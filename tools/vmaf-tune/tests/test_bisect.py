@@ -79,16 +79,27 @@ def _make_runners(
         if rc == 0:
             out_path.parent.mkdir(parents=True, exist_ok=True)
             out_path.write_bytes(b"\x00" * bytes_fn(crf))
-        log.append({"kind": "encode", "crf": crf, "argv": list(argv), "rc": rc})
+        # Distinguish real encode invocations (which carry an explicit
+        # ``-crf`` / ``-cq`` quality flag) from the post-encode decode
+        # invocation introduced by the Bug #3 fix (a vanilla
+        # ``ffmpeg -i <mkv> ... rawvideo`` that has no quality flag).
+        # Existing assertions count encode invocations only.
+        kind = "decode" if crf < 0 else "encode"
+        log.append({"kind": kind, "crf": crf, "argv": list(argv), "rc": rc})
         return _FakeCompleted(returncode=rc)
 
     def _score_runner(argv: list[str], **_kwargs: Any) -> _FakeCompleted:
         # Score runner is invoked with the libvmaf CLI argv. We extract
         # the -crf-equivalent from the *distorted* path the encode
         # runner wrote (filename embeds crf=...) and emit a vmaf JSON.
+        # The decoded sidecar path used by the Bug #3 fix carries an
+        # extra ``.decoded`` stem segment we strip before parsing.
         if "--distorted" in argv:
             distorted = Path(argv[argv.index("--distorted") + 1])
-            stem_parts = distorted.stem.split("_")
+            stem = distorted.stem
+            if stem.endswith(".decoded"):
+                stem = stem[: -len(".decoded")]
+            stem_parts = stem.split("_")
             try:
                 crf = int(stem_parts[-1])
             except ValueError:

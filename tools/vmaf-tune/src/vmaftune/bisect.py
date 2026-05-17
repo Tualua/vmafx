@@ -54,7 +54,7 @@ from typing import TYPE_CHECKING
 
 from .codec_adapters import get_adapter
 from .encode import EncodeRequest, bitrate_kbps, run_encode
-from .score import ScoreRequest, run_score
+from .score import VMAF_RAW_SUFFIXES, ScoreRequest, maybe_decode_distorted, run_score
 
 if TYPE_CHECKING:
     from .compare import PredicateFn, RecommendResult
@@ -164,6 +164,7 @@ def bisect_target_vmaf(
     score_backend: str | None = None,
     encode_runner: object | None = None,
     score_runner: object | None = None,
+    decode_runner: object | None = None,
     ffmpeg_bin: str = "ffmpeg",
     vmaf_bin: str = "vmaf",
     workdir: Path | None = None,
@@ -265,6 +266,7 @@ def bisect_target_vmaf(
                 score_backend=score_backend,
                 encode_runner=encode_runner,
                 score_runner=score_runner,
+                decode_runner=decode_runner,
                 ffmpeg_bin=ffmpeg_bin,
                 vmaf_bin=vmaf_bin,
                 workdir=workdir_path,
@@ -401,6 +403,7 @@ def _encode_and_score(
     ffmpeg_bin: str,
     vmaf_bin: str,
     workdir: Path,
+    decode_runner: object | None = None,
 ) -> BisectResult:
     """One encode+score round-trip — returns a sample-shaped BisectResult.
 
@@ -419,6 +422,12 @@ def _encode_and_score(
         sample_clip_seconds=sample_clip_seconds,
         framerate=framerate,
     )
+    # Bug #1: When the reference source is a container (mp4/mkv/…) the
+    # encoder ffmpeg invocation must NOT prepend ``-f rawvideo`` —
+    # otherwise ffmpeg tries to parse the demuxed container as raw YUV
+    # and produces "Output file is empty". Autodetect via the same
+    # suffix table that the post-encode decode step uses.
+    src_is_container = Path(src).suffix.lower() not in VMAF_RAW_SUFFIXES
     enc_req = EncodeRequest(
         source=Path(src),
         width=int(width),
@@ -431,6 +440,7 @@ def _encode_and_score(
         output=out_path,
         sample_clip_seconds=sample_duration_s,
         sample_clip_start_s=sample_start_s,
+        source_is_container=src_is_container,
     )
     enc_res = run_encode(enc_req, ffmpeg_bin=ffmpeg_bin, runner=encode_runner)
     if enc_res.exit_status != 0:
@@ -442,8 +452,48 @@ def _encode_and_score(
             encoder_version=enc_res.encoder_version,
         )
 
+    # Bug #3: The libvmaf CLI only accepts raw .yuv / .y4m. The
+    # encoded artefact is a Matroska container; without this decode
+    # step the vmaf binary mis-parses it as raw YUV and aborts with
+    # "file too small for declared geometry". We also need a raw YUV
+    # reference for the same reason — if ``src`` is a container, the
+    # caller cannot have decoded it (bisect is responsible for the
+    # full round trip), so decode it once into the workdir.
+    # ``decode_runner`` defaults to the encode runner: both are
+    # ffmpeg invocations, so production callers (which leave both
+    # ``None``) get the real ``subprocess.run`` either way, while
+    # tests can keep injecting a single stub.
+    effective_decode_runner = decode_runner if decode_runner is not None else encode_runner
+
+    ref_for_score = Path(src)
+    decoded_ref: Path | None = None
+    if src_is_container:
+        from .score import _decode_to_raw_yuv  # noqa: PLC0415 — module-local helper
+
+        decoded_ref = workdir / (Path(src).stem + ".ref.decoded.yuv")
+        # Re-use across iterations within the same bisect — workdir
+        # persists for the bisect's lifetime so a single decode is
+        # enough (every iteration scores the same reference).
+        rc = 0
+        if not decoded_ref.exists():
+            rc = _decode_to_raw_yuv(
+                Path(src),
+                decoded_ref,
+                pix_fmt=pix_fmt,
+                ffmpeg_bin=ffmpeg_bin,
+                runner=effective_decode_runner,
+            )
+        if rc != 0 or not decoded_ref.exists():
+            return _failure(
+                codec,
+                f"reference decode to raw YUV failed (rc={rc}) for {src}",
+                encode_time_ms=enc_res.encode_time_ms,
+                encoder_version=enc_res.encoder_version,
+            )
+        ref_for_score = decoded_ref
+
     score_req = ScoreRequest(
-        reference=Path(src),
+        reference=ref_for_score,
         distorted=out_path,
         width=int(width),
         height=int(height),
@@ -452,6 +502,27 @@ def _encode_and_score(
         frame_skip_ref=frame_skip_ref,
         frame_cnt=frame_cnt,
     )
+    # Decode the encoded container to raw YUV — libvmaf will not accept
+    # the .mkv otherwise. ``maybe_decode_distorted`` is a no-op for raw
+    # outputs, so callers that wire a custom encoder that emits .yuv
+    # directly are unaffected.
+    score_req, decode_rc = maybe_decode_distorted(
+        score_req,
+        workdir=workdir,
+        ffmpeg_bin=ffmpeg_bin,
+        runner=effective_decode_runner,
+    )
+    if decode_rc != 0:
+        with contextlib.suppress(OSError):
+            if out_path.exists():
+                out_path.unlink()
+        return _failure(
+            codec,
+            f"distorted decode to raw YUV failed (rc={decode_rc}) at CRF {crf}",
+            encode_time_ms=enc_res.encode_time_ms,
+            encoder_version=enc_res.encoder_version,
+        )
+
     score_res = run_score(
         score_req,
         vmaf_bin=vmaf_bin,
@@ -459,13 +530,15 @@ def _encode_and_score(
         backend=score_backend,
     )
 
-    # Best-effort cleanup: the encoded artefact is throwaway; we keep
-    # the workdir alive across iterations so a caller-supplied workdir
-    # can still inspect it later (the temp-dir path cleans on context
-    # exit instead).
+    # Best-effort cleanup: the encoded artefact + per-iteration decoded
+    # sidecar are throwaway; we keep the workdir alive across
+    # iterations so a caller-supplied workdir can still inspect it
+    # later (the temp-dir path cleans on context exit instead).
     with contextlib.suppress(OSError):
         if out_path.exists():
             out_path.unlink()
+        if score_req.distorted != out_path and score_req.distorted.exists():
+            score_req.distorted.unlink()
 
     if score_res.exit_status != 0:
         return _failure(
@@ -516,6 +589,7 @@ def make_bisect_predicate(
     score_backend: str | None = None,
     encode_runner: object | None = None,
     score_runner: object | None = None,
+    decode_runner: object | None = None,
     ffmpeg_bin: str = "ffmpeg",
     vmaf_bin: str = "vmaf",
     workdir: Path | None = None,
@@ -562,6 +636,7 @@ def make_bisect_predicate(
             score_backend=score_backend,
             encode_runner=encode_runner,
             score_runner=score_runner,
+            decode_runner=decode_runner,
             ffmpeg_bin=ffmpeg_bin,
             vmaf_bin=vmaf_bin,
             workdir=workdir,

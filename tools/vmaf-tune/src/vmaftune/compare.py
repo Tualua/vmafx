@@ -30,6 +30,7 @@ import csv
 import dataclasses
 import io
 import json
+import math
 import time
 from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -275,6 +276,29 @@ def _emit_markdown(report: ComparisonReport) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _nan_to_none(value: Any) -> Any:
+    """Recursively substitute ``None`` for ``NaN`` / ``±inf`` floats.
+
+    The compare-report JSON emitter previously relied on Python's
+    default ``json.dumps`` (``allow_nan=True``), which writes bare
+    ``NaN`` / ``Infinity`` tokens. Those tokens are valid only under a
+    JavaScript-extended grammar — RFC 8259 strict parsers (Go's
+    ``encoding/json``, Rust ``serde_json``, ``jq --strict``,
+    ``json.loads(..., parse_constant=...)``) reject them. The fix is to
+    coerce non-finite floats to ``null`` before serialization so the
+    output is portable; downstream readers that need to distinguish a
+    failed row from a missing key can rely on the row-level ``ok`` flag
+    + ``error`` string (Bug #2, BBB e2e 2026-05-17).
+    """
+    if isinstance(value, float):
+        return None if math.isnan(value) or math.isinf(value) else value
+    if isinstance(value, dict):
+        return {k: _nan_to_none(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_nan_to_none(v) for v in value]
+    return value
+
+
 def _emit_json(report: ComparisonReport) -> str:
     payload = {
         "src": report.src,
@@ -283,7 +307,10 @@ def _emit_json(report: ComparisonReport) -> str:
         "wall_time_ms": report.wall_time_ms,
         "rows": [r.to_row(report.target_vmaf) for r in report.rows],
     }
-    return json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    # ``allow_nan=False`` is a defence in depth — together with
+    # ``_nan_to_none`` it guarantees the emitter never writes bare
+    # ``NaN`` (which is not valid RFC 8259 JSON).
+    return json.dumps(_nan_to_none(payload), indent=2, sort_keys=True, allow_nan=False) + "\n"
 
 
 def _emit_csv(report: ComparisonReport) -> str:

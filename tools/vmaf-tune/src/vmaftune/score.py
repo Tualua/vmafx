@@ -235,6 +235,56 @@ def _decode_to_raw_yuv(
     return int(getattr(completed, "returncode", 1))
 
 
+# Suffixes the vmaf CLI accepts as-is without a prior ffmpeg decode step.
+# Container outputs (``.mkv`` / ``.mp4`` / …) must be decoded to raw YUV
+# before the binary will accept them.
+VMAF_RAW_SUFFIXES: frozenset[str] = frozenset({".yuv", ".y4m", ""})
+
+
+def maybe_decode_distorted(
+    req: ScoreRequest,
+    *,
+    workdir: Path,
+    ffmpeg_bin: str = "ffmpeg",
+    runner: object | None = None,
+) -> tuple[ScoreRequest, int]:
+    """Decode ``req.distorted`` to raw YUV when it is a container file.
+
+    Lifted shared helper — both ``corpus.iter_rows`` and ``bisect``
+    funnel container-shaped encoder outputs (``.mkv`` / ``.mp4``)
+    through here before invoking the vmaf CLI. The libvmaf binary only
+    accepts raw ``.yuv`` / ``.y4m``; without this decode step it
+    interprets the container bytes as raw planar samples and aborts
+    with "file too small for declared geometry" (Bug #3 in the BBB
+    end-to-end run on 2026-05-17).
+
+    Returns ``(updated_request, returncode)``.
+
+    - ``returncode == 0`` and the returned request points at a freshly-
+      written raw YUV when the input was a container and the decode
+      succeeded.
+    - ``returncode == 0`` with the original request returned when the
+      input was already raw (no work to do).
+    - A non-zero ``returncode`` with the original request signals a
+      decode failure; callers should treat the score step as failed
+      rather than invoking the vmaf binary on an undecodable file.
+    """
+    if req.distorted.suffix.lower() in VMAF_RAW_SUFFIXES:
+        return req, 0
+    workdir.mkdir(parents=True, exist_ok=True)
+    decoded = workdir / (req.distorted.stem + ".decoded.yuv")
+    rc = _decode_to_raw_yuv(
+        req.distorted,
+        decoded,
+        pix_fmt=req.pix_fmt,
+        ffmpeg_bin=ffmpeg_bin,
+        runner=runner,
+    )
+    if rc != 0 or not decoded.exists():
+        return req, rc if rc != 0 else 1
+    return dataclasses.replace(req, distorted=decoded), 0
+
+
 def run_score(
     req: ScoreRequest,
     *,

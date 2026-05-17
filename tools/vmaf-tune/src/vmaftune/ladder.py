@@ -193,10 +193,60 @@ def _default_sampler_preset(encoder: str) -> str:
     return presets[len(presets) // 2]
 
 
+def make_default_sampler(
+    *,
+    pix_fmt: str = "yuv420p",
+    framerate: float = 24.0,
+    duration_s: float = 1.0,
+    crf_sweep: Sequence[int] | None = None,
+) -> SamplerFn:
+    """Return a :data:`SamplerFn` closed over real source-shape metadata.
+
+    The legacy module-level :func:`_default_sampler` hardcoded
+    ``framerate=24.0``, ``duration_s=1.0``, ``pix_fmt="yuv420p"`` and
+    the canonical 5-point CRF sweep. The CLI had no way to override
+    any of them — a 1080p30 / 60 s source therefore ran the corpus
+    sweep at 24 fps / 1 s, producing nonsense bitrate math
+    (kbps = file_size / 1.0) and timing out on real content (Bug #4
+    and #5, BBB e2e 2026-05-17). This factory closes over the actual
+    source shape (resolved by the CLI from ``--framerate`` /
+    ``--duration`` / ``--pix-fmt`` flags or ffprobe) plus an optional
+    CRF sweep override (``--crf-sweep``) so smoke runs can pick a
+    short sweep instead of the production 5-point grid.
+    """
+    sweep = tuple(int(c) for c in crf_sweep) if crf_sweep is not None else DEFAULT_SAMPLER_CRF_SWEEP
+
+    def _sampler(
+        src: Path, encoder: str, width: int, height: int, target_vmaf: float
+    ) -> LadderPoint:
+        return _default_sampler(
+            src,
+            encoder,
+            width,
+            height,
+            target_vmaf,
+            pix_fmt=pix_fmt,
+            framerate=framerate,
+            duration_s=duration_s,
+            crf_sweep=sweep,
+        )
+
+    return _sampler
+
+
 def _default_sampler(
-    src: Path, encoder: str, width: int, height: int, target_vmaf: float
+    src: Path,
+    encoder: str,
+    width: int,
+    height: int,
+    target_vmaf: float,
+    *,
+    pix_fmt: str = "yuv420p",
+    framerate: float = 24.0,
+    duration_s: float = 1.0,
+    crf_sweep: Sequence[int] | None = None,
 ) -> LadderPoint:
-    """Production sampler — encode the canonical CRF sweep, pick by VMAF.
+    """Production sampler — encode the configured CRF sweep, pick by VMAF.
 
     Composes :func:`vmaftune.corpus.iter_rows` (Phase A encode+score)
     with :func:`vmaftune.recommend.pick_target_vmaf` (Phase B-equivalent
@@ -205,19 +255,19 @@ def _default_sampler(
     encode-side temp dir lives under the same prefix and is cleaned up
     on exit.
 
-    The source is treated as a raw YUV at ``yuv420p`` / 24 fps with a
-    1-second nominal duration — these are placeholder defaults for
-    rows whose ``bitrate_kbps`` is computed against the encoded
-    duration; callers needing a different framerate / pix_fmt /
-    duration should pass an explicit ``sampler=`` (the seam is
-    deliberately preserved per ADR-0307).
+    Defaults remain the historical placeholders (``yuv420p`` /
+    24 fps / 1 s) for back-compat with callers that pass this function
+    by name as ``sampler=``; the production CLI now binds the real
+    source shape via :func:`make_default_sampler` so bitrate math and
+    encode framerate match the input.
     """
     # Lazy imports — see ``_default_sampler_preset``.
     from .corpus import CorpusJob, CorpusOptions, iter_rows
     from .recommend import pick_target_vmaf
 
     preset = _default_sampler_preset(encoder)
-    cells = tuple((preset, crf) for crf in DEFAULT_SAMPLER_CRF_SWEEP)
+    sweep = tuple(int(c) for c in crf_sweep) if crf_sweep is not None else DEFAULT_SAMPLER_CRF_SWEEP
+    cells = tuple((preset, crf) for crf in sweep)
 
     with tempfile.TemporaryDirectory(prefix="vmaftune-ladder-") as tmp:
         tmp_path = Path(tmp)
@@ -225,9 +275,9 @@ def _default_sampler(
             source=src,
             width=width,
             height=height,
-            pix_fmt="yuv420p",
-            framerate=24.0,
-            duration_s=1.0,
+            pix_fmt=pix_fmt,
+            framerate=float(framerate),
+            duration_s=float(duration_s),
             cells=cells,
         )
         opts = CorpusOptions(
@@ -840,6 +890,7 @@ __all__ = [
     "convex_hull",
     "emit_manifest",
     "insert_extra_rungs_in_high_uncertainty_regions",
+    "make_default_sampler",
     "prune_redundant_rungs_by_uncertainty",
     "select_knees",
 ]

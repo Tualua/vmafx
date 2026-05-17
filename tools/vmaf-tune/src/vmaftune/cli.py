@@ -14,11 +14,13 @@ import argparse
 import dataclasses
 import importlib
 import json
+import math
 import subprocess
 import sys
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from . import __version__
 from .bisect import bisect_target_vmaf
@@ -611,6 +613,41 @@ def _build_parser() -> argparse.ArgumentParser:
             "above which two adjacent rungs are treated as "
             "indistinguishable and the lower-bitrate one is dropped. "
             "Default 0.5 per Research-0067."
+        ),
+    )
+    # Source-shape flags symmetric with ``compare`` / ``tune-per-shot``
+    # (Bug #4, BBB e2e 2026-05-17). The default sampler used to hardcode
+    # framerate=24.0 / duration_s=1.0 / pix_fmt="yuv420p" — any real-
+    # world 1080p30 input therefore ran the corpus sweep at the wrong
+    # framerate and computed bitrate against 1 s of encoded output.
+    # These flags thread the actual source shape through
+    # ``make_default_sampler`` so bitrate math and encode timing match.
+    ladder.add_argument(
+        "--framerate",
+        type=float,
+        default=24.0,
+        help="source frame rate, fed to the default corpus sampler (default 24.0)",
+    )
+    ladder.add_argument(
+        "--duration",
+        type=float,
+        default=1.0,
+        dest="duration_s",
+        help="source duration in seconds, used for bitrate math (default 1.0)",
+    )
+    ladder.add_argument(
+        "--pix-fmt",
+        default="yuv420p",
+        help="source pixel format (default yuv420p)",
+    )
+    ladder.add_argument(
+        "--crf-sweep",
+        default=None,
+        help=(
+            "comma-separated CRF list to use instead of the canonical "
+            "5-point sweep (18,23,28,33,38). Useful for smoke runs that "
+            "want to exercise the ladder plumbing with a 1-2 CRF "
+            "schedule (Bug #5, BBB e2e 2026-05-17)."
         ),
     )
 
@@ -1981,7 +2018,7 @@ def _run_ladder(args: argparse.Namespace) -> int:
     ``wide_interval_min_width`` threshold, so they still participate
     in midpoint insertion instead of bypassing the recipe.
     """
-    from .ladder import build_and_emit
+    from .ladder import build_and_emit, make_default_sampler
     from .uncertainty import load_confidence_thresholds
 
     thresholds = None
@@ -1989,6 +2026,26 @@ def _run_ladder(args: argparse.Namespace) -> int:
         thresholds = load_confidence_thresholds(getattr(args, "uncertainty_sidecar", None))
     resolutions = _parse_resolutions(args.resolutions)
     target_vmafs = _parse_target_vmafs(args.target_vmafs)
+    # Bind the default sampler to the CLI source-shape flags so the
+    # corpus sweep encodes at the right framerate / pix_fmt / duration
+    # and a smoke run can drop the canonical 5-point CRF schedule for
+    # a shorter list (Bug #4 / Bug #5, BBB e2e 2026-05-17).
+    crf_sweep = None
+    if getattr(args, "crf_sweep", None):
+        try:
+            crf_sweep = tuple(int(c.strip()) for c in args.crf_sweep.split(",") if c.strip())
+        except ValueError as exc:
+            sys.stderr.write(f"vmaf-tune ladder: invalid --crf-sweep: {exc}\n")
+            return 2
+        if not crf_sweep:
+            sys.stderr.write("vmaf-tune ladder: --crf-sweep produced an empty list\n")
+            return 2
+    sampler = make_default_sampler(
+        pix_fmt=getattr(args, "pix_fmt", "yuv420p"),
+        framerate=float(getattr(args, "framerate", 24.0)),
+        duration_s=float(getattr(args, "duration_s", 1.0)),
+        crf_sweep=crf_sweep,
+    )
     manifest = build_and_emit(
         src=args.src,
         encoder=args.encoder,
@@ -1997,6 +2054,7 @@ def _run_ladder(args: argparse.Namespace) -> int:
         quality_tiers=args.quality_tiers,
         format=args.format,
         spacing=args.spacing,
+        sampler=sampler,
         with_uncertainty=bool(getattr(args, "with_uncertainty", False)),
         uncertainty_thresholds=thresholds,
         rung_overlap_threshold=getattr(args, "rung_overlap_threshold", None),
@@ -2855,6 +2913,50 @@ def _run_sidecar(args: argparse.Namespace) -> int:
     return 2
 
 
+def _coerce_finite_float(value: Any, default: float = math.nan) -> float:
+    """Parse a JSON numeric field into a finite float or ``NaN``.
+
+    The compare-report JSON output uses ``null`` for failed-row
+    numerics (Bug #2 fix). Round-tripping through ``float(x or 0.0)``
+    silently coerces ``None`` to ``0.0`` and leaves NaN as NaN — both
+    masquerade as legitimate values in the rendered profile card
+    (Bug #6, BBB e2e 2026-05-17). This helper returns ``NaN`` for
+    ``None`` / missing / non-finite inputs so the renderer can apply
+    its em-dash placeholder.
+    """
+    if value is None:
+        return default
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return default
+    if math.isnan(v) or math.isinf(v):
+        return default
+    return v
+
+
+def _codec_row_from_json(r: dict[str, Any]) -> "CodecRow":  # type: ignore[name-defined]  # noqa: F821
+    """Build a :class:`vmaftune.report.CodecRow` from a compare JSON row.
+
+    Coerces ``null`` / NaN numerics to ``NaN`` (which the renderer
+    formats as an em-dash) and falls back to the row-level ``ok``
+    flag instead of treating missing ``best_crf`` as 0.
+    """
+    from .report import CodecRow
+
+    ok = bool(r.get("ok", True))
+    return CodecRow(
+        codec=str(r.get("codec", "")),
+        encoder_version=str(r.get("encoder_version", "")),
+        best_crf=int(r.get("best_crf") if r.get("best_crf") is not None else -1),
+        bitrate_kbps=_coerce_finite_float(r.get("bitrate_kbps")),
+        encode_time_ms=_coerce_finite_float(r.get("encode_time_ms")),
+        vmaf_score=_coerce_finite_float(r.get("vmaf_score")),
+        ok=ok,
+        error=str(r.get("error", "")),
+    )
+
+
 def _run_report(args: argparse.Namespace) -> int:
     """Render a vmaf-tune profile-card from one or more JSON dumps."""
     from datetime import datetime, timezone
@@ -2880,19 +2982,7 @@ def _run_report(args: argparse.Namespace) -> int:
             sys.stderr.write(f"vmaf-tune report: cannot load --compare-json: {e}\n")
             return 2
         cmp_rows_in = cmp_payload.get("rows") or cmp_payload.get("results") or []
-        codec_rows = tuple(
-            CodecRow(
-                codec=str(r.get("codec", "")),
-                encoder_version=str(r.get("encoder_version", "")),
-                best_crf=int(r.get("best_crf") or 0),
-                bitrate_kbps=float(r.get("bitrate_kbps") or 0.0),
-                encode_time_ms=float(r.get("encode_time_ms") or 0.0),
-                vmaf_score=float(r.get("vmaf_score") or 0.0),
-                ok=bool(r.get("ok", True)),
-                error=str(r.get("error", "")),
-            )
-            for r in cmp_rows_in
-        )
+        codec_rows = tuple(_codec_row_from_json(r) for r in cmp_rows_in)
 
     ladder_samples: tuple[LadderSample, ...] = ()
     ladder_rungs: tuple[LadderRung, ...] = ()
@@ -2966,12 +3056,27 @@ def _run_report(args: argparse.Namespace) -> int:
         md_path.write_text(render_markdown(data, assets_dir=args.assets_dir), encoding="utf-8")
         outputs.append(md_path)
 
+    # Aggregate row-level ``ok`` flags into the top-level status field
+    # so consumers can ``jq .ok`` to decide whether the report is
+    # trustworthy without re-scanning every row. The compare-stage
+    # bisect can fail per-codec while the report itself succeeds in
+    # producing a card — both signals matter, but the previous
+    # unconditional ``"ok": true`` masked the per-row failures (Bug #6,
+    # BBB e2e 2026-05-17). The semantics: ``ok=true`` iff at least one
+    # codec row succeeded AND no row recorded a failure; mirrors the
+    # ``ComparisonReport.best()`` definition. With no codec rows at
+    # all the report is informational and stays ``ok=true``.
+    rows_ok = all(r.ok for r in codec_rows) if codec_rows else True
+    rows_any = any(r.ok for r in codec_rows) if codec_rows else True
+    top_ok = bool(rows_ok and rows_any)
     sys.stdout.write(
         json.dumps(
             {
-                "ok": True,
+                "ok": top_ok,
                 "outputs": [str(p) for p in outputs],
                 "codec_rows": len(codec_rows),
+                "codec_rows_ok": sum(1 for r in codec_rows if r.ok),
+                "codec_rows_failed": sum(1 for r in codec_rows if not r.ok),
                 "ladder_samples": len(ladder_samples),
                 "ladder_rungs": len(ladder_rungs),
                 "shots": len(shots),

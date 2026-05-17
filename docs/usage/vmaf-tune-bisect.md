@@ -154,8 +154,29 @@ the comparison schema.
 | `preset` | adapter mid-range (`"medium"` for x264/x265/svtav1) | Forwarded verbatim to the adapter. |
 | `vmaf_model` | `"vmaf_v0.6.1"` | Same vocabulary as `score.py`; HDR / 4K models per ADR-0289 / ADR-0295. |
 | `score_backend` | `None` | `"cpu"` / `"cuda"` / `"sycl"` / `"vulkan"` per ADR-0299. |
-| `encode_runner` / `score_runner` | `subprocess.run` | Test seams; production callers leave `None`. |
-| `workdir` | `tempfile.TemporaryDirectory()` | Per-iteration encoded output goes here; cleaned at exit. |
+| `encode_runner` / `score_runner` / `decode_runner` | `subprocess.run` | Test seams; production callers leave `None`. `decode_runner` falls back to `encode_runner` when both are ffmpeg invocations. |
+| `workdir` | `tempfile.TemporaryDirectory()` | Per-iteration encoded output + the cached decoded-reference sidecar go here; cleaned at exit. |
+
+## Container vs raw YUV sources
+
+`src` may be **either** a raw planar `.yuv` (the legacy contract) **or
+any FFmpeg-readable container** (`.mp4`, `.mkv`, `.mov`, …). The
+bisect autodetects the shape via the file suffix and does two extra
+things for container sources (ADR-0497):
+
+1. **Encode** — the encoder ffmpeg invocation omits the
+   `-f rawvideo -pix_fmt … -s … -r …` input flags so ffmpeg
+   autodetects the container; otherwise it would mis-interpret the
+   demuxed bytes as raw YUV and produce zero frames.
+2. **Decode-then-score** — every per-CRF encode is a `.mkv`
+   container; the libvmaf CLI only accepts raw `.yuv` / `.y4m`, so
+   the bisect decodes the encoded artefact to a raw YUV sidecar
+   before invoking the vmaf binary. The reference is also decoded
+   once per bisect and cached across iterations.
+
+These steps add one ffmpeg call per encode + one per bisect to the
+critical path; both are negligible against the encoder runtime on
+sample clips longer than a second.
 
 ## Error modes
 

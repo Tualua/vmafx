@@ -25,6 +25,7 @@ import base64
 import dataclasses
 import io
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -200,7 +201,14 @@ def _ladder_plot_fn(data: ReportData):
 
 def _codec_plot_fn(data: ReportData):
     def _plot(ax) -> None:
-        rows = [r for r in data.codec_rows if r.ok]
+        # Drop failed AND non-finite-numeric rows so the bar / line
+        # axes don't try to plot NaN (matplotlib would otherwise emit
+        # an empty plot or a warning, depending on version). Bug #6.
+        rows = [
+            r
+            for r in data.codec_rows
+            if r.ok and not _is_missing(r.bitrate_kbps) and not _is_missing(r.vmaf_score)
+        ]
         if not rows:
             ax.text(0.5, 0.5, "no successful codec rows", ha="center", va="center")
             ax.set_axis_off()
@@ -257,17 +265,57 @@ def _fmt_bytes(n: int) -> str:
     return f"{n:.1f} TiB"
 
 
-def _fmt_kbps(v: float) -> str:
+_DASH = "—"  # U+2014 em-dash; renderer placeholder for NaN / None.
+
+
+def _is_missing(v: float | None) -> bool:
+    """Return True when ``v`` is ``None`` or a non-finite float.
+
+    Failed bisect rows (Bug #3) propagate ``NaN`` through the compare
+    JSON; the renderer formats them as an em-dash so the profile-card
+    table no longer prints literal ``nan kbps`` / ``nan`` text
+    (Bug #6, BBB e2e 2026-05-17).
+    """
+    if v is None:
+        return True
+    return math.isnan(v) or math.isinf(v)
+
+
+def _fmt_kbps(v: float | None) -> str:
+    if _is_missing(v):
+        return _DASH
+    v = float(v)  # type: ignore[arg-type]
     if v >= 1000:
         return f"{v / 1000:.2f} Mbps"
     return f"{v:.0f} kbps"
 
 
-def _fmt_duration(s: float) -> str:
+def _fmt_duration(s: float | None) -> str:
+    if _is_missing(s):
+        return _DASH
+    s = float(s)  # type: ignore[arg-type]
     if s < 60:
         return f"{s:.1f}s"
     m, sec = divmod(int(s), 60)
     return f"{m}m {sec}s"
+
+
+def _fmt_vmaf(v: float | None) -> str:
+    if _is_missing(v):
+        return _DASH
+    return f"{float(v):.2f}"
+
+
+def _fmt_ms(v: float | None) -> str:
+    if _is_missing(v):
+        return _DASH
+    return f"{float(v):.0f} ms"
+
+
+def _fmt_crf(v: int | None) -> str:
+    if v is None or v < 0:
+        return _DASH
+    return str(int(v))
 
 
 def render_markdown(data: ReportData, *, assets_dir: Path | None = None) -> str:
@@ -309,9 +357,9 @@ def render_markdown(data: ReportData, *, assets_dir: Path | None = None) -> str:
         for r in data.codec_rows:
             status = "✓" if r.ok else f"✗ {r.error}"
             lines.append(
-                f"| {r.codec} | {r.encoder_version or '—'} | {r.best_crf} | "
-                f"{_fmt_kbps(r.bitrate_kbps)} | {r.encode_time_ms:.0f} ms | "
-                f"{r.vmaf_score:.2f} | {status} |"
+                f"| {r.codec} | {r.encoder_version or '—'} | {_fmt_crf(r.best_crf)} | "
+                f"{_fmt_kbps(r.bitrate_kbps)} | {_fmt_ms(r.encode_time_ms)} | "
+                f"{_fmt_vmaf(r.vmaf_score)} | {status} |"
             )
         lines.append("")
         lines.append(
@@ -330,7 +378,8 @@ def render_markdown(data: ReportData, *, assets_dir: Path | None = None) -> str:
             lines.append("|---|---:|---:|---:|")
             for r in data.ladder_rungs:
                 lines.append(
-                    f"| {r.width}×{r.height} | {r.crf} | {_fmt_kbps(r.bitrate_kbps)} | {r.vmaf:.2f} |"
+                    f"| {r.width}×{r.height} | {_fmt_crf(r.crf)} | "
+                    f"{_fmt_kbps(r.bitrate_kbps)} | {_fmt_vmaf(r.vmaf)} |"
                 )
             lines.append("")
         lines.append(_embed_png(_render_chart(7, 4, _ladder_plot_fn(data)), "ladder", assets_dir))
@@ -348,7 +397,8 @@ def render_markdown(data: ReportData, *, assets_dir: Path | None = None) -> str:
             lines.append(
                 f"| {s.shot_index} | {s.start_frame}–{s.end_frame} | "
                 f"{_fmt_duration(s.duration_s)} | {s.width}×{s.height} | "
-                f"{s.best_crf} | {s.vmaf:.2f} | {_fmt_kbps(s.bitrate_kbps)} |"
+                f"{_fmt_crf(s.best_crf)} | {_fmt_vmaf(s.vmaf)} | "
+                f"{_fmt_kbps(s.bitrate_kbps)} |"
             )
         lines.append("")
         lines.append(_embed_png(_render_chart(7, 3.5, _shot_plot_fn(data)), "shots", assets_dir))
@@ -460,10 +510,10 @@ def _row_html(row: CodecRow) -> str:
     )
     return (
         f"<tr><td>{row.codec}</td><td>{row.encoder_version or '—'}</td>"
-        f"<td class='num'>{row.best_crf}</td>"
+        f"<td class='num'>{_fmt_crf(row.best_crf)}</td>"
         f"<td class='num'>{_fmt_kbps(row.bitrate_kbps)}</td>"
-        f"<td class='num'>{row.encode_time_ms:.0f} ms</td>"
-        f"<td class='num'>{row.vmaf_score:.2f}</td>"
+        f"<td class='num'>{_fmt_ms(row.encode_time_ms)}</td>"
+        f"<td class='num'>{_fmt_vmaf(row.vmaf_score)}</td>"
         f"<td>{status}</td></tr>"
     )
 
@@ -488,9 +538,10 @@ def render_html(data: ReportData) -> str:
         rungs_html = ""
         if data.ladder_rungs:
             rungs = "".join(
-                f"<tr><td>{r.width}×{r.height}</td><td class='num'>{r.crf}</td>"
+                f"<tr><td>{r.width}×{r.height}</td>"
+                f"<td class='num'>{_fmt_crf(r.crf)}</td>"
                 f"<td class='num'>{_fmt_kbps(r.bitrate_kbps)}</td>"
-                f"<td class='num'>{r.vmaf:.2f}</td></tr>"
+                f"<td class='num'>{_fmt_vmaf(r.vmaf)}</td></tr>"
                 for r in data.ladder_rungs
             )
             rungs_html = (
@@ -511,8 +562,8 @@ def render_html(data: ReportData) -> str:
             f"<td>{s.start_frame}–{s.end_frame}</td>"
             f"<td class='num'>{_fmt_duration(s.duration_s)}</td>"
             f"<td>{s.width}×{s.height}</td>"
-            f"<td class='num'>{s.best_crf}</td>"
-            f"<td class='num'>{s.vmaf:.2f}</td>"
+            f"<td class='num'>{_fmt_crf(s.best_crf)}</td>"
+            f"<td class='num'>{_fmt_vmaf(s.vmaf)}</td>"
             f"<td class='num'>{_fmt_kbps(s.bitrate_kbps)}</td></tr>"
             for s in data.shots
         )

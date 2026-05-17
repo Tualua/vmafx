@@ -46,6 +46,10 @@ invariant is preserved.
 | `--with-uncertainty` | off | Apply uncertainty-aware rung pruning/insertion. Sampled `vmaf_interval` payloads win; point-only rows use a conservative centred interval based on `wide_interval_min_width`. |
 | `--uncertainty-sidecar PATH` | none | Calibration sidecar JSON (same schema as `recommend --uncertainty-sidecar`). Falls back to the documented Research-0067 floor. |
 | `--rung-overlap-threshold F` | 0.5 | Overlap fraction above which two adjacent rungs are treated as indistinguishable and the lower-bitrate one is dropped. |
+| `--framerate F` | `24.0` | Source frame rate fed to the default corpus sampler. Set to match the real source — the legacy hardcoded `24.0` produced incorrect bitrate math on non-24 fps inputs (ADR-0497). |
+| `--duration S` | `1.0` | Source duration in seconds, used to compute `bitrate_kbps = encode_size / duration` in the default sampler. Set to the real source length (ADR-0497). |
+| `--pix-fmt FMT` | `yuv420p` | Source pixel format fed to the default corpus sampler (e.g. `yuv422p`, `yuv420p10le`). Symmetric with `compare` / `tune-per-shot` (ADR-0497). |
+| `--crf-sweep CSV` | `18,23,28,33,38` | Comma-separated CRF list overriding the canonical 5-point default sweep. Useful for smoke runs that only need to verify the ladder plumbing (e.g. `--crf-sweep 23,28`, ADR-0497). |
 
 The threshold defaults are documented in
 [`vmaftune.uncertainty.ConfidenceThresholds`](../ai/conformal-vqa.md):
