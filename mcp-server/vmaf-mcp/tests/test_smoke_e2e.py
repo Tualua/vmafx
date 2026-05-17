@@ -36,9 +36,13 @@ _DIS_YUV = REPO / "python/test/resource/yuv/src01_hrc01_576x324.yuv"
 _WIDTH = 576
 _HEIGHT = 324
 
-# Clip-mean VMAF v0.6.1 CPU reference — asserted to places=4.
-# Source: python/test/quality_runner_test.py (Netflix golden gate).
-_EXPECTED_VMAF_SCORE = 76.69926
+# Clip-mean VMAF v0.6.1 CPU reference — asserted to places=2 (matching
+# the Netflix golden gate's own assertion). Source:
+# python/test/quality_runner_test.py::test_run_vmaf_runner asserts
+# results[0]["VMAF_score"] == 76.66890519623612, places=2.
+# (The prior 76.69926 hardcode here was off by 0.03 — it never matched
+# the Netflix golden it claimed to source.)
+_EXPECTED_VMAF_SCORE = 76.66890519623612
 
 
 def _binary_present() -> bool:
@@ -170,9 +174,12 @@ async def test_call_tool_vmaf_score_golden_pair() -> None:
         f"Payload keys: {list(payload.keys())}"
     )
 
-    assert abs(mean_score - _EXPECTED_VMAF_SCORE) < 1e-4 * 10, (
+    # Tolerance matches the Netflix golden gate's own places=2 assertion
+    # (quality_runner_test.py::test_run_vmaf_runner). Tightening below
+    # places=2 would diverge from the gate this test exists to mirror.
+    assert abs(mean_score - _EXPECTED_VMAF_SCORE) < 1e-2, (
         f"Mean VMAF score {mean_score:.5f} deviates from reference "
-        f"{_EXPECTED_VMAF_SCORE:.5f} by more than 1e-3 — possible regression."
+        f"{_EXPECTED_VMAF_SCORE:.5f} by more than 1e-2 — possible regression."
     )
 
 
