@@ -3103,17 +3103,35 @@ def _run_report(args: argparse.Namespace) -> int:
     # codec row succeeded AND no row recorded a failure; mirrors the
     # ``ComparisonReport.best()`` definition. With no codec rows at
     # all the report is informational and stays ``ok=true``.
-    rows_ok = all(r.ok for r in codec_rows) if codec_rows else True
-    rows_any = any(r.ok for r in codec_rows) if codec_rows else True
-    top_ok = bool(rows_ok and rows_any)
+    #
+    # ADR-0501 / BBB e2e v4 Bug #V4-C: an "encoder unavailable" row
+    # records an infrastructure gap (the codec binary wasn't built
+    # into the runtime), not a quality regression. The bisect
+    # discriminator in ADR-0498 already labels such rows
+    # ``error="encoder unavailable (NAME): …"``. Treat those rows
+    # as *informational failures* — they don't gate ``ok`` but they
+    # do raise a new ``degraded`` flag so dashboards can surface the
+    # missing codec without flipping the run to red. The aggregation:
+    # ``ok=true`` when every non-``ok`` row's error starts with
+    # ``"encoder unavailable"`` AND at least one row succeeded;
+    # ``degraded=true`` when any row is an encoder-unavailable row.
+    _UNAVAIL_PREFIX = "encoder unavailable"
+    failed_rows = [r for r in codec_rows if not r.ok]
+    unavail_rows = [r for r in failed_rows if r.error.startswith(_UNAVAIL_PREFIX)]
+    real_failures = [r for r in failed_rows if not r.error.startswith(_UNAVAIL_PREFIX)]
+    rows_any_ok = any(r.ok for r in codec_rows) if codec_rows else True
+    top_ok = bool(rows_any_ok and not real_failures)
+    degraded = bool(unavail_rows)
     sys.stdout.write(
         json.dumps(
             {
                 "ok": top_ok,
+                "degraded": degraded,
                 "outputs": [str(p) for p in outputs],
                 "codec_rows": len(codec_rows),
                 "codec_rows_ok": sum(1 for r in codec_rows if r.ok),
                 "codec_rows_failed": sum(1 for r in codec_rows if not r.ok),
+                "codec_rows_unavailable": len(unavail_rows),
                 "ladder_samples": len(ladder_samples),
                 "ladder_rungs": len(ladder_rungs),
                 "shots": len(shots),

@@ -35590,3 +35590,28 @@ Touches upstream-mirrored files:
    (not the original `log2f(i)*2048` for `i` in `[32767..65535]`).
 
 If upstream changes any of the above, a new reconciliation pass is needed.
+
+## fix/bbb-e2e-v4-bug-cluster-2026-05-18 (ADR-0501)
+
+**Files**:
+`tools/vmaf-tune/src/vmaftune/{corpus,ladder,cli}.py`,
+`tools/vmaf-tune/tests/{test_bbb_e2e_v2_bug_cluster,test_bbb_e2e_v4_bug_cluster}.py`,
+`docs/adr/0501-vmaf-tune-bbb-e2e-v4-bug-cluster.md`,
+`docs/adr/README.md`,
+`docs/usage/vmaf-tune.md`,
+`changelog.d/fixed/0501-vmaf-tune-bbb-e2e-v4-bug-cluster.md`.
+
+**Rebase sensitivity (none):** all changes live in `tools/vmaf-tune/`
+(fork-added) and fork-added docs/changelog files — no upstream
+Netflix file is touched. The corpus / ladder / cli modules are
+not present in Netflix master. The optional `target_width` /
+`target_height` kwargs added to `_decode_source_to_yuv` and
+`_maybe_decode_reference` default to `None` so older test fixtures
+and the ADR-0499 single-resolution code path round-trip
+unchanged. The `samples=` kwarg added to `emit_manifest` /
+`_emit_json` is keyword-only with a `None` default; HLS / DASH
+emitters silently ignore it. `_run_report`'s stdout JSON grows
+two new fields (`degraded`, `codec_rows_unavailable`) — a strict
+schema consumer that asserts on absence would need updating, but
+the existing fields stay populated. ffmpeg-patches are unaffected;
+no public C API surface changed.

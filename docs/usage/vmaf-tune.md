@@ -1693,6 +1693,37 @@ vmaf-tune ladder --src ep01.yuv --format dash --output ladder.mpd
 vmaf-tune ladder --src ep01.yuv --format json --output ladder.json
 ```
 
+The JSON descriptor carries three top-level fields:
+
+- `schema` — schema identifier (`"vmaf-tune-ladder/v1"`).
+- `renditions[]` — the post-hull rungs that `select_knees` picked.
+  Ascending-bitrate order; each entry has `width`, `height`,
+  `bitrate_kbps`, `bandwidth_bps`, `vmaf`, `crf`.
+- `samples[]` — every raw `(resolution, target_vmaf)` cell the
+  sampler scored, pre-hull. Ascending by `(pixel_count,
+  bitrate_kbps)`; same per-entry shape as `renditions[]`. Added
+  2026-05-18 per ADR-0501 so `vmaf-tune report --ladder-json` can
+  render the Pareto-cloud overlay. The array is always present —
+  callers running with no scored cells get an empty list rather
+  than a missing key.
+
+### Cross-resolution scoring against container sources
+
+Prior to ADR-0501 the reference leg of a cross-resolution rung was
+decoded at the source's native geometry while the libvmaf CLI was
+told to read both legs at the rung target. A 1920x1080 reference
+was therefore mis-parsed as a 1280x720 frame and emitted a
+catastrophic VMAF (~21 instead of ~93), collapsing the post-hull
+ladder to a single rendition. The corpus / ladder paths now
+downscale the reference YUV sidecar to the rung target via a
+per-rung `-vf scale=W:H` filter on the ffmpeg decode call. The
+per-rung sidecar's filename embeds the target dims
+(`<src>.ref.decoded.<W>x<H>.yuv`) so a multi-rung sweep in the
+same `encode_dir` doesn't collide on a stale path. Single-resolution
+ladders and rungs that match the source geometry keep the legacy
+decode-at-native-geometry path — there's no decode overhead when
+the target already matches.
+
 ### Rung spacing
 
 `--spacing log_bitrate` (default) doubles bandwidth per rung — Apple
@@ -1725,7 +1756,33 @@ accepted as a legacy alias for `vmaf`.
 > 1080p bytes = decoded garbage). The ladder now accepts separate
 > source dims and injects a `-vf scale=W:H` filter for each
 > sub-source rung. Container (`.mp4` / `.mkv`) sources are
-> unaffected — ffmpeg auto-detects their geometry.
+> unaffected — ffmpeg auto-detects their geometry. ADR-0501 closes
+> the corresponding gap on the *reference* leg: a per-rung
+> `.ref.decoded.<W>x<H>.yuv` sidecar is now produced so the libvmaf
+> CLI reads both legs at the same geometry.
+
+## `report` subcommand — stdout aggregate flags
+
+The `report` subcommand renders a profile-card (HTML / Markdown)
+from one or more JSON dumps emitted upstream of it
+(`--compare-json`, `--ladder-json`, `--per-shot-json`). It also
+writes a one-line stdout JSON summary that downstream automation
+can pipe to `jq`. The fields:
+
+| Key | Meaning |
+| --- | --- |
+| `ok` | `true` when at least one codec row succeeded **and** no non-`ok` row is a real encode failure. An "encoder unavailable" row (infrastructure gap — codec not built into ffmpeg) does **not** flip this to `false`. With no codec rows the report is informational and stays `ok=true`. |
+| `degraded` | `true` when at least one codec row is an "encoder unavailable" row. Lets dashboards show the missing codec without flipping the run red. Added 2026-05-18 per ADR-0501 / Bug #V4-C. |
+| `codec_rows` / `codec_rows_ok` / `codec_rows_failed` | Total / succeeded / failed row counts. |
+| `codec_rows_unavailable` | Subset of `codec_rows_failed` whose `error` starts with `"encoder unavailable"`. Added 2026-05-18 per ADR-0501. |
+| `ladder_samples` / `ladder_rungs` | Counts read from `--ladder-json`. `ladder_samples` reads the top-level `samples[]` array (always present in `vmaf-tune-ladder/v1` JSON since ADR-0501). |
+| `shots` | Count of per-shot rows read from `--per-shot-json`. |
+| `outputs` | Paths of the rendered card files. |
+
+The "encoder unavailable" discrimination keys on the bisect-stage
+error prefix added in ADR-0498 (`"encoder unavailable (NAME): …"`).
+A row whose `error` does **not** start with that prefix is treated
+as a genuine encode/score failure and flips `ok=false`.
 
 ## Phase F — multi-pass encoding (ADR-0333)
 

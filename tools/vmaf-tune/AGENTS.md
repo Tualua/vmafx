@@ -800,3 +800,31 @@ scripts for those local corpora.
   `"<encoder>-enabled"` when the encoder is compiled in; an empty
   string lets the caller keep its `"unknown"` placeholder so
   existing tests that pin that exact value still pass.
+- **`_maybe_decode_reference` scales the reference YUV to the rung
+  target on cross-resolution sweeps (ADR-0501, Bug #V4-B).** When
+  `CorpusJob.src_width / src_height` differs from `width / height`,
+  `iter_rows` passes the rung target to `_maybe_decode_reference`
+  which appends `-vf scale=W:H` to the ffmpeg decode argv and
+  embeds the dims in the sidecar filename
+  (`<src>.ref.decoded.<W>x<H>.yuv`) so multi-rung sweeps don't
+  collide on a stale path. Single-resolution rungs (src dims == rung
+  dims, or both `None`) keep the legacy native-geometry decode.
+  Without this scale the libvmaf CLI silently mis-parses the planar
+  bytes (1080p reference handed to a 720p-reading CLI = ~21 VMAF
+  instead of ~93) and collapses the ladder grid.
+- **`vmaf-tune-ladder/v1` JSON always emits a `samples[]` array
+  (ADR-0501, Bug #V4-B).** `emit_manifest(format="json", samples=…)`
+  threads the pre-hull sampler cloud through `build_and_emit`. Empty
+  array when no cloud is wired — never a missing key — so consumers
+  can read `payload["samples"]` unconditionally. HLS / DASH emitters
+  silently ignore the `samples=` kwarg.
+- **`_run_report` separates infrastructure-gap rows from real
+  failures (ADR-0501, Bug #V4-C).** A row whose `error` starts with
+  `"encoder unavailable"` (the bisect discriminator prefix added in
+  ADR-0498 follow-up #6) raises a new top-level `degraded=true`
+  flag without flipping `ok=false`. `ok=true` requires
+  `at_least_one_row_succeeded AND no_real_failure`; `ok=false`
+  whenever any non-unavailable row fails. New counter
+  `codec_rows_unavailable` exposes the gap count for dashboards.
+  Changing the prefix in `bisect._predicate_for_codec` must update
+  this aggregator too.

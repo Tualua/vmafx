@@ -186,8 +186,15 @@ def test_ladder_cross_resolution_against_yuv_source() -> None:
     assert (job.src_width, job.src_height) == (1920, 1080)
 
 
-def test_corpus_emits_scale_filter_when_src_dims_differ(tmp_path: Path) -> None:
-    """``iter_rows`` injects ``-vf scale=W:H`` for cross-res YUV sources."""
+def test_corpus_emits_scale_filter_when_src_dims_differ(tmp_path: Path, monkeypatch: Any) -> None:
+    """``iter_rows`` injects ``-vf scale=W:H`` for cross-res YUV sources.
+
+    ADR-0501 follow-up: the reference decode now also downscales to the
+    rung target on cross-res rungs (Bug #V4-B); the test must stub the
+    ffmpeg decode subprocess so it doesn't shell out against the 1-byte
+    fixture YUV. The encode-side argv assertions remain unchanged.
+    """
+    import vmaftune.corpus as corpus_mod
     from vmaftune.corpus import CorpusJob, CorpusOptions, iter_rows
 
     job = CorpusJob(
@@ -209,6 +216,7 @@ def test_corpus_emits_scale_filter_when_src_dims_differ(tmp_path: Path) -> None:
         src_sha256=False,
     )
     encode_argvs: list[list[str]] = []
+    decode_argvs: list[list[str]] = []
 
     def _enc_runner(argv: list[str], **_kw: Any) -> _FakeCompleted:
         encode_argvs.append(list(argv))
@@ -223,6 +231,25 @@ def test_corpus_emits_scale_filter_when_src_dims_differ(tmp_path: Path) -> None:
         out.write_text('{"pooled_metrics": {"vmaf": {"mean": 80.0}}}\n')
         return _FakeCompleted(returncode=0, stderr="VMAF version 3.0.0-test\n")
 
+    # Stub the ffmpeg decode subprocess used by both
+    # ``_maybe_decode_reference`` (cross-res raw YUV, ADR-0501) and
+    # ``_maybe_decode_distorted`` (container->raw, ADR-0499). They
+    # both shell out via ``subprocess.run``; the test fixture is a
+    # 1-byte placeholder so a real ffmpeg call would fail. Producing
+    # the destination file with ``\x00`` bytes lets the iter_rows
+    # cell loop reach the encode/score stubs.
+    import subprocess as _sp
+
+    def _fake_sp_run(argv: list[Any], **_kw: Any) -> _FakeCompleted:
+        decode_argvs.append([str(a) for a in argv])
+        dest = Path(argv[-1])
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(b"\x00" * 1024)
+        return _FakeCompleted(returncode=0)
+
+    monkeypatch.setattr(_sp, "run", _fake_sp_run)
+    monkeypatch.setattr(corpus_mod, "_sha256_file", lambda *_a, **_kw: "")
+
     rows = list(iter_rows(job, opts, encode_runner=_enc_runner, score_runner=_score_runner))
     assert rows, "iter_rows produced no rows"
     assert encode_argvs, "encode runner never called"
@@ -234,6 +261,15 @@ def test_corpus_emits_scale_filter_when_src_dims_differ(tmp_path: Path) -> None:
     assert "-vf" in argv
     vf_value = argv[argv.index("-vf") + 1]
     assert "scale=1280:720" in vf_value
+    # ADR-0501 / Bug #V4-B: the reference decode must also have run a
+    # ``-vf scale=1280:720`` to materialise a 720p reference YUV — the
+    # libvmaf CLI then reads both legs at the same geometry.
+    ref_decodes = [d for d in decode_argvs if any("ref.decoded" in str(part) for part in d)]
+    assert ref_decodes, f"reference decode never ran (decode_argvs={decode_argvs!r})"
+    ref_argv = ref_decodes[0]
+    assert "-vf" in ref_argv
+    ref_vf = ref_argv[ref_argv.index("-vf") + 1]
+    assert "scale=1280:720" in ref_vf, f"expected reference scale=1280:720, got {ref_vf!r}"
 
 
 # ---------------------------------------------------------------------------

@@ -538,7 +538,12 @@ def _rendition_of(p: LadderPoint) -> Rendition:
 # ---------------------------------------------------------------------------
 
 
-def emit_manifest(ladder: Sequence[Rendition], format: str = "hls") -> str:
+def emit_manifest(
+    ladder: Sequence[Rendition],
+    format: str = "hls",
+    *,
+    samples: Sequence[LadderPoint] | None = None,
+) -> str:
     """Serialise a list of :class:`Rendition` rungs in the requested format.
 
     Supported formats:
@@ -551,7 +556,12 @@ def emit_manifest(ladder: Sequence[Rendition], format: str = "hls") -> str:
     - ``"dash"`` — DASH MPD with one ``Representation`` per rung
       under a single ``AdaptationSet``. Minimal but spec-conformant.
     - ``"json"`` — JSON descriptor (the canonical machine-readable
-      form for downstream tooling).
+      form for downstream tooling). When ``samples`` is provided the
+      JSON payload also carries a top-level ``samples`` array — every
+      raw ``(resolution, target_vmaf)`` cell that the sampler scored,
+      pre-hull. ``vmaf-tune report`` reads the array to render a hull
+      plot; downstream diff tooling reads it to compare the sampled
+      cloud across runs. Non-JSON formats ignore ``samples``.
 
     Output is a string; callers write to disk if needed. Renditions
     are emitted in ascending-bitrate order.
@@ -562,7 +572,7 @@ def emit_manifest(ladder: Sequence[Rendition], format: str = "hls") -> str:
     if format == "dash":
         return _emit_dash(sorted_ladder)
     if format == "json":
-        return _emit_json(sorted_ladder)
+        return _emit_json(sorted_ladder, samples=samples)
     raise ValueError(f"unknown manifest format: {format!r} (expected hls/dash/json)")
 
 
@@ -606,8 +616,8 @@ def _emit_dash(ladder: Sequence[Rendition]) -> str:
     )
 
 
-def _emit_json(ladder: Sequence[Rendition]) -> str:
-    payload = {
+def _emit_json(ladder: Sequence[Rendition], *, samples: Sequence[LadderPoint] | None = None) -> str:
+    payload: dict[str, object] = {
         "schema": "vmaf-tune-ladder/v1",
         "renditions": [
             {
@@ -621,6 +631,23 @@ def _emit_json(ladder: Sequence[Rendition]) -> str:
             for r in ladder
         ],
     }
+    # ADR-0501 / BBB e2e v4 Bug #V4-B: always emit a ``samples`` array
+    # (possibly empty when the caller never wired the pre-hull cloud
+    # through). Downstream consumers (``vmaf-tune report``) read it to
+    # plot the Pareto frontier overlay; an absent key forced them into
+    # the legacy ``points`` fallback or to count ``ladder_samples=0``.
+    samples_list = list(samples) if samples is not None else []
+    payload["samples"] = [
+        {
+            "width": p.width,
+            "height": p.height,
+            "bitrate_kbps": float(p.bitrate_kbps),
+            "bandwidth_bps": int(round(float(p.bitrate_kbps) * 1000.0)),
+            "vmaf": float(p.vmaf),
+            "crf": int(p.crf),
+        }
+        for p in sorted(samples_list, key=lambda x: (x.width * x.height, x.bitrate_kbps))
+    ]
     return json.dumps(payload, indent=2, sort_keys=True) + "\n"
 
 
@@ -668,7 +695,15 @@ def build_and_emit(
         )
         hull = [p.as_ladder_point() for p in adjusted]
     rungs = select_knees(hull, n=quality_tiers, spacing=spacing)
-    return emit_manifest(rungs, format=format)
+    # ADR-0501 / BBB e2e v4 Bug #V4-B: thread the pre-hull sample
+    # cloud through so the JSON emitter's ``samples`` array carries
+    # every scored ``(resolution, target_vmaf)`` cell. HLS / DASH
+    # emitters ignore the argument; only the JSON descriptor consumes
+    # it. We project ``UncertaintyLadderPoint``-typed samples back to
+    # the plain :class:`LadderPoint` shape so the JSON schema stays
+    # stable irrespective of whether the run was uncertainty-aware.
+    plain_samples = [_plain_ladder_point(p) for p in ladder.points]
+    return emit_manifest(rungs, format=format, samples=plain_samples)
 
 
 # ---------------------------------------------------------------------------

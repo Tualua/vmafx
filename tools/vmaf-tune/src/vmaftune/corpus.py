@@ -88,6 +88,8 @@ def _decode_source_to_yuv(
     duration_s: float,
     ffmpeg_bin: str,
     runner: object,
+    target_width: int | None = None,
+    target_height: int | None = None,
 ) -> int:
     """Run ``ffmpeg -i source -f rawvideo -pix_fmt pix_fmt destination``.
 
@@ -96,6 +98,17 @@ def _decode_source_to_yuv(
     where they place the output file and what they do on failure;
     centralising the argv keeps the ``-t`` clamp and pix_fmt selection
     in one place (BBB e2e v2 Bug #v2-A + v3 Bug #V3-B).
+
+    BBB e2e v4 Bug #V4-B (ADR-0501): when ``target_width`` and
+    ``target_height`` are both set, append ``-vf scale=W:H`` so the
+    decoded raw YUV lands at the requested rendition geometry rather
+    than the source's native geometry. This is what lets the libvmaf
+    CLI read both reference and distorted as the *same* width/height
+    on a cross-resolution rung — without it, the binary mis-parses a
+    1920x1080 reference as a 1280x720 frame and produces nonsense
+    VMAF (~21 instead of ~93). ``None`` for either field skips the
+    filter and preserves the legacy auto-detect-source-geometry
+    behaviour.
     """
     destination.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
@@ -111,6 +124,8 @@ def _decode_source_to_yuv(
         "-pix_fmt",
         pix_fmt,
     ]
+    if target_width is not None and target_height is not None:
+        cmd.extend(["-vf", f"scale={int(target_width)}:{int(target_height)}"])
     if duration_s > 0.0:
         cmd.extend(["-t", f"{float(duration_s)}"])
     cmd.append(str(destination))
@@ -174,6 +189,8 @@ def _maybe_decode_reference(
     duration_s: float,
     ffmpeg_bin: str,
     runner: object,
+    target_width: int | None = None,
+    target_height: int | None = None,
 ) -> tuple[Path, int]:
     """Decode a container reference to raw YUV once per ``iter_rows`` call.
 
@@ -185,6 +202,18 @@ def _maybe_decode_reference(
     container bytes as raw planes and aborts with "file size mismatch"
     (Y4M) or "file too small for declared geometry" (MP4).
 
+    ADR-0501 / BBB e2e v4 Bug #V4-B: when the *rung target* differs
+    from the source's native geometry, the reference must be decoded
+    *and downscaled* to the rung target so the libvmaf CLI reads both
+    legs at the same width/height. Without the scale filter the binary
+    silently mis-parses the planar bytes of a 1080p reference as a
+    720p frame and emits a catastrophic ~21 VMAF instead of the true
+    ~93. Callers pass ``target_width`` / ``target_height`` to engage
+    the per-rung scale; both ``None`` (default) preserves the
+    legacy native-geometry decode. The decoded sidecar's filename
+    embeds the target dims so cross-resolution rungs in the same
+    sweep don't collide on a stale path.
+
     Returns ``(reference_path, returncode)``. ``returncode == 0`` with
     the original ``source`` returned when the source is already raw
     (no work to do). A non-zero ``returncode`` with the original
@@ -194,9 +223,20 @@ def _maybe_decode_reference(
     under ``encode_dir`` with a ``.ref.decoded.yuv`` suffix so the
     same path can be reused across every cell in the sweep.
     """
-    if source.suffix.lower() in _VMAF_RAW_SUFFIXES:
+    if (
+        source.suffix.lower() in _VMAF_RAW_SUFFIXES
+        and target_width is None
+        and target_height is None
+    ):
         return source, 0
-    decoded = encode_dir / (source.stem + ".ref.decoded.yuv")
+    if target_width is not None and target_height is not None:
+        # Per-rung sidecar — embed WxH in the filename so multi-rung
+        # sweeps don't collide on a stale decode (ADR-0501).
+        decoded = encode_dir / (
+            f"{source.stem}.ref.decoded.{int(target_width)}x{int(target_height)}.yuv"
+        )
+    else:
+        decoded = encode_dir / (source.stem + ".ref.decoded.yuv")
     # Re-use a previous decode if one is already on disk for this
     # ``iter_rows`` call. The same source + same window length is
     # constant across every cell so a single decode suffices.
@@ -209,6 +249,8 @@ def _maybe_decode_reference(
         duration_s=duration_s,
         ffmpeg_bin=ffmpeg_bin,
         runner=runner,
+        target_width=target_width,
+        target_height=target_height,
     )
     if rc == 0 and decoded.exists():
         return decoded, 0
@@ -519,6 +561,25 @@ def iter_rows(
     # ``score_runner`` mock the vmaf CLI, not ffmpeg decodes.
     import subprocess as _sp  # noqa: PLC0415 — local to avoid polluting module
 
+    # ADR-0501 / BBB e2e v4 Bug #V4-B: when the caller bound source
+    # dims distinct from the rung target (cross-resolution ladder)
+    # OR when the rung target differs from the raw-YUV source's
+    # native geometry, the reference decode must downscale to the
+    # rung target so the libvmaf CLI reads both legs at the same
+    # width/height. Otherwise the binary mis-parses the planar bytes
+    # and emits a catastrophic VMAF (~21 instead of ~93). Container
+    # sources without explicit src dims keep the legacy "decode at
+    # native geometry" path — width/height for those rungs already
+    # match the source after ffmpeg's auto-detect.
+    _ref_target_w: int | None = None
+    _ref_target_h: int | None = None
+    if (
+        job.src_width is not None
+        and job.src_height is not None
+        and ((int(job.src_width), int(job.src_height)) != (int(job.width), int(job.height)))
+    ):
+        _ref_target_w = int(job.width)
+        _ref_target_h = int(job.height)
     decoded_reference, ref_decode_rc = _maybe_decode_reference(
         job.source,
         encode_dir=opts.encode_dir,
@@ -528,6 +589,8 @@ def iter_rows(
         duration_s=float(job.duration_s),
         ffmpeg_bin=opts.ffmpeg_bin,
         runner=_sp.run,
+        target_width=_ref_target_w,
+        target_height=_ref_target_h,
     )
 
     for preset, crf in job.cells:
