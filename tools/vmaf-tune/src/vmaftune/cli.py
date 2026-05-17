@@ -857,6 +857,64 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_fast_args(fast)
 
+    report = sub.add_parser(
+        "report",
+        help=(
+            "render an HTML/Markdown profile card for a tuned source — "
+            "ingests JSON dumps of `compare`/`ladder`/`tune-per-shot` and "
+            "emits a self-contained artefact with rate-distortion charts, "
+            "ladder rungs, per-shot timeline, and source metadata"
+        ),
+    )
+    report.add_argument(
+        "--src",
+        type=Path,
+        required=True,
+        help="reference video (used for ffprobe metadata in the report header)",
+    )
+    report.add_argument(
+        "--target-vmaf",
+        type=float,
+        default=92.0,
+        help="target VMAF (displayed in the report header)",
+    )
+    report.add_argument(
+        "--compare-json",
+        type=Path,
+        default=None,
+        help="`vmaf-tune compare --format json` output to ingest",
+    )
+    report.add_argument(
+        "--ladder-json",
+        type=Path,
+        default=None,
+        help="`vmaf-tune ladder --format json` output to ingest (raw samples and/or picked rungs)",
+    )
+    report.add_argument(
+        "--per-shot-json",
+        type=Path,
+        default=None,
+        help="`vmaf-tune tune-per-shot --format json` output to ingest",
+    )
+    report.add_argument(
+        "--format",
+        default="html",
+        choices=("html", "markdown", "both"),
+        help="report format (default html; `both` emits .html + .md next to --output)",
+    )
+    report.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="report destination (file path; .html/.md suffix matches --format)",
+    )
+    report.add_argument(
+        "--assets-dir",
+        type=Path,
+        default=None,
+        help="when emitting markdown, write chart PNGs into this dir (default: inline base64)",
+    )
+
     sidecar = sub.add_parser(
         "sidecar",
         help=(
@@ -2797,6 +2855,133 @@ def _run_sidecar(args: argparse.Namespace) -> int:
     return 2
 
 
+def _run_report(args: argparse.Namespace) -> int:
+    """Render a vmaf-tune profile-card from one or more JSON dumps."""
+    from datetime import datetime, timezone
+
+    from .report import (
+        CodecRow,
+        LadderRung,
+        LadderSample,
+        ReportData,
+        ShotRow,
+        probe_source,
+        render_html,
+        render_markdown,
+    )
+
+    src_info = probe_source(args.src)
+
+    codec_rows: tuple[CodecRow, ...] = ()
+    if args.compare_json is not None:
+        try:
+            cmp_payload = json.loads(args.compare_json.read_text())
+        except (OSError, json.JSONDecodeError) as e:
+            sys.stderr.write(f"vmaf-tune report: cannot load --compare-json: {e}\n")
+            return 2
+        cmp_rows_in = cmp_payload.get("rows") or cmp_payload.get("results") or []
+        codec_rows = tuple(
+            CodecRow(
+                codec=str(r.get("codec", "")),
+                encoder_version=str(r.get("encoder_version", "")),
+                best_crf=int(r.get("best_crf") or 0),
+                bitrate_kbps=float(r.get("bitrate_kbps") or 0.0),
+                encode_time_ms=float(r.get("encode_time_ms") or 0.0),
+                vmaf_score=float(r.get("vmaf_score") or 0.0),
+                ok=bool(r.get("ok", True)),
+                error=str(r.get("error", "")),
+            )
+            for r in cmp_rows_in
+        )
+
+    ladder_samples: tuple[LadderSample, ...] = ()
+    ladder_rungs: tuple[LadderRung, ...] = ()
+    if args.ladder_json is not None:
+        try:
+            lp = json.loads(args.ladder_json.read_text())
+        except (OSError, json.JSONDecodeError) as e:
+            sys.stderr.write(f"vmaf-tune report: cannot load --ladder-json: {e}\n")
+            return 2
+        for s in lp.get("samples") or lp.get("points") or []:
+            ladder_samples = ladder_samples + (
+                LadderSample(
+                    width=int(s.get("width") or 0),
+                    height=int(s.get("height") or 0),
+                    bitrate_kbps=float(s.get("bitrate_kbps") or 0.0),
+                    vmaf=float(s.get("vmaf") or 0.0),
+                    crf=int(s.get("crf") or 0),
+                ),
+            )
+        for r in lp.get("renditions") or lp.get("rungs") or []:
+            ladder_rungs = ladder_rungs + (
+                LadderRung(
+                    width=int(r.get("width") or 0),
+                    height=int(r.get("height") or 0),
+                    bitrate_kbps=float(r.get("bitrate_kbps") or 0.0),
+                    vmaf=float(r.get("vmaf") or 0.0),
+                    crf=int(r.get("crf") or 0),
+                ),
+            )
+
+    shots: tuple[ShotRow, ...] = ()
+    if args.per_shot_json is not None:
+        try:
+            sp = json.loads(args.per_shot_json.read_text())
+        except (OSError, json.JSONDecodeError) as e:
+            sys.stderr.write(f"vmaf-tune report: cannot load --per-shot-json: {e}\n")
+            return 2
+        for idx, s in enumerate(sp.get("shots") or sp.get("plan") or []):
+            shots = shots + (
+                ShotRow(
+                    shot_index=int(s.get("index", idx)),
+                    start_frame=int(s.get("start_frame") or s.get("start") or 0),
+                    end_frame=int(s.get("end_frame") or s.get("end") or 0),
+                    width=int(s.get("width") or src_info.width),
+                    height=int(s.get("height") or src_info.height),
+                    best_crf=int(s.get("best_crf") or s.get("crf") or 0),
+                    vmaf=float(s.get("vmaf") or 0.0),
+                    bitrate_kbps=float(s.get("bitrate_kbps") or 0.0),
+                    duration_s=float(s.get("duration_s") or 0.0),
+                ),
+            )
+
+    data = ReportData(
+        source=src_info,
+        target_vmaf=float(args.target_vmaf),
+        codec_rows=codec_rows,
+        ladder_samples=ladder_samples,
+        ladder_rungs=ladder_rungs,
+        shots=shots,
+        generated_at_iso=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    )
+
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    outputs: list[Path] = []
+    if args.format in ("html", "both"):
+        html_path = args.output if args.format == "html" else args.output.with_suffix(".html")
+        html_path.write_text(render_html(data), encoding="utf-8")
+        outputs.append(html_path)
+    if args.format in ("markdown", "both"):
+        md_path = args.output if args.format == "markdown" else args.output.with_suffix(".md")
+        md_path.write_text(render_markdown(data, assets_dir=args.assets_dir), encoding="utf-8")
+        outputs.append(md_path)
+
+    sys.stdout.write(
+        json.dumps(
+            {
+                "ok": True,
+                "outputs": [str(p) for p in outputs],
+                "codec_rows": len(codec_rows),
+                "ladder_samples": len(ladder_samples),
+                "ladder_rungs": len(ladder_rungs),
+                "shots": len(shots),
+            }
+        )
+        + "\n"
+    )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -2822,6 +3007,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_fast(args)
     if args.cmd == "sidecar":
         return _run_sidecar(args)
+    if args.cmd == "report":
+        return _run_report(args)
     parser.print_help()
     return 2
 
