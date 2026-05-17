@@ -35477,3 +35477,16 @@ re-verify that the double-precision GLSL block still mirrors the CPU
 reference exactly (especially the eps constant and the int32 truncation
 order for sv_sq).  The `common.c` shaderFloat64 probe must stay in sync
 with any new device-feature guards added to the same function.
+
+
+---
+
+## fix/test-output-portable-tempfile
+
+**Files**: `libvmaf/test/test_output.c`,
+`changelog.d/fixed/test-output-portable-tempfile.md`.
+
+No rebase impact: `libvmaf/test/test_output.c` is fork-local (added by
+PR #963, fork-only coverage gap follow-up; Netflix upstream has no
+equivalent file). The Windows-portable `make_temp_path()` helper sits
+inside that file and is not exported. Upstream syncs do not touch it.

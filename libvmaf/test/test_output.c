@@ -46,10 +46,56 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _WIN32
+#include <io.h>
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
 #include "test.h"
 
 #include "feature/feature_collector.h"
 #include "libvmaf/libvmaf.h"
+
+/* Portable temp-file-path helper. Produces a path to a freshly created (and
+ * already closed) zero-byte file suitable for handing to writer APIs that
+ * fopen() the path themselves. POSIX uses mkstemp() against $TMPDIR (falling
+ * back to /tmp). Windows uses GetTempPathA + GetTempFileNameA — these honour
+ * %TMP%/%TEMP%/%USERPROFILE% and work on MSYS2 + MSVC CI runners where the
+ * POSIX /tmp template fails. Returns 0 on success, -1 on failure. */
+static int make_temp_path(const char *prefix, char *out_buf, size_t out_buf_sz)
+{
+    if (!prefix || !out_buf || out_buf_sz == 0)
+        return -1;
+#ifdef _WIN32
+    char dir[MAX_PATH];
+    DWORD n = GetTempPathA((DWORD)sizeof(dir), dir);
+    if (n == 0 || n > sizeof(dir))
+        return -1;
+    /* GetTempFileNameA's prefix arg only uses the first 3 chars; pass as-is. */
+    char path[MAX_PATH];
+    if (GetTempFileNameA(dir, prefix, 0, path) == 0)
+        return -1;
+    size_t plen = strlen(path);
+    if (plen + 1 > out_buf_sz)
+        return -1;
+    memcpy(out_buf, path, plen + 1);
+    return 0;
+#else
+    const char *tmpdir = getenv("TMPDIR");
+    if (!tmpdir || !*tmpdir)
+        tmpdir = "/tmp";
+    int written = snprintf(out_buf, out_buf_sz, "%s/%sXXXXXX", tmpdir, prefix);
+    if (written < 0 || (size_t)written >= out_buf_sz)
+        return -1;
+    int fd = mkstemp(out_buf);
+    if (fd < 0)
+        return -1;
+    (void)close(fd);
+    return 0;
+#endif
+}
 
 /* Pull output.c + libvmaf.c in directly so (a) the .gcno/.gcda sit in this
  * test's build dir and gcovr aggregates them into the coverage report, and
@@ -463,16 +509,14 @@ static char *test_write_output_json_path()
     int err = seed_normal(&vmaf);
     mu_assert("seed_normal failed", !err);
 
-    char tmp[] = "/tmp/test_write_output_XXXXXX";
-    int fd = mkstemp(tmp);
-    mu_assert("mkstemp failed", fd >= 0);
-    (void)close(fd);
+    char tmp[4096];
+    mu_assert("make_temp_path failed", make_temp_path("vmaf_wo_", tmp, sizeof(tmp)) == 0);
 
     err = vmaf_write_output(vmaf, tmp, VMAF_OUTPUT_FORMAT_JSON);
     mu_assert("vmaf_write_output(JSON) returned non-zero", !err);
 
     char *out = slurp_path(tmp);
-    (void)unlink(tmp);
+    (void)remove(tmp);
     mu_assert("slurp_path failed after vmaf_write_output", out);
     mu_assert("write_output json: missing '{' open brace", strstr(out, "{"));
     mu_assert("write_output json: missing frames block", strstr(out, "\"frames\":"));
@@ -492,16 +536,14 @@ static char *test_write_output_with_format_custom()
     int err = seed_normal(&vmaf);
     mu_assert("seed_normal failed", !err);
 
-    char tmp[] = "/tmp/test_write_output_fmt_XXXXXX";
-    int fd = mkstemp(tmp);
-    mu_assert("mkstemp failed", fd >= 0);
-    (void)close(fd);
+    char tmp[4096];
+    mu_assert("make_temp_path failed", make_temp_path("vmaf_wf_", tmp, sizeof(tmp)) == 0);
 
     err = vmaf_write_output_with_format(vmaf, tmp, VMAF_OUTPUT_FORMAT_JSON, "%.3f");
     mu_assert("vmaf_write_output_with_format(JSON,%.3f) returned non-zero", !err);
 
     char *out = slurp_path(tmp);
-    (void)unlink(tmp);
+    (void)remove(tmp);
     mu_assert("slurp_path failed after vmaf_write_output_with_format", out);
     /* "%.3f" of 80.0 → "80.000" (exactly three decimal places). */
     mu_assert("write_output_with_format: custom format '80.000' not found", strstr(out, "80.000"));
