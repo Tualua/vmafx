@@ -271,7 +271,7 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     err = compute_vif(s->ref_scaled, s->dist_scaled, s->scaled_w, s->scaled_h,
                       s->scaled_float_stride, s->scaled_float_stride, &score, &score_num,
                       &score_den, scores, s->vif_enhn_gain_limit, s->vif_kernelscale,
-                      s->vif_skip_scale0, s->vif_sigma_nsq, s->vif_buf);
+                      s->vif_skip_scale0, s->vif_sigma_nsq);
     if (err)
         return err;
 
