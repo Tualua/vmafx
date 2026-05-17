@@ -1172,6 +1172,25 @@ def generate_dataset_from_raw(raw_dataset_filepath, output_dataset_filepath, **k
         subjective_model.run_modeling(**kwargs)
         subjective_model.to_aggregated_dataset_file(output_dataset_filepath, **kwargs)
 
+        # sureal's `write_out_dataset` serialises numpy scalars via repr().
+        # numpy 2.x changed scalar __repr__ from "<value>" to
+        # "np.float64(<value>)", which makes the generated Python dataset
+        # file unimportable (NameError: name 'np' is not defined) unless
+        # `np` is in scope at import time. Prepend the import so the
+        # canonical `import_python_file(path)` consumer can load the
+        # generated file without locale-/version-dependent surprises.
+        # See ADR-0494.
+        try:
+            with open(output_dataset_filepath, "r") as f:
+                body = f.read()
+        except OSError:
+            return
+        if "np.float64(" in body or "np.int64(" in body:
+            if not body.lstrip().startswith("import numpy"):
+                with open(output_dataset_filepath, "w") as f:
+                    f.write("import numpy as np  # injected by routine.generate_dataset_from_raw\n")
+                    f.write(body)
+
 
 def run_vmaf_cv_from_raw(
     train_dataset_raw_filepath,

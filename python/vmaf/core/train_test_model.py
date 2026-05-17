@@ -1145,16 +1145,27 @@ class LibsvmNusvrTrainTestModel(TrainTestModel, RegressorMixin):
         nu = model_param["nu"] if "nu" in model_param else 0.5
         cache_size = model_param["cache_size"] if "cache_size" in model_param else 200
 
-        if kernel == "rbf":
-            ktype_int = svmutil.RBF
-        elif kernel == "linear":
-            ktype_int = svmutil.LINEAR
-        elif kernel == "poly":
-            ktype_int = svmutil.POLY
-        elif kernel == "sigmoid":
-            ktype_int = svmutil.SIGMOID
+        # Recent libsvm wheels (≥ 3.32) moved the kernel-type constants from
+        # module-level attributes (svmutil.RBF / .LINEAR / …) to a nested
+        # `kernel_names` IntEnum. Resolve via the enum when present and fall
+        # back to the legacy attributes for older wheels.
+        if hasattr(svmutil, "kernel_names"):
+            _kernel_map = {
+                "rbf": int(svmutil.kernel_names.RBF),
+                "linear": int(svmutil.kernel_names.LINEAR),
+                "poly": int(svmutil.kernel_names.POLY),
+                "sigmoid": int(svmutil.kernel_names.SIGMOID),
+            }
         else:
-            assert False, "ktype = " + str(kernel) + " not implemented"
+            _kernel_map = {
+                "rbf": svmutil.RBF,
+                "linear": svmutil.LINEAR,
+                "poly": svmutil.POLY,
+                "sigmoid": svmutil.SIGMOID,
+            }
+        if kernel not in _kernel_map:
+            raise ValueError(f"ktype = {kernel} not implemented")
+        ktype_int = _kernel_map[kernel]
 
         param = svmutil.svm_parameter(
             ["-s", 4, "-t", ktype_int, "-c", C, "-g", gamma, "-n", nu, "-m", cache_size]

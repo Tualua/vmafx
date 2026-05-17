@@ -48,6 +48,16 @@ class ProcessRunner(object):
     def run(self, cmd, kwargs):
         try:
             logger.info(cmd)
+            # Force a deterministic C locale so subprocess error messages
+            # captured into the AssertionError text are English. Without
+            # this, run on a non-English host produces locale-translated
+            # shell errors (e.g. "Kommando nicht gefunden" instead of
+            # "command not found") and breaks test assertions that grep
+            # the message for canonical English phrases.
+            env = dict(os.environ)
+            env.setdefault("LC_ALL", "C")
+            env.setdefault("LANG", "C")
+            kwargs.setdefault("env", env)
             subprocess.check_output(cmd, stderr=subprocess.STDOUT, **kwargs)
         except subprocess.CalledProcessError as e:
             raise AssertionError(

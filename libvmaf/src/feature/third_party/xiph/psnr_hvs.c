@@ -400,7 +400,14 @@ static const VmafOption options[] = {{
                                          .help = "enable calculation for chroma channels",
                                          .offset = offsetof(PsnrHvsState, enable_chroma),
                                          .type = VMAF_OPT_TYPE_BOOL,
-                                         .default_val.b = false,
+                                         // Upstream Netflix unconditionally computes the YCbCr-
+                                         // weighted (Y*0.8 + (Cb+Cr)*0.1) `psnr_hvs` score. The
+                                         // fork-added `enable_chroma` option lets a caller fall
+                                         // back to Y-only for performance; defaulting it to
+                                         // `true` preserves upstream-equivalent output for
+                                         // callers that don't set the option (and keeps the
+                                         // third_party/xiph PSNRHVS golden assertions valid).
+                                         .default_val.b = true,
                                      },
                                      {0}};
 

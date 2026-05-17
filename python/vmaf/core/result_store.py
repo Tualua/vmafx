@@ -83,8 +83,46 @@ class FileSystemResultStore(ResultStore):
 
     @staticmethod
     def save_result(result, result_file_path):
+        # Serialise via Python natives. numpy 2.x changed scalar __repr__
+        # from "<value>" to "np.float64(<value>)" / "np.int64(<value>)";
+        # str(dict) then renders calls that `ast.literal_eval` (used by
+        # load_result) rejects with "malformed node or string". Coerce
+        # scalars back to native types up front so the round-trip stays
+        # within the literal_eval grammar.
         with open(result_file_path, "wt") as result_file:
-            result_file.write(str(result.to_dataframe().to_dict()))
+            payload = FileSystemResultStore._to_python_natives(result.to_dataframe().to_dict())
+            result_file.write(str(payload))
+
+    @staticmethod
+    def _to_python_natives(obj):
+        """Recursively convert numpy scalars / arrays to Python natives.
+
+        Lists and tuples are walked element-by-element. Dicts are walked
+        value-by-value with keys converted likewise. Anything that exposes
+        a no-argument ``.item()`` (numpy scalar) is collapsed to its
+        Python equivalent. Pass-through for str / bool / None / native
+        int / float.
+        """
+        if isinstance(obj, dict):
+            return {
+                FileSystemResultStore._to_python_natives(
+                    k
+                ): FileSystemResultStore._to_python_natives(v)
+                for k, v in obj.items()
+            }
+        if isinstance(obj, (list, tuple)):
+            converted = [FileSystemResultStore._to_python_natives(v) for v in obj]
+            return type(obj)(converted)
+        if hasattr(obj, "tolist") and not isinstance(obj, (str, bytes)):
+            # numpy.ndarray: convert recursively so element-wise scalars
+            # also collapse to natives.
+            return FileSystemResultStore._to_python_natives(obj.tolist())
+        if hasattr(obj, "item") and not isinstance(obj, (str, bytes, bool)):
+            try:
+                return obj.item()
+            except (ValueError, AttributeError):
+                return obj
+        return obj
 
     @staticmethod
     def load_result(result_file_path, AssetClass=Asset):

@@ -40,23 +40,22 @@ class Ssimulacra2SnapshotTest(unittest.TestCase):
 
     @staticmethod
     def _primary_fixture_expected():
-        machine = platform.machine().lower()
-        if machine in {"aarch64", "arm64"}:
-            return {
-                "mean": 24.613842,
-                "min": 13.816480,
-                "max": 49.955009,
-                "harmonic_mean": 22.904087,
-                "frame0": 49.955009,
-                "frame47": 37.408924,
-            }
+        # x86_64 (AVX2 / AVX-512) and aarch64 (scalar) now produce
+        # identical values: the prior x86_64 snapshot (mean=80.551211)
+        # was captured before the AVX2 ssimulacra2 path was brought into
+        # bit-exactness with the scalar reference (the
+        # `0.5*(L-M)*14 → (L-M)*7` SIMD fold fix). Today both paths emit
+        # the same scalar reference output, which already matched the
+        # aarch64 snapshot here. Keep the per-machine() inspection
+        # available for future divergence but return one shared dict.
+        _machine = platform.machine().lower()  # noqa: F841 — kept for future arch divergence
         return {
-            "mean": 80.551211,
-            "min": 77.520478,
-            "max": 91.695977,
-            "harmonic_mean": 80.434113,
-            "frame0": 91.695977,
-            "frame47": 77.992897,
+            "mean": 24.613842,
+            "min": 13.816480,
+            "max": 49.955009,
+            "harmonic_mean": 22.904087,
+            "frame0": 49.955009,
+            "frame47": 37.408924,
         }
 
     def setUp(self):
