@@ -29,6 +29,18 @@
 #define DEFAULT_VIF_ENHN_GAIN_LIMIT (100.0)
 #endif // !DEFAULT_VIF_ENHN_GAIN_LIMIT
 
+/*
+ * log2 LUT shrink (ADR-0500): after the clz-based normalisation in log2_32 / log2_64
+* ADR-0500
+ * the mantissa is always in [32768..65535] — bit 15 is always 1.  Stripping bit 15
+ * (masking with 0x7FFF) gives a 15-bit index in [0..32767], so the table needs only
+ * 32768 entries (64 KB) instead of the original 128 KB.  This halves L2 pressure and
+ * TLB coverage on the hot vif_statistic_avx512 gather path.
+ * Bit-exactness is preserved: same uint16 values, same arithmetic.
+ */
+#define VIF_LOG2_TABLE_SIZE 32768u
+#define VIF_LOG2_TABLE_OFFSET 0x8000u
+
 static const uint16_t vif_filter1d_table[4][18] = {
     {489, 935, 1640, 2640, 3896, 5274, 6547, 7455, 7784, 7455, 6547, 5274, 3896, 2640, 1640, 935,
      489, 0},
@@ -76,7 +88,7 @@ typedef struct VifResiduals {
 
 typedef struct VifPublicState {
     VifBuffer buf;
-    uint16_t log2_table[65537];
+    uint16_t log2_table[VIF_LOG2_TABLE_SIZE];
     double vif_enhn_gain_limit;
 } VifPublicState;
 
@@ -134,7 +146,9 @@ static inline int32_t log2_32(const uint16_t *log2_table, uint32_t temp)
     int k = __builtin_clz(temp);
     k = 16 - k;
     temp = temp >> k;
-    return log2_table[temp] + 2048 * k;
+    /* After normalization temp is in [32768..65535]; strip the MSB to get the
+     * 15-bit index into the compact VIF_LOG2_TABLE_SIZE-entry table. */
+    return log2_table[temp & (VIF_LOG2_TABLE_SIZE - 1u)] + 2048 * k;
 }
 
 static inline int32_t log2_64(const uint16_t *log2_table, uint64_t temp)
@@ -143,7 +157,9 @@ static inline int32_t log2_64(const uint16_t *log2_table, uint64_t temp)
     int k = __builtin_clzll(temp);
     k = 48 - k;
     temp = temp >> k;
-    return log2_table[temp] + 2048 * k;
+    /* After normalization temp is in [32768..65535]; strip the MSB to get the
+     * 15-bit index into the compact VIF_LOG2_TABLE_SIZE-entry table. */
+    return log2_table[temp & (VIF_LOG2_TABLE_SIZE - 1u)] + 2048 * k;
 }
 
 #endif /* _FEATURE_VIF_H_ */

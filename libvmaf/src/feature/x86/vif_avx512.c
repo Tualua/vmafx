@@ -97,9 +97,13 @@ static inline void vif_statistic_avx512(Residuals512 *out, __m512i xx, __m512i x
         __m512i mnorm =
             _mm512_sub_epi64(_mm512_set1_epi64(48), _mm512_lzcnt_epi64(mlog_den_stage1));
         __m512i mlog_den1 = _mm512_srlv_epi64(mlog_den_stage1, mnorm);
-        // note: I'm getting 32 bit here, but I need just 16!
-        __m512i mden_val = _mm512_i32gather_epi64(_mm512_cvtusepi64_epi32(mlog_den1), log2_table,
-                                                  sizeof(*log2_table));
+        /* ADR-0500: LUT shrunk to 16384 entries (32 KB, fits L1D on Zen).
+         * The normalised mantissa is in [32768..65535]; mask off bit 15 to
+         * obtain the 15-bit index into log2_table[0..32767].  All three gather
+         * sites below apply the same mask.  Bit-exactness is preserved. */
+        __m256i mlog_den1_idx = _mm256_and_si256(
+            _mm512_cvtusepi64_epi32(mlog_den1), _mm256_set1_epi32((int)(VIF_LOG2_TABLE_SIZE - 1u)));
+        __m512i mden_val = _mm512_i32gather_epi64(mlog_den1_idx, log2_table, sizeof(*log2_table));
         mden_val =
             _mm512_and_si512(mden_val, _mm512_set1_epi64(0xffff)); // we took 64 bits, we need 16
         mden_val = _mm512_add_epi64(mden_val, _mm512_slli_epi64(mnorm, 11));
@@ -120,8 +124,10 @@ static inline void vif_statistic_avx512(Residuals512 *out, __m512i xx, __m512i x
         __m512i mnumer1_mantissa = _mm512_srlv_epi64(mnumer1, mnumer1_lz);
         __m512i mnumer1_mantissa_log = _mm512_and_si512(
             _mm512_set1_epi64(0xffff),
-            _mm512_i32gather_epi64(_mm512_cvtusepi64_epi32(mnumer1_mantissa), log2_table,
-                                   sizeof(*log2_table))); // we took 64 bits, we need 16
+            _mm512_i32gather_epi64(
+                _mm256_and_si256(_mm512_cvtusepi64_epi32(mnumer1_mantissa),
+                                 _mm256_set1_epi32((int)(VIF_LOG2_TABLE_SIZE - 1u))),
+                log2_table, sizeof(*log2_table))); // we took 64 bits, we need 16
         __m512i mnumer1_log =
             _mm512_add_epi64(mnumer1_mantissa_log, _mm512_slli_epi64(mnumer1_lz, 11));
 
@@ -132,8 +138,10 @@ static inline void vif_statistic_avx512(Residuals512 *out, __m512i xx, __m512i x
         __m512i mnumer1_tmp_mantissa = _mm512_srlv_epi64(mnumer1_tmp, mnumer1_tmp_lz);
         __m512i mnumer1_tmp_mantissa_log = _mm512_and_si512(
             _mm512_set1_epi64(0xffff),
-            _mm512_i32gather_epi64(_mm512_cvtusepi64_epi32(mnumer1_tmp_mantissa), log2_table,
-                                   sizeof(*log2_table))); // we took 64 bits, we need 16
+            _mm512_i32gather_epi64(
+                _mm256_and_si256(_mm512_cvtusepi64_epi32(mnumer1_tmp_mantissa),
+                                 _mm256_set1_epi32((int)(VIF_LOG2_TABLE_SIZE - 1u))),
+                log2_table, sizeof(*log2_table))); // we took 64 bits, we need 16
         __m512i mnumer1_tmp_log =
             _mm512_add_epi64(mnumer1_tmp_mantissa_log, _mm512_slli_epi64(mnumer1_tmp_lz, 11));
 

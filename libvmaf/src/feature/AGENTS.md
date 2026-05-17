@@ -752,3 +752,20 @@ after a port-upstream of any of these files.
   allocation for a geometry-sized buffer, move it to init/close in the same PR.
   Small constant-size (geometry-independent) allocations inside hot paths
   are acceptable but must be justified in the PR description.
+
+- **VIF log2 LUT invariant** (ADR-0500): `VifPublicState.log2_table` is a
+  32768-entry table (64 KB, not 65537 entries / 128 KB). The normalisation in
+  `log2_32` / `log2_64` always produces indices in `[32768..65535]`; the mask
+  `& (VIF_LOG2_TABLE_SIZE - 1u)` strips bit 15 to get a `[0..32767]` index.
+  If upstream Netflix changes the LUT size or the normalisation logic, audit
+  the mask in `integer_vif.h` and the three gather sites in `vif_avx512.c`
+  before merging. The new `log_generate` fills `log2_table[i] = log2f(32768+i)*2048`;
+  the original filled `log2_table[i] = log2f(i)*2048` for `i` in `[32767..65535]`.
+- **compute_vif filter-cache parameter** (ADR-0500): `compute_vif` in `vif.c`
+  accepts two nullable trailing parameters `precomputed_filters` /
+  `precomputed_filter_widths`. The `float_vif.c` caller passes pre-computed
+  Gaussian coefficients from `VifState.filter_cache` / `filter_width_cache`
+  (populated once in `init()`). The internal `vifdiff` path passes NULL to
+  retain the original per-call `vif_get_filter()` path. If upstream changes
+  `compute_vif`'s signature, both the declaration in `vif.h` and the internal
+  call in `vif.c` need updating.

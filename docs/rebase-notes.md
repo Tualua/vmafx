@@ -35570,3 +35570,23 @@ which cross-checks the table against the CLI source). ffmpeg-patches
 unaffected. No effect on bisect.py (already decodes the reference per
 ADR-0498) — the regression test
 `test_bisect_decodes_reference_too` pins the existing invariant.
+
+---
+
+## perf/vif-lut-shrink-and-filter-cache (ADR-0500)
+
+Touches upstream-mirrored files:
+`libvmaf/src/feature/integer_vif.h`, `integer_vif.c`, `vif.c`, `vif.h`,
+`float_vif.c`, `x86/vif_avx512.c`.
+
+**Rebase note**: when pulling upstream changes to any of these files, verify that:
+
+1. `VifPublicState.log2_table` (now 32768 entries) is not reverted to 65537 entries.
+2. The `compute_vif` signature addition (`precomputed_filters`, `precomputed_filter_widths`)
+   does not conflict with upstream signature changes.
+3. The three `_mm512_i32gather_epi64` gather sites in `vif_avx512.c` retain the
+   `_mm256_and_si256` index mask with `VIF_LOG2_TABLE_SIZE - 1`.
+4. `log_generate` fills indices `[0..32767]` with `log2f(32768+i)*2048`
+   (not the original `log2f(i)*2048` for `i` in `[32767..65535]`).
+
+If upstream changes any of the above, a new reconciliation pass is needed.

@@ -220,8 +220,16 @@ static void subsample_rd_16(VifBuffer buf, unsigned w, unsigned h, int scale, in
 
 static inline void log_generate(uint16_t *log2_table)
 {
-    for (unsigned i = 32767; i < 65536; ++i) {
-        log2_table[i] = (uint16_t)round(log2f((float)i) * 2048);
+    /*
+     * ADR-0500 LUT shrink: the table now has VIF_LOG2_TABLE_SIZE (16384) entries.
+     * Entry i corresponds to the original entry at index (VIF_LOG2_TABLE_OFFSET + i),
+     * i.e. log2(32768 + i) * 2048.  The scalar accessors log2_32 / log2_64 mask the
+     * normalised mantissa with 0x7FFF (= VIF_LOG2_TABLE_SIZE - 1) to recover i.  The
+     * AVX-512 gather path applies the same mask via _mm256_and_si256 before the gather.
+     * Bit-exactness is preserved: same uint16 values, same arithmetic.
+     */
+    for (unsigned i = 0; i < VIF_LOG2_TABLE_SIZE; ++i) {
+        log2_table[i] = (uint16_t)round(log2f((float)(VIF_LOG2_TABLE_OFFSET + i)) * 2048);
     }
 }
 

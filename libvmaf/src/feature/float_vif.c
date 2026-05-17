@@ -65,6 +65,13 @@ typedef struct VifState {
     double vif_scale3_min_val;
     char *vif_prescale_method;
     VmafDictionary *feature_name_dict;
+    /*
+     * Pre-computed Gaussian filters for all 4 VIF scales (ADR-0500 Win #3).
+     * Computed once in init() from vif_kernelscale, eliminating 4×
+     * vif_get_filter() transcendental calls per frame.
+     */
+    float filter_cache[4][128];
+    int filter_width_cache[4];
 } VifState;
 
 static const VmafOption options[] = {
@@ -219,6 +226,16 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     if (!s->vif_buf)
         goto fail;
 
+    /*
+     * ADR-0500 Win #3: pre-compute Gaussian filters for all 4 scales so that
+     * compute_vif() can skip vif_get_filter() (which calls expf) on every frame.
+     * The kernelscale is immutable after init, so this is always correct.
+     */
+    for (int sc = 0; sc < 4; ++sc) {
+        s->filter_width_cache[sc] = vif_get_filter_size(sc, (float)s->vif_kernelscale);
+        vif_get_filter(s->filter_cache[sc], sc, (float)s->vif_kernelscale);
+    }
+
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (!s->feature_name_dict)
@@ -268,10 +285,11 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
 
     double score, score_num, score_den;
     double scores[8];
-    err = compute_vif(s->ref_scaled, s->dist_scaled, s->scaled_w, s->scaled_h,
-                      s->scaled_float_stride, s->scaled_float_stride, &score, &score_num,
-                      &score_den, scores, s->vif_enhn_gain_limit, s->vif_kernelscale,
-                      s->vif_skip_scale0, s->vif_sigma_nsq);
+    err =
+        compute_vif(s->ref_scaled, s->dist_scaled, s->scaled_w, s->scaled_h, s->scaled_float_stride,
+                    s->scaled_float_stride, &score, &score_num, &score_den, scores,
+                    s->vif_enhn_gain_limit, s->vif_kernelscale, s->vif_skip_scale0,
+                    s->vif_sigma_nsq, (const float (*)[128])s->filter_cache, s->filter_width_cache);
     if (err)
         return err;
 
