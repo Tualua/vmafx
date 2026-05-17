@@ -44,6 +44,17 @@ MODEL=model/vmaf_v0.6.1.json
 OUTDIR=testdata/bbb/results
 mkdir -p "$OUTDIR"
 
+# Fail loudly if the vmaf binary is missing — the MCP `run_benchmark`
+# wrapper previously returned `exit_code=1` with empty stdout/stderr
+# because `set -euo pipefail` aborted on the first run() invocation
+# before any output had flushed (probe finding 2026-05-17 #3).
+if [[ ! -x "$VMAF" ]]; then
+  echo "ERROR: vmaf binary not found or not executable at: $VMAF" >&2
+  echo "  Build first: meson compile -C libvmaf/build" >&2
+  echo "  Or set VMAF_BIN to an installed vmaf binary." >&2
+  exit 2
+fi
+
 # `flags` is intentionally space-split into separate argv entries.
 run() {
   local name="$1" ref="$2" dis="$3" w="$4" h="$5" bd="$6" flags="$7"

@@ -61,6 +61,16 @@ def test_run_vmaf_score_emits_expected_no_flags(
     fake_vmaf.chmod(0o755)
     monkeypatch.setattr(srv, "_vmaf_binary", lambda: fake_vmaf)
 
+    # Pre-seed the backend-probe cache so the new "refuse silent fallback"
+    # guard (ADR-0495) accepts every backend under test. The original
+    # test's intent is to verify the argv expansion, not the probe logic
+    # — that's covered in test_probe_findings_2026_05_17.py.
+    monkeypatch.setitem(
+        srv._BACKEND_PROBE_CACHE,
+        str(fake_vmaf),
+        frozenset({"cpu", "cuda", "sycl", "vulkan", "hip", "metal"}),
+    )
+
     # Fake output payload — _run_vmaf_score reads the JSON, so write one
     # before the function reads it. We capture argv via the mocked exec.
     fake_output = tmp_path / "vmaf-out.json"

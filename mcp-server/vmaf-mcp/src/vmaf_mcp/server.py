@@ -34,6 +34,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -124,12 +125,131 @@ class ScoreRequest:
     precision: str = "17"
 
 
+# Map each named backend to the set of siblings it must disable so the
+# vmaf binary does not probe and select a different runtime at startup.
+# "auto" leaves all probes active (no --no_* flags added).
+_BACKEND_DISABLE: dict[str, tuple[str, ...]] = {
+    "cpu": ("cuda", "sycl", "vulkan", "hip", "metal"),
+    "cuda": ("sycl", "vulkan", "hip", "metal"),
+    "sycl": ("cuda", "vulkan", "hip", "metal"),
+    "vulkan": ("cuda", "sycl", "hip", "metal"),
+    "hip": ("cuda", "sycl", "vulkan", "metal"),
+    "metal": ("cuda", "sycl", "vulkan", "hip"),
+}
+
+
+# Models trained at a specific resolution preset (substring match on the
+# `version=...` selector or a path stem). Used by the resolution-mismatch
+# warning emitted from `_run_vmaf_score`. Bug #5 from the 2026-05-17 MCP
+# probe: `vmaf_4k_v0.6.1` saturates at 100 on every SD frame and the MCP
+# layer silently returned the bogus pool. Surface a hint instead.
+_MODEL_RES_HINTS: dict[str, str] = {
+    "vmaf_4k": "4k",
+    "vmaf_v0.6.1neg": "hd",  # 1080p training set
+    "vmaf_v0.6.1": "hd",
+    "vmaf_b_v0.6.3": "hd",
+}
+
+
+def _classify_source_resolution(width: int, height: int) -> str:
+    """Return ``'sd'`` / ``'hd'`` / ``'4k'`` for the longer-edge bucket."""
+    long_edge = max(int(width), int(height))
+    if long_edge >= 3840:
+        return "4k"
+    if long_edge >= 1280:
+        return "hd"
+    return "sd"
+
+
+def _model_resolution_class(model: str) -> str | None:
+    """Best-effort classification of @p model's intended resolution.
+
+    Looks at the model name embedded in the ``version=NAME`` / ``path=...``
+    string. Returns ``None`` when the model is unknown so callers don't
+    nag on bespoke ONNX models.
+    """
+    blob = model.lower()
+    for needle, klass in _MODEL_RES_HINTS.items():
+        if needle in blob:
+            return klass
+    return None
+
+
+def _resolution_mismatch_warning(model: str, width: int, height: int) -> str | None:
+    """Return a one-line warning string when the model's intended
+    resolution does not match the source frame size, else ``None``."""
+    model_class = _model_resolution_class(model)
+    if model_class is None:
+        return None
+    source_class = _classify_source_resolution(width, height)
+    if model_class == source_class:
+        return None
+    return (
+        f"model resolution preset {model_class!r} does not match "
+        f"source {width}x{height} ({source_class!r}); "
+        "scores may saturate or be biased — pick a model trained at the "
+        "matching resolution."
+    )
+
+
+# Cache of the host vmaf binary's advertised backends, indexed by absolute
+# binary path. Populated lazily on first `_probe_backends` call.
+_BACKEND_PROBE_CACHE: dict[str, frozenset[str]] = {}
+
+
+def _probe_backends(vmaf: Path) -> frozenset[str]:
+    """Return the set of backends the local @p vmaf binary advertises.
+
+    Probes ``vmaf --help`` (which always lists every ``--no_<backend>``
+    flag) and matches the documented backend names. ``cpu`` is always
+    included — it has no driver dependency and is never gated.
+
+    Result is cached for the lifetime of the server process so we don't
+    fork a subprocess per `vmaf_score` call.
+    """
+    key = str(vmaf)
+    cached = _BACKEND_PROBE_CACHE.get(key)
+    if cached is not None:
+        return cached
+    advertised: set[str] = {"cpu"}
+    try:
+        result = subprocess.run(
+            [str(vmaf), "--help"], capture_output=True, text=True, timeout=5, check=False
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        # On probe failure we conservatively assume CPU-only — better to
+        # over-reject and let the user override via env than to silently
+        # fall back as bug #1 used to.
+        probe = frozenset(advertised)
+        _BACKEND_PROBE_CACHE[key] = probe
+        return probe
+    blob = (result.stdout or "") + (result.stderr or "")
+    # The CLI documents disable-flags as `--no_<backend>` (one per line).
+    for name in ("cuda", "sycl", "vulkan", "hip", "metal"):
+        if re.search(rf"--no_{name}\b", blob):
+            advertised.add(name)
+    probe = frozenset(advertised)
+    _BACKEND_PROBE_CACHE[key] = probe
+    return probe
+
+
 async def _run_vmaf_score(req: ScoreRequest) -> dict[str, Any]:
     vmaf = _vmaf_binary()
     if not vmaf.exists():
-        raise RuntimeError(
-            f"vmaf binary not found at {vmaf}. " "Build first: meson compile -C build."
-        )
+        raise RuntimeError(f"vmaf binary not found at {vmaf}. Build first: meson compile -C build.")
+
+    # Bug #1 from the 2026-05-17 MCP probe: caller-requested backend
+    # silently fell through to CPU when the binary lacked the runtime.
+    # Refuse explicitly (and let auto pass through unchanged).
+    if req.backend != "auto":
+        advertised = _probe_backends(vmaf)
+        if req.backend not in advertised:
+            raise RuntimeError(
+                f"backend {req.backend!r} requested but the local vmaf binary "
+                f"does not advertise it (available: {sorted(advertised)}); "
+                "refusing to fall back silently. Pass backend='auto' to let "
+                "vmaf pick, or rebuild with the requested backend enabled."
+            )
 
     output = Path("/tmp") / f"vmaf-mcp-{os.getpid()}-{asyncio.current_task().get_name()}.json"
     try:
@@ -156,17 +276,6 @@ async def _run_vmaf_score(req: ScoreRequest) -> dict[str, Any]:
             str(output),
             "--json",
         ]
-        # Map each named backend to the set of siblings it must disable so the
-        # vmaf binary does not probe and select a different runtime at startup.
-        # "auto" leaves all probes active (no --no_* flags added).
-        _BACKEND_DISABLE: dict[str, tuple[str, ...]] = {
-            "cpu": ("cuda", "sycl", "vulkan", "hip", "metal"),
-            "cuda": ("sycl", "vulkan", "hip", "metal"),
-            "sycl": ("cuda", "vulkan", "hip", "metal"),
-            "vulkan": ("cuda", "sycl", "hip", "metal"),
-            "hip": ("cuda", "sycl", "vulkan", "metal"),
-            "metal": ("cuda", "sycl", "vulkan", "hip"),
-        }
         if req.backend in _BACKEND_DISABLE:
             for sibling in _BACKEND_DISABLE[req.backend]:
                 argv.append(f"--no_{sibling}")
@@ -177,9 +286,45 @@ async def _run_vmaf_score(req: ScoreRequest) -> dict[str, Any]:
         _stdout, stderr = await proc.communicate()
         if proc.returncode != 0:
             raise RuntimeError(f"vmaf exited {proc.returncode}: {stderr.decode(errors='replace')}")
-        return json.loads(output.read_text())
+        payload = json.loads(output.read_text())
+        # Bug #1 (echo): tell the caller which backend actually ran, so
+        # downstream parity tests can assert it instead of trusting the
+        # request silently.
+        payload["backend_requested"] = req.backend
+        payload["backend_used"] = (
+            req.backend if req.backend != "auto" else _infer_backend_from_payload(payload)
+        )
+        # Bug #5: surface a resolution-mismatch warning when the model's
+        # training resolution preset disagrees with the source frame size.
+        warning = _resolution_mismatch_warning(req.model, req.width, req.height)
+        if warning is not None:
+            payload["mismatched_model_warning"] = warning
+        return payload
     finally:
         output.unlink(missing_ok=True)
+
+
+def _infer_backend_from_payload(payload: dict[str, Any]) -> str:
+    """Best-effort backend identification from the vmaf JSON output.
+
+    libvmaf does not (yet) emit a ``backend`` field in its JSON, but the
+    per-backend feature-key counts diverge in well-known ways (see the
+    `bench_all.sh` `compare` table: CPU 14-15, CUDA 11-12, Vulkan ~34).
+    When the count is ambiguous we return ``'cpu'`` — the conservative
+    default the CLI also picks when no GPU is wired up.
+    """
+    frames = payload.get("frames") or []
+    if not frames:
+        return "cpu"
+    metrics = frames[0].get("metrics") or {}
+    nkeys = len(metrics)
+    if nkeys >= 30:
+        return "vulkan"
+    if nkeys <= 12:
+        # Could be CUDA or SYCL — without a backend marker we cannot
+        # disambiguate further. Return 'gpu' as a hint.
+        return "gpu"
+    return "cpu"
 
 
 def _list_models() -> list[dict[str, Any]]:
@@ -256,7 +401,7 @@ def _eval_model_on_split(
         from scipy.stats import pearsonr, spearmanr
     except ImportError as exc:  # pragma: no cover — exercised only without extras
         raise RuntimeError(
-            "eval_model_on_split requires the 'eval' extra: " "pip install 'vmaf-mcp[eval]'"
+            "eval_model_on_split requires the 'eval' extra: pip install 'vmaf-mcp[eval]'"
         ) from exc
 
     df = pd.read_parquet(features)
@@ -558,11 +703,26 @@ async def _run_benchmark(ref: Path, dis: Path, width: int, height: int) -> dict[
         env=bench_env,
     )
     stdout, stderr = await proc.communicate()
-    return {
+    stdout_s = stdout.decode(errors="replace")
+    stderr_s = stderr.decode(errors="replace")
+    payload: dict[str, Any] = {
         "exit_code": proc.returncode,
-        "stdout": stdout.decode(errors="replace"),
-        "stderr": stderr.decode(errors="replace"),
+        "stdout": stdout_s,
+        "stderr": stderr_s,
     }
+    # Bug #3 from the 2026-05-17 MCP probe: bench_all.sh exited 1 with
+    # empty stdout AND stderr because `set -euo pipefail` aborted before
+    # any echo fired (typically a `source setvars.sh` failure). Surface
+    # a meaningful hint instead of returning success-shaped empty output.
+    if proc.returncode != 0 and not stdout_s.strip() and not stderr_s.strip():
+        payload["error"] = (
+            f"bench_all.sh exited {proc.returncode} with no output — likely "
+            "aborted by `set -euo pipefail` before printing. Common causes: "
+            "missing oneAPI setvars.sh (now guarded), missing vmaf binary at "
+            f"{_vmaf_binary()}, missing fixture YUVs. Re-run with "
+            "`bash -x testdata/bench_all.sh` to bisect."
+        )
+    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -592,7 +752,7 @@ async def _list_tools() -> list[Tool]:
                     "model": {"type": "string", "default": "version=vmaf_v0.6.1"},
                     "backend": {
                         "type": "string",
-                        "enum": ["auto", "cpu", "cuda", "sycl"],
+                        "enum": ["auto", "cpu", "cuda", "sycl", "vulkan", "hip", "metal"],
                         "default": "auto",
                     },
                     "precision": {"type": "string", "default": "17"},
@@ -685,7 +845,7 @@ async def _list_tools() -> list[Tool]:
                     "model": {"type": "string", "default": "version=vmaf_v0.6.1"},
                     "backend": {
                         "type": "string",
-                        "enum": ["auto", "cpu", "cuda", "sycl"],
+                        "enum": ["auto", "cpu", "cuda", "sycl", "vulkan", "hip", "metal"],
                         "default": "auto",
                     },
                     "n": {

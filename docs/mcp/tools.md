@@ -24,7 +24,7 @@ Score one `(ref, dis)` YUV pair and return the full VMAF JSON report.
 | `pixfmt`    | `"420" \| "422" \| "444"`              | yes      | —                       | YUV chroma subsampling                         |
 | `bitdepth`  | `8 \| 10 \| 12 \| 16`                  | yes      | —                       | Bit depth of both YUV files                    |
 | `model`     | string                                 | no       | `"version=vmaf_v0.6.1"` | Any `--model` grammar from the CLI             |
-| `backend`   | `"auto" \| "cpu" \| "cuda" \| "sycl"`  | no       | `"auto"`                | Backend selection; `auto` lets vmaf pick       |
+| `backend`   | `"auto" \| "cpu" \| "cuda" \| "sycl" \| "vulkan" \| "hip" \| "metal"` | no       | `"auto"`                | Backend selection; `auto` lets vmaf pick. Requesting a backend the local binary does not advertise raises (no silent fallback — ADR-0495). |
 | `precision` | string                                 | no       | `"17"`                  | Passed straight to `--precision` (see below)   |
 
 ### Behaviour
@@ -40,9 +40,29 @@ vmaf -r <ref> -d <dis> --width <w> --height <h> -p <pixfmt> -b <bitdepth> \
 #   backend=sycl → --no_cuda
 ```
 
-The JSON written by vmaf is parsed and returned verbatim (the temp file
-is always unlinked — even on error). See
-[usage/cli.md](../usage/cli.md#output) for the report schema.
+The JSON written by vmaf is parsed and returned with two extra
+fields injected by the MCP layer (ADR-0495):
+
+- `backend_requested` — verbatim echo of the caller's `backend` arg.
+- `backend_used` — what actually ran. For an explicit `backend` arg
+  this equals the requested value (the wrapper refuses to silently
+  fall back); for `backend="auto"` it's a best-effort label
+  inferred from the JSON's per-backend key-count signature
+  (`"cpu"` / `"gpu"` / `"vulkan"`).
+
+When the local `vmaf` binary does not advertise the requested
+backend, the wrapper raises rather than running CPU silently
+(the bug-1 pattern from the 2026-05-17 probe). Use
+`backend="auto"` to opt back into vmaf's own probe.
+
+The wrapper additionally emits a `mismatched_model_warning` field
+when the model's intended resolution preset disagrees with the
+source frame size — e.g. `version=vmaf_4k_v0.6.1` on a 576×324
+source saturates at 100 on every frame and the warning surfaces
+the foot-gun. Bespoke ONNX models with no known resolution
+preset are silent (no false positives). See
+[usage/cli.md](../usage/cli.md#output) for the rest of the report
+schema; the temp file is always unlinked, even on error.
 
 > **`precision` default `"17"`.** The MCP server explicitly passes
 > `--precision 17` (`%.17g`, IEEE-754 round-trip lossless) so MCP
@@ -89,6 +109,11 @@ Response body (abridged):
 - Path does not exist → `{"error": "<abs-path>"}` from `FileNotFoundError`.
 - vmaf binary missing → `{"error": "vmaf binary not found at ...; Build first: meson compile -C build."}`.
 - Non-zero vmaf exit → `{"error": "vmaf exited <code>: <stderr>"}`.
+- Caller-requested backend not advertised by the local binary →
+  `{"error": "backend 'cuda' requested but the local vmaf binary
+  does not advertise it (available: ['cpu']); refusing to fall back
+  silently. Pass backend='auto' to let vmaf pick, or rebuild with
+  the requested backend enabled."}` (ADR-0495).
 
 ## `list_models`
 
@@ -181,6 +206,12 @@ runs CPU / CUDA / SYCL variants end-to-end and prints timings — see
 - `testdata/bench_all.sh` missing → `{"error": "benchmark harness not found: ..."}`.
 - Non-zero exit is *not* an error — it is returned in `exit_code` so the
   caller can see both stdout and stderr regardless.
+- Non-zero exit + empty stdout + empty stderr (the classic
+  `set -euo pipefail` silent abort) → the response gains an
+  `error` field with the most common root-cause shortlist and a
+  `bash -x` re-run hint (ADR-0495). The benchmark script itself
+  now exits `2` with a clear stderr message when the vmaf binary
+  is missing, which is the most common silent-abort cause.
 
 ## `eval_model_on_split`
 
@@ -304,7 +335,7 @@ wants narrative context for low-quality regions. Added in
 | `pixfmt`   | `"420"` / `"422"` / `"444"`                         | yes      | —                        |
 | `bitdepth` | 8 / 10 / 12 / 16                                    | yes      | —                        |
 | `model`    | string                                              | no       | `"version=vmaf_v0.6.1"`  |
-| `backend`  | `"auto"` / `"cpu"` / `"cuda"` / `"sycl"`            | no       | `"auto"`                 |
+| `backend`  | `"auto"` / `"cpu"` / `"cuda"` / `"sycl"` / `"vulkan"` / `"hip"` / `"metal"` | no       | `"auto"`                 |
 | `n`        | integer in `[1, 32]`                                | no       | `5`                      |
 
 ### Behaviour

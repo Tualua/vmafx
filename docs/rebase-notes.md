@@ -35490,3 +35490,27 @@ No rebase impact: `libvmaf/test/test_output.c` is fork-local (added by
 PR #963, fork-only coverage gap follow-up; Netflix upstream has no
 equivalent file). The Windows-portable `make_temp_path()` helper sits
 inside that file and is not exported. Upstream syncs do not touch it.
+
+---
+
+## fix/mcp-probe-findings-2026-05-17
+
+**Files**: `mcp-server/vmaf-mcp/src/vmaf_mcp/server.py`,
+`mcp-server/vmaf-mcp/tests/test_probe_findings_2026_05_17.py`,
+`mcp-server/vmaf-mcp/tests/test_backend_dispatch.py`,
+`testdata/bench_all.sh`,
+`docs/adr/0495-mcp-probe-bug-fixes.md`,
+`docs/mcp/tools.md`,
+`docs/state.md`,
+`changelog.d/fixed/mcp-probe-bug-cluster-2026-05-17.md`.
+
+**Rebase sensitivity (low):** all changes live in the fork-only
+`mcp-server/` tree and the fork-added `testdata/bench_all.sh` (Netflix
+upstream has neither). The new `_BACKEND_DISABLE` / `_BACKEND_PROBE_CACHE`
+helpers and the `--no_<backend>` flag plumbing in `_run_vmaf_score`
+assume the libvmaf CLI continues to advertise `--no_<backend>` switches
+in `--help` and to accept them on the command line. If upstream ever
+removes them (the new `--backend $NAME` exclusive selector landed in the
+fork on 2026-04-28 — see `bench_all.sh` header comments), swap
+`_probe_backends` to parse the selector grammar instead. No upstream-
+mirrored file is touched.
