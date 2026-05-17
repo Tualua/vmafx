@@ -4,54 +4,43 @@
 #
 # dev/scripts/dev-mcp-entrypoint.sh — container entrypoint
 #
-# Starts the embedded MCP UDS server at ${VMAF_MCP_UDS_PATH}
-# (default: /tmp/vmaf-mcp.sock) and tails the log.
+# Keeps the container alive so MCP clients can attach via
+#   docker exec -i vmaf-dev-mcp /opt/vmaf-venv/bin/vmaf-mcp
+# (stdio transport — the only one vmaf-mcp's main() implements).
 #
-# The server is spawned as a background daemon; this script then
-# exec-tails the log so Docker's log collector sees MCP output and
-# the container stays foreground.
+# Background: an earlier iteration tried to spawn vmaf-mcp with
+# `--transport uds --socket …`, but vmaf-mcp's main() has no argparse
+# and ignores all argv flags; it always opens a stdio_server() and
+# blocks on stdin. Spawned as a background daemon, its stdin
+# immediately closes → the process exits silently → the 30 s socket
+# wait timed out → entrypoint exited 1 → docker restarted the
+# container in a tight loop. The `.vscode/mcp.json` template and the
+# project rule (ADR-0496) already document the docker-exec-i pattern;
+# this entrypoint now just keeps the container alive for that pattern
+# to work.
+#
+# If the project later grows a real UDS transport in vmaf-mcp, switch
+# this script back to launching it as a daemon and waiting for the
+# socket — the previous version of this file is in git.
 
 set -euo pipefail
 
-SOCKET_PATH="${VMAF_MCP_UDS_PATH:-/tmp/vmaf-mcp.sock}"
 LOG_FILE="${VMAF_MCP_LOG:-/tmp/vmaf-mcp.log}"
 MODEL_PATH="${VMAF_MODEL_PATH:-/workspace/model}"
 
-# Remove stale socket from a previous run
-if [ -S "${SOCKET_PATH}" ]; then
-  rm -f "${SOCKET_PATH}"
-fi
+# Banner so `docker logs vmaf-dev-mcp` is self-explanatory.
+{
+  echo "[dev-mcp-entrypoint] vmaf-dev-mcp container ready."
+  echo "[dev-mcp-entrypoint] Build info: $(vmaf --version 2>&1 || echo 'vmaf CLI not in PATH')"
+  echo "[dev-mcp-entrypoint] Model path: ${MODEL_PATH}"
+  echo "[dev-mcp-entrypoint] vmaf-mcp transport: stdio (use 'docker exec -i ${HOSTNAME:-vmaf-dev-mcp} /opt/vmaf-venv/bin/vmaf-mcp')"
+  echo "[dev-mcp-entrypoint] To run vmaf-tune / vmaf-tools inside, e.g.:"
+  echo "[dev-mcp-entrypoint]   docker exec ${HOSTNAME:-vmaf-dev-mcp} vmaf --help"
+  echo "[dev-mcp-entrypoint]   docker exec ${HOSTNAME:-vmaf-dev-mcp} bash -c 'cd /workspace && PYTHONPATH=tools/vmaf-tune/src python -c \"from vmaftune.cli import main; main()\" --help'"
+} | tee -a "${LOG_FILE}"
 
-echo "[dev-mcp-entrypoint] Starting vmaf-mcp UDS server at ${SOCKET_PATH}" | tee -a "${LOG_FILE}"
-echo "[dev-mcp-entrypoint] Model path: ${MODEL_PATH}" | tee -a "${LOG_FILE}"
-echo "[dev-mcp-entrypoint] Build info: $(vmaf --version 2>&1 || echo 'vmaf CLI not in PATH')" | tee -a "${LOG_FILE}"
-
-# Start the MCP server in the background.
-# vmaf-mcp reads the UDS transport config from environment:
-#   VMAF_MCP_UDS_PATH — socket path
-#   VMAF_MODEL_PATH   — directory containing .json and .onnx model files
-vmaf-mcp \
-  --transport uds \
-  --socket "${SOCKET_PATH}" \
-  --model-dir "${MODEL_PATH}" \
-  >>"${LOG_FILE}" 2>&1 &
-
-MCP_PID=$!
-echo "[dev-mcp-entrypoint] MCP server PID: ${MCP_PID}" | tee -a "${LOG_FILE}"
-
-# Wait for socket to appear (max 30 s)
-for i in $(seq 1 30); do
-  if [ -S "${SOCKET_PATH}" ]; then
-    echo "[dev-mcp-entrypoint] Socket ready after ${i}s" | tee -a "${LOG_FILE}"
-    break
-  fi
-  sleep 1
-done
-
-if [ ! -S "${SOCKET_PATH}" ]; then
-  echo "[dev-mcp-entrypoint] ERROR: socket never appeared at ${SOCKET_PATH}" | tee -a "${LOG_FILE}"
-  exit 1
-fi
-
-# Tail the log (keeps container foreground; Docker log collector reads stdout)
+# Keep container foreground; Docker's log collector reads stdout.
+# We block on `tail -F` so any tool writing to the log shows up in
+# `docker logs`. `tail` is shipped with coreutils in the base image.
+touch "${LOG_FILE}"
 exec tail -F "${LOG_FILE}"
