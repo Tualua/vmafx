@@ -303,6 +303,55 @@ Use `/prep-release` to dry-run locally before merging a release PR.
     cumulative state from earlier patches, not against pristine
     `n8.1`. See
     [ADR-0186](docs/adr/0186-vulkan-image-import-impl.md).
+15. **Default to the `vmaf-dev-mcp` container for vmaf / vmaf-tune /
+    ai / MCP-probing work.** The container at
+    [`dev/Containerfile`](dev/Containerfile) bakes in every backend
+    (CUDA + SYCL + Vulkan + HIP + Metal scaffolds), oneAPI, the
+    NVIDIA Container Toolkit runtime, ffmpeg with libvmaf, the MCP
+    server, and the workspace mount. Host-side `meson setup build`
+    chases moving toolchain targets (icpx missing, Vulkan SDK gaps,
+    libsvm wheel drift, locale leaks); the container eliminates that
+    entire class of yak shave. The rule:
+    - **Before any non-trivial vmaf / vmaf-tune / ai / MCP run**:
+      rebuild the container if its image predates the last `master`
+      sync that touched anything under `libvmaf/`, `mcp-server/`,
+      `ai/`, `tools/vmaf-tune/`, or `dev/`. One-liner:
+      `docker compose --project-directory $(git rev-parse --show-toplevel)
+      -f dev/docker-compose.yml build dev-mcp && docker compose
+      -f dev/docker-compose.yml up -d`.
+    - **Then exec into it** for the actual work:
+      `docker exec vmaf-dev-mcp <command>`. The workspace lives at
+      `/workspace/`, the vmaf binary at `/usr/local/bin/vmaf` (with
+      every backend live), `.corpus/` and `python/test/resource/` are
+      mounted, the MCP socket is at `/sockets/vmaf-mcp.sock`.
+    - **Skip the container when**: editing only Python harness files
+      that don't touch the C surface (unit tests against the wrapper),
+      editing only docs / changelog / ADR, or running pure host-side
+      git / gh operations.
+    - **Don't reinvent host builds** when a backend isn't reproducing
+      in the container — diagnose the container first; if it's a real
+      container gap, fix the Containerfile rather than the host
+      build-flag soup. Host-side builds remain available
+      (`build/`, `libvmaf/build-cuda`, `libvmaf/build-all`) but are
+      no longer the default mental model.
+    - **Don't multiplex the same device across parallel jobs.** When
+      a long-running job (CHUG re-extract, BVI-DVC sweep) is pinned to
+      one device (e.g. CUDA / RTX 4090), schedule sibling parallel
+      work on a *different* device: Intel Arc via SYCL, AMD via HIP,
+      Vulkan on a non-NVIDIA adapter, or CPU. The fork's
+      `--backend $name` selector forces exclusive backend choice; use
+      it (or `--no_cuda` / `--no_sycl` / etc. for negative selection)
+      to pin each parallel run to its own silicon. The dev machine
+      has at least CUDA (RTX 4090), Intel Arc (SYCL + Vulkan), and
+      CPU — three independent lanes for cross-backend parity sweeps
+      while CHUG keeps CUDA hot.
+
+    See [docs/development/dev-mcp.md](docs/development/dev-mcp.md) for
+    the operator guide, including the cross-backend probe harness and
+    how to attach the IDE's MCP client. Background: the host-build
+    debt drained an entire merge train on 2026-05-17 (Python 3.14 +
+    numpy 2.x + libsvm 3.32 + locale-leaked subprocess output, all of
+    which the container had already pinned through).
 
 ## 13. Interaction style — prefer the popup question tool
 
