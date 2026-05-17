@@ -255,10 +255,19 @@ def _decode_to_raw_yuv(
     return int(getattr(completed, "returncode", 1))
 
 
-# Suffixes the vmaf CLI accepts as-is without a prior ffmpeg decode step.
-# Container outputs (``.mkv`` / ``.mp4`` / …) must be decoded to raw YUV
-# before the binary will accept them.
-VMAF_RAW_SUFFIXES: frozenset[str] = frozenset({".yuv", ".y4m", ""})
+# Suffixes the vmaf CLI accepts as raw YUV without a prior ffmpeg
+# decode step. ADR-0499 / BBB e2e v3 Bug #V3-B: ``.y4m`` was previously
+# listed here on the assumption the CLI auto-detects Y4M containers
+# from the extension. It does not — vmaf-tune always passes
+# ``--width`` / ``--height`` / ``--pixel_format`` / ``--bitdepth``
+# (see :func:`build_vmaf_command`) which flips the libvmaf CLI's
+# ``use_yuv`` flag (libvmaf/tools/cli_parse.c) and routes both inputs
+# through ``raw_input_open``. Y4M files then trip the file-size
+# mismatch guard inside ``raw_input_open``. The empty-suffix entry is
+# kept for fixture trees that name raw YUV without a ``.yuv``
+# extension — geometry is already pinned by the ``--width`` / etc.
+# flags, so those inputs round-trip correctly.
+VMAF_RAW_SUFFIXES: frozenset[str] = frozenset({".yuv", ""})
 
 
 def maybe_decode_distorted(

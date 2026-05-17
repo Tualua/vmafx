@@ -1644,6 +1644,23 @@ target, and feeds those points into hull and knee selection. A custom
 `sampler=` callback remains supported for callers that want a finer
 grid, a bisect loop, or a precomputed corpus stream.
 
+### Container and Y4M sources
+
+`--src` accepts any input ffmpeg can decode: raw `.yuv`, `.y4m`, or a
+container (`.mp4`, `.mkv`, `.webm`, …). The ladder, corpus, and
+bisect paths transparently decode the reference once per sweep into a
+`.ref.decoded.yuv` sidecar under the encode dir and reuse it across
+every cell — there is no need to pre-decode the source by hand
+(ADR-0499). When `--duration` is set, the reference decode is clamped
+to that window so a 10-second probe against a multi-minute source
+produces a bounded YUV instead of materialising the full file
+(ADR-0498).
+
+The libvmaf CLI itself reads `.yuv` only when `--width` / `--height` /
+`--pixel_format` / `--bitdepth` are passed (which vmaf-tune always
+does); `.y4m` is treated as raw planar YUV the same way `.mp4` is, so
+the wrapper decodes both.
+
 ### Canonical 5-rung invocation
 
 The default rendition set is the canonical 5-rung

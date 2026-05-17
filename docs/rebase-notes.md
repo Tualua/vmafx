@@ -35547,3 +35547,26 @@ touched. The `ScoreRequest.duration_s` and `CorpusJob.{src_width,
 src_height}` field additions are optional with safe defaults so older
 test fixtures still compile. ffmpeg-patches are unaffected — no
 public C API surface changed.
+
+## fix/vmaf-tune-ladder-reference-decode-v3
+
+**Files**: `tools/vmaf-tune/src/vmaftune/{corpus,score}.py`,
+`tools/vmaf-tune/tests/test_bbb_e2e_v3_bug_cluster.py`,
+`docs/adr/0499-vmaf-tune-ladder-reference-decode-v3.md`,
+`docs/adr/README.md`,
+`docs/usage/vmaf-tune.md`,
+`changelog.d/fixed/vmaf-tune-ladder-reference-decode-v3.md`.
+
+**Rebase sensitivity (none):** all changes live in `tools/vmaf-tune/`
+which is fork-added — no upstream Netflix file is touched. The new
+`_maybe_decode_reference` helper and `_decode_source_to_yuv` shared
+building block are private module functions; no public API was added
+or renamed. Dropping `.y4m` from `_VMAF_RAW_SUFFIXES` /
+`VMAF_RAW_SUFFIXES` is a behaviour change inside the wrapper that
+matches what the libvmaf CLI has always done (`raw_input_open` rejects
+Y4M files when `use_yuv=true` — see `libvmaf/tools/cli_parse.c` and
+the regression test `test_vmaf_raw_suffixes_matches_libvmaf_cli_source`
+which cross-checks the table against the CLI source). ffmpeg-patches
+unaffected. No effect on bisect.py (already decodes the reference per
+ADR-0498) — the regression test
+`test_bisect_decodes_reference_too` pins the existing invariant.

@@ -65,8 +65,60 @@ from aiutils.time_utils import now_iso_8601 as _utc_now_iso  # noqa: E402
 
 _LOG = logging.getLogger(__name__)
 
-# Suffixes the vmaf CLI accepts as-is without a prior ffmpeg decode step.
-_VMAF_RAW_SUFFIXES: frozenset[str] = frozenset({".yuv", ".y4m", ""})
+# Suffixes the vmaf CLI accepts as raw YUV without a prior ffmpeg decode
+# step. ADR-0499 / BBB e2e v3 Bug #V3-B: ``.y4m`` was previously listed
+# here on the assumption the vmaf CLI auto-detects Y4M containers from
+# the extension. It does not — vmaf-tune always passes ``--width`` /
+# ``--height`` / ``--pixel_format`` / ``--bitdepth`` (see
+# :func:`vmaftune.score.build_vmaf_command`), which flips the CLI's
+# ``use_yuv`` flag (libvmaf/tools/cli_parse.c) and routes both inputs
+# through ``raw_input_open``. Y4M files then trip the file-size-mismatch
+# guard inside ``raw_input_open``. The empty-suffix entry is kept for
+# operators who name raw YUV without a ``.yuv`` extension (a long-
+# standing convention in fixture trees); they get correct behaviour
+# because ``--width`` / etc. already pin the geometry.
+_VMAF_RAW_SUFFIXES: frozenset[str] = frozenset({".yuv", ""})
+
+
+def _decode_source_to_yuv(
+    source: Path,
+    *,
+    destination: Path,
+    pix_fmt: str,
+    duration_s: float,
+    ffmpeg_bin: str,
+    runner: object,
+) -> int:
+    """Run ``ffmpeg -i source -f rawvideo -pix_fmt pix_fmt destination``.
+
+    Shared building block for both :func:`_maybe_decode_distorted` and
+    :func:`_maybe_decode_reference`. The two callers differ only in
+    where they place the output file and what they do on failure;
+    centralising the argv keeps the ``-t`` clamp and pix_fmt selection
+    in one place (BBB e2e v2 Bug #v2-A + v3 Bug #V3-B).
+    """
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        ffmpeg_bin,
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-i",
+        str(source),
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        pix_fmt,
+    ]
+    if duration_s > 0.0:
+        cmd.extend(["-t", f"{float(duration_s)}"])
+    cmd.append(str(destination))
+    import subprocess as _sp  # noqa: PLC0415 — keep import local to avoid polluting module
+
+    run_fn = runner if callable(runner) else _sp.run
+    completed = run_fn(cmd, capture_output=True, text=True, check=False)
+    return int(getattr(completed, "returncode", 1))
 
 
 def _maybe_decode_distorted(
@@ -78,11 +130,11 @@ def _maybe_decode_distorted(
 ) -> "ScoreRequest":
     """Decode ``req.distorted`` to a raw YUV sidecar when it is a container.
 
-    The vmaf CLI only accepts ``.yuv`` / ``.y4m`` inputs. Encoded outputs
-    are containers (``mp4``, ``mkv``, …); they must be decoded before
-    the scoring step. The decoded YUV file is placed next to the encode
-    under ``encode_dir`` with a ``.decoded.yuv`` suffix so callers that
-    keep encodes (``--keep-encodes``) can find it.
+    The vmaf CLI only accepts raw ``.yuv`` (see :data:`_VMAF_RAW_SUFFIXES`).
+    Encoded outputs are containers (``mp4``, ``mkv``, …); they must be
+    decoded before the scoring step. The decoded YUV file is placed next
+    to the encode under ``encode_dir`` with a ``.decoded.yuv`` suffix so
+    callers that keep encodes (``--keep-encodes``) can find it.
 
     Returns an updated :class:`ScoreRequest` pointing at the decoded path.
     When the distorted file is already raw, or when the decode fails, the
@@ -94,36 +146,79 @@ def _maybe_decode_distorted(
         return req
 
     decoded = encode_dir / (req.distorted.stem + ".decoded.yuv")
-    cmd = [
-        ffmpeg_bin,
-        "-y",
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-i",
-        str(req.distorted),
-        "-f",
-        "rawvideo",
-        "-pix_fmt",
-        req.pix_fmt,
-    ]
-    # BBB e2e v2 Bug #v2-A: cap the decoded YUV at the analysed window
-    # length when the caller bound ``ScoreRequest.duration_s``.
-    if float(getattr(req, "duration_s", 0.0)) > 0.0:
-        cmd.extend(["-t", f"{float(req.duration_s)}"])
-    cmd.append(str(decoded))
-    import subprocess as _sp  # noqa: PLC0415 — keep import local to avoid polluting module
-
-    run_fn = runner if callable(runner) else _sp.run
-    completed = run_fn(cmd, capture_output=True, text=True, check=False)
-    if int(getattr(completed, "returncode", 1)) == 0 and decoded.exists():
+    rc = _decode_source_to_yuv(
+        req.distorted,
+        destination=decoded,
+        pix_fmt=req.pix_fmt,
+        # BBB e2e v2 Bug #v2-A: cap the decoded YUV at the analysed
+        # window length when the caller bound ``ScoreRequest.duration_s``.
+        duration_s=float(getattr(req, "duration_s", 0.0)),
+        ffmpeg_bin=ffmpeg_bin,
+        runner=runner,
+    )
+    if rc == 0 and decoded.exists():
         return dataclasses.replace(req, distorted=decoded)
     _LOG.warning(
         "corpus: ffmpeg decode of %s failed (rc=%s); scoring will likely fail",
         req.distorted,
-        getattr(completed, "returncode", "?"),
+        rc,
     )
     return req
+
+
+def _maybe_decode_reference(
+    source: Path,
+    *,
+    encode_dir: Path,
+    pix_fmt: str,
+    duration_s: float,
+    ffmpeg_bin: str,
+    runner: object,
+) -> tuple[Path, int]:
+    """Decode a container reference to raw YUV once per ``iter_rows`` call.
+
+    Mirror of :func:`_maybe_decode_distorted` for the reference leg.
+    ADR-0499 / BBB e2e v3 Bug #V3-B: before this helper landed, only
+    the encoded distorted output was decoded — the *reference* was
+    handed to the vmaf CLI as-is. When the source is a container
+    (``.mp4`` / ``.mkv``) or a Y4M file, ``raw_input_open`` reads the
+    container bytes as raw planes and aborts with "file size mismatch"
+    (Y4M) or "file too small for declared geometry" (MP4).
+
+    Returns ``(reference_path, returncode)``. ``returncode == 0`` with
+    the original ``source`` returned when the source is already raw
+    (no work to do). A non-zero ``returncode`` with the original
+    ``source`` returned signals a decode failure; callers should treat
+    every (preset, crf) cell as failed rather than invoking the vmaf
+    binary on an undecodable file. The decoded YUV file is placed
+    under ``encode_dir`` with a ``.ref.decoded.yuv`` suffix so the
+    same path can be reused across every cell in the sweep.
+    """
+    if source.suffix.lower() in _VMAF_RAW_SUFFIXES:
+        return source, 0
+    decoded = encode_dir / (source.stem + ".ref.decoded.yuv")
+    # Re-use a previous decode if one is already on disk for this
+    # ``iter_rows`` call. The same source + same window length is
+    # constant across every cell so a single decode suffices.
+    if decoded.exists():
+        return decoded, 0
+    rc = _decode_source_to_yuv(
+        source,
+        destination=decoded,
+        pix_fmt=pix_fmt,
+        duration_s=duration_s,
+        ffmpeg_bin=ffmpeg_bin,
+        runner=runner,
+    )
+    if rc == 0 and decoded.exists():
+        return decoded, 0
+    _LOG.warning(
+        "corpus: ffmpeg decode of reference %s failed (rc=%s); "
+        "every (preset, crf) cell will record exit_status != 0",
+        source,
+        rc,
+    )
+    return source, rc if rc != 0 else 1
 
 
 @dataclasses.dataclass(frozen=True)
@@ -411,6 +506,30 @@ def iter_rows(
         hdr_extra_params = hdr_codec_args(opts.encoder, hdr_info)
     score_model_warned = [False]
 
+    # ADR-0499 / BBB e2e v3 Bug #V3-B: decode the *reference* leg to
+    # raw YUV once before iterating cells. The libvmaf CLI's
+    # ``raw_input_open`` path (active whenever ``--width`` / ``--height``
+    # / ``--pixel_format`` / ``--bitdepth`` are passed, which vmaf-tune
+    # always does) refuses container/Y4M inputs. Previously only the
+    # distorted leg was decoded; container sources tripped the score
+    # step with "file size mismatch" and the sampler reported "produced
+    # no scorable encodes". Doing this once per ``iter_rows`` call
+    # (instead of per cell) keeps the cost flat across CRF/preset
+    # sweeps. ``_sp.run`` is used directly: test stubs injected via
+    # ``score_runner`` mock the vmaf CLI, not ffmpeg decodes.
+    import subprocess as _sp  # noqa: PLC0415 — local to avoid polluting module
+
+    decoded_reference, ref_decode_rc = _maybe_decode_reference(
+        job.source,
+        encode_dir=opts.encode_dir,
+        pix_fmt=job.pix_fmt,
+        # Cap the reference decode at the analysed window so a 10 s
+        # probe doesn't spill ~58 GB of raw YUV (BBB e2e v2 Bug #v2-A).
+        duration_s=float(job.duration_s),
+        ffmpeg_bin=opts.ffmpeg_bin,
+        runner=_sp.run,
+    )
+
     for preset, crf in job.cells:
         adapter.validate(preset, crf)
 
@@ -475,6 +594,75 @@ def iter_rows(
                 continue
 
         out = _encode_path(opts, job.source, preset, crf)
+        # ADR-0499 / Bug #V3-B: when the once-per-sweep reference
+        # decode failed, every cell's score will fail the same way.
+        # Synthesize a failed ``EncodeResult`` instead of re-running
+        # ffmpeg N times for output we cannot score; the
+        # ref-decode-fail branch below short-circuits the score step
+        # too. ``_row_for`` requires a non-None ``enc_res`` for the
+        # row-shape invariant.
+        if ref_decode_rc != 0:
+            from .encode import EncodeRequest as _EncReq  # noqa: PLC0415
+            from .encode import EncodeResult as _EncRes  # noqa: PLC0415
+
+            enc_res = _EncRes(
+                request=_EncReq(
+                    source=job.source,
+                    width=int(job.width),
+                    height=int(job.height),
+                    pix_fmt=job.pix_fmt,
+                    framerate=float(job.framerate),
+                    encoder=adapter.encoder,
+                    preset=preset,
+                    crf=crf,
+                    output=out,
+                ),
+                encode_size_bytes=0,
+                encode_time_ms=0.0,
+                encoder_version="skipped",
+                ffmpeg_version="skipped",
+                exit_status=ref_decode_rc,
+                stderr_tail=(f"encode skipped: reference decode failed (rc={ref_decode_rc})"),
+            )
+            base_model = opts.vmaf_model
+            score_model = _resolve_hdr_score_model(hdr_info, base_model, warned=score_model_warned)
+            score_req = ScoreRequest(
+                reference=decoded_reference,
+                distorted=out,
+                width=job.width,
+                height=job.height,
+                pix_fmt=job.pix_fmt,
+                model=score_model,
+                frame_skip_ref=frame_skip_ref,
+                frame_cnt=frame_cnt,
+                duration_s=float(job.duration_s),
+            )
+            score_res = ScoreResult(
+                request=score_req,
+                vmaf_score=float("nan"),
+                score_time_ms=0.0,
+                vmaf_binary_version="skipped",
+                exit_status=ref_decode_rc,
+                stderr_tail=(
+                    f"reference decode to raw YUV failed (rc={ref_decode_rc}) " f"for {job.source}"
+                ),
+            )
+            row = _row_for(
+                job=job,
+                opts=opts,
+                preset=preset,
+                crf=crf,
+                src_sha=src_hash,
+                enc_res=enc_res,
+                score_res=score_res,
+                score_model=score_model,
+                clip_mode=clip_mode,
+                hdr_info=hdr_info,
+                hdr_forced=hdr_forced,
+                shot_meta=shot_meta,
+            )
+            yield row
+            continue
         # ADR-0498 / Bug #v2-B: when the caller supplied source dims
         # distinct from the rung target, tell ffmpeg the *source*
         # geometry on the input side (-s) and add a -vf scale=W:H
@@ -529,7 +717,13 @@ def iter_rows(
             base_model = select_vmaf_model_version(job.width, job.height)
         score_model = _resolve_hdr_score_model(hdr_info, base_model, warned=score_model_warned)
         score_req = ScoreRequest(
-            reference=job.source,
+            # ADR-0499 / Bug #V3-B: ``decoded_reference`` is the
+            # pre-decoded raw-YUV path when ``job.source`` was a
+            # container, or ``job.source`` itself when the source was
+            # already raw. Container sources that fail to decode are
+            # short-circuited above (the cell yields a failed row
+            # without invoking ffmpeg or the vmaf binary).
+            reference=decoded_reference,
             distorted=out,
             width=job.width,
             height=job.height,
