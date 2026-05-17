@@ -274,7 +274,7 @@
       "notes": "Legacy mlp_medium sibling of vmaf_tiny_v1. Superseded by vmaf_tiny_v3 as the medium-capacity default. Retained on disk and in registry because docs/ai/loso-eval.md references both vmaf_tiny_v1*.onnx as single-split LOSO baselines.",
       "onnx": "vmaf_tiny_v1_medium.onnx",
       "opset": 17,
-      "sha256": "c72893db825e8a2cddf4e3932f30d8ba343ec353d0185e2ef9eedea38fb6c533",
+      "sha256": "97f6116b44913f4076170a2f0cb78042db85aac7c56d432e14d9fe138ab952b7",
       "sigstore_bundle": "vmaf_tiny_v1_medium.onnx.sigstore.json",
       "smoke": true
     },
