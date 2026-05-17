@@ -448,8 +448,14 @@ FROM libvmaf-build AS dev-mcp
 # vmaf-train: tiny-AI training harness (ai/)
 # vmaf-tune: encode automation / VMAF-tune CLI
 USER root
+# matplotlib: vmaf-tune report renderer (charts in the markdown/html
+# bundles). ADR-0496 demands every user-discoverable surface work
+# inside the container; BBB e2e v2 Bug #v2-C surfaced when ``report``
+# crashed on ``ModuleNotFoundError: matplotlib`` because the package
+# wasn't baked in. ADR-0498 closes the gap.
 RUN python3 -m venv /opt/vmaf-venv \
     && /opt/vmaf-venv/bin/pip install --upgrade pip \
+    && /opt/vmaf-venv/bin/pip install matplotlib \
     && /opt/vmaf-venv/bin/pip install -e /build/vmaf/mcp-server/vmaf-mcp \
     && /opt/vmaf-venv/bin/pip install -e /build/vmaf/ai \
     && /opt/vmaf-venv/bin/pip install -e /build/vmaf/tools/vmaf-tune

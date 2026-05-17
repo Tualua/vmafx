@@ -650,6 +650,26 @@ def _build_parser() -> argparse.ArgumentParser:
             "schedule (Bug #5, BBB e2e 2026-05-17)."
         ),
     )
+    # ADR-0498 / Bug #v2-B: explicit source dimensions for raw YUV
+    # sources when cross-resolution rungs are requested. When omitted
+    # the largest resolution in --resolutions is used as the source
+    # geometry (matches the historic single-resolution behaviour).
+    ladder.add_argument(
+        "--src-width",
+        type=int,
+        default=None,
+        help=(
+            "actual source width when it differs from the rung target "
+            "(raw YUV cross-resolution ladders). Defaults to the "
+            "largest --resolutions entry (Bug #v2-B, BBB e2e 2026-05-18)."
+        ),
+    )
+    ladder.add_argument(
+        "--src-height",
+        type=int,
+        default=None,
+        help=("actual source height when it differs from the rung target " "(see --src-width)."),
+    )
 
     compare = sub.add_parser(
         "compare",
@@ -2040,11 +2060,28 @@ def _run_ladder(args: argparse.Namespace) -> int:
         if not crf_sweep:
             sys.stderr.write("vmaf-tune ladder: --crf-sweep produced an empty list\n")
             return 2
+    # ADR-0498 / Bug #v2-B: source dims default to the largest rung
+    # in the resolution list so a multi-resolution ladder against a
+    # raw YUV source decodes at the source's native geometry and
+    # downscales for sub-source rungs via a -vf scale=W:H filter.
+    src_w = getattr(args, "src_width", None)
+    src_h = getattr(args, "src_height", None)
+    if src_w is None or src_h is None:
+        # Pick the largest (by pixel count) requested rung. Single-
+        # resolution ladders trivially match the source so the
+        # legacy single-res behaviour is preserved.
+        max_w, max_h = max(resolutions, key=lambda wh: wh[0] * wh[1])
+        if src_w is None:
+            src_w = int(max_w)
+        if src_h is None:
+            src_h = int(max_h)
     sampler = make_default_sampler(
         pix_fmt=getattr(args, "pix_fmt", "yuv420p"),
         framerate=float(getattr(args, "framerate", 24.0)),
         duration_s=float(getattr(args, "duration_s", 1.0)),
         crf_sweep=crf_sweep,
+        src_width=int(src_w),
+        src_height=int(src_h),
     )
     manifest = build_and_emit(
         src=args.src,

@@ -106,8 +106,12 @@ def _maybe_decode_distorted(
         "rawvideo",
         "-pix_fmt",
         req.pix_fmt,
-        str(decoded),
     ]
+    # BBB e2e v2 Bug #v2-A: cap the decoded YUV at the analysed window
+    # length when the caller bound ``ScoreRequest.duration_s``.
+    if float(getattr(req, "duration_s", 0.0)) > 0.0:
+        cmd.extend(["-t", f"{float(req.duration_s)}"])
+    cmd.append(str(decoded))
     import subprocess as _sp  # noqa: PLC0415 — keep import local to avoid polluting module
 
     run_fn = runner if callable(runner) else _sp.run
@@ -124,7 +128,19 @@ def _maybe_decode_distorted(
 
 @dataclasses.dataclass(frozen=True)
 class CorpusJob:
-    """One source + a list of (preset, crf) cells to evaluate."""
+    """One source + a list of (preset, crf) cells to evaluate.
+
+    ``width`` / ``height`` are the *rung target* (encode output and
+    libvmaf score) dimensions. ``src_width`` / ``src_height`` (added
+    2026-05-18, ADR-0498) are optional source-side overrides used when
+    the raw-YUV source's actual geometry differs from the rung target:
+    the encode pipe then tells ffmpeg the true source ``-s W:H`` and
+    a ``-vf scale=W:H`` filter downscales to the rung target. Both
+    ``None`` (default) keeps the legacy single-resolution behaviour
+    where ``width / height`` serve as both source and rung dims —
+    safe for container sources (ffmpeg auto-detects geometry) and
+    raw YUV at the requested resolution.
+    """
 
     source: Path
     width: int
@@ -133,6 +149,8 @@ class CorpusJob:
     framerate: float
     duration_s: float
     cells: tuple[tuple[str, int], ...]
+    src_width: int | None = None
+    src_height: int | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -457,17 +475,28 @@ def iter_rows(
                 continue
 
         out = _encode_path(opts, job.source, preset, crf)
+        # ADR-0498 / Bug #v2-B: when the caller supplied source dims
+        # distinct from the rung target, tell ffmpeg the *source*
+        # geometry on the input side (-s) and add a -vf scale=W:H
+        # filter so the encoded rendition lands at the rung target.
+        # Both fields ``None`` keeps the legacy behaviour where the
+        # rung target serves as both source and encode geometry.
+        enc_src_w = int(job.src_width) if job.src_width is not None else int(job.width)
+        enc_src_h = int(job.src_height) if job.src_height is not None else int(job.height)
+        scale_extra: tuple[str, ...] = ()
+        if (enc_src_w, enc_src_h) != (int(job.width), int(job.height)):
+            scale_extra = ("-vf", f"scale={int(job.width)}:{int(job.height)}")
         enc_req = EncodeRequest(
             source=job.source,
-            width=job.width,
-            height=job.height,
+            width=enc_src_w,
+            height=enc_src_h,
             pix_fmt=job.pix_fmt,
             framerate=job.framerate,
             encoder=adapter.encoder,
             preset=preset,
             crf=crf,
             output=out,
-            extra_params=hdr_extra_params,
+            extra_params=tuple(hdr_extra_params) + scale_extra,
             sample_clip_seconds=clip_seconds,
             sample_clip_start_s=start_s,
         )
@@ -508,6 +537,9 @@ def iter_rows(
             model=score_model,
             frame_skip_ref=frame_skip_ref,
             frame_cnt=frame_cnt,
+            # BBB e2e v2 Bug #v2-A: forward the job duration so the
+            # post-encode container -> raw YUV decode is bounded.
+            duration_s=float(job.duration_s),
         )
         if enc_res.exit_status == 0:
             # The vmaf CLI only reads raw .yuv / .y4m input; decode the

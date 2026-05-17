@@ -773,3 +773,30 @@ scripts for those local corpora.
   (without `aiutils` installed as an editable package) still resolve the
   import. Do not reintroduce inline duplicates of either helper — the
   canonical implementations live in `ai/src/aiutils/`.
+- **`ScoreRequest.duration_s` is a decode-clamp, not a score window
+  (ADR-0498, Bug #v2-A).** The new optional field threads down through
+  `maybe_decode_distorted` / `_decode_to_raw_yuv` into an ffmpeg `-t`
+  output clamp so a 10 s probe against a 634 s source doesn't
+  materialise tens of gigabytes of raw YUV. The score window is still
+  driven by `frame_skip_ref` / `frame_cnt`; `duration_s` is purely the
+  disk-budget gate for the container -> raw YUV decode step. Default
+  `0.0` preserves the legacy full-source decode.
+- **`CorpusJob.{src_width, src_height}` are source-side overrides,
+  not rung targets (ADR-0498, Bug #v2-B).** When set distinct from
+  `width / height`, `iter_rows` tells ffmpeg the actual source
+  geometry on `-s W:H` and appends `-vf scale=W:H` to the encode
+  argv so the encoder sees the downscaled rendition. Both `None`
+  keeps the legacy single-resolution path where the rung target
+  serves as both source and encode dims. The ladder default sampler
+  populates these from `make_default_sampler(src_width=, src_height=)`
+  which the CLI binds to `--src-width / --src-height` (defaulting
+  to the largest entry in `--resolutions`).
+- **Encoder-version probe is a process-cached fallback (ADR-0498,
+  follow-up #7).** `encode._probe_encoder_version_from_ffmpeg`
+  runs at most once per `(ffmpeg_bin, encoder)` pair via
+  `_PROBE_CACHE` (module-scope dict). Tests that exercise the
+  fallback must clear `_PROBE_CACHE` explicitly. The probe parses
+  `ffmpeg -version`'s configuration line and returns
+  `"<encoder>-enabled"` when the encoder is compiled in; an empty
+  string lets the caller keep its `"unknown"` placeholder so
+  existing tests that pin that exact value still pass.

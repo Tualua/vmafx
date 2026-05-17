@@ -485,6 +485,52 @@ static int init_gpu_backends(VmafContext *vmaf, const CLISettings *c
     (void)c;
     (void)err;
 
+    /* ADR-0498 / Bug #v2-E: when the user passes ``--backend NAME``
+     * (not the default ``auto``), an init failure for the requested
+     * backend must surface as a hard error — silently falling back to
+     * CPU corrupts CI gates that depend on backend-specific scoring.
+     * The ``auto`` selector keeps the legacy soft-fallback chain.
+     * Marked (void) so a build with no GPU backends compiled in
+     * doesn't trip ``-Wunused-variable``. */
+    const bool explicit_backend =
+        c->backend && strcmp(c->backend, "auto") != 0 && strcmp(c->backend, "cpu") != 0;
+    (void)explicit_backend;
+
+    /* If the requested backend isn't compiled into this libvmaf,
+     * surface that as a hard error too — otherwise the CLI silently
+     * runs on CPU and the user has no signal beyond stderr. */
+    if (explicit_backend) {
+        bool compiled_in = false;
+#ifdef HAVE_SYCL
+        if (strcmp(c->backend, "sycl") == 0)
+            compiled_in = true;
+#endif
+#ifdef HAVE_CUDA
+        if (strcmp(c->backend, "cuda") == 0)
+            compiled_in = true;
+#endif
+#ifdef HAVE_VULKAN
+        if (strcmp(c->backend, "vulkan") == 0)
+            compiled_in = true;
+#endif
+#ifdef HAVE_HIP
+        if (strcmp(c->backend, "hip") == 0)
+            compiled_in = true;
+#endif
+#ifdef HAVE_METAL
+        if (strcmp(c->backend, "metal") == 0)
+            compiled_in = true;
+#endif
+        if (!compiled_in) {
+            (void)fprintf(stderr,
+                          "vmaf: --backend %s requested but this libvmaf was built "
+                          "without %s support; refusing to silently fall back to CPU "
+                          "(ADR-0498)\n",
+                          c->backend, c->backend);
+            return -1;
+        }
+    }
+
     // GPU backend initialization: each backend activates only when its
     // specific flag is passed.  --gpumask enables the preferred backend
     // (SYCL > CUDA).  --sycl_device selects
@@ -497,6 +543,11 @@ static int init_gpu_backends(VmafContext *vmaf, const CLISettings *c
         err = vmaf_sycl_state_init(sycl_state, sycl_cfg);
         if (err) {
             (void)fprintf(stderr, "problem during vmaf_sycl_state_init, using CPU\n");
+            if (explicit_backend && strcmp(c->backend, "sycl") == 0) {
+                (void)fprintf(stderr, "vmaf: --backend sycl requested but init failed; "
+                                      "refusing to silently fall back to CPU (ADR-0498)\n");
+                return -1;
+            }
         } else {
             err = vmaf_sycl_import_state(vmaf, *sycl_state);
             if (err) {
@@ -519,6 +570,11 @@ static int init_gpu_backends(VmafContext *vmaf, const CLISettings *c
         err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
         if (err) {
             (void)fprintf(stderr, "problem during vmaf_cuda_state_init, using CPU\n");
+            if (explicit_backend && strcmp(c->backend, "cuda") == 0) {
+                (void)fprintf(stderr, "vmaf: --backend cuda requested but init failed; "
+                                      "refusing to silently fall back to CPU (ADR-0498)\n");
+                return -1;
+            }
         } else {
             err |= vmaf_cuda_import_state(vmaf, cu_state);
             if (err) {
@@ -543,6 +599,11 @@ static int init_gpu_backends(VmafContext *vmaf, const CLISettings *c
         err = vmaf_vulkan_state_init(vulkan_state, vulkan_cfg);
         if (err) {
             (void)fprintf(stderr, "problem during vmaf_vulkan_state_init (%d), using CPU\n", err);
+            if (explicit_backend && strcmp(c->backend, "vulkan") == 0) {
+                (void)fprintf(stderr, "vmaf: --backend vulkan requested but init failed; "
+                                      "refusing to silently fall back to CPU (ADR-0498)\n");
+                return -1;
+            }
         } else {
             err = vmaf_vulkan_import_state(vmaf, *vulkan_state);
             if (err) {
@@ -567,6 +628,11 @@ static int init_gpu_backends(VmafContext *vmaf, const CLISettings *c
         err = vmaf_hip_state_init(hip_state, hip_cfg);
         if (err) {
             (void)fprintf(stderr, "problem during vmaf_hip_state_init (%d), using CPU\n", err);
+            if (explicit_backend && strcmp(c->backend, "hip") == 0) {
+                (void)fprintf(stderr, "vmaf: --backend hip requested but init failed; "
+                                      "refusing to silently fall back to CPU (ADR-0498)\n");
+                return -1;
+            }
         } else {
             err = vmaf_hip_import_state(vmaf, *hip_state);
             if (err) {
@@ -591,6 +657,11 @@ static int init_gpu_backends(VmafContext *vmaf, const CLISettings *c
         err = vmaf_metal_state_init(metal_state, metal_cfg);
         if (err) {
             (void)fprintf(stderr, "problem during vmaf_metal_state_init (%d), using CPU\n", err);
+            if (explicit_backend && strcmp(c->backend, "metal") == 0) {
+                (void)fprintf(stderr, "vmaf: --backend metal requested but init failed; "
+                                      "refusing to silently fall back to CPU (ADR-0498)\n");
+                return -1;
+            }
         } else {
             err = vmaf_metal_import_state(vmaf, *metal_state);
             if (err) {
@@ -844,6 +915,63 @@ static int report_pooled_scores(VmafContext *vmaf, const CLISettings *c, VmafMod
     return 0;
 }
 
+/* ADR-0498 / Bug #v2-E: amend the JSON output file with a top-level
+ * ``"backend_used": "NAME"`` key so downstream consumers (CI gates,
+ * MCP probes per PR #1251) can confirm which backend actually ran.
+ * Implemented as a textual edit on the closing ``}`` to avoid pulling
+ * a JSON parser into the CLI; the writer always emits a single
+ * top-level object so the brace is at the file tail.
+ *
+ * No-op when output_path is NULL or format isn't JSON.
+ */
+static void amend_json_with_backend_used(const char *output_path, enum VmafOutputFormat fmt,
+                                         const char *backend_used)
+{
+    if (!output_path || !backend_used)
+        return;
+    if (fmt != VMAF_OUTPUT_FORMAT_JSON)
+        return;
+
+    FILE *fp = fopen(output_path, "rb+");
+    if (!fp)
+        return;
+    if (fseek(fp, 0, SEEK_END) != 0) {
+        (void)fclose(fp);
+        return;
+    }
+    long size = ftell(fp);
+    if (size <= 1) {
+        (void)fclose(fp);
+        return;
+    }
+    /* Walk backwards over trailing whitespace + the final '}'. */
+    long pos = size - 1;
+    while (pos > 0) {
+        if (fseek(fp, pos, SEEK_SET) != 0) {
+            (void)fclose(fp);
+            return;
+        }
+        int ch = fgetc(fp);
+        if (ch == EOF) {
+            (void)fclose(fp);
+            return;
+        }
+        if (ch == '}')
+            break;
+        if (ch != ' ' && ch != '\t' && ch != '\n' && ch != '\r') {
+            (void)fclose(fp);
+            return;
+        }
+        pos--;
+    }
+    if (fseek(fp, pos, SEEK_SET) != 0) {
+        (void)fclose(fp);
+        return;
+    }
+    (void)fprintf(fp, ", \"backend_used\": \"%s\"}\n", backend_used);
+    (void)fclose(fp);
+}
+
 /* CLI driver: orchestrates input opening, VMAF context init, GPU backend
  * activation, model loading, frame loop, score reporting, and cleanup.
  * The function is structured around a single goto-cleanup block (not
@@ -1050,8 +1178,44 @@ int main(int argc, char *argv[])
             goto cleanup;
     }
 
-    if (c.output_path)
+    if (c.output_path) {
         vmaf_write_output_with_format(vmaf, c.output_path, c.output_fmt, c.precision_fmt);
+        /* ADR-0498 / Bug #v2-E: echo the active backend into the JSON
+         * output so CI gates and MCP probes can confirm what actually
+         * ran (mirrors the MCP-layer echo added by PR #1251). */
+        const char *backend_used = "cpu";
+#ifdef HAVE_SYCL
+        if (sycl_active)
+            backend_used = "sycl";
+#endif
+#ifdef HAVE_VULKAN
+        if (vulkan_active)
+            backend_used = "vulkan";
+#endif
+#ifdef HAVE_HIP
+        if (hip_active)
+            backend_used = "hip";
+#endif
+#ifdef HAVE_METAL
+        if (metal_active)
+            backend_used = "metal";
+#endif
+#ifdef HAVE_CUDA
+        /* CUDA's active flag is local to init_gpu_backends; surface
+         * it indirectly via the cumulative gpumask + no-flags state.
+         * When the user passed --backend cuda and init succeeded we
+         * already gated explicit_backend so the binary errored on
+         * failure; here we report CUDA only when no other GPU flag
+         * is live and the dispatch was actually routed to CUDA. */
+        if (c.use_gpumask && !c.no_cuda
+#ifdef HAVE_SYCL
+            && !sycl_active
+#endif
+        )
+            backend_used = "cuda";
+#endif
+        amend_json_with_backend_used(c.output_path, c.output_fmt, backend_used);
+    }
 
     ret = err;
 

@@ -32,6 +32,34 @@ from typing import Any
 from . import __version__ as TOOL_VERSION
 
 
+def _nan_to_none(value: Any) -> Any:
+    """Recursively substitute ``None`` for ``NaN`` / ``±inf`` floats.
+
+    The report appendix used to dump ``data.to_dict()`` through the
+    default ``json.dumps`` (``allow_nan=True``), which writes bare
+    ``NaN`` tokens for any in-memory ``float('nan')``. Those tokens
+    are valid only under JavaScript-extended JSON; RFC 8259 strict
+    parsers (Go ``encoding/json``, Rust ``serde_json``, ``jq``)
+    reject them. Failed compare/ladder rows surface as in-memory
+    NaNs even when the upstream JSON files write them as ``null``
+    — the dump round-trips ``null -> float('nan')`` on parse and
+    back to ``NaN`` on emit. Coerce to ``None`` here so the
+    appendix is portable JSON (BBB e2e v2 Bug #v2-D, ADR-0498).
+    """
+    if isinstance(value, float):
+        return None if math.isnan(value) or math.isinf(value) else value
+    if isinstance(value, dict):
+        return {k: _nan_to_none(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_nan_to_none(v) for v in value]
+    return value
+
+
+def _portable_json_dump(data: Any) -> str:
+    """``json.dumps`` with NaN coercion + ``allow_nan=False`` defence."""
+    return json.dumps(_nan_to_none(data), indent=2, sort_keys=True, allow_nan=False)
+
+
 @dataclasses.dataclass(frozen=True)
 class CodecRow:
     """One row in the codec-comparison table."""
@@ -138,11 +166,19 @@ def _render_chart(width_in: float, height_in: float, plot_fn) -> bytes:
 
     ``plot_fn`` is called with one ``Axes`` argument. The figure is
     closed after rendering so callers don't accumulate global state.
+
+    Returns empty bytes when matplotlib is not importable. ADR-0498
+    pairs this fallback with the Containerfile pin so the table-only
+    report renders even on hosts that didn't pip-install matplotlib
+    (Bug #v2-C, BBB e2e v2 2026-05-18).
     """
-    import matplotlib
+    try:
+        import matplotlib  # noqa: PLC0415
+    except ImportError:
+        return b""
 
     matplotlib.use("Agg", force=True)
-    import matplotlib.pyplot as plt
+    import matplotlib.pyplot as plt  # noqa: PLC0415
 
     fig, ax = plt.subplots(figsize=(width_in, height_in), dpi=110)
     try:
@@ -155,11 +191,19 @@ def _render_chart(width_in: float, height_in: float, plot_fn) -> bytes:
 
 
 def _render_chart_svg(width_in: float, height_in: float, plot_fn) -> str:
-    """Render a matplotlib figure to SVG string for inline-HTML use."""
-    import matplotlib
+    """Render a matplotlib figure to SVG string for inline-HTML use.
+
+    Returns an empty string when matplotlib is unavailable so the
+    surrounding HTML still renders without the chart panel
+    (ADR-0498, Bug #v2-C fallback companion).
+    """
+    try:
+        import matplotlib  # noqa: PLC0415
+    except ImportError:
+        return ""
 
     matplotlib.use("Agg", force=True)
-    import matplotlib.pyplot as plt
+    import matplotlib.pyplot as plt  # noqa: PLC0415
 
     fig, ax = plt.subplots(figsize=(width_in, height_in), dpi=110)
     try:
@@ -411,7 +455,7 @@ def render_markdown(data: ReportData, *, assets_dir: Path | None = None) -> str:
     lines.append("<details><summary>report.json</summary>")
     lines.append("")
     lines.append("```json")
-    lines.append(json.dumps(data.to_dict(), indent=2, sort_keys=True))
+    lines.append(_portable_json_dump(data.to_dict()))
     lines.append("```")
     lines.append("")
     lines.append("</details>")
@@ -419,6 +463,10 @@ def render_markdown(data: ReportData, *, assets_dir: Path | None = None) -> str:
 
 
 def _embed_png(png: bytes, name: str, assets_dir: Path | None) -> str:
+    if not png:
+        # Matplotlib unavailable (ADR-0498 fallback); skip the image
+        # rather than emit a broken inline data URI.
+        return f"<!-- chart {name} unavailable (matplotlib not installed) -->"
     if assets_dir is None:
         b64 = base64.b64encode(png).decode("ascii")
         return f"![{name}](data:image/png;base64,{b64})"
@@ -592,7 +640,7 @@ def render_html(data: ReportData) -> str:
         codec_section=codec_section,
         ladder_section=ladder_section,
         shots_section=shots_section,
-        json_dump=json.dumps(data.to_dict(), indent=2, sort_keys=True),
+        json_dump=_portable_json_dump(data.to_dict()),
     )
 
 

@@ -245,12 +245,24 @@ def build_ffmpeg_command(req: EncodeRequest, ffmpeg_bin: str = "ffmpeg") -> list
 
 
 _FFMPEG_VERSION_RE = re.compile(r"ffmpeg version (\S+)")
-_X264_VERSION_RE = re.compile(r"x264 - core (\d+)")
+# x264 banner formats:
+#   classic: "x264 - core 164 r3094 bfc87b7" (libx264 banner)
+#   fallback: ffmpeg's "[libx264 @ 0x55] using SAR=…" lines carry no
+#   version; probe the meson/ffconfigure-emitted "libx264 N.NNN.NNNN" /
+#   "x264-core NNN" alt strings the build also surfaces (ADR-0498
+#   follow-up #7 — BBB e2e v2 logged "unknown" for x264 even with
+#   the encoder running, because ``-hide_banner`` suppressed the
+#   per-encoder banner on the build's ffmpeg).
+# Accepts both "x264 - core 164" (canonical libx264 banner) and the
+# defensive "x264-core 164" variant that some downstream builds emit
+# in their configure summary (ADR-0498 follow-up #7).
+_X264_VERSION_RE = re.compile(r"x264\s*-?\s*core\s+(\d+)")
 _X265_VERSION_RE = re.compile(r"x265 \[info\]: HEVC encoder version (\S+)")
 _LIBVPX_VP9_VERSION_RE = re.compile(r"\[libvpx-vp9 @ [^\]]+\]\s+v(\S+)")
 # SVT-AV1 banner formats across versions:
 #   older: "SVT-AV1 ENCODER v1.7.0"
 #   newer: "Svt[info]:SVT-AV1 Encoder Lib v2.1.0"
+#   v1.x: "SVT [info]: SVT-AV1 Encoder Lib v1.7.0"
 _SVTAV1_VERSION_RE = re.compile(r"SVT-AV1 Encoder(?:\s+Lib)?\s+v(\S+)", re.IGNORECASE)
 
 
@@ -349,6 +361,18 @@ def run_encode(
         size = os.path.getsize(req.output)
 
     ffmpeg_v, encoder_v = parse_versions(stderr, encoder=req.encoder)
+    # ADR-0498 follow-up #7: when the encode succeeded but the per-
+    # encoder banner didn't appear in the captured stderr (modern
+    # FFmpeg builds suppress it under ``-hide_banner``), fall back
+    # to ``ffmpeg -version``'s ``configuration: ... --enable-libx264 ...``
+    # / ``libavcodec N.N.N`` lines. The fallback runs at most once
+    # per process via the LRU cache below; mocks in tests already
+    # patch ``runner_fn`` so the fallback is a no-op unless the
+    # underlying subprocess is real.
+    if rc == 0 and encoder_v == "unknown":
+        probed = _probe_encoder_version_from_ffmpeg(ffmpeg_bin, req.encoder, runner_fn)
+        if probed:
+            encoder_v = probed
     return EncodeResult(
         request=req,
         encode_size_bytes=size,
@@ -364,6 +388,63 @@ def _tail(text: str, n: int) -> str:
     if len(text) <= n:
         return text
     return text[-n:]
+
+
+# Fallback "encoder version" probe — populated lazily on first miss
+# from a real ``ffmpeg -version`` run. Keyed by (ffmpeg_bin, encoder)
+# so a test that swaps the binary path between probes still gets a
+# fresh probe. ADR-0498 follow-up #7 (BBB e2e v2).
+_PROBE_CACHE: dict[tuple[str, str], str] = {}
+
+# Map encoder names to (regex, prefix) for parsing the configure-line
+# / banner that ``ffmpeg -version`` prints. The configure line typically
+# looks like::
+#
+#   configuration: --prefix=/usr ... --enable-libx264 --enable-libsvtav1 ...
+#
+# which carries no version. The libavcodec banner that follows::
+#
+#   libavcodec     60. 31.102 / 60. 31.102
+#
+# also carries no encoder version. For libx264 / libsvtav1 the version
+# is in the per-encoder banner that ffmpeg dumps on init; when that
+# banner is suppressed we settle for an "enabled" marker so consumers
+# at least know the encoder was compiled in.
+_VERSION_PROBE_PATTERNS: dict[str, re.Pattern] = {
+    "libx264": re.compile(r"--enable-libx264"),
+    "libsvtav1": re.compile(r"--enable-libsvtav1"),
+}
+
+
+def _probe_encoder_version_from_ffmpeg(ffmpeg_bin: str, encoder: str, runner_fn: object) -> str:
+    """Return a best-effort version label, or ``""`` when nothing parseable.
+
+    The CLI returns a short stable label (``libx264-enabled`` /
+    ``libsvtav1-enabled``) when ``ffmpeg -version``'s configuration
+    line confirms the encoder is compiled in. Empty string keeps the
+    caller's previous ``"unknown"`` placeholder so existing tests that
+    pin that exact value still pass.
+    """
+    pattern = _VERSION_PROBE_PATTERNS.get(encoder)
+    if pattern is None:
+        return ""
+    key = (ffmpeg_bin, encoder)
+    if key in _PROBE_CACHE:
+        return _PROBE_CACHE[key]
+    try:
+        completed = runner_fn(  # type: ignore[operator]
+            [ffmpeg_bin, "-version"], capture_output=True, text=True, check=False
+        )
+    except (OSError, ValueError):
+        _PROBE_CACHE[key] = ""
+        return ""
+    out = (getattr(completed, "stdout", "") or "") + (getattr(completed, "stderr", "") or "")
+    if pattern.search(out):
+        label = f"{encoder}-enabled"
+    else:
+        label = ""
+    _PROBE_CACHE[key] = label
+    return label
 
 
 def build_pass1_stats_command(

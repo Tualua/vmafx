@@ -199,6 +199,8 @@ def make_default_sampler(
     framerate: float = 24.0,
     duration_s: float = 1.0,
     crf_sweep: Sequence[int] | None = None,
+    src_width: int | None = None,
+    src_height: int | None = None,
 ) -> SamplerFn:
     """Return a :data:`SamplerFn` closed over real source-shape metadata.
 
@@ -213,6 +215,17 @@ def make_default_sampler(
     ``--duration`` / ``--pix-fmt`` flags or ffprobe) plus an optional
     CRF sweep override (``--crf-sweep``) so smoke runs can pick a
     short sweep instead of the production 5-point grid.
+
+    ``src_width`` / ``src_height`` (added 2026-05-18, ADR-0498) carry
+    the actual source resolution separately from the per-rung target
+    resolution. When the source is raw YUV at one resolution and the
+    ladder requests a different rendition, the sampler injects an
+    ffmpeg ``scale`` filter on the encode pipe and tells ffmpeg the
+    true source dimensions on the input side — the historic path used
+    the target dims as the input ``-s`` argument, which produces
+    frame-corruption on every rung where target != source (BBB e2e v2
+    Bug #v2-B). When left at ``None`` the legacy behaviour is
+    preserved (target dims serve as both source and encode dims).
     """
     sweep = tuple(int(c) for c in crf_sweep) if crf_sweep is not None else DEFAULT_SAMPLER_CRF_SWEEP
 
@@ -229,6 +242,8 @@ def make_default_sampler(
             framerate=framerate,
             duration_s=duration_s,
             crf_sweep=sweep,
+            src_width=src_width,
+            src_height=src_height,
         )
 
     return _sampler
@@ -245,6 +260,8 @@ def _default_sampler(
     framerate: float = 24.0,
     duration_s: float = 1.0,
     crf_sweep: Sequence[int] | None = None,
+    src_width: int | None = None,
+    src_height: int | None = None,
 ) -> LadderPoint:
     """Production sampler — encode the configured CRF sweep, pick by VMAF.
 
@@ -260,6 +277,14 @@ def _default_sampler(
     by name as ``sampler=``; the production CLI now binds the real
     source shape via :func:`make_default_sampler` so bitrate math and
     encode framerate match the input.
+
+    BBB e2e v2 Bug #v2-B: when ``src_width`` / ``src_height`` are set
+    and differ from the rung's ``(width, height)``, the corpus job is
+    configured with the *actual* source dimensions and an extra
+    ``-vf scale=W:H`` filter is appended via ``CorpusOptions.extra_args``
+    so ffmpeg decodes the source at its native geometry and scales to
+    the requested rendition. The historic single-resolution code path
+    (``src_width`` / ``src_height`` left at ``None``) is preserved.
     """
     # Lazy imports — see ``_default_sampler_preset``.
     from .corpus import CorpusJob, CorpusOptions, iter_rows
@@ -269,16 +294,40 @@ def _default_sampler(
     sweep = tuple(int(c) for c in crf_sweep) if crf_sweep is not None else DEFAULT_SAMPLER_CRF_SWEEP
     cells = tuple((preset, crf) for crf in sweep)
 
+    # Resolve the dims to hand the corpus job:
+    # - When the caller bound ``src_width / src_height`` (CLI path, ADR-0498)
+    #   AND they differ from the rung target, decode at the source geometry
+    #   and add a scale filter to the encode pipe.
+    # - Otherwise (caller left them None, or source == target) the legacy
+    #   single-resolution path is taken — corpus job receives the target dims.
+    use_src_dims = (
+        src_width is not None
+        and src_height is not None
+        and (src_width, src_height) != (width, height)
+    )
+
     with tempfile.TemporaryDirectory(prefix="vmaftune-ladder-") as tmp:
         tmp_path = Path(tmp)
+        # ``CorpusJob.{width,height}`` are the rung's *target* dimensions
+        # used by the libvmaf score step and (when no source dims are
+        # supplied) by the encoder's raw-YUV input shape. ``src_width``
+        # / ``src_height`` (added 2026-05-18, ADR-0498) carry the actual
+        # source dimensions so :func:`vmaftune.corpus.iter_rows` can
+        # tell ffmpeg the demuxer geometry separately from the encoded
+        # rendition geometry and inject a ``-vf scale=W:H`` filter when
+        # they differ — fixes Bug #v2-B (the historic code path passed
+        # the rung target as the source ``-s`` argument, corrupting
+        # every cross-res rung against a raw-YUV source).
         job = CorpusJob(
             source=src,
-            width=width,
-            height=height,
+            width=int(width),
+            height=int(height),
             pix_fmt=pix_fmt,
             framerate=float(framerate),
             duration_s=float(duration_s),
             cells=cells,
+            src_width=int(src_width) if use_src_dims else None,
+            src_height=int(src_height) if use_src_dims else None,
         )
         opts = CorpusOptions(
             encoder=encoder,

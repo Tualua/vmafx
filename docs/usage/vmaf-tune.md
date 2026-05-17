@@ -1698,6 +1698,17 @@ accepted as a legacy alias for `vmaf`.
 | `--uncertainty-sidecar PATH` | default thresholds | Calibration sidecar for the uncertainty recipe. |
 | `--rung-overlap-threshold F` | `0.5` | Adjacent-rung interval overlap threshold for pruning. |
 | `--output PATH` | stdout | Manifest destination. |
+| `--src-width INT` | largest `--resolutions` entry | Actual source width for raw YUV cross-resolution ladders. When the source is a higher resolution than the smallest rung, this is the demuxer-side `-s W:H`; the encode pipe scales to each rung target via `-vf scale=W:H`. Container sources auto-detect geometry and ignore this flag. Added 2026-05-18 per ADR-0498 / Bug #v2-B. |
+| `--src-height INT` | largest `--resolutions` entry | Companion to `--src-width`. Default picks the tallest entry in `--resolutions` so a `--resolutions 1920x1080,1280x720,854x480` ladder against a 1080p raw YUV "just works". |
+
+> **Cross-resolution ladders against raw YUV**: prior to ADR-0498 the
+> default sampler used the rung target dims as the source dims, which
+> corrupted every encode against a raw YUV source whose actual
+> resolution differed from the requested rung (`-s 1280x720` on
+> 1080p bytes = decoded garbage). The ladder now accepts separate
+> source dims and injects a `-vf scale=W:H` filter for each
+> sub-source rung. Container (`.mp4` / `.mkv`) sources are
+> unaffected — ffmpeg auto-detects their geometry.
 
 ## Phase F — multi-pass encoding (ADR-0333)
 

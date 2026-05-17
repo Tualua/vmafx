@@ -35514,3 +35514,36 @@ removes them (the new `--backend $NAME` exclusive selector landed in the
 fork on 2026-04-28 — see `bench_all.sh` header comments), swap
 `_probe_backends` to parse the selector grammar instead. No upstream-
 mirrored file is touched.
+
+---
+
+## fix/bbb-e2e-v2-bug-cluster-2026-05-18
+
+**Files**: `libvmaf/tools/vmaf.c` (init_gpu_backends explicit-backend
+gating + amend_json_with_backend_used helper),
+`tools/vmaf-tune/src/vmaftune/{score,bisect,corpus,ladder,report,encode,cli}.py`,
+`tools/vmaf-tune/tests/test_bbb_e2e_v2_bug_cluster.py`,
+`dev/Containerfile` (matplotlib),
+`dev/scripts/dev-mcp-entrypoint.sh` (mkdir -p /tmp),
+`docs/adr/0498-vmaf-tune-bbb-e2e-v2-bug-cluster.md`,
+`docs/adr/README.md`,
+`docs/state.md`,
+`docs/usage/vmaf-tune.md`,
+`docs/backends/index.md`,
+`docs/development/dev-mcp.md`,
+`changelog.d/fixed/vmaf-tune-bbb-e2e-v2-bug-cluster.md`.
+
+**Rebase sensitivity (medium for `libvmaf/tools/vmaf.c`, low for the
+rest):** the C-side change is bolted on at the end of each backend's
+`state_init` failure stanza inside `init_gpu_backends`; an upstream
+refactor that restructures that helper (Netflix has no equivalent
+function — the fork extracted it as ADR-0141 §2 with NOLINTNEXTLINE)
+would need the explicit-backend `if (...) return -1;` gates re-applied
+per backend. The `amend_json_with_backend_used` helper is fork-local
+(operates on the file libvmaf wrote — no API change) and survives
+upstream syncs verbatim. The vmaf-tune fixes live entirely in
+`tools/vmaf-tune/` which is fork-added; no upstream-mirror file is
+touched. The `ScoreRequest.duration_s` and `CorpusJob.{src_width,
+src_height}` field additions are optional with safe defaults so older
+test fixtures still compile. ffmpeg-patches are unaffected — no
+public C API surface changed.

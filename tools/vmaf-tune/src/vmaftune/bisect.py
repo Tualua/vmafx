@@ -444,10 +444,26 @@ def _encode_and_score(
     )
     enc_res = run_encode(enc_req, ffmpeg_bin=ffmpeg_bin, runner=encode_runner)
     if enc_res.exit_status != 0:
+        # ADR-0498 / BBB e2e v2 follow-up #6: ffmpeg returns the same
+        # non-zero exit for "encoder binary missing in this build" as
+        # for genuine encode failures (rate-control overflow, etc.).
+        # Distinguish them via the stderr tail so operators see
+        # "encoder unavailable" rather than "Encoder not found" /
+        # "encode failed" for the libsvtav1 case in the dev-mcp image.
+        stderr_tail = enc_res.stderr_tail or ""
+        last_line = stderr_tail.strip().splitlines()[-1] if stderr_tail else "no stderr"
+        lowered = stderr_tail.lower()
+        if (
+            "encoder not found" in lowered
+            or "unknown encoder" in lowered
+            or "no such codec" in lowered
+        ):
+            err_msg = f"encoder unavailable ({encoder_name}): {last_line}"
+        else:
+            err_msg = f"encode failed at CRF {crf} (exit={enc_res.exit_status}): {last_line}"
         return _failure(
             codec,
-            f"encode failed at CRF {crf} (exit={enc_res.exit_status}): "
-            f"{enc_res.stderr_tail.strip().splitlines()[-1] if enc_res.stderr_tail else 'no stderr'}",
+            err_msg,
             encode_time_ms=enc_res.encode_time_ms,
             encoder_version=enc_res.encoder_version,
         )
@@ -476,12 +492,19 @@ def _encode_and_score(
         # enough (every iteration scores the same reference).
         rc = 0
         if not decoded_ref.exists():
+            # BBB e2e v2 Bug #v2-A: clamp the reference decode to
+            # ``duration_s`` so a 10 s probe against a 634 s source
+            # produces ~896 MB of raw YUV, not ~58 GB. ``duration_s == 0``
+            # preserves the legacy full-source behaviour for callers
+            # that have not bound a source duration yet.
+            decode_dur = float(duration_s) if float(duration_s) > 0.0 else None
             rc = _decode_to_raw_yuv(
                 Path(src),
                 decoded_ref,
                 pix_fmt=pix_fmt,
                 ffmpeg_bin=ffmpeg_bin,
                 runner=effective_decode_runner,
+                duration_s=decode_dur,
             )
         if rc != 0 or not decoded_ref.exists():
             return _failure(
@@ -501,6 +524,10 @@ def _encode_and_score(
         model=vmaf_model,
         frame_skip_ref=frame_skip_ref,
         frame_cnt=frame_cnt,
+        # BBB e2e v2 Bug #v2-A: thread the requested duration so the
+        # ``maybe_decode_distorted`` step caps the raw-YUV decode at
+        # the analysed window length.
+        duration_s=float(duration_s),
     )
     # Decode the encoded container to raw YUV — libvmaf will not accept
     # the .mkv otherwise. ``maybe_decode_distorted`` is a no-op for raw

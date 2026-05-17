@@ -25,6 +25,14 @@
 
 set -euo pipefail
 
+# ADR-0498 follow-up #8 (BBB e2e v2): some container runtimes ship a
+# minimal ``/`` filesystem without ``/tmp`` (especially when the image
+# is started with a fresh tmpfs overlay). Both the MCP log and the
+# bug-cluster repro scripts assume ``/tmp`` exists with 1777
+# permissions. Materialise it idempotently here so the entrypoint
+# never fails on "No such file or directory: /tmp/vmaf-mcp.log".
+mkdir -p /tmp && chmod 1777 /tmp
+
 LOG_FILE="${VMAF_MCP_LOG:-/tmp/vmaf-mcp.log}"
 MODEL_PATH="${VMAF_MODEL_PATH:-/workspace/model}"
 

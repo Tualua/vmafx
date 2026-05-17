@@ -37,6 +37,39 @@ Dispatch precedence inside `libvmaf` (highest first):
 3. Otherwise the best available CPU SIMD twin runs; scalar C is the universal
    fallback.
 
+### Explicit-backend semantics (`--backend NAME`)
+
+The `--backend` exclusive selector accepts `auto | cpu | cuda | sycl
+| vulkan | hip | metal`. Per ADR-0498 (2026-05-18):
+
+- `--backend auto` (default) keeps the soft-fallback chain — an init
+  failure for the priority backend silently demotes to CPU with a
+  stderr log line.
+- `--backend NAME` for any *explicit* GPU backend turns init failure
+  into a **non-zero exit** with a clear stderr error. CI gates that
+  depend on backend-specific scoring no longer silently regress
+  when, e.g., the Vulkan ICD fails to load in a container.
+- The JSON output gains a top-level `"backend_used": "NAME"` key
+  echoing what actually ran (cpu / cuda / sycl / vulkan / hip /
+  metal). Downstream consumers can confirm dispatch independently
+  of stderr; mirrors the MCP-layer echo added by PR #1251.
+
+Example:
+
+```bash
+# Explicit Vulkan; errors out hard if the Vulkan ICD can't load.
+vmaf --reference ref.yuv --distorted dist.yuv \
+     --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
+     --model version=vmaf_v0.6.1 --backend vulkan \
+     --json --output /tmp/s.json
+# stdout silent on success; /tmp/s.json carries:
+#   { ..., "backend_used": "vulkan" }
+# On init failure: exit != 0, stderr:
+#   problem during vmaf_vulkan_state_init (-19), using CPU
+#   vmaf: --backend vulkan requested but init failed; refusing to
+#   silently fall back to CPU (ADR-0498)
+```
+
 Not every feature has every twin — the coverage matrix is in
 [../metrics/features.md](../metrics/features.md) per feature and in each
 per-backend page below.

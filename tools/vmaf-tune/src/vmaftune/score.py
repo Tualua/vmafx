@@ -30,6 +30,14 @@ class ScoreRequest:
     sets these so VMAF compares the same time window of the reference
     that was fed to the encoder, instead of slicing the reference YUV
     on disk. Both ``0`` (default) keeps the legacy full-source scoring.
+
+    ``duration_s`` (added 2026-05-18, ADR-0498) gates the container -> raw
+    YUV decode step that :func:`maybe_decode_distorted` performs before
+    handing a path to the vmaf CLI. When set to a positive value, the
+    decode is bounded with ffmpeg's ``-t`` so a 10-second probe against
+    a 634-second source produces ~896 MB of raw YUV instead of ~58 GB
+    (BBB e2e v2 Bug #v2-A). ``0.0`` (default) preserves the legacy
+    full-source decode for callers that have not been updated yet.
     """
 
     reference: Path
@@ -40,6 +48,7 @@ class ScoreRequest:
     model: str = "vmaf_v0.6.1"
     frame_skip_ref: int = 0
     frame_cnt: int = 0
+    duration_s: float = 0.0
 
 
 @dataclasses.dataclass(frozen=True)
@@ -209,12 +218,20 @@ def _decode_to_raw_yuv(
     pix_fmt: str,
     ffmpeg_bin: str = "ffmpeg",
     runner: object | None = None,
+    duration_s: float | None = None,
 ) -> int:
     """Decode a container (mp4/mkv/…) to a raw planar YUV file for the vmaf CLI.
 
     The vmaf CLI only accepts ``.yuv`` / ``.y4m`` inputs. When the distorted
     encode is a container file (e.g. ``.mp4``) the caller must decode it first.
     Returns the ffmpeg exit code — non-zero signals a decode failure.
+
+    ``duration_s``: optional ffmpeg ``-t`` clamp on the decoded output.
+    When ``None`` or ``<= 0`` the full source is decoded (legacy
+    behaviour). When set to a positive value the decoded YUV is bounded
+    to ``duration_s`` seconds, preventing a 10-second probe against a
+    634-second source from materialising tens of gigabytes of raw YUV
+    that the score step never reads (BBB e2e v2 Bug #v2-A, ADR-0498).
     """
     runner_fn = runner or subprocess.run
     cmd = [
@@ -229,8 +246,11 @@ def _decode_to_raw_yuv(
         "rawvideo",
         "-pix_fmt",
         pix_fmt,
-        str(dst),
     ]
+    if duration_s is not None and duration_s > 0.0:
+        # ``-t`` after ``-i`` clamps the output to the first N seconds.
+        cmd.extend(["-t", f"{float(duration_s)}"])
+    cmd.append(str(dst))
     completed = runner_fn(cmd, capture_output=True, text=True, check=False)  # type: ignore[operator]
     return int(getattr(completed, "returncode", 1))
 
@@ -273,12 +293,17 @@ def maybe_decode_distorted(
         return req, 0
     workdir.mkdir(parents=True, exist_ok=True)
     decoded = workdir / (req.distorted.stem + ".decoded.yuv")
+    # Honour ``req.duration_s`` when set so we don't materialise a 58 GB
+    # raw YUV when the caller only intends to score a 10-second window
+    # (BBB e2e v2 Bug #v2-A).
+    decode_duration = req.duration_s if req.duration_s > 0.0 else None
     rc = _decode_to_raw_yuv(
         req.distorted,
         decoded,
         pix_fmt=req.pix_fmt,
         ffmpeg_bin=ffmpeg_bin,
         runner=runner,
+        duration_s=decode_duration,
     )
     if rc != 0 or not decoded.exists():
         return req, rc if rc != 0 else 1
