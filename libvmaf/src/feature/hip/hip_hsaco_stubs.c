@@ -29,7 +29,23 @@
     __attribute__((weak)) const unsigned char name[1] = {0};                                       \
     __attribute__((weak)) const unsigned int name##_len = 0u;
 
+/* ADM kernels (original ADR-0536). */
 VMAF_HSACO_WEAK_STUB(adm_dwt2_hsaco)
 VMAF_HSACO_WEAK_STUB(adm_csf_hsaco)
 VMAF_HSACO_WEAK_STUB(adm_csf_den_hsaco)
 VMAF_HSACO_WEAK_STUB(adm_cm_hsaco)
+
+/* SSIMULACRA2 kernels — needed by ssimulacra2_hip.c (ADR-0533). */
+VMAF_HSACO_WEAK_STUB(ssimulacra2_blur_hsaco)
+VMAF_HSACO_WEAK_STUB(ssimulacra2_mul_hsaco)
+
+/* Other extractors that hipModuleLoadData but whose .hip kernels
+ * don't yet build standalone. Each is overridden by the real
+ * xxd-embedded blob when its kernel is added to hip_kernel_sources. */
+VMAF_HSACO_WEAK_STUB(float_vif_score_hsaco)
+VMAF_HSACO_WEAK_STUB(integer_ssim_score_hsaco)
+VMAF_HSACO_WEAK_STUB(integer_moment_score_hsaco)
+VMAF_HSACO_WEAK_STUB(ms_ssim_score_hsaco)
+VMAF_HSACO_WEAK_STUB(psnr_score_hsaco)
+VMAF_HSACO_WEAK_STUB(cambi_score_hsaco)
+VMAF_HSACO_WEAK_STUB(vif_statistics_hsaco)
