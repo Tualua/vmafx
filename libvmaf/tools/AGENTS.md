@@ -136,3 +136,23 @@ tools/
   chroma-alignment gates; if upstream Netflix adds similar checks to
   `validate_videos()` in a sync, merge rather than duplicate — keep the
   fork's helpers and call them from the merged body.
+- [ADR-0520](../../docs/adr/0520-cli-no-reference-wiring.md) —
+  `--no-reference` wiring.
+  **CLI gate invariant**: the reference-required gate at the end of
+  `cli_parse()` must remain conditional on `!settings->no_reference`;
+  the NR branch must require `tiny_model_path` and force
+  `no_prediction = true` so the built-in `vmaf_v0.6.1` SVM is not
+  auto-injected (the SVM consumes FR feature columns and would always
+  fail downstream). If `/sync-upstream` reintroduces an unconditional
+  `if (!settings->path_ref)` block, restore the `no_reference` guard.
+  **Frame-loop invariant**: in NR mode `vmaf.c::main` opens the
+  distorted source twice (two `video_input` handles) so
+  `vmaf_read_pictures` receives a non-null picture pair; this
+  satisfies the public-API contract without exposing a new entry
+  point. Do NOT collapse the two opens into a single handle — the
+  per-frame `vmaf_picture_unref` cleanup walks both slots
+  independently and a single-slot reuse would cause a use-after-free.
+  The rank-4 DNN dispatch in `libvmaf.c::vmaf_ctx_dnn_run_frame_nchw`
+  reads picture data exclusively from the `ref` argument and is the
+  *only* downstream consumer that legitimately observes that slot in
+  NR mode.

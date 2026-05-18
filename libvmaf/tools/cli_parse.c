@@ -883,8 +883,21 @@ void cli_parse(const int argc, char *const *const argv, CLISettings *const setti
         }
     }
 
-    if (!settings->path_ref)
+    /* ADR-0520: `--no-reference` opts out of the reference-required gate.
+     * The only scorer that can produce a value without a reference is a
+     * no-reference tiny ONNX model, so a tiny-model path is mandatory in
+     * NR mode. The classic SVM models all consume FR feature columns
+     * (vif/adm/motion), so the built-in default is also suppressed below
+     * and `--no_prediction` is forced on. */
+    if (settings->no_reference) {
+        if (!settings->tiny_model_path) {
+            usage(argv[0], "--no-reference requires --tiny-model; no classic NR scorer exists");
+        }
+        /* Suppress the built-in vmaf_v0.6.1 default; the SVM is FR-only. */
+        settings->no_prediction = true;
+    } else if (!settings->path_ref) {
         usage(argv[0], "Reference .y4m or .yuv (-r/--reference) is required");
+    }
     if (!settings->path_dist)
         usage(argv[0], "Distorted .y4m or .yuv (-d/--distorted) is required");
     if (settings->use_yuv &&

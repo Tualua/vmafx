@@ -368,3 +368,4 @@
 0513-per-shot-scene-threshold-and-1-shot-chart
 0514-dev-container-full-backend-exposure
 0515-test-public-api-score-mingw64-temp-path
+0520-cli-no-reference-wiring

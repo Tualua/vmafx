@@ -415,7 +415,10 @@ static int open_input_videos(const CLISettings *c, FILE **file_ref, FILE **file_
         err = video_input_open(vid_ref, *file_ref);
     }
     if (err) {
-        (void)fprintf(stderr, "problem with reference file: %s\n", c->path_ref);
+        /* ADR-0520: --no-reference re-opens the distorted file as the
+         * "ref" slot; surface the actually-opened path on failure. */
+        const char *const opened_path = c->no_reference ? c->path_dist : c->path_ref;
+        (void)fprintf(stderr, "problem with reference file: %s\n", opened_path);
         return -1;
     }
     *vid_ref_open = true;
@@ -1035,9 +1038,21 @@ int main(int argc, char *argv[])
         (void)fprintf(stderr, "VMAF version %s\n", vmaf_version());
     }
 
-    file_ref = fopen(c.path_ref, "rb");
+    /* ADR-0520: --no-reference mode opens the distorted file twice and
+     * threads both handles through the existing ref+dist code paths.
+     * `vmaf_read_pictures` enforces a non-null picture pair (the public
+     * API contract: either both NULL = flush, or both non-NULL = score),
+     * so we satisfy it with two independent decoded copies of the same
+     * source. The NR tiny-model dispatch in `vmaf_ctx_dnn_run_frame_nchw`
+     * reads picture bytes exclusively from the `ref` slot, so the model
+     * sees the distorted frame as intended. No classic SVM features are
+     * registered in this mode (cli_parse.c forces `no_prediction = true`
+     * when `no_reference` is set), so the second copy is touched only by
+     * `vmaf_picture_unref` in the cleanup tail. */
+    const char *const ref_open_path = c.no_reference ? c.path_dist : c.path_ref;
+    file_ref = fopen(ref_open_path, "rb");
     if (!file_ref) {
-        (void)fprintf(stderr, "could not open file: %s\n", c.path_ref);
+        (void)fprintf(stderr, "could not open file: %s\n", ref_open_path);
         ret = -1;
         goto cleanup;
     }

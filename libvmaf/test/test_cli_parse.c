@@ -408,12 +408,80 @@ static char *run_backend_tests(void)
     return NULL;
 }
 
+/* ADR-0520: `--no-reference --tiny-model X --distorted Y` must reach
+ * the success path without a reference path. The parser sets
+ * `no_reference`, defers the reference-required gate, and force-enables
+ * `no_prediction` so the built-in SVM default (which would auto-load
+ * with `model_cnt == 0`) is not injected — the SVM consumes FR feature
+ * columns and would always fail downstream. The failure case (NR mode
+ * without `--tiny-model`) calls the `_Noreturn` `usage()` and so cannot
+ * be exercised in-process; the shell smoke at `libvmaf/test/dnn/test_cli.sh`
+ * §5a covers it. */
+static char *test_no_reference_with_tiny_model_passes_parse(void)
+{
+    char *argv[] = {"vmaf",         "--no-reference",
+                    "--tiny-model", "/tmp/m.onnx",
+                    "-d",           "/tmp/d.yuv",
+                    "-w",           "64",
+                    "-h",           "64",
+                    "-p",           "420",
+                    "-b",           "8"};
+    const int argc = sizeof(argv) / sizeof(argv[0]);
+    CLISettings settings;
+    optind = 1;
+    cli_parse(argc, argv, &settings);
+    mu_assert("ADR-0520: --no-reference must be recorded", settings.no_reference);
+    mu_assert("ADR-0520: --no-reference must force no_prediction so the "
+              "built-in vmaf_v0.6.1 SVM is not auto-injected",
+              settings.no_prediction);
+    mu_assert("ADR-0520: --no-reference must suppress the default-model "
+              "auto-add (model_cnt remains 0 with no -m flag)",
+              settings.model_cnt == 0);
+    mu_assert("ADR-0519: --tiny-model path must be captured", settings.tiny_model_path != NULL);
+    mu_assert("ADR-0520: --no-reference must allow path_ref to be NULL", settings.path_ref == NULL);
+    cli_free(&settings);
+    cli_free_dicts(&settings);
+    return NULL;
+}
+
+/* Underscore alias must take the same code path. */
+static char *test_no_reference_underscore_alias_parses(void)
+{
+    char *argv[] = {"vmaf",         "--no_reference",
+                    "--tiny_model", "/tmp/m.onnx",
+                    "-d",           "/tmp/d.yuv",
+                    "-w",           "64",
+                    "-h",           "64",
+                    "-p",           "420",
+                    "-b",           "8"};
+    const int argc = sizeof(argv) / sizeof(argv[0]);
+    CLISettings settings;
+    optind = 1;
+    cli_parse(argc, argv, &settings);
+    mu_assert("ADR-0520: --no_reference (underscore alias) must be recorded",
+              settings.no_reference);
+    mu_assert("ADR-0519: underscore alias must also force no_prediction", settings.no_prediction);
+    cli_free(&settings);
+    cli_free_dicts(&settings);
+    return NULL;
+}
+
+static char *run_no_reference_tests(void)
+{
+    mu_run_test(test_no_reference_with_tiny_model_passes_parse);
+    mu_run_test(test_no_reference_underscore_alias_parses);
+    return NULL;
+}
+
 char *run_tests()
 {
     char *result = run_aom_ctc_tests();
     if (result)
         return result;
     result = run_backend_tests();
+    if (result)
+        return result;
+    result = run_no_reference_tests();
     if (result)
         return result;
     return NULL;

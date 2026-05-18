@@ -71,7 +71,55 @@ for dev in openvino-npu openvino-cpu openvino-gpu; do
   fi
 done
 
-# 5. Feature-vector + external-data ONNX models load successfully
+# 5a. --no-reference without --tiny-model is rejected with the specific
+# diagnostic from ADR-0519. Before that ADR the flag was a documented
+# no-op: the parser set CLISettings::no_reference but the gate downstream
+# always required a reference path. Asserts both the new error message
+# AND the absence of the legacy "Reference .y4m or .yuv (-r/--reference)
+# is required" message that would surface if the gate were still
+# unconditional.
+nr_noref_out="$("$VMAF_BIN" --no-reference --distorted /dev/null \
+  --width 64 --height 64 --pixel_format 420 --bitdepth 8 2>&1 || true)"
+if ! printf '%s\n' "$nr_noref_out" | grep -q -- '--no-reference requires --tiny-model'; then
+  printf '%s\n' "$nr_noref_out"
+  echo "ADR-0520: --no-reference without --tiny-model did not emit the expected diagnostic"
+  exit 1
+fi
+if printf '%s\n' "$nr_noref_out" | grep -q 'Reference .y4m or .yuv'; then
+  printf '%s\n' "$nr_noref_out"
+  echo "ADR-0520: --no-reference still trips the legacy reference-required gate"
+  exit 1
+fi
+
+# 5b. --no-reference --tiny-model X --distorted Y must clear the
+# reference-required gate. We use dists_sq.onnx (a 2-input FR placeholder
+# that load-fails) because the shipped NR-marked models all use a
+# symbolic batch dim that the loader rejects (a separate pre-existing
+# limitation, tracked outside ADR-0519). The point of this assertion is
+# the *absence* of the legacy reference-required diagnostic — once that
+# fires the CLI exits before model load, and the test would never see
+# the model-loader's error. A "problem loading tiny model" message is
+# the success indicator: it proves the CLI advanced past the gate.
+DIST_YUV="python/test/resource/yuv/src01_hrc01_576x324.yuv"
+if [[ -f "$DIST_YUV" && -f model/tiny/dists_sq.onnx ]]; then
+  nr_dist_out="$("$VMAF_BIN" --no-reference --tiny-model model/tiny/dists_sq.onnx \
+    --tiny-device cpu --distorted "$DIST_YUV" \
+    --width 576 --height 324 --pixel_format 420 --bitdepth 8 2>&1 || true)"
+  if printf '%s\n' "$nr_dist_out" | grep -q 'Reference .y4m or .yuv'; then
+    printf '%s\n' "$nr_dist_out"
+    echo "ADR-0520: --no-reference --tiny-model still trips the reference-required gate"
+    exit 1
+  fi
+  if ! printf '%s\n' "$nr_dist_out" | grep -qE 'problem loading tiny model|vmaf_tiny_model|frame'; then
+    printf '%s\n' "$nr_dist_out"
+    echo "ADR-0520: --no-reference --tiny-model did not reach the loader / frame loop"
+    exit 1
+  fi
+else
+  echo "ADR-0519: dist YUV or dists_sq model missing; skipping NR end-to-end smoke"
+fi
+
+# 6. Feature-vector + external-data ONNX models load successfully
 # (ADR-0518). Each of the shipped tiny FR-regressor checkpoints carries
 # either rank-2 inputs (feature vector), external-data weights, or both.
 # Before ADR-0517 the C-side loader rejected all three with -ENOTSUP

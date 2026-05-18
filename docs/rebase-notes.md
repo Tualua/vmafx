@@ -7,6 +7,43 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## fix/cli-no-reference-wire (ADR-0520)
+
+**Rebase-sensitive — `libvmaf/tools/cli_parse.c` + `libvmaf/tools/vmaf.c`
+are upstream-shared paths.** Changes:
+
+- `cli_parse.c`: the reference-required gate at the end of `cli_parse()`
+  is now conditional on `!settings->no_reference`; the new branch
+  requires `tiny_model_path` and force-enables `no_prediction`. If
+  upstream Netflix reintroduces an unconditional
+  `if (!settings->path_ref)` (the original shape pre-PR), restore the
+  guard. The `no_reference` field has been in tree since the tiny-AI
+  surface landed, so the merge conflict is a literal hunk replace.
+- `vmaf.c`: in the `main()` body the `file_ref = fopen(c.path_ref, ...)`
+  call now opens `c.path_dist` when `c.no_reference` is true. If an
+  upstream sync collapses the open into a helper, propagate the
+  conditional. `open_input_videos` also gained a `no_reference`-aware
+  error message (uses `c->path_dist` when ref is being faked).
+- `libvmaf/tools/AGENTS.md`: new ADR-0519 entry under "Governing ADRs"
+  documents the CLI gate invariant + frame-loop invariant. Keep the
+  entry through future merges.
+
+`libvmaf/src/libvmaf.c` is **not** touched; the public API
+(`vmaf_read_pictures`, `vmaf_use_tiny_model`) is unchanged. The
+rank-4 DNN dispatch in `vmaf_ctx_dnn_run_frame_nchw` is upstream-
+internal and consumes `ref` argument bytes without caring about the
+slot semantics — the CLI's open-twice strategy works precisely
+because that dispatch is slot-agnostic. If an upstream refactor
+changes the dispatch to consult both ref and dist (e.g. for FR-only
+dual-input models), the fork-side wiring needs to either pass `dist`
+explicitly or expose a public `vmaf_read_pictures_nr` API.
+
+ffmpeg-patch stack: no impact. The fork's FFmpeg filter does not
+surface NR-mode wiring today.
+
+Netflix upstream does not ship `--no-reference`; the flag is a
+fork-local addition.
+
 ## fix/per-shot-scene-threshold-and-1-shot-chart (ADR-0513)
 
 **No rebase impact.** Changes confined to fork-local trees:

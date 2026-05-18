@@ -247,13 +247,29 @@ Underscore aliases (`--tiny_model`, `--tiny_device`, `--tiny_threads`, `--tiny_f
 `--no_reference`, `--dnn_ep`) are accepted for scripting symmetry with the underscore
 flags upstream uses.
 
-`--no-reference` requires a `--tiny-model` whose registry entry declares
-`"reference_required": false`. With no tiny model loaded the flag is
-rejected at parse time; with a reference-required tiny model the run
-fails at init with a diagnostic naming the model. In NR mode the
-classic VMAF score and any reference-needing per-feature outputs are
-omitted from the JSON / XML / CSV report — only the tiny-AI score and
-NR-only metrics are emitted.
+`--no-reference` puts the CLI into no-reference (NR) mode (ADR-0520):
+
+- `--reference` / `-r` is no longer required. The CLI opens the
+  distorted source twice (two `video_input` handles backed by the same
+  file) and the rank-4 tiny-model dispatch reads picture bytes from the
+  slot that would have held the reference, so the model sees the
+  distorted frame.
+- `--tiny-model` is now **mandatory** — no classic NR scorer exists in
+  the fork. Omitting it returns the diagnostic
+  `--no-reference requires --tiny-model; no classic NR scorer exists`.
+- The built-in `vmaf_v0.6.1` SVM is auto-suppressed (NR mode forces
+  `--no_prediction`); all classic SVM scorers consume FR feature
+  columns (`vif_*`, `adm2`, `motion2`) that cannot be computed without
+  a reference. To pin a tiny model on top of the SVM you need a
+  reference.
+- The tiny model must accept a rank-4 single-luma input
+  (`[1, 1, H, W]` with fully-resolved spatial dims matching your
+  distorted source). Rank-2 feature-vector tiny models (ADR-0518) load
+  but always score `0.0` in NR mode, because their input features are
+  derived from the reference.
+- The JSON / XML / CSV report contains only the tiny-AI feature column
+  the model wrote through; no `pooled_metrics` block exists when
+  `--no_prediction` is active.
 
 See [../ai/inference.md](../ai/inference.md) for the full tiny-AI CLI
 walkthrough and the per-model registry (`model/tiny/registry.json`,
