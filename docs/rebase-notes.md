@@ -7,6 +7,14 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## fix/hip-motion-extractor-register (ADR-0523)
+
+**No rebase impact.** The only changed file is
+`libvmaf/src/feature/feature_extractor.c`, which is a fork-local file
+(the HIP and Metal extractor blocks it contains have no upstream equivalent).
+Upstream Netflix/vmaf does not ship `integer_motion_hip` and the
+`#if HAVE_HIP` block does not exist in upstream. No conflict risk on sync.
+
 ## fix/cli-no-reference-wire (ADR-0520)
 
 **Rebase-sensitive — `libvmaf/tools/cli_parse.c` + `libvmaf/tools/vmaf.c`

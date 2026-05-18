@@ -81,6 +81,11 @@ hip_sources += files(
     '../feature/hip/float_moment_hip.c',
     '../feature/hip/float_ansnr_hip.c',
     '../feature/hip/integer_motion_v2_hip.c',
+    # integer_motion_hip: HIP port of the integer motion extractor (ADR-0523).
+    # Mirrors `feature/cuda/integer_motion_cuda.c` — TEMPORAL flag, per-frame
+    # SAD reduction, motion3 5-frame window. Emits motion_score, motion2_score,
+    # motion3_score. Registered under `#if HAVE_HIP` in feature_extractor.c.
+    '../feature/hip/integer_motion_hip.c',
     '../feature/hip/float_motion_hip.c',
     '../feature/hip/float_ssim_hip.c',
     # T7-10b first real kernel: float_psnr_hip (ADR-0254). Registered under

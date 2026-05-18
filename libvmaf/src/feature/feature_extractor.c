@@ -137,6 +137,11 @@ extern VmafFeatureExtractor vmaf_fex_float_moment_hip;
  * -ENOSYS until T7-10b. */
 extern VmafFeatureExtractor vmaf_fex_float_ansnr_hip;
 extern VmafFeatureExtractor vmaf_fex_integer_motion_v2_hip;
+/* HIP thirteenth consumer — ADR-0523. Integer motion HIP port; mirrors
+ * `vmaf_fex_integer_motion_cuda`. Emits VMAF_integer_feature_motion_score,
+ * _motion2_score, and _motion3_score. Scaffold posture: init() returns
+ * -ENOSYS until T7-10b promotes the kernel template to real HIP calls. */
+extern VmafFeatureExtractor vmaf_fex_integer_motion_hip;
 /* HIP seventh-consumer kernel — T7-10b follow-up / ADR-0273. Same
  * scaffold posture; mirrors the CUDA twin
  * `feature/cuda/float_motion_cuda.c` and pins the temporal-extractor
@@ -287,6 +292,13 @@ static VmafFeatureExtractor *feature_extractor_list[] = {
     /* T7-10b fifth + sixth consumers (ADR-0266 / ADR-0267): same
      * scaffold-posture registration as the first consumer. */
     &vmaf_fex_float_ansnr_hip, &vmaf_fex_integer_motion_v2_hip,
+    /* Thirteenth consumer (ADR-0523): `integer_motion_hip` mirrors
+     * `integer_motion_cuda.c` — TEMPORAL flag, per-frame SAD reduction,
+     * motion3 5-frame window. Emits motion_score, motion2_score,
+     * motion3_score. Same scaffold posture as the first consumer:
+     * registration succeeds, init() returns -ENOSYS until T7-10b
+     * promotes the kernel-template helpers. */
+    &vmaf_fex_integer_motion_hip,
     /* Seventh consumer (ADR-0273): `float_motion_hip` mirrors
      * `float_motion_cuda.c`'s call graph (TEMPORAL flag,
      * raw-pixel cache + blurred-frame ping-pong, `flush()`
