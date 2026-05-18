@@ -95,3 +95,19 @@ int vmaf_use_tiny_model(VmafContext *ctx, const char *onnx_path, const VmafDnnCo
     return -ENOSYS;
 #endif
 }
+
+int vmaf_dnn_set_codec_context(VmafContext *ctx, const char *codec_name, const char *preset,
+                               int crf)
+{
+#if defined(VMAF_HAVE_DNN) && VMAF_HAVE_DNN
+    if (!ctx)
+        return -EINVAL;
+    return vmaf_ctx_dnn_set_codec_context(ctx, codec_name, preset, crf);
+#else
+    (void)ctx;
+    (void)codec_name;
+    (void)preset;
+    (void)crf;
+    return -ENOSYS;
+#endif
+}

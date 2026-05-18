@@ -36028,3 +36028,38 @@ backend; the entire `libvmaf/src/hip/` tree is fork-local
 (ADR-0212). No ffmpeg-patches file consumes
 `vmaf_hip_import_state` directly today — `vf_libvmaf` reaches
 HIP only through the CPU-path fallback for now.
+## 2026-05-18 — `--tiny-codec` / `--tiny-preset` / `--tiny-crf` populate codec block (ADR-0522, PR #TBD)
+
+Fork-local. Adds three CLI flags + one public C-API
+(`vmaf_dnn_set_codec_context`) that override the ADR-0518
+"unknown" codec pre-seed for codec-aware tiny models
+(`fr_regressor_v2`). Touched: `libvmaf/include/libvmaf/dnn.h`
+(public header — new export), `libvmaf/src/dnn/dnn_attach_api.c`
+(public symbol), `libvmaf/src/dnn/dnn_ctx.h` (bridge),
+`libvmaf/src/libvmaf.c` (bridge implementation —
+`vmaf_ctx_dnn_set_codec_context`), `libvmaf/src/dnn/model_loader.{c,h}`
+(sidecar `encoder_vocab[]` parsing + `vmaf_dnn_codec_block_fill`
+helper + `VmafModelSidecar` grows by `n_encoder_vocab` /
+`encoder_vocab[VMAF_DNN_MAX_ENCODER_VOCAB]` / `codec_aware`),
+`libvmaf/tools/cli_parse.{c,h}` (three new flags + three new
+`CLISettings` fields: `tiny_codec`, `tiny_preset`, `tiny_crf`),
+`libvmaf/tools/vmaf.c` (call site after
+`vmaf_use_tiny_model`), `libvmaf/test/dnn/test_model_loader.c`
+(8 new tests).
+
+**Rebase sensitivity (low — fork-local additive):**
+All touched files are fork-local. `VmafModelSidecar` and the
+`VmafContext::dnn` substruct grow by additive fields only — no
+existing offset shifts. `vmaf_dnn_set_codec_context()` is a new
+`VMAF_EXPORT` symbol on the public `libvmaf/dnn.h` surface; the
+ffmpeg-patches stack does NOT currently consume tiny-model
+inference (the `vf_libvmaf` filter wires through the classic
+metric collector, not the tiny-AI surface), so no patch update
+is required for this PR (per CLAUDE.md §12 r14: "Does NOT apply
+to … kernel implementations behind an existing public surface").
+The C-side `codec_block_preset_ordinal` table is a duplicate of
+`train_fr_regressor_v2.py::PRESET_ORDINAL`; the
+`libvmaf/src/dnn/AGENTS.md` invariant note flags both files as
+a co-edit pair. The sidecar `encoder_vocab` array is the
+single source of truth for the vocabulary; vocab bumps (e.g.
+ADR-0302 v3) only require a new sidecar JSON, no C recompile.

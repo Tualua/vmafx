@@ -43,6 +43,12 @@ typedef enum VmafModelQuantMode {
  *  name. */
 #define VMAF_DNN_MAX_FEATURE_NAMES 32u
 
+/** Maximum entries in the encoder vocabulary (ADR-0519). The v2 vocabulary
+ *  currently has 12 slots; 32 leaves room for hardware-encoder additions
+ *  and the planned v3 16-slot expansion (ADR-0302) without a struct
+ *  layout change. */
+#define VMAF_DNN_MAX_ENCODER_VOCAB 32u
+
 typedef struct VmafModelSidecar {
     VmafModelKind kind; /**< mirrors sidecar "kind" field */
     int opset;
@@ -76,7 +82,44 @@ typedef struct VmafModelSidecar {
     float feature_mean[VMAF_DNN_MAX_FEATURE_NAMES];
     float feature_std[VMAF_DNN_MAX_FEATURE_NAMES];
     bool has_feature_scaler; /**< true iff feature_mean / feature_std parsed */
+
+    /** Codec-aware models (ADR-0519). When the sidecar carries an
+     *  `encoder_vocab` JSON array, the loader populates these fields so
+     *  the CLI can validate user-supplied `--tiny-codec` names before
+     *  encoding the one-hot and reject unknown codecs with a clear error.
+     *
+     *  `n_encoder_vocab == 0` means the model is not codec-aware;
+     *  `--tiny-codec` / `--tiny-preset` / `--tiny-crf` are silently
+     *  ignored for such models. */
+    size_t n_encoder_vocab;
+    char *encoder_vocab[VMAF_DNN_MAX_ENCODER_VOCAB]; /**< owned */
+    bool codec_aware; /**< true iff encoder_vocab was present in the sidecar */
 } VmafModelSidecar;
+
+/**
+ * Fill the codec one-hot block @p buf (length @p buf_len) from the user-
+ * supplied codec name, preset, and CRF — matching the encoding the
+ * fr_regressor_v2 trainer uses (ADR-0522 / train_fr_regressor_v2.py).
+ *
+ * Layout (see sidecar field ``codec_block_layout``):
+ *   slots 0 .. n_vocab-1 : encoder one-hot (exactly one slot set to 1.0)
+ *   slot  n_vocab        : preset_norm     = ordinal / 9.0
+ *   slot  n_vocab + 1    : crf_norm        = crf / 63.0
+ *
+ * @p vocab and @p n_vocab must match the sidecar's ``encoder_vocab`` order.
+ * When @p codec_name is NULL or empty the "unknown" bucket (last entry in
+ * the vocab) is used and the function returns 0. When @p codec_name is
+ * non-NULL but does not appear in @p vocab the "unknown" bucket is still
+ * written and the function returns -ENOENT so callers can hard-fail on
+ * typos. @p preset may be NULL (defaults to ordinal 5 = "medium").
+ *
+ * @p crf is clamped to [0, 63] before normalisation.
+ *
+ * Returns 0 on success, -ENOENT on unknown @p codec_name, -EINVAL on null
+ * pointers or @p buf_len != n_vocab + 2.
+ */
+int vmaf_dnn_codec_block_fill(float *buf, size_t buf_len, const char *const *vocab, size_t n_vocab,
+                              const char *codec_name, const char *preset, int crf);
 
 /** Byte-identical magic check. Returns VMAF_MODEL_KIND_SVM for libsvm json/pkl,
  *  DNN_FR/DNN_NR for ONNX (kind refined from sidecar), or -1 on unknown. */

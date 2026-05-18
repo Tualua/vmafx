@@ -780,6 +780,37 @@ int vmaf_ctx_dnn_has_session(const VmafContext *ctx)
     return (ctx && ctx->dnn.sess) ? 1 : 0;
 }
 
+/* ADR-0519: bridge for vmaf_dnn_set_codec_context. The public symbol
+ * lives in dnn_attach_api.c and forwards here so VmafContext stays
+ * opaque to the DNN module. */
+int vmaf_ctx_dnn_set_codec_context(VmafContext *ctx, const char *codec_name, const char *preset,
+                                   int crf)
+{
+    if (!ctx)
+        return -EINVAL;
+    if (!ctx->dnn.sess)
+        return -EINVAL;
+    /* Codec block only exists for feature-vector models with a second
+     * input. Image-rank or single-input feature-vector models cannot
+     * accept a codec context. */
+    if (ctx->dnn.in_rank != 2u || ctx->dnn.extra_in_buf == NULL || ctx->dnn.extra_in_width == 0u) {
+        return -ENOTSUP;
+    }
+    if (!ctx->dnn.has_sidecar || !ctx->dnn.meta.codec_aware ||
+        ctx->dnn.meta.n_encoder_vocab == 0u) {
+        return -ENOTSUP;
+    }
+    /* Layout must be [one-hot(n_vocab), preset_norm, crf_norm]. The
+     * loader already validated this at attach time, but check again so
+     * a future loader bug surfaces here rather than as a memory error. */
+    if (ctx->dnn.extra_in_width != ctx->dnn.meta.n_encoder_vocab + 2u) {
+        return -ENOTSUP;
+    }
+    return vmaf_dnn_codec_block_fill(ctx->dnn.extra_in_buf, ctx->dnn.extra_in_width,
+                                     (const char *const *)ctx->dnn.meta.encoder_vocab,
+                                     ctx->dnn.meta.n_encoder_vocab, codec_name, preset, crf);
+}
+
 /* Helper: rank-4 NCHW path. Validates static-image shape, allocates the
  * luma scratch buffer, and writes the per-frame inference state into
  * ctx->dnn. Returns 0 on success or a negative errno. */

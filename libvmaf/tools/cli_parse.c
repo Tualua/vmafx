@@ -68,6 +68,11 @@ enum {
     ARG_TINY_THREADS,
     ARG_TINY_FP16,
     ARG_TINY_MODEL_VERIFY,
+    /* ADR-0519 — codec context for codec-aware tiny models
+     * (e.g. fr_regressor_v2). All three default unset. */
+    ARG_TINY_CODEC,
+    ARG_TINY_PRESET,
+    ARG_TINY_CRF,
     ARG_NO_REFERENCE,
     ARG_DNN_EP,
 };
@@ -153,6 +158,14 @@ static const struct option long_opts[] = {
     {"tiny_fp16", 0, NULL, ARG_TINY_FP16},
     {"tiny-model-verify", 0, NULL, ARG_TINY_MODEL_VERIFY},
     {"tiny_model_verify", 0, NULL, ARG_TINY_MODEL_VERIFY},
+    /* ADR-0519 — codec context. Underscore aliases match the rest
+     * of the tiny-* family for scripting consistency. */
+    {"tiny-codec", 1, NULL, ARG_TINY_CODEC},
+    {"tiny_codec", 1, NULL, ARG_TINY_CODEC},
+    {"tiny-preset", 1, NULL, ARG_TINY_PRESET},
+    {"tiny_preset", 1, NULL, ARG_TINY_PRESET},
+    {"tiny-crf", 1, NULL, ARG_TINY_CRF},
+    {"tiny_crf", 1, NULL, ARG_TINY_CRF},
     {"no-reference", 0, NULL, ARG_NO_REFERENCE},
     {"no_reference", 0, NULL, ARG_NO_REFERENCE},
     /* --dnn-ep is the user-facing name for selecting the ONNX Runtime
@@ -246,6 +259,20 @@ static void usage(const char *const app, const char *const reason, ...)
         " --tiny-model-verify:          require Sigstore-bundle verification (cosign verify-blob)\n"
         "                               of the loaded tiny model before use; refuses to load\n"
         "                               on missing bundle, missing cosign, or non-zero exit\n"
+        " --tiny-codec $name:           encoder name for codec-aware tiny models\n"
+        "                               (e.g. fr_regressor_v2). Must match the model's\n"
+        "                               sidecar encoder_vocab (libx264|libx265|libsvtav1|\n"
+        "                               libvvenc|libvpx-vp9|h264_nvenc|hevc_nvenc|\n"
+        "                               av1_nvenc|h264_qsv|hevc_qsv|av1_qsv|unknown).\n"
+        "                               Common ffprobe aliases (h264|hevc|av1|vp9|vvc)\n"
+        "                               are accepted. Unknown names are rejected\n"
+        "                               at attach time. Default: \"unknown\"\n"
+        " --tiny-preset $string:        encoder preset string (medium|slow|p4|5|...);\n"
+        "                               interpretation is encoder-specific and mirrors\n"
+        "                               train_fr_regressor_v2.py::PRESET_ORDINAL.\n"
+        "                               Default: ordinal 5 (medium-equivalent)\n"
+        " --tiny-crf $unsigned:         CRF / QP integer used during encoding; clamped\n"
+        "                               to [0, 63] and normalised by 63. Default: 0\n"
         " --no-reference:               no-reference mode; valid only with an NR tiny model\n"
         " --quiet/-q:                  disable FPS meter when run in a TTY\n"
         " --no_prediction/-n:          no prediction, extract features only\n"
@@ -638,6 +665,7 @@ void cli_parse(const int argc, char *const *const argv, CLISettings *const setti
     settings->precision_n = -1;
     settings->precision_fmt = VMAF_DEFAULT_PRECISION_FMT;
     settings->tiny_device = "auto";
+    settings->tiny_crf = -1; /* ADR-0522: -1 = unset; 0..63 user-supplied */
     int o;
 
     while ((o = getopt_long(argc, argv, short_opts, long_opts, NULL)) >= 0) {
@@ -797,6 +825,21 @@ void cli_parse(const int argc, char *const *const argv, CLISettings *const setti
         case ARG_TINY_MODEL_VERIFY:
             settings->tiny_model_verify = true;
             break;
+        case ARG_TINY_CODEC:
+            settings->tiny_codec = optarg;
+            break;
+        case ARG_TINY_PRESET:
+            settings->tiny_preset = optarg;
+            break;
+        case ARG_TINY_CRF: {
+            /* parse_unsigned exits on overflow / negative; we then
+             * clamp at use-time to [0, 63] per ADR-0519. Keep the
+             * accepted range generous so a stray CRF=51 from x265
+             * is fine without an explicit upper cap here. */
+            unsigned long crf = parse_unsigned(optarg, ARG_TINY_CRF, argv[0]);
+            settings->tiny_crf = (int)(crf > 63u ? 63u : crf);
+            break;
+        }
         case ARG_NO_REFERENCE:
             settings->no_reference = true;
             break;

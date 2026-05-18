@@ -223,6 +223,36 @@ Runtime directly.
   must accept the new value. End-to-end NPU silicon validation is
   deferred to a contributor with Meteor / Lunar / Arrow Lake hardware.
 
+## Invariant — `PRESET_ORDINAL` mirrors Python trainer (ADR-0519)
+
+`model_loader.c::codec_block_preset_ordinal()` is a verbatim port of
+`ai/scripts/train_fr_regressor_v2.py::PRESET_ORDINAL` (lines
+169..234). When the trainer adds an encoder (e.g. AMD AMF in the
+ADR-0302 v3 retrain) or changes a preset ordinal, the C-side table
+must update in the same PR — otherwise the codec block populated by
+`--tiny-codec` will diverge from what the model was trained against.
+
+The `PRESET_MAX_ORDINAL = 9.0` and `CRF_MAX = 63.0` constants are
+shared invariants between the two files; they appear inline in the C
+helper rather than as named constants so a `grep '/ 9.0f'` /
+`'/ 63.0f'` finds them.
+
+The encoder vocabulary itself comes from the sidecar's
+`encoder_vocab` array (loaded into `VmafModelSidecar.encoder_vocab[]`),
+not from a duplicated C-side constant, so vocab bumps only require a
+new sidecar JSON — no C recompile.
+
+## Invariant — codec block layout (ADR-0522)
+
+The second input of `fr_regressor_v2` is exactly
+`[encoder_onehot(N_VOCAB), preset_norm, crf_norm]`. The runtime
+guards check `extra_in_width == n_encoder_vocab + 2u` at attach time
+*and* in the `vmaf_ctx_dnn_set_codec_context` bridge; both checks
+must agree. If a future codec-aware model uses a different layout
+(e.g. multi-scale codec mixing), bump the sidecar
+`codec_block_layout` array and add a dispatch branch — do NOT silently
+extend `vmaf_dnn_codec_block_fill` to a different layout.
+
 ## Testing
 
 ```bash

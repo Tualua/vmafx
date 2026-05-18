@@ -797,7 +797,175 @@ static char *test_sidecar_feature_vector_no_scaler(void)
     (void)remove(tmpl);
     return NULL;
 }
+
+/* ADR-0519: sidecar carrying an encoder_vocab array populates
+ * VmafModelSidecar.encoder_vocab / n_encoder_vocab and flips
+ * codec_aware. Models without it stay codec_aware == false. */
+static char *test_sidecar_encoder_vocab_v2(void)
+{
+    char tmpl[] = "/tmp/vmaf-dnn-vocab-XXXXXX";
+    int fd = mkstemp(tmpl);
+    mu_assert("mkstemp failed", fd >= 0);
+    close(fd);
+    char onnx[1024];
+    char sidecar[1024];
+    (void)snprintf(onnx, sizeof onnx, "%s.onnx", tmpl);
+    (void)snprintf(sidecar, sizeof sidecar, "%s.json", tmpl);
+    FILE *f = fopen_w_600(onnx);
+    if (f)
+        (void)fclose(f);
+    FILE *s = fopen_w_600(sidecar);
+    mu_assert("fopen sidecar failed", s != NULL);
+    (void)fprintf(s, "{\n"
+                     "  \"kind\": \"fr\",\n"
+                     "  \"encoder_vocab\": [\"libx264\", \"libx265\", \"libsvtav1\", "
+                     "\"libvvenc\", \"libvpx-vp9\", \"h264_nvenc\", \"hevc_nvenc\", "
+                     "\"av1_nvenc\", \"h264_qsv\", \"hevc_qsv\", \"av1_qsv\", \"unknown\"],\n"
+                     "  \"encoder_vocab_version\": 2\n"
+                     "}\n");
+    (void)fclose(s);
+
+    VmafModelSidecar meta;
+    int err = vmaf_dnn_sidecar_load(onnx, &meta);
+    mu_assert("sidecar_load codec-aware failed", err == 0);
+    mu_assert("codec_aware true", meta.codec_aware);
+    mu_assert("n_encoder_vocab == 12", meta.n_encoder_vocab == 12u);
+    mu_assert("encoder_vocab[0] == libx264",
+              meta.encoder_vocab[0] && strcmp(meta.encoder_vocab[0], "libx264") == 0);
+    mu_assert("encoder_vocab[11] == unknown",
+              meta.encoder_vocab[11] && strcmp(meta.encoder_vocab[11], "unknown") == 0);
+    vmaf_dnn_sidecar_free(&meta);
+    (void)remove(sidecar);
+    (void)remove(onnx);
+    (void)remove(tmpl);
+    return NULL;
+}
+
+/* ADR-0519: sidecar without encoder_vocab keeps codec_aware false
+ * (existing non-v2 models — fr_regressor_v1, vmaf_tiny_v4, dists_sq). */
+static char *test_sidecar_no_encoder_vocab(void)
+{
+    char tmpl[] = "/tmp/vmaf-dnn-novocab-XXXXXX";
+    int fd = mkstemp(tmpl);
+    mu_assert("mkstemp failed", fd >= 0);
+    close(fd);
+    char onnx[1024];
+    char sidecar[1024];
+    (void)snprintf(onnx, sizeof onnx, "%s.onnx", tmpl);
+    (void)snprintf(sidecar, sizeof sidecar, "%s.json", tmpl);
+    FILE *f = fopen_w_600(onnx);
+    if (f)
+        (void)fclose(f);
+    FILE *s = fopen_w_600(sidecar);
+    mu_assert("fopen sidecar failed", s != NULL);
+    (void)fprintf(s, "{\n"
+                     "  \"kind\": \"fr\",\n"
+                     "  \"feature_order\": [\"adm2\"]\n"
+                     "}\n");
+    (void)fclose(s);
+
+    VmafModelSidecar meta;
+    int err = vmaf_dnn_sidecar_load(onnx, &meta);
+    mu_assert("sidecar_load no-vocab failed", err == 0);
+    mu_assert("codec_aware false", meta.codec_aware == false);
+    mu_assert("n_encoder_vocab == 0", meta.n_encoder_vocab == 0u);
+    vmaf_dnn_sidecar_free(&meta);
+    (void)remove(sidecar);
+    (void)remove(onnx);
+    (void)remove(tmpl);
+    return NULL;
+}
 #endif /* !_WIN32 */
+
+/* ADR-0519: vmaf_dnn_codec_block_fill — known codec produces the right
+ * one-hot + preset_norm + crf_norm. */
+static char *test_codec_block_fill_libx264_medium_28(void)
+{
+    static const char *VOCAB[] = {"libx264",    "libx265",    "libsvtav1",  "libvvenc",
+                                  "libvpx-vp9", "h264_nvenc", "hevc_nvenc", "av1_nvenc",
+                                  "h264_qsv",   "hevc_qsv",   "av1_qsv",    "unknown"};
+    const size_t n_vocab = 12u;
+    float buf[14] = {0};
+    int rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, n_vocab, "libx264", "medium", 28);
+    mu_assert("rc == 0 for known codec", rc == 0);
+    /* one-hot: index 0 (libx264) set, all others zero */
+    mu_assert("buf[0] == 1.0 (libx264)", buf[0] > 0.999f && buf[0] < 1.001f);
+    for (size_t i = 1; i < n_vocab; ++i) {
+        mu_assert("non-selected encoder slots are zero", buf[i] == 0.0f);
+    }
+    /* preset_norm: 5/9 = 0.5555... */
+    mu_assert("preset_norm ~ 5/9", buf[n_vocab] > 0.555f && buf[n_vocab] < 0.556f);
+    /* crf_norm: 28/63 = 0.444... */
+    mu_assert("crf_norm ~ 28/63", buf[n_vocab + 1u] > 0.444f && buf[n_vocab + 1u] < 0.445f);
+    return NULL;
+}
+
+/* ADR-0519: vmaf_dnn_codec_block_fill — unknown codec name returns
+ * -ENOENT but still writes the "unknown" bucket so the model can
+ * still produce a finite score if the caller decides to ignore. */
+static char *test_codec_block_fill_unknown_returns_enoent(void)
+{
+    static const char *VOCAB[] = {"libx264", "libx265", "unknown"};
+    float buf[5] = {0};
+    int rc = vmaf_dnn_codec_block_fill(buf, 5u, VOCAB, 3u, "MY_UNKNOWN_ENC", "medium", 28);
+    mu_assert("rc == -ENOENT for unknown codec", rc == -ENOENT);
+    mu_assert("buf[2] == 1.0 (unknown bucket)", buf[2] > 0.999f && buf[2] < 1.001f);
+    mu_assert("buf[0] == 0", buf[0] == 0.0f);
+    mu_assert("buf[1] == 0", buf[1] == 0.0f);
+    return NULL;
+}
+
+/* ADR-0519: vmaf_dnn_codec_block_fill — NULL codec name selects
+ * "unknown" but returns 0 (legitimate "I don't know the codec" tag,
+ * not a typo). */
+static char *test_codec_block_fill_null_codec_is_ok(void)
+{
+    static const char *VOCAB[] = {"libx264", "unknown"};
+    float buf[4] = {0};
+    int rc = vmaf_dnn_codec_block_fill(buf, 4u, VOCAB, 2u, NULL, NULL, 0);
+    mu_assert("rc == 0 for NULL codec", rc == 0);
+    mu_assert("unknown bucket set", buf[1] > 0.999f && buf[1] < 1.001f);
+    return NULL;
+}
+
+/* ADR-0519: vmaf_dnn_codec_block_fill — ffprobe alias "h264" is
+ * remapped to libx264 (not bucketed to unknown). */
+static char *test_codec_block_fill_h264_alias(void)
+{
+    static const char *VOCAB[] = {"libx264", "libx265", "unknown"};
+    float buf[5] = {0};
+    int rc = vmaf_dnn_codec_block_fill(buf, 5u, VOCAB, 3u, "h264", "medium", 0);
+    mu_assert("rc == 0 for h264 alias", rc == 0);
+    mu_assert("buf[0] == 1.0 (libx264 via alias)", buf[0] > 0.999f && buf[0] < 1.001f);
+    return NULL;
+}
+
+/* ADR-0519: vmaf_dnn_codec_block_fill — CRF clamped to [0, 63]. */
+static char *test_codec_block_fill_crf_clamp(void)
+{
+    static const char *VOCAB[] = {"libx264", "unknown"};
+    float buf[4] = {0};
+    /* CRF 100 → clamped to 63 → crf_norm == 1.0 */
+    int rc = vmaf_dnn_codec_block_fill(buf, 4u, VOCAB, 2u, "libx264", "medium", 100);
+    mu_assert("rc == 0", rc == 0);
+    mu_assert("crf_norm clamped to 1.0", buf[3] > 0.999f && buf[3] < 1.001f);
+    /* CRF -5 → clamped to 0 → crf_norm == 0.0 */
+    rc = vmaf_dnn_codec_block_fill(buf, 4u, VOCAB, 2u, "libx264", "medium", -5);
+    mu_assert("rc == 0 (negative crf)", rc == 0);
+    mu_assert("crf_norm clamped to 0.0", buf[3] == 0.0f);
+    return NULL;
+}
+
+/* ADR-0519: vmaf_dnn_codec_block_fill — wrong buf_len returns -EINVAL. */
+static char *test_codec_block_fill_bad_len(void)
+{
+    static const char *VOCAB[] = {"libx264", "unknown"};
+    float buf[5] = {0};
+    /* expected len = 2 + 2 = 4; pass 5 */
+    int rc = vmaf_dnn_codec_block_fill(buf, 5u, VOCAB, 2u, "libx264", "medium", 28);
+    mu_assert("rc == -EINVAL for wrong buf_len", rc == -EINVAL);
+    return NULL;
+}
 
 char *run_tests(void)
 {
@@ -834,6 +1002,14 @@ char *run_tests(void)
     mu_run_test(test_sidecar_feature_vector_canonical6);
     mu_run_test(test_sidecar_feature_vector_vmaf_tiny_field_names);
     mu_run_test(test_sidecar_feature_vector_no_scaler);
+    mu_run_test(test_sidecar_encoder_vocab_v2);
+    mu_run_test(test_sidecar_no_encoder_vocab);
 #endif
+    mu_run_test(test_codec_block_fill_libx264_medium_28);
+    mu_run_test(test_codec_block_fill_unknown_returns_enoent);
+    mu_run_test(test_codec_block_fill_null_codec_is_ok);
+    mu_run_test(test_codec_block_fill_h264_alias);
+    mu_run_test(test_codec_block_fill_crf_clamp);
+    mu_run_test(test_codec_block_fill_bad_len);
     return NULL;
 }

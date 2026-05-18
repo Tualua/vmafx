@@ -49,6 +49,15 @@ int vmaf_ctx_dnn_attach(VmafContext *ctx, VmafOrtSession *sess, const VmafModelS
 /** Returns 1 if a tiny model is attached to @p ctx, else 0. */
 int vmaf_ctx_dnn_has_session(const VmafContext *ctx);
 
+/**
+ * Populate the codec one-hot block of an attached codec-aware tiny model
+ * (ADR-0519). Bridge for the public `vmaf_dnn_set_codec_context` API
+ * declared in `libvmaf/dnn.h`; see that header for the parameter and
+ * return-value contract.
+ */
+int vmaf_ctx_dnn_set_codec_context(VmafContext *ctx, const char *codec_name, const char *preset,
+                                   int crf);
+
 #ifdef __cplusplus
 }
 #endif

@@ -98,6 +98,50 @@ VMAF_EXPORT int vmaf_use_tiny_model(VmafContext *ctx, const char *onnx_path,
                                     const VmafDnnConfig *cfg);
 
 /**
+ * Populate the codec one-hot block of an attached codec-aware tiny model
+ * (ADR-0519). Must be called **after** vmaf_use_tiny_model() and
+ * **before** the first vmaf_read_pictures() call.
+ *
+ * For codec-aware models such as `fr_regressor_v2`, the loader pre-seeds
+ * the codec block to the "unknown" encoder baseline at attach time
+ * (ADR-0518). This function overrides that seed with the actual encoding
+ * parameters so the model receives the correct conditioning vector.
+ *
+ * The codec block layout is
+ * `[encoder_onehot(N_VOCAB), preset_norm, crf_norm]`. Encoder names are
+ * validated against the sidecar's `encoder_vocab`; unknown names return
+ * `-ENOENT` (the "unknown" bucket is still written so callers can choose
+ * to continue). Preset strings are looked up in a per-encoder ordinal
+ * table that mirrors `ai/scripts/train_fr_regressor_v2.py::PRESET_ORDINAL`;
+ * unknown presets fall back to ordinal 5 ("medium"-equivalent). The CRF
+ * is clamped to [0, 63] before normalisation.
+ *
+ * Common ffprobe aliases (`h264`, `hevc`, `av1`, `vp9`, `vvc`) are
+ * accepted and remapped to their canonical encoder names so callers can
+ * pipe `ffprobe -show_entries stream=codec_name` output directly.
+ *
+ * @param ctx         live VmafContext with a tiny model attached via
+ *                    vmaf_use_tiny_model().
+ * @param codec_name  encoder name (e.g. "libx264", "libx265", "libsvtav1",
+ *                    "h264_nvenc"). NULL or "" maps to the "unknown"
+ *                    bucket and returns 0.
+ * @param preset      encoder preset string (e.g. "medium", "slow",
+ *                    "p4", "5"). NULL defaults to ordinal 5.
+ * @param crf         CRF / QP integer; clamped to [0, 63].
+ *
+ * @return  0          success (codec found and block written, or the
+ *                     caller asked for the "unknown" bucket).
+ * @return -ENOENT     @p codec_name is non-NULL but not in the model's
+ *                     `encoder_vocab`; the "unknown" bucket was used.
+ * @return -ENOSYS     libvmaf was built without DNN support.
+ * @return -EINVAL     @p ctx is NULL or no tiny model is attached.
+ * @return -ENOTSUP    the attached model has no codec block (rank-4
+ *                     image model or rank-2 single-input model).
+ */
+VMAF_EXPORT int vmaf_dnn_set_codec_context(VmafContext *ctx, const char *codec_name,
+                                           const char *preset, int crf);
+
+/**
  * Standalone DNN session for filter-style inference (learned pre-processing,
  * C3). Unlike vmaf_use_tiny_model() this path does NOT need a VmafContext —
  * intended for consumers that want luma-in / luma-out without scoring.

@@ -16,6 +16,7 @@
  *
  */
 
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -767,6 +768,33 @@ static int configure_tiny_model(VmafContext *vmaf, const CLISettings *c)
     if (err) {
         (void)fprintf(stderr, "problem loading tiny model %s: %d\n", c->tiny_model_path, err);
         return -1;
+    }
+
+    /* ADR-0519: populate the codec one-hot block for codec-aware
+     * models (e.g. fr_regressor_v2). Only fires when the user supplied
+     * at least one of --tiny-codec / --tiny-preset / --tiny-crf —
+     * otherwise the loader's pre-seeded "unknown" baseline from
+     * ADR-0518 stays in place so legacy invocations are byte-for-byte
+     * unchanged. */
+    if (c->tiny_codec || c->tiny_preset || c->tiny_crf >= 0) {
+        const int crf = c->tiny_crf >= 0 ? c->tiny_crf : 0;
+        const int cerr = vmaf_dnn_set_codec_context(vmaf, c->tiny_codec, c->tiny_preset, crf);
+        if (cerr == -ENOENT) {
+            (void)fprintf(stderr,
+                          "--tiny-codec '%s' not found in model encoder_vocab; "
+                          "use one of the names listed by --help.\n",
+                          c->tiny_codec ? c->tiny_codec : "(null)");
+            return -1;
+        }
+        if (cerr == -ENOTSUP) {
+            (void)fprintf(stderr, "--tiny-codec / --tiny-preset / --tiny-crf require a "
+                                  "codec-aware tiny model (loaded model has no codec block).\n");
+            return -1;
+        }
+        if (cerr != 0) {
+            (void)fprintf(stderr, "vmaf_dnn_set_codec_context failed (errno %d)\n", -cerr);
+            return -1;
+        }
     }
 
     return 0;

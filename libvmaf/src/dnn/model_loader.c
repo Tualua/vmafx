@@ -438,8 +438,247 @@ int vmaf_dnn_sidecar_load(const char *onnx_path, VmafModelSidecar *out)
         out->n_features = 0u;
     }
 
+    /* ADR-0519: codec-aware models carry an encoder vocabulary in the
+     * sidecar so the CLI can validate --tiny-codec names and build the
+     * correct one-hot block. Missing = not codec-aware (non-fatal). */
+    out->n_encoder_vocab = 0u;
+    out->codec_aware = false;
+    size_t n_vocab = 0u;
+    int vrc = extract_string_array(buf, "encoder_vocab", out->encoder_vocab,
+                                   VMAF_DNN_MAX_ENCODER_VOCAB, &n_vocab);
+    if (vrc == 0 && n_vocab > 0u) {
+        out->n_encoder_vocab = n_vocab;
+        out->codec_aware = true;
+    } else if (vrc != -ENOENT && vrc != 0) {
+        /* Malformed array — wipe partial allocations to keep the
+         * sidecar consistent. */
+        for (size_t i = 0; i < n_vocab; ++i) {
+            free(out->encoder_vocab[i]);
+            out->encoder_vocab[i] = NULL;
+        }
+        out->n_encoder_vocab = 0u;
+    }
+
     free(buf);
     return 0;
+}
+
+/* ============================================================
+ * ADR-0522 — codec block helper
+ *
+ * The trainer (ai/scripts/train_fr_regressor_v2.py) pins the layout
+ * `[encoder_onehot(N_ENCODERS), preset_norm, crf_norm]` with
+ * `PRESET_MAX_ORDINAL = 9.0` and `CRF_MAX = 63.0`. The PRESET_ORDINAL
+ * table below mirrors lines 169..234 of that file. When the trainer
+ * changes either constant, update both sides — see the AGENTS.md
+ * note under libvmaf/src/dnn/.
+ * ============================================================ */
+
+/* Per-encoder preset table. Keys are lower-case; lookup returns the
+ * normalised value in [0, 1]. Falls back to ordinal 5 (medium) when
+ * either the encoder or the preset string is not known. */
+static float codec_block_preset_ordinal(const char *enc_lc, const char *preset_lc)
+{
+    static const float default_norm = 5.0f / 9.0f;
+    static const float max_ord = 9.0f;
+
+    if (!enc_lc || !preset_lc)
+        return default_norm;
+
+    /* libx264 / libx265 share the same preset vocabulary. */
+    if (strcmp(enc_lc, "libx264") == 0 || strcmp(enc_lc, "libx265") == 0) {
+        if (strcmp(preset_lc, "ultrafast") == 0)
+            return 0.0f / max_ord;
+        if (strcmp(preset_lc, "superfast") == 0)
+            return 1.0f / max_ord;
+        if (strcmp(preset_lc, "veryfast") == 0)
+            return 2.0f / max_ord;
+        if (strcmp(preset_lc, "faster") == 0)
+            return 3.0f / max_ord;
+        if (strcmp(preset_lc, "fast") == 0)
+            return 4.0f / max_ord;
+        if (strcmp(preset_lc, "medium") == 0)
+            return 5.0f / max_ord;
+        if (strcmp(preset_lc, "slow") == 0)
+            return 6.0f / max_ord;
+        if (strcmp(preset_lc, "slower") == 0)
+            return 7.0f / max_ord;
+        if (strcmp(preset_lc, "veryslow") == 0)
+            return 8.0f / max_ord;
+        if (strcmp(preset_lc, "placebo") == 0)
+            return 9.0f / max_ord;
+        return default_norm;
+    }
+    /* libsvtav1 uses numeric presets 0..13; trainer squashes to 0..9. */
+    if (strcmp(enc_lc, "libsvtav1") == 0) {
+        char *endp = NULL;
+        errno = 0;
+        const long v = strtol(preset_lc, &endp, 10);
+        if (endp != preset_lc && errno == 0 && v >= 0 && v <= 13) {
+            const long clamped = v < 9 ? v : 9;
+            return (float)clamped / max_ord;
+        }
+        return default_norm;
+    }
+    /* libvvenc */
+    if (strcmp(enc_lc, "libvvenc") == 0) {
+        if (strcmp(preset_lc, "faster") == 0)
+            return 1.0f / max_ord;
+        if (strcmp(preset_lc, "fast") == 0)
+            return 3.0f / max_ord;
+        if (strcmp(preset_lc, "medium") == 0)
+            return 5.0f / max_ord;
+        if (strcmp(preset_lc, "slow") == 0)
+            return 7.0f / max_ord;
+        if (strcmp(preset_lc, "slower") == 0)
+            return 8.0f / max_ord;
+        return default_norm;
+    }
+    /* libvpx-vp9 deadline strings */
+    if (strcmp(enc_lc, "libvpx-vp9") == 0) {
+        if (strcmp(preset_lc, "realtime") == 0)
+            return 0.0f / max_ord;
+        if (strcmp(preset_lc, "good") == 0)
+            return 5.0f / max_ord;
+        if (strcmp(preset_lc, "best") == 0)
+            return 9.0f / max_ord;
+        return default_norm;
+    }
+    /* NVENC p1..p7 */
+    if (strcmp(enc_lc, "h264_nvenc") == 0 || strcmp(enc_lc, "hevc_nvenc") == 0 ||
+        strcmp(enc_lc, "av1_nvenc") == 0) {
+        if (strcmp(preset_lc, "p1") == 0)
+            return 0.0f / max_ord;
+        if (strcmp(preset_lc, "p2") == 0)
+            return 2.0f / max_ord;
+        if (strcmp(preset_lc, "p3") == 0)
+            return 3.0f / max_ord;
+        if (strcmp(preset_lc, "p4") == 0)
+            return 5.0f / max_ord;
+        if (strcmp(preset_lc, "p5") == 0)
+            return 6.0f / max_ord;
+        if (strcmp(preset_lc, "p6") == 0)
+            return 7.0f / max_ord;
+        if (strcmp(preset_lc, "p7") == 0)
+            return 9.0f / max_ord;
+        return default_norm;
+    }
+    /* Intel QSV (h264_qsv / hevc_qsv / av1_qsv) */
+    if (strcmp(enc_lc, "h264_qsv") == 0 || strcmp(enc_lc, "hevc_qsv") == 0 ||
+        strcmp(enc_lc, "av1_qsv") == 0) {
+        if (strcmp(preset_lc, "veryfast") == 0)
+            return 2.0f / max_ord;
+        if (strcmp(preset_lc, "faster") == 0)
+            return 3.0f / max_ord;
+        if (strcmp(preset_lc, "fast") == 0)
+            return 4.0f / max_ord;
+        if (strcmp(preset_lc, "medium") == 0)
+            return 5.0f / max_ord;
+        if (strcmp(preset_lc, "slow") == 0)
+            return 6.0f / max_ord;
+        if (strcmp(preset_lc, "slower") == 0)
+            return 7.0f / max_ord;
+        if (strcmp(preset_lc, "veryslow") == 0)
+            return 8.0f / max_ord;
+        return default_norm;
+    }
+    return default_norm;
+}
+
+/* Lower-case @p n bytes of @p s in place. */
+static void str_to_lower(char *s, size_t n)
+{
+    for (size_t i = 0; i < n; ++i) {
+        s[i] = (char)tolower((unsigned char)s[i]);
+    }
+}
+
+/* Resolve common ffprobe codec aliases (h264 → libx264, hevc → libx265,
+ * av1 → libsvtav1, vp9 → libvpx-vp9, vvc → libvvenc) so the trainer
+ * `train_fr_regressor_v2.py::_encoder_index` aliases work from the CLI
+ * too. Returns @p name_lc when no alias matches. */
+static const char *resolve_codec_alias(const char *name_lc)
+{
+    if (strcmp(name_lc, "h264") == 0 || strcmp(name_lc, "avc") == 0)
+        return "libx264";
+    if (strcmp(name_lc, "hevc") == 0 || strcmp(name_lc, "h265") == 0)
+        return "libx265";
+    if (strcmp(name_lc, "av1") == 0)
+        return "libsvtav1";
+    if (strcmp(name_lc, "vp9") == 0)
+        return "libvpx-vp9";
+    if (strcmp(name_lc, "vvc") == 0 || strcmp(name_lc, "h266") == 0)
+        return "libvvenc";
+    return name_lc;
+}
+
+int vmaf_dnn_codec_block_fill(float *buf, size_t buf_len, const char *const *vocab, size_t n_vocab,
+                              const char *codec_name, const char *preset, int crf)
+{
+    if (!buf || !vocab || n_vocab == 0u)
+        return -EINVAL;
+    /* Layout: [one-hot(n_vocab), preset_norm, crf_norm]. */
+    if (buf_len != n_vocab + 2u)
+        return -EINVAL;
+
+    /* Zero the whole block first so exactly one slot ends up set. */
+    for (size_t i = 0; i < buf_len; ++i) {
+        buf[i] = 0.0f;
+    }
+
+    /* Default to "unknown" — the trainer guarantees the last slot is
+     * the "unknown" bucket (see train_fr_regressor_v2.py
+     * `UNKNOWN_ENCODER_INDEX = ENCODER_VOCAB.index("unknown")` with
+     * "unknown" appended last). */
+    size_t codec_idx = n_vocab - 1u;
+    int found = 0;
+
+    char name_lc[64];
+    const char *codec_lc = NULL;
+
+    if (codec_name && codec_name[0] != '\0') {
+        size_t nlen = strlen(codec_name);
+        if (nlen < sizeof(name_lc)) {
+            memcpy(name_lc, codec_name, nlen + 1u);
+            str_to_lower(name_lc, nlen);
+            codec_lc = resolve_codec_alias(name_lc);
+
+            for (size_t i = 0; i < n_vocab; ++i) {
+                if (!vocab[i])
+                    continue;
+                if (strcmp(vocab[i], codec_lc) == 0) {
+                    codec_idx = i;
+                    found = 1;
+                    break;
+                }
+            }
+        }
+    } else {
+        /* NULL or empty codec name is a legitimate "unknown" tag. */
+        found = 1;
+    }
+
+    buf[codec_idx] = 1.0f;
+
+    /* preset_norm: encoder-specific ordinal table, normalised by 9.0. */
+    char preset_lc[64];
+    const char *preset_ptr = NULL;
+    if (preset && preset[0] != '\0') {
+        size_t plen = strlen(preset);
+        if (plen < sizeof(preset_lc)) {
+            memcpy(preset_lc, preset, plen + 1u);
+            str_to_lower(preset_lc, plen);
+            preset_ptr = preset_lc;
+        }
+    }
+    const char *enc_key = codec_lc ? codec_lc : "";
+    buf[n_vocab] = codec_block_preset_ordinal(enc_key, preset_ptr);
+
+    /* crf_norm: clamp to [0, 63] then divide. */
+    int crf_clamped = crf < 0 ? 0 : (crf > 63 ? 63 : crf);
+    buf[n_vocab + 1u] = (float)crf_clamped / 63.0f;
+
+    return found ? 0 : -ENOENT;
 }
 
 void vmaf_dnn_sidecar_free(VmafModelSidecar *s)
@@ -451,6 +690,9 @@ void vmaf_dnn_sidecar_free(VmafModelSidecar *s)
     free(s->output_name);
     for (size_t i = 0; i < s->n_features && i < VMAF_DNN_MAX_FEATURE_NAMES; ++i) {
         free(s->feature_names[i]);
+    }
+    for (size_t i = 0; i < s->n_encoder_vocab && i < VMAF_DNN_MAX_ENCODER_VOCAB; ++i) {
+        free(s->encoder_vocab[i]);
     }
     memset(s, 0, sizeof(*s));
 }

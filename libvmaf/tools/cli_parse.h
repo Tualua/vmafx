@@ -113,6 +113,15 @@ typedef struct {
      * missing bundle, cosign exec error, cosign exit non-zero). Off by
      * default for dev-friendliness; production deployments set it on. */
     bool tiny_model_verify;
+    /* ADR-0519 — codec context for codec-aware tiny models
+     * (e.g. fr_regressor_v2). All three default unset; when any is
+     * provided the CLI calls vmaf_dnn_set_codec_context after the
+     * model attaches. tiny_crf is -1 when unset (passed through as
+     * "use 0/63 = 0.0" to the model only if the user explicitly set
+     * a codec). */
+    const char *tiny_codec;
+    const char *tiny_preset;
+    int tiny_crf;
 } CLISettings;
 
 void cli_parse(const int argc, char *const *const argv, CLISettings *const settings);

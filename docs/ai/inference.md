@@ -94,7 +94,46 @@ New flags:
 | `--tiny-threads N` | `0` | CPU EP intra-op threads; 0 = ORT default. |
 | `--tiny-fp16` | off | Request fp16 I/O when the EP supports it. |
 | `--tiny-model-verify` | off | Require Sigstore-bundle verification (`cosign verify-blob`) before model load. Refuses to load on missing bundle, missing `cosign`, or non-zero exit. See [model-registry.md](model-registry.md) and [security.md](security.md). |
+| `--tiny-codec NAME` | `unknown` | Encoder name for codec-aware tiny models (e.g. `fr_regressor_v2`). Validated against the sidecar's `encoder_vocab`; unknown names hard-fail at attach time so typos are caught. Common ffprobe aliases (`h264`, `hevc`, `av1`, `vp9`, `vvc`) are accepted. See [ADR-0522](../adr/0522-tiny-codec-preset-crf-cli-flags.md). |
+| `--tiny-preset STR` | medium | Encoder preset (`medium` / `slow` / `p4` / `5` etc.); interpretation is encoder-specific and mirrors `ai/scripts/train_fr_regressor_v2.py::PRESET_ORDINAL`. Unknown presets fall back to ordinal 5. |
+| `--tiny-crf N` | `0` | CRF / QP integer used during encoding; clamped to `[0, 63]` and normalised by 63 to match the trainer. |
 | `--no-reference` | off | Skip reference loading; only valid with an NR tiny model. |
+
+### Codec-aware tiny models (`fr_regressor_v2`)
+
+`fr_regressor_v2.onnx` carries a second `codec` input of shape `[batch,
+N_VOCAB + 2]`. The first `N_VOCAB` slots are a one-hot over the
+sidecar's `encoder_vocab` (v2: 12 entries — `libx264`, `libx265`,
+`libsvtav1`, `libvvenc`, `libvpx-vp9`, `h264_nvenc`, `hevc_nvenc`,
+`av1_nvenc`, `h264_qsv`, `hevc_qsv`, `av1_qsv`, `unknown`); the last
+two are `preset_norm = preset_ordinal / 9.0` and `crf_norm = crf / 63.0`.
+
+Without `--tiny-codec` / `--tiny-preset` / `--tiny-crf` the loader
+pre-seeds the codec block to the `unknown` baseline (ADR-0518) and the
+model receives a constant conditioning vector — every call returns the
+same score regardless of the distorted YUV's encoder. Passing the
+flags populates the block from the user-supplied parameters via the
+new `vmaf_dnn_set_codec_context()` public API (ADR-0519):
+
+```bash
+vmaf --reference src.yuv --distorted dst.yuv \
+     --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+     --tiny-model model/tiny/fr_regressor_v2.onnx \
+     --tiny-codec libx264 --tiny-preset medium --tiny-crf 28 \
+     --json --output /tmp/scores.json
+```
+
+Unknown codec names exit non-zero before the first frame is read:
+
+```text
+$ vmaf … --tiny-codec UNKNOWN_ENC …
+--tiny-codec 'UNKNOWN_ENC' not found in model encoder_vocab;
+use one of the names listed by --help.
+```
+
+Non-codec-aware models (`fr_regressor_v1`, `vmaf_tiny_v4`, `dists_sq`)
+reject the flags with a `-ENOTSUP` message — `--tiny-codec` requires a
+model whose sidecar carries an `encoder_vocab` array.
 
 `--tiny-model` accepts an absolute or relative path. For production,
 set `VMAF_TINY_MODEL_DIR` to the trusted model directory and pass paths
