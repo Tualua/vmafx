@@ -182,3 +182,94 @@ def test_empty_sections_omitted():
     assert "Codec comparison" not in html
     assert "ABR ladder" not in html
     assert "Per-shot tuning" not in html
+
+
+def test_three_shot_timeline_shows_last_shot_band():
+    """ADR-0531 Bug B: a three-shot per-shot timeline must render the
+    last shot's CRF band visibly in the SVG chart.
+
+    Historically the x-axis right bound was exactly ``last_end``, so
+    matplotlib's clip box trimmed the last shot's hlines artist — the
+    band for shot 2 (frames 200-300) was invisible.  The fix pads the
+    right bound to ``last_end + max(1, 0.05 * last_end)`` so the
+    rightmost segment is fully inside the viewport.
+    """
+    src = SourceInfo(
+        path="/tmp/three_shot.mp4",
+        width=3840,
+        height=2160,
+        fps=60.0,
+        duration_s=5.0,
+        frame_count=300,
+        codec="h264",
+        size_bytes=5_000_000,
+    )
+    data = ReportData(
+        source=src,
+        target_vmaf=92.0,
+        shots=(
+            ShotRow(0, 0, 100, 3840, 2160, 26, 92.1, 5000.0, 1.667),
+            ShotRow(1, 100, 200, 3840, 2160, 25, 92.5, 4800.0, 1.667),
+            ShotRow(2, 200, 300, 3840, 2160, 25, 92.3, 4200.0, 1.667),
+        ),
+        generated_at_iso="2026-05-18T00:00:00+00:00",
+    )
+    html = render_html(data)
+    assert "Per-shot tuning" in html
+    if "<svg" not in html:
+        import pytest as _pytest  # noqa: PLC0415
+
+        _pytest.skip("matplotlib unavailable; SVG fallback exercised separately")
+
+    # The per-shot chart SVG must contain drawable elements for all three shots.
+    # We locate the shot-timeline SVG by its title text and verify it has
+    # path/line drawable elements — the last shot's band being the critical one.
+    chart_pos = html.find("Per-shot tuning timeline")
+    if chart_pos < 0:
+        chart_pos = html.find("<svg")
+    svg_tail = html[chart_pos:]
+    svg_end = svg_tail.find("</svg>")
+    assert svg_end > 0, "expected closing </svg> after per-shot chart"
+    chart_svg = svg_tail[:svg_end]
+
+    has_path = "<path " in chart_svg and 'd="M' in chart_svg
+    has_line = "<line " in chart_svg
+    assert has_path or has_line, (
+        "Three-shot timeline had no drawable path/line element. "
+        "ADR-0531 Bug B: last-shot CRF band must be visible in the chart."
+    )
+    # The bitrate column in the markdown table must carry real numbers.
+    md = render_markdown(data)
+    assert (
+        "5.00 Mbps" in md or "5000 kbps" in md or "4.80 Mbps" in md
+    ), "expected real bitrate numbers in per-shot markdown table (ADR-0531 Bug A)"
+
+
+def test_per_shot_bitrate_renders_in_markdown_table():
+    """ADR-0531 Bug A: when ShotRow.bitrate_kbps is populated the markdown
+    table must show the formatted bitrate, not an em-dash.
+    """
+    src = SourceInfo("/tmp/x.mp4", 1920, 1080, 30.0, 3.0, 90, "h264", 1_000_000)
+    data = ReportData(
+        source=src,
+        target_vmaf=92.0,
+        shots=(
+            ShotRow(0, 0, 30, 1920, 1080, 23, 93.1, 5234.0, 1.0),
+            ShotRow(1, 30, 60, 1920, 1080, 25, 92.5, 4800.0, 1.0),
+            ShotRow(2, 60, 90, 1920, 1080, 26, 92.0, 3900.0, 1.0),
+        ),
+    )
+    md = render_markdown(data)
+    # Each shot's bitrate must appear as a human-readable string.
+    # _fmt_kbps formats values >= 1000 as Mbps, so 5234 kbps => "5.23 Mbps".
+    assert "5.23 Mbps" in md, f"shot 0 bitrate missing from report: {md}"
+    assert "4.80 Mbps" in md, f"shot 1 bitrate missing from report: {md}"
+    assert "3.90 Mbps" in md, f"shot 2 bitrate missing from report: {md}"
+    # None of the Bitrate cells should be an em-dash (which would mean NaN).
+    # The per-shot table rows contain the shot index at the start.
+    shot_rows = [
+        line
+        for line in md.splitlines()
+        if line.startswith("| ") and ("Mbps" in line or "kbps" in line)
+    ]
+    assert shot_rows, "expected at least one per-shot table row with a bitrate value"

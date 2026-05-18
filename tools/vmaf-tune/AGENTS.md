@@ -642,6 +642,7 @@ corresponding phase.
   by ``test_per_shot.py`` and downstream merge / concat-listing code
   depends on the contiguity property.
 - **Segment-dir priority order is load-bearing (ADR-0532).** The CLI
+- **Segment-dir priority order is load-bearing (ADR-0530).** The CLI
   resolves the concat-listing directory in this exact order: (1)
   ``--segment-dir`` when set; (2) ``plan_out.parent / "segments"`` when
   ``--plan-out`` is set; (3) ``output.parent / "segments"`` otherwise.
@@ -984,3 +985,21 @@ scripts for those local corpora.
   libvmaf pick the live runtime at scoring time. The asymmetry is
   documented inline at the top of `_run_tune_per_shot`; do not "fix"
   it without updating that contract and the predicate tests.
+- **`_build_per_shot_bisect_predicate` returns a 2-tuple (ADR-0531).**
+  The function now returns `(predicate_fn, bitrate_sidecar)` where
+  `bitrate_sidecar` is a `dict[tuple[int, int], float]` keyed by
+  `(start_frame, end_frame)`. The predicate closure populates the dict
+  as each shot's bisect completes; `_run_tune_per_shot` annotates each
+  `ShotRecommendation` via `dataclasses.replace(r, bitrate_kbps=...)`.
+  Custom `--predicate-module` callers are unaffected (the sidecar is
+  empty for that path). Do not change the function signature back to a
+  bare `PerShotPredicateFn` return without also wiring an alternative
+  bitrate capture path — the plan JSON schema now requires `bitrate_kbps`
+  per shot, and its absence causes the report renderer to show "—".
+- **`ShotRecommendation.bitrate_kbps` defaults to NaN (ADR-0531).**
+  The field carries the measured segment bitrate from the bisect
+  predicate. NaN is correct for dry-run / synthetic predicates that
+  never encode a real segment. The plan-JSON emitter serialises NaN as
+  `null` (RFC-8259-portable); the report ingester treats `null` and
+  absent as NaN and renders "—". Tests that construct `ShotRecommendation`
+  directly need not set `bitrate_kbps` unless testing the bitrate column.

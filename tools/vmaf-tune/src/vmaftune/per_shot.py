@@ -78,11 +78,19 @@ class Shot:
 
 @dataclasses.dataclass(frozen=True)
 class ShotRecommendation:
-    """Per-shot CRF recommendation produced by :func:`tune_per_shot`."""
+    """Per-shot CRF recommendation produced by :func:`tune_per_shot`.
+
+    ``bitrate_kbps`` carries the encoded segment bitrate when the
+    predicate measures it (e.g. the Phase-B bisect predicate in
+    ``_build_per_shot_bisect_predicate``). It defaults to ``NaN`` for
+    dry-run / synthetic predicates that never encode a real segment.
+    ADR-0531.
+    """
 
     shot: Shot
     crf: int
     predicted_vmaf: float
+    bitrate_kbps: float = float("nan")
 
 
 @dataclasses.dataclass(frozen=True)

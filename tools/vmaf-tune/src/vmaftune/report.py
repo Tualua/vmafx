@@ -481,10 +481,18 @@ def _shot_plot_fn(data: ReportData):
         # Provide explicit axis ranges so a single-shot dataset still
         # picks sensible bounds (matplotlib's autoscale degenerates on a
         # single point + hline pair at the same coordinate).
+        #
+        # ADR-0531 Bug B: use 1.05 * last_end (right side) + 0.02-span
+        # left-side padding so the last shot's CRF band is always fully
+        # inside the axes viewport. When last_end is exactly on the axes
+        # right boundary, matplotlib's clip box trims the rightmost pixel
+        # of the hlines artist, making the final shot's band appear
+        # invisible at small output sizes.
         last_end = max(shot.end_frame for shot in data.shots)
         first_start = min(shot.start_frame for shot in data.shots)
-        x_pad = max(1.0, 0.02 * (last_end - first_start))
-        ax.set_xlim(first_start - x_pad, last_end + x_pad)
+        x_pad_left = max(1.0, 0.02 * (last_end - first_start))
+        x_pad_right = max(1.0, 0.05 * last_end)
+        ax.set_xlim(first_start - x_pad_left, last_end + x_pad_right)
         crfs = [shot.best_crf for shot in data.shots]
         vmafs = [shot.vmaf for shot in data.shots]
         if min(crfs) == max(crfs):

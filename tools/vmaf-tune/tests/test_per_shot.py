@@ -396,11 +396,13 @@ def test_cli_tune_per_shot_binds_bisect_predicate(tmp_path, monkeypatch):
 
 # --------------------------------------------------------------------------- #
 # ADR-0532 — tune-per-shot tolerates read-only CWD                            #
+# ADR-0530 — tune-per-shot tolerates read-only CWD                            #
 # --------------------------------------------------------------------------- #
 
 
 def test_cli_tune_per_shot_readonly_cwd_returns_zero(tmp_path, monkeypatch):
     """tune-per-shot exits 0 even when CWD is read-only (ADR-0532).
+    """tune-per-shot exits 0 even when CWD is read-only (ADR-0530).
 
     The plan JSON is the primary deliverable.  When the segments directory
     cannot be created (e.g. a bind-mounted read-only container workspace), a
