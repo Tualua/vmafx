@@ -16,7 +16,6 @@
  *
  */
 
-#include <assert.h>
 #ifdef _WIN32
 #include "compat/win32/getopt.h"
 #else
@@ -313,11 +312,24 @@ static void error(const char *const app, const char *const optarg, const int opt
         if (long_opts[n].val == option)
             break;
     }
-    assert(long_opts[n].name);
+    /* Replace assert(long_opts[n].name) with an explicit check: the
+     * banned-function audit (ADR-0523) found that assert() here (a)
+     * uses a banned macro per docs/principles.md §1.2 rule 30 in
+     * analysis and (b) with GCC 16 + -O3 -flto the assert→SIGABRT path
+     * was transformed into SIGSEGV via sprintf(NULL) on the next line,
+     * making the failure non-deterministic and harder to diagnose.
+     * Replace with a clean error-exit that never invokes UB. */
+    if (!long_opts[n].name) {
+        usage(app,
+              "Invalid argument \"%s\" for unrecognised option (internal error: "
+              "option code %d not in long_opts[])",
+              optarg, option);
+        return; /* unreachable — usage() calls exit(1); satisfies _Noreturn analysis */
+    }
     if (long_opts[n].val < 256) {
-        (void)sprintf(optname, "-%c/--%s", long_opts[n].val, long_opts[n].name);
+        (void)snprintf(optname, sizeof(optname), "-%c/--%s", long_opts[n].val, long_opts[n].name);
     } else {
-        (void)sprintf(optname, "--%s", long_opts[n].name);
+        (void)snprintf(optname, sizeof(optname), "--%s", long_opts[n].name);
     }
 
     usage(app, "Invalid argument \"%s\" for option %s; should be %s", optarg, optname, shouldbe);

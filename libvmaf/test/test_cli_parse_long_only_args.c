@@ -38,6 +38,56 @@
 
 #include "cli_parse.h"
 
+/* In the child half of the fork: redirect stderr to the pipe and call
+ * cli_parse with the bad argv.  Never returns — the child exits via
+ * cli_parse → usage() → exit(1) for invalid input, or _exit(2) if
+ * cli_parse somehow accepted the bad args silently. */
+static void child_parse_via_pipe(int pipefd_write, int argc, char **argv)
+{
+    (void)dup2(pipefd_write, 2);
+    (void)close(pipefd_write);
+
+    CLISettings settings;
+    memset(&settings, 0, sizeof(settings));
+    optind = 1;
+    cli_parse(argc, argv, &settings);
+    /* Unreachable on invalid input — cli_parse calls usage() → exit(1).
+     * _exit(2) distinguishes "parser silently accepted bad args" from the
+     * expected exit(1) so the parent can flag it separately. */
+    _exit(2);
+}
+
+/* Read up to `cap-1` bytes from `fd` into `buf`, NUL-terminate, then
+ * drain any remaining bytes (discarding them) so the writer is never
+ * blocked or SIGPIPE'd.  Returns the number of bytes stored in buf.
+ *
+ * Background (ADR-0523): usage() dumps the full ~4 KiB help text after
+ * the "Invalid argument" line.  When the CLI grew past 4 KiB the
+ * original 4 KiB buf caused the parent to stop reading mid-message,
+ * close the read end, and SIGPIPE the child — an intermittent failure
+ * unrelated to the assert bug.  Splitting head (captured) from tail
+ * (drained) eliminates the race. */
+static size_t read_head_drain_tail(int fd, char *buf, size_t cap)
+{
+    size_t total = 0;
+
+    /* Head: capture up to cap-1 bytes for needle search. */
+    while (total < cap - 1u) {
+        const ssize_t n = read(fd, buf + total, cap - 1u - total);
+        if (n <= 0)
+            break;
+        total += (size_t)n;
+    }
+    buf[total] = '\0';
+
+    /* Tail: discard remainder so the child can finish writing. */
+    char drain[256];
+    while (read(fd, drain, sizeof(drain)) > 0)
+        ; /* discard */
+
+    return total;
+}
+
 /* Capture-and-replay test: fork(), in the child run
  * cli_parse(argv) with stderr redirected into a pipe, in the
  * parent read the captured bytes and waitpid() for the exit
@@ -58,37 +108,17 @@ static int run_parse_expect_usage_error(int argc, char **argv, const char *needl
     }
 
     if (pid == 0) {
-        /* Child: redirect stderr into the pipe write end so
-         * the parent can scan for the "Invalid argument"
-         * line emitted by usage(). */
         (void)close(pipefd[0]);
-        (void)dup2(pipefd[1], 2);
-        (void)close(pipefd[1]);
-
-        CLISettings settings;
-        memset(&settings, 0, sizeof(settings));
-        optind = 1;
-        cli_parse(argc, argv, &settings);
-        /* Should be unreachable — cli_parse should have
-         * called usage() -> exit(1) on the bad optarg. If we
-         * reach here, the parser silently accepted invalid
-         * input; flag it as a distinct failure shape. */
-        _exit(2);
+        child_parse_via_pipe(pipefd[1], argc, argv);
+        /* child_parse_via_pipe never returns */
     }
 
-    /* Parent: drain stderr and reap the child. */
     (void)close(pipefd[1]);
-    char buf[4096];
-    size_t total = 0;
-    for (;;) {
-        if (total >= sizeof(buf) - 1u)
-            break;
-        const ssize_t n = read(pipefd[0], buf + total, sizeof(buf) - 1u - total);
-        if (n <= 0)
-            break;
-        total += (size_t)n;
-    }
-    buf[total] = '\0';
+
+    /* 512 B is enough for the "Invalid argument …" line which always
+     * precedes the usage block. */
+    char buf[512];
+    read_head_drain_tail(pipefd[0], buf, sizeof(buf));
     (void)close(pipefd[0]);
 
     int status = 0;

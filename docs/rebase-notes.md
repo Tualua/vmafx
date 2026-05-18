@@ -36112,3 +36112,20 @@ The C-side `codec_block_preset_ordinal` table is a duplicate of
 a co-edit pair. The sidecar `encoder_vocab` array is the
 single source of truth for the vocabulary; vocab bumps (e.g.
 ADR-0302 v3) only require a new sidecar JSON, no C recompile.
+
+## fix/cli-threads-parse-safety-v2 (ADR-0528)
+
+**Files touched:** `libvmaf/test/test_cli_parse_long_only_args.c`,
+`libvmaf/tools/cli_parse.c`.
+
+**Rebase sensitivity (low — fork-local additive):**
+Both files are fork-local. The test (`test_cli_parse_long_only_args.c`)
+has no upstream twin — it was added in PR #408 / ADR-0316 to lock down
+the long-only short-option synthesis bug. `cli_parse.c` is upstream-
+adjacent (Netflix maintains its own `error()` with the same
+`assert(long_opts[n].name)` shape and the same `sprintf(optname, …)`
+calls). On a future upstream sync, expect a merge conflict on
+`error()` if Netflix changes the assert / sprintf lines independently:
+keep the fork's `if (!found) usage(…); return;` + `snprintf` shape and
+drop the `<assert.h>` include. No public API surface changes; the
+ffmpeg-patches stack is untouched.
