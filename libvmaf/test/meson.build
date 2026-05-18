@@ -1009,6 +1009,22 @@ test_hip_motion3_parity = executable('test_hip_motion3_parity',
 test('test_hip_motion3_parity', test_hip_motion3_parity,
     suite : ['gpu'],
     timeout : 60)
+
+# ADR-0539 — integer ADM CPU vs. HIP parity gate (places=4).
+# Verifies the per-thread atomicAdd reduction pattern adopted by
+# adm_csf_den.hip + adm_cm.hip produces bit-exact-tolerant scores
+# vs. the CPU integer_adm extractor on a synthetic fixture.
+# HIP-gated: skips cleanly when no AMD GPU is visible.
+test_hip_adm_parity = executable('test_hip_adm_parity',
+    ['test.c', 'test_hip_adm_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps],
+    c_args: ['-DHAVE_HIP=1']
+)
+test('test_hip_adm_parity', test_hip_adm_parity,
+    suite : ['gpu'],
+    timeout : 60)
 endif
 
 # ADR-0338 / T8-1: Metal (Apple Silicon) backend scaffold smoke. Same

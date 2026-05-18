@@ -352,3 +352,41 @@ the prior command line for any kernel not listed.
 Mirrors the established `cuda_cu_extra_flags` dict in the same meson
 file (used by `float_adm_score` and `ssimulacra2_blur` on the CUDA side).
 When porting `float_adm` device code to HIP, add a matching entry.
+## ADR-0539: integer ADM HIP kernels — real implementation (2026-05-18)
+
+The four ADM kernels (`adm_dwt2`, `adm_csf`, `adm_csf_den`, `adm_cm`)
+that the ADR-0537 sub-bundle had left as weak HSACO fallbacks now build
+standalone via `hipcc --genco` and are registered in `hip_kernel_sources`.
+The xxd-embedded strong symbols replace the weak slots in
+`hip_hsaco_stubs.c` (which is now ADM-stub-free).
+
+End-to-end on AMD gfx1036 inside `vmaf-dev-mcp`:
+
+```bash
+docker exec vmaf-dev-mcp vmaf \
+    --reference /workspace/python/test/resource/yuv/src01_hrc00_576x324.yuv \
+    --distorted /workspace/python/test/resource/yuv/src01_hrc01_576x324.yuv \
+    --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+    --backend hip --feature adm --json --output /tmp/adm_hip.json
+```
+
+Bit-exact vs CPU on the Netflix golden src01 pair (delta = 0.000000):
+
+| Feature | CPU | HIP | Diff |
+|---|---|---|---|
+| `integer_adm`        | 0.934506 | 0.934506 | 0.000000 |
+| `integer_adm2`       | 0.934506 | 0.934506 | 0.000000 |
+| `integer_adm3`       | 0.953973 | 0.953973 | 0.000000 |
+| `integer_adm_scale0` | 0.907897 | 0.907897 | 0.000000 |
+| `integer_adm_scale1` | 0.893864 | 0.893864 | 0.000000 |
+| `integer_adm_scale2` | 0.929998 | 0.929998 | 0.000000 |
+| `integer_adm_scale3` | 0.964951 | 0.964951 | 0.000000 |
+
+The CUDA twin's per-warp `__shfl_down_sync` reduction
+(`cuda_helper.cuh::warp_reduce`) is replaced by per-thread `atomicAdd` on
+the 64-bit unsigned accumulator. AMD wavefronts are 64 wide (not the 32
+the CUDA shuffle mask hard-codes); per-thread atomicAdd is **bit-exact**
+since uint64 addition is associative and commutative. Same pattern
+`vif_statistics.hip` adopted (ADR-0537).
+
+See [ADR-0539](../../adr/0539-hip-adm-kernels-real.md).

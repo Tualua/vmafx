@@ -153,3 +153,46 @@ file.  Current entries: `ssimulacra2_blur`.  Rebase invariant: when
 porting a new CUDA kernel that lists `--fmad=false` /
 `-ffp-contract=off` in `cuda_cu_extra_flags`, add the matching HIP
 entry in the same PR.
+## Per-thread atomicAdd replaces CUDA per-warp `__shfl_down_sync` reduce (ADR-0539)
+
+The CUDA twin's `cuda_helper.cuh::warp_reduce` hard-codes
+`warpSize == 32` in the `__shfl_down_sync(0xffffffff, …)` mask.  AMD
+wavefronts are **64 wide** on every GCN / CDNA / RDNA target we ship to
+(gfx906 / gfx90a / gfx10 / gfx11), so the CUDA shuffle pattern is
+incorrect on AMD even when `__shfl_down_sync` is available.
+
+**Established pattern** when porting a CUDA kernel that ends in
+`warp_reduce(accum) + per-warp atomicAdd`:
+
+1. Drop the warp reduce entirely.
+2. Have **every thread** call `atomicAdd((uint64_cu *)&accum_global[band], lane_value)`.
+3. Bit-exact w.r.t. the CUDA twin since unsigned 64-bit integer addition
+   is associative and commutative — only the reduction *order* changes.
+4. Works on every AMD wavefront width without `#ifdef`-ing per arch.
+
+`atomicAdd` on `unsigned long long` is native on gfx90a / gfx10 / gfx11
+and falls back to a CAS loop on older GCN — the HIP runtime handles the
+arch selection.
+
+Precedents: `integer_vif/vif_statistics.hip` (ADR-0537),
+`integer_adm/adm_csf_den.hip` + `integer_adm/adm_cm.hip` (ADR-0539).
+
+## ADM `_hsaco` weak-stub slots have been removed (ADR-0539)
+
+The `hip_hsaco_stubs.c` weak fallbacks for `adm_dwt2_hsaco`,
+`adm_csf_hsaco`, `adm_csf_den_hsaco`, `adm_cm_hsaco` have been
+**removed** — the four `.hip` kernels now build standalone via
+`hipcc --genco` (registered in `libvmaf/src/meson.build::hip_kernel_sources`)
+and their xxd-embedded strong symbols supply the blobs the host TU loads.
+
+If a future ADM PR re-introduces a CUDA-only helper into one of the
+four kernels (re-breaking the standalone build), do NOT re-add a weak
+stub — fix the kernel.  Falling back to weak stubs silently degrades
+HIP ADM to CPU at runtime (the `hipModuleLoadData` call returns
+non-zero on an empty blob and the extractor returns `-ENOSYS` from
+`init()`), which is what the user directive "no stubs anywhere"
+explicitly rules out.
+
+The `VMAF_HSACO_WEAK_STUB` macro in `hip_hsaco_stubs.c` is retained
+as a documented pattern for in-progress ports of *new* extractors;
+it is currently used by zero extractors.

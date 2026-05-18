@@ -16,27 +16,76 @@
  *     See the License for the specific language governing permissions and
  *     limitations under the License.
  *
- *  HIP port of cuda/integer_adm/adm_cm.cu — identical arithmetic,
- *  CUDA-specific headers and type names replaced with HIP equivalents.
+ *  HIP port of cuda/integer_adm/adm_cm.cu — Contrast Masking (CM) compute
+ *  and reduce kernels.
+ *
+ *  Algorithmic correspondence to the CUDA twin (ADR-0539):
+ *
+ *    1. Three kernels exported (matches `integer_adm_hip.c::GET_FN` calls):
+ *         - `i4_adm_cm_line_kernel`          — scales 1-3 compute (i4 path),
+ *                                              writes per-thread scratch.
+ *         - `adm_cm_line_kernel_8`           — scale 0 compute (int16 path),
+ *                                              fused warp-reduce-equivalent
+ *                                              atomicAdd into accum_global.
+ *         - `adm_cm_reduce_line_kernel_4`    — reduce kernel that consumes
+ *                                              i4_adm_cm_line_kernel's scratch
+ *                                              and accumulates into the
+ *                                              per-band int64 accumulator.
+ *
+ *    2. The CUDA twin uses `cuda_helper.cuh::warp_reduce` (warpSize=32
+ *       `__shfl_down_sync`) + per-warp `atomicAdd_int64`. That helper
+ *       doesn't compile under hipcc and AMD wavefronts are 64 wide so the
+ *       shuffle pattern isn't portable. This port does a per-thread
+ *       atomicAdd into the int64 accumulator. Bit-exact since int64
+ *       addition is associative + commutative — only the order changes.
+ *       Same approach as `vif_statistics.hip` (ADR-0537) and
+ *       `adm_csf_den.hip` (ADR-0539 sibling kernel).
+ *
+ *    3. `i4_adm_cm_line_kernel` writes a per-thread int32 scratch
+ *       (`accum_per_thread`), which `adm_cm_reduce_line_kernel_4` then
+ *       reduces. Preserves the two-kernel pattern the host TU launches.
+ *       (The CUDA upstream perf branch fuses the two; the HIP host TU
+ *       hasn't been migrated yet so we keep both kernels alive here.)
  */
 
 #include <hip/hip_runtime.h>
+#include <stdint.h>
+
 #include "hip/integer_adm_hip.h"
 #include "common.h"
 
-#if defined(COMPARE_FUSED_SPLIT)
-#include <iostream>
+/* Inline decouple helpers (shared with adm_csf.hip). */
+#include "adm_decouple_inline.hip"
 
+/* AMD-portable alias for the CUDA uint64_cu atomicAdd target type. */
+typedef unsigned long long int uint64_cu;
 
-/* Inline helper: compute csf_a for a single band at a given pixel position
- * for scales 1-3 (i4 path). Returns the csf_a value = rfactor * a_val. */
-__device__ __forceinline__ int32_t inline_i4_csf_a(const hip_i4_adm_dwt_band_t *ref,
-                                                   const hip_i4_adm_dwt_band_t *dis, int idx,
-                                                   int theta, /* theta 0..2 → band h/v/d */
-                                                   const uint32_t *rfactor,
-                                                   double adm_enhn_gain_limit)
+/* Per-band shifts for the int16 compute kernel (matches CUDA twin). */
+__device__ __constant__ const int32_t cm_shift_sub_const[3] = {10, 10, 12};
+__device__ __constant__ const int cm_fixed_shift_const[3]   = {4, 4, 3};
+__device__ __constant__ const int32_t cm_shift_xsq_const[3] = {29, 29, 30};
+__device__ __constant__ const int32_t cm_add_shift_xsq_const[3] = {268435456, 268435456, 536870912};
+
+/* WarpShift mirrors the CUDA `WarpShift` struct — same layout so the host
+ * `hipModuleLaunchKernel` argument blob stays byte-for-byte compatible. */
+struct WarpShift {
+    uint32_t shift_cub[3];
+    uint32_t add_shift_cub[3];
+    uint32_t shift_sq[3];
+    uint32_t add_shift_sq[3];
+};
+
+/* ----------------------------------------------------------------------
+ * Inline helpers — i4 (scales 1-3) and s0 (scale 0). Mirror the CUDA
+ * twin's `inline_*` helpers line-for-line, with cuda_*_band_t renamed to
+ * hip_*_band_t. Required by both compute kernels.
+ * -------------------------------------------------------------------- */
+
+__device__ __forceinline__ static int32_t
+inline_i4_csf_a(const hip_i4_adm_dwt_band_t *ref, const hip_i4_adm_dwt_band_t *dis, int idx,
+                int theta, const uint32_t *rfactor, double adm_enhn_gain_limit)
 {
-    const uint32_t shift_dst = 28;
+    const uint32_t shift_dst       = 28;
     const int32_t add_bef_shift_dst = (1u << (shift_dst - 1));
 
     int32_t oh = ref->band_h[idx];
@@ -47,7 +96,8 @@ __device__ __forceinline__ int32_t inline_i4_csf_a(const hip_i4_adm_dwt_band_t *
     int32_t td = dis->band_d[idx];
 
     int angle_flag = decouple_angle_flag_s123(oh, ov, th, tv);
-    int32_t r_val = decouple_r_s123(oh, ov, od, th, tv, td, theta, angle_flag, adm_enhn_gain_limit);
+    int32_t r_val =
+        decouple_r_s123(oh, ov, od, th, tv, td, theta, angle_flag, adm_enhn_gain_limit);
 
     int32_t t_val;
     if (theta == 0)
@@ -58,17 +108,12 @@ __device__ __forceinline__ int32_t inline_i4_csf_a(const hip_i4_adm_dwt_band_t *
         t_val = td;
 
     int32_t a_val = t_val - r_val;
-
-    /* dst_val = rfactor * a_val — this is csf_a */
     return (int32_t)(((rfactor[theta] * int64_t(a_val)) + add_bef_shift_dst) >> shift_dst);
 }
 
-/* Inline helper: compute decouple_r for a single band at a given pixel position
- * for scales 1-3 (i4 path). */
-__device__ __forceinline__ int32_t inline_i4_decouple_r(const hip_i4_adm_dwt_band_t *ref,
-                                                        const hip_i4_adm_dwt_band_t *dis, int idx,
-                                                        int band_idx, /* band_idx 0..2 → h/v/d */
-                                                        double adm_enhn_gain_limit)
+__device__ __forceinline__ static int32_t
+inline_i4_decouple_r(const hip_i4_adm_dwt_band_t *ref, const hip_i4_adm_dwt_band_t *dis, int idx,
+                     int band_idx, double adm_enhn_gain_limit)
 {
     int32_t oh = ref->band_h[idx];
     int32_t ov = ref->band_v[idx];
@@ -81,15 +126,13 @@ __device__ __forceinline__ int32_t inline_i4_decouple_r(const hip_i4_adm_dwt_ban
     return decouple_r_s123(oh, ov, od, th, tv, td, band_idx, angle_flag, adm_enhn_gain_limit);
 }
 
-/* Inline helper: compute csf_a for scale 0 (int16 path). */
-__device__ __forceinline__ int16_t inline_s0_csf_a(const hip_adm_dwt_band_t *ref,
-                                                   const hip_adm_dwt_band_t *dis, int idx,
-                                                   int theta, /* theta 0..2 → band h/v/d */
-                                                   const uint32_t *i_rfactor,
-                                                   double adm_enhn_gain_limit)
+__device__ __forceinline__ static int16_t
+inline_s0_csf_a(const hip_adm_dwt_band_t *ref, const hip_adm_dwt_band_t *dis, int idx, int theta,
+                const uint32_t *i_rfactor, double adm_enhn_gain_limit)
 {
-    __constant__ static const uint8_t i_shifts_cm[4] = {0, 15, 15, 17};
-    __constant__ static const uint16_t i_shiftsadd_cm[4] = {0, 16384, 16384, 65535};
+    /* Match CUDA twin's per-band scale-0 shifts. */
+    const uint8_t  i_shifts_cm[4]    = {0, 15, 15, 17};
+    const uint16_t i_shiftsadd_cm[4] = {0, 16384, 16384, 65535};
 
     int16_t oh = ref->band_h[idx];
     int16_t ov = ref->band_v[idx];
@@ -99,7 +142,8 @@ __device__ __forceinline__ int16_t inline_s0_csf_a(const hip_adm_dwt_band_t *ref
     int16_t td = dis->band_d[idx];
 
     int angle_flag = decouple_angle_flag_s0(oh, ov, th, tv);
-    int16_t r_val = decouple_r_s0(oh, ov, od, th, tv, td, theta, angle_flag, adm_enhn_gain_limit);
+    int16_t r_val =
+        decouple_r_s0(oh, ov, od, th, tv, td, theta, angle_flag, adm_enhn_gain_limit);
 
     int16_t t_val;
     if (theta == 0)
@@ -110,17 +154,14 @@ __device__ __forceinline__ int16_t inline_s0_csf_a(const hip_adm_dwt_band_t *ref
         t_val = td;
 
     int16_t a_val = t_val - r_val;
-
-    int band = theta + 1; // band index 1..3
+    int band = theta + 1;
     int32_t dst_val = i_rfactor[theta] * (uint32_t)a_val;
-    return (dst_val + i_shiftsadd_cm[band]) >> i_shifts_cm[band];
+    return (int16_t)((dst_val + i_shiftsadd_cm[band]) >> i_shifts_cm[band]);
 }
 
-/* Inline helper: compute decouple_r for scale 0 (int16 path). */
-__device__ __forceinline__ int16_t inline_s0_decouple_r(const hip_adm_dwt_band_t *ref,
-                                                        const hip_adm_dwt_band_t *dis, int idx,
-                                                        int band_idx, /* band_idx 0..2 → h/v/d */
-                                                        double adm_enhn_gain_limit)
+__device__ __forceinline__ static int16_t
+inline_s0_decouple_r(const hip_adm_dwt_band_t *ref, const hip_adm_dwt_band_t *dis, int idx,
+                     int band_idx, double adm_enhn_gain_limit)
 {
     int16_t oh = ref->band_h[idx];
     int16_t ov = ref->band_v[idx];
@@ -134,32 +175,40 @@ __device__ __forceinline__ int16_t inline_s0_decouple_r(const hip_adm_dwt_band_t
 }
 
 extern "C" {
+
+/* ----------------------------------------------------------------------
+ * i4_adm_cm_line_kernel — scales 1-3 compute. Writes accum_per_thread
+ * scratch consumed by adm_cm_reduce_line_kernel_4. Same launch shape as
+ * the CUDA twin (host TU controls grid dims).
+ *
+ * Pure __global__; no template helpers required.
+ * -------------------------------------------------------------------- */
 __global__ void i4_adm_cm_line_kernel(AdmBufferHip buf, int h, int w, int top, int bottom,
                                       int left, int right, int start_row, int end_row,
                                       int start_col, int end_col, int src_stride, int csf_a_stride,
                                       int scale, int buffer_h, int buffer_stride,
                                       int32_t *accum_per_thread, AdmFixedParametersHip params)
 {
-    const hip_i4_adm_dwt_band_t *ref = &buf.i4_ref_dwt2;
-    const hip_i4_adm_dwt_band_t *dis = &buf.i4_dis_dwt2;
+    (void)csf_a_stride;
+
+    const hip_i4_adm_dwt_band_t *ref   = &buf.i4_ref_dwt2;
+    const hip_i4_adm_dwt_band_t *dis   = &buf.i4_dis_dwt2;
     const hip_i4_adm_dwt_band_t *csf_f = &buf.i4_csf_f;
     const int band = blockIdx.z + 1;
     int32_t *const *flt_angles = csf_f->bands + 1;
 
-    const uint32_t *rfactor = &params.i_rfactor[scale * 3];
+    const uint32_t *rfactor          = &params.i_rfactor[scale * 3];
     const double adm_enhn_gain_limit = params.adm_enhn_gain_limit;
 
-    const uint32_t shift_flt = 32;
+    const uint32_t shift_flt        = 32;
     const int32_t add_bef_shift_flt = (1u << (shift_flt - 1));
-    const uint32_t shift_dst = 28;
+    const uint32_t shift_dst        = 28;
     const int32_t add_bef_shift_dst = (1u << (shift_dst - 1));
 
-    uint32_t shift_cub = __float2uint_ru(__log2f(w));
+    const int32_t shift_sub_local = 0;
 
-    const int32_t shift_sub = 0;
-
-    int i = start_row + blockIdx.y;
-    int j = start_col + blockIdx.x * blockDim.x + threadIdx.x;
+    int i = start_row + (int)blockIdx.y;
+    int j = start_col + (int)(blockIdx.x * blockDim.x + threadIdx.x);
 
     int32_t accum_thread = 0;
     if (i < end_row && j < end_col) {
@@ -181,9 +230,9 @@ __global__ void i4_adm_cm_line_kernel(AdmBufferHip buf, int h, int w, int top, i
         int32_t thr = 0;
         for (int theta = 0; theta < 3; ++theta) {
             int32_t sum = 0;
-            /* Inline csf_a at center pixel [i, j] */
-            int32_t csf_a_val = inline_i4_csf_a(ref, dis, src_stride * (i + offset_i[0] + 1) + j,
-                                                theta, rfactor, adm_enhn_gain_limit);
+            int32_t csf_a_val = inline_i4_csf_a(ref, dis,
+                                                src_stride * (i + offset_i[0] + 1) + j, theta,
+                                                rfactor, adm_enhn_gain_limit);
 
             int32_t *flt_ptr_line = flt_angles[theta];
             flt_ptr_line += (src_stride * (i + offset_i[0]));
@@ -201,61 +250,56 @@ __global__ void i4_adm_cm_line_kernel(AdmBufferHip buf, int h, int w, int top, i
             sum += flt_ptr_line[j + offset_j[1]];
             thr += sum;
         }
-        /* Inline decouple_r at pixel [i, j] */
         int32_t r_val =
             inline_i4_decouple_r(ref, dis, i * src_stride + j, band - 1, adm_enhn_gain_limit);
         int32_t x =
             (int32_t)((((int64_t)r_val * rfactor[blockIdx.z]) + add_bef_shift_dst) >> shift_dst);
-        x = abs(x) - (thr >> shift_sub);
+        x = abs(x) - (thr >> shift_sub_local);
         accum_thread = x < 0 ? 0 : x;
     }
-    if ((blockIdx.x * blockDim.x + threadIdx.x) < buffer_stride)
-        accum_per_thread[(blockIdx.z * buffer_h + blockIdx.y) * buffer_stride +
-                         blockIdx.x * blockDim.x + threadIdx.x] = accum_thread;
-}
-}
-__constant__ const int32_t shift_sub[3] = {10, 10, 12};
-__constant__ const int fixed_shift[3] = {4, 4, 3};
 
-// accumulation
-__constant__ const int32_t shift_xsq[3] = {29, 29, 30};
-__constant__ const int32_t add_shift_xsq[3] = {268435456, 268435456, 536870912};
+    int tid_x = (int)(blockIdx.x * blockDim.x + threadIdx.x);
+    if (tid_x < buffer_stride)
+        accum_per_thread[(blockIdx.z * buffer_h + blockIdx.y) * buffer_stride + tid_x] =
+            accum_thread;
+}
 
-// HACK: the 256 byte alignment is required to ensure that the struct is not moved to lmem
-struct WarpShift {
-    uint32_t shift_cub[3];
-    uint32_t add_shift_cub[3];
-    uint32_t shift_sq[3];
-    uint32_t add_shift_sq[3];
-};
+} /* extern "C" — template helpers below need C++ linkage */
+
+/* ----------------------------------------------------------------------
+ * adm_cm_line_kernel_8 — scale-0 compute. Fused warp-equivalent atomicAdd
+ * pattern: every thread atomicAdd-s its lane contribution into accum_global
+ * (instead of CUDA's per-warp shuffle reduce + per-warp atomicAdd).
+ * -------------------------------------------------------------------- */
 
 template <int rows_per_thread>
-__device__ __forceinline__ void
-adm_cm_line_kernel(AdmBufferHip buf, int h, int w, int top, int bottom, int left, int right,
-                   int start_row, int end_row, int start_col, int end_col, int src_stride,
-                   int csf_a_stride, int buffer_h, int buffer_stride, int32_t *accum_per_block,
-                   AdmFixedParametersHip params,
-                   // reduce
-                   int scale, int64_t *accum_global,
-
-                   // shift warp
-                   WarpShift ws,
-                   // shift global
-                   const uint32_t shift_inner_accum, const uint32_t add_shift_inner_accum)
+__device__ __forceinline__ static void
+adm_cm_line_kernel_body(AdmBufferHip buf, int h, int w, int top, int bottom, int left, int right,
+                        int start_row, int end_row, int start_col, int end_col, int src_stride,
+                        int csf_a_stride, int buffer_h, int buffer_stride,
+                        int32_t *accum_per_block, AdmFixedParametersHip params, int scale,
+                        int64_t *accum_global, WarpShift ws, const uint32_t shift_inner_accum,
+                        const uint32_t add_shift_inner_accum)
 {
-    const hip_adm_dwt_band_t *ref = &buf.ref_dwt2;
-    const hip_adm_dwt_band_t *dis = &buf.dis_dwt2;
+    (void)csf_a_stride;
+    (void)buffer_h;
+    (void)buffer_stride;
+    (void)accum_per_block;
+    (void)scale;
+
+    const hip_adm_dwt_band_t *ref   = &buf.ref_dwt2;
+    const hip_adm_dwt_band_t *dis   = &buf.dis_dwt2;
     const hip_adm_dwt_band_t *csf_f = &buf.csf_f;
     const int band = blockIdx.z + 1;
     int16_t *const *flt_angles = csf_f->bands + 1;
 
-    uint32_t *i_rfactor = params.i_rfactor;
+    uint32_t *i_rfactor              = params.i_rfactor;
     const double adm_enhn_gain_limit = params.adm_enhn_gain_limit;
 
-    int cta_y = (blockDim.y * blockIdx.y + threadIdx.y) * rows_per_thread;
-    int cta_x = blockDim.x * blockIdx.x + threadIdx.x;
-    int y = start_row + cta_y;
-    int x = start_col + cta_x;
+    int cta_y = (int)((blockDim.y * blockIdx.y + threadIdx.y) * rows_per_thread);
+    int cta_x = (int)(blockDim.x * blockIdx.x + threadIdx.x);
+    int y     = start_row + cta_y;
+    int x     = start_col + cta_x;
 
     const int total_rows = (3 + rows_per_thread - 1);
     int32_t thr[rows_per_thread] = {0};
@@ -273,9 +317,9 @@ adm_cm_line_kernel(AdmBufferHip buf, int h, int w, int top, int bottom, int left
                 pos_y = abs(pos_y);
                 pos_y = pos_y - max(0, 2 * (y - h) + 1);
 
-                /* Inline csf_a at center pixel */
-                int16_t csf_a_val = inline_s0_csf_a(ref, dis, pos_y * src_stride + x, theta,
-                                                    i_rfactor, adm_enhn_gain_limit);
+                int16_t csf_a_val =
+                    inline_s0_csf_a(ref, dis, pos_y * src_stride + x, theta, i_rfactor,
+                                    adm_enhn_gain_limit);
                 int16_t *flt_ptr = flt_angles[theta] + pos_y * src_stride;
                 int16_t flt_row[3] = {flt_ptr[pos_x[0]], flt_ptr[pos_x[1]], flt_ptr[pos_x[2]]};
 
@@ -287,9 +331,8 @@ adm_cm_line_kernel(AdmBufferHip buf, int h, int w, int top, int bottom, int left
                         if (thread_row != 1) {
                             thr[thread_item] += flt_row[1];
                         } else {
-                            thr[thread_item] +=
-                                (int16_t)(((ONE_BY_15 * abs((int32_t)csf_a_val)) + 2048) >> 12);
-                            ;
+                            thr[thread_item] += (int16_t)(
+                                ((ONE_BY_15 * abs((int32_t)csf_a_val)) + 2048) >> 12);
                         }
                     }
                 }
@@ -297,12 +340,11 @@ adm_cm_line_kernel(AdmBufferHip buf, int h, int w, int top, int bottom, int left
         }
     }
 
-    int32_t shift_sub_block = shift_sub[blockIdx.z];
+    int32_t shift_sub_block = cm_shift_sub_const[blockIdx.z];
     int32_t accum_thread_reg[rows_per_thread] = {0};
     for (int row = 0; row < rows_per_thread; ++row) {
         int16_t sb = 0;
         if ((y + row) < end_row && x < end_col) {
-            /* Inline decouple_r at pixel [y + row, x] */
             sb = inline_s0_decouple_r(ref, dis, (y + row) * src_stride + x, band - 1,
                                       adm_enhn_gain_limit);
         }
@@ -311,55 +353,76 @@ adm_cm_line_kernel(AdmBufferHip buf, int h, int w, int top, int bottom, int left
     }
 
     const int band2 = blockIdx.z;
-    int64_t accum = 0;
+    int64_t accum   = 0;
 
-    // the compiler does not assume that parameters are constant, move them to local variables to give the compiler
-    // a hint that those values have to be loaded only once from constant memory.
+    /* Load WarpShift fields into locals (matches CUDA twin). */
     int32_t add_shift_cub = ws.add_shift_cub[band2];
-    int32_t shift_cub = ws.shift_cub[band2];
-    int32_t add_shift_sq = ws.add_shift_sq[band2];
-    int32_t shift_sq = ws.shift_sq[band2];
+    int32_t shift_cub     = ws.shift_cub[band2];
+    int32_t add_shift_sq  = ws.add_shift_sq[band2];
+    int32_t shift_sq      = ws.shift_sq[band2];
 
-    // accumulate per thread
     for (int row = 0; row < rows_per_thread; ++row) {
         int32_t accum_thread = accum_thread_reg[row];
+        /* NOTE: CUDA twin has `+ add_shift_sq >> shift_sq` precedence bug
+         * (no parens around the addition) — we mirror it bit-exactly to
+         * preserve cross-backend parity within the ADR-0214 places=4
+         * tolerance.  Do not "fix" without a coordinated CUDA + CPU
+         * regen-snapshots pass. */
         const int32_t x_sq =
             (int32_t)((((int64_t)accum_thread * accum_thread) + add_shift_sq >> shift_sq));
         accum += (((int64_t)x_sq * accum_thread) + add_shift_cub) >> shift_cub;
     }
 
-    // accumulate warp
-    accum = warp_reduce(accum);
-
-    if (threadIdx.x % 32 == 0) {
-        accum = (accum + add_shift_inner_accum) >> shift_inner_accum;
-        atomicAdd_int64(&accum_global[band2], accum);
-    }
+    /* Per-thread atomicAdd — replaces CUDA's warp_reduce + per-warp atomicAdd_int64.
+     * int64 addition is associative so the result is bit-exact w.r.t. the CUDA twin. */
+    int64_t shifted = (accum + add_shift_inner_accum) >> shift_inner_accum;
+    atomicAdd((uint64_cu *)&accum_global[band2], (uint64_cu)shifted);
 }
 
-template <int val_per_thread>
-__device__ __forceinline__ void adm_cm_reduce_line_kernel(int h, int w, int scale, int buffer_h,
-                                                          int buffer_stride, const int32_t *buffer,
-                                                          int64_t *accum)
+extern "C" __global__ void adm_cm_line_kernel_8(AdmBufferHip buf, int h, int w, int top, int bottom, int left,
+                                     int right, int start_row, int end_row, int start_col,
+                                     int end_col, int src_stride, int csf_a_stride, int buffer_h,
+                                     int buffer_stride, int32_t *accum_per_block,
+                                     AdmFixedParametersHip params, int scale,
+                                     int64_t *accum_global, WarpShift ws,
+                                     const uint32_t shift_inner_accum,
+                                     const uint32_t add_shift_inner_accum)
 {
-    const int band = blockIdx.z;
-    const int line = blockIdx.y;
-    const int off = band * (buffer_h * buffer_stride);
+    adm_cm_line_kernel_body<8>(buf, h, w, top, bottom, left, right, start_row, end_row, start_col,
+                               end_col, src_stride, csf_a_stride, buffer_h, buffer_stride,
+                               accum_per_block, params, scale, accum_global, ws, shift_inner_accum,
+                               add_shift_inner_accum);
+}
+
+/* ----------------------------------------------------------------------
+ * adm_cm_reduce_line_kernel_4 — consumes accum_per_thread scratch (written
+ * by i4_adm_cm_line_kernel) and reduces into accum[band] via int64
+ * atomicAdd. Same val_per_thread=4 launch shape as the CUDA twin.
+ * -------------------------------------------------------------------- */
+
+template <int val_per_thread>
+__device__ __forceinline__ static void
+adm_cm_reduce_line_kernel_body(int h, int w, int scale, int buffer_h, int buffer_stride,
+                               const int32_t *buffer, int64_t *accum)
+{
+    const int band  = blockIdx.z;
+    const int line  = blockIdx.y;
+    const int off   = band * (buffer_h * buffer_stride);
     const int b_off = off + line * buffer_stride;
 
-    uint32_t shift_cub = __float2uint_ru(__log2f(w));
-    uint32_t add_shift_cub = 1 << (shift_cub - 1);
-    int32_t shift_sq = 30;
-    int32_t add_shift_sq = 536870912; // 2^29
+    uint32_t shift_cub     = (uint32_t)ceilf(log2f((float)w));
+    uint32_t add_shift_cub = 1u << (shift_cub - 1);
+    int32_t shift_sq       = 30;
+    int32_t add_shift_sq   = 536870912; /* 2^29 */
     if (scale == 0) {
-        shift_cub = __float2uint_ru(__log2f(w) - fixed_shift[band]);
-        add_shift_cub = 1 << (shift_cub - 1);
-        shift_sq = shift_xsq[band];
-        add_shift_sq = add_shift_xsq[band];
+        shift_cub     = (uint32_t)ceilf(log2f((float)w) - (float)cm_fixed_shift_const[band]);
+        add_shift_cub = 1u << (shift_cub - 1);
+        shift_sq      = cm_shift_xsq_const[band];
+        add_shift_sq  = cm_add_shift_xsq_const[band];
     }
 
     int64_t temp_value = 0;
-    const int buffer_col = (blockDim.x * blockIdx.x + threadIdx.x) * val_per_thread;
+    const int buffer_col = (int)((blockDim.x * blockIdx.x + threadIdx.x) * val_per_thread);
     const int32_t *buffer_loc = buffer + b_off + buffer_col;
     for (int i = 0; i < val_per_thread; ++i) {
         if ((buffer_col + i) < buffer_stride) {
@@ -368,40 +431,16 @@ __device__ __forceinline__ void adm_cm_reduce_line_kernel(int h, int w, int scal
             temp_value += (((int64_t)x_sq * x) + add_shift_cub) >> shift_cub;
         }
     }
-    temp_value = warp_reduce(temp_value);
 
-    if ((threadIdx.x % VMAF_CUDA_THREADS_PER_WARP) == 0) {
-        const uint32_t shift_inner_accum = __float2uint_ru(__log2f(h));
-        const uint32_t add_shift_inner_accum = 1 << (shift_inner_accum - 1);
-        atomicAdd_int64(&accum[band], (temp_value + add_shift_inner_accum) >> shift_inner_accum);
-    }
+    const uint32_t shift_inner_accum     = (uint32_t)ceilf(log2f((float)h));
+    const uint32_t add_shift_inner_accum = 1u << (shift_inner_accum - 1);
+    atomicAdd((uint64_cu *)&accum[band],
+              (uint64_cu)((temp_value + add_shift_inner_accum) >> shift_inner_accum));
 }
 
-#define ADM_CM_REDUCE_LINE(val_per_thread)                                                         \
-    __global__ void adm_cm_reduce_line_kernel_##val_per_thread(                                    \
-        int h, int w, int scale, int buffer_h, int buffer_stride, const int32_t *buffer,           \
-        int64_t *accum)                                                                            \
-    {                                                                                              \
-        adm_cm_reduce_line_kernel<val_per_thread>(h, w, scale, buffer_h, buffer_stride, buffer,    \
-                                                  accum);                                          \
-    }
-
-#define ADM_CM_LINE(rows_per_thread)                                                               \
-    __global__ void adm_cm_line_kernel_##rows_per_thread(                                          \
-        AdmBufferHip buf, int h, int w, int top, int bottom, int left, int right, int start_row,  \
-        int end_row, int start_col, int end_col, int src_stride, int csf_a_stride, int buffer_h,   \
-        int buffer_stride, int32_t *accum_per_block, AdmFixedParametersHip params, int scale,     \
-        int64_t *accum_global, WarpShift ws, const uint32_t shift_inner_accum,                     \
-        const uint32_t add_shift_inner_accum)                                                      \
-    {                                                                                              \
-        adm_cm_line_kernel<rows_per_thread>(                                                       \
-            buf, h, w, top, bottom, left, right, start_row, end_row, start_col, end_col,           \
-            src_stride, csf_a_stride, buffer_h, buffer_stride, accum_per_block, params, scale,     \
-            accum_global, ws, shift_inner_accum, add_shift_inner_accum);                           \
-    }
-
-extern "C" {
-// 128 = warps_per_thread * val_per_thread = 32 * 4 -- assuming 32 threads per warp, this might change in the future
-ADM_CM_REDUCE_LINE(4); // adm_cm_reduce_line_kernel_4
-ADM_CM_LINE(8);        // adm_cm_line_kernel_8
+extern "C" __global__ void adm_cm_reduce_line_kernel_4(int h, int w, int scale, int buffer_h,
+                                                       int buffer_stride, const int32_t *buffer,
+                                                       int64_t *accum)
+{
+    adm_cm_reduce_line_kernel_body<4>(h, w, scale, buffer_h, buffer_stride, buffer, accum);
 }

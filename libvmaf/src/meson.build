@@ -275,14 +275,17 @@ if is_hipcc_enabled and is_hip_enabled
         'float_vif_score' : feature_src_dir + 'hip/float_vif/float_vif_score.hip',
         'ssimulacra2_blur' : feature_src_dir + 'hip/ssimulacra2/ssimulacra2_blur.hip',
         'ssimulacra2_mul' : feature_src_dir + 'hip/ssimulacra2/ssimulacra2_mul.hip',
-        # integer_adm_hip ADM kernels (adm_dwt2/adm_csf/adm_csf_den/adm_cm)
-        # are pre-existing scaffolds that don't yet build as standalone .hip
-        # files (they reference CUDA-specific types like `uint64_cu` /
-        # `cta_size` / `warp_reduce` / `VMAF_CUDA_THREADS_PER_WARP` that the
-        # CUDA twin's `cuda_helper.cuh` provides).  The host TU references
-        # the `_hsaco` symbols under `#ifdef HAVE_HIPCC` — they're declared
-        # weak in a stub TU below to keep the build linkable; calling the
-        # extractor will surface the ENOSYS from a nullptr-hsaco guard.
+        # integer_adm_hip ADM kernels (ADR-0539) — the 4 .hip files port the
+        # CUDA twins under cuda/integer_adm/ to HIP. The CUDA twin's
+        # `warp_reduce` (warpSize=32 `__shfl_down_sync`) is replaced by a
+        # per-thread `atomicAdd` into the int64/uint64 accumulator on AMD
+        # (associative, bit-exact). The xxd-embedded `_hsaco` blobs from
+        # these targets define the strong symbols that override the weak
+        # fallbacks in `hip_hsaco_stubs.c`.
+        'adm_dwt2'        : feature_src_dir + 'hip/integer_adm/adm_dwt2.hip',
+        'adm_csf'         : feature_src_dir + 'hip/integer_adm/adm_csf.hip',
+        'adm_csf_den'     : feature_src_dir + 'hip/integer_adm/adm_csf_den.hip',
+        'adm_cm'          : feature_src_dir + 'hip/integer_adm/adm_cm.hip',
     }
     # Per-kernel extra hipcc flags. Mirrors `cuda_cu_extra_flags` below for
     # the nvcc path. `ssimulacra2_blur` needs `-ffp-contract=off` so the

@@ -36646,3 +36646,20 @@ CUDA kernel that lists flags in `cuda_cu_extra_flags`, mirror the entry
 in `hip_cu_extra_flags` per `libvmaf/src/feature/hip/AGENTS.md`. No
 public API surface, no `meson_options.txt` entry, no ffmpeg-patches
 entry. On a future upstream sync, expect zero conflicts.
+## ADR-0539 — integer ADM HIP kernels (real impl, removes ADR-0536 weak stubs)
+
+**No rebase impact**: every touched file is fork-local — the four
+`.hip` kernel sources under `libvmaf/src/feature/hip/integer_adm/` are
+fork-additive (Netflix ships no HIP backend), the `hip_kernel_sources`
+meson dict additions live inside the `if is_hip_enabled and
+is_hipcc_enabled` block (also fork-local), and the
+`hip_hsaco_stubs.c` weak-fallback file is wholly fork-added under
+ADR-0536. No public C-API surface changes — kernel symbol names match
+the `GET_FN` calls in `integer_adm_hip.c` exactly, host TU is
+untouched. No `meson_options.txt` flag added or renamed (re-uses
+`enable_hip` + `enable_hipcc`). No ffmpeg-patches entry needs an
+update (no new `LIBVMAFContext` field, no new CLI flag). On a future
+upstream sync, expect zero conflicts. If a future PR re-introduces a
+CUDA-only helper into one of the four kernels (re-breaking the
+standalone build), do NOT re-add a weak HSACO stub — fix the kernel
+(invariant pinned in `libvmaf/src/feature/hip/AGENTS.md`).
