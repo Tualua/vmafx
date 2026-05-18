@@ -1,4 +1,4 @@
-# ADR-0486: Add enable_lcs and enable_chroma to float_ms_ssim SYCL twin
+# ADR-0525: Add enable_lcs and enable_chroma to float_ms_ssim SYCL twin
 
 - **Status**: Accepted
 - **Date**: 2026-05-17

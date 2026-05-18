@@ -44,5 +44,5 @@ after the `score = num / den` computation in each backend's collect path.
 
 - CPU reference: `libvmaf/src/feature/integer_adm.c` lines 206–215.
 - Parity audit: `.workingdir/feature-option-parity-audit-2026-05-16.md`.
-- Related: ADR-0485 (MS-SSIM enable_db parity), ADR-0486 (aiutils dedup).
+- Related: ADR-0485 (MS-SSIM enable_db parity), ADR-0526 (aiutils dedup).
 - req: "pick smallest unaddressed gap" (user session instruction 2026-05-17).

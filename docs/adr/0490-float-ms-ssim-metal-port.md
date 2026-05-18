@@ -9,7 +9,7 @@
 
 The Metal backend (ADR-0421) shipped eight feature extractors across T8-1b through
 T8-1k. The `float_ms_ssim` metric — the float-precision 5-scale MS-SSIM used by the
-VMAF model — had Metal twins on CUDA (ADR-0243), SYCL (ADR-0486), and Vulkan but not
+VMAF model — had Metal twins on CUDA (ADR-0243), SYCL (ADR-0526), and Vulkan but not
 Metal, leaving a coverage gap in the Metal backend's dispatch table.
 
 The CPU source (`float_ms_ssim.c`) uses a separable 11-tap Gaussian on each of 5
