@@ -12,7 +12,7 @@ assessment. Backends are **opt-in at build time** via meson options and
 | ARM NEON | auto-detected on aarch64 | yes | `--cpumask` | stable — see [arm/overview.md](arm/overview.md) |
 | CUDA | `-Denable_cuda=true` | no | `--no_cuda` | stable — see [cuda/overview.md](cuda/overview.md) |
 | SYCL / oneAPI | `-Denable_sycl=true` | no | `--no_sycl` / `--sycl_device N` | stable — see [sycl/overview.md](sycl/overview.md) |
-| HIP (AMD) | `-Denable_hip=true` | no | n/a | 8/11 real kernels (T7-10b, batch 1–4) — see [hip/overview.md](hip/overview.md); 3 stubs (adm, vif, integer_motion) remain `-ENOSYS` |
+| HIP (AMD) | `-Denable_hip=true` | no | `--no_hip` / `--hip_device N` | `--backend hip` end-to-end working on AMD ROCm hosts ([ADR-0519](../adr/0519-hip-import-state-implementation.md)); 20/23 feature kernels real, 3 legacy stubs (adm, vif, motion). Dispatch currently routes through CPU twins (HIP scores match CPU bit-exactly). See [hip/overview.md](hip/overview.md). |
 | Metal (Apple Silicon) | `-Denable_metal=auto/enabled` | auto on macOS | n/a | Runtime + 8 feature kernels live on Apple Silicon — see [metal/index.md](metal/index.md); remaining feature kernels are VIF, ADM, CIEDE, CAMBI, SSIMULACRA2, and other long-tail metrics |
 
 ## Runtime selection

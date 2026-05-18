@@ -35930,3 +35930,42 @@ DNN tests; consumers outside `libvmaf/src/dnn/` or
 `ort_backend.h`; the existing `vmaf_ort_input_shape()`
 remains as the `slot == 0` shortcut. No ffmpeg-patches
 file consumes any of the changed symbols.
+
+## fix/hip-import-state-implementation (ADR-0519)
+
+**Files**:
+`libvmaf/src/hip/common.c` (delete `vmaf_hip_import_state`
+stub body — 9 lines removed),
+`libvmaf/src/libvmaf.c` (add `HAVE_HIP` block: header
+include, `hip` field on `VmafContext`, real implementation
+of `vmaf_hip_import_state`, cleanup in `vmaf_close`),
+`libvmaf/test/test_hip_smoke.c` (replace
+`test_import_state_returns_enosys` with
+`test_import_state_validates_arguments` +
+`test_import_state_succeeds_with_real_state`),
+`docs/adr/0519-hip-import-state-implementation.md`,
+`docs/adr/README.md`,
+`docs/backends/hip/overview.md`,
+`docs/state.md`,
+`docs/research/0519-hip-import-state.md`,
+`docs/rebase-notes.md`,
+`changelog.d/fixed/hip-import-state.md`.
+
+**Rebase sensitivity (low — fork-local HIP surface, additive):**
+The `VmafContext` struct in `libvmaf/src/libvmaf.c` grows by one
+field — a `hip` substruct holding a single `VmafHipState *`
+pointer — gated by `#ifdef HAVE_HIP`. The field is appended
+after the existing `metal` substruct (the last existing GPU
+substruct), so no offsets shift in CPU-only / CUDA-only / etc.
+builds. The new `vmaf_hip_import_state` definition matches the
+existing public declaration in `libvmaf/include/libvmaf/libvmaf_hip.h`
+field-for-field; the header is unchanged, so consumers (the
+fork's `libvmaf/tools/vmaf.c` and any future ffmpeg-patches/ HIP
+consumer) recompile against the same ABI. `libvmaf/src/hip/common.c`
+loses the 9-line `vmaf_hip_import_state` stub; no other
+in-file functions are touched. On upstream rebase the patch is
+trivially applicable because Netflix/vmaf master ships no HIP
+backend; the entire `libvmaf/src/hip/` tree is fork-local
+(ADR-0212). No ffmpeg-patches file consumes
+`vmaf_hip_import_state` directly today — `vf_libvmaf` reaches
+HIP only through the CPU-path fallback for now.

@@ -16,9 +16,10 @@
  *                                  hipGetDeviceProperties (logs one
  *                                  line per device, returns count)
  *
- *  `vmaf_hip_import_state` stays at -ENOSYS until the first
- *  feature-kernel PR (T7-10c) wires the dispatch hookup on
- *  VmafContext.
+ *  `vmaf_hip_import_state` lives in `libvmaf/src/libvmaf.c` (next to
+ *  the CUDA / SYCL / Vulkan / Metal `_import_state` twins) because it
+ *  needs `VmafContext` field-level access to stash the borrowed state
+ *  pointer. Removed from this TU by ADR-0519.
  */
 
 #include <assert.h>
@@ -146,15 +147,8 @@ int vmaf_hip_state_init(VmafHipState **out, VmafHipConfiguration cfg)
     return 0;
 }
 
-int vmaf_hip_import_state(VmafContext *ctx, VmafHipState *state)
-{
-    (void)ctx;
-    (void)state;
-    /* T7-10c follow-up: stash the HIP state on the VmafContext so the
-     * dispatch strategy can route HIP-capable feature extractors.
-     * Stays unwired until the first feature kernel lands. */
-    return -ENOSYS;
-}
+/* vmaf_hip_import_state moved to libvmaf/src/libvmaf.c — needs
+ * VmafContext field-level access. ADR-0519. */
 
 void vmaf_hip_state_free(VmafHipState **state)
 {

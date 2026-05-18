@@ -143,14 +143,57 @@ static char *test_state_init_runtime_contract(void)
     return NULL;
 }
 
-static char *test_import_state_returns_enosys(void)
+static char *test_import_state_validates_arguments(void)
 {
-    /* import_state stays unwired in the runtime PR — the
-     * VmafContext-side dispatch hookup is the responsibility of the
-     * first feature-kernel PR (T7-10c). The scaffold contract
-     * (-ENOSYS) is preserved here as a reminder. */
+    /* ADR-0519: the library-side state-binding stub was promoted from
+     * -ENOSYS to a real implementation in libvmaf/src/libvmaf.c. The
+     * function now stashes the caller-imported VmafHipState on the
+     * VmafContext (same lifetime model as SYCL / Vulkan / Metal).
+     * NULL arguments return -EINVAL; the device-bound success path is
+     * covered by test_import_state_succeeds_with_real_state below. */
     int rc = vmaf_hip_import_state(NULL, NULL);
-    mu_assert("import_state returns -ENOSYS until T7-10c lands", rc == -ENOSYS);
+    mu_assert("import_state with NULL args returns -EINVAL", rc == -EINVAL);
+    return NULL;
+}
+
+static char *test_import_state_succeeds_with_real_state(void)
+{
+    /* ADR-0519: end-to-end happy-path on a host with a visible HIP
+     * device. Skip cleanly when no device is visible (CI without an
+     * AMD GPU). The success branch is the load-bearing assertion the
+     * `vmaf --backend hip` CLI exit-status gate depends on. */
+    if (vmaf_hip_device_count() <= 0) {
+        return NULL;
+    }
+    VmafHipConfiguration cfg = {.device_index = -1, .flags = 0};
+    VmafHipState *state = NULL;
+    int rc = vmaf_hip_state_init(&state, cfg);
+    mu_assert("state_init returns 0 with a real HIP device", rc == 0);
+    mu_assert("state_init populates out-pointer on success", state != NULL);
+
+    VmafConfiguration vcfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafContext *vmaf = NULL;
+    int err = vmaf_init(&vmaf, vcfg);
+    mu_assert("vmaf_init succeeds", err == 0);
+    mu_assert("vmaf_init populates context", vmaf != NULL);
+
+    err = vmaf_hip_import_state(vmaf, state);
+    mu_assert("import_state stashes the state and returns 0", err == 0);
+
+    /* Re-import is idempotent and overwrites the slot. */
+    err = vmaf_hip_import_state(vmaf, state);
+    mu_assert("re-import_state is idempotent", err == 0);
+
+    /* NULL state on a non-NULL ctx still rejected. */
+    err = vmaf_hip_import_state(vmaf, NULL);
+    mu_assert("import_state(NULL state) returns -EINVAL", err == -EINVAL);
+
+    err = vmaf_close(vmaf);
+    mu_assert("vmaf_close returns 0", err == 0);
+
+    /* Caller still owns the state — must free after vmaf_close. */
+    vmaf_hip_state_free(&state);
+    mu_assert("state_free clears the slot", state == NULL);
     return NULL;
 }
 
@@ -421,7 +464,8 @@ static const test_fn test_table[] = {
     test_device_count_runtime_returns_nonneg,
     test_available_reports_build_flag,
     test_state_init_runtime_contract,
-    test_import_state_returns_enosys,
+    test_import_state_validates_arguments,
+    test_import_state_succeeds_with_real_state,
     test_state_free_null_is_noop,
     test_list_devices_returns_count,
     /* T7-10 first consumer (ADR-0241) */

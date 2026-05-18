@@ -1,5 +1,23 @@
 # HIP (AMD ROCm) compute backend
 
+> **Status (2026-05-18):** `vmaf --backend hip` is end-to-end working on AMD
+> ROCm hosts following [ADR-0519](../../adr/0519-hip-import-state-implementation.md).
+> The library-side `vmaf_hip_import_state` was promoted from `-ENOSYS` to a
+> real implementation; the CLI now produces a valid VMAF JSON on any AMD GPU
+> visible to ROCm. Verified on AMD gfx1036 (Radeon 680M) inside the
+> `vmaf-dev-mcp` container: VMAF = 76.66783 on the Netflix golden src01
+> pair, bit-exact match against the CPU backend (delta = 0; meets the
+> `places=4` cross-backend gate from [ADR-0214](../../adr/0214-gpu-parity-ci-gate.md)
+> with room to spare). HIP joins CUDA / SYCL / Vulkan as a fully working
+> runtime-selected backend.
+>
+> **Dispatch posture (2026-05-18):** the HIP-flagged feature extractors
+> still do not set the `VMAF_FEATURE_EXTRACTOR_HIP` flag bit, so the
+> dispatch layer routes them through their CPU twins — that is why
+> the HIP scores match CPU bit-exactly today. Flipping the flag bit
+> requires `VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE` plumbing and an
+> end-to-end picture-pool wiring; that work is the next follow-up.
+>
 > **Status (2026-05-17):** 20 of 23 feature extractors now have real device
 > kernels; three legacy-API stubs remain (`adm_hip`, `vif_hip`, `motion_hip`).
 >

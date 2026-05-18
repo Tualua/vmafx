@@ -90,6 +90,10 @@ __attribute__((weak)) char __libc_single_threaded = 1;
 #include "metal/import.h"
 #endif
 
+#ifdef HAVE_HIP
+#include "libvmaf/libvmaf_hip.h"
+#endif
+
 typedef struct VmafContext {
     VmafConfiguration cfg;
     VmafFeatureCollector *feature_collector;
@@ -141,6 +145,18 @@ typedef struct VmafContext {
     struct {
         VmafMetalState *state;
     } metal;
+#endif
+#ifdef HAVE_HIP
+    /* ADR-0519: caller-imported HIP state. Same lifetime model as the
+     * SYCL / Vulkan / Metal backends — vmaf_hip_state_free() after
+     * vmaf_close(). The HIP feature extractors do not yet set the
+     * VMAF_FEATURE_EXTRACTOR_HIP flag, so dispatch routes them through
+     * their CPU twins; storing the state here is the wiring that
+     * unblocks `vmaf --backend hip` end-to-end and the future
+     * picture-buffer-type plumbing that flips the flag on. */
+    struct {
+        VmafHipState *state;
+    } hip;
 #endif
     struct {
         unsigned w, h;
@@ -708,6 +724,28 @@ int vmaf_metal_read_imported_pictures(VmafContext *vmaf, unsigned index)
 }
 #endif
 
+#ifdef HAVE_HIP
+/* ADR-0519: stash the caller-imported HIP state on the VmafContext.
+ * Mirrors vmaf_sycl_import_state / vmaf_vulkan_import_state /
+ * vmaf_metal_import_state field-for-field — ownership stays with the
+ * caller, vmaf_close() clears the pointer without freeing, and the
+ * caller calls vmaf_hip_state_free() after vmaf_close().
+ *
+ * Implementation lives here (not in libvmaf/src/hip/common.c) because
+ * it needs VmafContext field-level access. The CUDA / SYCL / Vulkan /
+ * Metal twins follow the same convention. */
+int vmaf_hip_import_state(VmafContext *vmaf, VmafHipState *hip_state)
+{
+    if (!vmaf)
+        return -EINVAL;
+    if (!hip_state)
+        return -EINVAL;
+
+    vmaf->hip.state = hip_state;
+    return 0;
+}
+#endif
+
 static int set_fex_framesync(VmafFeatureExtractorContext *fex_ctx, VmafContext *vmaf)
 {
     if (fex_ctx->fex->flags & VMAF_FEATURE_FRAME_SYNC)
@@ -1111,6 +1149,12 @@ int vmaf_close(VmafContext *vmaf)
     /* Same lifetime contract as Vulkan: caller owns metal.state
      * and must call vmaf_metal_state_free() after vmaf_close(). */
     vmaf->metal.state = NULL;
+#endif
+#ifdef HAVE_HIP
+    /* ADR-0519: same lifetime contract as SYCL / Vulkan / Metal —
+     * caller owns hip.state and must call vmaf_hip_state_free()
+     * after vmaf_close(). */
+    vmaf->hip.state = NULL;
 #endif
     free(vmaf);
 

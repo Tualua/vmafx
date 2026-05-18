@@ -59,8 +59,10 @@ ADR-0372 (batch-1, this PR).
    `hipMalloc` + `hipHostMalloc`, `hipFree` + `hipHostFree`,
    `hipGetDeviceCount`, `hipSetDevice`, `hipGetDeviceProperties`).
    `vmaf_hip_state_init` returns `0` on a host with `>=1` AMD GPU;
-   `-ENODEV` otherwise. `vmaf_hip_import_state` stays at `-ENOSYS`
-   until T7-10c wires `VmafContext`-side dispatch. Remaining
+   `-ENODEV` otherwise. `vmaf_hip_import_state` was implemented in
+   ADR-0519 (2026-05-18) and now lives in `libvmaf/src/libvmaf.c`
+   next to the CUDA / SYCL / Vulkan / Metal `_import_state` twins;
+   the stub body has been removed from `common.c`. Remaining
    feature-kernel ports follow as their own PRs gated by the
    `places=4` cross-backend-diff lane (ADR-0214).
 8. **Batch-1 real kernels** (ADR-0372) — `integer_psnr_hip`
@@ -219,6 +221,42 @@ do not replace — the scaffold invariants already documented above.
   merge, keep one copy and discard the duplicate. The bodies are
   identical so either direction is safe.
 
+## Rebase-sensitive invariants (import-state — ADR-0519)
+
+- **`vmaf_hip_import_state` lives in `libvmaf/src/libvmaf.c`, not in
+  `libvmaf/src/hip/common.c`** (fork-local, ADR-0519). The function
+  needs `VmafContext` field-level access; placing it next to the
+  CUDA / SYCL / Vulkan / Metal `_import_state` twins keeps the four
+  "stash the borrowed state pointer on the context" implementations
+  in one TU. Do NOT re-introduce a copy of the function in
+  `hip/common.c` — the duplicate-symbol link error is the obvious
+  failure mode, but the more insidious one is divergent behaviour
+  between the two definitions. On rebase: if any upstream port adds
+  a HIP-related function to `libvmaf.c`, leave the `vmaf_hip_import_state`
+  block intact next to its SYCL / Vulkan / Metal siblings.
+
+- **`VmafContext::hip` substruct is appended after `metal`**
+  (fork-local, ADR-0519). The `hip` struct holds a single
+  `VmafHipState *state` pointer gated by `#ifdef HAVE_HIP`. It is
+  intentionally appended at the end of the GPU-backend substructs
+  so CPU-only / CUDA-only / etc. builds see no offset shifts. On
+  rebase: if upstream reorders the file-private VmafContext
+  definition, keep the HIP block at the end and keep its
+  `#ifdef HAVE_HIP` guard exactly aligned with the public-header
+  include block at the top of the file.
+
+- **HIP state lifetime mirrors SYCL / Vulkan / Metal, not CUDA**
+  (fork-local, ADR-0519). `vmaf_close` clears `vmaf->hip.state =
+  NULL` without freeing the underlying state — caller owns the
+  state and frees it via `vmaf_hip_state_free()` after `vmaf_close`.
+  This deliberately differs from the CUDA twin's by-value copy
+  semantics, which historically grew an ownership-transfer
+  ambiguity the newer backends avoid. On rebase: if upstream
+  changes the CUDA twin's ownership model, do NOT propagate the
+  change to HIP without an ADR — the pointer-stash contract is
+  load-bearing for the caller-owned `VmafHipState` lifetime
+  documented in `libvmaf/include/libvmaf/libvmaf_hip.h`.
+
 ## Rebase-sensitive invariants (seventh + eighth consumers)
 
 - **`float_motion_hip.c` mirrors `float_motion_cuda.c`
@@ -312,6 +350,12 @@ do not replace — the scaffold invariants already documented above.
   kernel-template decision; the source the HIP mirror tracks.
 - [ADR-0214](../../../docs/adr/0214-gpu-parity-ci-gate.md) — `places=4`
   cross-backend gate; the runtime PR's incoming numerics gate.
+- [ADR-0519](../../../docs/adr/0519-hip-import-state-implementation.md)
+  — `vmaf_hip_import_state` implementation; moves the function from
+  `hip/common.c` to `libvmaf.c`, unblocks `vmaf --backend hip` on
+  AMD ROCm hosts. HIP joins CUDA / SYCL / Vulkan as a fully working
+  runtime-selected backend (scores match CPU bit-exactly because
+  dispatch still routes through CPU twins).
 
 ## Build
 
