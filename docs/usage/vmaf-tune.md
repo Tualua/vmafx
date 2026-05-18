@@ -2171,6 +2171,8 @@ shell script of the per-segment + concat commands.
 | `--encoder NAME` | `libx264` | Any registered codec adapter accepted by the Phase-B bisect backend. |
 | `--bitdepth N` | `8` | Forwarded to `vmaf-perShot` (`8`, `10`, or `12`). |
 | `--total-frames N` | `0` | Frame count for the single-shot fallback when `vmaf-perShot` is unavailable. |
+| `--scene-threshold X` | unset | Override `vmaf-perShot --diff-threshold` (mean-absolute-luma-delta cutoff for cut classification; lower = more shots). Omit to keep the C-side compiled default (`12.0` on 8-bit content). See [ADR-0513](../adr/0513-per-shot-scene-threshold-and-1-shot-chart.md). |
+| `--max-shot-duration S` | `2.0` | Uniform-time-window splitter (seconds). Any detected shot longer than `S` is sliced into equal-length sub-shots so the per-shot tuner sees a non-degenerate timeline even when the detector under-cuts (e.g. short clips, low-contrast fades). Set to `0` to disable. See [ADR-0513](../adr/0513-per-shot-scene-threshold-and-1-shot-chart.md). |
 | `--per-shot-bin PATH` | `vmaf-perShot` | Override the shot detector binary. |
 | `--ffmpeg-bin PATH` | `ffmpeg` | Override the FFmpeg binary. |
 | `--vmaf-bin PATH` | `vmaf` | Override the libvmaf CLI used by the per-shot scorer. |
@@ -2220,6 +2222,32 @@ If the `vmaf-perShot` binary is not on PATH, or it exits non-zero, the
 planner falls back to a single shot covering the whole clip
 (`[0, --total-frames)`). This keeps `tune-per-shot` usable as a smoke
 test on machines that have not built the shot-detector binary yet.
+
+The uniform-time-window splitter (`--max-shot-duration`, default
+`2.0 s`) still applies to that fallback: even when the detector
+returns one giant shot, the splitter slices it into roughly
+`ceil(duration / window)` equal-length sub-shots so the per-shot
+tuner produces a useful CRF timeline. Pass `--max-shot-duration 0`
+to restore the historical single-shot behaviour. See
+[ADR-0513](../adr/0513-per-shot-scene-threshold-and-1-shot-chart.md).
+
+### Tuning scene sensitivity
+
+`vmaf-perShot` classifies frame `N` as a cut when the mean absolute
+luma delta against frame `N-1` (in the 8-bit domain) crosses the
+`--diff-threshold` cutoff. The compiled-in default is `12.0`, which
+the empirical calibration in
+[ADR-0222](../adr/0222-vmaf-pershot-binary.md) tuned against the
+`testdata` fixtures. Real-world content varies: animated material
+with deep saturated transitions trips the heuristic easily, but
+short live-action clips with low-contrast scene changes (BBB's
+underwater segment, indoor talking-heads) under-cut at the default.
+
+Lower `--scene-threshold` (e.g. `4` - `6`) to recover those cuts.
+Higher values (e.g. `18` - `25`) reject motion-rich in-shot bursts
+that the default classifies as fades. The CLI flag passes through to
+the C binary verbatim so existing diagnostic scripts that invoke
+`vmaf-perShot` directly use the same units.
 
 ### What Phase D does **not** do
 

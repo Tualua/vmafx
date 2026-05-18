@@ -118,6 +118,9 @@ def detect_shots(
     total_frames: int | None = None,
     per_shot_bin: str = "vmaf-perShot",
     runner: object | None = None,
+    diff_threshold: float | None = None,
+    framerate: float | None = None,
+    max_shot_duration_sec: float | None = None,
 ) -> list[Shot]:
     """Return the shot boundary list for ``video_path``.
 
@@ -127,6 +130,18 @@ def detect_shots(
 
     ``total_frames`` is required for the fallback path; the
     ``vmaf-perShot`` path infers it from the YUV size.
+
+    ``diff_threshold`` overrides the C-side ``--diff-threshold`` (luma
+    mean-absolute-delta cutoff for cut classification). Lower values
+    yield more shots; the C default is 12.0 (8-bit domain). When
+    ``None`` the C binary uses its compiled-in default. See ADR-0512.
+
+    ``max_shot_duration_sec`` enforces a uniform-time-window splitter
+    on top of the detector output: any shot longer than the window is
+    sliced into equal-length sub-shots so downstream per-shot tuning
+    sees a non-degenerate timeline even when the detector under-cuts
+    (e.g. short clips, low-contrast scene transitions). Requires
+    ``framerate``. When ``None`` no splitter is applied.
     """
     shots, _ok = _detect_shots_with_status(
         video_path,
@@ -137,7 +152,14 @@ def detect_shots(
         total_frames=total_frames,
         per_shot_bin=per_shot_bin,
         runner=runner,
+        diff_threshold=diff_threshold,
     )
+    if max_shot_duration_sec is not None and framerate is not None:
+        shots = split_long_shots(
+            shots,
+            max_duration_sec=max_shot_duration_sec,
+            framerate=framerate,
+        )
     return shots
 
 
@@ -151,6 +173,7 @@ def _detect_shots_with_status(
     total_frames: int | None = None,
     per_shot_bin: str = "vmaf-perShot",
     runner: object | None = None,
+    diff_threshold: float | None = None,
 ) -> tuple[list[Shot], bool]:
     """Like :func:`detect_shots` but also returns ``ok`` — ``True`` iff
     the ``vmaf-perShot`` invocation succeeded and yielded shot data.
@@ -191,6 +214,12 @@ def _detect_shots_with_status(
         "--format",
         "json",
     ]
+    # ADR-0512: thread a user-tunable cut threshold to the C binary so
+    # operators can dial sensitivity per content (animation vs. live
+    # action) without rebuilding. The binary keeps its own default
+    # when the flag is omitted.
+    if diff_threshold is not None:
+        cmd.extend(["--diff-threshold", f"{float(diff_threshold):.6f}"])
 
     try:
         runner_fn = runner or subprocess.run
@@ -235,6 +264,53 @@ def _single_shot_fallback(total_frames: int | None) -> list[Shot]:
         # happy without lying about real length.
         return [Shot(start_frame=0, end_frame=1)]
     return [Shot(start_frame=0, end_frame=total_frames)]
+
+
+def split_long_shots(
+    shots: Sequence[Shot],
+    *,
+    max_duration_sec: float,
+    framerate: float,
+) -> list[Shot]:
+    """Slice any shot longer than ``max_duration_sec`` into uniform sub-shots.
+
+    Guards downstream per-shot tuning against an under-cutting scene
+    detector — when ``vmaf-perShot``'s mean-absolute-luma-delta
+    heuristic can't see a cut (low-contrast fades, short clips, content
+    the empirical threshold under-fits), the fallback ensures the
+    timeline is partitioned into at least :math:`\\lceil L/W \\rceil`
+    pieces where :math:`L` is the shot length in seconds and :math:`W`
+    is the window. ADR-0512.
+
+    ``max_duration_sec`` <= 0 or non-finite ``framerate`` is a no-op
+    (returns the input unchanged) — the caller has explicitly disabled
+    the splitter or has no usable framerate to convert seconds to
+    frames.
+    """
+    if not shots:
+        return list(shots)
+    if not math.isfinite(framerate) or framerate <= 0.0:
+        return list(shots)
+    if max_duration_sec <= 0.0:
+        return list(shots)
+    max_frames = max(1, int(round(max_duration_sec * framerate)))
+    out: list[Shot] = []
+    for shot in shots:
+        length = shot.length
+        if length <= max_frames:
+            out.append(shot)
+            continue
+        # ceil(length / max_frames) equal-sized partitions.
+        n_parts = (length + max_frames - 1) // max_frames
+        # Distribute remainder so partitions differ by at most 1 frame.
+        base = length // n_parts
+        extra = length - base * n_parts
+        cursor = shot.start_frame
+        for idx in range(n_parts):
+            part_len = base + (1 if idx < extra else 0)
+            out.append(Shot(start_frame=cursor, end_frame=cursor + part_len))
+            cursor += part_len
+    return out
 
 
 def _parse_per_shot_json(payload: str) -> list[Shot]:
@@ -587,6 +663,7 @@ __all__ = [
     "merge_shots",
     "parse_per_shot_csv",
     "plan_to_shell_script",
+    "split_long_shots",
     "summarise_shots",
     "tune_per_shot",
     "write_concat_listing",

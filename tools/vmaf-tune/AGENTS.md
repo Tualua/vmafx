@@ -593,6 +593,21 @@ corresponding phase.
   When TransNet V2 is hot-pathed (e.g. Phase E ladder generation
   re-running detection), extend ``detect_shots`` to call
   ``vmaf-perShot`` once and cache, not to bypass the binary.
+- **Scene-threshold + uniform-window splitter (ADR-0512).**
+  ``detect_shots`` accepts ``diff_threshold`` (forwarded to the C
+  binary as ``--diff-threshold``) and ``max_shot_duration_sec``
+  (post-processing splitter, requires ``framerate``). The CLI
+  exposes these as ``--scene-threshold`` and ``--max-shot-duration``
+  (default ``2.0 s``, ``0`` disables). The splitter is intentionally
+  default-on so 5 s clips always produce ``>= 2`` shots even when
+  the luma-delta heuristic under-cuts; lowering the default is a
+  behavioural change that must come with a fresh empirical
+  calibration against the BBB e2e fixtures. The ``split_long_shots``
+  helper preserves contiguity (``out[i].end_frame ==
+  out[i+1].start_frame``) and distributes the remainder so partition
+  lengths differ by at most one frame — both invariants are covered
+  by ``test_per_shot.py`` and downstream merge / concat-listing code
+  depends on the contiguity property.
 - **Shot detection runs once per source, never per cell.** The
   corpus driver (``corpus._resolve_shot_metadata``) calls
   ``_detect_shots_with_status`` at the top of ``iter_rows`` and

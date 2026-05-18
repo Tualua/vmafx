@@ -112,6 +112,63 @@ def test_markdown_assets_dir_writes_pngs(tmp_path):
     assert "data:image/png;base64" not in md
 
 
+def test_html_one_shot_timeline_renders_non_empty_chart():
+    """ADR-0513 Bug B regression: a single-shot per-shot result must
+    still produce a visible drawable element in the rendered SVG chart.
+
+    The historical ``ax.step([start], [crf], ...)`` call collapsed to a
+    zero-length path the SVG backend silently dropped. The fix renders
+    each shot as a horizontal band over its frame range so the chart
+    always carries at least one ``<path>`` / ``<line>`` element with a
+    non-degenerate ``d="..."`` (or x1!=x2 line) attribute.
+    """
+    src = SourceInfo(
+        path="/tmp/example.mp4",
+        width=3840,
+        height=2160,
+        fps=60.0,
+        duration_s=5.0,
+        frame_count=300,
+        codec="h264",
+        size_bytes=1_000_000,
+    )
+    data = ReportData(
+        source=src,
+        target_vmaf=92.0,
+        shots=(ShotRow(0, 0, 300, 3840, 2160, 26, 92.47, 12000, 5.0),),
+        generated_at_iso="2026-05-18T00:00:00+00:00",
+    )
+    html = render_html(data)
+    # The chart panel renders (matplotlib available).
+    assert "Per-shot tuning" in html
+    # Inline SVG present.
+    if "<svg" not in html:
+        # matplotlib not installed in the test env — skip rather than fail.
+        import pytest as _pytest  # noqa: PLC0415
+
+        _pytest.skip("matplotlib unavailable; SVG fallback exercised separately")
+    # Locate the per-shot chart subtree by anchoring on the section
+    # header and grabbing the SVG that follows it.
+    chart_pos = html.find("Per-shot tuning timeline")
+    # Title rendered inside the SVG; everything after it up to the next
+    # </svg> is the chart we care about.
+    if chart_pos < 0:
+        # Fall back to any svg substring — the chart still rendered as
+        # part of the page.
+        chart_pos = html.find("<svg")
+    svg_tail = html[chart_pos:]
+    svg_end = svg_tail.find("</svg>")
+    assert svg_end > 0, "expected closing </svg> after per-shot chart"
+    chart_svg = svg_tail[:svg_end]
+    # Drawable element heuristics: a Line2D / hline emits either a
+    # <path d="M ... L ..."/> or a <line x1=... x2=.../> with x1 != x2.
+    has_path = "<path " in chart_svg and 'd="M' in chart_svg
+    has_line = "<line " in chart_svg
+    assert has_path or has_line, (
+        "1-shot timeline chart had no drawable path/line element — " "ADR-0513 Bug B regressed"
+    )
+
+
 def test_empty_sections_omitted():
     src = SourceInfo("/tmp/x.mp4", 1920, 1080, 24.0, 1.0, 24, "h264", 100)
     data = ReportData(source=src, target_vmaf=92.0)

@@ -34,6 +34,7 @@ from vmaftune.per_shot import (  # noqa: E402
     merge_shots,
     parse_per_shot_csv,
     plan_to_shell_script,
+    split_long_shots,
     tune_per_shot,
     write_concat_listing,
 )
@@ -391,3 +392,99 @@ def test_cli_tune_per_shot_binds_bisect_predicate(tmp_path, monkeypatch):
     # Concat listing was written next to the segments.
     listing = (out.parent / "segments" / "concat.txt").read_text()
     assert listing.count("file '") == 2
+
+
+# --------------------------------------------------------------------------- #
+# ADR-0513 — scene-threshold + uniform-window splitter                         #
+# --------------------------------------------------------------------------- #
+
+
+def test_split_long_shots_partitions_uniform_window():
+    """A single 5 s shot at 60 fps with a 2 s window splits into 3 sub-shots
+    of [120, 90, 90] frames (uniform within ±1 frame)."""
+    shots = [Shot(start_frame=0, end_frame=300)]
+    out = split_long_shots(shots, max_duration_sec=2.0, framerate=60.0)
+    assert len(out) >= 3
+    # Contiguity: end_i == start_{i+1}; full coverage of input range.
+    assert out[0].start_frame == 0
+    assert out[-1].end_frame == 300
+    for a, b in zip(out, out[1:], strict=False):
+        assert a.end_frame == b.start_frame
+    # No partition longer than ceil(2.0 * 60) frames.
+    assert max(s.length for s in out) <= 120
+
+
+def test_split_long_shots_noop_when_disabled():
+    shots = [Shot(start_frame=0, end_frame=300)]
+    assert split_long_shots(shots, max_duration_sec=0.0, framerate=60.0) == shots
+    # Non-finite framerate is a no-op too.
+    assert split_long_shots(shots, max_duration_sec=2.0, framerate=float("nan")) == shots
+    assert split_long_shots(shots, max_duration_sec=2.0, framerate=0.0) == shots
+
+
+def test_split_long_shots_preserves_short_shots():
+    """Shots already shorter than the window are passed through verbatim."""
+    shots = [Shot(0, 30), Shot(30, 60), Shot(60, 90)]
+    out = split_long_shots(shots, max_duration_sec=2.0, framerate=60.0)
+    assert out == shots
+
+
+def test_detect_shots_forwards_diff_threshold(tmp_path):
+    """``--diff-threshold`` is added to the C-binary argv when supplied."""
+    src = tmp_path / "ref.yuv"
+    src.write_bytes(b"\x00" * 16)
+    payload = json.dumps({"shots": [{"start_frame": 0, "end_frame": 59}]})
+
+    seen_cmd: list[list[str]] = []
+
+    def fake_run(cmd, capture_output, text, check):
+        seen_cmd.append(list(cmd))
+        out_path = Path(cmd[cmd.index("--output") + 1])
+        out_path.write_text(payload, encoding="utf-8")
+        return _FakeCompleted(returncode=0, stdout="ok")
+
+    detect_shots(
+        src,
+        width=128,
+        height=128,
+        per_shot_bin="vmaf-perShot",
+        runner=fake_run,
+        diff_threshold=4.5,
+    )
+    assert seen_cmd, "C binary was not invoked"
+    cmd = seen_cmd[0]
+    assert "--diff-threshold" in cmd
+    idx = cmd.index("--diff-threshold")
+    assert float(cmd[idx + 1]) == pytest.approx(4.5)
+
+
+def test_detect_shots_splits_single_shot_via_max_duration(tmp_path):
+    """5 s @ 60 fps with --max-shot-duration 2.0 yields >= 2 shots even
+    when the C binary returns a single shot covering the whole clip.
+
+    This is the deliverable-gate scenario from the BBB 5s case: the
+    luma-delta heuristic returns one shot, and the uniform-window
+    splitter ensures the per-shot tuner sees a non-degenerate timeline.
+    """
+    src = tmp_path / "ref.yuv"
+    src.write_bytes(b"\x00" * 16)
+    payload = json.dumps({"shots": [{"start_frame": 0, "end_frame": 299}]})
+
+    def fake_run(cmd, capture_output, text, check):
+        out_path = Path(cmd[cmd.index("--output") + 1])
+        out_path.write_text(payload, encoding="utf-8")
+        return _FakeCompleted(returncode=0, stdout="ok")
+
+    shots = detect_shots(
+        src,
+        width=3840,
+        height=2160,
+        per_shot_bin="vmaf-perShot",
+        runner=fake_run,
+        framerate=60.0,
+        max_shot_duration_sec=2.0,
+    )
+    assert len(shots) >= 2
+    # Contiguous coverage of [0, 300).
+    assert shots[0].start_frame == 0
+    assert shots[-1].end_frame == 300

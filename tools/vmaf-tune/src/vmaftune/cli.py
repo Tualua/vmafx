@@ -433,6 +433,28 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     per_shot.add_argument(
+        "--scene-threshold",
+        type=float,
+        default=None,
+        help=(
+            "override vmaf-perShot --diff-threshold (mean-absolute-luma-delta "
+            "cutoff for cut classification; lower = more shots). Omit to keep "
+            "the C-side compiled default (12.0 on 8-bit content). ADR-0512."
+        ),
+    )
+    per_shot.add_argument(
+        "--max-shot-duration",
+        type=float,
+        default=2.0,
+        help=(
+            "uniform-time-window splitter: any detected shot longer than this "
+            "many seconds is sliced into equal-length sub-shots so the "
+            "per-shot tuner sees a non-degenerate timeline even when the "
+            "detector under-cuts (e.g. 5 s clips on the BBB fixtures). Set "
+            "to 0 to disable; default 2.0. ADR-0512."
+        ),
+    )
+    per_shot.add_argument(
         "--per-shot-bin",
         default="vmaf-perShot",
         help="path to the vmaf-perShot binary (default vmaf-perShot on PATH)",
@@ -1823,6 +1845,12 @@ def _run_tune_per_shot(args: argparse.Namespace) -> int:
     # ``score_backend`` at line 1880 already passing the raw user
     # value (and `bisect_target_vmaf` surfacing the failure).
     total_frames = args.total_frames if args.total_frames > 0 else None
+    # ADR-0512: thread the user-tunable scene threshold + uniform-window
+    # splitter through so short clips and under-cutting content still
+    # produce a multi-shot timeline for the per-shot tuner.
+    max_shot_duration = getattr(args, "max_shot_duration", None)
+    if max_shot_duration is not None and max_shot_duration <= 0.0:
+        max_shot_duration = None
     shots = detect_shots(
         args.src,
         width=args.width,
@@ -1831,6 +1859,9 @@ def _run_tune_per_shot(args: argparse.Namespace) -> int:
         bitdepth=args.bitdepth,
         total_frames=total_frames,
         per_shot_bin=args.per_shot_bin,
+        diff_threshold=getattr(args, "scene_threshold", None),
+        framerate=args.framerate,
+        max_shot_duration_sec=max_shot_duration,
     )
     predicate_label = "bisect"
     scratch_ctx = None

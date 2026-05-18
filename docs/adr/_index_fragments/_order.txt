@@ -365,3 +365,4 @@
 0456-ssimulacra2-cuda-blur-fusion-transpose
 0452-vif-scratch-buf-hoist-to-vifstate
 
+0513-per-shot-scene-threshold-and-1-shot-chart

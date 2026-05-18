@@ -7,6 +7,26 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## fix/per-shot-scene-threshold-and-1-shot-chart (ADR-0513)
+
+**No rebase impact.** Changes confined to fork-local trees:
+`tools/vmaf-tune/src/vmaftune/per_shot.py` (new `split_long_shots`
+helper + `diff_threshold` / `framerate` / `max_shot_duration_sec`
+kwargs on `detect_shots`), `tools/vmaf-tune/src/vmaftune/cli.py`
+(`--scene-threshold` + `--max-shot-duration` flags on
+`tune-per-shot`), `tools/vmaf-tune/src/vmaftune/report.py`
+(`_shot_plot_fn` uses `ax.hlines` bands instead of a `step` plot),
+`tools/vmaf-tune/tests/test_per_shot.py` + `test_report.py` (6 new
+regression tests). The C-side `libvmaf/tools/vmaf_per_shot.c` is
+untouched — the new `--scene-threshold` flag passes through to the
+existing `--diff-threshold` C option that has been in tree since
+ADR-0222. Docs: ADR-0512, `docs/adr/README.md` index row,
+`docs/usage/vmaf-tune.md` flag rows + "Tuning scene sensitivity"
+section, `docs/state.md` Recently-closed rows,
+`changelog.d/fixed/per-shot-scene-threshold-and-1-shot-chart.md`.
+Netflix upstream does not ship `tools/vmaf-tune/`.
+
+---
 ## fix/compare-source-is-container-plumbing (ADR-0509)
 
 **No rebase impact.** Changes confined to `tools/vmaf-tune/` (fork-local

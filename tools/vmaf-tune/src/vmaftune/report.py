@@ -280,18 +280,71 @@ def _shot_plot_fn(data: ReportData):
             ax.set_axis_off()
             return
         ax2 = ax.twinx()
-        starts = [s.start_frame for s in data.shots]
-        crfs = [s.best_crf for s in data.shots]
-        vmafs = [s.vmaf for s in data.shots]
-        ax.step(starts, crfs, where="post", color="#1f77b4", label="best CRF")
+        # ADR-0512 Bug B: when the source resolves to a single shot the
+        # historical ``ax.step([start], [crf], ...)`` produced a
+        # zero-length path that the SVG backend silently dropped, leaving
+        # the chart visually empty even though the axes/title rendered.
+        # Render each shot as a horizontal band over its frame range so
+        # the user always sees a drawable element — for the 1-shot case
+        # this becomes a single full-width band labelled with the
+        # tuner's pick.
+        for shot in data.shots:
+            x0 = shot.start_frame
+            x1 = shot.end_frame
+            ax.hlines(
+                shot.best_crf,
+                x0,
+                x1,
+                colors="#1f77b4",
+                linewidth=2.5,
+            )
+            ax2.hlines(
+                shot.vmaf,
+                x0,
+                x1,
+                colors="#d62728",
+                linewidth=2.5,
+                alpha=0.7,
+            )
+            # Midpoint markers — extra insurance that the segment is
+            # visible even when the band collapses on a print-at-small
+            # output size.
+            mid = (x0 + x1) / 2.0
+            ax.plot(mid, shot.best_crf, marker="o", color="#1f77b4", markersize=4)
+            ax2.plot(mid, shot.vmaf, marker="o", color="#d62728", markersize=4, alpha=0.7)
+        # Provide explicit axis ranges so a single-shot dataset still
+        # picks sensible bounds (matplotlib's autoscale degenerates on a
+        # single point + hline pair at the same coordinate).
+        last_end = max(shot.end_frame for shot in data.shots)
+        first_start = min(shot.start_frame for shot in data.shots)
+        x_pad = max(1.0, 0.02 * (last_end - first_start))
+        ax.set_xlim(first_start - x_pad, last_end + x_pad)
+        crfs = [shot.best_crf for shot in data.shots]
+        vmafs = [shot.vmaf for shot in data.shots]
+        if min(crfs) == max(crfs):
+            ax.set_ylim(min(crfs) - 2.0, max(crfs) + 2.0)
+        if min(vmafs) == max(vmafs):
+            ax2.set_ylim(min(vmafs) - 1.0, min(100.0, max(vmafs) + 1.0))
+        # Synthetic legend handles — matplotlib's auto-legend skips
+        # hline artists in older versions; the proxies keep the legend
+        # populated regardless of backend version.
+        from matplotlib.lines import Line2D  # noqa: PLC0415
+
+        ax.legend(
+            handles=[Line2D([0], [0], color="#1f77b4", lw=2.5, label="best CRF")],
+            loc="upper left",
+            fontsize=8,
+        )
+        ax2.legend(
+            handles=[Line2D([0], [0], color="#d62728", lw=2.5, alpha=0.7, label="VMAF")],
+            loc="upper right",
+            fontsize=8,
+        )
         ax.set_xlabel("frame")
         ax.set_ylabel("CRF")
-        ax2.step(starts, vmafs, where="post", color="#d62728", alpha=0.7, label="VMAF")
         ax2.set_ylabel("VMAF")
         ax.set_title("Per-shot tuning timeline")
         ax.grid(True, alpha=0.3)
-        ax.legend(loc="upper left", fontsize=8)
-        ax2.legend(loc="upper right", fontsize=8)
 
     return _plot
 
