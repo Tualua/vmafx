@@ -152,6 +152,14 @@ typedef struct VmafFeatureExtractor {
 VmafFeatureExtractor *vmaf_get_feature_extractor_by_name(const char *name);
 VmafFeatureExtractor *vmaf_get_feature_extractor_by_feature_name(const char *name, unsigned flags);
 
+/* ADR-0544: Audit feature_extractor_list[] for accidental duplicate
+ * registrations (same `name` string registered more than once).
+ * Returns 0 if every entry is unique, -EINVAL otherwise.  Each
+ * duplicate is logged at VMAF_LOG_LEVEL_ERROR.  Called once from
+ * `vmaf_init()` so a regression caught locally fails fast instead of
+ * silently doubling pool-entry init / extract / flush counts. */
+int vmaf_feature_extractor_list_audit(void);
+
 enum VmafFeatureExtractorContextFlags {
     VMAF_FEATURE_EXTRACTOR_CONTEXT_DO_NOT_OVERWRITE = 1 << 0,
 };

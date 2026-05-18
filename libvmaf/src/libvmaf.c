@@ -247,6 +247,15 @@ int vmaf_init(VmafContext **vmaf, VmafConfiguration cfg)
 
     vmaf_set_log_level(cfg.log_level);
 
+    /* ADR-0544: catch accidental duplicate extractor registrations
+     * fast.  The static `feature_extractor_list[]` should hold each
+     * extractor exactly once; a duplicate doubles ctx-pool entries and
+     * runs init/extract/flush twice per pic.  Run the audit before any
+     * other state is touched. */
+    err = vmaf_feature_extractor_list_audit();
+    if (err)
+        goto free_v;
+
     err = vmaf_framesync_init(&(v->framesync));
     if (err)
         goto free_v;

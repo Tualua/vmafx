@@ -769,3 +769,22 @@ after a port-upstream of any of these files.
   retain the original per-call `vif_get_filter()` path. If upstream changes
   `compute_vif`'s signature, both the declaration in `vif.h` and the internal
   call in `vif.c` need updating.
+
+- **`feature_extractor_list[]` is exactly-once** (ADR-0544):
+  the static `feature_extractor_list[]` in `feature_extractor.c` must
+  list every `&vmaf_fex_*` symbol **at most once** under its correct
+  `#ifdef HAVE_*` guard. A duplicate is silently masked by the
+  first-match `vmaf_get_feature_extractor_by_name()` but breaks the
+  ctx-pool's iterator dispatch: the pool's `get_fex_list_entry()` keys
+  on `fex->name` so the same name registered twice still collapses to
+  one pool entry there, but any caller that walks the registry
+  directly (e.g. the iterator dispatch path that fans out
+  `vmaf_use_features_from_model`) allocates one entry per registered
+  pointer and runs `init`/`extract`/`flush` once per copy per picture.
+  The audit helper `vmaf_feature_extractor_list_audit()` runs from
+  `vmaf_init()` and returns `-EINVAL` on duplicates; the
+  `test_feature_extractor_list_no_duplicates` C unit test exercises
+  it on the live registry. When adding a new backend or extractor:
+  add **one** `extern VmafFeatureExtractor vmaf_fex_*_<bk>` decl and
+  **one** `&vmaf_fex_*_<bk>` entry inside the matching `#if HAVE_<BK>`
+  block — do not paste the whole `&vmaf_fex_*` cluster.

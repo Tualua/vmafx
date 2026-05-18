@@ -230,17 +230,23 @@ static VmafFeatureExtractor *feature_extractor_list[] = {
     &vmaf_fex_ciede, &vmaf_fex_psnr, &vmaf_fex_psnr_hvs, &vmaf_fex_integer_adm,
     &vmaf_fex_integer_motion, &vmaf_fex_integer_motion_v2, &vmaf_fex_integer_vif, &vmaf_fex_cambi,
 #if HAVE_SYCL
-    // SYCL before CUDA: when multiple GPU backends are compiled in,
-    // the first matching extractor wins.  SYCL is the preferred backend
-    // because it supports the widest range of Intel hardware.
-    // Use --no_sycl to fall back to CUDA.
+    /* SYCL before CUDA: when multiple GPU backends are compiled in,
+     * the first matching extractor wins.  SYCL is the preferred backend
+     * because it supports the widest range of Intel hardware.
+     * Use --no_sycl to fall back to CUDA.
+     *
+     * ADR-0541: each extractor symbol appears EXACTLY ONCE here.  The
+     * prior arrangement registered six SYCL twins twice
+     * (psnr_sycl / float_moment_sycl / ciede_sycl / float_ssim_sycl /
+     * float_ms_ssim_sycl / psnr_hvs_sycl), which caused the ctx pool's
+     * by-feature-name iterator to instantiate two contexts per twin and
+     * run their init/extract/flush hooks twice per pic. */
     &vmaf_fex_integer_vif_sycl, &vmaf_fex_integer_adm_sycl, &vmaf_fex_integer_motion_sycl,
     &vmaf_fex_integer_motion_v2_sycl, &vmaf_fex_psnr_sycl, &vmaf_fex_float_moment_sycl,
     &vmaf_fex_ciede_sycl, &vmaf_fex_float_ssim_sycl, &vmaf_fex_float_ms_ssim_sycl,
-    &vmaf_fex_psnr_hvs_sycl, &vmaf_fex_psnr_sycl, &vmaf_fex_float_moment_sycl, &vmaf_fex_ciede_sycl,
-    &vmaf_fex_float_ssim_sycl, &vmaf_fex_float_ms_ssim_sycl, &vmaf_fex_psnr_hvs_sycl,
-    &vmaf_fex_float_ansnr_sycl, &vmaf_fex_float_psnr_sycl, &vmaf_fex_float_motion_sycl,
-    &vmaf_fex_float_vif_sycl, &vmaf_fex_ssimulacra2_sycl, &vmaf_fex_float_adm_sycl,
+    &vmaf_fex_psnr_hvs_sycl, &vmaf_fex_float_ansnr_sycl, &vmaf_fex_float_psnr_sycl,
+    &vmaf_fex_float_motion_sycl, &vmaf_fex_float_vif_sycl, &vmaf_fex_ssimulacra2_sycl,
+    &vmaf_fex_float_adm_sycl,
     /* T3-15 / ADR-0371: cambi SYCL twin (closes last CUDA→SYCL parity gap). */
     &vmaf_fex_cambi_sycl,
 #endif
@@ -249,31 +255,23 @@ static VmafFeatureExtractor *feature_extractor_list[] = {
      * the preferred GPU paths because they ship the full feature
      * set (ADM + motion + VIF) and are bit-exact-tested against the
      * Netflix golden gate. Vulkan is opt-in via explicit feature
-     * name selection until the full backend lands (T5-1c). */
+     * name selection until the full backend lands (T5-1c).
+     *
+     * ADR-0541: each Vulkan extractor appears EXACTLY ONCE.  Prior to
+     * the dedup pass this block held 67 entries instead of 18; nine
+     * extractors were re-registered (two of them eleven times each,
+     * seven of them six times), which caused
+     * `vmaf_fex_ctx_pool_aquire` to allocate one ctx-pool entry per
+     * registration and invoke each extractor's init/extract/flush
+     * hooks 6-11x per picture.  The first-match `get_by_name` path
+     * hid the bug from CLI users, but every iterator-driven dispatch
+     * (e.g. `vmaf_use_features_from_model`) paid the cost. */
     &vmaf_fex_integer_vif_vulkan, &vmaf_fex_integer_motion_vulkan,
     &vmaf_fex_integer_motion_v2_vulkan, &vmaf_fex_integer_adm_vulkan, &vmaf_fex_psnr_vulkan,
     &vmaf_fex_float_moment_vulkan, &vmaf_fex_ciede_vulkan, &vmaf_fex_float_ssim_vulkan,
-    &vmaf_fex_float_ms_ssim_vulkan, &vmaf_fex_psnr_hvs_vulkan, &vmaf_fex_integer_vif_vulkan,
-    &vmaf_fex_integer_motion_vulkan, &vmaf_fex_integer_adm_vulkan, &vmaf_fex_psnr_vulkan,
-    &vmaf_fex_float_moment_vulkan, &vmaf_fex_ciede_vulkan, &vmaf_fex_float_ssim_vulkan,
     &vmaf_fex_float_ms_ssim_vulkan, &vmaf_fex_psnr_hvs_vulkan, &vmaf_fex_float_ansnr_vulkan,
-    &vmaf_fex_float_ms_ssim_vulkan, &vmaf_fex_psnr_hvs_vulkan, &vmaf_fex_integer_vif_vulkan,
-    &vmaf_fex_integer_motion_vulkan, &vmaf_fex_integer_adm_vulkan, &vmaf_fex_psnr_vulkan,
-    &vmaf_fex_float_moment_vulkan, &vmaf_fex_ciede_vulkan, &vmaf_fex_float_ssim_vulkan,
-    &vmaf_fex_float_ms_ssim_vulkan, &vmaf_fex_psnr_hvs_vulkan, &vmaf_fex_float_psnr_vulkan,
-    &vmaf_fex_float_ms_ssim_vulkan, &vmaf_fex_psnr_hvs_vulkan, &vmaf_fex_integer_vif_vulkan,
-    &vmaf_fex_integer_motion_vulkan, &vmaf_fex_integer_adm_vulkan, &vmaf_fex_psnr_vulkan,
-    &vmaf_fex_float_moment_vulkan, &vmaf_fex_ciede_vulkan, &vmaf_fex_float_ssim_vulkan,
-    &vmaf_fex_float_ms_ssim_vulkan, &vmaf_fex_psnr_hvs_vulkan, &vmaf_fex_float_motion_vulkan,
-    &vmaf_fex_float_ms_ssim_vulkan, &vmaf_fex_psnr_hvs_vulkan, &vmaf_fex_integer_vif_vulkan,
-    &vmaf_fex_integer_motion_vulkan, &vmaf_fex_integer_adm_vulkan, &vmaf_fex_psnr_vulkan,
-    &vmaf_fex_float_moment_vulkan, &vmaf_fex_ciede_vulkan, &vmaf_fex_float_ssim_vulkan,
-    &vmaf_fex_float_ms_ssim_vulkan, &vmaf_fex_psnr_hvs_vulkan, &vmaf_fex_float_vif_vulkan,
-    &vmaf_fex_float_ms_ssim_vulkan, &vmaf_fex_psnr_hvs_vulkan, &vmaf_fex_integer_vif_vulkan,
-    &vmaf_fex_integer_motion_vulkan, &vmaf_fex_integer_adm_vulkan, &vmaf_fex_psnr_vulkan,
-    &vmaf_fex_float_moment_vulkan, &vmaf_fex_ciede_vulkan, &vmaf_fex_float_ssim_vulkan,
-    &vmaf_fex_float_ms_ssim_vulkan, &vmaf_fex_psnr_hvs_vulkan, &vmaf_fex_float_adm_vulkan,
-    &vmaf_fex_float_ms_ssim_vulkan, &vmaf_fex_psnr_hvs_vulkan, &vmaf_fex_ssimulacra2_vulkan,
+    &vmaf_fex_float_psnr_vulkan, &vmaf_fex_float_motion_vulkan, &vmaf_fex_float_vif_vulkan,
+    &vmaf_fex_float_adm_vulkan, &vmaf_fex_ssimulacra2_vulkan,
     /* T7-36 / ADR-0205: cambi Vulkan twin (Strategy II hybrid). */
     &vmaf_fex_cambi_vulkan,
 #endif
@@ -391,6 +389,42 @@ VmafFeatureExtractor *vmaf_get_feature_extractor_by_name(const char *name)
     }
 
     return NULL;
+}
+
+int vmaf_feature_extractor_list_audit(void)
+{
+    /* ADR-0541: O(N^2) over the static registry — N ≤ ~60 even with every
+     * backend compiled in, so the cost is negligible (one-shot at
+     * vmaf_init()).  Compare both pointer identity (catches a symbol
+     * registered twice) and the `name` string (catches two distinct
+     * extractor objects that happen to publish the same name).  Either
+     * is a registry bug. */
+    int dup_count = 0;
+    for (unsigned i = 0; feature_extractor_list[i]; i++) {
+        const VmafFeatureExtractor *const a = feature_extractor_list[i];
+        if (!a->name)
+            continue;
+        for (unsigned j = i + 1; feature_extractor_list[j]; j++) {
+            const VmafFeatureExtractor *const b = feature_extractor_list[j];
+            if (!b->name)
+                continue;
+            if (a == b || !strcmp(a->name, b->name)) {
+                vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                         "feature_extractor_list duplicate: \"%s\" at index %u and %u\n", a->name,
+                         i, j);
+                dup_count++;
+            }
+        }
+    }
+    if (dup_count > 0) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "feature_extractor_list has %d duplicate registration(s); "
+                 "see ADR-0544. Each duplicate burns one ctx-pool entry and "
+                 "one init/extract/flush call per picture.\n",
+                 dup_count);
+        return -EINVAL;
+    }
+    return 0;
 }
 
 VmafFeatureExtractor *vmaf_get_feature_extractor_by_feature_name(const char *name, unsigned flags)

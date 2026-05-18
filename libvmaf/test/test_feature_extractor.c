@@ -281,6 +281,23 @@ static char *test_fex_vector_dedup_by_provided_feature_name(void)
     return NULL;
 }
 
+/* ADR-0544: walk the static `feature_extractor_list[]` and assert that no
+ * extractor `name` (or symbol pointer) appears twice.  A duplicate caused
+ * the ctx-pool's by-name iterator to allocate one entry per registration
+ * and run init/extract/flush 2x–11x per picture; the bug was hidden from
+ * the first-match get_by_name() path but trashed iterator-driven dispatch
+ * (e.g. vmaf_use_features_from_model).  This test exercises the runtime
+ * audit helper that also fires from vmaf_init(). */
+static char *test_feature_extractor_list_no_duplicates(void)
+{
+    int err = vmaf_feature_extractor_list_audit();
+    mu_assert("feature_extractor_list[] contains duplicate registrations "
+              "(see ADR-0541; check the audit log above for the offending "
+              "names/indices)",
+              !err);
+    return NULL;
+}
+
 char *run_tests()
 {
     mu_run_test(test_get_feature_extractor_by_name_and_feature_name);
@@ -289,5 +306,6 @@ char *run_tests()
     mu_run_test(test_feature_extractor_initialization_options);
     mu_run_test(test_ssim_extractor_registered_and_extracts);
     mu_run_test(test_fex_vector_dedup_by_provided_feature_name);
+    mu_run_test(test_feature_extractor_list_no_duplicates);
     return NULL;
 }
