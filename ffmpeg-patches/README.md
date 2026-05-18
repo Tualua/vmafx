@@ -120,7 +120,10 @@ Or via the helper skill: `/ffmpeg-apply-patches /path/to/ffmpeg`.
 > `git apply --check`. The latter rejects `0002+` because they
 > reference cumulative-state hunks that don't exist in pristine
 > `n8.1.1`. The most recent no-drift verification is
-> the n8.1 → n8.1.1 base bump (2026-05-09); the previous one was
+> the full-feature-exposure sync (ADR-0576, 2026-05-18): all 14 patches
+> (0001-0014) apply cleanly against a pristine `n8.1.1` checkout with
+> zero conflicts. The previous verification was the n8.1 to n8.1.1 base
+> bump (2026-05-09); before that was
 > [ADR-0277 (2026-05-04)](../docs/adr/0277-ffmpeg-patches-refresh-2026-05-04.md);
 > the procedure is captured in
 > [`docs/rebase-notes.md`](../docs/rebase-notes.md) under the same

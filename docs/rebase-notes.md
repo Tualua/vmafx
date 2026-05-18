@@ -7,6 +7,42 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## chore/ffmpeg-patches-n811-full-feature-exposure-sync (ADR-0576)
+
+**Rebase impact**: `ffmpeg-patches/` only — no libvmaf C sources, public
+headers, or `meson_options.txt` touched. Upstream Netflix/vmaf does not
+ship `ffmpeg-patches/`; no rebase conflict surface.
+
+**Rebase-sensitive invariants**:
+
+- Patch 0014 targets the `LIBVMAFContext` struct and `VmafConfiguration`
+  init blocks introduced cumulatively by patches 0003–0013. It must remain
+  the final patch in the series (or be rebased against whichever patch last
+  touches those init blocks if the series is reordered).
+- The `cpumask` / `gpumask` AVOption names must match the field names in
+  `VmafConfiguration` from `libvmaf/include/libvmaf/libvmaf.h`. If a future
+  libvmaf refactor renames those fields, patch 0014's struct designators
+  (`.cpumask =`, `.gpumask =`) must be updated to match.
+- The `feature=` passthrough in the stock `libvmaf` filter continues to
+  cover all extractors in `feature_extractor_list[]`; no patch is needed for
+  new extractor additions unless they require a dedicated C-API init call
+  (e.g., a new `vmaf_<backend>_state_init()` entry point).
+
+**Re-test on rebase**:
+
+```bash
+git clone --depth 1 --branch n8.1.1 https://git.ffmpeg.org/ffmpeg.git /tmp/ffmpeg-retest
+git -C /tmp/ffmpeg-retest config user.email "lusoris@pm.me"
+git -C /tmp/ffmpeg-retest config user.name "Lusoris"
+for p in ffmpeg-patches/*.patch; do
+    git -C /tmp/ffmpeg-retest am --3way "$p" || { echo "FAILED: $p"; break; }
+done
+# Expect 14 commits applied cleanly, no conflicts.
+```
+
+Upstream Netflix/vmaf has no `ffmpeg-patches/`; no rebase conflict surface
+against `upstream/master`. All 14 patches are fork-local.
+
 ## fix/windows-ci-sdk-pin-22621 (ADR-0575)
 
 **Rebase impact**: tools only — touches `libvmaf/tools/yuv_input.c`.
