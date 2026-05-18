@@ -22,10 +22,28 @@
 #ifdef _WIN32
 #include <io.h>
 #define yuv_fileno _fileno
+#else
+#include <unistd.h>
+#define yuv_fileno fileno
+#endif
+/*
+ * Include <sys/stat.h> before any macro aliases so the system header
+ * parses cleanly.  On MSVC (ucrt/sys/stat.h, SDK 10.0.26100.0+) the
+ * header declares _fstat64 / struct _stat64 / __stat64 internally; if
+ * we define `#define stat __stat64` first, the preprocessor expands the
+ * identifiers inside the header itself, causing "redefinition of struct
+ * _stat64" and cascading C2059/C2143 errors with NVCC and cl.exe.
+ * Placing the include here, before the MSVC macro block, avoids that
+ * conflict.  MinGW64 also defines _WIN32 but ships POSIX-compatible
+ * stat/fstat/S_ISREG natively; the _MSC_VER guard below ensures the
+ * aliases are only active under cl.exe / icx-cl.  (ADR-0521, ADR-0575)
+ */
+#include <sys/stat.h>
+#ifdef _MSC_VER
 /*
  * MSVC <sys/stat.h> declares _fstat64 / struct __stat64 but not the POSIX
  * fstat() / S_ISREG() names.  Map them to the MSVC equivalents so the
- * yuv_check_file_size() body can stay unguarded (ADR-0519).
+ * yuv_check_file_size() body can stay unguarded (ADR-0521).
  *
  * _S_IFREG is defined by MSVC <sys/stat.h>; S_ISREG is not.
  */
@@ -34,11 +52,7 @@
 #define S_ISREG(m) (((m) & _S_IFMT) == _S_IFREG)
 /* off_t is 32-bit on MSVC by default; use __int64 for >2 GiB safety. */
 typedef __int64 off_t;
-#else
-#include <unistd.h>
-#define yuv_fileno fileno
 #endif
-#include <sys/stat.h>
 
 #include "vidinput.h"
 

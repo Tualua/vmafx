@@ -7,6 +7,25 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## fix/windows-ci-sdk-pin-22621 (ADR-0575)
+
+**Rebase impact**: tools only — touches `libvmaf/tools/yuv_input.c`.
+No meson.build change, no public C-API change, no GPU path change.
+
+**Rebase-sensitive invariant**: `#include <sys/stat.h>` must remain
+**before** the `#ifdef _MSC_VER` macro block in `yuv_input.c`. If a
+rebase reorders these lines (e.g. by re-applying a prior ADR-0521 patch
+that placed the macros before the include), the MinGW64 and MSVC+SDK-26100
+redefinition errors will recur.
+
+Touched files:
+`libvmaf/tools/yuv_input.c`,
+`docs/adr/0575-windows-msvc-stat-compat-include-order.md`,
+`docs/adr/README.md` (one index row),
+`docs/state.md` (Updated note + T-WINDOWS-STAT-COMPAT row in Recently closed),
+`changelog.d/fixed/0575-windows-stat-compat-include-order.md`,
+`docs/rebase-notes.md` (this entry).
+
 ## feat/integer-ssim-gpu-real-kernels (ADR-0564)
 
 **Rebase impact**: low. The change touches two upstream-shared files:
