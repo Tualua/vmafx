@@ -33,6 +33,38 @@ for the option-space digest.
   candidate-CRF probe wants the right rung), so re-using one closure
   across multiple targets re-runs the same target every time.
 
+- **The v2 schema's `bisect_samples` row field is optional and
+  additive (ADR-0530).** Every successful encode+score round-trip
+  the underlying bisect computes is appended to
+  `BisectResult.samples` and projected through
+  `RecommendResult.bisect_samples` (a tuple of dicts with `crf`,
+  `bitrate_kbps`, `vmaf_score`, `encode_time_ms`). `to_row` emits
+  the field only when populated so the absence of the key still
+  identifies "old v2 dump (pre-ADR-0530)" — the renderer falls back
+  to the legacy connect-the-dots chart with a caveat note in that
+  case. The chart deduplicates samples per codec by CRF, sorts by
+  bitrate, and draws a monotonic-friendly per-codec curve with the
+  picked-CRF rows highlighted as larger circled markers. **Do not
+  collapse `bisect_samples` into a "winner only" field** — that
+  defeats the whole purpose of the additive plumb. The CSV emitter
+  intentionally drops the structured column via
+  `extrasaction="ignore"`; preserving the flat row contract is
+  load-bearing for downstream `csv` consumers (e.g. spreadsheet
+  ingestion).
+
+- **`--target-vmafs` default sweep is `75,80,85,90,93` (ADR-0534).**
+  Covers low-end streaming through premium. The top end stops at 93
+  because 95+ frequently exceeds the codec's CRF ceiling and
+  produces "unreachable" failure rows. Back-compat for legacy
+  scripts that pin a single VMAF via `--target-vmaf NN` is
+  preserved by the `_TrackedDefaultAction` sentinel: when
+  `--target-vmaf` is explicit and `--target-vmafs` is at its
+  default, the v1 single-target schema is honoured. The sentinel
+  detection happens in `_run_compare` — if you bypass `main()` and
+  invoke `_run_compare` directly, stamp `args._target_vmafs_was_default`
+  and `args._target_vmaf_was_default` first (call
+  `_stamp_tracked_default_sentinels(args)`).
+
 - **Hardware-encoder availability probing is opt-in by codec, not by
   flag.** `probe_encoder_available()` only runs the 1-frame lavfi
   dummy encode when the codec is in `HARDWARE_ENCODERS`. Adding a new

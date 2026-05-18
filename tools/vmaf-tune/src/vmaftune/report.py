@@ -127,6 +127,21 @@ class SourceInfo:
 
 
 @dataclasses.dataclass(frozen=True)
+class BisectSamplePoint:
+    """One per-iteration (CRF, bitrate, VMAF) probe from a target-VMAF bisect.
+
+    Mirrors :class:`vmaftune.bisect.BisectSample` on the report side so
+    the renderer does not import the bisect module (keeps ``report``
+    free of subprocess / ffmpeg deps).
+    """
+
+    crf: int
+    bitrate_kbps: float
+    vmaf_score: float
+    encode_time_ms: float = 0.0
+
+
+@dataclasses.dataclass(frozen=True)
 class CodecSweepPoint:
     """One (codec, target_vmaf) point in a rate-quality sweep.
 
@@ -138,6 +153,14 @@ class CodecSweepPoint:
     Schema v2 ingestion (ADR-0516). The legacy single-target compare
     output (schema v1) ingests as :class:`CodecRow` and renders the
     historical bar+dot chart for back-compat.
+
+    ``bisect_samples`` (ADR-0530, schema v2 additive) carries every
+    encode+score probe the underlying bisect walked through. When
+    populated, the rate-quality chart aggregates these per codec
+    (across all targets) and draws a single monotonic R-Q curve
+    instead of connecting the picked-CRF cells. Empty tuple = old v2
+    JSON without samples — renderer falls back to the legacy
+    connect-the-dots line with a caveat note.
     """
 
     codec: str
@@ -149,6 +172,7 @@ class CodecSweepPoint:
     vmaf_score: float
     ok: bool
     error: str = ""
+    bisect_samples: tuple[BisectSamplePoint, ...] = ()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -354,13 +378,64 @@ def compute_pareto_frontier(
     return tuple(frontier)
 
 
-def _sweep_plot_fn(data: ReportData):
-    """Rate-quality line plot — one line per codec, pareto highlighted.
+def _has_bisect_samples(points: Sequence[CodecSweepPoint]) -> bool:
+    """True when at least one ok point carries a populated samples tuple.
 
-    X-axis is bitrate (kbps) on a log scale (the canonical R-D axis),
-    Y is VMAF achieved. Each codec contributes one polyline across its
-    successful (target_vmaf, bitrate) points. The pareto frontier is
-    drawn as a heavier dashed line on top so the eye lands on it.
+    ADR-0530: gates the new chart variant. Old v2 dumps without samples
+    plus all v1 dumps fall through to the legacy connect-the-dots line
+    with a caveat note.
+    """
+    for p in points:
+        if p.ok and p.bisect_samples:
+            return True
+    return False
+
+
+def _dedup_bisect_samples(
+    points: Sequence[CodecSweepPoint],
+) -> dict[str, list[BisectSamplePoint]]:
+    """Aggregate per-codec bisect samples, de-duplicated by CRF.
+
+    The same codec is bisected once per target — those bisect probes
+    overlap (e.g. a target-85 bisect and a target-90 bisect on libx264
+    will both visit CRF 24 if that's a midpoint). Two measurements at
+    the same CRF on the same source should be close to identical, so
+    we keep the first occurrence and drop subsequent duplicates. Sorted
+    by bitrate ascending so the rendered curve is monotonic-friendly.
+    """
+    by_codec: dict[str, dict[int, BisectSamplePoint]] = {}
+    for p in points:
+        if not p.ok:
+            continue
+        for s in p.bisect_samples:
+            if _is_missing(s.bitrate_kbps) or _is_missing(s.vmaf_score):
+                continue
+            by_codec.setdefault(p.codec, {}).setdefault(int(s.crf), s)
+    out: dict[str, list[BisectSamplePoint]] = {}
+    for codec, by_crf in by_codec.items():
+        samples = list(by_crf.values())
+        samples.sort(key=lambda s: s.bitrate_kbps)
+        out[codec] = samples
+    return out
+
+
+def _sweep_plot_fn(data: ReportData):
+    """Rate-quality line plot — one curve per codec, pareto highlighted.
+
+    Two modes (ADR-0530):
+
+    - **From-bisect-samples** (schema-v2 with ``bisect_samples``):
+      each codec's curve is built from every CRF the underlying
+      target-VMAF bisects probed. Sorted by bitrate, drawn as a
+      monotonic-friendly line; picked-CRF rows are highlighted as
+      larger filled markers on top of the line. Pareto frontier of
+      picked-CRF rows is the dashed overlay.
+    - **Legacy connect-the-dots** (schema-v1, or v2 without samples):
+      one line per codec connecting its picked-CRF rows by target.
+      Carries a caveat note in the title because the bisect's
+      target-overshoot can flip the apparent VMAF order between
+      adjacent targets — that's the bug ADR-0530 fixes for the new
+      mode.
     """
 
     def _plot(ax) -> None:
@@ -368,36 +443,81 @@ def _sweep_plot_fn(data: ReportData):
             ax.text(0.5, 0.5, "no sweep data", ha="center", va="center")
             ax.set_axis_off()
             return
-        by_codec: dict[str, list[CodecSweepPoint]] = {}
-        for p in data.sweep_points:
-            by_codec.setdefault(p.codec, []).append(p)
+        use_samples = _has_bisect_samples(data.sweep_points)
         plotted_any = False
-        for idx, (codec, pts) in enumerate(sorted(by_codec.items())):
-            ok_pts = [
-                p
-                for p in pts
-                if p.ok and not _is_missing(p.bitrate_kbps) and not _is_missing(p.vmaf_score)
-            ]
-            if not ok_pts:
-                continue
-            ok_pts.sort(key=lambda p: p.target_vmaf)
-            xs = [p.bitrate_kbps for p in ok_pts]
-            ys = [p.vmaf_score for p in ok_pts]
-            label = codec
-            ver = ok_pts[0].encoder_version
-            if ver:
-                label = f"{codec} ({ver})"
-            ax.plot(
-                xs,
-                ys,
-                marker="o",
-                linewidth=1.6,
-                markersize=6,
-                color=_codec_colour(codec, idx),
-                label=label,
-            )
-            plotted_any = True
-        # Pareto frontier overlay.
+        if use_samples:
+            curves = _dedup_bisect_samples(data.sweep_points)
+            picked_by_codec: dict[str, list[CodecSweepPoint]] = {}
+            for p in data.sweep_points:
+                if not p.ok or _is_missing(p.bitrate_kbps) or _is_missing(p.vmaf_score):
+                    continue
+                picked_by_codec.setdefault(p.codec, []).append(p)
+            for idx, (codec, samples) in enumerate(sorted(curves.items())):
+                if not samples:
+                    continue
+                colour = _codec_colour(codec, idx)
+                first_picked = picked_by_codec.get(codec, [])
+                ver = first_picked[0].encoder_version if first_picked else ""
+                label = f"{codec} ({ver})" if ver else codec
+                xs = [s.bitrate_kbps for s in samples]
+                ys = [s.vmaf_score for s in samples]
+                # Bisect-sample curve: small markers, thin line — the
+                # genuine codec R-Q signal.
+                ax.plot(
+                    xs,
+                    ys,
+                    marker="o",
+                    markersize=3.5,
+                    linewidth=1.2,
+                    color=colour,
+                    alpha=0.85,
+                    label=label,
+                )
+                # Picked-CRF overlay: larger hollow markers so the eye
+                # spots them as the actual per-target winners.
+                if first_picked:
+                    pxs = [p.bitrate_kbps for p in first_picked]
+                    pys = [p.vmaf_score for p in first_picked]
+                    ax.scatter(
+                        pxs,
+                        pys,
+                        s=80,
+                        facecolors="none",
+                        edgecolors=colour,
+                        linewidths=1.8,
+                        zorder=8,
+                    )
+                plotted_any = True
+        else:
+            by_codec: dict[str, list[CodecSweepPoint]] = {}
+            for p in data.sweep_points:
+                by_codec.setdefault(p.codec, []).append(p)
+            for idx, (codec, pts) in enumerate(sorted(by_codec.items())):
+                ok_pts = [
+                    p
+                    for p in pts
+                    if p.ok and not _is_missing(p.bitrate_kbps) and not _is_missing(p.vmaf_score)
+                ]
+                if not ok_pts:
+                    continue
+                ok_pts.sort(key=lambda p: p.target_vmaf)
+                xs = [p.bitrate_kbps for p in ok_pts]
+                ys = [p.vmaf_score for p in ok_pts]
+                label = codec
+                ver = ok_pts[0].encoder_version
+                if ver:
+                    label = f"{codec} ({ver})"
+                ax.plot(
+                    xs,
+                    ys,
+                    marker="o",
+                    linewidth=1.6,
+                    markersize=6,
+                    color=_codec_colour(codec, idx),
+                    label=label,
+                )
+                plotted_any = True
+        # Pareto frontier overlay (always from the picked-CRF rows).
         frontier = compute_pareto_frontier(data.sweep_points)
         if frontier:
             fxs = [p.bitrate_kbps for p in frontier]
@@ -429,7 +549,16 @@ def _sweep_plot_fn(data: ReportData):
         ax.set_xscale("log")
         ax.set_xlabel("bitrate (kbps, log scale)")
         ax.set_ylabel("VMAF achieved")
-        ax.set_title("Rate-quality curve per codec (pareto frontier dashed)")
+        if use_samples:
+            ax.set_title(
+                "Rate-quality curve per codec (bisect samples; "
+                "picked-CRF circled; pareto frontier dashed)"
+            )
+        else:
+            ax.set_title(
+                "Rate-quality curve per codec (pareto frontier dashed) — "
+                "caveat: connect-the-dots may show overshoot artefacts"
+            )
         ax.grid(True, alpha=0.3, which="both")
         # Horizontal reference lines at each sweep target.
         for t in data.sweep_targets:
@@ -1077,6 +1206,7 @@ def probe_source(path: Path) -> SourceInfo:
 
 
 __all__ = [
+    "BisectSamplePoint",
     "CodecRow",
     "CodecSweepPoint",
     "LadderRung",

@@ -1401,28 +1401,55 @@ Sample output (`--format markdown`, abridged):
 **Smallest file**: `libaom` at CRF 30 → 1500.0 kbps (VMAF 92.40).
 ```
 
-### Multi-target rate-quality sweep (schema v2, ADR-0516)
+### Multi-target rate-quality sweep (schema v2, ADR-0516 + ADR-0534)
 
-Pass `--target-vmafs 85,90,92,95` to run each codec across multiple
-VMAF targets in one invocation. The JSON output stamps
-`schema_version: 2` and carries one row per `(codec, target_vmaf)`
-pair; `vmaf-tune report --compare-json sweep.json` then renders a
-**per-codec rate-quality line chart** on log-bitrate / VMAF axes with
-the **pareto frontier** (lowest bitrate at each target) drawn as a
-heavier dashed line, plus a per-codec / per-target summary table.
+`vmaf-tune compare` defaults to a 5-point rate-quality sweep covering
+realistic streaming operating points: `--target-vmafs 75,80,85,90,93`
+(ADR-0530). The JSON output stamps `schema_version: 2` and carries
+one row per `(codec, target_vmaf)` pair, **plus** an optional
+`bisect_samples` list per row that records every encode+score probe
+the underlying target-VMAF bisect computed. `vmaf-tune report
+--compare-json sweep.json` then renders a **per-codec rate-quality
+curve** assembled from those probes, with the picked-CRF rows
+highlighted as larger circled markers and the **pareto frontier**
+(lowest bitrate at each target) drawn as a heavier dashed overlay.
 
 ```shell
+# Out of the box: 5-point sweep, 3-codec compare, GPU scoring.
 vmaf-tune compare \
     --src bbb_1080p_60fps.mp4 \
-    --target-vmafs 85,90,92,95 \
-    --encoders libx264,libx265,libsvtav1,h264_nvenc,hevc_nvenc \
+    --width 1920 --height 1080 --framerate 60 \
+    --encoders libx264,libx265,libvpx-vp9 \
     --sample-clip-seconds 3 --max-iterations 3 \
+    --score-backend cuda \
     --format json --output sweep.json
 vmaf-tune report \
     --src bbb_1080p_60fps.mp4 \
     --compare-json sweep.json --target-vmaf 92 \
     --format html --output sweep_report.html
 ```
+
+**Why these defaults (ADR-0530)**
+
+- **`75,80,85,90,93` covers realistic streaming.** Broadcast-quality
+  sits at VMAF ≈ 75; mainstream streaming at 80-90; premium at 93.
+  The legacy default `85,90,92,95` was an archival-only sweep.
+- **The top end stops at 93, not 95.** VMAF 95+ frequently exceeds
+  the codec's CRF ceiling for 4K high-motion content — the bisect
+  returns "unreachable" failure rows that pollute the report
+  instead of producing data.
+- **The chart renders from `bisect_samples`, not from the picked-CRF
+  cells.** Connecting picked-CRF rows per codec across targets
+  produced physically impossible downward dips, because the bisect
+  overshoots each target by a different amount. Plotting every probe
+  the bisect already computed shows the genuine per-codec R-Q curve.
+
+**Single-target legacy (v1, back-compat)**: pass `--target-vmaf NN`
+without `--target-vmafs` to fall back to the v1 single-target schema
+(one row per codec at the single target, bar+dot chart). A
+`_TrackedDefaultAction` sentinel distinguishes "user passed
+`--target-vmaf` explicitly" from "argparse default" so legacy
+single-target scripts keep working unchanged.
 
 Hardware encoders (`*_nvenc`, `*_qsv`, `*_amf`) are availability-
 probed before dispatch: a two-stage probe greps `ffmpeg -encoders`
@@ -1433,18 +1460,16 @@ as `ok=false` rows with a stable `hardware encoder not available: …`
 error string — the renderer flags them visually and the sweep
 continues; the run does not abort.
 
-The `--encoders` flag is now **optional**; when omitted it defaults
-to the CPU set `libx264,libx265,libsvtav1,libvpx-vp9`. The single-
-target `--target-vmaf 92` form continues to emit the v1 schema so
-existing automation stays untouched (ADR-0513 §Schema migration).
+The `--encoders` flag is **optional**; when omitted it defaults to
+the CPU set `libx264,libx265,libsvtav1,libvpx-vp9`.
 
 ### `compare` CLI flags
 
 | Flag | Default | Notes |
 | --- | --- | --- |
 | `--src PATH` | — | Required. Single reference clip. |
-| `--target-vmaf F` | `92.0` | Single VMAF target (legacy single-target path). Back-compat shortcut for `--target-vmafs N`. |
-| `--target-vmafs LIST` | unset | Comma-separated VMAF targets to sweep per codec, e.g. `85,90,92,95`. When set the CLI emits the v2 multi-target schema (ADR-0516). |
+| `--target-vmaf F` | `92.0` | Single VMAF target. When passed explicitly and `--target-vmafs` is at its default sweep, the v1 single-target schema is emitted (ADR-0534 back-compat). |
+| `--target-vmafs LIST` | `75,80,85,90,93` (ADR-0534) | Comma-separated VMAF targets to sweep per codec. The default covers realistic streaming operating points (broadcast through premium). Pass a single value to opt into the v1 path; pass an explicit multi-value list (e.g. `80,85,90`) to override the sweep range. |
 | `--encoders LIST` | `libx264,libx265,libsvtav1,libvpx-vp9` | Comma-separated codec names. Hardware encoders (`h264_nvenc`, `hevc_nvenc`, `av1_nvenc`, `h264_qsv`, `hevc_qsv`, `av1_qsv`, `h264_amf`, `hevc_amf`, `av1_amf`) are accepted; missing-encoder rows skip with a reason rather than failing the whole run. |
 | `--width / --height` | — | Required for the default real-bisect backend. |
 | `--pix-fmt` | `yuv420p` | Source pixel format forwarded to the scorer. |
@@ -1475,14 +1500,32 @@ sentinel numerics (`-1` for `best_crf`, `NaN` for the floats).
 passed. The JSON has no `schema_version` key; `rows` is one row per
 codec at `--target-vmaf`.
 
-**v2 (multi-target sweep, ADR-0516)**: emitted when `--target-vmafs`
-lists ≥ 2 targets. The JSON carries `"schema_version": 2`,
-`"target_vmafs": [85.0, 90.0, ...]`, and `rows` is one row per
-`(codec, target_vmaf)` pair. `vmaf-tune report` detects the v1 vs v2
-discriminator via the schema-version key (or the presence of
-`target_vmafs`) and picks the right chart: v1 renders the bar+dot
-chart, v2 renders the per-codec rate-quality line plot with the
-pareto frontier overlay and the per-codec / per-target summary table.
+**v2 (multi-target sweep, ADR-0516 + ADR-0534)**: emitted when
+`--target-vmafs` lists ≥ 2 targets (the new default, ADR-0534). The
+JSON carries `"schema_version": 2`,
+`"target_vmafs": [75.0, 80.0, 85.0, 90.0, 93.0]`, and `rows` is one
+row per `(codec, target_vmaf)` pair. Each row also carries an
+optional `bisect_samples: [{crf, bitrate_kbps, vmaf_score,
+encode_time_ms}, ...]` list (ADR-0530, additive) recording every
+encode+score probe the underlying bisect computed; the field is
+absent on old v2 dumps pre-dating ADR-0530.
+
+`vmaf-tune report` detects the v1 vs v2 discriminator via the
+schema-version key (or the presence of `target_vmafs`) and picks the
+right chart: v1 renders the bar+dot chart, v2 renders the per-codec
+rate-quality curve. When `bisect_samples` is populated the chart
+plots every probe per codec (deduplicated by CRF, sorted by bitrate)
+and overlays the picked-CRF rows as larger circled markers; pareto
+frontier stays as the dashed overlay. When `bisect_samples` is
+absent (old v2 dump or v1) the chart falls back to the legacy
+connect-the-dots line with a caveat note in the title — the dots-
+connect-the-dots representation can show physically impossible
+downward dips when the bisect's per-target overshoot varies, which
+is the failure mode ADR-0530 fixes for the new path.
+
+The CSV emitter intentionally drops the `bisect_samples` column
+(`extrasaction="ignore"` on the writer); it stays a JSON-only
+structured field.
 
 > **Encode-time normalisation**: the `encode_time_ms` column is
 > wall-clock on whatever machine ran the predicate. Cross-codec time

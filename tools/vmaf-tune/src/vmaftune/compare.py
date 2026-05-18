@@ -74,6 +74,15 @@ class RecommendResult:
     ``ok=False`` carries a human-readable ``error`` string and leaves
     the numeric fields at sentinel values; the report renderer skips
     such rows in the ranking but still surfaces them in the table.
+
+    ``bisect_samples`` (ADR-0530, schema-v2 additive) carries every
+    encode+score probe the underlying target-VMAF bisect walked
+    through before converging on ``best_crf``. Each entry is a dict
+    with ``crf`` / ``bitrate_kbps`` / ``vmaf_score`` /
+    ``encode_time_ms`` keys. The rate-quality chart consumes this list
+    instead of the picked-CRF point to avoid the connect-the-dots
+    artefact described in ADR-0530. Empty tuple means the predicate
+    is not a bisect (older predicates / hand-written stubs).
     """
 
     codec: str
@@ -84,9 +93,10 @@ class RecommendResult:
     encoder_version: str = ""
     ok: bool = True
     error: str = ""
+    bisect_samples: tuple[dict[str, Any], ...] = ()
 
     def to_row(self, target_vmaf: float) -> dict[str, Any]:
-        return {
+        row: dict[str, Any] = {
             "codec": self.codec,
             "encoder_version": self.encoder_version,
             "best_crf": self.best_crf,
@@ -97,6 +107,13 @@ class RecommendResult:
             "ok": self.ok,
             "error": self.error,
         }
+        # Additive (ADR-0530): only emit the key when the predicate
+        # actually populated samples — keeps v1 CSV / single-target
+        # JSON exporters unchanged and lets v2 readers detect "old
+        # v2-without-samples" by the key's absence.
+        if self.bisect_samples:
+            row["bisect_samples"] = [dict(s) for s in self.bisect_samples]
+        return row
 
 
 @dataclasses.dataclass(frozen=True)
@@ -326,7 +343,11 @@ def _emit_json(report: ComparisonReport) -> str:
 
 def _emit_csv(report: ComparisonReport) -> str:
     buf = io.StringIO()
-    writer = csv.DictWriter(buf, fieldnames=list(COMPARE_ROW_KEYS))
+    # ``extrasaction="ignore"`` keeps CSV output stable when ``to_row``
+    # learns optional columns over time (ADR-0530 added
+    # ``bisect_samples``, which is structured and intentionally not
+    # surfaced in the flat CSV view).
+    writer = csv.DictWriter(buf, fieldnames=list(COMPARE_ROW_KEYS), extrasaction="ignore")
     writer.writeheader()
     for r in report.rows:
         writer.writerow(r.to_row(report.target_vmaf))
@@ -683,7 +704,11 @@ def emit_sweep_json(report: SweepReport) -> str:
 
 def emit_sweep_csv(report: SweepReport) -> str:
     buf = io.StringIO()
-    writer = csv.DictWriter(buf, fieldnames=list(COMPARE_ROW_KEYS))
+    # ``extrasaction="ignore"`` keeps CSV output stable when ``to_row``
+    # learns optional columns over time (ADR-0530 added
+    # ``bisect_samples``, which is structured and intentionally not
+    # surfaced in the flat CSV view).
+    writer = csv.DictWriter(buf, fieldnames=list(COMPARE_ROW_KEYS), extrasaction="ignore")
     writer.writeheader()
     for target, r in zip(report.row_targets, report.rows, strict=True):
         writer.writerow(r.to_row(target))

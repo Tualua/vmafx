@@ -68,6 +68,24 @@ _VMAF_VALID_CEIL: float = 100.0
 
 
 @dataclasses.dataclass(frozen=True)
+class BisectSample:
+    """One per-iteration (CRF, bitrate, VMAF) probe collected by the bisect.
+
+    The full bisect typically encodes 3-5 CRFs before converging on the
+    target-meeting cell. Each probe is a genuine measurement on the
+    codec under test (no extrapolation, no overshoot bias) — exactly
+    the data the rate-quality chart should plot to avoid the
+    connect-the-dots artefact described in ADR-0530. Failed encodes /
+    score round-trips never reach this list; see :func:`_encode_and_score`.
+    """
+
+    crf: int
+    bitrate_kbps: float
+    vmaf_score: float
+    encode_time_ms: float = 0.0
+
+
+@dataclasses.dataclass(frozen=True)
 class BisectResult:
     """One bisect's best (CRF, VMAF, bitrate) tuple at a given target.
 
@@ -78,6 +96,13 @@ class BisectResult:
     ``ok=False`` carries a human-readable ``error`` string and leaves
     the numeric fields at sentinel values; downstream consumers
     (``compare`` ranking, ``ladder`` knee selection) skip such rows.
+
+    ``samples`` carries every successful encode+score probe the bisect
+    walked through before converging on ``best_crf``. Consumers like
+    the rate-quality chart use the raw samples instead of the
+    (potentially overshoot-biased) picked-CRF point to draw a
+    monotonic R-Q curve (ADR-0530). The tuple is empty when the bisect
+    short-circuits before any sample completes (e.g. unknown codec).
     """
 
     codec: str
@@ -89,6 +114,7 @@ class BisectResult:
     encoder_version: str = ""
     ok: bool = True
     error: str = ""
+    samples: tuple[BisectSample, ...] = ()
 
     def to_recommend_result(self) -> "RecommendResult":
         """Project onto the ``compare.RecommendResult`` shape.
@@ -108,6 +134,15 @@ class BisectResult:
             encoder_version=self.encoder_version,
             ok=self.ok,
             error=self.error,
+            bisect_samples=tuple(
+                {
+                    "crf": int(s.crf),
+                    "bitrate_kbps": float(s.bitrate_kbps),
+                    "vmaf_score": float(s.vmaf_score),
+                    "encode_time_ms": float(s.encode_time_ms),
+                }
+                for s in self.samples
+            ),
         )
 
 
@@ -121,6 +156,7 @@ def _failure(
     bitrate_kbps: float = float("nan"),
     encode_time_ms: float = float("nan"),
     encoder_version: str = "",
+    samples: tuple[BisectSample, ...] = (),
 ) -> BisectResult:
     return BisectResult(
         codec=codec,
@@ -132,6 +168,7 @@ def _failure(
         encoder_version=encoder_version,
         ok=False,
         error=error,
+        samples=samples,
     )
 
 
@@ -242,6 +279,13 @@ def bisect_target_vmaf(
     # State across iterations:
     best: BisectResult | None = None
     last_vmaf_at_crf: dict[int, float] = {}
+    # ADR-0530: record every successful encode+score round-trip so
+    # downstream consumers (compare-sweep, rate-quality chart) can
+    # plot the genuine codec R-Q curve instead of just the picked-CRF
+    # cell. Duplicates by (crf) are kept — the bisect never revisits
+    # a CRF in normal operation but a deliberate retry would be a real
+    # second measurement worth preserving.
+    samples: list[BisectSample] = []
     n_iterations = 0
     cur_lo, cur_hi = lo, hi
 
@@ -272,7 +316,21 @@ def bisect_target_vmaf(
                 workdir=workdir_path,
             )
             if not sample.ok:
-                return dataclasses.replace(sample, n_iterations=n_iterations)
+                return dataclasses.replace(
+                    sample, n_iterations=n_iterations, samples=tuple(samples)
+                )
+
+            # ADR-0530: record every successful probe (regardless of
+            # whether it cleared the target) so the rate-quality chart
+            # can render the actual codec curve.
+            samples.append(
+                BisectSample(
+                    crf=int(mid),
+                    bitrate_kbps=float(sample.bitrate_kbps),
+                    vmaf_score=float(sample.measured_vmaf),
+                    encode_time_ms=float(sample.encode_time_ms),
+                )
+            )
 
             mono_err = _detect_monotonicity_violation(last_vmaf_at_crf, mid, sample.measured_vmaf)
             last_vmaf_at_crf[mid] = sample.measured_vmaf
@@ -286,6 +344,7 @@ def bisect_target_vmaf(
                     bitrate_kbps=best.bitrate_kbps if best is not None else float("nan"),
                     encode_time_ms=sample.encode_time_ms,
                     encoder_version=sample.encoder_version,
+                    samples=tuple(samples),
                 )
 
             if sample.measured_vmaf >= target_vmaf:
@@ -307,9 +366,10 @@ def bisect_target_vmaf(
                     f"(best sample: {_describe_best_miss(last_vmaf_at_crf)})"
                 ),
                 n_iterations=n_iterations,
+                samples=tuple(samples),
             )
 
-        return best
+        return dataclasses.replace(best, samples=tuple(samples))
     finally:
         if workdir_ctx is not None:
             workdir_ctx.cleanup()
@@ -675,6 +735,7 @@ def make_bisect_predicate(
 
 __all__ = [
     "BisectResult",
+    "BisectSample",
     "bisect_target_vmaf",
     "make_bisect_predicate",
 ]

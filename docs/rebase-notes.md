@@ -46,6 +46,35 @@ No conflict risk on sync.
 `docs/adr/README.md`, `docs/rebase-notes.md`, `docs/state.md`, and
 `changelog.d/fixed/dev-container-dri-bind.md`. None of these paths exist in
 upstream Netflix/vmaf. No conflict risk on sync.
+## fix/compare-rate-quality-chart-from-bisect-samples (ADR-0534)
+
+**No rebase impact.** All changes are confined to fork-local files:
+
+- `tools/vmaf-tune/src/vmaftune/bisect.py` — added `BisectSample`
+  dataclass + `BisectResult.samples` field; bisect loop appends a
+  sample per successful probe; `to_recommend_result` projects samples
+  into the `RecommendResult.bisect_samples` tuple.
+- `tools/vmaf-tune/src/vmaftune/compare.py` — `RecommendResult` gained
+  optional `bisect_samples` field; `to_row` emits `bisect_samples`
+  only when populated (additive v2 schema change); CSV writer pinned
+  to `extrasaction="ignore"`.
+- `tools/vmaf-tune/src/vmaftune/report.py` — `BisectSamplePoint`
+  added; `CodecSweepPoint` gained optional `bisect_samples`;
+  `_sweep_plot_fn` rewrites the chart to render from samples when
+  available (legacy connect-the-dots path retained with caveat note
+  when samples absent).
+- `tools/vmaf-tune/src/vmaftune/cli.py` — `--target-vmafs` default
+  flipped to `75,80,85,90,93`; both `--target-vmaf` and
+  `--target-vmafs` wrapped with `_TrackedDefaultAction` so the v1
+  single-target back-compat path activates only when
+  `--target-vmaf NN` is explicit and `--target-vmafs` is at its
+  default; `_sweep_point_from_json` parses the new field.
+
+None of these paths exist in upstream Netflix/vmaf (the entire
+`tools/vmaf-tune/` tree is fork-local). No conflict risk on sync.
+
+ffmpeg-patch stack: no impact (this PR doesn't touch any libvmaf
+C-API, public header, or `meson_options.txt` entry).
 
 ## feat/bvi-dvc-pre-extracted-input (ADR-0527)
 

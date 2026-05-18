@@ -96,7 +96,7 @@ def _stamp_tracked_default_sentinels(args: argparse.Namespace) -> None:
     # Iterate only the names the compare subparser registers as tracked.
     # Hardcoded so the sentinel-stamp pass stays cheap; add to this
     # tuple when wiring a new ``_TrackedDefaultAction`` flag.
-    for dest in ("framerate", "duration"):
+    for dest in ("framerate", "duration", "target_vmafs", "target_vmaf"):
         sentinel = f"_{dest}_was_default"
         if not hasattr(args, sentinel):
             setattr(args, sentinel, True)
@@ -779,23 +779,35 @@ def _build_parser() -> argparse.ArgumentParser:
     compare.add_argument(
         "--target-vmaf",
         type=float,
+        action=_TrackedDefaultAction,
         default=92.0,
         help=(
             "single VMAF target each codec aims for (default 92). "
             "Back-compat shortcut for --target-vmafs N. Ignored when "
-            "--target-vmafs lists more than one target (ADR-0516)."
+            "--target-vmafs lists more than one target (ADR-0516). "
+            "When passed explicitly and --target-vmafs is left at its "
+            "default sweep, the v1 single-target schema is emitted "
+            "(ADR-0530 back-compat)."
         ),
     )
     compare.add_argument(
         "--target-vmafs",
-        default=None,
+        action=_TrackedDefaultAction,
+        default="75,80,85,90,93",
         help=(
-            "comma-separated VMAF targets to sweep per codec, e.g. "
-            "``85,90,92,95``. When this lists more than one value the "
-            "CLI emits the v2 multi-target schema (ADR-0513) and the "
-            "report renders a rate-quality curve per codec with the "
-            "pareto frontier highlighted. Default: derived from "
-            "--target-vmaf (single target)."
+            "comma-separated VMAF targets to sweep per codec. When this "
+            "lists more than one value the CLI emits the v2 multi-target "
+            "schema (ADR-0513) and the report renders a rate-quality "
+            "curve per codec with the pareto frontier highlighted. "
+            "Default (ADR-0530): ``75,80,85,90,93`` — covers realistic "
+            "streaming operating points from low-bandwidth (VMAF 75) "
+            "through premium (VMAF 93). The top end stops at 93 because "
+            "VMAF >=95 frequently exceeds the codec's CRF ceiling and "
+            "produces 'unreachable' failure rows. Pass a single value to "
+            "fall through to the legacy single-target schema. When "
+            "``--target-vmaf`` is passed explicitly and ``--target-vmafs`` "
+            "is left at its default, the back-compat path activates and "
+            "the legacy single-target v1 schema is emitted."
         ),
     )
     compare.add_argument(
@@ -2508,7 +2520,17 @@ def _run_compare(args: argparse.Namespace) -> int:
     # back to ``[--target-vmaf]`` (single-target legacy path) when the
     # multi-target flag is not passed. Duplicates collapse and the list
     # is sorted ascending so the report's rate-quality curve is stable.
-    if args.target_vmafs:
+    #
+    # ADR-0534 back-compat: ``--target-vmafs`` now has a non-empty
+    # default (``75,80,85,90,93``) so the realistic-streaming sweep
+    # runs out of the box. When the user explicitly passes
+    # ``--target-vmaf NN`` without touching ``--target-vmafs``, the
+    # legacy single-target v1 path is honoured — preserves CSV / JSON
+    # back-compat for operators / scripts that pin a single VMAF.
+    target_vmafs_was_default = getattr(args, "_target_vmafs_was_default", True)
+    target_vmaf_was_default = getattr(args, "_target_vmaf_was_default", True)
+    use_single_target_legacy = target_vmafs_was_default and not target_vmaf_was_default
+    if args.target_vmafs and not use_single_target_legacy:
         try:
             target_vmafs = sorted(
                 {float(t.strip()) for t in args.target_vmafs.split(",") if t.strip()}
@@ -3449,10 +3471,35 @@ def _sweep_point_from_json(r: dict[str, Any]) -> "CodecSweepPoint":  # type: ign
     contract is "one row per (codec, target_vmaf) pair" (ADR-0513).
     Missing / non-finite numerics map to ``NaN`` so the chart renderer
     drops them rather than drawing a broken segment.
+
+    ``bisect_samples`` (ADR-0530, optional) is read when present and
+    populated; absent or empty means an old v2 dump pre-dating the
+    bisect-samples plumb, which renders via the legacy connect-the-
+    dots path with a caveat note.
     """
-    from .report import CodecSweepPoint
+    from .report import BisectSamplePoint, CodecSweepPoint
 
     ok = bool(r.get("ok", True))
+    raw_samples = r.get("bisect_samples") or ()
+    samples: tuple[BisectSamplePoint, ...] = ()
+    if isinstance(raw_samples, (list, tuple)):
+        parsed: list[BisectSamplePoint] = []
+        for s in raw_samples:
+            if not isinstance(s, dict):
+                continue
+            try:
+                parsed.append(
+                    BisectSamplePoint(
+                        crf=int(s.get("crf") if s.get("crf") is not None else -1),
+                        bitrate_kbps=_coerce_finite_float(s.get("bitrate_kbps")),
+                        vmaf_score=_coerce_finite_float(s.get("vmaf_score")),
+                        encode_time_ms=_coerce_finite_float(s.get("encode_time_ms")),
+                    )
+                )
+            except (TypeError, ValueError):
+                # Skip malformed sample entries — never crash the renderer.
+                continue
+        samples = tuple(parsed)
     return CodecSweepPoint(
         codec=str(r.get("codec", "")),
         encoder_version=str(r.get("encoder_version", "")),
@@ -3463,6 +3510,7 @@ def _sweep_point_from_json(r: dict[str, Any]) -> "CodecSweepPoint":  # type: ign
         vmaf_score=_coerce_finite_float(r.get("vmaf_score")),
         ok=ok,
         error=str(r.get("error", "")),
+        bisect_samples=samples,
     )
 
 

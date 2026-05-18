@@ -449,4 +449,11 @@ def test_predicate_forwards_sample_clip_seconds():
 
 def test_module_exports_match_public_surface():
     public = set(bisect_mod.__all__)
-    assert public == {"BisectResult", "bisect_target_vmaf", "make_bisect_predicate"}
+    # ADR-0530 added ``BisectSample`` to surface the per-iteration probes
+    # consumed by the compare-sweep rate-quality chart.
+    assert public == {
+        "BisectResult",
+        "BisectSample",
+        "bisect_target_vmaf",
+        "make_bisect_predicate",
+    }

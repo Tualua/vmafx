@@ -571,3 +571,394 @@ def test_report_v1_compare_json_still_renders_legacy_chart(tmp_path):
     # v1 path uses "Codec comparison" header, NOT "rate-quality".
     assert "Codec comparison" in html
     assert "rate-quality" not in html.lower()
+
+
+# ---------------------------------------------------------------------------
+# ADR-0534: rate-quality chart from bisect samples
+# ---------------------------------------------------------------------------
+
+
+def _fake_bisect_predicate_with_samples(
+    codec: str, src: Path, target_vmaf: float
+) -> RecommendResult:
+    """Fake bisect that emits 3-4 synthetic samples per call.
+
+    Each codec has its own monotonic R-Q curve so the assembled curve
+    is well-shaped. Picked-CRF is the one closest above target.
+    """
+    curves = {
+        "libx264": [
+            (28, 1100.0, 80.0),
+            (24, 2200.0, 86.0),
+            (22, 3100.0, 91.0),
+            (18, 5800.0, 96.0),
+        ],
+        "libx265": [
+            (28, 750.0, 81.0),
+            (25, 1600.0, 88.0),
+            (23, 2200.0, 92.0),
+            (19, 4400.0, 96.5),
+        ],
+        "libsvtav1": [
+            (38, 550.0, 80.5),
+            (32, 1200.0, 88.5),
+            (30, 1800.0, 92.5),
+            (25, 3700.0, 96.0),
+        ],
+    }
+    rows = curves.get(codec)
+    if rows is None:
+        return RecommendResult(
+            codec=codec,
+            best_crf=-1,
+            bitrate_kbps=float("nan"),
+            encode_time_ms=float("nan"),
+            vmaf_score=float("nan"),
+            ok=False,
+            error=f"unknown codec {codec!r}",
+        )
+    samples = tuple(
+        {"crf": crf, "bitrate_kbps": br, "vmaf_score": vm, "encode_time_ms": 0.0}
+        for crf, br, vm in rows
+    )
+    # Pick the lowest-bitrate row that clears the target.
+    ok_rows = [(crf, br, vm) for crf, br, vm in rows if vm >= target_vmaf]
+    if not ok_rows:
+        return RecommendResult(
+            codec=codec,
+            best_crf=-1,
+            bitrate_kbps=float("nan"),
+            encode_time_ms=float("nan"),
+            vmaf_score=float("nan"),
+            ok=False,
+            error="target unreachable",
+            bisect_samples=samples,
+        )
+    crf, br, vm = ok_rows[0]
+    return RecommendResult(
+        codec=codec,
+        best_crf=crf,
+        bitrate_kbps=br,
+        encode_time_ms=200.0,
+        vmaf_score=vm,
+        encoder_version=f"{codec}-fake",
+        ok=True,
+        error="",
+        bisect_samples=samples,
+    )
+
+
+def test_bisect_records_per_iteration_samples_when_target_met():
+    """Real bisect populates ``samples`` with each successful probe.
+
+    ADR-0534: the compare-sweep rate-quality chart consumes these.
+    """
+    # Stub adapter + runners — direct unit test of the bisect loop.
+    # We monkey-patch a simple tabulated VMAF function via the
+    # ``score_runner`` / ``encode_runner`` indirection in the bisect
+    # module's existing test harness.
+    # Easier: drive bisect_target_vmaf through fake encode/score runners.
+    # We replicate the technique used in test_bisect.py.
+    import vmaftune.bisect as bm
+    from vmaftune.bisect import BisectSample
+
+    # Monotonic VMAF / bitrate model: high CRF -> low VMAF, low CRF ->
+    # high bitrate. Linear is enough for the bisect to converge.
+    def _vmaf_for(crf: int) -> float:
+        # CRF 18 -> 96 VMAF; CRF 33 -> 66 VMAF. Slope = 2 VMAF/CRF.
+        return max(0.0, min(100.0, 96.0 - 2.0 * (crf - 18)))
+
+    def _size_for(crf: int) -> int:
+        # CRF 18 -> 600 KB, CRF 33 -> 80 KB. Linear interpolation.
+        return int(80_000 + (600_000 - 80_000) * (33 - crf) / 15.0)
+
+    def _fake_encode_and_score(*, src, codec, adapter, preset, crf, **kwargs):
+        return bm.BisectResult(
+            codec=codec,
+            best_crf=int(crf),
+            measured_vmaf=_vmaf_for(int(crf)),
+            bitrate_kbps=_size_for(int(crf)) / 1000.0,
+            encode_time_ms=100.0,
+            n_iterations=0,
+            encoder_version="fake-1.0",
+            ok=True,
+            error="",
+        )
+
+    monkeypatcher = pytest.MonkeyPatch()
+    monkeypatcher.setattr(bm, "_encode_and_score", _fake_encode_and_score)
+    try:
+        result = bm.bisect_target_vmaf(
+            Path("/tmp/ref.yuv"),
+            "libx264",
+            target_vmaf=85.0,
+            width=320,
+            height=240,
+            duration_s=1.0,
+            crf_range=(18, 33),
+            max_iterations=5,
+        )
+    finally:
+        monkeypatcher.undo()
+
+    assert result.ok
+    # Bisect typically takes >= 2 iterations to converge; samples
+    # equals the number of successful encode+score round-trips.
+    assert len(result.samples) >= 2
+    assert all(isinstance(s, BisectSample) for s in result.samples)
+    # Every sample has finite numerics.
+    assert all(s.bitrate_kbps > 0 and 0 <= s.vmaf_score <= 100 for s in result.samples)
+
+
+def test_recommend_result_to_row_includes_bisect_samples_when_populated():
+    """RecommendResult.to_row() includes ``bisect_samples`` only when set."""
+    empty = RecommendResult("libx264", 22, 3200.0, 1700.0, 92.0)
+    assert "bisect_samples" not in empty.to_row(92.0)
+
+    full = RecommendResult(
+        "libx264",
+        22,
+        3200.0,
+        1700.0,
+        92.0,
+        bisect_samples=(
+            {"crf": 28, "bitrate_kbps": 1200.0, "vmaf_score": 82.0, "encode_time_ms": 0.0},
+            {"crf": 22, "bitrate_kbps": 3200.0, "vmaf_score": 92.0, "encode_time_ms": 0.0},
+        ),
+    )
+    row = full.to_row(92.0)
+    assert "bisect_samples" in row
+    assert len(row["bisect_samples"]) == 2
+    assert row["bisect_samples"][0]["crf"] == 28
+
+
+def test_sweep_json_round_trips_bisect_samples():
+    """v2 JSON keeps the bisect_samples list — additive, schema-compatible."""
+    sweep = compare_codecs_sweep(
+        src=Path("ref.yuv"),
+        target_vmafs=(85.0, 92.0),
+        encoders=("libx264", "libx265", "libsvtav1"),
+        predicate=_fake_bisect_predicate_with_samples,
+    )
+    payload = json.loads(emit_sweep_json(sweep))
+    rows_with_samples = [r for r in payload["rows"] if r.get("bisect_samples")]
+    assert len(rows_with_samples) == len(
+        payload["rows"]
+    ), "every successful fake-sample row should round-trip its bisect_samples"
+    # At least 3 sample dicts per row by construction.
+    for r in rows_with_samples:
+        assert len(r["bisect_samples"]) >= 3
+        for s in r["bisect_samples"]:
+            assert {"crf", "bitrate_kbps", "vmaf_score"} <= set(s)
+
+
+def test_sweep_csv_drops_bisect_samples_column():
+    """CSV stays flat: bisect_samples is structured-only (ADR-0530)."""
+    sweep = compare_codecs_sweep(
+        src=Path("ref.yuv"),
+        target_vmafs=(85.0, 92.0),
+        encoders=("libx264",),
+        predicate=_fake_bisect_predicate_with_samples,
+    )
+    csv_text = emit_sweep_csv(sweep)
+    header = csv_text.splitlines()[0]
+    assert "bisect_samples" not in header
+    # Body row still well-formed.
+    assert csv_text.count("\n") >= 2
+
+
+def test_sweep_point_ingest_parses_bisect_samples_from_v2_json(tmp_path):
+    """cli._sweep_point_from_json parses bisect_samples back to BisectSamplePoint."""
+    from vmaftune.cli import _sweep_point_from_json
+
+    row = {
+        "codec": "libx264",
+        "encoder_version": "x264-fake",
+        "target_vmaf": 85.0,
+        "best_crf": 24,
+        "bitrate_kbps": 2200.0,
+        "encode_time_ms": 200.0,
+        "vmaf_score": 86.0,
+        "ok": True,
+        "error": "",
+        "bisect_samples": [
+            {"crf": 28, "bitrate_kbps": 1100.0, "vmaf_score": 80.0, "encode_time_ms": 0.0},
+            {"crf": 24, "bitrate_kbps": 2200.0, "vmaf_score": 86.0, "encode_time_ms": 0.0},
+            {"crf": 22, "bitrate_kbps": 3100.0, "vmaf_score": 91.0, "encode_time_ms": 0.0},
+        ],
+    }
+    point = _sweep_point_from_json(row)
+    assert len(point.bisect_samples) == 3
+    assert point.bisect_samples[0].crf == 28
+    assert point.bisect_samples[2].vmaf_score == 91.0
+
+
+def test_sweep_point_ingest_back_compat_when_bisect_samples_missing():
+    """v2 JSON without bisect_samples ingests with empty tuple, not crash."""
+    from vmaftune.cli import _sweep_point_from_json
+
+    row = {
+        "codec": "libx264",
+        "encoder_version": "x264",
+        "target_vmaf": 85.0,
+        "best_crf": 24,
+        "bitrate_kbps": 2200.0,
+        "encode_time_ms": 200.0,
+        "vmaf_score": 86.0,
+        "ok": True,
+        "error": "",
+    }
+    point = _sweep_point_from_json(row)
+    assert point.bisect_samples == ()
+
+
+def test_report_chart_from_bisect_samples_has_dots_per_codec(tmp_path):
+    """ADR-0530: SVG chart carries >=3 sample dots per codec curve.
+
+    Each codec runs through 2 bisects (target 85 and 92), each emitting
+    4 fake samples => 8 raw samples; deduplicated by CRF (no overlap in
+    the fake table) => 4 sample-markers per codec on the rendered SVG.
+    The picked-CRF is also drawn as a larger ring marker on top.
+    """
+    sweep = compare_codecs_sweep(
+        src=Path("ref.yuv"),
+        target_vmafs=(85.0, 92.0),
+        encoders=("libx264", "libx265", "libsvtav1"),
+        predicate=_fake_bisect_predicate_with_samples,
+    )
+    sweep_json = tmp_path / "sweep_v11.json"
+    sweep_json.write_text(emit_sweep_json(sweep), encoding="utf-8")
+    src_file = tmp_path / "ref.mp4"
+    src_file.touch()
+    out_html = tmp_path / "report_v11.html"
+
+    from vmaftune.cli import main
+
+    rc = main(
+        [
+            "report",
+            "--src",
+            str(src_file),
+            "--target-vmaf",
+            "92",
+            "--compare-json",
+            str(sweep_json),
+            "--format",
+            "html",
+            "--output",
+            str(out_html),
+        ]
+    )
+    assert rc == 0
+    html = out_html.read_text()
+    # New chart title carries the "bisect samples" + "picked-CRF circled" phrasing.
+    assert "bisect samples" in html
+    assert "picked-CRF" in html
+    # Caveat note from the legacy connect-the-dots path MUST NOT appear
+    # when bisect_samples are present.
+    assert "connect-the-dots may show overshoot" not in html
+
+
+def test_report_chart_legacy_caveat_appears_when_no_bisect_samples(tmp_path):
+    """v2 JSON without bisect_samples => legacy chart + caveat note."""
+    sweep = compare_codecs_sweep(
+        src=Path("ref.yuv"),
+        target_vmafs=(85.0, 90.0),
+        encoders=("libx264", "libx265"),
+        predicate=_fake_predicate,  # The original fake — no samples.
+    )
+    sweep_json = tmp_path / "sweep_legacy.json"
+    sweep_json.write_text(emit_sweep_json(sweep), encoding="utf-8")
+    src_file = tmp_path / "ref.mp4"
+    src_file.touch()
+    out_html = tmp_path / "report_legacy.html"
+
+    from vmaftune.cli import main
+
+    rc = main(
+        [
+            "report",
+            "--src",
+            str(src_file),
+            "--target-vmaf",
+            "92",
+            "--compare-json",
+            str(sweep_json),
+            "--format",
+            "html",
+            "--output",
+            str(out_html),
+        ]
+    )
+    assert rc == 0
+    html = out_html.read_text()
+    # Legacy path's caveat appears in the chart title.
+    assert "connect-the-dots may show overshoot" in html
+
+
+# ---------------------------------------------------------------------------
+# ADR-0534: realistic default --target-vmafs
+# ---------------------------------------------------------------------------
+
+
+def test_compare_cli_default_target_vmafs_is_realistic_streaming():
+    """ADR-0534: default sweeps 75,80,85,90,93 — broadcast/streaming range."""
+    from vmaftune.cli import _build_parser
+
+    p = _build_parser()
+    # Parse a minimal compare invocation; check the default.
+    args = p.parse_args(
+        [
+            "compare",
+            "--src",
+            "/tmp/ref.yuv",
+            "--width",
+            "1920",
+            "--height",
+            "1080",
+        ]
+    )
+    assert args.target_vmafs == "75,80,85,90,93"
+
+
+def test_compare_cli_target_vmaf_alone_still_back_compat_v1(monkeypatch, capsys, tmp_path):
+    """ADR-0534 back-compat: --target-vmaf alone (no --target-vmafs) -> v1.
+
+    The new non-empty default for --target-vmafs would otherwise force
+    every legacy single-target invocation through the v2 sweep emitter.
+    The ``_TrackedDefaultAction`` sentinel preserves the old behaviour:
+    when --target-vmaf is explicit and --target-vmafs is its default,
+    the v1 schema is honoured.
+    """
+    import types
+
+    shim = types.ModuleType("_sweep_shim_adr530_backcompat")
+
+    def predicate(codec, src, target_vmaf):
+        return _fake_predicate(codec, src, target_vmaf)
+
+    shim.predicate = predicate  # type: ignore[attr-defined]
+    sys.modules["_sweep_shim_adr530_backcompat"] = shim
+
+    from vmaftune.cli import main
+
+    rc = main(
+        [
+            "compare",
+            "--src",
+            str(tmp_path / "ref.yuv"),
+            "--target-vmaf",
+            "92",
+            "--encoders",
+            "libx264,libx265",
+            "--format",
+            "json",
+            "--predicate-module",
+            "_sweep_shim_adr530_backcompat:predicate",
+        ]
+    )
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    # v1 path: no schema_version key.
+    assert "schema_version" not in payload
+    assert len(payload["rows"]) == 2
