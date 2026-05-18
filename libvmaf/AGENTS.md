@@ -160,6 +160,24 @@ libvmaf/
   See [ADR-0147](../docs/adr/0147-thread-pool-job-pool.md) and
   [rebase-notes 0040](../docs/rebase-notes.md).
 
+- **`integer_vif` is luma-only across every backend** (fork-local,
+  [ADR-0541](../docs/adr/0541-integer-vif-luma-only-clarification.md)).
+  CPU [`src/feature/integer_vif.c`](src/feature/integer_vif.c) reads
+  `data[0]` only and has no `enable_chroma` option; CUDA
+  [`src/feature/cuda/integer_vif_cuda.c`](src/feature/cuda/integer_vif_cuda.c)
+  hardcodes `s->n_planes = 1` and warn-on-trues `enable_chroma`; HIP,
+  SYCL, Vulkan, Metal twins all match. Upstream Netflix/vmaf is the
+  same. VIF (Sheikh & Bovik, 2006) is defined on a single luminance
+  channel — multi-plane VIF has no MOS-correlation literature. Do not
+  "fix" the `n_planes = 1` or "wire enable_chroma through" without
+  filing a fresh ADR that includes a research digest and a golden-data
+  regeneration plan; the previous attempt (PRs #948 + #949, 2026-05-16)
+  was abandoned and left the vestigial CUDA `enable_chroma` option as
+  the only artefact. The regression test
+  [`test/test_integer_vif_cpu_cuda_parity.c`](test/test_integer_vif_cpu_cuda_parity.c)
+  asserts CPU vs CUDA scale parity and `enable_chroma=true` bit-identity
+  with the default invocation — both must keep passing.
+
 - **Vulkan PSNR chroma contract** (fork-local, [ADR-0216](../docs/adr/0216-vulkan-chroma-psnr.md)).
   [`src/feature/vulkan/psnr_vulkan.c`](src/feature/vulkan/psnr_vulkan.c)
   carries `ref_in[3] / dis_in[3] / se_partials[3]` arrays in

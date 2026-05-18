@@ -49,6 +49,42 @@ no `meson_options.txt`, no `ffmpeg-patches/` entry. The CLAUDE.md
 §12 r14 patch-stack rule does not apply (no libvmaf surface
 touched). Netflix upstream has no container infra under `dev/` to
 conflict with.
+## fix/integer-vif-cuda-chroma-plane (ADR-0541)
+
+**Touches upstream-mirror path.** Modifies:
+- `libvmaf/src/feature/cuda/integer_vif_cuda.c` (upstream-mirror — comment
+  + option-help-text clarifications plus a one-shot warn-on-true block for
+  the vestigial `enable_chroma` option; no kernel changes, no behaviour
+  changes for any caller that doesn't set `enable_chroma=true`).
+
+**Why fork-local.** Upstream Netflix/vmaf's CUDA VIF (verified at
+`Netflix/vmaf@32780bd9b6:libvmaf/src/feature/cuda/integer_vif_cuda.c`)
+neither carries the `enable_chroma` option nor has an `n_planes` field —
+it hardcodes `data[0]`-only access. The option was added by the
+fork-local PR #949 and the abandoned PR #948 attempted to mirror it on
+CPU; only the CUDA option landed and it was always a no-op.
+
+**Sync rule.** If upstream ever adds genuine multi-plane VIF (would be a
+significant departure from the Sheikh & Bovik 2006 definition), revisit
+this clarification:
+
+- Drop the `vmaf_log VMAF_LOG_LEVEL_WARNING` block from `init_fex_cuda`.
+- Restore `s->enable_chroma = false;` to the active-clamp form OR plumb
+  `enable_chroma` into the dispatch loop (depending on upstream's
+  shape).
+- Update `docs/metrics/vif.md` to advertise the per-chroma-plane features
+  that newly exist.
+- Move the `docs/state.md` row from "Confirmed not-affected" to a normal
+  closed-bug row.
+
+Until then, sync conflicts on this file should keep both: the
+fork-local warn-on-true block in `init_fex_cuda` (search for the
+`ADR-0541` comment anchor) and any incoming upstream changes to the
+neighbouring kernel-load paths.
+
+**Test reference.** `libvmaf/test/test_integer_vif_cpu_cuda_parity.c`
+(suite `fast`/`gpu`) is the regression gate; it must continue to pass
+after any sync.
 
 ## fix/hip-integer-vif-kernel-crash (ADR-0538)
 

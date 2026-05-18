@@ -27,6 +27,7 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "log.h"
 #include "mem.h"
 
 #include "picture.h"
@@ -80,11 +81,19 @@ static const VmafOption options[] = {{
                                          .default_val.b = false,
                                      },
                                      {
+                                         /* Vestigial no-op retained for backward compatibility
+                                          * with callers that pass `integer_vif:enable_chroma=…`
+                                          * on the CLI or in a model JSON.  VIF is luma-only
+                                          * across every backend (CPU, CUDA, HIP, SYCL, Vulkan,
+                                          * Metal) and across upstream Netflix/vmaf — see
+                                          * ADR-0541.  Setting `enable_chroma=true` emits a
+                                          * one-shot warning during init() and otherwise has
+                                          * no effect on the produced scores. */
                                          .name = "enable_chroma",
                                          .help =
-                                             "when set, compute vif on chroma (Cb/Cr) planes in "
-                                             "addition to luma; forced off for YUV400. "
-                                             "CUDA path: n_planes clamped to 1 (luma-only kernel)",
+                                             "no-op (luma-only kernel; ADR-0541). retained for "
+                                             "backward-compat with callers that set the option; "
+                                             "emits a one-shot warning when true",
                                          .offset = offsetof(VifStateCuda, enable_chroma),
                                          .type = VMAF_OPT_TYPE_BOOL,
                                          .default_val.b = false,
@@ -174,10 +183,25 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail_after_pop);
 
-    /* Clamp n_planes to 1: CUDA VIF kernel is luma-only; honour YUV400 too. */
-    if (pix_fmt == VMAF_PIX_FMT_YUV400P)
+    /* VIF is luma-only by design across every backend (CPU, CUDA, HIP, SYCL,
+     * Vulkan, Metal) and across upstream Netflix/vmaf — the metric (Sheikh &
+     * Bovik, 2006) is defined on a single luminance channel.  `n_planes` is
+     * hardcoded to 1 to match the CPU twin (`libvmaf/src/feature/integer_vif.c`,
+     * which reads `data[0]` only and has no `enable_chroma` option).  The
+     * `enable_chroma` option above is vestigial — retained so callers passing
+     * it on the CLI / in model JSONs do not see an option-not-recognised
+     * error — and warn-on-true here surfaces the no-op behaviour instead of
+     * silently producing luma-only output that contradicts the request.
+     * See ADR-0541. */
+    if (s->enable_chroma) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "integer_vif (CUDA): enable_chroma=true requested but VIF is "
+                 "luma-only by design (matches CPU integer_vif and upstream "
+                 "Netflix/vmaf); option is a no-op. See ADR-0541.\n");
         s->enable_chroma = false;
-    s->n_planes = 1; /* CUDA path: chroma dispatch not yet implemented */
+    }
+    (void)pix_fmt; /* YUV400P needs no special case — luma-only path handles it. */
+    s->n_planes = 1;
 
     const bool hbd = bpc > 8;
 
@@ -539,8 +563,9 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     CudaFunctions *cu_f = fex->cu_state->f;
     (void)ref_pic_90;
     (void)dist_pic_90;
-    /* n_planes is always 1: CUDA VIF kernel is luma-only; enable_chroma is
-     * clamped in init_fex_cuda.  Loop mirrors CPU integer_vif dispatch shape. */
+    /* n_planes is always 1: VIF is luma-only by design across every backend
+     * (matches CPU integer_vif and upstream Netflix/vmaf — see ADR-0541).
+     * The loop is retained for shape-parity with the CPU/HIP/SYCL twins. */
     for (unsigned plane = 0; plane < s->n_planes; ++plane) {
         int w = ref_pic->w[plane];
         int h = dist_pic->h[plane];

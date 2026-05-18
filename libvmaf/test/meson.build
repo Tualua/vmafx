@@ -763,6 +763,22 @@ test_cuda_motion3_parity = executable('test_cuda_motion3_parity',
 )
 test('test_cuda_motion3_parity', test_cuda_motion3_parity,
     suite : ['fast', 'gpu'])
+
+# ADR-0541 — integer_vif CPU vs. CUDA parity gate.  Pins the luma-only
+# design contract as a regression assertion so DEEP_AUDIT 2026-05-18
+# finding 23 (false-positive "CUDA VIF skips chroma planes") cannot
+# refile.  Also exercises the vestigial enable_chroma=true option to
+# confirm its documented no-op behaviour (bit-identical to default).
+# GPU-gated: skips cleanly when no CUDA device is visible.
+test_integer_vif_cpu_cuda_parity = executable('test_integer_vif_cpu_cuda_parity',
+    ['test.c', 'test_integer_vif_cpu_cuda_parity.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_integer_vif_cpu_cuda_parity', test_integer_vif_cpu_cuda_parity,
+    suite : ['fast', 'gpu'])
 endif
 
 # T6-2b / ADR-0247 — vmaf-roi sidecar core helpers (per-CTU mean reduce
