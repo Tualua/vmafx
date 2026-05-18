@@ -852,3 +852,35 @@ scripts for those local corpora.
   not two — `_run_ladder` test stubs that fabricate `LadderPoint`
   instances with the same `(w, h, crf)` triple across different
   cells will collapse in the JSON descriptor as designed.
+- **`ladder --duration N` bounds the encode pipe AND the
+  reference decode (ADR-0506, Bug #V6-1).** `EncodeRequest.duration_s`
+  is plumbed by `iter_rows` from `CorpusJob.duration_s`;
+  `build_ffmpeg_command` appends `-t duration_s` as an input-side
+  flag iff `sample_clip_seconds == 0.0 AND duration_s > 0`. A
+  regression that drops the `duration_s` field or skips the
+  fallback branch re-introduces the "ladder smoke run takes 10
+  minutes per cell" bug — the encoder will process the full
+  source while only `duration_s` seconds of reference is decoded
+  for scoring. Sample-clip mode (ADR-0297) keeps precedence
+  because it carries a centred start offset.
+- **Raw-YUV reference decode emits demuxer-side flags before
+  `-i` (ADR-0506, Bug #V6-2).** `_decode_source_to_yuv` requires
+  `source_width` / `source_height` when `source_is_raw=True`
+  (raises `ValueError` otherwise) and prepends `-f rawvideo
+  -pix_fmt <pf> -s SRCWxSRCH -r FR` before `-i`. The container
+  path (`source_is_raw=False`, the default) keeps the auto-
+  detect argv unchanged so every v3/v4/v5 container test still
+  passes. `_maybe_decode_reference` derives `source_is_raw` from
+  the source suffix and forwards `iter_rows`'s
+  `job.src_width / src_height / framerate` (or, when those are
+  `None`, the rung dims as the legacy single-res case). A
+  regression that drops the demuxer-side block when raw is the
+  shape re-introduces "default sampler produced no scorable
+  encodes" on every cross-res rung against a raw source.
+- **`_run_ladder` returns RC=2 on operational failure
+  (ADR-0506, Bug #V6-3).** `build_and_emit` can legitimately
+  raise `RuntimeError` (no scorable encodes) or `ValueError`
+  (bad input). The wrapper prints the exception message to
+  stderr and returns 2; do not widen the exception list to
+  bare `Exception` (that would swallow programmer errors and
+  `KeyboardInterrupt`).

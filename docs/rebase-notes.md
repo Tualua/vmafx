@@ -35690,3 +35690,31 @@ suffix-set membership test against the fork-local
 `_VMAF_RAW_SUFFIXES`. The new `cloud_sink` kwarg on
 `make_default_sampler` and `_default_sampler` defaults to `None`
 so every existing caller round-trips unchanged.
+
+---
+
+## fix/bbb-e2e-v6-bug-cluster-2026-05-18 (ADR-0506)
+
+**Files**:
+`tools/vmaf-tune/src/vmaftune/{corpus,encode,cli}.py`,
+`tools/vmaf-tune/tests/test_bbb_e2e_v6_bug_cluster.py`,
+`docs/adr/0506-vmaf-tune-bbb-e2e-v6-bug-cluster.md`,
+`docs/adr/README.md`,
+`docs/state.md`,
+`docs/rebase-notes.md`,
+`changelog.d/fixed/0506-vmaf-tune-bbb-e2e-v6-bug-cluster.md`.
+
+**Rebase sensitivity (none):** all changes live in fork-added
+`tools/vmaf-tune/` plus fork-added docs/changelog files — no
+upstream Netflix file is touched. `EncodeRequest` gains a
+new `duration_s: float = 0.0` field with a back-compatible
+default so every existing caller round-trips unchanged.
+`_decode_source_to_yuv` gains four new kwargs
+(`source_is_raw`, `source_width`, `source_height`,
+`source_framerate`) all defaulting to `None`/`False`; the
+container-source path (which is what every v3/v4/v5 test
+exercises) takes the legacy branch and emits an identical
+argv. `_maybe_decode_reference` and `iter_rows` wire the new
+kwargs through. No public surface of the libvmaf C API
+changes; no ffmpeg-patches file consumes the modified
+`tools/vmaf-tune/` Python helpers.

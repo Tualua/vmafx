@@ -71,6 +71,17 @@ class EncodeRequest:
     # input flags so ffmpeg auto-detects the format. sample_clip_seconds
     # uses -ss/-t on the input side when set.
     source_is_container: bool = False
+    # BBB e2e v6 Bug #V6-1 (ADR-0506): when the corpus job is bound to
+    # an analysed-window length (``CorpusJob.duration_s > 0``) and the
+    # caller has NOT opted into sample-clip mode, the encode must still
+    # be clipped to that window — otherwise a 30 fps source 9 min long
+    # bound to ``duration_s=10`` would encode all 9 min while only 10 s
+    # of reference is decoded for scoring. ``duration_s`` here is a
+    # plumb-through of ``CorpusJob.duration_s``; the encode driver
+    # adds ``-t duration_s`` on the input side when
+    # ``sample_clip_seconds == 0.0 and duration_s > 0`` so the
+    # `--duration` ladder/CLI flag actually bounds the encode.
+    duration_s: float = 0.0
 
 
 @dataclasses.dataclass(frozen=True)
@@ -187,12 +198,25 @@ def build_ffmpeg_command(req: EncodeRequest, ffmpeg_bin: str = "ffmpeg") -> list
     as a fallback for unregistered encoders.
     """
     cmd: list[str] = [ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "info"]
+    # BBB e2e v6 Bug #V6-1 (ADR-0506): when the caller didn't opt into
+    # sample-clip mode but did bind ``duration_s`` (via the ladder /
+    # corpus ``--duration`` flag), honour it as an input-side ``-t``
+    # so the encode is bounded to the analysed window. The reference
+    # leg is already clipped by ``_maybe_decode_reference``; without
+    # this guard the encode would process the full source (9 min of
+    # BBB instead of 10 s) burning ~9x wall time per cell on long
+    # sources.
+    fallback_duration = (
+        float(req.duration_s) if req.sample_clip_seconds <= 0.0 and req.duration_s > 0.0 else 0.0
+    )
     if req.source_is_container:
         # Container source (mkv/mp4/…): let ffmpeg auto-detect format.
         # -ss/-t go before -i for fast input-seek on compressed streams.
         if req.sample_clip_seconds > 0.0:
             cmd.extend(["-ss", f"{req.sample_clip_start_s}"])
             cmd.extend(["-t", f"{req.sample_clip_seconds}"])
+        elif fallback_duration > 0.0:
+            cmd.extend(["-t", f"{fallback_duration}"])
         cmd.extend(["-i", str(req.source)])
     else:
         # Raw YUV source: must tell ffmpeg the format explicitly.
@@ -212,6 +236,8 @@ def build_ffmpeg_command(req: EncodeRequest, ffmpeg_bin: str = "ffmpeg") -> list
             # Input-side -ss / -t — fast-seek for raw YUV.
             cmd.extend(["-ss", f"{req.sample_clip_start_s}"])
             cmd.extend(["-t", f"{req.sample_clip_seconds}"])
+        elif fallback_duration > 0.0:
+            cmd.extend(["-t", f"{fallback_duration}"])
         cmd.extend(["-i", str(req.source)])
     cmd.extend(_resolve_codec_args(req))
 

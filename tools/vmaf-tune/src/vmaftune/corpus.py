@@ -90,6 +90,10 @@ def _decode_source_to_yuv(
     runner: object,
     target_width: int | None = None,
     target_height: int | None = None,
+    source_width: int | None = None,
+    source_height: int | None = None,
+    source_framerate: float | None = None,
+    source_is_raw: bool = False,
 ) -> int:
     """Run ``ffmpeg -i source -f rawvideo -pix_fmt pix_fmt destination``.
 
@@ -109,21 +113,51 @@ def _decode_source_to_yuv(
     VMAF (~21 instead of ~93). ``None`` for either field skips the
     filter and preserves the legacy auto-detect-source-geometry
     behaviour.
+
+    BBB e2e v6 Bug #V6-2 (ADR-0506): when ``source_is_raw=True``,
+    insert the demuxer-side ``-f rawvideo -pix_fmt … -s WxH -r FR``
+    block BEFORE ``-i`` so ffmpeg can parse the raw YUV — without
+    those flags ffmpeg auto-detects nothing and refuses the input
+    ("Invalid data found when processing input"). The v4 cross-res
+    scale path passed raw-YUV references through this helper without
+    the raw input flags, causing the 854x480 rung of a 1280x720
+    raw source to error with "default sampler produced no scorable
+    encodes". ``source_is_raw=False`` (default) preserves the
+    container-source auto-detect path.
     """
     destination.parent.mkdir(parents=True, exist_ok=True)
-    cmd = [
+    cmd: list[str] = [
         ffmpeg_bin,
         "-y",
         "-hide_banner",
         "-loglevel",
         "error",
-        "-i",
-        str(source),
-        "-f",
-        "rawvideo",
-        "-pix_fmt",
-        pix_fmt,
     ]
+    if source_is_raw:
+        # BBB e2e v6 Bug #V6-2: tell ffmpeg the demuxer geometry on
+        # the input side so raw YUV is parseable. ``source_width`` /
+        # ``source_height`` are required for raw decode; framerate
+        # defaults to 24 (matches ``_default_sampler`` legacy) when
+        # not bound.
+        if source_width is None or source_height is None:
+            raise ValueError(
+                "_decode_source_to_yuv: source_is_raw=True requires "
+                "source_width and source_height"
+            )
+        cmd.extend(
+            [
+                "-f",
+                "rawvideo",
+                "-pix_fmt",
+                pix_fmt,
+                "-s",
+                f"{int(source_width)}x{int(source_height)}",
+                "-r",
+                f"{float(source_framerate) if source_framerate is not None else 24.0}",
+            ]
+        )
+    cmd.extend(["-i", str(source)])
+    cmd.extend(["-f", "rawvideo", "-pix_fmt", pix_fmt])
     if target_width is not None and target_height is not None:
         cmd.extend(["-vf", f"scale={int(target_width)}:{int(target_height)}"])
     if duration_s > 0.0:
@@ -191,6 +225,9 @@ def _maybe_decode_reference(
     runner: object,
     target_width: int | None = None,
     target_height: int | None = None,
+    source_width: int | None = None,
+    source_height: int | None = None,
+    source_framerate: float | None = None,
 ) -> tuple[Path, int]:
     """Decode a container reference to raw YUV once per ``iter_rows`` call.
 
@@ -223,11 +260,8 @@ def _maybe_decode_reference(
     under ``encode_dir`` with a ``.ref.decoded.yuv`` suffix so the
     same path can be reused across every cell in the sweep.
     """
-    if (
-        source.suffix.lower() in _VMAF_RAW_SUFFIXES
-        and target_width is None
-        and target_height is None
-    ):
+    source_is_raw = source.suffix.lower() in _VMAF_RAW_SUFFIXES
+    if source_is_raw and target_width is None and target_height is None:
         return source, 0
     if target_width is not None and target_height is not None:
         # Per-rung sidecar — embed WxH in the filename so multi-rung
@@ -251,6 +285,16 @@ def _maybe_decode_reference(
         runner=runner,
         target_width=target_width,
         target_height=target_height,
+        # BBB e2e v6 Bug #V6-2 (ADR-0506): when the source is raw YUV
+        # (`.yuv` / no-suffix) the demuxer needs explicit format flags
+        # — without them ffmpeg cannot parse raw planar bytes and the
+        # cross-resolution rung's reference decode fails. ``source_*``
+        # carry the caller-bound geometry (the corpus job's source
+        # dims) so this helper can synthesise the demuxer ``-s WxH``.
+        source_is_raw=source_is_raw,
+        source_width=source_width,
+        source_height=source_height,
+        source_framerate=source_framerate,
     )
     if rc == 0 and decoded.exists():
         return decoded, 0
@@ -580,6 +624,13 @@ def iter_rows(
     ):
         _ref_target_w = int(job.width)
         _ref_target_h = int(job.height)
+    # BBB e2e v6 Bug #V6-2 (ADR-0506): pass the source's native
+    # geometry into the reference decoder so a raw-YUV source can be
+    # parsed by ffmpeg's rawvideo demuxer when a cross-resolution
+    # scale is required. For container sources the demuxer auto-
+    # detects and the ``source_*`` hints are unused.
+    _src_dim_w = int(job.src_width) if job.src_width is not None else int(job.width)
+    _src_dim_h = int(job.src_height) if job.src_height is not None else int(job.height)
     decoded_reference, ref_decode_rc = _maybe_decode_reference(
         job.source,
         encode_dir=opts.encode_dir,
@@ -591,6 +642,9 @@ def iter_rows(
         runner=_sp.run,
         target_width=_ref_target_w,
         target_height=_ref_target_h,
+        source_width=_src_dim_w,
+        source_height=_src_dim_h,
+        source_framerate=float(job.framerate),
     )
 
     for preset, crf in job.cells:
@@ -770,6 +824,14 @@ def iter_rows(
             sample_clip_seconds=clip_seconds,
             sample_clip_start_s=start_s,
             source_is_container=source_is_container,
+            # BBB e2e v6 Bug #V6-1 (ADR-0506): plumb the job's analysed
+            # window length so the encode is bounded when the caller
+            # didn't opt into sample-clip mode (the ladder/CLI
+            # ``--duration`` flag exercises this path). The reference
+            # decode already honours ``job.duration_s``; mirroring it on
+            # the encode side stops a 10-second smoke run from re-
+            # encoding the full 9-minute source.
+            duration_s=float(job.duration_s),
         )
         if opts.two_pass:
             # Phase F (ADR-0333). The driver gracefully falls back

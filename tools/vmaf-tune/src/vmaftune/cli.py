@@ -2093,20 +2093,36 @@ def _run_ladder(args: argparse.Namespace) -> int:
         src_height=int(src_h),
         cloud_sink=cloud_sink,
     )
-    manifest = build_and_emit(
-        src=args.src,
-        encoder=args.encoder,
-        resolutions=resolutions,
-        target_vmafs=target_vmafs,
-        quality_tiers=args.quality_tiers,
-        format=args.format,
-        spacing=args.spacing,
-        sampler=sampler,
-        with_uncertainty=bool(getattr(args, "with_uncertainty", False)),
-        uncertainty_thresholds=thresholds,
-        rung_overlap_threshold=getattr(args, "rung_overlap_threshold", None),
-        extra_samples=cloud_sink,
-    )
+    # BBB e2e v6 Bug #V6-3 (ADR-0506): the sampler can legitimately
+    # raise ``RuntimeError`` ("default sampler produced no scorable
+    # encodes …") when the source / rung combination yields zero
+    # successful corpus rows. Letting the exception bubble out of
+    # ``main()`` would terminate with a Python traceback AND
+    # ``sys.exit(1)`` — but the CLI wrapper that wraps ``main()``
+    # historically caught nothing and returned 0 on traceback, so CI
+    # / shell scripts could not distinguish a no-rung ladder from a
+    # green one. Catching the failure here and returning 2 (the
+    # canonical "operational failure" exit code shared with the
+    # other vmaf-tune subcommands) restores the CI / shell-script
+    # contract.
+    try:
+        manifest = build_and_emit(
+            src=args.src,
+            encoder=args.encoder,
+            resolutions=resolutions,
+            target_vmafs=target_vmafs,
+            quality_tiers=args.quality_tiers,
+            format=args.format,
+            spacing=args.spacing,
+            sampler=sampler,
+            with_uncertainty=bool(getattr(args, "with_uncertainty", False)),
+            uncertainty_thresholds=thresholds,
+            rung_overlap_threshold=getattr(args, "rung_overlap_threshold", None),
+            extra_samples=cloud_sink,
+        )
+    except (RuntimeError, ValueError, OSError) as exc:
+        sys.stderr.write(f"vmaf-tune ladder: {exc}\n")
+        return 2
     if args.output is not None:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(manifest, encoding="utf-8")
