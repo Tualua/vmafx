@@ -36856,3 +36856,16 @@ produce zero conflicts.
 
 **No rebase impact for ai-01**: `tools/vmaf-tune/src/vmaftune/predictor_train.py`
 is fork-local. The `--emit-stub-card-only` flag is additive.
+
+## ADR-0550 -- Cross-backend parity matrix 2026-05-18
+
+**Touches:** `docs/adr/0550-cross-backend-parity-matrix-2026-05-18.md`,
+`docs/research/0550-cross-backend-parity-matrix-2026-05-18.md`,
+`docs/adr/README.md` (index row), `docs/state.md` (audit-closed row),
+`changelog.d/added/0550-cross-backend-parity-matrix.md`, this file.
+
+**Rebase sensitivity (none -- docs-only, no C source):**
+All touched files are under `docs/` and `changelog.d/`. No libvmaf C
+source, no public header, no `meson_options.txt`, no `ffmpeg-patches/`
+entry. No numerical-correctness risk: this is a read-only audit that produces
+only documentation artefacts.
