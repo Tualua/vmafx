@@ -107,6 +107,23 @@ lossless output (CLI default is `%.6f` for Netflix-compat per
 [ADR-0119](../adr/0119-cli-precision-default-revert.md); pass
 `--precision=max` to opt into `%.17g`).
 
+### Feature option syntax
+
+The `feature=` option attaches extra extractors beyond the model's intrinsic
+features. Values are pipe-separated `name=<extractor>` entries (e.g.
+`feature='name=psnr|name=ciede|name=adm3'`). Intra-feature options use
+backslash-escaped colons inside the value, e.g.
+`feature='name=integer_ssim\:enable_chroma=true'`. Names match the entries in
+libvmaf's `feature_extractor_list[]`.
+
+### Dedicated SYCL filter: libvmaf_sycl
+
+The fork ships a dedicated `libvmaf_sycl` filter (FFmpeg patch in
+`ffmpeg-patches/`) that routes scoring through libvmaf's SYCL backend without
+invoking the generic `libvmaf` filter's CPU path. Usage mirrors `libvmaf=`
+syntax but accepts an additional `sycl_device=<n>` option. See
+[`vmaf-vpl.md`](vmaf-vpl.md) for the SYCL backend overview.
+
 ### Multi-feature / multi-model examples
 
 Score a pair with the default model plus PSNR + CIEDE attached:
