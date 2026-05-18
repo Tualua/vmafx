@@ -49,7 +49,7 @@ no `meson_options.txt`, no `ffmpeg-patches/` entry. The CLAUDE.md
 §12 r14 patch-stack rule does not apply (no libvmaf surface
 touched). Netflix upstream has no container infra under `dev/` to
 conflict with.
-## fix/integer-vif-cuda-chroma-plane (ADR-0541)
+## fix/integer-vif-cuda-chroma-plane (ADR-0547)
 
 **Touches upstream-mirror path.** Modifies:
 - `libvmaf/src/feature/cuda/integer_vif_cuda.c` (upstream-mirror — comment
@@ -36608,7 +36608,7 @@ No CPU-path C source, no public header, no `meson_options.txt`, no
 `ffmpeg-patches/` entry, no Python-binding change — CLAUDE.md §12
 r14 (FFmpeg patch-stack sync) does not apply.
 
-## feat/vmaf-tune-full-file-and-no-bisect (ADR-0542)
+## feat/vmaf-tune-full-file-and-no-bisect (ADR-0548)
 
 **Files touched:** `tools/vmaf-tune/src/vmaftune/cli.py` (auto-probe
 block in `_run_tune_per_shot`; new `_run_compare_crf_sweep` function;
@@ -36617,8 +36617,8 @@ subparser; `--width` / `--height` / `--framerate` made optional in the
 `tune-per-shot` subparser), `tools/vmaf-tune/tests/test_tune_per_shot_container_src.py`
 (new — Fix A smoke tests), `tools/vmaf-tune/tests/test_compare_no_bisect.py`
 (new — Fix B smoke tests), `tools/vmaf-tune/AGENTS.md` (two new
-invariant notes), `docs/adr/0542-vmaf-tune-full-file-and-no-bisect.md`
-(+ index row in `docs/adr/README.md`), `changelog.d/added/0542-…md`,
+invariant notes), `docs/adr/0548-vmaf-tune-full-file-and-no-bisect.md`
+(+ index row in `docs/adr/README.md`), `changelog.d/added/0548-…md`,
 `docs/usage/vmaf-tune.md` (Fix A and Fix B documentation), this file.
 
 **Rebase sensitivity (none — vmaf-tune Python only):**

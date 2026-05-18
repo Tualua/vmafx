@@ -1,7 +1,7 @@
 - `integer_vif`: clarified as luma-only by design across every backend
   (CPU AVX2/AVX-512, ARM NEON, CUDA, HIP, SYCL, Vulkan, Metal),
   matching upstream Netflix/vmaf and the Sheikh & Bovik (2006)
-  definition of the metric (ADR-0541). The CUDA twin's misleading
+  definition of the metric (ADR-0547). The CUDA twin's misleading
   `n_planes = 1; /* …not yet implemented */` comment is rewritten to
   state the luma-only design intent. The vestigial `enable_chroma`
   option on the CUDA twin (introduced by an abandoned 2026-05-16

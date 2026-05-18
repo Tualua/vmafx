@@ -1,4 +1,4 @@
-# ADR-0542: vmaf-tune tune-per-shot accepts container sources directly; compare gains --no-bisect mode
+# ADR-0548: vmaf-tune tune-per-shot accepts container sources directly; compare gains --no-bisect mode
 
 - **Status**: Accepted
 - **Date**: 2026-05-18

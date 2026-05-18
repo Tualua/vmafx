@@ -1,7 +1,7 @@
-# Research digest 0542 — vmaf-tune ergonomics: container sources + CRF sweep mode
+# Research digest 0548 — vmaf-tune ergonomics: container sources + CRF sweep mode
 
 **Status:** Trivial ergonomic fix — no digest needed beyond this summary.
-**ADR:** [ADR-0542](../adr/0542-vmaf-tune-full-file-and-no-bisect.md)
+**ADR:** [ADR-0548](../adr/0548-vmaf-tune-full-file-and-no-bisect.md)
 **Date:** 2026-05-18
 
 ## Summary

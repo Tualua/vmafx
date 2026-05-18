@@ -1,4 +1,4 @@
-# ADR-0541: `integer_vif` is luma-only across every backend; CUDA `enable_chroma` is a documented no-op
+# ADR-0547: `integer_vif` is luma-only across every backend; CUDA `enable_chroma` is a documented no-op
 
 - **Status**: Accepted
 - **Date**: 2026-05-18

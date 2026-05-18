@@ -1,6 +1,6 @@
 # vmaf-tune: tune-per-shot accepts container sources; compare --no-bisect mode
 
-Two ergonomic gaps closed (ADR-0542):
+Two ergonomic gaps closed (ADR-0548):
 
 **Fix A — tune-per-shot accepts container sources directly.**
 `vmaf-tune tune-per-shot --src clip.mp4` now works without pre-extracting a raw
