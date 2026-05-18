@@ -3090,17 +3090,29 @@ def _run_report(args: argparse.Namespace) -> int:
             sys.stderr.write(f"vmaf-tune report: cannot load --per-shot-json: {e}\n")
             return 2
         for idx, s in enumerate(sp.get("shots") or sp.get("plan") or []):
+            # Per-shot tune emits `shot_id` + `frames` (count) + `predicted_crf`
+            # — not the bisect-style `index`/`best_crf` fields. Map both shapes
+            # so a real `vmaf-tune tune-per-shot` plan ingests without
+            # collapsing every shot to "0 kbps / 0s". Compute duration from
+            # frame count + source fps when the JSON doesn't carry it; mark
+            # missing per-shot vmaf / bitrate as NaN so the renderer shows
+            # "—" instead of misleading zeros.
+            start_f = int(s.get("start_frame") or s.get("start") or 0)
+            end_f = int(s.get("end_frame") or s.get("end") or 0)
+            frame_count = int(s.get("frames") or max(0, end_f - start_f))
+            fps = float(s.get("framerate") or sp.get("framerate") or src_info.fps or 0.0)
+            duration_default = (frame_count / fps) if fps > 0 else 0.0
             shots = shots + (
                 ShotRow(
-                    shot_index=int(s.get("index", idx)),
-                    start_frame=int(s.get("start_frame") or s.get("start") or 0),
-                    end_frame=int(s.get("end_frame") or s.get("end") or 0),
+                    shot_index=int(s.get("shot_id", s.get("index", idx))),
+                    start_frame=start_f,
+                    end_frame=end_f,
                     width=int(s.get("width") or src_info.width),
                     height=int(s.get("height") or src_info.height),
-                    best_crf=int(s.get("best_crf") or s.get("crf") or 0),
-                    vmaf=float(s.get("vmaf") or s.get("predicted_vmaf") or 0.0),
-                    bitrate_kbps=float(s.get("bitrate_kbps") or 0.0),
-                    duration_s=float(s.get("duration_s") or 0.0),
+                    best_crf=int(s.get("best_crf") or s.get("crf") or s.get("predicted_crf") or 0),
+                    vmaf=float(s.get("vmaf") or s.get("predicted_vmaf") or float("nan")),
+                    bitrate_kbps=float(s.get("bitrate_kbps") or float("nan")),
+                    duration_s=float(s.get("duration_s") or duration_default),
                 ),
             )
 
