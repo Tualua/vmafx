@@ -91,10 +91,15 @@ services:
       # Docker's stored config to reference a no-longer-existing path and
       # preventing container start. Mounting the whole directory avoids any
       # hard-coded path dependency. ADR-0528.
+      # NOTE: must be writable (not read_only) — NVIDIA Container Toolkit's
+      # OCI hook creates pci-bus-address symlinks inside /dev/dri/by-path at
+      # container init. read_only:true caused createContainer hook #5 to fail
+      # with "read-only file system" on every start. Container OS isolation
+      # prevents writes from inside the container from leaking to the host.
       - type: bind
         source: /dev/dri
         target: /dev/dri
-        read_only: true
+        read_only: false
 
     # NVIDIA Container Toolkit runtime — requires nvidia runtime configured on host.
     # See: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html

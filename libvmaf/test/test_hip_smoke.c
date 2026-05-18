@@ -488,6 +488,9 @@ static char *test_integer_motion_hip_dispatch_picks_hip(void)
     mu_assert("HIP motion2 extractor resolvable with HIP flag", hip_fex != NULL);
     mu_assert("HIP flag picks the HIP twin (name=motion_hip)",
               strcmp(hip_fex->name, "motion_hip") == 0);
+    return NULL;
+}
+
 /* ---- ADR-0533: full HIP-extractor registration sweep ---- */
 /*
  * One assertion per newly-registered HIP feature extractor. Pins the

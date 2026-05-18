@@ -124,6 +124,11 @@ hip_sources += files(
     '../feature/hip/integer_psnr_hvs_hip.c',
     '../feature/hip/integer_ssim_hip.c',
     '../feature/hip/ssimulacra2_hip.c',
+    # NOTE: hip_hsaco_stubs.c entry removed — the file was never
+    # committed alongside the meson reference (dangling), breaking
+    # `meson setup`. If link fails under enable_hipcc=true with
+    # undefined HSACO blob symbols, add the stubs file with
+    # weak-symbol fallbacks for the missing kernels.
 )
 
 # T7-10b runtime linkage. ROCm ships `hip_runtime_api.h` under
