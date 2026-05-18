@@ -36632,3 +36632,17 @@ removed. The probe block at the top of `_run_tune_per_shot` only
 executes when `args.width is None or args.height is None or
 args.framerate is None` — callers that pass explicit geometry are
 unaffected. No upstream Netflix/vmaf path is touched.
+## ADR-0539 — HIP `hip_cu_extra_flags` dispatch + `ssimulacra2_blur` `-ffp-contract=off`
+
+**No rebase impact**: the change is entirely additive in
+`libvmaf/src/meson.build` inside the `if get_option('enable_hipcc')`
+block — a new `hip_cu_extra_flags` dict and one extra `per_kernel_flags`
+list interpolated into the existing hipcc `custom_target` command. The
+fall-through (`.get(name, [])`) keeps the command line byte-identical
+for every kernel not listed. Netflix upstream ships no HIP backend, so
+the entire `enable_hipcc` block is fork-local; upstream syncs will not
+conflict. The dict mechanism extends naturally — when porting a future
+CUDA kernel that lists flags in `cuda_cu_extra_flags`, mirror the entry
+in `hip_cu_extra_flags` per `libvmaf/src/feature/hip/AGENTS.md`. No
+public API surface, no `meson_options.txt` entry, no ffmpeg-patches
+entry. On a future upstream sync, expect zero conflicts.

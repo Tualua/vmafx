@@ -337,3 +337,18 @@ All within places=4 of CPU (in fact bit-exact: delta=0.000000).
 After this PR no weak HSACO stubs back any of the three integer-domain
 PSNR / PSNR-HVS / moment extractors — only the four ADM kernels remain
 on the ADR-0536 stub path pending their own CUDA-helper-macro port.
+## Per-kernel hipcc flag dispatch (ADR-0539)
+
+`libvmaf/src/meson.build` defines a `hip_cu_extra_flags` dict alongside
+`hip_kernel_sources` so individual HSACO compilations can opt into
+non-default flags without changing the global hipcc command line. The
+fall-through (`hip_cu_extra_flags.get(name, [])`) is byte-identical to
+the prior command line for any kernel not listed.
+
+| Kernel              | Extra hipcc flags        | Reason |
+|---------------------|--------------------------|--------|
+| `ssimulacra2_blur`  | `-ffp-contract=off`      | Recursive Gaussian IIR pole-tracking depends on IEEE-754 add/mul ordering; allowing FMA fusion of `n2 * sum - d1 * prev` drifts the cascade past the places=2 parity gate within a handful of pyramid levels. Mirrors the CUDA twin's `--fmad=false`. |
+
+Mirrors the established `cuda_cu_extra_flags` dict in the same meson
+file (used by `float_adm_score` and `ssimulacra2_blur` on the CUDA side).
+When porting `float_adm` device code to HIP, add a matching entry.

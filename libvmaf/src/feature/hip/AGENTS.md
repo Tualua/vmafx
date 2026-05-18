@@ -138,3 +138,18 @@ Pattern (ADR-0539 example for `float_vif_score`):
    reviewer sees why the slot is gone.
 3. Rebuild with `enable_hipcc=true` and grep the ninja output for
    warnings referencing the symbol — none should remain.
+## IEEE-strict kernels go in `hip_cu_extra_flags` (ADR-0539)
+
+When a HIP kernel relies on IEEE-754 add/mul ordering — for example any
+recursive IIR (the SSIMULACRA2 FastGaussian cascade), angle-flag
+reductions, or numerically-sensitive variance / covariance combines —
+add an entry to the `hip_cu_extra_flags` dict in
+`libvmaf/src/meson.build` with `['-ffp-contract=off']` (or richer flag
+list as needed).  hipcc / amdclang++ default to `-ffp-contract=fast` on
+the device side, which silently fuses `n2 * sum - d1 * prev` patterns
+into FMAs and shifts the recursion past places=2 vs the CPU / Vulkan
+`precise` twin.  Mirrors the CUDA `cuda_cu_extra_flags` dict in the same
+file.  Current entries: `ssimulacra2_blur`.  Rebase invariant: when
+porting a new CUDA kernel that lists `--fmad=false` /
+`-ffp-contract=off` in `cuda_cu_extra_flags`, add the matching HIP
+entry in the same PR.

@@ -284,13 +284,25 @@ if is_hipcc_enabled and is_hip_enabled
         # weak in a stub TU below to keep the build linkable; calling the
         # extractor will surface the ENOSYS from a nullptr-hsaco guard.
     }
+    # Per-kernel extra hipcc flags. Mirrors `cuda_cu_extra_flags` below for
+    # the nvcc path. `ssimulacra2_blur` needs `-ffp-contract=off` so the
+    # recursive Gaussian IIR pole-tracking pre/prev sequence keeps IEEE-754
+    # add/mul ordering (hipcc / amdclang++ default to `-ffp-contract=fast`
+    # on the device side, which auto-fuses the n*sum - d*prev pair into an
+    # FMA and shifts the recursion past places=2 vs the CPU / Vulkan
+    # `precise` twin). The CUDA twin passes `--fmad=false` for the same
+    # reason; HIP's amdclang++-driven hipcc honours `-ffp-contract=off`.
+    hip_cu_extra_flags = {
+        'ssimulacra2_blur' : ['-ffp-contract=off'],
+    }
     foreach name, src : hip_kernel_sources
+        per_kernel_flags = hip_cu_extra_flags.get(name, [])
         hsaco_target = custom_target('hip_hsaco_' + name,
             build_by_default: true,
             output: name + '.hsaco',
             input: src,
             command: [hipcc_exe, '--genco'] + hip_offload_arch_flags +
-                     hip_include_flags +
+                     hip_include_flags + per_kernel_flags +
                      ['-I', meson.current_source_dir(),
                       '-I', meson.current_source_dir() + '/feature',
                       '-I', meson.current_source_dir() + '/feature/hip',
