@@ -22,6 +22,7 @@ import contextlib
 import hashlib
 import json
 import math
+import os
 import subprocess
 import sys
 import tempfile
@@ -42,7 +43,9 @@ from ai.data.feature_extractor import (
     extract_features,
 )
 
-DEFAULT_CHUG_DIR = Path(".workingdir2") / "chug"
+# Default working directory for CHUG feature extraction; override with
+# ``VMAF_CHUG_DIR`` env var for container / non-maintainer layouts.
+DEFAULT_CHUG_DIR = Path(os.environ.get("VMAF_CHUG_DIR", str(Path(".workingdir2") / "chug")))
 DEFAULT_INPUT = DEFAULT_CHUG_DIR / "chug.jsonl"
 DEFAULT_OUTPUT = DEFAULT_CHUG_DIR / "chug_features.jsonl"
 DEFAULT_CLIPS_DIR = DEFAULT_CHUG_DIR / "clips"

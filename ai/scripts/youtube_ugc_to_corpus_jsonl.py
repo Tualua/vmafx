@@ -52,7 +52,14 @@ _LOG = logging.getLogger("youtube_ugc_to_corpus_jsonl")
 
 _UGC_MIN_ROWS: int = 200
 _UGC_DEFAULT_MAX_ROWS: int = 300
-_DEFAULT_UGC_DIR: Path = Path(__file__).resolve().parents[2] / ".workingdir2" / "youtube-ugc"
+# Default working directory; override with ``VMAF_YOUTUBE_UGC_DIR`` env
+# var for container / non-maintainer layouts.
+_DEFAULT_UGC_DIR: Path = Path(
+    os.environ.get(
+        "VMAF_YOUTUBE_UGC_DIR",
+        str(Path(__file__).resolve().parents[2] / ".workingdir2" / "youtube-ugc"),
+    )
+)
 _DEFAULT_OUTPUT: Path = _DEFAULT_UGC_DIR / "youtube-ugc.jsonl"
 _DEFAULT_CLIPS_SUBDIR: str = "clips"
 _DEFAULT_MANIFEST_NAME: str = "manifest.csv"

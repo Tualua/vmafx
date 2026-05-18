@@ -33,6 +33,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -73,11 +74,11 @@ def build_argparser() -> argparse.ArgumentParser:
     p.add_argument(
         "--corpus-root",
         type=Path,
-        default=Path(".workingdir2/netflix"),
+        default=Path(os.environ.get("VMAF_NETFLIX_CORPUS_DIR", ".workingdir2/netflix")),
         help=(
             "Corpus root used during the LOSO run; sha256-snapshotted "
             "into the verdict JSON for reproducibility (default: "
-            ".workingdir2/netflix)."
+            "``$VMAF_NETFLIX_CORPUS_DIR`` or ``.workingdir2/netflix``)."
         ),
     )
     p.add_argument(

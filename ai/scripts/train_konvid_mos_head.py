@@ -62,6 +62,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
 import time
 from collections.abc import Sequence
@@ -676,17 +677,29 @@ def _build_manifest(
 
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="train_konvid_mos_head.py")
+    _konvid_1k_dir = Path(
+        os.environ.get("VMAF_KONVID_1K_DIR", str(Path.home() / ".workingdir2" / "konvid-1k"))
+    )
+    _konvid_150k_dir = Path(
+        os.environ.get("VMAF_KONVID_150K_DIR", str(Path.home() / ".workingdir2" / "konvid-150k"))
+    )
     ap.add_argument(
         "--konvid-1k",
         type=Path,
-        default=Path.home() / ".workingdir2" / "konvid-1k" / "konvid_1k.jsonl",
-        help="Path to the KonViD-1k JSONL corpus drop (Phase 1, PR #440).",
+        default=_konvid_1k_dir / "konvid_1k.jsonl",
+        help=(
+            "Path to the KonViD-1k JSONL corpus drop (Phase 1, PR #440). "
+            "Parent dir overridden via ``VMAF_KONVID_1K_DIR``."
+        ),
     )
     ap.add_argument(
         "--konvid-150k",
         type=Path,
-        default=Path.home() / ".workingdir2" / "konvid-150k" / "konvid_150k.jsonl",
-        help="Path to the KonViD-150k JSONL corpus drop (Phase 2, PR #447).",
+        default=_konvid_150k_dir / "konvid_150k.jsonl",
+        help=(
+            "Path to the KonViD-150k JSONL corpus drop (Phase 2, PR #447). "
+            "Parent dir overridden via ``VMAF_KONVID_150K_DIR``."
+        ),
     )
     ap.add_argument(
         "--feature-parquet",

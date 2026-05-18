@@ -75,7 +75,14 @@ _LOG = logging.getLogger("konvid_1k_to_corpus_jsonl")
 # ---------------------------------------------------------------------------
 
 _KONVID_1K_MAX_ROWS: int = 1500
-_DEFAULT_KONVID_DIR: Path = Path(__file__).resolve().parents[2] / ".workingdir2" / "konvid-1k"
+# Default working directory; override with ``VMAF_KONVID_1K_DIR`` env
+# var for container / non-maintainer layouts.
+_DEFAULT_KONVID_DIR: Path = Path(
+    os.environ.get(
+        "VMAF_KONVID_1K_DIR",
+        str(Path(__file__).resolve().parents[2] / ".workingdir2" / "konvid-1k"),
+    )
+)
 _DEFAULT_OUTPUT: Path = _DEFAULT_KONVID_DIR / "konvid_1k.jsonl"
 _VIDEOS_SUBDIRS: tuple[str, ...] = ("KoNViD_1k_videos", "videos")
 _METADATA_SUBDIRS: tuple[str, ...] = ("KoNViD_1k_metadata", "metadata")

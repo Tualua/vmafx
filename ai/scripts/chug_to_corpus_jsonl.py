@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import csv
 import logging
+import os
 import subprocess
 import sys
 from collections.abc import Iterator
@@ -44,7 +45,16 @@ _LOG = logging.getLogger("chug_to_corpus_jsonl")
 
 _CHUG_MIN_ROWS: int = 1000
 _CHUG_DEFAULT_MAX_ROWS: int = 500
-_DEFAULT_CHUG_DIR: Path = Path(__file__).resolve().parents[2] / ".workingdir2" / "chug"
+# Default working directory for CHUG inputs/outputs. Override with
+# ``VMAF_CHUG_DIR`` env var (e.g. inside the dev-mcp container or on
+# operator machines that don't use the maintainer's ``.workingdir2``
+# layout). Falls back to the in-tree default for backwards compatibility.
+_DEFAULT_CHUG_DIR: Path = Path(
+    os.environ.get(
+        "VMAF_CHUG_DIR",
+        str(Path(__file__).resolve().parents[2] / ".workingdir2" / "chug"),
+    )
+)
 _DEFAULT_OUTPUT: Path = _DEFAULT_CHUG_DIR / "chug.jsonl"
 _DEFAULT_CLIPS_SUBDIR: str = "clips"
 _DEFAULT_MANIFEST_NAME: str = "manifest.csv"

@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -85,7 +86,15 @@ def _load_or_compute(
 
 def main() -> int:
     ap = argparse.ArgumentParser(prog="extract_full_features.py")
-    ap.add_argument("--data-root", type=Path, default=Path(".workingdir2/netflix"))
+    ap.add_argument(
+        "--data-root",
+        type=Path,
+        default=Path(os.environ.get("VMAF_NETFLIX_CORPUS_DIR", ".workingdir2/netflix")),
+        help=(
+            "Netflix corpus root. Override with the ``VMAF_NETFLIX_CORPUS_DIR`` "
+            "env var when running inside the dev-mcp container or other layouts."
+        ),
+    )
     ap.add_argument(
         "--cache-dir",
         type=Path,

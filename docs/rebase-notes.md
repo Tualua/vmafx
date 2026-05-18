@@ -36763,3 +36763,26 @@ Touched files:
 `docs/state.md` (Recently-closed row),
 `changelog.d/added/0546-codec-adapter-two-pass-real.md`,
 `docs/rebase-notes.md` (this entry).
+
+## chore/ai-tooling-env-overrides-split (ADR-0547)
+
+**Rebase sensitivity (low — fork-local only):**
+
+- `ai/scripts/*.py`: every file is fork-local. The edits add an
+  `os.environ.get(...)` wrap around the existing default-path literal.
+  No upstream conflict possible.
+- `.gitignore`: appends `*.bak` / `*.orig`. Trivial to resolve if
+  upstream ever touches the same lines (unlikely — these are universal
+  editor-backup patterns).
+- `docs/ai/scripts-env-vars.md` (new file), `mkdocs.yml` nav entry:
+  fork-local docs tree. No upstream conflict possible.
+- `tools/vmaf-tune/src/vmaftune/cli.py.bak`: untracked file deletion;
+  no git history impact.
+
+Touched files: `.gitignore`, fifteen `ai/scripts/*.py` files,
+`docs/ai/scripts-env-vars.md` (new), `mkdocs.yml`,
+`docs/adr/0547-ai-script-env-vars.md` (new),
+`docs/adr/README.md`, `docs/state.md`, `docs/rebase-notes.md`,
+`changelog.d/changed/0547-ai-script-env-vars.md` (new).
+No `ffmpeg-patches/` change (no C-API, CLI flag, or
+`meson_options.txt` consumed by a patch — CLAUDE.md §12 r14 exempt).

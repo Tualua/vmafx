@@ -989,17 +989,24 @@ def main() -> int:
         prog="extract_k150k_features.py",
         description="Extract FULL_FEATURES from KoNViD-150k-A via FR-from-NR adapter (ADR-0346).",
     )
+    _k150k_dir = os.environ.get("VMAF_KONVID_150K_DIR", ".workingdir2/konvid-150k")
     ap.add_argument(
         "--clips-dir",
         type=Path,
-        default=Path(".workingdir2/konvid-150k/k150ka_extracted"),
-        help="Directory containing K150K-A .mp4 clips.",
+        default=Path(_k150k_dir) / "k150ka_extracted",
+        help=(
+            "Directory containing K150K-A .mp4 clips. Override the parent "
+            "dir via the ``VMAF_KONVID_150K_DIR`` env var."
+        ),
     )
     ap.add_argument(
         "--scores",
         type=Path,
-        default=Path(".workingdir2/konvid-150k/k150ka_scores.csv"),
-        help="CSV with columns video_name, video_score (MOS labels).",
+        default=Path(_k150k_dir) / "k150ka_scores.csv",
+        help=(
+            "CSV with columns video_name, video_score (MOS labels). "
+            "Parent dir overridden via ``VMAF_KONVID_150K_DIR``."
+        ),
     )
     ap.add_argument(
         "--metadata-jsonl",

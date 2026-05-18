@@ -247,6 +247,7 @@ nav:
       - U2Net-P mirror: ai/u2netp-mirror.md
       - Extractor template: ai/extractor-template.md
       - Roadmap: ai/roadmap.md
+      - Scripts env vars: ai/scripts-env-vars.md
       - Corpus ingestion:
           - KonViD-1k: ai/konvid-1k-ingestion.md
           - KonViD-150k: ai/konvid-150k-ingestion.md

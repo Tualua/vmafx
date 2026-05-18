@@ -61,7 +61,14 @@ _LOG = logging.getLogger("konvid_150k_to_corpus_jsonl")
 # ---------------------------------------------------------------------------
 
 _KONVID_150K_MIN_ROWS: int = 5000
-_DEFAULT_KONVID_DIR: Path = Path(__file__).resolve().parents[2] / ".workingdir2" / "konvid-150k"
+# Default working directory; override with ``VMAF_KONVID_150K_DIR`` env
+# var for container / non-maintainer layouts.
+_DEFAULT_KONVID_DIR: Path = Path(
+    os.environ.get(
+        "VMAF_KONVID_150K_DIR",
+        str(Path(__file__).resolve().parents[2] / ".workingdir2" / "konvid-150k"),
+    )
+)
 _DEFAULT_OUTPUT: Path = _DEFAULT_KONVID_DIR / "konvid_150k.jsonl"
 _DEFAULT_CLIPS_SUBDIR: str = "clips"
 _DEFAULT_MANIFEST_NAME: str = "manifest.csv"

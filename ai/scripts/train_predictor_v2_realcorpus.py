@@ -125,11 +125,27 @@ _HOME = Path(os.path.expanduser("~"))
 #: Directory layout the operator is expected to populate. Each root is
 #: scanned recursively for ``*.jsonl`` corpora at runtime; absent
 #: directories are silently skipped (the operator may have only one of
-#: the three corpora on disk).
+#: the three corpora on disk). Each path may be overridden with a
+#: ``VMAF_<NAME>_DIR`` env var for container / non-maintainer layouts.
 DEFAULT_CORPUS_ROOTS: tuple[Path, ...] = (
-    _HOME / ".workingdir2" / "netflix",
-    _HOME / ".workingdir2" / "konvid-150k",
-    _HOME / ".workingdir2" / "bvi-dvc-raw",
+    Path(
+        os.environ.get(
+            "VMAF_NETFLIX_CORPUS_DIR",
+            str(_HOME / ".workingdir2" / "netflix"),
+        )
+    ),
+    Path(
+        os.environ.get(
+            "VMAF_KONVID_150K_DIR",
+            str(_HOME / ".workingdir2" / "konvid-150k"),
+        )
+    ),
+    Path(
+        os.environ.get(
+            "VMAF_BVI_DVC_RAW_DIR",
+            str(_HOME / ".workingdir2" / "bvi-dvc-raw"),
+        )
+    ),
 )
 
 

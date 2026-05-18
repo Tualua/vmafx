@@ -48,8 +48,13 @@ _LOG = logging.getLogger("waterloo_ivc_to_corpus_jsonl")
 
 _WATERLOO_IVC_MIN_ROWS: int = 100
 _WATERLOO_IVC_DEFAULT_MAX_ROWS: int = 100
-_DEFAULT_WATERLOO_IVC_DIR: Path = (
-    Path(__file__).resolve().parents[2] / ".workingdir2" / "waterloo-ivc-4k"
+# Default working directory; override with ``VMAF_WATERLOO_IVC_DIR`` env
+# var for container / non-maintainer layouts.
+_DEFAULT_WATERLOO_IVC_DIR: Path = Path(
+    os.environ.get(
+        "VMAF_WATERLOO_IVC_DIR",
+        str(Path(__file__).resolve().parents[2] / ".workingdir2" / "waterloo-ivc-4k"),
+    )
 )
 _DEFAULT_OUTPUT: Path = _DEFAULT_WATERLOO_IVC_DIR / "waterloo_ivc_4k.jsonl"
 _DEFAULT_CLIPS_SUBDIR: str = "clips"

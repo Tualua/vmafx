@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -122,8 +123,17 @@ def main() -> int:
     ap.add_argument(
         "--data-root",
         type=Path,
-        default=REPO_ROOT / ".workingdir2" / "netflix",
-        help="Netflix corpus root (ref/ + dis/).",
+        default=Path(
+            os.environ.get(
+                "VMAF_NETFLIX_CORPUS_DIR",
+                str(REPO_ROOT / ".workingdir2" / "netflix"),
+            )
+        ),
+        help=(
+            "Netflix corpus root (ref/ + dis/). Override with the "
+            "``VMAF_NETFLIX_CORPUS_DIR`` env var for container or "
+            "non-maintainer layouts."
+        ),
     )
     ap.add_argument(
         "--training-runs-dir",

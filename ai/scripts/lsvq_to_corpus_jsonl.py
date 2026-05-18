@@ -51,7 +51,14 @@ _LOG = logging.getLogger("lsvq_to_corpus_jsonl")
 
 _LSVQ_MIN_ROWS: int = 1000
 _LSVQ_DEFAULT_MAX_ROWS: int = 500
-_DEFAULT_LSVQ_DIR: Path = Path(__file__).resolve().parents[2] / ".workingdir2" / "lsvq"
+# Default working directory; override with ``VMAF_LSVQ_DIR`` env var
+# for container / non-maintainer layouts.
+_DEFAULT_LSVQ_DIR: Path = Path(
+    os.environ.get(
+        "VMAF_LSVQ_DIR",
+        str(Path(__file__).resolve().parents[2] / ".workingdir2" / "lsvq"),
+    )
+)
 _DEFAULT_OUTPUT: Path = _DEFAULT_LSVQ_DIR / "lsvq.jsonl"
 _DEFAULT_CLIPS_SUBDIR: str = "clips"
 _DEFAULT_MANIFEST_NAME: str = "manifest.csv"

@@ -56,7 +56,14 @@ _LOG = logging.getLogger("live_vqc_to_corpus_jsonl")
 
 _LIVE_VQC_MIN_ROWS: int = 50
 _LIVE_VQC_DEFAULT_MAX_ROWS: int = 200
-_DEFAULT_LIVE_VQC_DIR: Path = Path(__file__).resolve().parents[2] / ".workingdir2" / "live-vqc"
+# Default working directory; override with ``VMAF_LIVE_VQC_DIR`` env
+# var for container / non-maintainer layouts.
+_DEFAULT_LIVE_VQC_DIR: Path = Path(
+    os.environ.get(
+        "VMAF_LIVE_VQC_DIR",
+        str(Path(__file__).resolve().parents[2] / ".workingdir2" / "live-vqc"),
+    )
+)
 _DEFAULT_OUTPUT: Path = _DEFAULT_LIVE_VQC_DIR / "live_vqc.jsonl"
 _DEFAULT_CLIPS_SUBDIR: str = "clips"
 _DEFAULT_MANIFEST_NAME: str = "manifest.csv"
