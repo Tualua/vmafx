@@ -1102,13 +1102,37 @@ if is_sycl_enabled
 
     # Toolchain-specific compile flags.
     #   icpx:  `-fsycl` enables single-source SYCL.
+    #          When `sycl_icpx_aot_targets` is non-empty (the default),
+    #          we additionally pass `-fsycl-targets=spir64_gen,spir64` to
+    #          request AOT compilation into native GPU ISA, and
+    #          `-Xs '-device <list>'` to specify target micro-architectures.
+    #          This eliminates the JIT cold-start cost paid on every first
+    #          kernel launch. The binary embeds native ISA blobs for each
+    #          listed target plus a SPIR-V fallback for unlisted devices.
+    #          Set `sycl_icpx_aot_targets=''` to revert to SPIR-V JIT only
+    #          (smaller binary, mandatory JIT on first launch). ADR-0567.
     #   acpp:  `--acpp-targets=<targets>` selects backend(s); the
     #          equivalent of `-fsycl` is implicit.
     if is_sycl_acpp
         acpp_targets = get_option('sycl_acpp_targets')
         sycl_toolchain_args = ['--acpp-targets=' + acpp_targets]
     else
-        sycl_toolchain_args = ['-fsycl']
+        icpx_aot_targets = get_option('sycl_icpx_aot_targets')
+        if icpx_aot_targets != ''
+            # AOT path: emit spir64_gen (IGC) ISA blobs for the listed targets.
+            # `-Xs '-device <list>'` is forwarded to IGC via clang-offload-wrapper.
+            # `spir64` fallback embeds portable SPIR-V for any unlisted device.
+            sycl_toolchain_args = [
+                '-fsycl',
+                '-fsycl-targets=spir64_gen,spir64',
+                '-Xs', '-device ' + icpx_aot_targets,
+            ]
+            message('SYCL AOT targets (icpx): ' + icpx_aot_targets)
+        else
+            # JIT path: portable SPIR-V only; compiled to native ISA at first launch.
+            sycl_toolchain_args = ['-fsycl']
+            message('SYCL AOT: disabled — SPIR-V JIT only (sycl_icpx_aot_targets is empty)')
+        endif
     endif
 
     sycl_common_args = vmaf_cflags_common + ['-c'] + sycl_toolchain_args + ['-std=c++20'] + sycl_pic_arg

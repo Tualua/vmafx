@@ -379,3 +379,4 @@
 0544-fix-feature-extractor-list-dedup
 0565-continuous-feature-mix-eval-pipeline
 0567-upstream-port-direct-read
+0568-sycl-icpx-aot-targets-default

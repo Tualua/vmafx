@@ -83,8 +83,9 @@ libvmaf/src/feature/sycl/                # per-feature kernels
   `D3D11_USAGE_STAGING + D3D11_CPU_ACCESS_READ`, calls `CopyResource` to pull the
   GPU surface into staging, `Map`s the staging tex for CPU read, and forwards the
   mapped pointer + row pitch into `vmaf_sycl_upload_plane`. This is **not zero-copy**
-  — throughput is bounded by PCIe upstream (staging Map) + PCIe downstream (SYCL H2D).
-  A zero-copy equivalent would need DXGI NT-handle sharing + DPC++ D3D11 interop,
+  — throughput is bounded by PCIe upstream (staging Map) + PCIe downstream
+  (SYCL H2D). A zero-copy equivalent would need DXGI NT-handle sharing +
+  DPC++ D3D11 interop,
   which isn't documented in oneAPI as of 2025.1. See [d3d11_import.cpp](../../../libvmaf/src/sycl/d3d11_import.cpp)
   and ADR-0103.
 - **In-order queues per extractor.** Each feature extractor owns a SYCL
@@ -172,6 +173,94 @@ vmaf_read_pictures(vmaf, NULL, NULL, 0);
 See [ADR-0101](../../adr/0101-sycl-usm-picture-pool.md) for the design
 rationale (Y-plane only, pool depth 2, refcount semantics).
 
+## AOT targets (default, ADR-0568)
+
+By default this fork compiles the SYCL backend with Intel's GPU ahead-of-time
+(AOT) compilation instead of the portable SPIR-V JIT path. AOT embeds
+native GPU ISA blobs for the listed Intel micro-architectures directly into the
+binary so that no JIT compilation is needed at first launch.
+
+### Why AOT by default
+
+Without AOT, `icpx -fsycl` emits portable SPIR-V that is compiled to native
+ISA by the Level Zero / IGC runtime on first use. That compilation typically
+takes several seconds and is paid again after driver upgrades or binary
+reinstallation. For short VMAF runs (a handful of frames) the JIT cost
+dominates the total wall time. The HIP analogue (`hip_gfx_targets`) learned
+the same lesson in PR #1329. Making AOT the default eliminates the silent
+first-run penalty for every operator who builds with `-Denable_sycl=true`
+without reading the documentation.
+
+### Default target list
+
+<!-- markdownlint-disable MD013 -->
+The default `sycl_icpx_aot_targets` value covers the following Intel GPU
+micro-architectures:
+
+| Target | Silicon |
+| --- | --- |
+| `dg2-g10` | Arc A770 / A750 (DG2-G10) |
+| `dg2-g11` | Arc A380 / Arc Pro A30M (DG2-G11) |
+| `acm-g10` | Arc A770M / A730M (ACM-G10) — mobile |
+| `acm-g11` | Arc A550M / A370M (ACM-G11) — mobile |
+| `acm-g12` | Arc A350M (ACM-G12) — mobile thin |
+| `tgllp` | Tiger Lake integrated (TGL-LP) |
+| `adl-s` | Alder Lake-S integrated (desktop) |
+| `adl-p` | Alder Lake-P integrated (mobile 28W) |
+| `adl-n` | Alder Lake-N integrated (N-series) |
+| `rpl-s` | Raptor Lake-S integrated (desktop) |
+| `rpl-p` | Raptor Lake-P integrated (mobile) |
+| `mtl-h` | Meteor Lake-H integrated (high-performance mobile) |
+| `mtl-u` | Meteor Lake-U integrated (ultra-mobile) |
+| `arl-h` | Arrow Lake-H integrated (high-performance mobile) |
+| `arl-s` | Arrow Lake-S integrated (desktop) |
+| `arl-u` | Arrow Lake-U integrated (ultra-mobile) |
+| `lnl-m` | Lunar Lake-M integrated (requires icpx 2025.0+) |
+| `bmg-g21` | Battlemage G21 dGPU (requires icpx 2025.1+) |
+| `bmg-g31` | Battlemage G31 dGPU (requires icpx 2025.1+) |
+<!-- markdownlint-enable MD013 -->
+
+The fat binary also embeds a SPIR-V JIT fallback (`spir64`) for any device not
+in the list, so an unlisted or future device still works — it just pays the
+cold-start cost.
+
+### Adjusting the target list
+
+Override the default at configure time with `-Dsycl_icpx_aot_targets=`:
+
+```bash
+# Single-target fleet (Arc A380 only) — smallest binary:
+meson setup build -Denable_sycl=true -Dsycl_icpx_aot_targets=dg2-g11
+
+# JIT-only (SPIR-V, no AOT blobs) — smallest binary, first-run penalty:
+meson setup build -Denable_sycl=true -Dsycl_icpx_aot_targets=''
+
+# Dev machine with Arc A380 + Meteor Lake iGPU:
+meson setup build -Denable_sycl=true -Dsycl_icpx_aot_targets='dg2-g11,mtl-h'
+```
+
+The option is ignored when `sycl_compiler != 'icpx'` (i.e. AdaptiveCpp builds
+are unaffected).
+
+### Known toolchain version constraints
+
+- `lnl-m` (Lunar Lake): requires icpx 2025.0.0 or later. Older releases emit
+  an "unknown device" warning and silently skip that target; the remaining
+  targets and the SPIR-V fallback still work.
+- `bmg-g21`, `bmg-g31` (Battlemage): requires icpx 2025.1.0 or later. Same
+  graceful-skip behaviour on older toolchains.
+- If your toolchain is older than 2025.0.0 and the build fails on an unknown
+  target name, narrow the list to the targets your toolchain supports, or set
+  `sycl_icpx_aot_targets=''` to disable AOT.
+
+### AdaptiveCpp (acpp) side
+
+The `sycl_acpp_targets` option currently defaults to `"generic"`, which is
+AdaptiveCpp's portable SPIR-V / SSCP JIT path — the same cold-start trap as
+the old icpx default. AOT under AdaptiveCpp requires `intel_gpu_<arch>` target
+strings (supported in AdaptiveCpp 23.10+); that broadening is tracked as a
+follow-up task (see Known gaps below).
+
 ## Profiling
 
 - Intel VTune (`vtune-gui`) with the GPU Compute analysis type for kernel
@@ -212,7 +301,7 @@ the deviation:
 
 - **CAMBI** — SYCL twin (`cambi_sycl`) shipped in ADR-0371. Strategy II
   hybrid: three GPU kernels (spatial-mask, 2× decimate, 3-tap mode filter)
-  + host CPU residual (`calculate_c_values` + top-K pooling). Bit-exact
+  and host CPU residual (`calculate_c_values` + top-K pooling). Bit-exact
   with the CPU scalar extractor at `places=4` (ULP=0 on emitted score).
 - **CIEDE2000** — no SYCL kernel; CPU fallback.
 - **SSIM / MS-SSIM / PSNR / PSNR-HVS / ANSNR** — no SYCL kernels.

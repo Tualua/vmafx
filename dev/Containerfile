@@ -477,6 +477,18 @@ RUN cd /tmp \
 USER vmaf
 
 
+# SYCL is built with AOT compilation by default (ADR-0567).
+# The default sycl_icpx_aot_targets list covers Arc dGPU (dg2-g10/g11,
+# acm-g10/g11/g12) plus every common Intel iGPU from Tiger Lake through
+# Battlemage. The fat binary also embeds a SPIR-V JIT fallback for any
+# unlisted device. This eliminates the several-second cold-start compilation
+# that Level Zero / IGC would otherwise perform on the first kernel launch.
+#
+# To shrink the binary for a single-target fleet (e.g. Arc A380 = dg2-g11):
+#   -Dsycl_icpx_aot_targets='dg2-g11'
+#
+# To revert to SPIR-V JIT only (smallest binary, first-run penalty):
+#   -Dsycl_icpx_aot_targets=''
 RUN cd libvmaf && CC=icx CXX=icpx meson setup build \
         -Denable_cuda=true \
         -Denable_sycl=true \

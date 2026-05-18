@@ -36784,6 +36784,7 @@ Touched files:
 `changelog.d/added/0546-codec-adapter-two-pass-real.md`,
 `docs/rebase-notes.md` (this entry).
 
+
 ## chore/ai-tooling-env-overrides-split (ADR-0547)
 
 **Rebase sensitivity (low — fork-local only):**
@@ -36995,7 +36996,7 @@ before any loop body runs. Files touched:
 `changelog.d/fixed/0556-python-mcp-ai-audit.md`,
 `docs/state.md` (5 T-rows added to Open section),
 
-## ADR-0567 — upstream port USE_DIRECT_READ zero-copy input path (Netflix/vmaf@30a6e2a8d)
+## ADR-0568 — upstream port USE_DIRECT_READ zero-copy input path (Netflix/vmaf@30a6e2a8d)
 
 **Branch**: `chore/upstream-port-direct-read-and-speed-wrappers`
 **Rebase impact**: low — all touched files are upstream-shared paths that
@@ -37018,5 +37019,26 @@ Touched files:
 `docs/adr/0567-upstream-port-direct-read.md`,
 `docs/adr/README.md` (one index row),
 `changelog.d/perf/0567-upstream-port-direct-read.md`,
+
+
+## ADR-0568 — `sycl_icpx_aot_targets` default
+
+**Rebase impact**: low. Adds a new `sycl_icpx_aot_targets` string option to
+`libvmaf/meson_options.txt` and wires the corresponding AOT flags in
+`libvmaf/src/meson.build`. Any upstream Netflix/vmaf change that also touches
+those two files will produce a trivial two-hunk conflict. Resolution:
+preserve both the upstream hunk and the fork-added `sycl_icpx_aot_targets`
+option + toolchain-flag block. No public API header is touched; no
+ffmpeg-patches file is touched.
+
+Touched files:
+`libvmaf/meson_options.txt` (new option),
+`libvmaf/src/meson.build` (AOT flag wiring, icpx branch),
+`docs/backends/sycl/overview.md` (new AOT section),
+`dev/Containerfile` (doc comment near meson invocation),
+`docs/adr/0568-sycl-icpx-aot-targets-default.md` (new ADR),
+`docs/adr/README.md` (one index row),
+`changelog.d/added/0568-sycl-icpx-aot-targets-default.md`,
+`docs/state.md` (no-bug note),
 
 `docs/rebase-notes.md` (this entry).
