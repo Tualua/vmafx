@@ -1369,6 +1369,19 @@ bitrate against the sample duration. For custom rankers or tests,
 `(codec, src, target_vmaf) -> RecommendResult` callable and bypasses
 the bisect backend.
 
+**Container sources auto-probe their framerate / duration**
+(ADR-0509). When `--src` is a container (mp4 / mkv / mov / Y4M / ...)
+and you omit `--framerate` / `--duration`, the CLI calls `ffprobe`
+on the source and substitutes the probed values before invoking
+the bisect predicate. This avoids a silent failure mode where the
+argparse default `--framerate=24` against a 60 fps source mis-aligns
+reference vs. distorted decodes and collapses VMAF to the 4-90 band
+regardless of CRF. Explicit `--framerate` / `--duration` flags still
+win; a stderr warning fires when an explicit value disagrees with
+the probed source rate (subsampling is legitimate but should be
+deliberate). For raw `.yuv` sources nothing changes — the probe is
+skipped because raw YUV does not self-describe its framerate.
+
 Sample output (`--format markdown`, abridged):
 
 ```markdown
@@ -1397,8 +1410,8 @@ Sample output (`--format markdown`, abridged):
 | `--encoders LIST` | every registered adapter | Comma-separated codec names; e.g. `libx264,libx265,libsvtav1,libaom`. |
 | `--width / --height` | — | Required for the default real-bisect backend. |
 | `--pix-fmt` | `yuv420p` | Source pixel format forwarded to the scorer. |
-| `--framerate` | `24.0` | Source framerate. |
-| `--duration` | `0.0` | Source duration in seconds, used for bitrate math. |
+| `--framerate` | `24.0` (or auto-probed for container `--src`) | Source framerate. Container sources (mp4 / mkv / mov / Y4M / ...) auto-probe via `ffprobe` when this flag is left at its default; explicit values still win with a stderr-warning on probed-vs-user mismatch (ADR-0509). |
+| `--duration` | `0.0` (or auto-probed for container `--src`) | Source duration in seconds, used for bitrate math. Same auto-probe semantics as `--framerate` for container sources (ADR-0509). |
 | `--sample-clip-seconds` | `0.0` | `0.0` scores the full source. Positive values shorter than `--duration` use a centre sample window for encode, score, and bitrate math (ADR-0301). |
 | `--preset` | adapter default | Preset forwarded to the codec adapter. |
 | `--crf-min / --crf-max` | adapter range | Inclusive CRF search window. Pass both or neither. |

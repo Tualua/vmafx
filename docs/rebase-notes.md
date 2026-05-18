@@ -7,6 +7,19 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## fix/compare-source-is-container-plumbing (ADR-0509)
+
+**No rebase impact.** Changes confined to `tools/vmaf-tune/` (fork-local
+package) — `src/vmaftune/cli.py` (the `_run_compare` runner, the new
+`_TrackedDefaultAction` argparse action, `_stamp_tracked_default_sentinels`,
+and the `_resolve_compare_source_geometry` helper) and
+`tests/test_compare.py` (7 new regression tests). Netflix upstream does
+not ship `tools/vmaf-tune/`; no upstream-shared C sources, public
+headers, or build files are modified. The ADR (`0509`) and changelog
+fragment are fork-local docs only.
+
+---
+
 ## fix/restore-cuda-kernel-lifecycle-helpers
 
 **No rebase impact.** Investigation confirmed `VmafCudaKernelLifecycle`,

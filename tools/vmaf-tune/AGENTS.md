@@ -884,3 +884,26 @@ scripts for those local corpora.
   stderr and returns 2; do not widen the exception list to
   bare `Exception` (that would swallow programmer errors and
   `KeyboardInterrupt`).
+- **`_run_compare` auto-probes container-source framerate /
+  duration (ADR-0509, Bug #V7-1).** When `--src` is a container
+  (suffix outside `score.VMAF_RAW_SUFFIXES`) and the user did
+  NOT pass `--framerate` / `--duration` explicitly,
+  `_resolve_compare_source_geometry` substitutes the probed
+  values from `vmaftune.report.probe_source` before building
+  the bisect predicate. The "user passed explicitly" signal
+  rides on `_TrackedDefaultAction` + `_stamp_tracked_default_sentinels`
+  which set `args._<dest>_was_default = False` for any flag
+  the user explicitly named. The sentinel is intentionally
+  inverted (default `True`, opted-out to `False`) because
+  argparse never invokes `Action.__call__` on omitted flags.
+  Explicit user overrides win; mismatches emit a one-line
+  stderr warning. A regression that bypasses the helper (i.e.
+  feeds `args.framerate` straight into `make_bisect_predicate`)
+  re-opens the v7 bug class: the encoder pulls frames at the
+  container's native rate but `frame_skip_ref` / `frame_cnt`
+  walk the reference YUV at a different rate, collapsing VMAF
+  to the 4-90 band regardless of CRF. Tests pinning the
+  invariant live under `tests/test_compare.py` (the
+  `test_resolve_compare_source_geometry_*` + `test_cli_compare_passes_probed_framerate_for_container_src`
+  family); when adding a new `_TrackedDefaultAction` flag,
+  extend the hardcoded tuple in `_stamp_tracked_default_sentinels`.

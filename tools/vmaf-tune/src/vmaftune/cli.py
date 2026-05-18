@@ -47,6 +47,61 @@ from .per_shot import (
 from .score_backend import ALL_BACKENDS, BackendUnavailableError, select_backend
 
 
+class _TrackedDefaultAction(argparse.Action):
+    """Argparse action that records when a flag was passed explicitly.
+
+    When the user passes the flag, sets both ``args.<dest>`` to the
+    parsed value AND ``args._<dest>_was_default`` to ``False``. When the
+    flag is omitted, argparse uses the registered ``default`` for
+    ``<dest>`` and the sentinel stays at its default ``False`` — so
+    consumers default-initialise the marker to ``False`` then opt in by
+    setting it ``True`` on the parser, mirroring the inverted semantics
+    we actually want: "True means default, False means user override".
+
+    ADR-0509 / BBB e2e v7 Bug #V7-1 needs this to distinguish
+    ``vmaf-tune compare --framerate 24 …`` (user pinned 24 fps,
+    keep it) from ``vmaf-tune compare …`` (argparse default 24 fps;
+    auto-probe container sources and replace). The class is module-
+    local because ``argparse.Action`` subclasses are otherwise
+    boilerplate-heavy and the use-site is narrow.
+    """
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)  # type: ignore[arg-type]
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: object,
+        option_string: str | None = None,
+    ) -> None:
+        setattr(namespace, self.dest, values)
+        # When the user explicitly passes the flag, mark the sentinel
+        # ``_<dest>_was_default`` as False. The default value lives on
+        # the namespace as ``True`` (set by ``_stamp_tracked_default_sentinels``
+        # after parsing).
+        setattr(namespace, f"_{self.dest}_was_default", False)
+
+
+def _stamp_tracked_default_sentinels(args: argparse.Namespace) -> None:
+    """Stamp ``_<dest>_was_default = True`` for every ``_TrackedDefaultAction``.
+
+    Argparse never invokes the ``Action.__call__`` when the user omits
+    the flag, so we cannot set the sentinel inside the Action. We post-
+    process the namespace after ``parse_args`` and stamp every tracked
+    sentinel that isn't already set to ``False`` (i.e. the user did not
+    pass the flag) to ``True``.
+    """
+    # Iterate only the names the compare subparser registers as tracked.
+    # Hardcoded so the sentinel-stamp pass stays cheap; add to this
+    # tuple when wiring a new ``_TrackedDefaultAction`` flag.
+    for dest in ("framerate", "duration"):
+        sentinel = f"_{dest}_was_default"
+        if not hasattr(args, sentinel):
+            setattr(args, sentinel, True)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="vmaf-tune",
@@ -722,12 +777,30 @@ def _build_parser() -> argparse.ArgumentParser:
     compare.add_argument("--width", type=int, default=None, help="source width for real bisect")
     compare.add_argument("--height", type=int, default=None, help="source height for real bisect")
     compare.add_argument("--pix-fmt", default="yuv420p", help="source pixel format")
-    compare.add_argument("--framerate", type=float, default=24.0, help="source framerate")
+    # ADR-0509 / BBB e2e v7: ``--framerate`` and ``--duration`` use the
+    # ``_TrackedDefaultAction`` so ``_run_compare`` can tell "user
+    # explicitly passed 24" from "argparse default 24"; the container-
+    # source auto-probe only replaces the latter.
+    compare.add_argument(
+        "--framerate",
+        type=float,
+        default=24.0,
+        action=_TrackedDefaultAction,
+        help=(
+            "source framerate (default 24; auto-probed from the source "
+            "when --src is a container and this flag is left at default)"
+        ),
+    )
     compare.add_argument(
         "--duration",
         type=float,
         default=0.0,
-        help="source duration in seconds, used for bitrate math",
+        action=_TrackedDefaultAction,
+        help=(
+            "source duration in seconds, used for bitrate math (auto-probed "
+            "from the source when --src is a container and this flag is "
+            "left at default)"
+        ),
     )
     compare.add_argument(
         "--sample-clip-seconds",
@@ -2134,6 +2207,123 @@ def _run_ladder(args: argparse.Namespace) -> int:
     return 0
 
 
+def _resolve_compare_source_geometry(
+    src: Path,
+    *,
+    width: int | None,
+    height: int | None,
+    framerate: float,
+    duration_s: float,
+    framerate_was_default: bool,
+    duration_was_default: bool,
+    probe_fn: object | None = None,
+    warn_stream: object | None = None,
+) -> tuple[int | None, int | None, float, float]:
+    """Reconcile user-supplied geometry with an ffprobe of a container source.
+
+    ADR-0509 / BBB e2e v7 Bug #V7-1 root cause: the historic compare
+    CLI required ``--framerate`` (default ``24.0``) and ``--duration``
+    (default ``0.0``) and threaded them through to ``make_bisect_predicate``
+    verbatim. When ``--src`` is a container whose native rate is not
+    24 fps (e.g. 60 fps BBB), the per-iteration ``frame_skip_ref`` /
+    ``frame_cnt`` derived from the user-supplied ``--framerate`` no
+    longer indexes the same source frames the encoder pulled — the
+    distorted MKV is decoded back to YUV at the container's native
+    rate while ``vmaf --frame_skip_ref`` skips frames at the wrong
+    rate, comparing misaligned content and collapsing the apparent
+    VMAF (BBB 60fps → VMAF=90 at CRF=6, physically wrong).
+
+    The fix: when ``src`` is a container and the user did NOT
+    explicitly override ``--framerate`` / ``--duration`` (i.e. left
+    them at their argparse defaults), probe the source via
+    :func:`vmaftune.report.probe_source` and substitute the probed
+    values. When the user passed values that disagree with the probe,
+    keep the user override (operators may intentionally subsample) but
+    emit a one-line stderr warning so a misconfigured run is visible.
+    Width and height: when the user did not pass them and the source
+    is a container, fill them in from the probe (the existing rung-
+    target scale filter in :mod:`encode` handles geometry mismatch).
+
+    Returns the (possibly probe-derived) ``(width, height, framerate,
+    duration_s)`` tuple. The probe is best-effort — if it returns
+    zero / fails, user-supplied values are kept.
+
+    Sister fix to ADR-0505 (ladder ``source_is_container`` plumbing).
+    The compare path already plumbed ``source_is_container`` correctly
+    through :class:`vmaftune.encode.EncodeRequest` (see ``bisect.py``);
+    the remaining defect was that the user-supplied ``--framerate``
+    silently disagreed with the container's native rate, defeating the
+    per-iteration frame-window alignment between reference and
+    distorted decodes.
+    """
+    # Local imports keep the heavy ffprobe path off the import graph
+    # of CLI smoke tests that don't exercise compare.
+    from .score import VMAF_RAW_SUFFIXES  # noqa: PLC0415
+
+    if probe_fn is None:
+        from .report import probe_source as _probe_source  # noqa: PLC0415
+    else:
+        _probe_source = probe_fn  # type: ignore[assignment]
+
+    stream = warn_stream if warn_stream is not None else sys.stderr
+
+    if Path(src).suffix.lower() in VMAF_RAW_SUFFIXES:
+        # Raw YUV source — no probe possible / required. Width / height
+        # are already checked as mandatory by the caller; framerate /
+        # duration fall through verbatim.
+        return width, height, framerate, duration_s
+
+    try:
+        info = _probe_source(Path(src))  # type: ignore[operator]
+    except Exception as exc:  # noqa: BLE001 — defensive: probe is best-effort
+        stream.write(
+            f"vmaf-tune compare: ffprobe of {src} failed ({exc}); "
+            "using user-supplied geometry verbatim.\n"
+        )
+        return width, height, framerate, duration_s
+
+    probed_fps = float(getattr(info, "fps", 0.0) or 0.0)
+    probed_dur = float(getattr(info, "duration_s", 0.0) or 0.0)
+    probed_w = int(getattr(info, "width", 0) or 0)
+    probed_h = int(getattr(info, "height", 0) or 0)
+
+    out_w = width
+    out_h = height
+    out_fr = framerate
+    out_dur = duration_s
+
+    # Width / height: fill in from probe when user did not pass them.
+    # Don't override an explicit user value — operators may intentionally
+    # request a rung target different from the source rendition (the
+    # encode path's ``-vf scale`` filter handles that, see ADR-0505).
+    if out_w is None and probed_w > 0:
+        out_w = probed_w
+    if out_h is None and probed_h > 0:
+        out_h = probed_h
+
+    # Framerate: probe overrides the argparse default; warn on explicit
+    # mismatch but honour the user's override (subsampling is legitimate).
+    if framerate_was_default and probed_fps > 0.0:
+        out_fr = probed_fps
+    elif not framerate_was_default and probed_fps > 0.0 and abs(probed_fps - framerate) > 0.01:
+        stream.write(
+            f"vmaf-tune compare: --framerate {framerate:g} disagrees with the "
+            f"probed source rate {probed_fps:g} fps for {src}; using user "
+            "override but frame-skip/cnt math may misalign reference vs. "
+            "distorted YUV — pass --framerate to match the source if scores "
+            "look wrong.\n"
+        )
+
+    # Duration: argparse default is ``0.0`` (= full source). Fill from
+    # probe so downstream ``--duration`` clamping (ADR-0506 / V6-1) and
+    # the score-side reference decode budget actually bound to a real
+    # number when the user didn't pin one.
+    if duration_was_default and probed_dur > 0.0:
+        out_dur = probed_dur
+
+    return out_w, out_h, out_fr, out_dur
+
+
 def _run_compare(args: argparse.Namespace) -> int:
     """Compare codec adapters at a target VMAF using Phase B bisect.
 
@@ -2147,6 +2337,17 @@ def _run_compare(args: argparse.Namespace) -> int:
     from the source geometry flags, so ``compare`` is no longer a
     report-only scaffold. ``--predicate-module`` remains as an advanced
     test/operator hook and bypasses the bisect backend.
+
+    ADR-0509 / BBB e2e v7 Bug #V7-1: when ``--src`` is a container the
+    argparse defaults for ``--framerate`` (24.0) and ``--duration`` (0)
+    no longer index the same frames the encoder pulled, mis-aligning
+    the per-iteration reference vs. distorted YUV decode and collapsing
+    the apparent VMAF (sister bug to ADR-0505's ladder path). The
+    compare runner now auto-probes container sources via
+    :func:`vmaftune.report.probe_source` and substitutes the probed
+    framerate / duration when the user left those flags at their
+    defaults; explicit user values still win, with a stderr warning on
+    explicit mismatch.
     """
     from .bisect import make_bisect_predicate
     from .compare import compare_codecs, emit_report, supported_formats
@@ -2169,7 +2370,23 @@ def _run_compare(args: argparse.Namespace) -> int:
             sys.stderr.write(f"vmaf-tune compare: invalid --predicate-module: {exc}\n")
             return 2
     else:
-        if args.width is None or args.height is None:
+        # Container-source auto-probe (ADR-0509 / BBB e2e v7 Bug #V7-1).
+        # ``_framerate_was_default`` / ``_duration_was_default`` are
+        # sentinel attributes the argparse parser stamps onto ``args``
+        # when the user did NOT pass the flag explicitly. See
+        # ``build_parser`` for the wiring.
+        framerate_was_default = getattr(args, "_framerate_was_default", False)
+        duration_was_default = getattr(args, "_duration_was_default", False)
+        resolved_w, resolved_h, resolved_fr, resolved_dur = _resolve_compare_source_geometry(
+            Path(args.src),
+            width=args.width,
+            height=args.height,
+            framerate=args.framerate,
+            duration_s=args.duration,
+            framerate_was_default=framerate_was_default,
+            duration_was_default=duration_was_default,
+        )
+        if resolved_w is None or resolved_h is None:
             sys.stderr.write(
                 "vmaf-tune compare: --width and --height are required for the "
                 "real bisect backend. Use --predicate-module MODULE:CALLABLE "
@@ -2185,11 +2402,11 @@ def _run_compare(args: argparse.Namespace) -> int:
         score_backend = None if args.score_backend in (None, "auto") else args.score_backend
         predicate = make_bisect_predicate(
             target_vmaf=args.target_vmaf,
-            width=args.width,
-            height=args.height,
+            width=resolved_w,
+            height=resolved_h,
             pix_fmt=args.pix_fmt,
-            framerate=args.framerate,
-            duration_s=args.duration,
+            framerate=resolved_fr,
+            duration_s=resolved_dur,
             sample_clip_seconds=args.sample_clip_seconds,
             preset=args.preset,
             crf_range=crf_range,
@@ -3189,6 +3406,11 @@ def _run_report(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
+    # ADR-0509 / BBB e2e v7: stamp ``_<dest>_was_default = True`` on
+    # every ``_TrackedDefaultAction`` flag the user did NOT pass, so
+    # ``_run_compare`` can distinguish "argparse default" from "user
+    # override" when auto-probing container-source geometry.
+    _stamp_tracked_default_sentinels(args)
     if args.cmd == "corpus":
         return _run_corpus(args)
     if args.cmd == "recommend":

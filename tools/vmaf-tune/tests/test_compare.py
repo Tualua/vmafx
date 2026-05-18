@@ -385,3 +385,302 @@ def test_cli_compare_binds_real_bisect_predicate(monkeypatch, capsys, tmp_path):
     ]
     payload = json.loads(capsys.readouterr().out)
     assert [row["codec"] for row in payload["rows"]] == ["libx265", "libx264"]
+
+
+# -----------------------------------------------------------------------------
+# ADR-0509 / BBB e2e v7 Bug #V7-1 regression tests — container-source auto-
+# probe of framerate / duration in ``_run_compare``.
+#
+# Root cause: the compare CLI threaded ``--framerate`` (argparse default
+# 24.0) and ``--duration`` (default 0.0) into ``make_bisect_predicate``
+# verbatim. When ``--src`` is a 60 fps container (BBB, e.g.), the per-
+# iteration ``frame_skip_ref`` / ``frame_cnt`` derived from the default
+# 24 fps no longer indexes the same frames the encoder pulled — the
+# distorted MKV is decoded back to YUV at the container's native rate
+# while ``vmaf --frame_skip_ref`` skips frames at the wrong rate,
+# comparing misaligned content and collapsing the apparent VMAF (BBB
+# 60 fps → VMAF=90 at CRF=6, physically wrong).
+#
+# These tests pin the fix at the CLI level: when the user does NOT
+# pass ``--framerate`` / ``--duration``, the probed values must reach
+# ``make_bisect_predicate``; when the user DOES pass them, the
+# override wins (with an explicit-mismatch stderr warning).
+# -----------------------------------------------------------------------------
+
+
+def _stub_probe_source(*, fps: float, duration: float, width: int = 1920, height: int = 1080):
+    """Return a stub ``probe_source`` returning the given fps / duration."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class _Info:
+        path: str
+        width: int
+        height: int
+        fps: float
+        duration_s: float
+        frame_count: int = 0
+        codec: str = "h264"
+        size_bytes: int = 0
+
+    def _probe(path: Path) -> _Info:
+        return _Info(
+            path=str(path),
+            width=width,
+            height=height,
+            fps=fps,
+            duration_s=duration,
+        )
+
+    return _probe
+
+
+def test_resolve_compare_source_geometry_probes_container_when_default_framerate(
+    tmp_path,
+):
+    """Container src + default --framerate => probe wins."""
+    from vmaftune.cli import _resolve_compare_source_geometry
+
+    src = tmp_path / "bbb.mp4"
+    src.touch()
+    stream = io.StringIO()
+    w, h, fr, dur = _resolve_compare_source_geometry(
+        src,
+        width=1920,
+        height=1080,
+        framerate=24.0,  # argparse default
+        duration_s=0.0,  # argparse default
+        framerate_was_default=True,
+        duration_was_default=True,
+        probe_fn=_stub_probe_source(fps=60.0, duration=634.5),
+        warn_stream=stream,
+    )
+    assert (w, h) == (1920, 1080)
+    assert fr == pytest.approx(60.0)
+    assert dur == pytest.approx(634.5)
+    # No warning when the user didn't pass conflicting flags.
+    assert stream.getvalue() == ""
+
+
+def test_resolve_compare_source_geometry_explicit_user_override_wins_with_warning(
+    tmp_path,
+):
+    """Container src + explicit --framerate mismatch => keep user, warn."""
+    from vmaftune.cli import _resolve_compare_source_geometry
+
+    src = tmp_path / "bbb.mp4"
+    src.touch()
+    stream = io.StringIO()
+    _w, _h, fr, _dur = _resolve_compare_source_geometry(
+        src,
+        width=1920,
+        height=1080,
+        framerate=24.0,  # user explicitly passed 24 — keep it
+        duration_s=0.0,
+        framerate_was_default=False,
+        duration_was_default=True,
+        probe_fn=_stub_probe_source(fps=60.0, duration=634.5),
+        warn_stream=stream,
+    )
+    assert fr == pytest.approx(24.0), "user override must win"
+    warn = stream.getvalue()
+    assert "disagrees with the probed source rate 60 fps" in warn
+    assert "24" in warn
+
+
+def test_resolve_compare_source_geometry_raw_yuv_skips_probe(tmp_path):
+    """Raw YUV src => no probe call, user values verbatim."""
+    from vmaftune.cli import _resolve_compare_source_geometry
+
+    src = tmp_path / "ref.yuv"
+    src.touch()
+    probe_calls: list[Path] = []
+
+    def _probe(p: Path):
+        probe_calls.append(p)
+        raise AssertionError("probe should not be called for raw YUV")
+
+    stream = io.StringIO()
+    w, h, fr, dur = _resolve_compare_source_geometry(
+        src,
+        width=640,
+        height=360,
+        framerate=24.0,
+        duration_s=0.0,
+        framerate_was_default=True,
+        duration_was_default=True,
+        probe_fn=_probe,
+        warn_stream=stream,
+    )
+    assert (w, h, fr, dur) == (640, 360, 24.0, 0.0)
+    assert probe_calls == []
+    assert stream.getvalue() == ""
+
+
+def test_resolve_compare_source_geometry_fills_width_height_from_probe(tmp_path):
+    """Container src + no --width/--height => probe fills geometry."""
+    from vmaftune.cli import _resolve_compare_source_geometry
+
+    src = tmp_path / "bbb.mp4"
+    src.touch()
+    w, h, fr, dur = _resolve_compare_source_geometry(
+        src,
+        width=None,
+        height=None,
+        framerate=24.0,
+        duration_s=0.0,
+        framerate_was_default=True,
+        duration_was_default=True,
+        probe_fn=_stub_probe_source(fps=60.0, duration=5.0, width=3840, height=2160),
+    )
+    assert (w, h) == (3840, 2160)
+    assert fr == pytest.approx(60.0)
+    assert dur == pytest.approx(5.0)
+
+
+def test_resolve_compare_source_geometry_probe_failure_is_best_effort(tmp_path):
+    """Probe raises => user-supplied geometry kept verbatim + stderr warning."""
+    from vmaftune.cli import _resolve_compare_source_geometry
+
+    src = tmp_path / "bbb.mp4"
+    src.touch()
+
+    def _probe(p: Path):
+        raise OSError("ffprobe missing")
+
+    stream = io.StringIO()
+    w, h, fr, dur = _resolve_compare_source_geometry(
+        src,
+        width=1920,
+        height=1080,
+        framerate=24.0,
+        duration_s=0.0,
+        framerate_was_default=True,
+        duration_was_default=True,
+        probe_fn=_probe,
+        warn_stream=stream,
+    )
+    assert (w, h, fr, dur) == (1920, 1080, 24.0, 0.0)
+    assert "ffprobe" in stream.getvalue() and "failed" in stream.getvalue()
+
+
+def test_cli_compare_passes_probed_framerate_for_container_src(monkeypatch, capsys, tmp_path):
+    """End-to-end: ``compare --src foo.mp4`` (no --framerate) => make_bisect_predicate sees probed fps.
+
+    This is the CLI-level pin of the ADR-0509 / V7-1 fix: a container
+    source with default --framerate must reach the bisect predicate
+    with the probed source rate (60 fps for the stubbed BBB), not the
+    argparse default 24 fps. Sister test to ``test_cli_compare_binds_real_bisect_predicate``
+    which covers the raw-YUV path.
+    """
+    from vmaftune import cli as cli_module
+
+    captured: list[dict] = []
+
+    def fake_make_bisect_predicate(**kwargs):
+        captured.append(kwargs)
+
+        def predicate(codec: str, src: Path, target_vmaf: float) -> RecommendResult:
+            return RecommendResult(
+                codec=codec,
+                best_crf=28,
+                bitrate_kbps=1000.0,
+                encode_time_ms=100.0,
+                vmaf_score=target_vmaf,
+                encoder_version=f"{codec}-fake",
+            )
+
+        return predicate
+
+    monkeypatch.setattr(
+        "vmaftune.bisect.make_bisect_predicate",
+        fake_make_bisect_predicate,
+    )
+    # Stub probe_source so the test doesn't shell out to ffprobe.
+    monkeypatch.setattr(
+        "vmaftune.report.probe_source",
+        _stub_probe_source(fps=60.0, duration=634.5, width=1920, height=1080),
+    )
+
+    src = tmp_path / "bbb.mp4"
+    src.touch()
+    rc = cli_module.main(
+        [
+            "compare",
+            "--src",
+            str(src),
+            "--target-vmaf",
+            "92",
+            "--encoders",
+            "libx264",
+            "--width",
+            "1920",
+            "--height",
+            "1080",
+            # No --framerate / --duration — auto-probe must fill them.
+            "--format",
+            "json",
+        ]
+    )
+    assert rc == 0
+    assert len(captured) == 1
+    # The probed 60 fps must reach the bisect predicate, not the
+    # argparse default 24.0.
+    assert captured[0]["framerate"] == pytest.approx(60.0)
+    assert captured[0]["duration_s"] == pytest.approx(634.5)
+
+
+def test_cli_compare_explicit_framerate_override_keeps_user_value(monkeypatch, capsys, tmp_path):
+    """End-to-end: explicit ``--framerate 30`` keeps user value + warns on mismatch."""
+    from vmaftune import cli as cli_module
+
+    captured: list[dict] = []
+
+    def fake_make_bisect_predicate(**kwargs):
+        captured.append(kwargs)
+
+        def predicate(codec: str, src: Path, target_vmaf: float) -> RecommendResult:
+            return RecommendResult(
+                codec=codec,
+                best_crf=28,
+                bitrate_kbps=1000.0,
+                encode_time_ms=100.0,
+                vmaf_score=target_vmaf,
+            )
+
+        return predicate
+
+    monkeypatch.setattr(
+        "vmaftune.bisect.make_bisect_predicate",
+        fake_make_bisect_predicate,
+    )
+    monkeypatch.setattr(
+        "vmaftune.report.probe_source",
+        _stub_probe_source(fps=60.0, duration=634.5, width=1920, height=1080),
+    )
+
+    src = tmp_path / "bbb.mp4"
+    src.touch()
+    rc = cli_module.main(
+        [
+            "compare",
+            "--src",
+            str(src),
+            "--target-vmaf",
+            "92",
+            "--encoders",
+            "libx264",
+            "--width",
+            "1920",
+            "--height",
+            "1080",
+            "--framerate",
+            "30",  # explicit override — must win over the 60 fps probe
+            "--format",
+            "json",
+        ]
+    )
+    assert rc == 0
+    assert captured[0]["framerate"] == pytest.approx(30.0)
+    err = capsys.readouterr().err
+    assert "disagrees with the probed source rate 60 fps" in err
