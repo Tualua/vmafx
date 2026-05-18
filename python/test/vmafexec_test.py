@@ -1291,7 +1291,7 @@ class VmafexecQualityRunnerTest(MyTestCase):
             results[0]["VMAFEXEC_vif_scale3_egl_1_score"], 0.999151, places=4
         )  # 1.0728060231246508
 
-        self.assertAlmostEqual(results[0]["VMAFEXEC_score"], 88.484423, places=2)  # 88.032956
+        self.assertAlmostEqual(results[0]["VMAFEXEC_score"], 88.484423, places=2)
 
     def test_run_vmafexec_runner_use_default_built_in_model(self):
 

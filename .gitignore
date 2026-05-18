@@ -86,6 +86,8 @@ tools/external-bench/**/__pycache__/
 # Claude Code local (machine-specific) settings
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+# Agent isolation worktrees (created by parallel-agent harness; machine-local).
+.claude/worktrees/
 
 # Generated benchmark results
 testdata/bbb/results/

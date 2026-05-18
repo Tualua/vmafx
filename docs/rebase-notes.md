@@ -36786,3 +36786,32 @@ Touched files: `.gitignore`, fifteen `ai/scripts/*.py` files,
 `changelog.d/changed/0547-ai-script-env-vars.md` (new).
 No `ffmpeg-patches/` change (no C-API, CLI flag, or
 `meson_options.txt` consumed by a patch — CLAUDE.md §12 r14 exempt).
+
+## chore/audit-cleanup-bundle-2 (ADR-0549)
+
+**No rebase impact.** All changes are confined to fork-local files:
+
+- `libvmaf/src/feature/cuda/integer_{ssim,ms_ssim,psnr,moment}_cuda.c`
+  (comment addition only — no functional change; upstream parity intact).
+- `libvmaf/src/feature/sycl/integer_{ssim,ms_ssim,psnr,moment}_sycl.cpp`
+  (comment addition only).
+- `dev/Containerfile` (fork-local; whole file is fork-added).
+- `.gitignore` (adds `.claude/worktrees/` line; no upstream conflict).
+- `docs/state.md` (fork-only doc tree).
+- `python/test/vmafexec_test.py` (comment deletion only; assertion value
+  and `places` argument are unchanged — no golden-gate impact).
+- `docs/adr/0549-audit-cleanup-bundle-2.md`, `docs/adr/README.md`,
+  `changelog.d/changed/0549-audit-cleanup-bundle-2.md`,
+  `docs/rebase-notes.md` (this entry).
+
+Touched files:
+`libvmaf/src/feature/cuda/integer_{ssim,ms_ssim,psnr,moment}_cuda.c`,
+`libvmaf/src/feature/sycl/integer_{ssim,ms_ssim,psnr,moment}_sycl.cpp`,
+`dev/Containerfile`,
+`.gitignore`,
+`docs/state.md`,
+`python/test/vmafexec_test.py`,
+`docs/adr/0549-audit-cleanup-bundle-2.md`,
+`docs/adr/README.md` (one index row),
+`changelog.d/changed/0549-audit-cleanup-bundle-2.md`,
+`docs/rebase-notes.md` (this entry).

@@ -106,6 +106,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     jq \
     && rm -rf /var/lib/apt/lists/*
 
+# Verify critical GPU/Vulkan/VA-API packages were actually installed.
+# A misconfigured repo or network failure during apt-get produces a silently
+# broken image; this check surfaces the gap at build time instead of run time.
+RUN for pkg in mesa-vulkan-drivers intel-media-va-driver-non-free; do \
+        apt-mark showmanual | grep -q "^${pkg}$" \
+            || (echo "FATAL: ${pkg} was not installed" && exit 1); \
+    done
+
 # Ensure gcc-13 / clang-19 are the default compilers
 RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 100 \
     && update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-13 100 \
@@ -225,6 +233,12 @@ RUN mkdir -p /tmp/neo && cd /tmp/neo \
     && cd / && rm -rf /tmp/neo \
     && find /var/lib/apt/lists -mindepth 1 -delete
 
+# Verify NEO compute-runtime packages were actually installed.
+RUN for pkg in intel-opencl-icd libze-intel-gpu1; do \
+        apt-mark showmanual | grep -q "^${pkg}$" \
+            || (echo "FATAL: ${pkg} was not installed" && exit 1); \
+    done
+
 # Level Zero loader (libze_loader) for SYCL
 ARG LEVEL_ZERO_VER=1.28.6
 RUN curl -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LEVEL_ZERO_VER}/libze1_${LEVEL_ZERO_VER}%2Bu24.04_amd64.deb" -o /tmp/libze1.deb \
@@ -312,6 +326,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     hipcc \
     rocm-cmake \
     && rm -rf /var/lib/apt/lists/*
+
+# Verify ROCm packages were actually installed.
+RUN for pkg in rocm-hip-runtime-dev hipcc; do \
+        apt-mark showmanual | grep -q "^${pkg}$" \
+            || (echo "FATAL: ${pkg} was not installed" && exit 1); \
+    done
 
 ENV ROCM_PATH=/opt/rocm
 ENV PATH=${ROCM_PATH}/bin:${ROCM_PATH}/llvm/bin:${PATH}
