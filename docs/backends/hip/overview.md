@@ -292,3 +292,43 @@ Adjacent fixes bundled in the same PR:
 
 Re-enables `VMAF_FEATURE_EXTRACTOR_HIP` on `vmaf_fex_integer_vif_hip` —
 ADR-0530 had cleared it pending this fix.
+
+## ADR-0539 — `integer_moment` HIP kernel registration (2026-05-18)
+
+Closes the last unresolved-symbol gap in the
+`enable_hipcc=true` HIP build.  Adds a new entry to
+`hip_kernel_sources`:
+
+```meson
+'integer_moment_score' : feature_src_dir + 'hip/integer_moment/moment_score.hip',
+```
+
+The key is **distinct** from the pre-existing `moment_score` key (which
+points at `hip/float_moment/moment_score.hip`).  The two keys emit
+different `_hsaco` symbols (`integer_moment_score_hsaco` vs
+`moment_score_hsaco`) consumed by `integer_moment_hip.c` and
+`float_moment_hip.c` respectively.
+
+End-to-end verification on the Netflix `src01_hrc00 ↔ src01_hrc01`
+576×324 pair (HIP vs CPU, `--backend hip|cpu --feature
+psnr|psnr_hvs|float_moment`):
+
+| Feature              | HIP                     | CPU                     | delta |
+|----------------------|-------------------------|-------------------------|-------|
+| `psnr_y` mean        | 30.755064               | 30.755064               | 0.000000 |
+| `psnr_cb` mean       | 38.449441               | 38.449441               | 0.000000 |
+| `psnr_cr` mean       | 40.991910               | 40.991910               | 0.000000 |
+| `psnr_hvs` mean      | 31.330446               | 31.330446               | 0.000000 |
+| `psnr_hvs_y` mean    | 30.578766               | 30.578766               | 0.000000 |
+| `psnr_hvs_cb` mean   | 37.258498               | 37.258498               | 0.000000 |
+| `psnr_hvs_cr` mean   | 38.200260               | 38.200260               | 0.000000 |
+| `float_moment_ref1st` mean | 59.788567         | 59.788567               | 0.000000 |
+| `float_moment_dis1st` mean | 61.332007         | 61.332007               | 0.000000 |
+| `float_moment_ref2nd` mean | 4696.668388       | 4696.668388             | 0.000000 |
+| `float_moment_dis2nd` mean | 4798.659574       | 4798.659574             | 0.000000 |
+
+All within places=4 of CPU (in fact bit-exact: delta=0.000000).
+
+After this PR no weak HSACO stubs back any of the three integer-domain
+PSNR / PSNR-HVS / moment extractors — only the four ADM kernels remain
+on the ADR-0536 stub path pending their own CUDA-helper-macro port.

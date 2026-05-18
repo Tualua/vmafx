@@ -89,3 +89,32 @@ Established precedent: ADR-0537 ports `integer_vif/vif_statistics.hip`
 scalar-per-thread (~540 lines vs the CUDA twin's ~850), accepts a
 ~5–10× perf regression vs CUDA in exchange for a verifiable kernel
 surface.  Perf optimisation deferred to a follow-up ADR.
+
+## HSACO symbol naming — kernel keys must match the host-TU consumer (ADR-0539)
+
+When a HIP host TU references a kernel module via
+`hipModuleLoadData(..., <name>_hsaco)`, the `hip_kernel_sources` meson
+key MUST be exactly `<name>` — the `xxd -i -n <name>_hsaco` step inside
+the meson custom_target derives the symbol from that key.  Two
+gotchas:
+
+1. **Distinct host TUs that consume different kernels must use
+   distinct meson keys, even when the underlying `.hip` filename is
+   `moment_score.hip`** for both.  Compare:
+
+   ```meson
+   # float_moment_hip.c consumes `moment_score_hsaco`
+   'moment_score' : feature_src_dir + 'hip/float_moment/moment_score.hip',
+   # integer_moment_hip.c consumes `integer_moment_score_hsaco`
+   'integer_moment_score' : feature_src_dir + 'hip/integer_moment/moment_score.hip',
+   ```
+
+   The two `.hip` files contain different kernel entry points
+   (`calculate_float_moment_*` vs `calculate_integer_moment_hip_kernel_*`)
+   and are NOT interchangeable.
+
+2. **A missing meson registration produces an undefined-reference link
+   error** for `<name>_hsaco`, NOT a runtime `-ENOSYS`.  If you see
+   such a link failure, either register the kernel (preferred) or add
+   a weak stub in `hip_hsaco_stubs.c` (per ADR-0536 — only for kernels
+   that can't yet compile standalone via `hipcc --genco`).

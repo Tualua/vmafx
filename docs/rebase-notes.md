@@ -36371,3 +36371,20 @@ and the corresponding test file. No public API surface, no C code, no
 `meson_options.txt` entry, no ffmpeg-patches entry, no new public Python
 symbol. Netflix upstream never touches `vmaf-tune`; upstream syncs will
 not conflict. On a future upstream sync, expect zero conflicts.
+
+## ADR-0539 — HIP `integer_moment` HSACO blob registration
+
+**No rebase impact**: change is one new row in `hip_kernel_sources`
+inside `libvmaf/src/meson.build`, gated by the fork-only `enable_hip`
+flag.  Netflix upstream has no HIP backend and never touches
+`hip_kernel_sources`, the four `feature/hip/integer_moment/*` paths,
+or the `hip_hsaco_stubs.c` TU.  The ffmpeg-patches stack is untouched
+(no new `LIBVMAFContext` field, no new CLI flag, no new
+`meson_options.txt` entry).  On a future upstream sync, expect zero
+conflicts.
+
+If a future PR adds yet another HIP host TU that consumes a
+`<name>_hsaco` symbol distinct from any existing meson key, the
+invariant pinned in `libvmaf/src/feature/hip/AGENTS.md` (HSACO symbol
+naming) must be honoured to avoid the same class of link error this
+ADR closed.
