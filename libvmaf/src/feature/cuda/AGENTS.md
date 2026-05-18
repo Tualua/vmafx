@@ -66,7 +66,8 @@ the same PR:
 | **motion_v2** | `integer_motion_v2_cuda.c` ↔ `../sycl/integer_motion_v2_sycl.cpp` ↔ `../vulkan/motion_v2_vulkan.c` (+ `motion_v2.comp`) ↔ `../hip/integer_motion_v2_hip.c` |
 | **vif (integer)** | `integer_vif_cuda.c` (+ `integer_vif/filter1d.cu`) ↔ `../sycl/integer_vif_sycl.cpp` ↔ `../vulkan/vif_vulkan.c` (+ `vif.comp`) |
 | **adm (integer)** | `integer_adm_cuda.c` (+ `integer_adm/*.cu`) ↔ `../sycl/integer_adm_sycl.cpp` ↔ `../vulkan/adm_vulkan.c` (+ `adm.comp`) |
-| **ssim** | `integer_ssim_cuda.c` ↔ `../sycl/integer_ssim_sycl.cpp` ↔ `../vulkan/ssim_vulkan.c` (+ `ssim.comp`) |
+| **ssim (float)** | `integer_ssim_cuda.c` (misnomer; provides `"float_ssim"` — 11-tap float Gaussian) ↔ `../sycl/integer_ssim_sycl.cpp` (float_ssim part) ↔ `../vulkan/ssim_vulkan.c` (+ `ssim.comp`) |
+| **ssim (integer)** | `ssim_cuda.c` (real integer_ssim; provides `"ssim"` — 9-tap int64) ↔ `../hip/integer_ssim_hip.c` ↔ `../sycl/integer_ssim_sycl.cpp` (integer_ssim part) — Vulkan integer_ssim pending (ADR-0564) |
 | **ms_ssim** | `integer_ms_ssim_cuda.c` ↔ `../sycl/integer_ms_ssim_sycl.cpp` ↔ `../vulkan/ms_ssim_vulkan.c` (+ `ms_ssim.comp`) |
 | **psnr_hvs** | `integer_psnr_hvs_cuda.c` ↔ `../sycl/integer_psnr_hvs_sycl.cpp` ↔ `../vulkan/psnr_hvs_vulkan.c` (+ `psnr_hvs.comp`) |
 | **ssimulacra2** | `ssimulacra2_cuda.c` (+ `ssimulacra2/*.cu`) ↔ `../sycl/ssimulacra2_sycl.cpp` ↔ `../vulkan/ssimulacra2_vulkan.c` (+ `ssimulacra2_*.comp`) |
@@ -306,6 +307,18 @@ HIP / Metal motion twins listed in the Twin-update table below) in the same PR.
   coalescing; do not skip the transpose to save one launch — the V-pass
   performance benefit outweighs the launch cost at all resolutions ≥ 480p.
 
+
+- **`ssim_cuda.c` and `integer_ssim_cuda.c` provide different features — do not
+  conflate them** (ADR-0564). `ssim_cuda.c` registers `vmaf_fex_integer_ssim_cuda`
+  and provides `"ssim"` (the real 9-tap int64 integer SSIM, bit-exact with CPU).
+  `integer_ssim_cuda.c` is a historical misnomer: it registers a *different*
+  `vmaf_fex_integer_ssim_cuda` symbol and provides `"float_ssim"` (11-tap
+  floating-point Gaussian). Both symbols are linked and registered in
+  `feature_extractor.c`; `feature_extractor_list[]` puts `ssim_cuda.c`'s extractor
+  first so that `vmaf_get_feature_extractor_by_name("ssim")` resolves correctly.
+  **Never swap the order** of these two entries. A planned follow-up (post-ADR-0564)
+  will rename `integer_ssim_cuda.c` → `float_ssim_cuda.c` to eliminate the confusion;
+  until then, keep the naming mismatch explicit and do not merge the two files.
 
 ## Build
 

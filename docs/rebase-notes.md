@@ -7,6 +7,46 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## feat/integer-ssim-gpu-real-kernels (ADR-0564)
+
+**Rebase impact**: low. The change touches two upstream-shared files:
+
+- `libvmaf/src/feature/feature_extractor.c`: adds three `extern` declarations and
+  three list entries (`vmaf_fex_integer_ssim_cuda`, `vmaf_fex_integer_ssim_sycl`,
+  and a comment update). On rebase, apply after any upstream changes to this file.
+- `libvmaf/src/meson.build`: adds one entry to `cuda_cu_sources` dict and one entry
+  to the C source list. The meson.build is append-only per fork coordination rules.
+- `libvmaf/src/feature/hip/integer_ssim_hip.c`: full rewrite of the host glue.
+  The pre-existing upstream file used float intermediates; this branch rewrites it
+  to int64. If upstream ever ships a real integer_ssim HIP extractor, it will
+  conflict — prefer the upstream version and re-test.
+- `libvmaf/src/feature/sycl/integer_ssim_sycl.cpp`: appends a new extractor after
+  the existing float_ssim_sycl code. On rebase, confirm the append point is still
+  a clean `} /* extern "C" */` boundary.
+
+All new files (`ssim_cuda.c`, `ssim_cuda.h`, `integer_ssim_score.cu`) are
+fork-local with no upstream equivalent; no conflict expected.
+
+**Invariant**: `vmaf_fex_integer_ssim_cuda` in `ssim_cuda.c` provides `"ssim"`.
+The pre-existing `vmaf_fex_integer_ssim_cuda` in `integer_ssim_cuda.c` provides
+`"float_ssim"` — the naming is a historical misnomer kept for link-compat. Do not
+merge or rename without updating `feature_extractor.c` to match.
+
+Touched files:
+`libvmaf/src/feature/cuda/integer_ssim/integer_ssim_score.cu` (new),
+`libvmaf/src/feature/cuda/ssim_cuda.c` (new),
+`libvmaf/src/feature/cuda/ssim_cuda.h` (new),
+`libvmaf/src/feature/hip/integer_ssim_hip.c` (rewritten),
+`libvmaf/src/feature/sycl/integer_ssim_sycl.cpp` (appended),
+`libvmaf/src/feature/feature_extractor.c` (extern + list entries),
+`libvmaf/src/meson.build` (PTX + C source entries),
+`docs/adr/0564-integer-ssim-gpu-real-kernels.md`,
+`docs/adr/README.md` (one index row),
+`docs/research/0564-integer-ssim-gpu-real-kernels.md`,
+`docs/state.md` (Recently-closed row),
+`changelog.d/added/0564-integer-ssim-gpu-real-kernels.md`,
+`docs/rebase-notes.md` (this entry).
+
 ## fix/vmaftune-workdir-tmpfs-enospc (ADR-0549)
 
 **No rebase impact.** All changes are confined to fork-local files:

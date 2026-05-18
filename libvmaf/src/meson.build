@@ -775,7 +775,10 @@ if is_cuda_enabled
         'psnr_score' : [feature_src_dir + 'cuda/integer_psnr/psnr_score.cu'],
         'moment_score' : [feature_src_dir + 'cuda/integer_moment/moment_score.cu'],
         'ciede_score' : [feature_src_dir + 'cuda/integer_ciede/ciede_score.cu'],
+        # float_ssim CUDA kernel (11-tap float Gaussian, emits float_ssim).
         'ssim_score' : [feature_src_dir + 'cuda/integer_ssim/ssim_score.cu'],
+        # Real integer_ssim CUDA kernel (9-tap int64 moments, ADR-0564).
+        'integer_ssim_score' : [feature_src_dir + 'cuda/integer_ssim/integer_ssim_score.cu'],
         'ms_ssim_score' : [feature_src_dir + 'cuda/integer_ms_ssim/ms_ssim_score.cu'],
         'psnr_hvs_score' : [feature_src_dir + 'cuda/integer_psnr_hvs/psnr_hvs_score.cu'],
         'float_ansnr_score' : [feature_src_dir + 'cuda/float_ansnr/float_ansnr_score.cu'],
@@ -1303,6 +1306,10 @@ if is_cuda_enabled
         feature_src_dir + 'cuda/integer_moment_cuda.c',
         feature_src_dir + 'cuda/integer_ciede_cuda.c',
         feature_src_dir + 'cuda/integer_ssim_cuda.c',
+        # Real integer_ssim CUDA host glue (ADR-0564). ssim_cuda.c provides
+        # vmaf_fex_integer_ssim_cuda; integer_ssim_cuda.c keeps providing
+        # vmaf_fex_float_ssim_cuda (misnomed legacy, kept for back-compat).
+        feature_src_dir + 'cuda/ssim_cuda.c',
         feature_src_dir + 'cuda/integer_ms_ssim_cuda.c',
         feature_src_dir + 'cuda/integer_psnr_hvs_cuda.c',
         feature_src_dir + 'cuda/float_ansnr_cuda.c',

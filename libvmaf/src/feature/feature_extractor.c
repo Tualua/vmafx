@@ -62,6 +62,10 @@ extern VmafFeatureExtractor vmaf_fex_psnr_cuda;
 extern VmafFeatureExtractor vmaf_fex_float_moment_cuda;
 extern VmafFeatureExtractor vmaf_fex_ciede_cuda;
 extern VmafFeatureExtractor vmaf_fex_float_ssim_cuda;
+/* Real integer_ssim CUDA extractor — bit-exact with CPU vmaf_fex_ssim
+ * (ADR-0564). Provided by cuda/ssim_cuda.c. Distinct from
+ * vmaf_fex_float_ssim_cuda which uses floating-point Gaussian weights. */
+extern VmafFeatureExtractor vmaf_fex_integer_ssim_cuda;
 extern VmafFeatureExtractor vmaf_fex_float_ms_ssim_cuda;
 extern VmafFeatureExtractor vmaf_fex_psnr_hvs_cuda;
 extern VmafFeatureExtractor vmaf_fex_float_ansnr_cuda;
@@ -82,6 +86,9 @@ extern VmafFeatureExtractor vmaf_fex_psnr_sycl;
 extern VmafFeatureExtractor vmaf_fex_float_moment_sycl;
 extern VmafFeatureExtractor vmaf_fex_ciede_sycl;
 extern VmafFeatureExtractor vmaf_fex_float_ssim_sycl;
+/* Real integer_ssim SYCL extractor (ADR-0564). int64 moments + float32
+ * SSIM formula (fp64-free per ADR-0220); places=4-5 vs CPU. */
+extern VmafFeatureExtractor vmaf_fex_integer_ssim_sycl;
 extern VmafFeatureExtractor vmaf_fex_float_ms_ssim_sycl;
 extern VmafFeatureExtractor vmaf_fex_psnr_hvs_sycl;
 extern VmafFeatureExtractor vmaf_fex_float_ansnr_sycl;
@@ -177,7 +184,7 @@ extern VmafFeatureExtractor vmaf_fex_integer_vif_hip;
  * returns -ENOSYS (scaffold posture). */
 extern VmafFeatureExtractor vmaf_fex_float_adm_hip;
 /* ADR-0533: full HIP-extractor registration sweep. Each of the symbols
- * below already lived in `libvmaf/src/feature/hip/*.c` mirroring its
+ * below already lived in libvmaf/src/feature/hip/ mirroring its
  * CUDA twin, but the TUs were never compiled into the HIP runtime
  * archive and never declared in this file. The companion meson edit
  * adds the source files to `hip_sources`; the entries below make
@@ -242,10 +249,12 @@ static VmafFeatureExtractor *feature_extractor_list[] = {
      * run their init/extract/flush hooks twice per pic. */
     &vmaf_fex_integer_vif_sycl, &vmaf_fex_integer_adm_sycl, &vmaf_fex_integer_motion_sycl,
     &vmaf_fex_integer_motion_v2_sycl, &vmaf_fex_psnr_sycl, &vmaf_fex_float_moment_sycl,
-    &vmaf_fex_ciede_sycl, &vmaf_fex_float_ssim_sycl, &vmaf_fex_float_ms_ssim_sycl,
-    &vmaf_fex_psnr_hvs_sycl, &vmaf_fex_float_ansnr_sycl, &vmaf_fex_float_psnr_sycl,
-    &vmaf_fex_float_motion_sycl, &vmaf_fex_float_vif_sycl, &vmaf_fex_ssimulacra2_sycl,
-    &vmaf_fex_float_adm_sycl,
+    /* ADR-0564: integer_ssim_sycl provides real int64-moment integer_ssim.
+     * float32 SSIM formula (fp64-free ADR-0220); expected places=4-5 vs CPU. */
+    &vmaf_fex_integer_ssim_sycl, &vmaf_fex_ciede_sycl, &vmaf_fex_float_ssim_sycl,
+    &vmaf_fex_float_ms_ssim_sycl, &vmaf_fex_psnr_hvs_sycl, &vmaf_fex_float_ansnr_sycl,
+    &vmaf_fex_float_psnr_sycl, &vmaf_fex_float_motion_sycl, &vmaf_fex_float_vif_sycl,
+    &vmaf_fex_ssimulacra2_sycl, &vmaf_fex_float_adm_sycl,
     /* T3-15 / ADR-0371: cambi SYCL twin (closes last CUDA→SYCL parity gap). */
     &vmaf_fex_cambi_sycl,
 #endif
@@ -284,10 +293,13 @@ static VmafFeatureExtractor *feature_extractor_list[] = {
 #if HAVE_CUDA
     &vmaf_fex_integer_adm_cuda, &vmaf_fex_integer_vif_cuda, &vmaf_fex_integer_motion_cuda,
     &vmaf_fex_integer_motion_v2_cuda, &vmaf_fex_psnr_cuda, &vmaf_fex_float_moment_cuda,
-    &vmaf_fex_ciede_cuda, &vmaf_fex_float_ssim_cuda, &vmaf_fex_float_ms_ssim_cuda,
-    &vmaf_fex_psnr_hvs_cuda, &vmaf_fex_float_ansnr_cuda, &vmaf_fex_float_psnr_cuda,
-    &vmaf_fex_float_motion_cuda, &vmaf_fex_float_vif_cuda, &vmaf_fex_ssimulacra2_cuda,
-    &vmaf_fex_float_adm_cuda,
+    /* ADR-0564: integer_ssim_cuda provides real bit-exact integer_ssim on CUDA.
+     * Placed before float_ssim_cuda so the registry picks the integer path when
+     * both CUDA and CPU are compiled in. */
+    &vmaf_fex_integer_ssim_cuda, &vmaf_fex_ciede_cuda, &vmaf_fex_float_ssim_cuda,
+    &vmaf_fex_float_ms_ssim_cuda, &vmaf_fex_psnr_hvs_cuda, &vmaf_fex_float_ansnr_cuda,
+    &vmaf_fex_float_psnr_cuda, &vmaf_fex_float_motion_cuda, &vmaf_fex_float_vif_cuda,
+    &vmaf_fex_ssimulacra2_cuda, &vmaf_fex_float_adm_cuda,
     /* T3-15 / ADR-0360: cambi CUDA twin (Strategy II hybrid). */
     &vmaf_fex_cambi_cuda,
 #endif
