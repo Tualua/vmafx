@@ -416,3 +416,29 @@ def test_predictor_raises_on_missing_model_file(tmp_path: Path) -> None:
     missing = tmp_path / "does-not-exist.onnx"
     with pytest.raises(FileNotFoundError):
         Predictor(model_path=missing)
+
+
+# ---------------------------------------------------------------------------
+# ADR-0546 / ai-01: --emit-stub-card-only smoke test
+# ---------------------------------------------------------------------------
+
+
+def test_emit_stub_card_only_does_not_contain_placeholder(tmp_path: Path) -> None:
+    """--emit-stub-card-only must emit a card with no literal PLACEHOLDER text.
+
+    ADR-0546 (ai-01): the synthetic-stub signing note previously emitted
+    'PLACEHOLDER', which is misleading.  The replacement text must be
+    present and the literal word 'PLACEHOLDER' must not appear.
+    """
+    dest = tmp_path / "stub_card.md"
+    exit_code = main(["--emit-stub-card-only", str(dest), "--codec", "libx264"])
+    assert exit_code == 0, "expected exit 0 from --emit-stub-card-only"
+    assert dest.exists(), "--emit-stub-card-only must write the destination file"
+    card_text = dest.read_text(encoding="utf-8")
+    assert (
+        "PLACEHOLDER" not in card_text
+    ), f"card still contains literal 'PLACEHOLDER':\n{card_text[:500]}"
+    assert (
+        "not applicable" in card_text
+    ), "expected 'not applicable' in the Sigstore signing note for a synthetic-stub card"
+    assert "Sigstore" in card_text, "expected a Sigstore reference in the signing note"

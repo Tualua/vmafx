@@ -36815,3 +36815,17 @@ Touched files:
 `docs/adr/README.md` (one index row),
 `changelog.d/changed/0549-audit-cleanup-bundle-2.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0546 — audit bundle (Vulkan-01 / saliency-tune-01 / ai-01)
+
+**No rebase impact for Vulkan-01**: adding `&vmaf_fex_integer_motion_vulkan_impl` to
+`feature_extractor_list[]` in `feature_extractor.c` is a purely additive change under
+the existing `#if HAVE_VULKAN` guard. Netflix has no Vulkan backend, so upstream syncs
+produce zero conflicts.
+
+**No rebase impact for saliency-tune-01**: all touched files (`tools/vmaf-tune/src/vmaftune/saliency.py`,
+`tools/vmaf-tune/src/vmaftune/cli.py`) are fork-local. No public C-API, no
+`meson_options.txt` entry, no ffmpeg-patches entry.
+
+**No rebase impact for ai-01**: `tools/vmaf-tune/src/vmaftune/predictor_train.py`
+is fork-local. The `--emit-stub-card-only` flag is additive.

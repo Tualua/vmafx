@@ -632,6 +632,18 @@ def _build_parser() -> argparse.ArgumentParser:
         default=0.6,
         help="current-frame weight for --saliency-aggregator=ema (default 0.6)",
     )
+    rec_sal.add_argument(
+        "--saliency-fallback-plain",
+        action="store_true",
+        default=False,
+        help=(
+            "ADR-0546: when --saliency-aware is set and the chosen encoder has no ROI "
+            "dispatch (e.g. h264_nvenc, libvpx-vp9), accept a plain encode instead of "
+            "exiting with code 2. An ERROR is logged. "
+            "Equivalent to setting VMAFTUNE_SALIENCY_FALLBACK_OK=1 in the environment. "
+            "Supported ROI encoders: libx264, libaom-av1, libx265, libsvtav1, libvvenc."
+        ),
+    )
     rec_sal.add_argument("--ffmpeg-bin", default="ffmpeg")
     rec_sal.add_argument(
         "--output",
@@ -2346,6 +2358,7 @@ def _run_recommend_saliency(args: argparse.Namespace) -> int:
             foreground_offset=args.saliency_offset,
             temporal_aggregator=args.saliency_aggregator,
             ema_alpha=args.saliency_ema_alpha,
+            allow_unsupported_encoder_fallback=args.saliency_fallback_plain,
         )
         if args.saliency_aware
         else None

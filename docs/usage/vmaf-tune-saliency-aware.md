@@ -28,8 +28,9 @@ vmaf-tune recommend-saliency \
 2. `build_roi_plan()` converts frame-level saliency into encoder ROI
    controls.
 3. `run_saliency_encode()` dispatches the codec-specific encode.
-4. Unsupported ROI encoders fall back to a plain encode with a warning
-   rather than failing the whole run.
+4. Unsupported ROI encoders exit with code 2 and a structured error
+   message by default; pass `--saliency-fallback-plain` to accept a
+   plain encode instead (ADR-0546).
 
 Supported saliency ROI encoders are:
 
@@ -60,6 +61,7 @@ The shipped default model is documented in
 | `--saliency-model PATH` | shipped model | Override saliency ONNX path. |
 | `--saliency-aggregator` | `mean` | Temporal reducer for sampled per-frame saliency masks. One of `mean`, `ema`, `max`, `motion-weighted`. See [Temporal aggregation](#temporal-aggregation) below. |
 | `--saliency-ema-alpha` | `0.6` | Current-frame weight when `--saliency-aggregator=ema`. Range `(0, 1]`; higher values weight recent frames more heavily. |
+| `--saliency-fallback-plain` | off | ADR-0546: when the chosen encoder has no ROI dispatch, accept a plain encode instead of exiting with code 2. An ERROR is logged. Equivalent to setting `VMAFTUNE_SALIENCY_FALLBACK_OK=1`. Supported ROI encoders: `libx264`, `libaom-av1`, `libx265`, `libsvtav1`, `libvvenc`. |
 | `--ffmpeg-bin` | `ffmpeg` | FFmpeg binary. |
 | `--output PATH` | — | Encoded output. |
 

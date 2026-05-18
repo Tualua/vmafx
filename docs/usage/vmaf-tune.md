@@ -1218,9 +1218,14 @@ model contract or encoder sidecar format.
 If `onnxruntime` is not installed or
 `model/tiny/saliency_student_v1.onnx` cannot be loaded,
 `recommend-saliency --saliency-aware` logs a warning and falls back to a
-plain encode. Callers always get a result; the saliency bias is
-opportunistic. This matches the
-[`vmaf-roi`](vmaf-roi.md) C sidecar's posture.
+plain encode. This matches the [`vmaf-roi`](vmaf-roi.md) C sidecar's posture.
+
+If the chosen `--encoder` has no ROI dispatch implementation (e.g.
+`h264_nvenc`, `libvpx-vp9`, `hevc_nvenc`) the command exits with **code 2**
+and a structured error message listing the supported codecs. To accept a plain
+encode instead, pass `--saliency-fallback-plain` (or set the environment
+variable `VMAFTUNE_SALIENCY_FALLBACK_OK=1`); in that case an ERROR is logged
+rather than a WARNING. This hard-fail posture matches ADR-0498 / ADR-0546.
 
 ### Encoder targets
 

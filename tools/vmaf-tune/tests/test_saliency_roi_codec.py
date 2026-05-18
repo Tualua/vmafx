@@ -28,6 +28,7 @@ from vmaftune.encode import EncodeRequest  # noqa: E402
 from vmaftune.saliency import (  # noqa: E402
     _SALIENCY_DISPATCH,
     SaliencyConfig,
+    SaliencyUnsupportedEncoderError,
     saliency_aware_encode,
 )
 
@@ -451,7 +452,7 @@ def test_saliency_aware_encode_vvenc_does_not_emit_x265_or_svt_params(tmp_path):
 
 
 def test_saliency_aware_encode_unknown_encoder_falls_back_to_plain(tmp_path):
-    """Encoders not in the dispatch table get a plain encode with a warning."""
+    """With allow_unsupported_encoder_fallback=True, unsupported encoders get a plain encode."""
     # libx264 is in the dispatch table, but we pass an unsupported name.
     request, _ = _make_request(tmp_path, "libx264")
     # Patch the encoder name to something not in the dispatch table.
@@ -466,11 +467,87 @@ def test_saliency_aware_encode_unknown_encoder_falls_back_to_plain(tmp_path):
         request,
         duration_frames=1,
         model_path=fake_model,
-        config=SaliencyConfig(frame_samples=1),
+        # ADR-0546: must explicitly opt in to fallback behaviour.
+        config=SaliencyConfig(frame_samples=1, allow_unsupported_encoder_fallback=True),
         encode_runner=runner,
         session_factory=_session_factory_for(128, 128),
     )
 
     # None of the saliency-specific argv flags should appear.
+    for flag in ("-qpfile", "-x264-params", "-x265-params", "-svtav1-params", "-vvenc-params"):
+        assert flag not in captured.get("cmd", [])
+
+
+# ---------------------------------------------------------------------------
+# ADR-0546 / saliency-tune-01: hard-fail on unsupported encoder (default)
+# ---------------------------------------------------------------------------
+
+
+def test_saliency_aware_encode_unsupported_encoder_raises_by_default(tmp_path):
+    """Without opt-in fallback, an unsupported encoder raises SaliencyUnsupportedEncoderError.
+
+    ADR-0546 (saliency-tune-01): the default posture is exit code 2, not a
+    silent WARNING-and-continue.  Callers must explicitly opt in via
+    allow_unsupported_encoder_fallback=True or VMAFTUNE_SALIENCY_FALLBACK_OK=1.
+    """
+    import dataclasses
+
+    request, _ = _make_request(tmp_path, "libx264")
+    request = dataclasses.replace(request, encoder="h264_nvenc")
+    fake_model = tmp_path / "saliency_student_v1.onnx"
+    fake_model.write_bytes(b"\x00")
+    _, runner = _capture_runner(tmp_path)
+
+    with pytest.raises(SaliencyUnsupportedEncoderError) as exc_info:
+        saliency_aware_encode(
+            request,
+            duration_frames=1,
+            model_path=fake_model,
+            config=SaliencyConfig(frame_samples=1),
+            encode_runner=runner,
+            session_factory=_session_factory_for(128, 128),
+        )
+
+    err = exc_info.value
+    # Exit code must be 2 (inherits from SystemExit).
+    assert err.code == (
+        f"vmaf-tune: saliency ROI is not implemented for encoder 'h264_nvenc'.\n"
+        f"Supported encoders: {', '.join(sorted(_SALIENCY_DISPATCH))}\n"
+        "To accept a plain encode without ROI bias, pass --saliency-fallback-plain "
+        "or set VMAFTUNE_SALIENCY_FALLBACK_OK=1."
+    )
+    assert err.encoder == "h264_nvenc"
+    assert "h264_nvenc" not in err.supported
+
+
+def test_saliency_aware_encode_unsupported_encoder_env_override_allows_fallback(
+    tmp_path, monkeypatch
+):
+    """VMAFTUNE_SALIENCY_FALLBACK_OK=1 re-enables the old graceful-fallback behaviour.
+
+    ADR-0546: the env var is the non-flag opt-in path for callers that cannot
+    easily modify SaliencyConfig (e.g. external scripts or CI wrappers).
+    """
+    import dataclasses
+
+    request, _ = _make_request(tmp_path, "libx264")
+    request = dataclasses.replace(request, encoder="libvpx-vp9")
+    fake_model = tmp_path / "saliency_student_v1.onnx"
+    fake_model.write_bytes(b"\x00")
+    captured, runner = _capture_runner(tmp_path)
+
+    monkeypatch.setenv("VMAFTUNE_SALIENCY_FALLBACK_OK", "1")
+
+    # Must NOT raise — the env var unlocks the fallback path.
+    saliency_aware_encode(
+        request,
+        duration_frames=1,
+        model_path=fake_model,
+        config=SaliencyConfig(frame_samples=1),
+        encode_runner=runner,
+        session_factory=_session_factory_for(128, 128),
+    )
+
+    # Encoder argv must contain no ROI-specific flags.
     for flag in ("-qpfile", "-x264-params", "-x265-params", "-svtav1-params", "-vvenc-params"):
         assert flag not in captured.get("cmd", [])

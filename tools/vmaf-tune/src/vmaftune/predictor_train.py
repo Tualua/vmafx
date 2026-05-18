@@ -711,10 +711,9 @@ def _write_model_card(
         else ""
     )
     signing_note = (
-        "- **Sigstore signature**: PLACEHOLDER — the synthetic stub ships "
-        "unsigned. Production retrains should replace this card with a "
-        "`real-N=<rows>` corpus and receive a Sigstore-keyless OIDC "
-        "signature at the release-please tag step."
+        "- **Sigstore signature**: not applicable (synthetic-stub model card; "
+        "production models are signed via Sigstore — see "
+        "[docs/development/release.md](../docs/development/release.md))"
         if is_synthetic
         else "- **Sigstore signature**: unsigned in-tree artefact. Release "
         "automation attaches the Sigstore-keyless OIDC signature for the "
@@ -808,7 +807,13 @@ PyTorch trainer's behaviour bit-for-bit.
 
 `vmaf` — single scalar in `[0, 100]`.
 """
-    path.write_text(body, encoding="utf-8")
+    if isinstance(path, Path):
+        path.write_text(body, encoding="utf-8")
+    else:
+        # Accept any file-like with a .write() method (e.g. io.StringIO or
+        # sys.stdout) so the --emit-stub-card-only smoke-test hook can collect
+        # the card text without touching the filesystem.
+        path.write(body)
 
 
 # ---------------------------------------------------------------------
@@ -876,6 +881,17 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help="Restrict to specific codec(s). Repeatable. Default: all 14.",
     )
+    parser.add_argument(
+        "--emit-stub-card-only",
+        metavar="DEST",
+        default=None,
+        help=(
+            "ADR-0546 (ai-01 smoke-test hook): write a synthetic-stub model card for "
+            "the first --codec value (default: libx264) to DEST (use '-' for stdout) "
+            "and exit 0, without training any model.  Useful for verifying the card "
+            "template without a full train cycle."
+        ),
+    )
     return parser
 
 
@@ -896,6 +912,30 @@ def main(argv: Iterable[str] | None = None) -> int:
     unknown = [c for c in codecs if c not in CODECS]
     if unknown:
         parser.error(f"unknown codec(s): {unknown}; supported: {list(CODECS)}")
+
+    # ADR-0546 (ai-01): smoke-test hook — emit a synthetic-stub card and exit.
+    if args.emit_stub_card_only is not None:
+        codec_for_stub = codecs[0]
+        kind_for_stub = f"synthetic-stub-N={SYNTHETIC_CORPUS_ROWS}"
+        dest_raw = args.emit_stub_card_only
+        dest: Any = sys.stdout if dest_raw == "-" else Path(dest_raw)
+        _write_model_card(
+            dest,
+            codec=codec_for_stub,
+            opset=args.opset,
+            node_count=0,
+            n_train=SYNTHETIC_CORPUS_ROWS,
+            n_val=0,
+            plcc=0.0,
+            srocc=0.0,
+            rmse=0.0,
+            onnx_sha256="0" * 64,
+            onnx_bytes=0,
+            op_allowlist_ok=True,
+            forbidden_ops=(),
+            corpus_kind=kind_for_stub,
+        )
+        return 0
 
     print(f"training predictor models -> {args.output_dir}", flush=True)
     print(f"corpus: {args.corpus or '(synthetic stub for every codec)'}", flush=True)

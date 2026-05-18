@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import os
 import tempfile
 from collections.abc import Sequence
 from pathlib import Path
@@ -85,6 +86,29 @@ class SaliencyUnavailableError(RuntimeError):
     non-saliency encoding."""
 
 
+class SaliencyUnsupportedEncoderError(SystemExit):
+    """Raised (exit code 2) when ``--saliency`` is requested for a codec that
+    has no ROI dispatch implementation and the caller has not opted in to the
+    graceful-fallback behaviour via ``--saliency-fallback-plain`` or the
+    ``VMAFTUNE_SALIENCY_FALLBACK_OK=1`` environment variable.
+
+    Inherits from :class:`SystemExit` so unhandled propagation through the CLI
+    produces a clean exit-2 without a traceback (matches ADR-0498 hard-fail
+    posture for requested-but-unavailable features).
+    """
+
+    def __init__(self, encoder: str, supported: list[str]) -> None:
+        self.encoder = encoder
+        self.supported = sorted(supported)
+        msg = (
+            f"vmaf-tune: saliency ROI is not implemented for encoder {encoder!r}.\n"
+            f"Supported encoders: {', '.join(self.supported)}\n"
+            "To accept a plain encode without ROI bias, pass --saliency-fallback-plain "
+            "or set VMAFTUNE_SALIENCY_FALLBACK_OK=1."
+        )
+        super().__init__(msg)
+
+
 @dataclasses.dataclass(frozen=True)
 class SaliencyConfig:
     """User-tunable knobs for the saliency-aware encode path."""
@@ -105,6 +129,11 @@ class SaliencyConfig:
     temporal_aggregator: str = DEFAULT_SALIENCY_AGGREGATOR
     # Current-frame weight for the EMA reducer.
     ema_alpha: float = DEFAULT_SALIENCY_EMA_ALPHA
+    # ADR-0546 (saliency-tune-01): when True, an unsupported encoder silently
+    # falls back to a plain encode (the pre-ADR-0546 behaviour) with an ERROR
+    # log instead of raising SaliencyUnsupportedEncoderError (exit code 2).
+    # Set via --saliency-fallback-plain or VMAFTUNE_SALIENCY_FALLBACK_OK=1.
+    allow_unsupported_encoder_fallback: bool = False
 
 
 def _import_numpy() -> Any:
@@ -791,9 +820,12 @@ def saliency_aware_encode(
     - ``libvvenc``  — comma-separated ROI-delta CSV at 64×64 CTU
       granularity via ``-vvenc-params ROIFile=…``.
 
-    Encoders not listed above receive a plain encode (no saliency bias)
-    with a warning — the caller always gets a result (same graceful-
-    fallback posture as when onnxruntime is unavailable).
+    For encoders not listed above the function raises
+    :class:`SaliencyUnsupportedEncoderError` (exit code 2) unless the
+    caller has set ``SaliencyConfig.allow_unsupported_encoder_fallback=True``
+    (``--saliency-fallback-plain``) or ``VMAFTUNE_SALIENCY_FALLBACK_OK=1``.
+    In the opt-in fallback path the call is demoted to a plain encode and an
+    ERROR is emitted (ADR-0546 / saliency-tune-01).
 
     Steps:
 
@@ -803,8 +835,8 @@ def saliency_aware_encode(
        reduces the pixel-level map to its native ROI-map granularity).
     4. Delegate to :func:`encode.run_encode` (or the injected runner).
 
-    Falls back to a plain encode if saliency is unavailable, so callers
-    always get a result.
+    Falls back to a plain encode (with a WARNING) if onnxruntime or the
+    model file is unavailable, so callers always get a result in that case.
     """
     from .encode import run_encode  # local import to avoid cycles
 
@@ -834,8 +866,17 @@ def saliency_aware_encode(
 
     augment_fn = _SALIENCY_DISPATCH.get(request.encoder)
     if augment_fn is None:
-        _LOG.warning(
-            "saliency ROI not implemented for encoder %r; falling back to plain encode. "
+        # ADR-0546 (saliency-tune-01): hard-fail by default (exit 2).  The
+        # caller may opt in to the pre-ADR-0546 graceful-fallback behaviour
+        # via SaliencyConfig.allow_unsupported_encoder_fallback=True
+        # (--saliency-fallback-plain) or the env override.
+        env_override = os.environ.get("VMAFTUNE_SALIENCY_FALLBACK_OK", "").strip()
+        allow_fallback = cfg.allow_unsupported_encoder_fallback or env_override == "1"
+        if not allow_fallback:
+            raise SaliencyUnsupportedEncoderError(request.encoder, list(_SALIENCY_DISPATCH))
+        _LOG.error(
+            "saliency ROI not implemented for encoder %r; falling back to plain encode "
+            "(--saliency-fallback-plain / VMAFTUNE_SALIENCY_FALLBACK_OK=1 is set). "
             "Supported encoders: %s",
             request.encoder,
             sorted(_SALIENCY_DISPATCH),
@@ -878,6 +919,7 @@ __all__ = [
     "X264_MB_SIDE",
     "SaliencyConfig",
     "SaliencyUnavailableError",
+    "SaliencyUnsupportedEncoderError",
     "SALIENCY_AGGREGATORS",
     "augment_extra_params_with_libaom_qpfile",
     "augment_extra_params_with_qpfile",
