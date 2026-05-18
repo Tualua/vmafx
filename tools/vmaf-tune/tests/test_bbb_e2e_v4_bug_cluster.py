@@ -284,7 +284,14 @@ def test_ladder_json_emits_samples_array() -> None:
     assert "samples" in payload
     assert len(payload["samples"]) == 4
     s0 = payload["samples"][0]
-    assert {"width", "height", "bitrate_kbps", "bandwidth_bps", "vmaf", "crf"} <= s0.keys()
+    assert {
+        "width",
+        "height",
+        "bitrate_kbps",
+        "bandwidth_bps",
+        "vmaf",
+        "crf",
+    } <= s0.keys()
     # Samples are sorted by (pixel_count, bitrate_kbps) ascending so a
     # downstream plotter can iterate without re-sorting.
     pixel_counts = [s["width"] * s["height"] for s in payload["samples"]]
@@ -342,10 +349,15 @@ def test_build_and_emit_threads_samples_into_json(tmp_path: Path) -> None:
     )
     assert len(cells_seen) == 4
     payload = json.loads(out)
-    assert len(payload["samples"]) == 4
-    sample_keys = {(s["width"], s["height"], s["vmaf"]) for s in payload["samples"]}
-    expected = {(w, h, v) for (w, h, v) in cells_seen}
-    assert sample_keys == expected
+    # ADR-0502 / V5-3: samples are now de-duplicated by
+    # ``(width, height, crf)`` so two target-VMAFs that converge on
+    # the same CRF emit a single sample row (not two). The V4 stub
+    # returns ``crf=28`` for every cell, so two resolutions x two
+    # targets collapses to two unique rows (one per resolution).
+    assert len(payload["samples"]) == 2
+    sample_keys = {(s["width"], s["height"], s["crf"]) for s in payload["samples"]}
+    expected_keys = {(w, h, 28) for (w, h, _) in cells_seen}
+    assert sample_keys == expected_keys
 
 
 # ---------------------------------------------------------------------------

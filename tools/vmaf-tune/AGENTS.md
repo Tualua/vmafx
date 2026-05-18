@@ -828,3 +828,27 @@ scripts for those local corpora.
   `codec_rows_unavailable` exposes the gap count for dashboards.
   Changing the prefix in `bisect._predicate_for_codec` must update
   this aggregator too.
+- **`corpus.iter_rows` marks container sources for ffmpeg
+  auto-detect (ADR-0505, Bug #V5-2).** `EncodeRequest.source_is_container`
+  is derived from `source.suffix.lower() not in _VMAF_RAW_SUFFIXES`.
+  Container sources additionally always get a `-vf scale=W:H`
+  filter against the rung target so ffmpeg renders the encoded
+  output at the rendition geometry regardless of source resolution.
+  A regression that flips `source_is_container=False` for container
+  inputs re-introduces the "VMAF 4-9 at 50 Mbps" bug — the encode
+  driver then emits `-f rawvideo -pix_fmt yuv420p -s WxH -i src.mp4`
+  and re-interprets compressed bytes as planar YUV pixels.
+- **Sample cloud is full per-CRF sweep, de-duplicated by
+  `(width, height, crf)` (ADR-0505, Bug #V5-2 + #V5-3).** The
+  CLI's `_run_ladder` constructs a local `cloud_sink: list[LadderPoint]`,
+  passes it to `make_default_sampler(cloud_sink=…)`, and threads
+  it into `build_and_emit(extra_samples=…)`. The sampler appends
+  every successfully-scored CRF row from `iter_rows` into the sink
+  before `pick_target_vmaf` collapses the cell, so the emitted
+  `samples[]` array carries every encoded CRF row per resolution
+  instead of one-row-per-target-cell (V4 emit shape). The
+  emit-side `_dedup_samples` pass keys on `(width, height, crf)`
+  so two targets converging on the same CRF emit one sample row,
+  not two — `_run_ladder` test stubs that fabricate `LadderPoint`
+  instances with the same `(w, h, crf)` triple across different
+  cells will collapse in the JSON descriptor as designed.

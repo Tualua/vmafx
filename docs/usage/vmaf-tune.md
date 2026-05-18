@@ -1699,13 +1699,16 @@ The JSON descriptor carries three top-level fields:
 - `renditions[]` — the post-hull rungs that `select_knees` picked.
   Ascending-bitrate order; each entry has `width`, `height`,
   `bitrate_kbps`, `bandwidth_bps`, `vmaf`, `crf`.
-- `samples[]` — every raw `(resolution, target_vmaf)` cell the
-  sampler scored, pre-hull. Ascending by `(pixel_count,
-  bitrate_kbps)`; same per-entry shape as `renditions[]`. Added
-  2026-05-18 per ADR-0501 so `vmaf-tune report --ladder-json` can
-  render the Pareto-cloud overlay. The array is always present —
-  callers running with no scored cells get an empty list rather
-  than a missing key.
+- `samples[]` — every encoded `(resolution, crf)` row the sampler
+  scored, pre-hull. Ascending by `(pixel_count, bitrate_kbps)`;
+  same per-entry shape as `renditions[]`. Added 2026-05-18 per
+  ADR-0501 so `vmaf-tune report --ladder-json` can render the
+  Pareto-cloud overlay; widened 2026-05-18 per ADR-0505 from
+  one-row-per-target-cell (V4 emit shape) to the full per-CRF
+  sweep — every CRF encoded by the sampler now lands in the
+  array exactly once, de-duplicated by `(width, height, crf)`.
+  The array is always present — callers running with no scored
+  cells get an empty list rather than a missing key.
 
 ### Cross-resolution scoring against container sources
 
@@ -1723,6 +1726,18 @@ same `encode_dir` doesn't collide on a stale path. Single-resolution
 ladders and rungs that match the source geometry keep the legacy
 decode-at-native-geometry path — there's no decode overhead when
 the target already matches.
+
+ADR-0505 closes the matching gap on the encode side. Before
+2026-05-18 the encode driver passed `-f rawvideo -pix_fmt yuv420p
+-s WxH -i src.mp4` against every source, re-interpreting a
+container's compressed bytes as planar YUV pixels and producing a
+uniformly-bogus ~50 Mbps encode with VMAF in the 4-9 band
+regardless of CRF. The corpus now detects container sources by
+suffix (anything outside `_VMAF_RAW_SUFFIXES = {".yuv", ""}`) and
+sets `EncodeRequest.source_is_container=True`, so ffmpeg
+auto-detects the format and the rung-target `-vf scale=W:H`
+filter handles the resolution change. Raw `.yuv` sources keep
+the legacy rawvideo framing.
 
 ### Rung spacing
 

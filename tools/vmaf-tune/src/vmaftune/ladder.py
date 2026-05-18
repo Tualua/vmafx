@@ -201,6 +201,7 @@ def make_default_sampler(
     crf_sweep: Sequence[int] | None = None,
     src_width: int | None = None,
     src_height: int | None = None,
+    cloud_sink: list[LadderPoint] | None = None,
 ) -> SamplerFn:
     """Return a :data:`SamplerFn` closed over real source-shape metadata.
 
@@ -244,6 +245,7 @@ def make_default_sampler(
             crf_sweep=sweep,
             src_width=src_width,
             src_height=src_height,
+            cloud_sink=cloud_sink,
         )
 
     return _sampler
@@ -262,6 +264,7 @@ def _default_sampler(
     crf_sweep: Sequence[int] | None = None,
     src_width: int | None = None,
     src_height: int | None = None,
+    cloud_sink: list[LadderPoint] | None = None,
 ) -> LadderPoint:
     """Production sampler — encode the configured CRF sweep, pick by VMAF.
 
@@ -344,6 +347,18 @@ def _default_sampler(
             f"{src} at {width}x{height} (encoder={encoder}); pass an "
             f"explicit sampler= to build_ladder() to debug."
         )
+
+    # ADR-0505 / BBB e2e v5 Bug #V5-2: when a cloud sink is wired in,
+    # capture every successfully-scored CRF row before the
+    # ``pick_target_vmaf`` collapse. Downstream JSON ``samples`` then
+    # contains the full per-CRF cloud per resolution instead of one
+    # winner per (resolution, target_vmaf) cell. The sink is shared
+    # across cells in the same ``build_and_emit`` call, so the
+    # ``_dedup_samples`` pass on the emit side keeps the array
+    # unique by ``(width, height, crf)``.
+    if cloud_sink is not None:
+        for row in rows:
+            cloud_sink.append(_ladder_point_from_row(width, height, row))
 
     pick = pick_target_vmaf(rows, target_vmaf)
     return _ladder_point_from_row(width, height, pick.row)
@@ -670,8 +685,26 @@ def build_and_emit(
     uncertainty_thresholds: ConfidenceThresholds | None = None,
     rung_overlap_threshold: float | None = None,
     point_interval_width: float | None = None,
+    extra_samples: Sequence[LadderPoint] | None = None,
 ) -> str:
-    """Convenience: build → hull → select → emit, returns the manifest string."""
+    """Convenience: build → hull → select → emit, returns the manifest string.
+
+    ADR-0505 / BBB e2e v5 Bug #V5-2 + #V5-3: when ``extra_samples`` is
+    provided it supersedes the per-target ``ladder.points`` cloud as
+    the source of the JSON ``samples`` array. The historic path emitted
+    one sample per ``(resolution, target_vmaf)`` cell — for a sweep
+    with multiple CRF candidates per resolution this dropped every
+    non-winning CRF row and double-listed duplicates whenever two
+    target-VMAFs picked the same CRF. ``extra_samples`` lets the
+    caller pass the *full* per-CRF cloud produced by the sampler so
+    downstream consumers (``vmaf-tune report`` Pareto overlay,
+    diff tooling) see every scored point exactly once.
+
+    Samples are de-duplicated by ``(width, height, crf)`` before
+    emission so the JSON descriptor is stable across sampler quirks
+    (e.g. two targets that select the same CRF still yield one
+    sample row, not two).
+    """
     ladder = build_ladder(src, encoder, resolutions, target_vmafs, sampler=sampler)
     hull = convex_hull([_plain_ladder_point(p) for p in ladder.points])
     if with_uncertainty:
@@ -697,13 +730,37 @@ def build_and_emit(
     rungs = select_knees(hull, n=quality_tiers, spacing=spacing)
     # ADR-0501 / BBB e2e v4 Bug #V4-B: thread the pre-hull sample
     # cloud through so the JSON emitter's ``samples`` array carries
-    # every scored ``(resolution, target_vmaf)`` cell. HLS / DASH
-    # emitters ignore the argument; only the JSON descriptor consumes
-    # it. We project ``UncertaintyLadderPoint``-typed samples back to
-    # the plain :class:`LadderPoint` shape so the JSON schema stays
-    # stable irrespective of whether the run was uncertainty-aware.
-    plain_samples = [_plain_ladder_point(p) for p in ladder.points]
+    # every scored cell.
+    # ADR-0505 / BBB e2e v5 Bug #V5-2 + #V5-3: prefer ``extra_samples``
+    # (the full per-CRF sweep, dedup'd) over the per-target picks so
+    # report consumers see every encoded point, not the V4-B subset
+    # that double-listed targets which selected the same CRF.
+    if extra_samples is not None:
+        plain_samples = [_plain_ladder_point(p) for p in extra_samples]
+    else:
+        plain_samples = [_plain_ladder_point(p) for p in ladder.points]
+    plain_samples = _dedup_samples(plain_samples)
     return emit_manifest(rungs, format=format, samples=plain_samples)
+
+
+def _dedup_samples(samples: Sequence[LadderPoint]) -> list[LadderPoint]:
+    """Drop ``(width, height, crf)`` duplicates from a sample cloud.
+
+    Stable: the first occurrence wins so the caller's ordering on the
+    surviving rows is preserved. Added 2026-05-18 for ADR-0505 to fix
+    the V5-3 double-append symptom that surfaced in the v4 emit path
+    (two target-VMAFs picking the same CRF would emit two identical
+    sample rows).
+    """
+    seen: set[tuple[int, int, int]] = set()
+    out: list[LadderPoint] = []
+    for p in samples:
+        key = (int(p.width), int(p.height), int(p.crf))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(p)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -768,7 +825,9 @@ def _plain_ladder_point(point: LadderPoint | UncertaintyLadderPoint) -> LadderPo
     return point
 
 
-def _point_key(point: LadderPoint | UncertaintyLadderPoint) -> tuple[int, int, float, float, int]:
+def _point_key(
+    point: LadderPoint | UncertaintyLadderPoint,
+) -> tuple[int, int, float, float, int]:
     return (
         point.width,
         point.height,

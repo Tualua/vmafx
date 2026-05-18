@@ -2075,6 +2075,15 @@ def _run_ladder(args: argparse.Namespace) -> int:
             src_w = int(max_w)
         if src_h is None:
             src_h = int(max_h)
+    # ADR-0505 / BBB e2e v5 Bug #V5-2 + #V5-3: collect the full
+    # per-CRF sweep cloud via a sink list shared across all
+    # ``(resolution, target_vmaf)`` cells. The sink supersedes the
+    # historic per-target picks as the source of the JSON ``samples``
+    # array — see :func:`vmaftune.ladder.build_and_emit` for the
+    # dedup + emit semantics.
+    from .ladder import LadderPoint as _LadderPoint  # noqa: PLC0415
+
+    cloud_sink: list[_LadderPoint] = []
     sampler = make_default_sampler(
         pix_fmt=getattr(args, "pix_fmt", "yuv420p"),
         framerate=float(getattr(args, "framerate", 24.0)),
@@ -2082,6 +2091,7 @@ def _run_ladder(args: argparse.Namespace) -> int:
         crf_sweep=crf_sweep,
         src_width=int(src_w),
         src_height=int(src_h),
+        cloud_sink=cloud_sink,
     )
     manifest = build_and_emit(
         src=args.src,
@@ -2095,6 +2105,7 @@ def _run_ladder(args: argparse.Namespace) -> int:
         with_uncertainty=bool(getattr(args, "with_uncertainty", False)),
         uncertainty_thresholds=thresholds,
         rung_overlap_threshold=getattr(args, "rung_overlap_threshold", None),
+        extra_samples=cloud_sink,
     )
     if args.output is not None:
         args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -2916,7 +2927,12 @@ def _run_sidecar(args: argparse.Namespace) -> int:
                         features = _sidecar_features_from_mapping(row)
                         crf = int(row["crf"])
                         observed = float(row["observed_vmaf"])
-                    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                    except (
+                        KeyError,
+                        TypeError,
+                        ValueError,
+                        json.JSONDecodeError,
+                    ) as exc:
                         skipped += 1
                         sys.stderr.write(
                             f"vmaf-tune sidecar batch-record: skip line {lineno}: {exc}\n"

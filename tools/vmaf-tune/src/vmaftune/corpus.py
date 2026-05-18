@@ -734,8 +734,27 @@ def iter_rows(
         # rung target serves as both source and encode geometry.
         enc_src_w = int(job.src_width) if job.src_width is not None else int(job.width)
         enc_src_h = int(job.src_height) if job.src_height is not None else int(job.height)
+        # ADR-0505 / BBB e2e v5 Bug #V5-2 root cause: when the source is
+        # a container/Y4M (anything outside :data:`_VMAF_RAW_SUFFIXES`)
+        # the encode pipe MUST treat it as a container — letting ffmpeg
+        # auto-detect format and resolution. The historic path always
+        # built the encode argv with ``-f rawvideo -pix_fmt … -s WxH``,
+        # which reinterprets the container's compressed bytes as planar
+        # YUV pixels and produces a catastrophic encode (uniformly
+        # ~50 Mbps regardless of CRF, garbage frames, VMAF in the 4-9
+        # band). The reference leg is already decoded to raw YUV by
+        # :func:`_maybe_decode_reference`; the encode leg gets the
+        # complementary fix here so cross-resolution scoring is well-
+        # defined and the CRF flag actually controls bitrate.
+        source_is_container = job.source.suffix.lower() not in _VMAF_RAW_SUFFIXES
         scale_extra: tuple[str, ...] = ()
-        if (enc_src_w, enc_src_h) != (int(job.width), int(job.height)):
+        if source_is_container:
+            # Container sources: enforce the rung target via a scale
+            # filter unconditionally (ffmpeg's auto-detected geometry
+            # may not match the requested rendition). For native-
+            # geometry rungs the scale is a cheap no-op.
+            scale_extra = ("-vf", f"scale={int(job.width)}:{int(job.height)}")
+        elif (enc_src_w, enc_src_h) != (int(job.width), int(job.height)):
             scale_extra = ("-vf", f"scale={int(job.width)}:{int(job.height)}")
         enc_req = EncodeRequest(
             source=job.source,
@@ -750,6 +769,7 @@ def iter_rows(
             extra_params=tuple(hdr_extra_params) + scale_extra,
             sample_clip_seconds=clip_seconds,
             sample_clip_start_s=start_s,
+            source_is_container=source_is_container,
         )
         if opts.two_pass:
             # Phase F (ADR-0333). The driver gracefully falls back

@@ -35667,3 +35667,26 @@ upstream changes to the accumulation order or filter constant initialisation.
 The struct fields map 1:1 to the local variables in the original monolithic body
 (f0-f4, mask2/3/x for vertical; fcoeff-fcoeff4, addnum, mask1 for horizontal).
 No public C-API surface, no header, no meson build files touched.
+
+---
+
+## fix/bbb-e2e-v5-bug-cluster-2026-05-18 (ADR-0505)
+
+**Files**:
+`tools/vmaf-tune/src/vmaftune/{corpus,ladder,cli}.py`,
+`tools/vmaf-tune/tests/{test_bbb_e2e_v4_bug_cluster,test_bbb_e2e_v5_bug_cluster}.py`,
+`docs/adr/0505-vmaf-tune-bbb-e2e-v5-bug-cluster.md`,
+`docs/adr/README.md`,
+`docs/state.md`,
+`docs/rebase-notes.md`,
+`changelog.d/fixed/0505-vmaf-tune-bbb-e2e-v5-bug-cluster.md`.
+
+**Rebase sensitivity (none):** all changes live in fork-added
+`tools/vmaf-tune/` plus fork-added docs/changelog files — no
+upstream Netflix file is touched. The new `source_is_container`
+wiring in `corpus.iter_rows` consumes an existing `EncodeRequest`
+field (added in earlier fork work); container-detection logic is a
+suffix-set membership test against the fork-local
+`_VMAF_RAW_SUFFIXES`. The new `cloud_sink` kwarg on
+`make_default_sampler` and `_default_sampler` defaults to `None`
+so every existing caller round-trips unchanged.
