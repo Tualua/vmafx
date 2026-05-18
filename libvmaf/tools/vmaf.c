@@ -307,12 +307,7 @@ static void copy_picture_data(VmafPicture *pic, video_input_ycbcr ycbcr, video_i
 static int fetch_picture(VmafContext *vmaf, video_input *vid, VmafPicture *pic, int depth)
 {
     int ret;
-    video_input_ycbcr ycbcr;
     video_input_info info;
-
-    ret = video_input_fetch_frame(vid, ycbcr, NULL);
-    if (ret < 1)
-        return !ret;
 
     video_input_get_info(vid, &info);
 
@@ -322,7 +317,18 @@ static int fetch_picture(VmafContext *vmaf, video_input *vid, VmafPicture *pic, 
         return -1;
     }
 
-    copy_picture_data(pic, ycbcr, &info, depth);
+#ifdef USE_DIRECT_READ
+    (void)depth;
+    ret = video_input_fetch_into_vmaf_picture(vid, pic);
+    if (ret < 1)
+        return !ret;
+#else
+    video_input_ycbcr ycbcr;
+    ret = video_input_fetch_frame(vid, ycbcr, NULL);
+    if (ret < 1)
+        return !ret;
+    copy_picture_data(pic, ycbcr, &info, info.depth);
+#endif
     return 0;
 }
 

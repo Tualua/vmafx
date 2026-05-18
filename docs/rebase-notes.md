@@ -36947,6 +36947,7 @@ Touched files:
 `changelog.d/fixed/0566-hip-vif-per-feature-places4-gate.md`,
 `docs/rebase-notes.md` (this entry).
 
+
 ## ADR-0552 — HIP VIF deterministic wavefront reduction
 
 **Branch**: `fix/hip-vif-deterministic-reduce`
@@ -36993,4 +36994,29 @@ before any loop body runs. Files touched:
 `docs/research/python-mcp-ai-audit-2026-05-18.md`,
 `changelog.d/fixed/0556-python-mcp-ai-audit.md`,
 `docs/state.md` (5 T-rows added to Open section),
+
+## ADR-0567 — upstream port USE_DIRECT_READ zero-copy input path (Netflix/vmaf@30a6e2a8d)
+
+**Branch**: `chore/upstream-port-direct-read-and-speed-wrappers`
+**Rebase impact**: low — all touched files are upstream-shared paths that
+the upstream commit also modifies.  On the next `sync-upstream`, these changes
+should merge cleanly because the fork's version is a strict superset of the
+upstream diff (same logic, plus fork style conventions: `(void)fprintf`,
+explicit `(int)` casts on `fread` returns, `memcmp(…) != 0`).
+
+**Rebase-sensitive invariant**: The new `fetch_into_vmaf_picture` vtable field
+is the last member of `video_input_vtbl`.  Any future vtable extension must
+append after it or update both the vtable struct and all initialisers
+(`YUV_INPUT_VTBL`, `Y4M_INPUT_VTBL`) simultaneously.  The upstream port order
+is: `open_raw`, `open`, `get_info`, `fetch_frame`, `close`,
+`fetch_into_vmaf_picture`.
+
+Touched files:
+`libvmaf/tools/vidinput.h`, `libvmaf/tools/vidinput.c`,
+`libvmaf/tools/yuv_input.c`, `libvmaf/tools/y4m_input.c`,
+`libvmaf/tools/vmaf.c`,
+`docs/adr/0567-upstream-port-direct-read.md`,
+`docs/adr/README.md` (one index row),
+`changelog.d/perf/0567-upstream-port-direct-read.md`,
+
 `docs/rebase-notes.md` (this entry).
