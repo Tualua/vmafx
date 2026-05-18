@@ -780,12 +780,36 @@ def _build_parser() -> argparse.ArgumentParser:
         "--target-vmaf",
         type=float,
         default=92.0,
-        help="VMAF target each codec aims for (default 92)",
+        help=(
+            "single VMAF target each codec aims for (default 92). "
+            "Back-compat shortcut for --target-vmafs N. Ignored when "
+            "--target-vmafs lists more than one target (ADR-0516)."
+        ),
+    )
+    compare.add_argument(
+        "--target-vmafs",
+        default=None,
+        help=(
+            "comma-separated VMAF targets to sweep per codec, e.g. "
+            "``85,90,92,95``. When this lists more than one value the "
+            "CLI emits the v2 multi-target schema (ADR-0513) and the "
+            "report renders a rate-quality curve per codec with the "
+            "pareto frontier highlighted. Default: derived from "
+            "--target-vmaf (single target)."
+        ),
     )
     compare.add_argument(
         "--encoders",
-        required=True,
-        help="comma-separated list of encoders to compare (e.g. ``libx264,libx265,libsvtav1``)",
+        required=False,
+        default=None,
+        help=(
+            "comma-separated list of encoders to compare "
+            "(e.g. ``libx264,libx265,libsvtav1,h264_nvenc``). "
+            "Default: the CPU encoder set ``libx264,libx265,libsvtav1,libvpx-vp9`` "
+            "(ADR-0513). Hardware encoders (``*_nvenc``, ``*_qsv``, ``*_amf``) "
+            "are accepted; missing-encoder / no-compatible-GPU rows are "
+            "skipped with a reason and do not fail the whole run."
+        ),
     )
     compare.add_argument(
         "--format",
@@ -2427,9 +2451,21 @@ def _run_compare(args: argparse.Namespace) -> int:
     explicit mismatch.
     """
     from .bisect import make_bisect_predicate
-    from .compare import compare_codecs, emit_report, supported_formats
+    from .compare import (
+        DEFAULT_CPU_ENCODERS,
+        compare_codecs,
+        compare_codecs_sweep,
+        emit_report,
+        emit_sweep_report,
+        probe_encoder_available,
+        supported_formats,
+    )
 
-    encoders = [token.strip() for token in args.encoders.split(",") if token.strip()]
+    # ADR-0513: ``--encoders`` defaults to the CPU encoder set when
+    # omitted; the user is no longer required to pass an explicit list
+    # for the basic "compare the four mainline CPU encoders" case.
+    encoders_raw = args.encoders if args.encoders is not None else ",".join(DEFAULT_CPU_ENCODERS)
+    encoders = [token.strip() for token in encoders_raw.split(",") if token.strip()]
     if not encoders:
         sys.stderr.write("vmaf-tune compare: --encoders is empty\n")
         return 2
@@ -2439,10 +2475,32 @@ def _run_compare(args: argparse.Namespace) -> int:
             f"expected one of {supported_formats()}\n"
         )
         return 2
+
+    # ADR-0516: ``--target-vmafs`` parses to a list of floats; falls
+    # back to ``[--target-vmaf]`` (single-target legacy path) when the
+    # multi-target flag is not passed. Duplicates collapse and the list
+    # is sorted ascending so the report's rate-quality curve is stable.
+    if args.target_vmafs:
+        try:
+            target_vmafs = sorted(
+                {float(t.strip()) for t in args.target_vmafs.split(",") if t.strip()}
+            )
+        except ValueError as exc:
+            sys.stderr.write(f"vmaf-tune compare: invalid --target-vmafs: {exc}\n")
+            return 2
+        if not target_vmafs:
+            sys.stderr.write("vmaf-tune compare: --target-vmafs is empty\n")
+            return 2
+    else:
+        target_vmafs = [float(args.target_vmaf)]
     predicate = None
+    sweep_predicate = None
     if args.predicate_module:
         try:
             predicate = _load_compare_predicate(args.predicate_module)
+            # For sweeps, the same module-level predicate accepts the
+            # per-call target_vmaf — no extra binding needed.
+            sweep_predicate = predicate
         except (AttributeError, ImportError, ValueError) as exc:
             sys.stderr.write(f"vmaf-tune compare: invalid --predicate-module: {exc}\n")
             return 2
@@ -2477,22 +2535,78 @@ def _run_compare(args: argparse.Namespace) -> int:
                 return 2
             crf_range = (args.crf_min, args.crf_max)
         score_backend = None if args.score_backend in (None, "auto") else args.score_backend
-        predicate = make_bisect_predicate(
-            target_vmaf=args.target_vmaf,
-            width=resolved_w,
-            height=resolved_h,
-            pix_fmt=args.pix_fmt,
-            framerate=resolved_fr,
-            duration_s=resolved_dur,
-            sample_clip_seconds=args.sample_clip_seconds,
-            preset=args.preset,
-            crf_range=crf_range,
-            max_iterations=args.max_iterations,
-            vmaf_model=args.vmaf_model,
-            score_backend=score_backend,
-            ffmpeg_bin=args.ffmpeg_bin,
-            vmaf_bin=args.vmaf_bin,
+
+        def _build_bisect_for_target(target: float):
+            return make_bisect_predicate(
+                target_vmaf=target,
+                width=resolved_w,
+                height=resolved_h,
+                pix_fmt=args.pix_fmt,
+                framerate=resolved_fr,
+                duration_s=resolved_dur,
+                sample_clip_seconds=args.sample_clip_seconds,
+                preset=args.preset,
+                crf_range=crf_range,
+                max_iterations=args.max_iterations,
+                vmaf_model=args.vmaf_model,
+                score_backend=score_backend,
+                ffmpeg_bin=args.ffmpeg_bin,
+                vmaf_bin=args.vmaf_bin,
+            )
+
+        # Single-target legacy: build one predicate against
+        # --target-vmaf and use the v1 emitter. Sweep mode: build a
+        # per-call dispatcher that lazily memoises one bisect closure
+        # per distinct target VMAF, so the cross-product (codec x
+        # target) still gets the right ``make_bisect_predicate`` for
+        # each rung.
+        predicate = _build_bisect_for_target(float(args.target_vmaf))
+        _bisect_cache: dict[float, object] = {}
+
+        def _sweep_dispatcher(codec, src_, target_):
+            if target_ not in _bisect_cache:
+                _bisect_cache[target_] = _build_bisect_for_target(float(target_))
+            return _bisect_cache[target_](codec, src_, target_)  # type: ignore[operator]
+
+        sweep_predicate = _sweep_dispatcher
+
+    # Pick the v2 sweep path when more than one target was requested.
+    if len(target_vmafs) > 1:
+        # Build the encoder-availability probe: real ffmpeg-backed for
+        # the default path, no-op when a custom predicate-module is in
+        # play (tests inject fake predicates and shouldn't be forced to
+        # shell out).
+        if args.predicate_module:
+
+            def _probe(_codec: str) -> tuple[bool, str]:
+                return True, ""
+
+        else:
+
+            def _probe(codec: str) -> tuple[bool, str]:
+                return probe_encoder_available(codec, ffmpeg_bin=args.ffmpeg_bin)
+
+        sweep = compare_codecs_sweep(
+            src=args.src,
+            target_vmafs=target_vmafs,
+            encoders=encoders,
+            parallel=not args.no_parallel,
+            max_workers=args.max_workers,
+            predicate=sweep_predicate,
+            availability_probe=_probe,
         )
+        rendered = emit_sweep_report(sweep, format=args.format)
+        if args.output is not None:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(rendered, encoding="utf-8")
+            sys.stderr.write(f"wrote compare sweep report -> {args.output}\n")
+        else:
+            sys.stdout.write(rendered)
+            if not rendered.endswith("\n"):
+                sys.stdout.write("\n")
+        any_ok = any(r.ok for r in sweep.rows)
+        return 0 if any_ok else 1
+
     report = compare_codecs(
         src=args.src,
         target_vmaf=args.target_vmaf,
@@ -3298,6 +3412,32 @@ def _coerce_finite_float(value: Any, default: float = math.nan) -> float:
     return v
 
 
+def _sweep_point_from_json(r: dict[str, Any]) -> "CodecSweepPoint":  # type: ignore[name-defined]  # noqa: F821
+    """Build a :class:`vmaftune.report.CodecSweepPoint` from a v2 row.
+
+    The compare-sweep JSON row carries ``target_vmaf`` as a top-level
+    field (set by :meth:`vmaftune.compare.RecommendResult.to_row`); the
+    sweep ingester treats that as authoritative because the schema-v2
+    contract is "one row per (codec, target_vmaf) pair" (ADR-0513).
+    Missing / non-finite numerics map to ``NaN`` so the chart renderer
+    drops them rather than drawing a broken segment.
+    """
+    from .report import CodecSweepPoint
+
+    ok = bool(r.get("ok", True))
+    return CodecSweepPoint(
+        codec=str(r.get("codec", "")),
+        encoder_version=str(r.get("encoder_version", "")),
+        target_vmaf=float(r.get("target_vmaf") or 0.0),
+        best_crf=int(r.get("best_crf") if r.get("best_crf") is not None else -1),
+        bitrate_kbps=_coerce_finite_float(r.get("bitrate_kbps")),
+        encode_time_ms=_coerce_finite_float(r.get("encode_time_ms")),
+        vmaf_score=_coerce_finite_float(r.get("vmaf_score")),
+        ok=ok,
+        error=str(r.get("error", "")),
+    )
+
+
 def _codec_row_from_json(r: dict[str, Any]) -> "CodecRow":  # type: ignore[name-defined]  # noqa: F821
     """Build a :class:`vmaftune.report.CodecRow` from a compare JSON row.
 
@@ -3324,8 +3464,10 @@ def _run_report(args: argparse.Namespace) -> int:
     """Render a vmaf-tune profile-card from one or more JSON dumps."""
     from datetime import datetime, timezone
 
+    from .compare import detect_schema_version
     from .report import (
         CodecRow,
+        CodecSweepPoint,
         LadderRung,
         LadderSample,
         ReportData,
@@ -3338,6 +3480,8 @@ def _run_report(args: argparse.Namespace) -> int:
     src_info = probe_source(args.src)
 
     codec_rows: tuple[CodecRow, ...] = ()
+    sweep_points: tuple[CodecSweepPoint, ...] = ()
+    sweep_targets: tuple[float, ...] = ()
     if args.compare_json is not None:
         try:
             cmp_payload = json.loads(args.compare_json.read_text())
@@ -3345,7 +3489,19 @@ def _run_report(args: argparse.Namespace) -> int:
             sys.stderr.write(f"vmaf-tune report: cannot load --compare-json: {e}\n")
             return 2
         cmp_rows_in = cmp_payload.get("rows") or cmp_payload.get("results") or []
-        codec_rows = tuple(_codec_row_from_json(r) for r in cmp_rows_in)
+        schema_v = detect_schema_version(cmp_payload)
+        if schema_v >= 2:
+            # ADR-0516: v2 sweep schema. Build CodecSweepPoint instances
+            # and surface the declared target list so the renderer's
+            # summary table prints a uniform per-codec / per-target grid
+            # even when one codec's row is missing for some target (the
+            # "encoder unavailable" or per-target bisect failure cases).
+            sweep_points = tuple(_sweep_point_from_json(r) for r in cmp_rows_in)
+            sweep_targets = tuple(float(t) for t in cmp_payload.get("target_vmafs") or ())
+            if not sweep_targets:
+                sweep_targets = tuple(sorted({p.target_vmaf for p in sweep_points}))
+        else:
+            codec_rows = tuple(_codec_row_from_json(r) for r in cmp_rows_in)
 
     ladder_samples: tuple[LadderSample, ...] = ()
     ladder_rungs: tuple[LadderRung, ...] = ()
@@ -3414,6 +3570,8 @@ def _run_report(args: argparse.Namespace) -> int:
         source=src_info,
         target_vmaf=float(args.target_vmaf),
         codec_rows=codec_rows,
+        sweep_points=sweep_points,
+        sweep_targets=sweep_targets,
         ladder_samples=ladder_samples,
         ladder_rungs=ladder_rungs,
         shots=shots,
@@ -3454,10 +3612,26 @@ def _run_report(args: argparse.Namespace) -> int:
     # ``"encoder unavailable"`` AND at least one row succeeded;
     # ``degraded=true`` when any row is an encoder-unavailable row.
     _UNAVAIL_PREFIX = "encoder unavailable"
-    failed_rows = [r for r in codec_rows if not r.ok]
-    unavail_rows = [r for r in failed_rows if r.error.startswith(_UNAVAIL_PREFIX)]
-    real_failures = [r for r in failed_rows if not r.error.startswith(_UNAVAIL_PREFIX)]
-    rows_any_ok = any(r.ok for r in codec_rows) if codec_rows else True
+    _HW_UNAVAIL_PREFIX = "hardware encoder not available"
+    # Treat both v1 ``codec_rows`` and v2 ``sweep_points`` uniformly
+    # for the ok / degraded aggregation. v2 (ADR-0513) introduces
+    # ``hardware encoder not available: ...`` as a sibling unavailable
+    # marker for hardware encoders the operator listed but the host
+    # can't run — same semantics as the legacy ``encoder unavailable``
+    # marker the bisect produces.
+    aggregate_rows: list[Any] = list(codec_rows) + list(sweep_points)
+    failed_rows = [r for r in aggregate_rows if not r.ok]
+    unavail_rows = [
+        r
+        for r in failed_rows
+        if r.error.startswith(_UNAVAIL_PREFIX) or r.error.startswith(_HW_UNAVAIL_PREFIX)
+    ]
+    real_failures = [
+        r
+        for r in failed_rows
+        if not (r.error.startswith(_UNAVAIL_PREFIX) or r.error.startswith(_HW_UNAVAIL_PREFIX))
+    ]
+    rows_any_ok = any(r.ok for r in aggregate_rows) if aggregate_rows else True
     top_ok = bool(rows_any_ok and not real_failures)
     degraded = bool(unavail_rows)
     sys.stdout.write(
@@ -3469,7 +3643,18 @@ def _run_report(args: argparse.Namespace) -> int:
                 "codec_rows": len(codec_rows),
                 "codec_rows_ok": sum(1 for r in codec_rows if r.ok),
                 "codec_rows_failed": sum(1 for r in codec_rows if not r.ok),
-                "codec_rows_unavailable": len(unavail_rows),
+                "codec_rows_unavailable": sum(
+                    1
+                    for r in codec_rows
+                    if (not r.ok)
+                    and (
+                        r.error.startswith(_UNAVAIL_PREFIX)
+                        or r.error.startswith(_HW_UNAVAIL_PREFIX)
+                    )
+                ),
+                "sweep_points": len(sweep_points),
+                "sweep_points_ok": sum(1 for r in sweep_points if r.ok),
+                "sweep_points_failed": sum(1 for r in sweep_points if not r.ok),
                 "ladder_samples": len(ladder_samples),
                 "ladder_rungs": len(ladder_rungs),
                 "shots": len(shots),

@@ -26,6 +26,7 @@ import dataclasses
 import io
 import json
 import math
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -126,12 +127,39 @@ class SourceInfo:
 
 
 @dataclasses.dataclass(frozen=True)
+class CodecSweepPoint:
+    """One (codec, target_vmaf) point in a rate-quality sweep.
+
+    The renderer builds the per-codec rate-quality line from these
+    points (one line per codec, ordered by ``target_vmaf``) and
+    derives the pareto frontier — for each target VMAF, the codec
+    with the smallest bitrate.
+
+    Schema v2 ingestion (ADR-0516). The legacy single-target compare
+    output (schema v1) ingests as :class:`CodecRow` and renders the
+    historical bar+dot chart for back-compat.
+    """
+
+    codec: str
+    encoder_version: str
+    target_vmaf: float
+    best_crf: int
+    bitrate_kbps: float
+    encode_time_ms: float
+    vmaf_score: float
+    ok: bool
+    error: str = ""
+
+
+@dataclasses.dataclass(frozen=True)
 class ReportData:
     """All structured inputs for one report."""
 
     source: SourceInfo
     target_vmaf: float
     codec_rows: tuple[CodecRow, ...] = ()
+    sweep_points: tuple[CodecSweepPoint, ...] = ()
+    sweep_targets: tuple[float, ...] = ()
     ladder_samples: tuple[LadderSample, ...] = ()
     ladder_rungs: tuple[LadderRung, ...] = ()
     shots: tuple[ShotRow, ...] = ()
@@ -148,6 +176,8 @@ class ReportData:
             "source": dataclasses.asdict(self.source),
             "target_vmaf": self.target_vmaf,
             "codec_rows": [dataclasses.asdict(r) for r in self.codec_rows],
+            "sweep_points": [dataclasses.asdict(p) for p in self.sweep_points],
+            "sweep_targets": list(self.sweep_targets),
             "ladder_samples": [dataclasses.asdict(p) for p in self.ladder_samples],
             "ladder_rungs": [dataclasses.asdict(r) for r in self.ladder_rungs],
             "shots": [dataclasses.asdict(s) for s in self.shots],
@@ -269,6 +299,142 @@ def _codec_plot_fn(data: ReportData):
         ax2.legend(loc="lower right", fontsize=8)
         for tick in ax.get_xticklabels():
             tick.set_rotation(20)
+
+    return _plot
+
+
+# Stable codec -> colour map so the same codec keeps the same hue in
+# successive reports (avoids "blue swap" diffs when comparing two HTML
+# reports side by side). Matplotlib's default Tab10 + Set2 give 18
+# distinct hues — enough headroom for the CPU+HW encoder matrix.
+_CODEC_PALETTE: tuple[str, ...] = (
+    "#1f77b4",  # libx264
+    "#ff7f0e",  # libx265
+    "#2ca02c",  # libsvtav1
+    "#d62728",  # libvpx-vp9
+    "#9467bd",  # libaom
+    "#8c564b",  # libvvenc
+    "#e377c2",  # h264_nvenc
+    "#7f7f7f",  # hevc_nvenc
+    "#bcbd22",  # av1_nvenc
+    "#17becf",  # h264_qsv
+    "#aec7e8",  # hevc_qsv
+    "#ffbb78",  # av1_qsv
+    "#98df8a",  # h264_amf
+    "#ff9896",  # hevc_amf
+    "#c5b0d5",  # av1_amf
+)
+
+
+def _codec_colour(codec: str, index: int) -> str:
+    """Deterministic colour for ``codec`` — falls back by index."""
+    return _CODEC_PALETTE[index % len(_CODEC_PALETTE)]
+
+
+def compute_pareto_frontier(
+    points: Sequence[CodecSweepPoint],
+) -> tuple[CodecSweepPoint, ...]:
+    """Return the bitrate-minimising frontier across all codecs.
+
+    For each target VMAF that appears in ``points``, pick the ok-row
+    with the smallest bitrate (any codec). The frontier is ordered by
+    ``target_vmaf`` ascending. Failed / non-finite rows are filtered
+    out so the renderer never draws a NaN segment.
+    """
+    by_target: dict[float, list[CodecSweepPoint]] = {}
+    for p in points:
+        if not p.ok or _is_missing(p.bitrate_kbps) or _is_missing(p.vmaf_score):
+            continue
+        by_target.setdefault(p.target_vmaf, []).append(p)
+    frontier: list[CodecSweepPoint] = []
+    for target in sorted(by_target):
+        # Tie-break by codec name so two-codec ties are deterministic.
+        winner = min(by_target[target], key=lambda r: (r.bitrate_kbps, r.codec))
+        frontier.append(winner)
+    return tuple(frontier)
+
+
+def _sweep_plot_fn(data: ReportData):
+    """Rate-quality line plot — one line per codec, pareto highlighted.
+
+    X-axis is bitrate (kbps) on a log scale (the canonical R-D axis),
+    Y is VMAF achieved. Each codec contributes one polyline across its
+    successful (target_vmaf, bitrate) points. The pareto frontier is
+    drawn as a heavier dashed line on top so the eye lands on it.
+    """
+
+    def _plot(ax) -> None:
+        if not data.sweep_points:
+            ax.text(0.5, 0.5, "no sweep data", ha="center", va="center")
+            ax.set_axis_off()
+            return
+        by_codec: dict[str, list[CodecSweepPoint]] = {}
+        for p in data.sweep_points:
+            by_codec.setdefault(p.codec, []).append(p)
+        plotted_any = False
+        for idx, (codec, pts) in enumerate(sorted(by_codec.items())):
+            ok_pts = [
+                p
+                for p in pts
+                if p.ok and not _is_missing(p.bitrate_kbps) and not _is_missing(p.vmaf_score)
+            ]
+            if not ok_pts:
+                continue
+            ok_pts.sort(key=lambda p: p.target_vmaf)
+            xs = [p.bitrate_kbps for p in ok_pts]
+            ys = [p.vmaf_score for p in ok_pts]
+            label = codec
+            ver = ok_pts[0].encoder_version
+            if ver:
+                label = f"{codec} ({ver})"
+            ax.plot(
+                xs,
+                ys,
+                marker="o",
+                linewidth=1.6,
+                markersize=6,
+                color=_codec_colour(codec, idx),
+                label=label,
+            )
+            plotted_any = True
+        # Pareto frontier overlay.
+        frontier = compute_pareto_frontier(data.sweep_points)
+        if frontier:
+            fxs = [p.bitrate_kbps for p in frontier]
+            fys = [p.vmaf_score for p in frontier]
+            ax.plot(
+                fxs,
+                fys,
+                color="#000",
+                linestyle="--",
+                linewidth=2.4,
+                alpha=0.55,
+                label="pareto frontier",
+                zorder=10,
+            )
+            for p in frontier:
+                ax.annotate(
+                    f"{p.codec}",
+                    xy=(p.bitrate_kbps, p.vmaf_score),
+                    xytext=(5, 5),
+                    textcoords="offset points",
+                    fontsize=7,
+                    color="#000",
+                    alpha=0.7,
+                )
+        if not plotted_any:
+            ax.text(0.5, 0.5, "no successful sweep rows", ha="center", va="center")
+            ax.set_axis_off()
+            return
+        ax.set_xscale("log")
+        ax.set_xlabel("bitrate (kbps, log scale)")
+        ax.set_ylabel("VMAF achieved")
+        ax.set_title("Rate-quality curve per codec (pareto frontier dashed)")
+        ax.grid(True, alpha=0.3, which="both")
+        # Horizontal reference lines at each sweep target.
+        for t in data.sweep_targets:
+            ax.axhline(t, color="#888", linestyle=":", alpha=0.35, linewidth=0.8)
+        ax.legend(loc="lower right", fontsize=7)
 
     return _plot
 
@@ -415,6 +581,70 @@ def _fmt_crf(v: int | None) -> str:
     return str(int(v))
 
 
+def _per_codec_targets(
+    points: Sequence[CodecSweepPoint], targets: Sequence[float]
+) -> dict[str, dict[float, CodecSweepPoint]]:
+    """Group sweep points by (codec, target_vmaf) for table rendering."""
+    by_codec: dict[str, dict[float, CodecSweepPoint]] = {}
+    for p in points:
+        by_codec.setdefault(p.codec, {})[p.target_vmaf] = p
+    # Ensure every codec has a slot for every requested target so the
+    # summary table prints a uniform shape (missing cells render as
+    # em-dashes for unavailable encoders / failed bisects).
+    for codec in by_codec:
+        for t in targets:
+            by_codec[codec].setdefault(t, None)  # type: ignore[assignment]
+    return by_codec
+
+
+def _render_sweep_summary_table_md(data: ReportData) -> list[str]:
+    """Render the per-codec / per-target summary table as markdown."""
+    targets = list(data.sweep_targets) or sorted({p.target_vmaf for p in data.sweep_points})
+    by_codec = _per_codec_targets(data.sweep_points, targets)
+
+    header_cells = ["Codec", "Encoder"]
+    header_cells.extend(f"bitrate @ VMAF {t:g}" for t in targets)
+    header_cells.extend(["encode time (ms / frame)", "best preset"])
+    align = ["---", "---"] + ["---:" for _ in targets] + ["---:", "---"]
+
+    lines: list[str] = []
+    lines.append("| " + " | ".join(header_cells) + " |")
+    lines.append("|" + "|".join(align) + "|")
+    for codec in sorted(by_codec):
+        per_target = by_codec[codec]
+        rows = [p for p in per_target.values() if p is not None]
+        ok_rows = [p for p in rows if p.ok]
+        encoder_version = next((p.encoder_version for p in rows if p.encoder_version), "—")
+        cells: list[str] = [codec, encoder_version]
+        for t in targets:
+            p = per_target.get(t)
+            if p is None or not p.ok or _is_missing(p.bitrate_kbps):
+                cells.append(_DASH)
+            else:
+                cells.append(_fmt_kbps(p.bitrate_kbps))
+        # Encode time per frame: average across the codec's ok rows.
+        if ok_rows:
+            avg_ms = sum(p.encode_time_ms for p in ok_rows) / float(len(ok_rows))
+            cells.append(_fmt_ms(avg_ms))
+        else:
+            cells.append(_DASH)
+        cells.append("adapter default")
+        lines.append("| " + " | ".join(cells) + " |")
+    # Pareto-frontier summary.
+    frontier = compute_pareto_frontier(data.sweep_points)
+    if frontier:
+        lines.append("")
+        lines.append("**Pareto frontier** (lowest bitrate at each target):")
+        lines.append("")
+        for p in frontier:
+            lines.append(
+                f"- VMAF {p.target_vmaf:g}: `{p.codec}` "
+                f"({p.encoder_version or '—'}) "
+                f"@ {_fmt_kbps(p.bitrate_kbps)} (CRF {_fmt_crf(p.best_crf)})"
+            )
+    return lines
+
+
 def render_markdown(data: ReportData, *, assets_dir: Path | None = None) -> str:
     """Render the report to Markdown.
 
@@ -445,8 +675,20 @@ def render_markdown(data: ReportData, *, assets_dir: Path | None = None) -> str:
     lines.append(f"Target VMAF: **{data.target_vmaf:.1f}**")
     lines.append("")
 
-    # Codec comparison table + chart
-    if data.codec_rows:
+    # Codec comparison table + chart. Schema v2 (sweep_points) takes
+    # priority — when both are present (legacy + new in the same
+    # report), the sweep view is the useful one and the bar+dot chart
+    # is informational only.
+    if data.sweep_points:
+        lines.append("## Codec rate-quality sweep")
+        lines.append("")
+        lines.extend(_render_sweep_summary_table_md(data))
+        lines.append("")
+        lines.append(
+            _embed_png(_render_chart(8, 4.5, _sweep_plot_fn(data)), "sweep_rq", assets_dir)
+        )
+        lines.append("")
+    elif data.codec_rows:
         lines.append("## Codec comparison")
         lines.append("")
         lines.append("| Codec | Encoder | CRF | Bitrate | Encode time | VMAF | Status |")
@@ -619,11 +861,72 @@ def _row_html(row: CodecRow) -> str:
     )
 
 
+def _sweep_summary_table_html(data: ReportData) -> str:
+    """Render the per-codec / per-target summary table as HTML."""
+    targets = list(data.sweep_targets) or sorted({p.target_vmaf for p in data.sweep_points})
+    by_codec = _per_codec_targets(data.sweep_points, targets)
+
+    head_cells = ["Codec", "Encoder"]
+    head_cells.extend(f"@ VMAF {t:g}" for t in targets)
+    head_cells.extend(["Encode time", "Best preset"])
+    head = "".join(f"<th>{c}</th>" for c in head_cells)
+
+    body_rows: list[str] = []
+    for codec in sorted(by_codec):
+        per_target = by_codec[codec]
+        rows = [p for p in per_target.values() if p is not None]
+        ok_rows = [p for p in rows if p.ok]
+        encoder_version = next((p.encoder_version for p in rows if p.encoder_version), "—")
+        cells: list[str] = [f"<td>{codec}</td>", f"<td>{encoder_version}</td>"]
+        for t in targets:
+            p = per_target.get(t)
+            if p is None or not p.ok or _is_missing(p.bitrate_kbps):
+                cells.append(f"<td class='num'>{_DASH}</td>")
+            else:
+                cells.append(f"<td class='num'>{_fmt_kbps(p.bitrate_kbps)}</td>")
+        if ok_rows:
+            avg_ms = sum(p.encode_time_ms for p in ok_rows) / float(len(ok_rows))
+            cells.append(f"<td class='num'>{_fmt_ms(avg_ms)}</td>")
+        else:
+            cells.append(f"<td class='num'>{_DASH}</td>")
+        cells.append("<td>adapter default</td>")
+        body_rows.append("<tr>" + "".join(cells) + "</tr>")
+
+    table = f"<table><thead><tr>{head}</tr></thead>" f"<tbody>{''.join(body_rows)}</tbody></table>"
+
+    frontier = compute_pareto_frontier(data.sweep_points)
+    frontier_html = ""
+    if frontier:
+        items = "".join(
+            f"<li>VMAF {p.target_vmaf:g}: <code>{p.codec}</code> "
+            f"({p.encoder_version or '—'}) "
+            f"@ {_fmt_kbps(p.bitrate_kbps)} (CRF {_fmt_crf(p.best_crf)})</li>"
+            for p in frontier
+        )
+        frontier_html = (
+            "<p><strong>Pareto frontier</strong> "
+            "(lowest bitrate at each target):</p>"
+            f"<ul>{items}</ul>"
+        )
+    return table + frontier_html
+
+
 def render_html(data: ReportData) -> str:
     """Render the report to a single self-contained HTML file."""
     src = data.source
     codec_section = ""
-    if data.codec_rows:
+    if data.sweep_points:
+        # Schema v2 — rate-quality sweep takes priority over the
+        # legacy bar+dot view when both are present (the latter is at
+        # most as informative as the sweep restricted to one target).
+        table_html = _sweep_summary_table_html(data)
+        chart = _render_chart_svg(8, 4.5, _sweep_plot_fn(data))
+        codec_section = (
+            f"<div class='panel'><h2 style='margin-top:0'>Codec rate-quality sweep</h2>"
+            f"{table_html}"
+            f"<div class='chart'>{chart}</div></div>"
+        )
+    elif data.codec_rows:
         rows = "\n".join(_row_html(r) for r in data.codec_rows)
         chart = _render_chart_svg(7, 3.5, _codec_plot_fn(data))
         codec_section = (
@@ -767,11 +1070,13 @@ def probe_source(path: Path) -> SourceInfo:
 
 __all__ = [
     "CodecRow",
+    "CodecSweepPoint",
     "LadderRung",
     "LadderSample",
     "ReportData",
     "ShotRow",
     "SourceInfo",
+    "compute_pareto_frontier",
     "probe_source",
     "render_html",
     "render_markdown",

@@ -2,9 +2,20 @@
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Codec-comparison mode (research-0061 Bucket #7).
 
-Given a single source and a target VMAF, run the per-codec recommend
-predicate in parallel and emit a ranked table of
-``(codec, best_crf, bitrate_kbps, encode_time_ms, vmaf_score)`` tuples.
+Given a single source and one or more target VMAFs, run the per-codec
+recommend predicate in parallel and emit a ranked report.
+
+Two emission shapes coexist:
+
+- **Single-target legacy** (schema v1): one row per codec at a single
+  target VMAF — preserved verbatim for back-compat. Renders as the
+  original bar+dot chart.
+- **Multi-target sweep** (schema v2, ADR-0516): one row per
+  ``(codec, target_vmaf)`` pair. Enables the rate-quality curve view
+  (line per codec across multiple VMAF targets), pareto-frontier
+  highlighting, and the summary table the report renderer now ships.
+  Default for the `vmaf-tune compare` CLI when more than one target is
+  passed via ``--target-vmafs``.
 
 This module is intentionally a thin orchestration layer: the heavy
 lifting lives in the per-codec recommend predicate, which is injected
@@ -348,13 +359,450 @@ def default_encoders() -> tuple[str, ...]:
     return known_codecs()
 
 
+# ---------------------------------------------------------------------------
+# Multi-target sweep (ADR-0516 / schema v2)
+# ---------------------------------------------------------------------------
+
+# Schema version stamped onto every JSON payload from `compare_codecs_sweep`.
+# Renderers and downstream tools use this to pick the right ingester:
+#  - v1 (legacy single-target): no ``schema_version`` key, no
+#    ``target_vmafs`` key. Renders as the original bar+dot chart.
+#  - v2 (multi-target sweep): ``schema_version=2``, ``target_vmafs=[...]``,
+#    rows keyed by ``(codec, target_vmaf)``. Renders as the rate-quality
+#    line chart with pareto-frontier highlight + summary table.
+SCHEMA_VERSION_V1: int = 1
+SCHEMA_VERSION_V2: int = 2
+
+
+# Default CPU encoder set for `vmaf-tune compare` when ``--encoders`` is
+# omitted. Hardware encoders (NVENC / QSV / AMF / VideoToolbox) are
+# probed at runtime and skipped with a row-level error when absent
+# rather than silently dropped from the comparison.
+DEFAULT_CPU_ENCODERS: tuple[str, ...] = (
+    "libx264",
+    "libx265",
+    "libsvtav1",
+    "libvpx-vp9",
+)
+
+# Hardware encoders the CLI accepts. Availability is probed via
+# ``ffmpeg -encoders``; the per-encoder dummy-encode probe in
+# :func:`probe_encoder_available` catches the "encoder present but no
+# compatible GPU at runtime" case.
+HARDWARE_ENCODERS: tuple[str, ...] = (
+    "h264_nvenc",
+    "hevc_nvenc",
+    "av1_nvenc",
+    "h264_qsv",
+    "hevc_qsv",
+    "av1_qsv",
+    "h264_amf",
+    "hevc_amf",
+    "av1_amf",
+)
+
+
+@dataclasses.dataclass(frozen=True)
+class SweepReport:
+    """Result of :func:`compare_codecs_sweep` — multi-target sweep.
+
+    ``rows`` are ordered ascending by ``(codec, target_vmaf)``. The
+    renderer derives the per-codec line and the pareto frontier from
+    this canonical ordering.
+    """
+
+    src: str
+    target_vmafs: tuple[float, ...]
+    tool_version: str
+    wall_time_ms: float
+    rows: tuple[RecommendResult, ...]
+    # Parallel to ``rows`` — each entry is the ``target_vmaf`` the row
+    # was produced at. Frozen-dataclass means the predicate's
+    # RecommendResult does not need a target_vmaf field.
+    row_targets: tuple[float, ...]
+
+    def rows_with_targets(self) -> tuple[tuple[float, RecommendResult], ...]:
+        return tuple(zip(self.row_targets, self.rows, strict=True))
+
+    def best_for_target(self, target_vmaf: float) -> RecommendResult | None:
+        """Smallest-bitrate ok row at ``target_vmaf``, or ``None``."""
+        candidates = [
+            r
+            for t, r in self.rows_with_targets()
+            if r.ok and math.isclose(t, target_vmaf, rel_tol=1e-6, abs_tol=1e-6)
+        ]
+        if not candidates:
+            return None
+        return min(candidates, key=lambda r: r.bitrate_kbps)
+
+
+def probe_encoder_available(
+    encoder: str,
+    *,
+    ffmpeg_bin: str = "ffmpeg",
+    runner: Callable[..., Any] | None = None,
+) -> tuple[bool, str]:
+    """Return ``(available, reason)`` for ``encoder`` against ``ffmpeg``.
+
+    Two-stage probe:
+
+    1. Run ``ffmpeg -hide_banner -encoders`` and grep for ``encoder``.
+       Catches "encoder not compiled into this ffmpeg build" (the
+       libvpx-vp9 case in slim images, the libvvenc case in the dev
+       container, all hardware encoders on hosts without the SDK).
+    2. For hardware encoders, run a 1-frame ``lavfi nullsrc`` dummy
+       encode. Catches "encoder present but no compatible GPU runtime"
+       (nvenc with no NVIDIA driver; qsv with no Intel iGPU; amf with
+       no AMD GPU).
+
+    The ``runner`` hook keeps the helper test-friendly. Returns
+    ``(True, "")`` when the encoder is usable.
+    """
+    import shlex
+    import subprocess
+
+    def _default_runner(argv: Sequence[str], timeout: float = 30.0):
+        return subprocess.run(  # noqa: S603 — argv is internal, no shell
+            argv,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=timeout,
+            check=False,
+        )
+
+    run = runner if runner is not None else _default_runner
+
+    # Stage 1: encoder list. ``ffmpeg -encoders`` prints one line per
+    # encoder with the encoder name in the second column.
+    try:
+        listing = run([ffmpeg_bin, "-hide_banner", "-encoders"])
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        return False, f"ffmpeg unavailable for encoder probe: {exc}"
+
+    # ``run()``'s subprocess.CompletedProcess.stdout is bytes by default.
+    out = getattr(listing, "stdout", b"") or b""
+    if isinstance(out, bytes):
+        out_str = out.decode("utf-8", errors="replace")
+    else:
+        out_str = str(out)
+    if not _encoder_listed(out_str, encoder):
+        return False, f"hardware encoder not available: {encoder} not compiled into ffmpeg"
+
+    # Stage 2 (hardware only): dummy 1-frame encode. The probe argv
+    # uses lavfi ``nullsrc`` so it doesn't depend on any input file
+    # being on disk. ``-f null -`` discards the output container so
+    # we don't pay for muxer setup.
+    if encoder in HARDWARE_ENCODERS:
+        argv = [
+            ffmpeg_bin,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "nullsrc=size=64x64:rate=1:duration=0.04",
+            "-frames:v",
+            "1",
+            "-c:v",
+            encoder,
+            "-f",
+            "null",
+            "-",
+        ]
+        try:
+            probe = run(argv)
+        except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+            return False, f"hardware encoder not available: {encoder} probe failed: {exc}"
+        rc = getattr(probe, "returncode", -1)
+        if rc != 0:
+            tail = getattr(probe, "stdout", b"") or b""
+            tail_str = (
+                tail.decode("utf-8", errors="replace") if isinstance(tail, bytes) else str(tail)
+            )
+            # Last non-empty stderr line is the most useful diagnostic.
+            last_line = next(
+                (line for line in reversed(tail_str.strip().splitlines()) if line.strip()),
+                "no stderr",
+            )
+            return False, (
+                f"hardware encoder not available: {encoder} dummy encode failed "
+                f"(argv={shlex.join(argv)!r}): {last_line}"
+            )
+
+    return True, ""
+
+
+def _encoder_listed(ffmpeg_encoders_stdout: str, encoder: str) -> bool:
+    """True iff ``ffmpeg -encoders`` output advertises ``encoder``.
+
+    Each non-header line has the form ``" V..... NAME    description"``;
+    the encoder name appears as a whitespace-separated token in column 2.
+    Token-match avoids "libx264" matching "libx264rgb" or "h264_nvenc"
+    matching "h264_v4l2m2m" (substring matches false-positive there).
+    """
+    for raw in ffmpeg_encoders_stdout.splitlines():
+        # Skip header / separator lines.
+        if "------" in raw or not raw.strip():
+            continue
+        tokens = raw.split()
+        # Encoder lines have flags as first token (e.g. ``V.....``).
+        if len(tokens) >= 2 and tokens[1] == encoder:
+            return True
+    return False
+
+
+def compare_codecs_sweep(
+    src: Path,
+    target_vmafs: Sequence[float],
+    encoders: Sequence[str],
+    *,
+    predicate: PredicateFn | None = None,
+    parallel: bool = True,
+    max_workers: int | None = None,
+    availability_probe: Callable[[str], tuple[bool, str]] | None = None,
+) -> SweepReport:
+    """Run ``predicate`` across the cross-product of codecs x targets.
+
+    Encoders deemed unavailable by ``availability_probe`` get an
+    ``ok=False`` row per target with a stable ``hardware encoder not
+    available`` error string so the report renderer can flag them
+    visually without short-circuiting the whole sweep.
+
+    The cross-product is dispatched flat to the thread pool — one
+    future per ``(codec, target_vmaf)`` pair — so a 4-codec x 4-target
+    sweep saturates the pool across 16 independent bisects.
+    """
+    if not encoders:
+        raise ValueError("compare_codecs_sweep requires at least one encoder")
+    if not target_vmafs:
+        raise ValueError("compare_codecs_sweep requires at least one target VMAF")
+
+    pred = predicate if predicate is not None else _default_predicate
+    src_path = Path(src)
+    t0 = time.monotonic()
+
+    # Probe each encoder once up front. Cache the per-encoder verdict
+    # so we don't pay the probe cost N times across target sweeps.
+    probe = availability_probe if availability_probe is not None else _no_probe
+    availability: dict[str, tuple[bool, str]] = {}
+    for codec in encoders:
+        try:
+            availability[codec] = probe(codec)
+        except Exception as exc:  # noqa: BLE001 — probe is best-effort
+            availability[codec] = (False, f"hardware encoder not available: probe crashed: {exc}")
+
+    # Build the work list, substituting unavailable rows before dispatch.
+    pairs: list[tuple[str, float]] = [(c, float(t)) for c in encoders for t in target_vmafs]
+    results: list[RecommendResult] = [None] * len(pairs)  # type: ignore[list-item]
+    target_track: list[float] = [t for _, t in pairs]
+
+    dispatch_pairs: list[tuple[int, str, float]] = []
+    for i, (codec, target) in enumerate(pairs):
+        ok, reason = availability[codec]
+        if not ok:
+            results[i] = RecommendResult(
+                codec=codec,
+                best_crf=-1,
+                bitrate_kbps=float("nan"),
+                encode_time_ms=float("nan"),
+                vmaf_score=float("nan"),
+                ok=False,
+                error=reason,
+            )
+        else:
+            dispatch_pairs.append((i, codec, target))
+
+    if parallel and len(dispatch_pairs) > 1:
+        workers = max_workers if max_workers is not None else len(dispatch_pairs)
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                pool.submit(pred, codec, src_path, target): (i, codec)
+                for i, codec, target in dispatch_pairs
+            }
+            for fut in as_completed(futures):
+                i, codec = futures[fut]
+                try:
+                    results[i] = fut.result()
+                except Exception as exc:  # noqa: BLE001
+                    results[i] = RecommendResult(
+                        codec=codec,
+                        best_crf=-1,
+                        bitrate_kbps=float("nan"),
+                        encode_time_ms=float("nan"),
+                        vmaf_score=float("nan"),
+                        ok=False,
+                        error=f"{type(exc).__name__}: {exc}",
+                    )
+    else:
+        for i, codec, target in dispatch_pairs:
+            try:
+                results[i] = pred(codec, src_path, target)
+            except Exception as exc:  # noqa: BLE001
+                results[i] = RecommendResult(
+                    codec=codec,
+                    best_crf=-1,
+                    bitrate_kbps=float("nan"),
+                    encode_time_ms=float("nan"),
+                    vmaf_score=float("nan"),
+                    ok=False,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+
+    return SweepReport(
+        src=str(src_path),
+        target_vmafs=tuple(float(t) for t in target_vmafs),
+        tool_version=TOOL_VERSION,
+        wall_time_ms=(time.monotonic() - t0) * 1000.0,
+        rows=tuple(results),
+        row_targets=tuple(target_track),
+    )
+
+
+def _no_probe(_codec: str) -> tuple[bool, str]:
+    """Default availability probe — always reports ``available`` so unit
+    tests that pass a fake predicate don't accidentally exercise
+    ffmpeg. CLI callers wire in :func:`probe_encoder_available`."""
+    return True, ""
+
+
+def emit_sweep_json(report: SweepReport) -> str:
+    """Render a :class:`SweepReport` as schema-v2 JSON."""
+    payload = {
+        "schema_version": SCHEMA_VERSION_V2,
+        "src": report.src,
+        "target_vmafs": list(report.target_vmafs),
+        "tool_version": report.tool_version,
+        "wall_time_ms": report.wall_time_ms,
+        "rows": [
+            r.to_row(target) for target, r in zip(report.row_targets, report.rows, strict=True)
+        ],
+    }
+    return json.dumps(_nan_to_none(payload), indent=2, sort_keys=True, allow_nan=False) + "\n"
+
+
+def emit_sweep_csv(report: SweepReport) -> str:
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=list(COMPARE_ROW_KEYS))
+    writer.writeheader()
+    for target, r in zip(report.row_targets, report.rows, strict=True):
+        writer.writerow(r.to_row(target))
+    return buf.getvalue()
+
+
+def emit_sweep_markdown(report: SweepReport) -> str:
+    """Render a :class:`SweepReport` as a markdown rate-quality table.
+
+    The table is grouped per codec, with one row per (codec, target).
+    The summary table at the foot gives the bitrate at each target per
+    codec — useful for ad-hoc dashboards or commit-message snippets.
+    """
+    lines: list[str] = [
+        "# Codec rate-quality sweep",
+        "",
+        f"- Source: `{report.src}`",
+        f"- Tool: `vmaf-tune {report.tool_version}` (schema v{SCHEMA_VERSION_V2})",
+        f"- Targets: {', '.join(f'{t:g}' for t in report.target_vmafs)}",
+        f"- Wall time: {report.wall_time_ms:.1f} ms",
+        "",
+        "| Codec | Encoder | Target VMAF | Best CRF | Bitrate (kbps) | "
+        "Encode time (ms) | VMAF achieved | Status |",
+        "|---|---|---:|---:|---:|---:|---:|---|",
+    ]
+    for target, r in zip(report.row_targets, report.rows, strict=True):
+        if r.ok:
+            status = "ok"
+        else:
+            status = f"fail: {r.error}"
+        lines.append(
+            f"| {r.codec} | {r.encoder_version or '—'} | {target:g} | "
+            f"{r.best_crf if r.best_crf >= 0 else '—'} | "
+            f"{r.bitrate_kbps:.1f} | {r.encode_time_ms:.1f} | "
+            f"{r.vmaf_score:.2f} | {status} |"
+        )
+    # Summary table: bitrate at each target per codec.
+    by_codec: dict[str, dict[float, RecommendResult]] = {}
+    for target, r in zip(report.row_targets, report.rows, strict=True):
+        by_codec.setdefault(r.codec, {})[target] = r
+
+    lines.extend(
+        [
+            "",
+            "## Summary table",
+            "",
+            "| Codec | Encoder | "
+            + " | ".join(f"@ VMAF {t:g}" for t in report.target_vmafs)
+            + " | best preset |",
+            "|---|---|" + "|".join("---:" for _ in report.target_vmafs) + "|---|",
+        ]
+    )
+    for codec, per_target in by_codec.items():
+        cells: list[str] = []
+        first_row = next(iter(per_target.values()))
+        for t in report.target_vmafs:
+            r = per_target.get(t)
+            if r is None or not r.ok:
+                cells.append("—")
+            else:
+                cells.append(f"{r.bitrate_kbps:.0f} kbps")
+        lines.append(
+            f"| {codec} | {first_row.encoder_version or '—'} | "
+            + " | ".join(cells)
+            + " | adapter default |"
+        )
+    return "\n".join(lines) + "\n"
+
+
+_SWEEP_EMITTERS: dict[str, Callable[[SweepReport], str]] = {
+    "markdown": emit_sweep_markdown,
+    "json": emit_sweep_json,
+    "csv": emit_sweep_csv,
+}
+
+
+def emit_sweep_report(report: SweepReport, format: str = "markdown") -> str:
+    fmt = format.lower()
+    if fmt not in _SWEEP_EMITTERS:
+        raise ValueError(f"unknown format {format!r}; expected one of {sorted(_SWEEP_EMITTERS)}")
+    return _SWEEP_EMITTERS[fmt](report)
+
+
+def detect_schema_version(payload: dict[str, Any]) -> int:
+    """Return ``2`` if ``payload`` matches the v2 sweep schema, else ``1``.
+
+    The v1 single-target JSON has no ``schema_version`` key and no
+    ``target_vmafs`` list. The v2 sweep JSON carries both. The
+    ``--compare-json`` ingester in :mod:`vmaftune.cli` uses this to
+    pick the right ingestion path so a v1 file produced by the legacy
+    CLI still renders the bar+dot chart, while a v2 file from the
+    sweep CLI renders the rate-quality curve.
+    """
+    if int(payload.get("schema_version", SCHEMA_VERSION_V1)) >= SCHEMA_VERSION_V2:
+        return SCHEMA_VERSION_V2
+    if "target_vmafs" in payload:
+        return SCHEMA_VERSION_V2
+    return SCHEMA_VERSION_V1
+
+
 __all__ = [
     "COMPARE_ROW_KEYS",
     "ComparisonReport",
+    "DEFAULT_CPU_ENCODERS",
+    "HARDWARE_ENCODERS",
     "PredicateFn",
     "RecommendResult",
+    "SCHEMA_VERSION_V1",
+    "SCHEMA_VERSION_V2",
+    "SweepReport",
     "compare_codecs",
+    "compare_codecs_sweep",
     "default_encoders",
+    "detect_schema_version",
     "emit_report",
+    "emit_sweep_csv",
+    "emit_sweep_json",
+    "emit_sweep_markdown",
+    "emit_sweep_report",
+    "probe_encoder_available",
     "supported_formats",
 ]

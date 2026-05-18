@@ -1401,13 +1401,51 @@ Sample output (`--format markdown`, abridged):
 **Smallest file**: `libaom` at CRF 30 → 1500.0 kbps (VMAF 92.40).
 ```
 
+### Multi-target rate-quality sweep (schema v2, ADR-0516)
+
+Pass `--target-vmafs 85,90,92,95` to run each codec across multiple
+VMAF targets in one invocation. The JSON output stamps
+`schema_version: 2` and carries one row per `(codec, target_vmaf)`
+pair; `vmaf-tune report --compare-json sweep.json` then renders a
+**per-codec rate-quality line chart** on log-bitrate / VMAF axes with
+the **pareto frontier** (lowest bitrate at each target) drawn as a
+heavier dashed line, plus a per-codec / per-target summary table.
+
+```shell
+vmaf-tune compare \
+    --src bbb_1080p_60fps.mp4 \
+    --target-vmafs 85,90,92,95 \
+    --encoders libx264,libx265,libsvtav1,h264_nvenc,hevc_nvenc \
+    --sample-clip-seconds 3 --max-iterations 3 \
+    --format json --output sweep.json
+vmaf-tune report \
+    --src bbb_1080p_60fps.mp4 \
+    --compare-json sweep.json --target-vmaf 92 \
+    --format html --output sweep_report.html
+```
+
+Hardware encoders (`*_nvenc`, `*_qsv`, `*_amf`) are availability-
+probed before dispatch: a two-stage probe greps `ffmpeg -encoders`
+for the encoder name (catches "not compiled into this ffmpeg build")
+and then runs a 1-frame `lavfi nullsrc` dummy encode (catches "no
+compatible GPU at runtime"). Encoders that fail either stage surface
+as `ok=false` rows with a stable `hardware encoder not available: …`
+error string — the renderer flags them visually and the sweep
+continues; the run does not abort.
+
+The `--encoders` flag is now **optional**; when omitted it defaults
+to the CPU set `libx264,libx265,libsvtav1,libvpx-vp9`. The single-
+target `--target-vmaf 92` form continues to emit the v1 schema so
+existing automation stays untouched (ADR-0513 §Schema migration).
+
 ### `compare` CLI flags
 
 | Flag | Default | Notes |
 | --- | --- | --- |
 | `--src PATH` | — | Required. Single reference clip. |
-| `--target-vmaf F` | `92.0` | VMAF the bisect backend targets. |
-| `--encoders LIST` | every registered adapter | Comma-separated codec names; e.g. `libx264,libx265,libsvtav1,libaom`. |
+| `--target-vmaf F` | `92.0` | Single VMAF target (legacy single-target path). Back-compat shortcut for `--target-vmafs N`. |
+| `--target-vmafs LIST` | unset | Comma-separated VMAF targets to sweep per codec, e.g. `85,90,92,95`. When set the CLI emits the v2 multi-target schema (ADR-0516). |
+| `--encoders LIST` | `libx264,libx265,libsvtav1,libvpx-vp9` | Comma-separated codec names. Hardware encoders (`h264_nvenc`, `hevc_nvenc`, `av1_nvenc`, `h264_qsv`, `hevc_qsv`, `av1_qsv`, `h264_amf`, `hevc_amf`, `av1_amf`) are accepted; missing-encoder rows skip with a reason rather than failing the whole run. |
 | `--width / --height` | — | Required for the default real-bisect backend. |
 | `--pix-fmt` | `yuv420p` | Source pixel format forwarded to the scorer. |
 | `--framerate` | `24.0` (or auto-probed for container `--src`) | Source framerate. Container sources (mp4 / mkv / mov / Y4M / ...) auto-probe via `ffprobe` when this flag is left at its default; explicit values still win with a stderr-warning on probed-vs-user mismatch (ADR-0509). |
@@ -1432,6 +1470,19 @@ The JSON / CSV columns are exported as `vmaftune.compare.COMPARE_ROW_KEYS`:
 `vmaf_score`, `target_vmaf`, `ok`, `error`. Failed rows trail successful
 ones in the ranking; `ok=False` rows carry a human-readable `error` and
 sentinel numerics (`-1` for `best_crf`, `NaN` for the floats).
+
+**v1 (single-target legacy)**: emitted when `--target-vmafs` is not
+passed. The JSON has no `schema_version` key; `rows` is one row per
+codec at `--target-vmaf`.
+
+**v2 (multi-target sweep, ADR-0516)**: emitted when `--target-vmafs`
+lists ≥ 2 targets. The JSON carries `"schema_version": 2`,
+`"target_vmafs": [85.0, 90.0, ...]`, and `rows` is one row per
+`(codec, target_vmaf)` pair. `vmaf-tune report` detects the v1 vs v2
+discriminator via the schema-version key (or the presence of
+`target_vmafs`) and picks the right chart: v1 renders the bar+dot
+chart, v2 renders the per-codec rate-quality line plot with the
+pareto frontier overlay and the per-codec / per-target summary table.
 
 > **Encode-time normalisation**: the `encode_time_ms` column is
 > wall-clock on whatever machine ran the predicate. Cross-codec time

@@ -25,6 +25,32 @@ ADR-0222. Docs: ADR-0512, `docs/adr/README.md` index row,
 section, `docs/state.md` Recently-closed rows,
 `changelog.d/fixed/per-shot-scene-threshold-and-1-shot-chart.md`.
 Netflix upstream does not ship `tools/vmaf-tune/`.
+## feat/compare-rate-quality-sweep — ADR-0516
+
+**No rebase impact.** Changes confined to fork-local files:
+`tools/vmaf-tune/src/vmaftune/compare.py` (new `compare_codecs_sweep`,
+`SweepReport`, `probe_encoder_available`, `detect_schema_version`, v2
+emitters, `DEFAULT_CPU_ENCODERS`, `HARDWARE_ENCODERS`,
+`SCHEMA_VERSION_V1`, `SCHEMA_VERSION_V2`),
+`tools/vmaf-tune/src/vmaftune/cli.py` (the `_run_compare` runner gains
+`--target-vmafs` parsing + sweep dispatch, the `_run_report` runner
+ingests v2 JSON into `CodecSweepPoint`),
+`tools/vmaf-tune/src/vmaftune/report.py` (new `CodecSweepPoint`,
+`compute_pareto_frontier`, `_sweep_plot_fn` per-codec line chart, v2
+summary table renderers in both markdown + HTML),
+`tools/vmaf-tune/tests/test_compare_rate_quality_sweep.py` (new file,
+24 regression tests),
+`tools/vmaf-tune/AGENTS.md` (v1 vs v2 schema invariant note +
+per-target bisect predicate construction rule),
+`docs/usage/vmaf-tune.md` (multi-target sweep section + flag table
+update + schema migration note),
+`docs/adr/0516-vmaf-tune-compare-rate-quality-sweep.md` (new),
+`docs/adr/README.md` (index row),
+`docs/state.md` (Recently closed row),
+`changelog.d/added/compare-rate-quality-sweep.md` (new fragment).
+Netflix upstream does not ship `tools/vmaf-tune/`; no upstream-shared
+C sources, public headers, Meson options, or `ffmpeg-patches/`
+patches are touched.
 
 ---
 ## fix/compare-source-is-container-plumbing (ADR-0509)

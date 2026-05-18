@@ -8,6 +8,39 @@ for the option-space digest.
 
 ## Rebase-sensitive invariants
 
+- **The `compare` JSON has two schemas in tree (v1 + v2)** — pick the
+  ingester by discriminator, never by row count. v1 (single-target
+  legacy) has no `schema_version` key and no `target_vmafs` list and
+  carries one row per codec at the single `target_vmaf`. v2
+  ([ADR-0516](../../docs/adr/0516-vmaf-tune-compare-rate-quality-sweep.md))
+  stamps `"schema_version": 2` and `"target_vmafs": [...]` and emits
+  one row per `(codec, target_vmaf)` pair. The discriminator is
+  `schema_version >= 2 OR "target_vmafs" in payload`; the helper
+  `vmaftune.compare.detect_schema_version()` is the single source of
+  truth and **must not be inlined** into renderers. Both shapes share
+  the per-row key set (`COMPARE_ROW_KEYS`) — adding columns to one
+  schema means adding to both. When the renderer encounters a v2
+  payload it draws the rate-quality curve + pareto-frontier overlay;
+  v1 keeps the legacy bar+dot chart. Operators that consume the JSON
+  programmatically can `if payload.get("schema_version", 1) >= 2:`
+  branch on the contract.
+
+- **`compare_codecs_sweep` builds one bisect predicate per target
+  VMAF**, memoised in a per-target cache, then flat-dispatches the
+  cross-product `(codec, target_vmaf)` to the thread pool. Do not
+  collapse this into a single per-codec predicate: the bisect closure
+  binds `target_vmaf` at construction time (the per-iteration
+  candidate-CRF probe wants the right rung), so re-using one closure
+  across multiple targets re-runs the same target every time.
+
+- **Hardware-encoder availability probing is opt-in by codec, not by
+  flag.** `probe_encoder_available()` only runs the 1-frame lavfi
+  dummy encode when the codec is in `HARDWARE_ENCODERS`. Adding a new
+  hardware encoder family (e.g. VAAPI) means appending its names to
+  that tuple; the encoder will then automatically pay the dummy-encode
+  cost on every `compare` invocation. CPU encoders short-circuit
+  after the `ffmpeg -encoders` listing grep.
+
 - **The Phase A JSONL corpus row schema is the API contract for Phase
   B / C.** Phase B (target-VMAF bisect) and Phase C (per-title CRF
   predictor) read corpora produced by this tool. Adding optional keys
