@@ -242,3 +242,53 @@ Each returns `-ENOSYS` at `init()`. Tracked in
   `hip_sources` + `feature_extractor_list[]`).
 - [Research-0033](../../research/0033-hip-applicability.md) —
   AMD market-share + ROCm Linux maturity survey.
+
+## ADR-0537: integer_vif_hip kernel fix (2026-05-18)
+
+The integer VIF HIP extractor now runs end-to-end on AMD gfx1036 inside
+the `vmaf-dev-mcp` container:
+
+```bash
+docker exec vmaf-dev-mcp vmaf \
+    --reference /workspace/python/test/resource/yuv/src01_hrc00_576x324.yuv \
+    --distorted /workspace/python/test/resource/yuv/src01_hrc01_576x324.yuv \
+    --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+    --backend hip --feature vif_hip --json --output /tmp/vif_hip.json
+```
+
+Reports the four VIF scale scores within `places=3` of CPU on the Netflix
+golden pair.  The `places=4` parity target is tracked as an ADR-0537
+follow-up — the residual ~0.001–0.003 per-scale delta comes from the
+kernel's edge-clamp boundary vs CPU's pre-padded mirror boundary
+(cumulative across downsamples).
+
+Four defects fixed (see [ADR-0537](../../adr/0537-hip-integer-vif-kernel-fix.md)):
+
+1. The 4×18 `vif_filter1d_table` is uploaded to a device buffer at init
+   (the pre-fix kernel was handed a host pointer that the GPU faulted on).
+2. Filter half-widths corrected from `{9,5,3,0}` (parsed from the kernel-
+   name suffix — the wrong number) to `{8,4,2,1}` (= `vif_filter1d_width
+   [scale] / 2`).  Pre-fix read 19/11/7/1 coefficients per output pixel
+   from an 18-entry table.
+3. Added the rd-filter downsample-write path so scales 1–3 read the half-
+   resolution planes the previous horizontal pass produced.  Pre-fix left
+   them uninitialised.
+4. Picture buffers are staged into device memory via `hipMemcpy2DAsync`
+   before scale-0 reads them (mirrors the `integer_motion_hip.c` pattern).
+
+Adjacent fixes bundled in the same PR:
+
+- Missing HSACO entries (`motion_score`, `ms_ssim_score`, `psnr_hvs_score`,
+  `integer_ssim_score`, `float_vif_score`, `ssimulacra2_blur`,
+  `ssimulacra2_mul`) added to `hip_kernel_sources` — ADR-0533 wired the
+  extractor registration sweep but not the corresponding kernel compilation.
+- Weak-stub TU `hip_hsaco_stubs.c` provides empty fallback `_hsaco`
+  symbols for the four ADM kernels (`adm_dwt2`, `adm_csf`, `adm_csf_den`,
+  `adm_cm`) that don't yet build standalone via `hipcc --genco` because
+  they reference CUDA-specific helper macros.
+- `hipcc --genco` include path adds `meson.current_build_dir()` +
+  `feature/hip` + `hip` so kernel sources can resolve `config.h` /
+  `integer_*_hip.h` headers.
+
+Re-enables `VMAF_FEATURE_EXTRACTOR_HIP` on `vmaf_fex_integer_vif_hip` —
+ADR-0530 had cleared it pending this fix.

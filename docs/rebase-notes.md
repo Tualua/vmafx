@@ -8,6 +8,30 @@ invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
 =======
+## fix/hip-integer-vif-kernel-crash (ADR-0537)
+
+**Touches upstream-mirror paths.** Modifies:
+- `libvmaf/src/feature/hip/integer_vif/vif_statistics.hip` (fork-local —
+  HIP backend addition; no upstream conflict expected).
+- `libvmaf/src/feature/hip/integer_vif_hip.c` (fork-local — added by
+  ADR-0379 / PR #...).
+- `libvmaf/src/meson.build` (upstream-shared — adds entries to the
+  fork-local `hip_kernel_sources` dict, which itself is inside the
+  fork-local `if is_hipcc_enabled and is_hip_enabled` block; conflict
+  risk only if upstream lands a totally different HIP build pipeline,
+  which is implausible).
+- `libvmaf/src/hip/meson.build` (fork-local).
+- `libvmaf/src/feature/hip/AGENTS.md` (fork-local).
+- `libvmaf/src/feature/hip/hip_hsaco_stubs.c` (NEW — fork-local).
+
+No verbatim upstream code paths altered. Rebase invariant: if upstream
+ever adds an `integer_vif` HIP port, drop the fork's
+`integer_vif/vif_statistics.hip` and `integer_vif_hip.c` and re-evaluate
+whether the four ADR-0537 defects exist in their port too — three of the
+four are subtle (filter-half-width parsing, missing rd-write,
+host-pointer kernel arg) and an upstream re-implementation may well
+have the same blind spots.
+
 ## fix/per-shot-bitrate-and-last-shot-chart (ADR-0531)
 
 **No rebase impact.** All changes are confined to
@@ -36300,7 +36324,7 @@ honoured or the registration drops out silently.
 =======
 >>>>>>> 64a7a5517 (chore(adr): atomic next-free allocator with cross-branch claim (ADR-0535))
 
-## ADR-0536 — per-shot predicate bitrate sidecar (PR #1290 follow-up)
+## ADR-0537 — per-shot predicate bitrate sidecar (PR #1290 follow-up)
 
 **No rebase impact**: the change is entirely internal to
 `tools/vmaf-tune/src/vmaftune/cli.py` (`_build_per_shot_bisect_predicate`

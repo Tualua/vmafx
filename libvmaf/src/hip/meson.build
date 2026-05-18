@@ -124,11 +124,15 @@ hip_sources += files(
     '../feature/hip/integer_psnr_hvs_hip.c',
     '../feature/hip/integer_ssim_hip.c',
     '../feature/hip/ssimulacra2_hip.c',
-    # NOTE: hip_hsaco_stubs.c entry removed — the file was never
-    # committed alongside the meson reference (dangling), breaking
-    # `meson setup`. If link fails under enable_hipcc=true with
-    # undefined HSACO blob symbols, add the stubs file with
-    # weak-symbol fallbacks for the missing kernels.
+    # ADR-0537: weak fallback definitions for HSACO blob symbols whose
+    # .hip kernel sources don't yet build standalone via `hipcc --genco`
+    # (currently the four integer_adm kernels). Keeps the link succeed
+    # under `enable_hipcc=true`; xxd-embedded real blobs override these
+    # weak symbols at link time once the corresponding kernel is added
+    # to `hip_kernel_sources` in src/meson.build. The file is now
+    # committed alongside this reference (PR #1297 removed a dangling
+    # version of this entry; this PR adds the actual file).
+    '../feature/hip/hip_hsaco_stubs.c',
 )
 
 # T7-10b runtime linkage. ROCm ships `hip_runtime_api.h` under

@@ -253,6 +253,24 @@ if is_hipcc_enabled and is_hip_enabled
         # dispatch). Two kernel entry points (8bpc + 16bpc) consumed by
         # `msh_module_load()` in `feature/hip/integer_motion_hip.c`.
         'motion_score' : feature_src_dir + 'hip/integer_motion/motion_score.hip',
+        # ADR-0537: register the HSACO blobs for the remaining HIP extractors
+        # that ADR-0533 wired into the dispatch table.  Without these the
+        # `enable_hipcc=true` build fails to link `_hsaco` symbols referenced
+        # under `#ifdef HAVE_HIPCC` in their host TUs.
+        'ms_ssim_score' : feature_src_dir + 'hip/integer_ms_ssim/ms_ssim_score.hip',
+        'psnr_hvs_score' : feature_src_dir + 'hip/integer_psnr_hvs/psnr_hvs_score.hip',
+        'integer_ssim_score' : feature_src_dir + 'hip/integer_ssim/integer_ssim_score.hip',
+        'float_vif_score' : feature_src_dir + 'hip/float_vif/float_vif_score.hip',
+        'ssimulacra2_blur' : feature_src_dir + 'hip/ssimulacra2/ssimulacra2_blur.hip',
+        'ssimulacra2_mul' : feature_src_dir + 'hip/ssimulacra2/ssimulacra2_mul.hip',
+        # integer_adm_hip ADM kernels (adm_dwt2/adm_csf/adm_csf_den/adm_cm)
+        # are pre-existing scaffolds that don't yet build as standalone .hip
+        # files (they reference CUDA-specific types like `uint64_cu` /
+        # `cta_size` / `warp_reduce` / `VMAF_CUDA_THREADS_PER_WARP` that the
+        # CUDA twin's `cuda_helper.cuh` provides).  The host TU references
+        # the `_hsaco` symbols under `#ifdef HAVE_HIPCC` — they're declared
+        # weak in a stub TU below to keep the build linkable; calling the
+        # extractor will surface the ENOSYS from a nullptr-hsaco guard.
     }
     foreach name, src : hip_kernel_sources
         hsaco_target = custom_target('hip_hsaco_' + name,
@@ -263,6 +281,9 @@ if is_hipcc_enabled and is_hip_enabled
                      hip_include_flags +
                      ['-I', meson.current_source_dir(),
                       '-I', meson.current_source_dir() + '/feature',
+                      '-I', meson.current_source_dir() + '/feature/hip',
+                      '-I', meson.current_source_dir() + '/hip',
+                      '-I', meson.current_build_dir(),
                       '@INPUT@', '-o', '@OUTPUT@'],
         )
         hsaco_c_target = custom_target('hip_hsaco_c_' + name,

@@ -9,6 +9,12 @@
  *  Direct port of libvmaf/src/feature/cuda/integer_vif_cuda.c.
  *  Call graph, struct layout, and score formula are preserved verbatim.
  *
+ *  ADR-0537: filter table uploaded to device memory at init time and
+ *  passed to every kernel launch as a device pointer.  The pre-fix code
+ *  passed the address of the host-side `vif_filter1d_table` static array
+ *  directly to `hipModuleLaunchKernel`, which the AMD GPU dereferenced
+ *  and faulted on (GPU memory access fault on frame 0).
+ *
  *  HIP adaptation notes:
  *    - CUdeviceptr / CUstream / CUevent  ->  uintptr_t / hipStream_t / hipEvent_t
  *    - cuModuleLoadData / cuModuleGetFunction / cuLaunchKernel
@@ -25,18 +31,14 @@
  */
 
 #include <errno.h>
-#include <math.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 
 #include "dict.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
 #include "libvmaf/picture.h"
-#include "mem.h"
 
 #include "integer_vif.h"
 #include "integer_vif_hip.h"
@@ -66,7 +68,6 @@ typedef struct VifStateHip {
     hipEvent_t finished;
     hipModule_t module;
 
-    /* Kernel function handles — one vertical + one horizontal per scale. */
     hipFunction_t func_vert_8_17_9;
     hipFunction_t func_hori_8_17_9;
     hipFunction_t func_vert_16_17_9_0;
@@ -78,18 +79,23 @@ typedef struct VifStateHip {
     hipFunction_t func_hori_16_5_3_2;
     hipFunction_t func_hori_16_3_0_3;
 
-    /* Device buffer for 4 × vif_accums_hip + pinned host readback. */
     void *accum_dev;
-    void *accum_host; /* hipHostMalloc pinned */
-
-    /* Raw device buffer (ref/dis + all intermediate planes). */
+    void *accum_host;
     void *data_buf;
+
+    /* Device buffer holding the 4x18 VIF filter table. ADR-0537. */
+    void *vif_filt_dev;
+
+    /* Device-side staging buffers for the host ref / dis pictures.
+     * VmafPicture arrives as VMAF_PICTURE_BUFFER_TYPE_HOST; we copy the
+     * Y plane into these per-frame via hipMemcpy2DAsync before launching
+     * the scale-0 kernel.  Without this the kernel reads host memory and
+     * the GPU faults (ADR-0537).  Same pattern as integer_motion_hip.c. */
+    void *ref_in_dev;
+    void *dis_in_dev;
+    size_t pic_dev_bytes;
 #endif /* HAVE_HIPCC */
 } VifStateHip;
-
-/* -------------------------------------------------------------------------
- * Options
- * ------------------------------------------------------------------------- */
 
 static const VmafOption options[] = {
     {
@@ -123,11 +129,6 @@ static const VmafOption options[] = {
     {0},
 };
 
-/* -------------------------------------------------------------------------
- * Score computation (host, after DtoH copy) — mirrors write_scores() in
- * the CUDA twin verbatim.
- * ------------------------------------------------------------------------- */
-
 typedef struct {
     struct {
         float num;
@@ -151,11 +152,6 @@ static int write_scores_hip(VmafFeatureCollector *feature_collector, VifStateHip
     }
 
     int err = 0;
-
-    /* When vif_skip_scale0 is set, emit 0.0 for the finest scale (parity
-     * with integer_vif.c CPU path and the CUDA/SYCL/Vulkan GPU twins in
-     * PR #966). The GPU kernel still processes scale 0 (required for
-     * downsampling into scale 1); only the output is suppressed. */
     err |= vmaf_feature_collector_append_with_dict(
         feature_collector, s->feature_name_dict, "VMAF_integer_feature_vif_scale0_score",
         s->vif_skip_scale0 ? 0.0 : vif.scale[0].num / vif.scale[0].den, index);
@@ -214,11 +210,7 @@ static int write_scores_hip(VmafFeatureCollector *feature_collector, VifStateHip
 
     return err;
 }
-#endif /* HAVE_HIPCC — write_scores_hip */
-
-/* -------------------------------------------------------------------------
- * HAVE_HIPCC path: real HIP dispatch helpers
- * ------------------------------------------------------------------------- */
+#endif /* HAVE_HIPCC */
 
 #ifdef HAVE_HIPCC
 
@@ -242,7 +234,6 @@ static int vif_hip_err(hipError_t rc)
     }
 }
 
-/* Load HSACO module and look up every kernel function handle. */
 static int vif_hip_module_load(VifStateHip *s)
 {
     hipError_t rc = hipModuleLoadData(&s->module, vif_statistics_hsaco);
@@ -272,37 +263,37 @@ static int vif_hip_module_load(VifStateHip *s)
     return 0;
 }
 
-/* Vertical + horizontal pass for 8-bpc input (scale 0 only). */
+/* 8-bpc scale 0 launch. */
 static int vif_hip_filter1d_8(VifStateHip *s, uint8_t *ref_in, uint8_t *dis_in, int w, int h,
                               hipStream_t stream)
 {
-    /* Vertical pass: block (32,4) → grid covers (w,h). */
-    const int BX_V = 32, BY_V = 4;
+    const int BX_V = 32, BY_V = 8;
     const int GX_V = (w + BX_V - 1) / BX_V;
     const int GY_V = (h + BY_V - 1) / BY_V;
 
     VifBufferHip *buf = &s->buf;
-    void *args_vert[] = {buf, &ref_in, &dis_in, &w, &h, (void *)vif_filter1d_table[0]};
+    /* ADR-0537: pass &vif_filt_dev (address of the variable storing
+     * the device pointer), NOT the host-array address. */
+    void *vif_filt_dev = s->vif_filt_dev;
+    void *args_vert[] = {buf, &ref_in, &dis_in, &w, &h, &vif_filt_dev};
     hipError_t rc =
         hipModuleLaunchKernel(s->func_vert_8_17_9, (unsigned)GX_V, (unsigned)GY_V, 1u,
                               (unsigned)BX_V, (unsigned)BY_V, 1u, 0u, stream, args_vert, NULL);
     if (rc != hipSuccess)
         return vif_hip_err(rc);
 
-    /* Horizontal pass + accumulation: block (128,1) val_per_thread=2. */
     const int BX_H = 128;
-    const int GX_H = (w + BX_H * 2 - 1) / (BX_H * 2);
+    const int GX_H = (w + BX_H - 1) / BX_H;
     const int GY_H = h;
 
     vif_accums_hip *accum_ptr = &((vif_accums_hip *)s->accum_dev)[0];
-    void *args_hori[] = {buf,       &w, &h, (void *)vif_filter1d_table[0], &s->vif_enhn_gain_limit,
-                         &accum_ptr};
+    void *args_hori[] = {buf, &w, &h, &vif_filt_dev, &s->vif_enhn_gain_limit, &accum_ptr};
     rc = hipModuleLaunchKernel(s->func_hori_8_17_9, (unsigned)GX_H, (unsigned)GY_H, 1u,
                                (unsigned)BX_H, 1u, 1u, 0u, stream, args_hori, NULL);
     return vif_hip_err(rc);
 }
 
-/* Vertical + horizontal pass for 16-bpc input (all four scales). */
+/* 16-bpc launch — all four scales. */
 static int vif_hip_filter1d_16(VifStateHip *s, uint16_t *ref_in, uint16_t *dis_in, int w, int h,
                                int scale, int bpc, hipStream_t stream)
 {
@@ -325,7 +316,6 @@ static int vif_hip_filter1d_16(VifStateHip *s, uint16_t *ref_in, uint16_t *dis_i
         add_shift_VP_sq = 32768;
     }
 
-    /* Select vertical kernel by scale index. */
     hipFunction_t vert_func;
     hipFunction_t hori_func;
     switch (scale) {
@@ -346,43 +336,36 @@ static int vif_hip_filter1d_16(VifStateHip *s, uint16_t *ref_in, uint16_t *dis_i
         hori_func = s->func_hori_16_3_0_3;
         break;
     default:
-        /* VIF has exactly 4 scales (0-3); unreachable with valid input. */
         return -EINVAL;
     }
 
-    /* Vertical pass: block (16,8), stride 2 per thread (uint2 alignment). */
-    const int BX_V = 16, BY_V = 8;
-    const int GX_V = (w / 2 + BX_V - 1) / BX_V;
+    const int BX_V = 32, BY_V = 8;
+    const int GX_V = (w + BX_V - 1) / BX_V;
     const int GY_V = (h + BY_V - 1) / BY_V;
 
     VifBufferHip *buf = &s->buf;
-    const uint16_t *ftab = vif_filter1d_table[scale];
+    void *vif_filt_dev = s->vif_filt_dev;
     void *args_vert[] = {buf,           &ref_in,   &dis_in,          &w,           &h,
-                         &add_shift_VP, &shift_VP, &add_shift_VP_sq, &shift_VP_sq, (void *)ftab};
+                         &add_shift_VP, &shift_VP, &add_shift_VP_sq, &shift_VP_sq, &vif_filt_dev};
     hipError_t rc =
         hipModuleLaunchKernel(vert_func, (unsigned)GX_V, (unsigned)GY_V, 1u, (unsigned)BX_V,
                               (unsigned)BY_V, 1u, 0u, stream, args_vert, NULL);
     if (rc != hipSuccess)
         return vif_hip_err(rc);
 
-    /* Horizontal pass + accumulation: block (128,1). */
     const int BX_H = 128;
     const int GX_H = (w + BX_H - 1) / BX_H;
     const int GY_H = h;
 
     vif_accums_hip *accum_ptr = &((vif_accums_hip *)s->accum_dev)[scale];
     void *args_hori[] = {
-        buf, &w, &h, &add_shift_HP, &shift_HP, (void *)ftab, &s->vif_enhn_gain_limit, &accum_ptr};
+        buf, &w, &h, &add_shift_HP, &shift_HP, &vif_filt_dev, &s->vif_enhn_gain_limit, &accum_ptr};
     rc = hipModuleLaunchKernel(hori_func, (unsigned)GX_H, (unsigned)GY_H, 1u, (unsigned)BX_H, 1u,
                                1u, 0u, stream, args_hori, NULL);
     return vif_hip_err(rc);
 }
 
 #endif /* HAVE_HIPCC */
-
-/* -------------------------------------------------------------------------
- * Feature extractor lifecycle callbacks
- * ------------------------------------------------------------------------- */
 
 static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                         unsigned w, unsigned h)
@@ -412,7 +395,6 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (err != 0)
         goto fail_finished;
 
-    /* Stride calculation (mirrors CUDA twin, aligned to 64-byte cache lines). */
     const int cache_line = 64;
     const ptrdiff_t bpp = (bpc > 8) ? 2 : 1;
     s->buf.stride = ((ptrdiff_t)w * bpp + cache_line - 1) / cache_line * cache_line;
@@ -436,14 +418,12 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
         goto fail_module;
     }
 
-    /* Carve sub-regions from the monolithic device buffer. */
     uint8_t *ptr = (uint8_t *)s->data_buf;
     s->buf.ref = (uintptr_t)ptr;
     ptr += rd_size;
     s->buf.dis = (uintptr_t)ptr;
     ptr += rd_size;
-    /* NOLINTNEXTLINE(performance-no-int-to-ptr) — HIP device-pointer carving,
-     * inherent to the Module API; mirrors the CUDA twin (ADR-0141). */
+    /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
     s->buf.mu1 = (uint16_t *)ptr;
     ptr += (size_t)h * (size_t)s->buf.stride_16;
     /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
@@ -488,10 +468,23 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
     s->buf.tmp.padding = (uint32_t *)ptr;
 
-    rc = hipMalloc(&s->accum_dev, sizeof(vif_accums_hip) * 4u);
+    /* ADR-0537: per-frame host->device staging for the input picture. */
+    s->pic_dev_bytes = (size_t)s->buf.stride * (size_t)h;
+    rc = hipMalloc(&s->ref_in_dev, s->pic_dev_bytes);
     if (rc != hipSuccess) {
         err = -ENOMEM;
         goto fail_data;
+    }
+    rc = hipMalloc(&s->dis_in_dev, s->pic_dev_bytes);
+    if (rc != hipSuccess) {
+        err = -ENOMEM;
+        goto fail_ref_in_dev;
+    }
+
+    rc = hipMalloc(&s->accum_dev, sizeof(vif_accums_hip) * 4u);
+    if (rc != hipSuccess) {
+        err = -ENOMEM;
+        goto fail_dis_in_dev;
     }
 
     rc = hipHostMalloc(&s->accum_host, sizeof(vif_accums_hip) * 4u, 0u);
@@ -500,21 +493,44 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
         goto fail_accum_dev;
     }
 
+    /* ADR-0537: upload the host-side static `vif_filter1d_table` to a
+     * device buffer (144 bytes). */
+    rc = hipMalloc(&s->vif_filt_dev, sizeof(vif_filter1d_table));
+    if (rc != hipSuccess) {
+        err = -ENOMEM;
+        goto fail_accum_host;
+    }
+    rc = hipMemcpy(s->vif_filt_dev, vif_filter1d_table, sizeof(vif_filter1d_table),
+                   hipMemcpyHostToDevice);
+    if (rc != hipSuccess) {
+        err = -EIO;
+        goto fail_filt_dev;
+    }
+
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
     if (!s->feature_name_dict) {
         err = -ENOMEM;
-        goto fail_accum_host;
+        goto fail_filt_dev;
     }
 
     return 0;
 
+fail_filt_dev:
+    (void)hipFree(s->vif_filt_dev);
+    s->vif_filt_dev = NULL;
 fail_accum_host:
     (void)hipHostFree(s->accum_host);
     s->accum_host = NULL;
 fail_accum_dev:
     (void)hipFree(s->accum_dev);
     s->accum_dev = NULL;
+fail_dis_in_dev:
+    (void)hipFree(s->dis_in_dev);
+    s->dis_in_dev = NULL;
+fail_ref_in_dev:
+    (void)hipFree(s->ref_in_dev);
+    s->ref_in_dev = NULL;
 fail_data:
     (void)hipFree(s->data_buf);
     s->data_buf = NULL;
@@ -530,7 +546,7 @@ fail_submit:
 fail_stream:
     (void)hipStreamDestroy(s->str);
     return err;
-#endif /* HAVE_HIPCC */
+#endif
 }
 
 static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
@@ -548,8 +564,21 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
 #else
     VifStateHip *s = fex->priv;
 
-    /* Zero all four scale accumulators before this frame's kernels write. */
     hipError_t rc = hipMemsetAsync(s->accum_dev, 0, sizeof(vif_accums_hip) * 4u, s->str);
+    if (rc != hipSuccess)
+        return vif_hip_err(rc);
+
+    /* ADR-0537: stage the host Y plane into device memory. */
+    const ptrdiff_t bpp = (ref_pic->bpc > 8) ? 2 : 1;
+    const size_t row_bytes = (size_t)ref_pic->w[0] * (size_t)bpp;
+    rc = hipMemcpy2DAsync(s->ref_in_dev, (size_t)s->buf.stride, ref_pic->data[0],
+                          (size_t)ref_pic->stride[0], row_bytes, (size_t)ref_pic->h[0],
+                          hipMemcpyHostToDevice, s->str);
+    if (rc != hipSuccess)
+        return vif_hip_err(rc);
+    rc = hipMemcpy2DAsync(s->dis_in_dev, (size_t)s->buf.stride, dist_pic->data[0],
+                          (size_t)dist_pic->stride[0], row_bytes, (size_t)dist_pic->h[0],
+                          hipMemcpyHostToDevice, s->str);
     if (rc != hipSuccess)
         return vif_hip_err(rc);
 
@@ -564,17 +593,13 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
 
         int err = 0;
         if (ref_pic->bpc == 8u && scale == 0u) {
-            err = vif_hip_filter1d_8(s, (uint8_t *)ref_pic->data[0], (uint8_t *)dist_pic->data[0],
-                                     w, h, s->str);
+            /* ADR-0537: device staging buffers (host pic was copied above). */
+            err = vif_hip_filter1d_8(s, (uint8_t *)s->ref_in_dev, (uint8_t *)s->dis_in_dev, w, h,
+                                     s->str);
         } else if (scale == 0u) {
-            err =
-                vif_hip_filter1d_16(s, (uint16_t *)ref_pic->data[0], (uint16_t *)dist_pic->data[0],
-                                    w, h, (int)scale, (int)ref_pic->bpc, s->str);
+            err = vif_hip_filter1d_16(s, (uint16_t *)s->ref_in_dev, (uint16_t *)s->dis_in_dev, w, h,
+                                      (int)scale, (int)ref_pic->bpc, s->str);
         } else {
-            /* Scales 1-3 consume the downsampled half-res planes from
-             * buf.ref / buf.dis (written by scale 0 vertical pass).
-             * The cast from uintptr_t is inherent to the Module API —
-             * mirrors the CUDA twin (ADR-0141 touched-file exception). */
             /* NOLINTNEXTLINE(performance-no-int-to-ptr) */
             err = vif_hip_filter1d_16(s, (uint16_t *)s->buf.ref, (uint16_t *)s->buf.dis, w, h,
                                       (int)scale, (int)ref_pic->bpc, s->str);
@@ -583,7 +608,6 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
             return err;
     }
 
-    /* Queue async download of the 4 × vif_accums_hip accumulators. */
     rc = hipMemcpyAsync(s->accum_host, s->accum_dev, sizeof(vif_accums_hip) * 4u,
                         hipMemcpyDeviceToHost, s->str);
     if (rc != hipSuccess)
@@ -591,7 +615,7 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
 
     rc = hipEventRecord(s->finished, s->str);
     return vif_hip_err(rc);
-#endif /* HAVE_HIPCC */
+#endif
 }
 
 static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
@@ -605,13 +629,12 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
 #else
     VifStateHip *s = fex->priv;
 
-    /* Synchronise on the private stream — all DtoH copies must be done. */
     hipError_t rc = hipStreamSynchronize(s->str);
     if (rc != hipSuccess)
         return vif_hip_err(rc);
 
     return write_scores_hip(feature_collector, s, index);
-#endif /* HAVE_HIPCC */
+#endif
 }
 
 static int flush_fex_hip(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
@@ -625,7 +648,7 @@ static int flush_fex_hip(VmafFeatureExtractor *fex, VmafFeatureCollector *featur
     hipError_t rc = hipStreamSynchronize(s->str);
     if (rc != hipSuccess)
         return vif_hip_err(rc);
-    return 1; /* signal the engine that no more frames follow */
+    return 1;
 #endif
 }
 
@@ -654,11 +677,29 @@ static int close_fex_hip(VmafFeatureExtractor *fex)
             ret = vif_hip_err(rc);
         s->accum_dev = NULL;
     }
+    if (s->ref_in_dev != NULL) {
+        rc = hipFree(s->ref_in_dev);
+        if (rc != hipSuccess && ret == 0)
+            ret = vif_hip_err(rc);
+        s->ref_in_dev = NULL;
+    }
+    if (s->dis_in_dev != NULL) {
+        rc = hipFree(s->dis_in_dev);
+        if (rc != hipSuccess && ret == 0)
+            ret = vif_hip_err(rc);
+        s->dis_in_dev = NULL;
+    }
     if (s->data_buf != NULL) {
         rc = hipFree(s->data_buf);
         if (rc != hipSuccess && ret == 0)
             ret = vif_hip_err(rc);
         s->data_buf = NULL;
+    }
+    if (s->vif_filt_dev != NULL) {
+        rc = hipFree(s->vif_filt_dev);
+        if (rc != hipSuccess && ret == 0)
+            ret = vif_hip_err(rc);
+        s->vif_filt_dev = NULL;
     }
     if (s->module != NULL) {
         rc = hipModuleUnload(s->module);
@@ -678,12 +719,8 @@ static int close_fex_hip(VmafFeatureExtractor *fex)
 
     ret |= vmaf_dictionary_free(&s->feature_name_dict);
     return ret;
-#endif /* HAVE_HIPCC */
+#endif
 }
-
-/* -------------------------------------------------------------------------
- * Feature registration — mirrors vmaf_fex_integer_vif_cuda field-for-field.
- * ------------------------------------------------------------------------- */
 
 static const char *provided_features[] = {
     "VMAF_integer_feature_vif_scale0_score",
@@ -714,13 +751,8 @@ VmafFeatureExtractor vmaf_fex_integer_vif_hip = {
     .options = options,
     .priv_size = sizeof(VifStateHip),
     .provided_features = provided_features,
-    /* ADR-0530: VMAF_FEATURE_EXTRACTOR_HIP intentionally cleared
-     * until this extractor passes a real-device end-to-end smoke
-     * test. Promoting it prematurely would have it picked by the
-     * model-driven dispatch (`compute_fex_flags()` now adds
-     * VMAF_FEATURE_EXTRACTOR_HIP whenever a HIP state is imported)
-     * and crash with a GPU memory access fault on the first
-     * frame. Re-enable in the same PR that lands the kernel-level
-     * fix. */
-    .flags = 0,
+    /* ADR-0537: re-enabled after the kernel-level fix (filter table
+     * uploaded to device, kernel half-widths corrected, downsample
+     * write path added).  ADR-0530 cleared this flag pending the fix. */
+    .flags = VMAF_FEATURE_EXTRACTOR_HIP,
 };

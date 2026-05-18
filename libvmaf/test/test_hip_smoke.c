@@ -562,6 +562,47 @@ static char *test_ssimulacra2_hip_extractor_registered(void)
     return NULL;
 }
 
+/* ---- ADR-0537: integer VIF HIP kernel-crash fix ---- */
+/* Pins the contract that closes the ADR-0530 follow-up: the integer
+ * VIF HIP extractor is registered under name `vif_hip`, carries the
+ * HIP flag bit (re-enabled after the kernel-level fix), and the
+ * model-driven dispatch routes `VMAF_integer_feature_vif_scale0_score`
+ * to it when the HIP flag mask is active.  Lookup-only — runtime
+ * dispatch is verified separately by the end-to-end repro in the
+ * PR description. */
+
+static char *test_integer_vif_hip_extractor_registered(void)
+{
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("vif_hip");
+    mu_assert("vif_hip extractor must be registered (ADR-0537)", fex != NULL);
+    mu_assert("vif_hip extractor name matches", strcmp(fex->name, "vif_hip") == 0);
+    mu_assert("vif_hip carries the HIP flag (ADR-0537 re-enabled after kernel fix)",
+              (fex->flags & VMAF_FEATURE_EXTRACTOR_HIP) != 0);
+    return NULL;
+}
+
+static char *test_integer_vif_hip_dispatch_picks_hip(void)
+{
+    /* With flags=0 the CPU twin still wins by registry order; the
+     * ADR-0530 fallback path falls back to CPU when no HIP-flagged
+     * provider exists.  With the HIP flag mask active the model-driven
+     * dispatch picks the HIP twin. */
+    VmafFeatureExtractor *cpu_fex =
+        vmaf_get_feature_extractor_by_feature_name("VMAF_integer_feature_vif_scale0_score", 0);
+    mu_assert("CPU vif extractor resolvable with flags=0 (ADR-0537)", cpu_fex != NULL);
+    /* The CPU `integer_vif` extractor's registry name is `vif` (matches
+     * upstream Netflix/vmaf: file name drops the `integer_` prefix at
+     * registration). */
+    mu_assert("flags=0 picks the CPU vif twin", strcmp(cpu_fex->name, "vif") == 0);
+
+    VmafFeatureExtractor *hip_fex = vmaf_get_feature_extractor_by_feature_name(
+        "VMAF_integer_feature_vif_scale0_score", VMAF_FEATURE_EXTRACTOR_HIP);
+    mu_assert("HIP vif extractor resolvable with HIP flag (ADR-0537)", hip_fex != NULL);
+    mu_assert("HIP flag picks the HIP vif twin (name=vif_hip)",
+              strcmp(hip_fex->name, "vif_hip") == 0);
+    return NULL;
+}
+
 /* Function-pointer table keeps `run_tests` flat — without it,
  * `mu_run_test` macro-expands to a branching pair per test, blowing
  * past clang-tidy's `readability-function-size` 15-branch budget at
@@ -612,6 +653,9 @@ static const test_fn test_table[] = {
     test_psnr_hvs_hip_extractor_registered,
     test_integer_ssim_hip_extractor_registered,
     test_ssimulacra2_hip_extractor_registered,
+    /* ADR-0537: integer_vif_hip kernel-crash fix + flag re-enable. */
+    test_integer_vif_hip_extractor_registered,
+    test_integer_vif_hip_dispatch_picks_hip,
 };
 
 static const size_t test_table_len = sizeof(test_table) / sizeof(test_table[0]);
