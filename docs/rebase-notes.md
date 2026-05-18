@@ -8,7 +8,7 @@ invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
 =======
-## fix/dev-container-sycl-hip-runtime (ADR-0541)
+## fix/dev-container-sycl-hip-runtime (ADR-0543)
 
 **No rebase impact.** All changes are confined to:
 - `dev/Containerfile` (fork-local; whole file is fork-added).
@@ -36432,7 +36432,7 @@ naming) must be honoured to avoid the same class of link error this
 ADR closed.
 =======
 
-## feat/dev-container-ffmpeg-av1-hwaccel (ADR-0541)
+## feat/dev-container-ffmpeg-av1-hwaccel (ADR-0543)
 
 **Files touched:** `dev/Containerfile` (stage 3.5 apt list + SVT-AV1 /
 libaom / vvenc / AMF source builds + FFmpeg configure flags + build-
@@ -36441,7 +36441,7 @@ invariants"), `docs/development/dev-mcp.md` (encoder matrix + runtime
 failure modes + full-sweep reproducer), `libvmaf/src/meson.build`
 (one-line follow-up to ADR-0523: add `'motion_score'` to the
 `hip_kernel_sources` dict; surfaced as a stage-3 link blocker during
-ADR-0541's container rebuild verification), `ffmpeg-patches/0007-
+ADR-0543's container rebuild verification), `ffmpeg-patches/0007-
 libvmaf-tune-qpfile-unified.patch` (one-line addition: `#include
 <stdbool.h>` to `libavcodec/libsvtav1.c` so `enable_roi_map = true`
 compiles — surfaced when the in-image FFmpeg was first built with
@@ -36463,3 +36463,45 @@ build only and is orthogonal to the host-side patch series under
 `ffmpeg-patches/`. Pin bumps (VVenC `v1.12.0`, AMF `v1.4.36`, FFmpeg
 `n8.1.1` via `FFMPEG_TAG` build-arg) are visible in the `ARG` lines
 of `dev/Containerfile`; bumping them is a local container change.
+
+---
+
+## ADR-0543 — ADR-0498 enforcement hardening (exit code 100 + JSON error + per-feature gate)
+
+**Summary**: Hardens the explicit-backend gate that ADR-0498
+introduced in `libvmaf/tools/vmaf.c`. Adds three orthogonal
+contracts: dedicated exit code `100`
+(`VMAF_EXIT_BACKEND_INIT_FAILED`) for `--backend NAME` init failures,
+structured JSON error descriptor at the `--output` path when format
+is JSON, and a per-feature gate that hard-fails GPU-pinned feature
+names (`*_cuda` / `*_sycl` / `*_vulkan` / `*_hip` / `*_metal`) when
+the matching backend isn't active.
+
+**Files touched**: `libvmaf/tools/vmaf.c` (new constants, new
+helpers `write_backend_error_json` / `feature_backend_suffix` /
+`backend_active`, new `bool *cuda_active_out` parameter on
+`init_gpu_backends`, per-feature gate in the feature-loading loop,
+simplified `backend_used` echo), `docs/adr/0543-adr-0498-enforcement-
+hardening.md` (+ index row in `docs/adr/README.md`),
+`changelog.d/fixed/0543-adr-0498-enforcement-hardening.md`,
+`tools/vmaf-tune/tests/test_adr_0543_backend_enforcement.py`
+(13 integration + source-level tests), `docs/state.md` (Recently
+closed row), this file.
+
+**Rebase sensitivity (none — fork-local additive against an
+already-fork-local helper):** The only C source touched is
+`libvmaf/tools/vmaf.c`, and only inside the `init_gpu_backends`
+helper + its caller — both of which are fork-local additions that
+do not exist in Netflix/vmaf upstream (Netflix has no SYCL / HIP /
+Vulkan / Metal backends and no `--backend` selector). The new
+`bool *cuda_active_out` parameter on `init_gpu_backends` is guarded
+by `#ifdef HAVE_CUDA` and only affects the in-tree caller. No
+upstream conflict possible.
+
+**ffmpeg-patches/ impact (none):** No public libvmaf C-API entry
+points added, renamed, or removed. No `meson_options.txt` flag
+added. No `LIBVMAFContext` field added. No `vf_libvmaf.c` filter
+variant added. The new exit code is a CLI-level contract observed
+by wrappers (`vmaf-tune`, MCP) — FFmpeg's `libvmaf` filter consumes
+libvmaf via the C API and is not impacted. CLAUDE.md §12 r14 does
+not apply.

@@ -49,6 +49,23 @@ The `--backend` exclusive selector accepts `auto | cpu | cuda | sycl
   into a **non-zero exit** with a clear stderr error. CI gates that
   depend on backend-specific scoring no longer silently regress
   when, e.g., the Vulkan ICD fails to load in a container.
+- Per ADR-0543 (extends ADR-0498), the exit code for an explicit-
+  backend init failure is a dedicated **`100`** (`VMAF_EXIT_BACKEND_INIT_FAILED`)
+  rather than the generic non-zero `255` (`int -1` truncated to
+  `uint8_t`). CI gates can match `[[ $rc -eq 100 ]]` to distinguish
+  backend failures from other errors without parsing stderr.
+- When `--output X.json` is also passed, the libvmaf CLI overwrites
+  the output path with a single-line structured JSON descriptor
+  carrying `"error"`, `"backend_requested"`, `"errno"`, `"adr"`
+  (always `"ADR-0498"`), and `"exit_code"` keys — downstream
+  wrappers can decode the failure structurally instead of falling
+  back to stderr parsing (ADR-0543).
+- Per-feature symmetry (ADR-0543): a feature name ending in
+  `_cuda` / `_sycl` / `_vulkan` / `_hip` / `_metal` is a GPU-pinned
+  variant. If the matching backend isn't active in this run
+  (not compiled in, not requested, or failed to init), the CLI
+  hard-fails with the same exit `100` + JSON descriptor instead of
+  silently registering the CPU twin.
 - The JSON output gains a top-level `"backend_used": "NAME"` key
   echoing what actually ran (cpu / cuda / sycl / vulkan / hip /
   metal). Downstream consumers can confirm dispatch independently
@@ -64,10 +81,14 @@ vmaf --reference ref.yuv --distorted dist.yuv \
      --json --output /tmp/s.json
 # stdout silent on success; /tmp/s.json carries:
 #   { ..., "backend_used": "vulkan" }
-# On init failure: exit != 0, stderr:
+# On init failure: exit = 100 (ADR-0543), stderr:
 #   problem during vmaf_vulkan_state_init (-19), using CPU
 #   vmaf: --backend vulkan requested but init failed; refusing to
 #   silently fall back to CPU (ADR-0498)
+# AND /tmp/s.json is overwritten with a structured error descriptor:
+#   {"error": "vmaf_vulkan_state_init failed",
+#    "backend_requested": "vulkan", "errno": -19,
+#    "adr": "ADR-0498", "exit_code": 100}
 ```
 
 Not every feature has every twin — the coverage matrix is in

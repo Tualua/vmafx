@@ -55,6 +55,28 @@
 #include "libvmaf/libvmaf_metal.h"
 #endif
 
+/* ADR-0543 (extends ADR-0498): dedicated exit code for an explicit-
+ * backend init failure. Distinguishes a "you asked for SYCL but it
+ * couldn't initialise" failure from generic encode / score errors
+ * (which keep using non-zero-but-unspecified) so CI gates and the
+ * vmaf-tune bisect predicate can tell the two apart without parsing
+ * stderr. Mirrors the EX_* convention from <sysexits.h>; we don't pull
+ * sysexits.h in to stay portable to Windows/MSVC. */
+#define VMAF_EXIT_BACKEND_INIT_FAILED 100
+
+/* ADR-0543: sentinel returned by init_gpu_backends when the user passed
+ * `--backend NAME` (non-auto/cpu) and that backend failed to initialise.
+ * The caller in main() distinguishes this from the generic `-1` path so
+ * (a) the binary exits with VMAF_EXIT_BACKEND_INIT_FAILED rather than the
+ * default 255 (= int -1 → uint8), and (b) the JSON output path, if
+ * provided, is overwritten with an `{"error": ..., "backend_requested": ...}`
+ * descriptor so downstream consumers see a structured failure instead of an
+ * empty file. The value is deliberately distinct from any errno-style
+ * negative returned by the underlying vmaf_*_state_init helpers (which
+ * are -EINVAL / -ENODEV / -ENOMEM range, well above -100 in magnitude
+ * for typical errno but never exactly -100 in practice). */
+#define VMAF_INIT_GPU_EXPLICIT_FAIL (-100)
+
 static enum VmafPixelFormat pix_fmt_map(int pf)
 {
     switch (pf) {
@@ -67,6 +89,49 @@ static enum VmafPixelFormat pix_fmt_map(int pf)
     default:
         return VMAF_PIX_FMT_UNKNOWN;
     }
+}
+
+/* ADR-0543 (extends ADR-0498): when the explicit-backend gate fires we
+ * overwrite the requested ``--output`` file (if any) with a minimal JSON
+ * descriptor so downstream consumers (CI gates, vmaf-tune compare,
+ * MCP probes) get a structured signal instead of an empty file. The
+ * file is overwritten unconditionally — empty / partial / pre-existing
+ * content is replaced. No-op when output_path is NULL or the requested
+ * format isn't JSON; XML / CSV / SUB consumers don't read the error
+ * field, but the non-zero exit code still surfaces the failure.
+ *
+ * Schema (RFC 8259 strict):
+ *   {
+ *     "error": "<human-readable reason>",
+ *     "backend_requested": "<sycl|cuda|vulkan|hip|metal>",
+ *     "errno": <int>,
+ *     "adr": "ADR-0498",
+ *     "exit_code": 100
+ *   }
+ *
+ * `err_no` is the underlying ``vmaf_*_state_init`` return (negative
+ * errno-style) or 0 when the failure is structural (e.g. backend not
+ * compiled in).
+ */
+static void write_backend_error_json(const char *output_path, enum VmafOutputFormat fmt,
+                                     const char *backend_requested, const char *reason, int err_no)
+{
+    if (!output_path || !backend_requested || !reason)
+        return;
+    if (fmt != VMAF_OUTPUT_FORMAT_JSON)
+        return;
+
+    FILE *fp = fopen(output_path, "wb");
+    if (!fp)
+        return;
+    /* Keep the JSON compact + single line — every consumer in the tree
+     * parses it with a permissive reader and the file is short. */
+    (void)fprintf(fp,
+                  "{\"error\": \"%s\", \"backend_requested\": \"%s\", "
+                  "\"errno\": %d, \"adr\": \"ADR-0498\", "
+                  "\"exit_code\": %d}\n",
+                  reason, backend_requested, err_no, VMAF_EXIT_BACKEND_INIT_FAILED);
+    (void)fclose(fp);
 }
 
 /* Validate per-video constraints that do not require comparing the two streams:
@@ -470,6 +535,10 @@ static int init_gpu_backends(VmafContext *vmaf, const CLISettings *c
                              ,
                              VmafSyclState **sycl_state, bool *sycl_active
 #endif
+#ifdef HAVE_CUDA
+                             ,
+                             bool *cuda_active_out
+#endif
 #ifdef HAVE_VULKAN
                              ,
                              VmafVulkanState **vulkan_state, bool *vulkan_active
@@ -531,7 +600,9 @@ static int init_gpu_backends(VmafContext *vmaf, const CLISettings *c
                           "without %s support; refusing to silently fall back to CPU "
                           "(ADR-0498)\n",
                           c->backend, c->backend);
-            return -1;
+            write_backend_error_json(c->output_path, c->output_fmt, c->backend,
+                                     "backend not compiled into this libvmaf", 0);
+            return VMAF_INIT_GPU_EXPLICIT_FAIL;
         }
     }
 
@@ -550,7 +621,9 @@ static int init_gpu_backends(VmafContext *vmaf, const CLISettings *c
             if (explicit_backend && strcmp(c->backend, "sycl") == 0) {
                 (void)fprintf(stderr, "vmaf: --backend sycl requested but init failed; "
                                       "refusing to silently fall back to CPU (ADR-0498)\n");
-                return -1;
+                write_backend_error_json(c->output_path, c->output_fmt, "sycl",
+                                         "vmaf_sycl_state_init failed", err);
+                return VMAF_INIT_GPU_EXPLICIT_FAIL;
             }
         } else {
             err = vmaf_sycl_import_state(vmaf, *sycl_state);
@@ -563,7 +636,7 @@ static int init_gpu_backends(VmafContext *vmaf, const CLISettings *c
     }
 #endif
 #ifdef HAVE_CUDA
-    bool cuda_active = false;
+    *cuda_active_out = false;
     VmafCudaState *cu_state;
     VmafCudaConfiguration cuda_cfg = {0};
     if (c->use_gpumask && !c->no_cuda
@@ -577,7 +650,9 @@ static int init_gpu_backends(VmafContext *vmaf, const CLISettings *c
             if (explicit_backend && strcmp(c->backend, "cuda") == 0) {
                 (void)fprintf(stderr, "vmaf: --backend cuda requested but init failed; "
                                       "refusing to silently fall back to CPU (ADR-0498)\n");
-                return -1;
+                write_backend_error_json(c->output_path, c->output_fmt, "cuda",
+                                         "vmaf_cuda_state_init failed", err);
+                return VMAF_INIT_GPU_EXPLICIT_FAIL;
             }
         } else {
             err |= vmaf_cuda_import_state(vmaf, cu_state);
@@ -585,10 +660,9 @@ static int init_gpu_backends(VmafContext *vmaf, const CLISettings *c
                 (void)fprintf(stderr, "problem during vmaf_cuda_import_state\n");
                 return -1;
             }
-            cuda_active = true;
+            *cuda_active_out = true;
         }
     }
-    (void)cuda_active;
 #endif
 
 #ifdef HAVE_VULKAN
@@ -610,7 +684,9 @@ static int init_gpu_backends(VmafContext *vmaf, const CLISettings *c
             if (explicit_backend && strcmp(c->backend, "vulkan") == 0) {
                 (void)fprintf(stderr, "vmaf: --backend vulkan requested but init failed; "
                                       "refusing to silently fall back to CPU (ADR-0498)\n");
-                return -1;
+                write_backend_error_json(c->output_path, c->output_fmt, "vulkan",
+                                         "vmaf_vulkan_state_init failed", err);
+                return VMAF_INIT_GPU_EXPLICIT_FAIL;
             }
         } else {
             err = vmaf_vulkan_import_state(vmaf, *vulkan_state);
@@ -639,7 +715,9 @@ static int init_gpu_backends(VmafContext *vmaf, const CLISettings *c
             if (explicit_backend && strcmp(c->backend, "hip") == 0) {
                 (void)fprintf(stderr, "vmaf: --backend hip requested but init failed; "
                                       "refusing to silently fall back to CPU (ADR-0498)\n");
-                return -1;
+                write_backend_error_json(c->output_path, c->output_fmt, "hip",
+                                         "vmaf_hip_state_init failed", err);
+                return VMAF_INIT_GPU_EXPLICIT_FAIL;
             }
         } else {
             err = vmaf_hip_import_state(vmaf, *hip_state);
@@ -668,7 +746,9 @@ static int init_gpu_backends(VmafContext *vmaf, const CLISettings *c
             if (explicit_backend && strcmp(c->backend, "metal") == 0) {
                 (void)fprintf(stderr, "vmaf: --backend metal requested but init failed; "
                                       "refusing to silently fall back to CPU (ADR-0498)\n");
-                return -1;
+                write_backend_error_json(c->output_path, c->output_fmt, "metal",
+                                         "vmaf_metal_state_init failed", err);
+                return VMAF_INIT_GPU_EXPLICIT_FAIL;
             }
         } else {
             err = vmaf_metal_import_state(vmaf, *metal_state);
@@ -682,6 +762,67 @@ static int init_gpu_backends(VmafContext *vmaf, const CLISettings *c
     (void)*metal_active;
 #endif
 
+    return 0;
+}
+
+/* ADR-0543 (extends ADR-0498): a feature whose name ends in ``_cuda``
+ * / ``_sycl`` / ``_vulkan`` / ``_hip`` / ``_metal`` is a GPU-pinned
+ * variant. Asking for ``--feature integer_motion_hip`` against a
+ * libvmaf build without HIP — or with HIP compiled in but no device
+ * available — silently registers the CPU twin and produces scores
+ * that look identical to the explicit-backend invocation, but were
+ * actually computed on the CPU. That defeats the entire point of the
+ * explicit-backend gate.
+ *
+ * This helper hard-fails any GPU-pinned feature name when the matching
+ * backend isn't compiled into this binary, OR is compiled in but the
+ * matching ``--<backend>_device`` / ``--backend <name>`` wasn't
+ * requested (so no state_init was attempted) or the state_init failed
+ * (in which case init_gpu_backends has already errored out earlier
+ * and we never reach here). Returns 0 on success, -1 on mismatch.
+ *
+ * Returns the backend keyword via *requested_backend_out (caller-
+ * owned; points into a static string table) so the caller can include
+ * the keyword in the error JSON. */
+static int feature_backend_suffix(const char *feature_name, const char **backend_out)
+{
+    if (!feature_name || !backend_out)
+        return 0;
+    const struct {
+        const char *suffix;
+        const char *backend;
+    } table[] = {
+        {"_cuda", "cuda"}, {"_sycl", "sycl"},   {"_vulkan", "vulkan"},
+        {"_hip", "hip"},   {"_metal", "metal"},
+    };
+    const size_t nlen = strlen(feature_name);
+    for (size_t i = 0; i < sizeof(table) / sizeof(table[0]); i++) {
+        const size_t slen = strlen(table[i].suffix);
+        if (nlen > slen && strcmp(feature_name + nlen - slen, table[i].suffix) == 0) {
+            *backend_out = table[i].backend;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Returns 1 when the named backend is active in this run (state_init
+ * succeeded and the matching ``--<backend>_device`` was requested),
+ * 0 otherwise. The active flags live in main() so this helper accepts
+ * each as a parameter. */
+static int backend_active(const char *backend, bool sycl_act, bool cuda_act, bool vulkan_act,
+                          bool hip_act, bool metal_act)
+{
+    if (!strcmp(backend, "sycl"))
+        return sycl_act ? 1 : 0;
+    if (!strcmp(backend, "cuda"))
+        return cuda_act ? 1 : 0;
+    if (!strcmp(backend, "vulkan"))
+        return vulkan_act ? 1 : 0;
+    if (!strcmp(backend, "hip"))
+        return hip_act ? 1 : 0;
+    if (!strcmp(backend, "metal"))
+        return metal_act ? 1 : 0;
     return 0;
 }
 
@@ -1049,6 +1190,15 @@ int main(int argc, char *argv[])
     bool sycl_active = false;
     VmafSyclState *sycl_state = NULL;
 #endif
+#ifdef HAVE_CUDA
+    /* ADR-0543: CUDA active flag is propagated out of init_gpu_backends
+     * so the per-feature backend gate + `backend_used` JSON echo can
+     * see it. Prior to ADR-0543 the flag was a local in init_gpu_backends
+     * and the JSON echo inferred CUDA from the gpumask state — which
+     * broke down when the user passed an explicit ``--feature *_cuda``
+     * but no ``--backend cuda``. */
+    bool cuda_active = false;
+#endif
 #ifdef HAVE_VULKAN
     bool vulkan_active = false;
     VmafVulkanState *vulkan_state = NULL;
@@ -1124,26 +1274,41 @@ int main(int argc, char *argv[])
         goto cleanup;
     }
 
-    if (init_gpu_backends(vmaf, &c
+    {
+        const int gpu_rc = init_gpu_backends(vmaf, &c
 #ifdef HAVE_SYCL
-                          ,
-                          &sycl_state, &sycl_active
+                                             ,
+                                             &sycl_state, &sycl_active
+#endif
+#ifdef HAVE_CUDA
+                                             ,
+                                             &cuda_active
 #endif
 #ifdef HAVE_VULKAN
-                          ,
-                          &vulkan_state, &vulkan_active
+                                             ,
+                                             &vulkan_state, &vulkan_active
 #endif
 #ifdef HAVE_HIP
-                          ,
-                          &hip_state, &hip_active
+                                             ,
+                                             &hip_state, &hip_active
 #endif
 #ifdef HAVE_METAL
-                          ,
-                          &metal_state, &metal_active
+                                             ,
+                                             &metal_state, &metal_active
 #endif
-                          )) {
-        ret = -1;
-        goto cleanup;
+        );
+        if (gpu_rc) {
+            /* ADR-0543 (extends ADR-0498): explicit-backend init failure
+             * must surface as a distinct non-zero exit code so CI gates
+             * (vmaf-tune bisect, MCP probes) can distinguish "you asked
+             * for SYCL and it isn't there" from a generic encode/score
+             * error. The init_gpu_backends helper returns the dedicated
+             * sentinel VMAF_INIT_GPU_EXPLICIT_FAIL for that case and the
+             * generic -1 for everything else (e.g. an import failure
+             * after a successful state_init). */
+            ret = (gpu_rc == VMAF_INIT_GPU_EXPLICIT_FAIL) ? VMAF_EXIT_BACKEND_INIT_FAILED : -1;
+            goto cleanup;
+        }
     }
 
     // Preallocate picture pool to avoid allocation overhead
@@ -1193,7 +1358,61 @@ int main(int argc, char *argv[])
         }
     }
 
+    /* ADR-0543 (extends ADR-0498): a feature name ending in ``_cuda`` /
+     * ``_sycl`` / ``_vulkan`` / ``_hip`` / ``_metal`` is a GPU-pinned
+     * variant. If the matching backend isn't active in this run, the
+     * libvmaf feature registry silently registers the CPU twin and the
+     * resulting scores look identical to an explicit-backend invocation
+     * but were actually computed on the CPU — that's exactly the kind
+     * of silent-fallback bug ADR-0498 banned for ``--backend NAME``.
+     * Apply the same hard-fail policy here: surface a clear error +
+     * write the structured JSON descriptor + exit with the dedicated
+     * VMAF_EXIT_BACKEND_INIT_FAILED code. */
     for (unsigned i = 0; i < c.feature_cnt; i++) {
+        const char *requested_be = NULL;
+        if (feature_backend_suffix(c.feature_cfg[i].name, &requested_be)) {
+            const bool sa =
+#ifdef HAVE_SYCL
+                sycl_active;
+#else
+                false;
+#endif
+            const bool ca =
+#ifdef HAVE_CUDA
+                cuda_active;
+#else
+                false;
+#endif
+            const bool va =
+#ifdef HAVE_VULKAN
+                vulkan_active;
+#else
+                false;
+#endif
+            const bool ha =
+#ifdef HAVE_HIP
+                hip_active;
+#else
+                false;
+#endif
+            const bool ma =
+#ifdef HAVE_METAL
+                metal_active;
+#else
+                false;
+#endif
+            if (!backend_active(requested_be, sa, ca, va, ha, ma)) {
+                (void)fprintf(stderr,
+                              "vmaf: --feature %s pinned to %s backend but %s is not "
+                              "active in this run; refusing to silently fall back to CPU "
+                              "(ADR-0498)\n",
+                              c.feature_cfg[i].name, requested_be, requested_be);
+                write_backend_error_json(c.output_path, c.output_fmt, requested_be,
+                                         "feature pinned to inactive backend", 0);
+                ret = VMAF_EXIT_BACKEND_INIT_FAILED;
+                goto cleanup;
+            }
+        }
         err = vmaf_use_feature(vmaf, c.feature_cfg[i].name, c.feature_cfg[i].opts_dict);
         if (err) {
             (void)fprintf(stderr, "problem loading feature extractor: %s\n", c.feature_cfg[i].name);
@@ -1248,17 +1467,10 @@ int main(int argc, char *argv[])
             backend_used = "metal";
 #endif
 #ifdef HAVE_CUDA
-        /* CUDA's active flag is local to init_gpu_backends; surface
-         * it indirectly via the cumulative gpumask + no-flags state.
-         * When the user passed --backend cuda and init succeeded we
-         * already gated explicit_backend so the binary errored on
-         * failure; here we report CUDA only when no other GPU flag
-         * is live and the dispatch was actually routed to CUDA. */
-        if (c.use_gpumask && !c.no_cuda
-#ifdef HAVE_SYCL
-            && !sycl_active
-#endif
-        )
+        /* ADR-0543: CUDA's active flag is now propagated out of
+         * init_gpu_backends so we can echo it directly instead of
+         * re-deriving it from the gpumask + no-flags state. */
+        if (cuda_active)
             backend_used = "cuda";
 #endif
         amend_json_with_backend_used(c.output_path, c.output_fmt, backend_used);

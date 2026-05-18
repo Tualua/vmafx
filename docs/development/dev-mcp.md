@@ -244,7 +244,7 @@ backends in earlier image versions:
 | Env var | Contract | Why not pinned |
 |---|---|---|
 | `VK_ICD_FILENAMES` / `VK_DRIVER_FILES` | unset by default; Vulkan loader uses `/etc/vulkan/icd.d/` + `/usr/share/vulkan/icd.d/` search path | An earlier pin to `lvp_icd.x86_64.json` (typo of `lvp_icd.json`) hid every real GPU. ADR-0509 / Research-0138. |
-| `LD_LIBRARY_PATH` | includes `${ONEAPI_ROOT}/{compiler,umf,tcm,tbb}/latest/lib` | `tcm/latest/lib` carries `libhwloc.so.15` (level-zero UR adapter dlopens it at load time; dropping it causes SYCL "Platforms: 0" on Intel Arc). `tbb/latest/lib` carries `libtbb.so.12` (the Intel CPU OpenCL ICD dlopens it at platform enumeration; dropping it silently removes the Intel CPU OpenCL platform — ADR-0541). |
+| `LD_LIBRARY_PATH` | includes `${ONEAPI_ROOT}/{compiler,umf,tcm,tbb}/latest/lib` | `tcm/latest/lib` carries `libhwloc.so.15` (level-zero UR adapter dlopens it at load time; dropping it causes SYCL "Platforms: 0" on Intel Arc). `tbb/latest/lib` carries `libtbb.so.12` (the Intel CPU OpenCL ICD dlopens it at platform enumeration; dropping it silently removes the Intel CPU OpenCL platform — ADR-0543). |
 | `NVIDIA_DRIVER_CAPABILITIES` | `compute,graphics,utility,video` (set in `dev/docker-compose.yml` common-env) | `graphics` is what makes the NVIDIA Container Toolkit bind-mount `nvidia_icd.json` into `/etc/vulkan/icd.d/`. Dropping `graphics` hides NVIDIA from Vulkan. |
 | Env var | Contract | Rationale |
 | --- | --- | --- |
@@ -253,7 +253,7 @@ backends in earlier image versions:
 | `LD_LIBRARY_PATH` | Includes `${ONEAPI_ROOT}/{compiler,umf,tcm}/latest/lib`. | `tcm/latest/lib` carries `libhwloc.so.15` — the level-zero UR adapter dlopens it at load time. Dropping it causes SYCL "Platforms: 0" on Intel Arc. |
 | `NVIDIA_DRIVER_CAPABILITIES` | `compute,graphics,utility,video` (set in `dev/docker-compose.yml` common-env). | `graphics` is what makes the NVIDIA Container Toolkit bind-mount `nvidia_icd.json` into `/etc/vulkan/icd.d/`. Dropping `graphics` hides NVIDIA from Vulkan while leaving CUDA + nvidia-smi working — a hard regression to spot. |
 | `HSA_OVERRIDE_GFX_VERSION` | Pinned to `10.3.0` in `common-env`. | AMD `gfx1036` (Raphael iGPU, RDNA2 IP rev 10.3.6) is not on the ROCm 6.x supported-GPU allowlist. Without the override, `hsa_init()` returns `HSA_STATUS_ERROR_OUT_OF_RESOURCES` and `rocminfo` reports "Unable to open /dev/kfd read-write: Invalid argument" even though `/dev/kfd` is bind-mounted. `gfx1036` is binary-compatible enough with `gfx1030` for the libvmaf HIP feature kernels (ADR-0530 / ADR-0538). ADR-0542. |
-| `HSA_ENABLE_SDMA` | Pinned to `0` in `common-env`. | On RDNA2 iGPUs sharing system RAM with the CPU, the SDMA copy engine triggers VM faults on small device→host transfers (libvmaf collect path is dominated by such transfers). ADR-0541. |
+| `HSA_ENABLE_SDMA` | Pinned to `0` in `common-env`. | On RDNA2 iGPUs sharing system RAM with the CPU, the SDMA copy engine triggers VM faults on small device→host transfers (libvmaf collect path is dominated by such transfers). ADR-0543. |
 | `ROCR_VISIBLE_DEVICES` | Pinned to `0` in `common-env`. | Pins HIP to the single AMD adapter on multi-iGPU + dGPU hosts so kernels cannot accidentally dispatch onto a non-RDNA2 device that needs a different `HSA_OVERRIDE_GFX_VERSION`. ADR-0542. |
 
 Operators that need to force a single Vulkan ICD per invocation can
@@ -264,7 +264,7 @@ Operators on hosts with a ROCm-supported GPU on the allowlist
 override `HSA_OVERRIDE_GFX_VERSION` to the empty string at
 `docker compose up` time to remove the lie.
 
-## FFmpeg encoder matrix (post-ADR-0541)
+## FFmpeg encoder matrix (post-ADR-0543)
 
 The in-image FFmpeg is built with the fork's full encoder set so that
 `vmaf-tune compare` sweeps can address every codec the project
@@ -343,7 +343,7 @@ docker exec vmaf-dev-mcp bash -c '
 Encoders that are not runtime-available on the host produce per-row
 `ok=false` entries with the diagnostic strings above; the sweep does
 not abort.
-### Host-kernel ↔ container-userspace UAPI version pins (ADR-0541)
+### Host-kernel ↔ container-userspace UAPI version pins (ADR-0543)
 
 Intel NEO compute-runtime and ROCm KFD userspace are version-pinned via
 Containerfile ARGs to match the host kernel's i915 / xe / KFD ioctl ABI.
@@ -356,7 +356,7 @@ A mismatch silently degrades `vmaf --backend sycl|hip` to CPU.
 | `ARG ROCM_VER` | `7.2.3` | Matches Arch host `hsa-rocr 7.2.3`. ROCm 6.x KFD userspace returns `Unable to open /dev/kfd read-write: Invalid argument` against kernel-7.x KFD ioctls. |
 
 `dev-mcp-entrypoint.sh` emits a runtime visibility probe on container
-start (ADR-0541): `WARN: SYCL level_zero:gpu NOT detected` or `WARN: HIP
+start (ADR-0543): `WARN: SYCL level_zero:gpu NOT detected` or `WARN: HIP
 HSA agent NOT detected` means the host kernel has revved past the pinned
 userspace ABI — bump the ARG and rebuild rather than working around the
 fallback (CLAUDE.md §12 r15 sub-rule 4). The latest NEO release tag is at
