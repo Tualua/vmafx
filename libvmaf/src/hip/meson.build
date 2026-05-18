@@ -73,9 +73,11 @@ hip_sources += files(
     'picture_hip.c',
     'dispatch_strategy.c',
     'kernel_template.c',
-    '../feature/hip/adm_hip.c',
-    '../feature/hip/vif_hip.c',
-    '../feature/hip/motion_hip.c',
+    # adm_hip.c, vif_hip.c, motion_hip.c were deleted by ADR-0546:
+    # they defined only vmaf_hip_{adm,vif,motion}_{init,run,destroy} stubs
+    # (init=0, run=-ENOSYS) with no VmafFeatureExtractor registration and
+    # zero callers anywhere in the repo. feature_hip.h (their only header)
+    # was also removed. See ADR-0546 for the full audit trail.
     '../feature/hip/integer_psnr_hip.c',
     '../feature/hip/ciede_hip.c',
     '../feature/hip/float_moment_hip.c',

@@ -5,6 +5,15 @@ glue + `.cu` device code). Parent: [../AGENTS.md](../AGENTS.md). The
 backend runtime (context, stream, picture-pool) lives one level up
 in [`../../cuda/AGENTS.md`](../../cuda/AGENTS.md).
 
+## Deleted orphan TU (ADR-0546)
+
+`float_ssim_cuda.c` was removed by ADR-0546 (`chore/hip-cuda-orphan-tu-cleanup`,
+2026-05-18). It defined `vmaf_fex_float_ssim_cuda` but was not listed in
+`libvmaf/src/meson.build`; `integer_ssim_cuda.c` (which is compiled) also
+defines the same symbol and is the current canonical TU (it adds the
+`enable_chroma` option and other improvements absent from the orphan copy).
+Do not re-add `float_ssim_cuda.c` without consulting ADR-0546.
+
 ## Scope
 
 ```text
@@ -342,4 +351,3 @@ The `enable_cuda` umbrella flag gates inclusion via
   Removing the smem staging layer reverts the 15–35% VIF speedup.
   See [ADR-0454](../../../../docs/adr/0454-vif-cuda-smem-staging.md) and
   [Research-0135](../../../../docs/research/0135-vif-cuda-smem-staging-2026-05-16.md).
-

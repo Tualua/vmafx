@@ -40,6 +40,18 @@ No upstream-shared C sources, Python sources, or build files are touched. The
 `@unittest.skip` decorator in `python/test/local_explainer_test.py` is explicitly
 **not removed** in this PR — that is a follow-up code change.
 
+## chore/hip-cuda-orphan-tu-cleanup (ADR-0546)
+
+**No rebase impact.** All deleted files (`adm_hip.c`, `motion_hip.c`,
+`vif_hip.c`, `feature_hip.h`, `integer_ciede_hip.c`, `integer_moment_hip.c`,
+`float_ssim_cuda.c`) are fork-local additions with no upstream analogue.
+If upstream ever adds a file with the same name to `libvmaf/src/feature/hip/`
+or `libvmaf/src/feature/cuda/`, a sync-upstream cherry-pick will restore it;
+the deletion here does not create a rebase conflict because the upstream tree
+never had these paths. The `libvmaf/src/hip/meson.build` edit is entirely
+fork-local. `libvmaf/src/feature/hip/AGENTS.md` and
+`libvmaf/src/feature/cuda/AGENTS.md` are fork-local files.
+
 ## fix/dev-container-sycl-hip-runtime (ADR-0543)
 
 **No rebase impact.** All changes are confined to:
