@@ -35,7 +35,18 @@ class VmafQualityRunnerWithLocalExplainer(VmafQualityRunner):
         if self.optional_dict2 is not None and "explainer" in self.optional_dict2:
             explainer = self.optional_dict2["explainer"]
         else:
-            explainer = LocalExplainer()
+            # Default to neighbor_samples=100 so the runner completes in ~3 s.
+            # The upstream LocalExplainer default of 5000 produces ~480 000
+            # libsvm calls for a typical asset set and exceeds CI timeout
+            # (VCQ-223 / ADR-0562). Production callers that need higher
+            # fidelity should pass optional_dict2={"explainer":
+            # LocalExplainer(neighbor_samples=5000)} explicitly.
+            neighbor_samples = 100
+            if self.optional_dict is not None:
+                neighbor_samples = self.optional_dict.get(
+                    "explainer_neighbor_samples", neighbor_samples
+                )
+            explainer = LocalExplainer(neighbor_samples=neighbor_samples)
 
         exps = explainer.explain(model, xs)
         result_dict = {}

@@ -36869,3 +36869,20 @@ All touched files are under `docs/` and `changelog.d/`. No libvmaf C
 source, no public header, no `meson_options.txt`, no `ffmpeg-patches/`
 entry. No numerical-correctness risk: this is a read-only audit that produces
 only documentation artefacts.
+
+## ADR-0562 — VCQ-223 local-explainer hang fix
+
+**Rebase impact**: none. The change is entirely fork-local — all
+modified files live under `python/` (Python wrapper test harness)
+and `docs/`. No upstream Netflix/vmaf C file is touched, no
+ffmpeg-patches file is touched, no public `libvmaf/include/` header
+is touched, no `meson_options.txt` key is added.
+
+Touched files:
+`python/vmaf/core/quality_runner_extra.py`,
+`python/test/local_explainer_test.py`,
+`docs/adr/0562-local-explainer-hang-fix.md`,
+`docs/adr/README.md` (one index row),
+`docs/state.md` (Recently-closed row),
+`changelog.d/fixed/vcq-223-local-explainer-hang.md`,
+`docs/rebase-notes.md` (this entry).
