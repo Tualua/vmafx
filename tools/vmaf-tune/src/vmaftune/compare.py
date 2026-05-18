@@ -422,6 +422,59 @@ HARDWARE_ENCODERS: tuple[str, ...] = (
     "av1_amf",
 )
 
+# QSV encoder names — require VAAPI/QSV device-init flags and an
+# ``hwupload`` filter before the encoder (ADR-0601 Bug V14-B).
+_QSV_ENCODERS: frozenset[str] = frozenset({"h264_qsv", "hevc_qsv", "av1_qsv"})
+
+# Default VA-API render node used for QSV device initialisation.
+# Override via the ``--vaapi-device`` CLI flag or the
+# ``VMAFTUNE_VAAPI_DEVICE`` environment variable.
+_DEFAULT_VAAPI_DEVICE: str = "/dev/dri/renderD128"
+
+# Public alias — callers and tests can use this without importing the
+# private name.
+DEFAULT_VAAPI_DEVICE: str = _DEFAULT_VAAPI_DEVICE
+
+
+def _hw_init_args_for_encoder(
+    encoder: str,
+    vaapi_device: str = _DEFAULT_VAAPI_DEVICE,
+) -> list[str]:
+    """Return the pre-input FFmpeg argv for hardware-device initialisation.
+
+    NVENC / AMF: no device-init flags needed on Linux (the NVIDIA driver
+    and the AMF runtime are discovered automatically). Returns ``[]``.
+
+    QSV: FFmpeg's QSV bridge requires three device-init flags before the
+    first ``-i`` input. The chain initialises a VA-API context, derives a
+    QSV context from it, and nominates the VA-API device as the filter-
+    hardware device so ``hwupload`` can push frames to the encoder::
+
+        -init_hw_device vaapi=va:<device>
+        -init_hw_device qsv=qsv_dev@va
+        -filter_hw_device va
+
+    Without these flags ``ffmpeg -c:v h264_qsv`` fails with
+    ``-22 Invalid argument`` even when the Intel GPU driver is installed.
+
+    The caller is also responsible for inserting
+    ``-vf format=nv12,hwupload=extra_hw_frames=64`` before ``-c:v`` to
+    push system-memory frames into QSV-mapped surfaces.
+
+    See ADR-0601.
+    """
+    if encoder in _QSV_ENCODERS:
+        return [
+            "-init_hw_device",
+            f"vaapi=va:{vaapi_device}",
+            "-init_hw_device",
+            "qsv=qsv_dev@va",
+            "-filter_hw_device",
+            "va",
+        ]
+    # NVENC and AMF: no pre-input device-init required.
+    return []
+
 
 @dataclasses.dataclass(frozen=True)
 class SweepReport:
@@ -462,6 +515,7 @@ def probe_encoder_available(
     *,
     ffmpeg_bin: str = "ffmpeg",
     runner: Callable[..., Any] | None = None,
+    vaapi_device: str = _DEFAULT_VAAPI_DEVICE,
 ) -> tuple[bool, str]:
     """Return ``(available, reason)`` for ``encoder`` against ``ffmpeg``.
 
@@ -475,6 +529,9 @@ def probe_encoder_available(
        encode. Catches "encoder present but no compatible GPU runtime"
        (nvenc with no NVIDIA driver; qsv with no Intel iGPU; amf with
        no AMD GPU).
+
+    ``vaapi_device`` selects the VA-API render node used for QSV device
+    initialisation (ADR-0601). Ignored for NVENC and AMF.
 
     The ``runner`` hook keeps the helper test-friendly. Returns
     ``(True, "")`` when the encoder is usable.
@@ -513,24 +570,32 @@ def probe_encoder_available(
     # uses lavfi ``nullsrc`` so it doesn't depend on any input file
     # being on disk. ``-f null -`` discards the output container so
     # we don't pay for muxer setup.
+    #
+    # ADR-0601 Bug V14-A: use 320x240 at 24 fps. Hardware encoders
+    # (NVENC, QSV, AMF) reject 64x64 with -22 (EINVAL) because their
+    # fixed-function encode blocks enforce a minimum resolution
+    # (NVENC: 145x49; QSV: 128x96). 320x240 clears every known minimum.
     if encoder in HARDWARE_ENCODERS:
+        # ADR-0601 Bug V14-B: QSV requires hardware-device init flags
+        # before the input and an hwupload filter before the encoder.
+        # NVENC and AMF need no pre-input device-init.
+        pre_input_args = _hw_init_args_for_encoder(encoder, vaapi_device)
         argv = [
             ffmpeg_bin,
             "-hide_banner",
             "-loglevel",
             "error",
+            *pre_input_args,
             "-f",
             "lavfi",
             "-i",
-            "nullsrc=size=64x64:rate=1:duration=0.04",
+            "nullsrc=size=320x240:rate=24:duration=0.5",
             "-frames:v",
             "1",
-            "-c:v",
-            encoder,
-            "-f",
-            "null",
-            "-",
         ]
+        if encoder in _QSV_ENCODERS:
+            argv += ["-vf", "format=nv12,hwupload=extra_hw_frames=64"]
+        argv += ["-c:v", encoder, "-f", "null", "-"]
         try:
             probe = run(argv)
         except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
@@ -813,6 +878,7 @@ __all__ = [
     "COMPARE_ROW_KEYS",
     "ComparisonReport",
     "DEFAULT_CPU_ENCODERS",
+    "DEFAULT_VAAPI_DEVICE",
     "HARDWARE_ENCODERS",
     "PredicateFn",
     "RecommendResult",

@@ -7,6 +7,36 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## fix/vmaftune-qsv-amf-hw-init-and-probe-size (ADR-0601)
+
+**Rebase impact**: `tools/vmaf-tune/` only — no libvmaf C sources, public
+headers, or `meson_options.txt` touched. Zero upstream conflict surface.
+
+**Rebase-sensitive invariants**:
+
+- `compare._QSV_ENCODERS` must stay in sync with the set of QSV encoder
+  names registered in `codec_adapters/`. If a new QSV adapter is added
+  (e.g. `vp9_qsv`), add its encoder string to `_QSV_ENCODERS` in the same
+  commit; omitting it silently skips the VA-API init chain for that encoder.
+- `BaseQsvAdapter.qsv_hw_init_args()` and `compare._hw_init_args_for_encoder()`
+  must produce identical flag sequences. If one is updated, update the other.
+  A test in `test_bbb_e2e_v14_bug_cluster.py` verifies this invariant.
+- The default `_DEFAULT_VAAPI_DEVICE = "/dev/dri/renderD128"` is also the
+  default in `BaseQsvAdapter.qsv_hw_init_args`. Keep them in sync.
+
+Touched files:
+`tools/vmaf-tune/src/vmaftune/compare.py`,
+`tools/vmaf-tune/src/vmaftune/cli.py`,
+`tools/vmaf-tune/src/vmaftune/codec_adapters/_qsv_common.py`,
+`tools/vmaf-tune/src/vmaftune/codec_adapters/_amf_common.py`,
+`tools/vmaf-tune/tests/test_bbb_e2e_v14_bug_cluster.py`,
+`docs/adr/0601-vmaftune-qsv-amf-hw-init-and-probe-fix.md`,
+`docs/adr/README.md` (one index row),
+`docs/usage/vmaf-tune.md` (`--vaapi-device` flag + QSV init docs),
+`docs/state.md` (T-BBB-V14-HW-ENCODER-PROBE-QSV-INIT-2026-05-18 row),
+`changelog.d/fixed/0601-vmaftune-qsv-amf-hw-init-and-probe-fix.md`,
+`docs/rebase-notes.md` (this entry).
+
 ## chore/ffmpeg-patches-n811-full-feature-exposure-sync (ADR-0576)
 
 **Rebase impact**: `ffmpeg-patches/` only — no libvmaf C sources, public

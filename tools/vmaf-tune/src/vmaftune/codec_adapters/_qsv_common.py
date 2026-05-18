@@ -235,3 +235,32 @@ class BaseQsvAdapter:
             "-global_quality",
             str(self.probe_quality),
         ]
+
+    @staticmethod
+    def qsv_hw_init_args(vaapi_device: str = "/dev/dri/renderD128") -> list[str]:
+        """Return the FFmpeg pre-input argv for QSV hardware-device init.
+
+        FFmpeg's QSV bridge on Linux requires three device-initialisation
+        flags before the first ``-i`` argument. Without them,
+        ``ffmpeg -c:v h264_qsv …`` fails with ``-22 Invalid argument``
+        even when the Intel GPU driver and libmfx / VPL are installed.
+
+        The returned list must be inserted before the ``-i`` input flag.
+        Callers must also add ``-vf format=nv12,hwupload=extra_hw_frames=64``
+        before the ``-c:v`` flag to surface QSV-mapped surfaces to the
+        encoder.
+
+        ``vaapi_device`` defaults to ``/dev/dri/renderD128``; override
+        when the Intel GPU occupies a non-default render node (e.g.
+        ``/dev/dri/renderD129`` on a mixed-GPU system).
+
+        See ADR-0601 (Bug V14-B).
+        """
+        return [
+            "-init_hw_device",
+            f"vaapi=va:{vaapi_device}",
+            "-init_hw_device",
+            "qsv=qsv_dev@va",
+            "-filter_hw_device",
+            "va",
+        ]

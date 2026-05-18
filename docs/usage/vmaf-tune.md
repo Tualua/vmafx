@@ -271,6 +271,7 @@ The mapping is closed and order-stable; see
 | `--force-hdr-pq` | off | Treat all sources as HDR PQ (SMPTE-2084) without probing. Useful for raw YUV refs that ffprobe cannot read color metadata from. |
 | `--force-hdr-hlg` | off | Treat all sources as HDR HLG (ARIB STD-B67) without probing. |
 | `--two-pass` | off | Phase F (ADR-0333 + ADR-0546). Run a 2-pass encode for codecs whose adapter sets `supports_two_pass = True` (today: `libx264`, `libx265`, `libvpx-vp9`, `libaom-av1`, `libvvenc`). Codecs without 2-pass support fall back to single-pass with a stderr warning. Doubles encode wall time. |
+| `--vaapi-device PATH` | `/dev/dri/renderD128` | VA-API DRI render-node for Intel QSV hardware-device init. Override when the Intel GPU occupies a non-default render node on a mixed-GPU system (e.g. `/dev/dri/renderD129`). Also overridable via `VMAFTUNE_VAAPI_DEVICE` env var; the flag takes precedence. Ignored for non-QSV encoders. ([ADR-0601](../adr/0601-vmaftune-qsv-amf-hw-init-and-probe-fix.md)) |
 
 ## Resolution-aware mode
 
@@ -1082,12 +1083,36 @@ similar to CRF).
 | `hevc_qsv` | `hevc_qsv` | `global_quality` (1–51) | Intel iGPU 7th-gen+ (10-bit needs 11th-gen+) or Arc / Battlemage |
 | `av1_qsv` | `av1_qsv` | `global_quality` (1–51) | Intel iGPU 12th-gen+ only or Arc / Battlemage |
 
+**Hardware-device initialisation (Linux).** FFmpeg's QSV bridge on Linux
+requires an explicit VA-API device chain before the input and a pixel-format
+conversion filter after it. `vmaf-tune` injects these automatically for all
+QSV encoders:
+
+```text
+# Before -i:
+-init_hw_device vaapi=va:/dev/dri/renderD128
+-init_hw_device qsv=qsv_dev@va
+-filter_hw_device va
+# After -i, before -c:v:
+-vf format=nv12,hwupload=extra_hw_frames=64
+```
+
+Without this chain every QSV encode fails with `-22 Invalid argument`.
+The VA-API device defaults to `/dev/dri/renderD128` (the first Intel GPU
+on most single-GPU Linux hosts). Override with `--vaapi-device /dev/dri/renderD129`
+or `VMAFTUNE_VAAPI_DEVICE=/dev/dri/renderD129` for mixed-GPU systems where
+the Intel GPU is not the primary DRI node. ([ADR-0601](../adr/0601-vmaftune-qsv-amf-hw-init-and-probe-fix.md))
+
 The underlying FFmpeg invocations look like:
 
 ```shell
-ffmpeg -i src.mkv -c:v h264_qsv -preset medium -global_quality 23 -an out.mkv
-ffmpeg -i src.mkv -c:v hevc_qsv -preset medium -global_quality 23 -an out.mkv
-ffmpeg -i src.mkv -c:v av1_qsv  -preset medium -global_quality 23 -an out.mkv
+ffmpeg \
+    -init_hw_device vaapi=va:/dev/dri/renderD128 \
+    -init_hw_device qsv=qsv_dev@va \
+    -filter_hw_device va \
+    -i src.mkv \
+    -vf format=nv12,hwupload=extra_hw_frames=64 \
+    -c:v h264_qsv -preset medium -global_quality 23 -an out.mkv
 ```
 
 `vmaf-tune` validates the `(preset, global_quality)` pair before

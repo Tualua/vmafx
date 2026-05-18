@@ -1059,6 +1059,20 @@ def _build_parser() -> argparse.ArgumentParser:
             "decode-to-raw-YUV step is serialized at the default."
         ),
     )
+    compare.add_argument(
+        "--vaapi-device",
+        default=None,
+        metavar="PATH",
+        dest="vaapi_device",
+        help=(
+            "VA-API DRI render-node used for Intel QSV hardware-device "
+            "initialisation (e.g. /dev/dri/renderD128). Defaults to "
+            "/dev/dri/renderD128. Override when the Intel GPU occupies a "
+            "non-default render node on a mixed-GPU system. "
+            "Also overridable via VMAFTUNE_VAAPI_DEVICE env var "
+            "(flag takes precedence). (ADR-0601)"
+        ),
+    )
 
     benchmark = sub.add_parser(
         "benchmark",
@@ -2746,17 +2760,27 @@ def _run_compare(args: argparse.Namespace) -> int:
     defaults; explicit user values still win, with a stderr warning on
     explicit mismatch.
     """
+    import os  # noqa: PLC0415
     import threading  # noqa: PLC0415
 
     from .bisect import make_bisect_predicate, set_decode_semaphore
     from .compare import (
         DEFAULT_CPU_ENCODERS,
+        DEFAULT_VAAPI_DEVICE,
         compare_codecs,
         compare_codecs_sweep,
         emit_report,
         emit_sweep_report,
         probe_encoder_available,
         supported_formats,
+    )
+
+    # ADR-0601: resolve the VA-API render-node for QSV device init.
+    # Resolution: --vaapi-device > VMAFTUNE_VAAPI_DEVICE env var > default.
+    vaapi_device: str = (
+        getattr(args, "vaapi_device", None)
+        or os.environ.get("VMAFTUNE_VAAPI_DEVICE", "")
+        or DEFAULT_VAAPI_DEVICE
     )
 
     # ADR-0513: ``--encoders`` defaults to the CPU encoder set when
@@ -2913,7 +2937,11 @@ def _run_compare(args: argparse.Namespace) -> int:
         else:
 
             def _probe(codec: str) -> tuple[bool, str]:
-                return probe_encoder_available(codec, ffmpeg_bin=args.ffmpeg_bin)
+                return probe_encoder_available(
+                    codec,
+                    ffmpeg_bin=args.ffmpeg_bin,
+                    vaapi_device=vaapi_device,
+                )
 
         sweep = compare_codecs_sweep(
             src=args.src,
@@ -2968,13 +2996,21 @@ def _run_compare_crf_sweep(args: argparse.Namespace, encoders: list[str]) -> int
     knobs in this mode (pareto frontier annotation); they do not drive the
     encode loop.
     """
+    import os  # noqa: PLC0415
     import tempfile  # noqa: PLC0415
     import time  # noqa: PLC0415
     from concurrent.futures import ThreadPoolExecutor, as_completed  # noqa: PLC0415
 
     from .bisect import _encode_and_score  # noqa: PLC0415
     from .codec_adapters import get_adapter  # noqa: PLC0415
-    from .compare import probe_encoder_available  # noqa: PLC0415
+    from .compare import DEFAULT_VAAPI_DEVICE, probe_encoder_available  # noqa: PLC0415
+
+    # ADR-0601: resolve the VA-API render-node for QSV device init.
+    _vaapi_device: str = (
+        getattr(args, "vaapi_device", None)
+        or os.environ.get("VMAFTUNE_VAAPI_DEVICE", "")
+        or DEFAULT_VAAPI_DEVICE
+    )
 
     # Parse --crf-sweep (required in this mode).
     crf_sweep_raw = getattr(args, "crf_sweep", None)
@@ -3015,7 +3051,11 @@ def _run_compare_crf_sweep(args: argparse.Namespace, encoders: list[str]) -> int
     # Probe encoder availability once per codec (mirrors the bisect path).
     availability: dict[str, tuple[bool, str]] = {}
     for enc in encoders:
-        availability[enc] = probe_encoder_available(enc, ffmpeg_bin=args.ffmpeg_bin)
+        availability[enc] = probe_encoder_available(
+            enc,
+            ffmpeg_bin=args.ffmpeg_bin,
+            vaapi_device=_vaapi_device,
+        )
 
     def _encode_one(codec: str, crf: int) -> dict:
         avail, reason = availability[codec]

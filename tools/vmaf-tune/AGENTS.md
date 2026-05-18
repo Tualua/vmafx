@@ -91,6 +91,27 @@ for the option-space digest.
   cost on every `compare` invocation. CPU encoders short-circuit
   after the `ffmpeg -encoders` listing grep.
 
+- **`_QSV_ENCODERS` and `BaseQsvAdapter.qsv_hw_init_args()` must stay
+  in sync (ADR-0601).** `compare._hw_init_args_for_encoder()` injects
+  the QSV VA-API device-init chain (`-init_hw_device vaapi=va:…
+  -init_hw_device qsv=qsv_dev@va -filter_hw_device va`) only for
+  encoders listed in `_QSV_ENCODERS`. If a new QSV adapter is added,
+  its encoder string must be added to `_QSV_ENCODERS` in the same
+  commit — omitting it silently skips the init chain and produces
+  `-22 Invalid argument` at runtime. The static helper
+  `BaseQsvAdapter.qsv_hw_init_args(vaapi_device)` must produce the
+  same flag sequence as `_hw_init_args_for_encoder` for QSV encoders.
+  `test_bbb_e2e_v14_bug_cluster.py::test_qsv_adapter_static_helper_returns_init_args`
+  asserts this invariant.
+
+- **Probe dummy-encode resolution floor is 320×240 (ADR-0601).**
+  `probe_encoder_available()` uses `nullsrc=size=320x240:rate=24:
+  duration=0.5` for the 1-frame dummy encode. Do not lower this
+  resolution: NVENC requires at least ~145×49 and QSV requires
+  ~128×96; 64×64 (the pre-fix value) was below both minima and caused
+  every hardware encoder to fail the probe with EINVAL on otherwise
+  fully-working GPU hosts.
+
 - **The Phase A JSONL corpus row schema is the API contract for Phase
   B / C.** Phase B (target-VMAF bisect) and Phase C (per-title CRF
   predictor) read corpora produced by this tool. Adding optional keys

@@ -26,6 +26,20 @@ The adapter does not check for runtime AMF availability — that is
 handled by ``ensure_amf_available`` which probes ``ffmpeg
 -hide_banner -encoders`` and is exercised in the unit tests via a
 mocked subprocess runner.
+
+**Linux device init and gfx1036 (AMD Raphael / Phoenix APUs):**
+AMF on Linux auto-detects the first AMD DRI render node via the AMF
+runtime loader — no explicit ``-init_hw_device`` flags are required at
+the FFmpeg layer. However, not all AMD APUs include a VCE (Video Codec
+Engine) encode block. The gfx1036 iGPU in AMD Raphael / Phoenix-series
+APUs (Ryzen 7000 integrated graphics) is a decoder-only ASIC; it does
+not expose an AMF encoder. As a result ``h264_amf``, ``hevc_amf``, and
+``av1_amf`` will fail at the probe stage with ``AMF_NOT_SUPPORTED``
+even when the AMF runtime and ROCm libraries are installed. This is a
+hardware limitation, not a software configuration problem. The
+encoder-probe in ``compare.probe_encoder_available`` surfaces a
+``hardware encoder not available: … dummy encode failed`` row rather
+than aborting the sweep. See ADR-0601 (Bug V14-C).
 """
 
 from __future__ import annotations
