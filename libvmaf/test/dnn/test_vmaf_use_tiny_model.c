@@ -37,6 +37,12 @@
 
 /* Path is relative to workdir = project root (set in meson.build). */
 #define SMOKE_FP32_MODEL "model/tiny/smoke_v0.onnx"
+/* ADR-0524: minimal rank-4 NCHW ONNX with `dim_param='batch'` on dim 0.
+ * Generated once and committed under model/tiny/; see
+ * docs/adr/0524-tiny-model-loader-symbolic-batch-dim.md. The loader
+ * folds symbolic batch to 1; attach must succeed even though
+ * ORT reports `in_shape[0] == -1`. */
+#define SMOKE_SYMBATCH_MODEL "model/tiny/smoke_v0_symbolic_batch.onnx"
 
 /* Helper: allocate a minimal VmafContext (no features, no threads). */
 static VmafContext *alloc_ctx(void)
@@ -138,6 +144,39 @@ static char *test_happy_path_smoke_model(void)
     return NULL;
 }
 
+/* --- ADR-0524: symbolic batch dim acceptance ------------------------------ */
+
+/* The shipped NR tiny checkpoints (model/tiny/nr_metric_v1*.onnx) all
+ * declare their NCHW input shape as `['batch', 1, 224, 224]` — the
+ * ONNX `dim_param='batch'` token, which ORT surfaces through the C
+ * API as `-1`. Before ADR-0523 the loader rejected this with -ENOTSUP
+ * (errno 95) because `dnn_attach_nchw` required `in_shape[0] == 1`.
+ * The fixture `smoke_v0_symbolic_batch.onnx` is the minimal
+ * reproducer: a rank-4 Identity graph with a symbolic batch on dim 0
+ * and concrete C=1 / H=4 / W=4. Attach must succeed; the per-frame
+ * inference loop always emits batch=1 so symbolic batch is safe to
+ * fold to 1 at attach time. */
+static char *test_attach_accepts_symbolic_batch_rank4(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+
+#ifndef _WIN32
+    if (access(SMOKE_SYMBATCH_MODEL, R_OK) != 0)
+        return NULL;
+#endif
+
+    VmafContext *ctx = alloc_ctx();
+    mu_assert("vmaf_init must succeed", ctx != NULL);
+
+    int rc = vmaf_use_tiny_model(ctx, SMOKE_SYMBATCH_MODEL, NULL);
+    mu_assert("ADR-0524: symbolic-batch rank-4 model must attach (folded to batch=1)", rc == 0);
+
+    rc = vmaf_close(ctx);
+    mu_assert("vmaf_close after symbolic-batch attach must return 0", rc == 0);
+    return NULL;
+}
+
 /* -------------------------------------------------------------------------- */
 
 char *run_tests(void)
@@ -147,5 +186,6 @@ char *run_tests(void)
     mu_run_test(test_rejects_null_path);
     mu_run_test(test_rejects_nonexistent_path);
     mu_run_test(test_happy_path_smoke_model);
+    mu_run_test(test_attach_accepts_symbolic_batch_rank4);
     return NULL;
 }

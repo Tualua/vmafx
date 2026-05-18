@@ -188,14 +188,35 @@ The sidecar JSON is discovered automatically at
 `${onnx_path%.onnx}.json`. Its `kind` field (`fr` / `nr`) tells libvmaf
 whether to expect a reference.
 
-### Accepted ONNX input shapes (ADR-0518)
+### Accepted ONNX input shapes (ADR-0518, extended by ADR-0523)
 
 The loader accepts two input ranks:
 
 | Rank | Shape | Meaning | Example checkpoint |
 | --- | --- | --- | --- |
-| 4 | `[1, 1, H, W]` | NCHW single-channel luma image — the picture's Y plane is fed through `vmaf_tensor_from_luma` each frame. Optional `(mean, std)` normalisation comes from the sidecar's `norm_mean` / `norm_std`. | `model/tiny/dists_sq.onnx` |
-| 2 | `[batch, F]` | Feature-vector model. The host materialises the `F` features (default canonical-6: `adm2`, `vif_scale0..3`, `motion2`) from libvmaf's classic feature collector at inference time. The sidecar's `feature_order` (or `features`) declares the slot-to-feature mapping; the sidecar's `feature_mean` / `feature_std` (or `input_mean` / `input_std`) apply a StandardScaler before the tensor is handed to ORT. | `model/tiny/fr_regressor_v1.onnx`, `model/tiny/fr_regressor_v2.onnx`, `model/tiny/vmaf_tiny_v4.onnx` |
+| 4 | `[N, 1, H, W]` | NCHW single-channel luma image — the picture's Y plane is fed through `vmaf_tensor_from_luma` each frame. Optional `(mean, std)` normalisation comes from the sidecar's `norm_mean` / `norm_std`. | `model/tiny/dists_sq.onnx`, `model/tiny/nr_metric_v1.onnx` |
+| 2 | `[N, F]` | Feature-vector model. The host materialises the `F` features (default canonical-6: `adm2`, `vif_scale0..3`, `motion2`) from libvmaf's classic feature collector at inference time. The sidecar's `feature_order` (or `features`) declares the slot-to-feature mapping; the sidecar's `feature_mean` / `feature_std` (or `input_mean` / `input_std`) apply a StandardScaler before the tensor is handed to ORT. | `model/tiny/fr_regressor_v1.onnx`, `model/tiny/fr_regressor_v2.onnx`, `model/tiny/vmaf_tiny_v4.onnx` |
+
+The batch dimension `N` may be:
+
+- the fixed value `1` (legacy single-sample exports), or
+- the symbolic ONNX `dim_param` token (`'batch'`, `'N'`, …) which ORT
+  reports back through the C API as `-1` — this is the default
+  produced by `torch.onnx.export(..., dynamic_axes=...)` and is what
+  every shipped NR checkpoint uses (ADR-0523).
+
+A *fixed* batch greater than 1 is rejected: libvmaf's per-frame
+inference loop feeds one sample per ORT Run call, so multi-sample
+batches have no consumer today. The diagnostic reads
+`tiny-model loader: <rank-4|feature-vector> model has fixed batch N;
+only batch=1 or symbolic batch (-1) is supported`.
+
+For rank-4 models, the spatial dims `H` and `W` must be known positive
+values; symbolic H/W ("dynamic-resolution" exports) fails with
+`tiny-model loader: rank-4 model has dynamic / non-positive spatial
+dims (H=…, W=…); symbolic H/W is unsupported — re-export with a fixed
+input resolution`. The scratch buffer is sized once at attach time, so
+the runtime cannot accept varying resolution.
 
 Anything other than rank 2 or 4 fails loud with a human-readable log
 line: `tiny-model loader: model has input rank N, expected 2 (feature

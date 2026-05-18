@@ -369,3 +369,4 @@
 0514-dev-container-full-backend-exposure
 0515-test-public-api-score-mingw64-temp-path
 0520-cli-no-reference-wiring
+0524-tiny-model-loader-symbolic-batch-dim

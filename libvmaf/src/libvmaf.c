@@ -813,17 +813,50 @@ int vmaf_ctx_dnn_set_codec_context(VmafContext *ctx, const char *codec_name, con
 
 /* Helper: rank-4 NCHW path. Validates static-image shape, allocates the
  * luma scratch buffer, and writes the per-frame inference state into
- * ctx->dnn. Returns 0 on success or a negative errno. */
+ * ctx->dnn. Returns 0 on success or a negative errno.
+ *
+ * Symbolic-dim policy (ADR-0524):
+ *   - dim 0 (N / batch): ORT reports symbolic dims as `-1`. The fork's
+ *     inference loop only ever feeds one frame at a time, so a symbolic
+ *     batch is folded to 1. A fixed batch > 1 is still rejected (no
+ *     batched-inference scheduler in libvmaf today).
+ *   - dim 1 (C / channels): must be 1 (single-channel luma). Symbolic
+ *     channels are rejected — the tensor bridge has no way to fan out
+ *     C > 1 without an explicit colourspace contract.
+ *   - dims 2/3 (H/W): must be a known positive value. Symbolic H/W
+ *     ("dynamic-resolution" exports) are rejected loudly because the
+ *     scratch buffer size depends on them; the diagnostic distinguishes
+ *     symbolic from "C != 1" so the failure mode is observable. */
 static int dnn_attach_nchw(VmafContext *ctx, VmafOrtSession *sess, const VmafModelSidecar *meta,
                            const int64_t *in_shape, char *name)
 {
-    if (in_shape[0] != 1 || in_shape[1] != 1) {
+    /* Fold a symbolic batch dim (-1) to 1 — the per-frame loop never
+     * batches. Anything else outside {1, -1} is a fixed batch > 1 which
+     * the runtime does not support. */
+    if (in_shape[0] != 1 && in_shape[0] != -1) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "tiny-model loader: rank-4 model has fixed batch %lld; "
+                 "only batch=1 or symbolic batch (-1) is supported\n",
+                 (long long)in_shape[0]);
+        free(name);
+        return -ENOTSUP;
+    }
+    if (in_shape[1] != 1) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "tiny-model loader: rank-4 model has channels=%lld; "
+                 "only single-channel luma (C=1) is supported\n",
+                 (long long)in_shape[1]);
         free(name);
         return -ENOTSUP;
     }
     const int64_t h = in_shape[2];
     const int64_t w = in_shape[3];
     if (h <= 0 || w <= 0) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "tiny-model loader: rank-4 model has dynamic / non-positive "
+                 "spatial dims (H=%lld, W=%lld); symbolic H/W is unsupported — "
+                 "re-export with a fixed input resolution\n",
+                 (long long)h, (long long)w);
         free(name);
         return -ENOTSUP; /* dynamic dims unsupported */
     }
@@ -856,6 +889,17 @@ static int dnn_attach_feature_vector(VmafContext *ctx, VmafOrtSession *sess,
                                      const VmafModelSidecar *meta, const int64_t *in_shape,
                                      char *name)
 {
+    /* Symbolic-dim policy (ADR-0524): batch may be -1 (symbolic) or 1.
+     * A fixed batch > 1 is rejected — the per-frame inference loop only
+     * feeds a single sample per Run() call. */
+    if (in_shape[0] != 1 && in_shape[0] != -1) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "tiny-model loader: feature-vector model has fixed batch %lld; "
+                 "only batch=1 or symbolic batch (-1) is supported\n",
+                 (long long)in_shape[0]);
+        free(name);
+        return -ENOTSUP;
+    }
     const int64_t f = in_shape[1];
     if (f <= 0 || (size_t)f > VMAF_DNN_MAX_FEATURE_NAMES) {
         free(name);
@@ -891,13 +935,18 @@ static int dnn_attach_feature_vector(VmafContext *ctx, VmafOrtSession *sess,
             free(name);
             return rc_sh;
         }
-        if (extra_rank != 2 || extra_shape[1] <= 0) {
+        /* Second-input symbolic-batch policy mirrors the primary input
+         * (ADR-0524): batch may be -1 (symbolic) or 1; feature width
+         * (extra_shape[1]) must be a known positive value because it
+         * sizes the scratch buffer. */
+        if (extra_rank != 2 || (extra_shape[0] != 1 && extra_shape[0] != -1) ||
+            extra_shape[1] <= 0) {
             free(buf);
             free(name);
             vmaf_log(VMAF_LOG_LEVEL_ERROR,
                      "tiny-model loader: second input has unsupported "
-                     "shape (rank %zu)\n",
-                     extra_rank);
+                     "shape (rank %zu, batch %lld, width %lld)\n",
+                     extra_rank, (long long)extra_shape[0], (long long)extra_shape[1]);
             return -ENOTSUP;
         }
         extra_w = (size_t)extra_shape[1];

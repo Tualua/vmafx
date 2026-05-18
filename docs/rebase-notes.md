@@ -14,6 +14,40 @@ rebase impact" in the PR description and skip the entry.
 (the HIP and Metal extractor blocks it contains have no upstream equivalent).
 Upstream Netflix/vmaf does not ship `integer_motion_hip` and the
 `#if HAVE_HIP` block does not exist in upstream. No conflict risk on sync.
+## fix/dnn-symbolic-batch-dim (ADR-0524)
+
+**Rebase-sensitive — `libvmaf/src/libvmaf.c` carries the fork-local
+tiny-AI loader path (`vmaf_ctx_dnn_attach` and the two helpers
+`dnn_attach_nchw` / `dnn_attach_feature_vector`); Netflix upstream
+does not ship a tiny-model surface.** Changes:
+
+- `dnn_attach_nchw` accepts `in_shape[0] ∈ {1, -1}` (symbolic batch
+  folded to 1). The `in_shape[1] != 1` (channels) reject is now
+  separated from the batch check so each surface has its own
+  diagnostic. The H/W reject message was sharpened to call out
+  symbolic dims explicitly.
+- `dnn_attach_feature_vector` gained the same batch policy before
+  the feature-width check; the optional rank-2 second-input shape
+  probe (extra_shape) follows the same rule.
+- Per-frame inference (`vmaf_ctx_dnn_run_frame_nchw` and the
+  feature-vector run path) is unchanged — both already emit
+  `shape[0] = 1` on the ORT Run call, so symbolic batch is purely
+  a load-time concern.
+
+`libvmaf/src/dnn/AGENTS.md` gained an "Invariant — symbolic batch
+dim acceptance (ADR-0524)" section. Reverting the batch acceptance
+breaks every shipped NR tiny model (`model/tiny/nr_metric_v1*.onnx`)
+plus any future trainer using the PyTorch `dynamic_axes` default.
+
+ffmpeg-patch stack: no impact. The tiny-AI loader sits behind
+`vmaf_use_tiny_model`, which the in-tree FFmpeg patches do not
+touch.
+
+Test fixture: `model/tiny/smoke_v0_symbolic_batch.onnx` is a
+fork-local 166-byte Identity graph with `dim_param='batch'` on
+dim 0. The fixture has no sidecar (loader handles -ENOENT
+gracefully) and is not listed in `model/tiny/registry.json` (which
+catalogues shipped models, not test fixtures).
 
 ## fix/cli-no-reference-wire (ADR-0520)
 

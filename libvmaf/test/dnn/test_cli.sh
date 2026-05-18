@@ -92,31 +92,50 @@ if printf '%s\n' "$nr_noref_out" | grep -q 'Reference .y4m or .yuv'; then
 fi
 
 # 5b. --no-reference --tiny-model X --distorted Y must clear the
-# reference-required gate. We use dists_sq.onnx (a 2-input FR placeholder
-# that load-fails) because the shipped NR-marked models all use a
-# symbolic batch dim that the loader rejects (a separate pre-existing
-# limitation, tracked outside ADR-0519). The point of this assertion is
-# the *absence* of the legacy reference-required diagnostic — once that
-# fires the CLI exits before model load, and the test would never see
-# the model-loader's error. A "problem loading tiny model" message is
-# the success indicator: it proves the CLI advanced past the gate.
+# reference-required gate AND produce a finite score with the shipped
+# NR model. Before ADR-0523 the shipped NR-marked models all used a
+# symbolic batch dim (`['batch', 1, 224, 224]`) that the loader
+# rejected with -95; that fix is now in place, so nr_metric_v1.onnx
+# loads + scores end-to-end through `vmaf --no-reference`. We assert
+# (a) the legacy reference-required diagnostic does NOT fire, (b) the
+# loader-side error does NOT surface, and (c) the JSON output carries
+# the NR model's feature column.
 DIST_YUV="python/test/resource/yuv/src01_hrc01_576x324.yuv"
-if [[ -f "$DIST_YUV" && -f model/tiny/dists_sq.onnx ]]; then
-  nr_dist_out="$("$VMAF_BIN" --no-reference --tiny-model model/tiny/dists_sq.onnx \
+if [[ -f "$DIST_YUV" && -f model/tiny/nr_metric_v1.onnx ]]; then
+  json_out="$(mktemp -t vmaf_nr_smoke_XXXXXX.json)"
+  if ! nr_dist_out="$("$VMAF_BIN" --no-reference --tiny-model model/tiny/nr_metric_v1.onnx \
     --tiny-device cpu --distorted "$DIST_YUV" \
-    --width 576 --height 324 --pixel_format 420 --bitdepth 8 2>&1 || true)"
+    --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+    --json --output "$json_out" 2>&1)"; then
+    printf '%s\n' "$nr_dist_out"
+    echo "ADR-0524: --no-reference --tiny-model nr_metric_v1.onnx FAILED to run"
+    rm -f "$json_out"
+    exit 1
+  fi
   if printf '%s\n' "$nr_dist_out" | grep -q 'Reference .y4m or .yuv'; then
     printf '%s\n' "$nr_dist_out"
     echo "ADR-0520: --no-reference --tiny-model still trips the reference-required gate"
+    rm -f "$json_out"
     exit 1
   fi
-  if ! printf '%s\n' "$nr_dist_out" | grep -qE 'problem loading tiny model|vmaf_tiny_model|frame'; then
+  if printf '%s\n' "$nr_dist_out" | grep -q 'problem loading tiny model'; then
     printf '%s\n' "$nr_dist_out"
-    echo "ADR-0520: --no-reference --tiny-model did not reach the loader / frame loop"
+    echo "ADR-0524: --no-reference --tiny-model nr_metric_v1.onnx hit the loader-reject path"
+    rm -f "$json_out"
     exit 1
   fi
+  # Sidecar gives nr_metric_v1's feature a stable column name; if the
+  # sidecar is absent the loader defaults to "vmaf_tiny_model". Accept
+  # either spelling — the assertion is that SOME tiny-model feature
+  # column landed in the JSON, proving the NR scoring path completed.
+  if ! grep -qE 'vmaf_tiny_model|nr_metric' "$json_out"; then
+    echo "ADR-0524: NR smoke produced no tiny-model feature column"
+    rm -f "$json_out"
+    exit 1
+  fi
+  rm -f "$json_out"
 else
-  echo "ADR-0519: dist YUV or dists_sq model missing; skipping NR end-to-end smoke"
+  echo "ADR-0524: dist YUV or nr_metric_v1 model missing; skipping NR end-to-end smoke"
 fi
 
 # 6. Feature-vector + external-data ONNX models load successfully

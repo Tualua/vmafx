@@ -91,6 +91,19 @@ test_ort_internals = executable('test_ort_internals',
     dependencies : [math_lib, cuda_dependency, sycl_dependency],
 )
 
+# Public-surface attach gate test for `vmaf_use_tiny_model`. Covers
+# null-arg rejection, the happy-path smoke fixture, and (per ADR-0523)
+# the symbolic-batch-dim fixture that gates the loader's acceptance of
+# `dim_param='batch'` ONNX exports — the shape every shipped NR tiny
+# checkpoint uses.
+test_vmaf_use_tiny_model = executable('test_vmaf_use_tiny_model',
+    ['../test.c', 'test_vmaf_use_tiny_model.c'],
+    include_directories : dnn_test_inc,
+    c_args : dnn_defines,
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [math_lib, cuda_dependency, sycl_dependency],
+)
+
 test('test_tensor_io',       test_tensor_io,       suite : 'dnn')
 test('test_op_allowlist',    test_op_allowlist,    suite : 'dnn')
 test('test_model_loader',    test_model_loader,    suite : 'dnn')
@@ -103,6 +116,9 @@ test('test_ep_fp16',         test_ep_fp16,
      workdir : meson.project_source_root() / '..',
      suite : 'dnn')
 test('test_ort_internals',   test_ort_internals,
+     workdir : meson.project_source_root() / '..',
+     suite : 'dnn')
+test('test_vmaf_use_tiny_model', test_vmaf_use_tiny_model,
      workdir : meson.project_source_root() / '..',
      suite : 'dnn')
 

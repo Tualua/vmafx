@@ -242,6 +242,29 @@ The encoder vocabulary itself comes from the sidecar's
 not from a duplicated C-side constant, so vocab bumps only require a
 new sidecar JSON — no C recompile.
 
+## Invariant — symbolic batch dim acceptance (ADR-0524)
+
+`vmaf_ctx_dnn_attach`'s helpers (`dnn_attach_nchw`,
+`dnn_attach_feature_vector`, and the optional rank-2 second-input
+shape probe) accept `in_shape[0] ∈ {1, -1}` for the batch dimension.
+ORT reports symbolic ONNX dims as `-1` via the C API
+(`OrtApi::GetDimensions`), and the per-frame inference loop always
+emits `shape[0] = 1` on the ORT Run call, so symbolic batch is
+folded to 1 at attach time. **Do not** re-tighten the gate to
+`!= 1` — that breaks every shipped NR tiny model
+(`model/tiny/nr_metric_v1*.onnx`) plus any future trainer that uses
+the PyTorch `torch.onnx.export(..., dynamic_axes=…)` default.
+
+A *fixed* batch > 1 is still rejected (no batched-inference
+scheduler exists; the per-frame loop feeds one sample per Run
+call). Symbolic H/W (rank-4 spatial dims) remain rejected because
+the scratch buffer is sized once at attach time; the diagnostic
+distinguishes "symbolic H/W" from "C != 1" so the failure mode is
+observable. The `test_attach_accepts_symbolic_batch_rank4`
+regression in `test_vmaf_use_tiny_model.c` synthesises a minimal
+rank-4 ONNX with `dim_param='batch'` and gates against accidental
+re-tightening.
+
 ## Invariant — codec block layout (ADR-0522)
 
 The second input of `fr_regressor_v2` is exactly
