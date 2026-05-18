@@ -67,6 +67,66 @@ _VMAF_VALID_FLOOR: float = 0.0
 _VMAF_VALID_CEIL: float = 100.0
 
 
+# ADR-0538 — Encoder-absolute CRF ranges per codec, used as the bisect
+# search window when the caller passes ``crf_range=None``. These are the
+# bounds the encoder will accept at the FFmpeg CLI, NOT the
+# perceptually-informative window adapters expose via
+# :attr:`CodecAdapter.quality_range`. The premium-archival defaults
+# (``--target-vmafs 94,96,97,98``) frequently require CRFs below the
+# informative window — e.g. libsvtav1's ``quality_range = (20, 50)`` is
+# too tight to ever reach VMAF 97. The bisect therefore searches the
+# absolute range so high targets are reachable, and falls back to the
+# adapter's ``quality_range`` when no override exists for the codec.
+#
+# Sources (see docs/research/2026-05-18-premium-vmaf-bisect.md):
+#   libx264, libx265 : ``-crf 0..51`` (man x264; FFmpeg encoder doc)
+#   libvpx-vp9       : ``-crf 0..63`` (FFmpeg encoder doc)
+#   libaom-av1       : ``-crf 0..63`` (FFmpeg encoder doc)
+#   libsvtav1        : ``-crf 0..63`` (matches adapter.crf_min/crf_max)
+#
+# Hardware encoders (NVENC / AMF / QSV / VideoToolbox) and VVenC are
+# omitted from this table; their adapters either expose narrower native
+# quality ranges (CQ / QP scales that don't map to 0..63) or refuse
+# CRF 0 by design. For those codecs we fall back to the adapter's
+# ``quality_range`` until per-codec validation rules land.
+_ABSOLUTE_CRF_RANGE_BY_NAME: dict[str, tuple[int, int]] = {
+    "libx264": (0, 51),
+    "libx265": (0, 51),
+    "libvpx-vp9": (0, 63),
+    "libaom-av1": (0, 63),
+    "libsvtav1": (0, 63),
+}
+
+
+def _absolute_crf_range(adapter: object) -> tuple[int, int]:
+    """Return the encoder's accepted CRF range for the bisect search.
+
+    Prefer (in order):
+
+    1. The codec-name lookup in :data:`_ABSOLUTE_CRF_RANGE_BY_NAME`
+       (curated per-codec encoder limits, see module docstring above).
+    2. The adapter's own ``crf_min`` / ``crf_max`` attributes when both
+       are present (libsvtav1 exposes these as the encoder absolute
+       limits, distinct from the informative ``quality_range``).
+    3. The adapter's ``quality_range`` as a last resort — keeps codecs
+       without an absolute-range entry working at the informative window.
+
+    The bisect calls this only when the caller did not pass
+    ``crf_range`` explicitly. Callers that need the legacy informative-
+    window behaviour pass ``crf_range=adapter.quality_range`` directly.
+    """
+    name = getattr(adapter, "name", "")
+    table = _ABSOLUTE_CRF_RANGE_BY_NAME.get(str(name))
+    if table is not None:
+        return table
+    crf_min = getattr(adapter, "crf_min", None)
+    crf_max = getattr(adapter, "crf_max", None)
+    if crf_min is not None and crf_max is not None:
+        return (int(crf_min), int(crf_max))
+    qr = getattr(adapter, "quality_range", (0, 51))
+    return (int(qr[0]), int(qr[1]))
+
+
 @dataclasses.dataclass(frozen=True)
 class BisectSample:
     """One per-iteration (CRF, bitrate, VMAF) probe collected by the bisect.
@@ -225,9 +285,16 @@ def bisect_target_vmaf(
         window and scores against the matching reference frame window.
     crf_range
         ``(lo, hi)`` inclusive bound on the search domain. ``None``
-        defaults to the codec adapter's ``quality_range`` (per
-        ADR-0296 the adapter's range is the search-space boundary,
-        not a user-input gate).
+        defaults to the encoder's **absolute** CRF range per
+        :func:`_absolute_crf_range` (ADR-0538, supersedes the
+        ADR-0296 ``quality_range`` default). The wider absolute range
+        is required so the high-VMAF targets in the premium-archival
+        sweep (``--target-vmafs 94,96,97,98``) are reachable —
+        adapters such as ``libsvtav1`` declare
+        ``quality_range = (20, 50)`` for the informative window, which
+        is too tight to bisect down to VMAF >= 95. Callers that need
+        the historical informative-window behaviour pass
+        ``crf_range=adapter.quality_range`` explicitly.
     max_iterations
         Hard cap on encode+score round-trips. The window halves each
         iteration so the asymptote is ``ceil(log2(hi - lo + 1))``;
@@ -257,7 +324,15 @@ def bisect_target_vmaf(
     except KeyError as exc:
         return _failure(codec, f"unknown codec: {exc}")
 
-    lo, hi = crf_range if crf_range is not None else adapter.quality_range
+    # ADR-0538: default to the encoder's absolute CRF range (e.g. 0..51
+    # for libx264 / libx265, 0..63 for libvpx-vp9 / libaom-av1 /
+    # libsvtav1) rather than the adapter's perceptually-informative
+    # ``quality_range``. Premium-archival targets (VMAF 94..98) require
+    # CRFs below the informative window for most codecs; the absolute
+    # range makes them reachable. Caller-supplied ``crf_range`` always
+    # wins so the existing --crf-min / --crf-max CLI knobs and the
+    # codec-tutorial test fixtures keep their explicit windows.
+    lo, hi = crf_range if crf_range is not None else _absolute_crf_range(adapter)
     lo = int(lo)
     hi = int(hi)
     if lo > hi:
@@ -470,10 +545,36 @@ def _encode_and_score(
     The ``n_iterations`` field on the returned struct is always ``0``;
     the caller stamps it with the cumulative count.
     """
-    try:
-        adapter.validate(preset, crf)  # type: ignore[attr-defined]
-    except (ValueError, AttributeError) as exc:
-        return _failure(codec, f"adapter rejected (preset={preset!r}, crf={crf}): {exc}")
+    # ADR-0538: ``adapter.validate(preset, crf)`` enforces both the
+    # preset whitelist AND the adapter's perceptually-informative
+    # ``quality_range`` (e.g. x265's ``(15, 40)``, svtav1's
+    # ``(20, 50)``). For the bisect we want the preset check but NOT
+    # the informative-range gate — the search window in
+    # :func:`bisect_target_vmaf` is the encoder's absolute CRF range,
+    # which is intentionally wider than the informative window so
+    # premium-archival targets are reachable. Validate the preset by
+    # itself first; then re-run the full validator under a "swallow
+    # CRF-range complaints" rule so genuine encoder limits (e.g.
+    # libsvtav1's ``crf_min/crf_max``) still fire when the bisect
+    # was misconfigured with an out-of-encoder window.
+    abs_lo, abs_hi = _absolute_crf_range(adapter)
+    if not abs_lo <= int(crf) <= abs_hi:
+        return _failure(
+            codec,
+            (
+                f"adapter rejected (preset={preset!r}, crf={crf}): "
+                f"crf outside encoder absolute range [{abs_lo}, {abs_hi}]"
+            ),
+        )
+    presets = getattr(adapter, "presets", ())
+    if presets and preset not in presets:
+        return _failure(
+            codec,
+            (
+                f"adapter rejected (preset={preset!r}, crf={crf}): "
+                f"unknown preset; expected one of {presets}"
+            ),
+        )
 
     out_path = workdir / f"bisect_{codec}_{preset}_{crf}.mkv"
     encoder_name = getattr(adapter, "encoder", codec)

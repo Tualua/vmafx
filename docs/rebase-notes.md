@@ -8,7 +8,7 @@ invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
 =======
-## fix/hip-integer-vif-kernel-crash (ADR-0537)
+## fix/hip-integer-vif-kernel-crash (ADR-0538)
 
 **Touches upstream-mirror paths.** Modifies:
 - `libvmaf/src/feature/hip/integer_vif/vif_statistics.hip` (fork-local —
@@ -27,7 +27,7 @@ rebase impact" in the PR description and skip the entry.
 No verbatim upstream code paths altered. Rebase invariant: if upstream
 ever adds an `integer_vif` HIP port, drop the fork's
 `integer_vif/vif_statistics.hip` and `integer_vif_hip.c` and re-evaluate
-whether the four ADR-0537 defects exist in their port too — three of the
+whether the four ADR-0538 defects exist in their port too — three of the
 four are subtle (filter-half-width parsing, missing rd-write,
 host-pointer kernel arg) and an upstream re-implementation may well
 have the same blind spots.
@@ -109,6 +109,44 @@ C-API, public header, or `meson_options.txt` entry).
 `changelog.d/added/0535-adr-atomic-allocator.md`,
 `CLAUDE.md`, and `AGENTS.md`.
 None of these paths exist in upstream Netflix/vmaf. No conflict risk on sync.
+
+## fix/premium-vmaf-target-defaults (ADR-0538)
+
+**No rebase impact.** All changes are confined to fork-local files:
+
+- `tools/vmaf-tune/src/vmaftune/cli.py` — flip the `--target-vmafs`
+  default from `75,80,85,90,93` (ADR-0534) to `94,96,97,98` and
+  update the help text + supersession note.
+- `tools/vmaf-tune/src/vmaftune/bisect.py` — add
+  `_ABSOLUTE_CRF_RANGE_BY_NAME` + `_absolute_crf_range(adapter)`;
+  default the bisect search window to that absolute range;
+  bypass `adapter.validate`'s CRF gate inside `_encode_and_score`
+  in favour of an explicit absolute-range check.
+- `tools/vmaf-tune/tests/test_bisect.py` — update
+  `test_crf_range_defaults_to_adapter_quality_range` ->
+  `test_crf_range_defaults_to_encoder_absolute_range`; add
+  three regression tests pinning libx264 / libx265 / libsvtav1
+  premium-archival targets at `ok=True` with achieved VMAF
+  within 0.5 of target.
+- `tools/vmaf-tune/tests/test_compare_rate_quality_sweep.py` —
+  update the default-target-vmafs assertion to `94,96,97,98`.
+- `tools/vmaf-tune/AGENTS.md` — rewrite the `--target-vmafs`
+  default rebase-sensitive-invariant note; add a new
+  invariant for the bisect's encoder-absolute-range default.
+- `docs/usage/vmaf-tune.md` — supersede the rate-quality-sweep
+  section's defaults / rationale; add the **High-VMAF bisect
+  contract** subsection with the per-codec absolute-range table.
+- `docs/adr/0538-premium-vmaf-target-defaults-and-bisect.md`,
+  `docs/adr/0534-...md` (status flip), `docs/adr/README.md`,
+  `docs/research/0537-...md`, `docs/state.md`,
+  `docs/rebase-notes.md`,
+  `changelog.d/fixed/0538-premium-vmaf-target-defaults-and-bisect.md`.
+
+None of these paths exist in upstream Netflix/vmaf (the entire
+`tools/vmaf-tune/` tree is fork-local). No conflict risk on sync.
+
+ffmpeg-patch stack: no impact (this PR does not touch any libvmaf
+C-API, public header, or `meson_options.txt` entry).
 
 ## feat/bvi-dvc-pre-extracted-input (ADR-0527)
 
@@ -36324,7 +36362,7 @@ honoured or the registration drops out silently.
 =======
 >>>>>>> 64a7a5517 (chore(adr): atomic next-free allocator with cross-branch claim (ADR-0535))
 
-## ADR-0537 — per-shot predicate bitrate sidecar (PR #1290 follow-up)
+## ADR-0538 — per-shot predicate bitrate sidecar (PR #1290 follow-up)
 
 **No rebase impact**: the change is entirely internal to
 `tools/vmaf-tune/src/vmaftune/cli.py` (`_build_per_shot_bisect_predicate`

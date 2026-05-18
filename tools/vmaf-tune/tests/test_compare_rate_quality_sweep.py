@@ -901,8 +901,16 @@ def test_report_chart_legacy_caveat_appears_when_no_bisect_samples(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_compare_cli_default_target_vmafs_is_realistic_streaming():
-    """ADR-0534: default sweeps 75,80,85,90,93 — broadcast/streaming range."""
+def test_compare_cli_default_target_vmafs_is_premium_archival():
+    """ADR-0538: default sweeps 94,96,97,98 — premium-archival range.
+
+    Supersedes ADR-0534's streaming/broadcast default
+    (``75,80,85,90,93``). The fork user encodes for archival, never
+    below VMAF 95; the streaming default produced an R-Q chart that
+    didn't include any of the user's operating points. The bisect
+    contract (ADR-0538) makes VMAF >= 95 reachable by widening the
+    CRF search window to the encoder's absolute range.
+    """
     from vmaftune.cli import _build_parser
 
     p = _build_parser()
@@ -918,7 +926,7 @@ def test_compare_cli_default_target_vmafs_is_realistic_streaming():
             "1080",
         ]
     )
-    assert args.target_vmafs == "75,80,85,90,93"
+    assert args.target_vmafs == "94,96,97,98"
 
 
 def test_compare_cli_target_vmaf_alone_still_back_compat_v1(monkeypatch, capsys, tmp_path):

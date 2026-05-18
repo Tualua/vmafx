@@ -23,7 +23,6 @@ sys.path.insert(0, str(_HERE.parent / "src"))
 
 from vmaftune import bisect as bisect_mod  # noqa: E402
 from vmaftune.bisect import BisectResult, bisect_target_vmaf, make_bisect_predicate  # noqa: E402
-from vmaftune.codec_adapters import get_adapter  # noqa: E402
 from vmaftune.compare import RecommendResult, compare_codecs  # noqa: E402
 
 # ----------------------------------------------------------------------
@@ -197,10 +196,13 @@ def test_target_met_at_every_crf_returns_max_crf():
     assert result.best_crf == 51
 
 
-def test_crf_range_defaults_to_adapter_quality_range():
-    # A constant-VMAF curve will pick the top of whatever range we
-    # bisect over. Asserting it equals the adapter's hi confirms the
-    # default-binding path was taken.
+def test_crf_range_defaults_to_encoder_absolute_range():
+    # ADR-0538: the default search window is the encoder's absolute
+    # CRF range (libx264 -> 0..51) rather than the adapter's
+    # perceptually-informative ``quality_range``. A constant-VMAF
+    # curve picks the top of whatever range we bisect over;
+    # asserting it equals the encoder's absolute hi (51) confirms
+    # the new default binding.
     enc, sc, _log = _make_runners(lambda c: 99.0)
     result = bisect_target_vmaf(
         Path("ref.yuv"),
@@ -211,8 +213,75 @@ def test_crf_range_defaults_to_adapter_quality_range():
         **_kwargs(),
     )
     assert result.ok is True
-    expected_hi = get_adapter("libx264").quality_range[1]
-    assert result.best_crf == expected_hi
+    # libx264 absolute range hi = 51 (see _ABSOLUTE_CRF_RANGE_BY_NAME).
+    assert result.best_crf == 51
+
+
+def test_premium_target_libx264_target_96_returns_ok_true():
+    """ADR-0538: bisect to VMAF >= 96 on libx264 must succeed.
+
+    Pre-ADR-0538 the bisect defaulted to the adapter's
+    ``quality_range`` (libx264 = (0, 51), no change) but for codecs
+    whose informative window opens above CRF 0 (libx265 = (15, 40),
+    libsvtav1 = (20, 50)) the high-VMAF targets were unreachable.
+    This test pins the libx264 happy path against a curve that
+    requires CRF <= 12 to clear VMAF 96 — well inside both the old
+    and the new defaults — and asserts ok=True with achieved >= 95.5
+    (the user-stated SLA from the PR brief).
+    """
+    enc, sc, _log = _make_runners(lambda c: 100.0 - 0.4 * float(c))
+    result = bisect_target_vmaf(
+        Path("ref.yuv"),
+        "libx264",
+        target_vmaf=96.0,
+        encode_runner=enc,
+        score_runner=sc,
+        **_kwargs(),
+    )
+    assert result.ok is True, result.error
+    assert result.measured_vmaf >= 95.5, (result.best_crf, result.measured_vmaf)
+
+
+def test_premium_target_libx265_target_96_uses_absolute_range():
+    """ADR-0538: libx265's informative range (15, 40) is too tight.
+
+    Without the ADR-0538 default the bisect would search (15, 40)
+    and reject CRF <= 14 via ``adapter.validate``. With ADR-0538 it
+    searches (0, 51), reaches the low-CRF region, and clears
+    VMAF 96. Regression guard for the supersession rationale.
+    """
+    enc, sc, _log = _make_runners(lambda c: 100.0 - 0.4 * float(c))
+    result = bisect_target_vmaf(
+        Path("ref.yuv"),
+        "libx265",
+        target_vmaf=96.0,
+        encode_runner=enc,
+        score_runner=sc,
+        **_kwargs(),
+    )
+    assert result.ok is True, result.error
+    assert result.measured_vmaf >= 95.5
+
+
+def test_premium_target_libsvtav1_target_97_uses_absolute_range():
+    """ADR-0538: libsvtav1's informative range (20, 50) is too tight.
+
+    AV1 saturates faster than H.264 in absolute VMAF terms so the
+    synthetic curve here only needs CRF <= ~7 to clear VMAF 97. The
+    pre-ADR-0538 default would have refused CRF <= 19 outright via
+    the adapter validator; this regression test pins the fix.
+    """
+    enc, sc, _log = _make_runners(lambda c: 100.0 - 0.45 * float(c))
+    result = bisect_target_vmaf(
+        Path("ref.yuv"),
+        "libsvtav1",
+        target_vmaf=97.0,
+        encode_runner=enc,
+        score_runner=sc,
+        **_kwargs(),
+    )
+    assert result.ok is True, result.error
+    assert result.measured_vmaf >= 96.5
 
 
 def test_max_iterations_4_halts_early():

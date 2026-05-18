@@ -52,10 +52,10 @@ for the option-space digest.
   load-bearing for downstream `csv` consumers (e.g. spreadsheet
   ingestion).
 
-- **`--target-vmafs` default sweep is `75,80,85,90,93` (ADR-0534).**
-  Covers low-end streaming through premium. The top end stops at 93
-  because 95+ frequently exceeds the codec's CRF ceiling and
-  produces "unreachable" failure rows. Back-compat for legacy
+- **`--target-vmafs` default sweep is `94,96,97,98` (ADR-0538,
+  supersedes ADR-0534's `75,80,85,90,93`).** Premium-archival
+  operating points; the fork's primary user encodes archival
+  masters at VMAF >= 95 exclusively. Back-compat for legacy
   scripts that pin a single VMAF via `--target-vmaf NN` is
   preserved by the `_TrackedDefaultAction` sentinel: when
   `--target-vmaf` is explicit and `--target-vmafs` is at its
@@ -64,6 +64,24 @@ for the option-space digest.
   invoke `_run_compare` directly, stamp `args._target_vmafs_was_default`
   and `args._target_vmaf_was_default` first (call
   `_stamp_tracked_default_sentinels(args)`).
+
+- **The bisect default search window is the encoder's absolute CRF
+  range (ADR-0538), not the adapter's `quality_range`.** When
+  `bisect_target_vmaf` is called with `crf_range=None` it consults
+  `_ABSOLUTE_CRF_RANGE_BY_NAME` in `bisect.py` to pick the
+  encoder's accepted bounds: `libx264 / libx265 -> (0, 51)`,
+  `libvpx-vp9 / libaom-av1 / libsvtav1 -> (0, 63)`. This is wider
+  than the perceptually-informative `adapter.quality_range` (e.g.
+  libx265's `(15, 40)`) so high-VMAF targets are reachable. The
+  bisect also bypasses `adapter.validate`'s CRF gate and
+  re-implements just the preset + absolute-range checks in
+  `_encode_and_score`; if you change `adapter.validate` semantics
+  also audit `bisect._encode_and_score` to keep them in sync. The
+  corpus-generator path in `corpus.py` still calls
+  `adapter.validate` unchanged — only the bisect search loop is
+  widened. Adding a new codec to the absolute-range table is a
+  single dict entry; codecs not in the table fall back to
+  `adapter.crf_min/crf_max` then `quality_range`.
 
 - **Hardware-encoder availability probing is opt-in by codec, not by
   flag.** `probe_encoder_available()` only runs the 1-frame lavfi

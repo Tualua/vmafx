@@ -793,21 +793,26 @@ def _build_parser() -> argparse.ArgumentParser:
     compare.add_argument(
         "--target-vmafs",
         action=_TrackedDefaultAction,
-        default="75,80,85,90,93",
+        default="94,96,97,98",
         help=(
             "comma-separated VMAF targets to sweep per codec. When this "
             "lists more than one value the CLI emits the v2 multi-target "
             "schema (ADR-0513) and the report renders a rate-quality "
             "curve per codec with the pareto frontier highlighted. "
-            "Default (ADR-0530): ``75,80,85,90,93`` — covers realistic "
-            "streaming operating points from low-bandwidth (VMAF 75) "
-            "through premium (VMAF 93). The top end stops at 93 because "
-            "VMAF >=95 frequently exceeds the codec's CRF ceiling and "
-            "produces 'unreachable' failure rows. Pass a single value to "
-            "fall through to the legacy single-target schema. When "
-            "``--target-vmaf`` is passed explicitly and ``--target-vmafs`` "
-            "is left at its default, the back-compat path activates and "
-            "the legacy single-target v1 schema is emitted."
+            "Default (ADR-0538, supersedes ADR-0534): ``94,96,97,98`` — "
+            "premium-archival operating points. VMAF 94 is the "
+            "subjectively-transparent floor on 4K source; 98 is "
+            "near-lossless. The bisect (ADR-0538) now starts its CRF "
+            "search at the encoder's absolute floor (e.g. CRF 0 for "
+            "libx264 / libx265 / libvpx-vp9 / libsvtav1) so VMAF >=95 "
+            "is reachable; if the codec already overshoots the target at "
+            "its lowest accepted CRF the bisect returns that CRF with "
+            "ok=true and the achieved VMAF instead of an 'unreachable' "
+            "failure row. Pass a single value to fall through to the "
+            "legacy single-target schema. When ``--target-vmaf`` is "
+            "passed explicitly and ``--target-vmafs`` is left at its "
+            "default, the back-compat path activates and the legacy "
+            "single-target v1 schema is emitted."
         ),
     )
     compare.add_argument(

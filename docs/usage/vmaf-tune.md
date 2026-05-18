@@ -1401,18 +1401,19 @@ Sample output (`--format markdown`, abridged):
 **Smallest file**: `libaom` at CRF 30 → 1500.0 kbps (VMAF 92.40).
 ```
 
-### Multi-target rate-quality sweep (schema v2, ADR-0516 + ADR-0534)
+### Multi-target rate-quality sweep (schema v2, ADR-0516 + ADR-0534 + ADR-0538)
 
-`vmaf-tune compare` defaults to a 5-point rate-quality sweep covering
-realistic streaming operating points: `--target-vmafs 75,80,85,90,93`
-(ADR-0530). The JSON output stamps `schema_version: 2` and carries
-one row per `(codec, target_vmaf)` pair, **plus** an optional
-`bisect_samples` list per row that records every encode+score probe
-the underlying target-VMAF bisect computed. `vmaf-tune report
---compare-json sweep.json` then renders a **per-codec rate-quality
-curve** assembled from those probes, with the picked-CRF rows
-highlighted as larger circled markers and the **pareto frontier**
-(lowest bitrate at each target) drawn as a heavier dashed overlay.
+`vmaf-tune compare` defaults to a 4-point rate-quality sweep covering
+premium-archival operating points: `--target-vmafs 94,96,97,98`
+(ADR-0538, supersedes the ADR-0534 streaming defaults). The JSON
+output stamps `schema_version: 2` and carries one row per
+`(codec, target_vmaf)` pair, **plus** an optional `bisect_samples`
+list per row that records every encode+score probe the underlying
+target-VMAF bisect computed. `vmaf-tune report --compare-json
+sweep.json` then renders a **per-codec rate-quality curve** assembled
+from those probes, with the picked-CRF rows highlighted as larger
+circled markers and the **pareto frontier** (lowest bitrate at each
+target) drawn as a heavier dashed overlay.
 
 ```shell
 # Out of the box: 5-point sweep, 3-codec compare, GPU scoring.
@@ -1429,20 +1430,66 @@ vmaf-tune report \
     --format html --output sweep_report.html
 ```
 
-**Why these defaults (ADR-0530)**
+**Why these defaults (ADR-0538 supersedes ADR-0530)**
 
-- **`75,80,85,90,93` covers realistic streaming.** Broadcast-quality
-  sits at VMAF ≈ 75; mainstream streaming at 80-90; premium at 93.
-  The legacy default `85,90,92,95` was an archival-only sweep.
-- **The top end stops at 93, not 95.** VMAF 95+ frequently exceeds
-  the codec's CRF ceiling for 4K high-motion content — the bisect
-  returns "unreachable" failure rows that pollute the report
-  instead of producing data.
+- **`94,96,97,98` covers premium-archival.** The fork's primary user
+  encodes archival masters at VMAF >= 95 exclusively; VMAF 94 is
+  the subjectively-transparent floor on 4K source, 98 is the
+  near-lossless ceiling. The previous ADR-0530 / ADR-0534 default
+  (`75,80,85,90,93`) targeted streaming / broadcast workflows that
+  this fork does not service, so its R-Q chart contained no points
+  the user picks CRFs from.
+- **VMAF >= 95 is reachable.** The earlier "top stops at 93" caveat
+  was a bisect-harness artefact: the search window defaulted to the
+  codec adapter's narrow `quality_range` (e.g. `libx265 = (15, 40)`,
+  `libsvtav1 = (20, 50)`) which the adapter validator additionally
+  enforced as a hard CRF gate. ADR-0538 widens the default search
+  window to the encoder's absolute CRF range — see the
+  **High-VMAF bisect contract** subsection below for the per-codec
+  table and the contract callers can rely on.
 - **The chart renders from `bisect_samples`, not from the picked-CRF
   cells.** Connecting picked-CRF rows per codec across targets
   produced physically impossible downward dips, because the bisect
   overshoots each target by a different amount. Plotting every probe
   the bisect already computed shows the genuine per-codec R-Q curve.
+
+#### High-VMAF bisect contract (ADR-0538)
+
+When `crf_range` is left at its default (the CLI default; no
+`--crf-min` / `--crf-max` passed), `bisect_target_vmaf` searches the
+**encoder's absolute CRF range**, not the codec adapter's
+perceptually-informative `quality_range`:
+
+| Codec | Absolute CRF range | Informative `quality_range` (legacy default) |
+| --- | --- | --- |
+| `libx264` | `0..51` | `0..51` (already maximal) |
+| `libx265` | `0..51` | `15..40` |
+| `libvpx-vp9` | `0..63` | `0..63` (already maximal) |
+| `libaom-av1` | `0..63` | `0..63` (already maximal) |
+| `libsvtav1` | `0..63` | `20..50` |
+| Other (`*_nvenc`, `*_qsv`, `*_amf`, `*_videotoolbox`, `libvvenc`) | falls back to `adapter.crf_min/crf_max` then `adapter.quality_range` | as declared by the adapter |
+
+The contract guarantees:
+
+1. **The bisect starts at the encoder's accepted floor.** For
+   libx264 / libx265 / libvpx-vp9 / libaom-av1 / libsvtav1 the
+   lowest probe is CRF 0 (lossless), so any reasonable source
+   produces VMAF >= 98 at that CRF and high targets are reachable.
+2. **`max_iterations >= 6` covers the widest window.** `ceil(log2(64))
+   = 6`; the CLI default is `--max-iterations 8` (+2 safety). For a
+   target near the top of the VMAF scale (>= 97) callers running the
+   bisect programmatically should keep at least 6 iterations.
+3. **Overshoot at the floor is OK.** If the codec already overshoots
+   the target at CRF 0 (e.g. CRF 0 gives VMAF 99.5 on a low-distortion
+   source against target 96), the bisect narrows toward higher CRFs
+   looking for the highest CRF that still clears the target and
+   returns that one with `ok=True`. The achieved VMAF will be `>=
+   target_vmaf` by construction.
+4. **The adapter's narrow informative window is bypassed for CRF
+   validation but not for preset validation.** Preset names are still
+   checked against the adapter's whitelist; CRFs are checked against
+   the encoder absolute range. Pass `--crf-min` / `--crf-max`
+   explicitly to recover the historical narrow-window behaviour.
 
 **Single-target legacy (v1, back-compat)**: pass `--target-vmaf NN`
 without `--target-vmafs` to fall back to the v1 single-target schema
@@ -1469,7 +1516,7 @@ the CPU set `libx264,libx265,libsvtav1,libvpx-vp9`.
 | --- | --- | --- |
 | `--src PATH` | — | Required. Single reference clip. |
 | `--target-vmaf F` | `92.0` | Single VMAF target. When passed explicitly and `--target-vmafs` is at its default sweep, the v1 single-target schema is emitted (ADR-0534 back-compat). |
-| `--target-vmafs LIST` | `75,80,85,90,93` (ADR-0534) | Comma-separated VMAF targets to sweep per codec. The default covers realistic streaming operating points (broadcast through premium). Pass a single value to opt into the v1 path; pass an explicit multi-value list (e.g. `80,85,90`) to override the sweep range. |
+| `--target-vmafs LIST` | `94,96,97,98` (ADR-0538, supersedes ADR-0534) | Comma-separated VMAF targets to sweep per codec. The default covers premium-archival operating points (4K archival masters at VMAF 94-98). Pass a single value to opt into the v1 path; pass an explicit multi-value list (e.g. `80,85,90`) to override the sweep range. |
 | `--encoders LIST` | `libx264,libx265,libsvtav1,libvpx-vp9` | Comma-separated codec names. Hardware encoders (`h264_nvenc`, `hevc_nvenc`, `av1_nvenc`, `h264_qsv`, `hevc_qsv`, `av1_qsv`, `h264_amf`, `hevc_amf`, `av1_amf`) are accepted; missing-encoder rows skip with a reason rather than failing the whole run. |
 | `--width / --height` | — | Required for the default real-bisect backend. |
 | `--pix-fmt` | `yuv420p` | Source pixel format forwarded to the scorer. |
@@ -1500,10 +1547,10 @@ sentinel numerics (`-1` for `best_crf`, `NaN` for the floats).
 passed. The JSON has no `schema_version` key; `rows` is one row per
 codec at `--target-vmaf`.
 
-**v2 (multi-target sweep, ADR-0516 + ADR-0534)**: emitted when
-`--target-vmafs` lists ≥ 2 targets (the new default, ADR-0534). The
-JSON carries `"schema_version": 2`,
-`"target_vmafs": [75.0, 80.0, 85.0, 90.0, 93.0]`, and `rows` is one
+**v2 (multi-target sweep, ADR-0516 + ADR-0534 + ADR-0538)**: emitted
+when `--target-vmafs` lists ≥ 2 targets (the new default, ADR-0538).
+The JSON carries `"schema_version": 2`,
+`"target_vmafs": [94.0, 96.0, 97.0, 98.0]`, and `rows` is one
 row per `(codec, target_vmaf)` pair. Each row also carries an
 optional `bisect_samples: [{crf, bitrate_kbps, vmaf_score,
 encode_time_ms}, ...]` list (ADR-0530, additive) recording every
