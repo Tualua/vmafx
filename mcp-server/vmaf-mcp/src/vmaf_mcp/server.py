@@ -84,10 +84,31 @@ def _vmaf_binary() -> Path:
 
 
 def _allowed_roots() -> list[Path]:
+    """Return the list of filesystem trees under which MCP tool paths are allowed.
+
+    Default roots:
+    - ``<repo>/testdata`` — fork-added YUV fixtures and benchmark harnesses.
+    - ``<repo>/python/test/resource`` — Netflix golden fixture tree (includes
+      ``yuv/``, ``model/``, and ``feature/`` sub-directories).
+    - ``<repo>/model`` — shipped VMAF model JSON/PKL/ONNX files.
+    - ``/workspace/python/test/resource/yuv`` — vmaf-dev-mcp container mount
+      (ADR-0496 / Bug B, 2026-05-18): the container bind-mounts the repo
+      at ``/workspace/``, so the absolute container path must also be
+      allowlisted so MCP calls that pass the absolute container path for the
+      Netflix golden YUVs succeed without requiring ``VMAF_MCP_ALLOW``.
+
+    Additional roots may be added at runtime via the ``VMAF_MCP_ALLOW``
+    environment variable (colon-separated list of absolute paths).
+    """
     roots = [
         _repo_root() / "testdata",
         _repo_root() / "python" / "test" / "resource",
         _repo_root() / "model",
+        # Bug B fix: absolute container path for the Netflix golden YUVs
+        # (vmaf-dev-mcp container, ADR-0496). The bind-mount makes the
+        # repo root appear at /workspace/, so the golden YUVs live at
+        # /workspace/python/test/resource/yuv/ inside the container.
+        Path("/workspace/python/test/resource"),
     ]
     extra = os.environ.get("VMAF_MCP_ALLOW")
     if extra:
@@ -344,6 +365,21 @@ def _list_models() -> list[dict[str, Any]]:
 
 
 def _list_backends() -> dict[str, bool]:
+    """Return which backends the local vmaf binary was compiled with.
+
+    Delegates to :func:`_probe_backends`, which reads ``vmaf --help``
+    and looks for ``--no_<backend>`` flags (presence = compiled in).
+    This correctly identifies live CUDA/SYCL/Vulkan/HIP/Metal support
+    even on hosts where the ``--version`` banner does not mention GPU
+    backends — the historical ``--version`` grep approach (Bug A,
+    2026-05-18) missed CUDA on the ``vmaf-dev-mcp`` container because
+    the banner omits backend names.
+
+    Bug A fix: the old implementation searched the ``--version`` output
+    for keyword substrings which may be absent despite the backend being
+    compiled in (e.g. CUDA enabled but no "CUDA" token in the banner).
+    ``--help`` always lists ``--no_<backend>`` for every compiled backend.
+    """
     vmaf = _vmaf_binary()
     if not vmaf.exists():
         # CPU is always available regardless of binary presence; GPU backends
@@ -356,20 +392,14 @@ def _list_backends() -> dict[str, bool]:
             "hip": False,
             "metal": False,
         }
-    try:
-        result = subprocess.run(
-            [str(vmaf), "--version"], capture_output=True, text=True, timeout=5, check=False
-        )
-        blob = (result.stdout + result.stderr).lower()
-    except (subprocess.TimeoutExpired, OSError):
-        blob = ""
+    advertised = _probe_backends(vmaf)
     return {
         "cpu": True,
-        "cuda": "cuda" in blob,
-        "sycl": "sycl" in blob or "oneapi" in blob,
-        "vulkan": "vulkan" in blob,
-        "hip": "hip" in blob,
-        "metal": "metal" in blob,
+        "cuda": "cuda" in advertised,
+        "sycl": "sycl" in advertised,
+        "vulkan": "vulkan" in advertised,
+        "hip": "hip" in advertised,
+        "metal": "metal" in advertised,
     }
 
 

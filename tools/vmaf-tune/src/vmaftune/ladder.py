@@ -202,6 +202,7 @@ def make_default_sampler(
     src_width: int | None = None,
     src_height: int | None = None,
     cloud_sink: list[LadderPoint] | None = None,
+    score_backend: str | None = None,
 ) -> SamplerFn:
     """Return a :data:`SamplerFn` closed over real source-shape metadata.
 
@@ -227,6 +228,11 @@ def make_default_sampler(
     frame-corruption on every rung where target != source (BBB e2e v2
     Bug #v2-B). When left at ``None`` the legacy behaviour is
     preserved (target dims serve as both source and encode dims).
+
+    ``score_backend`` (added 2026-05-18, Bug C / ADR-0509) threads the
+    ``--score-backend`` CLI value into every corpus call the default
+    sampler makes. ``None`` keeps the existing auto-select behaviour
+    (libvmaf picks the fastest available backend).
     """
     sweep = tuple(int(c) for c in crf_sweep) if crf_sweep is not None else DEFAULT_SAMPLER_CRF_SWEEP
 
@@ -246,6 +252,7 @@ def make_default_sampler(
             src_width=src_width,
             src_height=src_height,
             cloud_sink=cloud_sink,
+            score_backend=score_backend,
         )
 
     return _sampler
@@ -265,6 +272,7 @@ def _default_sampler(
     src_width: int | None = None,
     src_height: int | None = None,
     cloud_sink: list[LadderPoint] | None = None,
+    score_backend: str | None = None,
 ) -> LadderPoint:
     """Production sampler — encode the configured CRF sweep, pick by VMAF.
 
@@ -338,6 +346,7 @@ def _default_sampler(
             encode_dir=tmp_path / "encodes",
             keep_encodes=False,
             src_sha256=False,
+            score_backend=score_backend,
         )
         rows = [r for r in iter_rows(job, opts) if int(r.get("exit_status", 0)) == 0]
 

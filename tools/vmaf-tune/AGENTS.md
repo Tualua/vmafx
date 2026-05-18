@@ -907,3 +907,21 @@ scripts for those local corpora.
   `test_resolve_compare_source_geometry_*` + `test_cli_compare_passes_probed_framerate_for_container_src`
   family); when adding a new `_TrackedDefaultAction` flag,
   extend the hardcoded tuple in `_stamp_tracked_default_sentinels`.
+- **`vmaf-tune ladder --score-backend` resolves up-front;
+  `tune-per-shot --score-backend` defers to libvmaf (ADR-0511).**
+  `_run_ladder` calls `score_backend.select_backend(prefer=raw_backend,
+  vmaf_bin=args.vmaf_bin)` BEFORE any encode starts so an unavailable
+  backend errors out with RC=2 and a clear message instead of failing
+  mid-sweep with cryptic libvmaf output. The resolved value threads
+  through `make_default_sampler(score_backend=...)` →
+  `CorpusOptions.score_backend` → `vmaf --backend $name`. When `auto`
+  resolves to `cpu`, the value passed downstream is `None` so the
+  corpus step omits the explicit `--backend` flag and lets libvmaf
+  use its own default (preserves the legacy zero-flag invocation
+  pattern). `_run_tune_per_shot` DELIBERATELY DOES NOT pre-resolve —
+  `_build_per_shot_bisect_predicate` keeps the historical
+  `None if args.score_backend == "auto" else args.score_backend`
+  conversion so `bisect_target_vmaf` receives `None` for auto and lets
+  libvmaf pick the live runtime at scoring time. The asymmetry is
+  documented inline at the top of `_run_tune_per_shot`; do not "fix"
+  it without updating that contract and the predicate tests.

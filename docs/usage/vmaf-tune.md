@@ -1776,6 +1776,8 @@ accepted as a legacy alias for `vmaf`.
 | `--output PATH` | stdout | Manifest destination. |
 | `--src-width INT` | largest `--resolutions` entry | Actual source width for raw YUV cross-resolution ladders. When the source is a higher resolution than the smallest rung, this is the demuxer-side `-s W:H`; the encode pipe scales to each rung target via `-vf scale=W:H`. Container sources auto-detect geometry and ignore this flag. Added 2026-05-18 per ADR-0498 / Bug #v2-B. |
 | `--src-height INT` | largest `--resolutions` entry | Companion to `--src-width`. Default picks the tallest entry in `--resolutions` so a `--resolutions 1920x1080,1280x720,854x480` ladder against a 1080p raw YUV "just works". |
+| `--score-backend NAME` | `auto` | libvmaf scoring backend used by the default corpus sampler. Accepts `auto\|cpu\|cuda\|sycl\|vulkan` (same enum as `corpus --score-backend` / `compare --score-backend`). `auto` picks the fastest available (`cuda > vulkan > sycl > cpu`); a specific name is honoured strictly and the run errors out with RC=2 before any encodes start if the local `vmaf` binary does not advertise it. Use `cpu` to force bit-exact CPU scoring for verification against the Netflix golden gate. Added 2026-05-18 per ADR-0511 / Bug C. |
+| `--vmaf-bin PATH` | `vmaf` | Path to the `vmaf` binary used to probe backend availability for `--score-backend`. Added 2026-05-18 per ADR-0511 / Bug C. |
 
 > **Cross-resolution ladders against raw YUV**: prior to ADR-0498 the
 > default sampler used the rung target dims as the source dims, which

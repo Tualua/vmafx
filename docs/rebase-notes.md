@@ -35768,3 +35768,34 @@ argv. `_maybe_decode_reference` and `iter_rows` wire the new
 kwargs through. No public surface of the libvmaf C API
 changes; no ffmpeg-patches file consumes the modified
 `tools/vmaf-tune/` Python helpers.
+
+## fix/mcp-backend-probe-allowlist-ladder-score-backend (ADR-0511)
+
+**Files**:
+`mcp-server/vmaf-mcp/src/vmaf_mcp/server.py`,
+`mcp-server/vmaf-mcp/tests/test_backend_probe_and_allowlist_0509.py`,
+`tools/vmaf-tune/src/vmaftune/{cli,ladder}.py`,
+`tools/vmaf-tune/tests/test_ladder_score_backend_0509.py`,
+`docs/adr/0511-mcp-backend-probe-allowlist-and-ladder-backend.md`,
+`docs/adr/README.md`,
+`docs/state.md`,
+`docs/mcp/backends.md`,
+`docs/usage/vmaf-tune.md`,
+`docs/rebase-notes.md`,
+`mcp-server/AGENTS.md`,
+`tools/vmaf-tune/AGENTS.md`,
+`changelog.d/fixed/mcp-and-ladder-backend.md`.
+
+**Rebase sensitivity (none):** every touched file is fork-local —
+the MCP server (`mcp-server/`) and the `vmaf-tune` CLI
+(`tools/vmaf-tune/`) are wholly fork-added trees with no upstream
+counterpart. The libvmaf C surface is untouched (the probe shells
+out to the existing `vmaf --help` flag table, no new CLI surface
+added there), and no `ffmpeg-patches/` patch consumes
+`tools/vmaf-tune/` or `mcp-server/` Python helpers.
+`make_default_sampler` and `_default_sampler` gain a new
+`score_backend: str | None = None` kwarg with a back-compatible
+default, so every existing caller round-trips unchanged.
+`_run_tune_per_shot` is deliberately not touched — the
+`auto → None → libvmaf-picks` predicate contract is preserved as
+documented inline.

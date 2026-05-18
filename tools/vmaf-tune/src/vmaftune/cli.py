@@ -725,6 +725,20 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help=("actual source height when it differs from the rung target " "(see --src-width)."),
     )
+    ladder.add_argument(
+        "--score-backend",
+        default="auto",
+        choices=("auto", *ALL_BACKENDS),
+        help=(
+            "libvmaf scoring backend used by the default corpus sampler "
+            "(default: auto). 'auto' picks the fastest available "
+            "(cuda > vulkan > sycl > cpu); a specific name is honoured "
+            "strictly and errors out if unavailable. Use 'cpu' to force "
+            "bit-exact CPU scoring for verification against golden data. "
+            "(Bug C / ADR-0509)"
+        ),
+    )
+    ladder.add_argument("--vmaf-bin", default="vmaf", help="path to the vmaf binary")
 
     compare = sub.add_parser(
         "compare",
@@ -1795,6 +1809,19 @@ def _run_predict(args: argparse.Namespace) -> int:
 
 
 def _run_tune_per_shot(args: argparse.Namespace) -> int:
+    # ADR-0509 / Bug C audit: `tune-per-shot` already had a
+    # ``--score-backend`` CLI flag and the predicate plumbing converts
+    # ``"auto"`` to ``None`` further down at
+    # :func:`_build_per_shot_bisect_predicate` (line 1880). The user
+    # spec for ADR-0509 explicitly asked us NOT to regress that
+    # behaviour, so we deliberately do not pre-resolve the backend
+    # here — `bisect_target_vmaf` will receive ``None`` for auto and
+    # let libvmaf pick the fastest available runtime at scoring time,
+    # preserving the historical behaviour. The strict "user-asked-for-
+    # an-unavailable-backend → error" semantics added for ``ladder``
+    # in :func:`_run_ladder` are layered into the predicate via
+    # ``score_backend`` at line 1880 already passing the raw user
+    # value (and `bisect_target_vmaf` surfacing the failure).
     total_frames = args.total_frames if args.total_frames > 0 else None
     shots = detect_shots(
         args.src,
@@ -2156,6 +2183,24 @@ def _run_ladder(args: argparse.Namespace) -> int:
     # dedup + emit semantics.
     from .ladder import LadderPoint as _LadderPoint  # noqa: PLC0415
 
+    # Bug C / ADR-0511: resolve --score-backend up-front so an
+    # unavailable backend errors out before any encodes start.
+    raw_backend = getattr(args, "score_backend", "auto")
+    vmaf_bin = getattr(args, "vmaf_bin", "vmaf")
+    try:
+        resolved_backend = select_backend(prefer=raw_backend, vmaf_bin=vmaf_bin)
+    except BackendUnavailableError as exc:
+        sys.stderr.write(f"vmaf-tune ladder: {exc}\n")
+        return 2
+    sys.stderr.write(f"vmaf-tune ladder: scoring backend = {resolved_backend}\n")
+    # Pass None when auto resolved to CPU so the corpus step omits the
+    # explicit ``--backend`` flag and lets libvmaf use its own default.
+    # When the user explicitly requested a backend (or auto resolved to a
+    # GPU), pass the resolved name through to CorpusOptions.score_backend.
+    ladder_backend: str | None = (
+        None if raw_backend == "auto" and resolved_backend == "cpu" else resolved_backend
+    )
+
     cloud_sink: list[_LadderPoint] = []
     sampler = make_default_sampler(
         pix_fmt=getattr(args, "pix_fmt", "yuv420p"),
@@ -2165,6 +2210,7 @@ def _run_ladder(args: argparse.Namespace) -> int:
         src_width=int(src_w),
         src_height=int(src_h),
         cloud_sink=cloud_sink,
+        score_backend=ladder_backend,
     )
     # BBB e2e v6 Bug #V6-3 (ADR-0506): the sampler can legitimately
     # raise ``RuntimeError`` ("default sampler produced no scorable

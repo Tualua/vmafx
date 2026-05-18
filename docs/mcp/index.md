@@ -157,6 +157,9 @@ tool-calling interface with declared schemas and a JSON-shaped response.
 
 - [Tool reference](tools.md) — request/response schemas and error codes
   for every tool.
+- [Backend discovery and default allowlist](backends.md) — how
+  `list_backends` probes compiled-in GPU runtimes and which paths the
+  server accepts without `VMAF_MCP_ALLOW` (ADR-0511).
 - [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md) — the
   per-surface doc bar this page satisfies (MCP tool: what / schema /
   allowed paths / example / error codes).

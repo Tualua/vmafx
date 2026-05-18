@@ -48,3 +48,27 @@ Locked in [ADR-0009](../docs/adr/0009-mcp-server-tool-surface.md):
 - [ADR-0009](../docs/adr/0009-mcp-server-tool-surface.md) — the four initial tools.
 - [ADR-0036](../docs/adr/0036-tinyai-wave1-scope-expansion.md) — `describe_worst_frames` on the Wave 1 list.
 - [ADR-0042](../docs/adr/0042-tinyai-docs-required-per-pr.md) — doc rule.
+
+## Rebase-sensitive invariants
+
+- **`_probe_backends` reads `vmaf --help`, not `--version` (ADR-0509,
+  Bug A).** Every backend the local `vmaf` binary was compiled with
+  surfaces in `--help` as a `--no_<backend>` disable flag. The
+  `--version` banner does NOT list compiled-in GPU backends on this
+  fork, so the historical banner-grep mis-reported CUDA as
+  unavailable on hosts where the kernel + driver + binary all
+  supported it (e.g. the `vmaf-dev-mcp` container). Results are
+  cached per-binary-path for the server-process lifetime so
+  `vmaf_score` does not fork a subprocess per call. A regression
+  that switches the probe source back to `--version` re-introduces
+  the silent "CUDA-not-available" false-negative class.
+- **Default allowlist includes `/workspace/python/test/resource`
+  alongside the host-relative `<repo>/python/test/resource`
+  (ADR-0509, Bug B).** The container at
+  [`dev/Containerfile`](../dev/Containerfile) bind-mounts the repo
+  root at `/workspace/`, so the Netflix golden YUVs are at the
+  absolute container path; without the absolute entry every
+  container-side MCP demo had to set
+  `VMAF_MCP_ALLOW=/workspace/python/test/resource` first.
+  `VMAF_MCP_ALLOW` env-var override is preserved and additive (it
+  extends the default list, does not replace it).
