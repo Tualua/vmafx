@@ -64,6 +64,17 @@ int vmaf_ort_input_shape(VmafOrtSession *sess, int64_t *out_shape, size_t max_ra
                          size_t *out_rank);
 
 /**
+ * Fetch the static shape of input @p slot. Same semantics as
+ * vmaf_ort_input_shape (which is the legacy slot=0 shortcut). Used by
+ * the ADR-0517 feature-vector loader to discover the optional
+ * second-input width (e.g. fr_regressor_v2's 14-D `codec` block).
+ *
+ * Returns -ERANGE when @p slot is out of bounds.
+ */
+int vmaf_ort_input_shape_at(VmafOrtSession *sess, size_t slot, int64_t *out_shape, size_t max_rank,
+                            size_t *out_rank);
+
+/**
  * Name of the ONNX Runtime execution provider that actually attached to
  * the session. Populated at open time; owned by the session. Stable
  * strings: "CPU", "CUDA", "OpenVINO:GPU", "OpenVINO:CPU", "OpenVINO:NPU",

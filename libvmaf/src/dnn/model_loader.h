@@ -36,6 +36,13 @@ typedef enum VmafModelQuantMode {
     VMAF_QUANT_QAT = 3,
 } VmafModelQuantMode;
 
+/** Maximum number of features in a feature-vector tiny model. The shipped
+ *  models top out at 6 (canonical-6); 32 leaves comfortable headroom for any
+ *  future extension (e.g. canonical-6 + extended motion stats) without
+ *  bloating the sidecar struct or forcing a heap allocation per feature
+ *  name. */
+#define VMAF_DNN_MAX_FEATURE_NAMES 32u
+
 typedef struct VmafModelSidecar {
     VmafModelKind kind; /**< mirrors sidecar "kind" field */
     int opset;
@@ -49,6 +56,26 @@ typedef struct VmafModelSidecar {
     float expected_max;
     bool has_range;
     VmafModelQuantMode quant_mode; /**< default FP32; mirrors sidecar/registry */
+
+    /** Feature-vector tiny models (ADR-0518). The trainer ships the
+     *  per-feature order, mean, and std in the sidecar; the loader
+     *  parses them so the C-side `vmaf_ctx_dnn_run_frame` path knows
+     *  which canonical libvmaf features to materialise into the input
+     *  tensor, and which scaler to apply before inference.
+     *
+     *  Field-name compatibility: sidecars from both
+     *  `train_fr_regressor_v2.py` (which writes `feature_order` /
+     *  `feature_mean` / `feature_std`) and `vmaf_tiny_v4`-style
+     *  trainers (which write `features` / `input_mean` / `input_std`)
+     *  are accepted; the parser tries both keys.
+     *
+     *  `n_features == 0` means the sidecar carried no feature schema
+     *  — the loader treats the model as image-rank (rank-4 NCHW). */
+    size_t n_features;
+    char *feature_names[VMAF_DNN_MAX_FEATURE_NAMES]; /**< owned */
+    float feature_mean[VMAF_DNN_MAX_FEATURE_NAMES];
+    float feature_std[VMAF_DNN_MAX_FEATURE_NAMES];
+    bool has_feature_scaler; /**< true iff feature_mean / feature_std parsed */
 } VmafModelSidecar;
 
 /** Byte-identical magic check. Returns VMAF_MODEL_KIND_SVM for libsvm json/pkl,

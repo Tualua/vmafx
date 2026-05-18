@@ -675,6 +675,128 @@ static char *test_sidecar_extract_string_no_close_quote(void)
     (void)remove(tmpl);
     return NULL;
 }
+
+/* ADR-0517 regression: sidecar carrying a feature-vector schema
+ * (feature_order / feature_mean / feature_std as written by
+ * train_fr_regressor_v2.py) populates VmafModelSidecar.n_features,
+ * feature_names[], feature_mean[], feature_std[], and
+ * has_feature_scaler. */
+static char *test_sidecar_feature_vector_canonical6(void)
+{
+    char tmpl[] = "/tmp/vmaf-dnn-fv-XXXXXX";
+    int fd = mkstemp(tmpl);
+    mu_assert("mkstemp failed", fd >= 0);
+    close(fd);
+    char onnx[1024];
+    char sidecar[1024];
+    (void)snprintf(onnx, sizeof onnx, "%s.onnx", tmpl);
+    (void)snprintf(sidecar, sizeof sidecar, "%s.json", tmpl);
+    FILE *f = fopen_w_600(onnx);
+    if (f)
+        (void)fclose(f);
+    FILE *s = fopen_w_600(sidecar);
+    mu_assert("fopen sidecar failed", s != NULL);
+    (void)fprintf(s, "{\n"
+                     "  \"kind\": \"fr\",\n"
+                     "  \"feature_order\": [\"adm2\", \"vif_scale0\", "
+                     "\"vif_scale1\", \"vif_scale2\", \"vif_scale3\", \"motion2\"],\n"
+                     "  \"feature_mean\": [0.86, 0.37, 0.73, 0.82, 0.87, 8.95],\n"
+                     "  \"feature_std\":  [0.10, 0.16, 0.19, 0.17, 0.14, 6.24]\n"
+                     "}\n");
+    (void)fclose(s);
+
+    VmafModelSidecar meta;
+    int err = vmaf_dnn_sidecar_load(onnx, &meta);
+    mu_assert("sidecar_load canonical-6 failed", err == 0);
+    mu_assert("n_features == 6", meta.n_features == 6u);
+    mu_assert("feature_names[0] == adm2",
+              meta.feature_names[0] && strcmp(meta.feature_names[0], "adm2") == 0);
+    mu_assert("feature_names[5] == motion2",
+              meta.feature_names[5] && strcmp(meta.feature_names[5], "motion2") == 0);
+    mu_assert("has_feature_scaler", meta.has_feature_scaler);
+    mu_assert("feature_mean[0] ~ 0.86",
+              meta.feature_mean[0] > 0.85f && meta.feature_mean[0] < 0.87f);
+    mu_assert("feature_std[5] ~ 6.24", meta.feature_std[5] > 6.2f && meta.feature_std[5] < 6.3f);
+    vmaf_dnn_sidecar_free(&meta);
+    (void)remove(sidecar);
+    (void)remove(onnx);
+    (void)remove(tmpl);
+    return NULL;
+}
+
+/* ADR-0517: the alternative `features` / `input_mean` / `input_std`
+ * field names (used by vmaf_tiny_v* trainers) populate the same
+ * VmafModelSidecar fields. */
+static char *test_sidecar_feature_vector_vmaf_tiny_field_names(void)
+{
+    char tmpl[] = "/tmp/vmaf-dnn-fv2-XXXXXX";
+    int fd = mkstemp(tmpl);
+    mu_assert("mkstemp failed", fd >= 0);
+    close(fd);
+    char onnx[1024];
+    char sidecar[1024];
+    (void)snprintf(onnx, sizeof onnx, "%s.onnx", tmpl);
+    (void)snprintf(sidecar, sizeof sidecar, "%s.json", tmpl);
+    FILE *f = fopen_w_600(onnx);
+    if (f)
+        (void)fclose(f);
+    FILE *s = fopen_w_600(sidecar);
+    mu_assert("fopen sidecar failed", s != NULL);
+    (void)fprintf(s, "{\n"
+                     "  \"kind\": \"fr\",\n"
+                     "  \"features\": [\"adm2\", \"vif_scale0\"],\n"
+                     "  \"input_mean\": [0.5, 0.5],\n"
+                     "  \"input_std\":  [0.1, 0.1]\n"
+                     "}\n");
+    (void)fclose(s);
+
+    VmafModelSidecar meta;
+    int err = vmaf_dnn_sidecar_load(onnx, &meta);
+    mu_assert("sidecar_load tiny-v4-style failed", err == 0);
+    mu_assert("n_features == 2", meta.n_features == 2u);
+    mu_assert("alt-field has_feature_scaler", meta.has_feature_scaler);
+    vmaf_dnn_sidecar_free(&meta);
+    (void)remove(sidecar);
+    (void)remove(onnx);
+    (void)remove(tmpl);
+    return NULL;
+}
+
+/* ADR-0517: sidecar with feature_order but no scaler arrays — the
+ * loader honours the names but flags has_feature_scaler false so the
+ * runtime knows to skip the (mean, std) transform. */
+static char *test_sidecar_feature_vector_no_scaler(void)
+{
+    char tmpl[] = "/tmp/vmaf-dnn-fv3-XXXXXX";
+    int fd = mkstemp(tmpl);
+    mu_assert("mkstemp failed", fd >= 0);
+    close(fd);
+    char onnx[1024];
+    char sidecar[1024];
+    (void)snprintf(onnx, sizeof onnx, "%s.onnx", tmpl);
+    (void)snprintf(sidecar, sizeof sidecar, "%s.json", tmpl);
+    FILE *f = fopen_w_600(onnx);
+    if (f)
+        (void)fclose(f);
+    FILE *s = fopen_w_600(sidecar);
+    mu_assert("fopen sidecar failed", s != NULL);
+    (void)fprintf(s, "{\n"
+                     "  \"kind\": \"fr\",\n"
+                     "  \"feature_order\": [\"adm2\", \"vif_scale0\"]\n"
+                     "}\n");
+    (void)fclose(s);
+
+    VmafModelSidecar meta;
+    int err = vmaf_dnn_sidecar_load(onnx, &meta);
+    mu_assert("sidecar_load no-scaler failed", err == 0);
+    mu_assert("n_features == 2", meta.n_features == 2u);
+    mu_assert("no scaler arrays → has_feature_scaler false", meta.has_feature_scaler == false);
+    vmaf_dnn_sidecar_free(&meta);
+    (void)remove(sidecar);
+    (void)remove(onnx);
+    (void)remove(tmpl);
+    return NULL;
+}
 #endif /* !_WIN32 */
 
 char *run_tests(void)
@@ -709,6 +831,9 @@ char *run_tests(void)
     mu_run_test(test_sidecar_oversized_path);
     mu_run_test(test_sidecar_malformed_keys_default);
     mu_run_test(test_sidecar_extract_string_no_close_quote);
+    mu_run_test(test_sidecar_feature_vector_canonical6);
+    mu_run_test(test_sidecar_feature_vector_vmaf_tiny_field_names);
+    mu_run_test(test_sidecar_feature_vector_no_scaler);
 #endif
     return NULL;
 }

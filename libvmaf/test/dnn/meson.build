@@ -115,11 +115,15 @@ if bash_prog.found()
     # cross-compiling (bash invokes VMAF_BIN directly, bypassing meson's
     # exe_wrapper; qemu-user then fails without QEMU_LD_PREFIX).
     if get_option('enable_tools') and not meson.is_cross_build()
+        # workdir = project source root so the feature-vector smoke
+        # block in test_cli.sh can resolve `model/tiny/*.onnx` and the
+        # Netflix YUV fixtures against the source tree (ADR-0517).
         test('test_cli',
              bash_prog,
              args : [files('test_cli.sh')],
              env  : { 'VMAF_BIN' : vmaf.full_path() },
              depends : vmaf,
+             workdir : meson.project_source_root() / '..',
              suite : 'dnn')
     endif
 

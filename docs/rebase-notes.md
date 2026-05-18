@@ -35893,3 +35893,40 @@ documented inline.
 ## fix/windows-mingw64-build-repair (ADR-0515)
 
 **Rebase sensitivity (none):** test-only change confined to a fork-added file (`libvmaf/test/test_public_api_score.c`, added 2026-05-16 from the C-API coverage audit). The Win32 `#ifdef` branch mirrors the pre-existing pattern in `libvmaf/test/dnn/test_model_loader.c::test_sidecar_parses`; no public C-API or ffmpeg-patches/ surface touched. No upstream-Netflix counterpart for this test file, so upstream rebases cannot collide with the helper.
+
+## fix/tiny-model-loader-external-data-and-feature-rank (ADR-0518)
+
+**Files**:
+`libvmaf/src/dnn/{model_loader.h,model_loader.c,dnn_ctx.h,ort_backend.h,ort_backend.c,AGENTS.md}`,
+`libvmaf/src/libvmaf.c`,
+`libvmaf/test/dnn/{meson.build,test_cli.sh,test_model_loader.c}`,
+`docs/adr/0518-tiny-model-loader-external-data-and-feature-rank.md`,
+`docs/adr/README.md`,
+`docs/ai/inference.md`,
+`docs/state.md`,
+`docs/research/0518-tiny-model-loader-feature-rank.md`,
+`docs/rebase-notes.md`,
+`changelog.d/fixed/tiny-model-loader.md`.
+
+**Rebase sensitivity (low — fork-local dnn surface, additive):**
+All touched files are fork-local except `libvmaf/src/libvmaf.c`,
+where the changes are confined to the tiny-AI bridge (the
+`VmafContext::dnn` struct in the file-private definitions block,
+`vmaf_ctx_dnn_free`, `vmaf_ctx_dnn_attach`, and
+`vmaf_ctx_dnn_run_frame` — all fork-added per ADR-0040 /
+ADR-0042). The struct grows by four fields
+(`in_rank`, `n_features`, `extra_in_width`, `extra_in_buf`);
+no existing offset shifts since the new fields are appended
+inside the `dnn` substruct, which is private to
+`libvmaf.c`. `VmafModelSidecar` (declared in
+`libvmaf/src/dnn/model_loader.h`) grows by
+`n_features` / `feature_names[VMAF_DNN_MAX_FEATURE_NAMES]` /
+`feature_mean[]` / `feature_std[]` / `has_feature_scaler` —
+this is a header consumed only by the dnn TU set and the
+DNN tests; consumers outside `libvmaf/src/dnn/` or
+`libvmaf/test/dnn/` should not depend on the struct layout
+(it's an internal sidecar contract, not a public API).
+`vmaf_ort_input_shape_at()` is a new public symbol on
+`ort_backend.h`; the existing `vmaf_ort_input_shape()`
+remains as the `slot == 0` shortcut. No ffmpeg-patches
+file consumes any of the changed symbols.

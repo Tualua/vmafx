@@ -100,6 +100,49 @@ Runtime directly.
   — QAT pipeline (PyTorch QAT → fp32 ONNX → ORT static-quantize
   bridge for PyTorch 2.11 ONNX-exporter limitations).
 
+## ADR-0518 invariants — tiny-model loader accepts rank-2 + external-data ONNX
+
+- **`vmaf_ctx_dnn_attach` accepts `in_rank == 2` AND `in_rank == 4`**.
+  Reverting to a `!= 4` gate breaks every shipped FR regressor (the
+  three checkpoints under `model/tiny/fr_regressor_v[12]*.onnx` plus
+  `vmaf_tiny_v4`). The rank-2 branch lives in
+  `dnn_attach_feature_vector()` (file-static helper in
+  `libvmaf.c`); the dispatch in `vmaf_ctx_dnn_run_frame` reads
+  `vmaf->dnn.in_rank` to route to the NCHW vs feature-vector path.
+- **Sidecar parser MUST accept both naming conventions** for the
+  feature schema: `feature_order` / `feature_mean` / `feature_std`
+  (the trainer style used by `ai/scripts/train_fr_regressor*.py`)
+  AND `features` / `input_mean` / `input_std` (the trainer style
+  used by `ai/scripts/train_vmaf_tiny_v*.py`). Removing either
+  alias breaks one of the two trainer paths silently — the
+  loader still loads the ONNX but `n_features` stays 0 and the
+  fallback canonical-6 ordering is used unconditionally,
+  scrambling models whose feature order differs from
+  canonical-6. The `test_sidecar_feature_vector_*` regression
+  tests in `test_model_loader.c` gate this.
+- **`VMAF_DNN_MAX_FEATURE_NAMES = 32`** is the static cap on the
+  in-struct `feature_names[]` / `feature_mean[]` / `feature_std[]`
+  arrays. The cap exists to keep `VmafModelSidecar` heap-free
+  (Power-of-10 / no-VLA). Increasing it has no behavioural cost
+  but lower-bounds the per-context memory; do not shrink it
+  below 6 (canonical-6).
+- **Pre-seeded "unknown" codec one-hot** in
+  `dnn_attach_feature_vector`: when a rank-2 model declares a
+  second input, the scratch buffer's third-from-last slot is set
+  to 1.0. The "third-from-last" rule mirrors the v2 layout
+  (`[encoder_onehot…, preset_norm, crf_norm]`) — the
+  "unknown" one-hot lives at index `N-3`. Any future trainer
+  that ships a different second-input layout (e.g. inserts a
+  new normalised feature between the one-hot and `preset_norm`)
+  must keep the "unknown" slot reachable by this offset OR
+  update the loader to honour an explicit sidecar
+  `unknown_encoder_index` field.
+- **ORT external-data resolution is implicit**. Do not add
+  `AddExternalInitializersFromFilesInMemory` plumbing —
+  `OrtCreateSession(env, abs_path, opts, &session)` already
+  resolves sibling `.onnx.data` files. Adding manual external-data
+  wiring opens a second code path that drifts.
+
 ## Rebase-sensitive invariants (DNN-side surfaces in flight)
 
 - **`f16_to_f32_one` subnormal path uses `int32_t exp_adj`, not

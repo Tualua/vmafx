@@ -151,6 +151,129 @@ static char *extract_string(const char *doc, const char *key)
     return out;
 }
 
+/* Extract a JSON array of string values:  "key": ["a", "b", "c"]
+ *
+ * Writes up to @p max strings into @p out[]; the caller owns each
+ * allocation. The actual count is returned via @p *out_n. Returns 0
+ * when the key is found and parsed (even if the array is empty),
+ * -ENOENT when the key is absent, -ERANGE when the array exceeds
+ * @p max, -ENOMEM on allocation failure. */
+static int extract_string_array(const char *doc, const char *key, char **out, size_t max,
+                                size_t *out_n)
+{
+    char needle[64];
+    int n = snprintf(needle, sizeof(needle), "\"%s\"", key);
+    if (n < 0 || (size_t)n >= sizeof(needle))
+        return -EINVAL;
+    const char *p = strstr(doc, needle);
+    if (!p)
+        return -ENOENT;
+    p = strchr(p + (size_t)n, ':');
+    if (!p)
+        return -ENOENT;
+    p++;
+    while (*p && isspace((unsigned char)*p))
+        p++;
+    if (*p != '[')
+        return -EINVAL;
+    p++;
+
+    size_t cnt = 0u;
+    while (*p) {
+        while (*p && isspace((unsigned char)*p))
+            p++;
+        if (*p == ']') {
+            *out_n = cnt;
+            return 0;
+        }
+        if (*p != '"')
+            return -EINVAL;
+        ++p;
+        const char *q = strchr(p, '"');
+        if (!q)
+            return -EINVAL;
+        const size_t len = (size_t)(q - p);
+        if (cnt >= max)
+            return -ERANGE;
+        char *s = (char *)malloc(len + 1u);
+        if (!s)
+            return -ENOMEM;
+        memcpy(s, p, len);
+        s[len] = '\0';
+        out[cnt++] = s;
+        p = q + 1;
+        while (*p && isspace((unsigned char)*p))
+            p++;
+        if (*p == ',') {
+            ++p;
+            continue;
+        }
+        if (*p == ']') {
+            *out_n = cnt;
+            return 0;
+        }
+        return -EINVAL;
+    }
+    return -EINVAL;
+}
+
+/* Extract a JSON array of numeric values:  "key": [1.0, 2, 3.5e-1]
+ *
+ * Writes up to @p max floats into @p out[]; @p *out_n receives the
+ * actual count. Returns 0 / -ENOENT / -ERANGE on the same axes as
+ * extract_string_array. */
+static int extract_float_array(const char *doc, const char *key, float *out, size_t max,
+                               size_t *out_n)
+{
+    char needle[64];
+    int n = snprintf(needle, sizeof(needle), "\"%s\"", key);
+    if (n < 0 || (size_t)n >= sizeof(needle))
+        return -EINVAL;
+    const char *p = strstr(doc, needle);
+    if (!p)
+        return -ENOENT;
+    p = strchr(p + (size_t)n, ':');
+    if (!p)
+        return -ENOENT;
+    p++;
+    while (*p && isspace((unsigned char)*p))
+        p++;
+    if (*p != '[')
+        return -EINVAL;
+    p++;
+
+    size_t cnt = 0u;
+    while (*p) {
+        while (*p && isspace((unsigned char)*p))
+            p++;
+        if (*p == ']') {
+            *out_n = cnt;
+            return 0;
+        }
+        char *endp = NULL;
+        errno = 0;
+        const double v = strtod(p, &endp);
+        if (endp == p)
+            return -EINVAL;
+        if (cnt >= max)
+            return -ERANGE;
+        out[cnt++] = (float)v;
+        p = endp;
+        while (*p && isspace((unsigned char)*p))
+            p++;
+        if (*p == ',') {
+            ++p;
+            continue;
+        }
+        if (*p == ']') {
+            *out_n = cnt;
+            return 0;
+        }
+        return -EINVAL;
+    }
+    return -EINVAL;
+}
+
 static int extract_int(const char *doc, const char *key, int *out)
 {
     char needle[64];
@@ -261,6 +384,60 @@ int vmaf_dnn_sidecar_load(const char *onnx_path, VmafModelSidecar *out)
         free(quant_str);
     }
 
+    /* ADR-0518: feature-vector tiny models carry their feature schema in
+     * the sidecar — feature names (in input-tensor order), per-feature
+     * scaler mean, per-feature scaler std. Two field-name conventions
+     * are accepted:
+     *
+     *   - ``feature_order`` / ``feature_mean`` / ``feature_std`` —
+     *     written by ``ai/scripts/train_fr_regressor_v2.py`` and the
+     *     v1 trainer.
+     *   - ``features`` / ``input_mean`` / ``input_std`` — written by
+     *     the ``vmaf_tiny_v*`` trainers (the scaler is baked into the
+     *     ONNX graph as Constant nodes, but the sidecar still echoes
+     *     the per-feature values for downstream tooling).
+     *
+     * Missing schema is non-fatal: the loader treats the model as a
+     * rank-4 NCHW image model and ``vmaf_ctx_dnn_attach`` enforces
+     * the rank-4 contract. */
+    out->n_features = 0u;
+    out->has_feature_scaler = false;
+    size_t n_names = 0u;
+    int frc = extract_string_array(buf, "feature_order", out->feature_names,
+                                   VMAF_DNN_MAX_FEATURE_NAMES, &n_names);
+    if (frc == -ENOENT) {
+        frc = extract_string_array(buf, "features", out->feature_names, VMAF_DNN_MAX_FEATURE_NAMES,
+                                   &n_names);
+    }
+    if (frc == 0 && n_names > 0u) {
+        out->n_features = n_names;
+        size_t n_mean = 0u;
+        size_t n_std = 0u;
+        int mrc = extract_float_array(buf, "feature_mean", out->feature_mean,
+                                      VMAF_DNN_MAX_FEATURE_NAMES, &n_mean);
+        if (mrc == -ENOENT) {
+            mrc = extract_float_array(buf, "input_mean", out->feature_mean,
+                                      VMAF_DNN_MAX_FEATURE_NAMES, &n_mean);
+        }
+        int src = extract_float_array(buf, "feature_std", out->feature_std,
+                                      VMAF_DNN_MAX_FEATURE_NAMES, &n_std);
+        if (src == -ENOENT) {
+            src = extract_float_array(buf, "input_std", out->feature_std,
+                                      VMAF_DNN_MAX_FEATURE_NAMES, &n_std);
+        }
+        if (mrc == 0 && src == 0 && n_mean == n_names && n_std == n_names) {
+            out->has_feature_scaler = true;
+        }
+    } else if (frc != -ENOENT && frc != 0) {
+        /* Malformed array — wipe partial allocations to keep the
+         * sidecar consistent. */
+        for (size_t i = 0; i < n_names; ++i) {
+            free(out->feature_names[i]);
+            out->feature_names[i] = NULL;
+        }
+        out->n_features = 0u;
+    }
+
     free(buf);
     return 0;
 }
@@ -272,6 +449,9 @@ void vmaf_dnn_sidecar_free(VmafModelSidecar *s)
     free(s->name);
     free(s->input_name);
     free(s->output_name);
+    for (size_t i = 0; i < s->n_features && i < VMAF_DNN_MAX_FEATURE_NAMES; ++i) {
+        free(s->feature_names[i]);
+    }
     memset(s, 0, sizeof(*s));
 }
 

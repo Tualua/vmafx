@@ -30,10 +30,18 @@ extern "C" {
  * ownership.
  *
  * @param in_shape  static input shape reported by ORT (rank dims).
- * @param in_rank   rank of in_shape. Must be 3 (CHW) or 4 (NCHW).
+ * @param in_rank   rank of in_shape. Accepts:
+ *                    - 4: NCHW [1, 1, H, W] single-channel luma image
+ *                         (legacy path, runs the picture through
+ *                         vmaf_tensor_from_luma each frame).
+ *                    - 2: [batch, feature_count] feature-vector model
+ *                         (ADR-0517). The host materialises the
+ *                         feature vector from libvmaf's classic
+ *                         feature collector at inference time.
  *
- * Currently accepts NCHW shape [1, 1, H, W] — single-channel luma. Other
- * shapes are rejected with -ENOTSUP so the failure is visible, not silent.
+ * Anything else is rejected with -ENOTSUP so the failure is visible,
+ * not silent. The accepted ranks cover every tiny-AI model shipped
+ * under model/tiny/ to date.
  */
 int vmaf_ctx_dnn_attach(VmafContext *ctx, VmafOrtSession *sess, const VmafModelSidecar *meta,
                         const int64_t *in_shape, size_t in_rank, const char *feature_name);
