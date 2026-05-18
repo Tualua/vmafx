@@ -37064,4 +37064,31 @@ Touched files: `dev/Containerfile`, `.pre-commit-config.yaml`,
 `docs/adr/README.md` (one index row),
 `changelog.d/changed/0569-sdk-version-bumps-2026-05-18.md`,
 `dev/AGENTS.md` (invariant notes), `docs/development/dev-mcp.md` (version table),
+## ADR-0574 — CUDA twins for HDR-model aim and adm3 sub-features (Phase 1)
+
+**Branch**: `feat/hdr-features-cuda-twins`
+**Rebase impact**: CUDA kernel and host files only — touches
+`libvmaf/src/feature/cuda/float_adm/float_adm_score.cu` and
+`libvmaf/src/feature/cuda/float_adm_cuda.c`. No meson.build change,
+no public C-API change, no Python/model change.
+
+**Rebase-sensitive invariant**: `FADM_ACCUM_SLOTS = 9` must remain
+identical in both files. The `.cu` unit defines the per-WG slot layout
+(`[0..2]`=csf_den, `[3..5]`=cm_num, `[6..8]`=aim_cm); the `.c` host
+uses it for buffer allocation, D2H copy size, and accumulator reads.
+If a rebase replaces the `.cu` with a pre-ADR-0574 version
+(`FADM_ACCUM_SLOTS = 6`), update `float_adm_cuda.c` to match in the
+same commit — a mismatch silently corrupts host memory. The
+`--fmad=false` nvcc flag covers all six kernels; do not remove it.
+
+Touched files:
+`libvmaf/src/feature/cuda/float_adm/float_adm_score.cu`,
+`libvmaf/src/feature/cuda/float_adm_cuda.c`,
+`docs/adr/0574-hdr-features-cuda-twins-phase-1.md`,
+`docs/adr/README.md` (one index row),
+`libvmaf/src/feature/cuda/AGENTS.md` (slot-sync invariant note),
+`docs/research/netflix-upstream-feature-additions-since-sync-2026-05-18.md`,
+`docs/metrics/features.md` (aim/adm3 sub-feature docs + footnote ⁶),
+`docs/state.md` (Recently-closed row T-CUDA-AIM-ADM3-2026-05-18),
+`changelog.d/added/0574-hdr-features-cuda-twins-aim-adm3.md`,
 `docs/rebase-notes.md` (this entry).

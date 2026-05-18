@@ -239,6 +239,24 @@ HIP / Metal motion twins listed in the Twin-update table below) in the same PR.
   `integer_adm.c` / `float_adm.c`, the CUDA twins must be updated
   in the same PR.
 
+- **`float_adm_cuda.c` / `float_adm/float_adm_score.cu` AIM/ADM3
+  slot-sync invariant** (ADR-0574). `FADM_ACCUM_SLOTS = 9` must
+  remain identical in both files. The `.cu` compile unit defines
+  the per-WG slot layout (`[0..2]`=csf\_den, `[3..5]`=cm\_num,
+  `[6..8]`=aim\_cm); the `.c` host file uses the same constant for
+  buffer allocation, `cuMemsetD8Async` size, D2H copy byte-count,
+  and the per-WG accumulator read in `collect_fex_cuda`. A slot-count
+  mismatch silently overwrites adjacent host memory or produces
+  incorrect AIM/ADM3 scores without any crash.
+  If the `.cu` file is replaced by a rebase with a pre-ADR-0574
+  version (`FADM_ACCUM_SLOTS = 6`), update `float_adm_cuda.c`
+  accordingly in the same commit. The `--fmad=false` nvcc flag on
+  `float_adm_score.cu` covers all six kernels including the two new
+  AIM stages (`float_adm_csf_r`, `float_adm_aim_cm`); do not remove
+  it. AIM/ADM3 options: `adm_bypass_cm`, `adm_adm3_apply_hm`,
+  `adm_p_norm`, `adm_dlm_weight`, `adm_min_val`, `adm_skip_aim_scale`
+  must keep the same defaults as `float_adm.c`.
+
 - **`motion_fps_weight` is a cross-backend parity parameter** — all
   motion-family GPU twins must expose `motion_fps_weight` in their
   `VmafOption options[]` table and apply it identically: for
@@ -349,6 +367,9 @@ The `enable_cuda` umbrella flag gates inclusion via
   CAMBI CUDA spatial-mask SLM tile (perf-audit 2026-05-16 win 3).
 - [ADR-0456](../../../../docs/adr/0456-ssimulacra2-cuda-blur-fusion-transpose.md) —
   SSIMULACRA2 CUDA blur: 3-channel kernel fusion + V-pass transpose.
+- [ADR-0574](../../../../docs/adr/0574-hdr-features-cuda-twins-phase-1.md) —
+  CUDA twins for HDR-model `aim` and `adm3` sub-features (Phase 1);
+  `FADM_ACCUM_SLOTS` 6→9 slot-sync invariant.
 
 
 ## Stencil/convolution kernel invariant (ADR-0454)

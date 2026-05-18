@@ -32,7 +32,7 @@ limitations in the same PR as the code.
 | Motion v2 (fixed)  | `motion_v2`     | No            | `VMAF_integer_feature_motion_v2_sad_score`, `VMAF_integer_feature_motion2_v2_score`            | AVX2, AVX-512, NEON       | CUDA, SYCL, Vulkan |
 | Motion2 (float)    | `float_motion`  | Yes           | `float_motion2` (+ `float_motion` if `debug=true`)                                             | AVX2, AVX-512, NEON       | CUDA, SYCL, Vulkan |
 | ADM (fixed-point)  | `adm`           | Yes           | `adm2`, `adm_scale0`, `adm_scale1`, `adm_scale2`, `adm_scale3`                                 | AVX2, AVX-512, NEON       | CUDA, Vulkan       |
-| ADM (float)        | `float_adm`     | Yes           | `float_adm2`, `float_adm_scale0..3`                                                            | AVX2, AVX-512, NEON       | CUDA, SYCL, Vulkan |
+| ADM (float)        | `float_adm`     | Yes           | `float_adm2`, `adm_scale0..3`, `aim_score`⁶, `adm3_score`⁶                                    | AVX2, AVX-512, NEON       | CUDA⁶, SYCL, Vulkan |
 | [CAMBI](cambi.md)  | `cambi`         | No            | `cambi`                                                                                        | —                         | Vulkan⁴            |
 | CIEDE2000          | `ciede`         | No            | `ciede2000`                                                                                    | AVX2, AVX-512, NEON       | CUDA, SYCL, Vulkan |
 | PSNR (fixed)       | `psnr`          | No            | `psnr_y`, `psnr_cb`, `psnr_cr` (+ MSE / APSNR optional)                                        | AVX2, AVX-512, NEON       | CUDA, SYCL, Vulkan¹|
@@ -96,6 +96,13 @@ all register at the extractor level under
 "extractor found, runtime not ready (`-ENOSYS`)" surface; kernels
 go live once the runtime PR (T7-10b) lands. See
 [`backends/hip/overview.md`](../backends/hip/overview.md).
+
+⁶ `aim_score` and `adm3_score` are emitted by the `float_adm`
+extractor only (not the fixed-point `adm` extractor). The CUDA twin
+(`float_adm_cuda`) gained support for both sub-features in ADR-0574
+(2026-05-18). SYCL and Vulkan `float_adm` twins emit `adm2` /
+`adm_scale*` only; `aim_score` / `adm3_score` Phase 2 (SYCL/Vulkan)
+is tracked as a follow-up.
 
 ## Per-feature GPU dispatch hints (T7-26 / ADR-0181)
 
@@ -320,6 +327,16 @@ to avoid divide-by-zero.
 - `adm2` — the fused final value (range `[0, 1]`), published as the
   VMAF-model input.
 - `adm_scale0..3` — per-wavelet-scale fidelity.
+- `aim_score` (`float_adm` only) — Anchored Impairment Metric (AIM):
+  CM of `decouple_a` relative to the CSF of `decouple_r`, with
+  `noise_weight = 0`. Range `[0, 1]`. Required by the Netflix HDR
+  VMAF model. Available on CUDA (ADR-0574) and CPU; SYCL/Vulkan
+  pending Phase 2.
+- `adm3_score` (`float_adm` only) — ADM version 3: blends adm2 and
+  AIM via harmonic mean (`adm_adm3_apply_hm=true`) or a linear
+  combination weighted by `adm_dlm_weight`. Range `[adm_min_val, 1]`.
+  Required by the Netflix HDR VMAF model. Available on CUDA
+  (ADR-0574) and CPU; SYCL/Vulkan pending Phase 2.
 - With `debug=true`: `adm`, `adm_num`, `adm_den`, and per-scale
   numerator / denominator.
 
