@@ -42,7 +42,7 @@ gpu  = []
 viz  = ["matplotlib>=3.10.9", "seaborn>=0.13.2"]
 dev  = [
   "pytest>=9.0.3",
-  "ruff>=0.15.12",
+  "ruff>=0.15.13",
   "mypy>=2.1.0",
   "types-PyYAML>=6.0.12.20260510",
   "pandas-stubs>=3.0.0.260204",
