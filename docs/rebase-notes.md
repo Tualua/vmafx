@@ -36887,3 +36887,22 @@ Touched files:
 `docs/research/feature-coverage-audit-2026-05-18.md`,
 `changelog.d/added/0559-feature-coverage-audit-speed-features.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0566 — HIP VIF per-feature places=4 gate (supersedes ADR-0537 follow-up)
+
+**Branch**: `fix/hip-vif-svm-amplification-places4-gate`
+**Rebase impact**: documentation-only — touches only `docs/adr/`,
+`docs/state.md`, `docs/rebase-notes.md`, and `changelog.d/`. No kernel code,
+no meson.build change, no public API change.
+
+**Rebase-sensitive invariant**: If ADR-0537 is amended in a future PR, ensure
+the "places=3 is acceptable" follow-up clause is not reintroduced. The
+supersession is recorded in ADR-0566 and in the Recently-closed row
+T-HIP-VIF-PLACES3-GATE-INCORRECT-2026-05-18.
+
+Touched files:
+`docs/adr/0566-hip-vif-per-feature-places4-gate.md`,
+`docs/adr/README.md` (one index row),
+`docs/state.md` (Recently-closed row T-HIP-VIF-PLACES3-GATE-INCORRECT-2026-05-18),
+`changelog.d/fixed/0566-hip-vif-per-feature-places4-gate.md`,
+`docs/rebase-notes.md` (this entry).
