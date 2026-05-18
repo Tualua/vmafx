@@ -358,11 +358,12 @@ diff --git a/libavcodec/libsvtav1.c b/libavcodec/libsvtav1.c
 index fec2ed596e..403810d78e 100644
 --- a/libavcodec/libsvtav1.c
 +++ b/libavcodec/libsvtav1.c
-@@ -20,6 +20,7 @@
+@@ -20,6 +20,8 @@
   * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
   */
  
 +#include <limits.h>
++#include <stdbool.h>
  #include <stdint.h>
  #include <inttypes.h>
  #include <EbSvtAv1ErrorCodes.h>

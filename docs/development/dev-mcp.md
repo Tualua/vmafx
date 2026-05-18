@@ -246,3 +246,83 @@ GPU backends:
 
 Operators that need to force a single ICD per invocation can still
 `docker exec vmaf-dev-mcp env VK_ICD_FILENAMES=… vmaf …`.
+
+## FFmpeg encoder matrix (post-ADR-0540)
+
+The in-image FFmpeg is built with the fork's full encoder set so that
+`vmaf-tune compare` sweeps can address every codec the project
+supports without skipping rows with `hardware encoder not available:
+... not compiled into ffmpeg`. The matrix:
+
+| Encoder | Compile-in source | Host runtime requirement |
+|---|---|---|
+| `libx264` | `libx264-dev` (apt) | none |
+| `libx265` | `libx265-dev` (apt) | none |
+| `libvpx-vp9` | `libvpx-dev` (apt) | none |
+| `libsvtav1` | `libsvtav1-dev` (apt, SVT-AV1 1.7.0) | none |
+| `libaom-av1` | `libaom-dev` (apt, libaom 3.8.0) | none |
+| `libvvenc` | source build (Fraunhofer VVenC v1.12.0) | none |
+| `h264_nvenc` / `hevc_nvenc` / `av1_nvenc` | `--enable-nvenc` + `nv-codec-headers` | NVIDIA GPU + Container Toolkit; NVENC capability bit on host driver (av1_nvenc requires Ada or newer — RTX 4090 ok) |
+| `h264_qsv` / `hevc_qsv` / `av1_qsv` | `--enable-libvpl` + `libvpl-dev` (apt) | Intel GPU + `/dev/dri/renderD*` passthrough + `intel-media-driver` host package (or the `intel-media-va-driver` Ubuntu equivalent) |
+| `h264_amf` / `hevc_amf` / `av1_amf` | `--enable-amf` + AMF headers (source) | AMD GPU + `libamfrt64.so` from the proprietary `amdgpu-pro` userspace bind-mounted into the container. The open-source ROCm install in the image (`rocm-hip-runtime-dev`) does **not** include AMF. |
+
+To verify the in-image listing after a rebuild:
+
+```bash
+docker exec vmaf-dev-mcp ffmpeg -hide_banner -encoders 2>&1 \
+    | grep -E "libsvtav1|libaom-av1|libvvenc|libvpx-vp9|nvenc|qsv|amf|vpl" \
+    | head -20
+```
+
+Expected (assuming the build-time encoder probe in stage 3.5 logged no
+`WARN ... missing`):
+
+```
+ V....D libaom-av1           libaom AV1
+ V....D libsvtav1            SVT-AV1(Scalable Video Technology for AV1) encoder
+ V..... libvvenc             libvvenc-based VVC encoder
+ V....D libvpx-vp9           libvpx VP9
+ V....D h264_nvenc           NVIDIA NVENC H.264 encoder
+ V....D hevc_nvenc           NVIDIA NVENC hevc encoder
+ V....D av1_nvenc            NVIDIA NVENC av1 encoder
+ V....D h264_qsv             H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10 (Intel Quick Sync Video acceleration)
+ V....D hevc_qsv             HEVC (Intel Quick Sync Video acceleration)
+ V....D av1_qsv              AV1 (Intel Quick Sync Video acceleration)
+ V....D h264_amf             AMD AMF H.264 Encoder
+ V....D hevc_amf             AMD AMF HEVC encoder
+ V....D av1_amf              AMD AMF AV1 encoder
+```
+
+### Hardware-encoder runtime failure modes
+
+The encoders above are split into "compile-in" (does the binary
+advertise the encoder?) and "runtime-ok" (does a 1-frame dummy encode
+succeed?). `vmaf-tune compare`'s
+`compare.py::probe_encoder_available` runs both stages. The container
+locks down the compile-in promise; runtime failures produce stable
+row-level skip strings:
+
+| Symptom | Cause | Action |
+|---|---|---|
+| `hardware encoder not available: h264_nvenc dummy encode failed (...): Cannot load libcuda.so.1` | Container started without `runtime: nvidia` | `CONTAINER_RUNTIME=nvidia ./dev/scripts/dev-mcp-up.sh` |
+| `hardware encoder not available: av1_nvenc dummy encode failed: Cannot load library` | Host NVIDIA driver too old for AV1 NVENC (Turing/Ampere don't have av1_nvenc) | Use h264_nvenc / hevc_nvenc on that host; av1_nvenc needs Ada or newer |
+| `hardware encoder not available: h264_qsv dummy encode failed: Error initializing an internal MFX session` | Intel iGPU not exposed (`/dev/dri/renderD*` missing) or host lacks `intel-media-driver` | Pass `/dev/dri:/dev/dri` + `/dev/dri/by-path` and `apt install intel-media-driver` on the host |
+| `hardware encoder not available: h264_amf dummy encode failed: ... cannot open shared object libamfrt64.so` | amdgpu-pro userspace not bind-mounted | Install `amdgpu-pro` on the host and bind-mount `/opt/amdgpu-pro/lib/x86_64-linux-gnu/libamfrt64.so` into the container, or accept that AMF encode is unavailable on this host |
+
+### Reproducer — full cross-codec compare sweep
+
+```bash
+docker exec vmaf-dev-mcp bash -c '
+  cd /workspace && PYTHONPATH=/workspace/tools/vmaf-tune/src:$PYTHONPATH \
+  python -c "from vmaftune.cli import main; raise SystemExit(main())" compare \
+    --src /workspace/.corpus/bbb_e2e/bbb_sunflower_1080p_60fps_normal.mp4 \
+    --width 1920 --height 1080 --framerate 60 \
+    --target-vmafs 85,90,92,95 \
+    --encoders libx264,libx265,libsvtav1,libaom-av1,libvvenc,libvpx-vp9,h264_nvenc,hevc_nvenc,av1_nvenc,h264_qsv,hevc_qsv,av1_qsv,h264_amf,hevc_amf,av1_amf \
+    --duration 5 --sample-clip-seconds 3 --max-iterations 3 \
+    --score-backend cuda --format json --output /tmp/v11_1080p_cmp_full.json'
+```
+
+Encoders that are not runtime-available on the host produce per-row
+`ok=false` entries with the diagnostic strings above; the sweep does
+not abort.

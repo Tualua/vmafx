@@ -463,13 +463,159 @@ USER root
 # new stage so we must repeat it here.
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
+# Codec dependencies for FFmpeg n8.1.1 build:
+#
+#   libx264-dev      H.264 software encoder
+#   libx265-dev      H.265 software encoder
+#   libvpx-dev       VP8/VP9 software encoder (libvpx-vp9)
+#   libdav1d-dev     AV1 software *decoder*
+#   libaom-dev       AV1 software encoder + decoder (alliance for open media)
+#   libfdk-aac-dev   AAC encoder (nonfree-gated)
+#   libmp3lame-dev   MP3 encoder
+#   libopus-dev      Opus encoder/decoder
+#   libvorbis-dev    Vorbis encoder/decoder
+#   libass-dev       Subtitle renderer
+#   libfreetype-dev  Font glyph rendering for drawtext
+#   libfontconfig-dev / libfribidi-dev  Font matching + bidi for subtitle layout
+#   libva-dev        VA-API (Intel/AMD video accel headers — used by qsv/vaapi)
+#   libvdpau-dev     VDPAU (NVIDIA video accel headers — legacy decode path)
+#   libvpl-dev       Intel oneVPL runtime (modern replacement for libmfx;
+#                    enables `h264_qsv` / `hevc_qsv` / `av1_qsv` via
+#                    `--enable-libvpl`). Already pulled in stage 1 but
+#                    re-listed for documentation.
+#
+# SVT-AV1 and libaom are intentionally NOT installed from apt:
+#
+#   * libsvtav1-dev (Ubuntu) ships the library and headers but omits
+#     the `SvtAv1Enc.pc` pkg-config file (a Debian packaging quirk
+#     verified 2026-05-18 against `ubuntu:24.04`: only `aom.pc` and
+#     `vpl.pc` land in `/usr/lib/x86_64-linux-gnu/pkgconfig/`).
+#     FFmpeg's `require_pkg_config libsvtav1 SvtAv1Enc ...` configure
+#     probe therefore fails with `ERROR: SvtAv1Enc >= 0.9.0 not found
+#     using pkg-config` even when the library is present on disk.
+#
+#   * libaom-dev (Ubuntu 24.04 → 3.8.2) is too old for FFmpeg n8.1.1:
+#     `libavcodec/libaomenc.c` uses `aom_roi_map_t` fields (`enabled`,
+#     `skip`, `ref_frame`, `delta_qp_enabled`) added in libaom 3.10+,
+#     so the in-image FFmpeg build fails with
+#     `'aom_roi_map_t' has no member named 'enabled'` etc. against
+#     Ubuntu's older struct layout.
+#
+# Both libraries are built from source in dedicated layers below
+# (analogous to libvvenc and AMF), which install pinned upstream
+# releases under `/usr/local/` with the correct headers + .pc files.
+#
 # hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libx264-dev libx265-dev libvpx-dev libdav1d-dev \
     libfdk-aac-dev libmp3lame-dev libopus-dev libvorbis-dev \
     libass-dev libfreetype-dev libfontconfig-dev libfribidi-dev \
-    libva-dev libvdpau-dev \
+    libva-dev libvdpau-dev libvpl-dev \
     && rm -rf /var/lib/apt/lists/*
+
+# NOTE: libaom (Alliance for Open Media reference AV1 encoder) is
+# intentionally NOT built or enabled.
+#
+# The fork's `ffmpeg-patches/0007-libvmaf-tune-qpfile-unified.patch`
+# adds a `qpfile_aom_apply_roi` helper to `libavcodec/libaomenc.c`
+# that references `aom_roi_map_t` fields (`enabled`, `skip`,
+# `ref_frame`, `delta_qp_enabled`) that DO NOT EXIST in any released
+# libaom version including v3.11.0 (verified 2026-05-18 against
+# upstream `aom/aomcx.h:1609` — the public struct only has
+# `roi_map`, `rows`, `cols`, `delta_q`, `delta_lf`,
+# `static_threshold`). The patch was likely written against a
+# libaom development branch whose ROI API never shipped. Enabling
+# `--enable-libaom` therefore hard-errors at FFmpeg compile time
+# regardless of the libaom version installed.
+#
+# Disposition: SVT-AV1 (built above) is the production AV1 lane
+# anyway (Intel / Netflix maintain it as the fast software encoder);
+# libaom-av1 is the slow reference rarely used in production
+# pipelines. Dropping it from the in-image FFmpeg costs `libaom-av1`
+# in the compare-sweep matrix but keeps the fork's patch stack
+# rebase-stable. Re-enabling libaom requires first fixing
+# `ffmpeg-patches/0007-libvmaf-tune-qpfile-unified.patch` to either
+# (a) target a libaom version that actually ships the assumed ROI
+# fields, or (b) make the ROI bridge libaom-version-gated (mirror
+# the SVT-AV1 `>= 1.6.0` log-and-continue pattern already in the
+# patch). Tracked as a follow-up; out of ADR-0540's scope.
+
+# ---- SVT-AV1 (Scalable Video Tech for AV1) source build ---------------------
+# Built from upstream because Ubuntu's `libsvtav1-dev` package omits
+# `SvtAv1Enc.pc` (see comment above). Upstream's `cmake --install`
+# always writes `SvtAv1Enc.pc` under `${CMAKE_INSTALL_PREFIX}/lib/
+# pkgconfig/`, which the FFmpeg `--enable-libsvtav1` configure probe
+# resolves via PKG_CONFIG_PATH.
+#
+# Pin to a release tag that FFmpeg n8.1.1's configure accepts
+# (`SvtAv1Enc >= 0.9.0`) and that ships modern presets (`-preset 6` /
+# `-preset 8` are the rate-quality knobs vmaf-tune's compare sweep
+# exercises). Tags 2.x are current at time of writing; 2.1.0 is a
+# stable LTS-flavoured cut.
+ARG SVTAV1_VERSION=2.1.0
+RUN git clone --depth=1 --branch "v${SVTAV1_VERSION}" \
+        https://gitlab.com/AOMediaCodec/SVT-AV1.git /tmp/SVT-AV1 \
+    && cmake -S /tmp/SVT-AV1 -B /tmp/SVT-AV1/build \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr/local \
+        -DBUILD_SHARED_LIBS=ON \
+        -DBUILD_APPS=OFF \
+        -DBUILD_TESTING=OFF \
+    && cmake --build /tmp/SVT-AV1/build -j"$(nproc)" \
+    && cmake --install /tmp/SVT-AV1/build \
+    && ldconfig \
+    && rm -rf /tmp/SVT-AV1
+
+# ---- libvvenc (Fraunhofer Versatile Video Coding reference encoder) ---------
+# Not in Ubuntu apt. Build the VVenC reference encoder from the upstream
+# tagged release; install the static libs + pkg-config file so FFmpeg's
+# `--enable-libvvenc` configure probe succeeds. Pin to a tag known to
+# compile against gcc-13 / cmake>=3.13 on Ubuntu 24.04.
+#
+# Build options:
+#   -DBUILD_SHARED_LIBS=ON   exposes libvvenc.so so we don't statically link
+#                            into ffmpeg (smaller binary; matches the other
+#                            codec deps' .so layout).
+#   -DVVENC_ENABLE_INSTALL=ON installs pkg-config (libvvenc.pc) so FFmpeg's
+#                            check_pkg_config probe matches.
+#   -DCMAKE_BUILD_TYPE=Release optimised encoder; debug builds are 5-10x slower.
+#
+# Threading: GitHub raw artifacts are subject to rate limiting; clone via
+# the upstream Fraunhofer mirror which has higher bandwidth caps.
+ARG VVENC_VERSION=1.12.0
+RUN git clone --depth=1 --branch "v${VVENC_VERSION}" \
+        https://github.com/fraunhoferhhi/vvenc.git /tmp/vvenc \
+    && cmake -S /tmp/vvenc -B /tmp/vvenc/build \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr/local \
+        -DBUILD_SHARED_LIBS=ON \
+        -DVVENC_ENABLE_INSTALL=ON \
+    && cmake --build /tmp/vvenc/build -j"$(nproc)" \
+    && cmake --install /tmp/vvenc/build \
+    && ldconfig \
+    && rm -rf /tmp/vvenc
+
+# ---- AMD AMF headers (Advanced Media Framework, header-only) ---------------
+# AMF is a header-only API; the actual encoder runs inside the AMD GPU
+# user-space driver (amdgpu-pro). FFmpeg's `--enable-amf` only needs the
+# headers at build time. Vendored from the upstream GPUOpen repo.
+#
+# Runtime requirement (not covered by this layer):
+#   `libamfrt64.so` from amdgpu-pro userspace. On hosts without amdgpu-pro,
+#   `h264_amf` / `hevc_amf` / `av1_amf` will probe-fail at runtime ("encoder
+#   compiled in, dlopen libamfrt64.so failed"). vmaf-tune's probe handles
+#   that case as a per-encoder skip — see ADR-0540 §Consequences.
+# FFmpeg n8.1.1's configure probe is
+# `AMF_VERSION >= 0x0001000400240000` (= 1.4.36); older AMF tags hard-error
+# with `ERROR: amf requested but not found`. v1.4.36 is the minimum compatible
+# tag (verified 2026-05-18 against the n8.1.1 configure source).
+ARG AMF_VERSION=1.4.36
+RUN git clone --depth=1 --branch "v${AMF_VERSION}" \
+        https://github.com/GPUOpen-LibrariesAndSDKs/AMF.git /tmp/AMF \
+    && mkdir -p /usr/local/include/AMF \
+    && cp -r /tmp/AMF/amf/public/include/* /usr/local/include/AMF/ \
+    && rm -rf /tmp/AMF
+
 USER vmaf
 
 ARG FFMPEG_TAG=n8.1.1
@@ -486,7 +632,82 @@ RUN git config user.email "vmaf-dev-mcp@localhost" && git config user.name "vmaf
             || (echo "FATAL: ffmpeg-patches/${patch_name} did not apply" && exit 1) ; \
     done < /build/vmaf/ffmpeg-patches/series.txt
 
-RUN PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig \
+# FFmpeg configure with the fork's full encoder matrix.
+#
+# Codec-by-codec rationale (see ADR-0540):
+#
+#   Software AV1:
+#     --enable-libsvtav1   SVT-AV1 (Intel/Netflix, the production
+#                          software AV1 encoder).
+#     `--enable-libaom` is intentionally NOT passed — the fork's
+#     ffmpeg-patches/0007 carries a libaom-ROI helper that references
+#     `aom_roi_map_t` fields not present in any released libaom (the
+#     patch was written against an unreleased dev branch). Enabling
+#     libaom hard-errors at compile time. See the comment block on
+#     the libaom skip above for the follow-up plan.
+#
+#   Software VVC (H.266):
+#     --enable-libvvenc    Fraunhofer reference VVC encoder
+#
+#   NVIDIA hardware (RTX 4090):
+#     --enable-nvenc       h264_nvenc / hevc_nvenc / av1_nvenc
+#     --enable-cuda-nvcc   Lets FFmpeg compile its own CUDA kernels (used by
+#                          `scale_cuda`, `hwupload_cuda` etc. that the GPU
+#                          encode pipelines lean on). Requires CUDA_HOME.
+#
+#   `--enable-libnpp` is INTENTIONALLY OMITTED. FFmpeg n8.1.1's NPP
+#   compatibility ceiling is CUDA 12.x; passing the flag against
+#   CUDA 13.x (the version the dev image tracks via the unversioned
+#   `cuda-toolkit` apt meta-package) hard-errors at configure time with
+#   `ERROR: libnpp support is deprecated, version 13.0 and up are not
+#   supported`. `scale_cuda` (built via `--enable-cuda-nvcc`) covers
+#   the usual hwupload → scale → nvenc GPU pipeline without libnpp;
+#   `scale_npp` is the only filter we lose, and it has no consumer in
+#   the vmaf-tune / MCP / corpus scripts. Re-add `--enable-libnpp`
+#   only if the image is pinned to a CUDA <=12.x base.
+#
+#   Intel hardware (Arc / Xe / Gen11+):
+#     --enable-libvpl      Intel oneVPL — the modern unified API that
+#                          replaced legacy libmfx. Provides
+#                          `h264_qsv` / `hevc_qsv` / `av1_qsv` /
+#                          `vp9_qsv` / `mjpeg_qsv` encoders. The
+#                          legacy `--enable-libmfx` is intentionally
+#                          omitted (sunsetted by Intel for Arc;
+#                          oneVPL is the supported successor on
+#                          Gen11+ silicon including the host's A380).
+#
+#   AMD hardware (gfx1036 + future Radeon):
+#     --enable-amf         h264_amf / hevc_amf / av1_amf. AMF is a
+#                          header-only API at FFmpeg build time;
+#                          libamfrt64.so dlopen happens at runtime
+#                          and requires the amdgpu-pro userspace.
+#     --disable-filter=amf_capture
+#                          The `amf_capture` (`vsrc_amf.c`, AMF Display
+#                          Capture source filter) includes AMF's
+#                          `components/DisplayCapture.h` which contains
+#                          `extern "C"` blocks. FFmpeg compiles
+#                          `vsrc_amf.c` as plain C and chokes on the
+#                          C++ syntax (verified 2026-05-18 against AMF
+#                          v1.4.36 / FFmpeg n8.1.1). The filter is for
+#                          screen-capture sources we don't use; the
+#                          `*_amf` encoders live in separate
+#                          translation units (`libavcodec/amfenc*.c`)
+#                          and are unaffected. Filter name is taken
+#                          from `OBJS-$(CONFIG_AMF_CAPTURE_FILTER)`
+#                          in `libavfilter/Makefile`.
+#
+# vmaf integration patches (unchanged):
+#     --enable-libvmaf{,-cuda,-sycl,-vulkan,-hip} — fork patches.
+# PKG_CONFIG_PATH must explicitly include /usr/lib/x86_64-linux-gnu/pkgconfig
+# (the Ubuntu/Debian multiarch path) so FFmpeg's `check_pkg_config` probes
+# pick up the distro-installed `.pc` files — `SvtAv1Enc.pc` (from
+# `libsvtav1-dev`), `aom.pc` (from `libaom-dev`), `vpl.pc` (from `libvpl-dev`).
+# The default pkg-config search path varies by distro/version: on some
+# builds setting PKG_CONFIG_PATH only *prepends*, but ffmpeg's configure
+# also passes it through to its own pkg-config invocations which lose the
+# implicit defaults. Listing the multiarch path explicitly is the
+# robust fix (verified post-ADR-0540 SvtAv1Enc-not-found regression).
+RUN PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig \
     ./configure \
         --prefix=/usr/local \
         --enable-gpl --enable-version3 --enable-nonfree \
@@ -497,17 +718,45 @@ RUN PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkg
         --enable-libvmaf-hip \
         --enable-libx264 --enable-libx265 \
         --enable-libvpx --enable-libdav1d \
+        --enable-libsvtav1 --enable-libvvenc \
         --enable-libfdk-aac --enable-libmp3lame --enable-libopus --enable-libvorbis \
         --enable-libass --enable-libfreetype --enable-libfontconfig --enable-libfribidi \
         --enable-vaapi --enable-vdpau \
-        --extra-cflags="-I${CUDA_HOME}/include" \
-        --extra-ldflags="-L${CUDA_HOME}/lib64" \
+        --enable-nvenc --enable-cuda-nvcc \
+        --enable-libvpl \
+        --enable-amf \
+        --disable-filter=amf_capture \
+        --extra-cflags="-I${CUDA_HOME}/include -I/usr/local/include" \
+        --extra-ldflags="-L${CUDA_HOME}/lib64 -L/usr/local/lib" \
     && make -j"$(nproc)"
 
 USER root
 RUN cd /build/ffmpeg \
     && make install \
     && /usr/local/bin/ffmpeg -version | head -3
+
+# ---- Build-time encoder probe (ADR-0540) ----------------------------------
+# Walk every encoder this stage promises and grep the actual `ffmpeg
+# -encoders` output for it. The probe is a soft-gate (`|| echo WARN`)
+# because hardware encoders need the matching userspace driver to *load*
+# but not to be *listed*. The compile-in promise is what we lock down
+# here — if a future configure-flag tweak silently drops `--enable-amf`
+# or `--enable-libvvenc`, the WARN line catches it on every rebuild
+# instead of waiting for a user to run a sweep.
+#
+# Mirrors the libvmaf backend probe at stage 3.
+RUN echo "=== ffmpeg encoder probe (ADR-0540) ===" \
+    && for enc in libx264 libx265 libvpx-vp9 libsvtav1 libvvenc \
+                  h264_nvenc hevc_nvenc av1_nvenc \
+                  h264_qsv hevc_qsv av1_qsv \
+                  h264_amf hevc_amf av1_amf ; do \
+         if /usr/local/bin/ffmpeg -hide_banner -encoders 2>/dev/null \
+             | awk -v e="$enc" '{ if ($2 == e) { print; found=1 } } END { exit !found }' ; then \
+           printf "  ok   %s\n" "$enc" ; \
+         else \
+           printf "  WARN %s missing from ffmpeg -encoders\n" "$enc" ; \
+         fi ; \
+       done
 USER vmaf
 
 WORKDIR /build/vmaf

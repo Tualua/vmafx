@@ -36253,7 +36253,6 @@ The C-side `codec_block_preset_ordinal` table is a duplicate of
 a co-edit pair. The sidecar `encoder_vocab` array is the
 single source of truth for the vocabulary; vocab bumps (e.g.
 ADR-0302 v3) only require a new sidecar JSON, no C recompile.
-<<<<<<< HEAD
 
 ## fix/cli-threads-parse-safety-v2 (ADR-0528)
 
@@ -36271,6 +36270,7 @@ calls). On a future upstream sync, expect a merge conflict on
 keep the fork's `if (!found) usage(…); return;` + `snprintf` shape and
 drop the `<assert.h>` include. No public API surface changes; the
 ffmpeg-patches stack is untouched.
+<<<<<<< HEAD
 <<<<<<< HEAD
 ## 2026-05-18 — HIP `integer_motion` flag promotion + HIP_DEVICE buffer enum (ADR-0530, PR #TBD)
 
@@ -36359,7 +36359,6 @@ future PR adds a new HIP feature TU, the invariant pinned in
 `libvmaf/src/hip/AGENTS.md` (every `vmaf_fex_*_hip` symbol must
 appear in `hip_sources` + the extern/registry blocks) must be
 honoured or the registration drops out silently.
-=======
 >>>>>>> 64a7a5517 (chore(adr): atomic next-free allocator with cross-branch claim (ADR-0535))
 
 ## ADR-0538 — per-shot predicate bitrate sidecar (PR #1290 follow-up)
@@ -36388,3 +36387,36 @@ If a future PR adds yet another HIP host TU that consumes a
 invariant pinned in `libvmaf/src/feature/hip/AGENTS.md` (HSACO symbol
 naming) must be honoured to avoid the same class of link error this
 ADR closed.
+=======
+
+## feat/dev-container-ffmpeg-av1-hwaccel (ADR-0540)
+
+**Files touched:** `dev/Containerfile` (stage 3.5 apt list + SVT-AV1 /
+libaom / vvenc / AMF source builds + FFmpeg configure flags + build-
+time encoder probe), `dev/AGENTS.md` (four new "FFmpeg encoder exposure
+invariants"), `docs/development/dev-mcp.md` (encoder matrix + runtime
+failure modes + full-sweep reproducer), `libvmaf/src/meson.build`
+(one-line follow-up to ADR-0523: add `'motion_score'` to the
+`hip_kernel_sources` dict; surfaced as a stage-3 link blocker during
+ADR-0540's container rebuild verification), `ffmpeg-patches/0007-
+libvmaf-tune-qpfile-unified.patch` (one-line addition: `#include
+<stdbool.h>` to `libavcodec/libsvtav1.c` so `enable_roi_map = true`
+compiles — surfaced when the in-image FFmpeg was first built with
+`--enable-libsvtav1`; the patched code was never previously
+exercised because no prior dev-image enabled libsvtav1),
+`docs/adr/0529-…md` (+ index fragment), `changelog.d/added/0529-…md`,
+`docs/state.md` (two state rows), this file.
+
+**Rebase sensitivity (none — container-only fork-local additive plus
+one fork-local libvmaf wiring fix):**
+Every touched file lives under `dev/`, `docs/`, `changelog.d/`, or
+`libvmaf/src/meson.build`. The libvmaf hunk adds one dict entry
+referencing a fork-local `.hip` source (ADR-0523 lineage); no
+upstream conflict possible because Netflix has no HIP backend.
+No libvmaf C source, no public header, no `meson_options.txt`, no
+`ffmpeg-patches/` entry. The CLAUDE.md §12 r14 patch-stack rule does
+not apply — the FFmpeg configure-line change happens in the in-image
+build only and is orthogonal to the host-side patch series under
+`ffmpeg-patches/`. Pin bumps (VVenC `v1.12.0`, AMF `v1.4.36`, FFmpeg
+`n8.1.1` via `FFMPEG_TAG` build-arg) are visible in the `ARG` lines
+of `dev/Containerfile`; bumping them is a local container change.

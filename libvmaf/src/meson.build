@@ -243,6 +243,17 @@ if is_hipcc_enabled and is_hip_enabled
         'ssim_score' : feature_src_dir + 'hip/float_ssim/ssim_score.hip',
         'ciede_score' : feature_src_dir + 'hip/integer_ciede/ciede_score.hip',
         'motion_v2_score' : feature_src_dir + 'hip/integer_motion_v2/motion_v2_score.hip',
+        # ADR-0523 follow-up: integer_motion_hip.c loads `motion_score_hsaco`
+        # but the .hip kernel was never wired into this dict, so the
+        # `extern const unsigned char motion_score_hsaco[]` in
+        # `integer_motion_hip.h` resolved to an undefined link reference
+        # whenever `enable_hipcc=true` was paired with `enable_hip=true`
+        # (i.e. the dev-MCP container's default build mode). The kernel
+        # source has lived at `libvmaf/src/feature/hip/integer_motion/
+        # motion_score.hip` since ADR-0523 added the registration; this
+        # entry closes the loop. Surfaced during ADR-0529 container
+        # rebuild verification.
+        'motion_score' : feature_src_dir + 'hip/integer_motion/motion_score.hip',
         # T7-10b batch-2 twelfth consumer: float_adm_score (ADR-0468).
         'float_adm_score' : feature_src_dir + 'hip/float_adm/float_adm_score.hip',
         # integer_cambi_hip HSACO blob.

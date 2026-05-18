@@ -104,3 +104,51 @@ a real container-side regression that hid a host GPU from libvmaf:
    `built without X support` string — that means a meson flag silently
    flipped off and a real backend disappeared from libvmaf entirely
    (the precise failure mode that triggered ADR-0514 for HIP).
+
+### FFmpeg encoder exposure invariants (ADR-0540)
+
+These four constraints must survive every rebase. Each one corresponds
+to a real encoder that the `vmaf-tune compare` predicate would silently
+skip if dropped:
+
+1. **SVT-AV1 must be built from source; the apt `libsvtav1-dev`
+   package is NOT sufficient.** Ubuntu's `libsvtav1-dev`
+   (1.7.0+dfsg-2build1) omits `SvtAv1Enc.pc` (verified 2026-05-18
+   against `ubuntu:24.04`). FFmpeg's `require_pkg_config libsvtav1
+   SvtAv1Enc ...` probe therefore fails. SVT-AV1 is cloned from
+   `https://gitlab.com/AOMediaCodec/SVT-AV1.git` at pinned tag
+   (`v2.1.0` at time of writing) and built with cmake under
+   `/usr/local/`. `cmake --install` writes `SvtAv1Enc.pc` to
+   `/usr/local/lib/pkgconfig/` as a side effect. Do NOT replace
+   with the distro package.
+
+   **libaom is intentionally NOT enabled.** The fork's
+   `ffmpeg-patches/0007` references libaom `aom_roi_map_t` fields
+   that do not exist in any released libaom version. SVT-AV1
+   covers the production AV1 lane. Re-enabling libaom requires
+   first fixing patch 0007's ROI helper to either target a real
+   libaom version or gate the ROI bridge behind a version probe.
+2. **`libvvenc` (Fraunhofer VVC reference) must be built from source
+   and installed under `/usr/local`.** The package is not in Ubuntu
+   apt. Pin to a release tag (`v1.12.0` at time of writing) so future
+   rebases get a deterministic build. The configure-time check is
+   `check_pkg_config(libvvenc, ...)` which needs the `.pc` file
+   `VVENC_ENABLE_INSTALL=ON` ships.
+3. **AMF headers vendored from the upstream `GPUOpen-Libraries-
+   AndSDKs/AMF` repo (header-only).** FFmpeg's `--enable-amf` needs
+   only the headers at compile time; `libamfrt64.so` runtime
+   resolution is host-side. Do NOT try to install `libamfrt64.so` from
+   apt — it lives in the proprietary `amdgpu-pro` userspace and is
+   not packaged.
+4. **The FFmpeg configure line carries all of `--enable-nvenc
+   --enable-cuda-nvcc --enable-libvpl --enable-amf` in addition to
+   the software codec flags.** Dropping any one silently disappears
+   a hardware-encoder family from the `ffmpeg -encoders` listing and
+   breaks the `vmaf-tune compare` sweep. The build-time encoder
+   probe at the end of stage 3.5 catches drops with `WARN <encoder>
+   missing` lines. Do NOT add `--enable-libnpp` — FFmpeg n8.1.1's
+   NPP support tops out at CUDA 12.x, and the image's
+   `cuda-toolkit` meta-package tracks 13.x, so passing the flag
+   hard-errors at configure time. `scale_cuda` (built via
+   `--enable-cuda-nvcc`) is the replacement for the
+   `scale_npp` pipeline.

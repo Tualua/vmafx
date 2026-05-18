@@ -373,3 +373,4 @@
 0528-cli-parse-test-stderr-pipe-drain-and-error-fallback
 0530-hip-feature-flag-promotion-and-picture-buffer
 0537-hip-integer-vif-kernel-fix
+0540-dev-container-ffmpeg-av1-and-hwaccel-encoders
