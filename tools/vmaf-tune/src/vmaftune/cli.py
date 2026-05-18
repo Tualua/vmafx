@@ -3098,7 +3098,7 @@ def _run_report(args: argparse.Namespace) -> int:
                     width=int(s.get("width") or src_info.width),
                     height=int(s.get("height") or src_info.height),
                     best_crf=int(s.get("best_crf") or s.get("crf") or 0),
-                    vmaf=float(s.get("vmaf") or 0.0),
+                    vmaf=float(s.get("vmaf") or s.get("predicted_vmaf") or 0.0),
                     bitrate_kbps=float(s.get("bitrate_kbps") or 0.0),
                     duration_s=float(s.get("duration_s") or 0.0),
                 ),
