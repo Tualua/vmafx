@@ -7,6 +7,29 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## fix/ubuntu-26-04-fallout (ADR-0603)
+
+**No rebase-sensitive invariants** — all changes are in the build/CI layer
+(`dev/Containerfile`, CI workflow YAML, `meson.build` nvcc flags,
+`pyproject.toml` ceiling bumps) and do not touch any upstream-shared C
+sources, public headers, or Python test assertions.
+
+The one meson.build addition (`-D__MATH_NO_INLINES` in `cuda_flags`) is
+additive and harmless on any glibc version; if upstream Netflix touches
+the CUDA flags block in `libvmaf/src/meson.build`, preserve the
+`-D__MATH_NO_INLINES` entry alongside whatever upstream adds.
+
+Touched files:
+`dev/Containerfile`,
+`libvmaf/src/meson.build` (cuda_flags),
+`tools/vmaf-tune/pyproject.toml` (requires-python ceiling),
+`ai/pyproject.toml` (requires-python ceiling),
+`.github/workflows/libvmaf-build-matrix.yml` (CUDA version pin),
+`docs/adr/0603-ubuntu-26-04-fallout-fixes.md`,
+`docs/adr/README.md` (index row),
+`changelog.d/fixed/ubuntu-26-04-fallout.md`,
+`docs/rebase-notes.md` (this entry).
+
 ## fix/macos-vmaf-write-output-segv (ADR-0602)
 
 **No rebase-sensitive invariants** — the changes are purely defensive

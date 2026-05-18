@@ -955,7 +955,18 @@ if is_cuda_enabled
     # bundled headers use C++20 features (char8_t, constexpr semantics)
     # that nvcc's default C++17 host parser cannot consume. CUDA 13+
     # supports c++20 natively; 12.x clamps at c++17 and loses on gcc-16.
-    cuda_flags = ['-D_USE_MATH_DEFINES', '--std', 'c++20']
+    #
+    # -D__MATH_NO_INLINES: glibc 2.43 (Ubuntu 26.04) declares rsqrt(double)
+    # in bits/mathcalls.h with noexcept(true). CUDA 13.0/13.1's
+    # crt/math_functions.h redeclares the same symbol without the noexcept
+    # spec, producing C2059/C2085 cascade errors from NVCC's host-compile
+    # pass. CUDA 13.2 aligns its noexcept annotations with glibc 2.43, so
+    # the flag is belt-and-suspenders for 13.2+ but harmless to include.
+    # It instructs glibc to suppress the inline math-function definitions
+    # (including the noexcept-annotated rsqrt overload), preventing the
+    # redeclaration conflict even if a future CUDA patch re-introduces the
+    # mismatch. ADR-0603.
+    cuda_flags = ['-D_USE_MATH_DEFINES', '-D__MATH_NO_INLINES', '--std', 'c++20']
     if get_option('buildtype') == 'debug'
         cuda_flags += ['-DCUDA_DEBUG', '-G']
     else

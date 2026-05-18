@@ -390,14 +390,19 @@ jobs:
           sudo ldconfig
 
       # ---------- CUDA toolkit ----------
-      # Pinned to CUDA 13.0.0 (released 2025-08-04). 13.0 drops sm_50/60/70
-      # (Maxwell/Pascal/Volta); meson.build already guards the sm_50 gencode
-      # with a `<13` version check. Minimum driver for 13.x is >= 580.
+      # Bumped to CUDA 13.2.0 (ADR-0603). Ubuntu 26.04 (Resolute Raccoon)
+      # ships glibc 2.43 whose bits/mathcalls.h declares rsqrt(double) with
+      # noexcept(true). CUDA 13.0/13.1 crt/math_functions.h redeclares it
+      # without noexcept, causing a C2059/C2085 cascade from NVCC. CUDA 13.2
+      # aligns its noexcept annotation with glibc 2.43 and resolves the
+      # conflict. 13.2 still drops sm_50/60/70 (Maxwell/Pascal/Volta);
+      # meson.build already guards the sm_50 gencode with a `<13` version
+      # check. Minimum driver for 13.x is >= 580.
       - name: Install CUDA toolkit
         if: matrix.cuda
         uses: Jimver/cuda-toolkit@3d45d157f327c09c04b50ee6ccdea2d9d017ec76  # v0.2.35
         with:
-          cuda: '13.0.0'
+          cuda: '13.2.0'
           method: network
           sub-packages: '["nvcc", "cudart-dev"]'
 
@@ -834,7 +839,8 @@ jobs:
   # MSVC env is set up via ilammy/msvc-dev-cmd@v1 (community-standard
   # action that runs `vcvars64.bat` and exports the variables).
   # CUDA toolkit comes from Jimver/cuda-toolkit (same action used by
-  # the Linux CUDA legs, pinned to the same 13.0.0 release for parity).
+  # the Linux CUDA legs, pinned to the same 13.2.0 release for parity
+  # — bumped from 13.0.0 per ADR-0603 for glibc 2.43 noexcept parity).
   # oneAPI is installed via the official `oneapi-src/oneapi-ci`
   # offline-installer pattern (`curl` the Base Toolkit installer +
   # extract + run bootstrapper). We tried `rscohn2/setup-oneapi@v0`
@@ -893,14 +899,14 @@ jobs:
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756  # v1.13.0
 
       # ---------- CUDA toolkit (CUDA leg only) ----------
-      # Same pin as the Linux CUDA legs: CUDA 13.0.0, Maxwell/Pascal/Volta
+      # Same pin as the Linux CUDA legs: CUDA 13.2.0, Maxwell/Pascal/Volta
       # gencodes dropped (meson.build already guards the sm_50 emit on
-      # `version < 13`).
+      # `version < 13`). Bumped from 13.0.0 per ADR-0603.
       - name: Install CUDA toolkit (windows)
         if: matrix.backend == 'cuda'
         uses: Jimver/cuda-toolkit@3d45d157f327c09c04b50ee6ccdea2d9d017ec76  # v0.2.35
         with:
-          cuda: '13.0.0'
+          cuda: '13.2.0'
           method: network
           # Persist the CUDA installer payload (~3 GB on Windows) in
           # the GHA cache between runs. Default behavior re-downloads
