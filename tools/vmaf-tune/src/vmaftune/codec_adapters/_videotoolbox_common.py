@@ -46,6 +46,42 @@ search-space signal; preset mostly affects throughput, not quality.
 
 from __future__ import annotations
 
+from pathlib import Path
+
+
+class VideoToolboxTwoPassUnsupportedError(NotImplementedError):
+    """Apple VideoToolbox does not expose a multi-pass encode API.
+
+    Raised by every ``*_videotoolbox`` adapter's :meth:`two_pass_args`.
+    VideoToolbox's ``VTCompressionSession`` (the C API the FFmpeg
+    encoders wrap) has no equivalent of x264's ``-pass`` or NVENC's
+    ``-multipass``; the encoder runs single-pass only and exposes
+    quality solely through ``-q:v`` (h264 / hevc / av1) or ``-bitrate``
+    + ``-allow_sw``. Two-pass-style quality lift on an Apple host
+    requires switching to a software encoder (libx264, libx265,
+    libsvtav1, libaom-av1, libvvenc) — all of which ship in the same
+    FFmpeg build.
+    """
+
+
+def videotoolbox_two_pass_args(encoder: str, pass_number: int, stats_path: Path) -> tuple[str, ...]:
+    """Always raise :class:`VideoToolboxTwoPassUnsupportedError`.
+
+    Centralises the error message so every ``*_videotoolbox`` adapter
+    points users at the same workaround. ``stats_path`` is accepted for
+    interface symmetry with the other adapters.
+    """
+    del stats_path
+    raise VideoToolboxTwoPassUnsupportedError(
+        f"{encoder!r}: Apple VideoToolbox is single-pass only — the "
+        "VTCompressionSession C API does not expose a multi-pass encode "
+        "interface (see ADR-0546). pass_number="
+        f"{pass_number} is therefore not supported. Switch to a "
+        "software encoder (libx264 / libx265 / libsvtav1 / libaom-av1 "
+        "/ libvvenc) for true 2-pass on macOS."
+    )
+
+
 # Preset names shared with libx264 / libx265 so callers can use a single
 # preset list across codecs. Maps to ``-realtime`` boolean.
 _FAST_PRESETS: frozenset[str] = frozenset({"ultrafast", "superfast", "veryfast", "faster", "fast"})

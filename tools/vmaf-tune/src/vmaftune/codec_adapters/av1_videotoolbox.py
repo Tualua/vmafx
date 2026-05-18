@@ -36,9 +36,14 @@ from __future__ import annotations
 import dataclasses
 import shutil
 import subprocess
+from pathlib import Path
 
 from . import _gop_common
-from ._videotoolbox_common import VIDEOTOOLBOX_PRESETS, preset_to_realtime
+from ._videotoolbox_common import (
+    VIDEOTOOLBOX_PRESETS,
+    preset_to_realtime,
+    videotoolbox_two_pass_args,
+)
 
 
 class Av1VideoToolboxUnavailableError(RuntimeError):
@@ -162,6 +167,8 @@ class Av1VideoToolboxAdapter:
     # ADR-0332: VideoToolbox does not emit a parseable x264/x265-style
     # stats file — opt out of encoder-internal stats capture.
     supports_encoder_stats: bool = False
+    # ADR-0546: VideoToolbox is single-pass only — see h264_videotoolbox.
+    supports_two_pass: bool = False
 
     def _runtime_available(self) -> bool:
         """Lazily probe ffmpeg; cached only within one ``validate`` call."""
@@ -225,3 +232,7 @@ class Av1VideoToolboxAdapter:
     def probe_args(self) -> list[str]:
         """Predictor probe-encode argv. Only valid once activated."""
         return _gop_common.default_probe_args(self)
+
+    def two_pass_args(self, pass_number: int, stats_path: Path) -> tuple[str, ...]:
+        """Always raise — VideoToolbox is single-pass only (ADR-0546)."""
+        return videotoolbox_two_pass_args(self.encoder, pass_number, stats_path)

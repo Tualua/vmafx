@@ -45,6 +45,7 @@ self-activating adapter set applies.
 from __future__ import annotations
 
 import dataclasses
+from pathlib import Path
 
 from . import _gop_common
 
@@ -118,6 +119,13 @@ class VVenCAdapter:
     supports_encoder_stats: bool = False
     # VVenC ROI-map file (ADR-0370): delivered via -vvenc-params ROIFile=.
     supports_saliency_roi: bool = True
+    # ADR-0546 (Phase F real 2-pass): the FFmpeg ``libvvenc`` wrapper
+    # accepts ``-pass N -passlogfile <prefix>`` since FFmpeg 6.1 — the
+    # wrapper translates internally to VVenC's RcStatsFile config key
+    # (``-vvenc-params RcStatsFile=...``). We rely on the generic
+    # ffmpeg-side flags so the encode driver does not need a
+    # VVenC-specific stats path.
+    supports_two_pass: bool = True
 
     # Vocabulary the search loop sees — the canonical 7-name superset.
     # The adapter compresses to VVenC's 5-level native vocabulary at
@@ -319,6 +327,27 @@ class VVenCAdapter:
             "-qp",
             str(self.probe_quality),
         ]
+
+    def two_pass_args(self, pass_number: int, stats_path: Path) -> tuple[str, ...]:
+        """FFmpeg argv slice for libvvenc 2-pass encoding (ADR-0546).
+
+        FFmpeg's ``libvvenc`` wrapper honours the generic ``-pass`` /
+        ``-passlogfile`` pair; internally the wrapper translates that
+        into VVenC's ``RcStatsFile`` config key. We let FFmpeg do the
+        translation so the encode driver does not need a VVenC-
+        specific stats path or .json sidecar handling.
+
+        ``stats_path`` is used as the passlog *prefix* — FFmpeg writes
+        ``<prefix>-0.log`` as the stream-specific stats sidecar (same
+        convention libx264 / libaom-av1 use).
+        """
+        if pass_number == 0:
+            return ()
+        if pass_number not in (1, 2):
+            raise ValueError(
+                f"libvvenc two_pass_args: pass_number must be 1 or 2, got {pass_number}"
+            )
+        return ("-pass", str(pass_number), "-passlogfile", str(stats_path))
 
     def roi_from_saliency(
         self,

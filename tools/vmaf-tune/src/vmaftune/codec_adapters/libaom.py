@@ -77,6 +77,9 @@ class LibaomAdapter:
     supports_saliency_roi: bool = True
     # ADR-0332: this encoder has no parseable first-pass stats file.
     supports_encoder_stats: bool = False
+    # ADR-0546 (Phase F real 2-pass): libaom-av1 honours FFmpeg's generic
+    # ``-pass`` / ``-passlogfile`` pair — same mechanism libvpx uses.
+    supports_two_pass: bool = True
 
     presets: tuple[str, ...] = (
         "placebo",
@@ -149,6 +152,26 @@ class LibaomAdapter:
     def force_keyframes_args(self, timestamps: tuple[float, ...]) -> tuple[str, ...]:
         """FFmpeg ``-force_key_frames`` with comma-separated seconds."""
         return _gop_common.default_force_keyframes_args(timestamps)
+
+    def two_pass_args(self, pass_number: int, stats_path: Path) -> tuple[str, ...]:
+        """FFmpeg argv slice for libaom-av1 2-pass encoding (ADR-0546).
+
+        FFmpeg's libaom wrapper routes through the generic ``-pass`` /
+        ``-passlogfile`` pair (the same path libvpx uses). The path is
+        a *prefix*; FFmpeg writes ``<prefix>-0.log`` as the stream-
+        specific sidecar.
+
+        Returns an empty tuple for ``pass_number == 0`` so callers that
+        forward this method's result unconditionally don't need a
+        single-pass branch.
+        """
+        if pass_number == 0:
+            return ()
+        if pass_number not in (1, 2):
+            raise ValueError(
+                f"libaom-av1 two_pass_args: pass_number must be 1 or 2, got {pass_number}"
+            )
+        return ("-pass", str(pass_number), "-passlogfile", str(stats_path))
 
     def probe_args(self) -> list[str]:
         """Predictor probe-encode argv: fastest cpu-used, fixed CRF.

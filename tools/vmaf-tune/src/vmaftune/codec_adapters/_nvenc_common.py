@@ -23,6 +23,7 @@ fields.
 from __future__ import annotations
 
 import dataclasses
+from pathlib import Path
 from typing import Final
 
 from . import _gop_common
@@ -122,6 +123,14 @@ class BaseNvencAdapter:
     supports_qpfile: bool = False
     # ADR-0332: hardware encoders have no parseable first-pass stats file.
     supports_encoder_stats: bool = False
+    # ADR-0546: NVENC's "two-pass" is a single-invocation in-encoder
+    # analysis pre-pass (``-multipass fullres``), not a true ffmpeg
+    # two-invocation 2-pass with a stats sidecar. The 2-pass driver in
+    # :func:`vmaftune.encode.run_two_pass_encode` therefore leaves
+    # ``supports_two_pass = False`` and falls back to single-pass; the
+    # caller can still call :meth:`two_pass_args` directly to retrieve
+    # the hardware-quality-boost flags for an enhanced single-pass run.
+    supports_two_pass: bool = False
 
     presets: tuple[str, ...] = NVENC_PRESETS
 
@@ -167,6 +176,45 @@ class BaseNvencAdapter:
         if not timestamps:
             return ()
         return _gop_common.default_force_keyframes_args(timestamps) + ("-forced-idr", "1")
+
+    def two_pass_args(self, pass_number: int, stats_path: Path) -> tuple[str, ...]:
+        """NVENC hardware multipass argv (ADR-0546).
+
+        NVENC implements "two-pass" as an in-encoder full-resolution
+        analysis stage inside a single ffmpeg invocation — there is no
+        separate first-pass stats file written to disk. The relevant
+        FFmpeg flag is ``-multipass fullres`` (the slow / high-quality
+        variant; ``qres`` is the quarter-resolution fast variant).
+
+        Because the analysis runs inside one ffmpeg call, the per-pass
+        contract differs from the software encoders:
+
+        - ``pass_number == 0`` → empty tuple (single-pass).
+        - ``pass_number == 1`` → ``("-multipass", "fullres")`` so the
+          driver can fold the flag in even if it is otherwise driving
+          the two-pass loop.
+        - ``pass_number == 2`` → empty tuple (the multipass analysis
+          already ran inside pass 1's single invocation; a second
+          ffmpeg invocation would re-encode from scratch).
+
+        The adapter declares ``supports_two_pass = False`` so the
+        :func:`vmaftune.encode.run_two_pass_encode` driver will not
+        attempt to split the work across two invocations; callers that
+        want the hardware quality boost append this method's pass-1
+        return value to a single-pass ``EncodeRequest.extra_params``.
+
+        ``stats_path`` is accepted for interface uniformity with the
+        software adapters but unused — NVENC keeps its analysis state
+        in VRAM across the single invocation.
+        """
+        del stats_path  # NVENC's analysis is in-VRAM, no disk sidecar
+        if pass_number == 0:
+            return ()
+        if pass_number == 1:
+            return ("-multipass", "fullres")
+        if pass_number == 2:
+            return ()
+        raise ValueError(f"NVENC two_pass_args: pass_number must be 0, 1, or 2, got {pass_number}")
 
     def probe_args(self) -> list[str]:
         """Predictor probe-encode argv: NVENC ``p1`` preset, fixed CQ."""

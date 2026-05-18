@@ -12,6 +12,7 @@ instead of ``-crf``.
 from __future__ import annotations
 
 import dataclasses
+from pathlib import Path
 
 from . import _gop_common
 from ._videotoolbox_common import (
@@ -19,6 +20,7 @@ from ._videotoolbox_common import (
     VIDEOTOOLBOX_QUALITY_DEFAULT,
     VIDEOTOOLBOX_QUALITY_RANGE,
     validate_videotoolbox,
+    videotoolbox_two_pass_args,
 )
 
 _PRESET_TO_REALTIME = {
@@ -55,6 +57,11 @@ class H264VideoToolboxAdapter:
     supports_qpfile: bool = False
     # ADR-0332: this encoder has no parseable first-pass stats file.
     supports_encoder_stats: bool = False
+    # ADR-0546: VideoToolbox is single-pass only — the underlying
+    # ``VTCompressionSession`` C API has no multi-pass interface.
+    # :meth:`two_pass_args` always raises so callers fail loud rather
+    # than producing a silently-wrong bitstream.
+    supports_two_pass: bool = False
 
     presets: tuple[str, ...] = VIDEOTOOLBOX_PRESETS
 
@@ -96,3 +103,7 @@ class H264VideoToolboxAdapter:
     def probe_args(self) -> list[str]:
         """Predictor probe-encode argv: realtime mode + middle q:v."""
         return _gop_common.default_probe_args(self)
+
+    def two_pass_args(self, pass_number: int, stats_path: Path) -> tuple[str, ...]:
+        """Always raise — VideoToolbox is single-pass only (ADR-0546)."""
+        return videotoolbox_two_pass_args(self.encoder, pass_number, stats_path)

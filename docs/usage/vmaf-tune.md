@@ -234,7 +234,7 @@ The mapping is closed and order-stable; see
 | `--force-sdr` | off | Treat all sources as SDR; skip HDR detection. |
 | `--force-hdr-pq` | off | Treat all sources as HDR PQ (SMPTE-2084) without probing. Useful for raw YUV refs that ffprobe cannot read color metadata from. |
 | `--force-hdr-hlg` | off | Treat all sources as HDR HLG (ARIB STD-B67) without probing. |
-| `--two-pass` | off | Phase F (ADR-0333). Run a 2-pass encode for codecs whose adapter sets `supports_two_pass = True` (today: `libx264`, `libx265`, `libvpx-vp9`). Codecs without 2-pass support fall back to single-pass with a stderr warning. Doubles encode wall time. |
+| `--two-pass` | off | Phase F (ADR-0333 + ADR-0546). Run a 2-pass encode for codecs whose adapter sets `supports_two_pass = True` (today: `libx264`, `libx265`, `libvpx-vp9`, `libaom-av1`, `libvvenc`). Codecs without 2-pass support fall back to single-pass with a stderr warning. Doubles encode wall time. |
 
 ## Resolution-aware mode
 
@@ -2031,22 +2031,55 @@ encoder sidecars when the run completes — successful or not.
 
 ### Codec support matrix
 
-| Codec | `supports_two_pass` | Notes |
-| --- | --- | --- |
-| `libx265` | yes | First Phase F implementation. ADR-0333. |
-| `libx264` | yes | FFmpeg-native `-pass` / `-passlogfile` wiring. |
-| `libvpx-vp9` | yes | FFmpeg-native `-pass` / `-passlogfile`; adapter emits VP9 CRF mode via `-b:v 0`. |
-| `libsvtav1` | not yet | Sibling PR planned. Uses `-svtav1-params passes=2`. |
-| `libvvenc` | not yet | Sibling PR planned. Uses `-vvenc-params`. |
-| `libaom-av1` | not yet | Possible sibling PR; encode time prohibitive on long sources. |
-| `*_nvenc` (NVIDIA) | no | NVENC's `-multipass` is a single-invocation lookahead, not the stats-file two-call sequence. Separate adapter contract. |
-| `*_amf` / `*_qsv` / `*_videotoolbox` | no | Hardware encoders use internal lookahead; no stats-file 2-pass exposed. |
+ADR-0546 closed the contract for every codec adapter. Each adapter now
+either runs a real two-invocation 2-pass, returns single-invocation
+quality-boost flags callers can splice into `extra_params`, or raises a
+typed error documenting why the encoder cannot support multi-pass.
+
+| Codec | `supports_two_pass` | `two_pass_args(1, p)` returns | Notes |
+| --- | --- | --- | --- |
+| `libx264` | yes | `-pass 1 -passlogfile <prefix>` | FFmpeg-native two-invocation 2-pass. ADR-0333. |
+| `libx265` | yes | `-x265-params pass=1:stats=<path>` | x265 routes pass control through its codec-private payload. ADR-0333. |
+| `libvpx-vp9` | yes | `-pass 1 -passlogfile <prefix>` | FFmpeg-native two-invocation 2-pass; CRF mode pinned via `-b:v 0`. |
+| `libaom-av1` | yes | `-pass 1 -passlogfile <prefix>` | FFmpeg-native two-invocation 2-pass. ADR-0546. |
+| `libvvenc` | yes | `-pass 1 -passlogfile <prefix>` | FFmpeg ≥ 6.1 translates `-pass` to VVenC's `RcStatsFile` config. ADR-0546. |
+| `libsvtav1` | no | `-pass 1 -passlogfile <prefix>` | SVT-AV1 forbids multi-pass in CRF mode (verified against v4.1.0: `Svt[error]: CRF does not support multi-pass. Use single pass.`). The adapter still returns VBR-mode argv for callers that explicitly switch into bitrate-targeted mode via `extra_params`. ADR-0546. |
+| `h264_nvenc` / `hevc_nvenc` / `av1_nvenc` | no | `-multipass fullres` | NVENC's multipass is a single-invocation, in-encoder full-resolution analysis. Splice the pass-1 return value into `EncodeRequest.extra_params` for a quality-boosted single-pass encode. Requires NVENC's VBR rate control + target bitrate. ADR-0546. |
+| `h264_qsv` / `hevc_qsv` / `av1_qsv` | no | `-extbrc 1 -look_ahead_depth 40` | Intel QSV's extended-BRC look-ahead is a single-invocation in-encoder pre-analysis window. Compose into `extra_params` for the quality boost. ADR-0546. |
+| `h264_amf` / `hevc_amf` / `av1_amf` | no | `-preanalysis true` | AMD AMF's pre-analysis stage runs inside a single ffmpeg invocation. Compose into `extra_params` for the quality boost. ADR-0546. |
+| `h264_videotoolbox` / `hevc_videotoolbox` / `av1_videotoolbox` / `prores_videotoolbox` | no | `raise VideoToolboxTwoPassUnsupportedError` | Apple `VTCompressionSession` has no multi-pass C API. For true 2-pass on macOS, switch to a software encoder (`libx264` / `libx265` / `libsvtav1` / `libaom-av1` / `libvvenc`) — all of which ship in the same FFmpeg build. ADR-0546. |
 
 When `--two-pass` is set against a codec where `supports_two_pass = False`,
 vmaf-tune writes a one-line warning to stderr and runs single-pass.
 (Mirrors the saliency.py "unsupported ROI encoder, fallback to plain encode"
 precedent.) To fail loud instead, callers using the Python API can
-pass `on_unsupported="raise"` to `run_two_pass_encode`.
+pass `on_unsupported="raise"` to `run_two_pass_encode`. VideoToolbox
+calls to `adapter.two_pass_args()` always raise the typed error so
+callers introspecting the contract can disambiguate "API limitation"
+from "we forgot to implement".
+
+### Hardware quality-boost composition (ADR-0546)
+
+Hardware encoders expose their "2-pass equivalent" as single-invocation
+flags. To combine them with the harness's normal single-pass driver,
+pull `adapter.two_pass_args(1, Path("/tmp/unused"))` and splice the
+result into `EncodeRequest.extra_params`:
+
+```python
+from vmaftune.codec_adapters import get_adapter
+from vmaftune.encode import EncodeRequest, run_encode
+from pathlib import Path
+
+adapter = get_adapter("h264_nvenc")
+boost = adapter.two_pass_args(1, Path("/tmp/_unused"))  # ('-multipass', 'fullres')
+
+req = EncodeRequest(
+    source=ref, width=1920, height=1080, pix_fmt="yuv420p", framerate=24.0,
+    encoder="h264_nvenc", preset="slow", crf=22, output=out,
+    extra_params=boost,  # quality-boosted single-pass
+)
+run_encode(req)
+```
 
 ### Cache interaction
 
@@ -2068,9 +2101,10 @@ file is unique per slice. No special handling required.
 - No per-title or per-shot CRF prediction (Phase C / D).
 - No real-corpus end-to-end ladder validation against a Netflix per-
   title baseline yet.
-- 2-pass on codecs other than `libx264` / `libx265` / `libvpx-vp9`
-  (Phase F sibling PRs land one-file-at-a-time per the ADR-0288 /
-  ADR-0333 pattern).
+- True two-invocation 2-pass on codecs the underlying encoder
+  refuses (today: `libsvtav1` in CRF mode; ADR-0546). The adapter
+  still exposes meaningful argv for callers that switch into the
+  encoder's supported mode (e.g. VBR for SvtAv1).
 - Encoder-stats parsing for `libvpx-vp9`: FFmpeg's libvpx passlog is
   binary first-pass data, not the x264/x265 text schema consumed by
   `encoder_stats.py`.
@@ -2530,7 +2564,7 @@ isolation.
 | 7 | `skip-per-shot` | `duration < 5min` AND `shot_variance < 0.15` | The `tune_per_shot.refine` pass (ADR-0392). |
 | 8 | `low-complexity` | `meta.complexity_score < 200 kbps` (probe-encode bitrate) | The `recommend.coarse_to_fine` sweep — the predictor's point estimate is already tight on simple content. `0.0`/`NaN` does not fire (no probe run yet). |
 | 9 | `baseline-meets-target` | `meta.baseline_vmaf >= target_vmaf` | The full predictor sweep — the default-CRF encode already satisfies the quality target. `0.0`/`NaN` does not fire (no baseline scored yet). |
-| 10 | `no-two-pass` | `adapter.supports_two_pass == False` (ADR-0333) | The two-pass calibration stage. Hardware encoders (`*_nvenc`, `*_amf`, `*_qsv`, `*_videotoolbox`) and most software encoders fire this. `libx264` and `libx265` currently set `supports_two_pass = True`. |
+| 10 | `no-two-pass` | `adapter.supports_two_pass == False` (ADR-0333 + ADR-0546) | The two-pass calibration stage. Hardware encoders (`*_nvenc`, `*_amf`, `*_qsv`, `*_videotoolbox`) and `libsvtav1` (CRF-mode multi-pass prohibition) fire this. `libx264` / `libx265` / `libvpx-vp9` / `libaom-av1` / `libvvenc` set `supports_two_pass = True`. |
 
 The 5-min and 0.15 thresholds in short-circuit #7 are placeholders;
 F.3 fits them empirically once Phase F has emitted enough labelled

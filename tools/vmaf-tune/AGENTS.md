@@ -348,6 +348,23 @@ for the option-space digest.
   `-multipass` is **not** this seam (single-invocation lookahead, not
   a stats-file two-call sequence); a separate adapter contract is the
   follow-up if demand surfaces.
+- **`two_pass_args` is implemented on every adapter (ADR-0546).** No
+  adapter inherits the protocol-default `NotImplementedError` body.
+  `libaom-av1` + `libvvenc` are now `supports_two_pass=True` (FFmpeg
+  generic `-pass N -passlogfile <prefix>`). `libsvtav1` returns the
+  same VBR-mode argv but stays `supports_two_pass=False` because SVT-AV1
+  enforces "CRF does not support multi-pass" at runtime — the harness
+  default mode is CRF, so the driver falls back to single-pass. NVENC
+  / QSV / AMF return their single-invocation in-encoder analysis flags
+  (`-multipass fullres` / `-extbrc 1 -look_ahead_depth 40` /
+  `-preanalysis true`) for pass 1 and `()` for pass 2; callers compose
+  the pass-1 argv into `EncodeRequest.extra_params` for a
+  quality-boosted single-pass encode. All four VideoToolbox adapters
+  raise the typed `VideoToolboxTwoPassUnsupportedError` from
+  `_videotoolbox_common` documenting that `VTCompressionSession` has
+  no multi-pass C API. Do not regress these adapters back to bare
+  `NotImplementedError` — the search loop assumes the contract is
+  uniformly implemented.
 - **AMF preset compression is fixed (ADR-0282).** The 7-into-3 preset
   table in `codec_adapters/_amf_common.py` (`_PRESET_TO_AMF`) is the
   cross-codec axis Phase B / C consumers depend on. Do not extend

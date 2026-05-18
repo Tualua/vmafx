@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Mapping
+from pathlib import Path
 
 from . import _gop_common
 
@@ -101,6 +102,16 @@ class SvtAv1Adapter:
     supports_encoder_stats: bool = False
     # SVT-AV1 QP-offset map (ADR-0370): delivered via --qp-file / -svtav1-params.
     supports_saliency_roi: bool = True
+    # ADR-0546 (Phase F real 2-pass): SVT-AV1 supports multi-pass
+    # **only in VBR mode**. Quoting the encoder's runtime error
+    # (verified against SVT-AV1 v4.1.0): "CRF does not support
+    # multi-pass. Use single pass." vmaf-tune pins libsvtav1 to CRF
+    # mode (the harness's canonical quality axis), so the 2-pass
+    # driver leaves ``supports_two_pass = False`` and
+    # :meth:`two_pass_args` returns the VBR-mode argv plus emits a
+    # diagnostic. Callers who explicitly switch the adapter to a
+    # bitrate-targeted mode can use those args.
+    supports_two_pass: bool = False
 
     # Phase-A-supported preset *names* (compatibility shim — see
     # PRESET_NAME_TO_INT). Order is "slowest -> fastest" to match the
@@ -196,6 +207,39 @@ class SvtAv1Adapter:
         already carries elsewhere.
         """
         return str(preset_to_int(preset))
+
+    def two_pass_args(self, pass_number: int, stats_path: Path) -> tuple[str, ...]:
+        """FFmpeg argv slice for libsvtav1 2-pass encoding (ADR-0546).
+
+        SVT-AV1 supports multi-pass **only in VBR / target-bitrate
+        mode**. The encoder enforces this at runtime: pass 2 of a CRF
+        2-pass fails with::
+
+            Svt[error]: CRF does not support multi-pass. Use single pass.
+
+        vmaf-tune's libsvtav1 adapter pins CRF mode by default (CRF is
+        the harness's canonical quality axis), so the
+        :func:`vmaftune.encode.run_two_pass_encode` driver leaves
+        ``supports_two_pass = False`` and falls back to single-pass.
+
+        This method still returns the VBR-mode 2-pass argv for callers
+        that have explicitly switched the encoder to bitrate-targeted
+        mode (e.g. via ``EncodeRequest.extra_params``). The FFmpeg
+        ``libsvtav1`` wrapper accepts the generic ``-pass`` /
+        ``-passlogfile`` flags; the stats sidecar is
+        ``<passlogfile>-0.log`` as with libx264 / libaom-av1.
+
+        Returns an empty tuple for ``pass_number == 0`` so callers that
+        forward this method's result unconditionally don't need a
+        single-pass branch.
+        """
+        if pass_number == 0:
+            return ()
+        if pass_number not in (1, 2):
+            raise ValueError(
+                f"libsvtav1 two_pass_args: pass_number must be 1 or 2, got {pass_number}"
+            )
+        return ("-pass", str(pass_number), "-passlogfile", str(stats_path))
 
     def qpmap_from_saliency(
         self,

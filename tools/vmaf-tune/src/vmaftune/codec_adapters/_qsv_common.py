@@ -28,6 +28,7 @@ from __future__ import annotations
 import dataclasses
 import shutil
 import subprocess
+from pathlib import Path
 
 from . import _gop_common
 
@@ -144,6 +145,15 @@ class BaseQsvAdapter:
     supports_qpfile: bool = False
     # ADR-0332: hardware encoders have no parseable first-pass stats file.
     supports_encoder_stats: bool = False
+    # ADR-0546: QSV's "two-pass" equivalent is the in-encoder
+    # extended-BRC look-ahead (``-extbrc 1 -look_ahead_depth 40``)
+    # which runs inside a single ffmpeg invocation. There is no
+    # standalone first-pass stats sidecar, so the
+    # :func:`vmaftune.encode.run_two_pass_encode` driver falls back to
+    # a single-pass encode for QSV — callers that want the look-ahead
+    # quality boost append :meth:`two_pass_args` pass-1 output to a
+    # single-pass ``EncodeRequest.extra_params``.
+    supports_two_pass: bool = False
 
     presets: tuple[str, ...] = QSV_PRESETS
 
@@ -179,6 +189,41 @@ class BaseQsvAdapter:
     def force_keyframes_args(self, timestamps: tuple[float, ...]) -> tuple[str, ...]:
         """FFmpeg ``-force_key_frames`` with comma-separated seconds."""
         return _gop_common.default_force_keyframes_args(timestamps)
+
+    def two_pass_args(self, pass_number: int, stats_path: Path) -> tuple[str, ...]:
+        """Intel QSV extended-BRC look-ahead argv (ADR-0546).
+
+        QSV does not implement a software-style two-invocation 2-pass.
+        The closest analogue is the extended bit-rate controller's
+        look-ahead mode: ``-extbrc 1 -look_ahead_depth 40`` adds an
+        internal pre-analysis window inside a single ffmpeg invocation.
+        The look-ahead depth of 40 frames matches Intel's recommended
+        default for "quality" presets in the libmfx / VPL sample apps.
+
+        Per-pass contract (mirrors the NVENC adapter):
+
+        - ``pass_number == 0`` → empty tuple (single-pass).
+        - ``pass_number == 1`` → the full look-ahead flag set.
+        - ``pass_number == 2`` → empty tuple (look-ahead already ran
+          inside the pass-1 single invocation).
+
+        The adapter declares ``supports_two_pass = False`` so the
+        2-pass driver leaves the work to a single invocation; callers
+        that want the look-ahead boost can splice this method's pass-1
+        return value into ``EncodeRequest.extra_params``.
+
+        ``stats_path`` is accepted for interface uniformity with the
+        software adapters but unused — the look-ahead window lives in
+        the encoder's working set, not on disk.
+        """
+        del stats_path  # QSV look-ahead is in-encoder; no disk sidecar
+        if pass_number == 0:
+            return ()
+        if pass_number == 1:
+            return ("-extbrc", "1", "-look_ahead_depth", "40")
+        if pass_number == 2:
+            return ()
+        raise ValueError(f"QSV two_pass_args: pass_number must be 0, 1, or 2, got {pass_number}")
 
     def probe_args(self) -> list[str]:
         """Predictor probe-encode argv: QSV ``veryfast`` preset, fixed ICQ."""

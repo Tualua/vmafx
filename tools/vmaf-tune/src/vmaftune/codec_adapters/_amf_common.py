@@ -33,6 +33,7 @@ from __future__ import annotations
 import dataclasses
 import subprocess
 from collections.abc import Callable
+from pathlib import Path
 from typing import Final
 
 from . import _gop_common
@@ -130,6 +131,13 @@ class _AMFAdapterBase:
     supports_qpfile: bool = False
     # ADR-0332: AMF is hardware; no first-pass stats-file surface.
     supports_encoder_stats: bool = False
+    # ADR-0546: AMF's "two-pass" equivalent is the encoder-internal
+    # pre-analysis stage (``-preanalysis true``) which runs inside a
+    # single ffmpeg invocation. No standalone first-pass stats sidecar
+    # is written; the 2-pass driver therefore falls back to single-
+    # pass. Callers that want the pre-analysis quality boost append
+    # :meth:`two_pass_args` pass-1 output to ``extra_params``.
+    supports_two_pass: bool = False
 
     presets: tuple[str, ...] = (
         "ultrafast",
@@ -213,6 +221,35 @@ class _AMFAdapterBase:
         non-IDR keyframes the workaround is to set ``-bf 0``.
         """
         return _gop_common.default_force_keyframes_args(timestamps)
+
+    def two_pass_args(self, pass_number: int, stats_path: Path) -> tuple[str, ...]:
+        """AMD AMF pre-analysis argv (ADR-0546).
+
+        AMF does not implement a software-style two-invocation 2-pass.
+        The closest analogue is the encoder-internal pre-analysis
+        stage exposed via the ``-preanalysis`` AVOption (``true`` or
+        ``false``). Pre-analysis improves rate-distortion decisions
+        for VBR rate control and adds modest quality gains for the
+        constant-QP mode this adapter pins by default.
+
+        Per-pass contract (mirrors NVENC / QSV):
+
+        - ``pass_number == 0`` → empty tuple (single-pass).
+        - ``pass_number == 1`` → ``("-preanalysis", "true")``.
+        - ``pass_number == 2`` → empty tuple (pre-analysis already
+          ran inside pass-1's single invocation).
+
+        ``stats_path`` is accepted for interface uniformity but unused
+        — AMF's pre-analysis state lives in the encoder, not on disk.
+        """
+        del stats_path  # AMF pre-analysis is in-encoder; no disk sidecar
+        if pass_number == 0:
+            return ()
+        if pass_number == 1:
+            return ("-preanalysis", "true")
+        if pass_number == 2:
+            return ()
+        raise ValueError(f"AMF two_pass_args: pass_number must be 0, 1, or 2, got {pass_number}")
 
     def probe_args(self) -> list[str]:
         """Predictor probe-encode argv: AMF ``speed`` quality, fixed cqp.

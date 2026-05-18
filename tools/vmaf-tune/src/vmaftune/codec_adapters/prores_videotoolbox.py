@@ -46,6 +46,7 @@ References
 from __future__ import annotations
 
 import dataclasses
+from pathlib import Path
 
 from . import _gop_common
 from ._videotoolbox_common import (
@@ -54,6 +55,7 @@ from ._videotoolbox_common import (
     VIDEOTOOLBOX_PRESETS,
     prores_profile_name,
     validate_prores_videotoolbox,
+    videotoolbox_two_pass_args,
 )
 
 _PRESET_TO_REALTIME = {
@@ -101,6 +103,9 @@ class ProresVideoToolboxAdapter:
     supports_qpfile: bool = False
     # ADR-0332: ProRes VideoToolbox does not emit a parseable stats file.
     supports_encoder_stats: bool = False
+    # ADR-0546: ProRes is intra-only and VideoToolbox is single-pass
+    # by API; 2-pass has no meaning here. :meth:`two_pass_args` raises.
+    supports_two_pass: bool = False
 
     presets: tuple[str, ...] = VIDEOTOOLBOX_PRESETS
 
@@ -153,3 +158,7 @@ class ProresVideoToolboxAdapter:
     def probe_args(self) -> list[str]:
         """Predictor probe-encode argv: realtime mode + proxy tier."""
         return _gop_common.default_probe_args(self)
+
+    def two_pass_args(self, pass_number: int, stats_path: Path) -> tuple[str, ...]:
+        """Always raise — VideoToolbox is single-pass only (ADR-0546)."""
+        return videotoolbox_two_pass_args(self.encoder, pass_number, stats_path)

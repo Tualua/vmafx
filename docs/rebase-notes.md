@@ -36663,3 +36663,23 @@ upstream sync, expect zero conflicts. If a future PR re-introduces a
 CUDA-only helper into one of the four kernels (re-breaking the
 standalone build), do NOT re-add a weak HSACO stub — fix the kernel
 (invariant pinned in `libvmaf/src/feature/hip/AGENTS.md`).
+
+## ADR-0546 — Codec-adapter `two_pass_args` real implementations
+
+**Rebase impact**: none. The change is entirely fork-local — all
+modified files live under `tools/vmaf-tune/src/vmaftune/codec_adapters/`
+(fork-added Phase A/F vmaf-tune package) and `docs/`. No upstream
+Netflix/vmaf file is touched, no ffmpeg-patches file is touched, no
+public `libvmaf/include/` header is touched, no `meson_options.txt`
+key is added.
+
+Touched files:
+`tools/vmaf-tune/src/vmaftune/codec_adapters/{svtav1,libaom,vvenc,_nvenc_common,_qsv_common,_amf_common,_videotoolbox_common,h264_videotoolbox,hevc_videotoolbox,av1_videotoolbox,prores_videotoolbox}.py`,
+`tools/vmaf-tune/tests/test_codec_adapter_two_pass_real.py`,
+`docs/adr/0546-codec-adapter-two-pass-real.md`,
+`docs/adr/README.md` (one index row),
+`docs/research/0546-codec-adapter-two-pass-real.md`,
+`docs/usage/vmaf-tune.md` (codec support matrix refresh),
+`docs/state.md` (Recently-closed row),
+`changelog.d/added/0546-codec-adapter-two-pass-real.md`,
+`docs/rebase-notes.md` (this entry).
