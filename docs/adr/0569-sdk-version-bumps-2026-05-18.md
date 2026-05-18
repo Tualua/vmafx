@@ -40,7 +40,7 @@ no host-install behaviour changes).
 | Option | Pros | Cons | Why not chosen |
 |---|---|---|---|
 | Bump each dependency in its own PR | Easier bisect if one bump breaks something | 8x CI overhead; each PR needs its own ADR + deliverables; total cost dominates benefit | Not chosen — all 8 are genuinely low-risk and independently validated in the audit |
-| Hold all until Ubuntu 26.04 base-image PR merges | One fewer Containerfile conflict to manage | Blocks ROCm/CUDA EP improvements in ORT for weeks; linters drift further | Not chosen — Ubuntu 26.04 PR touched different ARG lines; Containerfile conflicts are easily resolved |
+| Hold all until Ubuntu 26.04 base-image PR merges | One fewer Containerfile conflict to manage | Blocks ROCm/CUDA EP improvements in ORT for weeks; linters drift further | Not chosen — Ubuntu 26.04 PR (#1330) touched different ARG lines; Containerfile conflicts were easily resolved |
 | Only bump pre-commit tools, skip container ARGs | Zero container-rebuild cost | Misses the highest-value bump (ORT 1.26 ROCm EP support) | Not chosen — container ARG bumps are string-only changes that require no rebuild to merge |
 
 ## Consequences
