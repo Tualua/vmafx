@@ -557,6 +557,97 @@ static char *test_write_output_with_format_custom()
     return NULL;
 }
 
+/*
+ * ADR-0602 regression helpers.
+ *
+ * When the caller injects scores via vmaf_import_feature_score() without ever
+ * calling vmaf_read_pictures(), vmaf->pic_cnt stays zero.  The JSON / XML
+ * pooled-metrics writers used to compute `pic_cnt - 1` (unsigned), which wraps
+ * to UINT_MAX and passes the `index_low > index_high` guard inside
+ * vmaf_feature_score_pooled() (0 <= UINT_MAX for unsigned).  On macOS clang
+ * the optimiser may not emit the same early-exit path as GCC on Linux, turning
+ * the bounded loop into an apparently-infinite one that eventually SIGSEGV'd.
+ * The fix adds an explicit `pic_cnt > 0` guard before `pic_cnt - 1` in both
+ * writers; the null-vmaf path is also now guarded up front.
+ *
+ * Split across three small functions to stay under the function-size lint gate.
+ */
+
+/* Shared: build a context with one imported score and pic_cnt == 0. */
+static int make_pic_cnt_zero_ctx(VmafContext **out)
+{
+    VmafConfiguration cfg = {0};
+    int err = vmaf_init(out, cfg);
+    if (err)
+        return err;
+    return vmaf_import_feature_score(*out, "feat_injected", 42.0, 0);
+}
+
+/* Sub-test: JSON output with pic_cnt == 0. */
+static char *test_write_output_pic_cnt_zero_json(VmafContext *vmaf)
+{
+    char tmp[4096];
+    mu_assert("make_temp_path(json) failed", make_temp_path("vmaf_pc0j_", tmp, sizeof(tmp)) == 0);
+    int err = vmaf_write_output(vmaf, tmp, VMAF_OUTPUT_FORMAT_JSON);
+    mu_assert("vmaf_write_output(JSON,pic_cnt=0) returned non-zero", !err);
+    char *out = slurp_path(tmp);
+    (void)remove(tmp);
+    mu_assert("slurp failed for JSON pic_cnt=0", out);
+    mu_assert("JSON pc0: missing '{' open brace", strstr(out, "{"));
+    mu_assert("JSON pc0: missing frames block", strstr(out, "\"frames\":"));
+    mu_assert("JSON pc0: missing feat_injected in output", strstr(out, "feat_injected"));
+    mu_assert("JSON pc0: missing pooled_metrics block", strstr(out, "\"pooled_metrics\":"));
+    free(out);
+    return NULL;
+}
+
+/* Sub-test: XML output with pic_cnt == 0. */
+static char *test_write_output_pic_cnt_zero_xml(VmafContext *vmaf)
+{
+    char tmp[4096];
+    mu_assert("make_temp_path(xml) failed", make_temp_path("vmaf_pc0x_", tmp, sizeof(tmp)) == 0);
+    int err = vmaf_write_output(vmaf, tmp, VMAF_OUTPUT_FORMAT_XML);
+    mu_assert("vmaf_write_output(XML,pic_cnt=0) returned non-zero", !err);
+    char *out = slurp_path(tmp);
+    (void)remove(tmp);
+    mu_assert("slurp failed for XML pic_cnt=0", out);
+    mu_assert("XML pc0: missing <VMAF> root", strstr(out, "<VMAF"));
+    mu_assert("XML pc0: missing pooled_metrics block", strstr(out, "<pooled_metrics>"));
+    free(out);
+    return NULL;
+}
+
+/* Top-level ADR-0602 regression entry point. */
+static char *test_write_output_pic_cnt_zero()
+{
+    VmafContext *vmaf;
+    int err = make_pic_cnt_zero_ctx(&vmaf);
+    mu_assert("make_pic_cnt_zero_ctx failed", !err);
+
+    char *msg = test_write_output_pic_cnt_zero_json(vmaf);
+    if (msg) {
+        (void)vmaf_close(vmaf);
+        return msg;
+    }
+    msg = test_write_output_pic_cnt_zero_xml(vmaf);
+    if (msg) {
+        (void)vmaf_close(vmaf);
+        return msg;
+    }
+
+    /* NULL-argument guards: vmaf NULL must not reach open() or
+     * feature_collector dereference (ADR-0602). */
+    char dummy_path[] = "/tmp/vmaf_null_guard_test";
+    err = vmaf_write_output(NULL, dummy_path, VMAF_OUTPUT_FORMAT_JSON);
+    mu_assert("vmaf_write_output(NULL vmaf) must fail", err);
+
+    err = vmaf_write_output(vmaf, NULL, VMAF_OUTPUT_FORMAT_JSON);
+    mu_assert("vmaf_write_output(NULL path) must fail", err);
+
+    (void)vmaf_close(vmaf);
+    return NULL;
+}
+
 char *run_tests()
 {
     mu_run_test(test_csv_basic);
@@ -570,5 +661,6 @@ char *run_tests()
     mu_run_test(test_vmaf_version);
     mu_run_test(test_write_output_json_path);
     mu_run_test(test_write_output_with_format_custom);
+    mu_run_test(test_write_output_pic_cnt_zero);
     return NULL;
 }

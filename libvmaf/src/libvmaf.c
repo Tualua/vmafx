@@ -2718,6 +2718,20 @@ const char *vmaf_version(void)
 int vmaf_write_output_with_format(VmafContext *vmaf, const char *output_path,
                                   enum VmafOutputFormat fmt, const char *score_format)
 {
+    /* ADR-0602: both vmaf and output_path are annotated nonnull on macOS
+     * (open(2) is __nonnull(1); vmaf->feature_collector is dereferenced
+     * immediately below).  On macOS, Apple Clang and glibc both declare
+     * open() with __attribute__((nonnull(1))); passing NULL skips the
+     * call entirely and falls through to undefined memory with SIGSEGV
+     * before the error-path even executes.  Guard both up front. */
+    if (!vmaf) {
+        (void)fprintf(stderr, "vmaf_write_output: vmaf context must not be NULL\n");
+        return -EINVAL;
+    }
+    if (!vmaf->feature_collector) {
+        (void)fprintf(stderr, "vmaf_write_output: feature_collector not initialised\n");
+        return -EINVAL;
+    }
     if (!output_path) {
         (void)fprintf(stderr, "vmaf_write_output: output_path must not be NULL\n");
         return -EINVAL;

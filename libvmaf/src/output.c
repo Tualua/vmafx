@@ -76,7 +76,6 @@ static unsigned count_written_at(VmafFeatureCollector *fc, unsigned i)
 static void xml_write_frames(VmafFeatureCollector *fc, FILE *outfile, unsigned subsample,
                              const char *sf)
 {
-    unsigned n_frames = 0;
     fprintf(outfile, "  <frames>\n");
     for (unsigned i = 0; i < max_capacity(fc); i++) {
         if ((subsample > 1) && (i % subsample))
@@ -96,33 +95,44 @@ static void xml_write_frames(VmafFeatureCollector *fc, FILE *outfile, unsigned s
             fprintf(outfile, sf, fc->feature_vector[j]->score[i].value);
             fprintf(outfile, "\" ");
         }
-        n_frames++;
         fprintf(outfile, "/>\n");
     }
     fprintf(outfile, "  </frames>\n");
 }
 
-static void xml_write_pooled_and_aggregate(VmafContext *vmaf, VmafFeatureCollector *fc,
-                                           FILE *outfile, unsigned pic_cnt, const char *sf)
+/* Emit pool scores for one XML <metric> entry when frames were actually read.
+ * Called only when pic_cnt > 0 to avoid the `pic_cnt - 1` unsigned underflow
+ * to UINT_MAX that was the ADR-0602 macOS SIGSEGV root cause. */
+static void xml_write_one_metric_pools(VmafContext *vmaf, FILE *outfile, const char *feature_name,
+                                       unsigned pic_cnt, const char *sf)
+{
+    for (unsigned j = 1; j < VMAF_POOL_METHOD_NB; j++) {
+        double score;
+        int err = vmaf_feature_score_pooled(vmaf, feature_name, j, &score, 0, pic_cnt - 1);
+        if (!err) {
+            fprintf(outfile, "%s=\"", pool_method_name[j]);
+            fprintf(outfile, sf, score);
+            fprintf(outfile, "\" ");
+        }
+    }
+}
+
+static void xml_write_pooled_metrics(VmafContext *vmaf, VmafFeatureCollector *fc, FILE *outfile,
+                                     unsigned pic_cnt, const char *sf)
 {
     fprintf(outfile, "  <pooled_metrics>\n");
     for (unsigned i = 0; i < fc->cnt; i++) {
         const char *feature_name = fc->feature_vector[i]->name;
         fprintf(outfile, "    <metric name=\"%s\" ", vmaf_feature_name_alias(feature_name));
-
-        for (unsigned j = 1; j < VMAF_POOL_METHOD_NB; j++) {
-            double score;
-            int err = vmaf_feature_score_pooled(vmaf, feature_name, j, &score, 0, pic_cnt - 1);
-            if (!err) {
-                fprintf(outfile, "%s=\"", pool_method_name[j]);
-                fprintf(outfile, sf, score);
-                fprintf(outfile, "\" ");
-            }
-        }
+        if (pic_cnt > 0)
+            xml_write_one_metric_pools(vmaf, outfile, feature_name, pic_cnt, sf);
         fprintf(outfile, "/>\n");
     }
     fprintf(outfile, "  </pooled_metrics>\n");
+}
 
+static void xml_write_aggregate_metrics(VmafFeatureCollector *fc, FILE *outfile, const char *sf)
+{
     fprintf(outfile, "  <aggregate_metrics ");
     for (unsigned i = 0; i < fc->aggregate_vector.cnt; i++) {
         fprintf(outfile, "%s=\"", fc->aggregate_vector.metric[i].name);
@@ -130,6 +140,13 @@ static void xml_write_pooled_and_aggregate(VmafContext *vmaf, VmafFeatureCollect
         fprintf(outfile, "\" ");
     }
     fprintf(outfile, "/>\n");
+}
+
+static void xml_write_pooled_and_aggregate(VmafContext *vmaf, VmafFeatureCollector *fc,
+                                           FILE *outfile, unsigned pic_cnt, const char *sf)
+{
+    xml_write_pooled_metrics(vmaf, fc, outfile, pic_cnt, sf);
+    xml_write_aggregate_metrics(fc, outfile, sf);
 }
 
 int vmaf_write_output_xml(VmafContext *vmaf, VmafFeatureCollector *fc, FILE *outfile,
@@ -204,7 +221,6 @@ static void json_write_frame(VmafFeatureCollector *fc, FILE *outfile, unsigned i
 static void json_write_frames(VmafFeatureCollector *fc, FILE *outfile, unsigned subsample,
                               const char *sf)
 {
-    unsigned n_frames = 0;
     fprintf(outfile, "  \"frames\": [");
     for (unsigned i = 0; i < max_capacity(fc); i++) {
         if ((subsample > 1) && (i % subsample))
@@ -216,7 +232,6 @@ static void json_write_frames(VmafFeatureCollector *fc, FILE *outfile, unsigned 
         fprintf(outfile, "%s", i > 0 ? ",\n" : "\n");
 
         json_write_frame(fc, outfile, i, cnt, sf);
-        n_frames++;
     }
     fprintf(outfile, "\n  ],\n");
 }
@@ -243,11 +258,21 @@ static void json_write_pooled_entry(VmafContext *vmaf, FILE *outfile, const char
                                     unsigned pic_cnt, const char *sf)
 {
     fprintf(outfile, "    \"%s\": {", vmaf_feature_name_alias(feature_name));
-    for (unsigned j = 1; j < VMAF_POOL_METHOD_NB; j++) {
-        double score;
-        int err = vmaf_feature_score_pooled(vmaf, feature_name, j, &score, 0, pic_cnt - 1);
-        if (!err)
-            json_write_pool_score(outfile, j, score, sf);
+    /* ADR-0602: pic_cnt == 0 means no frames were read via vmaf_read_pictures
+     * (e.g. the caller injected scores via vmaf_import_feature_score).  The
+     * expression `pic_cnt - 1` wraps to UINT_MAX when pic_cnt is zero, which
+     * passes vmaf_feature_score_pooled's `index_low > index_high` guard (0 <=
+     * UINT_MAX is always true for unsigned comparisons) and can trigger an
+     * apparently-infinite loop on macOS clang where the optimiser may not
+     * emit the early-exit path the same way GCC does on Linux.  Skip pooled
+     * metrics entirely when there are no frames to pool. */
+    if (pic_cnt > 0) {
+        for (unsigned j = 1; j < VMAF_POOL_METHOD_NB; j++) {
+            double score;
+            int err = vmaf_feature_score_pooled(vmaf, feature_name, j, &score, 0, pic_cnt - 1);
+            if (!err)
+                json_write_pool_score(outfile, j, score, sf);
+        }
     }
     fprintf(outfile, "\n");
     fprintf(outfile, "    }");
@@ -290,6 +315,16 @@ int vmaf_write_output_json(VmafContext *vmaf, VmafFeatureCollector *fc, FILE *ou
                            unsigned subsample, double fps, unsigned pic_cnt,
                            const char *score_format)
 {
+    /* ADR-0602: mirror the vmaf_write_output_xml NULL guards so the JSON
+     * writer is equally defensive.  vmaf and fc are both dereferenced by the
+     * pooled-metrics loop; outfile is dereferenced by every fprintf. */
+    if (!vmaf)
+        return -EINVAL;
+    if (!fc)
+        return -EINVAL;
+    if (!outfile)
+        return -EINVAL;
+
     const char *sf = fmt_or_default(score_format);
 
     VmafThreadLocaleState *locale_state = vmaf_thread_locale_push_c();

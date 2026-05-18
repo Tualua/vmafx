@@ -7,6 +7,29 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## fix/macos-vmaf-write-output-segv (ADR-0602)
+
+**No rebase-sensitive invariants** — the changes are purely defensive
+guards (NULL checks, `pic_cnt > 0` guards) added to existing functions
+in `libvmaf/src/libvmaf.c` and `libvmaf/src/output.c`, and a new test
+in `libvmaf/test/test_output.c`.  If upstream Netflix merges any change
+to `vmaf_write_output_with_format` or `vmaf_write_output_json`, re-apply
+the three guards (vmaf-NULL, feature_collector-NULL, output_path-NULL)
+and the `pic_cnt > 0` guards in `json_write_pooled_entry` /
+`xml_write_one_metric_pools` to the merged version.
+
+Touched files:
+`libvmaf/src/libvmaf.c` (NULL guards at top of `vmaf_write_output_with_format`),
+`libvmaf/src/output.c` (`pic_cnt > 0` guards, NULL guards in JSON writer,
+split `xml_write_pooled_and_aggregate` into three helpers, remove
+unused `n_frames` variables),
+`libvmaf/test/test_output.c` (`test_write_output_pic_cnt_zero` regression test),
+`docs/adr/0602-macos-vmaf-write-output-segv.md`,
+`docs/adr/README.md` (index row),
+`docs/state.md` (Recently-closed row),
+`docs/rebase-notes.md` (this entry),
+`changelog.d/fixed/0602-macos-vmaf-write-output-segv.md`.
+
 ## fix/vmaftune-qsv-amf-hw-init-and-probe-size (ADR-0601)
 
 **Rebase impact**: `tools/vmaf-tune/` only — no libvmaf C sources, public
