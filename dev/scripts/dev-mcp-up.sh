@@ -18,6 +18,17 @@ PROBE_DIR="${REPO_ROOT}/.workingdir/dev-mcp-probes"
 # Ensure probe output directory exists
 mkdir -p "${PROBE_DIR}"
 
+# ADR-0540: read the host's actual video / render GIDs so the container's
+# group_add resolves to numbers that match the device-node ownership
+# (Arch / CachyOS / Fedora use different numbers than Ubuntu's defaults).
+# Falls back to the compose-file defaults (44 / 109) when getent fails or
+# returns nothing.
+HOST_GID_VIDEO="$(getent group video 2>/dev/null | cut -d: -f3)"
+HOST_GID_RENDER="$(getent group render 2>/dev/null | cut -d: -f3)"
+export HOST_GID_VIDEO="${HOST_GID_VIDEO:-44}"
+export HOST_GID_RENDER="${HOST_GID_RENDER:-109}"
+echo "[dev-mcp-up] Host group IDs: video=${HOST_GID_VIDEO} render=${HOST_GID_RENDER}"
+
 echo "[dev-mcp-up] Building container image (if needed)…"
 docker compose \
   --project-directory "${REPO_ROOT}" \

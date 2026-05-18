@@ -49,8 +49,28 @@ at exactly the build-dir creation step, exit code 13.
 - Use `rocm-hip-runtime-dev` (not `rocm-hip-sdk`).
 - `rocm-hip-sdk` transitively installs `rccl` (multi-GPU collectives) which
   depends on `libdrm-amdgpu-amdgpu1` + `libdrm2-amdgpu` — packages absent
-  from the ROCm 6.4 noble apt repo. libvmaf HIP kernels use one GPU per
+  from the ROCm noble apt repo. libvmaf HIP kernels use one GPU per
   worker; rccl is not needed.
+
+### Userspace ↔ host-kernel UAPI version pins (ADR-0541)
+
+The Intel NEO compute-runtime and ROCm KFD userspace MUST match the host
+kernel's i915 / xe / KFD ioctl ABI, or `vmaf --backend sycl|hip` silently
+falls back to CPU. Two hard pins live in `dev/Containerfile`:
+
+- **`ARG NEO_VER=26.18.38308.1`** (+ `IGC_VER=2.34.4+21428` +
+  `GMMLIB_VER=22.10.0`). Pinned via GitHub releases because Intel's
+  `noble/unified` APT repo's newest as of 2026-05-18 is `25.18.x`, too old
+  for kernel ≥ 7.0. The IGC / gmmlib versions follow the NEO release-notes
+  manifest — bump them together when you bump NEO.
+- **`ARG ROCM_VER=7.2.3`** for `https://repo.radeon.com/rocm/apt/${ROCM_VER}`.
+  ROCm 6.x KFD ioctls do not match kernel ≥ 7.0.
+
+When CI / a maintainer's host runs a newer kernel that breaks these pins,
+the `dev-mcp-entrypoint.sh` runtime-visibility probe (also ADR-0541)
+surfaces the regression on container start as
+`WARN: SYCL level_zero:gpu NOT detected` or `WARN: HIP HSA agent NOT
+detected`. Bump the relevant ARG and rebuild.
 
 ### SHELL / hadolint DL4006
 
@@ -105,7 +125,7 @@ a real container-side regression that hid a host GPU from libvmaf:
    flipped off and a real backend disappeared from libvmaf entirely
    (the precise failure mode that triggered ADR-0514 for HIP).
 
-### FFmpeg encoder exposure invariants (ADR-0540)
+### FFmpeg encoder exposure invariants (ADR-0541)
 
 These four constraints must survive every rebase. Each one corresponds
 to a real encoder that the `vmaf-tune compare` predicate would silently
@@ -152,3 +172,19 @@ skip if dropped:
    hard-errors at configure time. `scale_cuda` (built via
    `--enable-cuda-nvcc`) is the replacement for the
    `scale_npp` pipeline.
+5. **`LD_LIBRARY_PATH` must include `${ONEAPI_ROOT}/tbb/latest/lib`
+   (ADR-0541).** The Intel CPU OpenCL ICD
+   (`/opt/intel/oneapi/compiler/latest/lib/libintelocl.so`) dlopens
+   `libtbb.so.12` at OpenCL platform-enumeration time. Without
+   `tbb/latest/lib` the Khronos ocl-icd loader silently drops the Intel
+   CPU OpenCL platform, leaving SYCL with no CPU fallback when the GPU
+   path is also degraded. The full env line in the Containerfile is now
+   `${DPCPP_ROOT}/lib:${ONEAPI_ROOT}/umf/latest/lib:${ONEAPI_ROOT}/tcm/latest/lib:${ONEAPI_ROOT}/tbb/latest/lib:${LD_LIBRARY_PATH}`.
+
+6. **NEO + ROCm userspace are version-pinned to the host kernel's UAPI
+   (ADR-0541).** See "Userspace ↔ host-kernel UAPI version pins" above.
+   The `dev-mcp-entrypoint.sh` banner emits a `WARN: SYCL level_zero:gpu
+   NOT detected` / `WARN: HIP HSA agent NOT detected` line at container
+   start when the pin no longer matches the host — bump the ARG and
+   rebuild instead of working around it on the host (CLAUDE.md §12 r15
+   sub-rule 4).

@@ -241,13 +241,13 @@ GPU backends:
 | Env var | Contract | Why not pinned |
 |---|---|---|
 | `VK_ICD_FILENAMES` / `VK_DRIVER_FILES` | unset by default; Vulkan loader uses `/etc/vulkan/icd.d/` + `/usr/share/vulkan/icd.d/` search path | An earlier pin to `lvp_icd.x86_64.json` (typo of `lvp_icd.json`) hid every real GPU. ADR-0509 / Research-0138. |
-| `LD_LIBRARY_PATH` | includes `${ONEAPI_ROOT}/{compiler,umf,tcm}/latest/lib` | `tcm/latest/lib` carries `libhwloc.so.15` — the level-zero UR adapter dlopens it at load time. Dropping it causes SYCL "Platforms: 0" on Intel Arc. |
+| `LD_LIBRARY_PATH` | includes `${ONEAPI_ROOT}/{compiler,umf,tcm,tbb}/latest/lib` | `tcm/latest/lib` carries `libhwloc.so.15` (level-zero UR adapter dlopens it at load time; dropping it causes SYCL "Platforms: 0" on Intel Arc). `tbb/latest/lib` carries `libtbb.so.12` (the Intel CPU OpenCL ICD dlopens it at platform enumeration; dropping it silently removes the Intel CPU OpenCL platform — ADR-0541). |
 | `NVIDIA_DRIVER_CAPABILITIES` | `compute,graphics,utility,video` (set in `dev/docker-compose.yml` common-env) | `graphics` is what makes the NVIDIA Container Toolkit bind-mount `nvidia_icd.json` into `/etc/vulkan/icd.d/`. Dropping `graphics` hides NVIDIA from Vulkan. |
 
 Operators that need to force a single ICD per invocation can still
 `docker exec vmaf-dev-mcp env VK_ICD_FILENAMES=… vmaf …`.
 
-## FFmpeg encoder matrix (post-ADR-0540)
+## FFmpeg encoder matrix (post-ADR-0541)
 
 The in-image FFmpeg is built with the fork's full encoder set so that
 `vmaf-tune compare` sweeps can address every codec the project
@@ -326,3 +326,23 @@ docker exec vmaf-dev-mcp bash -c '
 Encoders that are not runtime-available on the host produce per-row
 `ok=false` entries with the diagnostic strings above; the sweep does
 not abort.
+### Host-kernel ↔ container-userspace UAPI version pins (ADR-0541)
+
+Intel NEO compute-runtime and ROCm KFD userspace are version-pinned via
+Containerfile ARGs to match the host kernel's i915 / xe / KFD ioctl ABI.
+A mismatch silently degrades `vmaf --backend sycl|hip` to CPU.
+
+| Pin | Current value | Why pinned |
+|---|---|---|
+| `ARG NEO_VER` | `26.18.38308.1` | Intel's `noble/unified` APT repo's newest as of 2026-05-18 is `25.18.x`, too old for kernel ≥ 7.0. NEO 25.18 returns `ZE_RESULT_ERROR_UNINITIALIZED` from `zeInit()` against kernel-7.x i915/xe. Pulled from `github.com/intel/compute-runtime/releases`. |
+| `ARG IGC_VER` + `ARG GMMLIB_VER` | `2.34.4+21428` + `22.10.0` | NEO 26.18's release notes mandate IGC v2.34.4 + gmmlib 22.10.0. Pinned together. |
+| `ARG ROCM_VER` | `7.2.3` | Matches Arch host `hsa-rocr 7.2.3`. ROCm 6.x KFD userspace returns `Unable to open /dev/kfd read-write: Invalid argument` against kernel-7.x KFD ioctls. |
+
+`dev-mcp-entrypoint.sh` emits a runtime visibility probe on container
+start (ADR-0541): `WARN: SYCL level_zero:gpu NOT detected` or `WARN: HIP
+HSA agent NOT detected` means the host kernel has revved past the pinned
+userspace ABI — bump the ARG and rebuild rather than working around the
+fallback (CLAUDE.md §12 r15 sub-rule 4). The latest NEO release tag is at
+`https://github.com/intel/compute-runtime/releases/latest`; the latest
+ROCm noble channel is listed under
+`https://repo.radeon.com/rocm/apt/`.

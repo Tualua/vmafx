@@ -115,14 +115,39 @@ services:
 
     # Intel Arc (Vulkan/SYCL via DRI) + AMD ROCm (HIP via /dev/kfd).
     #
-    # /dev/dri is no longer listed under `devices:` — the whole-directory
-    # bind-mount in `volumes:` above covers both the cgroup device nodes
-    # AND the udev `by-path/` symlink directory. Docker's `devices:` form
-    # only carries leaf device nodes and drops subdirectory symlinks; the
-    # bind-mount gives the Intel level-zero runtime what it needs to
-    # discover Arc GPUs without any PCI-address dependency. ADR-0528.
+    # We need BOTH the `devices:` entry AND the `/dev/dri` bind-mount in
+    # `volumes:` above — they do different things:
+    #   - `devices:` adds entries to the container's cgroup device whitelist
+    #     so the kernel allows read/write syscalls on the major:minor pair.
+    #     Without it, even a 0666 device file returns EACCES from the
+    #     cgroup-device controller (which NEO 26.x surfaces as
+    #     INSUFFICIENT_PERMISSIONS from zeInit and rocminfo surfaces as
+    #     `Unable to open /dev/kfd … Invalid argument`).
+    #   - the `/dev/dri` whole-directory bind-mount in `volumes:` carries
+    #     the udev-managed `by-path/` symlinks that NEO uses to enumerate
+    #     PCI<->render mappings (ADR-0528) — Docker's `devices:` form
+    #     drops subdirectory entries.
+    # ADR-0541 supersedes the partial fix that dropped the `devices:`
+    # entry for /dev/dri (older NEO 25.x tolerated this; 26.x does not).
     devices:
       - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+
+    # ADR-0541: Intel NEO compute-runtime 26.x and ROCm 7.x both use
+    # syscalls that Docker's default seccomp profile blocks (notably
+    # io_uring + userfaultfd interactions used for command-buffer
+    # submission and GPU page-fault handling). On the dev host kernel
+    # ≥ 7.0 this manifests as `zeInit() →
+    # ZE_RESULT_ERROR_INSUFFICIENT_PERMISSIONS` from level-zero and
+    # `Unable to open /dev/kfd read-write: Invalid argument` from
+    # rocminfo, even when /dev/dri + /dev/kfd are correctly passed
+    # through. `seccomp=unconfined` drops the syscall filter so the
+    # newer userspace can perform the GPU init handshake. This is the
+    # standard ROCm container recommendation (rocm/dev-ubuntu base
+    # images set it by default); NEO 26.x picked up the same
+    # requirement.
+    security_opt:
+      - seccomp=unconfined
 
     # video + render groups give the HIP runtime access to /dev/kfd and
     # the DRI render nodes without running as root.
@@ -185,8 +210,15 @@ services:
 
     runtime: ${CONTAINER_RUNTIME:-runc}
 
+    # See dev-mcp service above (ADR-0541) for the /dev/dri cgroup +
+    # /dev/kfd rationale.
     devices:
       - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+
+    # See dev-mcp service above (ADR-0541) for the seccomp rationale.
+    security_opt:
+      - seccomp=unconfined
 
     group_add:
       - "${HOST_GID_VIDEO:-44}"

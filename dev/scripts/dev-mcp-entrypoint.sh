@@ -61,6 +61,50 @@ MODEL_PATH="${VMAF_MODEL_PATH:-/workspace/model}"
   echo "[dev-mcp-entrypoint]   docker exec ${HOSTNAME:-vmaf-dev-mcp} bash -c 'cd /workspace && PYTHONPATH=tools/vmaf-tune/src python -c \"from vmaftune.cli import main; main()\" --help'"
 } | tee -a "${LOG_FILE}"
 
+# ADR-0540: runtime visibility probe for GPU backends that require kernel-UAPI-
+# matched userspace (Intel NEO compute-runtime + ROCm). When the host kernel
+# is newer than the userspace expects, the userspace silently fails and vmaf
+# falls back to CPU. Surface the gap here so operators don't lose hours to
+# "why is my Arc / Radeon idle".
+#
+# The probe retries for up to ~10 seconds: on a freshly-recreated container
+# the OCI cgroup device whitelist + seccomp profile are sometimes still
+# being applied when the entrypoint starts, so the first sycl-ls / rocminfo
+# call after start can race the userspace's first device-open. A short
+# retry loop avoids spurious WARN lines on healthy hosts without masking a
+# real userspace<->kernel ABI mismatch (which never recovers and keeps
+# failing past the retry window).
+_probe_with_retry() {
+  local label="$1" cmd="$2" pattern="$3" advice="$4"
+  local attempt
+  for attempt in 1 2 3 4 5 6 7 8 9 10; do
+    if eval "${cmd}" 2>&1 | grep -qE "${pattern}"; then
+      echo "[dev-mcp-entrypoint]   ${label} detected (attempt ${attempt})"
+      return 0
+    fi
+    sleep 3
+  done
+  echo "[dev-mcp-entrypoint]   WARN: ${label} NOT detected after 10 attempts (~30 s) — vmaf --backend will fall back to CPU."
+  echo "[dev-mcp-entrypoint]         ${advice}"
+  # Intentional: return 0 even on miss so `set -e` does not kill the
+  # entrypoint and prevent `exec tail -F` from ever running. The WARN
+  # itself is the operator-visible signal — the entrypoint must
+  # continue so the container stays up for `docker exec` use.
+  return 0
+}
+
+{
+  echo "[dev-mcp-entrypoint] GPU backend visibility probe (ADR-0540):"
+  if command -v sycl-ls >/dev/null 2>&1; then
+    _probe_with_retry "SYCL level_zero:gpu" "sycl-ls" "level_zero.*gpu" \
+      "Check /dev/dri/renderD<N> passthrough, seccomp=unconfined, and host kernel <-> NEO ABI compat."
+  fi
+  if command -v rocminfo >/dev/null 2>&1; then
+    _probe_with_retry "HIP HSA agent" "rocminfo" "Agent.*GPU|gfx[0-9]+" \
+      "Check /dev/kfd passthrough, seccomp=unconfined, and host kernel <-> ROCm KFD ioctl ABI compat."
+  fi
+} | tee -a "${LOG_FILE}"
+
 # Keep container foreground; Docker's log collector reads stdout.
 # We block on `tail -F` so any tool writing to the log shows up in
 # `docker logs`. `tail` is shipped with coreutils in the base image.

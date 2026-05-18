@@ -8,6 +8,24 @@ invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
 =======
+## fix/dev-container-sycl-hip-runtime (ADR-0541)
+
+**No rebase impact.** All changes are confined to:
+- `dev/Containerfile` (fork-local; whole file is fork-added).
+- `dev/scripts/dev-mcp-entrypoint.sh` (fork-local).
+- `dev/AGENTS.md` (fork-local invariant note).
+- `docs/adr/0541-dev-container-sycl-hip-runtime-fix.md`,
+  `docs/state.md`, `docs/development/dev-mcp.md`,
+  `changelog.d/fixed/0541-dev-container-sycl-hip-runtime.md`,
+  `docs/adr/README.md` (fork-only doc tree).
+
+No upstream-shared paths touched. The container's pinned
+`NEO_VER` / `IGC_VER` / `GMMLIB_VER` / `ROCM_VER` ARGs become a
+recurring maintenance item: when a future host kernel revs the i915 /
+xe / KFD UAPI, bump the relevant ARG. The `dev-mcp-entrypoint.sh`
+visibility probe surfaces such regressions in ≤ 30 s of container
+start so future bumps are easy to identify.
+
 ## fix/hip-integer-vif-kernel-crash (ADR-0538)
 
 **Touches upstream-mirror paths.** Modifies:
@@ -36389,7 +36407,7 @@ naming) must be honoured to avoid the same class of link error this
 ADR closed.
 =======
 
-## feat/dev-container-ffmpeg-av1-hwaccel (ADR-0540)
+## feat/dev-container-ffmpeg-av1-hwaccel (ADR-0541)
 
 **Files touched:** `dev/Containerfile` (stage 3.5 apt list + SVT-AV1 /
 libaom / vvenc / AMF source builds + FFmpeg configure flags + build-
@@ -36398,7 +36416,7 @@ invariants"), `docs/development/dev-mcp.md` (encoder matrix + runtime
 failure modes + full-sweep reproducer), `libvmaf/src/meson.build`
 (one-line follow-up to ADR-0523: add `'motion_score'` to the
 `hip_kernel_sources` dict; surfaced as a stage-3 link blocker during
-ADR-0540's container rebuild verification), `ffmpeg-patches/0007-
+ADR-0541's container rebuild verification), `ffmpeg-patches/0007-
 libvmaf-tune-qpfile-unified.patch` (one-line addition: `#include
 <stdbool.h>` to `libavcodec/libsvtav1.c` so `enable_roi_map = true`
 compiles — surfaced when the in-image FFmpeg was first built with

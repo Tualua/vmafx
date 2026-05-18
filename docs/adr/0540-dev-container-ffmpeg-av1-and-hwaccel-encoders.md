@@ -1,4 +1,4 @@
-# ADR-0540: dev-MCP container FFmpeg ships AV1 (SVT/aom) + VVenC + hardware encoders (NVENC, oneVPL/QSV, AMF)
+# ADR-0541: dev-MCP container FFmpeg ships AV1 (SVT/aom) + VVenC + hardware encoders (NVENC, oneVPL/QSV, AMF)
 
 - **Status**: Accepted
 - **Date**: 2026-05-18
@@ -104,7 +104,7 @@ configure. Concretely:
    version that ships the assumed ROI fields or make the ROI
    bridge libaom-version-gated (mirror the SVT-AV1 `>= 1.6.0`
    log-and-continue pattern). Tracked as a follow-up; out of
-   ADR-0540's scope.
+   ADR-0541's scope.
 3. **VVenC built from source.** Not in Ubuntu apt. Cloned from
    `https://github.com/fraunhoferhhi/vvenc.git` at tag `v1.12.0`,
    built with CMake (`-DBUILD_SHARED_LIBS=ON
@@ -157,7 +157,7 @@ matrix and reproducer command.
 | Use distro packages for everything (no source builds) | Fastest build; no upstream-tag tracking | `libvvenc-dev` does not exist in Ubuntu 24.04 apt; AMF is not packaged anywhere | Not feasible — the codecs we need most (VVenC + AMF) are not in apt. |
 | Replace `libvpl` with legacy `libmfx` | Wider hardware compatibility (older Intel iGPUs) | Intel has sunsetted libmfx for Gen11+ silicon (the Arc A380 falls under this); FFmpeg upstream pivoted to libvpl in 7.x | libvpl is the supported successor and matches the host's Arc generation. |
 | Add `--enable-vulkan` for the experimental Vulkan-Video encode path | Forward-looking; vendor-neutral hardware encode | FFmpeg 8.1 Vulkan-Video encoder is experimental, only AV1+H.265, and requires shaderInt64 + storage-buffer8bit extensions the host's gfx1036 doesn't expose | Premature; revisit when FFmpeg promotes the path out of experimental and the host AMD GPU gets driver support. |
-| Defer hardware encoders to a separate PR | Smaller PR diff | Defeats the user's stated goal of unblocking the BBB v10 sweep across all 3 vendors; would need ADR-0540 *and* a follow-up ADR | Lumping into one PR is what the user explicitly requested ("LARGER PR"). |
+| Defer hardware encoders to a separate PR | Smaller PR diff | Defeats the user's stated goal of unblocking the BBB v10 sweep across all 3 vendors; would need ADR-0541 *and* a follow-up ADR | Lumping into one PR is what the user explicitly requested ("LARGER PR"). |
 | Pin nv-codec-headers to a newer ref to pick up AV1 NVENC | Required for `av1_nvenc` to appear in `-encoders` listing | Stage 3 already pins nv-codec-headers to `876af32a` (post-`cuStreamCreateWithPriority`) which is recent enough to include the av1_nvenc bindings | Already covered by existing pin — no action needed. |
 
 ## Consequences
