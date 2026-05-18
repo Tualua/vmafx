@@ -36864,7 +36864,6 @@ Touched files:
 `docs/state.md` (Recently-closed row),
 `changelog.d/fixed/vcq-223-local-explainer-hang.md`,
 `docs/rebase-notes.md` (this entry).
-
 ## ADR-0559 — Feature coverage audit: speed_chroma + speed_temporal in extraction scripts
 
 **Rebase impact**: minimal. Changes are entirely fork-local — all modified
@@ -36933,4 +36932,25 @@ Touched files:
 `docs/research/0552-hip-vif-deterministic-reduce.md`,
 `docs/state.md` (Recently-closed row T-HIP-VIF-PARITY-PLACES4-2026-05-18),
 `changelog.d/fixed/0552-hip-vif-deterministic-reduce.md`,
+`docs/rebase-notes.md` (this entry).
+
+## fix/python-mcp-ai-audit-p0-p1-2026-05-18 (ADR-0556)
+
+Python / MCP / AI silent-fallback audit. No upstream-shared paths modified;
+all fixes are in fork-local Python harness files (`tools/vmaf-tune/`,
+`mcp-server/`, `ai/scripts/`) or documentation. No rebase-sensitive
+invariants introduced — the `score.py` `JSONDecodeError` guard is a
+pure additive safety wrapper around an existing `json.load` call, and
+the `bvi_dvc_to_full_features.py` empty-entries guards are early-exits
+before any loop body runs. Files touched:
+`tools/vmaf-tune/src/vmaftune/score.py`,
+`tools/vmaf-tune/src/vmaftune/auto.py`,
+`mcp-server/vmaf-mcp/src/vmaf_mcp/server.py`,
+`ai/scripts/bvi_dvc_to_full_features.py`,
+`ai/scripts/validate_model_registry.py`,
+`docs/adr/0556-python-mcp-ai-audit-2026-05-18.md`,
+`docs/adr/README.md` (one index row),
+`docs/research/python-mcp-ai-audit-2026-05-18.md`,
+`changelog.d/fixed/0556-python-mcp-ai-audit.md`,
+`docs/state.md` (5 T-rows added to Open section),
 `docs/rebase-notes.md` (this entry).

@@ -283,8 +283,11 @@ def _load_calibrated_recipes() -> dict[str, dict[str, object]]:
     """
     path = _find_calibrated_recipes_path()
     if path is None:
-        _LOG.debug(
-            "no calibrated recipes JSON found; using F.4 placeholders",
+        _LOG.warning(
+            "no calibrated recipes JSON found; using F.4 placeholder recipes "
+            "(documented-placeholder values, not measured outcomes). "
+            "Run 'vmaf-tune auto --calibrate' or supply a recipes JSON to "
+            "suppress this warning.",
         )
         return {cls: dict(rec) for cls, rec in _F4_PLACEHOLDER_RECIPES.items()}
     try:

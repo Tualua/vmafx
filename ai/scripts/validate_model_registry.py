@@ -182,9 +182,13 @@ def main(argv: list[str] | None = None) -> int:
     else:
         try:
             n = len(json.loads(args.registry.read_text(encoding="utf-8")).get("models", []))
-        except Exception:
-            n = 0
-        print(f"OK: {n} registry entries valid against {args.schema.name}")
+            print(f"OK: {n} registry entries valid against {args.schema.name}")
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            print(
+                f"ERROR: registry validated successfully but count read failed: {exc}",
+                file=sys.stderr,
+            )
+            rc = 1
     return rc
 
 

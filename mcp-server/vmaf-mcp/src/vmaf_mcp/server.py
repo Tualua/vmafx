@@ -830,7 +830,10 @@ async def _list_tools() -> list[Tool]:
         ),
         Tool(
             name="list_backends",
-            description="Report which runtime backends (cpu / cuda / sycl / hip) the local vmaf binary was built with.",
+            description=(
+                "Report which runtime backends (cpu / cuda / sycl / vulkan / hip / metal) "
+                "the local vmaf binary was built with."
+            ),
             inputSchema={"type": "object", "properties": {}},
         ),
         Tool(

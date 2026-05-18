@@ -364,16 +364,25 @@ def run_score(
         feature_means: dict[str, float] = {}
         feature_stds: dict[str, float] = {}
         if rc == 0 and json_path.exists():
-            with json_path.open("r", encoding="utf-8") as fh:
-                payload = json.load(fh)
             try:
-                score = parse_vmaf_json(payload)
-            except ValueError:
-                rc = rc or 65
-            # Per-feature aggregates are best-effort — a cambi-only
-            # model won't expose ``adm2`` etc.; the corpus row writer
-            # fills missing entries with NaN.
-            feature_means, feature_stds = parse_feature_aggregates(payload, CANONICAL6_FEATURES)
+                with json_path.open("r", encoding="utf-8") as fh:
+                    payload = json.load(fh)
+            except json.JSONDecodeError:
+                # vmaf exited 0 but wrote corrupt/partial JSON (e.g. killed
+                # mid-write).  Treat this as a scoring error so the corpus
+                # row gets a NaN score and a non-zero exit status rather than
+                # an unhandled exception crashing the whole run.
+                rc = 65
+                payload = None
+            if payload is not None:
+                try:
+                    score = parse_vmaf_json(payload)
+                except ValueError:
+                    rc = rc or 65
+                # Per-feature aggregates are best-effort — a cambi-only
+                # model won't expose ``adm2`` etc.; the corpus row writer
+                # fills missing entries with NaN.
+                feature_means, feature_stds = parse_feature_aggregates(payload, CANONICAL6_FEATURES)
 
         match = _VMAF_VERSION_RE.search(stderr)
         version = match.group(1) if match else "unknown"

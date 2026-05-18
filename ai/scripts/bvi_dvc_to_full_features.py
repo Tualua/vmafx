@@ -504,6 +504,16 @@ def _run_zip_mode(args: argparse.Namespace, out_path: Path, cache_dir: Path | No
 
     with zipfile.ZipFile(args.bvi_zip) as zf:
         entries = _select_tier_entries(zf, args.tier)
+        if not entries:
+            print(
+                f"[bvi-dvc-full] ERROR: no BVI-DVC clips found in {args.bvi_zip} "
+                f"for tier={args.tier!r}. "
+                "Check --bvi-zip and --tier; expected .mp4 entries matching the "
+                "BVI-DVC naming convention.",
+                file=sys.stderr,
+                flush=True,
+            )
+            return 2
         if args.max_clips is not None:
             entries = entries[: args.max_clips]
         print(
@@ -556,6 +566,16 @@ def _run_dir_mode(args: argparse.Namespace, out_path: Path, cache_dir: Path | No
     and are passed directly to libvmaf as the reference.
     """
     entries = _select_tier_entries_dir(args.bvi_dir, args.tier)
+    if not entries:
+        print(
+            f"[bvi-dvc-full] ERROR: no BVI-DVC clips found in {args.bvi_dir} "
+            f"for tier={args.tier!r}. "
+            "Check --bvi-dir and --tier; expected files matching the BVI-DVC "
+            "naming convention (e.g. BVI_DVC_tier1_*.yuv / *.mp4).",
+            file=sys.stderr,
+            flush=True,
+        )
+        return 2
     if args.max_clips is not None:
         entries = entries[: args.max_clips]
     print(
