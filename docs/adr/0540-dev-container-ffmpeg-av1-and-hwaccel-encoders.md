@@ -1,4 +1,4 @@
-# ADR-0541: dev-MCP container FFmpeg ships AV1 (SVT/aom) + VVenC + hardware encoders (NVENC, oneVPL/QSV, AMF)
+# ADR-0540: dev-MCP container FFmpeg ships AV1 (SVT/aom) + VVenC + hardware encoders (NVENC, oneVPL/QSV, AMF)
 
 - **Status**: Accepted
 - **Date**: 2026-05-18

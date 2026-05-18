@@ -1,4 +1,4 @@
-# ADR-0468: Introduce integer_adm_vulkan.c as canonical Vulkan integer ADM extractor
+# ADR-0586: Introduce integer_adm_vulkan.c as canonical Vulkan integer ADM extractor
 
 - **Status**: Accepted
 - **Date**: 2026-05-16

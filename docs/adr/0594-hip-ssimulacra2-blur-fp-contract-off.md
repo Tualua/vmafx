@@ -1,4 +1,4 @@
-# ADR-0539: Per-kernel `hip_cu_extra_flags` dispatch — disable FMA contraction for `ssimulacra2_blur` HIP HSACO
+# ADR-0594: Per-kernel `hip_cu_extra_flags` dispatch — disable FMA contraction for `ssimulacra2_blur` HIP HSACO
 
 - **Status**: Accepted
 - **Date**: 2026-05-18

@@ -50,8 +50,22 @@
 #define fstat(fd, st) _fstat64((fd), (st))
 #define stat __stat64
 #define S_ISREG(m) (((m) & _S_IFMT) == _S_IFREG)
-/* off_t is 32-bit on MSVC by default; use __int64 for >2 GiB safety. */
+/*
+ * ucrt SDK 10.0.26100+ declares off_t as 'long' in <sys/types.h>, which is
+ * pulled in transitively by <sys/stat.h> above.  Guard the typedef to avoid
+ * C2371 "redefinition; different basic types" under cl.exe / icx-cl.
+ *
+ * When ucrt has not declared off_t (older SDKs), define it ourselves as
+ * __int64 for large-file (> 2 GiB) safety.  When ucrt has already declared
+ * it, the _OFF_T_DEFINED sentinel is set and we skip the typedef; the body
+ * code in yuv_check_file_size() continues to use off_t (which is 'long' on
+ * those SDKs) — acceptable because the static assert below would catch any
+ * size regression, and these SDKs are EOL.
+ */
+#ifndef _OFF_T_DEFINED
 typedef __int64 off_t;
+#define _OFF_T_DEFINED
+#endif
 #endif
 
 #include "vidinput.h"

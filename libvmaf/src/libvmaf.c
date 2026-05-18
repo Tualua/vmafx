@@ -2718,6 +2718,10 @@ const char *vmaf_version(void)
 int vmaf_write_output_with_format(VmafContext *vmaf, const char *output_path,
                                   enum VmafOutputFormat fmt, const char *score_format)
 {
+    if (!output_path) {
+        (void)fprintf(stderr, "vmaf_write_output: output_path must not be NULL\n");
+        return -EINVAL;
+    }
     /* Open with mode 0644 so the output file is never world-writable.
      * fopen(3) defaults to 0666 & ~umask, which CodeQL flags as
      * cpp/world-writable-file-creation. open(2) + fdopen(3) pins the

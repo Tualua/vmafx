@@ -10,7 +10,7 @@ The tool is **built but not installed**. It only compiles when SYCL +
 Intel VPL + libva + libva-drm are all present at configure time. The
 canonical invocation is from the build tree
 (`./build/libvmaf/tools/vmaf_vpl`). For most users the
-[`vmaf_libvmaf_sycl` FFmpeg filter](ffmpeg.md#dedicated-sycl-filter--libvmaf_sycl)
+[`vmaf_libvmaf_sycl` FFmpeg filter](ffmpeg.md#dedicated-sycl-filter-libvmaf_sycl)
 is the right entry point; `vmaf_vpl` is for libvmaf SYCL contributors
 debugging the import path itself.
 

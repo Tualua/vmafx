@@ -1,4 +1,4 @@
-# ADR-0461 — `float_moment` SVE2 port
+# ADR-0584 — `float_moment` SVE2 port
 
 | Field        | Value                                          |
 |--------------|------------------------------------------------|

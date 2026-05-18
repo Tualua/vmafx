@@ -1,4 +1,4 @@
-# ADR-0541: Full GPU backend plumbing in the dev-mcp container
+# ADR-0542: Full GPU backend plumbing in the dev-mcp container
 
 - **Status**: Accepted
 - **Date**: 2026-05-18

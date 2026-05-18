@@ -1,4 +1,4 @@
-# ADR-0485: Restore `rfe_hw_flags` per-frame bitmask cache after PR #1067 clobber
+# ADR-0591: Restore `rfe_hw_flags` per-frame bitmask cache after PR #1067 clobber
 
 - **Status**: Accepted
 - **Date**: 2026-05-16

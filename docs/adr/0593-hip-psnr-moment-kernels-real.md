@@ -1,4 +1,4 @@
-# ADR-0539: HIP integer_moment kernel — register real HSACO blob alongside psnr / psnr_hvs
+# ADR-0593: HIP integer_moment kernel — register real HSACO blob alongside psnr / psnr_hvs
 
 - **Status**: Accepted
 - **Date**: 2026-05-18

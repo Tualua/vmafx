@@ -1,4 +1,4 @@
-# ADR-0461: Add `enable_chroma` option to the `float_ms_ssim` extractor
+# ADR-0583: Add `enable_chroma` option to the `float_ms_ssim` extractor
 
 - **Status**: Accepted
 - **Date**: 2026-05-16

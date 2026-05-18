@@ -1,4 +1,4 @@
-# ADR-0546: Real two-pass argv for all 14 codec adapters
+# ADR-0595: Real two-pass argv for all 14 codec adapters
 
 - **Status**: Accepted
 - **Date**: 2026-05-18

@@ -1,4 +1,4 @@
-# ADR-0546: Delete orphan and duplicate HIP/CUDA translation units
+# ADR-0596: Delete orphan and duplicate HIP/CUDA translation units
 
 - **Status**: Accepted
 - **Date**: 2026-05-18

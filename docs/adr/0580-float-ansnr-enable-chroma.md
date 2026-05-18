@@ -1,4 +1,4 @@
-# ADR-0460: float_ansnr enable_chroma option
+# ADR-0580: float_ansnr enable_chroma option
 
 - **Status**: Accepted
 - **Date**: 2026-05-16

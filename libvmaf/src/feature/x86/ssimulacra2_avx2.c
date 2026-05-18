@@ -167,8 +167,7 @@ void ssimulacra2_linear_rgb_to_xyb_avx2(const float *lin, float *xyb, unsigned w
         /* MakePositiveXYB rescale in libjxl order (B uses Y before Y offset). */
         const __m256 Bfinal = _mm256_add_ps(_mm256_sub_ps(B, Y), _mm256_set1_ps(0.55f));
         const __m256 Xfinal = _mm256_add_ps(
-            _mm256_mul_ps(_mm256_sub_ps(L, M), _mm256_set1_ps(7.0f)),
-            _mm256_set1_ps(0.42f));
+            _mm256_mul_ps(_mm256_sub_ps(L, M), _mm256_set1_ps(7.0f)), _mm256_set1_ps(0.42f));
         const __m256 Yfinal = _mm256_add_ps(Y, _mm256_set1_ps(0.01f));
 
         _mm256_storeu_ps(xp + i, Xfinal);

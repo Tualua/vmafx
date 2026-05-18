@@ -1,4 +1,4 @@
-# ADR-0549: vmaf-tune workdir relocation — disk-space preflight + VMAFTUNE_WORKDIR env var
+# ADR-0598: vmaf-tune workdir relocation — disk-space preflight + VMAFTUNE_WORKDIR env var
 
 - **Status**: Accepted
 - **Date**: 2026-05-18

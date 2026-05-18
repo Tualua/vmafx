@@ -1,4 +1,4 @@
-# ADR-0468: Real Metal Compute Kernels for CAMBI
+# ADR-0587: Real Metal Compute Kernels for CAMBI
 
 - **Status**: Accepted
 - **Date**: 2026-05-16

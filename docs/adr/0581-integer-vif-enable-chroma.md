@@ -1,4 +1,4 @@
-# ADR-0460: Add `enable_chroma` option to `integer_vif`
+# ADR-0581: Add `enable_chroma` option to `integer_vif`
 
 - **Status**: Accepted
 - **Date**: 2026-05-16

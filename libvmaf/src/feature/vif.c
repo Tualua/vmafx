@@ -124,25 +124,31 @@ int compute_vif(const float *ref, const float *dis, int w, int h, int ref_stride
 
     data_top = (char *)data_buf;
 
-    ref_scale = (float *)data_top;
+    /* Partition the aligned slab into typed sub-regions.  data_top is a
+     * char* cursor into aligned_malloc() storage; the sub-region base is
+     * always buf_sz_one-aligned (buf_sz_one is a multiple of sizeof(float)),
+     * so every cast below is safe.
+     * cppcheck-suppress invalidPointerCast [misra-c2012-11.3 / SEI CERT EXP36-C]
+     */
+    ref_scale = (float *)data_top; /* cppcheck-suppress invalidPointerCast */
     data_top += buf_sz_one;
-    dis_scale = (float *)data_top;
+    dis_scale = (float *)data_top; /* cppcheck-suppress invalidPointerCast */
     data_top += buf_sz_one;
-    mu1 = (float *)data_top;
+    mu1 = (float *)data_top; /* cppcheck-suppress invalidPointerCast */
     data_top += buf_sz_one;
-    mu2 = (float *)data_top;
+    mu2 = (float *)data_top; /* cppcheck-suppress invalidPointerCast */
     data_top += buf_sz_one;
-    ref_sq_filt = (float *)data_top;
+    ref_sq_filt = (float *)data_top; /* cppcheck-suppress invalidPointerCast */
     data_top += buf_sz_one;
-    dis_sq_filt = (float *)data_top;
+    dis_sq_filt = (float *)data_top; /* cppcheck-suppress invalidPointerCast */
     data_top += buf_sz_one;
-    ref_dis_filt = (float *)data_top;
+    ref_dis_filt = (float *)data_top; /* cppcheck-suppress invalidPointerCast */
     data_top += buf_sz_one;
-    num_array = (float *)data_top;
+    num_array = (float *)data_top; /* cppcheck-suppress invalidPointerCast */
     data_top += buf_sz_one;
-    den_array = (float *)data_top;
+    den_array = (float *)data_top; /* cppcheck-suppress invalidPointerCast */
     data_top += buf_sz_one;
-    tmpbuf = (float *)data_top;
+    tmpbuf = (float *)data_top; /* cppcheck-suppress invalidPointerCast */
     data_top += buf_sz_one;
 
     unsigned scale_start = 0;

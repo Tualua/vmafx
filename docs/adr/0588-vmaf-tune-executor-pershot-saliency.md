@@ -1,4 +1,4 @@
-# ADR-0468: vmaf-tune executor — per-shot and saliency execution modes
+# ADR-0588: vmaf-tune executor — per-shot and saliency execution modes
 
 - **Status**: Accepted
 - **Date**: 2026-05-16

@@ -1,4 +1,4 @@
-# ADR-0460: MS-SSIM `enable_db` and `clip_db` option parity on CUDA and SYCL backends
+# ADR-0582: MS-SSIM `enable_db` and `clip_db` option parity on CUDA and SYCL backends
 
 - **Status**: Accepted
 - **Date**: 2026-05-16

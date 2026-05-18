@@ -1,4 +1,4 @@
-# ADR-0524: Extract `run_cmd` subprocess helper into `aiutils`
+# ADR-0525: Extract `run_cmd` subprocess helper into `aiutils`
 
 - **Status**: Accepted
 - **Date**: 2026-05-17

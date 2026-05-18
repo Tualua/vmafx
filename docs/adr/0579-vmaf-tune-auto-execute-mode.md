@@ -1,4 +1,4 @@
-# ADR-0454: `vmaf-tune auto --execute` — Phase F real encode/score execution mode
+# ADR-0579: `vmaf-tune auto --execute` — Phase F real encode/score execution mode
 
 - **Status**: Accepted
 - **Date**: 2026-05-16

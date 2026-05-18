@@ -1,4 +1,4 @@
-# ADR-0567: Port upstream USE_DIRECT_READ zero-copy input path (Netflix/vmaf@30a6e2a8d)
+# ADR-0600: Port upstream USE_DIRECT_READ zero-copy input path (Netflix/vmaf@30a6e2a8d)
 
 - **Status**: Accepted
 - **Date**: 2026-05-18

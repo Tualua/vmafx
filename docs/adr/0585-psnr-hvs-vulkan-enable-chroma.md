@@ -1,4 +1,4 @@
-# ADR-0461: Add `enable_chroma` option to `psnr_hvs_vulkan`
+# ADR-0585: Add `enable_chroma` option to `psnr_hvs_vulkan`
 
 - **Status**: Accepted
 - **Date**: 2026-05-16

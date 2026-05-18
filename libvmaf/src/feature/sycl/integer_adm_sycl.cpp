@@ -257,8 +257,7 @@ static const VmafOption options[] = {{
 static float dwt_quant_step(int lambda, int theta, double view_dist, int display_h)
 {
     float const r = (float)(view_dist * display_h * M_PI / 180.0);
-    float const temp =
-        log10f(powf(2.0f, lambda + 1) * dwt_model_Y.f0 * dwt_model_Y.g[theta] / r);
+    float const temp = log10f(powf(2.0f, lambda + 1) * dwt_model_Y.f0 * dwt_model_Y.g[theta] / r);
     return 2.0f * dwt_model_Y.a * powf(10.0f, dwt_model_Y.k * temp * temp) /
            dwt_basis_amp[lambda][theta];
 }

@@ -1,4 +1,4 @@
-# ADR-0485: Wire `enable_db` / `clip_db` into the CUDA and SYCL MS-SSIM twins
+# ADR-0590: Wire `enable_db` / `clip_db` into the CUDA and SYCL MS-SSIM twins
 
 - **Status**: Accepted
 - **Date**: 2026-05-17

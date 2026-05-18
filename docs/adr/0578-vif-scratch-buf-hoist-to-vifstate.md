@@ -1,4 +1,4 @@
-# ADR-0452: Hoist VIF scratch buffer from per-frame allocation to VifState
+# ADR-0578: Hoist VIF scratch buffer from per-frame allocation to VifState
 
 - **Status**: Accepted
 - **Date**: 2026-05-16

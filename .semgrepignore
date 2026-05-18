@@ -22,6 +22,13 @@ libvmaf/test/data/
 model/
 testdata/
 
+# pre-push-mkdocs-strict.sh is itself a hook; it documents the SKIP= /
+# --no-verify bypass patterns as user-facing help text in comments and a
+# heredoc error message.  The vmaf-no-skip-hooks-in-scripts rule correctly
+# flags scripts that programmatically invoke those bypasses, but this file
+# is exempt: it is the hook being bypassed, not a caller that bypasses it.
+scripts/git-hooks/pre-push-mkdocs-strict.sh
+
 # Binary / data suffixes.
 *.pkl
 *.mexa64
