@@ -484,12 +484,26 @@ def build_pass1_stats_command(
     (and thus emits the stats file) but we skip muxing / writing the
     output. The stats file lands at ``<prefix>-0.log`` (and an
     ``mbtree`` sidecar at ``<prefix>-0.log.mbtree`` which we ignore).
+
+    Bug #V8-A (ADR-0508): mirrors the ``build_ffmpeg_command`` V6-1
+    fallback — when the caller bound ``req.duration_s`` (via the
+    ladder / CLI ``--duration`` flag) without opting into sample-clip
+    mode, the pass-1 invocation must honour that window too. Without
+    this guard, ``ladder --duration 5`` against a 9-minute source
+    would run pass-1 stats over all 9 minutes (then pass-2 honoured
+    the window via :func:`build_ffmpeg_command`), so each cell still
+    burned >60x the requested wall time on the stats sweep alone.
     """
     cmd = [ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "info"]
+    fallback_duration = (
+        float(req.duration_s) if req.sample_clip_seconds <= 0.0 and req.duration_s > 0.0 else 0.0
+    )
     if req.source_is_container:
         if req.sample_clip_seconds > 0.0:
             cmd.extend(["-ss", f"{req.sample_clip_start_s}"])
             cmd.extend(["-t", f"{req.sample_clip_seconds}"])
+        elif fallback_duration > 0.0:
+            cmd.extend(["-t", f"{fallback_duration}"])
         cmd.extend(["-i", str(req.source)])
     else:
         cmd.extend(
@@ -507,6 +521,8 @@ def build_pass1_stats_command(
         if req.sample_clip_seconds > 0.0:
             cmd.extend(["-ss", f"{req.sample_clip_start_s}"])
             cmd.extend(["-t", f"{req.sample_clip_seconds}"])
+        elif fallback_duration > 0.0:
+            cmd.extend(["-t", f"{fallback_duration}"])
         cmd.extend(["-i", str(req.source)])
     cmd.extend(
         [

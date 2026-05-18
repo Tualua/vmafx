@@ -35693,6 +35693,29 @@ so every existing caller round-trips unchanged.
 
 ---
 
+## fix/ladder-duration-clip-ffmpeg-t-flag (ADR-0508)
+
+**Files**:
+`tools/vmaf-tune/src/vmaftune/encode.py`,
+`tools/vmaf-tune/tests/test_bbb_e2e_v8_bug_cluster.py`,
+`docs/adr/0508-vmaf-tune-ladder-pass1-stats-duration-clip.md`,
+`docs/adr/README.md`,
+`docs/state.md`,
+`docs/rebase-notes.md`,
+`changelog.d/fixed/0508-vmaf-tune-ladder-pass1-stats-duration-clip.md`.
+
+**Rebase sensitivity (none):** all changes live in fork-added
+`tools/vmaf-tune/` plus fork-added docs/changelog files — no
+upstream Netflix file is touched. The fix adds a six-line
+fallback to `build_pass1_stats_command` that reads the existing
+`EncodeRequest.duration_s` field (introduced by ADR-0506 V6-1)
+and emits an input-side `-t duration_s` when the caller did not
+opt into sample-clip mode. Sample-clip precedence is preserved
+so existing tests that pin the sample-clip argv shape continue
+to pass unchanged. No public surface of the libvmaf C API
+changes; no ffmpeg-patches file consumes `tools/vmaf-tune/`
+Python helpers.
+
 ## fix/bbb-e2e-v6-bug-cluster-2026-05-18 (ADR-0506)
 
 **Files**:
