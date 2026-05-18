@@ -1901,6 +1901,11 @@ def _run_tune_per_shot(args: argparse.Namespace) -> int:
     )
     predicate_label = "bisect"
     scratch_ctx = None
+    # ADR-0536: bitrate_sidecar is populated by the bisect predicate closure
+    # with the measured kbps for each shot.  External predicates (--predicate-module)
+    # do not provide bitrate data so the sidecar stays empty, leaving
+    # ShotRecommendation.bitrate_kbps at its NaN default (serialised as null).
+    bitrate_sidecar: dict[tuple[int, int], float] = {}
     try:
         if args.predicate_module:
             predicate = _load_per_shot_predicate(args.predicate_module)
@@ -1911,7 +1916,7 @@ def _run_tune_per_shot(args: argparse.Namespace) -> int:
                 args.crf_max,
             )
             scratch_ctx = tempfile.TemporaryDirectory(prefix="vmaf-tune-per-shot-")
-            predicate = _build_per_shot_bisect_predicate(
+            predicate, bitrate_sidecar = _build_per_shot_bisect_predicate(
                 args,
                 scratch=Path(scratch_ctx.name),
                 crf_range=crf_range,
@@ -1928,6 +1933,21 @@ def _run_tune_per_shot(args: argparse.Namespace) -> int:
     finally:
         if scratch_ctx is not None:
             scratch_ctx.cleanup()
+
+    # Patch each ShotRecommendation with the measured bitrate collected by the
+    # predicate sidecar (ADR-0536).  ShotRecommendation is frozen so we
+    # reconstruct via dataclasses.replace; shots absent from the sidecar (e.g.
+    # external predicate path) keep their NaN default.
+    recs = [
+        dataclasses.replace(
+            r,
+            bitrate_kbps=bitrate_sidecar.get(
+                (r.shot.start_frame, r.shot.end_frame),
+                r.bitrate_kbps,
+            ),
+        )
+        for r in recs
+    ]
 
     plan = merge_shots(
         recs,
@@ -2022,13 +2042,20 @@ def _build_per_shot_bisect_predicate(
     *,
     scratch: Path,
     crf_range: tuple[int, int] | None,
-) -> PerShotPredicateFn:
+) -> tuple[PerShotPredicateFn, dict[tuple[int, int], float]]:
     """Build the production Phase-D predicate from Phase-B bisect.
 
     ``bisect_target_vmaf`` operates on raw YUV references, so the
     per-shot CLI first extracts each detected shot to a temporary raw
     YUV file and then runs the existing encode+score bisect loop over
     that isolated shot.
+
+    Returns a ``(predicate, bitrate_sidecar)`` pair.  ``bitrate_sidecar``
+    is a dict keyed by ``(start_frame, end_frame)`` that the predicate
+    closure populates with the measured ``bitrate_kbps`` for each shot as
+    the bisect completes.  The caller reads the sidecar after
+    :func:`tune_per_shot` to patch :attr:`ShotRecommendation.bitrate_kbps`
+    without widening the :data:`PredicateFn` return type (ADR-0536).
     """
     if args.width <= 0 or args.height <= 0:
         raise ValueError("--width and --height must be positive for per-shot bisect")
@@ -2041,6 +2068,10 @@ def _build_per_shot_bisect_predicate(
     refs_dir.mkdir(parents=True, exist_ok=True)
     work_dir.mkdir(parents=True, exist_ok=True)
     score_backend = None if args.score_backend == "auto" else args.score_backend
+
+    # Sidecar dict: keyed by (start_frame, end_frame), populated by _predicate
+    # so the caller can attach measured bitrate_kbps to each ShotRecommendation.
+    bitrate_sidecar: dict[tuple[int, int], float] = {}
 
     def _predicate(shot: Shot, target_vmaf: float, encoder: str) -> tuple[int, float]:
         ref_yuv = refs_dir / f"shot_{shot.start_frame}_{shot.end_frame}.yuv"
@@ -2067,9 +2098,10 @@ def _build_per_shot_bisect_predicate(
             raise RuntimeError(
                 "bisect failed for shot " f"[{shot.start_frame}, {shot.end_frame}): {result.error}"
             )
+        bitrate_sidecar[(shot.start_frame, shot.end_frame)] = result.bitrate_kbps
         return (result.best_crf, result.measured_vmaf)
 
-    return _predicate
+    return _predicate, bitrate_sidecar
 
 
 def _extract_shot_to_raw_yuv(

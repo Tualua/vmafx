@@ -36299,3 +36299,13 @@ appear in `hip_sources` + the extern/registry blocks) must be
 honoured or the registration drops out silently.
 =======
 >>>>>>> 64a7a5517 (chore(adr): atomic next-free allocator with cross-branch claim (ADR-0535))
+
+## ADR-0536 — per-shot predicate bitrate sidecar (PR #1290 follow-up)
+
+**No rebase impact**: the change is entirely internal to
+`tools/vmaf-tune/src/vmaftune/cli.py` (`_build_per_shot_bisect_predicate`
+return type change + call-site unpack + `dataclasses.replace` patch loop)
+and the corresponding test file. No public API surface, no C code, no
+`meson_options.txt` entry, no ffmpeg-patches entry, no new public Python
+symbol. Netflix upstream never touches `vmaf-tune`; upstream syncs will
+not conflict. On a future upstream sync, expect zero conflicts.

@@ -346,6 +346,7 @@ def test_cli_tune_per_shot_binds_bisect_predicate(tmp_path, monkeypatch):
             ok=True,
             best_crf=crf,
             measured_vmaf=target_vmaf + len(calls) / 10.0,
+            bitrate_kbps=1000.0 * len(calls),
             error="",
         )
 
@@ -401,8 +402,7 @@ def test_cli_tune_per_shot_binds_bisect_predicate(tmp_path, monkeypatch):
 
 
 def test_cli_tune_per_shot_readonly_cwd_returns_zero(tmp_path, monkeypatch):
-    """tune-per-shot exits 0 even when CWD is read-only (ADR-0532).
-    """tune-per-shot exits 0 even when CWD is read-only (ADR-0530).
+    """tune-per-shot exits 0 even when CWD is read-only (ADR-0530, ADR-0532).
 
     The plan JSON is the primary deliverable.  When the segments directory
     cannot be created (e.g. a bind-mounted read-only container workspace), a
@@ -450,6 +450,7 @@ def test_cli_tune_per_shot_readonly_cwd_returns_zero(tmp_path, monkeypatch):
             ok=True,
             best_crf=23,
             measured_vmaf=target_vmaf,
+            bitrate_kbps=2500.0,
             error="",
         )
 
@@ -535,7 +536,9 @@ def test_cli_tune_per_shot_ro_cwd_no_plan_out_warns(tmp_path, monkeypatch):
     monkeypatch.setattr("vmaftune.per_shot.subprocess.run", fake_run)
 
     def fake_bisect(src_path, codec, target_vmaf, **kwargs):
-        return SimpleNamespace(ok=True, best_crf=23, measured_vmaf=target_vmaf, error="")
+        return SimpleNamespace(
+            ok=True, best_crf=23, measured_vmaf=target_vmaf, bitrate_kbps=1800.0, error=""
+        )
 
     monkeypatch.setattr("vmaftune.cli.bisect_target_vmaf", fake_bisect)
 
@@ -677,3 +680,97 @@ def test_detect_shots_splits_single_shot_via_max_duration(tmp_path):
     # Contiguous coverage of [0, 300).
     assert shots[0].start_frame == 0
     assert shots[-1].end_frame == 300
+
+
+# --------------------------------------------------------------------------- #
+# ADR-0536 — per-shot predicate threads bitrate_kbps through bisect sidecar   #
+# --------------------------------------------------------------------------- #
+
+
+def test_cli_tune_per_shot_bitrate_kbps_propagates_from_bisect(tmp_path, monkeypatch):
+    """Regression: plan JSON must carry real kbps numbers, not null.
+
+    PR #1290 (ADR-0531) added ``ShotRecommendation.bitrate_kbps`` and the
+    ``_shot_bitrate`` null-serialiser but ``_build_per_shot_bisect_predicate``
+    discarded ``result.bitrate_kbps`` before returning ``(crf, vmaf)``.
+    ADR-0536 fixes this via a bitrate sidecar dict populated by the predicate
+    closure and consumed after :func:`tune_per_shot` completes.
+    """
+    src = tmp_path / "ref.yuv"
+    src.write_bytes(b"\x00" * 16)
+    plan_out = tmp_path / "plan.json"
+    out = tmp_path / "out.mp4"
+
+    payload = json.dumps(
+        {
+            "shots": [
+                {"start_frame": 0, "end_frame": 47},
+                {"start_frame": 48, "end_frame": 95},
+                {"start_frame": 96, "end_frame": 143},
+            ]
+        }
+    )
+
+    monkeypatch.setattr("vmaftune.per_shot._which", lambda _b: "/fake/vmaf-perShot")
+
+    def fake_run(cmd, capture_output, text, check):
+        if cmd[0] == "vmaf-perShot":
+            out_path = Path(cmd[cmd.index("--output") + 1])
+            out_path.write_text(payload, encoding="utf-8")
+            return _FakeCompleted(returncode=0, stdout="wrote 3 shot(s)")
+        assert cmd[0] == "ffmpeg"
+        out_yuv = Path(cmd[-1])
+        out_yuv.write_bytes(b"\x00" * 16)
+        return _FakeCompleted(returncode=0)
+
+    monkeypatch.setattr("vmaftune.per_shot.subprocess.run", fake_run)
+
+    # Fake bisect returns distinct bitrate_kbps per call so we can assert
+    # they land in the right shot slots.
+    call_index = [0]
+
+    def fake_bisect(src_path, codec, target_vmaf, **kwargs):
+        call_index[0] += 1
+        return SimpleNamespace(
+            ok=True,
+            best_crf=20 + call_index[0],
+            measured_vmaf=target_vmaf,
+            bitrate_kbps=1000.0 * call_index[0],
+            error="",
+        )
+
+    monkeypatch.setattr("vmaftune.cli.bisect_target_vmaf", fake_bisect)
+
+    rc = cli.main(
+        [
+            "tune-per-shot",
+            "--src",
+            str(src),
+            "--width",
+            "1920",
+            "--height",
+            "1080",
+            "--framerate",
+            "24",
+            "--target-vmaf",
+            "92",
+            "--encoder",
+            "libx264",
+            "--crf-min",
+            "18",
+            "--crf-max",
+            "30",
+            "--max-iterations",
+            "4",
+            "--output",
+            str(out),
+            "--plan-out",
+            str(plan_out),
+        ]
+    )
+    assert rc == 0
+    doc = json.loads(plan_out.read_text())
+    bitrates = [s["bitrate_kbps"] for s in doc["shots"]]
+    # All three shots must carry a real kbps number — not null (ADR-0536).
+    assert all(b is not None for b in bitrates), f"expected real kbps, got {bitrates}"
+    assert bitrates == pytest.approx([1000.0, 2000.0, 3000.0])
