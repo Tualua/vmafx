@@ -877,7 +877,21 @@ void cli_parse(const int argc, char *const *const argv, CLISettings *const setti
      * settings->no_cuda / no_sycl / no_vulkan. */
     if (settings->backend) {
         if (!strcmp(settings->backend, "auto")) {
-            /* Default — leave per-backend flags as-is. */
+            /* Default — leave per-backend flags as-is, BUT engage CUDA
+             * dispatch when compiled in and not explicitly disabled.
+             * Without this, `vmaf` (or any caller passing `--backend auto`,
+             * which is the default) silently runs on CPU even when the
+             * libvmaf build has CUDA + the host has an RTX 4090: the
+             * dispatch only routes to the CUDA extractors when
+             * `use_gpumask = true` (see the `--backend cuda` branch below
+             * for the why-comment). Mirroring that line for `auto` makes
+             * auto-select actually pick a GPU when one is available, while
+             * still respecting `--no_cuda` and gracefully degrading on
+             * a non-CUDA libvmaf build (init_gpu_backends no-ops). */
+            if (!settings->no_cuda && !settings->use_gpumask) {
+                settings->gpumask = 0;
+                settings->use_gpumask = true;
+            }
         } else if (!strcmp(settings->backend, "cpu")) {
             settings->no_cuda = true;
             settings->no_sycl = true;
@@ -935,6 +949,16 @@ void cli_parse(const int argc, char *const *const argv, CLISettings *const setti
                   "Unknown --backend value '%s' "
                   "(expected: auto|cpu|cuda|sycl|vulkan|hip|metal)",
                   settings->backend);
+        }
+    } else {
+        /* No `--backend` passed at all: behaves like `--backend auto`.
+         * Engage CUDA dispatch on the same terms as the explicit
+         * `--backend auto` branch above — without this, the binary
+         * silently runs on CPU even when the libvmaf build has CUDA
+         * and the host has an NVIDIA GPU. */
+        if (!settings->no_cuda && !settings->use_gpumask) {
+            settings->gpumask = 0;
+            settings->use_gpumask = true;
         }
     }
 
