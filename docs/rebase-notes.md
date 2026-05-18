@@ -36823,6 +36823,7 @@ source, no public header, no `meson_options.txt`, no `ffmpeg-patches/`
 entry. No numerical-correctness risk: this is a read-only audit that produces
 only documentation artefacts.
 
+
 ## ADR-0561 — HIP gfx_targets fallback widening
 
 **Branch**: `fix/hip-gfx-targets-fallback-widening`
