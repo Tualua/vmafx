@@ -36906,3 +36906,30 @@ Touched files:
 `docs/state.md` (Recently-closed row T-HIP-VIF-PLACES3-GATE-INCORRECT-2026-05-18),
 `changelog.d/fixed/0566-hip-vif-per-feature-places4-gate.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0552 — HIP VIF deterministic wavefront reduction
+
+**Branch**: `fix/hip-vif-deterministic-reduce`
+**Rebase impact**: low — only touches `libvmaf/src/feature/hip/integer_vif/vif_statistics.hip`
+and documentation files. No public API change. No meson.build change.
+
+**Rebase-sensitive invariant**: The `wavefront_reduce_i64` helper uses `__shfl_xor`
+with strides 32, 16, 8, 4, 2, 1 (for AMD 64-lane wavefronts). Do NOT merge with a
+CUDA-style `__shfl_down_sync` port that uses strides 16, 8, 4, 2, 1 (32-lane) — the
+stride list is wrong for AMD and will under-reduce, leaving 32-thread partial sums
+in the accumulator.
+
+**Conflict scenario**: If a rebase brings in a change to `vif_statistics.hip` from
+the CUDA parity sweep or a `vif_hori_16_body` template refactor, verify that:
+1. The outer `if (x < w && y < h)` guard is preserved (not replaced by early return).
+2. `wavefront_reduce_accums(thr)` is called before the `atomicAdd` block.
+3. The `atomicAdd` block is inside `if ((threadIdx.x % AMD_WAVEFRONT_SIZE) == 0)`.
+
+Touched files:
+`libvmaf/src/feature/hip/integer_vif/vif_statistics.hip`,
+`docs/adr/0552-hip-integer-vif-deterministic-reduce.md`,
+`docs/adr/README.md` (one index row),
+`docs/research/0552-hip-vif-deterministic-reduce.md`,
+`docs/state.md` (Recently-closed row T-HIP-VIF-PARITY-PLACES4-2026-05-18),
+`changelog.d/fixed/0552-hip-vif-deterministic-reduce.md`,
+`docs/rebase-notes.md` (this entry).
