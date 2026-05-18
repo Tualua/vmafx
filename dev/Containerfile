@@ -37,7 +37,7 @@
 # ---------------------------------------------------------------------------
 # Stage 1 — build-deps
 # ---------------------------------------------------------------------------
-FROM ubuntu:24.04 AS build-deps
+FROM ubuntu:24.04@sha256:c4a8d5503dfb2a3eb8ab5f807da5bc69a85730fb49b5cfca2330194ebcc41c7b AS build-deps
 
 LABEL org.opencontainers.image.title="vmaf-dev-mcp-build-deps"
 LABEL org.opencontainers.image.description="Base build tools for VMAF fork dev-MCP container"
