@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.23@sha256:2780b5c3bab67f1f76c781860de469442999ed1a0d7992a5efdf2cffc0e3d769
-FROM intel/oneapi-basekit:2025.0.0-0-devel-ubuntu24.04@sha256:295792b8d5d577f70c5469b12d52fd0bf33ee85e31d256613a60ef015269505f
+FROM intel/oneapi-basekit:2025.3.2-0-devel-ubuntu24.04@sha256:79a5e333ff6f773793d124b78047001c51cbcd53035e5100313abf2f771af95a
 
 ENV DEBIAN_FRONTEND=noninteractive \
     INSTALL_LINTERS=1 \
