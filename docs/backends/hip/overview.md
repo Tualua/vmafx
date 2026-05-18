@@ -100,6 +100,48 @@ no `hipcc`, no `amdhip64`. The Meson build files include an optional
 has ROCm installed will see the dependency resolve; the scaffold compiles
 cleanly without it.
 
+### `-Dhip_gfx_targets` (HSACO fat-binary targets)
+
+`hipcc --genco` produces an HSACO blob for each `--offload-arch`
+target. The Meson build discovers the targets in this order:
+
+1. The `-Dhip_gfx_targets=<csv>` operator override (explicit).
+2. `rocm_agent_enumerator` (filters to `gfx*` lines).
+3. `hipconfig --amdgpu-target`.
+4. The hard-coded fallback list
+   `gfx90a,gfx1030,gfx1036,gfx1100`
+   (CDNA2 server + RDNA2 desktop + AMD Raphael APU iGPU + RDNA3).
+
+Steps 2 and 3 only succeed when the build host can see a real GPU.
+Inside a no-GPU build sandbox (BuildKit, CI) both probes return
+empty and the build falls through to step 4. The fallback was
+`gfx90a` only until [ADR-0546](../../adr/0546-audit-cleanup-bundle.md);
+that narrow fallback shipped libvmaf.so binaries that failed at
+runtime on the fork's own dev host (AMD Raphael APU `gfx1036`,
+override-mapped to `gfx1030` via `HSA_OVERRIDE_GFX_VERSION=10.3.0`)
+with `hip_fatbin.cpp: No compatible code objects found for:
+gfx1030`. Widening the fallback closed that failure mode without
+changing what an operator with a configured GPU sees.
+
+Operators that need a smaller fat binary (image size, build time)
+can pin a single target:
+
+```bash
+meson setup build -Denable_hip=true -Denable_hipcc=true \
+                  -Dhip_gfx_targets=gfx1036
+```
+
+Multi-target operator overrides take a comma-separated list (one
+`--offload-arch` per target):
+
+```bash
+meson setup build -Denable_hip=true -Denable_hipcc=true \
+                  -Dhip_gfx_targets=gfx90a,gfx1100
+```
+
+The `HIP HSACO targets:` line in the Meson configure output shows
+the resolved list for the current build.
+
 ## Runtime
 
 When built with HIP and device kernels, the backend is available for

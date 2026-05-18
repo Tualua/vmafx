@@ -167,9 +167,15 @@ endif
 # Architecture discovery: `hipconfig --amdgpu-target` returns a
 # comma-separated list of installed GFX targets (e.g. `gfx90a,gfx1100`).
 # We compile one HSACO fat binary covering all installed targets by
-# passing each as a separate `--offload-arch` flag. Falls back to
-# `gfx90a` (CDNA2 / MI200) when `hipconfig` is absent or returns
-# an empty list.
+# passing each as a separate `--offload-arch` flag. Falls back to a
+# multi-target list covering the commonly-deployed CDNA2 / RDNA2 /
+# RDNA3 GPUs (`gfx90a`, `gfx1030`, `gfx1036`, `gfx1100`) when both
+# `rocm_agent_enumerator` and `hipconfig` come back empty (the typical
+# no-GPU build-sandbox case — BuildKit, CI). See
+# ADR-0546 (audit-cleanup-bundle): a previous `gfx90a`-only fallback
+# shipped HSACO blobs that failed at runtime on dev hosts with
+# consumer iGPUs such as the AMD Raphael APU `gfx1036`
+# (override-mapped to `gfx1030` via `HSA_OVERRIDE_GFX_VERSION=10.3.0`).
 if is_hipcc_enabled and is_hip_enabled
     cdata.set10('HAVE_HIPCC', true)
     vmaf_cflags_common += '-DHAVE_HIPCC'
@@ -197,7 +203,15 @@ if is_hipcc_enabled and is_hip_enabled
         hip_gfx_raw = hipconfig_result.stdout().strip()
     endif
     if hip_gfx_raw == ''
-        hip_gfx_raw = 'gfx90a'
+        # No GPU visible (no-GPU build sandbox) AND no operator override:
+        # widen the fat-binary to cover the four most common targets so
+        # the resulting .so works on CDNA2 servers, RDNA2/3 desktops, and
+        # the AMD Raphael APU iGPU (`gfx1036`, override-mapped to
+        # `gfx1030` via `HSA_OVERRIDE_GFX_VERSION=10.3.0`) used as one of
+        # this fork's dev hosts. Operators that want a single-target
+        # build for size or speed should pass `-Dhip_gfx_targets=<list>`
+        # explicitly. See ADR-0546.
+        hip_gfx_raw = 'gfx90a,gfx1030,gfx1036,gfx1100'
     endif
     # Build --offload-arch flag list from comma-separated target string.
     hip_offload_arch_flags = []
@@ -208,7 +222,8 @@ if is_hipcc_enabled and is_hip_enabled
         endif
     endforeach
     if hip_offload_arch_flags.length() == 0
-        hip_offload_arch_flags = ['--offload-arch=gfx90a']
+        hip_offload_arch_flags = ['--offload-arch=gfx90a', '--offload-arch=gfx1030',
+                                  '--offload-arch=gfx1036', '--offload-arch=gfx1100']
     endif
     message('HIP HSACO targets: ' + ' '.join(hip_offload_arch_flags))
 

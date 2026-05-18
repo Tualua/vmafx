@@ -106,7 +106,7 @@ option('enable_hipcc',
 option('hip_gfx_targets',
     type: 'string',
     value: '',
-    description: 'Comma-separated list of AMD GFX targets for hipcc --offload-arch (e.g. "gfx1036,gfx1100"). When empty (default), auto-detected from rocm_agent_enumerator, then hipconfig; falls back to gfx90a if both fail. Override here when auto-detection misparsed the hipconfig output or cross-compiling for a remote GPU.')
+    description: 'Comma-separated list of AMD GFX targets for hipcc --offload-arch (e.g. "gfx1036,gfx1100"). When empty (default), auto-detected from rocm_agent_enumerator, then hipconfig; falls back to "gfx90a,gfx1030,gfx1036,gfx1100" (CDNA2 + RDNA2 desktop + Raphael APU iGPU + RDNA3) if both fail — the typical no-GPU build sandbox case. Override here when auto-detection misparsed the hipconfig output, when cross-compiling for a remote GPU, or to shrink the fat-binary to a single target.')
 
 option('enable_metal',
     type: 'feature',
