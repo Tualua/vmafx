@@ -168,6 +168,25 @@ it remains local under `.workingdir2/` per ADR-0325 §Constraint 1.
 The derived ONNX weights and manifest sidecar redistribute under the
 fork's BSD-3-Clause-Plus-Patent licence.
 
+## Feature coverage gap — speed_chroma / speed_temporal (ADR-0559)
+
+`konvid_mos_head_v1` was trained on 11 features (canonical-6 + 5 saliency /
+scene-transition signals). It does **not** consume `speed_chroma` or
+`speed_temporal`. These CPU-only extractors (Netflix `speed_ported` branch,
+ported to the fork's libvmaf as `libvmaf/src/feature/speed.c`) are expected
+inputs to a future Netflix HDR VMAF model.
+
+A `konvid_mos_head_v2` that includes speed features in its input vector will
+require:
+
+1. Re-extraction of the KoNViD-1k and KoNViD-150k corpora with speed features
+   (scripts updated in ADR-0559 — re-extraction is tracked by the corpus agent).
+2. Retraining with a wider input dimension (11 → 15).
+3. A passing production-flip gate on real-corpus cross-validation.
+
+Until then, callers that receive NaN for speed columns (pre-extraction corpora)
+can drop those columns and run inference with the existing 11-feature model.
+
 ## See also
 
 - [mos-corpora.md](../mos-corpora.md) — MOS-corpus ingestion family overview
@@ -176,3 +195,5 @@ fork's BSD-3-Clause-Plus-Patent licence.
 - [ADR-0336](../../adr/0336-konvid-mos-head-v1.md) — decision record
 - [ADR-0325](../../adr/0325-konvid-150k-corpus-ingestion.md) — KonViD ingestion plan and production-flip protocol
 - [ADR-0303](../../adr/0303-fr-regressor-v2-ensemble-prod-flip.md) — gate shape this model inherits
+- [ADR-0559](../../adr/0559-feature-coverage-audit.md) — feature coverage audit
+  that identified the speed-feature gap

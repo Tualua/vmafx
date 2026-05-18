@@ -15,7 +15,11 @@ The output schema is one row per (pair, frame):
   frame_index      : int   (0-based per-pair frame number)
   codec            : str   (encoder family; ``"unknown"`` for this corpus)
   vmaf             : float (vmaf_v0.6.1 teacher score)
-  <22 feature columns from FULL_FEATURES>
+  <26 feature columns from FULL_FEATURES>
+
+(ADR-0559 extended FULL_FEATURES from 22 to 26 columns by appending
+speed_temporal and speed_chroma_u/v/uv.  The speed_* extractors are CPU-only;
+GPU twins are tracked in ADR-0557 and ADR-0558.)
 
 The Netflix Public corpus ships pre-encoded distorted YUVs with no
 in-band codec metadata, so the ``codec`` column defaults to ``"unknown"``

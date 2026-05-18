@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """BVI-DVC → full-feature VMAF parquet (corpus-3 for tiny-AI v2).
 
-Mirrors :mod:`ai.scripts.konvid_to_full_features` (the canonical-21
+Mirrors :mod:`ai.scripts.konvid_to_full_features` (the canonical-feature
 KoNViD acquisition pipeline shipped in PR #178) but sources clips from
 the BVI-DVC Part 1 dataset (Ma, Zhang, Bull 2021) — a 4-tier 4:2:0
 10-bit YCbCr reference corpus distributed as a single ``Videos/``
@@ -19,7 +19,10 @@ tiny-AI student.
 
 Output schema (one row per (clip, frame) pair):
 
-    key, frame_index, codec, <21 feature columns>, vmaf
+    key, frame_index, codec, <25 feature columns>, vmaf
+
+(ADR-0559 extended the feature set from 21 to 25 by appending speed_temporal
+and speed_chroma_u/v/uv at the end of FULL_FEATURES.)
 
 The ``codec`` column is the encoder family that produced the distorted
 side. BVI-DVC ships reference-only material and this script encodes
@@ -74,9 +77,11 @@ import pandas as pd
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-# Verbatim mirror of FULL_FEATURES in ai/scripts/konvid_to_full_features.py
-# (PR #178). Keep these tuples in sync — they define the corpus-portable
-# 21-feature pool the Phase-3b sweep consumes.
+# Verbatim mirror of FULL_FEATURES in ai/data/feature_extractor.py.
+# Keep these tuples in sync — they define the corpus-portable feature pool
+# the Phase-3b sweep consumes.  Extended by ADR-0559 (2026-05-18) to add
+# speed_temporal + speed_chroma_u/v/uv (CPU-only; GPU twins in ADR-0557/0558).
+# New columns appended at END to preserve parquet schema-version lock.
 FULL_FEATURES: tuple[str, ...] = (
     "adm2",
     "adm_scale0",
@@ -99,6 +104,11 @@ FULL_FEATURES: tuple[str, ...] = (
     "ciede2000",
     "psnr_hvs",
     "ssimulacra2",
+    # ADR-0559: SpEED chroma/temporal features — appended at end.
+    "speed_temporal",
+    "speed_chroma_u",
+    "speed_chroma_v",
+    "speed_chroma_uv",
 )
 
 
@@ -114,6 +124,9 @@ EXTRACTORS = (
     "ciede",
     "psnr_hvs",
     "ssimulacra2",
+    # ADR-0559: SpEED chroma/temporal (CPU-only; GPU twins tracked in ADR-0557/0558).
+    "speed_temporal",
+    "speed_chroma",
 )
 
 

@@ -161,53 +161,6 @@ Rebase invariant: the moment another `.hip` kernel under
 one-line removal must happen in `hip_hsaco_stubs.c` for its symbol.
 The AGENTS.md note added by this PR captures the pattern.
 
-
-## feat/tiny-model-auto-resize (ADR-0550)
-
-**Fork-local only.** Modifies:
-
-- `libvmaf/src/dnn/tensor_io.{c,h}` (fork-local — DNN module added
-  by the tiny-AI surface, ADR-0020 onwards). Adds
-  `VmafTinyResize` enum and `vmaf_tensor_from_luma_resize()`
-  helper. No upstream equivalent.
-- `libvmaf/src/libvmaf.c` (upstream-mirror — fork-local hunk inside
-  the fork-added `dnn` substruct of `VmafContext` and the
-  fork-added `vmaf_ctx_dnn_run_frame_nchw` static helper). Conflict
-  risk is bounded to the `vmaf_ctx_dnn_run_frame_nchw` body and a
-  new field in the `dnn` substruct; both are fork-additions that
-  don't exist upstream, so a clean three-way rebase will keep the
-  hunks isolated.
-- `libvmaf/include/libvmaf/dnn.h` (fork-local — public DNN header
-  added with the tiny-AI surface). Adds `VmafDnnResizeMode` enum
-  and `vmaf_dnn_set_resize_mode` declaration. No upstream
-  equivalent.
-- `libvmaf/src/dnn/dnn_attach_api.c`, `libvmaf/src/dnn/dnn_ctx.h`
-  (fork-local — DNN bridge layer). Adds the public-symbol setter
-  and the int-bridge declaration.
-- `libvmaf/tools/cli_parse.{c,h}`, `libvmaf/tools/vmaf.c`
-  (upstream-mirror — CLI parser). Fork-local hunks: a new
-  `ARG_TINY_RESIZE` enum value, two `long_opts` rows, one switch
-  case, usage text, and a setter call in
-  `configure_tiny_model`. All hunks land in fork-only neighbourhoods
-  (the `--tiny-*` family is fork-added).
-- `libvmaf/test/dnn/test_tensor_io.c` (fork-local — DNN unit-test
-  TU). Adds five resize regression tests.
-
-Rebase invariant: the public `VmafDnnResizeMode` and the internal
-`VmafTinyResize` enums must keep matching integer layouts
-(0=DISABLED, 1=BILINEAR, 2=NEAREST, 3=BICUBIC). The default zero-init
-of `vmaf->dnn.resize_mode` is DISABLED (ADR-0550) — a dimension
-mismatch returns -ERANGE until the operator explicitly passes
-`--tiny-resize bilinear` (or equivalent). See
-`libvmaf/src/dnn/AGENTS.md` §"NCHW auto-resize default is DISABLED".
-The matched-dims path in `vmaf_tensor_from_luma_resize` forwards
-verbatim to `vmaf_tensor_from_luma`; do not insert per-pixel logic
-into that fast path — the Netflix golden gate depends on the
-bit-identical forward.
-
-No verbatim upstream code paths altered. The patch stack against
-upstream/master should apply cleanly.
-
 ## fix/hip-integer-vif-kernel-crash (ADR-0538)
 
 **Touches upstream-mirror paths.** Modifies:
@@ -36870,6 +36823,30 @@ source, no public header, no `meson_options.txt`, no `ffmpeg-patches/`
 entry. No numerical-correctness risk: this is a read-only audit that produces
 only documentation artefacts.
 
+## ADR-0561 — HIP gfx_targets fallback widening
+
+**Branch**: `fix/hip-gfx-targets-fallback-widening`
+**Rebase impact**: low — touches only `libvmaf/src/meson.build`,
+`libvmaf/meson_options.txt`, and `docs/backends/hip/overview.md`.
+No kernel code, no public API change.
+
+**Rebase-sensitive invariant**: The fallback string
+`'gfx90a,gfx1030,gfx1036,gfx1100'` at the end of the four-step probe
+chain in `libvmaf/src/meson.build` must not regress to `'gfx90a'` alone.
+If a meson.build rebase conflict arises in that region, prefer the wider
+fallback. The comment block above the fallback explains the rationale.
+
+Touched files:
+`libvmaf/src/meson.build` (fallback string + comment),
+`libvmaf/meson_options.txt` (description update),
+`docs/backends/hip/overview.md` (-Dhip_gfx_targets section),
+`docs/adr/0561-hip-gfx-targets-fallback-widening.md`,
+`docs/adr/README.md` (one index row),
+`docs/research/0561-hip-gfx-targets-fallback-widening.md`,
+`docs/state.md` (Recently-closed row T-HIP-GFX-TARGETS-FALLBACK-2026-05-18),
+`changelog.d/fixed/0561-hip-gfx-targets-fallback-widening.md`,
+`docs/rebase-notes.md` (this entry).
+
 ## ADR-0562 — VCQ-223 local-explainer hang fix
 
 **Rebase impact**: none. The change is entirely fork-local — all
@@ -36885,4 +36862,28 @@ Touched files:
 `docs/adr/README.md` (one index row),
 `docs/state.md` (Recently-closed row),
 `changelog.d/fixed/vcq-223-local-explainer-hang.md`,
+`docs/rebase-notes.md` (this entry).
+
+## ADR-0559 — Feature coverage audit: speed_chroma + speed_temporal in extraction scripts
+
+**Rebase impact**: minimal. Changes are entirely fork-local — all modified
+files live under `ai/data/feature_extractor.py`, `ai/scripts/bvi_dvc_to_full_features.py`,
+`ai/scripts/extract_full_features.py` (docstring only), and `docs/`. No
+upstream Netflix/vmaf file is touched, no ffmpeg-patches file is touched,
+no public `libvmaf/include/` header is touched, no `meson_options.txt`
+key is added.
+
+If a future upstream sync adds `speed_chroma` or `speed_temporal` to the
+upstream FULL_FEATURES equivalent, this fork's tuple will have them already;
+check for duplicates on merge.
+
+Touched files:
+`ai/data/feature_extractor.py` (FULL_FEATURES + _METRIC_TO_EXTRACTOR),
+`ai/scripts/bvi_dvc_to_full_features.py` (local FULL_FEATURES + EXTRACTORS),
+`ai/scripts/extract_full_features.py` (docstring only),
+`docs/ai/models/konvid_mos_head_v1.md` (coverage-gap note),
+`docs/adr/0559-feature-coverage-audit.md`,
+`docs/adr/README.md` (one index row),
+`docs/research/feature-coverage-audit-2026-05-18.md`,
+`changelog.d/added/0559-feature-coverage-audit-speed-features.md`,
 `docs/rebase-notes.md` (this entry).

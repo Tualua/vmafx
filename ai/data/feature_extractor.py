@@ -38,11 +38,13 @@ DEFAULT_FEATURES: tuple[str, ...] = (
     "motion2",
 )
 
-# Full feature set the fork's extractors can produce (per Research-0026).
+# Full feature set the fork's extractors can produce (per Research-0026,
+# extended by ADR-0559 to include SpEED chroma/temporal features).
 # Excludes lpips (DNN-based, expensive) and float_moment (image
-# statistics, not quality-relevant). The 22 features below cover the
+# statistics, not quality-relevant). The 26 features below cover the
 # bit-exact CPU + AVX2 + AVX-512 + NEON + (mostly) CUDA / SYCL / Vulkan
-# extractors registered in libvmaf/src/feature/.
+# extractors registered in libvmaf/src/feature/.  The 4 speed_* features
+# are CPU-only until GPU twins land (ADR-0557, ADR-0558).
 FULL_FEATURES: tuple[str, ...] = (
     # ADM (5 features) — `adm2` is the detail-loss aggregate; the
     # bare `adm` is not emitted as a separate JSON metric by the
@@ -77,6 +79,16 @@ FULL_FEATURES: tuple[str, ...] = (
     "ciede2000",
     "psnr_hvs",
     "ssimulacra2",
+    # SpEED chroma/temporal (4 features) — CPU-only extractors from
+    # libvmaf/src/feature/speed.c (Netflix speed_ported branch, ported to
+    # fork per ADR-0559).  Required by the anticipated Netflix HDR VMAF model.
+    # GPU twins are tracked in ADR-0557 (CUDA) and ADR-0558 (HIP); until
+    # those land these features are always extracted on the CPU residual pass.
+    # Appended at END to preserve parquet schema-version lock (ai/AGENTS.md).
+    "speed_temporal",
+    "speed_chroma_u",
+    "speed_chroma_v",
+    "speed_chroma_uv",
 )
 
 # Predefined feature-set names for CLI / API ergonomics. Custom subsets
@@ -142,6 +154,12 @@ _METRIC_TO_EXTRACTOR: dict[str, str] = {
     # ADR-0192, useful for cross-backend feature consistency).
     "float_ansnr": "float_ansnr",
     "float_anpsnr": "float_ansnr",
+    # SpEED chroma/temporal — CPU-only (ADR-0559; GPU twins in ADR-0557/0558).
+    # Short alias names registered in libvmaf/src/feature/alias.c.
+    "speed_temporal": "speed_temporal",
+    "speed_chroma_u": "speed_chroma",
+    "speed_chroma_v": "speed_chroma",
+    "speed_chroma_uv": "speed_chroma",
 }
 
 
