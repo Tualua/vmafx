@@ -53,7 +53,14 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+
+#ifdef _WIN32
+#include <io.h>
+#include <windows.h>
+#else
 #include <unistd.h>
+#endif
 
 #include "test.h"
 #include "libvmaf/libvmaf.h"
@@ -170,6 +177,50 @@ static char *test_vmaf_model_collection_load()
     return NULL;
 }
 
+/*
+ * Create an empty, writable temp file at @p out (size @p out_len).
+ *
+ * Portable temp-path resolution: MSYS2/MinGW64 does not map a usable
+ * "/tmp" inside the GitHub Actions `windows-latest` runner — `mkstemp`
+ * against a hardcoded `/tmp/...` template fails with ENOENT and the
+ * test aborts with "mkstemp failed". Mirror the pattern used in
+ * `libvmaf/test/dnn/test_model_loader.c::test_sidecar_parses` (added
+ * for the same reason): on Windows query GetTempPathA() and synthesise
+ * a deterministic filename inside it; on POSIX keep mkstemp() on
+ * "/tmp" so the test retains O_CREAT|O_EXCL atomicity there.
+ *
+ * Returns 0 on success, non-zero on failure.
+ */
+static int make_temp_output_path(char *out, size_t out_len)
+{
+#ifdef _WIN32
+    char tmpdir[MAX_PATH];
+    DWORD tmplen = GetTempPathA((DWORD)sizeof tmpdir, tmpdir);
+    if (tmplen == 0 || tmplen >= sizeof tmpdir)
+        return -1;
+    int n = snprintf(out, out_len, "%svmaf_test_output_%lu", tmpdir,
+                     (unsigned long)GetCurrentProcessId());
+    if (n <= 0 || (size_t)n >= out_len)
+        return -1;
+    /* Pre-create the file so the later fopen("r") + ftell can read it. */
+    FILE *touch = fopen(out, "w");
+    if (!touch)
+        return -1;
+    (void)fclose(touch);
+    return 0;
+#else
+    const char tmpl[] = "/tmp/vmaf_test_output_XXXXXX";
+    if (sizeof tmpl > out_len)
+        return -1;
+    memcpy(out, tmpl, sizeof tmpl);
+    int fd = mkstemp(out);
+    if (fd < 0)
+        return -1;
+    (void)close(fd);
+    return 0;
+#endif
+}
+
 /* -------------------------------------------------------------------------
  * Test: vmaf_write_output() dispatcher — public entry point
  * ---------------------------------------------------------------------- */
@@ -187,11 +238,9 @@ static char *test_vmaf_write_output()
     err = vmaf_score_at_index(vmaf, model, &score, 0);
     mu_assert("vmaf_score_at_index for write_output setup failed", !err);
 
-    /* Write to a temp file; verify the file is non-empty. */
-    char tmp[] = "/tmp/vmaf_test_output_XXXXXX";
-    int fd = mkstemp(tmp);
-    mu_assert("mkstemp failed", fd >= 0);
-    (void)close(fd);
+    char tmp[260];
+    err = make_temp_output_path(tmp, sizeof tmp);
+    mu_assert("temp-output-path setup failed", !err);
 
     err = vmaf_write_output(vmaf, tmp, VMAF_OUTPUT_FORMAT_JSON);
     mu_assert("vmaf_write_output(JSON) returned error", !err);
@@ -201,7 +250,7 @@ static char *test_vmaf_write_output()
     (void)fseek(f, 0, SEEK_END);
     long sz = ftell(f);
     (void)fclose(f);
-    (void)unlink(tmp);
+    (void)remove(tmp);
 
     mu_assert("vmaf_write_output(JSON) produced empty file", sz > 0);
 

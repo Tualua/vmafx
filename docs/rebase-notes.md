@@ -35855,3 +35855,7 @@ default, so every existing caller round-trips unchanged.
 `_run_tune_per_shot` is deliberately not touched — the
 `auto → None → libvmaf-picks` predicate contract is preserved as
 documented inline.
+
+## fix/windows-mingw64-build-repair (ADR-0515)
+
+**Rebase sensitivity (none):** test-only change confined to a fork-added file (`libvmaf/test/test_public_api_score.c`, added 2026-05-16 from the C-API coverage audit). The Win32 `#ifdef` branch mirrors the pre-existing pattern in `libvmaf/test/dnn/test_model_loader.c::test_sidecar_parses`; no public C-API or ffmpeg-patches/ surface touched. No upstream-Netflix counterpart for this test file, so upstream rebases cannot collide with the helper.

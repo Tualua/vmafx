@@ -52,7 +52,21 @@ and teardown.
   [coverage gap analysis](../../docs/development/coverage-gap-analysis-2026-05-02.md)):
   open a `tmpfile()`, run the writer, `fseek(SEEK_END)` + `ftell` +
   `fseek(SEEK_SET)` + `fread` to slurp the buffer, then `strstr` for
-  expected markers. To reach `vmaf_feature_score_pooled` the test must
+  expected markers.
+- **Tests that need a *named* temp file (path-on-disk dispatch)** must
+  resolve the temp directory at runtime — never hardcode `/tmp/...`
+  with `mkstemp(3)`. MSYS2/MinGW64 inside the GitHub Actions
+  `windows-latest` runner does not expose a usable `/tmp` from the
+  `MINGW64` shell, so `mkstemp` against a `/tmp/foo_XXXXXX` template
+  fails with `ENOENT` and the test wedges the Windows matrix leg red
+  (ADR-0515 history: `test_public_api_score::test_vmaf_write_output`).
+  Reference patterns: the `make_temp_output_path()` helper in
+  [test_public_api_score.c](test_public_api_score.c) and the inline
+  `#ifdef _WIN32 ... GetTempPathA ... #else mkstemp ... #endif` block
+  in [dnn/test_model_loader.c](dnn/test_model_loader.c)
+  (`test_sidecar_parses`). Both use `<stdio.h>` `remove(path)` instead
+  of `unlink(path)` so `<unistd.h>` doesn't have to be pulled in on
+  Windows. To reach `vmaf_feature_score_pooled` the test must
   use a real `VmafContext` (the writers require it for the
   `pooled_metrics` block); pull it in via `#include "libvmaf.c"` so
   `struct VmafContext` becomes complete. **Pooled-metrics invariant**:
