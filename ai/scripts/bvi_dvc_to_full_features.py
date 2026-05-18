@@ -276,11 +276,18 @@ def _run_vmaf_full(
 
 
 def _lookup(metrics: dict, name: str) -> float | None:
-    """libvmaf may emit ``integer_<name>`` for fixed-point kernels."""
-    if name in metrics:
-        return float(metrics[name])
-    if f"integer_{name}" in metrics:
-        return float(metrics[f"integer_{name}"])
+    """libvmaf may emit ``integer_<name>`` for fixed-point kernels.
+
+    Returns None when the key is absent OR when libvmaf emits a JSON null
+    (e.g. ssimulacra2 / ciede2000 on frames where the metric cannot be
+    computed for the source content). The caller maps None to float("nan").
+    """
+    v = metrics.get(name)
+    if v is not None:
+        return float(v)
+    v = metrics.get(f"integer_{name}")
+    if v is not None:
+        return float(v)
     return None
 
 
@@ -294,7 +301,8 @@ def _frames_to_rows(key: str, vmaf_json: Path, codec: str) -> list[dict]:
         for feat in FULL_FEATURES:
             v = _lookup(m, feat)
             row[feat] = float("nan") if v is None else v
-        row["vmaf"] = float(m["vmaf"])
+        vmaf_v = m.get("vmaf")
+        row["vmaf"] = float("nan") if vmaf_v is None else float(vmaf_v)
         rows.append(row)
     return rows
 
