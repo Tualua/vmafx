@@ -137,6 +137,85 @@ static char *test_read_imported_pictures_without_imports(void)
     return NULL;
 }
 
+/* ADR-0512 (supersedes ADR-0492): the Vulkan backend ships two VIF
+ * compute-shader variants and auto-picks based on
+ * `VkPhysicalDeviceFeatures::shaderFloat64`. Default behaviour (no
+ * `require_fp64`) must NEVER refuse to attach because of missing
+ * `shaderFloat64`. The `--vulkan-require-fp64` opt-in (mirrored in
+ * `VmafVulkanConfiguration::require_fp64`) re-enables the old strict
+ * refusal so bit-exact-strict workflows preserve their behaviour. */
+
+static char *test_context_new_default_does_not_refuse_on_no_fp64(void)
+{
+    /* Default `vmaf_vulkan_context_new` must succeed on any compute-capable
+     * device regardless of `shaderFloat64` (ADR-0512). The pre-fix
+     * behaviour was `-ENOTSUP` on Intel Arc / AMD iGPU / older NVIDIA;
+     * if this assertion ever flips back to -ENOTSUP somebody has
+     * regressed the auto-fallback. */
+    if (vmaf_vulkan_device_count() <= 0)
+        return NULL;
+    VmafVulkanContext *ctx = NULL;
+    int rc = vmaf_vulkan_context_new(&ctx, -1);
+    mu_assert("default context_new must not refuse on no-fp64 devices "
+              "(ADR-0509 auto-fallback)",
+              rc == 0);
+    mu_assert("context must be non-NULL on success", ctx != NULL);
+    vmaf_vulkan_context_destroy(ctx);
+    return NULL;
+}
+
+static char *test_state_init_with_require_fp64_opt_in(void)
+{
+    /* The public `VmafVulkanConfiguration::require_fp64` field re-enables
+     * the strict refusal. We can't predict the device's `shaderFloat64`
+     * capability in the test, so we assert the contract: either the init
+     * succeeds (device has fp64, fp64 path loaded) OR it returns -ENOTSUP
+     * (device lacks fp64, strict refusal honoured). Any other return
+     * value is a contract violation. */
+    if (vmaf_vulkan_device_count() <= 0)
+        return NULL;
+    VmafVulkanConfiguration cfg = {
+        .device_index = -1,
+        .enable_validation = 0,
+        .require_fp64 = 1,
+    };
+    VmafVulkanState *state = NULL;
+    int rc = vmaf_vulkan_state_init(&state, cfg);
+    mu_assert("require_fp64 init must return 0 or -ENOTSUP "
+              "(no other code is valid)",
+              rc == 0 || rc == -ENOTSUP);
+    if (rc == 0) {
+        mu_assert("state must be non-NULL on success", state != NULL);
+        vmaf_vulkan_state_free(&state);
+    } else {
+        mu_assert("state must remain NULL on -ENOTSUP", state == NULL);
+    }
+    return NULL;
+}
+
+static char *test_state_init_default_does_not_refuse(void)
+{
+    /* Mirror of test_context_new_default_does_not_refuse_on_no_fp64 but
+     * via the public `VmafVulkanConfiguration` surface that the CLI
+     * uses. Default-initialised cfg (no `require_fp64`) must always
+     * succeed on a compute-capable device under ADR-0509. */
+    if (vmaf_vulkan_device_count() <= 0)
+        return NULL;
+    VmafVulkanConfiguration cfg = {
+        .device_index = -1,
+        .enable_validation = 0,
+        /* require_fp64 deliberately left as 0 — this is the default. */
+    };
+    VmafVulkanState *state = NULL;
+    int rc = vmaf_vulkan_state_init(&state, cfg);
+    mu_assert("default state_init must not refuse on no-fp64 devices "
+              "(ADR-0509 auto-fallback)",
+              rc == 0);
+    mu_assert("state must be non-NULL on success", state != NULL);
+    vmaf_vulkan_state_free(&state);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_context_destroy_null_is_noop);
@@ -149,5 +228,9 @@ char *run_tests(void)
     mu_run_test(test_wait_compute_null_state);
     mu_run_test(test_wait_compute_idle_is_zero);
     mu_run_test(test_read_imported_pictures_without_imports);
+    /* ADR-0512 two-variant VIF shader contract. */
+    mu_run_test(test_context_new_default_does_not_refuse_on_no_fp64);
+    mu_run_test(test_state_init_default_does_not_refuse);
+    mu_run_test(test_state_init_with_require_fp64_opt_in);
     return NULL;
 }

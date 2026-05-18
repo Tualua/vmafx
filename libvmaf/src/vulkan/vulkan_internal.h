@@ -159,6 +159,14 @@ struct VmafVulkanContext {
      * read these to pick group size, sub-group ops, etc. */
     VkPhysicalDeviceProperties props;
     VkPhysicalDeviceMemoryProperties mem_props;
+
+    /* ADR-0509 (supersedes ADR-0492): set after `vkGetPhysicalDeviceFeatures`
+     * during context init. Feature kernels (currently only VIF) inspect this
+     * to choose between the fp64 and fp32 shader variants — the fp64 variant
+     * matches `integer_vif.c`'s CPU path exactly; the fp32 variant runs on
+     * devices without `shaderFloat64` (Intel Arc, AMD iGPU, older NVIDIA)
+     * with empirical accuracy within ~1e-4 VMAF of CPU. */
+    int has_float64;
 };
 
 #ifdef __cplusplus

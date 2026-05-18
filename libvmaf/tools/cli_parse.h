@@ -75,6 +75,13 @@ typedef struct {
     int sycl_device; // -1 = not requested (default), 0+ = device index
     bool no_vulkan;
     int vulkan_device; // -1 = not requested (default), 0+ = device index
+    /* --vulkan-require-fp64 (ADR-0512): bit-exact-strict opt-in. When
+     * true, the Vulkan backend refuses to attach to devices that lack
+     * `VkPhysicalDeviceFeatures::shaderFloat64`. Default (false)
+     * auto-falls-back to the fp32 VIF shader variant on those devices
+     * (Intel Arc, AMD iGPU, older NVIDIA). Used by parity test
+     * harnesses that need to assert the fp64 path is taken. */
+    bool vulkan_require_fp64;
     bool no_hip;
     int hip_device; // -1 = not requested (default), 0+ = device index
     bool no_metal;

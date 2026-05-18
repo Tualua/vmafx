@@ -594,6 +594,10 @@ static int init_gpu_backends(VmafContext *vmaf, const CLISettings *c
     VmafVulkanConfiguration vulkan_cfg = {
         .device_index = c->vulkan_device,
         .enable_validation = 0,
+        /* ADR-0512 (supersedes ADR-0492): --vulkan-require-fp64 opt-in
+         * re-enables the strict shaderFloat64 gate; default is auto-
+         * fallback to the fp32 VIF shader variant. */
+        .require_fp64 = c->vulkan_require_fp64 ? 1 : 0,
     };
     if (c->vulkan_device >= 0 && !c->no_vulkan) {
         err = vmaf_vulkan_state_init(vulkan_state, vulkan_cfg);

@@ -33,6 +33,32 @@ and the FR-from-NR adapter pattern are fork-local — Netflix upstream has
 no CHUG ingestion, no K150K-A extractor, and no FR-from-NR adapter. No
 upstream-shared code, headers, build files, public C-API, or feature
 extractors are modified; the libvmaf CLI and all backends are unchanged.
+## fix/vulkan-two-variant-vif-shader (ADR-0512, supersedes ADR-0492)
+
+**No rebase impact** on Netflix upstream — the Vulkan backend and its
+GLSL compute shaders are entirely fork-local (the `libvmaf/src/vulkan/`
+and `libvmaf/src/feature/vulkan/` trees do not exist in upstream).
+Fork-internal rebase invariants:
+
+- `libvmaf/src/feature/vulkan/shaders/vif.comp` was renamed into
+  `vif_fp64.comp` + new sibling `vif_fp32.comp` (the original file is
+  removed). Any future patch series that targets `vif.comp` by name
+  must be retargeted onto both variants — kernel changes touch BOTH in
+  lockstep (see `libvmaf/src/feature/vulkan/AGENTS.md`).
+- `VmafVulkanContext` gained an `int has_float64` field
+  (`libvmaf/src/vulkan/vulkan_internal.h`). Wire-compatible: feature
+  TUs read it via the internal header, not the public ABI.
+- `VmafVulkanConfiguration` gained a public `int require_fp64` field
+  (`libvmaf/include/libvmaf/libvmaf_vulkan.h`). Append-only ABI
+  extension — existing zero-initialised callers get the auto-fallback
+  default.
+- New internal entry point `vmaf_vulkan_context_new_with_opts(out,
+  device_index, require_fp64)`; the original `vmaf_vulkan_context_new`
+  is preserved as a wrapper that passes `require_fp64 = 0`.
+- New CLI flag `--vulkan-require-fp64` (and underscore alias
+  `--vulkan_require_fp64`); the usage string was split across two
+  `fprintf` calls to stay under the C99 4095-char string-literal
+  limit.
 
 ## fix/restore-cuda-kernel-lifecycle-helpers
 

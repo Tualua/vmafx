@@ -42,7 +42,13 @@ glslc = find_program('glslc', required : true)
 # `static const uint32_t <name>_spv[]` for direct embedding into the
 # host-side dispatch wrapper.
 vulkan_shader_sources = [
-    'shaders/vif.comp',
+    # ADR-0512: two-variant VIF compute shader. The runtime picks one
+    # based on the device's `shaderFloat64` capability (auto-fallback to
+    # fp32 on Intel Arc / AMD iGPU / older NVIDIA). Both .spv blobs are
+    # embedded into the libvmaf binary; the C side resolves at backend
+    # init time.
+    'shaders/vif_fp64.comp',
+    'shaders/vif_fp32.comp',
     'shaders/motion.comp',
     'shaders/integer_motion.comp',
     'shaders/motion_v2.comp',

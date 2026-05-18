@@ -199,6 +199,16 @@ int vmaf_vulkan_device_count(void)
 
 int vmaf_vulkan_context_new(VmafVulkanContext **out, int device_index)
 {
+    /* Back-compat wrapper: no fp64 strictness, i.e. auto-fallback to the
+     * fp32 VIF shader variant on devices without `shaderFloat64` (ADR-0512
+     * supersedes ADR-0492). New callers that need bit-exact-strict parity
+     * with the CPU path should use `vmaf_vulkan_context_new_with_opts`
+     * with `require_fp64 = 1`. */
+    return vmaf_vulkan_context_new_with_opts(out, device_index, /*require_fp64=*/0);
+}
+
+int vmaf_vulkan_context_new_with_opts(VmafVulkanContext **out, int device_index, int require_fp64)
+{
     if (!out)
         return -EINVAL;
 
@@ -285,25 +295,33 @@ int vmaf_vulkan_context_new(VmafVulkanContext **out, int device_index)
         goto fail;
     }
 
-    /* ADR-0492: vif.comp promotes g/sv_sq/gg_sigma to double via
-     * GL_EXT_shader_explicit_arithmetic_types_float64 to match
-     * integer_vif.c's CPU double-precision path exactly and pass the
-     * ADR-0214 places=4 Vulkan parity gate.  shaderFloat64 is a
-     * VkPhysicalDeviceFeatures core field (Vulkan 1.0+) and must be
-     * probed and enabled explicitly at vkCreateDevice time. */
+    /* ADR-0512 (supersedes ADR-0492): probe `shaderFloat64` but DO NOT
+     * refuse the backend on devices that lack it. The VIF compute shader
+     * ships as two SPIR-V variants — `vif_fp64.comp` (matches CPU's double
+     * precision exactly) and `vif_fp32.comp` (auto-fallback, ~1e-4 VMAF
+     * delta on Netflix golden). The C-side picks the matching variant at
+     * pipeline-create time based on `ctx->has_float64`. The `require_fp64`
+     * opt-in (CLI: `--vulkan-require-fp64`) re-enables the old strict gate
+     * for bit-exact parity workflows. */
     {
         VkPhysicalDeviceFeatures avail_feats = {0};
         vkGetPhysicalDeviceFeatures(ctx->physical_device, &avail_feats);
-        if (!avail_feats.shaderFloat64) {
+        ctx->has_float64 = avail_feats.shaderFloat64 ? 1 : 0;
+        if (!ctx->has_float64 && require_fp64) {
             fprintf(stderr,
                     "libvmaf: Vulkan backend disabled on this device "
-                    "(\"%s\") — no shaderFloat64 support, required for "
-                    "double-precision VIF g/sv_sq computation "
-                    "(ADR-0492). Falling back to CPU.\n",
+                    "(\"%s\") — no shaderFloat64 support and "
+                    "--vulkan-require-fp64 was set (ADR-0512). "
+                    "Falling back to CPU.\n",
                     ctx->props.deviceName);
             err = -ENOTSUP;
             goto fail;
         }
+        /* INFO log identifying which VIF variant will be loaded. fp32 is
+         * a supported path (not a degraded mode); use INFO not WARN. */
+        fprintf(stderr, "libvmaf: Vulkan: VIF g/sv_sq using %s path on \"%s\"%s\n",
+                ctx->has_float64 ? "fp64" : "fp32", ctx->props.deviceName,
+                ctx->has_float64 ? "" : " (no shaderFloat64)");
     }
 
     float queue_priority = 1.0f;
@@ -313,16 +331,16 @@ int vmaf_vulkan_context_new(VmafVulkanContext **out, int device_index)
         .queueCount = 1,
         .pQueuePriorities = &queue_priority,
     };
-    /* Enable shaderBufferInt64Atomics (ADR-0350) and shaderFloat64
-     * (ADR-0492) on the device.  We re-use fresh structs because the
-     * query-result structs above are spec-disallowed on vkCreateDevice's
-     * pNext chain.  shaderFloat64 lives in the VkPhysicalDeviceFeatures
-     * core struct (not an extension struct), so we set it there. */
+    /* Enable shaderBufferInt64Atomics (ADR-0350) on the device. Enable
+     * `shaderFloat64` only when the device advertises it — requesting it
+     * on a device that lacks it would fail `vkCreateDevice` with
+     * VK_ERROR_FEATURE_NOT_PRESENT. ADR-0512: the fp32 VIF shader variant
+     * covers devices without the feature. */
     VkPhysicalDeviceShaderAtomicInt64Features atomic64_enable = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_INT64_FEATURES,
         .shaderBufferInt64Atomics = VK_TRUE,
     };
-    VkPhysicalDeviceFeatures features = {.shaderFloat64 = VK_TRUE};
+    VkPhysicalDeviceFeatures features = {.shaderFloat64 = ctx->has_float64 ? VK_TRUE : VK_FALSE};
     VkDeviceCreateInfo device_create = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .pNext = &atomic64_enable,
@@ -469,23 +487,29 @@ static int vmaf_vulkan_context_new_external(VmafVulkanContext **out,
         }
     }
 
-    /* ADR-0492: also probe shaderFloat64 on the external-handle path.
-     * We cannot alter the caller's pre-created VkDevice features, so
-     * if the device was created without shaderFloat64 our VIF shader
-     * will fail to load.  Refuse early with a clear diagnostic. */
+    /* ADR-0509 (supersedes ADR-0492): on the external-handle path the
+     * caller's VkDevice was created without our involvement, so we cannot
+     * decide which `shaderFloat64`-dependent extensions to enable. We
+     * probe the physical-device capability (independent of which features
+     * the caller actually enabled on vkCreateDevice) and store it; the
+     * VIF shader picks fp32 or fp64 accordingly. If the caller created
+     * the VkDevice without enabling `shaderFloat64` on a device that
+     * advertises the feature, the fp64 SPIR-V variant will still fail to
+     * load at pipeline-create time — callers are responsible for enabling
+     * the feature on their VkDevice if they want the fp64 path. The
+     * external-handle path always auto-falls-back to fp32 on devices
+     * that do not advertise `shaderFloat64`; the `require_fp64` opt-in
+     * on `VmafVulkanConfiguration` only applies to the
+     * libvmaf-created-device path (`vmaf_vulkan_state_init`). */
     {
         VkPhysicalDeviceFeatures ext_feats = {0};
         vkGetPhysicalDeviceFeatures(ctx->physical_device, &ext_feats);
-        if (!ext_feats.shaderFloat64) {
-            fprintf(stderr,
-                    "libvmaf: Vulkan backend disabled on imported "
-                    "device (\"%s\") — no shaderFloat64 support, "
-                    "required for double-precision VIF computation "
-                    "(ADR-0492). Falling back to CPU.\n",
-                    ctx->props.deviceName);
-            err = -ENOTSUP;
-            goto fail;
-        }
+        ctx->has_float64 = ext_feats.shaderFloat64 ? 1 : 0;
+        fprintf(stderr,
+                "libvmaf: Vulkan (external device): VIF g/sv_sq using %s "
+                "path on \"%s\"%s\n",
+                ctx->has_float64 ? "fp64" : "fp32", ctx->props.deviceName,
+                ctx->has_float64 ? "" : " (no shaderFloat64)");
     }
 
     VmaVulkanFunctions vma_fns = {
@@ -555,7 +579,7 @@ int vmaf_vulkan_state_init(VmafVulkanState **out, VmafVulkanConfiguration cfg)
     if (!s)
         return -ENOMEM;
 
-    int err = vmaf_vulkan_context_new(&s->ctx, cfg.device_index);
+    int err = vmaf_vulkan_context_new_with_opts(&s->ctx, cfg.device_index, cfg.require_fp64);
     if (err) {
         free(s);
         return err;

@@ -63,6 +63,18 @@ typedef struct VmafVulkanConfiguration {
      * call to take effect. See ADR-0251.
      */
     unsigned max_outstanding_frames;
+
+    /**
+     * Bit-exact-strict opt-in (ADR-0509, supersedes ADR-0492's hard
+     * refusal). When non-zero, the backend init refuses to attach to
+     * devices that do not expose `VkPhysicalDeviceFeatures::shaderFloat64`
+     * and returns `-ENOTSUP`. Default (0) auto-falls-back to the fp32
+     * VIF shader variant on such devices; the per-frame VMAF delta vs
+     * the fp64 path is bounded by ~1e-4 on the Netflix golden 576x324
+     * corpus — well within the cross-backend tolerance. Used by parity
+     * test harnesses that need to assert the fp64 path is taken.
+     */
+    int require_fp64;
 } VmafVulkanConfiguration;
 
 /**

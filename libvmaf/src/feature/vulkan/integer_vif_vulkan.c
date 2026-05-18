@@ -63,7 +63,10 @@
 #include "../../vulkan/picture_vulkan.h"
 #include "../../vulkan/vulkan_internal.h"
 
-#include "vif_spv.h"        /* per-WG accumulator kernel */
+/* ADR-0512 (supersedes ADR-0492): two-variant VIF compute shader; see
+ * vif_vulkan.c for the runtime-pick comment. */
+#include "vif_fp64_spv.h"
+#include "vif_fp32_spv.h"
 #include "vif_reduce_spv.h" /* two-level reduction kernel (ADR-0350) */
 
 /* ------------------------------------------------------------------ */
@@ -280,11 +283,14 @@ static int create_pipelines(VifVulkanState *s)
     VkSpecializationInfo spec_info = {0};
     vif_fill_spec(&spec_data, spec_entries, &spec_info, s, /*scale=*/0);
 
+    /* ADR-0512: runtime pick of fp64 vs fp32 SPIR-V — see vif_vulkan.c. */
+    const uint32_t *vif_spv_bytes = s->ctx->has_float64 ? vif_fp64_spv : vif_fp32_spv;
+    const size_t vif_spv_size_pick = s->ctx->has_float64 ? vif_fp64_spv_size : vif_fp32_spv_size;
     const VmafVulkanKernelPipelineDesc desc = {
         .ssbo_binding_count = 6U,
         .push_constant_size = (uint32_t)sizeof(VifPushConsts),
-        .spv_bytes = vif_spv,
-        .spv_size = vif_spv_size,
+        .spv_bytes = vif_spv_bytes,
+        .spv_size = vif_spv_size_pick,
         .pipeline_create_info =
             {
                 .stage =

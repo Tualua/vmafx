@@ -43,6 +43,17 @@ typedef struct VmafVulkanContext VmafVulkanContext;
  */
 int vmaf_vulkan_context_new(VmafVulkanContext **ctx, int device_index);
 
+/*
+ * Variant of @ref vmaf_vulkan_context_new that also accepts the
+ * `require_fp64` opt-in. Non-zero `require_fp64` makes the init refuse
+ * to attach to devices without `VkPhysicalDeviceFeatures::shaderFloat64`
+ * with `-ENOTSUP`. Default (0) auto-falls-back to the fp32 VIF shader
+ * variant on such devices (ADR-0509, supersedes ADR-0492's hard refusal).
+ * Existing callers that pass through `vmaf_vulkan_context_new` get the
+ * default auto-fallback behaviour for free.
+ */
+int vmaf_vulkan_context_new_with_opts(VmafVulkanContext **ctx, int device_index, int require_fp64);
+
 void vmaf_vulkan_context_destroy(VmafVulkanContext *ctx);
 
 /*

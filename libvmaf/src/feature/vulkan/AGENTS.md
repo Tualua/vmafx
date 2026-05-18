@@ -59,6 +59,28 @@ ADR-0234) catches drift but only after a full GPU run.
 
 ## Rebase-sensitive invariants
 
+- **`vif_vulkan.c` two-variant SPIR-V pick (ADR-0512, supersedes
+  ADR-0492).** The VIF compute shader ships as TWO `.comp` sources —
+  [`shaders/vif_fp64.comp`](shaders/vif_fp64.comp) (double precision,
+  matches `integer_vif.c` bit-for-bit) and
+  [`shaders/vif_fp32.comp`](shaders/vif_fp32.comp) (single precision,
+  drops the `shaderFloat64` requirement). Both compile to embedded
+  SPIR-V (`vif_fp64_spv.h` + `vif_fp32_spv.h`); `create_pipelines()`
+  in `vif_vulkan.c` picks one based on `s->ctx->has_float64`. Rebases
+  that collapse the two variants into a single `vif.comp` regress
+  Intel Arc A380 / AMD `gfx1036` / older NVIDIA to `-ENOTSUP` at
+  backend init. Any change to the integer-VIF inner loop must touch
+  **both** shader variants in lockstep — they share the same SCALE
+  spec-constant contract, descriptor bindings, push-constant layout,
+  and `vif_reduce.comp` accumulator-slot layout. The only intended
+  difference is the `g`/`sv_sq`/`gg_sigma` accumulator type
+  (`double` vs `precise float`) and the
+  `GL_EXT_shader_explicit_arithmetic_types_float64` extension
+  enable. The `--vulkan-require-fp64` opt-in
+  (`VmafVulkanConfiguration::require_fp64`) re-enables the old
+  ADR-0492 strict refusal for bit-exact-strict workflows; do **not**
+  flip its default from off to on.
+
 - **`psnr_vulkan.c` chroma plane loop and `enable_chroma` option**
   ([ADR-0216](../../../../docs/adr/0216-vulkan-chroma-psnr.md) /
   [ADR-0453](../../../../docs/adr/0453-psnr-enable-chroma-gpu-parity.md)).

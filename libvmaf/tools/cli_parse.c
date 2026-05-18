@@ -56,6 +56,7 @@ enum {
     ARG_SYCL_DEVICE,
     ARG_NO_VULKAN,
     ARG_VULKAN_DEVICE,
+    ARG_VULKAN_REQUIRE_FP64,
     ARG_NO_HIP,
     ARG_HIP_DEVICE,
     ARG_NO_METAL,
@@ -134,6 +135,8 @@ static const struct option long_opts[] = {
     {"sycl_device", 1, NULL, ARG_SYCL_DEVICE},
     {"no_vulkan", 0, NULL, ARG_NO_VULKAN},
     {"vulkan_device", 1, NULL, ARG_VULKAN_DEVICE},
+    {"vulkan-require-fp64", 0, NULL, ARG_VULKAN_REQUIRE_FP64},
+    {"vulkan_require_fp64", 0, NULL, ARG_VULKAN_REQUIRE_FP64},
     {"no_hip", 0, NULL, ARG_NO_HIP},
     {"hip_device", 1, NULL, ARG_HIP_DEVICE},
     {"no_metal", 0, NULL, ARG_NO_METAL},
@@ -207,6 +210,17 @@ static void usage(const char *const app, const char *const reason, ...)
         " --sycl_device $unsigned:      select SYCL GPU by index (default: auto)\n"
         " --no_vulkan:                  disable Vulkan backend\n"
         " --vulkan_device $unsigned:    select Vulkan GPU by index (default: auto)\n"
+        " --vulkan-require-fp64:       bit-exact-strict opt-in (ADR-0512): refuse to attach\n"
+        "                              to Vulkan devices that lack shaderFloat64. Default\n"
+        "                              auto-falls-back to the fp32 VIF shader variant on\n"
+        "                              Intel Arc / AMD iGPU / older NVIDIA (within ~1e-4\n"
+        "                              VMAF of CPU on the Netflix golden corpus). Used by\n"
+        "                              parity test harnesses.\n");
+    /* C99 only requires compilers to support string literals up to 4095 chars
+     * (5.2.4.1). Split the usage text in two fprintf calls so we stay under
+     * the limit even as new flags accrete. */
+    (void)fprintf(
+        stderr,
         " --no_hip:                     disable HIP (AMD ROCm) backend\n"
         " --hip_device $unsigned:       select HIP GPU by index (default: auto)\n"
         " --no_metal:                   disable Metal (Apple Silicon) backend\n"
@@ -734,6 +748,9 @@ void cli_parse(const int argc, char *const *const argv, CLISettings *const setti
             break;
         case ARG_VULKAN_DEVICE:
             settings->vulkan_device = (int)parse_unsigned(optarg, ARG_VULKAN_DEVICE, argv[0]);
+            break;
+        case ARG_VULKAN_REQUIRE_FP64:
+            settings->vulkan_require_fp64 = true;
             break;
         case ARG_NO_HIP:
             settings->no_hip = true;

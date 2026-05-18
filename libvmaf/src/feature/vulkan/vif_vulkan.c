@@ -57,7 +57,15 @@
 #include "../../vulkan/picture_vulkan.h"
 #include "../../vulkan/vulkan_internal.h"
 
-#include "vif_spv.h"        /* per-WG accumulator kernel */
+/* ADR-0512 (supersedes ADR-0492): two-variant VIF compute shader. The
+ * fp64 variant matches CPU's double-precision g/sv_sq path bit-for-bit;
+ * the fp32 variant runs on devices without `shaderFloat64` (Intel Arc,
+ * AMD iGPU, older NVIDIA) with empirical VMAF delta vs CPU bounded at
+ * ~1e-4 on the Netflix golden corpus. `ctx->has_float64` (probed in
+ * vmaf_vulkan_context_new_with_opts) decides which SPIR-V blob the
+ * pipeline-create call binds. */
+#include "vif_fp64_spv.h"
+#include "vif_fp32_spv.h"
 #include "vif_reduce_spv.h" /* two-level reduction kernel (ADR-0350) */
 
 /* ------------------------------------------------------------------ */
@@ -285,11 +293,16 @@ static int create_pipelines(VifVulkanState *s)
     VkSpecializationInfo spec_info = {0};
     vif_fill_spec(&spec_data, spec_entries, &spec_info, s, /*scale=*/0);
 
+    /* ADR-0512: runtime pick between the fp64 and fp32 SPIR-V variants
+     * based on the device's `shaderFloat64` capability. Both blobs are
+     * embedded at build time; only one is bound per pipeline-create. */
+    const uint32_t *vif_spv_bytes = s->ctx->has_float64 ? vif_fp64_spv : vif_fp32_spv;
+    const size_t vif_spv_size_pick = s->ctx->has_float64 ? vif_fp64_spv_size : vif_fp32_spv_size;
     const VmafVulkanKernelPipelineDesc desc = {
         .ssbo_binding_count = 6U,
         .push_constant_size = (uint32_t)sizeof(VifPushConsts),
-        .spv_bytes = vif_spv,
-        .spv_size = vif_spv_size,
+        .spv_bytes = vif_spv_bytes,
+        .spv_size = vif_spv_size_pick,
         .pipeline_create_info =
             {
                 .stage =

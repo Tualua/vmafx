@@ -1,6 +1,6 @@
 # ADR-0492: Promote Vulkan VIF g/sv_sq Computation to double Precision
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-0512](0512-vulkan-vif-two-variant-shader.md)
 - **Date**: 2026-05-17
 - **Deciders**: lusoris, Claude (Anthropic)
 - **Tags**: `vulkan`, `vif`, `gpu-parity`, `precision`

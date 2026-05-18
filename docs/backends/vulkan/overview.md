@@ -442,14 +442,45 @@ The framework then falls back to the CPU path automatically. Linux
 and Windows targets with NVIDIA proprietary, Mesa anv, RADV, and
 lavapipe drivers all advertise the feature and follow the GPU path.
 
-**Required device features summary (ADR-0350, ADR-0492):**
+**Required device features summary (ADR-0350, ADR-0509):**
 
 | Feature | Vulkan struct | Requirement | Why |
 |---|---|---|---|
 | `shaderBufferInt64Atomics` | `VkPhysicalDeviceShaderAtomicInt64Features` | Required | Two-level GPU reduction shaders (ADR-0350) |
-| `shaderFloat64` | `VkPhysicalDeviceFeatures` (core) | Required | VIF `g`/`sv_sq` double-precision computation — closes fp32-vs-double ~7 ULP/px bias (ADR-0492) |
+| `shaderFloat64` | `VkPhysicalDeviceFeatures` (core) | Preferred (auto-fallback) | Selects the `vif_fp64.comp` variant when present; on devices without it the runtime auto-picks `vif_fp32.comp` (ADR-0512 supersedes ADR-0492) |
 
-Devices missing either feature fall back to CPU with a `stderr` diagnostic
-and `-ENOTSUP`. Apple Silicon / MoltenVK is excluded by both requirements.
-All tested discrete GPU targets (NVIDIA RTX 4090, AMD RDNA2+, Intel Arc
-Xe-HPG) expose both features.
+Devices missing `shaderBufferInt64Atomics` fall back to CPU with a `stderr`
+diagnostic and `-ENOTSUP`. Apple Silicon / MoltenVK is excluded by that
+requirement.
+
+**VIF compute shader: fp64/fp32 auto-pick (ADR-0512).** The VIF feature
+extractor ships two SPIR-V variants of its per-workgroup compute kernel,
+both embedded in `libvmaf.so`:
+
+| Variant | When loaded | Accumulator precision (g / sv_sq / gg_sigma) | Empirical VMAF delta vs CPU (Netflix golden 576x324) |
+|---|---|---|---|
+| `vif_fp64.comp` | Device advertises `shaderFloat64` (RTX 4090, RDNA discrete AMD, Intel Arc Xe-HPG with the fp64 capability bit, ...) | IEEE-754 `double` — bit-for-bit match with `integer_vif.c` | -7e-5 (RTX 4090) |
+| `vif_fp32.comp` | Device does NOT advertise `shaderFloat64` (Intel Arc A380 in some driver configurations, AMD iGPU `gfx1036`, older NVIDIA, ...) | `precise float` with FMA contraction blocked | -8e-5 (Intel Arc A380) / -9e-5 (AMD gfx1036) |
+
+The pick happens at backend init time based on
+`VkPhysicalDeviceFeatures::shaderFloat64`. On startup `libvmaf` emits a
+one-line INFO log identifying which path was selected:
+
+```text
+libvmaf: Vulkan: VIF g/sv_sq using fp64 path on "NVIDIA GeForce RTX 4090"
+libvmaf: Vulkan: VIF g/sv_sq using fp32 path on "Intel(R) Arc(tm) A380 Graphics (DG2)" (no shaderFloat64)
+```
+
+The fp32 path is a supported variant, not a degraded mode; it lands
+within the cross-backend tolerance docs/backends/vulkan/overview.md
+documents for all GPU paths. The metric and downsampling math are
+unchanged — only the per-pixel `g`-ratio accumulator precision differs.
+
+**`--vulkan-require-fp64` (opt-in, bit-exact-strict workflows).** CI
+parity gates and validation harnesses that need to assert the fp64 path
+is taken can pass `--vulkan-require-fp64` (CLI) or set
+`VmafVulkanConfiguration::require_fp64 = 1` (public C API). When set,
+the backend reverts to the pre-ADR-0509 (ADR-0492) refusal behaviour:
+on devices without `shaderFloat64` the init returns `-ENOTSUP` and the
+framework falls back to CPU. Default is off — most callers never have
+to think about this flag.
