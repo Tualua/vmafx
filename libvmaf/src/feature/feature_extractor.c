@@ -176,6 +176,21 @@ extern VmafFeatureExtractor vmaf_fex_integer_vif_hip;
  * `enable_hipcc=true` the HSACO runs on device; without it init()
  * returns -ENOSYS (scaffold posture). */
 extern VmafFeatureExtractor vmaf_fex_float_adm_hip;
+/* ADR-0533: full HIP-extractor registration sweep. Each of the symbols
+ * below already lived in `libvmaf/src/feature/hip/*.c` mirroring its
+ * CUDA twin, but the TUs were never compiled into the HIP runtime
+ * archive and never declared in this file. The companion meson edit
+ * adds the source files to `hip_sources`; the entries below make
+ * `vmaf_get_feature_extractor_by_name(<name>)` resolve. Scaffold
+ * posture: `init()` returns -ENOSYS unless the kernel TU carries a real
+ * HSACO blob compiled under `enable_hipcc=true` (matches the prior
+ * consumers' contract — psnr_hip / ciede_hip / etc.). */
+extern VmafFeatureExtractor vmaf_fex_float_vif_hip;
+extern VmafFeatureExtractor vmaf_fex_integer_adm_hip;
+extern VmafFeatureExtractor vmaf_fex_integer_ms_ssim_hip;
+extern VmafFeatureExtractor vmaf_fex_psnr_hvs_hip;
+extern VmafFeatureExtractor vmaf_fex_integer_ssim_hip;
+extern VmafFeatureExtractor vmaf_fex_ssimulacra2_hip;
 #endif
 #if HAVE_METAL
 /* Metal feature extractors — T8-1c through T8-1j / ADR-0421.
@@ -331,6 +346,19 @@ static VmafFeatureExtractor *feature_extractor_list[] = {
      * launches per frame (4 stages × 4 scales), host double-precision
      * WG reduction. Emits adm2 + 4 scale scores + debug features. */
     &vmaf_fex_float_adm_hip,
+    /* ADR-0533: full HIP-extractor registration sweep. Each entry below
+     * mirrors a CUDA twin that has been a long-standing extractor in
+     * `feature_extractor_list[]` (float_vif_cuda / integer_adm_cuda /
+     * integer_ms_ssim_cuda / psnr_hvs_cuda / integer_ssim_cuda /
+     * ssimulacra2_cuda). The HIP TUs already shipped the
+     * `VmafFeatureExtractor vmaf_fex_*_hip` symbols and pinned the
+     * extractor-name strings; the entries here wire the name lookup so
+     * the registry surface matches what `libvmaf/src/feature/hip/` ships.
+     * Scaffold posture preserved — `init()` returns -ENOSYS unless the
+     * TU's kernel half is real (ssimulacra2 + integer_ms_ssim ship full
+     * HSACO blobs; the rest stay scaffold-only until the next batch). */
+    &vmaf_fex_float_vif_hip, &vmaf_fex_integer_adm_hip, &vmaf_fex_integer_ms_ssim_hip,
+    &vmaf_fex_psnr_hvs_hip, &vmaf_fex_integer_ssim_hip, &vmaf_fex_ssimulacra2_hip,
 #endif
 #if HAVE_METAL
     /* T8-1 first consumer (ADR-0361): registration succeeds even on

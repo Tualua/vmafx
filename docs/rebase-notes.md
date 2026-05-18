@@ -7,7 +7,6 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
-<<<<<<< HEAD
 =======
 ## fix/per-shot-bitrate-and-last-shot-chart (ADR-0531)
 
@@ -36170,6 +36169,7 @@ calls). On a future upstream sync, expect a merge conflict on
 keep the fork's `if (!found) usage(…); return;` + `snprintf` shape and
 drop the `<assert.h>` include. No public API surface changes; the
 ffmpeg-patches stack is untouched.
+<<<<<<< HEAD
 ## 2026-05-18 — HIP `integer_motion` flag promotion + HIP_DEVICE buffer enum (ADR-0530, PR #TBD)
 
 Extends ADR-0519. Promotes `VMAF_FEATURE_EXTRACTOR_HIP` on
@@ -36230,3 +36230,30 @@ No public-header change → no ffmpeg-patches/ update required
 in the libvmaf-private `src/picture.h`, not the public
 `include/libvmaf/picture.h`; the ffmpeg `vf_libvmaf` filter
 hands HOST buffers to libvmaf and is unaffected).
+
+## feat/hip-register-all-extractors (ADR-0533)
+
+**Files touched:** `libvmaf/src/hip/meson.build`,
+`libvmaf/src/feature/feature_extractor.c`,
+`libvmaf/test/test_hip_smoke.c`, `libvmaf/src/hip/AGENTS.md`,
+`docs/backends/hip/overview.md`, `docs/state.md`,
+`docs/adr/0533-hip-all-extractors-registration-sweep.md`,
+`docs/adr/README.md`,
+`changelog.d/fixed/hip-register-all-extractors.md`.
+
+**Rebase sensitivity (low — fork-local only):**
+All edits sit in fork-additive HIP plumbing. Upstream Netflix/vmaf
+ships no HIP backend, so the `#if HAVE_HIP` blocks in
+`feature_extractor.c` are entirely fork-local; the extern + registry
+entries land inside the same `#if HAVE_HIP` regions ADR-0523 already
+extended. `libvmaf/src/hip/meson.build` is a fork-added file (the
+`subdir('hip')` invocation is gated on `enable_hip`). No public C-API
+surface changes — `vmaf_get_feature_extractor_by_name` already
+existed; the sweep only adds rows to the table it reads. The
+ffmpeg-patches stack is untouched (no new `LIBVMAFContext` field, no
+new CLI flag, no new `meson_options.txt` entry). On a future upstream
+sync, expect zero conflicts — Netflix never touches HIP files. If a
+future PR adds a new HIP feature TU, the invariant pinned in
+`libvmaf/src/hip/AGENTS.md` (every `vmaf_fex_*_hip` symbol must
+appear in `hip_sources` + the extern/registry blocks) must be
+honoured or the registration drops out silently.

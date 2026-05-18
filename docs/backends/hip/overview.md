@@ -37,8 +37,19 @@
 > promoted by its own follow-up PR + ADR after a successful
 > reproducer + cross-backend numerical check.
 >
-> **Status (2026-05-17):** 20 of 23 feature extractors now have real device
-> kernels; three legacy-API stubs remain (`adm_hip`, `vif_hip`, `motion_hip`).
+> **Status (2026-05-18):** 19 HIP feature extractors are registered in
+> `feature_extractor_list[]` and resolve via
+> `vmaf_get_feature_extractor_by_name(<name>)`. ADR-0523 wired the
+> first long-missing entry (`integer_motion_hip`); ADR-0533 swept in
+> the remaining six (`float_vif_hip`, `integer_adm_hip` →
+> `adm_hip`, `integer_ms_ssim_hip`, `psnr_hvs_hip`, `integer_ssim_hip`,
+> `ssimulacra2_hip`). The three legacy-API plumbing TUs (`adm_hip.c`,
+> `vif_hip.c`, `motion_hip.c`) carry no `VmafFeatureExtractor` struct —
+> they hold older `_init/_run/_destroy` helpers and are intentionally
+> not registered. Two stale rename-scaffold duplicates
+> (`integer_ciede_hip.c`, `integer_moment_hip.c`) are unwired in
+> `hip_sources` because the canonical TUs (`ciede_hip.c`,
+> `float_moment_hip.c`) already register the same extractor.
 >
 > | Extractor | Feature name | Added in |
 > | --- | --- | --- |
@@ -224,5 +235,10 @@ Each returns `-ENOSYS` at `init()`. Tracked in
 - [ADR-0379](../../adr/0379-hip-float-vif.md) — `float_vif_hip`.
 - [ADR-0380](../../adr/0380-ffmpeg-hip-backend-selector.md) — FFmpeg selector.
 - [ADR-0468](../../adr/0468-hip-float-adm.md) — `float_adm_hip`.
+- [ADR-0523](../../adr/0523-hip-integer-motion-extractor-registration.md) —
+  register `vmaf_fex_integer_motion_hip`.
+- [ADR-0533](../../adr/0533-hip-all-extractors-registration-sweep.md) —
+  full HIP-extractor registration sweep (six more TUs wired into
+  `hip_sources` + `feature_extractor_list[]`).
 - [Research-0033](../../research/0033-hip-applicability.md) —
   AMD market-share + ROCm Linux maturity survey.

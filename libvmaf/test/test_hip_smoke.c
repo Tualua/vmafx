@@ -488,6 +488,74 @@ static char *test_integer_motion_hip_dispatch_picks_hip(void)
     mu_assert("HIP motion2 extractor resolvable with HIP flag", hip_fex != NULL);
     mu_assert("HIP flag picks the HIP twin (name=motion_hip)",
               strcmp(hip_fex->name, "motion_hip") == 0);
+/* ---- ADR-0533: full HIP-extractor registration sweep ---- */
+/*
+ * One assertion per newly-registered HIP feature extractor. Pins the
+ * load-bearing contract that ADR-0523 first established: every TU under
+ * `libvmaf/src/feature/hip/` that defines a `VmafFeatureExtractor
+ * vmaf_fex_*_hip` symbol must be discoverable via
+ * `vmaf_get_feature_extractor_by_name(<name>)` once compiled into the
+ * HIP runtime archive. Without these assertions a future drop-out from
+ * `hip_sources` (or from the `extern` block in feature_extractor.c)
+ * fails silently — the registry returns NULL and the CLI's
+ * `--feature <name>` plumbing dies at the lookup step. Scaffold posture
+ * is unaffected: the test only pins lookup, not `init()` — `init()`
+ * still returns -ENOSYS on builds without `enable_hipcc=true` for the
+ * scaffold TUs.
+ */
+
+static char *test_float_vif_hip_extractor_registered(void)
+{
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_vif_hip");
+    mu_assert("float_vif_hip extractor must be registered", fex != NULL);
+    mu_assert("float_vif_hip extractor name matches", strcmp(fex->name, "float_vif_hip") == 0);
+    return NULL;
+}
+
+static char *test_adm_hip_extractor_registered(void)
+{
+    /* `vmaf_fex_integer_adm_hip` registers under the name `"adm_hip"`
+     * (no `integer_` prefix), mirroring the convention chosen at the
+     * source-file level. The CUDA twin uses `integer_adm_cuda` →
+     * `adm` / `adm_scale*`; the HIP twin keeps the `adm_hip` short
+     * form so callers can opt in without re-typing the `integer_`. */
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("adm_hip");
+    mu_assert("adm_hip extractor must be registered", fex != NULL);
+    mu_assert("adm_hip extractor name matches", strcmp(fex->name, "adm_hip") == 0);
+    return NULL;
+}
+
+static char *test_integer_ms_ssim_hip_extractor_registered(void)
+{
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("integer_ms_ssim_hip");
+    mu_assert("integer_ms_ssim_hip extractor must be registered", fex != NULL);
+    mu_assert("integer_ms_ssim_hip extractor name matches",
+              strcmp(fex->name, "integer_ms_ssim_hip") == 0);
+    return NULL;
+}
+
+static char *test_psnr_hvs_hip_extractor_registered(void)
+{
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("psnr_hvs_hip");
+    mu_assert("psnr_hvs_hip extractor must be registered", fex != NULL);
+    mu_assert("psnr_hvs_hip extractor name matches", strcmp(fex->name, "psnr_hvs_hip") == 0);
+    return NULL;
+}
+
+static char *test_integer_ssim_hip_extractor_registered(void)
+{
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("integer_ssim_hip");
+    mu_assert("integer_ssim_hip extractor must be registered", fex != NULL);
+    mu_assert("integer_ssim_hip extractor name matches",
+              strcmp(fex->name, "integer_ssim_hip") == 0);
+    return NULL;
+}
+
+static char *test_ssimulacra2_hip_extractor_registered(void)
+{
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("ssimulacra2_hip");
+    mu_assert("ssimulacra2_hip extractor must be registered", fex != NULL);
+    mu_assert("ssimulacra2_hip extractor name matches", strcmp(fex->name, "ssimulacra2_hip") == 0);
     return NULL;
 }
 
@@ -531,6 +599,16 @@ static const test_fn test_table[] = {
      * dispatch. */
     test_integer_motion_hip_extractor_registered,
     test_integer_motion_hip_dispatch_picks_hip,
+    /* ADR-0533: full HIP-extractor registration sweep — six TUs that
+     * declared `vmaf_fex_*_hip` but were never wired into the registry
+     * are now resolvable by name. One assertion per extractor pins the
+     * lookup contract. */
+    test_float_vif_hip_extractor_registered,
+    test_adm_hip_extractor_registered,
+    test_integer_ms_ssim_hip_extractor_registered,
+    test_psnr_hvs_hip_extractor_registered,
+    test_integer_ssim_hip_extractor_registered,
+    test_ssimulacra2_hip_extractor_registered,
 };
 
 static const size_t test_table_len = sizeof(test_table) / sizeof(test_table[0]);

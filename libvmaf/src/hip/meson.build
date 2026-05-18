@@ -107,6 +107,23 @@ hip_sources += files(
     # integer_cambi_hip: HIP port of CAMBI extractor.
     # Registered as #if HAVE_HIP entry in feature_extractor.c.
     '../feature/hip/integer_cambi_hip.c',
+    # ADR-0533: full HIP-extractor registration sweep. Each TU below
+    # already declares `VmafFeatureExtractor vmaf_fex_*_hip` and mirrors
+    # a CUDA twin call-graph-for-call-graph, but was never compiled into
+    # the HIP runtime archive. The companion edit in
+    # `libvmaf/src/feature/feature_extractor.c` adds the extern + registry
+    # entry for each so `vmaf_get_feature_extractor_by_name` resolves.
+    #
+    # Scaffold posture: without `enable_hipcc=true` each init() returns
+    # -ENOSYS (same contract as the prior consumers); with hipcc the
+    # HSACO blob runs where the kernel is real, otherwise the extractor
+    # surfaces "found but runtime not ready" through dispatch.
+    '../feature/hip/float_vif_hip.c',
+    '../feature/hip/integer_adm_hip.c',
+    '../feature/hip/integer_ms_ssim_hip.c',
+    '../feature/hip/integer_psnr_hvs_hip.c',
+    '../feature/hip/integer_ssim_hip.c',
+    '../feature/hip/ssimulacra2_hip.c',
 )
 
 # T7-10b runtime linkage. ROCm ships `hip_runtime_api.h` under

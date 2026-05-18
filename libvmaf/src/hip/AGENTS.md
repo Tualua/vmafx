@@ -380,6 +380,25 @@ do not replace — the scaffold invariants already documented above.
   AMD ROCm hosts. HIP joins CUDA / SYCL / Vulkan as a fully working
   runtime-selected backend (scores match CPU bit-exactly because
   dispatch still routes through CPU twins).
+- [ADR-0523](../../../docs/adr/0523-hip-integer-motion-extractor-registration.md)
+  — register `vmaf_fex_integer_motion_hip` (single-extractor fix).
+- [ADR-0533](../../../docs/adr/0533-hip-all-extractors-registration-sweep.md)
+  — full HIP-extractor registration sweep; six TUs in
+  `feature/hip/` were already shipping `VmafFeatureExtractor`
+  symbols but missing both from `hip_sources` and from the
+  `extern` + registry block in `feature_extractor.c`. The sweep
+  pinned the rebase-sensitive invariant: **every TU under
+  `libvmaf/src/feature/hip/` that defines a `VmafFeatureExtractor
+  vmaf_fex_*` symbol must appear in `hip_sources` and have a
+  matching `extern` + `&vmaf_fex_*` entry inside the `#if HAVE_HIP`
+  blocks of `libvmaf/src/feature/feature_extractor.c`**. The three
+  legacy plumbing TUs (`adm_hip.c`, `vif_hip.c`, `motion_hip.c`)
+  carry no `VmafFeatureExtractor` and are exempt. The two
+  duplicate-named TUs (`integer_ciede_hip.c`,
+  `integer_moment_hip.c`) are stale rename scaffolds whose
+  extractor names already register via the canonical
+  `ciede_hip.c` / `float_moment_hip.c` TUs — leave them out of
+  `hip_sources` to avoid a duplicate-symbol link error.
 
 ## Build
 
