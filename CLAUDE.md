@@ -199,8 +199,14 @@ Use `/prep-release` to dry-run locally before merging a release PR.
    answer) in the ADR's `## References` section; put the "why" in `## Context`
    and the runner-up options in `## Alternatives considered`. Planning
    dossiers under `.workingdir2/` may mirror ADRs for local continuity, but
-   the tracked `docs/adr/` tree is authoritative. See
-   [ADR-0028](docs/adr/0028-adr-maintenance-rule.md).
+   the tracked `docs/adr/` tree is authoritative. **Always run
+   `scripts/adr/next-free.sh --claim <slug>` to atomically reserve the next
+   ADR number before creating the file** — do not hand-pick a number or use
+   the read-only form without `--claim`. The `--claim` flag creates a
+   `docs/adr/NNNN-<slug>.md.stub` reservation visible to parallel agents.
+   Rename the stub to `.md` when committing. See
+   [ADR-0386](docs/adr/0386-adr-numbering-collision-prevention.md) and
+   [ADR-0535](docs/adr/0535-adr-atomic-allocator.md).
 9. **Every** session re-reads [docs/adr/README.md](docs/adr/README.md) at
    start and writes missing `docs/adr/NNNN-*.md` files + index rows for any
    decisions inherited from context before the next commit.

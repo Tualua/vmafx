@@ -185,8 +185,14 @@ tracking upstream version + a fork suffix. Signing is keyless via Sigstore / Git
    Non-trivial = another engineer could reasonably have chosen differently.
    Bug fixes and implementation details do not need an ADR. Cite `req`
    (direct user quote) or `Q<round>.<q>` (popup answer) in the ADR's
-   `## References` section. See
-   [ADR-0028](docs/adr/0028-adr-maintenance-rule.md).
+   `## References` section. **Invariant (ADR-0532): always run
+   `scripts/adr/next-free.sh --claim <slug>` to atomically reserve the next
+   ADR number before creating the file.** Do not hand-pick a number or use
+   the read-only form without `--claim`. The command creates a stub file
+   (`docs/adr/NNNN-<slug>.md.stub`) that all concurrent agents treat as
+   taken; rename the stub to `.md` when committing. See
+   [ADR-0386](docs/adr/0386-adr-numbering-collision-prevention.md) and
+   [ADR-0535](docs/adr/0535-adr-atomic-allocator.md).
 9. Every fork-local PR ships the **six deep-dive deliverables** in the same
    PR (per [ADR-0108](docs/adr/0108-deep-dive-deliverables-rule.md)):
    (a) research digest under [`docs/research/`](docs/research/) (or

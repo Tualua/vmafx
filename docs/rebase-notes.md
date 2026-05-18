@@ -75,6 +75,16 @@ None of these paths exist in upstream Netflix/vmaf (the entire
 
 ffmpeg-patch stack: no impact (this PR doesn't touch any libvmaf
 C-API, public header, or `meson_options.txt` entry).
+## tooling/adr-atomic-allocator (ADR-0535)
+
+**No rebase impact.** All changes are confined to
+`scripts/adr/next-free.sh`, `scripts/adr/test-next-free.sh`,
+`docs/adr/0535-adr-atomic-allocator.md`, `docs/adr/README.md`,
+`docs/adr/0000-template.md`, `docs/state.md`, `docs/rebase-notes.md`,
+`docs/development/adr-workflow.md`,
+`changelog.d/added/0535-adr-atomic-allocator.md`,
+`CLAUDE.md`, and `AGENTS.md`.
+None of these paths exist in upstream Netflix/vmaf. No conflict risk on sync.
 
 ## feat/bvi-dvc-pre-extracted-input (ADR-0527)
 
@@ -83,7 +93,7 @@ C-API, public header, or `meson_options.txt` entry).
 and doc / AGENTS.md / changelog files. None of these paths exist in upstream
 Netflix/vmaf. No conflict risk on sync.
 
-## fix/hip-motion-extractor-register (ADR-0530)
+## fix/hip-motion-extractor-register (ADR-0523)
 
 **No rebase impact.** The only changed file is
 `libvmaf/src/feature/feature_extractor.c`, which is a fork-local file
@@ -36181,6 +36191,7 @@ The C-side `codec_block_preset_ordinal` table is a duplicate of
 a co-edit pair. The sidecar `encoder_vocab` array is the
 single source of truth for the vocabulary; vocab bumps (e.g.
 ADR-0302 v3) only require a new sidecar JSON, no C recompile.
+<<<<<<< HEAD
 
 ## fix/cli-threads-parse-safety-v2 (ADR-0528)
 
@@ -36286,3 +36297,5 @@ future PR adds a new HIP feature TU, the invariant pinned in
 `libvmaf/src/hip/AGENTS.md` (every `vmaf_fex_*_hip` symbol must
 appear in `hip_sources` + the extern/registry blocks) must be
 honoured or the registration drops out silently.
+=======
+>>>>>>> 64a7a5517 (chore(adr): atomic next-free allocator with cross-branch claim (ADR-0535))

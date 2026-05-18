@@ -1,7 +1,12 @@
-> **Allocator**: run `scripts/adr/next-free.sh` to claim a number before creating this file.
-> If you hand-pick a number, the pre-commit hook (`check-adr-numbering`) and the CI gate
-> (`adr-collision-check` in `rule-enforcement.yml`) will fail on collision.
-> See [ADR-0386](0386-adr-numbering-collision-prevention.md).
+> **Allocator**: run `scripts/adr/next-free.sh --claim <your-topic-slug>` to atomically
+> reserve a number before creating this file.  The command creates a
+> `docs/adr/NNNN-<slug>.md.stub` placeholder that prevents parallel agents from
+> claiming the same number.  Rename the stub to `.md` when you commit the real ADR.
+> If you abandon the PR, run `scripts/adr/next-free.sh --release <NNNN>` to free the slot.
+> The pre-commit hook (`check-adr-numbering`) and the CI gate (`adr-collision-check` in
+> `rule-enforcement.yml`) remain the hard backstop for non-compliant callers.
+> See [ADR-0386](0386-adr-numbering-collision-prevention.md) and
+> [ADR-0535](0535-adr-atomic-allocator.md).
 
 # ADR-0000: <short, declarative title>
 
