@@ -926,6 +926,10 @@ static int close_fex_issim_sycl(VmafFeatureExtractor *fex)
     return 0;
 }
 
+} /* anonymous namespace */
+
+extern "C" {
+
 static const VmafOption options_issim_sycl[] = {
     {0},
 };
@@ -936,7 +940,7 @@ static const char *provided_features_issim_sycl[] = {"ssim", NULL};
  * matching the CPU algorithm. The SSIM formula is computed in float32
  * (fp64-free constraint, ADR-0220); expected precision is places=4-5 vs
  * CPU. Load-bearing: declared via extern in feature_extractor.c. */
-extern "C" VmafFeatureExtractor vmaf_fex_integer_ssim_sycl = {
+VmafFeatureExtractor vmaf_fex_integer_ssim_sycl = {
     .name = "integer_ssim_sycl",
     .init = init_fex_issim_sycl,
     .extract = NULL,

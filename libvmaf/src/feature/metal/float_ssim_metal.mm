@@ -46,6 +46,7 @@ extern "C" {
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "log.h"
 #include "libvmaf/picture.h"
 
 #include "../../metal/common.h"
