@@ -520,9 +520,13 @@ def test_module_exports_match_public_surface():
     public = set(bisect_mod.__all__)
     # ADR-0530 added ``BisectSample`` to surface the per-iteration probes
     # consumed by the compare-sweep rate-quality chart.
+    # ADR-0577 added ``set_decode_semaphore`` + ``DEFAULT_MAX_CONCURRENT_DECODES``
+    # for the decode-concurrency cap (fixes BBB v13 ENOSPC).
     assert public == {
         "BisectResult",
         "BisectSample",
+        "DEFAULT_MAX_CONCURRENT_DECODES",
         "bisect_target_vmaf",
         "make_bisect_predicate",
+        "set_decode_semaphore",
     }

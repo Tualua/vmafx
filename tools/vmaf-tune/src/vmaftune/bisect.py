@@ -51,6 +51,7 @@ import math
 import os
 import shutil
 import tempfile
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -60,6 +61,38 @@ from .score import VMAF_RAW_SUFFIXES, ScoreRequest, maybe_decode_distorted, run_
 
 if TYPE_CHECKING:
     from .compare import PredicateFn, RecommendResult
+
+
+# ADR-0577: module-level decode semaphore, initialised to 1 by default
+# (serial decodes). The CLI / bisect entry point replaces this with a
+# Semaphore(N) when the operator passes ``--max-concurrent-decodes N > 1``.
+# Using a module-level sentinel lets the same bisect module serve both the
+# CLI path (which owns the semaphore lifetime) and unit tests (which can
+# swap in a fake semaphore).
+_decode_semaphore: threading.Semaphore = threading.Semaphore(1)
+
+# Default value exposed so the CLI can display it in --help and tests can
+# reset the global to the canonical default.
+DEFAULT_MAX_CONCURRENT_DECODES: int = 1
+
+
+def set_decode_semaphore(max_concurrent: int) -> None:
+    """Replace the module-level decode semaphore with a new one.
+
+    Call this once at startup (e.g. from the CLI ``_run_compare`` family)
+    before spawning the thread pool. Thread-safe: the assignment is atomic
+    in CPython. Callers that want the default (serial) behaviour do not
+    need to call this.
+
+    Args:
+        max_concurrent: Maximum concurrent reference-YUV decode operations.
+            ``1`` = serial decodes (safest, default). Higher values trade
+            peak disk space for throughput on operators with large volumes.
+    """
+    global _decode_semaphore  # noqa: PLW0603 — module-level singleton
+    if max_concurrent < 1:
+        raise ValueError(f"max_concurrent must be >= 1, got {max_concurrent}")
+    _decode_semaphore = threading.Semaphore(max_concurrent)
 
 
 # Sentinel: a measured VMAF below this floor against a non-degenerate
@@ -162,6 +195,7 @@ def _check_disk_space(
     *,
     estimated_bytes: int,
     headroom: float = 1.1,
+    context: str = "",
 ) -> str | None:
     """Return an error string if ``workdir``'s volume lacks disk space.
 
@@ -173,6 +207,18 @@ def _check_disk_space(
     The check is best-effort: if ``disk_usage`` raises (e.g. on an
     exotic filesystem) the function returns ``None`` (allow the decode
     to proceed) rather than blocking legitimate runs.
+
+    Args:
+        workdir: Path whose volume to check.
+        estimated_bytes: Raw YUV size estimate in bytes.
+        headroom: Multiplier applied to ``estimated_bytes`` before
+            comparing against free space. ``2.0`` means the volume
+            must have 2× the estimated decode size free — the
+            conservative mid-run default (ADR-0577) that accommodates
+            the encoded MKV + the decoded YUV coexisting on disk.
+        context: Optional codec/target context string for mid-run
+            diagnostics (e.g. ``"libx264 @ VMAF 96"``). Appended to
+            the error message when non-empty.
     """
     required = int(math.ceil(estimated_bytes * headroom))
     try:
@@ -184,8 +230,9 @@ def _check_disk_space(
         return None
     est_gb = estimated_bytes / (1024**3)
     free_gb = free / (1024**3)
+    ctx_suffix = f" [{context}]" if context else ""
     return (
-        f"insufficient disk space for YUV decode: "
+        f"insufficient disk space for YUV decode{ctx_suffix}: "
         f"estimated {est_gb:.1f} GB, "
         f"free {free_gb:.1f} GB on {workdir}. "
         f"Re-run with --workdir /path/to/volume-with-space "
@@ -360,6 +407,7 @@ def bisect_target_vmaf(
     ffmpeg_bin: str = "ffmpeg",
     vmaf_bin: str = "vmaf",
     workdir: Path | None = None,
+    decode_semaphore: threading.Semaphore | None = None,
 ) -> BisectResult:
     """Find the largest CRF whose measured VMAF still meets ``target_vmaf``.
 
@@ -406,6 +454,13 @@ def bisect_target_vmaf(
     workdir
         Where the per-iteration encoded outputs live. ``None`` uses a
         :class:`tempfile.TemporaryDirectory` cleaned at exit.
+    decode_semaphore
+        A :class:`threading.Semaphore` that gates concurrent
+        reference-YUV decode operations (ADR-0577). When ``None``,
+        the module-level ``_decode_semaphore`` is used (default:
+        serial, i.e. ``Semaphore(1)``). Callers that want multiple
+        concurrent decodes pass ``threading.Semaphore(N)`` or call
+        :func:`set_decode_semaphore` before spawning the thread pool.
 
     Returns
     -------
@@ -418,6 +473,13 @@ def bisect_target_vmaf(
         adapter = get_adapter(codec)
     except KeyError as exc:
         return _failure(codec, f"unknown codec: {exc}")
+
+    # ADR-0577: use caller-supplied semaphore or fall back to the
+    # module-level singleton. The module-level default is Semaphore(1)
+    # (serial decodes) unless the CLI called set_decode_semaphore().
+    effective_sem: threading.Semaphore = (
+        decode_semaphore if decode_semaphore is not None else _decode_semaphore
+    )
 
     # ADR-0538: default to the encoder's absolute CRF range (e.g. 0..51
     # for libx264 / libx265, 0..63 for libvpx-vp9 / libaom-av1 /
@@ -466,32 +528,72 @@ def bisect_target_vmaf(
     n_iterations = 0
     cur_lo, cur_hi = lo, hi
 
+    # ADR-0577: estimate YUV size once for mid-run disk checks.
+    _yuv_est_bytes: int | None = None
+    if float(duration_s) > 0.0:
+        _yuv_est_bytes = _estimate_yuv_bytes(
+            width=width,
+            height=height,
+            pix_fmt=pix_fmt,
+            fps=framerate,
+            duration_s=float(duration_s),
+        )
+
     try:
         while cur_lo <= cur_hi and n_iterations < max_iterations:
             mid = _midpoint_lower_quality(cur_lo, cur_hi)
             n_iterations += 1
 
-            sample = _encode_and_score(
-                src=src,
-                codec=codec,
-                adapter=adapter,
-                preset=chosen_preset,
-                crf=mid,
-                width=width,
-                height=height,
-                pix_fmt=pix_fmt,
-                framerate=framerate,
-                duration_s=duration_s,
-                sample_clip_seconds=sample_clip_seconds,
-                vmaf_model=vmaf_model,
-                score_backend=score_backend,
-                encode_runner=encode_runner,
-                score_runner=score_runner,
-                decode_runner=decode_runner,
-                ffmpeg_bin=ffmpeg_bin,
-                vmaf_bin=vmaf_bin,
-                workdir=workdir_path,
-            )
+            # ADR-0577: mid-run disk-space check. Before each iteration's
+            # reference decode we verify the volume still has >= 2× the
+            # estimated YUV size free. The 2× headroom accounts for the
+            # encoded .mkv + the decoded .yuv coexisting on disk. The
+            # check fires here (before acquiring the semaphore) so we
+            # fail fast rather than queuing a decode that will ENOSPC.
+            if _yuv_est_bytes is not None and workdir_path is not None:
+                _ctx = f"{codec} @ VMAF {target_vmaf:g}, iteration {n_iterations}"
+                _space_err = _check_disk_space(
+                    workdir_path,
+                    estimated_bytes=_yuv_est_bytes,
+                    headroom=2.0,
+                    context=_ctx,
+                )
+                if _space_err is not None:
+                    return _failure(
+                        codec,
+                        _space_err,
+                        n_iterations=n_iterations,
+                        samples=tuple(samples),
+                    )
+
+            # ADR-0577: acquire the decode semaphore before calling
+            # _encode_and_score. The semaphore gates the number of
+            # concurrent reference-YUV materialisation operations across
+            # all threads in the compare thread pool. Encoder runs inside
+            # _encode_and_score proceed without semaphore gating — only
+            # the decode step benefits from the cap.
+            with effective_sem:
+                sample = _encode_and_score(
+                    src=src,
+                    codec=codec,
+                    adapter=adapter,
+                    preset=chosen_preset,
+                    crf=mid,
+                    width=width,
+                    height=height,
+                    pix_fmt=pix_fmt,
+                    framerate=framerate,
+                    duration_s=duration_s,
+                    sample_clip_seconds=sample_clip_seconds,
+                    vmaf_model=vmaf_model,
+                    score_backend=score_backend,
+                    encode_runner=encode_runner,
+                    score_runner=score_runner,
+                    decode_runner=decode_runner,
+                    ffmpeg_bin=ffmpeg_bin,
+                    vmaf_bin=vmaf_bin,
+                    workdir=workdir_path,
+                )
             if not sample.ok:
                 return dataclasses.replace(
                     sample, n_iterations=n_iterations, samples=tuple(samples)
@@ -548,6 +650,23 @@ def bisect_target_vmaf(
 
         return dataclasses.replace(best, samples=tuple(samples))
     finally:
+        # ADR-0577 aggressive cleanup: after the bisect completes (all
+        # iterations for this codec at this target), delete the decoded
+        # reference YUV. It is re-decoded on the next codec's bisect.
+        # This costs one extra decode per codec but caps peak disk usage
+        # to one reference YUV at a time instead of N (where N = number
+        # of concurrent codec bisects running in parallel). At 110 GB per
+        # 1080p BBB source, serial cleanup drops peak from 330 GB (3
+        # codecs × 110 GB) to 110 GB.
+        if workdir_ctx is None:
+            # Caller-supplied workdir: clean up the decoded ref YUV that
+            # _encode_and_score materialized (stem + ".ref.decoded.yuv").
+            # The temp-dir case is handled by workdir_ctx.cleanup() below,
+            # which removes the entire tree.
+            _ref_yuv = workdir_path / (Path(src).stem + ".ref.decoded.yuv")
+            with contextlib.suppress(OSError):
+                if _ref_yuv.exists():
+                    _ref_yuv.unlink()
         if workdir_ctx is not None:
             workdir_ctx.cleanup()
 
@@ -908,6 +1027,7 @@ def make_bisect_predicate(
     ffmpeg_bin: str = "ffmpeg",
     vmaf_bin: str = "vmaf",
     workdir: Path | None = None,
+    decode_semaphore: threading.Semaphore | None = None,
 ) -> "PredicateFn":
     """Return a :data:`compare.PredicateFn` that closes over bisect knobs.
 
@@ -922,6 +1042,11 @@ def make_bisect_predicate(
     signature exposes a target argument (so the same predicate may be
     re-used with shifting targets) but encode geometry / runners must
     be fixed before the predicate is built.
+
+    ``decode_semaphore`` is forwarded to :func:`bisect_target_vmaf`
+    so callers that build predicates for multiple codecs share the same
+    semaphore across all threads in the compare thread pool (ADR-0577).
+    When ``None``, the module-level ``_decode_semaphore`` is used.
     """
 
     def _predicate(codec: str, src: Path, runtime_target_vmaf: float) -> "RecommendResult":
@@ -955,6 +1080,7 @@ def make_bisect_predicate(
             ffmpeg_bin=ffmpeg_bin,
             vmaf_bin=vmaf_bin,
             workdir=workdir,
+            decode_semaphore=decode_semaphore,
         )
         return result.to_recommend_result()
 
@@ -964,6 +1090,8 @@ def make_bisect_predicate(
 __all__ = [
     "BisectResult",
     "BisectSample",
+    "DEFAULT_MAX_CONCURRENT_DECODES",
     "bisect_target_vmaf",
     "make_bisect_predicate",
+    "set_decode_semaphore",
 ]

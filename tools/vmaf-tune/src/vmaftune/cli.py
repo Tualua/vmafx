@@ -563,6 +563,22 @@ def _build_parser() -> argparse.ArgumentParser:
             "(ADR-0546)"
         ),
     )
+    per_shot.add_argument(
+        "--max-concurrent-decodes",
+        type=int,
+        default=1,
+        metavar="N",
+        dest="max_concurrent_decodes",
+        help=(
+            "maximum number of reference-YUV decode operations that may "
+            "run simultaneously across all codec bisect threads (ADR-0577). "
+            "Default 1 (serial decodes) — safest for disk-space constrained "
+            "volumes. Raise to N on hosts with large --workdir volumes and "
+            "sufficient IOPS to decode N streams in parallel. "
+            "Encoder runs are always parallel; only the decode-to-raw-YUV "
+            "step is serialized at the default."
+        ),
+    )
 
     rec_sal = sub.add_parser(
         "recommend-saliency",
@@ -822,6 +838,20 @@ def _build_parser() -> argparse.ArgumentParser:
             "(ADR-0546)"
         ),
     )
+    ladder.add_argument(
+        "--max-concurrent-decodes",
+        type=int,
+        default=1,
+        metavar="N",
+        dest="max_concurrent_decodes",
+        help=(
+            "maximum number of reference-YUV decode operations that may "
+            "run simultaneously across all codec bisect threads (ADR-0577). "
+            "Default 1 (serial decodes). Raise on hosts with large --workdir "
+            "volumes. Encoder runs are always parallel; only the "
+            "decode-to-raw-YUV step is serialized at the default."
+        ),
+    )
 
     compare = sub.add_parser(
         "compare",
@@ -1009,6 +1039,24 @@ def _build_parser() -> argparse.ArgumentParser:
             "OS default (/tmp). Use a path on a volume with sufficient free "
             "space — a full 1080p60 source decode can exceed 100 GB. "
             "(ADR-0546)"
+        ),
+    )
+    compare.add_argument(
+        "--max-concurrent-decodes",
+        type=int,
+        default=1,
+        metavar="N",
+        dest="max_concurrent_decodes",
+        help=(
+            "maximum number of reference-YUV decode operations that may "
+            "run simultaneously across all codec bisect threads (ADR-0577). "
+            "Default 1 (serial decodes) — safest for the /probes volume. "
+            "A BBB 1080p source decodes to ~110 GB; 3 concurrent decodes "
+            "at default would require 330 GB peak. With N=1 (default) the "
+            "peak is 110 GB regardless of how many codecs run in parallel. "
+            "Raise to N on hosts with large --workdir volumes and sufficient "
+            "IOPS. Encoder runs are always parallel; only the "
+            "decode-to-raw-YUV step is serialized at the default."
         ),
     )
 
@@ -2079,10 +2127,20 @@ def _run_tune_per_shot(args: argparse.Namespace) -> int:
             scratch_ctx = tempfile.TemporaryDirectory(
                 prefix="vmaf-tune-per-shot-", dir=_pershot_parent
             )
+            # ADR-0577: configure the decode semaphore for per-shot bisect.
+            import threading as _threading_pershot  # noqa: PLC0415
+
+            from .bisect import set_decode_semaphore as _set_decode_sem  # noqa: PLC0415
+
+            _ps_max_decodes = int(getattr(args, "max_concurrent_decodes", 1))
+            _set_decode_sem(_ps_max_decodes)
+            _pershot_decode_sem = _threading_pershot.Semaphore(_ps_max_decodes)
+
             predicate, bitrate_sidecar = _build_per_shot_bisect_predicate(
                 args,
                 scratch=Path(scratch_ctx.name),
                 crf_range=crf_range,
+                decode_semaphore=_pershot_decode_sem,
             )
         recs = tune_per_shot(
             shots,
@@ -2205,6 +2263,7 @@ def _build_per_shot_bisect_predicate(
     *,
     scratch: Path,
     crf_range: tuple[int, int] | None,
+    decode_semaphore: object | None = None,
 ) -> tuple[PerShotPredicateFn, dict[tuple[int, int], float]]:
     """Build the production Phase-D predicate from Phase-B bisect.
 
@@ -2256,6 +2315,7 @@ def _build_per_shot_bisect_predicate(
             ffmpeg_bin=args.ffmpeg_bin,
             vmaf_bin=args.vmaf_bin,
             workdir=work_dir / f"shot_{shot.start_frame}_{shot.end_frame}",
+            decode_semaphore=decode_semaphore,  # ADR-0577
         )
         if not result.ok:
             raise RuntimeError(
@@ -2686,7 +2746,9 @@ def _run_compare(args: argparse.Namespace) -> int:
     defaults; explicit user values still win, with a stderr warning on
     explicit mismatch.
     """
-    from .bisect import make_bisect_predicate
+    import threading  # noqa: PLC0415
+
+    from .bisect import make_bisect_predicate, set_decode_semaphore
     from .compare import (
         DEFAULT_CPU_ENCODERS,
         compare_codecs,
@@ -2792,6 +2854,15 @@ def _run_compare(args: argparse.Namespace) -> int:
         # ADR-0549: CLI --workdir beats env var; env var beats /tmp.
         _compare_workdir = getattr(args, "workdir", None)
 
+        # ADR-0577: configure the decode concurrency cap. The semaphore
+        # is shared across all thread-pool workers so only
+        # --max-concurrent-decodes reference-YUV decodes run at once.
+        # Default 1 = serial decodes (safest for disk-space constrained
+        # volumes like /probes at 420 GB with 110 GB per 1080p source).
+        _max_decodes = int(getattr(args, "max_concurrent_decodes", 1))
+        set_decode_semaphore(_max_decodes)
+        _decode_sem = threading.Semaphore(_max_decodes)
+
         def _build_bisect_for_target(target: float):
             return make_bisect_predicate(
                 target_vmaf=target,
@@ -2809,6 +2880,7 @@ def _run_compare(args: argparse.Namespace) -> int:
                 ffmpeg_bin=args.ffmpeg_bin,
                 vmaf_bin=args.vmaf_bin,
                 workdir=_compare_workdir,
+                decode_semaphore=_decode_sem,
             )
 
         # Single-target legacy: build one predicate against

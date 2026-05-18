@@ -365,25 +365,33 @@ def test_cli_compare_binds_real_bisect_predicate(monkeypatch, capsys, tmp_path):
         ]
     )
     assert rc == 0
-    assert captured == [
-        {
-            "target_vmaf": 92.0,
-            "width": 1920,
-            "height": 1080,
-            "pix_fmt": "yuv420p",
-            "framerate": 24.0,
-            "duration_s": 10.0,
-            "sample_clip_seconds": 4.0,
-            "preset": None,
-            "crf_range": (15, 40),
-            "max_iterations": 8,
-            "vmaf_model": "vmaf_v0.6.1",
-            "score_backend": None,
-            "ffmpeg_bin": "ffmpeg",
-            "vmaf_bin": "vmaf",
-            "workdir": None,
-        }
-    ]
+    # ADR-0577 added ``decode_semaphore`` to the kwargs; check all other
+    # keys explicitly and then verify decode_semaphore is a Semaphore(1).
+    assert len(captured) == 1
+    kwargs = captured[0]
+    import threading as _threading
+
+    decode_sem = kwargs.pop("decode_semaphore", None)
+    assert isinstance(
+        decode_sem, _threading.Semaphore
+    ), f"Expected decode_semaphore to be a threading.Semaphore, got {decode_sem!r}"
+    assert kwargs == {
+        "target_vmaf": 92.0,
+        "width": 1920,
+        "height": 1080,
+        "pix_fmt": "yuv420p",
+        "framerate": 24.0,
+        "duration_s": 10.0,
+        "sample_clip_seconds": 4.0,
+        "preset": None,
+        "crf_range": (15, 40),
+        "max_iterations": 8,
+        "vmaf_model": "vmaf_v0.6.1",
+        "score_backend": None,
+        "ffmpeg_bin": "ffmpeg",
+        "vmaf_bin": "vmaf",
+        "workdir": None,
+    }
     payload = json.loads(capsys.readouterr().out)
     assert [row["codec"] for row in payload["rows"]] == ["libx265", "libx264"]
 

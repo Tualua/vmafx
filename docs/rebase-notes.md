@@ -42,6 +42,30 @@ done
 
 Upstream Netflix/vmaf has no `ffmpeg-patches/`; no rebase conflict surface
 against `upstream/master`. All 14 patches are fork-local.
+## feat/vmaftune-bisect-concurrency-cap (ADR-0577)
+
+**Rebase impact**: pure Python — touches only `tools/vmaf-tune/` and
+`docs/`. No C surface, no meson.build change, no public C-API change,
+no GPU path change.
+
+**Rebase-sensitive invariant**: none. The `_decode_semaphore` singleton
+and `set_decode_semaphore` setter are new module-level additions in
+`vmaftune/bisect.py`; they do not conflict with any existing upstream
+pattern. The `decode_semaphore` keyword argument added to
+`bisect_target_vmaf` and `make_bisect_predicate` is backwards-compatible
+(defaults to `None`, falling back to the module-level semaphore).
+
+Touched files:
+`tools/vmaf-tune/src/vmaftune/bisect.py`,
+`tools/vmaf-tune/src/vmaftune/cli.py`,
+`tools/vmaf-tune/tests/test_bisect_concurrency_cap.py` (new),
+`tools/vmaf-tune/tests/test_bisect.py` (exports check update),
+`tools/vmaf-tune/tests/test_compare.py` (semaphore kwarg assertion),
+`docs/adr/0577-vmaftune-bisect-concurrency-cap-and-aggressive-cleanup.md` (new),
+`docs/adr/README.md` (one index row),
+`docs/usage/vmaf-tune.md` (--max-concurrent-decodes docs + disk-mgmt section),
+`changelog.d/fixed/vmaf-tune-bisect-concurrency-cap-enospc.md` (new),
+`docs/rebase-notes.md` (this entry).
 
 ## fix/windows-ci-sdk-pin-22621 (ADR-0575)
 

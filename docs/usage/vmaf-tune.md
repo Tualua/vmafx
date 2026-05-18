@@ -54,6 +54,36 @@ corpus.jsonl ──► vmaf-tune benchmark --target-vmaf T   ──► encoder r
 | --- | --- | --- |
 | `VMAFTUNE_WORKDIR` | (OS default, typically `/tmp`) | Parent directory under which all vmaf-tune subcommands create their per-run temporary scratch directories (decoded reference YUV, intermediate encodes). Set this to a path on a volume with sufficient free space when the OS `/tmp` is a small `tmpfs` — e.g. a 634-second 1080p60 source decodes to approximately 118 GB of raw YUV420p. The `compare`, `tune-per-shot`, and `ladder` subcommands also accept `--workdir PATH` to override this variable per invocation. In the `vmaf-dev-mcp` container this is pre-set to `/probes/vmaftune-work` (the 435 GB `/probes` bind-mount). Resolution order: `--workdir` flag > `VMAFTUNE_WORKDIR` env var > OS default. ([ADR-0549](../adr/0549-vmaftune-workdir-relocation.md)) |
 
+## Workdir disk-space management (ADR-0577)
+
+`compare` and `tune-per-shot` both run bisects inside a thread pool. Without
+a concurrency cap, each codec thread decodes the full reference source in
+parallel — a 3-codec compare against a 110 GB BBB 1080p source would peak at
+330 GB, which overflowed the 420 GB `/probes` volume in the BBB v13 failure.
+
+Three safeguards are active by default:
+
+1. **Decode concurrency cap** (`--max-concurrent-decodes 1`). A semaphore
+   serialises reference-YUV decode operations across all threads. Peak disk
+   stays at one YUV at a time (110 GB for BBB) regardless of how many codecs
+   run in parallel. Raise the cap on hosts with large volumes and fast disks.
+
+2. **Aggressive cleanup**. After each bisect (codec × target VMAF pair)
+   completes, its decoded reference YUV is deleted immediately. Per-iteration
+   `.mkv` and `.decoded.yuv` files are deleted as soon as scoring finishes.
+   Scratch accumulation is therefore bounded to the working set of the
+   currently active bisect, not the full run.
+
+3. **Mid-run disk-space check**. Before each iteration's decode,
+   `shutil.disk_usage` is called and compared against 2× the estimated YUV
+   size. If the volume is too full the bisect fails fast with a structured
+   error message that names the codec and target VMAF, rather than an opaque
+   ffmpeg rc=228 (ENOSPC) followed by a corrupt output JSON.
+
+To reproduce the BBB v13 scenario in tests, monkeypatch `shutil.disk_usage`
+to return low free space and pass a container source — the preflight and
+mid-run checks both fire before any real decode is attempted.
+
 ## Install
 
 The tool ships under `tools/vmaf-tune/` as a standalone Python package.
@@ -1550,6 +1580,7 @@ the CPU set `libx264,libx265,libsvtav1,libvpx-vp9`.
 | `--no-bisect` | off | Switch to CRF-sweep mode: skip target-VMAF bisect and encode each (codec, CRF) pair from `--crf-sweep` exactly once. See [CRF sweep mode](#crf-sweep-mode-no-bisect) below. (ADR-0542) |
 | `--crf-sweep LIST` | — | Comma-separated CRF values to use in `--no-bisect` mode. Example: `18,23,28,33`. Required when `--no-bisect` is passed. (ADR-0542) |
 | `--workdir PATH` | `None` | Directory under which to create the per-run temporary scratch directory for the decoded reference YUV and encodes. Overrides `VMAFTUNE_WORKDIR`. When unset, falls through to `VMAFTUNE_WORKDIR` (if set), then to the OS default (`/tmp`). Pass this when your source is large and `/tmp` is a small `tmpfs` (e.g. 634-second 1080p60 BBB decodes to ~118 GB raw YUV). ([ADR-0549](../adr/0549-vmaftune-workdir-relocation.md)) |
+| `--max-concurrent-decodes N` | `1` | Maximum number of reference-YUV decode operations that may run simultaneously across all codec bisect threads. Default `1` (serial decodes) caps peak workdir disk usage to one YUV at a time regardless of how many codecs run in the thread pool. For example, with 3 codecs and a 110 GB BBB source, the default prevents the 330 GB peak that caused the v13 ENOSPC failure — peak stays at 110 GB. Raise to `N` on hosts where `--workdir` points to a volume with sufficient free space and the I/O subsystem can sustain N parallel decode streams. Encoder runs are always parallel; only the decode-to-raw-YUV step is serialised at the default. ([ADR-0577](../adr/0577-vmaftune-bisect-concurrency-cap-and-aggressive-cleanup.md)) |
 | `--output PATH` | stdout | Write the rendered report to PATH instead of stdout. |
 
 ### `compare` output schema
@@ -1974,6 +2005,7 @@ accepted as a legacy alias for `vmaf`.
 | `--score-backend NAME` | `auto` | libvmaf scoring backend used by the default corpus sampler. Accepts `auto\|cpu\|cuda\|sycl\|vulkan` (same enum as `corpus --score-backend` / `compare --score-backend`). `auto` picks the fastest available (`cuda > vulkan > sycl > cpu`); a specific name is honoured strictly and the run errors out with RC=2 before any encodes start if the local `vmaf` binary does not advertise it. Use `cpu` to force bit-exact CPU scoring for verification against the Netflix golden gate. Added 2026-05-18 per ADR-0511 / Bug C. |
 | `--vmaf-bin PATH` | `vmaf` | Path to the `vmaf` binary used to probe backend availability for `--score-backend`. Added 2026-05-18 per ADR-0511 / Bug C. |
 | `--workdir PATH` | `None` | Directory under which to create the per-run temporary scratch directory. Overrides `VMAFTUNE_WORKDIR`. See `compare --workdir` for full semantics. ([ADR-0549](../adr/0549-vmaftune-workdir-relocation.md)) |
+| `--max-concurrent-decodes N` | `1` | Accepted for consistency with `compare` and `tune-per-shot` (ADR-0577). Currently a no-op for `ladder` because the corpus sampler does not use the bisect decode path; effective when the ladder sampler is updated to bisect in a future PR. |
 
 > **Cross-resolution ladders against raw YUV**: prior to ADR-0498 the
 > default sampler used the rung target dims as the source dims, which
@@ -2426,6 +2458,7 @@ shell script of the per-segment + concat commands.
 | `--score-backend NAME` | `auto` | libvmaf scoring backend for the per-shot scorer (`auto`, `cpu`, `cuda`, `sycl`, `vulkan`). |
 | `--predicate-module SPEC` | — | Advanced hook `MODULE:CALLABLE` matching `(shot, target_vmaf, encoder) -> (crf, measured_vmaf)`; bypasses real bisect. |
 | `--workdir PATH` | `None` | Directory under which to create the per-run temporary scratch directory. Overrides `VMAFTUNE_WORKDIR`. See `compare --workdir` for full semantics. ([ADR-0549](../adr/0549-vmaftune-workdir-relocation.md)) |
+| `--max-concurrent-decodes N` | `1` | Maximum number of simultaneous reference-YUV decode operations across all per-shot bisect threads. Default `1` (serial decodes). See `compare --max-concurrent-decodes` for full semantics. ([ADR-0577](../adr/0577-vmaftune-bisect-concurrency-cap-and-aggressive-cleanup.md)) |
 | `--output PATH` | `per_shot_encode.mp4` | Final concatenated encode destination. |
 | `--segment-dir PATH` | see below | Directory for per-shot segment files. Priority order: (1) explicit `--segment-dir`; (2) `<plan-out>.parent/segments` when `--plan-out` is set; (3) `<output>.parent/segments`. If the resolved directory is not writable (e.g. a read-only bind-mount), a `WARN` is emitted to stderr and the command still exits 0 — the plan JSON remains the authoritative deliverable. See [ADR-0532](../adr/0532-per-shot-segments-readonly-cwd.md). |
 | `--plan-out PATH` | stdout | Write the JSON plan here instead of stdout. |
