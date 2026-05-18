@@ -76,7 +76,7 @@ setup(
         "numpy>=1.26.4",
         "scipy>=1.17.1",
         "matplotlib>=3.2.1",
-        "pandas>=3.0.2",
+        "pandas>=3.0.3",
         "scikit-learn>=1.8.0",
         "scikit-image>=0.16.2",
         "h5py>=3.16.0",
