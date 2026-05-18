@@ -401,10 +401,35 @@ def _build_parser() -> argparse.ArgumentParser:
         required=True,
         help="reference video (raw YUV or any FFmpeg-readable container)",
     )
-    per_shot.add_argument("--width", type=int, required=True)
-    per_shot.add_argument("--height", type=int, required=True)
+    per_shot.add_argument(
+        "--width",
+        type=int,
+        default=None,
+        help=(
+            "source width. Required for raw YUV (`.yuv`/`.raw`) sources. "
+            "Auto-probed from ffprobe for container sources (mp4, mkv, mov, …) "
+            "when omitted. (ADR-0542)"
+        ),
+    )
+    per_shot.add_argument(
+        "--height",
+        type=int,
+        default=None,
+        help=(
+            "source height. Required for raw YUV sources. "
+            "Auto-probed from ffprobe for container sources when omitted. (ADR-0542)"
+        ),
+    )
     per_shot.add_argument("--pix-fmt", default="yuv420p")
-    per_shot.add_argument("--framerate", type=float, default=24.0)
+    per_shot.add_argument(
+        "--framerate",
+        type=float,
+        default=None,
+        help=(
+            "source framerate. Auto-probed from ffprobe for container sources when "
+            "omitted; defaults to 24.0 if the probe cannot determine a rate. (ADR-0542)"
+        ),
+    )
     per_shot.add_argument(
         "--target-vmaf",
         type=float,
@@ -916,6 +941,25 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "advanced hook MODULE:CALLABLE matching "
             "(codec, src, target_vmaf) -> RecommendResult; bypasses real bisect"
+        ),
+    )
+    compare.add_argument(
+        "--no-bisect",
+        action="store_true",
+        default=False,
+        help=(
+            "CRF sweep mode: skip target-VMAF bisect and encode each "
+            "(codec, CRF) pair from --crf-sweep exactly once. Requires "
+            "--crf-sweep. Output is schema-version-3 JSON. (ADR-0542)"
+        ),
+    )
+    compare.add_argument(
+        "--crf-sweep",
+        default=None,
+        metavar="LIST",
+        help=(
+            "comma-separated CRF values for --no-bisect mode "
+            "(e.g. 18,23,28,33). Required when --no-bisect is passed. (ADR-0542)"
         ),
     )
 
@@ -1885,7 +1929,61 @@ def _run_tune_per_shot(args: argparse.Namespace) -> int:
     # in :func:`_run_ladder` are layered into the predicate via
     # ``score_backend`` at line 1880 already passing the raw user
     # value (and `bisect_target_vmaf` surfacing the failure).
-    total_frames = args.total_frames if args.total_frames > 0 else None
+
+    # ADR-0542: auto-probe geometry for container sources so operators
+    # do not need to pre-extract a raw YUV or know --width/--height.
+    # The probe result is written back onto `args` so all downstream
+    # helpers (_build_per_shot_bisect_predicate, merge_shots, plan
+    # serialisation) see consistent geometry without signature changes.
+    _resolved_width = args.width
+    _resolved_height = args.height
+    _resolved_framerate = args.framerate  # may be None = not yet known
+    _resolved_total_frames = args.total_frames if args.total_frames > 0 else None
+
+    if not _source_needs_rawvideo_demux(args.src):
+        # Container source: auto-probe missing geometry.
+        if _resolved_width is None or _resolved_height is None or _resolved_framerate is None:
+            from .report import probe_source as _probe_source  # noqa: PLC0415
+
+            try:
+                _info = _probe_source(args.src)
+            except Exception as _exc:  # noqa: BLE001
+                sys.stderr.write(f"vmaf-tune tune-per-shot: ffprobe failed on {args.src}: {_exc}\n")
+                return 2
+            if _resolved_width is None:
+                _resolved_width = _info.width or None
+            if _resolved_height is None:
+                _resolved_height = _info.height or None
+            if _resolved_framerate is None and _info.fps > 0.0:
+                _resolved_framerate = _info.fps
+            if _resolved_total_frames is None and _info.frame_count > 0:
+                _resolved_total_frames = _info.frame_count
+    else:
+        # Raw YUV source: explicit geometry is required.
+        if _resolved_width is None or _resolved_height is None:
+            sys.stderr.write(
+                "vmaf-tune tune-per-shot: --width and --height are required "
+                "for raw YUV sources. For container sources (mp4, mkv, …) "
+                "these flags are optional and auto-probed via ffprobe.\n"
+            )
+            return 2
+
+    if _resolved_width is None or _resolved_height is None:
+        sys.stderr.write(
+            "vmaf-tune tune-per-shot: could not determine source width/height. "
+            "Pass --width and --height explicitly.\n"
+        )
+        return 2
+    if _resolved_framerate is None:
+        _resolved_framerate = 24.0  # safe default when probe yields nothing
+
+    # Write resolved geometry back onto args so every downstream helper
+    # that reads args.width / args.height / args.framerate is consistent.
+    args.width = _resolved_width
+    args.height = _resolved_height
+    args.framerate = _resolved_framerate
+
+    total_frames = _resolved_total_frames
     # ADR-0512: thread the user-tunable scene threshold + uniform-window
     # splitter through so short clips and under-cutting content still
     # produce a multi-shot timeline for the per-shot tuner.
@@ -2553,6 +2651,13 @@ def _run_compare(args: argparse.Namespace) -> int:
         )
         return 2
 
+    # ADR-0542: CRF-sweep mode — bypass bisect entirely when --no-bisect
+    # is set. Dispatched after format validation so the format guard still
+    # applies; dispatched before the target-VMAF / predicate-module blocks
+    # because none of that logic is needed for a sweep.
+    if getattr(args, "no_bisect", False):
+        return _run_compare_crf_sweep(args, encoders)
+
     # ADR-0516: ``--target-vmafs`` parses to a list of floats; falls
     # back to ``[--target-vmaf]`` (single-target legacy path) when the
     # multi-target flag is not passed. Duplicates collapse and the list
@@ -2712,6 +2817,177 @@ def _run_compare(args: argparse.Namespace) -> int:
         if not rendered.endswith("\n"):
             sys.stdout.write("\n")
     return 0 if report.best() is not None else 1
+
+
+def _run_compare_crf_sweep(args: argparse.Namespace, encoders: list[str]) -> int:
+    """CRF-sweep mode for ``compare --no-bisect`` (ADR-0542).
+
+    Encodes each ``(codec, CRF)`` pair from ``--crf-sweep`` exactly once via
+    :func:`vmaftune.bisect._encode_and_score` — no iterative bisect search.
+    Emits schema-version-3 JSON with ``mode: "crf_sweep"`` and a ``rows`` list
+    (one entry per ``(codec, crf)`` pair).
+
+    ``--target-vmaf`` / ``--target-vmafs`` are parsed but act as label-only
+    knobs in this mode (pareto frontier annotation); they do not drive the
+    encode loop.
+    """
+    import tempfile  # noqa: PLC0415
+    import time  # noqa: PLC0415
+    from concurrent.futures import ThreadPoolExecutor, as_completed  # noqa: PLC0415
+
+    from .bisect import _encode_and_score  # noqa: PLC0415
+    from .codec_adapters import get_adapter  # noqa: PLC0415
+    from .compare import probe_encoder_available  # noqa: PLC0415
+
+    # Parse --crf-sweep (required in this mode).
+    crf_sweep_raw = getattr(args, "crf_sweep", None)
+    if not crf_sweep_raw:
+        sys.stderr.write(
+            "vmaf-tune compare --no-bisect: --crf-sweep LIST is required. "
+            "Example: --crf-sweep 18,23,28,33\n"
+        )
+        return 2
+    try:
+        crf_values = [int(c.strip()) for c in crf_sweep_raw.split(",") if c.strip()]
+    except ValueError as exc:
+        sys.stderr.write(f"vmaf-tune compare --no-bisect: invalid --crf-sweep: {exc}\n")
+        return 2
+    if not crf_values:
+        sys.stderr.write("vmaf-tune compare --no-bisect: --crf-sweep produced an empty list\n")
+        return 2
+
+    # Resolve source geometry the same way as the bisect path.
+    framerate_was_default = getattr(args, "_framerate_was_default", False)
+    duration_was_default = getattr(args, "_duration_was_default", False)
+    resolved_w, resolved_h, resolved_fr, resolved_dur = _resolve_compare_source_geometry(
+        Path(args.src),
+        width=args.width,
+        height=args.height,
+        framerate=args.framerate,
+        duration_s=args.duration,
+        framerate_was_default=framerate_was_default,
+        duration_was_default=duration_was_default,
+    )
+    if resolved_w is None or resolved_h is None:
+        sys.stderr.write("vmaf-tune compare --no-bisect: --width and --height are required.\n")
+        return 2
+
+    src_path = Path(args.src)
+    score_backend = None if args.score_backend in (None, "auto") else args.score_backend
+
+    # Probe encoder availability once per codec (mirrors the bisect path).
+    availability: dict[str, tuple[bool, str]] = {}
+    for enc in encoders:
+        availability[enc] = probe_encoder_available(enc, ffmpeg_bin=args.ffmpeg_bin)
+
+    def _encode_one(codec: str, crf: int) -> dict:
+        avail, reason = availability[codec]
+        if not avail:
+            return {
+                "codec": codec,
+                "crf": crf,
+                "bitrate_kbps": float("nan"),
+                "vmaf_score": float("nan"),
+                "encode_time_ms": 0.0,
+                "encoder_version": "",
+                "ok": False,
+                "error": reason,
+            }
+        adapter = get_adapter(codec)
+        with tempfile.TemporaryDirectory(prefix="vmaf-tune-crf-sweep-") as _wd:
+            result = _encode_and_score(
+                src=src_path,
+                codec=codec,
+                adapter=adapter,
+                preset=args.preset,
+                crf=crf,
+                width=resolved_w,
+                height=resolved_h,
+                pix_fmt=args.pix_fmt,
+                framerate=resolved_fr,
+                duration_s=resolved_dur,
+                sample_clip_seconds=getattr(args, "sample_clip_seconds", 0.0),
+                vmaf_model=args.vmaf_model,
+                score_backend=score_backend,
+                ffmpeg_bin=args.ffmpeg_bin,
+                vmaf_bin=args.vmaf_bin,
+                workdir=Path(_wd),
+            )
+        return {
+            "codec": codec,
+            "crf": crf,
+            "bitrate_kbps": result.bitrate_kbps,
+            "vmaf_score": result.measured_vmaf,
+            "encode_time_ms": result.encode_time_ms,
+            "encoder_version": result.encoder_version,
+            "ok": result.ok,
+            "error": result.error,
+        }
+
+    t0 = time.monotonic()
+    rows: list[dict] = []
+    cells = [(codec, crf) for codec in encoders for crf in crf_values]
+
+    no_parallel = getattr(args, "no_parallel", False)
+    max_workers = getattr(args, "max_workers", None)
+
+    if no_parallel or len(cells) == 1:
+        for codec, crf in cells:
+            rows.append(_encode_one(codec, crf))
+    else:
+        n_workers = max_workers if max_workers is not None else len(cells)
+        futures = {}
+        with ThreadPoolExecutor(max_workers=n_workers) as pool:
+            for codec, crf in cells:
+                futures[pool.submit(_encode_one, codec, crf)] = (codec, crf)
+            # Collect in submission order for deterministic output.
+            ordered: dict[tuple[str, int], dict] = {}
+            for fut in as_completed(futures):
+                key = futures[fut]
+                ordered[key] = fut.result()
+        for cell in cells:
+            rows.append(ordered[cell])
+
+    wall_ms = (time.monotonic() - t0) * 1000.0
+
+    def _nan_to_none(v: object) -> object:
+        """Serialise NaN/inf as null for RFC-8259 portability."""
+        if isinstance(v, float) and (v != v or v == float("inf") or v == float("-inf")):
+            return None
+        return v
+
+    rows_clean = [
+        {k: (_nan_to_none(v) if isinstance(v, float) else v) for k, v in row.items()}
+        for row in rows
+    ]
+
+    try:
+        import importlib.metadata as _meta  # noqa: PLC0415
+
+        _tool_version = _meta.version("vmaf-tune")
+    except Exception:  # noqa: BLE001
+        _tool_version = "unknown"
+
+    payload = {
+        "schema_version": 3,
+        "mode": "crf_sweep",
+        "src": str(src_path),
+        "crf_sweep": crf_values,
+        "target_vmaf": float(args.target_vmaf),
+        "tool_version": _tool_version,
+        "wall_time_ms": round(wall_ms, 1),
+        "rows": rows_clean,
+    }
+    rendered = json.dumps(payload, indent=2)
+    if args.output is not None:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(rendered + "\n", encoding="utf-8")
+        sys.stderr.write(f"wrote compare crf-sweep report -> {args.output}\n")
+    else:
+        sys.stdout.write(rendered)
+        if not rendered.endswith("\n"):
+            sys.stdout.write("\n")
+    return 0
 
 
 def _run_benchmark(args: argparse.Namespace) -> int:

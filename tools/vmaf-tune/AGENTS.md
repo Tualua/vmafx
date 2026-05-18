@@ -1053,3 +1053,26 @@ scripts for those local corpora.
   `null` (RFC-8259-portable); the report ingester treats `null` and
   absent as NaN and renders "—". Tests that construct `ShotRecommendation`
   directly need not set `bitrate_kbps` unless testing the bitrate column.
+- **`tune-per-shot` geometry auto-probe: patch `args` in-place before
+  any downstream call (ADR-0542).** `_run_tune_per_shot` writes the
+  ffprobe-derived width, height, framerate, and total-frames back onto
+  the `args` namespace at the top of the function so that
+  `_build_per_shot_bisect_predicate`, `merge_shots`, plan serialisation,
+  and the `detect_shots` call all receive consistent geometry without
+  signature changes. The branch condition is
+  `not _source_needs_rawvideo_demux(args.src)` — raw YUV (`.yuv` /
+  `.raw`) sources still require explicit `--width` and `--height` and
+  exit 2 if omitted. Do not add a new geometry-consuming helper inside
+  `_run_tune_per_shot` without reading `args.width` / `args.height`
+  AFTER the probe block, not before. Tests: `tests/test_tune_per_shot_container_src.py`.
+- **`compare --no-bisect` skips bisect; `_run_compare_crf_sweep` owns
+  schema-v3 output (ADR-0542).** When `args.no_bisect` is truthy,
+  `_run_compare()` delegates immediately to `_run_compare_crf_sweep(args,
+  encoders)` — the normal bisect path is not entered. The sweep function
+  calls `bisect._encode_and_score` directly (no iterative search), builds
+  a `{"schema_version": 3, "mode": "crf_sweep", "rows": [...]}` payload,
+  and writes / prints JSON only (CSV / Markdown rendering is a
+  follow-up). `--target-vmaf` / `--target-vmafs` are parsed but act
+  as label-only annotation; they do not influence the encode loop. Do
+  not short-circuit `_run_compare` before the format-validation block
+  (the format guard still applies). Tests: `tests/test_compare_no_bisect.py`.

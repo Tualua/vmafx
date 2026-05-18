@@ -1533,6 +1533,8 @@ the CPU set `libx264,libx265,libsvtav1,libvpx-vp9`.
 | `--no-parallel` | off | Run codecs sequentially (default: thread pool, one per codec). |
 | `--max-workers N` | `len(encoders)` | Cap on the parallel thread pool. |
 | `--predicate-module MOD:FN` | off | Advanced hook that bypasses the bisect backend. |
+| `--no-bisect` | off | Switch to CRF-sweep mode: skip target-VMAF bisect and encode each (codec, CRF) pair from `--crf-sweep` exactly once. See [CRF sweep mode](#crf-sweep-mode-no-bisect) below. (ADR-0542) |
+| `--crf-sweep LIST` | — | Comma-separated CRF values to use in `--no-bisect` mode. Example: `18,23,28,33`. Required when `--no-bisect` is passed. (ADR-0542) |
 | `--output PATH` | stdout | Write the rendered report to PATH instead of stdout. |
 
 ### `compare` output schema
@@ -1579,6 +1581,43 @@ structured field.
 > comparisons only make sense when every predicate was run on the same
 > hardware in the same configuration — see
 > [Research-0061 Bucket #7](../research/0061-vmaf-tune-capability-audit.md).
+
+### CRF sweep mode (`--no-bisect`) {#crf-sweep-mode-no-bisect}
+
+When `--no-bisect` is passed together with `--crf-sweep`, `compare`
+skips the target-VMAF bisect entirely and instead encodes each
+`(codec, CRF)` pair exactly once. This is useful for operators who
+want to sweep a fixed CRF ladder (e.g. 18, 23, 28, 33) and inspect
+the resulting (bitrate, VMAF) pairs — faster than running four
+separate bisect sweeps and more direct than the `corpus` pipeline.
+
+```shell
+vmaf-tune compare \
+    --src clip.mp4 \
+    --encoders libx264,libx265,libsvtav1 \
+    --no-bisect --crf-sweep 18,23,28,33 \
+    --duration 60 --sample-clip-seconds 30 \
+    --format json --output cmp_sweep.json
+```
+
+3 codecs × 4 CRFs = 12 rows in `cmp_sweep.json`.
+
+**v3 (CRF-sweep, ADR-0542)**: emitted when `--no-bisect` is set.
+The JSON carries `"schema_version": 3`, `"mode": "crf_sweep"`,
+`"crf_sweep": [18, 23, 28, 33]`, and `rows` is one row per
+`(codec, crf)` pair. Each row carries `codec`, `crf`,
+`bitrate_kbps`, `vmaf_score`, `encode_time_ms`, `encoder_version`,
+`ok`, and `error`. The `--target-vmaf` / `--target-vmafs` flags are
+accepted but act as label-only knobs in this mode (they annotate
+pareto frontier markers when rendered, but do not drive the encode
+loop). The `--format` flag is accepted but only `json` output is
+implemented for v3 in the current release; Markdown / CSV rendering
+of the v3 payload is a follow-up.
+
+Hardware encoder availability is probed the same way as the bisect
+path: unavailable encoders (e.g. `h264_nvenc` without an NVIDIA
+device) produce `ok=false` rows for each CRF rather than aborting
+the entire run.
 
 ## HDR-aware tuning (Bucket #9, ADR-0300)
 
@@ -2285,9 +2324,22 @@ Design rationale and the decision matrix live in
 
 ### Quick start
 
+Container source (geometry auto-probed, no pre-extraction needed — ADR-0542):
+
 ```shell
 vmaf-tune tune-per-shot \
-    --src ref.mp4 \
+    --src clip.mp4 \
+    --target-vmaf 92 \
+    --encoder libx264 \
+    --output per_shot_encode.mp4 \
+    --plan-out plan.json
+```
+
+Raw YUV source (explicit geometry required):
+
+```shell
+vmaf-tune tune-per-shot \
+    --src ref.yuv \
     --width 1920 --height 1080 \
     --framerate 24 \
     --target-vmaf 92 \
@@ -2304,14 +2356,14 @@ shell script of the per-segment + concat commands.
 
 | Flag | Default | Notes |
 | --- | --- | --- |
-| `--src PATH` | — | Required. Source video (raw YUV or container). |
-| `--width / --height` | — | Required. Source resolution. |
+| `--src PATH` | — | Required. Source video. Accepts raw YUV (`.yuv` / `.raw`) **or** any container format (mp4, mkv, mov, ts, …). For container sources, `--width`, `--height`, `--framerate`, and `--total-frames` are auto-derived from ffprobe. (ADR-0542) |
+| `--width / --height` | auto-probed | Source resolution. **Required for raw YUV sources.** For container sources the values are auto-derived from ffprobe when these flags are omitted. Pass explicit values to override the probe. (ADR-0542) |
 | `--pix-fmt PFMT` | `yuv420p` | Forwarded to `vmaf-perShot`. |
-| `--framerate F` | `24.0` | Used to translate frame counts to `-ss` seek seconds. |
+| `--framerate F` | auto-probed | Source framerate. Auto-derived from ffprobe for container sources; defaults to `24.0` if the probe cannot determine a rate. (ADR-0542) |
 | `--target-vmaf V` | `92.0` | Per-shot quality target. |
 | `--encoder NAME` | `libx264` | Any registered codec adapter accepted by the Phase-B bisect backend. |
 | `--bitdepth N` | `8` | Forwarded to `vmaf-perShot` (`8`, `10`, or `12`). |
-| `--total-frames N` | `0` | Frame count for the single-shot fallback when `vmaf-perShot` is unavailable. |
+| `--total-frames N` | `0` | Frame count for the single-shot fallback when `vmaf-perShot` is unavailable. Auto-derived from ffprobe for container sources. (ADR-0542) |
 | `--scene-threshold X` | unset | Override `vmaf-perShot --diff-threshold` (mean-absolute-luma-delta cutoff for cut classification; lower = more shots). Omit to keep the C-side compiled default (`12.0` on 8-bit content). See [ADR-0513](../adr/0513-per-shot-scene-threshold-and-1-shot-chart.md). |
 | `--max-shot-duration S` | `2.0` | Uniform-time-window splitter (seconds). Any detected shot longer than `S` is sliced into equal-length sub-shots so the per-shot tuner sees a non-degenerate timeline even when the detector under-cuts (e.g. short clips, low-contrast fades). Set to `0` to disable. See [ADR-0513](../adr/0513-per-shot-scene-threshold-and-1-shot-chart.md). |
 | `--per-shot-bin PATH` | `vmaf-perShot` | Override the shot detector binary. |
@@ -2324,11 +2376,7 @@ shell script of the per-segment + concat commands.
 | `--score-backend NAME` | `auto` | libvmaf scoring backend for the per-shot scorer (`auto`, `cpu`, `cuda`, `sycl`, `vulkan`). |
 | `--predicate-module SPEC` | — | Advanced hook `MODULE:CALLABLE` matching `(shot, target_vmaf, encoder) -> (crf, measured_vmaf)`; bypasses real bisect. |
 | `--output PATH` | `per_shot_encode.mp4` | Final concatenated encode destination. |
-<<<<<<< HEAD
 | `--segment-dir PATH` | see below | Directory for per-shot segment files. Priority order: (1) explicit `--segment-dir`; (2) `<plan-out>.parent/segments` when `--plan-out` is set; (3) `<output>.parent/segments`. If the resolved directory is not writable (e.g. a read-only bind-mount), a `WARN` is emitted to stderr and the command still exits 0 — the plan JSON remains the authoritative deliverable. See [ADR-0532](../adr/0532-per-shot-segments-readonly-cwd.md). |
-=======
-| `--segment-dir PATH` | see below | Directory for per-shot segment files. Priority order: (1) explicit `--segment-dir`; (2) `<plan-out>.parent/segments` when `--plan-out` is set; (3) `<output>.parent/segments`. If the resolved directory is not writable (e.g. a read-only bind-mount), a `WARN` is emitted to stderr and the command still exits 0 — the plan JSON remains the authoritative deliverable. See [ADR-0530](../adr/0530-per-shot-segments-readonly-cwd.md). |
->>>>>>> b0517eb4b (fix(vmaf-tune): per-shot emits bitrate_kbps + chart shows last shot (ADR-0531))
 | `--plan-out PATH` | stdout | Write the JSON plan here instead of stdout. |
 | `--script-out PATH` | — | Optional: also emit a copy-paste shell script. |
 

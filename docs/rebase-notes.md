@@ -7,7 +7,6 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
-=======
 ## fix/dev-container-sycl-hip-runtime (ADR-0543)
 
 **No rebase impact.** All changes are confined to:
@@ -101,7 +100,6 @@ No conflict risk on sync.
 The `tools/vmaf-tune/` tree does not exist in upstream Netflix/vmaf.
 No conflict risk on sync.
 
->>>>>>> 99322ed05 (fix(vmaf-tune): tune-per-shot tolerates read-only CWD when writing segments (ADR-0532))
 `changelog.d/fixed/0530-per-shot-segments-readonly-cwd.md`.
 The `tools/vmaf-tune/` tree does not exist in upstream Netflix/vmaf.
 No conflict risk on sync.
@@ -36400,7 +36398,6 @@ future PR adds a new HIP feature TU, the invariant pinned in
 `libvmaf/src/hip/AGENTS.md` (every `vmaf_fex_*_hip` symbol must
 appear in `hip_sources` + the extern/registry blocks) must be
 honoured or the registration drops out silently.
->>>>>>> 64a7a5517 (chore(adr): atomic next-free allocator with cross-branch claim (ADR-0535))
 
 ## ADR-0538 — per-shot predicate bitrate sidecar (PR #1290 follow-up)
 
@@ -36461,8 +36458,6 @@ build only and is orthogonal to the host-side patch series under
 `n8.1.1` via `FFMPEG_TAG` build-arg) are visible in the `ARG` lines
 of `dev/Containerfile`; bumping them is a local container change.
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 ---
 
 ## ADR-0543 — ADR-0498 enforcement hardening (exit code 100 + JSON error + per-feature gate)
@@ -36537,7 +36532,6 @@ Touched files: `libvmaf/src/feature/feature_extractor.{c,h}`,
 `docs/rebase-notes.md`, `changelog.d/fixed/0541-*.md`.
 No `ffmpeg-patches/`, `meson_options.txt`, or `meson.build` change
 (test is exercised by an existing `test_feature_extractor` target).
-=======
 ## chore/wire-or-delete-dead-extractor-files (ADR-0545)
 
 Deletes 18 dead Vulkan / Metal feature-extractor source files plus
@@ -36562,3 +36556,28 @@ retained `adm_vulkan.c` legacy shim is out of scope per ADR-0468.
 No CPU-path C source, no public header, no `meson_options.txt`, no
 `ffmpeg-patches/` entry, no Python-binding change — CLAUDE.md §12
 r14 (FFmpeg patch-stack sync) does not apply.
+
+## feat/vmaf-tune-full-file-and-no-bisect (ADR-0542)
+
+**Files touched:** `tools/vmaf-tune/src/vmaftune/cli.py` (auto-probe
+block in `_run_tune_per_shot`; new `_run_compare_crf_sweep` function;
+`--no-bisect` / `--crf-sweep` argparse flags in the `compare`
+subparser; `--width` / `--height` / `--framerate` made optional in the
+`tune-per-shot` subparser), `tools/vmaf-tune/tests/test_tune_per_shot_container_src.py`
+(new — Fix A smoke tests), `tools/vmaf-tune/tests/test_compare_no_bisect.py`
+(new — Fix B smoke tests), `tools/vmaf-tune/AGENTS.md` (two new
+invariant notes), `docs/adr/0542-vmaf-tune-full-file-and-no-bisect.md`
+(+ index row in `docs/adr/README.md`), `changelog.d/added/0542-…md`,
+`docs/usage/vmaf-tune.md` (Fix A and Fix B documentation), this file.
+
+**Rebase sensitivity (none — vmaf-tune Python only):**
+All touched files live under `tools/vmaf-tune/`, `docs/`, or
+`changelog.d/`. No libvmaf C source, no public header, no
+`meson_options.txt`, no `ffmpeg-patches/` entry is touched. The
+`cli.py` changes are purely additive: new function `_run_compare_crf_sweep`,
+new optional args in existing subparsers, and an early-return dispatch
+at the top of `_run_compare`. No existing API surface is renamed or
+removed. The probe block at the top of `_run_tune_per_shot` only
+executes when `args.width is None or args.height is None or
+args.framerate is None` — callers that pass explicit geometry are
+unaffected. No upstream Netflix/vmaf path is touched.
