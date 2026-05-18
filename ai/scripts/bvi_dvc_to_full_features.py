@@ -36,6 +36,23 @@ script: ffmpeg gets ``-pix_fmt yuv420p10le`` and libvmaf gets
 ``--bitdepth 10``; everything else (FULL_FEATURES tuple, EXTRACTORS
 tuple, CRF 35, single-thread CPU vmaf, model attached for per-frame
 teacher score) is verbatim.
+
+Input modes
+-----------
+``--bvi-zip PATH``
+    Path to ``BVI-DVC Part 1.zip`` (original behaviour). Each clip's
+    ``.mp4`` is streamed out of the archive, processed, then deleted.
+
+``--bvi-dir PATH``  (ADR-0527)
+    Path to a directory containing already-extracted ``.mp4`` or
+    ``.yuv`` files. The directory is enumerated recursively for files
+    matching the BVI-DVC filename convention. For ``.yuv`` inputs the
+    width, height, framerate, and bit-depth are parsed directly from the
+    filename; no ffprobe decode step is needed. For ``.mp4`` inputs the
+    existing decode path is used unchanged.
+
+The two flags are mutually exclusive. ``--bvi-zip`` is the default when
+neither is provided.
 """
 
 from __future__ import annotations
@@ -100,9 +117,28 @@ EXTRACTORS = (
 )
 
 
-# Filename pattern: e.g. "DBookcaseBVITexture_480x272_120fps_10bit_420.mp4".
+# Filename pattern for zip-sourced MP4s:
+# e.g. "DBookcaseBVITexture_480x272_120fps_10bit_420.mp4".
 # Group 1 = tier letter (A/B/C/D), 2 = width, 3 = height.
 _NAME_RE = re.compile(r"^([ABCD])[A-Za-z0-9]+_(\d+)x(\d+)_\d+fps_10bit_420\.mp4$")
+
+# Resolution → tier mapping used for --bvi-dir mode (covers the four official tiers).
+_RES_TO_TIER: dict[tuple[int, int], str] = {
+    (3840, 2176): "A",
+    (1920, 1088): "B",
+    (960, 544): "C",
+    (480, 272): "D",
+}
+
+# Filename pattern for pre-extracted files (MP4 or YUV).
+# Accepts any alphanumeric/underscore stem followed by _WxH_<fps>fps_<depth>bit_420.
+# Groups: 1=stem, 2=width, 3=height, 4=fps (int portion), 5=depth, 6=extension.
+_DIR_NAME_RE = re.compile(r"^([A-Za-z0-9_\-]+?)_(\d+)x(\d+)_(\d+)fps_(\d+)bit_420\.(mp4|yuv)$")
+
+
+def _tier_from_resolution(w: int, h: int) -> str | None:
+    """Return the tier letter for a (width, height) pair, or None if unknown."""
+    return _RES_TO_TIER.get((w, h))
 
 
 def _run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
@@ -165,6 +201,28 @@ def _encode_dis_10bit(src_mp4: Path, out_yuv: Path, crf: int) -> None:
     _run(["bash", "-c", cmd])
 
 
+def _encode_dis_10bit_from_yuv(
+    ref_yuv: Path, out_yuv: Path, w: int, h: int, fps: int, crf: int
+) -> None:
+    """Encode a distorted YUV from a raw 10-bit 4:2:0 YUV reference.
+
+    Used in ``--bvi-dir`` mode when the source is already a raw YUV
+    file — ffmpeg reads it with explicit format flags so it does not try
+    to auto-detect a container.
+    """
+    out_yuv.parent.mkdir(parents=True, exist_ok=True)
+    cmd = (
+        f"ffmpeg -y -loglevel error "
+        f"-f rawvideo -pixel_format yuv420p10le -video_size {w}x{h} -framerate {fps} "
+        f"-i {shlex.quote(str(ref_yuv))} "
+        f"-c:v libx264 -pix_fmt yuv420p10le -crf {crf} -preset fast -an "
+        f"-f matroska pipe:1 | "
+        f"ffmpeg -y -loglevel error -i pipe:0 -pix_fmt yuv420p10le "
+        f"-f rawvideo {shlex.quote(str(out_yuv))}"
+    )
+    _run(["bash", "-c", cmd])
+
+
 def _run_vmaf_full(
     vmaf_bin: Path,
     ref_yuv: Path,
@@ -173,12 +231,15 @@ def _run_vmaf_full(
     h: int,
     out_json: Path,
     model_path: Path,
+    bitdepth: int = 10,
 ) -> None:
     """Run libvmaf CLI with all FULL_FEATURES extractors + the
     vmaf_v0.6.1 model attached for the per-frame VMAF teacher score.
 
     BVI-DVC ships 10-bit; ``--bitdepth 10`` is the only structural
-    delta vs. the 8-bit konvid invocation.
+    delta vs. the 8-bit konvid invocation. The ``bitdepth`` parameter
+    is exposed so callers that synthesise 8-bit test fixtures can pass
+    ``bitdepth=8``.
     """
     feat_args: list[str] = []
     for ex in EXTRACTORS:
@@ -197,7 +258,7 @@ def _run_vmaf_full(
             "--pixel_format",
             "420",
             "--bitdepth",
-            "10",
+            str(bitdepth),
             "--model",
             f"path={model_path}",
             *feat_args,
@@ -270,6 +331,56 @@ def _process_clip(
                 p.unlink()
 
 
+def _process_clip_yuv(
+    key: str,
+    src_yuv: Path,
+    w: int,
+    h: int,
+    fps: int,
+    depth: int,
+    vmaf_bin: Path,
+    model_path: Path,
+    crf: int,
+    cache_dir: Path | None,
+    scratch: Path,
+    codec: str,
+) -> list[dict]:
+    """Process a pre-decoded YUV clip from ``--bvi-dir`` mode.
+
+    The caller has already parsed ``w``, ``h``, ``fps``, and ``depth``
+    from the filename so no ffprobe step is needed. The reference YUV
+    is used directly; the distorted side is re-encoded via libx264 and
+    decoded back to raw YUV just as in the MP4 path.
+    """
+    if cache_dir is not None:
+        cache_path = cache_dir / f"{key}.json"
+        if cache_path.is_file():
+            return _frames_to_rows(key, cache_path, codec)
+    dis_yuv = scratch / f"{key}_dis.yuv"
+    vmaf_json = scratch / f"{key}_vmaf.json"
+    try:
+        _encode_dis_10bit_from_yuv(src_yuv, dis_yuv, w, h, fps, crf)
+        _run_vmaf_full(
+            vmaf_bin,
+            src_yuv,
+            dis_yuv,
+            w,
+            h,
+            vmaf_json,
+            model_path,
+            bitdepth=depth,
+        )
+        rows = _frames_to_rows(key, vmaf_json, codec)
+        if cache_dir is not None:
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            (cache_dir / f"{key}.json").write_text(vmaf_json.read_text())
+        return rows
+    finally:
+        for p in (dis_yuv, vmaf_json):
+            with contextlib.suppress(FileNotFoundError):
+                p.unlink()
+
+
 def _select_tier_entries(zf: zipfile.ZipFile, tier: str) -> list[zipfile.ZipInfo]:
     """Filter the zip's ``Videos/`` entries to a single tier (or all).
 
@@ -295,6 +406,61 @@ def _select_tier_entries(zf: zipfile.ZipFile, tier: str) -> list[zipfile.ZipInfo
     return selected
 
 
+# ---------------------------------------------------------------------------
+# Data type for directory-mode clips (replaces zipfile.ZipInfo).
+# ---------------------------------------------------------------------------
+
+
+class _DirEntry:
+    """Lightweight stand-in for a ``zipfile.ZipInfo`` in the dir-scan path."""
+
+    def __init__(self, path: Path, tier: str, w: int, h: int, fps: int, depth: int) -> None:
+        self.path = path
+        self.tier = tier
+        self.w = w
+        self.h = h
+        self.fps = fps
+        self.depth = depth
+        # Mimic the ZipInfo attribute used for sorting / display.
+        self.filename = str(path)
+
+
+def _select_tier_entries_dir(bvi_dir: Path, tier: str) -> list[_DirEntry]:
+    """Enumerate ``.mp4`` / ``.yuv`` files in *bvi_dir* that match the BVI-DVC
+    naming convention and belong to the requested tier.
+
+    Resolution tiers are determined first from the four canonical
+    ``_RES_TO_TIER`` pairs; if no canonical pair matches the parsed
+    resolution the file is skipped with a warning.
+
+    ``tier == "all"`` returns every matching clip in deterministic sorted
+    order.
+    """
+    selected: list[_DirEntry] = []
+    for path in sorted(bvi_dir.rglob("*")):
+        if path.suffix.lower() not in (".mp4", ".yuv"):
+            continue
+        m = _DIR_NAME_RE.match(path.name)
+        if m is None:
+            continue
+        w = int(m.group(2))
+        h = int(m.group(3))
+        fps = int(m.group(4))
+        depth = int(m.group(5))
+        clip_tier = _tier_from_resolution(w, h)
+        if clip_tier is None:
+            print(
+                f"[bvi-dvc-full] warning: {path.name}: resolution {w}x{h} not in "
+                "known tier map — skipping",
+                file=sys.stderr,
+            )
+            continue
+        if tier != "all" and clip_tier != tier:
+            continue
+        selected.append(_DirEntry(path, clip_tier, w, h, fps, depth))
+    return selected
+
+
 def _stream_extract(zf: zipfile.ZipFile, info: zipfile.ZipInfo, dest: Path) -> Path:
     """Stream a single zip entry to ``dest`` without unpacking the
     rest of the archive. Returns the dest path."""
@@ -309,19 +475,152 @@ def _stream_extract(zf: zipfile.ZipFile, info: zipfile.ZipInfo, dest: Path) -> P
     return dest
 
 
+def _run_zip_mode(args: argparse.Namespace, out_path: Path, cache_dir: Path | None) -> int:
+    """Process clips from a zip archive (original ``--bvi-zip`` path)."""
+    if not args.bvi_zip.is_file():
+        print(f"error: BVI-DVC zip not found at {args.bvi_zip}", file=sys.stderr)
+        return 2
+
+    with zipfile.ZipFile(args.bvi_zip) as zf:
+        entries = _select_tier_entries(zf, args.tier)
+        if args.max_clips is not None:
+            entries = entries[: args.max_clips]
+        print(
+            f"[bvi-dvc-full] mode=zip tier={args.tier} processing "
+            f"{len(entries)} clips → {out_path}",
+            flush=True,
+        )
+
+        rows: list[dict] = []
+        t0 = time.time()
+        for i, info in enumerate(entries):
+            base = info.filename.rsplit("/", 1)[-1]
+            key = base[: -len(".mp4")]
+            local_mp4 = args.scratch / base
+            try:
+                # Skip extraction if the cached vmaf JSON already exists —
+                # _process_clip will short-circuit before touching the mp4.
+                cache_hit = cache_dir is not None and (cache_dir / f"{key}.json").is_file()
+                if not cache_hit:
+                    _stream_extract(zf, info, local_mp4)
+                rows += _process_clip(
+                    key,
+                    local_mp4,
+                    args.vmaf_bin,
+                    args.model,
+                    args.crf,
+                    cache_dir,
+                    args.scratch,
+                    args.codec,
+                )
+            finally:
+                with contextlib.suppress(FileNotFoundError):
+                    local_mp4.unlink()
+            if (i + 1) % 5 == 0 or (i + 1) == len(entries):
+                wt = time.time() - t0
+                print(
+                    f"[bvi-dvc-full] {i + 1}/{len(entries)} clips, {len(rows)} frames, {wt:.1f}s",
+                    flush=True,
+                )
+
+    return _write_parquet(rows, len(entries), out_path)
+
+
+def _run_dir_mode(args: argparse.Namespace, out_path: Path, cache_dir: Path | None) -> int:
+    """Process clips from a pre-extracted directory (``--bvi-dir`` path).
+
+    Each file in the directory is processed in-place — no extraction
+    step, no deletion.  ``.mp4`` files go through the standard decode →
+    encode-distorted path; ``.yuv`` files skip the decode step entirely
+    and are passed directly to libvmaf as the reference.
+    """
+    entries = _select_tier_entries_dir(args.bvi_dir, args.tier)
+    if args.max_clips is not None:
+        entries = entries[: args.max_clips]
+    print(
+        f"[bvi-dvc-full] mode=dir tier={args.tier} processing {len(entries)} clips → {out_path}",
+        flush=True,
+    )
+
+    rows: list[dict] = []
+    t0 = time.time()
+    for i, entry in enumerate(entries):
+        key = entry.path.stem
+        if entry.path.suffix.lower() == ".yuv":
+            rows += _process_clip_yuv(
+                key,
+                entry.path,
+                entry.w,
+                entry.h,
+                entry.fps,
+                entry.depth,
+                args.vmaf_bin,
+                args.model,
+                args.crf,
+                cache_dir,
+                args.scratch,
+                args.codec,
+            )
+        else:
+            # .mp4 — use the standard MP4 → YUV decode path; the file
+            # is not deleted afterwards (it belongs to the user's dir).
+            local_mp4 = entry.path
+            rows += _process_clip(
+                key,
+                local_mp4,
+                args.vmaf_bin,
+                args.model,
+                args.crf,
+                cache_dir,
+                args.scratch,
+                args.codec,
+            )
+        if (i + 1) % 5 == 0 or (i + 1) == len(entries):
+            wt = time.time() - t0
+            print(
+                f"[bvi-dvc-full] {i + 1}/{len(entries)} clips, {len(rows)} frames, {wt:.1f}s",
+                flush=True,
+            )
+
+    return _write_parquet(rows, len(entries), out_path)
+
+
+def _write_parquet(rows: list[dict], n_clips: int, out_path: Path) -> int:
+    df = pd.DataFrame(rows)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(out_path)
+    print(
+        f"[bvi-dvc-full] wrote {out_path} ({len(df)} frames, "
+        f"{n_clips} clips, {len(df.columns)} cols)",
+        flush=True,
+    )
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(prog="bvi_dvc_to_full_features.py")
-    ap.add_argument(
+
+    # Mutually exclusive input-source group (ADR-0524).
+    src_group = ap.add_mutually_exclusive_group()
+    src_group.add_argument(
         "--bvi-zip",
         type=Path,
-        default=Path(
-            os.environ.get(
-                "VMAF_BVI_DVC_ZIP",
-                str(REPO_ROOT.parent / ".workingdir2" / "BVI-DVC Part 1.zip"),
-            )
-        ),
-        help="Path to BVI-DVC Part 1.zip.",
+        default=None,
+        help="Path to BVI-DVC Part 1.zip. Mutually exclusive with --bvi-dir.",
     )
+    src_group.add_argument(
+        "--bvi-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Path to a directory containing already-extracted BVI-DVC "
+            ".mp4 or .yuv files. Files matching the BVI-DVC naming "
+            "convention (e.g. ``Clip_480x272_30fps_8bit_420.yuv``) are "
+            "enumerated and processed without extraction. "
+            "Mutually exclusive with --bvi-zip."
+        ),
+    )
+
     ap.add_argument(
         "--tier",
         choices=("A", "B", "C", "D", "all"),
@@ -376,9 +675,17 @@ def main() -> int:
     )
     args = ap.parse_args()
 
-    if not args.bvi_zip.is_file():
-        print(f"error: BVI-DVC zip not found at {args.bvi_zip}", file=sys.stderr)
-        return 2
+    # Resolve the default input source: if neither flag was given, fall
+    # back to the legacy VMAF_BVI_DVC_ZIP env-var / hard-coded path so
+    # existing callers that omit --bvi-zip keep working.
+    if args.bvi_zip is None and args.bvi_dir is None:
+        args.bvi_zip = Path(
+            os.environ.get(
+                "VMAF_BVI_DVC_ZIP",
+                str(REPO_ROOT.parent / ".workingdir2" / "BVI-DVC Part 1.zip"),
+            )
+        )
+
     if not args.vmaf_bin.is_file():
         print(f"error: vmaf binary not found at {args.vmaf_bin}", file=sys.stderr)
         return 2
@@ -392,56 +699,14 @@ def main() -> int:
     if cache_dir is not None:
         cache_dir.mkdir(parents=True, exist_ok=True)
 
-    with zipfile.ZipFile(args.bvi_zip) as zf:
-        entries = _select_tier_entries(zf, args.tier)
-        if args.max_clips is not None:
-            entries = entries[: args.max_clips]
-        print(
-            f"[bvi-dvc-full] tier={args.tier} processing {len(entries)} clips → {out_path}",
-            flush=True,
-        )
+    if args.bvi_dir is not None:
+        if not args.bvi_dir.is_dir():
+            print(f"error: --bvi-dir path is not a directory: {args.bvi_dir}", file=sys.stderr)
+            return 2
+        return _run_dir_mode(args, out_path, cache_dir)
 
-        rows: list[dict] = []
-        t0 = time.time()
-        for i, info in enumerate(entries):
-            base = info.filename.rsplit("/", 1)[-1]
-            key = base[: -len(".mp4")]
-            local_mp4 = args.scratch / base
-            try:
-                # Skip extraction if the cached vmaf JSON already exists —
-                # _process_clip will short-circuit before touching the mp4.
-                cache_hit = cache_dir is not None and (cache_dir / f"{key}.json").is_file()
-                if not cache_hit:
-                    _stream_extract(zf, info, local_mp4)
-                rows += _process_clip(
-                    key,
-                    local_mp4,
-                    args.vmaf_bin,
-                    args.model,
-                    args.crf,
-                    cache_dir,
-                    args.scratch,
-                    args.codec,
-                )
-            finally:
-                with contextlib.suppress(FileNotFoundError):
-                    local_mp4.unlink()
-            if (i + 1) % 5 == 0 or (i + 1) == len(entries):
-                wt = time.time() - t0
-                print(
-                    f"[bvi-dvc-full] {i + 1}/{len(entries)} clips, {len(rows)} frames, {wt:.1f}s",
-                    flush=True,
-                )
-
-    df = pd.DataFrame(rows)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(out_path)
-    print(
-        f"[bvi-dvc-full] wrote {out_path} ({len(df)} frames, "
-        f"{len(entries)} clips, {len(df.columns)} cols)",
-        flush=True,
-    )
-    return 0
+    # --bvi-zip path (original behaviour).
+    return _run_zip_mode(args, out_path, cache_dir)
 
 
 if __name__ == "__main__":  # pragma: no cover

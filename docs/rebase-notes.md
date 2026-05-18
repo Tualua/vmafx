@@ -7,6 +7,13 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## feat/bvi-dvc-pre-extracted-input (ADR-0527)
+
+**No rebase impact.** All changes are confined to
+`ai/scripts/bvi_dvc_to_full_features.py`, `ai/tests/test_bvi_dvc_dir_mode.py`,
+and doc / AGENTS.md / changelog files. None of these paths exist in upstream
+Netflix/vmaf. No conflict risk on sync.
+
 ## fix/hip-motion-extractor-register (ADR-0523)
 
 **No rebase impact.** The only changed file is

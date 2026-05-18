@@ -53,27 +53,60 @@ data, the extracted parquet, or any cached `vmaf` JSON — only derived
 training weights and scripts ship in-tree. This is the same posture
 the fork already takes for the Netflix Public drop (ADR-0203).
 
+### 2.1 If you already have the YUVs extracted
+
+If you have already extracted the archive (e.g. a 192 GB directory of
+raw `.yuv` files), pass `--bvi-dir` instead of `--bvi-zip` to skip the
+streaming-extraction step entirely:
+
+```bash
+python ai/scripts/bvi_dvc_to_full_features.py \
+    --bvi-dir /path/to/bvi-dvc-extracted \
+    --tier D \
+    --vmaf-bin build/tools/vmaf \
+    --out runs/full_features_bvi_dvc_D.parquet
+```
+
+`--bvi-dir` and `--bvi-zip` are mutually exclusive. Omitting both falls
+back to `--bvi-zip` using the default path or the `$VMAF_BVI_DVC_ZIP`
+environment variable. See [ADR-0527](../adr/0527-bvi-dvc-pre-extracted-dir-input.md)
+for the design rationale.
+
+Accepted file types in `--bvi-dir` mode:
+
+| Suffix | Behaviour |
+|--------|-----------|
+| `.yuv` | Used directly as the reference; width, height, fps, and bit-depth are parsed from the filename. No intermediate decode step. |
+| `.mp4` | Decoded to raw YUV via ffmpeg (same as the zip path). |
+
+Files that do not match the BVI-DVC naming convention
+(`<Stem>_<W>x<H>_<fps>fps_<depth>bit_420.<ext>`) are skipped with a
+warning. Files whose resolution does not map to one of the four
+canonical tiers (A/B/C/D) are also skipped with a warning.
+
 ## 3. Pipeline
 
 The end-to-end ingestion is two stages:
 
 ```text
-   .workingdir2/BVI-DVC Part 1.zip
-              │
-              │  (1) feature parquet
-              ▼
-   ai/scripts/bvi_dvc_to_full_features.py
-              │      → runs/full_features_bvi_dvc_<tier>.parquet
-              │
-              │  (2) corpus JSONL (fr_regressor_v2 schema)
-              ▼
-   ai/scripts/bvi_dvc_to_corpus_jsonl.py
-              │      → runs/bvi_dvc_corpus.jsonl
-              │
-              │  (3) merge with Netflix shard
-              ▼
-   ai/scripts/merge_corpora.py
-                     → runs/fr_v2_train_corpus.jsonl
+   .workingdir2/BVI-DVC Part 1.zip    OR    /path/to/bvi-dvc-extracted/
+              │                                          │
+              │  --bvi-zip (default)                    │  --bvi-dir (ADR-0527)
+              └──────────────────────┬──────────────────┘
+                                     │  (1) feature parquet
+                                     ▼
+              ai/scripts/bvi_dvc_to_full_features.py
+                                     │      → runs/full_features_bvi_dvc_<tier>.parquet
+                                     │
+                                     │  (2) corpus JSONL (fr_regressor_v2 schema)
+                                     ▼
+              ai/scripts/bvi_dvc_to_corpus_jsonl.py
+                                     │      → runs/bvi_dvc_corpus.jsonl
+                                     │
+                                     │  (3) merge with Netflix shard
+                                     ▼
+              ai/scripts/merge_corpora.py
+                                           → runs/fr_v2_train_corpus.jsonl
 ```
 
 Stage (1) is the **per-frame feature parquet** consumed by the

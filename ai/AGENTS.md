@@ -502,6 +502,15 @@ by `(src_sha256, encoder, preset, crf)`).
   [ADR-0303](../docs/adr/0303-fr-regressor-v2-ensemble-flip.md).
   Adding BVI-DVC to the corpus does NOT authorise re-shipping
   `fr_regressor_v2.onnx` without re-running the ensemble gate.
+- `bvi_dvc_to_full_features.py` accepts two mutually exclusive input
+  modes: `--bvi-zip` (original; streams MP4s from the archive) and
+  `--bvi-dir` (ADR-0527; enumerates pre-extracted `.mp4` / `.yuv` files
+  from a directory). Tier is inferred from the resolution via the
+  closed `_RES_TO_TIER` dict — any new BVI-DVC release with a
+  non-standard resolution requires adding a row there before the file
+  will be picked up. The dir-mode path does **not** delete source files
+  after processing; the zip-mode path deletes the temporarily extracted
+  MP4 after processing (existing behaviour).
 
 ## v5 corpus-expansion probe — research-only (ADR-0287)
 
