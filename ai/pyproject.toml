@@ -43,7 +43,7 @@ viz  = ["matplotlib>=3.9", "seaborn>=0.13"]
 dev  = [
   "pytest>=9.0.3",
   "ruff>=0.15.12",
-  "mypy>=1.10",
+  "mypy>=2.1.0",
   "types-PyYAML>=6.0",
   "pandas-stubs>=2.2",
 ]
