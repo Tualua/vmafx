@@ -1927,6 +1927,15 @@ def _run_tune_per_shot(args: argparse.Namespace) -> int:
         ffmpeg_bin=args.ffmpeg_bin,
     )
 
+    def _shot_bitrate(br: float) -> float | None:
+        # ADR-0531: serialise NaN/inf as null (RFC-8259-portable JSON).
+        # The report ingester maps null → NaN → "—" in the Bitrate column,
+        # which is the correct rendering for synthetic/dry-run predicates
+        # that never perform a real encode.
+        if not isinstance(br, float) or math.isnan(br) or math.isinf(br):
+            return None
+        return round(br, 2)
+
     plan_doc = {
         "encoder": plan.encoder,
         "framerate": plan.framerate,
@@ -1938,6 +1947,7 @@ def _run_tune_per_shot(args: argparse.Namespace) -> int:
                 "end_frame": r.shot.end_frame,
                 "crf": r.crf,
                 "predicted_vmaf": r.predicted_vmaf,
+                "bitrate_kbps": _shot_bitrate(r.bitrate_kbps),
             }
             for r in plan.recommendations
         ],
@@ -1958,8 +1968,26 @@ def _run_tune_per_shot(args: argparse.Namespace) -> int:
         args.script_out.write_text(plan_to_shell_script(plan), encoding="utf-8")
         sys.stderr.write(f"wrote shell script -> {args.script_out}\n")
 
-    seg_dir = args.segment_dir or args.output.parent / "segments"
-    write_concat_listing(plan, seg_dir / "concat.txt")
+    # Derive the segments directory.  Prefer the explicit --segment-dir flag,
+    # then the directory that contains --plan-out (writable by construction —
+    # the plan JSON was just written there), and only fall back to
+    # <output>.parent/segments when neither is set.  The fallback resolves
+    # relative to the CWD, which may be read-only inside a bind-mounted
+    # container workspace (ADR-0530).
+    if args.segment_dir is not None:
+        seg_dir = args.segment_dir
+    elif args.plan_out is not None:
+        seg_dir = args.plan_out.parent / "segments"
+    else:
+        seg_dir = args.output.parent / "segments"
+    try:
+        write_concat_listing(plan, seg_dir / "concat.txt")
+    except OSError as exc:
+        sys.stderr.write(
+            f"WARN: segments dir {seg_dir} not writable; "
+            f"skipping concat listing ({exc}). "
+            f"Plan JSON still emitted at {args.plan_out or 'stdout'}.\n"
+        )
     return 0
 
 

@@ -395,6 +395,193 @@ def test_cli_tune_per_shot_binds_bisect_predicate(tmp_path, monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
+# ADR-0532 — tune-per-shot tolerates read-only CWD                            #
+# --------------------------------------------------------------------------- #
+
+
+def test_cli_tune_per_shot_readonly_cwd_returns_zero(tmp_path, monkeypatch):
+    """tune-per-shot exits 0 even when CWD is read-only (ADR-0532).
+
+    The plan JSON is the primary deliverable.  When the segments directory
+    cannot be created (e.g. a bind-mounted read-only container workspace), a
+    WARN message is emitted to stderr and the command still returns 0.
+    """
+    import stat
+
+    src = tmp_path / "ref.yuv"
+    src.write_bytes(b"\x00" * 16)
+    plan_out = tmp_path / "plan.json"
+    out = tmp_path / "out.mp4"
+
+    # Create a read-only directory to use as CWD; the default --output
+    # resolves relative to this directory, so segments/ would land there too
+    # without the ADR-0530 fix.
+    ro_dir = tmp_path / "ro_workspace"
+    ro_dir.mkdir()
+    ro_dir.chmod(stat.S_IRUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IXGRP)
+
+    payload = json.dumps(
+        {
+            "shots": [
+                {"start_frame": 0, "end_frame": 23},
+                {"start_frame": 24, "end_frame": 47},
+            ]
+        }
+    )
+
+    monkeypatch.setattr("vmaftune.per_shot._which", lambda _b: "/fake/vmaf-perShot")
+
+    def fake_run(cmd, capture_output, text, check):
+        if cmd[0] == "vmaf-perShot":
+            out_path = Path(cmd[cmd.index("--output") + 1])
+            out_path.write_text(payload, encoding="utf-8")
+            return _FakeCompleted(returncode=0, stdout="wrote 2 shot(s)")
+        assert cmd[0] == "ffmpeg"
+        out_yuv = Path(cmd[-1])
+        out_yuv.write_bytes(b"\x00" * 16)
+        return _FakeCompleted(returncode=0)
+
+    monkeypatch.setattr("vmaftune.per_shot.subprocess.run", fake_run)
+
+    def fake_bisect(src_path, codec, target_vmaf, **kwargs):
+        return SimpleNamespace(
+            ok=True,
+            best_crf=23,
+            measured_vmaf=target_vmaf,
+            error="",
+        )
+
+    monkeypatch.setattr("vmaftune.cli.bisect_target_vmaf", fake_bisect)
+
+    # Change into the read-only directory so that any relative path write
+    # (e.g. Path("segments").mkdir()) would fail with PermissionError.
+    monkeypatch.chdir(ro_dir)
+
+    import io
+    import sys
+
+    stderr_capture = io.StringIO()
+    monkeypatch.setattr(sys, "stderr", stderr_capture)
+
+    rc = cli.main(
+        [
+            "tune-per-shot",
+            "--src",
+            str(src),
+            "--width",
+            "1920",
+            "--height",
+            "1080",
+            "--framerate",
+            "24",
+            "--target-vmaf",
+            "92",
+            "--encoder",
+            "libx264",
+            "--crf-min",
+            "18",
+            "--crf-max",
+            "30",
+            "--max-iterations",
+            "4",
+            "--output",
+            str(out),
+            "--plan-out",
+            str(plan_out),
+        ]
+    )
+
+    # Restore write permissions so pytest can clean up tmp_path.
+    ro_dir.chmod(stat.S_IRWXU)
+
+    assert rc == 0, f"expected exit 0, got {rc}"
+    assert plan_out.exists(), "plan JSON must be written regardless of segments dir"
+    doc = json.loads(plan_out.read_text())
+    assert doc["encoder"] == "libx264"
+    # The segments dir under plan_out.parent must have been created and contain
+    # concat.txt (plan_out.parent is tmp_path, which is writable).
+    listing = (plan_out.parent / "segments" / "concat.txt").read_text()
+    assert listing.count("file '") == 2
+
+
+def test_cli_tune_per_shot_ro_cwd_no_plan_out_warns(tmp_path, monkeypatch):
+    """When neither --plan-out nor --segment-dir is given and CWD is read-only,
+    a WARN is emitted to stderr and the command still returns 0 (ADR-0530).
+    """
+    import stat
+
+    src = tmp_path / "ref.yuv"
+    src.write_bytes(b"\x00" * 16)
+
+    ro_dir = tmp_path / "ro_cwd"
+    ro_dir.mkdir()
+    ro_dir.chmod(stat.S_IRUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IXGRP)
+
+    payload = json.dumps({"shots": [{"start_frame": 0, "end_frame": 23}]})
+
+    monkeypatch.setattr("vmaftune.per_shot._which", lambda _b: "/fake/vmaf-perShot")
+
+    def fake_run(cmd, capture_output, text, check):
+        if cmd[0] == "vmaf-perShot":
+            out_path = Path(cmd[cmd.index("--output") + 1])
+            out_path.write_text(payload, encoding="utf-8")
+            return _FakeCompleted(returncode=0, stdout="wrote 1 shot(s)")
+        out_yuv = Path(cmd[-1])
+        out_yuv.write_bytes(b"\x00" * 16)
+        return _FakeCompleted(returncode=0)
+
+    monkeypatch.setattr("vmaftune.per_shot.subprocess.run", fake_run)
+
+    def fake_bisect(src_path, codec, target_vmaf, **kwargs):
+        return SimpleNamespace(ok=True, best_crf=23, measured_vmaf=target_vmaf, error="")
+
+    monkeypatch.setattr("vmaftune.cli.bisect_target_vmaf", fake_bisect)
+
+    # Use a relative --output that resolves inside the read-only CWD so
+    # the fallback seg_dir (output.parent/segments == ro_cwd/segments) is
+    # non-writable.
+    monkeypatch.chdir(ro_dir)
+
+    import io
+    import sys
+
+    stderr_capture = io.StringIO()
+    monkeypatch.setattr(sys, "stderr", stderr_capture)
+
+    rc = cli.main(
+        [
+            "tune-per-shot",
+            "--src",
+            str(src),
+            "--width",
+            "1920",
+            "--height",
+            "1080",
+            "--framerate",
+            "24",
+            "--target-vmaf",
+            "92",
+            "--encoder",
+            "libx264",
+            "--crf-min",
+            "18",
+            "--crf-max",
+            "30",
+            "--max-iterations",
+            "4",
+            "--output",
+            "per_shot_encode.mp4",
+        ]
+    )
+
+    ro_dir.chmod(stat.S_IRWXU)
+
+    assert rc == 0, f"expected exit 0, got {rc}"
+    stderr_out = stderr_capture.getvalue()
+    assert "WARN" in stderr_out and "not writable" in stderr_out
+
+
+# --------------------------------------------------------------------------- #
 # ADR-0513 — scene-threshold + uniform-window splitter                         #
 # --------------------------------------------------------------------------- #
 

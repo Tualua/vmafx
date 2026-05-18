@@ -7,6 +7,34 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+<<<<<<< HEAD
+=======
+## fix/per-shot-bitrate-and-last-shot-chart (ADR-0531)
+
+**No rebase impact.** All changes are confined to
+`tools/vmaf-tune/src/vmaftune/per_shot.py`,
+`tools/vmaf-tune/src/vmaftune/cli.py`,
+`tools/vmaf-tune/src/vmaftune/report.py`,
+`tools/vmaf-tune/tests/test_per_shot.py`,
+`tools/vmaf-tune/tests/test_report.py`,
+`docs/adr/0531-*.md`, `docs/adr/README.md`,
+`docs/state.md`, `docs/rebase-notes.md`, and
+`changelog.d/fixed/per-shot-bitrate-and-last-shot-chart.md`.
+The `tools/vmaf-tune/` tree does not exist in upstream Netflix/vmaf.
+No conflict risk on sync.
+
+## fix/per-shot-segments-readonly-cwd (ADR-0532)
+
+**No rebase impact.** All changes are confined to
+`tools/vmaf-tune/src/vmaftune/cli.py`,
+`tools/vmaf-tune/tests/test_per_shot.py`,
+`docs/usage/vmaf-tune.md`, `docs/adr/0530-*.md`, `docs/adr/README.md`,
+`docs/state.md`, `docs/rebase-notes.md`, and
+`changelog.d/fixed/0532-per-shot-segments-readonly-cwd.md`.
+The `tools/vmaf-tune/` tree does not exist in upstream Netflix/vmaf.
+No conflict risk on sync.
+
+>>>>>>> 99322ed05 (fix(vmaf-tune): tune-per-shot tolerates read-only CWD when writing segments (ADR-0532))
 ## fix/dev-container-dri-bind (ADR-0528)
 
 **No rebase impact.** The only changed files are `dev/docker-compose.yml`,

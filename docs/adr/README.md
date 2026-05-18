@@ -1,5 +1,3 @@
-WARNING: _order.txt lists missing fragment 0447-motion-hfr-under-report
-WARNING: _order.txt lists missing fragment 0460-ms-ssim-enable-db-clip-db-gpu-parity
 # Architectural Decision Records (ADR)
 
 This is the **canonical, tracked** decision log for the fork. Every non-trivial

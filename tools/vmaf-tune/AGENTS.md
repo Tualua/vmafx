@@ -641,6 +641,17 @@ corresponding phase.
   lengths differ by at most one frame — both invariants are covered
   by ``test_per_shot.py`` and downstream merge / concat-listing code
   depends on the contiguity property.
+- **Segment-dir priority order is load-bearing (ADR-0532).** The CLI
+  resolves the concat-listing directory in this exact order: (1)
+  ``--segment-dir`` when set; (2) ``plan_out.parent / "segments"`` when
+  ``--plan-out`` is set; (3) ``output.parent / "segments"`` otherwise.
+  Order (2) ensures the concat listing lands alongside the plan JSON on
+  a writable path — the plan write already succeeded at that point, so
+  the parent is guaranteed writable.  The ``write_concat_listing`` call
+  is wrapped in an ``OSError`` catch; failure emits a ``WARN`` to stderr
+  and the command exits 0 (plan JSON is the authoritative deliverable).
+  Do not collapse orders (2) and (3) without updating this invariant and
+  ``test_per_shot.py::test_cli_tune_per_shot_readonly_cwd_returns_zero``.
 - **Shot detection runs once per source, never per cell.** The
   corpus driver (``corpus._resolve_shot_metadata``) calls
   ``_detect_shots_with_status`` at the top of ``iter_rows`` and

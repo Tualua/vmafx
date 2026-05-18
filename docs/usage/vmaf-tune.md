@@ -2234,7 +2234,7 @@ shell script of the per-segment + concat commands.
 | `--score-backend NAME` | `auto` | libvmaf scoring backend for the per-shot scorer (`auto`, `cpu`, `cuda`, `sycl`, `vulkan`). |
 | `--predicate-module SPEC` | — | Advanced hook `MODULE:CALLABLE` matching `(shot, target_vmaf, encoder) -> (crf, measured_vmaf)`; bypasses real bisect. |
 | `--output PATH` | `per_shot_encode.mp4` | Final concatenated encode destination. |
-| `--segment-dir PATH` | `<output>.parent/segments` | Directory for per-shot segment files. |
+| `--segment-dir PATH` | see below | Directory for per-shot segment files. Priority order: (1) explicit `--segment-dir`; (2) `<plan-out>.parent/segments` when `--plan-out` is set; (3) `<output>.parent/segments`. If the resolved directory is not writable (e.g. a read-only bind-mount), a `WARN` is emitted to stderr and the command still exits 0 — the plan JSON remains the authoritative deliverable. See [ADR-0532](../adr/0532-per-shot-segments-readonly-cwd.md). |
 | `--plan-out PATH` | stdout | Write the JSON plan here instead of stdout. |
 | `--script-out PATH` | — | Optional: also emit a copy-paste shell script. |
 
@@ -2247,8 +2247,16 @@ shell script of the per-segment + concat commands.
   "predicate": "bisect",
   "target_vmaf": 92.0,
   "shots": [
-    {"start_frame": 0, "end_frame": 24, "crf": 22, "predicted_vmaf": 93.0},
-    {"start_frame": 24, "end_frame": 72, "crf": 26, "predicted_vmaf": 92.5}
+    {
+      "start_frame": 0, "end_frame": 24,
+      "crf": 22, "predicted_vmaf": 93.0,
+      "bitrate_kbps": 5234.12
+    },
+    {
+      "start_frame": 24, "end_frame": 72,
+      "crf": 26, "predicted_vmaf": 92.5,
+      "bitrate_kbps": 4182.44
+    }
   ],
   "segment_commands": [
     ["ffmpeg", "-y", "-hide_banner", "-ss", "0.000000", "-i", "ref.mp4",
@@ -2266,6 +2274,15 @@ shell script of the per-segment + concat commands.
 convention). The `vmaf-perShot` CSV/JSON sidecar uses inclusive
 `end_frame`; the planner normalises into the half-open form and the
 segment commands honour the half-open semantics via `-frames:v`.
+
+`bitrate_kbps` (added in ADR-0531) carries the encoded segment
+bitrate measured by the Phase-B bisect backend: `(segment_size_bytes
+× 8 / 1000) / shot_duration_s`. It is `null` when a custom
+`--predicate-module` is used (no real encode happens in that path)
+and always a positive finite float for the default bisect backend.
+The `vmaf-tune report` renderer uses this field to populate the
+**Bitrate** column in the per-shot table; a `null` / absent value
+renders as "—".
 
 ### Single-shot fallback
 
