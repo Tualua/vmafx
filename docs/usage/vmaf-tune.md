@@ -48,6 +48,12 @@ corpus.jsonl ──► vmaf-tune recommend --target-vmaf T   ──► smallest 
 corpus.jsonl ──► vmaf-tune benchmark --target-vmaf T   ──► encoder ranking
 ```
 
+## Environment variables
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `VMAFTUNE_WORKDIR` | (OS default, typically `/tmp`) | Parent directory under which all vmaf-tune subcommands create their per-run temporary scratch directories (decoded reference YUV, intermediate encodes). Set this to a path on a volume with sufficient free space when the OS `/tmp` is a small `tmpfs` — e.g. a 634-second 1080p60 source decodes to approximately 118 GB of raw YUV420p. The `compare`, `tune-per-shot`, and `ladder` subcommands also accept `--workdir PATH` to override this variable per invocation. In the `vmaf-dev-mcp` container this is pre-set to `/probes/vmaftune-work` (the 435 GB `/probes` bind-mount). Resolution order: `--workdir` flag > `VMAFTUNE_WORKDIR` env var > OS default. ([ADR-0549](../adr/0549-vmaftune-workdir-relocation.md)) |
+
 ## Install
 
 The tool ships under `tools/vmaf-tune/` as a standalone Python package.
@@ -1535,6 +1541,7 @@ the CPU set `libx264,libx265,libsvtav1,libvpx-vp9`.
 | `--predicate-module MOD:FN` | off | Advanced hook that bypasses the bisect backend. |
 | `--no-bisect` | off | Switch to CRF-sweep mode: skip target-VMAF bisect and encode each (codec, CRF) pair from `--crf-sweep` exactly once. See [CRF sweep mode](#crf-sweep-mode-no-bisect) below. (ADR-0542) |
 | `--crf-sweep LIST` | — | Comma-separated CRF values to use in `--no-bisect` mode. Example: `18,23,28,33`. Required when `--no-bisect` is passed. (ADR-0542) |
+| `--workdir PATH` | `None` | Directory under which to create the per-run temporary scratch directory for the decoded reference YUV and encodes. Overrides `VMAFTUNE_WORKDIR`. When unset, falls through to `VMAFTUNE_WORKDIR` (if set), then to the OS default (`/tmp`). Pass this when your source is large and `/tmp` is a small `tmpfs` (e.g. 634-second 1080p60 BBB decodes to ~118 GB raw YUV). ([ADR-0549](../adr/0549-vmaftune-workdir-relocation.md)) |
 | `--output PATH` | stdout | Write the rendered report to PATH instead of stdout. |
 
 ### `compare` output schema
@@ -1958,6 +1965,7 @@ accepted as a legacy alias for `vmaf`.
 | `--src-height INT` | largest `--resolutions` entry | Companion to `--src-width`. Default picks the tallest entry in `--resolutions` so a `--resolutions 1920x1080,1280x720,854x480` ladder against a 1080p raw YUV "just works". |
 | `--score-backend NAME` | `auto` | libvmaf scoring backend used by the default corpus sampler. Accepts `auto\|cpu\|cuda\|sycl\|vulkan` (same enum as `corpus --score-backend` / `compare --score-backend`). `auto` picks the fastest available (`cuda > vulkan > sycl > cpu`); a specific name is honoured strictly and the run errors out with RC=2 before any encodes start if the local `vmaf` binary does not advertise it. Use `cpu` to force bit-exact CPU scoring for verification against the Netflix golden gate. Added 2026-05-18 per ADR-0511 / Bug C. |
 | `--vmaf-bin PATH` | `vmaf` | Path to the `vmaf` binary used to probe backend availability for `--score-backend`. Added 2026-05-18 per ADR-0511 / Bug C. |
+| `--workdir PATH` | `None` | Directory under which to create the per-run temporary scratch directory. Overrides `VMAFTUNE_WORKDIR`. See `compare --workdir` for full semantics. ([ADR-0549](../adr/0549-vmaftune-workdir-relocation.md)) |
 
 > **Cross-resolution ladders against raw YUV**: prior to ADR-0498 the
 > default sampler used the rung target dims as the source dims, which
@@ -2409,6 +2417,7 @@ shell script of the per-segment + concat commands.
 | `--vmaf-model NAME` | `vmaf_v0.6.1` | VMAF model forwarded to the per-shot scorer. |
 | `--score-backend NAME` | `auto` | libvmaf scoring backend for the per-shot scorer (`auto`, `cpu`, `cuda`, `sycl`, `vulkan`). |
 | `--predicate-module SPEC` | — | Advanced hook `MODULE:CALLABLE` matching `(shot, target_vmaf, encoder) -> (crf, measured_vmaf)`; bypasses real bisect. |
+| `--workdir PATH` | `None` | Directory under which to create the per-run temporary scratch directory. Overrides `VMAFTUNE_WORKDIR`. See `compare --workdir` for full semantics. ([ADR-0549](../adr/0549-vmaftune-workdir-relocation.md)) |
 | `--output PATH` | `per_shot_encode.mp4` | Final concatenated encode destination. |
 | `--segment-dir PATH` | see below | Directory for per-shot segment files. Priority order: (1) explicit `--segment-dir`; (2) `<plan-out>.parent/segments` when `--plan-out` is set; (3) `<output>.parent/segments`. If the resolved directory is not writable (e.g. a read-only bind-mount), a `WARN` is emitted to stderr and the command still exits 0 — the plan JSON remains the authoritative deliverable. See [ADR-0532](../adr/0532-per-shot-segments-readonly-cwd.md). |
 | `--plan-out PATH` | stdout | Write the JSON plan here instead of stdout. |

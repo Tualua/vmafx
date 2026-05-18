@@ -861,6 +861,10 @@ ENV VMAF_MODEL_PATH=/build/vmaf/model
 ENV VMAF_TESTDATA_PATH=/build/vmaf/testdata
 # MCP UDS socket path (must match dev-mcp-entrypoint.sh and docker-compose.yml)
 ENV VMAF_MCP_UDS_PATH=/tmp/vmaf-mcp.sock
+# ADR-0546: route vmaf-tune temporary decode artefacts to the /probes
+# bind-mount (~435 GB free in production) instead of the 8 GB /tmp tmpfs.
+# The entrypoint creates /probes/vmaftune-work at startup.
+ENV VMAFTUNE_WORKDIR=/probes/vmaftune-work
 
 # Expose the SSE port (if SSE transport is enabled at build time)
 EXPOSE 8765

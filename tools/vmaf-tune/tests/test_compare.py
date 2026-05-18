@@ -381,6 +381,7 @@ def test_cli_compare_binds_real_bisect_predicate(monkeypatch, capsys, tmp_path):
             "score_backend": None,
             "ffmpeg_bin": "ffmpeg",
             "vmaf_bin": "vmaf",
+            "workdir": None,
         }
     ]
     payload = json.loads(capsys.readouterr().out)

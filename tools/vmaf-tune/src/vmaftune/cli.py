@@ -551,6 +551,18 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="optional: write a copy-paste shell script of the plan",
     )
+    per_shot.add_argument(
+        "--workdir",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help=(
+            "directory for temporary bisect encode / decode artefacts. "
+            "Overrides VMAFTUNE_WORKDIR and the OS /tmp default. "
+            "Ensure the volume has sufficient free space for raw YUV decodes. "
+            "(ADR-0546)"
+        ),
+    )
 
     rec_sal = sub.add_parser(
         "recommend-saliency",
@@ -786,6 +798,18 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     ladder.add_argument("--vmaf-bin", default="vmaf", help="path to the vmaf binary")
+    ladder.add_argument(
+        "--workdir",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help=(
+            "directory for temporary corpus-sampler encode / decode artefacts. "
+            "Overrides VMAFTUNE_WORKDIR and the OS /tmp default. "
+            "Ensure the volume has sufficient free space for raw YUV decodes. "
+            "(ADR-0546)"
+        ),
+    )
 
     compare = sub.add_parser(
         "compare",
@@ -960,6 +984,19 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "comma-separated CRF values for --no-bisect mode "
             "(e.g. 18,23,28,33). Required when --no-bisect is passed. (ADR-0542)"
+        ),
+    )
+    compare.add_argument(
+        "--workdir",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help=(
+            "directory used for temporary encoded and decoded YUV files. "
+            "Overrides the VMAFTUNE_WORKDIR environment variable and the "
+            "OS default (/tmp). Use a path on a volume with sufficient free "
+            "space — a full 1080p60 source decode can exceed 100 GB. "
+            "(ADR-0546)"
         ),
     )
 
@@ -2018,7 +2055,18 @@ def _run_tune_per_shot(args: argparse.Namespace) -> int:
                 args.crf_min,
                 args.crf_max,
             )
-            scratch_ctx = tempfile.TemporaryDirectory(prefix="vmaf-tune-per-shot-")
+            # ADR-0549: honour --workdir / VMAFTUNE_WORKDIR for
+            # per-shot bisect scratch space so artefacts land on a
+            # volume with sufficient free space rather than /tmp.
+            from .bisect import _workdir_parent as _bwp  # noqa: PLC0415
+
+            _pershot_wd = getattr(args, "workdir", None)
+            _pershot_parent = _pershot_wd if _pershot_wd is not None else _bwp()
+            if _pershot_parent is not None:
+                _pershot_parent.mkdir(parents=True, exist_ok=True)
+            scratch_ctx = tempfile.TemporaryDirectory(
+                prefix="vmaf-tune-per-shot-", dir=_pershot_parent
+            )
             predicate, bitrate_sidecar = _build_per_shot_bisect_predicate(
                 args,
                 scratch=Path(scratch_ctx.name),
@@ -2728,6 +2776,9 @@ def _run_compare(args: argparse.Namespace) -> int:
             crf_range = (args.crf_min, args.crf_max)
         score_backend = None if args.score_backend in (None, "auto") else args.score_backend
 
+        # ADR-0549: CLI --workdir beats env var; env var beats /tmp.
+        _compare_workdir = getattr(args, "workdir", None)
+
         def _build_bisect_for_target(target: float):
             return make_bisect_predicate(
                 target_vmaf=target,
@@ -2744,6 +2795,7 @@ def _run_compare(args: argparse.Namespace) -> int:
                 score_backend=score_backend,
                 ffmpeg_bin=args.ffmpeg_bin,
                 vmaf_bin=args.vmaf_bin,
+                workdir=_compare_workdir,
             )
 
         # Single-target legacy: build one predicate against
@@ -2894,7 +2946,16 @@ def _run_compare_crf_sweep(args: argparse.Namespace, encoders: list[str]) -> int
                 "error": reason,
             }
         adapter = get_adapter(codec)
-        with tempfile.TemporaryDirectory(prefix="vmaf-tune-crf-sweep-") as _wd:
+        # ADR-0549: honour --workdir / VMAFTUNE_WORKDIR so the sweep
+        # decode artefacts land on a volume with sufficient free space
+        # rather than the 8 GB /tmp tmpfs inside the dev-mcp container.
+        _cli_workdir = getattr(args, "workdir", None)
+        from .bisect import _workdir_parent as _bwp  # noqa: PLC0415
+
+        _sweep_parent = _cli_workdir if _cli_workdir is not None else _bwp()
+        if _sweep_parent is not None:
+            _sweep_parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="vmaf-tune-crf-sweep-", dir=_sweep_parent) as _wd:
             result = _encode_and_score(
                 src=src_path,
                 codec=codec,

@@ -7,6 +7,25 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## fix/vmaftune-workdir-tmpfs-enospc (ADR-0549)
+
+**No rebase impact.** All changes are confined to fork-local files:
+
+- `tools/vmaf-tune/src/vmaftune/bisect.py` (fork-added tool).
+- `tools/vmaf-tune/src/vmaftune/cli.py` (fork-added tool).
+- `tools/vmaf-tune/tests/test_workdir_enospc.py` (new test file).
+- `tools/vmaf-tune/tests/test_compare.py` (update expected kwargs).
+- `dev/Containerfile` (fork-local; whole file is fork-added).
+- `dev/scripts/dev-mcp-entrypoint.sh` (fork-local).
+- `docs/adr/0549-vmaftune-workdir-relocation.md`, `docs/state.md`,
+  `docs/usage/vmaf-tune.md`, `docs/adr/README.md`,
+  `changelog.d/fixed/vmaf-tune-enospc-workdir.md`,
+  `docs/rebase-notes.md` (fork-only doc tree).
+
+No upstream-shared paths touched. `VMAFTUNE_WORKDIR` is a new
+fork-local environment variable; it has no upstream counterpart and
+poses no rebase conflict risk.
+
 ## fix/dev-container-sycl-hip-runtime (ADR-0543)
 
 **No rebase impact.** All changes are confined to:

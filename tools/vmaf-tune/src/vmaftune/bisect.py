@@ -48,6 +48,8 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import math
+import os
+import shutil
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -96,6 +98,99 @@ _ABSOLUTE_CRF_RANGE_BY_NAME: dict[str, tuple[int, int]] = {
     "libaom-av1": (0, 63),
     "libsvtav1": (0, 63),
 }
+
+
+def _workdir_parent() -> Path | None:
+    """Return the preferred parent directory for temporary work directories.
+
+    Resolution order (ADR-0549):
+
+    1. ``VMAFTUNE_WORKDIR`` environment variable (set by the dev-mcp
+       container to ``/probes/vmaftune-work`` which has ~435 GB free).
+    2. ``None`` — callers fall back to the OS default (usually
+       ``/tmp``, an 8 GB tmpfs inside the dev-mcp container — too
+       small for a full 1080p60 YUV decode of BBB).
+
+    Returns a :class:`Path` when the env var is set (the directory is
+    created on demand by the caller), otherwise ``None``.
+    """
+    env_val = os.environ.get("VMAFTUNE_WORKDIR", "").strip()
+    if env_val:
+        return Path(env_val)
+    return None
+
+
+# Size in bytes of a single pixel in each supported pix_fmt.
+# yuv420p  → 1.5 bytes/px  (Y plane full + U + V half)
+# yuv420p10le → 3 bytes/px (same layout but 16-bit / plane)
+# yuv422p  → 2 bytes/px
+# yuv444p  → 3 bytes/px
+_BYTES_PER_PIXEL: dict[str, float] = {
+    "yuv420p": 1.5,
+    "yuv420p10le": 3.0,
+    "yuv420p12le": 3.0,
+    "yuv422p": 2.0,
+    "yuv422p10le": 4.0,
+    "yuv444p": 3.0,
+    "yuv444p10le": 6.0,
+}
+_BYTES_PER_PIXEL_DEFAULT: float = 1.5  # safe floor for unknown formats
+
+
+def _estimate_yuv_bytes(
+    *,
+    width: int,
+    height: int,
+    pix_fmt: str,
+    fps: float,
+    duration_s: float,
+) -> int:
+    """Estimate the disk bytes a raw YUV decode will occupy.
+
+    Used for the preflight disk-space check (ADR-0549). The estimate
+    is intentionally rounded up — we multiply by the ceiling of fps and
+    add a small per-frame overhead for alignment, so the check is
+    conservative rather than optimistic.
+    """
+    bpp = _BYTES_PER_PIXEL.get(pix_fmt, _BYTES_PER_PIXEL_DEFAULT)
+    frames = max(1, int(math.ceil(fps * max(duration_s, 0.0))))
+    return int(math.ceil(width * height * bpp * frames))
+
+
+def _check_disk_space(
+    workdir: Path,
+    *,
+    estimated_bytes: int,
+    headroom: float = 1.1,
+) -> str | None:
+    """Return an error string if ``workdir``'s volume lacks disk space.
+
+    Compares ``shutil.disk_usage(workdir).free`` against
+    ``estimated_bytes * headroom``. Returns ``None`` when space is
+    sufficient. Returns a human-readable diagnostic (including GB
+    figures and a ``--workdir`` hint) when space is insufficient.
+
+    The check is best-effort: if ``disk_usage`` raises (e.g. on an
+    exotic filesystem) the function returns ``None`` (allow the decode
+    to proceed) rather than blocking legitimate runs.
+    """
+    required = int(math.ceil(estimated_bytes * headroom))
+    try:
+        usage = shutil.disk_usage(workdir)
+        free = usage.free
+    except OSError:
+        return None  # cannot query — let the decode attempt proceed
+    if free >= required:
+        return None
+    est_gb = estimated_bytes / (1024**3)
+    free_gb = free / (1024**3)
+    return (
+        f"insufficient disk space for YUV decode: "
+        f"estimated {est_gb:.1f} GB, "
+        f"free {free_gb:.1f} GB on {workdir}. "
+        f"Re-run with --workdir /path/to/volume-with-space "
+        f"(or set VMAFTUNE_WORKDIR=/path/to/volume-with-space)"
+    )
 
 
 def _absolute_crf_range(adapter: object) -> tuple[int, int]:
@@ -344,7 +439,14 @@ def bisect_target_vmaf(
     chosen_preset = preset if preset is not None else _default_preset(adapter)
 
     if workdir is None:
-        workdir_ctx = tempfile.TemporaryDirectory()
+        # ADR-0549: prefer VMAFTUNE_WORKDIR (e.g. /probes/vmaftune-work
+        # in the dev-mcp container, ~435 GB free) over the OS default
+        # /tmp (8 GB tmpfs in the container — too small for a full
+        # 1080p60 BBB YUV decode of ~118 GB).
+        _wdir_parent = _workdir_parent()
+        if _wdir_parent is not None:
+            _wdir_parent.mkdir(parents=True, exist_ok=True)
+        workdir_ctx = tempfile.TemporaryDirectory(dir=_wdir_parent)
         workdir_path = Path(workdir_ctx.name)
     else:
         workdir_ctx = None
@@ -653,6 +755,31 @@ def _encode_and_score(
         # enough (every iteration scores the same reference).
         rc = 0
         if not decoded_ref.exists():
+            # ADR-0549: preflight disk-space check before materialising
+            # the raw YUV decode. A 1080p60 634 s BBB source decodes to
+            # ~118 GB; the dev-mcp container's /tmp is an 8 GB tmpfs, so
+            # the decode fails with rc=228 (ENOSPC) without this guard.
+            # The check is skipped when duration_s <= 0 (unknown
+            # duration) — we cannot estimate in that case and the error
+            # will surface via the ffmpeg returncode as before.
+            _decode_dur_s = float(duration_s) if float(duration_s) > 0.0 else None
+            if _decode_dur_s is not None:
+                workdir.mkdir(parents=True, exist_ok=True)
+                _est = _estimate_yuv_bytes(
+                    width=width,
+                    height=height,
+                    pix_fmt=pix_fmt,
+                    fps=framerate,
+                    duration_s=_decode_dur_s,
+                )
+                _space_err = _check_disk_space(workdir, estimated_bytes=_est)
+                if _space_err is not None:
+                    return _failure(
+                        codec,
+                        _space_err,
+                        encode_time_ms=enc_res.encode_time_ms,
+                        encoder_version=enc_res.encoder_version,
+                    )
             # BBB e2e v2 Bug #v2-A: clamp the reference decode to
             # ``duration_s`` so a 10 s probe against a 634 s source
             # produces ~896 MB of raw YUV, not ~58 GB. ``duration_s == 0``

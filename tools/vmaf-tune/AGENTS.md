@@ -455,6 +455,19 @@ for the option-space digest.
   `CORPUS_ROW_KEYS`: adding optional keys with a default is fine,
   renaming or removing keys requires bumping the schema and updating
   every downstream consumer in the same PR.
+- **`bisect_target_vmaf` public kwarg `workdir`** — added by ADR-0549.
+  Resolution order: `workdir=` kwarg (explicit Path) > `VMAFTUNE_WORKDIR`
+  env var > OS default (`/tmp`). The private helpers `_workdir_parent`,
+  `_estimate_yuv_bytes`, and `_check_disk_space` are **not** in
+  `__all__` — `test_module_exports_match_public_surface` in
+  `tests/test_bisect.py` pins the exact set `{BisectResult,
+  BisectSample, bisect_target_vmaf, make_bisect_predicate}`. Adding
+  private helpers to `__all__` will trip that test; import them
+  directly in tests if needed. The `make_bisect_predicate` forwarding
+  call in `_run_compare` (cli.py) includes `workdir=args.workdir`; any
+  new compare-path caller must carry this kwarg through or the
+  `test_cli_compare_binds_real_bisect_predicate` assertion will catch
+  the omission. ([ADR-0549](../../docs/adr/0549-vmaftune-workdir-relocation.md))
 - **Score backend selection is strict-by-default
   ([ADR-0299](../../docs/adr/0299-vmaf-tune-gpu-score.md)).**
   `score_backend.select_backend(prefer)` honours `cuda` / `vulkan` /

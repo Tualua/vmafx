@@ -87,6 +87,12 @@ unset _vk_real_icds _vk_dir _vk_json
 # never fails on "No such file or directory: /tmp/vmaf-mcp.log".
 mkdir -p /tmp && chmod 1777 /tmp
 
+# ADR-0546: create the vmaf-tune workdir under /probes (the large
+# bind-mount). /probes itself is created by the docker-compose bind
+# and may not exist yet on a fresh host if the compose file never ran.
+# Guard with || true so the entrypoint does not abort on read-only hosts.
+mkdir -p "${VMAFTUNE_WORKDIR:-/probes/vmaftune-work}" 2>/dev/null || true
+
 LOG_FILE="${VMAF_MCP_LOG:-/tmp/vmaf-mcp.log}"
 MODEL_PATH="${VMAF_MODEL_PATH:-/workspace/model}"
 
