@@ -213,7 +213,7 @@ Toolkit installed, every libvmaf backend should run inside the container:
 |---|---|---|
 | `cpu` | VMAF score, rc=0 | always |
 | `cuda` | VMAF score, rc=0 (5-place-equal to CPU per ADR-0214) | NVIDIA GPU + Container Toolkit |
-| `sycl` | VMAF score, rc=0 (5-place-equal to CPU) | Intel GPU exposed via `/dev/dri/renderD*` + `/dev/dri/by-path/` |
+| `sycl` | VMAF score, rc=0 (5-place-equal to CPU) | Intel GPU exposed via `/dev/dri` bind-mount (ADR-0528) |
 | `vulkan` | VMAF score, rc=0 (per-adapter device picker selects the first compatible ICD) | At least one Vulkan ICD: NVIDIA (via NVIDIA_DRIVER_CAPABILITIES=graphics), Intel/AMD (via mesa-vulkan-drivers), or lavapipe software fallback |
 | `hip` | VMAF score, rc=0 (5-place-equal to CPU) | AMD GPU via `/dev/kfd` + `/dev/dri/renderD*` |
 | `metal` | "built without metal support" on Linux containers | macOS host only |

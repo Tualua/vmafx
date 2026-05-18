@@ -81,16 +81,19 @@ services:
         source: ./.workingdir/dev-mcp-probes
         target: /probes
         read_only: false
-      # /dev/dri/by-path bind-mount — preserves the udev-managed
-      # `pci-XXXX:YY:ZZ.W-{card,render}` symlinks the Intel level-zero runtime
-      # uses to discover Arc GPUs. The leaf device nodes themselves
-      # (card0..card2, renderD128..renderD130) are still passed via the
-      # `devices:` directive below — but Docker's `devices:` form does NOT
-      # carry directory entries like `by-path/`, so the symlinks must be
-      # bind-mounted separately. ADR-0509 / Research-0138.
+      # Whole /dev/dri bind-mount — mounts the entire DRI subsystem directory,
+      # including both the leaf device nodes (card*, renderD*) AND the
+      # udev-managed `by-path/` and `by-id/` symlink directories that the
+      # Intel level-zero runtime uses to discover Arc GPUs. This supersedes
+      # the former `/dev/dri/by-path`-only bind (ADR-0514) which was
+      # vulnerable to PCI re-enumeration: after a reboot, suspend/resume, or
+      # GPU hotplug the by-path symlink names change on the host, causing
+      # Docker's stored config to reference a no-longer-existing path and
+      # preventing container start. Mounting the whole directory avoids any
+      # hard-coded path dependency. ADR-0528.
       - type: bind
-        source: /dev/dri/by-path
-        target: /dev/dri/by-path
+        source: /dev/dri
+        target: /dev/dri
         read_only: true
 
     # NVIDIA Container Toolkit runtime — requires nvidia runtime configured on host.
@@ -107,16 +110,13 @@ services:
 
     # Intel Arc (Vulkan/SYCL via DRI) + AMD ROCm (HIP via /dev/kfd).
     #
-    # /dev/dri is passed as a single `devices:` entry — Docker assigns
-    # cgroup rwm rules to every device-node under that directory at
-    # container start. The matching `/dev/dri/by-path` bind-mount in the
-    # `volumes:` section above brings in the udev symlinks that the Intel
-    # level-zero runtime (`libze_intel_gpu.so.1`) uses to discover the Arc
-    # GPU. Without those symlinks sycl-ls reports `Platforms: 0` even when
-    # renderD129 is visible. ADR-0509 / Research-0138; verified via strace
-    # inside the container.
+    # /dev/dri is no longer listed under `devices:` — the whole-directory
+    # bind-mount in `volumes:` above covers both the cgroup device nodes
+    # AND the udev `by-path/` symlink directory. Docker's `devices:` form
+    # only carries leaf device nodes and drops subdirectory symlinks; the
+    # bind-mount gives the Intel level-zero runtime what it needs to
+    # discover Arc GPUs without any PCI-address dependency. ADR-0528.
     devices:
-      - /dev/dri:/dev/dri
       - /dev/kfd:/dev/kfd
 
     # video + render groups give the HIP runtime access to /dev/kfd and
@@ -172,16 +172,15 @@ services:
         source: ./.workingdir/dev-mcp-probes
         target: /probes
         read_only: false
-      # /dev/dri/by-path — udev symlinks (see dev-mcp service above).
+      # Whole /dev/dri bind-mount — see dev-mcp service above. ADR-0529.
       - type: bind
-        source: /dev/dri/by-path
-        target: /dev/dri/by-path
+        source: /dev/dri
+        target: /dev/dri
         read_only: true
 
     runtime: ${CONTAINER_RUNTIME:-runc}
 
     devices:
-      - /dev/dri:/dev/dri
       - /dev/kfd:/dev/kfd
 
     group_add:

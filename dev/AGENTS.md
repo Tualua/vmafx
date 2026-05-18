@@ -81,14 +81,20 @@ a real container-side regression that hid a host GPU from libvmaf:
    real GPU. Operators that need to force a single ICD can set the
    env var at `docker exec` time per-invocation.
 
-3. **`/dev/dri/by-path` is a separate bind-mount in
-   `dev/docker-compose.yml`.** Docker's `devices:` directive carries
-   leaf device nodes but drops the udev-managed
-   `pci-XXXX:YY:ZZ.W-render` symlinks. The Intel compute-runtime
-   discovers Arc GPUs through those symlinks; without them sycl-ls
-   reports `Platforms: 0` even when `/dev/dri/renderD*` is visible.
-   The `/dev/dri:/dev/dri` `devices:` entry stays so Docker writes the
-   cgroup rwm rules; the bind-mount overlays the missing symlinks.
+3. **`/dev/dri` is bind-mounted as a whole directory in
+   `dev/docker-compose.yml` (ADR-0528).** Docker's `devices:` directive
+   carries leaf device nodes but drops subdirectory entries such as
+   `by-path/` and `by-id/`. The Intel compute-runtime discovers Arc GPUs
+   through the udev-managed `pci-XXXX:YY:ZZ.W-render` symlinks inside
+   `by-path/`; without them sycl-ls reports `Platforms: 0` even when
+   `/dev/dri/renderD*` is visible. The former `/dev/dri/by-path`-only
+   bind (ADR-0514) was vulnerable to PCI re-enumeration after reboot,
+   suspend/resume, or GPU hotplug — the path would no longer exist and
+   the container would fail to start. The fix mounts the stable
+   `/dev/dri` directory itself (a kernel devtmpfs entry that is always
+   present) and drops the separate `devices: /dev/dri:/dev/dri` entry
+   (the bind-mount subsumes it). Only `/dev/kfd` remains under
+   `devices:` (single leaf node, no subdirectory dependency).
 
 4. **The build-time backend probe loop in stage 3 must stay green for
    `cpu` + `cuda` and `WARN`-but-not-`built without X support` for the

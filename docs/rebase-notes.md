@@ -7,6 +7,14 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## fix/dev-container-dri-bind (ADR-0528)
+
+**No rebase impact.** The only changed files are `dev/docker-compose.yml`,
+`dev/AGENTS.md`, `docs/development/dev-mcp.md`, `docs/adr/0528-*.md`,
+`docs/adr/README.md`, `docs/rebase-notes.md`, `docs/state.md`, and
+`changelog.d/fixed/dev-container-dri-bind.md`. None of these paths exist in
+upstream Netflix/vmaf. No conflict risk on sync.
+
 ## feat/bvi-dvc-pre-extracted-input (ADR-0527)
 
 **No rebase impact.** All changes are confined to
