@@ -35633,3 +35633,15 @@ resolution: apply the prefetch block to the updated gather cluster in the
 upstream version. The `adm_div_lookup` LUT signature is unchanged; the
 `adm_div_lookup[val + 32768]` access pattern is identical to scalar.
 No public C-API surface, no header, no meson build files touched.
+
+## ADR-0503: `vif_subsample_rd_8_avx512` loop fission (2026-05-18)
+
+**File**: `libvmaf/src/feature/x86/vif_avx512.c`
+
+If Netflix upstream modifies `vif_subsample_rd_8_avx512`, the two noinline helpers
+(`vif_subsample_rd_8_vert_j`, `vif_subsample_rd_8_horiz_j`) and their parameter
+structs (`VifVertCoeffs8`, `VifHorizCoeffs8`) must be kept in sync with any
+upstream changes to the accumulation order or filter constant initialisation.
+The struct fields map 1:1 to the local variables in the original monolithic body
+(f0-f4, mask2/3/x for vertical; fcoeff-fcoeff4, addnum, mask1 for horizontal).
+No public C-API surface, no header, no meson build files touched.
