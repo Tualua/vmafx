@@ -26,7 +26,7 @@ No upstream-shared paths touched. `VMAFTUNE_WORKDIR` is a new
 fork-local environment variable; it has no upstream counterpart and
 poses no rebase conflict risk.
 
-## docs/vcq-223-local-explainer-hang-diagnosis (ADR-0551)
+## docs/vcq-223-local-explainer-hang-diagnosis (ADR-0563)
 
 **No rebase impact.** All changes are confined to fork-local documentation:
 - `docs/adr/0551-local-explainer-hang-diagnosis.md` (new file, fork-local).
@@ -51,6 +51,21 @@ the deletion here does not create a rebase conflict because the upstream tree
 never had these paths. The `libvmaf/src/hip/meson.build` edit is entirely
 fork-local. `libvmaf/src/feature/hip/AGENTS.md` and
 `libvmaf/src/feature/cuda/AGENTS.md` are fork-local files.
+
+## chore/hip-extractor-audit-verify-9 (ADR-0563)
+
+**No rebase impact.** This PR is documentation and audit closure only.
+All changed files are fork-local:
+- `docs/adr/0563-hip-extractor-audit-verification.md` (new ADR, fork-local).
+- `docs/research/0563-hip-extractor-audit-verification.md` (new research digest, fork-local).
+- `docs/state.md` (fork-local tracking ledger).
+- `docs/adr/README.md` (fork-local ADR index).
+- `docs/rebase-notes.md` (this file, fork-local).
+- `changelog.d/changed/0551-hip-extractor-audit-close.md` (fork-local fragment).
+
+No upstream Netflix/vmaf file is touched. No `libvmaf/` source is touched.
+No `ffmpeg-patches/` file is touched. No `meson_options.txt` key is added.
+No new rebase-sensitive invariant is introduced.
 
 ## fix/dev-container-sycl-hip-runtime (ADR-0543)
 
