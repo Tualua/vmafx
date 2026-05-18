@@ -1138,6 +1138,9 @@ ProRes is intra-only — every frame is a keyframe — so `--keyint` /
 effect. The harness still emits them so the muxer's seek-table
 density is predictable across codecs.
 
+<!-- markdownlint-disable-next-line MD033 -->
+<a id="saliency-aware-encoding-recommend-saliency-saliency-aware"></a>
+
 ## Saliency-aware encoding (`recommend-saliency --saliency-aware`)
 
 Bucket #2 of the [PR #354](https://github.com/lusoris/vmaf/pull/354)
