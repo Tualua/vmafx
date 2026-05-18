@@ -10,7 +10,8 @@ feature/common/
   alignment.{c,h}            # vmaf_align / pinned-buffer alignment helpers
   blur_array.{c,h}           # ring-buffer blur backing for motion / motion_v2
   convolution.{c,h}          # scalar separable convolution (used by float_adm / float_vif / motion / SpEED-class extractors)
-  convolution_avx.c          # ADR-0143 generalised AVX scanlines for the same surface
+  convolution_avx.c          # ADR-0143 generalised AVX2 scanlines (8-wide FMA)
+  convolution_avx512.c       # ADR-0504 AVX-512F port of same scanlines (16-wide FMA)
   convolution_internal.h     # private helpers (RESTRICT, MAX_FWIDTH_AVX_CONV, ...)
   macros.h                   # cross-toolchain FORCE_INLINE / RESTRICT / UNUSED_FUNCTION
 ```
@@ -50,6 +51,20 @@ SSIM-specific scalar reference — do not confuse it with the
   [`docs/rebase-notes.md` §0036](../../../../docs/rebase-notes.md)
   carries the port history.
 
+- **`convolution_avx512.c` inherits the same invariants** (ADR-0504).
+  The four static scanline helpers (`convolution_f32_avx512_s_1d_*`)
+  and three public wrappers use `static` linkage and `ptrdiff_t`
+  strides identically to the AVX2 counterparts. Key additional
+  constraint: the vertical-pass `_mm512_load_ps` requires 64-byte
+  alignment; this is guaranteed because the tmp buffer is allocated
+  via `aligned_malloc(ALIGN_CEIL(...), MAX_ALIGN)` where
+  `MAX_ALIGN >= 64`, and `vmaf_ceiln(width, 16)` ensures the
+  stride is a multiple of 16 floats (= 64 bytes). The horizontal-pass
+  uses `_mm512_loadu_ps` (no alignment guarantee on the interior of
+  a row). **Results are NOT bit-identical to the AVX2 path** (wider
+  FMA tree → different rounding) — this is accepted for the float
+  path per ADR-0214.
+
 - **`MAX_FWIDTH_AVX_CONV` in `convolution_internal.h`** sizes the
   `__m256 f[]` filter-tap buffer in `convolution_avx.c`. Bumping
   this constant changes the per-call stack frame for the convolution
@@ -86,6 +101,10 @@ SSIM-specific scalar reference — do not confuse it with the
   ([`0143-port-netflix-f3a628b4-generalized-avx-convolve.md`](../../../../docs/adr/0143-port-netflix-f3a628b4-generalized-avx-convolve.md))
   — generalised AVX convolve scanlines (`static` + `ptrdiff_t`
   fork-local invariants).
+- ADR-0504
+  ([`0504-float-convolution-avx512-port.md`](../../../../docs/adr/0504-float-convolution-avx512-port.md))
+  — AVX-512F port of the same scanlines; dispatched before AVX2 in
+  `vif_tools.c`; inherits all ADR-0143 invariants.
 - [ADR-0146](../../../../docs/adr/0146-nolint-sweep-function-size.md) —
   helper-decomposition discipline applied across the IQA, common,
   and VIF surfaces.

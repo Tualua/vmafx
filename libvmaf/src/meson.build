@@ -648,6 +648,7 @@ if is_asm_enabled
             feature_src_dir + 'x86/ciede_avx512.c',
             feature_src_dir + 'x86/ms_ssim_decimate_avx512.c',
             feature_src_dir + 'x86/convolve_avx512.c',
+            feature_src_dir + 'common/convolution_avx512.c',
         ]
 
         x86_avx512_static_lib = static_library(

@@ -4368,6 +4368,28 @@ inline.*
   widths, evaluate on a per-fwidth perf profile — the fork's
   `/profile-hotpath` skill covers this.
 
+### 0037 — Float convolution AVX-512 port (ADR-0504, fork-local)
+
+- **Workstream PR**: `perf/float-convolution-avx512-port-2026-05-18`.
+- **Upstream**: no AVX-512 float convolution path in upstream; this is
+  fork-local (ADR-0504).
+- **Touches** (fork-local):
+  - [`convolution_avx512.c`](../libvmaf/src/feature/common/convolution_avx512.c)
+    — new TU with four static scanline helpers and three public wrappers,
+    all ported from `convolution_avx.c` (`__m256` → `__m512`, FMA added).
+  - [`convolution.h`](../libvmaf/src/feature/common/convolution.h) — adds
+    three `convolution_f32_avx512_*_s` declarations.
+  - [`vif_tools.c`](../libvmaf/src/feature/vif_tools.c) — dispatch updated
+    to test `VMAF_X86_CPU_FLAG_AVX512` before `AVX2` in all three
+    `vif_filter1d_*_s` functions.
+  - [`libvmaf/src/meson.build`](../libvmaf/src/meson.build) — adds
+    `convolution_avx512.c` to `x86_avx512_sources`.
+- **Rebase risk**: LOW. `convolution_avx512.c` is entirely fork-local;
+  upstream changes to `convolution_avx.c` or `convolution.h` may need
+  to be mirrored here, but the AVX-512 file has no upstream conflict
+  surface.
+- **Gate**: `meson test -C build` (63/63). Netflix CPU golden tests pass.
+
 ### 0038 — `motion_v2` NEON SIMD (fork-local)
 
 - **Workstream PR**: `port/motion-bundle-neon-and-updates` (this PR).

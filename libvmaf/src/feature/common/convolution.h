@@ -26,7 +26,8 @@ Filter widths above this one will not use the AVX path for convolutions.
 
 /*
  * All functions listed here expect a SYMMETRICAL filter.
- * All array arguments must be 32-byte aligned.
+ * All array arguments must be 32-byte aligned (AVX2 path) or
+ * 64-byte aligned (AVX-512 path; see ADR-0504).
  *
  * filter - convolution kernel
  * filter_width - convolution width (including symmetric side)
@@ -41,6 +42,7 @@ Filter widths above this one will not use the AVX path for convolutions.
 void convolution_f32_c_s(const float *filter, int filter_width, const float *src, float *dst,
                          float *tmp, int width, int height, int src_stride, int dst_stride);
 
+/* AVX2 paths (256-bit, 8 floats per FMA). */
 void convolution_f32_avx_s(const float *filter, int filter_width, const float *src, float *dst,
                            float *tmp, int width, int height, int src_stride, int dst_stride);
 
@@ -50,4 +52,20 @@ void convolution_f32_avx_sq_s(const float *filter, int filter_width, const float
 void convolution_f32_avx_xy_s(const float *filter, int filter_width, const float *src1,
                               const float *src2, float *dst, float *tmp, int width, int height,
                               int src1_stride, int src2_stride, int dst_stride);
+
+/* AVX-512F paths (512-bit, 16 floats per FMA). ADR-0504.
+ * Results are NOT bit-identical to the AVX2 paths (wider FMA tree changes
+ * rounding at the ULP level) but are numerically equivalent within the
+ * tolerance of the float VIF path (per ADR-0214 precedent). */
+void convolution_f32_avx512_s(const float *filter, int filter_width, const float *src, float *dst,
+                              float *tmp, int width, int height, int src_stride, int dst_stride);
+
+void convolution_f32_avx512_sq_s(const float *filter, int filter_width, const float *src,
+                                 float *dst, float *tmp, int width, int height, int src_stride,
+                                 int dst_stride);
+
+void convolution_f32_avx512_xy_s(const float *filter, int filter_width, const float *src1,
+                                 const float *src2, float *dst, float *tmp, int width, int height,
+                                 int src1_stride, int src2_stride, int dst_stride);
+
 #endif // CONVOLUTION_H_
