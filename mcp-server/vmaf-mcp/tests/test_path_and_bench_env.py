@@ -1,4 +1,9 @@
-"""Tests for B1 (_vmaf_binary path resolution) and B2 (_run_benchmark VMAF_ROOT)."""
+"""Tests for B1 (_vmaf_binary path resolution) and B2 (_run_benchmark env injection).
+
+ADR-0517: ``_run_benchmark`` takes NO positional arguments (bench_all.sh is a
+fixed-fixture suite); it injects VMAF_ROOT and VMAF_BIN into the subprocess
+environment and passes zero positional args to the script.
+"""
 
 from __future__ import annotations
 
@@ -73,8 +78,17 @@ def test_vmaf_binary_falls_back_to_libvmaf_when_all_absent(monkeypatch, tmp_path
 
 
 # ---------------------------------------------------------------------------
-# B2: _run_benchmark passes VMAF_ROOT to the subprocess
+# B2: _run_benchmark env injection (ADR-0517)
 # ---------------------------------------------------------------------------
+
+
+def _make_bench_script(tmp_path):
+    """Create a minimal bench_all.sh stub in tmp_path/testdata/."""
+    (tmp_path / "testdata").mkdir(exist_ok=True)
+    bench_script = tmp_path / "testdata" / "bench_all.sh"
+    bench_script.write_text("#!/bin/sh\nexit 0\n")
+    bench_script.chmod(0o755)
+    return bench_script
 
 
 def test_run_benchmark_injects_vmaf_root(monkeypatch, tmp_path):
@@ -86,10 +100,7 @@ def test_run_benchmark_injects_vmaf_root(monkeypatch, tmp_path):
     captured_env: dict[str, str] = {}
 
     monkeypatch.setattr(srv, "_repo_root", lambda: tmp_path)
-    (tmp_path / "testdata").mkdir()
-    bench_script = tmp_path / "testdata" / "bench_all.sh"
-    bench_script.write_text("#!/bin/sh\nexit 0\n")
-    bench_script.chmod(0o755)
+    _make_bench_script(tmp_path)
 
     async def fake_cse(*args, **kwargs):
         captured_env.update(kwargs.get("env") or {})
@@ -104,33 +115,102 @@ def test_run_benchmark_injects_vmaf_root(monkeypatch, tmp_path):
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_cse)
 
-    ref = tmp_path / "ref.yuv"
-    dis = tmp_path / "dis.yuv"
-    ref.write_bytes(b"fakeyuv")
-    dis.write_bytes(b"fakeyuv")
-
-    anyio.run(lambda: srv._run_benchmark(ref, dis, 576, 324))
+    anyio.run(srv._run_benchmark)
 
     assert "VMAF_ROOT" in captured_env, (
         "_run_benchmark did not pass VMAF_ROOT to the subprocess env; "
         "bench_all.sh will fail in containers where git is unavailable."
     )
-    assert captured_env["VMAF_ROOT"] == str(tmp_path), (
-        f"VMAF_ROOT={captured_env['VMAF_ROOT']!r} should equal repo root {tmp_path!r}"
+    assert captured_env["VMAF_ROOT"] == str(
+        tmp_path
+    ), f"VMAF_ROOT={captured_env['VMAF_ROOT']!r} should equal repo root {tmp_path!r}"
+
+
+def test_run_benchmark_injects_vmaf_bin(monkeypatch, tmp_path):
+    """_run_benchmark must pass VMAF_BIN so bench_all.sh does not fall back to
+    the relative in-tree path (libvmaf/build/tools/vmaf) that is absent in
+    the container after ``make install`` (ADR-0513 root cause #2)."""
+    import anyio
+
+    captured_env: dict[str, str] = {}
+    fake_bin = tmp_path / "fake-vmaf"
+    fake_bin.touch()
+
+    monkeypatch.setattr(srv, "_repo_root", lambda: tmp_path)
+    monkeypatch.setattr(srv, "_vmaf_binary", lambda: fake_bin)
+    _make_bench_script(tmp_path)
+
+    async def fake_cse(*args, **kwargs):
+        captured_env.update(kwargs.get("env") or {})
+
+        class _FakeProc:
+            returncode = 0
+
+            async def communicate(self):
+                return b"", b""
+
+        return _FakeProc()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_cse)
+
+    anyio.run(srv._run_benchmark)
+
+    assert "VMAF_BIN" in captured_env, (
+        "_run_benchmark did not pass VMAF_BIN to the subprocess env; "
+        "bench_all.sh will silently use the relative in-tree fallback path."
+    )
+    assert captured_env["VMAF_BIN"] == str(
+        fake_bin
+    ), f"VMAF_BIN={captured_env['VMAF_BIN']!r} should equal {fake_bin!r}"
+
+
+def test_run_benchmark_passes_no_positional_args(monkeypatch, tmp_path):
+    """bench_all.sh must be invoked with NO positional arguments.
+
+    Passing ``-r ref -d dis --width W --height H`` corrupts the ``$@`` array
+    visible inside the sourced Intel oneAPI ``setvars.sh``, which processes
+    ``$@`` as its own flags. Unknown flags are forwarded to per-component
+    ``env/vars.sh`` scripts, which may hang or exit non-zero — aborting
+    bench_all.sh before any output is emitted (ADR-0517 root cause #1).
+    """
+    import anyio
+
+    captured_args: list[str] = []
+
+    monkeypatch.setattr(srv, "_repo_root", lambda: tmp_path)
+    _make_bench_script(tmp_path)
+
+    async def fake_cse(*args, **kwargs):
+        captured_args.extend(args)
+
+        class _FakeProc:
+            returncode = 0
+
+            async def communicate(self):
+                return b"", b""
+
+        return _FakeProc()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_cse)
+
+    anyio.run(srv._run_benchmark)
+
+    # captured_args[0] is the script path; there must be nothing after it.
+    assert len(captured_args) == 1, (
+        f"bench_all.sh must be called with zero positional args; "
+        f"got {captured_args[1:]!r}. Extra args corrupt $@ inside "
+        "the sourced oneAPI setvars.sh (ADR-0517)."
     )
 
 
 def test_run_benchmark_preserves_inherited_env(monkeypatch, tmp_path):
-    """VMAF_ROOT injection must not discard the process environment -- PATH
-    and other variables required by the binary must survive."""
+    """VMAF_ROOT/VMAF_BIN injection must not discard the process environment --
+    PATH and GPU runtime vars must survive."""
     import anyio
 
     captured_env: dict[str, str] = {}
     monkeypatch.setattr(srv, "_repo_root", lambda: tmp_path)
-    (tmp_path / "testdata").mkdir()
-    bench_script = tmp_path / "testdata" / "bench_all.sh"
-    bench_script.write_text("#!/bin/sh\nexit 0\n")
-    bench_script.chmod(0o755)
+    _make_bench_script(tmp_path)
 
     monkeypatch.setenv("SENTINEL_VAR", "sentinel_value")
 
@@ -147,12 +227,7 @@ def test_run_benchmark_preserves_inherited_env(monkeypatch, tmp_path):
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_cse)
 
-    ref = tmp_path / "ref.yuv"
-    dis = tmp_path / "dis.yuv"
-    ref.write_bytes(b"fakeyuv")
-    dis.write_bytes(b"fakeyuv")
-
-    anyio.run(lambda: srv._run_benchmark(ref, dis, 576, 324))
+    anyio.run(srv._run_benchmark)
 
     assert captured_env.get("SENTINEL_VAR") == "sentinel_value", (
         "_run_benchmark must preserve the inherited environment; "

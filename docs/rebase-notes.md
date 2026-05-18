@@ -115,6 +115,14 @@ discipline and re-applying the four invariants documented in
 `dev/AGENTS.md` (`tcm/latest/lib` on `LD_LIBRARY_PATH`, no
 `VK_ICD_FILENAMES` pin, `/dev/dri/by-path` bind-mount, build-time
 backend probe).
+## fix/mcp-run-benchmark-repair — no rebase impact
+
+All changed files (`mcp-server/`, `testdata/bench_all.sh`, `docs/adr/0513-*`,
+`docs/mcp/`, `changelog.d/`, `docs/state.md`) are fork-local. `bench_all.sh`
+is a fork-local benchmarking helper not present in Netflix/vmaf upstream. No
+rebase action required on upstream sync.
+
+---
 
 ## fix/restore-cuda-kernel-lifecycle-helpers
 

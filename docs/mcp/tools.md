@@ -178,40 +178,58 @@ output; `cpu` is reported `true` whenever the binary exists.
 
 ## `run_benchmark`
 
-Execute `testdata/bench_all.sh` on a `(ref, dis)` pair. The harness
-runs CPU / CUDA / SYCL variants end-to-end and prints timings — see
-[usage/bench.md](../usage/bench.md).
+Run the full multi-fixture benchmark suite (`testdata/bench_all.sh`) against all
+available backends — CPU, CUDA, SYCL, and Vulkan — on three canonical YUV fixture
+pairs built into the harness:
+
+1. **576×324, 48 frames, 8-bit** — the Netflix golden pair `src01_hrc00 / src01_hrc01`
+2. **1920×1080, 5 frames, 8-bit** — the 5-frame 1080p pair
+3. **3840×2160, 200 frames, 8-bit** — the 4K BBB excerpt (`testdata/bbb/`)
+
+For each fixture the harness scores all four backends, prints per-backend VMAF means
+and wall times, and prints a comparison table showing max per-frame diff between
+CPU and each GPU backend. See [usage/bench.md](../usage/bench.md) for more detail.
+
+> **This tool does not accept per-call `ref`/`dis` arguments.** Per-pair scoring is
+> the job of `vmaf_score`. `bench_all.sh` is a fixed-fixture harness. (ADR-0517)
+
+> **Protocol note**: `run_benchmark` runs the full 4K test which takes 30–60 seconds
+> on a modern GPU. Real MCP clients hold the connection open. The heredoc test pattern
+> (`docker exec -i ... vmaf-mcp << EOF ... EOF`) causes the server to shut down on
+> stdin EOF before the benchmark completes. Use a persistent pipe (`sleep 120 |`)
+> when testing from the command line. See [Finding 9 in the E2E test matrix](../../.workingdir/bbb_reports/E2E_TEST_MATRIX_v9.md).
 
 ### Input schema
 
-| Field    | Type          | Required |
-|----------|---------------|----------|
-| `ref`    | string (path) | yes      |
-| `dis`    | string (path) | yes      |
-| `width`  | integer       | yes      |
-| `height` | integer       | yes      |
+Takes no arguments.
+
+```json
+{}
+```
 
 ### Response body
 
 ```json
 {
   "exit_code": 0,
-  "stdout": "...",
-  "stderr": "..."
+  "stdout": "=========================================\nTest 1: Official 576x324 (48 frames, 8-bit)\n...",
+  "stderr": ""
 }
 ```
 
+The `stdout` field contains the full human-readable benchmark output. Per-backend JSON
+result files are written to `/tmp/vmaf-bench-<pid>/` (or to `VMAF_BENCH_OUTDIR` if set).
+
 ### Errors
 
-- `testdata/bench_all.sh` missing → `{"error": "benchmark harness not found: ..."}`.
-- Non-zero exit is *not* an error — it is returned in `exit_code` so the
-  caller can see both stdout and stderr regardless.
-- Non-zero exit + empty stdout + empty stderr (the classic
-  `set -euo pipefail` silent abort) → the response gains an
-  `error` field with the most common root-cause shortlist and a
-  `bash -x` re-run hint (ADR-0495). The benchmark script itself
-  now exits `2` with a clear stderr message when the vmaf binary
-  is missing, which is the most common silent-abort cause.
+- `testdata/bench_all.sh` missing → raises `FileNotFoundError` with path.
+- Non-zero `exit_code` is not itself an error field — both stdout and stderr are
+  always returned so the caller can diagnose partial failures.
+- Non-zero exit + empty stdout + empty stderr → `error` key is added with a
+  root-cause shortlist and a `bash -x` re-run hint. Common causes: missing vmaf
+  binary or missing fixture YUVs under `testdata/bbb/`.
+- Unavailable backends (Vulkan without ICD, HIP scaffold-only) produce a `SKIP`
+  line in stdout and do not abort the harness.
 
 ## `eval_model_on_split`
 

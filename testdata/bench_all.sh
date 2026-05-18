@@ -23,8 +23,15 @@ ONEAPI_CANDIDATES=(
 )
 for cand in "${ONEAPI_CANDIDATES[@]}"; do
   if [[ -n "${cand}" && -f "${cand}" ]]; then
+    # ADR-0513: setvars.sh references variables that may be unset in the
+    # calling environment (e.g. SETVARS_ARGS, ia32).  When the parent
+    # shell has `set -u` active, bash aborts immediately on the first
+    # such reference inside the sourced script — bypassing the `|| true`
+    # guard.  Temporarily disable nounset (-u) while sourcing.
+    set +u
     # shellcheck disable=SC1090  # path resolved at runtime
     source "${cand}" >/dev/null 2>&1 || true
+    set -u
     break
   fi
 done
@@ -41,7 +48,11 @@ cd "${VMAF_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || echo /home/kilia
 # explicitly.
 VMAF="${VMAF_BIN:-libvmaf/build/tools/vmaf}"
 MODEL=model/vmaf_v0.6.1.json
-OUTDIR=testdata/bbb/results
+# ADR-0513: OUTDIR defaults to /tmp/vmaf-bench-$$ so the script works from
+# read-only mounts (e.g. the vmaf-dev-mcp container where /workspace is ro).
+# Set VMAF_BENCH_OUTDIR to override (e.g. testdata/bbb/results for local
+# runs that want persistent per-backend JSON artefacts).
+OUTDIR="${VMAF_BENCH_OUTDIR:-/tmp/vmaf-bench-$$}"
 mkdir -p "$OUTDIR"
 
 # Fail loudly if the vmaf binary is missing — the MCP `run_benchmark`
@@ -56,19 +67,33 @@ if [[ ! -x "$VMAF" ]]; then
 fi
 
 # `flags` is intentionally space-split into separate argv entries.
+# ADR-0513: run() guards vmaf exit codes with || true so that backends
+# that are unavailable (Vulkan without an ICD, HIP on a CUDA-only host)
+# do not abort the whole harness under `set -euo pipefail`.
 run() {
   local name="$1" ref="$2" dis="$3" w="$4" h="$5" bd="$6" flags="$7"
   local out="$OUTDIR/${name}.json"
-  local start end ms score
+  local start end ms score vmaf_rc
   echo -n "  $name ... "
   start=$(date +%s%N)
   # shellcheck disable=SC2086  # $flags is an intentionally-split flag list
   "$VMAF" --reference "$ref" --distorted "$dis" \
     --width "$w" --height "$h" --pixel_format 420 --bitdepth "$bd" \
     --model "path=$MODEL" --threads 1 \
-    --output "$out" --json -q $flags 2>/dev/null
+    --output "$out" --json -q $flags 2>/dev/null || vmaf_rc=$?
   end=$(date +%s%N)
   ms=$(((end - start) / 1000000))
+  if [[ -n "${vmaf_rc:-}" ]]; then
+    echo "SKIP (vmaf exited ${vmaf_rc} — backend likely unavailable)  (${ms}ms)"
+    return 0
+  fi
+  if [[ ! -f "$out" ]]; then
+    # vmaf returned 0 but did not write the output file — this happens when
+    # the requested backend is unavailable and the fallback path also fails
+    # to open the output (e.g. Vulkan without ICD: "could not open file").
+    echo "SKIP (no output file produced — backend likely unavailable)  (${ms}ms)"
+    return 0
+  fi
   score=$(python3 -c "import json; print(f'{json.load(open(\"$out\"))[\"pooled_metrics\"][\"vmaf\"][\"mean\"]:.6f}')")
   echo "${score}  (${ms}ms)"
 }

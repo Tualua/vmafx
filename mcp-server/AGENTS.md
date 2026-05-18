@@ -23,7 +23,8 @@ Locked in [ADR-0009](../docs/adr/0009-mcp-server-tool-surface.md):
 - `vmaf_score` — score a ref/dist pair, returning per-frame + aggregate
 - `list_models` — enumerate registered VMAF models (`model/`) + tiny models (`model/tiny/`)
 - `list_backends` — SIMD caps + GPU devices present on the host
-- `run_benchmark` — run `vmaf_bench` on a fixture set
+- `run_benchmark` — run the full multi-fixture benchmark harness (`bench_all.sh`) with no
+  arguments; per-pair scoring belongs in `vmaf_score` (ADR-0513)
 - `eval_model_on_split` — evaluate a tiny-AI ONNX regressor on a parquet split
 - `compare_models` — rank ONNX regressors on the same split
 - `describe_worst_frames` — local VLM describes the N frames with lowest VMAF score
@@ -41,6 +42,16 @@ Locked in [ADR-0009](../docs/adr/0009-mcp-server-tool-surface.md):
 - **Tiny-AI surface rule applies**: MCP tools that touch the tiny-AI path
   (e.g. `describe_worst_frames`) ship docs under `docs/ai/` in the same PR.
   See [ADR-0042](../docs/adr/0042-tinyai-docs-required-per-pr.md).
+
+## Rebase-sensitive invariants
+
+**`run_benchmark` takes no positional arguments** (ADR-0517). `bench_all.sh` is a
+fixed-fixture suite. Do not add `ref`/`dis`/`width`/`height` args back — they
+corrupt `$@` inside the sourced Intel oneAPI `setvars.sh` and cause a silent abort.
+
+**`bench_all.sh` must have `set +u` / `set -u` around the `source setvars.sh` call**
+(ADR-0517). `setvars.sh` references variables (`SETVARS_ARGS`, `ia32`) that may be
+unset in the calling context; `set -u` aborts on those references and bypasses `|| true`.
 
 ## Governing ADRs
 
@@ -72,3 +83,4 @@ Locked in [ADR-0009](../docs/adr/0009-mcp-server-tool-surface.md):
   `VMAF_MCP_ALLOW=/workspace/python/test/resource` first.
   `VMAF_MCP_ALLOW` env-var override is preserved and additive (it
   extends the default list, does not replace it).
+- [ADR-0517](../docs/adr/0517-mcp-run-benchmark-repair.md) — `run_benchmark` repair.

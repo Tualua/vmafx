@@ -149,9 +149,9 @@ def test_bug2_schema_advertises_all_seven_backends() -> None:
     for tool_name in ("vmaf_score", "describe_worst_frames"):
         tool = by_name[tool_name]
         backend_schema = tool.inputSchema["properties"]["backend"]
-        assert set(backend_schema["enum"]) == expected, (
-            f"{tool_name}: enum is {backend_schema['enum']}, expected {sorted(expected)}"
-        )
+        assert (
+            set(backend_schema["enum"]) == expected
+        ), f"{tool_name}: enum is {backend_schema['enum']}, expected {sorted(expected)}"
 
 
 # ---------------------------------------------------------------------------
@@ -181,13 +181,8 @@ def test_bug3_run_benchmark_surfaces_silent_pipefail(
     fake_proc.communicate = _fake_communicate
     fake_proc.returncode = 1
 
-    ref = tmp_path / "ref.yuv"
-    dis = tmp_path / "dis.yuv"
-    ref.touch()
-    dis.touch()
-
     with patch.object(srv.asyncio, "create_subprocess_exec", AsyncMock(return_value=fake_proc)):
-        result = asyncio.run(srv._run_benchmark(ref=ref, dis=dis, width=576, height=324))
+        result = asyncio.run(srv._run_benchmark())
 
     assert result["exit_code"] == 1
     assert "error" in result, f"expected error key, got {result}"
