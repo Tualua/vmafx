@@ -380,3 +380,4 @@
 0565-continuous-feature-mix-eval-pipeline
 0567-upstream-port-direct-read
 0568-sycl-icpx-aot-targets-default
+0569-sdk-version-bumps-2026-05-18

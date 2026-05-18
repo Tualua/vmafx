@@ -201,10 +201,10 @@ skip if dropped:
    libaom version or gate the ROI bridge behind a version probe.
 2. **`libvvenc` (Fraunhofer VVC reference) must be built from source
    and installed under `/usr/local`.** The package is not in Ubuntu
-   apt. Pin to a release tag (`v1.12.0` at time of writing) so future
-   rebases get a deterministic build. The configure-time check is
-   `check_pkg_config(libvvenc, ...)` which needs the `.pc` file
-   `VVENC_ENABLE_INSTALL=ON` ships.
+   apt. Pin to a release tag (`v1.14.0` as of ADR-0568; bumped from
+   `v1.12.0` 2026-05-18) so future rebases get a deterministic build.
+   The configure-time check is `check_pkg_config(libvvenc, ...)`
+   which needs the `.pc` file `VVENC_ENABLE_INSTALL=ON` ships.
 3. **AMF headers vendored from the upstream `GPUOpen-Libraries-
    AndSDKs/AMF` repo (header-only).** FFmpeg's `--enable-amf` needs
    only the headers at compile time; `libamfrt64.so` runtime
@@ -239,3 +239,13 @@ skip if dropped:
    start when the pin no longer matches the host — bump the ARG and
    rebuild instead of working around it on the host (CLAUDE.md §12 r15
    sub-rule 4).
+
+7. **`ORT_VERSION` must satisfy the `ai/pyproject.toml` requirement
+   `onnxruntime>=1.20,<2.0`.** Current pin: `1.26.0` (bumped from 1.20.1
+   per ADR-0568 2026-05-18). The tarball naming pattern is
+   `onnxruntime-linux-x64-${ORT_VERSION}.tgz` from the microsoft/onnxruntime
+   GitHub releases. The C API is stable across the 1.x line; however,
+   the ROCm EP and CUDA EP are only available from ORT 1.26+ (matching the
+   container's ROCm 7.2.3 + CUDA 13.x stack set in ADR-0541/ADR-0542).
+   When bumping ORT_VERSION: verify the new version's tarball exists at the
+   GitHub releases URL before updating the ARG, and update this note.

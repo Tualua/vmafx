@@ -278,7 +278,7 @@ supports without skipping rows with `hardware encoder not available:
 | `libvpx-vp9` | `libvpx-dev` (apt) | none |
 | `libsvtav1` | `libsvtav1-dev` (apt, SVT-AV1 1.7.0) | none |
 | `libaom-av1` | `libaom-dev` (apt, libaom 3.8.0) | none |
-| `libvvenc` | source build (Fraunhofer VVenC v1.12.0) | none |
+| `libvvenc` | source build (Fraunhofer VVenC v1.14.0) | none |
 | `h264_nvenc` / `hevc_nvenc` / `av1_nvenc` | `--enable-nvenc` + `nv-codec-headers` | NVIDIA GPU + Container Toolkit; NVENC capability bit on host driver (av1_nvenc requires Ada or newer — RTX 4090 ok) |
 | `h264_qsv` / `hevc_qsv` / `av1_qsv` | `--enable-libvpl` + `libvpl-dev` (apt) | Intel GPU + `/dev/dri/renderD*` passthrough + `intel-media-driver` host package (or the `intel-media-va-driver` Ubuntu equivalent) |
 | `h264_amf` / `hevc_amf` / `av1_amf` | `--enable-amf` + AMF headers (source) | AMD GPU + `libamfrt64.so` from the proprietary `amdgpu-pro` userspace bind-mounted into the container. The open-source ROCm install in the image (`rocm-hip-runtime-dev`) does **not** include AMF. |

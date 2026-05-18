@@ -37041,4 +37041,27 @@ Touched files:
 `changelog.d/added/0568-sycl-icpx-aot-targets-default.md`,
 `docs/state.md` (no-bug note),
 
+## chore/sdk-version-bumps-may-2026 (ADR-0569)
+
+No rebase-sensitive invariants. All changes are version-string edits in
+`dev/Containerfile` ARG lines, `.pre-commit-config.yaml` rev fields,
+`.github/workflows/supply-chain.yml` action SHA pins, and
+`python/requirements.txt` ceiling. No API changes, no C/Python logic changes.
+
+**Conflict scenarios**:
+- `dev/Containerfile`: The Ubuntu 26.04 base-image PR (in-flight) touches
+  different ARG blocks. If a rebase conflict occurs, keep both sets of
+  version edits — they are in disjoint sections of the file.
+- `.pre-commit-config.yaml`: If a concurrent PR bumps the same tools,
+  prefer the higher version.
+- `python/requirements.txt`: If the Ubuntu 26.04 PR widens the `numpy`
+  ceiling in the same PR, both edits are independent; apply both.
+
+Touched files: `dev/Containerfile`, `.pre-commit-config.yaml`,
+`.github/workflows/supply-chain.yml`, `python/requirements.txt`,
+`ai/pyproject.toml` (comment only),
+`docs/adr/0569-sdk-version-bumps-2026-05-18.md`,
+`docs/adr/README.md` (one index row),
+`changelog.d/changed/0569-sdk-version-bumps-2026-05-18.md`,
+`dev/AGENTS.md` (invariant notes), `docs/development/dev-mcp.md` (version table),
 `docs/rebase-notes.md` (this entry).
