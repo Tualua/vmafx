@@ -377,3 +377,4 @@
 0540-dev-container-ffmpeg-av1-and-hwaccel-encoders
 0542-dev-container-full-gpu-plumbing
 0544-fix-feature-extractor-list-dedup
+0565-continuous-feature-mix-eval-pipeline
