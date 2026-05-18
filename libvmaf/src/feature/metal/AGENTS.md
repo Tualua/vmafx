@@ -13,6 +13,28 @@ a real kernel lands; they are removed from `metal_sources` in
 
 ## Rebase-sensitive invariants
 
+- **Only the wired `.mm` + `.metal` pairs exist** (ADR-0545). The
+  Metal feature directory no longer carries scaffold `.mm` files for
+  extractors that lack a wired meson entry and a registry slot in
+  `feature_extractor.c`. The wired set is: `integer_motion_v2`,
+  `float_psnr`, `float_moment`, `float_ansnr`, `integer_psnr`,
+  `float_motion`, `integer_motion`, `float_ssim`, `float_ms_ssim`.
+  A previous scaffold pass left 11 dead `.mm` files (`float_adm_metal`,
+  `float_vif_metal`, `integer_adm_metal`, `integer_cambi_metal`,
+  `integer_ciede_metal`, `integer_moment_metal`, `integer_ms_ssim_metal`,
+  `integer_psnr_hvs_metal`, `integer_ssim_metal`, `integer_vif_metal`,
+  `ssimulacra2_metal`) and their paired `.metal` kernels in tree; these
+  were deleted because none of them was wired into
+  `libvmaf/src/metal/meson.build` and none had an extern reference in
+  `feature_extractor.c` (the lone exception, `vmaf_fex_integer_adm_metal`,
+  was an orphan extern with no registry entry and was removed as part of
+  the same change). Do **not** re-add a `<feature>_metal.mm` without (a)
+  the matching `.metal` kernel, (b) a meson entry in `metal_objcpp_lib`
+  + a `<feature>_air` `custom_target` + an entry in `metal_air_files`,
+  and (c) an `extern VmafFeatureExtractor` declaration in
+  `feature_extractor.c` plus a slot in `feature_extractor_list[]` under
+  the `HAVE_METAL` block.
+
 - **Per-WG float/uint partials — no atomics**: Apple MSL does not
   expose `atomic_ulong` (`atomic_fetch_add_explicit` for `ulong`
   silently compiles but fails on device — confirmed CI run 25685703780
@@ -72,17 +94,10 @@ a real kernel lands; they are removed from `metal_sources` in
 | `float_motion_metal.mm`            | Done (T8-1h) | host dispatch                                                           |
 | `integer_motion.metal`             | Done (T8-1i) | `VMAF_integer_feature_motion_y_score`, `motion2_score`, `motion3_score` |
 | `integer_motion_metal.mm`          | Done (T8-1i) | host dispatch                                                           |
-| `float_ssim.metal`                 | Done (T8-1j) | `float_ssim`, `float_ms_ssim`                                           |
+| `float_ssim.metal`                 | Done (T8-1j) | `float_ssim`                                                            |
 | `float_ssim_metal.mm`              | Done (T8-1j) | host dispatch                                                           |
-| `float_psnr_metal.c`               | Scaffold     | replaced by float_psnr_metal.mm                                         |
-| `float_moment_metal.c`             | Scaffold     | replaced by float_moment_metal.mm                                       |
-| `float_ansnr_metal.c`              | Scaffold     | replaced by float_ansnr_metal.mm                                        |
-| `integer_psnr_metal.c`             | Scaffold     | replaced by integer_psnr_metal.mm                                       |
-| `float_motion_metal.c`             | Scaffold     | replaced by float_motion_metal.mm                                       |
-| `integer_motion_metal.c`           | Scaffold     | replaced by integer_motion_metal.mm                                     |
-| `float_ssim_metal.c`               | Scaffold     | replaced by float_ssim_metal.mm                                         |
-| `float_ms_ssim.metal`             | Done (T8-2b) | `float_ms_ssim` — 5-scale pyramid, Wang weights                        |
-| `float_ms_ssim_metal.mm`          | Done (T8-2b) | host dispatch (ADR-0490)                                                |
+| `float_ms_ssim.metal`              | Done (T8-2b) | `float_ms_ssim` — 5-scale pyramid, Wang weights                         |
+| `float_ms_ssim_metal.mm`           | Done (T8-2b) | host dispatch (ADR-0490, wired in meson per ADR-0545)                   |
 
 ## Rebase-sensitive invariants (motion_fps_weight)
 

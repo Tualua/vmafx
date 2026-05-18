@@ -59,6 +59,26 @@ ADR-0234) catches drift but only after a full GPU run.
 
 ## Rebase-sensitive invariants
 
+- **No `integer_*_vulkan.c` "convention rename" duplicates** (ADR-0541).
+  The canonical wired files for the integer-precision GPU twins in this
+  directory keep the historical bare names: `vif_vulkan.c` (defines
+  `vmaf_fex_integer_vif_vulkan` with `.name = "vif_vulkan"`),
+  `moment_vulkan.c` (defines `vmaf_fex_float_moment_vulkan`),
+  `ms_ssim_vulkan.c` (defines `vmaf_fex_float_ms_ssim_vulkan`),
+  `ssim_vulkan.c` (defines `vmaf_fex_float_ssim_vulkan`),
+  `psnr_hvs_vulkan.c` (defines `vmaf_fex_psnr_hvs_vulkan`),
+  `cambi_vulkan.c` (defines `vmaf_fex_cambi_vulkan`). A previous
+  unmerged scaffold pass added `integer_vif_vulkan.c`,
+  `float_moment_vulkan.c`, `integer_ms_ssim_vulkan.c`,
+  `integer_ssim_vulkan.c`, `integer_psnr_hvs_vulkan.c`,
+  `integer_cambi_vulkan.c`, `integer_moment_vulkan.c` with the same
+  symbol names — they were duplicates / abandoned WIP and were deleted.
+  Do **not** re-introduce these "rename" copies on rebase. The one
+  Vulkan TU that does follow the `integer_*` convention is
+  `integer_adm_vulkan.c` (ADR-0468), which exports a distinct
+  `.name = "integer_adm_vulkan"` and is the canonical extractor; the
+  legacy `adm_vulkan.c` shim is intentionally retained per that ADR.
+
 - **`vif_vulkan.c` two-variant SPIR-V pick (ADR-0512, supersedes
   ADR-0492).** The VIF compute shader ships as TWO `.comp` sources —
   [`shaders/vif_fp64.comp`](shaders/vif_fp64.comp) (double precision,

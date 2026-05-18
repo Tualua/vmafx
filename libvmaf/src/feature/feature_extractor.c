@@ -193,14 +193,13 @@ extern VmafFeatureExtractor vmaf_fex_integer_ssim_hip;
 extern VmafFeatureExtractor vmaf_fex_ssimulacra2_hip;
 #endif
 #if HAVE_METAL
-/* Metal feature extractors — T8-1c through T8-1j / ADR-0421.
- * All eight consumers are fully implemented as Obj-C++ .mm dispatch
- * files in feature/metal/; the -ENOSYS scaffold .c stubs have been
- * removed. Kernels live under feature/metal/, compiled via xcrun
- * into the __TEXT,__metallib section of libvmaf. */
-/* T8-3a: integer_adm_metal — DWT-CSF-CM ADM pipeline on Metal.
- * Port of integer_adm_cuda.c; emits adm2 + adm_scale{0..3}. */
-extern VmafFeatureExtractor vmaf_fex_integer_adm_metal;
+/* Metal feature extractors — T8-1c through T8-1j / ADR-0421, plus
+ * T8-2b (float_ms_ssim) per ADR-0490. All consumers below are fully
+ * implemented as Obj-C++ .mm dispatch files in feature/metal/;
+ * kernels live under feature/metal/, compiled via xcrun into the
+ * __TEXT,__metallib section of libvmaf. ADR-0545 retired the dead
+ * scaffold sources (integer_adm_metal, integer_cambi_metal, ...) and
+ * the orphan extern for integer_adm_metal that referenced them. */
 extern VmafFeatureExtractor vmaf_fex_integer_motion_v2_metal;
 extern VmafFeatureExtractor vmaf_fex_integer_psnr_metal;
 extern VmafFeatureExtractor vmaf_fex_float_ssim_metal;
@@ -235,7 +234,7 @@ static VmafFeatureExtractor *feature_extractor_list[] = {
      * because it supports the widest range of Intel hardware.
      * Use --no_sycl to fall back to CUDA.
      *
-     * ADR-0541: each extractor symbol appears EXACTLY ONCE here.  The
+     * ADR-0545: each extractor symbol appears EXACTLY ONCE here.  The
      * prior arrangement registered six SYCL twins twice
      * (psnr_sycl / float_moment_sycl / ciede_sycl / float_ssim_sycl /
      * float_ms_ssim_sycl / psnr_hvs_sycl), which caused the ctx pool's
@@ -257,7 +256,7 @@ static VmafFeatureExtractor *feature_extractor_list[] = {
      * Netflix golden gate. Vulkan is opt-in via explicit feature
      * name selection until the full backend lands (T5-1c).
      *
-     * ADR-0541: each Vulkan extractor appears EXACTLY ONCE.  Prior to
+     * ADR-0545: each Vulkan extractor appears EXACTLY ONCE.  Prior to
      * the dedup pass this block held 67 entries instead of 18; nine
      * extractors were re-registered (two of them eleven times each,
      * seven of them six times), which caused
@@ -393,7 +392,7 @@ VmafFeatureExtractor *vmaf_get_feature_extractor_by_name(const char *name)
 
 int vmaf_feature_extractor_list_audit(void)
 {
-    /* ADR-0541: O(N^2) over the static registry — N ≤ ~60 even with every
+    /* ADR-0545: O(N^2) over the static registry — N ≤ ~60 even with every
      * backend compiled in, so the cost is negligible (one-shot at
      * vmaf_init()).  Compare both pointer identity (catches a symbol
      * registered twice) and the `name` string (catches two distinct

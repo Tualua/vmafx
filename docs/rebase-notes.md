@@ -36313,7 +36313,6 @@ calls). On a future upstream sync, expect a merge conflict on
 keep the fork's `if (!found) usage(…); return;` + `snprintf` shape and
 drop the `<assert.h>` include. No public API surface changes; the
 ffmpeg-patches stack is untouched.
-<<<<<<< HEAD
 ## 2026-05-18 — HIP `integer_motion` flag promotion + HIP_DEVICE buffer enum (ADR-0530, PR #TBD)
 
 Extends ADR-0519. Promotes `VMAF_FEATURE_EXTRACTOR_HIP` on
@@ -36463,6 +36462,7 @@ build only and is orthogonal to the host-side patch series under
 of `dev/Containerfile`; bumping them is a local container change.
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 ---
 
 ## ADR-0543 — ADR-0498 enforcement hardening (exit code 100 + JSON error + per-feature gate)
@@ -36504,7 +36504,6 @@ variant added. The new exit code is a CLI-level contract observed
 by wrappers (`vmaf-tune`, MCP) — FFmpeg's `libvmaf` filter consumes
 libvmaf via the C API and is not impacted. CLAUDE.md §12 r14 does
 not apply.
-=======
 ## fix/feature-extractor-list-dedup (ADR-0544)
 
 Removes 61 duplicate `&vmaf_fex_*` entries from
@@ -36538,3 +36537,28 @@ Touched files: `libvmaf/src/feature/feature_extractor.{c,h}`,
 `docs/rebase-notes.md`, `changelog.d/fixed/0541-*.md`.
 No `ffmpeg-patches/`, `meson_options.txt`, or `meson.build` change
 (test is exercised by an existing `test_feature_extractor` target).
+=======
+## chore/wire-or-delete-dead-extractor-files (ADR-0545)
+
+Deletes 18 dead Vulkan / Metal feature-extractor source files plus
+14 paired orphan shaders (`.comp` / `.metal`) from
+`libvmaf/src/feature/{vulkan,metal}/` that were never wired into
+their backend's `meson.build`. Wires one previously-unwired Metal TU
+(`float_ms_ssim_metal.mm` + `float_ms_ssim.metal`, ADR-0490) into
+`libvmaf/src/metal/meson.build`. Removes one dead `extern` in
+`libvmaf/src/feature/feature_extractor.c`
+(`vmaf_fex_integer_adm_metal`) and refreshes the
+`libvmaf/src/feature/{vulkan,metal}/AGENTS.md` rebase-sensitive
+invariants section to forbid re-introducing the deleted scaffolds.
+
+**Rebase sensitivity (none — pure fork-local housekeeping):**
+All deleted files were fork-local scaffolds added in commit
+`302bd1673` (2026-05-18, "docs(rules): default to vmaf-dev-mcp
+container"). Netflix upstream has no Vulkan or Metal backend, so no
+upstream conflict is possible on the deletes. The lone wired file
+(`float_ms_ssim_metal.mm`) is fork-original, references no upstream
+identifier, and lives under fork-only `libvmaf/src/metal/`. The
+retained `adm_vulkan.c` legacy shim is out of scope per ADR-0468.
+No CPU-path C source, no public header, no `meson_options.txt`, no
+`ffmpeg-patches/` entry, no Python-binding change — CLAUDE.md §12
+r14 (FFmpeg patch-stack sync) does not apply.
