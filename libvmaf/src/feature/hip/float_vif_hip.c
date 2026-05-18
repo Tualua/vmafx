@@ -245,10 +245,18 @@ static int fvif_hip_bufs_alloc(FloatVifStateHip *s)
     /* Per-scale (num, den) partials + pinned host readback. */
     for (int i = 0; i < 4; i++) {
         const size_t pbytes = (size_t)s->wg_count[i] * sizeof(float);
+        /* hipHostMalloc's C prototype is (void **, size_t, unsigned). The
+         * num_host / den_host buffers are float* (host-side reduction loop
+         * indexes them as floats), so &s->num_host[i] is float** and needs
+         * an explicit (void **) cast in C. HIP's C++ header provides a
+         * templated hipHostMalloc<T>(T**, ...) overload, but this TU is
+         * compiled as C by icx so the template isn't visible. Without the
+         * cast, icx emits -Wincompatible-pointer-types as a hard error
+         * under the container's strict CFLAGS. */
         bool ok = (hipMalloc(&s->num_partials[i], pbytes) == hipSuccess) &&
                   (hipMalloc(&s->den_partials[i], pbytes) == hipSuccess) &&
-                  (hipHostMalloc(&s->num_host[i], pbytes, 0) == hipSuccess) &&
-                  (hipHostMalloc(&s->den_host[i], pbytes, 0) == hipSuccess);
+                  (hipHostMalloc((void **)&s->num_host[i], pbytes, 0) == hipSuccess) &&
+                  (hipHostMalloc((void **)&s->den_host[i], pbytes, 0) == hipSuccess);
         if (!ok) {
             /* Free this scale's partially-allocated slots. */
             if (s->den_host[i] != NULL) {
