@@ -10,7 +10,7 @@ authors = [
   { name = "Claude (Anthropic)", email = "noreply@anthropic.com" },
 ]
 dependencies = [
-  "torch>=2.8,<3.0",
+  "torch>=2.12.0,<3.0",
   # Lightning AI un-published the `lightning` distribution from PyPI on
   # 2026-04-30 (yesterday's PR #229 still resolved `lightning-2.6.1`;
   # today the name returns 404). The functionally-identical wheel is
