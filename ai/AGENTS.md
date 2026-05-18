@@ -681,6 +681,25 @@ threshold). When extending these scripts:
   the Python training harness — it builds the vmaf CLI argv directly with
   ref == distorted, which is the lighter-weight equivalent. Any upstream
   refactor of the Python adapter is irrelevant to this script.
+- **FR-corpus misuse guard (ADR-0509):** the script is a no-reference
+  adapter; running it on a full-reference corpus (CHUG: `chug_ref==1`
+  references paired with bitrate-ladder distortions for the same
+  `chug_content_name`) silently produces a parquet where every clip is
+  scored against itself — every difference-based metric collapses to its
+  identity-pair floor (`adm2 == vif_* == 1.0`, `psnr_y == 60`,
+  `ciede2000 / psnr_hvs == NaN`, `vmaf ~= 99`) and the parquet carries
+  zero training signal. `detect_fr_corpus_misuse(meta_by_clip)` returns
+  `{misuse_detected: bool, ref_count, dis_count, content_groups_with_both,
+  example}`; `main()` exits 2 before spawning any worker when the loaded
+  sidecar carries the FR signature. Use `ai/scripts/chug_extract_features.py`
+  for FR corpora — it pairs each distorted row with its matching
+  reference. The `--allow-fr-from-nr` opt-in flag is reserved for genuine
+  identity-pair studies on an FR corpus; do NOT default-on it in any
+  script or recipe. The guard runs on the **loaded** `jsonl_meta` dict
+  (after `_load_jsonl_metadata` filters the raw sidecar), so
+  `_load_jsonl_metadata`'s keep-list MUST preserve `chug_ref` and
+  `chug_content_name`. Pinned by 3 unit tests
+  (`test_detect_fr_corpus_misuse_*`) in `ai/tests/test_extract_k150k_features.py`.
 
 ## v3 retrain invariant — `ENCODER_VOCAB` 13 → 16 (ADR-0302)
 

@@ -709,6 +709,76 @@ def _content_split_for(content_name: str, *, seed: str = DEFAULT_CHUG_SPLIT_SEED
     return "test"
 
 
+def detect_fr_corpus_misuse(meta_by_clip: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Detect the FR-corpus-on-NR-pipeline misconfiguration.
+
+    The script is an FR-from-NR adapter (ADR-0346 / ADR-0362): it feeds the
+    same decoded YUV as both ``--reference`` and ``--distorted`` to the
+    libvmaf CLI.  This is correct ONLY for genuinely no-reference corpora
+    (KoNViD-150k-A): all difference-based metrics (adm, vif, psnr, ssim,
+    ciede2000, psnr_hvs, vmaf) collapse to their identity-pair floor and
+    carry no quality signal.
+
+    Running the script on a full-reference corpus (e.g. CHUG, which ships
+    one ``chug_ref==1`` reference plus six bitrate-ladder distortions per
+    ``chug_content_name``) silently produces a parquet where every clip
+    scores against itself: ``adm2 == vif_* == 1.0``, ``psnr_y == 60``,
+    ``ciede2000 / psnr_hvs == NaN``, ``vmaf ~= 99`` for every row including
+    deliberately heavily-compressed ones (360p @ 0.2 Mbps). This is the bug
+    the 2026-05-18 CHUG re-extract surfaced: 5992 rows × ~99 VMAF, with
+    bitrate-ladder rungs indistinguishable.
+
+    The detector inspects the loaded sidecar metadata for the FR-corpus
+    signature: at least one row whose ``chug_ref`` flag is truthy AND at
+    least one sibling row in the same ``chug_content_name`` group whose
+    flag is falsy. If both conditions hold the corpus has real references
+    paired with distortions and the FR-from-NR identity-pair pipeline is
+    wrong for it; the caller should use ``ai/scripts/chug_extract_features.py``
+    (the FR-aware extractor) instead.
+
+    Returns a dict with keys ``misuse_detected`` (bool), ``ref_count``,
+    ``dis_count``, ``content_groups_with_both`` (count), and ``example``
+    (one ``chug_content_name`` that demonstrates the misuse).
+    """
+    ref_count = 0
+    dis_count = 0
+    by_content: dict[str, dict[str, int]] = {}
+    example: str | None = None
+    for meta in meta_by_clip.values():
+        if not isinstance(meta, dict):
+            continue
+        raw_flag = meta.get("chug_ref")
+        if raw_flag is None:
+            continue
+        try:
+            is_ref = bool(int(raw_flag)) if not isinstance(raw_flag, bool) else bool(raw_flag)
+        except (TypeError, ValueError):
+            continue
+        content = str(meta.get("chug_content_name") or "").strip()
+        if not content:
+            continue
+        bucket = by_content.setdefault(content, {"ref": 0, "dis": 0})
+        if is_ref:
+            ref_count += 1
+            bucket["ref"] += 1
+        else:
+            dis_count += 1
+            bucket["dis"] += 1
+    groups_with_both = 0
+    for content, counts in by_content.items():
+        if counts["ref"] >= 1 and counts["dis"] >= 1:
+            groups_with_both += 1
+            if example is None:
+                example = content
+    return {
+        "misuse_detected": groups_with_both >= 1,
+        "ref_count": ref_count,
+        "dis_count": dis_count,
+        "content_groups_with_both": groups_with_both,
+        "example": example,
+    }
+
+
 def _load_jsonl_metadata(path: Path | None, *, split_seed: str) -> dict[str, dict[str, Any]]:
     """Load optional CHUG/K150K JSONL side metadata keyed by clip basename."""
     if path is None or not path.is_file():
@@ -1027,6 +1097,17 @@ def main() -> int:
         default=Path(tempfile.gettempdir()) / "k150k_yuv_scratch",
         help="Scratch directory for temporary YUV files.  Cleaned per-clip.",
     )
+    ap.add_argument(
+        "--allow-fr-from-nr",
+        action="store_true",
+        help=(
+            "Acknowledge that the FR-from-NR adapter (ref == distorted) will be "
+            "applied even when the --metadata-jsonl sidecar advertises real "
+            "reference rows (e.g. CHUG ``chug_ref==1`` rows). Without this flag "
+            "the script refuses to run on FR corpora and points the operator at "
+            "ai/scripts/chug_extract_features.py instead. See ADR-0510."
+        ),
+    )
     args = ap.parse_args()
 
     # --flush-every is a legacy alias; --progress-every takes precedence.
@@ -1073,6 +1154,32 @@ def main() -> int:
             meta["mos_raw_0_100"] = row["mos_raw_0_100"]
         score_meta[name] = meta
     jsonl_meta = _load_jsonl_metadata(args.metadata_jsonl, split_seed=args.split_seed)
+
+    # FR-corpus misuse guard (ADR-0510).  The script is an FR-from-NR adapter:
+    # ref == distorted.  Running it on a corpus that ships real references
+    # (CHUG: ``chug_ref==1`` rows paired with bitrate-ladder distortions for
+    # the same ``chug_content_name``) silently degrades every difference-based
+    # metric to its identity-pair floor and produces a parquet with no quality
+    # signal (vmaf~99 across all rungs including 360p @ 0.2 Mbps).  Use
+    # ai/scripts/chug_extract_features.py for FR corpora.
+    misuse = detect_fr_corpus_misuse(jsonl_meta)
+    if misuse["misuse_detected"] and not args.allow_fr_from_nr:
+        print(
+            f"error: --metadata-jsonl {args.metadata_jsonl} advertises an FR "
+            f"corpus with real reference rows "
+            f"({misuse['ref_count']} ref + {misuse['dis_count']} distorted, "
+            f"{misuse['content_groups_with_both']} content groups with both; "
+            f"example: {misuse['example']!r}). This script runs the FR-from-NR "
+            f"adapter (ref == distorted) and would score every clip against "
+            f"itself, producing a parquet where all difference-based metrics "
+            f"degenerate (vmaf~99 across every bitrate-ladder rung).\n\n"
+            f"Use ai/scripts/chug_extract_features.py for FR corpora -- it "
+            f"pairs each distorted row with its matching reference. Pass "
+            f"--allow-fr-from-nr only if you genuinely want self-vs-self "
+            f"scoring (rare; see ADR-0509).",
+            file=sys.stderr,
+        )
+        return 2
 
     # ------------------------------------------------------------------
     # Enumerate clips and apply checkpoint

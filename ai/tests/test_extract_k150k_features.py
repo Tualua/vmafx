@@ -194,3 +194,74 @@ def test_jsonl_metadata_preserves_chug_content_split(tmp_path: Path) -> None:
     assert metadata["clip-a.mp4"]["chug_split_key"] == "source-a.mp4"
     assert metadata["clip-a.mp4"]["split"] in {"train", "val", "test"}
     assert metadata["clip-b.mp4"]["split"] == "test"
+
+
+def test_detect_fr_corpus_misuse_flags_chug_pairs() -> None:
+    """CHUG sidecar with ref + dis rows for the same content triggers the guard.
+
+    ADR-0510: the script is an FR-from-NR adapter; running it on an FR
+    corpus silently produces a parquet where every clip scores against
+    itself (vmaf~99 across all bitrate-ladder rungs).
+    """
+    meta_by_clip = {
+        "ref-clip.mp4": {
+            "chug_ref": 1,
+            "chug_content_name": "source-X.mp4",
+            "chug_bitladder": "1080p_ref_",
+        },
+        "dis-clip-0.2M.mp4": {
+            "chug_ref": 0,
+            "chug_content_name": "source-X.mp4",
+            "chug_bitladder": "360p_0.2M_",
+        },
+        "dis-clip-1M.mp4": {
+            "chug_ref": 0,
+            "chug_content_name": "source-X.mp4",
+            "chug_bitladder": "1080p_1M_",
+        },
+    }
+
+    result = K150K.detect_fr_corpus_misuse(meta_by_clip)
+
+    assert result["misuse_detected"] is True
+    assert result["ref_count"] == 1
+    assert result["dis_count"] == 2
+    assert result["content_groups_with_both"] == 1
+    assert result["example"] == "source-X.mp4"
+
+
+def test_detect_fr_corpus_misuse_allows_nr_only_sidecar() -> None:
+    """K150K-A sidecars (no chug_ref field) must NOT trigger the guard."""
+    meta_by_clip = {
+        "k150ka-clip-1.mp4": {"mos_raw_0_100": 75.3},
+        "k150ka-clip-2.mp4": {"mos_raw_0_100": 42.1},
+    }
+
+    result = K150K.detect_fr_corpus_misuse(meta_by_clip)
+
+    assert result["misuse_detected"] is False
+    assert result["ref_count"] == 0
+    assert result["dis_count"] == 0
+    assert result["content_groups_with_both"] == 0
+    assert result["example"] is None
+
+
+def test_detect_fr_corpus_misuse_allows_ref_only_or_dis_only_groups() -> None:
+    """Groups with only ref OR only dis rows do NOT trigger — needs both."""
+    meta_by_clip = {
+        "ref-only.mp4": {
+            "chug_ref": 1,
+            "chug_content_name": "lone-ref.mp4",
+        },
+        "dis-only.mp4": {
+            "chug_ref": 0,
+            "chug_content_name": "lone-dis.mp4",
+        },
+    }
+
+    result = K150K.detect_fr_corpus_misuse(meta_by_clip)
+
+    assert result["misuse_detected"] is False
+    assert result["ref_count"] == 1
+    assert result["dis_count"] == 1
+    assert result["content_groups_with_both"] == 0

@@ -19,6 +19,20 @@ headers, or build files are modified. The ADR (`0509`) and changelog
 fragment are fork-local docs only.
 
 ---
+## fix/chug-extract-vmaf-alignment — ADR-0510
+
+**No rebase impact.** Changes confined to fork-local files:
+`ai/scripts/extract_k150k_features.py`, `ai/scripts/chug_extract_features.py`,
+`ai/tests/test_extract_k150k_features.py`, `ai/tests/test_chug.py`,
+`ai/tests/test_chug_extract_features_smoke.py` (new),
+`docs/adr/0510-chug-extract-vmaf-alignment-fr-from-nr-guard.md` (new),
+`docs/adr/README.md` (index row), `docs/rebase-notes.md` (this entry),
+`docs/state.md` (Recently closed row), `ai/AGENTS.md` (K150K-A invariant
+update), `changelog.d/fixed/0509-*.md` (new). The entire `ai/` package
+and the FR-from-NR adapter pattern are fork-local — Netflix upstream has
+no CHUG ingestion, no K150K-A extractor, and no FR-from-NR adapter. No
+upstream-shared code, headers, build files, public C-API, or feature
+extractors are modified; the libvmaf CLI and all backends are unchanged.
 
 ## fix/restore-cuda-kernel-lifecycle-helpers
 

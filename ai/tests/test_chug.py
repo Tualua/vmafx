@@ -372,3 +372,88 @@ def test_chug_feature_materialiser_writes_mean_features(tmp_path: Path) -> None:
     assert row["n_feature_frames"] == 2
     assert row["adm2"] == 2.0
     assert row["adm2_mean"] == 2.0
+
+
+def test_chug_pairing_never_uses_identity_pairs_for_distorted_rows(
+    tmp_path: Path,
+) -> None:
+    """Regression for ADR-0509: distorted rows must NEVER pair with themselves.
+
+    The CHUG re-extract on 2026-05-18 (5992 rows, ~99 VMAF on every
+    bitrate-ladder rung including 360p @ 0.2 Mbps) was caused by the
+    operator routing through ``extract_k150k_features.py`` (FR-from-NR
+    adapter: ref == distorted). This test pins the contract on the
+    correct script (`chug_extract_features.py`): for every distorted
+    row in a CHUG manifest with a matching reference, the emitted pair
+    has ref_path != dis_path.
+    """
+    clips_dir = tmp_path / "clips"
+    rows = [
+        _chug_row(
+            src="dist-360p.mp4",
+            content="content-a.mp4",
+            is_ref=False,
+            width=640,
+            height=360,
+            sha="0" * 64,
+        ),
+        _chug_row(
+            src="dist-720p.mp4",
+            content="content-a.mp4",
+            is_ref=False,
+            width=1280,
+            height=720,
+            sha="1" * 64,
+        ),
+        _chug_row(
+            src="dist-1080p.mp4",
+            content="content-a.mp4",
+            is_ref=False,
+            width=1920,
+            height=1080,
+            sha="2" * 64,
+        ),
+        _chug_row(
+            src="ref-1080p.mp4",
+            content="content-a.mp4",
+            is_ref=True,
+            width=1920,
+            height=1080,
+            sha="3" * 64,
+        ),
+    ]
+
+    pairs = CHUG_FEATURES.build_feature_pairs(rows, clips_dir=clips_dir)
+
+    assert len(pairs) == 3
+    for pair in pairs:
+        assert (
+            pair.ref_path != pair.dis_path
+        ), f"identity pair detected (ADR-0509 regression): ref={pair.ref_path} dis={pair.dis_path}"
+        assert pair.ref_row["chug_ref"] == 1
+        assert pair.row["chug_ref"] == 0
+
+
+def test_chug_pairing_skips_distorted_rows_without_matching_reference(
+    tmp_path: Path,
+) -> None:
+    """Distorted rows whose ``chug_content_name`` has no reference are dropped.
+
+    Prevents a silent fallback to identity-pairing in edge cases where a
+    CHUG manifest is partially downloaded (some references missing).
+    """
+    clips_dir = tmp_path / "clips"
+    rows = [
+        _chug_row(
+            src="orphan-dist.mp4",
+            content="orphan-content.mp4",
+            is_ref=False,
+            width=640,
+            height=360,
+            sha="o" * 64,
+        ),
+    ]
+
+    pairs = CHUG_FEATURES.build_feature_pairs(rows, clips_dir=clips_dir)
+
+    assert pairs == []
