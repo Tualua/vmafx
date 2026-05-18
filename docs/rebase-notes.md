@@ -26,6 +26,20 @@ No upstream-shared paths touched. `VMAFTUNE_WORKDIR` is a new
 fork-local environment variable; it has no upstream counterpart and
 poses no rebase conflict risk.
 
+## docs/vcq-223-local-explainer-hang-diagnosis (ADR-0551)
+
+**No rebase impact.** All changes are confined to fork-local documentation:
+- `docs/adr/0551-local-explainer-hang-diagnosis.md` (new file, fork-local).
+- `docs/research/0551-local-explainer-hang.md` (new file, fork-local).
+- `docs/state.md` — updated T-VCQ-223-LOCAL-EXPLAINER-HANG row (fork-local).
+- `changelog.d/fixed/0551-local-explainer-hang-diagnosis.md` (new file, fork-local).
+- `docs/adr/README.md` — new index row (fork-local).
+- `docs/rebase-notes.md` — this entry (fork-local).
+
+No upstream-shared C sources, Python sources, or build files are touched. The
+`@unittest.skip` decorator in `python/test/local_explainer_test.py` is explicitly
+**not removed** in this PR — that is a follow-up code change.
+
 ## fix/dev-container-sycl-hip-runtime (ADR-0543)
 
 **No rebase impact.** All changes are confined to:
