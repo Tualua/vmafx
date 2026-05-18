@@ -260,10 +260,6 @@ if is_hipcc_enabled and is_hip_enabled
         'cambi_score' : feature_src_dir + 'hip/integer_cambi/cambi_score.hip',
         # integer_vif_hip HSACO (8 kernels: 4 V + 4 H per scale).
         'vif_statistics' : feature_src_dir + 'hip/integer_vif/vif_statistics.hip',
-        # integer_motion_hip HSACO (ADR-0468 scaffold, ADR-0530 selectable
-        # dispatch). Two kernel entry points (8bpc + 16bpc) consumed by
-        # `msh_module_load()` in `feature/hip/integer_motion_hip.c`.
-        'motion_score' : feature_src_dir + 'hip/integer_motion/motion_score.hip',
         # ADR-0537: register the HSACO blobs for the remaining HIP extractors
         # that ADR-0533 wired into the dispatch table.  Without these the
         # `enable_hipcc=true` build fails to link `_hsaco` symbols referenced
