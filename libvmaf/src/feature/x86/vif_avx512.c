@@ -29,6 +29,29 @@
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 
+/*
+ * Portable noinline attribute.
+ *
+ * GCC/Clang: __attribute__((noinline, noclone))
+ *   - noinline: prevents the compiler from inlining the function.
+ *   - noclone:  prevents GCC from synthesising specialised clones of the
+ *               function (e.g. a constant-propagated clone).  Clones would
+ *               undo the register-pressure isolation that is the whole point
+ *               of factoring these helpers out (ADR-0503).
+ *
+ * MSVC: __declspec(noinline)
+ *   - MSVC does not clone, so no equivalent of noclone is needed.
+ *   - __attribute__ syntax is not supported by cl.exe and causes a hard
+ *     syntax error (C2143 / C2059) — hence the guard (ADR-0519).
+ */
+#if defined(_MSC_VER)
+#define VMAF_NOINLINE_NOCLONE __declspec(noinline)
+#elif defined(__GNUC__) || defined(__clang__)
+#define VMAF_NOINLINE_NOCLONE __attribute__((noinline, noclone))
+#else
+#define VMAF_NOINLINE_NOCLONE
+#endif
+
 static inline void pad_top_and_bottom(VifBuffer buf, unsigned h, int fwidth)
 {
     const unsigned fwidth_half = fwidth / 2;
@@ -1042,10 +1065,11 @@ typedef struct VifHorizCoeffs8 {
  * is identical to the original monolithic loop (ADR-0138 / ADR-0139).
  */
 /* NOLINTNEXTLINE(readability-function-size): ADR-0503 noinline helper; size is load-bearing for register-pressure isolation */
-static __attribute__((noinline, noclone)) void
-vif_subsample_rd_8_vert_j(const uint8_t *ref, const uint8_t *dis, ptrdiff_t stride_bytes, int ii,
-                          int j, const VifVertCoeffs8 *c, uint32_t *ref_convol,
-                          uint32_t *dis_convol)
+static VMAF_NOINLINE_NOCLONE void vif_subsample_rd_8_vert_j(const uint8_t *ref, const uint8_t *dis,
+                                                            ptrdiff_t stride_bytes, int ii, int j,
+                                                            const VifVertCoeffs8 *c,
+                                                            uint32_t *ref_convol,
+                                                            uint32_t *dis_convol)
 {
     int ii_check = ii;
     __m512i accum_mu2_lo;
@@ -1167,9 +1191,10 @@ vif_subsample_rd_8_vert_j(const uint8_t *ref, const uint8_t *dis, ptrdiff_t stri
  * is identical to the original monolithic loop (ADR-0138 / ADR-0139).
  */
 /* NOLINTNEXTLINE(readability-function-size): ADR-0503 noinline helper; size is load-bearing for register-pressure isolation */
-static __attribute__((noinline, noclone)) void
-vif_subsample_rd_8_horiz_j(const uint32_t *ref_convol, const uint32_t *dis_convol, int jj_check,
-                           const VifHorizCoeffs8 *c, uint16_t *mu1_out, uint16_t *mu2_out)
+static VMAF_NOINLINE_NOCLONE void vif_subsample_rd_8_horiz_j(const uint32_t *ref_convol,
+                                                             const uint32_t *dis_convol,
+                                                             int jj_check, const VifHorizCoeffs8 *c,
+                                                             uint16_t *mu1_out, uint16_t *mu2_out)
 {
     __m512i accumrlo = _mm512_setzero_si512();
     __m512i accumdlo = _mm512_setzero_si512();

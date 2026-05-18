@@ -99,6 +99,19 @@ and teardown.
   goldens (Python-side) never change.
 - [ADR-0245](../../docs/adr/0245-simd-bitexact-test-harness.md) — SIMD
   bit-exact test harness shared header (`simd_bitexact_test.h`).
+- [ADR-0515](../../docs/adr/0515-test-public-api-score-mingw64-temp-path.md) —
+  MinGW64 portable temp-path: no hardcoded `/tmp/` + `mkstemp`; use
+  `make_temp_output_path()` pattern (`GetTempPathA` on `_WIN32`, `mkstemp` on
+  POSIX). **Rebase-sensitive**: any new test that needs a named temp file must
+  follow this pattern or it will wedge the `Build — Windows MinGW64 (CPU)` leg.
+- [ADR-0521](../../docs/adr/0521-msvc-posix-gating-vif-avx512-yuv-input.md) —
+  MSVC portability: C source files touched by agents must not use bare
+  `__attribute__((noinline, noclone))` without a MSVC-guarded macro, and must
+  not call `fstat()` / `S_ISREG()` / rely on `off_t` being 64-bit without the
+  `#ifdef _WIN32` shims established in `libvmaf/tools/yuv_input.c`. **Rebase-
+  sensitive**: any new `.c` file that introduces GCC-extension attributes or
+  POSIX `<sys/stat.h>` calls must add a matching portability guard or it will
+  wedge `Build — Windows MSVC + CUDA` and `Build — Windows MSVC + oneAPI SYCL`.
 - [ADR-0347](../../docs/adr/0347-sanitizer-matrix-test-scope.md) —
   sanitizer matrix test-set scope. **Rebase-sensitive invariant**:
   the sanitizer job in

@@ -43,6 +43,28 @@ surface NR-mode wiring today.
 
 Netflix upstream does not ship `--no-reference`; the flag is a
 fork-local addition.
+## fix/msvc-unistd-gating (ADR-0521)
+
+**Rebase sensitivity: low — targeted portability guards on upstream-shared files.**
+
+Two files touched: `libvmaf/src/feature/x86/vif_avx512.c` and
+`libvmaf/tools/yuv_input.c`.
+
+`vif_avx512.c` is a fork-local AVX-512 TU (no Netflix/vmaf upstream
+equivalent). The `VMAF_NOINLINE_NOCLONE` macro is added at the TU level and
+does not affect public headers or the ABI.
+
+`yuv_input.c` has an upstream counterpart in Netflix/vmaf. The `_WIN32` shims
+(`fstat` → `_fstat64`, `S_ISREG`, `off_t`) are added inside the existing
+`#ifdef _WIN32` block, immediately after the already-present `_fileno` alias.
+On upstream sync: check whether Netflix has independently added MSVC portability
+to `yuv_input.c`; if so, prefer their solution and drop the fork-local block.
+The change is a four-line addition inside an existing guarded block — low merge
+conflict risk.
+
+No ffmpeg-patches file touches either file. No public API change.
+
+---
 
 ## fix/per-shot-scene-threshold-and-1-shot-chart (ADR-0513)
 

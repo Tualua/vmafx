@@ -22,6 +22,18 @@
 #ifdef _WIN32
 #include <io.h>
 #define yuv_fileno _fileno
+/*
+ * MSVC <sys/stat.h> declares _fstat64 / struct __stat64 but not the POSIX
+ * fstat() / S_ISREG() names.  Map them to the MSVC equivalents so the
+ * yuv_check_file_size() body can stay unguarded (ADR-0519).
+ *
+ * _S_IFREG is defined by MSVC <sys/stat.h>; S_ISREG is not.
+ */
+#define fstat(fd, st) _fstat64((fd), (st))
+#define stat __stat64
+#define S_ISREG(m) (((m) & _S_IFMT) == _S_IFREG)
+/* off_t is 32-bit on MSVC by default; use __int64 for >2 GiB safety. */
+typedef __int64 off_t;
 #else
 #include <unistd.h>
 #define yuv_fileno fileno
