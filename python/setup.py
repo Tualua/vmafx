@@ -78,7 +78,7 @@ setup(
         "matplotlib>=3.2.1",
         "pandas>=3.0.3",
         "scikit-learn>=1.8.0",
-        "scikit-image>=0.16.2",
+        "scikit-image>=0.26.0",
         "h5py>=3.16.0",
         "sureal>=0.9.0",
         "dill>=0.3.1",
