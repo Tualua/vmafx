@@ -23,6 +23,17 @@ endif
 if get_option('enable_vulkan').enabled()
     vmaf_tool_cflags += ['-DHAVE_VULKAN=1']
 endif
+if get_option('enable_hip')
+    # ADR-0514: the vmaf CLI gates HIP support on `#ifdef HAVE_HIP` (see
+    # `libvmaf/tools/vmaf.c` — includes of `libvmaf_hip.h`, init/cleanup
+    # of `VmafHipState`, the `--backend hip` strict-mode arm). Without
+    # this define the CLI compiles the "built without hip support"
+    # strict-mode error path even when the library itself was built with
+    # HIP enabled — exactly the failure mode that the dev-MCP container
+    # surfaced when `-Denable_hip=true` was set but `vmaf --backend hip`
+    # still refused.
+    vmaf_tool_cflags += ['-DHAVE_HIP=1']
+endif
 
 vmaf_tool_link_target = libvmaf
 if get_option('default_library') == 'both'

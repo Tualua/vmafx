@@ -198,10 +198,19 @@ RUN curl -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LE
 # "libumf.so.1: cannot open shared object file" and sycl-ls reports
 # "No platforms found" even though the Arc GPU is visible to the kernel.
 # Confirmed via LD_DEBUG=libs on the host before landing this fix.
+#
+# ONEAPI_ROOT/tcm/latest/lib supplies libhwloc.so.15 — the level-zero UR
+# adapter dlopen()s libhwloc at adapter load time to enumerate NUMA topology
+# even before it touches a device. Without tcm/latest/lib on LD_LIBRARY_PATH
+# both `libur_adapter_level_zero.so.0` and `libur_adapter_level_zero_v2.so.0`
+# fail to load with "libhwloc.so.15: cannot open shared object file" and the
+# loader skips straight to the OpenCL/CUDA/HIP adapters which can't drive an
+# Arc GPU. ADR-0509 / Research-0138; verified via strace + ZE_LOADER_DEBUG_TRACE
+# inside the container against host RTX 4090 + Intel Arc A380 + AMD gfx1036.
 ENV ONEAPI_ROOT=/opt/intel/oneapi
 ENV DPCPP_ROOT=${ONEAPI_ROOT}/compiler/latest
 ENV PATH=${DPCPP_ROOT}/bin:${PATH}
-ENV LD_LIBRARY_PATH=${DPCPP_ROOT}/lib:${ONEAPI_ROOT}/umf/latest/lib:${LD_LIBRARY_PATH}
+ENV LD_LIBRARY_PATH=${DPCPP_ROOT}/lib:${ONEAPI_ROOT}/umf/latest/lib:${ONEAPI_ROOT}/tcm/latest/lib:${LD_LIBRARY_PATH}
 ENV PKG_CONFIG_PATH=${ONEAPI_ROOT}/tbb/latest/lib/pkgconfig:${PKG_CONFIG_PATH}
 
 # ---------- ROCm 6.x (HIP toolchain + runtime) -----------------------------
@@ -259,11 +268,39 @@ RUN echo "=== sycl-ls (SYCL device visibility) ===" \
     && echo "=== rocminfo agents ===" \
     && rocminfo 2>&1 | grep -E "Agent|Name:|Device Type|gfx" || true
 
-# ---------- Vulkan ICD selection for lavapipe ------------------------------
-# Set the lavapipe ICD as the default software Vulkan renderer.
-# This allows Vulkan feature extractors to run in containers without a
-# physical GPU (CPU fallback; slower but functional for correctness checks).
-ENV VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+# ---------- Vulkan ICD selection ------------------------------------------
+# Do NOT set VK_ICD_FILENAMES / VK_DRIVER_FILES. Setting either overrides
+# the loader's default search path (/usr/share/vulkan/icd.d/ +
+# /etc/vulkan/icd.d/) and locks the loader to a single ICD JSON. In
+# particular, the NVIDIA Container Toolkit bind-mounts `nvidia_icd.json`
+# into /etc/vulkan/icd.d/ at runtime when NVIDIA_DRIVER_CAPABILITIES
+# includes `graphics`; pinning VK_ICD_FILENAMES to lavapipe (the software
+# fallback) hides the real GPU ICDs entirely.
+#
+# Default behaviour with both env vars unset:
+#   - NVIDIA discrete GPUs: visible via /etc/vulkan/icd.d/nvidia_icd.json
+#     (host-mounted by nvidia-container-runtime).
+#   - Intel Arc + AMD: visible via /usr/share/vulkan/icd.d/{intel,radeon}_icd.json
+#     installed by mesa-vulkan-drivers in stage 1.
+#   - Lavapipe (lvp_icd.json) software fallback: still present, last in the
+#     enumerator. Real GPUs override it. The /usr/share/vulkan/icd.d/lvp_icd.json
+#     file shipped by mesa is well-formed (verified inside the container); no
+#     malformed-JSON loader breakage to work around.
+#
+# ADR-0509 / Research-0138 background: the old image set
+# `VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json` (a typo —
+# mesa ships `lvp_icd.json`, no `.x86_64` suffix) which made the loader
+# return zero devices. Setting `ENV VK_ICD_FILENAMES=` to empty in a
+# Containerfile is NOT a fix — the Vulkan loader treats an empty string
+# the same way it treats a non-existent file: "no ICDs configured" →
+# ERROR_INCOMPATIBLE_DRIVER. The container entrypoint (`dev-mcp-entrypoint.sh`)
+# explicitly `unset`s both vars at startup so the loader falls back to its
+# default search path. We deliberately keep the ENV lines absent here so
+# nothing leaks the empty-string state into intermediate image layers.
+#
+# Operators that need to force a single ICD (e.g. for reproducibility tests)
+# can still set VK_ICD_FILENAMES at `docker exec -e VK_ICD_FILENAMES=… …`
+# time per-invocation.
 
 # ---------------------------------------------------------------------------
 # Stage 3 — libvmaf source build
@@ -369,8 +406,45 @@ RUN cd libvmaf && CC=icx CXX=icpx meson setup build \
     && ninja -C build
 
 USER root
-RUN cd libvmaf && ninja -C build install
+RUN cd libvmaf && ninja -C build install \
+    && ldconfig
+
+# ---------- Build-time backend smoke probe ---------------------------------
+# Walk every GPU backend the meson configure step claims to have enabled and
+# run a tiny vmaf invocation against the Netflix golden CPU pair. The probe
+# is a soft-gate: backends that need device passthrough (CUDA/SYCL/Vulkan/HIP)
+# will report "no device" or "not available" inside BuildKit's no-GPU sandbox,
+# which is non-fatal (|| echo WARN). What we actually catch here is the
+# "built without X support" class of regression — i.e. if a future commit
+# silently flips `-Denable_hip=true` to false (the precise failure mode that
+# motivated ADR-0514 in the first place), the WARN line for backend=hip will
+# read "built without hip support" instead of "no device", and the image
+# build log will surface the regression on every rebuild.
+#
+# LD_LIBRARY_PATH must include `/usr/local/lib` for this RUN because libvmaf.so.3
+# is installed there by `ninja install` above and the prior gpu-sdks ENV layers
+# pinned LD_LIBRARY_PATH to CUDA/oneAPI/ROCm directories only — `ldconfig` runs
+# during install (root) but the dlopen()er here is the vmaf process, and bash
+# `LD_LIBRARY_PATH=…` makes the dependency explicit.
+#
+# After a working run-time `docker compose up -d` with GPU passthrough,
+# `docker exec vmaf-dev-mcp /build/vmaf/dev/scripts/dev-mcp-probe.sh`
+# repeats the same probe with real devices and writes results to /probes/.
 USER vmaf
+# Use the 48-frame `testdata/{ref,dis}_576x324_48f.yuv` fixtures (always
+# present in the build context per testdata/) rather than the Netflix
+# golden CPU pair under python/test/resource/yuv/ which is fetched
+# separately via scripts/test/fetch-test-yuvs.sh per ADR-0493 and is
+# not part of the build context.
+RUN for B in cpu cuda sycl vulkan hip; do \
+      echo "--- probe: backend=$B ---" ; \
+      LD_LIBRARY_PATH=/usr/local/lib:${LD_LIBRARY_PATH} \
+      vmaf --reference /build/vmaf/testdata/ref_576x324_48f.yuv \
+           --distorted /build/vmaf/testdata/dis_576x324_48f.yuv \
+           --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+           --backend $B --json --output /tmp/probe_$B.json 2>&1 | head -3 \
+        || echo "WARN: backend=$B failed at container-build time (expected for GPU backends without device passthrough; check 'built without X support' as a real regression signal)" ; \
+    done
 
 # ---------------------------------------------------------------------------
 # Stage 3.5 — FFmpeg n8.1.1 with our libvmaf integration patches

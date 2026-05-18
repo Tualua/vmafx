@@ -81,6 +81,17 @@ services:
         source: ./.workingdir/dev-mcp-probes
         target: /probes
         read_only: false
+      # /dev/dri/by-path bind-mount — preserves the udev-managed
+      # `pci-XXXX:YY:ZZ.W-{card,render}` symlinks the Intel level-zero runtime
+      # uses to discover Arc GPUs. The leaf device nodes themselves
+      # (card0..card2, renderD128..renderD130) are still passed via the
+      # `devices:` directive below — but Docker's `devices:` form does NOT
+      # carry directory entries like `by-path/`, so the symlinks must be
+      # bind-mounted separately. ADR-0509 / Research-0138.
+      - type: bind
+        source: /dev/dri/by-path
+        target: /dev/dri/by-path
+        read_only: true
 
     # NVIDIA Container Toolkit runtime — requires nvidia runtime configured on host.
     # See: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
@@ -95,7 +106,15 @@ services:
               capabilities: [gpu]
 
     # Intel Arc (Vulkan/SYCL via DRI) + AMD ROCm (HIP via /dev/kfd).
-    # /dev/dri covers all DRM render nodes (renderD128–renderD130, cards 0–2).
+    #
+    # /dev/dri is passed as a single `devices:` entry — Docker assigns
+    # cgroup rwm rules to every device-node under that directory at
+    # container start. The matching `/dev/dri/by-path` bind-mount in the
+    # `volumes:` section above brings in the udev symlinks that the Intel
+    # level-zero runtime (`libze_intel_gpu.so.1`) uses to discover the Arc
+    # GPU. Without those symlinks sycl-ls reports `Platforms: 0` even when
+    # renderD129 is visible. ADR-0509 / Research-0138; verified via strace
+    # inside the container.
     devices:
       - /dev/dri:/dev/dri
       - /dev/kfd:/dev/kfd
@@ -153,6 +172,11 @@ services:
         source: ./.workingdir/dev-mcp-probes
         target: /probes
         read_only: false
+      # /dev/dri/by-path — udev symlinks (see dev-mcp service above).
+      - type: bind
+        source: /dev/dri/by-path
+        target: /dev/dri/by-path
+        read_only: true
 
     runtime: ${CONTAINER_RUNTIME:-runc}
 

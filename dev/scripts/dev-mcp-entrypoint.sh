@@ -25,6 +25,20 @@
 
 set -euo pipefail
 
+# ADR-0509: unset VK_ICD_FILENAMES / VK_DRIVER_FILES on container start.
+# Docker's ENV directive cannot truly unset an env var — setting it to ""
+# in the Containerfile produces an *empty* value, which the Vulkan loader
+# treats as "no ICDs configured" and bails with ERROR_INCOMPATIBLE_DRIVER.
+# Unset here so the loader falls back to its default search path
+# (/etc/vulkan/icd.d/ + /usr/share/vulkan/icd.d/), which picks up:
+#   - NVIDIA's nvidia_icd.json (bind-mounted by nvidia-container-runtime
+#     when NVIDIA_DRIVER_CAPABILITIES includes `graphics`),
+#   - Mesa's intel_icd.json / radeon_icd.json / lvp_icd.json
+#     (installed by mesa-vulkan-drivers in the build-deps stage).
+# Operators that need to force a single ICD can still set the env var at
+# `docker exec` time per-invocation (e.g. `docker exec -e VK_ICD_FILENAMES=…`).
+unset VK_ICD_FILENAMES VK_DRIVER_FILES || true
+
 # ADR-0498 follow-up #8 (BBB e2e v2): some container runtimes ship a
 # minimal ``/`` filesystem without ``/tmp`` (especially when the image
 # is started with a fresh tmpfs overlay). Both the MCP log and the

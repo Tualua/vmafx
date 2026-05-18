@@ -200,6 +200,49 @@ Each probe file follows this schema:
 | HIP kernels cannot run on NVIDIA-only hosts | The HIP toolchain in the container compiles and embeds HSACO fat binaries, but the AMD ROCm runtime is not available. Feature extractors return an error at kernel dispatch. The container is still valuable for catching compile-time regressions in HIP paths. |
 | Metal is disabled on Linux | `libvmaf` is built with `-Denable_metal=auto`, which resolves to disabled on Linux. Metal kernels require macOS + Apple Silicon. |
 | SYCL requires Intel GPU or software emulation | Without the oneAPI Level Zero runtime, SYCL falls back to the OpenCL CPU device (if available) or returns `-ENOSYS`. Performance is significantly lower than on a dedicated Intel GPU. |
-| Vulkan lavapipe is CPU-backed | The lavapipe software Vulkan ICD enabled in the container allows Vulkan correctness testing without a physical GPU, but throughput is 3–5× slower than real hardware. |
+| Vulkan lavapipe is CPU-backed | The lavapipe software Vulkan ICD shipped by mesa is enumerated last when no real ICD is available; it allows Vulkan correctness testing without a physical GPU, but throughput is 3–5× slower than real hardware. |
 | First build takes 20–40 minutes | All four GPU SDK layers are fetched during `docker compose build`. Subsequent builds are fast (layer cache). |
 | `vmaf-tune report` requires matplotlib | Baked into `/opt/vmaf-venv` by `dev/Containerfile` (added 2026-05-18 per ADR-0498). When the container is rebuilt, `vmaf-tune report --format both` produces a self-contained HTML+Markdown report with inline charts. If you see `ModuleNotFoundError: No module named 'matplotlib'` inside the container, your image predates the ADR-0498 commit — `docker compose -f dev/docker-compose.yml build dev-mcp` rebuilds it. |
+
+## Backend matrix (post-ADR-0514)
+
+On a host with NVIDIA + Intel Arc + AMD silicon and the NVIDIA Container
+Toolkit installed, every libvmaf backend should run inside the container:
+
+| Backend | Expected | Required host state |
+|---|---|---|
+| `cpu` | VMAF score, rc=0 | always |
+| `cuda` | VMAF score, rc=0 (5-place-equal to CPU per ADR-0214) | NVIDIA GPU + Container Toolkit |
+| `sycl` | VMAF score, rc=0 (5-place-equal to CPU) | Intel GPU exposed via `/dev/dri/renderD*` + `/dev/dri/by-path/` |
+| `vulkan` | VMAF score, rc=0 (per-adapter device picker selects the first compatible ICD) | At least one Vulkan ICD: NVIDIA (via NVIDIA_DRIVER_CAPABILITIES=graphics), Intel/AMD (via mesa-vulkan-drivers), or lavapipe software fallback |
+| `hip` | VMAF score, rc=0 (5-place-equal to CPU) | AMD GPU via `/dev/kfd` + `/dev/dri/renderD*` |
+| `metal` | "built without metal support" on Linux containers | macOS host only |
+
+Reproducer:
+
+```bash
+docker exec vmaf-dev-mcp bash -c '
+  for B in cpu cuda sycl vulkan hip; do
+    vmaf --reference /workspace/python/test/resource/yuv/src01_hrc00_576x324.yuv \
+         --distorted /workspace/python/test/resource/yuv/src01_hrc01_576x324.yuv \
+         --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+         --backend $B --json --output /tmp/probe_$B.json
+    echo "rc=$? backend=$B"
+  done
+'
+```
+
+### Environment-variable contract
+
+The container intentionally does **not** pin any of these env vars, even
+though earlier image versions did. Pinning them silently hid one or more
+GPU backends:
+
+| Env var | Contract | Why not pinned |
+|---|---|---|
+| `VK_ICD_FILENAMES` / `VK_DRIVER_FILES` | unset by default; Vulkan loader uses `/etc/vulkan/icd.d/` + `/usr/share/vulkan/icd.d/` search path | An earlier pin to `lvp_icd.x86_64.json` (typo of `lvp_icd.json`) hid every real GPU. ADR-0509 / Research-0138. |
+| `LD_LIBRARY_PATH` | includes `${ONEAPI_ROOT}/{compiler,umf,tcm}/latest/lib` | `tcm/latest/lib` carries `libhwloc.so.15` — the level-zero UR adapter dlopens it at load time. Dropping it causes SYCL "Platforms: 0" on Intel Arc. |
+| `NVIDIA_DRIVER_CAPABILITIES` | `compute,graphics,utility,video` (set in `dev/docker-compose.yml` common-env) | `graphics` is what makes the NVIDIA Container Toolkit bind-mount `nvidia_icd.json` into `/etc/vulkan/icd.d/`. Dropping `graphics` hides NVIDIA from Vulkan. |
+
+Operators that need to force a single ICD per invocation can still
+`docker exec vmaf-dev-mcp env VK_ICD_FILENAMES=… vmaf …`.

@@ -79,6 +79,16 @@ Fork-internal rebase invariants:
   `--vulkan_require_fp64`); the usage string was split across two
   `fprintf` calls to stay under the C99 4095-char string-literal
   limit.
+## fix/dev-container-backend-exposure (ADR-0514)
+
+**No rebase impact.** `dev/Containerfile`, `dev/docker-compose.yml`,
+and `dev/AGENTS.md` are entirely fork-local — upstream Netflix/vmaf
+does not ship the `vmaf-dev-mcp` container stack. If upstream ever
+ships its own dev container, merge by adopting upstream's image
+discipline and re-applying the four invariants documented in
+`dev/AGENTS.md` (`tcm/latest/lib` on `LD_LIBRARY_PATH`, no
+`VK_ICD_FILENAMES` pin, `/dev/dri/by-path` bind-mount, build-time
+backend probe).
 
 ## fix/restore-cuda-kernel-lifecycle-helpers
 
