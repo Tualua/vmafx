@@ -960,3 +960,5 @@ VmafFeatureExtractor vmaf_fex_integer_ssim_sycl = {
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
         },
 };
+
+} /* extern "C" */
