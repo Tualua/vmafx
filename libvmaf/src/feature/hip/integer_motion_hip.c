@@ -21,8 +21,15 @@
  *  the Gaussian-blurred current/previous frames. The kernel writes the
  *  current blurred frame into `blur[index%2]` and diffs against
  *  `blur[(index+1)%2]`. The raw Y-plane is transferred HtoD directly
- *  from the CPU VmafPicture (VMAF_FEATURE_EXTRACTOR_HIP flag not set yet
- *  — same posture as all other HIP consumers, ADR-0241).
+ *  from the CPU VmafPicture; pictures still arrive as
+ *  VMAF_PICTURE_BUFFER_TYPE_HOST until a real HIP picture pool lands.
+ *
+ *  ADR-0530: VMAF_FEATURE_EXTRACTOR_HIP IS now set so that
+ *  `compute_fex_flags()` actually selects this extractor when a HIP
+ *  state has been imported via `vmaf_hip_import_state()`. Without the
+ *  flag the model-driven (`vmaf_use_features_from_model`) dispatch
+ *  would skip past this extractor and pick the CPU twin, which is what
+ *  ADR-0519 deliberately left in place for the import-state PR.
  *
  *  HIP adaptation notes vs CUDA twin:
  *  - Warp size 64 on GCN/RDNA; warp reduction in kernel uses `__shfl_down`.
@@ -215,15 +222,24 @@ static double normalize_and_scale_sad(uint64_t sad, unsigned w, unsigned h)
     return (double)(sad / 256.) / ((double)w * (double)h);
 }
 
-/* Idempotent append — suppresses duplicate-write warning when flush's
- * collect already wrote the same (feature, index) pair. */
-static int append_if_unwritten(VmafFeatureCollector *fc, const char *feature, double value,
-                               unsigned index)
+/* Idempotent append (dict-aware) — suppresses duplicate-write warning
+ * when flush's collect already wrote the same (feature, index) pair.
+ * ADR-0530: routes through the feature_name_dict so the encoded key
+ * (`vmaf_feature_name_from_options`) matches what the predict layer
+ * looks up via `model->predict_feature_names[i]`. Without the dict
+ * the literal key would be written and the predict step would emit
+ * "no feature 'VMAF_integer_feature_motion2_score' at index N". */
+static int append_if_unwritten(VmafFeatureCollector *fc, VmafDictionary *dict, const char *feature,
+                               double value, unsigned index)
 {
+    /* Resolve through the dict so the get-side query uses the same
+     * encoded key the append-side write produces. */
+    VmafDictionaryEntry *entry = vmaf_dictionary_get(&dict, feature, 0);
+    const char *fn = entry ? entry->val : feature;
     double existing;
-    if (vmaf_feature_collector_get_score(fc, feature, &existing, index) == 0)
+    if (vmaf_feature_collector_get_score(fc, fn, &existing, index) == 0)
         return 0;
-    return vmaf_feature_collector_append(fc, feature, value, index);
+    return vmaf_feature_collector_append(fc, fn, value, index);
 }
 
 static int extract_force_zero(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
@@ -550,11 +566,15 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
     return -ENOSYS;
 #else
     if (index == 0u) {
-        int e = vmaf_feature_collector_append(feature_collector,
-                                              "VMAF_integer_feature_motion2_score", 0., 0);
+        /* ADR-0530: route writes through s->feature_name_dict so the
+         * collector keys match what `vmaf_predict_score_at_index`
+         * looks up (encoded option-aware key, not the literal). */
+        int e = vmaf_feature_collector_append_with_dict(
+            feature_collector, s->feature_name_dict, "VMAF_integer_feature_motion2_score", 0., 0);
         if (s->debug) {
-            e |= vmaf_feature_collector_append(feature_collector,
-                                               "VMAF_integer_feature_motion_score", 0., 0);
+            e |=
+                vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                        "VMAF_integer_feature_motion_score", 0., 0);
         }
         s->frame_index++;
         return e;
@@ -567,8 +587,9 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
 
     int e = 0;
     if (s->debug) {
-        e |= vmaf_feature_collector_append(feature_collector, "VMAF_integer_feature_motion_score",
-                                           s->score, index);
+        e |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                     "VMAF_integer_feature_motion_score", s->score,
+                                                     index);
     }
 
     /* Mirror integer_motion_cuda.c collect logic exactly. */
@@ -577,8 +598,9 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
                                          s->score * s->motion_fps_weight :
                                          s->motion_max_val;
         const double motion3_score = motion3_postprocess_hip(s, score_clipped);
-        e |= vmaf_feature_collector_append(feature_collector, "VMAF_integer_feature_motion3_score",
-                                           motion3_score, index - 1u);
+        e |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                     "VMAF_integer_feature_motion3_score",
+                                                     motion3_score, index - 1u);
     }
 
     if (index > 1u) {
@@ -586,11 +608,13 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
         const double motion2_clipped = motion2_raw * s->motion_fps_weight < s->motion_max_val ?
                                            motion2_raw * s->motion_fps_weight :
                                            s->motion_max_val;
-        e |= vmaf_feature_collector_append(feature_collector, "VMAF_integer_feature_motion2_score",
-                                           motion2_clipped, index - 1u);
+        e |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                     "VMAF_integer_feature_motion2_score",
+                                                     motion2_clipped, index - 1u);
         const double motion3_score = motion3_postprocess_hip(s, motion2_clipped);
-        e |= vmaf_feature_collector_append(feature_collector, "VMAF_integer_feature_motion3_score",
-                                           motion3_score, index - 1u);
+        e |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                     "VMAF_integer_feature_motion3_score",
+                                                     motion3_score, index - 1u);
     }
 
     return e;
@@ -613,12 +637,13 @@ static int flush_fex_hip(VmafFeatureExtractor *fex, VmafFeatureCollector *featur
         const double last_motion2 = s->score * s->motion_fps_weight < s->motion_max_val ?
                                         s->score * s->motion_fps_weight :
                                         s->motion_max_val;
-        err = append_if_unwritten(feature_collector, "VMAF_integer_feature_motion2_score",
-                                  last_motion2, s->index);
+        err = append_if_unwritten(feature_collector, s->feature_name_dict,
+                                  "VMAF_integer_feature_motion2_score", last_motion2, s->index);
         if (err >= 0) {
             const double motion3_score = motion3_postprocess_hip(s, last_motion2);
-            const int e3 = append_if_unwritten(
-                feature_collector, "VMAF_integer_feature_motion3_score", motion3_score, s->index);
+            const int e3 =
+                append_if_unwritten(feature_collector, s->feature_name_dict,
+                                    "VMAF_integer_feature_motion3_score", motion3_score, s->index);
             if (e3 < 0)
                 err = e3;
         }
@@ -683,10 +708,14 @@ VmafFeatureExtractor vmaf_fex_integer_motion_hip = {
      * carry, so the feature engine drives collect before the next submit.
      * Mirrors the CUDA twin verbatim.
      *
-     * No VMAF_FEATURE_EXTRACTOR_HIP flag yet — pictures arrive as CPU
-     * VmafPictures and msh_launch() does explicit HtoD copies. Same
-     * posture as all prior HIP consumers (ADR-0241 through ADR-0377). */
-    .flags = VMAF_FEATURE_EXTRACTOR_TEMPORAL,
+     * ADR-0530: VMAF_FEATURE_EXTRACTOR_HIP is now set so the
+     * model-driven dispatch (`compute_fex_flags()` in libvmaf.c)
+     * actually selects this extractor when a HIP state is imported.
+     * Pictures still arrive as VMAF_PICTURE_BUFFER_TYPE_HOST and
+     * msh_launch() does its own HtoD copy; the dispatch check in
+     * `feature_extractor.c` allows HOST buffers for HIP-flagged
+     * extractors per the same ADR. */
+    .flags = VMAF_FEATURE_EXTRACTOR_TEMPORAL | VMAF_FEATURE_EXTRACTOR_HIP,
     .chars =
         {
             .n_dispatches_per_frame = 1,

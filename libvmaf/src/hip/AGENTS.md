@@ -126,16 +126,40 @@ ADR-0372 (batch-1, this PR).
   CUDA twin. If a future PR drifts the CUDA twin's lifecycle (e.g.
   adds a third event), update the HIP twin in the same PR.
 
-- **`vmaf_fex_psnr_hip` is registered without the
-  `VMAF_FEATURE_EXTRACTOR_HIP` flag bit set** (fork-local, ADR-0241).
-  The flag bit (`1 << 6`) is reserved in the enum but the consumer
-  does not set it, because the picture buffer-type check in
-  `vmaf_feature_extractor_context_extract` would route a HIP-flagged
-  extractor through a (not-yet-existing) HIP buffer-type branch. The
-  runtime PR (T7-10b) adds the `VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE`
-  tag and *then* sets the flag on the extractor. **On rebase**: if a
-  refactor touches the picture buffer-type dispatch, leave the HIP
-  extractor's flags at `0` until T7-10b.
+- **HIP extractor flag-promotion is per-extractor and gated on a
+  verified end-to-end CLI reproducer** (fork-local, ADR-0530 —
+  supersedes the ADR-0241 "flag bit reserved but cleared" invariant
+  for `vmaf_fex_psnr_hip` and friends). The flag bit (`1 << 6`)
+  IS now set on extractors that have a verified-working real HIP
+  kernel — currently only `vmaf_fex_integer_motion_hip` qualifies.
+  `vmaf_fex_psnr_hip`, `vmaf_fex_ciede_hip`,
+  `vmaf_fex_float_moment_hip`, `vmaf_fex_float_ansnr_hip`,
+  `vmaf_fex_integer_motion_v2_hip`, `vmaf_fex_float_motion_hip`,
+  `vmaf_fex_float_ssim_hip`, `vmaf_fex_float_psnr_hip`,
+  `vmaf_fex_float_adm_hip`, `vmaf_fex_cambi_hip`,
+  `vmaf_fex_integer_vif_hip` remain unflagged because their kernels
+  are still scaffold-only / -ENOSYS / crash on first dispatch.
+  `vmaf_fex_integer_vif_hip` is the cautionary tale: it was
+  speculatively flagged in its batch-1 commit but crashes with a
+  GPU memory access fault on the first frame when the dispatch
+  actually picks it; ADR-0530 un-flags it until the kernel-level
+  fix lands. **On rebase**: do NOT bulk-set the flag on every HIP
+  extractor — promotion requires its own ADR + a
+  `vmaf --backend hip --feature <name>` reproducer that shows the
+  HIP kernel actually launching (`AMD_LOG_LEVEL=3` shows the
+  `hipModuleLaunchKernel` trace) and that the VMAF score is within
+  the places=4 cross-backend gate of the CPU twin. Three companion
+  invariants pinned by ADR-0530 on the dispatch side:
+  (1) `compute_fex_flags()` in `libvmaf.c` adds
+  `VMAF_FEATURE_EXTRACTOR_HIP` whenever `vmaf->hip.state` is set
+  (host-pic only, like Vulkan — no gpumask gate);
+  (2) `vmaf_get_feature_extractor_by_feature_name()` falls back to
+  an unflagged extractor when the preferred-flag pass misses, so a
+  partially-ported HIP backend still routes the missing features
+  through CPU twins;
+  (3) `flush_context_serial()` drains HIP-flagged extractors'
+  `gpu_pending` final-frame collect (mirrors the SYCL pattern in
+  `flush_context_sycl`).
 
 ## Rebase-sensitive invariants (additional consumers)
 

@@ -714,5 +714,13 @@ VmafFeatureExtractor vmaf_fex_integer_vif_hip = {
     .options = options,
     .priv_size = sizeof(VifStateHip),
     .provided_features = provided_features,
-    .flags = VMAF_FEATURE_EXTRACTOR_HIP,
+    /* ADR-0530: VMAF_FEATURE_EXTRACTOR_HIP intentionally cleared
+     * until this extractor passes a real-device end-to-end smoke
+     * test. Promoting it prematurely would have it picked by the
+     * model-driven dispatch (`compute_fex_flags()` now adds
+     * VMAF_FEATURE_EXTRACTOR_HIP whenever a HIP state is imported)
+     * and crash with a GPU memory access fault on the first
+     * frame. Re-enable in the same PR that lands the kernel-level
+     * fix. */
+    .flags = 0,
 };

@@ -371,3 +371,4 @@
 0520-cli-no-reference-wiring
 0524-tiny-model-loader-symbolic-batch-dim
 0528-cli-parse-test-stderr-pipe-drain-and-error-fallback
+0530-hip-feature-flag-promotion-and-picture-buffer

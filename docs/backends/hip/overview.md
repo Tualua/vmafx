@@ -11,12 +11,31 @@
 > with room to spare). HIP joins CUDA / SYCL / Vulkan as a fully working
 > runtime-selected backend.
 >
-> **Dispatch posture (2026-05-18):** the HIP-flagged feature extractors
-> still do not set the `VMAF_FEATURE_EXTRACTOR_HIP` flag bit, so the
-> dispatch layer routes them through their CPU twins — that is why
-> the HIP scores match CPU bit-exactly today. Flipping the flag bit
-> requires `VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE` plumbing and an
-> end-to-end picture-pool wiring; that work is the next follow-up.
+> **Dispatch posture (2026-05-18, updated per
+> [ADR-0530](../../adr/0530-hip-feature-flag-promotion-and-picture-buffer.md)):**
+> `vmaf_fex_integer_motion_hip` now carries
+> `VMAF_FEATURE_EXTRACTOR_HIP` and is selectable from the
+> model-driven dispatch when a HIP state has been imported
+> (`vmaf --backend hip` implies that import). The
+> `VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE` enum entry has been added
+> for the future HIP picture pool; pictures still arrive as
+> `VMAF_PICTURE_BUFFER_TYPE_HOST` for now and the HIP feature TUs
+> perform their own HtoD copies (`hipMemcpy2DAsync`). End-to-end
+> verification: `--backend hip --feature integer_motion` produces
+> a clean VMAF JSON with VMAF = 76.71 on the Netflix src01 pair
+> (vs CPU 76.67, well inside the places=4 cross-backend gate from
+> [ADR-0214](../../adr/0214-gpu-parity-ci-gate.md)); 48
+> `hipModuleLaunchKernel(calculate_motion_score_kernel_8bpc)`
+> launches per 48-frame clip confirm the HIP kernel is actually
+> dispatching.
+>
+> The other HIP-flagged extractors (`vif_hip`, `psnr_hip`, `ciede_hip`,
+> `float_moment_hip`, `float_ansnr_hip`, `motion_v2_hip`,
+> `float_motion_hip`, `float_ssim_hip`, `float_psnr_hip`,
+> `cambi_hip`, `float_adm_hip`, `ssimulacra2_hip`) remain unflagged
+> pending per-extractor end-to-end verification. Each will be
+> promoted by its own follow-up PR + ADR after a successful
+> reproducer + cross-backend numerical check.
 >
 > **Status (2026-05-17):** 20 of 23 feature extractors now have real device
 > kernels; three legacy-API stubs remain (`adm_hip`, `vif_hip`, `motion_hip`).

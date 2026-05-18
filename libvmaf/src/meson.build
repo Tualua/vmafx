@@ -249,6 +249,10 @@ if is_hipcc_enabled and is_hip_enabled
         'cambi_score' : feature_src_dir + 'hip/integer_cambi/cambi_score.hip',
         # integer_vif_hip HSACO (8 kernels: 4 V + 4 H per scale).
         'vif_statistics' : feature_src_dir + 'hip/integer_vif/vif_statistics.hip',
+        # integer_motion_hip HSACO (ADR-0468 scaffold, ADR-0530 selectable
+        # dispatch). Two kernel entry points (8bpc + 16bpc) consumed by
+        # `msh_module_load()` in `feature/hip/integer_motion_hip.c`.
+        'motion_score' : feature_src_dir + 'hip/integer_motion/motion_score.hip',
     }
     foreach name, src : hip_kernel_sources
         hsaco_target = custom_target('hip_hsaco_' + name,

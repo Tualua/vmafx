@@ -1307,11 +1307,12 @@ int vmaf_use_feature(VmafContext *vmaf, const char *feature_name, VmafFeatureDic
 }
 
 /* Compose the extractor-selection flag mask from the active backends.
- * Vulkan is host-pic only (no gpumask gate, no device-picture pool). */
+ * Vulkan / HIP are host-pic only (no gpumask gate, no device-picture
+ * pool). HIP follows the Vulkan posture per ADR-0530. */
 static unsigned compute_fex_flags(const VmafContext *vmaf)
 {
     unsigned fex_flags = 0;
-#if !defined(HAVE_CUDA) && !defined(HAVE_SYCL) && !defined(HAVE_VULKAN)
+#if !defined(HAVE_CUDA) && !defined(HAVE_SYCL) && !defined(HAVE_VULKAN) && !defined(HAVE_HIP)
     (void)vmaf; /* CPU-only build: no backend slots to inspect. */
 #endif
 #ifdef HAVE_CUDA
@@ -1325,6 +1326,14 @@ static unsigned compute_fex_flags(const VmafContext *vmaf)
 #ifdef HAVE_VULKAN
     if (vmaf->vulkan.state)
         fex_flags |= VMAF_FEATURE_EXTRACTOR_VULKAN;
+#endif
+#ifdef HAVE_HIP
+    /* ADR-0530: HIP-flagged extractors are selected when a HIP state
+     * pointer has been imported via vmaf_hip_import_state(). Like
+     * Vulkan the HIP backend is host-pic for now — the gpumask gate
+     * does not apply. */
+    if (vmaf->hip.state)
+        fex_flags |= VMAF_FEATURE_EXTRACTOR_HIP;
 #endif
     return fex_flags;
 }
@@ -1712,7 +1721,23 @@ static int flush_context_serial(VmafContext *vmaf)
 {
     int err = 0;
     RegisteredFeatureExtractors rfe = vmaf->registered_feature_extractors;
+    /* ADR-0530: drain HIP-flagged extractors' gpu_pending final-frame
+     * collect BEFORE running their flush. The async submit/collect
+     * double-buffer in `read_pictures_dispatch_one` leaves the last
+     * submitted frame's collect pending; without this drain, the HIP
+     * extractor's collect(N) never runs and motion2/motion3 at index
+     * N-1 is never written, which trips
+     * `vmaf_predict_score_at_index()` ("no feature ... at index N-1").
+     * Mirrors the SYCL `flush_context_sycl` pattern. */
     for (unsigned i = 0; i < rfe.cnt; i++) {
+#ifdef HAVE_HIP
+        if ((rfe.fex_ctx[i]->fex->flags & VMAF_FEATURE_EXTRACTOR_HIP) &&
+            rfe.fex_ctx[i]->gpu_pending) {
+            err |= vmaf_feature_extractor_context_collect(
+                rfe.fex_ctx[i], rfe.fex_ctx[i]->gpu_pending_index, vmaf->feature_collector);
+            rfe.fex_ctx[i]->gpu_pending = false;
+        }
+#endif
         if (!(rfe.fex_ctx[i]->fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA) &&
             !(rfe.fex_ctx[i]->fex->flags & VMAF_FEATURE_EXTRACTOR_SYCL)) {
             err |= vmaf_feature_extractor_context_flush(rfe.fex_ctx[i], vmaf->feature_collector);

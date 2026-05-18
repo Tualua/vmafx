@@ -449,6 +449,48 @@ static char *test_float_psnr_hip_extractor_registered(void)
     return NULL;
 }
 
+/* ---- ADR-0530: integer_motion_hip flag-promotion + selectable
+ * dispatch. Registration + HIP-flag presence are the load-bearing
+ * assertions; the runtime kernel launch is validated by the CLI
+ * reproducer in the PR description (AMD_LOG_LEVEL=3 trace shows
+ * `calculate_motion_score_kernel_8bpc` dispatched once per frame). */
+
+static char *test_integer_motion_hip_extractor_registered(void)
+{
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion_hip");
+    mu_assert("motion_hip extractor must be registered (ADR-0530)", fex != NULL);
+    mu_assert("motion_hip extractor name matches", strcmp(fex->name, "motion_hip") == 0);
+    mu_assert("motion_hip carries the TEMPORAL flag",
+              (fex->flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL) != 0);
+    mu_assert("motion_hip carries the HIP flag (ADR-0530 promotion)",
+              (fex->flags & VMAF_FEATURE_EXTRACTOR_HIP) != 0);
+    return NULL;
+}
+
+static char *test_integer_motion_hip_dispatch_picks_hip(void)
+{
+    /* The model-driven dispatch resolves `VMAF_integer_feature_motion2_score`
+     * to the HIP-flagged extractor when the HIP flag is part of the
+     * fex_flags mask (i.e. when a HIP state has been imported via
+     * vmaf_hip_import_state). With flags=0 the CPU twin still wins by
+     * registry order. The fallback path (ADR-0530) returns the CPU
+     * twin when an unflagged feature has no HIP-flagged provider. */
+    VmafFeatureExtractor *cpu_fex =
+        vmaf_get_feature_extractor_by_feature_name("VMAF_integer_feature_motion2_score", 0);
+    mu_assert("CPU motion2 extractor resolvable with flags=0", cpu_fex != NULL);
+    /* CPU integer_motion extractor's registry name is `motion` (source
+     * file is `integer_motion.c` but the registry name drops the
+     * `integer_` prefix to match upstream Netflix/vmaf history). */
+    mu_assert("flags=0 picks the CPU twin (name=motion)", strcmp(cpu_fex->name, "motion") == 0);
+
+    VmafFeatureExtractor *hip_fex = vmaf_get_feature_extractor_by_feature_name(
+        "VMAF_integer_feature_motion2_score", VMAF_FEATURE_EXTRACTOR_HIP);
+    mu_assert("HIP motion2 extractor resolvable with HIP flag", hip_fex != NULL);
+    mu_assert("HIP flag picks the HIP twin (name=motion_hip)",
+              strcmp(hip_fex->name, "motion_hip") == 0);
+    return NULL;
+}
+
 /* Function-pointer table keeps `run_tests` flat — without it,
  * `mu_run_test` macro-expands to a branching pair per test, blowing
  * past clang-tidy's `readability-function-size` 15-branch budget at
@@ -485,6 +527,10 @@ static const test_fn test_table[] = {
     test_float_ssim_hip_extractor_registered,
     /* T7-10b first real kernel (ADR-0254): float_psnr_hip */
     test_float_psnr_hip_extractor_registered,
+    /* ADR-0530: integer_motion_hip flag-promotion + selectable
+     * dispatch. */
+    test_integer_motion_hip_extractor_registered,
+    test_integer_motion_hip_dispatch_picks_hip,
 };
 
 static const size_t test_table_len = sizeof(test_table) / sizeof(test_table[0]);

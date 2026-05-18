@@ -137,10 +137,14 @@ extern VmafFeatureExtractor vmaf_fex_float_moment_hip;
  * -ENOSYS until T7-10b. */
 extern VmafFeatureExtractor vmaf_fex_float_ansnr_hip;
 extern VmafFeatureExtractor vmaf_fex_integer_motion_v2_hip;
-/* HIP thirteenth consumer — ADR-0523. Integer motion HIP port; mirrors
- * `vmaf_fex_integer_motion_cuda`. Emits VMAF_integer_feature_motion_score,
- * _motion2_score, and _motion3_score. Scaffold posture: init() returns
- * -ENOSYS until T7-10b promotes the kernel template to real HIP calls. */
+/* HIP integer_motion consumer — ADR-0468 scaffold, registration
+ * landed in ADR-0523 (PR #1283), promoted to real kernel with
+ * `VMAF_FEATURE_EXTRACTOR_HIP` set + selectable dispatch by
+ * ADR-0530. Carries `VMAF_FEATURE_EXTRACTOR_HIP` so
+ * `compute_fex_flags()` selects it when a HIP state is imported
+ * (otherwise the CPU twin wins by tie-break order). Emits
+ * VMAF_integer_feature_motion_score, _motion2_score, and
+ * _motion3_score (mirrors `vmaf_fex_integer_motion_cuda`). */
 extern VmafFeatureExtractor vmaf_fex_integer_motion_hip;
 /* HIP seventh-consumer kernel — T7-10b follow-up / ADR-0273. Same
  * scaffold posture; mirrors the CUDA twin
@@ -292,12 +296,13 @@ static VmafFeatureExtractor *feature_extractor_list[] = {
     /* T7-10b fifth + sixth consumers (ADR-0266 / ADR-0267): same
      * scaffold-posture registration as the first consumer. */
     &vmaf_fex_float_ansnr_hip, &vmaf_fex_integer_motion_v2_hip,
-    /* Thirteenth consumer (ADR-0523): `integer_motion_hip` mirrors
-     * `integer_motion_cuda.c` — TEMPORAL flag, per-frame SAD reduction,
-     * motion3 5-frame window. Emits motion_score, motion2_score,
-     * motion3_score. Same scaffold posture as the first consumer:
-     * registration succeeds, init() returns -ENOSYS until T7-10b
-     * promotes the kernel-template helpers. */
+    /* integer_motion_hip — ADR-0468 scaffold, registration landed
+     * in ADR-0523 (PR #1283), promoted to real HIP-flagged
+     * dispatch by ADR-0530. Mirrors `integer_motion_cuda.c` —
+     * TEMPORAL flag, per-frame SAD reduction, motion3 5-frame
+     * window. The per-extractor flag filter in
+     * `vmaf_get_feature_extractor_by_feature_name` is what picks
+     * the HIP path; placement order in this list is irrelevant. */
     &vmaf_fex_integer_motion_hip,
     /* Seventh consumer (ADR-0273): `float_motion_hip` mirrors
      * `float_motion_cuda.c`'s call graph (TEMPORAL flag,
@@ -367,6 +372,8 @@ VmafFeatureExtractor *vmaf_get_feature_extractor_by_feature_name(const char *nam
 
     VmafFeatureExtractor *fex = NULL;
 
+    /* First pass: prefer an extractor that matches one of the requested
+     * backend flags. */
     for (unsigned i = 0; (fex = feature_extractor_list[i]); i++) {
         if (!fex->provided_features)
             continue;
@@ -376,6 +383,28 @@ VmafFeatureExtractor *vmaf_get_feature_extractor_by_feature_name(const char *nam
         for (unsigned j = 0; (fname = fex->provided_features[j]); j++) {
             if (!strcmp(name, fname))
                 return fex;
+        }
+    }
+    /* ADR-0530 fallback: if no flagged extractor was found, fall back to
+     * any extractor providing the feature (including the CPU twin).
+     * This preserves the ADR-0519 posture that lets a partially-covered
+     * GPU backend (e.g. HIP, which has not yet promoted every kernel
+     * out of the -ENOSYS scaffold) run the requested model by routing
+     * the unflagged features through their CPU twins. Without this
+     * fallback, enabling the HIP flag mask in `compute_fex_flags()`
+     * would break the default VMAF model (only motion / vif / ssimu2
+     * have HIP-flagged registrations today; adm2 / motion2 / etc. would
+     * fail to resolve). The CUDA backend has full coverage so the
+     * fallback is a no-op for it. */
+    if (flags) {
+        for (unsigned i = 0; (fex = feature_extractor_list[i]); i++) {
+            if (!fex->provided_features)
+                continue;
+            const char *fname = NULL;
+            for (unsigned j = 0; (fname = fex->provided_features[j]); j++) {
+                if (!strcmp(name, fname))
+                    return fex;
+            }
         }
     }
     return NULL;
@@ -481,6 +510,31 @@ int vmaf_feature_extractor_context_extract(VmafFeatureExtractorContext *fex_ctx,
     } else {
         if (ref_priv->buf_type == VMAF_PICTURE_BUFFER_TYPE_CUDA_DEVICE) {
             vmaf_log(VMAF_LOG_LEVEL_ERROR, "picture buf_type mismatch: cpu fex (%s), cuda buf\n",
+                     fex_ctx->fex->name);
+            return -EINVAL;
+        }
+    }
+    /* ADR-0530: HIP-flagged extractors accept both HOST and HIP_DEVICE
+     * pictures. HOST is the current production path — the HIP picture
+     * pool (picture_hip.{c,h}) is still a stub, so pictures arrive as
+     * HOST from the YUV reader and the HIP TUs perform their own HtoD
+     * copy (e.g. msh_launch() in integer_motion_hip.c). HIP_DEVICE is
+     * reserved for the future picture pool. The symmetry rule is that
+     * a HIP extractor must NOT see a foreign GPU buffer (CUDA / SYCL /
+     * Vulkan), and a non-HIP extractor must NOT see a HIP_DEVICE buf.
+     * The CUDA mismatch is already caught by the block above; the
+     * remaining cross-GPU mismatches are caught here. */
+    if (fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_HIP) {
+        if (ref_priv->buf_type != VMAF_PICTURE_BUFFER_TYPE_HOST &&
+            ref_priv->buf_type != VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE) {
+            vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                     "picture buf_type mismatch: hip fex (%s), non-host/non-hip buf\n",
+                     fex_ctx->fex->name);
+            return -EINVAL;
+        }
+    } else {
+        if (ref_priv->buf_type == VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE) {
+            vmaf_log(VMAF_LOG_LEVEL_ERROR, "picture buf_type mismatch: cpu fex (%s), hip buf\n",
                      fex_ctx->fex->name);
             return -EINVAL;
         }

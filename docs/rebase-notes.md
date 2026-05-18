@@ -22,7 +22,7 @@ upstream Netflix/vmaf. No conflict risk on sync.
 and doc / AGENTS.md / changelog files. None of these paths exist in upstream
 Netflix/vmaf. No conflict risk on sync.
 
-## fix/hip-motion-extractor-register (ADR-0523)
+## fix/hip-motion-extractor-register (ADR-0530)
 
 **No rebase impact.** The only changed file is
 `libvmaf/src/feature/feature_extractor.c`, which is a fork-local file
@@ -36137,3 +36137,63 @@ calls). On a future upstream sync, expect a merge conflict on
 keep the fork's `if (!found) usage(…); return;` + `snprintf` shape and
 drop the `<assert.h>` include. No public API surface changes; the
 ffmpeg-patches stack is untouched.
+## 2026-05-18 — HIP `integer_motion` flag promotion + HIP_DEVICE buffer enum (ADR-0530, PR #TBD)
+
+Extends ADR-0519. Promotes `VMAF_FEATURE_EXTRACTOR_HIP` on
+`vmaf_fex_integer_motion_hip` so the model-driven dispatch picks
+the HIP kernel instead of the CPU twin when a HIP state is
+imported. Adds `VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE` to the
+picture-buffer enum (reserved for the future HIP picture pool;
+HIP TUs still accept HOST and do their own HtoD copy). Wires
+`compute_fex_flags()` for HIP, adds a CPU-twin fallback in
+`vmaf_get_feature_extractor_by_feature_name()`, drains
+HIP-flagged extractors' `gpu_pending` final-frame collect in
+`flush_context_serial()`, and routes the HIP integer_motion
+collect/flush writes through `feature_name_dict` so the encoded
+option-aware key matches the predict-side lookup.
+
+Touched: `libvmaf/src/picture.h` (new enum entry),
+`libvmaf/src/feature/feature_extractor.c` (dispatch buffer-type
+check + `_by_feature_name` fallback + new extern + registry row),
+`libvmaf/src/libvmaf.c` (`compute_fex_flags` HIP slot +
+`flush_context_serial` HIP drain), `libvmaf/src/feature/hip/integer_motion_hip.c`
+(flag bit set + dict-aware writes), `libvmaf/src/feature/hip/integer_vif_hip.c`
+(flag bit cleared with citation — un-promotes pending kernel-level
+fix), `libvmaf/src/hip/meson.build` (compile integer_motion_hip.c),
+`libvmaf/src/meson.build` (motion_score.hip HSACO),
+`libvmaf/src/hip/AGENTS.md` (invariant rewrite), `libvmaf/test/test_hip_smoke.c`
+(registration + flag-dispatch tests),
+`docs/backends/hip/overview.md`, `docs/rebase-notes.md`,
+`changelog.d/added/0530-hip-integer-motion-flag-promotion.md`,
+`docs/state.md`.
+
+**Rebase sensitivity (medium — touches upstream-mirror
+`feature_extractor.c` dispatch site):**
+
+The dispatch-time HIP buffer-type check is a NEW symmetric
+block right after the existing CUDA buffer-type check. Any
+upstream port that touches the CUDA block needs a paired update
+to the HIP block to keep them symmetric. The CPU-twin fallback
+pass in `_by_feature_name` is a documented contract going
+forward (ADR-0530) — future GPU backend work cannot assume
+"flag set ⇒ full coverage"; treat the fallback as the
+established behaviour, not as a bug to fix.
+
+The `compute_fex_flags()` HIP slot mirrors the existing
+Vulkan / SYCL slots field-for-field; the
+`flush_context_serial()` HIP drain mirrors the SYCL
+`flush_context_sycl` drain. Any upstream refactor that
+relocates either function needs to move all three GPU slots /
+drains together.
+
+`vmaf_fex_integer_vif_hip` had `VMAF_FEATURE_EXTRACTOR_HIP`
+set speculatively in its batch-1 commit; this PR clears it
+with an inline citation. Do NOT re-enable on a future rebase
+without a kernel-level GPU-memory-access-fault fix and an
+ADR-0530-style per-extractor reproducer.
+
+No public-header change → no ffmpeg-patches/ update required
+(per CLAUDE.md §12 r14: the new picture-buffer-type enum lives
+in the libvmaf-private `src/picture.h`, not the public
+`include/libvmaf/picture.h`; the ffmpeg `vf_libvmaf` filter
+hands HOST buffers to libvmaf and is unaffected).
