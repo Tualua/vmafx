@@ -37,7 +37,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-tune = ["optuna>=4.0", "ray[tune]>=2.55.1"]
+tune = ["optuna>=4.8.0", "ray[tune]>=2.55.1"]
 gpu  = []
 viz  = ["matplotlib>=3.9", "seaborn>=0.13"]
 dev  = [
