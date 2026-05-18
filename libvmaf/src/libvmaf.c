@@ -201,6 +201,14 @@ typedef struct VmafContext {
          * NULL when the model has only one input. */
         float *extra_in_buf;
         char *feature_name; /* owned; published via feature_collector */
+        /* ADR-0550 — NCHW dispatch auto-resize. Default (zero-init via
+         * memset in vmaf_init) is VMAF_TINY_RESIZE_DISABLED == 0.
+         * Operator must explicitly call vmaf_dnn_set_resize_mode() (or
+         * pass --tiny-resize) to enable bilinear/nearest/bicubic.
+         * When DISABLED (default), a size mismatch returns -ERANGE (the
+         * pre-ADR-0550 behaviour, preserved for parity harnesses).
+         * Cast through VmafTinyResize at the dispatch site. */
+        int resize_mode;
     } dnn;
 } VmafContext;
 
@@ -820,6 +828,19 @@ int vmaf_ctx_dnn_set_codec_context(VmafContext *ctx, const char *codec_name, con
                                      ctx->dnn.meta.n_encoder_vocab, codec_name, preset, crf);
 }
 
+/* ADR-0543: bridge for vmaf_dnn_set_resize_mode. The public symbol in
+ * dnn_attach_api.c forwards to here so VmafContext stays opaque to the
+ * DNN module. The int -> enum cast happens at the dispatch site
+ * (vmaf_ctx_dnn_run_frame_nchw); the enum-validity gate lives in the
+ * public wrapper. */
+int vmaf_ctx_dnn_set_resize_mode(VmafContext *ctx, int mode)
+{
+    if (!ctx)
+        return -EINVAL;
+    ctx->dnn.resize_mode = mode;
+    return 0;
+}
+
 /* Helper: rank-4 NCHW path. Validates static-image shape, allocates the
  * luma scratch buffer, and writes the per-frame inference state into
  * ctx->dnn. Returns 0 on success or a negative errno.
@@ -1042,7 +1063,17 @@ static int vmaf_ctx_dnn_run_frame_nchw(VmafContext *vmaf, VmafPicture *ref, unsi
      * quietly truncated. */
     if (ref->bpc != 8)
         return -ENOTSUP;
-    if ((int)ref->w[0] != vmaf->dnn.expected_w || (int)ref->h[0] != vmaf->dnn.expected_h) {
+
+    /* ADR-0550 — when the source frame dims don't match the model's
+     * expected NCHW input shape, route through the selected resize
+     * filter. Default (DISABLED / zero-init) returns -ERANGE; the
+     * operator must explicitly pass --tiny-resize to enable auto-resize.
+     * The `disabled` mode preserves the pre-ADR-0550 behaviour for
+     * parity harnesses. */
+    const bool dim_mismatch =
+        ((int)ref->w[0] != vmaf->dnn.expected_w || (int)ref->h[0] != vmaf->dnn.expected_h);
+    const VmafTinyResize resize_mode = (VmafTinyResize)vmaf->dnn.resize_mode;
+    if (dim_mismatch && resize_mode == VMAF_TINY_RESIZE_DISABLED) {
         return -ERANGE;
     }
 
@@ -1059,10 +1090,18 @@ static int vmaf_ctx_dnn_run_frame_nchw(VmafContext *vmaf, VmafPicture *ref, unsi
         }
     }
 
-    int rc =
-        vmaf_tensor_from_luma((const uint8_t *)ref->data[0], (size_t)ref->stride[0],
-                              vmaf->dnn.expected_w, vmaf->dnn.expected_h, VMAF_TENSOR_LAYOUT_NCHW,
-                              VMAF_TENSOR_DTYPE_F32, mean, std, vmaf->dnn.in_buf);
+    int rc;
+    if (dim_mismatch) {
+        rc = vmaf_tensor_from_luma_resize(
+            (const uint8_t *)ref->data[0], (size_t)ref->stride[0], (int)ref->w[0], (int)ref->h[0],
+            vmaf->dnn.expected_w, vmaf->dnn.expected_h, VMAF_TENSOR_LAYOUT_NCHW,
+            VMAF_TENSOR_DTYPE_F32, mean, std, resize_mode, vmaf->dnn.in_buf);
+    } else {
+        rc = vmaf_tensor_from_luma((const uint8_t *)ref->data[0], (size_t)ref->stride[0],
+                                   vmaf->dnn.expected_w, vmaf->dnn.expected_h,
+                                   VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32, mean, std,
+                                   vmaf->dnn.in_buf);
+    }
     if (rc < 0)
         return rc;
 

@@ -157,6 +157,68 @@ Output JSON gains a `tiny_model` block alongside `pooled_metrics`:
 }
 ```
 
+### Auto-resize for image-input tiny models (ADR-0550)
+
+Image-input (rank-4 NCHW) tiny models declare a *fixed* input shape — the
+shipped `model/tiny/nr_metric_v1.onnx` NR scorer, for example, expects
+`[1, 1, 224, 224]` because it was trained on KoNViD-1k middle-frames
+downscaled to 224×224 grayscale. Most NR workflows pass the encoder's
+native resolution as `--width / --height`, so a dimension mismatch is
+the norm rather than the exception.
+
+The per-frame NCHW dispatch can **auto-resample the luma plane** to the
+model's input shape when they differ. The default behaviour is
+**`disabled`** — a dimension mismatch returns `-ERANGE` and the operator
+must explicitly choose a resize filter. This preserves the strict mode
+for parity harnesses and avoids a silent free parameter.
+
+> **Warning:** `bilinear`, `nearest`, and `bicubic` produce scores that
+> differ by approximately **2%** on the same input. Treat filter choice
+> as a model hyperparameter and document it alongside the model
+> checkpoint.
+
+Filter selectors:
+
+```text
+--tiny-resize disabled   # default: mismatch -> -ERANGE (strict mode)
+--tiny-resize bilinear   # torchvision / OpenCV BILINEAR (half-pixel-centre)
+--tiny-resize nearest    # nearest-neighbour, floor coord (debug-friendly)
+--tiny-resize bicubic    # Catmull-Rom (a = -0.5), separable
+```
+
+When the source dims already equal the model dims, the dispatch
+forwards verbatim to `vmaf_tensor_from_luma` — the matched-dims path
+stays bit-identical to the pre-ADR-0550 code, so the Netflix golden
+gate is unaffected regardless of the selected filter.
+
+Smoke test (Finding 11 reproducer — requires explicit `--tiny-resize`):
+
+```bash
+vmaf --no-reference \
+     --tiny-model model/tiny/nr_metric_v1.onnx \
+     --distorted testdata/dis_576x324_48f.yuv \
+     --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+     --tiny-resize bilinear \
+     --json --output /tmp/nr.json
+# Expected: 48 frames scored, vmaf_tiny_model mean ~ 3.09 (bilinear),
+# ~ 3.05 (nearest), ~ 3.11 (bicubic).
+```
+
+Without `--tiny-resize`, the default (disabled) produces 0 frames and
+"problem reading pictures" for any size-mismatched NR model:
+
+```bash
+vmaf --no-reference \
+     --tiny-model model/tiny/nr_metric_v1.onnx \
+     --distorted testdata/dis_576x324_48f.yuv \
+     --width 576 --height 324 --pixel_format 420 --bitdepth 8
+# Expected: "problem reading pictures" at frame 0; 0 frames scored.
+```
+
+The same selector is reachable from the C API via
+`vmaf_dnn_set_resize_mode(ctx, VMAF_DNN_RESIZE_BILINEAR | _NEAREST |
+_BICUBIC | _DISABLED)` — see Surface 2 below.
+
 ## Surface 2 — the libvmaf C API
 
 ```c

@@ -3,6 +3,7 @@
  *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
  */
 
+#include <errno.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -351,6 +352,119 @@ static char *test_plane16_12bit_clamps(void)
     return NULL;
 }
 
+/* --- ADR-0550 — auto-resize for NR tiny-model NCHW dispatch --- */
+
+static char *test_resize_identity_matches_legacy(void)
+{
+    /* When src dims already equal dst dims, the resize helper must be
+     * bit-identical to vmaf_tensor_from_luma — the no-resize fast
+     * path forwards to it verbatim. */
+    uint8_t src[16] = {0, 32, 64, 96, 128, 160, 192, 224, 16, 48, 80, 112, 144, 176, 208, 240};
+    float legacy[16];
+    float resized[16];
+    int e1 = vmaf_tensor_from_luma(src, 4u, 4, 4, VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32,
+                                   NULL, NULL, legacy);
+    int e2 = vmaf_tensor_from_luma_resize(src, 4u, 4, 4, 4, 4, VMAF_TENSOR_LAYOUT_NCHW,
+                                          VMAF_TENSOR_DTYPE_F32, NULL, NULL,
+                                          VMAF_TINY_RESIZE_BILINEAR, resized);
+    mu_assert("identity legacy call failed", e1 == 0);
+    mu_assert("identity resize call failed", e2 == 0);
+    for (int i = 0; i < 16; ++i) {
+        mu_assert("identity path must be bit-identical", legacy[i] == resized[i]);
+    }
+    return NULL;
+}
+
+static char *test_resize_disabled_returns_einval(void)
+{
+    /* The DISABLED mode is consumed at the libvmaf.c call site (it
+     * routes to -ERANGE there). When passed directly to the helper
+     * it must -EINVAL so a programming error surfaces. */
+    uint8_t src[4] = {10, 20, 30, 40};
+    float dst[16] = {0};
+    int rc = vmaf_tensor_from_luma_resize(src, 2u, 2, 2, 4, 4, VMAF_TENSOR_LAYOUT_NCHW,
+                                          VMAF_TENSOR_DTYPE_F32, NULL, NULL,
+                                          VMAF_TINY_RESIZE_DISABLED, dst);
+    mu_assert("DISABLED must -EINVAL when reached", rc == -EINVAL);
+    return NULL;
+}
+
+static char *test_resize_bilinear_2x_upsample(void)
+{
+    /* 2x bilinear upsample of a 2x2 plane. Corner outputs should
+     * clamp to the matching source corner (half-pixel-centre + edge
+     * replicate); interior outputs should sit strictly inside the
+     * corner-value bounding box. */
+    uint8_t src[4] = {0, 200, 100, 50};
+    float dst[16] = {0};
+    int rc = vmaf_tensor_from_luma_resize(src, 2u, 2, 2, 4, 4, VMAF_TENSOR_LAYOUT_NCHW,
+                                          VMAF_TENSOR_DTYPE_F32, NULL, NULL,
+                                          VMAF_TINY_RESIZE_BILINEAR, dst);
+    mu_assert("bilinear 2x upsample failed", rc == 0);
+    mu_assert("top-left corner clamps to source[0,0]", dst[0] == 0.0f);
+    /* Tolerance: the helper computes `(p * (1/255))` whereas the
+     * reference is `p / 255`; the two are mathematically equal but
+     * not bit-identical under fp32. 1 ULP at this magnitude is well
+     * under 1e-6. */
+    {
+        const float expected = (float)(50.0 / 255.0);
+        const float got = dst[15];
+        const float diff = got > expected ? got - expected : expected - got;
+        mu_assert("bottom-right corner clamps to source[1,1]", diff < 1e-5f);
+    }
+    /* dst[5] = (dx=1, dy=1) — heavily weighted toward source[0,0] but
+     * interpolating with the other three corners. Sanity-check it
+     * lives strictly inside the source corner bounding box. */
+    mu_assert("interior sample is between corners", dst[5] > 0.0f && dst[5] < (200.0f / 255.0f));
+    return NULL;
+}
+
+static char *test_resize_nearest_downsample(void)
+{
+    /* 4x4 source -> 2x2 nearest downsample. Half-pixel-centre coord
+     * means dst[dy,dx] samples src[floor(2*dy+0.5), floor(2*dx+0.5)]
+     * = src[2*dy, 2*dx]. With this checkerboard src, dst[0,0] picks
+     * src[0,0]=10 and dst[1,1] picks src[2,2]=30 — each output is a
+     * deterministic single source sample. */
+    uint8_t src[16] = {10, 11, 12, 13, 14, 15, 16, 17, 20, 21, 22, 23, 24, 25, 26, 27};
+    float dst[4] = {0};
+    int rc = vmaf_tensor_from_luma_resize(src, 4u, 4, 4, 2, 2, VMAF_TENSOR_LAYOUT_NCHW,
+                                          VMAF_TENSOR_DTYPE_F32, NULL, NULL,
+                                          VMAF_TINY_RESIZE_NEAREST, dst);
+    mu_assert("nearest 2x downsample failed", rc == 0);
+    /* dst[0,0] -> src[0,0]=10; dst[0,1] -> src[0,2]=12;
+     * dst[1,0] -> src[2,0]=20; dst[1,1] -> src[2,2]=22. */
+    const float tol = 1e-5f;
+    const float e00 = 10.0f / 255.0f;
+    const float e01 = 12.0f / 255.0f;
+    const float e10 = 20.0f / 255.0f;
+    const float e11 = 22.0f / 255.0f;
+    mu_assert("nearest dst[0,0] = src[0,0]", fabsf(dst[0] - e00) < tol);
+    mu_assert("nearest dst[0,1] = src[0,2]", fabsf(dst[1] - e01) < tol);
+    mu_assert("nearest dst[1,0] = src[2,0]", fabsf(dst[2] - e10) < tol);
+    mu_assert("nearest dst[1,1] = src[2,2]", fabsf(dst[3] - e11) < tol);
+    return NULL;
+}
+
+static char *test_resize_rejects_bad_args(void)
+{
+    uint8_t src[4] = {0};
+    float dst[16] = {0};
+    mu_assert("NULL src must -EINVAL",
+              vmaf_tensor_from_luma_resize(NULL, 2u, 2, 2, 4, 4, VMAF_TENSOR_LAYOUT_NCHW,
+                                           VMAF_TENSOR_DTYPE_F32, NULL, NULL,
+                                           VMAF_TINY_RESIZE_BILINEAR, dst) == -EINVAL);
+    mu_assert("dst_w<=0 must -EINVAL",
+              vmaf_tensor_from_luma_resize(src, 2u, 2, 2, 0, 4, VMAF_TENSOR_LAYOUT_NCHW,
+                                           VMAF_TENSOR_DTYPE_F32, NULL, NULL,
+                                           VMAF_TINY_RESIZE_BILINEAR, dst) == -EINVAL);
+    mu_assert("unknown mode must -EINVAL",
+              vmaf_tensor_from_luma_resize(src, 2u, 2, 2, 4, 4, VMAF_TENSOR_LAYOUT_NCHW,
+                                           VMAF_TENSOR_DTYPE_F32, NULL, NULL, (VmafTinyResize)99,
+                                           dst) == -EINVAL);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_luma_to_f32_unnormalized);
@@ -371,5 +485,11 @@ char *run_tests(void)
     mu_run_test(test_plane16_10bit_roundtrip);
     mu_run_test(test_plane16_rejects_bad_bpc);
     mu_run_test(test_plane16_12bit_clamps);
+    /* ADR-0550 — auto-resize for NR tiny-model NCHW dispatch. */
+    mu_run_test(test_resize_identity_matches_legacy);
+    mu_run_test(test_resize_disabled_returns_einval);
+    mu_run_test(test_resize_bilinear_2x_upsample);
+    mu_run_test(test_resize_nearest_downsample);
+    mu_run_test(test_resize_rejects_bad_args);
     return NULL;
 }

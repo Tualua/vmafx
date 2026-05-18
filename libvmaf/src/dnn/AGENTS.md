@@ -265,6 +265,51 @@ regression in `test_vmaf_use_tiny_model.c` synthesises a minimal
 rank-4 ONNX with `dim_param='batch'` and gates against accidental
 re-tightening.
 
+## Invariant — NCHW auto-resize default is DISABLED (ADR-0550)
+
+`vmaf_ctx_dnn_run_frame_nchw` supports auto-resampling the luma plane
+to the model's expected NCHW input shape when they differ, using the
+filter selected by `vmaf->dnn.resize_mode` (0=DISABLED, 1=BILINEAR,
+2=NEAREST, 3=BICUBIC). The enum integer layout is shared between the
+public `VmafDnnResizeMode` (`libvmaf/include/libvmaf/dnn.h`) and the
+internal `VmafTinyResize` (`libvmaf/src/dnn/tensor_io.h`); the values
+**must** stay 0-indexed and aligned across the two enums — the public
+setter casts directly without remapping.
+
+- **Default zero-init is DISABLED**: `vmaf_init` does
+  `memset(v, 0, sizeof(*v))`, and `VMAF_TINY_RESIZE_DISABLED == 0`,
+  so any context that never calls `vmaf_dnn_set_resize_mode` gets
+  the strict -ERANGE-on-mismatch behaviour. Renumbering the enums to
+  put a different value at 0 would silently change the default for
+  every existing caller. The operator must pass `--tiny-resize bilinear`
+  (or equivalent) to enable auto-resize.
+- **Matched-dims path stays bit-identical to `vmaf_tensor_from_luma`**:
+  `vmaf_tensor_from_luma_resize` forwards verbatim to
+  `vmaf_tensor_from_luma` when `src_w == dst_w && src_h == dst_h`.
+  This keeps the Netflix golden gate unaffected (FR tiny models
+  never hit the resize branch — the user-supplied ref/dist pair is
+  already at the right dims). Do NOT introduce a per-pixel codepath
+  for the matched-dims case.
+- **`DISABLED` semantics live in `libvmaf.c`, not in the helper**:
+  the per-frame dispatch routes `VMAF_TINY_RESIZE_DISABLED` to
+  `-ERANGE` before calling the resize helper. The helper itself
+  returns `-EINVAL` when handed `DISABLED` so a programming bug
+  surfaces loudly. Keep the gates in both places — pulling either
+  gate folds the disabled-mode semantics into a single point that's
+  easier to regress.
+- **Coordinate convention is half-pixel-centre**:
+  `sx = (dx + 0.5) * src_w / dst_w - 0.5` (and analog for `sy`).
+  This matches OpenCV `INTER_*` and torchvision
+  `Resize(..., antialias=False)`. Out-of-bounds source coords clamp
+  via replicate-edge. Changing the convention silently re-trains
+  every shipped image-input model against a slightly different
+  distribution.
+
+The `test_resize_*` regressions in
+[`../../test/dnn/test_tensor_io.c`](../../test/dnn/test_tensor_io.c)
+gate the bit-identical-identity / disabled-EINVAL / nearest
+floor-coord behaviour.
+
 ## Invariant — codec block layout (ADR-0522)
 
 The second input of `fr_regressor_v2` is exactly

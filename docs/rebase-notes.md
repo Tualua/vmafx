@@ -120,6 +120,53 @@ Rebase invariant: the moment another `.hip` kernel under
 one-line removal must happen in `hip_hsaco_stubs.c` for its symbol.
 The AGENTS.md note added by this PR captures the pattern.
 
+
+## feat/tiny-model-auto-resize (ADR-0550)
+
+**Fork-local only.** Modifies:
+
+- `libvmaf/src/dnn/tensor_io.{c,h}` (fork-local — DNN module added
+  by the tiny-AI surface, ADR-0020 onwards). Adds
+  `VmafTinyResize` enum and `vmaf_tensor_from_luma_resize()`
+  helper. No upstream equivalent.
+- `libvmaf/src/libvmaf.c` (upstream-mirror — fork-local hunk inside
+  the fork-added `dnn` substruct of `VmafContext` and the
+  fork-added `vmaf_ctx_dnn_run_frame_nchw` static helper). Conflict
+  risk is bounded to the `vmaf_ctx_dnn_run_frame_nchw` body and a
+  new field in the `dnn` substruct; both are fork-additions that
+  don't exist upstream, so a clean three-way rebase will keep the
+  hunks isolated.
+- `libvmaf/include/libvmaf/dnn.h` (fork-local — public DNN header
+  added with the tiny-AI surface). Adds `VmafDnnResizeMode` enum
+  and `vmaf_dnn_set_resize_mode` declaration. No upstream
+  equivalent.
+- `libvmaf/src/dnn/dnn_attach_api.c`, `libvmaf/src/dnn/dnn_ctx.h`
+  (fork-local — DNN bridge layer). Adds the public-symbol setter
+  and the int-bridge declaration.
+- `libvmaf/tools/cli_parse.{c,h}`, `libvmaf/tools/vmaf.c`
+  (upstream-mirror — CLI parser). Fork-local hunks: a new
+  `ARG_TINY_RESIZE` enum value, two `long_opts` rows, one switch
+  case, usage text, and a setter call in
+  `configure_tiny_model`. All hunks land in fork-only neighbourhoods
+  (the `--tiny-*` family is fork-added).
+- `libvmaf/test/dnn/test_tensor_io.c` (fork-local — DNN unit-test
+  TU). Adds five resize regression tests.
+
+Rebase invariant: the public `VmafDnnResizeMode` and the internal
+`VmafTinyResize` enums must keep matching integer layouts
+(0=DISABLED, 1=BILINEAR, 2=NEAREST, 3=BICUBIC). The default zero-init
+of `vmaf->dnn.resize_mode` is DISABLED (ADR-0550) — a dimension
+mismatch returns -ERANGE until the operator explicitly passes
+`--tiny-resize bilinear` (or equivalent). See
+`libvmaf/src/dnn/AGENTS.md` §"NCHW auto-resize default is DISABLED".
+The matched-dims path in `vmaf_tensor_from_luma_resize` forwards
+verbatim to `vmaf_tensor_from_luma`; do not insert per-pixel logic
+into that fast path — the Netflix golden gate depends on the
+bit-identical forward.
+
+No verbatim upstream code paths altered. The patch stack against
+upstream/master should apply cleanly.
+
 ## fix/hip-integer-vif-kernel-crash (ADR-0538)
 
 **Touches upstream-mirror paths.** Modifies:

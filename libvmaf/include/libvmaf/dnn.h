@@ -142,6 +142,54 @@ VMAF_EXPORT int vmaf_dnn_set_codec_context(VmafContext *ctx, const char *codec_n
                                            const char *preset, int crf);
 
 /**
+ * Resize filter selector for the NCHW tiny-model dispatch (ADR-0550).
+ * When a tiny model's expected input dims (e.g. 224x224 for the
+ * `nr_metric_v1` NR scorer) do not match the user-supplied frame
+ * (e.g. 576x324 from `--width / --height`), the per-frame dispatch
+ * resamples the luma plane to the model dims using the selected
+ * filter before invoking ONNX Runtime. Bit-exact when src dims
+ * already equal model dims (the routine forwards to
+ * `vmaf_tensor_from_luma` unchanged).
+ *
+ * - `DISABLED` (default) — no resampling; a size mismatch returns
+ *   `-ERANGE` (the pre-ADR-0550 behaviour). Operator must explicitly
+ *   opt in to a resize filter via `--tiny-resize`. This preserves the
+ *   strict mode for parity harnesses and avoids a silent free parameter.
+ * - `BILINEAR` — matches torchvision `Resize(..., antialias=False)`
+ *   and OpenCV `INTER_LINEAR`, the convention every shipped NR /
+ *   image-input tiny-AI model was trained against. Enables auto-resize.
+ * - `NEAREST`  — deterministic, no filtering; floor of the source
+ *   coord (OpenCV `INTER_NEAREST`). Cheaper and useful for debugging.
+ * - `BICUBIC`  — separable Catmull-Rom (a = -0.5); parity with
+ *   exporters that use `transforms.Resize(interpolation=BICUBIC)`.
+ *
+ * Note: `BILINEAR`, `NEAREST`, and `BICUBIC` produce scores that differ
+ * by approximately 2% on the same input — treat filter choice as a model
+ * hyperparameter and document it alongside the model checkpoint.
+ */
+typedef enum VmafDnnResizeMode {
+    VMAF_DNN_RESIZE_DISABLED = 0, /**< default; no resampling — mismatch -> -ERANGE */
+    VMAF_DNN_RESIZE_BILINEAR = 1, /**< OpenCV INTER_LINEAR / torchvision BILINEAR */
+    VMAF_DNN_RESIZE_NEAREST = 2,  /**< nearest-neighbour, floor coord */
+    VMAF_DNN_RESIZE_BICUBIC = 3,  /**< Catmull-Rom (a = -0.5), separable */
+} VmafDnnResizeMode;
+
+/**
+ * Configure the auto-resize filter used by the NCHW tiny-model dispatch
+ * when the user-supplied frame dims don't match the model's expected
+ * input shape. Default is `VMAF_DNN_RESIZE_DISABLED` (mismatch -> -ERANGE).
+ * Pass `VMAF_DNN_RESIZE_BILINEAR` (or nearest/bicubic) to enable
+ * auto-resize. May be called before or after `vmaf_use_tiny_model()`;
+ * takes effect on the next `vmaf_read_pictures()` call. See @ref
+ * VmafDnnResizeMode for filter semantics. ADR-0550.
+ *
+ * @return  0          success.
+ * @return -EINVAL     @p ctx is NULL or @p mode is outside the enum.
+ * @return -ENOSYS     libvmaf was built without DNN support.
+ */
+VMAF_EXPORT int vmaf_dnn_set_resize_mode(VmafContext *ctx, VmafDnnResizeMode mode);
+
+/**
  * Standalone DNN session for filter-style inference (learned pre-processing,
  * C3). Unlike vmaf_use_tiny_model() this path does NOT need a VmafContext —
  * intended for consumers that want luma-in / luma-out without scoring.

@@ -129,6 +129,195 @@ int vmaf_tensor_from_luma(const uint8_t *src, size_t stride_src, int width, int 
     return 0;
 }
 
+/* --- ADR-0550 — auto-resize for NR tiny-model NCHW dispatch ----------
+ *
+ * Three deterministic filters, all separable, half-pixel-centre coord
+ * convention. The choice intentionally mirrors OpenCV `INTER_*` and the
+ * torchvision `Resize(..., antialias=False)` default, so a model
+ * trained against either pipeline sees the same input statistics at
+ * inference time. See [docs/ai/inference.md] §Auto-resize for the
+ * external contract.
+ */
+
+static inline int clamp_int(int v, int lo, int hi)
+{
+    if (v < lo)
+        return lo;
+    if (v > hi)
+        return hi;
+    return v;
+}
+
+static float sample_luma_nearest(const uint8_t *src, size_t stride_src, int src_w, int src_h,
+                                 float sx, float sy)
+{
+    /* Floor matches OpenCV `INTER_NEAREST` (note: cv2 uses floor, not
+     * round, despite the docs sometimes implying otherwise). */
+    int ix = (int)floorf(sx);
+    int iy = (int)floorf(sy);
+    ix = clamp_int(ix, 0, src_w - 1);
+    iy = clamp_int(iy, 0, src_h - 1);
+    return (float)src[(size_t)iy * stride_src + (size_t)ix];
+}
+
+static float sample_luma_bilinear(const uint8_t *src, size_t stride_src, int src_w, int src_h,
+                                  float sx, float sy)
+{
+    int x0 = (int)floorf(sx);
+    int y0 = (int)floorf(sy);
+    float fx = sx - (float)x0;
+    float fy = sy - (float)y0;
+    int x1 = x0 + 1;
+    int y1 = y0 + 1;
+    x0 = clamp_int(x0, 0, src_w - 1);
+    x1 = clamp_int(x1, 0, src_w - 1);
+    y0 = clamp_int(y0, 0, src_h - 1);
+    y1 = clamp_int(y1, 0, src_h - 1);
+    float p00 = (float)src[(size_t)y0 * stride_src + (size_t)x0];
+    float p01 = (float)src[(size_t)y0 * stride_src + (size_t)x1];
+    float p10 = (float)src[(size_t)y1 * stride_src + (size_t)x0];
+    float p11 = (float)src[(size_t)y1 * stride_src + (size_t)x1];
+    float top = p00 + (p01 - p00) * fx;
+    float bot = p10 + (p11 - p10) * fx;
+    return top + (bot - top) * fy;
+}
+
+/* Catmull-Rom cubic with a = -0.5 (the OpenCV default). */
+static inline float cubic_weight(float t)
+{
+    const float a = -0.5f;
+    float at = t < 0.f ? -t : t;
+    float at2 = at * at;
+    float at3 = at2 * at;
+    if (at <= 1.f) {
+        return (a + 2.f) * at3 - (a + 3.f) * at2 + 1.f;
+    }
+    if (at < 2.f) {
+        return a * at3 - 5.f * a * at2 + 8.f * a * at - 4.f * a;
+    }
+    return 0.f;
+}
+
+static float sample_luma_bicubic(const uint8_t *src, size_t stride_src, int src_w, int src_h,
+                                 float sx, float sy)
+{
+    int x0 = (int)floorf(sx);
+    int y0 = (int)floorf(sy);
+    float fx = sx - (float)x0;
+    float fy = sy - (float)y0;
+    float wx[4];
+    float wy[4];
+    wx[0] = cubic_weight(1.f + fx);
+    wx[1] = cubic_weight(0.f + fx);
+    wx[2] = cubic_weight(1.f - fx);
+    wx[3] = cubic_weight(2.f - fx);
+    wy[0] = cubic_weight(1.f + fy);
+    wy[1] = cubic_weight(0.f + fy);
+    wy[2] = cubic_weight(1.f - fy);
+    wy[3] = cubic_weight(2.f - fy);
+    float acc = 0.f;
+    for (int j = 0; j < 4; ++j) {
+        int yy = clamp_int(y0 - 1 + j, 0, src_h - 1);
+        const uint8_t *row = src + (size_t)yy * stride_src;
+        float row_acc = 0.f;
+        for (int i = 0; i < 4; ++i) {
+            int xx = clamp_int(x0 - 1 + i, 0, src_w - 1);
+            row_acc += wx[i] * (float)row[xx];
+        }
+        acc += wy[j] * row_acc;
+    }
+    /* The cubic kernel can ring; clamp to [0, 255] before normalising so
+     * the downstream `(v / 255 - mean) / std` lives in the same domain
+     * the model saw during training. */
+    if (acc < 0.f)
+        acc = 0.f;
+    if (acc > 255.f)
+        acc = 255.f;
+    return acc;
+}
+
+/* Dispatch helper — picks the per-pixel sampler based on the requested
+ * filter. */
+static inline float sample_luma_dispatch(const uint8_t *src, size_t stride_src, int src_w,
+                                         int src_h, float sx, float sy, VmafTinyResize mode)
+{
+    switch (mode) {
+    case VMAF_TINY_RESIZE_NEAREST:
+        return sample_luma_nearest(src, stride_src, src_w, src_h, sx, sy);
+    case VMAF_TINY_RESIZE_BICUBIC:
+        return sample_luma_bicubic(src, stride_src, src_w, src_h, sx, sy);
+    case VMAF_TINY_RESIZE_BILINEAR:
+    default:
+        return sample_luma_bilinear(src, stride_src, src_w, src_h, sx, sy);
+    }
+}
+
+/* Per-pixel write — collapses the (dtype, dst) branch out of the
+ * resize hot loop. Returns 0 on success, -EINVAL on unsupported dtype. */
+static inline int store_normalised(void *dst, size_t off, float p, float m, float inv_s,
+                                   VmafTensorDType dtype)
+{
+    const float v = ((p * (1.0f / 255.0f)) - m) * inv_s;
+    if (dtype == VMAF_TENSOR_DTYPE_F32) {
+        ((float *)dst)[off] = v;
+        return 0;
+    }
+    if (dtype == VMAF_TENSOR_DTYPE_F16) {
+        ((uint16_t *)dst)[off] = f32_to_f16_one(v);
+        return 0;
+    }
+    return -EINVAL;
+}
+
+int vmaf_tensor_from_luma_resize(const uint8_t *src, size_t stride_src, int src_w, int src_h,
+                                 int dst_w, int dst_h, VmafTensorLayout layout,
+                                 VmafTensorDType dtype, const float *mean, const float *std,
+                                 VmafTinyResize mode, void *dst)
+{
+    if (!src || !dst || src_w <= 0 || src_h <= 0 || dst_w <= 0 || dst_h <= 0 ||
+        stride_src < (size_t)src_w) {
+        return -EINVAL;
+    }
+    /* The disabled mode is consumed at the call site (libvmaf.c routes
+     * it to -ERANGE). Reaching here means a programming error — bail
+     * rather than silently fall back to a default filter. */
+    if (mode == VMAF_TINY_RESIZE_DISABLED) {
+        return -EINVAL;
+    }
+    if (mode != VMAF_TINY_RESIZE_NEAREST && mode != VMAF_TINY_RESIZE_BILINEAR &&
+        mode != VMAF_TINY_RESIZE_BICUBIC) {
+        return -EINVAL;
+    }
+    (void)layout; /* C=1 → NCHW and NHWC coincide. */
+
+    /* Bit-identical fast path when no scaling is needed. */
+    if (src_w == dst_w && src_h == dst_h) {
+        return vmaf_tensor_from_luma(src, stride_src, dst_w, dst_h, layout, dtype, mean, std, dst);
+    }
+
+    const float m = mean ? mean[0] : 0.0f;
+    const float s = std ? std[0] : 1.0f;
+    if (s == 0.0f) {
+        return -EINVAL;
+    }
+    const float inv_s = 1.0f / s;
+    const float scale_x = (float)src_w / (float)dst_w;
+    const float scale_y = (float)src_h / (float)dst_h;
+
+    for (int dy = 0; dy < dst_h; ++dy) {
+        const float sy = ((float)dy + 0.5f) * scale_y - 0.5f;
+        for (int dx = 0; dx < dst_w; ++dx) {
+            const float sx = ((float)dx + 0.5f) * scale_x - 0.5f;
+            const float p = sample_luma_dispatch(src, stride_src, src_w, src_h, sx, sy, mode);
+            const size_t off = (size_t)dy * (size_t)dst_w + (size_t)dx;
+            const int rc = store_normalised(dst, off, p, m, inv_s, dtype);
+            if (rc < 0)
+                return rc;
+        }
+    }
+    return 0;
+}
+
 /* ImageNet / torchvision normalization constants. Keep in sync with the
  * export pipeline in ai/ — any divergence silently biases every learned
  * RGB model (LPIPS, MobileSal, TransNet-V2). */

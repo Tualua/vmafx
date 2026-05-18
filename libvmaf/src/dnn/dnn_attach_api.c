@@ -111,3 +111,23 @@ int vmaf_dnn_set_codec_context(VmafContext *ctx, const char *codec_name, const c
     return -ENOSYS;
 #endif
 }
+
+/* ADR-0550 — public setter for the NCHW dispatch auto-resize filter.
+ * The on-context state lives in libvmaf.c (the only TU that sees the
+ * VmafContext layout); this stub validates the enum and delegates. */
+int vmaf_dnn_set_resize_mode(VmafContext *ctx, VmafDnnResizeMode mode)
+{
+#if defined(VMAF_HAVE_DNN) && VMAF_HAVE_DNN
+    if (!ctx)
+        return -EINVAL;
+    if (mode != VMAF_DNN_RESIZE_BILINEAR && mode != VMAF_DNN_RESIZE_NEAREST &&
+        mode != VMAF_DNN_RESIZE_BICUBIC && mode != VMAF_DNN_RESIZE_DISABLED) {
+        return -EINVAL;
+    }
+    return vmaf_ctx_dnn_set_resize_mode(ctx, (int)mode);
+#else
+    (void)ctx;
+    (void)mode;
+    return -ENOSYS;
+#endif
+}

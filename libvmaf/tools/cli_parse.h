@@ -122,6 +122,10 @@ typedef struct {
     const char *tiny_codec;
     const char *tiny_preset;
     int tiny_crf;
+    /* ADR-0550 — NCHW tiny-model auto-resize filter. NULL = unset
+     * (libvmaf default of bilinear applies). Accepted values:
+     * "bilinear" (default), "nearest", "bicubic", "disabled". */
+    const char *tiny_resize;
 } CLISettings;
 
 void cli_parse(const int argc, char *const *const argv, CLISettings *const settings);

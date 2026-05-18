@@ -24,6 +24,24 @@ typedef enum VmafTensorDType {
 } VmafTensorDType;
 
 /**
+ * Resize filter used by @ref vmaf_tensor_from_luma_resize. The default
+ * is `DISABLED` (ADR-0550): the libvmaf NCHW dispatch returns -ERANGE on
+ * any dim mismatch so the operator must explicitly opt in to a filter.
+ * `BILINEAR` matches the export-time torchvision pipeline most tiny-AI
+ * models are trained against (`PIL.Image.BILINEAR`); `NEAREST` is a
+ * deterministic fast fallback; `BICUBIC` is provided for parity with
+ * exporters that use `transforms.Resize(interpolation=BICUBIC)`.
+ * Note: BILINEAR/NEAREST/BICUBIC produce scores differing by ~2%.
+ */
+typedef enum VmafTinyResize {
+    VMAF_TINY_RESIZE_DISABLED =
+        0, /**< default; caller demands exact-dims match (mismatch -> -ERANGE) */
+    VMAF_TINY_RESIZE_BILINEAR = 1, /**< OpenCV / torchvision BILINEAR */
+    VMAF_TINY_RESIZE_NEAREST = 2,  /**< nearest-neighbour; floor of unnormalised src coord */
+    VMAF_TINY_RESIZE_BICUBIC = 3,  /**< Catmull-Rom (a=-0.5), separable */
+} VmafTinyResize;
+
+/**
  * Convert a single-channel 8-bit luma frame to a normalized float32/float16
  * tensor. Values are scaled to [0, 1] (divide by 255) and, if @p mean and
  * @p std are non-NULL, standardized channel-wise.
@@ -41,6 +59,36 @@ typedef enum VmafTensorDType {
 int vmaf_tensor_from_luma(const uint8_t *src, size_t stride_src, int width, int height,
                           VmafTensorLayout layout, VmafTensorDType dtype, const float *mean,
                           const float *std, void *dst);
+
+/**
+ * Variant of @ref vmaf_tensor_from_luma that resamples the input plane from
+ * (@p src_w, @p src_h) to (@p dst_w, @p dst_h) on the fly using the filter
+ * selected by @p mode (nearest / bilinear / bicubic). ADR-0550.
+ *
+ * Coordinate convention is `half-pixel-centers`:
+ *
+ * ```
+ *   sx = (dx + 0.5) * (src_w / dst_w) - 0.5
+ *   sy = (dy + 0.5) * (src_h / dst_h) - 0.5
+ * ```
+ *
+ * which matches OpenCV `INTER_LINEAR` / `INTER_CUBIC` and the PyTorch /
+ * torchvision `Resize(antialias=False)` default. Out-of-bounds source
+ * samples are clamped (replicate-edge) so the filter is well-defined at
+ * frame borders. The bicubic kernel is Catmull-Rom (a = -0.5).
+ *
+ * When (@p src_w, @p src_h) == (@p dst_w, @p dst_h) the routine forwards
+ * to @ref vmaf_tensor_from_luma so the no-resize fast path is
+ * bit-identical to the legacy code (no rounding error introduced).
+ *
+ * @return 0 on success, -EINVAL on bad args (including
+ *         `VMAF_TINY_RESIZE_DISABLED` — the caller is responsible for
+ *         routing the disabled mode to its own error path).
+ */
+int vmaf_tensor_from_luma_resize(const uint8_t *src, size_t stride_src, int src_w, int src_h,
+                                 int dst_w, int dst_h, VmafTensorLayout layout,
+                                 VmafTensorDType dtype, const float *mean, const float *std,
+                                 VmafTinyResize mode, void *dst);
 
 /**
  * Convert a normalized float32/float16 NCHW or NHWC tensor back to an 8-bit

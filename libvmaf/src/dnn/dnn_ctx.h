@@ -58,6 +58,15 @@ int vmaf_ctx_dnn_has_session(const VmafContext *ctx);
 int vmaf_ctx_dnn_set_codec_context(VmafContext *ctx, const char *codec_name, const char *preset,
                                    int crf);
 
+/**
+ * Bridge for the public `vmaf_dnn_set_resize_mode` setter (ADR-0550).
+ * The @p mode int is `VmafDnnResizeMode` cast to int; values are
+ * 0=DISABLED (default), 1=BILINEAR, 2=NEAREST, 3=BICUBIC. Stored on
+ * the context and consumed by the NCHW dispatch in
+ * `vmaf_ctx_dnn_run_frame_nchw`.
+ */
+int vmaf_ctx_dnn_set_resize_mode(VmafContext *ctx, int mode);
+
 #ifdef __cplusplus
 }
 #endif

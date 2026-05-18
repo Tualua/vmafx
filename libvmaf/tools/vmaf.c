@@ -911,6 +911,30 @@ static int configure_tiny_model(VmafContext *vmaf, const CLISettings *c)
         return -1;
     }
 
+    /* ADR-0550: apply the user-selected NCHW auto-resize filter. NULL
+     * (no --tiny-resize) leaves the libvmaf default (DISABLED) in place:
+     * a size mismatch returns -ERANGE so the operator must explicitly opt
+     * in to auto-resize. The ~2% score spread across filters means filter
+     * choice is a model hyperparameter that should be documented. */
+    if (c->tiny_resize) {
+        VmafDnnResizeMode mode = VMAF_DNN_RESIZE_DISABLED;
+        if (strcmp(c->tiny_resize, "bilinear") == 0) {
+            mode = VMAF_DNN_RESIZE_BILINEAR;
+        } else if (strcmp(c->tiny_resize, "nearest") == 0) {
+            mode = VMAF_DNN_RESIZE_NEAREST;
+        } else if (strcmp(c->tiny_resize, "bicubic") == 0) {
+            mode = VMAF_DNN_RESIZE_BICUBIC;
+        } else if (strcmp(c->tiny_resize, "disabled") == 0) {
+            mode = VMAF_DNN_RESIZE_DISABLED;
+        }
+        const int rerr = vmaf_dnn_set_resize_mode(vmaf, mode);
+        if (rerr != 0) {
+            (void)fprintf(stderr, "--tiny-resize: vmaf_dnn_set_resize_mode failed (errno %d)\n",
+                          -rerr);
+            return -1;
+        }
+    }
+
     /* ADR-0519: populate the codec one-hot block for codec-aware
      * models (e.g. fr_regressor_v2). Only fires when the user supplied
      * at least one of --tiny-codec / --tiny-preset / --tiny-crf —

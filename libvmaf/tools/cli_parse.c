@@ -74,6 +74,8 @@ enum {
     ARG_TINY_CRF,
     ARG_NO_REFERENCE,
     ARG_DNN_EP,
+    /* ADR-0550 — NCHW tiny-model auto-resize filter. */
+    ARG_TINY_RESIZE,
 };
 
 /* Default matches Netflix's pre-fork output exactly so the CPU golden
@@ -167,6 +169,9 @@ static const struct option long_opts[] = {
     {"tiny_crf", 1, NULL, ARG_TINY_CRF},
     {"no-reference", 0, NULL, ARG_NO_REFERENCE},
     {"no_reference", 0, NULL, ARG_NO_REFERENCE},
+    /* ADR-0550 — NCHW tiny-model auto-resize filter selector. */
+    {"tiny-resize", 1, NULL, ARG_TINY_RESIZE},
+    {"tiny_resize", 1, NULL, ARG_TINY_RESIZE},
     /* --dnn-ep is the user-facing name for selecting the ONNX Runtime
      * execution provider. It is an alias for --tiny-device so both flags
      * write to the same CLISettings.tiny_device field. Accepting both names
@@ -273,6 +278,15 @@ static void usage(const char *const app, const char *const reason, ...)
         " --tiny-crf $unsigned:         CRF / QP integer used during encoding; clamped\n"
         "                               to [0, 63] and normalised by 63. Default: 0\n"
         " --no-reference:               no-reference mode; valid only with an NR tiny model\n"
+        " --tiny-resize $string:        enable auto-resize for NCHW tiny models when the\n"
+        "                               input frame dims don't match the model's expected\n"
+        "                               shape (e.g. 576x324 input -> 224x224 nr_metric_v1).\n"
+        "                               One of: bilinear, nearest, bicubic, disabled.\n"
+        "                               Default: disabled (mismatch -> -ERANGE hard-error;\n"
+        "                               operator must opt in to resize explicitly).\n"
+        "                               Warning: bilinear/nearest/bicubic produce scores\n"
+        "                               that differ by ~2%% on the same input -- document\n"
+        "                               the filter alongside your model checkpoint.\n"
         " --quiet/-q:                  disable FPS meter when run in a TTY\n"
         " --no_prediction/-n:          no prediction, extract features only\n"
         " --version/-v:                print version and exit\n");
@@ -854,6 +868,16 @@ void cli_parse(const int argc, char *const *const argv, CLISettings *const setti
         }
         case ARG_NO_REFERENCE:
             settings->no_reference = true;
+            break;
+        case ARG_TINY_RESIZE:
+            /* ADR-0543 — validate the keyword up front so a typo
+             * surfaces at parse time instead of after model load. */
+            if (strcmp(optarg, "bilinear") != 0 && strcmp(optarg, "nearest") != 0 &&
+                strcmp(optarg, "bicubic") != 0 && strcmp(optarg, "disabled") != 0) {
+                error(argv[0], optarg, ARG_TINY_RESIZE,
+                      "--tiny-resize must be one of: bilinear, nearest, bicubic, disabled");
+            }
+            settings->tiny_resize = optarg;
             break;
         case 'n':
             settings->no_prediction = true;
