@@ -85,6 +85,21 @@ neighbouring kernel-load paths.
 **Test reference.** `libvmaf/test/test_integer_vif_cpu_cuda_parity.c`
 (suite `fast`/`gpu`) is the regression gate; it must continue to pass
 after any sync.
+## feat/hip-float-vif-score-kernel-real (ADR-0539)
+
+**No rebase impact.** Touches:
+- `libvmaf/src/feature/hip/hip_hsaco_stubs.c` — fork-local TU; removes
+  one `VMAF_HSACO_WEAK_STUB(float_vif_score_hsaco)` line. Upstream
+  Netflix/vmaf has no HIP backend so no conflict possible.
+- `docs/adr/0539-hip-float-vif-stub-removal.md`, `docs/adr/README.md`,
+  `docs/state.md`, `docs/backends/hip/overview.md`,
+  `libvmaf/src/feature/hip/AGENTS.md`,
+  `changelog.d/fixed/hip-float-vif-stub-removal.md` — fork-local docs.
+
+Rebase invariant: the moment another `.hip` kernel under
+`feature/hip/<extractor>/` becomes standalone-buildable, the same
+one-line removal must happen in `hip_hsaco_stubs.c` for its symbol.
+The AGENTS.md note added by this PR captures the pattern.
 
 ## fix/hip-integer-vif-kernel-crash (ADR-0538)
 

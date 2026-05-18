@@ -285,7 +285,12 @@ Adjacent fixes bundled in the same PR:
 - Weak-stub TU `hip_hsaco_stubs.c` provides empty fallback `_hsaco`
   symbols for the four ADM kernels (`adm_dwt2`, `adm_csf`, `adm_csf_den`,
   `adm_cm`) that don't yet build standalone via `hipcc --genco` because
-  they reference CUDA-specific helper macros.
+  they reference CUDA-specific helper macros.  As individual kernels
+  port to standalone-buildable `.hip` sources, their weak-stub line is
+  deleted from `hip_hsaco_stubs.c` in the same PR — ADR-0539 establishes
+  that pattern, starting with `float_vif_score_hsaco` whose real kernel
+  has shipped at `libvmaf/src/feature/hip/float_vif/float_vif_score.hip`
+  since ADR-0379 / PR #1025.
 - `hipcc --genco` include path adds `meson.current_build_dir()` +
   `feature/hip` + `hip` so kernel sources can resolve `config.h` /
   `integer_*_hip.h` headers.

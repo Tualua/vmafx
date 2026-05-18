@@ -42,7 +42,8 @@ VMAF_HSACO_WEAK_STUB(ssimulacra2_mul_hsaco)
 /* Other extractors that hipModuleLoadData but whose .hip kernels
  * don't yet build standalone. Each is overridden by the real
  * xxd-embedded blob when its kernel is added to hip_kernel_sources. */
-VMAF_HSACO_WEAK_STUB(float_vif_score_hsaco)
+/* float_vif_score_hsaco — real blob now built from
+ * feature/hip/float_vif/float_vif_score.hip (ADR-0539). */
 VMAF_HSACO_WEAK_STUB(integer_ssim_score_hsaco)
 VMAF_HSACO_WEAK_STUB(integer_moment_score_hsaco)
 VMAF_HSACO_WEAK_STUB(ms_ssim_score_hsaco)

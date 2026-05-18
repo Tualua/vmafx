@@ -118,3 +118,23 @@ gotchas:
    such a link failure, either register the kernel (preferred) or add
    a weak stub in `hip_hsaco_stubs.c` (per ADR-0536 — only for kernels
    that can't yet compile standalone via `hipcc --genco`).
+## Remove the weak HSACO stub the moment a real .hip lands (ADR-0539)
+
+When a `.hip` kernel under `feature/hip/<extractor>/` becomes
+standalone-buildable and you register it in `hip_kernel_sources` in
+`libvmaf/src/meson.build`, **also delete its matching
+`VMAF_HSACO_WEAK_STUB(<extractor>_score_hsaco)` line from
+`hip_hsaco_stubs.c` in the same PR.**  Leaving the stub creates two
+definitions of the same symbol — a strong xxd-embedded blob and a weak
+1-byte fallback — which the linker resolves to the strong one but at
+the cost of `-Wlto-type-mismatch` warnings on every build.  The user
+direction is "no stubs anywhere" once a real kernel exists.
+
+Pattern (ADR-0539 example for `float_vif_score`):
+1. Confirm the `.hip` source compiles via `hipcc --genco` in the
+   container (`ninja -C <build> src/<name>.hsaco`).
+2. Remove the `VMAF_HSACO_WEAK_STUB(<name>_hsaco)` line from
+   `hip_hsaco_stubs.c`.  Leave a one-line comment citing the ADR so the
+   reviewer sees why the slot is gone.
+3. Rebuild with `enable_hipcc=true` and grep the ninja output for
+   warnings referencing the symbol — none should remain.
