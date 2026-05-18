@@ -494,6 +494,14 @@ def build_pass1_stats_command(
     the window via :func:`build_ffmpeg_command`), so each cell still
     burned >60x the requested wall time on the stats sweep alone.
     """
+    # V6-1 / #1266 follow-up: `build_pass1_stats_command` lost the
+    # duration_s fallback that `build_ffmpeg_command` got — the ladder's
+    # pass-1 stats sweep still ran on the full source. Apply the same
+    # precedence: sample_clip_seconds wins (with --ss start), else
+    # plain --t duration_s, else no clip.
+    fallback_duration = (
+        float(req.duration_s) if req.sample_clip_seconds <= 0.0 and req.duration_s > 0.0 else 0.0
+    )
     cmd = [ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "info"]
     fallback_duration = (
         float(req.duration_s) if req.sample_clip_seconds <= 0.0 and req.duration_s > 0.0 else 0.0
