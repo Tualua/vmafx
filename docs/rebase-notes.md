@@ -35615,3 +35615,21 @@ two new fields (`degraded`, `codec_rows_unavailable`) — a strict
 schema consumer that asserts on absence would need updating, but
 the existing fields stay populated. ffmpeg-patches are unaffected;
 no public C API surface changed.
+
+---
+
+## perf/adm-decouple-gather-locality-2026-05-18 (ADR-0502)
+
+**Files touched:** `libvmaf/src/feature/x86/adm_avx512.c` (upstream-mirror),
+`libvmaf/src/feature/x86/AGENTS.md`, `docs/adr/0502-adm-decouple-gather-prefetch.md`,
+`docs/adr/README.md`, `docs/research/0435-adm-decouple-gather-locality.md`,
+`changelog.d/performance/adm-decouple-gather-prefetch.md`.
+
+**Rebase sensitivity (low):** the only upstream-shared file touched is
+`adm_avx512.c`. The change is a self-contained block (16 lines, guarded by
+`if (j + 32 < right_mod16)`) inserted before the three `vpgatherdd` lines.
+Conflicts arise only if Netflix upstream modifies `adm_decouple_avx512` —
+resolution: apply the prefetch block to the updated gather cluster in the
+upstream version. The `adm_div_lookup` LUT signature is unchanged; the
+`adm_div_lookup[val + 32768]` access pattern is identical to scalar.
+No public C-API surface, no header, no meson build files touched.

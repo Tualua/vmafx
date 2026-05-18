@@ -937,6 +937,36 @@ void adm_decouple_avx512(AdmBuffer *buf, int w, int h, int stride, double adm_en
             __mmask16 angle_flag =
                 _kand_mask16(gt_0, cmp_ot_cosot_mag_lo | ((__mmask16)cmp_ot_cosot_mag_hi << 8));
 
+            /*
+             * ADR-0502 — Approach B: software-prefetch the adm_div_lookup LUT entries
+             * for the iteration 2 steps ahead (j + 32 elements) into L2 (_MM_HINT_T1).
+             *
+             * Rationale: the LUT is 256 KB (65537 × int32) — too large for L1, fits in
+             * L2 only partially. The 3 × vpgatherdd below issue 48 scatter reads whose
+             * targets are scattered randomly across the 65 K-entry table, causing frequent
+             * L2/L3 misses (66.5 % of function cycles per perf-profiler ADR-0502 finding).
+             * Prefetching 2 iterations ahead hides the miss latency behind the ~300 cycles
+             * of arithmetic between the prefetch and the next gather, without changing any
+             * computed value (pure access-strategy change; bit-exactness is preserved).
+             *
+             * Approach A (vpermd + sequential loads) was ruled out because the DWT
+             * coefficients oh/ov/od are arbitrary int16s in [-32768, 32767] with no
+             * monotone ordering within a row — sequential-load substitution is not valid.
+             */
+            if (j + 32 < right_mod16) {
+                const int16_t *ph_next2 = ref->band_h + i * stride + j + 32;
+                const int16_t *pv_next2 = ref->band_v + i * stride + j + 32;
+                const int16_t *pd_next2 = ref->band_d + i * stride + j + 32;
+                for (int k = 0; k < 16; k++) {
+                    _mm_prefetch((const char *)&adm_div_lookup[(int32_t)ph_next2[k] + 32768],
+                                 _MM_HINT_T1);
+                    _mm_prefetch((const char *)&adm_div_lookup[(int32_t)pv_next2[k] + 32768],
+                                 _MM_HINT_T1);
+                    _mm_prefetch((const char *)&adm_div_lookup[(int32_t)pd_next2[k] + 32768],
+                                 _MM_HINT_T1);
+                }
+            }
+
             __m512i oh_div = _mm512_i32gather_epi32(_mm512_add_epi32(oh, _mm512_set1_epi32(32768)),
                                                     adm_div_lookup, 4);
             __m512i ov_div = _mm512_i32gather_epi32(_mm512_add_epi32(ov, _mm512_set1_epi32(32768)),
