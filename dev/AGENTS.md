@@ -126,6 +126,57 @@ a real container-side regression that hid a host GPU from libvmaf:
    (the precise failure mode that triggered ADR-0514 for HIP).
 
 ### FFmpeg encoder exposure invariants (ADR-0541)
+### Full GPU backend plumbing invariants (ADR-0541)
+
+Four constraints that close the last silent-fallback gaps surfaced
+empirically against the dev machine
+(NVIDIA RTX 4090, Intel Arc A380, AMD `gfx1036`). Each one
+corresponds to a backend that would otherwise land on CPU / lavapipe
+/ `-ENODEV` despite the device being visible to the kernel:
+
+1. **The entrypoint's `VK_DRIVER_FILES` rewrite must stay in place.**
+   `dev/scripts/dev-mcp-entrypoint.sh` enumerates every JSON under
+   `/etc/vulkan/icd.d/` + `/usr/share/vulkan/icd.d/`, drops anything
+   matching `lvp_*` / `lavapipe*`, and pins `VK_DRIVER_FILES` to the
+   colon-separated allowlist of real ICDs. Without the rewrite,
+   `vmaf --backend vulkan --vulkan_device 0` selects mesa's lavapipe
+   software ICD on multi-vendor hosts where lavapipe sorts before the
+   real GPU ICDs. Do NOT replace this with a static `ENV
+   VK_DRIVER_FILES=…` in the Containerfile — operators on CPU-only
+   hosts (no real ICD visible) need lavapipe to remain the fallback;
+   the entrypoint's "if any real ICD exists" guard preserves that.
+2. **`HSA_OVERRIDE_GFX_VERSION=10.3.0` must stay in
+   `dev/docker-compose.yml` `common-env`.** AMD `gfx1036` (Raphael
+   iGPU, RDNA2 IP rev 10.3.6) is not on the ROCm 6.x supported-GPU
+   allowlist. Without the override, `hsa_init()` returns
+   `HSA_STATUS_ERROR_OUT_OF_RESOURCES` and `rocminfo` reports "Unable
+   to open /dev/kfd read-write: Invalid argument" even though
+   `/dev/kfd` is bind-mounted via the `devices:` block and the
+   video / render groups are joined. `HSA_ENABLE_SDMA=0` (RDNA2 iGPU
+   SDMA-fault mitigation) and `ROCR_VISIBLE_DEVICES=0` (pin HIP to
+   the single AMD adapter) accompany the override and should not be
+   trimmed.
+3. **`intel-media-va-driver-non-free` + `mesa-va-drivers` must stay
+   in the stage-1 apt list.** The Intel compute-runtime
+   (`libze_intel_gpu.so.1`) dlopens
+   `/usr/lib/x86_64-linux-gnu/dri/iHD_drv_video.so` during
+   `zeInit()`-time GPU capability probing. Without
+   `intel-media-va-driver-non-free`, `vaInitialize()` returns
+   `VA_STATUS_ERROR_UNKNOWN`, the compute-runtime bails out of L0
+   driver enumeration, and `sycl-ls` reports `Platforms: 0` on Intel
+   Arc hosts. `mesa-va-drivers` provides `radeonsi_drv_video.so` for
+   the AMD equivalent.
+4. **`NVIDIA_DRIVER_CAPABILITIES` must include `graphics` (in
+   addition to `compute,utility,video`).** The NVIDIA Container
+   Toolkit only bind-mounts `nvidia_icd.json` into
+   `/etc/vulkan/icd.d/` when the `graphics` token is set. Trimming
+   the env block to `compute,utility` silently disables NVIDIA Vulkan
+   while leaving CUDA + nvidia-smi working — a particularly hard
+   regression to spot because every other lane stays green. The
+   compose-file `common-env` block carries the full token set with
+   an inline comment; do NOT trim it.
+
+### FFmpeg encoder exposure invariants (ADR-0540)
 
 These four constraints must survive every rebase. Each one corresponds
 to a real encoder that the `vmaf-tune compare` predicate would silently

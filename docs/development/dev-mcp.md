@@ -176,7 +176,8 @@ Each probe file follows this schema:
 
 ### Expected values
 
-- CPU score: ~76.45 (matches the Netflix golden pair; exact value varies by model version).
+- CPU score: ~76.45 (matches the Netflix golden pair; exact value
+  varies by model version).
 - CUDA / Vulkan scores: within ±0.01 of CPU (numeric parity is not bit-exact —
   see [ADR-0214](../adr/0214-gpu-parity-ci-gate.md)).
 - SYCL: `ENOSYS` on hosts without Intel GPU or oneAPI runtime; normal.
@@ -210,7 +211,7 @@ On a host with NVIDIA + Intel Arc + AMD silicon and the NVIDIA Container
 Toolkit installed, every libvmaf backend should run inside the container:
 
 | Backend | Expected | Required host state |
-|---|---|---|
+| --- | --- | --- |
 | `cpu` | VMAF score, rc=0 | always |
 | `cuda` | VMAF score, rc=0 (5-place-equal to CPU per ADR-0214) | NVIDIA GPU + Container Toolkit |
 | `sycl` | VMAF score, rc=0 (5-place-equal to CPU) | Intel GPU exposed via `/dev/dri` bind-mount (ADR-0528) |
@@ -234,18 +235,34 @@ docker exec vmaf-dev-mcp bash -c '
 
 ### Environment-variable contract
 
-The container intentionally does **not** pin any of these env vars, even
-though earlier image versions did. Pinning them silently hid one or more
-GPU backends:
+The container pins one env-var family (HSA / ROCm) at compose-up
+time, rewrites one (`VK_DRIVER_FILES`) at entrypoint time based on
+what is visible on disk, and intentionally leaves everything else
+alone. Pinning the wrong subset silently hid one or more GPU
+backends in earlier image versions:
 
 | Env var | Contract | Why not pinned |
 |---|---|---|
 | `VK_ICD_FILENAMES` / `VK_DRIVER_FILES` | unset by default; Vulkan loader uses `/etc/vulkan/icd.d/` + `/usr/share/vulkan/icd.d/` search path | An earlier pin to `lvp_icd.x86_64.json` (typo of `lvp_icd.json`) hid every real GPU. ADR-0509 / Research-0138. |
 | `LD_LIBRARY_PATH` | includes `${ONEAPI_ROOT}/{compiler,umf,tcm,tbb}/latest/lib` | `tcm/latest/lib` carries `libhwloc.so.15` (level-zero UR adapter dlopens it at load time; dropping it causes SYCL "Platforms: 0" on Intel Arc). `tbb/latest/lib` carries `libtbb.so.12` (the Intel CPU OpenCL ICD dlopens it at platform enumeration; dropping it silently removes the Intel CPU OpenCL platform — ADR-0541). |
 | `NVIDIA_DRIVER_CAPABILITIES` | `compute,graphics,utility,video` (set in `dev/docker-compose.yml` common-env) | `graphics` is what makes the NVIDIA Container Toolkit bind-mount `nvidia_icd.json` into `/etc/vulkan/icd.d/`. Dropping `graphics` hides NVIDIA from Vulkan. |
+| Env var | Contract | Rationale |
+| --- | --- | --- |
+| `VK_DRIVER_FILES` | Rewritten by `dev/scripts/dev-mcp-entrypoint.sh` at container start to the colon-separated list of every non-lavapipe ICD JSON visible under `/etc/vulkan/icd.d/` + `/usr/share/vulkan/icd.d/`. Unset when no real ICD is present (CPU-only fallback). | An earlier image left both env vars unset and relied on alphabetical search order; on multi-vendor hosts where mesa's `lvp_icd.json` sorted before NVIDIA's `nvidia_icd.json` (or Intel/AMD mesa ICDs), `vmaf --vulkan_device 0` silently landed on lavapipe. ADR-0542 closes the race by filtering lavapipe out whenever a real ICD exists. |
+| `VK_ICD_FILENAMES` | Unset (deprecated by Khronos in favour of `VK_DRIVER_FILES`). | Setting it overrides the loader's allowlist semantics; the prior `lvp_icd.x86_64.json` typo (ADR-0509 / Research-0138) hid every real GPU. |
+| `LD_LIBRARY_PATH` | Includes `${ONEAPI_ROOT}/{compiler,umf,tcm}/latest/lib`. | `tcm/latest/lib` carries `libhwloc.so.15` — the level-zero UR adapter dlopens it at load time. Dropping it causes SYCL "Platforms: 0" on Intel Arc. |
+| `NVIDIA_DRIVER_CAPABILITIES` | `compute,graphics,utility,video` (set in `dev/docker-compose.yml` common-env). | `graphics` is what makes the NVIDIA Container Toolkit bind-mount `nvidia_icd.json` into `/etc/vulkan/icd.d/`. Dropping `graphics` hides NVIDIA from Vulkan while leaving CUDA + nvidia-smi working — a hard regression to spot. |
+| `HSA_OVERRIDE_GFX_VERSION` | Pinned to `10.3.0` in `common-env`. | AMD `gfx1036` (Raphael iGPU, RDNA2 IP rev 10.3.6) is not on the ROCm 6.x supported-GPU allowlist. Without the override, `hsa_init()` returns `HSA_STATUS_ERROR_OUT_OF_RESOURCES` and `rocminfo` reports "Unable to open /dev/kfd read-write: Invalid argument" even though `/dev/kfd` is bind-mounted. `gfx1036` is binary-compatible enough with `gfx1030` for the libvmaf HIP feature kernels (ADR-0530 / ADR-0538). ADR-0542. |
+| `HSA_ENABLE_SDMA` | Pinned to `0` in `common-env`. | On RDNA2 iGPUs sharing system RAM with the CPU, the SDMA copy engine triggers VM faults on small device→host transfers (libvmaf collect path is dominated by such transfers). ADR-0541. |
+| `ROCR_VISIBLE_DEVICES` | Pinned to `0` in `common-env`. | Pins HIP to the single AMD adapter on multi-iGPU + dGPU hosts so kernels cannot accidentally dispatch onto a non-RDNA2 device that needs a different `HSA_OVERRIDE_GFX_VERSION`. ADR-0542. |
 
-Operators that need to force a single ICD per invocation can still
-`docker exec vmaf-dev-mcp env VK_ICD_FILENAMES=… vmaf …`.
+Operators that need to force a single Vulkan ICD per invocation can
+still `docker exec vmaf-dev-mcp env VK_DRIVER_FILES=/path/to/icd.json
+vmaf …` — the per-exec env var overrides the entrypoint-time pin.
+Operators on hosts with a ROCm-supported GPU on the allowlist
+(`gfx1030` / `gfx1100` / `gfx1101` desktop / workstation parts) can
+override `HSA_OVERRIDE_GFX_VERSION` to the empty string at
+`docker compose up` time to remove the lie.
 
 ## FFmpeg encoder matrix (post-ADR-0541)
 
@@ -255,7 +272,7 @@ supports without skipping rows with `hardware encoder not available:
 ... not compiled into ffmpeg`. The matrix:
 
 | Encoder | Compile-in source | Host runtime requirement |
-|---|---|---|
+| --- | --- | --- |
 | `libx264` | `libx264-dev` (apt) | none |
 | `libx265` | `libx265-dev` (apt) | none |
 | `libvpx-vp9` | `libvpx-dev` (apt) | none |
@@ -277,7 +294,7 @@ docker exec vmaf-dev-mcp ffmpeg -hide_banner -encoders 2>&1 \
 Expected (assuming the build-time encoder probe in stage 3.5 logged no
 `WARN ... missing`):
 
-```
+```text
  V....D libaom-av1           libaom AV1
  V....D libsvtav1            SVT-AV1(Scalable Video Technology for AV1) encoder
  V..... libvvenc             libvvenc-based VVC encoder
@@ -303,7 +320,7 @@ locks down the compile-in promise; runtime failures produce stable
 row-level skip strings:
 
 | Symptom | Cause | Action |
-|---|---|---|
+| --- | --- | --- |
 | `hardware encoder not available: h264_nvenc dummy encode failed (...): Cannot load libcuda.so.1` | Container started without `runtime: nvidia` | `CONTAINER_RUNTIME=nvidia ./dev/scripts/dev-mcp-up.sh` |
 | `hardware encoder not available: av1_nvenc dummy encode failed: Cannot load library` | Host NVIDIA driver too old for AV1 NVENC (Turing/Ampere don't have av1_nvenc) | Use h264_nvenc / hevc_nvenc on that host; av1_nvenc needs Ada or newer |
 | `hardware encoder not available: h264_qsv dummy encode failed: Error initializing an internal MFX session` | Intel iGPU not exposed (`/dev/dri/renderD*` missing) or host lacks `intel-media-driver` | Pass `/dev/dri:/dev/dri` + `/dev/dri/by-path` and `apt install intel-media-driver` on the host |

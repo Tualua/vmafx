@@ -72,7 +72,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Runtime libs needed by libvmaf and ONNX Runtime
     libgomp1 \
     libc6-dev \
-    # Vulkan + lavapipe (CPU ICD for containers without GPU passthrough)
+    # Vulkan: loader + tools + mesa ICDs (intel_icd.json, radeon_icd.json,
+    # lvp_icd.json). We deliberately KEEP mesa-vulkan-drivers so that Intel
+    # Arc + AMD Radeon physical devices are reachable from inside the
+    # container (NVIDIA's nvidia_icd.json is bind-mounted by the NVIDIA
+    # Container Toolkit at runtime when NVIDIA_DRIVER_CAPABILITIES includes
+    # `graphics` — see dev/docker-compose.yml common-env). The lavapipe
+    # software ICD (lvp_icd.json) shipped by mesa is removed by the
+    # entrypoint at startup whenever at least one real GPU ICD is also
+    # registered, to prevent the Vulkan loader from racing the software
+    # adapter onto vulkan_device=0 on hosts where the real GPU ICD enumerates
+    # later. See ADR-0541.
     libvulkan-dev \
     vulkan-tools \
     mesa-vulkan-drivers \
@@ -80,6 +90,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libva-dev \
     libva-drm2 \
     libvpl-dev \
+    # VA-API user-space drivers (Intel + AMD). The libva-dev / libva-drm2
+    # pair above only provides the VA-API headers and DRM transport — the
+    # actual codec driver (`iHD_drv_video.so` for Intel, `radeonsi_drv_video.so`
+    # for AMD) lives in these two packages. Without them, the
+    # `*_qsv` / `*_vaapi` encoders fail with `vaInitialize ... unknown libva
+    # error`. ADR-0541.
+    intel-media-va-driver-non-free \
+    mesa-va-drivers \
     # GLSL shader compiler (glslc) — required by the Vulkan backend at build time
     glslang-tools \
     glslc \
@@ -313,38 +331,46 @@ RUN echo "=== sycl-ls (SYCL device visibility) ===" \
     && rocminfo 2>&1 | grep -E "Agent|Name:|Device Type|gfx" || true
 
 # ---------- Vulkan ICD selection ------------------------------------------
-# Do NOT set VK_ICD_FILENAMES / VK_DRIVER_FILES. Setting either overrides
-# the loader's default search path (/usr/share/vulkan/icd.d/ +
-# /etc/vulkan/icd.d/) and locks the loader to a single ICD JSON. In
-# particular, the NVIDIA Container Toolkit bind-mounts `nvidia_icd.json`
-# into /etc/vulkan/icd.d/ at runtime when NVIDIA_DRIVER_CAPABILITIES
-# includes `graphics`; pinning VK_ICD_FILENAMES to lavapipe (the software
-# fallback) hides the real GPU ICDs entirely.
+# Do NOT set VK_ICD_FILENAMES / VK_DRIVER_FILES in the image. The
+# container entrypoint (`dev-mcp-entrypoint.sh`) dynamically rewrites
+# VK_DRIVER_FILES at startup to the colon-separated list of all
+# non-lavapipe ICD JSONs visible under /etc/vulkan/icd.d/ +
+# /usr/share/vulkan/icd.d/ — see ADR-0541. This guarantees that:
 #
-# Default behaviour with both env vars unset:
-#   - NVIDIA discrete GPUs: visible via /etc/vulkan/icd.d/nvidia_icd.json
-#     (host-mounted by nvidia-container-runtime).
-#   - Intel Arc + AMD: visible via /usr/share/vulkan/icd.d/{intel,radeon}_icd.json
-#     installed by mesa-vulkan-drivers in stage 1.
-#   - Lavapipe (lvp_icd.json) software fallback: still present, last in the
-#     enumerator. Real GPUs override it. The /usr/share/vulkan/icd.d/lvp_icd.json
-#     file shipped by mesa is well-formed (verified inside the container); no
-#     malformed-JSON loader breakage to work around.
+#   - NVIDIA discrete GPUs (via /etc/vulkan/icd.d/nvidia_icd.json,
+#     bind-mounted by nvidia-container-runtime when
+#     NVIDIA_DRIVER_CAPABILITIES includes `graphics`) are selected first
+#     when the host exposes them.
+#   - Intel Arc + AMD (via /usr/share/vulkan/icd.d/intel_icd.x86_64.json
+#     / radeon_icd.x86_64.json, installed by mesa-vulkan-drivers in
+#     stage 1) are visible alongside NVIDIA on multi-vendor hosts.
+#   - The mesa lavapipe ICD (lvp_icd.json) is filtered out whenever a
+#     real GPU ICD is present, so `vmaf --backend vulkan --vulkan_device 0`
+#     cannot accidentally land on software emulation. lavapipe remains as
+#     the fallback on CPU-only hosts (no real ICD visible) where the
+#     container is still useful for build-regression catching.
 #
-# ADR-0509 / Research-0138 background: the old image set
-# `VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json` (a typo —
-# mesa ships `lvp_icd.json`, no `.x86_64` suffix) which made the loader
-# return zero devices. Setting `ENV VK_ICD_FILENAMES=` to empty in a
-# Containerfile is NOT a fix — the Vulkan loader treats an empty string
-# the same way it treats a non-existent file: "no ICDs configured" →
-# ERROR_INCOMPATIBLE_DRIVER. The container entrypoint (`dev-mcp-entrypoint.sh`)
-# explicitly `unset`s both vars at startup so the loader falls back to its
-# default search path. We deliberately keep the ENV lines absent here so
-# nothing leaks the empty-string state into intermediate image layers.
+# Why not just delete /usr/share/vulkan/icd.d/lvp_icd.json from the
+# image? Because (a) it would couple us to mesa's package layout (the
+# file moves between minor releases) and (b) it would break the CPU-only
+# fallback on hosts without GPU passthrough. The entrypoint-time filter
+# is the right granularity.
 #
-# Operators that need to force a single ICD (e.g. for reproducibility tests)
-# can still set VK_ICD_FILENAMES at `docker exec -e VK_ICD_FILENAMES=… …`
-# time per-invocation.
+# ADR-0509 / Research-0138 / ADR-0541 background: the old image set
+# `VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json` (a typo
+# — mesa ships `lvp_icd.json`, no `.x86_64` suffix) which made the
+# loader return zero devices. Subsequent fix (ADR-0509) unset both vars
+# in the entrypoint and relied on the loader's default search to find
+# the NVIDIA bind-mount; this worked for NVIDIA on hosts where
+# `nvidia_icd.json` lexicographically beat `lvp_icd.json` but lost the
+# race on hosts where Intel-only / AMD-only mesa ICDs sort *after*
+# lavapipe. ADR-0541 closes that race by actively rewriting
+# VK_DRIVER_FILES instead of trusting alphabetical order.
+#
+# Operators that need to force a single ICD (e.g. for reproducibility
+# tests) can still set VK_DRIVER_FILES at `docker exec -e
+# VK_DRIVER_FILES=… …` time per-invocation; the entrypoint check only
+# runs once at container start.
 
 # ---------------------------------------------------------------------------
 # Stage 3 — libvmaf source build

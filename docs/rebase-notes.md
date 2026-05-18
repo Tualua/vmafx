@@ -25,6 +25,31 @@ recurring maintenance item: when a future host kernel revs the i915 /
 xe / KFD UAPI, bump the relevant ARG. The `dev-mcp-entrypoint.sh`
 visibility probe surfaces such regressions in ≤ 30 s of container
 start so future bumps are easy to identify.
+## fix/dev-container-full-gpu-plumbing (ADR-0542)
+
+**No upstream-mirror paths touched.** Modifies:
+
+- `dev/Containerfile` (stage 1 apt list: + `intel-media-va-driver-non-free`,
+  + `mesa-va-drivers`; revised Vulkan ICD selection comment block).
+- `dev/docker-compose.yml` (common-env: + `HSA_OVERRIDE_GFX_VERSION`,
+  + `HSA_ENABLE_SDMA`, + `ROCR_VISIBLE_DEVICES`; expanded
+  `NVIDIA_DRIVER_CAPABILITIES` documentation comment).
+- `dev/scripts/dev-mcp-entrypoint.sh` (entrypoint-time
+  `VK_DRIVER_FILES` rewrite to exclude lavapipe whenever any real ICD
+  is present).
+- `dev/AGENTS.md` (new GPU-plumbing invariant section).
+- `docs/development/dev-mcp.md` (backend matrix + env-var contract +
+  HSA override documentation).
+- `docs/adr/0541-…md` (+ index row), `changelog.d/fixed/0541-…md`,
+  `docs/state.md` (one recently-closed row), this file.
+
+**Rebase sensitivity (none — container infra fork-local additive
+plus documentation):** Every touched file lives under `dev/`,
+`docs/`, or `changelog.d/`. No libvmaf C source, no public header,
+no `meson_options.txt`, no `ffmpeg-patches/` entry. The CLAUDE.md
+§12 r14 patch-stack rule does not apply (no libvmaf surface
+touched). Netflix upstream has no container infra under `dev/` to
+conflict with.
 
 ## fix/hip-integer-vif-kernel-crash (ADR-0538)
 

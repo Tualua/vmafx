@@ -374,3 +374,4 @@
 0530-hip-feature-flag-promotion-and-picture-buffer
 0537-hip-integer-vif-kernel-fix
 0540-dev-container-ffmpeg-av1-and-hwaccel-encoders
+0542-dev-container-full-gpu-plumbing

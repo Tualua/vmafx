@@ -25,9 +25,33 @@ x-common-env: &common-env
   VMAF_MCP_UDS_PATH: /sockets/vmaf-mcp.sock
   # NVIDIA GPU passthrough — NVIDIA Container Toolkit must be installed on host.
   # All NVIDIA devices are exposed; capabilities cover compute, graphics, utility,
-  # and video (required for NVDEC/NVENC in FFmpeg).
+  # and video (required for NVDEC/NVENC in FFmpeg). `graphics` is also what
+  # makes the Container Toolkit bind-mount `nvidia_icd.json` into
+  # `/etc/vulkan/icd.d/` at runtime — without it the Vulkan loader sees no
+  # NVIDIA ICD and either lands on lavapipe (software fallback) or returns
+  # zero physical devices. ADR-0509 / ADR-0541.
   NVIDIA_VISIBLE_DEVICES: all
   NVIDIA_DRIVER_CAPABILITIES: compute,graphics,utility,video
+
+  # ROCm / HSA dispatch knobs (ADR-0541). The host's AMD iGPU (Raphael
+  # `gfx1036`, RDNA2 IP rev 10.3.6) is **not** on the ROCm 6.x supported-GPU
+  # allowlist that `libhsa-runtime64.so` consults at `hsa_init()`. Without
+  # the override, `rocminfo` returns "Unable to open /dev/kfd read-write:
+  # Invalid argument" / `hsa_init() = HSA_STATUS_ERROR_OUT_OF_RESOURCES`
+  # even though `/dev/kfd` is bind-mounted and the `video` + `render`
+  # groups are joined. Setting `HSA_OVERRIDE_GFX_VERSION=10.3.0` lies to
+  # the runtime: "treat this device as gfx1030 (RDNA2 desktop, on the
+  # allowlist)" — gfx1036 is binary-compatible enough with gfx1030 for the
+  # libvmaf HIP feature kernels (verified with the integer-VIF / motion
+  # extractors in ADR-0530 / ADR-0538). `HSA_ENABLE_SDMA=0` disables the
+  # SDMA copy engine; on RDNA2 iGPUs the SDMA path triggers VM faults on
+  # small device→host transfers (the libvmaf collect path is dominated by
+  # such transfers). `ROCR_VISIBLE_DEVICES=0` pins HIP to the single AMD
+  # adapter so multi-iGPU + dGPU hosts cannot accidentally dispatch onto a
+  # non-RDNA2 device that needs a different override.
+  HSA_OVERRIDE_GFX_VERSION: "10.3.0"
+  HSA_ENABLE_SDMA: "0"
+  ROCR_VISIBLE_DEVICES: "0"
 
 # ---------------------------------------------------------------------------
 # Volumes

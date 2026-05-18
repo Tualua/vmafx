@@ -39,6 +39,46 @@ set -euo pipefail
 # `docker exec` time per-invocation (e.g. `docker exec -e VK_ICD_FILENAMES=…`).
 unset VK_ICD_FILENAMES VK_DRIVER_FILES || true
 
+# ADR-0541: drop the lavapipe software ICD when at least one real GPU ICD
+# is registered. The Vulkan loader enumerates every JSON under
+# /etc/vulkan/icd.d/ + /usr/share/vulkan/icd.d/ in lexicographic order and
+# exposes each as a `VkPhysicalDevice`. `vmaf --vulkan_device 0` picks the
+# first device, which on a stock mesa install is `lvp_icd.json` (lvp_ <
+# nvidia_ < intel_ < radeon_). The user-facing symptom is a `vmaf --backend
+# vulkan` run that lands on lavapipe (software emulation, ~5x slower than
+# CPU) instead of the host's real GPU, with no diagnostic to indicate the
+# fallback occurred.
+#
+# Strategy: if any non-lavapipe ICD JSON is visible at entrypoint time,
+# rewrite the ICD search list via VK_DRIVER_FILES (preferred over the
+# deprecated VK_ICD_FILENAMES) to the colon-separated list of non-lvp
+# JSONs only. If no real ICD is present (CPU-only host, no Container
+# Toolkit, no mesa-radeon/intel devices), leave the env vars unset and
+# let the loader fall back to lavapipe on its own — the container is
+# still usable for build-regression catching.
+_vk_real_icds=""
+for _vk_dir in /etc/vulkan/icd.d /usr/share/vulkan/icd.d; do
+  [ -d "${_vk_dir}" ] || continue
+  for _vk_json in "${_vk_dir}"/*.json; do
+    [ -e "${_vk_json}" ] || continue
+    case "$(basename "${_vk_json}")" in
+      lvp_* | lavapipe*) continue ;;
+    esac
+    if [ -n "${_vk_real_icds}" ]; then
+      _vk_real_icds="${_vk_real_icds}:${_vk_json}"
+    else
+      _vk_real_icds="${_vk_json}"
+    fi
+  done
+done
+if [ -n "${_vk_real_icds}" ]; then
+  export VK_DRIVER_FILES="${_vk_real_icds}"
+  echo "[dev-mcp-entrypoint] Vulkan: pinned non-lavapipe ICDs: ${VK_DRIVER_FILES}"
+else
+  echo "[dev-mcp-entrypoint] Vulkan: no real ICD found; falling back to mesa default search (lavapipe likely)"
+fi
+unset _vk_real_icds _vk_dir _vk_json
+
 # ADR-0498 follow-up #8 (BBB e2e v2): some container runtimes ship a
 # minimal ``/`` filesystem without ``/tmp`` (especially when the image
 # is started with a fresh tmpfs overlay). Both the MCP log and the
