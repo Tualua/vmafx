@@ -2954,7 +2954,14 @@ class FeatureExtractorTest(MyTestCase):
             results[0]["VMAF_integer_feature_motion3_mfw_2.5_score"], 9.974411604166667, places=4
         )
 
-    @unittest.skip("vifdiff alternative needed, vmaf_feature executable deprecated")
+    @unittest.skip(
+        "VifFrameDifferenceFeatureExtractor calls ExternalProgramCaller.call_vifdiff_feature(), "
+        "which shells out to the 'vmaf_feature' binary removed upstream in Netflix/vmaf. "
+        "The binary no longer exists in libvmaf/build/tools/. "
+        "Fix: port VifFrameDifferenceFeatureExtractor to use the vmafexec / libvmaf C API "
+        "path (same pattern as VmafQualityRunner), or delete the extractor if vifdiff is "
+        "not needed. (scaffold-audit ADR-0621 P3-3)"
+    )
     def test_run_vif_frame_difference_fextractor(self):
 
         ref_path, dis_path, asset, asset_original = set_default_576_324_videos_for_testing()

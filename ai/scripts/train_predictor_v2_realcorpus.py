@@ -131,19 +131,19 @@ DEFAULT_CORPUS_ROOTS: tuple[Path, ...] = (
     Path(
         os.environ.get(
             "VMAF_NETFLIX_CORPUS_DIR",
-            str(_HOME / ".workingdir2" / "netflix"),
+            str(Path(__file__).resolve().parents[2] / ".corpus" / "netflix"),
         )
     ),
     Path(
         os.environ.get(
             "VMAF_KONVID_150K_DIR",
-            str(_HOME / ".workingdir2" / "konvid-150k"),
+            str(Path(__file__).resolve().parents[2] / ".corpus" / "konvid-150k"),
         )
     ),
     Path(
         os.environ.get(
             "VMAF_BVI_DVC_RAW_DIR",
-            str(_HOME / ".workingdir2" / "bvi-dvc-raw"),
+            str(Path(__file__).resolve().parents[2] / ".corpus" / "bvi-dvc-raw"),
         )
     ),
 )

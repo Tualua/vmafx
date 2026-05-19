@@ -57,7 +57,7 @@ _UGC_DEFAULT_MAX_ROWS: int = 300
 _DEFAULT_UGC_DIR: Path = Path(
     os.environ.get(
         "VMAF_YOUTUBE_UGC_DIR",
-        str(Path(__file__).resolve().parents[2] / ".workingdir2" / "youtube-ugc"),
+        str(Path(__file__).resolve().parents[2] / ".corpus" / "youtube-ugc"),
     )
 )
 _DEFAULT_OUTPUT: Path = _DEFAULT_UGC_DIR / "youtube-ugc.jsonl"

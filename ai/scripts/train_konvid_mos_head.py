@@ -678,10 +678,16 @@ def _build_manifest(
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="train_konvid_mos_head.py")
     _konvid_1k_dir = Path(
-        os.environ.get("VMAF_KONVID_1K_DIR", str(Path.home() / ".workingdir2" / "konvid-1k"))
+        os.environ.get(
+            "VMAF_KONVID_1K_DIR",
+            str(Path(__file__).resolve().parents[2] / ".corpus" / "konvid-1k"),
+        )
     )
     _konvid_150k_dir = Path(
-        os.environ.get("VMAF_KONVID_150K_DIR", str(Path.home() / ".workingdir2" / "konvid-150k"))
+        os.environ.get(
+            "VMAF_KONVID_150K_DIR",
+            str(Path(__file__).resolve().parents[2] / ".corpus" / "konvid-150k"),
+        )
     )
     ap.add_argument(
         "--konvid-1k",

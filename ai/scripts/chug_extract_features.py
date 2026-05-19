@@ -45,7 +45,12 @@ from ai.data.feature_extractor import (
 
 # Default working directory for CHUG feature extraction; override with
 # ``VMAF_CHUG_DIR`` env var for container / non-maintainer layouts.
-DEFAULT_CHUG_DIR = Path(os.environ.get("VMAF_CHUG_DIR", str(Path(".workingdir2") / "chug")))
+DEFAULT_CHUG_DIR = Path(
+    os.environ.get(
+        "VMAF_CHUG_DIR",
+        str(Path(__file__).resolve().parents[2] / ".corpus" / "chug"),
+    )
+)
 DEFAULT_INPUT = DEFAULT_CHUG_DIR / "chug.jsonl"
 DEFAULT_OUTPUT = DEFAULT_CHUG_DIR / "chug_features.jsonl"
 DEFAULT_CLIPS_DIR = DEFAULT_CHUG_DIR / "clips"

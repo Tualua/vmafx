@@ -61,7 +61,7 @@ _LIVE_VQC_DEFAULT_MAX_ROWS: int = 200
 _DEFAULT_LIVE_VQC_DIR: Path = Path(
     os.environ.get(
         "VMAF_LIVE_VQC_DIR",
-        str(Path(__file__).resolve().parents[2] / ".workingdir2" / "live-vqc"),
+        str(Path(__file__).resolve().parents[2] / ".corpus" / "live-vqc"),
     )
 )
 _DEFAULT_OUTPUT: Path = _DEFAULT_LIVE_VQC_DIR / "live_vqc.jsonl"

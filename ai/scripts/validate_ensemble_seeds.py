@@ -74,11 +74,16 @@ def build_argparser() -> argparse.ArgumentParser:
     p.add_argument(
         "--corpus-root",
         type=Path,
-        default=Path(os.environ.get("VMAF_NETFLIX_CORPUS_DIR", ".workingdir2/netflix")),
+        default=Path(
+            os.environ.get(
+                "VMAF_NETFLIX_CORPUS_DIR",
+                str(Path(__file__).resolve().parents[2] / ".corpus" / "netflix"),
+            )
+        ),
         help=(
             "Corpus root used during the LOSO run; sha256-snapshotted "
             "into the verdict JSON for reproducibility (default: "
-            "``$VMAF_NETFLIX_CORPUS_DIR`` or ``.workingdir2/netflix``)."
+            "``$VMAF_NETFLIX_CORPUS_DIR`` or ``.corpus/netflix``)."
         ),
     )
     p.add_argument(

@@ -1159,7 +1159,12 @@ class AssetTest(MyTestCase):
         )
 
     @unittest.skip(
-        "upstream-only feature: fps_cmd / format_cmd / get_filter_cmd not yet ported to fork (ADR-0326)"
+        "Asset.fps_cmd, Asset.ref_fps_cmd, Asset.dis_fps_cmd, and 'format' filter support "
+        "require adding 'fps' and 'format' to Asset.ORDERED_FILTER_LIST and implementing "
+        "the fps_cmd/ref_fps_cmd/dis_fps_cmd properties. get_filter_cmd() is already "
+        "implemented (asset.py:911) and works for existing filter keys (crop, pad, gblur, "
+        "eq, lutyuv, yadif). The skip rationale incorrectly cited ADR-0326 (vmaf-tune "
+        "bisect); the real gap is the missing filter-key additions. (scaffold-audit ADR-0621 P3-3)"
     )
     def test_fps_cmd(self):
         asset = Asset(
@@ -1204,7 +1209,12 @@ class AssetTest(MyTestCase):
         self.assertEqual(str(asset), "test_0_0_720x480_yuv422p_vs_720x480_yuv422p_q_720x320")
 
     @unittest.skip(
-        "upstream-only feature: fps_cmd / format_cmd / get_filter_cmd not yet ported to fork (ADR-0326)"
+        "Asset.fps_cmd, Asset.ref_fps_cmd, Asset.dis_fps_cmd, and 'format' filter support "
+        "require adding 'fps' and 'format' to Asset.ORDERED_FILTER_LIST and implementing "
+        "the fps_cmd/ref_fps_cmd/dis_fps_cmd properties. get_filter_cmd() is already "
+        "implemented (asset.py:911) and works for existing filter keys (crop, pad, gblur, "
+        "eq, lutyuv, yadif). The skip rationale incorrectly cited ADR-0326 (vmaf-tune "
+        "bisect); the real gap is the missing filter-key additions. (scaffold-audit ADR-0621 P3-3)"
     )
     def test_ref_dis_fps_cmd(self):
         asset = Asset(
@@ -1696,7 +1706,12 @@ class AssetTest(MyTestCase):
         self.assertEqual(str(asset), "test_0_0_720x480_yuv422p_vs_720x480_yuv422p_q_720x320")
 
     @unittest.skip(
-        "upstream-only feature: fps_cmd / format_cmd / get_filter_cmd not yet ported to fork (ADR-0326)"
+        "Asset.fps_cmd, Asset.ref_fps_cmd, Asset.dis_fps_cmd, and 'format' filter support "
+        "require adding 'fps' and 'format' to Asset.ORDERED_FILTER_LIST and implementing "
+        "the fps_cmd/ref_fps_cmd/dis_fps_cmd properties. get_filter_cmd() is already "
+        "implemented (asset.py:911) and works for existing filter keys (crop, pad, gblur, "
+        "eq, lutyuv, yadif). The skip rationale incorrectly cited ADR-0326 (vmaf-tune "
+        "bisect); the real gap is the missing filter-key additions. (scaffold-audit ADR-0621 P3-3)"
     )
     def test_format_cmd(self):
         asset = Asset(
@@ -1723,7 +1738,12 @@ class AssetTest(MyTestCase):
         )
 
     @unittest.skip(
-        "upstream-only feature: fps_cmd / format_cmd / get_filter_cmd not yet ported to fork (ADR-0326)"
+        "Asset.fps_cmd, Asset.ref_fps_cmd, Asset.dis_fps_cmd, and 'format' filter support "
+        "require adding 'fps' and 'format' to Asset.ORDERED_FILTER_LIST and implementing "
+        "the fps_cmd/ref_fps_cmd/dis_fps_cmd properties. get_filter_cmd() is already "
+        "implemented (asset.py:911) and works for existing filter keys (crop, pad, gblur, "
+        "eq, lutyuv, yadif). The skip rationale incorrectly cited ADR-0326 (vmaf-tune "
+        "bisect); the real gap is the missing filter-key additions. (scaffold-audit ADR-0621 P3-3)"
     )
     def test_fps_cmd_get_filter_cmd(self):
         asset = Asset(

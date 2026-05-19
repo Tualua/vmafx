@@ -29,6 +29,13 @@ testdata/
 # is exempt: it is the hook being bypassed, not a caller that bypasses it.
 scripts/git-hooks/pre-push-mkdocs-strict.sh
 
+# Vendored upstream cJSON — three upstream TODO/FIXME markers that cannot be
+# fixed without diverging from the upstream cJSON source (cJSON 1.7.x).
+# They are tracked in the cJSON project itself; we do not modify this file.
+# Lines: 1660 (FIXME overflow), 2774 (TODO O(n^2)), 2786 (TODO proper fix).
+# (scaffold-audit ADR-0621 P3-6)
+libvmaf/src/mcp/3rdparty/cJSON/cJSON.c
+
 # Binary / data suffixes.
 *.pkl
 *.mexa64

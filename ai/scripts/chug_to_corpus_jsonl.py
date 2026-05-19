@@ -52,7 +52,7 @@ _CHUG_DEFAULT_MAX_ROWS: int = 500
 _DEFAULT_CHUG_DIR: Path = Path(
     os.environ.get(
         "VMAF_CHUG_DIR",
-        str(Path(__file__).resolve().parents[2] / ".workingdir2" / "chug"),
+        str(Path(__file__).resolve().parents[2] / ".corpus" / "chug"),
     )
 )
 _DEFAULT_OUTPUT: Path = _DEFAULT_CHUG_DIR / "chug.jsonl"

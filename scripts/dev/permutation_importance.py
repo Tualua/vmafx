@@ -19,7 +19,7 @@ import onnxruntime as ort
 import pyarrow.parquet as pq
 from scipy.stats import pearsonr
 
-REPO = Path("/home/kilian/dev/vmaf")
+REPO = Path(__file__).resolve().parents[2]
 MODEL = REPO / "model/tiny/vmaf_tiny_v2.onnx"
 SIDECAR = REPO / "model/tiny/vmaf_tiny_v2.json"
 PARQUET = REPO / "runs/full_features_4corpus.parquet"

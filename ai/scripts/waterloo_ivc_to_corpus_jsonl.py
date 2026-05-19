@@ -53,7 +53,7 @@ _WATERLOO_IVC_DEFAULT_MAX_ROWS: int = 100
 _DEFAULT_WATERLOO_IVC_DIR: Path = Path(
     os.environ.get(
         "VMAF_WATERLOO_IVC_DIR",
-        str(Path(__file__).resolve().parents[2] / ".workingdir2" / "waterloo-ivc-4k"),
+        str(Path(__file__).resolve().parents[2] / ".corpus" / "waterloo-ivc-4k"),
     )
 )
 _DEFAULT_OUTPUT: Path = _DEFAULT_WATERLOO_IVC_DIR / "waterloo_ivc_4k.jsonl"

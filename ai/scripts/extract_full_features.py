@@ -93,7 +93,12 @@ def main() -> int:
     ap.add_argument(
         "--data-root",
         type=Path,
-        default=Path(os.environ.get("VMAF_NETFLIX_CORPUS_DIR", ".workingdir2/netflix")),
+        default=Path(
+            os.environ.get(
+                "VMAF_NETFLIX_CORPUS_DIR",
+                str(Path(__file__).resolve().parents[2] / ".corpus" / "netflix"),
+            )
+        ),
         help=(
             "Netflix corpus root. Override with the ``VMAF_NETFLIX_CORPUS_DIR`` "
             "env var when running inside the dev-mcp container or other layouts."

@@ -80,7 +80,7 @@ _KONVID_1K_MAX_ROWS: int = 1500
 _DEFAULT_KONVID_DIR: Path = Path(
     os.environ.get(
         "VMAF_KONVID_1K_DIR",
-        str(Path(__file__).resolve().parents[2] / ".workingdir2" / "konvid-1k"),
+        str(Path(__file__).resolve().parents[2] / ".corpus" / "konvid-1k"),
     )
 )
 _DEFAULT_OUTPUT: Path = _DEFAULT_KONVID_DIR / "konvid_1k.jsonl"

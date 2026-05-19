@@ -206,7 +206,14 @@ class ResultFormattingTest(unittest.TestCase):
         #     self.runner.remove_results()
         pass
 
-    @unittest.skip("numerical value has changed.")
+    @unittest.skip(
+        "XML attribute order is Python-version-dependent: the test's hardcoded "
+        "string expects 'SSIM_... frameNum=...' but xml.dom.minidom emits "
+        "'frameNum=... SSIM_...' on Python 3.8+. Scores are correct; the "
+        "assertion is fragile. Fix: compare parsed XML nodes instead of raw "
+        "strings, or drop in favour of the to_dict / to_json tests. "
+        "(scaffold-audit ADR-0621 P3-3)"
+    )
     def test_to_xml(self):
         self.assertEqual(
             self.result.to_xml().strip(),
@@ -441,6 +448,9 @@ class ScoreAggregationTest(unittest.TestCase):
             self.result["VMAF_two_models_array_score"][1], 35.0661575902223, places=2
         )
         self.assertAlmostEqual(self.result["VMAF_array_score"][0], 22.97749190550349, places=2)
+        # places=1: VMAF_array_score is derived from libsvm predict() on reshaped per-frame
+        # scores; the int→float32 rounding inside libsvm's SVM head makes the last decimal
+        # unreliable for mid-score frames (frames 1 & 2 are ~44 and ~37).
         self.assertAlmostEqual(self.result["VMAF_array_score"][1], 44.79653061901706, places=1)
         self.assertAlmostEqual(self.result["VMAF_array_score"][2], 37.424450246146364, places=1)
         # check that a 3-D array will throw assertion, score aggregation accepts only up to 2-D

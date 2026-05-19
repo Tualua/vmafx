@@ -56,7 +56,7 @@ _LSVQ_DEFAULT_MAX_ROWS: int = 500
 _DEFAULT_LSVQ_DIR: Path = Path(
     os.environ.get(
         "VMAF_LSVQ_DIR",
-        str(Path(__file__).resolve().parents[2] / ".workingdir2" / "lsvq"),
+        str(Path(__file__).resolve().parents[2] / ".corpus" / "lsvq"),
     )
 )
 _DEFAULT_OUTPUT: Path = _DEFAULT_LSVQ_DIR / "lsvq.jsonl"

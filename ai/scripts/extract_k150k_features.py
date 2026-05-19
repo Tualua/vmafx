@@ -989,7 +989,10 @@ def main() -> int:
         prog="extract_k150k_features.py",
         description="Extract FULL_FEATURES from KoNViD-150k-A via FR-from-NR adapter (ADR-0346).",
     )
-    _k150k_dir = os.environ.get("VMAF_KONVID_150K_DIR", ".workingdir2/konvid-150k")
+    _k150k_dir = os.environ.get(
+        "VMAF_KONVID_150K_DIR",
+        str(Path(__file__).resolve().parents[2] / ".corpus" / "konvid-150k"),
+    )
     ap.add_argument(
         "--clips-dir",
         type=Path,

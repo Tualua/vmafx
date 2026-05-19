@@ -112,7 +112,7 @@ def main() -> int:
         default=Path(
             os.environ.get(
                 "VMAF_NETFLIX_CORPUS_DIR",
-                str(REPO_ROOT / ".workingdir2" / "netflix"),
+                str(REPO_ROOT / ".corpus" / "netflix"),
             )
         ),
         help=(

@@ -143,3 +143,30 @@ together for production deployments.
 5. Run `python3 ai/scripts/validate_model_registry.py` and fix any reported issues.
 
 The `/add-model <path>` skill scaffolds steps 1–4 for you.
+
+## CI-only smoke fixtures (`smoke: true`)
+
+Several registry entries exist solely to exercise the loader / validator
+pipeline in CI and are **not user-facing surfaces**. They are exempt from
+the ADR-0042 five-point model-card requirement; no `docs/ai/models/` card
+is expected or needed for them.
+
+| Registry id | Notes |
+|---|---|
+| `smoke_v0` | Minimal ONNX graph used by `test_model_loader.c` smoke test. |
+| `smoke_fp16_v0` | Same graph, fp16 weights — exercises the fp16 loader path. |
+| `dists_sq_placeholder_v0` | Superseded placeholder; replaced by `dists_sq` (real weights). The non-placeholder card lives at `docs/ai/models/dists_sq.md`. |
+| `mobilesal_placeholder_v0` | Placeholder until the full U-2-Net weights clear compliance (ADR-0257). Non-placeholder card: `docs/ai/models/mobilesal.md`. |
+| `vmaf_tiny_v1` | Superseded by `vmaf_tiny_v2`; kept for loader back-compat tests. |
+| `vmaf_tiny_v1_medium` | Superseded by `vmaf_tiny_v2`; kept for loader back-compat tests. |
+
+These ids are excluded from doc-coverage checks. Do not promote them to
+`smoke: false` without first shipping a model card and the full ADR-0042 bar.
+
+## `lpips_sq_v1` — name vs card mismatch
+
+The registry entry `lpips_sq_v1` (`smoke: false`) points to `lpips_sq.onnx`.
+Its model card is at `docs/ai/models/lpips_sq.md` (without the `_v1` suffix).
+The card covers the same model; the naming divergence is a tracked cosmetic
+gap (scaffold-audit ADR-0621 P3-5). Until the card is renamed, treat
+`lpips_sq.md` as the authoritative card for `lpips_sq_v1`.

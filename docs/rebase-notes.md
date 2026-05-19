@@ -75,6 +75,32 @@ Touched files:
 `docs/development/netflix-grade-encoding-pipeline-roadmap-2026-05-19.md`,
 `changelog.d/added/netflix-grade-encoding-pipeline-roadmap.md`.
 
+## chore/scaffold-audit-p3-cleanup (ADR-0621)
+
+No rebase-sensitive invariants. All changes are in fork-local files
+(`ai/scripts/`, `scripts/dev/`, `python/test/`, `.semgrepignore`,
+`docs/ai/model-registry.md`, `docs/adr/`, `docs/state.md`,
+`changelog.d/`). None of the touched Python test files are shared with
+Netflix upstream (Netflix does not ship `asset_test.py` or
+`quality_runner_test.py`). The `python/test/*.py` files the PR touches
+carry fork-added tests or skip-decorator updates; no upstream test
+assertions are modified.
+
+Touched files:
+`scripts/dev/permutation_importance.py`,
+`ai/scripts/*.py` (13 files),
+`python/test/result_test.py`,
+`python/test/routine_test.py`,
+`python/test/asset_test.py`,
+`python/test/feature_extractor_test.py`,
+`python/test/quality_runner_test.py`,
+`.semgrepignore`,
+`docs/ai/model-registry.md`,
+`docs/adr/0621-scaffold-audit-p3-cleanup.md`,
+`docs/adr/README.md`,
+`docs/state.md`,
+`changelog.d/fixed/0621-scaffold-audit-p3-cleanup.md`.
+
 ## chore/renovate-customManagers-dev-image (ADR-0605)
 
 No rebase-sensitive invariants — the only change is to `renovate.json`

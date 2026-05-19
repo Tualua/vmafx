@@ -723,7 +723,7 @@ def main() -> int:
         args.bvi_zip = Path(
             os.environ.get(
                 "VMAF_BVI_DVC_ZIP",
-                str(REPO_ROOT.parent / ".workingdir2" / "BVI-DVC Part 1.zip"),
+                str(REPO_ROOT / ".corpus" / "bvi-dvc-raw" / "BVI-DVC Part 1.zip"),
             )
         )
 

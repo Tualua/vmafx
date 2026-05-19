@@ -132,6 +132,10 @@ class QualityRunnerTest(MyTestCase):
         self.assertAlmostEqual(results[1]["VMAF_feature_adm_score"], 1.0, places=4)
         self.assertAlmostEqual(results[1]["VMAF_feature_ansnr_score"], 31.004588333333334, places=4)
 
+        # places=1: legacy VMAF score passes through libsvm predict(), which
+        # converts int feature values to float32 internally; 12-bit input further
+        # introduces a per-bit-depth quantisation step.  The 0.1-VMAF tolerance
+        # is correct for deterministic-but-lossy libsvm-head inference.
         self.assertAlmostEqual(results[0]["VMAF_legacy_score"], 72.18465772375357, places=1)
         self.assertAlmostEqual(results[1]["VMAF_legacy_score"], 95.94112242732263, places=3)
 
@@ -348,6 +352,9 @@ class QualityRunnerTest(MyTestCase):
         with self.assertRaises(KeyError):
             self.assertAlmostEqual(results[1]["VMAF_feature_motion_score"], 1.0, places=4)
 
+        # places=1: VmafQualityRunner score passes through libsvm predict(); the
+        # int→float32 conversion inside libsvm's SVM head introduces ~0.05 VMAF
+        # of rounding noise at this score level.  The places=1 gate is correct.
         self.assertAlmostEqual(results[0]["VMAF_score"], 76.68425574067017, places=1)
         self.assertAlmostEqual(results[1]["VMAF_score"], 99.946416604585025, places=4)
 
@@ -1239,6 +1246,10 @@ class QualityRunnerTest(MyTestCase):
         with self.assertRaises(KeyError):
             self.assertAlmostEqual(results[1]["VMAF_feature_motion_score"], 1.0, places=4)
 
+        # places=1: bootstrap VMAF score is the seed-0 single-model score (deterministic),
+        # but the bagging_score is an average over K bootstrap replicates whose libsvm
+        # int→float32 head rounding accumulates across seeds.  places=1 is the correct
+        # tolerance for both; the raw per-feature assertions above use places=2–4.
         self.assertAlmostEqual(results[0]["BOOTSTRAP_VMAF_score"], 75.42800743529182, places=1)
         self.assertAlmostEqual(results[1]["BOOTSTRAP_VMAF_score"], 99.95804893252175, places=4)
         self.assertAlmostEqual(
