@@ -26,6 +26,14 @@ demotion; ccache-v2 key prefix),
 `docs/research/ci-warning-omnibus-2026-05-19.md`,
 `changelog.d/fixed/0635-ci-warning-omnibus.md`,
 `docs/rebase-notes.md` (this entry).
+## fix/ci-test-failures-omnibus (ADR-0637)
+
+**No rebase impact**: all touched files are fork-local CI configuration
+(`.github/workflows/tests-and-quality-gates.yml`), MCP server tests
+(`mcp-server/vmaf-mcp/tests/test_smoke_e2e.py`), ADR files, and
+changelog fragments. No upstream C sources, no public headers, no
+FFmpeg patch series involved. The timeout and coverage-floor edits are
+fork-CI-specific and have no upstream equivalent.
 
 ## fix/scaffold-audit-p0-silent-correctness (ADR-0620)
 

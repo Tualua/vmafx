@@ -26,7 +26,6 @@ from typing import Any
 
 import pytest
 import pytest_asyncio  # noqa: F401 — needed for asyncio mode auto-detection
-
 from vmaf_mcp import server as srv
 
 REPO = Path(__file__).resolve().parents[3]
@@ -70,11 +69,7 @@ pytestmark_needs_fixtures = pytest.mark.skipif(
 
 @pytest.mark.asyncio
 async def test_list_tools_returns_expected_names() -> None:
-    """Server lists all ten documented tools (seven original + three ADR-0634)."""
-    tools = await srv._list_tools()
-    names = {t.name for t in tools}
-    expected = {
-    """Server lists all documented tools (seven original + five P1 additions, ADR-0608)."""
+    """Server lists all fifteen documented tools (seven original + three ADR-0634 + five ADR-0608)."""
     tools = await srv._list_tools()
     names = {t.name for t in tools}
     # The original seven tools must always be present.
@@ -90,7 +85,6 @@ async def test_list_tools_returns_expected_names() -> None:
         "probe_backend",
         "vmaf_version",
         "vmaf_score_encoded",
-    }
     }
     # P1 additions (ADR-0608).
     p1 = {
@@ -218,6 +212,8 @@ async def test_call_tool_unknown_name_raises() -> None:
     as successes.  Renamed from test_call_tool_unknown_name_returns_error_json."""
     with pytest.raises(ValueError, match="unknown tool"):
         await srv._call_tool("no_such_tool", {})
+
+
 async def test_call_tool_unknown_name_returns_error_json() -> None:
     """Calling an unknown tool name must return error JSON, not raise."""
     contents = await srv._call_tool("no_such_tool", {})
