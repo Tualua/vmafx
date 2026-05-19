@@ -58,6 +58,12 @@ _HEIGHT_1080P_FALLBACK = 0
 MODEL_1080P = "vmaf_v0.6.1"
 MODEL_4K = "vmaf_4k_v0.6.1"
 
+# NEG (No Enhancement Gain) model variants — resist sharpening-based score
+# inflation. Use for codec A vs. B comparisons, not production monitoring.
+# See docs/metrics/vmaf-neg.md for when to use NEG and when not to.
+MODEL_1080P_NEG = "vmaf_v0.6.1neg"
+MODEL_4K_NEG = "vmaf_4k_v0.6.1neg"
+
 
 def _project_model_dir() -> Path:
     """Locate the in-tree ``model/`` directory.
@@ -92,6 +98,47 @@ def select_vmaf_model_version(width: int, height: int) -> str:
     if height >= _HEIGHT_4K_THRESHOLD:
         return MODEL_4K
     return MODEL_1080P
+
+
+def neg_model_for(model_version: str) -> str:
+    """Return the NEG variant of a standard VMAF model version string.
+
+    Maps the two supported production models to their NEG counterparts:
+
+    - ``"vmaf_v0.6.1"``     → ``"vmaf_v0.6.1neg"``
+    - ``"vmaf_4k_v0.6.1"``  → ``"vmaf_4k_v0.6.1neg"``
+
+    Any string already ending in ``"neg"`` is returned unchanged so the
+    function is idempotent. Unknown models are returned unchanged with a
+    ``"neg"`` suffix appended, which lets the libvmaf CLI surface the
+    missing-model error rather than silently using the wrong model.
+
+    Args:
+        model_version: Bare model version string as used in
+            :class:`~vmaftune.score.ScoreRequest` (e.g.
+            ``"vmaf_v0.6.1"``, ``"vmaf_4k_v0.6.1"``).  Pre-formatted
+            ``key=value`` strings (``"path=/…"`` / ``"version=…"``) are
+            returned unchanged — they are model-path overrides, not
+            version identifiers.
+
+    Returns:
+        NEG variant string suitable for passing as
+        ``ScoreRequest.model``.
+    """
+    # Pre-formatted path= / version= overrides — do not touch.
+    if "=" in model_version:
+        return model_version
+    # Already NEG — idempotent.
+    if model_version.endswith("neg"):
+        return model_version
+    _NEG_MAP = {
+        MODEL_1080P: MODEL_1080P_NEG,
+        MODEL_4K: MODEL_4K_NEG,
+    }
+    if model_version in _NEG_MAP:
+        return _NEG_MAP[model_version]
+    # Unknown model — append suffix so libvmaf surfaces a clear error.
+    return model_version + "neg"
 
 
 def select_vmaf_model(width: int, height: int) -> Path:
@@ -139,7 +186,10 @@ def crf_offset_for_resolution(width: int, height: int) -> int:
 __all__ = [
     "MODEL_1080P",
     "MODEL_4K",
+    "MODEL_1080P_NEG",
+    "MODEL_4K_NEG",
     "crf_offset_for_resolution",
+    "neg_model_for",
     "select_vmaf_model",
     "select_vmaf_model_version",
 ]

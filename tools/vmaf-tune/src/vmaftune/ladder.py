@@ -203,6 +203,7 @@ def make_default_sampler(
     src_height: int | None = None,
     cloud_sink: list[LadderPoint] | None = None,
     score_backend: str | None = None,
+    vmaf_model: str = "vmaf_v0.6.1",
 ) -> SamplerFn:
     """Return a :data:`SamplerFn` closed over real source-shape metadata.
 
@@ -233,6 +234,11 @@ def make_default_sampler(
     ``--score-backend`` CLI value into every corpus call the default
     sampler makes. ``None`` keeps the existing auto-select behaviour
     (libvmaf picks the fastest available backend).
+
+    ``vmaf_model`` (added ADR-0622) threads the ``--vmaf-model``
+    (and its NEG variant when ``--neg`` is set) into every corpus call.
+    The default preserves the historic ``vmaf_v0.6.1`` behaviour for
+    callers that do not pass ``vmaf_model``.
     """
     sweep = tuple(int(c) for c in crf_sweep) if crf_sweep is not None else DEFAULT_SAMPLER_CRF_SWEEP
 
@@ -253,6 +259,7 @@ def make_default_sampler(
             src_height=src_height,
             cloud_sink=cloud_sink,
             score_backend=score_backend,
+            vmaf_model=vmaf_model,
         )
 
     return _sampler
@@ -273,6 +280,7 @@ def _default_sampler(
     src_height: int | None = None,
     cloud_sink: list[LadderPoint] | None = None,
     score_backend: str | None = None,
+    vmaf_model: str = "vmaf_v0.6.1",
 ) -> LadderPoint:
     """Production sampler — encode the configured CRF sweep, pick by VMAF.
 
@@ -347,6 +355,7 @@ def _default_sampler(
             keep_encodes=False,
             src_sha256=False,
             score_backend=score_backend,
+            vmaf_model=vmaf_model,
         )
         rows = [r for r in iter_rows(job, opts) if int(r.get("exit_status", 0)) == 0]
 

@@ -44,6 +44,7 @@ from .per_shot import (
     tune_per_shot,
     write_concat_listing,
 )
+from .resolution import neg_model_for
 from .score_backend import ALL_BACKENDS, BackendUnavailableError, select_backend
 
 
@@ -82,6 +83,53 @@ class _TrackedDefaultAction(argparse.Action):
         # the namespace as ``True`` (set by ``_stamp_tracked_default_sentinels``
         # after parsing).
         setattr(namespace, f"_{self.dest}_was_default", False)
+
+
+def _resolve_vmaf_model(args: argparse.Namespace, attr: str = "vmaf_model") -> str:
+    """Return the effective VMAF model string from ``args``.
+
+    When ``--neg`` is present (``args.neg is True``), routes the model
+    version through :func:`~vmaftune.resolution.neg_model_for` so the
+    NEG variant is used. Handles all subcommands that carry both a
+    ``--vmaf-model`` flag and the ``--neg`` flag.
+
+    Args:
+        args: Parsed argument namespace.
+        attr: Name of the model attribute on ``args`` (default
+            ``"vmaf_model"``; some subcommands alias to ``"model"``).
+
+    Returns:
+        The (possibly NEG-routed) model version string.
+    """
+    model = getattr(args, attr, "vmaf_v0.6.1")
+    if getattr(args, "neg", False):
+        model = neg_model_for(model)
+    return model
+
+
+def _add_neg_flag(parser: argparse.ArgumentParser) -> None:
+    """Add the ``--neg`` flag to a subcommand parser.
+
+    The flag selects VMAF NEG (No Enhancement Gain) model variants that
+    penalise encoder in-loop sharpening. Use for codec A vs. B
+    comparisons; do NOT use for production quality monitoring against
+    baselines. See ``docs/metrics/vmaf-neg.md`` for full guidance.
+    """
+    parser.add_argument(
+        "--neg",
+        action="store_true",
+        default=False,
+        help=(
+            "use the VMAF NEG (No Enhancement Gain) model variant, which "
+            "penalises sharpening-based score inflation. Routes "
+            "``--vmaf-model vmaf_v0.6.1`` → ``vmaf_v0.6.1neg`` (or the 4K "
+            "equivalent). Use for codec A vs B comparisons where encoder "
+            "sharpening may mask compression differences. Do NOT use for "
+            "production quality monitoring against baselines — NEG produces "
+            "lower scores than standard VMAF on the same content. "
+            "See docs/metrics/vmaf-neg.md. (ADR-0622)"
+        ),
+    )
 
 
 def _stamp_tracked_default_sentinels(args: argparse.Namespace) -> None:
@@ -176,6 +224,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default="vmaf_v0.6.1",
         help="vmaf model version string (default vmaf_v0.6.1)",
     )
+    _add_neg_flag(corpus)
     corpus.add_argument("--ffmpeg-bin", default="ffmpeg")
     corpus.add_argument("--vmaf-bin", default="vmaf")
     corpus.add_argument(
@@ -512,6 +561,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default="vmaf_v0.6.1",
         help="VMAF model name forwarded to the per-shot bisect scorer",
     )
+    _add_neg_flag(per_shot)
     per_shot.add_argument(
         "--score-backend",
         default="auto",
@@ -852,6 +902,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "decode-to-raw-YUV step is serialized at the default."
         ),
     )
+    _add_neg_flag(ladder)
 
     compare = sub.add_parser(
         "compare",
@@ -993,6 +1044,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default="vmaf_v0.6.1",
         help="VMAF model name forwarded to the bisect scorer",
     )
+    _add_neg_flag(compare)
     compare.add_argument(
         "--score-backend",
         default=None,
@@ -1433,6 +1485,7 @@ def _add_recommend_args(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument("--keep-encodes", action="store_true")
     p.add_argument("--vmaf-model", default="vmaf_v0.6.1")
+    _add_neg_flag(p)
     p.add_argument("--ffmpeg-bin", default="ffmpeg")
     p.add_argument("--vmaf-bin", default="vmaf")
     p.add_argument(
@@ -1533,7 +1586,7 @@ def _build_opts(args: argparse.Namespace) -> CorpusOptions:
         encoder=args.encoder,
         output=args.output,
         encode_dir=args.encode_dir,
-        vmaf_model=args.vmaf_model,
+        vmaf_model=_resolve_vmaf_model(args),
         ffmpeg_bin=args.ffmpeg_bin,
         vmaf_bin=args.vmaf_bin,
         keep_encodes=args.keep_encodes,
@@ -2331,7 +2384,7 @@ def _build_per_shot_bisect_predicate(
             preset=args.preset,
             crf_range=crf_range,
             max_iterations=args.max_iterations,
-            vmaf_model=args.vmaf_model,
+            vmaf_model=_resolve_vmaf_model(args),
             score_backend=score_backend,
             ffmpeg_bin=args.ffmpeg_bin,
             vmaf_bin=args.vmaf_bin,
@@ -2583,6 +2636,7 @@ def _run_ladder(args: argparse.Namespace) -> int:
         src_height=int(src_h),
         cloud_sink=cloud_sink,
         score_backend=ladder_backend,
+        vmaf_model=_resolve_vmaf_model(args),
     )
     # BBB e2e v6 Bug #V6-3 (ADR-0506): the sampler can legitimately
     # raise ``RuntimeError`` ("default sampler produced no scorable
@@ -2928,7 +2982,7 @@ def _run_compare(args: argparse.Namespace) -> int:
                 preset=args.preset,
                 crf_range=crf_range,
                 max_iterations=args.max_iterations,
-                vmaf_model=args.vmaf_model,
+                vmaf_model=_resolve_vmaf_model(args),
                 score_backend=score_backend,
                 ffmpeg_bin=args.ffmpeg_bin,
                 vmaf_bin=args.vmaf_bin,
@@ -3219,7 +3273,7 @@ def _run_compare_crf_sweep(args: argparse.Namespace, encoders: list[str]) -> int
                 framerate=resolved_fr,
                 duration_s=resolved_dur,
                 sample_clip_seconds=getattr(args, "sample_clip_seconds", 0.0),
-                vmaf_model=args.vmaf_model,
+                vmaf_model=_resolve_vmaf_model(args),
                 score_backend=score_backend,
                 ffmpeg_bin=args.ffmpeg_bin,
                 vmaf_bin=args.vmaf_bin,
@@ -3634,7 +3688,7 @@ def _build_fast_sample_extractor(
                     width=args.width,
                     height=args.height,
                     pix_fmt=args.pix_fmt,
-                    model=args.vmaf_model,
+                    model=_resolve_vmaf_model(args),
                 ),
                 json_path,
                 vmaf_bin=args.vmaf_bin,
@@ -3754,7 +3808,7 @@ def _build_fast_encode_runner(
             width=args.width,
             height=args.height,
             pix_fmt=args.pix_fmt,
-            model=args.vmaf_model,
+            model=_resolve_vmaf_model(args),
         )
         score_result = run_score(
             score_req,
