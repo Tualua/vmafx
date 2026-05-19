@@ -797,7 +797,600 @@ async def _run_benchmark() -> dict[str, Any]:
     return payload
 
 
+
+
+
+
+
 # ---------------------------------------------------------------------------
+# list_extractors — enumerate VmafFeatureExtractor implementations (ADR-0608)
+# ---------------------------------------------------------------------------
+
+# Regex matching a top-level VmafFeatureExtractor struct definition followed
+# immediately by a .name assignment.  The pattern is:
+#
+#   VmafFeatureExtractor vmaf_fex_<sym> = {
+#       .name = "the_extractor_name",
+#
+# We capture the variable name (for the backend tag) and the string value.
+_FEX_STRUCT_RE = re.compile(
+    r"VmafFeatureExtractor\s+vmaf_fex_(\w+)\s*=\s*\{[^{]*?\.name\s*=\s*\"([^\"]+)\"",
+    re.DOTALL,
+)
+
+# Backend keyword → label (longest match wins; checked against the variable
+# name, not the .name string, because CUDA/SYCL/HIP/Vulkan twins are usually
+# named ``<feature>_cuda`` etc.).
+_BACKEND_KEYWORDS: list[tuple[str, str]] = [
+    ("_cuda", "cuda"),
+    ("_sycl", "sycl"),
+    ("_vulkan", "vulkan"),
+    ("_hip", "hip"),
+    ("_metal", "metal"),
+]
+
+
+def _infer_backend_from_sym(sym: str) -> str:
+    """Return the backend label for a symbol like ``float_vif_cuda``."""
+    for kw, label in _BACKEND_KEYWORDS:
+        if sym.endswith(kw):
+            return label
+    return "cpu"
+
+
+def _list_extractors() -> list[dict[str, Any]]:
+    """Walk the libvmaf C source tree and collect every VmafFeatureExtractor
+    registered in it.
+
+    Parses only ``libvmaf/src/feature/`` (recursively) — the top-level extractor
+    structs are always defined there.  Option-struct inner ``.name`` fields are
+    filtered out because those structs are always preceded by the word ``Option``
+    or ``VmafOption``, not ``VmafFeatureExtractor``.
+
+    Returns a list of dicts, one per extractor, with:
+    - ``name``: the C-string advertised as the extractor name (no extension).
+    - ``backend``: inferred from the symbol name suffix
+      (``cpu`` | ``cuda`` | ``sycl`` | ``vulkan`` | ``hip`` | ``metal``).
+    - ``source``: relative path to the C file that defines the struct.
+    """
+    feature_dir = _repo_root() / "libvmaf" / "src" / "feature"
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+
+    for c_file in sorted(feature_dir.rglob("*.c")):
+        try:
+            text = c_file.read_text(errors="replace")
+        except OSError:
+            continue
+        for m in _FEX_STRUCT_RE.finditer(text):
+            sym = m.group(1)
+            name = m.group(2)
+            key = (sym, name)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(
+                {
+                    "name": name,
+                    "backend": _infer_backend_from_sym(sym),
+                    "source": str(c_file.relative_to(_repo_root())),
+                }
+            )
+    return out
+
+
+# ---------------------------------------------------------------------------
+# describe_model — model metadata (ADR-0608, Path.stem fix)
+# ---------------------------------------------------------------------------
+
+# Known multi-part suffixes that make Path.stem unreliable for model files.
+# e.g. "vmaf_v0.6.1" → Path stem is "vmaf_v0.6" (strips ".1" as an extension).
+# We strip only known media-file extensions, not arbitrary dots.
+_MODEL_EXTENSIONS: frozenset[str] = frozenset({".json", ".pkl", ".onnx"})
+
+
+def _strip_model_ext(filename: str) -> str:
+    """Strip a known model extension from @p filename and return the stem.
+
+    Unlike ``Path(filename).stem`` (which strips *any* ``.X`` suffix), this
+    only removes extensions in ``_MODEL_EXTENSIONS``.  The bug: for
+    ``vmaf_v0.6.1.json`` the stdlib would produce ``vmaf_v0.6.1`` — that's
+    correct.  But for a hypothetical bare ``vmaf_v0.6.1`` query (no ext),
+    ``Path('vmaf_v0.6.1').stem`` returns ``vmaf_v0.6``, dropping ``.1``.
+    This function is used to normalise *registry keys* — the input is
+    always the filesystem filename, not a user-supplied bare name.
+    """
+    _, ext = os.path.splitext(filename)
+    if ext.lower() in _MODEL_EXTENSIONS:
+        return filename[: -len(ext)]
+    return filename
+
+
+def _describe_model(name_or_path: str) -> dict[str, Any]:
+    """Return metadata for the VMAF model identified by @p name_or_path.
+
+    Resolution order:
+    1. Treat @p name_or_path as an exact filesystem path (absolute or
+       relative to repo root).  If it exists and is a recognised model
+       file, describe it directly.
+    2. Match against every model file in ``model/`` (recursively) by
+       comparing the full filename (no extension) against @p name_or_path.
+       This avoids the ``Path.stem`` bug where ``vmaf_v0.6.1`` would be
+       matched as ``vmaf_v0.6`` by stdlib stem logic.
+
+    Returned dict:
+    - ``name``: filename stem (extension stripped).
+    - ``path``: repo-relative path.
+    - ``format``: ``json`` / ``pkl`` / ``onnx``.
+    - ``size_bytes``: file size.
+    - ``model_type``: for JSON models, the ``model_dict.model_type`` value
+      (e.g. ``LIBSVMNUSVR``); ``null`` for ONNX / PKL.
+    - ``feature_names``: for JSON models, the ``model_dict.feature_names``
+      list; ``null`` otherwise.
+    """
+    repo = _repo_root()
+    models_dir = repo / "model"
+
+    # --- Step 1: try as a direct path ---
+    candidate = Path(name_or_path)
+    if not candidate.is_absolute():
+        candidate = repo / candidate
+    candidate = candidate.resolve()
+    if candidate.is_file() and candidate.suffix.lower() in _MODEL_EXTENSIONS:
+        return _describe_model_file(candidate, repo)
+
+    # --- Step 2: search by filename match (full name, no extension) ---
+    # Build index keyed by EXACT filename (no ext) for unambiguous lookup.
+    # Use _strip_model_ext (not Path.stem) so "vmaf_v0.6.1" matches
+    # "vmaf_v0.6.1.json" correctly.
+    matches: list[Path] = []
+    for p in models_dir.rglob("*"):
+        if p.suffix.lower() not in _MODEL_EXTENSIONS or not p.is_file():
+            continue
+        stem = _strip_model_ext(p.name)
+        if stem == name_or_path or p.name == name_or_path:
+            matches.append(p)
+
+    if not matches:
+        raise ValueError(
+            f"model {name_or_path!r} not found; run list_models to see available models."
+        )
+    if len(matches) > 1:
+        paths = [str(m.relative_to(repo)) for m in matches]
+        raise ValueError(
+            f"model name {name_or_path!r} is ambiguous; matched: {paths}. "
+            "Pass an explicit path instead."
+        )
+    return _describe_model_file(matches[0], repo)
+
+
+def _describe_model_file(path: Path, repo: Path) -> dict[str, Any]:
+    """Build the metadata dict for @p path (already resolved and verified)."""
+    stat = path.stat()
+    ext = path.suffix.lower().lstrip(".")
+    stem = _strip_model_ext(path.name)
+    result: dict[str, Any] = {
+        "name": stem,
+        "path": str(path.relative_to(repo)),
+        "format": ext,
+        "size_bytes": stat.st_size,
+        "model_type": None,
+        "feature_names": None,
+    }
+
+    # Parse JSON models for richer metadata.
+    if ext == "json":
+        try:
+            payload = json.loads(path.read_text(errors="replace"))
+            model_dict = payload.get("model_dict") or {}
+            result["model_type"] = model_dict.get("model_type")
+            result["feature_names"] = model_dict.get("feature_names")
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# _vmaftune_binary — resolve the vmaf-tune CLI (ADR-0608)
+# ---------------------------------------------------------------------------
+
+
+def _vmaftune_binary() -> Path:
+    """Return the path to the vmaf-tune CLI binary.
+
+    Resolution order:
+    1. ``VMAF_TUNE_BIN`` environment variable (explicit override).
+    2. ``vmaf-tune`` on ``PATH`` (installed wheel or editable install).
+    3. ``<repo>/tools/vmaf-tune/vmaf-tune`` — in-tree wrapper script.
+
+    Returns the first candidate that exists.  If none exist the last
+    candidate is returned so callers get a clear "not found" error.
+    """
+    env = os.environ.get("VMAF_TUNE_BIN")
+    if env:
+        return Path(env)
+
+    which_result = shutil.which("vmaf-tune")
+    if which_result:
+        return Path(which_result)
+
+    # Fall back to the in-tree wrapper script shipped with the repo.
+    fallback = _repo_root() / "tools" / "vmaf-tune" / "vmaf-tune"
+    return fallback
+
+
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# _send_progress — MCP progress notification helper (ADR-0608)
+# ---------------------------------------------------------------------------
+
+async def _send_progress(
+    progress_token: str | int | None,
+    progress: float,
+    total: float,
+    message: str,
+) -> None:
+    """Emit a ``notifications/progress`` notification if the client supplied
+    a ``_meta.progressToken`` in the tool-call params.
+
+    Per the MCP spec the client opts in by passing ``progressToken`` in the
+    ``params._meta`` object of the ``tools/call`` request.  The server MUST
+    NOT send progress if no token was provided (the client has no handler).
+
+    Implementation note: ``server.request_context.session`` is a
+    ``ServerSession`` with ``send_progress_notification`` available in
+    mcp>=1.0.  We guard against ``LookupError`` so callers outside a
+    request context (tests) do not fail.
+    """
+    if progress_token is None:
+        return
+    try:
+        await server.request_context.session.send_progress_notification(
+            progress_token=progress_token,
+            progress=progress,
+            total=total,
+            message=message,
+        )
+    except LookupError:
+        # Called outside a request context (e.g. unit tests) — silently skip.
+        pass
+    except Exception:
+        pass
+
+
+
+# ---------------------------------------------------------------------------
+# run_compare — wraps vmaf-tune compare (ADR-0608)
+# ---------------------------------------------------------------------------
+
+
+async def _run_compare(
+    src: str,
+    *,
+    target_vmaf: float | None = None,
+    target_vmafs: str | None = None,
+    encoders: str | None = None,
+    format: str = "json",
+    width: int | None = None,
+    height: int | None = None,
+    pix_fmt: str = "yuv420p",
+    framerate: float | None = None,
+    no_parallel: bool = False,
+    progress_token: str | int | None = None,
+) -> dict[str, Any]:
+    """Run ``vmaf-tune compare`` and return the parsed report.
+
+    @p src may be any path recognised by FFmpeg (container or raw YUV).
+    The path is NOT validated against the MCP allowlist because vmaf-tune
+    handles its own file access; the MCP layer only validates VMAF YUV inputs.
+
+    Progress notifications are emitted at "started" and "done" when
+    @p progress_token is set (clients opt in via ``params._meta.progressToken``).
+    vmaf-tune compare typically runs 30 s–3 min depending on the number of
+    encoders and the source duration; no finer-grained progress is available
+    from the subprocess.
+    """
+    vmaftune = _vmaftune_binary()
+    if not vmaftune.exists():
+        raise RuntimeError(
+            f"vmaf-tune binary not found at {vmaftune}. "
+            "Install with: pip install -e tools/vmaf-tune or set VMAF_TUNE_BIN."
+        )
+
+    await _send_progress(progress_token, 0.0, 1.0, "starting vmaf-tune compare")
+
+    argv: list[str] = [str(vmaftune), "compare", "--src", src, "--format", format]
+    if target_vmafs is not None:
+        argv += ["--target-vmafs", target_vmafs]
+    elif target_vmaf is not None:
+        argv += ["--target-vmaf", str(target_vmaf)]
+    if encoders is not None:
+        argv += ["--encoders", encoders]
+    if width is not None:
+        argv += ["--width", str(width)]
+    if height is not None:
+        argv += ["--height", str(height)]
+    argv += ["--pix-fmt", pix_fmt]
+    if framerate is not None:
+        argv += ["--framerate", str(framerate)]
+    if no_parallel:
+        argv.append("--no-parallel")
+
+    proc = await asyncio.create_subprocess_exec(
+        *argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+    stdout, stderr = await proc.communicate()
+
+    await _send_progress(progress_token, 1.0, 1.0, "vmaf-tune compare done")
+
+    stdout_s = stdout.decode(errors="replace")
+    stderr_s = stderr.decode(errors="replace")
+    if proc.returncode != 0:
+        raise RuntimeError(f"vmaf-tune compare exited {proc.returncode}: {stderr_s.strip()}")
+
+    # vmaf-tune compare --format json emits JSON to stdout; other formats
+    # return a string.  We always pass --format json here so we can parse it.
+    try:
+        return json.loads(stdout_s)
+    except json.JSONDecodeError:
+        # Non-JSON format or parse error — return raw output.
+        return {
+            "exit_code": proc.returncode,
+            "stdout": stdout_s,
+            "stderr": stderr_s,
+        }
+
+
+# ---------------------------------------------------------------------------
+# run_ladder — wraps vmaf-tune ladder (ADR-0608)
+# ---------------------------------------------------------------------------
+
+
+async def _run_ladder(
+    src: str,
+    resolutions: str,
+    target_vmafs: str,
+    *,
+    encoder: str = "libx264",
+    quality_tiers: int = 5,
+    format: str = "json",
+    spacing: str = "log_bitrate",
+    framerate: float | None = None,
+    progress_token: str | int | None = None,
+) -> dict[str, Any]:
+    """Run ``vmaf-tune ladder`` and return the manifest.
+
+    @p resolutions: comma-separated ``WxH`` list, e.g. ``1920x1080,1280x720``.
+    @p target_vmafs: comma-separated VMAF target list, e.g. ``95,90,85``.
+    """
+    vmaftune = _vmaftune_binary()
+    if not vmaftune.exists():
+        raise RuntimeError(
+            f"vmaf-tune binary not found at {vmaftune}. "
+            "Install with: pip install -e tools/vmaf-tune or set VMAF_TUNE_BIN."
+        )
+
+    await _send_progress(progress_token, 0.0, 1.0, "starting vmaf-tune ladder")
+
+    argv: list[str] = [
+        str(vmaftune),
+        "ladder",
+        "--src",
+        src,
+        "--encoder",
+        encoder,
+        "--resolutions",
+        resolutions,
+        "--target-vmafs",
+        target_vmafs,
+        "--quality-tiers",
+        str(quality_tiers),
+        "--format",
+        format,
+        "--spacing",
+        spacing,
+    ]
+    if framerate is not None:
+        argv += ["--framerate", str(framerate)]
+
+    proc = await asyncio.create_subprocess_exec(
+        *argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+    stdout, stderr = await proc.communicate()
+
+    await _send_progress(progress_token, 1.0, 1.0, "vmaf-tune ladder done")
+
+    stdout_s = stdout.decode(errors="replace")
+    stderr_s = stderr.decode(errors="replace")
+    if proc.returncode != 0:
+        raise RuntimeError(f"vmaf-tune ladder exited {proc.returncode}: {stderr_s.strip()}")
+
+    # --format json emits JSON to stdout; HLS/DASH returns a manifest string.
+    if format == "json":
+        try:
+            return {"manifest": json.loads(stdout_s), "format": format}
+        except json.JSONDecodeError:
+            pass
+    return {"manifest": stdout_s, "format": format}
+
+
+# ---------------------------------------------------------------------------
+# run_tune_per_shot — wraps vmaf-tune tune-per-shot (ADR-0608)
+# ---------------------------------------------------------------------------
+
+
+async def _run_tune_per_shot(
+    src: str,
+    *,
+    target_vmaf: float = 92.0,
+    encoder: str = "libx264",
+    output: str | None = None,
+    pix_fmt: str = "yuv420p",
+    framerate: float | None = None,
+    scene_threshold: float | None = None,
+    format: str = "json",
+    progress_token: str | int | None = None,
+) -> dict[str, Any]:
+    """Run ``vmaf-tune tune-per-shot`` and return per-shot recommendations.
+
+    Detects scene cuts in @p src, runs a per-shot CRF bisect targeting
+    @p target_vmaf with @p encoder, and returns the plan.
+
+    Progress notifications: emitted at start and completion (two steps);
+    the actual bisect may take minutes for a long clip.
+    """
+    vmaftune = _vmaftune_binary()
+    if not vmaftune.exists():
+        raise RuntimeError(
+            f"vmaf-tune binary not found at {vmaftune}. "
+            "Install with: pip install -e tools/vmaf-tune or set VMAF_TUNE_BIN."
+        )
+
+    await _send_progress(progress_token, 0.0, 1.0, "starting vmaf-tune tune-per-shot")
+
+    argv: list[str] = [
+        str(vmaftune),
+        "tune-per-shot",
+        "--src",
+        src,
+        "--target-vmaf",
+        str(target_vmaf),
+        "--encoder",
+        encoder,
+        "--pix-fmt",
+        pix_fmt,
+        "--format",
+        format,
+    ]
+    if output is not None:
+        argv += ["--output", output]
+    if framerate is not None:
+        argv += ["--framerate", str(framerate)]
+    if scene_threshold is not None:
+        argv += ["--scene-threshold", str(scene_threshold)]
+
+    proc = await asyncio.create_subprocess_exec(
+        *argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+    stdout, stderr = await proc.communicate()
+
+    await _send_progress(progress_token, 1.0, 1.0, "vmaf-tune tune-per-shot done")
+
+    stdout_s = stdout.decode(errors="replace")
+    stderr_s = stderr.decode(errors="replace")
+    if proc.returncode != 0:
+        raise RuntimeError(f"vmaf-tune tune-per-shot exited {proc.returncode}: {stderr_s.strip()}")
+
+    if format == "json":
+        try:
+            return json.loads(stdout_s)
+        except json.JSONDecodeError:
+            pass
+    return {"exit_code": proc.returncode, "stdout": stdout_s, "stderr": stderr_s}
+
+
+# ---------------------------------------------------------------------------
+# run_benchmark (patched to emit progress notifications — ADR-0608)
+# ---------------------------------------------------------------------------
+
+
+async def _run_benchmark(
+    progress_token: str | int | None = None,
+) -> dict[str, Any]:
+    """Run the full multi-fixture benchmark suite (bench_all.sh).
+
+    bench_all.sh is a fixed-fixture harness: it tests three canonical YUV
+    pairs (576x324, 1080p-5f, 4K-BBB-200f) across all available backends.
+    It does NOT accept per-call ref/dis arguments — those are hardcoded.
+
+    Root causes of the original failure (ADR-0513):
+    1. The MCP tool previously passed ``-r ref -d dis --width W --height H``
+       as positional args to the script.  bench_all.sh uses ``set -euo
+       pipefail`` and sources Intel oneAPI ``setvars.sh`` inside the script
+       body.  ``setvars.sh`` reads the calling script's ``$@`` (positional
+       parameters) to process its own flags; the unknown flags ``-r``,
+       ``-d``, ``--width``, ``--height`` propagate into per-component
+       ``env/vars.sh`` scripts, which hang or exit non-zero, aborting the
+       outer script before any output is emitted.
+    2. ``VMAF_BIN`` was not injected into the subprocess environment, so the
+       script fell back to the relative path ``libvmaf/build/tools/vmaf``
+       which is absent in the container after ``make install``.
+
+    Progress notifications (ADR-0608): emitted at start and completion.
+    The benchmark takes 30–120 s; no finer-grained progress is available
+    from the shell script.
+    """
+    script = _repo_root() / "testdata" / "bench_all.sh"
+    if not script.exists():
+        raise FileNotFoundError(f"benchmark harness not found: {script}")
+    # Resolve the data root — where bench_all.sh's fixture YUVs live.
+    # Priority:
+    #   1. VMAF_ROOT env var already set by the caller (explicit override).
+    #   2. _repo_root() when it contains the canonical fixture file.
+    #   3. /workspace — the vmaf-dev-mcp container bind-mount (ADR-0513).
+    # This handles the case where the MCP server is installed as an editable
+    # package from a git worktree (e.g. during development): _repo_root()
+    # then resolves to the worktree directory which shares the git objects but
+    # does not have the large YUV fixtures checked out.
+    _fixture_probe = "python/test/resource/yuv/src01_hrc00_576x324.yuv"
+    _candidate_roots = [
+        Path(os.environ["VMAF_ROOT"]) if "VMAF_ROOT" in os.environ else None,
+        _repo_root(),
+        Path("/workspace"),
+    ]
+    vmaf_root = next(
+        (r for r in _candidate_roots if r is not None and (r / _fixture_probe).exists()),
+        _repo_root(),
+    )
+    # Inherit the full environment so that PATH, LD_LIBRARY_PATH, and any
+    # GPU-runtime variables are preserved.  Inject VMAF_ROOT so bench_all.sh
+    # resolves its ``cd`` correctly when git is unavailable, and inject
+    # VMAF_BIN so the script uses the installed binary (not the relative
+    # in-tree path which is absent after ``make install`` in containers).
+    bench_env = {
+        **os.environ,
+        "VMAF_ROOT": str(vmaf_root),
+        "VMAF_BIN": str(_vmaf_binary()),
+    }
+
+    await _send_progress(progress_token, 0.0, 1.0, "starting benchmark harness")
+
+    # bench_all.sh is invoked with NO positional arguments.  The script's
+    # fixture paths are hardcoded; passing extra args corrupts $@ inside
+    # the sourced oneAPI setvars.sh and causes a silent abort (ADR-0517).
+    proc = await asyncio.create_subprocess_exec(
+        str(script),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=bench_env,
+    )
+    stdout, stderr = await proc.communicate()
+
+    await _send_progress(progress_token, 1.0, 1.0, "benchmark harness done")
+
+    stdout_s = stdout.decode(errors="replace")
+    stderr_s = stderr.decode(errors="replace")
+    payload: dict[str, Any] = {
+        "exit_code": proc.returncode,
+        "stdout": stdout_s,
+        "stderr": stderr_s,
+    }
+    if proc.returncode != 0 and not stdout_s.strip() and not stderr_s.strip():
+        payload["error"] = (
+            f"bench_all.sh exited {proc.returncode} with no output — "
+            "likely aborted by set -euo pipefail before printing. Common "
+            f"causes: missing vmaf binary at {_vmaf_binary()}, missing "
+            "fixture YUVs under testdata/ or python/test/resource/yuv/. "
+            "Re-run with `bash -x testdata/bench_all.sh` to bisect."
+        )
+    return payload
+
+
+
+
 # probe_backend — runtime health check (ADR-0608 / C-P0-1)
 # ---------------------------------------------------------------------------
 
@@ -1165,6 +1758,8 @@ async def _run_vmaf_score_encoded(
 
 
 # ---------------------------------------------------------------------------
+
+
 # MCP server wiring
 # ---------------------------------------------------------------------------
 
@@ -1375,11 +1970,192 @@ async def _list_tools() -> list[Tool]:
                 },
             },
         ),
+        # ── P1 tools (ADR-0608) ─────────────────────────────────────────────
+        Tool(
+            name="list_extractors",
+            description=(
+                "Enumerate all VmafFeatureExtractor implementations found in the "
+                "local libvmaf C source tree. Returns each extractor's advertised "
+                "name, inferred backend (cpu / cuda / sycl / vulkan / hip / metal), "
+                "and the source file it was defined in. Requires no binary — "
+                "parses the C source directly. ADR-0608."
+            ),
+            inputSchema={"type": "object", "properties": {}},
+        ),
+        Tool(
+            name="describe_model",
+            description=(
+                "Return metadata for a VMAF model by name or path. Accepts the "
+                "model's filename stem (e.g. 'vmaf_v0.6.1'), its full filename "
+                "(e.g. 'vmaf_v0.6.1.json'), or a path relative to the repo root. "
+                "Fixes the Path.stem bug: 'vmaf_v0.6.1' is matched correctly "
+                "against 'vmaf_v0.6.1.json' — not mis-trimmed to 'vmaf_v0.6'. "
+                "Returns: name, path, format, size_bytes, model_type (JSON only), "
+                "feature_names (JSON only). ADR-0608."
+            ),
+            inputSchema={
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": (
+                            "Model name stem (e.g. 'vmaf_v0.6.1'), full filename "
+                            "(e.g. 'vmaf_v0.6.1.json'), or repo-relative path."
+                        ),
+                    },
+                },
+            },
+        ),
+        Tool(
+            name="run_compare",
+            description=(
+                "Wrap 'vmaf-tune compare': compare codec adapters at one or more "
+                "target VMAF scores and return a ranked report. Requires vmaf-tune "
+                "to be installed (pip install -e tools/vmaf-tune). Emits MCP "
+                "progress notifications when params._meta.progressToken is set. "
+                "Default encoders: libx264,libx265,libsvtav1,libvpx-vp9. "
+                "ADR-0608."
+            ),
+            inputSchema={
+                "type": "object",
+                "required": ["src"],
+                "properties": {
+                    "src": {
+                        "type": "string",
+                        "description": "Source video path (any FFmpeg-readable format or raw YUV).",
+                    },
+                    "target_vmaf": {
+                        "type": "number",
+                        "description": "Single VMAF target (legacy, single-target schema).",
+                    },
+                    "target_vmafs": {
+                        "type": "string",
+                        "description": "Comma-separated VMAF targets, e.g. '94,96,97,98'.",
+                    },
+                    "encoders": {
+                        "type": "string",
+                        "description": "Comma-separated encoder list, e.g. 'libx264,libx265'.",
+                    },
+                    "width": {"type": "integer", "description": "Source width (raw YUV only)."},
+                    "height": {"type": "integer", "description": "Source height (raw YUV only)."},
+                    "pix_fmt": {"type": "string", "default": "yuv420p"},
+                    "framerate": {"type": "number", "description": "Source framerate."},
+                    "no_parallel": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Dispatch encoders sequentially (default: parallel).",
+                    },
+                },
+            },
+        ),
+        Tool(
+            name="run_ladder",
+            description=(
+                "Wrap 'vmaf-tune ladder': build a per-title bitrate ladder via "
+                "convex-hull sweep over resolution x target-VMAF, pick K knees, "
+                "and emit an HLS / DASH / JSON manifest. Requires vmaf-tune. "
+                "Emits MCP progress notifications. ADR-0608."
+            ),
+            inputSchema={
+                "type": "object",
+                "required": ["src", "resolutions", "target_vmafs"],
+                "properties": {
+                    "src": {
+                        "type": "string",
+                        "description": "Source video path.",
+                    },
+                    "resolutions": {
+                        "type": "string",
+                        "description": "Comma-separated WxH list, e.g. '1920x1080,1280x720,854x480'.",
+                    },
+                    "target_vmafs": {
+                        "type": "string",
+                        "description": "Comma-separated VMAF targets, e.g. '95,90,85'.",
+                    },
+                    "encoder": {
+                        "type": "string",
+                        "default": "libx264",
+                        "description": "Codec adapter (default libx264).",
+                    },
+                    "quality_tiers": {
+                        "type": "integer",
+                        "default": 5,
+                        "description": "Number of ladder rungs to select.",
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": ["hls", "dash", "json"],
+                        "default": "json",
+                        "description": "Manifest format.",
+                    },
+                    "spacing": {
+                        "type": "string",
+                        "enum": ["log_bitrate", "vmaf", "uniform"],
+                        "default": "log_bitrate",
+                    },
+                    "framerate": {"type": "number", "description": "Source framerate."},
+                },
+            },
+        ),
+        Tool(
+            name="run_tune_per_shot",
+            description=(
+                "Wrap 'vmaf-tune tune-per-shot': detect scene cuts, run a "
+                "per-shot CRF bisect targeting a VMAF score, and return the "
+                "encoding plan. Requires vmaf-tune. Emits MCP progress "
+                "notifications. ADR-0608."
+            ),
+            inputSchema={
+                "type": "object",
+                "required": ["src"],
+                "properties": {
+                    "src": {
+                        "type": "string",
+                        "description": "Source video path.",
+                    },
+                    "target_vmaf": {
+                        "type": "number",
+                        "default": 92.0,
+                        "description": "Target VMAF score.",
+                    },
+                    "encoder": {
+                        "type": "string",
+                        "default": "libx264",
+                    },
+                    "pix_fmt": {"type": "string", "default": "yuv420p"},
+                    "framerate": {"type": "number"},
+                    "scene_threshold": {
+                        "type": "number",
+                        "description": "Scene-cut detection threshold (0..1).",
+                    },
+                    "output": {
+                        "type": "string",
+                        "description": "Output video path (optional; plan-only if omitted).",
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": ["json", "shell", "csv"],
+                        "default": "json",
+                    },
+                },
+            },
+        ),
     ]
 
 
 @server.call_tool()
 async def _call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
+    # Extract MCP progress token from the request context's meta field.
+    # The client opts in by passing {"_meta": {"progressToken": <token>}} in the
+    # tools/call params object (MCP spec §notifications/progress).
+    progress_token: str | int | None = None
+    try:
+        meta = server.request_context.request.params.meta
+        if meta is not None:
+            progress_token = getattr(meta, "progressToken", None)
+    except (LookupError, AttributeError):
+        pass
     # ADR-0608 / E-1 (spec-correctness fix): do NOT catch exceptions here.
     # Raising from this handler lets the mcp library's outer try/except
     # (mcp/server/lowlevel/server.py _make_error_result) set isError=True on
@@ -1406,7 +2182,7 @@ async def _call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     elif name == "list_backends":
         result = _list_backends()
     elif name == "run_benchmark":
-        result = await _run_benchmark()
+        result = await _run_benchmark(progress_token=progress_token)
     elif name == "eval_model_on_split":
         result = _eval_model_on_split(
             model=_validate_path(arguments["model"]),
@@ -1448,6 +2224,51 @@ async def _call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             backend=str(arguments.get("backend", "auto")),
             subsample=int(arguments.get("subsample", 1)),
             precision=str(arguments.get("precision", "17")),
+        )
+    # ── P1 tools (ADR-0608) ─────────────────────────────────────────────
+    elif name == "list_extractors":
+        result = {"extractors": _list_extractors()}
+    elif name == "describe_model":
+        result = _describe_model(str(arguments["name"]))
+    elif name == "run_compare":
+        result = await _run_compare(
+            src=str(arguments["src"]),
+            target_vmaf=arguments.get("target_vmaf"),
+            target_vmafs=arguments.get("target_vmafs"),
+            encoders=arguments.get("encoders"),
+            format="json",
+            width=int(arguments["width"]) if "width" in arguments else None,
+            height=int(arguments["height"]) if "height" in arguments else None,
+            pix_fmt=str(arguments.get("pix_fmt", "yuv420p")),
+            framerate=float(arguments["framerate"]) if "framerate" in arguments else None,
+            no_parallel=bool(arguments.get("no_parallel", False)),
+            progress_token=progress_token,
+        )
+    elif name == "run_ladder":
+        result = await _run_ladder(
+            src=str(arguments["src"]),
+            resolutions=str(arguments["resolutions"]),
+            target_vmafs=str(arguments["target_vmafs"]),
+            encoder=str(arguments.get("encoder", "libx264")),
+            quality_tiers=int(arguments.get("quality_tiers", 5)),
+            format=str(arguments.get("format", "json")),
+            spacing=str(arguments.get("spacing", "log_bitrate")),
+            framerate=float(arguments["framerate"]) if "framerate" in arguments else None,
+            progress_token=progress_token,
+        )
+    elif name == "run_tune_per_shot":
+        result = await _run_tune_per_shot(
+            src=str(arguments["src"]),
+            target_vmaf=float(arguments.get("target_vmaf", 92.0)),
+            encoder=str(arguments.get("encoder", "libx264")),
+            output=str(arguments["output"]) if "output" in arguments else None,
+            pix_fmt=str(arguments.get("pix_fmt", "yuv420p")),
+            framerate=float(arguments["framerate"]) if "framerate" in arguments else None,
+            scene_threshold=(
+                float(arguments["scene_threshold"]) if "scene_threshold" in arguments else None
+            ),
+            format=str(arguments.get("format", "json")),
+            progress_token=progress_token,
         )
     else:
         raise ValueError(f"unknown tool: {name}")

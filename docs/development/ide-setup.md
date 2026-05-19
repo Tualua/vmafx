@@ -1,8 +1,6 @@
-<<<<<<< HEAD
 # IDE setup (VS Code + clangd)
-=======
 # IDE setup (VS Code + Zed + clangd)
->>>>>>> 12f21ce52 (feat(dev): commit .zed/ project config (Zed editor parity with .vscode/))
+# IDE setup (VS Code + clangd)
 
 `.vscode/settings.json` ships with clangd as the C/C++ language
 server (Microsoft IntelliSense is explicitly disabled). clangd
@@ -74,8 +72,6 @@ of these via `--vmaf-binary`.
 If you see these and clangd is otherwise working, the cause is
 99% of the time that `build/` was set up without the relevant
 backend.
-<<<<<<< HEAD
-=======
 
 ---
 
@@ -219,4 +215,3 @@ functional. The parallel-period strategy from the migration plan (see
 `docs/development/zed-migration-plan-2026-05-19.md`) recommends running both
 editors for approximately two weeks to validate workflows before switching
 fully.
->>>>>>> 12f21ce52 (feat(dev): commit .zed/ project config (Zed editor parity with .vscode/))

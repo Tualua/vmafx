@@ -100,6 +100,16 @@ Touched files:
 `docs/adr/README.md`,
 `docs/state.md`,
 `changelog.d/fixed/0621-scaffold-audit-p3-cleanup.md`.
+## feat/mcp-p1-vmaftune-extractors-models-progress (ADR-0608)
+
+No rebase-sensitive invariants. The only changed files are:
+- `mcp-server/vmaf-mcp/src/vmaf_mcp/server.py` — fork-local MCP server, never in Netflix upstream.
+- `mcp-server/vmaf-mcp/tests/` — fork-local tests.
+- `mcp-server/vmaf-mcp/tests/test_smoke_e2e.py` — updated expected tool-name set.
+- `docs/mcp/tools.md`, `docs/adr/0608-*.md`, `docs/adr/README.md`, `docs/rebase-notes.md` — docs.
+- `changelog.d/added/0608-*.md` — changelog fragment.
+
+No C sources, public headers, `meson_options.txt`, `ffmpeg-patches/`, or build files are touched.
 
 ## chore/renovate-customManagers-dev-image (ADR-0605)
 

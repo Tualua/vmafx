@@ -16,6 +16,14 @@ scoring CLI to LLM tooling via JSON-RPC over stdio.
 | `run_benchmark`         | Run `testdata/bench_all.sh` on the built-in fixture pairs.                         |
 | `eval_model_on_split`   | Evaluate an ONNX tiny-AI model on a parquet feature split.                         |
 | `compare_models`        | Rank ONNX models on the same split by PLCC.                                        |
+| Tool            | Description                                                  |
+| --------------- | ------------------------------------------------------------ |
+| `vmaf_score`    | Score a (ref, dis) YUV pair. Returns the full JSON report.   |
+| `list_models`   | Enumerate models under `model/` (`.json`, `.pkl`, `.onnx`).  |
+| `list_backends` | Report which backends (`cpu`/`cuda`/`sycl`/`hip`) are live.  |
+| `run_benchmark` | Run `testdata/bench_all.sh` on a pair.                       |
+| `eval_model_on_split` | Evaluate an ONNX tiny-AI model on a parquet feature split. |
+| `compare_models` | Rank ONNX models on the same split by PLCC. |
 | `describe_worst_frames` | Extract the lowest-VMAF frames and describe visible artefacts with local VLM extras. |
 
 ## Install

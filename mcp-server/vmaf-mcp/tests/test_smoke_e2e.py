@@ -26,6 +26,7 @@ from typing import Any
 
 import pytest
 import pytest_asyncio  # noqa: F401 — needed for asyncio mode auto-detection
+
 from vmaf_mcp import server as srv
 
 REPO = Path(__file__).resolve().parents[3]
@@ -73,6 +74,11 @@ async def test_list_tools_returns_expected_names() -> None:
     tools = await srv._list_tools()
     names = {t.name for t in tools}
     expected = {
+    """Server lists all documented tools (seven original + five P1 additions, ADR-0608)."""
+    tools = await srv._list_tools()
+    names = {t.name for t in tools}
+    # The original seven tools must always be present.
+    original = {
         "vmaf_score",
         "list_models",
         "list_backends",
@@ -85,6 +91,16 @@ async def test_list_tools_returns_expected_names() -> None:
         "vmaf_version",
         "vmaf_score_encoded",
     }
+    }
+    # P1 additions (ADR-0608).
+    p1 = {
+        "list_extractors",
+        "describe_model",
+        "run_compare",
+        "run_ladder",
+        "run_tune_per_shot",
+    }
+    expected = original | p1
     assert expected == names, f"unexpected tool names: {names ^ expected}"
 
 
@@ -189,6 +205,7 @@ async def test_call_tool_vmaf_score_golden_pair() -> None:
 
 # ---------------------------------------------------------------------------
 # 4. call_tool — unknown tool name raises (ADR-0613 isError fix)
+# 4. call_tool — unknown tool name returns error JSON, not an exception
 # ---------------------------------------------------------------------------
 
 
@@ -201,3 +218,9 @@ async def test_call_tool_unknown_name_raises() -> None:
     as successes.  Renamed from test_call_tool_unknown_name_returns_error_json."""
     with pytest.raises(ValueError, match="unknown tool"):
         await srv._call_tool("no_such_tool", {})
+async def test_call_tool_unknown_name_returns_error_json() -> None:
+    """Calling an unknown tool name must return error JSON, not raise."""
+    contents = await srv._call_tool("no_such_tool", {})
+    assert len(contents) == 1
+    payload = json.loads(contents[0].text)
+    assert "error" in payload, "Unknown tool should return {'error': ...}"

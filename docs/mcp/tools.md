@@ -174,6 +174,15 @@ The server probes `vmaf --help` and looks for `--no_<backend>` flags;
 reports **compiled-in** backends only — a backend may be compiled in but
 its driver missing or non-functional at runtime. Use `probe_backend` to
 verify that a backend can actually run a score.
+  "cpu":  true,
+  "cuda": true,
+  "sycl": false,
+  "hip":  false
+}
+```
+
+The server runs `vmaf --version` with a 5-second timeout and grep's the
+output; `cpu` is reported `true` whenever the binary exists.
 
 ### Errors
 
@@ -569,6 +578,19 @@ implicitly `False`, causing clients to misclassify errors as successes.
 | Subprocess non-zero (`vmaf_score`)    | Raises `RuntimeError`; mcp sets `isError=True`          |
 | Missing optional extras               | Raises `RuntimeError`; mcp sets `isError=True`          |
 | `probe_backend` unhealthy backend     | Returns success result with `runtime_healthy: false`    |
+## Cross-tool error conventions
+
+| Situation                               | Shape                                                   |
+|-----------------------------------------|---------------------------------------------------------|
+| Unknown tool name                       | `{"error": "unknown tool: <name>"}`                     |
+| Path outside allowlist                  | `{"error": "path ... not under an allowlisted root"}`   |
+| Path does not exist                     | `{"error": "<resolved-abs-path>"}`                      |
+| Subprocess non-zero (vmaf_score only)   | `{"error": "vmaf exited <rc>: <stderr>"}`               |
+| Missing optional extras                 | `{"error": "... requires the 'eval' extra: ..."}`       |
+
+All exceptions raised inside a tool handler are caught and serialised
+into the `error` shape above — the JSON-RPC channel itself never
+returns a non-200.
 
 ## Related
 
@@ -579,3 +601,178 @@ implicitly `False`, causing clients to misclassify errors as successes.
   `eval_model_on_split` / `compare_models` are scoring.
 - [ADR-0613](../adr/0613-mcp-p0-iserror-and-probe-version-encoded.md) — P0 fixes.
 - [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md).
+- [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md).
+
+## `list_extractors`
+
+Enumerate all `VmafFeatureExtractor` implementations found in the local
+`libvmaf/src/feature/` C source tree.  No binary required — the server
+parses the C source directly.  Added in [ADR-0608](../adr/0608-mcp-p1-vmaftune-extractors-models-progress.md).
+
+### Input schema — no arguments.
+
+### Response body
+
+```json
+{
+  "extractors": [
+    { "name": "float_ansnr",      "backend": "cpu",    "source": "libvmaf/src/feature/float_ansnr.c" },
+    { "name": "float_ansnr_cuda", "backend": "cuda",   "source": "libvmaf/src/feature/cuda/float_ansnr_cuda.c" },
+    { "name": "float_ssim_hip",   "backend": "hip",    "source": "libvmaf/src/feature/hip/float_ssim_hip.c" }
+  ]
+}
+```
+
+`name` is the string the extractor registers as its canonical identifier.
+`backend` is inferred from the symbol-name suffix (`_cuda`, `_sycl`, `_vulkan`,
+`_hip`, `_metal`; everything else is `cpu`).
+
+### Errors — none (returns `{"extractors": []}` if the source tree is absent).
+
+## `describe_model`
+
+Return metadata for a VMAF model by name or path.  Fixes the `Path.stem` bug
+(ADR-0608): `vmaf_v0.6.1` is matched against `vmaf_v0.6.1.json` correctly —
+not incorrectly trimmed to `vmaf_v0.6` as Python's `Path.stem` would do.
+
+### Input schema
+
+| Field  | Type   | Required | Notes |
+|--------|--------|----------|-------|
+| `name` | string | yes      | Model stem (`vmaf_v0.6.1`), full filename (`vmaf_v0.6.1.json`), or repo-relative path. |
+
+### Response body
+
+```json
+{
+  "name":          "vmaf_v0.6.1",
+  "path":          "model/vmaf_v0.6.1.json",
+  "format":        "json",
+  "size_bytes":    9128,
+  "model_type":    "LIBSVMNUSVR",
+  "feature_names": ["VMAF_integer_feature_adm2_score", "..."]
+}
+```
+
+`model_type` and `feature_names` are populated for JSON models; both are
+`null` for `.pkl` and `.onnx` files.
+
+### Errors
+
+- Unknown name → `{"error": "model 'foo' not found; run list_models to see available models."}`.
+- Ambiguous name (two models with the same stem in different subdirs) →
+  `{"error": "model name '...' is ambiguous; matched: [...]. Pass an explicit path instead."}`.
+
+## `run_compare`
+
+Wrap `vmaf-tune compare`: compare codec adapters at one or more target VMAF
+scores and return a ranked report.  Requires `vmaf-tune` to be installed
+(`pip install -e tools/vmaf-tune` or set `VMAF_TUNE_BIN`).  Emits MCP progress
+notifications when `params._meta.progressToken` is set.  ADR-0608.
+
+### Input schema
+
+| Field          | Type    | Required | Default                              | Notes |
+|----------------|---------|----------|--------------------------------------|-------|
+| `src`          | string  | yes      | —                                    | Source video (any FFmpeg-readable format or raw YUV). |
+| `target_vmaf`  | number  | no       | —                                    | Single VMAF target (legacy single-target schema). |
+| `target_vmafs` | string  | no       | `"94,96,97,98"`                      | Comma-separated VMAF targets (multi-target schema). |
+| `encoders`     | string  | no       | `"libx264,libx265,libsvtav1,libvpx-vp9"` | Comma-separated encoder list. |
+| `width`        | integer | no       | —                                    | Source width (raw YUV only). |
+| `height`       | integer | no       | —                                    | Source height (raw YUV only). |
+| `pix_fmt`      | string  | no       | `"yuv420p"`                          | Source pixel format. |
+| `framerate`    | number  | no       | —                                    | Source framerate. |
+| `no_parallel`  | boolean | no       | `false`                              | Dispatch encoders sequentially. |
+
+### Response body
+
+Returns the parsed JSON output of `vmaf-tune compare --format json`.
+Shape is the v1 (single-target) or v2 (multi-target) schema from ADR-0513.
+
+### Errors
+
+- vmaf-tune binary missing → `{"error": "vmaf-tune binary not found at ...; Install with: pip install -e tools/vmaf-tune or set VMAF_TUNE_BIN."}`.
+- Non-zero exit → `{"error": "vmaf-tune compare exited <rc>: <stderr>"}`.
+
+## `run_ladder`
+
+Wrap `vmaf-tune ladder`: build a per-title bitrate ladder via convex-hull sweep
+and emit an HLS / DASH / JSON manifest.  Requires `vmaf-tune`.  Emits progress
+notifications.  ADR-0608.
+
+### Input schema
+
+| Field            | Type    | Required | Default        | Notes |
+|------------------|---------|----------|----------------|-------|
+| `src`            | string  | yes      | —              | Source video path. |
+| `resolutions`    | string  | yes      | —              | Comma-separated `WxH` list, e.g. `"1920x1080,1280x720,854x480"`. |
+| `target_vmafs`   | string  | yes      | —              | Comma-separated VMAF targets, e.g. `"95,90,85"`. |
+| `encoder`        | string  | no       | `"libx264"`    | Codec adapter. |
+| `quality_tiers`  | integer | no       | `5`            | Number of ladder rungs to select. |
+| `format`         | string  | no       | `"json"`       | `"hls"`, `"dash"`, or `"json"`. |
+| `spacing`        | string  | no       | `"log_bitrate"` | Knee-spacing strategy. |
+| `framerate`      | number  | no       | —              | Source framerate. |
+
+### Response body
+
+```json
+{ "manifest": { "rungs": [ ... ] }, "format": "json" }
+```
+
+For `format="hls"` or `"dash"`, `manifest` is a raw string (the M3U8 / MPD text).
+
+### Errors — same pattern as `run_compare`.
+
+## `run_tune_per_shot`
+
+Wrap `vmaf-tune tune-per-shot`: detect scene cuts and return per-shot CRF
+recommendations targeting a VMAF score.  Requires `vmaf-tune`.  Emits progress
+notifications.  ADR-0608.
+
+### Input schema
+
+| Field              | Type    | Required | Default     | Notes |
+|--------------------|---------|----------|-------------|-------|
+| `src`              | string  | yes      | —           | Source video path. |
+| `target_vmaf`      | number  | no       | `92.0`      | Target VMAF score. |
+| `encoder`          | string  | no       | `"libx264"` | Codec adapter. |
+| `pix_fmt`          | string  | no       | `"yuv420p"` | Source pixel format. |
+| `framerate`        | number  | no       | —           | Source framerate. |
+| `scene_threshold`  | number  | no       | —           | Scene-cut detection threshold (0..1). |
+| `output`           | string  | no       | —           | Output video path (plan-only if omitted). |
+| `format`           | string  | no       | `"json"`    | `"json"`, `"shell"`, or `"csv"`. |
+
+### Response body
+
+Returns the parsed JSON output of `vmaf-tune tune-per-shot --format json`
+(list of per-shot recommendations) or the raw shell/CSV string for other formats.
+
+### Errors — same pattern as `run_compare`.
+
+## Progress notifications
+
+All four `run_*` tools — `run_benchmark`, `run_compare`, `run_ladder`, and
+`run_tune_per_shot` — emit `notifications/progress` when the client supplies a
+`progressToken` in the request's `_meta` object:
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "run_compare",
+    "arguments": { "src": "/path/to/video.mp4" },
+    "_meta": { "progressToken": "my-token-42" }
+  }
+}
+```
+
+The server sends two progress events per tool call:
+
+| Event      | `progress` | `total` | `message` |
+|------------|-----------|---------|-----------|
+| Start      | `0.0`     | `1.0`   | `"starting vmaf-tune compare"` (tool-specific) |
+| Completion | `1.0`     | `1.0`   | `"vmaf-tune compare done"` |
+
+No finer-grained progress is available because the tools delegate to a subprocess.
+Clients without a token receive no progress events (per MCP spec — the server
+must not send unsolicited progress).
