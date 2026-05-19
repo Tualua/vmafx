@@ -776,3 +776,4 @@ The server sends two progress events per tool call:
 No finer-grained progress is available because the tools delegate to a subprocess.
 Clients without a token receive no progress events (per MCP spec — the server
 must not send unsolicited progress).
+- [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md).

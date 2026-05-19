@@ -340,6 +340,22 @@ identity tied to the GitHub Actions workflow that built the model.
 
 ## Known limitations
 
+- **Multi-output ONNX models via `vmaf_use_tiny_model` / `vmaf_ctx_dnn_attach`
+  are not supported.** Both the NCHW image path
+  (`vmaf_ctx_dnn_run_frame_nchw`) and the feature-vector path
+  (`vmaf_ctx_dnn_run_frame_feature_vector`) require exactly one scalar output
+  per frame, because the result is forwarded via
+  `vmaf_feature_collector_append(ctx, feature_name, score, index)` — a
+  single-slot per-frame write.  If an ONNX graph produces `out_n > 1`
+  tensors, the inference itself succeeds but the function returns `-ENOTSUP`
+  and no score is recorded.  This limitation does **not** affect the
+  standalone `vmaf_dnn_session_run()` API, which accepts multi-input /
+  multi-output graphs and writes directly to caller-owned `VmafDnnOutput`
+  buffers.  Multi-output support in the attached / VmafContext path is tracked
+  as **T-DNN-MULTI-OUTPUT** in [`docs/state.md`](../state.md).
+  See [ADR-0613](../adr/0613-scaffold-audit-p1-feature-plumbing-fixes.md)
+  §P1-4 for the decision rationale.
+
 - Operator allowlist covers the set required by tiny FR / NR / filter models
   shipped in `model/tiny/`; untrusted models with new op types will be
   rejected at `_open`. Extend the allowlist via the registry — see

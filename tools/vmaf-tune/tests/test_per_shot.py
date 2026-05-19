@@ -351,6 +351,9 @@ def test_cli_tune_per_shot_binds_bisect_predicate(tmp_path, monkeypatch):
         )
 
     monkeypatch.setattr("vmaftune.cli.bisect_target_vmaf", fake_bisect)
+    # ADR-0613: _run_tune_per_shot now calls select_backend() as a precheck.
+    # Patch it on the cli module so it doesn't invoke the real vmaf binary.
+    monkeypatch.setattr("vmaftune.cli.select_backend", lambda prefer, vmaf_bin: "cpu")
 
     rc = cli.main(
         [
@@ -455,6 +458,9 @@ def test_cli_tune_per_shot_readonly_cwd_returns_zero(tmp_path, monkeypatch):
         )
 
     monkeypatch.setattr("vmaftune.cli.bisect_target_vmaf", fake_bisect)
+    # ADR-0613: _run_tune_per_shot now calls select_backend() as a precheck.
+    # Patch it on the cli module so it doesn't invoke the real vmaf binary.
+    monkeypatch.setattr("vmaftune.cli.select_backend", lambda prefer, vmaf_bin: "cpu")
 
     # Change into the read-only directory so that any relative path write
     # (e.g. Path("segments").mkdir()) would fail with PermissionError.
@@ -541,6 +547,9 @@ def test_cli_tune_per_shot_ro_cwd_no_plan_out_warns(tmp_path, monkeypatch):
         )
 
     monkeypatch.setattr("vmaftune.cli.bisect_target_vmaf", fake_bisect)
+    # ADR-0613: _run_tune_per_shot now calls select_backend() as a precheck.
+    # Patch it on the cli module so it doesn't invoke the real vmaf binary.
+    monkeypatch.setattr("vmaftune.cli.select_backend", lambda prefer, vmaf_bin: "cpu")
 
     # Use a relative --output that resolves inside the read-only CWD so
     # the fallback seg_dir (output.parent/segments == ro_cwd/segments) is
@@ -740,6 +749,9 @@ def test_cli_tune_per_shot_bitrate_kbps_propagates_from_bisect(tmp_path, monkeyp
         )
 
     monkeypatch.setattr("vmaftune.cli.bisect_target_vmaf", fake_bisect)
+    # ADR-0613: _run_tune_per_shot now calls select_backend() as a precheck.
+    # Patch it on the cli module so it doesn't invoke the real vmaf binary.
+    monkeypatch.setattr("vmaftune.cli.select_backend", lambda prefer, vmaf_bin: "cpu")
 
     rc = cli.main(
         [

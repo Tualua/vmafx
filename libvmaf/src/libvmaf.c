@@ -1111,8 +1111,15 @@ static int vmaf_ctx_dnn_run_frame_nchw(VmafContext *vmaf, VmafPicture *ref, unsi
     rc = vmaf_ort_infer(vmaf->dnn.sess, vmaf->dnn.in_buf, shape, 4, &out, 1u, &out_n);
     if (rc < 0)
         return rc;
+    /* ADR-0613 / P1-4: multi-output ONNX graphs (out_n > 1) are not
+     * supported on the NCHW path.  A single scalar feature score is
+     * required because the result is appended via vmaf_feature_collector_append
+     * which takes exactly one double per frame.  If out_n != 1 the ORT session
+     * ran successfully but the output shape is incompatible with this path.
+     * See docs/api/dnn.md §Known limitations and docs/state.md
+     * T-DNN-MULTI-OUTPUT for the planned multi-output follow-up. */
     if (out_n != 1u)
-        return -ENOTSUP; /* multi-value outputs unsupported */
+        return -ENOTSUP;
 
     return vmaf_feature_collector_append(vmaf->feature_collector, vmaf->dnn.feature_name,
                                          (double)out, index);
@@ -1210,8 +1217,13 @@ static int vmaf_ctx_dnn_run_frame_feature_vector(VmafContext *vmaf, unsigned ind
     }
     if (rc < 0)
         return rc;
+    /* ADR-0613 / P1-4: same single-scalar constraint as the NCHW path above.
+     * Feature-vector models with multiple outputs (e.g. per-scale regressor
+     * producing {vmaf, adm2, vif}) are not supported here.  See
+     * docs/api/dnn.md §Known limitations and T-DNN-MULTI-OUTPUT in
+     * docs/state.md. */
     if (out_n != 1u)
-        return -ENOTSUP; /* multi-value outputs unsupported on this path */
+        return -ENOTSUP;
 
     return vmaf_feature_collector_append(vmaf->feature_collector, vmaf->dnn.feature_name,
                                          (double)out, index);

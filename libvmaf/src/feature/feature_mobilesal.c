@@ -118,8 +118,20 @@ static int mobilesal_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
         return -EINVAL;
     }
     if (bpc != 8) {
+        /* ADR-0613 / P1-3: early-reject non-8-bit input with an actionable
+         * message that names this extractor as the blocker.  The saliency
+         * ONNX model operates on 8-bit ImageNet-normalised RGB; downscaling
+         * and clipping 10/12-bit input would require retraining (option b
+         * rejected in ADR-0613).  Use --bitdepth 8 or omit --feature mobilesal
+         * when scoring HDR / 10-bit / 12-bit content.
+         * See docs/metrics/mobilesal.md §Known limitations. */
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "mobilesal: bpc=%u not supported yet (8-bit only in this build)\n", bpc);
+                 "mobilesal: bpc=%u is not supported (8-bit only). "
+                 "The mobilesal extractor requires 8-bit YUV input because "
+                 "the saliency model was trained on 8-bit ImageNet-RGB. "
+                 "Use --bitdepth 8 or omit --feature mobilesal for HDR / "
+                 "10-bit / 12-bit content.\n",
+                 bpc);
         return -ENOTSUP;
     }
 

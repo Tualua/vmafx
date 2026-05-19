@@ -65,8 +65,6 @@
   sub-group size, memory pattern) — out of T7-17's scope. See
   [ADR-0220](docs/adr/0220-sycl-fp64-fallback.md).
 
-<<<<<<< HEAD
-=======
 ### Fixed
 
 - **Feature-extractor double-write on GPU binaries when `--feature` is
@@ -136,7 +134,6 @@
   `ffmpeg-patches/0011-libvmaf-wire-hip-backend-selector.patch`;
   no libvmaf C source is touched.
 
->>>>>>> 1fa7e770 (chore(adr,mcp,process): renumber fex-dedup → 0385, backfill #741 deliverables, ADR-collision prevention (ADR-0386))
 ### Added
 
 - **GPU-parity matrix CI gate (T6-8 / ADR-0214).** New

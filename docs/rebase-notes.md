@@ -30,6 +30,32 @@ Touched files:
 `docs/adr/README.md` (one index row),
 `docs/state.md` (3 rows moved from Open to Recently closed),
 `changelog.d/fixed/adr0620-scaffold-audit-p0-silent-correctness.md`,
+## fix/scaffold-audit-p1-feature-plumbing (ADR-0613)
+
+Touches `libvmaf/src/hip/picture_hip.c`, `libvmaf/src/feature/feature_mobilesal.c`,
+and `libvmaf/src/libvmaf.c`.  Upstream Netflix/vmaf does not have a HIP backend, the
+mobilesal extractor, or the DNN multi-output guard — so no rebase conflict is expected
+on any of the C-side changes.
+
+Touches `tools/vmaf-tune/src/vmaftune/cli.py` — upstream does not have vmaf-tune.
+No rebase conflict expected.
+
+Doc paths (`docs/api/dnn.md`, `docs/ai/models/mobilesal.md`, `docs/state.md`,
+`docs/adr/README.md`) are fork-local only.
+
+**Rebase-sensitive invariant (C)**: `picture_hip.c` now compiles in two branches:
+`#ifdef HAVE_HIPCC` (real `hipMalloc`) and `#else` (`-ENOSYS`).  Any upstream change
+to `picture_hip.h`'s function signatures must be reflected in both branches.
+
+Touched files:
+`libvmaf/src/hip/picture_hip.c`,
+`libvmaf/src/feature/feature_mobilesal.c`,
+`libvmaf/src/libvmaf.c` (comment-only at lines 1115, 1214),
+`tools/vmaf-tune/src/vmaftune/cli.py`,
+`docs/api/dnn.md`, `docs/ai/models/mobilesal.md`, `docs/state.md`,
+`docs/adr/0613-scaffold-audit-p1-feature-plumbing-fixes.md`,
+`docs/adr/README.md`,
+`changelog.d/fixed/adr-0613-scaffold-audit-p1.md`,
 `docs/rebase-notes.md` (this entry).
 
 ## feat/zed-editor-project-config (ADR-0608)

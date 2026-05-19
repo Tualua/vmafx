@@ -145,9 +145,24 @@ Equivalent to setting `VMAF_MOBILESAL_MODEL_PATH` before
 
 ## Known limitations
 
-- **Bit depth**: 8-bit YUV only in this build (`bpc != 8` returns
-  `-ENOTSUP`). 10-bit support is gated on the same loader path landing
-  for LPIPS, see [`lpips_sq.md`](lpips_sq.md).
+- **Bit depth — 8-bit YUV only**: `mobilesal` rejects non-8-bit input at
+  `init()` time with `-ENOTSUP` and an actionable error message naming this
+  extractor as the blocker. The saliency ONNX model requires 8-bit
+  ImageNet-normalised RGB; 10-bit and 12-bit support would require retraining
+  and is not planned (see ADR-0613 §P1-3 rationale). If you pass `--bitdepth
+  10` (or `--bitdepth 12`) together with `--feature mobilesal`, the run will
+  abort before scoring with a message like:
+
+  ```
+  mobilesal: bpc=10 is not supported (8-bit only). The mobilesal extractor
+  requires 8-bit YUV input because the saliency model was trained on 8-bit
+  ImageNet-RGB. Use --bitdepth 8 or omit --feature mobilesal for HDR /
+  10-bit / 12-bit content.
+  ```
+
+  **Workaround**: drop `--feature mobilesal` from HDR / 10-bit / 12-bit
+  scoring runs, or score with `--bitdepth 8` if the source is actually 8-bit
+  content muxed into a 10-bit container.
 - **Pixel format**: `YUV420P`, `YUV422P`, `YUV444P` accepted;
   `YUV400P` (luma-only) is rejected at `init()` because the model
   requires three RGB channels.

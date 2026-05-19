@@ -1,6 +1,5 @@
 # IDE setup (VS Code + clangd)
 # IDE setup (VS Code + Zed + clangd)
-# IDE setup (VS Code + clangd)
 
 `.vscode/settings.json` ships with clangd as the C/C++ language
 server (Microsoft IntelliSense is explicitly disabled). clangd

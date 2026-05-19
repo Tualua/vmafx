@@ -2027,19 +2027,22 @@ def _run_predict(args: argparse.Namespace) -> int:
 
 
 def _run_tune_per_shot(args: argparse.Namespace) -> int:
-    # ADR-0509 / Bug C audit: `tune-per-shot` already had a
-    # ``--score-backend`` CLI flag and the predicate plumbing converts
-    # ``"auto"`` to ``None`` further down at
-    # :func:`_build_per_shot_bisect_predicate` (line 1880). The user
-    # spec for ADR-0509 explicitly asked us NOT to regress that
-    # behaviour, so we deliberately do not pre-resolve the backend
-    # here — `bisect_target_vmaf` will receive ``None`` for auto and
-    # let libvmaf pick the fastest available runtime at scoring time,
-    # preserving the historical behaviour. The strict "user-asked-for-
-    # an-unavailable-backend → error" semantics added for ``ladder``
-    # in :func:`_run_ladder` are layered into the predicate via
-    # ``score_backend`` at line 1880 already passing the raw user
-    # value (and `bisect_target_vmaf` surfacing the failure).
+    # ADR-0613: pre-validate --score-backend before touching any source
+    # files or launching bisect workers.  An unavailable backend must fail
+    # fast here (exit 2 + actionable message) rather than surfacing as a
+    # cryptic vmaf binary error buried inside the first shot's bisect loop.
+    # Mirrors the select_backend() pattern already used by _run_ladder
+    # (ADR-0511) and _run_corpus (ADR-0299 / ADR-0314).
+    raw_backend_pershot = getattr(args, "score_backend", "auto")
+    vmaf_bin_pershot = getattr(args, "vmaf_bin", "vmaf")
+    try:
+        _resolved_backend_pershot = select_backend(
+            prefer=raw_backend_pershot, vmaf_bin=vmaf_bin_pershot
+        )
+    except BackendUnavailableError as exc:
+        sys.stderr.write(f"vmaf-tune tune-per-shot: {exc}\n")
+        return 2
+    sys.stderr.write(f"vmaf-tune tune-per-shot: scoring backend = {_resolved_backend_pershot}\n")
 
     # ADR-0542: auto-probe geometry for container sources so operators
     # do not need to pre-extract a raw YUV or know --width/--height.
@@ -2303,7 +2306,11 @@ def _build_per_shot_bisect_predicate(
     work_dir = scratch / "bisect"
     refs_dir.mkdir(parents=True, exist_ok=True)
     work_dir.mkdir(parents=True, exist_ok=True)
-    score_backend = None if args.score_backend == "auto" else args.score_backend
+    # ADR-0613: backend pre-resolution now happens in _run_tune_per_shot
+    # before _build_per_shot_bisect_predicate is called.  The resolved value
+    # passes through args.score_backend (never "auto" at this point for
+    # explicit requests; "auto" means let libvmaf self-select, mapped to None).
+    score_backend = None if args.score_backend in (None, "auto") else args.score_backend
 
     # Sidecar dict: keyed by (start_frame, end_frame), populated by _predicate
     # so the caller can attach measured bitrate_kbps to each ShotRecommendation.
@@ -2800,6 +2807,25 @@ def _run_compare(args: argparse.Namespace) -> int:
         )
         return 2
 
+    # ADR-0613: pre-validate --score-backend before engaging any bisect or
+    # CRF-sweep worker, mirroring the select_backend() pattern in _run_ladder
+    # (ADR-0511) and _run_corpus (ADR-0299 / ADR-0314).  An unavailable backend
+    # must fail fast here (exit 2 + actionable message) rather than surfacing
+    # as a cryptic vmaf binary error buried inside a bisect iteration.
+    # Note: the compare argparse argument defaults to None (not "auto") when the
+    # flag is omitted; treat None as "auto" here so select_backend receives a
+    # valid preference string.
+    _raw_backend_compare = getattr(args, "score_backend", None) or "auto"
+    _vmaf_bin_compare = getattr(args, "vmaf_bin", "vmaf")
+    try:
+        _resolved_backend_compare = select_backend(
+            prefer=_raw_backend_compare, vmaf_bin=_vmaf_bin_compare
+        )
+    except BackendUnavailableError as exc:
+        sys.stderr.write(f"vmaf-tune compare: {exc}\n")
+        return 2
+    sys.stderr.write(f"vmaf-tune compare: scoring backend = {_resolved_backend_compare}\n")
+
     # ADR-0542: CRF-sweep mode — bypass bisect entirely when --no-bisect
     # is set. Dispatched after format validation so the format guard still
     # applies; dispatched before the target-VMAF / predicate-module blocks
@@ -2875,6 +2901,7 @@ def _run_compare(args: argparse.Namespace) -> int:
                 sys.stderr.write("vmaf-tune compare: pass both --crf-min and --crf-max\n")
                 return 2
             crf_range = (args.crf_min, args.crf_max)
+        # ADR-0613: backend already pre-validated above; map "auto" → None.
         score_backend = None if args.score_backend in (None, "auto") else args.score_backend
 
         # ADR-0549: CLI --workdir beats env var; env var beats /tmp.
@@ -3143,6 +3170,8 @@ def _run_compare_crf_sweep(args: argparse.Namespace, encoders: list[str]) -> int
         return 2
 
     src_path = Path(args.src)
+    # ADR-0613: backend already pre-validated in _run_compare before dispatch
+    # to this function; map "auto" → None so the vmaf binary self-selects.
     score_backend = None if args.score_backend in (None, "auto") else args.score_backend
 
     # Probe encoder availability once per codec (mirrors the bisect path).

@@ -172,20 +172,27 @@ def test_ladder_default_sampler_passes_none_when_score_backend_unset(monkeypatch
 
 
 def test_tune_per_shot_predicate_keeps_auto_to_none_conversion() -> None:
-    """ADR-0509 explicitly forbade regressing the
-    ``tune-per-shot`` predicate's
-    ``None if args.score_backend == "auto" else args.score_backend``
-    conversion. The fix for Bug C must NOT pre-resolve `tune-per-shot`'s
-    backend (only `ladder`'s) — verify by reading the source.
+    """ADR-0509 (preserved by ADR-0613): the tune-per-shot predicate must map
+    ``args.score_backend in (None, "auto")`` → ``None`` so the vmaf binary
+    self-selects the fastest available backend when the user does not request
+    an explicit one.
+
+    ADR-0613 expanded the original ``== "auto"`` check to also cover ``None``
+    (which argparse sets when ``--score-backend`` is absent), making the
+    behaviour strictly more correct without regressing the "auto" case.
+    The test is updated to match the new, broader pattern.
     """
     src_path = TOOLS_SRC / "vmaftune" / "cli.py"
     src = src_path.read_text(encoding="utf-8")
-    # The exact substring is part of the API contract — surrounding
-    # whitespace tolerated via split-on-newline scan.
-    needle = 'score_backend = None if args.score_backend == "auto" else args.score_backend'
+    # ADR-0613 updated the predicate from `== "auto"` to `in (None, "auto")`.
+    # Either form satisfies ADR-0509's "auto must map to None" contract; we pin
+    # the ADR-0613 form so that neither a revert to the old form nor a removal
+    # of the predicate goes undetected.
+    needle = 'args.score_backend in (None, "auto")'
     assert needle in src, (
-        "ADR-0509 regression: the tune-per-shot auto->None predicate "
-        "conversion is gone — check _build_per_shot_bisect_predicate"
+        "ADR-0509 / ADR-0613 regression: _build_per_shot_bisect_predicate "
+        "must map score_backend in (None, 'auto') → None. "
+        "Check that the combined in-tuple check is still present."
     )
 
 
