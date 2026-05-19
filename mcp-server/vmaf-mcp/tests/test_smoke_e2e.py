@@ -26,7 +26,6 @@ from typing import Any
 
 import pytest
 import pytest_asyncio  # noqa: F401 — needed for asyncio mode auto-detection
-
 from vmaf_mcp import server as srv
 
 REPO = Path(__file__).resolve().parents[3]
@@ -70,7 +69,7 @@ pytestmark_needs_fixtures = pytest.mark.skipif(
 
 @pytest.mark.asyncio
 async def test_list_tools_returns_expected_names() -> None:
-    """Server lists all seven documented tools."""
+    """Server lists all ten documented tools (seven original + three ADR-0634)."""
     tools = await srv._list_tools()
     names = {t.name for t in tools}
     expected = {
@@ -81,6 +80,10 @@ async def test_list_tools_returns_expected_names() -> None:
         "eval_model_on_split",
         "compare_models",
         "describe_worst_frames",
+        # ADR-0634 additions
+        "probe_backend",
+        "vmaf_version",
+        "vmaf_score_encoded",
     }
     assert expected == names, f"unexpected tool names: {names ^ expected}"
 
@@ -185,14 +188,16 @@ async def test_call_tool_vmaf_score_golden_pair() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 4. call_tool — unknown tool name returns error JSON, not an exception
+# 4. call_tool — unknown tool name raises (ADR-0613 isError fix)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_call_tool_unknown_name_returns_error_json() -> None:
-    """Calling an unknown tool name must return error JSON, not raise."""
-    contents = await srv._call_tool("no_such_tool", {})
-    assert len(contents) == 1
-    payload = json.loads(contents[0].text)
-    assert "error" in payload, "Unknown tool should return {'error': ...}"
+async def test_call_tool_unknown_name_raises() -> None:
+    """ADR-0634 (isError spec-correctness): _call_tool must raise ValueError
+    for unknown tool names so the mcp library sets isError=True on the
+    CallToolResult.  The old pattern caught and returned TextContent with
+    isError implicitly False, causing conformant clients to misclassify errors
+    as successes.  Renamed from test_call_tool_unknown_name_returns_error_json."""
+    with pytest.raises(ValueError, match="unknown tool"):
+        await srv._call_tool("no_such_tool", {})

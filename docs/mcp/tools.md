@@ -160,15 +160,20 @@ built with.
 
 ```json
 {
-  "cpu":  true,
-  "cuda": true,
-  "sycl": false,
-  "hip":  false
+  "cpu":    true,
+  "cuda":   true,
+  "sycl":   false,
+  "vulkan": false,
+  "hip":    false,
+  "metal":  false
 }
 ```
 
-The server runs `vmaf --version` with a 5-second timeout and grep's the
-output; `cpu` is reported `true` whenever the binary exists.
+The server probes `vmaf --help` and looks for `--no_<backend>` flags;
+`cpu` is always reported `true` when the binary exists. Note: this tool
+reports **compiled-in** backends only — a backend may be compiled in but
+its driver missing or non-functional at runtime. Use `probe_backend` to
+verify that a backend can actually run a score.
 
 ### Errors
 
@@ -401,19 +406,169 @@ during the lifetime of the process.
 - VLM inference exception per-frame → the frame's `description`
   carries the exception string; other frames still proceed.
 
+## `probe_backend`
+
+Run a 1-frame VMAF health check to distinguish "compiled in" from "driver
+present and functional". Uses a tiny 32×32 mid-grey synthetic YUV pair so
+no fixture files are required. Added in [ADR-0613](../adr/0613-mcp-p0-iserror-and-probe-version-encoded.md).
+
+### Input schema
+
+| Field     | Type                                                          | Required | Notes                        |
+|-----------|---------------------------------------------------------------|----------|------------------------------|
+| `backend` | `"cpu" \| "cuda" \| "sycl" \| "vulkan" \| "hip" \| "metal"` | yes      | Backend to health-check      |
+
+### Response body
+
+```json
+{
+  "backend":         "cuda",
+  "compiled_in":     true,
+  "runtime_healthy": true,
+  "latency_ms":      312.5,
+  "score":           100.0,
+  "error":           null
+}
+```
+
+- `compiled_in` — whether `vmaf --help` advertises `--no_<backend>` (same
+  as `list_backends`).
+- `runtime_healthy` — `true` iff the 1-frame score subprocess exits 0 and
+  returns a finite score; `false` on driver errors, ICD missing, KFD ioctl
+  failure, etc.
+- `latency_ms` — wall time for the subprocess in milliseconds; `null` when
+  the subprocess could not be launched.
+- `score` — VMAF mean on the synthetic pair (always near 100 for identical
+  ref/dis); `null` on failure.
+- `error` — human-readable failure reason; `null` on success.
+
+### Errors
+
+All failure conditions are reported as `runtime_healthy: false` with the
+reason in the `error` field — the tool itself does not raise (a non-healthy
+backend is a valid result, not a protocol error).
+
+---
+
+## `vmaf_version`
+
+Return the local `vmaf` binary's identity and build flags. Useful for
+confirming which fork build is running before scoring. Added in
+[ADR-0613](../adr/0613-mcp-p0-iserror-and-probe-version-encoded.md).
+
+### Input schema — no arguments.
+
+### Response body
+
+```json
+{
+  "binary_path": "/usr/local/bin/vmaf",
+  "version":     "3.0.0-lusoris.5",
+  "build_flags": {
+    "cpu":    true,
+    "cuda":   true,
+    "sycl":   false,
+    "vulkan": false,
+    "hip":    false,
+    "metal":  false
+  },
+  "error": null
+}
+```
+
+- `version` — extracted from `vmaf --version` output; `null` if the banner
+  cannot be parsed or the subprocess times out.
+- `build_flags` — derived from `vmaf --help` (`--no_<backend>` presence),
+  same probe as `list_backends`.
+- `error` — set when the binary does not exist; `null` on success.
+
+### Errors
+
+- vmaf binary missing → `error` field is populated; all `build_flags` are
+  `false`.
+
+---
+
+## `vmaf_score_encoded`
+
+Score a `(reference, distorted)` pair of **encoded video files** (MP4, MKV,
+Y4M, WebM, etc.) by decoding them to raw YUV via `ffmpeg`, then scoring
+with the standard `vmaf_score` pipeline. Geometry (width, height, pixel
+format, bit depth) is probed automatically from the reference stream — no
+manual size entry required. Added in
+[ADR-0613](../adr/0613-mcp-p0-iserror-and-probe-version-encoded.md).
+
+Requires `ffmpeg` and `ffprobe` on `PATH`.
+
+### Input schema
+
+| Field                | Type                                                            | Required | Default                  | Notes                                          |
+|----------------------|-----------------------------------------------------------------|----------|--------------------------|------------------------------------------------|
+| `reference_encoded`  | string (path)                                                   | yes      | —                        | Reference encoded video; must be under an allowlisted root |
+| `distorted_encoded`  | string (path)                                                   | yes      | —                        | Distorted encoded video; same allowlist        |
+| `model`              | string                                                          | no       | `"version=vmaf_v0.6.1"`  | Any `--model` grammar from the CLI             |
+| `backend`            | `"auto" \| "cpu" \| "cuda" \| "sycl" \| "vulkan" \| "hip" \| "metal"` | no       | `"auto"`        | Backend selection                              |
+| `subsample`          | integer `≥ 1`                                                   | no       | `1`                      | Score every Nth frame (1 = every frame)        |
+| `precision`          | string                                                          | no       | `"17"`                   | Passed to `--precision`                        |
+
+### Behaviour
+
+1. `ffprobe` the reference stream to detect width, height, pixel format, and
+   bit depth.
+2. Decode both reference and distorted in parallel to temp raw YUV files via
+   `ffmpeg -f rawvideo`.
+3. Call `_run_vmaf_score` with the decoded YUV pair and the probed geometry.
+4. Inject `reference_encoded` and `distorted_encoded` keys into the response
+   (the original encoded paths) alongside the full `vmaf_score` payload.
+
+Decoded YUV temp files are automatically cleaned up after scoring via a
+`TemporaryDirectory` context manager.
+
+### Response body
+
+Same shape as `vmaf_score`, plus two extra keys:
+
+```json
+{
+  "version": "3.x.y-lusoris.N",
+  "pooled_metrics": { "vmaf": { "mean": 76.668905, "...": "..." } },
+  "frames": [ "..." ],
+  "backend_requested": "auto",
+  "backend_used":      "cpu",
+  "reference_encoded": "/data/corpus/ref.mp4",
+  "distorted_encoded": "/data/corpus/dis_crf28.mp4"
+}
+```
+
+### Errors
+
+- `ffprobe` not on PATH → raises `RuntimeError`.
+- `ffmpeg` not on PATH → raises `RuntimeError`.
+- No video stream in input → raises `ValueError`.
+- Unknown pixel format → raises `ValueError` (e.g. `bgr24` is not mappable).
+- `ffmpeg` decode failure → raises `RuntimeError` with the ffmpeg stderr.
+- Same errors as `vmaf_score` for the scoring step.
+
+---
+
 ## Cross-tool error conventions
 
-| Situation                               | Shape                                                   |
-|-----------------------------------------|---------------------------------------------------------|
-| Unknown tool name                       | `{"error": "unknown tool: <name>"}`                     |
-| Path outside allowlist                  | `{"error": "path ... not under an allowlisted root"}`   |
-| Path does not exist                     | `{"error": "<resolved-abs-path>"}`                      |
-| Subprocess non-zero (vmaf_score only)   | `{"error": "vmaf exited <rc>: <stderr>"}`               |
-| Missing optional extras                 | `{"error": "... requires the 'eval' extra: ..."}`       |
+**ADR-0613 (isError spec-correctness):** From ADR-0613 onward, all tool
+handler exceptions are propagated as raises rather than being caught and
+returned as `TextContent({"error": ...})`. This allows the `mcp` library's
+outer handler (`_make_error_result`) to set `isError=True` on the
+`CallToolResult`, so conformant MCP clients (which branch on `result.isError`)
+correctly treat tool errors as errors. The previous pattern left `isError`
+implicitly `False`, causing clients to misclassify errors as successes.
 
-All exceptions raised inside a tool handler are caught and serialised
-into the `error` shape above — the JSON-RPC channel itself never
-returns a non-200.
+| Situation                             | MCP-level behavior                                       |
+|---------------------------------------|----------------------------------------------------------|
+| Unknown tool name                     | Raises `ValueError`; mcp sets `isError=True`            |
+| Path outside allowlist                | Raises `ValueError`; mcp sets `isError=True`            |
+| Path does not exist                   | Raises `FileNotFoundError`; mcp sets `isError=True`     |
+| Subprocess non-zero (`vmaf_score`)    | Raises `RuntimeError`; mcp sets `isError=True`          |
+| Missing optional extras               | Raises `RuntimeError`; mcp sets `isError=True`          |
+| `probe_backend` unhealthy backend     | Returns success result with `runtime_healthy: false`    |
 
 ## Related
 
@@ -422,4 +577,5 @@ returns a non-200.
 - [`vmaf_bench`](../usage/bench.md) — what `run_benchmark` drives.
 - [Tiny-AI inference](../ai/inference.md) — what
   `eval_model_on_split` / `compare_models` are scoring.
+- [ADR-0613](../adr/0613-mcp-p0-iserror-and-probe-version-encoded.md) — P0 fixes.
 - [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md).

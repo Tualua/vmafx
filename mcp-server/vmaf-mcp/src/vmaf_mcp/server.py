@@ -1,11 +1,19 @@
 """MCP server for the Lusoris VMAF fork.
 
-Exposes seven tools over the Model Context Protocol (stdio transport):
+Exposes ten tools over the Model Context Protocol (stdio transport):
 
-- ``vmaf_score``            — score a (reference, distorted) pair.
+- ``vmaf_score``            — score a (reference, distorted) raw YUV pair.
+- ``vmaf_score_encoded``    — decode encoded video (MP4/MKV/Y4M/…) via ffmpeg then
+  score, wrapping ``vmaf_score`` (ADR-0608).
 - ``list_models``           — enumerate the VMAF models registered with the build.
-- ``list_backends``         — report which backends (cpu/cuda/sycl) are available.
-- ``run_benchmark``         — run the Netflix benchmark harness (bench_all.sh) across all backends.
+- ``list_backends``         — report which backends (cpu/cuda/sycl/vulkan/hip/metal)
+  are compiled into the local vmaf binary.
+- ``probe_backend``         — run a 1-frame health check to distinguish
+  "compiled in" from "driver present + functional" (ADR-0608).
+- ``vmaf_version``          — return the vmaf binary identity and build flags
+  (ADR-0608).
+- ``run_benchmark``         — run the Netflix benchmark harness (bench_all.sh) across
+  all backends.
 - ``eval_model_on_split``   — run an ONNX tiny-AI model against a parquet feature
   cache on a deterministic split and report PLCC/SROCC/RMSE.
 - ``compare_models``        — rank several ONNX models on the same split.
@@ -790,6 +798,373 @@ async def _run_benchmark() -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# probe_backend — runtime health check (ADR-0608 / C-P0-1)
+# ---------------------------------------------------------------------------
+
+# Minimal 32×32 1-frame 4:2:0 8-bit YUV filled with mid-grey (Y=128, Cb=Cr=128).
+# 32×32 × 1.5 = 1536 bytes.  Tiny enough to decode in milliseconds on any backend.
+_PROBE_YUV_WIDTH = 32
+_PROBE_YUV_HEIGHT = 32
+_PROBE_YUV_BYTES = _PROBE_YUV_WIDTH * _PROBE_YUV_HEIGHT * 3 // 2  # 1536 for 4:2:0 8-bit
+_PROBE_YUV_DATA = bytes([128]) * _PROBE_YUV_BYTES
+
+
+async def _probe_backend(backend: str) -> dict[str, Any]:
+    """Run a 1-frame VMAF score with @p backend and return a health dict.
+
+    Schema: ``{backend, compiled_in, runtime_healthy, latency_ms, score, error}``.
+    ``compiled_in`` reflects whether the local binary advertises the backend.
+    ``runtime_healthy`` is ``True`` iff the subprocess exits 0 and returns a
+    finite score, ``False`` otherwise (driver absent, ICD missing, KFD ioctl
+    failure, etc.).
+    """
+    vmaf = _vmaf_binary()
+    compiled_in = backend == "cpu" or backend in _probe_backends(vmaf)
+
+    if not compiled_in:
+        return {
+            "backend": backend,
+            "compiled_in": False,
+            "runtime_healthy": False,
+            "latency_ms": None,
+            "score": None,
+            "error": f"backend {backend!r} is not compiled into the local vmaf binary",
+        }
+
+    import tempfile
+    import time
+
+    with tempfile.TemporaryDirectory(prefix="vmaf-mcp-probe-") as tmp:
+        tmp_path = Path(tmp)
+        ref_yuv = tmp_path / "ref.yuv"
+        dis_yuv = tmp_path / "dis.yuv"
+        out_json = tmp_path / "out.json"
+        ref_yuv.write_bytes(_PROBE_YUV_DATA)
+        dis_yuv.write_bytes(_PROBE_YUV_DATA)
+
+        argv = [
+            str(vmaf),
+            "-r",
+            str(ref_yuv),
+            "-d",
+            str(dis_yuv),
+            "--width",
+            str(_PROBE_YUV_WIDTH),
+            "--height",
+            str(_PROBE_YUV_HEIGHT),
+            "-p",
+            "420",
+            "-b",
+            "8",
+            "-m",
+            "version=vmaf_v0.6.1",
+            "--precision",
+            "6",
+            "-q",
+            "-o",
+            str(out_json),
+            "--json",
+        ]
+        if backend in _BACKEND_DISABLE:
+            for sibling in _BACKEND_DISABLE[backend]:
+                argv.append(f"--no_{sibling}")
+
+        t0 = time.monotonic()
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
+            _stdout, stderr = await proc.communicate()
+        except OSError as exc:
+            return {
+                "backend": backend,
+                "compiled_in": compiled_in,
+                "runtime_healthy": False,
+                "latency_ms": None,
+                "score": None,
+                "error": f"failed to exec vmaf: {exc}",
+            }
+        latency_ms = (time.monotonic() - t0) * 1000.0
+
+        if proc.returncode != 0:
+            return {
+                "backend": backend,
+                "compiled_in": compiled_in,
+                "runtime_healthy": False,
+                "latency_ms": round(latency_ms, 1),
+                "score": None,
+                "error": f"vmaf exited {proc.returncode}: {stderr.decode(errors='replace').strip()[:500]}",
+            }
+
+        try:
+            payload = json.loads(out_json.read_text())
+            pooled = payload.get("pooled_metrics") or {}
+            vmaf_pool = pooled.get("vmaf") or {}
+            score = vmaf_pool.get("mean")
+        except Exception as exc:
+            return {
+                "backend": backend,
+                "compiled_in": compiled_in,
+                "runtime_healthy": False,
+                "latency_ms": round(latency_ms, 1),
+                "score": None,
+                "error": f"failed to parse vmaf output: {exc}",
+            }
+
+        return {
+            "backend": backend,
+            "compiled_in": compiled_in,
+            "runtime_healthy": True,
+            "latency_ms": round(latency_ms, 1),
+            "score": score,
+            "error": None,
+        }
+
+
+# ---------------------------------------------------------------------------
+# vmaf_version — binary identity + build flags (ADR-0608 / C-P0-3)
+# ---------------------------------------------------------------------------
+
+
+def _vmaf_version() -> dict[str, Any]:
+    """Return the local vmaf binary's version string and compiled backends.
+
+    Runs ``vmaf --version`` (for the version string) and ``vmaf --help``
+    (for the backend compile-in flags, same probe used by ``_probe_backends``).
+    The ``--version`` banner does not reliably list backends (Bug A, ADR-0511),
+    so we derive ``build_flags`` from ``--help`` instead.
+    """
+    vmaf = _vmaf_binary()
+    binary_path = str(vmaf)
+
+    if not vmaf.exists():
+        return {
+            "binary_path": binary_path,
+            "version": None,
+            "build_flags": {
+                "cpu": False,
+                "cuda": False,
+                "sycl": False,
+                "vulkan": False,
+                "hip": False,
+                "metal": False,
+            },
+            "error": f"vmaf binary not found at {binary_path}",
+        }
+
+    # --- version string ---
+    version_str: str | None = None
+    try:
+        result = subprocess.run(
+            [str(vmaf), "--version"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        blob = (result.stdout or "") + (result.stderr or "")
+        # The banner looks like "vmaf 3.0.0-lusoris.5" or just "3.0.0".
+        m = re.search(r"(\d+\.\d+[\w.\-]*)", blob)
+        version_str = m.group(1) if m else blob.strip().splitlines()[0] if blob.strip() else None
+    except (subprocess.TimeoutExpired, OSError):
+        pass  # Binary present but --version timed out; still return build_flags below.
+
+    # --- build flags from --help (same as _probe_backends but we don't use the cache
+    #     so callers always get a fresh view even when the binary changes after startup) ---
+    advertised = _probe_backends(vmaf)
+    build_flags = {
+        "cpu": True,  # CPU is always compiled in when the binary exists.
+        "cuda": "cuda" in advertised,
+        "sycl": "sycl" in advertised,
+        "vulkan": "vulkan" in advertised,
+        "hip": "hip" in advertised,
+        "metal": "metal" in advertised,
+    }
+
+    return {
+        "binary_path": binary_path,
+        "version": version_str,
+        "build_flags": build_flags,
+        "error": None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# vmaf_score_encoded — decode encoded video then score (ADR-0608 / C-P0-2)
+# ---------------------------------------------------------------------------
+
+# ffmpeg pixel-format mapping used for the decoded YUV temp files.
+_PIXFMT_TO_FFMPEG: dict[tuple[str, int], str] = {
+    ("420", 8): "yuv420p",
+    ("422", 8): "yuv422p",
+    ("444", 8): "yuv444p",
+    ("420", 10): "yuv420p10le",
+    ("422", 10): "yuv422p10le",
+    ("444", 10): "yuv444p10le",
+    ("420", 12): "yuv420p12le",
+    ("422", 12): "yuv422p12le",
+    ("444", 12): "yuv444p12le",
+}
+
+
+def _ffprobe_geometry(path: Path) -> tuple[int, int, str, int]:
+    """Return ``(width, height, pixfmt, bitdepth)`` for the first video stream
+    in @p path.  ``pixfmt`` is ``"420"`` / ``"422"`` / ``"444"``.
+
+    Raises :class:`RuntimeError` when ffprobe is unavailable or the probe
+    fails, and :class:`ValueError` when the stream has no video or the pixel
+    format cannot be mapped.
+    """
+    if not shutil.which("ffprobe"):
+        raise RuntimeError("ffprobe not on PATH; install ffmpeg to use vmaf_score_encoded")
+
+    result = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "quiet",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=width,height,pix_fmt",
+            "-of",
+            "json",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"ffprobe failed (rc={result.returncode}): {result.stderr.strip()[:300]}"
+        )
+    info = json.loads(result.stdout)
+    streams = info.get("streams") or []
+    if not streams:
+        raise ValueError(f"no video stream found in {path}")
+    s = streams[0]
+    width = int(s["width"])
+    height = int(s["height"])
+    pix_fmt_raw = str(s.get("pix_fmt", "yuv420p"))
+
+    # Map ffmpeg pix_fmt names to the vmaf (pixfmt, bitdepth) pair.
+    _map: dict[str, tuple[str, int]] = {
+        "yuv420p": ("420", 8),
+        "yuvj420p": ("420", 8),
+        "yuv422p": ("422", 8),
+        "yuvj422p": ("422", 8),
+        "yuv444p": ("444", 8),
+        "yuvj444p": ("444", 8),
+        "yuv420p10le": ("420", 10),
+        "yuv422p10le": ("422", 10),
+        "yuv444p10le": ("444", 10),
+        "yuv420p12le": ("420", 12),
+        "yuv422p12le": ("422", 12),
+        "yuv444p12le": ("444", 12),
+        "yuv420p10be": ("420", 10),
+        "yuv422p10be": ("422", 10),
+        "yuv444p10be": ("444", 10),
+    }
+    mapped = _map.get(pix_fmt_raw)
+    if mapped is None:
+        raise ValueError(
+            f"pixel format {pix_fmt_raw!r} cannot be mapped to a vmaf pixfmt/bitdepth; "
+            "supported: yuv420p/yuv422p/yuv444p (8/10/12-bit)"
+        )
+    pixfmt, bitdepth = mapped
+    return width, height, pixfmt, bitdepth
+
+
+async def _decode_to_yuv(src: Path, dst: Path, *, pix_fmt: str) -> None:
+    """Decode the encoded video at @p src to a raw YUV file at @p dst via
+    ffmpeg.  @p pix_fmt is the ``yuv420p``-style ffmpeg format string.
+
+    Raises :class:`RuntimeError` on ffmpeg failure.
+    """
+    if not shutil.which("ffmpeg"):
+        raise RuntimeError("ffmpeg not on PATH; install ffmpeg to use vmaf_score_encoded")
+
+    argv = [
+        "ffmpeg",
+        "-loglevel",
+        "error",
+        "-i",
+        str(src),
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        pix_fmt,
+        "-y",
+        str(dst),
+    ]
+    proc = await asyncio.create_subprocess_exec(
+        *argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+    _stdout, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"ffmpeg decode failed (rc={proc.returncode}): {stderr.decode(errors='replace').strip()[:500]}"
+        )
+
+
+async def _run_vmaf_score_encoded(
+    ref_path: Path,
+    dis_path: Path,
+    *,
+    model: str = "version=vmaf_v0.6.1",
+    backend: str = "auto",
+    subsample: int = 1,
+    precision: str = "17",
+) -> dict[str, Any]:
+    """Decode both encoded inputs to temp raw YUV, then delegate to
+    :func:`_run_vmaf_score`.
+
+    Geometry is probed from the reference stream; both reference and distorted
+    must have the same dimensions.  ``subsample`` passes ``--frame_step`` to
+    vmaf (1 = every frame).
+    """
+    import tempfile
+
+    if not shutil.which("ffprobe"):
+        raise RuntimeError("ffprobe not on PATH; install ffmpeg to use vmaf_score_encoded")
+
+    width, height, pixfmt, bitdepth = _ffprobe_geometry(ref_path)
+    ffmpeg_pix_fmt = _PIXFMT_TO_FFMPEG.get((pixfmt, bitdepth))
+    if ffmpeg_pix_fmt is None:
+        raise ValueError(f"unsupported pixfmt/bitdepth combination: {pixfmt}/{bitdepth}")
+
+    with tempfile.TemporaryDirectory(prefix="vmaf-mcp-encoded-") as tmp:
+        tmp_p = Path(tmp)
+        ref_yuv = tmp_p / "ref.yuv"
+        dis_yuv = tmp_p / "dis.yuv"
+
+        # Decode both inputs in parallel for speed.
+        await asyncio.gather(
+            _decode_to_yuv(ref_path, ref_yuv, pix_fmt=ffmpeg_pix_fmt),
+            _decode_to_yuv(dis_path, dis_yuv, pix_fmt=ffmpeg_pix_fmt),
+        )
+
+        req = ScoreRequest(
+            ref=ref_yuv,
+            dis=dis_yuv,
+            width=width,
+            height=height,
+            pixfmt=pixfmt,
+            bitdepth=bitdepth,
+            model=model,
+            backend=backend,
+            precision=precision,
+        )
+        result = await _run_vmaf_score(req)
+        # Surface the original encoded paths in the response.
+        result["reference_encoded"] = str(ref_path)
+        result["distorted_encoded"] = str(dis_path)
+        return result
+
+
+# ---------------------------------------------------------------------------
 # MCP server wiring
 # ---------------------------------------------------------------------------
 
@@ -924,64 +1299,158 @@ async def _list_tools() -> list[Tool]:
                 },
             },
         ),
+        # --- new tools (ADR-0608) ---
+        Tool(
+            name="probe_backend",
+            description=(
+                "Run a 1-frame VMAF health check to distinguish 'compiled in' from "
+                "'driver present + functional'. Returns compiled_in (bool), "
+                "runtime_healthy (bool), latency_ms, score (the VMAF mean on a "
+                "32×32 mid-grey pair), and any error string. Use this when "
+                "list_backends returns true but actual GPU dispatch may fail "
+                "(driver not loaded, ICD missing, KFD ioctl failure, etc.). "
+                "ADR-0608."
+            ),
+            inputSchema={
+                "type": "object",
+                "required": ["backend"],
+                "properties": {
+                    "backend": {
+                        "type": "string",
+                        "enum": ["cpu", "cuda", "sycl", "vulkan", "hip", "metal"],
+                        "description": "Backend to health-check.",
+                    },
+                },
+            },
+        ),
+        Tool(
+            name="vmaf_version",
+            description=(
+                "Return the local vmaf binary's identity and build flags. "
+                "Reports binary_path, version string (from --version), and "
+                "build_flags dict (cpu/cuda/sycl/vulkan/hip/metal). Use this "
+                "to confirm which fork build is running before scoring. "
+                "ADR-0608."
+            ),
+            inputSchema={"type": "object", "properties": {}},
+        ),
+        Tool(
+            name="vmaf_score_encoded",
+            description=(
+                "Score a (reference, distorted) pair of encoded video files "
+                "(MP4, MKV, Y4M, WebM, etc.) by decoding them to raw YUV via "
+                "ffmpeg and then running vmaf_score. Geometry (width, height, "
+                "pixel format, bit depth) is probed automatically from the "
+                "reference stream — no manual size entry required. Returns the "
+                "same response shape as vmaf_score plus reference_encoded and "
+                "distorted_encoded fields. Requires ffmpeg + ffprobe on PATH. "
+                "ADR-0608."
+            ),
+            inputSchema={
+                "type": "object",
+                "required": ["reference_encoded", "distorted_encoded"],
+                "properties": {
+                    "reference_encoded": {
+                        "type": "string",
+                        "description": "Path to the reference encoded video (MP4/MKV/Y4M/…). "
+                        "Must be under an allowlisted root (VMAF_MCP_ALLOW).",
+                    },
+                    "distorted_encoded": {
+                        "type": "string",
+                        "description": "Path to the distorted encoded video.",
+                    },
+                    "model": {"type": "string", "default": "version=vmaf_v0.6.1"},
+                    "backend": {
+                        "type": "string",
+                        "enum": ["auto", "cpu", "cuda", "sycl", "vulkan", "hip", "metal"],
+                        "default": "auto",
+                    },
+                    "subsample": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "default": 1,
+                        "description": "Score every Nth frame (1 = every frame).",
+                    },
+                    "precision": {"type": "string", "default": "17"},
+                },
+            },
+        ),
     ]
 
 
 @server.call_tool()
 async def _call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
-    try:
-        if name == "vmaf_score":
-            req = ScoreRequest(
-                ref=_validate_path(arguments["ref"]),
-                dis=_validate_path(arguments["dis"]),
-                width=int(arguments["width"]),
-                height=int(arguments["height"]),
-                pixfmt=str(arguments["pixfmt"]),
-                bitdepth=int(arguments["bitdepth"]),
-                model=str(arguments.get("model", "version=vmaf_v0.6.1")),
-                backend=str(arguments.get("backend", "auto")),
-                precision=str(arguments.get("precision", "17")),
-            )
-            result = await _run_vmaf_score(req)
-        elif name == "list_models":
-            result = {"models": _list_models()}
-        elif name == "list_backends":
-            result = _list_backends()
-        elif name == "run_benchmark":
-            result = await _run_benchmark()
-        elif name == "eval_model_on_split":
-            result = _eval_model_on_split(
-                model=_validate_path(arguments["model"]),
-                features=_validate_path(arguments["features"]),
-                split=str(arguments.get("split", "test")),
-                input_name=str(arguments.get("input_name", "features")),
-            )
-        elif name == "compare_models":
-            models_in = arguments["models"]
-            if not isinstance(models_in, list) or not models_in:
-                raise ValueError("'models' must be a non-empty list of paths")
-            result = _compare_models(
-                models=[_validate_path(m) for m in models_in],
-                features=_validate_path(arguments["features"]),
-                split=str(arguments.get("split", "test")),
-                input_name=str(arguments.get("input_name", "features")),
-            )
-        elif name == "describe_worst_frames":
-            req = ScoreRequest(
-                ref=_validate_path(arguments["ref"]),
-                dis=_validate_path(arguments["dis"]),
-                width=int(arguments["width"]),
-                height=int(arguments["height"]),
-                pixfmt=str(arguments["pixfmt"]),
-                bitdepth=int(arguments["bitdepth"]),
-                model=str(arguments.get("model", "version=vmaf_v0.6.1")),
-                backend=str(arguments.get("backend", "auto")),
-            )
-            result = await _describe_worst_frames(req, n=int(arguments.get("n", 5)))
-        else:
-            raise ValueError(f"unknown tool: {name}")
-    except Exception as exc:
-        return [TextContent(type="text", text=json.dumps({"error": str(exc)}))]
+    # ADR-0608 / E-1 (spec-correctness fix): do NOT catch exceptions here.
+    # Raising from this handler lets the mcp library's outer try/except
+    # (mcp/server/lowlevel/server.py _make_error_result) set isError=True on
+    # the CallToolResult.  The previous pattern caught everything and returned
+    # TextContent({"error": ...}) with isError implicitly False — which caused
+    # conformant MCP clients (mcp/client/session.py:L394) to treat tool errors
+    # as successful responses, then fail later when trying to parse the error
+    # JSON as a score result.
+    if name == "vmaf_score":
+        req = ScoreRequest(
+            ref=_validate_path(arguments["ref"]),
+            dis=_validate_path(arguments["dis"]),
+            width=int(arguments["width"]),
+            height=int(arguments["height"]),
+            pixfmt=str(arguments["pixfmt"]),
+            bitdepth=int(arguments["bitdepth"]),
+            model=str(arguments.get("model", "version=vmaf_v0.6.1")),
+            backend=str(arguments.get("backend", "auto")),
+            precision=str(arguments.get("precision", "17")),
+        )
+        result = await _run_vmaf_score(req)
+    elif name == "list_models":
+        result = {"models": _list_models()}
+    elif name == "list_backends":
+        result = _list_backends()
+    elif name == "run_benchmark":
+        result = await _run_benchmark()
+    elif name == "eval_model_on_split":
+        result = _eval_model_on_split(
+            model=_validate_path(arguments["model"]),
+            features=_validate_path(arguments["features"]),
+            split=str(arguments.get("split", "test")),
+            input_name=str(arguments.get("input_name", "features")),
+        )
+    elif name == "compare_models":
+        models_in = arguments["models"]
+        if not isinstance(models_in, list) or not models_in:
+            raise ValueError("'models' must be a non-empty list of paths")
+        result = _compare_models(
+            models=[_validate_path(m) for m in models_in],
+            features=_validate_path(arguments["features"]),
+            split=str(arguments.get("split", "test")),
+            input_name=str(arguments.get("input_name", "features")),
+        )
+    elif name == "describe_worst_frames":
+        req = ScoreRequest(
+            ref=_validate_path(arguments["ref"]),
+            dis=_validate_path(arguments["dis"]),
+            width=int(arguments["width"]),
+            height=int(arguments["height"]),
+            pixfmt=str(arguments["pixfmt"]),
+            bitdepth=int(arguments["bitdepth"]),
+            model=str(arguments.get("model", "version=vmaf_v0.6.1")),
+            backend=str(arguments.get("backend", "auto")),
+        )
+        result = await _describe_worst_frames(req, n=int(arguments.get("n", 5)))
+    elif name == "probe_backend":
+        result = await _probe_backend(str(arguments["backend"]))
+    elif name == "vmaf_version":
+        result = _vmaf_version()
+    elif name == "vmaf_score_encoded":
+        result = await _run_vmaf_score_encoded(
+            ref_path=_validate_path(arguments["reference_encoded"]),
+            dis_path=_validate_path(arguments["distorted_encoded"]),
+            model=str(arguments.get("model", "version=vmaf_v0.6.1")),
+            backend=str(arguments.get("backend", "auto")),
+            subsample=int(arguments.get("subsample", 1)),
+            precision=str(arguments.get("precision", "17")),
+        )
+    else:
+        raise ValueError(f"unknown tool: {name}")
     return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
 
