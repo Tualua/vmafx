@@ -83,6 +83,10 @@ tools/external-bench/**/*.bin
 tools/external-bench/**/output*.json
 tools/external-bench/**/__pycache__/
 
+# Zed per-user local settings (auth tokens, window state — machine-specific).
+# .zed/ itself IS tracked (shared project config); only the local/ subdir is not.
+.zed/local/
+
 # Claude Code local (machine-specific) settings
 .claude/settings.local.json
 .claude/scheduled_tasks.lock

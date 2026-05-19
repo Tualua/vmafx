@@ -7,6 +7,25 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## feat/zed-editor-project-config (ADR-0608)
+
+No rebase-sensitive invariants — only `.zed/` (new directory), `.gitignore`
+(`.zed/local/` exclusion), `docs/development/ide-setup.md` (Zed section),
+`docs/adr/0608-zed-editor-project-config.md` (ADR), and supporting fragment/
+changelog files are touched. None of these paths overlap with upstream Netflix/vmaf.
+`.vscode/` is unchanged.
+
+Touched files:
+`.zed/settings.json`, `.zed/tasks.json`, `.zed/debug.json` (new),
+`.gitignore` (`.zed/local/` entry),
+`docs/development/ide-setup.md` (Zed section appended),
+`docs/adr/0608-zed-editor-project-config.md`,
+`docs/adr/_index_fragments/0608-zed-editor-project-config.md`,
+`docs/adr/_index_fragments/_order.txt`,
+`docs/adr/README.md` (regenerated),
+`changelog.d/added/0608-zed-editor-project-config.md`,
+`docs/rebase-notes.md` (this entry).
+
 ## chore/renovate-customManagers-dev-image (ADR-0605)
 
 No rebase-sensitive invariants — the only change is to `renovate.json`
@@ -37302,6 +37321,7 @@ Touched files:
 `docs/rebase-notes.md` (this entry).
 
 ## ADR-0612 — vmaf-tune compare: decode reference YUV once (shared-ref fix)
+## ADR-0607 — vmaf-tune compare: decode reference YUV once (shared-ref fix)
 
 **No rebase impact**: all touched files are fork-local Python harness files.
 No upstream C sources, no public headers, no FFmpeg patch series involved.

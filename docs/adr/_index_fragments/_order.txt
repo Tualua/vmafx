@@ -382,3 +382,4 @@
 0568-sycl-icpx-aot-targets-default
 0569-sdk-version-bumps-2026-05-18
 0612-tiny-ai-netflix-training-scaffold-2026-05-19
+0608-zed-editor-project-config
