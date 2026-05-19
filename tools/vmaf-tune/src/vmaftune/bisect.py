@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
+import logging
 import math
 import os
 import shutil
@@ -61,6 +62,9 @@ from .score import VMAF_RAW_SUFFIXES, ScoreRequest, maybe_decode_distorted, run_
 
 if TYPE_CHECKING:
     from .compare import PredicateFn, RecommendResult
+    from .score_backend import NRProxyBackend
+
+_log = logging.getLogger(__name__)
 
 
 # ADR-0577: module-level decode semaphore, initialised to 1 by default
@@ -317,6 +321,12 @@ class BisectResult:
     ok: bool = True
     error: str = ""
     samples: tuple[BisectSample, ...] = ()
+    # ADR-0624 / ADR-0615 NR pre-scoring telemetry.
+    # fr_calls_total: how many full-reference VMAF calls were made.
+    # fr_calls_saved: how many were skipped due to NR early-elimination.
+    # Both are 0 when --fast-nr was not active.
+    fr_calls_total: int = 0
+    fr_calls_saved: int = 0
 
     def to_recommend_result(self) -> "RecommendResult":
         """Project onto the ``compare.RecommendResult`` shape.
@@ -359,6 +369,8 @@ def _failure(
     encode_time_ms: float = float("nan"),
     encoder_version: str = "",
     samples: tuple[BisectSample, ...] = (),
+    fr_calls_total: int = 0,
+    fr_calls_saved: int = 0,
 ) -> BisectResult:
     return BisectResult(
         codec=codec,
@@ -371,6 +383,8 @@ def _failure(
         ok=False,
         error=error,
         samples=samples,
+        fr_calls_total=fr_calls_total,
+        fr_calls_saved=fr_calls_saved,
     )
 
 
@@ -383,6 +397,62 @@ def _midpoint_lower_quality(lo: int, hi: int) -> int:
     never one we extrapolated to from an adjacent sample.
     """
     return (lo + hi + 1) // 2
+
+
+# Sentinel prefix embedded in BisectResult.error to signal that _encode_and_score
+# performed NR early elimination (encode+decode-distorted done, FR skipped).
+# The caller uses startswith() to detect this and extracts direction + NR score
+# from the remainder: "<_NR_SKIP_SENTINEL><direction>;<nr_score>".
+_NR_SKIP_SENTINEL: str = "__nr_skip__:"
+
+
+def _try_nr_early_elimination_on_yuv(
+    *,
+    nr_proxy_backend: "NRProxyBackend",
+    distorted_yuv: Path,
+    width: int,
+    height: int,
+    pix_fmt: str,
+    target_vmaf: float,
+) -> tuple[str, float] | None:
+    """Run NR inference on an already-decoded distorted YUV and decide.
+
+    Called after encode+decode-distorted but before FR scoring.  Returns
+    ``(direction, nr_score)`` when the NR score is outside the δ_fast
+    uncertainty zone (the FR call can be skipped).  Returns ``None``
+    when the NR score is inside the zone or inference fails (fall
+    through to the full FR path).
+
+    ``direction`` is ``"tighter"`` (raise CRF — quality above target)
+    or ``"looser"`` (lower CRF — quality below target).
+    """
+    from .score_backend import NRProxyBackendError
+
+    try:
+        result = nr_proxy_backend.score_nr(
+            distorted_yuv,
+            width=width,
+            height=height,
+            pix_fmt=pix_fmt,
+        )
+        nr_score = result.nr_score
+    except NRProxyBackendError as exc:
+        _log.debug(
+            "fast-nr: NR inference failed for %s: %s — falling through to FR", distorted_yuv, exc
+        )
+        return None
+
+    if nr_proxy_backend.is_far_from_target(nr_score, target_vmaf):
+        direction = nr_proxy_backend.nr_implied_direction(nr_score, target_vmaf)
+        return direction, nr_score
+
+    _log.debug(
+        "fast-nr: NR=%.2f target=%.2f δ=%.1f — within uncertainty zone, paying FR cost",
+        nr_score,
+        target_vmaf,
+        nr_proxy_backend.calibration_threshold,
+    )
+    return None
 
 
 def bisect_target_vmaf(
@@ -408,6 +478,7 @@ def bisect_target_vmaf(
     vmaf_bin: str = "vmaf",
     workdir: Path | None = None,
     decode_semaphore: threading.Semaphore | None = None,
+    nr_proxy_backend: "NRProxyBackend | None" = None,
 ) -> BisectResult:
     """Find the largest CRF whose measured VMAF still meets ``target_vmaf``.
 
@@ -461,13 +532,26 @@ def bisect_target_vmaf(
         serial, i.e. ``Semaphore(1)``). Callers that want multiple
         concurrent decodes pass ``threading.Semaphore(N)`` or call
         :func:`set_decode_semaphore` before spawning the thread pool.
+    nr_proxy_backend
+        Optional :class:`~vmaftune.score_backend.NRProxyBackend` for
+        fast NR pre-scoring (ADR-0624 / ADR-0615). When provided, each
+        bisect midpoint is first scored via the cheap NR proxy. If
+        ``|NR - target| > δ_fast``, the full-reference VMAF call is
+        skipped and the bisect window advances in the NR-implied
+        direction. Full-reference scoring always runs for the *final*
+        confirmed CRF and for any midpoint within the δ_fast uncertainty
+        zone. The result carries ``fr_calls_saved`` / ``fr_calls_total``
+        telemetry fields. Pass ``None`` (default) to disable NR
+        pre-scoring and use full-reference scoring throughout.
 
     Returns
     -------
     BisectResult
         The best-so-far (CRF, VMAF, bitrate) tuple. ``ok=False`` when
         the target is unreachable in the given window or the
-        monotonicity assumption fails.
+        monotonicity assumption fails.  When ``nr_proxy_backend`` is
+        supplied, ``fr_calls_total`` and ``fr_calls_saved`` carry
+        the NR telemetry.
     """
     try:
         adapter = get_adapter(codec)
@@ -527,6 +611,9 @@ def bisect_target_vmaf(
     samples: list[BisectSample] = []
     n_iterations = 0
     cur_lo, cur_hi = lo, hi
+    # ADR-0624 NR telemetry counters.
+    _fr_calls_total: int = 0
+    _fr_calls_saved: int = 0
 
     # ADR-0577: estimate YUV size once for mid-run disk checks.
     _yuv_est_bytes: int | None = None
@@ -566,6 +653,19 @@ def bisect_target_vmaf(
                         samples=tuple(samples),
                     )
 
+            # ADR-0624 / ADR-0615 — NR pre-scoring fast path.
+            # When the caller supplied an NRProxyBackend, _encode_and_score
+            # is told about it. Inside _encode_and_score, after the
+            # encode+decode-distorted step but before the FR libvmaf call,
+            # the NR backend scores the distorted YUV. If |NR - target| >
+            # δ_fast the function returns early with nr_skipped=True and no
+            # measured_vmaf; the loop advances the window in the NR-implied
+            # direction without paying the FR cost.
+            #
+            # The ``cur_lo < cur_hi`` guard ensures the final CRF (window
+            # has collapsed to one candidate) always gets a FR confirmation.
+            _use_nr = nr_proxy_backend is not None and cur_lo < cur_hi
+
             # ADR-0577: acquire the decode semaphore before calling
             # _encode_and_score. The semaphore gates the number of
             # concurrent reference-YUV materialisation operations across
@@ -593,10 +693,46 @@ def bisect_target_vmaf(
                     ffmpeg_bin=ffmpeg_bin,
                     vmaf_bin=vmaf_bin,
                     workdir=workdir_path,
+                    nr_proxy_backend=nr_proxy_backend if _use_nr else None,
+                    nr_target_vmaf=target_vmaf if _use_nr else None,
                 )
+
+            # NR early-elimination path: _encode_and_score returned a
+            # sentinel BisectResult with ok=False and error starting with
+            # _NR_SKIP_SENTINEL. Parse direction + nr_score from the payload.
+            if not sample.ok and sample.error.startswith(_NR_SKIP_SENTINEL):
+                _fr_calls_saved += 1
+                _payload = sample.error[len(_NR_SKIP_SENTINEL) :]
+                _parts = _payload.split(";", 1)
+                direction = _parts[0] if _parts else "looser"
+                try:
+                    nr_val = float(_parts[1]) if len(_parts) > 1 else float("nan")
+                except ValueError:
+                    nr_val = float("nan")
+                _log.info(
+                    "fast-nr: CRF %d NR=%.2f target=%.2f δ=%.1f → %s (FR skipped, iter %d)",
+                    mid,
+                    nr_val,
+                    target_vmaf,
+                    nr_proxy_backend.calibration_threshold,  # type: ignore[union-attr]
+                    direction,
+                    n_iterations,
+                )
+                if direction == "tighter":
+                    cur_lo = mid + 1
+                else:
+                    cur_hi = mid - 1
+                continue
+
+            _fr_calls_total += 1
+
             if not sample.ok:
                 return dataclasses.replace(
-                    sample, n_iterations=n_iterations, samples=tuple(samples)
+                    sample,
+                    n_iterations=n_iterations,
+                    samples=tuple(samples),
+                    fr_calls_total=_fr_calls_total,
+                    fr_calls_saved=_fr_calls_saved,
                 )
 
             # ADR-0530: record every successful probe (regardless of
@@ -624,6 +760,8 @@ def bisect_target_vmaf(
                     encode_time_ms=sample.encode_time_ms,
                     encoder_version=sample.encoder_version,
                     samples=tuple(samples),
+                    fr_calls_total=_fr_calls_total,
+                    fr_calls_saved=_fr_calls_saved,
                 )
 
             if sample.measured_vmaf >= target_vmaf:
@@ -634,6 +772,14 @@ def bisect_target_vmaf(
             else:
                 # Quality miss — narrow toward higher quality.
                 cur_hi = mid - 1
+
+        if nr_proxy_backend is not None:
+            _log.info(
+                "fast-nr: bisect done — FR calls %d total, %d saved (%.0f%%)",
+                _fr_calls_total,
+                _fr_calls_saved,
+                100.0 * _fr_calls_saved / max(1, _fr_calls_total + _fr_calls_saved),
+            )
 
         if best is None:
             # Target unreachable in the searched window.
@@ -646,9 +792,16 @@ def bisect_target_vmaf(
                 ),
                 n_iterations=n_iterations,
                 samples=tuple(samples),
+                fr_calls_total=_fr_calls_total,
+                fr_calls_saved=_fr_calls_saved,
             )
 
-        return dataclasses.replace(best, samples=tuple(samples))
+        return dataclasses.replace(
+            best,
+            samples=tuple(samples),
+            fr_calls_total=_fr_calls_total,
+            fr_calls_saved=_fr_calls_saved,
+        )
     finally:
         # ADR-0577 aggressive cleanup: after the bisect completes (all
         # iterations for this codec at this target), delete the decoded
@@ -760,11 +913,22 @@ def _encode_and_score(
     vmaf_bin: str,
     workdir: Path,
     decode_runner: object | None = None,
+    nr_proxy_backend: "NRProxyBackend | None" = None,
+    nr_target_vmaf: float | None = None,
 ) -> BisectResult:
     """One encode+score round-trip — returns a sample-shaped BisectResult.
 
     The ``n_iterations`` field on the returned struct is always ``0``;
     the caller stamps it with the cumulative count.
+
+    When ``nr_proxy_backend`` is supplied, NR early-elimination is
+    attempted after encode+decode-distorted but before the FR libvmaf
+    call. If the NR score is outside the δ_fast uncertainty zone the
+    function returns early with ``ok=False`` and
+    ``error=_NR_SKIP_SENTINEL + "<direction>;<nr_score>"`` — the caller
+    detects this sentinel, increments ``_fr_calls_saved``, and advances
+    the bisect window in the NR-implied direction without treating the
+    result as a real failure.
     """
     # ADR-0538: ``adapter.validate(preset, crf)`` enforces both the
     # preset whitelist AND the adapter's perceptually-informative
@@ -957,6 +1121,34 @@ def _encode_and_score(
             encoder_version=enc_res.encoder_version,
         )
 
+    # ADR-0624 / ADR-0615 — NR early-elimination: the distorted YUV is
+    # now available (score_req.distorted). Run NR inference; if the score
+    # is far from the target skip the FR libvmaf call and return a
+    # sentinel so the bisect loop can advance the window cheaply.
+    if nr_proxy_backend is not None and nr_target_vmaf is not None:
+        _nr_result = _try_nr_early_elimination_on_yuv(
+            nr_proxy_backend=nr_proxy_backend,
+            distorted_yuv=score_req.distorted,
+            width=width,
+            height=height,
+            pix_fmt=pix_fmt,
+            target_vmaf=nr_target_vmaf,
+        )
+        if _nr_result is not None:
+            _direction, _nr_score = _nr_result
+            # Clean up artefacts before returning the sentinel.
+            with contextlib.suppress(OSError):
+                if out_path.exists():
+                    out_path.unlink()
+                if score_req.distorted != out_path and score_req.distorted.exists():
+                    score_req.distorted.unlink()
+            return _failure(
+                codec,
+                f"{_NR_SKIP_SENTINEL}{_direction};{_nr_score:.6f}",
+                encode_time_ms=enc_res.encode_time_ms,
+                encoder_version=enc_res.encoder_version,
+            )
+
     score_res = run_score(
         score_req,
         vmaf_bin=vmaf_bin,
@@ -1028,6 +1220,7 @@ def make_bisect_predicate(
     vmaf_bin: str = "vmaf",
     workdir: Path | None = None,
     decode_semaphore: threading.Semaphore | None = None,
+    nr_proxy_backend: "NRProxyBackend | None" = None,
 ) -> "PredicateFn":
     """Return a :data:`compare.PredicateFn` that closes over bisect knobs.
 
@@ -1047,6 +1240,12 @@ def make_bisect_predicate(
     so callers that build predicates for multiple codecs share the same
     semaphore across all threads in the compare thread pool (ADR-0577).
     When ``None``, the module-level ``_decode_semaphore`` is used.
+
+    ``nr_proxy_backend`` is an optional :class:`~vmaftune.score_backend.NRProxyBackend`
+    for fast NR pre-scoring (ADR-0624 / ADR-0615). When supplied, each
+    bisect midpoint is first scored via the NR proxy; midpoints far from
+    the target skip the full-reference VMAF call. Pass ``None`` (default)
+    to use full-reference scoring throughout.
     """
 
     def _predicate(codec: str, src: Path, runtime_target_vmaf: float) -> "RecommendResult":
@@ -1081,6 +1280,7 @@ def make_bisect_predicate(
             vmaf_bin=vmaf_bin,
             workdir=workdir,
             decode_semaphore=decode_semaphore,
+            nr_proxy_backend=nr_proxy_backend,
         )
         return result.to_recommend_result()
 

@@ -375,6 +375,9 @@ def test_cli_compare_binds_real_bisect_predicate(monkeypatch, capsys, tmp_path):
     assert isinstance(
         decode_sem, _threading.Semaphore
     ), f"Expected decode_semaphore to be a threading.Semaphore, got {decode_sem!r}"
+    # ADR-0624: nr_proxy_backend=None is forwarded when --fast-nr is not passed.
+    nr_proxy = kwargs.pop("nr_proxy_backend", "MISSING")
+    assert nr_proxy is None, f"Expected nr_proxy_backend=None (no --fast-nr), got {nr_proxy!r}"
     assert kwargs == {
         "target_vmaf": 92.0,
         "width": 1920,

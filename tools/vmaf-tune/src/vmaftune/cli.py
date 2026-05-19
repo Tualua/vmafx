@@ -563,6 +563,22 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_neg_flag(per_shot)
     per_shot.add_argument(
+        "--fast-nr",
+        action="store_true",
+        default=False,
+        dest="fast_nr",
+        help=(
+            "enable NR early-elimination for each per-shot bisect "
+            "(ADR-0624 / ADR-0615). At each midpoint the cheap "
+            "nr_metric_v1 ONNX model scores the distorted stream; "
+            "if |NR - target| > δ_fast the full-reference VMAF call "
+            "is skipped and the bisect window advances in the NR-implied "
+            "direction. The final accepted CRF always gets a full-reference "
+            "confirmation call. Requires onnxruntime (pip install "
+            "onnxruntime or onnxruntime-gpu) and numpy."
+        ),
+    )
+    per_shot.add_argument(
         "--score-backend",
         default="auto",
         choices=("auto", *ALL_BACKENDS),
@@ -1045,6 +1061,22 @@ def _build_parser() -> argparse.ArgumentParser:
         help="VMAF model name forwarded to the bisect scorer",
     )
     _add_neg_flag(compare)
+    compare.add_argument(
+        "--fast-nr",
+        action="store_true",
+        default=False,
+        dest="fast_nr",
+        help=(
+            "enable NR early-elimination for each per-codec bisect "
+            "(ADR-0624 / ADR-0615). At each midpoint the cheap "
+            "nr_metric_v1 ONNX model scores the distorted stream; "
+            "if |NR - target| > δ_fast the full-reference VMAF call "
+            "is skipped and the bisect window advances in the NR-implied "
+            "direction. The final accepted CRF always gets a full-reference "
+            "confirmation call. Requires onnxruntime and numpy. "
+            "Typical wall-time reduction: 2–4x on content far from target."
+        ),
+    )
     compare.add_argument(
         "--score-backend",
         default=None,
@@ -2206,11 +2238,31 @@ def _run_tune_per_shot(args: argparse.Namespace) -> int:
             _set_decode_sem(_ps_max_decodes)
             _pershot_decode_sem = _threading_pershot.Semaphore(_ps_max_decodes)
 
+            # ADR-0624 / ADR-0615: build the NR proxy backend when the
+            # --fast-nr flag is passed.  Errors surface immediately so the
+            # operator does not wait through shot detection before finding out
+            # onnxruntime is missing.
+            _pershot_nr_proxy = None
+            if getattr(args, "fast_nr", False):
+                from .score_backend import NRProxyBackend, NRProxyBackendError  # noqa: PLC0415
+
+                try:
+                    _pershot_nr_proxy = NRProxyBackend()
+                    _ps_delta = _pershot_nr_proxy.calibration_threshold
+                    sys.stderr.write(
+                        f"vmaf-tune tune-per-shot: --fast-nr enabled; "
+                        f"δ_fast={_ps_delta:.1f} VMAF (NR early-elimination)\n"
+                    )
+                except NRProxyBackendError as exc:
+                    sys.stderr.write(f"vmaf-tune tune-per-shot: --fast-nr: {exc}\n")
+                    raise
+
             predicate, bitrate_sidecar = _build_per_shot_bisect_predicate(
                 args,
                 scratch=Path(scratch_ctx.name),
                 crf_range=crf_range,
                 decode_semaphore=_pershot_decode_sem,
+                nr_proxy_backend=_pershot_nr_proxy,
             )
         recs = tune_per_shot(
             shots,
@@ -2334,6 +2386,7 @@ def _build_per_shot_bisect_predicate(
     scratch: Path,
     crf_range: tuple[int, int] | None,
     decode_semaphore: object | None = None,
+    nr_proxy_backend: object | None = None,
 ) -> tuple[PerShotPredicateFn, dict[tuple[int, int], float]]:
     """Build the production Phase-D predicate from Phase-B bisect.
 
@@ -2348,6 +2401,12 @@ def _build_per_shot_bisect_predicate(
     the bisect completes.  The caller reads the sidecar after
     :func:`tune_per_shot` to patch :attr:`ShotRecommendation.bitrate_kbps`
     without widening the :data:`PredicateFn` return type (ADR-0536).
+
+    ``nr_proxy_backend`` is an optional
+    :class:`~vmaftune.score_backend.NRProxyBackend` for fast NR
+    pre-scoring (ADR-0624 / ADR-0615). Injected from the ``--fast-nr``
+    CLI flag.  When ``None`` (default), full-reference scoring is used
+    throughout.
     """
     if args.width <= 0 or args.height <= 0:
         raise ValueError("--width and --height must be positive for per-shot bisect")
@@ -2390,6 +2449,7 @@ def _build_per_shot_bisect_predicate(
             vmaf_bin=args.vmaf_bin,
             workdir=work_dir / f"shot_{shot.start_frame}_{shot.end_frame}",
             decode_semaphore=decode_semaphore,  # ADR-0577
+            nr_proxy_backend=nr_proxy_backend,  # ADR-0624 / ADR-0615
         )
         if not result.ok:
             raise RuntimeError(
@@ -2970,6 +3030,29 @@ def _run_compare(args: argparse.Namespace) -> int:
         set_decode_semaphore(_max_decodes)
         _decode_sem = threading.Semaphore(_max_decodes)
 
+        # ADR-0624 / ADR-0615: build the NR proxy backend when --fast-nr
+        # is passed. A single shared instance is used for all codecs and
+        # all target-VMAF rungs in the compare run so the ONNX model is
+        # loaded once and the per-CRF cache is shared across the sweep.
+        # NRProxyBackendError from construction (missing onnxruntime,
+        # missing model file) is surfaced immediately as a user error.
+        _nr_proxy: "NRProxyBackend | None" = None
+        if getattr(args, "fast_nr", False):
+            from .score_backend import NRProxyBackend, NRProxyBackendError  # noqa: PLC0415
+
+            try:
+                _nr_proxy = NRProxyBackend()
+                # Eager δ_fast resolution so any sidecar-read error is
+                # surfaced before any encode starts.
+                _delta = _nr_proxy.calibration_threshold
+                sys.stderr.write(
+                    f"vmaf-tune compare: --fast-nr enabled; "
+                    f"δ_fast={_delta:.1f} VMAF (NR early-elimination)\n"
+                )
+            except NRProxyBackendError as exc:
+                sys.stderr.write(f"vmaf-tune compare: --fast-nr: {exc}\n")
+                return 2
+
         def _build_bisect_for_target(target: float):
             return make_bisect_predicate(
                 target_vmaf=target,
@@ -2988,6 +3071,7 @@ def _run_compare(args: argparse.Namespace) -> int:
                 vmaf_bin=args.vmaf_bin,
                 workdir=_compare_workdir,
                 decode_semaphore=_decode_sem,
+                nr_proxy_backend=_nr_proxy,
             )
 
         # Single-target legacy: build one predicate against
