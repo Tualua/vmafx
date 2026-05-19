@@ -37277,3 +37277,26 @@ Touched files:
 `docs/state.md` (Recently-closed row T-CUDA-AIM-ADM3-2026-05-18),
 `changelog.d/added/0574-hdr-features-cuda-twins-aim-adm3.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0606 — macOS SIGSEGV deep-fix in output.c writers (PR #1403 follow-up)
+
+**Rebase-sensitive invariant**: `i >= fc->feature_vector[j]->capacity` (not `>`) in
+all seven frame-iteration bounds checks in `libvmaf/src/output.c`.  If upstream
+Netflix ever backports a fix to the same comparison sites and uses `>` (the old,
+buggy form), the rebase must preserve the `>=` — the `>` form is a heap buffer
+overread UB that surfaces on macOS with `MALLOC_PERTURB_=198`.
+
+The fps computation guard (`if (vmaf->pic_cnt == 0 || timer_elapsed == 0)`) in
+`libvmaf/src/libvmaf.c` is similarly rebase-sensitive: if upstream modifies the
+fps block, preserve the guard before dividing so import-only callers (those that
+use `vmaf_import_feature_score` without `vmaf_read_pictures`) do not produce
+`0.0/0.0` which may SIGFPE on Apple platforms.
+
+Touched files:
+`libvmaf/src/output.c` (7 bounds-check sites, json pool-score + frames comma fixes),
+`libvmaf/src/libvmaf.c` (fps defensive computation),
+`docs/adr/0606-macos-vmaf-write-output-segv-deep-fix.md`,
+`docs/adr/README.md` (one index row),
+`docs/state.md` (Recently-closed row),
+`changelog.d/fixed/0606-macos-vmaf-write-output-segv-deep-fix.md`,
+`docs/rebase-notes.md` (this entry).

@@ -2764,10 +2764,21 @@ int vmaf_write_output_with_format(VmafContext *vmaf, const char *output_path,
         return -EINVAL;
     }
 
-    const double fps =
-        vmaf->pic_cnt /
-        ((double)(vmaf->feature_collector->timer.end - vmaf->feature_collector->timer.begin) /
-         CLOCKS_PER_SEC);
+    /* ADR-0606: Compute fps defensively to avoid 0.0/0.0 = NaN when either
+     * pic_cnt == 0 (no frames read, e.g. import-only callers) or the timer
+     * resolution is too coarse to distinguish begin and end.  NaN is handled
+     * correctly by the JSON fpclassify() switch, but Apple Clang with
+     * -ffast-math or a strict FP environment may generate a SIGFPE instead of
+     * the IEEE-754 quiet NaN on 0.0/0.0.  Emit 0.0 explicitly in those cases
+     * so the writers receive a well-defined, finite value. */
+    clock_t timer_elapsed =
+        vmaf->feature_collector->timer.end - vmaf->feature_collector->timer.begin;
+    double fps;
+    if (vmaf->pic_cnt == 0 || timer_elapsed == 0) {
+        fps = 0.0;
+    } else {
+        fps = (double)vmaf->pic_cnt / ((double)timer_elapsed / (double)CLOCKS_PER_SEC);
+    }
 
     int ret = 0;
     switch (fmt) {

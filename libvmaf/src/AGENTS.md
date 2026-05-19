@@ -37,3 +37,34 @@ arithmetic, the resulting aligned size is 0. The allocator succeeds, and any
 pixel read is OOB. Add an early-exit `if (w == 0 || w > 32768u || ...)
 return -EINVAL;` guard at the public entry point before any arithmetic.
 Pattern: see `vmaf_picture_alloc` in [`picture.c`](picture.c). CERT INT30-C.
+
+### 4. Capacity bounds checks in `output.c` must use `>=`, not `>` (ADR-0606)
+
+All frame-iteration loops in [`output.c`](output.c) guard per-feature
+access with:
+
+```c
+if (i >= fc->feature_vector[j]->capacity)  /* ADR-0606: >= not > */
+    continue;
+```
+
+The allocated score array covers indices `0..capacity-1`. Index `capacity`
+is one past the end. Using `>` (strictly greater) allows access at
+`i == capacity`, which is a heap buffer overread (UB). Under
+`MALLOC_PERTURB_=198` (the macOS CI setting), the poisoned byte at
+`score[capacity].written` is `0xC6` (truthy), causing spurious "written"
+results and downstream SIGSEGV under Apple Clang's UB optimizations.
+
+If an upstream sync or cherry-pick replaces any of the 7 capacity-check
+sites with `>`, revert back to `>=` in the same commit.
+
+### 5. Comma-tracking in JSON writers must use explicit `bool first` flags (ADR-0606)
+
+`json_write_pool_score` and `json_write_frames` in [`output.c`](output.c)
+track whether a comma separator is needed via explicit `bool first` /
+`bool first_frame` flags. Do not replace these with:
+
+- `j > 1` (pool method enum) — wrong when `j == 1` call is skipped and
+  `j == 2` is first, producing a leading comma in the JSON object.
+- `i > 0` (frame index) — wrong when frame 0 has no written scores and
+  frame 3 is first, producing a leading comma in the JSON array.

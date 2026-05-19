@@ -62,7 +62,12 @@ static unsigned count_written_at(VmafFeatureCollector *fc, unsigned i)
 {
     unsigned cnt = 0;
     for (unsigned j = 0; j < fc->cnt; j++) {
-        if (i > fc->feature_vector[j]->capacity)
+        /* ADR-0606: `>` was wrong — valid indices are 0..capacity-1, so the
+         * out-of-bounds check must use `>=`.  The old `>` allowed access to
+         * score[capacity] when i == capacity, which is one past the end of the
+         * allocated array and is undefined behaviour.  Apple Clang / ASan
+         * catches this as a heap buffer overread. */
+        if (i >= fc->feature_vector[j]->capacity)
             continue;
         if (fc->feature_vector[j]->score[i].written)
             cnt++;
@@ -87,7 +92,7 @@ static void xml_write_frames(VmafFeatureCollector *fc, FILE *outfile, unsigned s
 
         fprintf(outfile, "    <frame frameNum=\"%d\" ", i);
         for (unsigned j = 0; j < fc->cnt; j++) {
-            if (i > fc->feature_vector[j]->capacity)
+            if (i >= fc->feature_vector[j]->capacity) /* ADR-0606: >= not > */
                 continue;
             if (!fc->feature_vector[j]->score[i].written)
                 continue;
@@ -206,7 +211,7 @@ static void json_write_frame(VmafFeatureCollector *fc, FILE *outfile, unsigned i
 
     unsigned cnt2 = 0;
     for (unsigned j = 0; j < fc->cnt; j++) {
-        if (i > fc->feature_vector[j]->capacity)
+        if (i >= fc->feature_vector[j]->capacity) /* ADR-0606: >= not > */
             continue;
         if (!fc->feature_vector[j]->score[i].written)
             continue;
@@ -222,6 +227,11 @@ static void json_write_frames(VmafFeatureCollector *fc, FILE *outfile, unsigned 
                               const char *sf)
 {
     fprintf(outfile, "  \"frames\": [");
+    /* ADR-0606: track whether we have emitted the first frame entry so the
+     * separator comma is placed correctly regardless of which frame index is
+     * the first one with written scores (using `i > 0` was wrong when the
+     * first written frame had index > 0, producing a leading comma). */
+    bool first_frame = true;
     for (unsigned i = 0; i < max_capacity(fc); i++) {
         if ((subsample > 1) && (i % subsample))
             continue;
@@ -229,16 +239,27 @@ static void json_write_frames(VmafFeatureCollector *fc, FILE *outfile, unsigned 
         unsigned cnt = count_written_at(fc, i);
         if (!cnt)
             continue;
-        fprintf(outfile, "%s", i > 0 ? ",\n" : "\n");
+        fprintf(outfile, "%s", first_frame ? "\n" : ",\n");
+        first_frame = false;
 
         json_write_frame(fc, outfile, i, cnt, sf);
     }
     fprintf(outfile, "\n  ],\n");
 }
 
-static void json_write_pool_score(FILE *outfile, unsigned j, double score, const char *sf)
+/* Emit one pool score value, prefixing with a separator only after the first.
+ *
+ * ADR-0606: the previous implementation used `j > 1` (where j is the pool
+ * method enum value) to decide whether to emit a leading comma.  This was
+ * wrong when the j==1 method call returned an error and was skipped: the
+ * j==2 call would then print a leading comma with no preceding value,
+ * producing malformed JSON ("{,\n  \"max\": ...}").  Use an explicit
+ * `*first` flag instead so the comma tracks what was actually emitted. */
+static void json_write_pool_score(FILE *outfile, bool *first, unsigned j, double score,
+                                  const char *sf)
 {
-    fprintf(outfile, "%s", j > 1 ? ",\n" : "\n");
+    fprintf(outfile, "%s", *first ? "\n" : ",\n");
+    *first = false;
     switch (fpclassify(score)) {
     case FP_NORMAL:
     case FP_ZERO:
@@ -258,20 +279,22 @@ static void json_write_pooled_entry(VmafContext *vmaf, FILE *outfile, const char
                                     unsigned pic_cnt, const char *sf)
 {
     fprintf(outfile, "    \"%s\": {", vmaf_feature_name_alias(feature_name));
-    /* ADR-0602: pic_cnt == 0 means no frames were read via vmaf_read_pictures
-     * (e.g. the caller injected scores via vmaf_import_feature_score).  The
-     * expression `pic_cnt - 1` wraps to UINT_MAX when pic_cnt is zero, which
-     * passes vmaf_feature_score_pooled's `index_low > index_high` guard (0 <=
-     * UINT_MAX is always true for unsigned comparisons) and can trigger an
-     * apparently-infinite loop on macOS clang where the optimiser may not
-     * emit the early-exit path the same way GCC does on Linux.  Skip pooled
-     * metrics entirely when there are no frames to pool. */
+    /* ADR-0602 / ADR-0606: pic_cnt == 0 means no frames were read via
+     * vmaf_read_pictures (e.g. the caller injected scores via
+     * vmaf_import_feature_score).  The expression `pic_cnt - 1` wraps to
+     * UINT_MAX when pic_cnt is zero, which passes vmaf_feature_score_pooled's
+     * `index_low > index_high` guard (0 <= UINT_MAX for unsigned) and produces
+     * a loop whose termination condition `i <= UINT_MAX` is tautologically true
+     * for unsigned i.  Apple Clang may treat that as an infinite loop and
+     * optimise away the in-body early-exit paths that Linux GCC happens to
+     * preserve.  Skip pooled metrics entirely when there are no frames. */
     if (pic_cnt > 0) {
+        bool first = true;
         for (unsigned j = 1; j < VMAF_POOL_METHOD_NB; j++) {
             double score;
             int err = vmaf_feature_score_pooled(vmaf, feature_name, j, &score, 0, pic_cnt - 1);
             if (!err)
-                json_write_pool_score(outfile, j, score, sf);
+                json_write_pool_score(outfile, &first, j, score, sf);
         }
     }
     fprintf(outfile, "\n");
@@ -374,7 +397,7 @@ int vmaf_write_output_csv(VmafFeatureCollector *fc, FILE *outfile, unsigned subs
 
         unsigned cnt = 0;
         for (unsigned j = 0; j < fc->cnt; j++) {
-            if (i > fc->feature_vector[j]->capacity)
+            if (i >= fc->feature_vector[j]->capacity) /* ADR-0606: >= not > */
                 continue;
             if (fc->feature_vector[j]->score[i].written)
                 cnt++;
@@ -384,7 +407,7 @@ int vmaf_write_output_csv(VmafFeatureCollector *fc, FILE *outfile, unsigned subs
 
         fprintf(outfile, "%d,", i);
         for (unsigned j = 0; j < fc->cnt; j++) {
-            if (i > fc->feature_vector[j]->capacity)
+            if (i >= fc->feature_vector[j]->capacity) /* ADR-0606: >= not > */
                 continue;
             if (!fc->feature_vector[j]->score[i].written)
                 continue;
@@ -412,7 +435,7 @@ int vmaf_write_output_sub(VmafFeatureCollector *fc, FILE *outfile, unsigned subs
 
         unsigned cnt = 0;
         for (unsigned j = 0; j < fc->cnt; j++) {
-            if (i > fc->feature_vector[j]->capacity)
+            if (i >= fc->feature_vector[j]->capacity) /* ADR-0606: >= not > */
                 continue;
             if (fc->feature_vector[j]->score[i].written)
                 cnt++;
@@ -422,7 +445,7 @@ int vmaf_write_output_sub(VmafFeatureCollector *fc, FILE *outfile, unsigned subs
 
         fprintf(outfile, "{%d}{%d}frame: %d|", i, i + 1, i);
         for (unsigned j = 0; j < fc->cnt; j++) {
-            if (i > fc->feature_vector[j]->capacity)
+            if (i >= fc->feature_vector[j]->capacity) /* ADR-0606: >= not > */
                 continue;
             if (!fc->feature_vector[j]->score[i].written)
                 continue;
