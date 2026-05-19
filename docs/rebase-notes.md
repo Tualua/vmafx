@@ -37301,7 +37301,7 @@ Touched files:
 `changelog.d/fixed/0606-macos-vmaf-write-output-segv-deep-fix.md`,
 `docs/rebase-notes.md` (this entry).
 
-## ADR-0607 — vmaf-tune compare: decode reference YUV once (shared-ref fix)
+## ADR-0612 — vmaf-tune compare: decode reference YUV once (shared-ref fix)
 
 **No rebase impact**: all touched files are fork-local Python harness files.
 No upstream C sources, no public headers, no FFmpeg patch series involved.
@@ -37315,4 +37315,23 @@ Touched files:
 `docs/adr/0607-vmaftune-shared-ref-yuv-decode-once.md`,
 `docs/adr/README.md` (one index row),
 `changelog.d/fixed/0607-vmaftune-shared-ref-yuv-decode-once.md`,
+## ADR-0612 — Tiny-AI Netflix corpus training scaffold (2026-05-19 iteration)
+
+**No rebase-sensitive invariants introduced by this PR** — all changes are
+documentation, research digest, and CHANGELOG fragment.  No C/CUDA/SIMD paths
+modified; no loader or test code changed.
+
+The one invariant worth noting for future rebases: the `.workingdir2/netflix/`
+corpus path is **local-only and gitignored**.  If a future rebase touches
+`.gitignore`, confirm that the `*.yuv` and `.workingdir2/` entries remain in
+place.  Training scripts must continue to accept `--data-root` as an explicit
+CLI flag rather than hard-coding the path.
+
+Touched files:
+`docs/adr/0612-tiny-ai-netflix-training-scaffold-2026-05-19.md`,
+`docs/adr/_index_fragments/0612-tiny-ai-netflix-training-scaffold-2026-05-19.md`,
+`docs/adr/_index_fragments/_order.txt`,
+`docs/research/0612-tiny-ai-netflix-training-scaffold-2026-05-19.md`,
+`docs/ai/training-data.md` (cross-reference links),
+`changelog.d/added/0612-tiny-ai-netflix-training-scaffold-2026-05-19.md`,
 `docs/rebase-notes.md` (this entry).

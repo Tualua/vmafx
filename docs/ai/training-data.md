@@ -138,3 +138,8 @@ Determinism`.
   VMAF methodology survey and distillation literature (2026-04-27)
 - [Research digest 0099](../research/0099-tiny-ai-netflix-training-update.md) —
   2024–2026 distillation, ONNX Runtime, and lightweight FR regressor update
+- [Research digest 0607](../research/0612-tiny-ai-netflix-training-scaffold-2026-05-19.md) —
+  2024–2026 refresh: EfficientVMAF, temperature-scaled distillation, ORT 1.19/1.20,
+  feature-reweighting (2026-05-19)
+- [ADR-0612](../adr/0612-tiny-ai-netflix-training-scaffold-2026-05-19.md) — architecture
+  alternatives table and training-data contract formalised (2026-05-19 scaffold iteration)
