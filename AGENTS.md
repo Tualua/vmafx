@@ -406,6 +406,18 @@ linked AGENTS.md before resolving conflicts.
   ports `d3647c73` `feature/speed` extractors (`speed_chroma` +
   `speed_temporal`).
 
+- **CI action pins — Windows MSVC dev env**
+  ([ADR-0635](docs/adr/0635-ci-warning-omnibus-2026-05-19.md)):
+  `.github/workflows/libvmaf-build-matrix.yml` uses
+  `TheMrMilchmann/setup-msvc-dev@79dac248…` (v4.0.0, Node.js 24) for the
+  Windows GPU build legs. If upstream ADR-0121 is re-implemented or the
+  Windows legs are rebased, do **not** reintroduce `ilammy/msvc-dev-cmd`
+  (Node.js 20, deprecated 2026-06-02). The `TheMrMilchmann` action is a
+  drop-in replacement with identical `vcvarsall.bat` semantics.
+  Also: both Windows jobs are pinned to `windows-2025`; do not revert to
+  `windows-latest` (redirect to `windows-2025-vs2026` takes effect
+  2026-06-15).
+
 - **dev-MCP Docker container**
   ([ADR-0435](docs/adr/0435-local-dev-mcp-container.md)):
   `dev/Containerfile` pins `cuda-toolkit-12-6`, `intel-basekit-2025.3`,

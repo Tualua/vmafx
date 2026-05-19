@@ -7,6 +7,26 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## chore/ci-warning-omnibus (ADR-0635)
+
+**No rebase impact**: all touched files are fork-local CI workflow YAML
+(`.github/workflows/libvmaf-build-matrix.yml`), fork-added docs
+(`docs/mcp/tools.md`, `docs/adr/`, `docs/research/`, `changelog.d/`),
+and this file. Upstream Netflix/vmaf does not use GitHub Actions workflows
+that overlap with these changes. No C sources, no public headers, and no
+FFmpeg patch series are involved.
+
+Touched files:
+`.github/workflows/libvmaf-build-matrix.yml` (ilammy→TheMrMilchmann action
+swap; windows-latest→windows-2025; vulkaninfo stderr redirect + debug
+demotion; ccache-v2 key prefix),
+`docs/mcp/tools.md` (run_benchmark heading backtick removal + a-id drop),
+`docs/adr/0635-ci-warning-omnibus-2026-05-19.md`,
+`docs/adr/README.md` (one index row),
+`docs/research/ci-warning-omnibus-2026-05-19.md`,
+`changelog.d/fixed/0635-ci-warning-omnibus.md`,
+`docs/rebase-notes.md` (this entry).
+
 ## fix/scaffold-audit-p0-silent-correctness (ADR-0620)
 
 **No rebase impact**: all touched files are fork-local Python harness

@@ -268,11 +268,14 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
           path: ~/.ccache
-          key: ccache-${{ matrix.os }}-${{ matrix.CC }}-${{ matrix.meson_extra }}-${{ github.sha }}
+          # v2 prefix: forces fresh entries after actions/cache v4→v5
+          # upgrade (old v4-format entries cause deserialization failures
+          # on macOS Vulkan lane — ADR-0635).
+          key: ccache-v2-${{ matrix.os }}-${{ matrix.CC }}-${{ matrix.meson_extra }}-${{ github.sha }}
           restore-keys: |
-            ccache-${{ matrix.os }}-${{ matrix.CC }}-${{ matrix.meson_extra }}-
-            ccache-${{ matrix.os }}-${{ matrix.CC }}-
-            ccache-${{ matrix.os }}-
+            ccache-v2-${{ matrix.os }}-${{ matrix.CC }}-${{ matrix.meson_extra }}-
+            ccache-v2-${{ matrix.os }}-${{ matrix.CC }}-
+            ccache-v2-${{ matrix.os }}-
 
       - name: Setup python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
@@ -505,9 +508,13 @@ jobs:
           # because vulkaninfo non-zero-exits on some macOS warning
           # paths even when enumeration succeeds; the grep below is
           # the actual gate.
-          vulkaninfo --summary 2>&1 | tee /tmp/vulkaninfo.txt || true
+          # Stderr redirected to /dev/null: hosted macOS runners emit
+          # GPU-capability warnings (no bare-metal GPU access) that
+          # appear as CI annotations even though enumeration succeeds.
+          # The tee of stdout is the real diagnostic (ADR-0635).
+          vulkaninfo --summary 2>/dev/null | tee /tmp/vulkaninfo.txt || true
           if ! grep -qi 'MoltenVK\|Apple' /tmp/vulkaninfo.txt; then
-            echo "::warning::vulkaninfo did not report MoltenVK/Apple GPU — see /tmp/vulkaninfo.txt"
+            echo "::debug::vulkaninfo did not report MoltenVK/Apple GPU — see /tmp/vulkaninfo.txt (expected on hosted runners without bare-metal GPU)"
           fi
           glslc --version | head -2
 
@@ -770,7 +777,7 @@ jobs:
   windows:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: Build — Windows MinGW64 (CPU)
-    runs-on: windows-latest
+    runs-on: windows-2025
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -854,14 +861,16 @@ jobs:
           if-no-files-found: error
 
   # ===== Windows GPU build-only (MSVC + CUDA, MSVC + oneAPI SYCL) =====
-  # Build-only legs — no GPU on the windows-latest runner, so the test
+  # Build-only legs — no GPU on the windows-2025 runner, so the test
   # step is intentionally omitted. The point is verifying that the
   # CUDA / SYCL backend code compiles & links on the MSVC toolchain,
   # closing the platform-coverage hole left by the Linux-only GPU
   # matrix entries above. See ADR-0121.
   #
-  # MSVC env is set up via ilammy/msvc-dev-cmd@v1 (community-standard
-  # action that runs `vcvars64.bat` and exports the variables).
+  # MSVC env is set up via TheMrMilchmann/setup-msvc-dev@v4 (Node 24
+  # replacement for ilammy/msvc-dev-cmd@v1.13.0, which was deprecated
+  # on Node.js 20 — see ADR-0635). Functionally identical: runs
+  # vcvarsall.bat and exports PATH/INCLUDE/LIB for cl.exe.
   # CUDA toolkit comes from Jimver/cuda-toolkit (same action used by
   # the Linux CUDA legs, pinned to the same 13.2.0 release for parity
   # — bumped from 13.0.0 per ADR-0603 for glibc 2.43 noexcept parity).
@@ -870,7 +879,7 @@ jobs:
   # extract + run bootstrapper). We tried `rscohn2/setup-oneapi@v0`
   # first (Linux-only — all install URLs `.sh`) and Chocolatey's
   # `intel-oneapi-basekit` (not on the community feed); neither
-  # works on `windows-latest`. Pinned to oneAPI 2025.3.0.372 to
+  # works on `windows-2025`. Pinned to oneAPI 2025.3.0.372 to
   # match the Linux SYCL leg's `intel-oneapi-compiler-dpcpp-cpp-2025.3`.
   # Both legs additionally inject `/experimental:c11atomics` into
   # `CFLAGS` / `CXXFLAGS` because libvmaf uses C11 atomics that
@@ -881,7 +890,7 @@ jobs:
   windows-gpu-build:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: ${{ matrix.name }}
-    runs-on: windows-latest
+    runs-on: windows-2025
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -919,8 +928,12 @@ jobs:
       # Exports cl.exe + the rest of the MSVC toolchain into PATH /
       # INCLUDE / LIB. Required by both backends (CUDA's nvcc shells
       # out to cl.exe; oneAPI's icx-cl wraps cl.exe).
+      # Switched from ilammy/msvc-dev-cmd@v1.13.0 (Node.js 20,
+      # deprecated 2026-06-02) to TheMrMilchmann/setup-msvc-dev@v4
+      # (Node.js 24) per ADR-0635. Same vcvarsall.bat semantics;
+      # no inputs required — defaults to amd64.
       - name: Setup MSVC dev environment
-        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756  # v1.13.0
+        uses: TheMrMilchmann/setup-msvc-dev@79dac248aac9d0059f86eae9d8b5bfab4e95e97c  # v4.0.0
 
       # ---------- CUDA toolkit (CUDA leg only) ----------
       # Same pin as the Linux CUDA legs: CUDA 13.2.0, Maxwell/Pascal/Volta
@@ -1007,7 +1020,7 @@ jobs:
           echo INCLUDE=%CD%\nvcodec-prefix\include;%INCLUDE%>>%GITHUB_ENV%
 
       # ---------- Strip ccache from PATH (Windows) ----------
-      # `windows-latest` ships `C:\Strawberry\c\bin\ccache.exe` on
+      # `windows-2025` ships `C:\Strawberry\c\bin\ccache.exe` on
       # PATH. Meson's compiler-detection wraps nvcc with it
       # unconditionally → "Compiler ... ccache nvcc cannot compile
       # programs" (the wrap happens at meson configure time;
@@ -1093,6 +1106,6 @@ jobs:
           call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
           ninja -v -C libvmaf\build install
 
-      # No test step — windows-latest has no GPU. The whole point of
+      # No test step — windows-2025 has no GPU. The whole point of
       # this job is exercising the MSVC + CUDA / MSVC + oneAPI link
       # paths to catch portability regressions at compile time.
