@@ -705,7 +705,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # `-preset 8` are the rate-quality knobs vmaf-tune's compare sweep
 # exercises). Tags 2.x are current at time of writing; 2.1.0 is a
 # stable LTS-flavoured cut.
-ARG SVTAV1_VERSION=2.1.0
+ARG SVTAV1_VERSION=2.3.0
 RUN git clone --depth=1 --branch "v${SVTAV1_VERSION}" \
         https://gitlab.com/AOMediaCodec/SVT-AV1.git /tmp/SVT-AV1 \
     && cmake -S /tmp/SVT-AV1 -B /tmp/SVT-AV1/build \
