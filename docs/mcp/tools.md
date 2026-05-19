@@ -190,6 +190,9 @@ output; `cpu` is reported `true` whenever the binary exists.
   raised. Call `list_backends` before other tools to test whether the
   build is usable.
 
+<!-- markdownlint-disable-next-line MD033 -->
+<a id="run_benchmark"></a>
+
 ## `run_benchmark`
 
 Run the full multi-fixture benchmark suite (`testdata/bench_all.sh`) against all
