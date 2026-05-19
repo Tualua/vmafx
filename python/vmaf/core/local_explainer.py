@@ -3,6 +3,7 @@ import sklearn.metrics
 from sklearn.linear_model import Ridge
 
 from vmaf import plt
+from vmaf.tools.exceptions import EnsembleNotSupportedError
 from vmaf.tools.misc import get_file_name_without_extension
 from vmaf.tools.reader import YuvReader
 
@@ -118,7 +119,14 @@ class LocalExplainer(object):
 
             model = train_test_model.model
             if isinstance(model, list):
-                model = model[0]  # HACKY, TODO: fix it
+                if len(model) != 1:
+                    raise EnsembleNotSupportedError(
+                        "LocalExplainer received a model list of length {}. "
+                        "Explanation for multi-model ensembles is not yet "
+                        "defined. Either reduce the list to a single model or "
+                        "implement an ensemble aggregation strategy.".format(len(model))
+                    )
+                model = model[0]
 
             # predict
             ys_label_pred_neighbor = train_test_model._predict(model, xs_2d_neighbor)

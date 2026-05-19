@@ -7,6 +7,31 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## fix/scaffold-audit-p0-silent-correctness (ADR-0620)
+
+**No rebase impact**: all touched files are fork-local Python harness
+files and docs.  No upstream C sources, no public headers, no FFmpeg
+patch series involved.  The three fixed Python files (`routine.py`,
+`train_test_model.py`, `local_explainer.py`) are also present
+upstream, but the specific exception-handling changes are in
+fork-added call paths (extended-stats bagging, `plot_scatter`
+visualisation, local-explainer model dispatch).  If upstream lands
+a conflicting change to these exact lines, the merge resolution is
+straightforward: keep the `raise` paths and update context if the
+upstream change affects surrounding logic.
+
+Touched files:
+`python/vmaf/tools/exceptions.py` (3 new exception classes),
+`python/vmaf/routine.py` (P0-1 fix + `CalibrationError` import),
+`python/vmaf/core/train_test_model.py` (P0-2 fix + `MissingLabelStddevError` import),
+`python/vmaf/core/local_explainer.py` (P0-3 fix + `EnsembleNotSupportedError` import),
+`python/test/test_adr0620_scaffold_audit_p0.py` (16 regression tests),
+`docs/adr/0620-scaffold-audit-p0-silent-correctness-fixes.md`,
+`docs/adr/README.md` (one index row),
+`docs/state.md` (3 rows moved from Open to Recently closed),
+`changelog.d/fixed/adr0620-scaffold-audit-p0-silent-correctness.md`,
+`docs/rebase-notes.md` (this entry).
+
 ## feat/zed-editor-project-config (ADR-0608)
 
 No rebase-sensitive invariants — only `.zed/` (new directory), `.gitignore`

@@ -1,3 +1,19 @@
+class CalibrationError(Exception):
+    """Raised when stats-calculation fails and the caller has not opted in to
+    the uncalibrated-normalisation fallback via ``allow_uncalibrated=True``."""
+
+
+class MissingLabelStddevError(Exception):
+    """Raised when ``ys_label_stddev`` is absent from a stats dict and the
+    caller has not opted in to the unit-stddev assumption via
+    ``assume_unit_stddev=True``."""
+
+
+class EnsembleNotSupportedError(Exception):
+    """Raised when a ``LocalExplainer`` receives a multi-model list and has no
+    defined aggregation strategy for ensemble explanations."""
+
+
 class BdRateException(Exception):
     pass
 

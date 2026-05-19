@@ -12,6 +12,7 @@ from vmaf.core.local_explainer import LocalExplainer
 from vmaf.core.quality_runner import VmafQualityRunner, VmafQualityRunnerModelMixin
 from vmaf.core.result_store import FileSystemResultStore
 from vmaf.core.train_test_model import ClassifierMixin, RegressorMixin, TrainTestModel
+from vmaf.tools.exceptions import CalibrationError
 from vmaf.tools.misc import (
     close_logger,
     get_file_name_without_extension,
@@ -444,6 +445,7 @@ def run_test_on_dataset(
     fifo_mode=True,
     aggregate_method=np.mean,
     type="regressor",
+    allow_uncalibrated=False,
     **kwargs,
 ):
 
@@ -601,11 +603,19 @@ def run_test_on_dataset(
                 ys_label_stddev=groundtruths_std,
                 split_test_indices_for_perf_ci=split_test_indices_for_perf_ci,
             )
-    except Exception as e:
+    except Exception as exc:
+        if not allow_uncalibrated:
+            raise CalibrationError(
+                "Stats calculation failed and allow_uncalibrated=False. "
+                "Pass allow_uncalibrated=True to fall back to default "
+                "(uncalibrated) normalisation stats. "
+                "Original error: {}".format(exc)
+            ) from exc
         print(
-            "Warning: stats calculation failed, fall back to default stats calculation: {}".format(
-                e
-            )
+            "Warning: stats calculation failed, falling back to default "
+            "(uncalibrated) normalisation stats. "
+            "Pass allow_uncalibrated=True to suppress this check. "
+            "Original error: {}".format(exc)
         )
         # Fallback stats: same classifier/regressor split as above.
         if model_type is ClassifierMixin:

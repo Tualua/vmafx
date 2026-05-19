@@ -21,6 +21,7 @@ from vmaf.core.perf_metric import (
     SrccPerfMetric,
 )
 from vmaf.tools.decorator import deprecated, override
+from vmaf.tools.exceptions import MissingLabelStddevError
 from vmaf.tools.misc import NoPrint, indices, linear_fit, linear_func
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
@@ -347,11 +348,17 @@ class RegressorMixin(object):
         ys_label_pred = np.array(stats["ys_label_pred"])
         assert len(ys_label_pred) == len(ys_label)
 
-        ys_label_stddev = (
-            np.array(stats["ys_label_stddev"])
-            if "ys_label_stddev" in stats
-            else np.zeros(len(ys_label))
-        )  # FIXME: setting std to 0 may be misleading
+        assume_unit_stddev = kwargs.get("assume_unit_stddev", False)
+        if "ys_label_stddev" in stats:
+            ys_label_stddev = np.array(stats["ys_label_stddev"])
+        elif assume_unit_stddev:
+            ys_label_stddev = np.ones(len(ys_label))
+        else:
+            raise MissingLabelStddevError(
+                "stats dict does not contain 'ys_label_stddev'. "
+                "Pass assume_unit_stddev=True to plot with unit error bars "
+                "instead of raising."
+            )
         try:
             ys_label_stddev[np.isnan(ys_label_stddev)] = 0
         except TypeError:
