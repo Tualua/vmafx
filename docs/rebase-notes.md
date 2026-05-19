@@ -25,6 +25,30 @@ Touched files:
 `docs/adr/README.md` (regenerated),
 `changelog.d/added/0608-zed-editor-project-config.md`,
 `docs/rebase-notes.md` (this entry).
+## plan/netflix-grade-encoding-roadmap (ADR-0613 – ADR-0618)
+
+No rebase-sensitive invariants — all changes are planning documents only:
+six ADRs, six research digests, one roadmap overview, one changelog fragment,
+and ADR index rows in `docs/adr/README.md`. No C sources, headers, build
+files, or Python implementation files are touched. No upstream-shared paths
+are modified.
+
+Touched files:
+`docs/adr/0613-dynamic-optimizer.md`,
+`docs/adr/0614-per-shot-abr-rendition.md`,
+`docs/adr/0615-fast-nr-prescoring.md`,
+`docs/adr/0616-vmaf-neg-integration.md`,
+`docs/adr/0617-cross-shot-complexity-weighting.md`,
+`docs/adr/0618-content-aware-classifier.md`,
+`docs/adr/README.md` (index rows),
+`docs/research/0609-dynamic-optimizer-research.md`,
+`docs/research/0610-per-shot-abr-rendition-research.md`,
+`docs/research/0611-fast-nr-prescoring-research.md`,
+`docs/research/0612-vmaf-neg-integration-research.md`,
+`docs/research/0613-cross-shot-complexity-weighting-research.md`,
+`docs/research/0614-content-aware-classifier-research.md`,
+`docs/development/netflix-grade-encoding-pipeline-roadmap-2026-05-19.md`,
+`changelog.d/added/netflix-grade-encoding-pipeline-roadmap.md`.
 
 ## chore/renovate-customManagers-dev-image (ADR-0605)
 
@@ -37398,4 +37422,22 @@ Touched files:
 `docs/adr/0628-adr-allocator-remote-aware.md`,
 `docs/adr/README.md` (one index row),
 `changelog.d/fixed/0628-adr-allocator-remote-aware.md`,
+## ADR-0608 — MCP P0 fixes: isError, probe_backend, vmaf_version, vmaf_score_encoded
+
+**No rebase impact**: all touched files are fork-local MCP server Python files and docs.
+No upstream C sources, no public headers, no FFmpeg patch series involved.
+
+Touched files:
+`mcp-server/vmaf-mcp/src/vmaf_mcp/server.py` (isError fix in `_call_tool`;
+new `_probe_backend`, `_vmaf_version`, `_run_vmaf_score_encoded`,
+`_ffprobe_geometry`, `_decode_to_yuv` functions; three new Tool registrations),
+`mcp-server/vmaf-mcp/tests/test_mcp_p0_adr0608.py` (11 new regression tests),
+`mcp-server/vmaf-mcp/tests/test_smoke_e2e.py` (2 test updates for new behavior),
+`mcp-server/vmaf-mcp/README.md` (tools table updated to 10 tools, 6 backends),
+`docs/mcp/tools.md` (new tool sections, corrected list_backends description and
+response body, updated error conventions table),
+`docs/adr/0608-mcp-p0-iserror-and-probe-version-encoded.md`,
+`docs/adr/README.md` (one index row),
+`changelog.d/fixed/adr0608-mcp-p0-iserror-probe-version-encoded.md`,
+`changelog.d/added/adr0608-mcp-probe-backend-vmaf-version-encoded.md`,
 `docs/rebase-notes.md` (this entry).
