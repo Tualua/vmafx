@@ -37377,3 +37377,25 @@ Touched files:
 `docs/adr/README.md` (one index row),
 `changelog.d/added/0626-macos-ci-tmate-debug-on-failure.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0628 — Remote-aware ADR number allocator
+
+**No rebase impact**: all touched files are fork-local tooling and CI
+configuration.  No upstream C sources, public headers, or FFmpeg patch series
+involved.
+
+`scripts/adr/next-free.sh` is a fork-added script with no upstream analogue;
+it will never conflict on a Netflix upstream sync.  The `.github/workflows/
+rule-enforcement.yml` change adds a new step to an existing job — this file
+does not exist upstream, so no conflict is expected.  The `CLAUDE.md` update
+extends §12 r8 prose only.
+
+Touched files:
+`scripts/adr/next-free.sh` (remote-aware allocator + `.git/adr-claims/` side-pointer),
+`scripts/adr/tests/test-next-free-remote-aware.sh` (new acceptance tests),
+`.github/workflows/rule-enforcement.yml` (phase-2 open-PR collision check),
+`CLAUDE.md` (§12 r8 extended allocator description),
+`docs/adr/0628-adr-allocator-remote-aware.md`,
+`docs/adr/README.md` (one index row),
+`changelog.d/fixed/0628-adr-allocator-remote-aware.md`,
+`docs/rebase-notes.md` (this entry).

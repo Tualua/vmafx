@@ -297,17 +297,23 @@ jobs:
 
   adr-collision-check:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: ADR Number Collision Guard (ADR-0386)
+    name: ADR Number Collision Guard (ADR-0386 / ADR-0628)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # Blocking gate: every ADR file added in this PR must have a 4-digit prefix
-    # that does NOT already exist on origin/master.  This catches the cross-branch
-    # race the local pre-commit hook cannot see (two branches cut from the same
-    # master tip both add the same NNNN before either merges).
+    # that does NOT already exist on origin/master AND does NOT collide with any
+    # number already claimed by another OPEN PR (ADR-0628).
     #
-    # The gate deliberately does NOT flag already-merged collisions — those are
-    # master state and are not actionable here.  It only fails when the PR itself
-    # introduces a prefix that is already present on master.
+    # Two-phase check:
+    #   Phase 1 — vs master: catches numbers already merged.
+    #   Phase 2 — vs open PRs: catches in-flight collisions before merge.
+    #     For each open PR (excluding this one), we fetch its HEAD and scan
+    #     docs/adr/ for NNNN-*.md files.  If a number matches, the check fails.
+    #
+    # Phase 2 uses the gh CLI (pre-installed on ubuntu-latest) and is
+    # best-effort: if the gh call fails (e.g. rate limit, permissions), the
+    # step emits a WARNING but does not block the PR (to preserve offline /
+    # restricted-token builds).
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
@@ -316,8 +322,6 @@ jobs:
       - name: Fetch origin/master (cross-branch collision baseline)
         run: |
           set -euo pipefail
-          # Ensure origin/master is available locally.  fetch-depth: 0 above pulls
-          # the full PR branch history; we still need to ensure master is present.
           git fetch origin master --depth=50 --quiet
 
       - name: Check for ADR number collisions with origin/master
@@ -327,7 +331,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Make sure both tip SHAs are reachable (mirrors pattern from other jobs).
+          # Make sure both tip SHAs are reachable.
           git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null \
             || git fetch --no-tags origin "${BASE_SHA}" || true
           git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null \
@@ -351,27 +355,96 @@ jobs:
           for adr_file in "${added_adrs[@]}"; do
             num="$(basename "${adr_file}" | grep -oE '^[0-9]{4}')"
 
-            # Does origin/master already have ANY file with this prefix?
+            # Phase 1: does origin/master already have ANY file with this prefix?
             collision="$(git ls-tree origin/master "docs/adr/" \
               | awk '{ print $4 }' \
               | grep -E "^docs/adr/${num}-" || true)"
 
             if [ -n "${collision}" ]; then
               echo "::error file=${adr_file}::ADR number collision: ${adr_file} uses prefix ${num}, but origin/master already has: ${collision}"
-              echo ""
               echo "  The number ${num} was already merged into master before this PR."
-              echo "  Run 'scripts/adr/next-free.sh' on your branch to get a free number,"
-              echo "  then rename the file and update the '# ADR-${num}:' heading inside it."
+              echo "  Run 'scripts/adr/next-free.sh --claim <slug>' to get a free number."
               fail=1
             fi
           done
 
           if [ "${fail}" -eq 1 ]; then
             echo ""
-            echo "ADR collision check failed — see errors above."
-            echo "This guard prevents the 7-collision pattern observed on 2026-05-10."
+            echo "ADR collision check (phase 1: vs master) failed — see errors above."
             echo "See ADR-0386 (docs/adr/0386-adr-numbering-collision-prevention.md)."
             exit 1
           fi
 
-          echo "ADR-collision-check: all ${#added_adrs[@]} ADR file(s) have unique prefix(es) on master."
+          echo "ADR-collision-check phase 1: all ${#added_adrs[@]} ADR file(s) have unique prefix(es) on master."
+
+      - name: Check for ADR number collisions with open PRs (ADR-0628)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          THIS_PR: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # Collect ADR numbers added by THIS PR (same logic as phase 1).
+          added_nums=()
+          while IFS= read -r f; do
+            num="$(basename "${f}" | grep -oE '^[0-9]{4}')"
+            added_nums+=("${num}")
+          done < <(git diff --name-status "${BASE_SHA}".."${HEAD_SHA}" \
+            | awk '$1 == "A" || $1 ~ /^R/ { print $NF }' \
+            | grep -E '^docs/adr/[0-9]{4}-.*\.md$' || true)
+
+          if [ "${#added_nums[@]}" -eq 0 ]; then
+            echo "ADR-collision-check phase 2: no new ADR files, skipping open-PR scan."
+            exit 0
+          fi
+
+          # Fetch the list of open PRs (excluding this one).
+          open_prs_json=""
+          if ! open_prs_json="$(gh pr list --state open \
+            --json number,headRefName,headRefOid \
+            --limit 200 2>/dev/null)"; then
+            echo "::warning::ADR-collision-check phase 2: gh pr list failed — open-PR scan skipped."
+            echo "  Ensure GITHUB_TOKEN has pull-requests:read permission."
+            exit 0
+          fi
+
+          # For each open PR (excluding this one), fetch its HEAD and check docs/adr/.
+          fail=0
+          while IFS=$'\t' read -r pr_num pr_branch pr_sha; do
+            [ "${pr_num}" = "${THIS_PR}" ] && continue
+            [ -z "${pr_sha}" ] && continue
+
+            # Fetch the PR tip (shallow; soft failure if SHA unavailable).
+            git fetch --no-tags --depth=1 --quiet origin "${pr_sha}" 2>/dev/null || continue
+
+            # Check if this PR's HEAD contains any of the numbers added by THIS PR.
+            for num in "${added_nums[@]}"; do
+              collision="$(git ls-tree -r --name-only "${pr_sha}" -- docs/adr/ 2>/dev/null \
+                | grep -E "^docs/adr/${num}-" || true)"
+              if [ -n "${collision}" ]; then
+                echo "::error::ADR number collision with open PR #${pr_num} (${pr_branch}):"
+                echo "  This PR adds ADR number ${num}."
+                echo "  Open PR #${pr_num} also contains: ${collision}"
+                echo "  Whichever PR merges second will need a renumber."
+                echo "  Run 'scripts/adr/next-free.sh --claim <slug>' on your branch to get a free number."
+                fail=1
+              fi
+            done
+          done < <(printf '%s' "${open_prs_json}" \
+            | python3 -c "
+          import json, sys
+          prs = json.load(sys.stdin)
+          for pr in prs:
+              print(str(pr['number']) + '\t' + pr['headRefName'] + '\t' + pr['headRefOid'])
+          " 2>/dev/null || true)
+
+          if [ "${fail}" -eq 1 ]; then
+            echo ""
+            echo "ADR collision check (phase 2: vs open PRs) failed — see errors above."
+            echo "See ADR-0628 (docs/adr/0628-adr-allocator-remote-aware.md)."
+            exit 1
+          fi
+
+          echo "ADR-collision-check phase 2: no collisions with open PRs."

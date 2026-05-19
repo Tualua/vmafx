@@ -203,10 +203,19 @@ Use `/prep-release` to dry-run locally before merging a release PR.
    `scripts/adr/next-free.sh --claim <slug>` to atomically reserve the next
    ADR number before creating the file** — do not hand-pick a number or use
    the read-only form without `--claim`. The `--claim` flag creates a
-   `docs/adr/NNNN-<slug>.md.stub` reservation visible to parallel agents.
+   `docs/adr/NNNN-<slug>.md.stub` reservation visible to parallel agents AND
+   writes a `.git/adr-claims/<NUMBER>` side-pointer visible to all worktrees
+   sharing the same `.git/` directory (so sibling agents in other worktrees
+   see the claim immediately, before any push). The allocator also queries
+   `git ls-remote --heads origin` to detect in-flight branches that have
+   already pushed an ADR file — it returns `max(all-seen) + 1`, biasing
+   upward to avoid gaps left by unpushed claims. If the network is
+   unreachable, a WARNING is printed to stderr and the allocator falls back
+   to local + master + `.git/adr-claims/` only.
    Rename the stub to `.md` when committing. See
-   [ADR-0386](docs/adr/0386-adr-numbering-collision-prevention.md) and
-   [ADR-0535](docs/adr/0535-adr-atomic-allocator.md).
+   [ADR-0386](docs/adr/0386-adr-numbering-collision-prevention.md),
+   [ADR-0535](docs/adr/0535-adr-atomic-allocator.md), and
+   [ADR-0628](docs/adr/0628-adr-allocator-remote-aware.md).
 9. **Every** session re-reads [docs/adr/README.md](docs/adr/README.md) at
    start and writes missing `docs/adr/NNNN-*.md` files + index rows for any
    decisions inherited from context before the next commit.

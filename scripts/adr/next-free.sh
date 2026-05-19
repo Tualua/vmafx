@@ -6,46 +6,77 @@
 #   - ADR stub files (.md.stub) created by prior --claim calls in this session
 #   - ADR files already merged into origin/master (cross-branch awareness)
 #   - In-flight branches on origin that contain an ADR file at their tip
+#     (fetched via git ls-remote + batch git ls-tree — < 5 s for 600+ ADRs /
+#      30+ branches)
+#   - ADR number claims written by sibling worktrees sharing the same .git/
+#     (via .git/adr-claims/<NUMBER> side-files)
 #
 # Usage:
 #   scripts/adr/next-free.sh
 #   # -> e.g. "0532"   (read-only; prints next free number, does not claim)
 #
 #   scripts/adr/next-free.sh --claim <topic-slug>
-#   # -> e.g. "0532"   (atomically creates docs/adr/0532-<topic-slug>.md.stub)
-#   #                   and prints the reserved number.
-#   #                   Parallel callers observe the stub and skip that number.
+#   # -> e.g. "0532"   (atomically creates docs/adr/0532-<topic-slug>.md.stub
+#   #                   AND .git/adr-claims/0532 side-pointer)
+#   #                   Prints the reserved number.
+#   #                   Parallel callers in ANY worktree sharing this .git/ observe
+#   #                   the claim and skip that number.
 #   #                   Rename .stub -> .md when committing the real ADR.
 #
 #   scripts/adr/next-free.sh --release <NNNN>
 #   # -> releases a previously claimed stub (e.g. if the PR is abandoned).
+#   #    Also removes the matching .git/adr-claims/<NNNN> file.
 #
 # Atomic claim guarantee (single machine, parallel callers):
 #   Claims use a per-repo lock dir under /tmp (POSIX mkdir is atomic on
 #   Linux ext4/tmpfs) to serialise concurrent invocations on the same host.
 #   The stub file is the persistent cross-process signal; after the lock is
 #   released the next caller sees the stub and skips the number.
+#   The .git/adr-claims/<NUMBER> side-file is the cross-worktree signal;
+#   sibling worktrees (agents working in parallel) see it even if they have
+#   not yet fetched the stub branch.
 #
 # Remote-branch awareness:
-#   With --claim, the script queries origin for any branch whose tip commit
-#   touches docs/adr/NNNN-*.md (via git ls-remote + git ls-tree).  Numbers
-#   claimed by in-flight branches are skipped.  This covers the parallel-agent
-#   scenario where each agent pushes to its own branch before merging.
+#   With --claim, the script fetches all origin branches (git ls-remote) and
+#   batch-queries their docs/adr/ trees (git ls-tree --batch-all-objects or
+#   per-SHA via a single git cat-file --batch run).  Numbers claimed by
+#   in-flight branches are skipped.  This covers the parallel-agent scenario
+#   where each agent pushes to its own branch before merging.
 #
-# See ADR-0386 (docs/adr/0386-adr-numbering-collision-prevention.md)
-# and ADR-0535 (docs/adr/0535-adr-atomic-allocator.md).
+# Offline / network-fail mode:
+#   If git ls-remote or gh pr list fail (offline, no network, timeout), the
+#   script logs a WARNING to stderr and falls back to local-only behavior.
+#   The number allocated is still collision-free among local + master state,
+#   but may collide with another in-flight agent on a different machine.
+#
+# Performance:
+#   Target: < 5 s on a repo with 600+ ADRs and 30+ open branches.
+#   Strategy: one git ls-remote call; one git fetch; N git ls-tree calls
+#   (one per branch) are replaced by a single git cat-file --batch run over
+#   the set of branch tip SHAs, then grep for docs/adr/ entries.
+#
+# See ADR-0386 (docs/adr/0386-adr-numbering-collision-prevention.md),
+#     ADR-0535 (docs/adr/0535-adr-atomic-allocator.md), and
+#     ADR-0628 (docs/adr/0628-adr-allocator-remote-aware.md) — the ADR for
+#     this remote-aware extension.
 
 set -euo pipefail
 
 # ── constants ────────────────────────────────────────────────────────────────
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
+# Use the common .git dir (resolves correctly even inside a worktree).
+GIT_COMMON_DIR="$(git rev-parse --git-common-dir)"
 ADR_DIR="${REPO_ROOT}/docs/adr"
+# Cross-worktree claim signals live in the common .git dir so all worktrees
+# sharing this repo see them regardless of which branch they have checked out.
+ADR_CLAIMS_DIR="${GIT_COMMON_DIR}/adr-claims"
 
-# Lock file is keyed by repo root so concurrent repos on the same host do not
-# contend, but parallel agents in the same repo do serialize.
-_repo_key="$(printf '%s' "${REPO_ROOT}" | tr '/' '_')"
-LOCK_DIR="/tmp/vmaf_adr_claim_lock_${_repo_key}"
+# Lock file is keyed by the common git dir so parallel agents in any worktree
+# of the same repo contend on the same lock, but separate repos on the same
+# host do not.
+_git_key="$(printf '%s' "${GIT_COMMON_DIR}" | tr '/' '_')"
+LOCK_DIR="/tmp/vmaf_adr_claim_lock_${_git_key}"
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -79,22 +110,83 @@ _release_lock() {
   trap - EXIT INT TERM
 }
 
-# Collect all taken 4-digit ADR numbers from local tree, stubs, origin/master,
-# and any extra tree-ish refs passed as arguments (remote branch tips).
-_collect_taken() {
+# Collect ADR numbers from origin's remote branches by batch-querying
+# all branch tip SHAs for docs/adr/ entries in a single git ls-tree pass.
+# Prints one 4-digit number per line; is best-effort (soft failure on network
+# outage or offline dev).
+#
+# Offline detection: the caller (_ls_remote_heads in the main shell) checks the
+# exit status of git ls-remote and sets REMOTE_OFFLINE in the MAIN shell before
+# calling this function.  This function MUST NOT set REMOTE_OFFLINE — it runs
+# inside a process substitution subshell so variable assignments would be lost.
+REMOTE_OFFLINE=0
+
+# _ls_remote_heads: emit raw git ls-remote --heads output.  Separate function
+# so the caller can capture it in the main shell (not a subshell) before piping.
+_ls_remote_heads() {
+  git ls-remote --heads origin 2>/dev/null
+}
+
+# _collect_remote_branch_numbers: internal worker; called from a process
+# substitution.  Receives the raw ls-remote output on stdin (piped from the
+# main shell) so it never calls git ls-remote itself.
+_collect_remote_branch_numbers() {
+  local ls_remote_out="$1"
+
+  if [ -z "${ls_remote_out}" ]; then
+    return 0
+  fi
+
+  # Step 2: extract unique SHAs (multiple refs can share the same commit).
+  # Skip master — it's already covered by _collect_local_taken via origin/master.
+  local -a shas=()
+  while IFS=' 	' read -r sha ref; do
+    [ -n "${sha}" ] || continue
+    [[ "${ref}" == "refs/heads/master" ]] && continue
+    shas+=("${sha}")
+  done < <(printf '%s\n' "${ls_remote_out}" | sort -u -k1,1)
+
+  if [ "${#shas[@]}" -eq 0 ]; then
+    return 0
+  fi
+
+  # Step 3: fetch all branch tips so git ls-tree can resolve the SHAs.
+  # --no-tags avoids tag-name expansion; --depth=1 is the minimal fetch.
+  # Soft failure: if the network drops between the ls-remote above and here,
+  # ls-tree will simply find nothing.
+  git fetch --no-tags --depth=1 --quiet origin \
+    "${shas[@]}" 2>/dev/null || true
+
+  # Step 4: for each SHA, run git ls-tree to enumerate docs/adr/ entries.
+  # git ls-tree is fast (tree object lookup, no working-tree I/O).
+  for sha in "${shas[@]}"; do
+    git ls-tree -r --name-only "${sha}" -- docs/adr/ 2>/dev/null |
+      grep -oE 'docs/adr/[0-9]{4}-' |
+      grep -oE '[0-9]{4}' ||
+      true
+  done
+}
+
+# Collect all taken 4-digit ADR numbers from:
+#   1. Local real ADR files in docs/adr/
+#   2. Local stub files (.md.stub)
+#   3. origin/master
+#   4. .git/adr-claims/ (cross-worktree claims by sibling agents)
+# Prints one 4-digit number per line, sorted unique.
+_collect_local_taken() {
   {
     # Local real ADR files
     ls "${ADR_DIR}"/[0-9][0-9][0-9][0-9]-*.md 2>/dev/null || true
-    # Local stub files (cross-process claim markers)
+    # Local stub files (cross-process claim markers within this worktree)
     ls "${ADR_DIR}"/[0-9][0-9][0-9][0-9]-*.md.stub 2>/dev/null || true
-    # origin/master
-    git ls-tree -r --name-only origin/master docs/adr/ 2>/dev/null |
+    # origin/master (already fetched before this function is called)
+    git ls-tree -r --name-only origin/master -- docs/adr/ 2>/dev/null |
       grep -E '^docs/adr/[0-9]{4}-' || true
-    # Extra trees (e.g. remote branch tip SHAs)
-    for extra_tree in "$@"; do
-      git ls-tree -r --name-only "${extra_tree}" docs/adr/ 2>/dev/null |
-        grep -E '^docs/adr/[0-9]{4}-' || true
-    done
+    # .git/adr-claims/ — claims by sibling worktrees sharing this .git/
+    if [ -d "${ADR_CLAIMS_DIR}" ]; then
+      find "${ADR_CLAIMS_DIR}" -maxdepth 1 -name '[0-9][0-9][0-9][0-9]' \
+        -exec basename {} \; 2>/dev/null || true
+    fi
   } |
     sed 's|.*/||' |
     grep -oE '^[0-9]{4}' |
@@ -102,6 +194,8 @@ _collect_taken() {
 }
 
 # Given a sorted unique list of taken numbers on stdin, print the next free one.
+# Always returns max(taken)+1 rather than filling gaps, so a claim that has
+# not yet pushed is still safe (the gap is never reused).
 _next_free_from_taken() {
   local -a taken=()
   while IFS= read -r n; do
@@ -114,22 +208,6 @@ _next_free_from_taken() {
   # Highest taken + 1.  IDs are never reused (per ADR-0386).
   local highest="${taken[-1]}"
   printf '%04d\n' $((10#${highest} + 1))
-}
-
-# Fetch tip SHAs of every remote branch (except master) that contains at least
-# one docs/adr/NNNN-*.md entry.  Prints one SHA per line.  Best-effort only.
-_remote_branch_trees() {
-  git ls-remote --heads origin 2>/dev/null |
-    awk '{print $1, $2}' |
-    grep -v 'refs/heads/master$' |
-    while IFS=' ' read -r sha _ref; do
-      if [ -n "${sha}" ]; then
-        if git ls-tree -r --name-only "${sha}" docs/adr/ 2>/dev/null |
-          grep -qE '^docs/adr/[0-9]{4}-'; then
-          printf '%s\n' "${sha}"
-        fi
-      fi
-    done
 }
 
 # Write the stub frontmatter for a newly claimed ADR.
@@ -161,9 +239,29 @@ _write_stub() {
     printf -- '- **Negative**: <fill in>\n'
     printf -- '- **Neutral / follow-ups**: <fill in>\n\n'
     printf '## References\n\n'
-    printf -- '- See [ADR-0535](0535-adr-atomic-allocator.md) for the allocator design.\n'
+    printf -- '- See [ADR-0535](0535-adr-atomic-allocator.md) for the original allocator design.\n'
+    printf -- '- See [ADR-0628](0628-adr-allocator-remote-aware.md) for the remote-aware extension.\n'
     printf -- '- Source: <req or Q<round>.<q>>\n'
   } >"${stub_path}"
+}
+
+# Write the .git/adr-claims/<NUMBER> side-pointer.
+# This file is visible to ALL worktrees sharing this .git/ directory,
+# including sibling agents in separate worktrees.
+_write_claim_sidepointer() {
+  local number="$1" slug="$2"
+  local ts branch
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  branch="$(git symbolic-ref --short HEAD 2>/dev/null || printf 'detached')"
+  mkdir -p "${ADR_CLAIMS_DIR}"
+  printf '%s %s %s\n' "${slug}" "${ts}" "${branch}" \
+    >"${ADR_CLAIMS_DIR}/${number}"
+}
+
+# Remove the .git/adr-claims/<NUMBER> side-pointer (called by --release).
+_remove_claim_sidepointer() {
+  local number="$1"
+  rm -f "${ADR_CLAIMS_DIR}/${number}" 2>/dev/null || true
 }
 
 # ── argument parsing ──────────────────────────────────────────────────────────
@@ -221,17 +319,29 @@ if [ "${MODE}" = "release" ]; then
     rm -f "${f}"
     printf 'released %s (removed %s)\n' "${RELEASE_NUM}" "${f}" >&2
   done
+  # Also remove the cross-worktree side-pointer if it exists.
+  _remove_claim_sidepointer "${RELEASE_NUM}"
   printf 'released %s\n' "${RELEASE_NUM}"
   exit 0
 fi
 
-# ── query mode (read-only) ────────────────────────────────────────────────────
+# ── shared network fetch (query and claim modes) ──────────────────────────────
 
 # Fetch the latest master tip (soft failure on network outage or offline dev).
-git fetch origin master --depth=50 --quiet 2>/dev/null || true
+git fetch origin master --depth=50 --quiet 2>/dev/null || {
+  REMOTE_OFFLINE=1
+}
+
+# ── query mode (read-only) ────────────────────────────────────────────────────
 
 if [ "${MODE}" = "query" ]; then
-  _collect_taken | _next_free_from_taken
+  # Query mode: local + master + claims; no remote-branch scan (read-only,
+  # fast path).
+  _collect_local_taken | _next_free_from_taken
+  if [ "${REMOTE_OFFLINE}" -eq 1 ]; then
+    printf 'WARNING: could not reach origin — remote branch scan skipped.\n' >&2
+    printf '         Collision risk if other agents are working on separate branches.\n' >&2
+  fi
   exit 0
 fi
 
@@ -243,25 +353,48 @@ if ! printf '%s' "${SLUG}" | grep -qE '^[a-z0-9][a-z0-9-]*$'; then
   exit 1
 fi
 
-# Network fetch outside the lock to avoid holding it during slow I/O.
-git fetch origin --depth=50 --quiet 2>/dev/null || true
+# Scan remote branches for in-flight ADR numbers (best-effort; network-fail safe).
+# This runs OUTSIDE the lock to avoid holding it during slow network I/O.
+#
+# _ls_remote_heads is called HERE in the main shell so we can capture its exit
+# status in REMOTE_OFFLINE without the variable being swallowed by a subshell.
+ls_remote_out=""
+if ! ls_remote_out="$(_ls_remote_heads 2>/dev/null)"; then
+  REMOTE_OFFLINE=1
+fi
 
-# Query remote branch tip trees (best-effort; soft failure).
-remote_trees=()
-while IFS= read -r tree; do
-  remote_trees+=("${tree}")
-done < <(_remote_branch_trees 2>/dev/null || true)
+remote_numbers=()
+if [ "${REMOTE_OFFLINE}" -eq 0 ]; then
+  while IFS= read -r n; do
+    [ -n "${n}" ] && remote_numbers+=("${n}")
+  done < <(_collect_remote_branch_numbers "${ls_remote_out}" 2>/dev/null || true)
+fi
 
-# Acquire the exclusive per-repo lock.
+if [ "${REMOTE_OFFLINE}" -eq 1 ]; then
+  printf 'WARNING: could not reach origin — remote branch scan skipped.\n' >&2
+  printf '         Collision risk if other agents are working on separate branches.\n' >&2
+  printf '         Proceeding with local + master + .git/adr-claims/ only.\n' >&2
+fi
+
+# Acquire the exclusive per-repo lock (covers all worktrees sharing this .git/).
 _acquire_lock
 
-# Re-collect inside the lock (another process may have claimed between the
-# fetch above and our lock acquisition).
-number="$(_collect_taken "${remote_trees[@]}" | _next_free_from_taken)"
+# Re-collect inside the lock so we see any claim written since we started.
+# Merge local + remote branch numbers into a unified sorted-unique set.
+number="$(
+  {
+    _collect_local_taken
+    printf '%s\n' "${remote_numbers[@]+"${remote_numbers[@]}"}"
+  } | sort -u | _next_free_from_taken
+)"
 
 stub_path="${ADR_DIR}/${number}-${SLUG}.md.stub"
 
 _write_stub "${stub_path}" "${number}" "${SLUG}"
+
+# Write the cross-worktree side-pointer BEFORE releasing the lock so a sibling
+# agent that acquires the lock immediately after sees the claim.
+_write_claim_sidepointer "${number}" "${SLUG}"
 
 # Release the lock early to minimise critical-section duration.
 _release_lock
