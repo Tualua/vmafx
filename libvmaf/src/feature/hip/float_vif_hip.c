@@ -683,11 +683,16 @@ VmafFeatureExtractor vmaf_fex_float_vif_hip = {
     .options = options,
     .priv_size = sizeof(FloatVifStateHip),
     .provided_features = provided_features,
-    /* No TEMPORAL flag: VIF is stateless across frames.
-     * VMAF_FEATURE_EXTRACTOR_HIP is intentionally absent until picture
-     * buffer-type plumbing lands (T7-10c); pictures arrive as CPU
-     * VmafPictures and submit does explicit HtoD copies. */
+/* No TEMPORAL flag: VIF is stateless across frames.
+     * VMAF_FEATURE_EXTRACTOR_HIP is gated behind the
+     * enable_float_vif_hip_autodispatch Meson option (default OFF, ADR-0623)
+     * until picture-pool plumbing lands (T7-10c); pictures currently arrive
+     * as CPU VmafPictures and submit does explicit HtoD copies. */
+#if defined(FLOAT_VIF_HIP_AUTODISPATCH)
+    .flags = VMAF_FEATURE_EXTRACTOR_HIP,
+#else
     .flags = 0,
+#endif
     .chars =
         {
             .n_dispatches_per_frame = 1,

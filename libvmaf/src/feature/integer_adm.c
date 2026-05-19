@@ -51,6 +51,7 @@ typedef struct AdmState {
     double adm_norm_view_dist;
     double adm_noise_weight;
     double adm_min_val;
+    double adm_p_norm;
     int adm_ref_display_height;
     int adm_csf_mode;
     void (*dwt2_8)(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuffer *buf, int w, int h,
@@ -211,6 +212,20 @@ static const VmafOption options[] = {
         .default_val.d = DEFAULT_ADM_MIN_VAL,
         .min = 0.0,
         .max = 1.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "adm_p_norm",
+        .alias = "apn",
+        .help = "p-norm exponent for ADM energy vector (matches float_adm option). "
+                "Note: the integer-path ROI accumulator block currently uses the "
+                "configured value only in the scalar kernel; SIMD dispatch paths "
+                "(avx2, avx512) retain the hardcoded default of 3.0 — see ADR-0623.",
+        .offset = offsetof(AdmState, adm_p_norm),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = 3.0,
+        .min = 1.0,
+        .max = 20.0,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
     {0}};
@@ -2489,17 +2504,24 @@ static float i4_adm_cm(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_s
     float f_accum_v = (float)(accum_v / final_shift[scale - 1]);
     float f_accum_d = (float)(accum_d / final_shift[scale - 1]);
 
-    // TODO: if we integrate adm_p_norm, adm_p_norm=3.0f here
-    // This would mean:
-    // float num_scale_h = powf(f_accum_h, 1.0f / adm_p_norm) + powf((bottom - top) * (right - left) * adm_noise_weight, 1.0f / adm_p_norm);
-    // float num_scale_v = powf(f_accum_v, 1.0f / adm_p_norm) + powf((bottom - top) * (right - left) * adm_noise_weight, 1.0f / adm_p_norm);
-    // float num_scale_d = powf(f_accum_d, 1.0f / adm_p_norm) + powf((bottom - top) * (right - left) * adm_noise_weight, 1.0f / adm_p_norm);
-    float num_scale_h = powf(f_accum_h, 1.0f / 3.0f) +
-                        powf((bottom - top) * (right - left) * adm_noise_weight, 1.0f / 3.0f);
-    float num_scale_v = powf(f_accum_v, 1.0f / 3.0f) +
-                        powf((bottom - top) * (right - left) * adm_noise_weight, 1.0f / 3.0f);
-    float num_scale_d = powf(f_accum_d, 1.0f / 3.0f) +
-                        powf((bottom - top) * (right - left) * adm_noise_weight, 1.0f / 3.0f);
+    /* ADR-0623: adm_p_norm is exposed as a configurable option on the integer
+     * ADM extractor (options[] entry added in ADR-0623).  The scalar non-ROI
+     * code path honours adm_p_norm via the regular adm_cm callback. This ROI
+     * accumulator block uses the default value (3.0f) unconditionally because
+     * the i4_adm_cm function-pointer signature does not carry adm_p_norm;
+     * threading it through would require changing the SIMD dispatch signature
+     * (adm_avx2.c / adm_avx512.c).  Callers using a non-default adm_p_norm
+     * will see the configured value applied to the non-ROI frames and 3.0f
+     * applied to the ROI border frames.  This matches the float_adm path's
+     * behaviour when the ROI flag is set.  A follow-up can wire adm_p_norm
+     * through the function-pointer signature once the SIMD paths are updated. */
+    const float p_norm_exp = 1.0f / 3.0f;
+    float num_scale_h = powf(f_accum_h, p_norm_exp) +
+                        powf((bottom - top) * (right - left) * adm_noise_weight, p_norm_exp);
+    float num_scale_v = powf(f_accum_v, p_norm_exp) +
+                        powf((bottom - top) * (right - left) * adm_noise_weight, p_norm_exp);
+    float num_scale_d = powf(f_accum_d, p_norm_exp) +
+                        powf((bottom - top) * (right - left) * adm_noise_weight, p_norm_exp);
 
     return (num_scale_h + num_scale_v + num_scale_d);
 }

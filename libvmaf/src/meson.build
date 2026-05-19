@@ -151,6 +151,13 @@ is_hipcc_enabled = get_option('enable_hipcc') == true
 if is_hipcc_enabled and not is_hip_enabled
     warning('enable_hipcc=true has no effect when enable_hip=false')
 endif
+# ADR-0642: gate VMAF_FEATURE_EXTRACTOR_HIP on float_vif_hip behind a Meson
+# option (default OFF) pending T7-10c picture-pool plumbing. Without this flag,
+# pictures arrive as CPU VmafPictures and float_vif_hip performs explicit HtoD
+# copies rather than zero-copy from the HIP picture pool.
+if get_option('enable_float_vif_hip_autodispatch')
+    vmaf_cflags_common += '-DFLOAT_VIF_HIP_AUTODISPATCH'
+endif
 if is_hip_enabled
     cdata.set10('HAVE_HIP', true)
     subdir('hip')
