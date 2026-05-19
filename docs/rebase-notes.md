@@ -7,6 +7,21 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## chore/renovate-customManagers-dev-image (ADR-0605)
+
+No rebase-sensitive invariants — the only change is to `renovate.json`
+(adding eight new `customManagers` entries for Containerfile ARG-pinned deps;
+extending the FFmpeg manager's `managerFilePatterns` to also scan
+`dev/Containerfile`). `renovate.json` is fork-local and never appears in
+upstream Netflix/vmaf. No C sources, headers, or build files are touched.
+
+Touched files:
+`renovate.json` (customManagers + packageRules),
+`docs/adr/0605-renovate-custommgr-dev-image.md`,
+`docs/adr/README.md` (one index row),
+`changelog.d/changed/0605-renovate-custommgr-dev-image.md`,
+`docs/rebase-notes.md` (this entry).
+
 ## chore/rocm-7-13-bump-and-renovate-manager (ADR-0604)
 
 No rebase-sensitive invariants — the only change is to `renovate.json`

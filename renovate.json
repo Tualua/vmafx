@@ -85,19 +85,37 @@
       "groupName": "ROCm (hip runtime)",
       "automerge": false,
       "labels": ["dependencies", "rocm", "manual-review"]
+    },
+    {
+      "description": "dev-image deps (CUDA-adjacent, Intel NEO/IGC/gmmlib/LZ0, ONNX Runtime, SVT-AV1, VVenC, AMF) — manual review required. Container rebuild has large blast radius; validate GPU compatibility before merging. See ADR-0605.",
+      "matchPackageNames": [
+        "intel/compute-runtime",
+        "intel/intel-graphics-compiler",
+        "intel/gmmlib",
+        "oneapi-src/level-zero",
+        "microsoft/onnxruntime",
+        "AOMediaCodec/SVT-AV1",
+        "fraunhoferhhi/vvenc",
+        "GPUOpen-LibrariesAndSDKs/AMF"
+      ],
+      "groupName": "dev-image pinned deps",
+      "automerge": false,
+      "labels": ["dependencies", "dev-image"]
     }
   ],
   "customManagers": [
     {
       "customType": "regex",
-      "description": "FFmpeg release tag pinned in the patch-stack test script + the CI gate.",
+      "description": "FFmpeg release tag pinned in the patch-stack test script + the CI gate + the Containerfile ARG.",
       "managerFilePatterns": [
         "/^ffmpeg-patches/test/build-and-run\\.sh$/",
-        "/^scripts/ci/ffmpeg-patches-check\\.sh$/"
+        "/^scripts/ci/ffmpeg-patches-check\\.sh$/",
+        "/^dev/Containerfile$/"
       ],
       "matchStrings": [
         "FFMPEG_SHA:=(?<currentValue>n[0-9.]+)",
-        "FFMPEG_PATCHES_BRANCH:-(?<currentValue>release/[0-9.]+)"
+        "FFMPEG_PATCHES_BRANCH:-(?<currentValue>release/[0-9.]+)",
+        "ARG FFMPEG_TAG=(?<currentValue>n[0-9.]+)"
       ],
       "datasourceTemplate": "github-tags",
       "depNameTemplate": "FFmpeg/FFmpeg"
@@ -112,6 +130,87 @@
       ],
       "datasourceTemplate": "custom.rocm",
       "depNameTemplate": "rocm"
+    },
+    {
+      "customType": "regex",
+      "description": "Intel compute-runtime (NEO) version in dev/Containerfile. Tracks github.com/intel/compute-runtime releases. See ADR-0605.",
+      "managerFilePatterns": ["/^dev/Containerfile$/"],
+      "matchStrings": [
+        "ARG NEO_VER=(?<currentValue>[0-9.]+)"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "intel/compute-runtime"
+    },
+    {
+      "customType": "regex",
+      "description": "Intel Graphics Compiler (IGC) version in dev/Containerfile. Extracts the semver portion before the '+<build-id>' suffix (e.g. 2.34.4 from 2.34.4+21428). The +build suffix is Intel's internal build counter — it stays in the ARG line after Renovate bumps the semver part; a reviewer should update it to match the new release's counter. Tracks github.com/intel/intel-graphics-compiler releases. See ADR-0605.",
+      "managerFilePatterns": ["/^dev/Containerfile$/"],
+      "matchStrings": [
+        "ARG IGC_VER=(?<currentValue>[0-9.]+)\\+[0-9]+"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "intel/intel-graphics-compiler"
+    },
+    {
+      "customType": "regex",
+      "description": "Intel gmmlib (Graphics Memory Management) version in dev/Containerfile. Tracks github.com/intel/gmmlib releases. See ADR-0605.",
+      "managerFilePatterns": ["/^dev/Containerfile$/"],
+      "matchStrings": [
+        "ARG GMMLIB_VER=(?<currentValue>[0-9.]+)"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "intel/gmmlib"
+    },
+    {
+      "customType": "regex",
+      "description": "Level Zero loader version in dev/Containerfile. Tracks github.com/oneapi-src/level-zero releases. See ADR-0605.",
+      "managerFilePatterns": ["/^dev/Containerfile$/"],
+      "matchStrings": [
+        "ARG LEVEL_ZERO_VER=(?<currentValue>[0-9.]+)"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "oneapi-src/level-zero"
+    },
+    {
+      "customType": "regex",
+      "description": "ONNX Runtime C++ library version in dev/Containerfile. Installed via tarball from GitHub releases (not apt). Tracks github.com/microsoft/onnxruntime releases. See ADR-0605.",
+      "managerFilePatterns": ["/^dev/Containerfile$/"],
+      "matchStrings": [
+        "ARG ORT_VERSION=(?<currentValue>[0-9.]+)"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "microsoft/onnxruntime"
+    },
+    {
+      "customType": "regex",
+      "description": "SVT-AV1 encoder version in dev/Containerfile. Built from source via git clone of gitlab.com/AOMediaCodec/SVT-AV1 at a tagged release. See ADR-0605.",
+      "managerFilePatterns": ["/^dev/Containerfile$/"],
+      "matchStrings": [
+        "ARG SVTAV1_VERSION=(?<currentValue>[0-9.]+)"
+      ],
+      "datasourceTemplate": "gitlab-tags",
+      "depNameTemplate": "AOMediaCodec/SVT-AV1",
+      "registryUrlTemplate": "https://gitlab.com"
+    },
+    {
+      "customType": "regex",
+      "description": "VVenC (Fraunhofer VVC reference encoder) version in dev/Containerfile. Built from source via git clone of github.com/fraunhoferhhi/vvenc at a tagged release. See ADR-0605.",
+      "managerFilePatterns": ["/^dev/Containerfile$/"],
+      "matchStrings": [
+        "ARG VVENC_VERSION=(?<currentValue>[0-9.]+)"
+      ],
+      "datasourceTemplate": "github-tags",
+      "depNameTemplate": "fraunhoferhhi/vvenc"
+    },
+    {
+      "customType": "regex",
+      "description": "AMD AMF (Advanced Media Framework) headers version in dev/Containerfile. Built from source via git clone of github.com/GPUOpen-LibrariesAndSDKs/AMF at a tagged release. See ADR-0605.",
+      "managerFilePatterns": ["/^dev/Containerfile$/"],
+      "matchStrings": [
+        "ARG AMF_VERSION=(?<currentValue>[0-9.]+)"
+      ],
+      "datasourceTemplate": "github-tags",
+      "depNameTemplate": "GPUOpen-LibrariesAndSDKs/AMF"
     }
   ],
   "customDatasources": {
