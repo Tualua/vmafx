@@ -37355,3 +37355,25 @@ Touched files:
 `docs/ai/training-data.md` (cross-reference links),
 `changelog.d/added/0612-tiny-ai-netflix-training-scaffold-2026-05-19.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0626 — SSH debug session on macOS CI failure (tmate)
+
+**No rebase-sensitive invariants** — the change is limited to
+`.github/workflows/libvmaf-build-matrix.yml` (one new step) and
+`docs/`. No C, CUDA, SYCL, HIP, or Python paths touched.
+
+If an upstream sync touches `libvmaf-build-matrix.yml`, confirm that the
+`SSH debug session on test failure` step is preserved after the merge and
+that its `if:` condition still references `runner.os == 'macOS'`,
+`failure()`, and `github.event_name == 'workflow_dispatch'`. The action
+SHA pin (`c0afd6f790e3a5564914980036ebf83216678101`) will be bumped
+automatically by Renovate when a new `mxschmitt/action-tmate` release
+is tagged.
+
+Touched files:
+`.github/workflows/libvmaf-build-matrix.yml` (one new step after "Run tests"),
+`docs/development/ci-tmate-debug.md` (new operator guide),
+`docs/adr/0626-macos-ci-tmate-debug-on-failure.md`,
+`docs/adr/README.md` (one index row),
+`changelog.d/added/0626-macos-ci-tmate-debug-on-failure.md`,
+`docs/rebase-notes.md` (this entry).

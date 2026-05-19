@@ -198,6 +198,36 @@ A 422 response here is the canary that the workflow is about to start
 failing on the next push. See [ADR-0263](../docs/adr/0263-ossf-scorecard-policy.md)
 and [Research-0053](../docs/research/0053-ossf-scorecard-investigation.md).
 
+## macOS tmate SSH debug step (ADR-0626)
+
+`libvmaf-build-matrix.yml` carries an SSH debug step after the `Run tests`
+step in the `libvmaf-build` job:
+
+```yaml
+- name: SSH debug session on test failure
+  if: ${{ failure() && runner.os == 'macOS' && github.event_name == 'workflow_dispatch' }}
+  uses: mxschmitt/action-tmate@c0afd6f790e3a5564914980036ebf83216678101  # v3
+```
+
+Rebase-sensitive invariants:
+
+- The `if:` triple condition is load-bearing. **All three clauses must be
+  preserved together.** Dropping `github.event_name == 'workflow_dispatch'`
+  would cause the step to open a blocking SSH session on every failing PR push,
+  stranding a macOS runner for up to 30 minutes per failure.
+- The step must remain **after** the `Run tests` step and **before** the
+  `Run Vulkan smoke tests (macOS MoltenVK)` step so it fires only when a
+  test failure has already set the job status to `failure()`.
+- The action is pinned to a commit SHA per the fork's Renovate
+  `helpers:pinGitHubActionDigests` policy. Renovate will propose digest bumps;
+  accept only after verifying the new SHA corresponds to a signed release tag.
+- The step is intentionally present in the shared matrix job (not a separate
+  macOS-only job) because the `runner.os == 'macOS'` clause in the `if:`
+  already restricts it to macOS legs. Do not split it into a separate job.
+
+See [ADR-0626](../docs/adr/0626-macos-ci-tmate-debug-on-failure.md) and
+[`docs/development/ci-tmate-debug.md`](../docs/development/ci-tmate-debug.md).
+
 ## macOS Vulkan-via-MoltenVK lane (ADR-0338)
 
 `libvmaf-build-matrix.yml` carries an advisory lane

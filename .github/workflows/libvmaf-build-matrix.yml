@@ -635,6 +635,30 @@ jobs:
         if: "!matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686 && !matrix.moltenvk"
         run: sudo ninja -vC libvmaf/build test
 
+      # ---------- SSH debug session (macOS × workflow_dispatch only) ----------
+      # Fires ONLY when:
+      #   (a) the job is running on macOS (any macOS matrix leg), AND
+      #   (b) a preceding step has failed (failure()), AND
+      #   (c) the workflow was triggered by a manual workflow_dispatch event.
+      #
+      # The workflow_dispatch gate is critical: it prevents the session from
+      # opening on every failing PR push, which would strand a runner for up
+      # to 30 minutes per failure. Manual dispatch is deliberate — the operator
+      # signals intent to debug interactively.
+      #
+      # Action pinned to commit SHA (not just tag) per the fork's
+      # `helpers:pinGitHubActionDigests` Renovate policy.
+      # SHA corresponds to mxschmitt/action-tmate v3 (2024-08-07).
+      # See docs/development/ci-tmate-debug.md for usage.
+      - name: SSH debug session on test failure
+        if: ${{ failure() && runner.os == 'macOS' && github.event_name == 'workflow_dispatch' }}
+        uses: mxschmitt/action-tmate@c0afd6f790e3a5564914980036ebf83216678101  # v3
+        with:
+          limit-access-to-actor: true
+          # Wait up to 30 min for the operator to connect; if nobody connects
+          # within that window the step unblocks and the job completes.
+          connect-timeout-seconds: 1800
+
       # ---------- Vulkan smoke test (macOS MoltenVK lane) ----------
       # Runs ONLY the Vulkan-tagged smoke binaries and captures the
       # ICD enumeration output for triage. Per ADR-0338 the lane is
