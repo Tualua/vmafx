@@ -202,24 +202,38 @@ def compare_codecs(
     predicate: PredicateFn | None = None,
     parallel: bool = True,
     max_workers: int | None = None,
+    pre_decoded_ref: "Path | None" = None,
 ) -> ComparisonReport:
     """Run ``predicate`` per codec and rank by smallest bitrate.
 
     ``parallel=True`` dispatches each codec to a thread pool — every
     predicate call already shells out to ffmpeg / vmaf, so the GIL
     is not the bottleneck. ``max_workers`` defaults to ``len(encoders)``.
+
+    ``pre_decoded_ref`` (ADR-0607): when set, every worker receives this
+    already-decoded raw-YUV path as the ``src`` argument instead of the
+    original container path. The report's ``src`` label still shows the
+    original path so output is human-readable. Callers are responsible for
+    creating and deleting the file; ``compare_codecs`` never touches it.
+    This eliminates the per-worker reference re-decode that caused quadratic
+    wall time with many concurrent workers (v14 BBB 1080p 9.7 h run).
     """
     if not encoders:
         raise ValueError("compare_codecs requires at least one encoder")
     pred = predicate if predicate is not None else _default_predicate
     src_path = Path(src)
+    # ADR-0607: workers receive the pre-decoded YUV when available so each
+    # bisect sees a raw-YUV src and skips the per-bisect reference decode.
+    worker_src = Path(pre_decoded_ref) if pre_decoded_ref is not None else src_path
     t0 = time.monotonic()
 
     results: list[RecommendResult] = []
     if parallel and len(encoders) > 1:
         workers = max_workers if max_workers is not None else len(encoders)
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = {pool.submit(pred, codec, src_path, target_vmaf): codec for codec in encoders}
+            futures = {
+                pool.submit(pred, codec, worker_src, target_vmaf): codec for codec in encoders
+            }
             for fut in as_completed(futures):
                 codec = futures[fut]
                 try:
@@ -239,7 +253,7 @@ def compare_codecs(
     else:
         for codec in encoders:
             try:
-                results.append(pred(codec, src_path, target_vmaf))
+                results.append(pred(codec, worker_src, target_vmaf))
             except Exception as exc:  # noqa: BLE001
                 results.append(
                     RecommendResult(
@@ -647,6 +661,7 @@ def compare_codecs_sweep(
     parallel: bool = True,
     max_workers: int | None = None,
     availability_probe: Callable[[str], tuple[bool, str]] | None = None,
+    pre_decoded_ref: "Path | None" = None,
 ) -> SweepReport:
     """Run ``predicate`` across the cross-product of codecs x targets.
 
@@ -658,6 +673,14 @@ def compare_codecs_sweep(
     The cross-product is dispatched flat to the thread pool — one
     future per ``(codec, target_vmaf)`` pair — so a 4-codec x 4-target
     sweep saturates the pool across 16 independent bisects.
+
+    ``pre_decoded_ref`` (ADR-0607): when set, every worker receives this
+    already-decoded raw-YUV path as the ``src`` argument instead of the
+    original container path. The report's ``src`` label still shows the
+    original path so output is human-readable. Callers are responsible for
+    creating and deleting the file; ``compare_codecs_sweep`` never touches it.
+    This eliminates per-worker reference re-decodes that caused quadratic
+    wall time with many concurrent workers (v14 BBB 1080p 9.7 h run).
     """
     if not encoders:
         raise ValueError("compare_codecs_sweep requires at least one encoder")
@@ -666,6 +689,9 @@ def compare_codecs_sweep(
 
     pred = predicate if predicate is not None else _default_predicate
     src_path = Path(src)
+    # ADR-0607: workers receive the pre-decoded YUV when available so each
+    # bisect sees a raw-YUV src and skips the per-bisect reference decode.
+    worker_src = Path(pre_decoded_ref) if pre_decoded_ref is not None else src_path
     t0 = time.monotonic()
 
     # Probe each encoder once up front. Cache the per-encoder verdict
@@ -703,7 +729,7 @@ def compare_codecs_sweep(
         workers = max_workers if max_workers is not None else len(dispatch_pairs)
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {
-                pool.submit(pred, codec, src_path, target): (i, codec)
+                pool.submit(pred, codec, worker_src, target): (i, codec)
                 for i, codec, target in dispatch_pairs
             }
             for fut in as_completed(futures):
@@ -723,7 +749,7 @@ def compare_codecs_sweep(
     else:
         for i, codec, target in dispatch_pairs:
             try:
-                results[i] = pred(codec, src_path, target)
+                results[i] = pred(codec, worker_src, target)
             except Exception as exc:  # noqa: BLE001
                 results[i] = RecommendResult(
                     codec=codec,

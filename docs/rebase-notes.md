@@ -37300,3 +37300,19 @@ Touched files:
 `docs/state.md` (Recently-closed row),
 `changelog.d/fixed/0606-macos-vmaf-write-output-segv-deep-fix.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0607 — vmaf-tune compare: decode reference YUV once (shared-ref fix)
+
+**No rebase impact**: all touched files are fork-local Python harness files.
+No upstream C sources, no public headers, no FFmpeg patch series involved.
+
+Touched files:
+`tools/vmaf-tune/src/vmaftune/compare.py` (`pre_decoded_ref` param on
+`compare_codecs` and `compare_codecs_sweep`),
+`tools/vmaf-tune/src/vmaftune/cli.py` (decode-once block + try/finally in
+`_run_compare`; imports `_decode_to_raw_yuv` from `.score`),
+`tools/vmaf-tune/tests/test_bbb_e2e_v15_shared_ref.py` (7 acceptance tests),
+`docs/adr/0607-vmaftune-shared-ref-yuv-decode-once.md`,
+`docs/adr/README.md` (one index row),
+`changelog.d/fixed/0607-vmaftune-shared-ref-yuv-decode-once.md`,
+`docs/rebase-notes.md` (this entry).

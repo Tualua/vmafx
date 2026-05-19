@@ -2760,6 +2760,7 @@ def _run_compare(args: argparse.Namespace) -> int:
     defaults; explicit user values still win, with a stderr warning on
     explicit mismatch.
     """
+    import contextlib  # noqa: PLC0415
     import os  # noqa: PLC0415
     import threading  # noqa: PLC0415
 
@@ -2774,6 +2775,7 @@ def _run_compare(args: argparse.Namespace) -> int:
         probe_encoder_available,
         supported_formats,
     )
+    from .score import VMAF_RAW_SUFFIXES, _decode_to_raw_yuv  # noqa: PLC0415
 
     # ADR-0601: resolve the VA-API render-node for QSV device init.
     # Resolution: --vaapi-device > VMAFTUNE_VAAPI_DEVICE env var > default.
@@ -2923,65 +2925,160 @@ def _run_compare(args: argparse.Namespace) -> int:
 
         sweep_predicate = _sweep_dispatcher
 
-    # Pick the v2 sweep path when more than one target was requested.
-    if len(target_vmafs) > 1:
-        # Build the encoder-availability probe: real ffmpeg-backed for
-        # the default path, no-op when a custom predicate-module is in
-        # play (tests inject fake predicates and shouldn't be forced to
-        # shell out).
-        if args.predicate_module:
+    # ADR-0607: decode the reference YUV exactly once for the entire compare
+    # run, then share the decoded path with every worker. This eliminates
+    # the quadratic re-decode pattern from ADR-0577 / PR #1354 where each
+    # bisect's finally block deleted the shared 118 GB reference and every
+    # subsequent worker re-decoded it from scratch, yielding
+    # N_workers × N_iters re-decodes instead of 1. The pre_decoded_ref
+    # argument lets compare_codecs / compare_codecs_sweep pass the raw-YUV
+    # path to every bisect worker; each bisect sees src_is_container=False
+    # and skips its own reference decode entirely.
+    #
+    # For --no-bisect CRF-sweep mode the same optimisation applies; we
+    # pass the decoded path through _run_compare_crf_sweep's workdir.
+    # Encoding workers still produce per-encoder distorted YUVs in the
+    # shared workdir; those are cleaned up by _encode_and_score as before.
+    #
+    # Cleanup responsibility: cli.py owns the pre-decoded file and deletes
+    # it after both pool.shutdown() and the report are done, even on error.
+    _src_path = Path(args.src)
+    _src_is_container = _src_path.suffix.lower() not in VMAF_RAW_SUFFIXES
+    _pre_decoded_ref: Path | None = None
+    _decode_workdir: Path | None = None
 
-            def _probe(_codec: str) -> tuple[bool, str]:
-                return True, ""
+    # Only decode when using the real bisect backend (not custom predicate)
+    # and only when the source is a container.
+    _should_pre_decode = _src_is_container and not getattr(args, "predicate_module", None)
 
-        else:
+    if _should_pre_decode:
+        # Resolve the workdir for the shared-ref decode. Use the same
+        # precedence as the per-bisect path (ADR-0549): --workdir > env var.
+        from .bisect import _workdir_parent  # noqa: PLC0415
 
-            def _probe(codec: str) -> tuple[bool, str]:
-                return probe_encoder_available(
-                    codec,
-                    ffmpeg_bin=args.ffmpeg_bin,
-                    vaapi_device=vaapi_device,
+        _given_workdir = getattr(args, "workdir", None)
+        _decode_workdir = _given_workdir if _given_workdir is not None else _workdir_parent()
+        if _decode_workdir is None:
+            import tempfile  # noqa: PLC0415
+
+            _decode_workdir = Path(tempfile.mkdtemp(prefix="vmaftune-compare-"))
+
+        _decode_workdir = Path(_decode_workdir)
+        _decode_workdir.mkdir(parents=True, exist_ok=True)
+        _pre_decoded_ref = _decode_workdir / (_src_path.stem + ".shared-ref.yuv")
+
+        if not _pre_decoded_ref.exists():
+            sys.stderr.write(
+                f"vmaf-tune compare: decoding shared reference YUV once "
+                f"({_src_path.name} -> {_pre_decoded_ref.name}) ...\n"
+            )
+            # Resolve the effective duration and pix_fmt from the args
+            # already resolved above (only set when not using predicate_module).
+            # ``_should_pre_decode`` gates on not predicate_module, so
+            # ``resolved_dur`` is always defined at this point (set by
+            # ``_resolve_compare_source_geometry`` in the bisect path above).
+            _ref_dur: float | None = (
+                float(resolved_dur) if float(resolved_dur) > 0.0 else None  # type: ignore[name-defined]
+            )
+            _ref_pix_fmt = getattr(args, "pix_fmt", "yuv420p")
+            _ref_ffmpeg = getattr(args, "ffmpeg_bin", "ffmpeg")
+
+            _rc = _decode_to_raw_yuv(
+                _src_path,
+                _pre_decoded_ref,
+                pix_fmt=_ref_pix_fmt,
+                ffmpeg_bin=_ref_ffmpeg,
+                duration_s=_ref_dur,
+            )
+            if _rc != 0 or not _pre_decoded_ref.exists():
+                sys.stderr.write(
+                    f"vmaf-tune compare: shared reference decode failed (rc={_rc}); "
+                    "falling back to per-worker decode.\n"
+                )
+                _pre_decoded_ref = None
+            else:
+                _ref_bytes = _pre_decoded_ref.stat().st_size
+                sys.stderr.write(
+                    f"vmaf-tune compare: shared reference decoded "
+                    f"({_ref_bytes / 1024**3:.1f} GB) — "
+                    f"all {len(encoders)} workers will share it.\n"
                 )
 
-        sweep = compare_codecs_sweep(
+    try:
+        # Pick the v2 sweep path when more than one target was requested.
+        if len(target_vmafs) > 1:
+            # Build the encoder-availability probe: real ffmpeg-backed for
+            # the default path, no-op when a custom predicate-module is in
+            # play (tests inject fake predicates and shouldn't be forced to
+            # shell out).
+            if args.predicate_module:
+
+                def _probe(_codec: str) -> tuple[bool, str]:
+                    return True, ""
+
+            else:
+
+                def _probe(codec: str) -> tuple[bool, str]:
+                    return probe_encoder_available(
+                        codec,
+                        ffmpeg_bin=args.ffmpeg_bin,
+                        vaapi_device=vaapi_device,
+                    )
+
+            sweep = compare_codecs_sweep(
+                src=args.src,
+                target_vmafs=target_vmafs,
+                encoders=encoders,
+                parallel=not args.no_parallel,
+                max_workers=args.max_workers,
+                predicate=sweep_predicate,
+                availability_probe=_probe,
+                pre_decoded_ref=_pre_decoded_ref,
+            )
+            rendered = emit_sweep_report(sweep, format=args.format)
+            if args.output is not None:
+                args.output.parent.mkdir(parents=True, exist_ok=True)
+                args.output.write_text(rendered, encoding="utf-8")
+                sys.stderr.write(f"wrote compare sweep report -> {args.output}\n")
+            else:
+                sys.stdout.write(rendered)
+                if not rendered.endswith("\n"):
+                    sys.stdout.write("\n")
+            any_ok = any(r.ok for r in sweep.rows)
+            return 0 if any_ok else 1
+
+        report = compare_codecs(
             src=args.src,
-            target_vmafs=target_vmafs,
+            target_vmaf=args.target_vmaf,
             encoders=encoders,
             parallel=not args.no_parallel,
             max_workers=args.max_workers,
-            predicate=sweep_predicate,
-            availability_probe=_probe,
+            predicate=predicate,
+            pre_decoded_ref=_pre_decoded_ref,
         )
-        rendered = emit_sweep_report(sweep, format=args.format)
+        rendered = emit_report(report, format=args.format)
         if args.output is not None:
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(rendered, encoding="utf-8")
-            sys.stderr.write(f"wrote compare sweep report -> {args.output}\n")
+            sys.stderr.write(f"wrote compare report -> {args.output}\n")
         else:
             sys.stdout.write(rendered)
             if not rendered.endswith("\n"):
                 sys.stdout.write("\n")
-        any_ok = any(r.ok for r in sweep.rows)
-        return 0 if any_ok else 1
-
-    report = compare_codecs(
-        src=args.src,
-        target_vmaf=args.target_vmaf,
-        encoders=encoders,
-        parallel=not args.no_parallel,
-        max_workers=args.max_workers,
-        predicate=predicate,
-    )
-    rendered = emit_report(report, format=args.format)
-    if args.output is not None:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(rendered, encoding="utf-8")
-        sys.stderr.write(f"wrote compare report -> {args.output}\n")
-    else:
-        sys.stdout.write(rendered)
-        if not rendered.endswith("\n"):
-            sys.stdout.write("\n")
-    return 0 if report.best() is not None else 1
+        return 0 if report.best() is not None else 1
+    finally:
+        # ADR-0607: delete the shared reference YUV now that all workers
+        # have finished. The pool (inside compare_codecs / compare_codecs_sweep)
+        # shuts down before we reach this point, so no worker can still be
+        # reading the file.
+        if _pre_decoded_ref is not None:
+            with contextlib.suppress(OSError):
+                if _pre_decoded_ref.exists():
+                    _pre_decoded_ref.unlink()
+                    sys.stderr.write(
+                        f"vmaf-tune compare: deleted shared reference YUV "
+                        f"({_pre_decoded_ref.name}).\n"
+                    )
 
 
 def _run_compare_crf_sweep(args: argparse.Namespace, encoders: list[str]) -> int:
