@@ -78,6 +78,13 @@
       "groupName": "FFmpeg patch base",
       "automerge": false,
       "labels": ["dependencies", "ffmpeg-patches"]
+    },
+    {
+      "description": "ROCm apt-repo version bump — manual review required. ROCm major-version bumps carry KFD ioctl ABI risk; validate kernel compat before merging (ADR-0604, ADR-0603).",
+      "matchPackageNames": ["rocm"],
+      "groupName": "ROCm (hip runtime)",
+      "automerge": false,
+      "labels": ["dependencies", "rocm", "manual-review"]
     }
   ],
   "customManagers": [
@@ -94,8 +101,25 @@
       ],
       "datasourceTemplate": "github-tags",
       "depNameTemplate": "FFmpeg/FFmpeg"
+    },
+    {
+      "customType": "regex",
+      "description": "ROCm pin in dev/Containerfile. Matches both the ARG ROCM_VER line and the repo URL path so both stay in sync on bumps. Queries the AMD apt directory listing via the html datasource. See ADR-0604.",
+      "managerFilePatterns": ["/^dev/Containerfile$/"],
+      "matchStrings": [
+        "ARG ROCM_VER=(?<currentValue>[0-9.]+)",
+        "rocm/apt/(?<currentValue>[0-9.]+)/"
+      ],
+      "datasourceTemplate": "custom.rocm",
+      "depNameTemplate": "rocm"
     }
   ],
+  "customDatasources": {
+    "rocm": {
+      "defaultRegistryUrlTemplate": "https://repo.radeon.com/rocm/apt/",
+      "format": "html"
+    }
+  },
   "vulnerabilityAlerts": {
     "labels": ["security", "dependencies"],
     "automerge": false,

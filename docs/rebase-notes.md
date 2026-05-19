@@ -7,6 +7,21 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## chore/rocm-7-13-bump-and-renovate-manager (ADR-0604)
+
+No rebase-sensitive invariants — the only change is to `renovate.json`
+(adding a `customManagers` entry and `customDatasources` block for ROCm).
+`renovate.json` is fork-local and never appears in upstream Netflix/vmaf.
+`dev/Containerfile` is unchanged (7.2.3 remains the correct pin).
+
+Touched files:
+`renovate.json` (customManagers + customDatasources),
+`docs/adr/0604-rocm-renovate-manager.md`,
+`docs/adr/README.md` (one index row),
+`docs/research/rocm-version-audit-2026-05-19.md`,
+`changelog.d/changed/0604-rocm-renovate-manager.md`,
+`docs/rebase-notes.md` (this entry).
+
 ## fix/ubuntu-26-04-fallout (ADR-0603)
 
 **No rebase-sensitive invariants** — all changes are in the build/CI layer
