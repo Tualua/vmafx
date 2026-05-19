@@ -81,7 +81,7 @@ Touched files:
 `libvmaf/src/libvmaf.c` (comment-only at lines 1115, 1214),
 `tools/vmaf-tune/src/vmaftune/cli.py`,
 `docs/api/dnn.md`, `docs/ai/models/mobilesal.md`, `docs/state.md`,
-`docs/adr/0613-scaffold-audit-p1-feature-plumbing-fixes.md`,
+`docs/adr/0639-scaffold-audit-p1-feature-plumbing-fixes.md`,
 `docs/adr/README.md`,
 `changelog.d/fixed/adr-0613-scaffold-audit-p1.md`,
 `docs/rebase-notes.md` (this entry).

@@ -353,7 +353,7 @@ identity tied to the GitHub Actions workflow that built the model.
   multi-output graphs and writes directly to caller-owned `VmafDnnOutput`
   buffers.  Multi-output support in the attached / VmafContext path is tracked
   as **T-DNN-MULTI-OUTPUT** in [`docs/state.md`](../state.md).
-  See [ADR-0613](../adr/0613-scaffold-audit-p1-feature-plumbing-fixes.md)
+  See [ADR-0613](../adr/0639-scaffold-audit-p1-feature-plumbing-fixes.md)
   §P1-4 for the decision rationale.
 
 - Operator allowlist covers the set required by tiny FR / NR / filter models

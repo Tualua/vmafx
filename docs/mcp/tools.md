@@ -607,7 +607,7 @@ returns a non-200.
 
 Enumerate all `VmafFeatureExtractor` implementations found in the local
 `libvmaf/src/feature/` C source tree.  No binary required — the server
-parses the C source directly.  Added in [ADR-0608](../adr/0608-mcp-p1-vmaftune-extractors-models-progress.md).
+parses the C source directly.  Added in [ADR-0608](../adr/0638-mcp-p1-vmaftune-extractors-models-progress.md).
 
 ### Input schema — no arguments.
 

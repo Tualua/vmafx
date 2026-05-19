@@ -1,4 +1,4 @@
-# ADR-0608: MCP P1 surface — vmaf-tune integration, list_extractors, describe_model, progress notifications
+# ADR-0638: MCP P1 surface — vmaf-tune integration, list_extractors, describe_model, progress notifications
 
 - **Status**: Accepted
 - **Date**: 2026-05-19
@@ -83,4 +83,4 @@ name matching, fixing the `.1` truncation bug permanently.
 - ADR-0172 (describe_worst_frames / T6-6)
 - ADR-0495 (backend-probe allowlist)
 - ADR-0513 (run_benchmark / bench_all.sh)
-- ADR-0608 stub reserved by `scripts/adr/next-free.sh --claim mcp-p1-vmaftune-extractors-models-progress`
+- ADR-0638 stub reserved by `scripts/adr/next-free.sh --claim mcp-p1-vmaftune-extractors-models-progress`

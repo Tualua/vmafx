@@ -1,4 +1,4 @@
-# ADR-0613: Scaffold-audit P1 — backend precheck, HIP picture, mobilesal bpc, DNN multi-output
+# ADR-0639: Scaffold-audit P1 — backend precheck, HIP picture, mobilesal bpc, DNN multi-output
 
 - **Status**: Accepted
 - **Date**: 2026-05-19
@@ -45,7 +45,7 @@ comment block in `_run_tune_per_shot` that deferred the fix (citing ADR-0509) is
 removed; the defer rationale was superseded by the availability of the pre-check
 pattern established in `_run_ladder` and `_run_corpus`.  The `_build_per_shot_bisect_predicate`
 and `_run_compare_crf_sweep` local `score_backend` assignments are annotated with
-ADR-0613 citations.
+ADR-0639 citations.
 
 **P1-2**: Implement real `hipMalloc`-backed `vmaf_hip_picture_alloc` and `hipFree`-backed
 `vmaf_hip_picture_free` under `#ifdef HAVE_HIPCC`.  The non-HIP build retains `-ENOSYS`
@@ -59,13 +59,13 @@ sites.
 `feature_mobilesal` as the blocker, state the 8-bit constraint, and give the
 workaround (`--bitdepth 8` or omit `--feature mobilesal`).  Update
 `docs/ai/models/mobilesal.md` §Known limitations with a verbatim copy of the new
-message, the workaround, and an ADR-0613 citation.  Option (b) — implement 10-bit
+message, the workaround, and an ADR-0639 citation.  Option (b) — implement 10-bit
 support by downscaling/clipping to 8-bit internally — is rejected because it would
 require retraining the saliency model on 10-bit-clipped input to avoid a distribution
 mismatch that would silently degrade saliency quality.
 
 **P1-4**: Add inline code comments at both `-ENOTSUP` sites in `libvmaf.c` citing
-ADR-0613 and the T-DNN-MULTI-OUTPUT follow-up.  Update `docs/api/dnn.md` §Known
+ADR-0639 and the T-DNN-MULTI-OUTPUT follow-up.  Update `docs/api/dnn.md` §Known
 limitations with a clear description of the single-output constraint, an explanation
 of why it exists (the `vmaf_feature_collector_append` API accepts one `double` per
 frame per feature name), the workaround via standalone `vmaf_dnn_session_run()`, and
