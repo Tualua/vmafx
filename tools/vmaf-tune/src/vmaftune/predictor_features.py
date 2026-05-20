@@ -69,6 +69,8 @@ class FeatureExtractorConfig:
     ffprobe_bin: str = "ffprobe"
     use_signalstats: bool = True
     use_saliency: bool = False
+    saliency_model: Path | None = None
+    saliency_frame_samples: int = 8
     # Cap probe encode runtime — for very long shots we sample the
     # first N frames rather than encoding the entire shot. The
     # complexity signal saturates after a few seconds.
@@ -98,7 +100,7 @@ def extract_features(
     else:
         sig_stats = _SignalStats()
     if cfg.use_saliency:
-        sal = _compute_saliency(shot, source, cfg, run)
+        sal = _compute_saliency(shot, source, cfg, run, width=width, height=height, fps=fps)
     else:
         sal = (0.0, 0.0)
 
@@ -372,18 +374,31 @@ def _mean(values: list[float]) -> float:
     return sum(values) / len(values)
 
 
+def _shot_start_arg(shot: Shot, fps: float) -> str:
+    if fps > 0.0:
+        return f"{shot.start_frame / fps:.6f}"
+    return str(shot.start_frame)
+
+
 def _compute_saliency(
     shot: Shot,
     source: Path,
     cfg: FeatureExtractorConfig,
     run: SubprocessRunner,
+    *,
+    width: int,
+    height: int,
+    fps: float,
 ) -> tuple[float, float]:
-    """Run the saliency ONNX on the centre frame of ``shot``.
+    """Run the saliency ONNX on a raw-YUV decode of ``shot``.
 
     Returns ``(mean, var)`` over the full saliency map. Returns
     ``(0.0, 0.0)`` if onnxruntime / numpy / the saliency module are
     unavailable so the harness degrades gracefully on minimal hosts.
     """
+    frames = min(shot.length, cfg.probe_max_frames)
+    if width <= 0 or height <= 0 or frames <= 0:
+        return (0.0, 0.0)
     try:
         import numpy as np  # type: ignore[import-not-found]
 
@@ -392,16 +407,42 @@ def _compute_saliency(
         return (0.0, 0.0)
     if not hasattr(saliency, "compute_saliency_map"):
         return (0.0, 0.0)
-    centre = (shot.start_frame + shot.end_frame) // 2
-    try:
-        smap = saliency.compute_saliency_map(  # type: ignore[attr-defined]
-            source=source,
-            frame_index=centre,
-            ffmpeg_bin=cfg.ffmpeg_bin,
-            runner=run,
-        )
-    except Exception:  # pragma: no cover — saliency is best-effort
-        return (0.0, 0.0)
+
+    with tempfile.TemporaryDirectory(prefix="vmaf-tune-saliency-") as tmp:
+        raw_path = Path(tmp) / "shot.yuv"
+        cmd = [
+            cfg.ffmpeg_bin,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-ss",
+            _shot_start_arg(shot, fps),
+            "-i",
+            str(source),
+            "-frames:v",
+            str(frames),
+            "-pix_fmt",
+            "yuv420p",
+            "-f",
+            "rawvideo",
+            str(raw_path),
+        ]
+        completed = run(cmd, capture_output=True, text=True, check=False)
+        rc = int(getattr(completed, "returncode", 1))
+        if rc != 0 or not raw_path.exists():
+            return (0.0, 0.0)
+        try:
+            frame_samples = max(1, min(int(cfg.saliency_frame_samples), frames))
+            smap = saliency.compute_saliency_map(  # type: ignore[attr-defined]
+                raw_path,
+                width,
+                height,
+                model_path=cfg.saliency_model,
+                frame_samples=frame_samples,
+            )
+        except Exception:  # pragma: no cover — saliency is best-effort
+            return (0.0, 0.0)
     if smap is None:
         return (0.0, 0.0)
     arr = np.asarray(smap, dtype=np.float32)

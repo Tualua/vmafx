@@ -94,13 +94,17 @@ in the same run; mixed runs are explicit in each card via the
 |-------------------------------|----------------------------------------------------------|
 | `crf`                         | row `crf` (`cq` / `q` aliases accepted for hardware sweeps) |
 | `probe_bitrate_kbps`          | row `bitrate_kbps` (`actual_kbps` alias accepted)        |
-| `probe_*_avg_bytes`           | derived from `bitrate_kbps` + `framerate` (stand-in)     |
-| `saliency_*` / signalstats    | zero (not in Phase A schema; future `--predictor-training`) |
+| `probe_*_avg_bytes`           | row values when present; otherwise derived from `bitrate_kbps` + `framerate` |
+| `saliency_*` / signalstats    | row values when present; otherwise zero                   |
 | `shot_length_frames`          | `framerate × duration_s`                                  |
 | `fps`, `width`, `height`      | row metadata                                              |
 
 The runtime extractor in `predictor_features.py` populates the
-saliency / signalstats inputs from a real probe run.
+saliency / signalstats inputs from a real probe run. `vmaf-tune predict
+--use-saliency` decodes the current shot to temporary `yuv420p` and runs
+the configured `saliency_student` ONNX model over sampled frames before
+feeding `saliency_mean` and `saliency_var` into `ShotFeatures`; this is a
+predictor input, not the ROI encode path from `recommend-saliency`.
 
 ## 3. Op allowlist compliance
 

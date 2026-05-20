@@ -22,6 +22,7 @@ onnxruntime installed.
 
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 
@@ -40,6 +41,8 @@ from vmaftune.predictor import (  # noqa: E402
     resolution_class,
 )
 from vmaftune.predictor_features import (  # noqa: E402
+    FeatureExtractorConfig,
+    _compute_saliency,
     _parse_bitrate,
     _parse_metadata_float,
     _parse_signalstats,
@@ -360,3 +363,57 @@ def test_parse_signalstats_averages_per_metric():
     s = _parse_signalstats(text)
     assert s.y_avg == pytest.approx(125.0)
     assert s.frame_diff_mean == pytest.approx(3.0)
+
+
+def test_compute_saliency_extracts_raw_yuv_before_model(tmp_path, monkeypatch):
+    np = pytest.importorskip("numpy")
+    import vmaftune.saliency as saliency
+
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"fake container")
+    model = tmp_path / "saliency.onnx"
+    model.write_bytes(b"fake model")
+    seen: dict[str, object] = {}
+
+    def fake_run(cmd, capture_output, text, check):
+        assert cmd[0] == "ffmpeg-test"
+        assert "-ss" in cmd and cmd[cmd.index("-ss") + 1] == "1.000000"
+        assert "-frames:v" in cmd and cmd[cmd.index("-frames:v") + 1] == "10"
+        raw_path = Path(cmd[-1])
+        raw_path.write_bytes(bytes(4 * 4 * 3 // 2 * 10))
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    def fake_compute(video_path, width, height, *, model_path, frame_samples):
+        seen["video_path"] = Path(video_path)
+        seen["width"] = width
+        seen["height"] = height
+        seen["model_path"] = model_path
+        seen["frame_samples"] = frame_samples
+        assert Path(video_path).is_file()
+        return np.asarray([[0.0, 0.5], [1.0, 0.5]], dtype=np.float32)
+
+    monkeypatch.setattr(saliency, "compute_saliency_map", fake_compute)
+    cfg = FeatureExtractorConfig(
+        ffmpeg_bin="ffmpeg-test",
+        use_saliency=True,
+        saliency_model=model,
+        saliency_frame_samples=3,
+        probe_max_frames=10,
+    )
+
+    mean, var = _compute_saliency(
+        Shot(24, 72),
+        source,
+        cfg,
+        fake_run,
+        width=4,
+        height=4,
+        fps=24.0,
+    )
+
+    assert mean == pytest.approx(0.5)
+    assert var == pytest.approx(0.125)
+    assert seen["width"] == 4
+    assert seen["height"] == 4
+    assert seen["model_path"] == model
+    assert seen["frame_samples"] == 3

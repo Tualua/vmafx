@@ -147,6 +147,21 @@ demotion; ccache-v2 key prefix),
 `docs/research/ci-warning-omnibus-2026-05-19.md`,
 `changelog.d/fixed/0635-ci-warning-omnibus.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0654 — Predictor saliency signals
+
+`vmaf-tune predict --use-saliency` is a predictor-feature switch, not
+the ROI/QP sidecar path. Preserve the temporary raw-`yuv420p` decode in
+`predictor_features._compute_saliency()` before calling
+`saliency.compute_saliency_map(raw_path, width, height, ...)`; the
+saliency helper remains raw-YUV-only even though the public `predict`
+source can be any FFmpeg-readable container.
+
+`predictor_train.project_row()` must keep the 14-column predictor input
+layout stable. When real corpora carry `probe_*_avg_bytes`,
+`saliency_mean`, `saliency_var`, `frame_diff_mean`, `y_avg`, or `y_var`,
+preserve those finite values. Only legacy rows should fall back to
+bitrate-derived probe bytes and zero saliency / signalstats values.
 ## fix/ci-test-failures-omnibus (ADR-0637)
 
 **No rebase impact**: all touched files are fork-local CI configuration

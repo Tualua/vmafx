@@ -126,6 +126,30 @@ model card records `corpus.kind: synthetic-stub-*`. Directory inputs
 are passed through the same loader as single files; a codec with rows in
 any shard records `corpus.kind: real-N=<rows>`.
 
+When rows include richer predictor inputs, the trainer now preserves
+them instead of zero-filling: `probe_i_frame_avg_bytes`,
+`probe_p_frame_avg_bytes`, `probe_b_frame_avg_bytes`, `saliency_mean`,
+`saliency_var`, `frame_diff_mean`, `y_avg`, and `y_var`. Older rows
+remain valid; missing probe-byte columns use the deterministic bitrate
+stand-ins and missing saliency / signalstats columns stay `0.0`.
+
+`vmaf-tune predict --use-saliency` uses the same saliency feature slots
+at runtime. It decodes each sampled shot to temporary `yuv420p`, runs
+the configured saliency ONNX, and feeds only `saliency_mean` /
+`saliency_var` into the predictor:
+
+```shell
+vmaf-tune predict \
+    --source source.mp4 \
+    --codec libx264 \
+    --target-vmaf 96 \
+    --use-saliency \
+    --saliency-model model/tiny/saliency_student_v1.onnx
+```
+
+This flag is separate from `recommend-saliency --saliency-aware`, which
+creates ROI/QP sidecars for the encoder.
+
 ## Local Sidecar Bias Correction
 
 `vmaf-tune sidecar` exposes the local sidecar model from

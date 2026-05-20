@@ -401,4 +401,5 @@
 0651-chug-hdr-row-metadata
 0652-chug-visual-signal-primitives
 0653-chug-display-profile-training
+0654-predictor-saliency-signals
 0658-project-modernization-audit

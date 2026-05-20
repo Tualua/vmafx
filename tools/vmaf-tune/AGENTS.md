@@ -295,6 +295,15 @@ for the option-space digest.
   YUV to RGB, and only then applies ImageNet normalisation for
   `saliency_student_v1`. Do not reintroduce the old luma-only tensor
   path unless the model card and operator docs explicitly change.
+- **Predictor saliency uses the raw-YUV saliency helper
+  (ADR-0654).** `predictor_features._compute_saliency()` must decode the
+  requested shot range to temporary `yuv420p` before calling
+  `saliency.compute_saliency_map(raw_path, width, height, ...)`; the
+  public `predict --source` accepts containers, but the saliency helper
+  intentionally remains raw-YUV-only. `predictor_train.project_row()`
+  must preserve row-provided saliency / signalstats values in the
+  existing 14-column predictor layout and only zero-fill missing legacy
+  rows.
 - **Saliency temporal aggregation is a CLI-visible contract
   (ADR-0396 Phase 1).** `recommend-saliency --saliency-aggregator`
   exposes `mean`, `ema`, `max`, and `motion-weighted`. `mean` is the

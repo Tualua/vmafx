@@ -363,8 +363,16 @@ def _build_parser() -> argparse.ArgumentParser:
     predict.add_argument(
         "--use-saliency",
         action="store_true",
-        help="layer the saliency QP-offset map on top of the picked CRF "
-        "(libx264 only for now; other codecs warn and skip)",
+        help="include saliency_student mean/variance in predictor features",
+    )
+    predict.add_argument(
+        "--saliency-model",
+        type=Path,
+        default=None,
+        help=(
+            "path to saliency_student ONNX for --use-saliency "
+            "(default: model/tiny/saliency_student_v1.onnx)"
+        ),
     )
     predict.add_argument(
         "--model",
@@ -381,6 +389,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--ffmpeg-bin",
         default="ffmpeg",
         help="path to the ffmpeg binary (default ffmpeg on PATH)",
+    )
+    predict.add_argument(
+        "--ffprobe-bin",
+        default="ffprobe",
+        help="path to the ffprobe binary (default ffprobe on PATH)",
     )
     predict.add_argument(
         "--bitdepth",
@@ -1994,7 +2007,9 @@ def _run_predict(args: argparse.Namespace) -> int:
 
     feat_cfg = FeatureExtractorConfig(
         ffmpeg_bin=args.ffmpeg_bin,
+        ffprobe_bin=args.ffprobe_bin,
         use_saliency=args.use_saliency,
+        saliency_model=args.saliency_model,
     )
 
     # Probe geometry first — detect_shots needs width/height/pix_fmt and

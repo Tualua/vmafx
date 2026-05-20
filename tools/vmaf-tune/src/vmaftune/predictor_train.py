@@ -102,12 +102,11 @@ CODECS: tuple[str, ...] = tuple(_DEFAULT_COEFFS.keys())
 def project_row(row: dict[str, Any], crf_override: float | None = None) -> list[float]:
     """Project a JSONL corpus row onto the 14-float predictor input.
 
-    The Phase A corpus schema does not currently carry per-shot probe
-    statistics (those land in a future ``corpus.py --predictor-training``
-    mode). We derive a deterministic stand-in for the
-    ``probe_*_avg_bytes`` family from ``bitrate_kbps`` so the trainer
-    can run end-to-end on the schema as-shipped. Predictions remain
-    monotone in CRF because the stand-in does not depend on CRF.
+    When a corpus row already carries runtime predictor signals
+    (probe-frame bytes, saliency aggregates, signalstats), preserve
+    them. Older Phase A rows only have bitrate and structural metadata;
+    those still get deterministic frame-size stand-ins so the trainer
+    can run end-to-end on the schema as-shipped.
     """
     crf = float(crf_override if crf_override is not None else _row_quality(row))
     bitrate_kbps = float(_first_present(row, ("bitrate_kbps", "actual_kbps"), 0.0) or 0.0)
@@ -124,9 +123,20 @@ def project_row(row: dict[str, Any], crf_override: float | None = None) -> list[
     bytes_per_sec = bitrate_kbps * 1000.0 / 8.0
     frames_per_sec = max(framerate, 1.0)
     avg_frame_bytes = bytes_per_sec / frames_per_sec
-    i_frame_avg_bytes = avg_frame_bytes * 5.0  # I-frames ~5x average
-    p_frame_avg_bytes = avg_frame_bytes * 1.0
-    b_frame_avg_bytes = avg_frame_bytes * 0.5
+    i_frame_avg_bytes = _optional_float(
+        row, ("probe_i_frame_avg_bytes", "i_frame_avg_bytes"), avg_frame_bytes * 5.0
+    )
+    p_frame_avg_bytes = _optional_float(
+        row, ("probe_p_frame_avg_bytes", "p_frame_avg_bytes"), avg_frame_bytes * 1.0
+    )
+    b_frame_avg_bytes = _optional_float(
+        row, ("probe_b_frame_avg_bytes", "b_frame_avg_bytes"), avg_frame_bytes * 0.5
+    )
+    saliency_mean = _optional_float(row, ("saliency_mean",), 0.0)
+    saliency_var = _optional_float(row, ("saliency_var",), 0.0)
+    frame_diff_mean = _optional_float(row, ("frame_diff_mean", "ydif_mean"), 0.0)
+    y_avg = _optional_float(row, ("y_avg", "yavg_mean"), 0.0)
+    y_var = _optional_float(row, ("y_var", "yrange_mean"), 0.0)
 
     # Predictor input layout — must match Predictor._predict_onnx.
     return [
@@ -135,11 +145,11 @@ def project_row(row: dict[str, Any], crf_override: float | None = None) -> list[
         i_frame_avg_bytes,
         p_frame_avg_bytes,
         b_frame_avg_bytes,
-        0.0,  # saliency_mean — not in Phase A schema
-        0.0,  # saliency_var
-        0.0,  # frame_diff_mean
-        0.0,  # y_avg
-        0.0,  # y_var
+        saliency_mean,
+        saliency_var,
+        frame_diff_mean,
+        y_avg,
+        y_var,
         float(shot_length),
         framerate,
         float(width),
@@ -236,6 +246,18 @@ def _first_present(row: dict[str, Any], keys: Sequence[str], default: Any = None
         if value is not None and value != "":
             return value
     return default
+
+
+def _optional_float(row: dict[str, Any], keys: Sequence[str], default: float) -> float:
+    """Return the first finite float among ``keys``; otherwise ``default``."""
+    value = _first_present(row, keys, None)
+    if value is None:
+        return float(default)
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return float(default)
+    return out if math.isfinite(out) else float(default)
 
 
 def _row_codec(row: dict[str, Any]) -> str | None:

@@ -127,6 +127,36 @@ def test_project_row_returns_input_dim_floats() -> None:
     assert vec[1] == pytest.approx(4321.5)
 
 
+def test_project_row_preserves_optional_predictor_signal_columns() -> None:
+    row = {
+        "crf": 24,
+        "bitrate_kbps": 2400.0,
+        "width": 1280,
+        "height": 720,
+        "framerate": 30.0,
+        "duration_s": 2.0,
+        "probe_i_frame_avg_bytes": "12000.5",
+        "probe_p_frame_avg_bytes": 2200.25,
+        "probe_b_frame_avg_bytes": 900.0,
+        "saliency_mean": 0.42,
+        "saliency_var": "0.037",
+        "frame_diff_mean": 2.5,
+        "y_avg": 128.0,
+        "y_var": 400.0,
+    }
+
+    vec = project_row(row)
+
+    assert vec[2] == pytest.approx(12000.5)
+    assert vec[3] == pytest.approx(2200.25)
+    assert vec[4] == pytest.approx(900.0)
+    assert vec[5] == pytest.approx(0.42)
+    assert vec[6] == pytest.approx(0.037)
+    assert vec[7] == pytest.approx(2.5)
+    assert vec[8] == pytest.approx(128.0)
+    assert vec[9] == pytest.approx(400.0)
+
+
 def test_load_corpus_accepts_hardware_sweep_aliases(tmp_path: Path) -> None:
     """Real Phase-A hardware sweeps predate canonical corpus key names."""
     corpus = tmp_path / "hardware.jsonl"
