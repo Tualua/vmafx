@@ -22,9 +22,11 @@ needs.
 ONNX I/O contract::
 
     Inputs:
-      features: float32 [N, 11]   canonical-6 + saliency_mean +
-                                  saliency_var + shot_count_norm +
-                                  shot_mean_len_norm + shot_cut_density
+      features: float32 [N, F]    F depends on the selected feature schema.
+                                  KonViD defaults to the 11-D
+                                  canonical-6 + saliency + shot layout;
+                                  CHUG HDR defaults to a 34-D wide schema
+                                  with temporal aggregates and HDR metadata.
       encoder_onehot: float32 [N, 1]  ENCODER_VOCAB v4 single slot
                                       (always [1.0]) — placeholder for
                                       future multi-slot expansion.
@@ -35,14 +37,15 @@ Reproducer (smoke — no real corpus on disk; deterministic seed)::
 
     python ai/scripts/train_konvid_mos_head.py --smoke
 
-Production (real KonViD JSONL drops or CHUG/K150K feature parquet)::
+Production (real KonViD JSONL drops)::
 
     python ai/scripts/train_konvid_mos_head.py \
         --konvid-1k .workingdir2/konvid-1k/konvid_1k.jsonl \
         --konvid-150k .workingdir2/konvid-150k/konvid_150k.jsonl
 
-    python ai/scripts/train_konvid_mos_head.py \
-        --feature-parquet .workingdir2/chug/training/full_features_chug.parquet
+CHUG HDR MOS training uses ``train_chug_hdr_mos_head.py``. That wrapper
+reuses this module's training loop but keeps the command name, defaults,
+and emitted manifest identity CHUG-specific.
 
 Production-flip gate (mirrors ADR-0303 / fr_regressor_v2_ensemble):
 
@@ -77,8 +80,9 @@ from aiutils.file_utils import sha256
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # ---------------------------------------------------------------------
-# Constants — schema-pinned, must stay in sync with the model card and
-# the predictor in ``tools/vmaf-tune/src/vmaftune/predictor.py``.
+# Constants — the KonViD schema is predictor-facing and must stay in sync with
+# the model card and ``tools/vmaf-tune/src/vmaftune/predictor.py``. CHUG HDR
+# schemas are local training schemas until a validated HDR model ships.
 # ---------------------------------------------------------------------
 
 CANONICAL_6: tuple[str, ...] = (
@@ -104,6 +108,37 @@ EXTRA_FEATURES: tuple[str, ...] = (
 
 FEATURE_COLUMNS: tuple[str, ...] = CANONICAL_6 + EXTRA_FEATURES
 N_FEATURES = len(FEATURE_COLUMNS)
+DEFAULT_MODEL_ID = "konvid_mos_head_v1"
+FEATURE_SCHEMA_KONVID_V1 = "konvid-v1"
+
+# CHUG feature shards carry richer full-reference aggregates than the original
+# KonViD MOS-head surface: per-feature p10/p90/std temporal summaries plus
+# HDR ladder / geometry metadata.  Keep this as a separate schema so the
+# committed KonViD head remains byte-compatible while local CHUG experiments can
+# actually use the data the extractor produced.
+CHUG_HDR_TEMPORAL_FEATURES: tuple[str, ...] = tuple(
+    f"{name}_{stat}" for name in CANONICAL_6 for stat in ("p10", "p90", "std")
+)
+CHUG_HDR_METADATA_FEATURES: tuple[str, ...] = (
+    "chug_bitrate_mbps",
+    "chug_orientation_portrait",
+    "chug_ref",
+    "distorted_width_norm",
+    "distorted_height_norm",
+    "reference_width_norm",
+    "reference_height_norm",
+    "duration_s_norm",
+    "n_feature_frames_norm",
+    "feature_bitdepth_norm",
+)
+CHUG_HDR_FEATURE_COLUMNS: tuple[str, ...] = (
+    CANONICAL_6 + CHUG_HDR_TEMPORAL_FEATURES + CHUG_HDR_METADATA_FEATURES
+)
+FEATURE_SCHEMA_CHUG_HDR_WIDE_V1 = "chug-hdr-wide-v1"
+FEATURE_SCHEMAS: dict[str, tuple[str, ...]] = {
+    FEATURE_SCHEMA_KONVID_V1: FEATURE_COLUMNS,
+    FEATURE_SCHEMA_CHUG_HDR_WIDE_V1: CHUG_HDR_FEATURE_COLUMNS,
+}
 
 # ENCODER_VOCAB v4 — KonViD UGC content collapses to a single
 # ``ugc-mixed`` slot per ADR-0325 §Phase 2 §Decision. The MOS-head
@@ -156,6 +191,8 @@ def _set_seed(seed: int) -> None:
         import torch  # type: ignore[import-not-found]
 
         torch.manual_seed(seed)
+        if hasattr(torch, "cuda") and torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
         if hasattr(torch, "use_deterministic_algorithms"):
             # Some PyTorch builds reject a hard True under CUDA; warn-only is best-effort.
             with contextlib.suppress(RuntimeError):
@@ -203,7 +240,98 @@ def _normalise_split(raw: Any) -> str:
     return split if split in {"train", "val", "test"} else ""
 
 
-def _row_to_features(row: dict[str, Any]) -> tuple[np.ndarray, float] | None:
+def _feature_columns_for_schema(schema: str) -> tuple[str, ...]:
+    try:
+        return FEATURE_SCHEMAS[schema]
+    except KeyError as exc:
+        known = ", ".join(sorted(FEATURE_SCHEMAS))
+        raise ValueError(f"unknown feature schema {schema!r}; expected one of: {known}") from exc
+
+
+def _safe_float(value: Any) -> float:
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return math.nan
+    return out if math.isfinite(out) else math.nan
+
+
+def _normalise_positive(value: Any, denominator: float) -> float:
+    raw = _safe_float(value)
+    if not math.isfinite(raw) or raw < 0.0:
+        return math.nan
+    return raw / denominator
+
+
+def _parse_bitrate_mbps(value: Any) -> float:
+    """Parse CHUG labels such as ``0.2M`` or ``500K`` into Mbps."""
+    if isinstance(value, (int, float)):
+        raw = _safe_float(value)
+        return raw if math.isfinite(raw) else math.nan
+    text = str(value or "").strip().lower().replace("bps", "")
+    if not text:
+        return math.nan
+    multiplier = 1.0
+    if text.endswith("mb") or text.endswith("m"):
+        multiplier = 1.0
+        text = text.removesuffix("mb").removesuffix("m")
+    elif text.endswith("kb") or text.endswith("k"):
+        multiplier = 0.001
+        text = text.removesuffix("kb").removesuffix("k")
+    raw = _safe_float(text)
+    if not math.isfinite(raw):
+        return math.nan
+    return raw * multiplier
+
+
+def _row_feature_value(row: dict[str, Any], name: str) -> float:
+    if name == "chug_bitrate_mbps":
+        if row.get("chug_bitrate_label") is not None:
+            return _parse_bitrate_mbps(row.get("chug_bitrate_label"))
+        mbps = _safe_float(row.get("bitrate_mbps"))
+        if math.isfinite(mbps):
+            return mbps
+        kbps = _safe_float(row.get("bitrate_kbps"))
+        return kbps / 1000.0 if math.isfinite(kbps) else math.nan
+    if name == "chug_orientation_portrait":
+        orientation = str(row.get("chug_orientation") or "").strip().lower()
+        if orientation.startswith("portrait"):
+            return 1.0
+        if orientation.startswith("landscape"):
+            return 0.0
+        return math.nan
+    if name == "distorted_width_norm":
+        return _normalise_positive(row.get("width"), 3840.0)
+    if name == "distorted_height_norm":
+        return _normalise_positive(row.get("height"), 2160.0)
+    if name == "reference_width_norm":
+        return _normalise_positive(row.get("feature_width"), 3840.0)
+    if name == "reference_height_norm":
+        return _normalise_positive(row.get("feature_height"), 2160.0)
+    if name == "duration_s_norm":
+        return _normalise_positive(row.get("duration_s"), 60.0)
+    if name == "n_feature_frames_norm":
+        return _normalise_positive(row.get("n_feature_frames"), 1800.0)
+    if name == "feature_bitdepth_norm":
+        bitdepth = _safe_float(row.get("feature_bitdepth"))
+        return (bitdepth - 8.0) / 4.0 if math.isfinite(bitdepth) else math.nan
+
+    value = row.get(name)
+    primary_f = _safe_float(value)
+    if not math.isfinite(primary_f):
+        # Parquet corpora produced by materialisers store per-clip temporal
+        # averages under ``<feature>_mean`` (e.g. ``adm2_mean``).  When a
+        # parquet file has mixed columns, pandas fills absent slots with NaN
+        # rather than omitting the key, so NaN must also fall back.
+        value = row.get(f"{name}_mean")
+        primary_f = _safe_float(value)
+    return primary_f
+
+
+def _row_to_features(
+    row: dict[str, Any],
+    feature_columns: Sequence[str] = FEATURE_COLUMNS,
+) -> tuple[np.ndarray, float] | None:
     """Project one corpus row to ``(features, mos)`` or ``None`` to skip.
 
     Phase 1/2 KonViD JSONL rows carry per-clip aggregates only — they
@@ -215,8 +343,6 @@ def _row_to_features(row: dict[str, Any]) -> tuple[np.ndarray, float] | None:
     canonical-6 / saliency / shot-metadata columns get bolted on in
     follow-up PRs.
     """
-    import contextlib
-
     mos = row.get("mos")
     try:
         mos_f = float(mos)
@@ -233,32 +359,19 @@ def _row_to_features(row: dict[str, Any]) -> tuple[np.ndarray, float] | None:
         # rows indicate a schema mismatch and are dropped rather than
         # silently clamped.
         return None
-    feats = np.zeros(N_FEATURES, dtype=np.float32)
-    for idx, name in enumerate(FEATURE_COLUMNS):
-        value = row.get(name)
-        # Parquet corpora produced by the CHUG materialiser store per-clip
-        # temporal averages under the ``<feature>_mean`` column name (e.g.
-        # ``adm2_mean``).  When a parquet file has mixed columns, pandas
-        # fills absent slots with NaN rather than omitting the key, so we
-        # must treat NaN as "missing" and also fall back.  Accept either
-        # form so that full-features parquet and bare-feature JSONL rows
-        # can coexist in the same corpus load.  (Regression introduced by
-        # PR #908 which dropped this fallback during the aiutils refactor.)
-        try:
-            primary_f = float(value)
-        except (TypeError, ValueError):
-            primary_f = math.nan
-        if not math.isfinite(primary_f):
-            value = row.get(f"{name}_mean")
-        if value is not None:
-            with contextlib.suppress(TypeError, ValueError):
-                feats[idx] = float(value)
+    feats = np.zeros(len(feature_columns), dtype=np.float32)
+    for idx, name in enumerate(feature_columns):
+        value = _row_feature_value(row, name)
+        if math.isfinite(value):
+            feats[idx] = float(value)
     return feats, mos_f
 
 
 def _load_corpus_arrays(
     paths: Sequence[Path],
+    jsonl_paths: Sequence[Path] = (),
     parquet_paths: Sequence[Path] = (),
+    feature_columns: Sequence[str] = FEATURE_COLUMNS,
 ) -> CorpusArrays:
     """Load + project one or more JSONL or parquet corpus paths.
 
@@ -267,19 +380,19 @@ def _load_corpus_arrays(
     a single slot.
     """
     rows: list[dict[str, Any]] = []
-    for p in (*paths, *parquet_paths):
+    for p in (*paths, *jsonl_paths, *parquet_paths):
         if p is not None and p.is_file():
             rows.extend(_load_corpus_rows(p))
     pairs: list[tuple[np.ndarray, float]] = []
     splits: list[str] = []
     for row in rows:
-        proj = _row_to_features(row)
+        proj = _row_to_features(row, feature_columns=feature_columns)
         if proj is not None:
             pairs.append(proj)
             splits.append(_normalise_split(row.get("split")))
     if not pairs:
         return CorpusArrays(
-            features=np.empty((0, N_FEATURES), dtype=np.float32),
+            features=np.empty((0, len(feature_columns)), dtype=np.float32),
             encoder=np.empty((0, N_ENCODERS), dtype=np.float32),
             mos=np.empty((0,), dtype=np.float32),
             splits=np.empty((0,), dtype="<U5"),
@@ -322,6 +435,7 @@ def _heldout_split_indices(splits: np.ndarray) -> tuple[np.ndarray, np.ndarray] 
 def _synthesize_corpus(
     n_rows: int = 600,
     seed: int = 0,
+    feature_columns: Sequence[str] = FEATURE_COLUMNS,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Synthesise a deterministic-seeded synthetic MOS corpus.
 
@@ -333,7 +447,7 @@ def _synthesize_corpus(
     fresh checkout reproduces the gate verdict bit-for-bit.
     """
     rng = np.random.default_rng(seed)
-    feats = np.column_stack(
+    base_feats = np.column_stack(
         [
             rng.uniform(0.4, 1.0, size=n_rows),  # adm2
             rng.uniform(0.2, 0.95, size=n_rows),  # vif_scale0
@@ -348,6 +462,58 @@ def _synthesize_corpus(
             rng.uniform(0.0, 0.1, size=n_rows),  # shot_cut_density
         ]
     ).astype(np.float32)
+    base_map = {name: base_feats[:, idx] for idx, name in enumerate(FEATURE_COLUMNS)}
+    columns: list[np.ndarray] = []
+    for name in feature_columns:
+        if name in base_map:
+            columns.append(base_map[name])
+            continue
+        if name.endswith("_p10") and name.removesuffix("_p10") in base_map:
+            columns.append(np.maximum(0.0, base_map[name.removesuffix("_p10")] * 0.90))
+            continue
+        if name.endswith("_p90") and name.removesuffix("_p90") in base_map:
+            columns.append(base_map[name.removesuffix("_p90")] * 1.08)
+            continue
+        if name.endswith("_std") and name.removesuffix("_std") in base_map:
+            columns.append(rng.uniform(0.005, 0.05, size=n_rows).astype(np.float32))
+            continue
+        if name == "chug_bitrate_mbps":
+            columns.append(rng.choice([0.2, 0.5, 1.0, 2.0, 4.0], size=n_rows).astype(np.float32))
+            continue
+        if name == "chug_orientation_portrait":
+            columns.append(rng.integers(0, 2, size=n_rows).astype(np.float32))
+            continue
+        if name == "chug_ref":
+            columns.append(np.zeros(n_rows, dtype=np.float32))
+            continue
+        if name in {
+            "distorted_width_norm",
+            "distorted_height_norm",
+            "reference_width_norm",
+            "reference_height_norm",
+        }:
+            columns.append(rng.uniform(0.16, 1.0, size=n_rows).astype(np.float32))
+            continue
+        if name == "duration_s_norm":
+            columns.append(rng.uniform(0.05, 0.25, size=n_rows).astype(np.float32))
+            continue
+        if name == "n_feature_frames_norm":
+            columns.append(rng.uniform(0.05, 0.25, size=n_rows).astype(np.float32))
+            continue
+        if name == "feature_bitdepth_norm":
+            columns.append(np.full(n_rows, 0.5, dtype=np.float32))
+            continue
+        columns.append(np.zeros(n_rows, dtype=np.float32))
+    feats = np.column_stack(columns).astype(np.float32)
+
+    feature_columns_list = list(feature_columns)
+
+    def col(column: str, fallback: float = 0.0) -> np.ndarray:
+        try:
+            return feats[:, feature_columns_list.index(column)]
+        except ValueError:
+            return np.full(n_rows, fallback, dtype=np.float32)
+
     # Smooth nonlinear MOS target — anchored so well-encoded
     # high-saliency content lives near 4.5 and grainy fast-motion
     # content near 1.5. The form is a sum of three monotone terms
@@ -355,10 +521,10 @@ def _synthesize_corpus(
     # recovering ≥0.75 PLCC on the synthetic split.
     base = (
         2.5
-        + 1.6 * feats[:, 0]  # adm2 lift
-        - 0.04 * feats[:, 5]  # motion2 penalty
-        + 0.6 * feats[:, 6]  # saliency lift
-        + 0.3 * feats[:, 4]  # vif_scale3 lift
+        + 1.6 * col("adm2")  # adm2 lift
+        - 0.04 * col("motion2")  # motion2 penalty
+        + 0.6 * col("saliency_mean")  # saliency lift
+        + 0.3 * col("vif_scale3")  # vif_scale3 lift
     )
     noise = rng.normal(0.0, 0.10, size=n_rows)  # ~rater noise
     target = np.clip(base + noise, MOS_MIN, MOS_MAX).astype(np.float32)
@@ -416,6 +582,20 @@ def _count_parameters(model) -> int:  # type: ignore[no-untyped-def]
     return int(sum(p.numel() for p in model.parameters()))
 
 
+def _resolve_device(device: str):  # type: ignore[no-untyped-def]
+    """Resolve the requested PyTorch training device."""
+    import torch
+
+    requested = device.strip().lower()
+    if requested == "auto":
+        requested = "cuda" if torch.cuda.is_available() else "cpu"
+    if requested == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError("CUDA was requested for MOS-head training but torch.cuda is unavailable")
+    if requested != "cpu" and not requested.startswith("cuda"):
+        raise RuntimeError(f"unsupported MOS-head training device: {device}")
+    return torch.device(requested)
+
+
 # ---------------------------------------------------------------------
 # Cross-validation training loop.
 # ---------------------------------------------------------------------
@@ -469,13 +649,16 @@ def _train_one_fold(
     lr: float,
     weight_decay: float,
     seed: int,
+    n_features: int,
+    device: str = "cpu",
 ) -> tuple[np.ndarray, dict[str, float]]:
     """Train one fold; return ``(val_pred, fold_metrics)``."""
     import torch
     from torch.utils.data import DataLoader, TensorDataset
 
     _set_seed(seed)
-    model = _build_model()
+    torch_device = _resolve_device(device)
+    model = _build_model(in_features=n_features).to(torch_device)
     ds = TensorDataset(
         torch.from_numpy(features_train.astype(np.float32)),
         torch.from_numpy(encoder_train.astype(np.float32)),
@@ -487,6 +670,9 @@ def _train_one_fold(
     model.train()
     for _ep in range(epochs):
         for fb, eb, yb in loader:
+            fb = fb.to(torch_device)
+            eb = eb.to(torch_device)
+            yb = yb.to(torch_device)
             opt.zero_grad()
             pred = model(fb, eb)
             loss = loss_fn(pred, yb)
@@ -496,8 +682,8 @@ def _train_one_fold(
     with torch.no_grad():
         val_pred = (
             model(
-                torch.from_numpy(features_val.astype(np.float32)),
-                torch.from_numpy(encoder_val.astype(np.float32)),
+                torch.from_numpy(features_val.astype(np.float32)).to(torch_device),
+                torch.from_numpy(encoder_val.astype(np.float32)).to(torch_device),
             )
             .cpu()
             .numpy()
@@ -523,13 +709,16 @@ def _train_full(
     lr: float,
     weight_decay: float,
     seed: int,
+    n_features: int,
+    device: str = "cpu",
 ):  # type: ignore[no-untyped-def]
     """Train one model on the full corpus — the ship checkpoint."""
     import torch
     from torch.utils.data import DataLoader, TensorDataset
 
     _set_seed(seed)
-    model = _build_model()
+    torch_device = _resolve_device(device)
+    model = _build_model(in_features=n_features).to(torch_device)
     ds = TensorDataset(
         torch.from_numpy(features.astype(np.float32)),
         torch.from_numpy(encoder.astype(np.float32)),
@@ -541,6 +730,9 @@ def _train_full(
     model.train()
     for _ep in range(epochs):
         for fb, eb, yb in loader:
+            fb = fb.to(torch_device)
+            eb = eb.to(torch_device)
+            yb = yb.to(torch_device)
             opt.zero_grad()
             pred = model(fb, eb)
             loss = loss_fn(pred, yb)
@@ -550,12 +742,17 @@ def _train_full(
     return model
 
 
-def _export_onnx(model, onnx_path: Path) -> str:  # type: ignore[no-untyped-def]
+def _export_onnx(
+    model,
+    onnx_path: Path,
+    n_features: int = N_FEATURES,
+) -> str:  # type: ignore[no-untyped-def]
     """Export the trained model as opset-17 ONNX. Returns sha256."""
     import torch
 
     onnx_path.parent.mkdir(parents=True, exist_ok=True)
-    dummy_features = torch.zeros(1, N_FEATURES, dtype=torch.float32)
+    model = model.cpu()
+    dummy_features = torch.zeros(1, n_features, dtype=torch.float32)
     dummy_encoder = torch.ones(1, N_ENCODERS, dtype=torch.float32)
     torch.onnx.export(
         model,
@@ -633,6 +830,9 @@ def _build_manifest(
     *,
     onnx_path: Path,
     sha256: str,
+    model_id: str = DEFAULT_MODEL_ID,
+    feature_schema: str = FEATURE_SCHEMA_KONVID_V1,
+    feature_columns: Sequence[str] = FEATURE_COLUMNS,
     folds: list[dict[str, Any]],
     gate: dict[str, Any],
     feature_mean: list[float],
@@ -644,12 +844,13 @@ def _build_manifest(
     seed: int,
 ) -> dict[str, Any]:
     return {
-        "id": "konvid_mos_head_v1",
+        "id": model_id,
         "kind": "mos",
         "onnx": onnx_path.name,
         "sha256": sha256,
         "opset": 17,
-        "feature_order": list(FEATURE_COLUMNS),
+        "feature_schema": feature_schema,
+        "feature_order": list(feature_columns),
         "feature_mean": feature_mean,
         "feature_std": feature_std,
         "encoder_vocab": list(ENCODER_VOCAB_V4),
@@ -718,6 +919,29 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
     )
     ap.add_argument(
+        "--feature-jsonl",
+        type=Path,
+        action="append",
+        default=[],
+        help=argparse.SUPPRESS,
+    )
+    ap.add_argument(
+        "--model-id",
+        default=DEFAULT_MODEL_ID,
+        help=argparse.SUPPRESS,
+    )
+    ap.add_argument(
+        "--feature-schema",
+        choices=tuple(FEATURE_SCHEMAS),
+        default=FEATURE_SCHEMA_KONVID_V1,
+        help=argparse.SUPPRESS,
+    )
+    ap.add_argument(
+        "--log-prefix",
+        default="konvid-mos",
+        help=argparse.SUPPRESS,
+    )
+    ap.add_argument(
         "--smoke",
         action="store_true",
         help="Synthesize a deterministic-seeded corpus instead of loading "
@@ -730,6 +954,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--weight-decay", type=float, default=1e-5)
     ap.add_argument("--k-folds", type=int, default=5)
     ap.add_argument("--seed", type=int, default=20260508)
+    ap.add_argument(
+        "--device",
+        default="cpu",
+        help=(
+            "PyTorch training device: cpu, cuda, cuda:N, or auto. Defaults to "
+            "cpu so CI smoke runs stay deterministic; local CHUG experiments "
+            "can pass --device cuda."
+        ),
+    )
     ap.add_argument(
         "--out-onnx",
         type=Path,
@@ -753,22 +986,33 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Skip ONNX export + manifest write (dev mode).",
     )
     args = ap.parse_args(argv)
+    feature_columns = _feature_columns_for_schema(args.feature_schema)
 
     if args.smoke:
         n_rows = 600
-        features, encoder, mos = _synthesize_corpus(n_rows=n_rows, seed=args.seed)
+        features, encoder, mos = _synthesize_corpus(
+            n_rows=n_rows,
+            seed=args.seed,
+            feature_columns=feature_columns,
+        )
         splits = np.empty((features.shape[0],), dtype="<U5")
         epochs = args.smoke_epochs
         synthetic = True
         print(
-            f"[konvid-mos] smoke mode: {n_rows} synthetic rows, "
-            f"epochs={epochs}, seed={args.seed}",
+            f"[{args.log_prefix}] smoke mode: {n_rows} synthetic rows, "
+            f"epochs={epochs}, seed={args.seed}, device={args.device}",
             flush=True,
         )
     else:
         paths = [p for p in (args.konvid_1k, args.konvid_150k) if p is not None]
+        feature_jsonls = [p for p in args.feature_jsonl if p is not None]
         feature_parquets = [p for p in args.feature_parquet if p is not None]
-        arrays = _load_corpus_arrays(paths, parquet_paths=feature_parquets)
+        arrays = _load_corpus_arrays(
+            paths,
+            jsonl_paths=feature_jsonls,
+            parquet_paths=feature_parquets,
+            feature_columns=feature_columns,
+        )
         features, encoder, mos, splits = (
             arrays.features,
             arrays.encoder,
@@ -777,27 +1021,31 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         if features.shape[0] == 0:
             print(
-                "[konvid-mos] no real corpus rows found at "
-                f"{[str(p) for p in (*paths, *feature_parquets)]}; "
+                f"[{args.log_prefix}] no real corpus rows found at "
+                f"{[str(p) for p in (*paths, *feature_jsonls, *feature_parquets)]}; "
                 "falling back to synthetic. "
                 "Pass --smoke to silence this message.",
                 file=sys.stderr,
             )
-            features, encoder, mos = _synthesize_corpus(n_rows=600, seed=args.seed)
+            features, encoder, mos = _synthesize_corpus(
+                n_rows=600,
+                seed=args.seed,
+                feature_columns=feature_columns,
+            )
             splits = np.empty((features.shape[0],), dtype="<U5")
             synthetic = True
         else:
             synthetic = False
         epochs = args.epochs
         print(
-            f"[konvid-mos] {'real' if not synthetic else 'synthetic-fallback'} "
-            f"mode: {features.shape[0]} rows, epochs={epochs}",
+            f"[{args.log_prefix}] {'real' if not synthetic else 'synthetic-fallback'} "
+            f"mode: {features.shape[0]} rows, epochs={epochs}, device={args.device}",
             flush=True,
         )
 
     if features.shape[0] < args.k_folds * 2:
         print(
-            f"[konvid-mos] error: corpus has only {features.shape[0]} rows; "
+            f"[{args.log_prefix}] error: corpus has only {features.shape[0]} rows; "
             f"need at least {args.k_folds * 2} for {args.k_folds}-fold CV.",
             file=sys.stderr,
         )
@@ -821,7 +1069,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         fold_indices = [(train_idx, val_idx)]
         validation_policy = "explicit-corpus-split"
         print(
-            f"[konvid-mos] explicit split validation: "
+            f"[{args.log_prefix}] explicit split validation: "
             f"n_train={len(train_idx)} n_val={len(val_idx)}",
             flush=True,
         )
@@ -838,19 +1086,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             lr=args.lr,
             weight_decay=args.weight_decay,
             seed=args.seed + fold_idx,
+            n_features=features.shape[1],
+            device=args.device,
         )
         metrics["fold"] = fold_idx
         metrics["validation_policy"] = validation_policy
         folds_report.append(metrics)
         print(
-            f"[konvid-mos] fold {fold_idx}: "
+            f"[{args.log_prefix}] fold {fold_idx}: "
             f"plcc={metrics['plcc']:.4f} srocc={metrics['srocc']:.4f} "
             f"rmse={metrics['rmse']:.4f} (n_val={metrics['n_val']})",
             flush=True,
         )
     gate = _evaluate_gate(folds_report, synthetic=synthetic)
     print(
-        f"[konvid-mos] gate={'PASS' if gate['passed'] else 'FAIL'} "
+        f"[{args.log_prefix}] gate={'PASS' if gate['passed'] else 'FAIL'} "
         f"mean_plcc={gate['mean_plcc']:.4f} "
         f"mean_srocc={gate['mean_srocc']:.4f} "
         f"mean_rmse={gate['mean_rmse']:.4f} "
@@ -863,7 +1113,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     # the LOSO fold *is* the gate — the ship checkpoint goes on the
     # entire corpus.
     if args.no_export:
-        print("[konvid-mos] --no-export: skipping ONNX + manifest write", flush=True)
+        print(f"[{args.log_prefix}] --no-export: skipping ONNX + manifest write", flush=True)
         return 0
     if split_indices is None:
         ship_features = features
@@ -883,12 +1133,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         lr=args.lr,
         weight_decay=args.weight_decay,
         seed=args.seed,
+        n_features=features.shape[1],
+        device=args.device,
     )
     n_params = _count_parameters(ship_model)
-    sha256 = _export_onnx(ship_model, args.out_onnx)
+    sha256 = _export_onnx(ship_model, args.out_onnx, n_features=features.shape[1])
     manifest = _build_manifest(
         onnx_path=args.out_onnx,
         sha256=sha256,
+        model_id=args.model_id,
+        feature_schema=args.feature_schema,
+        feature_columns=feature_columns,
         folds=folds_report,
         gate=gate,
         feature_mean=feature_mean,
@@ -905,7 +1160,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     wall_s = time.time() - t0
     print(
-        f"[konvid-mos] wrote {args.out_onnx} ({n_params} params, "
+        f"[{args.log_prefix}] wrote {args.out_onnx} ({n_params} params, "
         f"sha256={sha256[:16]}…); manifest={args.out_manifest.name}; "
         f"wall={wall_s:.1f}s",
         flush=True,
@@ -915,10 +1170,17 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 __all__ = [
     "CANONICAL_6",
+    "CHUG_HDR_FEATURE_COLUMNS",
+    "CHUG_HDR_METADATA_FEATURES",
+    "CHUG_HDR_TEMPORAL_FEATURES",
+    "DEFAULT_MODEL_ID",
     "ENCODER_VOCAB_V4",
     "ENCODER_VOCAB_V4_VERSION",
     "EXTRA_FEATURES",
     "FEATURE_COLUMNS",
+    "FEATURE_SCHEMAS",
+    "FEATURE_SCHEMA_CHUG_HDR_WIDE_V1",
+    "FEATURE_SCHEMA_KONVID_V1",
     "GATE_MEAN_PLCC",
     "GATE_RMSE_MAX",
     "GATE_SPREAD_MAX",
@@ -930,10 +1192,12 @@ __all__ = [
     "SYNTHETIC_GATE_PLCC",
     "CorpusArrays",
     "_evaluate_gate",
+    "_feature_columns_for_schema",
     "_heldout_split_indices",
     "_kfold_indices",
     "_load_corpus",
     "_load_corpus_arrays",
+    "_resolve_device",
     "_row_to_features",
     "_synthesize_corpus",
     "main",

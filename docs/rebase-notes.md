@@ -37970,6 +37970,27 @@ final `powf` exponent must be `1.0f / (float)adm_p_norm` in every twin. The
 default `3.0` path is the Netflix-compatible path; do not split SIMD dispatch
 back to a hard-coded exponent when resolving conflicts.
 
+## ADR-0648 — CHUG HDR MOS trainer entry point
+
+CHUG HDR subjective-MOS experiments use
+`ai/scripts/train_chug_hdr_mos_head.py` and local
+`chug_hdr_mos_head_v1` manifests. Keep CHUG operator docs on that entry point;
+do not reintroduce instructions that pass CHUG shards through
+`train_konvid_mos_head.py`'s KonViD-named flags. The wrapper may reuse the
+shared MOS-head implementation, but it must pass explicit non-existent KonViD
+paths so CHUG runs cannot accidentally mix local KonViD rows with HDR MOS
+shards.
+
+## ADR-0649 — CHUG HDR wide MOS feature schema
+
+`train_chug_hdr_mos_head.py` defaults to `--feature-schema chug-hdr-wide-v1`.
+That schema is CHUG-local and currently 34 columns: canonical-6 means, p10/p90
+/ std temporal aggregates, and HDR ladder / geometry metadata. Do not edit the
+KonViD `FEATURE_COLUMNS` order to implement CHUG experiments; keep the shipped
+`konvid_mos_head_v1` ONNX on the `konvid-v1` 11-column schema. Downstream CHUG
+experiment scripts must read `feature_schema` and `feature_order` from the
+manifest instead of assuming 11 inputs.
+
 ## ADR-0331 — rule-enforcement ready-for-review trigger repair
 
 `.github/workflows/rule-enforcement.yml` must include

@@ -30,6 +30,7 @@ misses — the model ships ``Status: Proposed`` instead.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import sys
 from pathlib import Path
@@ -43,6 +44,13 @@ np = pytest.importorskip("numpy")
 torch = pytest.importorskip("torch")
 
 import train_konvid_mos_head as trainer  # noqa: E402
+
+_CHUG_SCRIPT_PATH = REPO_ROOT / "ai" / "scripts" / "train_chug_hdr_mos_head.py"
+_CHUG_SPEC = importlib.util.spec_from_file_location("train_chug_hdr_mos_head", _CHUG_SCRIPT_PATH)
+assert _CHUG_SPEC is not None and _CHUG_SPEC.loader is not None
+chug_trainer = importlib.util.module_from_spec(_CHUG_SPEC)
+sys.modules[_CHUG_SPEC.name] = chug_trainer
+_CHUG_SPEC.loader.exec_module(chug_trainer)
 
 # ---------------------------------------------------------------------
 # Schema pins — fail loudly if any constant drifts under us.
@@ -67,6 +75,38 @@ def test_feature_columns_layout() -> None:
     )
     assert trainer.FEATURE_COLUMNS == trainer.CANONICAL_6 + trainer.EXTRA_FEATURES
     assert trainer.N_FEATURES == 11
+    assert trainer.FEATURE_SCHEMA_KONVID_V1 == "konvid-v1"
+    assert trainer.FEATURE_SCHEMAS[trainer.FEATURE_SCHEMA_KONVID_V1] == trainer.FEATURE_COLUMNS
+
+
+def test_chug_hdr_wide_feature_schema_layout() -> None:
+    expected_temporal = tuple(
+        f"{name}_{stat}" for name in trainer.CANONICAL_6 for stat in ("p10", "p90", "std")
+    )
+    assert trainer.FEATURE_SCHEMA_CHUG_HDR_WIDE_V1 == "chug-hdr-wide-v1"
+    assert expected_temporal == trainer.CHUG_HDR_TEMPORAL_FEATURES
+    assert trainer.CHUG_HDR_METADATA_FEATURES == (
+        "chug_bitrate_mbps",
+        "chug_orientation_portrait",
+        "chug_ref",
+        "distorted_width_norm",
+        "distorted_height_norm",
+        "reference_width_norm",
+        "reference_height_norm",
+        "duration_s_norm",
+        "n_feature_frames_norm",
+        "feature_bitdepth_norm",
+    )
+    assert trainer.CHUG_HDR_FEATURE_COLUMNS == (
+        trainer.CANONICAL_6
+        + trainer.CHUG_HDR_TEMPORAL_FEATURES
+        + trainer.CHUG_HDR_METADATA_FEATURES
+    )
+    assert len(trainer.CHUG_HDR_FEATURE_COLUMNS) == 34
+    assert (
+        trainer.FEATURE_SCHEMAS[trainer.FEATURE_SCHEMA_CHUG_HDR_WIDE_V1]
+        == trainer.CHUG_HDR_FEATURE_COLUMNS
+    )
 
 
 def test_encoder_vocab_v4_single_slot() -> None:
@@ -193,6 +233,107 @@ def test_load_corpus_preserves_explicit_split_labels(tmp_path: Path) -> None:
 
     assert arrays.features.shape == (4, trainer.N_FEATURES)
     assert arrays.splits.tolist() == ["train", "val", "test", ""]
+
+
+def test_chug_hdr_wide_projection_uses_temporal_and_hdr_metadata() -> None:
+    row = {
+        "mos": 2.5,
+        "adm2": 0.80,
+        "vif_scale0": 0.30,
+        "vif_scale1": 0.40,
+        "vif_scale2": 0.50,
+        "vif_scale3": 0.60,
+        "motion2": 7.0,
+        "adm2_p10": 0.70,
+        "adm2_p90": 0.90,
+        "adm2_std": 0.05,
+        "chug_bitrate_label": "0.5M",
+        "chug_orientation": "Portrait",
+        "chug_ref": 0,
+        "width": 1080,
+        "height": 1920,
+        "feature_width": 1920,
+        "feature_height": 1080,
+        "duration_s": 6.0,
+        "n_feature_frames": 180,
+        "feature_bitdepth": 10,
+    }
+
+    projected = trainer._row_to_features(
+        row,
+        feature_columns=trainer.CHUG_HDR_FEATURE_COLUMNS,
+    )
+
+    assert projected is not None
+    features, mos = projected
+    idx = trainer.CHUG_HDR_FEATURE_COLUMNS.index
+    assert features.shape == (34,)
+    assert mos == pytest.approx(2.5)
+    assert features[idx("adm2_p10")] == pytest.approx(0.70)
+    assert features[idx("adm2_p90")] == pytest.approx(0.90)
+    assert features[idx("adm2_std")] == pytest.approx(0.05)
+    assert features[idx("chug_bitrate_mbps")] == pytest.approx(0.5)
+    assert features[idx("chug_orientation_portrait")] == pytest.approx(1.0)
+    assert features[idx("distorted_width_norm")] == pytest.approx(1080.0 / 3840.0)
+    assert features[idx("distorted_height_norm")] == pytest.approx(1920.0 / 2160.0)
+    assert features[idx("reference_width_norm")] == pytest.approx(1920.0 / 3840.0)
+    assert features[idx("reference_height_norm")] == pytest.approx(1080.0 / 2160.0)
+    assert features[idx("duration_s_norm")] == pytest.approx(0.1)
+    assert features[idx("n_feature_frames_norm")] == pytest.approx(0.1)
+    assert features[idx("feature_bitdepth_norm")] == pytest.approx(0.5)
+
+
+def test_chug_hdr_entrypoint_accepts_feature_jsonl_and_custom_model_id(
+    tmp_path: Path,
+) -> None:
+    p = tmp_path / "chug_features.jsonl"
+    rows = []
+    for idx in range(6):
+        split = "train" if idx < 4 else "val"
+        rows.append(
+            {
+                "src": f"chug-{idx}.mp4",
+                "corpus": "chug",
+                "mos": 2.0 + 0.3 * idx,
+                "adm2": 0.55 + 0.05 * idx,
+                "vif_scale0": 0.30 + 0.04 * idx,
+                "vif_scale1": 0.35 + 0.04 * idx,
+                "vif_scale2": 0.40 + 0.04 * idx,
+                "vif_scale3": 0.45 + 0.04 * idx,
+                "motion2": 1.0 + idx,
+                "split": split,
+            }
+        )
+    p.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+    onnx_path = tmp_path / "chug_hdr_mos_head_v1.onnx"
+    manifest_path = tmp_path / "chug_hdr_mos_head_v1.json"
+
+    rc = chug_trainer.main(
+        [
+            "--feature-jsonl",
+            str(p),
+            "--model-id",
+            "chug_hdr_mos_head_v1",
+            "--epochs",
+            "1",
+            "--k-folds",
+            "2",
+            "--out-onnx",
+            str(onnx_path),
+            "--out-manifest",
+            str(manifest_path),
+            "--device",
+            "cpu",
+        ]
+    )
+
+    assert rc == 0
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["id"] == "chug_hdr_mos_head_v1"
+    assert manifest["feature_schema"] == trainer.FEATURE_SCHEMA_CHUG_HDR_WIDE_V1
+    assert manifest["feature_order"] == list(trainer.CHUG_HDR_FEATURE_COLUMNS)
+    assert manifest["training_recipe"]["n_rows"] == 4
+    assert manifest["folds"][0]["validation_policy"] == "explicit-corpus-split"
 
 
 def test_load_corpus_accepts_full_features_parquet(tmp_path: Path) -> None:
@@ -337,6 +478,8 @@ def test_smoke_run_produces_allowlist_conformant_onnx(tmp_path: Path) -> None:
             str(onnx_path),
             "--out-manifest",
             str(manifest_path),
+            "--device",
+            "cpu",
         ]
     )
     assert rc == 0
@@ -386,6 +529,8 @@ def test_smoke_run_is_deterministic(tmp_path: Path) -> None:
                 str(out_path),
                 "--out-manifest",
                 str(out_path.with_suffix(".json")),
+                "--device",
+                "cpu",
             ]
         )
         assert rc == 0

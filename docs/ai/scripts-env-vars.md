@@ -15,7 +15,8 @@ unset and the maintainer's defaults still apply.
 
 | Script(s) | Env var | Default |
 | --- | --- | --- |
-| `chug_to_corpus_jsonl.py`, `chug_extract_features.py` | `VMAF_CHUG_DIR` | `<repo>/.workingdir2/chug` |
+| `chug_to_corpus_jsonl.py`, `chug_extract_features.py`, `train_chug_hdr_mos_head.py` (input shards) | `VMAF_CHUG_DIR` | `<repo>/.corpus/chug` |
+| `train_chug_hdr_mos_head.py` (local model outputs) | `VMAF_CHUG_OUTPUT_DIR` | `<repo>/.workingdir2/chug` |
 | `konvid_1k_to_corpus_jsonl.py`, `konvid_to_full_features.py`, `train_konvid_mos_head.py` (1k input) | `VMAF_KONVID_1K_DIR` | `<repo>/.workingdir2/konvid-1k`; full-feature extraction falls back to `$VMAF_DATA_ROOT/konvid-1k` when unset |
 | `konvid_150k_to_corpus_jsonl.py`, `extract_k150k_features.py`, `train_konvid_mos_head.py` (150k input), `train_predictor_v2_realcorpus.py` | `VMAF_KONVID_150K_DIR` | `<repo>/.workingdir2/konvid-150k` |
 | `lsvq_to_corpus_jsonl.py` | `VMAF_LSVQ_DIR` | `<repo>/.workingdir2/lsvq` |
@@ -35,6 +36,7 @@ export VMAF_KONVID_150K_DIR=/workspace/konvid-150k
 export VMAF_NETFLIX_CORPUS_DIR=/workspace/netflix
 
 python ai/scripts/chug_extract_features.py            # picks up /workspace/chug
+python ai/scripts/train_chug_hdr_mos_head.py          # picks up /workspace/chug
 python ai/scripts/train_konvid_mos_head.py            # picks up /workspace/konvid-150k
 python ai/scripts/extract_full_features.py            # picks up /workspace/netflix
 python ai/scripts/konvid_to_full_features.py          # picks up /workspace/konvid-1k

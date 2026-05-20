@@ -276,6 +276,23 @@ python ai/scripts/train_konvid_mos_head.py \
 #    → model/konvid_mos_head_v1.json  (manifest sidecar)
 ```
 
+CHUG HDR MOS training is a separate local experiment because CHUG is HDR
+subjective-MOS data and the current Netflix VMAF teacher is SDR/8-bit.
+The CHUG wrapper defaults to the `chug-hdr-wide-v1` feature schema, which
+uses the CHUG temporal quantiles/std columns and HDR ladder metadata in
+addition to the canonical-6 feature means:
+
+```bash
+python ai/scripts/train_chug_hdr_mos_head.py
+#    → .workingdir2/chug/chug_hdr_mos_head_v1.onnx
+#    → .workingdir2/chug/chug_hdr_mos_head_v1.json
+```
+
+For an apples-to-apples ablation against the older 11-feature baseline,
+add `--feature-schema konvid-v1`. Do not use that ablation as the
+default CHUG command; it discards CHUG-specific signal that was already
+materialised by the extractor.
+
 See [models/konvid_mos_head_v1.md](models/konvid_mos_head_v1.md) for the
 full model card (architecture, I/O contract, production-flip gate, and
 predictor integration).

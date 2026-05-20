@@ -839,14 +839,16 @@ with the trained ONNX and human-readable model card at
 [`model/konvid_mos_head_v1_card.md`](../model/konvid_mos_head_v1_card.md).
 Invariants that any follow-up retrain or corpus-shape PR must honour:
 
-- **Feature-column order is load-bearing.** `FEATURE_COLUMNS =
-  CANONICAL_6 + EXTRA_FEATURES` is the exact 11-D layout baked into
-  the trained ONNX and consumed by
+- **Feature-column order is load-bearing.** `FEATURE_SCHEMA_KONVID_V1`
+  maps to `FEATURE_COLUMNS = CANONICAL_6 + EXTRA_FEATURES`, the exact
+  11-D layout baked into the trained KonViD ONNX and consumed by
   `tools/vmaf-tune/src/vmaftune/predictor.py::_predict_mos_via_head`.
   The 6 canonical columns occupy indices 0..5; the 5 extras
   (`saliency_mean`, `saliency_var`, `shot_count_norm`,
   `shot_mean_len_norm`, `shot_cut_density`) occupy 6..10. Reordering
   silently invalidates every shipped `konvid_mos_head_v1.onnx`.
+  New experimental layouts must be separate named schemas in
+  `FEATURE_SCHEMAS`, not in-place edits to `FEATURE_COLUMNS`.
 - **ENCODER_VOCAB v4 expansion is append-only.** The v4 vocab ships
   with a single `"ugc-mixed"` slot per ADR-0325 §Decision. When
   LSVQ + YouTube-UGC ingestion lands, the new slots append at the
@@ -873,6 +875,18 @@ Invariants that any follow-up retrain or corpus-shape PR must honour:
   (`tools/vmaf-tune/tests/test_predict_mos.py::test_predict_mos_falls_back_when_onnx_missing`)
   pin it. Removing the fallback breaks every dev host that hasn't
   pulled the ONNX.
+- **CHUG HDR MOS uses a CHUG-named entry point.**
+  `ai/scripts/train_chug_hdr_mos_head.py` is the operator-facing
+  command for CHUG HDR subjective-MOS experiments. It may reuse the
+  same small MOS-head training loop, but docs and local commands must
+  not tell operators to pass CHUG shards through the KonViD-named
+  flags. Local CHUG manifests use `chug_hdr_mos_head_v1` so the HDR
+  MOS signal is not confused with the committed SDR KonViD head. The
+  CHUG wrapper defaults to `FEATURE_SCHEMA_CHUG_HDR_WIDE_V1`
+  (`chug-hdr-wide-v1`): canonical-6 means, p10/p90/std temporal
+  aggregates, and HDR ladder / geometry metadata. Keep that 34-D order
+  append-only for local CHUG checkpoints; use `--feature-schema
+  konvid-v1` only for ablation runs against the older 11-D baseline.
 
 ## Knob-sweep recipe-regression policy (ADR-0308)
 

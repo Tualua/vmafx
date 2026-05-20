@@ -103,6 +103,13 @@ python ai/scripts/train_konvid_mos_head.py \
 #   --no-export         skip ONNX write (dev / dry-run)
 ```
 
+CHUG HDR subjective-MOS training uses the CHUG-specific wrapper
+`ai/scripts/train_chug_hdr_mos_head.py`; do not pass CHUG shards through
+the KonViD-named flags. That wrapper defaults to its own
+`chug-hdr-wide-v1` schema and writes local-only `chug_hdr_mos_head_v1`
+manifests under `.workingdir2/chug/`; it does not change this committed
+11-feature KonViD model contract.
+
 For corpus acquisition instructions see
 [mos-corpora.md](../mos-corpora.md). The Phase 1 (KonViD-1k) and Phase 2
 (KonViD-150k) adapters must have produced their JSONL drops before running

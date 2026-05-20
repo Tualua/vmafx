@@ -101,7 +101,8 @@ YUV, scales the distorted side to the reference geometry, runs libvmaf,
 and writes clip-level feature aggregates. The trainer-facing feature row
 contains the canonical bare feature names (`adm2`, `vif_scale0` ...
 `motion2`) as means, plus `<feature>_mean`, `<feature>_p10`,
-`<feature>_p90`, and `<feature>_std` columns for downstream sweeps.
+`<feature>_p90`, and `<feature>_std` columns. The CHUG trainer uses
+those temporal aggregates by default rather than throwing them away.
 
 The materialiser assigns train/validation/test splits at
 `chug_content_name` granularity, not at row granularity. Every bitrate
@@ -122,61 +123,83 @@ first check to run before using a CHUG feature file for HDR experiments.
 Train against the feature rows:
 
 ```bash
-python ai/scripts/train_konvid_mos_head.py \
-  --konvid-1k .workingdir2/chug/chug_features.jsonl \
-  --konvid-150k .workingdir2/chug/no-konvid-150k.jsonl \
-  --out-onnx .workingdir2/chug/chug_mos_head.onnx \
-  --out-card .workingdir2/chug/chug_mos_head_card.md \
-  --out-manifest .workingdir2/chug/chug_mos_head.json
+python ai/scripts/train_chug_hdr_mos_head.py \
+  --feature-jsonl .corpus/chug/training/fr_canonical_shards/output/shard_00.features.jsonl \
+  --feature-jsonl .corpus/chug/training/fr_canonical_shards/output/shard_01.features.jsonl \
+  --feature-jsonl .corpus/chug/training/fr_canonical_shards/output/shard_02.features.jsonl \
+  --feature-jsonl .corpus/chug/training/fr_canonical_shards/output/shard_03.features.jsonl \
+  --feature-jsonl .corpus/chug/training/fr_canonical_shards/output/shard_04.features.jsonl \
+  --feature-jsonl .corpus/chug/training/fr_canonical_shards/output/shard_05.features.jsonl \
+  --feature-jsonl .corpus/chug/training/fr_canonical_shards/output/shard_06.features.jsonl \
+  --feature-jsonl .corpus/chug/training/fr_canonical_shards/output/shard_07.features.jsonl \
+  --model-id chug_hdr_mos_head_v1 \
+  --out-onnx .workingdir2/chug/chug_hdr_mos_head_v1.onnx \
+  --out-card .workingdir2/chug/chug_hdr_mos_head_v1_card.md \
+  --out-manifest .workingdir2/chug/chug_hdr_mos_head_v1.json
+```
+
+When all canonical shards live under
+`.corpus/chug/training/fr_canonical_shards/output/`, the shorter form is
+equivalent:
+
+```bash
+python ai/scripts/train_chug_hdr_mos_head.py
+```
+
+By default the wrapper trains with `--feature-schema chug-hdr-wide-v1`.
+That 34-column schema contains:
+
+- the canonical-6 means: `adm2`, `vif_scale0..3`, `motion2`;
+- p10, p90, and standard-deviation temporal summaries for each
+  canonical feature;
+- CHUG HDR ladder metadata: bitrate in Mbps, portrait/landscape flag,
+  reference-row flag, distorted/reference geometry, duration, feature
+  frame count, and bit depth.
+
+Use the legacy 11-column KonViD layout only for ablation or regression
+comparison:
+
+```bash
+python ai/scripts/train_chug_hdr_mos_head.py --feature-schema konvid-v1
 ```
 
 When feature rows carry the `split` column emitted by
-`chug_extract_features.py`, `train_konvid_mos_head.py` uses that
+`chug_extract_features.py`, `train_chug_hdr_mos_head.py` uses that
 content-level split for validation instead of creating random k-folds.
 The exported local checkpoint is trained on the `train` partition only,
 leaving `val` / `test` rows held out for calibration and reporting.
+`--model-id chug_hdr_mos_head_v1` keeps the local manifest honest: this
+is a CHUG HDR subjective-MOS model, not the committed SDR KonViD MOS
+head.
 
 This is a baseline unlock, not a final HDR model. The CHUG feature rows
-carry full-reference libvmaf features, but future production HDR claims
-still need the HDR teacher/model decision to land.
+carry full-reference libvmaf features and subjective HDR MOS labels.
+They are the fork's interim HDR signal until Netflix ships an HDR VMAF
+model; do not treat the current SDR `vmaf_v0.6.1` teacher as an HDR
+ground truth.
 
 ## Local FULL_FEATURES Experiments
 
-For local CHUG sweeps that use the generic FR-from-NR FULL_FEATURES
-extractor, point `ai/scripts/extract_k150k_features.py` at CHUG clips and
-labels:
+For CHUG full-reference training, prefer the JSONL emitted by
+`ai/scripts/chug_extract_features.py`. Do **not** point the generic
+FR-from-NR `extract_k150k_features.py` adapter at CHUG bitrate ladders
+for normal training: CHUG has explicit reference/distorted pairs, and the
+generic adapter scores each clip against itself unless it is used for a
+deliberate identity-pair study.
+
+If you already have a metadata-enriched FULL_FEATURES parquet from a
+correct full-reference CHUG run, the trainer can consume it directly:
 
 ```bash
-PYTHONPATH=ai/src python ai/scripts/extract_k150k_features.py \
-  --clips-dir .workingdir2/chug/clips \
-  --scores .workingdir2/chug/chug_scores.csv \
-  --metadata-jsonl .workingdir2/chug/chug.jsonl \
-  --vmaf-bin libvmaf/build-cuda/tools/vmaf \
-  --cpu-vmaf-bin libvmaf/build-cpu/tools/vmaf \
-  --out .workingdir2/chug/training/full_features_chug.parquet \
-  --scratch-dir .workingdir2/chug/feature_scratch_cuda
-```
-
-When a CUDA binary is used, the extractor splits the pass: explicit CUDA
-feature names for the stable CUDA twins, then a CPU residual pass for
-`float_ssim` and `cambi`. This avoids the mixed all-feature
-`--backend cuda` CLI path that can fail with duplicate feature-key writes
-while preserving the same parquet columns for training.
-With `--metadata-jsonl`, the parquet also carries CHUG content identity,
-bitrate-ladder fields, raw 0-100 MOS, and the same deterministic
-content-level split metadata used by the JSONL materialiser.
-
-Train directly from that FULL_FEATURES parquet once extraction finishes:
-
-```bash
-python ai/scripts/train_konvid_mos_head.py \
+python ai/scripts/train_chug_hdr_mos_head.py \
   --feature-parquet .workingdir2/chug/training/full_features_chug.parquet \
   --out-onnx .workingdir2/chug/chug_full_features_mos_head.onnx \
   --out-card .workingdir2/chug/chug_full_features_mos_head_card.md \
   --out-manifest .workingdir2/chug/chug_full_features_mos_head.json
 ```
 
-`train_konvid_mos_head.py` reads both bare trainer columns (`adm2`) and
+`train_chug_hdr_mos_head.py` forwards to the shared MOS trainer, which
+reads both bare trainer columns (`adm2`) and
 FULL_FEATURES aggregate columns (`adm2_mean`). If the parquet was written
 with `--metadata-jsonl`, the trainer also honors the `split` column so the
 CHUG content-level holdout survives the parquet path.
