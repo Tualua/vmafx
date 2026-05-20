@@ -52,7 +52,12 @@ ref AND the previous frame's ref every call).
 
 ### Mirror padding — diverges from `motion.comp`
 
-CPU `integer_motion_v2.c::mirror`:
+> **Correction (ADR-0662, 2026-05-20):** the literal below was stale.
+> Current CPU `integer_motion_v2.c::mirror` uses `2 * size - idx - 2`,
+> and the CUDA / SYCL / Vulkan twins must match that reflect-101 formula.
+> The old `-1` value produced the lavapipe drift fixed by ADR-0662.
+
+CPU `integer_motion_v2.c::mirror` as originally documented here:
 
 ```c
 if (idx >= size) return 2 * size - idx - 1;   /* edge replication */
@@ -131,11 +136,10 @@ work needed; the kernel only emits `motion_v2_sad_score`.
 - **Positive**: ~280 LOC kernel + ~280 LOC host glue. Smallest
   fork-local kernel PR in batch 3, validates the "delta on top of
   motion" thesis from ADR-0192's per-metric ordering.
-- **Negative**: the mirror divergence is a subtle footgun — anyone
-  porting to CUDA / SYCL must use the **same** `2 * size - idx - 1`
-  formula, NOT motion's `2 * (sup - 1) - idx`. The shader header
-  and this ADR call it out; the CUDA / SYCL twins (batch 3 parts
-  1b + 1c) inherit the same call-out.
+- **Negative**: the original mirror divergence warning became stale
+  after the CPU reference settled on the reflect-101 `2 * size - idx - 2`
+  formula. ADR-0662 corrects the Vulkan / CUDA / SYCL twins and keeps
+  lavapipe parity gated.
 - **Neutral**: motion3 is irrelevant for motion_v2 (no 5-frame
   window mode in the v2 algorithm); no equivalent of motion.comp's
   scope exclusion needed.

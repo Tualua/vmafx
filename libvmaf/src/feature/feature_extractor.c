@@ -274,19 +274,21 @@ static VmafFeatureExtractor *feature_extractor_list[] = {
      * hooks 6-11x per picture.  The first-match `get_by_name` path
      * hid the bug from CLI users, but every iterator-driven dispatch
      * (e.g. `vmaf_use_features_from_model`) paid the cost. */
-    &vmaf_fex_integer_vif_vulkan, &vmaf_fex_integer_motion_vulkan,
+    &vmaf_fex_integer_vif_vulkan,
     /* ADR-0546 (Vulkan-01): vmaf_fex_integer_motion_vulkan_impl provides the
      * explicitly-named "integer_motion_vulkan" twin matching the CUDA/SYCL
      * naming convention.  The symbol and TU existed since the Vulkan backend
      * landed but were never entered into this list, causing
      * vmaf_get_feature_extractor_by_name("integer_motion_vulkan") to return
-     * NULL even on Vulkan-enabled builds. */
-    &vmaf_fex_integer_motion_vulkan_impl, &vmaf_fex_integer_motion_v2_vulkan,
-    &vmaf_fex_integer_adm_vulkan, &vmaf_fex_psnr_vulkan, &vmaf_fex_float_moment_vulkan,
-    &vmaf_fex_ciede_vulkan, &vmaf_fex_float_ssim_vulkan, &vmaf_fex_float_ms_ssim_vulkan,
-    &vmaf_fex_psnr_hvs_vulkan, &vmaf_fex_float_ansnr_vulkan, &vmaf_fex_float_psnr_vulkan,
-    &vmaf_fex_float_motion_vulkan, &vmaf_fex_float_vif_vulkan, &vmaf_fex_float_adm_vulkan,
-    &vmaf_fex_ssimulacra2_vulkan,
+     * NULL even on Vulkan-enabled builds. ADR-0662 keeps it before the legacy
+     * "motion_vulkan" compatibility extractor so feature-name dispatch prefers
+     * the lavapipe-stable implementation. */
+    &vmaf_fex_integer_motion_vulkan_impl, &vmaf_fex_integer_motion_vulkan,
+    &vmaf_fex_integer_motion_v2_vulkan, &vmaf_fex_integer_adm_vulkan, &vmaf_fex_psnr_vulkan,
+    &vmaf_fex_float_moment_vulkan, &vmaf_fex_ciede_vulkan, &vmaf_fex_float_ssim_vulkan,
+    &vmaf_fex_float_ms_ssim_vulkan, &vmaf_fex_psnr_hvs_vulkan, &vmaf_fex_float_ansnr_vulkan,
+    &vmaf_fex_float_psnr_vulkan, &vmaf_fex_float_motion_vulkan, &vmaf_fex_float_vif_vulkan,
+    &vmaf_fex_float_adm_vulkan, &vmaf_fex_ssimulacra2_vulkan,
     /* T7-36 / ADR-0205: cambi Vulkan twin (Strategy II hybrid). */
     &vmaf_fex_cambi_vulkan,
 #endif

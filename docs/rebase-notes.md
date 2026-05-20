@@ -38205,3 +38205,52 @@ Touched files:
 `mkdocs.yml`,
 `changelog.d/added/0658-project-modernization-audit.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0662 — Vulkan motion lavapipe parity
+
+**Rebase-sensitive feature-extractor impact.** This changes fork-local GPU
+motion twins and CI parity routing; keep these invariants when resolving any
+upstream sync that touches motion, feature registration, or parity scripts.
+
+**Key invariants**:
+
+- `integer_motion_vulkan` stays before legacy `motion_vulkan` in the Vulkan
+  registry block so model feature-name dispatch chooses the lavapipe-stable
+  canonical twin.
+- Both parity scripts keep
+  `BACKEND_EXTRACTOR_ALIASES[("motion", "vulkan")] =
+  "integer_motion_vulkan"`.
+- CUDA, SYCL, and Vulkan `motion_v2` kernels use the CPU
+  `integer_motion_v2.c::mirror` high-edge literal
+  `2 * size - idx - 2`; do not restore the stale `-1` formula from old
+  ADR-0193 prose.
+- `integer_motion_vulkan` defaults `debug=true`, matching CPU, CUDA, and the
+  legacy Vulkan motion extractor, so the raw `integer_motion` metric is emitted
+  for parity.
+
+Touched files:
+`.github/workflows/tests-and-quality-gates.yml`,
+`libvmaf/src/feature/feature_extractor.c`,
+`libvmaf/src/feature/vulkan/integer_motion_vulkan.c`,
+`libvmaf/src/feature/vulkan/shaders/motion_v2.comp`,
+`libvmaf/src/feature/cuda/integer_motion_v2/motion_v2_score.cu`,
+`libvmaf/src/feature/sycl/integer_motion_v2_sycl.cpp`,
+`scripts/ci/cross_backend_vif_diff.py`,
+`scripts/ci/cross_backend_parity_gate.py`,
+`docs/metrics/motion.md`,
+`docs/metrics/features.md`,
+`docs/backends/vulkan/overview.md`,
+`docs/api/gpu.md`,
+`docs/development/cross-backend-gate.md`,
+`docs/adr/0193-motion-v2-vulkan.md`,
+`docs/adr/0662-vulkan-motion-lavapipe-parity.md`,
+`docs/adr/_index_fragments/0193-motion-v2-vulkan.md`,
+`docs/adr/_index_fragments/0662-vulkan-motion-lavapipe-parity.md`,
+`docs/adr/_index_fragments/_order.txt`,
+`docs/research/0662-vulkan-motion-lavapipe-parity.md`,
+`libvmaf/src/feature/AGENTS.md`,
+`libvmaf/src/feature/vulkan/AGENTS.md`,
+`libvmaf/src/feature/cuda/AGENTS.md`,
+`scripts/ci/AGENTS.md`,
+`changelog.d/fixed/0662-vulkan-motion-lavapipe-parity.md`,
+`docs/rebase-notes.md` (this entry).

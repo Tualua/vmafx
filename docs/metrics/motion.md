@@ -62,11 +62,13 @@ temporal activity. No inherent upper bound — clamped to `motion_max_val` (defa
 | NEON (AArch64) | Supported | `arm64/motion_neon.c`                         |
 | CUDA           | Supported | `feature/cuda/integer_motion_cuda.c`          |
 | SYCL           | Supported | `feature/sycl/integer_motion_sycl.cpp`        |
-| Vulkan         | Supported | `feature/vulkan/integer_motion_vulkan.c`      |
+| Vulkan         | Supported | `feature/vulkan/integer_motion_vulkan.c` (canonical); `motion_vulkan` remains an explicit compatibility name |
 | HIP            | Supported | `feature/hip/integer_motion_hip.c`            |
 | Metal          | Supported | `feature/metal/integer_motion_metal.mm`       |
 
 All GPU backends emit `motion2_score` and `motion3_score` in 3-frame window mode.
+Vulkan model and parity dispatch prefer `integer_motion_vulkan`; callers that
+name `motion_vulkan` directly still get the legacy compatibility extractor.
 The 5-frame window (`motion_five_frame_window=true`) and `motion_moving_average`
 are CPU-only; GPU paths return `-ENOTSUP` at `init()` when these are set.
 
@@ -132,12 +134,15 @@ eliminated.
 | NEON (AArch64) | Supported | `arm64/motion_v2_neon.c` (ADR-0145, bit-exact)                         |
 | CUDA           | Supported | `feature/cuda/integer_motion_v2_cuda.c`                                |
 | SYCL           | Supported | `feature/sycl/integer_motion_v2_sycl.cpp`                              |
-| Vulkan         | Supported | `feature/vulkan/motion_v2_vulkan.c` (ADR-0193, bit-exact on 8/10 bpc) |
+| Vulkan         | Supported | `feature/vulkan/motion_v2_vulkan.c` (ADR-0193 + ADR-0662, bit-exact on lavapipe) |
 | HIP            | Supported | `feature/hip/integer_motion_v2_hip.c`                                  |
 | Metal          | Supported | `feature/metal/integer_motion_v2_metal.mm`                             |
 
-All GPU kernels are **bit-exact** vs the scalar CPU reference on 8-bit and 10-bit
-inputs (max_abs_diff = 0.0 across the cross-backend gate fixture per ADR-0193).
+All GPU kernels use the CPU `integer_motion_v2.c::mirror` high-edge formula
+(`2 * size - idx - 2`). The CUDA, SYCL, and Vulkan twins are **bit-exact** vs
+the scalar CPU reference on the cross-backend gate fixture (Vulkan/lavapipe
+`max_abs_diff = 0.0` per ADR-0662). Do not use the stale `-1` formula from the
+original ADR-0193 prose; it creates a measurable CPU/GPU drift.
 
 ---
 

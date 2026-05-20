@@ -231,6 +231,11 @@ BACKEND_EXTRACTOR_ALIASES: dict[tuple[str, str], str] = {
     # canonical "integer_adm_vulkan"; the CPU/CUDA/SYCL names stayed
     # "adm", "adm_cuda", and "adm_sycl" for compatibility.
     ("adm", "vulkan"): "integer_adm_vulkan",
+    # ADR-0662: lavapipe is stable with the canonical integer-motion
+    # Vulkan twin. The legacy "motion_vulkan" compatibility extractor
+    # remains explicit-name only because Mesa llvmpipe can crash inside
+    # that older two-buffer implementation.
+    ("motion", "vulkan"): "integer_motion_vulkan",
 }
 
 # Per-backend extractor-name suffix and the device-selection flag the

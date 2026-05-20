@@ -276,6 +276,13 @@ HIP / Metal motion twins listed in the Twin-update table below) in the same PR.
   `float_motion_vulkan.c`, `float_motion_hip.c`,
   `float_motion_metal.mm`. PR #863 initially wired this option.
 
+- **`integer_motion_v2_*` mirror contract** (ADR-0662) — CPU
+  `integer_motion_v2.c::mirror` maps `idx >= size` to
+  `2 * size - idx - 2`. The CUDA, SYCL, and Vulkan `motion_v2`
+  kernels must keep that same high-edge literal. The old `-1`
+  formula is stale prose from ADR-0193 bring-up and creates a
+  measurable CPU/GPU drift.
+
 - **`integer_adm/adm_cm.cu` (and the rest of the `integer_adm/`
   subdirectory) carries an NVIDIA copyright line** alongside the
   Netflix one. This is upstream-mirror — keep both headers

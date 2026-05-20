@@ -5,8 +5,9 @@
 > the public state-level API; the CLI flags `--vulkan_device <N>`,
 > `--no_vulkan`, and `--backend {auto,cpu,cuda,sycl,vulkan}` drive
 > end-to-end execution on a real Vulkan ICD. Live extractors:
-> `vif_vulkan` (4-scale VIF), `motion_vulkan` (motion + motion2),
-> and `adm_vulkan` (4-scale ADM + adm2). All three are gated
+> `vif_vulkan` (4-scale VIF), `integer_motion_vulkan` (canonical
+> motion + motion2; `motion_vulkan` remains an explicit compatibility
+> name), and `adm_vulkan` (4-scale ADM + adm2). All three are gated
 > against the CPU scalar reference at `places=4` by the
 > `Vulkan VIF Cross-Backend (lavapipe)` CI lane on every PR (one
 > step per feature); the Arc-A380 nightly lane (advisory, parked

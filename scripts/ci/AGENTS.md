@@ -68,6 +68,10 @@ behaviour.
    Existing compatibility names are not always `feature + suffix`:
    ADR-0586 renamed Vulkan integer ADM to `integer_adm_vulkan`, so both
    scripts must keep `BACKEND_EXTRACTOR_ALIASES[("adm", "vulkan")]`.
+   ADR-0662 routes lavapipe motion parity through
+   `BACKEND_EXTRACTOR_ALIASES[("motion", "vulkan")] =
+   "integer_motion_vulkan"` because the legacy `motion_vulkan`
+   compatibility extractor stays explicit-name only.
 2. New backend → extend `BACKEND_SUFFIX`, `BACKEND_DEVICE_FLAG`,
    `BACKEND_DEFAULT_DEVICE` in both scripts.
 3. New GPU arch → add a row to `gpu_ulp_calibration.yaml`. Mark it

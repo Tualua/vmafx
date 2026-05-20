@@ -22,8 +22,9 @@
  *  Host accumulates in `double` and emits the two CPU outputs.
  *
  *  Mirror padding: edge-replicating reflective mirror
- *  (`2 * size - idx - 1`) — same as motion_v2_cuda, NOT the
- *  skip-boundary variant the motion CUDA kernel uses.
+ *  (`2 * size - idx - 1`) — this intentionally differs from
+ *  motion_v2_cuda's CPU-parity reflect-101 mirror
+ *  (`2 * size - idx - 2`).
  *
  *  Precision contract per ADR-0192: places=3 (float convolution +
  *  per-WG reduction + log10 final transform). Empirically lands at

@@ -28,6 +28,11 @@ The gate is enforced on every PR as the CI job
   | `psnr_hvs` | `5e-4` | ADR-0191 (DCT + per-block float reduction) |
   | `ssimulacra2` | `5e-3` | ADR-0192 (XYB cube root + IIR blur) |
 
+  Vulkan `motion` is routed through the canonical `integer_motion_vulkan`
+  extractor in both parity scripts. The legacy `motion_vulkan` extractor
+  remains addressable by explicit name for compatibility, but it is not the
+  lavapipe gate path after ADR-0662.
+
 - **Backend pairs.** The CI lane runs `cpu ↔ vulkan` only — Mesa
   lavapipe runs on stock GitHub-hosted Ubuntu and needs no GPU
   hardware. CUDA / SYCL / hardware-Vulkan are advisory until a

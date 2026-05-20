@@ -299,8 +299,8 @@ frame's Y plane; per-WG `int64` SAD partials reduce on the host;
 `motion2_v2_score = min(score[i], score[i+1])` is emitted in
 `flush()`. Mirror padding **diverges** from the corresponding
 `motion_*` kernels by one pixel at the boundary (CPU
-`integer_motion_v2.c` uses edge-replicating reflective mirror
-`2*size - idx - 1`).
+`integer_motion_v2.c` uses reflect-101 mirror `2*size - idx - 2`;
+ADR-0662 corrected stale GPU-side prose that had documented `-1`).
 
 **Limitations** — Temporal: the extractor caches its own previous
 ref in a GPU-side ping-pong (the framework's `prev_ref` slot is

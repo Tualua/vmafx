@@ -667,9 +667,10 @@ after a port-upstream of any of these files.
   GPU long-tail batches 1–3. Every registered feature extractor
   now has at least one GPU twin (lpips remains ORT-delegated).
 - [ADR-0193](../../../docs/adr/0193-motion-v2-vulkan.md) —
-  `motion_v2` Vulkan kernel; edge-replicating mirror diverges
-  from `motion.comp` non-replicating mirror — load-bearing per
-  the underlying CPU code path.
+  `motion_v2` Vulkan kernel. ADR-0662 corrects its mirror contract:
+  `integer_motion_v2.c::mirror` uses reflect-101 (`2 * size - idx - 2`)
+  and the CUDA / SYCL / Vulkan twins must keep that literal aligned
+  with the CPU reference.
 - [ADR-0205](../../../docs/adr/0205-cambi-gpu-feasibility.md) +
   [ADR-0210](../../../docs/adr/0210-cambi-vulkan-integration.md) —
   cambi Vulkan integration (Strategy II, hybrid host/GPU).

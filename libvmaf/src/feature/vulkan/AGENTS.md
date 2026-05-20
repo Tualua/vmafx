@@ -148,11 +148,12 @@ ADR-0234) catches drift but only after a full GPU run.
   Changes to the `motion3_postprocess_host` helper must be verified
   against all three parity tests.
 
-- **`motion_v2_vulkan.c` mirror divergence** (ADR-0193). The
-  Vulkan kernel uses an **edge-replicating** mirror that diverges
-  from `motion.comp`'s non-replicating mirror — load-bearing per
-  the underlying CPU code path. Do **not** unify the two mirror
-  shapes on rebase.
+- **`motion_v2_vulkan.c` mirror contract** (ADR-0193, corrected by
+  ADR-0662). The Vulkan kernel must match
+  `integer_motion_v2.c::mirror` exactly: `idx >= size` maps to
+  `2 * size - idx - 2`. Do not restore the old `-1` high-edge
+  formula from stale ADR/docs prose; it causes the 2.62e-3 lavapipe
+  drift captured in ADR-0662.
 
 - **`cambi_vulkan.c` is hybrid host/GPU**
   ([ADR-0205](../../../../docs/adr/0205-cambi-gpu-feasibility.md) +

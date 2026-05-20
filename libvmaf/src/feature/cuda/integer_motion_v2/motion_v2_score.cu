@@ -23,14 +23,8 @@
  *  motion2_v2_score is the host-side min(cur, next) post-process in
  *  flush(); no GPU work needed.
  *
- *  Mirror padding: edge-replicating reflective mirror
- *  (`2 * size - idx - 1` for idx >= size) — DIFFERS by one pixel
- *  from motion's CUDA kernel `motion_score.cu` (which uses skip-
- *  boundary `2 * size - idx - 2`). The fork-internal warning comes
- *  from `motion_v2.comp` (Vulkan twin in PR #146); the CUDA port
- *  inherits it. Reusing `motion_score.cu`'s mirror verbatim
- *  produced max_abs_diff = 2.62e-3 on Vulkan during bring-up before
- *  the divergence was caught.
+ *  Mirror padding: reflect-101 (`2 * size - idx - 2` for idx >= size),
+ *  matching CPU `integer_motion_v2.c::mirror` and motion's CUDA kernel.
  */
 
 #include "cuda_helper.cuh"
@@ -54,7 +48,7 @@ __device__ __forceinline__ int mv2_mirror(int idx, int sup)
     if (idx < 0)
         return -idx;
     if (idx >= sup)
-        return 2 * sup - idx - 1;
+        return 2 * sup - idx - 2;
     return idx;
 }
 

@@ -392,8 +392,9 @@ the enable/disable pair to gate which frame ranges get timed.
 > The state-level entry points (`vmaf_vulkan_state_init` /
 > `_import_state` / `_state_free` / `_list_devices` /
 > `_available`) plumb a real volk-backed VkInstance + VkDevice +
-> compute queue. Live extractors: `vif_vulkan`, `motion_vulkan`,
-> `motion_v2_vulkan`, `adm_vulkan`, `float_adm_vulkan`,
+> compute queue. Live extractors: `vif_vulkan`, `integer_motion_vulkan`
+> (canonical motion path; `motion_vulkan` is the legacy explicit
+> compatibility name), `motion_v2_vulkan`, `adm_vulkan`, `float_adm_vulkan`,
 > `float_vif_vulkan`, `float_motion_vulkan`, `psnr_vulkan` (luma;
 > chroma via T3-15(b) PR #204), `psnr_hvs_vulkan`, `ciede_vulkan`,
 > `float_ssim_vulkan`, `float_ms_ssim_vulkan`, `float_ansnr_vulkan`,

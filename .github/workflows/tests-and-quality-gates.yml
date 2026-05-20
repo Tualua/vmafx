@@ -397,20 +397,17 @@ jobs:
           # The lavapipe row is calibrated; no behaviour change versus
           # the prior FEATURE_TOLERANCE-only path because the
           # calibration values match the gate's defaults.
-          # `motion` and `motion_v2` skipped on lavapipe — pre-existing
-          # Vulkan motion kernel issues (backend init failure for
-          # `motion`, max_abs_diff = 2.6e-3 for `motion_v2`). Tracked
-          # as T-VULKAN-MOTION-LAVAPIPE-INIT in `docs/state.md`. Both
-          # are dropped from the matrix here so this gate keeps
-          # gating the other ~14 features; restore once the Vulkan
-          # motion fix lands.
+          # ADR-0662: the lavapipe matrix gates motion through the
+          # canonical integer_motion_vulkan twin; the legacy
+          # motion_vulkan extractor remains explicit-name only.
           timeout --kill-after=30s 20m python3 scripts/ci/cross_backend_parity_gate.py \
             --vmaf-binary libvmaf/build/tools/vmaf \
             --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
             --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
             --width 576 --height 324 \
             --backends cpu vulkan \
-            --features adm ciede float_adm float_ansnr float_moment \
+            --features adm ciede float_adm float_ansnr float_moment motion \
+                       motion_v2 \
                        float_motion float_ms_ssim float_ms_ssim_lcs \
                        float_psnr float_ssim float_vif psnr psnr_hvs \
                        ssimulacra2 vif \
