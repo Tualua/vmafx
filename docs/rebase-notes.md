@@ -7,6 +7,29 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## feat/signal-mix-audit (ADR-0650)
+
+**No upstream rebase impact**: all implementation paths are fork-local AI
+tooling, tests, and documentation. Upstream Netflix/vmaf does not ship this
+training/audit package or the associated docs.
+
+Rebase-sensitive fork invariants:
+
+- `ai/scripts/signal_mix_audit.py` remains table-only and side-effect free:
+  no feature extraction, checkpoint export, corpus mutation, or default CI gate.
+- Signal-family regexes and `docs/ai/signal-mix-audit.md` must be updated
+  together when new metric families or table columns are introduced.
+- Missing candidate metrics in the Markdown report are advisory work selectors,
+  not proof that a candidate should be promoted without a corpus run.
+
+Smoke:
+`.venv/bin/python -m pytest ai/tests/test_signal_mix_audit.py -q`
+
+Touched files: `ai/scripts/signal_mix_audit.py`,
+`ai/tests/test_signal_mix_audit.py`, `ai/AGENTS.md`,
+`docs/ai/signal-mix-audit.md`, `docs/adr/0650-*.md`,
+`docs/research/0650-*.md`, `changelog.d/added/0650-*.md`, and this file.
+
 ## fix/dnn-attached-multi-output (ADR-0646)
 
 **Low upstream rebase impact**: the implementation touches fork-local DNN

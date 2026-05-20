@@ -26,6 +26,9 @@ alongside classic VMAF SVM models.
   LIVE-VQC, CHUG UGC-HDR, and BVI-DVC corpora; common schema,
   quick-start commands, aggregation workflow, and KonViD MOS head v1
   entry point
+- [Signal-mix audit](signal-mix-audit.md) — table-only coverage,
+  redundancy, complementary-intersection, and blind-spot reports for
+  refreshed AI feature tables
 - [CHUG UGC-HDR ingestion](chug-ingestion.md) — local-only CHUG
   manifest/video ingest path for HDR subjective-MOS experiments
 - [KonViD MOS head v1](models/konvid_mos_head_v1.md) — 5 081-parameter

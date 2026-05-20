@@ -488,6 +488,7 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-0647](0647-ai-fr-regressor-v1-refresh-20260520.md) | Refresh `fr_regressor_v1` from the 2026-05-20 Netflix feature table | Accepted | ai, tiny-ai, model-refresh, netflix-public |
 | [ADR-0648](0648-mos-head-feature-jsonl-chug-id.md) | CHUG HDR MOS Trainer Entry Point | Proposed |
 | [ADR-0649](0649-chug-hdr-wide-mos-feature-schema.md) | CHUG HDR Wide MOS Feature Schema | Proposed |
+| [ADR-0650](0650-signal-mix-audit.md) | Add a signal-mix audit CLI | Accepted | 2026-05-20 | ai, metrics, audit, hdr |
 | [ADR-0436](0436-mcp-backend-selector-parity.md) | MCP server backend-selector parity (vulkan/hip/metal) | Accepted | mcp, agents, api, dispatch, fork-local |
 | [ADR-0448](0448-active-upstream-monitoring-discipline.md) | Active upstream monitoring (no silent "wait" deferrals) | Accepted | ci, governance, upstream-sync, deferral, fork-local |
 | [0457](0457-onnx-blobs-to-github-releases.md) | model/tiny/*.onnx blobs ≥1MB live in GitHub Releases, not git | Accepted | 2026-05-15 |
