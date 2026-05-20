@@ -846,37 +846,6 @@ static int cambi_vk_submit_wait(CambiVkState *s, VmafVulkanKernelSubmit *sub)
     return vmaf_vulkan_kernel_submit_end_and_wait(s->ctx, sub);
 }
 
-/* Upload source luma plane into raw_in_buf (word-packed). */
-static int cambi_vk_upload_luma(CambiVkState *s, VmafPicture *pic)
-{
-    uint8_t *dst = vmaf_vulkan_buffer_host(s->raw_in_buf);
-    if (!dst)
-        return -EIO;
-    const unsigned W = s->src_width;
-    const unsigned H = s->src_height;
-    const unsigned bpc = s->src_bpc;
-    if (bpc <= 8) {
-        const size_t dst_words_per_row = (W + 3u) / 4u;
-        const size_t dst_stride = dst_words_per_row * sizeof(uint32_t);
-        for (unsigned y = 0; y < H; y++) {
-            const uint8_t *src = (const uint8_t *)pic->data[0] + (size_t)y * pic->stride[0];
-            uint8_t *drow = dst + (size_t)y * dst_stride;
-            memset(drow, 0, dst_stride);
-            memcpy(drow, src, W);
-        }
-    } else {
-        const size_t dst_words_per_row = (W + 1u) / 2u;
-        const size_t dst_stride = dst_words_per_row * sizeof(uint32_t);
-        for (unsigned y = 0; y < H; y++) {
-            const uint8_t *src = (const uint8_t *)pic->data[0] + (size_t)y * pic->stride[0];
-            uint8_t *drow = dst + (size_t)y * dst_stride;
-            memset(drow, 0, dst_stride);
-            memcpy(drow, src, (size_t)W * 2u);
-        }
-    }
-    return vmaf_vulkan_buffer_flush(s->ctx, s->raw_in_buf);
-}
-
 /* Read back image_buf into pics[0] luma plane (10-bit packed → uint16). */
 static int cambi_vk_readback_image(CambiVkState *s, unsigned w, unsigned h)
 {

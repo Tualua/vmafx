@@ -163,6 +163,7 @@ int vmaf_framesync_acquire_new_buf(VmafFrameSyncContext *fs_ctx, void **data, un
 int vmaf_framesync_submit_filled_data(VmafFrameSyncContext *fs_ctx, void *data, unsigned index)
 {
     VmafFrameSyncBuf *buf_que = fs_ctx->buf_que;
+    const signed long frame_index = (signed long)index;
     int ret = 0;
 
     // M0-before-M1: take the structural lock first to walk the spine
@@ -178,7 +179,7 @@ int vmaf_framesync_submit_filled_data(VmafFrameSyncContext *fs_ctx, void *data, 
 
     // loop until a matching buffer is found
     for (unsigned i = 0; i < fs_ctx->buf_cnt; i++) {
-        if ((buf_que->index == index) && (buf_que->buf_status == BUF_ACQUIRED)) {
+        if ((buf_que->index == frame_index) && (buf_que->buf_status == BUF_ACQUIRED)) {
             buf_que->buf_status = BUF_FILLED;
             if (data != buf_que->frame_data) {
                 ret = -1;
@@ -200,6 +201,7 @@ int vmaf_framesync_submit_filled_data(VmafFrameSyncContext *fs_ctx, void *data, 
 
 int vmaf_framesync_retrieve_filled_data(VmafFrameSyncContext *fs_ctx, void **data, unsigned index)
 {
+    const signed long frame_index = (signed long)index;
     *data = NULL;
 
     while (*data == NULL) {
@@ -220,7 +222,7 @@ int vmaf_framesync_retrieve_filled_data(VmafFrameSyncContext *fs_ctx, void **dat
 
         // loop until a free buffer is found
         for (unsigned i = 0; i < fs_ctx->buf_cnt; i++) {
-            if ((buf_que->index == index) && (buf_que->buf_status == BUF_FILLED)) {
+            if ((buf_que->index == frame_index) && (buf_que->buf_status == BUF_FILLED)) {
                 buf_que->buf_status = BUF_RETRIEVED;
                 *data = buf_que->frame_data;
                 break;
@@ -251,6 +253,7 @@ int vmaf_framesync_retrieve_filled_data(VmafFrameSyncContext *fs_ctx, void **dat
 int vmaf_framesync_release_buf(VmafFrameSyncContext *fs_ctx, void *data, unsigned index)
 {
     VmafFrameSyncBuf *buf_que = fs_ctx->buf_que;
+    const signed long frame_index = (signed long)index;
     int ret = 0;
 
     int rc = pthread_mutex_lock(&(fs_ctx->acquire_lock));
@@ -258,7 +261,7 @@ int vmaf_framesync_release_buf(VmafFrameSyncContext *fs_ctx, void *data, unsigne
         return -rc;
     // loop until a matching buffer is found
     for (unsigned i = 0; i < fs_ctx->buf_cnt; i++) {
-        if ((buf_que->index == index) && (buf_que->buf_status == BUF_RETRIEVED)) {
+        if ((buf_que->index == frame_index) && (buf_que->buf_status == BUF_RETRIEVED)) {
             if (data != buf_que->frame_data) {
                 ret = -1;
                 break;

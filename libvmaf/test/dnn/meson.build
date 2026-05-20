@@ -100,7 +100,7 @@ test_vmaf_use_tiny_model = executable('test_vmaf_use_tiny_model',
     ['../test.c', 'test_vmaf_use_tiny_model.c'],
     include_directories : dnn_test_inc,
     c_args : dnn_defines,
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    link_with : libvmaf_public_link,
     dependencies : [math_lib, cuda_dependency, sycl_dependency],
 )
 

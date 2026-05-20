@@ -222,6 +222,12 @@ static int try_append_coreml(struct VmafOrtSession *sess, const char *compute_un
     return try_append_ep_generic(sess, "CoreMLExecutionProvider", keys, values, nk);
 }
 
+static void ort_discard_status(const OrtApi *api, OrtStatus *st)
+{
+    if (st != NULL)
+        api->ReleaseStatus(st);
+}
+
 #define ORT_TRY(call)                                                                              \
     do {                                                                                           \
         OrtStatus *st__ = (call);                                                                  \
@@ -451,7 +457,7 @@ int vmaf_ort_open(VmafOrtSession **out, const char *onnx_path, const VmafDnnConf
         OrtStatus *cst = sess->api->CastTypeInfoToTensorInfo(ti, &tinfo);
         if (cst == NULL && tinfo != NULL) {
             ONNXTensorElementDataType et = ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED;
-            (void)sess->api->GetTensorElementType(tinfo, &et);
+            ort_discard_status(sess->api, sess->api->GetTensorElementType(tinfo, &et));
             sess->input_elem_types[i] = (int)et;
         } else if (cst != NULL) {
             sess->api->ReleaseStatus(cst);
@@ -465,7 +471,7 @@ int vmaf_ort_open(VmafOrtSession **out, const char *onnx_path, const VmafDnnConf
         OrtStatus *cst = sess->api->CastTypeInfoToTensorInfo(ti, &tinfo);
         if (cst == NULL && tinfo != NULL) {
             ONNXTensorElementDataType et = ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED;
-            (void)sess->api->GetTensorElementType(tinfo, &et);
+            ort_discard_status(sess->api, sess->api->GetTensorElementType(tinfo, &et));
             sess->output_elem_types[i] = (int)et;
         } else if (cst != NULL) {
             sess->api->ReleaseStatus(cst);
@@ -544,9 +550,19 @@ static int copy_output_tensor(VmafOrtSession *sess, OrtValue *tensor, float *dst
         return -EIO;
     }
     size_t out_n = 0;
-    (void)sess->api->GetTensorShapeElementCount(info, &out_n);
+    st = sess->api->GetTensorShapeElementCount(info, &out_n);
+    if (st) {
+        sess->api->ReleaseStatus(st);
+        sess->api->ReleaseTensorTypeAndShapeInfo(info);
+        return -EIO;
+    }
     ONNXTensorElementDataType et = ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT;
-    (void)sess->api->GetTensorElementType(info, &et);
+    st = sess->api->GetTensorElementType(info, &et);
+    if (st) {
+        sess->api->ReleaseStatus(st);
+        sess->api->ReleaseTensorTypeAndShapeInfo(info);
+        return -EIO;
+    }
     sess->api->ReleaseTensorTypeAndShapeInfo(info);
 
     if (written)
@@ -714,14 +730,16 @@ void vmaf_ort_close(VmafOrtSession *sess)
             assert(sess->n_inputs > 0u);
             for (size_t i = 0; i < sess->n_inputs; ++i) {
                 if (sess->input_names[i])
-                    (void)sess->api->AllocatorFree(sess->alloc, sess->input_names[i]);
+                    ort_discard_status(sess->api,
+                                       sess->api->AllocatorFree(sess->alloc, sess->input_names[i]));
             }
         }
         if (sess->alloc && sess->output_names) {
             assert(sess->n_outputs > 0u);
             for (size_t i = 0; i < sess->n_outputs; ++i) {
                 if (sess->output_names[i])
-                    (void)sess->api->AllocatorFree(sess->alloc, sess->output_names[i]);
+                    ort_discard_status(
+                        sess->api, sess->api->AllocatorFree(sess->alloc, sess->output_names[i]));
             }
         }
         if (sess->session)

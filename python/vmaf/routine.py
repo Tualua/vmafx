@@ -563,25 +563,51 @@ def run_test_on_dataset(
         None if test_assets is None else list(map(lambda asset: asset.groundtruth_std, test_assets))
     )
     try:
-        predictions_bagging = list(
-            map(lambda result: result[runner_class.get_bagging_score_key()], results)
+        stats_kwargs = {
+            "ys_label_raw": raw_grountruths,
+            "ys_label_stddev": groundtruths_std,
+            "split_test_indices_for_perf_ci": split_test_indices_for_perf_ci,
+        }
+        num_models = 1
+        has_bootstrap_predictions = all(
+            hasattr(runner_class, key_getter)
+            for key_getter in (
+                "get_bagging_score_key",
+                "get_stddev_score_key",
+                "get_ci95_low_score_key",
+                "get_ci95_high_score_key",
+                "get_all_models_score_key",
+            )
         )
-        predictions_stddev = list(
-            map(lambda result: result[runner_class.get_stddev_score_key()], results)
-        )
-        predictions_ci95_low = list(
-            map(lambda result: result[runner_class.get_ci95_low_score_key()], results)
-        )
-        predictions_ci95_high = list(
-            map(lambda result: result[runner_class.get_ci95_high_score_key()], results)
-        )
-        predictions_all_models = list(
-            map(lambda result: result[runner_class.get_all_models_score_key()], results)
-        )
+        if has_bootstrap_predictions:
+            predictions_bagging = list(
+                map(lambda result: result[runner_class.get_bagging_score_key()], results)
+            )
+            predictions_stddev = list(
+                map(lambda result: result[runner_class.get_stddev_score_key()], results)
+            )
+            predictions_ci95_low = list(
+                map(lambda result: result[runner_class.get_ci95_low_score_key()], results)
+            )
+            predictions_ci95_high = list(
+                map(lambda result: result[runner_class.get_ci95_high_score_key()], results)
+            )
+            predictions_all_models = list(
+                map(lambda result: result[runner_class.get_all_models_score_key()], results)
+            )
 
-        # need to revert the list of lists, so that the outer list has the predictions for each model separately
-        predictions_all_models = np.array(predictions_all_models).T.tolist()
-        num_models = np.shape(predictions_all_models)[0]
+            # need to revert the list of lists, so that the outer list has the predictions for each model separately
+            predictions_all_models = np.array(predictions_all_models).T.tolist()
+            num_models = np.shape(predictions_all_models)[0]
+            stats_kwargs.update(
+                {
+                    "ys_label_pred_bagging": predictions_bagging,
+                    "ys_label_pred_stddev": predictions_stddev,
+                    "ys_label_pred_ci95_low": predictions_ci95_low,
+                    "ys_label_pred_ci95_high": predictions_ci95_high,
+                    "ys_label_pred_all_models": predictions_all_models,
+                }
+            )
 
         # ClassifierMixin.get_stats only accepts positional (ys_label,
         # ys_label_pred); the regressor-specific kwargs below are
@@ -591,18 +617,7 @@ def run_test_on_dataset(
         if model_type is ClassifierMixin:
             stats = model_type.get_stats(groundtruths, predictions)
         else:
-            stats = model_type.get_stats(
-                groundtruths,
-                predictions,
-                ys_label_raw=raw_grountruths,
-                ys_label_pred_bagging=predictions_bagging,
-                ys_label_pred_stddev=predictions_stddev,
-                ys_label_pred_ci95_low=predictions_ci95_low,
-                ys_label_pred_ci95_high=predictions_ci95_high,
-                ys_label_pred_all_models=predictions_all_models,
-                ys_label_stddev=groundtruths_std,
-                split_test_indices_for_perf_ci=split_test_indices_for_perf_ci,
-            )
+            stats = model_type.get_stats(groundtruths, predictions, **stats_kwargs)
     except Exception as exc:
         if not allow_uncalibrated:
             raise CalibrationError(
@@ -628,7 +643,6 @@ def run_test_on_dataset(
                 ys_label_stddev=groundtruths_std,
                 split_test_indices_for_perf_ci=split_test_indices_for_perf_ci,
             )
-        num_models = 1
 
     print("Stats on testing data: {}".format(model_type.format_stats_for_print(stats)))
 

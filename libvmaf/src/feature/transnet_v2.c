@@ -339,7 +339,7 @@ static const VmafOption transnet_v2_options[] = {
         TransNetV2State, "Filesystem path to the TransNet V2 ONNX model "
                          "(input 'frames' [1, 100, 3, 27, 48], output 'boundary_logits' [1, 100]). "
                          "Overrides the VMAF_TRANSNET_V2_MODEL_PATH env var."),
-    {NULL},
+    {0},
 };
 
 static const char *transnet_v2_provided_features[] = {"shot_boundary_probability", "shot_boundary",

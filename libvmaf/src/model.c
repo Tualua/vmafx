@@ -154,7 +154,7 @@ int vmaf_model_load_from_path(VmafModel **model, VmafModelConfig *cfg, const cha
     int err = vmaf_read_json_model_from_path(model, cfg, path);
     if (err) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "could not read model from path: \"%s\"\n", path);
-        char *ext = strrchr(path, '.');
+        const char *ext = strrchr(path, '.');
         if (ext && !strcmp(ext, ".pkl")) {
             vmaf_log(VMAF_LOG_LEVEL_ERROR,
                      "support for pkl model files has been removed, use json\n");
@@ -315,7 +315,7 @@ int vmaf_model_collection_load_from_path(VmafModel **model, VmafModelCollection 
     int err = vmaf_read_json_model_collection_from_path(model, model_collection, cfg, path);
     if (err) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "could not read model collection from path: \"%s\"\n", path);
-        char *ext = strrchr(path, '.');
+        const char *ext = strrchr(path, '.');
         if (ext && !strcmp(ext, ".pkl")) {
             vmaf_log(VMAF_LOG_LEVEL_ERROR,
                      "support for pkl model files has been removed, use json\n");

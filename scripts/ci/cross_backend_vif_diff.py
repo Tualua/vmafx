@@ -226,6 +226,13 @@ FEATURE_ALIASES: dict[str, tuple[str, str]] = {
     "float_ms_ssim_lcs": ("float_ms_ssim", "enable_lcs=true"),
 }
 
+BACKEND_EXTRACTOR_ALIASES: dict[tuple[str, str], str] = {
+    # ADR-0586: Vulkan's integer ADM extractor was renamed to the
+    # canonical "integer_adm_vulkan"; the CPU/CUDA/SYCL names stayed
+    # "adm", "adm_cuda", and "adm_sycl" for compatibility.
+    ("adm", "vulkan"): "integer_adm_vulkan",
+}
+
 # Per-backend extractor-name suffix and the device-selection flag the
 # CLI uses to actually route to it. CPU is the implicit baseline (no
 # suffix, no device flag). If a future backend uses a different naming
@@ -240,6 +247,17 @@ BACKEND_DEVICE_FLAG: dict[str, str] = {
     "sycl": "--sycl_device",
     "vulkan": "--vulkan_device",
 }
+
+
+def feature_extractor_name(feature: str, backend: str | None) -> str:
+    base_name, opt_string = FEATURE_ALIASES.get(feature, (feature, ""))
+    if backend is None:
+        extractor_name = base_name
+    else:
+        extractor_name = BACKEND_EXTRACTOR_ALIASES.get(
+            (feature, backend), f"{base_name}{BACKEND_SUFFIX[backend]}"
+        )
+    return f"{extractor_name}={opt_string}" if opt_string else extractor_name
 
 
 def run_vmaf(
@@ -261,12 +279,7 @@ def run_vmaf(
     feature names. See PR #120 commit message for the silent-CPU bug
     that motivated this contract.
     """
-    # Resolve aliases to (extractor_base_name, opt_string) — used by
-    # float_ms_ssim_lcs (T7-35) which gates the same extractor on the
-    # `enable_lcs` boolean.
-    base_name, opt_string = FEATURE_ALIASES.get(feature, (feature, ""))
-    extractor_name = base_name if backend is None else f"{base_name}{BACKEND_SUFFIX[backend]}"
-    extractor = f"{extractor_name}={opt_string}" if opt_string else extractor_name
+    extractor = feature_extractor_name(feature, backend)
     cmd = [
         str(binary),
         "--reference",

@@ -68,3 +68,39 @@ track whether a comma separator is needed via explicit `bool first` /
   `j == 2` is first, producing a leading comma in the JSON object.
 - `i > 0` (frame index) — wrong when frame 0 has no written scores and
   frame 3 is first, producing a leading comma in the JSON array.
+
+### 6. macOS locale pushes must use a duplicated base locale
+
+`thread_locale.c::vmaf_thread_locale_push_c()` must not call
+`newlocale(..., "C", NULL)` on POSIX hosts. On macOS, allocator poisoning can
+leave Apple libc's freshly allocated internal locale object with poisoned
+category pointers before `uselocale()` / `fprintf()` touches it, causing the
+writer tests to SIGSEGV only on Darwin. The invariant is:
+
+```c
+locale_t base = duplocale(LC_GLOBAL_LOCALE);
+state->c_locale = newlocale(LC_NUMERIC_MASK, "C", base);
+```
+
+Never pass `LC_GLOBAL_LOCALE` directly as the `newlocale()` base; duplicate it
+first, and `freelocale(base)` on `newlocale()` failure. The output writers only
+need numeric formatting isolation, so do not widen this back to `LC_ALL_MASK`
+without a macOS CI run that covers `test_output`, `test_public_api_score`, and
+`test_vmaf_use_tiny_model`.
+
+### 7. `test_output` must not include libvmaf implementation TUs
+
+`libvmaf/test/test_output.c` links against libvmaf and reaches the owned
+collector through `libvmaf_priv.h::vmaf_feature_collector_get()`. Do not bring
+back `#include "libvmaf.c"` or `#include "output.c"` in that test while it also
+links libvmaf: Apple ld64 + LTO has resolved the duplicate external definitions
+incorrectly under allocator poisoning, crashing the macOS writer tests.
+
+### 8. Output writers flush before popping the C numeric locale
+
+`output.c` writers call `fflush(outfile)` before
+`vmaf_thread_locale_pop(locale_state)`. Keep the stream flush inside the
+temporary C numeric locale lifetime. Path-based `vmaf_write_output()` uses
+`fdopen()` and may otherwise leave the final flush to `fclose()` after the
+locale has been restored/freed; that is the macOS-only SIGSEGV shape for
+`test_output` and `test_public_api_score`.

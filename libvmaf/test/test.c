@@ -17,12 +17,50 @@
  */
 
 #include "test.h"
+#ifdef __APPLE__
+#include <execinfo.h>
+#include <signal.h>
+#include <string.h>
+#include <unistd.h>
+#endif
 #include <stdio.h>
 
 int mu_tests_run;
 
+#ifdef __APPLE__
+static void mu_crash_handler(int signum)
+{
+    void *frames[64];
+    const char prefix[] = "\nlibvmaf test caught fatal signal; backtrace:\n";
+
+    (void)write(STDERR_FILENO, prefix, sizeof(prefix) - 1u);
+    int nframes = backtrace(frames, 64);
+    backtrace_symbols_fd(frames, nframes, STDERR_FILENO);
+
+    (void)signal(signum, SIG_DFL);
+    (void)raise(signum);
+}
+
+static void mu_install_crash_handler(void)
+{
+    struct sigaction action;
+
+    memset(&action, 0, sizeof(action));
+    action.sa_handler = mu_crash_handler;
+    (void)sigemptyset(&action.sa_mask);
+    action.sa_flags = SA_RESETHAND;
+    (void)sigaction(SIGABRT, &action, NULL);
+    (void)sigaction(SIGBUS, &action, NULL);
+    (void)sigaction(SIGSEGV, &action, NULL);
+}
+#endif
+
 int main(void)
 {
+#ifdef __APPLE__
+    mu_install_crash_handler();
+#endif
+
     char *msg = run_tests();
 
     if (msg) {

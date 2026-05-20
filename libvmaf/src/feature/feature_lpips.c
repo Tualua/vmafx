@@ -204,7 +204,7 @@ static const VmafOption lpips_options[] = {
     VMAF_TINY_AI_MODEL_PATH_OPTION(
         LpipsState, "Filesystem path to the LPIPS ONNX model (two-input, 'ref'/'dist'). "
                     "Overrides the VMAF_LPIPS_MODEL_PATH env var."),
-    {NULL},
+    {0},
 };
 
 static const char *lpips_provided_features[] = {"lpips", NULL};

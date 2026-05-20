@@ -650,6 +650,10 @@ that advertise the `sve2` HWCAP and falls back to NEON otherwise.
 All SIMD paths build with `-ffp-contract=off` in dedicated split
 static libraries to pin cross-host bit-exactness. CUDA / SYCL
 backends remain optional follow-up work (BACKLOG T3-8).
+The source-level `FP_CONTRACT OFF` pragmas are wrapped for GCC so
+warning-clean builds still keep the same no-FMA contract; compilers
+that ignore the pragma rely on the split-library `-ffp-contract=off`
+flag.
 
 **Bit-exactness** — scalar and SIMD outputs are byte-identical on the
 fork's host matrix (verified by `libvmaf/test/test_ssimulacra2_simd.c`,
@@ -660,6 +664,11 @@ fork's host matrix (verified by `libvmaf/test/test_ssimulacra2_simd.c`,
 [ADR-0164](../adr/0164-ssimulacra2-snapshot-gate.md). The CI snapshot
 gate (`python/test/ssimulacra2_test.py`) pins 48-frame
 mean/min/max/hmean/frame-0/frame-47 values at `places=4` tolerance.
+The CPU, SIMD, Vulkan, and tiny-AI extractor registration structs are
+kept warning-clean across the hosted CI build matrix. That maintenance
+does not change feature names, option names, score formulas, or backend
+selection; it exists so real score-path diagnostics are not buried by
+compiler noise.
 
 **Limitations** —
 

@@ -28,7 +28,14 @@
  *
  * Bit-exact contract: ADR-0161 / ADR-0242 — lane-commutative pointwise
  * arithmetic, `cbrtf` applied per-lane via scalar libm, addition order
- * preserved left-to-right, `#pragma STDC FP_CONTRACT OFF` + build flag
+ * preserved left-to-right, `#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunknown-pragmas"
+#endif
+#pragma STDC FP_CONTRACT OFF
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif` + build flag
  * `-ffp-contract=off`.
  */
 
@@ -43,7 +50,14 @@
 #include "feature/ssimulacra2_math.h"
 #include "ssimulacra2_host_avx2.h"
 
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunknown-pragmas"
+#endif
 #pragma STDC FP_CONTRACT OFF
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 static const float kM00 = 0.30f;
 static const float kM02 = 0.078f;

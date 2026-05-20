@@ -47,9 +47,6 @@
 #define FVIF_WG_X 16
 #define FVIF_WG_Y 16
 
-/* Default vif_kernelscale=1.0 filter widths per scale. */
-static const int FVIF_FW[4] = {17, 9, 5, 3};
-
 typedef struct {
     bool debug;
     double vif_enhn_gain_limit;

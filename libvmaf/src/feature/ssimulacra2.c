@@ -874,7 +874,7 @@ static void edge_diff_map(const float *img1, const float *mu1, const float *img2
  * ---------------------------------------------------------------
  */
 
-static double pool_score(const double avg_ssim[6][6], const double avg_ed[6][12], int num_scales)
+static double pool_score(double avg_ssim[6][6], double avg_ed[6][12], int num_scales)
 {
     double ssim = 0.0;
     size_t i = 0;

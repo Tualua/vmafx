@@ -38,9 +38,9 @@
  *   - Inner-loop strides use `ptrdiff_t` to avoid int * int UB.
  *   - Unaligned load (_mm512_loadu_ps) for the horizontal pass source
  *     (no alignment guarantee on tmp row interior).
- *   - Aligned load (_mm512_load_ps) for the vertical pass source
- *     (convolution_f32_avx*_s callers guarantee aligned tmp rows via
- *     vmaf_ceiln round-up to AVX512_STEP boundary).
+ *   - Unaligned load/store for the vertical pass source/tmp. The project
+ *     allocator contract is 32-byte alignment (MAX_ALIGN), while AVX-512
+ *     aligned memory ops require 64-byte alignment.
  *   - MAX_FWIDTH_AVX_CONV guard is enforced by the caller; VLA-sized
  *     filter register array avoids stack-blown runtime sizes.
  */
@@ -81,8 +81,8 @@ static void convolution_f32_avx512_s_1d_h_scanline(const float *RESTRICT filter,
     }
 }
 
-/* Vertical scanline: source rows are aligned (tmp allocated with
- * MAX_ALIGN, stride rounded to AVX512_STEP), so use aligned load. */
+/* Vertical scanline: source/tmp rows are only guaranteed 32-byte aligned
+ * by MAX_ALIGN, so use unaligned AVX-512 memory ops. */
 static void convolution_f32_avx512_s_1d_v_scanline(const float *RESTRICT filter, int filter_width,
                                                    const float *RESTRICT src, float *RESTRICT dst,
                                                    ptrdiff_t src_stride, int j_end)
@@ -101,11 +101,11 @@ static void convolution_f32_avx512_s_1d_v_scanline(const float *RESTRICT filter,
         __m512 sum = _mm512_setzero_ps();
 
         for (int k = 0; k < filter_width; k++) {
-            __m512 g = _mm512_load_ps(src + (ptrdiff_t)k * src_stride + j);
+            __m512 g = _mm512_loadu_ps(src + (ptrdiff_t)k * src_stride + j);
             sum = _mm512_fmadd_ps(f[k], g, sum);
         }
 
-        _mm512_store_ps(dst + j, sum);
+        _mm512_storeu_ps(dst + j, sum);
     }
 }
 
@@ -130,12 +130,12 @@ static void convolution_f32_avx512_s_1d_v_sq_scanline(const float *RESTRICT filt
         __m512 sum = _mm512_setzero_ps();
 
         for (int k = 0; k < filter_width; k++) {
-            __m512 g = _mm512_load_ps(src + (ptrdiff_t)k * src_stride + j);
+            __m512 g = _mm512_loadu_ps(src + (ptrdiff_t)k * src_stride + j);
             g = _mm512_mul_ps(g, g);
             sum = _mm512_fmadd_ps(f[k], g, sum);
         }
 
-        _mm512_store_ps(dst + j, sum);
+        _mm512_storeu_ps(dst + j, sum);
     }
 }
 
@@ -163,13 +163,13 @@ static void convolution_f32_avx512_s_1d_v_xy_scanline(const float *RESTRICT filt
         __m512 sum = _mm512_setzero_ps();
 
         for (int k = 0; k < filter_width; k++) {
-            __m512 g = _mm512_load_ps(src1 + (ptrdiff_t)k * src1_stride + j);
-            __m512 g2 = _mm512_load_ps(src2 + (ptrdiff_t)k * src2_stride + j);
+            __m512 g = _mm512_loadu_ps(src1 + (ptrdiff_t)k * src1_stride + j);
+            __m512 g2 = _mm512_loadu_ps(src2 + (ptrdiff_t)k * src2_stride + j);
             g = _mm512_mul_ps(g, g2);
             sum = _mm512_fmadd_ps(f[k], g, sum);
         }
 
-        _mm512_store_ps(dst + j, sum);
+        _mm512_storeu_ps(dst + j, sum);
     }
 }
 
@@ -177,9 +177,10 @@ static void convolution_f32_avx512_s_1d_v_xy_scanline(const float *RESTRICT filt
  * Public wrappers — same structure as convolution_f32_avx_s / _sq_s / _xy_s
  * in convolution_avx.c, with AVX512_STEP replacing AVX_STEP.
  *
- * tmp_stride is rounded up to AVX512_STEP (16 floats = 64 bytes) by the
- * vmaf_ceiln call, which is also 64-byte cache-line aligned — this is what
- * keeps the _mm512_load_ps / _mm512_store_ps in the vertical pass safe.
+ * tmp_stride is rounded up to AVX512_STEP (16 floats = 64 bytes), but the
+ * base pointers are only guaranteed 32-byte aligned by MAX_ALIGN. Keep
+ * vertical-pass memory ops unaligned unless the project-wide allocation
+ * contract changes.
  */
 
 void convolution_f32_avx512_s(const float *RESTRICT filter, int filter_width,

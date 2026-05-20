@@ -70,7 +70,14 @@
  * IEEE-754-rounded ops. This TU is compiled with NEON enabled (aarch64
  * baseline); `calc_psnrhvs_neon`'s scalar float accumulators must stay
  * uncontracted to preserve byte-for-byte parity with scalar. */
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunknown-pragmas"
+#endif
 #pragma STDC FP_CONTRACT OFF
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 typedef int32_t od_coeff;
 

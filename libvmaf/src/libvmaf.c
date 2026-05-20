@@ -2825,3 +2825,18 @@ int vmaf_write_output(VmafContext *vmaf, const char *output_path, enum VmafOutpu
 {
     return vmaf_write_output_with_format(vmaf, output_path, fmt, NULL);
 }
+
+/*
+ * Internal test accessor.
+ *
+ * Tests that need VmafFeatureCollector must not include libvmaf.c directly
+ * while also linking libvmaf. Apple ld64 + LTO has resolved that duplicate
+ * definition pattern incorrectly under allocator poisoning, crashing macOS CI
+ * in writer tests. See libvmaf_priv.h for the declaration.
+ */
+VmafFeatureCollector *vmaf_feature_collector_get(VmafContext *vmaf)
+{
+    if (!vmaf)
+        return NULL;
+    return vmaf->feature_collector;
+}

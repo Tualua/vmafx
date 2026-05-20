@@ -54,9 +54,22 @@ VmafThreadLocaleState *vmaf_thread_locale_push_c(void)
 
 #if defined(HAVE_USELOCALE)
     // POSIX.1-2008: thread-local locale (Linux, macOS, BSD)
-    // Use LC_ALL_MASK for complete locale isolation
-    state->c_locale = newlocale(LC_ALL_MASK, "C", NULL);
+    //
+    // macOS note: avoid newlocale(..., NULL). Apple libc allocates an
+    // internal _xlocale object for the requested categories; with allocator
+    // poisoning enabled, partially initialised category slots can contain
+    // poisoned pointer values that uselocale()/fprintf() later dereference.
+    // Start from a fully initialised duplicate of the process-global locale
+    // and override only numeric formatting, which is the writer requirement.
+    // POSIX forbids passing LC_GLOBAL_LOCALE directly as the base locale.
+    locale_t base = duplocale(LC_GLOBAL_LOCALE);
+    if (base == (locale_t)0) {
+        free(state);
+        return NULL;
+    }
+    state->c_locale = newlocale(LC_NUMERIC_MASK, "C", base);
     if (state->c_locale == (locale_t)0) {
+        freelocale(base);
         free(state);
         return NULL;
     }

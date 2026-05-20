@@ -14,7 +14,9 @@
 /* volk loads every Vulkan entry point at runtime, so VMA must call
  * the function pointers we hand it via VmaVulkanFunctions rather
  * than the prototypes the system headers would otherwise emit. */
+#ifndef VK_NO_PROTOTYPES
 #define VK_NO_PROTOTYPES
+#endif
 
 /* VMA_VULKAN_VERSION matches the API version we request in
  * vmaCreateAllocator() — anything lower would silently disable

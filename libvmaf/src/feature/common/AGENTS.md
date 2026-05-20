@@ -55,15 +55,14 @@ SSIM-specific scalar reference — do not confuse it with the
   The four static scanline helpers (`convolution_f32_avx512_s_1d_*`)
   and three public wrappers use `static` linkage and `ptrdiff_t`
   strides identically to the AVX2 counterparts. Key additional
-  constraint: the vertical-pass `_mm512_load_ps` requires 64-byte
-  alignment; this is guaranteed because the tmp buffer is allocated
-  via `aligned_malloc(ALIGN_CEIL(...), MAX_ALIGN)` where
-  `MAX_ALIGN >= 64`, and `vmaf_ceiln(width, 16)` ensures the
-  stride is a multiple of 16 floats (= 64 bytes). The horizontal-pass
-  uses `_mm512_loadu_ps` (no alignment guarantee on the interior of
-  a row). **Results are NOT bit-identical to the AVX2 path** (wider
-  FMA tree → different rounding) — this is accepted for the float
-  path per ADR-0214.
+  constraint: the project-wide allocation contract is `MAX_ALIGN == 32`,
+  so AVX-512 vertical scanlines must use `_mm512_loadu_ps` /
+  `_mm512_storeu_ps` even when the stride is a multiple of 16 floats.
+  Do not reintroduce aligned 64-byte AVX-512 memory ops unless
+  `MAX_ALIGN` and every float-buffer caller are promoted together.
+  **Results are NOT bit-identical to the AVX2 path** (wider FMA tree
+  → different rounding) — this is accepted for the float path per
+  ADR-0214.
 
 - **`MAX_FWIDTH_AVX_CONV` in `convolution_internal.h`** sizes the
   `__m256 f[]` filter-tap buffer in `convolution_avx.c`. Bumping

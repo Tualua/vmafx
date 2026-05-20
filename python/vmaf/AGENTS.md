@@ -54,6 +54,17 @@ python/vmaf/
   `PypsnrMaxdb100FeatureExtractor`. Any upstream commit that renames or removes the `Pypsnr*`
   aliases should be absorbed without touching the `PyPsnr*` primary names — they are what the
   test file asserts against. Tracked: fix/pypsnr-feature-extractor-import PR (2026-05-10).
+- **`routine.py::run_test_on_dataset()` only reads bootstrap score keys from bootstrap-capable runners.**
+  Normal `VmafQualityRunner` / `PsnrQualityRunner` results do not expose
+  `get_bagging_score_key()` / CI95 / all-model prediction fields; keep the
+  bootstrap kwargs conditional on the full getter set. The macOS tox lane runs
+  `run_testing.py` through those normal runners, so unconditional bootstrap-key
+  access regresses the CLI tests before any score assertion executes.
+- **Doctests must not depend on NumPy scalar `repr()` or assertion traceback
+  details.** NumPy 2 may render scalar results as `np.float64(...)`, and Python
+  3.14 appends assert-expression detail to `AssertionError` text. Cast numeric
+  scalar examples to `float(...)` or format them, and print only the first
+  exception-message line when a doctest is documenting assertion text.
 
 ## Governing ADRs
 

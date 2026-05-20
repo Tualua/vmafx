@@ -199,7 +199,6 @@ async def test_call_tool_vmaf_score_golden_pair() -> None:
 
 # ---------------------------------------------------------------------------
 # 4. call_tool — unknown tool name raises (ADR-0613 isError fix)
-# 4. call_tool — unknown tool name returns error JSON, not an exception
 # ---------------------------------------------------------------------------
 
 
@@ -212,11 +211,3 @@ async def test_call_tool_unknown_name_raises() -> None:
     as successes.  Renamed from test_call_tool_unknown_name_returns_error_json."""
     with pytest.raises(ValueError, match="unknown tool"):
         await srv._call_tool("no_such_tool", {})
-
-
-async def test_call_tool_unknown_name_returns_error_json() -> None:
-    """Calling an unknown tool name must return error JSON, not raise."""
-    contents = await srv._call_tool("no_such_tool", {})
-    assert len(contents) == 1
-    payload = json.loads(contents[0].text)
-    assert "error" in payload, "Unknown tool should return {'error': ...}"

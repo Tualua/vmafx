@@ -576,7 +576,10 @@ diff should resolve cleanly in `git rebase`. The `config.h` include
 in `integer_ssim.c` is load-bearing on Vulkan-enabled LTO builds —
 without it the `VmafFeatureExtractor` struct layout disagrees
 between TUs (different `HAVE_CUDA` / `HAVE_SYCL` / `HAVE_VULKAN`
-visibility) and GCC fires `-Wlto-type-mismatch` at link time.
+visibility) and GCC fires `-Wlto-type-mismatch` at link time. The
+generated `config.h` include in `feature_extractor.h` is the
+project-wide guard for this layout; keep it there so every extractor
+definition and every registry consumer sees the same backend fields.
 
 ### `speed_chroma` / `speed_temporal` are float-build-only
 

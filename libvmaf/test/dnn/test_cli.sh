@@ -104,9 +104,9 @@ DIST_YUV="python/test/resource/yuv/src01_hrc01_576x324.yuv"
 if [[ -f "$DIST_YUV" && -f model/tiny/nr_metric_v1.onnx ]]; then
   json_out="$(mktemp -t vmaf_nr_smoke_XXXXXX.json)"
   if ! nr_dist_out="$("$VMAF_BIN" --no-reference --tiny-model model/tiny/nr_metric_v1.onnx \
-    --tiny-device cpu --distorted "$DIST_YUV" \
+    --tiny-device cpu --tiny-resize bilinear --distorted "$DIST_YUV" \
     --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
-    --json --output "$json_out" 2>&1)"; then
+    --frame_cnt 1 --json --output "$json_out" 2>&1)"; then
     printf '%s\n' "$nr_dist_out"
     echo "ADR-0524: --no-reference --tiny-model nr_metric_v1.onnx FAILED to run"
     rm -f "$json_out"
@@ -168,7 +168,7 @@ if [[ -f "$SRC_YUV" && -f "$DST_YUV" ]]; then
       --reference "$SRC_YUV" --distorted "$DST_YUV" \
       --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
       --tiny-model "$M" --tiny-device cpu \
-      --json --output "$json_out" 2>&1)"; then
+      --frame_cnt 1 --json --output "$json_out" 2>&1)"; then
       echo "$out"
       echo "tiny-model smoke load FAILED for $M"
       rm -f "$json_out"

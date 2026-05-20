@@ -37556,3 +37556,195 @@ response body, updated error conventions table),
 `changelog.d/fixed/adr0608-mcp-p0-iserror-probe-version-encoded.md`,
 `changelog.d/added/adr0608-mcp-probe-backend-vmaf-version-encoded.md`,
 `docs/rebase-notes.md` (this entry).
+
+## Master CI repair — DNN coverage, MCP smoke, and formatter drift (2026-05-19)
+
+**No rebase-sensitive invariants introduced** — this PR is CI/test/doc hygiene
+only. No public C API, backend implementation, model artifact, FFmpeg patch, or
+Netflix golden-data assertion changed.
+
+If a future rebase touches the DNN tiny-model smoke tests, preserve these
+contracts:
+
+- `libvmaf/test/dnn/test_cli.sh` uses `--tiny-resize bilinear` for the
+  `nr_metric_v1.onnx` no-reference smoke because the shipped NR model is
+  224x224 and strict resize mode intentionally rejects the 576x324 fixture.
+- The same CLI smoke caps tiny-model inference at `--frame_cnt 1`; it is a
+  load/run smoke, not a full-clip numerical benchmark.
+- `mcp-server/vmaf-mcp/tests/test_smoke_e2e.py` expects unknown tool names to
+  raise, matching the ADR-0613 isError contract.
+- The Netflix golden and lavapipe parity gates keep per-command `timeout`
+  wrappers plus step-level `timeout-minutes`; if a runner/backend hangs, CI
+  must fail diagnostically instead of waiting for the full job-level timeout.
+- The Netflix golden CI lane intentionally invokes only
+  `QualityRunnerTest::test_run_vmaf_runner` and
+  `QualityRunnerTest::test_run_vmaf_runner_checkerboard`: together they cover
+  the D24 normal pair plus the checkerboard 10-px and 1-px distorted pairs.
+  Do not expand this lane into the broad Python quality/feature suites; those
+  are separate test coverage, not the golden-data gate.
+- Keep the D24 normal and checkerboard invocations as separate workflow steps;
+  this preserves a clear failure surface when the 1080p checkerboard pair is
+  slow or stuck. The normal-pair step still needs a multi-minute budget on
+  cold GitHub-hosted runners because the Python runner invokes the feature
+  binary with ADM/VIF/motion debug output. The normal-pair budget is
+  21 minutes inside a 22-minute step; lowering it back to 7 or 11 minutes has
+  timed out on cold 2026-05-19 GitHub-hosted runners before assertions
+  completed.
+- The lavapipe Vulkan VIF cross-backend lane has the same cold-runner
+  constraint. Keep the required VIF step at a 15-minute command wrapper inside
+  a 16-minute step; the old 8-minute wrapper timed out exactly on
+  GitHub-hosted Ubuntu before the diff script could report a result.
+- `python/vmaf/routine.py::run_test_on_dataset()` only passes bootstrap stats
+  kwargs when the runner exposes the full bootstrap score-key getter set.
+  Normal VMAF and PSNR runners do not have `get_bagging_score_key()` / CI95 /
+  all-model prediction fields; macOS tox exercises those normal runners through
+  `run_testing.py`, so do not reintroduce unconditional bootstrap-key access.
+- Python doctests under `python/vmaf/tools/` must not rely on platform/version
+  scalar reprs or assertion traceback formatting. NumPy 2 can display scalar
+  values as `np.float64(...)`, and Python 3.14 can append assert-expression
+  details; keep examples explicit with `float(...)`, string formatting, or
+  first-line exception-message printing.
+- `libvmaf/src/thread_locale.c` uses `duplocale(LC_GLOBAL_LOCALE)` as the
+  base for `newlocale(LC_NUMERIC_MASK, "C", base)`. Do not restore
+  `newlocale(LC_ALL_MASK, "C", NULL)`: macOS allocator poisoning can expose
+  poisoned internal locale pointers as SIGSEGV in the output-writer tests.
+- `libvmaf/test/test_output.c` must not include `libvmaf.c` or `output.c`
+  directly while also linking libvmaf. Use
+  `libvmaf/src/libvmaf_priv.h::vmaf_feature_collector_get()` for the internal
+  collector access instead; duplicate implementation TUs have crashed Apple
+  ld64 + LTO macOS jobs under allocator poisoning.
+- `libvmaf/src/dnn/model_loader.c::vmaf_dnn_sidecar_load()` rejects oversized
+  sidecars with `stat()` before opening them. Preserve this cheap
+  metadata-only guard so the `test_vmaf_use_tiny_model` oversized-sidecar case
+  does not enter platform stdio on the expected `-EFBIG` path. The regression
+  test copies `model/tiny/smoke_v0.onnx` rather than synthesising an invalid
+  ONNX blob; that keeps a missed sidecar gate as an assertion failure instead
+  of an ORT invalid-model crash on macOS.
+- `libvmaf/src/output.c` flushes each writer's stream before calling
+  `vmaf_thread_locale_pop()`. Keep the flush inside the locale lifetime:
+  path-based `vmaf_write_output()` uses `fdopen()` and may otherwise defer the
+  stream flush to `fclose()` after the temporary C numeric locale has been
+  restored/freed, which is the macOS-only writer SIGSEGV shape.
+- `libvmaf/test/meson.build` defines `libvmaf_public_link` so public ABI tests
+  link the shared library when `default_library=both`. Do not route
+  `test_public_api_score` or `test_vmaf_use_tiny_model` back through
+  `libvmaf.get_static_lib()` on macOS: Apple ld64 + LTO folds the public call
+  into the test executable and reproduces the writer/DNN SIGSEGV shape. The
+  internal `test_output` target keeps its static link for
+  `vmaf_feature_collector_get()` but disables LTO at the target on Darwin
+  only; Linux clang static-archive links still need `-flto` because
+  `src/libvmaf.a` contains LLVM bitcode there.
+- `python/vmaf/core/asset.py::ORDERED_FILTER_LIST` includes `fps` and
+  `format` between `pad` and `gblur`. Keep that order stable: it controls
+  both FFmpeg preprocessing command composition and the slugified `Asset`
+  string identity. The corresponding properties are `fps_cmd`,
+  `ref_fps_cmd`, and `dis_fps_cmd`; `format` is intentionally accessed via
+  `get_filter_cmd("format", target)` like the generic filter-only keys.
+- `libvmaf/src/feature/feature_extractor.h` includes generated `config.h`
+  before defining `struct VmafFeatureExtractor`. Keep that include in the
+  header, not just in selected consumer TUs: backend-enabled LTO builds need
+  every extractor definition and the registry to see identical `HAVE_CUDA` /
+  `HAVE_SYCL` / `HAVE_VULKAN` macro state, otherwise GCC emits
+  `-Wlto-type-mismatch` and may misoptimise extractor globals.
+- `libvmaf/src/feature/common/macros.h::FORCE_INLINE` already expands to an
+  inline specifier on GCC/Clang. Do not re-add a second literal `inline` to
+  CSF / CAMBI / motion helper declarations; Clang reports the duplicate
+  specifier throughout the build matrix.
+- `libvmaf/tools/vmaf.c::fetch_picture()` owns a preallocated picture slot
+  as soon as `vmaf_fetch_preallocated_picture()` succeeds. Preserve the
+  EOF/read-error cleanup that unrefs that slot before returning `1` or `-1`,
+  and preserve the `run_frame_loop()` cleanup for the opposite side when only
+  one input read succeeded. Without both, the CLI can score and write output
+  successfully, then hang forever in `vmaf_close()` while the picture pool
+  waits for unread slots to return.
+- `scripts/ci/cross_backend_{parity_gate,vif_diff}.py` must keep the
+  backend-specific extractor alias `("adm", "vulkan") -> "integer_adm_vulkan"`.
+  ADR-0586 renamed Vulkan integer ADM to the canonical extractor name while
+  CPU/CUDA/SYCL retained the historical `adm`, `adm_cuda`, and `adm_sycl`
+  names. Dropping the alias makes the lavapipe parity gate invoke the retired
+  `adm_vulkan` compatibility name and fail before comparing scores.
+- `libvmaf/src/feature/common/convolution_avx512.c` vertical scanlines must use
+  `_mm512_loadu_ps` / `_mm512_storeu_ps`. `MAX_ALIGN` is 32 bytes, not 64 bytes;
+  the stride can be a 64-byte multiple while the row base is still only
+  32-byte aligned. Reintroducing aligned AVX-512 memory ops can crash
+  `float_vif` on AVX-512-capable CPU runners.
+
+Touched files:
+`.github/workflows/tests-and-quality-gates.yml`,
+`docs/development/zed-migration-plan-2026-05-19.md`,
+`docs/metrics/features.md`,
+`docs/usage/python.md`,
+`libvmaf/src/dnn/AGENTS.md`,
+`libvmaf/src/dnn/model_loader.c`,
+`libvmaf/src/dnn/ort_backend.c`,
+`libvmaf/src/AGENTS.md`,
+`libvmaf/src/feature/AGENTS.md`,
+`libvmaf/src/feature/adm_csf_tools.h`,
+`libvmaf/src/feature/arm64/moment_sve2.c`,
+`libvmaf/src/feature/arm64/psnr_hvs_neon.c`,
+`libvmaf/src/feature/arm64/ssimulacra2_host_neon.c`,
+`libvmaf/src/feature/arm64/ssimulacra2_neon.c`,
+`libvmaf/src/feature/arm64/ssimulacra2_sve2.c`,
+`libvmaf/src/feature/barten_csf_tools.h`,
+`libvmaf/src/feature/cambi.c`,
+`libvmaf/src/feature/feature_dists.c`,
+`libvmaf/src/feature/feature_extractor.h`,
+`libvmaf/src/feature/feature_lpips.c`,
+`libvmaf/src/feature/feature_mobilesal.c`,
+`libvmaf/src/feature/fastdvdnet_pre.c`,
+`libvmaf/src/feature/integer_motion.c`,
+`libvmaf/src/feature/motion_blend_tools.h`,
+`libvmaf/src/feature/ssimulacra2.c`,
+`libvmaf/src/feature/transnet_v2.c`,
+`libvmaf/src/feature/vulkan/adm_vulkan.c`,
+`libvmaf/src/feature/vulkan/cambi_vulkan.c`,
+`libvmaf/src/feature/vulkan/float_vif_vulkan.c`,
+`libvmaf/src/feature/vulkan/integer_adm_vulkan.c`,
+`libvmaf/src/feature/vulkan/ssimulacra2_vulkan.c`,
+`libvmaf/src/feature/vif_tools.c`,
+`libvmaf/src/feature/x86/psnr_hvs_avx2.c`,
+`libvmaf/src/feature/x86/ssimulacra2_avx2.c`,
+`libvmaf/src/feature/x86/ssimulacra2_avx512.c`,
+`libvmaf/src/feature/x86/ssimulacra2_host_avx2.c`,
+`libvmaf/src/feature/x86/vif_avx512.c`,
+`libvmaf/src/libvmaf.c`,
+`libvmaf/src/libvmaf_priv.h`,
+`libvmaf/src/framesync.c`,
+`libvmaf/src/model.c`,
+`libvmaf/src/output.c`,
+`libvmaf/src/picture.c`,
+`libvmaf/src/thread_locale.c`,
+`libvmaf/src/vulkan/vma_impl.cpp`,
+`libvmaf/tools/AGENTS.md`,
+`libvmaf/tools/vmaf.c`,
+`libvmaf/test/AGENTS.md`,
+`libvmaf/test/dnn/test_cli.sh`,
+`libvmaf/test/dnn/test_dnn_session_api.c`,
+`libvmaf/test/dnn/test_model_loader.c`,
+`libvmaf/test/dnn/test_ort_internals.c`,
+`libvmaf/test/dnn/test_tensor_io.c`,
+`libvmaf/test/dnn/test_vmaf_use_tiny_model.c`,
+`libvmaf/test/dnn/meson.build`,
+`libvmaf/test/meson.build`,
+`libvmaf/test/test_feature_extractor.c`,
+`libvmaf/test/test_framesync.c`,
+`libvmaf/test/test_model.c`,
+`libvmaf/test/test_output.c`,
+`libvmaf/test/test_predict.c`,
+`libvmaf/test/test_psnr_hvs_simd.c`,
+`libvmaf/test/test.c`,
+`mcp-server/vmaf-mcp/tests/test_smoke_e2e.py`,
+`python/test/asset_test.py`,
+`python/vmaf/core/asset.py`,
+`libvmaf/tools/vmaf_bench.c`,
+`libvmaf/src/feature/common/AGENTS.md`,
+`libvmaf/src/feature/common/convolution.h`,
+`libvmaf/src/feature/common/convolution_avx512.c`,
+`libvmaf/test/test_vif_simd.c`,
+`scripts/ci/AGENTS.md`,
+`scripts/ci/cross_backend_parity_gate.py`,
+`scripts/ci/cross_backend_vif_diff.py`,
+`scripts/ci/test_cross_backend_feature_names.py`,
+`docs/state.md`,
+`changelog.d/fixed/master-ci-dnn-mcp-coverage-2026-05-19.md`,
+`docs/rebase-notes.md` (this entry).

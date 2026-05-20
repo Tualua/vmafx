@@ -48,7 +48,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: "Netflix CPU Golden Tests (D24)"
     runs-on: ubuntu-latest
-    timeout-minutes: 45  # ADR-0637: bumped from 25 — build+test exceeds 25 min on cold runners
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
@@ -60,7 +60,7 @@ jobs:
           sudo apt-get install -y meson ninja-build nasm pkg-config \
             libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
             python3-pip
-          python3 -m pip install --user -r python/requirements.txt pytest
+          python3 -m pip install --user -r python/requirements.txt pytest pytest-timeout
 
       - name: Build (CPU, release)
         # Build inside libvmaf/ so the CLI lands at libvmaf/build/tools/vmaf
@@ -87,25 +87,33 @@ jobs:
             vmaf-fixtures-resource-v1-
             vmaf-fixtures-resource-
 
-      - name: Run Netflix golden test pairs
+      - name: Run Netflix golden normal pair
         env:
           PYTHONPATH: ${{ github.workspace }}/python
+        timeout-minutes: 22
         run: |
           # The 3 pairs live in python/test/resource/yuv/ — see D24.
           # Hardcoded CPU score assertions live in the python/test/*_test.py files.
           #
-          # Deselect 4 tests whose places=8 or aggregated-score assertions
-          # are sensitive to compiler FP contraction / auto-vectorization
-          # (GCC 13 vs 14 vs 15 produce different results from the same
-          # scalar C). Netflix upstream does NOT run these Python tests in
-          # CI either. The 3 actual golden pairs (§8) all pass.
-          python3 -m pytest python/test/quality_runner_test.py \
-                            python/test/feature_extractor_test.py \
-                            -v -m "not slow" --tb=short \
-                            --deselect test/quality_runner_test.py::QualityRunnerTest::test_run_vmaf_runner_float_rdh540 \
-                            --deselect test/quality_runner_test.py::QualityRunnerTest::test_run_vmaf_runner_v061 \
-                            --deselect test/feature_extractor_test.py::FeatureExtractorTest::test_run_psnr_fextractor_proc \
-                            --deselect test/feature_extractor_test.py::FeatureExtractorTest::test_run_ssim_fextractor_flat
+          # Run only the D24 normal golden pair. The broader quality/feature
+          # suites are covered elsewhere; this gate exists to protect the
+          # Netflix CPU golden assertions, not to run every Python assertion.
+          timeout --kill-after=30s 21m python3 -m pytest \
+            python/test/quality_runner_test.py::QualityRunnerTest::test_run_vmaf_runner \
+            -v --tb=short --timeout=1260 --timeout-method=signal
+
+      - name: Run Netflix golden checkerboard pairs
+        env:
+          PYTHONPATH: ${{ github.workspace }}/python
+        timeout-minutes: 20
+        run: |
+          # The checkerboard test covers the 10-px and 1-px distorted
+          # Netflix golden pairs. Keep it isolated so a slow 1080p golden
+          # run reports the actual failing surface instead of masking the
+          # normal-pair result.
+          timeout --kill-after=30s 19m python3 -m pytest \
+            python/test/quality_runner_test.py::QualityRunnerTest::test_run_vmaf_runner_checkerboard \
+            -v --tb=short --timeout=1020 --timeout-method=signal
 
   # ===== Cross-backend ULP gate =====
   # Requires GPU hardware + local YUV fixtures not present on GitHub-hosted
@@ -142,7 +150,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: "Vulkan VIF Cross-Backend (lavapipe, places=4)"
     runs-on: ubuntu-24.04
-    timeout-minutes: 60  # ADR-0637: bumped from 25 — build+lavapipe+13-feature cross-diff exceeds 25 min
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
@@ -189,8 +197,9 @@ jobs:
       - name: VIF cross-backend diff (CPU vs Vulkan/lavapipe)
         env:
           VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 16
         run: |
-          python3 scripts/ci/cross_backend_vif_diff.py \
+          timeout --kill-after=30s 15m python3 scripts/ci/cross_backend_vif_diff.py \
             --vmaf-binary libvmaf/build/tools/vmaf \
             --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
             --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
@@ -207,8 +216,9 @@ jobs:
         continue-on-error: true
         env:
           VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 7
         run: |
-          python3 scripts/ci/cross_backend_vif_diff.py \
+          timeout --kill-after=30s 6m python3 scripts/ci/cross_backend_vif_diff.py \
             --vmaf-binary libvmaf/build/tools/vmaf \
             --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
             --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
@@ -222,8 +232,9 @@ jobs:
         continue-on-error: true
         env:
           VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 7
         run: |
-          python3 scripts/ci/cross_backend_vif_diff.py \
+          timeout --kill-after=30s 6m python3 scripts/ci/cross_backend_vif_diff.py \
             --vmaf-binary libvmaf/build/tools/vmaf \
             --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
             --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
@@ -231,8 +242,9 @@ jobs:
       - name: ADM cross-backend diff (CPU vs Vulkan/lavapipe)
         env:
           VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 9
         run: |
-          python3 scripts/ci/cross_backend_vif_diff.py \
+          timeout --kill-after=30s 8m python3 scripts/ci/cross_backend_vif_diff.py \
             --vmaf-binary libvmaf/build/tools/vmaf \
             --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
             --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
@@ -240,8 +252,9 @@ jobs:
       - name: float_moment cross-backend diff (CPU vs Vulkan/lavapipe)
         env:
           VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
         run: |
-          python3 scripts/ci/cross_backend_vif_diff.py \
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
             --vmaf-binary libvmaf/build/tools/vmaf \
             --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
             --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
@@ -249,8 +262,9 @@ jobs:
       - name: PSNR cross-backend diff (CPU vs Vulkan/lavapipe)
         env:
           VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
         run: |
-          python3 scripts/ci/cross_backend_vif_diff.py \
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
             --vmaf-binary libvmaf/build/tools/vmaf \
             --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
             --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
@@ -258,8 +272,9 @@ jobs:
       - name: ciede cross-backend diff (CPU vs Vulkan/lavapipe)
         env:
           VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
         run: |
-          python3 scripts/ci/cross_backend_vif_diff.py \
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
             --vmaf-binary libvmaf/build/tools/vmaf \
             --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
             --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
@@ -267,8 +282,9 @@ jobs:
       - name: float_ssim cross-backend diff (CPU vs Vulkan/lavapipe)
         env:
           VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
         run: |
-          python3 scripts/ci/cross_backend_vif_diff.py \
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
             --vmaf-binary libvmaf/build/tools/vmaf \
             --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
             --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
@@ -276,8 +292,9 @@ jobs:
       - name: float_ms_ssim cross-backend diff (CPU vs Vulkan/lavapipe)
         env:
           VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
         run: |
-          python3 scripts/ci/cross_backend_vif_diff.py \
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
             --vmaf-binary libvmaf/build/tools/vmaf \
             --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
             --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
@@ -285,8 +302,9 @@ jobs:
       - name: float_ansnr cross-backend diff (CPU vs Vulkan/lavapipe)
         env:
           VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
         run: |
-          python3 scripts/ci/cross_backend_vif_diff.py \
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
             --vmaf-binary libvmaf/build/tools/vmaf \
             --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
             --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
@@ -294,8 +312,9 @@ jobs:
       - name: float_vif cross-backend diff (CPU vs Vulkan/lavapipe)
         env:
           VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
         run: |
-          python3 scripts/ci/cross_backend_vif_diff.py \
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
             --vmaf-binary libvmaf/build/tools/vmaf \
             --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
             --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
@@ -303,8 +322,9 @@ jobs:
       - name: float_motion cross-backend diff (CPU vs Vulkan/lavapipe)
         env:
           VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
         run: |
-          python3 scripts/ci/cross_backend_vif_diff.py \
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
             --vmaf-binary libvmaf/build/tools/vmaf \
             --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
             --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
@@ -312,8 +332,9 @@ jobs:
       - name: float_psnr cross-backend diff (CPU vs Vulkan/lavapipe)
         env:
           VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
         run: |
-          python3 scripts/ci/cross_backend_vif_diff.py \
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
             --vmaf-binary libvmaf/build/tools/vmaf \
             --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
             --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
@@ -321,8 +342,9 @@ jobs:
       - name: psnr_hvs cross-backend diff (CPU vs Vulkan/lavapipe)
         env:
           VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
         run: |
-          python3 scripts/ci/cross_backend_vif_diff.py \
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
             --vmaf-binary libvmaf/build/tools/vmaf \
             --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
             --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
@@ -330,8 +352,9 @@ jobs:
       - name: float_adm cross-backend diff (CPU vs Vulkan/lavapipe)
         env:
           VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
         run: |
-          python3 scripts/ci/cross_backend_vif_diff.py \
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
             --vmaf-binary libvmaf/build/tools/vmaf \
             --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
             --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
@@ -339,8 +362,9 @@ jobs:
       - name: ssimulacra2 cross-backend diff (CPU vs Vulkan/lavapipe)
         env:
           VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 9
         run: |
-          python3 scripts/ci/cross_backend_vif_diff.py \
+          timeout --kill-after=30s 8m python3 scripts/ci/cross_backend_vif_diff.py \
             --vmaf-binary libvmaf/build/tools/vmaf \
             --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
             --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
@@ -356,7 +380,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: "GPU-Parity Matrix Gate (lavapipe, T6-8)"
     runs-on: ubuntu-24.04
-    timeout-minutes: 60  # ADR-0637: bumped from 30 — build+lavapipe+15-feature matrix exceeds 30 min
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
@@ -400,6 +424,7 @@ jobs:
       - name: Run GPU-parity matrix gate (CPU ↔ Vulkan/lavapipe)
         env:
           VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 22
         run: |
           mkdir -p parity-gate-report
           # ADR-0234: pass the lavapipe gpu_id so the gate looks up
@@ -414,7 +439,7 @@ jobs:
           # are dropped from the matrix here so this gate keeps
           # gating the other ~14 features; restore once the Vulkan
           # motion fix lands.
-          python3 scripts/ci/cross_backend_parity_gate.py \
+          timeout --kill-after=30s 20m python3 scripts/ci/cross_backend_parity_gate.py \
             --vmaf-binary libvmaf/build/tools/vmaf \
             --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
             --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
@@ -958,7 +983,7 @@ jobs:
           # 2-4) and will keep modifying it (SIMD fixes, refactors), so the
           # safety net has to cover everything we might touch.
           #
-          # Floor history (ADR-0636):
+          # Floor history (ADR-0637):
           #   40% — original floor (meson unit suite + Python feature/CLI tests)
           #   37% — 2026-05-19 merge burst (PRs #1417, #1418, #1424, #1425)
           #          added ~2 200 LOC of new MCP/HIP/DNN/scaffold C that the

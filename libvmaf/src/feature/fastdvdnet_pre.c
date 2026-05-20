@@ -297,7 +297,7 @@ static const VmafOption fastdvdnet_pre_options[] = {
         FastDvdnetPreState,
         "Filesystem path to the FastDVDnet ONNX model (5-frame window 'frames' input, "
         "single-frame 'denoised' output). Overrides the VMAF_FASTDVDNET_PRE_MODEL_PATH env var."),
-    {NULL},
+    {0},
 };
 
 static const char *fastdvdnet_pre_provided_features[] = {"fastdvdnet_pre_l1_residual", NULL};

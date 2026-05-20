@@ -38,6 +38,11 @@
  *   - score_format=NULL fall-through to DEFAULT_SCORE_FORMAT.
  *   - Custom score_format ("%.3f") overrides default.
  *   - aggregate_metrics with multiple entries (comma separators).
+ *
+ * The test links against libvmaf and uses libvmaf_priv.h for the context-owned
+ * feature collector. Do not include libvmaf.c/output.c directly here: that
+ * creates duplicate external definitions and has crashed Apple ld64 + LTO
+ * builds under allocator poisoning.
  */
 
 #include <math.h>
@@ -57,6 +62,8 @@
 
 #include "feature/feature_collector.h"
 #include "libvmaf/libvmaf.h"
+#include "libvmaf_priv.h"
+#include "output.h"
 
 /* Portable temp-file-path helper. Produces a path to a freshly created (and
  * already closed) zero-byte file suitable for handing to writer APIs that
@@ -97,14 +104,6 @@ static int make_temp_path(const char *prefix, char *out_buf, size_t out_buf_sz)
 #endif
 }
 
-/* Pull output.c + libvmaf.c in directly so (a) the .gcno/.gcda sit in this
- * test's build dir and gcovr aggregates them into the coverage report, and
- * (b) we get the full `struct VmafContext` definition (the public header
- * exposes only an opaque typedef). Mirrors the test_feature_collector
- * pattern of including .c files. */
-#include "libvmaf.c"
-#include "output.c"
-
 /* Read entire FILE* (after rewind) into a malloc'd, NUL-terminated buffer.
  * Caller frees. Returns NULL on failure. Bounded scan: 64 KiB cap is plenty
  * for our synthetic collectors (largest test emits ~2 KiB). */
@@ -117,11 +116,15 @@ static char *slurp(FILE *f)
         return NULL;
     if (fseek(f, 0, SEEK_SET) != 0)
         return NULL;
-    char *buf = malloc((size_t)sz + 1);
+    const size_t file_sz = (size_t)sz;
+    char *buf = calloc(file_sz + 1u, 1u);
     if (!buf)
         return NULL;
-    size_t n = fread(buf, 1, (size_t)sz, f);
-    buf[n] = '\0';
+    size_t n = fread(buf, 1, file_sz, f);
+    if (n < file_sz && ferror(f) != 0) {
+        free(buf);
+        return NULL;
+    }
     return buf;
 }
 
@@ -154,7 +157,7 @@ static int seed_normal(VmafContext **out_vmaf)
     int err = vmaf_init(out_vmaf, cfg);
     if (err)
         return err;
-    VmafFeatureCollector *fc = (*out_vmaf)->feature_collector;
+    VmafFeatureCollector *fc = vmaf_feature_collector_get(*out_vmaf);
     /* frame 0: both features written */
     err |= seed(fc, "feat_a", 80.0, 0);
     err |= seed(fc, "feat_b", 0.5, 0);
@@ -177,7 +180,7 @@ static char *test_csv_basic()
     FILE *f = tmpfile();
     mu_assert("tmpfile failed", f);
 
-    err = vmaf_write_output_csv(vmaf->feature_collector, f, /*subsample=*/0,
+    err = vmaf_write_output_csv(vmaf_feature_collector_get(vmaf), f, /*subsample=*/0,
                                 /*score_format=*/NULL);
     mu_assert("vmaf_write_output_csv returned non-zero", !err);
 
@@ -212,7 +215,7 @@ static char *test_csv_subsample_and_custom_format()
     /* subsample=2 keeps even-indexed frames (0, 2, ...). Frame 1 is dropped
      * by the modulo guard; frame 3 is dropped too (3 % 2 != 0). Frame 0 is
      * the only survivor. Custom format "%.3f" overrides DEFAULT_SCORE_FORMAT. */
-    err = vmaf_write_output_csv(vmaf->feature_collector, f, /*subsample=*/2, "%.3f");
+    err = vmaf_write_output_csv(vmaf_feature_collector_get(vmaf), f, /*subsample=*/2, "%.3f");
     mu_assert("vmaf_write_output_csv returned non-zero", !err);
 
     char *out = slurp(f);
@@ -240,7 +243,7 @@ static char *test_sub_basic()
     FILE *f = tmpfile();
     mu_assert("tmpfile failed", f);
 
-    err = vmaf_write_output_sub(vmaf->feature_collector, f, /*subsample=*/0,
+    err = vmaf_write_output_sub(vmaf_feature_collector_get(vmaf), f, /*subsample=*/0,
                                 /*score_format=*/NULL);
     mu_assert("vmaf_write_output_sub returned non-zero", !err);
 
@@ -271,13 +274,15 @@ static char *test_xml_einval_guards()
     FILE *f = tmpfile();
     mu_assert("tmpfile failed", f);
 
-    err = vmaf_write_output_xml(NULL, vmaf->feature_collector, f, 0, 64, 64, 30.0, 1, NULL);
+    VmafFeatureCollector *fc = vmaf_feature_collector_get(vmaf);
+
+    err = vmaf_write_output_xml(NULL, fc, f, 0, 64, 64, 30.0, 1, NULL);
     mu_assert("xml: NULL vmaf must return -EINVAL", err == -EINVAL);
 
     err = vmaf_write_output_xml(vmaf, NULL, f, 0, 64, 64, 30.0, 1, NULL);
     mu_assert("xml: NULL fc must return -EINVAL", err == -EINVAL);
 
-    err = vmaf_write_output_xml(vmaf, vmaf->feature_collector, NULL, 0, 64, 64, 30.0, 1, NULL);
+    err = vmaf_write_output_xml(vmaf, fc, NULL, 0, 64, 64, 30.0, 1, NULL);
     mu_assert("xml: NULL outfile must return -EINVAL", err == -EINVAL);
 
     teardown(vmaf, f, NULL);
@@ -297,7 +302,7 @@ static char *test_xml_basic()
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("vmaf_init failed", !err);
 
-    VmafFeatureCollector *fc = vmaf->feature_collector;
+    VmafFeatureCollector *fc = vmaf_feature_collector_get(vmaf);
     err |= seed(fc, "feat_a", 80.0, 0);
     err |= seed(fc, "feat_a", 82.0, 1);
     err |= seed(fc, "feat_b", 0.5, 0);
@@ -346,7 +351,7 @@ static char *test_json_basic_and_format()
     int err = vmaf_init(&vmaf, cfg);
     mu_assert("vmaf_init failed", !err);
 
-    VmafFeatureCollector *fc = vmaf->feature_collector;
+    VmafFeatureCollector *fc = vmaf_feature_collector_get(vmaf);
     err |= seed(fc, "feat_a", 80.0, 0);
     err |= seed(fc, "feat_a", 82.0, 1);
     err |= seed(fc, "feat_b", 0.5, 0);
@@ -407,19 +412,21 @@ static char *test_json_nan_and_inf()
     mu_assert("vmaf_init failed", !err);
 
     /* Single feature, single frame, value = NaN. */
-    err = seed(vmaf->feature_collector, "feat_nan", NAN, 0);
+    VmafFeatureCollector *fc = vmaf_feature_collector_get(vmaf);
+
+    err = seed(fc, "feat_nan", NAN, 0);
     mu_assert("seed feat_nan failed", !err);
     /* Aggregate with +Inf and a normal sibling -> exercises both inf branch
      * and the trailing-comma logic between two aggregates. */
-    err |= vmaf_feature_collector_set_aggregate(vmaf->feature_collector, "agg_inf", INFINITY);
-    err |= vmaf_feature_collector_set_aggregate(vmaf->feature_collector, "agg_ok", 3.14);
+    err |= vmaf_feature_collector_set_aggregate(fc, "agg_inf", INFINITY);
+    err |= vmaf_feature_collector_set_aggregate(fc, "agg_ok", 3.14);
     mu_assert("set_aggregate failed", !err);
 
     FILE *f = tmpfile();
     mu_assert("tmpfile failed", f);
 
     /* fps=NaN -> top-level "fps": null branch in vmaf_write_output_json. */
-    err = vmaf_write_output_json(vmaf, vmaf->feature_collector, f, /*subsample=*/0,
+    err = vmaf_write_output_json(vmaf, fc, f, /*subsample=*/0,
                                  /*fps=*/NAN, /*pic_cnt=*/1, NULL);
     mu_assert("json: writer returned non-zero", !err);
 
@@ -452,7 +459,7 @@ static char *test_json_empty_collector()
     FILE *f = tmpfile();
     mu_assert("tmpfile failed", f);
 
-    err = vmaf_write_output_json(vmaf, vmaf->feature_collector, f, /*subsample=*/0,
+    err = vmaf_write_output_json(vmaf, vmaf_feature_collector_get(vmaf), f, /*subsample=*/0,
                                  /*fps=*/30.0, /*pic_cnt=*/0, NULL);
     mu_assert("json: writer returned non-zero on empty collector", !err);
 

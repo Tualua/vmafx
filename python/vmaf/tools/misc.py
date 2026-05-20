@@ -27,9 +27,9 @@ __license__ = "BSD+Patent"
 
 try:
     multiprocessing.set_start_method("fork")
-except ValueError:  # noqa, If platform does not support, just ignore
+except ValueError:  # If platform does not support, just ignore
     pass
-except RuntimeError:  # noqa, If context has already being set, just ignore
+except RuntimeError:  # If context has already being set, just ignore
     pass
 
 
@@ -591,26 +591,31 @@ def find_linear_function_parameters(p1, p2):
     """
     Find parameters of a linear function connecting first_point and second_point
 
-    >>> find_linear_function_parameters((1, 1), (0, 0))
-    Traceback (most recent call last):
-    ...
-    AssertionError: first_point coordinates need to be smaller or equal to second_point coordinates
-    >>> find_linear_function_parameters((0, 1), (0, 0))
-    Traceback (most recent call last):
-    ...
-    AssertionError: first_point coordinates need to be smaller or equal to second_point coordinates
-    >>> find_linear_function_parameters((1, 0), (0, 0))
-    Traceback (most recent call last):
-    ...
-    AssertionError: first_point coordinates need to be smaller or equal to second_point coordinates
-    >>> find_linear_function_parameters((50.0, 30.0), (50.0, 100.0))
-    Traceback (most recent call last):
-    ...
-    AssertionError: first_point and second_point cannot lie on a horizontal or vertical line
-    >>> find_linear_function_parameters((50.0, 30.0), (100.0, 30.0))
-    Traceback (most recent call last):
-    ...
-    AssertionError: first_point and second_point cannot lie on a horizontal or vertical line
+    >>> try:
+    ...     find_linear_function_parameters((1, 1), (0, 0))
+    ... except AssertionError as exc:
+    ...     print(str(exc).splitlines()[0])
+    first_point coordinates need to be smaller or equal to second_point coordinates
+    >>> try:
+    ...     find_linear_function_parameters((0, 1), (0, 0))
+    ... except AssertionError as exc:
+    ...     print(str(exc).splitlines()[0])
+    first_point coordinates need to be smaller or equal to second_point coordinates
+    >>> try:
+    ...     find_linear_function_parameters((1, 0), (0, 0))
+    ... except AssertionError as exc:
+    ...     print(str(exc).splitlines()[0])
+    first_point coordinates need to be smaller or equal to second_point coordinates
+    >>> try:
+    ...     find_linear_function_parameters((50.0, 30.0), (50.0, 100.0))
+    ... except AssertionError as exc:
+    ...     print(str(exc).splitlines()[0])
+    first_point and second_point cannot lie on a horizontal or vertical line
+    >>> try:
+    ...     find_linear_function_parameters((50.0, 30.0), (100.0, 30.0))
+    ... except AssertionError as exc:
+    ...     print(str(exc).splitlines()[0])
+    first_point and second_point cannot lie on a horizontal or vertical line
     >>> find_linear_function_parameters((50.0, 20.0), (110.0, 110.0))
     (1.5, -55.0)
     >>> a, b = find_linear_function_parameters((50.0, 30.0), (110.0, 110.0))
@@ -650,22 +655,26 @@ def piecewise_linear_mapping(x, knots):
         knots - list of (at least 2) lists with x and y coordinates [[x0, y0], [x1, y1], ...]
 
     >>> x = np.arange(0.0, 110.0)
-    >>> piecewise_linear_mapping(x, [[0, 1], [1, 2], [1, 3]])
-    Traceback (most recent call last):
-    ...
-    AssertionError: The x-coordinate of each point need to be greater that the x-coordinate of the previous point, the y-coordinate needs to be greater or equal.
-    >>> piecewise_linear_mapping(x, [[0, 0], []])
-    Traceback (most recent call last):
-    ...
-    AssertionError: Each point needs to have two coordinates [x, y]
-    >>> piecewise_linear_mapping(x, [0, 0])
-    Traceback (most recent call last):
-    ...
-    AssertionError: knots needs to be list of lists
-    >>> piecewise_linear_mapping(x, [[0, 2], [1, 1]])
-    Traceback (most recent call last):
-    ...
-    AssertionError: The x-coordinate of each point need to be greater that the x-coordinate of the previous point, the y-coordinate needs to be greater or equal.
+    >>> try:
+    ...     piecewise_linear_mapping(x, [[0, 1], [1, 2], [1, 3]])
+    ... except AssertionError as exc:
+    ...     print(str(exc).splitlines()[0])
+    The x-coordinate of each point need to be greater that the x-coordinate of the previous point, the y-coordinate needs to be greater or equal.
+    >>> try:
+    ...     piecewise_linear_mapping(x, [[0, 0], []])
+    ... except AssertionError as exc:
+    ...     print(str(exc).splitlines()[0])
+    Each point needs to have two coordinates [x, y]
+    >>> try:
+    ...     piecewise_linear_mapping(x, [0, 0])
+    ... except AssertionError as exc:
+    ...     print(str(exc).splitlines()[0])
+    knots needs to be list of lists
+    >>> try:
+    ...     piecewise_linear_mapping(x, [[0, 2], [1, 1]])
+    ... except AssertionError as exc:
+    ...     print(str(exc).splitlines()[0])
+    The x-coordinate of each point need to be greater that the x-coordinate of the previous point, the y-coordinate needs to be greater or equal.
 
     >>> knots2160p = [[0.0, -55.0], [95.0, 87.5], [105.0, 105.0], [110.0, 110.0]]
     >>> knots1080p = [[0.0, -36.66], [90.0, 83.04], [95.0, 95.0], [100.0, 100.0]]
@@ -673,18 +682,18 @@ def piecewise_linear_mapping(x, knots):
     >>> x0 = np.arange(0.0, 95.0, 0.1)
     >>> y0_true = 1.5 * x0 - 55.0
     >>> y0 = piecewise_linear_mapping(x0, knots2160p)
-    >>> np.sqrt(np.mean((y0 - y0_true)**2))
+    >>> float(np.sqrt(np.mean((y0 - y0_true)**2)))
     0.0
     >>> x1 = np.arange(0.0, 90.0, 0.1)
     >>> y1_true = 1.33 * x1 - 36.66
     >>> y1 = piecewise_linear_mapping(x1, knots1080p)
-    >>> np.sqrt(np.mean((y1 - y1_true) ** 2))
+    >>> float(np.sqrt(np.mean((y1 - y1_true) ** 2)))
     0.0
 
     >>> x0 = np.arange(95.0, 105.0, 0.1)
     >>> y0_true = 1.75 * x0 - 78.75
     >>> y0 = piecewise_linear_mapping(x0, knots2160p)
-    >>> np.sqrt(np.mean((y0 - y0_true) ** 2))
+    >>> float(np.sqrt(np.mean((y0 - y0_true) ** 2)))
     0.0
     >>> x1 = np.arange(90.0, 95.0, 0.1)
     >>> y1_true = 2.392 * x1 - 132.24
@@ -693,17 +702,17 @@ def piecewise_linear_mapping(x, knots):
 
     >>> x0 = np.arange(105.0, 110.0, 0.1)
     >>> y0 = piecewise_linear_mapping(x0, knots2160p)
-    >>> np.sqrt(np.mean((y0 - x0) ** 2))
+    >>> float(np.sqrt(np.mean((y0 - x0) ** 2)))
     0.0
     >>> x1 = np.arange(95.0, 100.0, 0.1)
     >>> y1 = piecewise_linear_mapping(x1, knots1080p)
-    >>> np.sqrt(np.mean((y1 - x1) ** 2))
+    >>> float(np.sqrt(np.mean((y1 - x1) ** 2)))
     0.0
     >>> knots_single = [[10.0, 10.0], [50.0, 60.0]]
     >>> x0 = np.arange(0.0, 110.0, 0.1)
     >>> y0 = piecewise_linear_mapping(x0, knots_single)
     >>> y0_true = 1.25 * x0 - 2.5
-    >>> np.sqrt(np.mean((y0 - y0_true) ** 2))
+    >>> float(np.sqrt(np.mean((y0 - y0_true) ** 2)))
     0.0
     """
     assert len(knots) > 1
@@ -782,7 +791,7 @@ def linear_func(x, a, b):
 def linear_fit(x, y):
     """
     >>> fit = linear_fit([0, 1], [0, 1])
-    >>> (fit[0][0], fit[0][1])
+    >>> tuple(map(float, fit[0]))
     (1.0, 0.0)
     """
     assert isinstance(x, (list, tuple, np.ndarray)), "x must be a list, tuple, or a numpy array"

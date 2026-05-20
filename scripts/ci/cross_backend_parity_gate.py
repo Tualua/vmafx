@@ -285,6 +285,13 @@ FEATURE_ALIASES: dict[str, tuple[str, str]] = {
     "float_ms_ssim_lcs": ("float_ms_ssim", "enable_lcs=true"),
 }
 
+BACKEND_EXTRACTOR_ALIASES: dict[tuple[str, str], str] = {
+    # ADR-0586: Vulkan's integer ADM extractor was renamed to the
+    # canonical "integer_adm_vulkan"; the CPU/CUDA/SYCL names stayed
+    # "adm", "adm_cuda", and "adm_sycl" for compatibility.
+    ("adm", "vulkan"): "integer_adm_vulkan",
+}
+
 
 def feature_extractor_name(feature: str, backend: str) -> str:
     """Map (feature, backend) to the extractor name `--feature` accepts.
@@ -295,6 +302,9 @@ def feature_extractor_name(feature: str, backend: str) -> str:
     """
 
     suffix = BACKEND_SUFFIX[backend]
+    aliased = BACKEND_EXTRACTOR_ALIASES.get((feature, backend))
+    if aliased is not None:
+        return aliased
     if feature in FEATURE_ALIASES:
         base_name, opt_string = FEATURE_ALIASES[feature]
         return f"{base_name}{suffix}={opt_string}"

@@ -32,7 +32,7 @@ typedef struct {
     int flags;
 } MetaStruct;
 
-static char *test_predict_score_at_index()
+static char *test_predict_score_at_index(void)
 {
     int err;
 
@@ -74,7 +74,7 @@ void set_meta(void *data, VmafMetadata *metadata)
     vmaf_dictionary_set(meta->metadata, key, value, meta->flags);
 }
 
-static char *test_propagate_metadata()
+static char *test_propagate_metadata(void)
 {
     int err;
 
@@ -155,7 +155,7 @@ static char *test_propagate_metadata()
     return NULL;
 }
 
-static char *test_find_linear_function_parameters()
+static char *test_find_linear_function_parameters(void)
 {
     int err;
 
@@ -221,7 +221,7 @@ static char *test_find_linear_function_parameters()
     return NULL;
 }
 
-static char *test_piecewise_linear_mapping()
+static char *test_piecewise_linear_mapping(void)
 {
     int err;
 
@@ -300,7 +300,7 @@ static char *test_piecewise_linear_mapping()
     return NULL;
 }
 
-char *run_tests()
+char *run_tests(void)
 {
     mu_run_test(test_predict_score_at_index);
     mu_run_test(test_find_linear_function_parameters);

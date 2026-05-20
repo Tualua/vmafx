@@ -87,7 +87,7 @@ cleanup:
     free(thread_data->dist);
 }
 
-static char *test_framesync_create_process_and_destroy()
+static char *test_framesync_create_process_and_destroy(void)
 {
     int err;
     int frame_index;
@@ -143,7 +143,7 @@ static char *test_framesync_create_process_and_destroy()
     return NULL;
 }
 
-char *run_tests()
+char *run_tests(void)
 {
     mu_run_test(test_framesync_create_process_and_destroy);
     return NULL;

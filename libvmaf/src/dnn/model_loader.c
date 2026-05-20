@@ -105,6 +105,11 @@ static bool has_suffix(const char *s, const char *suf)
     return strcmp(s + ls - lu, suf) == 0;
 }
 
+static bool json_is_space(char c)
+{
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+}
+
 int vmaf_dnn_sniff_kind(const char *path)
 {
     if (!path)
@@ -134,7 +139,7 @@ static char *extract_string(const char *doc, const char *key)
     if (!p)
         return NULL;
     p++;
-    while (*p && isspace((unsigned char)*p))
+    while (*p && json_is_space(*p))
         p++;
     if (*p != '"')
         return NULL;
@@ -172,7 +177,7 @@ static int extract_string_array(const char *doc, const char *key, char **out, si
     if (!p)
         return -ENOENT;
     p++;
-    while (*p && isspace((unsigned char)*p))
+    while (*p && json_is_space(*p))
         p++;
     if (*p != '[')
         return -EINVAL;
@@ -180,7 +185,7 @@ static int extract_string_array(const char *doc, const char *key, char **out, si
 
     size_t cnt = 0u;
     while (*p) {
-        while (*p && isspace((unsigned char)*p))
+        while (*p && json_is_space(*p))
             p++;
         if (*p == ']') {
             *out_n = cnt;
@@ -202,7 +207,7 @@ static int extract_string_array(const char *doc, const char *key, char **out, si
         s[len] = '\0';
         out[cnt++] = s;
         p = q + 1;
-        while (*p && isspace((unsigned char)*p))
+        while (*p && json_is_space(*p))
             p++;
         if (*p == ',') {
             ++p;
@@ -236,7 +241,7 @@ static int extract_float_array(const char *doc, const char *key, float *out, siz
     if (!p)
         return -ENOENT;
     p++;
-    while (*p && isspace((unsigned char)*p))
+    while (*p && json_is_space(*p))
         p++;
     if (*p != '[')
         return -EINVAL;
@@ -244,7 +249,7 @@ static int extract_float_array(const char *doc, const char *key, float *out, siz
 
     size_t cnt = 0u;
     while (*p) {
-        while (*p && isspace((unsigned char)*p))
+        while (*p && json_is_space(*p))
             p++;
         if (*p == ']') {
             *out_n = cnt;
@@ -259,7 +264,7 @@ static int extract_float_array(const char *doc, const char *key, float *out, siz
             return -ERANGE;
         out[cnt++] = (float)v;
         p = endp;
-        while (*p && isspace((unsigned char)*p))
+        while (*p && json_is_space(*p))
             p++;
         if (*p == ',') {
             ++p;
@@ -287,7 +292,7 @@ static int extract_int(const char *doc, const char *key, int *out)
     if (!p)
         return -ENOENT;
     p++;
-    while (*p && isspace((unsigned char)*p))
+    while (*p && json_is_space(*p))
         p++;
     errno = 0;
     char *endp = NULL;
@@ -320,6 +325,11 @@ int vmaf_dnn_sidecar_load(const char *onnx_path, VmafModelSidecar *out)
         memcpy(sidecar + len, ".json", 6);
     }
 
+    struct stat st;
+    if (stat(sidecar, &st) == 0 && S_ISREG(st.st_mode) && st.st_size > 0 &&
+        (size_t)st.st_size > (size_t)(1u << 20))
+        return -EFBIG;
+
     FILE *f = fopen(sidecar, "rb");
     if (!f)
         return -errno;
@@ -337,7 +347,7 @@ int vmaf_dnn_sidecar_load(const char *onnx_path, VmafModelSidecar *out)
         (void)fclose(f);
         return -EIO;
     }
-    char *buf = (char *)malloc(sz + 1u);
+    char *buf = (char *)calloc(sz + 1u, 1u);
     if (!buf) {
         (void)fclose(f);
         return -ENOMEM;
@@ -831,7 +841,7 @@ static int find_bundle_for_onnx(const char *registry_doc, const char *onnx_basen
         if (!colon)
             return -ENOENT;
         const char *p = colon + 1;
-        while (*p && isspace((unsigned char)*p))
+        while (*p && json_is_space(*p))
             p++;
         if (*p != '"')
             return -EBADMSG;
@@ -853,7 +863,7 @@ static int find_bundle_for_onnx(const char *registry_doc, const char *onnx_basen
             if (!bcolon)
                 return -EBADMSG;
             const char *bp = bcolon + 1;
-            while (*bp && isspace((unsigned char)*bp))
+            while (*bp && json_is_space(*bp))
                 bp++;
             if (*bp != '"')
                 return -EBADMSG;
@@ -895,7 +905,7 @@ static int slurp_registry(const char *registry_path, char **out_buf)
         (void)fclose(f);
         return -EIO;
     }
-    char *buf = (char *)malloc(sz + 1u);
+    char *buf = (char *)calloc(sz + 1u, 1u);
     if (!buf) {
         (void)fclose(f);
         return -ENOMEM;
@@ -906,7 +916,6 @@ static int slurp_registry(const char *registry_path, char **out_buf)
         free(buf);
         return -EIO;
     }
-    buf[sz] = '\0';
     *out_buf = buf;
     return 0;
 }

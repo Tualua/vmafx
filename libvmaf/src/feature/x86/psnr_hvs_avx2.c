@@ -57,7 +57,14 @@
  * x86_avx2_sources cflags) to enable vector FMAs in the DCT, but
  * `calc_psnrhvs_avx2`'s scalar float accumulators must stay
  * uncontracted to preserve byte-for-byte parity with scalar. */
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunknown-pragmas"
+#endif
 #pragma STDC FP_CONTRACT OFF
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 typedef int32_t od_coeff;
 
@@ -388,7 +395,7 @@ static void compute_vars(psnr_hvs_block *b)
 
 /* DCT + AC-only mask accumulation; `sqrt` is double-precision to match
  * scalar. d_mask > s_mask fold mirrors the scalar reference. */
-static void compute_masks(psnr_hvs_block *b, const float mask[8][8])
+static void compute_masks(psnr_hvs_block *b, float mask[8][8])
 {
     od_bin_fdct8x8_avx2(b->dct_s, 8, b->dct_s, 8);
     od_bin_fdct8x8_avx2(b->dct_d, 8, b->dct_d, 8);
@@ -430,8 +437,8 @@ static void compute_masks(psnr_hvs_block *b, const float mask[8][8])
  * summation tree (IEEE-754 add is non-associative) and break byte-for-byte
  * parity with the scalar reference's inline accumulation at
  * third_party/xiph/psnr_hvs.c:355. */
-static void accumulate_error(const psnr_hvs_block *b, const float mask[8][8], float csf[8][8],
-                             float *ret, int *pixels)
+static void accumulate_error(const psnr_hvs_block *b, float mask[8][8], float csf[8][8], float *ret,
+                             int *pixels)
 {
     for (int i = 0; i < 8; i++) {
         for (int j = 0; j < 8; j++) {

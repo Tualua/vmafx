@@ -448,6 +448,11 @@ An Asset is the most basic unit with enough information to perform a task on a m
 
 - The frame range on which to perform a task (i.e. `dis_start_end_frame` and `ref_start_end_frame`)
 - At what resolution to perform a task (e.g. a video frame is upscaled with a `resampling_type` method to the resolution specified by `quality_width_height` before feature extraction)
+- Optional FFmpeg preprocessing filters in `asset_dict`. Shared keys such as
+  `crop_cmd`, `pad_cmd`, `fps_cmd`, `format_cmd`, `gblur_cmd`, `eq_cmd`,
+  `lutyuv_cmd`, and `yadif_cmd` apply to both reference and distorted inputs;
+  target-specific keys such as `ref_fps_cmd` or `dis_fps_cmd` override the
+  shared value for one side.
 
 Asset extends the `WorkdirEnabled` mixin, which comes with a thread-safe working directory to facilitate parallel execution.
 

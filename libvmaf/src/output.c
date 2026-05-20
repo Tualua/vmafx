@@ -178,9 +178,10 @@ int vmaf_write_output_xml(VmafContext *vmaf, VmafFeatureCollector *fc, FILE *out
 
     fprintf(outfile, "</VMAF>\n");
 
+    const int flush_err = fflush(outfile);
     vmaf_thread_locale_pop(locale_state);
 
-    return ferror(outfile) ? -EIO : 0;
+    return (flush_err != 0 || ferror(outfile)) ? -EIO : 0;
 }
 
 static void json_write_frame_metric(FILE *outfile, const char *name, double value, const char *sf,
@@ -373,9 +374,10 @@ int vmaf_write_output_json(VmafContext *vmaf, VmafFeatureCollector *fc, FILE *ou
 
     fprintf(outfile, "}\n");
 
+    const int flush_err = fflush(outfile);
     vmaf_thread_locale_pop(locale_state);
 
-    return ferror(outfile) ? -EIO : 0;
+    return (flush_err != 0 || ferror(outfile)) ? -EIO : 0;
 }
 
 int vmaf_write_output_csv(VmafFeatureCollector *fc, FILE *outfile, unsigned subsample,
@@ -417,9 +419,10 @@ int vmaf_write_output_csv(VmafFeatureCollector *fc, FILE *outfile, unsigned subs
         fprintf(outfile, "\n");
     }
 
+    const int flush_err = fflush(outfile);
     vmaf_thread_locale_pop(locale_state);
 
-    return ferror(outfile) ? -EIO : 0;
+    return (flush_err != 0 || ferror(outfile)) ? -EIO : 0;
 }
 
 int vmaf_write_output_sub(VmafFeatureCollector *fc, FILE *outfile, unsigned subsample,
@@ -456,8 +459,9 @@ int vmaf_write_output_sub(VmafFeatureCollector *fc, FILE *outfile, unsigned subs
         fprintf(outfile, "\n");
     }
 
+    const int flush_err = fflush(outfile);
     vmaf_thread_locale_pop(locale_state);
 
-    return ferror(outfile) ? -EIO : 0;
+    return (flush_err != 0 || ferror(outfile)) ? -EIO : 0;
 }
 // NOLINTEND(cert-err33-c)

@@ -27,7 +27,14 @@
  * instead of `base + p * w*h`.
  *
  * Bit-exact contract: ADR-0161 / ADR-0242 — per-lane scalar cbrtf,
- * `#pragma STDC FP_CONTRACT OFF`, compiled with `-ffp-contract=off`.
+ * `#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunknown-pragmas"
+#endif
+#pragma STDC FP_CONTRACT OFF
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif`, compiled with `-ffp-contract=off`.
  */
 
 #include <arm_neon.h>
@@ -40,7 +47,14 @@
 #include "feature/ssimulacra2_math.h"
 #include "ssimulacra2_host_neon.h"
 
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunknown-pragmas"
+#endif
 #pragma STDC FP_CONTRACT OFF
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 static const float kM00 = 0.30f;
 static const float kM02 = 0.078f;

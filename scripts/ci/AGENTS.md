@@ -65,6 +65,9 @@ behaviour.
    gate scripts (single source of truth lives in the parity gate;
    the per-feature script mirrors it). Add the workflow step to
    `tests-and-quality-gates.yml`.
+   Existing compatibility names are not always `feature + suffix`:
+   ADR-0586 renamed Vulkan integer ADM to `integer_adm_vulkan`, so both
+   scripts must keep `BACKEND_EXTRACTOR_ALIASES[("adm", "vulkan")]`.
 2. New backend → extend `BACKEND_SUFFIX`, `BACKEND_DEVICE_FLAG`,
    `BACKEND_DEFAULT_DEVICE` in both scripts.
 3. New GPU arch → add a row to `gpu_ulp_calibration.yaml`. Mark it

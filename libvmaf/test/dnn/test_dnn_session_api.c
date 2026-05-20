@@ -551,6 +551,52 @@ static char *test_session_run_null_output_data(void)
     return NULL;
 }
 
+static char *test_session_run_rejects_null_vectors(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    VmafDnnSession *sess = NULL;
+    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, NULL);
+    if (rc == -ENOENT)
+        return NULL;
+    mu_assert("smoke model open ok", rc == 0);
+
+    float buf[16] = {0};
+    int64_t shape[4] = {1, 1, 4, 4};
+    VmafDnnInput in = {.name = NULL, .data = buf, .shape = shape, .rank = 4};
+    VmafDnnOutput out = {.name = NULL, .data = buf, .capacity = 16, .written = 0};
+    rc = vmaf_dnn_session_run(sess, NULL, 1, &out, 1);
+    mu_assert("NULL input vector rejected", rc == -EINVAL);
+    rc = vmaf_dnn_session_run(sess, &in, 1, NULL, 1);
+    mu_assert("NULL output vector rejected", rc == -EINVAL);
+
+    vmaf_dnn_session_close(sess);
+    return NULL;
+}
+
+static char *test_session_run_generic_success(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    VmafDnnSession *sess = NULL;
+    int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, NULL);
+    if (rc == -ENOENT)
+        return NULL;
+    mu_assert("smoke model open ok", rc == 0);
+
+    float in_buf[16] = {0};
+    float out_buf[16] = {0};
+    int64_t shape[4] = {1, 1, 4, 4};
+    VmafDnnInput in = {.name = NULL, .data = in_buf, .shape = shape, .rank = 4};
+    VmafDnnOutput out = {.name = NULL, .data = out_buf, .capacity = 16, .written = 0};
+    rc = vmaf_dnn_session_run(sess, &in, 1, &out, 1);
+    mu_assert("generic session run succeeds", rc == 0);
+    mu_assert("generic session run reports output count", out.written == 16u);
+
+    vmaf_dnn_session_close(sess);
+    return NULL;
+}
+
 static char *test_session_run_undersized_output(void)
 {
     /* Drives copy_output_tensor() -ENOSPC branch (lines 391, 646-649). The
@@ -636,6 +682,31 @@ static char *test_session_open_rocm_falls_through(void)
     return NULL;
 }
 
+static char *test_session_open_explicit_ep_selectors_fall_back(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    const VmafDnnDevice devices[] = {
+        VMAF_DNN_DEVICE_CUDA,         VMAF_DNN_DEVICE_OPENVINO,     VMAF_DNN_DEVICE_OPENVINO_NPU,
+        VMAF_DNN_DEVICE_OPENVINO_CPU, VMAF_DNN_DEVICE_OPENVINO_GPU, VMAF_DNN_DEVICE_COREML,
+        VMAF_DNN_DEVICE_COREML_ANE,   VMAF_DNN_DEVICE_COREML_GPU,   VMAF_DNN_DEVICE_COREML_CPU,
+    };
+    const size_t n = sizeof(devices) / sizeof(devices[0]);
+    for (size_t i = 0; i < n; ++i) {
+        VmafDnnSession *sess = NULL;
+        VmafDnnConfig cfg = {.device = devices[i], .device_index = 1, .threads = 1};
+        int rc = vmaf_dnn_session_open(&sess, SMOKE_FP32_MODEL, &cfg);
+        if (rc == -ENOENT)
+            return NULL;
+        mu_assert("explicit EP selector opens or CPU-falls-back", rc == 0);
+        mu_assert("session populated", sess != NULL);
+        const char *ep = vmaf_dnn_session_attached_ep(sess);
+        mu_assert("attached EP string reported", ep != NULL && ep[0] != '\0');
+        vmaf_dnn_session_close(sess);
+    }
+    return NULL;
+}
+
 static char *test_attached_ep_after_session_close(void)
 {
     /* Drives the success path of vmaf_dnn_session_attached_ep (line 231). */
@@ -681,9 +752,12 @@ char *run_tests(void)
     mu_run_test(test_session_run_negative_dim);
     mu_run_test(test_session_run_null_input_data);
     mu_run_test(test_session_run_null_output_data);
+    mu_run_test(test_session_run_rejects_null_vectors);
+    mu_run_test(test_session_run_generic_success);
     mu_run_test(test_session_run_undersized_output);
     mu_run_test(test_session_run_named_io_round_trip);
     mu_run_test(test_session_open_threads_config);
     mu_run_test(test_session_open_rocm_falls_through);
+    mu_run_test(test_session_open_explicit_ep_selectors_fall_back);
     return NULL;
 }

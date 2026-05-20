@@ -9,11 +9,11 @@ class ListStats(object):
     >>> test_list = [1, 2, 3, 4, 5, 11, 12, 13, 14, 15]
     >>> "%0.4f" % ListStats.total_variation(test_list)
     '1.5556'
-    >>> np.mean(test_list)
+    >>> float(np.mean(test_list))
     8.0
-    >>> np.median(test_list)
+    >>> float(np.median(test_list))
     8.0
-    >>> ListStats.lp_norm(test_list, 1.0)
+    >>> float(ListStats.lp_norm(test_list, 1.0))
     8.0
     >>> "%0.4f" % ListStats.lp_norm(test_list, 3.0)
     '10.5072'
@@ -25,11 +25,11 @@ class ListStats(object):
     '1.90'
     >>> "%0.2f" % ListStats.perc20(test_list)
     '2.80'
-    >>> ListStats.nonemean([None, None, 1, 2])
+    >>> float(ListStats.nonemean([None, None, 1, 2]))
     1.5
-    >>> ListStats.nonemean([3, 4, 1, 2])
+    >>> float(ListStats.nonemean([3, 4, 1, 2]))
     2.5
-    >>> ListStats.nonemean([None, None, None])
+    >>> float(ListStats.nonemean([None, None, None]))
     nan
     >>> "%0.4f" % ListStats.harmonic_mean(test_list)
     '4.5223'

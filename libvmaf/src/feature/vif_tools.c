@@ -326,6 +326,9 @@ void vif_statistic_s(const float *mu1, const float *mu2, const float *xx_filt, c
 void vif_filter1d_s(const float *f, const float *src, float *dst, float *tmpbuf, int w, int h,
                     int src_stride, int dst_stride, int fwidth)
 {
+#if !ARCH_X86
+    (void)tmpbuf;
+#endif
 
     int src_px_stride = src_stride / sizeof(float);
     int dst_px_stride = dst_stride / sizeof(float);
@@ -403,6 +406,9 @@ void vif_filter1d_s(const float *f, const float *src, float *dst, float *tmpbuf,
 void vif_filter1d_sq_s(const float *f, const float *src, float *dst, float *tmpbuf, int w, int h,
                        int src_stride, int dst_stride, int fwidth)
 {
+#if !ARCH_X86
+    (void)tmpbuf;
+#endif
 
     int src_px_stride = src_stride / sizeof(float);
     int dst_px_stride = dst_stride / sizeof(float);
@@ -475,6 +481,9 @@ void vif_filter1d_xy_s(const float *f, const float *src1, const float *src2, flo
                        float *tmpbuf, int w, int h, int src1_stride, int src2_stride,
                        int dst_stride, int fwidth)
 {
+#if !ARCH_X86
+    (void)tmpbuf;
+#endif
 
     int src1_px_stride = src1_stride / sizeof(float);
     int src2_px_stride = src2_stride / sizeof(float);

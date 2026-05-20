@@ -27,6 +27,7 @@
 #include "ort_backend_internal.h"
 
 #define SMOKE_FP32_MODEL "model/tiny/smoke_v0.onnx"
+#define SMOKE_FP16_MODEL "model/tiny/smoke_fp16_v0.onnx"
 
 /* ---------- fp32 ↔ fp16 conversion --------------------------------- */
 
@@ -262,6 +263,110 @@ static char *test_ort_input_shape_null_args(void)
     return NULL;
 }
 
+static char *test_ort_input_shape_at_bounds_and_success(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    int64_t shape[4] = {0};
+    size_t rank = 0;
+    VmafOrtSession *sess = NULL;
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, NULL);
+    if (rc == -ENOENT)
+        return NULL;
+    mu_assert("input_shape_at: open succeeds", rc == 0);
+
+    mu_assert("input_shape_at NULL sess",
+              vmaf_ort_input_shape_at(NULL, 0u, shape, 4u, &rank) == -EINVAL);
+    mu_assert("input_shape_at NULL out_shape",
+              vmaf_ort_input_shape_at(sess, 0u, NULL, 4u, &rank) == -EINVAL);
+    mu_assert("input_shape_at NULL out_rank",
+              vmaf_ort_input_shape_at(sess, 0u, shape, 4u, NULL) == -EINVAL);
+    mu_assert("input_shape_at max_rank=0",
+              vmaf_ort_input_shape_at(sess, 0u, shape, 0u, &rank) == -EINVAL);
+    mu_assert("input_shape_at slot out of range",
+              vmaf_ort_input_shape_at(sess, 99u, shape, 4u, &rank) == -ERANGE);
+    mu_assert("input_shape_at max_rank too small",
+              vmaf_ort_input_shape_at(sess, 0u, shape, 1u, &rank) == -ERANGE);
+
+    rc = vmaf_ort_input_shape_at(sess, 0u, shape, 4u, &rank);
+    mu_assert("input_shape_at success", rc == 0);
+    mu_assert("input_shape_at rank 4", rank == 4u);
+    mu_assert("input_shape_at dims match smoke model",
+              shape[0] == 1 && shape[1] == 1 && shape[2] == 4 && shape[3] == 4);
+
+    rank = 0;
+    memset(shape, 0, sizeof(shape));
+    rc = vmaf_ort_input_shape(sess, shape, 4u, &rank);
+    mu_assert("input_shape success", rc == 0);
+    mu_assert("input_shape rank 4", rank == 4u);
+    mu_assert("input_shape max_rank too small",
+              vmaf_ort_input_shape(sess, shape, 1u, &rank) == -ERANGE);
+
+    vmaf_ort_close(sess);
+    return NULL;
+}
+
+static char *test_ort_infer_guards_and_smoke_paths(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    float input[16] = {0.0f};
+    float output[16] = {0.0f};
+    int64_t shape[4] = {1, 1, 4, 4};
+    size_t written = 0;
+
+    mu_assert("infer NULL sess",
+              vmaf_ort_infer(NULL, input, shape, 4u, output, 16u, &written) == -EINVAL);
+
+    VmafOrtSession *sess = NULL;
+    int rc = vmaf_ort_open(&sess, SMOKE_FP32_MODEL, NULL);
+    if (rc == -ENOENT)
+        return NULL;
+    mu_assert("infer: open succeeds", rc == 0);
+    mu_assert("infer NULL input",
+              vmaf_ort_infer(sess, NULL, shape, 4u, output, 16u, &written) == -EINVAL);
+    mu_assert("infer NULL shape",
+              vmaf_ort_infer(sess, input, NULL, 4u, output, 16u, &written) == -EINVAL);
+    mu_assert("infer NULL output",
+              vmaf_ort_infer(sess, input, shape, 4u, NULL, 16u, &written) == -EINVAL);
+
+    rc = vmaf_ort_infer(sess, input, shape, 4u, output, 16u, &written);
+    mu_assert("infer fp32 smoke succeeds", rc == 0);
+    mu_assert("infer fp32 written count", written == 16u);
+    written = 0;
+    rc = vmaf_ort_infer(sess, input, shape, 4u, output, 1u, &written);
+    mu_assert("infer undersized output reports ENOSPC", rc == -ENOSPC);
+    mu_assert("infer undersized output required count", written == 16u);
+
+    vmaf_ort_close(sess);
+    return NULL;
+}
+
+static char *test_ort_infer_fp16_input_output_path(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    float input[4] = {0.0f};
+    float output[4] = {0.0f};
+    int64_t shape[4] = {1, 1, 2, 2};
+    size_t written = 0;
+    VmafOrtSession *sess = NULL;
+    VmafDnnConfig cfg = {.device = VMAF_DNN_DEVICE_CPU, .fp16_io = true};
+    int rc = vmaf_ort_open(&sess, SMOKE_FP16_MODEL, &cfg);
+    if (rc == -ENOENT)
+        return NULL;
+    mu_assert("fp16 smoke model open succeeds", rc == 0);
+
+    for (size_t i = 0; i < 4u; ++i)
+        input[i] = (float)i / 16.0f;
+    rc = vmaf_ort_infer(sess, input, shape, 4u, output, 4u, &written);
+    mu_assert("fp16 infer succeeds", rc == 0);
+    mu_assert("fp16 infer written count", written == 4u);
+
+    vmaf_ort_close(sess);
+    return NULL;
+}
+
 static char *test_ort_run_null_guards(void)
 {
     if (!vmaf_dnn_available())
@@ -317,6 +422,9 @@ char *run_tests(void)
     mu_run_test(test_ort_close_null_session);
     mu_run_test(test_ort_io_count_null_args);
     mu_run_test(test_ort_input_shape_null_args);
+    mu_run_test(test_ort_input_shape_at_bounds_and_success);
+    mu_run_test(test_ort_infer_guards_and_smoke_paths);
+    mu_run_test(test_ort_infer_fp16_input_output_path);
     mu_run_test(test_ort_run_null_guards);
     mu_run_test(test_ort_open_null_args);
     return NULL;

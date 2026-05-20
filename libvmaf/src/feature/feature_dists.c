@@ -189,7 +189,7 @@ static const VmafOption dists_sq_options[] = {
     VMAF_TINY_AI_MODEL_PATH_OPTION(
         DistsSqState, "Filesystem path to the DISTS-Sq ONNX model (two-input, 'ref'/'dist'). "
                       "Overrides the VMAF_DISTS_SQ_MODEL_PATH env var."),
-    {NULL},
+    {0},
 };
 
 static const char *dists_sq_provided_features[] = {"dists_sq", NULL};

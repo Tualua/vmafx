@@ -68,8 +68,17 @@ and teardown.
   of `unlink(path)` so `<unistd.h>` doesn't have to be pulled in on
   Windows. To reach `vmaf_feature_score_pooled` the test must
   use a real `VmafContext` (the writers require it for the
-  `pooled_metrics` block); pull it in via `#include "libvmaf.c"` so
-  `struct VmafContext` becomes complete. **Pooled-metrics invariant**:
+  `pooled_metrics` block); obtain the owned collector through
+  `libvmaf/src/libvmaf_priv.h::vmaf_feature_collector_get()` and link
+  against libvmaf. Do not include `libvmaf.c` / `output.c` directly from
+  `test_output.c`: Apple ld64 + LTO has resolved that duplicate-definition
+  pattern incorrectly under allocator poisoning, causing macOS writer-test
+  SIGSEGVs. `test_output` still needs private-symbol access, so its Meson
+  target disables LTO on Darwin only; Linux clang must keep LTO enabled at
+  link time because `src/libvmaf.a` contains LLVM bitcode in clang builds.
+  Public ABI tests that do not need private symbols must link
+  `libvmaf_public_link` so `default_library=both` exercises the shared library
+  instead of Apple ld64's static-LTO path. **Pooled-metrics invariant**:
   for the writer to emit per-feature mean/min/max/harmonic_mean
   entries, *every* index in `[0, pic_cnt)` must have a written value
   for every feature — `vmaf_feature_score_pooled` returns `-EAGAIN`

@@ -20,6 +20,7 @@
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "config.h"
@@ -77,23 +78,24 @@ static char *slurp(const char *path, size_t *len)
         return NULL;
     }
     const long sz = ftell(f);
-    if (sz < 0 || fseek(f, 0, SEEK_SET) != 0) {
+    const long max_slurp_size = 1L << 20;
+    if (sz < 0 || sz > max_slurp_size || fseek(f, 0, SEEK_SET) != 0) {
         (void)fclose(f);
         return NULL;
     }
-    char *buf = malloc((size_t)sz + 1);
+    const size_t file_sz = (size_t)sz;
+    char *buf = calloc(file_sz + 1u, 1u);
     if (!buf) {
         (void)fclose(f);
         return NULL;
     }
-    const size_t got = fread(buf, 1, (size_t)sz, f);
+    const size_t got = fread(buf, 1, file_sz, f);
     (void)fclose(f);
-    if (got != (size_t)sz) {
+    if (got != file_sz) {
         free(buf);
         return NULL;
     }
-    buf[sz] = '\0';
-    *len = (size_t)sz;
+    *len = file_sz;
     return buf;
 }
 
@@ -114,7 +116,7 @@ static int append_fmt(char *dst, size_t dst_sz, size_t *off, const char *fmt, ..
     return 0;
 }
 
-static char *test_json_model()
+static char *test_json_model(void)
 {
     int err = 0;
 
@@ -141,7 +143,7 @@ static char *test_json_model()
 }
 
 #if VMAF_BUILT_IN_MODELS
-static char *test_built_in_model()
+static char *test_built_in_model(void)
 {
     int err = 0;
 
@@ -166,7 +168,7 @@ static char *test_built_in_model()
 }
 #endif
 
-static char *test_model_load_and_destroy()
+static char *test_model_load_and_destroy(void)
 {
     int err;
 
@@ -190,7 +192,7 @@ static char *test_model_load_and_destroy()
     return NULL;
 }
 
-static char *test_model_feature()
+static char *test_model_feature(void)
 {
     int err;
 
@@ -211,6 +213,7 @@ static char *test_model_feature()
               !model->feature[0].opts_dict);
 
     err = vmaf_model_feature_overload(model, "adm", dict);
+    mu_assert("problem during vmaf_model_feature_overload", !err);
 
     mu_assert("feature 0 should be \"VMAF_integer_feature_adm2_score\"",
               !strcmp("VMAF_integer_feature_adm2_score", model->feature[0].name));
@@ -249,6 +252,7 @@ static char *test_model_feature()
               !strcmp(e2->key, "adm_enhancement_gain_limit") && !strcmp(e2->val, "1.1"));
 
     err = vmaf_model_feature_overload(model, "adm", dict_neg);
+    mu_assert("problem during vmaf_model_feature_overload", !err);
 
     mu_assert("feature 0 should be \"VMAF_integer_feature_adm2_score\"",
               !strcmp("VMAF_integer_feature_adm2_score", model->feature[0].name));
@@ -267,7 +271,7 @@ static char *test_model_feature()
     return NULL;
 }
 
-static char *test_model_check_default_behavior_unset_flags()
+static char *test_model_check_default_behavior_unset_flags(void)
 {
     int err;
 
@@ -293,7 +297,7 @@ static char *test_model_check_default_behavior_unset_flags()
     return NULL;
 }
 
-static char *test_model_check_default_behavior_set_flags()
+static char *test_model_check_default_behavior_set_flags(void)
 {
     int err;
 
@@ -318,7 +322,7 @@ static char *test_model_check_default_behavior_set_flags()
     return NULL;
 }
 
-static char *test_model_set_flags()
+static char *test_model_set_flags(void)
 {
     int err;
 
@@ -988,7 +992,7 @@ static char *test_version_next(void)
     return NULL;
 }
 
-char *run_tests()
+char *run_tests(void)
 {
     mu_run_test(test_json_model);
 #if VMAF_BUILT_IN_MODELS

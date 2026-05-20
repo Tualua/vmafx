@@ -26,8 +26,9 @@ Filter widths above this one will not use the AVX path for convolutions.
 
 /*
  * All functions listed here expect a SYMMETRICAL filter.
- * All array arguments must be 32-byte aligned (AVX2 path) or
- * 64-byte aligned (AVX-512 path; see ADR-0504).
+ * All array arguments must be at least 32-byte aligned. AVX-512 paths use
+ * unaligned memory ops for source/tmp rows because the project allocator
+ * contract is MAX_ALIGN == 32, not 64.
  *
  * filter - convolution kernel
  * filter_width - convolution width (including symmetric side)

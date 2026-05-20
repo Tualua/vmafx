@@ -10,7 +10,7 @@ No training-data assertions are made.
 
 Retrieved 2026-05-19 from <https://zed.dev/docs> (navigation audit) and linked sub-pages.
 
-**Latest stable version:** 1.2.6, released 2026-05-15.  
+**Latest stable version:** 1.2.6, released 2026-05-15.
 Source: <https://zed.dev/releases>, retrieved 2026-05-19.
 
 ### 1.1 AI — agent panel and external agents
@@ -24,7 +24,7 @@ can run in parallel against different projects. Three built-in tool profiles exi
 (no tools, plain chat). Custom profiles are supported.
 
 **External agents** — Claude Agent, Gemini CLI, Codex CLI, and GitHub Copilot — are
-integrated via the **Agent Client Protocol (ACP)**.  
+integrated via the **Agent Client Protocol (ACP)**.
 Source: <https://zed.dev/docs/ai/external-agents>, retrieved 2026-05-19.
 
 The first time a Claude Agent thread is created, Zed auto-installs
@@ -66,7 +66,7 @@ agents (GitHub Copilot Workspace, etc.) and the Claude Code CLI directly.
 
 ### 1.3 ACP — Agent Client Protocol
 
-Source: <https://zed.dev/docs/ai/external-agents>, retrieved 2026-05-19.  
+Source: <https://zed.dev/docs/ai/external-agents>, retrieved 2026-05-19.
 Note: `https://zed.dev/docs/acp` returns HTTP 404 — the canonical documentation
 is at the external agents page above.
 

@@ -251,7 +251,7 @@ static const VmafOption mobilesal_options[] = {
         MobilesalState, "Filesystem path to the MobileSal saliency ONNX model (single input "
                         "'input', single output 'saliency_map'). Overrides the "
                         "VMAF_MOBILESAL_MODEL_PATH env var."),
-    {NULL},
+    {0},
 };
 
 static const char *mobilesal_provided_features[] = {"saliency_mean", NULL};

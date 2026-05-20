@@ -304,6 +304,14 @@ static void copy_picture_data(VmafPicture *pic, video_input_ycbcr ycbcr, video_i
     }
 }
 
+static int finish_unread_picture(VmafPicture *pic, int fetch_ret)
+{
+    const int err_unref = vmaf_picture_unref(pic);
+    if (err_unref)
+        (void)fprintf(stderr, "\nproblem during vmaf_picture_unref (unread)\n");
+    return fetch_ret == 0 ? 1 : -1;
+}
+
 static int fetch_picture(VmafContext *vmaf, video_input *vid, VmafPicture *pic, int depth)
 {
     int ret;
@@ -321,13 +329,13 @@ static int fetch_picture(VmafContext *vmaf, video_input *vid, VmafPicture *pic, 
     (void)depth;
     ret = video_input_fetch_into_vmaf_picture(vid, pic);
     if (ret < 1)
-        return !ret;
+        return finish_unread_picture(pic, ret);
 #else
     video_input_ycbcr ycbcr;
     ret = video_input_fetch_frame(vid, ycbcr, NULL);
     if (ret < 1)
-        return !ret;
-    copy_picture_data(pic, ycbcr, &info, info.depth);
+        return finish_unread_picture(pic, ret);
+    copy_picture_data(pic, ycbcr, &info, depth);
 #endif
     return 0;
 }
@@ -1019,6 +1027,19 @@ static unsigned run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_in
         int ret1 = fetch_picture(vmaf, vid_ref, &pic_ref, common_bitdepth);
         int ret2 = fetch_picture(vmaf, vid_dist, &pic_dist, common_bitdepth);
 
+        if (ret1 || ret2) {
+            if (!ret1) {
+                int err_unref = vmaf_picture_unref(&pic_ref);
+                if (err_unref)
+                    (void)fprintf(stderr, "\nproblem during vmaf_picture_unref\n");
+            }
+            if (!ret2) {
+                int err_unref = vmaf_picture_unref(&pic_dist);
+                if (err_unref)
+                    (void)fprintf(stderr, "\nproblem during vmaf_picture_unref\n");
+            }
+        }
+
         if (ret1 && ret2) {
             break;
         } else if (ret1 < 0 || ret2 < 0) {
@@ -1026,15 +1047,9 @@ static unsigned run_frame_loop(VmafContext *vmaf, video_input *vid_ref, video_in
             break;
         } else if (ret1) {
             (void)fprintf(stderr, "\n\"%s\" ended before \"%s\".\n", c->path_ref, c->path_dist);
-            int err_unref = vmaf_picture_unref(&pic_dist);
-            if (err_unref)
-                (void)fprintf(stderr, "\nproblem during vmaf_picture_unref\n");
             break;
         } else if (ret2) {
             (void)fprintf(stderr, "\n\"%s\" ended before \"%s\".\n", c->path_dist, c->path_ref);
-            int err_unref = vmaf_picture_unref(&pic_ref);
-            if (err_unref)
-                (void)fprintf(stderr, "\nproblem during vmaf_picture_unref\n");
             break;
         }
 

@@ -486,10 +486,6 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
     // these are only used with five-frame window
     const unsigned blur_idx_3 =
         s->motion_five_frame_window ? (index + 3) % buffer_size : 0; // i - 2 (five-frame window)
-    // NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores): the `blur_idx_4` slot is reserved for the five-frame window scoring path that the analyzer's 3-frame trace cannot reach; keeping the ring-buffer index symmetric with `blur_idx_0..3` documents the invariant.
-    const unsigned blur_idx_4 =
-        s->motion_five_frame_window ? (index + 4) % buffer_size : 0; // i - 1 (five-frame window)
-
     const ptrdiff_t y_src_stride = ref_pic->bpc == 8 ? ref_pic->stride[0] : ref_pic->stride[0] / 2;
 
     s->y_convolution(ref_pic->data[0], s->tmp.data[0], ref_pic->w[0], ref_pic->h[0], y_src_stride,

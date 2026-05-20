@@ -126,6 +126,11 @@ Runtime directly.
   (Power-of-10 / no-VLA). Increasing it has no behavioural cost
   but lower-bounds the per-context memory; do not shrink it
   below 6 (canonical-6).
+- **Oversized sidecars are rejected before stdio reads.**
+  `vmaf_dnn_sidecar_load()` performs a `stat()` size check before
+  `fopen()` / `fseek()` / `ftell()`. Keep that metadata-only guard:
+  the oversized-sidecar regression expects `-EFBIG` without entering
+  the normal JSON read path.
 - **Pre-seeded "unknown" codec one-hot** in
   `dnn_attach_feature_vector`: when a rank-2 model declares a
   second input, the scratch buffer's third-from-last slot is set

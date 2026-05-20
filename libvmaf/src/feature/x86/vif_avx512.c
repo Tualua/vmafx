@@ -46,8 +46,10 @@
  */
 #if defined(_MSC_VER)
 #define VMAF_NOINLINE_NOCLONE __declspec(noinline)
-#elif defined(__GNUC__) || defined(__clang__)
+#elif defined(__GNUC__) && !defined(__clang__)
 #define VMAF_NOINLINE_NOCLONE __attribute__((noinline, noclone))
+#elif defined(__clang__)
+#define VMAF_NOINLINE_NOCLONE __attribute__((noinline))
 #else
 #define VMAF_NOINLINE_NOCLONE
 #endif

@@ -73,7 +73,6 @@
 #define ADM_NUM_SCALES 4
 #define ADM_NUM_BANDS 3
 #define ADM_NUM_STAGES 4
-#define ADM_BORDER_FACTOR 0.1
 #define ADM_DIV_LOOKUP_SIZE 65537
 #define ADM_ACCUM_SLOTS_PER_WG 6 /* csf_h,csf_v,csf_d, cm_h,cm_v,cm_d */
 

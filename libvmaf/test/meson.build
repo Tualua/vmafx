@@ -15,6 +15,9 @@ gpu_all_deps = [
   metal_deps,
 ]
 
+libvmaf_public_link = get_option('default_library') == 'both' ? libvmaf.get_shared_lib() : libvmaf
+test_output_lto_override = host_machine.system() == 'darwin' ? ['b_lto=false'] : []
+
 test_context = executable('test_context',
     ['test.c', 'test_context.c'],
     include_directories : [libvmaf_inc, test_inc],
@@ -44,17 +47,18 @@ test_feature_collector = executable('test_feature_collector',
 
 # Coverage follow-up to PR #313 (R3 from
 # docs/development/coverage-gap-analysis-2026-05-02.md): exercise
-# libvmaf/src/output.c writers (XML / JSON / CSV / SUB) end-to-end through
-# tmpfile-backed FILE* sinks. test_output.c #include's output.c directly so
-# the per-translation-unit .gcno lands in this test's build dir and gcovr
-# picks it up. Mirrors the test_feature_collector wiring (link_with libvmaf
-# + libsvm objects) for the supporting symbols.
+# libvmaf/src/output.c writers (XML / JSON / CSV / SUB) end-to-end.
+#
+# macOS/ld64 invariant: test_output must link one libvmaf definition only.
+# Do not include libvmaf.c/output.c directly while also linking libvmaf.a;
+# Apple LTO has resolved that duplicate-symbol pattern incorrectly under
+# allocator poisoning and crashed the writer tests.
 test_output = executable('test_output',
-    ['test.c', 'test_output.c', '../src/log.c', '../src/predict.c', '../src/metadata_handler.c'],
+    ['test.c', 'test_output.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/feature/'), include_directories('../src')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, gpu_all_deps],
-    objects : libsvm_static_lib.extract_all_objects(recursive: true),
+    override_options : test_output_lto_override,
 )
 
 test_log = executable('test_log',
@@ -71,7 +75,7 @@ test_log = executable('test_log',
 test_public_api_score = executable('test_public_api_score',
     ['test.c', 'test_public_api_score.c'],
     include_directories : [libvmaf_inc, test_inc],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    link_with : libvmaf_public_link,
     dependencies : [pthread_dependency, thread_lib, gpu_all_deps],
 )
 

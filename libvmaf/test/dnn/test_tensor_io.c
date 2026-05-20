@@ -352,6 +352,45 @@ static char *test_plane16_12bit_clamps(void)
     return NULL;
 }
 
+static char *test_plane16_f16_roundtrip(void)
+{
+    const uint16_t src[4] = {0, 341, 682, 1023};
+    uint16_t tensor[4] = {0};
+    uint16_t dst[4] = {0};
+    int err =
+        vmaf_tensor_from_plane16(src, 2u * sizeof(uint16_t), 2, 2, 10, VMAF_TENSOR_LAYOUT_NCHW,
+                                 VMAF_TENSOR_DTYPE_F16, NULL, NULL, tensor);
+    mu_assert("from_plane16 f16 failed", err == 0);
+    err = vmaf_tensor_to_plane16(tensor, VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F16, 2, 2, 10,
+                                 NULL, NULL, dst, 2u * sizeof(uint16_t));
+    mu_assert("to_plane16 f16 failed", err == 0);
+    mu_assert("0 survives f16 plane path", dst[0] == 0);
+    mu_assert("max survives f16 plane path", dst[3] == 1023);
+    return NULL;
+}
+
+static char *test_plane16_rejects_more_bad_args(void)
+{
+    const uint16_t src[4] = {0};
+    float tensor[4] = {0};
+    uint16_t dst[4] = {0};
+    float zero = 0.0f;
+    int err =
+        vmaf_tensor_from_plane16(src, 2u * sizeof(uint16_t), 2, 2, 10, VMAF_TENSOR_LAYOUT_NCHW,
+                                 VMAF_TENSOR_DTYPE_F32, NULL, &zero, tensor);
+    mu_assert("from_plane16 zero std rejected", err == -EINVAL);
+    err = vmaf_tensor_from_plane16(src, 2u * sizeof(uint16_t), 2, 2, 10, VMAF_TENSOR_LAYOUT_NCHW,
+                                   (VmafTensorDType)99, NULL, NULL, tensor);
+    mu_assert("from_plane16 unknown dtype rejected", err == -EINVAL);
+    err = vmaf_tensor_to_plane16(tensor, VMAF_TENSOR_LAYOUT_NCHW, (VmafTensorDType)99, 2, 2, 10,
+                                 NULL, NULL, dst, 2u * sizeof(uint16_t));
+    mu_assert("to_plane16 unknown dtype rejected", err == -EINVAL);
+    err = vmaf_tensor_to_plane16(tensor, VMAF_TENSOR_LAYOUT_NCHW, VMAF_TENSOR_DTYPE_F32, 2, 2, 10,
+                                 NULL, NULL, dst, sizeof(uint16_t));
+    mu_assert("to_plane16 short stride rejected", err == -EINVAL);
+    return NULL;
+}
+
 /* --- ADR-0550 — auto-resize for NR tiny-model NCHW dispatch --- */
 
 static char *test_resize_identity_matches_legacy(void)
@@ -446,6 +485,42 @@ static char *test_resize_nearest_downsample(void)
     return NULL;
 }
 
+static char *test_resize_bicubic_and_f16_paths(void)
+{
+    uint8_t src[9] = {0, 30, 60, 90, 120, 150, 180, 210, 240};
+    uint16_t dst[16] = {0};
+    int rc = vmaf_tensor_from_luma_resize(src, 3u, 3, 3, 4, 4, VMAF_TENSOR_LAYOUT_NCHW,
+                                          VMAF_TENSOR_DTYPE_F16, NULL, NULL,
+                                          VMAF_TINY_RESIZE_BICUBIC, dst);
+    mu_assert("bicubic f16 resize failed", rc == 0);
+    mu_assert("bicubic f16 writes nonzero interior", dst[5] != 0u);
+    mu_assert("bicubic f16 writes nonzero tail", dst[15] != 0u);
+    return NULL;
+}
+
+static char *test_resize_zero_std_rejected(void)
+{
+    uint8_t src[4] = {0, 64, 128, 255};
+    float dst[16] = {0};
+    float zero = 0.0f;
+    int rc = vmaf_tensor_from_luma_resize(src, 2u, 2, 2, 4, 4, VMAF_TENSOR_LAYOUT_NCHW,
+                                          VMAF_TENSOR_DTYPE_F32, NULL, &zero,
+                                          VMAF_TINY_RESIZE_BILINEAR, dst);
+    mu_assert("resize zero std rejected", rc == -EINVAL);
+    return NULL;
+}
+
+static char *test_resize_unknown_dtype_rejected_after_sampling(void)
+{
+    uint8_t src[4] = {0, 64, 128, 255};
+    float dst[16] = {0};
+    int rc = vmaf_tensor_from_luma_resize(src, 2u, 2, 2, 4, 4, VMAF_TENSOR_LAYOUT_NCHW,
+                                          (VmafTensorDType)99, NULL, NULL,
+                                          VMAF_TINY_RESIZE_BILINEAR, dst);
+    mu_assert("resize unknown dtype rejected after dispatch", rc == -EINVAL);
+    return NULL;
+}
+
 static char *test_resize_rejects_bad_args(void)
 {
     uint8_t src[4] = {0};
@@ -485,11 +560,16 @@ char *run_tests(void)
     mu_run_test(test_plane16_10bit_roundtrip);
     mu_run_test(test_plane16_rejects_bad_bpc);
     mu_run_test(test_plane16_12bit_clamps);
+    mu_run_test(test_plane16_f16_roundtrip);
+    mu_run_test(test_plane16_rejects_more_bad_args);
     /* ADR-0550 — auto-resize for NR tiny-model NCHW dispatch. */
     mu_run_test(test_resize_identity_matches_legacy);
     mu_run_test(test_resize_disabled_returns_einval);
     mu_run_test(test_resize_bilinear_2x_upsample);
     mu_run_test(test_resize_nearest_downsample);
+    mu_run_test(test_resize_bicubic_and_f16_paths);
+    mu_run_test(test_resize_zero_std_rejected);
+    mu_run_test(test_resize_unknown_dtype_rejected_after_sampling);
     mu_run_test(test_resize_rejects_bad_args);
     return NULL;
 }

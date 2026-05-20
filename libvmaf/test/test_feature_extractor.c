@@ -29,7 +29,7 @@
 #include "picture.h"
 #include "libvmaf/picture.h"
 
-static char *test_get_feature_extractor_by_name_and_feature_name()
+static char *test_get_feature_extractor_by_name_and_feature_name(void)
 {
     VmafFeatureExtractor *fex;
     fex = vmaf_get_feature_extractor_by_name("");
@@ -51,7 +51,7 @@ static char *test_get_feature_extractor_by_name_and_feature_name()
     return NULL;
 }
 
-static char *test_feature_extractor_context_pool()
+static char *test_feature_extractor_context_pool(void)
 {
     int err = 0;
 
@@ -84,7 +84,7 @@ static char *test_feature_extractor_context_pool()
     return NULL;
 }
 
-static char *test_feature_extractor_flush()
+static char *test_feature_extractor_flush(void)
 {
     int err = 0;
 
@@ -132,7 +132,7 @@ static char *test_feature_extractor_flush()
     return NULL;
 }
 
-static char *test_feature_extractor_initialization_options()
+static char *test_feature_extractor_initialization_options(void)
 {
     int err = 0;
 
@@ -298,7 +298,7 @@ static char *test_feature_extractor_list_no_duplicates(void)
     return NULL;
 }
 
-char *run_tests()
+char *run_tests(void)
 {
     mu_run_test(test_get_feature_extractor_by_name_and_feature_name);
     mu_run_test(test_feature_extractor_context_pool);

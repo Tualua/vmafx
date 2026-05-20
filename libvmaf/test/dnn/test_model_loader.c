@@ -956,6 +956,162 @@ static char *test_codec_block_fill_crf_clamp(void)
     return NULL;
 }
 
+static char *test_codec_block_fill_preset_tables(void)
+{
+    static const char *VOCAB[] = {"libx264",    "libx265",    "libsvtav1",  "libvvenc",
+                                  "libvpx-vp9", "h264_nvenc", "hevc_nvenc", "av1_nvenc",
+                                  "h264_qsv",   "hevc_qsv",   "av1_qsv",    "unknown"};
+    float buf[14] = {0};
+    int rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libx265", "placebo", 0);
+    mu_assert("x265 placebo ok", rc == 0);
+    mu_assert("x265 placebo preset = 1", buf[12] > 0.999f && buf[12] < 1.001f);
+
+    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libsvtav1", "13", 0);
+    mu_assert("svtav1 numeric preset ok", rc == 0);
+    mu_assert("svtav1 preset clamped to 1", buf[12] > 0.999f && buf[12] < 1.001f);
+
+    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libvvenc", "slower", 0);
+    mu_assert("vvenc slower ok", rc == 0);
+    mu_assert("vvenc slower preset", buf[12] > 0.888f && buf[12] < 0.890f);
+
+    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libvpx-vp9", "best", 0);
+    mu_assert("vp9 best ok", rc == 0);
+    mu_assert("vp9 best preset = 1", buf[12] > 0.999f && buf[12] < 1.001f);
+
+    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "h264_nvenc", "p7", 0);
+    mu_assert("nvenc p7 ok", rc == 0);
+    mu_assert("nvenc p7 preset = 1", buf[12] > 0.999f && buf[12] < 1.001f);
+
+    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "hevc_qsv", "veryslow", 0);
+    mu_assert("qsv veryslow ok", rc == 0);
+    mu_assert("qsv veryslow preset", buf[12] > 0.888f && buf[12] < 0.890f);
+
+    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libx264", "ultrafast", 0);
+    mu_assert("x264 ultrafast ok", rc == 0);
+    mu_assert("x264 ultrafast preset", buf[12] < 0.001f);
+    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libx264", "superfast", 0);
+    mu_assert("x264 superfast ok", rc == 0);
+    mu_assert("x264 superfast preset", buf[12] > 0.110f && buf[12] < 0.112f);
+    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libx264", "veryfast", 0);
+    mu_assert("x264 veryfast ok", rc == 0);
+    mu_assert("x264 veryfast preset", buf[12] > 0.221f && buf[12] < 0.223f);
+    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libx264", "faster", 0);
+    mu_assert("x264 faster ok", rc == 0);
+    mu_assert("x264 faster preset", buf[12] > 0.332f && buf[12] < 0.334f);
+    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libx264", "fast", 0);
+    mu_assert("x264 fast ok", rc == 0);
+    mu_assert("x264 fast preset", buf[12] > 0.443f && buf[12] < 0.445f);
+    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libx264", "slow", 0);
+    mu_assert("x264 slow ok", rc == 0);
+    mu_assert("x264 slow preset", buf[12] > 0.666f && buf[12] < 0.668f);
+    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libx264", "slower", 0);
+    mu_assert("x264 slower ok", rc == 0);
+    mu_assert("x264 slower preset", buf[12] > 0.777f && buf[12] < 0.779f);
+    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libx264", "veryslow", 0);
+    mu_assert("x264 veryslow ok", rc == 0);
+    mu_assert("x264 veryslow preset", buf[12] > 0.888f && buf[12] < 0.890f);
+
+    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libvvenc", "faster", 0);
+    mu_assert("vvenc faster ok", rc == 0);
+    mu_assert("vvenc faster preset", buf[12] > 0.110f && buf[12] < 0.112f);
+    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libvvenc", "fast", 0);
+    mu_assert("vvenc fast ok", rc == 0);
+    mu_assert("vvenc fast preset", buf[12] > 0.332f && buf[12] < 0.334f);
+    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libvvenc", "medium", 0);
+    mu_assert("vvenc medium ok", rc == 0);
+    mu_assert("vvenc medium preset", buf[12] > 0.555f && buf[12] < 0.556f);
+    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libvvenc", "slow", 0);
+    mu_assert("vvenc slow ok", rc == 0);
+    mu_assert("vvenc slow preset", buf[12] > 0.777f && buf[12] < 0.779f);
+
+    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libvpx-vp9", "realtime", 0);
+    mu_assert("vp9 realtime ok", rc == 0);
+    mu_assert("vp9 realtime preset", buf[12] < 0.001f);
+    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "libvpx-vp9", "good", 0);
+    mu_assert("vp9 good ok", rc == 0);
+    mu_assert("vp9 good preset", buf[12] > 0.555f && buf[12] < 0.556f);
+
+    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "h264_nvenc", "p1", 0);
+    mu_assert("nvenc p1 ok", rc == 0);
+    mu_assert("nvenc p1 preset", buf[12] < 0.001f);
+    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "h264_nvenc", "p2", 0);
+    mu_assert("nvenc p2 ok", rc == 0);
+    mu_assert("nvenc p2 preset", buf[12] > 0.221f && buf[12] < 0.223f);
+    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "h264_nvenc", "p3", 0);
+    mu_assert("nvenc p3 ok", rc == 0);
+    mu_assert("nvenc p3 preset", buf[12] > 0.332f && buf[12] < 0.334f);
+    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "h264_nvenc", "p4", 0);
+    mu_assert("nvenc p4 ok", rc == 0);
+    mu_assert("nvenc p4 preset", buf[12] > 0.555f && buf[12] < 0.556f);
+    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "h264_nvenc", "p5", 0);
+    mu_assert("nvenc p5 ok", rc == 0);
+    mu_assert("nvenc p5 preset", buf[12] > 0.666f && buf[12] < 0.668f);
+    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "h264_nvenc", "p6", 0);
+    mu_assert("nvenc p6 ok", rc == 0);
+    mu_assert("nvenc p6 preset", buf[12] > 0.777f && buf[12] < 0.779f);
+
+    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "h264_qsv", "veryfast", 0);
+    mu_assert("qsv veryfast ok", rc == 0);
+    mu_assert("qsv veryfast preset", buf[12] > 0.221f && buf[12] < 0.223f);
+    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "h264_qsv", "faster", 0);
+    mu_assert("qsv faster ok", rc == 0);
+    mu_assert("qsv faster preset", buf[12] > 0.332f && buf[12] < 0.334f);
+    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "h264_qsv", "fast", 0);
+    mu_assert("qsv fast ok", rc == 0);
+    mu_assert("qsv fast preset", buf[12] > 0.443f && buf[12] < 0.445f);
+    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "h264_qsv", "medium", 0);
+    mu_assert("qsv medium ok", rc == 0);
+    mu_assert("qsv medium preset", buf[12] > 0.555f && buf[12] < 0.556f);
+    rc = vmaf_dnn_codec_block_fill(buf, 14u, VOCAB, 12u, "h264_qsv", "slow", 0);
+    mu_assert("qsv slow ok", rc == 0);
+    mu_assert("qsv slow preset", buf[12] > 0.666f && buf[12] < 0.668f);
+    return NULL;
+}
+
+static char *test_codec_block_fill_unknown_presets_default(void)
+{
+    static const char *VOCAB[] = {"libx264",   "libsvtav1", "libvvenc", "libvpx-vp9",
+                                  "av1_nvenc", "av1_qsv",   "unknown"};
+    float buf[9] = {0};
+    int rc = vmaf_dnn_codec_block_fill(buf, 9u, VOCAB, 7u, "libx264", "not-a-preset", 0);
+    mu_assert("x264 unknown preset ok", rc == 0);
+    mu_assert("x264 unknown preset defaults medium", buf[7] > 0.555f && buf[7] < 0.556f);
+
+    rc = vmaf_dnn_codec_block_fill(buf, 9u, VOCAB, 7u, "libsvtav1", "notnumeric", 0);
+    mu_assert("svtav1 unknown preset ok", rc == 0);
+    mu_assert("svtav1 unknown preset defaults medium", buf[7] > 0.555f && buf[7] < 0.556f);
+
+    rc = vmaf_dnn_codec_block_fill(buf, 9u, VOCAB, 7u, "libvvenc", "not-a-preset", 0);
+    mu_assert("vvenc unknown preset ok", rc == 0);
+    mu_assert("vvenc unknown preset defaults medium", buf[7] > 0.555f && buf[7] < 0.556f);
+
+    rc = vmaf_dnn_codec_block_fill(buf, 9u, VOCAB, 7u, "libvpx-vp9", "not-a-deadline", 0);
+    mu_assert("vp9 unknown preset ok", rc == 0);
+    mu_assert("vp9 unknown preset defaults medium", buf[7] > 0.555f && buf[7] < 0.556f);
+
+    rc = vmaf_dnn_codec_block_fill(buf, 9u, VOCAB, 7u, "av1_nvenc", "p9", 0);
+    mu_assert("nvenc unknown preset ok", rc == 0);
+    mu_assert("nvenc unknown preset defaults medium", buf[7] > 0.555f && buf[7] < 0.556f);
+
+    rc = vmaf_dnn_codec_block_fill(buf, 9u, VOCAB, 7u, "av1_qsv", "not-a-preset", 0);
+    mu_assert("qsv unknown preset ok", rc == 0);
+    mu_assert("qsv unknown preset defaults medium", buf[7] > 0.555f && buf[7] < 0.556f);
+    return NULL;
+}
+
+static char *test_codec_block_fill_rejects_bad_args(void)
+{
+    static const char *VOCAB[] = {"libx264", "unknown"};
+    float buf[4] = {0};
+    int rc = vmaf_dnn_codec_block_fill(NULL, 4u, VOCAB, 2u, "libx264", "medium", 28);
+    mu_assert("NULL buf rejected", rc == -EINVAL);
+    rc = vmaf_dnn_codec_block_fill(buf, 4u, NULL, 2u, "libx264", "medium", 28);
+    mu_assert("NULL vocab rejected", rc == -EINVAL);
+    rc = vmaf_dnn_codec_block_fill(buf, 4u, VOCAB, 0u, "libx264", "medium", 28);
+    mu_assert("empty vocab rejected", rc == -EINVAL);
+    return NULL;
+}
+
 /* ADR-0519: vmaf_dnn_codec_block_fill — wrong buf_len returns -EINVAL. */
 static char *test_codec_block_fill_bad_len(void)
 {
@@ -1010,6 +1166,9 @@ char *run_tests(void)
     mu_run_test(test_codec_block_fill_null_codec_is_ok);
     mu_run_test(test_codec_block_fill_h264_alias);
     mu_run_test(test_codec_block_fill_crf_clamp);
+    mu_run_test(test_codec_block_fill_preset_tables);
+    mu_run_test(test_codec_block_fill_unknown_presets_default);
+    mu_run_test(test_codec_block_fill_rejects_bad_args);
     mu_run_test(test_codec_block_fill_bad_len);
     return NULL;
 }

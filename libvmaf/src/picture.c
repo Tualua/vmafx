@@ -79,13 +79,6 @@ static int pool_release_picture(VmafPicture *pic, void *cookie)
     return 0;
 }
 
-static int default_release_picture(VmafPicture *pic, void *cookie)
-{
-    (void)cookie;
-    aligned_free(pic->data[0]);
-    return 0;
-}
-
 int vmaf_picture_set_release_callback(VmafPicture *pic, void *cookie,
                                       int (*release_picture)(VmafPicture *pic, void *cookie))
 {

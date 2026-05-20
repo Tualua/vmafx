@@ -23,10 +23,12 @@
 
 #include <errno.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #ifndef _WIN32
+#include <fcntl.h>
 #include <unistd.h>
 #endif
 
@@ -43,6 +45,68 @@
  * folds symbolic batch to 1; attach must succeed even though
  * ORT reports `in_shape[0] == -1`. */
 #define SMOKE_SYMBATCH_MODEL "model/tiny/smoke_v0_symbolic_batch.onnx"
+/* Rank-5 temporal model fixture. It opens in ORT, then vmaf_use_tiny_model()
+ * rejects it at the attach-time shape gate because the public tiny-model
+ * frame path supports rank-2 feature vectors and rank-4 NCHW images only. */
+#define RANK5_MODEL "model/tiny/transnet_v2.onnx"
+
+#ifndef _WIN32
+static const unsigned char kAllowedOnnx[] = {0x3A, 0x08, 0x0A, 0x06, 0x22,
+                                             0x04, 'C',  'o',  'n',  'v'};
+
+static int write_file_600(const char *path, const unsigned char *data, size_t len)
+{
+    const int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (fd < 0)
+        return -1;
+    const ssize_t w = write(fd, data, len);
+    const int rc = close(fd);
+    if (w != (ssize_t)len || rc != 0)
+        return -1;
+    return 0;
+}
+
+static int copy_file_600(const char *src, const char *dst)
+{
+    const int in_fd = open(src, O_RDONLY);
+    if (in_fd < 0)
+        return -1;
+    const int out_fd = open(dst, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (out_fd < 0) {
+        (void)close(in_fd);
+        return -1;
+    }
+
+    unsigned char buf[4096];
+    int rc = 0;
+    for (;;) {
+        const ssize_t n = read(in_fd, buf, sizeof(buf));
+        if (n == 0)
+            break;
+        if (n < 0) {
+            rc = -1;
+            break;
+        }
+        ssize_t off = 0;
+        while (off < n) {
+            const ssize_t w = write(out_fd, buf + off, (size_t)(n - off));
+            if (w <= 0) {
+                rc = -1;
+                break;
+            }
+            off += w;
+        }
+        if (rc != 0)
+            break;
+    }
+
+    if (close(out_fd) != 0)
+        rc = -1;
+    if (close(in_fd) != 0)
+        rc = -1;
+    return rc;
+}
+#endif
 
 /* Helper: allocate a minimal VmafContext (no features, no threads). */
 static VmafContext *alloc_ctx(void)
@@ -117,6 +181,121 @@ static char *test_rejects_nonexistent_path(void)
     return NULL;
 }
 
+static char *test_codec_context_and_resize_reject_bad_args(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    int rc = vmaf_dnn_set_codec_context(NULL, "libx264", "medium", 23);
+    mu_assert("codec context NULL ctx rejected", rc == -EINVAL);
+    rc = vmaf_dnn_set_resize_mode(NULL, VMAF_DNN_RESIZE_BILINEAR);
+    mu_assert("resize mode NULL ctx rejected", rc == -EINVAL);
+
+    VmafContext *ctx = alloc_ctx();
+    mu_assert("vmaf_init must succeed", ctx != NULL);
+    rc = vmaf_dnn_set_resize_mode(ctx, (VmafDnnResizeMode)99);
+    mu_assert("invalid resize mode rejected", rc == -EINVAL);
+    rc = vmaf_dnn_set_codec_context(ctx, "libx264", "medium", 23);
+    mu_assert("codec context without attached codec-aware model rejected", rc < 0);
+    rc = vmaf_dnn_set_resize_mode(ctx, VMAF_DNN_RESIZE_BILINEAR);
+    mu_assert("resize mode accepted on live ctx", rc == 0);
+    (void)vmaf_close(ctx);
+    return NULL;
+}
+
+#ifndef _WIN32
+static char *test_rejects_oversized_sidecar_before_ort_open(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    if (access(SMOKE_FP32_MODEL, R_OK) != 0)
+        return NULL;
+    char tmpl[] = "/tmp/vmaf-use-tiny-sidecar-XXXXXX";
+    int fd = mkstemp(tmpl);
+    mu_assert("mkstemp failed", fd >= 0);
+    (void)close(fd);
+
+    char onnx[1024];
+    char sidecar[1024];
+    (void)snprintf(onnx, sizeof onnx, "%s.onnx", tmpl);
+    (void)snprintf(sidecar, sizeof sidecar, "%s.json", tmpl);
+    mu_assert("copy smoke onnx failed", copy_file_600(SMOKE_FP32_MODEL, onnx) == 0);
+
+    unsigned char chunk[4096];
+    memset(chunk, ' ', sizeof(chunk));
+    fd = open(sidecar, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    mu_assert("open sidecar failed", fd >= 0);
+    for (size_t i = 0; i < 257u; ++i) {
+        mu_assert("write sidecar chunk failed",
+                  write(fd, chunk, sizeof(chunk)) == (ssize_t)sizeof(chunk));
+    }
+    (void)close(fd);
+
+    VmafContext *ctx = alloc_ctx();
+    mu_assert("vmaf_init must succeed", ctx != NULL);
+    int rc = vmaf_use_tiny_model(ctx, onnx, NULL);
+    mu_assert("oversized sidecar rejected before ORT open", rc == -EFBIG);
+    (void)vmaf_close(ctx);
+
+    (void)remove(sidecar);
+    (void)remove(onnx);
+    (void)remove(tmpl);
+    return NULL;
+}
+
+static char *test_valid_scanner_invalid_ort_model_closes_session(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    char tmpl[] = "/tmp/vmaf-use-tiny-invalid-XXXXXX";
+    int fd = mkstemp(tmpl);
+    mu_assert("mkstemp failed", fd >= 0);
+    (void)close(fd);
+
+    char onnx[1024];
+    (void)snprintf(onnx, sizeof onnx, "%s.onnx", tmpl);
+    mu_assert("write onnx failed", write_file_600(onnx, kAllowedOnnx, sizeof(kAllowedOnnx)) == 0);
+
+    VmafContext *ctx = alloc_ctx();
+    mu_assert("vmaf_init must succeed", ctx != NULL);
+    int rc = vmaf_use_tiny_model(ctx, onnx, NULL);
+    mu_assert("protobuf-shaped but invalid ORT model rejected", rc < 0);
+    (void)vmaf_close(ctx);
+
+    (void)remove(onnx);
+    (void)remove(tmpl);
+    return NULL;
+}
+
+static char *test_invalid_ort_model_frees_loaded_sidecar(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+    char tmpl[] = "/tmp/vmaf-use-tiny-sidecar-cleanup-XXXXXX";
+    int fd = mkstemp(tmpl);
+    mu_assert("mkstemp failed", fd >= 0);
+    (void)close(fd);
+
+    char onnx[1024];
+    char sidecar[1024];
+    (void)snprintf(onnx, sizeof onnx, "%s.onnx", tmpl);
+    (void)snprintf(sidecar, sizeof sidecar, "%s.json", tmpl);
+    mu_assert("write onnx failed", write_file_600(onnx, kAllowedOnnx, sizeof(kAllowedOnnx)) == 0);
+    static const unsigned char json[] = "{\"kind\":\"nr\",\"name\":\"cleanup_probe\"}\n";
+    mu_assert("write sidecar failed", write_file_600(sidecar, json, sizeof(json) - 1u) == 0);
+
+    VmafContext *ctx = alloc_ctx();
+    mu_assert("vmaf_init must succeed", ctx != NULL);
+    int rc = vmaf_use_tiny_model(ctx, onnx, NULL);
+    mu_assert("invalid ORT model with sidecar rejected", rc < 0);
+    (void)vmaf_close(ctx);
+
+    (void)remove(sidecar);
+    (void)remove(onnx);
+    (void)remove(tmpl);
+    return NULL;
+}
+#endif
+
 /* --- happy path (enabled build + smoke fixture present) ------------------- */
 
 static char *test_happy_path_smoke_model(void)
@@ -177,6 +356,27 @@ static char *test_attach_accepts_symbolic_batch_rank4(void)
     return NULL;
 }
 
+static char *test_rank5_model_closes_session_after_shape_reject(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+
+#ifndef _WIN32
+    if (access(RANK5_MODEL, R_OK) != 0)
+        return NULL;
+#endif
+
+    VmafContext *ctx = alloc_ctx();
+    mu_assert("vmaf_init must succeed", ctx != NULL);
+
+    int rc = vmaf_use_tiny_model(ctx, RANK5_MODEL, NULL);
+    mu_assert("rank-5 model rejected at tiny attach", rc < 0);
+
+    rc = vmaf_close(ctx);
+    mu_assert("vmaf_close after rank-5 reject must return 0", rc == 0);
+    return NULL;
+}
+
 /* -------------------------------------------------------------------------- */
 
 char *run_tests(void)
@@ -185,7 +385,14 @@ char *run_tests(void)
     mu_run_test(test_rejects_null_ctx);
     mu_run_test(test_rejects_null_path);
     mu_run_test(test_rejects_nonexistent_path);
+    mu_run_test(test_codec_context_and_resize_reject_bad_args);
+#ifndef _WIN32
+    mu_run_test(test_rejects_oversized_sidecar_before_ort_open);
+    mu_run_test(test_valid_scanner_invalid_ort_model_closes_session);
+    mu_run_test(test_invalid_ort_model_frees_loaded_sidecar);
+#endif
     mu_run_test(test_happy_path_smoke_model);
     mu_run_test(test_attach_accepts_symbolic_batch_rank4);
+    mu_run_test(test_rank5_model_closes_session_after_shape_reject);
     return NULL;
 }

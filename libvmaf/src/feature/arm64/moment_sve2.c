@@ -39,7 +39,14 @@
 
 #include "moment_sve2.h"
 
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunknown-pragmas"
+#endif
 #pragma STDC FP_CONTRACT OFF
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 int compute_1st_moment_sve2(const float *pic, int w, int h, int stride, double *score)
 {

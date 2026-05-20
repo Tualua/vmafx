@@ -293,9 +293,9 @@ static const Resolution resolutions[] = {
 };
 static const int n_resolutions = sizeof(resolutions) / sizeof(resolutions[0]);
 
+#ifdef HAVE_SYCL
 static int g_gpu_device_idx = -1; /* -1 = auto; applies to SYCL */
 
-#ifdef HAVE_SYCL
 static int run_sycl_gpu_profile(unsigned w, unsigned h, unsigned n_frames)
 {
     int err = 0;
@@ -895,19 +895,13 @@ int main(int argc, char *argv[])
 
     if (gpu_profile_mode) {
         /* Default to 4K if no resolution specified */
+#ifdef HAVE_SYCL
         unsigned pw = 3840;
         unsigned ph = 2160;
         if (res_idx >= 0) {
-            // NOLINTBEGIN(clang-analyzer-deadcode.DeadStores): pw / ph are read
-            // inside the `#ifdef HAVE_SYCL` block below; without HAVE_SYCL the
-            // function returns at "No GPU backend enabled" before any read,
-            // and the analyzer (which can't see preprocessor branches) flags
-            // these assignments dead.
             pw = resolutions[res_idx].width;
             ph = resolutions[res_idx].height;
-            // NOLINTEND(clang-analyzer-deadcode.DeadStores)
         }
-#ifdef HAVE_SYCL
         {
             int ret = run_sycl_gpu_profile(pw, ph, n_frames);
             if (ret)

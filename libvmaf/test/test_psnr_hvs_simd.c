@@ -132,7 +132,14 @@ static void ref_od_bin_fdct8x8_hvs(od_coeff_ref *y, int ystride, const od_coeff_
 }
 
 /* ref_calc_psnrhvs: scalar reference, including the (double) cast fix. */
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunknown-pragmas"
+#endif
 #pragma STDC FP_CONTRACT OFF
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 static double ref_calc_psnrhvs(const unsigned char *src, int systride, const unsigned char *dst,
                                int dystride, double par, int depth, int w, int h, int step,
                                float csf[8][8])

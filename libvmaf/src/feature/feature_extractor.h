@@ -33,6 +33,7 @@ using std::atomic_int;
 #include <stdint.h>
 #include <stdlib.h>
 
+#include "config.h"
 #include "dict.h"
 #include "feature_characteristics.h"
 #include "framesync.h"

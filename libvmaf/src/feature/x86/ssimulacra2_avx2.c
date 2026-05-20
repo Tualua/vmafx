@@ -38,7 +38,14 @@
  *     arithmetic and then reducing lane-parallel would change the
  *     summation order.
  *
- * `#pragma STDC FP_CONTRACT OFF` disables FMA contraction to match
+ * `#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunknown-pragmas"
+#endif
+#pragma STDC FP_CONTRACT OFF
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif` disables FMA contraction to match
  * the scalar reference compiled without FMA fusion.
  */
 
@@ -53,7 +60,14 @@
 #include "feature/ssimulacra2_math.h"
 #include "ssimulacra2_avx2.h"
 
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunknown-pragmas"
+#endif
 #pragma STDC FP_CONTRACT OFF
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 /* Scalar constants mirrored from ssimulacra2.c. Keeping them local
  * avoids dragging `Ssimu2State` into this TU. */

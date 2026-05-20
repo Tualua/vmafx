@@ -45,6 +45,14 @@ tools/
   `python -m pytest python/test/command_line_test.py
   ::VmafexecCommandLineTest::test_run_vmafexec_with_frame_skipping` — if
   it hangs (timeout, no output), the unref is missing or wrong.
+- **EOF / read-error cleanup in `fetch_picture()` is load-bearing.**
+  `fetch_picture()` reserves a pooled `VmafPicture` before asking the
+  input reader for bytes. If the reader returns EOF or an error, the
+  reserved picture MUST be unrefed before `fetch_picture()` returns
+  `1` (EOF) or `-1` (error). `run_frame_loop()` must also unref the
+  opposite picture when only one side read successfully. Otherwise the
+  CLI can finish writing output and then hang forever in `vmaf_close()`
+  while the picture pool waits for the leaked unread slot.
 - **`vmaf_roi` sidecar contract** (T6-2b / ADR-0247) is
   **rebase-sensitive** — encoder drivers depend on the exact byte
   layouts:

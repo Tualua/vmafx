@@ -383,7 +383,7 @@ enum CambiTVIBisectFlag {
     CAMBI_TVI_BISECT_TOO_BIG
 };
 
-static FORCE_INLINE inline int clip(int value, int low, int high)
+static FORCE_INLINE int clip(int value, int low, int high)
 {
     return value < low ? low : (value > high ? high : value);
 }
@@ -469,9 +469,8 @@ static int get_vlt_luma(double visibility_luminance_threshold, VmafLumaRange lum
     }
 }
 
-static FORCE_INLINE inline void adjust_window_size(uint16_t *window_size, unsigned input_width,
-                                                   unsigned input_height,
-                                                   bool cambi_high_res_speedup)
+static FORCE_INLINE void adjust_window_size(uint16_t *window_size, unsigned input_width,
+                                            unsigned input_height, bool cambi_high_res_speedup)
 {
     // Adjustment weight: (input_width + input_height) / (CAMBI_4K_WIDTH + CAMBI_4K_HEIGHT)
     (*window_size) = (((*window_size) * (input_width + input_height)) / 375) >> 4;
@@ -1091,7 +1090,7 @@ static void filter_mode(const VmafPicture *image, int width, int height, uint16_
     }
 }
 
-static FORCE_INLINE inline uint16_t ceil_log2(uint32_t num)
+static FORCE_INLINE uint16_t ceil_log2(uint32_t num)
 {
     if (num == 0)
         return 0;
@@ -1105,8 +1104,8 @@ static FORCE_INLINE inline uint16_t ceil_log2(uint32_t num)
     return shift;
 }
 
-static FORCE_INLINE inline uint16_t get_mask_index(unsigned input_width, unsigned input_height,
-                                                   uint16_t filter_size)
+static FORCE_INLINE uint16_t get_mask_index(unsigned input_width, unsigned input_height,
+                                            uint16_t filter_size)
 {
     uint32_t shifted_wh = (input_width >> 6) * (input_height >> 6);
     return (filter_size * filter_size + 3 * (ceil_log2(shifted_wh) - 11) - 1) >> 1;
@@ -1273,11 +1272,12 @@ static float c_value_pixel(const uint16_t *histograms, uint16_t value, const int
 // the count of values in the useful band. Compiler emits ~1 sub + 1 cmp per
 // pixel with no second branch, which costs less when the skip rarely fires.
 
-static FORCE_INLINE inline void
-update_histogram_subtract_edge(uint16_t *histograms, uint16_t *image, uint16_t *mask, int i, int j,
-                               int width, ptrdiff_t stride, uint16_t pad_size,
-                               const uint16_t num_diffs, uint16_t v_band_base, uint16_t v_band_size,
-                               VmafRangeUpdater dec_range_callback)
+static FORCE_INLINE void update_histogram_subtract_edge(uint16_t *histograms, uint16_t *image,
+                                                        uint16_t *mask, int i, int j, int width,
+                                                        ptrdiff_t stride, uint16_t pad_size,
+                                                        const uint16_t num_diffs,
+                                                        uint16_t v_band_base, uint16_t v_band_size,
+                                                        VmafRangeUpdater dec_range_callback)
 {
     if (!mask[(i - pad_size - 1) * stride + j])
         return;
@@ -1290,11 +1290,12 @@ update_histogram_subtract_edge(uint16_t *histograms, uint16_t *image, uint16_t *
                        MIN(j + pad_size + 1, width));
 }
 
-static FORCE_INLINE inline void
-update_histogram_subtract(uint16_t *histograms, uint16_t *image, uint16_t *mask, int i, int j,
-                          int width, ptrdiff_t stride, uint16_t pad_size, const uint16_t num_diffs,
-                          uint16_t v_band_base, uint16_t v_band_size,
-                          VmafRangeUpdater dec_range_callback)
+static FORCE_INLINE void update_histogram_subtract(uint16_t *histograms, uint16_t *image,
+                                                   uint16_t *mask, int i, int j, int width,
+                                                   ptrdiff_t stride, uint16_t pad_size,
+                                                   const uint16_t num_diffs, uint16_t v_band_base,
+                                                   uint16_t v_band_size,
+                                                   VmafRangeUpdater dec_range_callback)
 {
     if (!mask[(i - pad_size - 1) * stride + j])
         return;
@@ -1306,11 +1307,12 @@ update_histogram_subtract(uint16_t *histograms, uint16_t *image, uint16_t *mask,
     dec_range_callback(&histograms[row * width], j - pad_size, j + pad_size + 1);
 }
 
-static FORCE_INLINE inline void
-update_histogram_add_edge(uint16_t *histograms, uint16_t *image, uint16_t *mask, int i, int j,
-                          int width, ptrdiff_t stride, uint16_t pad_size, const uint16_t num_diffs,
-                          uint16_t v_band_base, uint16_t v_band_size,
-                          VmafRangeUpdater inc_range_callback)
+static FORCE_INLINE void update_histogram_add_edge(uint16_t *histograms, uint16_t *image,
+                                                   uint16_t *mask, int i, int j, int width,
+                                                   ptrdiff_t stride, uint16_t pad_size,
+                                                   const uint16_t num_diffs, uint16_t v_band_base,
+                                                   uint16_t v_band_size,
+                                                   VmafRangeUpdater inc_range_callback)
 {
     if (!mask[(i + pad_size) * stride + j])
         return;
@@ -1323,12 +1325,11 @@ update_histogram_add_edge(uint16_t *histograms, uint16_t *image, uint16_t *mask,
                        MIN(j + pad_size + 1, width));
 }
 
-static FORCE_INLINE inline void update_histogram_add(uint16_t *histograms, uint16_t *image,
-                                                     uint16_t *mask, int i, int j, int width,
-                                                     ptrdiff_t stride, uint16_t pad_size,
-                                                     const uint16_t num_diffs, uint16_t v_band_base,
-                                                     uint16_t v_band_size,
-                                                     VmafRangeUpdater inc_range_callback)
+static FORCE_INLINE void update_histogram_add(uint16_t *histograms, uint16_t *image, uint16_t *mask,
+                                              int i, int j, int width, ptrdiff_t stride,
+                                              uint16_t pad_size, const uint16_t num_diffs,
+                                              uint16_t v_band_base, uint16_t v_band_size,
+                                              VmafRangeUpdater inc_range_callback)
 {
     if (!mask[(i + pad_size) * stride + j])
         return;
@@ -1340,7 +1341,7 @@ static FORCE_INLINE inline void update_histogram_add(uint16_t *histograms, uint1
     inc_range_callback(&histograms[row * width], j - pad_size, j + pad_size + 1);
 }
 
-static FORCE_INLINE inline void
+static FORCE_INLINE void
 update_histogram_add_edge_first_pass(uint16_t *histograms, uint16_t *image, uint16_t *mask, int i,
                                      int j, int width, ptrdiff_t stride, uint16_t pad_size,
                                      const uint16_t num_diffs, uint16_t v_band_base,
@@ -1357,11 +1358,12 @@ update_histogram_add_edge_first_pass(uint16_t *histograms, uint16_t *image, uint
                        MIN(j + pad_size + 1, width));
 }
 
-static FORCE_INLINE inline void
-update_histogram_add_first_pass(uint16_t *histograms, uint16_t *image, uint16_t *mask, int i, int j,
-                                int width, ptrdiff_t stride, uint16_t pad_size,
-                                const uint16_t num_diffs, uint16_t v_band_base,
-                                uint16_t v_band_size, VmafRangeUpdater inc_range_callback)
+static FORCE_INLINE void update_histogram_add_first_pass(uint16_t *histograms, uint16_t *image,
+                                                         uint16_t *mask, int i, int j, int width,
+                                                         ptrdiff_t stride, uint16_t pad_size,
+                                                         const uint16_t num_diffs,
+                                                         uint16_t v_band_base, uint16_t v_band_size,
+                                                         VmafRangeUpdater inc_range_callback)
 {
     if (!mask[i * stride + j])
         return;
@@ -1375,11 +1377,10 @@ update_histogram_add_first_pass(uint16_t *histograms, uint16_t *image, uint16_t 
 
 // Fused subtract-then-add for interior columns. Skips when both pixels are
 // in-band with the same value: the decrement and increment cancel exactly.
-static FORCE_INLINE inline void uh_slide(uint16_t *histograms, uint16_t *image, uint16_t *mask,
-                                         int i, int j, int width, ptrdiff_t stride,
-                                         uint16_t pad_size, uint16_t v_band_base,
-                                         uint16_t v_band_size, VmafRangeUpdater inc_fn,
-                                         VmafRangeUpdater dec_fn)
+static FORCE_INLINE void uh_slide(uint16_t *histograms, uint16_t *image, uint16_t *mask, int i,
+                                  int j, int width, ptrdiff_t stride, uint16_t pad_size,
+                                  uint16_t v_band_base, uint16_t v_band_size,
+                                  VmafRangeUpdater inc_fn, VmafRangeUpdater dec_fn)
 {
     bool sub_valid = mask[(i - pad_size - 1) * stride + j];
     bool add_valid = mask[(i + pad_size) * stride + j];
@@ -1396,11 +1397,10 @@ static FORCE_INLINE inline void uh_slide(uint16_t *histograms, uint16_t *image, 
 }
 
 // Same as uh_slide but with clamped (edge) column ranges.
-static FORCE_INLINE inline void uh_slide_edge(uint16_t *histograms, uint16_t *image, uint16_t *mask,
-                                              int i, int j, int width, ptrdiff_t stride,
-                                              uint16_t pad_size, uint16_t v_band_base,
-                                              uint16_t v_band_size, VmafRangeUpdater inc_fn,
-                                              VmafRangeUpdater dec_fn)
+static FORCE_INLINE void uh_slide_edge(uint16_t *histograms, uint16_t *image, uint16_t *mask, int i,
+                                       int j, int width, ptrdiff_t stride, uint16_t pad_size,
+                                       uint16_t v_band_base, uint16_t v_band_size,
+                                       VmafRangeUpdater inc_fn, VmafRangeUpdater dec_fn)
 {
     bool sub_valid = mask[(i - pad_size - 1) * stride + j];
     bool add_valid = mask[(i + pad_size) * stride + j];
@@ -1622,15 +1622,14 @@ static double spatial_pooling(float *c_values, double topk, unsigned width, unsi
     return average_topk_elements(c_values, topk_num_elements);
 }
 
-static FORCE_INLINE inline uint16_t get_pixels_in_window(uint16_t window_length)
+static FORCE_INLINE uint16_t get_pixels_in_window(uint16_t window_length)
 {
     uint16_t odd_length = 2 * (window_length >> 1) + 1;
     return odd_length * odd_length;
 }
 
 // Inner product weighting scores for each scale
-static FORCE_INLINE inline double weight_scores_per_scale(double *scores_per_scale,
-                                                          uint16_t normalization)
+static FORCE_INLINE double weight_scores_per_scale(double *scores_per_scale, uint16_t normalization)
 {
     double score = 0.0;
     for (unsigned scale = 0; scale < NUM_SCALES; scale++)

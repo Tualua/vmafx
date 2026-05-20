@@ -46,6 +46,7 @@
 #include "simd_bitexact_test.h"
 /* clang-format on */
 
+#include "feature/common/convolution.h"
 #include "feature/vif_tools.h"
 
 #if ARCH_X86
@@ -73,6 +74,78 @@
 /* Relative tolerance: the fix changes sigma_max_inv by at most one ULP in
  * float32 (~1.2e-7).  Allow 1e-6 to accommodate accumulated row errors. */
 #define VIF_REL_TOL 1e-6
+
+#define VIF_AVX512_ALIGN_W 32
+#define VIF_AVX512_ALIGN_H 19
+#define VIF_AVX512_ALIGN_STRIDE VIF_AVX512_ALIGN_W
+#define VIF_AVX512_ALIGN_TOTAL ((size_t)VIF_AVX512_ALIGN_STRIDE * (size_t)VIF_AVX512_ALIGN_H)
+#define VIF_AVX512_ALIGN_OFFSET_FLOATS 8
+#define VIF_AVX512_ALIGN_EXTRA_FLOATS 16
+
+enum VifAvx512ConvMode {
+    VIF_AVX512_CONV_LINEAR,
+    VIF_AVX512_CONV_SQUARE,
+    VIF_AVX512_CONV_CROSS,
+};
+
+struct VifAvx512ConvFixture {
+    float *src1_base;
+    float *src2_base;
+    float *dst_base;
+    float *tmp_base;
+    float *src1;
+    float *src2;
+    float *dst;
+    float *tmp;
+};
+
+static const float vif_avx512_filter[17] = {0.001f, 0.004f, 0.011f, 0.027f, 0.053f, 0.088f,
+                                            0.125f, 0.151f, 0.161f, 0.151f, 0.125f, 0.088f,
+                                            0.053f, 0.027f, 0.011f, 0.004f, 0.001f};
+
+static float *select_32_aligned_64_misaligned(float *base)
+{
+    uintptr_t addr = (uintptr_t)base;
+    if ((addr % 64u) == 0u) {
+        return base + VIF_AVX512_ALIGN_OFFSET_FLOATS;
+    }
+    return base;
+}
+
+static void free_vif_avx512_fixture(struct VifAvx512ConvFixture *fixture)
+{
+    simd_test_aligned_free(fixture->src1_base);
+    simd_test_aligned_free(fixture->src2_base);
+    simd_test_aligned_free(fixture->dst_base);
+    simd_test_aligned_free(fixture->tmp_base);
+}
+
+static char *validate_vif_avx512_alignment(const struct VifAvx512ConvFixture *fixture)
+{
+    if (((uintptr_t)fixture->src1 % 32u) != 0u) {
+        return "src1 must stay 32-byte aligned";
+    }
+    if (((uintptr_t)fixture->src1 % 64u) == 0u) {
+        return "src1 fixture must be 64-byte misaligned";
+    }
+    if (((uintptr_t)fixture->tmp % 32u) != 0u) {
+        return "tmp must stay 32-byte aligned";
+    }
+    if (((uintptr_t)fixture->tmp % 64u) == 0u) {
+        return "tmp fixture must be 64-byte misaligned";
+    }
+    return NULL;
+}
+
+static char *assert_finite_plane(const float *plane)
+{
+    for (size_t i = 0; i < VIF_AVX512_ALIGN_TOTAL; ++i) {
+        if (!isfinite(plane[i])) {
+            return "AVX512 convolution produced non-finite output";
+        }
+    }
+    return NULL;
+}
 
 #if ARCH_X86
 
@@ -107,11 +180,13 @@ static char *check_vif_stat_avx2(uint32_t seed, int w, int h)
     const double egl = 100.0;     /* default enhancement gain limit */
     const int stride_b_int = (int)stride_b;
 
-    float num_scalar = 0.0f, den_scalar = 0.0f;
+    float num_scalar = 0.0f;
+    float den_scalar = 0.0f;
     vif_statistic_s(mu1, mu2, xx_flt, yy_flt, xy_flt, &num_scalar, &den_scalar, w, h, stride_b_int,
                     stride_b_int, stride_b_int, stride_b_int, stride_b_int, egl, sigma_nsq);
 
-    float num_avx2 = 0.0f, den_avx2 = 0.0f;
+    float num_avx2 = 0.0f;
+    float den_avx2 = 0.0f;
     vif_statistic_s_avx2(mu1, mu2, xx_flt, yy_flt, xy_flt, &num_avx2, &den_avx2, w, h, stride_b_int,
                          stride_b_int, stride_b_int, stride_b_int, stride_b_int, egl, sigma_nsq);
 
@@ -187,11 +262,13 @@ static char *test_vif_avx2_sigma_max_inv_branch(void)
     const double sigma_nsq = 2.0;
     const double egl = 100.0;
 
-    float num_scalar = 0.0f, den_scalar = 0.0f;
+    float num_scalar = 0.0f;
+    float den_scalar = 0.0f;
     vif_statistic_s(mu1, mu2, xx_flt, yy_flt, xy_flt, &num_scalar, &den_scalar, w, h, stride_b_int,
                     stride_b_int, stride_b_int, stride_b_int, stride_b_int, egl, sigma_nsq);
 
-    float num_avx2 = 0.0f, den_avx2 = 0.0f;
+    float num_avx2 = 0.0f;
+    float den_avx2 = 0.0f;
     vif_statistic_s_avx2(mu1, mu2, xx_flt, yy_flt, xy_flt, &num_avx2, &den_avx2, w, h, stride_b_int,
                          stride_b_int, stride_b_int, stride_b_int, stride_b_int, egl, sigma_nsq);
 
@@ -208,6 +285,89 @@ static char *test_vif_avx2_sigma_max_inv_branch(void)
     return NULL;
 }
 
+#if HAVE_AVX512
+static char *init_vif_avx512_fixture(struct VifAvx512ConvFixture *fixture)
+{
+    const size_t elems = VIF_AVX512_ALIGN_TOTAL + VIF_AVX512_ALIGN_EXTRA_FLOATS;
+    const size_t bytes = elems * sizeof(float);
+
+    fixture->src1_base = (float *)simd_test_aligned_malloc(bytes, 32);
+    fixture->src2_base = (float *)simd_test_aligned_malloc(bytes, 32);
+    fixture->dst_base = (float *)simd_test_aligned_malloc(bytes, 32);
+    fixture->tmp_base = (float *)simd_test_aligned_malloc(bytes, 32);
+
+    if (!fixture->src1_base || !fixture->src2_base || !fixture->dst_base || !fixture->tmp_base) {
+        return "aligned_malloc failed";
+    }
+
+    fixture->src1 = select_32_aligned_64_misaligned(fixture->src1_base);
+    fixture->src2 = select_32_aligned_64_misaligned(fixture->src2_base);
+    fixture->dst = select_32_aligned_64_misaligned(fixture->dst_base);
+    fixture->tmp = select_32_aligned_64_misaligned(fixture->tmp_base);
+
+    char *result = validate_vif_avx512_alignment(fixture);
+    if (result != NULL) {
+        return result;
+    }
+
+    simd_test_fill_random_f32(fixture->src1, VIF_AVX512_ALIGN_TOTAL, 0.0f, 255.0f, 0x510dfaceu);
+    simd_test_fill_random_f32(fixture->src2, VIF_AVX512_ALIGN_TOTAL, 0.0f, 255.0f, 0x0ddba11u);
+    return NULL;
+}
+
+static char *run_vif_avx512_convolution(struct VifAvx512ConvFixture *fixture,
+                                        enum VifAvx512ConvMode mode)
+{
+    switch (mode) {
+    case VIF_AVX512_CONV_LINEAR:
+        convolution_f32_avx512_s(vif_avx512_filter, 17, fixture->src1, fixture->dst, fixture->tmp,
+                                 VIF_AVX512_ALIGN_W, VIF_AVX512_ALIGN_H, VIF_AVX512_ALIGN_STRIDE,
+                                 VIF_AVX512_ALIGN_STRIDE);
+        break;
+    case VIF_AVX512_CONV_SQUARE:
+        convolution_f32_avx512_sq_s(vif_avx512_filter, 17, fixture->src1, fixture->dst,
+                                    fixture->tmp, VIF_AVX512_ALIGN_W, VIF_AVX512_ALIGN_H,
+                                    VIF_AVX512_ALIGN_STRIDE, VIF_AVX512_ALIGN_STRIDE);
+        break;
+    case VIF_AVX512_CONV_CROSS:
+        convolution_f32_avx512_xy_s(vif_avx512_filter, 17, fixture->src1, fixture->src2,
+                                    fixture->dst, fixture->tmp, VIF_AVX512_ALIGN_W,
+                                    VIF_AVX512_ALIGN_H, VIF_AVX512_ALIGN_STRIDE,
+                                    VIF_AVX512_ALIGN_STRIDE, VIF_AVX512_ALIGN_STRIDE);
+        break;
+    default:
+        return "unknown AVX512 convolution mode";
+    }
+    return NULL;
+}
+
+static char *check_vif_avx512_32byte_alignment(enum VifAvx512ConvMode mode)
+{
+    struct VifAvx512ConvFixture fixture = {0};
+    char *result = init_vif_avx512_fixture(&fixture);
+    if (result == NULL) {
+        result = run_vif_avx512_convolution(&fixture, mode);
+    }
+    if (result == NULL) {
+        result = assert_finite_plane(fixture.dst);
+    }
+    free_vif_avx512_fixture(&fixture);
+    return result;
+}
+
+static char *test_vif_avx512_convolution_32byte_alignment(void)
+{
+    char *result = check_vif_avx512_32byte_alignment(VIF_AVX512_CONV_LINEAR);
+    if (result == NULL) {
+        result = check_vif_avx512_32byte_alignment(VIF_AVX512_CONV_SQUARE);
+    }
+    if (result == NULL) {
+        result = check_vif_avx512_32byte_alignment(VIF_AVX512_CONV_CROSS);
+    }
+    return result;
+}
+#endif /* HAVE_AVX512 */
+
 #endif /* ARCH_X86 */
 
 char *run_tests(void)
@@ -221,6 +381,13 @@ char *run_tests(void)
     mu_run_test(test_vif_avx2_aligned_w);
     mu_run_test(test_vif_avx2_tiny);
     mu_run_test(test_vif_avx2_sigma_max_inv_branch);
+#if HAVE_AVX512
+    if (vmaf_get_cpu_flags_x86() & VMAF_X86_CPU_FLAG_AVX512) {
+        mu_run_test(test_vif_avx512_convolution_32byte_alignment);
+    } else {
+        (void)fprintf(stderr, "skipping: CPU lacks AVX512\n");
+    }
+#endif
 #else
     (void)fprintf(stderr, "skipping: non-x86 arch\n");
 #endif

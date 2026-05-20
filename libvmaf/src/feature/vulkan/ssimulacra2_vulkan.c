@@ -951,20 +951,6 @@ static void ss2v_barrier(VkCommandBuffer cmd)
                          VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
 }
 
-/* Run XYB conversion on (lin -> xyb) for one frame at the given scale. */
-static void ss2v_dispatch_xyb(Ssimu2VkState *s, VkCommandBuffer cmd, int scale, VkDescriptorSet set)
-{
-    XybPushConsts pc = {.width = s->scale_w[scale], .height = s->scale_h[scale]};
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, s->pl_xyb.pipeline_layout, 0, 1,
-                            &set, 0, NULL);
-    vkCmdPushConstants(cmd, s->pl_xyb.pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(pc),
-                       &pc);
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, s->xyb_pipelines[scale]);
-    uint32_t gx = (s->scale_w[scale] + SS2V_WG_X - 1) / SS2V_WG_X;
-    uint32_t gy = (s->scale_h[scale] + SS2V_WG_Y - 1) / SS2V_WG_Y;
-    vkCmdDispatch(cmd, gx, gy, 1);
-}
-
 static void ss2v_dispatch_mul(Ssimu2VkState *s, VkCommandBuffer cmd, int scale, VkDescriptorSet set,
                               uint32_t plane_count)
 {
@@ -1382,8 +1368,7 @@ out:
 }
 
 /* Mirror of ssimulacra2.c::pool_score. */
-static double ss2v_pool_score(const double avg_ssim[6][6], const double avg_ed[6][12],
-                              int num_scales)
+static double ss2v_pool_score(double avg_ssim[6][6], double avg_ed[6][12], int num_scales)
 {
     double ssim = 0.0;
     size_t i = 0;
