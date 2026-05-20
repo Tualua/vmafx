@@ -24,6 +24,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from train_konvid_mos_head import (  # noqa: E402
+    FEATURE_SCHEMA_CHUG_HDR_DISPLAY_V1,
     FEATURE_SCHEMA_CHUG_HDR_WIDE_V1,
     FEATURE_SCHEMA_KONVID_V1,
 )
@@ -84,12 +85,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument(
         "--feature-schema",
-        choices=(FEATURE_SCHEMA_CHUG_HDR_WIDE_V1, FEATURE_SCHEMA_KONVID_V1),
-        default=FEATURE_SCHEMA_CHUG_HDR_WIDE_V1,
+        choices=(
+            FEATURE_SCHEMA_CHUG_HDR_WIDE_V1,
+            FEATURE_SCHEMA_CHUG_HDR_DISPLAY_V1,
+            FEATURE_SCHEMA_KONVID_V1,
+        ),
+        default=None,
         help=(
             "Feature schema for the local head. The default uses CHUG temporal "
-            "quantiles/std plus HDR ladder metadata; konvid-v1 keeps the older "
-            "11-column baseline for ablation runs."
+            "quantiles/std plus HDR ladder metadata, or the display-aware "
+            "schema when --display-profile-json is supplied; konvid-v1 keeps "
+            "the older 11-column baseline for ablation runs."
+        ),
+    )
+    parser.add_argument(
+        "--display-profile-json",
+        type=Path,
+        default=None,
+        help=(
+            "Optional target-display profile JSON. When set and --feature-schema "
+            "is omitted, the wrapper selects chug-hdr-display-v1."
         ),
     )
     parser.add_argument(
@@ -121,6 +136,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+    feature_schema = args.feature_schema
+    if feature_schema is None:
+        feature_schema = (
+            FEATURE_SCHEMA_CHUG_HDR_DISPLAY_V1
+            if args.display_profile_json is not None
+            else FEATURE_SCHEMA_CHUG_HDR_WIDE_V1
+        )
 
     # The shared trainer still has legacy KonViD defaults. Pass explicit
     # impossible paths so a CHUG run cannot accidentally ingest local KoNViD
@@ -133,7 +155,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--model-id",
         args.model_id,
         "--feature-schema",
-        args.feature_schema,
+        feature_schema,
         "--log-prefix",
         "chug-hdr-mos",
         "--out-onnx",
@@ -147,6 +169,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         delegated.extend(["--feature-jsonl", str(shard)])
     for table in feature_parquets:
         delegated.extend(["--feature-parquet", str(table)])
+    if args.display_profile_json is not None:
+        delegated.extend(["--display-profile-json", str(args.display_profile_json)])
     delegated.extend(forwarded)
     return _train_mos_head_main(delegated)
 
@@ -156,6 +180,7 @@ __all__ = [
     "DEFAULT_CHUG_OUTPUT_DIR",
     "DEFAULT_MODEL_ID",
     "DEFAULT_SHARD_DIR",
+    "FEATURE_SCHEMA_CHUG_HDR_DISPLAY_V1",
     "FEATURE_SCHEMA_CHUG_HDR_WIDE_V1",
     "FEATURE_SCHEMA_KONVID_V1",
     "_discover_feature_jsonls",

@@ -109,6 +109,31 @@ def test_chug_hdr_wide_feature_schema_layout() -> None:
     )
 
 
+def test_chug_hdr_display_feature_schema_layout() -> None:
+    assert trainer.FEATURE_SCHEMA_CHUG_HDR_DISPLAY_V1 == "chug-hdr-display-v1"
+    assert trainer.CHUG_HDR_DISPLAY_FEATURES == (
+        "display_peak_luminance_nits_norm",
+        "display_black_luminance_nits_norm",
+        "display_contrast_ratio_log_norm",
+        "display_ambient_lux_norm",
+        "display_bt2020_coverage",
+        "display_p3_coverage",
+        "display_panel_oled",
+        "display_panel_qled",
+        "display_panel_lcd",
+        "display_local_dimming",
+        "display_tone_mapping_dynamic",
+    )
+    assert trainer.CHUG_HDR_DISPLAY_FEATURE_COLUMNS == (
+        trainer.CHUG_HDR_FEATURE_COLUMNS + trainer.CHUG_HDR_DISPLAY_FEATURES
+    )
+    assert len(trainer.CHUG_HDR_DISPLAY_FEATURE_COLUMNS) == 45
+    assert (
+        trainer.FEATURE_SCHEMAS[trainer.FEATURE_SCHEMA_CHUG_HDR_DISPLAY_V1]
+        == trainer.CHUG_HDR_DISPLAY_FEATURE_COLUMNS
+    )
+
+
 def test_encoder_vocab_v4_single_slot() -> None:
     assert trainer.ENCODER_VOCAB_V4 == ("ugc-mixed",)
     assert trainer.ENCODER_VOCAB_V4_VERSION == 4
@@ -283,6 +308,71 @@ def test_chug_hdr_wide_projection_uses_temporal_and_hdr_metadata() -> None:
     assert features[idx("feature_bitdepth_norm")] == pytest.approx(0.5)
 
 
+def test_display_profile_payload_normalises_panel_context() -> None:
+    values = trainer._normalise_display_profile_payload(
+        {
+            "display": {
+                "peak_nits": 1000.0,
+                "black_nits": 0.005,
+                "ambient_lux": 25.0,
+                "bt2020_coverage": 72.5,
+                "p3_coverage": 0.95,
+                "panel_type": "QLED LCD",
+                "local_dimming": True,
+                "tone_mapping": "HDR10+ dynamic",
+            }
+        }
+    )
+
+    assert values["display_peak_luminance_nits_norm"] == pytest.approx(0.1)
+    assert values["display_black_luminance_nits_norm"] == pytest.approx(0.005)
+    assert values["display_contrast_ratio_log_norm"] == pytest.approx(5.30103 / 7.0)
+    assert values["display_ambient_lux_norm"] == pytest.approx(0.025)
+    assert values["display_bt2020_coverage"] == pytest.approx(0.725)
+    assert values["display_p3_coverage"] == pytest.approx(0.95)
+    assert values["display_panel_oled"] == pytest.approx(0.0)
+    assert values["display_panel_qled"] == pytest.approx(1.0)
+    assert values["display_panel_lcd"] == pytest.approx(1.0)
+    assert values["display_local_dimming"] == pytest.approx(1.0)
+    assert values["display_tone_mapping_dynamic"] == pytest.approx(1.0)
+
+
+def test_chug_hdr_display_projection_uses_row_then_profile_fallback() -> None:
+    display_profile = trainer._normalise_display_profile_payload(
+        {
+            "peak_nits": 800.0,
+            "black_nits": 0.01,
+            "ambient_lux": 40.0,
+            "bt2020_coverage": 0.80,
+            "p3_coverage": 0.92,
+            "panel_type": "OLED",
+            "local_dimming": False,
+            "tone_mapping": "static HDR10",
+        }
+    )
+    row = {
+        "mos_raw_0_100": 50.0,
+        "adm2": 0.80,
+        "display_peak_luminance_nits": 1200.0,
+    }
+
+    projected = trainer._row_to_features(
+        row,
+        feature_columns=trainer.CHUG_HDR_DISPLAY_FEATURE_COLUMNS,
+        display_profile=display_profile,
+    )
+
+    assert projected is not None
+    features, mos = projected
+    idx = trainer.CHUG_HDR_DISPLAY_FEATURE_COLUMNS.index
+    assert mos == pytest.approx(3.0)
+    assert features[idx("display_peak_luminance_nits_norm")] == pytest.approx(0.12)
+    assert features[idx("display_black_luminance_nits_norm")] == pytest.approx(0.01)
+    assert features[idx("display_panel_oled")] == pytest.approx(1.0)
+    assert features[idx("display_panel_lcd")] == pytest.approx(0.0)
+    assert features[idx("display_tone_mapping_dynamic")] == pytest.approx(0.0)
+
+
 def test_chug_hdr_entrypoint_accepts_feature_jsonl_and_custom_model_id(
     tmp_path: Path,
 ) -> None:
@@ -334,6 +424,80 @@ def test_chug_hdr_entrypoint_accepts_feature_jsonl_and_custom_model_id(
     assert manifest["feature_order"] == list(trainer.CHUG_HDR_FEATURE_COLUMNS)
     assert manifest["training_recipe"]["n_rows"] == 4
     assert manifest["folds"][0]["validation_policy"] == "explicit-corpus-split"
+
+
+def test_chug_hdr_entrypoint_display_profile_selects_display_schema(
+    tmp_path: Path,
+) -> None:
+    p = tmp_path / "chug_features.jsonl"
+    rows = []
+    for idx in range(6):
+        split = "train" if idx < 4 else "val"
+        rows.append(
+            {
+                "src": f"chug-display-{idx}.mp4",
+                "corpus": "chug",
+                "mos": 2.1 + 0.2 * idx,
+                "adm2": 0.55 + 0.05 * idx,
+                "vif_scale0": 0.30 + 0.04 * idx,
+                "vif_scale1": 0.35 + 0.04 * idx,
+                "vif_scale2": 0.40 + 0.04 * idx,
+                "vif_scale3": 0.45 + 0.04 * idx,
+                "motion2": 1.0 + idx,
+                "split": split,
+            }
+        )
+    p.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+    profile_path = tmp_path / "display-profile.json"
+    profile_path.write_text(
+        json.dumps(
+            {
+                "display": {
+                    "peak_nits": 1000.0,
+                    "black_nits": 0.005,
+                    "ambient_lux": 25.0,
+                    "bt2020_coverage": 0.72,
+                    "p3_coverage": 0.95,
+                    "panel_type": "OLED",
+                    "local_dimming": False,
+                    "tone_mapping": "HDR10",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    onnx_path = tmp_path / "chug_hdr_display_mos_head_v1.onnx"
+    manifest_path = tmp_path / "chug_hdr_display_mos_head_v1.json"
+
+    rc = chug_trainer.main(
+        [
+            "--feature-jsonl",
+            str(p),
+            "--display-profile-json",
+            str(profile_path),
+            "--epochs",
+            "1",
+            "--k-folds",
+            "2",
+            "--out-onnx",
+            str(onnx_path),
+            "--out-manifest",
+            str(manifest_path),
+            "--device",
+            "cpu",
+        ]
+    )
+
+    assert rc == 0
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["feature_schema"] == trainer.FEATURE_SCHEMA_CHUG_HDR_DISPLAY_V1
+    assert manifest["feature_order"] == list(trainer.CHUG_HDR_DISPLAY_FEATURE_COLUMNS)
+    assert manifest["display_profile"]["schema"] == "chug-display-profile-v1"
+    assert manifest["display_profile"]["source_path"] == str(profile_path)
+    assert manifest["display_profile"]["feature_values"][
+        "display_peak_luminance_nits_norm"
+    ] == pytest.approx(0.1)
+    assert manifest["training_recipe"]["n_rows"] == 4
 
 
 def test_load_corpus_accepts_full_features_parquet(tmp_path: Path) -> None:

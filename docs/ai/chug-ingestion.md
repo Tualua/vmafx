@@ -198,6 +198,41 @@ comparison:
 python ai/scripts/train_chug_hdr_mos_head.py --feature-schema konvid-v1
 ```
 
+For display-aware HDR experiments, pass a target panel profile:
+
+```bash
+cat > .workingdir2/chug/display-profile.json <<'JSON'
+{
+  "display": {
+    "peak_nits": 1000,
+    "black_nits": 0.005,
+    "ambient_lux": 25,
+    "bt2020_coverage": 0.72,
+    "p3_coverage": 0.95,
+    "panel_type": "OLED",
+    "local_dimming": false,
+    "tone_mapping": "HDR10"
+  }
+}
+JSON
+
+python ai/scripts/train_chug_hdr_mos_head.py \
+  --display-profile-json .workingdir2/chug/display-profile.json
+```
+
+When `--display-profile-json` is supplied and `--feature-schema` is
+omitted, the wrapper selects `chug-hdr-display-v1`. That 45-column
+schema appends normalized target-display features to
+`chug-hdr-wide-v1`: peak luminance, black level, log contrast ratio,
+ambient lux, BT.2020/P3 coverage, OLED/QLED/LCD panel flags, local
+dimming, and dynamic tone-mapping. The profile is recorded in the
+manifest under `display_profile` with a sha256 of the source JSON.
+
+If a future HDR corpus row already carries display fields, row-local
+values win and the profile only fills missing display features. That
+keeps multi-display datasets usable while still letting CHUG runs bind
+their MOS head to a target consumer panel.
+
 When feature rows carry the `split` column emitted by
 `chug_extract_features.py`, `train_chug_hdr_mos_head.py` uses that
 content-level split for validation instead of creating random k-folds.

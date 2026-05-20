@@ -995,6 +995,17 @@ landed in PR scope ADR-0325; the binary upload is a separate PR.
   lockstep edit across both, plus a `corpus_version` bump.
 
 
+- **CHUG display-profile training is trainer-side context, not a
+  corpus-schema mutation.** `train_chug_hdr_mos_head.py` keeps
+  `chug-hdr-wide-v1` as the no-profile default, and auto-selects
+  `chug-hdr-display-v1` only when `--display-profile-json` is supplied
+  without an explicit `--feature-schema`. Row-local display columns win
+  over the target profile so future multi-display HDR corpora remain
+  usable. Do not widen CHUG JSONL adapters just to carry one operator's
+  local panel profile; profiles are recorded in the emitted manifest
+  with their source sha256.
+
+
   `ai/scripts/youtube_ugc_to_corpus_jsonl.py` (ADR-0368) is
   byte-identical to the LSVQ adapter
   (`ai/scripts/lsvq_to_corpus_jsonl.py`, ADR-0333) and the

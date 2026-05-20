@@ -38131,3 +38131,33 @@ Touched files:
 `ai/AGENTS.md`,
 `changelog.d/added/0652-chug-visual-signal-primitives.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0653 — CHUG display-profile training
+
+**No upstream Netflix C-source rebase impact.** This is a fork-local CHUG HDR
+MOS training-schema extension under `ai/` plus docs and DDD material.
+
+**Key invariants**:
+
+- `chug-hdr-wide-v1` remains the no-profile CHUG default.
+- `--display-profile-json` selects `chug-hdr-display-v1` only when the caller
+  did not explicitly pass `--feature-schema`.
+- Row-local display fields override the target profile so future multi-display
+  HDR corpora keep their panel axis.
+- The display profile is recorded in the emitted manifest with normalized
+  feature values and source sha256.
+
+Touched files:
+`ai/scripts/train_konvid_mos_head.py`,
+`ai/scripts/train_chug_hdr_mos_head.py`,
+`ai/tests/test_train_konvid_mos_head.py`,
+`docs/ai/chug-ingestion.md`,
+`docs/ai/mos-corpora.md`,
+`docs/ai/models/konvid_mos_head_v1.md`,
+`docs/adr/0653-chug-display-profile-training.md`,
+`docs/adr/_index_fragments/0653-chug-display-profile-training.md`,
+`docs/adr/_index_fragments/_order.txt`,
+`docs/research/0653-chug-display-profile-training.md`,
+`ai/AGENTS.md`,
+`changelog.d/added/0653-chug-display-profile-training.md`,
+`docs/rebase-notes.md` (this entry).

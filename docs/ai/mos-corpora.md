@@ -288,6 +288,19 @@ python ai/scripts/train_chug_hdr_mos_head.py
 #    → .workingdir2/chug/chug_hdr_mos_head_v1.json
 ```
 
+To train against a target HDR display instead of treating MOS as
+display-invariant, provide a display profile:
+
+```bash
+python ai/scripts/train_chug_hdr_mos_head.py \
+  --display-profile-json .workingdir2/chug/display-profile.json
+```
+
+With that flag and no explicit `--feature-schema`, the wrapper uses
+`chug-hdr-display-v1`, a 45-column schema that appends normalized panel
+and viewing-context features to `chug-hdr-wide-v1`. The manifest records
+the normalized display profile and the source JSON sha256.
+
 For an apples-to-apples ablation against the older 11-feature baseline,
 add `--feature-schema konvid-v1`. Do not use that ablation as the
 default CHUG command; it discards CHUG-specific signal that was already

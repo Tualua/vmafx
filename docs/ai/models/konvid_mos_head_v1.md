@@ -110,6 +110,15 @@ the KonViD-named flags. That wrapper defaults to its own
 manifests under `.workingdir2/chug/`; it does not change this committed
 11-feature KonViD model contract.
 
+For target-panel HDR experiments, add
+`--display-profile-json <profile.json>`. When no explicit
+`--feature-schema` is passed, that flag selects `chug-hdr-display-v1`
+and appends normalized display context to the CHUG-local feature order:
+peak luminance, black level, log contrast ratio, ambient lux,
+BT.2020/P3 coverage, OLED/QLED/LCD panel flags, local dimming, and
+dynamic tone-mapping. The generated manifest records the profile values
+and sha256 so the checkpoint can be traced back to the viewing context.
+
 For corpus acquisition instructions see
 [mos-corpora.md](../mos-corpora.md). The Phase 1 (KonViD-1k) and Phase 2
 (KonViD-150k) adapters must have produced their JSONL drops before running

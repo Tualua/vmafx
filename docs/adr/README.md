@@ -491,6 +491,7 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-0650](0650-signal-mix-audit.md) | Add a signal-mix audit CLI | Accepted | 2026-05-20 | ai, metrics, audit, hdr |
 | [ADR-0651](0651-chug-hdr-row-metadata.md) | Preserve normalized ffprobe HDR/display metadata on every CHUG feature row | Accepted | ai, chug, hdr, metadata, training |
 | [ADR-0652](0652-chug-visual-signal-primitives.md) | Add cheap decoded-luma blur/noise/grain primitives to CHUG feature rows | Accepted | ai, chug, hdr, features, training |
+| [ADR-0653](0653-chug-display-profile-training.md) | CHUG Display Profile Training | Proposed |
 | [ADR-0436](0436-mcp-backend-selector-parity.md) | MCP server backend-selector parity (vulkan/hip/metal) | Accepted | mcp, agents, api, dispatch, fork-local |
 | [ADR-0448](0448-active-upstream-monitoring-discipline.md) | Active upstream monitoring (no silent "wait" deferrals) | Accepted | ci, governance, upstream-sync, deferral, fork-local |
 | [0457](0457-onnx-blobs-to-github-releases.md) | model/tiny/*.onnx blobs ≥1MB live in GitHub Releases, not git | Accepted | 2026-05-15 |

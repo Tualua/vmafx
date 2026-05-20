@@ -26,7 +26,9 @@ ONNX I/O contract::
                                   KonViD defaults to the 11-D
                                   canonical-6 + saliency + shot layout;
                                   CHUG HDR defaults to a 34-D wide schema
-                                  with temporal aggregates and HDR metadata.
+                                  with temporal aggregates and HDR metadata,
+                                  or a 45-D display-aware schema when a
+                                  target display profile is supplied.
       encoder_onehot: float32 [N, 1]  ENCODER_VOCAB v4 single slot
                                       (always [1.0]) — placeholder for
                                       future multi-slot expansion.
@@ -135,9 +137,28 @@ CHUG_HDR_FEATURE_COLUMNS: tuple[str, ...] = (
     CANONICAL_6 + CHUG_HDR_TEMPORAL_FEATURES + CHUG_HDR_METADATA_FEATURES
 )
 FEATURE_SCHEMA_CHUG_HDR_WIDE_V1 = "chug-hdr-wide-v1"
+
+CHUG_HDR_DISPLAY_FEATURES: tuple[str, ...] = (
+    "display_peak_luminance_nits_norm",
+    "display_black_luminance_nits_norm",
+    "display_contrast_ratio_log_norm",
+    "display_ambient_lux_norm",
+    "display_bt2020_coverage",
+    "display_p3_coverage",
+    "display_panel_oled",
+    "display_panel_qled",
+    "display_panel_lcd",
+    "display_local_dimming",
+    "display_tone_mapping_dynamic",
+)
+CHUG_HDR_DISPLAY_FEATURE_COLUMNS: tuple[str, ...] = (
+    CHUG_HDR_FEATURE_COLUMNS + CHUG_HDR_DISPLAY_FEATURES
+)
+FEATURE_SCHEMA_CHUG_HDR_DISPLAY_V1 = "chug-hdr-display-v1"
 FEATURE_SCHEMAS: dict[str, tuple[str, ...]] = {
     FEATURE_SCHEMA_KONVID_V1: FEATURE_COLUMNS,
     FEATURE_SCHEMA_CHUG_HDR_WIDE_V1: CHUG_HDR_FEATURE_COLUMNS,
+    FEATURE_SCHEMA_CHUG_HDR_DISPLAY_V1: CHUG_HDR_DISPLAY_FEATURE_COLUMNS,
 }
 
 # ENCODER_VOCAB v4 — KonViD UGC content collapses to a single
@@ -175,6 +196,15 @@ class CorpusArrays:
     encoder: np.ndarray
     mos: np.ndarray
     splits: np.ndarray
+
+
+@dataclass(frozen=True)
+class DisplayProfile:
+    """Target display profile normalised onto trainer feature columns."""
+
+    source_path: str
+    sha256: str
+    feature_values: dict[str, float]
 
 
 # ---------------------------------------------------------------------
@@ -263,6 +293,211 @@ def _normalise_positive(value: Any, denominator: float) -> float:
     return raw / denominator
 
 
+def _mapping_first(mapping: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in mapping and mapping[key] is not None:
+            return mapping[key]
+    return None
+
+
+def _clamp01(value: float) -> float:
+    return min(1.0, max(0.0, value))
+
+
+def _normalise_fraction(value: Any) -> float:
+    raw = _safe_float(value)
+    if not math.isfinite(raw) or raw < 0.0:
+        return math.nan
+    if raw > 1.0 and raw <= 100.0:
+        raw /= 100.0
+    return _clamp01(raw) if raw <= 1.0 else math.nan
+
+
+def _boolish_feature(value: Any) -> float:
+    if isinstance(value, bool):
+        return 1.0 if value else 0.0
+    raw = _safe_float(value)
+    if math.isfinite(raw):
+        return 1.0 if raw != 0.0 else 0.0
+    text = str(value or "").strip().lower()
+    if text in {"1", "true", "yes", "y", "on", "enabled", "enable"}:
+        return 1.0
+    if text in {"0", "false", "no", "n", "off", "disabled", "disable", "none"}:
+        return 0.0
+    return math.nan
+
+
+def _display_panel_type(mapping: dict[str, Any]) -> str:
+    return (
+        str(
+            _mapping_first(
+                mapping,
+                "display_panel_type",
+                "panel_type",
+                "display_type",
+                "panel",
+            )
+            or ""
+        )
+        .strip()
+        .lower()
+    )
+
+
+def _display_tone_mapping(mapping: dict[str, Any]) -> str:
+    return (
+        str(
+            _mapping_first(
+                mapping,
+                "display_tone_mapping",
+                "tone_mapping",
+                "hdr_tone_mapping",
+                "hdr_format",
+            )
+            or ""
+        )
+        .strip()
+        .lower()
+    )
+
+
+def _display_feature_from_mapping(mapping: dict[str, Any], name: str) -> float:
+    direct = _safe_float(mapping.get(name))
+    if math.isfinite(direct):
+        return direct
+    if name == "display_peak_luminance_nits_norm":
+        value = _mapping_first(
+            mapping,
+            "display_peak_luminance_nits",
+            "peak_luminance_nits",
+            "peak_nits",
+            "max_luminance_nits",
+        )
+        return _normalise_positive(value, 10000.0)
+    if name == "display_black_luminance_nits_norm":
+        value = _mapping_first(
+            mapping,
+            "display_black_luminance_nits",
+            "black_luminance_nits",
+            "black_nits",
+            "min_luminance_nits",
+        )
+        return _normalise_positive(value, 1.0)
+    if name == "display_contrast_ratio_log_norm":
+        contrast = _safe_float(_mapping_first(mapping, "display_contrast_ratio", "contrast_ratio"))
+        if not math.isfinite(contrast):
+            peak = _safe_float(
+                _mapping_first(
+                    mapping,
+                    "display_peak_luminance_nits",
+                    "peak_luminance_nits",
+                    "peak_nits",
+                    "max_luminance_nits",
+                )
+            )
+            black = _safe_float(
+                _mapping_first(
+                    mapping,
+                    "display_black_luminance_nits",
+                    "black_luminance_nits",
+                    "black_nits",
+                    "min_luminance_nits",
+                )
+            )
+            if math.isfinite(peak) and math.isfinite(black) and black > 0.0:
+                contrast = peak / black
+        if not math.isfinite(contrast) or contrast <= 1.0:
+            return math.nan
+        return _clamp01(math.log10(contrast) / 7.0)
+    if name == "display_ambient_lux_norm":
+        value = _mapping_first(mapping, "display_ambient_lux", "ambient_lux", "viewing_lux")
+        return _normalise_positive(value, 1000.0)
+    if name == "display_bt2020_coverage":
+        return _normalise_fraction(
+            _mapping_first(
+                mapping,
+                "display_bt2020_coverage",
+                "bt2020_coverage",
+                "rec2020_coverage",
+            )
+        )
+    if name == "display_p3_coverage":
+        return _normalise_fraction(
+            _mapping_first(mapping, "display_p3_coverage", "p3_coverage", "dci_p3_coverage")
+        )
+    panel_type = _display_panel_type(mapping)
+    if name == "display_panel_oled":
+        return 1.0 if "oled" in panel_type else 0.0 if panel_type else math.nan
+    if name == "display_panel_qled":
+        return (
+            1.0
+            if ("qled" in panel_type or "quantum" in panel_type)
+            else (0.0 if panel_type else math.nan)
+        )
+    if name == "display_panel_lcd":
+        is_lcd = "oled" not in panel_type and any(
+            token in panel_type for token in ("lcd", "mini-led", "miniled", "led", "ips", "va")
+        )
+        return 1.0 if is_lcd else 0.0 if panel_type else math.nan
+    if name == "display_local_dimming":
+        value = _mapping_first(
+            mapping,
+            "display_local_dimming",
+            "local_dimming",
+            "full_array_local_dimming",
+        )
+        if value is not None:
+            return _boolish_feature(value)
+        return (
+            1.0
+            if any(token in panel_type for token in ("mini-led", "miniled", "fald"))
+            else math.nan
+        )
+    if name == "display_tone_mapping_dynamic":
+        value = _mapping_first(mapping, "display_tone_mapping_dynamic", "tone_mapping_dynamic")
+        if value is not None:
+            return _boolish_feature(value)
+        tone_mapping = _display_tone_mapping(mapping)
+        if not tone_mapping:
+            return math.nan
+        dynamic = any(
+            token in tone_mapping for token in ("dynamic", "hdr10+", "hdr10plus", "dolby", "vision")
+        )
+        return 1.0 if dynamic else 0.0
+    return math.nan
+
+
+def _display_profile_candidate(raw: dict[str, Any]) -> dict[str, Any]:
+    candidate = dict(raw)
+    for key in ("display", "panel", "profile", "features"):
+        nested = raw.get(key)
+        if isinstance(nested, dict):
+            candidate.update(nested)
+    return candidate
+
+
+def _normalise_display_profile_payload(raw: dict[str, Any]) -> dict[str, float]:
+    candidate = _display_profile_candidate(raw)
+    values: dict[str, float] = {}
+    for name in CHUG_HDR_DISPLAY_FEATURES:
+        value = _display_feature_from_mapping(candidate, name)
+        if math.isfinite(value):
+            values[name] = float(value)
+    if not values:
+        raise ValueError("display profile JSON did not contain any recognised display fields")
+    return values
+
+
+def _load_display_profile(path: Path | None) -> DisplayProfile | None:
+    if path is None:
+        return None
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError("display profile JSON must be an object")
+    values = _normalise_display_profile_payload(raw)
+    return DisplayProfile(source_path=str(path), sha256=sha256(path), feature_values=values)
+
+
 def _parse_bitrate_mbps(value: Any) -> float:
     """Parse CHUG labels such as ``0.2M`` or ``500K`` into Mbps."""
     if isinstance(value, (int, float)):
@@ -284,7 +519,11 @@ def _parse_bitrate_mbps(value: Any) -> float:
     return raw * multiplier
 
 
-def _row_feature_value(row: dict[str, Any], name: str) -> float:
+def _row_feature_value(
+    row: dict[str, Any],
+    name: str,
+    display_profile: dict[str, float] | None = None,
+) -> float:
     if name == "chug_bitrate_mbps":
         if row.get("chug_bitrate_label") is not None:
             return _parse_bitrate_mbps(row.get("chug_bitrate_label"))
@@ -315,6 +554,13 @@ def _row_feature_value(row: dict[str, Any], name: str) -> float:
     if name == "feature_bitdepth_norm":
         bitdepth = _safe_float(row.get("feature_bitdepth"))
         return (bitdepth - 8.0) / 4.0 if math.isfinite(bitdepth) else math.nan
+    if name in CHUG_HDR_DISPLAY_FEATURES:
+        value = _display_feature_from_mapping(row, name)
+        if math.isfinite(value):
+            return value
+        if display_profile is not None:
+            return _safe_float(display_profile.get(name))
+        return math.nan
 
     value = row.get(name)
     primary_f = _safe_float(value)
@@ -331,6 +577,7 @@ def _row_feature_value(row: dict[str, Any], name: str) -> float:
 def _row_to_features(
     row: dict[str, Any],
     feature_columns: Sequence[str] = FEATURE_COLUMNS,
+    display_profile: dict[str, float] | None = None,
 ) -> tuple[np.ndarray, float] | None:
     """Project one corpus row to ``(features, mos)`` or ``None`` to skip.
 
@@ -361,7 +608,7 @@ def _row_to_features(
         return None
     feats = np.zeros(len(feature_columns), dtype=np.float32)
     for idx, name in enumerate(feature_columns):
-        value = _row_feature_value(row, name)
+        value = _row_feature_value(row, name, display_profile=display_profile)
         if math.isfinite(value):
             feats[idx] = float(value)
     return feats, mos_f
@@ -372,6 +619,7 @@ def _load_corpus_arrays(
     jsonl_paths: Sequence[Path] = (),
     parquet_paths: Sequence[Path] = (),
     feature_columns: Sequence[str] = FEATURE_COLUMNS,
+    display_profile: dict[str, float] | None = None,
 ) -> CorpusArrays:
     """Load + project one or more JSONL or parquet corpus paths.
 
@@ -386,7 +634,11 @@ def _load_corpus_arrays(
     pairs: list[tuple[np.ndarray, float]] = []
     splits: list[str] = []
     for row in rows:
-        proj = _row_to_features(row, feature_columns=feature_columns)
+        proj = _row_to_features(
+            row,
+            feature_columns=feature_columns,
+            display_profile=display_profile,
+        )
         if proj is not None:
             pairs.append(proj)
             splits.append(_normalise_split(row.get("split")))
@@ -502,6 +754,30 @@ def _synthesize_corpus(
             continue
         if name == "feature_bitdepth_norm":
             columns.append(np.full(n_rows, 0.5, dtype=np.float32))
+            continue
+        if name == "display_peak_luminance_nits_norm":
+            columns.append(rng.uniform(0.04, 0.20, size=n_rows).astype(np.float32))
+            continue
+        if name == "display_black_luminance_nits_norm":
+            columns.append(rng.uniform(0.0001, 0.02, size=n_rows).astype(np.float32))
+            continue
+        if name == "display_contrast_ratio_log_norm":
+            columns.append(rng.uniform(0.55, 0.95, size=n_rows).astype(np.float32))
+            continue
+        if name == "display_ambient_lux_norm":
+            columns.append(rng.uniform(0.0, 0.25, size=n_rows).astype(np.float32))
+            continue
+        if name in {"display_bt2020_coverage", "display_p3_coverage"}:
+            columns.append(rng.uniform(0.65, 1.0, size=n_rows).astype(np.float32))
+            continue
+        if name in {
+            "display_panel_oled",
+            "display_panel_qled",
+            "display_panel_lcd",
+            "display_local_dimming",
+            "display_tone_mapping_dynamic",
+        }:
+            columns.append(rng.integers(0, 2, size=n_rows).astype(np.float32))
             continue
         columns.append(np.zeros(n_rows, dtype=np.float32))
     feats = np.column_stack(columns).astype(np.float32)
@@ -842,8 +1118,9 @@ def _build_manifest(
     n_rows: int,
     epochs: int,
     seed: int,
+    display_profile: DisplayProfile | None = None,
 ) -> dict[str, Any]:
-    return {
+    manifest: dict[str, Any] = {
         "id": model_id,
         "kind": "mos",
         "onnx": onnx_path.name,
@@ -869,6 +1146,14 @@ def _build_manifest(
         "adr": "0336",
         "phase": "ADR-0325 Phase 3",
     }
+    if display_profile is not None:
+        manifest["display_profile"] = {
+            "schema": "chug-display-profile-v1",
+            "source_path": display_profile.source_path,
+            "sha256": display_profile.sha256,
+            "feature_values": display_profile.feature_values,
+        }
+    return manifest
 
 
 # ---------------------------------------------------------------------
@@ -937,6 +1222,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         help=argparse.SUPPRESS,
     )
     ap.add_argument(
+        "--display-profile-json",
+        type=Path,
+        default=None,
+        help=argparse.SUPPRESS,
+    )
+    ap.add_argument(
         "--log-prefix",
         default="konvid-mos",
         help=argparse.SUPPRESS,
@@ -987,6 +1278,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args = ap.parse_args(argv)
     feature_columns = _feature_columns_for_schema(args.feature_schema)
+    display_profile = _load_display_profile(args.display_profile_json)
+    uses_display_profile = any(name in feature_columns for name in CHUG_HDR_DISPLAY_FEATURES)
+    display_profile_values = (
+        display_profile.feature_values
+        if display_profile is not None and uses_display_profile
+        else None
+    )
+    if display_profile is not None and not uses_display_profile:
+        print(
+            f"[{args.log_prefix}] display profile ignored by feature schema "
+            f"{args.feature_schema}",
+            file=sys.stderr,
+        )
 
     if args.smoke:
         n_rows = 600
@@ -1012,6 +1316,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             jsonl_paths=feature_jsonls,
             parquet_paths=feature_parquets,
             feature_columns=feature_columns,
+            display_profile=display_profile_values,
         )
         features, encoder, mos, splits = (
             arrays.features,
@@ -1153,6 +1458,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         n_rows=int(ship_features.shape[0]),
         epochs=epochs,
         seed=args.seed,
+        display_profile=display_profile if uses_display_profile else None,
     )
     args.out_manifest.parent.mkdir(parents=True, exist_ok=True)
     args.out_manifest.write_text(
@@ -1170,6 +1476,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 __all__ = [
     "CANONICAL_6",
+    "CHUG_HDR_DISPLAY_FEATURES",
+    "CHUG_HDR_DISPLAY_FEATURE_COLUMNS",
     "CHUG_HDR_FEATURE_COLUMNS",
     "CHUG_HDR_METADATA_FEATURES",
     "CHUG_HDR_TEMPORAL_FEATURES",
@@ -1179,6 +1487,7 @@ __all__ = [
     "EXTRA_FEATURES",
     "FEATURE_COLUMNS",
     "FEATURE_SCHEMAS",
+    "FEATURE_SCHEMA_CHUG_HDR_DISPLAY_V1",
     "FEATURE_SCHEMA_CHUG_HDR_WIDE_V1",
     "FEATURE_SCHEMA_KONVID_V1",
     "GATE_MEAN_PLCC",
@@ -1191,12 +1500,15 @@ __all__ = [
     "N_FEATURES",
     "SYNTHETIC_GATE_PLCC",
     "CorpusArrays",
+    "DisplayProfile",
     "_evaluate_gate",
     "_feature_columns_for_schema",
     "_heldout_split_indices",
     "_kfold_indices",
     "_load_corpus",
     "_load_corpus_arrays",
+    "_load_display_profile",
+    "_normalise_display_profile_payload",
     "_resolve_device",
     "_row_to_features",
     "_synthesize_corpus",
