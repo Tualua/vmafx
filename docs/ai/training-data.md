@@ -143,3 +143,7 @@ Determinism`.
   feature-reweighting (2026-05-19)
 - [ADR-0612](../adr/0612-tiny-ai-netflix-training-scaffold-2026-05-19.md) — architecture
   alternatives table and training-data contract formalised (2026-05-19 scaffold iteration)
+- [ADR-0640](../adr/0640-tiny-ai-netflix-training-scaffold-2026-05-20.md) — EfficientVMAF
+  survey update, feature-reweighting alternative added (2026-05-20 scaffold iteration)
+- [Research digest 0615](../research/0615-tiny-ai-netflix-training-2026-05-20.md) —
+  EfficientVMAF (CVPR 2024), IQA-PyTorch distillation, ORT 1.20 update (2026-05-20)

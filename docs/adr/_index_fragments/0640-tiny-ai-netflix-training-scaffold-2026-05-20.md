@@ -1,0 +1,1 @@
+| [0640](0640-tiny-ai-netflix-training-scaffold-2026-05-20.md) | Tiny-AI training on the original Netflix VMAF training corpus (2026-05-20 scaffold) | Proposed | `ai`, `docs`, `workspace`, `mcp` |

@@ -37748,3 +37748,31 @@ Touched files:
 `docs/state.md`,
 `changelog.d/fixed/master-ci-dnn-mcp-coverage-2026-05-19.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0640 — Tiny-AI Netflix corpus training scaffold (2026-05-20 iteration)
+
+**No rebase impact on upstream C sources or FFmpeg patches.** All touched
+files are fork-local docs, Python test infrastructure, and the changelog
+fragment tree.
+
+**Key invariants** (track when upstream Netflix/vmaf adds its own training
+surface):
+
+- `.workingdir2/netflix/` is gitignored and the 37 GB corpus is never
+  committed. The `--data-root` flag (or `VMAF_DATA_ROOT` env var) is
+  the mandatory CLI interface; any training script that hard-codes the
+  corpus path violates this invariant.
+- `mcp-server/vmaf-mcp/tests/test_smoke_e2e.py` runs against committed
+  fixtures only (`python/test/resource/yuv/src01_hrc00_576x324.yuv`).
+  Do not change the smoke test to reference `.workingdir2/netflix/`.
+- Architecture selection and the actual training run are deferred to a
+  follow-up PR; do not trigger training from the scaffold branch.
+
+Touched files:
+`docs/adr/0640-tiny-ai-netflix-training-scaffold-2026-05-20.md`,
+`docs/adr/_index_fragments/0640-tiny-ai-netflix-training-scaffold-2026-05-20.md`,
+`docs/adr/_index_fragments/_order.txt`,
+`docs/research/0615-tiny-ai-netflix-training-2026-05-20.md`,
+`docs/ai/training-data.md` (See also section extended),
+`changelog.d/added/0640-tiny-ai-netflix-training-scaffold-2026-05-20.md`,
+`docs/rebase-notes.md` (this entry).
