@@ -217,6 +217,14 @@ LOSO PLCC ≥ 0.95 against the `vmaf_v0.6.1` per-frame teacher.
   consumes the same six features in the same order, and the ONNX
   graph weight matrix is column-aligned to it. Reordering the
   sidecar `feature_order` field invalidates the checkpoint.
+- Refresh PRs must point `--parquet` at the current dated Netflix
+  full-feature table (for example
+  `runs/full_features_netflix_refresh_20260520.parquet`), not the
+  stale historical `runs/full_features_netflix.parquet`, and must
+  update the model card with the new LOSO fold metrics. If
+  `torch.onnx.export` leaves an orphan `<model>.onnx.data` while the
+  saved ONNX has no external initializers, restore the orphan file and
+  commit only the inline ONNX plus sidecar/registry changes.
 - Netflix Public Dataset is non-redistributable. CI cannot retrain
   end-to-end; only the smoke path
   (`python ai/scripts/train_fr_regressor.py --epochs 3 --no-export`)

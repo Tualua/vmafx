@@ -394,3 +394,4 @@
 0644-vmaf-tune-codec-runtime-variants
 0645-integer-adm-pnorm-simd
 0646-dnn-attached-multi-output
+0647-ai-fr-regressor-v1-refresh-20260520

@@ -485,6 +485,7 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-0644](0644-vmaf-tune-codec-runtime-variants.md) | Add `vmaf-tune compare` codec runtime variants: `ADAPTER@VARIANT` display tokens still route through the base adapter, `--encoder-ffmpeg-bin TOKEN=PATH` binds token-local FFmpeg binaries, and compare JSON/CSV rows now expose `adapter`, `runtime_variant`, and `ffmpeg_bin` provenance metadata. | Accepted | vmaf-tune, ffmpeg, cli, docs |
 | [ADR-0645](0645-integer-adm-pnorm-simd.md) | Thread integer ADM p-norm through SIMD callbacks | Accepted | simd, feature-extractor, testing |
 | [ADR-0646](0646-dnn-attached-multi-output.md) | Route attached DNN multi-output tensors | Accepted | 2026-05-20 | ai, dnn, api |
+| [ADR-0647](0647-ai-fr-regressor-v1-refresh-20260520.md) | Refresh `fr_regressor_v1` from the 2026-05-20 Netflix feature table | Accepted | ai, tiny-ai, model-refresh, netflix-public |
 | [ADR-0436](0436-mcp-backend-selector-parity.md) | MCP server backend-selector parity (vulkan/hip/metal) | Accepted | mcp, agents, api, dispatch, fork-local |
 | [ADR-0448](0448-active-upstream-monitoring-discipline.md) | Active upstream monitoring (no silent "wait" deferrals) | Accepted | ci, governance, upstream-sync, deferral, fork-local |
 | [0457](0457-onnx-blobs-to-github-releases.md) | model/tiny/*.onnx blobs ≥1MB live in GitHub Releases, not git | Accepted | 2026-05-15 |

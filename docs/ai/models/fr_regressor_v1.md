@@ -8,10 +8,10 @@ same target — packaged as a 67-op-allowlisted ONNX so it can run inside
 `libvmaf`'s tiny-AI inference path on every supported execution provider
 (CPU / CUDA / OpenVINO / ROCm).
 
-> **Status — shipped 2026-04-29.** Unblocks BACKLOG row T6-1a;
-> closes the `fr_regressor_v1` deferral row in
-> [`docs/state.md`](../../state.md). See
-> [ADR-0249](../../adr/0249-fr-regressor-v1.md).
+> **Status — refreshed 2026-05-20.** Originally shipped 2026-04-29
+> (ADR-0249); refreshed after the May feature-extraction/default-path
+> bugfix wave using `runs/full_features_netflix_refresh_20260520.parquet`.
+> See [ADR-0647](../../adr/0647-ai-fr-regressor-v1-refresh-20260520.md).
 
 ## What the output means
 
@@ -45,9 +45,9 @@ that threshold.
 | Output | `score` — `[N]` float32, VMAF-scale |
 | Feature order | `adm2, vif_scale0, vif_scale1, vif_scale2, vif_scale3, motion2` |
 | ONNX opset | 17 |
-| Training corpus | Netflix Public Dataset (9 ref + 70 dis YUVs, 1920×1080 yuv420p 8-bit) |
+| Training corpus | Netflix Public Dataset refresh table `runs/full_features_netflix_refresh_20260520.parquet` (11190 rows, 30 cols; source YUVs remain local-only) |
 | Teacher | `vmaf_v0.6.1` per-frame score |
-| Held-out PLCC | reported in sidecar — see `training.loso_mean_plcc` |
+| Held-out PLCC | `0.9982 ± 0.0014` mean 9-fold LOSO |
 | License | BSD-3-Clause-Plus-Patent (fork-local; checkpoint is non-redistributable Netflix data derivative — see *Provenance* below) |
 | Exporter | `ai/scripts/train_fr_regressor.py` |
 
@@ -57,6 +57,25 @@ input feature vector with the same statistics before invoking the
 graph** — the standardisation is *not* baked into the ONNX so that
 downstream consumers can substitute a different feature pool without
 re-exporting.
+
+### 2026-05-20 refresh metrics
+
+| Source | PLCC | SROCC | RMSE |
+| --- | ---: | ---: | ---: |
+| BigBuckBunny | 0.9962 | 0.6277 | 4.466 |
+| BirdsInCage | 0.9993 | 0.9997 | 1.854 |
+| CrowdRun | 0.9997 | 0.9998 | 1.005 |
+| ElFuente1 | 0.9992 | 0.9963 | 1.635 |
+| ElFuente2 | 0.9964 | 0.9969 | 3.169 |
+| FoxBird | 0.9967 | 0.9954 | 2.352 |
+| OldTownCross | 0.9992 | 0.9998 | 1.931 |
+| Seeking | 0.9989 | 0.9962 | 1.982 |
+| Tennis | 0.9982 | 0.9982 | 1.356 |
+
+Summary: mean PLCC `0.9982 ± 0.0014`, mean SROCC
+`0.9567 ± 0.1234`, mean RMSE `2.194 ± 1.049`. BigBuckBunny has weak
+rank ordering but high linear agreement; the C1 ship gate remains the
+ADR-0249 PLCC gate.
 
 ## Provenance
 
@@ -116,13 +135,15 @@ scores = sess.run(["score"], {"features": x.astype(np.float32)})[0]
 ## Re-training
 
 ```bash
-# 1. Make sure runs/full_features_netflix.parquet exists. Regenerate via:
+# 1. Make sure a fresh Netflix feature table exists. Regenerate via:
 python ai/scripts/extract_full_features.py \
     --data-root .workingdir2/netflix \
-    --vmaf-bin libvmaf/build-cpu/tools/vmaf
+    --vmaf-bin libvmaf/build-cpu/tools/vmaf \
+    --out runs/full_features_netflix_refresh_YYYYMMDD.parquet
 
 # 2. Train + export (defaults match the shipped checkpoint).
-python ai/scripts/train_fr_regressor.py
+PYTHONPATH=ai/src python ai/scripts/train_fr_regressor.py \
+    --parquet runs/full_features_netflix_refresh_YYYYMMDD.parquet
 ```
 
 The trainer:
@@ -153,6 +174,10 @@ same ONNX bytes (modulo torch / onnx producer-string drift).
   `vmaf_v0.6.1` was originally calibrated against.
 - **Static input shape.** Only the batch axis is dynamic
   (`[N, 6]`); the feature dimension is pinned at 6.
+- **Rank correlation caveat on BigBuckBunny.** The 2026-05-20 refresh
+  keeps high PLCC (`0.9962`) on BigBuckBunny but low SROCC
+  (`0.6277`). Treat this model as a PLCC-aligned teacher-score
+  regressor, not a per-content ranker.
 
 ## See also
 
@@ -166,3 +191,4 @@ same ONNX bytes (modulo torch / onnx producer-string drift).
 - [ADR-0168](../../adr/0168-tinyai-konvid-baselines.md) — C2 + C3
   baselines (sibling).
 - [ADR-0249](../../adr/0249-fr-regressor-v1.md) — this model's decision record.
+- [ADR-0647](../../adr/0647-ai-fr-regressor-v1-refresh-20260520.md) — 2026-05-20 refresh.

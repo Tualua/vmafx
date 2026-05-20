@@ -29,13 +29,10 @@
     {
       "id": "fr_regressor_v1",
       "kind": "fr",
-      "license": "BSD-3-Clause-Plus-Patent",
-      "license_url": "https://github.com/lusoris/vmaf/blob/master/LICENSE",
-      "notes": "Tiny FR regressor (C1) \u2014 6-feature canonical-6 vector (adm2, vif_scale0..3, motion2) \u2192 VMAF teacher score scalar. Trained on the Netflix Public Dataset (9 ref + 70 dis YUVs) with vmaf_v0.6.1 as DMOS-aligned teacher. 9-fold LOSO mean PLCC = 0.9977 \u00b1 0.0025. Shipped checkpoint trained on all 9 sources. Exported via ai/scripts/train_fr_regressor.py. See docs/ai/models/fr_regressor_v1.md + ADR-0249.",
+      "notes": "Tiny FR regressor (C1) \u2014 6-feature canonical-6 vector (adm2, vif_scale0..3, motion2) \u2192 VMAF teacher score scalar. Trained on the Netflix Public Dataset (9 ref + 70 dis YUVs) with vmaf_v0.6.1 as DMOS-aligned teacher. 9-fold LOSO mean PLCC = 0.9982 \u00b1 0.0014. Shipped checkpoint trained on all 9 sources. Exported via ai/scripts/train_fr_regressor.py. See docs/ai/models/fr_regressor_v1.md + ADR-0249.",
       "onnx": "fr_regressor_v1.onnx",
       "opset": 17,
-      "sha256": "447334948e1cc63497ad3143f2342bd6a334adbb6d9a8dbf3685b1b3595979e9",
-      "sigstore_bundle": "fr_regressor_v1.onnx.sigstore.json"
+      "sha256": "b57dee2509290d77c7980f8f23aa1380f64937c485d1b1d1e5f78c13a3a54c63"
     },
     {
       "id": "fr_regressor_v2",
@@ -240,19 +237,6 @@
       "sigstore_bundle": "transnet_v2.onnx.sigstore.json"
     },
     {
-      "description": "Tiny VMAF fusion regressor \u2014 canonical-6 features + bundled StandardScaler + mlp_small (~257 params).",
-      "id": "vmaf_tiny_v2",
-      "kind": "fr",
-      "license": "BSD-3-Clause-Plus-Patent",
-      "license_url": "https://github.com/lusoris/vmaf/blob/master/LICENSE",
-      "notes": "vmaf_tiny_v2 \u2014 Phase-3 validated mlp_small (6\u219216\u21928\u21921) over canonical-6 (adm2, vif_scale0..3, motion2). 90ep Adam lr=1e-3 MSE bs=256. StandardScaler baked into ONNX graph (ADR-0244). Trained 4-corpus parquet (NF+KV+BVI-DVC A+B+C+D, 330499 rows). PLCC 0.9978\u00b10.0021 NF LOSO; 0.9998 KV 5-fold; 0.9999 ship-gate. See docs/ai/models/vmaf_tiny_v2.md.",
-      "onnx": "vmaf_tiny_v2.onnx",
-      "opset": 17,
-      "sha256": "d7000bf5c5fd1ed39528546dd8464db44a13cb73cfed33fd8f134e5848b009a7",
-      "sigstore_bundle": "vmaf_tiny_v2.onnx.sigstore.json",
-      "smoke": false
-    },
-    {
       "description": "Legacy tiny VMAF fusion regressor (mlp_small) \u2014 superseded by vmaf_tiny_v2 (ADR-0244); retained for LOSO-eval baselines + quantization regression tests.",
       "id": "vmaf_tiny_v1",
       "kind": "fr",
@@ -277,6 +261,19 @@
       "sha256": "97f6116b44913f4076170a2f0cb78042db85aac7c56d432e14d9fe138ab952b7",
       "sigstore_bundle": "vmaf_tiny_v1_medium.onnx.sigstore.json",
       "smoke": true
+    },
+    {
+      "description": "Tiny VMAF fusion regressor \u2014 canonical-6 features + bundled StandardScaler + mlp_small (~257 params).",
+      "id": "vmaf_tiny_v2",
+      "kind": "fr",
+      "license": "BSD-3-Clause-Plus-Patent",
+      "license_url": "https://github.com/lusoris/vmaf/blob/master/LICENSE",
+      "notes": "vmaf_tiny_v2 \u2014 Phase-3 validated mlp_small (6\u219216\u21928\u21921) over canonical-6 (adm2, vif_scale0..3, motion2). 90ep Adam lr=1e-3 MSE bs=256. StandardScaler baked into ONNX graph (ADR-0244). Trained 4-corpus parquet (NF+KV+BVI-DVC A+B+C+D, 330499 rows). PLCC 0.9978\u00b10.0021 NF LOSO; 0.9998 KV 5-fold; 0.9999 ship-gate. See docs/ai/models/vmaf_tiny_v2.md.",
+      "onnx": "vmaf_tiny_v2.onnx",
+      "opset": 17,
+      "sha256": "d7000bf5c5fd1ed39528546dd8464db44a13cb73cfed33fd8f134e5848b009a7",
+      "sigstore_bundle": "vmaf_tiny_v2.onnx.sigstore.json",
+      "smoke": false
     },
     {
       "description": "Tiny VMAF fusion regressor \u2014 canonical-6 features + bundled StandardScaler + mlp_medium (~769 params).",

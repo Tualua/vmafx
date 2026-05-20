@@ -37999,3 +37999,34 @@ documented `T-VULKAN-MOTION-LAVAPIPE-INIT` debt in `docs/state.md` and keep
 the required `GPU-Parity Matrix Gate` skip list until the Vulkan motion
 lavapipe bug is actually fixed; do not reintroduce advisory failing steps
 inside the named VIF gate.
+
+## ADR-0647 — `fr_regressor_v1` Netflix refresh
+
+**No upstream Netflix C-source rebase impact.** This is a fork-local model
+artifact refresh: `model/tiny/fr_regressor_v1.onnx`, its sidecar, registry
+row, model card, ADR/research docs, and state/changelog metadata.
+
+**Key invariants**:
+
+- The ADR-0249 model recipe and PLCC ship gate stay unchanged. Do not use this
+  refresh as precedent for changing architecture, feature order, or gate
+  threshold.
+- Refreshes must train from a dated current full-feature table, not from stale
+  `runs/full_features_netflix.parquet`.
+- `fr_regressor_v1.onnx` is inline after export. If the exporter rewrites the
+  stale sibling `.onnx.data` file while the ONNX has no external initializers,
+  restore the orphan sidecar rather than expanding the model diff.
+
+Touched files:
+`model/tiny/fr_regressor_v1.onnx`,
+`model/tiny/fr_regressor_v1.json`,
+`model/tiny/registry.json`,
+`docs/ai/models/fr_regressor_v1.md`,
+`docs/adr/0647-ai-fr-regressor-v1-refresh-20260520.md`,
+`docs/adr/_index_fragments/0647-ai-fr-regressor-v1-refresh-20260520.md`,
+`docs/adr/_index_fragments/_order.txt`,
+`docs/research/0647-ai-fr-regressor-v1-refresh-20260520.md`,
+`ai/AGENTS.md`,
+`docs/state.md`,
+`changelog.d/changed/0647-ai-fr-regressor-v1-refresh-20260520.md`,
+`docs/rebase-notes.md` (this entry).
