@@ -38161,3 +38161,32 @@ Touched files:
 `ai/AGENTS.md`,
 `changelog.d/added/0653-chug-display-profile-training.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0658 — Project modernization audit
+
+**No upstream Netflix C-source rebase impact.** This is a fork-local
+developer-tooling audit under `scripts/dev/`.
+
+**Key invariants**:
+
+- `scripts/dev/project_modernization_audit.py` is read-only. It may emit JSON
+  and Markdown, but it must not rewrite `.workingdir2/OPEN.md`,
+  `.workingdir2/BACKLOG.md`, `docs/state.md`, changelog fragments, or PR bodies.
+- The scanner is advisory queue shaping, not a required CI gate. Its marker
+  matches are intentionally text-based and need human triage.
+- Archived scratch remains skipped by default; include it only with
+  `--include-archives` during deliberate archaeology.
+
+Touched files:
+`scripts/dev/project_modernization_audit.py`,
+`scripts/dev/test_project_modernization_audit.py`,
+`docs/development/project-modernization-audit.md`,
+`docs/adr/0658-project-modernization-audit.md`,
+`docs/adr/_index_fragments/0658-project-modernization-audit.md`,
+`docs/adr/_index_fragments/_order.txt`,
+`docs/adr/README.md`,
+`docs/research/0658-project-modernization-audit.md`,
+`scripts/AGENTS.md`,
+`mkdocs.yml`,
+`changelog.d/added/0658-project-modernization-audit.md`,
+`docs/rebase-notes.md` (this entry).

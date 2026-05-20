@@ -123,6 +123,16 @@ for the throw-away wrapper that performs the rename until
 SCHEMA_VERSION=3 lands. **Do not** modify `analyze_knob_sweep.py`
 to accept both spellings; producer-side rename is the path forward.
 
+### `dev/project_modernization_audit.py` is read-only queue shaping
+
+The modernization audit is an operator aid, not a CI gate. It scans
+curated source/doc roots, model-registry smoke rows, AI script-family
+clusters, and `.workingdir2` state files, then emits JSON/Markdown.
+It must stay read-only: no automatic edits to `.workingdir2/OPEN.md`,
+`.workingdir2/BACKLOG.md`, `docs/state.md`, GitHub PRs, or changelog
+fragments. If a future branch wants machine-written backlog updates,
+that is a separate ADR and module.
+
 ### `run_unittests.sh` is upstream-mirror
 
 This script is part of the original Netflix Python test harness

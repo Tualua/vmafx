@@ -283,6 +283,7 @@ nav:
       - Known upstream bugs: development/known-upstream-bugs.md
       - OSSF Scorecard: development/ossf-scorecard.md
       - Dependency bot: development/dependency-bot.md
+      - Project modernization audit: development/project-modernization-audit.md
       - Self-hosted runner: development/self-hosted-runner.md
       - Agent dispatch: development/agent-dispatch.md
       - Agent worktree discipline: development/agent-worktree-discipline.md
