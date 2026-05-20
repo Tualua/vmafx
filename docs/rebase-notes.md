@@ -37881,3 +37881,50 @@ Touched files:
 `docs/research/0644-vmaf-tune-codec-runtime-variants.md`,
 `changelog.d/added/0644-vmaf-tune-codec-runtime-variants.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0645 — Integer ADM p-norm SIMD callback ABI
+
+When rebasing any upstream change that touches integer ADM contrast-measure
+callbacks, keep `adm_p_norm` threaded through the scalar and x86 SIMD twins.
+
+Touched ABI group:
+`libvmaf/src/feature/integer_adm.c`,
+`libvmaf/src/feature/x86/adm_avx2.c`,
+`libvmaf/src/feature/x86/adm_avx512.c`,
+`libvmaf/src/feature/x86/adm_avx2.h`,
+`libvmaf/src/feature/x86/adm_avx512.h`.
+
+Invariant: `adm_cm` and `i4_adm_cm` must accept the p-norm parameter and the
+final `powf` exponent must be `1.0f / (float)adm_p_norm` in every twin. The
+default `3.0` path is the Netflix-compatible path; do not split SIMD dispatch
+back to a hard-coded exponent when resolving conflicts.
+
+## ADR-0331 — rule-enforcement ready-for-review trigger repair
+
+`.github/workflows/rule-enforcement.yml` must include
+`ready_for_review` in its `pull_request.types` list, alongside `edited`.
+Without `ready_for_review`, draft-to-ready promotion leaves the ADR-0108,
+ADR-0100, FFmpeg-surface, ADR-number, backfill, and `docs/state.md` gates
+stuck on their draft-time skipped check runs while the heavier workflows
+rerun correctly. Keep `edited` as well so PR-body fixes can rerun only the
+rule-enforcement workflow without burning the full matrix again.
+
+## Test build graph — generated vcs_version.h dependency
+
+`libvmaf/test/test_feature_collector.c` directly includes
+`libvmaf/src/libvmaf.c`, and `libvmaf.c` includes the generated
+`vcs_version.h` header. Keep `rev_target` listed in the
+`test_feature_collector` executable sources in `libvmaf/test/meson.build`;
+otherwise fresh parallel Ninja builds can compile the test before
+`include/vcs_version.h` exists and fail nondeterministically.
+
+## Vulkan lavapipe CI — motion probes stay out of the VIF job
+
+The `Vulkan VIF Cross-Backend (lavapipe, places=4)` job should not run the
+known-broken `motion` / `motion_v2` lavapipe probes with
+`continue-on-error: true`. GitHub still emits `##[error]` annotations for
+those advisory failures, which makes a passing PR look broken. Keep the
+documented `T-VULKAN-MOTION-LAVAPIPE-INIT` debt in `docs/state.md` and keep
+the required `GPU-Parity Matrix Gate` skip list until the Vulkan motion
+lavapipe bug is actually fixed; do not reintroduce advisory failing steps
+inside the named VIF gate.

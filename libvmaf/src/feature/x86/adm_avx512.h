@@ -35,12 +35,12 @@ void adm_decouple_s123_avx512(AdmBuffer *buf, int w, int h, int stride, double a
 float adm_cm_avx512(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stride,
                     double adm_norm_view_dist, int adm_ref_display_height, int adm_csf_mode,
                     double adm_csf_scale, double adm_csf_diag_scale, double adm_noise_weight,
-                    bool measure_aim);
+                    double adm_p_norm, bool measure_aim);
 
 float i4_adm_cm_avx512(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stride, int scale,
                        double adm_norm_view_dist, int adm_ref_display_height, int adm_csf_mode,
                        double adm_csf_scale, double adm_csf_diag_scale, double adm_noise_weight,
-                       bool measure_aim);
+                       double adm_p_norm, bool measure_aim);
 
 void adm_dwt2_s123_combined_avx512(const int32_t *i4_ref_scale, const int32_t *i4_curr_dis,
                                    AdmBuffer *buf, int w, int h, int ref_stride, int dis_stride,

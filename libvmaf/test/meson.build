@@ -38,7 +38,8 @@ test_propagate_metadata = executable('test_propagate_metadata',
 )
 
 test_feature_collector = executable('test_feature_collector',
-    ['test.c', 'test_feature_collector.c', '../src/log.c', '../src/predict.c', '../src/metadata_handler.c'],
+    ['test.c', 'test_feature_collector.c', '../src/log.c', '../src/predict.c',
+     '../src/metadata_handler.c', rev_target],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/feature/'), include_directories('../src')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, gpu_all_deps],

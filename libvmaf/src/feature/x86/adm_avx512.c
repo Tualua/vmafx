@@ -1985,7 +1985,7 @@ static inline float dwt_quant_step(const struct dwt_model_params *params, int la
 float adm_cm_avx512(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stride,
                     double adm_norm_view_dist, int adm_ref_display_height, int adm_csf_mode,
                     double adm_csf_scale, double adm_csf_diag_scale, double adm_noise_weight,
-                    bool measure_aim)
+                    double adm_p_norm, bool measure_aim)
 {
     adm_dwt_band_t *src;
     adm_dwt_band_t *csf_f;
@@ -2456,12 +2456,13 @@ float adm_cm_avx512(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stri
     float f_accum_v = (float)(accum_v / pow(2, (52 - shift_xvcub - shift_inner_accum)));
     float f_accum_d = (float)(accum_d / pow(2, (57 - shift_xdcub - shift_inner_accum)));
 
-    float num_scale_h = powf(f_accum_h, 1.0f / 3.0f) +
-                        powf((bottom - top) * (right - left) * adm_noise_weight, 1.0f / 3.0f);
-    float num_scale_v = powf(f_accum_v, 1.0f / 3.0f) +
-                        powf((bottom - top) * (right - left) * adm_noise_weight, 1.0f / 3.0f);
-    float num_scale_d = powf(f_accum_d, 1.0f / 3.0f) +
-                        powf((bottom - top) * (right - left) * adm_noise_weight, 1.0f / 3.0f);
+    const float p_norm_exp = 1.0f / (float)adm_p_norm;
+    float num_scale_h = powf(f_accum_h, p_norm_exp) +
+                        powf((bottom - top) * (right - left) * adm_noise_weight, p_norm_exp);
+    float num_scale_v = powf(f_accum_v, p_norm_exp) +
+                        powf((bottom - top) * (right - left) * adm_noise_weight, p_norm_exp);
+    float num_scale_d = powf(f_accum_d, p_norm_exp) +
+                        powf((bottom - top) * (right - left) * adm_noise_weight, p_norm_exp);
 
     return (num_scale_h + num_scale_v + num_scale_d);
 }
@@ -2469,7 +2470,7 @@ float adm_cm_avx512(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stri
 float i4_adm_cm_avx512(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_stride, int scale,
                        double adm_norm_view_dist, int adm_ref_display_height, int adm_csf_mode,
                        double adm_csf_scale, double adm_csf_diag_scale, double adm_noise_weight,
-                       bool measure_aim)
+                       double adm_p_norm, bool measure_aim)
 {
     i4_adm_dwt_band_t *src;
     i4_adm_dwt_band_t *csf_f;
@@ -3006,12 +3007,13 @@ float i4_adm_cm_avx512(AdmBuffer *buf, int w, int h, int src_stride, int csf_a_s
     float f_accum_v = (float)(accum_v / final_shift[scale - 1]);
     float f_accum_d = (float)(accum_d / final_shift[scale - 1]);
 
-    float num_scale_h = powf(f_accum_h, 1.0f / 3.0f) +
-                        powf((bottom - top) * (right - left) * adm_noise_weight, 1.0f / 3.0f);
-    float num_scale_v = powf(f_accum_v, 1.0f / 3.0f) +
-                        powf((bottom - top) * (right - left) * adm_noise_weight, 1.0f / 3.0f);
-    float num_scale_d = powf(f_accum_d, 1.0f / 3.0f) +
-                        powf((bottom - top) * (right - left) * adm_noise_weight, 1.0f / 3.0f);
+    const float p_norm_exp = 1.0f / (float)adm_p_norm;
+    float num_scale_h = powf(f_accum_h, p_norm_exp) +
+                        powf((bottom - top) * (right - left) * adm_noise_weight, p_norm_exp);
+    float num_scale_v = powf(f_accum_v, p_norm_exp) +
+                        powf((bottom - top) * (right - left) * adm_noise_weight, p_norm_exp);
+    float num_scale_d = powf(f_accum_d, p_norm_exp) +
+                        powf((bottom - top) * (right - left) * adm_noise_weight, p_norm_exp);
 
     return (num_scale_h + num_scale_v + num_scale_d);
 }

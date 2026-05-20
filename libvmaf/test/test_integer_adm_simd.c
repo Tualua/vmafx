@@ -225,9 +225,11 @@ static char *test_adm_cm_avx2_smoke(void)
 
     /* Call adm_cm_avx2 twice — must return the same value (determinism). */
     const float r1 = adm_cm_avx2(&buf, w, h, stride, stride, nvd, rdh, ADM_CSF_MODE_WATSON97, csf_s,
-                                 csf_ds, nw, false);
+                                 csf_ds, nw, 3.0, false);
     const float r2 = adm_cm_avx2(&buf, w, h, stride, stride, nvd, rdh, ADM_CSF_MODE_WATSON97, csf_s,
-                                 csf_ds, nw, false);
+                                 csf_ds, nw, 3.0, false);
+    const float r_p2 = adm_cm_avx2(&buf, w, h, stride, stride, nvd, rdh, ADM_CSF_MODE_WATSON97,
+                                   csf_s, csf_ds, nw, 2.0, false);
 
     simd_test_aligned_free(dr_h);
     simd_test_aligned_free(dr_v);
@@ -250,6 +252,95 @@ static char *test_adm_cm_avx2_smoke(void)
                       (double)r2);
         return "adm_cm_avx2 is non-deterministic";
     }
+    if (!(r_p2 >= 0.0f && r_p2 < 1e10f)) {
+        (void)fprintf(stderr, "  adm_cm_avx2 p=2 returned invalid value: %g\n", (double)r_p2);
+        return "adm_cm_avx2 p=2 returned invalid value";
+    }
+    if (r_p2 == r1) {
+        return "adm_cm_avx2 ignored adm_p_norm";
+    }
+    return NULL;
+}
+
+static char *test_i4_adm_cm_avx2_p_norm(void)
+{
+    const size_t bytes = ADM_BAND_PX * sizeof(int32_t);
+    int32_t *dr_h = (int32_t *)simd_test_aligned_malloc(bytes, 32);
+    int32_t *dr_v = (int32_t *)simd_test_aligned_malloc(bytes, 32);
+    int32_t *dr_d = (int32_t *)simd_test_aligned_malloc(bytes, 32);
+    int32_t *cf_h = (int32_t *)simd_test_aligned_malloc(bytes, 32);
+    int32_t *cf_v = (int32_t *)simd_test_aligned_malloc(bytes, 32);
+    int32_t *cf_d = (int32_t *)simd_test_aligned_malloc(bytes, 32);
+    int32_t *ca_h = (int32_t *)simd_test_aligned_malloc(bytes, 32);
+    int32_t *ca_v = (int32_t *)simd_test_aligned_malloc(bytes, 32);
+    int32_t *ca_d = (int32_t *)simd_test_aligned_malloc(bytes, 32);
+
+    if (!dr_h || !dr_v || !dr_d || !cf_h || !cf_v || !cf_d || !ca_h || !ca_v || !ca_d) {
+        simd_test_aligned_free(dr_h);
+        simd_test_aligned_free(dr_v);
+        simd_test_aligned_free(dr_d);
+        simd_test_aligned_free(cf_h);
+        simd_test_aligned_free(cf_v);
+        simd_test_aligned_free(cf_d);
+        simd_test_aligned_free(ca_h);
+        simd_test_aligned_free(ca_v);
+        simd_test_aligned_free(ca_d);
+        return "aligned_malloc failed";
+    }
+
+    uint32_t state = 0x51d15eedu;
+    for (size_t i = 0; i < ADM_BAND_PX; i++) {
+        uint32_t r = simd_test_xorshift32(&state);
+        dr_h[i] = (int32_t)((int)(r & 0x3F) - 32);
+        dr_v[i] = (int32_t)((int)((r >> 8) & 0x3F) - 32);
+        dr_d[i] = (int32_t)((int)((r >> 16) & 0x3F) - 32);
+        cf_h[i] = (int32_t)((int)((r >> 24) & 0x3F));
+        r = simd_test_xorshift32(&state);
+        cf_v[i] = (int32_t)((int)(r & 0x3F));
+        cf_d[i] = (int32_t)((int)((r >> 8) & 0x3F));
+        r = simd_test_xorshift32(&state);
+        ca_h[i] = (int32_t)((int)(r & 0x3F));
+        ca_v[i] = (int32_t)((int)((r >> 8) & 0x3F));
+        ca_d[i] = (int32_t)((int)((r >> 16) & 0x3F));
+    }
+
+    AdmBuffer buf;
+    (void)memset(&buf, 0, sizeof(buf));
+    buf.i4_decouple_r.band_h = dr_h;
+    buf.i4_decouple_r.band_v = dr_v;
+    buf.i4_decouple_r.band_d = dr_d;
+    buf.i4_csf_f.band_h = cf_h;
+    buf.i4_csf_f.band_v = cf_v;
+    buf.i4_csf_f.band_d = cf_d;
+    buf.i4_csf_a.band_h = ca_h;
+    buf.i4_csf_a.band_v = ca_v;
+    buf.i4_csf_a.band_d = ca_d;
+
+    const float r_p3 =
+        i4_adm_cm_avx2(&buf, ADM_TEST_W, ADM_TEST_H, ADM_TEST_STRIDE, ADM_TEST_STRIDE, 1,
+                       DEFAULT_ADM_NORM_VIEW_DIST, DEFAULT_ADM_REF_DISPLAY_HEIGHT,
+                       ADM_CSF_MODE_WATSON97, 1.0, 1.0, DEFAULT_ADM_NOISE_WEIGHT, 3.0, false);
+    const float r_p2 =
+        i4_adm_cm_avx2(&buf, ADM_TEST_W, ADM_TEST_H, ADM_TEST_STRIDE, ADM_TEST_STRIDE, 1,
+                       DEFAULT_ADM_NORM_VIEW_DIST, DEFAULT_ADM_REF_DISPLAY_HEIGHT,
+                       ADM_CSF_MODE_WATSON97, 1.0, 1.0, DEFAULT_ADM_NOISE_WEIGHT, 2.0, false);
+
+    simd_test_aligned_free(dr_h);
+    simd_test_aligned_free(dr_v);
+    simd_test_aligned_free(dr_d);
+    simd_test_aligned_free(cf_h);
+    simd_test_aligned_free(cf_v);
+    simd_test_aligned_free(cf_d);
+    simd_test_aligned_free(ca_h);
+    simd_test_aligned_free(ca_v);
+    simd_test_aligned_free(ca_d);
+
+    if (!(r_p3 >= 0.0f && r_p3 < 1e10f && r_p2 >= 0.0f && r_p2 < 1e10f)) {
+        return "i4_adm_cm_avx2 p-norm result invalid";
+    }
+    if (r_p2 == r_p3) {
+        return "i4_adm_cm_avx2 ignored adm_p_norm";
+    }
     return NULL;
 }
 
@@ -265,6 +356,7 @@ char *run_tests(void)
         return NULL;
     }
     mu_run_test(test_adm_cm_avx2_smoke);
+    mu_run_test(test_i4_adm_cm_avx2_p_norm);
 #else
     (void)fprintf(stderr, "skipping SIMD smoke: non-x86 arch\n");
 #endif

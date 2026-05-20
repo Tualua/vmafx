@@ -391,3 +391,4 @@
 0641-dev-container-encoder-probe-hardening
 0642-ai-refresh-full-feature-defaults
 0644-vmaf-tune-codec-runtime-variants
+0645-integer-adm-pnorm-simd

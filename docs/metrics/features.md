@@ -361,11 +361,14 @@ only.
 | `adm_skip_aim`           | —      | bool   | `false`   | —           | Skip the AIM (Additive Impairment Metric) sub-band calculation entirely; forces AIM contribution to zero                                                  |
 | `adm_skip_scale0`        | `ssz`  | bool   | `false`   | —           | Skip scale-0 (finest wavelet level) calculation; scale-0 outputs forced to `0.0` and excluded from the fused score. Matches GPU-backend parity mode.      |
 | `adm_min_val`            | `min`  | double | `0.0`     | `0.0–1.0`   | Floor value: fused ADM scores below this threshold are clipped up to it                                                                                   |
+| `adm_p_norm`             | `apn`  | double | `3.0`     | `1.0–20.0`  | CPU `float_adm` p-norm exponent; CPU fixed-point `adm` uses it for contrast-measure finalisation. The x86 AVX2 / AVX-512 `adm` paths honour it.          |
 
-All parameters are available on every backend (`adm` and `float_adm`)
-including CUDA, SYCL, HIP, Vulkan, and Metal. Setting `adm_csf_scale`,
-`adm_csf_diag_scale`, and `adm_noise_weight` to their defaults (`1.0`, `1.0`,
-`0.03125`) produces output bit-identical to upstream Netflix ADM.
+The CPU `adm` / `float_adm` extractors expose the full option table above.
+GPU integer-ADM twins expose their backend-specific subsets; pin GPU sweeps to
+default `adm_p_norm=3.0` until a backend explicitly documents the option.
+Setting `adm_csf_scale`, `adm_csf_diag_scale`, and `adm_noise_weight` to their
+defaults (`1.0`, `1.0`, `0.03125`) produces output bit-identical to upstream
+Netflix ADM.
 
 **Backends** — `adm`: AVX2, AVX-512, NEON, CUDA, SYCL, Vulkan.
 `float_adm`: AVX2, AVX-512, NEON, CUDA, SYCL, Vulkan.
