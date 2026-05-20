@@ -103,6 +103,17 @@ Returns:
 Equivalent CLI flag: `--tiny-model <path>`
 ([usage/cli.md](../usage/cli.md#tiny-ai-flags-fork-added)).
 
+Attached scores are written to the normal feature collector:
+
+- A single-output model preserves the historical key: the sidecar `name` field
+  (or `vmaf_tiny_model` when no sidecar name exists).
+- A multi-output model emits one scalar score per graph output. The key is
+  `<sidecar-name>_<output-name>`, where `output-name` comes from sidecar
+  `output_names[]` when the array length matches the ONNX output count, or from
+  the ONNX graph output name otherwise. The suffix is sanitized to
+  `[A-Za-z0-9_]`; duplicate sanitized suffixes fall back to deterministic
+  `output<slot>_<attempt>` keys.
+
 ## Standalone sessions — `VmafDnnSession`
 
 Standalone mode is for filter-style inference that does not need a
@@ -340,21 +351,18 @@ identity tied to the GitHub Actions workflow that built the model.
 
 ## Known limitations
 
-- **Multi-output ONNX models via `vmaf_use_tiny_model` / `vmaf_ctx_dnn_attach`
-  are not supported.** Both the NCHW image path
-  (`vmaf_ctx_dnn_run_frame_nchw`) and the feature-vector path
-  (`vmaf_ctx_dnn_run_frame_feature_vector`) require exactly one scalar output
-  per frame, because the result is forwarded via
-  `vmaf_feature_collector_append(ctx, feature_name, score, index)` — a
-  single-slot per-frame write.  If an ONNX graph produces `out_n > 1`
-  tensors, the inference itself succeeds but the function returns `-ENOTSUP`
-  and no score is recorded.  This limitation does **not** affect the
-  standalone `vmaf_dnn_session_run()` API, which accepts multi-input /
-  multi-output graphs and writes directly to caller-owned `VmafDnnOutput`
-  buffers.  Multi-output support in the attached / VmafContext path is tracked
-  as **T-DNN-MULTI-OUTPUT** in [`docs/state.md`](../state.md).
-  See [ADR-0613](../adr/0639-scaffold-audit-p1-feature-plumbing-fixes.md)
-  §P1-4 for the decision rationale.
+- **Attached mode supports multiple scalar output tensors, not vector or image
+  output tensors.** `vmaf_use_tiny_model()` / `vmaf_ctx_dnn_attach()` can now
+  record every ONNX output when each output tensor contains exactly one scalar
+  value. If any attached output tensor has more than one element, the frame run
+  returns `-ENOTSUP`. Use the standalone `vmaf_dnn_session_run()` API for
+  caller-owned vector/image output buffers. See
+  [ADR-0646](../adr/0646-dnn-attached-multi-output.md).
+- **Attached mode caps routed outputs at eight tensors.** This mirrors
+  `VMAF_ORT_MAX_IO`, the existing ORT wrapper stack-array limit. Models with
+  more outputs should collapse related values into a standalone session output
+  or ship a future ADR that raises the cap across the ORT wrapper and sidecar
+  parser together.
 
 - Operator allowlist covers the set required by tiny FR / NR / filter models
   shipped in `model/tiny/`; untrusted models with new op types will be

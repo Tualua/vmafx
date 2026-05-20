@@ -201,6 +201,8 @@ typedef struct VmafContext {
          * NULL when the model has only one input. */
         float *extra_in_buf;
         char *feature_name; /* owned; published via feature_collector */
+        size_t n_outputs;
+        char *output_feature_names[VMAF_ORT_MAX_IO]; /* owned collector keys */
         /* ADR-0550 — NCHW dispatch auto-resize. Default (zero-init via
          * memset in vmaf_init) is VMAF_TINY_RESIZE_DISABLED == 0.
          * Operator must explicitly call vmaf_dnn_set_resize_mode() (or
@@ -790,6 +792,11 @@ static void vmaf_ctx_dnn_free(VmafContext *vmaf)
     vmaf->dnn.extra_in_width = 0;
     free(vmaf->dnn.feature_name);
     vmaf->dnn.feature_name = NULL;
+    for (size_t i = 0; i < vmaf->dnn.n_outputs; ++i) {
+        free(vmaf->dnn.output_feature_names[i]);
+        vmaf->dnn.output_feature_names[i] = NULL;
+    }
+    vmaf->dnn.n_outputs = 0u;
 }
 
 int vmaf_ctx_dnn_has_session(const VmafContext *ctx)
@@ -838,6 +845,170 @@ int vmaf_ctx_dnn_set_resize_mode(VmafContext *ctx, int mode)
     if (!ctx)
         return -EINVAL;
     ctx->dnn.resize_mode = mode;
+    return 0;
+}
+
+static bool dnn_feature_name_char_ok(char c)
+{
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+}
+
+static char *dnn_make_output_feature_name(const char *base, const char *suffix, size_t pos,
+                                          bool multi_output)
+{
+    if (!base)
+        return NULL;
+    if (!multi_output)
+        return strdup(base);
+
+    char fallback[32];
+    const char *raw = suffix;
+    if (!raw || !*raw) {
+        (void)snprintf(fallback, sizeof(fallback), "output%zu", pos);
+        raw = fallback;
+    }
+
+    const size_t base_len = strnlen(base, 1024u);
+    const size_t raw_len = strnlen(raw, 1024u);
+    char *clean = (char *)malloc(raw_len + 1u);
+    if (!clean)
+        return NULL;
+
+    bool any = false;
+    for (size_t i = 0; i < raw_len; ++i) {
+        const char c = raw[i];
+        clean[i] = dnn_feature_name_char_ok(c) ? c : '_';
+        any = any || dnn_feature_name_char_ok(c);
+    }
+    clean[raw_len] = '\0';
+    if (!any) {
+        (void)snprintf(fallback, sizeof(fallback), "output%zu", pos);
+        const size_t fallback_len = strlen(fallback);
+        char *tmp = (char *)realloc(clean, fallback_len + 1u);
+        if (!tmp) {
+            free(clean);
+            return NULL;
+        }
+        clean = tmp;
+        memcpy(clean, fallback, fallback_len + 1u);
+    }
+
+    const size_t clean_len = strlen(clean);
+    char *out = (char *)malloc(base_len + 1u + clean_len + 1u);
+    if (!out) {
+        free(clean);
+        return NULL;
+    }
+    memcpy(out, base, base_len);
+    out[base_len] = '_';
+    memcpy(out + base_len + 1u, clean, clean_len + 1u);
+    free(clean);
+    return out;
+}
+
+static bool dnn_output_name_duplicate(char *const *names, size_t count, const char *candidate)
+{
+    for (size_t i = 0; i < count; ++i) {
+        if (names[i] && candidate && strcmp(names[i], candidate) == 0)
+            return true;
+    }
+    return false;
+}
+
+static void dnn_output_names_free(char **names, size_t count)
+{
+    for (size_t i = 0; i < count; ++i) {
+        free(names[i]);
+        names[i] = NULL;
+    }
+}
+
+static char *dnn_make_unique_fallback_output_name(const char *base, char *const *names,
+                                                  size_t count, size_t pos)
+{
+    char suffix[48];
+    for (size_t attempt = 0; attempt <= VMAF_ORT_MAX_IO; ++attempt) {
+        (void)snprintf(suffix, sizeof(suffix), "output%zu_%zu", pos, attempt);
+        char *candidate = dnn_make_output_feature_name(base, suffix, pos, true);
+        if (!candidate)
+            return NULL;
+        if (!dnn_output_name_duplicate(names, count, candidate))
+            return candidate;
+        free(candidate);
+    }
+    return NULL;
+}
+
+static int dnn_prepare_output_feature_names(VmafContext *ctx, VmafOrtSession *sess,
+                                            const VmafModelSidecar *meta, const char *base_name)
+{
+    size_t n_inputs = 0u;
+    size_t n_outputs = 0u;
+    int rc = vmaf_ort_io_count(sess, &n_inputs, &n_outputs);
+    if (rc < 0)
+        return rc;
+    (void)n_inputs;
+    if (n_outputs == 0u || n_outputs > VMAF_ORT_MAX_IO)
+        return -ENOTSUP;
+
+    char *names[VMAF_ORT_MAX_IO] = {0};
+    const bool multi_output = n_outputs > 1u;
+    const bool sidecar_names_match =
+        meta && meta->n_output_names == n_outputs && meta->n_output_names > 0u;
+
+    for (size_t i = 0; i < n_outputs; ++i) {
+        const char *suffix = NULL;
+        if (multi_output) {
+            if (sidecar_names_match && meta->output_names[i] && *meta->output_names[i]) {
+                suffix = meta->output_names[i];
+            } else {
+                suffix = vmaf_ort_output_name_at(sess, i);
+            }
+        }
+
+        names[i] = dnn_make_output_feature_name(base_name, suffix, i, multi_output);
+        if (!names[i]) {
+            dnn_output_names_free(names, i);
+            return -ENOMEM;
+        }
+        if (dnn_output_name_duplicate(names, i, names[i])) {
+            free(names[i]);
+            names[i] = dnn_make_unique_fallback_output_name(base_name, names, i, i);
+            if (!names[i]) {
+                dnn_output_names_free(names, i);
+                return -ENOMEM;
+            }
+        }
+    }
+
+    ctx->dnn.n_outputs = n_outputs;
+    for (size_t i = 0; i < n_outputs; ++i) {
+        ctx->dnn.output_feature_names[i] = names[i];
+    }
+    return 0;
+}
+
+static int dnn_append_scalar_outputs(VmafContext *vmaf, const VmafOrtTensorOut *outputs,
+                                     unsigned index)
+{
+    if (!vmaf || !outputs)
+        return -EINVAL;
+    if (vmaf->dnn.n_outputs == 0u || vmaf->dnn.n_outputs > VMAF_ORT_MAX_IO)
+        return -EINVAL;
+
+    for (size_t i = 0; i < vmaf->dnn.n_outputs; ++i) {
+        if (outputs[i].written != 1u)
+            return -ENOTSUP;
+        if (!vmaf->dnn.output_feature_names[i])
+            return -EINVAL;
+    }
+    for (size_t i = 0; i < vmaf->dnn.n_outputs; ++i) {
+        int rc = vmaf_feature_collector_append(vmaf->feature_collector,
+                                               vmaf->dnn.output_feature_names[i],
+                                               (double)outputs[i].data[0], index);
+        if (rc < 0)
+            return rc;
+    }
     return 0;
 }
 
@@ -895,6 +1066,12 @@ static int dnn_attach_nchw(VmafContext *ctx, VmafOrtSession *sess, const VmafMod
     if (!buf) {
         free(name);
         return -ENOMEM;
+    }
+    int rc_names = dnn_prepare_output_feature_names(ctx, sess, meta, name);
+    if (rc_names < 0) {
+        free(buf);
+        free(name);
+        return rc_names;
     }
     ctx->dnn.sess = sess;
     if (meta) {
@@ -954,6 +1131,7 @@ static int dnn_attach_feature_vector(VmafContext *ctx, VmafOrtSession *sess,
         free(name);
         return rc_io;
     }
+    (void)n_outputs;
     float *extra_buf = NULL;
     size_t extra_w = 0u;
     if (n_inputs >= 2u) {
@@ -996,6 +1174,14 @@ static int dnn_attach_feature_vector(VmafContext *ctx, VmafOrtSession *sess,
             const size_t unknown_idx = extra_w - 3u; /* before preset, crf */
             extra_buf[unknown_idx] = 1.0f;
         }
+    }
+
+    int rc_names = dnn_prepare_output_feature_names(ctx, sess, meta, name);
+    if (rc_names < 0) {
+        free(extra_buf);
+        free(buf);
+        free(name);
+        return rc_names;
     }
 
     ctx->dnn.sess = sess;
@@ -1106,23 +1292,28 @@ static int vmaf_ctx_dnn_run_frame_nchw(VmafContext *vmaf, VmafPicture *ref, unsi
         return rc;
 
     const int64_t shape[4] = {1, 1, vmaf->dnn.expected_h, vmaf->dnn.expected_w};
-    float out = 0.f;
-    size_t out_n = 0;
-    rc = vmaf_ort_infer(vmaf->dnn.sess, vmaf->dnn.in_buf, shape, 4, &out, 1u, &out_n);
+    VmafOrtTensorIn input = {
+        .name = NULL,
+        .data = vmaf->dnn.in_buf,
+        .shape = shape,
+        .rank = 4u,
+    };
+    float out_values[VMAF_ORT_MAX_IO] = {0.f};
+    VmafOrtTensorOut outputs[VMAF_ORT_MAX_IO];
+    memset(outputs, 0, sizeof(outputs));
+    for (size_t i = 0; i < vmaf->dnn.n_outputs; ++i) {
+        outputs[i].name = NULL;
+        outputs[i].data = &out_values[i];
+        outputs[i].capacity = 1u;
+        outputs[i].written = 0u;
+    }
+
+    rc = vmaf_ort_run(vmaf->dnn.sess, &input, 1u, outputs, vmaf->dnn.n_outputs);
+    if (rc == -ENOSPC)
+        return -ENOTSUP;
     if (rc < 0)
         return rc;
-    /* ADR-0613 / P1-4: multi-output ONNX graphs (out_n > 1) are not
-     * supported on the NCHW path.  A single scalar feature score is
-     * required because the result is appended via vmaf_feature_collector_append
-     * which takes exactly one double per frame.  If out_n != 1 the ORT session
-     * ran successfully but the output shape is incompatible with this path.
-     * See docs/api/dnn.md §Known limitations and docs/state.md
-     * T-DNN-MULTI-OUTPUT for the planned multi-output follow-up. */
-    if (out_n != 1u)
-        return -ENOTSUP;
-
-    return vmaf_feature_collector_append(vmaf->feature_collector, vmaf->dnn.feature_name,
-                                         (double)out, index);
+    return dnn_append_scalar_outputs(vmaf, outputs, index);
 }
 
 /* Resolve a sidecar feature name (e.g. "adm2", "vif_scale0", "motion2")
@@ -1199,34 +1390,31 @@ static int vmaf_ctx_dnn_run_frame_feature_vector(VmafContext *vmaf, unsigned ind
 
     const int64_t feat_shape[2] = {1, (int64_t)n};
     const int64_t codec_shape[2] = {1, (int64_t)vmaf->dnn.extra_in_width};
-    float out = 0.f;
-    size_t out_n = 0;
-    int rc;
+    VmafOrtTensorIn inputs[2] = {
+        {.name = NULL, .data = vmaf->dnn.in_buf, .shape = feat_shape, .rank = 2u},
+        {.name = NULL, .data = vmaf->dnn.extra_in_buf, .shape = codec_shape, .rank = 2u},
+    };
+    size_t n_inputs = 1u;
     if (vmaf->dnn.extra_in_buf != NULL && vmaf->dnn.extra_in_width > 0u) {
-        VmafOrtTensorIn ins[2] = {
-            {.name = NULL, .data = vmaf->dnn.in_buf, .shape = feat_shape, .rank = 2u},
-            {.name = NULL, .data = vmaf->dnn.extra_in_buf, .shape = codec_shape, .rank = 2u},
-        };
-        VmafOrtTensorOut outs[1] = {
-            {.name = NULL, .data = &out, .capacity = 1u, .written = 0u},
-        };
-        rc = vmaf_ort_run(vmaf->dnn.sess, ins, 2u, outs, 1u);
-        out_n = outs[0].written;
-    } else {
-        rc = vmaf_ort_infer(vmaf->dnn.sess, vmaf->dnn.in_buf, feat_shape, 2u, &out, 1u, &out_n);
+        n_inputs = 2u;
     }
+
+    float out_values[VMAF_ORT_MAX_IO] = {0.f};
+    VmafOrtTensorOut outputs[VMAF_ORT_MAX_IO];
+    memset(outputs, 0, sizeof(outputs));
+    for (size_t i = 0; i < vmaf->dnn.n_outputs; ++i) {
+        outputs[i].name = NULL;
+        outputs[i].data = &out_values[i];
+        outputs[i].capacity = 1u;
+        outputs[i].written = 0u;
+    }
+
+    int rc = vmaf_ort_run(vmaf->dnn.sess, inputs, n_inputs, outputs, vmaf->dnn.n_outputs);
+    if (rc == -ENOSPC)
+        return -ENOTSUP;
     if (rc < 0)
         return rc;
-    /* ADR-0613 / P1-4: same single-scalar constraint as the NCHW path above.
-     * Feature-vector models with multiple outputs (e.g. per-scale regressor
-     * producing {vmaf, adm2, vif}) are not supported here.  See
-     * docs/api/dnn.md §Known limitations and T-DNN-MULTI-OUTPUT in
-     * docs/state.md. */
-    if (out_n != 1u)
-        return -ENOTSUP;
-
-    return vmaf_feature_collector_append(vmaf->feature_collector, vmaf->dnn.feature_name,
-                                         (double)out, index);
+    return dnn_append_scalar_outputs(vmaf, outputs, index);
 }
 
 static int vmaf_ctx_dnn_run_frame(VmafContext *vmaf, VmafPicture *ref, unsigned index)

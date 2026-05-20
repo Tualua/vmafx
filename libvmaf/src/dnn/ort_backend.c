@@ -772,6 +772,15 @@ int vmaf_ort_io_count(VmafOrtSession *sess, size_t *n_inputs, size_t *n_outputs)
     return 0;
 }
 
+const char *vmaf_ort_output_name_at(VmafOrtSession *sess, size_t slot)
+{
+    if (!sess)
+        return NULL;
+    if (slot >= sess->n_outputs)
+        return NULL;
+    return sess->output_names[slot];
+}
+
 /* Resolve a user-supplied input/output name against the session's name
  * table. NULL name → positional fallback at @p pos. Returns the const
  * char* used by ORT (owned by the session) or NULL on lookup failure. */
@@ -974,6 +983,13 @@ int vmaf_ort_io_count(VmafOrtSession *sess, size_t *n_inputs, size_t *n_outputs)
     (void)n_inputs;
     (void)n_outputs;
     return -ENOSYS;
+}
+
+const char *vmaf_ort_output_name_at(VmafOrtSession *sess, size_t slot)
+{
+    (void)sess;
+    (void)slot;
+    return NULL;
 }
 
 int vmaf_ort_run(VmafOrtSession *sess, const VmafOrtTensorIn *inputs, size_t n_inputs,

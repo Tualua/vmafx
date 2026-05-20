@@ -48,6 +48,9 @@ int vmaf_ort_run(VmafOrtSession *sess, const VmafOrtTensorIn *inputs, size_t n_i
 /** Number of graph inputs / outputs in the loaded model. */
 int vmaf_ort_io_count(VmafOrtSession *sess, size_t *n_inputs, size_t *n_outputs);
 
+/** Borrowed ONNX output name at @p slot, or NULL when @p slot is out of range. */
+const char *vmaf_ort_output_name_at(VmafOrtSession *sess, size_t slot);
+
 /**
  * Maximum number of graph inputs or outputs supported by vmaf_ort_run.
  * Callers with more IO must use a dedicated path; the limit covers every

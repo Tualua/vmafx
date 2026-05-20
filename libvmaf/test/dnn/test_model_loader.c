@@ -373,7 +373,8 @@ static char *test_sidecar_parses(void)
                      "  \"kind\": \"fr\",\n"
                      "  \"onnx_opset\": 17,\n"
                      "  \"input_name\":  \"features\",\n"
-                     "  \"output_name\": \"score\"\n"
+                     "  \"output_name\": \"score\",\n"
+                     "  \"output_names\": [\"score\", \"uncertainty\"]\n"
                      "}\n");
     (void)fclose(s);
 
@@ -385,6 +386,11 @@ static char *test_sidecar_parses(void)
     mu_assert("name set", meta.name && !strcmp(meta.name, "vmaf_tiny_fr_v1"));
     mu_assert("input set", meta.input_name && !strcmp(meta.input_name, "features"));
     mu_assert("output set", meta.output_name && !strcmp(meta.output_name, "score"));
+    mu_assert("output_names count", meta.n_output_names == 2u);
+    mu_assert("output_names[0] set",
+              meta.output_names[0] && !strcmp(meta.output_names[0], "score"));
+    mu_assert("output_names[1] set",
+              meta.output_names[1] && !strcmp(meta.output_names[1], "uncertainty"));
     vmaf_dnn_sidecar_free(&meta);
 
     (void)remove(sidecar);

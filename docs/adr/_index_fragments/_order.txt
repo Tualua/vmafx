@@ -393,3 +393,4 @@
 0643-vmaf-tune-encoder-profile-contract
 0644-vmaf-tune-codec-runtime-variants
 0645-integer-adm-pnorm-simd
+0646-dnn-attached-multi-output

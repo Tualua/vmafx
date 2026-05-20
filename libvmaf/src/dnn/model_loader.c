@@ -377,6 +377,19 @@ int vmaf_dnn_sidecar_load(const char *onnx_path, VmafModelSidecar *out)
     out->name = extract_string(buf, "name");
     out->input_name = extract_string(buf, "input_name");
     out->output_name = extract_string(buf, "output_name");
+    out->n_output_names = 0u;
+    size_t n_output_names = 0u;
+    int orc = extract_string_array(buf, "output_names", out->output_names,
+                                   VMAF_DNN_MAX_OUTPUT_NAMES, &n_output_names);
+    if (orc == 0 && n_output_names > 0u) {
+        out->n_output_names = n_output_names;
+    } else if (orc != -ENOENT && orc != 0) {
+        for (size_t i = 0; i < n_output_names; ++i) {
+            free(out->output_names[i]);
+            out->output_names[i] = NULL;
+        }
+        out->n_output_names = 0u;
+    }
     (void)extract_int(buf, "onnx_opset", &out->opset);
 
     /* ADR-0173 / T5-3: optional quant_mode field (default fp32). */
@@ -698,6 +711,9 @@ void vmaf_dnn_sidecar_free(VmafModelSidecar *s)
     free(s->name);
     free(s->input_name);
     free(s->output_name);
+    for (size_t i = 0; i < s->n_output_names && i < VMAF_DNN_MAX_OUTPUT_NAMES; ++i) {
+        free(s->output_names[i]);
+    }
     for (size_t i = 0; i < s->n_features && i < VMAF_DNN_MAX_FEATURE_NAMES; ++i) {
         free(s->feature_names[i]);
     }

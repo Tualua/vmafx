@@ -157,6 +157,13 @@ Output JSON gains a `tiny_model` block alongside `pooled_metrics`:
 }
 ```
 
+For attached multi-output models, each scalar ONNX output is recorded as its own
+feature. A single-output model keeps the sidecar `name` as the score key.
+Multi-output models use `<sidecar-name>_<output-name>`, with `output-name`
+taken from sidecar `output_names[]` when present and count-matched, otherwise
+from the ONNX graph output name. Attached mode still rejects non-scalar output
+tensors; use `vmaf_dnn_session_run()` when the caller needs vectors or images.
+
 ### Auto-resize for image-input tiny models (ADR-0550)
 
 Image-input (rank-4 NCHW) tiny models declare a *fixed* input shape — the
@@ -249,6 +256,8 @@ if (err < 0) { /* handle -errno */ }
 The sidecar JSON is discovered automatically at
 `${onnx_path%.onnx}.json`. Its `kind` field (`fr` / `nr`) tells libvmaf
 whether to expect a reference.
+Optional `output_names[]` entries name attached multi-output scalar scores; the
+legacy `output_name` field remains accepted for single-output metadata.
 
 ### Accepted ONNX input shapes (ADR-0518, extended by ADR-0523)
 

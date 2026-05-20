@@ -22,6 +22,7 @@
  */
 
 #include <errno.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,6 +40,7 @@
 
 /* Path is relative to workdir = project root (set in meson.build). */
 #define SMOKE_FP32_MODEL "model/tiny/smoke_v0.onnx"
+#define SMOKE_MULTI_OUTPUT_MODEL "model/tiny/smoke_multi_output_v0.onnx"
 /* ADR-0524: minimal rank-4 NCHW ONNX with `dim_param='batch'` on dim 0.
  * Generated once and committed under model/tiny/; see
  * docs/adr/0524-tiny-model-loader-symbolic-batch-dim.md. The loader
@@ -123,6 +125,14 @@ static VmafContext *alloc_ctx(void)
     if (rc < 0)
         return NULL;
     return ctx;
+}
+
+static void fill_luma(VmafPicture *pic, uint8_t value)
+{
+    for (unsigned y = 0; y < pic->h[0]; ++y) {
+        uint8_t *row = (uint8_t *)pic->data[0] + (ptrdiff_t)y * pic->stride[0];
+        memset(row, value, pic->w[0]);
+    }
 }
 
 /* --- stub contract when DNN is disabled ----------------------------------- */
@@ -323,6 +333,48 @@ static char *test_happy_path_smoke_model(void)
     return NULL;
 }
 
+static char *test_attached_multi_output_model_records_named_scores(void)
+{
+    if (!vmaf_dnn_available())
+        return NULL;
+
+#ifndef _WIN32
+    if (access(SMOKE_MULTI_OUTPUT_MODEL, R_OK) != 0)
+        return NULL;
+#endif
+
+    VmafContext *ctx = alloc_ctx();
+    mu_assert("vmaf_init must succeed", ctx != NULL);
+
+    int rc = vmaf_use_tiny_model(ctx, SMOKE_MULTI_OUTPUT_MODEL, NULL);
+    mu_assert("multi-output smoke model attach must return 0", rc == 0);
+
+    VmafPicture ref = {0};
+    VmafPicture dist = {0};
+    rc = vmaf_picture_alloc(&ref, VMAF_PIX_FMT_YUV400P, 8, 4, 4);
+    mu_assert("ref picture alloc must succeed", rc == 0);
+    rc = vmaf_picture_alloc(&dist, VMAF_PIX_FMT_YUV400P, 8, 4, 4);
+    mu_assert("dist picture alloc must succeed", rc == 0);
+    fill_luma(&ref, 64u);
+    fill_luma(&dist, 64u);
+
+    rc = vmaf_read_pictures(ctx, &ref, &dist, 0u);
+    mu_assert("multi-output tiny model frame run must succeed", rc == 0);
+
+    double mean_score = -1.0;
+    double peak_score = -1.0;
+    rc = vmaf_feature_score_at_index(ctx, "multi_probe_mean_score", &mean_score, 0u);
+    mu_assert("mean_score output must be recorded", rc == 0);
+    rc = vmaf_feature_score_at_index(ctx, "multi_probe_peak_score", &peak_score, 0u);
+    mu_assert("peak_score output must be recorded", rc == 0);
+    mu_assert("mean_score must be positive", mean_score > 0.0);
+    mu_assert("peak_score must be positive", peak_score > 0.0);
+
+    rc = vmaf_close(ctx);
+    mu_assert("vmaf_close after multi-output tiny model must return 0", rc == 0);
+    return NULL;
+}
+
 /* --- ADR-0524: symbolic batch dim acceptance ------------------------------ */
 
 /* The shipped NR tiny checkpoints (model/tiny/nr_metric_v1*.onnx) all
@@ -392,6 +444,7 @@ char *run_tests(void)
     mu_run_test(test_invalid_ort_model_frees_loaded_sidecar);
 #endif
     mu_run_test(test_happy_path_smoke_model);
+    mu_run_test(test_attached_multi_output_model_records_named_scores);
     mu_run_test(test_attach_accepts_symbolic_batch_rank4);
     mu_run_test(test_rank5_model_closes_session_after_shape_reject);
     return NULL;

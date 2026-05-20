@@ -125,7 +125,9 @@ together for production deployments.
 - **Not** the inference contract — per-model input/output names,
   normalisation, and expected ranges live in the sidecar JSON next to
   the ONNX (`<basename>.json`). The registry stays small and easy to
-  audit; the sidecar carries the runtime knobs.
+  audit; the sidecar carries the runtime knobs. Attached multi-output
+  models may use sidecar `output_names[]` to provide stable scalar-score
+  suffixes for report keys.
 - **Not** the operator-allowlist source of truth — that's
   `libvmaf/src/dnn/op_allowlist.c`. The registry pins identity; the
   allowlist constrains content.

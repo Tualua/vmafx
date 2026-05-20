@@ -326,6 +326,26 @@ must agree. If a future codec-aware model uses a different layout
 `codec_block_layout` array and add a dispatch branch — do NOT silently
 extend `vmaf_dnn_codec_block_fill` to a different layout.
 
+## Invariant — attached scalar multi-output naming (ADR-0646)
+
+`vmaf_use_tiny_model()` / `vmaf_ctx_dnn_attach()` preserve the old
+single-output collector key exactly: sidecar `name` (or
+`vmaf_tiny_model`) without an appended output suffix. Multi-output
+attached models route through `vmaf_ort_run()` and publish one feature
+collector key per scalar ONNX output. The suffix source order is:
+
+1. sidecar `output_names[]` when the array count equals the ONNX output
+   count;
+2. the ONNX graph output name;
+3. deterministic `output<slot>_<attempt>` fallback after sanitisation or
+   duplicate collapse.
+
+The attached path is intentionally scalar-only. Do not flatten vector or
+image tensors into feature names during a rebase; that needs a new ADR
+because it changes report schema cardinality. Also do not revert the
+rank-2 / rank-4 frame runners back to `vmaf_ort_infer()` — that helper
+is single-output by construction and would reopen T-DNN-MULTI-OUTPUT.
+
 ## Testing
 
 ```bash

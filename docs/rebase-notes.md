@@ -7,6 +7,34 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## fix/dnn-attached-multi-output (ADR-0646)
+
+**Low upstream rebase impact**: the implementation touches fork-local DNN
+runtime plumbing plus libvmaf's context bridge. Upstream Netflix/vmaf does not
+ship the fork's ONNX Runtime attached tiny-AI surface, but conflicts are
+possible if upstream changes `libvmaf/src/libvmaf.c` near the per-frame
+pipeline.
+
+Rebase-sensitive fork invariants:
+
+- Single-output attached tiny models keep the historical collector key exactly.
+  Do not append `_score` or an ONNX output suffix for one-output models.
+- Multi-output attached models route through `vmaf_ort_run()`, not
+  `vmaf_ort_infer()`. The latter is intentionally a single-output helper.
+- Sidecar `output_names[]` wins only when its count matches the ONNX output
+  count; otherwise ONNX output names are used and sanitized.
+- Attached mode remains scalar-only. Vector or image output tensors must still
+  use `vmaf_dnn_session_run()` until a future ADR defines feature-name flattening.
+
+Smoke:
+`docker exec vmaf-dev-mcp bash -lc 'cd /workspace && rm -rf /tmp/vmaf-dnn-multi-output-build && meson setup /tmp/vmaf-dnn-multi-output-build libvmaf -Denable_dnn=enabled -Denable_cuda=false -Denable_sycl=false -Denable_vulkan=disabled -Denable_hip=false -Denable_metal=disabled && meson test -C /tmp/vmaf-dnn-multi-output-build --suite=dnn --print-errorlogs'`
+
+Touched files: `libvmaf/src/libvmaf.c`, `libvmaf/src/dnn/model_loader.*`,
+`libvmaf/src/dnn/ort_backend.*`, `libvmaf/test/dnn/*`,
+`model/tiny/smoke_multi_output_v0.*`, `scripts/gen_multi_output_smoke_onnx.py`,
+`docs/api/dnn.md`, `docs/ai/`, `docs/adr/0646-*.md`,
+`docs/research/0646-*.md`, `changelog.d/fixed/0646-*.md`, and this file.
+
 ## fix/ai-refresh-defaults-and-konvid-full-features (ADR-0642)
 
 **No upstream rebase impact**: all touched implementation files live under

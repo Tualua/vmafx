@@ -49,12 +49,19 @@ typedef enum VmafModelQuantMode {
  *  layout change. */
 #define VMAF_DNN_MAX_ENCODER_VOCAB 32u
 
+/** Maximum number of attached tiny-model outputs routed into the feature
+ *  collector. Mirrors VMAF_ORT_MAX_IO without making the model-sidecar parser
+ *  depend on the ORT wrapper header. */
+#define VMAF_DNN_MAX_OUTPUT_NAMES 8u
+
 typedef struct VmafModelSidecar {
     VmafModelKind kind; /**< mirrors sidecar "kind" field */
     int opset;
     char *name;        /**< owned */
     char *input_name;  /**< owned */
-    char *output_name; /**< owned */
+    char *output_name; /**< owned; legacy single-output spelling */
+    size_t n_output_names;
+    char *output_names[VMAF_DNN_MAX_OUTPUT_NAMES]; /**< owned */
     float norm_mean;
     float norm_std;
     bool has_norm;
