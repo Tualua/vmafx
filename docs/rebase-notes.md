@@ -38074,3 +38074,60 @@ Touched files:
 `docs/state.md`,
 `changelog.d/changed/0647-ai-fr-regressor-v1-refresh-20260520.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0651 — CHUG HDR row metadata
+
+**No upstream Netflix C-source rebase impact.** This is a fork-local AI
+corpus-materialisation schema extension in `ai/scripts/chug_extract_features.py`.
+
+**Key invariants**:
+
+- CHUG feature rows now preserve `feature_ref_*` and `feature_dis_*`
+  ffprobe HDR/display metadata for the matched reference and distorted clip.
+- Unknown ffprobe fields remain explicit as `unknown` or `null`; do not infer
+  panel/display capability in the materialiser.
+- The existing `--audit-output` corpus preflight remains the aggregate health
+  check; the row fields are the model-facing copy.
+
+Touched files:
+`ai/scripts/chug_extract_features.py`,
+`ai/tests/test_chug.py`,
+`docs/ai/chug-ingestion.md`,
+`docs/adr/0651-chug-hdr-row-metadata.md`,
+`docs/adr/_index_fragments/0651-chug-hdr-row-metadata.md`,
+`docs/adr/_index_fragments/_order.txt`,
+`docs/adr/README.md`,
+`docs/research/0651-chug-hdr-row-metadata.md`,
+`ai/AGENTS.md`,
+`changelog.d/added/0651-chug-hdr-row-metadata.md`,
+`docs/rebase-notes.md` (this entry).
+
+## ADR-0652 — CHUG visual-signal primitives
+
+**No upstream Netflix C-source rebase impact.** This is a fork-local AI
+feature-row schema extension in `ai/scripts/chug_extract_features.py`.
+
+**Key invariants**:
+
+- CHUG feature rows now include `feature_ref_*`, `feature_dis_*`, and
+  `feature_delta_*` luma-domain visual-signal primitives for
+  `luma_std`, `sharpness_laplacian_var`, `highfreq_abs_mean`, and
+  `noise_lap_mad`.
+- These are deterministic diagnostic blur/noise/grain proxies computed
+  from sampled decoded YUV10 luma frames. Do not treat them as a trained
+  no-reference VQA model.
+- The visual-signal cache lives beside the existing CHUG feature cache and
+  must be regenerated if the primitive definitions change.
+
+Touched files:
+`ai/scripts/chug_extract_features.py`,
+`ai/tests/test_chug.py`,
+`docs/ai/chug-ingestion.md`,
+`docs/adr/0652-chug-visual-signal-primitives.md`,
+`docs/adr/_index_fragments/0652-chug-visual-signal-primitives.md`,
+`docs/adr/_index_fragments/_order.txt`,
+`docs/adr/README.md`,
+`docs/research/0652-chug-visual-signal-primitives.md`,
+`ai/AGENTS.md`,
+`changelog.d/added/0652-chug-visual-signal-primitives.md`,
+`docs/rebase-notes.md` (this entry).

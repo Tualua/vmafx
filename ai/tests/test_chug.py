@@ -306,9 +306,47 @@ def test_chug_hdr_audit_flags_malformed_hdr_metadata(tmp_path: Path) -> None:
 
 class _FakeFeatureRunner:
     def __call__(self, cmd, **_kwargs):
+        argv0 = Path(cmd[0]).name
+        if argv0 == "ffprobe":
+            src = Path(cmd[-1]).name
+            stream = {
+                "width": 1920,
+                "height": 1080,
+                "pix_fmt": "yuv420p10le",
+                "codec_name": "hevc",
+                "color_transfer": "smpte2084" if src == "ref.mp4" else "arib-std-b67",
+                "color_primaries": "bt2020",
+                "color_space": "bt2020nc",
+                "color_range": "tv",
+                "side_data_list": [
+                    {
+                        "side_data_type": "Mastering display metadata",
+                        "max_content": "1000",
+                        "max_average": "400",
+                    }
+                ],
+            }
+            return subprocess.CompletedProcess(
+                args=cmd,
+                returncode=0,
+                stdout=json.dumps({"streams": [stream]}),
+                stderr="",
+            )
+        src = Path(cmd[cmd.index("-i") + 1]).name
+        vf = str(cmd[cmd.index("-vf") + 1])
+        scale = vf.split(",", maxsplit=1)[0].removeprefix("scale=")
+        width_s, height_s = scale.split(":", maxsplit=2)[:2]
+        width = int(width_s)
+        height = int(height_s)
         output = Path(cmd[-1])
         output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_bytes(b"fake yuv")
+        if src == "dist.mp4":
+            y = np.indices((height, width)).sum(axis=0) % 2
+            luma = (y * 1023).astype("<u2")
+        else:
+            luma = np.full((height, width), 512, dtype="<u2")
+        chroma = np.full((height // 2, width // 2), 512, dtype="<u2")
+        output.write_bytes(luma.tobytes() + chroma.tobytes() + chroma.tobytes())
         return subprocess.CompletedProcess(args=cmd, returncode=0)
 
 
@@ -324,16 +362,16 @@ def test_chug_feature_materialiser_writes_mean_features(tmp_path: Path) -> None:
             src="dist.mp4",
             content="content-a.mp4",
             is_ref=False,
-            width=640,
-            height=360,
+            width=32,
+            height=18,
             sha="d" * 64,
         ),
         _chug_row(
             src="ref.mp4",
             content="content-a.mp4",
             is_ref=True,
-            width=1920,
-            height=1080,
+            width=32,
+            height=18,
             sha="r" * 64,
         ),
     ]
@@ -364,14 +402,75 @@ def test_chug_feature_materialiser_writes_mean_features(tmp_path: Path) -> None:
     assert row["feature_source"] == "chug-fr-ref-aligned"
     assert row["feature_alignment"] == "distorted_scaled_to_reference"
     assert row["feature_ref_src"] == "ref.mp4"
-    assert row["feature_width"] == 1920
-    assert row["feature_height"] == 1080
+    assert row["feature_width"] == 32
+    assert row["feature_height"] == 18
     assert row["split"] in {"train", "val", "test"}
     assert row["chug_split_key"] == "content-a.mp4"
     assert row["chug_split_policy"] == "content-name-blake2s-80-10-10"
     assert row["n_feature_frames"] == 2
+    assert row["feature_ref_color_transfer"] == "smpte2084"
+    assert row["feature_ref_transfer_class"] == "pq"
+    assert row["feature_dis_color_transfer"] == "arib-std-b67"
+    assert row["feature_dis_transfer_class"] == "hlg"
+    assert row["feature_ref_color_primaries"] == "bt2020"
+    assert row["feature_dis_color_space"] == "bt2020nc"
+    assert row["feature_ref_max_content_nits"] == 1000.0
+    assert row["feature_dis_max_average_nits"] == 400.0
+    assert row["feature_ref_luma_std"] == 0.0
+    assert row["feature_ref_sharpness_laplacian_var"] == 0.0
+    assert row["feature_dis_luma_std"] > 0.0
+    assert row["feature_dis_sharpness_laplacian_var"] > 0.0
+    assert row["feature_delta_luma_std"] > 0.0
+    assert row["feature_delta_noise_lap_mad"] > 0.0
     assert row["adm2"] == 2.0
     assert row["adm2_mean"] == 2.0
+
+
+def test_chug_visual_signal_helper_reads_yuv10_luma(tmp_path: Path) -> None:
+    yuv = tmp_path / "pattern.yuv"
+    width, height = 8, 6
+    luma = (np.indices((height, width)).sum(axis=0) % 2 * 1023).astype("<u2")
+    chroma = np.full((height // 2, width // 2), 512, dtype="<u2")
+    yuv.write_bytes(luma.tobytes() + chroma.tobytes() + chroma.tobytes())
+
+    signals = CHUG_FEATURES.compute_visual_signals_from_yuv10(
+        yuv,
+        width=width,
+        height=height,
+    )
+
+    assert signals["luma_std"] > 0.0
+    assert signals["sharpness_laplacian_var"] > 0.0
+    assert signals["highfreq_abs_mean"] > 0.0
+    assert signals["noise_lap_mad"] > 0.0
+
+
+def test_chug_hdr_metadata_helper_defaults_unknown_and_parses_side_data() -> None:
+    metadata = CHUG_FEATURES.hdr_metadata_from_payload(
+        {
+            "streams": [
+                {
+                    "pix_fmt": "YUV420P10LE",
+                    "codec_name": "HEVC",
+                    "color_transfer": "SMPTE2084",
+                    "color_primaries": "BT2020",
+                    "side_data_list": [{"max_content": "1500", "max_average": "700"}],
+                }
+            ]
+        }
+    )
+
+    assert metadata["pix_fmt"] == "yuv420p10le"
+    assert metadata["codec_name"] == "hevc"
+    assert metadata["transfer_class"] == "pq"
+    assert metadata["color_space"] == "unknown"
+    assert metadata["max_content_nits"] == 1500.0
+    assert metadata["max_average_nits"] == 700.0
+
+    missing = CHUG_FEATURES.hdr_metadata_from_payload(None)
+    assert missing["transfer_class"] == "unknown"
+    assert missing["color_primaries"] == "unknown"
+    assert missing["max_content_nits"] is None
 
 
 def test_chug_pairing_never_uses_identity_pairs_for_distorted_rows(

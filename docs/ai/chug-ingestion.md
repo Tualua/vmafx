@@ -103,6 +103,38 @@ contains the canonical bare feature names (`adm2`, `vif_scale0` ...
 `motion2`) as means, plus `<feature>_mean`, `<feature>_p10`,
 `<feature>_p90`, and `<feature>_std` columns. The CHUG trainer uses
 those temporal aggregates by default rather than throwing them away.
+Each row also carries ffprobe-derived HDR/display metadata for both
+input clips:
+
+- `feature_ref_*` describes the matched reference clip.
+- `feature_dis_*` describes the distorted ladder clip.
+- The suffixes are `codec_name`, `pix_fmt`, `color_transfer`,
+  `transfer_class`, `color_primaries`, `color_space`, `color_range`,
+  `max_content_nits`, and `max_average_nits`.
+
+`transfer_class` is normalized to `pq`, `hlg`, `sdr`, or `unknown` so
+training scripts can consume a stable categorical field even when
+ffprobe reports vendor-specific transfer strings. Missing static
+metadata stays explicit as `unknown` or `null`; the materialiser does
+not infer panel capability from the clip alone.
+
+The same decode pass also emits cheap luma-domain visual-signal
+primitives for both sides:
+
+- `feature_ref_luma_std` / `feature_dis_luma_std` — luma contrast proxy.
+- `feature_ref_sharpness_laplacian_var` / `feature_dis_sharpness_laplacian_var`
+  — Laplacian-variance sharpness proxy; lower values usually mean blur,
+  while high values may be either detail or noise.
+- `feature_ref_highfreq_abs_mean` / `feature_dis_highfreq_abs_mean` —
+  high-frequency texture/grain proxy from neighboring-pixel differences.
+- `feature_ref_noise_lap_mad` / `feature_dis_noise_lap_mad` —
+  robust high-pass residual proxy for noise/grain.
+- `feature_delta_*` — distorted-minus-reference deltas for the four
+  fields above.
+
+These are intentionally low-cost diagnostics, not a no-reference VQA
+model. They make the CHUG feature table aware of blur/noise/grain axes
+that libvmaf's canonical six features do not expose directly.
 
 The materialiser assigns train/validation/test splits at
 `chug_content_name` granularity, not at row granularity. Every bitrate
@@ -119,6 +151,9 @@ transfer-characteristic counts (`pq`, `hlg`, `sdr`, `unknown`),
 primaries, pix-fmt distribution, split row counts, and malformed HDR
 rows where PQ/HLG is signalled without BT.2020 primaries. This is the
 first check to run before using a CHUG feature file for HDR experiments.
+The audit is a corpus-level preflight; the per-row `feature_ref_*` and
+`feature_dis_*` fields are the model-facing copy preserved in the
+training rows.
 
 Train against the feature rows:
 

@@ -32,6 +32,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -59,6 +61,23 @@ DEFAULT_CACHE_DIR = DEFAULT_CHUG_DIR / "feature-cache"
 DEFAULT_FEATURE_SET = "canonical"
 DEFAULT_SPLIT_SEED = "chug-hdr-v1"
 SPLIT_NAMES = ("train", "val", "test")
+HDR_METADATA_FIELDS: tuple[str, ...] = (
+    "codec_name",
+    "pix_fmt",
+    "color_transfer",
+    "transfer_class",
+    "color_primaries",
+    "color_space",
+    "color_range",
+    "max_content_nits",
+    "max_average_nits",
+)
+VISUAL_SIGNAL_FIELDS: tuple[str, ...] = (
+    "luma_std",
+    "sharpness_laplacian_var",
+    "highfreq_abs_mean",
+    "noise_lap_mad",
+)
 FEATURE_SETS: dict[str, tuple[str, ...]] = {
     "canonical": DEFAULT_FEATURES,
     "full": FULL_FEATURES,
@@ -77,6 +96,15 @@ class FeaturePair:
     height: int
     split: str
     split_key: str
+
+
+@dataclass(frozen=True)
+class ExtractedPairPayload:
+    """Cached libvmaf result plus decoded-luma side signals."""
+
+    result: FeatureExtractionResult
+    ref_visual_signals: dict[str, float | None]
+    dis_visual_signals: dict[str, float | None]
 
 
 def content_split_for(
@@ -209,6 +237,64 @@ def _classify_transfer(raw: str) -> str:
     return "sdr"
 
 
+def _normalised_stream_text(stream: dict[str, Any], key: str) -> str:
+    value = str(stream.get(key) or "").strip().lower()
+    return value or "unknown"
+
+
+def _metadata_number(value: Any) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
+def _side_data_number(stream: dict[str, Any], key: str) -> float | None:
+    direct = _metadata_number(stream.get(key))
+    if direct is not None:
+        return direct
+    for entry in stream.get("side_data_list") or []:
+        parsed = _metadata_number(entry.get(key))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def hdr_metadata_from_payload(payload: dict[str, Any] | None) -> dict[str, Any]:
+    """Return normalized HDR/display metadata from one ffprobe JSON payload."""
+    streams = (payload or {}).get("streams") or []
+    stream = streams[0] if streams else {}
+    transfer = _normalised_stream_text(stream, "color_transfer")
+    return {
+        "codec_name": _normalised_stream_text(stream, "codec_name"),
+        "pix_fmt": _normalised_stream_text(stream, "pix_fmt"),
+        "color_transfer": transfer,
+        "transfer_class": _classify_transfer("" if transfer == "unknown" else transfer),
+        "color_primaries": _normalised_stream_text(stream, "color_primaries"),
+        "color_space": _normalised_stream_text(stream, "color_space"),
+        "color_range": _normalised_stream_text(stream, "color_range"),
+        "max_content_nits": _side_data_number(stream, "max_content"),
+        "max_average_nits": _side_data_number(stream, "max_average"),
+    }
+
+
+def probe_clip_hdr_metadata(
+    clip_path: Path,
+    *,
+    ffprobe_bin: str = "ffprobe",
+    runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+) -> dict[str, Any]:
+    """Probe one local clip and return row-safe HDR/display metadata."""
+    payload = _ffprobe_hdr_payload(clip_path, ffprobe_bin=ffprobe_bin, runner=runner)
+    return hdr_metadata_from_payload(payload)
+
+
+def _prefixed_hdr_metadata(prefix: str, metadata: dict[str, Any] | None) -> dict[str, Any]:
+    values = metadata or hdr_metadata_from_payload(None)
+    return {f"{prefix}_{field}": values.get(field) for field in HDR_METADATA_FIELDS}
+
+
 def audit_chug_hdr_metadata(
     rows: Iterable[dict[str, Any]],
     *,
@@ -243,11 +329,11 @@ def audit_chug_hdr_metadata(
         if not streams:
             probe_failed += 1
             continue
-        stream = streams[0]
+        metadata = hdr_metadata_from_payload(payload)
         probed += 1
-        transfer = _classify_transfer(str(stream.get("color_transfer") or ""))
-        primaries = str(stream.get("color_primaries") or "unknown").lower()
-        pix_fmt = str(stream.get("pix_fmt") or "unknown").lower()
+        transfer = metadata["transfer_class"]
+        primaries = metadata["color_primaries"]
+        pix_fmt = metadata["pix_fmt"]
         transfer_counts[transfer] += 1
         primaries_counts[primaries] += 1
         pix_fmt_counts[pix_fmt] += 1
@@ -263,9 +349,9 @@ def audit_chug_hdr_metadata(
                     "src": row.get("src", ""),
                     "chug_content_name": content,
                     "split": split,
-                    "color_transfer": stream.get("color_transfer", ""),
-                    "color_primaries": stream.get("color_primaries", ""),
-                    "pix_fmt": stream.get("pix_fmt", ""),
+                    "color_transfer": metadata["color_transfer"],
+                    "color_primaries": primaries,
+                    "pix_fmt": pix_fmt,
                 }
             )
 
@@ -372,6 +458,111 @@ def _decode_to_yuv10(
     runner(cmd, check=True)
 
 
+def _empty_visual_signals() -> dict[str, float | None]:
+    return {field: None for field in VISUAL_SIGNAL_FIELDS}
+
+
+def _read_yuv420p10le_luma_frame(
+    handle,
+    *,
+    frame_index: int,
+    width: int,
+    height: int,
+    frame_bytes: int,
+) -> np.ndarray | None:
+    plane_bytes = width * height * 2
+    handle.seek(frame_index * frame_bytes)
+    raw = handle.read(plane_bytes)
+    if len(raw) != plane_bytes:
+        return None
+    luma = np.frombuffer(raw, dtype="<u2").astype(np.float32).reshape(height, width)
+    denom = 1023.0 if float(np.nanmax(luma)) <= 1023.0 else 65535.0
+    return luma / denom
+
+
+def _frame_visual_signals(luma: np.ndarray) -> dict[str, float]:
+    if luma.shape[0] < 3 or luma.shape[1] < 3:
+        return {
+            "luma_std": float(np.std(luma)),
+            "sharpness_laplacian_var": 0.0,
+            "highfreq_abs_mean": 0.0,
+            "noise_lap_mad": 0.0,
+        }
+    center = luma[1:-1, 1:-1]
+    lap = luma[:-2, 1:-1] + luma[2:, 1:-1] + luma[1:-1, :-2] + luma[1:-1, 2:] - (4.0 * center)
+    dx = np.abs(np.diff(luma, axis=1))
+    dy = np.abs(np.diff(luma, axis=0))
+    lap_median = float(np.median(lap))
+    return {
+        "luma_std": float(np.std(luma)),
+        "sharpness_laplacian_var": float(np.var(lap)),
+        "highfreq_abs_mean": float((float(np.mean(dx)) + float(np.mean(dy))) * 0.5),
+        "noise_lap_mad": float(1.4826 * np.median(np.abs(lap - lap_median))),
+    }
+
+
+def compute_visual_signals_from_yuv10(
+    yuv_path: Path,
+    *,
+    width: int,
+    height: int,
+    max_frames: int = 8,
+) -> dict[str, float | None]:
+    """Compute cheap decoded-luma noise/grain/blur proxies from yuv420p10le."""
+    if width <= 0 or height <= 0 or not yuv_path.is_file():
+        return _empty_visual_signals()
+    frame_bytes = (width * height + 2 * ((width // 2) * (height // 2))) * 2
+    if frame_bytes <= 0:
+        return _empty_visual_signals()
+    n_frames = yuv_path.stat().st_size // frame_bytes
+    if n_frames <= 0:
+        return _empty_visual_signals()
+    sample_count = min(max_frames, n_frames)
+    indices = np.linspace(0, n_frames - 1, num=sample_count, dtype=np.int64)
+    frame_stats: list[dict[str, float]] = []
+    with yuv_path.open("rb") as handle:
+        for index in indices:
+            luma = _read_yuv420p10le_luma_frame(
+                handle,
+                frame_index=int(index),
+                width=width,
+                height=height,
+                frame_bytes=frame_bytes,
+            )
+            if luma is not None:
+                frame_stats.append(_frame_visual_signals(luma))
+    if not frame_stats:
+        return _empty_visual_signals()
+    return {
+        field: float(np.mean([stats[field] for stats in frame_stats]))
+        for field in VISUAL_SIGNAL_FIELDS
+    }
+
+
+def _prefixed_visual_signals(
+    prefix: str,
+    signals: dict[str, float | None] | None,
+) -> dict[str, float | None]:
+    values = signals or _empty_visual_signals()
+    return {f"{prefix}_{field}": values.get(field) for field in VISUAL_SIGNAL_FIELDS}
+
+
+def _visual_signal_deltas(
+    ref_signals: dict[str, float | None] | None,
+    dis_signals: dict[str, float | None] | None,
+) -> dict[str, float | None]:
+    ref_values = ref_signals or _empty_visual_signals()
+    dis_values = dis_signals or _empty_visual_signals()
+    deltas: dict[str, float | None] = {}
+    for field in VISUAL_SIGNAL_FIELDS:
+        ref = ref_values.get(field)
+        dis = dis_values.get(field)
+        deltas[f"feature_delta_{field}"] = (
+            float(dis) - float(ref) if ref is not None and dis is not None else None
+        )
+    return deltas
+
+
 def _cache_key(pair: FeaturePair, feature_set: str) -> str:
     dis_sha = str(pair.row.get("src_sha256", pair.dis_path.stem))
     ref_sha = str(pair.ref_row.get("src_sha256", pair.ref_path.stem))
@@ -389,7 +580,7 @@ def _read_done_keys(output: Path) -> set[str]:
     return done
 
 
-def _extract_pair_features(
+def _extract_pair_payload(
     pair: FeaturePair,
     *,
     feature_names: tuple[str, ...],
@@ -399,10 +590,19 @@ def _extract_pair_features(
     vmaf_bin: Path,
     runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
     extractor: Callable[..., FeatureExtractionResult] = extract_features,
-) -> FeatureExtractionResult:
+) -> ExtractedPairPayload:
     cache_path = cache_dir / f"{_cache_key(pair, feature_set)}.json"
+    visual_cache_path = cache_dir / f"{_cache_key(pair, feature_set)}.visual.json"
+    result: FeatureExtractionResult | None = None
     if cache_path.is_file():
-        return FeatureExtractionResult.from_jsonable(json.loads(cache_path.read_text()))
+        result = FeatureExtractionResult.from_jsonable(json.loads(cache_path.read_text()))
+    if result is not None and visual_cache_path.is_file():
+        visual_payload = json.loads(visual_cache_path.read_text())
+        return ExtractedPairPayload(
+            result=result,
+            ref_visual_signals=visual_payload.get("ref") or _empty_visual_signals(),
+            dis_visual_signals=visual_payload.get("dis") or _empty_visual_signals(),
+        )
 
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="chug-features-") as tmp_s:
@@ -425,19 +625,43 @@ def _extract_pair_features(
             ffmpeg_bin=ffmpeg_bin,
             runner=runner,
         )
-        result = extractor(
-            ref_yuv,
-            dis_yuv,
-            pair.width,
-            pair.height,
-            features=feature_names,
-            vmaf_binary=vmaf_bin,
-            pix_fmt="420",
-            bitdepth=10,
+        if result is None:
+            result = extractor(
+                ref_yuv,
+                dis_yuv,
+                pair.width,
+                pair.height,
+                features=feature_names,
+                vmaf_binary=vmaf_bin,
+                pix_fmt="420",
+                bitdepth=10,
+            )
+            cache_path.write_text(
+                json.dumps(result.to_jsonable(), sort_keys=True),
+                encoding="utf-8",
+            )
+        visual_payload = {
+            "ref": compute_visual_signals_from_yuv10(
+                ref_yuv,
+                width=pair.width,
+                height=pair.height,
+            ),
+            "dis": compute_visual_signals_from_yuv10(
+                dis_yuv,
+                width=pair.width,
+                height=pair.height,
+            ),
+        }
+        visual_cache_path.write_text(
+            json.dumps(visual_payload, sort_keys=True),
+            encoding="utf-8",
         )
 
-    cache_path.write_text(json.dumps(result.to_jsonable(), sort_keys=True), encoding="utf-8")
-    return result
+    return ExtractedPairPayload(
+        result=result,
+        ref_visual_signals=visual_payload["ref"],
+        dis_visual_signals=visual_payload["dis"],
+    )
 
 
 def _finite_or_none(value: float) -> float | None:
@@ -449,6 +673,10 @@ def _build_output_row(
     result: FeatureExtractionResult,
     *,
     feature_set: str,
+    ref_hdr_metadata: dict[str, Any] | None = None,
+    dis_hdr_metadata: dict[str, Any] | None = None,
+    ref_visual_signals: dict[str, float | None] | None = None,
+    dis_visual_signals: dict[str, float | None] | None = None,
 ) -> dict[str, Any]:
     stats = aggregate_clip_stats(result.per_frame)
     n = len(result.feature_names)
@@ -472,6 +700,11 @@ def _build_output_row(
             "n_feature_frames": int(result.n_frames),
         }
     )
+    row.update(_prefixed_hdr_metadata("feature_ref", ref_hdr_metadata))
+    row.update(_prefixed_hdr_metadata("feature_dis", dis_hdr_metadata))
+    row.update(_prefixed_visual_signals("feature_ref", ref_visual_signals))
+    row.update(_prefixed_visual_signals("feature_dis", dis_visual_signals))
+    row.update(_visual_signal_deltas(ref_visual_signals, dis_visual_signals))
     stat_names = ("mean", "p10", "p90", "std")
     for stat_idx, stat_name in enumerate(stat_names):
         offset = stat_idx * n
@@ -537,6 +770,18 @@ def run(
 
     output_jsonl.parent.mkdir(parents=True, exist_ok=True)
     done = _read_done_keys(output_jsonl)
+    hdr_cache: dict[Path, dict[str, Any]] = {}
+
+    def hdr_for(path: Path) -> dict[str, Any]:
+        resolved = path.resolve()
+        if resolved not in hdr_cache:
+            hdr_cache[resolved] = probe_clip_hdr_metadata(
+                path,
+                ffprobe_bin=ffprobe_bin,
+                runner=runner,
+            )
+        return hdr_cache[resolved]
+
     written = 0
     with output_jsonl.open("a", encoding="utf-8") as out:
         for idx, pair in enumerate(pairs, start=1):
@@ -545,7 +790,7 @@ def run(
                 continue
             if not pair.ref_path.is_file() or not pair.dis_path.is_file():
                 continue
-            result = _extract_pair_features(
+            payload = _extract_pair_payload(
                 pair,
                 feature_names=feature_names,
                 feature_set=feature_set,
@@ -555,7 +800,20 @@ def run(
                 runner=runner,
                 extractor=extractor,
             )
-            out.write(json.dumps(_build_output_row(pair, result, feature_set=feature_set)) + "\n")
+            out.write(
+                json.dumps(
+                    _build_output_row(
+                        pair,
+                        payload.result,
+                        feature_set=feature_set,
+                        ref_hdr_metadata=hdr_for(pair.ref_path),
+                        dis_hdr_metadata=hdr_for(pair.dis_path),
+                        ref_visual_signals=payload.ref_visual_signals,
+                        dis_visual_signals=payload.dis_visual_signals,
+                    )
+                )
+                + "\n"
+            )
             out.flush()
             done.add(pair_key)
             written += 1

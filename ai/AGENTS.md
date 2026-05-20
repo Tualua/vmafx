@@ -631,6 +631,18 @@ threshold). When extending these scripts:
   gate for CHUG experiments. Preserve its ffprobe transfer / primaries /
   pix-fmt counters and malformed-PQ/HLG-without-BT.2020 row list when
   touching the materialiser.
+- Per ADR-0651, the CHUG feature materialiser also writes per-row
+  `feature_ref_*` and `feature_dis_*` HDR/display metadata copied from
+  ffprobe (`codec_name`, `pix_fmt`, `color_transfer`, normalized
+  `transfer_class`, primaries, colorspace/range, MaxCLL/MaxFALL-style
+  static metadata). Preserve unknown/null values explicitly; do not
+  infer display-panel capability from clip metadata alone.
+- Per ADR-0652, the same decode pass writes luma-domain visual-signal
+  primitives (`luma_std`, `sharpness_laplacian_var`,
+  `highfreq_abs_mean`, `noise_lap_mad`) for both reference and
+  distorted clips plus `feature_delta_*` distorted-minus-reference
+  fields. These are diagnostic blur/noise/grain proxies; do not treat
+  them as a replacement for a trained NR VQA model.
 - `ai/scripts/enrich_k150k_parquet_metadata.py` is the recovery path for
   FULL_FEATURES parquet jobs that were started without `--metadata-jsonl`.
   It must match metadata by `clip_name` / JSONL basename, fill missing
