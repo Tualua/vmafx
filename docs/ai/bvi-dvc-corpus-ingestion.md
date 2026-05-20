@@ -55,15 +55,15 @@ the fork already takes for the Netflix Public drop (ADR-0203).
 
 ### 2.1 If you already have the YUVs extracted
 
-If you have already extracted the archive (e.g. a 192 GB directory of
-raw `.yuv` files), pass `--bvi-dir` instead of `--bvi-zip` to skip the
-streaming-extraction step entirely:
+If you have already extracted the archive (e.g. a directory of raw
+`.yuv` files or the local lossless `.mkv` bundle), pass `--bvi-dir`
+instead of `--bvi-zip` to skip the streaming-extraction step entirely:
 
 ```bash
 python ai/scripts/bvi_dvc_to_full_features.py \
     --bvi-dir /path/to/bvi-dvc-extracted \
     --tier D \
-    --vmaf-bin build/tools/vmaf \
+    --vmaf-bin libvmaf/build-cpu/tools/vmaf \
     --out runs/full_features_bvi_dvc_D.parquet
 ```
 
@@ -78,6 +78,7 @@ Accepted file types in `--bvi-dir` mode:
 |--------|-----------|
 | `.yuv` | Used directly as the reference; width, height, fps, and bit-depth are parsed from the filename. No intermediate decode step. |
 | `.mp4` | Decoded to raw YUV via ffmpeg (same as the zip path). |
+| `.mkv` | Decoded to raw YUV via ffmpeg (same path as `.mp4`; used by the local lossless bundle). |
 
 Files that do not match the BVI-DVC naming convention
 (`<Stem>_<W>x<H>_<fps>fps_<depth>bit_420.<ext>`) are skipped with a
@@ -111,8 +112,10 @@ The end-to-end ingestion is two stages:
 
 Stage (1) is the **per-frame feature parquet** consumed by the
 `vmaf_tiny_v*` and `fr_regressor_v1` trainers. It runs libvmaf with
-the canonical-21 feature pool and writes one parquet row per frame.
-This stage already existed in tree — it is unchanged by ADR-0310.
+the current `FULL_FEATURES` pool (25 feature columns as of the SpEED
+chroma/temporal refresh) and writes one parquet row per frame.
+This stage already existed in tree; ADR-0310 added the downstream
+corpus-JSONL reshape.
 
 Stage (2) is **new in ADR-0310**. It re-shapes the BVI-DVC encodes
 into the vmaf-tune Phase A corpus row schema

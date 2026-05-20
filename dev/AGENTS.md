@@ -178,9 +178,10 @@ corresponds to a backend that would otherwise land on CPU / lavapipe
 
 ### FFmpeg encoder exposure invariants (ADR-0540)
 
-These four constraints must survive every rebase. Each one corresponds
-to a real encoder that the `vmaf-tune compare` predicate would silently
-skip if dropped:
+These constraints must survive every rebase. Each one corresponds to a
+real encoder or FFmpeg integration path that the `vmaf-tune compare`
+predicate would silently skip, or that the dev-container FFmpeg build
+would fail to compile:
 
 1. **SVT-AV1 must be built from source; the apt `libsvtav1-dev`
    package is NOT sufficient.** Ubuntu's `libsvtav1-dev`
@@ -211,7 +212,18 @@ skip if dropped:
    resolution is host-side. Do NOT try to install `libamfrt64.so` from
    apt — it lives in the proprietary `amdgpu-pro` userspace and is
    not packaged.
-4. **The FFmpeg configure line carries all of `--enable-nvenc
+4. **QSV needs both the oneVPL dispatcher and the GPU runtime.**
+   `libvpl-dev` provides `libvpl.so.2` and lets FFmpeg compile
+   `--enable-libvpl`, but it does not provide the Gen implementation
+   (`libmfx-gen.so`) that creates an Arc/iGPU MFX session at runtime.
+   `dev/Containerfile` builds `intel/vpl-gpu-rt` at the pinned
+   `VPL_GPU_RT_TAG` and installs it into
+   `/usr/lib/x86_64-linux-gnu/`, the path searched by Ubuntu's
+   `libvpl.so.2` dispatcher. Do NOT move it back to `/usr/local/lib`
+   without also preserving dispatcher discovery, or QSV will regress
+   to `Error creating a MFX session: -9` while still appearing in
+   `ffmpeg -encoders`.
+5. **The FFmpeg configure line carries all of `--enable-nvenc
    --enable-cuda-nvcc --enable-libvpl --enable-amf` in addition to
    the software codec flags.** Dropping any one silently disappears
    a hardware-encoder family from the `ffmpeg -encoders` listing and
@@ -223,7 +235,29 @@ skip if dropped:
    hard-errors at configure time. `scale_cuda` (built via
    `--enable-cuda-nvcc`) is the replacement for the
    `scale_npp` pipeline.
-5. **`LD_LIBRARY_PATH` must include `${ONEAPI_ROOT}/tbb/latest/lib`
+6. **The FFmpeg SYCL patch must use the current libvmaf state-free
+   ownership contract.** `libvmaf_sycl.h` declares
+   `vmaf_sycl_state_free(VmafSyclState **sycl_state)`, matching
+   Vulkan / HIP / Metal rather than CUDA. Keep
+   `ffmpeg-patches/0003-*` calling
+   `vmaf_sycl_state_free(&s->sycl_state)`. Passing the single pointer
+   builds against stale patch text and fails the container FFmpeg
+   compile with `-Wincompatible-pointer-types`.
+
+### Compose healthcheck invariant (ADR-0641)
+
+The `dev-mcp` service healthcheck must match the entrypoint transport.
+The entrypoint exposes MCP over stdio (`docker exec -i vmaf-dev-mcp
+/opt/vmaf-venv/bin/vmaf-mcp`) and does not create
+`/sockets/vmaf-mcp.sock` by default. Therefore the compose healthcheck
+must remain a CLI check (`vmaf --version`). Reverting it to
+`test -S /sockets/vmaf-mcp.sock` leaves the container permanently
+`unhealthy` and prevents `smoke-probe-cron` from starting even though
+the runtime is usable.
+
+### Runtime dependency invariants (ADR-0541 / ADR-0568)
+
+1. **`LD_LIBRARY_PATH` must include `${ONEAPI_ROOT}/tbb/latest/lib`
    (ADR-0541).** The Intel CPU OpenCL ICD
    (`/opt/intel/oneapi/compiler/latest/lib/libintelocl.so`) dlopens
    `libtbb.so.12` at OpenCL platform-enumeration time. Without
@@ -232,7 +266,7 @@ skip if dropped:
    path is also degraded. The full env line in the Containerfile is now
    `${DPCPP_ROOT}/lib:${ONEAPI_ROOT}/umf/latest/lib:${ONEAPI_ROOT}/tcm/latest/lib:${ONEAPI_ROOT}/tbb/latest/lib:${LD_LIBRARY_PATH}`.
 
-6. **NEO + ROCm userspace are version-pinned to the host kernel's UAPI
+2. **NEO + ROCm userspace are version-pinned to the host kernel's UAPI
    (ADR-0541).** See "Userspace ↔ host-kernel UAPI version pins" above.
    The `dev-mcp-entrypoint.sh` banner emits a `WARN: SYCL level_zero:gpu
    NOT detected` / `WARN: HIP HSA agent NOT detected` line at container
@@ -240,7 +274,7 @@ skip if dropped:
    rebuild instead of working around it on the host (CLAUDE.md §12 r15
    sub-rule 4).
 
-7. **`ORT_VERSION` must satisfy the `ai/pyproject.toml` requirement
+3. **`ORT_VERSION` must satisfy the `ai/pyproject.toml` requirement
    `onnxruntime>=1.20,<2.0`.** Current pin: `1.26.0` (bumped from 1.20.1
    per ADR-0568 2026-05-18). The tarball naming pattern is
    `onnxruntime-linux-x64-${ORT_VERSION}.tgz` from the microsoft/onnxruntime

@@ -47,12 +47,12 @@ Input modes
     ``.mp4`` is streamed out of the archive, processed, then deleted.
 
 ``--bvi-dir PATH``  (ADR-0527)
-    Path to a directory containing already-extracted ``.mp4`` or
-    ``.yuv`` files. The directory is enumerated recursively for files
+    Path to a directory containing already-extracted ``.mp4``, ``.mkv``,
+    or ``.yuv`` files. The directory is enumerated recursively for files
     matching the BVI-DVC filename convention. For ``.yuv`` inputs the
     width, height, framerate, and bit-depth are parsed directly from the
-    filename; no ffprobe decode step is needed. For ``.mp4`` inputs the
-    existing decode path is used unchanged.
+    filename; no ffprobe decode step is needed. For video-container
+    inputs the existing decode path is used unchanged.
 
 The two flags are mutually exclusive. ``--bvi-zip`` is the default when
 neither is provided.
@@ -143,10 +143,10 @@ _RES_TO_TIER: dict[tuple[int, int], str] = {
     (480, 272): "D",
 }
 
-# Filename pattern for pre-extracted files (MP4 or YUV).
+# Filename pattern for pre-extracted files (video containers or YUV).
 # Accepts any alphanumeric/underscore stem followed by _WxH_<fps>fps_<depth>bit_420.
 # Groups: 1=stem, 2=width, 3=height, 4=fps (int portion), 5=depth, 6=extension.
-_DIR_NAME_RE = re.compile(r"^([A-Za-z0-9_\-]+?)_(\d+)x(\d+)_(\d+)fps_(\d+)bit_420\.(mp4|yuv)$")
+_DIR_NAME_RE = re.compile(r"^([A-Za-z0-9_\-]+?)_(\d+)x(\d+)_(\d+)fps_(\d+)bit_420\.(mkv|mp4|yuv)$")
 
 
 def _tier_from_resolution(w: int, h: int) -> str | None:
@@ -158,7 +158,7 @@ def _run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, check=True, **kw)
 
 
-def _decode_yuv_10bit(src_mp4: Path, out_yuv: Path) -> tuple[int, int, int]:
+def _decode_yuv_10bit(src_video: Path, out_yuv: Path) -> tuple[int, int, int]:
     probe = subprocess.run(
         [
             "ffprobe",
@@ -170,7 +170,7 @@ def _decode_yuv_10bit(src_mp4: Path, out_yuv: Path) -> tuple[int, int, int]:
             "stream=width,height,nb_frames",
             "-of",
             "json",
-            str(src_mp4),
+            str(src_video),
         ],
         check=True,
         capture_output=True,
@@ -188,7 +188,7 @@ def _decode_yuv_10bit(src_mp4: Path, out_yuv: Path) -> tuple[int, int, int]:
             "-loglevel",
             "error",
             "-i",
-            str(src_mp4),
+            str(src_video),
             "-pix_fmt",
             "yuv420p10le",
             "-f",
@@ -199,13 +199,13 @@ def _decode_yuv_10bit(src_mp4: Path, out_yuv: Path) -> tuple[int, int, int]:
     return w, h, nb_frames
 
 
-def _encode_dis_10bit(src_mp4: Path, out_yuv: Path, crf: int) -> None:
+def _encode_dis_10bit(src_video: Path, out_yuv: Path, crf: int) -> None:
     out_yuv.parent.mkdir(parents=True, exist_ok=True)
     # libx264 10-bit lossy compression at CRF 35 (matches KoNViD flow);
     # matroska pipe container so the moov atom doesn't need seekable
     # output. Decode side restores to yuv420p10le raw for libvmaf.
     cmd = (
-        f"ffmpeg -y -loglevel error -i {shlex.quote(str(src_mp4))} "
+        f"ffmpeg -y -loglevel error -i {shlex.quote(str(src_video))} "
         f"-c:v libx264 -pix_fmt yuv420p10le -crf {crf} -preset fast -an "
         f"-f matroska pipe:1 | "
         f"ffmpeg -y -loglevel error -i pipe:0 -pix_fmt yuv420p10le "
@@ -322,7 +322,7 @@ def _frames_to_rows(key: str, vmaf_json: Path, codec: str) -> list[dict]:
 
 def _process_clip(
     key: str,
-    src_mp4: Path,
+    src_video: Path,
     vmaf_bin: Path,
     model_path: Path,
     crf: int,
@@ -338,8 +338,8 @@ def _process_clip(
     dis_yuv = scratch / f"{key}_dis.yuv"
     vmaf_json = scratch / f"{key}_vmaf.json"
     try:
-        w, h, _nb = _decode_yuv_10bit(src_mp4, ref_yuv)
-        _encode_dis_10bit(src_mp4, dis_yuv, crf)
+        w, h, _nb = _decode_yuv_10bit(src_video, ref_yuv)
+        _encode_dis_10bit(src_video, dis_yuv, crf)
         _run_vmaf_full(vmaf_bin, ref_yuv, dis_yuv, w, h, vmaf_json, model_path)
         rows = _frames_to_rows(key, vmaf_json, codec)
         if cache_dir is not None:
@@ -447,8 +447,8 @@ class _DirEntry:
 
 
 def _select_tier_entries_dir(bvi_dir: Path, tier: str) -> list[_DirEntry]:
-    """Enumerate ``.mp4`` / ``.yuv`` files in *bvi_dir* that match the BVI-DVC
-    naming convention and belong to the requested tier.
+    """Enumerate video-container / ``.yuv`` files in *bvi_dir* that match the
+    BVI-DVC naming convention and belong to the requested tier.
 
     Resolution tiers are determined first from the four canonical
     ``_RES_TO_TIER`` pairs; if no canonical pair matches the parsed
@@ -459,7 +459,7 @@ def _select_tier_entries_dir(bvi_dir: Path, tier: str) -> list[_DirEntry]:
     """
     selected: list[_DirEntry] = []
     for path in sorted(bvi_dir.rglob("*")):
-        if path.suffix.lower() not in (".mp4", ".yuv"):
+        if path.suffix.lower() not in (".mkv", ".mp4", ".yuv"):
             continue
         m = _DIR_NAME_RE.match(path.name)
         if m is None:
@@ -561,9 +561,9 @@ def _run_dir_mode(args: argparse.Namespace, out_path: Path, cache_dir: Path | No
     """Process clips from a pre-extracted directory (``--bvi-dir`` path).
 
     Each file in the directory is processed in-place — no extraction
-    step, no deletion.  ``.mp4`` files go through the standard decode →
-    encode-distorted path; ``.yuv`` files skip the decode step entirely
-    and are passed directly to libvmaf as the reference.
+    step, no deletion.  Video-container files go through the standard
+    decode → encode-distorted path; ``.yuv`` files skip the decode step
+    entirely and are passed directly to libvmaf as the reference.
     """
     entries = _select_tier_entries_dir(args.bvi_dir, args.tier)
     if not entries:
@@ -571,7 +571,7 @@ def _run_dir_mode(args: argparse.Namespace, out_path: Path, cache_dir: Path | No
             f"[bvi-dvc-full] ERROR: no BVI-DVC clips found in {args.bvi_dir} "
             f"for tier={args.tier!r}. "
             "Check --bvi-dir and --tier; expected files matching the BVI-DVC "
-            "naming convention (e.g. BVI_DVC_tier1_*.yuv / *.mp4).",
+            "naming convention (e.g. BVI_DVC_tier1_*.yuv / *.mkv / *.mp4).",
             file=sys.stderr,
             flush=True,
         )
@@ -603,8 +603,7 @@ def _run_dir_mode(args: argparse.Namespace, out_path: Path, cache_dir: Path | No
                 args.codec,
             )
         else:
-            # .mp4 — use the standard MP4 → YUV decode path; the file
-            # is not deleted afterwards (it belongs to the user's dir).
+            # Video-container path: decode to YUV, then re-encode a distorted side.
             local_mp4 = entry.path
             rows += _process_clip(
                 key,
@@ -655,7 +654,7 @@ def main() -> int:
         default=None,
         help=(
             "Path to a directory containing already-extracted BVI-DVC "
-            ".mp4 or .yuv files. Files matching the BVI-DVC naming "
+            ".mp4, .mkv, or .yuv files. Files matching the BVI-DVC naming "
             "convention (e.g. ``Clip_480x272_30fps_8bit_420.yuv``) are "
             "enumerated and processed without extraction. "
             "Mutually exclusive with --bvi-zip."
@@ -672,7 +671,7 @@ def main() -> int:
     ap.add_argument(
         "--vmaf-bin",
         type=Path,
-        default=REPO_ROOT / "build-cpu" / "tools" / "vmaf",
+        default=REPO_ROOT / "libvmaf" / "build-cpu" / "tools" / "vmaf",
         help="Path to the libvmaf CLI binary.",
     )
     ap.add_argument(

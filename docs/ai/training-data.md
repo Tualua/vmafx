@@ -20,6 +20,18 @@ The `--data-root` flag (or the `VMAF_DATA_ROOT` environment variable) tells
 every training subcommand where to find the dataset. The flag takes
 precedence when both are set.
 
+KoNViD-1k uses a separate local root because the public dataset ships
+MP4 clips rather than Netflix-style YUV reference/distorted pairs:
+
+```text
+$VMAF_KONVID_1K_DIR/
+  KoNViD_1k_videos/    # 1200 source MP4s
+```
+
+`ai/scripts/konvid_to_full_features.py` also accepts `--konvid-root`;
+when `VMAF_KONVID_1K_DIR` is unset it falls back to
+`$VMAF_DATA_ROOT/konvid-1k` and then `~/datasets/konvid-1k`.
+
 ### Naming convention
 
 Files follow the Netflix encoding-ladder convention:
@@ -64,6 +76,7 @@ When `--data-root` points to a directory with the layout above, the loader:
 vmaf-train extract-features \
     --data-root .workingdir2/netflix \
     --dataset nflx-local \
+    --vmaf-binary libvmaf/build-cpu/tools/vmaf \
     --output ai/data/nflx_local_features.parquet
 
 # If VMAF_DATA_ROOT is set instead:

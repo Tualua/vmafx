@@ -96,9 +96,17 @@ python ai/scripts/extract_full_features.py --codec unknown
 # BVI-DVC — script encodes internally with libx264 at CRF 35
 python ai/scripts/bvi_dvc_to_full_features.py --tier D --codec x264
 
-# KoNViD-1k — codec inferred per-clip via ffprobe (see ai/scripts/konvid_to_full_features.py)
-# After the konvid pipeline lands, the per-clip codec is the ffprobe stream=codec_name
-# value aliased through ai/src/vmaf_train/codec.py.
+# KoNViD-1k — synthetic distorted side encoded with libx264
+python ai/scripts/konvid_to_full_features.py \
+    --konvid-root "$VMAF_KONVID_1K_DIR" \
+    --vmaf-bin libvmaf/build-cpu/tools/vmaf \
+    --codec x264
+
+# Optional audit mode: use ffprobe's source stream codec_name instead.
+python ai/scripts/konvid_to_full_features.py \
+    --konvid-root "$VMAF_KONVID_1K_DIR" \
+    --vmaf-bin libvmaf/build-cpu/tools/vmaf \
+    --codec-from-source
 ```
 
 ## Known limitations of this superseded design

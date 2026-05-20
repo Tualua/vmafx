@@ -255,7 +255,7 @@ def main() -> int:
     ap.add_argument(
         "--vmaf-bin",
         type=Path,
-        default=REPO_ROOT / "libvmaf" / "build" / "tools" / "vmaf",
+        default=REPO_ROOT / "libvmaf" / "build-cpu" / "tools" / "vmaf",
         help="Path to the libvmaf CLI binary.",
     )
     ap.add_argument(

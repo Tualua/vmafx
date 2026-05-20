@@ -4,7 +4,7 @@
 # dev/docker-compose.yml — VMAF fork dev-MCP stack
 #
 # Services:
-#   dev-mcp          — libvmaf + MCP UDS server (primary container)
+#   dev-mcp          — libvmaf + MCP stdio runtime (primary container)
 #   smoke-probe-cron — periodic golden-pair + MCP probe loop (every 15 min)
 #
 # Usage:
@@ -22,6 +22,8 @@ name: vmaf-dev-mcp
 x-common-env: &common-env
   VMAF_MODEL_PATH: /workspace/model
   VMAF_TESTDATA_PATH: /workspace/testdata
+  # Kept for callers that deliberately start the UDS transport inside the
+  # container; the default entrypoint uses stdio and does not create the socket.
   VMAF_MCP_UDS_PATH: /sockets/vmaf-mcp.sock
   # NVIDIA GPU passthrough — NVIDIA Container Toolkit must be installed on host.
   # All NVIDIA devices are exposed; capabilities cover compute, graphics, utility,
@@ -190,7 +192,10 @@ services:
       - vmaf-net
 
     healthcheck:
-      test: ["CMD", "test", "-S", "/sockets/vmaf-mcp.sock"]
+      # The entrypoint exposes MCP over stdio (`docker exec -i ... vmaf-mcp`)
+      # rather than a persistent UDS listener, so health must check the CLI
+      # that the probe service actually depends on.
+      test: ["CMD", "vmaf", "--version"]
       interval: 30s
       timeout: 10s
       retries: 5

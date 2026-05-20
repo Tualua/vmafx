@@ -92,9 +92,9 @@ runnable Netflix-corpus prep stack:
   convention. `iter_pairs(data_root, *, sources=, max_pairs=,
   assume_dims=)` is the only public surface.
 - [`ai/data/feature_extractor.py`](data/feature_extractor.py) — wraps
-  the libvmaf CLI in JSON mode. Defaults to `build/tools/vmaf`; honours
-  `$VMAF_BIN`. Raises `RuntimeError` with explicit build instructions
-  on missing binary.
+  the libvmaf CLI in JSON mode. Defaults to
+  `libvmaf/build-cpu/tools/vmaf`; honours `$VMAF_BIN`. Raises
+  `RuntimeError` with explicit build instructions on missing binary.
 - [`ai/data/scores.py`](data/scores.py) — `vmaf_v0.6.1` distillation
   scores (per-frame + pooled). Honours `$VMAF_MODEL_PATH`.
 - [`ai/train/dataset.py`](train/dataset.py) — `NetflixFrameDataset`
@@ -512,6 +512,34 @@ by `(src_sha256, encoder, preset, crf)`).
   after processing; the zip-mode path deletes the temporarily extracted
   MP4 after processing (existing behaviour).
 
+## KoNViD-1k full-feature refresh
+
+`ai/scripts/konvid_to_full_features.py` is the regeneration path for
+`runs/full_features_konvid.parquet` and
+`runs/full_features_konvid_with_folds.parquet`. It mirrors
+`konvid_to_vmaf_pairs.py`'s synthetic-FR recipe (source MP4 as
+reference, libx264 CRF 35 distorted side) but emits the current
+`FULL_FEATURES` tuple plus `vmaf` from the fork CPU binary.
+
+**Rebase-sensitive invariants:**
+
+- Use `libvmaf/build-cpu/tools/vmaf` or an explicitly verified fresh
+  dev-container binary. Do not let the script fall back to
+  `/usr/local/bin/vmaf`; system installs have previously lacked
+  fork-only extractors such as `motion_v2`, `ssimulacra2`, and the
+  SpEED features.
+- The folded parquet's `source=fold0..fold4` assignment is a stable
+  balanced hash over clip keys. It intentionally does not depend on
+  directory enumeration order or row count, because
+  `eval_multiseed_v3_v4.py` treats `source` as the held-out fold key.
+- The default cache path includes the `FULL_FEATURES` count and CRF.
+  If the feature tuple or distortion recipe changes, write a new cache
+  namespace rather than reusing stale per-clip libvmaf JSON.
+- Aggregate `runs/full_features_*corpus*.parquet` files are rebuilt via
+  `ai/scripts/combine_full_feature_parquets.py`, not ad hoc notebook
+  concatenation. Its output schema is
+  `corpus, source, frame_index, codec, <FULL_FEATURES>, vmaf`.
+
 ## v5 corpus-expansion probe — research-only (ADR-0287)
 
 The `*_vmaf_tiny_v5.py` scripts
@@ -530,6 +558,10 @@ threshold). When extending these scripts:
   CC-BY); raw videos and the resulting
   `runs/full_features_ugc.parquet` must NEVER be committed
   (the `runs/` and `.workingdir2/` trees are gitignored).
+- `extract_ugc_features.py` emits the same current `FULL_FEATURES`
+  schema as the other full-feature refresh scripts. Older versions
+  intentionally populated only canonical-6 and forced the rest to NaN;
+  do not restore that shortcut when refreshing `full_features_5corpus`.
 - The dual-arm LOSO trains 18 mlp_small models
   (9 v2-baseline plus 9 v5-candidate); single invocation
   wall-time is ~10–25 min depending on CPU. Do NOT launch it

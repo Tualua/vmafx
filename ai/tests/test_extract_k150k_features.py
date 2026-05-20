@@ -67,7 +67,7 @@ def test_cuda_feature_passes_split_gpu_and_cpu_residual(monkeypatch, tmp_path: P
 
     frames = K150K._run_feature_passes(
         vmaf_bin=Path("libvmaf/build-cuda/tools/vmaf"),
-        cpu_vmaf_bin=Path("build-cpu/tools/vmaf"),
+        cpu_vmaf_bin=Path("libvmaf/build-cpu/tools/vmaf"),
         yuv_path=tmp_path / "clip.yuv",
         width=1280,
         height=720,
@@ -105,8 +105,8 @@ def test_cpu_feature_pass_uses_generic_extractors(monkeypatch, tmp_path: Path) -
     monkeypatch.setattr(K150K.subprocess, "run", fake_run)
 
     frames = K150K._run_feature_passes(
-        vmaf_bin=Path("build-cpu/tools/vmaf"),
-        cpu_vmaf_bin=Path("build-cpu/tools/vmaf"),
+        vmaf_bin=Path("libvmaf/build-cpu/tools/vmaf"),
+        cpu_vmaf_bin=Path("libvmaf/build-cpu/tools/vmaf"),
         yuv_path=tmp_path / "clip.yuv",
         width=640,
         height=360,
@@ -144,7 +144,7 @@ def test_vmaf_column_non_nan_in_aggregated_output(monkeypatch, tmp_path: Path) -
     monkeypatch.setattr(K150K.subprocess, "run", fake_run)
 
     frames = K150K._run_vmaf_json(
-        vmaf_bin=Path("build-cpu/tools/vmaf"),
+        vmaf_bin=Path("libvmaf/build-cpu/tools/vmaf"),
         yuv_path=tmp_path / "clip.yuv",
         width=640,
         height=360,

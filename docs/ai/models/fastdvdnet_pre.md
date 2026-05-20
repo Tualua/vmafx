@@ -143,18 +143,18 @@ five-slot ring buffer of the most recent normalised luma planes. Each
 
 ```bash
 # 1. Build libvmaf with DNN support enabled.
-meson setup build -Denable_dnn=true
-ninja -C build
+meson setup libvmaf/build-cpu -Denable_dnn=true
+ninja -C libvmaf/build-cpu
 
 # 2. Run the extractor against a clip, supplying the model path.
-build/libvmaf/tools/vmaf \
+libvmaf/build-cpu/tools/vmaf \
     --reference ref.yuv --distorted dis.yuv \
     --width 1920 --height 1080 --pixel_format yuv420p --bitdepth 8 \
     --feature fastdvdnet_pre=model_path=model/tiny/fastdvdnet_pre.onnx
 
 # Or via env var (matches lpips_sq's pattern):
 VMAF_FASTDVDNET_PRE_MODEL_PATH=model/tiny/fastdvdnet_pre.onnx \
-    build/libvmaf/tools/vmaf --feature fastdvdnet_pre …
+    libvmaf/build-cpu/tools/vmaf --feature fastdvdnet_pre …
 ```
 
 The extractor declines cleanly (non-fatal `-EINVAL`) if neither

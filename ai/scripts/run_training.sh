@@ -18,7 +18,7 @@ cd "$repo_root"
 
 data_root="${VMAF_DATA_ROOT:-$repo_root/.workingdir2/netflix}"
 out_dir="${VMAF_TRAIN_OUT_DIR:-$repo_root/runs/tiny_nflx}"
-vmaf_bin="${VMAF_BIN:-$repo_root/build/tools/vmaf}"
+vmaf_bin="${VMAF_BIN:-$repo_root/libvmaf/build-cpu/tools/vmaf}"
 
 if [[ ! -d "$data_root" ]]; then
   echo "error: data root not found: $data_root" >&2
@@ -29,7 +29,7 @@ fi
 
 if [[ ! -x "$vmaf_bin" ]]; then
   echo "error: libvmaf CLI not found at $vmaf_bin" >&2
-  echo "Build it first: meson setup build && ninja -C build" >&2
+  echo "Build it first: meson setup libvmaf/build-cpu && ninja -C libvmaf/build-cpu" >&2
   exit 2
 fi
 

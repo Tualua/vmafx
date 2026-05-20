@@ -30,6 +30,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from ..hw_devices import AUTO_VAAPI_DEVICE, resolve_vaapi_device
 from . import _gop_common
 
 # QSV preset vocabulary — identical to x264's medium/fast/... subset
@@ -237,7 +238,7 @@ class BaseQsvAdapter:
         ]
 
     @staticmethod
-    def qsv_hw_init_args(vaapi_device: str = "/dev/dri/renderD128") -> list[str]:
+    def qsv_hw_init_args(vaapi_device: str = AUTO_VAAPI_DEVICE) -> list[str]:
         """Return the FFmpeg pre-input argv for QSV hardware-device init.
 
         FFmpeg's QSV bridge on Linux requires three device-initialisation
@@ -250,15 +251,16 @@ class BaseQsvAdapter:
         before the ``-c:v`` flag to surface QSV-mapped surfaces to the
         encoder.
 
-        ``vaapi_device`` defaults to ``/dev/dri/renderD128``; override
-        when the Intel GPU occupies a non-default render node (e.g.
-        ``/dev/dri/renderD129`` on a mixed-GPU system).
+        ``vaapi_device`` defaults to ``auto`` and resolves to the first
+        Intel render node under ``/sys/class/drm``. Override when an
+        operator needs a specific render node.
 
         See ADR-0601 (Bug V14-B).
         """
+        resolved_vaapi_device = resolve_vaapi_device(vaapi_device)
         return [
             "-init_hw_device",
-            f"vaapi=va:{vaapi_device}",
+            f"vaapi=va:{resolved_vaapi_device}",
             "-init_hw_device",
             "qsv=qsv_dev@va",
             "-filter_hw_device",

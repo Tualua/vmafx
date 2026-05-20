@@ -119,7 +119,7 @@ scores = sess.run(["score"], {"features": x.astype(np.float32)})[0]
 # 1. Make sure runs/full_features_netflix.parquet exists. Regenerate via:
 python ai/scripts/extract_full_features.py \
     --data-root .workingdir2/netflix \
-    --vmaf-bin build-cpu/tools/vmaf
+    --vmaf-bin libvmaf/build-cpu/tools/vmaf
 
 # 2. Train + export (defaults match the shipped checkpoint).
 python ai/scripts/train_fr_regressor.py

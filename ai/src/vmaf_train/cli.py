@@ -19,13 +19,14 @@ from rich.console import Console
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 console = Console()
+DEFAULT_VMAF_BINARY = Path("libvmaf") / "build-cpu" / "tools" / "vmaf"
 
 
 @app.command("extract-features")
 def extract_features_cmd(
     dataset: str = typer.Option(..., help="Dataset name (nflx, konvid-1k, ...)"),
     output: Path = typer.Option(..., help="Output parquet path"),
-    vmaf_binary: Path = typer.Option(Path("vmaf"), help="Path to the vmaf CLI binary"),
+    vmaf_binary: Path = typer.Option(DEFAULT_VMAF_BINARY, help="Path to the vmaf CLI binary"),
 ) -> None:
     """Dump per-frame libvmaf features → parquet for C1 training."""
     from .data.datasets import load_manifest

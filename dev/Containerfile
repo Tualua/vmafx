@@ -68,6 +68,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pip \
     # Source control + fetch
     git \
+    git-lfs \
     curl \
     ca-certificates \
     gnupg \
@@ -91,7 +92,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libglvnd-dev \
     libva-dev \
     libva-drm2 \
+    libdrm-dev \
     libvpl-dev \
+    vainfo \
+    ripgrep \
     # VA-API user-space drivers (Intel + AMD). The libva-dev / libva-drm2
     # pair above only provides the VA-API headers and DRM transport — the
     # actual codec driver (`iHD_drv_video.so` for Intel, `radeonsi_drv_video.so`
@@ -115,7 +119,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Verify critical GPU/Vulkan/VA-API packages were actually installed.
 # A misconfigured repo or network failure during apt-get produces a silently
 # broken image; this check surfaces the gap at build time instead of run time.
-RUN for pkg in mesa-vulkan-drivers intel-media-va-driver-non-free mesa-libgallium; do \
+RUN for pkg in mesa-vulkan-drivers intel-media-va-driver-non-free mesa-libgallium libvpl-dev; do \
         apt-mark showmanual | grep -q "^${pkg}$" \
             || (echo "FATAL: ${pkg} was not installed" && exit 1); \
     done
@@ -274,6 +278,33 @@ RUN curl -fsSL "https://github.com/oneapi-src/level-zero/releases/download/v${LE
     && apt-get install -y --no-install-recommends /tmp/libze1.deb /tmp/libze-dev.deb \
     && find /tmp -maxdepth 1 -name 'libze*.deb' -delete \
     && find /var/lib/apt/lists -mindepth 1 -delete
+
+# ---------- Intel oneVPL GPU runtime (QSV encode dispatch) -----------------
+# `libvpl-dev` installs the dispatcher (`libvpl.so.2`) but not the Gen GPU
+# implementation (`libmfx-gen.so`). FFmpeg can compile `--enable-libvpl`
+# without it, but every `*_qsv` dummy encode fails at runtime with
+# "Error creating a MFX session: -9" on Arc. Build the pinned Intel GPU
+# runtime from source into the Debian multiarch library directory that the
+# distro oneVPL dispatcher searches by default, so QSV works without
+# per-command ONEVPL_SEARCH_PATH overrides.
+ARG VPL_GPU_RT_TAG=intel-onevpl-26.1.5
+# hadolint ignore=DL3003
+RUN git clone --depth=1 --branch "${VPL_GPU_RT_TAG}" https://github.com/intel/vpl-gpu-rt.git /tmp/vpl-gpu-rt \
+    && cd /tmp/vpl-gpu-rt \
+    && git lfs pull \
+    && cmake -S . -B build \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr \
+        -DCMAKE_INSTALL_LIBDIR=lib/x86_64-linux-gnu \
+        -DBUILD_RUNTIME=ON \
+        -DBUILD_TESTS=OFF \
+        -DBUILD_TOOLS=OFF \
+        -DENABLE_ITT=OFF \
+    && cmake --build build -j"$(nproc)" \
+    && cmake --install build \
+    && ldconfig \
+    && test -e /usr/lib/x86_64-linux-gnu/libmfx-gen.so \
+    && rm -rf /tmp/vpl-gpu-rt
 
 # oneAPI env — source /opt/intel/oneapi/setvars.sh in interactive shells;
 # for CI/build steps we set the critical vars explicitly.

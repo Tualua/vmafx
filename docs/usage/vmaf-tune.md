@@ -24,11 +24,11 @@ with [`vmaf`](cli.md), and emits a JSONL corpus of
 
 ## Codec adapters
 
-18 adapters under `tools/vmaf-tune/src/vmaftune/codec_adapters/`:
+19 adapters under `tools/vmaf-tune/src/vmaftune/codec_adapters/`:
 
 | Family | Software           | NVIDIA NVENC                                                                                               | Intel QSV     | AMD AMF       | Apple VideoToolbox    |
 |--------|--------------------|------------------------------------------------------------------------------------------------------------|---------------|---------------|-----------------------|
-| AV1    | `libaom`, `svtav1` | `av1_nvenc` ([ADR-0290](../adr/0290-vmaf-tune-nvenc-adapters.md))                                          | `av1_qsv`     | `av1_amf`     | —                     |
+| AV1    | `libaom-av1`, `libsvtav1` | `av1_nvenc` ([ADR-0290](../adr/0290-vmaf-tune-nvenc-adapters.md))                                  | `av1_qsv`     | `av1_amf`     | `av1_videotoolbox` placeholder |
 | H.264  | `x264` (Phase A)   | `h264_nvenc`                                                                                               | `h264_qsv`    | `h264_amf`    | `h264_videotoolbox`   |
 | HEVC   | `x265` ([ADR-0288](../adr/0288-vmaf-tune-codec-adapter-x265.md)) | `hevc_nvenc`                                                              | `hevc_qsv`    | `hevc_amf`    | `hevc_videotoolbox`   |
 | VP9    | `libvpx-vp9`       | —                                                                                                          | —             | —             | —                     |
@@ -271,7 +271,7 @@ The mapping is closed and order-stable; see
 | `--force-hdr-pq` | off | Treat all sources as HDR PQ (SMPTE-2084) without probing. Useful for raw YUV refs that ffprobe cannot read color metadata from. |
 | `--force-hdr-hlg` | off | Treat all sources as HDR HLG (ARIB STD-B67) without probing. |
 | `--two-pass` | off | Phase F (ADR-0333 + ADR-0546). Run a 2-pass encode for codecs whose adapter sets `supports_two_pass = True` (today: `libx264`, `libx265`, `libvpx-vp9`, `libaom-av1`, `libvvenc`). Codecs without 2-pass support fall back to single-pass with a stderr warning. Doubles encode wall time. |
-| `--vaapi-device PATH` | `/dev/dri/renderD128` | VA-API DRI render-node for Intel QSV hardware-device init. Override when the Intel GPU occupies a non-default render node on a mixed-GPU system (e.g. `/dev/dri/renderD129`). Also overridable via `VMAFTUNE_VAAPI_DEVICE` env var; the flag takes precedence. Ignored for non-QSV encoders. ([ADR-0601](../adr/0601-vmaftune-qsv-amf-hw-init-and-probe-fix.md)) |
+| `--vaapi-device PATH` | `auto` | VA-API DRI render-node for Intel QSV hardware-device init. `auto` selects the first Intel render node from `/sys/class/drm` and falls back to `/dev/dri/renderD128` only when no Intel node is discoverable. Also overridable via `VMAFTUNE_VAAPI_DEVICE` env var; the flag takes precedence. Ignored for non-QSV encoders. ([ADR-0641](../adr/0641-dev-container-encoder-probe-hardening.md)) |
 
 ## Resolution-aware mode
 
@@ -923,6 +923,14 @@ crf, vmaf_score, encode_time_ms, bitrate_kbps)` tuple, so Phase C/D
 predictors can pick whichever encoder dominates the relevant region of
 the rate-distortion plane on a given source.
 
+SVT-AV1-HDR (`juliobbv-p/svt-av1-hdr`) is **not** a separate adapter
+today. The project is an HDR-focused SVT-AV1 fork with community
+FFmpeg builds, but vmaf-tune has not yet pinned a runtime or verified
+whether FFmpeg exposes it through a distinct encoder name or the same
+`libsvtav1` wrapper. Until the runtime-variant layer lands, selecting an
+SVT-AV1-HDR-linked FFmpeg via `--ffmpeg-bin` changes the meaning of the
+existing `libsvtav1` row for the whole run.
+
 ## Hardware encoders (NVENC)
 
 Phase A also wires the NVIDIA NVENC family for hardware-accelerated
@@ -1090,7 +1098,7 @@ QSV encoders:
 
 ```text
 # Before -i:
--init_hw_device vaapi=va:/dev/dri/renderD128
+-init_hw_device vaapi=va:/dev/dri/renderD129
 -init_hw_device qsv=qsv_dev@va
 -filter_hw_device va
 # After -i, before -c:v:
@@ -1098,16 +1106,19 @@ QSV encoders:
 ```
 
 Without this chain every QSV encode fails with `-22 Invalid argument`.
-The VA-API device defaults to `/dev/dri/renderD128` (the first Intel GPU
-on most single-GPU Linux hosts). Override with `--vaapi-device /dev/dri/renderD129`
-or `VMAFTUNE_VAAPI_DEVICE=/dev/dri/renderD129` for mixed-GPU systems where
-the Intel GPU is not the primary DRI node. ([ADR-0601](../adr/0601-vmaftune-qsv-amf-hw-init-and-probe-fix.md))
+The VA-API device defaults to `auto`: `vmaf-tune` walks `/dev/dri/by-path`
+and `/sys/class/drm/renderD*/device/vendor`, selects the first Intel
+vendor node (`0x8086`), and falls back to `/dev/dri/renderD128` only
+when no Intel render node is discoverable. Override with
+`--vaapi-device /dev/dri/renderD129` or
+`VMAFTUNE_VAAPI_DEVICE=/dev/dri/renderD129` when you need to pin a
+specific node. ([ADR-0641](../adr/0641-dev-container-encoder-probe-hardening.md))
 
 The underlying FFmpeg invocations look like:
 
 ```shell
 ffmpeg \
-    -init_hw_device vaapi=va:/dev/dri/renderD128 \
+    -init_hw_device vaapi=va:/dev/dri/renderD129 \
     -init_hw_device qsv=qsv_dev@va \
     -filter_hw_device va \
     -i src.mkv \
@@ -1421,7 +1432,7 @@ vmaf-tune compare \
     --framerate 24 --duration 10 \
     --sample-clip-seconds 4 \
     --target-vmaf 92 \
-    --encoders libx264,libx265,libsvtav1,libaom,libvvenc \
+    --encoders libx264,libx265,libsvtav1,libaom-av1,libvvenc \
     --crf-min 15 --crf-max 40 \
     --format markdown
 ```
@@ -1462,12 +1473,12 @@ Sample output (`--format markdown`, abridged):
 
 | Rank | Codec    | Encoder         | Best CRF | Bitrate (kbps) | Encode time (ms) | VMAF  | Status |
 |---:|---|---|---:|---:|---:|---:|---|
-| 1  | libaom    | libaom-3.8.0    | 30       |         1500.0 |          18000.0 | 92.40 | ok     |
+| 1  | libaom-av1 | libaom-3.8.0   | 30       |         1500.0 |          18000.0 | 92.40 | ok     |
 | 2  | libx265   | libx265-3.5     | 26       |         1700.0 |           4200.0 | 92.00 | ok     |
 | 3  | libsvtav1 | libsvtav1-1.7.0 | 32       |         1900.0 |           2800.0 | 92.30 | ok     |
 | 4  | libx264   | libx264-164     | 23       |         2400.0 |           1500.0 | 92.10 | ok     |
 
-**Smallest file**: `libaom` at CRF 30 → 1500.0 kbps (VMAF 92.40).
+**Smallest file**: `libaom-av1` at CRF 30 → 1500.0 kbps (VMAF 92.40).
 ```
 
 ### Multi-target rate-quality sweep (schema v2, ADR-0516 + ADR-0534 + ADR-0538)
@@ -1489,7 +1500,7 @@ target) drawn as a heavier dashed overlay.
 vmaf-tune compare \
     --src bbb_1080p_60fps.mp4 \
     --width 1920 --height 1080 --framerate 60 \
-    --encoders libx264,libx265,libvpx-vp9 \
+    --encoders libx265,libsvtav1 \
     --sample-clip-seconds 3 --max-iterations 3 \
     --score-backend cuda \
     --format json --output sweep.json
@@ -1497,6 +1508,15 @@ vmaf-tune report \
     --src bbb_1080p_60fps.mp4 \
     --compare-json sweep.json --target-vmaf 92 \
     --format html --output sweep_report.html
+
+# Convenience path: render the same profile card directly from compare.
+vmaf-tune compare \
+    --src bbb_1080p_60fps.mp4 \
+    --width 1920 --height 1080 --framerate 60 \
+    --encoders libx265,libsvtav1,av1_nvenc,av1_qsv \
+    --sample-clip-seconds 3 --max-iterations 3 \
+    --score-backend cuda \
+    --format both --output sweep_profile.html
 ```
 
 **Why these defaults (ADR-0538 supersedes ADR-0530)**
@@ -1577,7 +1597,14 @@ error string — the renderer flags them visually and the sweep
 continues; the run does not abort.
 
 The `--encoders` flag is **optional**; when omitted it defaults to
-the CPU set `libx264,libx265,libsvtav1,libvpx-vp9`.
+the CPU set `libx265,libsvtav1`. Older archival smoke runs also swept
+`libx264` and `libvpx-vp9`, but those two CPU lanes dominate wall time
+without covering the fork's current HEVC/AV1 decision points.
+
+BBB v9 artifacts are retained only as historical bug evidence; do not
+use v9 as a current run baseline. New BBB compare probes should start
+from the ADR-0641 profile-report path (`--format both`) and list
+`libx264` / `libvpx-vp9` only for an explicit legacy comparison.
 
 ### `compare` CLI flags
 
@@ -1586,7 +1613,7 @@ the CPU set `libx264,libx265,libsvtav1,libvpx-vp9`.
 | `--src PATH` | — | Required. Single reference clip. |
 | `--target-vmaf F` | `92.0` | Single VMAF target. When passed explicitly and `--target-vmafs` is at its default sweep, the v1 single-target schema is emitted (ADR-0534 back-compat). |
 | `--target-vmafs LIST` | `94,96,97,98` (ADR-0538, supersedes ADR-0534) | Comma-separated VMAF targets to sweep per codec. The default covers premium-archival operating points (4K archival masters at VMAF 94-98). Pass a single value to opt into the v1 path; pass an explicit multi-value list (e.g. `80,85,90`) to override the sweep range. |
-| `--encoders LIST` | `libx264,libx265,libsvtav1,libvpx-vp9` | Comma-separated codec names. Hardware encoders (`h264_nvenc`, `hevc_nvenc`, `av1_nvenc`, `h264_qsv`, `hevc_qsv`, `av1_qsv`, `h264_amf`, `hevc_amf`, `av1_amf`) are accepted; missing-encoder rows skip with a reason rather than failing the whole run. |
+| `--encoders LIST` | `libx265,libsvtav1` | Comma-separated codec names. Hardware encoders (`h264_nvenc`, `hevc_nvenc`, `av1_nvenc`, `h264_qsv`, `hevc_qsv`, `av1_qsv`, `h264_amf`, `hevc_amf`, `av1_amf`) are accepted; missing-encoder rows skip with a reason rather than failing the whole run. |
 | `--width / --height` | — | Required for the default real-bisect backend. |
 | `--pix-fmt` | `yuv420p` | Source pixel format forwarded to the scorer. |
 | `--framerate` | `24.0` (or auto-probed for container `--src`) | Source framerate. Container sources (mp4 / mkv / mov / Y4M / ...) auto-probe via `ffprobe` when this flag is left at its default; explicit values still win with a stderr-warning on probed-vs-user mismatch (ADR-0509). |
@@ -1598,7 +1625,7 @@ the CPU set `libx264,libx265,libsvtav1,libvpx-vp9`.
 | `--vmaf-model` | `vmaf_v0.6.1` | VMAF model forwarded to the scorer. |
 | `--score-backend` | scorer default | `cpu`, `cuda`, `sycl`, `vulkan`, or `auto`. |
 | `--ffmpeg-bin / --vmaf-bin` | `ffmpeg` / `vmaf` | Binary overrides. |
-| `--format` | `markdown` | One of `markdown`, `json`, `csv`. |
+| `--format` | `markdown` | One of `markdown`, `json`, `csv`, `html`, `both`. `html` and `both` render the profile-card report directly; `both` writes `.html` and `.md` next to `--output` and therefore requires `--output`. |
 | `--no-parallel` | off | Run codecs sequentially (default: thread pool, one per codec). |
 | `--max-workers N` | `len(encoders)` | Cap on the parallel thread pool. |
 | `--predicate-module MOD:FN` | off | Advanced hook that bypasses the bisect backend. |
@@ -1681,9 +1708,8 @@ The JSON carries `"schema_version": 3`, `"mode": "crf_sweep"`,
 `ok`, and `error`. The `--target-vmaf` / `--target-vmafs` flags are
 accepted but act as label-only knobs in this mode (they annotate
 pareto frontier markers when rendered, but do not drive the encode
-loop). The `--format` flag is accepted but only `json` output is
-implemented for v3 in the current release; Markdown / CSV rendering
-of the v3 payload is a follow-up.
+loop). CRF-sweep mode currently requires `--format json`; render the
+result with a separate downstream report step once v3 ingestion lands.
 
 Hardware encoder availability is probed the same way as the bisect
 path: unavailable encoders (e.g. `h264_nvenc` without an NVIDIA

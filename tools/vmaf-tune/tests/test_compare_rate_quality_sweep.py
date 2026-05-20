@@ -307,6 +307,33 @@ def test_probe_encoder_available_hardware_dummy_encode_fail():
     assert len(calls) == 2
 
 
+def test_probe_encoder_available_prefers_actionable_runtime_error():
+    """Probe failures keep the useful runtime line, not the final muxer noise."""
+
+    def runner(argv, timeout=30.0):
+        if "-encoders" in argv:
+
+            class _R:
+                stdout = b" V..... h264_amf             AMD AMF H.264 Encoder\n"
+                returncode = 0
+
+            return _R()
+
+        class _R2:
+            stdout = (
+                b"[h264_amf @ 0x...] DLL libamfrt64.so.1 failed to open\n"
+                b"[out#0/null @ 0x...] Nothing was written into output file\n"
+            )
+            returncode = 1
+
+        return _R2()
+
+    ok, reason = probe_encoder_available("h264_amf", runner=runner)
+    assert ok is False
+    assert "libamfrt64.so.1 failed to open" in reason
+    assert not reason.endswith("Nothing was written into output file")
+
+
 def test_probe_encoder_available_handles_ffmpeg_missing():
     def runner(argv, timeout=30.0):
         raise FileNotFoundError("ffmpeg")
@@ -321,10 +348,11 @@ def test_hardware_encoders_includes_canonical_nvenc_qsv_amf():
         assert token in HARDWARE_ENCODERS
 
 
-def test_default_cpu_encoders_covers_mainline_set():
-    assert "libx264" in DEFAULT_CPU_ENCODERS
+def test_default_cpu_encoders_covers_fast_archival_set():
     assert "libx265" in DEFAULT_CPU_ENCODERS
     assert "libsvtav1" in DEFAULT_CPU_ENCODERS
+    assert "libx264" not in DEFAULT_CPU_ENCODERS
+    assert "libvpx-vp9" not in DEFAULT_CPU_ENCODERS
 
 
 # ---------------------------------------------------------------------------
@@ -477,10 +505,52 @@ def test_cli_compare_default_encoders_is_cpu_set(monkeypatch, capsys, tmp_path):
     )
     assert rc == 0
     # Default encoder set is the CPU encoders. (the fake adapter handles
-    # x264/x265/svtav1 but the libvpx-vp9 row will fall back to the
-    # default error; we only assert dispatch coverage)
-    assert "libx264" in captured
+    # x265/svtav1; we only assert dispatch coverage)
     assert "libx265" in captured
+    assert "libsvtav1" in captured
+    assert "libx264" not in captured
+
+
+def test_cli_compare_profile_report_both_writes_html_and_markdown(monkeypatch, tmp_path):
+    """``compare --format both`` renders finished profile-card artefacts."""
+    import types
+
+    shim = types.ModuleType("_sweep_shim_profile")
+
+    def predicate(codec, src, target_vmaf):
+        return _fake_predicate(codec, src, target_vmaf)
+
+    shim.predicate = predicate  # type: ignore[attr-defined]
+    sys.modules["_sweep_shim_profile"] = shim
+
+    out_base = tmp_path / "compare_profile.out"
+
+    from vmaftune.cli import main
+
+    rc = main(
+        [
+            "compare",
+            "--src",
+            str(tmp_path / "ref.yuv"),
+            "--target-vmafs",
+            "85,90",
+            "--encoders",
+            "libx265,libsvtav1",
+            "--format",
+            "both",
+            "--output",
+            str(out_base),
+            "--predicate-module",
+            "_sweep_shim_profile:predicate",
+        ]
+    )
+    assert rc == 0
+    html = out_base.with_suffix(".html")
+    md = out_base.with_suffix(".md")
+    assert html.exists()
+    assert md.exists()
+    assert "rate-quality" in html.read_text(encoding="utf-8").lower()
+    assert "Codec rate-quality sweep" in md.read_text(encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------

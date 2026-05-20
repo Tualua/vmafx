@@ -37,6 +37,7 @@ if __package__ in (None, ""):
 
 from ai.data.feature_extractor import (
     DEFAULT_FEATURES,
+    DEFAULT_VMAF_BINARY,
     FULL_FEATURES,
     FeatureExtractionResult,
     aggregate_clip_stats,
@@ -497,7 +498,7 @@ def run(
     include_reference_identity: bool = False,
     ffmpeg_bin: str = "ffmpeg",
     ffprobe_bin: str = "ffprobe",
-    vmaf_bin: Path = Path("build/tools/vmaf"),
+    vmaf_bin: Path = DEFAULT_VMAF_BINARY,
     runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
     extractor: Callable[..., FeatureExtractionResult] = extract_features,
 ) -> int:
@@ -588,7 +589,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--ffmpeg-bin", default="ffmpeg")
     ap.add_argument("--ffprobe-bin", default="ffprobe")
-    ap.add_argument("--vmaf-bin", type=Path, default=Path("build/tools/vmaf"))
+    ap.add_argument("--vmaf-bin", type=Path, default=DEFAULT_VMAF_BINARY)
     args = ap.parse_args(argv)
 
     with contextlib.suppress(KeyboardInterrupt):

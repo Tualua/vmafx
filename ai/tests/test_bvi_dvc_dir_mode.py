@@ -5,7 +5,7 @@
 ADR-0524.  These tests cover the two new helpers without invoking the real
 vmaf binary or touching the 192 GB corpus:
 
-* ``_select_tier_entries_dir`` — enumerate YUV/MP4 files in a directory and
+* ``_select_tier_entries_dir`` — enumerate YUV/MP4/MKV files in a directory and
   map them to tiers via resolution.
 * ``_DirEntry`` — the lightweight stand-in for ``zipfile.ZipInfo``.
 * ``main`` end-to-end against a synthetic fixture directory with two fake YUV
@@ -123,6 +123,19 @@ class TestSelectTierEntriesDir:
         _write_fake_yuv(d / "ClipD_480x272_30fps_8bit_420.yuv", 480, 272, depth=8)
         entries = mod._select_tier_entries_dir(d, "all")
         assert len(entries) == 1
+
+    def test_mkv_container_files_are_accepted(self, tmp_path: Path) -> None:
+        """The local lossless BVI-DVC bundle is MKV-backed, not MP4-backed."""
+        mod = _load_module()
+        d = tmp_path / "mkv"
+        d.mkdir()
+        (d / "ClipB_1920x1088_60fps_10bit_420.mkv").write_bytes(b"not a real mkv")
+
+        entries = mod._select_tier_entries_dir(d, "B")
+
+        assert len(entries) == 1
+        assert entries[0].tier == "B"
+        assert entries[0].path.suffix == ".mkv"
 
     def test_unknown_resolution_emits_warning_and_skips(
         self, tmp_path: Path, capsys: pytest.CaptureFixture

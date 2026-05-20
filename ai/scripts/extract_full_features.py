@@ -43,7 +43,7 @@ import numpy as np
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from ai.data.feature_extractor import FULL_FEATURES, extract_features
+from ai.data.feature_extractor import DEFAULT_VMAF_BINARY, FULL_FEATURES, extract_features
 from ai.data.netflix_loader import iter_pairs
 from ai.data.scores import teacher_scores
 
@@ -112,7 +112,7 @@ def main() -> int:
     ap.add_argument(
         "--vmaf-bin",
         type=Path,
-        default=Path("build-cpu/tools/vmaf"),
+        default=DEFAULT_VMAF_BINARY,
     )
     ap.add_argument(
         "--out",

@@ -90,7 +90,7 @@ PYTHONPATH=ai/src python ai/scripts/chug_extract_features.py \
   --cache-dir .workingdir2/chug/feature-cache \
   --split-manifest .workingdir2/chug/chug_splits.json \
   --audit-output .workingdir2/chug/chug_hdr_audit.json \
-  --vmaf-bin build/tools/vmaf \
+  --vmaf-bin libvmaf/build-cpu/tools/vmaf \
   --feature-set canonical \
   --full
 ```
@@ -152,7 +152,7 @@ PYTHONPATH=ai/src python ai/scripts/extract_k150k_features.py \
   --scores .workingdir2/chug/chug_scores.csv \
   --metadata-jsonl .workingdir2/chug/chug.jsonl \
   --vmaf-bin libvmaf/build-cuda/tools/vmaf \
-  --cpu-vmaf-bin build-cpu/tools/vmaf \
+  --cpu-vmaf-bin libvmaf/build-cpu/tools/vmaf \
   --out .workingdir2/chug/training/full_features_chug.parquet \
   --scratch-dir .workingdir2/chug/feature_scratch_cuda
 ```

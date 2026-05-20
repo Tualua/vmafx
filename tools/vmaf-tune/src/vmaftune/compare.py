@@ -50,6 +50,7 @@ from typing import Any
 
 from . import __version__ as TOOL_VERSION
 from .codec_adapters import known_codecs
+from .hw_devices import AUTO_VAAPI_DEVICE, resolve_vaapi_device
 
 # Keys exposed to programmatic consumers. Mirrors the CORPUS_ROW_KEYS
 # discipline in ``vmaftune/__init__.py``: bumping the list is a
@@ -414,10 +415,8 @@ SCHEMA_VERSION_V2: int = 2
 # probed at runtime and skipped with a row-level error when absent
 # rather than silently dropped from the comparison.
 DEFAULT_CPU_ENCODERS: tuple[str, ...] = (
-    "libx264",
     "libx265",
     "libsvtav1",
-    "libvpx-vp9",
 )
 
 # Hardware encoders the CLI accepts. Availability is probed via
@@ -440,10 +439,10 @@ HARDWARE_ENCODERS: tuple[str, ...] = (
 # ``hwupload`` filter before the encoder (ADR-0601 Bug V14-B).
 _QSV_ENCODERS: frozenset[str] = frozenset({"h264_qsv", "hevc_qsv", "av1_qsv"})
 
-# Default VA-API render node used for QSV device initialisation.
-# Override via the ``--vaapi-device`` CLI flag or the
-# ``VMAFTUNE_VAAPI_DEVICE`` environment variable.
-_DEFAULT_VAAPI_DEVICE: str = "/dev/dri/renderD128"
+# Default VA-API render-node selector used for QSV device initialisation.
+# ``auto`` resolves to the first Intel render node in /sys/class/drm and
+# falls back to /dev/dri/renderD128 only when no Intel node is discoverable.
+_DEFAULT_VAAPI_DEVICE: str = AUTO_VAAPI_DEVICE
 
 # Public alias — callers and tests can use this without importing the
 # private name.
@@ -478,9 +477,10 @@ def _hw_init_args_for_encoder(
     See ADR-0601.
     """
     if encoder in _QSV_ENCODERS:
+        resolved_vaapi_device = resolve_vaapi_device(vaapi_device)
         return [
             "-init_hw_device",
-            f"vaapi=va:{vaapi_device}",
+            f"vaapi=va:{resolved_vaapi_device}",
             "-init_hw_device",
             "qsv=qsv_dev@va",
             "-filter_hw_device",
@@ -488,6 +488,29 @@ def _hw_init_args_for_encoder(
         ]
     # NVENC and AMF: no pre-input device-init required.
     return []
+
+
+_PROBE_ERROR_HINTS: tuple[str, ...] = (
+    "libamfrt64",
+    "amf_not_supported",
+    "failed to create hardware device context",
+    "error creating a mfx session",
+    "failed to initialise vaapi connection",
+    "failed to create a vaapi device",
+    "no capable devices",
+    "cannot load",
+    "permission denied",
+)
+
+
+def _probe_error_line(output: str) -> str:
+    """Pick the most actionable line from an FFmpeg probe failure."""
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    for line in reversed(lines):
+        lowered = line.lower()
+        if any(hint in lowered for hint in _PROBE_ERROR_HINTS):
+            return line
+    return lines[-1] if lines else "no stderr"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -620,11 +643,7 @@ def probe_encoder_available(
             tail_str = (
                 tail.decode("utf-8", errors="replace") if isinstance(tail, bytes) else str(tail)
             )
-            # Last non-empty stderr line is the most useful diagnostic.
-            last_line = next(
-                (line for line in reversed(tail_str.strip().splitlines()) if line.strip()),
-                "no stderr",
-            )
+            last_line = _probe_error_line(tail_str)
             return False, (
                 f"hardware encoder not available: {encoder} dummy encode failed "
                 f"(argv={shlex.join(argv)!r}): {last_line}"

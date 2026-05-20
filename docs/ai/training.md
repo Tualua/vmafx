@@ -42,6 +42,7 @@ manifests only record hashes, not bytes.
 #    libvmaf CPU backend.
 vmaf-train extract-features \
     --dataset nflx \
+    --vmaf-binary libvmaf/build-cpu/tools/vmaf \
     --output ai/data/nflx_features.parquet
 
 # 2. Train a 2-layer MLP on the extracted features.
@@ -220,8 +221,8 @@ variance the natural unblocker is a *different / larger* training
 corpus. KoNViD-1k (Konstanz natural video database, 1 200 user-
 generated clips at 540p with crowd-sourced MOS) is the natural
 starting point; it's already locally available at
-`$VMAF_DATA_ROOT/konvid-1k/` (downloaded via
-`ai/scripts/fetch_konvid_1k.py`).
+`$VMAF_DATA_ROOT/konvid-1k/` or `$VMAF_KONVID_1K_DIR`
+(downloaded via `ai/scripts/fetch_konvid_1k.py`).
 
 KoNViD-1k ships as no-reference (clip + MOS), not as VMAF-style
 (ref, dis) pairs. To turn it into the FR-pair format the LOSO
@@ -247,6 +248,52 @@ matches what `NetflixFrameDataset.numpy_arrays()` produces:
 
 Per-clip JSON caches under `$VMAF_TINY_AI_CACHE/konvid-1k/<key>.json`
 so re-runs are idempotent — only newly-added clips re-extract.
+
+For the current full-feature FR refresh, use the fork CPU `vmaf`
+binary explicitly:
+
+```bash
+# smoke
+python ai/scripts/konvid_to_full_features.py \
+    --konvid-root "$VMAF_KONVID_1K_DIR" \
+    --vmaf-bin libvmaf/build-cpu/tools/vmaf \
+    --max-clips 5
+
+# full run
+python ai/scripts/konvid_to_full_features.py \
+    --konvid-root "$VMAF_KONVID_1K_DIR" \
+    --vmaf-bin libvmaf/build-cpu/tools/vmaf
+```
+
+This writes `runs/full_features_konvid.parquet` plus
+`runs/full_features_konvid_with_folds.parquet`. The folded file adds
+`source=fold0..fold4` using a deterministic balanced hash order over
+clip keys so `eval_multiseed_v3_v4.py` can reproduce the KoNViD 5-fold
+gate without relying on stale local parquet files.
+
+### Combining Refreshed FULL_FEATURES Shards
+
+After Netflix, KoNViD, BVI-DVC, and optional UGC refreshes finish,
+rebuild aggregate training tables with the combiner instead of manual
+`pandas.concat`:
+
+```bash
+python ai/scripts/combine_full_feature_parquets.py \
+    --input netflix=runs/full_features_netflix_refresh_20260520.parquet \
+    --input konvid=runs/full_features_konvid_refresh_20260520.parquet \
+    --input bvi=runs/full_features_bvi_dvc_D_refresh_20260520.parquet \
+    --out runs/full_features_4corpus_refresh_20260520.parquet
+
+python ai/scripts/combine_full_feature_parquets.py \
+    --input base=runs/full_features_4corpus_refresh_20260520.parquet \
+    --input ugc=runs/full_features_ugc_refresh_20260520.parquet \
+    --out runs/full_features_5corpus_refresh_20260520.parquet
+```
+
+The combiner normalizes every input to
+`corpus, source, frame_index, codec, <FULL_FEATURES>, vmaf`, fills
+missing feature columns with `NaN`, and preserves the caller-provided
+corpus label.
 
 ### Loader
 

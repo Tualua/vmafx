@@ -174,6 +174,16 @@ _BYTES_PER_PIXEL: dict[str, float] = {
 _BYTES_PER_PIXEL_DEFAULT: float = 1.5  # safe floor for unknown formats
 
 
+def _midrun_disk_headroom(src: Path) -> float:
+    """Return decode headroom for a bisect iteration.
+
+    Container sources need room for a reference decode plus the distorted
+    decode. Pre-decoded/raw sources already *are* the reference, so the
+    iteration needs only the distorted decode plus normal file overhead.
+    """
+    return 2.0 if src.suffix.lower() not in VMAF_RAW_SUFFIXES else 1.1
+
+
 def _estimate_yuv_bytes(
     *,
     width: int,
@@ -631,18 +641,17 @@ def bisect_target_vmaf(
             mid = _midpoint_lower_quality(cur_lo, cur_hi)
             n_iterations += 1
 
-            # ADR-0577: mid-run disk-space check. Before each iteration's
-            # reference decode we verify the volume still has >= 2× the
-            # estimated YUV size free. The 2× headroom accounts for the
-            # encoded .mkv + the decoded .yuv coexisting on disk. The
-            # check fires here (before acquiring the semaphore) so we
-            # fail fast rather than queuing a decode that will ENOSPC.
+            # ADR-0577 / ADR-0641: mid-run disk-space check. Container
+            # sources need 2× the estimated YUV size because the reference
+            # and distorted decodes can coexist. A pre-decoded/raw source
+            # already occupies the reference side, so each iteration needs
+            # only the distorted decode plus normal file overhead.
             if _yuv_est_bytes is not None and workdir_path is not None:
                 _ctx = f"{codec} @ VMAF {target_vmaf:g}, iteration {n_iterations}"
                 _space_err = _check_disk_space(
                     workdir_path,
                     estimated_bytes=_yuv_est_bytes,
-                    headroom=2.0,
+                    headroom=_midrun_disk_headroom(Path(src)),
                     context=_ctx,
                 )
                 if _space_err is not None:

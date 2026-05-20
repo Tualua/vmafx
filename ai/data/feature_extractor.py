@@ -7,9 +7,9 @@ The extractor mirrors what ``vmaf_v0.6.1`` consumes::
     DEFAULT_FEATURES = ("adm2", "vif_scale0", "vif_scale1",
                         "vif_scale2", "vif_scale3", "motion2")
 
-It calls the local CPU build of ``vmaf`` (default ``build/tools/vmaf``)
-in JSON mode, parses the per-frame metrics, and returns a NumPy
-``(n_frames, n_features)`` matrix plus a 4-stat aggregate
+It calls the local CPU build of ``vmaf`` (default
+``libvmaf/build-cpu/tools/vmaf``) in JSON mode, parses the per-frame
+metrics, and returns a NumPy ``(n_frames, n_features)`` matrix plus a 4-stat aggregate
 ``(mean, p10, p90, std)`` per feature for clip-level pooling.
 
 The binary path can be overridden via ``VMAF_BIN`` or the explicit
@@ -37,6 +37,8 @@ DEFAULT_FEATURES: tuple[str, ...] = (
     "vif_scale3",
     "motion2",
 )
+
+DEFAULT_VMAF_BINARY = Path("libvmaf") / "build-cpu" / "tools" / "vmaf"
 
 # Full feature set the fork's extractors can produce (per Research-0026,
 # extended by ADR-0559 to include SpEED chroma/temporal features).
@@ -192,16 +194,15 @@ def default_vmaf_binary() -> Path:
     env = os.environ.get("VMAF_BIN")
     if env:
         return Path(env)
-    # Repo-relative default (matches ``meson setup build && ninja -C build``).
-    return Path("build") / "tools" / "vmaf"
+    return DEFAULT_VMAF_BINARY
 
 
 def _ensure_binary(binary: Path) -> None:
     if not binary.is_file():
         raise RuntimeError(
             "libvmaf CLI not found at "
-            f"{binary}. Build it first with `meson setup build "
-            "&& ninja -C build`, or set $VMAF_BIN to point at an "
+            f"{binary}. Build it first with `meson setup libvmaf/build-cpu "
+            "&& ninja -C libvmaf/build-cpu`, or set $VMAF_BIN to point at an "
             "existing binary."
         )
 

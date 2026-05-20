@@ -45,6 +45,7 @@ from vmaftune.compare import (  # noqa: E402
     _hw_init_args_for_encoder,
     probe_encoder_available,
 )
+from vmaftune.hw_devices import AUTO_VAAPI_DEVICE  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # V14-A — probe nullsrc resolution fix (320x240, not 64x64)
@@ -156,17 +157,17 @@ def test_v14_b_qsv_probe_init_precedes_input():
     assert init_idx < input_idx, f"-init_hw_device must precede -i in QSV probe: {encode_argv!r}"
 
 
-def test_v14_b_qsv_default_vaapi_device():
-    """QSV probe uses the module default VAAPI device when none is specified."""
+def test_v14_b_qsv_auto_vaapi_device(monkeypatch):
+    """QSV probe auto-resolves the Intel VAAPI device when none is specified."""
+    monkeypatch.setattr(
+        "vmaftune.compare.resolve_vaapi_device", lambda _device: "/dev/dri/renderD129"
+    )
     runner, calls = _make_runner(
         b" V..... h264_qsv             H.264 / AVC (Intel Quick Sync Video)\n"
     )
     probe_encoder_available("h264_qsv", runner=runner)
     encode_argv = calls[1]
-    assert any(_DEFAULT_VAAPI_DEVICE in a for a in encode_argv), (
-        f"QSV probe does not reference default VAAPI device {_DEFAULT_VAAPI_DEVICE!r}: "
-        f"{encode_argv!r}"
-    )
+    assert any("/dev/dri/renderD129" in a for a in encode_argv), encode_argv
 
 
 def test_v14_b_qsv_custom_vaapi_device():
@@ -230,14 +231,16 @@ def test_hw_init_args_qsv_custom_device():
 # ---------------------------------------------------------------------------
 
 
-def test_qsv_adapter_static_helper_returns_init_args():
+def test_qsv_adapter_static_helper_returns_init_args(monkeypatch):
     """``BaseQsvAdapter.qsv_hw_init_args()`` returns the device-init argv."""
+    monkeypatch.setattr(
+        "vmaftune.codec_adapters._qsv_common.resolve_vaapi_device",
+        lambda _device: "/dev/dri/renderD129",
+    )
     result = BaseQsvAdapter.qsv_hw_init_args()
     assert "-init_hw_device" in result
     assert "-filter_hw_device" in result
-    assert any(
-        _DEFAULT_VAAPI_DEVICE in a for a in result
-    ), f"default vaapi device not in result: {result!r}"
+    assert any("/dev/dri/renderD129" in a for a in result), result
 
 
 def test_qsv_adapter_static_helper_custom_device():
@@ -255,7 +258,7 @@ def test_qsv_adapter_static_helper_custom_device():
 def test_default_vaapi_device_public_alias():
     """``DEFAULT_VAAPI_DEVICE`` is exported and equals the internal default."""
     assert DEFAULT_VAAPI_DEVICE == _DEFAULT_VAAPI_DEVICE
-    assert DEFAULT_VAAPI_DEVICE == "/dev/dri/renderD128"
+    assert DEFAULT_VAAPI_DEVICE == AUTO_VAAPI_DEVICE
 
 
 # ---------------------------------------------------------------------------

@@ -101,7 +101,7 @@ index 552743f..e3cf572 100644
 +
 +#if CONFIG_LIBVMAF_SYCL
 +    if (s->sycl_state) {
-+        vmaf_sycl_state_free(s->sycl_state);
++        vmaf_sycl_state_free(&s->sycl_state);
 +        s->sycl_state = NULL;
 +    }
 +#endif
@@ -110,4 +110,3 @@ index 552743f..e3cf572 100644
  static const AVFilterPad libvmaf_inputs[] = {
 -- 
 2.54.0
-

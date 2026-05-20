@@ -19,6 +19,10 @@ model card finds the deferral verdict instead of a missing document.
   tiny-VMAF architecture.
 - Treat any proposed v5 work as a new model-development PR with fresh
   training data, metrics, model card updates, and ADR coverage.
+- Refresh the UGC side with `ai/scripts/extract_ugc_features.py`
+  before any new v5 experiment. The extractor now emits the current
+  `FULL_FEATURES` schema instead of the historical canonical-6-only
+  table, while the v5 trainer still selects only canonical-6 + `vmaf`.
 
 ## See also
 

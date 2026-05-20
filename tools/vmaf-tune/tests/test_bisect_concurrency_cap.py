@@ -386,14 +386,14 @@ class TestMidRunDiskCheck:
             "--workdir" in result.error or "VMAFTUNE_WORKDIR" in result.error
         ), f"Expected --workdir hint in error; got: {result.error!r}"
 
-    def test_mid_run_check_uses_2x_headroom(self, tmp_path):
-        """The mid-run check requires 2× estimated bytes free (not 1.1×).
+    def test_mid_run_check_headroom_modes(self, tmp_path):
+        """Container sources use 2× headroom; pre-decoded raw sources use 1.1×.
 
         Verify that a volume with 1.5× the estimated YUV size fails the
-        mid-run check (headroom=2.0) but would pass the preflight
-        check (headroom=1.1).
+        container-source mid-run check but accepts the pre-decoded raw
+        source path used by compare's shared-reference optimisation.
         """
-        from vmaftune.bisect import _check_disk_space
+        from vmaftune.bisect import _check_disk_space, _midrun_disk_headroom
 
         estimated = _estimate_yuv_bytes(
             width=1920, height=1080, pix_fmt="yuv420p", fps=60.0, duration_s=60.0
@@ -405,13 +405,19 @@ class TestMidRunDiskCheck:
             "vmaftune.bisect.shutil.disk_usage",
             return_value=_DiskUsage(total=one_half_x_free, used=0, free=one_half_x_free),
         ):
-            # Mid-run check (headroom=2.0) must reject.
-            result_midrun = _check_disk_space(tmp_path, estimated_bytes=estimated, headroom=2.0)
-            # Preflight check (headroom=1.1) must accept.
-            result_preflight = _check_disk_space(tmp_path, estimated_bytes=estimated, headroom=1.1)
+            result_container = _check_disk_space(
+                tmp_path,
+                estimated_bytes=estimated,
+                headroom=_midrun_disk_headroom(Path("ref.mp4")),
+            )
+            result_raw = _check_disk_space(
+                tmp_path,
+                estimated_bytes=estimated,
+                headroom=_midrun_disk_headroom(Path("ref.shared-ref.yuv")),
+            )
 
-        assert result_midrun is not None, "Mid-run 2× headroom should reject 1.5× free"
-        assert result_preflight is None, "Preflight 1.1× headroom should accept 1.5× free"
+        assert result_container is not None, "Container-source 2× headroom should reject 1.5× free"
+        assert result_raw is None, "Pre-decoded raw-source 1.1× headroom should accept 1.5× free"
 
     def test_mid_run_error_contains_context_codec_and_target(self, tmp_path):
         """_check_disk_space with context kwarg includes context in error."""

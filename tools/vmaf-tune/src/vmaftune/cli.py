@@ -980,8 +980,8 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "comma-separated list of encoders to compare "
             "(e.g. ``libx264,libx265,libsvtav1,h264_nvenc``). "
-            "Default: the CPU encoder set ``libx264,libx265,libsvtav1,libvpx-vp9`` "
-            "(ADR-0513). Hardware encoders (``*_nvenc``, ``*_qsv``, ``*_amf``) "
+            "Default: the CPU encoder set ``libx265,libsvtav1`` "
+            "(ADR-0641). Hardware encoders (``*_nvenc``, ``*_qsv``, ``*_amf``) "
             "are accepted; missing-encoder / no-compatible-GPU rows are "
             "skipped with a reason and do not fail the whole run."
         ),
@@ -989,8 +989,11 @@ def _build_parser() -> argparse.ArgumentParser:
     compare.add_argument(
         "--format",
         default="markdown",
-        choices=("markdown", "json", "csv"),
-        help="report format (default markdown)",
+        choices=("markdown", "json", "csv", "html", "both"),
+        help=(
+            "report format (default markdown). html/both render the same "
+            "profile-card artefacts as `vmaf-tune report`; both requires --output."
+        ),
     )
     compare.add_argument(
         "--no-parallel",
@@ -1150,11 +1153,10 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="vaapi_device",
         help=(
             "VA-API DRI render-node used for Intel QSV hardware-device "
-            "initialisation (e.g. /dev/dri/renderD128). Defaults to "
-            "/dev/dri/renderD128. Override when the Intel GPU occupies a "
-            "non-default render node on a mixed-GPU system. "
+            "initialisation (e.g. /dev/dri/renderD129). Defaults to auto, "
+            "which selects the first Intel render node from /sys/class/drm. "
             "Also overridable via VMAFTUNE_VAAPI_DEVICE env var "
-            "(flag takes precedence). (ADR-0601)"
+            "(flag takes precedence). (ADR-0641)"
         ),
     )
 
@@ -2906,19 +2908,24 @@ def _run_compare(args: argparse.Namespace) -> int:
         or DEFAULT_VAAPI_DEVICE
     )
 
-    # ADR-0513: ``--encoders`` defaults to the CPU encoder set when
-    # omitted; the user is no longer required to pass an explicit list
-    # for the basic "compare the four mainline CPU encoders" case.
+    # ADR-0641: ``--encoders`` defaults to the current production CPU
+    # decision set when omitted. Legacy x264/VP9 BBB sweeps remain
+    # available only when listed explicitly.
     encoders_raw = args.encoders if args.encoders is not None else ",".join(DEFAULT_CPU_ENCODERS)
     encoders = [token.strip() for token in encoders_raw.split(",") if token.strip()]
     if not encoders:
         sys.stderr.write("vmaf-tune compare: --encoders is empty\n")
         return 2
-    if args.format not in supported_formats():
+    _profile_formats = ("html", "both")
+    _supported_compare_formats = (*supported_formats(), *_profile_formats)
+    if args.format not in _supported_compare_formats:
         sys.stderr.write(
             f"vmaf-tune compare: unsupported --format {args.format!r}; "
-            f"expected one of {supported_formats()}\n"
+            f"expected one of {_supported_compare_formats}\n"
         )
+        return 2
+    if args.format == "both" and args.output is None:
+        sys.stderr.write("vmaf-tune compare: --format both requires --output PATH\n")
         return 2
 
     # ADR-0613: pre-validate --score-backend before engaging any bisect or
@@ -2945,6 +2952,12 @@ def _run_compare(args: argparse.Namespace) -> int:
     # applies; dispatched before the target-VMAF / predicate-module blocks
     # because none of that logic is needed for a sweep.
     if getattr(args, "no_bisect", False):
+        if args.format in _profile_formats:
+            sys.stderr.write(
+                "vmaf-tune compare --no-bisect: --format html/both is not supported; "
+                "emit --format json and pass it to vmaf-tune report.\n"
+            )
+            return 2
         return _run_compare_crf_sweep(args, encoders)
 
     # ADR-0516: ``--target-vmafs`` parses to a list of floats; falls
@@ -3200,6 +3213,16 @@ def _run_compare(args: argparse.Namespace) -> int:
                 availability_probe=_probe,
                 pre_decoded_ref=_pre_decoded_ref,
             )
+            if args.format in _profile_formats:
+                outputs = _write_compare_profile_report(args, sweep_report=sweep)
+                if outputs:
+                    sys.stderr.write(
+                        "wrote compare profile report -> "
+                        + ", ".join(str(p) for p in outputs)
+                        + "\n"
+                    )
+                any_ok = any(r.ok for r in sweep.rows)
+                return 0 if any_ok else 1
             rendered = emit_sweep_report(sweep, format=args.format)
             if args.output is not None:
                 args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -3221,6 +3244,13 @@ def _run_compare(args: argparse.Namespace) -> int:
             predicate=predicate,
             pre_decoded_ref=_pre_decoded_ref,
         )
+        if args.format in _profile_formats:
+            outputs = _write_compare_profile_report(args, comparison_report=report)
+            if outputs:
+                sys.stderr.write(
+                    "wrote compare profile report -> " + ", ".join(str(p) for p in outputs) + "\n"
+                )
+            return 0 if report.best() is not None else 1
         rendered = emit_report(report, format=args.format)
         if args.output is not None:
             args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -3244,6 +3274,99 @@ def _run_compare(args: argparse.Namespace) -> int:
                         f"vmaf-tune compare: deleted shared reference YUV "
                         f"({_pre_decoded_ref.name}).\n"
                     )
+
+
+def _compare_source_info(args: argparse.Namespace):
+    """Return source metadata for inline compare profile rendering."""
+    from .report import SourceInfo, probe_source
+
+    src = Path(args.src)
+    probed = probe_source(src)
+    try:
+        size_bytes = src.stat().st_size
+    except OSError:
+        size_bytes = probed.size_bytes
+    width = probed.width or int(getattr(args, "width", 0) or 0)
+    height = probed.height or int(getattr(args, "height", 0) or 0)
+    fps = probed.fps or float(getattr(args, "framerate", 0.0) or 0.0)
+    duration_s = probed.duration_s or float(getattr(args, "duration", 0.0) or 0.0)
+    frame_count = probed.frame_count or (int(duration_s * fps) if duration_s > 0 and fps > 0 else 0)
+    return SourceInfo(
+        path=probed.path,
+        width=width,
+        height=height,
+        fps=fps,
+        duration_s=duration_s,
+        frame_count=frame_count,
+        codec=probed.codec,
+        size_bytes=size_bytes,
+    )
+
+
+def _write_compare_profile_report(
+    args: argparse.Namespace,
+    *,
+    comparison_report: Any | None = None,
+    sweep_report: Any | None = None,
+) -> list[Path]:
+    """Render compare results through the profile-card renderer."""
+    from datetime import datetime, timezone
+
+    from .report import ReportData, render_html, render_markdown
+
+    if comparison_report is None and sweep_report is None:
+        raise ValueError("comparison_report or sweep_report is required")
+
+    codec_rows = ()
+    sweep_points = ()
+    sweep_targets = ()
+    if sweep_report is not None:
+        rows = [
+            r.to_row(target)
+            for target, r in zip(sweep_report.row_targets, sweep_report.rows, strict=True)
+        ]
+        sweep_points = tuple(_sweep_point_from_json(row) for row in rows)
+        sweep_targets = tuple(float(t) for t in sweep_report.target_vmafs)
+        target_vmaf = float(sweep_targets[0]) if sweep_targets else float(args.target_vmaf)
+    else:
+        codec_rows = tuple(
+            _codec_row_from_json(r.to_row(float(comparison_report.target_vmaf)))
+            for r in comparison_report.rows
+        )
+        target_vmaf = float(comparison_report.target_vmaf)
+
+    data = ReportData(
+        source=_compare_source_info(args),
+        target_vmaf=target_vmaf,
+        codec_rows=codec_rows,
+        sweep_points=sweep_points,
+        sweep_targets=sweep_targets,
+        generated_at_iso=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    )
+
+    output = getattr(args, "output", None)
+    fmt = str(args.format)
+    if output is None:
+        if fmt == "html":
+            rendered = render_html(data)
+            sys.stdout.write(rendered)
+            if not rendered.endswith("\n"):
+                sys.stdout.write("\n")
+            return []
+        raise ValueError("--format both requires --output PATH")
+
+    output = Path(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    outputs: list[Path] = []
+    if fmt in ("html", "both"):
+        html_path = output if fmt == "html" else output.with_suffix(".html")
+        html_path.write_text(render_html(data), encoding="utf-8")
+        outputs.append(html_path)
+    if fmt in ("markdown", "both"):
+        md_path = output if fmt == "markdown" else output.with_suffix(".md")
+        md_path.write_text(render_markdown(data), encoding="utf-8")
+        outputs.append(md_path)
+    return outputs
 
 
 def _run_compare_crf_sweep(args: argparse.Namespace, encoders: list[str]) -> int:

@@ -53,6 +53,8 @@ DEFAULT_FEATURES = (
     "motion2",
 )
 
+DEFAULT_VMAF_BINARY = Path("libvmaf") / "build-cpu" / "tools" / "vmaf"
+
 # vmaf's CLI takes feature-extractor names (``adm``, ``vif``, ``motion``) while
 # the JSON output labels individual metrics (``adm2``, ``vif_scale0``, …).
 # One extractor emits many metrics, so translate before building the argv.
@@ -130,7 +132,7 @@ def _lookup_feature(metrics: dict, name: str) -> float | None:
 def dump_features(
     entries: list[Entry],
     out_parquet: Path,
-    vmaf_binary: Path = Path("vmaf"),
+    vmaf_binary: Path = DEFAULT_VMAF_BINARY,
     features: tuple[str, ...] = DEFAULT_FEATURES,
 ) -> Path:
     rows: list[dict] = []

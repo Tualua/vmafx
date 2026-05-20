@@ -14,7 +14,7 @@ in `feature_dump.py` — wrong pix_fmt default and missing
 `integer_<name>` fallback. A CI run against the Netflix golden YUV
 pair is the cheapest place to keep that guarantee.
 
-The test is skipped if either the vmaf binary under `build/tools/`
+The test is skipped if either the vmaf binary under `libvmaf/build-cpu/tools/`
 or the Netflix YUV fixtures are missing, so it no-ops on a fresh
 checkout without a build.
 """
@@ -34,7 +34,7 @@ from onnx import TensorProto, helper  # noqa: E402
 from vmaf_train.data.feature_dump import DEFAULT_FEATURES, Entry, dump_features  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-VMAF_BIN = REPO_ROOT / "build" / "tools" / "vmaf"
+VMAF_BIN = REPO_ROOT / "libvmaf" / "build-cpu" / "tools" / "vmaf"
 YUV_DIR = REPO_ROOT / "python" / "test" / "resource" / "yuv"
 REF_YUV = YUV_DIR / "src01_hrc00_576x324.yuv"
 DIS_YUV = YUV_DIR / "src01_hrc01_576x324.yuv"

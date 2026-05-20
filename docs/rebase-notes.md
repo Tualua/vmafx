@@ -7,6 +7,76 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## fix/ai-refresh-defaults-and-konvid-full-features (ADR-0642)
+
+**No upstream rebase impact**: all touched implementation files live under
+fork-local `ai/` tooling. Upstream Netflix/vmaf does not ship these
+training scripts, model-refresh docs, or local corpus ledgers.
+
+Rebase-sensitive fork invariants:
+
+- AI feature extraction defaults point at `libvmaf/build-cpu/tools/vmaf`.
+  Do not regress to `/usr/local/bin/vmaf` or ambiguous `build/tools/vmaf`;
+  stale binaries have previously lacked fork-only extractors.
+- `ai/scripts/konvid_to_full_features.py` owns regeneration of both
+  `runs/full_features_konvid.parquet` and
+  `runs/full_features_konvid_with_folds.parquet`. The folded output's
+  `source=fold0..fold4` assignment is a deterministic balanced hash over
+  clip keys and feeds `eval_multiseed_v3_v4.py`.
+- BVI-DVC full-feature dir mode accepts `.mkv`, `.mp4`, and `.yuv`. The
+  local `.mkv` lossless bundle is the known-good refresh input after the
+  raw-YUV copy produced all-zero VMAF in a one-clip smoke.
+- `ai/scripts/extract_ugc_features.py` emits the current `FULL_FEATURES`
+  schema with an explicit `vmaf_v0.6.1` model path. Do not restore the
+  historical canonical-6-only UGC table when refreshing
+  `full_features_5corpus`.
+- Aggregate full-feature training tables are rebuilt with
+  `ai/scripts/combine_full_feature_parquets.py`; the normalized schema is
+  `corpus, source, frame_index, codec, <FULL_FEATURES>, vmaf`.
+
+Smoke:
+`.venv/bin/python -m pytest ai/tests/test_konvid_full_features.py ai/tests/test_extract_ugc_features.py ai/tests/test_combine_full_feature_parquets.py ai/tests/test_feature_extractor_defaults.py ai/tests/test_bvi_dvc_dir_mode.py -q`
+
+Touched files: `ai/data/feature_extractor.py`, `ai/scripts/*full_features*.py`,
+`ai/scripts/konvid_to_full_features.py`, `ai/src/vmaf_train/`,
+`ai/tests/test_*`, `ai/AGENTS.md`, `docs/ai/`, `docs/adr/0642-*.md`,
+`docs/research/0642-*.md`, `changelog.d/added/`,
+and `.workingdir2/AI_REFRESH_2026-05-20.md` (ignored local ledger).
+
+## fix/dev-container-encoder-probes (ADR-0641)
+
+**Low upstream rebase impact**: implementation changes are fork-local
+dev-container / vmaf-tune files (`dev/`, `tools/vmaf-tune/`, docs, ADR,
+research, changelog) plus one fork-local FFmpeg integration patch. Upstream
+Netflix/vmaf does not ship vmaf-tune or this dev-MCP compose stack. The only
+upstream-adjacent file is `ffmpeg-patches/0003-*`, which targets FFmpeg n8.1.1
+rather than Netflix/vmaf.
+
+Rebase-sensitive fork invariants:
+
+- `dev/Containerfile` must keep the pinned `intel/vpl-gpu-rt` source build and
+  post-install `/usr/lib/x86_64-linux-gnu/libmfx-gen.so` check whenever FFmpeg
+  keeps `--enable-libvpl`. `libvpl-dev` alone exposes QSV encoders but cannot
+  create an Arc/iGPU session, and installing the runtime outside the dispatcher
+  search path revives the same `MFX_ERR_NOT_FOUND` failure.
+- `dev/docker-compose.yml` must keep the `dev-mcp` healthcheck aligned with the
+  stdio entrypoint (`vmaf --version`), not `/sockets/vmaf-mcp.sock`.
+- `vmaf-tune compare` defaults to the production CPU set `libx265,libsvtav1`;
+  archival software codecs remain explicit via `--encoders`.
+- QSV VA-API device selection defaults to `auto` and uses Intel sysfs vendor-ID
+  discovery; explicit `--vaapi-device` paths still override.
+- `ffmpeg-patches/0003-*` must call `vmaf_sycl_state_free(&s->sycl_state)`.
+  The public SYCL API frees and nulls a `VmafSyclState **`; using the older
+  single-pointer call breaks the in-container FFmpeg build with
+  `-Wincompatible-pointer-types`.
+
+Touched files: `dev/Containerfile`, `dev/docker-compose.yml`, `dev/AGENTS.md`,
+`tools/vmaf-tune/src/vmaftune/{bisect.py,cli.py,compare.py,hw_devices.py}`,
+`tools/vmaf-tune/src/vmaftune/codec_adapters/_qsv_common.py`,
+`tools/vmaf-tune/tests/`, `ffmpeg-patches/0003-*`, `docs/usage/vmaf-tune.md`,
+`docs/development/dev-mcp.md`, `docs/state.md`, `docs/adr/0641-*.md`,
+`docs/research/0641-*.md`, `changelog.d/fixed/0641-*.md`, and this file.
+
 ## chore/ci-warning-omnibus (ADR-0635)
 
 **No rebase impact**: all touched files are fork-local CI workflow YAML

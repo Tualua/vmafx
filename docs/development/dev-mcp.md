@@ -1,7 +1,7 @@
 # dev-MCP Docker Container
 
 The `dev-MCP` container runs the full VMAF fork inside Docker with all four
-GPU backends enabled (CUDA, SYCL, Vulkan, HIP) plus the embedded MCP UDS
+GPU backends enabled (CUDA, SYCL, Vulkan, HIP) plus the embedded MCP stdio
 server.  It is the standard environment for:
 
 - Live probing of VMAF scores across all backends from a single shell.
@@ -91,7 +91,9 @@ video` returns a different GID (for example, Arch Linux uses `985`/`986`).
 
 The `dev-mcp-up.sh` wrapper builds (if needed) then starts:
 
-1. `vmaf-dev-mcp` — primary container; exposes MCP UDS at `/sockets/vmaf-mcp.sock`.
+1. `vmaf-dev-mcp` — primary container; runs `vmaf-mcp` via `docker exec -i`
+   stdio when requested. The service healthcheck is `vmaf --version`, not a
+   socket check.
 2. `vmaf-smoke-probe-cron` — waits for the primary to be healthy, then probes
    every 15 minutes.
 
@@ -276,18 +278,18 @@ supports without skipping rows with `hardware encoder not available:
 | `libx264` | `libx264-dev` (apt) | none |
 | `libx265` | `libx265-dev` (apt) | none |
 | `libvpx-vp9` | `libvpx-dev` (apt) | none |
-| `libsvtav1` | `libsvtav1-dev` (apt, SVT-AV1 1.7.0) | none |
-| `libaom-av1` | `libaom-dev` (apt, libaom 3.8.0) | none |
+| `libsvtav1` | source build (SVT-AV1 pinned in `dev/Containerfile`) | none |
+| `libaom-av1` | adapter exists, but the in-image FFmpeg intentionally omits libaom until patch 0007's ROI bridge targets released libaom fields | external FFmpeg with `--enable-libaom`, or wait for the patch-stack follow-up |
 | `libvvenc` | source build (Fraunhofer VVenC v1.14.0) | none |
 | `h264_nvenc` / `hevc_nvenc` / `av1_nvenc` | `--enable-nvenc` + `nv-codec-headers` | NVIDIA GPU + Container Toolkit; NVENC capability bit on host driver (av1_nvenc requires Ada or newer — RTX 4090 ok) |
-| `h264_qsv` / `hevc_qsv` / `av1_qsv` | `--enable-libvpl` + `libvpl-dev` (apt) | Intel GPU + `/dev/dri/renderD*` passthrough + `intel-media-driver` host package (or the `intel-media-va-driver` Ubuntu equivalent) |
+| `h264_qsv` / `hevc_qsv` / `av1_qsv` | `--enable-libvpl` + `libvpl-dev` dispatcher + pinned `intel/vpl-gpu-rt` (`libmfx-gen.so`) source build installed under `/usr/lib/x86_64-linux-gnu/` | Intel GPU + `/dev/dri/renderD*` passthrough; the container auto-selects the Intel render node for QSV |
 | `h264_amf` / `hevc_amf` / `av1_amf` | `--enable-amf` + AMF headers (source) | AMD GPU + `libamfrt64.so` from the proprietary `amdgpu-pro` userspace bind-mounted into the container. The open-source ROCm install in the image (`rocm-hip-runtime-dev`) does **not** include AMF. |
 
 To verify the in-image listing after a rebuild:
 
 ```bash
 docker exec vmaf-dev-mcp ffmpeg -hide_banner -encoders 2>&1 \
-    | grep -E "libsvtav1|libaom-av1|libvvenc|libvpx-vp9|nvenc|qsv|amf|vpl" \
+    | grep -E "libsvtav1|libvvenc|libvpx-vp9|nvenc|qsv|amf|vpl" \
     | head -20
 ```
 
@@ -295,7 +297,6 @@ Expected (assuming the build-time encoder probe in stage 3.5 logged no
 `WARN ... missing`):
 
 ```text
- V....D libaom-av1           libaom AV1
  V....D libsvtav1            SVT-AV1(Scalable Video Technology for AV1) encoder
  V..... libvvenc             libvvenc-based VVC encoder
  V....D libvpx-vp9           libvpx VP9
@@ -323,7 +324,7 @@ row-level skip strings:
 | --- | --- | --- |
 | `hardware encoder not available: h264_nvenc dummy encode failed (...): Cannot load libcuda.so.1` | Container started without `runtime: nvidia` | `CONTAINER_RUNTIME=nvidia ./dev/scripts/dev-mcp-up.sh` |
 | `hardware encoder not available: av1_nvenc dummy encode failed: Cannot load library` | Host NVIDIA driver too old for AV1 NVENC (Turing/Ampere don't have av1_nvenc) | Use h264_nvenc / hevc_nvenc on that host; av1_nvenc needs Ada or newer |
-| `hardware encoder not available: h264_qsv dummy encode failed: Error initializing an internal MFX session` | Intel iGPU not exposed (`/dev/dri/renderD*` missing) or host lacks `intel-media-driver` | Pass `/dev/dri:/dev/dri` + `/dev/dri/by-path` and `apt install intel-media-driver` on the host |
+| `hardware encoder not available: h264_qsv dummy encode failed: Error creating a MFX session` | Stale image missing `libmfx-gen.so` in the dispatcher search path, or Intel iGPU not exposed (`/dev/dri/renderD*` missing) | Rebuild `dev-mcp` so the pinned `intel/vpl-gpu-rt` layer is present under `/usr/lib/x86_64-linux-gnu/`; verify `vainfo --display drm --device /dev/dri/renderD<N>` on the Intel node |
 | `hardware encoder not available: h264_amf dummy encode failed: ... cannot open shared object libamfrt64.so` | amdgpu-pro userspace not bind-mounted | Install `amdgpu-pro` on the host and bind-mount `/opt/amdgpu-pro/lib/x86_64-linux-gnu/libamfrt64.so` into the container, or accept that AMF encode is unavailable on this host |
 
 ### Reproducer — full cross-codec compare sweep
