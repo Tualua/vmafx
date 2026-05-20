@@ -1377,6 +1377,91 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="when emitting markdown, write chart PNGs into this dir (default: inline base64)",
     )
+    report.add_argument("--pix-fmt", default="", help="source pix_fmt to record in encoder profile")
+    report.add_argument("--preset", default="", help="encoder preset to record in encoder profile")
+    report.add_argument(
+        "--score-backend", default="", help="score backend to record in encoder profile"
+    )
+    report.add_argument(
+        "--ffmpeg-bin", default="", help="ffmpeg binary to record in encoder profile"
+    )
+    report.add_argument("--vmaf-bin", default="", help="vmaf binary to record in encoder profile")
+
+    encode_profile = sub.add_parser(
+        "encode-profile",
+        help=(
+            "read a vmaf-tune report/profile and encode one selected recommendation " "with FFmpeg"
+        ),
+    )
+    encode_profile.add_argument(
+        "--profile",
+        type=Path,
+        required=True,
+        help="report JSON/HTML/Markdown containing encoder_profile",
+    )
+    encode_profile.add_argument("--output", type=Path, required=True, help="encoded output path")
+    encode_profile.add_argument(
+        "--src",
+        type=Path,
+        default=None,
+        help="override the source path stored in the profile",
+    )
+    encode_profile.add_argument("--codec", default=None, help="restrict selection to one codec")
+    encode_profile.add_argument(
+        "--target-vmaf",
+        type=float,
+        default=None,
+        help="restrict selection to one target VMAF",
+    )
+    encode_profile.add_argument(
+        "--recommendation-index",
+        type=int,
+        default=None,
+        help="zero-based index after --codec/--target-vmaf filtering",
+    )
+    encode_profile.add_argument("--preset", default=None, help="override the stored/default preset")
+    encode_profile.add_argument("--pix-fmt", default=None, help="override raw-source pixel format")
+    encode_profile.add_argument("--framerate", type=float, default=None)
+    encode_profile.add_argument("--width", type=int, default=None)
+    encode_profile.add_argument("--height", type=int, default=None)
+    encode_profile.add_argument("--duration", type=float, default=None)
+    encode_profile.add_argument(
+        "--source-kind",
+        choices=("auto", "container", "raw"),
+        default="auto",
+        help="input interpretation (default auto; .yuv/.raw are raw)",
+    )
+    encode_profile.add_argument(
+        "--sample-clip-seconds",
+        type=float,
+        default=0.0,
+        help="optional input-side clip length forwarded to FFmpeg",
+    )
+    encode_profile.add_argument(
+        "--sample-clip-start-s",
+        type=float,
+        default=0.0,
+        help="optional input-side clip offset forwarded to FFmpeg",
+    )
+    encode_profile.add_argument(
+        "--extra-ffmpeg-arg",
+        action="append",
+        default=[],
+        help=(
+            "append one raw FFmpeg argv token after codec args; repeat as needed "
+            "(use --extra-ffmpeg-arg=-movflags for tokens beginning with '-')"
+        ),
+    )
+    encode_profile.add_argument(
+        "--ffmpeg-bin",
+        default=None,
+        help="override profile ffmpeg_bin (default: profile value, then ffmpeg)",
+    )
+    encode_profile.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print selected recommendation and ffmpeg argv without encoding",
+    )
 
     sidecar = sub.add_parser(
         "sidecar",
@@ -3403,6 +3488,11 @@ def _write_compare_profile_report(
         sweep_points=sweep_points,
         sweep_targets=sweep_targets,
         generated_at_iso=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        encoder_preset=str(getattr(args, "preset", "") or ""),
+        pix_fmt=str(getattr(args, "pix_fmt", "") or ""),
+        score_backend=str(getattr(args, "score_backend", "") or ""),
+        ffmpeg_bin=str(getattr(args, "ffmpeg_bin", "") or ""),
+        vmaf_bin=str(getattr(args, "vmaf_bin", "") or ""),
     )
 
     output = getattr(args, "output", None)
@@ -4623,6 +4713,11 @@ def _run_report(args: argparse.Namespace) -> int:
         ladder_rungs=ladder_rungs,
         shots=shots,
         generated_at_iso=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        encoder_preset=str(getattr(args, "preset", "") or ""),
+        pix_fmt=str(getattr(args, "pix_fmt", "") or ""),
+        score_backend=str(getattr(args, "score_backend", "") or ""),
+        ffmpeg_bin=str(getattr(args, "ffmpeg_bin", "") or ""),
+        vmaf_bin=str(getattr(args, "vmaf_bin", "") or ""),
     )
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -4712,6 +4807,85 @@ def _run_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_encode_profile(args: argparse.Namespace) -> int:
+    """Encode one recommendation from an embedded vmaf-tune profile."""
+    from .encode import build_ffmpeg_command, run_encode
+    from .encoder_profile import build_encode_request, load_profile_payload, select_recommendation
+
+    try:
+        profile = load_profile_payload(args.profile)
+        recommendation = select_recommendation(
+            profile,
+            codec=args.codec,
+            target_vmaf=args.target_vmaf,
+            recommendation_index=args.recommendation_index,
+        )
+        req = build_encode_request(
+            profile,
+            recommendation,
+            output=args.output,
+            source_override=args.src,
+            preset_override=args.preset,
+            pix_fmt_override=args.pix_fmt,
+            framerate_override=args.framerate,
+            width_override=args.width,
+            height_override=args.height,
+            duration_override=args.duration,
+            source_kind=args.source_kind,
+            sample_clip_seconds=args.sample_clip_seconds,
+            sample_clip_start_s=args.sample_clip_start_s,
+            extra_params=tuple(args.extra_ffmpeg_arg or ()),
+        )
+    except ValueError as exc:
+        sys.stderr.write(f"vmaf-tune encode-profile: {exc}\n")
+        return 2
+
+    run_meta = profile.get("run") or {}
+    ffmpeg_bin = args.ffmpeg_bin or run_meta.get("ffmpeg_bin") or "ffmpeg"
+    argv = build_ffmpeg_command(req, ffmpeg_bin=str(ffmpeg_bin))
+    if args.dry_run:
+        sys.stdout.write(
+            json.dumps(
+                {
+                    "ok": True,
+                    "dry_run": True,
+                    "profile": str(args.profile),
+                    "selected": recommendation,
+                    "ffmpeg_argv": argv,
+                    "output": str(args.output),
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n"
+        )
+        return 0
+
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    result = run_encode(req, ffmpeg_bin=str(ffmpeg_bin))
+    sys.stdout.write(
+        json.dumps(
+            {
+                "ok": result.exit_status == 0,
+                "profile": str(args.profile),
+                "selected": recommendation,
+                "ffmpeg_argv": argv,
+                "output": str(args.output),
+                "exit_status": result.exit_status,
+                "encode_size_bytes": result.encode_size_bytes,
+                "encode_time_ms": result.encode_time_ms,
+                "encoder_version": result.encoder_version,
+                "ffmpeg_version": result.ffmpeg_version,
+                "stderr_tail": result.stderr_tail,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    )
+    return int(result.exit_status)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -4744,6 +4918,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_sidecar(args)
     if args.cmd == "report":
         return _run_report(args)
+    if args.cmd == "encode-profile":
+        return _run_encode_profile(args)
     parser.print_help()
     return 2
 

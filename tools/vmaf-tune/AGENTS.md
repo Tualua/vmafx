@@ -1001,6 +1001,16 @@ scripts for those local corpora.
   `codec_rows_unavailable` exposes the gap count for dashboards.
   Changing the prefix in `bisect._predicate_for_codec` must update
   this aggregator too.
+- **Report JSON carries an encoder-profile contract
+  (ADR-0643).** `ReportData.to_dict()` embeds
+  `encoder_profile.schema == "vmaftune.encoder_profile.v1"` and
+  `vmaf-tune encode-profile` reads that payload from JSON, HTML, or
+  Markdown reports. Do not drop successful rows, failed rows, codec
+  metadata, source geometry, `pix_fmt`, binary provenance, or
+  `selected_pareto`; the profile reader uses them to choose exactly
+  one recommendation and construct the FFmpeg argv. HTML escaping of
+  the raw JSON `<pre>` is part of the contract because the reader
+  unescapes it before `json.loads`.
 - **`corpus.iter_rows` marks container sources for ffmpeg
   auto-detect (ADR-0505, Bug #V5-2).** `EncodeRequest.source_is_container`
   is derived from `source.suffix.lower() not in _VMAF_RAW_SUFFIXES`.

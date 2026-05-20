@@ -1,20 +1,21 @@
 # Using vmaf-tune with FFmpeg's encoder-side hooks
 
 The `tools/vmaf-tune/` orchestrator drives encodes through FFmpeg.
-Three FFmpeg-side hooks (added via the `ffmpeg-patches/` 0007–0009
-series, ADR-0312) make that integration first-class instead of
-out-of-band.
+Four FFmpeg-side hooks (added via the `ffmpeg-patches/` 0007–0009
+series plus the 0015 profile hand-off patch) make that integration
+first-class instead of out-of-band.
 
-This page documents how each hook plugs into vmaf-tune's three
-operating modes: **saliency-aware encoding**, **CRF recommendation**,
-and **2-pass autotuning**.
+This page documents how each hook plugs into vmaf-tune's operating
+modes: **saliency-aware encoding**, **CRF recommendation**,
+**2-pass autotuning**, and **report-profile driven encodes**.
 
 ## Prerequisites
 
-Apply the fork's FFmpeg patches against a clean `n8.1` checkout:
+Apply the fork's FFmpeg patches against a clean `n8.1.1` checkout
+(latest released FFmpeg 8.x.x tag verified on 2026-05-20):
 
 ```bash
-cd /path/to/ffmpeg && git checkout n8.1
+cd /path/to/ffmpeg && git checkout n8.1.1
 for p in /path/to/vmaf/ffmpeg-patches/000*-*.patch; do
     git am --3way "$p" || break
 done
@@ -30,6 +31,7 @@ Confirm the new options are recognised:
 ./ffmpeg -h encoder=libaom-av1 2>&1 | grep -i qpfile
 ./ffmpeg -h filter=libvmaf_tune
 ./ffmpeg -h | grep -i pass-autotune
+./ffmpeg -h | grep -i vmaf-profile
 ```
 
 ## Hook 1: `-qpfile <path>` (patch 0007)
@@ -205,6 +207,52 @@ The flag is **glue only** — when set, FFmpeg behaves like a normal
 `tools/vmaf-tune/src/vmaftune/recommend.py`. The flag exists so
 shell scripts that call ffmpeg directly can signal the user-visible
 intent without inventing their own log conventions.
+
+## Hook 4: `-vmaf-profile <path>` (patch 0015)
+
+`vmaf-tune compare --format html|both` and `vmaf-tune report` embed a
+versioned `encoder_profile` payload in the generated report. The
+profile is consumed by the Python orchestrator because it contains
+codec-adapter defaults, target-VMAF selection rules, and
+schema-version handling that should not be duplicated inside FFmpeg.
+
+The FFmpeg-side hook is therefore an advisory hand-off:
+
+```bash
+ffmpeg -i input.mp4 -c:v libsvtav1 -vmaf-profile sweep_profile.html -f null -
+```
+
+```text
+[ffmpeg] -vmaf-profile sweep_profile.html: encode with
+`vmaf-tune encode-profile --profile sweep_profile.html --src INPUT --output OUTPUT`
+(add --codec / --target-vmaf to select one recommendation). See
+docs/usage/vmaf-tune-ffmpeg.md.
+```
+
+Run the actual encode through the profile reader:
+
+```bash
+vmaf-tune encode-profile \
+    --profile sweep_profile.html \
+    --src input.mp4 \
+    --codec libsvtav1 \
+    --target-vmaf 96 \
+    --output out.mkv \
+    --dry-run
+
+vmaf-tune encode-profile \
+    --profile sweep_profile.html \
+    --src input.mp4 \
+    --codec libsvtav1 \
+    --target-vmaf 96 \
+    --output out.mkv
+```
+
+The tool reads raw JSON, HTML, or Markdown reports, chooses one row
+with `--codec`, `--target-vmaf`, or `--recommendation-index`, and then
+uses the same codec-adapter registry as `vmaf-tune compare`. It does
+not encode every codec or every ladder rung unless the operator scripts
+that loop explicitly.
 
 ## End-to-end recipe: saliency-aware libx264 encode
 

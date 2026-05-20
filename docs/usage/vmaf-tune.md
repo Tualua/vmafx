@@ -21,6 +21,7 @@ with [`vmaf`](cli.md), and emits a JSONL corpus of
 | `compare`             | Apples-to-apples codec comparison at matched VMAF      | (PR #435)                                                                                            |
 | `benchmark`           | Offline cross-codec report from an existing JSONL      | [ADR-0424](../adr/0424-vmaf-tune-corpus-benchmark.md)                                                |
 | `sidecar`             | Local predictor bias-correction training / inspection  | [ADR-0394](../adr/0394-local-sidecar-training.md)                                                    |
+| `encode-profile`      | Encode one recommendation from a report profile        | [ADR-0643](../adr/0643-vmaf-tune-encoder-profile-contract.md)                                        |
 
 ## Codec adapters
 
@@ -1507,7 +1508,14 @@ target-VMAF bisect computed. `vmaf-tune report --compare-json
 sweep.json` then renders a **per-codec rate-quality curve** assembled
 from those probes, with the picked-CRF rows highlighted as larger
 circled markers and the **pareto frontier** (lowest bitrate at each
-target) drawn as a heavier dashed overlay.
+target) drawn as a heavier dashed overlay. Current HTML/Markdown
+profile cards also include short "how to read this" notes, report-local
+codec identity chips (text badges that link to the upstream codec or
+vendor project), per-codec failure status, and an embedded
+`encoder_profile` JSON payload. That payload is intentionally
+machine-readable: `vmaf-tune encode-profile` can read the HTML,
+Markdown, or raw JSON and turn one selected recommendation into a
+concrete FFmpeg encode.
 
 ```shell
 # Out of the box: 5-point sweep, 3-codec compare, GPU scoring.
@@ -1531,6 +1539,13 @@ vmaf-tune compare \
     --sample-clip-seconds 3 --max-iterations 3 \
     --score-backend cuda \
     --format both --output sweep_profile.html
+
+# Reuse one recommendation from that profile without re-running the sweep.
+vmaf-tune encode-profile \
+    --profile sweep_profile.html \
+    --src bbb_1080p_60fps.mp4 \
+    --codec libsvtav1 --target-vmaf 96 \
+    --output bbb_svtav1_vmaf96.mkv
 ```
 
 **Why these defaults (ADR-0538 supersedes ADR-0530)**
@@ -2112,6 +2127,64 @@ The "encoder unavailable" discrimination keys on the bisect-stage
 error prefix added in ADR-0498 (`"encoder unavailable (NAME): …"`).
 A row whose `error` does **not** start with that prefix is treated
 as a genuine encode/score failure and flips `ok=false`.
+
+## `encode-profile` subcommand — reuse report recommendations
+
+Every HTML, Markdown, and raw JSON profile card embeds
+`encoder_profile` with schema `vmaftune.encoder_profile.v1`
+([ADR-0643](../adr/0643-vmaf-tune-encoder-profile-contract.md)).
+The payload contains source metadata, tool/binary provenance,
+codec metadata, failures, and a sorted list of concrete encoder
+recommendations. `encode-profile` reads that payload and runs exactly
+one selected FFmpeg encode; it never encodes the full ladder or every
+codec by default.
+
+```shell
+# Inspect the exact FFmpeg argv first.
+vmaf-tune encode-profile \
+    --profile sweep_profile.html \
+    --src bbb_1080p_60fps.mp4 \
+    --codec libsvtav1 \
+    --target-vmaf 96 \
+    --output bbb_svtav1_vmaf96.mkv \
+    --dry-run
+
+# Run the encode once the selected row looks right.
+vmaf-tune encode-profile \
+    --profile sweep_profile.html \
+    --src bbb_1080p_60fps.mp4 \
+    --codec libsvtav1 \
+    --target-vmaf 96 \
+    --output bbb_svtav1_vmaf96.mkv \
+    --extra-ffmpeg-arg=-movflags --extra-ffmpeg-arg=+faststart
+```
+
+Selection rules:
+
+- With no filters, the first pareto-selected row with the lowest
+  bitrate is used.
+- `--codec NAME` narrows the candidate list to one adapter token
+  (`libsvtav1`, `libx265`, `av1_nvenc`, ...).
+- `--target-vmaf F` narrows by the exact target stored in the profile.
+- `--recommendation-index N` picks the zero-based row after those
+  filters, useful when several rows remain tied or intentionally
+  comparable.
+
+Input handling:
+
+| Flag | Default | Notes |
+| --- | --- | --- |
+| `--profile PATH` | — | Required. Accepts report JSON, report HTML, or report Markdown. |
+| `--src PATH` | profile source | Override when the profile was generated on another machine. |
+| `--output PATH` | — | Required encoded output path. |
+| `--source-kind auto\|container\|raw` | `auto` | `auto` treats `.yuv` / `.raw` / `.rgb` / `.gray` as raw and everything else as FFmpeg-auto-detected container input. |
+| `--width / --height / --framerate / --pix-fmt` | profile values | Required only when the selected source is raw and the profile did not carry those fields. |
+| `--preset` | profile row / adapter default | Override the selected row's preset. |
+| `--duration` | profile source duration | Bounds the input-side encode window. |
+| `--sample-clip-seconds / --sample-clip-start-s` | `0` | Optional input-side clip flags forwarded to FFmpeg. |
+| `--extra-ffmpeg-arg TOKEN` | none | Append one raw FFmpeg argv token after codec args. Repeat as needed; use `--extra-ffmpeg-arg=-movflags` for leading-dash tokens. |
+| `--ffmpeg-bin PATH` | profile `ffmpeg_bin`, then `ffmpeg` | Override the FFmpeg binary. |
+| `--dry-run` | off | Print the selected recommendation and `ffmpeg_argv` without encoding. |
 
 ## Phase F — multi-pass encoding (ADR-0333)
 

@@ -12,7 +12,9 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
 from vmaftune.report import (
+    ENCODER_PROFILE_SCHEMA,
     CodecRow,
+    CodecSweepPoint,
     LadderRung,
     LadderSample,
     ReportData,
@@ -95,8 +97,10 @@ def test_to_dict_round_trip():
     d = data.to_dict()
     assert d["source"]["width"] == 1920
     assert d["target_vmaf"] == 92.0
+    assert d["encoder_profile"]["schema"] == ENCODER_PROFILE_SCHEMA
     assert len(d["codec_rows"]) == 3
     assert d["codec_rows"][0]["codec"] == "libx264"
+    assert d["encoder_profile"]["recommendations"][0]["codec"] == "libsvtav1"
     assert len(d["ladder_rungs"]) == 2
     assert len(d["shots"]) == 2
     # serialisable
@@ -273,3 +277,65 @@ def test_per_shot_bitrate_renders_in_markdown_table():
         if line.startswith("| ") and ("Mbps" in line or "kbps" in line)
     ]
     assert shot_rows, "expected at least one per-shot table row with a bitrate value"
+
+
+def test_html_escapes_user_controlled_report_text():
+    src = SourceInfo(
+        path="/tmp/<unsafe>.mp4",
+        width=1920,
+        height=1080,
+        fps=24.0,
+        duration_s=1.0,
+        frame_count=24,
+        codec="<h264>",
+        size_bytes=100,
+    )
+    data = ReportData(
+        source=src,
+        target_vmaf=92.0,
+        codec_rows=(CodecRow("libx264", "x264<script>", 23, 2400, 100, 92.0, False, "<boom>"),),
+    )
+    html = render_html(data)
+    assert "<unsafe>" not in html
+    assert "<h264>" not in html
+    assert "x264<script>" not in html
+    assert "<boom>" not in html
+    assert "&lt;unsafe&gt;" in html
+    assert "&lt;h264&gt;" in html
+    assert "x264&lt;script&gt;" in html
+    assert "&lt;boom&gt;" in html
+
+
+def test_sweep_report_has_human_guidance_status_and_profile():
+    src = SourceInfo("/tmp/source.mkv", 1920, 1080, 24.0, 10.0, 240, "h264", 100)
+    data = ReportData(
+        source=src,
+        target_vmaf=94.0,
+        sweep_targets=(94.0, 96.0),
+        sweep_points=(
+            CodecSweepPoint("libx265", "x265", 94.0, 24, 2100, 100, 94.3, True),
+            CodecSweepPoint(
+                "libx265", "x265", 96.0, -1, float("nan"), 0, float("nan"), False, "timeout"
+            ),
+            CodecSweepPoint("libsvtav1", "SVT-AV1", 94.0, 30, 1600, 120, 94.2, True),
+            CodecSweepPoint("libsvtav1", "SVT-AV1", 96.0, 26, 2400, 140, 96.1, True),
+        ),
+        pix_fmt="yuv420p10le",
+        score_backend="cuda",
+    )
+    md = render_markdown(data)
+    html = render_html(data)
+    assert "How to read this" in md
+    assert "Codec guide" in md
+    assert "CRF picks" in md
+    assert "94→24" in md
+    assert "timeout" in md
+    assert "adapter default" not in md
+    assert "encoder_profile" in md
+    assert "Codec guide" in html
+    assert "codec-chip" in html
+    assert "adapter default" not in html
+    profile = data.to_dict()["encoder_profile"]
+    assert profile["run"]["pix_fmt"] == "yuv420p10le"
+    assert profile["run"]["score_backend"] == "cuda"
+    assert profile["codec_metadata"]["libsvtav1"]["url"]

@@ -120,9 +120,12 @@ Or via the helper skill: `/ffmpeg-apply-patches /path/to/ffmpeg`.
 > `git apply --check`. The latter rejects `0002+` because they
 > reference cumulative-state hunks that don't exist in pristine
 > `n8.1.1`. The most recent no-drift verification is
-> the full-feature-exposure sync (ADR-0576, 2026-05-18): all 14 patches
-> (0001-0014) apply cleanly against a pristine `n8.1.1` checkout with
-> zero conflicts. The previous verification was the n8.1 to n8.1.1 base
+> the encoder-profile hand-off (ADR-0643, 2026-05-20): all 15 patches
+> (0001-0015) apply cleanly against pristine `n8.1.1`, the latest
+> released FFmpeg 8.x.x tag verified on 2026-05-20, with zero conflicts.
+> The previous verification was the full-feature-exposure
+> sync (ADR-0576, 2026-05-18) against pristine `n8.1.1`; before that was
+> the n8.1 to n8.1.1 base
 > bump (2026-05-09); before that was
 > [ADR-0277 (2026-05-04)](../docs/adr/0277-ffmpeg-patches-refresh-2026-05-04.md);
 > the procedure is captured in
@@ -152,8 +155,8 @@ distribution terms are governed by FFmpeg's license, not this one.
 
 ## vmaf-tune integration patches (ADR-0312)
 
-The 0007–0009 patches wire the in-tree `tools/vmaf-tune/` orchestrator
-into FFmpeg's encoder-side and CLI-side surfaces:
+The 0007–0009 patches plus 0015 wire the in-tree `tools/vmaf-tune/`
+orchestrator into FFmpeg's encoder-side and CLI-side surfaces:
 
 - **`0007-libvmaf-tune-qpfile-unified.patch`** — adds an `-qpfile <path>`
   AVOption to `libx264`, `libsvtav1`, and `libaom-av1`. The shared
@@ -176,6 +179,13 @@ into FFmpeg's encoder-side and CLI-side surfaces:
   flag to `fftools/ffmpeg_opt.c` that emits an advisory log line
   pointing at `docs/usage/vmaf-tune-ffmpeg.md`. Glue only — real
   orchestration stays in vmaf-tune.
+- **`0015-vmaf-tune-profile-cli-glue.patch`** — adds a
+  `-vmaf-profile <path>` flag to `fftools/ffmpeg_opt.c` that emits an
+  advisory hand-off to `vmaf-tune encode-profile --profile <path>`.
+  Glue only — the Python tool reads the report JSON/HTML/Markdown,
+  selects one recommendation via `--codec` / `--target-vmaf` /
+  `--recommendation-index`, and then invokes FFmpeg with the codec
+  adapter registry.
 
 ### vmaf-tune patch invariant
 
@@ -185,3 +195,8 @@ Patches **0007–0009** must keep the qpfile parser shared at
 `tools/vmaf-tune/src/vmaftune/saliency.py`'s `write_x264_qpfile`
 output format changes, patch 0007's parser must change in the same
 PR (CLAUDE.md §12 r14).
+
+Patch **0015** must remain advisory. The profile reader and selection
+logic live in `vmaf-tune encode-profile`; duplicating that JSON schema
+inside FFmpeg would make the patch stack rebase-sensitive for no
+encoding benefit.

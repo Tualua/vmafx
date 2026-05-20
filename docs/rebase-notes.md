@@ -37847,6 +37847,49 @@ Touched files:
 `changelog.d/added/0640-tiny-ai-netflix-training-scaffold-2026-05-20.md`,
 `docs/rebase-notes.md` (this entry).
 
+## ADR-0643 — vmaf-tune encoder-profile report contract
+
+**No rebase impact on upstream libvmaf C sources.** This change touches
+fork-local `vmaf-tune` Python code, docs, tests, and the FFmpeg patch
+stack. The FFmpeg integration is advisory CLI glue only.
+
+**Key invariants**:
+
+- `ReportData.to_dict()` embeds `encoder_profile.schema ==
+  "vmaftune.encoder_profile.v1"`. Future report-shape changes should be
+  additive or should bump the profile schema.
+- `vmaf-tune encode-profile` must read raw JSON, HTML, and Markdown
+  reports. HTML raw JSON is escaped in `<pre>` and intentionally
+  unescaped before parsing.
+- The profile reader selects one recommendation by `--codec`,
+  `--target-vmaf`, and/or `--recommendation-index`; it must not
+  implicitly encode every codec or ladder rung.
+- FFmpeg patch `0015-vmaf-tune-profile-cli-glue.patch` stays advisory.
+  Do not duplicate vmaf-tune's JSON/profile selection logic in FFmpeg.
+- FFmpeg 8.x.x base: upstream tags were fetched on 2026-05-20 and the
+  latest released 8.x.x tag was `n8.1.1` (`n8.2-dev` is a dev tag).
+  The full `ffmpeg-patches/000*-*.patch` series replayed cleanly
+  against a temporary pristine `n8.1.1` worktree.
+
+Touched files:
+`tools/vmaf-tune/src/vmaftune/report.py`,
+`tools/vmaf-tune/src/vmaftune/encoder_profile.py`,
+`tools/vmaf-tune/src/vmaftune/cli.py`,
+`tools/vmaf-tune/tests/test_report.py`,
+`tools/vmaf-tune/tests/test_encoder_profile.py`,
+`tools/vmaf-tune/AGENTS.md`,
+`docs/usage/vmaf-tune.md`,
+`docs/usage/vmaf-tune-ffmpeg.md`,
+`ffmpeg-patches/0015-vmaf-tune-profile-cli-glue.patch`,
+`ffmpeg-patches/series.txt`,
+`ffmpeg-patches/README.md`,
+`docs/adr/0643-vmaf-tune-encoder-profile-contract.md`,
+`docs/adr/_index_fragments/0643-vmaf-tune-encoder-profile-contract.md`,
+`docs/adr/_index_fragments/_order.txt`,
+`docs/research/0643-vmaf-tune-encoder-profile-contract.md`,
+`changelog.d/added/vmaf-tune-encoder-profile.md`,
+`docs/rebase-notes.md` (this entry).
+
 ## ADR-0644 — vmaf-tune codec runtime variants
 
 **No upstream Netflix C-source rebase impact.** The change is confined to the

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import base64
 import dataclasses
+import html
 import io
 import json
 import math
@@ -59,6 +60,212 @@ def _nan_to_none(value: Any) -> Any:
 def _portable_json_dump(data: Any) -> str:
     """``json.dumps`` with NaN coercion + ``allow_nan=False`` defence."""
     return json.dumps(_nan_to_none(data), indent=2, sort_keys=True, allow_nan=False)
+
+
+def _html_escape(value: Any) -> str:
+    """Escape user-controlled report text before embedding it in HTML."""
+    return html.escape(str(value), quote=True)
+
+
+def _md_cell(value: Any) -> str:
+    """Escape markdown table metacharacters in user-controlled cells."""
+    return str(value).replace("|", r"\|").replace("\n", "<br>")
+
+
+ENCODER_PROFILE_SCHEMA = "vmaftune.encoder_profile.v1"
+ENCODER_PROFILE_VERSION = 1
+
+
+_SECTION_GUIDANCE: dict[str, str] = {
+    "sweep": (
+        "How to read this: higher is better on the vertical axis; farther left is smaller "
+        "on the bitrate axis. Hollow markers are the CRFs actually selected for a target; "
+        "the dashed black line is the bitrate-minimising frontier across codecs."
+    ),
+    "codec": (
+        "How to read this: every row targets the same VMAF. The useful winner is the row "
+        "with the lowest bitrate that still clears the target; failed rows remain visible "
+        "so missing encoder support is not mistaken for a quality result."
+    ),
+    "ladder": (
+        "How to read this: selected rungs are the delivery ladder. A good ladder increases "
+        "quality smoothly with bitrate; isolated jumps usually mean the source or codec "
+        "needs a narrower follow-up sweep."
+    ),
+    "shots": (
+        "How to read this: CRF changes mark scenes that needed different compression "
+        "pressure. Large CRF swings are useful cues for per-shot overrides and future "
+        "profile training."
+    ),
+    "profile": (
+        "The raw JSON contains encoder_profile, a stable payload that can be passed to "
+        "`vmaf-tune encode-profile` to reproduce one selected recommendation."
+    ),
+}
+
+
+_CODEC_METADATA: dict[str, dict[str, str]] = {
+    "libx264": {
+        "badge": "H.264",
+        "label": "x264 / AVC",
+        "family": "H.264 / AVC",
+        "implementation": "CPU software",
+        "url": "https://www.videolan.org/developers/x264.html",
+        "note": "Fast and mature AVC baseline; useful for compatibility checks.",
+    },
+    "libx265": {
+        "badge": "HEVC",
+        "label": "x265 / HEVC",
+        "family": "H.265 / HEVC",
+        "implementation": "CPU software",
+        "url": "https://www.x265.org/",
+        "note": "Strong CPU compression baseline for high-quality HEVC ladders.",
+    },
+    "libsvtav1": {
+        "badge": "AV1",
+        "label": "SVT-AV1",
+        "family": "AV1",
+        "implementation": "CPU software",
+        "url": "https://gitlab.com/AOMediaCodec/SVT-AV1",
+        "note": "Production AV1 encoder; good default for CPU AV1 profile rows.",
+    },
+    "libaom-av1": {
+        "badge": "AV1",
+        "label": "AOM AV1",
+        "family": "AV1",
+        "implementation": "CPU reference",
+        "url": "https://aomedia.googlesource.com/aom/",
+        "note": "Reference AV1 encoder; valuable for quality experiments, usually slower.",
+    },
+    "libvpx-vp9": {
+        "badge": "VP9",
+        "label": "libvpx VP9",
+        "family": "VP9",
+        "implementation": "CPU software",
+        "url": "https://chromium.googlesource.com/webm/libvpx/",
+        "note": "VP9 baseline for older web delivery comparisons.",
+    },
+    "libvpx": {
+        "badge": "VP9",
+        "label": "libvpx",
+        "family": "VP8 / VP9",
+        "implementation": "CPU software",
+        "url": "https://chromium.googlesource.com/webm/libvpx/",
+        "note": "WebM codec family adapter.",
+    },
+    "libvvenc": {
+        "badge": "VVC",
+        "label": "VVenC / H.266",
+        "family": "H.266 / VVC",
+        "implementation": "CPU software",
+        "url": "https://github.com/fraunhoferhhi/vvenc",
+        "note": "VVC research/next-generation profile row.",
+    },
+    "h264_nvenc": {
+        "badge": "NVENC",
+        "label": "NVIDIA H.264 NVENC",
+        "family": "H.264 / AVC",
+        "implementation": "NVIDIA hardware",
+        "url": "https://developer.nvidia.com/video-codec-sdk",
+        "note": "NVIDIA hardware encoder; speed-oriented, device-dependent quality.",
+    },
+    "hevc_nvenc": {
+        "badge": "NVENC",
+        "label": "NVIDIA HEVC NVENC",
+        "family": "H.265 / HEVC",
+        "implementation": "NVIDIA hardware",
+        "url": "https://developer.nvidia.com/video-codec-sdk",
+        "note": "NVIDIA HEVC hardware encoder; useful for fast production ladders.",
+    },
+    "av1_nvenc": {
+        "badge": "NVENC",
+        "label": "NVIDIA AV1 NVENC",
+        "family": "AV1",
+        "implementation": "NVIDIA hardware",
+        "url": "https://developer.nvidia.com/video-codec-sdk",
+        "note": "NVIDIA AV1 hardware encoder on supported RTX generations.",
+    },
+    "h264_qsv": {
+        "badge": "QSV",
+        "label": "Intel H.264 Quick Sync",
+        "family": "H.264 / AVC",
+        "implementation": "Intel hardware",
+        "url": "https://www.intel.com/content/www/us/en/developer/tools/oneapi/onevpl.html",
+        "note": "Intel media hardware path; depends on the active render node.",
+    },
+    "hevc_qsv": {
+        "badge": "QSV",
+        "label": "Intel HEVC Quick Sync",
+        "family": "H.265 / HEVC",
+        "implementation": "Intel hardware",
+        "url": "https://www.intel.com/content/www/us/en/developer/tools/oneapi/onevpl.html",
+        "note": "Intel HEVC hardware path for Arc/iGPU profile rows.",
+    },
+    "av1_qsv": {
+        "badge": "QSV",
+        "label": "Intel AV1 Quick Sync",
+        "family": "AV1",
+        "implementation": "Intel hardware",
+        "url": "https://www.intel.com/content/www/us/en/developer/tools/oneapi/onevpl.html",
+        "note": "Intel AV1 hardware path on supported Arc/iGPU devices.",
+    },
+    "h264_amf": {
+        "badge": "AMF",
+        "label": "AMD H.264 AMF",
+        "family": "H.264 / AVC",
+        "implementation": "AMD hardware",
+        "url": "https://gpuopen.com/advanced-media-framework/",
+        "note": "AMD hardware encoder via Advanced Media Framework.",
+    },
+    "hevc_amf": {
+        "badge": "AMF",
+        "label": "AMD HEVC AMF",
+        "family": "H.265 / HEVC",
+        "implementation": "AMD hardware",
+        "url": "https://gpuopen.com/advanced-media-framework/",
+        "note": "AMD HEVC hardware encoder via Advanced Media Framework.",
+    },
+    "av1_amf": {
+        "badge": "AMF",
+        "label": "AMD AV1 AMF",
+        "family": "AV1",
+        "implementation": "AMD hardware",
+        "url": "https://gpuopen.com/advanced-media-framework/",
+        "note": "AMD AV1 hardware encoder on supported Radeon generations.",
+    },
+    "h264_videotoolbox": {
+        "badge": "VT",
+        "label": "Apple H.264 VideoToolbox",
+        "family": "H.264 / AVC",
+        "implementation": "Apple hardware",
+        "url": "https://developer.apple.com/documentation/videotoolbox",
+        "note": "Apple platform hardware encoder.",
+    },
+    "hevc_videotoolbox": {
+        "badge": "VT",
+        "label": "Apple HEVC VideoToolbox",
+        "family": "H.265 / HEVC",
+        "implementation": "Apple hardware",
+        "url": "https://developer.apple.com/documentation/videotoolbox",
+        "note": "Apple HEVC hardware encoder.",
+    },
+    "av1_videotoolbox": {
+        "badge": "VT",
+        "label": "Apple AV1 VideoToolbox",
+        "family": "AV1",
+        "implementation": "Apple hardware",
+        "url": "https://developer.apple.com/documentation/videotoolbox",
+        "note": "Apple AV1 hardware encoder where the platform exposes it.",
+    },
+    "prores_videotoolbox": {
+        "badge": "ProRes",
+        "label": "Apple ProRes VideoToolbox",
+        "family": "ProRes",
+        "implementation": "Apple hardware",
+        "url": "https://developer.apple.com/documentation/videotoolbox",
+        "note": "Mezzanine/intermediate profile row, not an ABR delivery codec.",
+    },
+}
 
 
 @dataclasses.dataclass(frozen=True)
@@ -189,6 +396,11 @@ class ReportData:
     shots: tuple[ShotRow, ...] = ()
     tool_version: str = TOOL_VERSION
     generated_at_iso: str = ""
+    encoder_preset: str = ""
+    pix_fmt: str = ""
+    score_backend: str = ""
+    ffmpeg_bin: str = ""
+    vmaf_bin: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         """Serialisable view of the structured inputs.
@@ -207,7 +419,261 @@ class ReportData:
             "shots": [dataclasses.asdict(s) for s in self.shots],
             "tool_version": self.tool_version,
             "generated_at_iso": self.generated_at_iso,
+            "encoder_preset": self.encoder_preset,
+            "pix_fmt": self.pix_fmt,
+            "score_backend": self.score_backend,
+            "ffmpeg_bin": self.ffmpeg_bin,
+            "vmaf_bin": self.vmaf_bin,
+            "encoder_profile": build_encoder_profile(self),
         }
+
+
+def _codecs_in_report(data: ReportData) -> tuple[str, ...]:
+    codecs: set[str] = set()
+    codecs.update(r.codec for r in data.codec_rows if r.codec)
+    codecs.update(p.codec for p in data.sweep_points if p.codec)
+    return tuple(sorted(codecs))
+
+
+def codec_metadata(codec: str) -> dict[str, str]:
+    """Return human/report metadata for a codec adapter token."""
+    base = {
+        "badge": codec.upper()[:8] or "?",
+        "label": codec or "Unknown codec",
+        "family": "Unknown",
+        "implementation": "Unknown",
+        "url": "",
+        "note": "Adapter metadata is not registered yet.",
+    }
+    base.update(_CODEC_METADATA.get(codec, {}))
+    base["codec"] = codec
+    base["colour"] = _codec_colour(codec, 0)
+    return base
+
+
+def _codec_chip_md(codec: str) -> str:
+    meta = codec_metadata(codec)
+    label = f"{meta['badge']} {codec}"
+    if meta["url"]:
+        return f"[{_md_cell(label)}]({meta['url']})"
+    return _md_cell(label)
+
+
+def _codec_chip_html(codec: str) -> str:
+    meta = codec_metadata(codec)
+    style = f"--codec-colour:{_html_escape(meta['colour'])}"
+    content = (
+        f"<span class='codec-logo'>{_html_escape(meta['badge'])}</span>"
+        f"<span class='codec-name'>{_html_escape(codec)}</span>"
+    )
+    if meta["url"]:
+        return (
+            f"<a class='codec-chip' href='{_html_escape(meta['url'])}' "
+            f"style='{style}'>{content}</a>"
+        )
+    return f"<span class='codec-chip' style='{style}'>{content}</span>"
+
+
+def _render_codec_guide_md(data: ReportData) -> list[str]:
+    codecs = _codecs_in_report(data)
+    if not codecs:
+        return []
+    lines = ["### Codec guide", ""]
+    lines.append(
+        "Codec badges are self-contained identity chips: they act like report-local logos, "
+        "link to the upstream project/vendor, and show whether a row is software or hardware."
+    )
+    lines.append("")
+    for codec in codecs:
+        meta = codec_metadata(codec)
+        lines.append(
+            f"- {_codec_chip_md(codec)} — {_md_cell(meta['label'])}; "
+            f"{_md_cell(meta['implementation'])}. {_md_cell(meta['note'])}"
+        )
+    return lines
+
+
+def _render_codec_guide_html(data: ReportData) -> str:
+    codecs = _codecs_in_report(data)
+    if not codecs:
+        return ""
+    items = []
+    for codec in codecs:
+        meta = codec_metadata(codec)
+        items.append(
+            "<li>"
+            f"{_codec_chip_html(codec)} "
+            f"<span>{_html_escape(meta['label'])}; "
+            f"{_html_escape(meta['implementation'])}. {_html_escape(meta['note'])}</span>"
+            "</li>"
+        )
+    return (
+        "<div class='guide codec-guide'><h3>Codec guide</h3>"
+        "<p>Codec badges are self-contained identity chips: they act like report-local "
+        "logos, link to the upstream project/vendor, and show whether a row is software "
+        "or hardware.</p>"
+        f"<ul>{''.join(items)}</ul></div>"
+    )
+
+
+def _sweep_row_status(points: Sequence[CodecSweepPoint | None], targets: Sequence[float]) -> str:
+    failures: list[str] = []
+    present_targets = {p.target_vmaf for p in points if p is not None}
+    for target in targets:
+        if target not in present_targets:
+            failures.append(f"VMAF {target:g}: missing")
+    for p in points:
+        if p is None or p.ok:
+            continue
+        reason = p.error or "failed"
+        failures.append(f"VMAF {p.target_vmaf:g}: {reason}")
+    if not failures:
+        return "OK"
+    return "; ".join(failures)
+
+
+def _sweep_crf_picks(points: Sequence[CodecSweepPoint]) -> str:
+    ok_points = [p for p in points if p.ok and p.best_crf >= 0]
+    if not ok_points:
+        return _DASH
+    ok_points.sort(key=lambda p: p.target_vmaf)
+    return ", ".join(f"{p.target_vmaf:g}→{p.best_crf}" for p in ok_points)
+
+
+def _recommendation_row(
+    *,
+    index: int,
+    codec: str,
+    encoder_version: str,
+    target_vmaf: float,
+    crf: int,
+    bitrate_kbps: float,
+    encode_time_ms: float,
+    vmaf_score: float,
+    preset: str,
+    selected_pareto: bool,
+    source_row: str,
+) -> dict[str, Any]:
+    return {
+        "index": index,
+        "codec": codec,
+        "encoder_version": encoder_version,
+        "target_vmaf": target_vmaf,
+        "quality_knob": "crf",
+        "quality": crf,
+        "crf": crf,
+        "preset": preset,
+        "bitrate_kbps": bitrate_kbps,
+        "achieved_vmaf": vmaf_score,
+        "encode_time_ms": encode_time_ms,
+        "selected_pareto": selected_pareto,
+        "source_row": source_row,
+    }
+
+
+def build_encoder_profile(data: ReportData) -> dict[str, Any]:
+    """Build the machine-readable profile payload embedded in every report."""
+    codecs = _codecs_in_report(data)
+    frontier_keys = {
+        (p.codec, p.target_vmaf, p.best_crf)
+        for p in compute_pareto_frontier(data.sweep_points)
+        if p.ok
+    }
+    recommendations: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+    preset = data.encoder_preset
+
+    for row in data.codec_rows:
+        if row.ok and not _is_missing(row.bitrate_kbps) and not _is_missing(row.vmaf_score):
+            recommendations.append(
+                _recommendation_row(
+                    index=len(recommendations),
+                    codec=row.codec,
+                    encoder_version=row.encoder_version,
+                    target_vmaf=data.target_vmaf,
+                    crf=row.best_crf,
+                    bitrate_kbps=row.bitrate_kbps,
+                    encode_time_ms=row.encode_time_ms,
+                    vmaf_score=row.vmaf_score,
+                    preset=preset,
+                    selected_pareto=True,
+                    source_row="compare",
+                )
+            )
+        else:
+            failures.append(
+                {
+                    "codec": row.codec,
+                    "target_vmaf": data.target_vmaf,
+                    "error": row.error or "failed",
+                    "source_row": "compare",
+                }
+            )
+
+    for point in data.sweep_points:
+        if point.ok and not _is_missing(point.bitrate_kbps) and not _is_missing(point.vmaf_score):
+            recommendations.append(
+                _recommendation_row(
+                    index=len(recommendations),
+                    codec=point.codec,
+                    encoder_version=point.encoder_version,
+                    target_vmaf=point.target_vmaf,
+                    crf=point.best_crf,
+                    bitrate_kbps=point.bitrate_kbps,
+                    encode_time_ms=point.encode_time_ms,
+                    vmaf_score=point.vmaf_score,
+                    preset=preset,
+                    selected_pareto=(point.codec, point.target_vmaf, point.best_crf)
+                    in frontier_keys,
+                    source_row="sweep",
+                )
+            )
+        else:
+            failures.append(
+                {
+                    "codec": point.codec,
+                    "target_vmaf": point.target_vmaf,
+                    "error": point.error or "failed",
+                    "source_row": "sweep",
+                }
+            )
+
+    recommendations.sort(
+        key=lambda r: (
+            not bool(r["selected_pareto"]),
+            float(r["target_vmaf"]),
+            float(r["bitrate_kbps"]),
+            str(r["codec"]),
+        )
+    )
+    for idx, rec in enumerate(recommendations):
+        rec["index"] = idx
+
+    return {
+        "schema": ENCODER_PROFILE_SCHEMA,
+        "schema_version": ENCODER_PROFILE_VERSION,
+        "source": dataclasses.asdict(data.source),
+        "run": {
+            "target_vmaf": data.target_vmaf,
+            "sweep_targets": list(data.sweep_targets),
+            "tool_version": data.tool_version,
+            "generated_at_iso": data.generated_at_iso,
+            "preset": data.encoder_preset,
+            "pix_fmt": data.pix_fmt,
+            "score_backend": data.score_backend,
+            "ffmpeg_bin": data.ffmpeg_bin,
+            "vmaf_bin": data.vmaf_bin,
+        },
+        "codec_metadata": {codec: codec_metadata(codec) for codec in codecs},
+        "recommendations": recommendations,
+        "failures": failures,
+        "ladder": {
+            "samples": [dataclasses.asdict(p) for p in data.ladder_samples],
+            "rungs": [dataclasses.asdict(r) for r in data.ladder_rungs],
+        },
+        "shots": [dataclasses.asdict(s) for s in data.shots],
+        "human_guidance": dict(_SECTION_GUIDANCE),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -289,10 +755,11 @@ def _ladder_plot_fn(data: ReportData):
                 alpha=0.5,
                 label=f"target {data.target_vmaf:.1f}",
             )
-        ax.set_xscale("log")
+        _apply_bitrate_xaxis(ax, log_scale=True)
         ax.grid(True, alpha=0.3)
+        _set_padded_ylim(ax, ys + [data.target_vmaf], lower=0.0, upper=100.0, min_pad=1.0)
         ax.legend(loc="lower right", fontsize=8)
-        ax.set_title("Bitrate vs VMAF (rate-distortion)")
+        ax.set_title("ABR ladder — higher quality at each bitrate is better")
 
     return _plot
 
@@ -315,11 +782,13 @@ def _codec_plot_fn(data: ReportData):
         bitrates = [r.bitrate_kbps for r in rows]
         vmafs = [r.vmaf_score for r in rows]
         ax.bar(codecs, bitrates, color="#2ca02c")
-        ax.set_ylabel("bitrate (kbps)")
-        ax.set_title("Codec bitrate to reach target VMAF")
+        ax.set_ylabel("bitrate (lower is smaller)")
+        _apply_bitrate_yaxis(ax)
+        ax.set_title("Codec comparison — lowest bitrate that reaches target wins")
         ax2 = ax.twinx()
         ax2.plot(codecs, vmafs, "o-", color="#d62728", label="VMAF achieved")
         ax2.set_ylabel("VMAF")
+        _set_padded_ylim(ax2, vmafs, lower=0.0, upper=100.0, min_pad=0.75)
         ax2.legend(loc="lower right", fontsize=8)
         for tick in ax.get_xticklabels():
             tick.set_rotation(20)
@@ -349,10 +818,96 @@ _CODEC_PALETTE: tuple[str, ...] = (
     "#c5b0d5",  # av1_amf
 )
 
+_CODEC_COLOURS: dict[str, str] = {
+    "libx264": _CODEC_PALETTE[0],
+    "libx265": _CODEC_PALETTE[1],
+    "libsvtav1": _CODEC_PALETTE[2],
+    "libvpx-vp9": _CODEC_PALETTE[3],
+    "libvpx": _CODEC_PALETTE[3],
+    "libaom-av1": _CODEC_PALETTE[4],
+    "libaom": _CODEC_PALETTE[4],
+    "libvvenc": _CODEC_PALETTE[5],
+    "h264_nvenc": _CODEC_PALETTE[6],
+    "hevc_nvenc": _CODEC_PALETTE[7],
+    "av1_nvenc": _CODEC_PALETTE[8],
+    "h264_qsv": _CODEC_PALETTE[9],
+    "hevc_qsv": _CODEC_PALETTE[10],
+    "av1_qsv": _CODEC_PALETTE[11],
+    "h264_amf": _CODEC_PALETTE[12],
+    "hevc_amf": _CODEC_PALETTE[13],
+    "av1_amf": _CODEC_PALETTE[14],
+    "h264_videotoolbox": _CODEC_PALETTE[0],
+    "hevc_videotoolbox": _CODEC_PALETTE[1],
+    "av1_videotoolbox": _CODEC_PALETTE[2],
+    "prores_videotoolbox": _CODEC_PALETTE[5],
+}
+
 
 def _codec_colour(codec: str, index: int) -> str:
-    """Deterministic colour for ``codec`` — falls back by index."""
-    return _CODEC_PALETTE[index % len(_CODEC_PALETTE)]
+    """Deterministic colour for ``codec`` — stable even when rows are filtered."""
+    colour = _CODEC_COLOURS.get(codec)
+    if colour is not None:
+        return colour
+    stable_idx = sum((idx + 1) * ord(ch) for idx, ch in enumerate(codec))
+    return _CODEC_PALETTE[(stable_idx + index) % len(_CODEC_PALETTE)]
+
+
+def _bitrate_tick_label(value: float, _pos: float | None = None) -> str:
+    if value <= 0 or not math.isfinite(value):
+        return ""
+    if value >= 1000:
+        return f"{value / 1000:g}M"
+    return f"{value:g}k"
+
+
+def _finite_values(values: Sequence[float | int | None]) -> list[float]:
+    finite: list[float] = []
+    for value in values:
+        if value is None:
+            continue
+        f = float(value)
+        if math.isfinite(f):
+            finite.append(f)
+    return finite
+
+
+def _set_padded_ylim(
+    ax,
+    values: Sequence[float | int | None],
+    *,
+    lower: float | None = None,
+    upper: float | None = None,
+    min_pad: float = 1.0,
+) -> None:
+    finite = _finite_values(values)
+    if not finite:
+        return
+    lo = min(finite)
+    hi = max(finite)
+    span = max(hi - lo, min_pad)
+    pad = max(min_pad, span * 0.08)
+    y0 = lo - pad
+    y1 = hi + pad
+    if lower is not None:
+        y0 = max(lower, y0)
+    if upper is not None:
+        y1 = min(upper, y1)
+    if y0 < y1:
+        ax.set_ylim(y0, y1)
+
+
+def _apply_bitrate_xaxis(ax, *, log_scale: bool = True) -> None:
+    from matplotlib.ticker import FuncFormatter  # noqa: PLC0415
+
+    if log_scale:
+        ax.set_xscale("log")
+    ax.xaxis.set_major_formatter(FuncFormatter(_bitrate_tick_label))
+
+
+def _apply_bitrate_yaxis(ax) -> None:
+    from matplotlib.ticker import FuncFormatter  # noqa: PLC0415
+
+    ax.yaxis.set_major_formatter(FuncFormatter(_bitrate_tick_label))
 
 
 def compute_pareto_frontier(
@@ -546,23 +1101,61 @@ def _sweep_plot_fn(data: ReportData):
             ax.text(0.5, 0.5, "no successful sweep rows", ha="center", va="center")
             ax.set_axis_off()
             return
-        ax.set_xscale("log")
-        ax.set_xlabel("bitrate (kbps, log scale)")
-        ax.set_ylabel("VMAF achieved")
+        _apply_bitrate_xaxis(ax, log_scale=True)
+        ax.set_xlabel("bitrate (log scale; left is smaller)")
+        ax.set_ylabel("VMAF achieved (higher is better)")
+        plotted_vmafs = [
+            p.vmaf_score for p in data.sweep_points if p.ok and not _is_missing(p.vmaf_score)
+        ]
+        plotted_vmafs.extend(float(t) for t in data.sweep_targets)
+        _set_padded_ylim(ax, plotted_vmafs, lower=0.0, upper=100.0, min_pad=0.75)
         if use_samples:
-            ax.set_title(
-                "Rate-quality curve per codec (bisect samples; "
-                "picked-CRF circled; pareto frontier dashed)"
-            )
+            ax.set_title("Rate-quality sweep — bisect samples; picked-CRF circled")
         else:
-            ax.set_title(
-                "Rate-quality curve per codec (pareto frontier dashed) — "
-                "caveat: connect-the-dots may show overshoot artefacts"
+            ax.set_title("Rate-quality sweep — picked rows only; bisect samples unavailable")
+            ax.text(
+                0.015,
+                0.91,
+                "Caveat: connect-the-dots may show overshoot.",
+                transform=ax.transAxes,
+                ha="left",
+                va="top",
+                fontsize=7,
+                color="#333",
+                bbox={
+                    "boxstyle": "round,pad=0.25",
+                    "facecolor": "white",
+                    "alpha": 0.75,
+                    "lw": 0,
+                },
             )
         ax.grid(True, alpha=0.3, which="both")
         # Horizontal reference lines at each sweep target.
         for t in data.sweep_targets:
             ax.axhline(t, color="#888", linestyle=":", alpha=0.35, linewidth=0.8)
+            ax.annotate(
+                f"target {t:g}",
+                xy=(0.995, t),
+                xycoords=("axes fraction", "data"),
+                xytext=(-4, 0),
+                textcoords="offset points",
+                ha="right",
+                va="center",
+                fontsize=7,
+                color="#555",
+                alpha=0.8,
+            )
+        ax.text(
+            0.015,
+            0.985,
+            "Read: for the same VMAF, farther left is smaller.",
+            transform=ax.transAxes,
+            ha="left",
+            va="top",
+            fontsize=7,
+            color="#333",
+            bbox={"boxstyle": "round,pad=0.25", "facecolor": "white", "alpha": 0.75, "lw": 0},
+        )
         ax.legend(loc="lower right", fontsize=7)
 
     return _plot
@@ -741,8 +1334,8 @@ def _render_sweep_summary_table_md(data: ReportData) -> list[str]:
 
     header_cells = ["Codec", "Encoder"]
     header_cells.extend(f"bitrate @ VMAF {t:g}" for t in targets)
-    header_cells.extend(["encode time (ms / frame)", "best preset"])
-    align = ["---", "---"] + ["---:" for _ in targets] + ["---:", "---"]
+    header_cells.extend(["CRF picks", "encode time", "Status"])
+    align = ["---", "---"] + ["---:" for _ in targets] + ["---", "---:", "---"]
 
     lines: list[str] = []
     lines.append("| " + " | ".join(header_cells) + " |")
@@ -752,20 +1345,21 @@ def _render_sweep_summary_table_md(data: ReportData) -> list[str]:
         rows = [p for p in per_target.values() if p is not None]
         ok_rows = [p for p in rows if p.ok]
         encoder_version = next((p.encoder_version for p in rows if p.encoder_version), "—")
-        cells: list[str] = [codec, encoder_version]
+        cells: list[str] = [_codec_chip_md(codec), _md_cell(encoder_version)]
         for t in targets:
             p = per_target.get(t)
             if p is None or not p.ok or _is_missing(p.bitrate_kbps):
                 cells.append(_DASH)
             else:
                 cells.append(_fmt_kbps(p.bitrate_kbps))
+        cells.append(_md_cell(_sweep_crf_picks(ok_rows)))
         # Encode time per frame: average across the codec's ok rows.
         if ok_rows:
             avg_ms = sum(p.encode_time_ms for p in ok_rows) / float(len(ok_rows))
             cells.append(_fmt_ms(avg_ms))
         else:
             cells.append(_DASH)
-        cells.append("adapter default")
+        cells.append(_md_cell(_sweep_row_status(list(per_target.values()), targets)))
         lines.append("| " + " | ".join(cells) + " |")
     # Pareto-frontier summary.
     frontier = compute_pareto_frontier(data.sweep_points)
@@ -792,7 +1386,7 @@ def render_markdown(data: ReportData, *, assets_dir: Path | None = None) -> str:
     lines: list[str] = []
     src = data.source
 
-    lines.append(f"# vmaf-tune report — `{Path(src.path).name}`")
+    lines.append(f"# vmaf-tune report — `{_md_cell(Path(src.path).name)}`")
     lines.append("")
     lines.append(
         f"_Generated by vmaf-tune {data.tool_version}{' on ' + data.generated_at_iso if data.generated_at_iso else ''}._"
@@ -802,11 +1396,11 @@ def render_markdown(data: ReportData, *, assets_dir: Path | None = None) -> str:
     lines.append("")
     lines.append("| Field | Value |")
     lines.append("|---|---|")
-    lines.append(f"| Path | `{src.path}` |")
+    lines.append(f"| Path | `{_md_cell(src.path)}` |")
     lines.append(f"| Resolution | {src.width} × {src.height} |")
     lines.append(f"| Frame rate | {src.fps:.3f} fps |")
     lines.append(f"| Duration | {_fmt_duration(src.duration_s)} ({src.frame_count} frames) |")
-    lines.append(f"| Codec | {src.codec} |")
+    lines.append(f"| Codec | {_md_cell(src.codec)} |")
     lines.append(f"| File size | {_fmt_bytes(src.size_bytes)} |")
     lines.append("")
     lines.append(f"Target VMAF: **{data.target_vmaf:.1f}**")
@@ -819,6 +1413,11 @@ def render_markdown(data: ReportData, *, assets_dir: Path | None = None) -> str:
     if data.sweep_points:
         lines.append("## Codec rate-quality sweep")
         lines.append("")
+        lines.append(_SECTION_GUIDANCE["sweep"])
+        lines.append("")
+        lines.extend(_render_codec_guide_md(data))
+        if lines[-1:] != [""]:
+            lines.append("")
         lines.extend(_render_sweep_summary_table_md(data))
         lines.append("")
         lines.append(
@@ -828,14 +1427,20 @@ def render_markdown(data: ReportData, *, assets_dir: Path | None = None) -> str:
     elif data.codec_rows:
         lines.append("## Codec comparison")
         lines.append("")
+        lines.append(_SECTION_GUIDANCE["codec"])
+        lines.append("")
+        lines.extend(_render_codec_guide_md(data))
+        if lines[-1:] != [""]:
+            lines.append("")
         lines.append("| Codec | Encoder | CRF | Bitrate | Encode time | VMAF | Status |")
         lines.append("|---|---|---:|---:|---:|---:|---|")
         for r in data.codec_rows:
-            status = "✓" if r.ok else f"✗ {r.error}"
+            status = "OK" if r.ok else f"FAIL: {r.error}"
             lines.append(
-                f"| {r.codec} | {r.encoder_version or '—'} | {_fmt_crf(r.best_crf)} | "
+                f"| {_codec_chip_md(r.codec)} | {_md_cell(r.encoder_version or '—')} | "
+                f"{_fmt_crf(r.best_crf)} | "
                 f"{_fmt_kbps(r.bitrate_kbps)} | {_fmt_ms(r.encode_time_ms)} | "
-                f"{_fmt_vmaf(r.vmaf_score)} | {status} |"
+                f"{_fmt_vmaf(r.vmaf_score)} | {_md_cell(status)} |"
             )
         lines.append("")
         lines.append(
@@ -846,6 +1451,8 @@ def render_markdown(data: ReportData, *, assets_dir: Path | None = None) -> str:
     # Ladder
     if data.ladder_rungs or data.ladder_samples:
         lines.append("## ABR ladder")
+        lines.append("")
+        lines.append(_SECTION_GUIDANCE["ladder"])
         lines.append("")
         if data.ladder_rungs:
             lines.append("Selected rungs:")
@@ -865,6 +1472,8 @@ def render_markdown(data: ReportData, *, assets_dir: Path | None = None) -> str:
     if data.shots:
         lines.append("## Per-shot tuning")
         lines.append("")
+        lines.append(_SECTION_GUIDANCE["shots"])
+        lines.append("")
         lines.append(f"{len(data.shots)} shots detected.")
         lines.append("")
         lines.append("| # | Frames | Duration | Resolution | Best CRF | VMAF | Bitrate |")
@@ -883,6 +1492,8 @@ def render_markdown(data: ReportData, *, assets_dir: Path | None = None) -> str:
     lines.append("---")
     lines.append("")
     lines.append("Raw JSON dump for downstream tooling:")
+    lines.append("")
+    lines.append(_SECTION_GUIDANCE["profile"])
     lines.append("")
     lines.append("<details><summary>report.json</summary>")
     lines.append("")
@@ -933,11 +1544,22 @@ body {{ background: var(--bg); color: var(--text); font: 16px/1.5 -apple-system,
         max-width: 1100px; margin: 0 auto; padding: 2rem 1.25rem; }}
 h1 {{ color: var(--accent); border-bottom: 2px solid var(--accent); padding-bottom: .4rem; }}
 h2 {{ margin-top: 2rem; }}
+h3 {{ margin-bottom: .35rem; }}
 .panel {{ background: var(--panel); border-radius: 8px; padding: 1.2rem; margin: 1rem 0; }}
+.guide {{ border-left: 4px solid var(--accent); padding: .75rem 1rem; margin: .75rem 0 1rem; background: rgba(245,121,42,.08); }}
+.guide p {{ margin: .25rem 0 .5rem; color: var(--muted); }}
+.guide ul {{ margin: .5rem 0 0; padding-left: 1.1rem; }}
+.note {{ color: var(--muted); margin: .25rem 0 1rem; }}
+.table-scroll {{ overflow-x: auto; }}
 table {{ width: 100%; border-collapse: collapse; margin: .5rem 0; }}
 th, td {{ padding: .4rem .6rem; text-align: left; border-bottom: 1px solid #2d3142; }}
 th {{ color: var(--muted); font-weight: 600; font-size: .85rem; text-transform: uppercase; letter-spacing: .03em; }}
 td.num {{ text-align: right; font-variant-numeric: tabular-nums; }}
+.codec-chip {{ --codec-colour: var(--accent); display: inline-flex; align-items: center; gap: .35rem;
+    color: var(--text); text-decoration: none; white-space: nowrap; }}
+.codec-logo {{ background: var(--codec-colour); color: #fff; border-radius: 4px; padding: .08rem .32rem;
+    font-weight: 700; font-size: .72rem; letter-spacing: .02em; line-height: 1.35; }}
+.codec-name {{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .92em; }}
 .tag {{ display: inline-block; padding: .15em .5em; border-radius: 3px; font-size: .85em; }}
 .tag.ok {{ background: rgba(76,175,80,.18); color: var(--ok); }}
 .tag.bad {{ background: rgba(239,83,80,.18); color: var(--bad); }}
@@ -975,6 +1597,7 @@ pre {{ background: #000; color: #ddd; padding: 1rem; border-radius: 6px; overflo
 
 <details>
 <summary>Raw JSON dump (for downstream tooling)</summary>
+<p class="note">{profile_guidance}</p>
 <pre>{json_dump}</pre>
 </details>
 </body>
@@ -986,10 +1609,11 @@ def _row_html(row: CodecRow) -> str:
     status = (
         '<span class="tag ok">OK</span>'
         if row.ok
-        else f'<span class="tag bad">{row.error or "fail"}</span>'
+        else f'<span class="tag bad">{_html_escape(row.error or "fail")}</span>'
     )
     return (
-        f"<tr><td>{row.codec}</td><td>{row.encoder_version or '—'}</td>"
+        f"<tr><td>{_codec_chip_html(row.codec)}</td>"
+        f"<td>{_html_escape(row.encoder_version or '—')}</td>"
         f"<td class='num'>{_fmt_crf(row.best_crf)}</td>"
         f"<td class='num'>{_fmt_kbps(row.bitrate_kbps)}</td>"
         f"<td class='num'>{_fmt_ms(row.encode_time_ms)}</td>"
@@ -1005,8 +1629,8 @@ def _sweep_summary_table_html(data: ReportData) -> str:
 
     head_cells = ["Codec", "Encoder"]
     head_cells.extend(f"@ VMAF {t:g}" for t in targets)
-    head_cells.extend(["Encode time", "Best preset"])
-    head = "".join(f"<th>{c}</th>" for c in head_cells)
+    head_cells.extend(["CRF picks", "Encode time", "Status"])
+    head = "".join(f"<th>{_html_escape(c)}</th>" for c in head_cells)
 
     body_rows: list[str] = []
     for codec in sorted(by_codec):
@@ -1014,29 +1638,38 @@ def _sweep_summary_table_html(data: ReportData) -> str:
         rows = [p for p in per_target.values() if p is not None]
         ok_rows = [p for p in rows if p.ok]
         encoder_version = next((p.encoder_version for p in rows if p.encoder_version), "—")
-        cells: list[str] = [f"<td>{codec}</td>", f"<td>{encoder_version}</td>"]
+        cells: list[str] = [
+            f"<td>{_codec_chip_html(codec)}</td>",
+            f"<td>{_html_escape(encoder_version)}</td>",
+        ]
         for t in targets:
             p = per_target.get(t)
             if p is None or not p.ok or _is_missing(p.bitrate_kbps):
                 cells.append(f"<td class='num'>{_DASH}</td>")
             else:
                 cells.append(f"<td class='num'>{_fmt_kbps(p.bitrate_kbps)}</td>")
+        cells.append(f"<td>{_html_escape(_sweep_crf_picks(ok_rows))}</td>")
         if ok_rows:
             avg_ms = sum(p.encode_time_ms for p in ok_rows) / float(len(ok_rows))
             cells.append(f"<td class='num'>{_fmt_ms(avg_ms)}</td>")
         else:
             cells.append(f"<td class='num'>{_DASH}</td>")
-        cells.append("<td>adapter default</td>")
+        status = _sweep_row_status(list(per_target.values()), targets)
+        tag_class = "ok" if status == "OK" else "bad"
+        cells.append(f"<td><span class='tag {tag_class}'>{_html_escape(status)}</span></td>")
         body_rows.append("<tr>" + "".join(cells) + "</tr>")
 
-    table = f"<table><thead><tr>{head}</tr></thead>" f"<tbody>{''.join(body_rows)}</tbody></table>"
+    table = (
+        "<div class='table-scroll'><table><thead><tr>"
+        f"{head}</tr></thead><tbody>{''.join(body_rows)}</tbody></table></div>"
+    )
 
     frontier = compute_pareto_frontier(data.sweep_points)
     frontier_html = ""
     if frontier:
         items = "".join(
-            f"<li>VMAF {p.target_vmaf:g}: <code>{p.codec}</code> "
-            f"({p.encoder_version or '—'}) "
+            f"<li>VMAF {p.target_vmaf:g}: {_codec_chip_html(p.codec)} "
+            f"({_html_escape(p.encoder_version or '—')}) "
             f"@ {_fmt_kbps(p.bitrate_kbps)} (CRF {_fmt_crf(p.best_crf)})</li>"
             for p in frontier
         )
@@ -1060,6 +1693,8 @@ def render_html(data: ReportData) -> str:
         chart = _render_chart_svg(8, 4.5, _sweep_plot_fn(data))
         codec_section = (
             f"<div class='panel'><h2 style='margin-top:0'>Codec rate-quality sweep</h2>"
+            f"<p class='note'>{_html_escape(_SECTION_GUIDANCE['sweep'])}</p>"
+            f"{_render_codec_guide_html(data)}"
             f"{table_html}"
             f"<div class='chart'>{chart}</div></div>"
         )
@@ -1068,9 +1703,11 @@ def render_html(data: ReportData) -> str:
         chart = _render_chart_svg(7, 3.5, _codec_plot_fn(data))
         codec_section = (
             f"<div class='panel'><h2 style='margin-top:0'>Codec comparison</h2>"
-            f"<table><thead><tr><th>Codec</th><th>Encoder</th><th>CRF</th>"
+            f"<p class='note'>{_html_escape(_SECTION_GUIDANCE['codec'])}</p>"
+            f"{_render_codec_guide_html(data)}"
+            f"<div class='table-scroll'><table><thead><tr><th>Codec</th><th>Encoder</th><th>CRF</th>"
             f"<th>Bitrate</th><th>Encode time</th><th>VMAF</th><th>Status</th></tr></thead>"
-            f"<tbody>{rows}</tbody></table>"
+            f"<tbody>{rows}</tbody></table></div>"
             f"<div class='chart'>{chart}</div></div>"
         )
 
@@ -1086,13 +1723,14 @@ def render_html(data: ReportData) -> str:
                 for r in data.ladder_rungs
             )
             rungs_html = (
-                f"<table><thead><tr><th>Resolution</th><th>CRF</th>"
+                f"<div class='table-scroll'><table><thead><tr><th>Resolution</th><th>CRF</th>"
                 f"<th>Bitrate</th><th>VMAF</th></tr></thead>"
-                f"<tbody>{rungs}</tbody></table>"
+                f"<tbody>{rungs}</tbody></table></div>"
             )
         chart = _render_chart_svg(8, 4, _ladder_plot_fn(data))
         ladder_section = (
             f"<div class='panel'><h2 style='margin-top:0'>ABR ladder</h2>"
+            f"<p class='note'>{_html_escape(_SECTION_GUIDANCE['ladder'])}</p>"
             f"{rungs_html}<div class='chart'>{chart}</div></div>"
         )
 
@@ -1111,29 +1749,31 @@ def render_html(data: ReportData) -> str:
         chart = _render_chart_svg(8, 3.5, _shot_plot_fn(data))
         shots_section = (
             f"<div class='panel'><h2 style='margin-top:0'>Per-shot tuning ({len(data.shots)} shots)</h2>"
-            f"<table><thead><tr><th>#</th><th>Frames</th><th>Duration</th>"
+            f"<p class='note'>{_html_escape(_SECTION_GUIDANCE['shots'])}</p>"
+            f"<div class='table-scroll'><table><thead><tr><th>#</th><th>Frames</th><th>Duration</th>"
             f"<th>Resolution</th><th>Best CRF</th><th>VMAF</th><th>Bitrate</th></tr></thead>"
-            f"<tbody>{rows}</tbody></table>"
+            f"<tbody>{rows}</tbody></table></div>"
             f"<div class='chart'>{chart}</div></div>"
         )
 
     return _HTML_TEMPLATE.format(
-        source_name=Path(src.path).name,
-        source_path=src.path,
+        source_name=_html_escape(Path(src.path).name),
+        source_path=_html_escape(src.path),
         width=src.width,
         height=src.height,
         fps=src.fps,
         duration=_fmt_duration(src.duration_s),
         frame_count=src.frame_count,
-        codec=src.codec,
+        codec=_html_escape(src.codec),
         size=_fmt_bytes(src.size_bytes),
         target_vmaf=data.target_vmaf,
-        tool_version=data.tool_version,
-        generated_at=f" on {data.generated_at_iso}" if data.generated_at_iso else "",
+        tool_version=_html_escape(data.tool_version),
+        generated_at=f" on {_html_escape(data.generated_at_iso)}" if data.generated_at_iso else "",
         codec_section=codec_section,
         ladder_section=ladder_section,
         shots_section=shots_section,
-        json_dump=_portable_json_dump(data.to_dict()),
+        profile_guidance=_html_escape(_SECTION_GUIDANCE["profile"]),
+        json_dump=_html_escape(_portable_json_dump(data.to_dict())),
     )
 
 
@@ -1209,11 +1849,14 @@ __all__ = [
     "BisectSamplePoint",
     "CodecRow",
     "CodecSweepPoint",
+    "ENCODER_PROFILE_SCHEMA",
     "LadderRung",
     "LadderSample",
     "ReportData",
     "ShotRow",
     "SourceInfo",
+    "build_encoder_profile",
+    "codec_metadata",
     "compute_pareto_frontier",
     "probe_source",
     "render_html",
