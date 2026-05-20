@@ -399,6 +399,73 @@ def test_cli_compare_binds_real_bisect_predicate(monkeypatch, capsys, tmp_path):
     assert [row["codec"] for row in payload["rows"]] == ["libx265", "libx264"]
 
 
+def test_cli_compare_runtime_variant_binds_per_encoder_ffmpeg(monkeypatch, capsys, tmp_path):
+    """``ADAPTER@VARIANT`` rows use the base adapter with a token-local FFmpeg."""
+    from vmaftune import cli as cli_module
+
+    captured: list[dict] = []
+
+    def fake_make_bisect_predicate(**kwargs):
+        captured.append(dict(kwargs))
+        ffmpeg_bin = kwargs["ffmpeg_bin"]
+
+        def predicate(codec: str, src: Path, target_vmaf: float) -> RecommendResult:
+            bitrate = 1800.0 if ffmpeg_bin.endswith("ffmpeg-main") else 1600.0
+            return RecommendResult(
+                codec=codec,
+                best_crf=27,
+                bitrate_kbps=bitrate,
+                encode_time_ms=100.0,
+                vmaf_score=target_vmaf,
+                encoder_version=f"{codec}:{Path(ffmpeg_bin).name}",
+            )
+
+        return predicate
+
+    monkeypatch.setattr(
+        "vmaftune.bisect.make_bisect_predicate",
+        fake_make_bisect_predicate,
+    )
+
+    rc = cli_module.main(
+        [
+            "compare",
+            "--src",
+            str(tmp_path / "ref.yuv"),
+            "--target-vmaf",
+            "92",
+            "--encoders",
+            "libsvtav1,libsvtav1@svt-av1-hdr",
+            "--ffmpeg-bin",
+            "/opt/ffmpeg-main",
+            "--encoder-ffmpeg-bin",
+            "libsvtav1@svt-av1-hdr=/opt/ffmpeg-hdr",
+            "--width",
+            "1920",
+            "--height",
+            "1080",
+            "--duration",
+            "10",
+            "--format",
+            "json",
+            "--no-parallel",
+        ]
+    )
+
+    assert rc == 0
+    assert sorted(call["ffmpeg_bin"] for call in captured) == [
+        "/opt/ffmpeg-hdr",
+        "/opt/ffmpeg-main",
+    ]
+    payload = json.loads(capsys.readouterr().out)
+    by_codec = {row["codec"]: row for row in payload["rows"]}
+    assert set(by_codec) == {"libsvtav1", "libsvtav1@svt-av1-hdr"}
+    hdr = by_codec["libsvtav1@svt-av1-hdr"]
+    assert hdr["adapter"] == "libsvtav1"
+    assert hdr["runtime_variant"] == "svt-av1-hdr"
+    assert hdr["ffmpeg_bin"] == "/opt/ffmpeg-hdr"
+
+
 # -----------------------------------------------------------------------------
 # ADR-0509 / BBB e2e v7 Bug #V7-1 regression tests — container-source auto-
 # probe of framerate / duration in ``_run_compare``.

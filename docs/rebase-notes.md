@@ -37846,3 +37846,38 @@ Touched files:
 `docs/ai/training-data.md` (See also section extended),
 `changelog.d/added/0640-tiny-ai-netflix-training-scaffold-2026-05-20.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0644 — vmaf-tune codec runtime variants
+
+**No upstream Netflix C-source rebase impact.** The change is confined to the
+fork-local `tools/vmaf-tune` Python CLI/report schema, usage docs, and ADR
+metadata.
+
+**Key invariants**:
+
+- `ADAPTER@VARIANT` is a compare display token. The base `ADAPTER` still routes
+  through the codec-adapter registry and FFmpeg `-c:v` encoder name.
+- `--encoder-ffmpeg-bin TOKEN=PATH` is an exact-token binding. Unknown binding
+  keys are rejected rather than silently falling back to the global
+  `--ffmpeg-bin`.
+- Compare JSON/CSV rows now include `adapter`, `runtime_variant`, and
+  `ffmpeg_bin`. Keep these fields together if future schema work touches
+  `COMPARE_ROW_KEYS`.
+
+Touched files:
+`tools/vmaf-tune/src/vmaftune/encoder_runtime.py`,
+`tools/vmaf-tune/src/vmaftune/compare.py`,
+`tools/vmaf-tune/src/vmaftune/cli.py`,
+`tools/vmaf-tune/tests/test_encoder_runtime.py`,
+`tools/vmaf-tune/tests/test_compare.py`,
+`tools/vmaf-tune/tests/test_compare_no_bisect.py`,
+`tools/vmaf-tune/tests/test_compare_rate_quality_sweep.py`,
+`tools/vmaf-tune/AGENTS.md`,
+`docs/usage/vmaf-tune.md`,
+`docs/usage/vmaf-tune-codec-adapters.md`,
+`docs/adr/0644-vmaf-tune-codec-runtime-variants.md`,
+`docs/adr/_index_fragments/0644-vmaf-tune-codec-runtime-variants.md`,
+`docs/adr/_index_fragments/_order.txt`,
+`docs/research/0644-vmaf-tune-codec-runtime-variants.md`,
+`changelog.d/added/0644-vmaf-tune-codec-runtime-variants.md`,
+`docs/rebase-notes.md` (this entry).

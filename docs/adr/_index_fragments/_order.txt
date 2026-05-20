@@ -390,3 +390,4 @@
 0640-tiny-ai-netflix-training-scaffold-2026-05-20
 0641-dev-container-encoder-probe-hardening
 0642-ai-refresh-full-feature-defaults
+0644-vmaf-tune-codec-runtime-variants

@@ -923,13 +923,27 @@ crf, vmaf_score, encode_time_ms, bitrate_kbps)` tuple, so Phase C/D
 predictors can pick whichever encoder dominates the relevant region of
 the rate-distortion plane on a given source.
 
-SVT-AV1-HDR (`juliobbv-p/svt-av1-hdr`) is **not** a separate adapter
-today. The project is an HDR-focused SVT-AV1 fork with community
-FFmpeg builds, but vmaf-tune has not yet pinned a runtime or verified
-whether FFmpeg exposes it through a distinct encoder name or the same
-`libsvtav1` wrapper. Until the runtime-variant layer lands, selecting an
-SVT-AV1-HDR-linked FFmpeg via `--ffmpeg-bin` changes the meaning of the
-existing `libsvtav1` row for the whole run.
+SVT-AV1-HDR (`juliobbv-p/svt-av1-hdr`) is a runtime variant of the
+`libsvtav1` adapter, not a separate adapter. Its FFmpeg examples still
+use `-c:v libsvtav1`; the difference is which SVT library the FFmpeg
+binary is linked against. Use `ADAPTER@VARIANT` tokens plus
+`--encoder-ffmpeg-bin` to compare mainline SVT-AV1 and SVT-AV1-HDR in
+one report:
+
+```shell
+vmaf-tune compare \
+    --src clip.mkv --width 3840 --height 2160 --pix-fmt yuv420p10le \
+    --target-vmafs 94,96,98 \
+    --encoders libsvtav1,libsvtav1@svt-av1-hdr \
+    --ffmpeg-bin /opt/ffmpeg-8.1.1-main/bin/ffmpeg \
+    --encoder-ffmpeg-bin libsvtav1@svt-av1-hdr=/opt/ffmpeg-8.1.1-svtav1-hdr/bin/ffmpeg \
+    --format json --output svtav1-vs-hdr.json
+```
+
+The row label stays human-readable (`codec = libsvtav1@svt-av1-hdr`),
+while machine-readable provenance records `adapter = libsvtav1`,
+`runtime_variant = svt-av1-hdr`, and the exact `ffmpeg_bin` path. Tokens
+without a per-token binding use the global `--ffmpeg-bin`.
 
 ## Hardware encoders (NVENC)
 
@@ -1625,6 +1639,7 @@ from the ADR-0641 profile-report path (`--format both`) and list
 | `--vmaf-model` | `vmaf_v0.6.1` | VMAF model forwarded to the scorer. |
 | `--score-backend` | scorer default | `cpu`, `cuda`, `sycl`, `vulkan`, or `auto`. |
 | `--ffmpeg-bin / --vmaf-bin` | `ffmpeg` / `vmaf` | Binary overrides. |
+| `--encoder-ffmpeg-bin ENCODER=PATH` | off | Bind one compare token to a specific FFmpeg binary. Use with `ADAPTER@VARIANT` labels such as `libsvtav1@svt-av1-hdr=/opt/ffmpeg-8.1.1-svtav1-hdr/bin/ffmpeg`; unbound tokens use `--ffmpeg-bin`. |
 | `--format` | `markdown` | One of `markdown`, `json`, `csv`, `html`, `both`. `html` and `both` render the profile-card report directly; `both` writes `.html` and `.md` next to `--output` and therefore requires `--output`. |
 | `--no-parallel` | off | Run codecs sequentially (default: thread pool, one per codec). |
 | `--max-workers N` | `len(encoders)` | Cap on the parallel thread pool. |
@@ -1638,10 +1653,14 @@ from the ADR-0641 profile-report path (`--format both`) and list
 ### `compare` output schema
 
 The JSON / CSV columns are exported as `vmaftune.compare.COMPARE_ROW_KEYS`:
-`codec`, `encoder_version`, `best_crf`, `bitrate_kbps`, `encode_time_ms`,
-`vmaf_score`, `target_vmaf`, `ok`, `error`. Failed rows trail successful
-ones in the ranking; `ok=False` rows carry a human-readable `error` and
-sentinel numerics (`-1` for `best_crf`, `NaN` for the floats).
+`codec`, `adapter`, `runtime_variant`, `ffmpeg_bin`, `encoder_version`,
+`best_crf`, `bitrate_kbps`, `encode_time_ms`, `vmaf_score`, `target_vmaf`,
+`ok`, `error`. Failed rows trail successful ones in the ranking; `ok=False`
+rows carry a human-readable `error` and sentinel numerics (`-1` for
+`best_crf`, `NaN` for the floats). `adapter`, `runtime_variant`, and
+`ffmpeg_bin` are provenance fields for `ADAPTER@VARIANT` compare runs; they
+are empty on rows produced by old programmatic predicates that do not bind a
+runtime variant.
 
 **v1 (single-target legacy)**: emitted when `--target-vmafs` is not
 passed. The JSON has no `schema_version` key; `rows` is one row per
@@ -1703,10 +1722,11 @@ vmaf-tune compare \
 **v3 (CRF-sweep, ADR-0542)**: emitted when `--no-bisect` is set.
 The JSON carries `"schema_version": 3`, `"mode": "crf_sweep"`,
 `"crf_sweep": [18, 23, 28, 33]`, and `rows` is one row per
-`(codec, crf)` pair. Each row carries `codec`, `crf`,
-`bitrate_kbps`, `vmaf_score`, `encode_time_ms`, `encoder_version`,
-`ok`, and `error`. The `--target-vmaf` / `--target-vmafs` flags are
-accepted but act as label-only knobs in this mode (they annotate
+`(codec, crf)` pair. Each row carries `codec`, `adapter`,
+`runtime_variant`, `ffmpeg_bin`, `crf`, `bitrate_kbps`, `vmaf_score`,
+`encode_time_ms`, `encoder_version`, `ok`, and `error`. The
+`--target-vmaf` / `--target-vmafs` flags are accepted but act as
+label-only knobs in this mode (they annotate
 pareto frontier markers when rendered, but do not drive the encode
 loop). CRF-sweep mode currently requires `--format json`; render the
 result with a separate downstream report step once v3 ingestion lands.

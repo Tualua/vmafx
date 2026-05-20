@@ -980,6 +980,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "comma-separated list of encoders to compare "
             "(e.g. ``libx264,libx265,libsvtav1,h264_nvenc``). "
+            "Use ADAPTER@VARIANT labels with --encoder-ffmpeg-bin for "
+            "runtime variants that share one FFmpeg encoder name "
+            "(for example libsvtav1@svt-av1-hdr). "
             "Default: the CPU encoder set ``libx265,libsvtav1`` "
             "(ADR-0641). Hardware encoders (``*_nvenc``, ``*_qsv``, ``*_amf``) "
             "are accepted; missing-encoder / no-compatible-GPU rows are "
@@ -1087,6 +1090,18 @@ def _build_parser() -> argparse.ArgumentParser:
         help="libvmaf score backend for the bisect scorer",
     )
     compare.add_argument("--ffmpeg-bin", default="ffmpeg", help="ffmpeg binary")
+    compare.add_argument(
+        "--encoder-ffmpeg-bin",
+        action="append",
+        default=None,
+        metavar="ENCODER=PATH",
+        help=(
+            "bind one compare encoder token to a specific FFmpeg binary. "
+            "Use with ADAPTER@VARIANT tokens, for example "
+            "libsvtav1@svt-av1-hdr=/opt/ffmpeg-svtav1-hdr/bin/ffmpeg. "
+            "Unbound tokens use --ffmpeg-bin."
+        ),
+    )
     compare.add_argument("--vmaf-bin", default="vmaf", help="vmaf binary")
     compare.add_argument(
         "--predicate-module",
@@ -2898,6 +2913,7 @@ def _run_compare(args: argparse.Namespace) -> int:
         probe_encoder_available,
         supported_formats,
     )
+    from .encoder_runtime import EncoderRuntimeSpec, resolve_encoder_runtime_specs
     from .score import VMAF_RAW_SUFFIXES, _decode_to_raw_yuv  # noqa: PLC0415
 
     # ADR-0601: resolve the VA-API render-node for QSV device init.
@@ -2912,10 +2928,39 @@ def _run_compare(args: argparse.Namespace) -> int:
     # decision set when omitted. Legacy x264/VP9 BBB sweeps remain
     # available only when listed explicitly.
     encoders_raw = args.encoders if args.encoders is not None else ",".join(DEFAULT_CPU_ENCODERS)
-    encoders = [token.strip() for token in encoders_raw.split(",") if token.strip()]
-    if not encoders:
+    encoder_tokens = [token.strip() for token in encoders_raw.split(",") if token.strip()]
+    if not encoder_tokens:
         sys.stderr.write("vmaf-tune compare: --encoders is empty\n")
         return 2
+    try:
+        runtime_specs = resolve_encoder_runtime_specs(
+            encoder_tokens,
+            ffmpeg_bin=args.ffmpeg_bin,
+            encoder_ffmpeg_bins=getattr(args, "encoder_ffmpeg_bin", ()),
+        )
+    except ValueError as exc:
+        sys.stderr.write(f"vmaf-tune compare: {exc}\n")
+        return 2
+    encoders = [spec.token for spec in runtime_specs]
+    runtime_by_token = {spec.token: spec for spec in runtime_specs}
+
+    def _annotate_runtime_result(result, spec: EncoderRuntimeSpec):
+        return dataclasses.replace(
+            result,
+            codec=spec.token,
+            adapter=spec.adapter,
+            runtime_variant=spec.variant,
+            ffmpeg_bin=spec.ffmpeg_bin,
+        )
+
+    def _runtime_row_metadata(codec: str) -> dict[str, str]:
+        spec = runtime_by_token[codec]
+        return {
+            "adapter": spec.adapter,
+            "runtime_variant": spec.variant,
+            "ffmpeg_bin": spec.ffmpeg_bin,
+        }
+
     _profile_formats = ("html", "both")
     _supported_compare_formats = (*supported_formats(), *_profile_formats)
     if args.format not in _supported_compare_formats:
@@ -2958,7 +3003,7 @@ def _run_compare(args: argparse.Namespace) -> int:
                 "emit --format json and pass it to vmaf-tune report.\n"
             )
             return 2
-        return _run_compare_crf_sweep(args, encoders)
+        return _run_compare_crf_sweep(args, encoders, runtime_specs=runtime_specs)
 
     # ADR-0516: ``--target-vmafs`` parses to a list of floats; falls
     # back to ``[--target-vmaf]`` (single-target legacy path) when the
@@ -2991,13 +3036,19 @@ def _run_compare(args: argparse.Namespace) -> int:
     sweep_predicate = None
     if args.predicate_module:
         try:
-            predicate = _load_compare_predicate(args.predicate_module)
+            loaded_predicate = _load_compare_predicate(args.predicate_module)
             # For sweeps, the same module-level predicate accepts the
             # per-call target_vmaf — no extra binding needed.
-            sweep_predicate = predicate
         except (AttributeError, ImportError, ValueError) as exc:
             sys.stderr.write(f"vmaf-tune compare: invalid --predicate-module: {exc}\n")
             return 2
+
+        def _predicate_module_dispatcher(codec: str, src_, target_: float):
+            spec = runtime_by_token[codec]
+            return _annotate_runtime_result(loaded_predicate(codec, src_, target_), spec)
+
+        predicate = _predicate_module_dispatcher
+        sweep_predicate = _predicate_module_dispatcher
     else:
         # Container-source auto-probe (ADR-0509 / BBB e2e v7 Bug #V7-1).
         # ``_framerate_was_default`` / ``_duration_was_default`` are
@@ -3066,7 +3117,7 @@ def _run_compare(args: argparse.Namespace) -> int:
                 sys.stderr.write(f"vmaf-tune compare: --fast-nr: {exc}\n")
                 return 2
 
-        def _build_bisect_for_target(target: float):
+        def _build_bisect_for_target(target: float, *, ffmpeg_bin: str):
             return make_bisect_predicate(
                 target_vmaf=target,
                 width=resolved_w,
@@ -3080,7 +3131,7 @@ def _run_compare(args: argparse.Namespace) -> int:
                 max_iterations=args.max_iterations,
                 vmaf_model=_resolve_vmaf_model(args),
                 score_backend=score_backend,
-                ffmpeg_bin=args.ffmpeg_bin,
+                ffmpeg_bin=ffmpeg_bin,
                 vmaf_bin=args.vmaf_bin,
                 workdir=_compare_workdir,
                 decode_semaphore=_decode_sem,
@@ -3093,14 +3144,21 @@ def _run_compare(args: argparse.Namespace) -> int:
         # per distinct target VMAF, so the cross-product (codec x
         # target) still gets the right ``make_bisect_predicate`` for
         # each rung.
-        predicate = _build_bisect_for_target(float(args.target_vmaf))
-        _bisect_cache: dict[float, object] = {}
+        _bisect_cache: dict[tuple[str, float], object] = {}
 
         def _sweep_dispatcher(codec, src_, target_):
-            if target_ not in _bisect_cache:
-                _bisect_cache[target_] = _build_bisect_for_target(float(target_))
-            return _bisect_cache[target_](codec, src_, target_)  # type: ignore[operator]
+            spec = runtime_by_token[codec]
+            target_f = float(target_)
+            cache_key = (spec.ffmpeg_bin, target_f)
+            if cache_key not in _bisect_cache:
+                _bisect_cache[cache_key] = _build_bisect_for_target(
+                    target_f,
+                    ffmpeg_bin=spec.ffmpeg_bin,
+                )
+            result = _bisect_cache[cache_key](spec.adapter, src_, target_)  # type: ignore[operator]
+            return _annotate_runtime_result(result, spec)
 
+        predicate = _sweep_dispatcher
         sweep_predicate = _sweep_dispatcher
 
     # ADR-0607: decode the reference YUV exactly once for the entire compare
@@ -3197,9 +3255,10 @@ def _run_compare(args: argparse.Namespace) -> int:
             else:
 
                 def _probe(codec: str) -> tuple[bool, str]:
+                    spec = runtime_by_token[codec]
                     return probe_encoder_available(
-                        codec,
-                        ffmpeg_bin=args.ffmpeg_bin,
+                        spec.adapter,
+                        ffmpeg_bin=spec.ffmpeg_bin,
                         vaapi_device=vaapi_device,
                     )
 
@@ -3212,6 +3271,7 @@ def _run_compare(args: argparse.Namespace) -> int:
                 predicate=sweep_predicate,
                 availability_probe=_probe,
                 pre_decoded_ref=_pre_decoded_ref,
+                row_metadata=_runtime_row_metadata,
             )
             if args.format in _profile_formats:
                 outputs = _write_compare_profile_report(args, sweep_report=sweep)
@@ -3243,6 +3303,7 @@ def _run_compare(args: argparse.Namespace) -> int:
             max_workers=args.max_workers,
             predicate=predicate,
             pre_decoded_ref=_pre_decoded_ref,
+            row_metadata=_runtime_row_metadata,
         )
         if args.format in _profile_formats:
             outputs = _write_compare_profile_report(args, comparison_report=report)
@@ -3369,7 +3430,12 @@ def _write_compare_profile_report(
     return outputs
 
 
-def _run_compare_crf_sweep(args: argparse.Namespace, encoders: list[str]) -> int:
+def _run_compare_crf_sweep(
+    args: argparse.Namespace,
+    encoders: list[str],
+    *,
+    runtime_specs: tuple[Any, ...] | None = None,
+) -> int:
     """CRF-sweep mode for ``compare --no-bisect`` (ADR-0542).
 
     Encodes each ``(codec, CRF)`` pair from ``--crf-sweep`` exactly once via
@@ -3389,6 +3455,7 @@ def _run_compare_crf_sweep(args: argparse.Namespace, encoders: list[str]) -> int
     from .bisect import _encode_and_score  # noqa: PLC0415
     from .codec_adapters import get_adapter  # noqa: PLC0415
     from .compare import DEFAULT_VAAPI_DEVICE, probe_encoder_available  # noqa: PLC0415
+    from .encoder_runtime import resolve_encoder_runtime_specs  # noqa: PLC0415
 
     # ADR-0601: resolve the VA-API render-node for QSV device init.
     _vaapi_device: str = (
@@ -3396,6 +3463,17 @@ def _run_compare_crf_sweep(args: argparse.Namespace, encoders: list[str]) -> int
         or os.environ.get("VMAFTUNE_VAAPI_DEVICE", "")
         or DEFAULT_VAAPI_DEVICE
     )
+    if runtime_specs is None:
+        try:
+            runtime_specs = resolve_encoder_runtime_specs(
+                encoders,
+                ffmpeg_bin=getattr(args, "ffmpeg_bin", "ffmpeg"),
+                encoder_ffmpeg_bins=getattr(args, "encoder_ffmpeg_bin", ()),
+            )
+        except ValueError as exc:
+            sys.stderr.write(f"vmaf-tune compare --no-bisect: {exc}\n")
+            return 2
+    runtime_by_token = {spec.token: spec for spec in runtime_specs}
 
     # Parse --crf-sweep (required in this mode).
     crf_sweep_raw = getattr(args, "crf_sweep", None)
@@ -3437,18 +3515,22 @@ def _run_compare_crf_sweep(args: argparse.Namespace, encoders: list[str]) -> int
 
     # Probe encoder availability once per codec (mirrors the bisect path).
     availability: dict[str, tuple[bool, str]] = {}
-    for enc in encoders:
-        availability[enc] = probe_encoder_available(
-            enc,
-            ffmpeg_bin=args.ffmpeg_bin,
+    for spec in runtime_specs:
+        availability[spec.token] = probe_encoder_available(
+            spec.adapter,
+            ffmpeg_bin=spec.ffmpeg_bin,
             vaapi_device=_vaapi_device,
         )
 
     def _encode_one(codec: str, crf: int) -> dict:
+        spec = runtime_by_token[codec]
         avail, reason = availability[codec]
         if not avail:
             return {
                 "codec": codec,
+                "adapter": spec.adapter,
+                "runtime_variant": spec.variant,
+                "ffmpeg_bin": spec.ffmpeg_bin,
                 "crf": crf,
                 "bitrate_kbps": float("nan"),
                 "vmaf_score": float("nan"),
@@ -3457,7 +3539,7 @@ def _run_compare_crf_sweep(args: argparse.Namespace, encoders: list[str]) -> int
                 "ok": False,
                 "error": reason,
             }
-        adapter = get_adapter(codec)
+        adapter = get_adapter(spec.adapter)
         # ADR-0549: honour --workdir / VMAFTUNE_WORKDIR so the sweep
         # decode artefacts land on a volume with sufficient free space
         # rather than the 8 GB /tmp tmpfs inside the dev-mcp container.
@@ -3470,7 +3552,7 @@ def _run_compare_crf_sweep(args: argparse.Namespace, encoders: list[str]) -> int
         with tempfile.TemporaryDirectory(prefix="vmaf-tune-crf-sweep-", dir=_sweep_parent) as _wd:
             result = _encode_and_score(
                 src=src_path,
-                codec=codec,
+                codec=spec.adapter,
                 adapter=adapter,
                 preset=args.preset,
                 crf=crf,
@@ -3482,12 +3564,15 @@ def _run_compare_crf_sweep(args: argparse.Namespace, encoders: list[str]) -> int
                 sample_clip_seconds=getattr(args, "sample_clip_seconds", 0.0),
                 vmaf_model=_resolve_vmaf_model(args),
                 score_backend=score_backend,
-                ffmpeg_bin=args.ffmpeg_bin,
+                ffmpeg_bin=spec.ffmpeg_bin,
                 vmaf_bin=args.vmaf_bin,
                 workdir=Path(_wd),
             )
         return {
             "codec": codec,
+            "adapter": spec.adapter,
+            "runtime_variant": spec.variant,
+            "ffmpeg_bin": spec.ffmpeg_bin,
             "crf": crf,
             "bitrate_kbps": result.bitrate_kbps,
             "vmaf_score": result.measured_vmaf,

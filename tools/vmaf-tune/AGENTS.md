@@ -90,6 +90,18 @@ for the option-space digest.
   that tuple; the encoder will then automatically pay the dummy-encode
   cost on every `compare` invocation. CPU encoders short-circuit
   after the `ffmpeg -encoders` listing grep.
+- **Compare runtime variants are labels, not adapters
+  ([ADR-0644](../../docs/adr/0644-vmaf-tune-codec-runtime-variants.md)).**
+  `ADAPTER@VARIANT` tokens in `vmaf-tune compare` must parse through
+  `encoder_runtime.resolve_encoder_runtime_specs()`. The base
+  `ADAPTER` routes through `codec_adapters.get_adapter()` and
+  `probe_encoder_available()`; the full token is only the display
+  label and the key for `--encoder-ffmpeg-bin TOKEN=PATH`. Do not add
+  fake adapters such as `libsvtav1-hdr` when FFmpeg still exposes
+  `-c:v libsvtav1`. Compare JSON/CSV rows must keep `codec` (display
+  token), `adapter`, `runtime_variant`, and `ffmpeg_bin` together so
+  encoder-profile consumers can audit which runtime produced each
+  row.
 
 - **`_QSV_ENCODERS` and `BaseQsvAdapter.qsv_hw_init_args()` must stay
   in sync (ADR-0601).** `compare._hw_init_args_for_encoder()` injects

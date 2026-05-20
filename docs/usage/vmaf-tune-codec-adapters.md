@@ -19,6 +19,15 @@ vmaf-tune corpus --encoder <adapter-name> ...
 `--encoder` multiple times to fan a single source out across several
 encoders in one corpus row.
 
+`vmaf-tune compare` also accepts runtime-variant display tokens of the
+form `ADAPTER@VARIANT`. The part before `@` is still the adapter slug
+from this table; the variant suffix is a report label and runtime
+binding key. Use `--encoder-ffmpeg-bin ADAPTER@VARIANT=/path/to/ffmpeg`
+when two rows use the same FFmpeg encoder name through different FFmpeg
+builds, for example mainline `libsvtav1` vs `libsvtav1@svt-av1-hdr`.
+Corpus JSONL generation does not use this suffix yet; it still records
+one real adapter name per row.
+
 ## Adapter matrix
 
 | `--encoder` value   | Codec | Backend | ADR                                                        | Status           | Two-pass | Notes                                                     |

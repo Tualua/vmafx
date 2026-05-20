@@ -43,13 +43,14 @@ import io
 import json
 import math
 import time
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
 from . import __version__ as TOOL_VERSION
 from .codec_adapters import known_codecs
+from .encoder_runtime import parse_encoder_runtime_token
 from .hw_devices import AUTO_VAAPI_DEVICE, resolve_vaapi_device
 
 # Keys exposed to programmatic consumers. Mirrors the CORPUS_ROW_KEYS
@@ -57,6 +58,9 @@ from .hw_devices import AUTO_VAAPI_DEVICE, resolve_vaapi_device
 # coordinated change.
 COMPARE_ROW_KEYS: tuple[str, ...] = (
     "codec",
+    "adapter",
+    "runtime_variant",
+    "ffmpeg_bin",
     "encoder_version",
     "best_crf",
     "bitrate_kbps",
@@ -95,10 +99,16 @@ class RecommendResult:
     ok: bool = True
     error: str = ""
     bisect_samples: tuple[dict[str, Any], ...] = ()
+    adapter: str = ""
+    runtime_variant: str = ""
+    ffmpeg_bin: str = ""
 
     def to_row(self, target_vmaf: float) -> dict[str, Any]:
         row: dict[str, Any] = {
             "codec": self.codec,
+            "adapter": self.adapter,
+            "runtime_variant": self.runtime_variant,
+            "ffmpeg_bin": self.ffmpeg_bin,
             "encoder_version": self.encoder_version,
             "best_crf": self.best_crf,
             "bitrate_kbps": self.bitrate_kbps,
@@ -141,6 +151,25 @@ class ComparisonReport:
 
 
 PredicateFn = Callable[[str, Path, float], RecommendResult]
+RowMetadataFn = Callable[[str], Mapping[str, str]]
+
+
+def _apply_row_metadata(
+    codec: str,
+    result: RecommendResult,
+    row_metadata: RowMetadataFn | None,
+) -> RecommendResult:
+    """Attach compare-row provenance for CLI runtime variants."""
+    if row_metadata is None:
+        return result
+    meta = dict(row_metadata(codec))
+    return dataclasses.replace(
+        result,
+        codec=codec,
+        adapter=meta.get("adapter", result.adapter),
+        runtime_variant=meta.get("runtime_variant", result.runtime_variant),
+        ffmpeg_bin=meta.get("ffmpeg_bin", result.ffmpeg_bin),
+    )
 
 
 def _default_predicate(codec: str, src: Path, target_vmaf: float) -> RecommendResult:
@@ -204,6 +233,7 @@ def compare_codecs(
     parallel: bool = True,
     max_workers: int | None = None,
     pre_decoded_ref: "Path | None" = None,
+    row_metadata: RowMetadataFn | None = None,
 ) -> ComparisonReport:
     """Run ``predicate`` per codec and rank by smallest bitrate.
 
@@ -238,9 +268,33 @@ def compare_codecs(
             for fut in as_completed(futures):
                 codec = futures[fut]
                 try:
-                    results.append(fut.result())
+                    results.append(_apply_row_metadata(codec, fut.result(), row_metadata))
                 except Exception as exc:  # noqa: BLE001 — surface the error verbatim
                     results.append(
+                        _apply_row_metadata(
+                            codec,
+                            RecommendResult(
+                                codec=codec,
+                                best_crf=-1,
+                                bitrate_kbps=float("nan"),
+                                encode_time_ms=float("nan"),
+                                vmaf_score=float("nan"),
+                                ok=False,
+                                error=f"{type(exc).__name__}: {exc}",
+                            ),
+                            row_metadata,
+                        )
+                    )
+    else:
+        for codec in encoders:
+            try:
+                results.append(
+                    _apply_row_metadata(codec, pred(codec, worker_src, target_vmaf), row_metadata)
+                )
+            except Exception as exc:  # noqa: BLE001
+                results.append(
+                    _apply_row_metadata(
+                        codec,
                         RecommendResult(
                             codec=codec,
                             best_crf=-1,
@@ -249,22 +303,8 @@ def compare_codecs(
                             vmaf_score=float("nan"),
                             ok=False,
                             error=f"{type(exc).__name__}: {exc}",
-                        )
-                    )
-    else:
-        for codec in encoders:
-            try:
-                results.append(pred(codec, worker_src, target_vmaf))
-            except Exception as exc:  # noqa: BLE001
-                results.append(
-                    RecommendResult(
-                        codec=codec,
-                        best_crf=-1,
-                        bitrate_kbps=float("nan"),
-                        encode_time_ms=float("nan"),
-                        vmaf_score=float("nan"),
-                        ok=False,
-                        error=f"{type(exc).__name__}: {exc}",
+                        ),
+                        row_metadata,
                     )
                 )
 
@@ -576,6 +616,9 @@ def probe_encoder_available(
     import shlex
     import subprocess
 
+    encoder_spec = parse_encoder_runtime_token(encoder, ffmpeg_bin=ffmpeg_bin)
+    adapter_encoder = encoder_spec.adapter
+
     def _default_runner(argv: Sequence[str], timeout: float = 30.0):
         return subprocess.run(  # noqa: S603 — argv is internal, no shell
             argv,
@@ -600,8 +643,10 @@ def probe_encoder_available(
         out_str = out.decode("utf-8", errors="replace")
     else:
         out_str = str(out)
-    if not _encoder_listed(out_str, encoder):
-        return False, f"hardware encoder not available: {encoder} not compiled into ffmpeg"
+    if not _encoder_listed(out_str, adapter_encoder):
+        return False, (
+            f"hardware encoder not available: {adapter_encoder} not compiled into ffmpeg"
+        )
 
     # Stage 2 (hardware only): dummy 1-frame encode. The probe argv
     # uses lavfi ``nullsrc`` so it doesn't depend on any input file
@@ -612,11 +657,11 @@ def probe_encoder_available(
     # (NVENC, QSV, AMF) reject 64x64 with -22 (EINVAL) because their
     # fixed-function encode blocks enforce a minimum resolution
     # (NVENC: 145x49; QSV: 128x96). 320x240 clears every known minimum.
-    if encoder in HARDWARE_ENCODERS:
+    if adapter_encoder in HARDWARE_ENCODERS:
         # ADR-0601 Bug V14-B: QSV requires hardware-device init flags
         # before the input and an hwupload filter before the encoder.
         # NVENC and AMF need no pre-input device-init.
-        pre_input_args = _hw_init_args_for_encoder(encoder, vaapi_device)
+        pre_input_args = _hw_init_args_for_encoder(adapter_encoder, vaapi_device)
         argv = [
             ffmpeg_bin,
             "-hide_banner",
@@ -630,13 +675,13 @@ def probe_encoder_available(
             "-frames:v",
             "1",
         ]
-        if encoder in _QSV_ENCODERS:
+        if adapter_encoder in _QSV_ENCODERS:
             argv += ["-vf", "format=nv12,hwupload=extra_hw_frames=64"]
-        argv += ["-c:v", encoder, "-f", "null", "-"]
+        argv += ["-c:v", adapter_encoder, "-f", "null", "-"]
         try:
             probe = run(argv)
         except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-            return False, f"hardware encoder not available: {encoder} probe failed: {exc}"
+            return False, (f"hardware encoder not available: {adapter_encoder} probe failed: {exc}")
         rc = getattr(probe, "returncode", -1)
         if rc != 0:
             tail = getattr(probe, "stdout", b"") or b""
@@ -645,7 +690,7 @@ def probe_encoder_available(
             )
             last_line = _probe_error_line(tail_str)
             return False, (
-                f"hardware encoder not available: {encoder} dummy encode failed "
+                f"hardware encoder not available: {adapter_encoder} dummy encode failed "
                 f"(argv={shlex.join(argv)!r}): {last_line}"
             )
 
@@ -681,6 +726,7 @@ def compare_codecs_sweep(
     max_workers: int | None = None,
     availability_probe: Callable[[str], tuple[bool, str]] | None = None,
     pre_decoded_ref: "Path | None" = None,
+    row_metadata: RowMetadataFn | None = None,
 ) -> SweepReport:
     """Run ``predicate`` across the cross-product of codecs x targets.
 
@@ -732,14 +778,18 @@ def compare_codecs_sweep(
     for i, (codec, target) in enumerate(pairs):
         ok, reason = availability[codec]
         if not ok:
-            results[i] = RecommendResult(
-                codec=codec,
-                best_crf=-1,
-                bitrate_kbps=float("nan"),
-                encode_time_ms=float("nan"),
-                vmaf_score=float("nan"),
-                ok=False,
-                error=reason,
+            results[i] = _apply_row_metadata(
+                codec,
+                RecommendResult(
+                    codec=codec,
+                    best_crf=-1,
+                    bitrate_kbps=float("nan"),
+                    encode_time_ms=float("nan"),
+                    vmaf_score=float("nan"),
+                    ok=False,
+                    error=reason,
+                ),
+                row_metadata,
             )
         else:
             dispatch_pairs.append((i, codec, target))
@@ -754,9 +804,33 @@ def compare_codecs_sweep(
             for fut in as_completed(futures):
                 i, codec = futures[fut]
                 try:
-                    results[i] = fut.result()
+                    results[i] = _apply_row_metadata(codec, fut.result(), row_metadata)
                 except Exception as exc:  # noqa: BLE001
-                    results[i] = RecommendResult(
+                    results[i] = _apply_row_metadata(
+                        codec,
+                        RecommendResult(
+                            codec=codec,
+                            best_crf=-1,
+                            bitrate_kbps=float("nan"),
+                            encode_time_ms=float("nan"),
+                            vmaf_score=float("nan"),
+                            ok=False,
+                            error=f"{type(exc).__name__}: {exc}",
+                        ),
+                        row_metadata,
+                    )
+    else:
+        for i, codec, target in dispatch_pairs:
+            try:
+                results[i] = _apply_row_metadata(
+                    codec,
+                    pred(codec, worker_src, target),
+                    row_metadata,
+                )
+            except Exception as exc:  # noqa: BLE001
+                results[i] = _apply_row_metadata(
+                    codec,
+                    RecommendResult(
                         codec=codec,
                         best_crf=-1,
                         bitrate_kbps=float("nan"),
@@ -764,20 +838,8 @@ def compare_codecs_sweep(
                         vmaf_score=float("nan"),
                         ok=False,
                         error=f"{type(exc).__name__}: {exc}",
-                    )
-    else:
-        for i, codec, target in dispatch_pairs:
-            try:
-                results[i] = pred(codec, worker_src, target)
-            except Exception as exc:  # noqa: BLE001
-                results[i] = RecommendResult(
-                    codec=codec,
-                    best_crf=-1,
-                    bitrate_kbps=float("nan"),
-                    encode_time_ms=float("nan"),
-                    vmaf_score=float("nan"),
-                    ok=False,
-                    error=f"{type(exc).__name__}: {exc}",
+                    ),
+                    row_metadata,
                 )
 
     return SweepReport(

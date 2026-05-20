@@ -126,6 +126,28 @@ def test_sweep_unavailable_encoder_gets_skip_reason_row():
     assert "hardware encoder not available" in by_codec["h264_nvenc"].error
 
 
+def test_sweep_unavailable_runtime_variant_keeps_metadata():
+    sweep = compare_codecs_sweep(
+        src=Path("ref.yuv"),
+        target_vmafs=(90.0,),
+        encoders=("libsvtav1@svt-av1-hdr",),
+        predicate=_fake_predicate,
+        availability_probe=lambda _codec: (False, "not compiled"),
+        row_metadata=lambda _codec: {
+            "adapter": "libsvtav1",
+            "runtime_variant": "svt-av1-hdr",
+            "ffmpeg_bin": "/opt/ffmpeg-hdr",
+        },
+    )
+
+    row = sweep.rows[0]
+    assert row.codec == "libsvtav1@svt-av1-hdr"
+    assert row.adapter == "libsvtav1"
+    assert row.runtime_variant == "svt-av1-hdr"
+    assert row.ffmpeg_bin == "/opt/ffmpeg-hdr"
+    assert row.ok is False
+
+
 def test_sweep_empty_encoder_list_raises():
     with pytest.raises(ValueError):
         compare_codecs_sweep(
@@ -265,6 +287,28 @@ def test_probe_encoder_available_returns_true_for_listed_cpu_encoder():
     ok, reason = probe_encoder_available("libx264", runner=runner)
     assert ok is True
     assert reason == ""
+
+
+def test_probe_encoder_available_accepts_runtime_variant_token():
+    calls: list[list[str]] = []
+
+    def runner(argv, timeout=30.0):
+        class _R:
+            stdout = b" V..... libsvtav1          SVT-AV1 encoder\n"
+            returncode = 0
+
+        calls.append(list(argv))
+        return _R()
+
+    ok, reason = probe_encoder_available(
+        "libsvtav1@svt-av1-hdr",
+        ffmpeg_bin="/opt/ffmpeg-hdr",
+        runner=runner,
+    )
+
+    assert ok is True
+    assert reason == ""
+    assert calls == [["/opt/ffmpeg-hdr", "-hide_banner", "-encoders"]]
 
 
 def test_probe_encoder_available_returns_false_when_not_compiled():

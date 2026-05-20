@@ -278,3 +278,65 @@ def test_no_bisect_unavailable_encoder_gets_error_rows(monkeypatch, tmp_path):
     assert len(nvenc_rows) == 2  # one per CRF
     assert all(not r["ok"] for r in nvenc_rows)
     assert all("hardware encoder not available" in r["error"] for r in nvenc_rows)
+
+
+def test_no_bisect_runtime_variant_uses_bound_ffmpeg(monkeypatch, tmp_path):
+    """CRF-sweep mode keeps display tokens while encoding through the base adapter."""
+    src = tmp_path / "ref.yuv"
+    src.write_bytes(b"\x00" * 100)
+    out = tmp_path / "sweep.json"
+    args = _make_compare_args(
+        src,
+        output=out,
+        crf_sweep="23",
+        encoders="libsvtav1,libsvtav1@svt-av1-hdr",
+        ffmpeg_bin="/opt/ffmpeg-main",
+        encoder_ffmpeg_bin=("libsvtav1@svt-av1-hdr=/opt/ffmpeg-hdr",),
+    )
+
+    calls: list[tuple[str, str]] = []
+
+    def _fake(*, codec, crf, ffmpeg_bin, **kwargs) -> BisectResult:
+        calls.append((codec, ffmpeg_bin))
+        return BisectResult(
+            codec=codec,
+            best_crf=int(crf),
+            measured_vmaf=94.0,
+            bitrate_kbps=1500.0 if ffmpeg_bin.endswith("ffmpeg-hdr") else 1700.0,
+            encode_time_ms=500.0,
+            n_iterations=1,
+            encoder_version=f"{codec}:{Path(ffmpeg_bin).name}",
+            ok=True,
+            error="",
+        )
+
+    import vmaftune.bisect as _b  # noqa: PLC0415
+
+    monkeypatch.setattr(_b, "_encode_and_score", _fake)
+
+    probes: list[tuple[str, str]] = []
+    from vmaftune import compare as _cmp  # noqa: PLC0415
+
+    def _probe(enc, **kw):
+        probes.append((enc, kw["ffmpeg_bin"]))
+        return (True, "")
+
+    monkeypatch.setattr(_cmp, "probe_encoder_available", _probe)
+
+    rc = cli._run_compare_crf_sweep(args, ["libsvtav1", "libsvtav1@svt-av1-hdr"])
+    assert rc == 0
+    assert calls == [
+        ("libsvtav1", "/opt/ffmpeg-main"),
+        ("libsvtav1", "/opt/ffmpeg-hdr"),
+    ]
+    assert probes == [
+        ("libsvtav1", "/opt/ffmpeg-main"),
+        ("libsvtav1", "/opt/ffmpeg-hdr"),
+    ]
+
+    payload = json.loads(out.read_text())
+    by_codec = {row["codec"]: row for row in payload["rows"]}
+    assert set(by_codec) == {"libsvtav1", "libsvtav1@svt-av1-hdr"}
+    assert by_codec["libsvtav1@svt-av1-hdr"]["adapter"] == "libsvtav1"
+    assert by_codec["libsvtav1@svt-av1-hdr"]["runtime_variant"] == "svt-av1-hdr"
+    assert by_codec["libsvtav1@svt-av1-hdr"]["ffmpeg_bin"] == "/opt/ffmpeg-hdr"
