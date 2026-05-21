@@ -228,6 +228,26 @@ Add a model to `model/tiny/registry.json` per ADR-0211.
 | `--train-config PATH` | Training-config path |
 | `--manifest PATH` | Optional supplementary manifest |
 
+## JSON report provenance
+
+Every `vmaf-train` subcommand that writes a durable JSON report via `--json`
+adds an ADR-0661 `run_provenance` block. This currently covers
+`validate-norm`, `profile`, `audit-learned-filter`, `quantize-int8`,
+`cross-backend`, and `bisect-model-quality`.
+
+The block records:
+
+- `entrypoint`: `ai/src/vmaf_train/cli.py` plus a SHA-256 of the CLI file.
+- `argv` and `args`: the invoked command arguments and parsed option values.
+- `inputs`: the model, feature table, calibration table, frame corpus, or model
+  list used by the report.
+- `outputs`: the JSON report path, plus generated model outputs where the
+  command writes one, such as `quantize-int8 --output`.
+
+Use that block when attaching reports to model cards, promotion PRs, or
+regression investigations; it is the reproducibility pointer for the exact
+files and thresholds behind the table.
+
 ## Common workflows
 
 ### From scratch: train + register a new fr_regressor

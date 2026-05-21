@@ -45,6 +45,11 @@ The ensemble LOSO trainer (`train_fr_regressor_v2_ensemble_loso.py`) records
 the same block in each `loso_seed{N}.json` report so the per-seed gate inputs
 identify the corpus JSONL, training hyperparameters, argv, and report target
 before the validator aggregates them.
+The `vmaf-train` CLI (`ai/src/vmaf_train/cli.py`) records the same block in
+durable `--json` reports for `validate-norm`, `profile`,
+`audit-learned-filter`, `quantize-int8`, `cross-backend`, and
+`bisect-model-quality`, including the model/feature/calibration inputs,
+parsed thresholds, JSON target, and generated model output where applicable.
 Legacy evaluation reports (`eval_loso_mlp_small.py`, `eval_loso_3arch.py`,
 `eval_probabilistic_proxy.py`, and `eval_saliency_per_mb.py`) also adopt the
 same schema when they emit durable JSON so old model-card evidence and
@@ -74,6 +79,7 @@ label/score inputs, report thresholds, output targets, and argv.
 | Leave table materializers out of ADR-0661 | Smaller scope | Recreates the exact blind spot that made refreshed MOS/saliency/second-opinion tables hard to audit | Materialized feature tables are durable AI inputs, so their audit JSON belongs in the same provenance family |
 | Leave ensemble seed export sidecars as legacy JSON | No model-file delta unless seeds are refreshed | Fresh production seed sidecars would still lack corpus/verdict/argv lineage | Rejected because the exporter is the promotion boundary from gate evidence to shipped ONNXs |
 | Leave ensemble LOSO reports as legacy JSON | Smaller trainer diff | Validator verdicts would carry provenance, but their source `loso_seed{N}.json` files would still be opaque | Rejected because seed reports are the durable gate inputs and often outlive the validator run |
+| Leave `vmaf-train --json` reports as plain JSON | No CLI helper diff | Model-card evidence from the user-facing CLI still loses input/threshold lineage | Rejected because these reports are the operator-facing promotion/audit artifacts |
 
 ## Consequences
 
@@ -92,6 +98,8 @@ label/score inputs, report thresholds, output targets, and argv.
   and corpus identity that justified shipping the exported ONNXs.
 - **Positive**: ensemble LOSO seed reports now preserve the exact corpus,
   argv, and training arguments that produced validator gate inputs.
+- **Positive**: `vmaf-train --json` reports now carry the same reproducibility
+  context as the script-family artifacts they complement.
 - **Positive**: CHUG manifests stay CHUG-named even though the implementation
   shares the KonViD training loop.
 - **Negative**: sidecars become slightly larger and include local path names.

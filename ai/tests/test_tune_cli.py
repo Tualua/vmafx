@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -119,3 +120,51 @@ def test_tune_cli_invokes_sweep(monkeypatch, tmp_path: Path) -> None:
         }
     ]
     assert "Sweep done" in result.output
+
+
+def test_validate_norm_json_records_run_provenance(monkeypatch, tmp_path: Path) -> None:
+    model = tmp_path / "model.json"
+    features = tmp_path / "features.parquet"
+    out_json = tmp_path / "norm.json"
+    model.write_text("{}", encoding="utf-8")
+    features.write_text("not a real parquet; validate_norm is stubbed", encoding="utf-8")
+
+    class Report:
+        ok = True
+
+        def to_dict(self) -> dict[str, object]:
+            return {"ok": True, "warnings": []}
+
+    monkeypatch.setitem(
+        sys.modules,
+        "ai.src.vmaf_train.validate_norm",
+        SimpleNamespace(
+            validate_norm=lambda _model, _features: Report(),
+            render_table=lambda _report: "norm-ok",
+        ),
+    )
+
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "validate-norm",
+            "--model",
+            str(model),
+            "--features",
+            str(features),
+            "--json",
+            str(out_json),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(out_json.read_text(encoding="utf-8"))
+    provenance = payload["run_provenance"]
+    assert provenance["schema"] == "ai-run-provenance-v1"
+    assert provenance["entrypoint"]["path"] == "ai/src/vmaf_train/cli.py"
+    assert provenance["args"]["model"] == str(model)
+    assert provenance["args"]["features"] == str(features)
+    assert provenance["args"]["fail_on_warning"] is False
+    assert provenance["inputs"]["model"]["kind"] == "file"
+    assert provenance["inputs"]["features"]["kind"] == "file"
+    assert provenance["outputs"]["json_report"] == str(out_json)

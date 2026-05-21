@@ -10,6 +10,7 @@ Subcommands:
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Optional
@@ -17,9 +18,39 @@ from typing import Any, Optional
 import typer
 from rich.console import Console
 
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[3]
+if str(REPO_ROOT / "ai" / "src") not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
+
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 console = Console()
 DEFAULT_VMAF_BINARY = Path("libvmaf") / "build-cpu" / "tools" / "vmaf"
+
+
+def _write_cli_report_json(
+    path: Path,
+    payload: dict[str, Any],
+    *,
+    args: dict[str, Any],
+    inputs: dict[str, Any],
+    outputs: dict[str, Any] | None = None,
+) -> None:
+    """Write a vmaf-train JSON report with ADR-0661 run provenance."""
+    report_outputs = {"json_report": str(path)}
+    if outputs:
+        report_outputs.update(outputs)
+    payload["run_provenance"] = build_run_provenance(
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=sys.argv[1:],
+        args=args,
+        inputs=inputs,
+        outputs=report_outputs,
+    )
+    write_manifest_json(path, payload)
 
 
 @app.command("extract-features")
@@ -319,14 +350,22 @@ def validate_norm_cmd(
     mean. Catches the "trained on dataset A, deployed on dataset B"
     class of silent correctness bug.
     """
-    import json as _json
-
     from .validate_norm import render_table, validate_norm
 
     report = validate_norm(model, features)
     console.print(render_table(report))
     if json_out:
-        json_out.write_text(_json.dumps(report.to_dict(), indent=2))
+        _write_cli_report_json(
+            json_out,
+            report.to_dict(),
+            args={
+                "model": model,
+                "features": features,
+                "fail_on_warning": fail_on_warning,
+                "json": json_out,
+            },
+            inputs={"model": model, "features": features},
+        )
     if fail_on_warning and not report.ok:
         raise typer.Exit(code=2)
 
@@ -354,8 +393,6 @@ def profile_cmd(
     (provider, shape). Useful both for picking a deployment target and
     as a CI gate ("this model must stay under 20 ms on CPU").
     """
-    import json as _json
-
     from .profile import profile_model, render_table
 
     shapes: list[tuple[int, ...]] | None = None
@@ -371,7 +408,19 @@ def profile_cmd(
     )
     console.print(render_table(report))
     if json_out:
-        json_out.write_text(_json.dumps(report.to_dict(), indent=2))
+        _write_cli_report_json(
+            json_out,
+            report.to_dict(),
+            args={
+                "model": model,
+                "shape": shape,
+                "provider": provider,
+                "warmup": warmup,
+                "iters": iters,
+                "json": json_out,
+            },
+            inputs={"model": model},
+        )
         console.print(f"[green]Wrote {json_out}[/green]")
 
 
@@ -454,8 +503,6 @@ def audit_learned_filter_cmd(
     clean content, deployed on heavily-compressed content" class of
     silent failure before the model hits a production pipeline.
     """
-    import json as _json
-
     import numpy as np
 
     from .learned_filter_audit import audit_learned_filter, render_table
@@ -478,7 +525,23 @@ def audit_learned_filter_cmd(
     )
     console.print(render_table(report))
     if json_out:
-        json_out.write_text(_json.dumps(report.to_dict(), indent=2))
+        _write_cli_report_json(
+            json_out,
+            report.to_dict(),
+            args={
+                "model": model,
+                "frames": frames,
+                "peak": peak,
+                "input_name": input_name,
+                "ssim_min": ssim_min,
+                "mean_shift_max": mean_shift_max,
+                "std_ratio_max": std_ratio_max,
+                "clip_fraction_max": clip_fraction_max,
+                "json": json_out,
+                "fail_on_warning": fail_on_warning,
+            },
+            inputs={"model": model, "frames": frames},
+        )
         console.print(f"[green]Wrote {json_out}[/green]")
     if fail_on_warning and not report.ok:
         raise typer.Exit(code=2)
@@ -508,8 +571,6 @@ def quantize_int8_cmd(
     the gate — protects against "we shipped the int8 model but it
     silently lost 5 VMAF points".
     """
-    import json as _json
-
     from .quantize import quantize_int8, render_table
 
     report = quantize_int8(
@@ -522,7 +583,22 @@ def quantize_int8_cmd(
     )
     console.print(render_table(report))
     if json_out:
-        json_out.write_text(_json.dumps(report.to_dict(), indent=2))
+        _write_cli_report_json(
+            json_out,
+            report.to_dict(),
+            args={
+                "fp32": fp32,
+                "output": output,
+                "calibration": calibration,
+                "input_name": input_name,
+                "n_calibration": n_calibration,
+                "batch_size": batch_size,
+                "rmse_gate": rmse_gate,
+                "json": json_out,
+            },
+            inputs={"fp32": fp32, "calibration": calibration},
+            outputs={"int8_model": str(output)},
+        )
         console.print(f"[green]Wrote {json_out}[/green]")
     if report.rmse > rmse_gate:
         console.print(f"[red]INT8 drift RMSE {report.rmse:.3g} exceeds gate {rmse_gate:g}[/red]")
@@ -558,8 +634,6 @@ def cross_backend_cmd(
     VMAF-point drift in prod" class of bug. Mirrors the ≤2-ULP discipline
     we apply to VMAF's own cross-backend scoring.
     """
-    import json as _json
-
     from .cross_backend import compare_backends, render_table
 
     parsed_shape: tuple[int, ...] | None = None
@@ -575,7 +649,24 @@ def cross_backend_cmd(
     )
     console.print(render_table(report))
     if json_out:
-        json_out.write_text(_json.dumps(report.to_dict(), indent=2))
+        inputs: dict[str, Any] = {"model": model}
+        if features is not None:
+            inputs["features"] = features
+        _write_cli_report_json(
+            json_out,
+            report.to_dict(),
+            args={
+                "model": model,
+                "features": features,
+                "provider": provider,
+                "shape": shape,
+                "n_rows": n_rows,
+                "atol": atol,
+                "json": json_out,
+                "fail_on_mismatch": fail_on_mismatch,
+            },
+            inputs=inputs,
+        )
         console.print(f"[green]Wrote {json_out}[/green]")
     if fail_on_mismatch and not report.ok:
         raise typer.Exit(code=2)
@@ -605,8 +696,6 @@ def bisect_model_quality_cmd(
     Assumes the list is ordered good→bad; if not, exits 0 with the verdict
     "no regression detected" or "first model already fails".
     """
-    import json as _json
-
     import pandas as pd
 
     from .bisect_model_quality import bisect_model_quality, render_table
@@ -633,7 +722,21 @@ def bisect_model_quality_cmd(
     )
     console.print(render_table(result))
     if json_out:
-        json_out.write_text(_json.dumps(result.to_dict(), indent=2))
+        _write_cli_report_json(
+            json_out,
+            result.to_dict(),
+            args={
+                "models": list(models),
+                "features": features,
+                "min_plcc": min_plcc,
+                "min_srocc": min_srocc,
+                "max_rmse": max_rmse,
+                "input_name": input_name,
+                "json": json_out,
+                "fail_on_first_bad": fail_on_first_bad,
+            },
+            inputs={"models": list(models), "features": features},
+        )
         console.print(f"[green]Wrote {json_out}[/green]")
     if (
         fail_on_first_bad

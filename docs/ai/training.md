@@ -173,6 +173,13 @@ also records the same block in each `loso_seed{N}.json` report, identifying
 the corpus JSONL, parsed training arguments, original argv, and per-seed report
 target before the validator condenses those reports into a promotion verdict.
 
+The `vmaf-train` CLI uses the same schema for durable report commands that
+accept `--json`: `validate-norm`, `profile`, `audit-learned-filter`,
+`quantize-int8`, `cross-backend`, and `bisect-model-quality`. Those reports
+identify the CLI entrypoint, parsed thresholds/options, model and feature
+inputs, and JSON/model output targets, so promotion evidence can be attached to
+model cards without losing the command context.
+
 ## MOS label materialization
 
 Real MOS-head training expects feature tables to already carry `mos` or

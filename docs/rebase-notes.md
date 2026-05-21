@@ -38740,3 +38740,28 @@ Touched files:
 `docs/research/0671-ensemble-loso-report-provenance.md`,
 `changelog.d/added/0671-ensemble-loso-report-provenance.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0661 follow-up — vmaf-train CLI report provenance
+
+**vmaf-train report provenance impact.** This widens ADR-0661 adoption to the
+user-facing `vmaf-train --json` report surfaces.
+
+**Key invariants**:
+
+- `ai/src/vmaf_train/cli.py` uses `_write_cli_report_json()` for durable report
+  commands that accept `--json`.
+- Covered subcommands: `validate-norm`, `profile`, `audit-learned-filter`,
+  `quantize-int8`, `cross-backend`, and `bisect-model-quality`.
+- The provenance block records the CLI entrypoint, argv, parsed options,
+  model/feature/calibration/frame inputs, JSON report output, and generated
+  model output where a command writes one.
+
+Touched files:
+`ai/src/vmaf_train/cli.py`,
+`ai/tests/test_tune_cli.py`,
+`docs/usage/vmaf-train.md`,
+`docs/ai/training.md`,
+`docs/adr/0661-ai-run-manifest-provenance.md`,
+`docs/research/0672-vmaf-train-cli-report-provenance.md`,
+`changelog.d/added/0672-vmaf-train-cli-report-provenance.md`,
+`docs/rebase-notes.md` (this entry).
