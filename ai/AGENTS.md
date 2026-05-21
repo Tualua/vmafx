@@ -963,20 +963,27 @@ consumes its output:
   `analyze_knob_sweep.py` to accept both spellings.
 
 
-## `u2netp` fork-local mirror invariants (ADR-0325)
+## `u2netp` fork-local mirror invariants (ADR-0412 / ADR-0671)
 
 The fork ships a release-artefact mirror for the upstream U-2-Net
 `u2netp` checkpoint via GitHub Release attachments. The scaffold
 (license, model card, operator doc, supply-chain staging step)
-landed in PR scope ADR-0325; the binary upload is a separate PR.
+landed in PR scope ADR-0412; the exporter landed in ADR-0671; the
+binary upload is a separate PR.
 
 - **Never commit `model/u2netp_mirror.onnx` or
   `model/u2netp_mirror.pth` to git.** Both paths are gitignored
   (see `.gitignore`). The binary lives in GitHub Release assets
   only — signed via Sigstore, hashed for SLSA, paired with
   `LICENSES/Apache-2.0-u2netp.txt` at upload time. If a binary
-  upload PR ever attempts to commit either file, the ADR-0325
+  upload PR ever attempts to commit either file, the ADR-0412
   contract is broken; reject the PR.
+- **The exporter imports upstream code; it does not vendor it.**
+  `ai/scripts/export_u2netp_mirror.py` expects an audited local
+  `xuebinqin/U-2-Net` checkout plus `u2netp.pth`, then exports
+  ONNX and a `u2netp-mirror-export-manifest-v1` sidecar. Keep this
+  boundary intact: copying U-2-Net source into this repository or
+  silently accepting non-Apache license text breaks ADR-0671.
 - **The recommended saliency weights remain
   `saliency_student_v1`** (ADR-0286, fork-trained DUTS student
   under BSD-3-Clause-Plus-Patent). `u2netp_mirror` is the named

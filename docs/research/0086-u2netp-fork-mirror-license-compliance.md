@@ -6,7 +6,7 @@
 | **Status** | Compliance walk recorded — scaffold approved (binary upload pending user) |
 | **Tags**   | dnn, tiny-ai, u2netp, license, apache-2.0, supply-chain, fork-local |
 
-Companion to [ADR-0325](../adr/0325-u2netp-fork-mirror-scaffold.md).
+Companion to [ADR-0412](../adr/0412-u2netp-fork-mirror-scaffold.md).
 Captures the licence-compliance walk for redistributing
 `u2netp.pth` (or its ONNX rewrap) under Apache-2.0 §4 from the
 fork's GitHub Releases, the Sigstore + SLSA wiring this scaffold
@@ -72,7 +72,7 @@ step uploads both the binary and the licence text alongside).
 notices stating that You changed the files"*. **Conditionally
 applies** to the ONNX rewrap (the binary derivative). The
 fork-local conversion script `ai/scripts/export_u2netp_mirror.py`
-(filed as a follow-up; not in this scaffold PR) emits an ONNX
+(implemented by ADR-0671) emits an ONNX
 graph with a top-level `model.metadata_props` entry recording:
 "derived from xuebinqin/U-2-Net @ <sha>; converted via
 torch.onnx.export opset 17; no graph-topology modifications;
@@ -154,10 +154,10 @@ cosign verify-blob \
 
 | Option | Pros | Cons | Why not chosen |
 |---|---|---|---|
-| **Scaffold + user-uploads-binary-later (this digest)** | Two-PR shape lets reviewers focus on licence + plumbing now without a 4.7 MB binary in the diff; matches the user's existing Google-Drive-recipient bundler workflow shape | Scaffold is inactive until the user uploads | **Chosen** — see ADR-0325 |
+| **Scaffold + user-uploads-binary-later (this digest)** | Two-PR shape lets reviewers focus on licence + plumbing now without a 4.7 MB binary in the diff; matches the user's existing Google-Drive-recipient bundler workflow shape | Scaffold is inactive until the user uploads | **Chosen** — see ADR-0412 |
 | Single-PR scaffold + binary | One-shot ship | Reviewers asked to examine licence + plumbing + binary all at once; binary review tooling is GitHub's anyway, just less concentrated; explicitly forbidden by task brief | Rejected — task brief says scaffold-only |
-| `.pth` verbatim only | Simplest licence story (no derivative-work argument); smallest scaffold | Adds a `.pth → .onnx` runtime conversion burden to every consumer, complicating the C-side load path | Open question for the user — flagged in ADR-0325 §References |
-| `.onnx` rewrap only | Loads directly via the existing C-side ONNX path; no runtime conversion | Loses lineage clarity; reviewers must trust the export script for "this is what upstream actually trained" | Open question for the user — flagged in ADR-0325 §References |
+| `.pth` verbatim only | Simplest licence story (no derivative-work argument); smallest scaffold | Adds a `.pth → .onnx` runtime conversion burden to every consumer, complicating the C-side load path | Deferred; ADR-0671 implements the ONNX-export path |
+| `.onnx` rewrap only | Loads directly via the existing C-side ONNX path; no runtime conversion | Loses lineage clarity; reviewers must trust the export script for "this is what upstream actually trained" | Chosen for the exporter path; release upload remains separate |
 | `.pth` + `.onnx` both | Best lineage; verifiable rewrap | Doubles the asset count and Sigstore-sign count | Open question for the user — flagged |
 | Vendor `u2netp.pth` directly into `model/` (committed binary) | One-shot ship | Bloats git history with a 4.7 MB binary forever | Rejected — release attachments are the right shape |
 | `git-lfs` mirror | Tracked but lazy-clone | Adds `git-lfs` to fork toolchain; LFS storage is paid GitHub feature | Rejected — release attachments are free + already wired to Sigstore |
@@ -167,14 +167,13 @@ cosign verify-blob \
 
 ## Recommendation
 
-Land [ADR-0325](../adr/0325-u2netp-fork-mirror-scaffold.md) and
+Land [ADR-0412](../adr/0412-u2netp-fork-mirror-scaffold.md) and
 the scaffold deliverables (licence text, model card stub,
 operator doc, release-workflow guard) in this PR. Defer the
 binary upload to a sibling PR after the user confirms the three
-compliance questions in ADR-0325 §References (redistribution
-read, tag scheme, artefact format). The release-workflow guard
-is idempotent — it is safe to merge the scaffold without the
-binary because the upload step fast-exits on missing-file paths.
+compliance questions in ADR-0412 §References (redistribution read,
+tag scheme, artefact format). ADR-0671 adds the missing exporter
+while preserving the release-asset-only binary contract.
 
 ## References
 

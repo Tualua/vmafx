@@ -96,7 +96,7 @@ shapes carry over to any future drop-in unchanged.
 
 ### Status update 2026-05-08: path B scaffold landed
 
-[ADR-0325](0325-u2netp-fork-mirror-scaffold.md) lands the
+[ADR-0412](0412-u2netp-fork-mirror-scaffold.md) lands the
 **fork-local release-artefact mirror scaffold** named in this
 ADR's "Neutral / follow-ups" §`T6-2a-mirror-u2netp-via-release`.
 The scaffold ships the licence text
@@ -216,7 +216,7 @@ moved as follows:
   no longer content-independent.
 - **Path B — `T6-2a-mirror-u2netp-via-release`** is **in flight** as
   PR #469 (`feat(ai): u2netp fork-local release-artefact mirror
-  scaffold (ADR-0325)`). When PR #469 lands, the original u2netp
+  scaffold (ADR-0412)`). When PR #469 lands, the original u2netp
   unblock path closes regardless — but the saliency surface is
   already covered by the path-C delivery, so PR #469 becomes a
   reference replacement / cross-validation rather than the primary

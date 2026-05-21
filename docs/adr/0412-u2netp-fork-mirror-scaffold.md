@@ -7,6 +7,11 @@
   attribution + licence compliance recipe landed. Binary upload
   (`model/u2netp_mirror.onnx`) is a user-triggered release step
   per the scaffold design.
+- **Status update 2026-05-21**:
+  [ADR-0671](0671-u2netp-mirror-exporter.md) adds the missing
+  exporter that produces the ONNX candidate and provenance manifest
+  from an audited local upstream checkout. The binary remains a
+  release asset, not a committed file.
 - **Date**: 2026-05-08
 - **Deciders**: Lusoris, Claude (Anthropic)
 - **Tags**: ai, dnn, u2netp, saliency, license, apache-2.0, supply-chain, fork-local, docs

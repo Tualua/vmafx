@@ -1,16 +1,13 @@
-# `u2netp_mirror` — model card (scaffold; binary upload pending)
+# `u2netp_mirror` — model card (exporter ready; binary upload pending)
 
-> **Status — scaffold-only.** Per
-> [ADR-0325](../../adr/0325-u2netp-fork-mirror-scaffold.md) this
-> page documents a planned fork-local mirror of the upstream
-> U-2-Net `u2netp` checkpoint. The binary itself
-> (`model/u2netp_mirror.onnx`, optionally
-> `model/u2netp_mirror.pth`) lands in a separate PR after the
-> three open compliance questions in ADR-0325 §References are
-> answered. Until then, **the recommended weights for the
-> `mobilesal` extractor remain
-> [`saliency_student_v1`](saliency_student_v1.md)** — see
-> "When to use this" below.
+> **Status — exporter ready; signed release asset pending.** Per
+> [ADR-0412](../../adr/0412-u2netp-fork-mirror-scaffold.md) and
+> [ADR-0671](../../adr/0671-u2netp-mirror-exporter.md), the fork has
+> an operator exporter for the upstream U-2-Net `u2netp` checkpoint.
+> The generated binary itself (`model/u2netp_mirror.onnx`) remains
+> gitignored and lands as a signed release asset. Until runtime
+> promotion is measured, **the recommended weights for the `mobilesal`
+> extractor remain [`saliency_student_v2`](saliency_student_v2.md)**.
 
 This card follows the 5-point bar of
 [ADR-0042](../../adr/0042-tinyai-docs-required-per-pr.md):
@@ -26,19 +23,23 @@ contract, licence-compliance receipt.
 | Upstream paper       | Qin et al., *U^2-Net*, Pattern Recognition 2020                      |
 | Upstream model file  | `u2netp.pth` (~4.7 MB)                                               |
 | Upstream license     | Apache-2.0 (no NOTICE file in upstream tree as of HEAD `ac7e1c81`)   |
-| Fork release tag     | `u2netp-mirror-v1` (scheme pending compliance answer 2 in ADR-0325)  |
+| Fork release tag     | `u2netp-mirror-v1` (ADR-0412 scaffold scheme)                       |
 | Fork artefact path   | `model/u2netp_mirror.onnx` (gitignored; release attachment only)     |
-| Fork artefact sha256 | _to be filled at binary upload_ — written into
-                        `model/tiny/registry.json` if/when the registry registration follow-up lands |
+| Fork artefact sha256 | _to be filled at binary upload_ — first recorded by
+                        `model/u2netp_mirror.manifest.json`, then written into
+                        `model/tiny/registry.json` if/when a registry follow-up lands |
 | Sigstore bundle URL  | _to be filled at binary upload_ — emitted by
                         `.github/workflows/release-please.yml`'s `u2netp-mirror-attach` step |
 
 ## 2. Training recipe
 
-The fork does **not** re-train this model. The mirrored
-checkpoint is the upstream `u2netp` weights byte-identical to
-the upstream Google Drive download. The upstream training recipe
-(per the U-2-Net paper) is:
+The fork does **not** re-train this model. The mirrored checkpoint
+is the upstream `u2netp` weights byte-identical to the upstream
+Google Drive download. `ai/scripts/export_u2netp_mirror.py` imports
+an audited local U-2-Net checkout, loads `u2netp.pth`, selects the
+upstream `d0` saliency output, and exports ONNX opset 17 as
+`input` -> `saliency_map`. The upstream training recipe (per the
+U-2-Net paper) is:
 
 - Backbone: `U^2-Net` (nested U-structure) — small variant
   (`U2NETP`) with ~4.7 M parameters.
@@ -48,9 +49,9 @@ the upstream Google Drive download. The upstream training recipe
 - Image size: 320×320 with random crop / horizontal flip.
 
 For a fork-trained alternative on the same DUTS-TR corpus see
-[`saliency_student_v1`](saliency_student_v1.md) — that one is
-~113 K parameters (40× smaller) and ships under
-BSD-3-Clause-Plus-Patent rather than Apache-2.0.
+[`saliency_student_v2`](saliency_student_v2.md) — that model is
+smaller, fork-owned, and ships under BSD-3-Clause-Plus-Patent
+rather than Apache-2.0.
 
 ## 3. ONNX op-allowlist coverage
 
@@ -87,7 +88,7 @@ unchanged against the fork's wire-format scanner.
   C extractor logic).
 
 The deployment contract is intentionally identical to
-`saliency_student_v1`'s — both models can be swapped in by
+`saliency_student_v2`'s — both models can be swapped in by
 flipping the registry entry, no C-side rebuild needed.
 
 ## 5. Licence-compliance receipt
@@ -120,10 +121,10 @@ modifying the License").
 
 ## 6. When to use this
 
-Prefer [`saliency_student_v1`](saliency_student_v1.md) by
-default. It is fork-owned, ~40× smaller, ships under the same
-license as the rest of `model/tiny/`, and was trained on the
-same DUTS-TR corpus the upstream u2netp paper used.
+Prefer [`saliency_student_v2`](saliency_student_v2.md) by default.
+It is fork-owned, much smaller, ships under the same license as the
+rest of `model/tiny/`, and was trained on the same DUTS-TR corpus
+the upstream u2netp paper used.
 
 Reach for `u2netp_mirror` when one of these applies:
 
@@ -149,6 +150,12 @@ The operator-facing fetch + verification recipe lives at
 version:
 
 ```bash
+.venv/bin/python ai/scripts/export_u2netp_mirror.py \
+  --upstream-dir /path/to/U-2-Net \
+  --checkpoint /path/to/u2netp.pth \
+  --output model/u2netp_mirror.onnx \
+  --manifest-out model/u2netp_mirror.manifest.json
+
 gh release download <tag> --repo lusoris/vmaf \
   --pattern 'u2netp_mirror_v*.onnx' \
   --pattern 'u2netp_mirror_v*.onnx.bundle' \
@@ -166,25 +173,26 @@ any production pipeline — it gates on Sigstore's keyless OIDC
 identity (`lusoris/vmaf` workflow + GitHub OIDC issuer), so a
 tampered or wrong-origin binary fails verification.
 
-## 8. Open compliance questions
+## 8. Release / promotion follow-ups
 
-These three are open until the user confirms before the binary
-upload PR ships (paraphrased from ADR-0325 §References):
+The exporter writes the local ONNX and manifest, but release and
+runtime promotion are still separate steps:
 
-1. Apache-2.0 §4 redistribution read — confirm the licence text
-   + attribution block at
+1. Attach the ONNX, Sigstore bundle, provenance manifest, and
    [`LICENSES/Apache-2.0-u2netp.txt`](../../../LICENSES/Apache-2.0-u2netp.txt)
-   meets the fork's bar, or flag a stricter read.
-2. Tag scheme — `u2netp-mirror-v1` (this PR's recommendation),
-   or fold the asset into the main `vX.Y.Z-lusoris.N` release
-   tag, or a different scheme.
-3. Artefact format — verbatim `.pth`, ONNX rewrap only, or
-   both.
+   to the release asset set.
+2. Run saliency/ROI materializer comparisons against refreshed
+   tables.
+3. Only after measured benefit, add `u2netp_mirror_v1` as an
+   alternative registry entry. Do not flip the default in the same
+   PR as the asset upload.
 
 ## References
 
-- [ADR-0325](../../adr/0325-u2netp-fork-mirror-scaffold.md) —
+- [ADR-0412](../../adr/0412-u2netp-fork-mirror-scaffold.md) —
   the scaffold decision this card documents.
+- [ADR-0671](../../adr/0671-u2netp-mirror-exporter.md) — the
+  exporter implementation.
 - [ADR-0265](../../adr/0265-u2netp-saliency-replacement-blocked.md)
   — the blocker decision this scaffold partially unblocks.
 - [ADR-0286](../../adr/0286-saliency-student-fork-trained-on-duts.md)

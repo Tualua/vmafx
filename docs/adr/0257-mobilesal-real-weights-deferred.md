@@ -89,7 +89,7 @@ shift in its own right.
 
 ### Status update 2026-05-08: path B scaffold landed
 
-[ADR-0325](0325-u2netp-fork-mirror-scaffold.md) lands the
+[ADR-0412](0412-u2netp-fork-mirror-scaffold.md) lands the
 fork-local release-artefact mirror scaffold for `u2netp.pth`,
 named in [ADR-0265](0265-u2netp-saliency-replacement-blocked.md)'s
 T6-2a path (b) follow-up

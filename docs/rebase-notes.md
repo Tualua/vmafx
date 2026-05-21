@@ -7,6 +7,27 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## feat/u2netp-mirror-exporter (ADR-0671)
+
+**No upstream rebase impact**: this touches fork-local tiny-AI exporter
+tooling, tests, docs, ADR/research notes, and a changelog fragment. Upstream
+Netflix/vmaf does not ship the U2NetP mirror workflow.
+
+Invariant: `ai/scripts/export_u2netp_mirror.py` imports an audited local
+`xuebinqin/U-2-Net` checkout and writes a gitignored ONNX plus manifest. Do
+not vendor upstream U-2-Net source here, do not accept non-Apache license text,
+and do not commit `model/u2netp_mirror.onnx`.
+
+Smoke:
+`.venv/bin/python -m pytest ai/tests/test_export_u2netp_mirror.py -q`
+
+Touched files: `ai/scripts/export_u2netp_mirror.py`,
+`ai/tests/test_export_u2netp_mirror.py`, `ai/AGENTS.md`,
+`docs/ai/u2netp-mirror.md`, `docs/ai/models/u2netp_mirror_card.md`,
+`docs/ai/training.md`, `docs/adr/0671-*.md`,
+`docs/adr/_index_fragments/0671-*.md`, `docs/research/0691-*.md`,
+`changelog.d/added/0671-*.md`, and this file.
+
 ## feat/tune-score-backend-native-priority (ADR-0667)
 
 **No upstream rebase impact**: this touches fork-local `vmaf-tune`

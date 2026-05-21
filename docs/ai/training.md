@@ -126,7 +126,11 @@ output targets used for the run. The `vmaf_tiny_v2`, `vmaf_tiny_v3`,
 and `fr_regressor_v2_ensemble_v1_seed*` exporters record the same block in
 their sidecar JSON so an exported ONNX can be traced back to the checkpoint,
 upstream weights, corpus, export command, gate verdict, and output paths used
-to create it. The direct `train_fr_regressor_v2_ensemble.py` smoke/production
+to create it. The U2NetP mirror exporter writes a separate
+`u2netp-mirror-export-manifest-v1` sidecar with the same `run_provenance`
+block plus upstream checkout, checkpoint, license, NOTICE, output hash, and
+ONNX metadata status. The direct `train_fr_regressor_v2_ensemble.py`
+smoke/production
 trainer also records `run_provenance` in `fr_regressor_v2_ensemble_v1.json`,
 covering the corpus input, member ONNX outputs, registry target, and manifest
 path.
