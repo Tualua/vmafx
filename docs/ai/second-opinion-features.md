@@ -1,0 +1,64 @@
+# Second-opinion feature materializer
+
+`ai/scripts/materialize_second_opinion_features.py` joins externally generated
+NR/MOS scores onto refreshed feature tables. Use it after running fork-local
+or third-party scorers such as `fork-nr-metric`, DOVER, Q-Align, FAST-VQA,
+MUSIQ, or CLIP-IQA, and before retraining MOS heads, predictor models, or
+running the signal-mix audit.
+
+The script does not run, vendor, or link any external scorer. It only reads
+score JSON/JSONL files and appends namespaced columns:
+
+| Column | Meaning |
+|---|---|
+| `second_opinion_<scorer>_score` | Clip-level MOS/VQA score from the scorer. |
+| `second_opinion_<scorer>_status` | `ok`, `missing`, or `bad`. |
+| `second_opinion_<scorer>_runtime_ms` | Runtime reported by the scorer, when available. |
+| `second_opinion_<scorer>_frames` | Number of frame scores averaged when the score came from frame JSON. |
+| `second_opinion_<scorer>_source` | Score file that supplied the row. |
+
+## Inputs
+
+Feature tables may be parquet, JSONL/NDJSON, or a JSON object with `rows`.
+Score files may be JSONL/NDJSON or JSON. Each score row needs:
+
+- a row key such as `clip_id`, `video_id`, `filename`, `name`, or `path`;
+- a `competitor` field, unless passed as `LABEL=path` through `--scores`;
+- either a scalar score field such as `score`, `mos`,
+  `predicted_mos`, `predicted_vmaf_or_mos`, or a wrapper-style `frames[]`
+  list with per-frame `predicted_vmaf_or_mos`.
+
+External-bench wrapper payloads are accepted directly when they include a clip
+key. Their per-frame scores are averaged if no summary-level score is present.
+
+## Examples
+
+Join DOVER and the fork NR scorer onto a CHUG feature shard:
+
+```bash
+.venv/bin/python ai/scripts/materialize_second_opinion_features.py \
+  --features .corpus/chug/training/fr_canonical_shards/shard_000.features.jsonl \
+  --scores dover-mobile=.workingdir2/second-opinion/dover-chug.jsonl \
+  --scores fork-nr-metric=.workingdir2/second-opinion/fork-nr-chug.jsonl \
+  --out .workingdir2/second-opinion/shard_000.with-second-opinion.jsonl \
+  --audit-json .workingdir2/second-opinion/shard_000.audit.json
+```
+
+Use `--missing-policy fail` for promotion-grade tables where every row must
+have every scorer. Use the default `mark` during exploratory audits; missing
+scores remain visible as `second_opinion_<scorer>_status = "missing"`.
+
+## Reading The Columns
+
+Second-opinion columns are advisory evidence, not replacements for reference
+metrics or subjective labels. Their main value is intersection:
+
+- disagreeing with VMAF on UGC/HDR clips that humans rate poorly;
+- separating no-reference camera defects from encode artifacts;
+- giving MOS heads an extra axis when FR features saturate;
+- showing signal-mix audits that NR/MOS evidence is present rather than
+  silently missing.
+
+Do not commit derived score tables that contain licensed third-party outputs
+or private MOS labels unless the dataset and scorer licences explicitly allow
+redistribution.

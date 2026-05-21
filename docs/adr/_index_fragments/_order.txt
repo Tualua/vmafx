@@ -404,5 +404,6 @@
 0654-predictor-saliency-signals
 0655-saliency-feature-materializer
 0656-external-bench-wrapper-schema
+0657-second-opinion-feature-materializer
 0658-project-modernization-audit
 0662-vulkan-motion-lavapipe-parity

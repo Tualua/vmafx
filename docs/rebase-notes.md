@@ -38218,6 +38218,38 @@ Touched files:
 `changelog.d/added/0653-chug-display-profile-training.md`,
 `docs/rebase-notes.md` (this entry).
 
+## ADR-0657 — Second-opinion feature materializer
+
+**No upstream Netflix C-source rebase impact.** This is a fork-local AI
+feature-table enrichment utility under `ai/scripts/`.
+
+**Key invariants**:
+
+- `ai/scripts/materialize_second_opinion_features.py` stays table-side: it
+  joins already-generated scorer JSON/JSONL and must not invoke or vendor
+  third-party VQA projects.
+- Output columns remain namespaced as `second_opinion_<scorer>_*` so downstream
+  audits and trainers can detect NR/MOS evidence without colliding with native
+  corpus columns.
+- Duplicate `(scorer, key)` rows are rejected; they usually indicate stale
+  reruns or mismatched row keys and must not be averaged silently.
+
+Touched files:
+`ai/scripts/materialize_second_opinion_features.py`,
+`ai/scripts/signal_mix_audit.py`,
+`ai/tests/test_second_opinion_features.py`,
+`docs/ai/second-opinion-features.md`,
+`docs/ai/signal-mix-audit.md`,
+`docs/ai/index.md`,
+`docs/adr/0657-second-opinion-feature-materializer.md`,
+`docs/adr/_index_fragments/0657-second-opinion-feature-materializer.md`,
+`docs/adr/_index_fragments/_order.txt`,
+`docs/research/0657-second-opinion-feature-materializer.md`,
+`ai/AGENTS.md`,
+`mkdocs.yml`,
+`changelog.d/added/0657-second-opinion-feature-materializer.md`,
+`docs/rebase-notes.md` (this entry).
+
 ## ADR-0658 — Project modernization audit
 
 **No upstream Netflix C-source rebase impact.** This is a fork-local

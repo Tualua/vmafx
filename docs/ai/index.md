@@ -31,6 +31,8 @@ alongside classic VMAF SVM models.
   refreshed AI feature tables
 - [External benchmark wrappers](external-bench.md) — wrapper-only
   comparison harness for fork predictors, x264-pVMAF, and DOVER-Mobile
+- [Second-opinion features](second-opinion-features.md) — join out-of-tree
+  NR/MOS scorer outputs into refreshed feature tables before retraining
 - [CHUG UGC-HDR ingestion](chug-ingestion.md) — local-only CHUG
   manifest/video ingest path for HDR subjective-MOS experiments
 - [KonViD MOS head v1](models/konvid_mos_head_v1.md) — 5 081-parameter

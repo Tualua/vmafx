@@ -126,6 +126,21 @@ def test_custom_target_is_honoured(tmp_path):
     assert audit.target_correlations
 
 
+def test_second_opinion_columns_count_as_nr_mos_signal(tmp_path):
+    rows = _fixture_rows()
+    for idx, row in enumerate(rows):
+        row["second_opinion_dover_mobile_score"] = 60.0 + idx
+        row["second_opinion_q_align_score"] = 62.0 + 0.5 * idx
+    table = _write_jsonl(tmp_path / "second_opinion.jsonl", rows)
+
+    audit = audit_table("second-opinion", table)
+
+    health = audit.family_health["no_reference_ugc"]
+    assert health["status"] == "covered"
+    assert "second_opinion_dover_mobile_score" in health["matched_columns"]
+    assert "second_opinion_q_align_score" in health["matched_columns"]
+
+
 def test_invalid_target_leaves_report_targetless(tmp_path):
     table = _write_jsonl(tmp_path / "features.jsonl", _fixture_rows())
     audit = audit_table("synthetic", table, target="not_present")

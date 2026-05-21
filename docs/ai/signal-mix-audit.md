@@ -60,13 +60,16 @@ contracts. A column can count for more than one family when names overlap.
 | HDR display and panel context | bit depth, transfer/EOTF, mastering data, panel/display fields |
 | Source geometry and content metadata | resolution, duration, frame rate, orientation, category/content labels |
 | Codec and rate-control context | codec, encoder, preset, CRF/QP, bitrate, hardware encoder tokens |
-| No-reference UGC and subjective MOS | MOS/DMOS, rating counts, UGC labels, orientation/category |
+| No-reference UGC and subjective MOS | MOS/DMOS, rating counts, UGC labels, orientation/category, `second_opinion_*` |
 | Noise, grain, blur, and sharpening | noise/grain/blur/sharpness/edge columns |
 
 The candidate-metric column in the Markdown report is intentionally broader
 than the current tree. It calls out useful intersections that may not be wired
 yet: U2NetP, DISTS, LPIPS, HDR-VDP, PU-PSNR/PU-SSIM, DOVER, Q-Align, FAST-VQA,
-MUSIQ, CLIP-IQA, VMAF NEG, and panel metadata.
+MUSIQ, CLIP-IQA, VMAF NEG, and panel metadata. When those no-reference
+or subjective scorers are run out-of-tree, join their results back into the
+table with [Second-opinion features](second-opinion-features.md) so the audit
+sees `second_opinion_*` columns as NR/MOS evidence.
 
 ## Reading the Report
 
