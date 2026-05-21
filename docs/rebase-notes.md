@@ -7,6 +7,22 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## feat/tune-report-quick-takeaways (ADR-0666)
+
+**No upstream rebase impact**: this touches fork-local `vmaf-tune report`
+rendering, tests, user docs, ADR/research notes, AGENTS notes, and a changelog
+fragment. Upstream Netflix/vmaf does not ship the fork `vmaf-tune` profile-card
+renderer.
+
+Smoke:
+`.venv/bin/python -m pytest tools/vmaf-tune/tests/test_report.py -q`
+
+Touched files: `tools/vmaf-tune/src/vmaftune/report.py`,
+`tools/vmaf-tune/tests/test_report.py`, `tools/vmaf-tune/AGENTS.md`,
+`docs/usage/vmaf-tune.md`, `docs/adr/0666-*.md`,
+`docs/adr/_index_fragments/0666-*.md`, `docs/research/0686-*.md`,
+`changelog.d/added/0666-*.md`, and this file.
+
 ## fix/fast-nr-calibration-quality-guard (ADR-0665)
 
 **No upstream rebase impact**: this touches fork-local tiny-AI calibration

@@ -850,6 +850,13 @@ tree without an ADR-0237 follow-up promoting the corresponding phase.
   rejected, fix the NR model/features or training corpus; do not loosen
   the vmaf-tune early-elimination logic to make a bad sidecar useful.
 
+- **Profile-card reports start with run-specific takeaways.**
+  `report.py::_quick_takeaways` is the single source for the Markdown and
+  HTML "Quick takeaways" section (ADR-0666). It must stay derived from
+  `ReportData`, not from rendered text or browser-side JavaScript, so the
+  Markdown, HTML, tests, and future PDF/export paths agree on the same
+  recommendation summary.
+
 - **F.4 recipe overrides are read-only factories, not literal
   dicts.** `_CONTENT_RECIPE_TABLE` in `auto.py` stores **callables**
   (`_animation_recipe`, `_screen_content_recipe`,

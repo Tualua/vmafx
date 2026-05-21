@@ -1533,13 +1533,16 @@ sweep.json` then renders a **per-codec rate-quality curve** assembled
 from those probes, with the picked-CRF rows highlighted as larger
 circled markers and the **pareto frontier** (lowest bitrate at each
 target) drawn as a heavier dashed overlay. Current HTML/Markdown
-profile cards also include short "how to read this" notes, report-local
-codec identity chips (text badges that link to the upstream codec or
-vendor project), per-codec failure status, and an embedded
-`encoder_profile` JSON payload. That payload is intentionally
-machine-readable: `vmaf-tune encode-profile` can read the HTML,
-Markdown, or raw JSON and turn one selected recommendation into a
-concrete FFmpeg encode.
+profile cards also include a **Quick takeaways** block before the
+charts, short "how to read this" notes, report-local codec identity
+chips (text badges that link to the upstream codec or vendor project),
+per-codec failure status, and an embedded `encoder_profile` JSON
+payload. The takeaways spell out the smallest successful row at each
+target, failed/unavailable row count, ladder span, and per-shot CRF
+spread so non-expert readers do not have to infer the main result from
+the chart alone. The profile payload is intentionally machine-readable:
+`vmaf-tune encode-profile` can read the HTML, Markdown, or raw JSON and
+turn one selected recommendation into a concrete FFmpeg encode.
 
 ```shell
 # Out of the box: 5-point sweep, 3-codec compare, GPU scoring.
@@ -2135,7 +2138,9 @@ The `report` subcommand renders a profile-card (HTML / Markdown)
 from one or more JSON dumps emitted upstream of it
 (`--compare-json`, `--ladder-json`, `--per-shot-json`). It also
 writes a one-line stdout JSON summary that downstream automation
-can pipe to `jq`. The fields:
+can pipe to `jq`. The rendered card starts with a Quick takeaways block
+that summarizes the concrete recommendation and coverage gaps before
+the detailed tables. The stdout fields:
 
 | Key | Meaning |
 | --- | --- |

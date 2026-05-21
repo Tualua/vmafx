@@ -64,6 +64,8 @@ def test_markdown_contains_all_sections():
     md = render_markdown(_sample_data())
     assert "# vmaf-tune report" in md
     assert "## Source" in md
+    assert "## Quick takeaways" in md
+    assert "Best single-target row: libsvtav1" in md
     assert "## Codec comparison" in md
     assert "## ABR ladder" in md
     assert "## Per-shot tuning" in md
@@ -84,6 +86,8 @@ def test_html_is_self_contained():
     assert "<svg" in html
     assert 'src="http' not in html  # no remote assets
     # tables rendered
+    assert "Quick takeaways" in html
+    assert "Best single-target row: libsvtav1" in html
     assert "Codec comparison" in html
     assert "Per-shot tuning" in html
     # status tag for failed row
@@ -326,6 +330,8 @@ def test_sweep_report_has_human_guidance_status_and_profile():
     md = render_markdown(data)
     html = render_html(data)
     assert "How to read this" in md
+    assert "At VMAF 94, libsvtav1 is the smallest successful row" in md
+    assert "At VMAF 96, libsvtav1 is the smallest successful row" in md
     assert "Codec guide" in md
     assert "CRF picks" in md
     assert "94→24" in md

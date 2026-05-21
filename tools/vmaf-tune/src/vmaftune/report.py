@@ -1311,6 +1311,66 @@ def _fmt_crf(v: int | None) -> str:
     return str(int(v))
 
 
+def _quick_takeaways(data: ReportData) -> tuple[str, ...]:
+    """Return plain-language report takeaways for non-expert readers."""
+    lines: list[str] = []
+
+    frontier = compute_pareto_frontier(data.sweep_points)
+    if frontier:
+        for point in frontier:
+            lines.append(
+                f"At VMAF {point.target_vmaf:g}, {point.codec} is the smallest "
+                f"successful row: {_fmt_kbps(point.bitrate_kbps)} at CRF "
+                f"{_fmt_crf(point.best_crf)}."
+            )
+    elif data.codec_rows:
+        ok_rows = [
+            row
+            for row in data.codec_rows
+            if row.ok and not _is_missing(row.bitrate_kbps) and not _is_missing(row.vmaf_score)
+        ]
+        if ok_rows:
+            best = min(ok_rows, key=lambda row: (row.bitrate_kbps, row.codec))
+            lines.append(
+                f"Best single-target row: {best.codec} reaches VMAF "
+                f"{_fmt_vmaf(best.vmaf_score)} at {_fmt_kbps(best.bitrate_kbps)} "
+                f"(CRF {_fmt_crf(best.best_crf)})."
+            )
+
+    failed_rows = sum(1 for row in data.codec_rows if not row.ok)
+    failed_rows += sum(1 for point in data.sweep_points if not point.ok)
+    if failed_rows:
+        lines.append(
+            f"{failed_rows} encoder/target row(s) failed or were unavailable; "
+            "treat the report as degraded coverage, not as a quality loss."
+        )
+
+    if data.ladder_rungs:
+        rungs = sorted(data.ladder_rungs, key=lambda rung: rung.bitrate_kbps)
+        lines.append(
+            f"ABR ladder: {len(rungs)} rung(s), from "
+            f"{rungs[0].width}x{rungs[0].height} at {_fmt_kbps(rungs[0].bitrate_kbps)} "
+            f"to {rungs[-1].width}x{rungs[-1].height} at "
+            f"{_fmt_kbps(rungs[-1].bitrate_kbps)}."
+        )
+
+    if data.shots:
+        crfs = [shot.best_crf for shot in data.shots if shot.best_crf >= 0]
+        if crfs:
+            lines.append(
+                f"Per-shot tuning: {len(data.shots)} shot(s), CRF range "
+                f"{min(crfs)}-{max(crfs)}; wider spread means the source benefits "
+                "more from shot-aware encoding."
+            )
+        else:
+            lines.append(f"Per-shot tuning: {len(data.shots)} shot(s) detected.")
+
+    if not lines:
+        lines.append("No successful encode rows yet; this report only carries source metadata.")
+
+    return tuple(lines)
+
+
 def _per_codec_targets(
     points: Sequence[CodecSweepPoint], targets: Sequence[float]
 ) -> dict[str, dict[float, CodecSweepPoint]]:
@@ -1404,6 +1464,11 @@ def render_markdown(data: ReportData, *, assets_dir: Path | None = None) -> str:
     lines.append(f"| File size | {_fmt_bytes(src.size_bytes)} |")
     lines.append("")
     lines.append(f"Target VMAF: **{data.target_vmaf:.1f}**")
+    lines.append("")
+    lines.append("## Quick takeaways")
+    lines.append("")
+    for takeaway in _quick_takeaways(data):
+        lines.append(f"- {_md_cell(takeaway)}")
     lines.append("")
 
     # Codec comparison table + chart. Schema v2 (sweep_points) takes
@@ -1591,6 +1656,7 @@ pre {{ background: #000; color: #ddd; padding: 1rem; border-radius: 6px; overflo
 </div>
 </div>
 
+{takeaways_section}
 {codec_section}
 {ladder_section}
 {shots_section}
@@ -1684,6 +1750,11 @@ def _sweep_summary_table_html(data: ReportData) -> str:
 def render_html(data: ReportData) -> str:
     """Render the report to a single self-contained HTML file."""
     src = data.source
+    takeaways = "".join(f"<li>{_html_escape(takeaway)}</li>" for takeaway in _quick_takeaways(data))
+    takeaways_section = (
+        "<div class='panel'><h2 style='margin-top:0'>Quick takeaways</h2>"
+        f"<ul>{takeaways}</ul></div>"
+    )
     codec_section = ""
     if data.sweep_points:
         # Schema v2 — rate-quality sweep takes priority over the
@@ -1769,6 +1840,7 @@ def render_html(data: ReportData) -> str:
         target_vmaf=data.target_vmaf,
         tool_version=_html_escape(data.tool_version),
         generated_at=f" on {_html_escape(data.generated_at_iso)}" if data.generated_at_iso else "",
+        takeaways_section=takeaways_section,
         codec_section=codec_section,
         ladder_section=ladder_section,
         shots_section=shots_section,

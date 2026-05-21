@@ -413,3 +413,4 @@
 0663-mos-label-materializer
 0664-windows-cuda-toolkit-installer
 0665-fast-nr-calibration-quality-guard
+0666-tune-report-quick-takeaways
