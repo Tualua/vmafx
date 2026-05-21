@@ -18,7 +18,6 @@ Outputs:
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sys
 import time
@@ -30,7 +29,9 @@ import onnxruntime as ort
 from onnx.external_data_helper import load_external_data_for_model
 from scipy.stats import pearsonr, spearmanr
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
+sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 sys.path.insert(0, str(REPO_ROOT))
 
 from ai.train.dataset import NetflixFrameDataset  # noqa: E402
@@ -165,12 +166,30 @@ def main() -> int:
     x_all = np.concatenate([clip_xy[c][0] for c in CLIPS], axis=0)
     y_all = np.concatenate([clip_xy[c][1] for c in CLIPS], axis=0)
 
+    json_out = args.out / "loso_mlp_small_eval.json"
+    md_out = args.out / "loso_mlp_small_eval.md"
+
+    from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
     report: dict[str, object] = {
         "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "corpus": str(args.data_root),
         "loso_per_fold": {},
         "loso_aggregate": {},
         "baselines": {},
+        "run_provenance": build_run_provenance(
+            entrypoint=SCRIPT_PATH,
+            repo_root=REPO_ROOT,
+            argv=sys.argv,
+            args=args,
+            inputs={
+                "data_root": args.data_root,
+                "loso_dir": args.loso_dir,
+                "mlp_small_baseline": args.mlp_small_baseline,
+                "mlp_medium_baseline": args.mlp_medium_baseline,
+            },
+            outputs={"json_report": json_out, "markdown_report": md_out},
+        ),
     }
 
     print("[eval] === LOSO per-fold (each fold's mlp_small on its held-out clip) ===", flush=True)
@@ -222,12 +241,9 @@ def main() -> int:
             flush=True,
         )
 
-    json_out = args.out / "loso_mlp_small_eval.json"
-    with json_out.open("w", encoding="utf-8") as f:
-        json.dump(report, f, indent=2)
+    write_manifest_json(json_out, report)
     print(f"[eval] wrote {json_out}", flush=True)
 
-    md_out = args.out / "loso_mlp_small_eval.md"
     with md_out.open("w", encoding="utf-8") as f:
         f.write("# LOSO evaluation — `mlp_small` on Netflix corpus\n\n")
         f.write(f"Generated: {report['generated']}\n\n")

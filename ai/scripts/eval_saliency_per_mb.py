@@ -19,11 +19,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
 
 import numpy as np
+
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
+sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
+
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 SUPPORTED_SUFFIXES = (".npy", ".pgm")
 
@@ -229,12 +236,19 @@ def main() -> int:
         block_size=args.block_size,
         threshold=args.threshold,
     )
-    text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    payload["run_provenance"] = build_run_provenance(
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=sys.argv,
+        args=args,
+        inputs={"pred_dir": args.pred_dir, "gt_dir": args.gt_dir},
+        outputs={"json_report": args.out_json},
+    )
     if args.out_json is None:
+        text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
         print(text, end="")
     else:
-        args.out_json.parent.mkdir(parents=True, exist_ok=True)
-        args.out_json.write_text(text, encoding="utf-8")
+        write_manifest_json(args.out_json, payload)
     return 0
 
 

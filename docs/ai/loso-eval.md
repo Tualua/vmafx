@@ -51,8 +51,17 @@ python ai/scripts/eval_loso_mlp_small.py \
 
 Outputs:
 
-* `runs/loso_eval/loso_mlp_small_eval.json` — machine-readable.
+* `runs/loso_eval/loso_mlp_small_eval.json` — machine-readable, including a
+  `run_provenance` block with the script entrypoint, argv, parsed arguments,
+  data root, fold directory, baseline ONNX inputs, and JSON/Markdown output
+  targets.
 * `runs/loso_eval/loso_mlp_small_eval.md` — markdown summary.
+
+The 3-architecture companion harness
+[`ai/scripts/eval_loso_3arch.py`](../../ai/scripts/eval_loso_3arch.py) writes
+`runs/loso_eval/loso_3arch_eval.json` and
+`runs/loso_eval/loso_3arch_eval.md`; its JSON report carries the same
+`run_provenance` schema and records the shared `--training-runs-dir` input.
 
 Both directories (`runs/` and `model/tiny/training_runs/`) are
 gitignored by design — training and eval outputs regenerate from

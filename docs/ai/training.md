@@ -134,6 +134,15 @@ feature parquet input, parsed evaluation hyperparameters, original argv, and
 the report target path. Use that block when comparing refreshed LOSO or
 multi-seed numbers instead of relying on shell history.
 
+Legacy evaluation reports use the same schema where they still produce durable
+operator artifacts: `eval_loso_mlp_small.py` and `eval_loso_3arch.py` record
+their Netflix corpus root, fold-checkpoint directory, baseline ONNX inputs, and
+JSON/Markdown report targets; `eval_probabilistic_proxy.py` records its
+ensemble manifest, optional held-out parquet, and metrics output; and
+`eval_saliency_per_mb.py` records the predicted / ground-truth mask directories
+plus the JSON report target. This keeps old model-card evidence comparable with
+the refreshed v3/v4/v5 reports.
+
 The ensemble production validator `ai/scripts/validate_ensemble_seeds.py`
 records `run_provenance` in its `PROMOTE.json` / `HOLD.json` verdicts. That
 block identifies the LOSO artifact directory, corpus root snapshot input,

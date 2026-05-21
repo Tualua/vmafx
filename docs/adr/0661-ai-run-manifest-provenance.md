@@ -38,6 +38,10 @@ hyperparameters, argv, and output report path. The ensemble production-flip
 validator (`validate_ensemble_seeds.py`) uses the same block for
 `PROMOTE.json` / `HOLD.json` verdicts so registry-flip evidence identifies the
 LOSO directory, corpus root, seed list, gate thresholds, and verdict target.
+Legacy evaluation reports (`eval_loso_mlp_small.py`, `eval_loso_3arch.py`,
+`eval_probabilistic_proxy.py`, and `eval_saliency_per_mb.py`) also adopt the
+same schema when they emit durable JSON so old model-card evidence and
+saliency/probabilistic probes do not drift from the refreshed report contract.
 
 ## Alternatives considered
 
@@ -49,9 +53,10 @@ LOSO directory, corpus root, seed list, gate thresholds, and verdict target.
 
 ## Consequences
 
-- **Positive**: local MOS-head, FR-regressor, vmaf_tiny export, vmaf_tiny
-  evaluation, and ensemble validation artifacts can be traced back to the
-  command, script revision, input files, and output targets that produced them.
+- **Positive**: local MOS-head, FR-regressor, vmaf_tiny export, vmaf_tiny and
+  legacy evaluation, saliency/probabilistic probe, and ensemble validation
+  artifacts can be traced back to the command, script revision, input files, and
+  output targets that produced them.
 - **Positive**: CHUG manifests stay CHUG-named even though the implementation
   shares the KonViD training loop.
 - **Negative**: sidecars become slightly larger and include local path names.

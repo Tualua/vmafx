@@ -41,7 +41,9 @@ Use `--block-size 16` for x264/libaom-style macroblock evaluation and
 ## Output
 
 The JSON payload has `schema_version: 1`, aggregate `macro_iou` /
-`micro_iou`, and one row per paired mask:
+`micro_iou`, one row per paired mask, and `run_provenance` for the CLI
+entrypoint, argv, parsed arguments, input mask directories, and JSON output
+path:
 
 ```json
 {
@@ -51,6 +53,7 @@ The JSON payload has `schema_version: 1`, aggregate `macro_iou` /
   "n_pairs": 1,
   "macro_iou": 0.75,
   "micro_iou": 0.75,
+  "run_provenance": {"schema": "ai-run-provenance-v1"},
   "rows": [
     {
       "stem": "clip001_000120",

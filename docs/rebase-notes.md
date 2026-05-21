@@ -38551,3 +38551,36 @@ Touched files:
 `ai/src/aiutils/AGENTS.md`,
 `changelog.d/added/0665-ai-eval-report-run-provenance.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0661 follow-up — Legacy AI eval report run provenance
+
+**Legacy eval/report provenance impact.** This widens ADR-0661 adoption from
+the refreshed v3/v4/v5 eval family to older durable AI evaluation reports.
+
+**Key invariants**:
+
+- `eval_loso_mlp_small.py` and `eval_loso_3arch.py` JSON reports carry
+  `run_provenance` built by `aiutils.run_manifest.build_run_provenance()`.
+- `eval_probabilistic_proxy.py --metrics-out` writes the same block with the
+  ensemble manifest input, optional held-out parquet, and metrics output path.
+- `eval_saliency_per_mb.py` writes the same block for CLI output, recording the
+  predicted and ground-truth mask directories plus block settings.
+- Do not restore direct `json.dump()` writers for these durable reports when
+  rebasing old eval-script changes; use `write_manifest_json()` for stable
+  sorting and newline handling.
+
+Touched files:
+`ai/scripts/eval_loso_mlp_small.py`,
+`ai/scripts/eval_loso_3arch.py`,
+`ai/scripts/eval_probabilistic_proxy.py`,
+`ai/scripts/eval_saliency_per_mb.py`,
+`ai/tests/test_legacy_eval_report_run_provenance.py`,
+`ai/tests/test_eval_saliency_per_mb.py`,
+`docs/ai/training.md`,
+`docs/ai/loso-eval.md`,
+`docs/ai/saliency-per-mb-eval.md`,
+`docs/ai/models/fr_regressor_v2_probabilistic.md`,
+`docs/adr/0661-ai-run-manifest-provenance.md`,
+`docs/research/0666-ai-legacy-eval-report-provenance.md`,
+`changelog.d/added/0666-ai-legacy-eval-report-provenance.md`,
+`docs/rebase-notes.md` (this entry).

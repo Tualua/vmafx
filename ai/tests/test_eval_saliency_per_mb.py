@@ -122,3 +122,6 @@ def test_main_writes_json(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     assert main() == 0
     payload = json.loads(out_json.read_text(encoding="utf-8"))
     assert payload["n_pairs"] == 1
+    assert payload["run_provenance"]["schema"] == "ai-run-provenance-v1"
+    assert payload["run_provenance"]["entrypoint"]["path"] == "ai/scripts/eval_saliency_per_mb.py"
+    assert payload["run_provenance"]["inputs"]["pred_dir"]["kind"] == "directory"

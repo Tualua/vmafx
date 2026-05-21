@@ -22,7 +22,6 @@ canonical Netflix-corpus comparison documented in ADR-0203.
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sys
 import time
@@ -30,7 +29,9 @@ from pathlib import Path
 
 import numpy as np
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
+sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 sys.path.insert(0, str(REPO_ROOT))
 
 # Reuse the existing helpers — same constants, same load_session
@@ -157,21 +158,34 @@ def main() -> int:
     for clip in CLIPS:
         clip_xy[clip] = _load_clip(args.data_root, clip)
 
+    json_out = args.out / "loso_3arch_eval.json"
+    md_out = args.out / "loso_3arch_eval.md"
+
+    from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
     report: dict = {
         "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "corpus": str(args.data_root),
         "archs": {},
+        "run_provenance": build_run_provenance(
+            entrypoint=SCRIPT_PATH,
+            repo_root=REPO_ROOT,
+            argv=sys.argv,
+            args=args,
+            inputs={
+                "data_root": args.data_root,
+                "training_runs_dir": args.training_runs_dir,
+            },
+            outputs={"json_report": json_out, "markdown_report": md_out},
+        ),
     }
     for arch in ARCHS:
         loso_dir = args.training_runs_dir / f"loso_{arch}"
         report["archs"][arch] = _eval_arch(arch, loso_dir, clip_xy)
 
-    json_out = args.out / "loso_3arch_eval.json"
-    with json_out.open("w", encoding="utf-8") as f:
-        json.dump(report, f, indent=2)
+    write_manifest_json(json_out, report)
     print(f"[eval] wrote {json_out}", flush=True)
 
-    md_out = args.out / "loso_3arch_eval.md"
     with md_out.open("w", encoding="utf-8") as f:
         f.write(_markdown(report))
     print(f"[eval] wrote {md_out}", flush=True)

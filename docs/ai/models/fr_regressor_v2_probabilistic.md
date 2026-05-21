@@ -140,6 +140,9 @@ aggregate". A reference implementation lives in
 [`ai/scripts/eval_probabilistic_proxy.py`](../../../ai/scripts/eval_probabilistic_proxy.py)
 (Python / onnxruntime); the C-side adapter that wires this into
 `libvmaf/src/dnn/` is the T7-FR-REGRESSOR-V2-PROBABILISTIC follow-up.
+When `--metrics-out` is used, the evaluator writes `run_provenance` alongside
+the coverage metrics so stale probabilistic reports can be traced to the exact
+ensemble manifest, optional held-out parquet, argv, and output path.
 
 ```python
 import json, numpy as np, onnxruntime as ort

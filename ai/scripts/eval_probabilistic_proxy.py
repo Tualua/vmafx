@@ -51,10 +51,12 @@ from typing import Any
 
 import numpy as np
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
 if str(REPO_ROOT / "ai" / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 CANONICAL_6: tuple[str, ...] = (
     "adm2",
@@ -307,13 +309,20 @@ def main() -> int:
         "rmse": rmse,
         "mean_sigma": float(sigma.mean()),
         "coverage": coverage,
+        "run_provenance": build_run_provenance(
+            entrypoint=SCRIPT_PATH,
+            repo_root=REPO_ROOT,
+            argv=sys.argv,
+            args=args,
+            inputs={"manifest": args.manifest, "parquet": args.parquet},
+            outputs={"metrics_out": args.metrics_out},
+        ),
     }
 
     print(json.dumps(report, indent=2))
 
     if args.metrics_out is not None:
-        args.metrics_out.parent.mkdir(parents=True, exist_ok=True)
-        args.metrics_out.write_text(json.dumps(report, indent=2) + "\n")
+        write_manifest_json(args.metrics_out, report)
 
     # Sanity: empirical 95% coverage should be in [0, 1].
     g95 = coverage["gaussian"]["95"]["empirical_coverage"]
