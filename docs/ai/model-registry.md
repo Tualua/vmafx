@@ -58,7 +58,8 @@ runs both the JSON Schema check and the cross-file consistency check
 sidecar). It is a CI gate; run it locally before pushing:
 
 ```bash
-python3 ai/scripts/validate_model_registry.py
+python3 ai/scripts/validate_model_registry.py \
+    --out-json runs/tiny_model_registry_validation.json
 # → OK: 5 registry entries valid against registry.schema.json
 ```
 
@@ -66,13 +67,19 @@ Pass a different registry / schema explicitly when working off-tree:
 
 ```bash
 python3 ai/scripts/validate_model_registry.py /path/to/other-registry.json \
-    --schema /path/to/registry.schema.json
+    --schema /path/to/registry.schema.json \
+    --out-json runs/offtree_registry_validation.json
 ```
 
 The validator falls back to a structural check when `jsonschema` is not
 installed, so distros without `python-jsonschema` still get the
 required-field invariants. Install `jsonschema` for full Draft 2020-12
 coverage.
+
+The optional `--out-json` report records the pass/fail verdict, model count,
+errors, registry/schema paths, and ADR-0661 `run_provenance`. Use it for
+release evidence and for debugging registry failures without relying on CI log
+scrollback.
 
 ## Runtime verification — `--tiny-model-verify`
 

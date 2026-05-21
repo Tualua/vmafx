@@ -47,6 +47,11 @@ hyperparameters, argv, and output report path. The ensemble production-flip
 validator (`validate_ensemble_seeds.py`) uses the same block for
 `PROMOTE.json` / `HOLD.json` verdicts so registry-flip evidence identifies the
 LOSO directory, corpus root, seed list, gate thresholds, and verdict target.
+The registry and saliency validation helpers (`validate_model_registry.py
+--out-json` and `validate_saliency_student.py --out-json`) also use the same
+block so CI/release evidence for registry consistency and saliency ONNX
+allowlist/parity checks records the input files, argv, verdicts, and report
+target.
 The tiny-VMAF smoke validators (`validate_vmaf_tiny_v2.py`,
 `validate_vmaf_tiny_v3.py`, and `validate_vmaf_tiny_v4.py`) record the same
 block when `--out-json` is passed so promotion gate evidence identifies the
@@ -121,6 +126,7 @@ label/score inputs, report thresholds, output targets, and argv.
 | Leave table materializers out of ADR-0661 | Smaller scope | Recreates the exact blind spot that made refreshed MOS/saliency/second-opinion tables hard to audit | Materialized feature tables are durable AI inputs, so their audit JSON belongs in the same provenance family |
 | Leave ensemble seed export sidecars as legacy JSON | No model-file delta unless seeds are refreshed | Fresh production seed sidecars would still lack corpus/verdict/argv lineage | Rejected because the exporter is the promotion boundary from gate evidence to shipped ONNXs |
 | Leave ensemble LOSO reports as legacy JSON | Smaller trainer diff | Validator verdicts would carry provenance, but their source `loso_seed{N}.json` files would still be opaque | Rejected because seed reports are the durable gate inputs and often outlive the validator run |
+| Leave registry and saliency validators stdout-only | No output-schema addition | Release/model-card evidence would still depend on CI scrollback for registry consistency and saliency ONNX parity | Rejected because validator reports are the durable proof that a model artifact is promotable |
 | Leave the direct ensemble manifest as legacy JSON | Avoids touching an older smoke/production trainer | `fr_regressor_v2_ensemble_v1.json` would identify members but not the command, corpus, registry target, or member outputs that produced it | Rejected because the manifest is the top-level runtime entry point for the ensemble |
 | Leave `vmaf-train --json` reports as plain JSON | No CLI helper diff | Model-card evidence from the user-facing CLI still loses input/threshold lineage | Rejected because these reports are the operator-facing promotion/audit artifacts |
 | Leave feature-correlation reports as plain JSON | Smallest diff | Signal-mix audits would keep metrics but lose the exact source parquet and ranking parameters | Rejected because the feature-correlation report is durable analysis evidence, not a transient debug print |
@@ -150,6 +156,9 @@ label/score inputs, report thresholds, output targets, and argv.
   and corpus identity that justified shipping the exported ONNXs.
 - **Positive**: ensemble LOSO seed reports now preserve the exact corpus,
   argv, and training arguments that produced validator gate inputs.
+- **Positive**: registry and saliency validation reports now preserve the
+  input files, argv, check verdicts, and report target needed for release and
+  model-card evidence.
 - **Positive**: direct ensemble manifests now preserve the corpus, member-output,
   registry, argv, and manifest context that produced the top-level runtime entry.
 - **Positive**: `vmaf-train --json` reports now carry the same reproducibility

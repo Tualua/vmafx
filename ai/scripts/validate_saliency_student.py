@@ -29,12 +29,14 @@ import onnx
 import onnxruntime as ort
 import torch
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
 sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 sys.path.insert(0, str(REPO_ROOT / "ai" / "scripts"))
 
 from train_saliency_student import TinyUNet  # noqa: E402  # type: ignore[import-not-found]
 
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 from vmaf_train.op_allowlist import check_model  # noqa: E402  # type: ignore[import-not-found]
 
 
@@ -112,7 +114,8 @@ def _check_registry() -> int:
     return rc
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--onnx",
@@ -121,7 +124,13 @@ def main() -> int:
     )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--threshold", type=float, default=1e-5)
-    args = parser.parse_args()
+    parser.add_argument(
+        "--out-json",
+        type=Path,
+        default=None,
+        help="Optional JSON validation report with ADR-0661 run provenance.",
+    )
+    args = parser.parse_args(raw_argv)
 
     rc1 = _check_allowlist(args.onnx)
     rc2 = _check_parity(args.onnx, seed=args.seed, threshold=args.threshold)
@@ -129,6 +138,32 @@ def main() -> int:
 
     overall = max(rc1, rc2, rc3)
     print(f"\nResult: {'OK' if overall == 0 else 'FAIL'}")
+    if args.out_json is not None:
+        write_manifest_json(
+            args.out_json,
+            {
+                "ok": overall == 0,
+                "checks": {
+                    "op_allowlist": rc1 == 0,
+                    "pt_ort_parity": rc2 == 0,
+                    "registry": rc3 == 0,
+                },
+                "return_codes": {
+                    "op_allowlist": rc1,
+                    "pt_ort_parity": rc2,
+                    "registry": rc3,
+                    "overall": overall,
+                },
+                "run_provenance": build_run_provenance(
+                    entrypoint=SCRIPT_PATH,
+                    repo_root=REPO_ROOT,
+                    argv=raw_argv,
+                    args=args,
+                    inputs={"onnx": args.onnx},
+                    outputs={"report": args.out_json},
+                ),
+            },
+        )
     return overall
 
 

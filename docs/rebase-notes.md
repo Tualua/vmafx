@@ -7,6 +7,23 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## feat/ai-validation-report-provenance (ADR-0661)
+
+**No upstream rebase impact**: this touches fork-local tiny-AI validation
+tooling, model docs, ADR/research notes, and changelog fragments. Upstream
+Netflix/vmaf does not ship the fork tiny-model registry or saliency-student
+validation surfaces.
+
+Smoke:
+`.venv/bin/python -m pytest ai/tests/test_validation_report_provenance.py -q`
+
+Touched files: `ai/scripts/validate_model_registry.py`,
+`ai/scripts/validate_saliency_student.py`,
+`ai/tests/test_validation_report_provenance.py`, `docs/ai/model-registry.md`,
+`docs/ai/models/saliency_student_*.md`, `docs/ai/training.md`,
+`docs/research/0683-*.md`, `docs/adr/0661-ai-run-manifest-provenance.md`,
+`changelog.d/added/0683-*.md`, and this file.
+
 ## feat/vmaf-tiny-validator-report-provenance (ADR-0661)
 
 **No upstream rebase impact**: this touches fork-local tiny-AI validator
@@ -38931,7 +38948,6 @@ Touched files:
 `docs/research/0674-phase3-subset-report-provenance.md`,
 `changelog.d/added/0674-phase3-subset-report-provenance.md`,
 `docs/rebase-notes.md` (this entry).
-
 ## ADR-0661 follow-up — Quantisation report provenance
 
 **Quantisation provenance impact.** This widens ADR-0661 adoption to the int8

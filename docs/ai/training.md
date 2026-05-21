@@ -184,6 +184,10 @@ The ensemble production validator `ai/scripts/validate_ensemble_seeds.py`
 records `run_provenance` in its `PROMOTE.json` / `HOLD.json` verdicts. That
 block identifies the LOSO artifact directory, corpus root snapshot input,
 thresholds, seed list, and verdict output path.
+The remaining validation helpers use the same schema when asked for reports:
+`validate_model_registry.py --out-json` records the registry/schema inputs and
+cross-file validation result, while `validate_saliency_student.py --out-json`
+records the ONNX input and allowlist / parity / registry check verdicts.
 The LOSO trainer itself (`ai/scripts/train_fr_regressor_v2_ensemble_loso.py`)
 also records the same block in each `loso_seed{N}.json` report, identifying
 the corpus JSONL, parsed training arguments, original argv, and per-seed report

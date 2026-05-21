@@ -137,8 +137,18 @@ unzip DUTS-TR.zip
     --metrics-out build_artifacts/saliency_student_v2_train.json
 
 # 3. validate against the registry
-.venv/bin/python ai/scripts/validate_model_registry.py
+.venv/bin/python ai/scripts/validate_model_registry.py \
+    --out-json build_artifacts/tiny_model_registry_validation.json
+
+# 4. validate ONNX allowlist / PyTorch-vs-ORT parity / registry status
+.venv/bin/python ai/scripts/validate_saliency_student.py \
+    --onnx model/tiny/saliency_student_v2.onnx \
+    --out-json build_artifacts/saliency_student_v2_validate.json
 ```
+
+The training metrics and validation JSONs carry ADR-0661 `run_provenance`, so
+model-card evidence records the DUTS root, ONNX output, check verdicts, argv,
+and report paths.
 
 ## Promotion history
 

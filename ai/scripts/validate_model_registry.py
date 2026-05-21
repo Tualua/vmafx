@@ -32,7 +32,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
+if str(REPO_ROOT / "ai" / "src") not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
+
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+
 DEFAULT_REGISTRY = REPO_ROOT / "model" / "tiny" / "registry.json"
 DEFAULT_SCHEMA = REPO_ROOT / "model" / "tiny" / "registry.schema.json"
 
@@ -158,6 +164,7 @@ def validate(registry_path: Path, schema_path: Path) -> tuple[int, list[str]]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "registry",
@@ -172,23 +179,51 @@ def main(argv: list[str] | None = None) -> int:
         default=DEFAULT_SCHEMA,
         help=f"path to registry.schema.json (default: {DEFAULT_SCHEMA})",
     )
-    args = parser.parse_args(argv)
+    parser.add_argument(
+        "--out-json",
+        type=Path,
+        default=None,
+        help="Optional JSON validation report with ADR-0661 run provenance.",
+    )
+    args = parser.parse_args(raw_argv)
 
     rc, errors = validate(args.registry, args.schema)
+    model_count = 0
     if rc != 0:
         for e in errors:
             print(f"FAIL: {e}", file=sys.stderr)
         print(f"\n{len(errors)} error(s) — registry validation failed.", file=sys.stderr)
     else:
         try:
-            n = len(json.loads(args.registry.read_text(encoding="utf-8")).get("models", []))
-            print(f"OK: {n} registry entries valid against {args.schema.name}")
+            model_count = len(
+                json.loads(args.registry.read_text(encoding="utf-8")).get("models", [])
+            )
+            print(f"OK: {model_count} registry entries valid against {args.schema.name}")
         except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
             print(
                 f"ERROR: registry validated successfully but count read failed: {exc}",
                 file=sys.stderr,
             )
             rc = 1
+            errors = [f"registry count read failed: {exc}"]
+    if args.out_json is not None:
+        write_manifest_json(
+            args.out_json,
+            {
+                "ok": rc == 0,
+                "error_count": len(errors),
+                "errors": errors,
+                "model_count": model_count,
+                "run_provenance": build_run_provenance(
+                    entrypoint=SCRIPT_PATH,
+                    repo_root=REPO_ROOT,
+                    argv=raw_argv,
+                    args=args,
+                    inputs={"registry": args.registry, "schema": args.schema},
+                    outputs={"report": args.out_json},
+                ),
+            },
+        )
     return rc
 
 

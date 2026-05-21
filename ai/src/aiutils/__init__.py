@@ -9,7 +9,6 @@ directory and establish standard interfaces for new scripts.
 
 from aiutils.file_utils import sha256
 from aiutils.jsonl_utils import iter_jsonl
-from aiutils.parquet_utils import write_parquet_atomic
 from aiutils.run_manifest import build_run_provenance, describe_path, write_manifest_json
 from aiutils.time_utils import now_iso_8601
 
@@ -22,3 +21,12 @@ __all__ = [
     "write_manifest_json",
     "write_parquet_atomic",
 ]
+
+
+def __getattr__(name: str):
+    """Import optional heavy helpers only when the caller asks for them."""
+    if name == "write_parquet_atomic":
+        from aiutils.parquet_utils import write_parquet_atomic
+
+        return write_parquet_atomic
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
