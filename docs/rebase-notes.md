@@ -7,6 +7,27 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## fix/external-bench-wrapper-schema (ADR-0656)
+
+**No upstream rebase impact**: all touched implementation paths are
+fork-local external-bench tooling, docs, tests, ADR/research, and changelog
+fragments. Upstream Netflix/vmaf does not ship this benchmark harness.
+
+Rebase-sensitive fork invariant:
+
+- `summary.competitor` emitted by every `tools/external-bench/*/run.sh`
+  wrapper must exactly match the registry key in `compare.WRAPPERS`.
+  Model/version labels belong in optional metadata, not this identity
+  field, or `validate_wrapper_output()` will reject the result before
+  aggregation.
+
+Smoke:
+`.venv/bin/python -m pytest tools/external-bench/tests/ -q`
+
+Touched files: `tools/external-bench/`, `docs/ai/external-bench.md`,
+`docs/adr/0656-*.md`, `docs/research/0656-*.md`,
+`changelog.d/fixed/0656-*.md`, `mkdocs.yml`, and this file.
+
 ## feat/saliency-feature-materializer (ADR-0655)
 
 **No upstream rebase impact**: the implementation is fork-local AI tooling

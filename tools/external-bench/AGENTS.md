@@ -23,6 +23,12 @@ licence-boundary architecture and
   keys is fine; renaming or removing keys requires updating
   `compare.aggregate()` and every test in `tests/test_compare.py`
   in the same PR.
+- **`summary.competitor` is the registry key, not a display label.**
+  Wrapper payloads MUST use the exact key from `compare.WRAPPERS`
+  (`fork-fr-regressor`, `fork-nr-metric`, `x264-pvmaf`,
+  `dover-mobile`). Version/model detail belongs in optional metadata;
+  otherwise `validate_wrapper_output()` rejects the payload before
+  aggregation and the competitor silently drops from user reports.
 - **Tests must not depend on external binaries.** Every test in
   `tests/test_compare.py` stubs `subprocess.run` so the suite runs
   green on any host. Do not add a test that requires `x264-pVMAF`

@@ -58,6 +58,12 @@ score on whatever scale the model was trained on. The aggregation in
 `compare.py` reports PLCC / SROCC / RMSE per competitor — units in the
 score field do not need to match across competitors.
 
+`summary.competitor` must exactly match the registry key passed through
+`--competitors` (`fork-fr-regressor`, `fork-nr-metric`, `x264-pvmaf`, or
+`dover-mobile`). The model/version detail belongs in sidecar metadata or
+wrapper-local logs; changing this field to a descriptive label makes the
+orchestrator reject the payload as an invalid wrapper schema.
+
 `compare.py` validates every wrapper payload before aggregation. Missing
 required keys, a `summary.competitor` that does not match the wrapper
 name, non-object frames, and non-numeric metric fields are reported as

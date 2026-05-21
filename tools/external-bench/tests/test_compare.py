@@ -11,6 +11,7 @@ exercise the schema-merge + aggregation + rendering paths.
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -79,6 +80,83 @@ def _make_stub_runner(by_competitor: dict[str, dict]):
     return stub_run
 
 
+def _write_fake_vmaf_tune(tmp_path: pathlib.Path) -> pathlib.Path:
+    """Create a tiny `vmaf-tune` stand-in for shell-wrapper smoke tests."""
+    fake = tmp_path / "vmaf-tune"
+    fake.write_text(
+        """#!/usr/bin/env python3
+import json
+import pathlib
+import sys
+
+out = pathlib.Path(sys.argv[sys.argv.index("--json") + 1])
+out.write_text(json.dumps({
+    "frames": [{
+        "frame": 0,
+        "predicted_mos": 4.25,
+        "predicted_vmaf": 91.5,
+        "runtime_ms": 3.0,
+    }],
+    "plcc": 0.75,
+    "srocc": 0.70,
+    "rmse": 1.25,
+    "runtime_total_ms": 3.0,
+    "params": 123,
+    "gflops": 0.01,
+}))
+""",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    return fake
+
+
+def _run_fork_shell_wrapper(tmp_path: pathlib.Path, competitor: str) -> dict:
+    fake_vmaf_tune = _write_fake_vmaf_tune(tmp_path)
+    model_dir = tmp_path / "models"
+    model_dir.mkdir()
+    (model_dir / "nr_metric_v1.json").write_text("{}", encoding="utf-8")
+    (model_dir / "fr_regressor_v2_ensemble_v1.json").write_text("{}", encoding="utf-8")
+
+    ref = tmp_path / "ref.yuv"
+    dis = tmp_path / "dis.yuv"
+    ref.write_bytes(b"\x00" * 16)
+    dis.write_bytes(b"\x00" * 16)
+    out = tmp_path / f"{competitor}.json"
+
+    cmd = [
+        "bash",
+        str(compare.WRAPPERS[competitor]),
+        "--dis",
+        str(dis),
+        "--width",
+        "16",
+        "--height",
+        "16",
+        "--pixfmt",
+        "yuv420p",
+        "--fps",
+        "24",
+        "--out",
+        str(out),
+    ]
+    if competitor == "fork-fr-regressor":
+        cmd.extend(["--ref", str(ref)])
+
+    env = os.environ.copy()
+    env["EXTERNAL_BENCH_VMAF_TUNE"] = str(fake_vmaf_tune)
+    env["EXTERNAL_BENCH_MODEL_DIR"] = str(model_dir)
+    proc = subprocess.run(  # noqa: S603 - fixed argv runs repo wrapper with temp fixtures
+        cmd,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert proc.returncode == 0, proc.stderr
+    return json.loads(out.read_text(encoding="utf-8"))
+
+
 # --- tests -----------------------------------------------------------------
 
 
@@ -98,6 +176,20 @@ def test_run_wrapper_parses_canned_output(tmp_path: pathlib.Path) -> None:
     assert result["summary"]["competitor"] == "x264-pvmaf"
     assert len(result["frames"]) == EXPECTED_FRAMES_DEFAULT
     assert result["summary"]["plcc"] == EXPECTED_PLCC_CANNED
+
+
+def test_fork_nr_shell_wrapper_emits_registry_competitor_key(tmp_path: pathlib.Path) -> None:
+    payload = _run_fork_shell_wrapper(tmp_path, "fork-nr-metric")
+
+    assert payload["summary"]["competitor"] == "fork-nr-metric"
+    assert compare.validate_wrapper_output("fork-nr-metric", payload) is payload
+
+
+def test_fork_fr_shell_wrapper_emits_registry_competitor_key(tmp_path: pathlib.Path) -> None:
+    payload = _run_fork_shell_wrapper(tmp_path, "fork-fr-regressor")
+
+    assert payload["summary"]["competitor"] == "fork-fr-regressor"
+    assert compare.validate_wrapper_output("fork-fr-regressor", payload) is payload
 
 
 def test_run_wrapper_propagates_failure(tmp_path: pathlib.Path) -> None:

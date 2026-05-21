@@ -236,6 +236,7 @@ nav:
       - Predictor: ai/predictor.md
       - Predictor v2 (real corpus): ai/predictor-v2-realcorpus-training.md
       - Signal-mix audit: ai/signal-mix-audit.md
+      - External benchmark wrappers: ai/external-bench.md
       - LOSO evaluation: ai/loso-eval.md
       - Local sidecar training: ai/local-sidecar-training.md
       - Ensemble training kit: ai/ensemble-training-kit.md

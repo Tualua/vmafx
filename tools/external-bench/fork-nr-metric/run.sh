@@ -120,7 +120,7 @@ trap 'rm -f "$tmp_out"' EXIT
   --model "$model" \
   --json "$tmp_out"
 
-python3 - "$tmp_out" "$out" "fork-nr-metric-v1" <<'PY'
+python3 - "$tmp_out" "$out" "fork-nr-metric" <<'PY'
 import json, sys, pathlib
 src = pathlib.Path(sys.argv[1])
 dst = pathlib.Path(sys.argv[2])

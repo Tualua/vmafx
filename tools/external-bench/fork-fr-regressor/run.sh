@@ -123,7 +123,7 @@ trap 'rm -f "$tmp_out"' EXIT
   --model "$model" \
   --json "$tmp_out"
 
-python3 - "$tmp_out" "$out" "fork-fr-regressor-v2-ensemble" <<'PY'
+python3 - "$tmp_out" "$out" "fork-fr-regressor" <<'PY'
 import json, sys, pathlib
 src = pathlib.Path(sys.argv[1])
 dst = pathlib.Path(sys.argv[2])

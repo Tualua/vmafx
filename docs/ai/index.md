@@ -29,6 +29,8 @@ alongside classic VMAF SVM models.
 - [Signal-mix audit](signal-mix-audit.md) — table-only coverage,
   redundancy, complementary-intersection, and blind-spot reports for
   refreshed AI feature tables
+- [External benchmark wrappers](external-bench.md) — wrapper-only
+  comparison harness for fork predictors, x264-pVMAF, and DOVER-Mobile
 - [CHUG UGC-HDR ingestion](chug-ingestion.md) — local-only CHUG
   manifest/video ingest path for HDR subjective-MOS experiments
 - [KonViD MOS head v1](models/konvid_mos_head_v1.md) — 5 081-parameter
