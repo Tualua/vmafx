@@ -38612,3 +38612,38 @@ Touched files:
 `docs/research/0667-predictor-v2-report-provenance.md`,
 `changelog.d/added/0667-predictor-v2-report-provenance.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0661 follow-up — vmaf_tiny train stats provenance
+
+**vmaf_tiny training provenance impact.** This widens ADR-0661 adoption to the
+pre-export stats JSON files emitted by the vmaf_tiny trainer family.
+
+**Key invariants**:
+
+- `train_vmaf_tiny_v2.py`, `train_vmaf_tiny_v3.py`,
+  `train_vmaf_tiny_v4.py`, and `train_vmaf_tiny_v5.py` write their
+  `--out-stats` JSON with a `run_provenance` block built by
+  `aiutils.run_manifest.build_run_provenance()`.
+- v2/v3/v4 stats record the parquet input, checkpoint target, stats target,
+  argv, and parsed hyperparameters.
+- v5 stats record both `parquet_base` and `parquet_extra`, plus checkpoint and
+  stats output targets.
+- Do not restore direct `Path.write_text(json.dumps(...))` stats output here;
+  use `write_manifest_json()` so JSON sorting and trailing-newline behavior stay
+  shared with the other AI provenance reports.
+
+Touched files:
+`ai/scripts/train_vmaf_tiny_v2.py`,
+`ai/scripts/train_vmaf_tiny_v3.py`,
+`ai/scripts/train_vmaf_tiny_v4.py`,
+`ai/scripts/train_vmaf_tiny_v5.py`,
+`ai/tests/test_vmaf_tiny_train_run_provenance.py`,
+`docs/ai/training.md`,
+`docs/ai/models/vmaf_tiny_v2.md`,
+`docs/ai/models/vmaf_tiny_v3.md`,
+`docs/ai/models/vmaf_tiny_v4.md`,
+`docs/ai/models/vmaf_tiny_v5.md`,
+`docs/adr/0661-ai-run-manifest-provenance.md`,
+`docs/research/0668-vmaf-tiny-train-stats-provenance.md`,
+`changelog.d/added/0668-vmaf-tiny-train-stats-provenance.md`,
+`docs/rebase-notes.md` (this entry).

@@ -173,6 +173,10 @@ python3 ai/scripts/eval_loso_vmaf_tiny_v3.py \
     --out-json runs/vmaf_tiny_v3_loso_metrics.json
 ```
 
+The training stats JSON includes ADR-0661 `run_provenance` with the trainer
+entrypoint, argv, parsed hyperparameters, parquet input, checkpoint target, and
+stats target. Keep that block with any refreshed stats used for export.
+
 ## Choosing between v2 and v3
 
 * **Default to v2.** Smaller bundle (2 446 B vs 4 496 B), validated

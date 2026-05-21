@@ -23,10 +23,16 @@ exporter can be reused.
 from __future__ import annotations
 
 import argparse
-import json
+import sys
 from pathlib import Path
 
 import numpy as np
+
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
+AI_SRC = REPO_ROOT / "ai" / "src"
+if AI_SRC.is_dir() and str(AI_SRC) not in sys.path:
+    sys.path.insert(0, str(AI_SRC))
 
 CANONICAL_6: tuple[str, ...] = (
     "adm2",
@@ -144,6 +150,8 @@ def main() -> int:
     import pandas as pd
     import torch
 
+    from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
     base = _load(args.parquet_base, "base")
     extra = _load(args.parquet_extra, "extra")
     if "corpus" not in extra.columns:
@@ -191,26 +199,34 @@ def main() -> int:
         },
         args.out_ckpt,
     )
-    args.out_stats.parent.mkdir(parents=True, exist_ok=True)
-    args.out_stats.write_text(
-        json.dumps(
-            {
-                "features": list(CANONICAL_6),
-                "input_mean": mean.tolist(),
-                "input_std": std.tolist(),
-                "train_metrics": metrics,
-                "epochs": args.epochs,
-                "lr": args.lr,
-                "batch_size": args.batch_size,
-                "seed": args.seed,
-                "n_train_rows": len(df),
-                "parquet_base": str(args.parquet_base),
-                "parquet_extra": str(args.parquet_extra),
+    stats_payload = {
+        "features": list(CANONICAL_6),
+        "input_mean": mean.tolist(),
+        "input_std": std.tolist(),
+        "train_metrics": metrics,
+        "epochs": args.epochs,
+        "lr": args.lr,
+        "batch_size": args.batch_size,
+        "seed": args.seed,
+        "n_train_rows": len(df),
+        "parquet_base": str(args.parquet_base),
+        "parquet_extra": str(args.parquet_extra),
+        "run_provenance": build_run_provenance(
+            entrypoint=SCRIPT_PATH,
+            repo_root=REPO_ROOT,
+            argv=sys.argv[1:],
+            args=args,
+            inputs={
+                "parquet_base": args.parquet_base,
+                "parquet_extra": args.parquet_extra,
             },
-            indent=2,
-        )
-        + "\n"
-    )
+            outputs={
+                "checkpoint_target": str(args.out_ckpt),
+                "stats_target": str(args.out_stats),
+            },
+        ),
+    }
+    write_manifest_json(args.out_stats, stats_payload)
     print(f"[train-v5] wrote {args.out_ckpt} and {args.out_stats}")
     return 0
 

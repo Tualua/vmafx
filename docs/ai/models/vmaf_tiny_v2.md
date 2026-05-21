@@ -157,6 +157,10 @@ python3 ai/scripts/validate_vmaf_tiny_v2.py \
     --rows 100 --min-plcc 0.97
 ```
 
+The training stats JSON includes ADR-0661 `run_provenance` with the trainer
+entrypoint, argv, parsed hyperparameters, parquet input, checkpoint target, and
+stats target. Keep that block with any refreshed stats used for export.
+
 ## Limitations
 
 * The model fuses six **already-extracted** features — it is *not* a

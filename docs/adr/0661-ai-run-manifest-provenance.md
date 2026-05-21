@@ -47,6 +47,10 @@ The predictor-v2 real-corpus trainer
 block for `runs/predictor_v2_realcorpus/report.json`, including diagnostic
 `--allow-empty` runs, so gate-failed per-codec predictor evidence records the
 corpus roots, resolved corpus files, argv, and report target.
+The `vmaf_tiny_v2`, `vmaf_tiny_v3`, `vmaf_tiny_v4`, and deferred
+`vmaf_tiny_v5` training scripts record the same block in their `--out-stats`
+JSON files so exporter inputs can be traced to the parquet table(s),
+checkpoint target, stats target, argv, and hyperparameters that produced them.
 
 ## Alternatives considered
 
@@ -64,6 +68,8 @@ corpus roots, resolved corpus files, argv, and report target.
   output targets that produced them.
 - **Positive**: predictor-v2 real-corpus gate reports now carry the same
   reproducibility block as the model-card evidence they feed.
+- **Positive**: vmaf_tiny training stats now bridge the pre-export gap between
+  refreshed parquets and ONNX sidecars.
 - **Positive**: CHUG manifests stay CHUG-named even though the implementation
   shares the KonViD training loop.
 - **Negative**: sidecars become slightly larger and include local path names.

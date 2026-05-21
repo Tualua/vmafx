@@ -121,6 +121,10 @@ python3 ai/scripts/eval_loso_vmaf_tiny_v4.py \
     --out-json runs/vmaf_tiny_v4_loso_metrics.json
 ```
 
+The training stats JSON includes ADR-0661 `run_provenance` with the trainer
+entrypoint, argv, parsed hyperparameters, parquet input, checkpoint target, and
+stats target. Keep that block with any refreshed stats used for export.
+
 The generated LOSO report includes `run_provenance` with the evaluation
 entrypoint, original argv, parsed hyperparameters, feature parquet input, and
 report target path. Treat that block as the run identity when comparing v4

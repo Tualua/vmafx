@@ -27,6 +27,10 @@ model card finds the deferral verdict instead of a missing document.
   `run_provenance` for both the base and extra parquet inputs plus the report
   target. Use that block to compare corpus-expansion experiments; it does not
   change the current deferred ship verdict.
+- Any exploratory `ai/scripts/train_vmaf_tiny_v5.py --out-stats` JSON also
+  includes `run_provenance` for the base/extra parquet inputs, checkpoint
+  target, stats target, argv, and hyperparameters. Keep that block with local
+  experiments so rejected v5 refreshes remain auditable.
 
 ## See also
 

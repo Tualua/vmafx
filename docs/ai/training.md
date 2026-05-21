@@ -148,6 +148,12 @@ The predictor-v2 real-corpus trainer also writes `run_provenance` into
 codec list, corpus roots, resolved JSONL files, gate arguments, and report
 target so a gate failure can be reproduced without reconstructing shell history.
 
+The `vmaf_tiny_v2`, `vmaf_tiny_v3`, `vmaf_tiny_v4`, and `vmaf_tiny_v5`
+training scripts record the same block in their `--out-stats` JSON files.
+Those stats files feed the ONNX exporters, so they now identify the training
+parquet input(s), checkpoint target, stats target, argv, and hyperparameters
+used before an export sidecar is produced.
+
 The ensemble production validator `ai/scripts/validate_ensemble_seeds.py`
 records `run_provenance` in its `PROMOTE.json` / `HOLD.json` verdicts. That
 block identifies the LOSO artifact directory, corpus root snapshot input,
