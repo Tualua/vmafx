@@ -7,6 +7,22 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## feat/ensemble-manifest-provenance (ADR-0661)
+
+**No upstream rebase impact**: this touches fork-local AI ensemble training
+tooling, docs, ADR/research notes, and changelog fragments. Upstream
+Netflix/vmaf does not ship the `fr_regressor_v2_ensemble_v1` trainer/manifest
+surface.
+
+Smoke:
+`.venv/bin/python -m pytest ai/tests/test_train_fr_regressor_v2_ensemble.py -q`
+
+Touched files: `ai/scripts/train_fr_regressor_v2_ensemble.py`,
+`ai/tests/test_train_fr_regressor_v2_ensemble.py`,
+`docs/ai/models/fr_regressor_v2_probabilistic.md`, `docs/ai/training.md`,
+`docs/research/0678-*.md`, `docs/adr/0661-ai-run-manifest-provenance.md`,
+`changelog.d/added/0678-*.md`, and this file.
+
 ## feat/nr-threshold-calibration-provenance (ADR-0661)
 
 **No upstream rebase impact**: this touches fork-local AI/vmaf-tune

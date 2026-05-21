@@ -135,6 +135,13 @@ SHA-256-check each member without a registry-schema bump. The manifest
 is the higher-level entry point that wires the members into a single
 ensemble identifier.
 
+Fresh manifests written by `ai/scripts/train_fr_regressor_v2_ensemble.py`
+include ADR-0661 `run_provenance`. That block records the trainer entrypoint,
+argv, parsed training/export arguments, optional corpus parquet, member ONNX
+outputs, registry target, and manifest path. The later production seed exporter
+also records provenance in each per-seed sidecar, so the top-level manifest and
+individual ONNX sidecars both carry replay context.
+
 ## How to query
 
 The runtime contract is "run all 5 ONNX sessions on the same input,

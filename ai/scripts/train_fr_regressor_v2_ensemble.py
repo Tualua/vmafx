@@ -73,12 +73,13 @@ from typing import Any
 
 import numpy as np
 
-from aiutils.file_utils import sha256
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
 if str(REPO_ROOT / "ai" / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 
+from aiutils.file_utils import sha256  # noqa: E402
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 CANONICAL_6: tuple[str, ...] = (
     "adm2",
@@ -277,9 +278,10 @@ def _build_manifest(
     conformal_q: float | None,
     smoke: bool,
     eval_metrics: dict[str, Any] | None,
+    run_provenance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     method = "ensemble+conformal" if conformal_q is not None else "ensemble"
-    return {
+    manifest = {
         "id": ensemble_id,
         "kind": "fr_ensemble",
         "ensemble_size": len(members),
@@ -298,6 +300,9 @@ def _build_manifest(
         "smoke": smoke,
         "eval": eval_metrics,
     }
+    if run_provenance is not None:
+        manifest["run_provenance"] = run_provenance
+    return manifest
 
 
 def _update_registry(
@@ -343,7 +348,7 @@ def _update_registry(
     registry_path.write_text(json.dumps(registry, indent=2, sort_keys=True) + "\n")
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="train_fr_regressor_v2_ensemble.py")
     ap.add_argument(
         "--corpus",
@@ -392,7 +397,8 @@ def main() -> int:
         action="store_true",
         help="Skip ONNX export + registry update (dev mode).",
     )
-    args = ap.parse_args()
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = ap.parse_args(raw_argv)
 
     if args.ensemble_size < 1:
         print("error: --ensemble-size must be >= 1", file=sys.stderr)
@@ -562,6 +568,21 @@ def main() -> int:
         "feature_mean": mean.astype(float).tolist(),
         "feature_std": std.astype(float).tolist(),
     }
+    manifest_path = args.out_dir / f"{args.ensemble_id}.json"
+    run_provenance = build_run_provenance(
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=raw_argv,
+        args=args,
+        inputs={
+            "corpus": args.corpus,
+        },
+        outputs={
+            "manifest": manifest_path,
+            "member_onnx": [args.out_dir / member["onnx"] for member in member_records],
+            "registry": args.registry,
+        },
+    )
     manifest = _build_manifest(
         args.ensemble_id,
         member_records,
@@ -572,9 +593,9 @@ def main() -> int:
         conformal_q=conformal_q,
         smoke=args.smoke,
         eval_metrics=eval_metrics,
+        run_provenance=run_provenance,
     )
-    manifest_path = args.out_dir / f"{args.ensemble_id}.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    write_manifest_json(manifest_path, manifest)
     print(f"[fr-v2-ens] wrote manifest to {manifest_path}")
 
     _update_registry(
