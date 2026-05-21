@@ -7,6 +7,26 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## feat/tune-score-backend-native-priority (ADR-0667)
+
+**No upstream rebase impact**: this touches fork-local `vmaf-tune`
+backend-selection code, docs, tests, AGENTS notes, and ADR/research notes.
+Upstream Netflix/vmaf does not ship the fork `vmaf-tune` automation harness.
+
+Invariant: `tools/vmaf-tune/src/vmaftune/score_backend.py` keeps
+`DEFAULT_FALLBACKS = ("cuda", "sycl", "hip", "vulkan", "cpu")`. Do not move
+Vulkan before SYCL or HIP during backend-selector rebases; Vulkan is the broad
+fallback, not the native-first winner.
+
+Smoke:
+`.venv/bin/python -m pytest tools/vmaf-tune/tests/test_score_backend.py -q`
+
+Touched files: `tools/vmaf-tune/src/vmaftune/score_backend.py`,
+`tools/vmaf-tune/tests/test_score_backend.py`, `tools/vmaf-tune/AGENTS.md`,
+`docs/usage/vmaf-tune.md`, `docs/usage/vmaf-tune-score-backend.md`,
+`docs/adr/0667-*.md`, `docs/adr/_index_fragments/0667-*.md`,
+`docs/research/0687-*.md`, `changelog.d/changed/0667-*.md`, and this file.
+
 ## feat/tune-report-quick-takeaways (ADR-0666)
 
 **No upstream rebase impact**: this touches fork-local `vmaf-tune report`
@@ -39032,4 +39052,26 @@ Touched files:
 `docs/adr/0661-ai-run-manifest-provenance.md`,
 `docs/research/0684-chug-extraction-report-provenance.md`,
 `changelog.d/added/0684-chug-extraction-report-provenance.md`,
+`docs/rebase-notes.md` (this entry).
+
+## ADR-0628 follow-up — stacked PR ADR collision guard
+
+**ADR collision gate impact.** The rule-enforcement workflow still blocks
+independent open PRs that add the same ADR number, but it now skips descendant
+stacked PRs whose `baseRefName` chain reaches the current PR branch.
+
+**Key invariants**:
+
+- Child draft PRs in the merge train intentionally contain their parent PR's
+  ADR files; they are not independent ADR-number collisions.
+- Independent open PRs with overlapping added ADR numbers must still fail the
+  `adr-collision-check` job.
+- Keep `gh pr list --json number,headRefName,headRefOid,baseRefName` aligned
+  with the base-branch-chain traversal in `rule-enforcement.yml`.
+
+Touched files:
+`.github/workflows/rule-enforcement.yml`,
+`.github/AGENTS.md`,
+`scripts/adr/README.md`,
+`changelog.d/fixed/0667-adr-collision-stacked-prs.md`,
 `docs/rebase-notes.md` (this entry).

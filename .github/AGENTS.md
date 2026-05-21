@@ -59,6 +59,17 @@ blocked. If the sync skill
 ever changes its branch-naming or title convention, update the
 workflow's `Skip upstream-port PRs` step.
 
+### ADR collision guard and stacked PRs
+
+The `adr-collision-check` job in
+[`rule-enforcement.yml`](workflows/rule-enforcement.yml) scans open PRs for
+ADR-number collisions, but it must skip descendant stacked PRs whose
+`baseRefName` chain reaches the current PR's `head.ref`. Those descendants
+intentionally contain the parent PR's ADR files while the merge train waits.
+Do not replace that base-branch-chain check with a flat "any open PR with the
+same number fails" scan; it deadlocks ADR-bearing parent PRs whenever draft
+children are queued.
+
 ### Advisory surface-path lists
 
 Both advisory jobs grep the diff for specific path prefixes

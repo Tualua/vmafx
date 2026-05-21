@@ -29,7 +29,8 @@ from vmaftune.score_backend import (  # noqa: E402
 )
 
 _HELP_FULL = (
-    " --backend $name:              exclusive backend selector — " "auto|cpu|cuda|sycl|vulkan.\n"
+    " --backend $name:              exclusive backend selector — "
+    "auto|cpu|cuda|sycl|vulkan|hip|metal.\n"
 )
 _HELP_CUDA_ONLY = " --backend $name:              exclusive backend selector — auto|cpu|cuda.\n"
 _HELP_CPU_ONLY_NO_BACKEND_LINE = (
@@ -52,7 +53,7 @@ class _FakeCompleted:
 
 def test_parse_full_backend_line_yields_all_four():
     parsed = parse_supported_backends(_HELP_FULL)
-    assert parsed == frozenset({"cpu", "cuda", "sycl", "vulkan"})
+    assert parsed == frozenset({"cpu", "cuda", "sycl", "hip", "vulkan"})
 
 
 def test_parse_cuda_only_help_text():
@@ -113,6 +114,7 @@ def test_detect_cuda_when_binary_supports_and_nvidia_smi_succeeds():
     assert "cpu" in avail
     assert "vulkan" not in avail  # vulkaninfo is not on PATH in this scenario
     assert "sycl" not in avail
+    assert "hip" not in avail
 
 
 def test_detect_orders_results_per_all_backends():
@@ -125,12 +127,48 @@ def test_detect_orders_results_per_all_backends():
             return _FakeCompleted(0, stdout="deviceName = Radeon\n")
         if cmd[0] == "sycl-ls":
             return _FakeCompleted(0, stdout="[opencl:gpu] Intel Arc\n")
+        if cmd[0] == "rocminfo":
+            return _FakeCompleted(0, stdout="Name:                    gfx1036\n")
         return _FakeCompleted(1)
 
     with mock.patch("vmaftune.score_backend.shutil.which", side_effect=lambda b: f"/x/{b}"):
         avail = detect_available_backends(vmaf_bin="vmaf", runner=runner)
-    # ALL_BACKENDS is (cpu, cuda, sycl, vulkan); detect must respect that order.
+    # detect must respect the tuple order exposed by ALL_BACKENDS.
     assert avail == [b for b in ALL_BACKENDS if b in set(avail)]
+
+
+def test_detect_hip_when_binary_supports_and_rocminfo_succeeds():
+    def runner(cmd, capture_output, text, check, timeout=None):
+        if cmd[0] == "vmaf":
+            return _FakeCompleted(0, stdout=_HELP_FULL)
+        if cmd[0] == "rocminfo":
+            return _FakeCompleted(0, stdout="Name:                    gfx1100\n")
+        return _FakeCompleted(1)
+
+    def fake_which(binary):
+        return f"/usr/bin/{binary}" if binary in {"vmaf", "rocminfo"} else None
+
+    with mock.patch("vmaftune.score_backend.shutil.which", side_effect=fake_which):
+        avail = detect_available_backends(vmaf_bin="vmaf", runner=runner)
+    assert "hip" in avail
+    assert "cuda" not in avail
+    assert "vulkan" not in avail
+
+
+def test_detect_hip_falls_back_to_rocm_smi():
+    def runner(cmd, capture_output, text, check, timeout=None):
+        if cmd[0] == "vmaf":
+            return _FakeCompleted(0, stdout=_HELP_FULL)
+        if cmd[0] == "rocm-smi":
+            return _FakeCompleted(0, stdout="GPU[0] : Card series: AMD Radeon RX 7900 XTX\n")
+        return _FakeCompleted(1)
+
+    def fake_which(binary):
+        return f"/usr/bin/{binary}" if binary in {"vmaf", "rocm-smi"} else None
+
+    with mock.patch("vmaftune.score_backend.shutil.which", side_effect=fake_which):
+        avail = detect_available_backends(vmaf_bin="vmaf", runner=runner)
+    assert "hip" in avail
 
 
 # --------------------------------------------------------------------- #
@@ -146,6 +184,16 @@ def test_select_auto_picks_cuda_when_available():
 def test_select_auto_walks_fallback_chain_to_vulkan():
     chosen = select_backend(prefer="auto", available=["cpu", "vulkan"])
     assert chosen == "vulkan"
+
+
+def test_select_auto_prefers_sycl_before_hip_and_vulkan():
+    chosen = select_backend(prefer="auto", available=["cpu", "vulkan", "hip", "sycl"])
+    assert chosen == "sycl"
+
+
+def test_select_auto_prefers_hip_before_vulkan():
+    chosen = select_backend(prefer="auto", available=["cpu", "vulkan", "hip"])
+    assert chosen == "hip"
 
 
 def test_select_auto_lands_on_cpu_when_no_gpu_available():
@@ -170,6 +218,17 @@ def test_select_explicit_cuda_raises_when_unavailable():
         select_backend(prefer="cuda", available=["cpu"])
     assert "cuda" in str(exc.value)
     assert "available" in str(exc.value).lower()
+
+
+def test_select_explicit_hip_succeeds_when_available():
+    chosen = select_backend(prefer="hip", available=["cpu", "hip"])
+    assert chosen == "hip"
+
+
+def test_select_explicit_hip_raises_when_unavailable():
+    with pytest.raises(BackendUnavailableError) as exc:
+        select_backend(prefer="hip", available=["cpu"])
+    assert "hip" in str(exc.value)
 
 
 def test_select_explicit_vulkan_does_not_silently_downgrade_to_cpu():
@@ -250,6 +309,11 @@ def test_build_vmaf_command_accepts_every_known_backend(backend):
 def test_score_backend_choices_include_vulkan():
     """argparse must accept 'vulkan' as a --score-backend value."""
     assert "vulkan" in ALL_BACKENDS
+
+
+def test_score_backend_choices_include_hip():
+    """argparse must accept 'hip' as a --score-backend value."""
+    assert "hip" in ALL_BACKENDS
 
 
 def test_score_backend_choices_reject_unknown_value():

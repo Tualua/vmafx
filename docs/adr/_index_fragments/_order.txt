@@ -414,3 +414,4 @@
 0664-windows-cuda-toolkit-installer
 0665-fast-nr-calibration-quality-guard
 0666-tune-report-quick-takeaways
+0667-vmaf-tune-score-backend-native-priority

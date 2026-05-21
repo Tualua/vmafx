@@ -10,7 +10,8 @@ without changing the encode axis at all.
 The flag is governed by [ADR-0299](../adr/0299-vmaf-tune-gpu-score.md)
 (initial CUDA / SYCL / CPU shape) and
 [ADR-0314](../adr/0314-vmaf-tune-score-backend-vulkan.md) (Vulkan
-addition for vendor-neutral GPU scoring).
+addition for vendor-neutral GPU scoring). [ADR-0667](../adr/0667-vmaf-tune-score-backend-native-priority.md)
+adds HIP/ROCm and makes `auto` native-first.
 
 ## Usage
 
@@ -27,10 +28,11 @@ vmaf-tune corpus \
 
 | Value    | Behaviour                                                                                                                                                                                                          |
 |----------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `auto`   | (default) probe the host and pick the fastest available, in the order `cuda → vulkan → sycl → cpu`.                                                                                                                |
+| `auto`   | (default) probe the host and pick the fastest available, in the order `cuda → sycl → hip → vulkan → cpu`.                                                                                                          |
 | `cuda`   | NVIDIA GPU score path. Errors out if the local `vmaf` was built without CUDA, or if `nvidia-smi` is missing / reports no devices.                                                                                  |
-| `vulkan` | Vendor-neutral GPU path (per [ADR-0127](../adr/0127-vulkan-compute-backend.md)). Use on AMD, Intel Arc, or Apple-MoltenVK hosts. Errors out if `vmaf` was built without Vulkan or `vulkaninfo` reports no devices. |
 | `sycl`   | Intel oneAPI SYCL path. Errors out if `vmaf` was built without SYCL or `sycl-ls` reports no devices.                                                                                                               |
+| `hip`    | AMD ROCm score path. Errors out if the local `vmaf` was built without HIP, or if `rocminfo` / `rocm-smi` cannot see an AMD GPU.                                                                                    |
+| `vulkan` | Vendor-neutral GPU path (per [ADR-0127](../adr/0127-vulkan-compute-backend.md)). Use as the cross-vendor fallback or for MoltenVK hosts. Errors out if `vmaf` was built without Vulkan or `vulkaninfo` reports no devices. |
 | `cpu`    | Force CPU scoring. Always available; useful as a baseline reference when chasing a numeric divergence.                                                                                                             |
 
 ## Hard-failure semantics
@@ -41,7 +43,7 @@ falling back. This avoids the most common GPU-pipeline footgun —
 running a "GPU sweep" that quietly produced CPU numbers because the
 GPU wasn't actually engaged.
 
-`auto` walks the fallback chain (`cuda → vulkan → sycl → cpu`) and
+`auto` walks the fallback chain (`cuda → sycl → hip → vulkan → cpu`) and
 picks the first entry that is **both** advertised by the local `vmaf`
 binary's `--help` *and* probe-confirmed via the appropriate vendor
 tool. The probe results print to stderr at log-level INFO so a
@@ -89,8 +91,9 @@ sweep time.
   encoder side (the `--score-backend` flag is orthogonal to
   `--encoder`).
 - [`docs/backends/cuda/overview.md`](../backends/cuda/overview.md) /
-  [`vulkan/overview.md`](../backends/vulkan/overview.md) /
-  [`sycl/overview.md`](../backends/sycl/overview.md) — backend
+  [`sycl/overview.md`](../backends/sycl/overview.md) /
+  [`hip/overview.md`](../backends/hip/overview.md) /
+  [`vulkan/overview.md`](../backends/vulkan/overview.md) — backend
   build / runtime requirements.
 - [Research-0086](../research/0086-usage-doc-coverage-audit-2026-05-08.md)
   — audit that triggered this page.

@@ -93,10 +93,11 @@ phases on every PR:
 - **Phase 1 — vs master**: fails if an ADR number added by this PR already
   exists on `origin/master` (catches post-merge renumbering failures).
 - **Phase 2 — vs open PRs**: uses `gh pr list` to fetch every open PR's HEAD
-  SHA, then checks `docs/adr/` for overlapping numbers (catches in-flight
-  collisions before either PR merges).  Phase 2 is **best-effort**: if the
-  `gh` call fails (rate-limit, token scope), it emits a warning but does not
-  block the PR.
+  SHA and base branch, skips descendant stacked PRs whose `baseRefName` chain
+  reaches the current PR branch, then checks independent PRs' `docs/adr/` trees
+  for overlapping numbers (catches in-flight collisions before either PR
+  merges).  Phase 2 is **best-effort**: if the `gh` call fails (rate-limit,
+  token scope), it emits a warning but does not block the PR.
 
 ## Tests
 

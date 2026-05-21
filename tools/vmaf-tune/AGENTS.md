@@ -90,6 +90,12 @@ for the option-space digest.
   that tuple; the encoder will then automatically pay the dummy-encode
   cost on every `compare` invocation. CPU encoders short-circuit
   after the `ffmpeg -encoders` listing grep.
+- **Score backend auto-selection is native-first (ADR-0667).**
+  `vmaftune.score_backend.DEFAULT_FALLBACKS` must stay
+  `cuda -> sycl -> hip -> vulkan -> cpu`. Vulkan remains the
+  cross-vendor fallback, but native CUDA / SYCL / HIP runtimes win
+  before it. Adding another explicit backend to `ALL_BACKENDS` requires
+  a same-PR probe, docs update, and strict-mode unit tests.
 - **Compare runtime variants are labels, not adapters
   ([ADR-0644](../../docs/adr/0644-vmaf-tune-codec-runtime-variants.md)).**
   `ADAPTER@VARIANT` tokens in `vmaf-tune compare` must parse through

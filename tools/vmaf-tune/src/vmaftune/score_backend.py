@@ -3,18 +3,19 @@
 """Backend selection for the libvmaf CLI used by `vmaf-tune`.
 
 `vmaf` exposes a unified ``--backend NAME`` selector
-(values: ``auto|cpu|cuda|sycl|vulkan``) per ADR-0127 / ADR-0175.
+(values: ``auto|cpu|cuda|sycl|vulkan|hip``) per ADR-0127 / ADR-0175 /
+ADR-0422.
 The selector engages the GPU dispatch in libvmaf and gives a
 ~10-30x speedup on the score axis at 1080p relative to the CPU path.
 
-This module turns user intent (``--score-backend cuda|vulkan|sycl|cpu|auto``)
+This module turns user intent (``--score-backend cuda|sycl|hip|vulkan|cpu|auto``)
 into a concrete, validated choice by intersecting:
 
 1. What the **vmaf binary** advertises in its ``--help`` output (the
    `--backend` line lists which values are recognised);
 2. What the **host hardware / runtime** actually offers, probed via
-   cheap external tools (``nvidia-smi``, ``vulkaninfo``,
-   ``sycl-ls``) with conservative fallbacks.
+   cheap external tools (``nvidia-smi``, ``sycl-ls``,
+   ``rocminfo`` / ``rocm-smi``, ``vulkaninfo``) with conservative fallbacks.
 
 Hard rules (per task spec):
 
@@ -22,7 +23,7 @@ Hard rules (per task spec):
   clear error. We never silently fall back when the user explicitly
   requested a backend.
 - Only ``auto`` walks the fallback chain. The default chain is
-  ``cuda -> vulkan -> sycl -> cpu``, picking the first that is both
+  ``cuda -> sycl -> hip -> vulkan -> cpu``, picking the first that is both
   binary-supported and hardware-available.
 
 NRProxyBackend (ADR-0624 / ADR-0615)
@@ -57,12 +58,12 @@ from typing import NamedTuple
 _log = logging.getLogger(__name__)
 
 #: Backends the vmaf CLI accepts via ``--backend NAME``.
-ALL_BACKENDS: tuple[str, ...] = ("cpu", "cuda", "sycl", "vulkan")
+ALL_BACKENDS: tuple[str, ...] = ("cpu", "cuda", "sycl", "hip", "vulkan")
 
-#: Default fallback chain for ``auto``. CUDA first because it is the
-#: most-tuned GPU backend on this fork; CPU last as the always-available
-#: floor.
-DEFAULT_FALLBACKS: tuple[str, ...] = ("cuda", "vulkan", "sycl", "cpu")
+#: Default fallback chain for ``auto``. Native vendor backends are preferred
+#: before Vulkan because they have the shortest dispatch/runtime path on their
+#: respective silicon. CPU is the always-available floor.
+DEFAULT_FALLBACKS: tuple[str, ...] = ("cuda", "sycl", "hip", "vulkan", "cpu")
 
 
 class BackendUnavailableError(RuntimeError):
@@ -116,7 +117,7 @@ def parse_supported_backends(help_text: str) -> frozenset[str]:
 
     The fork's CLI prints a line like::
 
-        --backend $name:              exclusive backend selector — auto|cpu|cuda|sycl|vulkan.
+        --backend $name:              exclusive backend selector — auto|cpu|cuda|sycl|vulkan|hip.
 
     We parse the alternation (``a|b|c``) and intersect it with
     `ALL_BACKENDS`. ``cpu`` is added unconditionally — every build
@@ -127,7 +128,7 @@ def parse_supported_backends(help_text: str) -> frozenset[str]:
     found: set[str] = {"cpu"}
     for backend in ALL_BACKENDS:
         # Look for the exact token surrounded by | or whitespace as
-        # a robust check; matches any of: auto|cpu|cuda|sycl|vulkan
+        # a robust check; matches any of: auto|cpu|cuda|sycl|vulkan|hip
         # without false-positives on substrings (e.g. "cuda" inside
         # a comment about CUDA).
         for needle in (f"|{backend}|", f"|{backend}.", f"|{backend}\n", f"|{backend} "):
@@ -200,6 +201,44 @@ def _probe_sycl(runner: object | None = None) -> bool:
     return rc == 0 and "[" in out and ":gpu" in out.lower()
 
 
+def _probe_hip(runner: object | None = None) -> bool:
+    """True if an AMD ROCm/HIP GPU is reachable."""
+    runner_fn = runner or subprocess.run
+    if shutil.which("rocminfo") is not None:
+        try:
+            completed = runner_fn(  # type: ignore[operator]
+                ["rocminfo"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError):
+            completed = None
+        if completed is not None:
+            rc = int(getattr(completed, "returncode", 1))
+            out = f"{getattr(completed, 'stdout', '') or ''}\n{getattr(completed, 'stderr', '') or ''}"
+            if rc == 0 and "gfx" in out.lower():
+                return True
+
+    if shutil.which("rocm-smi") is None:
+        return False
+    try:
+        completed = runner_fn(  # type: ignore[operator]
+            ["rocm-smi", "--showproductname"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    rc = int(getattr(completed, "returncode", 1))
+    out = f"{getattr(completed, 'stdout', '') or ''}\n{getattr(completed, 'stderr', '') or ''}"
+    text_lower = out.lower()
+    return rc == 0 and ("gpu" in text_lower or "card series" in text_lower)
+
+
 def detect_available_backends(
     *,
     vmaf_bin: str = "vmaf",
@@ -219,8 +258,9 @@ def detect_available_backends(
     probes = {
         "cpu": True,
         "cuda": _probe_cuda(runner=runner) if "cuda" in supported else False,
-        "vulkan": _probe_vulkan(runner=runner) if "vulkan" in supported else False,
         "sycl": _probe_sycl(runner=runner) if "sycl" in supported else False,
+        "hip": _probe_hip(runner=runner) if "hip" in supported else False,
+        "vulkan": _probe_vulkan(runner=runner) if "vulkan" in supported else False,
     }
     return [b for b in ALL_BACKENDS if b in supported and probes[b]]
 
@@ -239,7 +279,7 @@ def select_backend(
       entry present in ``available``. ``cpu`` must be in the chain
       (or in ``available``) to guarantee a result.
     - Any other ``prefer`` value (``cpu``, ``cuda``, ``sycl``,
-      ``vulkan``) is honoured **strictly**: if it is not in
+      ``hip``, ``vulkan``) is honoured **strictly**: if it is not in
       ``available``, raise `BackendUnavailableError`. Never
       silently falls back — that would mask hardware/build mismatches
       and lie to the operator about wall-clock expectations.
