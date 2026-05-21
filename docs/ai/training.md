@@ -212,6 +212,13 @@ updated `nr_metric_v1.json` calibration sidecar, including the requested and
 actual corpus directories, `nr_metric_v1.onnx`, CRF grid, argv, and Markdown
 calibration report path.
 
+Quantisation scripts also use the same schema when asked for durable reports:
+`ptq_dynamic.py --report-out`, `ptq_static.py --report-out`,
+`qat_train.py --report-out`, and `measure_quant_drop.py --out-json` record the
+fp32/int8 model paths, calibration/config inputs where applicable, size/gate
+statistics, argv, and report output path. Prefer those reports for model-card
+evidence instead of terminal logs.
+
 ## MOS label materialization
 
 Real MOS-head training expects feature tables to already carry `mos` or

@@ -75,6 +75,11 @@ Per-EP quantisation reports (`ai/scripts/measure_quant_drop_per_ep.py`) use the
 same block so CPU/CUDA/OpenVINO PTQ investigations identify the tiny-model
 registry, optional fp32 baselines, selected execution providers, hardware tag,
 argv, and both JSON and Markdown report targets.
+Quantisation producer/gate scripts (`ptq_dynamic.py --report-out`,
+`ptq_static.py --report-out`, `qat_train.py --report-out`, and
+`measure_quant_drop.py --out-json`) use the same block so int8 model-card
+evidence identifies the fp32/int8 model paths, calibration/config inputs,
+size/gate statistics, argv, and report target.
 Phase F recipe calibration (`ai/scripts/calibrate_phase_f_recipes.py`) uses the
 same block so regenerated `vmaf-tune auto` content-recipe JSON identifies the
 source corpus JSONL, row cap, argv, and calibrated recipe output target.
@@ -121,6 +126,7 @@ label/score inputs, report thresholds, output targets, and argv.
 | Leave feature-correlation reports as plain JSON | Smallest diff | Signal-mix audits would keep metrics but lose the exact source parquet and ranking parameters | Rejected because the feature-correlation report is durable analysis evidence, not a transient debug print |
 | Leave Phase-3 subset sweeps as plain JSON | No schema delta | Model-selection sweeps would keep PLCC tables but lose seed / subset / standardization replay context | Rejected because Phase-3 outputs are durable model-selection evidence |
 | Leave per-EP quantisation reports as plain JSON | No change to a gitignored investigation harness | GPU-EP PTQ evidence would keep PLCC tables but lose the registry, hardware tag, EP list, and optional baseline context | Rejected because quantisation reports are copied into model-card and research evidence before int8 models ship |
+| Leave PTQ/QAT producer reports as terminal-only | No extra report file for local one-off quantisation | Int8 sidecars would still have no durable fp32/input/calibration/config lineage unless an operator copied shell logs by hand | Rejected because quantisation output is a shipped model artifact boundary |
 | Leave Phase F recipe calibration as plain JSON | No runtime loader delta | Calibrated recipe JSON would not identify which corpus snapshot and row cap produced operator-facing `vmaf-tune auto` behaviour | Rejected because recipe JSON is a shipped tuning input, not a scratch report |
 | Leave NR threshold calibration as plain JSON | No change to a slow calibration harness | `--fast-nr` would pick up a threshold without recording the corpus, CRF grid, model input, or report path that justified it | Rejected because NR thresholds directly affect user-facing bisect behaviour |
 | Leave DNN feature-model exporters as legacy sidecars | Avoids touching older weight-conversion scripts | Fresh C2/C3, FastDVDnet, or TransNet sidecars would record runtime shape but not the checkpoint/upstream inputs or exporter command that produced them | Rejected because those sidecars are the reproducibility boundary for shipped DNN feature models |
@@ -154,6 +160,9 @@ label/score inputs, report thresholds, output targets, and argv.
   sweep context needed to replay broader-feature decisions.
 - **Positive**: per-EP quantisation reports now carry the hardware and model
   input context needed to replay CPU/CUDA/OpenVINO PTQ findings.
+- **Positive**: PTQ/QAT producer and quant-drop gate reports now carry the
+  fp32/int8 model, calibration/config, size/gate, argv, and report context
+  needed to replay int8 model promotion evidence.
 - **Positive**: Phase F recipe calibration JSON now carries the corpus and CLI
   context needed to replay `vmaf-tune auto` content-recipe thresholds.
 - **Positive**: NR threshold calibration JSON now carries the corpus, model,

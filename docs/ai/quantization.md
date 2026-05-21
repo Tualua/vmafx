@@ -40,11 +40,14 @@ Pick the cheapest mode that stays inside the
 ### Dynamic PTQ
 
 ```bash
-python ai/scripts/ptq_dynamic.py model/tiny/nr_metric_v1.onnx
+python ai/scripts/ptq_dynamic.py model/tiny/nr_metric_v1.onnx \
+    --report-out runs/nr_metric_v1_dynamic_ptq.json
 # -> model/tiny/nr_metric_v1.int8.onnx
 ```
 
 No calibration data needed. Wraps `onnxruntime.quantization.quantize_dynamic`.
+When `--report-out` is supplied, the JSON records the fp32/int8 byte sizes,
+per-channel setting, output path, and ADR-0661 `run_provenance`.
 
 ### Static PTQ
 
@@ -53,18 +56,21 @@ a stack of `[N, ...]` representative samples. Then:
 
 ```bash
 python ai/scripts/ptq_static.py model/tiny/nr_metric_v1.onnx \
-    --calibration ai/calibration/nr_metric_v1.npz
+    --calibration ai/calibration/nr_metric_v1.npz \
+    --report-out runs/nr_metric_v1_static_ptq.json
 ```
 
 The output goes to `<input>.int8.onnx`. Add the calibration path to
-the registry's `quant_calibration_set` field.
+the registry's `quant_calibration_set` field. The optional report includes the
+calibration input names/sample count, size ratio, and `run_provenance`.
 
 ### Quantisation-aware training (QAT)
 
 ```bash
 python ai/scripts/qat_train.py \
     --config ai/configs/learned_filter_v1_qat.yaml \
-    --output model/tiny/learned_filter_v1.int8.onnx
+    --output model/tiny/learned_filter_v1.int8.onnx \
+    --report-out runs/learned_filter_v1_qat.json
 ```
 
 QAT is the third quant tier — pick it when static PTQ exceeds the
@@ -95,7 +101,8 @@ through weight pre-conditioning.
 **CLI knobs.** `--epochs-fp32` (default 20), `--epochs-qat`
 (default 10), `--lr-qat` (default fp32-lr / 10), `--n-calibration`
 (default 64), `--smoke` (skip both training phases — for CI / dev
-round-trip).
+round-trip), and `--report-out` (optional JSON with fp32/int8 outputs,
+parameter count, phase settings, and `run_provenance`).
 
 **Config.** YAML mirrors the `vmaf-train fit` shape plus a `qat:`
 block. See [`ai/configs/learned_filter_v1_qat.yaml`](../../ai/configs/learned_filter_v1_qat.yaml)
@@ -120,8 +127,13 @@ fails the PR.
 Run locally with:
 
 ```bash
-python ai/scripts/measure_quant_drop.py --all
+python ai/scripts/measure_quant_drop.py --all \
+    --out-json runs/quant_drop_gate.json
 ```
+
+`--out-json` preserves the per-model gate rows and the same ADR-0661
+`run_provenance` block as the producer scripts. Use it for model-card evidence
+or when comparing a refreshed int8 sidecar against a previous CI gate.
 
 ## Currently quantised models
 

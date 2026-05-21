@@ -36,6 +36,13 @@ import sys
 import tempfile
 from pathlib import Path
 
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
+if str(REPO_ROOT / "ai" / "src") not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
+
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+
 
 def _save_inlined_for_quant(src: Path, dst: Path) -> None:
     """Copy ``src`` to ``dst`` with all initialisers inlined and any
@@ -59,7 +66,8 @@ def _save_inlined_for_quant(src: Path, dst: Path) -> None:
     onnx.save(proto, str(dst), save_as_external_data=False)
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("onnx", type=Path, help="Path to fp32 ONNX file")
     parser.add_argument(
@@ -74,7 +82,13 @@ def main() -> int:
         help="Per-channel weight quantisation (better accuracy, marginal "
         "size cost). Default off; flip on for sensitive models.",
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--report-out",
+        type=Path,
+        default=None,
+        help="Optional JSON report with size stats and ADR-0661 run provenance.",
+    )
+    args = parser.parse_args(raw_argv)
 
     try:
         from onnxruntime.quantization import QuantType, quantize_dynamic
@@ -101,7 +115,27 @@ def main() -> int:
         )
     sz_in = src.stat().st_size
     sz_out = dst.stat().st_size
-    print(f"[ptq_dynamic] done — {sz_in:,} -> {sz_out:,} bytes ({sz_out / sz_in:.2f}×)")
+    ratio = sz_out / sz_in
+    print(f"[ptq_dynamic] done — {sz_in:,} -> {sz_out:,} bytes ({ratio:.2f}×)")
+    if args.report_out is not None:
+        write_manifest_json(
+            args.report_out,
+            {
+                "mode": "dynamic",
+                "input_bytes": sz_in,
+                "output_bytes": sz_out,
+                "size_ratio": ratio,
+                "per_channel": bool(args.per_channel),
+                "run_provenance": build_run_provenance(
+                    entrypoint=SCRIPT_PATH,
+                    repo_root=REPO_ROOT,
+                    argv=raw_argv,
+                    args=args,
+                    inputs={"model": src},
+                    outputs={"model": dst, "report": args.report_out},
+                ),
+            },
+        )
     return 0
 
 

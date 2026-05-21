@@ -55,11 +55,14 @@ from typing import Any
 # Allow this script to run both as ``python ai/scripts/qat_train.py``
 # (where the ai/ package needs to be importable) and as
 # ``python -m ai.scripts.qat_train``.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT_PATH = Path(__file__).resolve()
+_REPO_ROOT = SCRIPT_PATH.parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 if str(_REPO_ROOT / "ai" / "src") not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT / "ai" / "src"))
+
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -106,6 +109,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Skip training; exercise wiring only (for CI smoke / dev round-trip)",
     )
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--report-out",
+        type=Path,
+        default=None,
+        help="Optional JSON report with QAT outputs and ADR-0661 run provenance.",
+    )
     return parser.parse_args(argv)
 
 
@@ -229,7 +238,8 @@ def _build_train_loader_factory(cfg_doc: dict[str, Any], qat_cfg):
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _parse_args(argv)
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = _parse_args(raw_argv)
 
     try:
         import torch  # noqa: F401
@@ -274,6 +284,33 @@ def main(argv: list[str] | None = None) -> int:
         f"[qat_train] done — fp32_onnx={result.fp32_onnx} "
         f"int8_onnx={result.int8_onnx} params={result.n_params}"
     )
+    if args.report_out is not None:
+        write_manifest_json(
+            args.report_out,
+            {
+                "mode": "qat",
+                "model": cfg_doc.get("model"),
+                "smoke": bool(qat_cfg.smoke),
+                "epochs_fp32": int(result.epochs_fp32),
+                "epochs_qat": int(result.epochs_qat),
+                "n_calibration": int(qat_cfg.n_calibration),
+                "n_params": int(result.n_params),
+                "fp32_onnx": str(result.fp32_onnx),
+                "int8_onnx": str(result.int8_onnx),
+                "run_provenance": build_run_provenance(
+                    entrypoint=SCRIPT_PATH,
+                    repo_root=_REPO_ROOT,
+                    argv=raw_argv,
+                    args=args,
+                    inputs={"config": cfg_path},
+                    outputs={
+                        "fp32_model": result.fp32_onnx,
+                        "int8_model": result.int8_onnx,
+                        "report": args.report_out,
+                    },
+                ),
+            },
+        )
     return 0
 
 

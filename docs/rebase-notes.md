@@ -38931,3 +38931,32 @@ Touched files:
 `docs/research/0674-phase3-subset-report-provenance.md`,
 `changelog.d/added/0674-phase3-subset-report-provenance.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0661 follow-up — Quantisation report provenance
+
+**Quantisation provenance impact.** This widens ADR-0661 adoption to the int8
+producer/gate scripts used for model-card promotion evidence.
+
+**Key invariants**:
+
+- `ai/scripts/ptq_dynamic.py --report-out` and
+  `ai/scripts/ptq_static.py --report-out` write JSON reports with fp32/int8
+  sizes, selected quantisation settings, and `run_provenance`.
+- `ai/scripts/qat_train.py --report-out` writes QAT output/report metadata for
+  the fp32 bridge and final int8 ONNX artifact.
+- `ai/scripts/measure_quant_drop.py --out-json` preserves per-model gate rows
+  and `run_provenance` without changing stdout or exit codes.
+
+Touched files:
+`ai/scripts/ptq_dynamic.py`,
+`ai/scripts/ptq_static.py`,
+`ai/scripts/qat_train.py`,
+`ai/scripts/measure_quant_drop.py`,
+`ai/tests/test_ptq_scripts.py`,
+`ai/tests/test_qat_smoke.py`,
+`docs/ai/quantization.md`,
+`docs/ai/training.md`,
+`docs/adr/0661-ai-run-manifest-provenance.md`,
+`docs/research/0682-quantization-report-provenance.md`,
+`changelog.d/added/0682-quantization-report-provenance.md`,
+`docs/rebase-notes.md` (this entry).

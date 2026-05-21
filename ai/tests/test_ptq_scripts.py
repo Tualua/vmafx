@@ -8,6 +8,7 @@ that the script entry-points import cleanly and surface useful CLI help.
 from __future__ import annotations
 
 import importlib.util
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -32,6 +33,7 @@ def test_ptq_dynamic_help() -> None:
     cp = _run_help(SCRIPTS_DIR / "ptq_dynamic.py")
     assert cp.returncode == 0, cp.stderr
     assert "dynamic" in cp.stdout.lower()
+    assert "--report-out" in cp.stdout
     # No `--calibration` flag — dynamic PTQ doesn't need one.
     assert "--calibration" not in cp.stdout
 
@@ -40,12 +42,14 @@ def test_ptq_static_help() -> None:
     cp = _run_help(SCRIPTS_DIR / "ptq_static.py")
     assert cp.returncode == 0, cp.stderr
     assert "calibration" in cp.stdout.lower()
+    assert "--report-out" in cp.stdout
 
 
 def test_qat_train_help() -> None:
     cp = _run_help(SCRIPTS_DIR / "qat_train.py")
     assert cp.returncode == 0, cp.stderr
     assert "config" in cp.stdout.lower()
+    assert "--report-out" in cp.stdout
 
 
 def test_ptq_dynamic_imports_only_what_it_needs() -> None:
@@ -75,6 +79,7 @@ def test_ptq_dynamic_full_roundtrip(tmp_path: Path) -> None:
 
     src = tmp_path / "tiny.onnx"
     dst = tmp_path / "tiny.int8.onnx"
+    report = tmp_path / "ptq_dynamic_report.json"
 
     x = helper.make_tensor_value_info("x", TensorProto.FLOAT, [1, 4])
     y = helper.make_tensor_value_info("y", TensorProto.FLOAT, [1, 4])
@@ -92,7 +97,15 @@ def test_ptq_dynamic_full_roundtrip(tmp_path: Path) -> None:
     )
 
     cp = subprocess.run(
-        [sys.executable, str(SCRIPTS_DIR / "ptq_dynamic.py"), str(src), "--output", str(dst)],
+        [
+            sys.executable,
+            str(SCRIPTS_DIR / "ptq_dynamic.py"),
+            str(src),
+            "--output",
+            str(dst),
+            "--report-out",
+            str(report),
+        ],
         check=False,
         capture_output=True,
         text=True,
@@ -103,3 +116,47 @@ def test_ptq_dynamic_full_roundtrip(tmp_path: Path) -> None:
     # int8 quantised version is typically smaller; allow equal on tiny graphs
     # where the QDQ overhead dominates.
     assert dst.stat().st_size <= src.stat().st_size + 4096
+    payload = json.loads(report.read_text())
+    assert payload["mode"] == "dynamic"
+    assert payload["output_bytes"] == dst.stat().st_size
+    assert payload["run_provenance"]["schema"] == "ai-run-provenance-v1"
+
+
+def test_measure_quant_drop_report_for_fp32_skip(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The CI quant-drop gate can write a provenance-backed report without ORT."""
+    spec = importlib.util.spec_from_file_location(
+        "measure_quant_drop_under_test", SCRIPTS_DIR / "measure_quant_drop.py"
+    )
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    repo = tmp_path / "repo"
+    registry = repo / "model" / "tiny" / "registry.json"
+    registry.parent.mkdir(parents=True)
+    registry.write_text(
+        json.dumps(
+            {
+                "models": [
+                    {
+                        "id": "fp32_model",
+                        "onnx": "fp32_model.onnx",
+                        "quant_mode": "fp32",
+                    }
+                ]
+            }
+        )
+        + "\n"
+    )
+    report = tmp_path / "quant_drop_report.json"
+
+    monkeypatch.setattr(mod, "REPO_ROOT", repo)
+    monkeypatch.setattr(mod, "REGISTRY", registry)
+
+    assert mod.main(["--all", "--out-json", str(report)]) == 0
+    payload = json.loads(report.read_text())
+    assert payload["gate_pass"] is True
+    assert payload["models"][0]["status"] == "skipped_fp32"
+    assert payload["run_provenance"]["schema"] == "ai-run-provenance-v1"

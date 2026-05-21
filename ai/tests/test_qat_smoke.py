@@ -21,6 +21,7 @@ Test plan (per ADR-0207):
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -90,6 +91,7 @@ def test_qat_run_smoke(tmp_path: Path) -> None:
 def test_qat_train_cli_smoke(tmp_path: Path) -> None:
     """CLI: ``qat_train.py --smoke`` exits 0 and writes the int8 ONNX."""
     int8_path = tmp_path / "out.int8.onnx"
+    report_path = tmp_path / "qat_report.json"
     cmd = [
         sys.executable,
         str(QAT_SCRIPT),
@@ -104,9 +106,15 @@ def test_qat_train_cli_smoke(tmp_path: Path) -> None:
         "--n-calibration",
         "4",
         "--smoke",
+        "--report-out",
+        str(report_path),
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300, cwd=REPO_ROOT)
     assert (
         proc.returncode == 0
     ), f"qat_train smoke failed: stdout={proc.stdout}\nstderr={proc.stderr}"
     assert int8_path.is_file(), f"no int8 ONNX written; tmp={list(tmp_path.iterdir())}"
+    report = json.loads(report_path.read_text())
+    assert report["mode"] == "qat"
+    assert report["int8_onnx"] == str(int8_path.resolve())
+    assert report["run_provenance"]["schema"] == "ai-run-provenance-v1"
