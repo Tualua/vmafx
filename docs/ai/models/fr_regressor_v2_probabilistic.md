@@ -17,7 +17,9 @@ still ≥ 92"_ — driving the new `vmaf-tune --quality-confidence` flag
 > `runs/ensemble_v2_real/PROMOTE.json`. Each non-smoke ONNX has a
 > matching sidecar `fr_regressor_v2_ensemble_v1_seed{N}.json` with
 > the canonical encoder-vocab-v2 + codec-block layout + training
-> recipe + per-seed gate evidence. The shared
+> recipe + per-seed gate evidence. Fresh seed exports also include ADR-0661
+> `run_provenance` with the corpus, PROMOTE verdict, argv, output seed
+> sidecars, and optional registry target. The shared
 > `fr_regressor_v2_ensemble_v1.json` manifest is unchanged. See
 > [ADR-0303](../../adr/0303-fr-regressor-v2-ensemble-prod-flip.md)
 > (gate definition),

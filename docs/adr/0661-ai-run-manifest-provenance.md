@@ -30,7 +30,10 @@ trainer implementation that wrote the sidecar. FR-regressor trainers
 for their model sidecars; v1/v2 also copy it into their metrics JSON so a
 gate-failed run can still be traced. The `vmaf_tiny_v2`, `vmaf_tiny_v3`, and
 `vmaf_tiny_v4` exporters use the same block for their ONNX sidecars so exported
-artifacts identify the checkpoint input and output targets. Tiny-VMAF evaluation
+artifacts identify the checkpoint input and output targets. The
+`export_ensemble_v2_seeds.py` production seed exporter also uses the same block
+for per-seed sidecars so a seed refresh records the corpus, PROMOTE verdict,
+argv, per-seed output targets, and optional registry target. Tiny-VMAF evaluation
 reports (`eval_loso_vmaf_tiny_v3.py`, `eval_loso_vmaf_tiny_v4.py`,
 `eval_loso_vmaf_tiny_v5.py`, and `eval_multiseed_v3_v4.py`) also use the shared
 block so refreshed LOSO and multi-seed reports identify the feature table,
@@ -65,6 +68,7 @@ label/score inputs, report thresholds, output targets, and argv.
 | Store full environment snapshots | Captures more state | Leaks noisy host details, grows sidecars, and makes local-only runs look like reproducibility guarantees | The useful contract is input/output/config provenance, not a full machine image |
 | Require a single config file for every run before adding provenance | Cleaner long-term config story | Blocks current HDR/CHUG refresh work and does not help existing command-line runs | Provenance is incremental and can later point at config files when those land |
 | Leave table materializers out of ADR-0661 | Smaller scope | Recreates the exact blind spot that made refreshed MOS/saliency/second-opinion tables hard to audit | Materialized feature tables are durable AI inputs, so their audit JSON belongs in the same provenance family |
+| Leave ensemble seed export sidecars as legacy JSON | No model-file delta unless seeds are refreshed | Fresh production seed sidecars would still lack corpus/verdict/argv lineage | Rejected because the exporter is the promotion boundary from gate evidence to shipped ONNXs |
 
 ## Consequences
 
@@ -79,6 +83,8 @@ label/score inputs, report thresholds, output targets, and argv.
 - **Positive**: MOS label, saliency, second-opinion, and signal-mix audit JSONs
   now preserve the table inputs and report thresholds that produced refreshed
   training evidence.
+- **Positive**: fresh ensemble seed sidecars now preserve the PROMOTE verdict
+  and corpus identity that justified shipping the exported ONNXs.
 - **Positive**: CHUG manifests stay CHUG-named even though the implementation
   shares the KonViD training loop.
 - **Negative**: sidecars become slightly larger and include local path names.

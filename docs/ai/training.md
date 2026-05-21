@@ -121,10 +121,11 @@ shared. FR regressor runs (`train_fr_regressor.py`,
 `train_fr_regressor_v2.py`, and `train_fr_regressor_v3.py`) record the
 same block in their model sidecars; v1/v2 also include it in the metrics
 JSON so failed gates still preserve the exact table path, arguments, and
-output targets used for the run. The `vmaf_tiny_v2`, `vmaf_tiny_v3`, and
-`vmaf_tiny_v4` exporters record the same block in their sidecar JSON so an
-exported ONNX can be traced back to the checkpoint, export command, and output
-paths used to create it.
+output targets used for the run. The `vmaf_tiny_v2`, `vmaf_tiny_v3`,
+`vmaf_tiny_v4`, and `fr_regressor_v2_ensemble_v1_seed*` exporters record the
+same block in their sidecar JSON so an exported ONNX can be traced back to the
+checkpoint or corpus, export command, gate verdict, and output paths used to
+create it.
 
 The tiny-VMAF evaluation reports also carry the same block:
 `eval_loso_vmaf_tiny_v3.py`, `eval_loso_vmaf_tiny_v4.py`,

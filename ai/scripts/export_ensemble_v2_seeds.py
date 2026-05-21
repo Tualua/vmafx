@@ -47,7 +47,8 @@ from typing import Any
 
 import numpy as np
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
 if str(REPO_ROOT / "ai" / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 if str(REPO_ROOT / "ai" / "scripts") not in sys.path:
@@ -65,6 +66,7 @@ from train_fr_regressor_v2_ensemble_loso import (  # noqa: E402  # type: ignore[
 )
 
 from aiutils.file_utils import sha256  # noqa: E402
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 CODEC_BLOCK_LAYOUT: list[str] = [f"encoder_onehot[{e}]" for e in ENCODER_VOCAB] + [
     "preset_norm",
@@ -172,6 +174,7 @@ def _build_sidecar(
     corpus_path: str,
     corpus_sha256: str,
     promote: dict[str, Any],
+    run_provenance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the per-seed sidecar JSON.
 
@@ -184,7 +187,7 @@ def _build_sidecar(
     gate = promote.get("gate", {})
     per_seed_plccs = gate.get("per_seed_plccs", {}) or {}
     per_seed_plcc = per_seed_plccs.get(seed_str)
-    return {
+    sidecar = {
         "id": f"fr_regressor_v2_ensemble_v1_seed{seed}",
         "ensemble_id": "fr_regressor_v2_ensemble_v1",
         "seed": seed,
@@ -248,6 +251,9 @@ def _build_sidecar(
         ),
         "parent_adrs": ["ADR-0303", "ADR-0309", "ADR-0319", "ADR-0321"],
     }
+    if run_provenance is not None:
+        sidecar["run_provenance"] = run_provenance
+    return sidecar
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -283,7 +289,8 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Patch sha256 + smoke=false on the 5 seed rows in registry.json.",
     )
-    args = ap.parse_args(argv)
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = ap.parse_args(raw_argv)
 
     seeds = [int(s) for s in args.seeds.split(",") if s.strip()]
     if not seeds:
@@ -324,6 +331,25 @@ def main(argv: list[str] | None = None) -> int:
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
     new_shas: dict[int, str] = {}
+    output_targets: dict[str, str | None] = {}
+    for seed in seeds:
+        output_targets[f"seed{seed}_onnx"] = str(
+            args.out_dir / f"fr_regressor_v2_ensemble_v1_seed{seed}.onnx"
+        )
+        output_targets[f"seed{seed}_sidecar"] = str(
+            args.out_dir / f"fr_regressor_v2_ensemble_v1_seed{seed}.json"
+        )
+    output_targets["registry"] = (
+        str(args.out_dir / "registry.json") if args.update_registry else None
+    )
+    run_provenance = build_run_provenance(
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=raw_argv,
+        args=args,
+        inputs={"corpus": args.corpus, "promote_json": args.promote_json},
+        outputs=output_targets,
+    )
     for seed in seeds:
         t0 = time.time()
         print(f"[export-ens] seed={seed} training full-corpus model...", flush=True)
@@ -358,9 +384,10 @@ def main(argv: list[str] | None = None) -> int:
             corpus_path=str(args.corpus.relative_to(REPO_ROOT)),
             corpus_sha256=corpus_sha,
             promote=promote,
+            run_provenance=run_provenance,
         )
         sidecar_path = args.out_dir / f"fr_regressor_v2_ensemble_v1_seed{seed}.json"
-        sidecar_path.write_text(json.dumps(sidecar, indent=2, sort_keys=True) + "\n")
+        write_manifest_json(sidecar_path, sidecar)
         elapsed = time.time() - t0
         print(
             f"[export-ens] seed={seed} wrote {onnx_name} sha={sha[:16]}... "
@@ -378,7 +405,7 @@ def main(argv: list[str] | None = None) -> int:
                 if seed in new_shas:
                     entry["sha256"] = new_shas[seed]
                     entry["smoke"] = False
-        reg_path.write_text(json.dumps(reg, indent=2, sort_keys=True) + "\n")
+        write_manifest_json(reg_path, reg)
         print("[export-ens] patched registry.json: 5 seeds smoke=false + new sha256s")
 
     print("[export-ens] done. New sha256 per seed:")

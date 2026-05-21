@@ -42,6 +42,12 @@ not define a new model format and does not replace the LOSO trainer.
 | Validate seeds | `ai/scripts/validate_ensemble_seeds.py` | `PROMOTE.json` verdict |
 | Export seed ONNXs | `ai/scripts/export_ensemble_v2_seeds.py` | `fr_regressor_v2_ensemble_v1_seed*.onnx` |
 
+The validator verdict and fresh seed sidecars both carry ADR-0661
+`run_provenance`. The export sidecars record the corpus, PROMOTE verdict,
+argv, per-seed ONNX/sidecar targets, and optional registry target, so a
+production seed refresh can be audited without reconstructing the handoff
+shell session.
+
 ## Current Use
 
 Use the kit when handing the retrain workflow to another operator or

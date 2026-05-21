@@ -38686,3 +38686,30 @@ Touched files:
 `docs/research/0669-ai-materializer-audit-provenance.md`,
 `changelog.d/added/0669-ai-materializer-audit-provenance.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0661 follow-up — Ensemble seed export provenance
+
+**Ensemble export provenance impact.** This widens ADR-0661 adoption to the
+production seed exporter for `fr_regressor_v2_ensemble_v1_seed*` sidecars.
+
+**Key invariants**:
+
+- `ai/scripts/export_ensemble_v2_seeds.py` builds one
+  `run_provenance` block per invocation with the corpus, PROMOTE verdict,
+  parsed export args, argv, per-seed ONNX/sidecar targets, and optional
+  registry target.
+- Each fresh `fr_regressor_v2_ensemble_v1_seed{N}.json` sidecar receives that
+  block.
+- Sidecar and optional registry writes use `write_manifest_json()` so the JSON
+  formatting contract matches the other ADR-0661 adopters.
+
+Touched files:
+`ai/scripts/export_ensemble_v2_seeds.py`,
+`ai/tests/test_export_ensemble_v2_seeds_provenance.py`,
+`docs/ai/training.md`,
+`docs/ai/models/fr_regressor_v2_probabilistic.md`,
+`docs/ai/ensemble-training-kit.md`,
+`docs/adr/0661-ai-run-manifest-provenance.md`,
+`docs/research/0670-ensemble-seed-export-provenance.md`,
+`changelog.d/added/0670-ensemble-seed-export-provenance.md`,
+`docs/rebase-notes.md` (this entry).
