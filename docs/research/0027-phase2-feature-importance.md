@@ -270,6 +270,11 @@ python3 ai/scripts/feature_correlation.py \
   --redundancy-threshold 0.95
 ```
 
+The JSON report includes ADR-0661 `run_provenance` with the analyzer
+entrypoint, original argv, parsed target / threshold / top-K arguments, source
+parquet path, and output report path. Treat that block as the replay contract
+when comparing refreshed feature-correlation runs across corpora.
+
 ## References
 
 - **`req`** (user, 2026-04-29): *"and rebase #185"* + *"yeah write up"*

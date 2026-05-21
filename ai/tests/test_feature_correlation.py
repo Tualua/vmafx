@@ -99,6 +99,10 @@ def test_corr_main_invokable_via_argparse(tmp_path, monkeypatch):
     assert "pearson" in payload
     assert "consensus_topk" in payload
     assert "redundant_pairs" in payload
+    assert payload["run_provenance"]["schema"] == "ai-run-provenance-v1"
+    assert payload["run_provenance"]["entrypoint"]["path"] == "ai/scripts/feature_correlation.py"
+    assert payload["run_provenance"]["inputs"]["parquet"]["kind"] == "file"
+    assert payload["run_provenance"]["outputs"]["json_report"]["path"] == str(out)
     assert payload["target"] == "vmaf"
     # The synthetic redundant pair must be flagged.
     redundant_names = {frozenset({p["a"], p["b"]}) for p in payload["redundant_pairs"]}

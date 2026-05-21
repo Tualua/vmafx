@@ -180,6 +180,12 @@ identify the CLI entrypoint, parsed thresholds/options, model and feature
 inputs, and JSON/model output targets, so promotion evidence can be attached to
 model cards without losing the command context.
 
+Feature-analysis reports use the same convention where they produce durable
+JSON. `ai/scripts/feature_correlation.py --out` records the source parquet,
+target column, redundancy threshold, top-K setting, and report path alongside
+the Pearson / MI / LASSO / random-forest outputs, so signal-mix audits can be
+replayed from the report alone.
+
 ## MOS label materialization
 
 Real MOS-head training expects feature tables to already carry `mos` or

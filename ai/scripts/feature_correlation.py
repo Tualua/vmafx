@@ -17,14 +17,21 @@ Output goes to a JSON report + a text summary printed to stdout.
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
 import numpy as np
 
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
+AI_SRC = REPO_ROOT / "ai" / "src"
+
 if __package__ in (None, ""):
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+    sys.path.insert(0, str(REPO_ROOT))
+if str(AI_SRC) not in sys.path:
+    sys.path.insert(0, str(AI_SRC))
+
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 
 def _pearson_matrix(x: np.ndarray, names: list[str]) -> dict:
@@ -166,25 +173,28 @@ def main() -> int:
         ranked = sorted(finite.items(), key=lambda kv: -kv[1])[: args.top_k]
         per_method_topk[method] = ranked
 
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(
-        json.dumps(
-            {
-                "parquet": str(args.parquet),
-                "target": args.target,
-                "n_rows_clean": len(df_clean),
-                "feature_cols": feat_cols,
-                "pearson": pearson,
-                "redundant_pairs": redundant,
-                "redundancy_threshold": args.redundancy_threshold,
-                "importances": importances,
-                "top_k": args.top_k,
-                "per_method_topk": per_method_topk,
-                "consensus_topk": consensus,
-            },
-            indent=2,
-        )
-    )
+    report = {
+        "parquet": str(args.parquet),
+        "target": args.target,
+        "n_rows_clean": len(df_clean),
+        "feature_cols": feat_cols,
+        "pearson": pearson,
+        "redundant_pairs": redundant,
+        "redundancy_threshold": args.redundancy_threshold,
+        "importances": importances,
+        "top_k": args.top_k,
+        "per_method_topk": per_method_topk,
+        "consensus_topk": consensus,
+        "run_provenance": build_run_provenance(
+            entrypoint=SCRIPT_PATH,
+            repo_root=REPO_ROOT,
+            argv=sys.argv[1:],
+            args=vars(args),
+            inputs={"parquet": args.parquet},
+            outputs={"json_report": args.out},
+        ),
+    }
+    write_manifest_json(args.out, report)
     print(f"[corr] wrote {args.out}")
     return 0
 

@@ -50,6 +50,9 @@ durable `--json` reports for `validate-norm`, `profile`,
 `audit-learned-filter`, `quantize-int8`, `cross-backend`, and
 `bisect-model-quality`, including the model/feature/calibration inputs,
 parsed thresholds, JSON target, and generated model output where applicable.
+Feature-analysis reports (`ai/scripts/feature_correlation.py`) also use the
+same block so correlation / mutual-information / feature-importance reports
+identify the source parquet, target column, thresholds, argv, and report target.
 Legacy evaluation reports (`eval_loso_mlp_small.py`, `eval_loso_3arch.py`,
 `eval_probabilistic_proxy.py`, and `eval_saliency_per_mb.py`) also adopt the
 same schema when they emit durable JSON so old model-card evidence and
@@ -80,6 +83,7 @@ label/score inputs, report thresholds, output targets, and argv.
 | Leave ensemble seed export sidecars as legacy JSON | No model-file delta unless seeds are refreshed | Fresh production seed sidecars would still lack corpus/verdict/argv lineage | Rejected because the exporter is the promotion boundary from gate evidence to shipped ONNXs |
 | Leave ensemble LOSO reports as legacy JSON | Smaller trainer diff | Validator verdicts would carry provenance, but their source `loso_seed{N}.json` files would still be opaque | Rejected because seed reports are the durable gate inputs and often outlive the validator run |
 | Leave `vmaf-train --json` reports as plain JSON | No CLI helper diff | Model-card evidence from the user-facing CLI still loses input/threshold lineage | Rejected because these reports are the operator-facing promotion/audit artifacts |
+| Leave feature-correlation reports as plain JSON | Smallest diff | Signal-mix audits would keep metrics but lose the exact source parquet and ranking parameters | Rejected because the feature-correlation report is durable analysis evidence, not a transient debug print |
 
 ## Consequences
 
@@ -100,6 +104,8 @@ label/score inputs, report thresholds, output targets, and argv.
   argv, and training arguments that produced validator gate inputs.
 - **Positive**: `vmaf-train --json` reports now carry the same reproducibility
   context as the script-family artifacts they complement.
+- **Positive**: feature-correlation reports now carry the source parquet and
+  ranking-parameter context needed to replay signal-mix audits.
 - **Positive**: CHUG manifests stay CHUG-named even though the implementation
   shares the KonViD training loop.
 - **Negative**: sidecars become slightly larger and include local path names.

@@ -38765,3 +38765,29 @@ Touched files:
 `docs/research/0672-vmaf-train-cli-report-provenance.md`,
 `changelog.d/added/0672-vmaf-train-cli-report-provenance.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0661 follow-up — Feature-correlation report provenance
+
+**Feature-correlation provenance impact.** This widens ADR-0661 adoption to the
+feature-ranking report emitted by `ai/scripts/feature_correlation.py`.
+
+**Key invariants**:
+
+- `feature_correlation.py --out` writes the JSON report through
+  `write_manifest_json()`.
+- The report includes `run_provenance` with the analyzer entrypoint, original
+  argv, parsed target / redundancy / top-K arguments, source parquet input, and
+  JSON report target.
+- The analytic payload keys (`pearson`, `redundant_pairs`, `importances`,
+  `per_method_topk`, and `consensus_topk`) remain unchanged for downstream
+  research/audit readers.
+
+Touched files:
+`ai/scripts/feature_correlation.py`,
+`ai/tests/test_feature_correlation.py`,
+`docs/research/0027-phase2-feature-importance.md`,
+`docs/ai/training.md`,
+`docs/adr/0661-ai-run-manifest-provenance.md`,
+`docs/research/0673-feature-correlation-report-provenance.md`,
+`changelog.d/added/0673-feature-correlation-report-provenance.md`,
+`docs/rebase-notes.md` (this entry).
