@@ -164,6 +164,7 @@ from pathlib import Path
 from typing import Any
 
 from aiutils.jsonl_utils import iter_jsonl
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
 from aiutils.time_utils import now_iso_8601
 
 _LOG = logging.getLogger("aggregate_corpora")
@@ -519,6 +520,16 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Destination unified JSONL.",
     )
     ap.add_argument(
+        "--manifest-out",
+        type=Path,
+        default=None,
+        help=(
+            "Run-provenance JSON sidecar. Defaults to <output>.manifest.json and "
+            "records the input shards, scale conversions, counters, and exact "
+            "CLI args used to build the unified corpus JSONL."
+        ),
+    )
+    ap.add_argument(
         "--corpus-source-override",
         action="append",
         default=[],
@@ -564,6 +575,8 @@ def main(argv: list[str] | None = None) -> int:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     overrides = _parse_overrides(args.corpus_source_override)
+    if args.manifest_out is None:
+        args.manifest_out = args.output.with_suffix(".manifest.json")
 
     counters = aggregate(
         args.inputs,
@@ -578,6 +591,26 @@ def main(argv: list[str] | None = None) -> int:
         f"cross_corpus_dedups={counters['cross_corpus_dedups']} "
         f"dropped_unknown_corpus={counters['dropped_unknown_corpus']} "
         f"dropped_bad_scale={counters['dropped_bad_scale']} -> {args.output}"
+    )
+    write_manifest_json(
+        args.manifest_out,
+        {
+            "schema": "mos-corpus-aggregate-manifest-v1",
+            "counters": counters,
+            "scale_conversions": SCALE_CONVERSIONS,
+            "corpus_source_overrides": {
+                str(path): label
+                for path, label in sorted(overrides.items(), key=lambda item: str(item[0]))
+            },
+            "run_provenance": build_run_provenance(
+                entrypoint=Path(__file__),
+                repo_root=Path(__file__).resolve().parents[2],
+                argv=sys.argv[1:] if argv is None else argv,
+                args=args,
+                inputs={"corpus_jsonl": args.inputs},
+                outputs={"jsonl": args.output, "manifest": args.manifest_out},
+            ),
+        },
     )
     print(summary, file=sys.stderr)
     return 0

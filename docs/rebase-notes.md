@@ -39089,3 +39089,33 @@ Touched files:
 `docs/research/0688-ai-derived-table-provenance.md`,
 `changelog.d/added/0668-ai-derived-table-provenance.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0669 — AI corpus JSONL provenance
+
+**Corpus-JSONL provenance impact.** This extends the ADR-0661 manifest pattern
+to the corpus JSONL boundary before trainers consume merged or aggregated row
+streams.
+
+**Key invariants**:
+
+- `ai/scripts/aggregate_corpora.py` writes `<output>.manifest.json` by default
+  with MOS scale conversions, optional corpus-source overrides, aggregate
+  counters, and shared `run_provenance`.
+- `ai/scripts/merge_corpora.py` writes `<output>.manifest.json` by default
+  with required vmaf-tune corpus keys, natural dedup key, merge counters, and
+  shared `run_provenance`.
+- JSONL row schemas are unchanged; run-level evidence belongs in the sidecar.
+
+Touched files:
+`ai/scripts/aggregate_corpora.py`,
+`ai/scripts/merge_corpora.py`,
+`ai/tests/test_aggregate_corpora.py`,
+`ai/tests/test_merge_corpora.py`,
+`ai/AGENTS.md`,
+`docs/ai/mos-corpora.md`,
+`docs/ai/multi-corpus-aggregation.md`,
+`docs/ai/training.md`,
+`docs/adr/0669-ai-corpus-jsonl-provenance.md`,
+`docs/research/0689-ai-corpus-jsonl-provenance.md`,
+`changelog.d/added/0669-ai-corpus-jsonl-provenance.md`,
+`docs/rebase-notes.md` (this entry).

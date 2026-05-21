@@ -32,6 +32,7 @@ import json
 import sys
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any
 
 # The merge utility lives outside the vmaf-tune package; resolve the
 # tools/vmaf-tune source dir at import time so we depend only on the
@@ -49,6 +50,7 @@ if str(_AI_SRC) not in sys.path:
 from vmaftune import CORPUS_ROW_KEYS  # noqa: E402  (sys.path adjusted above)
 
 from aiutils.jsonl_utils import iter_jsonl  # noqa: E402  (sys.path adjusted above)
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 _REQUIRED_KEYS: frozenset[str] = frozenset(CORPUS_ROW_KEYS)
 
@@ -124,6 +126,35 @@ def merge(inputs: Iterable[Path], output: Path) -> tuple[int, int, int, int]:
     return rows_in, rows_out, duplicates, len(unique_sources)
 
 
+def _write_manifest(
+    *,
+    manifest_out: Path,
+    inputs: list[Path],
+    output: Path,
+    args: argparse.Namespace,
+    argv: list[str],
+    summary: dict[str, Any],
+) -> None:
+    """Write a replay manifest for the merged corpus JSONL."""
+    write_manifest_json(
+        manifest_out,
+        {
+            "schema": "vmaf-tune-corpus-merge-manifest-v1",
+            "required_keys": sorted(_REQUIRED_KEYS),
+            "dedup_key": ["src_sha256", "encoder", "preset", "crf"],
+            "summary": summary,
+            "run_provenance": build_run_provenance(
+                entrypoint=Path(__file__),
+                repo_root=_REPO_ROOT,
+                argv=argv,
+                args=args,
+                inputs={"corpus_jsonl": inputs},
+                outputs={"jsonl": output, "manifest": manifest_out},
+            ),
+        },
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="merge_corpora.py", description=__doc__)
     ap.add_argument(
@@ -139,7 +170,18 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         help="Destination JSONL.",
     )
+    ap.add_argument(
+        "--manifest-out",
+        type=Path,
+        default=None,
+        help=(
+            "Run-provenance JSON sidecar. Defaults to <output>.manifest.json and "
+            "records the input shards, schema keys, dedup counters, and exact "
+            "CLI args used to build the merged corpus JSONL."
+        ),
+    )
     args = ap.parse_args(argv)
+    parsed_argv = sys.argv[1:] if argv is None else argv
 
     if len(args.inputs) < 2:
         print(
@@ -148,10 +190,28 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
+    if args.manifest_out is None:
+        args.manifest_out = args.output.with_suffix(".manifest.json")
+
     rows_in, rows_out, dupes, sources = merge(args.inputs, args.output)
+    summary = {
+        "rows_in": rows_in,
+        "rows_out": rows_out,
+        "duplicates": dupes,
+        "unique_sources": sources,
+    }
+    _write_manifest(
+        manifest_out=args.manifest_out,
+        inputs=args.inputs,
+        output=args.output,
+        args=args,
+        argv=parsed_argv,
+        summary=summary,
+    )
     print(
         f"[merge_corpora] rows_in={rows_in} rows_out={rows_out} "
-        f"duplicates={dupes} unique_sources={sources} -> {args.output}",
+        f"duplicates={dupes} unique_sources={sources} manifest={args.manifest_out} "
+        f"-> {args.output}",
         file=sys.stderr,
     )
     return 0

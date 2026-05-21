@@ -427,3 +427,28 @@ def test_parse_overrides_rejects_bad_label(agg):
 def test_parse_overrides_rejects_no_equals(agg):
     with pytest.raises(SystemExit, match="PATH=LABEL"):
         agg._parse_overrides(["foo.jsonl"])
+
+
+# ---------------------------------------------------------------------------
+# Manifest sidecar
+# ---------------------------------------------------------------------------
+
+
+def test_cli_writes_default_manifest(agg, tmp_path):
+    source_path = _write_jsonl(
+        tmp_path / "konvid.jsonl",
+        [_likert_row(src="a.mp4", sha="aa" * 32, mos=4.0, corpus="konvid-150k")],
+    )
+    out_path = tmp_path / "unified.jsonl"
+
+    assert agg.main(["--inputs", str(source_path), "--output", str(out_path)]) == 0
+
+    manifest_path = out_path.with_suffix(".manifest.json")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["schema"] == "mos-corpus-aggregate-manifest-v1"
+    assert manifest["counters"]["rows_out"] == 1
+    assert manifest["scale_conversions"]["konvid-150k"]["scale_label"] == "1-5-acr"
+    provenance = manifest["run_provenance"]
+    assert provenance["schema"] == "ai-run-provenance-v1"
+    assert provenance["outputs"]["jsonl"]["path"].endswith("unified.jsonl")
+    assert provenance["outputs"]["manifest"]["path"].endswith("unified.manifest.json")

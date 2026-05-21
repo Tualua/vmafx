@@ -115,6 +115,12 @@ python ai/scripts/aggregate_corpora.py \
     --output .workingdir2/aggregated/unified_corpus.jsonl
 ```
 
+The default sidecar path is
+`.workingdir2/aggregated/unified_corpus.manifest.json`. It records
+`run_provenance`, input shard hashes, the active scale-conversion table,
+corpus-source overrides, and the same counters printed to stderr. Keep this
+manifest with the JSONL when using the artifact for later model-card evidence.
+
 Missing input paths are logged as `WARNING` and skipped. The run
 fails only when **every** path is absent — an empty unified corpus
 is never the operator's intent.
@@ -155,6 +161,7 @@ corpus JSONL on disk — every input is synthesised in-memory.
 
 - [ADR-0340: multi-corpus aggregation](../adr/0340-multi-corpus-aggregation.md) — decision record.
 - [ADR-0310: BVI-DVC corpus ingestion](../adr/0310-bvi-dvc-corpus-ingestion.md) — sibling encode-corpus merge utility (`merge_corpora.py`).
+- [ADR-0669: AI corpus JSONL provenance](../adr/0669-ai-corpus-jsonl-provenance.md) — manifest sidecars for aggregation and merge outputs.
 - [ADR-0325: KonViD-150k corpus ingestion](../adr/0325-konvid-150k-corpus-ingestion.md) — Phase 2 KonViD adapter.
 - ADR-0333 (LSVQ ingestion, in flight on PR #471).
 - ADR-0334 (YouTube UGC + Waterloo IVC ingestion, in flight on PRs #481 / #485).

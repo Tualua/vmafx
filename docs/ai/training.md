@@ -186,6 +186,12 @@ Those manifests record the source parquet/video/metadata paths, feature
 schema, backend split, filled feature columns, row counts, and original argv
 so refreshed Netflix/K150K/CHUG tables are not anonymous local artifacts and
 replay does not depend on shell history.
+The corpus JSONL boundary scripts also write manifests:
+`aggregate_corpora.py` records MOS scale-conversion metadata, source-shard
+inputs, dedup counters, and corpus-source overrides; `merge_corpora.py`
+records required vmaf-tune corpus keys, the natural dedup key, input shards,
+and merge counters. Both default to `<output>.manifest.json` and accept
+`--manifest-out`.
 
 The ensemble production validator `ai/scripts/validate_ensemble_seeds.py`
 records `run_provenance` in its `PROMOTE.json` / `HOLD.json` verdicts. That

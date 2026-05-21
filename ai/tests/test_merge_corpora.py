@@ -173,3 +173,30 @@ def test_merge_missing_input_exits_2(tmp_path: Path) -> None:
             out_path,
         )
     assert exc.value.code == 2
+
+
+def test_cli_writes_default_manifest(tmp_path: Path) -> None:
+    merge_mod = _load_merge_module()
+    a_path = tmp_path / "a.jsonl"
+    b_path = tmp_path / "b.jsonl"
+    out_path = tmp_path / "merged.jsonl"
+    _write_jsonl(a_path, [_fixture_row(0)])
+    _write_jsonl(b_path, [_fixture_row(1)])
+
+    assert merge_mod.main(["--inputs", str(a_path), str(b_path), "--output", str(out_path)]) == 0
+
+    manifest_path = out_path.with_suffix(".manifest.json")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["schema"] == "vmaf-tune-corpus-merge-manifest-v1"
+    assert manifest["summary"] == {
+        "duplicates": 0,
+        "rows_in": 2,
+        "rows_out": 2,
+        "unique_sources": 2,
+    }
+    assert manifest["dedup_key"] == ["src_sha256", "encoder", "preset", "crf"]
+    assert "src_sha256" in manifest["required_keys"]
+    provenance = manifest["run_provenance"]
+    assert provenance["schema"] == "ai-run-provenance-v1"
+    assert len(provenance["inputs"]["corpus_jsonl"]) == 2
+    assert provenance["outputs"]["manifest"]["path"].endswith("merged.manifest.json")

@@ -95,6 +95,12 @@ python ai/scripts/aggregate_corpora.py \
     --output .workingdir2/aggregated/unified_corpus.jsonl
 ```
 
+The command writes `.workingdir2/aggregated/unified_corpus.manifest.json` by
+default. That manifest records source-shard hashes, MOS scale conversions,
+dedup counters, corpus-source overrides, and ADR-0661 `run_provenance`.
+Use `--manifest-out PATH` when the JSONL and manifest need to live in a
+separate experiment bundle.
+
 For a one-command discover-then-train workflow:
 
 ```bash
@@ -138,6 +144,11 @@ python ai/scripts/merge_corpora.py \
     --inputs runs/netflix_corpus.jsonl runs/bvi_dvc_corpus.jsonl \
     --output runs/fr_v2_train_corpus.jsonl
 ```
+
+This command writes `runs/fr_v2_train_corpus.manifest.json` by default with
+the input shard hashes, required vmaf-tune corpus keys, the natural dedup key
+`(src_sha256, encoder, preset, crf)`, summary counters, and ADR-0661
+`run_provenance`. Pass `--manifest-out PATH` to place the sidecar elsewhere.
 
 ## Shared ingestion infrastructure (ADR-0371)
 

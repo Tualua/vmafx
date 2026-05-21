@@ -416,3 +416,4 @@
 0666-tune-report-quick-takeaways
 0667-vmaf-tune-score-backend-native-priority
 0668-ai-derived-table-provenance
+0669-ai-corpus-jsonl-provenance
