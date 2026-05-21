@@ -22,9 +22,15 @@ from typing import Any
 
 import pandas as pd
 
-if __package__ in (None, ""):
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
+AI_SRC = REPO_ROOT / "ai" / "src"
 
+if __package__ in (None, ""):
+    sys.path.insert(0, str(REPO_ROOT))
+    sys.path.insert(0, str(AI_SRC))
+
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 KEY_CANDIDATES: tuple[str, ...] = (
     "clip_id",
@@ -402,6 +408,7 @@ def materialize(
     missing_policy: str = "mark",
     prefix: str = "second_opinion",
     overwrite: bool = False,
+    run_provenance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     df = _read_table(features)
     column = _infer_feature_key_column(df, key_column)
@@ -492,9 +499,10 @@ def materialize(
         "missing_policy": missing_policy,
         "competitors": {name: asdict(stat) for name, stat in sorted(stats.items())},
     }
+    if run_provenance is not None:
+        audit["run_provenance"] = run_provenance
     if audit_json is not None:
-        audit_json.parent.mkdir(parents=True, exist_ok=True)
-        audit_json.write_text(json.dumps(audit, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        write_manifest_json(audit_json, audit)
     return audit
 
 
@@ -531,7 +539,19 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _parse_args(list(sys.argv[1:] if argv is None else argv))
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = _parse_args(raw_argv)
+    run_provenance = build_run_provenance(
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=raw_argv,
+        args=args,
+        inputs={"features": args.features, "scores": list(args.scores)},
+        outputs={
+            "out": str(args.out),
+            "audit_json": str(args.audit_json) if args.audit_json is not None else None,
+        },
+    )
     materialize(
         args.features,
         list(args.scores),
@@ -544,6 +564,7 @@ def main(argv: list[str] | None = None) -> int:
         missing_policy=args.missing_policy,
         prefix=args.prefix,
         overwrite=args.overwrite,
+        run_provenance=run_provenance,
     )
     return 0
 

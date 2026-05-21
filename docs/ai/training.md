@@ -154,6 +154,15 @@ Those stats files feed the ONNX exporters, so they now identify the training
 parquet input(s), checkpoint target, stats target, argv, and hyperparameters
 used before an export sidecar is produced.
 
+Table materializers and audits use the same schema for durable audit JSON:
+`materialize_mos_labels.py --audit-json`,
+`materialize_second_opinion_features.py --audit-json`,
+`materialize_saliency_features.py --audit-json`, and
+`signal_mix_audit.py --out-json` all record `run_provenance`. Those blocks
+identify source tables, label/score inputs, saliency model inputs where used,
+output table targets, and report targets so refreshed feature-table evidence
+does not depend on shell history.
+
 The ensemble production validator `ai/scripts/validate_ensemble_seeds.py`
 records `run_provenance` in its `PROMOTE.json` / `HOLD.json` verdicts. That
 block identifies the LOSO artifact directory, corpus root snapshot input,

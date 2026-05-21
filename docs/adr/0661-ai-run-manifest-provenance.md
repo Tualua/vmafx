@@ -51,6 +51,11 @@ The `vmaf_tiny_v2`, `vmaf_tiny_v3`, `vmaf_tiny_v4`, and deferred
 `vmaf_tiny_v5` training scripts record the same block in their `--out-stats`
 JSON files so exporter inputs can be traced to the parquet table(s),
 checkpoint target, stats target, argv, and hyperparameters that produced them.
+Table-side materializers and audits (`materialize_mos_labels.py`,
+`materialize_second_opinion_features.py`, `materialize_saliency_features.py`,
+and `signal_mix_audit.py`) use the same block for their audit/report JSON
+outputs so refreshed feature-table evidence records the source tables, joined
+label/score inputs, report thresholds, output targets, and argv.
 
 ## Alternatives considered
 
@@ -59,6 +64,7 @@ checkpoint target, stats target, argv, and hyperparameters that produced them.
 | Keep one-off manifest JSON in each trainer | Minimal diff; no helper import | Repeats path hashing and argument normalization; CHUG/KonViD identity can drift again | The active backlog is explicitly about consolidating AI script-family plumbing |
 | Store full environment snapshots | Captures more state | Leaks noisy host details, grows sidecars, and makes local-only runs look like reproducibility guarantees | The useful contract is input/output/config provenance, not a full machine image |
 | Require a single config file for every run before adding provenance | Cleaner long-term config story | Blocks current HDR/CHUG refresh work and does not help existing command-line runs | Provenance is incremental and can later point at config files when those land |
+| Leave table materializers out of ADR-0661 | Smaller scope | Recreates the exact blind spot that made refreshed MOS/saliency/second-opinion tables hard to audit | Materialized feature tables are durable AI inputs, so their audit JSON belongs in the same provenance family |
 
 ## Consequences
 
@@ -70,12 +76,15 @@ checkpoint target, stats target, argv, and hyperparameters that produced them.
   reproducibility block as the model-card evidence they feed.
 - **Positive**: vmaf_tiny training stats now bridge the pre-export gap between
   refreshed parquets and ONNX sidecars.
+- **Positive**: MOS label, saliency, second-opinion, and signal-mix audit JSONs
+  now preserve the table inputs and report thresholds that produced refreshed
+  training evidence.
 - **Positive**: CHUG manifests stay CHUG-named even though the implementation
   shares the KonViD training loop.
 - **Negative**: sidecars become slightly larger and include local path names.
 - **Neutral / follow-ups**: remaining `train_` / `export_` / `eval_` /
-  `validate_` script families can adopt the helper as they move from ad hoc CLI
-  state toward shared config plumbing.
+  `validate_` / materializer script families can adopt the helper as they move
+  from ad hoc CLI state toward shared config plumbing.
 
 ## References
 

@@ -111,6 +111,11 @@ def test_signal_mix_main_writes_json_and_markdown(tmp_path, monkeypatch):
     payload = json.loads(out_json.read_text())
     assert payload["tables"][0]["label"] == "syn"
     assert payload["tables"][0]["missing_families"]
+    provenance = payload["run_provenance"]
+    assert provenance["schema"] == "ai-run-provenance-v1"
+    assert provenance["entrypoint"]["path"] == "ai/scripts/signal_mix_audit.py"
+    assert provenance["inputs"]["tables"][0]["kind"] == "file"
+    assert provenance["outputs"]["json_report"] == str(out_json)
     assert "Recommended Next Actions" in out_md.read_text()
 
 

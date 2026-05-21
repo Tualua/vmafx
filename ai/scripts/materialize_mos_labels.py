@@ -23,6 +23,15 @@ from typing import Any
 
 import pandas as pd
 
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
+AI_SRC = REPO_ROOT / "ai" / "src"
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(AI_SRC))
+
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+
 MOS_MIN = 1.0
 MOS_MAX = 5.0
 MOS_RAW_MIN = 0.0
@@ -356,6 +365,7 @@ def materialize(
     min_match_rate: float = 0.95,
     status_column: str = "mos_label_status",
     overwrite: bool = False,
+    run_provenance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Join MOS labels onto ``features`` and return an audit dictionary."""
     if not (0.0 <= min_match_rate <= 1.0):
@@ -453,9 +463,10 @@ def materialize(
     )
     audit = asdict(stats)
     audit["match_rate"] = stats.match_rate
+    if run_provenance is not None:
+        audit["run_provenance"] = run_provenance
     if audit_json is not None:
-        audit_json.parent.mkdir(parents=True, exist_ok=True)
-        audit_json.write_text(json.dumps(audit, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        write_manifest_json(audit_json, audit)
     return audit
 
 
@@ -507,7 +518,19 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _parse_args(list(sys.argv[1:] if argv is None else argv))
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = _parse_args(raw_argv)
+    run_provenance = build_run_provenance(
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=raw_argv,
+        args=args,
+        inputs={"features": args.features, "labels": args.labels},
+        outputs={
+            "out": str(args.out),
+            "audit_json": str(args.audit_json) if args.audit_json is not None else None,
+        },
+    )
     materialize(
         args.features,
         list(args.labels),
@@ -522,6 +545,7 @@ def main(argv: list[str] | None = None) -> int:
         min_match_rate=args.min_match_rate,
         status_column=args.status_column,
         overwrite=args.overwrite,
+        run_provenance=run_provenance,
     )
     return 0
 

@@ -42,6 +42,12 @@ For a custom MOS or lab score:
   --out-md .workingdir2/signal-mix/chug.md
 ```
 
+The JSON report includes ADR-0661 `run_provenance` with the audited table
+paths, parsed thresholds, argv, JSON report target, and Markdown report target.
+Keep the JSON next to the Markdown when an audit drives model-mix or feature
+materializer work; it is the machine-readable proof of which tables produced
+the human report.
+
 ## Signal Families
 
 The audit maps columns into broad signal families, not individual model

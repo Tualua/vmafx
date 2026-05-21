@@ -48,6 +48,12 @@ fewer than 95% of unique feature keys receive a label. Lower it only for
 exploratory audits where missing rows are expected and visible in
 `mos_label_status`.
 
+When `--audit-json` is set, the audit file includes ADR-0661
+`run_provenance` with the script entrypoint, argv, parsed arguments, feature
+table, label table inputs, output table target, and audit target. Keep that
+audit next to refreshed training tables so MOS-head training evidence can be
+reproduced without shell history.
+
 ## Output Columns
 
 | Column | Meaning |

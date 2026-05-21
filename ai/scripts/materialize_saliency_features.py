@@ -20,15 +20,20 @@ import subprocess
 import sys
 import tempfile
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
 if __package__ in (None, ""):
     _ROOT = Path(__file__).resolve().parents[2]
     sys.path.insert(0, str(_ROOT))
+    sys.path.insert(0, str(_ROOT / "ai" / "src"))
     sys.path.insert(0, str(_ROOT / "tools" / "vmaf-tune" / "src"))
 
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
+
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 SubprocessRunner = Callable[..., subprocess.CompletedProcess[str]]
 SaliencyFn = Callable[..., Any]
@@ -283,6 +288,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--output", type=Path, required=True, help="Output .jsonl or .parquet table"
     )
+    parser.add_argument("--audit-json", type=Path, default=None, help="Optional audit JSON output")
     parser.add_argument(
         "--path-column", default="src", help="Row column containing the source path"
     )
@@ -306,7 +312,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _parse_args(argv)
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = _parse_args(raw_argv)
     cfg = SaliencyMaterializeConfig(
         path_column=args.path_column,
         width_column=args.width_column,
@@ -323,6 +330,35 @@ def main(argv: list[str] | None = None) -> int:
     rows = read_table(args.input)
     enriched, summary = materialize_rows(rows, cfg)
     write_table(args.output, enriched)
+    if args.audit_json is not None:
+        config = asdict(cfg)
+        for key in ("root", "model_path"):
+            if config[key] is not None:
+                config[key] = str(config[key])
+        write_manifest_json(
+            args.audit_json,
+            {
+                "input": str(args.input),
+                "output": str(args.output),
+                "config": config,
+                "summary": asdict(summary),
+                "run_provenance": build_run_provenance(
+                    entrypoint=SCRIPT_PATH,
+                    repo_root=REPO_ROOT,
+                    argv=raw_argv,
+                    args=args,
+                    inputs={
+                        "input": args.input,
+                        "root": args.root,
+                        "model_path": args.model_path,
+                    },
+                    outputs={
+                        "output": str(args.output),
+                        "audit_json": str(args.audit_json),
+                    },
+                ),
+            },
+        )
     print(
         "saliency materialize: "
         f"total={summary.total} ok={summary.ok} "

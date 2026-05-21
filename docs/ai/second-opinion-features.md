@@ -48,6 +48,12 @@ Use `--missing-policy fail` for promotion-grade tables where every row must
 have every scorer. Use the default `mark` during exploratory audits; missing
 scores remain visible as `second_opinion_<scorer>_status = "missing"`.
 
+When `--audit-json` is set, the audit file includes ADR-0661
+`run_provenance` with the feature table, score sidecar paths, parsed join
+options, output table target, and audit target. Keep that audit with any
+derived table used for retraining; external scorer sidecars can be rebuilt only
+if their exact join inputs are preserved.
+
 ## Reading The Columns
 
 Second-opinion columns are advisory evidence, not replacements for reference

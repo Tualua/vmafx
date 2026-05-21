@@ -18,12 +18,18 @@ PYTHONPATH=. .venv/bin/python ai/scripts/materialize_saliency_features.py \
   --root .corpus/chug \
   --path-column src \
   --max-frames 8 \
-  --frame-samples 8
+  --frame-samples 8 \
+  --audit-json runs/full_features_chug_hdr_saliency.audit.json
 ```
 
 The same command works for parquet by using `.parquet` input and output paths.
 Parquet support uses the local pandas/pyarrow stack; JSONL only needs the
 standard library plus the saliency runtime dependencies.
+
+`--audit-json` writes row counters, the effective materializer config, and
+ADR-0661 `run_provenance` for the input table, optional root/model path, output
+table target, and audit target. Use it for any saliency-enriched table that
+feeds retraining or signal-mix comparisons.
 
 ## Row Contract
 

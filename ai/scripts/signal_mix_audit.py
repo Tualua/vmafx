@@ -22,9 +22,15 @@ from typing import Any
 
 import numpy as np
 
-if __package__ in (None, ""):
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
+AI_SRC = REPO_ROOT / "ai" / "src"
 
+if __package__ in (None, ""):
+    sys.path.insert(0, str(REPO_ROOT))
+    sys.path.insert(0, str(AI_SRC))
+
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 TARGET_CANDIDATES: tuple[str, ...] = (
     "vmaf",
@@ -738,7 +744,8 @@ def main() -> int:
     parser.add_argument("--redundancy-threshold", type=float, default=0.95)
     parser.add_argument("--complement-threshold", type=float, default=0.70)
     parser.add_argument("--min-finite-ratio", type=float, default=0.80)
-    args = parser.parse_args()
+    raw_argv = sys.argv[1:]
+    args = parser.parse_args(raw_argv)
 
     audits = run_audit(
         args.input,
@@ -750,8 +757,19 @@ def main() -> int:
 
     args.out_json.parent.mkdir(parents=True, exist_ok=True)
     args.out_md.parent.mkdir(parents=True, exist_ok=True)
-    args.out_json.write_text(
-        json.dumps({"tables": [_audit_to_jsonable(audit) for audit in audits]}, indent=2) + "\n"
+    write_manifest_json(
+        args.out_json,
+        {
+            "tables": [_audit_to_jsonable(audit) for audit in audits],
+            "run_provenance": build_run_provenance(
+                entrypoint=SCRIPT_PATH,
+                repo_root=REPO_ROOT,
+                argv=raw_argv,
+                args=args,
+                inputs={"tables": [audit.path for audit in audits]},
+                outputs={"json_report": str(args.out_json), "markdown_report": str(args.out_md)},
+            ),
+        },
     )
     args.out_md.write_text(render_markdown(audits, top_k=args.top_k))
 

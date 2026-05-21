@@ -38647,3 +38647,42 @@ Touched files:
 `docs/research/0668-vmaf-tiny-train-stats-provenance.md`,
 `changelog.d/added/0668-vmaf-tiny-train-stats-provenance.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0661 follow-up — AI materializer audit provenance
+
+**Materializer audit provenance impact.** This widens ADR-0661 adoption to
+feature-table materializers and signal-mix audit reports that feed retraining
+or model-mix decisions.
+
+**Key invariants**:
+
+- `materialize_mos_labels.py --audit-json` and
+  `materialize_second_opinion_features.py --audit-json` include
+  `run_provenance` in their audit JSON outputs.
+- `materialize_saliency_features.py --audit-json` writes row counters, the
+  effective config, and `run_provenance`; use it for saliency-enriched tables
+  that feed retraining.
+- `signal_mix_audit.py --out-json` includes `run_provenance` for audited table
+  paths, thresholds, argv, JSON output, and Markdown output.
+- Do not reintroduce bespoke path hashing or direct audit JSON writers on these
+  surfaces; use `aiutils.run_manifest.build_run_provenance()` and
+  `write_manifest_json()`.
+
+Touched files:
+`ai/scripts/materialize_mos_labels.py`,
+`ai/scripts/materialize_second_opinion_features.py`,
+`ai/scripts/materialize_saliency_features.py`,
+`ai/scripts/signal_mix_audit.py`,
+`ai/tests/test_materialize_mos_labels.py`,
+`ai/tests/test_second_opinion_features.py`,
+`ai/tests/test_materialize_saliency_features.py`,
+`ai/tests/test_signal_mix_audit.py`,
+`docs/ai/training.md`,
+`docs/ai/mos-label-materializer.md`,
+`docs/ai/second-opinion-features.md`,
+`docs/ai/saliency-feature-materializer.md`,
+`docs/ai/signal-mix-audit.md`,
+`docs/adr/0661-ai-run-manifest-provenance.md`,
+`docs/research/0669-ai-materializer-audit-provenance.md`,
+`changelog.d/added/0669-ai-materializer-audit-provenance.md`,
+`docs/rebase-notes.md` (this entry).

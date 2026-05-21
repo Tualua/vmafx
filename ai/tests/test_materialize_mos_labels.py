@@ -167,3 +167,34 @@ def test_materialize_parquet_roundtrip_and_audit(tmp_path: Path) -> None:
     audit = json.loads(audit_json.read_text(encoding="utf-8"))
     assert audit["feature_key_column"] == "clip_name"
     assert audit["label_key_column"] == "filename"
+
+
+def test_main_audit_records_run_provenance(tmp_path: Path) -> None:
+    features = _write_jsonl(tmp_path / "features.jsonl", [{"video_id": "a"}])
+    labels = _write_jsonl(tmp_path / "labels.jsonl", [{"video_id": "a", "mos": 4.0}])
+    out = tmp_path / "features.with_mos.jsonl"
+    audit_json = tmp_path / "audit.json"
+
+    assert (
+        mos_labels.main(
+            [
+                "--features",
+                str(features),
+                "--labels",
+                str(labels),
+                "--out",
+                str(out),
+                "--audit-json",
+                str(audit_json),
+            ]
+        )
+        == 0
+    )
+
+    audit = json.loads(audit_json.read_text(encoding="utf-8"))
+    provenance = audit["run_provenance"]
+    assert provenance["schema"] == "ai-run-provenance-v1"
+    assert provenance["entrypoint"]["path"] == "ai/scripts/materialize_mos_labels.py"
+    assert provenance["inputs"]["features"]["kind"] == "file"
+    assert provenance["inputs"]["labels"][0]["kind"] == "file"
+    assert provenance["outputs"]["out"] == str(out)

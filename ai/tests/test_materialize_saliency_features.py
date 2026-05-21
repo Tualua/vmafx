@@ -139,3 +139,44 @@ def test_materialize_rows_marks_missing_source(tmp_path: Path) -> None:
 
     assert summary.failed == 1
     assert enriched[0]["saliency_status"] == "missing-source"
+
+
+def test_main_writes_audit_json_with_run_provenance(tmp_path: Path) -> None:
+    module = _load_module()
+    source = tmp_path / "clip.mp4"
+    source.write_bytes(b"not a real mp4")
+    input_path = tmp_path / "features.jsonl"
+    output_path = tmp_path / "features.saliency.jsonl"
+    audit_path = tmp_path / "audit.json"
+    module.write_table(
+        input_path,
+        [
+            {
+                "src": str(source),
+                "saliency_mean": 0.25,
+                "saliency_var": 0.01,
+            }
+        ],
+    )
+
+    assert (
+        module.main(
+            [
+                "--input",
+                str(input_path),
+                "--output",
+                str(output_path),
+                "--audit-json",
+                str(audit_path),
+            ]
+        )
+        == 0
+    )
+
+    audit = json.loads(audit_path.read_text(encoding="utf-8"))
+    assert audit["summary"]["skipped_existing"] == 1
+    provenance = audit["run_provenance"]
+    assert provenance["schema"] == "ai-run-provenance-v1"
+    assert provenance["entrypoint"]["path"] == "ai/scripts/materialize_saliency_features.py"
+    assert provenance["inputs"]["input"]["kind"] == "file"
+    assert provenance["outputs"]["output"] == str(output_path)

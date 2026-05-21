@@ -156,3 +156,36 @@ def test_parquet_roundtrip_when_pandas_stack_available(tmp_path: Path) -> None:
 
     frame = pd.read_parquet(out)
     assert frame.loc[0, "second_opinion_clip_iqa_score"] == pytest.approx(79.0)
+
+
+def test_main_audit_records_run_provenance(tmp_path: Path) -> None:
+    features = _write_jsonl(tmp_path / "features.jsonl", [{"video_id": "a"}])
+    scores = _write_jsonl(
+        tmp_path / "scores.jsonl",
+        [{"video_id": "a", "competitor": "q-align", "score": 83.0}],
+    )
+    out = tmp_path / "enriched.jsonl"
+    audit_json = tmp_path / "audit.json"
+
+    assert (
+        second_opinion.main(
+            [
+                "--features",
+                str(features),
+                "--scores",
+                str(scores),
+                "--out",
+                str(out),
+                "--audit-json",
+                str(audit_json),
+            ]
+        )
+        == 0
+    )
+
+    audit = json.loads(audit_json.read_text(encoding="utf-8"))
+    provenance = audit["run_provenance"]
+    assert provenance["schema"] == "ai-run-provenance-v1"
+    assert provenance["entrypoint"]["path"] == "ai/scripts/materialize_second_opinion_features.py"
+    assert provenance["inputs"]["features"]["kind"] == "file"
+    assert provenance["outputs"]["out"] == str(out)
