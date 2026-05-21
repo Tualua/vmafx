@@ -97,7 +97,9 @@ Per the Phase-3 chain (Research-0027 → 0028 → 0029 → 0030):
 The `min-PLCC = 0.97` ship gate runs in
 `ai/scripts/validate_vmaf_tiny_v2.py` against
 `runs/full_features_netflix.parquet` first 100 rows; refuses to
-exit-0 below the gate.
+exit-0 below the gate. Pass `--out-json` when preserving promotion
+evidence; the JSON report includes ADR-0661 `run_provenance` for the
+ONNX, parquet, parsed gate arguments, and report path.
 
 ## Usage — CLI
 
@@ -154,7 +156,8 @@ python3 ai/scripts/export_vmaf_tiny_v2.py \
 python3 ai/scripts/validate_vmaf_tiny_v2.py \
     --onnx model/tiny/vmaf_tiny_v2.onnx \
     --parquet runs/full_features_netflix.parquet \
-    --rows 100 --min-plcc 0.97
+    --rows 100 --min-plcc 0.97 \
+    --out-json runs/vmaf_tiny_v2_validate.json
 ```
 
 The training stats JSON includes ADR-0661 `run_provenance` with the trainer

@@ -47,6 +47,11 @@ hyperparameters, argv, and output report path. The ensemble production-flip
 validator (`validate_ensemble_seeds.py`) uses the same block for
 `PROMOTE.json` / `HOLD.json` verdicts so registry-flip evidence identifies the
 LOSO directory, corpus root, seed list, gate thresholds, and verdict target.
+The tiny-VMAF smoke validators (`validate_vmaf_tiny_v2.py`,
+`validate_vmaf_tiny_v3.py`, and `validate_vmaf_tiny_v4.py`) record the same
+block when `--out-json` is passed so promotion gate evidence identifies the
+validated ONNX, feature parquet, optional comparison model(s), argv, gate
+threshold, and report target.
 The ensemble LOSO trainer (`train_fr_regressor_v2_ensemble_loso.py`) records
 the same block in each `loso_seed{N}.json` report so the per-seed gate inputs
 identify the corpus JSONL, training hyperparameters, argv, and report target
@@ -120,6 +125,7 @@ label/score inputs, report thresholds, output targets, and argv.
 | Leave NR threshold calibration as plain JSON | No change to a slow calibration harness | `--fast-nr` would pick up a threshold without recording the corpus, CRF grid, model input, or report path that justified it | Rejected because NR thresholds directly affect user-facing bisect behaviour |
 | Leave DNN feature-model exporters as legacy sidecars | Avoids touching older weight-conversion scripts | Fresh C2/C3, FastDVDnet, or TransNet sidecars would record runtime shape but not the checkpoint/upstream inputs or exporter command that produced them | Rejected because those sidecars are the reproducibility boundary for shipped DNN feature models |
 | Leave saliency-student metrics as legacy JSON | No change to older DUTS trainers | Fresh v1/v2 metrics would report IoU and ONNX hashes but not the DUTS root, output targets, argv, or training hyperparameters that produced the evidence | Rejected because saliency model cards cite those metrics as durable production evidence |
+| Leave tiny-VMAF validator gates as stdout-only | No CLI/output-schema addition | Model-card promotion evidence would keep PLCC/RMSE only in terminal logs with no hashed ONNX/parquet identity | Rejected because validator reports are the shortest replay path for v2/v3/v4 smoke gates |
 
 ## Consequences
 
@@ -157,6 +163,9 @@ label/score inputs, report thresholds, output targets, and argv.
   TransNet refreshes.
 - **Positive**: saliency-student metrics now carry the DUTS root, ONNX output,
   metrics output, argv, and training arguments needed to replay v1/v2 refreshes.
+- **Positive**: tiny-VMAF smoke-validation reports now carry the validated ONNX,
+  parquet slice, comparison model, argv, gate threshold, and report target
+  needed to replay promotion checks.
 - **Positive**: CHUG manifests stay CHUG-named even though the implementation
   shares the KonViD training loop.
 - **Negative**: sidecars become slightly larger and include local path names.

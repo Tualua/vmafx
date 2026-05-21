@@ -7,6 +7,21 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## feat/vmaf-tiny-validator-report-provenance (ADR-0661)
+
+**No upstream rebase impact**: this touches fork-local tiny-AI validator
+tooling, model docs, ADR/research notes, and changelog fragments. Upstream
+Netflix/vmaf does not ship the v2/v3/v4 tiny-VMAF validator CLI family.
+
+Smoke:
+`.venv/bin/python -m pytest ai/tests/test_vmaf_tiny_validator_reports.py -q`
+
+Touched files: `ai/scripts/validate_vmaf_tiny_v*.py`,
+`ai/tests/test_vmaf_tiny_validator_reports.py`, `docs/ai/models/vmaf_tiny_v*.md`,
+`docs/ai/training.md`, `docs/research/0681-*.md`,
+`docs/adr/0661-ai-run-manifest-provenance.md`,
+`changelog.d/added/0681-*.md`, and this file.
+
 ## feat/saliency-student-metrics-provenance (ADR-0661)
 
 **No upstream rebase impact**: this touches fork-local AI saliency training

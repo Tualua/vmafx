@@ -110,7 +110,9 @@ slightly cleaner with the extra capacity.
 The `min-PLCC = 0.97` ship gate runs in
 `ai/scripts/validate_vmaf_tiny_v3.py` against
 `runs/full_features_netflix.parquet`; refuses to exit-0 below the
-gate.
+gate. Pass `--out-json` when preserving promotion evidence; the JSON
+report includes ADR-0661 `run_provenance` for the ONNX, parquet, optional
+v2 comparison model, parsed gate arguments, and report path.
 
 ## Usage — CLI
 
@@ -165,7 +167,8 @@ python3 ai/scripts/validate_vmaf_tiny_v3.py \
     --onnx model/tiny/vmaf_tiny_v3.onnx \
     --parquet runs/full_features_netflix.parquet \
     --rows 5000 --min-plcc 0.97 \
-    --v2-onnx model/tiny/vmaf_tiny_v2.onnx
+    --v2-onnx model/tiny/vmaf_tiny_v2.onnx \
+    --out-json runs/vmaf_tiny_v3_validate.json
 
 # 4. LOSO comparison vs v2.
 python3 ai/scripts/eval_loso_vmaf_tiny_v3.py \

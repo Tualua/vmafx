@@ -138,6 +138,11 @@ The tiny-VMAF evaluation reports also carry the same block:
 feature parquet input, parsed evaluation hyperparameters, original argv, and
 the report target path. Use that block when comparing refreshed LOSO or
 multi-seed numbers instead of relying on shell history.
+The tiny-VMAF smoke validators (`validate_vmaf_tiny_v2.py`,
+`validate_vmaf_tiny_v3.py`, and `validate_vmaf_tiny_v4.py`) accept
+`--out-json` for the same reason: the report records the validated ONNX,
+feature parquet, PLCC/RMSE gate result, optional comparison model, argv, and
+JSON target path.
 
 Legacy evaluation reports use the same schema where they still produce durable
 operator artifacts: `eval_loso_mlp_small.py` and `eval_loso_3arch.py` record

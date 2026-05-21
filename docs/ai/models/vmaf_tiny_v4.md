@@ -113,7 +113,8 @@ python3 ai/scripts/validate_vmaf_tiny_v4.py \
     --parquet runs/full_features_netflix.parquet \
     --rows 5000 --min-plcc 0.97 \
     --v2-onnx model/tiny/vmaf_tiny_v2.onnx \
-    --v3-onnx model/tiny/vmaf_tiny_v3.onnx
+    --v3-onnx model/tiny/vmaf_tiny_v3.onnx \
+    --out-json runs/vmaf_tiny_v4_validate.json
 
 # 4. 9-fold LOSO eval (~12 s wall total).
 python3 ai/scripts/eval_loso_vmaf_tiny_v4.py \
@@ -129,6 +130,10 @@ The generated LOSO report includes `run_provenance` with the evaluation
 entrypoint, original argv, parsed hyperparameters, feature parquet input, and
 report target path. Treat that block as the run identity when comparing v4
 refreshes or multi-run audit output.
+
+The smoke-validation JSON from `--out-json` also carries ADR-0661
+`run_provenance`, including the validated ONNX, parquet slice, optional v2/v3
+comparison models, parsed gate arguments, and report path.
 
 Hyperparameters (identical to v2 / v3 — only the architecture changes):
 

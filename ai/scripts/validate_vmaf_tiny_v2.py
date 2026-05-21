@@ -20,6 +20,12 @@ from pathlib import Path
 
 import numpy as np
 
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
+sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
+
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+
 CANONICAL_6: tuple[str, ...] = (
     "adm2",
     "vif_scale0",
@@ -39,7 +45,45 @@ def _ort_predict(onnx_path: Path, x: np.ndarray, input_name: str) -> np.ndarray:
     return np.asarray(out).reshape(-1)
 
 
-def main() -> int:
+def _sample(values: np.ndarray) -> list[float]:
+    return [float(value) for value in values[:5]]
+
+
+def _write_report(
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    *,
+    rows: int,
+    plcc: float,
+    rmse: float,
+    predictions: np.ndarray,
+    truth: np.ndarray,
+    diff: dict[str, float | str] | None,
+) -> None:
+    payload: dict[str, object] = {
+        "model": "vmaf_tiny_v2",
+        "rows": rows,
+        "min_plcc": args.min_plcc,
+        "plcc": plcc,
+        "rmse": rmse,
+        "gate_pass": plcc >= args.min_plcc,
+        "sample_predictions": _sample(predictions),
+        "sample_truth": _sample(truth),
+    }
+    if diff is not None:
+        payload["v1_diff"] = diff
+    payload["run_provenance"] = build_run_provenance(
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=raw_argv,
+        args=args,
+        inputs={"onnx": args.onnx, "parquet": args.parquet, "v1_onnx": args.v1_onnx},
+        outputs={"report": args.out_json},
+    )
+    write_manifest_json(args.out_json, payload)
+
+
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--onnx", type=Path, required=True)
     ap.add_argument(
@@ -57,7 +101,9 @@ def main() -> int:
         default=None,
         help="Optional v1 ONNX path; if provided, diff v2 vs v1 predictions.",
     )
-    args = ap.parse_args()
+    ap.add_argument("--out-json", type=Path, help="Optional JSON validation report.")
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = ap.parse_args(raw_argv)
 
     import pandas as pd
 
@@ -95,12 +141,31 @@ def main() -> int:
             v1_in = sess1.get_inputs()[0].name
             v1_pred = sess1.run(None, {v1_in: x_z.astype(np.float32)})[0].reshape(-1)
             delta = pred.astype(np.float64) - v1_pred.astype(np.float64)
+            diff = {
+                "mean": float(delta.mean()),
+                "max_abs": float(np.max(np.abs(delta))),
+            }
             print(
-                f"[validate-v2] v2-v1 delta: mean={delta.mean():+.3f} "
-                f"max_abs={np.max(np.abs(delta)):.3f}"
+                f"[validate-v2] v2-v1 delta: mean={diff['mean']:+.3f} "
+                f"max_abs={diff['max_abs']:.3f}"
             )
         except Exception as exc:
+            diff = {"error": str(exc)}
             print(f"[validate-v2] v1 diff skipped: {exc}")
+    else:
+        diff = None
+
+    if args.out_json is not None:
+        _write_report(
+            args,
+            raw_argv,
+            rows=len(df),
+            plcc=plcc,
+            rmse=rmse,
+            predictions=pred,
+            truth=y,
+            diff=diff,
+        )
 
     if plcc < args.min_plcc:
         print(

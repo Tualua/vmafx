@@ -20,6 +20,12 @@ from pathlib import Path
 
 import numpy as np
 
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
+sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
+
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+
 CANONICAL_6: tuple[str, ...] = (
     "adm2",
     "vif_scale0",
@@ -39,7 +45,50 @@ def _ort_predict(onnx_path: Path, x: np.ndarray, input_name: str) -> np.ndarray:
     return np.asarray(out).reshape(-1)
 
 
-def main() -> int:
+def _sample(values: np.ndarray) -> list[float]:
+    return [float(value) for value in values[:5]]
+
+
+def _write_report(
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    *,
+    rows: int,
+    plcc: float,
+    rmse: float,
+    predictions: np.ndarray,
+    truth: np.ndarray,
+    diffs: dict[str, dict[str, float | str]],
+) -> None:
+    payload: dict[str, object] = {
+        "model": "vmaf_tiny_v4",
+        "rows": rows,
+        "min_plcc": args.min_plcc,
+        "plcc": plcc,
+        "rmse": rmse,
+        "gate_pass": plcc >= args.min_plcc,
+        "sample_predictions": _sample(predictions),
+        "sample_truth": _sample(truth),
+    }
+    if diffs:
+        payload["diffs"] = diffs
+    payload["run_provenance"] = build_run_provenance(
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=raw_argv,
+        args=args,
+        inputs={
+            "onnx": args.onnx,
+            "parquet": args.parquet,
+            "v2_onnx": args.v2_onnx,
+            "v3_onnx": args.v3_onnx,
+        },
+        outputs={"report": args.out_json},
+    )
+    write_manifest_json(args.out_json, payload)
+
+
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--onnx", type=Path, required=True)
     ap.add_argument(
@@ -63,7 +112,9 @@ def main() -> int:
         default=None,
         help="Optional v3 ONNX path; if provided, diff v4 vs v3 predictions on the same slice.",
     )
-    args = ap.parse_args()
+    ap.add_argument("--out-json", type=Path, help="Optional JSON validation report.")
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = ap.parse_args(raw_argv)
 
     import pandas as pd
 
@@ -85,17 +136,35 @@ def main() -> int:
     print(f"[validate-v4] sample preds: {pred[:5].round(3).tolist()}")
     print(f"[validate-v4] sample truth: {y[:5].round(3).tolist()}")
 
+    diffs: dict[str, dict[str, float | str]] = {}
     for label, onnx_path in (("v2", args.v2_onnx), ("v3", args.v3_onnx)):
         if onnx_path is not None and onnx_path.exists():
             try:
                 other_pred = _ort_predict(onnx_path, x, args.input_name)
                 delta = pred.astype(np.float64) - other_pred.astype(np.float64)
+                diffs[label] = {
+                    "mean": float(delta.mean()),
+                    "max_abs": float(np.max(np.abs(delta))),
+                }
                 print(
-                    f"[validate-v4] v4-{label} delta: mean={delta.mean():+.3f} "
-                    f"max_abs={np.max(np.abs(delta)):.3f}"
+                    f"[validate-v4] v4-{label} delta: mean={diffs[label]['mean']:+.3f} "
+                    f"max_abs={diffs[label]['max_abs']:.3f}"
                 )
             except Exception as exc:
+                diffs[label] = {"error": str(exc)}
                 print(f"[validate-v4] {label} diff skipped: {exc}")
+
+    if args.out_json is not None:
+        _write_report(
+            args,
+            raw_argv,
+            rows=len(df),
+            plcc=plcc,
+            rmse=rmse,
+            predictions=pred,
+            truth=y,
+            diffs=diffs,
+        )
 
     if plcc < args.min_plcc:
         print(
