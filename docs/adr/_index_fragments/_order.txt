@@ -402,5 +402,6 @@
 0652-chug-visual-signal-primitives
 0653-chug-display-profile-training
 0654-predictor-saliency-signals
+0655-saliency-feature-materializer
 0658-project-modernization-audit
 0662-vulkan-motion-lavapipe-parity

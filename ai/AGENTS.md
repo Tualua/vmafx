@@ -231,6 +231,17 @@ LOSO PLCC ≥ 0.95 against the `vmaf_v0.6.1` per-frame teacher.
   (`python ai/scripts/train_fr_regressor.py --epochs 3 --no-export`)
   runs in CI when the parquet is locally available.
 
+## Saliency feature materialization (ADR-0655)
+
+`ai/scripts/materialize_saliency_features.py` is the reusable bridge from
+row-oriented corpus tables to saliency-bearing training rows. Keep saliency
+inference out of trainer hot loops: trainers consume `saliency_mean` /
+`saliency_var` columns and report missing coverage, while this script owns
+bounded FFmpeg decode, ffprobe fallback, model invocation, and the
+`saliency_status` audit column. Do not add corpus-specific one-off saliency
+materializers unless a future ADR explains why the shared table utility cannot
+represent the corpus.
+
 ## Dynamic-PTQ tiny-MLP family (ADR-0275)
 
 `vmaf_tiny_v3` and `vmaf_tiny_v4` carry dynamic-PTQ int8 sidecars

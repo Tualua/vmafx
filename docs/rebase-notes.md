@@ -7,6 +7,26 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## feat/saliency-feature-materializer (ADR-0655)
+
+**No upstream rebase impact**: the implementation is fork-local AI tooling
+(`ai/scripts/`, `ai/tests/`) plus fork-local documentation and changelog files.
+Upstream Netflix/vmaf does not ship the fork's saliency training-table
+materializer.
+
+Rebase-sensitive fork invariants:
+
+- `ai/scripts/materialize_saliency_features.py` owns bulk saliency enrichment for
+  existing JSONL/parquet feature tables; trainers consume the resulting
+  `saliency_mean` / `saliency_var` columns instead of silently running saliency
+  inference inside training loops.
+- The status column remains row-local and human-readable (`ok`,
+  `skipped-existing`, `missing-source`, `missing-geometry`, `decode-failed`,
+  `model-failed`) so large local sweeps can be audited without scraping stderr.
+
+Smoke:
+`PYTHONPATH=. .venv/bin/python -m pytest ai/tests/test_materialize_saliency_features.py -q`
+
 ## feat/signal-mix-audit (ADR-0650)
 
 **No upstream rebase impact**: all implementation paths are fork-local AI

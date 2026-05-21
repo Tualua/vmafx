@@ -36,3 +36,6 @@ alongside classic VMAF SVM models.
   scalar subjective MOS prediction in [1.0, 5.0] (ADR-0336)
 - [Saliency per-block evaluation](saliency-per-mb-eval.md) — block-level
   IoU for saliency masks at the same granularity ROI encoders consume
+- [Saliency feature materializer](saliency-feature-materializer.md) — append
+  `saliency_mean` / `saliency_var` columns to existing JSONL or parquet
+  feature tables before predictor and MOS-head retrains
