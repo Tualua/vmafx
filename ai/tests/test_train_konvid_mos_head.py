@@ -3,8 +3,8 @@
 """Phase 3 of ADR-0325 — synthetic-corpus smoke + gate tests for the MOS head.
 
 The trainer in :mod:`ai.scripts.train_konvid_mos_head` produces a
-deterministic-seeded ONNX from a synthetic MOS corpus when no real
-KonViD JSONL is on disk. This test suite pins:
+deterministic-seeded ONNX from a synthetic MOS corpus only when
+``--smoke`` is explicit. This test suite pins:
 
 * The trainer is importable and exposes the documented constants
   (FEATURE_COLUMNS, ENCODER_VOCAB_V4, gate thresholds).
@@ -590,6 +590,30 @@ def test_load_corpus_handles_missing_paths(tmp_path: Path) -> None:
     nonexistent = tmp_path / "nope.jsonl"
     feat, _enc, _mos = trainer._load_corpus([nonexistent])
     assert feat.shape == (0, trainer.N_FEATURES)
+
+
+def test_main_rejects_empty_real_corpus_without_synthetic_fallback(tmp_path: Path) -> None:
+    empty = tmp_path / "empty.jsonl"
+    empty.write_text("", encoding="utf-8")
+
+    rc = trainer.main(
+        [
+            "--konvid-1k",
+            str(empty),
+            "--konvid-150k",
+            str(tmp_path / "missing.jsonl"),
+            "--out-onnx",
+            str(tmp_path / "out.onnx"),
+            "--out-manifest",
+            str(tmp_path / "out.json"),
+            "--device",
+            "cpu",
+        ]
+    )
+
+    assert rc == 2
+    assert not (tmp_path / "out.onnx").exists()
+    assert not (tmp_path / "out.json").exists()
 
 
 # ---------------------------------------------------------------------

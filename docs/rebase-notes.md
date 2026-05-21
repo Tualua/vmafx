@@ -38417,3 +38417,37 @@ Touched files:
 `scripts/ci/AGENTS.md`,
 `changelog.d/fixed/0662-vulkan-motion-lavapipe-parity.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0663 — MOS label materializer
+
+**No upstream Netflix C-source rebase impact.** This is fork-local AI
+training/data-prep plumbing under `ai/scripts/`.
+
+**Key invariants**:
+
+- `ai/scripts/materialize_mos_labels.py` stays table-side: it joins subjective
+  MOS labels onto already-extracted feature tables and must not extract
+  features, download corpora, or train models.
+- Real MOS-head training must not silently synthesize data when explicit
+  real-corpus paths produce zero labelled rows. `--smoke` is the documented
+  synthetic path.
+- Conflicting duplicate label keys are rejected; low unique-key coverage fails
+  by default so stale key joins do not become training inputs.
+
+Touched files:
+`ai/scripts/materialize_mos_labels.py`,
+`ai/scripts/train_konvid_mos_head.py`,
+`ai/tests/test_materialize_mos_labels.py`,
+`ai/tests/test_train_konvid_mos_head.py`,
+`docs/ai/mos-label-materializer.md`,
+`docs/ai/mos-corpora.md`,
+`docs/ai/models/konvid_mos_head_v1.md`,
+`docs/ai/index.md`,
+`docs/adr/0663-mos-label-materializer.md`,
+`docs/adr/_index_fragments/0663-mos-label-materializer.md`,
+`docs/adr/_index_fragments/_order.txt`,
+`docs/research/0663-mos-label-materializer.md`,
+`ai/AGENTS.md`,
+`mkdocs.yml`,
+`changelog.d/added/0663-mos-label-materializer.md`,
+`docs/rebase-notes.md` (this entry).

@@ -96,12 +96,26 @@ python ai/scripts/train_konvid_mos_head.py \
     --out-onnx    model/konvid_mos_head_v1.onnx \
     --out-manifest model/konvid_mos_head_v1.json
 
+# Production — refreshed feature parquet already carrying MOS labels:
+python ai/scripts/train_konvid_mos_head.py \
+    --konvid-1k /tmp/no-konvid-1k.jsonl \
+    --konvid-150k /tmp/no-konvid-150k.jsonl \
+    --feature-parquet runs/full_features_konvid_refresh_20260520_with_mos.parquet \
+    --out-onnx model/konvid_mos_head_v1.onnx \
+    --out-manifest model/konvid_mos_head_v1.json
+
 # Key flags:
 #   --epochs N          training epochs (default 30)
 #   --k-folds N         cross-validation folds (default 5)
 #   --seed N            RNG seed (default 20260508)
 #   --no-export         skip ONNX write (dev / dry-run)
 ```
+
+The real path requires labelled rows. A parquet produced by feature extraction
+must contain `mos` or `mos_raw_0_100`; otherwise the trainer exits with code
+`2` and writes no checkpoint. Use
+[`materialize_mos_labels.py`](../mos-label-materializer.md) to join labels,
+and reserve `--smoke` for synthetic CI/load-path checks.
 
 CHUG HDR subjective-MOS training uses the CHUG-specific wrapper
 `ai/scripts/train_chug_hdr_mos_head.py`; do not pass CHUG shards through

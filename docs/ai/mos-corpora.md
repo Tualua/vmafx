@@ -104,6 +104,29 @@ bash ai/scripts/run_aggregated_training.sh
 See [multi-corpus-aggregation.md](multi-corpus-aggregation.md) for the
 full scale-conversion table, dedup policy, and failure-mode reference.
 
+### Feature tables + MOS labels → MOS-head parquet
+
+Real MOS-head training tables must already carry `mos` or `mos_raw_0_100`.
+When a refreshed feature parquet only contains extracted metrics, join the
+labels first with `ai/scripts/materialize_mos_labels.py`:
+
+```bash
+.venv/bin/python ai/scripts/materialize_mos_labels.py \
+    --features runs/full_features_konvid_refresh_20260520_with_folds.parquet \
+    --labels .corpus/konvid-150k/konvid_150k.jsonl \
+    --feature-key-column key \
+    --label-key-column src \
+    --feature-key-regex '([0-9]{6,})' \
+    --label-key-regex '([0-9]{6,})' \
+    --out runs/full_features_konvid_refresh_20260520_with_mos.parquet \
+    --audit-json runs/full_features_konvid_refresh_20260520_with_mos.audit.json
+```
+
+The materializer fails by default below 95% unique-key coverage and refuses to
+overwrite existing MOS columns unless `--overwrite` is passed. See
+[mos-label-materializer.md](mos-label-materializer.md) for the key-matching
+and audit schema.
+
 ### Encode-grid corpora (Netflix + BVI-DVC) → FR-regressor JSONL
 
 Use `ai/scripts/merge_corpora.py` (PR #310).
@@ -274,7 +297,17 @@ python ai/scripts/train_konvid_mos_head.py \
     --konvid-150k .workingdir2/konvid-150k/konvid_150k.jsonl
 #    → model/konvid_mos_head_v1.onnx
 #    → model/konvid_mos_head_v1.json  (manifest sidecar)
+
+# Production from refreshed feature parquet, after MOS materialisation:
+python ai/scripts/train_konvid_mos_head.py \
+    --konvid-1k /tmp/no-konvid-1k.jsonl \
+    --konvid-150k /tmp/no-konvid-150k.jsonl \
+    --feature-parquet runs/full_features_konvid_refresh_20260520_with_mos.parquet
 ```
+
+Real mode fails when the input paths yield zero MOS-labelled rows. Use
+`--smoke` for synthetic pipeline checks; use the MOS label materializer for
+real feature tables that do not yet carry `mos`.
 
 CHUG HDR MOS training is a separate local experiment because CHUG is HDR
 subjective-MOS data and the current Netflix VMAF teacher is SDR/8-bit.

@@ -41,9 +41,14 @@ Reproducer (smoke — no real corpus on disk; deterministic seed)::
 
 Production (real KonViD JSONL drops)::
 
-    python ai/scripts/train_konvid_mos_head.py \
-        --konvid-1k .workingdir2/konvid-1k/konvid_1k.jsonl \
-        --konvid-150k .workingdir2/konvid-150k/konvid_150k.jsonl
+python ai/scripts/train_konvid_mos_head.py \
+    --konvid-1k .workingdir2/konvid-1k/konvid_1k.jsonl \
+    --konvid-150k .workingdir2/konvid-150k/konvid_150k.jsonl
+
+Full-feature parquet runs must already carry ``mos`` or ``mos_raw_0_100``.
+Use ``ai/scripts/materialize_mos_labels.py`` to join MOS labels before
+training. A real run that loads zero labelled rows fails instead of falling
+back to synthetic data; ``--smoke`` is the explicit synthetic path.
 
 CHUG HDR MOS training uses ``train_chug_hdr_mos_head.py``. That wrapper
 reuses this module's training loop but keeps the command name, defaults,
@@ -682,7 +687,7 @@ def _heldout_split_indices(splits: np.ndarray) -> tuple[np.ndarray, np.ndarray] 
 
 
 # ---------------------------------------------------------------------
-# Synthetic-corpus generator — used when no real corpus is on disk.
+# Synthetic-corpus generator — used only by explicit smoke/dev fallback paths.
 # ---------------------------------------------------------------------
 
 
@@ -1244,6 +1249,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Synthesize a deterministic-seeded corpus instead of loading "
         "from disk; used by CI smoke + the test harness.",
     )
+    ap.add_argument(
+        "--allow-synthetic-fallback",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
     ap.add_argument("--epochs", type=int, default=30)
     ap.add_argument("--smoke-epochs", type=int, default=30)
     ap.add_argument("--batch-size", type=int, default=64)
@@ -1352,11 +1362,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             arrays.splits,
         )
         if features.shape[0] == 0:
+            attempted = [str(p) for p in (*paths, *feature_jsonls, *feature_parquets)]
+            if not args.allow_synthetic_fallback:
+                print(
+                    f"[{args.log_prefix}] error: no real MOS-labelled rows found at "
+                    f"{attempted}. Add mos/mos_raw_0_100 with "
+                    "ai/scripts/materialize_mos_labels.py, or pass --smoke for an "
+                    "explicit synthetic pipeline run.",
+                    file=sys.stderr,
+                )
+                return 2
             print(
-                f"[{args.log_prefix}] no real corpus rows found at "
-                f"{[str(p) for p in (*paths, *feature_jsonls, *feature_parquets)]}; "
-                "falling back to synthetic. "
-                "Pass --smoke to silence this message.",
+                f"[{args.log_prefix}] no real corpus rows found at {attempted}; "
+                "falling back to synthetic because --allow-synthetic-fallback was set. "
+                "Prefer --smoke for CI smoke runs.",
                 file=sys.stderr,
             )
             features, encoder, mos = _synthesize_corpus(

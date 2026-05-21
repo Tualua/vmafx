@@ -238,6 +238,7 @@ nav:
       - Signal-mix audit: ai/signal-mix-audit.md
       - External benchmark wrappers: ai/external-bench.md
       - Second-opinion features: ai/second-opinion-features.md
+      - MOS label materializer: ai/mos-label-materializer.md
       - LOSO evaluation: ai/loso-eval.md
       - Local sidecar training: ai/local-sidecar-training.md
       - Ensemble training kit: ai/ensemble-training-kit.md

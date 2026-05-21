@@ -119,6 +119,26 @@ entrypoint. CHUG HDR MOS runs record
 CHUG command is the operator-facing contract while the training loop is
 shared.
 
+## MOS label materialization
+
+Real MOS-head training expects feature tables to already carry `mos` or
+`mos_raw_0_100`. If an extraction pass produced only metric columns, join the
+subjective labels before training:
+
+```bash
+.venv/bin/python ai/scripts/materialize_mos_labels.py \
+    --features runs/full_features_konvid_refresh_20260520_with_folds.parquet \
+    --labels .corpus/konvid-150k/konvid_150k.jsonl \
+    --feature-key-column key \
+    --label-key-column src \
+    --feature-key-regex '([0-9]{6,})' \
+    --label-key-regex '([0-9]{6,})' \
+    --out runs/full_features_konvid_refresh_20260520_with_mos.parquet
+```
+
+The KonViD MOS trainer rejects real-path inputs that yield zero labelled rows
+and writes no checkpoint. Use `--smoke` when the desired input is synthetic.
+
 ## C1 (Netflix corpus) — runnable training prep
 
 Once the local Netflix corpus exists at `.workingdir2/netflix/` (see

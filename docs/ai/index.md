@@ -33,6 +33,8 @@ alongside classic VMAF SVM models.
   comparison harness for fork predictors, x264-pVMAF, and DOVER-Mobile
 - [Second-opinion features](second-opinion-features.md) — join out-of-tree
   NR/MOS scorer outputs into refreshed feature tables before retraining
+- [MOS label materializer](mos-label-materializer.md) — join subjective MOS
+  labels onto refreshed feature tables before real MOS-head training
 - [CHUG UGC-HDR ingestion](chug-ingestion.md) — local-only CHUG
   manifest/video ingest path for HDR subjective-MOS experiments
 - [KonViD MOS head v1](models/konvid_mos_head_v1.md) — 5 081-parameter
