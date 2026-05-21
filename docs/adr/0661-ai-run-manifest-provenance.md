@@ -53,6 +53,9 @@ parsed thresholds, JSON target, and generated model output where applicable.
 Feature-analysis reports (`ai/scripts/feature_correlation.py`) also use the
 same block so correlation / mutual-information / feature-importance reports
 identify the source parquet, target column, thresholds, argv, and report target.
+Phase-3 subset-sweep reports (`ai/scripts/phase3_subset_sweep.py`) use the same
+block so model-selection sweeps identify the source parquet, subset list, seed
+policy, standardization flag, training hyperparameters, argv, and report target.
 Legacy evaluation reports (`eval_loso_mlp_small.py`, `eval_loso_3arch.py`,
 `eval_probabilistic_proxy.py`, and `eval_saliency_per_mb.py`) also adopt the
 same schema when they emit durable JSON so old model-card evidence and
@@ -84,6 +87,7 @@ label/score inputs, report thresholds, output targets, and argv.
 | Leave ensemble LOSO reports as legacy JSON | Smaller trainer diff | Validator verdicts would carry provenance, but their source `loso_seed{N}.json` files would still be opaque | Rejected because seed reports are the durable gate inputs and often outlive the validator run |
 | Leave `vmaf-train --json` reports as plain JSON | No CLI helper diff | Model-card evidence from the user-facing CLI still loses input/threshold lineage | Rejected because these reports are the operator-facing promotion/audit artifacts |
 | Leave feature-correlation reports as plain JSON | Smallest diff | Signal-mix audits would keep metrics but lose the exact source parquet and ranking parameters | Rejected because the feature-correlation report is durable analysis evidence, not a transient debug print |
+| Leave Phase-3 subset sweeps as plain JSON | No schema delta | Model-selection sweeps would keep PLCC tables but lose seed / subset / standardization replay context | Rejected because Phase-3 outputs are durable model-selection evidence |
 
 ## Consequences
 
@@ -106,6 +110,8 @@ label/score inputs, report thresholds, output targets, and argv.
   context as the script-family artifacts they complement.
 - **Positive**: feature-correlation reports now carry the source parquet and
   ranking-parameter context needed to replay signal-mix audits.
+- **Positive**: Phase-3 subset-sweep reports now carry the model-selection
+  sweep context needed to replay broader-feature decisions.
 - **Positive**: CHUG manifests stay CHUG-named even though the implementation
   shares the KonViD training loop.
 - **Negative**: sidecars become slightly larger and include local path names.

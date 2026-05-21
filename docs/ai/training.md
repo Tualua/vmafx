@@ -185,6 +185,9 @@ JSON. `ai/scripts/feature_correlation.py --out` records the source parquet,
 target column, redundancy threshold, top-K setting, and report path alongside
 the Pearson / MI / LASSO / random-forest outputs, so signal-mix audits can be
 replayed from the report alone.
+`ai/scripts/phase3_subset_sweep.py --out` also records `run_provenance` next to
+the subset result keys, including the source parquet, subset list, seed policy,
+standardization flag, and report path used for Phase-3 model-selection sweeps.
 
 ## MOS label materialization
 

@@ -30,15 +30,21 @@ metrics + summary table. Stdout pretty-prints the comparison.
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
 import numpy as np
 
-if __package__ in (None, ""):
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
+AI_SRC = REPO_ROOT / "ai" / "src"
 
+if __package__ in (None, ""):
+    sys.path.insert(0, str(REPO_ROOT))
+if str(AI_SRC) not in sys.path:
+    sys.path.insert(0, str(AI_SRC))
+
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 SUBSETS: dict[str, tuple[str, ...]] = {
     "canonical6": (
@@ -348,8 +354,15 @@ def main() -> int:
             f"{s['mean_plcc']:>12.4f} {s['std_plcc']:>10.4f} {delta_str:>18}"
         )
 
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(results, indent=2))
+    results["run_provenance"] = build_run_provenance(
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=sys.argv[1:],
+        args=vars(args),
+        inputs={"parquet": args.parquet},
+        outputs={"json_report": args.out},
+    )
+    write_manifest_json(args.out, results)
     print(f"\n[phase3] wrote {args.out}")
     return 0
 

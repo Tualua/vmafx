@@ -38791,3 +38791,29 @@ Touched files:
 `docs/research/0673-feature-correlation-report-provenance.md`,
 `changelog.d/added/0673-feature-correlation-report-provenance.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0661 follow-up — Phase-3 subset-sweep report provenance
+
+**Phase-3 sweep provenance impact.** This widens ADR-0661 adoption to the
+model-selection JSON emitted by `ai/scripts/phase3_subset_sweep.py`.
+
+**Key invariants**:
+
+- `phase3_subset_sweep.py --out` writes the JSON report through
+  `write_manifest_json()`.
+- The report keeps existing subset result keys and adds top-level
+  `run_provenance` with the analyzer entrypoint, original argv, parsed subset /
+  seed / standardization arguments, source parquet input, and JSON report
+  target.
+- The subset result payload (`features`, `per_seed`, `summary`) remains
+  unchanged for each requested subset.
+
+Touched files:
+`ai/scripts/phase3_subset_sweep.py`,
+`ai/tests/test_phase3_subset_sweep.py`,
+`docs/research/0028-phase3-subset-sweep.md`,
+`docs/ai/training.md`,
+`docs/adr/0661-ai-run-manifest-provenance.md`,
+`docs/research/0674-phase3-subset-report-provenance.md`,
+`changelog.d/added/0674-phase3-subset-report-provenance.md`,
+`docs/rebase-notes.md` (this entry).
