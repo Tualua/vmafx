@@ -122,7 +122,10 @@ The wrapper:
    `train_fr_regressor_v2_ensemble_loso.py --seeds N
    --corpus $CORPUS_JSONL --out-dir runs/ensemble_v2_real/` per
    seed. The trainer writes `loso_seed{N}.json` to `--out-dir`
-   automatically; the wrapper does not pass `--output`.
+   automatically; the wrapper does not pass `--output`. Each
+   `loso_seed{N}.json` includes ADR-0661 `run_provenance` with the
+   trainer entrypoint, argv, parsed hyperparameters, corpus JSONL input,
+   and per-seed report target.
 3. Tees a timestamped log per seed under
    `runs/ensemble_v2_real/logs/seed{N}_<UTC>.log`.
 4. Prints a one-line summary on completion (elapsed seconds + next

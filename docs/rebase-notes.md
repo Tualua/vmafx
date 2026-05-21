@@ -38713,3 +38713,30 @@ Touched files:
 `docs/research/0670-ensemble-seed-export-provenance.md`,
 `changelog.d/added/0670-ensemble-seed-export-provenance.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0661 follow-up — Ensemble LOSO report provenance
+
+**Ensemble LOSO provenance impact.** This widens ADR-0661 adoption to the
+per-seed `loso_seed{N}.json` reports emitted by the production ensemble LOSO
+trainer.
+
+**Key invariants**:
+
+- `ai/scripts/train_fr_regressor_v2_ensemble_loso.py` writes each
+  `loso_seed{N}.json` through `write_manifest_json()`.
+- Each report includes `run_provenance` with the trainer entrypoint, original
+  argv, parsed training args, corpus JSONL input, and per-seed report target.
+- The existing gate keys (`mean_plcc`, `min_plcc`, `max_plcc`, `folds`, and
+  seed metadata) remain unchanged for `scripts/ci/ensemble_prod_gate.py` and
+  `ai/scripts/validate_ensemble_seeds.py`.
+
+Touched files:
+`ai/scripts/train_fr_regressor_v2_ensemble_loso.py`,
+`ai/tests/test_train_fr_regressor_v2_ensemble_loso_train.py`,
+`docs/ai/training.md`,
+`docs/ai/ensemble-v2-real-corpus-retrain-runbook.md`,
+`docs/ai/ensemble-training-kit.md`,
+`docs/adr/0661-ai-run-manifest-provenance.md`,
+`docs/research/0671-ensemble-loso-report-provenance.md`,
+`changelog.d/added/0671-ensemble-loso-report-provenance.md`,
+`docs/rebase-notes.md` (this entry).

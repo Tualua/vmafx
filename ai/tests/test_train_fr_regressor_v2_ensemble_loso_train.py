@@ -24,6 +24,7 @@ pd = pytest.importorskip("pandas")
 np = pytest.importorskip("numpy")
 torch = pytest.importorskip("torch")
 
+import train_fr_regressor_v2_ensemble_loso as loso  # noqa: E402
 from train_fr_regressor_v2_ensemble_loso import _load_corpus, _train_one_seed  # noqa: E402
 
 
@@ -131,3 +132,67 @@ def test_train_one_seed_min_max_consistent(tmp_path: Path) -> None:
     if plcc_vals:
         assert summary["min_plcc"] == pytest.approx(min(plcc_vals))
         assert summary["max_plcc"] == pytest.approx(max(plcc_vals))
+
+
+def test_main_loso_report_records_run_provenance(monkeypatch, tmp_path: Path) -> None:
+    corpus_path = tmp_path / "synth.jsonl"
+    out_dir = tmp_path / "loso"
+    _write_synthetic_corpus(corpus_path)
+
+    def fake_train_one_seed(seed, corpus, args):  # type: ignore[no-untyped-def]
+        assert seed == 7
+        assert corpus["n_rows"] == 24
+        assert args.epochs == 3
+        return {
+            "seed": seed,
+            "corpus": str(args.corpus),
+            "n_folds": 3,
+            "folds": [],
+            "mean_plcc": 0.99,
+            "std_plcc": 0.0,
+            "min_plcc": 0.98,
+            "max_plcc": 0.99,
+            "mean_srocc": 0.98,
+            "mean_rmse": 0.1,
+            "epochs": args.epochs,
+            "batch_size": args.batch_size,
+            "lr": args.lr,
+            "weight_decay": args.weight_decay,
+            "num_codecs": args.num_codecs,
+            "encoder_vocab_version": 2,
+            "wall_time_s": 0.0,
+        }
+
+    monkeypatch.setattr(loso, "_train_one_seed", fake_train_one_seed)
+
+    rc = loso.main(
+        [
+            "--seeds",
+            "7",
+            "--corpus",
+            str(corpus_path),
+            "--out-dir",
+            str(out_dir),
+            "--epochs",
+            "3",
+        ]
+    )
+
+    assert rc == 0
+    report = json.loads((out_dir / "loso_seed7.json").read_text(encoding="utf-8"))
+    provenance = report["run_provenance"]
+    assert provenance["schema"] == "ai-run-provenance-v1"
+    assert provenance["entrypoint"]["path"] == "ai/scripts/train_fr_regressor_v2_ensemble_loso.py"
+    assert provenance["argv"] == [
+        "--seeds",
+        "7",
+        "--corpus",
+        str(corpus_path),
+        "--out-dir",
+        str(out_dir),
+        "--epochs",
+        "3",
+    ]
+    assert provenance["args"]["seeds"] == [7]
+    assert provenance["inputs"]["corpus"]["kind"] == "file"
+    assert provenance["outputs"]["report_target"] == str(out_dir / "loso_seed7.json")

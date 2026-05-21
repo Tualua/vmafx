@@ -48,12 +48,18 @@ The emitted JSON schema is documented in Research-0075
 from __future__ import annotations
 
 import argparse
-import json
 import random
 import sys
 import time
 from pathlib import Path
 from typing import Any
+
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
+if str(REPO_ROOT / "ai" / "src") not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
+
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 # 9 Netflix Public Dataset sources — the LOSO folds. Mirrors the order
 # baked into ai/scripts/eval_loso_vmaf_tiny_v3.py /
@@ -551,7 +557,8 @@ def _train_one_seed(
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_argparser()
-    args = parser.parse_args(argv)
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = parser.parse_args(raw_argv)
 
     print(
         f"[ensemble-loso] seeds={args.seeds} corpus={args.corpus} "
@@ -585,9 +592,15 @@ def main(argv: list[str] | None = None) -> int:
         t0 = time.monotonic()
         summary = _train_one_seed(seed, corpus, args)
         out_path = args.out_dir / f"loso_seed{seed}.json"
-        with out_path.open("w", encoding="utf-8") as fh:
-            json.dump(summary, fh, indent=2, sort_keys=True)
-            fh.write("\n")
+        summary["run_provenance"] = build_run_provenance(
+            entrypoint=SCRIPT_PATH,
+            repo_root=REPO_ROOT,
+            argv=raw_argv,
+            args=args,
+            inputs={"corpus": args.corpus},
+            outputs={"report_target": str(out_path)},
+        )
+        write_manifest_json(out_path, summary)
         print(
             f"[ensemble-loso] wrote {out_path} "
             f"mean_plcc={summary['mean_plcc']:.4f} "

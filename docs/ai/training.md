@@ -168,6 +168,10 @@ The ensemble production validator `ai/scripts/validate_ensemble_seeds.py`
 records `run_provenance` in its `PROMOTE.json` / `HOLD.json` verdicts. That
 block identifies the LOSO artifact directory, corpus root snapshot input,
 thresholds, seed list, and verdict output path.
+The LOSO trainer itself (`ai/scripts/train_fr_regressor_v2_ensemble_loso.py`)
+also records the same block in each `loso_seed{N}.json` report, identifying
+the corpus JSONL, parsed training arguments, original argv, and per-seed report
+target before the validator condenses those reports into a promotion verdict.
 
 ## MOS label materialization
 
