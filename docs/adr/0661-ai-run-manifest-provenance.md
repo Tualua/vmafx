@@ -63,6 +63,10 @@ argv, and both JSON and Markdown report targets.
 Phase F recipe calibration (`ai/scripts/calibrate_phase_f_recipes.py`) uses the
 same block so regenerated `vmaf-tune auto` content-recipe JSON identifies the
 source corpus JSONL, row cap, argv, and calibrated recipe output target.
+NR threshold calibration (`ai/scripts/calibrate_nr_threshold.py`) uses the same
+block so regenerated `nr_metric_v1.json` calibration thresholds identify the
+requested and actual corpus directories, `nr_metric_v1.onnx`, CRF grid, argv,
+model JSON output, and Markdown report target.
 Legacy evaluation reports (`eval_loso_mlp_small.py`, `eval_loso_3arch.py`,
 `eval_probabilistic_proxy.py`, and `eval_saliency_per_mb.py`) also adopt the
 same schema when they emit durable JSON so old model-card evidence and
@@ -97,6 +101,7 @@ label/score inputs, report thresholds, output targets, and argv.
 | Leave Phase-3 subset sweeps as plain JSON | No schema delta | Model-selection sweeps would keep PLCC tables but lose seed / subset / standardization replay context | Rejected because Phase-3 outputs are durable model-selection evidence |
 | Leave per-EP quantisation reports as plain JSON | No change to a gitignored investigation harness | GPU-EP PTQ evidence would keep PLCC tables but lose the registry, hardware tag, EP list, and optional baseline context | Rejected because quantisation reports are copied into model-card and research evidence before int8 models ship |
 | Leave Phase F recipe calibration as plain JSON | No runtime loader delta | Calibrated recipe JSON would not identify which corpus snapshot and row cap produced operator-facing `vmaf-tune auto` behaviour | Rejected because recipe JSON is a shipped tuning input, not a scratch report |
+| Leave NR threshold calibration as plain JSON | No change to a slow calibration harness | `--fast-nr` would pick up a threshold without recording the corpus, CRF grid, model input, or report path that justified it | Rejected because NR thresholds directly affect user-facing bisect behaviour |
 
 ## Consequences
 
@@ -125,6 +130,8 @@ label/score inputs, report thresholds, output targets, and argv.
   input context needed to replay CPU/CUDA/OpenVINO PTQ findings.
 - **Positive**: Phase F recipe calibration JSON now carries the corpus and CLI
   context needed to replay `vmaf-tune auto` content-recipe thresholds.
+- **Positive**: NR threshold calibration JSON now carries the corpus, model,
+  CRF-grid, and report context needed to replay `--fast-nr` skip thresholds.
 - **Positive**: CHUG manifests stay CHUG-named even though the implementation
   shares the KonViD training loop.
 - **Negative**: sidecars become slightly larger and include local path names.

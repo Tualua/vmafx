@@ -120,6 +120,32 @@ vmaf_dnn_session_close(session);
 .venv/bin/python ai/scripts/validate_model_registry.py
 ```
 
+## Fast-NR calibration sidecar
+
+`vmaf-tune --fast-nr` reads `model/tiny/nr_metric_v1.json` for the optional
+calibration fields used to skip full-reference calls during CRF bisection:
+`calibration_slope`, `calibration_intercept`, and `calibration_threshold`.
+The slope/intercept map this model's raw MOS-like output into VMAF units before
+the threshold comparison. Regenerate those fields with:
+
+```bash
+.venv/bin/python ai/scripts/calibrate_nr_threshold.py \
+    --corpus .corpus/netflix/ \
+    --output model/tiny/nr_metric_v1.json \
+    --nr-ep cpu
+```
+
+Use `--nr-ep cpu` when a long CUDA/ROCm extraction job is already running or
+when calibration should be bit-for-bit reproducible across hosts. The default
+`--nr-ep auto` tries CUDA/ROCm ONNX Runtime providers first and falls back to
+CPU. When the corpus path contains a `ref/` directory, calibration sweeps only
+that reference directory; the local Netflix public source names are recognised
+as 1920×1080 YUV even though the filenames omit the geometry.
+
+Fresh sidecars include ADR-0661 `run_provenance` with the requested and actual
+corpus directories, `nr_metric_v1.onnx`, CRF grid, parsed CLI arguments, JSON
+output path, and Markdown calibration report path.
+
 ## Known limitations
 
 - **Single-frame, no temporal context**: quality of slow-motion blur,

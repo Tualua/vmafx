@@ -24,6 +24,8 @@ sys.path.insert(0, str(_HERE.parent / "src"))
 
 from vmaftune.score_backend import (  # noqa: E402
     NR_MODEL_INPUT_HW,
+    NR_PROXY_DEFAULT_CALIBRATION_INTERCEPT,
+    NR_PROXY_DEFAULT_CALIBRATION_SLOPE,
     NR_PROXY_DEFAULT_DELTA_FAST,
     NRProbeResult,
     NRProxyBackend,
@@ -275,6 +277,28 @@ class TestNRProxyBackendDeltaFast:
         backend = NRProxyBackend(model_path=model_path)
         assert backend.calibration_threshold == pytest.approx(7.0)
 
+    def test_reads_affine_calibration_from_sidecar(self, tmp_path):
+        model_path = tmp_path / "model.onnx"
+        model_path.write_bytes(b"FAKE")
+        sidecar = tmp_path / "model.json"
+        sidecar.write_text(
+            json.dumps({"calibration_slope": 18.5, "calibration_intercept": 12.0}),
+            encoding="utf-8",
+        )
+        backend = NRProxyBackend(model_path=model_path, sidecar_path=sidecar)
+        assert backend.calibration_slope == pytest.approx(18.5)
+        assert backend.calibration_intercept == pytest.approx(12.0)
+        assert backend.calibrated_vmaf_score(4.0) == pytest.approx(86.0)
+
+    def test_affine_calibration_defaults_to_mos_20x_scale(self, tmp_path):
+        model_path = tmp_path / "model.onnx"
+        model_path.write_bytes(b"FAKE")
+        backend = NRProxyBackend(model_path=model_path, sidecar_path=tmp_path / "missing.json")
+        assert backend.calibration_slope == pytest.approx(NR_PROXY_DEFAULT_CALIBRATION_SLOPE)
+        assert backend.calibration_intercept == pytest.approx(
+            NR_PROXY_DEFAULT_CALIBRATION_INTERCEPT
+        )
+
 
 # ---------------------------------------------------------------------------
 # NRProxyBackend — is_far_from_target / nr_implied_direction
@@ -290,8 +314,17 @@ class TestNRProxyBackendDecisionLogic:
         object.__setattr__(backend, "delta_fast", delta)
         object.__setattr__(backend, "_session", None)
         object.__setattr__(backend, "_delta_fast_resolved", delta)
+        object.__setattr__(backend, "_calibration_slope_resolved", 1.0)
+        object.__setattr__(backend, "_calibration_intercept_resolved", 0.0)
         object.__setattr__(backend, "_cache", {})
         return backend
+
+    def test_far_uses_calibrated_vmaf_scale(self):
+        b = self._make_backend(delta=8.0)
+        object.__setattr__(b, "_calibration_slope_resolved", 20.0)
+        object.__setattr__(b, "_calibration_intercept_resolved", 0.0)
+        # raw NR=4.4 maps to VMAF 88, target=90, so it is inside δ=8.
+        assert b.is_far_from_target(4.4, 90.0) is False
 
     def test_far_when_outside_delta(self):
         b = self._make_backend(delta=8.0)
@@ -438,6 +471,8 @@ class TestNRProxyBackendInferenceValidation:
         object.__setattr__(backend, "delta_fast", 8.0)
         object.__setattr__(backend, "_session", session)
         object.__setattr__(backend, "_delta_fast_resolved", 8.0)
+        object.__setattr__(backend, "_calibration_slope_resolved", 1.0)
+        object.__setattr__(backend, "_calibration_intercept_resolved", 0.0)
         object.__setattr__(backend, "_cache", {})
         return backend
 
@@ -607,6 +642,8 @@ class TestBisectNRIntegration:
         object.__setattr__(backend, "delta_fast", 8.0)
         object.__setattr__(backend, "_session", session)
         object.__setattr__(backend, "_delta_fast_resolved", 8.0)
+        object.__setattr__(backend, "_calibration_slope_resolved", 1.0)
+        object.__setattr__(backend, "_calibration_intercept_resolved", 0.0)
         object.__setattr__(backend, "_cache", {})
 
         result = _try_nr_early_elimination_on_yuv(
@@ -637,6 +674,8 @@ class TestBisectNRIntegration:
         object.__setattr__(backend, "delta_fast", 8.0)
         object.__setattr__(backend, "_session", session)
         object.__setattr__(backend, "_delta_fast_resolved", 8.0)
+        object.__setattr__(backend, "_calibration_slope_resolved", 1.0)
+        object.__setattr__(backend, "_calibration_intercept_resolved", 0.0)
         object.__setattr__(backend, "_cache", {})
 
         from vmaftune.bisect import _try_nr_early_elimination_on_yuv
@@ -670,6 +709,8 @@ class TestBisectNRIntegration:
         object.__setattr__(backend, "delta_fast", 8.0)
         object.__setattr__(backend, "_session", _FailSession())
         object.__setattr__(backend, "_delta_fast_resolved", 8.0)
+        object.__setattr__(backend, "_calibration_slope_resolved", 1.0)
+        object.__setattr__(backend, "_calibration_intercept_resolved", 0.0)
         object.__setattr__(backend, "_cache", {})
 
         from vmaftune.bisect import _try_nr_early_elimination_on_yuv

@@ -411,8 +411,8 @@ def _midpoint_lower_quality(lo: int, hi: int) -> int:
 
 # Sentinel prefix embedded in BisectResult.error to signal that _encode_and_score
 # performed NR early elimination (encode+decode-distorted done, FR skipped).
-# The caller uses startswith() to detect this and extracts direction + NR score
-# from the remainder: "<_NR_SKIP_SENTINEL><direction>;<nr_score>".
+# The caller uses startswith() to detect this and extracts direction + calibrated
+# NR-VMAF score from the remainder: "<_NR_SKIP_SENTINEL><direction>;<nr_vmaf>".
 _NR_SKIP_SENTINEL: str = "__nr_skip__:"
 
 
@@ -428,10 +428,10 @@ def _try_nr_early_elimination_on_yuv(
     """Run NR inference on an already-decoded distorted YUV and decide.
 
     Called after encode+decode-distorted but before FR scoring.  Returns
-    ``(direction, nr_score)`` when the NR score is outside the δ_fast
-    uncertainty zone (the FR call can be skipped).  Returns ``None``
-    when the NR score is inside the zone or inference fails (fall
-    through to the full FR path).
+    ``(direction, nr_vmaf)`` when the calibrated NR-VMAF score is outside
+    the δ_fast uncertainty zone (the FR call can be skipped). Returns
+    ``None`` when the calibrated NR-VMAF score is inside the zone or
+    inference fails (fall through to the full FR path).
 
     ``direction`` is ``"tighter"`` (raise CRF — quality above target)
     or ``"looser"`` (lower CRF — quality below target).
@@ -454,11 +454,14 @@ def _try_nr_early_elimination_on_yuv(
 
     if nr_proxy_backend.is_far_from_target(nr_score, target_vmaf):
         direction = nr_proxy_backend.nr_implied_direction(nr_score, target_vmaf)
-        return direction, nr_score
+        return direction, nr_proxy_backend.calibrated_vmaf_score(nr_score)
 
+    nr_vmaf = nr_proxy_backend.calibrated_vmaf_score(nr_score)
     _log.debug(
-        "fast-nr: NR=%.2f target=%.2f δ=%.1f — within uncertainty zone, paying FR cost",
+        "fast-nr: NR_raw=%.2f NR_VMAF=%.2f target=%.2f δ=%.1f — within "
+        "uncertainty zone, paying FR cost",
         nr_score,
+        nr_vmaf,
         target_vmaf,
         nr_proxy_backend.calibration_threshold,
     )
@@ -708,7 +711,7 @@ def bisect_target_vmaf(
 
             # NR early-elimination path: _encode_and_score returned a
             # sentinel BisectResult with ok=False and error starting with
-            # _NR_SKIP_SENTINEL. Parse direction + nr_score from the payload.
+            # _NR_SKIP_SENTINEL. Parse direction + calibrated NR-VMAF from the payload.
             if not sample.ok and sample.error.startswith(_NR_SKIP_SENTINEL):
                 _fr_calls_saved += 1
                 _payload = sample.error[len(_NR_SKIP_SENTINEL) :]
@@ -719,7 +722,7 @@ def bisect_target_vmaf(
                 except ValueError:
                     nr_val = float("nan")
                 _log.info(
-                    "fast-nr: CRF %d NR=%.2f target=%.2f δ=%.1f → %s (FR skipped, iter %d)",
+                    "fast-nr: CRF %d NR_VMAF=%.2f target=%.2f δ=%.1f → %s " "(FR skipped, iter %d)",
                     mid,
                     nr_val,
                     target_vmaf,

@@ -28,18 +28,18 @@ Hard rules (per task spec):
 NRProxyBackend (ADR-0624 / ADR-0615)
 -------------------------------------
 ``NRProxyBackend`` wraps ``model/tiny/nr_metric_v1.onnx`` and provides a
-lightweight, no-reference VMAF proxy score (~200 ms per shot on CPU,
-<50 ms on GPU EP).  It is used by the ``--fast-nr`` bisect flag to skip
-full-reference VMAF calls when the NR score is far from the target VMAF,
-cutting bisect wall-time 2–4×.
+lightweight, no-reference MOS proxy score (~200 ms per shot on CPU,
+<50 ms on GPU EP).  The sidecar calibration maps that raw model output
+to a VMAF-scale proxy before ``--fast-nr`` compares it with the target
+VMAF, cutting bisect wall-time 2–4×.
 
 The ``δ_fast`` threshold (``calibration_threshold`` in the model sidecar
 JSON) is calibrated against the Netflix corpus by
 ``ai/scripts/calibrate_nr_threshold.py``.  During bisect:
 
-- If ``|NR_score - target| > δ_fast`` — proceed in the NR-implied
+- If ``|calibrated_NR_VMAF - target| > δ_fast`` — proceed in the NR-implied
   direction without paying the FR cost.
-- If ``|NR_score - target| ≤ δ_fast`` — fall through to full FR.
+- If ``|calibrated_NR_VMAF - target| ≤ δ_fast`` — fall through to full FR.
 - Final accepted CRF always gets a FR confirmation call.
 """
 
@@ -284,6 +284,8 @@ def select_backend(
 #: covers >95 % of in-domain content correctly per the Research-0611
 #: calibration plan.
 NR_PROXY_DEFAULT_DELTA_FAST: float = 8.0
+NR_PROXY_DEFAULT_CALIBRATION_SLOPE: float = 20.0
+NR_PROXY_DEFAULT_CALIBRATION_INTERCEPT: float = 0.0
 
 #: Input spatial resolution used by NRProxyBackend when resizing frames for
 #: nr_metric_v1.onnx (trained on 224×224 grayscale).
@@ -294,7 +296,7 @@ class NRProbeResult(NamedTuple):
     """Result of a single NR proxy score call."""
 
     nr_score: float
-    """NR VMAF proxy score, in [0, 100] range."""
+    """Raw NR model score, normally MOS-like in [1, 5]."""
     from_cache: bool
     """True when the result was served from the per-bisect cache."""
 
@@ -310,10 +312,10 @@ class NRProxyBackendError(RuntimeError):
 
 @dataclasses.dataclass
 class NRProxyBackend:
-    """No-reference VMAF proxy backend using ``nr_metric_v1.onnx``.
+    """No-reference MOS proxy backend using ``nr_metric_v1.onnx``.
 
     Wraps ``model/tiny/nr_metric_v1.onnx`` via onnxruntime and exposes
-    ``score_nr(distorted_yuv_path, geometry)`` returning an NR VMAF proxy
+    ``score_nr(distorted_yuv_path, geometry)`` returning a raw NR model
     value (~200 ms on CPU EP, <50 ms on GPU EP).
 
     Results are cached per (distorted_path, width, height) so repeated
@@ -347,6 +349,12 @@ class NRProxyBackend:
     # Private: loaded lazily on first call to score_nr.
     _session: object = dataclasses.field(default=None, init=False, repr=False)
     _delta_fast_resolved: float = dataclasses.field(default=float("nan"), init=False, repr=False)
+    _calibration_slope_resolved: float = dataclasses.field(
+        default=float("nan"), init=False, repr=False
+    )
+    _calibration_intercept_resolved: float = dataclasses.field(
+        default=float("nan"), init=False, repr=False
+    )
     _cache: dict[tuple, float] = dataclasses.field(default_factory=dict, init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -367,6 +375,40 @@ class NRProxyBackend:
             object.__setattr__(self, "_delta_fast_resolved", self._resolve_delta_fast())
         return self._delta_fast_resolved
 
+    @property
+    def calibration_slope(self) -> float:
+        """Return the raw-NR-to-VMAF calibration slope."""
+        import math
+
+        resolved = getattr(self, "_calibration_slope_resolved", float("nan"))
+        if math.isnan(resolved):
+            object.__setattr__(
+                self,
+                "_calibration_slope_resolved",
+                self._resolve_sidecar_float(
+                    "calibration_slope",
+                    NR_PROXY_DEFAULT_CALIBRATION_SLOPE,
+                ),
+            )
+        return self._calibration_slope_resolved
+
+    @property
+    def calibration_intercept(self) -> float:
+        """Return the raw-NR-to-VMAF calibration intercept."""
+        import math
+
+        resolved = getattr(self, "_calibration_intercept_resolved", float("nan"))
+        if math.isnan(resolved):
+            object.__setattr__(
+                self,
+                "_calibration_intercept_resolved",
+                self._resolve_sidecar_float(
+                    "calibration_intercept",
+                    NR_PROXY_DEFAULT_CALIBRATION_INTERCEPT,
+                ),
+            )
+        return self._calibration_intercept_resolved
+
     def score_nr(
         self,
         distorted: Path,
@@ -375,7 +417,7 @@ class NRProxyBackend:
         height: int,
         pix_fmt: str = "yuv420p",
     ) -> NRProbeResult:
-        """Return NR VMAF proxy score for ``distorted``.
+        """Return raw NR proxy score for ``distorted``.
 
         Parameters
         ----------
@@ -391,7 +433,9 @@ class NRProxyBackend:
         Returns
         -------
         NRProbeResult
-            ``(nr_score, from_cache)`` where ``nr_score`` is in [0, 100].
+            ``(nr_score, from_cache)`` where ``nr_score`` is the raw model
+            output. Use :meth:`calibrated_vmaf_score` to compare it with a
+            VMAF target.
 
         Raises
         ------
@@ -417,23 +461,29 @@ class NRProxyBackend:
         self._cache.clear()
 
     def is_far_from_target(self, nr_score: float, target_vmaf: float) -> bool:
-        """Return True when the NR score is outside the uncertainty zone.
+        """Return True when calibrated NR-VMAF is outside the uncertainty zone.
 
         Implements the ADR-0615 / ADR-0624 decision rule:
-        ``|nr_score - target_vmaf| > δ_fast`` → skip FR call.
+        ``|calibrated_NR_VMAF - target_vmaf| > δ_fast`` → skip FR call.
         """
-        return abs(nr_score - target_vmaf) > self.calibration_threshold
+        return abs(self.calibrated_vmaf_score(nr_score) - target_vmaf) > self.calibration_threshold
 
     def nr_implied_direction(self, nr_score: float, target_vmaf: float) -> str:
         """Return ``"tighter"`` (raise CRF) or ``"looser"`` (lower CRF).
 
         Convention matches the bisect direction logic in ``bisect.py``:
-        higher CRF = lower quality.  NR > target → quality exceeds goal
-        → we can afford higher CRF (tighter compression).
+        higher CRF = lower quality.  Calibrated NR-VMAF > target →
+        quality exceeds goal → we can afford higher CRF (tighter
+        compression).
         """
-        if nr_score >= target_vmaf:
+        if self.calibrated_vmaf_score(nr_score) >= target_vmaf:
             return "tighter"
         return "looser"
+
+    def calibrated_vmaf_score(self, nr_score: float) -> float:
+        """Map raw NR model output into calibrated VMAF score space."""
+        score = (self.calibration_slope * nr_score) + self.calibration_intercept
+        return max(0.0, min(100.0, score))
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -451,32 +501,33 @@ class NRProxyBackend:
         """Read δ_fast from sidecar JSON or return the compile-time default."""
         if self.delta_fast is not None:
             return float(self.delta_fast)
+        return self._resolve_sidecar_float("calibration_threshold", NR_PROXY_DEFAULT_DELTA_FAST)
+
+    def _resolve_sidecar_float(self, key: str, default: float) -> float:
+        """Read a float calibration field from sidecar JSON."""
         sidecar = self.sidecar_path
         if sidecar is not None and sidecar.is_file():
             try:
                 data = json.loads(sidecar.read_text(encoding="utf-8"))
-                raw = data.get("calibration_threshold")
+                raw = data.get(key)
                 if raw is not None:
                     val = float(raw)
-                    _log.debug(
-                        "NRProxyBackend: loaded δ_fast=%.3f from %s",
-                        val,
-                        sidecar,
-                    )
+                    _log.debug("NRProxyBackend: loaded %s=%.3f from %s", key, val, sidecar)
                     return val
             except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
                 _log.warning(
-                    "NRProxyBackend: failed to read calibration_threshold from %s: %s; "
-                    "using default δ_fast=%.1f",
+                    "NRProxyBackend: failed to read %s from %s: %s; using default %.3f",
+                    key,
                     sidecar,
                     exc,
-                    NR_PROXY_DEFAULT_DELTA_FAST,
+                    default,
                 )
         _log.debug(
-            "NRProxyBackend: no calibration_threshold in sidecar; using default δ_fast=%.1f",
-            NR_PROXY_DEFAULT_DELTA_FAST,
+            "NRProxyBackend: no %s in sidecar; using default %.3f",
+            key,
+            default,
         )
-        return NR_PROXY_DEFAULT_DELTA_FAST
+        return default
 
     def _run_inference(
         self,

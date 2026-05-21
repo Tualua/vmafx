@@ -3,9 +3,10 @@
 `--fast-nr` enables **NR early-elimination** in the Phase B CRF bisect
 (ADR-0615 / ADR-0624).  Instead of running a full-reference VMAF call at
 every bisect midpoint, the cheap `nr_metric_v1` ONNX model scores the
-distorted stream alone (~200 ms CPU, <50 ms GPU EP) and skips the expensive
-FR call whenever the score is far from the target.  The final accepted CRF
-always receives a full-reference confirmation call.
+distorted stream alone (~200 ms CPU, <50 ms GPU EP), maps that raw MOS-like
+score into VMAF units with the sidecar calibration, and skips the expensive
+FR call whenever the calibrated proxy is far from the target.  The final
+accepted CRF always receives a full-reference confirmation call.
 
 Typical wall-time reduction: **2–4×** on in-domain content that sits well
 away from the target VMAF.
@@ -63,8 +64,10 @@ fast-nr: bisect done — FR calls 3 total, 4 saved (57%)
 
 ## The δ_fast threshold
 
-`δ_fast` is the VMAF-unit half-width of the "uncertainty zone".  When
-`|NR_score − target| > δ_fast` the FR call is skipped.  When within the zone
+`δ_fast` is the VMAF-unit half-width of the "uncertainty zone".  The raw
+`nr_metric_v1` output is first mapped as
+`NR_VMAF = calibration_slope × NR_raw + calibration_intercept`.  When
+`|NR_VMAF − target| > δ_fast` the FR call is skipped.  When within the zone
 the FR call is paid.
 
 The default value (8.0 VMAF) comes from the ADR-0615 design target and is
@@ -74,13 +77,18 @@ fits a more precise value from your actual corpus:
 ```bash
 python ai/scripts/calibrate_nr_threshold.py \
     --corpus .corpus/netflix/ \
-    --output model/tiny/nr_metric_v1.json
+    --output model/tiny/nr_metric_v1.json \
+    --nr-ep cpu
 ```
 
-After a successful calibration run, `nr_metric_v1.json` will contain a
-`calibration_threshold` field that `NRProxyBackend` picks up automatically on
-the next `--fast-nr` invocation.  The calibration report is written to
-`docs/ai/models/nr_metric_v1-calibration-<date>.md`.
+After a successful calibration run, `nr_metric_v1.json` will contain
+`calibration_slope`, `calibration_intercept`, and `calibration_threshold`
+fields that `NRProxyBackend` picks up automatically on the next `--fast-nr`
+invocation.  The calibration report is written to
+`docs/ai/models/nr_metric_v1-calibration-<date>.md`.  Fresh calibration JSON
+also includes ADR-0661 `run_provenance` so the threshold can be traced back to
+the corpus directory, `nr_metric_v1.onnx` input, CRF grid, CLI arguments, and
+Markdown report path that produced it.
 
 ### Content-type considerations
 
@@ -95,7 +103,8 @@ via sidecar JSON) for content-specific tuning.
 ## Calibration script
 
 `ai/scripts/calibrate_nr_threshold.py` walks a YUV corpus at a CRF grid,
-runs FR + NR scoring for each clip, fits `vmaf_fr ≈ a × vmaf_nr + b` via
+runs FR + NR scoring for each clip, fits
+`vmaf_fr ≈ calibration_slope × nr_raw + calibration_intercept` via
 least-squares, and sets `δ_fast = 2σ(residuals)`.
 
 ```
@@ -105,22 +114,27 @@ usage: calibrate_nr_threshold.py [-h] [--corpus CORPUS] [--output JSON]
                                  [--height HEIGHT] [--pix-fmt PIX_FMT]
                                  [--max-clips N] [--vmaf-bin VMAF_BIN]
                                  [--ffmpeg-bin FFMPEG_BIN] [--report-dir DIR]
-                                 [--delta-fast VMAF] [--dry-run] [-v]
+                                 [--delta-fast VMAF] [--nr-ep {auto,cpu}]
+                                 [--dry-run] [-v]
 ```
 
 Key options:
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--corpus PATH` | `.corpus/netflix/` | Directory of reference YUVs |
+| `--corpus PATH` | `.corpus/netflix/` | Directory of reference YUVs; if `PATH/ref/` exists, only that reference subdirectory is swept |
 | `--output JSON` | `model/tiny/nr_metric_v1.json` | Sidecar JSON to update |
 | `--crfs LIST` | `18,23,28,33,38` | CRF grid to sweep |
 | `--max-clips N` | (all) | Limit clips for quick smoke runs |
+| `--nr-ep auto\|cpu` | `auto` | `auto` tries CUDA/ROCm EP before CPU; `cpu` pins CPU inference for reproducible calibration or when CUDA is already busy |
 | `--dry-run` | off | Compute δ_fast without writing the JSON |
 | `--delta-fast VMAF` | (fit from data) | Force a specific δ_fast value |
 
 Without a real corpus the script falls back to the YUVs under
-`python/test/resource/yuv/` for a minimal smoke run.
+`python/test/resource/yuv/` for a minimal smoke run. The in-tree Netflix
+public corpus convention uses 1080p source filenames such as
+`BigBuckBunny_25fps.yuv`; those names are recognised even though they do not
+spell out `1920x1080`.
 
 ## FR call savings — example
 
@@ -129,10 +143,10 @@ On a 10-second 1080p source at `--target-vmaf 93` with the default CRF window
 
 | Phase | CRF | NR score | δ_fast | Action |
 |-------|-----|----------|--------|--------|
-| iter 1 | 31 | 72.4 | 8.0 | NR far below target → skip FR, lower CRF |
-| iter 2 | 15 | 97.8 | 8.0 | NR far above target → skip FR, raise CRF |
-| iter 3 | 23 | 91.1 | 8.0 | NR within zone → pay FR (92.8 measured) |
-| iter 4 | 27 | 86.5 | 8.0 | NR far below target → skip FR, lower CRF |
+| iter 1 | 31 | 72.4 | 8.0 | NR_VMAF far below target → skip FR, lower CRF |
+| iter 2 | 15 | 97.8 | 8.0 | NR_VMAF far above target → skip FR, raise CRF |
+| iter 3 | 23 | 91.1 | 8.0 | NR_VMAF within zone → pay FR (92.8 measured) |
+| iter 4 | 27 | 86.5 | 8.0 | NR_VMAF far below target → skip FR, lower CRF |
 | iter 5 (final) | 25 | — | — | always FR: 93.1 measured ✓ |
 
 Result: 5 bisect iterations, 2 FR calls (iterations 3 and 5), 3 FR calls

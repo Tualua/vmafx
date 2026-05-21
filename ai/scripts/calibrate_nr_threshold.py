@@ -6,8 +6,8 @@
 Walks the Netflix corpus (`.corpus/netflix/`) or a fallback subset of
 BBB / KoNViD / BVI-DVC clips, runs both FR VMAF and NR scoring at a grid
 of CRF values, fits a linear calibration curve `vmaf_fr ≈ f(vmaf_nr)`,
-and writes `calibration_threshold = 2σ(residuals)` into
-`model/tiny/nr_metric_v1.json`.
+and writes `calibration_slope`, `calibration_intercept`, and
+`calibration_threshold = 2σ(residuals)` into `model/tiny/nr_metric_v1.json`.
 
 Usage
 -----
@@ -31,7 +31,7 @@ Output
 ------
 Writes a calibration report to
 ``docs/ai/models/nr_metric_v1-calibration-<YYYY-MM-DD>.md`` and updates
-the ``calibration_threshold`` field of ``model/tiny/nr_metric_v1.json``.
+the ``calibration_*`` fields of ``model/tiny/nr_metric_v1.json``.
 """
 
 from __future__ import annotations
@@ -45,7 +45,15 @@ import sys
 import tempfile
 from datetime import date
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
+
+SCRIPT_PATH = Path(__file__).resolve()
+_REPO_ROOT = SCRIPT_PATH.parents[2]
+_AI_SRC = _REPO_ROOT / "ai" / "src"
+if str(_AI_SRC) not in sys.path:
+    sys.path.insert(0, str(_AI_SRC))
+
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 _log = logging.getLogger(__name__)
 
@@ -53,7 +61,6 @@ _log = logging.getLogger(__name__)
 # Defaults
 # ---------------------------------------------------------------------------
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT_MODEL_JSON = _REPO_ROOT / "model" / "tiny" / "nr_metric_v1.json"
 _DEFAULT_MODEL_ONNX = _REPO_ROOT / "model" / "tiny" / "nr_metric_v1.onnx"
 _DEFAULT_CORPUS = _REPO_ROOT / ".corpus" / "netflix"
@@ -64,6 +71,17 @@ _DEFAULT_PRESET = "medium"
 # BBB YUVs under python/test/resource/yuv/ as minimal fallback fixtures.
 _FALLBACK_YUV_GLOB = "src01*.yuv"
 _FALLBACK_YUV_DIR = _REPO_ROOT / "python" / "test" / "resource" / "yuv"
+_NETFLIX_PUBLIC_1080P_PREFIXES: tuple[str, ...] = (
+    "BigBuckBunny",
+    "BirdsInCage",
+    "CrowdRun",
+    "ElFuente1",
+    "ElFuente2",
+    "FoxBird",
+    "OldTownCross",
+    "Seeking",
+    "Tennis",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -92,7 +110,29 @@ class CalibrationSample(NamedTuple):
 
 def _find_yuv_files(corpus: Path) -> list[Path]:
     """Return all .yuv files under *corpus* (recursive)."""
+    ref_dir = corpus / "ref"
+    if ref_dir.is_dir():
+        refs = sorted(ref_dir.glob("*.yuv"))
+        if refs:
+            return refs
     return sorted(corpus.rglob("*.yuv"))
+
+
+def _vmaf_cli_pixel_format(pix_fmt: str) -> str:
+    """Map FFmpeg-style raw pixel formats to vmaf CLI family tokens."""
+    if pix_fmt.startswith("yuv444"):
+        return "444"
+    if pix_fmt.startswith("yuv422"):
+        return "422"
+    return "420"
+
+
+def _vmaf_cli_bitdepth(pix_fmt: str) -> str:
+    """Return the bit depth token expected by the vmaf CLI."""
+    for marker, bitdepth in (("16", "16"), ("12", "12"), ("10", "10")):
+        if marker in pix_fmt:
+            return bitdepth
+    return "8"
 
 
 def _run_fr_vmaf(
@@ -116,11 +156,13 @@ def _run_fr_vmaf(
         "--height",
         str(height),
         "--pixel_format",
-        pix_fmt,
+        _vmaf_cli_pixel_format(pix_fmt),
+        "--bitdepth",
+        _vmaf_cli_bitdepth(pix_fmt),
         "--output",
         "/dev/stdout",
         "--json",
-        "--no_progress",
+        "--quiet",
     ]
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=120)
@@ -222,6 +264,8 @@ def _detect_yuv_geometry(yuv: Path) -> tuple[int, int] | None:
         w, h = int(m2.group(1)), int(m2.group(2))
         if 64 <= w <= 7680 and 64 <= h <= 4320:
             return w, h
+    if any(yuv.stem.startswith(prefix) for prefix in _NETFLIX_PUBLIC_1080P_PREFIXES):
+        return 1920, 1080
     return None
 
 
@@ -232,13 +276,14 @@ def _run_nr_score(
     height: int,
     pix_fmt: str = "yuv420p",
     nr_model_path: Path,
+    nr_use_gpu_ep: bool,
 ) -> float | None:
     """Return the NR VMAF proxy score for dist_yuv, or None on error."""
     try:
         sys.path.insert(0, str(_REPO_ROOT / "tools" / "vmaf-tune" / "src"))
         from vmaftune.score_backend import NRProxyBackend
 
-        backend = NRProxyBackend(model_path=nr_model_path, use_gpu_ep=True)
+        backend = NRProxyBackend(model_path=nr_model_path, use_gpu_ep=nr_use_gpu_ep)
         result = backend.score_nr(dist_yuv, width=width, height=height, pix_fmt=pix_fmt)
         return result.nr_score
     except Exception as exc:
@@ -337,20 +382,24 @@ def _write_calibration_report(
         "## Interpretation",
         "",
         (
-            f"During bisect, when |NR_score − target| > {delta_fast:.2f} VMAF, "
-            "the full-reference VMAF call is skipped and the bisect window advances "
-            "in the NR-implied direction. This threshold is calibrated to cover "
-            ">95% of in-domain content residuals correctly (2σ coverage)."
+            f"During bisect, raw NR is first mapped as `NR_VMAF = {a:.4f} × "
+            f"NR_raw + {b:.4f}`. When |NR_VMAF − target| > {delta_fast:.2f} "
+            "VMAF, the full-reference VMAF call is skipped and the bisect "
+            "window advances in the NR-implied direction. This threshold is "
+            "calibrated to cover >95% of in-domain content residuals correctly "
+            "(2σ coverage)."
         ),
         "",
         "## Per-sample data (first 50)",
         "",
-        "| Clip | CRF | NR score | FR score | Residual (FR−NR) |",
-        "|------|-----|----------|----------|-----------------|",
+        "| Clip | CRF | NR raw | NR→VMAF | FR score | Fit residual |",
+        "|------|-----|--------|---------|----------|--------------|",
     ]
     for s in samples[:50]:
+        pred = (a * s.nr_score) + b
         lines.append(
-            f"| {s.yuv_name} | {s.crf} | {s.nr_score:.2f} | {s.fr_score:.2f} | {s.residual:.2f} |"
+            f"| {s.yuv_name} | {s.crf} | {s.nr_score:.2f} | {pred:.2f} | "
+            f"{s.fr_score:.2f} | {s.fr_score - pred:.2f} |"
         )
     if len(samples) > 50:
         lines.append(f"| … | … | … | … | ({len(samples) - 50} more rows omitted) |")
@@ -361,7 +410,7 @@ def _write_calibration_report(
         "",
         "- ADR-0615: Fast NR pre-scoring for CRF bisect acceleration.",
         "- ADR-0624: Implementation record.",
-        "- `model/tiny/nr_metric_v1.json` — updated `calibration_threshold` field.",
+        "- `model/tiny/nr_metric_v1.json` — updated `calibration_*` fields.",
         "- `ai/scripts/calibrate_nr_threshold.py` — this script.",
     ]
 
@@ -392,6 +441,9 @@ def calibrate(
     max_clips: int | None,
     report_dir: Path,
     delta_fast_override: float | None,
+    nr_execution_provider: str,
+    provenance_argv: list[str] | None = None,
+    provenance_args: argparse.Namespace | dict[str, Any] | None = None,
 ) -> int:
     """Run the calibration sweep and write output. Returns 0 on success."""
     # Collect YUV files.
@@ -470,6 +522,7 @@ def calibrate(
                     height=h,
                     pix_fmt=pix_fmt,
                     nr_model_path=model_onnx,
+                    nr_use_gpu_ep=nr_execution_provider == "auto",
                 )
                 if nr is None:
                     continue
@@ -481,11 +534,23 @@ def calibrate(
     if not samples:
         _log.error("No calibration samples collected; check corpus and tool paths.")
         return 1
+    if len(samples) < 2 and delta_fast_override is None:
+        _log.error(
+            "Need at least 2 calibration samples to fit δ_fast; got %d. "
+            "Add CRFs/clips or pass --delta-fast to force a threshold.",
+            len(samples),
+        )
+        return 1
 
     # Fit linear regression.
     nr_vals = [s.nr_score for s in samples]
     fr_vals = [s.fr_score for s in samples]
-    a, b, residuals = _linear_regression(nr_vals, fr_vals)
+    if len(samples) >= 2:
+        a, b, residuals = _linear_regression(nr_vals, fr_vals)
+    else:
+        a = 1.0
+        b = 0.0
+        residuals = [s.residual for s in samples]
     sigma = math.sqrt(sum(r * r for r in residuals) / max(1, len(residuals) - 1))
     delta_fast = (
         delta_fast_override if delta_fast_override is not None else _compute_delta_fast(residuals)
@@ -518,16 +583,31 @@ def calibrate(
             _log.error("Failed to read %s: %s", model_json, exc)
             return 1
 
+        existing["calibration_slope"] = round(a, 6)
+        existing["calibration_intercept"] = round(b, 6)
         existing["calibration_threshold"] = round(delta_fast, 4)
         existing["calibration_plcc"] = round(plcc, 4)
         existing["calibration_sigma"] = round(sigma, 4)
         existing["calibration_date"] = date.today().isoformat()
         existing["calibration_n_samples"] = len(samples)
+        if provenance_args is not None:
+            existing["run_provenance"] = build_run_provenance(
+                entrypoint=SCRIPT_PATH,
+                repo_root=_REPO_ROOT,
+                argv=provenance_argv or [],
+                args=provenance_args,
+                inputs={
+                    "requested_corpus": corpus,
+                    "actual_corpus": Path(corpus_label),
+                    "model_onnx": model_onnx,
+                },
+                outputs={
+                    "model_json": model_json,
+                    "markdown_report": report_path,
+                },
+            )
 
-        model_json.write_text(
-            json.dumps(existing, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
+        write_manifest_json(model_json, existing)
         print(f"Updated calibration_threshold={delta_fast:.4f} in {model_json}")
     else:
         print(f"[dry-run] would set calibration_threshold={delta_fast:.4f} in {model_json}")
@@ -547,7 +627,8 @@ def _build_parser() -> argparse.ArgumentParser:
             "(ADR-0615 / ADR-0624). "
             "Walks a YUV corpus, runs FR+NR scoring at a CRF grid, fits "
             "vmaf_fr ≈ f(vmaf_nr) linear regression, and writes "
-            "calibration_threshold = 2σ to model/tiny/nr_metric_v1.json."
+            "calibration_slope/intercept and calibration_threshold = 2σ "
+            "to model/tiny/nr_metric_v1.json."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -646,6 +727,16 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
+        "--nr-ep",
+        choices=("auto", "cpu"),
+        default="auto",
+        help=(
+            "ONNX Runtime execution provider policy for NR scoring: "
+            "'auto' tries CUDA/ROCm then CPU; 'cpu' pins CPU EP "
+            "(default: auto)"
+        ),
+    )
+    p.add_argument(
         "--dry-run",
         action="store_true",
         default=False,
@@ -663,7 +754,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     p = _build_parser()
-    args = p.parse_args(argv)
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = p.parse_args(raw_argv)
 
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
@@ -696,6 +788,9 @@ def main(argv: list[str] | None = None) -> int:
         max_clips=args.max_clips,
         report_dir=args.report_dir,
         delta_fast_override=args.delta_fast_override,
+        nr_execution_provider=args.nr_ep,
+        provenance_argv=raw_argv,
+        provenance_args=args,
     )
 
 

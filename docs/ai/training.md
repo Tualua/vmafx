@@ -191,6 +191,10 @@ standardization flag, and report path used for Phase-3 model-selection sweeps.
 `ai/scripts/calibrate_phase_f_recipes.py --out` records the same block in the
 calibrated `vmaf-tune auto` recipe JSON, including the source corpus JSONL,
 optional row cap, argv, and recipe output path.
+`ai/scripts/calibrate_nr_threshold.py --output` records `run_provenance` in the
+updated `nr_metric_v1.json` calibration sidecar, including the requested and
+actual corpus directories, `nr_metric_v1.onnx`, CRF grid, argv, and Markdown
+calibration report path.
 
 ## MOS label materialization
 
