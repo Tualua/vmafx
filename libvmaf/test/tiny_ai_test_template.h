@@ -33,12 +33,15 @@
 #ifndef LIBVMAF_TEST_TINY_AI_TEST_TEMPLATE_H_
 #define LIBVMAF_TEST_TINY_AI_TEST_TEMPLATE_H_
 
+#include <errno.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "test.h"
 
+#include "config.h"
+#include "libvmaf/dnn.h"
 #include "feature/feature_extractor.h"
 #include "opt.h"
 
@@ -148,6 +151,13 @@ static int vmaf_tiny_ai_test_unsetenv(const char *name)
                                                                                                      \
         int rc = fex->init(fex, VMAF_PIX_FMT_YUV420P, 8u, 64u, 64u);                                 \
         mu_assert("init must fail when no model path is provided", rc < 0);                          \
+        if (vmaf_dnn_available()) {                                                                  \
+            mu_assert("DNN-enabled build must report missing model path as -EINVAL",                 \
+                      rc == -EINVAL);                                                                \
+        } else {                                                                                     \
+            mu_assert("DNN-disabled build must report optional runtime as -ENOSYS",                  \
+                      rc == -ENOSYS);                                                                \
+        }                                                                                            \
                                                                                                      \
         /* close() must be safe after a failed init. */                                              \
         (void)fex->close(fex);                                                                       \

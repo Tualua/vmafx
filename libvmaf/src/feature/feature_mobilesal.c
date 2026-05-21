@@ -36,9 +36,9 @@
  *  fallback. Missing model → init() returns -EINVAL so the pipeline
  *  cleanly declines instead of running on a stub.
  *
- *  When libvmaf is built with -Denable_dnn=false the session-open call
- *  returns -ENOSYS and init() propagates that, so this extractor simply
- *  cannot be instantiated without a real ORT build.
+ *  When libvmaf is built with -Denable_dnn=false, init() returns
+ *  -ENOSYS before model-path probing so callers see the shared
+ *  optional-runtime contract rather than a missing-model error.
  *
  *  Checkpoint provenance: the in-tree ``model/tiny/mobilesal.onnx`` is a
  *  smoke-only synthetic placeholder (3→1 Conv + Sigmoid) that matches
@@ -135,12 +135,17 @@ static int mobilesal_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
         return -ENOTSUP;
     }
 
+    int rc = vmaf_tiny_ai_require_runtime("mobilesal");
+    if (rc < 0) {
+        return rc;
+    }
+
     const char *path =
         vmaf_tiny_ai_resolve_model_path("mobilesal", s->model_path, "VMAF_MOBILESAL_MODEL_PATH");
     if (!path) {
         return -EINVAL;
     }
-    int rc = vmaf_tiny_ai_open_session("mobilesal", path, &s->sess);
+    rc = vmaf_tiny_ai_open_session("mobilesal", path, &s->sess);
     if (rc < 0) {
         return rc;
     }

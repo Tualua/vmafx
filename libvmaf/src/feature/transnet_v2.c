@@ -38,9 +38,9 @@
  *  before that, the prediction is delayed-onset and downstream
  *  consumers should treat the first ~50 frames as warm-up).
  *
- *  When libvmaf is built with -Denable_dnn=false the session-open call
- *  returns -ENOSYS and init() propagates that, so this extractor cannot
- *  be instantiated without a real ORT build.
+ *  When libvmaf is built with -Denable_dnn=false, init() returns
+ *  -ENOSYS before model-path probing so callers see the shared
+ *  optional-runtime contract rather than a missing-model error.
  */
 
 #include <assert.h>
@@ -217,12 +217,17 @@ static int transnet_v2_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_
         return -ENOTSUP;
     }
 
+    int rc = vmaf_tiny_ai_require_runtime("transnet_v2");
+    if (rc < 0) {
+        return rc;
+    }
+
     const char *path = vmaf_tiny_ai_resolve_model_path("transnet_v2", s->model_path,
                                                        "VMAF_TRANSNET_V2_MODEL_PATH");
     if (!path) {
         return -EINVAL;
     }
-    int rc = vmaf_tiny_ai_open_session("transnet_v2", path, &s->sess);
+    rc = vmaf_tiny_ai_open_session("transnet_v2", path, &s->sess);
     if (rc < 0) {
         return rc;
     }

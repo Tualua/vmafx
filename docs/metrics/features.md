@@ -788,9 +788,10 @@ is dispatched to whichever ORT execution provider is selected via
 `--tiny-device`; see [`docs/ai/inference.md`](../ai/inference.md)).
 
 **Limitations** — depends on the
-[tiny-AI runtime](../ai/overview.md). The extractor errors out at
-init if no model path is provided (neither the option nor the
-environment variable); the registry under
+[tiny-AI runtime](../ai/overview.md). On builds compiled without DNN
+support, init returns `-ENOSYS` before model-path probing. On DNN-enabled
+builds, the extractor errors out with `-EINVAL` if no model path is
+provided (neither the option nor the environment variable); the registry under
 [`model/tiny/registry.json`](../../model/tiny/registry.json) tracks
 the canonical LPIPS ONNX checkpoint.
 
@@ -832,8 +833,10 @@ LPIPS before ONNX inference.
 **Backends** — scalar only on the libvmaf side. ONNX execution follows the
 configured tiny-AI provider selected via `--tiny-device`.
 
-**Limitations** — depends on the [tiny-AI runtime](../ai/overview.md) and
-fails init if no model path is provided. The committed checkpoint is marked
+**Limitations** — depends on the [tiny-AI runtime](../ai/overview.md).
+On builds compiled without DNN support, init returns `-ENOSYS` before
+model-path probing; on DNN-enabled builds, missing `model_path` returns
+`-EINVAL`. The committed checkpoint is marked
 `smoke: true` in the model registry and should be used only for smoke tests
 until the real DISTS weights replace it.
 
@@ -890,10 +893,10 @@ via `--tiny-device`; see [`docs/ai/inference.md`](../ai/inference.md)).
 **Limitations** — Stateful (5-frame sliding window); not a metric
 (`fastdvdnet_pre_l1_residual` is a diagnostic residual, not a
 perceptual score). Depends on the [tiny-AI runtime](../ai/overview.md);
-extractor init fails with `-EINVAL` if no model path is provided
-(neither the `model_path` option nor the
-`VMAF_FASTDVDNET_PRE_MODEL_PATH` env var). Returns `-ENOSYS` from
-init if libvmaf was built without ORT. The shipped checkpoint at
+extractor init returns `-ENOSYS` before model-path probing if libvmaf
+was built without ORT. On DNN-enabled builds it fails with `-EINVAL` if
+no model path is provided (neither the `model_path` option nor the
+`VMAF_FASTDVDNET_PRE_MODEL_PATH` env var). The shipped checkpoint at
 `model/tiny/fastdvdnet_pre.onnx` now carries real upstream
 m-tassano/FastDVDnet weights (`smoke: false` in
 `model/tiny/registry.json`) wrapped by the ADR-0255 luma adapter.
@@ -930,11 +933,13 @@ across the H×W output map).
 **Backends** — scalar only on the libvmaf side; ORT-dispatched to the
 selected execution provider.
 
-**Limitations** — the default historical `mobilesal.onnx` placeholder is
-smoke-only; use `saliency_student_v1.onnx` for content-dependent
-saliency. The C extractor still accepts 8-bit YUV only; high-bit-depth
-input support is available on the encoder-side `vmaf-roi` tool, not on
-the scoring-side `mobilesal` feature yet. Depends on the
+**Limitations** — init returns `-ENOSYS` before model-path probing if
+libvmaf was built without ORT; on DNN-enabled builds, missing
+`model_path` returns `-EINVAL`. The default historical `mobilesal.onnx`
+placeholder is smoke-only; use `saliency_student_v1.onnx` for
+content-dependent saliency. The C extractor still accepts 8-bit YUV only;
+high-bit-depth input support is available on the encoder-side `vmaf-roi`
+tool, not on the scoring-side `mobilesal` feature yet. Depends on the
 [tiny-AI runtime](../ai/overview.md).
 
 ### `transnet_v2` — TransNet V2 shot-boundary detector (tiny-AI, NR / single-input)
@@ -969,10 +974,10 @@ the selected execution provider.
 **Limitations** — Stateful (100-frame sliding window; the first
 99 frames emit boundary probabilities computed against a partially-
 filled window). Depends on the [tiny-AI runtime](../ai/overview.md);
-extractor init fails with `-EINVAL` if no model path is provided
-(neither the `model_path` option nor the
-`VMAF_TRANSNET_V2_MODEL_PATH` env var). Returns `-ENOSYS` from init
-if libvmaf was built without ORT. The shipped checkpoint at
+extractor init returns `-ENOSYS` before model-path probing if libvmaf
+was built without ORT. On DNN-enabled builds it fails with `-EINVAL` if
+no model path is provided (neither the `model_path` option nor the
+`VMAF_TRANSNET_V2_MODEL_PATH` env var). The shipped checkpoint at
 `model/tiny/transnet_v2.onnx` now carries real upstream
 soCzech/TransNetV2 weights (`smoke: false` in
 `model/tiny/registry.json`) wrapped by the ADR-0261 NTCHW adapter.

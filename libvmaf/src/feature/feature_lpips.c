@@ -22,9 +22,9 @@
  *  fallback. Missing model → init() returns -EINVAL so the pipeline
  *  cleanly declines instead of running silently on dummy weights.
  *
- *  When libvmaf is built with -Denable_dnn=false the session-open call
- *  returns -ENOSYS and init() propagates that, so this extractor simply
- *  cannot be instantiated without a real ORT build.
+ *  When libvmaf is built with -Denable_dnn=false, init() returns
+ *  -ENOSYS before model-path probing so callers see the shared
+ *  optional-runtime contract rather than a missing-model error.
  *
  *  Shared scaffolding
  *  ------------------
@@ -106,12 +106,16 @@ static int lpips_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, u
         return -ENOTSUP;
     }
 
+    int rc = vmaf_tiny_ai_require_runtime("lpips");
+    if (rc < 0)
+        return rc;
+
     const char *path =
         vmaf_tiny_ai_resolve_model_path("lpips", s->model_path, "VMAF_LPIPS_MODEL_PATH");
     if (!path)
         return -EINVAL;
 
-    int rc = vmaf_tiny_ai_open_session("lpips", path, &s->sess);
+    rc = vmaf_tiny_ai_open_session("lpips", path, &s->sess);
     if (rc < 0)
         return rc;
     assert(s->sess != NULL);

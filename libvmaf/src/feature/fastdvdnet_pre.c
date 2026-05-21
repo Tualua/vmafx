@@ -36,9 +36,9 @@
  *  reference reflection-pad-light behaviour and lets the extractor emit
  *  a score on every frame index.
  *
- *  When libvmaf is built with -Denable_dnn=false the session-open call
- *  returns -ENOSYS and init() propagates that, so this extractor cannot
- *  be instantiated without a real ORT build.
+ *  When libvmaf is built with -Denable_dnn=false, init() returns
+ *  -ENOSYS before model-path probing so callers see the shared
+ *  optional-runtime contract rather than a missing-model error.
  */
 
 #include <assert.h>
@@ -169,12 +169,16 @@ static int fastdvdnet_pre_init(VmafFeatureExtractor *fex, enum VmafPixelFormat p
         return -ENOTSUP;
     }
 
+    int rc = vmaf_tiny_ai_require_runtime("fastdvdnet_pre");
+    if (rc < 0)
+        return rc;
+
     const char *path = vmaf_tiny_ai_resolve_model_path("fastdvdnet_pre", s->model_path,
                                                        "VMAF_FASTDVDNET_PRE_MODEL_PATH");
     if (!path)
         return -EINVAL;
 
-    int rc = vmaf_tiny_ai_open_session("fastdvdnet_pre", path, &s->sess);
+    rc = vmaf_tiny_ai_open_session("fastdvdnet_pre", path, &s->sess);
     if (rc < 0)
         return rc;
     assert(s->sess != NULL);

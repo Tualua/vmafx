@@ -17,6 +17,8 @@
  *  Model resolution mirrors LPIPS: the feature option ``model_path`` wins;
  *  otherwise ``VMAF_DISTS_SQ_MODEL_PATH`` is consulted. Missing model means
  *  init() returns -EINVAL so callers never run on accidental dummy weights.
+ *  Disabled-DNN builds return -ENOSYS before model-path probing, matching
+ *  the tiny-AI optional-runtime contract shared with LPIPS / FastDVDnet.
  */
 
 #include <assert.h>
@@ -89,12 +91,16 @@ static int dists_sq_init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         return -ENOTSUP;
     }
 
+    int rc = vmaf_tiny_ai_require_runtime("dists_sq");
+    if (rc < 0)
+        return rc;
+
     const char *path =
         vmaf_tiny_ai_resolve_model_path("dists_sq", s->model_path, "VMAF_DISTS_SQ_MODEL_PATH");
     if (!path)
         return -EINVAL;
 
-    int rc = vmaf_tiny_ai_open_session("dists_sq", path, &s->sess);
+    rc = vmaf_tiny_ai_open_session("dists_sq", path, &s->sess);
     if (rc < 0)
         return rc;
     assert(s->sess != NULL);

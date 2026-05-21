@@ -209,6 +209,10 @@ the way of the per-frame data shape.
 
 ## Do / don't
 
+- **Do** call `vmaf_tiny_ai_require_runtime` after pixel-format / bit-depth
+  validation and before model-path probing. Disabled-DNN builds must report
+  `-ENOSYS` from the shared optional-runtime contract, not a misleading
+  missing-model error.
 - **Do** call `vmaf_tiny_ai_resolve_model_path` even if your extractor
   only honours an env var; it logs the standard error message on
   failure so users get one consistent diagnostic.

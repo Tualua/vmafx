@@ -45,6 +45,15 @@ lives in [`dev-llm/`](../../dev-llm/).
 Lightning. Runtime lives in C and depends only on ONNX Runtime. The
 boundary is the `.onnx` + sidecar JSON pair on disk.
 
+## Runtime availability
+
+Tiny-AI extractors (`lpips`, `dists_sq`, `fastdvdnet_pre`, `mobilesal`,
+and `transnet_v2`) require a libvmaf build with ONNX Runtime support. On a
+build compiled with `-Denable_dnn=false`, extractor `init` returns
+`-ENOSYS` before probing `model_path` or the extractor-specific environment
+variable. On DNN-enabled builds, a missing model path remains a normal
+configuration error and returns `-EINVAL`.
+
 ## When to reach for Tiny AI
 
 | You want to… | Use | Read |

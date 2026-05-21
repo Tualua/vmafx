@@ -28,6 +28,31 @@ Touched files: `tools/external-bench/`, `docs/ai/external-bench.md`,
 `docs/adr/0656-*.md`, `docs/research/0656-*.md`,
 `changelog.d/fixed/0656-*.md`, `mkdocs.yml`, and this file.
 
+## fix/tiny-ai-disabled-runtime-gate (ADR-0660)
+
+**Low upstream rebase impact**: the touched C files are fork-local tiny-AI
+extractors and helper tests. Upstream Netflix/vmaf does not ship these DNN
+feature extractors, but conflicts are possible if upstream changes the feature
+registry or libvmaf's optional-DNN surface.
+
+Rebase-sensitive fork invariant:
+
+- Every tiny-AI feature extractor calls
+  `vmaf_tiny_ai_require_runtime(<feature>)` after pixel-format / bit-depth
+  validation and before `vmaf_tiny_ai_resolve_model_path()`. Disabled-DNN
+  builds must return `-ENOSYS` before path probing; DNN-enabled builds keep
+  missing model paths as `-EINVAL`.
+
+Smoke:
+`meson test -C build --suite=fast --print-errorlogs test_lpips test_dists test_fastdvdnet_pre test_mobilesal test_transnet_v2`
+
+Touched files: `libvmaf/src/dnn/tiny_extractor_template.h`,
+`libvmaf/src/feature/feature_{lpips,dists,mobilesal}.c`,
+`libvmaf/src/feature/{fastdvdnet_pre,transnet_v2}.c`,
+`libvmaf/test/tiny_ai_test_template.h`, `libvmaf/src/dnn/AGENTS.md`,
+`docs/ai/`, `docs/metrics/features.md`, `docs/adr/0660-*.md`,
+`docs/research/0660-*.md`, `changelog.d/fixed/0660-*.md`, and this file.
+
 ## feat/saliency-feature-materializer (ADR-0655)
 
 **No upstream rebase impact**: the implementation is fork-local AI tooling

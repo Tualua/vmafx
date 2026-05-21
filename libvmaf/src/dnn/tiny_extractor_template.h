@@ -18,8 +18,11 @@
  *
  *  What's in here
  *  --------------
- *  Three small inline helpers + one option-table macro. Nothing magical:
+ *  Four small inline helpers + one option-table macro. Nothing magical:
  *
+ *    - vmaf_tiny_ai_require_runtime()  — standard disabled-build guard:
+ *      return -ENOSYS before model-path probing when libvmaf was built
+ *      without the DNN runtime.
  *    - vmaf_tiny_ai_resolve_model_path() — feature-option-then-env-var
  *      lookup with a single user-facing log line on failure.
  *    - vmaf_tiny_ai_open_session()       — `resolve` + `vmaf_dnn_session_open`
@@ -58,6 +61,10 @@
  *    is well-defined per CERT ENV03-C; we treat the result as untrusted
  *    and only pass it to `vmaf_dnn_validate_onnx()` via
  *    `vmaf_dnn_session_open()` which performs `realpath` hardening.
+ *  - Disabled-build `-ENOSYS` is checked before model-path probing so
+ *    callers get the optional-runtime contract from ADR-0374 instead of
+ *    a misleading "no model path" error on builds that could not run the
+ *    model even with a valid path.
  */
 
 #ifndef LIBVMAF_DNN_TINY_EXTRACTOR_TEMPLATE_H_
@@ -78,6 +85,27 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/**
+ * Enforce the build-time optional DNN runtime contract shared by every
+ * tiny-AI extractor. Call this from `init()` after validating the pixel
+ * format / bit depth but before resolving the model path.
+ *
+ * @param feature_name short name used in the error log (e.g. "lpips").
+ * @return 0 when the DNN runtime is available, -ENOSYS when libvmaf was
+ *         built without ONNX Runtime support.
+ */
+static inline int vmaf_tiny_ai_require_runtime(const char *feature_name)
+{
+    if (vmaf_dnn_available()) {
+        return 0;
+    }
+    vmaf_log(VMAF_LOG_LEVEL_ERROR,
+             "%s: tiny-AI DNN runtime unavailable (rebuild libvmaf with "
+             "-Denable_dnn=enabled)\n",
+             feature_name ? feature_name : "tiny_ai");
+    return -ENOSYS;
+}
 
 /**
  * Resolve a tiny-AI extractor's ONNX model path: feature option first,
