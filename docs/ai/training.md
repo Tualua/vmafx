@@ -93,6 +93,32 @@ The sidecar `model/tiny/vmaf_tiny_fr_v1.json` pins:
 }
 ```
 
+## Run provenance sidecars
+
+Training scripts that emit model manifests should also emit a
+`run_provenance` block. The shared helper is
+`aiutils.run_manifest.build_run_provenance()`; use it instead of adding
+one-off JSON for paths or command-line arguments.
+
+`run_provenance` is intentionally compact:
+
+| Field | Meaning |
+|---|---|
+| `schema` | Provenance schema name, currently `ai-run-provenance-v1`. |
+| `entrypoint` | User-facing script path plus SHA-256 when the script file exists. |
+| `argv` | Original command-line arguments after wrapper normalization. |
+| `args` | Parsed arguments sorted into deterministic JSON values. |
+| `inputs` | Named corpus, feature, metadata, or profile paths with existence and file hashes. |
+| `outputs` | Named model, card, and manifest paths. Future outputs may be marked `missing` before they are written. |
+| `shared_trainer` | Optional implementation script when a wrapper delegates to a shared trainer. |
+
+KonViD MOS runs record `ai/scripts/train_konvid_mos_head.py` as the
+entrypoint. CHUG HDR MOS runs record
+`ai/scripts/train_chug_hdr_mos_head.py` as the entrypoint and
+`ai/scripts/train_konvid_mos_head.py` as `shared_trainer`, because the
+CHUG command is the operator-facing contract while the training loop is
+shared.
+
 ## C1 (Netflix corpus) — runnable training prep
 
 Once the local Netflix corpus exists at `.workingdir2/netflix/` (see

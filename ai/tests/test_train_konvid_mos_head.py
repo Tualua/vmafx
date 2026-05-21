@@ -424,6 +424,13 @@ def test_chug_hdr_entrypoint_accepts_feature_jsonl_and_custom_model_id(
     assert manifest["feature_order"] == list(trainer.CHUG_HDR_FEATURE_COLUMNS)
     assert manifest["training_recipe"]["n_rows"] == 4
     assert manifest["folds"][0]["validation_policy"] == "explicit-corpus-split"
+    assert manifest["run_provenance"]["entrypoint"]["path"].endswith(
+        "ai/scripts/train_chug_hdr_mos_head.py"
+    )
+    assert manifest["run_provenance"]["shared_trainer"]["path"].endswith(
+        "ai/scripts/train_konvid_mos_head.py"
+    )
+    assert manifest["run_provenance"]["inputs"]["feature_jsonl"][0]["kind"] == "file"
 
 
 def test_chug_hdr_entrypoint_display_profile_selects_display_schema(
@@ -498,6 +505,10 @@ def test_chug_hdr_entrypoint_display_profile_selects_display_schema(
         "display_peak_luminance_nits_norm"
     ] == pytest.approx(0.1)
     assert manifest["training_recipe"]["n_rows"] == 4
+    assert manifest["run_provenance"]["entrypoint"]["path"].endswith(
+        "ai/scripts/train_chug_hdr_mos_head.py"
+    )
+    assert manifest["run_provenance"]["inputs"]["display_profile_json"]["sha256"]
 
 
 def test_load_corpus_accepts_full_features_parquet(tmp_path: Path) -> None:
@@ -623,6 +634,13 @@ def test_evaluate_gate_real_threshold_unchanged() -> None:
     assert verdict["gate"]["spread_max"] == pytest.approx(0.005)
 
 
+def test_run_argv_json_must_decode_to_string_list(capsys: pytest.CaptureFixture[str]) -> None:
+    rc = trainer.main(["--run-argv-json", '{"not": "a-list"}', "--no-export"])
+
+    assert rc == 2
+    assert "--run-argv-json must decode to list[str]" in capsys.readouterr().err
+
+
 # ---------------------------------------------------------------------
 # End-to-end smoke train — produces an ONNX, gate evaluates, ops are
 # allowlist-conformant. This is the regression test the CI gate runs.
@@ -658,6 +676,11 @@ def test_smoke_run_produces_allowlist_conformant_onnx(tmp_path: Path) -> None:
     # 30-epoch recipe; this is the placeholder gate per the task brief.
     assert manifest["gate"]["mean_plcc"] >= trainer.SYNTHETIC_GATE_PLCC
     assert manifest["gate"]["passed"] is True
+    assert manifest["run_provenance"]["schema"] == "ai-run-provenance-v1"
+    assert manifest["run_provenance"]["entrypoint"]["path"].endswith(
+        "ai/scripts/train_konvid_mos_head.py"
+    )
+    assert manifest["run_provenance"]["args"]["smoke"] is True
 
     # ONNX op-allowlist conformance — every op must appear in
     # libvmaf/src/dnn/op_allowlist.c.

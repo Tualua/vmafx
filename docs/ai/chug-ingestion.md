@@ -228,6 +228,12 @@ ambient lux, BT.2020/P3 coverage, OLED/QLED/LCD panel flags, local
 dimming, and dynamic tone-mapping. The profile is recorded in the
 manifest under `display_profile` with a sha256 of the source JSON.
 
+The generated manifest also includes `run_provenance`. For CHUG runs,
+`entrypoint` is `ai/scripts/train_chug_hdr_mos_head.py`, `shared_trainer`
+is the shared KonViD MOS trainer, and `inputs` includes every
+`--feature-jsonl`, optional feature parquet, and optional display-profile
+JSON path with file hashes when those files exist.
+
 If a future HDR corpus row already carries display fields, row-local
 values win and the profile only fills missing display features. That
 keeps multi-display datasets usable while still letting CHUG runs bind

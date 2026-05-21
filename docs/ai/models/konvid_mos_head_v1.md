@@ -110,6 +110,12 @@ the KonViD-named flags. That wrapper defaults to its own
 manifests under `.workingdir2/chug/`; it does not change this committed
 11-feature KonViD model contract.
 
+Both KonViD and CHUG MOS-head manifests include `run_provenance`. The
+block records the user-facing entrypoint script, CLI arguments, named
+input/output paths, and file hashes where the files exist. CHUG wrapper
+runs keep `train_chug_hdr_mos_head.py` as `entrypoint` and record the
+shared `train_konvid_mos_head.py` implementation as `shared_trainer`.
+
 For target-panel HDR experiments, add
 `--display-profile-json <profile.json>`. When no explicit
 `--feature-schema` is passed, that flag selects `chug-hdr-display-v1`

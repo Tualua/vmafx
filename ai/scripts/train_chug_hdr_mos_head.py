@@ -12,6 +12,7 @@ KonViD MOS head.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from collections.abc import Sequence
@@ -44,6 +45,7 @@ def _discover_feature_jsonls(shard_dir: Path) -> list[Path]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
     parser = argparse.ArgumentParser(
         prog="train_chug_hdr_mos_head.py",
         description="Train a local CHUG HDR MOS head from reference-aligned feature JSONL.",
@@ -164,6 +166,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         str(args.out_card),
         "--out-manifest",
         str(args.out_manifest),
+        "--run-entrypoint",
+        str(Path(__file__).resolve()),
+        "--run-argv-json",
+        json.dumps(raw_argv),
     ]
     for shard in feature_jsonls:
         delegated.extend(["--feature-jsonl", str(shard)])

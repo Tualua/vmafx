@@ -38334,6 +38334,41 @@ Touched files:
 `changelog.d/fixed/0659-modernization-audit-false-positive-filter.md`,
 `docs/rebase-notes.md` (this entry).
 
+## ADR-0661 — AI run manifest provenance
+
+**No upstream Netflix C-source rebase impact.** This is fork-local AI
+tooling under `ai/` plus human-facing docs.
+
+**Key invariants**:
+
+- New AI training/export sidecars should use
+  `aiutils.run_manifest.build_run_provenance()` instead of hand-rolled path
+  hashing or argument JSON.
+- CHUG MOS wrapper runs record `train_chug_hdr_mos_head.py` as the
+  user-facing `entrypoint`, even though they delegate into the shared KonViD
+  training loop.
+- Add `shared_trainer` when wrapper identity and implementation script differ.
+
+Touched files:
+`ai/src/aiutils/run_manifest.py`,
+`ai/src/aiutils/__init__.py`,
+`ai/scripts/train_konvid_mos_head.py`,
+`ai/scripts/train_chug_hdr_mos_head.py`,
+`ai/tests/test_run_manifest.py`,
+`ai/tests/test_train_konvid_mos_head.py`,
+`ai/AGENTS.md`,
+`ai/src/aiutils/AGENTS.md`,
+`docs/ai/training.md`,
+`docs/ai/models/konvid_mos_head_v1.md`,
+`docs/ai/chug-ingestion.md`,
+`docs/adr/0661-ai-run-manifest-provenance.md`,
+`docs/adr/_index_fragments/0661-ai-run-manifest-provenance.md`,
+`docs/adr/_index_fragments/_order.txt`,
+`docs/adr/README.md`,
+`docs/research/0661-ai-run-manifest-provenance.md`,
+`changelog.d/added/0661-ai-run-manifest-provenance.md`,
+`docs/rebase-notes.md` (this entry).
+
 ## ADR-0662 — Vulkan motion lavapipe parity
 
 **Rebase-sensitive feature-extractor impact.** This changes fork-local GPU

@@ -78,8 +78,10 @@ from typing import Any
 import numpy as np
 
 from aiutils.file_utils import sha256
+from aiutils.run_manifest import build_run_provenance, describe_path, write_manifest_json
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT_PATH = Path(__file__).resolve()
 
 # ---------------------------------------------------------------------
 # Constants — the KonViD schema is predictor-facing and must stay in sync with
@@ -1119,6 +1121,7 @@ def _build_manifest(
     epochs: int,
     seed: int,
     display_profile: DisplayProfile | None = None,
+    run_provenance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     manifest: dict[str, Any] = {
         "id": model_id,
@@ -1153,6 +1156,8 @@ def _build_manifest(
             "sha256": display_profile.sha256,
             "feature_values": display_profile.feature_values,
         }
+    if run_provenance is not None:
+        manifest["run_provenance"] = run_provenance
     return manifest
 
 
@@ -1163,6 +1168,7 @@ def _build_manifest(
 
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="train_konvid_mos_head.py")
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
     _konvid_1k_dir = Path(
         os.environ.get(
             "VMAF_KONVID_1K_DIR",
@@ -1276,7 +1282,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Skip ONNX export + manifest write (dev mode).",
     )
+    ap.add_argument("--run-entrypoint", type=Path, default=SCRIPT_PATH, help=argparse.SUPPRESS)
+    ap.add_argument("--run-argv-json", default=None, help=argparse.SUPPRESS)
     args = ap.parse_args(argv)
+    run_argv = raw_argv
+    if args.run_argv_json is not None:
+        try:
+            parsed_argv = json.loads(args.run_argv_json)
+        except json.JSONDecodeError:
+            print(
+                f"[{args.log_prefix}] error: --run-argv-json must decode to list[str]",
+                file=sys.stderr,
+            )
+            return 2
+        if not isinstance(parsed_argv, list) or not all(
+            isinstance(item, str) for item in parsed_argv
+        ):
+            print(
+                f"[{args.log_prefix}] error: --run-argv-json must decode to list[str]",
+                file=sys.stderr,
+            )
+            return 2
+        run_argv = parsed_argv
     feature_columns = _feature_columns_for_schema(args.feature_schema)
     display_profile = _load_display_profile(args.display_profile_json)
     uses_display_profile = any(name in feature_columns for name in CHUG_HDR_DISPLAY_FEATURES)
@@ -1443,6 +1470,27 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     n_params = _count_parameters(ship_model)
     sha256 = _export_onnx(ship_model, args.out_onnx, n_features=features.shape[1])
+    run_provenance = build_run_provenance(
+        entrypoint=args.run_entrypoint,
+        repo_root=REPO_ROOT,
+        argv=run_argv,
+        args=args,
+        inputs={
+            "konvid_1k": args.konvid_1k,
+            "konvid_150k": args.konvid_150k,
+            "feature_jsonl": args.feature_jsonl,
+            "feature_parquet": args.feature_parquet,
+            "display_profile_json": args.display_profile_json,
+        },
+        outputs={
+            "onnx": args.out_onnx,
+            "card": args.out_card,
+            "manifest": args.out_manifest,
+        },
+        exclude_args={"run_entrypoint", "run_argv_json"},
+    )
+    if args.run_entrypoint.resolve() != SCRIPT_PATH:
+        run_provenance["shared_trainer"] = describe_path(SCRIPT_PATH, repo_root=REPO_ROOT)
     manifest = _build_manifest(
         onnx_path=args.out_onnx,
         sha256=sha256,
@@ -1459,11 +1507,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         epochs=epochs,
         seed=args.seed,
         display_profile=display_profile if uses_display_profile else None,
+        run_provenance=run_provenance,
     )
-    args.out_manifest.parent.mkdir(parents=True, exist_ok=True)
-    args.out_manifest.write_text(
-        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    write_manifest_json(args.out_manifest, manifest)
     wall_s = time.time() - t0
     print(
         f"[{args.log_prefix}] wrote {args.out_onnx} ({n_params} params, "
