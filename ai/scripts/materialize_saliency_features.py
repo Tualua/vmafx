@@ -50,10 +50,16 @@ class SaliencyMaterializeConfig:
     ffmpeg_bin: str = "ffmpeg"
     ffprobe_bin: str = "ffprobe"
     model_path: Path | None = None
+    model_id: str | None = None
     max_frames: int = 8
     frame_samples: int = 8
+    temporal_aggregator: str = "mean"
+    ema_alpha: float = 0.6
     overwrite: bool = False
     status_column: str = "saliency_status"
+    model_id_column: str = "saliency_model_id"
+    aggregator_column: str = "saliency_aggregator"
+    ema_alpha_column: str = "saliency_ema_alpha"
 
 
 @dataclass(frozen=True)
@@ -133,6 +139,7 @@ def materialize_rows(
         mean, var = result
         enriched["saliency_mean"] = mean
         enriched["saliency_var"] = var
+        _set_output_metadata(enriched, cfg)
         _set_status(enriched, cfg, "ok")
         ok += 1
         out.append(enriched)
@@ -191,6 +198,8 @@ def compute_row_saliency(
                 height,
                 model_path=cfg.model_path,
                 frame_samples=frame_samples,
+                temporal_aggregator=cfg.temporal_aggregator,
+                ema_alpha=cfg.ema_alpha,
             )
             return _mean_var(mask)
         except Exception:  # pragma: no cover - saliency stack is optional
@@ -214,6 +223,23 @@ def _has_existing_saliency(row: dict[str, Any]) -> bool:
 def _set_status(row: dict[str, Any], cfg: SaliencyMaterializeConfig, status: str) -> None:
     if cfg.status_column:
         row[cfg.status_column] = status
+
+
+def _set_output_metadata(row: dict[str, Any], cfg: SaliencyMaterializeConfig) -> None:
+    if cfg.model_id_column:
+        row[cfg.model_id_column] = _effective_model_id(cfg)
+    if cfg.aggregator_column:
+        row[cfg.aggregator_column] = cfg.temporal_aggregator
+    if cfg.ema_alpha_column:
+        row[cfg.ema_alpha_column] = float(cfg.ema_alpha)
+
+
+def _effective_model_id(cfg: SaliencyMaterializeConfig) -> str:
+    if cfg.model_id:
+        return cfg.model_id
+    if cfg.model_path is None:
+        return "saliency_student_v1"
+    return cfg.model_path.stem
 
 
 def _resolve_source(row: dict[str, Any], cfg: SaliencyMaterializeConfig) -> Path | None:
@@ -298,8 +324,28 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--ffmpeg-bin", default="ffmpeg")
     parser.add_argument("--ffprobe-bin", default="ffprobe")
     parser.add_argument("--model-path", type=Path, default=None)
+    parser.add_argument(
+        "--model-id",
+        default=None,
+        help=(
+            "Model identifier recorded in output metadata. Defaults to "
+            "saliency_student_v1 for the bundled model or the model-path stem."
+        ),
+    )
     parser.add_argument("--max-frames", type=int, default=8)
     parser.add_argument("--frame-samples", type=int, default=8)
+    parser.add_argument(
+        "--temporal-aggregator",
+        default="mean",
+        choices=("mean", "ema", "max", "motion-weighted"),
+        help="How sampled per-frame saliency maps are reduced.",
+    )
+    parser.add_argument(
+        "--ema-alpha",
+        type=float,
+        default=0.6,
+        help="Current-frame weight when --temporal-aggregator=ema.",
+    )
     parser.add_argument(
         "--overwrite", action="store_true", help="Recompute existing saliency columns"
     )
@@ -307,6 +353,21 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--status-column",
         default="saliency_status",
         help="Status column name; pass an empty string to omit it",
+    )
+    parser.add_argument(
+        "--model-id-column",
+        default="saliency_model_id",
+        help="Output metadata column for the model identifier; pass empty to omit.",
+    )
+    parser.add_argument(
+        "--aggregator-column",
+        default="saliency_aggregator",
+        help="Output metadata column for the temporal reducer; pass empty to omit.",
+    )
+    parser.add_argument(
+        "--ema-alpha-column",
+        default="saliency_ema_alpha",
+        help="Output metadata column for EMA alpha; pass empty to omit.",
     )
     return parser.parse_args(argv)
 
@@ -322,10 +383,16 @@ def main(argv: list[str] | None = None) -> int:
         ffmpeg_bin=args.ffmpeg_bin,
         ffprobe_bin=args.ffprobe_bin,
         model_path=args.model_path,
+        model_id=args.model_id,
         max_frames=args.max_frames,
         frame_samples=args.frame_samples,
+        temporal_aggregator=args.temporal_aggregator,
+        ema_alpha=args.ema_alpha,
         overwrite=args.overwrite,
         status_column=args.status_column,
+        model_id_column=args.model_id_column,
+        aggregator_column=args.aggregator_column,
+        ema_alpha_column=args.ema_alpha_column,
     )
     rows = read_table(args.input)
     enriched, summary = materialize_rows(rows, cfg)

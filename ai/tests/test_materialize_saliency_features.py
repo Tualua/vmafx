@@ -45,11 +45,15 @@ def _saliency_fn(
     *,
     model_path: Path | None = None,
     frame_samples: int = 8,
+    temporal_aggregator: str = "mean",
+    ema_alpha: float = 0.6,
 ) -> np.ndarray:
     assert raw_path.is_file()
     assert (width, height) == (4, 4)
     assert model_path is None
     assert frame_samples == 1
+    assert temporal_aggregator == "max"
+    assert ema_alpha == pytest.approx(0.75)
     return np.asarray([[0.0, 0.5], [1.0, 0.5]], dtype=np.float32)
 
 
@@ -72,6 +76,9 @@ def test_materialize_rows_decodes_and_writes_aggregates(tmp_path: Path) -> None:
         ffprobe_bin="ffprobe-test",
         max_frames=1,
         frame_samples=3,
+        model_id="saliency_student_v2",
+        temporal_aggregator="max",
+        ema_alpha=0.75,
     )
 
     enriched, summary = module.materialize_rows(
@@ -85,6 +92,9 @@ def test_materialize_rows_decodes_and_writes_aggregates(tmp_path: Path) -> None:
     assert enriched[0]["saliency_status"] == "ok"
     assert enriched[0]["saliency_mean"] == pytest.approx(0.5)
     assert enriched[0]["saliency_var"] == pytest.approx(0.125)
+    assert enriched[0]["saliency_model_id"] == "saliency_student_v2"
+    assert enriched[0]["saliency_aggregator"] == "max"
+    assert enriched[0]["saliency_ema_alpha"] == pytest.approx(0.75)
 
 
 def test_materialize_rows_probes_missing_geometry(tmp_path: Path) -> None:
@@ -96,6 +106,8 @@ def test_materialize_rows_probes_missing_geometry(tmp_path: Path) -> None:
         ffprobe_bin="ffprobe-test",
         max_frames=1,
         frame_samples=1,
+        temporal_aggregator="max",
+        ema_alpha=0.75,
     )
 
     enriched, summary = module.materialize_rows(
@@ -107,6 +119,7 @@ def test_materialize_rows_probes_missing_geometry(tmp_path: Path) -> None:
 
     assert summary.ok == 1
     assert enriched[0]["saliency_status"] == "ok"
+    assert enriched[0]["saliency_model_id"] == "saliency_student_v1"
 
 
 def test_materialize_rows_skips_existing_saliency() -> None:
@@ -124,6 +137,7 @@ def test_materialize_rows_skips_existing_saliency() -> None:
     assert enriched[0]["saliency_mean"] == pytest.approx(0.2)
     assert enriched[0]["saliency_var"] == pytest.approx(0.01)
     assert enriched[0]["saliency_status"] == "skipped-existing"
+    assert "saliency_model_id" not in enriched[0]
 
 
 def test_materialize_rows_marks_missing_source(tmp_path: Path) -> None:
@@ -180,3 +194,39 @@ def test_main_writes_audit_json_with_run_provenance(tmp_path: Path) -> None:
     assert provenance["entrypoint"]["path"] == "ai/scripts/materialize_saliency_features.py"
     assert provenance["inputs"]["input"]["kind"] == "file"
     assert provenance["outputs"]["output"] == str(output_path)
+
+
+def test_main_records_temporal_config_in_audit_json(tmp_path: Path) -> None:
+    module = _load_module()
+    input_path = tmp_path / "features.jsonl"
+    output_path = tmp_path / "features.saliency.jsonl"
+    audit_path = tmp_path / "audit.json"
+    module.write_table(
+        input_path,
+        [{"src": "missing.mp4"}],
+    )
+
+    assert (
+        module.main(
+            [
+                "--input",
+                str(input_path),
+                "--output",
+                str(output_path),
+                "--audit-json",
+                str(audit_path),
+                "--model-id",
+                "u2netp_mirror_v1",
+                "--temporal-aggregator",
+                "ema",
+                "--ema-alpha",
+                "0.4",
+            ]
+        )
+        == 1
+    )
+
+    audit = json.loads(audit_path.read_text(encoding="utf-8"))
+    assert audit["config"]["model_id"] == "u2netp_mirror_v1"
+    assert audit["config"]["temporal_aggregator"] == "ema"
+    assert audit["config"]["ema_alpha"] == pytest.approx(0.4)

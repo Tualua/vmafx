@@ -173,6 +173,23 @@ bundled with the scaffold PR.)*
 useful for ad-hoc evaluation without flipping the default.
 See [`docs/ai/model-registry.md`](model-registry.md).
 
+For table-side experiments before any registry promotion, point the saliency
+materializer at the verified ONNX and record the candidate id explicitly:
+
+```bash
+.venv/bin/python ai/scripts/materialize_saliency_features.py \
+  --input runs/full_features_chug_hdr.jsonl \
+  --output runs/full_features_chug_hdr.u2netp.jsonl \
+  --model-path model/u2netp_mirror.onnx \
+  --model-id u2netp_mirror_v1 \
+  --temporal-aggregator ema \
+  --audit-json runs/full_features_chug_hdr.u2netp.audit.json
+```
+
+Those output rows carry `saliency_model_id` and `saliency_aggregator`, so
+later signal-mix audits and MOS-head retrains can distinguish U2NetP/EMA
+experiments from the bundled saliency-student mean baseline.
+
 ## 8. License compliance — what the operator must do
 
 The mirror redistributes Apache-2.0-licensed work. If the

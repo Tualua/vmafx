@@ -17,6 +17,9 @@ PYTHONPATH=. .venv/bin/python ai/scripts/materialize_saliency_features.py \
   --output runs/full_features_chug_hdr_saliency.jsonl \
   --root .corpus/chug \
   --path-column src \
+  --model-id saliency_student_v2 \
+  --temporal-aggregator ema \
+  --ema-alpha 0.6 \
   --max-frames 8 \
   --frame-samples 8 \
   --audit-json runs/full_features_chug_hdr_saliency.audit.json
@@ -25,6 +28,18 @@ PYTHONPATH=. .venv/bin/python ai/scripts/materialize_saliency_features.py \
 The same command works for parquet by using `.parquet` input and output paths.
 Parquet support uses the local pandas/pyarrow stack; JSONL only needs the
 standard library plus the saliency runtime dependencies.
+
+`--temporal-aggregator` matches the `vmaf-tune` saliency reducers:
+`mean`, `ema`, `max`, or `motion-weighted`. Use `mean` for the historical
+clip average, `ema` when later frames should dominate but earlier frames still
+matter, `max` when any salient frame should mark the clip, and
+`motion-weighted` for a cheap video-saliency proxy that weights changing frames
+more heavily. `--ema-alpha` controls the current-frame weight for `ema`.
+
+`--model-id` records the model identity used for the run. It defaults to
+`saliency_student_v1` when `--model-path` is omitted, or to the model-path stem
+when a custom ONNX is supplied. Pass explicit ids such as
+`saliency_student_v2` or `u2netp_mirror_v1` when comparing model families.
 
 `--audit-json` writes row counters, the effective materializer config, and
 ADR-0661 `run_provenance` for the input table, optional root/model path, output
@@ -48,9 +63,14 @@ Output columns:
 | `saliency_mean` | Mean value of the returned saliency mask. |
 | `saliency_var` | Variance of the returned saliency mask. |
 | `saliency_status` | Row status. Disable with `--status-column ""`. |
+| `saliency_model_id` | Model id recorded for rows materialized in this run. Disable with `--model-id-column ""`. |
+| `saliency_aggregator` | Temporal reducer used for rows materialized in this run. Disable with `--aggregator-column ""`. |
+| `saliency_ema_alpha` | EMA alpha recorded for rows materialized in this run. Disable with `--ema-alpha-column ""`. |
 
 Rows that already contain finite `saliency_mean` and `saliency_var` are skipped
-unless `--overwrite` is set.
+unless `--overwrite` is set. Skipped rows keep their existing metadata; the
+materializer does not invent a model id for older saliency columns whose origin
+is unknown.
 
 ## Status Values
 

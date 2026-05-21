@@ -441,6 +441,34 @@ demotion; ccache-v2 key prefix),
 `changelog.d/fixed/0635-ci-warning-omnibus.md`,
 `docs/rebase-notes.md` (this entry).
 
+## ADR-0672 — Saliency materializer temporal controls
+
+**Saliency-table provenance impact.** This widens the ADR-0655 materializer
+from historical mean-only saliency to the same temporal reducer family exposed
+by `vmaf-tune`.
+
+**Key invariants**:
+
+- `ai/scripts/materialize_saliency_features.py` forwards
+  `--temporal-aggregator` and `--ema-alpha` into
+  `vmaftune.saliency.compute_saliency_map()`.
+- Newly computed rows record `saliency_model_id`,
+  `saliency_aggregator`, and `saliency_ema_alpha` by default.
+- Rows skipped because they already contain finite saliency columns must not
+  get invented model/reducer metadata; use `--overwrite` for intentional
+  replacement.
+
+Touched files:
+`ai/scripts/materialize_saliency_features.py`,
+`ai/tests/test_materialize_saliency_features.py`,
+`ai/AGENTS.md`,
+`docs/ai/saliency-feature-materializer.md`,
+`docs/ai/u2netp-mirror.md`,
+`docs/adr/0672-saliency-materializer-temporal-controls.md`,
+`docs/research/0692-saliency-materializer-temporal-controls.md`,
+`changelog.d/added/0672-saliency-materializer-temporal-controls.md`,
+`docs/rebase-notes.md` (this entry).
+
 ## ADR-0654 — Predictor saliency signals
 
 `vmaf-tune predict --use-saliency` is a predictor-feature switch, not
