@@ -224,7 +224,10 @@ Arc A380 failure modes (intel_gpu plugin in OpenVINO 2026.1):
 Headline numbers reflect PLCC drop vs the per-model fp32 baseline.
 Full per-EP detail (PLCC / worst |delta| / wall time) lives in the
 local `runs/quant-eps-2026-04-28/results.{json,md}` (gitignored —
-recreated by the harness).
+recreated by the harness). New runs also include `run_provenance` in
+`results.json`, so copied research/model-card evidence can be traced to
+the tiny-model registry, optional fp32 baselines, selected EPs, hardware
+tag, argv, and report paths that produced it.
 
 **Findings.**
 

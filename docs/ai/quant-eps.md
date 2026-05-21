@@ -60,8 +60,11 @@ python ai/scripts/measure_quant_drop_per_ep.py \
 ```
 
 Outputs `results.json` (machine-readable) and `results.md` (the
-human-readable table that goes into the research digest). The
-`runs/` directory is gitignored — copy the headline numbers into
+human-readable table that goes into the research digest). The JSON
+report carries the shared `run_provenance` block, recording the script
+revision, argv, selected EPs, hardware tag, tiny-model registry input,
+optional fp32 baselines, and both report targets. The `runs/` directory
+is gitignored — copy the headline numbers into
 [`docs/research/0006-tinyai-ptq-accuracy-targets.md`](../research/0006-tinyai-ptq-accuracy-targets.md)
 when refreshing the GPU-EP findings section.
 

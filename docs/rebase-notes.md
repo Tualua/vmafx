@@ -7,6 +7,22 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## feat/quant-ep-report-provenance (ADR-0661)
+
+**No upstream rebase impact**: this touches fork-local AI investigation
+tooling, AI docs, ADR/research notes, and changelog fragments. Upstream
+Netflix/vmaf does not ship this per-EP quantisation harness.
+
+Smoke:
+`.venv/bin/python -m pytest ai/tests/test_measure_quant_drop_per_ep.py -q`
+
+Touched files: `ai/scripts/measure_quant_drop_per_ep.py`,
+`ai/tests/test_measure_quant_drop_per_ep.py`, `docs/ai/quant-eps.md`,
+`docs/research/0006-tinyai-ptq-accuracy-targets.md`,
+`docs/research/0675-quant-ep-report-provenance.md`,
+`docs/adr/0661-ai-run-manifest-provenance.md`,
+`changelog.d/added/0675-*.md`, and this file.
+
 ## fix/windows-cuda-toolkit-installer (ADR-0664)
 
 **High CI rebase impact**: this touches the fork-local build matrix workflow.

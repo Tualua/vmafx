@@ -56,6 +56,10 @@ identify the source parquet, target column, thresholds, argv, and report target.
 Phase-3 subset-sweep reports (`ai/scripts/phase3_subset_sweep.py`) use the same
 block so model-selection sweeps identify the source parquet, subset list, seed
 policy, standardization flag, training hyperparameters, argv, and report target.
+Per-EP quantisation reports (`ai/scripts/measure_quant_drop_per_ep.py`) use the
+same block so CPU/CUDA/OpenVINO PTQ investigations identify the tiny-model
+registry, optional fp32 baselines, selected execution providers, hardware tag,
+argv, and both JSON and Markdown report targets.
 Legacy evaluation reports (`eval_loso_mlp_small.py`, `eval_loso_3arch.py`,
 `eval_probabilistic_proxy.py`, and `eval_saliency_per_mb.py`) also adopt the
 same schema when they emit durable JSON so old model-card evidence and
@@ -88,6 +92,7 @@ label/score inputs, report thresholds, output targets, and argv.
 | Leave `vmaf-train --json` reports as plain JSON | No CLI helper diff | Model-card evidence from the user-facing CLI still loses input/threshold lineage | Rejected because these reports are the operator-facing promotion/audit artifacts |
 | Leave feature-correlation reports as plain JSON | Smallest diff | Signal-mix audits would keep metrics but lose the exact source parquet and ranking parameters | Rejected because the feature-correlation report is durable analysis evidence, not a transient debug print |
 | Leave Phase-3 subset sweeps as plain JSON | No schema delta | Model-selection sweeps would keep PLCC tables but lose seed / subset / standardization replay context | Rejected because Phase-3 outputs are durable model-selection evidence |
+| Leave per-EP quantisation reports as plain JSON | No change to a gitignored investigation harness | GPU-EP PTQ evidence would keep PLCC tables but lose the registry, hardware tag, EP list, and optional baseline context | Rejected because quantisation reports are copied into model-card and research evidence before int8 models ship |
 
 ## Consequences
 
@@ -112,6 +117,8 @@ label/score inputs, report thresholds, output targets, and argv.
   ranking-parameter context needed to replay signal-mix audits.
 - **Positive**: Phase-3 subset-sweep reports now carry the model-selection
   sweep context needed to replay broader-feature decisions.
+- **Positive**: per-EP quantisation reports now carry the hardware and model
+  input context needed to replay CPU/CUDA/OpenVINO PTQ findings.
 - **Positive**: CHUG manifests stay CHUG-named even though the implementation
   shares the KonViD training loop.
 - **Negative**: sidecars become slightly larger and include local path names.

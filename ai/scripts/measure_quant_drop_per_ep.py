@@ -54,7 +54,14 @@ import traceback
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
+AI_SRC = REPO_ROOT / "ai" / "src"
+if str(AI_SRC) not in sys.path:
+    sys.path.insert(0, str(AI_SRC))
+
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+
 REGISTRY = REPO_ROOT / "model" / "tiny" / "registry.json"
 SEED = 0
 N_SAMPLES = 16
@@ -308,9 +315,7 @@ def _run_model(
 
 
 def _write_json(report: dict[str, Any], path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(report, f, indent=2, sort_keys=True)
+    write_manifest_json(path, report)
 
 
 def _write_markdown(report: dict[str, Any], path: Path) -> None:
@@ -491,6 +496,20 @@ def main() -> int:
 
         json_out = args.out / "results.json"
         md_out = args.out / "results.md"
+        report["run_provenance"] = build_run_provenance(
+            entrypoint=SCRIPT_PATH,
+            repo_root=REPO_ROOT,
+            argv=sys.argv[1:],
+            args=args,
+            inputs={
+                "registry": REGISTRY,
+                "extra_fp32": [REPO_ROOT / "model" / "tiny" / rel for rel in args.extra_fp32],
+            },
+            outputs={
+                "json_report": json_out,
+                "markdown_report": md_out,
+            },
+        )
         _write_json(report, json_out)
         _write_markdown(report, md_out)
         print(f"[ok] wrote {json_out}")
