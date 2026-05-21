@@ -38279,6 +38279,36 @@ Touched files:
 `changelog.d/added/0658-project-modernization-audit.md`,
 `docs/rebase-notes.md` (this entry).
 
+## ADR-0659 — Modernization audit false-positive filter
+
+**No upstream Netflix C-source rebase impact.** This is a fork-local
+developer-tooling precision fix under `scripts/dev/`.
+
+**Key invariants**:
+
+- Live Python `raise NotImplementedError(...)` rows remain high-severity audit
+  findings.
+- Historical closeout prose such as "replaced the NotImplementedError
+  scaffold", Python `except NotImplementedError` handlers, and custom
+  `NotImplementedError` exception subclasses are not modernization gaps.
+- Documented `-ENOSYS` optional-build contracts are not modernization gaps;
+  bare `return -ENOSYS;` rows outside such context still are.
+- Add future suppressions as narrow line-context tests; avoid file-level
+  suppressions that could hide new real debt.
+
+Touched files:
+`scripts/dev/project_modernization_audit.py`,
+`scripts/dev/test_project_modernization_audit.py`,
+`docs/development/project-modernization-audit.md`,
+`docs/adr/0659-modernization-audit-false-positive-filter.md`,
+`docs/adr/_index_fragments/0659-modernization-audit-false-positive-filter.md`,
+`docs/adr/_index_fragments/_order.txt`,
+`docs/adr/README.md`,
+`docs/research/0659-modernization-audit-false-positive-filter.md`,
+`scripts/AGENTS.md`,
+`changelog.d/fixed/0659-modernization-audit-false-positive-filter.md`,
+`docs/rebase-notes.md` (this entry).
+
 ## ADR-0662 — Vulkan motion lavapipe parity
 
 **Rebase-sensitive feature-extractor impact.** This changes fork-local GPU

@@ -89,6 +89,23 @@ BLOCKED_RE = re.compile(
     re.IGNORECASE,
 )
 
+HISTORICAL_CONTEXT_RE = re.compile(
+    r"\b("
+    r"already|closed|fixed|former(?:ly)?|historical|landed|legacy|"
+    r"no longer|old|pre-fix|previous(?:ly)?|prior|replace[ds]?|"
+    r"retired|rewritten|superseded"
+    r")\b",
+    re.IGNORECASE,
+)
+
+ENOSYS_CONTRACT_RE = re.compile(
+    r"\b("
+    r"built without|compiled out|contract|degrade gracefully|disabled-build|"
+    r"omitted|optional|pins? the -ENOSYS|stub-only|vmaf_[a-z0-9_]+_available"
+    r")\b",
+    re.IGNORECASE,
+)
+
 MARKERS: tuple[tuple[str, re.Pattern[str], int], ...] = (
     ("not_implemented", re.compile(r"\b(NotImplementedError|NotImplemented)\b"), 95),
     ("enosys", re.compile(r"\bENOSYS\b|-ENOSYS"), 90),
@@ -203,6 +220,44 @@ def _blocked_reason(line: str) -> tuple[bool, str]:
     return True, match.group(0)
 
 
+def _python_not_implemented_is_actionable(line: str) -> bool:
+    """Return whether a Python ``NotImplementedError`` mention is live debt."""
+    stripped = line.strip()
+    lowered = stripped.lower()
+    if lowered.startswith("except notimplementederror"):
+        return False
+    if re.match(r"^class\s+\w+\s*\(\s*NotImplementedError\s*\)\s*:", stripped):
+        return False
+    return bool(re.search(r"\braise\s+NotImplementedError\b", stripped))
+
+
+def _enosys_is_contract(path: str, context: str) -> bool:
+    if Path(path).suffix == ".md":
+        return True
+    if path.startswith("libvmaf/src/dnn/"):
+        return True
+    return bool(ENOSYS_CONTRACT_RE.search(context))
+
+
+def _marker_suppressed(kind: str, path: str, line: str, context: str) -> bool:
+    """Filter historical prose and non-debt exception handling.
+
+    The audit should point at implementation gaps, not at docs explaining that a
+    gap used to exist. Keep source-code ``raise NotImplementedError`` rows, but
+    drop docstrings such as "replaces the NotImplementedError scaffold" and
+    catch/exception-class lines that are part of normal error handling.
+    """
+    if HISTORICAL_CONTEXT_RE.search(line):
+        return True
+    if kind == "not_implemented":
+        if Path(path).suffix != ".py":
+            return True
+        return not _python_not_implemented_is_actionable(line)
+    if kind == "enosys":
+        return _enosys_is_contract(path, context)
+    return kind in {"stub", "scaffold"} and bool(ENOSYS_CONTRACT_RE.search(context))
+
+
 def _interesting_file(path: Path) -> bool:
     return path.suffix in TEXT_SUFFIXES and path.is_file()
 
@@ -249,8 +304,11 @@ def scan_marker_findings(
         except UnicodeDecodeError:
             continue
         for line_no, line in enumerate(lines, start=1):
+            context = "\n".join(lines[max(0, line_no - 8) : min(len(lines), line_no + 7)])
             for kind, pattern, base_severity in MARKERS:
                 if pattern.search(line) is None:
+                    continue
+                if _marker_suppressed(kind, rel, line, context):
                     continue
                 blocked, reason = _blocked_reason(line)
                 severity = base_severity - (20 if blocked else 0)

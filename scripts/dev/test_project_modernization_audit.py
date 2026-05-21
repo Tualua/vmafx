@@ -34,6 +34,95 @@ def test_marker_scan_ranks_unblocked_stubs(tmp_path: Path) -> None:
     assert all(not finding.blocked for finding in findings)
 
 
+def test_marker_scan_ignores_historical_notimplemented_prose(tmp_path: Path) -> None:
+    source = _write(
+        tmp_path / "ai" / "scripts" / "qat_train.py",
+        '"""Replaces the NotImplementedError scaffold from the old PR."""\n',
+    )
+
+    findings = audit.scan_marker_findings(tmp_path, [str(source.relative_to(tmp_path))])
+
+    assert findings == []
+
+
+def test_marker_scan_ignores_exception_handlers_and_exception_types(tmp_path: Path) -> None:
+    source = _write(
+        tmp_path / "tools" / "vmaf-tune" / "src" / "vmaftune" / "cli.py",
+        "\n".join(
+            [
+                "class TwoPassUnsupportedError(NotImplementedError):",
+                "    pass",
+                "try:",
+                "    run_plan()",
+                "except NotImplementedError as exc:",
+                "    raise RuntimeError(str(exc)) from exc",
+                "",
+            ]
+        ),
+    )
+
+    findings = audit.scan_marker_findings(tmp_path, [str(source.relative_to(tmp_path))])
+
+    assert findings == []
+
+
+def test_marker_scan_keeps_live_notimplemented_raise(tmp_path: Path) -> None:
+    source = _write(
+        tmp_path / "tools" / "vmaf-tune" / "src" / "vmaftune" / "gap.py",
+        "def run():\n    raise NotImplementedError('real gap')\n",
+    )
+
+    findings = audit.scan_marker_findings(tmp_path, [str(source.relative_to(tmp_path))])
+
+    assert len(findings) == 1
+    assert findings[0].kind == "not_implemented"
+    not_implemented_severity = next(
+        severity for kind, _pattern, severity in audit.MARKERS if kind == "not_implemented"
+    )
+    assert findings[0].severity == not_implemented_severity
+
+
+def test_marker_scan_ignores_notimplemented_in_markdown_docs(tmp_path: Path) -> None:
+    doc = _write(
+        tmp_path / "docs" / "development" / "audit.md",
+        "A live `raise NotImplementedError(...)` is still a Python-source finding.\n",
+    )
+
+    findings = audit.scan_marker_findings(tmp_path, [str(doc.relative_to(tmp_path))])
+
+    assert findings == []
+
+
+def test_marker_scan_ignores_documented_enosys_contracts(tmp_path: Path) -> None:
+    source = _write(
+        tmp_path / ".github" / "workflows" / "build.yml",
+        "# Stub-only build: every assertion pins the -ENOSYS contract.\n",
+    )
+    doc = _write(
+        tmp_path / "docs" / "api" / "dnn.md",
+        "`-ENOSYS` means this build was compiled without DNN support.\n",
+    )
+
+    findings = audit.scan_marker_findings(
+        tmp_path,
+        [str(source.relative_to(tmp_path)), str(doc.relative_to(tmp_path))],
+    )
+
+    assert findings == []
+
+
+def test_marker_scan_keeps_live_enosys_without_contract_context(tmp_path: Path) -> None:
+    source = _write(
+        tmp_path / "libvmaf" / "src" / "feature" / "missing.c",
+        "int run(void)\n{\n    return -ENOSYS;\n}\n",
+    )
+
+    findings = audit.scan_marker_findings(tmp_path, [str(source.relative_to(tmp_path))])
+
+    assert len(findings) == 1
+    assert findings[0].kind == "enosys"
+
+
 def test_blocked_state_row_is_classified(tmp_path: Path) -> None:
     state = _write(
         tmp_path / ".workingdir2" / "OPEN.md",

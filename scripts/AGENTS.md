@@ -133,6 +133,17 @@ It must stay read-only: no automatic edits to `.workingdir2/OPEN.md`,
 fragments. If a future branch wants machine-written backlog updates,
 that is a separate ADR and module.
 
+The marker scan deliberately suppresses historical closeout wording and
+non-debt Python exception plumbing. A live `raise NotImplementedError(...)`
+is actionable; a docstring saying that an old `NotImplementedError` scaffold was
+replaced, an `except NotImplementedError` handler, or a custom
+`NotImplementedError` subclass is not. Keep that distinction on rebase so the
+tool does not repopulate `.workingdir2` with already-closed gaps.
+The same rule applies to documented `-ENOSYS` disabled-build contracts:
+workflow comments, API docs, and DNN fallback stubs that explicitly describe
+optional-build behavior are not implementation gaps; bare `return -ENOSYS;`
+outside such context still is.
+
 ### `run_unittests.sh` is upstream-mirror
 
 This script is part of the original Netflix Python test harness

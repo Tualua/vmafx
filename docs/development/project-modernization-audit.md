@@ -31,6 +31,18 @@ refer to one row even after the Markdown is regenerated.
 
 ## Reading Findings
 
+The audit filters historical closeout prose before ranking markers. For example,
+docstrings that say a `NotImplementedError` scaffold was replaced, Python
+`except NotImplementedError` handlers, and custom exception classes that inherit
+from `NotImplementedError` are not actionable gaps by themselves. In Python
+source, a live `raise NotImplementedError(...)` still ranks as a high-severity
+implementation finding.
+
+Documented `-ENOSYS` disabled-build contracts are filtered the same way. API
+docs, workflow comments, and DNN fallback stubs that explicitly describe
+optional-build behavior are not reported as missing implementations. A bare
+`return -ENOSYS;` outside a documented contract remains a high-severity finding.
+
 `blocked=true` means the matched line contains a dependency phrase such as
 `upstream`, `manual access`, `legal`, `model weights`, or `stability window`.
 That flag is a triage hint only. Revalidate the dependency before deleting or
