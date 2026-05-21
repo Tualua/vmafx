@@ -34,10 +34,15 @@ from typing import Any
 
 import numpy as np
 
-if __package__ in (None, ""):
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
+AI_SRC = REPO_ROOT / "ai" / "src"
 
-from ai.data.feature_extractor import (
+if __package__ in (None, ""):
+    sys.path.insert(0, str(REPO_ROOT))
+    sys.path.insert(0, str(AI_SRC))
+
+from ai.data.feature_extractor import (  # noqa: E402
     DEFAULT_FEATURES,
     DEFAULT_VMAF_BINARY,
     FULL_FEATURES,
@@ -146,6 +151,7 @@ def write_split_manifest(
     *,
     output: Path,
     seed: str = DEFAULT_SPLIT_SEED,
+    run_provenance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Write a local-only split manifest keyed by CHUG content."""
     rows_list = list(rows)
@@ -158,6 +164,8 @@ def write_split_manifest(
         "counts": {name: int(counts.get(name, 0)) for name in SPLIT_NAMES},
         "splits": split_map,
     }
+    if run_provenance is not None:
+        payload["run_provenance"] = run_provenance
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return payload
@@ -303,6 +311,7 @@ def audit_chug_hdr_metadata(
     split_seed: str = DEFAULT_SPLIT_SEED,
     ffprobe_bin: str = "ffprobe",
     runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+    run_provenance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Probe local CHUG clips and write a compact HDR metadata audit."""
     rows_list = list(rows)
@@ -369,6 +378,8 @@ def audit_chug_hdr_metadata(
         "split_row_counts": dict(sorted(split_row_counts.items())),
         "malformed_hdr_rows": malformed,
     }
+    if run_provenance is not None:
+        payload["run_provenance"] = run_provenance
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return payload
@@ -734,6 +745,7 @@ def run(
     vmaf_bin: Path = DEFAULT_VMAF_BINARY,
     runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
     extractor: Callable[..., FeatureExtractionResult] = extract_features,
+    run_provenance: dict[str, Any] | None = None,
 ) -> int:
     """Materialise CHUG feature rows and return the number written."""
     if split not in ("all", *SPLIT_NAMES):
@@ -748,7 +760,12 @@ def run(
     rows = _load_jsonl(input_jsonl)
     split_map = build_content_split_map(rows, seed=split_seed)
     if split_manifest is not None:
-        write_split_manifest(rows, output=split_manifest, seed=split_seed)
+        write_split_manifest(
+            rows,
+            output=split_manifest,
+            seed=split_seed,
+            run_provenance=run_provenance,
+        )
     if audit_output is not None:
         audit_chug_hdr_metadata(
             rows,
@@ -757,6 +774,7 @@ def run(
             split_seed=split_seed,
             ffprobe_bin=ffprobe_bin,
             runner=runner,
+            run_provenance=run_provenance,
         )
     pairs = build_feature_pairs(
         rows,
@@ -823,6 +841,9 @@ def run(
 
 
 def main(argv: list[str] | None = None) -> int:
+    from aiutils.run_manifest import build_run_provenance
+
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
     ap = argparse.ArgumentParser(prog="chug_extract_features.py")
     ap.add_argument("--input", type=Path, default=DEFAULT_INPUT)
     ap.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
@@ -848,7 +869,24 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--ffmpeg-bin", default="ffmpeg")
     ap.add_argument("--ffprobe-bin", default="ffprobe")
     ap.add_argument("--vmaf-bin", type=Path, default=DEFAULT_VMAF_BINARY)
-    args = ap.parse_args(argv)
+    args = ap.parse_args(raw_argv)
+    run_provenance = build_run_provenance(
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=raw_argv,
+        args=args,
+        inputs={
+            "input_jsonl": args.input,
+            "clips_dir": args.clips_dir,
+            "cache_dir": args.cache_dir,
+            "vmaf_bin": args.vmaf_bin,
+        },
+        outputs={
+            "feature_jsonl": args.output,
+            "split_manifest": args.split_manifest,
+            "audit": args.audit_output,
+        },
+    )
 
     with contextlib.suppress(KeyboardInterrupt):
         written = run(
@@ -866,6 +904,7 @@ def main(argv: list[str] | None = None) -> int:
             ffmpeg_bin=args.ffmpeg_bin,
             ffprobe_bin=args.ffprobe_bin,
             vmaf_bin=args.vmaf_bin,
+            run_provenance=run_provenance,
         )
         print(f"[chug-features] wrote {written} rows to {args.output}")
         return 0

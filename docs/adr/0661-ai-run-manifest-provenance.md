@@ -115,6 +115,10 @@ Table-side materializers and audits (`materialize_mos_labels.py`,
 and `signal_mix_audit.py`) use the same block for their audit/report JSON
 outputs so refreshed feature-table evidence records the source tables, joined
 label/score inputs, report thresholds, output targets, and argv.
+CHUG feature extraction (`chug_extract_features.py`) uses the same block in its
+local split manifest and HDR metadata audit JSON so HDR MOS training evidence
+records the source CHUG JSONL, clip/cache directories, VMAF binary, split/audit
+targets, argv, and extraction arguments before model training starts.
 
 ## Alternatives considered
 
@@ -138,6 +142,7 @@ label/score inputs, report thresholds, output targets, and argv.
 | Leave DNN feature-model exporters as legacy sidecars | Avoids touching older weight-conversion scripts | Fresh C2/C3, FastDVDnet, or TransNet sidecars would record runtime shape but not the checkpoint/upstream inputs or exporter command that produced them | Rejected because those sidecars are the reproducibility boundary for shipped DNN feature models |
 | Leave saliency-student metrics as legacy JSON | No change to older DUTS trainers | Fresh v1/v2 metrics would report IoU and ONNX hashes but not the DUTS root, output targets, argv, or training hyperparameters that produced the evidence | Rejected because saliency model cards cite those metrics as durable production evidence |
 | Leave tiny-VMAF validator gates as stdout-only | No CLI/output-schema addition | Model-card promotion evidence would keep PLCC/RMSE only in terminal logs with no hashed ONNX/parquet identity | Rejected because validator reports are the shortest replay path for v2/v3/v4 smoke gates |
+| Leave CHUG split/audit JSON as plain local files | No CHUG extractor diff | HDR MOS training would know the model inputs but not which extractor command produced the split map and HDR preflight evidence | Rejected because CHUG split/audit files define the train/test boundary and HDR metadata validity before model training starts |
 
 ## Consequences
 
@@ -184,6 +189,8 @@ label/score inputs, report thresholds, output targets, and argv.
 - **Positive**: tiny-VMAF smoke-validation reports now carry the validated ONNX,
   parquet slice, comparison model, argv, gate threshold, and report target
   needed to replay promotion checks.
+- **Positive**: CHUG split manifests and HDR audit JSONs now carry the extractor
+  input/output and argv context needed to replay HDR MOS feature-table evidence.
 - **Positive**: CHUG manifests stay CHUG-named even though the implementation
   shares the KonViD training loop.
 - **Negative**: sidecars become slightly larger and include local path names.

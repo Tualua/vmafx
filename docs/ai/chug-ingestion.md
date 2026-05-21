@@ -155,6 +155,14 @@ The audit is a corpus-level preflight; the per-row `feature_ref_*` and
 `feature_dis_*` fields are the model-facing copy preserved in the
 training rows.
 
+Both `--split-manifest` and `--audit-output` include the shared
+`run_provenance` block from ADR-0661. That block records the
+`chug_extract_features.py` entrypoint, argv, parsed arguments, input
+JSONL, clip/cache directories, VMAF binary, and output targets. Keep
+those local JSON files with CHUG training artifacts so a later model-card
+or held-out validation pass can prove which feature extraction command
+created the split and HDR preflight evidence.
+
 Train against the feature rows:
 
 ```bash

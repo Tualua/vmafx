@@ -223,6 +223,37 @@ def test_chug_content_split_keeps_ladder_rows_together(tmp_path: Path) -> None:
         assert pair.split == split_map[pair.split_key]
 
 
+def test_chug_split_manifest_records_run_provenance(tmp_path: Path) -> None:
+    output = tmp_path / "splits.json"
+    rows = [
+        _chug_row(
+            src="a_ref.mp4",
+            content="content-a.mp4",
+            is_ref=True,
+            width=1920,
+            height=1080,
+            sha="a" * 64,
+        )
+    ]
+    provenance = {
+        "schema": "ai-run-provenance-v1",
+        "entrypoint": {"path": "ai/scripts/chug_extract_features.py", "exists": True},
+        "argv": ["--split-manifest", str(output)],
+    }
+
+    payload = CHUG_FEATURES.write_split_manifest(
+        rows,
+        output=output,
+        seed="stable",
+        run_provenance=provenance,
+    )
+    disk_payload = json.loads(output.read_text(encoding="utf-8"))
+
+    assert payload["run_provenance"] == provenance
+    assert disk_payload["run_provenance"] == provenance
+    assert disk_payload["n_contents"] == 1
+
+
 class _FakeAuditRunner:
     def __call__(self, cmd, **_kwargs):
         src = Path(cmd[-1]).name
@@ -286,6 +317,7 @@ def test_chug_hdr_audit_flags_malformed_hdr_metadata(tmp_path: Path) -> None:
         clips_dir=clips_dir,
         output=output,
         runner=_FakeAuditRunner(),
+        run_provenance={"schema": "ai-run-provenance-v1", "argv": ["--audit-output"]},
     )
 
     assert output.is_file()
@@ -301,6 +333,10 @@ def test_chug_hdr_audit_flags_malformed_hdr_metadata(tmp_path: Path) -> None:
             "color_primaries": "bt709",
             "pix_fmt": "yuv420p10le",
         }
+    ]
+    assert payload["run_provenance"]["schema"] == "ai-run-provenance-v1"
+    assert json.loads(output.read_text(encoding="utf-8"))["run_provenance"]["argv"] == [
+        "--audit-output"
     ]
 
 

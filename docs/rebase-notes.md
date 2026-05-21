@@ -38976,3 +38976,27 @@ Touched files:
 `docs/research/0682-quantization-report-provenance.md`,
 `changelog.d/added/0682-quantization-report-provenance.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0661 follow-up — CHUG extraction report provenance
+
+**CHUG extraction provenance impact.** This widens ADR-0661 adoption to the
+local CHUG split manifest and HDR metadata audit JSON emitted before HDR MOS
+training.
+
+**Key invariants**:
+
+- `ai/scripts/chug_extract_features.py --split-manifest` keeps the existing
+  content-level split payload and adds top-level `run_provenance`.
+- `ai/scripts/chug_extract_features.py --audit-output` keeps the existing HDR
+  audit counters/malformed-row payload and adds top-level `run_provenance`.
+- Feature JSONL rows are unchanged; this PR only stamps the durable split/audit
+  JSON evidence with extractor command and input/output context.
+
+Touched files:
+`ai/scripts/chug_extract_features.py`,
+`ai/tests/test_chug.py`,
+`docs/ai/chug-ingestion.md`,
+`docs/adr/0661-ai-run-manifest-provenance.md`,
+`docs/research/0684-chug-extraction-report-provenance.md`,
+`changelog.d/added/0684-chug-extraction-report-provenance.md`,
+`docs/rebase-notes.md` (this entry).
