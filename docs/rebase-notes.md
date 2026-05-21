@@ -39230,3 +39230,31 @@ Touched files:
 `docs/research/0693-saliency-materializer-batch-manifest.md`,
 `changelog.d/added/0673-saliency-materializer-batch-manifest.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0679 — CI draft auto-merge gate
+
+**Merge-train safety impact.** The single required branch-protection context,
+`Required Checks Aggregator`, must not be skipped on draft PRs. It now runs on
+drafts and fails intentionally so GitHub cannot treat a draft-era skipped check
+as sufficient for auto-merge after the PR is marked ready.
+
+**Key invariants**:
+
+- Keep `required-aggregator.yml` free of a job-level draft skip. Expensive
+  sibling workflows may still skip draft PRs, but the required aggregate
+  status must fail drafts and rerun on `ready_for_review`.
+- The aggregator ignores sibling check runs older than the current workflow
+  registration window and chooses the newest run per check name. This prevents
+  stale draft-era skipped checks on the same SHA from masking ready-run checks.
+- The ADR collision guard phase 1 compares against `BASE_SHA`, not live
+  `origin/master`, so a fast post-merge workflow cannot self-collide against
+  the PR's own ADR.
+
+Touched files:
+`.github/workflows/required-aggregator.yml`,
+`.github/workflows/rule-enforcement.yml`,
+`.github/AGENTS.md`,
+`docs/adr/0679-ci-draft-automerge-gate.md`,
+`docs/research/0699-ci-draft-automerge-gate.md`,
+`changelog.d/fixed/0679-ci-draft-automerge-gate.md`,
+`docs/rebase-notes.md` (this entry).

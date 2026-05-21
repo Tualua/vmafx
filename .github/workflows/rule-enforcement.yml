@@ -360,14 +360,17 @@ jobs:
           for adr_file in "${added_adrs[@]}"; do
             num="$(basename "${adr_file}" | grep -oE '^[0-9]{4}')"
 
-            # Phase 1: does origin/master already have ANY file with this prefix?
-            collision="$(git ls-tree origin/master "docs/adr/" \
+            # Phase 1: does the PR base already have ANY file with this prefix?
+            # Use BASE_SHA, not live origin/master: a fast auto-merge can advance
+            # origin/master before this job starts, and then the PR falsely
+            # collides with its own just-merged ADR file.
+            collision="$(git ls-tree "${BASE_SHA}" "docs/adr/" \
               | awk '{ print $4 }' \
               | grep -E "^docs/adr/${num}-" || true)"
 
             if [ -n "${collision}" ]; then
-              echo "::error file=${adr_file}::ADR number collision: ${adr_file} uses prefix ${num}, but origin/master already has: ${collision}"
-              echo "  The number ${num} was already merged into master before this PR."
+              echo "::error file=${adr_file}::ADR number collision: ${adr_file} uses prefix ${num}, but the PR base already has: ${collision}"
+              echo "  The number ${num} was already present before this PR branch."
               echo "  Run 'scripts/adr/next-free.sh --claim <slug>' to get a free number."
               fail=1
             fi
@@ -375,12 +378,12 @@ jobs:
 
           if [ "${fail}" -eq 1 ]; then
             echo ""
-            echo "ADR collision check (phase 1: vs master) failed — see errors above."
+            echo "ADR collision check (phase 1: vs PR base) failed — see errors above."
             echo "See ADR-0386 (docs/adr/0386-adr-numbering-collision-prevention.md)."
             exit 1
           fi
 
-          echo "ADR-collision-check phase 1: all ${#added_adrs[@]} ADR file(s) have unique prefix(es) on master."
+          echo "ADR-collision-check phase 1: all ${#added_adrs[@]} ADR file(s) have unique prefix(es) on the PR base."
 
       - name: Check for ADR number collisions with open PRs (ADR-0628)
         env:

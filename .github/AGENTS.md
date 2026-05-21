@@ -70,6 +70,22 @@ Do not replace that base-branch-chain check with a flat "any open PR with the
 same number fails" scan; it deadlocks ADR-bearing parent PRs whenever draft
 children are queued.
 
+Phase 1 compares added ADR numbers against the PR's event `base.sha`, not
+live `origin/master`. That distinction is load-bearing: if a PR merges before
+the collision job starts, live `origin/master` already contains the PR's own
+ADR and produces a false self-collision.
+
+### Required aggregator and draft PRs
+
+[`required-aggregator.yml`](workflows/required-aggregator.yml) is the single
+branch-protection status. It must run on draft PRs and fail them explicitly
+instead of being skipped. A skipped required context is considered successful
+by GitHub branch protection, so job-level draft skips can let auto-merge merge
+a PR before the ready-for-review CI run registers. The aggregator also ignores
+check runs older than its current workflow run when selecting sibling
+outcomes; otherwise stale draft-era skipped check runs on the same commit can
+mask real queued or failed ready-for-review checks.
+
 ### Advisory surface-path lists
 
 Both advisory jobs grep the diff for specific path prefixes
