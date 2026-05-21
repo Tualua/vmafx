@@ -82,6 +82,12 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
+AI_SRC = REPO_ROOT / "ai" / "src"
+if AI_SRC.is_dir() and str(AI_SRC) not in sys.path:
+    sys.path.insert(0, str(AI_SRC))
+
 # ---------------------------------------------------------------------
 # ADR-0303 production-flip gate constants
 # ---------------------------------------------------------------------
@@ -131,19 +137,19 @@ DEFAULT_CORPUS_ROOTS: tuple[Path, ...] = (
     Path(
         os.environ.get(
             "VMAF_NETFLIX_CORPUS_DIR",
-            str(Path(__file__).resolve().parents[2] / ".corpus" / "netflix"),
+            str(REPO_ROOT / ".corpus" / "netflix"),
         )
     ),
     Path(
         os.environ.get(
             "VMAF_KONVID_150K_DIR",
-            str(Path(__file__).resolve().parents[2] / ".corpus" / "konvid-150k"),
+            str(REPO_ROOT / ".corpus" / "konvid-150k"),
         )
     ),
     Path(
         os.environ.get(
             "VMAF_BVI_DVC_RAW_DIR",
-            str(Path(__file__).resolve().parents[2] / ".corpus" / "bvi-dvc-raw"),
+            str(REPO_ROOT / ".corpus" / "bvi-dvc-raw"),
         )
     ),
 )
@@ -181,8 +187,7 @@ def _resolve_codecs() -> tuple[str, ...]:
         "hevc_qsv",
         "av1_qsv",
     )
-    repo_root = Path(__file__).resolve().parents[2]
-    vmaftune_src = repo_root / "tools" / "vmaf-tune" / "src"
+    vmaftune_src = REPO_ROOT / "tools" / "vmaf-tune" / "src"
     if vmaftune_src.is_dir() and str(vmaftune_src) not in sys.path:
         sys.path.insert(0, str(vmaftune_src))
     try:
@@ -359,8 +364,7 @@ def loso_folds(
 
 def _import_predictor_train() -> Any:
     """Import the PR #450 trainer module if it is on the path."""
-    repo_root = Path(__file__).resolve().parents[2]
-    vmaftune_src = repo_root / "tools" / "vmaf-tune" / "src"
+    vmaftune_src = REPO_ROOT / "tools" / "vmaf-tune" / "src"
     if vmaftune_src.is_dir() and str(vmaftune_src) not in sys.path:
         sys.path.insert(0, str(vmaftune_src))
     try:
@@ -804,7 +808,8 @@ def _synthetic_rows_for_codec(codec: str, n_rows: int = 200) -> list[dict]:
 
 def main(argv: Iterable[str] | None = None) -> int:
     parser = _build_arg_parser()
-    args = parser.parse_args(list(argv) if argv is not None else None)
+    raw_argv = list(argv) if argv is not None else sys.argv[1:]
+    args = parser.parse_args(raw_argv)
 
     codecs = tuple(args.codec) if args.codec else CODECS
     unknown = [c for c in codecs if c not in CODECS]
@@ -861,9 +866,22 @@ def main(argv: Iterable[str] | None = None) -> int:
             reasons = "; ".join(result.failure_reasons) or "(no folds)"
             print(f"    {verdict}: {reasons}", flush=True)
 
+    from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
     report = render_report(results, corpus_files=corpus_files)
-    args.report_out.parent.mkdir(parents=True, exist_ok=True)
-    args.report_out.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+    report["run_provenance"] = build_run_provenance(
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=raw_argv,
+        args=args,
+        inputs={
+            "explicit_corpus_files": args.corpus or [],
+            "corpus_roots": args.corpus_root or list(DEFAULT_CORPUS_ROOTS),
+            "resolved_corpus_files": [c.path for c in corpus_files],
+        },
+        outputs={"report_target": str(args.report_out)},
+    )
+    write_manifest_json(args.report_out, report)
     print("", flush=True)
     print(render_human_summary(report), flush=True)
     print("", flush=True)

@@ -265,6 +265,50 @@ def test_render_report_carries_gate_constants() -> None:
     assert len(codec_payload["folds"]) == 5
 
 
+def test_main_empty_report_records_run_provenance(tmp_path: Path) -> None:
+    """Diagnostic reports identify the command and corpus roots that made them."""
+    report_out = tmp_path / "report.json"
+    missing_root = tmp_path / "missing-corpus-root"
+
+    rc = trainer.main(
+        [
+            "--allow-empty",
+            "--codec",
+            "libx264",
+            "--corpus-root",
+            str(missing_root),
+            "--report-out",
+            str(report_out),
+        ]
+    )
+
+    assert rc == 1
+    payload = json.loads(report_out.read_text(encoding="utf-8"))
+    provenance = payload["run_provenance"]
+    assert provenance["schema"] == "ai-run-provenance-v1"
+    assert provenance["entrypoint"]["path"] == "ai/scripts/train_predictor_v2_realcorpus.py"
+    assert provenance["argv"] == [
+        "--allow-empty",
+        "--codec",
+        "libx264",
+        "--corpus-root",
+        str(missing_root),
+        "--report-out",
+        str(report_out),
+    ]
+    assert provenance["args"]["allow_empty"] is True
+    assert provenance["args"]["codec"] == ["libx264"]
+    assert provenance["inputs"]["corpus_roots"] == [
+        {"exists": False, "kind": "missing", "path": str(missing_root)}
+    ]
+    assert provenance["inputs"]["resolved_corpus_files"] == []
+    assert provenance["outputs"]["report_target"] == str(report_out)
+    assert payload["summary"]["n_missing_rows"] == 1
+    codec_payload = payload["codecs"][0]
+    assert codec_payload["status"] == "missing-rows"
+    assert codec_payload["folds"] == []
+
+
 def test_render_report_summarises_failure() -> None:
     """A FAIL codec lands in n_fail with reasons preserved."""
     result = trainer.CodecResult(

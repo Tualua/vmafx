@@ -42,6 +42,11 @@ Legacy evaluation reports (`eval_loso_mlp_small.py`, `eval_loso_3arch.py`,
 `eval_probabilistic_proxy.py`, and `eval_saliency_per_mb.py`) also adopt the
 same schema when they emit durable JSON so old model-card evidence and
 saliency/probabilistic probes do not drift from the refreshed report contract.
+The predictor-v2 real-corpus trainer
+(`ai/scripts/train_predictor_v2_realcorpus.py`) uses the same report-level
+block for `runs/predictor_v2_realcorpus/report.json`, including diagnostic
+`--allow-empty` runs, so gate-failed per-codec predictor evidence records the
+corpus roots, resolved corpus files, argv, and report target.
 
 ## Alternatives considered
 
@@ -57,6 +62,8 @@ saliency/probabilistic probes do not drift from the refreshed report contract.
   legacy evaluation, saliency/probabilistic probe, and ensemble validation
   artifacts can be traced back to the command, script revision, input files, and
   output targets that produced them.
+- **Positive**: predictor-v2 real-corpus gate reports now carry the same
+  reproducibility block as the model-card evidence they feed.
 - **Positive**: CHUG manifests stay CHUG-named even though the implementation
   shares the KonViD training loop.
 - **Negative**: sidecars become slightly larger and include local path names.

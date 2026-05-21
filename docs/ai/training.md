@@ -143,6 +143,11 @@ ensemble manifest, optional held-out parquet, and metrics output; and
 plus the JSON report target. This keeps old model-card evidence comparable with
 the refreshed v3/v4/v5 reports.
 
+The predictor-v2 real-corpus trainer also writes `run_provenance` into
+`runs/predictor_v2_realcorpus/report.json`. That block records the selected
+codec list, corpus roots, resolved JSONL files, gate arguments, and report
+target so a gate failure can be reproduced without reconstructing shell history.
+
 The ensemble production validator `ai/scripts/validate_ensemble_seeds.py`
 records `run_provenance` in its `PROMOTE.json` / `HOLD.json` verdicts. That
 block identifies the LOSO artifact directory, corpus root snapshot input,

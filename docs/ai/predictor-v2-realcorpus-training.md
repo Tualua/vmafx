@@ -82,6 +82,9 @@ The script writes:
   - `gate.{mean_plcc_threshold, plcc_spread_max, per_fold_min, loso_fold_count, adr}`.
   - `codecs[].{codec, status, mean_plcc, plcc_spread, mean_srocc, mean_rmse, n_rows_total, n_distinct_sources, failure_reasons[], folds[]}`.
   - `summary.{n_pass, n_fail, n_insufficient, n_missing_rows}`.
+  - `run_provenance.{schema, entrypoint, argv, args, inputs, outputs}` records
+    the exact trainer script, command line, corpus roots/files, and report
+    target used for the run.
 - `runs/predictor_v2_realcorpus/train_<UTC>.log` — full trainer log.
 - `model/predictor_<codec>.onnx` — overwritten **only for codecs that
   PASS the gate**. Synthetic stubs are kept for failing codecs.
@@ -137,7 +140,7 @@ silent-pass path.
 
 ## Test coverage
 
-`ai/tests/test_train_predictor_v2_realcorpus.py` (22 cases) pins:
+`ai/tests/test_train_predictor_v2_realcorpus.py` (23 cases) pins:
 
 - **Gate enforcement is honest** — synthetic FoldResults at
   PLCC = 0.85 land in the `n_fail` bucket, never silently in
@@ -148,7 +151,8 @@ silent-pass path.
 - **Corpus discovery skips missing roots** — operators with only one
   of the three configured corpora do not crash the batch.
 - **Report schema is stable** — `gate`, `codecs[]`, `summary` keys
-  are pinned so the orchestration shell can rely on the layout.
+  are pinned so the orchestration shell can rely on the layout, and diagnostic
+  reports carry ADR-0661 `run_provenance`.
 
 The fold-level training body itself (the per-fold MLP fit) is
 exercised by the existing `tools/vmaf-tune/tests/test_predictor_train.py`

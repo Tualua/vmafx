@@ -38584,3 +38584,31 @@ Touched files:
 `docs/research/0666-ai-legacy-eval-report-provenance.md`,
 `changelog.d/added/0666-ai-legacy-eval-report-provenance.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0661 follow-up — Predictor v2 real-corpus report provenance
+
+**Predictor-v2 report provenance impact.** This widens ADR-0661 adoption to the
+per-codec real-corpus gate report used before predictor-v2 model-card updates.
+
+**Key invariants**:
+
+- `ai/scripts/train_predictor_v2_realcorpus.py` writes
+  `runs/predictor_v2_realcorpus/report.json` with a `run_provenance` block built
+  by `aiutils.run_manifest.build_run_provenance()`.
+- The report records the trainer entrypoint, original argv, parsed arguments,
+  explicit corpus files, corpus roots, resolved JSONL files, and report target.
+- Keep ADR-0303 gate constants untouched; provenance makes failed or
+  insufficient reports reproducible, but it does not change pass/fail logic.
+- Do not restore direct `Path.write_text(json.dumps(...))` report output here;
+  use `write_manifest_json()` so JSON sorting and trailing-newline behavior stay
+  shared with the other AI provenance reports.
+
+Touched files:
+`ai/scripts/train_predictor_v2_realcorpus.py`,
+`ai/tests/test_train_predictor_v2_realcorpus.py`,
+`docs/ai/predictor-v2-realcorpus-training.md`,
+`docs/ai/training.md`,
+`docs/adr/0661-ai-run-manifest-provenance.md`,
+`docs/research/0667-predictor-v2-report-provenance.md`,
+`changelog.d/added/0667-predictor-v2-report-provenance.md`,
+`docs/rebase-notes.md` (this entry).
