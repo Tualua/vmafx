@@ -117,7 +117,14 @@ entrypoint. CHUG HDR MOS runs record
 `ai/scripts/train_chug_hdr_mos_head.py` as the entrypoint and
 `ai/scripts/train_konvid_mos_head.py` as `shared_trainer`, because the
 CHUG command is the operator-facing contract while the training loop is
-shared.
+shared. FR regressor runs (`train_fr_regressor.py`,
+`train_fr_regressor_v2.py`, and `train_fr_regressor_v3.py`) record the
+same block in their model sidecars; v1/v2 also include it in the metrics
+JSON so failed gates still preserve the exact table path, arguments, and
+output targets used for the run. The `vmaf_tiny_v2`, `vmaf_tiny_v3`, and
+`vmaf_tiny_v4` exporters record the same block in their sidecar JSON so an
+exported ONNX can be traced back to the checkpoint, export command, and output
+paths used to create it.
 
 ## MOS label materialization
 

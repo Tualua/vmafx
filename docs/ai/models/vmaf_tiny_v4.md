@@ -55,6 +55,11 @@ set as Constant nodes that run *before* the MLP — exactly the same
 runtime contract as v2 / v3. There is no out-of-band scaler file
 to ship.
 
+Fresh exports add a `run_provenance` block to the sidecar. It records
+the exporter entrypoint, CLI arguments, checkpoint input, and ONNX /
+sidecar output paths so refreshed model artifacts can be traced without
+reading local shell history.
+
 Effective topology:
 
 ```

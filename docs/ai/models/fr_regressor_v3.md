@@ -225,6 +225,12 @@ codec block is unscaled. Output ONNX is opset 17, dynamic batch axis,
 op-allowlist checked. Smoke mode skips the ship gate; real-corpus
 mode exits non-zero on gate-fail.
 
+The sidecar includes `run_provenance` (`ai-run-provenance-v1`) with the
+trainer entrypoint, parsed arguments, corpus path/hash, and output
+targets. Smoke runs point at the generated temporary corpus, which makes
+the sidecar explicit that the output is a pipeline check rather than a
+real Phase-A training result.
+
 ## See also
 
 - [ADR-0323](../../adr/0323-fr-regressor-v3-train-and-register.md) —

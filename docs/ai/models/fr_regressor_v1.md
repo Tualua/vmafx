@@ -58,6 +58,12 @@ graph** — the standardisation is *not* baked into the ONNX so that
 downstream consumers can substitute a different feature pool without
 re-exporting.
 
+The sidecar also carries `run_provenance` (`ai-run-provenance-v1`):
+the trainer entrypoint, parsed arguments, input parquet path/hash, and
+output model/sidecar/registry/metrics targets. The metrics JSON written
+by `--metrics-out` carries the same block, including failed ship-gate
+runs where no ONNX is exported.
+
 ### 2026-05-20 refresh metrics
 
 | Source | PLCC | SROCC | RMSE |

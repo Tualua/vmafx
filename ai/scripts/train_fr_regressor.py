@@ -50,12 +50,15 @@ import json
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
 from aiutils.file_utils import sha256
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT_PATH = Path(__file__).resolve()
 if str(REPO_ROOT / "ai" / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 
@@ -275,6 +278,7 @@ def _export_and_register(
     onnx_path: Path,
     sidecar_path: Path,
     registry_path: Path,
+    run_provenance: dict[str, Any],
 ) -> None:
     from vmaf_train.models import export_to_onnx
 
@@ -322,8 +326,9 @@ def _export_and_register(
             "loso_mean_rmse": loso_summary["mean_rmse"],
             "in_sample_plcc": in_sample["plcc"],
         },
+        "run_provenance": run_provenance,
     }
-    sidecar_path.write_text(json.dumps(sidecar, indent=2, sort_keys=True) + "\n")
+    write_manifest_json(sidecar_path, sidecar)
 
     # Update registry.json. Idempotent: replace any existing
     # 'fr_regressor_v1' row.
@@ -400,6 +405,20 @@ def main() -> int:
         print(f"error: parquet not found at {args.parquet}", file=sys.stderr)
         return 2
 
+    run_provenance = build_run_provenance(
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=sys.argv[1:],
+        args=args,
+        inputs={"parquet": args.parquet},
+        outputs={
+            "onnx_target": str(args.out_onnx),
+            "sidecar_target": str(args.out_sidecar),
+            "registry_target": str(args.registry),
+            "metrics_target": str(args.metrics_out),
+        },
+    )
+
     import pandas as pd
 
     df = pd.read_parquet(args.parquet)
@@ -445,7 +464,10 @@ def main() -> int:
         )
         # Still emit the metrics JSON for inspection.
         args.metrics_out.parent.mkdir(parents=True, exist_ok=True)
-        args.metrics_out.write_text(json.dumps({"loso": loso, "shipped": False}, indent=2) + "\n")
+        write_manifest_json(
+            args.metrics_out,
+            {"loso": loso, "shipped": False, "run_provenance": run_provenance},
+        )
         return 3
 
     print("[fr-v1] training final all-source checkpoint ...", flush=True)
@@ -476,9 +498,10 @@ def main() -> int:
         "lr": args.lr,
         "weight_decay": args.weight_decay,
         "seed": args.seed,
+        "run_provenance": run_provenance,
     }
     args.metrics_out.parent.mkdir(parents=True, exist_ok=True)
-    args.metrics_out.write_text(json.dumps(metrics_out, indent=2) + "\n")
+    write_manifest_json(args.metrics_out, metrics_out)
     print(f"[fr-v1] wrote metrics to {args.metrics_out}")
 
     if args.no_export:
@@ -498,6 +521,7 @@ def main() -> int:
         onnx_path=args.out_onnx,
         sidecar_path=args.out_sidecar,
         registry_path=args.registry,
+        run_provenance=run_provenance,
     )
     print(f"[fr-v1] shipped: {args.out_onnx} (sha256={sha256(args.out_onnx)})")
     return 0

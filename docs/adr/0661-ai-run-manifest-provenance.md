@@ -20,12 +20,17 @@ a CI contract.
 
 ## Decision
 
-We will add a shared `aiutils.run_manifest` helper and have MOS-head trainers
-emit a `run_provenance` block in their JSON sidecars. The block records a schema
-name, user-facing entrypoint script with SHA-256, normalized CLI arguments,
-named input/output paths, and file hashes where the path exists. CHUG runs keep
+We will add a shared `aiutils.run_manifest` helper and have AI trainers emit a
+`run_provenance` block in their JSON sidecars. The block records a schema name,
+user-facing entrypoint script with SHA-256, normalized CLI arguments, named
+input/output paths, and file hashes where the path exists. CHUG runs keep
 `train_chug_hdr_mos_head.py` as the entrypoint while also recording the shared
-trainer implementation that wrote the sidecar.
+trainer implementation that wrote the sidecar. FR-regressor trainers
+(`fr_regressor_v1`, `fr_regressor_v2`, and `fr_regressor_v3`) use the same block
+for their model sidecars; v1/v2 also copy it into their metrics JSON so a
+gate-failed run can still be traced. The `vmaf_tiny_v2`, `vmaf_tiny_v3`, and
+`vmaf_tiny_v4` exporters use the same block for their ONNX sidecars so exported
+artifacts identify the checkpoint input and output targets.
 
 ## Alternatives considered
 
@@ -37,12 +42,13 @@ trainer implementation that wrote the sidecar.
 
 ## Consequences
 
-- **Positive**: local MOS-head artifacts can be traced back to the command,
-  script revision, input files, and output targets that produced them.
+- **Positive**: local MOS-head, FR-regressor, and vmaf_tiny export artifacts can
+  be traced back to the command, script revision, input files, and output
+  targets that produced them.
 - **Positive**: CHUG manifests stay CHUG-named even though the implementation
   shares the KonViD training loop.
 - **Negative**: sidecars become slightly larger and include local path names.
-- **Neutral / follow-ups**: broader `train_` / `export_` / `eval_` /
+- **Neutral / follow-ups**: remaining `train_` / `export_` / `eval_` /
   `validate_` script families can adopt the helper as they move from ad hoc CLI
   state toward shared config plumbing.
 

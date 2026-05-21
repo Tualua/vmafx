@@ -48,6 +48,11 @@ raw feature values, the trust-root sha256 covers the calibration
 values too. There is no out-of-band scaler file to ship or
 distribute.
 
+Fresh exports add a `run_provenance` block to the sidecar. It records
+the exporter entrypoint, CLI arguments, checkpoint input, and ONNX /
+sidecar output paths so refreshed model artifacts can be traced without
+reading local shell history.
+
 Effective topology:
 
 ```

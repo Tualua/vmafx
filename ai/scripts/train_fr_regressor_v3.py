@@ -72,8 +72,10 @@ from pathlib import Path
 from typing import Any
 
 from aiutils.file_utils import sha256
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT_PATH = Path(__file__).resolve()
 if str(REPO_ROOT / "ai" / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 if str(REPO_ROOT / "ai" / "scripts") not in sys.path:
@@ -551,6 +553,7 @@ def write_sidecar_and_registry(
     n_rows: int,
     smoke: bool,
     gate_passed: bool,
+    run_provenance: dict[str, Any],
 ) -> None:
     digest = sha256(onnx_path)
     corpus_digest = sha256(corpus_path) if corpus_path.is_file() else None
@@ -607,9 +610,10 @@ def write_sidecar_and_registry(
         "corpus_sha256": corpus_digest,
         "loso_mean_plcc": loso_summary["mean_plcc"],
         "gate_passed": gate_passed,
+        "run_provenance": run_provenance,
     }
     sidecar_path.parent.mkdir(parents=True, exist_ok=True)
-    sidecar_path.write_text(json.dumps(sidecar, indent=2, sort_keys=True) + "\n")
+    write_manifest_json(sidecar_path, sidecar)
 
     registry = json.loads(registry_path.read_text())
     models = registry.get("models", [])
@@ -751,6 +755,18 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"[fr-v3] loading corpus {args.corpus}", flush=True)
     corpus = _load_corpus(args.corpus)
+    run_provenance = build_run_provenance(
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=sys.argv[1:] if argv is None else argv,
+        args=args,
+        inputs={"corpus": args.corpus},
+        outputs={
+            "onnx_target": str(args.out_onnx),
+            "sidecar_target": str(args.out_sidecar),
+            "registry_target": str(args.registry),
+        },
+    )
     print(
         f"[fr-v3] loaded {corpus['n_rows']} rows; sources="
         f"{sorted(corpus['df'][corpus['source_col']].unique().tolist())} "
@@ -811,6 +827,7 @@ def main(argv: list[str] | None = None) -> int:
             n_rows=corpus["n_rows"],
             smoke=False,
             gate_passed=False,
+            run_provenance=run_provenance,
         )
         return 1
 
@@ -831,6 +848,7 @@ def main(argv: list[str] | None = None) -> int:
         n_rows=corpus["n_rows"],
         smoke=args.smoke,
         gate_passed=gate_passed,
+        run_provenance=run_provenance,
     )
     print(
         f"[fr-v3] shipped: {args.out_onnx} (sha256={sha256(args.out_onnx)})",

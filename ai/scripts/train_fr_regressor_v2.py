@@ -73,8 +73,10 @@ from typing import Any
 import numpy as np
 
 from aiutils.file_utils import sha256
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT_PATH = Path(__file__).resolve()
 if str(REPO_ROOT / "ai" / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 
@@ -583,6 +585,7 @@ def _write_sidecar_and_registry(
     in_sample: dict[str, float],
     n_rows: int,
     smoke: bool,
+    run_provenance: dict[str, Any],
     notes_extra: str = "",
 ) -> dict[str, Any]:
     digest = sha256(onnx_path)
@@ -627,8 +630,9 @@ def _write_sidecar_and_registry(
             "in_sample_rmse": in_sample["rmse"],
             "smoke": smoke,
         },
+        "run_provenance": run_provenance,
     }
-    sidecar_path.write_text(json.dumps(sidecar, indent=2, sort_keys=True) + "\n")
+    write_manifest_json(sidecar_path, sidecar)
 
     # Update registry — idempotent.
     registry = json.loads(registry_path.read_text())
@@ -707,6 +711,22 @@ def main() -> int:
         print("error: provide --corpus PATH or use --smoke", file=sys.stderr)
         return 2
 
+    run_provenance = build_run_provenance(
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=sys.argv[1:],
+        args=args,
+        inputs={
+            "corpus": args.corpus if args.corpus is not None else "synthetic-smoke",
+        },
+        outputs={
+            "onnx_target": str(args.out_onnx),
+            "sidecar_target": str(args.out_sidecar),
+            "registry_target": str(args.registry),
+            "metrics_target": str(args.metrics_out),
+        },
+    )
+
     if args.smoke:
         print("[fr-v2] SMOKE mode — synthesising 100 fake corpus rows", flush=True)
         rows = _synth_smoke_corpus(n=100, seed=args.seed)
@@ -781,9 +801,10 @@ def main() -> int:
         "weight_decay": args.weight_decay,
         "seed": args.seed,
         "smoke": args.smoke,
+        "run_provenance": run_provenance,
     }
     args.metrics_out.parent.mkdir(parents=True, exist_ok=True)
-    args.metrics_out.write_text(json.dumps(metrics_out, indent=2) + "\n")
+    write_manifest_json(args.metrics_out, metrics_out)
     print(f"[fr-v2] wrote metrics to {args.metrics_out}")
 
     if args.no_export:
@@ -804,6 +825,7 @@ def main() -> int:
         in_sample=in_sample,
         n_rows=len(rows),
         smoke=args.smoke,
+        run_provenance=run_provenance,
     )
     print(f"[fr-v2] shipped: {args.out_onnx} (sha256={sha256(args.out_onnx)})")
     return 0

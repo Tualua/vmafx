@@ -35,15 +35,18 @@ opset_version is pinned to 17 to match v2/v3 + sister tiny-AI models.
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
 from aiutils.file_utils import sha256
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
 
 OPSET = 17
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
 
 
 def _build_mlp_large(in_dim: int):  # type: ignore[no-untyped-def]
@@ -83,6 +86,47 @@ class _BundledScalerMLP:
                 return out.squeeze(-1)
 
         return _Wrap().eval()
+
+
+def _write_sidecar(
+    *,
+    sidecar_path: Path,
+    onnx_name: str,
+    digest: str,
+    in_dim: int,
+    features: list[str],
+    mean: np.ndarray,
+    std: np.ndarray,
+    n_params: int,
+    run_provenance: dict[str, Any],
+) -> dict[str, Any]:
+    sidecar = {
+        "id": "vmaf_tiny_v4",
+        "kind": "fr",
+        "onnx": onnx_name,
+        "opset": OPSET,
+        "sha256": digest,
+        "input_name": "features",
+        "input_shape": [-1, in_dim],
+        "output_name": "vmaf",
+        "output_shape": [-1],
+        "features": list(features),
+        "input_mean": mean.tolist(),
+        "input_std": std.tolist(),
+        "arch": "mlp_large",
+        "n_params": n_params,
+        "notes": (
+            "vmaf_tiny_v4 — canonical-6 + StandardScaler + mlp_large "
+            f"({n_params} params), 90 epochs Adam @ lr=1e-3, MSE. Scaler "
+            "(mean, std) baked into the ONNX graph as Constant nodes "
+            "so the runtime feeds raw feature values. Same recipe as "
+            "vmaf_tiny_v2/v3 but with ~3.5x hidden capacity over v3 "
+            "(6 → 64 → 32 → 16 → 1)."
+        ),
+        "run_provenance": run_provenance,
+    }
+    write_manifest_json(sidecar_path, sidecar)
+    return sidecar
 
 
 def main() -> int:
@@ -153,32 +197,28 @@ def main() -> int:
     print(f"[export-v4] sha256={digest}")
     print(f"[export-v4] size  ={args.out_onnx.stat().st_size} bytes")
 
-    sidecar = {
-        "id": "vmaf_tiny_v4",
-        "kind": "fr",
-        "onnx": args.out_onnx.name,
-        "opset": OPSET,
-        "sha256": digest,
-        "input_name": "features",
-        "input_shape": [-1, in_dim],
-        "output_name": "vmaf",
-        "output_shape": [-1],
-        "features": list(features),
-        "input_mean": mean.tolist(),
-        "input_std": std.tolist(),
-        "arch": "mlp_large",
-        "n_params": n_params,
-        "notes": (
-            "vmaf_tiny_v4 — canonical-6 + StandardScaler + mlp_large "
-            f"({n_params} params), 90 epochs Adam @ lr=1e-3, MSE. Scaler "
-            "(mean, std) baked into the ONNX graph as Constant nodes "
-            "so the runtime feeds raw feature values. Same recipe as "
-            "vmaf_tiny_v2/v3 but with ~3.5x hidden capacity over v3 "
-            "(6 → 64 → 32 → 16 → 1)."
-        ),
-    }
-    args.out_sidecar.parent.mkdir(parents=True, exist_ok=True)
-    args.out_sidecar.write_text(json.dumps(sidecar, indent=2) + "\n")
+    run_provenance = build_run_provenance(
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=sys.argv[1:],
+        args=args,
+        inputs={"checkpoint": args.ckpt},
+        outputs={
+            "onnx_target": args.out_onnx,
+            "sidecar_target": str(args.out_sidecar),
+        },
+    )
+    _write_sidecar(
+        sidecar_path=args.out_sidecar,
+        onnx_name=args.out_onnx.name,
+        digest=digest,
+        in_dim=in_dim,
+        features=list(features),
+        mean=mean,
+        std=std,
+        n_params=n_params,
+        run_provenance=run_provenance,
+    )
     print(f"[export-v4] wrote {args.out_sidecar}")
     return 0
 

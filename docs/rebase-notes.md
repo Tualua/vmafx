@@ -38473,3 +38473,42 @@ Touched files:
 `mkdocs.yml`,
 `changelog.d/added/0663-mos-label-materializer.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0661 follow-up — AI model sidecar run provenance
+
+**AI-sidecar provenance impact.** This widens ADR-0661 from MOS-head trainers to
+the FR regressor training family and the vmaf_tiny exporter family.
+
+**Key invariants**:
+
+- `train_fr_regressor.py`, `train_fr_regressor_v2.py`, and
+  `train_fr_regressor_v3.py` sidecars carry `run_provenance` built by
+  `aiutils.run_manifest.build_run_provenance()`.
+- v1/v2 metrics JSON carries the same block, including gate-failed runs where
+  no ONNX export is written.
+- `export_vmaf_tiny_v2.py`, `export_vmaf_tiny_v3.py`, and
+  `export_vmaf_tiny_v4.py` sidecars carry the same block with the checkpoint
+  input and ONNX/sidecar output targets.
+- Do not replace this with per-script argument/path JSON when rebasing AI
+  trainer changes; extend the shared helper instead.
+
+Touched files:
+`ai/scripts/export_vmaf_tiny_v2.py`,
+`ai/scripts/export_vmaf_tiny_v3.py`,
+`ai/scripts/export_vmaf_tiny_v4.py`,
+`ai/scripts/train_fr_regressor.py`,
+`ai/scripts/train_fr_regressor_v2.py`,
+`ai/scripts/train_fr_regressor_v3.py`,
+`ai/tests/test_fr_regressor_run_provenance.py`,
+`ai/tests/test_vmaf_tiny_export_run_provenance.py`,
+`docs/ai/training.md`,
+`docs/ai/models/fr_regressor_v1.md`,
+`docs/ai/models/fr_regressor_v2.md`,
+`docs/ai/models/fr_regressor_v3.md`,
+`docs/ai/models/vmaf_tiny_v2.md`,
+`docs/ai/models/vmaf_tiny_v3.md`,
+`docs/ai/models/vmaf_tiny_v4.md`,
+`docs/adr/0661-ai-run-manifest-provenance.md`,
+`docs/research/0664-ai-fr-regressor-run-provenance.md`,
+`changelog.d/added/0664-ai-fr-regressor-run-provenance.md`,
+`docs/rebase-notes.md` (this entry).

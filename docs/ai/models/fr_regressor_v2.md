@@ -101,6 +101,12 @@ the sidecar JSON (`feature_mean` / `feature_std`); the codec block
 is unscaled. Output ONNX is opset 17, dynamic batch axis, op-allowlist
 checked.
 
+The sidecar and `--metrics-out` JSON include `run_provenance`
+(`ai-run-provenance-v1`): trainer entrypoint, command arguments,
+real-corpus path/hash or `synthetic-smoke`, and output targets. Use this
+block when comparing refreshed codec-aware runs so stale Phase-A
+corpora are visible without reverse-engineering shell history.
+
 ## See also
 
 - [ADR-0272](../../adr/0272-fr-regressor-v2-codec-aware-scaffold.md)
