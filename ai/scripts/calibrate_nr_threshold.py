@@ -67,6 +67,8 @@ _DEFAULT_CORPUS = _REPO_ROOT / ".corpus" / "netflix"
 _DEFAULT_CRFS: tuple[int, ...] = (18, 23, 28, 33, 38)
 _DEFAULT_CODEC = "libx264"
 _DEFAULT_PRESET = "medium"
+_DEFAULT_MIN_CALIBRATION_SAMPLES = 10
+_DEFAULT_MIN_PLCC = 0.70
 
 # BBB YUVs under python/test/resource/yuv/ as minimal fallback fixtures.
 _FALLBACK_YUV_GLOB = "src01*.yuv"
@@ -101,6 +103,14 @@ class CalibrationSample(NamedTuple):
     def residual(self) -> float:
         """Residual = FR - NR (before regression; used for naive 1:1 estimate)."""
         return self.fr_score - self.nr_score
+
+
+class CalibrationQuality(NamedTuple):
+    """Result of the NR calibration quality gate."""
+
+    passed: bool
+    status: str
+    reasons: tuple[str, ...]
 
 
 # ---------------------------------------------------------------------------
@@ -342,6 +352,26 @@ def _pearson_r(x: list[float], y: list[float]) -> float:
     return num / denom
 
 
+def _evaluate_calibration_quality(
+    *,
+    sample_count: int,
+    plcc: float,
+    min_samples: int,
+    min_plcc: float,
+) -> CalibrationQuality:
+    """Return whether a fitted NR calibration is safe to write."""
+    reasons: list[str] = []
+    if sample_count < min_samples:
+        reasons.append(f"sample count {sample_count} < required {min_samples}")
+    if math.isnan(plcc):
+        reasons.append("PLCC is undefined")
+    elif plcc < min_plcc:
+        reasons.append(f"PLCC {plcc:.4f} < required {min_plcc:.4f}")
+    if reasons:
+        return CalibrationQuality(passed=False, status="weak", reasons=tuple(reasons))
+    return CalibrationQuality(passed=True, status="accepted", reasons=())
+
+
 # ---------------------------------------------------------------------------
 # Report generation
 # ---------------------------------------------------------------------------
@@ -359,6 +389,10 @@ def _write_calibration_report(
     n_crfs: int,
     corpus_path: str,
     output_dir: Path,
+    quality: CalibrationQuality,
+    min_samples: int,
+    min_plcc: float,
+    allow_weak_calibration: bool,
 ) -> Path:
     """Write a Markdown calibration report and return its path."""
     today = date.today().isoformat()
@@ -378,6 +412,8 @@ def _write_calibration_report(
         f"- **PLCC**: {plcc:.4f}",
         f"- **σ(residuals)**: {sigma:.4f} VMAF",
         f"- **δ_fast (2σ)**: **{delta_fast:.2f} VMAF**",
+        f"- **Quality gate**: **{quality.status.upper()}**",
+        f"- **Gate criteria**: samples ≥ {min_samples}, PLCC ≥ {min_plcc:.2f}",
         "",
         "## Interpretation",
         "",
@@ -389,6 +425,27 @@ def _write_calibration_report(
             "calibrated to cover >95% of in-domain content residuals correctly "
             "(2σ coverage)."
         ),
+        "",
+        "## Quality gate",
+        "",
+    ]
+    if quality.passed:
+        lines.append("The fit passed the write gate and can update the sidecar JSON.")
+    else:
+        lines += [
+            "The fit did not pass the write gate and must not be used for tune "
+            "early-elimination without an explicit override.",
+            "",
+            "Reasons:",
+        ]
+        lines.extend(f"- {reason}" for reason in quality.reasons)
+        if allow_weak_calibration:
+            lines += [
+                "",
+                "`--allow-weak-calibration` was set, so the caller accepted this "
+                "weak fit explicitly.",
+            ]
+    lines += [
         "",
         "## Per-sample data (first 50)",
         "",
@@ -442,6 +499,9 @@ def calibrate(
     report_dir: Path,
     delta_fast_override: float | None,
     nr_execution_provider: str,
+    min_calibration_samples: int,
+    min_plcc: float,
+    allow_weak_calibration: bool,
     provenance_argv: list[str] | None = None,
     provenance_args: argparse.Namespace | dict[str, Any] | None = None,
 ) -> int:
@@ -556,9 +616,19 @@ def calibrate(
         delta_fast_override if delta_fast_override is not None else _compute_delta_fast(residuals)
     )
     plcc = _pearson_r(nr_vals, fr_vals)
+    quality = _evaluate_calibration_quality(
+        sample_count=len(samples),
+        plcc=plcc,
+        min_samples=min_calibration_samples,
+        min_plcc=min_plcc,
+    )
 
     _log.info("Regression: vmaf_fr ≈ %.4f × vmaf_nr + %.4f", a, b)
     _log.info("PLCC=%.4f  σ=%.4f  δ_fast (2σ)=%.2f", plcc, sigma, delta_fast)
+    if quality.passed:
+        _log.info("Calibration quality gate accepted the fit.")
+    else:
+        _log.warning("Calibration quality gate rejected the fit: %s", "; ".join(quality.reasons))
 
     # Write calibration report.
     report_path = _write_calibration_report(
@@ -572,8 +642,21 @@ def calibrate(
         n_crfs=len(crfs),
         corpus_path=corpus_label,
         output_dir=report_dir,
+        quality=quality,
+        min_samples=min_calibration_samples,
+        min_plcc=min_plcc,
+        allow_weak_calibration=allow_weak_calibration,
     )
     print(f"Calibration report written to {report_path}")
+
+    if not quality.passed and not allow_weak_calibration:
+        print(
+            "Refusing to update calibration sidecar: "
+            f"{'; '.join(quality.reasons)}. "
+            "Use --allow-weak-calibration only for diagnostic sidecars.",
+            file=sys.stderr,
+        )
+        return 1
 
     # Update model/tiny/nr_metric_v1.json.
     if not dry_run:
@@ -590,6 +673,11 @@ def calibrate(
         existing["calibration_sigma"] = round(sigma, 4)
         existing["calibration_date"] = date.today().isoformat()
         existing["calibration_n_samples"] = len(samples)
+        existing["calibration_quality_status"] = quality.status
+        existing["calibration_quality_reasons"] = list(quality.reasons)
+        existing["calibration_min_samples"] = min_calibration_samples
+        existing["calibration_min_plcc"] = round(min_plcc, 4)
+        existing["calibration_allow_weak"] = allow_weak_calibration
         if provenance_args is not None:
             existing["run_provenance"] = build_run_provenance(
                 entrypoint=SCRIPT_PATH,
@@ -737,6 +825,35 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
+        "--min-calibration-samples",
+        type=int,
+        default=_DEFAULT_MIN_CALIBRATION_SAMPLES,
+        metavar="N",
+        help=(
+            "minimum fitted samples required before writing the sidecar "
+            f"(default: {_DEFAULT_MIN_CALIBRATION_SAMPLES})"
+        ),
+    )
+    p.add_argument(
+        "--min-plcc",
+        type=float,
+        default=_DEFAULT_MIN_PLCC,
+        metavar="R",
+        help=(
+            "minimum NR-vs-FR Pearson correlation required before writing "
+            f"the sidecar (default: {_DEFAULT_MIN_PLCC})"
+        ),
+    )
+    p.add_argument(
+        "--allow-weak-calibration",
+        action="store_true",
+        default=False,
+        help=(
+            "write the sidecar even when the sample-count or PLCC gate fails; "
+            "intended only for diagnostics"
+        ),
+    )
+    p.add_argument(
         "--dry-run",
         action="store_true",
         default=False,
@@ -771,6 +888,12 @@ def main(argv: list[str] | None = None) -> int:
     if not crfs:
         print("error: --crfs must not be empty", file=sys.stderr)
         return 2
+    if args.min_calibration_samples < 2:
+        print("error: --min-calibration-samples must be at least 2", file=sys.stderr)
+        return 2
+    if not 0.0 <= args.min_plcc <= 1.0:
+        print("error: --min-plcc must be between 0 and 1", file=sys.stderr)
+        return 2
 
     return calibrate(
         corpus=args.corpus,
@@ -789,6 +912,9 @@ def main(argv: list[str] | None = None) -> int:
         report_dir=args.report_dir,
         delta_fast_override=args.delta_fast_override,
         nr_execution_provider=args.nr_ep,
+        min_calibration_samples=args.min_calibration_samples,
+        min_plcc=args.min_plcc,
+        allow_weak_calibration=args.allow_weak_calibration,
         provenance_argv=raw_argv,
         provenance_args=args,
     )

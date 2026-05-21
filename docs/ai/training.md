@@ -214,7 +214,10 @@ optional row cap, argv, and recipe output path.
 `ai/scripts/calibrate_nr_threshold.py --output` records `run_provenance` in the
 updated `nr_metric_v1.json` calibration sidecar, including the requested and
 actual corpus directories, `nr_metric_v1.onnx`, CRF grid, argv, and Markdown
-calibration report path.
+calibration report path. The same script quality-gates sidecar writes with
+`--min-calibration-samples` and `--min-plcc`; weak fits still leave a Markdown
+report for diagnosis, but do not update the tune-facing JSON unless
+`--allow-weak-calibration` is set.
 
 Quantisation scripts also use the same schema when asked for durable reports:
 `ptq_dynamic.py --report-out`, `ptq_static.py --report-out`,

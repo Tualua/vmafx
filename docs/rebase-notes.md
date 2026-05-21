@@ -7,6 +7,23 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## fix/fast-nr-calibration-quality-guard (ADR-0665)
+
+**No upstream rebase impact**: this touches fork-local tiny-AI calibration
+tooling, vmaf-tune docs, package AGENTS notes, ADR/research notes, and a
+changelog fragment. Upstream Netflix/vmaf does not ship the fork
+`nr_metric_v1` fast-NR sidecar calibration workflow.
+
+Smoke:
+`.venv/bin/python -m pytest ai/tests/test_calibrate_nr_threshold.py -q`
+
+Touched files: `ai/scripts/calibrate_nr_threshold.py`,
+`ai/tests/test_calibrate_nr_threshold.py`, `ai/AGENTS.md`,
+`tools/vmaf-tune/AGENTS.md`, `docs/usage/vmaf-tune-fast-nr.md`,
+`docs/ai/training.md`, `docs/adr/0665-*.md`,
+`docs/adr/_index_fragments/0665-*.md`, `docs/research/0685-*.md`,
+`changelog.d/fixed/0665-*.md`, and this file.
+
 ## feat/ai-validation-report-provenance (ADR-0661)
 
 **No upstream rebase impact**: this touches fork-local tiny-AI validation

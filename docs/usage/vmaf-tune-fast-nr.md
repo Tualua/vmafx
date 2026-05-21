@@ -90,6 +90,13 @@ also includes ADR-0661 `run_provenance` so the threshold can be traced back to
 the corpus directory, `nr_metric_v1.onnx` input, CRF grid, CLI arguments, and
 Markdown report path that produced it.
 
+The script now guards the sidecar write: by default it requires at least 10
+samples and PLCC ≥ 0.70 between raw NR scores and FR VMAF.  Weak fits still
+write the Markdown report with a `WEAK` quality status, but they do not update
+`nr_metric_v1.json` unless `--allow-weak-calibration` is passed for diagnostic
+work.  This keeps `--fast-nr` from consuming a sidecar that cannot actually
+speed up the Netflix-style tune loop safely.
+
 ### Content-type considerations
 
 The default δ_fast = 8.0 VMAF is a global threshold calibrated on
@@ -115,6 +122,9 @@ usage: calibrate_nr_threshold.py [-h] [--corpus CORPUS] [--output JSON]
                                  [--max-clips N] [--vmaf-bin VMAF_BIN]
                                  [--ffmpeg-bin FFMPEG_BIN] [--report-dir DIR]
                                  [--delta-fast VMAF] [--nr-ep {auto,cpu}]
+                                 [--min-calibration-samples N]
+                                 [--min-plcc R]
+                                 [--allow-weak-calibration]
                                  [--dry-run] [-v]
 ```
 
@@ -127,6 +137,9 @@ Key options:
 | `--crfs LIST` | `18,23,28,33,38` | CRF grid to sweep |
 | `--max-clips N` | (all) | Limit clips for quick smoke runs |
 | `--nr-ep auto\|cpu` | `auto` | `auto` tries CUDA/ROCm EP before CPU; `cpu` pins CPU inference for reproducible calibration or when CUDA is already busy |
+| `--min-calibration-samples N` | `10` | Minimum fitted samples required before the JSON sidecar can be written |
+| `--min-plcc R` | `0.70` | Minimum positive NR-vs-FR Pearson correlation required before the JSON sidecar can be written |
+| `--allow-weak-calibration` | off | Diagnostic override that writes a weak sidecar with `calibration_quality_status = "weak"` |
 | `--dry-run` | off | Compute δ_fast without writing the JSON |
 | `--delta-fast VMAF` | (fit from data) | Force a specific δ_fast value |
 

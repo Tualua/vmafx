@@ -412,3 +412,4 @@
 0662-vulkan-motion-lavapipe-parity
 0663-mos-label-materializer
 0664-windows-cuda-toolkit-installer
+0665-fast-nr-calibration-quality-guard

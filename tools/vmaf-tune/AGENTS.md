@@ -841,6 +841,15 @@ tree without an ADR-0237 follow-up promoting the corresponding phase.
   value and then falling back to `ConfidenceThresholds()` is a
   user-visible planning bug.
 
+- **Fast-NR calibration sidecars are write-gated before tune consumes
+  them.** `NRProxyBackend` intentionally trusts `calibration_slope`,
+  `calibration_intercept`, and `calibration_threshold` once they are in
+  `nr_metric_v1.json`; the safety boundary is
+  `ai/scripts/calibrate_nr_threshold.py` (ADR-0665), which refuses weak
+  sample-count or PLCC fits by default. If a fresh real-corpus run is
+  rejected, fix the NR model/features or training corpus; do not loosen
+  the vmaf-tune early-elimination logic to make a bad sidecar useful.
+
 - **F.4 recipe overrides are read-only factories, not literal
   dicts.** `_CONTENT_RECIPE_TABLE` in `auto.py` stores **callables**
   (`_animation_recipe`, `_screen_content_recipe`,
