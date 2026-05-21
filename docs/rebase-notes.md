@@ -7,6 +7,22 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## feat/saliency-student-metrics-provenance (ADR-0661)
+
+**No upstream rebase impact**: this touches fork-local AI saliency training
+tooling, model docs, ADR/research notes, and changelog fragments. Upstream
+Netflix/vmaf does not ship the DUTS-trained saliency student metrics surface.
+
+Smoke:
+`.venv/bin/python -m pytest ai/tests/test_saliency_student_metrics_provenance.py -q`
+
+Touched files: `ai/scripts/train_saliency_student.py`,
+`ai/scripts/train_saliency_student_v2.py`,
+`ai/tests/test_saliency_student_metrics_provenance.py`,
+`docs/ai/models/saliency_student_*.md`, `docs/ai/training.md`,
+`docs/research/0680-*.md`, `docs/adr/0661-ai-run-manifest-provenance.md`,
+`changelog.d/added/0680-*.md`, and this file.
+
 ## feat/dnn-exporter-manifest-provenance (ADR-0661)
 
 **No upstream rebase impact**: this touches fork-local AI exporter tooling,

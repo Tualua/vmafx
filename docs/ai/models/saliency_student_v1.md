@@ -58,6 +58,9 @@ The training run is deterministic given a fixed `--seed` (default 42)
 and pinned PyTorch / CUDA versions. The ONNX exporter writes the
 graph with `do_constant_folding=True` and `training=TrainingMode.EVAL`
 so BatchNorm folds into the preceding Conv weights.
+Fresh `--metrics-out` JSON includes ADR-0661 `run_provenance` with
+the DUTS-TR root, ONNX output, metrics output, parsed training
+arguments, and original argv.
 
 ## Training corpus provenance
 

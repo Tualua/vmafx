@@ -90,6 +90,11 @@ The `vmaf_tiny_v2`, `vmaf_tiny_v3`, `vmaf_tiny_v4`, and deferred
 `vmaf_tiny_v5` training scripts record the same block in their `--out-stats`
 JSON files so exporter inputs can be traced to the parquet table(s),
 checkpoint target, stats target, argv, and hyperparameters that produced them.
+The saliency-student trainers (`train_saliency_student.py` and
+`train_saliency_student_v2.py`) record the same block in their `--metrics-out`
+JSON files so DUTS-rooted saliency refreshes identify the training corpus
+root, ONNX output, metrics output, argv, and hyperparameters that produced
+the model-card evidence.
 Table-side materializers and audits (`materialize_mos_labels.py`,
 `materialize_second_opinion_features.py`, `materialize_saliency_features.py`,
 and `signal_mix_audit.py`) use the same block for their audit/report JSON
@@ -114,6 +119,7 @@ label/score inputs, report thresholds, output targets, and argv.
 | Leave Phase F recipe calibration as plain JSON | No runtime loader delta | Calibrated recipe JSON would not identify which corpus snapshot and row cap produced operator-facing `vmaf-tune auto` behaviour | Rejected because recipe JSON is a shipped tuning input, not a scratch report |
 | Leave NR threshold calibration as plain JSON | No change to a slow calibration harness | `--fast-nr` would pick up a threshold without recording the corpus, CRF grid, model input, or report path that justified it | Rejected because NR thresholds directly affect user-facing bisect behaviour |
 | Leave DNN feature-model exporters as legacy sidecars | Avoids touching older weight-conversion scripts | Fresh C2/C3, FastDVDnet, or TransNet sidecars would record runtime shape but not the checkpoint/upstream inputs or exporter command that produced them | Rejected because those sidecars are the reproducibility boundary for shipped DNN feature models |
+| Leave saliency-student metrics as legacy JSON | No change to older DUTS trainers | Fresh v1/v2 metrics would report IoU and ONNX hashes but not the DUTS root, output targets, argv, or training hyperparameters that produced the evidence | Rejected because saliency model cards cite those metrics as durable production evidence |
 
 ## Consequences
 
@@ -149,6 +155,8 @@ label/score inputs, report thresholds, output targets, and argv.
 - **Positive**: DNN feature-model sidecars now carry the checkpoint or upstream
   weight inputs and exporter arguments needed to replay C2/C3, FastDVDnet, and
   TransNet refreshes.
+- **Positive**: saliency-student metrics now carry the DUTS root, ONNX output,
+  metrics output, argv, and training arguments needed to replay v1/v2 refreshes.
 - **Positive**: CHUG manifests stay CHUG-named even though the implementation
   shares the KonViD training loop.
 - **Negative**: sidecars become slightly larger and include local path names.

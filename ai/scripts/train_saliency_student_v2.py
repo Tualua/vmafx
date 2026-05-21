@@ -73,7 +73,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import json
 import random
 import sys
 import time
@@ -87,9 +86,11 @@ import torch.nn.functional as F
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
 sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
@@ -406,7 +407,41 @@ def set_seed(seed: int) -> None:
     torch.cuda.manual_seed_all(seed)
 
 
-def main() -> int:
+def _build_metrics_payload(
+    *,
+    best_val_iou: float,
+    param_count: int,
+    args: argparse.Namespace,
+    history: list[dict],
+    total_time_sec: float,
+    onnx_bytes: int,
+    onnx_sha256: str,
+    pt_onnx_max_abs_diff: float,
+    device: torch.device,
+    run_provenance: dict[str, object] | None = None,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "best_val_iou": best_val_iou,
+        "param_count": param_count,
+        "epochs": args.epochs,
+        "batch_size": args.batch_size,
+        "lr": args.lr,
+        "crop_size": args.crop_size,
+        "seed": args.seed,
+        "opset": args.opset,
+        "history": history,
+        "total_time_sec": total_time_sec,
+        "onnx_bytes": onnx_bytes,
+        "onnx_sha256": onnx_sha256,
+        "pt_onnx_max_abs_diff": pt_onnx_max_abs_diff,
+        "device": str(device),
+    }
+    if run_provenance is not None:
+        payload["run_provenance"] = run_provenance
+    return payload
+
+
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--duts-root", type=Path, required=True)
     parser.add_argument(
@@ -427,7 +462,8 @@ def main() -> int:
     parser.add_argument(
         "--metrics-out", type=Path, default=None, help="Optional JSON file to dump training metrics"
     )
-    args = parser.parse_args()
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = parser.parse_args(raw_argv)
 
     set_seed(args.seed)
 
@@ -519,28 +555,27 @@ def main() -> int:
     print(f"PT <-> ORT parity max-abs-diff = {diff:.3e}  (threshold 1e-5)", flush=True)
 
     if args.metrics_out is not None:
-        args.metrics_out.parent.mkdir(parents=True, exist_ok=True)
-        args.metrics_out.write_text(
-            json.dumps(
-                {
-                    "best_val_iou": best_iou,
-                    "param_count": n_params,
-                    "epochs": args.epochs,
-                    "batch_size": args.batch_size,
-                    "lr": args.lr,
-                    "crop_size": args.crop_size,
-                    "seed": args.seed,
-                    "opset": args.opset,
-                    "history": history,
-                    "total_time_sec": total_time,
-                    "onnx_bytes": len(onnx_bytes),
-                    "onnx_sha256": digest,
-                    "pt_onnx_max_abs_diff": diff,
-                    "device": str(device),
-                },
-                indent=2,
-            )
-            + "\n"
+        write_manifest_json(
+            args.metrics_out,
+            _build_metrics_payload(
+                best_val_iou=best_iou,
+                param_count=n_params,
+                args=args,
+                history=history,
+                total_time_sec=total_time,
+                onnx_bytes=len(onnx_bytes),
+                onnx_sha256=digest,
+                pt_onnx_max_abs_diff=diff,
+                device=device,
+                run_provenance=build_run_provenance(
+                    entrypoint=SCRIPT_PATH,
+                    repo_root=REPO_ROOT,
+                    argv=raw_argv,
+                    args=args,
+                    inputs={"duts_root": args.duts_root},
+                    outputs={"onnx": args.output, "metrics": args.metrics_out},
+                ),
+            ),
         )
         print(f"wrote metrics -> {args.metrics_out}", flush=True)
 

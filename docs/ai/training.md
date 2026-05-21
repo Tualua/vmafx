@@ -159,6 +159,13 @@ Those stats files feed the ONNX exporters, so they now identify the training
 parquet input(s), checkpoint target, stats target, argv, and hyperparameters
 used before an export sidecar is produced.
 
+Saliency-student training metrics use the same schema:
+`train_saliency_student.py --metrics-out` and
+`train_saliency_student_v2.py --metrics-out` record the DUTS-TR root, ONNX
+output, metrics output, parsed training arguments, and original argv. Use this
+block when comparing v1/v2 saliency refreshes or replaying a DUTS-rooted
+training run from a model card.
+
 Table materializers and audits use the same schema for durable audit JSON:
 `materialize_mos_labels.py --audit-json`,
 `materialize_second_opinion_features.py --audit-json`,
