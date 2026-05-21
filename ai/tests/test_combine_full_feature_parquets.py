@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -86,3 +87,9 @@ def test_main_combines_multiple_labeled_inputs(tmp_path: Path, monkeypatch) -> N
     assert df["corpus"].tolist() == ["netflix", "bvi"]
     assert df["source"].tolist() == ["netflix-src", "bvi-src"]
     assert df["codec"].tolist() == ["unknown", "x264"]
+    manifest = json.loads(out.with_suffix(".manifest.json").read_text(encoding="utf-8"))
+    assert manifest["schema"] == "full-feature-parquet-combine-manifest-v1"
+    assert manifest["stats"]["output_rows"] == 2
+    assert manifest["stats"]["corpora"] == {"netflix": 1, "bvi": 1}
+    assert manifest["inputs"][0]["label"] == "netflix"
+    assert manifest["run_provenance"]["schema"] == "ai-run-provenance-v1"

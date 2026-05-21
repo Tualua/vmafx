@@ -265,3 +265,53 @@ def test_detect_fr_corpus_misuse_allows_ref_only_or_dis_only_groups() -> None:
     assert result["ref_count"] == 1
     assert result["dis_count"] == 1
     assert result["content_groups_with_both"] == 0
+
+
+def test_write_extraction_manifest_records_run_provenance(tmp_path: Path) -> None:
+    out = tmp_path / "full_features_k150k.parquet"
+    manifest = tmp_path / "full_features_k150k.manifest.json"
+    clips_dir = tmp_path / "clips"
+    scores_csv = tmp_path / "scores.csv"
+    metadata_jsonl = tmp_path / "metadata.jsonl"
+    vmaf_bin = tmp_path / "vmaf"
+    clips_dir.mkdir()
+    scores_csv.write_text("video_name,video_score\nclip-a.mp4,78\n", encoding="utf-8")
+    metadata_jsonl.write_text(json.dumps({"src": "clip-a.mp4"}) + "\n", encoding="utf-8")
+    vmaf_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    K150K._write_parquet_from_rows([{"clip_name": "clip-a.mp4", "mos": 78.0}], out)
+
+    args = K150K.argparse.Namespace(
+        out=out,
+        clips_dir=clips_dir,
+        scores=scores_csv,
+        metadata_jsonl=metadata_jsonl,
+        vmaf_bin=vmaf_bin,
+        cpu_vmaf_bin=vmaf_bin,
+        threads_cuda=2,
+        threads=1,
+        allow_fr_from_nr=False,
+        split_seed="stable",
+        manifest_out=manifest,
+    )
+
+    K150K._write_extraction_manifest(
+        manifest_out=manifest,
+        args=args,
+        use_cuda=True,
+        total_clips=1,
+        done_before=0,
+        pending_count=1,
+        recovered_rows=0,
+        ok=1,
+        fail=0,
+        elapsed_seconds=2.0,
+        status="complete",
+    )
+
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    assert payload["schema"] == "k150k-feature-extraction-manifest-v1"
+    assert payload["stats"]["parquet_rows"] == 1
+    assert payload["stats"]["rate_clip_per_second"] == 0.5
+    assert payload["backend"] == {"use_cuda": True, "workers": 2, "threads_per_worker": 1}
+    assert payload["run_provenance"]["schema"] == "ai-run-provenance-v1"
+    assert payload["run_provenance"]["outputs"]["parquet"]["exists"] is True

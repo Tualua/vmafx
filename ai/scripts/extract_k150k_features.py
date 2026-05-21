@@ -108,6 +108,11 @@ import pandas as pd
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CHUG_SPLIT_SEED = "chug-hdr-v1"
+_AI_SRC = REPO_ROOT / "ai" / "src"
+if str(_AI_SRC) not in sys.path:
+    sys.path.insert(0, str(_AI_SRC))
+
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Feature / extractor configuration (column-order-locked per ai/AGENTS.md)
@@ -892,6 +897,86 @@ def _write_parquet_from_rows(rows: list[dict], out_path: Path) -> None:
     tmp.rename(out_path)
 
 
+def _parquet_row_count(path: Path) -> int:
+    """Return row count for an existing parquet output, or 0 when absent."""
+    if not path.is_file():
+        return 0
+    try:
+        return len(pd.read_parquet(path, columns=["clip_name"]))
+    except Exception:
+        return len(pd.read_parquet(path))
+
+
+def _write_extraction_manifest(
+    *,
+    manifest_out: Path,
+    args: argparse.Namespace,
+    use_cuda: bool,
+    total_clips: int,
+    done_before: int,
+    pending_count: int,
+    recovered_rows: int,
+    ok: int,
+    fail: int,
+    elapsed_seconds: float,
+    status: str,
+) -> None:
+    """Write the replay manifest for a K150K/FR-from-NR table extraction."""
+    done_path = args.out.with_suffix(".done")
+    staging_path = _staging_path(args.out)
+    payload = {
+        "schema": "k150k-feature-extraction-manifest-v1",
+        "status": status,
+        "stats": {
+            "total_clips": int(total_clips),
+            "done_before": int(done_before),
+            "pending_at_start": int(pending_count),
+            "recovered_rows": int(recovered_rows),
+            "ok": int(ok),
+            "fail": int(fail),
+            "parquet_rows": _parquet_row_count(args.out),
+            "elapsed_seconds": float(elapsed_seconds),
+            "rate_clip_per_second": float(ok / elapsed_seconds) if elapsed_seconds > 0 else 0.0,
+        },
+        "features": list(FEATURE_NAMES),
+        "extractors": {
+            "cpu": list(EXTRACTOR_NAMES),
+            "cuda_primary": list(CUDA_EXTRACTOR_NAMES),
+            "cuda_cpu_residual": list(CUDA_CPU_RESIDUAL_EXTRACTOR_NAMES),
+        },
+        "backend": {
+            "use_cuda": bool(use_cuda),
+            "workers": int(args.threads_cuda),
+            "threads_per_worker": int(args.threads),
+        },
+        "fr_from_nr_adapter": {
+            "enabled": True,
+            "allow_fr_from_nr": bool(args.allow_fr_from_nr),
+            "split_seed": str(args.split_seed),
+        },
+        "run_provenance": build_run_provenance(
+            entrypoint=Path(__file__),
+            repo_root=REPO_ROOT,
+            argv=sys.argv[1:],
+            args=args,
+            inputs={
+                "clips_dir": args.clips_dir,
+                "scores_csv": args.scores,
+                "metadata_jsonl": args.metadata_jsonl,
+                "vmaf_bin": args.vmaf_bin,
+                "cpu_vmaf_bin": args.cpu_vmaf_bin,
+            },
+            outputs={
+                "parquet": args.out,
+                "done": done_path,
+                "staging_jsonl": staging_path,
+                "manifest": manifest_out,
+            },
+        ),
+    }
+    write_manifest_json(manifest_out, payload)
+
+
 # ---------------------------------------------------------------------------
 # Worker (runs in a subprocess via ProcessPoolExecutor)
 # ---------------------------------------------------------------------------
@@ -1053,6 +1138,16 @@ def main() -> int:
         help="Output parquet path (gitignored).",
     )
     ap.add_argument(
+        "--manifest-out",
+        type=Path,
+        default=None,
+        help=(
+            "Run-provenance JSON sidecar. Defaults to <out>.manifest.json. "
+            "Records inputs, backend split, feature schema, restart counters, "
+            "and the exact CLI args used to build the derived parquet."
+        ),
+    )
+    ap.add_argument(
         "--threads",
         type=int,
         default=2,
@@ -1119,6 +1214,8 @@ def main() -> int:
         ),
     )
     args = ap.parse_args()
+    if args.manifest_out is None:
+        args.manifest_out = args.out.with_suffix(".manifest.json")
 
     # --flush-every is a legacy alias; --progress-every takes precedence.
     progress_every: int = args.progress_every
@@ -1201,6 +1298,7 @@ def main() -> int:
     done_path = args.out.with_suffix(".done")
     done_set = _load_done_set(done_path)
     pending = [c for c in clips if c.name not in done_set]
+    staging_path = _staging_path(args.out)
 
     print(
         f"[k150k] total={len(clips)} done={len(done_set)} pending={len(pending)} "
@@ -1211,6 +1309,23 @@ def main() -> int:
     )
 
     if not pending:
+        recovered_rows = _load_staging_rows(staging_path)
+        if recovered_rows:
+            _write_parquet_from_rows(recovered_rows, args.out)
+            staging_path.unlink(missing_ok=True)
+        _write_extraction_manifest(
+            manifest_out=args.manifest_out,
+            args=args,
+            use_cuda=use_cuda,
+            total_clips=len(clips),
+            done_before=len(done_set),
+            pending_count=0,
+            recovered_rows=len(recovered_rows),
+            ok=0,
+            fail=0,
+            elapsed_seconds=0.0,
+            status="complete-noop",
+        )
         print("[k150k] nothing to do.", flush=True)
         return 0
 
@@ -1218,7 +1333,6 @@ def main() -> int:
 
     # JSONL staging file — accumulates rows during the run for crash durability.
     # Converted to parquet exactly once at the end (Research-0135 Win 1).
-    staging_path = _staging_path(args.out)
     # Reload any rows from a previous partial run that are in the done set but
     # whose staging rows survived.  This covers the edge-case where the process
     # was killed after writing the staging line but before the final parquet write.
@@ -1300,6 +1414,19 @@ def main() -> int:
         f"[k150k] done. ok={ok} fail={fail} total_time={elapsed:.1f}s "
         f"rate={rate:.2f} clip/s out={args.out}",
         flush=True,
+    )
+    _write_extraction_manifest(
+        manifest_out=args.manifest_out,
+        args=args,
+        use_cuda=use_cuda,
+        total_clips=len(clips),
+        done_before=len(done_set),
+        pending_count=len(pending),
+        recovered_rows=len(recovered_rows),
+        ok=ok,
+        fail=fail,
+        elapsed_seconds=elapsed,
+        status="complete" if fail == 0 else "failed",
     )
     return 0 if fail == 0 else 1
 

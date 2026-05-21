@@ -27,6 +27,7 @@ import pandas as pd
 # (for the sibling extract_k150k_features module) so this script works
 # standalone.
 _AI_DIR = Path(__file__).resolve().parents[1]
+REPO_ROOT = _AI_DIR.parent
 for _path in (_AI_DIR / "src", _AI_DIR / "scripts"):
     _str = str(_path)
     if _str not in sys.path:
@@ -35,6 +36,7 @@ for _path in (_AI_DIR / "src", _AI_DIR / "scripts"):
 from extract_k150k_features import DEFAULT_CHUG_SPLIT_SEED, _load_jsonl_metadata  # noqa: E402
 
 from aiutils.parquet_utils import write_parquet_atomic  # noqa: E402
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 
 def _is_missing(value: Any) -> bool:
@@ -111,6 +113,16 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Overwrite existing metadata cells instead of filling only missing values.",
     )
+    ap.add_argument(
+        "--manifest-out",
+        type=Path,
+        default=None,
+        help=(
+            "Run-provenance JSON sidecar. Defaults to <out>.manifest.json and "
+            "records the input parquet, sidecar, enrichment counters, and exact "
+            "CLI args used to build the derived parquet."
+        ),
+    )
     args = ap.parse_args(argv)
 
     if not args.features_parquet.is_file():
@@ -126,8 +138,34 @@ def main(argv: list[str] | None = None) -> int:
         overwrite=args.overwrite_metadata,
     )
     out_path = args.out or args.features_parquet
+    if args.manifest_out is None:
+        args.manifest_out = out_path.with_suffix(".manifest.json")
     write_parquet_atomic(enriched, out_path, index=False)
-    print(json.dumps({"out": str(out_path), **stats}, sort_keys=True))
+    write_manifest_json(
+        args.manifest_out,
+        {
+            "schema": "k150k-metadata-enrichment-manifest-v1",
+            "stats": stats,
+            "metadata_keys": sorted({key for meta in metadata.values() for key in meta}),
+            "overwrite_metadata": bool(args.overwrite_metadata),
+            "run_provenance": build_run_provenance(
+                entrypoint=Path(__file__),
+                repo_root=REPO_ROOT,
+                argv=sys.argv[1:] if argv is None else argv,
+                args=args,
+                inputs={
+                    "features_parquet": args.features_parquet,
+                    "metadata_jsonl": args.metadata_jsonl,
+                },
+                outputs={"parquet": out_path, "manifest": args.manifest_out},
+            ),
+        },
+    )
+    print(
+        json.dumps(
+            {"out": str(out_path), "manifest": str(args.manifest_out), **stats}, sort_keys=True
+        )
+    )
     return 0
 
 

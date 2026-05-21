@@ -178,7 +178,14 @@ Table materializers and audits use the same schema for durable audit JSON:
 `signal_mix_audit.py --out-json` all record `run_provenance`. Those blocks
 identify source tables, label/score inputs, saliency model inputs where used,
 output table targets, and report targets so refreshed feature-table evidence
-does not depend on shell history.
+can be replayed from the report alone. Derived FULL_FEATURES table builders
+use the same contract: `extract_k150k_features.py`,
+`combine_full_feature_parquets.py`, and
+`enrich_k150k_parquet_metadata.py` write `<out>.manifest.json` by default.
+Those manifests record the source parquet/video/metadata paths, feature
+schema, backend split, filled feature columns, row counts, and original argv
+so refreshed Netflix/K150K/CHUG tables are not anonymous local artifacts and
+replay does not depend on shell history.
 
 The ensemble production validator `ai/scripts/validate_ensemble_seeds.py`
 records `run_provenance` in its `PROMOTE.json` / `HOLD.json` verdicts. That
@@ -446,7 +453,11 @@ python ai/scripts/combine_full_feature_parquets.py \
 The combiner normalizes every input to
 `corpus, source, frame_index, codec, <FULL_FEATURES>, vmaf`, fills
 missing feature columns with `NaN`, and preserves the caller-provided
-corpus label.
+corpus label. It also writes `<out>.manifest.json` by default with
+per-input row counts, missing-feature fill lists, output column order,
+the aggregate corpus distribution, and `run_provenance`. Pass
+`--manifest-out PATH` only when the manifest needs to live next to a
+separate experiment bundle.
 
 ### Loader
 

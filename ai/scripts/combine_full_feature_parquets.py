@@ -27,10 +27,17 @@ from pathlib import Path
 
 import pandas as pd
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
 if __package__ in (None, ""):
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    sys.path.insert(0, str(REPO_ROOT))
+_AI_SRC = REPO_ROOT / "ai" / "src"
+if str(_AI_SRC) not in sys.path:
+    sys.path.insert(0, str(_AI_SRC))
 
-from ai.data.feature_extractor import FULL_FEATURES
+from ai.data.feature_extractor import FULL_FEATURES  # noqa: E402
+
+# isort: split
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 OUTPUT_COLUMNS: tuple[str, ...] = (
     "corpus",
@@ -112,25 +119,69 @@ def main() -> int:
         default=None,
         help="Smoke-test cap applied independently to each shard.",
     )
+    parser.add_argument(
+        "--manifest-out",
+        type=Path,
+        default=None,
+        help=(
+            "Run-provenance JSON sidecar. Defaults to <out>.manifest.json and "
+            "records the input shards, normalized columns, filled feature gaps, "
+            "and exact CLI args used to build the derived parquet."
+        ),
+    )
     args = parser.parse_args()
+    if args.manifest_out is None:
+        args.manifest_out = args.out.with_suffix(".manifest.json")
 
     shards: list[pd.DataFrame] = []
+    input_stats: list[dict[str, object]] = []
     for label, path in args.inputs:
         shard = _normalise_shard(label, path, args.max_rows_per_input)
-        missing = shard.attrs.get("missing_features", [])
+        missing = list(shard.attrs.get("missing_features", []))
         print(
             f"[combine-full] {label}: {len(shard)} rows from {path}"
             + (f" (missing features filled NaN: {missing})" if missing else ""),
             flush=True,
+        )
+        input_stats.append(
+            {
+                "label": label,
+                "path": str(path),
+                "rows": len(shard),
+                "missing_features": missing,
+            }
         )
         shards.append(shard)
 
     combined = pd.concat(shards, ignore_index=True, sort=False)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     combined.to_parquet(args.out, index=False)
+    corpora = {str(key): int(value) for key, value in combined["corpus"].value_counts().items()}
+    write_manifest_json(
+        args.manifest_out,
+        {
+            "schema": "full-feature-parquet-combine-manifest-v1",
+            "stats": {
+                "input_count": len(args.inputs),
+                "output_rows": len(combined),
+                "corpora": corpora,
+                "max_rows_per_input": args.max_rows_per_input,
+            },
+            "inputs": input_stats,
+            "output_columns": list(OUTPUT_COLUMNS),
+            "run_provenance": build_run_provenance(
+                entrypoint=Path(__file__),
+                repo_root=REPO_ROOT,
+                argv=sys.argv[1:],
+                args=args,
+                inputs={"shards": [path for _, path in args.inputs]},
+                outputs={"parquet": args.out, "manifest": args.manifest_out},
+            ),
+        },
+    )
     print(
         f"[combine-full] wrote {args.out}: rows={len(combined)} "
-        f"corpora={combined['corpus'].value_counts().to_dict()}",
+        f"corpora={corpora} manifest={args.manifest_out}",
         flush=True,
     )
     return 0

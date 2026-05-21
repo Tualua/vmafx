@@ -300,4 +300,10 @@ python ai/scripts/enrich_k150k_parquet_metadata.py \
 
 The enrichment utility matches rows by `clip_name`, fills missing CHUG
 side columns, and leaves existing feature/MOS columns untouched unless
-`--overwrite-metadata` is passed.
+`--overwrite-metadata` is passed. It writes
+`<out>.manifest.json` by default, or
+`<features-parquet>.manifest.json` for in-place enrichment, with row-match
+counts, the metadata keys that were available, and the shared
+`run_provenance` block. Keep that manifest with the enriched parquet so a
+later HDR model card can distinguish a freshly extracted table from a
+post-enriched recovery artifact.

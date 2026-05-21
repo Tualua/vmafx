@@ -39054,24 +39054,38 @@ Touched files:
 `changelog.d/added/0684-chug-extraction-report-provenance.md`,
 `docs/rebase-notes.md` (this entry).
 
-## ADR-0628 follow-up — stacked PR ADR collision guard
+## ADR-0668 — AI derived table provenance
 
-**ADR collision gate impact.** The rule-enforcement workflow still blocks
-independent open PRs that add the same ADR number, but it now skips descendant
-stacked PRs whose `baseRefName` chain reaches the current PR branch.
+**Derived-table provenance impact.** This extends the ADR-0661 manifest
+pattern from trainer/report JSONs down to the local FULL_FEATURES parquet
+builders that feed refreshed AI models.
 
 **Key invariants**:
 
-- Child draft PRs in the merge train intentionally contain their parent PR's
-  ADR files; they are not independent ADR-number collisions.
-- Independent open PRs with overlapping added ADR numbers must still fail the
-  `adr-collision-check` job.
-- Keep `gh pr list --json number,headRefName,headRefOid,baseRefName` aligned
-  with the base-branch-chain traversal in `rule-enforcement.yml`.
+- `ai/scripts/extract_k150k_features.py` writes `<out>.manifest.json` by
+  default with feature order, CPU/CUDA extractor split, restart counters,
+  backend worker counts, parquet row count, and shared `run_provenance`.
+- `ai/scripts/combine_full_feature_parquets.py` writes `<out>.manifest.json`
+  by default with input labels, per-input row counts, missing-feature fill
+  lists, corpus distribution, output column order, and shared
+  `run_provenance`.
+- `ai/scripts/enrich_k150k_parquet_metadata.py` writes
+  `<out>.manifest.json` by default with metadata match/update counters,
+  available metadata keys, overwrite policy, and shared `run_provenance`.
+- Existing parquet row schemas are unchanged; the manifest is a sibling local
+  evidence artifact.
 
 Touched files:
-`.github/workflows/rule-enforcement.yml`,
-`.github/AGENTS.md`,
-`scripts/adr/README.md`,
-`changelog.d/fixed/0667-adr-collision-stacked-prs.md`,
+`ai/scripts/extract_k150k_features.py`,
+`ai/scripts/combine_full_feature_parquets.py`,
+`ai/scripts/enrich_k150k_parquet_metadata.py`,
+`ai/tests/test_extract_k150k_features.py`,
+`ai/tests/test_combine_full_feature_parquets.py`,
+`ai/tests/test_enrich_k150k_parquet_metadata.py`,
+`ai/AGENTS.md`,
+`docs/ai/training.md`,
+`docs/ai/chug-ingestion.md`,
+`docs/adr/0668-ai-derived-table-provenance.md`,
+`docs/research/0688-ai-derived-table-provenance.md`,
+`changelog.d/added/0668-ai-derived-table-provenance.md`,
 `docs/rebase-notes.md` (this entry).

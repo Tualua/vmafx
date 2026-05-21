@@ -131,7 +131,19 @@ def test_cli_enriches_existing_parquet(tmp_path: Path) -> None:
 
     summary = json.loads(proc.stdout)
     enriched = pd.read_parquet(out)
+    manifest = json.loads(out.with_suffix(".manifest.json").read_text(encoding="utf-8"))
     assert summary["matched_rows"] == 2
+    assert summary["manifest"] == str(out.with_suffix(".manifest.json"))
     assert enriched.loc[0, "chug_content_name"] == "source-a.mp4"
     assert enriched.loc[1, "split"] == "test"
     assert features.is_file()
+    assert manifest["schema"] == "k150k-metadata-enrichment-manifest-v1"
+    assert manifest["stats"]["matched_rows"] == 2
+    assert manifest["metadata_keys"] == [
+        "chug_content_name",
+        "chug_split_key",
+        "chug_split_policy",
+        "mos_raw_0_100",
+        "split",
+    ]
+    assert manifest["run_provenance"]["schema"] == "ai-run-provenance-v1"
