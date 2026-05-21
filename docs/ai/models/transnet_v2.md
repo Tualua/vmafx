@@ -52,7 +52,10 @@ shot-cut filter shipping with T6-3b) bind to those exact strings.
 The sidecar JSON at `model/tiny/transnet_v2.json` carries the input /
 output names plus `frame_window: 100`, `thumbnail_h: 27`,
 `thumbnail_w: 48`, `boundary_threshold: 0.5` so downstream consumers
-can validate the contract without parsing the ONNX graph.
+can validate the contract without parsing the ONNX graph. Fresh exports add
+ADR-0661 `run_provenance` with the upstream SavedModel paths, wrapped
+SavedModel scratch path, parsed exporter arguments, ONNX output, sidecar
+output, and registry target.
 
 ## Wrapper layer (NTCHW adapter)
 

@@ -38,6 +38,11 @@ downstream feature extractor.
 | License | BSD-3-Clause-Plus-Patent |
 | Trainer / exporter | `ai/scripts/export_tiny_models.py` |
 
+Fresh exports from `ai/scripts/export_tiny_models.py` add ADR-0661
+`run_provenance` to `model/tiny/learned_filter_v1.json`. That block records
+the C3 checkpoint input, parsed exporter arguments, ONNX output, sidecar
+output, and registry target so a refreshed filter baseline can be replayed.
+
 ## Training corpus provenance
 
 | Field | Value |
@@ -89,17 +94,26 @@ extractors.
 # 1. fetch KoNViD-1k (~40 GB) — not redistributed in-tree
 .venv/bin/python ai/scripts/fetch_konvid_1k.py
 
-# 2. train + export all KoNViD baselines (nr_metric_v1 + learned_filter_v1)
-.venv/bin/python ai/scripts/export_tiny_models.py \
-    --konvid-root $HOME/datasets/konvid-1k \
-    --output-dir model/tiny/
+# 2. train the C2/C3 checkpoints
+.venv/bin/python ai/scripts/train_konvid.py \
+    --model both \
+    --output-c2 runs/c2_konvid \
+    --output-c3 runs/c3_konvid \
+    --epochs-c2 50 \
+    --epochs-c3 200 \
+    --seed 42
 
-# 3. quantise to INT8
+# 3. export the ONNX + sidecar + registry rows
+.venv/bin/python ai/scripts/export_tiny_models.py \
+    --c2-ckpt runs/c2_konvid/last.ckpt \
+    --c3-ckpt runs/c3_konvid/last.ckpt
+
+# 4. quantise to INT8
 .venv/bin/python ai/scripts/ptq_dynamic.py \
     --model model/tiny/learned_filter_v1.onnx \
     --output model/tiny/learned_filter_v1.int8.onnx
 
-# 4. validate against the registry
+# 5. validate against the registry
 .venv/bin/python ai/scripts/validate_model_registry.py
 ```
 

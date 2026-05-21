@@ -69,8 +69,10 @@ import sys
 from pathlib import Path
 
 from aiutils.file_utils import sha256
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
 TINY_DIR = REPO_ROOT / "model" / "tiny"
 REGISTRY = TINY_DIR / "registry.json"
 
@@ -338,45 +340,41 @@ def _verify_parity(onnx_path: Path, wrapped_sm_dir: Path, *, trials: int = 3) ->
     print(f"[parity] worst max-abs-diff {worst:.3e} < 1e-4 -> OK")
 
 
-def _write_sidecar(onnx_path: Path) -> Path:
+def _write_sidecar(onnx_path: Path, *, run_provenance: dict[str, object] | None = None) -> Path:
     sidecar = onnx_path.with_suffix(".json")
-    sidecar.write_text(
-        json.dumps(
-            {
-                "id": "transnet_v2",
-                "kind": "shot_detector",
-                "onnx": onnx_path.name,
-                "opset": 17,
-                "input_name": "frames",
-                "output_name": "boundary_logits",
-                "frame_window": WINDOW,
-                "thumbnail_h": HEIGHT,
-                "thumbnail_w": WIDTH,
-                "channels": CHANNELS,
-                "boundary_threshold": 0.5,
-                "smoke": False,
-                "name": "vmaf_tiny_transnet_v2_v1",
-                "license": "MIT",
-                "license_url": (f"{UPSTREAM_REPO}/blob/{UPSTREAM_COMMIT}/LICENSE"),
-                "upstream_repo": UPSTREAM_REPO,
-                "upstream_commit": UPSTREAM_COMMIT,
-                "notes": (
-                    "TransNet V2 shot-boundary detector (T6-3a-followup). "
-                    "100-frame window of 27x48 RGB thumbnails -> per-frame "
-                    "shot-boundary logits. Real upstream weights from "
-                    "Soucek & Lokoc 2020 (MIT). "
-                    "Wrapper transposes NTCHW->NTHWC and selects only the "
-                    "single-frame logits output; ColorHistograms's rank-2 "
-                    "UnsortedSegmentSum rewritten to ScatterND for ONNX "
-                    "opset-17 compatibility. See ADR-0261 + "
-                    "docs/ai/models/transnet_v2.md."
-                ),
-            },
-            indent=2,
-            sort_keys=True,
-        )
-        + "\n"
-    )
+    payload = {
+        "id": "transnet_v2",
+        "kind": "shot_detector",
+        "onnx": onnx_path.name,
+        "opset": 17,
+        "input_name": "frames",
+        "output_name": "boundary_logits",
+        "frame_window": WINDOW,
+        "thumbnail_h": HEIGHT,
+        "thumbnail_w": WIDTH,
+        "channels": CHANNELS,
+        "boundary_threshold": 0.5,
+        "smoke": False,
+        "name": "vmaf_tiny_transnet_v2_v1",
+        "license": "MIT",
+        "license_url": (f"{UPSTREAM_REPO}/blob/{UPSTREAM_COMMIT}/LICENSE"),
+        "upstream_repo": UPSTREAM_REPO,
+        "upstream_commit": UPSTREAM_COMMIT,
+        "notes": (
+            "TransNet V2 shot-boundary detector (T6-3a-followup). "
+            "100-frame window of 27x48 RGB thumbnails -> per-frame "
+            "shot-boundary logits. Real upstream weights from "
+            "Soucek & Lokoc 2020 (MIT). "
+            "Wrapper transposes NTCHW->NTHWC and selects only the "
+            "single-frame logits output; ColorHistograms's rank-2 "
+            "UnsortedSegmentSum rewritten to ScatterND for ONNX "
+            "opset-17 compatibility. See ADR-0261 + "
+            "docs/ai/models/transnet_v2.md."
+        ),
+    }
+    if run_provenance is not None:
+        payload["run_provenance"] = run_provenance
+    write_manifest_json(sidecar, payload)
     return sidecar
 
 
@@ -419,7 +417,7 @@ def _update_registry(onnx_path: Path) -> None:
     REGISTRY.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n")
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--upstream-dir",
@@ -450,7 +448,8 @@ def main() -> None:
         action="store_true",
         help="Skip op-allowlist + TF parity verification",
     )
-    args = parser.parse_args()
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = parser.parse_args(raw_argv)
 
     _verify_upstream(args.upstream_dir)
     print(f"[upstream] verified saved_model.pb + variables under {args.upstream_dir}")
@@ -471,7 +470,26 @@ def main() -> None:
     if args.no_registry:
         return
 
-    sidecar = _write_sidecar(args.output)
+    sidecar = _write_sidecar(
+        args.output,
+        run_provenance=build_run_provenance(
+            entrypoint=SCRIPT_PATH,
+            repo_root=REPO_ROOT,
+            argv=raw_argv,
+            args=args,
+            inputs={
+                "upstream_dir": args.upstream_dir,
+                "saved_model_pb": args.upstream_dir / "saved_model.pb",
+                "variables_data": args.upstream_dir / "variables" / "variables.data-00000-of-00001",
+            },
+            outputs={
+                "wrapped_savedmodel": args.wrapped_savedmodel,
+                "onnx": args.output,
+                "sidecar": args.output.with_suffix(".json"),
+                "registry": REGISTRY,
+            },
+        ),
+    )
     print(f"[sidecar] wrote {sidecar}")
     _update_registry(args.output)
     print(f"[registry] updated {REGISTRY}")

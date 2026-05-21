@@ -47,6 +47,12 @@ reference stream.
 | License | BSD-3-Clause-Plus-Patent |
 | Trainer / exporter | `ai/scripts/train_konvid.py` + `ai/scripts/export_tiny_models.py` |
 
+Fresh exports from `ai/scripts/export_tiny_models.py` add ADR-0661
+`run_provenance` to `model/tiny/nr_metric_v1.json`. That block records the
+checkpoint input, parsed exporter arguments, ONNX output, sidecar output, and
+registry target so a refreshed C2 baseline can be traced without relying on
+shell history.
+
 ## Training corpus provenance
 
 | Field | Value |
@@ -105,18 +111,26 @@ vmaf_dnn_session_close(session);
 # 2. extract middle frames + convert to corpus JSONL
 .venv/bin/python ai/scripts/konvid_1k_to_corpus_jsonl.py
 
-# 3. train
+# 3. train the C2/C3 checkpoints
 .venv/bin/python ai/scripts/train_konvid.py \
-    --corpus-jsonl build_artifacts/konvid_1k.jsonl \
-    --output model/tiny/nr_metric_v1.onnx \
-    --epochs 50 --seed 42
+    --model both \
+    --output-c2 runs/c2_konvid \
+    --output-c3 runs/c3_konvid \
+    --epochs-c2 50 \
+    --epochs-c3 200 \
+    --seed 42
 
-# 4. quantise to INT8
+# 4. export the ONNX + sidecar + registry rows
+.venv/bin/python ai/scripts/export_tiny_models.py \
+    --c2-ckpt runs/c2_konvid/last.ckpt \
+    --c3-ckpt runs/c3_konvid/last.ckpt
+
+# 5. quantise to INT8
 .venv/bin/python ai/scripts/ptq_dynamic.py \
     --model model/tiny/nr_metric_v1.onnx \
     --output model/tiny/nr_metric_v1.int8.onnx
 
-# 5. validate against the registry
+# 6. validate against the registry
 .venv/bin/python ai/scripts/validate_model_registry.py
 ```
 

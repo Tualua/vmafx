@@ -54,7 +54,9 @@ The sidecar JSON at `model/tiny/fastdvdnet_pre.json` carries the input /
 output names plus `frame_window: 5`, `centre_index: 2` so downstream
 consumers can validate the contract without parsing the ONNX graph. It
 also records the upstream commit pin and weight checksum for
-reproducibility.
+reproducibility. Fresh exports add ADR-0661 `run_provenance` with the
+requested upstream directory, `model.pth`, `models.py`, parsed exporter
+arguments, ONNX output, sidecar output, and registry target.
 
 ## Provenance and license attribution
 

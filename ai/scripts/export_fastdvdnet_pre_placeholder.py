@@ -42,8 +42,10 @@ import torch
 from torch import nn
 
 from aiutils.file_utils import sha256
+from aiutils.run_manifest import build_run_provenance, write_manifest_json
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
 TINY_DIR = REPO_ROOT / "model" / "tiny"
 REGISTRY = TINY_DIR / "registry.json"
 
@@ -106,33 +108,30 @@ def _export(onnx_path: Path, height: int, width: int, opset: int) -> None:
     )
 
 
-def _write_sidecar(onnx_path: Path) -> Path:
+def _write_sidecar(onnx_path: Path, *, run_provenance: dict[str, object] | None = None) -> Path:
     sidecar = onnx_path.with_suffix(".json")
-    sidecar.write_text(
-        json.dumps(
-            {
-                "id": "fastdvdnet_pre",
-                "kind": "filter",
-                "onnx": onnx_path.name,
-                "opset": 17,
-                "input_name": "frames",
-                "output_name": "denoised",
-                "frame_window": 5,
-                "centre_index": 2,
-                "smoke": True,
-                "name": "vmaf_tiny_fastdvdnet_pre_placeholder_v0",
-                "notes": (
-                    "Placeholder FastDVDnet temporal pre-filter weights "
-                    "(T6-7). 5-frame window [t-2, t-1, t, t+1, t+2] -> "
-                    "denoised frame t. SMOKE-ONLY: random init, not "
-                    "trained. Real upstream weights tracked under T6-7b. "
-                    "See docs/ai/models/fastdvdnet_pre.md."
-                ),
-            },
-            indent=2,
-        )
-        + "\n"
-    )
+    payload = {
+        "id": "fastdvdnet_pre",
+        "kind": "filter",
+        "onnx": onnx_path.name,
+        "opset": 17,
+        "input_name": "frames",
+        "output_name": "denoised",
+        "frame_window": 5,
+        "centre_index": 2,
+        "smoke": True,
+        "name": "vmaf_tiny_fastdvdnet_pre_placeholder_v0",
+        "notes": (
+            "Placeholder FastDVDnet temporal pre-filter weights "
+            "(T6-7). 5-frame window [t-2, t-1, t, t+1, t+2] -> "
+            "denoised frame t. SMOKE-ONLY: random init, not "
+            "trained. Real upstream weights tracked under T6-7b. "
+            "See docs/ai/models/fastdvdnet_pre.md."
+        ),
+    }
+    if run_provenance is not None:
+        payload["run_provenance"] = run_provenance
+    write_manifest_json(sidecar, payload)
     return sidecar
 
 
@@ -165,7 +164,7 @@ def _update_registry(onnx_path: Path) -> None:
     REGISTRY.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n")
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--output",
@@ -181,13 +180,27 @@ def main() -> None:
         action="store_true",
         help="Skip registry.json + sidecar update (dry-run)",
     )
-    args = parser.parse_args()
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = parser.parse_args(raw_argv)
 
     _export(args.output, args.height, args.width, args.opset)
     print(f"[export] wrote {args.output} ({args.output.stat().st_size} bytes)")
     if args.no_registry:
         return
-    sidecar = _write_sidecar(args.output)
+    sidecar = _write_sidecar(
+        args.output,
+        run_provenance=build_run_provenance(
+            entrypoint=SCRIPT_PATH,
+            repo_root=REPO_ROOT,
+            argv=raw_argv,
+            args=args,
+            outputs={
+                "onnx": args.output,
+                "sidecar": args.output.with_suffix(".json"),
+                "registry": REGISTRY,
+            },
+        ),
+    )
     print(f"[export] wrote {sidecar}")
     _update_registry(args.output)
     print(f"[export] updated {REGISTRY}")

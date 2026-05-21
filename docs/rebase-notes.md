@@ -7,6 +7,25 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## feat/dnn-exporter-manifest-provenance (ADR-0661)
+
+**No upstream rebase impact**: this touches fork-local AI exporter tooling,
+tiny-model docs, ADR/research notes, and changelog fragments. Upstream
+Netflix/vmaf does not ship these DNN feature-model exporter sidecars.
+
+Smoke:
+`.venv/bin/python -m pytest ai/tests/test_dnn_exporter_run_provenance.py -q`
+
+Touched files: `ai/scripts/export_tiny_models.py`,
+`ai/scripts/export_fastdvdnet_pre.py`,
+`ai/scripts/export_fastdvdnet_pre_placeholder.py`,
+`ai/scripts/export_transnet_v2.py`,
+`ai/scripts/export_transnet_v2_placeholder.py`,
+`ai/tests/test_dnn_exporter_run_provenance.py`, `docs/ai/models/*.md`,
+`docs/ai/training.md`, `docs/research/0679-*.md`,
+`docs/adr/0661-ai-run-manifest-provenance.md`,
+`changelog.d/added/0679-*.md`, and this file.
+
 ## feat/ensemble-manifest-provenance (ADR-0661)
 
 **No upstream rebase impact**: this touches fork-local AI ensemble training

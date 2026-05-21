@@ -31,7 +31,13 @@ for their model sidecars; v1/v2 also copy it into their metrics JSON so a
 gate-failed run can still be traced. The `vmaf_tiny_v2`, `vmaf_tiny_v3`, and
 `vmaf_tiny_v4` exporters use the same block for their ONNX sidecars so exported
 artifacts identify the checkpoint input and output targets. The
-`export_ensemble_v2_seeds.py` production seed exporter also uses the same block
+KoNViD C2/C3 exporter (`export_tiny_models.py`), FastDVDnet pre-filter
+exporters (`export_fastdvdnet_pre.py` and its placeholder variant), and TransNet
+V2 exporters (`export_transnet_v2.py` and its placeholder variant) also record
+the same block in model sidecars so DNN feature-model refreshes identify the
+checkpoint/upstream-weight inputs, parsed exporter arguments, ONNX output,
+sidecar output, and registry target. The `export_ensemble_v2_seeds.py`
+production seed exporter also uses the same block
 for per-seed sidecars so a seed refresh records the corpus, PROMOTE verdict,
 argv, per-seed output targets, and optional registry target. Tiny-VMAF evaluation
 reports (`eval_loso_vmaf_tiny_v3.py`, `eval_loso_vmaf_tiny_v4.py`,
@@ -107,6 +113,7 @@ label/score inputs, report thresholds, output targets, and argv.
 | Leave per-EP quantisation reports as plain JSON | No change to a gitignored investigation harness | GPU-EP PTQ evidence would keep PLCC tables but lose the registry, hardware tag, EP list, and optional baseline context | Rejected because quantisation reports are copied into model-card and research evidence before int8 models ship |
 | Leave Phase F recipe calibration as plain JSON | No runtime loader delta | Calibrated recipe JSON would not identify which corpus snapshot and row cap produced operator-facing `vmaf-tune auto` behaviour | Rejected because recipe JSON is a shipped tuning input, not a scratch report |
 | Leave NR threshold calibration as plain JSON | No change to a slow calibration harness | `--fast-nr` would pick up a threshold without recording the corpus, CRF grid, model input, or report path that justified it | Rejected because NR thresholds directly affect user-facing bisect behaviour |
+| Leave DNN feature-model exporters as legacy sidecars | Avoids touching older weight-conversion scripts | Fresh C2/C3, FastDVDnet, or TransNet sidecars would record runtime shape but not the checkpoint/upstream inputs or exporter command that produced them | Rejected because those sidecars are the reproducibility boundary for shipped DNN feature models |
 
 ## Consequences
 
@@ -139,6 +146,9 @@ label/score inputs, report thresholds, output targets, and argv.
   context needed to replay `vmaf-tune auto` content-recipe thresholds.
 - **Positive**: NR threshold calibration JSON now carries the corpus, model,
   CRF-grid, and report context needed to replay `--fast-nr` skip thresholds.
+- **Positive**: DNN feature-model sidecars now carry the checkpoint or upstream
+  weight inputs and exporter arguments needed to replay C2/C3, FastDVDnet, and
+  TransNet refreshes.
 - **Positive**: CHUG manifests stay CHUG-named even though the implementation
   shares the KonViD training loop.
 - **Negative**: sidecars become slightly larger and include local path names.

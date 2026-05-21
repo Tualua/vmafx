@@ -122,10 +122,11 @@ shared. FR regressor runs (`train_fr_regressor.py`,
 same block in their model sidecars; v1/v2 also include it in the metrics
 JSON so failed gates still preserve the exact table path, arguments, and
 output targets used for the run. The `vmaf_tiny_v2`, `vmaf_tiny_v3`,
-`vmaf_tiny_v4`, and `fr_regressor_v2_ensemble_v1_seed*` exporters record the
-same block in their sidecar JSON so an exported ONNX can be traced back to the
-checkpoint or corpus, export command, gate verdict, and output paths used to
-create it. The direct `train_fr_regressor_v2_ensemble.py` smoke/production
+`vmaf_tiny_v4`, C2/C3 KoNViD baselines, FastDVDnet pre-filter, TransNet V2,
+and `fr_regressor_v2_ensemble_v1_seed*` exporters record the same block in
+their sidecar JSON so an exported ONNX can be traced back to the checkpoint,
+upstream weights, corpus, export command, gate verdict, and output paths used
+to create it. The direct `train_fr_regressor_v2_ensemble.py` smoke/production
 trainer also records `run_provenance` in `fr_regressor_v2_ensemble_v1.json`,
 covering the corpus input, member ONNX outputs, registry target, and manifest
 path.

@@ -27,10 +27,12 @@ import json
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
 sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 
 from aiutils.file_utils import sha256  # noqa: E402
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 from vmaf_train.models import LearnedFilter, NRMetric  # noqa: E402
 
 TINY_DIR = REPO_ROOT / "model" / "tiny"
@@ -74,22 +76,26 @@ def _export_one(  # type: ignore[no-untyped-def]
     )
 
 
-def _write_sidecar(model_id: str, onnx_path: Path, kind: str, notes: str) -> Path:
+def _write_sidecar(
+    model_id: str,
+    onnx_path: Path,
+    kind: str,
+    notes: str,
+    *,
+    run_provenance: dict[str, object] | None = None,
+) -> Path:
     sidecar = TINY_DIR / f"{model_id}.json"
-    sidecar.write_text(
-        json.dumps(
-            {
-                "id": model_id,
-                "kind": kind,
-                "onnx": onnx_path.name,
-                "opset": 17,
-                "sha256": sha256(onnx_path),
-                "notes": notes,
-            },
-            indent=2,
-        )
-        + "\n"
-    )
+    payload = {
+        "id": model_id,
+        "kind": kind,
+        "onnx": onnx_path.name,
+        "opset": 17,
+        "sha256": sha256(onnx_path),
+        "notes": notes,
+    }
+    if run_provenance is not None:
+        payload["run_provenance"] = run_provenance
+    write_manifest_json(sidecar, payload)
     return sidecar
 
 
@@ -104,13 +110,14 @@ def _update_registry(*entries: dict[str, object]) -> None:
     REGISTRY.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n")
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--c2-ckpt", type=Path, default=C2_CKPT_DEFAULT)
     parser.add_argument("--c3-ckpt", type=Path, default=C3_CKPT_DEFAULT)
     parser.add_argument("--c2-id", default="nr_metric_v1")
     parser.add_argument("--c3-id", default="learned_filter_v1")
-    args = parser.parse_args()
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = parser.parse_args(raw_argv)
 
     TINY_DIR.mkdir(parents=True, exist_ok=True)
     new_entries = []
@@ -134,6 +141,18 @@ def main() -> int:
                 "Trained on KoNViD-1k middle-frames (1200 clips, "
                 "~973 train / ~106 val) at 224×224 grayscale. "
                 "Exported via ai/scripts/export_tiny_models.py."
+            ),
+            run_provenance=build_run_provenance(
+                entrypoint=SCRIPT_PATH,
+                repo_root=REPO_ROOT,
+                argv=raw_argv,
+                args=args,
+                inputs={"c2_checkpoint": args.c2_ckpt},
+                outputs={
+                    "onnx": c2_onnx,
+                    "sidecar": TINY_DIR / f"{args.c2_id}.json",
+                    "registry": REGISTRY,
+                },
             ),
         )
         new_entries.append(
@@ -171,6 +190,18 @@ def main() -> int:
                 "Trained self-supervised on KoNViD-1k middle-frames + "
                 "synthetic gaussian-blur σ=1.2 + JPEG-Q35 degradation. "
                 "Exported via ai/scripts/export_tiny_models.py."
+            ),
+            run_provenance=build_run_provenance(
+                entrypoint=SCRIPT_PATH,
+                repo_root=REPO_ROOT,
+                argv=raw_argv,
+                args=args,
+                inputs={"c3_checkpoint": args.c3_ckpt},
+                outputs={
+                    "onnx": c3_onnx,
+                    "sidecar": TINY_DIR / f"{args.c3_id}.json",
+                    "registry": REGISTRY,
+                },
             ),
         )
         new_entries.append(
