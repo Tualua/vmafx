@@ -87,6 +87,11 @@ def test_promote_emitted_on_gate_pass(passing_loso_dir: Path) -> None:
     assert payload["adr"] == "ADR-0309"
     assert payload["parent_adr"] == "ADR-0303"
     assert payload["corpus"]["sha256"] is not None  # tmp_path exists
+    provenance = payload["run_provenance"]
+    assert provenance["schema"] == "ai-run-provenance-v1"
+    assert provenance["entrypoint"]["path"] == "ai/scripts/validate_ensemble_seeds.py"
+    assert provenance["inputs"]["loso_dir"]["kind"] == "directory"
+    assert provenance["outputs"]["verdict"]["path"].endswith("PROMOTE.json")
 
 
 def test_hold_emitted_on_spread_failure(spread_failing_loso_dir: Path) -> None:

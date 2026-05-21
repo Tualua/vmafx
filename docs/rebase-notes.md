@@ -38512,3 +38512,42 @@ Touched files:
 `docs/research/0664-ai-fr-regressor-run-provenance.md`,
 `changelog.d/added/0664-ai-fr-regressor-run-provenance.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0661 follow-up — AI eval report run provenance
+
+**AI-eval/validate provenance impact.** This widens ADR-0661 from
+model-producing sidecars to the tiny-VMAF evaluation and validation report
+families.
+
+**Key invariants**:
+
+- `eval_loso_vmaf_tiny_v3.py`, `eval_loso_vmaf_tiny_v4.py`,
+  `eval_loso_vmaf_tiny_v5.py`, and `eval_multiseed_v3_v4.py` report JSON files
+  carry `run_provenance` built by `aiutils.run_manifest.build_run_provenance()`.
+- Evaluation reports record the feature parquet input(s), parsed eval
+  hyperparameters, original argv, and `report_target` output path.
+- `validate_ensemble_seeds.py` verdict JSON files carry the same schema and
+  record `loso_dir`, `corpus_root`, seed list, gate thresholds, and the
+  `PROMOTE.json` / `HOLD.json` output path.
+- Do not restore per-script `json.dumps(...).write_text(...)` report writers
+  when rebasing eval-script changes; use `write_manifest_json()` so the JSON
+  shape and newline handling stay shared.
+
+Touched files:
+`ai/scripts/eval_loso_vmaf_tiny_v3.py`,
+`ai/scripts/eval_loso_vmaf_tiny_v4.py`,
+`ai/scripts/eval_loso_vmaf_tiny_v5.py`,
+`ai/scripts/eval_multiseed_v3_v4.py`,
+`ai/scripts/validate_ensemble_seeds.py`,
+`ai/tests/test_eval_report_run_provenance.py`,
+`ai/tests/test_validate_ensemble_seeds.py`,
+`docs/ai/training.md`,
+`docs/ai/ensemble-v2-real-corpus-retrain-runbook.md`,
+`docs/ai/models/vmaf_tiny_v3.md`,
+`docs/ai/models/vmaf_tiny_v4.md`,
+`docs/ai/models/vmaf_tiny_v5.md`,
+`docs/adr/0661-ai-run-manifest-provenance.md`,
+`docs/research/0665-ai-eval-report-run-provenance.md`,
+`ai/src/aiutils/AGENTS.md`,
+`changelog.d/added/0665-ai-eval-report-run-provenance.md`,
+`docs/rebase-notes.md` (this entry).

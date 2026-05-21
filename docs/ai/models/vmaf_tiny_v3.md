@@ -96,6 +96,12 @@ Recipe held identical between v2 and v3 — only the architecture
 function differs. Per-fold metrics are pinned in
 `runs/vmaf_tiny_v3_loso_metrics.json`.
 
+Fresh LOSO reports from `ai/scripts/eval_loso_vmaf_tiny_v3.py` include a
+`run_provenance` block with the evaluation entrypoint, argv, parsed
+hyperparameters, feature parquet input, and report target path. This lets
+refreshed v3 numbers be compared against older runs without guessing which
+local feature table produced them.
+
 The PLCC delta is small in absolute terms but the variance shrinks
 ~30 % — v3 is a more *consistent* estimator across hold-out clips.
 SROCC also improves by 0.0018 mean, suggesting the ranking signal is

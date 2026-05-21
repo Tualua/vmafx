@@ -95,8 +95,8 @@ The sidecar `model/tiny/vmaf_tiny_fr_v1.json` pins:
 
 ## Run provenance sidecars
 
-Training scripts that emit model manifests should also emit a
-`run_provenance` block. The shared helper is
+Training, evaluation, and validation scripts that emit durable JSON reports
+should emit a `run_provenance` block. The shared helper is
 `aiutils.run_manifest.build_run_provenance()`; use it instead of adding
 one-off JSON for paths or command-line arguments.
 
@@ -109,7 +109,7 @@ one-off JSON for paths or command-line arguments.
 | `argv` | Original command-line arguments after wrapper normalization. |
 | `args` | Parsed arguments sorted into deterministic JSON values. |
 | `inputs` | Named corpus, feature, metadata, or profile paths with existence and file hashes. |
-| `outputs` | Named model, card, and manifest paths. Future outputs may be marked `missing` before they are written. |
+| `outputs` | Named model, card, manifest, metrics, or report paths. Future outputs may be marked `missing` before they are written. |
 | `shared_trainer` | Optional implementation script when a wrapper delegates to a shared trainer. |
 
 KonViD MOS runs record `ai/scripts/train_konvid_mos_head.py` as the
@@ -125,6 +125,19 @@ output targets used for the run. The `vmaf_tiny_v2`, `vmaf_tiny_v3`, and
 `vmaf_tiny_v4` exporters record the same block in their sidecar JSON so an
 exported ONNX can be traced back to the checkpoint, export command, and output
 paths used to create it.
+
+The tiny-VMAF evaluation reports also carry the same block:
+`eval_loso_vmaf_tiny_v3.py`, `eval_loso_vmaf_tiny_v4.py`,
+`eval_loso_vmaf_tiny_v5.py`, and `eval_multiseed_v3_v4.py` write
+`run_provenance` into their report JSONs. Evaluation provenance records the
+feature parquet input, parsed evaluation hyperparameters, original argv, and
+the report target path. Use that block when comparing refreshed LOSO or
+multi-seed numbers instead of relying on shell history.
+
+The ensemble production validator `ai/scripts/validate_ensemble_seeds.py`
+records `run_provenance` in its `PROMOTE.json` / `HOLD.json` verdicts. That
+block identifies the LOSO artifact directory, corpus root snapshot input,
+thresholds, seed list, and verdict output path.
 
 ## MOS label materialization
 

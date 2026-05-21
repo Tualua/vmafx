@@ -32,7 +32,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import json
 import os
 import sys
 from datetime import datetime, timezone
@@ -41,7 +40,9 @@ from pathlib import Path
 # Hoist the gate evaluator from scripts/ci/ so we share a single
 # source of truth for the threshold constants. ADR-0303 forbids
 # divergent copies of the gate logic.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+_SCRIPT_PATH = Path(__file__).resolve()
+_REPO_ROOT = _SCRIPT_PATH.parents[2]
+sys.path.insert(0, str(_REPO_ROOT / "ai" / "src"))
 sys.path.insert(0, str(_REPO_ROOT / "scripts" / "ci"))
 
 from ensemble_prod_gate import (  # noqa: E402  # type: ignore[import-not-found]  (sys.path edit above)
@@ -51,6 +52,8 @@ from ensemble_prod_gate import (  # noqa: E402  # type: ignore[import-not-found]
     evaluate_gate,
     load_seed_jsons,
 )
+
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 
 def build_argparser() -> argparse.ArgumentParser:
@@ -154,9 +157,14 @@ def _build_verdict(
     corpus_snapshot: dict,
     seeds: list[int],
     loso_dir: Path,
+    corpus_root: Path,
+    mean_threshold: float,
+    spread_max: float,
+    argv: list[str],
 ) -> dict:
     """Assemble the verdict payload written to PROMOTE.json / HOLD.json."""
     verdict_kind = "PROMOTE" if report["passed"] else "HOLD"
+    out_path = loso_dir / f"{verdict_kind}.json"
     if verdict_kind == "PROMOTE":
         recommendation = (
             "flip seeds smoke->false in model/tiny/registry.json "
@@ -180,6 +188,20 @@ def _build_verdict(
         "recommendation": recommendation,
         "adr": "ADR-0309",
         "parent_adr": "ADR-0303",
+        "run_provenance": build_run_provenance(
+            entrypoint=_SCRIPT_PATH,
+            repo_root=_REPO_ROOT,
+            argv=argv,
+            args={
+                "corpus_root": corpus_root,
+                "loso_dir": loso_dir,
+                "mean_threshold": mean_threshold,
+                "plcc_spread_max": spread_max,
+                "seeds": seeds,
+            },
+            inputs={"corpus_root": corpus_root, "loso_dir": loso_dir},
+            outputs={"verdict": out_path},
+        ),
     }
 
 
@@ -201,9 +223,7 @@ def _failure_aspects(report: dict) -> list[str]:
 def write_verdict(verdict: dict, loso_dir: Path) -> Path:
     """Write the verdict to PROMOTE.json or HOLD.json under ``loso_dir``."""
     out_path = loso_dir / f"{verdict['verdict']}.json"
-    with out_path.open("w", encoding="utf-8") as fh:
-        json.dump(verdict, fh, indent=2, sort_keys=True)
-        fh.write("\n")
+    write_manifest_json(out_path, verdict)
     return out_path
 
 
@@ -213,6 +233,7 @@ def run_validation(
     corpus_root: Path,
     mean_threshold: float = SHIP_GATE_MEAN_PLCC,
     spread_max: float = SHIP_GATE_PLCC_SPREAD_MAX,
+    argv: list[str] | None = None,
 ) -> tuple[dict, Path]:
     """Run the full validate flow; returns ``(verdict, written_path)``.
 
@@ -226,13 +247,23 @@ def run_validation(
         per_seed_min=mean_threshold,
     )
     corpus_snapshot = snapshot_corpus(corpus_root)
-    verdict = _build_verdict(report, corpus_snapshot, seeds, loso_dir)
+    verdict = _build_verdict(
+        report,
+        corpus_snapshot,
+        seeds,
+        loso_dir,
+        corpus_root,
+        mean_threshold,
+        spread_max,
+        argv or [],
+    )
     written = write_verdict(verdict, loso_dir)
     return verdict, written
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_argparser()
+    raw_argv = sys.argv[1:] if argv is None else argv
     args = parser.parse_args(argv)
 
     try:
@@ -250,7 +281,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
-        verdict, written = run_validation(args.loso_dir, seeds, args.corpus_root)
+        verdict, written = run_validation(args.loso_dir, seeds, args.corpus_root, argv=raw_argv)
     except (FileNotFoundError, ValueError) as exc:
         print(f"[validate-ensemble] error: {exc}", file=sys.stderr)
         return 2

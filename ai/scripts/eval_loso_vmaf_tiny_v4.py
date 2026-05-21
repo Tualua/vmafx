@@ -20,14 +20,15 @@ statistics so the v4 → v3 PLCC delta can be cited directly in the ADR
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 import time
 from pathlib import Path
 
 import numpy as np
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
+sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 sys.path.insert(0, str(REPO_ROOT))
 
 from ai.scripts.train_vmaf_tiny_v4 import CANONICAL_6, _train  # noqa: E402
@@ -142,25 +143,29 @@ def main() -> int:
         flush=True,
     )
 
-    args.out_json.parent.mkdir(parents=True, exist_ok=True)
-    args.out_json.write_text(
-        json.dumps(
-            {
-                "arch": "mlp_large",
-                "model": "vmaf_tiny_v4",
-                "parquet": str(args.parquet),
-                "n_folds": len(sources),
-                "epochs": args.epochs,
-                "lr": args.lr,
-                "batch_size": args.batch_size,
-                "seed": args.seed,
-                "per_fold": fold_metrics,
-                "aggregate": aggregate,
-            },
-            indent=2,
-        )
-        + "\n"
-    )
+    from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
+    report = {
+        "arch": "mlp_large",
+        "model": "vmaf_tiny_v4",
+        "parquet": str(args.parquet),
+        "n_folds": len(sources),
+        "epochs": args.epochs,
+        "lr": args.lr,
+        "batch_size": args.batch_size,
+        "seed": args.seed,
+        "per_fold": fold_metrics,
+        "aggregate": aggregate,
+        "run_provenance": build_run_provenance(
+            entrypoint=SCRIPT_PATH,
+            repo_root=REPO_ROOT,
+            argv=sys.argv[1:],
+            args=args,
+            inputs={"parquet": args.parquet},
+            outputs={"report_target": str(args.out_json)},
+        ),
+    }
+    write_manifest_json(args.out_json, report)
     print(f"[loso-v4] wrote {args.out_json}")
     return 0
 

@@ -17,8 +17,9 @@ When writing a new script in `ai/scripts/` or a new module in
 4. **Atomic Parquet writes:** Use `write_parquet_atomic()` from `aiutils.parquet_utils`
    to safely write DataFrames with cleanup on failure.
 5. **Run provenance:** Use `aiutils.run_manifest.build_run_provenance()` for
-   training/export sidecars that need stable entrypoint, args, input, and
-   output metadata. Do not hand-roll path hashing in each script.
+   training/export sidecars and evaluation/validation reports that need stable
+   entrypoint, args, input, and output metadata. Do not hand-roll path hashing
+   in each script.
 6. **CLI setup:** (Opt-in) Logging and argument parser helpers are in `aiutils.cli_helpers`
    (see that module for factory functions). Not all scripts need consolidation yet;
    document custom patterns in your script's comments if you deviate.

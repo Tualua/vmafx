@@ -144,7 +144,10 @@ The validator:
   (single source of truth for the threshold constants).
 - Snapshots the corpus YUV file list (sha256 over sorted `relpath\tsize`,
   not YUV bytes — that would dominate validate runtime on a 37 GB corpus).
-- Writes `runs/ensemble_v2_real/PROMOTE.json` *or* `HOLD.json`.
+- Writes `runs/ensemble_v2_real/PROMOTE.json` *or* `HOLD.json`, including a
+  `run_provenance` block with the validator entrypoint, argv, seed list,
+  threshold arguments, LOSO directory input, corpus root input, and verdict
+  output path.
 - Exits 0 on PROMOTE, 1 on HOLD, 2 on input error.
 
 ---
@@ -163,6 +166,7 @@ The validator:
     "per_seed_plccs": {"0": 0.961, "1": 0.962, ...}
   },
   "corpus": {"sha256": "...", "yuv_count": 79, ...},
+  "run_provenance": {"schema": "ai-run-provenance-v1", "...": "..."},
   "recommendation": "flip seeds smoke->false in model/tiny/registry.json ..."
 }
 ```

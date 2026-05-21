@@ -121,6 +121,11 @@ python3 ai/scripts/eval_loso_vmaf_tiny_v4.py \
     --out-json runs/vmaf_tiny_v4_loso_metrics.json
 ```
 
+The generated LOSO report includes `run_provenance` with the evaluation
+entrypoint, original argv, parsed hyperparameters, feature parquet input, and
+report target path. Treat that block as the run identity when comparing v4
+refreshes or multi-run audit output.
+
 Hyperparameters (identical to v2 / v3 — only the architecture changes):
 
 - Optimiser: Adam @ `lr=1e-3`.

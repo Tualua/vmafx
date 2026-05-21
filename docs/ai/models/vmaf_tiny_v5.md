@@ -23,6 +23,10 @@ model card finds the deferral verdict instead of a missing document.
   before any new v5 experiment. The extractor now emits the current
   `FULL_FEATURES` schema instead of the historical canonical-6-only
   table, while the v5 trainer still selects only canonical-6 + `vmaf`.
+- Any exploratory `ai/scripts/eval_loso_vmaf_tiny_v5.py` report includes
+  `run_provenance` for both the base and extra parquet inputs plus the report
+  target. Use that block to compare corpus-expansion experiments; it does not
+  change the current deferred ship verdict.
 
 ## See also
 

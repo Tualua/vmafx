@@ -9,10 +9,10 @@
 
 The fork is refreshing many AI-derived artifacts at once: Netflix-derived
 regressors, KonViD/CHUG MOS heads, saliency and second-opinion materializers,
-and codec-profile experiments. Several scripts already emit model sidecars, but
-the run identity is inconsistent: a CHUG-facing command can delegate to the
-shared KonViD trainer, input paths may be local-only, and CLI arguments are not
-recorded in a shared shape.
+and codec-profile experiments. Several scripts already emit model sidecars or
+evaluation reports, but the run identity is inconsistent: a CHUG-facing command
+can delegate to the shared KonViD trainer, input paths may be local-only, and
+CLI arguments are not recorded in a shared shape.
 
 We need enough manifest provenance to reproduce a local training run or promote
 its output into a model card without turning gitignored local corpus paths into
@@ -30,7 +30,14 @@ trainer implementation that wrote the sidecar. FR-regressor trainers
 for their model sidecars; v1/v2 also copy it into their metrics JSON so a
 gate-failed run can still be traced. The `vmaf_tiny_v2`, `vmaf_tiny_v3`, and
 `vmaf_tiny_v4` exporters use the same block for their ONNX sidecars so exported
-artifacts identify the checkpoint input and output targets.
+artifacts identify the checkpoint input and output targets. Tiny-VMAF evaluation
+reports (`eval_loso_vmaf_tiny_v3.py`, `eval_loso_vmaf_tiny_v4.py`,
+`eval_loso_vmaf_tiny_v5.py`, and `eval_multiseed_v3_v4.py`) also use the shared
+block so refreshed LOSO and multi-seed reports identify the feature table,
+hyperparameters, argv, and output report path. The ensemble production-flip
+validator (`validate_ensemble_seeds.py`) uses the same block for
+`PROMOTE.json` / `HOLD.json` verdicts so registry-flip evidence identifies the
+LOSO directory, corpus root, seed list, gate thresholds, and verdict target.
 
 ## Alternatives considered
 
@@ -42,9 +49,9 @@ artifacts identify the checkpoint input and output targets.
 
 ## Consequences
 
-- **Positive**: local MOS-head, FR-regressor, and vmaf_tiny export artifacts can
-  be traced back to the command, script revision, input files, and output
-  targets that produced them.
+- **Positive**: local MOS-head, FR-regressor, vmaf_tiny export, vmaf_tiny
+  evaluation, and ensemble validation artifacts can be traced back to the
+  command, script revision, input files, and output targets that produced them.
 - **Positive**: CHUG manifests stay CHUG-named even though the implementation
   shares the KonViD training loop.
 - **Negative**: sidecars become slightly larger and include local path names.

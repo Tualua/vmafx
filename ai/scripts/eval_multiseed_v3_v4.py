@@ -39,12 +39,15 @@ multi-seed sweep produces confidence intervals, not new shipped models.
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 import time
 from pathlib import Path
 
 import numpy as np
+
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
+sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 
 CANONICAL_6: tuple[str, ...] = (
     "adm2",
@@ -329,26 +332,30 @@ def main() -> int:
         flush=True,
     )
 
-    args.out_json.parent.mkdir(parents=True, exist_ok=True)
-    args.out_json.write_text(
-        json.dumps(
-            {
-                "arch": args.arch,
-                "label": args.label,
-                "parquet": str(args.parquet),
-                "n_folds": len(sources),
-                "sources": sources,
-                "seeds": args.seeds,
-                "epochs": args.epochs,
-                "lr": args.lr,
-                "batch_size": args.batch_size,
-                "per_seed_per_fold": {str(s): per_seed[s] for s in args.seeds},
-                **agg,
-            },
-            indent=2,
-        )
-        + "\n"
-    )
+    from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
+    report = {
+        "arch": args.arch,
+        "label": args.label,
+        "parquet": str(args.parquet),
+        "n_folds": len(sources),
+        "sources": sources,
+        "seeds": args.seeds,
+        "epochs": args.epochs,
+        "lr": args.lr,
+        "batch_size": args.batch_size,
+        "per_seed_per_fold": {str(s): per_seed[s] for s in args.seeds},
+        **agg,
+        "run_provenance": build_run_provenance(
+            entrypoint=SCRIPT_PATH,
+            repo_root=REPO_ROOT,
+            argv=sys.argv[1:],
+            args=args,
+            inputs={"parquet": args.parquet},
+            outputs={"report_target": str(args.out_json)},
+        ),
+    }
+    write_manifest_json(args.out_json, report)
     print(f"[ms-{args.arch}] wrote {args.out_json}")
     return 0
 
