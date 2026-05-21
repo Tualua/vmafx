@@ -35,6 +35,7 @@ import argparse
 import datetime as _dt
 import hashlib
 import json
+import math
 import sys
 import uuid
 from pathlib import Path
@@ -43,8 +44,13 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _VMAFTUNE_SRC = _REPO_ROOT / "tools" / "vmaf-tune" / "src"
 if str(_VMAFTUNE_SRC) not in sys.path:
     sys.path.insert(0, str(_VMAFTUNE_SRC))
+_AI_SRC = _REPO_ROOT / "ai" / "src"
+if str(_AI_SRC) not in sys.path:
+    sys.path.insert(0, str(_AI_SRC))
 
-from vmaftune import CORPUS_ROW_KEYS, SCHEMA_VERSION  # noqa: E402
+from vmaftune import CANONICAL6_FEATURES, CORPUS_ROW_KEYS, SCHEMA_VERSION  # noqa: E402
+
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 
 def _stable_sha(key: str) -> str:
@@ -84,6 +90,12 @@ def _row_from_cache(
         width, height, framerate = 0, 0, 0.0
 
     duration_s = (len(frames) / framerate) if framerate > 0 else 0.0
+    canonical_aggs: dict[str, float] = {}
+    pooled_metrics = payload.get("pooled_metrics", {})
+    for feature in CANONICAL6_FEATURES:
+        pooled_feature = pooled_metrics.get(feature, {})
+        canonical_aggs[f"{feature}_mean"] = float(pooled_feature.get("mean", math.nan))
+        canonical_aggs[f"{feature}_std"] = float(pooled_feature.get("stddev", math.nan))
 
     row: dict = {
         "schema_version": SCHEMA_VERSION,
@@ -115,6 +127,25 @@ def _row_from_cache(
         # pipeline does not slice them via the ADR-0297
         # sample-clip mode, so the corpus row is always "full".
         "clip_mode": "full",
+        # The BVI-DVC cache adapter predates HDR/shot/encoder-stat schema
+        # columns. Preserve a uniform v3 row with explicit unavailable values.
+        "hdr_transfer": "",
+        "hdr_primaries": "",
+        "hdr_forced": False,
+        "shot_count": 0,
+        "shot_avg_duration_sec": 0.0,
+        "shot_duration_std_sec": 0.0,
+        **canonical_aggs,
+        "enc_internal_qp_mean": 0.0,
+        "enc_internal_qp_std": 0.0,
+        "enc_internal_bits_mean": 0.0,
+        "enc_internal_bits_std": 0.0,
+        "enc_internal_mv_mean": 0.0,
+        "enc_internal_mv_std": 0.0,
+        "enc_internal_itex_mean": 0.0,
+        "enc_internal_ptex_mean": 0.0,
+        "enc_internal_intra_ratio": 0.0,
+        "enc_internal_skip_ratio": 0.0,
     }
     missing = set(CORPUS_ROW_KEYS) - row.keys()
     assert not missing, f"row missing keys {missing}"
@@ -142,7 +173,19 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--preset", default="fast")
     ap.add_argument("--crf", type=int, default=35)
     ap.add_argument("--pix-fmt", default="yuv420p10le")
+    ap.add_argument(
+        "--manifest-out",
+        type=Path,
+        default=None,
+        help=(
+            "Run-provenance JSON sidecar. Defaults to <output>.manifest.json and "
+            "records cache inputs, selected adapter labels, row counts, and exact "
+            "CLI args used to build the JSONL."
+        ),
+    )
     args = ap.parse_args(argv)
+    if args.manifest_out is None:
+        args.manifest_out = args.output.with_suffix(".manifest.json")
 
     if not args.cache_dir.is_dir():
         print(f"error: cache dir not found: {args.cache_dir}", file=sys.stderr)
@@ -165,8 +208,28 @@ def main(argv: list[str] | None = None) -> int:
             )
             fp.write(json.dumps(row, sort_keys=True) + "\n")
             rows += 1
+    write_manifest_json(
+        args.manifest_out,
+        {
+            "schema": "bvi-dvc-corpus-jsonl-manifest-v1",
+            "row_schema_version": SCHEMA_VERSION,
+            "stats": {"cache_files": len(caches), "rows": rows},
+            "encoder": args.encoder,
+            "preset": args.preset,
+            "crf": args.crf,
+            "pix_fmt": args.pix_fmt,
+            "run_provenance": build_run_provenance(
+                entrypoint=Path(__file__),
+                repo_root=_REPO_ROOT,
+                argv=sys.argv[1:] if argv is None else argv,
+                args=args,
+                inputs={"cache_dir": args.cache_dir},
+                outputs={"jsonl": args.output, "manifest": args.manifest_out},
+            ),
+        },
+    )
     print(
-        f"[bvi-dvc-jsonl] wrote {rows} rows to {args.output}",
+        f"[bvi-dvc-jsonl] wrote {rows} rows to {args.output}; manifest {args.manifest_out}",
         file=sys.stderr,
     )
     return 0

@@ -508,6 +508,7 @@ ADRs may exist there for local session continuity, but the tracked
 | [ADR-0667](0667-vmaf-tune-score-backend-native-priority.md) | `vmaf-tune --score-backend auto` now uses native-first GPU priority (`cuda -> sycl -> hip -> vulkan -> cpu`) and accepts explicit `hip` backed by ROCm availability probes. | Accepted | vmaf-tune, gpu, cuda, sycl, hip, vulkan, fork-local |
 | [ADR-0668](0668-ai-derived-table-provenance.md) | AI FULL_FEATURES table builders emit replayable manifest sidecars with shared `run_provenance` for extraction, parquet combination, and metadata enrichment outputs. | Proposed | ai, training, provenance, parquet |
 | [ADR-0669](0669-ai-corpus-jsonl-provenance.md) | AI corpus JSONL merge and aggregation scripts emit replayable manifest sidecars with shared `run_provenance`. | Proposed | ai, training, provenance, corpus |
+| [ADR-0670](0670-ai-legacy-corpus-extraction-manifests.md) | Legacy AI corpus/extraction scripts emit replayable manifest sidecars with shared `run_provenance`. | Proposed | ai, training, provenance, corpus |
 | [ADR-0436](0436-mcp-backend-selector-parity.md) | MCP server backend-selector parity (vulkan/hip/metal) | Accepted | mcp, agents, api, dispatch, fork-local |
 | [ADR-0448](0448-active-upstream-monitoring-discipline.md) | Active upstream monitoring (no silent "wait" deferrals) | Accepted | ci, governance, upstream-sync, deferral, fork-local |
 | [0457](0457-onnx-blobs-to-github-releases.md) | model/tiny/*.onnx blobs ≥1MB live in GitHub Releases, not git | Accepted | 2026-05-15 |

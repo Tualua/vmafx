@@ -40,12 +40,24 @@ from pathlib import Path
 
 import numpy as np
 
-if __package__ in (None, ""):
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+REPO_ROOT = Path(__file__).resolve().parents[2]
+AI_SRC = REPO_ROOT / "ai" / "src"
 
-from ai.data.feature_extractor import DEFAULT_VMAF_BINARY, FULL_FEATURES, extract_features
-from ai.data.netflix_loader import iter_pairs
-from ai.data.scores import teacher_scores
+if __package__ in (None, ""):
+    sys.path.insert(0, str(REPO_ROOT))
+if str(AI_SRC) not in sys.path:
+    sys.path.insert(0, str(AI_SRC))
+
+from ai.data.feature_extractor import (  # noqa: E402
+    DEFAULT_VMAF_BINARY,
+    FULL_FEATURES,
+    extract_features,
+)
+from ai.data.netflix_loader import iter_pairs  # noqa: E402
+from ai.data.scores import teacher_scores  # noqa: E402
+
+# isort: split
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 
 def _per_clip_cache_path(root: Path, source: str, dis_stem: str) -> Path:
@@ -88,7 +100,42 @@ def _load_or_compute(
     return payload
 
 
-def main() -> int:
+def _write_manifest(
+    path: Path,
+    *,
+    args: argparse.Namespace,
+    argv: list[str] | None,
+    pairs_count: int,
+    rows_count: int,
+    elapsed_s: float,
+) -> None:
+    write_manifest_json(
+        path,
+        {
+            "schema": "netflix-full-features-manifest-v1",
+            "features": list(FULL_FEATURES),
+            "stats": {
+                "pairs": pairs_count,
+                "rows": rows_count,
+                "elapsed_s": round(elapsed_s, 6),
+            },
+            "run_provenance": build_run_provenance(
+                entrypoint=Path(__file__),
+                repo_root=REPO_ROOT,
+                argv=sys.argv[1:] if argv is None else argv,
+                args=args,
+                inputs={
+                    "data_root": args.data_root,
+                    "cache_dir": args.cache_dir,
+                    "vmaf_bin": args.vmaf_bin,
+                },
+                outputs={"parquet": args.out, "manifest": args.manifest_out},
+            ),
+        },
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="extract_full_features.py")
     ap.add_argument(
         "--data-root",
@@ -130,7 +177,19 @@ def main() -> int:
         "(bucketed via ai/src/vmaf_train/codec.py). Override when "
         "re-extracting against a manifest that does carry labels.",
     )
-    args = ap.parse_args()
+    ap.add_argument(
+        "--manifest-out",
+        type=Path,
+        default=None,
+        help=(
+            "Run-provenance JSON sidecar. Defaults to <out>.manifest.json and "
+            "records feature names, row counts, corpus/cache inputs, and exact "
+            "CLI args used to build the parquet."
+        ),
+    )
+    args = ap.parse_args(argv)
+    if args.manifest_out is None:
+        args.manifest_out = args.out.with_suffix(".manifest.json")
 
     if not args.vmaf_bin.is_file():
         print(f"error: vmaf binary not found at {args.vmaf_bin}", file=sys.stderr)
@@ -166,9 +225,18 @@ def main() -> int:
     df = pd.DataFrame(rows)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(args.out)
+    elapsed_s = time.time() - t0
+    _write_manifest(
+        args.manifest_out,
+        args=args,
+        argv=argv,
+        pairs_count=len(pairs),
+        rows_count=len(df),
+        elapsed_s=elapsed_s,
+    )
     print(
         f"[extract] wrote {args.out}: {len(df)} rows × {len(df.columns)} cols "
-        f"in {time.time() - t0:.0f}s wall"
+        f"in {elapsed_s:.0f}s wall; manifest {args.manifest_out}"
     )
     return 0
 

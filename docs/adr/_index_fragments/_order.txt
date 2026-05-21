@@ -417,3 +417,4 @@
 0667-vmaf-tune-score-backend-native-priority
 0668-ai-derived-table-provenance
 0669-ai-corpus-jsonl-provenance
+0670-ai-legacy-corpus-extraction-manifests

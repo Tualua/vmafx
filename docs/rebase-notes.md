@@ -39119,3 +39119,37 @@ Touched files:
 `docs/research/0689-ai-corpus-jsonl-provenance.md`,
 `changelog.d/added/0669-ai-corpus-jsonl-provenance.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0670 — AI legacy corpus extraction manifests
+
+**Legacy trainer-input provenance impact.** This extends the ADR-0661 manifest
+pattern to older corpus/extraction scripts that directly create local
+trainer-input parquets or vmaf-tune JSONL.
+
+**Key invariants**:
+
+- `ai/scripts/extract_full_features.py` writes `<out>.manifest.json` by default
+  with Netflix corpus/cache inputs, VMAF binary evidence, feature list, pair
+  count, row count, and shared `run_provenance`.
+- `ai/scripts/konvid_to_vmaf_pairs.py` writes `<out>.manifest.json` by default
+  with KoNViD root, VMAF/model inputs, cache policy, CRF, feature list, clip /
+  frame counters, failed clip IDs, and shared `run_provenance`.
+- `ai/scripts/bvi_dvc_to_corpus_jsonl.py` writes `<output>.manifest.json` by
+  default with cache inputs, row schema version, adapter labels, row/cache
+  counters, and shared `run_provenance`.
+- BVI-DVC JSONL rows must include the current vmaf-tune v3 additive keys;
+  unavailable HDR, shot, canonical-feature aggregate, and encoder-internal
+  values are explicit defaults, not missing columns.
+
+Touched files:
+`ai/scripts/extract_full_features.py`,
+`ai/scripts/konvid_to_vmaf_pairs.py`,
+`ai/scripts/bvi_dvc_to_corpus_jsonl.py`,
+`ai/tests/test_legacy_corpus_extraction_manifests.py`,
+`ai/AGENTS.md`,
+`docs/ai/training.md`,
+`docs/ai/mos-corpora.md`,
+`docs/adr/0670-ai-legacy-corpus-extraction-manifests.md`,
+`docs/research/0690-ai-legacy-corpus-extraction-manifests.md`,
+`changelog.d/added/0670-ai-legacy-corpus-extraction-manifests.md`,
+`docs/rebase-notes.md` (this entry).

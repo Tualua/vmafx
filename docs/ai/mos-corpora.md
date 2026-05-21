@@ -149,6 +149,12 @@ This command writes `runs/fr_v2_train_corpus.manifest.json` by default with
 the input shard hashes, required vmaf-tune corpus keys, the natural dedup key
 `(src_sha256, encoder, preset, crf)`, summary counters, and ADR-0661
 `run_provenance`. Pass `--manifest-out PATH` to place the sidecar elsewhere.
+The older BVI-DVC JSONL adapter follows the same convention: direct
+`bvi_dvc_to_corpus_jsonl.py` runs write `<output>.manifest.json` with cache
+inputs, row counts, adapter labels, row schema version, and `run_provenance`.
+It emits current vmaf-tune v3 additive columns with explicit unavailable
+defaults for HDR, shot, canonical-feature aggregates, and encoder-internal
+signals when those fields are not present in the cached libvmaf JSON.
 
 ## Shared ingestion infrastructure (ADR-0371)
 

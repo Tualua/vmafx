@@ -53,6 +53,11 @@ from pathlib import Path
 import pandas as pd
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+AI_SRC = REPO_ROOT / "ai" / "src"
+if str(AI_SRC) not in sys.path:
+    sys.path.insert(0, str(AI_SRC))
+
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 # vmaf_v0.6.1 model features — same set the LOSO trainer expects.
 DEFAULT_FEATURES = (
@@ -244,7 +249,7 @@ def _process_clip(
     return rows
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument(
         "--konvid-root",
@@ -302,7 +307,19 @@ def main() -> int:
         default=None,
         help="Cap number of clips processed (smoke / dry-run).",
     )
-    args = ap.parse_args()
+    ap.add_argument(
+        "--manifest-out",
+        type=Path,
+        default=None,
+        help=(
+            "Run-provenance JSON sidecar. Defaults to <out>.manifest.json and "
+            "records clip/frame counts, failed clips, cache settings, and exact "
+            "CLI args used to build the parquet."
+        ),
+    )
+    args = ap.parse_args(argv)
+    if args.manifest_out is None:
+        args.manifest_out = args.out.with_suffix(".manifest.json")
 
     videos_dir = args.konvid_root / "KoNViD_1k_videos"
     if not videos_dir.is_dir():
@@ -322,6 +339,7 @@ def main() -> int:
     print(f"[konvid] processing {len(clips)} clips → {args.out}", flush=True)
 
     all_rows: list[dict] = []
+    failed_clips: list[str] = []
     t0 = time.monotonic()
     for i, src_mp4 in enumerate(clips):
         key = f"KoNViD_1k_videos_{src_mp4.stem}"
@@ -337,6 +355,7 @@ def main() -> int:
             )
         except subprocess.CalledProcessError as exc:
             print(f"[konvid] {key} FAILED: {shlex.join(exc.cmd)}", file=sys.stderr)
+            failed_clips.append(key)
             continue
         all_rows.extend(rows)
         if (i + 1) % 10 == 0 or i == len(clips) - 1:
@@ -348,7 +367,42 @@ def main() -> int:
 
     df = pd.DataFrame(all_rows)
     df.to_parquet(args.out, index=False)
-    print(f"[konvid] wrote {args.out} ({len(df)} frames, {len(clips)} clips)", flush=True)
+    write_manifest_json(
+        args.manifest_out,
+        {
+            "schema": "konvid-vmaf-pairs-manifest-v1",
+            "features": list(DEFAULT_FEATURES),
+            "stats": {
+                "clips_selected": len(clips),
+                "clips_failed": len(failed_clips),
+                "clips_processed": len(clips) - len(failed_clips),
+                "frames": len(df),
+                "elapsed_s": round(time.monotonic() - t0, 6),
+            },
+            "failed_clips": failed_clips,
+            "crf": args.crf,
+            "cache_enabled": cache_dir is not None,
+            "run_provenance": build_run_provenance(
+                entrypoint=Path(__file__),
+                repo_root=REPO_ROOT,
+                argv=sys.argv[1:] if argv is None else argv,
+                args=args,
+                inputs={
+                    "konvid_root": args.konvid_root,
+                    "videos_dir": videos_dir,
+                    "cache_dir": cache_dir,
+                    "vmaf_bin": args.vmaf_bin,
+                    "model": args.model,
+                },
+                outputs={"parquet": args.out, "manifest": args.manifest_out},
+            ),
+        },
+    )
+    print(
+        f"[konvid] wrote {args.out} ({len(df)} frames, {len(clips)} clips); "
+        f"manifest {args.manifest_out}",
+        flush=True,
+    )
     return 0
 
 

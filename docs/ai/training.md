@@ -192,6 +192,15 @@ inputs, dedup counters, and corpus-source overrides; `merge_corpora.py`
 records required vmaf-tune corpus keys, the natural dedup key, input shards,
 and merge counters. Both default to `<output>.manifest.json` and accept
 `--manifest-out`.
+Legacy corpus/extraction entrypoints now follow the same sidecar pattern:
+`extract_full_features.py`, `konvid_to_vmaf_pairs.py`, and
+`bvi_dvc_to_corpus_jsonl.py` all default to `<out>.manifest.json` /
+`<output>.manifest.json`. Their manifests record corpus/cache roots, VMAF/model
+inputs, feature lists or row schema versions, row/frame/clip counters, failed
+KoNViD clip IDs where applicable, adapter labels, and ADR-0661
+`run_provenance`. The BVI-DVC adapter also emits the current vmaf-tune v3
+additive columns with explicit unavailable defaults so cached BVI rows remain
+schema-compatible.
 
 The ensemble production validator `ai/scripts/validate_ensemble_seeds.py`
 records `run_provenance` in its `PROMOTE.json` / `HOLD.json` verdicts. That
@@ -411,6 +420,10 @@ python ai/scripts/konvid_to_vmaf_pairs.py
 Output: `ai/data/konvid_vmaf_pairs.parquet` (gitignored). Schema
 matches what `NetflixFrameDataset.numpy_arrays()` produces:
 `(key, frame_index, vif_scale0..3, adm2, motion2, vmaf)` per row.
+The command also writes `ai/data/konvid_vmaf_pairs.manifest.json` by default,
+including CRF, feature names, clip/frame counts, failed clip IDs, the VMAF
+binary/model inputs, and `run_provenance`. Use `--manifest-out PATH` when the
+parquet is bundled under a different experiment directory.
 
 Per-clip JSON caches under `$VMAF_TINY_AI_CACHE/konvid-1k/<key>.json`
 so re-runs are idempotent — only newly-added clips re-extract.
