@@ -188,6 +188,9 @@ replayed from the report alone.
 `ai/scripts/phase3_subset_sweep.py --out` also records `run_provenance` next to
 the subset result keys, including the source parquet, subset list, seed policy,
 standardization flag, and report path used for Phase-3 model-selection sweeps.
+`ai/scripts/calibrate_phase_f_recipes.py --out` records the same block in the
+calibrated `vmaf-tune auto` recipe JSON, including the source corpus JSONL,
+optional row cap, argv, and recipe output path.
 
 ## MOS label materialization
 

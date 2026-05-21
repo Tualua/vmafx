@@ -90,6 +90,14 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
+AI_SRC = REPO_ROOT / "ai" / "src"
+if str(AI_SRC) not in sys.path:
+    sys.path.insert(0, str(AI_SRC))
+
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+
 _LOG = logging.getLogger(__name__)
 
 
@@ -489,6 +497,7 @@ def calibrate(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    raw_argv = list(argv) if argv is not None else sys.argv[1:]
     parser = argparse.ArgumentParser(
         description=(
             "Calibrate Phase F.5 per-content-type recipe overrides "
@@ -543,11 +552,15 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     _LOG.info("loaded %d corpus rows from %s", len(rows), args.corpus)
     payload = calibrate(rows, corpus_path=args.corpus, corpus_row_count=len(rows))
-
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    with args.out.open("wt", encoding="utf-8") as fh:
-        json.dump(payload, fh, indent=2, sort_keys=True)
-        fh.write("\n")
+    payload["run_provenance"] = build_run_provenance(
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=raw_argv,
+        args=args,
+        inputs={"corpus": args.corpus},
+        outputs={"recipe_json": args.out},
+    )
+    write_manifest_json(args.out, payload)
 
     _LOG.info("wrote %s", args.out)
     for cls, recipe in payload["recipes"].items():

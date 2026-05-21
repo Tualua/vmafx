@@ -3012,9 +3012,10 @@ exercised against.
 The `auto.py` runtime loads the JSON at module import via
 `_load_calibrated_recipes`; if the JSON file is missing or malformed,
 the F.4 placeholder constants in `_F4_PLACEHOLDER_RECIPES` apply as a
-graceful fallback. To regenerate the calibration after the corpus
-ingestion completes (or when a class-labelled corpus replaces K150K),
-run:
+graceful fallback. The generated JSON includes ADR-0661 `run_provenance`
+with the calibration script, argv, source corpus JSONL, row cap, and
+recipe output target. To regenerate the calibration after the corpus
+ingestion completes (or when a class-labelled corpus replaces K150K), run:
 
 ```shell
 python ai/scripts/calibrate_phase_f_recipes.py \

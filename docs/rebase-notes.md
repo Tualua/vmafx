@@ -7,6 +7,22 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## feat/phase-f-calibration-provenance (ADR-0661)
+
+**No upstream rebase impact**: this touches fork-local AI/vmaf-tune
+calibration tooling, docs, ADR/research notes, and changelog fragments.
+Upstream Netflix/vmaf does not ship the `vmaf-tune auto` Phase F recipe
+calibration path.
+
+Smoke:
+`.venv/bin/python -m pytest ai/tests/test_calibrate_phase_f_recipes.py -q`
+
+Touched files: `ai/scripts/calibrate_phase_f_recipes.py`,
+`ai/tests/test_calibrate_phase_f_recipes.py`, `docs/usage/vmaf-tune.md`,
+`docs/ai/training.md`, `docs/research/0676-*.md`,
+`docs/adr/0661-ai-run-manifest-provenance.md`,
+`changelog.d/added/0676-*.md`, and this file.
+
 ## feat/quant-ep-report-provenance (ADR-0661)
 
 **No upstream rebase impact**: this touches fork-local AI investigation
