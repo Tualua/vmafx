@@ -871,9 +871,11 @@ jobs:
   # replacement for ilammy/msvc-dev-cmd@v1.13.0, which was deprecated
   # on Node.js 20 — see ADR-0635). Functionally identical: runs
   # vcvarsall.bat and exports PATH/INCLUDE/LIB for cl.exe.
-  # CUDA toolkit comes from Jimver/cuda-toolkit (same action used by
-  # the Linux CUDA legs, pinned to the same 13.2.0 release for parity
-  # — bumped from 13.0.0 per ADR-0603 for glibc 2.43 noexcept parity).
+  # CUDA toolkit is installed directly from NVIDIA's Windows network
+  # installer, pinned to the same 13.2.0 release as the Linux CUDA
+  # legs. The Linux legs still use Jimver/cuda-toolkit; the Windows
+  # leg avoids that action because v0.2.35 can exit before setup on
+  # current windows-2025 images (ADR-0664).
   # oneAPI is installed via the official `oneapi-src/oneapi-ci`
   # offline-installer pattern (`curl` the Base Toolkit installer +
   # extract + run bootstrapper). We tried `rscohn2/setup-oneapi@v0`
@@ -943,41 +945,45 @@ jobs:
       # `version < 13`). Bumped from 13.0.0 per ADR-0603.
       - name: Install CUDA toolkit (windows)
         if: matrix.backend == 'cuda'
-        uses: Jimver/cuda-toolkit@3d45d157f327c09c04b50ee6ccdea2d9d017ec76  # v0.2.35
-        with:
-          cuda: '13.2.0'
-          method: network
-          # Persist the CUDA installer payload (~3 GB on Windows) in
-          # the GHA cache between runs. Default behavior re-downloads
-          # the network installer on every job — Research-0089 (PR
-          # #525) §2 puts the Windows MSVC + CUDA build at p50 = 10.91
-          # min, of which the CUDA install dominates. With the cache,
-          # the action restores the payload from `~/cuda_install_*`
-          # and skips the network leg. Pin matches the Linux legs.
-          use-github-cache: true
-          use-local-cache: false
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+
+          $cudaVersion = '13.2.0'
+          $cudaMajorMinor = '13.2'
+          $url = "https://developer.download.nvidia.com/compute/cuda/$cudaVersion/network_installers/cuda_${cudaVersion}_windows_network.exe"
+          $installer = Join-Path $env:RUNNER_TEMP "cuda_${cudaVersion}_windows_network.exe"
+
+          curl.exe --fail --location --retry 5 --retry-delay 10 --output $installer $url
+
           # Windows sub-package names per
           # https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/index.html#install-cuda-software
-          # — the action appends `_<major>.<minor>` to each entry, so
-          # `nvcc` → `nvcc_13.0`, etc. `cudart_dev` is Linux-Debian
-          # naming and is rejected by the Windows installer; the
-          # runtime dev headers ship with `cudart` on Windows.
-          # `crt` ships `crt/host_config.h` (CUDA Runtime Library
-          # compile-time headers); without it `cuda_runtime.h` errors
-          # with "Cannot open include file: 'crt/host_config.h'".
-          # NOTE: `cuda_cccl` looks like the right name on first read
-          # of the docs but is NOT a valid Windows sub-package name
-          # in CUDA 13.x — the installer rejects it with exit code
-          # 0xE0E07F19 (invalid package). The Windows CUDA Runtime
-          # ships these headers under the standalone `crt` sub-package
-          # per the CUDA Windows install guide.
-          # `nvvm` ships `nvvm/bin/cicc.exe` (CUDA LLVM-based device
-          # compiler) + `nvvm/libdevice/libdevice.*.bc`. Without it
-          # the `nvcc` driver spawns `cicc.exe` → "The system cannot
-          # find the path specified." at the .cu → PTX stage, even
-          # for an empty kernel. Verified locally (Windows Server
-          # 2022 VM, CUDA 13.0.48) 2026-04-19 — see ADR-0121.
-          sub-packages: '["nvcc", "cudart", "crt", "nvvm", "visual_studio_integration"]'
+          # The network installer expects the `_<major>.<minor>` suffix.
+          # `cudart` carries runtime headers on Windows. `crt` provides
+          # `crt/host_config.h`; `nvvm` provides `cicc.exe` and libdevice.
+          $packages = @(
+            "nvcc_$cudaMajorMinor",
+            "cudart_$cudaMajorMinor",
+            "crt_$cudaMajorMinor",
+            "nvvm_$cudaMajorMinor",
+            "visual_studio_integration_$cudaMajorMinor"
+          )
+
+          $process = Start-Process -FilePath $installer -ArgumentList (@('-s') + $packages) -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            Write-Error "CUDA installer failed with exit code $($process.ExitCode)"
+          }
+
+          $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$cudaMajorMinor"
+          if (-not (Test-Path (Join-Path $cudaPath 'bin\nvcc.exe'))) {
+            Write-Error "nvcc.exe was not installed under $cudaPath"
+          }
+
+          "CUDA_PATH=$cudaPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CUDA_PATH_V13_2=$cudaPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          (Join-Path $cudaPath 'bin') | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          & (Join-Path $cudaPath 'bin\nvcc.exe') --version
 
       # ---------- Intel oneAPI (SYCL leg only) ----------
       # Mirrors the official `oneapi-src/oneapi-ci` install pattern

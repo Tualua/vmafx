@@ -7,6 +7,28 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## fix/windows-cuda-toolkit-installer (ADR-0664)
+
+**High CI rebase impact**: this touches the fork-local build matrix workflow.
+Upstream Netflix/vmaf does not ship these Windows GPU build-only legs, but
+workflow syncs can silently restore older action-based setup patterns.
+
+Rebase-sensitive fork invariant:
+
+- `Build — Windows MSVC + CUDA (build only)` installs CUDA 13.2.0 directly
+  from NVIDIA's Windows network installer and verifies `nvcc.exe --version`.
+  Do not restore `Jimver/cuda-toolkit` on this Windows leg without a
+  superseding ADR and a green required Windows CUDA run.
+- Linux CUDA legs remain unchanged and still use `Jimver/cuda-toolkit`.
+
+Smoke:
+`gh pr checks <pr> --watch --required`
+
+Touched files: `.github/workflows/libvmaf-build-matrix.yml`,
+`.github/AGENTS.md`, `docs/development/ci-runners.md`,
+`docs/adr/0664-*.md`, `docs/research/0664-*.md`,
+`changelog.d/fixed/0664-*.md`, and this file.
+
 ## fix/external-bench-wrapper-schema (ADR-0656)
 
 **No upstream rebase impact**: all touched implementation paths are

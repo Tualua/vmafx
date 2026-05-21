@@ -160,6 +160,20 @@ re-introduce the zero-coverage gap (no `test()` call carries a
 `suite: 'unit'` tag in `libvmaf/test/meson.build`); the workflow
 must keep enumerating from `meson test --list`.
 
+## Windows CUDA setup path (ADR-0664)
+
+`libvmaf-build-matrix.yml` installs CUDA 13.2.0 directly in the
+`Build — Windows MSVC + CUDA (build only)` leg. Do not restore
+`Jimver/cuda-toolkit` for that Windows leg without a superseding ADR
+and a green required Windows CUDA run: v0.2.35 failed before setup on
+PR #1463 and blocked the merge train without Meson or compiler output.
+
+The Linux CUDA legs still use `Jimver/cuda-toolkit`; ADR-0664 only
+special-cases the Windows network-installer path. Keep the explicit
+Windows package set (`nvcc`, `cudart`, `crt`, `nvvm`, and
+`visual_studio_integration`) aligned with the CUDA major/minor suffix
+in the workflow when bumping CUDA.
+
 
 ## Upstream-merge guidance
 
