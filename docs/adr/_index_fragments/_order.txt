@@ -420,3 +420,4 @@
 0670-ai-legacy-corpus-extraction-manifests
 0671-u2netp-mirror-exporter
 0672-saliency-materializer-temporal-controls
+0673-saliency-materializer-batch-manifest

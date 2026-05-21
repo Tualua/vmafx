@@ -86,8 +86,56 @@ is unknown.
 The process exits `0` when all rows are `ok` or `skipped-existing`; it exits
 `1` when any row failed.
 
+## Batch Manifest
+
+Use `ai/scripts/batch_materialize_saliency_features.py` when a refresh run needs
+the same saliency model applied to several tables. Paths in the manifest are
+relative to the manifest file by default; pass `--base-dir` when the manifest
+is stored away from the run directory.
+
+```json
+{
+  "defaults": {
+    "model_id": "saliency_student_v1",
+    "temporal_aggregator": "ema",
+    "ema_alpha": 0.6,
+    "max_frames": 8,
+    "frame_samples": 8
+  },
+  "tables": [
+    {
+      "id": "chug_hdr",
+      "input": "runs/full_features_chug_hdr.parquet",
+      "output": "runs/full_features_chug_hdr.saliency.parquet",
+      "audit_json": "runs/full_features_chug_hdr.saliency.audit.json",
+      "root": ".corpus/chug"
+    },
+    {
+      "id": "konvid",
+      "input": "runs/full_features_konvid_refresh_20260520.parquet",
+      "output": "runs/full_features_konvid_refresh_20260520.saliency.parquet"
+    }
+  ]
+}
+```
+
+```bash
+PYTHONPATH=. .venv/bin/python ai/scripts/batch_materialize_saliency_features.py \
+  --manifest runs/saliency-batch.json \
+  --report-json runs/saliency-batch.report.json \
+  --report-md runs/saliency-batch.report.md
+```
+
+Each table may override any single-run materializer option from the defaults.
+The batch report uses schema `saliency-materializer-batch-v1` and carries
+ADR-0661 `run_provenance`; per-table `audit_json` files retain the effective
+config and row counters for the table. The batch command exits non-zero if any
+table has failed rows. Use `--allow-row-failures` only for exploratory audits
+where partial saliency coverage is intentionally kept for later filtering.
+
 ## Reproducer
 
 ```bash
 PYTHONPATH=. .venv/bin/python -m pytest ai/tests/test_materialize_saliency_features.py -q
+PYTHONPATH=. .venv/bin/python -m pytest ai/tests/test_batch_materialize_saliency_features.py -q
 ```

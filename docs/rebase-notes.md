@@ -39202,3 +39202,31 @@ Touched files:
 `docs/research/0690-ai-legacy-corpus-extraction-manifests.md`,
 `changelog.d/added/0670-ai-legacy-corpus-extraction-manifests.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0673 — Saliency materializer batch manifest
+
+**Saliency table refresh impact.** This adds a batch orchestration layer over
+`ai/scripts/materialize_saliency_features.py`. Rebase work that changes
+`SaliencyMaterializeConfig`, saliency status values, or table read/write
+semantics must update both the single-table script and the batch manifest
+runner/tests together.
+
+**Key invariants**:
+
+- `ai/scripts/batch_materialize_saliency_features.py` must import and reuse
+  the single-table materializer functions; it must not duplicate FFmpeg decode,
+  ffprobe fallback, saliency inference, or row status semantics.
+- Batch manifests carry shared defaults plus per-table overrides. Relative
+  paths resolve from the manifest directory unless `--base-dir` is supplied.
+- Batch reports use schema `saliency-materializer-batch-v1` and include
+  ADR-0661 `run_provenance`.
+
+Touched files:
+`ai/scripts/batch_materialize_saliency_features.py`,
+`ai/tests/test_batch_materialize_saliency_features.py`,
+`ai/AGENTS.md`,
+`docs/ai/saliency-feature-materializer.md`,
+`docs/adr/0673-saliency-materializer-batch-manifest.md`,
+`docs/research/0693-saliency-materializer-batch-manifest.md`,
+`changelog.d/added/0673-saliency-materializer-batch-manifest.md`,
+`docs/rebase-notes.md` (this entry).

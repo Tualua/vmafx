@@ -249,6 +249,10 @@ bounded FFmpeg decode, ffprobe fallback, model invocation, and the
 `saliency_status` audit column. Do not add corpus-specific one-off saliency
 materializers unless a future ADR explains why the shared table utility cannot
 represent the corpus.
+`ai/scripts/batch_materialize_saliency_features.py` is only orchestration over
+the shared materializer: batch manifests may select tables, roots, model ids,
+and temporal reducers, but must not duplicate row decoding, saliency inference,
+or status semantics.
 
 ## Dynamic-PTQ tiny-MLP family (ADR-0275)
 
