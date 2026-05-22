@@ -21,17 +21,21 @@ statistics, both consumed by ``export_vmaf_tiny_v2.py``.
 
 from __future__ import annotations
 
-import argparse
 import sys
 from pathlib import Path
 
 import numpy as np
 
-SCRIPT_PATH = Path(__file__).resolve()
-REPO_ROOT = SCRIPT_PATH.parents[2]
-AI_SRC = REPO_ROOT / "ai" / "src"
-if AI_SRC.is_dir() and str(AI_SRC) not in sys.path:
-    sys.path.insert(0, str(AI_SRC))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
+
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 
 CANONICAL_6: tuple[str, ...] = (
     "adm2",
@@ -127,8 +131,9 @@ def _train_metrics(model, x: np.ndarray, y: np.ndarray) -> dict[str, float]:
     return {"plcc": plcc, "srocc": srocc, "rmse": rmse}
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(prog="train_vmaf_tiny_v2.py", description=__doc__)
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    ap = make_argument_parser(prog="train_vmaf_tiny_v2.py", description=__doc__)
     ap.add_argument(
         "--parquet",
         type=Path,
@@ -154,7 +159,7 @@ def main() -> int:
     ap.add_argument("--batch-size", type=int, default=256)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--seed", type=int, default=0)
-    args = ap.parse_args()
+    args = ap.parse_args(raw_argv)
 
     import pandas as pd
     import torch
@@ -229,7 +234,7 @@ def main() -> int:
         "run_provenance": build_run_provenance(
             entrypoint=SCRIPT_PATH,
             repo_root=REPO_ROOT,
-            argv=sys.argv[1:],
+            argv=raw_argv,
             args=args,
             inputs={"parquet": args.parquet},
             outputs={

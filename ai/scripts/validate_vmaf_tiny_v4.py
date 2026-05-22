@@ -20,10 +20,16 @@ from pathlib import Path
 
 import numpy as np
 
-SCRIPT_PATH = Path(__file__).resolve()
-REPO_ROOT = SCRIPT_PATH.parents[2]
-sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
+
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 CANONICAL_6: tuple[str, ...] = (
@@ -89,7 +95,7 @@ def _write_report(
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
+    ap = make_argument_parser(description=__doc__)
     ap.add_argument("--onnx", type=Path, required=True)
     ap.add_argument(
         "--parquet",
@@ -113,7 +119,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Optional v3 ONNX path; if provided, diff v4 vs v3 predictions on the same slice.",
     )
     ap.add_argument("--out-json", type=Path, help="Optional JSON validation report.")
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    raw_argv = collect_cli_argv(argv)
     args = ap.parse_args(raw_argv)
 
     import pandas as pd
