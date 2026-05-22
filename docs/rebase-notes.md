@@ -7,6 +7,29 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## feat/ai-dataset-fetch-manifests (ADR-0677)
+
+**No upstream rebase impact**: this touches fork-local AI dataset fetch
+helpers, tests, docs, package AGENTS notes, ADR/research notes, and a changelog
+fragment. Upstream Netflix/vmaf does not ship these local downloader scripts.
+
+Invariant: dataset fetch helpers that seed later AI JSONL/parquet builders
+write deterministic ADR-0661 run-manifest sidecars before conversion.
+`fetch_konvid_1k.py` defaults to `<root>/fetch_manifest.json`;
+`fetch_youtube_ugc_subset.py` keeps `--manifest` as the content manifest and
+defaults the run sidecar to `<manifest>.run-manifest.json`.
+
+Smoke:
+`.venv/bin/python -m pytest ai/tests/test_dataset_fetch_manifests.py -q`
+
+Touched files: `ai/scripts/fetch_konvid_1k.py`,
+`ai/scripts/fetch_youtube_ugc_subset.py`,
+`ai/tests/test_dataset_fetch_manifests.py`, `ai/AGENTS.md`,
+`docs/ai/training.md`, `docs/ai/training-data.md`,
+`docs/ai/konvid-1k-ingestion.md`, `docs/ai/youtube-ugc-ingestion.md`,
+`docs/ai/mos-corpora.md`, `docs/adr/0677-*.md`,
+`docs/research/0698-*.md`, `changelog.d/added/0677-*.md`, and this file.
+
 ## feat/mos-corpus-adapter-manifests (ADR-0676)
 
 **No upstream rebase impact**: this touches fork-local AI MOS corpus adapters,

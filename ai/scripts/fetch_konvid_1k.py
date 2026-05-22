@@ -35,6 +35,14 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+AI_SRC = REPO_ROOT / "ai" / "src"
+
+if str(AI_SRC) not in sys.path:
+    sys.path.insert(0, str(AI_SRC))
+
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+
 VIDEOS_URL = "https://datasets.vqa.mmsp-kn.de/archives/KoNViD_1k_videos.zip"
 METADATA_URL = "https://datasets.vqa.mmsp-kn.de/archives/KoNViD_1k_metadata.zip"
 
@@ -119,6 +127,57 @@ def _extract(zip_path: Path, dst_dir: Path) -> None:
     print(f"[konvid] {zip_path.name} extraction complete")
 
 
+def _archive_record(label: str, *, url: str, path: Path, min_bytes: int) -> dict[str, object]:
+    return {
+        "label": label,
+        "url": url,
+        "path": str(path),
+        "exists": path.exists(),
+        "size_bytes": path.stat().st_size if path.is_file() else 0,
+        "min_bytes": min_bytes,
+    }
+
+
+def _write_fetch_manifest(
+    *,
+    args: argparse.Namespace,
+    root: Path,
+    manifest_out: Path,
+    archives: list[dict[str, object]],
+) -> None:
+    videos_dir = root / "KoNViD_1k_videos"
+    metadata_dir = root / "KoNViD_1k_metadata"
+    write_manifest_json(
+        manifest_out,
+        {
+            "schema": "konvid-1k-fetch-manifest-v1",
+            "dataset": "konvid-1k",
+            "root": str(root),
+            "keep_zips": bool(args.keep_zips),
+            "archives": archives,
+            "extracted": {
+                "videos_dir": str(videos_dir),
+                "videos_dir_exists": videos_dir.is_dir(),
+                "metadata_dir": str(metadata_dir),
+                "metadata_dir_exists": metadata_dir.is_dir(),
+            },
+            "run_provenance": build_run_provenance(
+                entrypoint=Path(__file__),
+                repo_root=REPO_ROOT,
+                argv=sys.argv,
+                args=args,
+                inputs={"videos_url": VIDEOS_URL, "metadata_url": METADATA_URL},
+                outputs={
+                    "root": root,
+                    "videos_dir": videos_dir,
+                    "metadata_dir": metadata_dir,
+                    "manifest": manifest_out,
+                },
+            ),
+        },
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -130,16 +189,29 @@ def main() -> int:
     parser.add_argument(
         "--keep-zips", action="store_true", help="Keep the .zip archives after extracting"
     )
+    parser.add_argument(
+        "--manifest-out",
+        type=Path,
+        default=None,
+        help="Output run-provenance JSON sidecar (default: <root>/fetch_manifest.json).",
+    )
     args = parser.parse_args()
 
     root = args.root or default_root()
     root.mkdir(parents=True, exist_ok=True)
+    manifest_out = args.manifest_out or root / "fetch_manifest.json"
 
     videos_zip = root / "KoNViD_1k_videos.zip"
     metadata_zip = root / "KoNViD_1k_metadata.zip"
 
     _download(VIDEOS_URL, videos_zip, _VIDEOS_MIN_BYTES)
     _download(METADATA_URL, metadata_zip, _METADATA_MIN_BYTES)
+    archives = [
+        _archive_record("videos", url=VIDEOS_URL, path=videos_zip, min_bytes=_VIDEOS_MIN_BYTES),
+        _archive_record(
+            "metadata", url=METADATA_URL, path=metadata_zip, min_bytes=_METADATA_MIN_BYTES
+        ),
+    ]
 
     if not (root / "KoNViD_1k_videos").is_dir():
         _extract(videos_zip, root)
@@ -151,7 +223,10 @@ def main() -> int:
             if z.exists():
                 z.unlink()
 
+    args.manifest_out = manifest_out
+    _write_fetch_manifest(args=args, root=root, manifest_out=manifest_out, archives=archives)
     print(f"[konvid] complete. dataset root: {root}")
+    print(f"[konvid] fetch manifest: {manifest_out}")
     print("[konvid] next: vmaf-train manifest-scan --dataset konvid-1k --root", root)
     return 0
 

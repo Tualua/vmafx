@@ -216,6 +216,7 @@ See [ADR-0371](../adr/0371-corpus-ingest-base-class.md) and the unit tests at
 # 1. Fetch + extract (idempotent — skips completed files).
 python ai/scripts/fetch_konvid_1k.py
 #    → ~/datasets/konvid-1k/KoNViD_1k_videos/  (default location)
+#    → ~/datasets/konvid-1k/fetch_manifest.json
 
 # 2. Convert to JSONL.
 python ai/scripts/konvid_1k_to_corpus_jsonl.py

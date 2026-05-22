@@ -32,6 +32,14 @@ $VMAF_KONVID_1K_DIR/
 when `VMAF_KONVID_1K_DIR` is unset it falls back to
 `$VMAF_DATA_ROOT/konvid-1k` and then `~/datasets/konvid-1k`.
 
+Dataset fetch helpers write run manifests beside the local data roots before
+conversion starts. `ai/scripts/fetch_konvid_1k.py` writes
+`<root>/fetch_manifest.json` by default and accepts `--manifest-out`.
+`ai/scripts/fetch_youtube_ugc_subset.py` keeps its existing stem-to-files
+content manifest and writes a separate `<manifest>.run-manifest.json` sidecar
+unless `--run-manifest-out` is supplied. Keep these gitignored sidecars with
+the downloaded corpora when citing training evidence.
+
 ### Naming convention
 
 Files follow the Netflix encoding-ladder convention:

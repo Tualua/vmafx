@@ -424,4 +424,5 @@
 0674-second-opinion-materializer-batch-manifest
 0675-mos-label-materializer-batch-manifest
 0676-mos-corpus-adapter-manifests
+0677-ai-dataset-fetch-manifests
 0679-ci-draft-automerge-gate

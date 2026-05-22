@@ -23,6 +23,14 @@ import sys
 import urllib.request
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+AI_SRC = REPO_ROOT / "ai" / "src"
+
+if str(AI_SRC) not in sys.path:
+    sys.path.insert(0, str(AI_SRC))
+
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+
 GCS_LIST_URL = "https://storage.googleapis.com/storage/v1/b/ugc-dataset/o"
 GCS_OBJ_URL = "https://storage.googleapis.com/ugc-dataset/{name}"
 PREFIX = "vp9_compressed_videos/"
@@ -75,6 +83,69 @@ def _download(url: str, dest: Path) -> None:
     tmp.rename(dest)
 
 
+def _suffix_for_name(filename: str) -> str:
+    for sfx in SUFFIXES:
+        if f"_{sfx}." in filename:
+            return sfx
+    return "unknown"
+
+
+def _run_manifest_default(content_manifest: Path) -> Path:
+    return content_manifest.with_name(f"{content_manifest.stem}.run-manifest.json")
+
+
+def _write_run_manifest(
+    *,
+    args: argparse.Namespace,
+    ranked: list[tuple[str, list[tuple[str, int]]]],
+    total_bytes: int,
+) -> None:
+    stems = [
+        {
+            "stem": stem,
+            "files": [
+                {
+                    "name": filename,
+                    "suffix": _suffix_for_name(filename),
+                    "size_bytes": size,
+                    "path": str(args.out_dir / filename),
+                }
+                for filename, size in sorted(files)
+            ],
+        }
+        for stem, files in ranked
+    ]
+    write_manifest_json(
+        args.run_manifest_out,
+        {
+            "schema": "youtube-ugc-subset-fetch-run-manifest-v1",
+            "dataset": "youtube-ugc",
+            "bucket": "ugc-dataset",
+            "prefix": PREFIX,
+            "selection": {
+                "policy": "smallest-complete-4tuple",
+                "n_stems_requested": args.n_stems,
+                "stems_selected": len(ranked),
+                "files_selected": sum(len(files) for _, files in ranked),
+                "total_size_bytes": total_bytes,
+            },
+            "stems": stems,
+            "run_provenance": build_run_provenance(
+                entrypoint=Path(__file__),
+                repo_root=REPO_ROOT,
+                argv=sys.argv,
+                args=args,
+                inputs={"bucket_listing": GCS_LIST_URL},
+                outputs={
+                    "clips_dir": args.out_dir,
+                    "content_manifest": args.manifest,
+                    "run_manifest": args.run_manifest_out,
+                },
+            ),
+        },
+    )
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument(
@@ -89,7 +160,15 @@ def main() -> int:
         required=True,
         help="Output JSON manifest (stem -> {orig,cbr,vod,vodlb}).",
     )
+    ap.add_argument(
+        "--run-manifest-out",
+        type=Path,
+        default=None,
+        help="Output run-provenance JSON sidecar (default: <manifest>.run-manifest.json).",
+    )
     args = ap.parse_args()
+    if args.run_manifest_out is None:
+        args.run_manifest_out = _run_manifest_default(args.manifest)
 
     print(f"[ugc-fetch] listing {PREFIX} ...", flush=True)
     items = _list_bucket(PREFIX)
@@ -97,7 +176,8 @@ def main() -> int:
     groups = _group_by_stem(items)
     print(f"[ugc-fetch] {len(groups)} complete 4-tuple stems", flush=True)
     ranked = sorted(groups.items(), key=lambda kv: sum(s for _, s in kv[1]))[: args.n_stems]
-    total_mb = sum(sum(s for _, s in files) for _, files in ranked) / 1e6
+    total_bytes = sum(sum(s for _, s in files) for _, files in ranked)
+    total_mb = total_bytes / 1e6
     print(f"[ugc-fetch] selected {len(ranked)} stems totalling {total_mb:.1f} MB", flush=True)
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
@@ -109,15 +189,17 @@ def main() -> int:
             url = GCS_OBJ_URL.format(name=PREFIX + fname)
             dest = args.out_dir / fname
             _download(url, dest)
-            for sfx in SUFFIXES:
-                if f"_{sfx}." in fname:
-                    entry[sfx] = str(dest)
-                    break
+            entry[_suffix_for_name(fname)] = str(dest)
         manifest[stem] = entry
 
     args.manifest.parent.mkdir(parents=True, exist_ok=True)
     args.manifest.write_text(json.dumps(manifest, indent=2) + "\n")
-    print(f"[ugc-fetch] wrote {args.manifest} ({len(manifest)} stems)", flush=True)
+    _write_run_manifest(args=args, ranked=ranked, total_bytes=total_bytes)
+    print(
+        f"[ugc-fetch] wrote {args.manifest} ({len(manifest)} stems); "
+        f"run manifest {args.run_manifest_out}",
+        flush=True,
+    )
     return 0
 
 

@@ -49,6 +49,10 @@ research-data drop, see CLAUDE.md §5). The companion downloader
 will fetch + extract everything to a similarly-shaped location under
 `$VMAF_DATA_ROOT/konvid-1k/`; the ingestion script accepts either
 layout via `--konvid-dir`.
+The fetcher writes `<root>/fetch_manifest.json` by default and accepts
+`--manifest-out PATH`. That sidecar records the archive URLs, observed archive
+sizes, extracted-directory status, `--keep-zips`, and ADR-0661
+`run_provenance` before the JSONL adapter consumes the local root.
 
 Dataset URL: <https://database.mmsp-kn.de/konvid-1k-database.html>
 

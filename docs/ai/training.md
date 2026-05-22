@@ -213,6 +213,13 @@ MOS corpus adapters now emit the same replay evidence at the source boundary:
 `<output>.manifest.json` and accept `--manifest-out`. These manifests record
 the corpus label, row counters, download/probe attrition, effective row caps,
 local corpus roots, manifest CSV inputs, and ADR-0661 `run_provenance`.
+Dataset fetchers now cover the step before those adapters run:
+`fetch_konvid_1k.py` writes `<root>/fetch_manifest.json`, while
+`fetch_youtube_ugc_subset.py` preserves its existing stem content manifest and
+writes `<manifest>.run-manifest.json`. These sidecars record archive/source
+URLs, selection policy, output bundle paths, and ADR-0661 `run_provenance` so a
+later JSONL/parquet manifest can be traced back to the original local download
+instead of only to an anonymous corpus directory.
 
 The ensemble production validator `ai/scripts/validate_ensemble_seeds.py`
 records `run_provenance` in its `PROMOTE.json` / `HOLD.json` verdicts. That

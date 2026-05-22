@@ -53,6 +53,14 @@ If the manifest CSV does not carry a URL column (the canonical
 download URL from `--bucket-prefix` (default
 `https://storage.googleapis.com/ugc-dataset/original_videos/`).
 
+The separate VP9 compressed subset helper
+`ai/scripts/fetch_youtube_ugc_subset.py` keeps its existing `--manifest`
+stem-to-files JSON for downstream consumers and writes a run sidecar at
+`<manifest>.run-manifest.json` by default. Pass `--run-manifest-out PATH` for a
+dated experiment bundle. The run sidecar records the GCS listing URL, smallest
+complete-4tuple selection policy, selected file sizes, output directory, and
+ADR-0661 `run_provenance`.
+
 ## Whole-corpus ingestion
 
 ```bash
