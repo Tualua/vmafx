@@ -66,7 +66,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from corpus.base import CorpusIngestBase, pick, utc_now_iso
+from corpus.base import CorpusIngestBase, pick, utc_now_iso, write_ingest_manifest
 
 _LOG = logging.getLogger("konvid_1k_to_corpus_jsonl")
 
@@ -282,6 +282,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Output JSONL path (default: .workingdir2/konvid-1k/konvid_1k.jsonl).",
     )
     ap.add_argument(
+        "--manifest-out",
+        type=Path,
+        default=None,
+        help="Replay manifest JSON sidecar (default: <output>.manifest.json).",
+    )
+    ap.add_argument(
         "--ffprobe-bin",
         default=os.environ.get("FFPROBE_BIN", "ffprobe"),
         help="ffprobe binary (default: $FFPROBE_BIN or 'ffprobe').",
@@ -300,13 +306,16 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _build_parser().parse_args(argv)
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = _build_parser().parse_args(raw_argv)
+    if args.manifest_out is None:
+        args.manifest_out = args.output.with_suffix(".manifest.json")
     logging.basicConfig(
         level=getattr(logging, args.log_level),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     try:
-        run(
+        written, skipped_broken, dedups = run(
             konvid_dir=args.konvid_dir,
             output=args.output,
             ffprobe_bin=args.ffprobe_bin,
@@ -327,6 +336,25 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+    write_ingest_manifest(
+        args.manifest_out,
+        schema="konvid-1k-corpus-jsonl-manifest-v1",
+        entrypoint=Path(__file__),
+        repo_root=Path(__file__).resolve().parents[2],
+        argv=raw_argv,
+        args=args,
+        corpus_label=_CORPUS_LABEL,
+        stats={
+            "written": written,
+            "skipped_download": 0,
+            "skipped_broken": skipped_broken,
+            "dedups": dedups,
+            "attrition_pct": 0.0,
+        },
+        inputs={"konvid_dir": args.konvid_dir},
+        outputs={"jsonl": args.output, "manifest": args.manifest_out},
+        config={"corpus_version": args.corpus_version},
+    )
     return 0
 
 

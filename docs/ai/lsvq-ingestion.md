@@ -117,6 +117,8 @@ Bare-stem filenames (e.g. `0001`) are normalised to
 --clips-subdir NAME           Subdir for clips (default: clips)
 --clip-suffix EXT             Default file suffix (default: .mp4)
 --output PATH                 Output JSONL (default: <dir>/lsvq.jsonl)
+--manifest-out PATH           Replay manifest JSON sidecar
+                              (default: <output>.manifest.json)
 --ffprobe-bin BIN             ffprobe binary (default: $FFPROBE_BIN or ffprobe)
 --curl-bin BIN                curl binary (default: $CURL_BIN or curl)
 --corpus-version STR          Dataset version (default: lsvq-2021)
@@ -126,6 +128,10 @@ Bare-stem filenames (e.g. `0001`) are normalised to
 --full                        Disable --max-rows cap; ingest whole CSV
 --log-level LEVEL             DEBUG / INFO / WARNING / ERROR
 ```
+
+The replay manifest records the LSVQ working directory, manifest/progress paths,
+row cap, attrition counters, effective corpus version, and ADR-0661
+`run_provenance`.
 
 ## Failure handling
 

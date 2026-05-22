@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import Any
 
 from corpus import base as _corpus_base
-from corpus.base import CorpusIngestBase, RunStats, pick, utc_now_iso
+from corpus.base import CorpusIngestBase, RunStats, pick, utc_now_iso, write_ingest_manifest
 
 save_progress = _corpus_base.save_progress
 
@@ -252,6 +252,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--chug-dir", type=Path, default=_DEFAULT_CHUG_DIR)
     parser.add_argument("--manifest-csv", type=Path, default=None)
     parser.add_argument("--output", type=Path, default=_DEFAULT_OUTPUT)
+    parser.add_argument(
+        "--manifest-out",
+        type=Path,
+        default=None,
+        help="Replay manifest JSON sidecar (default: <output>.manifest.json).",
+    )
     parser.add_argument("--clips-subdir", default=_DEFAULT_CLIPS_SUBDIR)
     parser.add_argument("--ffprobe-bin", default="ffprobe")
     parser.add_argument("--curl-bin", default="curl")
@@ -270,7 +276,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
-    args = parser.parse_args(argv)
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = parser.parse_args(raw_argv)
+    if args.manifest_out is None:
+        args.manifest_out = args.output.with_suffix(".manifest.json")
     logging.basicConfig(
         level=logging.INFO if args.verbose else logging.WARNING,
         format="%(levelname)s:%(name)s:%(message)s",
@@ -292,6 +301,29 @@ def main(argv: list[str] | None = None) -> int:
     except (FileNotFoundError, ValueError) as exc:
         print(f"chug_to_corpus_jsonl: {exc}", file=sys.stderr)
         return 2
+    write_ingest_manifest(
+        args.manifest_out,
+        schema="chug-corpus-jsonl-manifest-v1",
+        entrypoint=Path(__file__),
+        repo_root=Path(__file__).resolve().parents[2],
+        argv=raw_argv,
+        args=args,
+        corpus_label=_CORPUS_LABEL,
+        stats=stats,
+        inputs={
+            "chug_dir": args.chug_dir,
+            "manifest_csv": args.manifest_csv,
+            "progress_path": None,
+        },
+        outputs={"jsonl": args.output, "manifest": args.manifest_out},
+        config={
+            "clips_subdir": args.clips_subdir,
+            "min_csv_rows": args.min_csv_rows,
+            "max_rows": max_rows,
+            "full": args.full,
+            "corpus_version": _DEFAULT_CORPUS_VERSION,
+        },
+    )
     print(
         "chug_to_corpus_jsonl: "
         f"written={stats.written} skipped_download={stats.skipped_download} "

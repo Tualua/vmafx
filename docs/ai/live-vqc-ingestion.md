@@ -114,6 +114,7 @@ via curl (resumable, with a 120-second per-clip timeout).
 | `--manifest-csv` | `<dir>/manifest.csv` | MOS manifest path |
 | `--clips-subdir` | `clips` | Sub-directory for video files |
 | `--output` | `<dir>/live_vqc.jsonl` | Output JSONL path |
+| `--manifest-out` | `<output>.manifest.json` | Replay manifest JSON sidecar |
 | `--max-rows` | `200` | Cap on rows ingested (laptop-class subset) |
 | `--full` | off | Ingest the entire manifest; overrides `--max-rows` |
 | `--corpus-version` | `live-vqc-2019` | Version string baked into each row |
@@ -123,6 +124,10 @@ via curl (resumable, with a 120-second per-clip timeout).
 | `--download-timeout-s` | `120` | Per-clip curl `--max-time` seconds |
 | `--log-level` | `INFO` | Logging level (`DEBUG` / `INFO` / `WARNING` / `ERROR`) |
 | `--progress-path` | `<dir>/.download-progress.json` | Resumable download state; delete to retry failures |
+
+The replay manifest records the LIVE-VQC working directory, manifest path, row
+cap, attrition counters, effective corpus version, and ADR-0661
+`run_provenance`.
 
 ## Output schema
 

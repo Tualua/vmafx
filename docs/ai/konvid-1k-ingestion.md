@@ -89,6 +89,11 @@ with `--output`. Override the input layout with `--konvid-dir`. Override
 the ffprobe binary with `--ffprobe-bin` (also picked up from
 `$FFPROBE_BIN`).
 
+The adapter writes `<output>.manifest.json` by default and accepts
+`--manifest-out PATH` when a run bundle needs a separate sidecar location.
+The manifest records the KonViD root, effective corpus version, row counters,
+and ADR-0661 `run_provenance`.
+
 The summary line lands on stderr on completion:
 
 ```text

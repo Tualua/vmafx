@@ -205,6 +205,14 @@ KoNViD clip IDs where applicable, adapter labels, and ADR-0661
 `run_provenance`. The BVI-DVC adapter also emits the current vmaf-tune v3
 additive columns with explicit unavailable defaults so cached BVI rows remain
 schema-compatible.
+MOS corpus adapters now emit the same replay evidence at the source boundary:
+`chug_to_corpus_jsonl.py`, `konvid_1k_to_corpus_jsonl.py`,
+`konvid_150k_to_corpus_jsonl.py`, `youtube_ugc_to_corpus_jsonl.py`,
+`lsvq_to_corpus_jsonl.py`, `live_vqc_to_corpus_jsonl.py`, and
+`waterloo_ivc_to_corpus_jsonl.py` all default to
+`<output>.manifest.json` and accept `--manifest-out`. These manifests record
+the corpus label, row counters, download/probe attrition, effective row caps,
+local corpus roots, manifest CSV inputs, and ADR-0661 `run_provenance`.
 
 The ensemble production validator `ai/scripts/validate_ensemble_seeds.py`
 records `run_provenance` in its `PROMOTE.json` / `HOLD.json` verdicts. That

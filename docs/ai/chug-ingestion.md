@@ -47,6 +47,12 @@ The run is resumable through `.workingdir2/chug/.download-progress.json`.
 The adapter downloads each MP4 via `curl`, probes it with `ffprobe`,
 deduplicates by SHA-256, and appends JSONL rows.
 
+The source adapter also writes `.workingdir2/chug/chug.manifest.json` by
+default (or `<output>.manifest.json` when `--output` changes). The sidecar
+records the CHUG root, manifest CSV, row caps, written/skipped/dedup counters,
+and ADR-0661 `run_provenance`; pass `--manifest-out PATH` to place it in a
+dated experiment bundle.
+
 ## Output Schema
 
 The common MOS-corpus fields match [mos-corpora.md](mos-corpora.md):

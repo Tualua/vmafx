@@ -38,9 +38,11 @@ import os
 import subprocess
 import tempfile
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
+
+from aiutils.run_manifest import build_run_provenance, normalise_manifest_value, write_manifest_json
 
 _LOG = logging.getLogger(__name__)
 
@@ -433,6 +435,54 @@ class RunStats:
     def as_tuple(self) -> tuple[int, int, int, int]:
         """Return ``(written, skipped_download, skipped_broken, dedups)``."""
         return (self.written, self.skipped_download, self.skipped_broken, self.dedups)
+
+    def as_dict(self) -> dict[str, int | float]:
+        """Return JSON-ready run counters."""
+        return {
+            "written": self.written,
+            "skipped_download": self.skipped_download,
+            "skipped_broken": self.skipped_broken,
+            "dedups": self.dedups,
+            "attrition_pct": self.attrition_pct,
+        }
+
+
+def _normalise_stats(stats: RunStats | Mapping[str, Any]) -> dict[str, Any]:
+    if isinstance(stats, RunStats):
+        return stats.as_dict()
+    return dict(stats)
+
+
+def write_ingest_manifest(
+    path: Path,
+    *,
+    schema: str,
+    entrypoint: Path,
+    repo_root: Path,
+    argv: Sequence[str],
+    args: Any,
+    corpus_label: str,
+    stats: RunStats | Mapping[str, Any],
+    inputs: Mapping[str, Any],
+    outputs: Mapping[str, Any],
+    config: Mapping[str, Any] | None = None,
+) -> None:
+    """Write a replay manifest for a MOS-corpus JSONL ingest run."""
+    payload: dict[str, Any] = {
+        "schema": schema,
+        "corpus": corpus_label,
+        "stats": normalise_manifest_value(_normalise_stats(stats)),
+        "config": normalise_manifest_value(config or {}),
+        "run_provenance": build_run_provenance(
+            entrypoint=entrypoint,
+            repo_root=repo_root,
+            argv=argv,
+            args=args,
+            inputs=inputs,
+            outputs=outputs,
+        ),
+    }
+    write_manifest_json(path, payload)
 
 
 # ---------------------------------------------------------------------------

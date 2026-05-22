@@ -123,6 +123,41 @@ def test_run_writes_chug_jsonl_with_hdr_metadata(tmp_path: Path) -> None:
     assert row["chug_bitladder"] == "360p_0.2M_"
 
 
+def test_main_writes_replay_manifest(tmp_path: Path, monkeypatch) -> None:
+    output = tmp_path / "chug.jsonl"
+
+    def fake_run(**kwargs):
+        kwargs["output"].parent.mkdir(parents=True, exist_ok=True)
+        kwargs["output"].write_text("{}\n", encoding="utf-8")
+        stats = CHUG.RunStats()
+        stats.written = 1
+        return stats
+
+    monkeypatch.setattr(CHUG, "run", fake_run)
+
+    rc = CHUG.main(
+        [
+            "--chug-dir",
+            str(tmp_path / "chug"),
+            "--output",
+            str(output),
+            "--min-csv-rows",
+            "1",
+            "--max-rows",
+            "1",
+        ]
+    )
+
+    assert rc == 0
+    manifest = json.loads(output.with_suffix(".manifest.json").read_text(encoding="utf-8"))
+    assert manifest["schema"] == "chug-corpus-jsonl-manifest-v1"
+    assert manifest["corpus"] == "chug"
+    assert manifest["stats"]["written"] == 1
+    assert manifest["config"]["max_rows"] == 1
+    assert manifest["run_provenance"]["schema"] == "ai-run-provenance-v1"
+    assert manifest["run_provenance"]["args"]["output"] == str(output)
+
+
 def _chug_row(
     *,
     src: str,

@@ -7,6 +7,32 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## feat/mos-corpus-adapter-manifests (ADR-0676)
+
+**No upstream rebase impact**: this touches fork-local AI MOS corpus adapters,
+tests, docs, package AGENTS notes, ADR/research notes, and a changelog
+fragment. Upstream Netflix/vmaf does not ship these local MOS-corpus ingestion
+scripts.
+
+Invariant: CHUG, KoNViD-1k, KoNViD-150k, YouTube-UGC, LSVQ, LIVE-VQC, and
+Waterloo-IVC source adapters write `<output>.manifest.json` by default using
+`corpus.base.write_ingest_manifest()` and ADR-0661 `run_provenance`. Keep new
+MOS adapter CLIs on this sidecar contract before their JSONL rows feed
+aggregation, model-card refreshes, or signal-mix audits.
+
+Smoke:
+`.venv/bin/python -m pytest ai/tests/test_corpus_base.py ai/tests/test_chug.py ai/tests/test_konvid_1k.py ai/tests/test_konvid_150k.py ai/tests/test_lsvq.py ai/tests/test_live_vqc.py ai/tests/test_waterloo_ivc.py ai/tests/test_youtube_ugc.py -q`
+
+Touched files: `ai/src/corpus/base.py`, `ai/scripts/chug_to_corpus_jsonl.py`,
+`ai/scripts/konvid_1k_to_corpus_jsonl.py`,
+`ai/scripts/konvid_150k_to_corpus_jsonl.py`,
+`ai/scripts/youtube_ugc_to_corpus_jsonl.py`,
+`ai/scripts/lsvq_to_corpus_jsonl.py`, `ai/scripts/live_vqc_to_corpus_jsonl.py`,
+`ai/scripts/waterloo_ivc_to_corpus_jsonl.py`, `ai/tests/test_corpus_base.py`,
+`ai/tests/test_chug.py`, `ai/AGENTS.md`, `docs/ai/*.md` ingestion docs,
+`docs/adr/0676-*.md`, `docs/research/0697-*.md`,
+`changelog.d/added/0676-*.md`, and this file.
+
 ## feat/full-feature-exporter-manifests (ADR-0668 follow-up)
 
 **No upstream rebase impact**: this touches fork-local AI corpus

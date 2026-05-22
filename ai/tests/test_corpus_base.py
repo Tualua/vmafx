@@ -20,6 +20,7 @@ import pytest
 
 from corpus.base import (
     CorpusIngestBase,
+    RunStats,
     _parse_framerate,
     download_clip,
     load_progress,
@@ -33,6 +34,7 @@ from corpus.base import (
     sha256_file,
     should_attempt,
     utc_now_iso,
+    write_ingest_manifest,
 )
 
 # ---------------------------------------------------------------------------
@@ -343,6 +345,33 @@ def test_corpus_ingest_base_zero_geometry_skipped(tmp_path: Path) -> None:
     stats = ingest.run()
     assert stats.written == 0
     assert stats.skipped_broken == 1
+
+
+def test_write_ingest_manifest_records_run_provenance(tmp_path: Path) -> None:
+    stats = RunStats()
+    stats.written = 1
+    manifest = tmp_path / "out.manifest.json"
+
+    write_ingest_manifest(
+        manifest,
+        schema="test-corpus-jsonl-manifest-v1",
+        entrypoint=Path(__file__),
+        repo_root=Path(__file__).resolve().parents[2],
+        argv=["--output", str(tmp_path / "out.jsonl")],
+        args={"output": tmp_path / "out.jsonl"},
+        corpus_label="test-corpus",
+        stats=stats,
+        inputs={"corpus_dir": tmp_path},
+        outputs={"manifest": manifest},
+        config={"max_rows": 1},
+    )
+
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    assert payload["schema"] == "test-corpus-jsonl-manifest-v1"
+    assert payload["corpus"] == "test-corpus"
+    assert payload["stats"]["written"] == 1
+    assert payload["config"]["max_rows"] == 1
+    assert payload["run_provenance"]["schema"] == "ai-run-provenance-v1"
 
 
 # ---------------------------------------------------------------------------

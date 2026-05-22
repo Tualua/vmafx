@@ -40,7 +40,14 @@ from pathlib import Path
 from typing import Any
 
 from corpus import base as _corpus_base
-from corpus.base import CorpusIngestBase, RunStats, normalise_clip_name, pick, utc_now_iso
+from corpus.base import (
+    CorpusIngestBase,
+    RunStats,
+    normalise_clip_name,
+    pick,
+    utc_now_iso,
+    write_ingest_manifest,
+)
 
 save_progress = _corpus_base.save_progress
 
@@ -267,6 +274,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="GCS bucket URL prefix for synthesising download URLs.",
     )
     ap.add_argument("--output", type=Path, default=_DEFAULT_OUTPUT)
+    ap.add_argument(
+        "--manifest-out",
+        type=Path,
+        default=None,
+        help="Replay manifest JSON sidecar (default: <output>.manifest.json).",
+    )
     ap.add_argument("--ffprobe-bin", default=os.environ.get("FFPROBE_BIN", "ffprobe"))
     ap.add_argument("--curl-bin", default=os.environ.get("CURL_BIN", "curl"))
     ap.add_argument(
@@ -293,7 +306,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _build_parser().parse_args(argv)
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = _build_parser().parse_args(raw_argv)
+    if args.manifest_out is None:
+        args.manifest_out = args.output.with_suffix(".manifest.json")
     logging.basicConfig(
         level=getattr(logging, args.log_level),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -302,7 +318,7 @@ def main(argv: list[str] | None = None) -> int:
         _LOG.warning("curl binary %r not on PATH; downloads will fail", args.curl_bin)
     max_rows: int | None = None if args.full else args.max_rows
     try:
-        run(
+        stats = run(
             ugc_dir=args.ugc_dir,
             output=args.output,
             manifest_csv=args.manifest_csv,
@@ -328,6 +344,32 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+    write_ingest_manifest(
+        args.manifest_out,
+        schema="youtube-ugc-corpus-jsonl-manifest-v1",
+        entrypoint=Path(__file__),
+        repo_root=Path(__file__).resolve().parents[2],
+        argv=raw_argv,
+        args=args,
+        corpus_label=_CORPUS_LABEL,
+        stats=stats,
+        inputs={
+            "ugc_dir": args.ugc_dir,
+            "manifest_csv": args.manifest_csv,
+            "progress_path": args.progress_path,
+        },
+        outputs={"jsonl": args.output, "manifest": args.manifest_out},
+        config={
+            "clips_subdir": args.clips_subdir,
+            "clip_suffix": args.clip_suffix,
+            "bucket_prefix": args.bucket_prefix,
+            "min_csv_rows": _UGC_MIN_ROWS,
+            "max_rows": max_rows,
+            "full": args.full,
+            "corpus_version": args.corpus_version,
+            "attrition_warn_threshold": args.attrition_warn_threshold,
+        },
+    )
     return 0
 
 

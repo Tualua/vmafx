@@ -47,7 +47,14 @@ from pathlib import Path
 from typing import Any
 
 from corpus import base as _corpus_base
-from corpus.base import CorpusIngestBase, RunStats, normalise_clip_name, pick, utc_now_iso
+from corpus.base import (
+    CorpusIngestBase,
+    RunStats,
+    normalise_clip_name,
+    pick,
+    utc_now_iso,
+    write_ingest_manifest,
+)
 
 # Public re-export of corpus.base.save_progress so tests can call
 # `KONVID.save_progress(...)` directly on this module. Assignment
@@ -358,6 +365,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Output JSONL path (default: .workingdir2/konvid-150k/konvid_150k.jsonl).",
     )
     ap.add_argument(
+        "--manifest-out",
+        type=Path,
+        default=None,
+        help="Replay manifest JSON sidecar (default: <output>.manifest.json).",
+    )
+    ap.add_argument(
         "--ffprobe-bin", default=os.environ.get("FFPROBE_BIN", "ffprobe"), help="ffprobe binary."
     )
     ap.add_argument("--curl-bin", default=os.environ.get("CURL_BIN", "curl"), help="curl binary.")
@@ -383,7 +396,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _build_parser().parse_args(argv)
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = _build_parser().parse_args(raw_argv)
+    if args.manifest_out is None:
+        args.manifest_out = args.output.with_suffix(".manifest.json")
     logging.basicConfig(
         level=getattr(logging, args.log_level),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -391,7 +407,7 @@ def main(argv: list[str] | None = None) -> int:
     if shutil.which(args.curl_bin) is None:
         _LOG.warning("curl binary %r not on PATH; downloads will fail", args.curl_bin)
     try:
-        run(
+        stats = run(
             konvid_dir=args.konvid_dir,
             output=args.output,
             manifest_csv=args.manifest_csv,
@@ -415,6 +431,28 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+    write_ingest_manifest(
+        args.manifest_out,
+        schema="konvid-150k-corpus-jsonl-manifest-v1",
+        entrypoint=Path(__file__),
+        repo_root=Path(__file__).resolve().parents[2],
+        argv=raw_argv,
+        args=args,
+        corpus_label=_CORPUS_LABEL,
+        stats=stats,
+        inputs={
+            "konvid_dir": args.konvid_dir,
+            "manifest_csv": args.manifest_csv,
+            "progress_path": args.progress_path,
+        },
+        outputs={"jsonl": args.output, "manifest": args.manifest_out},
+        config={
+            "clips_subdir": args.clips_subdir,
+            "min_csv_rows": _KONVID_150K_MIN_ROWS,
+            "corpus_version": args.corpus_version,
+            "attrition_warn_threshold": args.attrition_warn_threshold,
+        },
+    )
     return 0
 
 

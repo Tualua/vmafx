@@ -101,6 +101,15 @@ dedup counters, corpus-source overrides, and ADR-0661 `run_provenance`.
 Use `--manifest-out PATH` when the JSONL and manifest need to live in a
 separate experiment bundle.
 
+Each source adapter writes the same kind of replay sidecar before aggregation.
+By default `chug_to_corpus_jsonl.py`, `konvid_1k_to_corpus_jsonl.py`,
+`konvid_150k_to_corpus_jsonl.py`, `youtube_ugc_to_corpus_jsonl.py`,
+`lsvq_to_corpus_jsonl.py`, `live_vqc_to_corpus_jsonl.py`, and
+`waterloo_ivc_to_corpus_jsonl.py` write `<output>.manifest.json`; pass
+`--manifest-out PATH` when storing a dated experiment bundle. The source
+manifests record the corpus root, manifest CSV, progress path, row caps,
+written/skipped/dedup counters, and ADR-0661 `run_provenance`.
+
 For a one-command discover-then-train workflow:
 
 ```bash

@@ -141,13 +141,16 @@ python ai/scripts/konvid_150k_to_corpus_jsonl.py
 ```
 
 Default output path is `.workingdir2/konvid-150k/konvid_150k.jsonl`.
-Override with `--output`. Override the input root with `--konvid-dir`.
+Override with `--output`. The adapter writes `<output>.manifest.json` by
+default; pass `--manifest-out PATH` when the replay sidecar should live in
+a dated experiment bundle. Override the input root with `--konvid-dir`.
 Passing `--manifest-csv` is strict: if that explicit file is missing,
 the script fails instead of falling back to split CSV discovery. This
 catches typoed manifest paths. Override the curl / ffprobe binaries
 with `--curl-bin` / `--ffprobe-bin` (also picked up from `$CURL_BIN` /
 `$FFPROBE_BIN`). Override the resumable-state path with
-`--progress-path`.
+`--progress-path`. The replay manifest records those source paths, row
+caps, attrition counters, and ADR-0661 `run_provenance`.
 
 The summary line lands on stderr on completion:
 

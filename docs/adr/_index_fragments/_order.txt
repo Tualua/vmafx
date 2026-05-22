@@ -423,4 +423,5 @@
 0673-saliency-materializer-batch-manifest
 0674-second-opinion-materializer-batch-manifest
 0675-mos-label-materializer-batch-manifest
+0676-mos-corpus-adapter-manifests
 0679-ci-draft-automerge-gate

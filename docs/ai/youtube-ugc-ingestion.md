@@ -150,6 +150,8 @@ to `Gaming_720P-25aa_orig.mp4` by appending `--clip-suffix`
                               download URLs when manifest lacks a `url` column
                               (default: original_videos/ on ugc-dataset bucket)
 --output PATH                 Output JSONL (default: <dir>/youtube-ugc.jsonl)
+--manifest-out PATH           Replay manifest JSON sidecar
+                              (default: <output>.manifest.json)
 --ffprobe-bin BIN             ffprobe binary (default: $FFPROBE_BIN or ffprobe)
 --curl-bin BIN                curl binary (default: $CURL_BIN or curl)
 --corpus-version STR          Dataset version (default: ugc-2019-orig;
@@ -162,6 +164,10 @@ to `Gaming_720P-25aa_orig.mp4` by appending `--clip-suffix`
 --full                        Disable --max-rows cap; ingest whole CSV
 --log-level LEVEL             DEBUG / INFO / WARNING / ERROR
 ```
+
+The replay manifest records the UGC working directory, manifest/progress paths,
+row cap, attrition counters, effective corpus version, and ADR-0661
+`run_provenance`.
 
 ## Failure handling
 
