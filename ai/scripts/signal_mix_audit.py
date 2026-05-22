@@ -21,14 +21,11 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from _script_bootstrap import bootstrap_ai_script
 
-SCRIPT_PATH = Path(__file__).resolve()
-REPO_ROOT = SCRIPT_PATH.parents[2]
-AI_SRC = REPO_ROOT / "ai" / "src"
-
-if __package__ in (None, ""):
-    sys.path.insert(0, str(REPO_ROOT))
-    sys.path.insert(0, str(AI_SRC))
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 

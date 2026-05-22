@@ -24,14 +24,15 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-if __package__ in (None, ""):
-    _ROOT = Path(__file__).resolve().parents[2]
-    sys.path.insert(0, str(_ROOT))
-    sys.path.insert(0, str(_ROOT / "ai" / "src"))
-    sys.path.insert(0, str(_ROOT / "tools" / "vmaf-tune" / "src"))
+from _script_bootstrap import bootstrap_ai_script
 
-SCRIPT_PATH = Path(__file__).resolve()
-REPO_ROOT = SCRIPT_PATH.parents[2]
+_SCRIPT_PATHS = bootstrap_ai_script(
+    __file__,
+    include_repo_root=True,
+    include_vmaf_tune_src=True,
+)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
