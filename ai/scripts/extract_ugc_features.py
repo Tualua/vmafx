@@ -31,12 +31,19 @@ from pathlib import Path
 
 import pandas as pd
 
-if __package__ in (None, ""):
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+if str(REPO_ROOT / "ai" / "src") not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 
-from ai.data.feature_extractor import DEFAULT_VMAF_BINARY, FULL_FEATURES, _extractors_for
+from ai.data.feature_extractor import (  # noqa: E402
+    DEFAULT_VMAF_BINARY,
+    FULL_FEATURES,
+    _extractors_for,
+)
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_COLS = (*FULL_FEATURES, "vmaf")
 
 _METRIC_ALIASES: dict[str, tuple[str, ...]] = {
@@ -172,7 +179,55 @@ def _frame_row(metrics: dict) -> dict:
     return row
 
 
-def main() -> int:
+def _write_manifest(
+    *,
+    path: Path,
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    manifest_items: int,
+    pair_count: int,
+    fail_count: int,
+    row_count: int,
+    source_count: int,
+) -> None:
+    from aiutils.run_manifest import write_run_manifest
+
+    write_run_manifest(
+        path,
+        schema="ugc-full-feature-extraction-manifest-v1",
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=raw_argv,
+        args=args,
+        inputs={
+            "manifest": args.manifest,
+            "vmaf_binary": args.vmaf_bin,
+            "model": args.model,
+        },
+        outputs={
+            "parquet": args.out_parquet,
+            "manifest": path,
+            "yuv_dir": args.yuv_dir,
+        },
+        sections={
+            "manifest_items": int(manifest_items),
+            "pair_count": int(pair_count),
+            "fail_count": int(fail_count),
+            "row_count": int(row_count),
+            "source_count": int(source_count),
+            "feature_columns": list(SCHEMA_COLS),
+            "config": {
+                "max_height": int(args.max_height),
+                "max_frames": int(args.max_frames),
+                "threads": int(args.threads),
+                "keep_yuv": bool(args.keep_yuv),
+            },
+        },
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
     ap = argparse.ArgumentParser()
     ap.add_argument("--manifest", type=Path, required=True)
     ap.add_argument(
@@ -200,7 +255,15 @@ def main() -> int:
     )
     ap.add_argument("--threads", type=int, default=8)
     ap.add_argument("--keep-yuv", action="store_true")
-    args = ap.parse_args()
+    ap.add_argument(
+        "--manifest-out",
+        type=Path,
+        default=None,
+        help="Replay manifest JSON sidecar (default: <out-parquet>.manifest.json).",
+    )
+    args = ap.parse_args(raw_argv)
+    if args.manifest_out is None:
+        args.manifest_out = args.out_parquet.with_suffix(".manifest.json")
 
     if not args.vmaf_bin.is_file():
         print(f"error: vmaf binary not found: {args.vmaf_bin}", file=sys.stderr)
@@ -308,6 +371,16 @@ def main() -> int:
     df = df[list(full_cols)]
     args.out_parquet.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(args.out_parquet, index=False)
+    _write_manifest(
+        path=args.manifest_out,
+        args=args,
+        raw_argv=raw_argv,
+        manifest_items=len(manifest),
+        pair_count=pair_count,
+        fail_count=fail_count,
+        row_count=len(df),
+        source_count=int(df["source"].nunique()),
+    )
     print(
         f"[ugc-extract] wrote {args.out_parquet} pairs={pair_count} fails={fail_count} "
         f"rows={len(df)} sources={df['source'].nunique()} "

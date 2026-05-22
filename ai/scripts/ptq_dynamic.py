@@ -41,7 +41,7 @@ REPO_ROOT = SCRIPT_PATH.parents[2]
 if str(REPO_ROOT / "ai" / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+from aiutils.run_manifest import write_run_manifest  # noqa: E402
 
 
 def _save_inlined_for_quant(src: Path, dst: Path) -> None:
@@ -118,22 +118,21 @@ def main(argv: list[str] | None = None) -> int:
     ratio = sz_out / sz_in
     print(f"[ptq_dynamic] done — {sz_in:,} -> {sz_out:,} bytes ({ratio:.2f}×)")
     if args.report_out is not None:
-        write_manifest_json(
+        write_run_manifest(
             args.report_out,
-            {
+            schema="ptq-dynamic-report-v1",
+            entrypoint=SCRIPT_PATH,
+            repo_root=REPO_ROOT,
+            argv=raw_argv,
+            args=args,
+            inputs={"model": src},
+            outputs={"model": dst, "report": args.report_out},
+            sections={
                 "mode": "dynamic",
                 "input_bytes": sz_in,
                 "output_bytes": sz_out,
                 "size_ratio": ratio,
                 "per_channel": bool(args.per_channel),
-                "run_provenance": build_run_provenance(
-                    entrypoint=SCRIPT_PATH,
-                    repo_root=REPO_ROOT,
-                    argv=raw_argv,
-                    args=args,
-                    inputs={"model": src},
-                    outputs={"model": dst, "report": args.report_out},
-                ),
             },
         )
     return 0

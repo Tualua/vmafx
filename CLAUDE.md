@@ -127,6 +127,7 @@ docs/                         # all documentation (upstream-mirrored + fork-adde
 | New SIMD path                       | `/add-simd-path <isa> <feature>`              |
 | New feature extractor               | `/add-feature-extractor <name>`               |
 | Register a new model JSON           | `/add-model <path>`                           |
+| Add/audit AI run manifest           | `/ai-run-manifest <script-or-artifact>`       |
 | Profile a hot path                  | `/profile-hotpath <backend> <feature>`        |
 | Bisect a regression                 | `/bisect-regression`                          |
 | Cross-backend numeric diff          | `/cross-backend-diff`                         |

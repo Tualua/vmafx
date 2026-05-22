@@ -62,7 +62,7 @@ if str(_REPO_ROOT) not in sys.path:
 if str(_REPO_ROOT / "ai" / "src") not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT / "ai" / "src"))
 
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+from aiutils.run_manifest import write_run_manifest  # noqa: E402
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -285,9 +285,20 @@ def main(argv: list[str] | None = None) -> int:
         f"int8_onnx={result.int8_onnx} params={result.n_params}"
     )
     if args.report_out is not None:
-        write_manifest_json(
+        write_run_manifest(
             args.report_out,
-            {
+            schema="qat-train-report-v1",
+            entrypoint=SCRIPT_PATH,
+            repo_root=_REPO_ROOT,
+            argv=raw_argv,
+            args=args,
+            inputs={"config": cfg_path},
+            outputs={
+                "fp32_model": result.fp32_onnx,
+                "int8_model": result.int8_onnx,
+                "report": args.report_out,
+            },
+            sections={
                 "mode": "qat",
                 "model": cfg_doc.get("model"),
                 "smoke": bool(qat_cfg.smoke),
@@ -297,18 +308,6 @@ def main(argv: list[str] | None = None) -> int:
                 "n_params": int(result.n_params),
                 "fp32_onnx": str(result.fp32_onnx),
                 "int8_onnx": str(result.int8_onnx),
-                "run_provenance": build_run_provenance(
-                    entrypoint=SCRIPT_PATH,
-                    repo_root=_REPO_ROOT,
-                    argv=raw_argv,
-                    args=args,
-                    inputs={"config": cfg_path},
-                    outputs={
-                        "fp32_model": result.fp32_onnx,
-                        "int8_model": result.int8_onnx,
-                        "report": args.report_out,
-                    },
-                ),
             },
         )
     return 0

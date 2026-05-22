@@ -57,7 +57,8 @@ Cron: `37 4 * * *` (04:37 UTC). Steps:
 2. Run `python ai/scripts/build_bisect_cache.py --check` — regenerates
    the committed cache from fixed seeds and asserts content equality
    against the committed tree. Catches drift in `pandas` / `pyarrow` /
-   `onnx` serialisation.
+   `onnx` serialisation. Add `--manifest-out runs/bisect-cache-check.json`
+   when you need durable replay evidence for the cache check.
 3. Run `vmaf-train bisect-model-quality --fail-on-first-bad` against
    `ai/testdata/bisect/`.
 4. Always upload the JSON report as a workflow artifact (`bisect-report`).
@@ -87,7 +88,8 @@ materialises the same cache shape:
 ```bash
 python ai/scripts/build_bisect_cache.py \
   --source-features runs/dmos_features.parquet \
-  --target-column dmos
+  --target-column dmos \
+  --manifest-out runs/bisect-cache-manifest.json
 ```
 
 The source parquet must contain the canonical six columns (`adm2`,
@@ -96,6 +98,10 @@ target column. Without `--target-column`, the script tries `mos`,
 `dmos`, `target`, then `score`. The generated `features.parquet` always
 renames the target to `mos`, and the generated ONNX timeline is fit from
 that target before deterministic tiny perturbations are applied.
+When `--manifest-out` is supplied, the generator writes a
+`bisect-cache-manifest-v1` sidecar with the generation/check mode, target-column
+candidates, default feature list, artifact counts, and shared AI
+`run_provenance`.
 
 See the [fixture README](../../ai/testdata/bisect/README.md) for the
 exact cache contract and [Research-0001](../research/0001-bisect-model-quality-cache.md)

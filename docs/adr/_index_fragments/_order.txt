@@ -425,4 +425,5 @@
 0675-mos-label-materializer-batch-manifest
 0676-mos-corpus-adapter-manifests
 0677-ai-dataset-fetch-manifests
+0678-ai-run-manifest-helper
 0679-ci-draft-automerge-gate

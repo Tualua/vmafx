@@ -9,10 +9,12 @@ import json
 from pathlib import Path
 
 from aiutils.run_manifest import (
+    build_run_manifest_payload,
     build_run_provenance,
     describe_path,
     normalise_namespace,
     write_manifest_json,
+    write_run_manifest,
 )
 
 
@@ -82,3 +84,55 @@ def test_write_manifest_json_is_sorted_and_newline_terminated(tmp_path: Path) ->
     assert raw.endswith("\n")
     assert raw.splitlines()[1].strip().startswith('"a"')
     assert json.loads(raw) == {"a": {"b": 2}, "z": 1}
+
+
+def test_build_run_manifest_payload_deduplicates_common_envelope(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    script = root / "ai" / "scripts" / "extract.py"
+    script.parent.mkdir(parents=True)
+    script.write_text("print('extract')\n", encoding="utf-8")
+    source = root / "features.parquet"
+    source.write_text("fake\n", encoding="utf-8")
+    output = root / "report.json"
+
+    payload = build_run_manifest_payload(
+        schema="example-manifest-v1",
+        entrypoint=script,
+        repo_root=root,
+        argv=["--source", str(source), "--output", str(output)],
+        args={"source": source, "output": output},
+        inputs={"source": source},
+        outputs={"report": output},
+        sections={"row_count": 7, "config": {"features": ("adm2", "motion2")}},
+    )
+
+    assert payload["schema"] == "example-manifest-v1"
+    assert payload["row_count"] == 7
+    assert payload["config"] == {"features": ["adm2", "motion2"]}
+    assert payload["run_provenance"]["schema"] == "ai-run-provenance-v1"
+    assert payload["run_provenance"]["inputs"]["source"]["kind"] == "file"
+    assert payload["run_provenance"]["outputs"]["report"]["kind"] == "missing"
+
+
+def test_write_run_manifest_writes_payload(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    script = root / "script.py"
+    script.write_text("print('x')\n", encoding="utf-8")
+    manifest = tmp_path / "manifest.json"
+
+    write_run_manifest(
+        manifest,
+        schema="example-run-v1",
+        entrypoint=script,
+        repo_root=root,
+        argv=["--ok"],
+        args=argparse.Namespace(ok=True),
+        sections={"status": "pass"},
+    )
+
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    assert payload["schema"] == "example-run-v1"
+    assert payload["status"] == "pass"
+    assert payload["run_provenance"]["entrypoint"]["path"] == "script.py"

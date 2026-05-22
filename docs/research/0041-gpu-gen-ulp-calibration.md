@@ -146,6 +146,10 @@ Per the user-direction the smoke target is:
 That is 5 × 1 × 100 = 500 rows of labelled data. The `--smoke` mode
 of `collect_gpu_calibration_data.py` should produce exactly this
 shape and finish in under 5 minutes on a hosted runner.
+The collector defaults its replay sidecar to `<output>.manifest.json`;
+override with `--manifest-out` when bundling a dated calibration corpus. The
+manifest records feature/backend/device selections, source geometry, row count,
+and shared AI `run_provenance`.
 
 ### Decision criterion (corpus → ONNX-or-JSON-offset)
 

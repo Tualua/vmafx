@@ -133,6 +133,7 @@ python3 ai/scripts/extract_ugc_features.py \
     --yuv-dir .workingdir2/ugc/yuv \
     --vmaf-bin build-cpu/tools/vmaf \
     --out-parquet runs/full_features_ugc.parquet \
+    --manifest-out runs/full_features_ugc.manifest.json \
     --max-height 360 \
     --max-frames 300 \
     --threads 8

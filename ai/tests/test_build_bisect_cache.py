@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 import numpy as np
@@ -62,3 +63,19 @@ def test_source_feature_validation_reports_missing_columns(tmp_path: Path) -> No
         assert "vif_scale0" in str(exc)
     else:
         raise AssertionError("missing columns should fail")
+
+
+def test_regenerate_writes_replay_manifest(tmp_path: Path) -> None:
+    mod = _load_script()
+    out = tmp_path / "bisect"
+    manifest = tmp_path / "bisect_manifest.json"
+
+    rc = mod.main(["--out", str(out), "--manifest-out", str(manifest)])
+
+    assert rc == 0
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    assert payload["schema"] == "bisect-cache-manifest-v1"
+    assert payload["mode"] == "regenerate"
+    assert payload["status"] == "written"
+    assert payload["artifact_counts"] == {"feature_parquets": 1, "onnx_models": mod.N_MODELS}
+    assert payload["run_provenance"]["schema"] == "ai-run-provenance-v1"

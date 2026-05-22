@@ -35,7 +35,7 @@ REPO_ROOT = SCRIPT_PATH.parents[2]
 if str(REPO_ROOT / "ai" / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+from aiutils.run_manifest import write_run_manifest  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -107,9 +107,16 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[ptq_static] done — {sz_in:,} -> {sz_out:,} bytes ({ratio:.2f}×)")
     if args.report_out is not None:
         first_input = next(iter(arrays.keys()))
-        write_manifest_json(
+        write_run_manifest(
             args.report_out,
-            {
+            schema="ptq-static-report-v1",
+            entrypoint=SCRIPT_PATH,
+            repo_root=REPO_ROOT,
+            argv=raw_argv,
+            args=args,
+            inputs={"model": src, "calibration": cal},
+            outputs={"model": dst, "report": args.report_out},
+            sections={
                 "mode": "static",
                 "input_bytes": sz_in,
                 "output_bytes": sz_out,
@@ -117,14 +124,6 @@ def main(argv: list[str] | None = None) -> int:
                 "per_channel": bool(args.per_channel),
                 "calibration_samples": int(arrays[first_input].shape[0]),
                 "calibration_inputs": sorted(arrays.keys()),
-                "run_provenance": build_run_provenance(
-                    entrypoint=SCRIPT_PATH,
-                    repo_root=REPO_ROOT,
-                    argv=raw_argv,
-                    args=args,
-                    inputs={"model": src, "calibration": cal},
-                    outputs={"model": dst, "report": args.report_out},
-                ),
             },
         )
     return 0

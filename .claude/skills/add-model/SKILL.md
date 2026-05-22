@@ -21,11 +21,15 @@ description: Register a new VMAF model (.json / .pkl / .onnx) with the build, va
 4. For `.onnx`: require opset ≥ 17, run `onnx.checker.check_model(...)`, verify
    input/output shapes match the declared `model_type`.
 5. Copy to `model/` (or `model/tiny/` for `.onnx`) — never overwrite.
-6. Patch `libvmaf/src/meson.build` or `model/meson.build` to add the file to the
+6. For tiny-AI `.onnx` additions, verify the exporter/trainer wrote a sidecar
+   with `run_provenance.schema == "ai-run-provenance-v1"`. If the producing
+   script lacks that evidence, run `/ai-run-manifest` first and fix the script
+   before registering the model.
+7. Patch `libvmaf/src/meson.build` or `model/meson.build` to add the file to the
    install set if `--install` is passed.
-7. Add a loader test in `libvmaf/test/test_model.c` that loads the model, asserts
+8. Add a loader test in `libvmaf/test/test_model.c` that loads the model, asserts
    basic metadata is read, and unloads cleanly.
-8. Emit a summary: model name, type, install target, test added.
+9. Emit a summary: model name, type, install target, test added.
 
 ## Guardrails
 
@@ -33,3 +37,6 @@ description: Register a new VMAF model (.json / .pkl / .onnx) with the build, va
   equivalent; never trusted to execute arbitrary code at load time.
 - `.onnx` models run through `onnxruntime.InferenceSession` with the operator allowlist
   specified in `libvmaf/src/dnn/allowed_ops.txt`.
+- Tiny-AI model artifacts must have replay evidence. New exporter/trainer
+  sidecars use `aiutils.run_manifest.write_run_manifest()` unless they are
+  embedding provenance into an already-stable report schema.

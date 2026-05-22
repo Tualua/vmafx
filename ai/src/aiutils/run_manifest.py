@@ -108,6 +108,71 @@ def build_run_provenance(
     return provenance
 
 
+def build_run_manifest_payload(
+    *,
+    schema: str,
+    entrypoint: Path,
+    repo_root: Path,
+    argv: Sequence[str],
+    args: argparse.Namespace | Mapping[str, Any],
+    inputs: Mapping[str, Any] | None = None,
+    outputs: Mapping[str, Any] | None = None,
+    exclude_args: set[str] | None = None,
+    sections: Mapping[str, Any] | None = None,
+) -> dict[str, JsonValue]:
+    """Build a deterministic script-specific manifest with shared provenance.
+
+    ``sections`` carries adapter-style per-script fields such as row counts,
+    selected features, gate status, or calibration metadata. The envelope and
+    ``run_provenance`` block remain shared so scripts do not hand-roll the
+    same JSON structure.
+    """
+    payload: dict[str, JsonValue] = {"schema": schema}
+    if sections:
+        for key, value in sorted(sections.items(), key=lambda pair: str(pair[0])):
+            payload[str(key)] = normalise_manifest_value(value)
+    payload["run_provenance"] = build_run_provenance(
+        entrypoint=entrypoint,
+        repo_root=repo_root,
+        argv=argv,
+        args=args,
+        inputs=inputs,
+        outputs=outputs,
+        exclude_args=exclude_args,
+    )
+    return payload
+
+
+def write_run_manifest(
+    path: Path,
+    *,
+    schema: str,
+    entrypoint: Path,
+    repo_root: Path,
+    argv: Sequence[str],
+    args: argparse.Namespace | Mapping[str, Any],
+    inputs: Mapping[str, Any] | None = None,
+    outputs: Mapping[str, Any] | None = None,
+    exclude_args: set[str] | None = None,
+    sections: Mapping[str, Any] | None = None,
+) -> None:
+    """Write a deterministic script manifest plus shared run provenance."""
+    write_manifest_json(
+        path,
+        build_run_manifest_payload(
+            schema=schema,
+            entrypoint=entrypoint,
+            repo_root=repo_root,
+            argv=argv,
+            args=args,
+            inputs=inputs,
+            outputs=outputs,
+            exclude_args=exclude_args,
+            sections=sections,
+        ),
+    )
+
+
 def write_manifest_json(path: Path, payload: Mapping[str, Any]) -> None:
     """Write a deterministic JSON manifest with a trailing newline."""
     path.parent.mkdir(parents=True, exist_ok=True)

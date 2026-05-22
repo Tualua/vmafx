@@ -7,6 +7,30 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## feat/ai-run-manifest-helper (ADR-0678)
+
+**No upstream rebase impact**: this touches fork-local AI helper code, AI
+scripts, tests, Claude skills, docs, ADR/research notes, and a changelog
+fragment. Upstream Netflix/vmaf does not ship these AI provenance helpers or
+local training utilities.
+
+Invariant: new standalone AI artifact sidecars use
+`aiutils.run_manifest.write_run_manifest()` so the shared envelope and
+`run_provenance` block stay deduplicated. Existing stable report schemas may
+continue embedding `build_run_provenance()` directly.
+
+Smoke:
+`.venv/bin/python -m pytest ai/tests/test_run_manifest.py ai/tests/test_build_bisect_cache.py ai/tests/test_legacy_extractor_manifests.py ai/tests/test_ptq_scripts.py ai/tests/test_qat_smoke.py -q`
+
+Touched files: `ai/src/aiutils/run_manifest.py`, `ai/scripts/ptq_dynamic.py`,
+`ai/scripts/ptq_static.py`, `ai/scripts/qat_train.py`,
+`ai/scripts/build_bisect_cache.py`,
+`ai/scripts/collect_gpu_calibration_data.py`,
+`ai/scripts/extract_ugc_features.py`, `ai/scripts/extract_konvid_frames.py`,
+AI tests, `.claude/skills/ai-run-manifest/SKILL.md`, AI package/Claude
+guidance, `docs/ai/*.md`, `docs/adr/0678-*.md`, `docs/research/0699-*.md`,
+`changelog.d/added/0678-*.md`, and this file.
+
 ## feat/ai-dataset-fetch-manifests (ADR-0677)
 
 **No upstream rebase impact**: this touches fork-local AI dataset fetch

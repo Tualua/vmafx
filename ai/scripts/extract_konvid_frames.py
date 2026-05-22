@@ -36,7 +36,13 @@ import pandas as pd
 import yaml
 from PIL import Image
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
+if str(REPO_ROOT / "ai" / "src") not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
+
+from aiutils.run_manifest import write_run_manifest  # noqa: E402
+
 MANIFEST = REPO_ROOT / "ai" / "src" / "vmaf_train" / "data" / "manifests" / "konvid-1k.yaml"
 DATA_DIR = REPO_ROOT / "ai" / "data"
 
@@ -113,7 +119,48 @@ def _make_degraded(clean: np.ndarray) -> np.ndarray:
     return np.array(Image.open(buf).convert("L"), dtype=np.uint8)
 
 
-def main() -> int:
+def _write_manifest(
+    *,
+    path: Path,
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    root: Path,
+    manifest_entries: int,
+    processed_count: int,
+    missing_count: int,
+    error_count: int,
+    c2_rows: int,
+    c3_rows: int,
+) -> None:
+    write_run_manifest(
+        path,
+        schema="konvid-frame-extraction-manifest-v1",
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=raw_argv,
+        args=args,
+        inputs={"dataset_root": root, "manifest": MANIFEST},
+        outputs={
+            "c2_parquet": C2_PARQUET,
+            "c3_parquet": C3_PARQUET,
+            "c2_frames": root / "_frames_c2",
+            "c3_pairs": root / "_frames_c3_pairs",
+            "manifest": path,
+        },
+        sections={
+            "manifest_entries": int(manifest_entries),
+            "processed_count": int(processed_count),
+            "missing_count": int(missing_count),
+            "error_count": int(error_count),
+            "c2_rows": int(c2_rows),
+            "c3_rows": int(c3_rows),
+            "target_hw": int(args.target_hw),
+        },
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--root",
@@ -127,7 +174,15 @@ def main() -> int:
         default=224,
         help="Square frame size after resize (multiple of 32)",
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--manifest-out",
+        type=Path,
+        default=None,
+        help="Replay manifest JSON sidecar (default: ai/data/konvid_frames_manifest.json).",
+    )
+    args = parser.parse_args(raw_argv)
+    if args.manifest_out is None:
+        args.manifest_out = DATA_DIR / "konvid_frames_manifest.json"
 
     if not MANIFEST.exists():
         sys.exit(f"manifest not found: {MANIFEST}; run vmaf-train manifest-scan first")
@@ -150,12 +205,15 @@ def main() -> int:
 
     c2_rows = []
     c3_rows = []
+    missing_count = 0
+    error_count = 0
     n = len(entries)
     for i, e in enumerate(entries):
         key = e["key"]
         mp4 = root / e["path"]
         if not mp4.is_file():
             print(f"[skip] missing {mp4}")
+            missing_count += 1
             continue
 
         c2_path = c2_dir / f"{key}.npy"
@@ -167,6 +225,7 @@ def main() -> int:
                 clean = _extract_middle_frame_y(mp4, args.target_hw)
             except Exception as exc:
                 print(f"[error] {mp4.name}: {exc}")
+                error_count += 1
                 continue
             np.save(c2_path, clean)
         else:
@@ -189,6 +248,18 @@ def main() -> int:
 
     pd.DataFrame(c2_rows).to_parquet(C2_PARQUET, index=False)
     pd.DataFrame(c3_rows).to_parquet(C3_PARQUET, index=False)
+    _write_manifest(
+        path=args.manifest_out,
+        args=args,
+        raw_argv=raw_argv,
+        root=root,
+        manifest_entries=n,
+        processed_count=len(c2_rows),
+        missing_count=missing_count,
+        error_count=error_count,
+        c2_rows=len(c2_rows),
+        c3_rows=len(c3_rows),
+    )
     print(f"[done] C2 parquet: {C2_PARQUET} ({len(c2_rows)} rows)")
     print(f"[done] C3 parquet: {C3_PARQUET} ({len(c3_rows)} rows)")
     return 0

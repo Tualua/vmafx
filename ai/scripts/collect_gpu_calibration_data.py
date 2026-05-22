@@ -40,6 +40,13 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
+if str(REPO_ROOT / "ai" / "src") not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
+
+from aiutils.run_manifest import write_run_manifest  # noqa: E402
+
 # Reuse the parity gate's authoritative feature ↔ metric-name table and
 # backend ↔ extractor-suffix table. Importing from a sibling top-level
 # package would require packaging shenanigans, so we duplicate the
@@ -312,7 +319,54 @@ def write_parquet(rows: Iterable[Row], path: Path) -> int:
     return len(rows_list)
 
 
-def parse_args() -> argparse.Namespace:
+def _write_manifest(
+    *,
+    path: Path,
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    features: list[str],
+    backends: list[str],
+    frame_limit: int | None,
+    row_count: int,
+) -> None:
+    write_run_manifest(
+        path,
+        schema="gpu-calibration-data-manifest-v1",
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=raw_argv,
+        args=args,
+        inputs={
+            "vmaf_binary": args.vmaf_binary,
+            "reference": args.reference,
+            "distorted": args.distorted,
+        },
+        outputs={"parquet": args.output, "manifest": path},
+        sections={
+            "row_count": int(row_count),
+            "smoke": bool(args.smoke),
+            "selection": {
+                "features": list(features),
+                "backends": list(backends),
+                "frame_limit": frame_limit,
+            },
+            "source_geometry": {
+                "width": int(args.width),
+                "height": int(args.height),
+                "pixel_format": args.pixel_format,
+                "bitdepth": int(args.bitdepth),
+            },
+            "arch_id": args.arch_id,
+            "devices": {
+                "cuda": int(args.cuda_device),
+                "sycl": int(args.sycl_device),
+                "vulkan": int(args.vulkan_device),
+            },
+        },
+    )
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
         "--vmaf-binary",
@@ -376,11 +430,20 @@ def parse_args() -> argparse.Namespace:
             "(per Research-0041 smallest-viable-training-set)"
         ),
     )
-    return ap.parse_args()
+    ap.add_argument(
+        "--manifest-out",
+        type=Path,
+        default=None,
+        help="Replay manifest JSON sidecar (default: <output>.manifest.json).",
+    )
+    return ap.parse_args(argv)
 
 
-def main() -> int:
-    args = parse_args()
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = parse_args(raw_argv)
+    if args.manifest_out is None:
+        args.manifest_out = args.output.with_suffix(".manifest.json")
 
     if not args.vmaf_binary.exists():
         sys.stderr.write(f"vmaf binary not found: {args.vmaf_binary}\n")
@@ -434,6 +497,15 @@ def main() -> int:
             all_rows.extend(rows)
 
     n = write_parquet(all_rows, args.output)
+    _write_manifest(
+        path=args.manifest_out,
+        args=args,
+        raw_argv=raw_argv,
+        features=features,
+        backends=backends,
+        frame_limit=frame_limit,
+        row_count=n,
+    )
     print(f"[collect] wrote {n} rows to {args.output}")
     return 0 if n > 0 else 1
 

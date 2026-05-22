@@ -47,6 +47,13 @@ import pandas as pd
 import pyarrow.parquet as pq
 from onnx import TensorProto, helper
 
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
+if str(REPO_ROOT / "ai" / "src") not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
+
+from aiutils.run_manifest import write_run_manifest  # noqa: E402
+
 DEFAULT_FEATURES = (
     "adm2",
     "vif_scale0",
@@ -181,6 +188,43 @@ def regenerate(
         build_models(out_dir / "models", feats, target)
 
 
+def _artifact_counts(out_dir: Path) -> dict[str, int]:
+    model_dir = out_dir / "models"
+    return {
+        "feature_parquets": int((out_dir / "features.parquet").is_file()),
+        "onnx_models": len(list(model_dir.glob("model_*.onnx"))) if model_dir.is_dir() else 0,
+    }
+
+
+def _write_manifest(
+    *,
+    path: Path,
+    args: argparse.Namespace,
+    raw_argv: Sequence[str],
+    mode: str,
+    status: str,
+    exit_code: int,
+) -> None:
+    write_run_manifest(
+        path,
+        schema="bisect-cache-manifest-v1",
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=raw_argv,
+        args=args,
+        inputs={"source_features": args.source_features},
+        outputs={"cache_dir": args.out, "manifest": path},
+        sections={
+            "mode": mode,
+            "status": status,
+            "exit_code": int(exit_code),
+            "target_column_candidates": list(TARGET_COLUMN_CANDIDATES),
+            "default_features": list(DEFAULT_FEATURES),
+            "artifact_counts": _artifact_counts(args.out),
+        },
+    )
+
+
 def _compare_parquet(committed: Path, fresh: Path) -> str | None:
     """Return None if logically equal, else a human-readable diff message.
 
@@ -270,7 +314,8 @@ def check(
     return 0
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument(
         "--out",
@@ -295,11 +340,25 @@ def main() -> int:
         "--target-column",
         help="Target column in --source-features (default: first of mos,dmos,target,score)",
     )
-    args = p.parse_args()
+    p.add_argument(
+        "--manifest-out",
+        type=Path,
+        default=None,
+        help="Optional replay manifest JSON sidecar with ADR-0661 run provenance.",
+    )
+    args = p.parse_args(raw_argv)
     if args.check:
-        return check(
-            args.out, source_features=args.source_features, target_column=args.target_column
-        )
+        rc = check(args.out, source_features=args.source_features, target_column=args.target_column)
+        if args.manifest_out is not None:
+            _write_manifest(
+                path=args.manifest_out,
+                args=args,
+                raw_argv=raw_argv,
+                mode="check",
+                status="pass" if rc == 0 else "fail",
+                exit_code=rc,
+            )
+        return rc
     # Wipe only generated artifacts; preserve hand-written siblings such as
     # README.md that explain the cache to future readers.
     parquet = args.out / "features.parquet"
@@ -310,6 +369,15 @@ def main() -> int:
         shutil.rmtree(models)
     regenerate(args.out, source_features=args.source_features, target_column=args.target_column)
     print(f"OK  wrote {args.out}")
+    if args.manifest_out is not None:
+        _write_manifest(
+            path=args.manifest_out,
+            args=args,
+            raw_argv=raw_argv,
+            mode="regenerate",
+            status="written",
+            exit_code=0,
+        )
     return 0
 
 

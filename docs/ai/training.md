@@ -97,8 +97,12 @@ The sidecar `model/tiny/vmaf_tiny_fr_v1.json` pins:
 
 Training, evaluation, and validation scripts that emit durable JSON reports
 should emit a `run_provenance` block. The shared helper is
-`aiutils.run_manifest.build_run_provenance()`; use it instead of adding
-one-off JSON for paths or command-line arguments.
+`aiutils.run_manifest.build_run_provenance()` when the script embeds
+provenance into an existing stable report schema. New standalone sidecars
+should use `aiutils.run_manifest.write_run_manifest()` so the repeated
+`schema` + adapter counters/config + `run_provenance` envelope is not copied
+between scripts. The Claude workflow for adding or auditing those sidecars is
+`.claude/skills/ai-run-manifest/SKILL.md`.
 
 `run_provenance` is intentionally compact:
 
@@ -266,6 +270,16 @@ Quantisation scripts also use the same schema when asked for durable reports:
 fp32/int8 model paths, calibration/config inputs where applicable, size/gate
 statistics, argv, and report output path. Prefer those reports for model-card
 evidence instead of terminal logs.
+
+Legacy extractor/cache utilities now use the standalone sidecar helper as
+well: `build_bisect_cache.py --manifest-out` records cache mode, check status,
+target-column candidates, default feature columns, and generated artifact
+counts; `collect_gpu_calibration_data.py` defaults to
+`<output>.manifest.json` and records selected features/backends/devices;
+`extract_ugc_features.py` defaults to `<out-parquet>.manifest.json` and
+records manifest/pair/fail/source counts; and `extract_konvid_frames.py`
+defaults to `ai/data/konvid_frames_manifest.json` and records frame-pair
+materialization counts.
 
 ## MOS label materialization
 

@@ -96,6 +96,7 @@ the steps manually.
 | Add SIMD path                     | `.claude/skills/add-simd-path/SKILL.md`           |
 | Add feature extractor             | `.claude/skills/add-feature-extractor/SKILL.md`   |
 | Add a model                       | `.claude/skills/add-model/SKILL.md`               |
+| Add/audit AI run manifest         | `.claude/skills/ai-run-manifest/SKILL.md`         |
 | Cross-backend numeric diff        | `.claude/skills/cross-backend-diff/SKILL.md`      |
 | Validate scores (per-backend ULP) | `.claude/skills/validate-scores/SKILL.md`         |
 | Run Netflix bench harness         | `.claude/skills/run-netflix-bench/SKILL.md`       |
