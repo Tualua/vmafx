@@ -54,6 +54,45 @@ options, output table target, and audit target. Keep that audit with any
 derived table used for retraining; external scorer sidecars can be rebuilt only
 if their exact join inputs are preserved.
 
+## Batch Manifest
+
+Use `ai/scripts/batch_materialize_second_opinion_features.py` when the same
+scorer family needs to be joined across multiple refreshed tables. Paths in the
+manifest are relative to the manifest file unless `--base-dir` is supplied.
+
+```json
+{
+  "defaults": {
+    "missing_policy": "fail",
+    "key_normalize": "auto"
+  },
+  "tables": [
+    {
+      "id": "chug_hdr",
+      "features": ".corpus/chug/training/fr_canonical_shards/shard_000.features.jsonl",
+      "scores": [
+        "dover-mobile=.workingdir2/second-opinion/dover-chug.jsonl",
+        "fork-nr-metric=.workingdir2/second-opinion/fork-nr-chug.jsonl"
+      ],
+      "out": ".workingdir2/second-opinion/shard_000.with-second-opinion.jsonl",
+      "audit_json": ".workingdir2/second-opinion/shard_000.audit.json"
+    }
+  ]
+}
+```
+
+```bash
+.venv/bin/python ai/scripts/batch_materialize_second_opinion_features.py \
+  --manifest .workingdir2/second-opinion/batch.json \
+  --report-json .workingdir2/second-opinion/batch.report.json \
+  --report-md .workingdir2/second-opinion/batch.report.md
+```
+
+Each table may override any single-run join option from `defaults`, including
+`missing_policy`, `key_column`, `score_key_field`, `score_field`,
+`key_normalize`, `prefix`, and `overwrite`. The batch report uses schema
+`second-opinion-materializer-batch-v1` and carries ADR-0661 `run_provenance`.
+
 ## Reading The Columns
 
 Second-opinion columns are advisory evidence, not replacements for reference

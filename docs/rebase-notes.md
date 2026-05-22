@@ -39231,6 +39231,34 @@ Touched files:
 `changelog.d/added/0673-saliency-materializer-batch-manifest.md`,
 `docs/rebase-notes.md` (this entry).
 
+## ADR-0674 — Second-opinion materializer batch manifest
+
+**Second-opinion table refresh impact.** This adds a batch orchestration layer
+over `ai/scripts/materialize_second_opinion_features.py`. Rebase work that
+changes score-sidecar parsing, join-key policy, missing-score semantics, or
+run-provenance fields must update both the single-table joiner and the batch
+manifest runner/tests together.
+
+**Key invariants**:
+
+- `ai/scripts/batch_materialize_second_opinion_features.py` must import and
+  reuse `materialize_second_opinion_features.materialize()`; external scorer
+  execution remains outside this repo.
+- Batch manifests carry shared defaults plus per-table overrides. Relative
+  paths resolve from the manifest directory unless `--base-dir` is supplied.
+- Batch reports use schema `second-opinion-materializer-batch-v1` and include
+  ADR-0661 `run_provenance`.
+
+Touched files:
+`ai/scripts/batch_materialize_second_opinion_features.py`,
+`ai/tests/test_batch_materialize_second_opinion_features.py`,
+`ai/AGENTS.md`,
+`docs/ai/second-opinion-features.md`,
+`docs/adr/0674-second-opinion-materializer-batch-manifest.md`,
+`docs/research/0694-second-opinion-materializer-batch-manifest.md`,
+`changelog.d/added/0674-second-opinion-materializer-batch-manifest.md`,
+`docs/rebase-notes.md` (this entry).
+
 ## ADR-0679 — CI draft auto-merge gate
 
 **Merge-train safety impact.** The single required branch-protection context,

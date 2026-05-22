@@ -421,4 +421,5 @@
 0671-u2netp-mirror-exporter
 0672-saliency-materializer-temporal-controls
 0673-saliency-materializer-batch-manifest
+0674-second-opinion-materializer-batch-manifest
 0679-ci-draft-automerge-gate
