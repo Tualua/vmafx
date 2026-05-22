@@ -11,11 +11,9 @@ It does not extract features, train models, or mutate corpus files.
 
 from __future__ import annotations
 
-import argparse
 import json
 import math
 import re
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -27,6 +25,7 @@ _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 TARGET_CANDIDATES: tuple[str, ...] = (
@@ -726,8 +725,8 @@ def run_audit(
     return audits
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(prog="signal_mix_audit.py")
+def main(argv: list[str] | None = None) -> int:
+    parser = make_argument_parser(prog="signal_mix_audit.py")
     parser.add_argument(
         "--input",
         action="append",
@@ -741,7 +740,7 @@ def main() -> int:
     parser.add_argument("--redundancy-threshold", type=float, default=0.95)
     parser.add_argument("--complement-threshold", type=float, default=0.70)
     parser.add_argument("--min-finite-ratio", type=float, default=0.80)
-    raw_argv = sys.argv[1:]
+    raw_argv = collect_cli_argv(argv)
     args = parser.parse_args(raw_argv)
 
     audits = run_audit(

@@ -15,7 +15,6 @@ import argparse
 import json
 import math
 import re
-import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -27,6 +26,7 @@ _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 KEY_CANDIDATES: tuple[str, ...] = (
@@ -504,7 +504,7 @@ def materialize(
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
+    parser = make_argument_parser(
         prog="materialize_second_opinion_features.py",
         description=(
             "Join externally generated NR/MOS second-opinion scores onto a "
@@ -536,7 +536,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    raw_argv = collect_cli_argv(argv)
     args = _parse_args(raw_argv)
     run_provenance = build_run_provenance(
         entrypoint=SCRIPT_PATH,

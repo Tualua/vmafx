@@ -16,7 +16,6 @@ import argparse
 import json
 import math
 import re
-import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -28,6 +27,7 @@ _SCRIPT_PATHS = bootstrap_ai_script(__file__)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 MOS_MIN = 1.0
@@ -469,7 +469,7 @@ def materialize(
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
+    parser = make_argument_parser(
         prog="materialize_mos_labels.py",
         description=(
             "Join subjective MOS labels onto an already-extracted feature table. "
@@ -516,7 +516,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    raw_argv = collect_cli_argv(argv)
     args = _parse_args(raw_argv)
     run_provenance = build_run_provenance(
         entrypoint=SCRIPT_PATH,

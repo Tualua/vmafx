@@ -34,6 +34,7 @@ _SCRIPT_PATHS = bootstrap_ai_script(
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 SubprocessRunner = Callable[..., subprocess.CompletedProcess[str]]
@@ -310,7 +311,7 @@ def _mean_var(mask: Any) -> tuple[float, float]:
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = make_argument_parser(description=__doc__)
     parser.add_argument("--input", type=Path, required=True, help="Input .jsonl or .parquet table")
     parser.add_argument(
         "--output", type=Path, required=True, help="Output .jsonl or .parquet table"
@@ -374,7 +375,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    raw_argv = collect_cli_argv(argv)
     args = _parse_args(raw_argv)
     cfg = SaliencyMaterializeConfig(
         path_column=args.path_column,

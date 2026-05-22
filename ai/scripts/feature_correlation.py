@@ -16,7 +16,6 @@ Output goes to a JSON report + a text summary printed to stdout.
 
 from __future__ import annotations
 
-import argparse
 import sys
 from pathlib import Path
 
@@ -27,6 +26,7 @@ _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
 SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 
@@ -108,8 +108,9 @@ def _top_k_consensus(importances: dict[str, dict[str, float]], k: int) -> list[s
     return sorted(consensus)
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(prog="feature_correlation.py")
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    ap = make_argument_parser(prog="feature_correlation.py")
     ap.add_argument("--parquet", type=Path, required=True)
     ap.add_argument(
         "--target",
@@ -125,7 +126,7 @@ def main() -> int:
         help="|Pearson r| above which pairs are flagged as redundant.",
     )
     ap.add_argument("--top-k", type=int, default=8)
-    args = ap.parse_args()
+    args = ap.parse_args(raw_argv)
 
     import pandas as pd
 
@@ -184,7 +185,7 @@ def main() -> int:
         "run_provenance": build_run_provenance(
             entrypoint=SCRIPT_PATH,
             repo_root=REPO_ROOT,
-            argv=sys.argv[1:],
+            argv=raw_argv,
             args=vars(args),
             inputs={"parquet": args.parquet},
             outputs={"json_report": args.out},
