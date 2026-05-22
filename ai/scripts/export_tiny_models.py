@@ -22,15 +22,20 @@ the registry row in place.
 
 from __future__ import annotations
 
-import argparse
 import json
 import sys
 from pathlib import Path
 
-SCRIPT_PATH = Path(__file__).resolve()
-REPO_ROOT = SCRIPT_PATH.parents[2]
-sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
+
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.file_utils import sha256  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 from vmaf_train.models import LearnedFilter, NRMetric  # noqa: E402
@@ -111,12 +116,12 @@ def _update_registry(*entries: dict[str, object]) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    raw_argv = collect_cli_argv(argv)
+    parser = make_argument_parser(description=__doc__)
     parser.add_argument("--c2-ckpt", type=Path, default=C2_CKPT_DEFAULT)
     parser.add_argument("--c3-ckpt", type=Path, default=C3_CKPT_DEFAULT)
     parser.add_argument("--c2-id", default="nr_metric_v1")
     parser.add_argument("--c3-id", default="learned_filter_v1")
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
     args = parser.parse_args(raw_argv)
 
     TINY_DIR.mkdir(parents=True, exist_ok=True)
