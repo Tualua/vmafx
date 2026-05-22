@@ -31,7 +31,6 @@ Output: ``runs/bvi_dvc_corpus.jsonl`` (gitignored).
 
 from __future__ import annotations
 
-import argparse
 import datetime as _dt
 import hashlib
 import json
@@ -40,16 +39,15 @@ import sys
 import uuid
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_VMAFTUNE_SRC = _REPO_ROOT / "tools" / "vmaf-tune" / "src"
-if str(_VMAFTUNE_SRC) not in sys.path:
-    sys.path.insert(0, str(_VMAFTUNE_SRC))
-_AI_SRC = _REPO_ROOT / "ai" / "src"
-if str(_AI_SRC) not in sys.path:
-    sys.path.insert(0, str(_AI_SRC))
+from _script_bootstrap import bootstrap_ai_script
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_vmaf_tune_src=True)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+_REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 from vmaftune import CANONICAL6_FEATURES, CORPUS_ROW_KEYS, SCHEMA_VERSION  # noqa: E402
 
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 
@@ -153,7 +151,8 @@ def _row_from_cache(
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="bvi_dvc_to_corpus_jsonl.py")
+    raw_argv = collect_cli_argv(argv)
+    ap = make_argument_parser(prog="bvi_dvc_to_corpus_jsonl.py")
     ap.add_argument(
         "--cache-dir",
         type=Path,
@@ -183,7 +182,7 @@ def main(argv: list[str] | None = None) -> int:
             "CLI args used to build the JSONL."
         ),
     )
-    args = ap.parse_args(argv)
+    args = ap.parse_args(raw_argv)
     if args.manifest_out is None:
         args.manifest_out = args.output.with_suffix(".manifest.json")
 
@@ -219,9 +218,9 @@ def main(argv: list[str] | None = None) -> int:
             "crf": args.crf,
             "pix_fmt": args.pix_fmt,
             "run_provenance": build_run_provenance(
-                entrypoint=Path(__file__),
+                entrypoint=SCRIPT_PATH,
                 repo_root=_REPO_ROOT,
-                argv=sys.argv[1:] if argv is None else argv,
+                argv=raw_argv,
                 args=args,
                 inputs={"cache_dir": args.cache_dir},
                 outputs={"jsonl": args.output, "manifest": args.manifest_out},

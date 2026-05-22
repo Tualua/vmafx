@@ -38,8 +38,15 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from corpus import base as _corpus_base
-from corpus.base import (
+from _script_bootstrap import bootstrap_ai_script
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
+
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
+from corpus import base as _corpus_base  # noqa: E402
+from corpus.base import (  # noqa: E402
     CorpusIngestBase,
     RunStats,
     normalise_clip_name,
@@ -63,7 +70,7 @@ _LSVQ_DEFAULT_MAX_ROWS: int = 500
 _DEFAULT_LSVQ_DIR: Path = Path(
     os.environ.get(
         "VMAF_LSVQ_DIR",
-        str(Path(__file__).resolve().parents[2] / ".corpus" / "lsvq"),
+        str(REPO_ROOT / ".corpus" / "lsvq"),
     )
 )
 _DEFAULT_OUTPUT: Path = _DEFAULT_LSVQ_DIR / "lsvq.jsonl"
@@ -233,7 +240,7 @@ def run(
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    ap = argparse.ArgumentParser(
+    ap = make_argument_parser(
         prog="lsvq_to_corpus_jsonl.py",
         description=(
             "ADR-0367: walk a local LSVQ extraction (or build one via "
@@ -303,7 +310,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    raw_argv = collect_cli_argv(argv)
     args = _build_parser().parse_args(raw_argv)
     if args.manifest_out is None:
         args.manifest_out = args.output.with_suffix(".manifest.json")
@@ -342,8 +349,8 @@ def main(argv: list[str] | None = None) -> int:
     write_ingest_manifest(
         args.manifest_out,
         schema="lsvq-corpus-jsonl-manifest-v1",
-        entrypoint=Path(__file__),
-        repo_root=Path(__file__).resolve().parents[2],
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
         argv=raw_argv,
         args=args,
         corpus_label=_CORPUS_LABEL,

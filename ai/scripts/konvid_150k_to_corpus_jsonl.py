@@ -46,8 +46,15 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from corpus import base as _corpus_base
-from corpus.base import (
+from _script_bootstrap import bootstrap_ai_script
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
+
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
+from corpus import base as _corpus_base  # noqa: E402
+from corpus.base import (  # noqa: E402
     CorpusIngestBase,
     RunStats,
     normalise_clip_name,
@@ -73,7 +80,7 @@ _KONVID_150K_MIN_ROWS: int = 5000
 _DEFAULT_KONVID_DIR: Path = Path(
     os.environ.get(
         "VMAF_KONVID_150K_DIR",
-        str(Path(__file__).resolve().parents[2] / ".corpus" / "konvid-150k"),
+        str(REPO_ROOT / ".corpus" / "konvid-150k"),
     )
 )
 _DEFAULT_OUTPUT: Path = _DEFAULT_KONVID_DIR / "konvid_150k.jsonl"
@@ -329,7 +336,7 @@ def run(
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    ap = argparse.ArgumentParser(
+    ap = make_argument_parser(
         prog="konvid_150k_to_corpus_jsonl.py",
         description=(
             "Phase 2 of ADR-0325: walk a local KonViD-150k extraction "
@@ -396,7 +403,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    raw_argv = collect_cli_argv(argv)
     args = _build_parser().parse_args(raw_argv)
     if args.manifest_out is None:
         args.manifest_out = args.output.with_suffix(".manifest.json")
@@ -434,8 +441,8 @@ def main(argv: list[str] | None = None) -> int:
     write_ingest_manifest(
         args.manifest_out,
         schema="konvid-150k-corpus-jsonl-manifest-v1",
-        entrypoint=Path(__file__),
-        repo_root=Path(__file__).resolve().parents[2],
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
         argv=raw_argv,
         args=args,
         corpus_label=_CORPUS_LABEL,

@@ -36,8 +36,21 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from corpus import base as _corpus_base
-from corpus.base import CorpusIngestBase, RunStats, pick, utc_now_iso, write_ingest_manifest
+from _script_bootstrap import bootstrap_ai_script
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
+
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
+from corpus import base as _corpus_base  # noqa: E402
+from corpus.base import (  # noqa: E402
+    CorpusIngestBase,
+    RunStats,
+    pick,
+    utc_now_iso,
+    write_ingest_manifest,
+)
 
 save_progress = _corpus_base.save_progress
 
@@ -52,7 +65,7 @@ _CHUG_DEFAULT_MAX_ROWS: int = 500
 _DEFAULT_CHUG_DIR: Path = Path(
     os.environ.get(
         "VMAF_CHUG_DIR",
-        str(Path(__file__).resolve().parents[2] / ".corpus" / "chug"),
+        str(REPO_ROOT / ".corpus" / "chug"),
     )
 )
 _DEFAULT_OUTPUT: Path = _DEFAULT_CHUG_DIR / "chug.jsonl"
@@ -248,7 +261,7 @@ def run(
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = make_argument_parser(description=__doc__)
     parser.add_argument("--chug-dir", type=Path, default=_DEFAULT_CHUG_DIR)
     parser.add_argument("--manifest-csv", type=Path, default=None)
     parser.add_argument("--output", type=Path, default=_DEFAULT_OUTPUT)
@@ -276,7 +289,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    raw_argv = collect_cli_argv(argv)
     args = parser.parse_args(raw_argv)
     if args.manifest_out is None:
         args.manifest_out = args.output.with_suffix(".manifest.json")
@@ -304,8 +317,8 @@ def main(argv: list[str] | None = None) -> int:
     write_ingest_manifest(
         args.manifest_out,
         schema="chug-corpus-jsonl-manifest-v1",
-        entrypoint=Path(__file__),
-        repo_root=Path(__file__).resolve().parents[2],
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
         argv=raw_argv,
         args=args,
         corpus_label=_CORPUS_LABEL,
