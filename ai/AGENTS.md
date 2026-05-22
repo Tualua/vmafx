@@ -82,7 +82,7 @@ ai/
 - [ADR-0305](../docs/adr/0305-encoder-knob-space-pareto-analysis.md) — **knob-sweep corpus invariant.** The 12,636-cell sweep at `runs/phase_a/full_grid/comprehensive.jsonl` (gitignored, locally generated) is the source of truth for `tools/vmaf-tune/codec_adapters/*` recipe defaults. Pareto frontiers are stratified per `(source, codec, rc_mode)` slice — never collapsed to a global hull (companion [Research-0063](../docs/research/0063-encoder-knob-space-cq-vs-vbr-stratification.md) shows the global-hull failure mode regresses NVENC h264/hevc by ~4 VMAF at cq=30). **Recipes that regress vs the bare encoder at matched bitrate within the same slice MUST NOT ship as adapter defaults.** The regression-detection check lives in `ai/scripts/analyze_knob_sweep.py` (`detect_recipe_regressions(...)`) and is exercised by `ai/tests/test_knob_sweep_analysis.py::test_recipe_regression_detection`; new codec adapter PRs cite the per-(codec, rc_mode) hull row from `reports/summary.md` (or "no hull entry yet — bare default") in their PR description. Methodology + scaffolded findings: [Research-0077](../docs/research/0077-encoder-knob-space-pareto-frontiers.md).
 - [ADR-0650](../docs/adr/0650-signal-mix-audit.md) — **signal-mix audit is advisory.** `ai/scripts/signal_mix_audit.py` reads already-extracted parquet/JSONL tables and renders coverage, redundancy, complementary-intersection, and blind-spot reports. It must remain side-effect free: no feature extraction, no checkpoint export, no corpus mutation, and no CI gating by default. When adding new metric families or table columns, update the family regexes and `docs/ai/signal-mix-audit.md` together so reports keep naming missing HDR/panel, saliency/ROI, texture, NR/MOS, and codec-profile signals in human terms.
 - [ADR-0661](../docs/adr/0661-ai-run-manifest-provenance.md) — **AI sidecars carry shared run provenance.** Use `aiutils.run_manifest.build_run_provenance()` for new training/export sidecars instead of inventing per-script argument/path JSON. CHUG-facing MOS runs record `train_chug_hdr_mos_head.py` as the user entrypoint and `train_konvid_mos_head.py` as `shared_trainer` because the wrapper delegates into the shared loop.
-- [ADR-0668](../docs/adr/0668-ai-derived-table-provenance.md) — **Derived feature tables need replay manifests.** `extract_k150k_features.py`, `combine_full_feature_parquets.py`, and `enrich_k150k_parquet_metadata.py` write `<out>.manifest.json` by default using `aiutils.run_manifest`. Do not add new operator-facing refreshed parquet/table builders that leave no input/output/argv sidecar; anonymous local parquet files are not acceptable training evidence.
+- [ADR-0668](../docs/adr/0668-ai-derived-table-provenance.md) — **Derived feature tables need replay manifests.** `extract_k150k_features.py`, `combine_full_feature_parquets.py`, `enrich_k150k_parquet_metadata.py`, `konvid_to_full_features.py`, and `bvi_dvc_to_full_features.py` write `<out>.manifest.json` by default using `aiutils.run_manifest`. Do not add new operator-facing refreshed parquet/table builders that leave no input/output/argv sidecar; anonymous local parquet files are not acceptable training evidence.
 - [ADR-0669](../docs/adr/0669-ai-corpus-jsonl-provenance.md) — **Corpus JSONL merge outputs need replay manifests.** `aggregate_corpora.py` and `merge_corpora.py` write `<output>.manifest.json` by default with shared `run_provenance`, counters, and schema/dedup policy. Keep JSONL row schemas stable and put run-level evidence in the sidecar.
 - [ADR-0670](../docs/adr/0670-ai-legacy-corpus-extraction-manifests.md) — **Legacy trainer-input builders need replay manifests.** `extract_full_features.py`, `konvid_to_vmaf_pairs.py`, and `bvi_dvc_to_corpus_jsonl.py` write sibling manifest sidecars by default. Do not add or revive corpus/extraction scripts that create local trainer-input parquet/JSONL without row/clip counters, input/output path evidence, and shared `run_provenance`. BVI-DVC JSONL rows must stay current with `vmaftune.CORPUS_ROW_KEYS`; missing HDR/shot/encoder-stat signals are explicit unavailable defaults, not omitted columns.
 - [ADR-0665](../docs/adr/0665-fast-nr-calibration-quality-guard.md) — **Fast-NR calibration sidecars are quality-gated.** `ai/scripts/calibrate_nr_threshold.py` must not write tune-facing `calibration_threshold` values unless the fitted sample count and NR-vs-FR PLCC pass the script's gates, or the operator explicitly uses `--allow-weak-calibration` for diagnostic sidecars. Weak real-corpus fits are model/training backlog, not a reason to loosen `vmaf-tune` thresholds.
@@ -536,6 +536,11 @@ by `(src_sha256, encoder, preset, crf)`).
   [ADR-0303](../docs/adr/0303-fr-regressor-v2-ensemble-flip.md).
   Adding BVI-DVC to the corpus does NOT authorise re-shipping
   `fr_regressor_v2.onnx` without re-running the ensemble gate.
+- `bvi_dvc_to_full_features.py` writes
+  `runs/full_features_bvi_dvc_<tier>.manifest.json` by default with
+  input mode, tier, cache/model inputs, feature order, row/clip counts,
+  and ADR-0661 `run_provenance`; keep the manifest beside any refreshed
+  local parquet.
 - `bvi_dvc_to_full_features.py` accepts two mutually exclusive input
   modes: `--bvi-zip` (original; streams MP4s from the archive) and
   `--bvi-dir` (ADR-0527; enumerates pre-extracted `.mp4` / `.yuv` files
@@ -573,6 +578,11 @@ reference, libx264 CRF 35 distorted side) but emits the current
   `ai/scripts/combine_full_feature_parquets.py`, not ad hoc notebook
   concatenation. Its output schema is
   `corpus, source, frame_index, codec, <FULL_FEATURES>, vmaf`.
+- `konvid_to_full_features.py` writes
+  `runs/full_features_konvid.manifest.json` by default with KoNViD
+  root/cache/model inputs, fold settings, selected/processed clip counts,
+  output paths, and ADR-0661 `run_provenance`; keep it with the refreshed
+  parquet pair.
 
 ## v5 corpus-expansion probe — research-only (ADR-0287)
 

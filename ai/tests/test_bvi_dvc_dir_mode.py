@@ -294,6 +294,16 @@ class TestMainDirMode:
         assert "vmaf" in df.columns
         assert "key" in df.columns
 
+        manifest = json.loads(out_parquet.with_suffix(".manifest.json").read_text(encoding="utf-8"))
+        assert manifest["schema"] == "bvi-dvc-full-features-manifest-v1"
+        assert manifest["stats"]["input_mode"] == "dir"
+        assert manifest["stats"]["tier"] == "all"
+        assert manifest["stats"]["clips_selected"] == 2
+        assert manifest["stats"]["frames"] == len(df)
+        assert manifest["stats"]["columns"] == len(df.columns)
+        assert manifest["run_provenance"]["schema"] == "ai-run-provenance-v1"
+        assert manifest["run_provenance"]["args"]["max_clips"] == 2
+
     def test_dir_mode_missing_dir_returns_2(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

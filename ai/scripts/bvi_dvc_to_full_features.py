@@ -75,7 +75,13 @@ from pathlib import Path
 import pandas as pd
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+AI_SRC = REPO_ROOT / "ai" / "src"
+if __package__ in (None, ""):
+    sys.path.insert(0, str(REPO_ROOT))
+if str(AI_SRC) not in sys.path:
+    sys.path.insert(0, str(AI_SRC))
 
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 # Verbatim mirror of FULL_FEATURES in ai/data/feature_extractor.py.
 # Keep these tuples in sync — they define the corpus-portable feature pool
@@ -496,11 +502,13 @@ def _stream_extract(zf: zipfile.ZipFile, info: zipfile.ZipInfo, dest: Path) -> P
     return dest
 
 
-def _run_zip_mode(args: argparse.Namespace, out_path: Path, cache_dir: Path | None) -> int:
+def _run_zip_mode(
+    args: argparse.Namespace, out_path: Path, cache_dir: Path | None
+) -> tuple[int, dict[str, object]]:
     """Process clips from a zip archive (original ``--bvi-zip`` path)."""
     if not args.bvi_zip.is_file():
         print(f"error: BVI-DVC zip not found at {args.bvi_zip}", file=sys.stderr)
-        return 2
+        return 2, {}
 
     with zipfile.ZipFile(args.bvi_zip) as zf:
         entries = _select_tier_entries(zf, args.tier)
@@ -513,7 +521,7 @@ def _run_zip_mode(args: argparse.Namespace, out_path: Path, cache_dir: Path | No
                 file=sys.stderr,
                 flush=True,
             )
-            return 2
+            return 2, {}
         if args.max_clips is not None:
             entries = entries[: args.max_clips]
         print(
@@ -554,10 +562,15 @@ def _run_zip_mode(args: argparse.Namespace, out_path: Path, cache_dir: Path | No
                     flush=True,
                 )
 
-    return _write_parquet(rows, len(entries), out_path)
+    stats = _write_parquet(rows, len(entries), out_path)
+    stats["input_mode"] = "zip"
+    stats["tier"] = args.tier
+    return 0, stats
 
 
-def _run_dir_mode(args: argparse.Namespace, out_path: Path, cache_dir: Path | None) -> int:
+def _run_dir_mode(
+    args: argparse.Namespace, out_path: Path, cache_dir: Path | None
+) -> tuple[int, dict[str, object]]:
     """Process clips from a pre-extracted directory (``--bvi-dir`` path).
 
     Each file in the directory is processed in-place — no extraction
@@ -575,7 +588,7 @@ def _run_dir_mode(args: argparse.Namespace, out_path: Path, cache_dir: Path | No
             file=sys.stderr,
             flush=True,
         )
-        return 2
+        return 2, {}
     if args.max_clips is not None:
         entries = entries[: args.max_clips]
     print(
@@ -622,10 +635,13 @@ def _run_dir_mode(args: argparse.Namespace, out_path: Path, cache_dir: Path | No
                 flush=True,
             )
 
-    return _write_parquet(rows, len(entries), out_path)
+    stats = _write_parquet(rows, len(entries), out_path)
+    stats["input_mode"] = "dir"
+    stats["tier"] = args.tier
+    return 0, stats
 
 
-def _write_parquet(rows: list[dict], n_clips: int, out_path: Path) -> int:
+def _write_parquet(rows: list[dict], n_clips: int, out_path: Path) -> dict[str, object]:
     df = pd.DataFrame(rows)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(out_path)
@@ -634,10 +650,58 @@ def _write_parquet(rows: list[dict], n_clips: int, out_path: Path) -> int:
         f"{n_clips} clips, {len(df.columns)} cols)",
         flush=True,
     )
-    return 0
+    return {
+        "clips_selected": n_clips,
+        "frames": len(df),
+        "columns": len(df.columns),
+    }
 
 
-def main() -> int:
+def _write_manifest(
+    path: Path,
+    *,
+    args: argparse.Namespace,
+    argv: list[str] | None,
+    out_path: Path,
+    cache_dir: Path | None,
+    stats: dict[str, object],
+) -> None:
+    write_manifest_json(
+        path,
+        {
+            "schema": "bvi-dvc-full-features-manifest-v1",
+            "features": list(FULL_FEATURES),
+            "extractors": list(EXTRACTORS),
+            "crf": args.crf,
+            "codec": args.codec,
+            "cache": {
+                "enabled": cache_dir is not None,
+                "directory": None if cache_dir is None else str(cache_dir),
+            },
+            "stats": stats,
+            "run_provenance": build_run_provenance(
+                entrypoint=Path(__file__),
+                repo_root=REPO_ROOT,
+                argv=sys.argv[1:] if argv is None else argv,
+                args=args,
+                inputs={
+                    "bvi_zip": args.bvi_zip,
+                    "bvi_dir": args.bvi_dir,
+                    "cache_dir": cache_dir,
+                    "scratch": args.scratch,
+                    "vmaf_bin": args.vmaf_bin,
+                    "model": args.model,
+                },
+                outputs={
+                    "parquet": out_path,
+                    "manifest": args.manifest_out,
+                },
+            ),
+        },
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="bvi_dvc_to_full_features.py")
 
     # Mutually exclusive input-source group (ADR-0524).
@@ -686,6 +750,16 @@ def main() -> int:
         help="Output parquet (default: runs/full_features_bvi_dvc_<tier>.parquet).",
     )
     ap.add_argument(
+        "--manifest-out",
+        type=Path,
+        default=None,
+        help=(
+            "Run-provenance JSON sidecar. Defaults to <out>.manifest.json and "
+            "records BVI input mode, tier, cache/model inputs, FULL_FEATURES "
+            "schema, row counts, and exact CLI args."
+        ),
+    )
+    ap.add_argument(
         "--scratch",
         type=Path,
         default=Path(os.environ.get("VMAF_TINY_AI_SCRATCH", "/tmp/bvi_dvc_full_acquire")),
@@ -713,7 +787,7 @@ def main() -> int:
         "encodes via libx264 today; this flag exists so a future "
         "multi-codec sweep can reuse the same harness.",
     )
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     # Resolve the default input source: if neither flag was given, fall
     # back to the legacy VMAF_BVI_DVC_ZIP env-var / hard-coded path so
@@ -734,6 +808,9 @@ def main() -> int:
         return 2
 
     out_path = args.out or (REPO_ROOT / "runs" / f"full_features_bvi_dvc_{args.tier}.parquet")
+    args.out = out_path
+    if args.manifest_out is None:
+        args.manifest_out = out_path.with_suffix(".manifest.json")
     args.scratch.mkdir(parents=True, exist_ok=True)
     cache_dir = None if args.no_cache else args.cache_dir
     if cache_dir is not None:
@@ -743,10 +820,22 @@ def main() -> int:
         if not args.bvi_dir.is_dir():
             print(f"error: --bvi-dir path is not a directory: {args.bvi_dir}", file=sys.stderr)
             return 2
-        return _run_dir_mode(args, out_path, cache_dir)
+        rc, stats = _run_dir_mode(args, out_path, cache_dir)
+    else:
+        # --bvi-zip path (original behaviour).
+        rc, stats = _run_zip_mode(args, out_path, cache_dir)
 
-    # --bvi-zip path (original behaviour).
-    return _run_zip_mode(args, out_path, cache_dir)
+    if rc == 0:
+        _write_manifest(
+            args.manifest_out,
+            args=args,
+            argv=argv,
+            out_path=out_path,
+            cache_dir=cache_dir,
+            stats=stats,
+        )
+        print(f"[bvi-dvc-full] wrote manifest {args.manifest_out}", flush=True)
+    return rc
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -454,6 +454,14 @@ This writes `runs/full_features_konvid.parquet` plus
 clip keys so `eval_multiseed_v3_v4.py` can reproduce the KoNViD 5-fold
 gate without relying on stale local parquet files.
 
+The script also writes `runs/full_features_konvid.manifest.json` by
+default. The manifest records the KoNViD root, resolved videos
+directory, cache directory, vmaf binary, model path, CRF/codec recipe,
+fold settings, selected/processed clip counts, row/column counts, and
+ADR-0661 `run_provenance` block. Pass `--manifest-out PATH` when the
+sidecar needs to live inside a dated experiment bundle instead of next
+to the parquet.
+
 ### Combining Refreshed FULL_FEATURES Shards
 
 After Netflix, KoNViD, BVI-DVC, and optional UGC refreshes finish,
@@ -481,6 +489,11 @@ per-input row counts, missing-feature fill lists, output column order,
 the aggregate corpus distribution, and `run_provenance`. Pass
 `--manifest-out PATH` only when the manifest needs to live next to a
 separate experiment bundle.
+
+The standalone KoNViD and BVI-DVC full-feature builders follow the same
+sidecar rule (`runs/full_features_konvid.manifest.json` and
+`runs/full_features_bvi_dvc_<tier>.manifest.json` by default), so each
+refreshed shard can be replayed before it is combined.
 
 ### Loader
 

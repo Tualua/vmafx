@@ -116,6 +116,13 @@ the current `FULL_FEATURES` pool (25 feature columns as of the SpEED
 chroma/temporal refresh) and writes one parquet row per frame.
 This stage already existed in tree; ADR-0310 added the downstream
 corpus-JSONL reshape.
+The stage also writes `runs/full_features_bvi_dvc_<tier>.manifest.json`
+by default, or a caller-selected path via `--manifest-out`. That sidecar
+records whether the run used `--bvi-zip` or `--bvi-dir`, the tier,
+cache/model/vmaf inputs, CRF/codec recipe, selected clip count, emitted
+row/column counts, feature order, extractor list, and ADR-0661
+`run_provenance`. Keep it beside the local parquet so later training
+refreshes can prove which BVI-DVC material was scored.
 
 Stage (2) is **new in ADR-0310**. It re-shapes the BVI-DVC encodes
 into the vmaf-tune Phase A corpus row schema

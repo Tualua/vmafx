@@ -7,6 +7,30 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## feat/full-feature-exporter-manifests (ADR-0668 follow-up)
+
+**No upstream rebase impact**: this touches fork-local AI corpus
+exporters, tests, docs, package AGENTS notes, a research digest, and a
+changelog fragment. Upstream Netflix/vmaf does not ship these KoNViD or
+BVI-DVC training-table builders.
+
+Invariant: `ai/scripts/konvid_to_full_features.py` and
+`ai/scripts/bvi_dvc_to_full_features.py` write `<out>.manifest.json` by
+default using `aiutils.run_manifest`. Keep the manifest beside refreshed
+local parquets so later model cards can prove source roots, cache/model
+inputs, feature order, and row/clip counts.
+
+Smoke:
+`.venv/bin/python -m pytest ai/tests/test_konvid_full_features.py ai/tests/test_bvi_dvc_dir_mode.py -q`
+
+Touched files: `ai/scripts/konvid_to_full_features.py`,
+`ai/scripts/bvi_dvc_to_full_features.py`,
+`ai/tests/test_konvid_full_features.py`,
+`ai/tests/test_bvi_dvc_dir_mode.py`, `ai/AGENTS.md`,
+`docs/ai/training.md`, `docs/ai/bvi-dvc-corpus-ingestion.md`,
+`docs/research/0696-full-feature-exporter-manifests.md`,
+`changelog.d/added/0696-full-feature-exporter-manifests.md`, and this file.
+
 ## feat/u2netp-mirror-exporter (ADR-0671)
 
 **No upstream rebase impact**: this touches fork-local tiny-AI exporter

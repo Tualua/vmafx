@@ -41,6 +41,13 @@ if __package__ in (None, ""):
 from ai.data.feature_extractor import DEFAULT_VMAF_BINARY, FULL_FEATURES, _extractors_for
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+AI_SRC = REPO_ROOT / "ai" / "src"
+if __package__ in (None, ""):
+    sys.path.insert(0, str(REPO_ROOT))
+if str(AI_SRC) not in sys.path:
+    sys.path.insert(0, str(AI_SRC))
+
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 
 def _run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
@@ -309,7 +316,64 @@ def _write_outputs(
     )
 
 
-def main() -> int:
+def _write_manifest(
+    path: Path,
+    *,
+    args: argparse.Namespace,
+    argv: list[str] | None,
+    videos_dir: Path,
+    clips_selected: int,
+    rows: list[dict],
+    folds_out: Path | None,
+    elapsed_s: float,
+) -> None:
+    clips_processed = len({str(row["key"]) for row in rows if "key" in row})
+    write_manifest_json(
+        path,
+        {
+            "schema": "konvid-full-features-manifest-v1",
+            "features": list(FULL_FEATURES),
+            "crf": args.crf,
+            "codec": args.codec,
+            "codec_from_source": bool(args.codec_from_source),
+            "folds": {
+                "enabled": folds_out is not None,
+                "fold_count": args.fold_count,
+            },
+            "cache": {
+                "enabled": not args.no_cache,
+                "directory": None if args.no_cache else str(args.cache_dir),
+            },
+            "stats": {
+                "clips_selected": clips_selected,
+                "clips_processed": clips_processed,
+                "frames": len(rows),
+                "columns": 0 if not rows else len(rows[0]),
+                "elapsed_s": round(elapsed_s, 6),
+            },
+            "run_provenance": build_run_provenance(
+                entrypoint=Path(__file__),
+                repo_root=REPO_ROOT,
+                argv=sys.argv[1:] if argv is None else argv,
+                args=args,
+                inputs={
+                    "konvid_root": args.konvid_root,
+                    "videos_dir": videos_dir,
+                    "cache_dir": None if args.no_cache else args.cache_dir,
+                    "vmaf_bin": args.vmaf_bin,
+                    "model": args.model,
+                },
+                outputs={
+                    "parquet": args.out,
+                    "folded_parquet": folds_out,
+                    "manifest": args.manifest_out,
+                },
+            ),
+        },
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="konvid_to_full_features.py")
     parser.add_argument(
         "--konvid-root",
@@ -344,6 +408,16 @@ def main() -> int:
     parser.add_argument("--no-folds-out", action="store_true")
     parser.add_argument("--fold-count", type=int, default=5)
     parser.add_argument(
+        "--manifest-out",
+        type=Path,
+        default=None,
+        help=(
+            "Run-provenance JSON sidecar. Defaults to <out>.manifest.json and "
+            "records KoNViD root/cache/model inputs, FULL_FEATURES schema, "
+            "fold output, row counts, and exact CLI args."
+        ),
+    )
+    parser.add_argument(
         "--scratch",
         type=Path,
         default=Path(os.environ.get("VMAF_TINY_AI_SCRATCH", "/tmp/konvid_full_acquire")),
@@ -372,7 +446,9 @@ def main() -> int:
         action="store_true",
         help="Use ffprobe's source codec_name as the codec label instead of --codec.",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    if args.manifest_out is None:
+        args.manifest_out = args.out.with_suffix(".manifest.json")
 
     if not args.vmaf_bin.is_file():
         print(f"error: vmaf binary not found at {args.vmaf_bin}", file=sys.stderr)
@@ -433,6 +509,17 @@ def main() -> int:
 
     folds_out = None if args.no_folds_out else args.folds_out
     _write_outputs(rows, args.out, folds_out, args.fold_count)
+    _write_manifest(
+        args.manifest_out,
+        args=args,
+        argv=argv,
+        videos_dir=videos_dir,
+        clips_selected=len(clips),
+        rows=rows,
+        folds_out=folds_out,
+        elapsed_s=time.monotonic() - t0,
+    )
+    print(f"[konvid-full] wrote manifest {args.manifest_out}", flush=True)
     return 0
 
 
