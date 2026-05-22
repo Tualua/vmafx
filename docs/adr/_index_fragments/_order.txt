@@ -427,3 +427,4 @@
 0677-ai-dataset-fetch-manifests
 0678-ai-run-manifest-helper
 0679-ci-draft-automerge-gate
+0680-ai-cli-helper-pattern

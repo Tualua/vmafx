@@ -104,6 +104,21 @@ should use `aiutils.run_manifest.write_run_manifest()` so the repeated
 between scripts. The Claude workflow for adding or auditing those sidecars is
 `.claude/skills/ai-run-manifest/SKILL.md`.
 
+Operator-facing AI scripts should also use the small CLI helper layer in
+`aiutils.cli_helpers` when they fit the shared shape. `make_argument_parser()`
+keeps parser formatting consistent, `collect_cli_argv()` preserves the raw
+argument vector for provenance, and `add_batch_manifest_arguments()` owns the
+standard batch-runner flags:
+
+| Helper | Use |
+|---|---|
+| `make_argument_parser()` | Standard parser construction for AI scripts. |
+| `collect_cli_argv()` | Canonical raw-argv capture before parsing. |
+| `add_batch_manifest_arguments()` | Shared `--manifest`, `--base-dir`, report-output, fail-fast, and optional row-failure flags for batch materializers. |
+
+Table-specific defaults, row schemas, and materializer options stay in the
+individual scripts; the helper only covers boilerplate that should not drift.
+
 `run_provenance` is intentionally compact:
 
 | Field | Meaning |

@@ -20,6 +20,7 @@ if __package__ in (None, ""):
 
 from materialize_mos_labels import REPO_ROOT, materialize
 
+from aiutils.cli_helpers import add_batch_manifest_arguments, collect_cli_argv, make_argument_parser
 from aiutils.run_manifest import build_run_provenance, write_manifest_json
 
 SCRIPT_PATH = Path(__file__).resolve()
@@ -250,22 +251,13 @@ def _resolve_path(value: Any, base_dir: Path) -> Path:
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--manifest", type=Path, required=True, help="Batch manifest JSON")
-    parser.add_argument(
-        "--base-dir",
-        type=Path,
-        default=None,
-        help="Base directory for relative manifest paths; defaults to manifest directory",
-    )
-    parser.add_argument("--report-json", type=Path, default=None, help="Batch report JSON path")
-    parser.add_argument("--report-md", type=Path, default=None, help="Batch report Markdown path")
-    parser.add_argument("--fail-fast", action="store_true", help="Stop after the first table error")
+    parser = make_argument_parser(description=__doc__)
+    add_batch_manifest_arguments(parser)
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    raw_argv = collect_cli_argv(argv)
     args = _parse_args(raw_argv)
     try:
         specs = load_batch_manifest(args.manifest, base_dir=args.base_dir)

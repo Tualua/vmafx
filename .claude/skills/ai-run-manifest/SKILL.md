@@ -34,7 +34,11 @@ description: Add or audit replay-manifest sidecars for AI scripts that create da
    report to a new manifest schema.
 4. Default new sidecars beside the artifact (`<output>.manifest.json`) unless
    the artifact has a stronger local convention.
-5. Add tests that assert the script writes the sidecar and that
+5. For a batch manifest runner, import `make_argument_parser()`,
+   `collect_cli_argv()`, and `add_batch_manifest_arguments()` from
+   `aiutils.cli_helpers` instead of duplicating the common
+   `--manifest` / `--base-dir` / report-output / fail-fast flags.
+6. Add tests that assert the script writes the sidecar and that
    `run_provenance.schema == "ai-run-provenance-v1"`.
 
 ## Guardrails

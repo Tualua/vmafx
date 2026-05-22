@@ -22,9 +22,11 @@ When writing a new script in `ai/scripts/` or a new module in
    `build_run_provenance()` only when embedding the provenance block into an
    existing report schema. Do not hand-roll path hashing or the manifest
    envelope in each script.
-6. **CLI setup:** (Opt-in) Logging and argument parser helpers are in `aiutils.cli_helpers`
-   (see that module for factory functions). Not all scripts need consolidation yet;
-   document custom patterns in your script's comments if you deviate.
+6. **CLI setup:** Use `make_argument_parser()` and `collect_cli_argv()` from
+   `aiutils.cli_helpers` for new operator-facing scripts. Batch manifest runners
+   must also use `add_batch_manifest_arguments()` so `--manifest`,
+   `--base-dir`, `--report-json`, `--report-md`, `--fail-fast`, and optional
+   `--allow-row-failures` stay aligned.
 
 ## Module inventory
 
@@ -33,9 +35,4 @@ When writing a new script in `ai/scripts/` or a new module in
 - `jsonl_utils.py` — `iter_jsonl(path) -> Iterator[tuple[int, dict]]`
 - `parquet_utils.py` — `write_parquet_atomic(df, output, **kwargs) -> None`
 - `run_manifest.py` — deterministic `run_provenance` sidecar helpers
-
-## Future: CLI helpers (not yet extracted)
-
-When CLI logging + argument parser duplication reaches a tipping point,
-extract `cli_helpers.py` with factory functions for `ArgumentParser`
-and `logging.basicConfig()`. Until then, each script handles its own CLI setup.
+- `cli_helpers.py` — shared parser/raw-argv/batch-manifest argument helpers

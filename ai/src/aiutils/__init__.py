@@ -7,6 +7,7 @@ CLI setup, Parquet I/O) to reduce code duplication across the ai/scripts/
 directory and establish standard interfaces for new scripts.
 """
 
+from aiutils.cli_helpers import add_batch_manifest_arguments, collect_cli_argv, make_argument_parser
 from aiutils.file_utils import sha256
 from aiutils.jsonl_utils import iter_jsonl
 from aiutils.run_manifest import (
@@ -19,10 +20,13 @@ from aiutils.run_manifest import (
 from aiutils.time_utils import now_iso_8601
 
 __all__ = [
+    "add_batch_manifest_arguments",
     "build_run_manifest_payload",
     "build_run_provenance",
+    "collect_cli_argv",
     "describe_path",
     "iter_jsonl",
+    "make_argument_parser",
     "now_iso_8601",
     "sha256",
     "write_manifest_json",

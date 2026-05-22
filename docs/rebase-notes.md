@@ -39411,3 +39411,35 @@ Touched files:
 `docs/research/0699-ci-draft-automerge-gate.md`,
 `changelog.d/fixed/0679-ci-draft-automerge-gate.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0680 — Shared AI CLI helper pattern
+
+**AI script helper impact.** Batch manifest runners now share parser and raw
+argv boilerplate through `aiutils.cli_helpers`. Rebase work that changes the
+standard manifest/report/fail-fast flags should update the helper and all batch
+runner tests together instead of editing each runner independently.
+
+**Key invariants**:
+
+- `collect_cli_argv()` is the canonical raw-argument capture for ADR-0661
+  provenance in scripts that accept an injectable `argv`.
+- `add_batch_manifest_arguments()` owns `--manifest`, `--base-dir`,
+  `--report-json`, `--report-md`, `--fail-fast`, and optional
+  `--allow-row-failures` for batch manifest runners.
+- Table-specific manifest schemas and materializer semantics stay in the
+  individual runner modules.
+
+Touched files:
+`ai/src/aiutils/cli_helpers.py`,
+`ai/scripts/batch_materialize_saliency_features.py`,
+`ai/scripts/batch_materialize_second_opinion_features.py`,
+`ai/scripts/batch_materialize_mos_labels.py`,
+`ai/tests/test_cli_helpers.py`,
+`ai/AGENTS.md`,
+`ai/src/aiutils/AGENTS.md`,
+`.claude/skills/ai-run-manifest/SKILL.md`,
+`docs/ai/training.md`,
+`docs/adr/0680-ai-cli-helper-pattern.md`,
+`docs/research/0700-ai-cli-helper-pattern.md`,
+`changelog.d/added/0680-ai-cli-helper-pattern.md`,
+`docs/rebase-notes.md` (this entry).
