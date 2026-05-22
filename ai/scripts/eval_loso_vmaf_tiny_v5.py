@@ -20,19 +20,24 @@ digest.
 
 from __future__ import annotations
 
-import argparse
-import sys
 import time
 from pathlib import Path
 
 import numpy as np
 
-SCRIPT_PATH = Path(__file__).resolve()
-REPO_ROOT = SCRIPT_PATH.parents[2]
-sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
-sys.path.insert(0, str(REPO_ROOT))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 from ai.scripts.train_vmaf_tiny_v5 import CANONICAL_6, _train  # noqa: E402
+
+# isort: split
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 
 
 def _metrics(pred: np.ndarray, y: np.ndarray) -> dict[str, float]:
@@ -109,8 +114,9 @@ def _run_loso(df, label: str, epochs: int, batch_size: int, lr: float, seed: int
     return {"per_fold": fold_metrics, "aggregate": aggregate}
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    ap = make_argument_parser()
     ap.add_argument(
         "--parquet-base", type=Path, required=True, help="4-corpus parquet (NF+KV+BVI A+B+C+D)."
     )
@@ -122,7 +128,7 @@ def main() -> int:
     ap.add_argument("--batch-size", type=int, default=256)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--seed", type=int, default=0)
-    args = ap.parse_args()
+    args = ap.parse_args(raw_argv)
 
     import pandas as pd
 
@@ -183,7 +189,7 @@ def main() -> int:
         "run_provenance": build_run_provenance(
             entrypoint=SCRIPT_PATH,
             repo_root=REPO_ROOT,
-            argv=sys.argv[1:],
+            argv=raw_argv,
             args=args,
             inputs={
                 "parquet_base": args.parquet_base,
