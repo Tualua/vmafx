@@ -51,6 +51,11 @@
     "hide": "on_success"
   },
   {
+    "label": "format-check (CI-equivalent, non-mutating)",
+    "command": "make format-check",
+    "reveal": "always"
+  },
+  {
     "label": "Lint all",
     "command": "make lint",
     "reveal": "always"
@@ -58,6 +63,22 @@
   {
     "label": "vmaf-tune compare BBB 1080p (smoke)",
     "command": "python tools/vmaf-tune/vmaftune/compare.py --ref testdata/ref_576x324_48f.yuv --dis testdata/dis_576x324_48f.yuv --width 576 --height 324 --backend cpu",
+    "reveal": "always"
+  },
+
+  {
+    "label": "container: rebuild dev-mcp image + up",
+    "command": "docker compose --project-directory $ZED_WORKTREE_ROOT -f $ZED_WORKTREE_ROOT/dev/docker-compose.yml build dev-mcp && docker compose -f $ZED_WORKTREE_ROOT/dev/docker-compose.yml up -d",
+    "reveal": "always"
+  },
+  {
+    "label": "container: build vmaf (all backends)",
+    "command": "docker exec vmaf-dev-mcp bash -lc 'cd /workspace && meson setup build -Denable_cuda=true -Denable_sycl=true && ninja -C build'",
+    "reveal": "always"
+  },
+  {
+    "label": "container: meson test fast",
+    "command": "docker exec vmaf-dev-mcp bash -lc 'meson test -C /workspace/build --suite=fast --print-errorlogs'",
     "reveal": "always"
   },
   {
@@ -68,6 +89,56 @@
   {
     "label": "MCP smoke test",
     "command": "cd mcp-server/vmaf-mcp && python -m pytest tests/test_smoke_e2e.py -v",
+    "reveal": "always"
+  },
+
+  {
+    "label": "ADR: claim next number (uses selection as slug)",
+    "command": "scripts/adr/next-free.sh --claim ${ZED_SELECTED_TEXT:new-decision}",
+    "reveal": "always"
+  },
+  {
+    "label": "ADR: list claimed / in-flight",
+    "command": "ls docs/adr/*.md.stub 2>/dev/null; ls .git/adr-claims/ 2>/dev/null",
+    "reveal": "always"
+  },
+
+  {
+    "label": "validate scores: all backends, Netflix normal pair",
+    "command": ".venv/bin/python scripts/dev/validate_scores.py --ref python/test/resource/yuv/src01_hrc00_576x324.yuv --dis python/test/resource/yuv/src01_hrc01_576x324.yuv --width 576 --height 324 --pix_fmt yuv420p --bitdepth 8",
+    "reveal": "always"
+  },
+
+  {
+    "label": "pytest: ai/tests (fast)",
+    "command": ".venv/bin/python -m pytest ai/tests -q --tb=short -x",
+    "reveal": "always"
+  },
+  {
+    "label": "pytest: current file (uses $ZED_FILE)",
+    "command": ".venv/bin/python -m pytest $ZED_FILE -v",
+    "reveal": "always"
+  },
+  {
+    "label": "ruff: check current file",
+    "command": ".venv/bin/ruff check $ZED_FILE",
+    "reveal": "always"
+  },
+
+  {
+    "label": "mkdocs: build strict",
+    "command": ".venv/bin/mkdocs build --strict",
+    "reveal": "always"
+  },
+  {
+    "label": "regen docs (skill alias)",
+    "command": ".venv/bin/python scripts/dev/regen_docs.py",
+    "reveal": "always"
+  },
+
+  {
+    "label": "deliverables-check vs current PR body",
+    "command": "BASE_SHA=$(git merge-base origin/master HEAD) HEAD_SHA=HEAD scripts/ci/deliverables-check.sh < .workingdir2/pr-body-current.md",
     "reveal": "always"
   },
   {

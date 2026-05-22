@@ -30,5 +30,48 @@
     "program": "$ZED_WORKTREE_ROOT/build/test/test_feature",
     "args": [],
     "cwd": "$ZED_WORKTREE_ROOT/build"
+  },
+  {
+    "adapter": "CodeLLDB",
+    "label": "Debug: test_feature (ASan/UBSan build)",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/build-san/test/test_feature",
+    "args": [],
+    "cwd": "$ZED_WORKTREE_ROOT/build-san",
+    "env": {
+      "ASAN_OPTIONS": "detect_leaks=1:abort_on_error=1",
+      "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+    }
+  },
+  {
+    "adapter": "Debugpy",
+    "label": "Debug: pytest current file",
+    "request": "launch",
+    "module": "pytest",
+    "args": ["$ZED_FILE", "-v"],
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "adapter": "Debugpy",
+    "label": "Debug: pytest ai/tests",
+    "request": "launch",
+    "module": "pytest",
+    "args": ["ai/tests", "-v", "-x"],
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "adapter": "Debugpy",
+    "label": "Debug: vmaf-mcp server (stdio)",
+    "request": "launch",
+    "module": "vmaf_mcp.server",
+    "cwd": "$ZED_WORKTREE_ROOT/mcp-server/vmaf-mcp"
+  },
+  {
+    "adapter": "Debugpy",
+    "label": "Debug: vmaf-tune compare (no args)",
+    "request": "launch",
+    "module": "vmaftune.compare",
+    "args": [],
+    "cwd": "$ZED_WORKTREE_ROOT"
   }
 ]

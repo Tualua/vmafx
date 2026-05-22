@@ -1,7 +1,8 @@
 {
+
   "tab_size": 4,
   "hard_tabs": false,
-  "line_ending": "lf",
+  "line_ending": "enforce_lf",
   "ensure_final_newline_on_save": true,
   "remove_trailing_whitespace_on_save": true,
   "preferred_line_length": 100,
@@ -20,12 +21,14 @@
     "node_modules",
     "**/*.yuv",
     "**/*.onnx",
-    "**/*.pkl"
+    "**/*.pkl",
+    "**/*.parquet"
   ],
 
   "file_types": {
-    "C++": ["cu", "cuh", "hip", "metal"],
-    "GLSL": ["comp", "vert", "frag", "glsl"]
+    "C++": ["cu", "cuh", "hip", "metal", "mm"],
+    "GLSL": ["comp", "vert", "frag", "glsl"],
+    "Python": ["meson.build", "meson_options.txt"]
   },
 
   "languages": {
@@ -45,7 +48,7 @@
       "formatter": [
         {
           "external": {
-            "command": "ruff",
+            "command": ".venv/bin/ruff",
             "arguments": ["format", "--stdin-filename", "{buffer_path}", "-"]
           }
         }
@@ -56,7 +59,7 @@
       "format_on_save": "on",
       "formatter": {
         "external": {
-          "command": "shfmt",
+          "command": ".venv/bin/shfmt",
           "arguments": ["-i", "2", "-ci", "-"]
         }
       }
@@ -108,13 +111,45 @@
     }
   },
 
+  "edit_predictions": {
+    "disabled_globs": [
+      "build/**",
+      "build-*/**",
+      "subprojects/**",
+      "python/test/resource/**",
+      "python/vmaf/resource/**",
+      "python/vmaf/matlab/**",
+      ".workingdir/**",
+      ".workingdir2/**",
+      ".corpus/**",
+      "model/**",
+      "**/*.yuv",
+      "**/*.onnx",
+      "**/*.onnx.data",
+      "**/*.pkl",
+      "**/*.parquet",
+      "**/*.bin"
+    ]
+  },
+
+  "agent_servers": {
+    "claude-acp": {
+      "type": "registry",
+      "default_model": "claude-sonnet-4-5"
+    },
+    "codex-acp": {
+      "type": "registry"
+    },
+    "gemini": {
+      "type": "registry"
+    }
+  },
+
   "context_servers": {
     "vmaf-mcp": {
       "source": "custom",
-      "command": "vmaf-mcp",
-      "env": {
-        "VMAF_BIN": "build/tools/vmaf"
-      }
+      "command": "docker",
+      "args": ["exec", "-i", "vmaf-dev-mcp", "vmaf-mcp"]
     }
   },
 
@@ -123,12 +158,33 @@
       "provider": "anthropic",
       "model": "claude-sonnet-4-5"
     },
+    "inline_assistant_model": {
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5"
+    },
+    "commit_message_model": {
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5"
+    },
+    "thread_summary_model": {
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5"
+    },
+    "subagent_model": {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-5"
+    },
+    "play_sound_when_agent_done": "when_hidden",
     "tool_permissions": {
       "default": "confirm",
       "tools": {
-        "mcp:vmaf-mcp:vmaf_score": { "default": "allow" },
-        "mcp:vmaf-mcp:list_models": { "default": "allow" },
-        "mcp:vmaf-mcp:list_backends": { "default": "allow" }
+        "mcp:vmaf-mcp:list_.*":      { "always_allow": true },
+        "mcp:vmaf-mcp:describe_.*":  { "always_allow": true },
+        "mcp:vmaf-mcp:vmaf_(score|score_encoded|version)": { "always_allow": true },
+        "mcp:vmaf-mcp:probe_backend": { "always_allow": true },
+        "mcp:vmaf-mcp:compare_models": { "always_allow": true },
+        "mcp:vmaf-mcp:run_.*":       { "always_confirm": true },
+        "mcp:vmaf-mcp:eval_.*":      { "always_confirm": true }
       }
     }
   },
