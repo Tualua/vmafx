@@ -39259,6 +39259,34 @@ Touched files:
 `changelog.d/added/0674-second-opinion-materializer-batch-manifest.md`,
 `docs/rebase-notes.md` (this entry).
 
+## ADR-0675 — MOS label materializer batch manifest
+
+**MOS-labelled table refresh impact.** This adds a batch orchestration layer
+over `ai/scripts/materialize_mos_labels.py`. Rebase work that changes MOS
+column inference, key-normalisation, match-rate enforcement, overwrite policy,
+or run-provenance fields must update both the single-table materializer and the
+batch manifest runner/tests together.
+
+**Key invariants**:
+
+- `ai/scripts/batch_materialize_mos_labels.py` must import and reuse
+  `materialize_mos_labels.materialize()`; it must not parse MOS rows, extract
+  features, or train models.
+- Batch manifests carry shared defaults plus per-table overrides. Relative
+  paths resolve from the manifest directory unless `--base-dir` is supplied.
+- Batch reports use schema `mos-label-materializer-batch-v1` and include
+  ADR-0661 `run_provenance`.
+
+Touched files:
+`ai/scripts/batch_materialize_mos_labels.py`,
+`ai/tests/test_batch_materialize_mos_labels.py`,
+`ai/AGENTS.md`,
+`docs/ai/mos-label-materializer.md`,
+`docs/adr/0675-mos-label-materializer-batch-manifest.md`,
+`docs/research/0695-mos-label-materializer-batch-manifest.md`,
+`changelog.d/added/0675-mos-label-materializer-batch-manifest.md`,
+`docs/rebase-notes.md` (this entry).
+
 ## ADR-0679 — CI draft auto-merge gate
 
 **Merge-train safety impact.** The single required branch-protection context,

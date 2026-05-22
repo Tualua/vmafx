@@ -54,6 +54,47 @@ table, label table inputs, output table target, and audit target. Keep that
 audit next to refreshed training tables so MOS-head training evidence can be
 reproduced without shell history.
 
+## Batch Manifest
+
+Use `ai/scripts/batch_materialize_mos_labels.py` when several refreshed
+feature tables need the same label-join policy. Paths in the manifest are
+relative to the manifest file unless `--base-dir` is supplied.
+
+```json
+{
+  "defaults": {
+    "min_match_rate": 0.95,
+    "key_normalize": "auto"
+  },
+  "tables": [
+    {
+      "id": "konvid",
+      "features": "runs/full_features_konvid_refresh.parquet",
+      "labels": [".corpus/konvid-150k/konvid_150k.jsonl"],
+      "feature_key_column": "key",
+      "label_key_column": "src",
+      "feature_key_regex": "([0-9]{6,})",
+      "label_key_regex": "([0-9]{6,})",
+      "out": "runs/full_features_konvid_refresh_with_mos.parquet",
+      "audit_json": "runs/full_features_konvid_refresh_with_mos.audit.json"
+    }
+  ]
+}
+```
+
+```bash
+.venv/bin/python ai/scripts/batch_materialize_mos_labels.py \
+  --manifest .workingdir2/mos-labels/batch.json \
+  --report-json .workingdir2/mos-labels/batch.report.json \
+  --report-md .workingdir2/mos-labels/batch.report.md
+```
+
+Each table may override any single-run join option from `defaults`, including
+`feature_key_column`, `label_key_column`, `label_mos_column`, `key_normalize`,
+`feature_key_regex`, `label_key_regex`, `min_match_rate`, `status_column`, and
+`overwrite`. The batch report uses schema `mos-label-materializer-batch-v1` and
+carries ADR-0661 `run_provenance`.
+
 ## Output Columns
 
 | Column | Meaning |
