@@ -19,20 +19,10 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+from _script_bootstrap import bootstrap_ai_script
 
-# Bootstrap sys.path for direct-invocation: pytest's pythonpath setting
-# ([tool.pytest.ini_options] in pyproject.toml) covers in-process tests
-# but does not propagate to subprocesses, and end-users running this CLI
-# directly have no equivalent. Insert ai/src (for aiutils) and ai/scripts
-# (for the sibling extract_k150k_features module) so this script works
-# standalone.
-_AI_DIR = Path(__file__).resolve().parents[1]
-REPO_ROOT = _AI_DIR.parent
-for _path in (_AI_DIR / "src", _AI_DIR / "scripts"):
-    _str = str(_path)
-    if _str not in sys.path:
-        sys.path.insert(0, _str)
-
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_ai_scripts=True)
+REPO_ROOT = _SCRIPT_PATHS.repo_root
 from extract_k150k_features import DEFAULT_CHUG_SPLIT_SEED, _load_jsonl_metadata  # noqa: E402
 
 from aiutils.parquet_utils import write_parquet_atomic  # noqa: E402

@@ -12,18 +12,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-if __package__ in (None, ""):
-    _ROOT = Path(__file__).resolve().parents[2]
-    sys.path.insert(0, str(_ROOT))
-    sys.path.insert(0, str(_ROOT / "ai" / "src"))
-    sys.path.insert(0, str(_ROOT / "ai" / "scripts"))
+from _script_bootstrap import bootstrap_ai_script
 
-from materialize_second_opinion_features import REPO_ROOT, materialize
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True, include_ai_scripts=True)
+from materialize_second_opinion_features import REPO_ROOT, materialize  # noqa: E402
 
-from aiutils.cli_helpers import add_batch_manifest_arguments, collect_cli_argv, make_argument_parser
-from aiutils.run_manifest import build_run_provenance, write_manifest_json
+from aiutils.cli_helpers import (  # noqa: E402
+    add_batch_manifest_arguments,
+    collect_cli_argv,
+    make_argument_parser,
+)
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
-SCRIPT_PATH = Path(__file__).resolve()
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
 _CONFIG_FIELDS = {
     "key_column",
     "score_key_field",

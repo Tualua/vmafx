@@ -17,8 +17,11 @@ description: Add or audit replay-manifest sidecars for AI scripts that create da
 
 ## Required Pattern
 
-1. Add `ai/src` to `sys.path` before importing shared helpers when the script is
-   executable as `python ai/scripts/<name>.py`.
+1. For scripts executable as `python ai/scripts/<name>.py`, call
+   `bootstrap_ai_script(__file__)` from `ai/scripts/_script_bootstrap.py`
+   before importing `aiutils` or sibling `ai/scripts` modules. Add only the
+   optional roots the script actually needs (`include_repo_root`,
+   `include_ai_scripts`, `include_vmaf_tune_src`).
 2. For a new standalone sidecar, call `aiutils.run_manifest.write_run_manifest()`.
    Pass:
    - `schema`: script-specific, versioned, kebab-case plus `-v1`.
@@ -45,6 +48,8 @@ description: Add or audit replay-manifest sidecars for AI scripts that create da
 
 - Do not hand-roll path hashing, JSON sorting, or `run_provenance` structure in
   the script.
+- Do not add new ad hoc `sys.path.insert(...)` blocks to AI scripts; extend
+  `_script_bootstrap.py` when a new repo-local import root is genuinely needed.
 - Keep row schemas stable. Put run-level evidence in the sidecar, not every row.
 - Preserve existing machine-readable report keys unless the PR explicitly bumps
   that report schema.

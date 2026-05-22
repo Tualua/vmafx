@@ -105,12 +105,11 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from _script_bootstrap import bootstrap_ai_script
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+REPO_ROOT = _SCRIPT_PATHS.repo_root
 DEFAULT_CHUG_SPLIT_SEED = "chug-hdr-v1"
-_AI_SRC = REPO_ROOT / "ai" / "src"
-if str(_AI_SRC) not in sys.path:
-    sys.path.insert(0, str(_AI_SRC))
 
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 

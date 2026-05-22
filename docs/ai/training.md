@@ -119,6 +119,20 @@ standard batch-runner flags:
 Table-specific defaults, row schemas, and materializer options stay in the
 individual scripts; the helper only covers boilerplate that should not drift.
 
+Directly executable `ai/scripts/*.py` files should use
+`ai/scripts/_script_bootstrap.py` before importing shared repo-local modules.
+`bootstrap_ai_script(__file__)` resolves the script path, repository root,
+`ai/src`, `ai/scripts`, and the optional `tools/vmaf-tune/src` root without
+copying ad hoc `sys.path.insert(...)` blocks into every script. Enable only the
+roots the script needs:
+
+| Bootstrap option | Use |
+|---|---|
+| default | Import `aiutils` from `ai/src`. |
+| `include_repo_root=True` | Import repo-root packages such as `ai.data`. |
+| `include_ai_scripts=True` | Import sibling materializers or feature extractors from `ai/scripts`. |
+| `include_vmaf_tune_src=True` | Import `vmaftune` helpers for table materializers. |
+
 `run_provenance` is intentionally compact:
 
 | Field | Meaning |

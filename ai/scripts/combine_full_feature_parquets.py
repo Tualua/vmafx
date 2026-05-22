@@ -26,14 +26,10 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+from _script_bootstrap import bootstrap_ai_script
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-if __package__ in (None, ""):
-    sys.path.insert(0, str(REPO_ROOT))
-_AI_SRC = REPO_ROOT / "ai" / "src"
-if str(_AI_SRC) not in sys.path:
-    sys.path.insert(0, str(_AI_SRC))
-
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
+REPO_ROOT = _SCRIPT_PATHS.repo_root
 from ai.data.feature_extractor import FULL_FEATURES  # noqa: E402
 
 # isort: split

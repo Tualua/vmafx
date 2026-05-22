@@ -27,6 +27,10 @@ When writing a new script in `ai/scripts/` or a new module in
    must also use `add_batch_manifest_arguments()` so `--manifest`,
    `--base-dir`, `--report-json`, `--report-md`, `--fail-fast`, and optional
    `--allow-row-failures` stay aligned.
+7. **Direct script bootstrap:** `aiutils` itself must stay importable without
+   mutating `sys.path`. Directly executed `ai/scripts/*.py` entrypoints use
+   `ai/scripts/_script_bootstrap.py` before importing this package; do not move
+   that bootstrap into `aiutils` where it would be too late to solve the import.
 
 ## Module inventory
 

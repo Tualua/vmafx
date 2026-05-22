@@ -39443,3 +39443,38 @@ Touched files:
 `docs/research/0700-ai-cli-helper-pattern.md`,
 `changelog.d/added/0680-ai-cli-helper-pattern.md`,
 `docs/rebase-notes.md` (this entry).
+
+## ADR-0681 — AI script bootstrap helper
+
+**AI script import impact.** Directly executable `ai/scripts/*.py` files now
+use `ai/scripts/_script_bootstrap.py::bootstrap_ai_script(__file__)` for
+repo-local imports before they import `aiutils`, sibling materializers, or
+`vmaf-tune` helpers.
+
+**Key invariants**:
+
+- `aiutils` must remain free of startup path mutation; the bootstrap lives in
+  `ai/scripts` because it has to run before `ai/src` is importable.
+- New ad hoc `sys.path.insert(...)` blocks in AI scripts should be avoided. If a
+  script needs a new repo-local root, extend `_script_bootstrap.py` and
+  `ai/tests/test_script_bootstrap.py`.
+- The helper only owns import roots; artifact schemas, materializer rules, and
+  report contents stay in the individual scripts.
+
+Touched files:
+`ai/scripts/_script_bootstrap.py`,
+`ai/scripts/batch_materialize_saliency_features.py`,
+`ai/scripts/batch_materialize_second_opinion_features.py`,
+`ai/scripts/batch_materialize_mos_labels.py`,
+`ai/scripts/enrich_k150k_parquet_metadata.py`,
+`ai/scripts/combine_full_feature_parquets.py`,
+`ai/scripts/extract_k150k_features.py`,
+`ai/tests/test_script_bootstrap.py`,
+`ai/AGENTS.md`,
+`ai/src/aiutils/AGENTS.md`,
+`.claude/skills/ai-run-manifest/SKILL.md`,
+`docs/ai/training.md`,
+`docs/adr/0681-ai-script-bootstrap-helper.md`,
+`docs/research/0701-ai-script-bootstrap-helper.md`,
+`changelog.d/changed/0681-ai-script-bootstrap-helper.md`,
+`docs/rebase-notes.md` (this entry).
