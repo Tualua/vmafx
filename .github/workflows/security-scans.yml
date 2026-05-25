@@ -39,7 +39,7 @@ jobs:
       # cannot load current `p/cwe-top-25` / `p/cert-c-strict` rulesets, which
       # uploads an empty SARIF and lights up a "Semgrep OSS is reporting errors"
       # banner on the repo Security tab.
-      image: semgrep/semgrep:latest@sha256:9349edbadf90c3f3c0c3f55867625354e89680e6fa10d9034042af52fdb0e0d0
+      image: semgrep/semgrep:latest@sha256:7cad2bc2d1e44f87f0bf4be6d1fa23aa90fb72015bebc89fb91385d813987a03
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
       - name: Run semgrep (local rules — gate on ERRORs)
@@ -78,13 +78,13 @@ jobs:
             --sarif --output=semgrep-registry.sarif || true
       - name: Upload local-rules SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
+        uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa  # v4
         with:
           sarif_file: semgrep-local.sarif
           category: semgrep-local
       - name: Upload registry-rules SARIF
         if: always() && hashFiles('semgrep-registry.sarif') != ''
-        uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
+        uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa  # v4
         with:
           sarif_file: semgrep-registry.sarif
           category: semgrep-registry
@@ -102,7 +102,7 @@ jobs:
       security-events: write   # codeql-action/analyze uploads SARIF
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-      - uses: github/codeql-action/init@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
+      - uses: github/codeql-action/init@7211b7c8077ea37d8641b6271f6a365a22a5fbfa  # v4
         with:
           languages: cpp
           queries: security-and-quality
@@ -114,7 +114,7 @@ jobs:
           sudo apt-get install -y meson ninja-build nasm
           meson setup build -Denable_cuda=false -Denable_sycl=false
           meson compile -C build
-      - uses: github/codeql-action/analyze@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
+      - uses: github/codeql-action/analyze@7211b7c8077ea37d8641b6271f6a365a22a5fbfa  # v4
         with:
           category: "/language:cpp"
 
@@ -128,12 +128,12 @@ jobs:
       security-events: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-      - uses: github/codeql-action/init@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
+      - uses: github/codeql-action/init@7211b7c8077ea37d8641b6271f6a365a22a5fbfa  # v4
         with:
           languages: python
           queries: security-and-quality
           config-file: ./.github/codeql-config.yml
-      - uses: github/codeql-action/analyze@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
+      - uses: github/codeql-action/analyze@7211b7c8077ea37d8641b6271f6a365a22a5fbfa  # v4
         with:
           category: "/language:python"
 
@@ -151,12 +151,12 @@ jobs:
       security-events: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-      - uses: github/codeql-action/init@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
+      - uses: github/codeql-action/init@7211b7c8077ea37d8641b6271f6a365a22a5fbfa  # v4
         with:
           languages: actions
           queries: security-and-quality
           config-file: ./.github/codeql-config.yml
-      - uses: github/codeql-action/analyze@9e0d7b8d25671d64c341c19c0152d693099fb5ba  # v4
+      - uses: github/codeql-action/analyze@7211b7c8077ea37d8641b6271f6a365a22a5fbfa  # v4
         with:
           category: "/language:actions"
 
