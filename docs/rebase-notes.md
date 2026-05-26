@@ -39500,3 +39500,24 @@ Touched files:
 `docs/adr/README.md`,
 `changelog.d/fixed/0683-mcp-cjson-banned-functions.md`,
 `docs/rebase-notes.md` (this entry).
+
+### 2026-05-21 follow-up — contract-noise filter widening
+
+**No upstream Netflix C-source rebase impact.** This stays within ADR-0659's
+scanner-precision policy.
+
+**Key invariant**: suppress only context-bound false positives:
+optional-backend contracts that name `HAVE_*`, `enable_*=false`, missing
+loader/runtime, or CPU fallback; unit-test stub prose; and ADR allocator
+`.md.stub` reservation wording. Non-implementation "stub" uses such as Python
+type-stub packages, driver-stub diagnostics, and ABI-pinning disabled-build
+stub comments are also filtered. Do not add broad file-level allowlists.
+
+Touched files:
+`scripts/dev/project_modernization_audit.py`,
+`scripts/dev/test_project_modernization_audit.py`,
+`docs/development/project-modernization-audit.md`,
+`docs/research/0685-modernization-audit-contract-noise.md`,
+`scripts/AGENTS.md`,
+`changelog.d/fixed/0685-modernization-audit-contract-noise.md`,
+`docs/rebase-notes.md` (this entry).

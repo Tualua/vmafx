@@ -101,8 +101,51 @@ HISTORICAL_CONTEXT_RE = re.compile(
 ENOSYS_CONTRACT_RE = re.compile(
     r"\b("
     r"built without|compiled out|contract|degrade gracefully|disabled-build|"
-    r"omitted|optional|pins? the -ENOSYS|stub-only|vmaf_[a-z0-9_]+_available"
+    r"omitted|optional|pins? the -ENOSYS|stub-only|vmaf_[a-z0-9_]+_available|"
+    r"HAVE_[A-Z0-9_]+|enable_[a-z0-9_]+=(?:false|disabled)|"
+    r"scaffold posture|runtime not ready|non-ROCm builds|CPU-flagged|"
+    r"buffer-type plumbing|volkInitialize|load_volk_once|"
+    r"without (?:hipcc|[a-z0-9_ -]+loader|[a-z0-9_ -]+runtime)|"
+    r"no [a-z0-9_ -]+loader|symbol is not available|"
+    r"lifecycle helper returns -ENOSYS|every lifecycle helper returns -ENOSYS|"
+    r"init\(\) returns -ENOSYS|returns -ENOSYS until|falling through to the CPU"
     r")\b",
+    re.IGNORECASE,
+)
+
+ERROR_TRANSLATION_CONTEXT_RE = re.compile(
+    r"\b("
+    r"case\s+[A-Za-z0-9_]*(?:NotSupported|Unsupported)|"
+    r"(?:rc|err|error)\s+to\s+(?:a\s+)?negative\s+(?:POSIX\s+)?errno|"
+    r"translate\s+(?:a\s+)?[A-Za-z0-9_ -]+error\s+(?:code\s+)?to\s+"
+    r"(?:a\s+)?negative\s+(?:POSIX\s+)?errno"
+    r")\b",
+    re.IGNORECASE,
+)
+
+TEST_DOUBLE_CONTEXT_RE = re.compile(
+    r"\b("
+    r"tests? (?:can |keep |may )?(?:inject|substitute|stub|stubbed)|"
+    r"unit tests? (?:inject|substitute|stub|stubbed)|"
+    r"stub(?:bed)? (?:external binaries|session|runner|subprocess|responses?)|"
+    r"fake [a-z0-9_-]+|runner argument lets unit tests"
+    r")\b",
+    re.IGNORECASE,
+)
+
+NON_IMPLEMENTATION_STUB_CONTEXT_RE = re.compile(
+    r"\b("
+    r"driver stub|stub signature must match|stub signatures must match|"
+    r"type stubs?|pandas-stubs"
+    r")\b",
+    re.IGNORECASE,
+)
+
+ADR_STUB_CONTEXT_RE = re.compile(
+    r"("
+    r"\.md\.stub|docs/adr/.+\.stub|ADR number|ADR allocator|"
+    r"stub file|reservation|--claim"
+    r")",
     re.IGNORECASE,
 )
 
@@ -236,7 +279,7 @@ def _enosys_is_contract(path: str, context: str) -> bool:
         return True
     if path.startswith("libvmaf/src/dnn/"):
         return True
-    return bool(ENOSYS_CONTRACT_RE.search(context))
+    return bool(ENOSYS_CONTRACT_RE.search(context) or ERROR_TRANSLATION_CONTEXT_RE.search(context))
 
 
 def _marker_suppressed(kind: str, path: str, line: str, context: str) -> bool:
@@ -255,7 +298,14 @@ def _marker_suppressed(kind: str, path: str, line: str, context: str) -> bool:
         return not _python_not_implemented_is_actionable(line)
     if kind == "enosys":
         return _enosys_is_contract(path, context)
-    return kind in {"stub", "scaffold"} and bool(ENOSYS_CONTRACT_RE.search(context))
+    if kind in {"stub", "scaffold"}:
+        return bool(
+            ENOSYS_CONTRACT_RE.search(context)
+            or TEST_DOUBLE_CONTEXT_RE.search(context)
+            or NON_IMPLEMENTATION_STUB_CONTEXT_RE.search(context)
+            or ADR_STUB_CONTEXT_RE.search(context)
+        )
+    return False
 
 
 def _interesting_file(path: Path) -> bool:
@@ -270,7 +320,7 @@ def _skip_path(path: Path, *, include_archives: bool) -> bool:
         return True
     if path.name in SKIP_FILE_NAMES:
         return True
-    return path.name.startswith("test_") or "tests" in parts
+    return path.name.startswith("test_") or path.name.startswith("test-") or "tests" in parts
 
 
 def _iter_files(repo_root: Path, roots: Sequence[str], *, include_archives: bool) -> Iterable[Path]:

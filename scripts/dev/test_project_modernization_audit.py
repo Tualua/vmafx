@@ -123,6 +123,144 @@ def test_marker_scan_keeps_live_enosys_without_contract_context(tmp_path: Path) 
     assert findings[0].kind == "enosys"
 
 
+def test_marker_scan_ignores_optional_backend_enosys_contracts(tmp_path: Path) -> None:
+    source = _write(
+        tmp_path / "libvmaf" / "src" / "feature" / "hip" / "integer_motion_hip.c",
+        "\n".join(
+            [
+                "/* Without HAVE_HIPCC, every lifecycle helper returns -ENOSYS so the",
+                " * feature engine falls through to the CPU implementation. */",
+                "int run(void)",
+                "{",
+                "    return -ENOSYS;",
+                "}",
+                "",
+            ]
+        ),
+    )
+
+    findings = audit.scan_marker_findings(tmp_path, [str(source.relative_to(tmp_path))])
+
+    assert findings == []
+
+
+def test_marker_scan_ignores_optional_runtime_error_translation(tmp_path: Path) -> None:
+    source = _write(
+        tmp_path / "libvmaf" / "src" / "feature" / "hip" / "float_psnr_hip.c",
+        "\n".join(
+            [
+                "static int hip_err(hipError_t rc)",
+                "{",
+                "    switch (rc) {",
+                "    case hipErrorNotSupported:",
+                "        return -ENOSYS;",
+                "    default:",
+                "        return -EIO;",
+                "    }",
+                "}",
+                "",
+            ]
+        ),
+    )
+
+    findings = audit.scan_marker_findings(tmp_path, [str(source.relative_to(tmp_path))])
+
+    assert findings == []
+
+
+def test_marker_scan_ignores_hip_scaffold_posture_else_branch(tmp_path: Path) -> None:
+    source = _write(
+        tmp_path / "libvmaf" / "src" / "feature" / "hip" / "integer_psnr_hip.c",
+        "\n".join(
+            [
+                "#else",
+                '    /* Scaffold posture: returns -ENOSYS ("runtime not ready"). */',
+                "    return -ENOSYS;",
+                "#endif /* HAVE_HIPCC */",
+                "",
+            ]
+        ),
+    )
+
+    findings = audit.scan_marker_findings(tmp_path, [str(source.relative_to(tmp_path))])
+
+    assert findings == []
+
+
+def test_marker_scan_ignores_optional_loader_enosys(tmp_path: Path) -> None:
+    source = _write(
+        tmp_path / "libvmaf" / "src" / "vulkan" / "common.c",
+        "\n".join(
+            [
+                "static int load_volk_once(void)",
+                "{",
+                "    VkResult vkr = volkInitialize();",
+                "    if (vkr != VK_SUCCESS)",
+                "        return -ENOSYS;",
+                "    return 0;",
+                "}",
+                "",
+            ]
+        ),
+    )
+
+    findings = audit.scan_marker_findings(tmp_path, [str(source.relative_to(tmp_path))])
+
+    assert findings == []
+
+
+def test_marker_scan_ignores_test_double_stub_prose(tmp_path: Path) -> None:
+    source = _write(
+        tmp_path / "tools" / "vmaf-tune" / "src" / "vmaftune" / "encode.py",
+        '"""The runner argument lets unit tests substitute a stub subprocess."""\n',
+    )
+
+    findings = audit.scan_marker_findings(tmp_path, [str(source.relative_to(tmp_path))])
+
+    assert findings == []
+
+
+def test_marker_scan_ignores_adr_allocator_stub_files(tmp_path: Path) -> None:
+    source = _write(
+        tmp_path / "scripts" / "adr" / "README.md",
+        "This removes both the `.md.stub` file and the reservation stub file.\n",
+    )
+
+    findings = audit.scan_marker_findings(tmp_path, [str(source.relative_to(tmp_path))])
+
+    assert findings == []
+
+
+def test_marker_scan_skips_hyphenated_test_helpers(tmp_path: Path) -> None:
+    source = _write(
+        tmp_path / "scripts" / "adr" / "test-next-free.sh",
+        "# Clean up any stubs we create, even on early exit.\n",
+    )
+
+    findings = audit.scan_marker_findings(tmp_path, ["scripts"])
+
+    assert source.is_file()
+    assert findings == []
+
+
+def test_marker_scan_ignores_non_implementation_stub_terms(tmp_path: Path) -> None:
+    source = _write(
+        tmp_path / "libvmaf" / "src" / "dnn" / "dnn_api.c",
+        "/* Stub signature must match the real-ORT path declared in the header. */\n",
+    )
+    package = _write(
+        tmp_path / "ai" / "pyproject.toml",
+        '"pandas-stubs>=3.0.0.260204",\n',
+    )
+
+    findings = audit.scan_marker_findings(
+        tmp_path,
+        [str(source.relative_to(tmp_path)), str(package.relative_to(tmp_path))],
+    )
+
+    assert findings == []
+
+
 def test_blocked_state_row_is_classified(tmp_path: Path) -> None:
     state = _write(
         tmp_path / ".workingdir2" / "OPEN.md",

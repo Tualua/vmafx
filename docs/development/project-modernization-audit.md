@@ -42,6 +42,22 @@ Documented `-ENOSYS` disabled-build contracts are filtered the same way. API
 docs, workflow comments, and DNN fallback stubs that explicitly describe
 optional-build behavior are not reported as missing implementations. A bare
 `return -ENOSYS;` outside a documented contract remains a high-severity finding.
+The same filter covers optional-backend contracts that name the compile-time
+guard (`HAVE_*`, `enable_*=false`), unavailable loader/runtime paths, or
+documented CPU fallback behavior. HIP/ROCm dual-path files are a common
+example: an `enable_hipcc=false` branch that returns `-ENOSYS` is a supported
+optional-runtime contract, while a live unguarded `return -ENOSYS;` remains a
+finding.
+
+Error-code translation helpers are also filtered when they map a native
+`NotSupported` runtime code to POSIX `-ENOSYS`. Those mappings are error
+normalisation, not missing implementations.
+
+Test-double prose is also filtered. Lines that say a unit test injects a stub,
+fake session, or fake subprocess are not implementation debt. Neither are ADR
+allocator stub-file references such as `docs/adr/NNNN-slug.md.stub`, Python
+type-stub package names, driver-stub environment diagnostics, or comments that
+pin disabled-build stub signatures to the real implementation ABI.
 
 `blocked=true` means the matched line contains a dependency phrase such as
 `upstream`, `manual access`, `legal`, `model weights`, or `stability window`.

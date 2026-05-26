@@ -143,6 +143,15 @@ The same rule applies to documented `-ENOSYS` disabled-build contracts:
 workflow comments, API docs, and DNN fallback stubs that explicitly describe
 optional-build behavior are not implementation gaps; bare `return -ENOSYS;`
 outside such context still is.
+Optional backend contracts that name their compile-time guard (`HAVE_*`,
+`enable_*=false`), unavailable loader/runtime path, or CPU fallback are also
+contract prose, not missing-implementation findings. Test-double prose
+("unit tests inject a stub") and ADR allocator `.md.stub` reservation wording
+are likewise suppressed; keep each suppression context-bound so real stubs in
+production paths still rank.
+Do the same for non-implementation uses of the word "stub": Python type-stub
+packages, driver-stub environment diagnostics, and comments that pin
+disabled-build stub signatures to the real implementation ABI.
 
 ### `run_unittests.sh` is upstream-mirror
 
