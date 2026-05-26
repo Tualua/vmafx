@@ -41,7 +41,6 @@ idempotent if `--cache-dir` is set — per-clip JSON caches under
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import shlex
@@ -52,11 +51,15 @@ from pathlib import Path
 
 import pandas as pd
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-AI_SRC = REPO_ROOT / "ai" / "src"
-if str(AI_SRC) not in sys.path:
-    sys.path.insert(0, str(AI_SRC))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+REPO_ROOT = _SCRIPT_PATHS.repo_root
+
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 # vmaf_v0.6.1 model features — same set the LOSO trainer expects.
@@ -250,7 +253,11 @@ def _process_clip(
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser()
+    raw_argv = collect_cli_argv(argv)
+    ap = make_argument_parser(
+        prog="konvid_to_vmaf_pairs.py",
+        description=__doc__,
+    )
     ap.add_argument(
         "--konvid-root",
         type=Path,
@@ -317,7 +324,7 @@ def main(argv: list[str] | None = None) -> int:
             "CLI args used to build the parquet."
         ),
     )
-    args = ap.parse_args(argv)
+    args = ap.parse_args(raw_argv)
     if args.manifest_out is None:
         args.manifest_out = args.out.with_suffix(".manifest.json")
 
@@ -385,7 +392,7 @@ def main(argv: list[str] | None = None) -> int:
             "run_provenance": build_run_provenance(
                 entrypoint=Path(__file__),
                 repo_root=REPO_ROOT,
-                argv=sys.argv[1:] if argv is None else argv,
+                argv=raw_argv,
                 args=args,
                 inputs={
                     "konvid_root": args.konvid_root,

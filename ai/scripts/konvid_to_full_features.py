@@ -35,18 +35,21 @@ from pathlib import Path
 
 import pandas as pd
 
-if __package__ in (None, ""):
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
-from ai.data.feature_extractor import DEFAULT_VMAF_BINARY, FULL_FEATURES, _extractors_for
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
+REPO_ROOT = _SCRIPT_PATHS.repo_root
+from ai.data.feature_extractor import (  # noqa: E402
+    DEFAULT_VMAF_BINARY,
+    FULL_FEATURES,
+    _extractors_for,
+)
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-AI_SRC = REPO_ROOT / "ai" / "src"
-if __package__ in (None, ""):
-    sys.path.insert(0, str(REPO_ROOT))
-if str(AI_SRC) not in sys.path:
-    sys.path.insert(0, str(AI_SRC))
-
+# isort: split
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 
@@ -374,7 +377,11 @@ def _write_manifest(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="konvid_to_full_features.py")
+    raw_argv = collect_cli_argv(argv)
+    parser = make_argument_parser(
+        prog="konvid_to_full_features.py",
+        description=__doc__,
+    )
     parser.add_argument(
         "--konvid-root",
         type=Path,
@@ -446,7 +453,7 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Use ffprobe's source codec_name as the codec label instead of --codec.",
     )
-    args = parser.parse_args(argv)
+    args = parser.parse_args(raw_argv)
     if args.manifest_out is None:
         args.manifest_out = args.out.with_suffix(".manifest.json")
 
@@ -512,7 +519,7 @@ def main(argv: list[str] | None = None) -> int:
     _write_manifest(
         args.manifest_out,
         args=args,
-        argv=argv,
+        argv=raw_argv,
         videos_dir=videos_dir,
         clips_selected=len(clips),
         rows=rows,

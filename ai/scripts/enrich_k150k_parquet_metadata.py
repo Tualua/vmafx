@@ -12,19 +12,22 @@ content-level split columns are filled into the parquet.
 
 from __future__ import annotations
 
-import argparse
 import json
-import sys
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from _script_bootstrap import bootstrap_ai_script
+
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_ai_scripts=True)
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 from extract_k150k_features import DEFAULT_CHUG_SPLIT_SEED, _load_jsonl_metadata  # noqa: E402
 
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.parquet_utils import write_parquet_atomic  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
@@ -74,7 +77,11 @@ def enrich_frame(
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="enrich_k150k_parquet_metadata.py")
+    raw_argv = collect_cli_argv(argv)
+    ap = make_argument_parser(
+        prog="enrich_k150k_parquet_metadata.py",
+        description=__doc__,
+    )
     ap.add_argument(
         "--features-parquet",
         type=Path,
@@ -113,7 +120,7 @@ def main(argv: list[str] | None = None) -> int:
             "CLI args used to build the derived parquet."
         ),
     )
-    args = ap.parse_args(argv)
+    args = ap.parse_args(raw_argv)
 
     if not args.features_parquet.is_file():
         raise SystemExit(f"error: features parquet not found: {args.features_parquet}")
@@ -141,7 +148,7 @@ def main(argv: list[str] | None = None) -> int:
             "run_provenance": build_run_provenance(
                 entrypoint=Path(__file__),
                 repo_root=REPO_ROOT,
-                argv=sys.argv[1:] if argv is None else argv,
+                argv=raw_argv,
                 args=args,
                 inputs={
                     "features_parquet": args.features_parquet,

@@ -74,66 +74,20 @@ from pathlib import Path
 
 import pandas as pd
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-AI_SRC = REPO_ROOT / "ai" / "src"
-if __package__ in (None, ""):
-    sys.path.insert(0, str(REPO_ROOT))
-if str(AI_SRC) not in sys.path:
-    sys.path.insert(0, str(AI_SRC))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
+REPO_ROOT = _SCRIPT_PATHS.repo_root
+from ai.data.feature_extractor import FULL_FEATURES, _extractors_for  # noqa: E402
+
+# isort: split
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
-# Verbatim mirror of FULL_FEATURES in ai/data/feature_extractor.py.
-# Keep these tuples in sync — they define the corpus-portable feature pool
-# the Phase-3b sweep consumes.  Extended by ADR-0559 (2026-05-18) to add
-# speed_temporal + speed_chroma_u/v/uv (CPU-only; GPU twins in ADR-0557/0558).
-# New columns appended at END to preserve parquet schema-version lock.
-FULL_FEATURES: tuple[str, ...] = (
-    "adm2",
-    "adm_scale0",
-    "adm_scale1",
-    "adm_scale2",
-    "adm_scale3",
-    "vif_scale0",
-    "vif_scale1",
-    "vif_scale2",
-    "vif_scale3",
-    "motion",
-    "motion2",
-    "motion3",
-    "psnr_y",
-    "psnr_cb",
-    "psnr_cr",
-    "float_ssim",
-    "float_ms_ssim",
-    "cambi",
-    "ciede2000",
-    "psnr_hvs",
-    "ssimulacra2",
-    # ADR-0559: SpEED chroma/temporal features — appended at end.
-    "speed_temporal",
-    "speed_chroma_u",
-    "speed_chroma_v",
-    "speed_chroma_uv",
-)
-
-
-EXTRACTORS = (
-    "adm",
-    "vif",
-    "motion",
-    "motion_v2",
-    "psnr",
-    "float_ssim",
-    "float_ms_ssim",
-    "cambi",
-    "ciede",
-    "psnr_hvs",
-    "ssimulacra2",
-    # ADR-0559: SpEED chroma/temporal (CPU-only; GPU twins tracked in ADR-0557/0558).
-    "speed_temporal",
-    "speed_chroma",
-)
+EXTRACTORS = tuple(_extractors_for(FULL_FEATURES))
 
 
 # Filename pattern for zip-sourced MP4s:
@@ -702,7 +656,11 @@ def _write_manifest(
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="bvi_dvc_to_full_features.py")
+    raw_argv = collect_cli_argv(argv)
+    ap = make_argument_parser(
+        prog="bvi_dvc_to_full_features.py",
+        description=__doc__,
+    )
 
     # Mutually exclusive input-source group (ADR-0524).
     src_group = ap.add_mutually_exclusive_group()
@@ -787,7 +745,7 @@ def main(argv: list[str] | None = None) -> int:
         "encodes via libx264 today; this flag exists so a future "
         "multi-codec sweep can reuse the same harness.",
     )
-    args = ap.parse_args(argv)
+    args = ap.parse_args(raw_argv)
 
     # Resolve the default input source: if neither flag was given, fall
     # back to the legacy VMAF_BVI_DVC_ZIP env-var / hard-coded path so
@@ -829,7 +787,7 @@ def main(argv: list[str] | None = None) -> int:
         _write_manifest(
             args.manifest_out,
             args=args,
-            argv=argv,
+            argv=raw_argv,
             out_path=out_path,
             cache_dir=cache_dir,
             stats=stats,

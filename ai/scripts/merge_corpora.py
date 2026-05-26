@@ -34,22 +34,18 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-# The merge utility lives outside the vmaf-tune package; resolve the
-# tools/vmaf-tune source dir at import time so we depend only on the
-# canonical key tuple, not on a pip-installed copy.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_VMAFTUNE_SRC = _REPO_ROOT / "tools" / "vmaf-tune" / "src"
-if str(_VMAFTUNE_SRC) not in sys.path:
-    sys.path.insert(0, str(_VMAFTUNE_SRC))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
-# Resolve aiutils package.
-_AI_SRC = _REPO_ROOT / "ai" / "src"
-if str(_AI_SRC) not in sys.path:
-    sys.path.insert(0, str(_AI_SRC))
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_vmaf_tune_src=True)
+_REPO_ROOT = _SCRIPT_PATHS.repo_root
 
-from vmaftune import CORPUS_ROW_KEYS  # noqa: E402  (sys.path adjusted above)
+from vmaftune import CORPUS_ROW_KEYS  # noqa: E402
 
-from aiutils.jsonl_utils import iter_jsonl  # noqa: E402  (sys.path adjusted above)
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
+from aiutils.jsonl_utils import iter_jsonl  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 _REQUIRED_KEYS: frozenset[str] = frozenset(CORPUS_ROW_KEYS)
@@ -156,7 +152,8 @@ def _write_manifest(
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="merge_corpora.py", description=__doc__)
+    parsed_argv = collect_cli_argv(argv)
+    ap = make_argument_parser(prog="merge_corpora.py", description=__doc__)
     ap.add_argument(
         "--inputs",
         nargs="+",
@@ -180,8 +177,7 @@ def main(argv: list[str] | None = None) -> int:
             "CLI args used to build the merged corpus JSONL."
         ),
     )
-    args = ap.parse_args(argv)
-    parsed_argv = sys.argv[1:] if argv is None else argv
+    args = ap.parse_args(parsed_argv)
 
     if len(args.inputs) < 2:
         print(

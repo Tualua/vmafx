@@ -40,13 +40,13 @@ from pathlib import Path
 
 import numpy as np
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-AI_SRC = REPO_ROOT / "ai" / "src"
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
-if __package__ in (None, ""):
-    sys.path.insert(0, str(REPO_ROOT))
-if str(AI_SRC) not in sys.path:
-    sys.path.insert(0, str(AI_SRC))
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
+REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 from ai.data.feature_extractor import (  # noqa: E402
     DEFAULT_VMAF_BINARY,
@@ -57,6 +57,7 @@ from ai.data.netflix_loader import iter_pairs  # noqa: E402
 from ai.data.scores import teacher_scores  # noqa: E402
 
 # isort: split
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 
@@ -136,7 +137,11 @@ def _write_manifest(
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="extract_full_features.py")
+    raw_argv = collect_cli_argv(argv)
+    ap = make_argument_parser(
+        prog="extract_full_features.py",
+        description=__doc__,
+    )
     ap.add_argument(
         "--data-root",
         type=Path,
@@ -187,7 +192,7 @@ def main(argv: list[str] | None = None) -> int:
             "CLI args used to build the parquet."
         ),
     )
-    args = ap.parse_args(argv)
+    args = ap.parse_args(raw_argv)
     if args.manifest_out is None:
         args.manifest_out = args.out.with_suffix(".manifest.json")
 
@@ -229,7 +234,7 @@ def main(argv: list[str] | None = None) -> int:
     _write_manifest(
         args.manifest_out,
         args=args,
-        argv=argv,
+        argv=raw_argv,
         pairs_count=len(pairs),
         rows_count=len(df),
         elapsed_s=elapsed_s,

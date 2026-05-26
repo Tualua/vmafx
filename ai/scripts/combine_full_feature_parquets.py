@@ -22,17 +22,21 @@ Each input is normalized to:
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 import pandas as pd
-from _script_bootstrap import bootstrap_ai_script
+
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
 _SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 from ai.data.feature_extractor import FULL_FEATURES  # noqa: E402
 
 # isort: split
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 OUTPUT_COLUMNS: tuple[str, ...] = (
@@ -98,8 +102,12 @@ def _normalise_shard(label: str, path: Path, max_rows: int | None = None) -> pd.
     return out
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(prog="combine_full_feature_parquets.py")
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    parser = make_argument_parser(
+        prog="combine_full_feature_parquets.py",
+        description=__doc__,
+    )
     parser.add_argument(
         "--input",
         dest="inputs",
@@ -125,7 +133,7 @@ def main() -> int:
             "and exact CLI args used to build the derived parquet."
         ),
     )
-    args = parser.parse_args()
+    args = parser.parse_args(raw_argv)
     if args.manifest_out is None:
         args.manifest_out = args.out.with_suffix(".manifest.json")
 
@@ -168,7 +176,7 @@ def main() -> int:
             "run_provenance": build_run_provenance(
                 entrypoint=Path(__file__),
                 repo_root=REPO_ROOT,
-                argv=sys.argv[1:],
+                argv=raw_argv,
                 args=args,
                 inputs={"shards": [path for _, path in args.inputs]},
                 outputs={"parquet": args.out, "manifest": args.manifest_out},
