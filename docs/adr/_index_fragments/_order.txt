@@ -429,3 +429,4 @@
 0679-ci-draft-automerge-gate
 0680-ai-cli-helper-pattern
 0681-ai-script-bootstrap-helper
+0682-tiny-ai-netflix-training-scaffold-2026-05-22

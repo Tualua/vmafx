@@ -18,25 +18,19 @@ statistics so the v3 → v2 PLCC delta can be cited directly in the ADR
 
 from __future__ import annotations
 
+import argparse
 import sys
 import time
 from pathlib import Path
 
 import numpy as np
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
-    from ai.scripts._script_bootstrap import bootstrap_ai_script
-
-_SCRIPT_PATHS = bootstrap_ai_script(__file__)
-SCRIPT_PATH = _SCRIPT_PATHS.script_path
-REPO_ROOT = _SCRIPT_PATHS.repo_root
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
+sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
+sys.path.insert(0, str(REPO_ROOT))
 
 from ai.scripts.train_vmaf_tiny_v3 import CANONICAL_6, _train  # noqa: E402
-
-# isort: split
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 
 
 def _metrics(pred: np.ndarray, y: np.ndarray) -> dict[str, float]:
@@ -61,9 +55,8 @@ def _eval_fold(
     return _metrics(pred, y_val)
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
-    ap = make_argument_parser()
+def main() -> int:
+    ap = argparse.ArgumentParser()
     ap.add_argument(
         "--parquet",
         type=Path,
@@ -80,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--batch-size", type=int, default=256)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--seed", type=int, default=0)
-    args = ap.parse_args(raw_argv)
+    args = ap.parse_args()
 
     import pandas as pd
 
@@ -165,7 +158,7 @@ def main(argv: list[str] | None = None) -> int:
         "run_provenance": build_run_provenance(
             entrypoint=SCRIPT_PATH,
             repo_root=REPO_ROOT,
-            argv=raw_argv,
+            argv=sys.argv[1:],
             args=args,
             inputs={"parquet": args.parquet},
             outputs={"report_target": str(args.out_json)},

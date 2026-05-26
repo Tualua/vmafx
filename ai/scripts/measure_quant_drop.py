@@ -20,21 +20,17 @@ Usage::
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
 from typing import Any
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
-    from ai.scripts._script_bootstrap import bootstrap_ai_script
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
+if str(REPO_ROOT / "ai" / "src") not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 
-_SCRIPT_PATHS = bootstrap_ai_script(__file__)
-SCRIPT_PATH = _SCRIPT_PATHS.script_path
-REPO_ROOT = _SCRIPT_PATHS.repo_root
-
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 REGISTRY = REPO_ROOT / "model" / "tiny" / "registry.json"
@@ -128,8 +124,8 @@ def _gate_one(entry: dict[str, Any]) -> dict[str, Any]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
-    parser = make_argument_parser(description=__doc__)
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("onnx", nargs="?", type=Path, help="Path to fp32 ONNX (default: --all)")
     parser.add_argument(
         "--all", action="store_true", help="Iterate every quantised model in the registry"

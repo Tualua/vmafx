@@ -17,6 +17,7 @@ Outputs:
 
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 import time
@@ -28,19 +29,12 @@ import onnxruntime as ort
 from onnx.external_data_helper import load_external_data_for_model
 from scipy.stats import pearsonr, spearmanr
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
-    from ai.scripts._script_bootstrap import bootstrap_ai_script
-
-_SCRIPT_PATHS = bootstrap_ai_script(__file__)
-SCRIPT_PATH = _SCRIPT_PATHS.script_path
-REPO_ROOT = _SCRIPT_PATHS.repo_root
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
+sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
+sys.path.insert(0, str(REPO_ROOT))
 
 from ai.train.dataset import NetflixFrameDataset  # noqa: E402
-
-# isort: split
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 
 CLIPS = [
     "BigBuckBunny",
@@ -111,9 +105,8 @@ def _load_clip(data_root: Path, clip: str) -> tuple[np.ndarray, np.ndarray]:
     return x, y
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
-    ap = make_argument_parser()
+def main() -> int:
+    ap = argparse.ArgumentParser()
     ap.add_argument(
         "--data-root",
         type=Path,
@@ -145,7 +138,7 @@ def main(argv: list[str] | None = None) -> int:
         default=REPO_ROOT / "model" / "tiny" / "vmaf_tiny_v1_medium.onnx",
     )
     ap.add_argument("--out", type=Path, default=REPO_ROOT / "runs" / "loso_eval")
-    args = ap.parse_args(raw_argv)
+    args = ap.parse_args()
 
     args.out.mkdir(parents=True, exist_ok=True)
 
@@ -187,7 +180,7 @@ def main(argv: list[str] | None = None) -> int:
         "run_provenance": build_run_provenance(
             entrypoint=SCRIPT_PATH,
             repo_root=REPO_ROOT,
-            argv=raw_argv,
+            argv=sys.argv,
             args=args,
             inputs={
                 "data_root": args.data_root,

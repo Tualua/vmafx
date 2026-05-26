@@ -47,25 +47,26 @@ test exercises.
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 from typing import Any
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
-    from ai.scripts._script_bootstrap import bootstrap_ai_script
+# Allow this script to run both as ``python ai/scripts/qat_train.py``
+# (where the ai/ package needs to be importable) and as
+# ``python -m ai.scripts.qat_train``.
+SCRIPT_PATH = Path(__file__).resolve()
+_REPO_ROOT = SCRIPT_PATH.parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+if str(_REPO_ROOT / "ai" / "src") not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT / "ai" / "src"))
 
-_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
-SCRIPT_PATH = _SCRIPT_PATHS.script_path
-_REPO_ROOT = _SCRIPT_PATHS.repo_root
-
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import write_run_manifest  # noqa: E402
 
 
-def _parse_args(argv: list[str] | None = None):
-    parser = make_argument_parser(description=__doc__)
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--config",
         type=Path,
@@ -124,7 +125,7 @@ def _load_config(path: Path) -> dict[str, Any]:
         return yaml.safe_load(fh) or {}
 
 
-def _resolve_qat_config(cfg_doc: dict[str, Any], args: Any):
+def _resolve_qat_config(cfg_doc: dict[str, Any], args: argparse.Namespace):
     """Build a QatConfig from YAML + CLI overrides."""
     from ai.train.qat import QatConfig
 
@@ -237,7 +238,7 @@ def _build_train_loader_factory(cfg_doc: dict[str, Any], qat_cfg):
 
 
 def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
     args = _parse_args(raw_argv)
 
     try:

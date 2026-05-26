@@ -43,6 +43,7 @@ Usage::
 from __future__ import annotations
 
 import abc
+import argparse
 import json
 import os
 import shutil
@@ -53,16 +54,12 @@ import traceback
 from pathlib import Path
 from typing import Any
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
-    from ai.scripts._script_bootstrap import bootstrap_ai_script
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
+AI_SRC = REPO_ROOT / "ai" / "src"
+if str(AI_SRC) not in sys.path:
+    sys.path.insert(0, str(AI_SRC))
 
-_SCRIPT_PATHS = bootstrap_ai_script(__file__)
-SCRIPT_PATH = _SCRIPT_PATHS.script_path
-REPO_ROOT = _SCRIPT_PATHS.repo_root
-
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 REGISTRY = REPO_ROOT / "model" / "tiny" / "registry.json"
@@ -393,9 +390,8 @@ def _registry_targets(reg: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
-    parser = make_argument_parser(description=__doc__)
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--eps",
         nargs="+",
@@ -439,7 +435,7 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Exit non-zero if any (model, EP) drop exceeds its budget.",
     )
-    args = parser.parse_args(raw_argv)
+    args = parser.parse_args()
 
     try:
         reg = json.loads(REGISTRY.read_text())
@@ -503,7 +499,7 @@ def main(argv: list[str] | None = None) -> int:
         report["run_provenance"] = build_run_provenance(
             entrypoint=SCRIPT_PATH,
             repo_root=REPO_ROOT,
-            argv=raw_argv,
+            argv=sys.argv[1:],
             args=args,
             inputs={
                 "registry": REGISTRY,
