@@ -39478,3 +39478,25 @@ Touched files:
 `docs/research/0701-ai-script-bootstrap-helper.md`,
 `changelog.d/changed/0681-ai-script-bootstrap-helper.md`,
 `docs/rebase-notes.md` (this entry).
+
+## fix/mcp-cjson-banned-functions (ADR-0683)
+
+**No upstream rebase impact**: `libvmaf/src/mcp/3rdparty/cJSON/` is fork-local;
+upstream Netflix/vmaf does not vendor cJSON. There is no rebase conflict risk from
+the Netflix side.
+
+Invariant: if this directory is synced to a newer cJSON upstream release, verify
+that no banned functions (`sprintf`, `strcpy`) have been re-introduced, and re-apply
+the fixes documented in ADR-0683. The `AGENTS.md` in this directory carries the
+exact `grep` command to check.
+
+Smoke: `ninja -C build && meson test -C build --suite=fast`
+(no dedicated cJSON unit test; the MCP smoke covers the JSON paths).
+
+Touched files:
+`libvmaf/src/mcp/3rdparty/cJSON/cJSON.c`,
+`libvmaf/src/mcp/3rdparty/cJSON/AGENTS.md`,
+`docs/adr/0683-cjson-banned-function-remediation.md`,
+`docs/adr/README.md`,
+`changelog.d/fixed/0683-mcp-cjson-banned-functions.md`,
+`docs/rebase-notes.md` (this entry).
