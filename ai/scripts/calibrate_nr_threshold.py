@@ -47,12 +47,16 @@ from datetime import date
 from pathlib import Path
 from typing import Any, NamedTuple
 
-SCRIPT_PATH = Path(__file__).resolve()
-_REPO_ROOT = SCRIPT_PATH.parents[2]
-_AI_SRC = _REPO_ROOT / "ai" / "src"
-if str(_AI_SRC) not in sys.path:
-    sys.path.insert(0, str(_AI_SRC))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+_REPO_ROOT = _SCRIPT_PATHS.repo_root
+
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 _log = logging.getLogger(__name__)
@@ -709,7 +713,8 @@ def calibrate(
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(
+    p = make_argument_parser(
+        prog="calibrate_nr_threshold.py",
         description=(
             "Calibrate the δ_fast threshold for NR early-elimination "
             "(ADR-0615 / ADR-0624). "
@@ -718,7 +723,6 @@ def _build_parser() -> argparse.ArgumentParser:
             "calibration_slope/intercept and calibration_threshold = 2σ "
             "to model/tiny/nr_metric_v1.json."
         ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument(
         "--corpus",
@@ -871,7 +875,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     p = _build_parser()
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    raw_argv = collect_cli_argv(argv)
     args = p.parse_args(raw_argv)
 
     logging.basicConfig(

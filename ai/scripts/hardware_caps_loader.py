@@ -45,8 +45,16 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Iterable
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+_REPO_ROOT = _SCRIPT_PATHS.repo_root
 _DEFAULT_CSV = _REPO_ROOT / "ai" / "data" / "hardware_caps.csv"
+
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 
 REQUIRED_COLUMNS: tuple[str, ...] = (
     "arch_name",
@@ -371,10 +379,13 @@ def row_as_dict(row: HardwareCapRow) -> dict[str, object]:
 
 def _main(argv: list[str] | None = None) -> int:  # pragma: no cover
     """Tiny CLI: print the loaded table as JSON for debugging."""
-    import argparse
     import json
 
-    parser = argparse.ArgumentParser(description=__doc__)
+    raw_argv = collect_cli_argv(argv)
+    parser = make_argument_parser(
+        prog="hardware_caps_loader.py",
+        description=__doc__,
+    )
     parser.add_argument(
         "--csv",
         type=Path,
@@ -389,7 +400,7 @@ def _main(argv: list[str] | None = None) -> int:  # pragma: no cover
         "--arch",
         help="architecture hint to pair with --encoder",
     )
-    args = parser.parse_args(argv)
+    args = parser.parse_args(raw_argv)
 
     table = HardwareCapsTable.load(args.csv)
     if args.encoder:

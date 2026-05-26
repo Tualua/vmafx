@@ -80,7 +80,6 @@ constants are kept as a graceful fallback.
 
 from __future__ import annotations
 
-import argparse
 import dataclasses
 import json
 import logging
@@ -90,12 +89,16 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
-SCRIPT_PATH = Path(__file__).resolve()
-REPO_ROOT = SCRIPT_PATH.parents[2]
-AI_SRC = REPO_ROOT / "ai" / "src"
-if str(AI_SRC) not in sys.path:
-    sys.path.insert(0, str(AI_SRC))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
+
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 _LOG = logging.getLogger(__name__)
@@ -497,8 +500,9 @@ def calibrate(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    raw_argv = list(argv) if argv is not None else sys.argv[1:]
-    parser = argparse.ArgumentParser(
+    raw_argv = collect_cli_argv(argv)
+    parser = make_argument_parser(
+        prog="calibrate_phase_f_recipes.py",
         description=(
             "Calibrate Phase F.5 per-content-type recipe overrides "
             "against a real corpus JSONL (ADR-0325)."
@@ -529,7 +533,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         default="INFO",
         help="Logging level (DEBUG / INFO / WARNING / ERROR).",
     )
-    args = parser.parse_args(argv)
+    args = parser.parse_args(raw_argv)
 
     logging.basicConfig(
         level=args.log_level.upper(),

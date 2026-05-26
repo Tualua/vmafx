@@ -42,6 +42,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -485,7 +494,8 @@ def analyze(jsonl_path: Path, out_dir: Path) -> dict[str, object]:
 
 
 def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
+    parser = make_argument_parser(
+        prog="analyze_knob_sweep.py",
         description=("Encoder knob-space Pareto-frontier analysis " "(ADR-0305 / Research-0077)."),
     )
     parser.add_argument(
@@ -504,7 +514,7 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = _parse_args(list(sys.argv[1:] if argv is None else argv))
+    args = _parse_args(collect_cli_argv(argv))
     if not args.jsonl.exists():
         print(f"error: jsonl not found: {args.jsonl}", file=sys.stderr)
         return 2

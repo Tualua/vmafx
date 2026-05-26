@@ -19,17 +19,22 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
 
 import numpy as np
 
-SCRIPT_PATH = Path(__file__).resolve()
-REPO_ROOT = SCRIPT_PATH.parents[2]
-sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
+
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 SUPPORTED_SUFFIXES = (".npy", ".pgm")
@@ -218,18 +223,22 @@ def evaluate_dirs(
     }
 
 
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
+def _parse_args(argv: list[str] | None) -> tuple[argparse.Namespace, list[str]]:
+    raw_argv = collect_cli_argv(argv)
+    parser = make_argument_parser(
+        prog="eval_saliency_per_mb.py",
+        description=__doc__,
+    )
     parser.add_argument("--pred-dir", type=Path, required=True)
     parser.add_argument("--gt-dir", type=Path, required=True)
     parser.add_argument("--block-size", type=int, default=16)
     parser.add_argument("--threshold", type=float, default=0.5)
     parser.add_argument("--out-json", type=Path, default=None)
-    return parser.parse_args()
+    return parser.parse_args(raw_argv), raw_argv
 
 
-def main() -> int:
-    args = _parse_args()
+def main(argv: list[str] | None = None) -> int:
+    args, raw_argv = _parse_args(argv)
     payload = evaluate_dirs(
         args.pred_dir,
         args.gt_dir,
@@ -239,7 +248,7 @@ def main() -> int:
     payload["run_provenance"] = build_run_provenance(
         entrypoint=SCRIPT_PATH,
         repo_root=REPO_ROOT,
-        argv=sys.argv,
+        argv=raw_argv,
         args=args,
         inputs={"pred_dir": args.pred_dir, "gt_dir": args.gt_dir},
         outputs={"json_report": args.out_json},
