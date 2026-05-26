@@ -59,7 +59,6 @@ Provenance (license attribution required by upstream MIT license):
 
 from __future__ import annotations
 
-import argparse
 import importlib.util
 import json
 import sys
@@ -68,13 +67,20 @@ from pathlib import Path
 import torch
 from torch import nn
 
-from aiutils.file_utils import sha256
-from aiutils.run_manifest import build_run_provenance, write_manifest_json
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
-SCRIPT_PATH = Path(__file__).resolve()
-REPO_ROOT = SCRIPT_PATH.parents[2]
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
 TINY_DIR = REPO_ROOT / "model" / "tiny"
 REGISTRY = TINY_DIR / "registry.json"
+
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
+from aiutils.file_utils import sha256  # noqa: E402
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 # Pinned upstream provenance — bumping these is a deliberate weights swap.
 UPSTREAM_REPO = "https://github.com/m-tassano/fastdvdnet"
@@ -356,7 +362,7 @@ def _update_registry(onnx_path: Path) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = make_argument_parser(description=__doc__)
     parser.add_argument(
         "--upstream-dir",
         type=Path,
@@ -390,7 +396,7 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="Skip registry.json + sidecar update (dry-run)",
     )
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    raw_argv = collect_cli_argv(argv)
     args = parser.parse_args(raw_argv)
 
     adapter = _build_adapter(args.upstream_dir, args.sigma)

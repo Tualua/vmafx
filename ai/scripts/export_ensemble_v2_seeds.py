@@ -38,7 +38,6 @@ See ADR-0321 + docs/ai/models/fr_regressor_v2_probabilistic.md.
 
 from __future__ import annotations
 
-import argparse
 import json
 import sys
 import time
@@ -47,12 +46,14 @@ from typing import Any
 
 import numpy as np
 
-SCRIPT_PATH = Path(__file__).resolve()
-REPO_ROOT = SCRIPT_PATH.parents[2]
-if str(REPO_ROOT / "ai" / "src") not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
-if str(REPO_ROOT / "ai" / "scripts") not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT / "ai" / "scripts"))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_ai_scripts=True)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 # Reuse the LOSO trainer's corpus loader + canonical constants so the
 # codec block layout is identical to what was gate-validated.
@@ -65,6 +66,7 @@ from train_fr_regressor_v2_ensemble_loso import (  # noqa: E402  # type: ignore[
     _set_seed_all,
 )
 
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.file_utils import sha256  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
@@ -257,7 +259,7 @@ def _build_sidecar(
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="export_ensemble_v2_seeds")
+    ap = make_argument_parser(prog="export_ensemble_v2_seeds")
     ap.add_argument(
         "--corpus",
         type=Path,
@@ -289,7 +291,7 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Patch sha256 + smoke=false on the 5 seed rows in registry.json.",
     )
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    raw_argv = collect_cli_argv(argv)
     args = ap.parse_args(raw_argv)
 
     seeds = [int(s) for s in args.seeds.split(",") if s.strip()]

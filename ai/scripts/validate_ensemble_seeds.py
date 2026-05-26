@@ -37,12 +37,17 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+
 # Hoist the gate evaluator from scripts/ci/ so we share a single
 # source of truth for the threshold constants. ADR-0303 forbids
 # divergent copies of the gate logic.
-_SCRIPT_PATH = Path(__file__).resolve()
-_REPO_ROOT = _SCRIPT_PATH.parents[2]
-sys.path.insert(0, str(_REPO_ROOT / "ai" / "src"))
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+_SCRIPT_PATH = _SCRIPT_PATHS.script_path
+_REPO_ROOT = _SCRIPT_PATHS.repo_root
 sys.path.insert(0, str(_REPO_ROOT / "scripts" / "ci"))
 
 from ensemble_prod_gate import (  # noqa: E402  # type: ignore[import-not-found]  (sys.path edit above)
@@ -53,12 +58,13 @@ from ensemble_prod_gate import (  # noqa: E402  # type: ignore[import-not-found]
     load_seed_jsons,
 )
 
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 
 def build_argparser() -> argparse.ArgumentParser:
     """Build the CLI argparser; exposed for tests."""
-    p = argparse.ArgumentParser(
+    p = make_argument_parser(
         prog="validate_ensemble_seeds",
         description=(
             "Apply the ADR-0303 two-part production-flip gate to "
@@ -80,7 +86,7 @@ def build_argparser() -> argparse.ArgumentParser:
         default=Path(
             os.environ.get(
                 "VMAF_NETFLIX_CORPUS_DIR",
-                str(Path(__file__).resolve().parents[2] / ".corpus" / "netflix"),
+                str(_REPO_ROOT / ".corpus" / "netflix"),
             )
         ),
         help=(
@@ -263,8 +269,8 @@ def run_validation(
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_argparser()
-    raw_argv = sys.argv[1:] if argv is None else argv
-    args = parser.parse_args(argv)
+    raw_argv = collect_cli_argv(argv)
+    args = parser.parse_args(raw_argv)
 
     try:
         seeds = _parse_seed_list(args.seeds)
