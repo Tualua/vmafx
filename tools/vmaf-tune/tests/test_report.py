@@ -20,8 +20,10 @@ from vmaftune.report import (
     ReportData,
     ShotRow,
     SourceInfo,
+    build_report_status,
     render_html,
     render_markdown,
+    write_report_outputs,
 )
 
 
@@ -118,6 +120,69 @@ def test_markdown_assets_dir_writes_pngs(tmp_path):
     assert len(pngs) >= 2  # ladder + codec + shot
     # md links them, not base64
     assert "data:image/png;base64" not in md
+
+
+def test_write_report_outputs_reuses_format_suffixes(tmp_path):
+    output = tmp_path / "profile.out"
+    paths = write_report_outputs(_sample_data(), output=output, format="both")
+
+    assert paths == (tmp_path / "profile.html", tmp_path / "profile.md")
+    assert "# vmaf-tune report" in (tmp_path / "profile.md").read_text(encoding="utf-8")
+    assert "<title>vmaf-tune report" in (tmp_path / "profile.html").read_text(encoding="utf-8")
+
+
+def test_build_report_status_marks_unavailable_rows_degraded_not_failed():
+    data = ReportData(
+        source=SourceInfo("/tmp/source.mkv", 1920, 1080, 24.0, 10.0, 240, "h264", 100),
+        target_vmaf=94.0,
+        codec_rows=(
+            CodecRow("libx265", "x265", 24, 2200, 100, 94.1, True),
+            CodecRow(
+                "av1_qsv",
+                "",
+                -1,
+                float("nan"),
+                0,
+                float("nan"),
+                False,
+                "hardware encoder not available: av1_qsv",
+            ),
+        ),
+    )
+
+    status = build_report_status(data, outputs=(pathlib.Path("report.html"),))
+
+    assert status["ok"] is True
+    assert status["degraded"] is True
+    assert status["outputs"] == ["report.html"]
+    assert status["codec_rows_unavailable"] == 1
+
+
+def test_build_report_status_marks_real_failures_not_ok():
+    data = ReportData(
+        source=SourceInfo("/tmp/source.mkv", 1920, 1080, 24.0, 10.0, 240, "h264", 100),
+        target_vmaf=94.0,
+        sweep_points=(
+            CodecSweepPoint("libx265", "x265", 94.0, 24, 2200, 100, 94.1, True),
+            CodecSweepPoint(
+                "libsvtav1",
+                "SVT-AV1",
+                96.0,
+                -1,
+                float("nan"),
+                0,
+                float("nan"),
+                False,
+                "timeout",
+            ),
+        ),
+    )
+
+    status = build_report_status(data)
+
+    assert status["ok"] is False
+    assert status["degraded"] is False
+    assert status["sweep_points_failed"] == 1
 
 
 def test_html_one_shot_timeline_renders_non_empty_chart():

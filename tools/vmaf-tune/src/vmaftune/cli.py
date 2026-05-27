@@ -3473,7 +3473,7 @@ def _write_compare_profile_report(
     """Render compare results through the profile-card renderer."""
     from datetime import datetime, timezone
 
-    from .report import ReportData, render_html, render_markdown
+    from .report import ReportData, render_html, write_report_outputs
 
     if comparison_report is None and sweep_report is None:
         raise ValueError("comparison_report or sweep_report is required")
@@ -3521,18 +3521,7 @@ def _write_compare_profile_report(
             return []
         raise ValueError("--format both requires --output PATH")
 
-    output = Path(output)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    outputs: list[Path] = []
-    if fmt in ("html", "both"):
-        html_path = output if fmt == "html" else output.with_suffix(".html")
-        html_path.write_text(render_html(data), encoding="utf-8")
-        outputs.append(html_path)
-    if fmt in ("markdown", "both"):
-        md_path = output if fmt == "markdown" else output.with_suffix(".md")
-        md_path.write_text(render_markdown(data), encoding="utf-8")
-        outputs.append(md_path)
-    return outputs
+    return list(write_report_outputs(data, output=Path(output), format=fmt))
 
 
 def _run_compare_crf_sweep(
@@ -4624,9 +4613,9 @@ def _run_report(args: argparse.Namespace) -> int:
         LadderSample,
         ReportData,
         ShotRow,
+        build_report_status,
         probe_source,
-        render_html,
-        render_markdown,
+        write_report_outputs,
     )
 
     src_info = probe_source(args.src)
@@ -4735,90 +4724,10 @@ def _run_report(args: argparse.Namespace) -> int:
         vmaf_bin=str(getattr(args, "vmaf_bin", "") or ""),
     )
 
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    outputs: list[Path] = []
-    if args.format in ("html", "both"):
-        html_path = args.output if args.format == "html" else args.output.with_suffix(".html")
-        html_path.write_text(render_html(data), encoding="utf-8")
-        outputs.append(html_path)
-    if args.format in ("markdown", "both"):
-        md_path = args.output if args.format == "markdown" else args.output.with_suffix(".md")
-        md_path.write_text(render_markdown(data, assets_dir=args.assets_dir), encoding="utf-8")
-        outputs.append(md_path)
-
-    # Aggregate row-level ``ok`` flags into the top-level status field
-    # so consumers can ``jq .ok`` to decide whether the report is
-    # trustworthy without re-scanning every row. The compare-stage
-    # bisect can fail per-codec while the report itself succeeds in
-    # producing a card — both signals matter, but the previous
-    # unconditional ``"ok": true`` masked the per-row failures (Bug #6,
-    # BBB e2e 2026-05-17). The semantics: ``ok=true`` iff at least one
-    # codec row succeeded AND no row recorded a failure; mirrors the
-    # ``ComparisonReport.best()`` definition. With no codec rows at
-    # all the report is informational and stays ``ok=true``.
-    #
-    # ADR-0501 / BBB e2e v4 Bug #V4-C: an "encoder unavailable" row
-    # records an infrastructure gap (the codec binary wasn't built
-    # into the runtime), not a quality regression. The bisect
-    # discriminator in ADR-0498 already labels such rows
-    # ``error="encoder unavailable (NAME): …"``. Treat those rows
-    # as *informational failures* — they don't gate ``ok`` but they
-    # do raise a new ``degraded`` flag so dashboards can surface the
-    # missing codec without flipping the run to red. The aggregation:
-    # ``ok=true`` when every non-``ok`` row's error starts with
-    # ``"encoder unavailable"`` AND at least one row succeeded;
-    # ``degraded=true`` when any row is an encoder-unavailable row.
-    _UNAVAIL_PREFIX = "encoder unavailable"
-    _HW_UNAVAIL_PREFIX = "hardware encoder not available"
-    # Treat both v1 ``codec_rows`` and v2 ``sweep_points`` uniformly
-    # for the ok / degraded aggregation. v2 (ADR-0513) introduces
-    # ``hardware encoder not available: ...`` as a sibling unavailable
-    # marker for hardware encoders the operator listed but the host
-    # can't run — same semantics as the legacy ``encoder unavailable``
-    # marker the bisect produces.
-    aggregate_rows: list[Any] = list(codec_rows) + list(sweep_points)
-    failed_rows = [r for r in aggregate_rows if not r.ok]
-    unavail_rows = [
-        r
-        for r in failed_rows
-        if r.error.startswith(_UNAVAIL_PREFIX) or r.error.startswith(_HW_UNAVAIL_PREFIX)
-    ]
-    real_failures = [
-        r
-        for r in failed_rows
-        if not (r.error.startswith(_UNAVAIL_PREFIX) or r.error.startswith(_HW_UNAVAIL_PREFIX))
-    ]
-    rows_any_ok = any(r.ok for r in aggregate_rows) if aggregate_rows else True
-    top_ok = bool(rows_any_ok and not real_failures)
-    degraded = bool(unavail_rows)
-    sys.stdout.write(
-        json.dumps(
-            {
-                "ok": top_ok,
-                "degraded": degraded,
-                "outputs": [str(p) for p in outputs],
-                "codec_rows": len(codec_rows),
-                "codec_rows_ok": sum(1 for r in codec_rows if r.ok),
-                "codec_rows_failed": sum(1 for r in codec_rows if not r.ok),
-                "codec_rows_unavailable": sum(
-                    1
-                    for r in codec_rows
-                    if (not r.ok)
-                    and (
-                        r.error.startswith(_UNAVAIL_PREFIX)
-                        or r.error.startswith(_HW_UNAVAIL_PREFIX)
-                    )
-                ),
-                "sweep_points": len(sweep_points),
-                "sweep_points_ok": sum(1 for r in sweep_points if r.ok),
-                "sweep_points_failed": sum(1 for r in sweep_points if not r.ok),
-                "ladder_samples": len(ladder_samples),
-                "ladder_rungs": len(ladder_rungs),
-                "shots": len(shots),
-            }
-        )
-        + "\n"
+    outputs = write_report_outputs(
+        data, output=args.output, format=args.format, assets_dir=args.assets_dir
     )
+    sys.stdout.write(json.dumps(build_report_status(data, outputs=outputs)) + "\n")
     return 0
 
 
