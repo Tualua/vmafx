@@ -68,12 +68,12 @@ it does **not** widen the production-flip gate.
 from __future__ import annotations
 
 import dataclasses
-import json
 import math
 import tempfile
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 
+from .jsonio import dumps_strict
 from .uncertainty import ConfidenceDecision, ConfidenceThresholds, classify_interval
 
 # ---------------------------------------------------------------------------
@@ -681,7 +681,7 @@ def _emit_json(ladder: Sequence[Rendition], *, samples: Sequence[LadderPoint] | 
         }
         for p in sorted(samples_list, key=lambda x: (x.width * x.height, x.bitrate_kbps))
     ]
-    return json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    return dumps_strict(payload) + "\n"
 
 
 # ---------------------------------------------------------------------------

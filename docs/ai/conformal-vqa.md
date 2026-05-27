@@ -43,7 +43,9 @@ runtime dependency, and no change to the existing op allowlist.
 * **`alpha`** — the nominal miscoverage level. Default `0.05`
   (95 % interval). A `null` / `NaN` value signals an uncalibrated
   wrapper: `low == high == point` and the interval is *not* a
-  coverage bound.
+  coverage bound. Persisted calibration sidecars are strict JSON:
+  non-finite diagnostic values are written as `null`, not as
+  JavaScript-only `NaN` / `Infinity` tokens.
 
 The interval **does not** cover model-specification error or
 distribution shift. If the calibration set is drawn from a different

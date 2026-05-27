@@ -20,7 +20,7 @@ def nan_to_none(value: Any) -> Any:
     return value
 
 
-def dumps_strict(data: Any, *, indent: int = 2, sort_keys: bool = True) -> str:
+def dumps_strict(data: Any, *, indent: int | None = 2, sort_keys: bool = True) -> str:
     """Dump portable RFC-8259 JSON with non-finite floats represented as null."""
     return json.dumps(nan_to_none(data), indent=indent, sort_keys=sort_keys, allow_nan=False)
 
