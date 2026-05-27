@@ -288,6 +288,12 @@ for the option-space digest.
   semantics as the Python API. Do not add upload, hostname-derived
   identifiers, or predictor mutation to this CLI; community pooling
   and non-linear sidecars require a separate ADR / PR.
+- **Local sidecar `state.json` is strict JSON.** Persistence routes
+  through `vmaftune.jsonio.write_json_strict()` so non-finite residuals,
+  weights, or inverse-Gram cells become `null`, never JavaScript
+  `NaN`/`Infinity` tokens. Loading a state with those nulls is treated
+  as invalid and cold-starts; do not make the loader silently coerce
+  them back to zero because that would hide a corrupt correction.
 - **Ladder uncertainty is post-hull / pre-knee.** `vmaf-tune ladder
   --with-uncertainty` must run the ADR-0279 prune/insert recipe only
   after `convex_hull()` and before `select_knees()`. Preserve corpus

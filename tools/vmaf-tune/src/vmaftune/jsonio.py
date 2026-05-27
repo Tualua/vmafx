@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import math
+from pathlib import Path
 from typing import Any
 
 
@@ -25,4 +26,22 @@ def dumps_strict(data: Any, *, indent: int | None = 2, sort_keys: bool = True) -
     return json.dumps(nan_to_none(data), indent=indent, sort_keys=sort_keys, allow_nan=False)
 
 
-__all__ = ["dumps_strict", "nan_to_none"]
+def write_json_strict(
+    path: Path,
+    data: Any,
+    *,
+    indent: int | None = 2,
+    sort_keys: bool = True,
+    trailing_newline: bool = True,
+) -> None:
+    """Atomically write portable RFC-8259 JSON to ``path``."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    payload = dumps_strict(data, indent=indent, sort_keys=sort_keys)
+    if trailing_newline:
+        payload += "\n"
+    tmp.write_text(payload, encoding="utf-8")
+    tmp.replace(path)
+
+
+__all__ = ["dumps_strict", "nan_to_none", "write_json_strict"]

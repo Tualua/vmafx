@@ -67,6 +67,7 @@ import secrets
 from collections.abc import Sequence
 from pathlib import Path
 
+from .jsonio import write_json_strict
 from .predictor import Predictor, ShotFeatures
 
 # ----------------------------------------------------------------------
@@ -395,12 +396,7 @@ class SidecarModel:
 
     def save(self, path: Path) -> None:
         """Write the state to ``path`` as JSON, creating parents."""
-        path.parent.mkdir(parents=True, exist_ok=True)
-        # Atomic-ish write: dump to a sibling tmp file then rename.
-        tmp = path.with_suffix(path.suffix + ".tmp")
-        with tmp.open("w", encoding="utf-8") as fh:
-            json.dump(self.to_dict(), fh, indent=2, sort_keys=True)
-        tmp.replace(path)
+        write_json_strict(path, self.to_dict())
 
     @classmethod
     def load(cls, path: Path, config: SidecarConfig) -> SidecarModel:
@@ -417,7 +413,7 @@ class SidecarModel:
             with path.open("r", encoding="utf-8") as fh:
                 state = json.load(fh)
             return cls.from_dict(state, config)
-        except (OSError, ValueError, json.JSONDecodeError):
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
             return cls(config=config)
 
 

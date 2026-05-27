@@ -24,6 +24,8 @@ All tests are CPU-only, sub-second, and write to a pytest ``tmp_path``
 
 from __future__ import annotations
 
+import json
+import math
 import sys
 from pathlib import Path
 
@@ -197,6 +199,34 @@ def test_save_load_handles_corrupted_json_as_cold_start(tmp_path: Path):
     assert sp2.model.n_updates == 0
     feats = _make_features()
     assert sp2.model.predict_correction(feats, crf=28) == 0.0
+
+
+def test_save_writes_strict_json_and_invalid_nonfinite_loads_cold(tmp_path: Path):
+    """Persistence JSON is portable; non-finite state reloads as cold-start."""
+    cfg = _config(tmp_path)
+    state_path = cfg.cache_dir / cfg.predictor_version / "libx264" / "state.json"
+    model = SidecarModel(config=cfg)
+    model.weights[0] = math.nan
+    model.history.append(
+        {
+            "residual": math.inf,
+            "predicted_vmaf": 91.0,
+            "observed_vmaf": math.nan,
+        }
+    )
+
+    model.save(state_path)
+    raw = state_path.read_text(encoding="utf-8")
+    assert "NaN" not in raw
+    assert "Infinity" not in raw
+    payload = json.loads(raw)
+    assert payload["weights"][0] is None
+    assert payload["history"][0]["residual"] is None
+    assert payload["history"][0]["observed_vmaf"] is None
+
+    reloaded = SidecarModel.load(state_path, cfg)
+    assert reloaded.n_updates == 0
+    assert reloaded.weights == [0.0] * FEATURE_DIM
 
 
 # ----------------------------------------------------------------------
