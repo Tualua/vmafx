@@ -97,7 +97,6 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from .predictor import Predictor, ShotFeatures
 
-from .jsonio import dumps_strict
 
 __all__ = [
     "ConformalInterval",
@@ -294,14 +293,13 @@ class SplitConformalCalibration:
 
     def to_json(self) -> str:
         """Serialise to a JSON sidecar string."""
-        return dumps_strict(
+        return json.dumps(
             {
                 "method": "split-conformal",
                 "alpha": self.alpha,
                 "n": self.n,
                 "residuals": list(self.residuals),
             },
-            indent=None,
             sort_keys=True,
         )
 

@@ -78,8 +78,6 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from .predictor import ShotFeatures
 
-from .jsonio import dumps_strict
-
 _LOG = logging.getLogger(__name__)
 
 
@@ -1585,7 +1583,7 @@ def emit_plan_json(plan: AutoPlan) -> str:
     are sorted so the output is reproducible across runs.
     """
     payload = {"cells": plan.cells, "metadata": plan.metadata}
-    return dumps_strict(payload)
+    return json.dumps(payload, indent=2, sort_keys=True)
 
 
 __all__ = [

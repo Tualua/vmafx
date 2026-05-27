@@ -50,6 +50,8 @@ import time
 from collections.abc import Iterable
 from pathlib import Path
 
+from .jsonio import write_json_strict
+
 # Bumps any time the cache key composition or the on-disk layout
 # changes in a way that should invalidate older entries.
 CACHE_VERSION = 1
@@ -165,17 +167,13 @@ class TuneCache:
             if isinstance(data, dict):
                 # values are floats (epoch seconds); coerce defensively
                 return {str(k): float(v) for k, v in data.items()}
-        except (OSError, ValueError, json.JSONDecodeError):
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
             # Corrupt index — rebuild from filesystem on next put.
             return {}
         return {}
 
     def _write_index(self, index: dict[str, float]) -> None:
-        idx = self._index_path()
-        tmp = idx.with_suffix(".json.tmp")
-        with tmp.open("w", encoding="utf-8") as fh:
-            json.dump(index, fh, sort_keys=True)
-        os.replace(tmp, idx)
+        write_json_strict(self._index_path(), index, indent=None, trailing_newline=False)
 
     def _meta_path(self, key: str) -> Path:
         return self.path / self.META_DIR / f"{key}.json"
@@ -196,6 +194,23 @@ class TuneCache:
                 payload = json.load(fh)
         except (OSError, json.JSONDecodeError):
             return None
+        if not isinstance(payload, dict):
+            return None
+
+        try:
+            result = CachedResult(
+                encode_size_bytes=int(payload.get("encode_size_bytes", 0)),
+                encode_time_ms=float(payload.get("encode_time_ms", 0.0)),
+                encoder_version=str(payload.get("encoder_version", "")),
+                ffmpeg_version=str(payload.get("ffmpeg_version", "")),
+                vmaf_score=float(payload["vmaf_score"]),
+                vmaf_model=str(payload.get("vmaf_model", "")),
+                score_time_ms=float(payload.get("score_time_ms", 0.0)),
+                vmaf_binary_version=str(payload.get("vmaf_binary_version", "")),
+                artifact_path=blob,
+            )
+        except (KeyError, TypeError, ValueError):
+            return None
 
         # Refresh LRU access time on hit.
         index = self._read_index()
@@ -203,17 +218,7 @@ class TuneCache:
         with contextlib.suppress(OSError):
             self._write_index(index)
 
-        return CachedResult(
-            encode_size_bytes=int(payload.get("encode_size_bytes", 0)),
-            encode_time_ms=float(payload.get("encode_time_ms", 0.0)),
-            encoder_version=str(payload.get("encoder_version", "")),
-            ffmpeg_version=str(payload.get("ffmpeg_version", "")),
-            vmaf_score=float(payload.get("vmaf_score", float("nan"))),
-            vmaf_model=str(payload.get("vmaf_model", "")),
-            score_time_ms=float(payload.get("score_time_ms", 0.0)),
-            vmaf_binary_version=str(payload.get("vmaf_binary_version", "")),
-            artifact_path=blob,
-        )
+        return result
 
     def put(
         self,
@@ -248,10 +253,7 @@ class TuneCache:
             "score_time_ms": float(result.score_time_ms),
             "vmaf_binary_version": result.vmaf_binary_version,
         }
-        tmp_meta = meta.with_suffix(".json.tmp")
-        with tmp_meta.open("w", encoding="utf-8") as fh:
-            json.dump(payload, fh, sort_keys=True)
-        os.replace(tmp_meta, meta)
+        write_json_strict(meta, payload, indent=None, trailing_newline=False)
 
         index = self._read_index()
         index[key] = time.time()

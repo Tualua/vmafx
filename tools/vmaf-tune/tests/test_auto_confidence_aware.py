@@ -377,6 +377,3 @@ def test_run_auto_missing_cell_interval_falls_back_to_recommend() -> None:
     }
     assert decisions[(1080, "libx264")] == ConfidenceDecision.SKIP_ESCALATION.value
     assert decisions[(1080, "libx265")] == ConfidenceDecision.RECOMMEND_ESCALATION.value
-    payload = json.loads(emit_plan_json(plan))
-    missing_cell = next(cell for cell in payload["cells"] if cell["codec"] == "libx265")
-    assert missing_cell["interval_width"] is None

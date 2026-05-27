@@ -32,12 +32,34 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__ as TOOL_VERSION
-from .jsonio import dumps_strict
+
+
+def _nan_to_none(value: Any) -> Any:
+    """Recursively substitute ``None`` for ``NaN`` / ``±inf`` floats.
+
+    The report appendix used to dump ``data.to_dict()`` through the
+    default ``json.dumps`` (``allow_nan=True``), which writes bare
+    ``NaN`` tokens for any in-memory ``float('nan')``. Those tokens
+    are valid only under JavaScript-extended JSON; RFC 8259 strict
+    parsers (Go ``encoding/json``, Rust ``serde_json``, ``jq``)
+    reject them. Failed compare/ladder rows surface as in-memory
+    NaNs even when the upstream JSON files write them as ``null``
+    — the dump round-trips ``null -> float('nan')`` on parse and
+    back to ``NaN`` on emit. Coerce to ``None`` here so the
+    appendix is portable JSON (BBB e2e v2 Bug #v2-D, ADR-0498).
+    """
+    if isinstance(value, float):
+        return None if math.isnan(value) or math.isinf(value) else value
+    if isinstance(value, dict):
+        return {k: _nan_to_none(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_nan_to_none(v) for v in value]
+    return value
 
 
 def _portable_json_dump(data: Any) -> str:
     """``json.dumps`` with NaN coercion + ``allow_nan=False`` defence."""
-    return dumps_strict(data)
+    return json.dumps(_nan_to_none(data), indent=2, sort_keys=True, allow_nan=False)
 
 
 def _html_escape(value: Any) -> str:
@@ -652,65 +674,6 @@ def build_encoder_profile(data: ReportData) -> dict[str, Any]:
         "shots": [dataclasses.asdict(s) for s in data.shots],
         "human_guidance": dict(_SECTION_GUIDANCE),
     }
-
-
-_UNAVAILABLE_ERROR_PREFIXES = ("encoder unavailable", "hardware encoder not available")
-
-
-def _row_is_unavailable(row: Any) -> bool:
-    error = str(getattr(row, "error", ""))
-    return (not bool(getattr(row, "ok", False))) and error.startswith(_UNAVAILABLE_ERROR_PREFIXES)
-
-
-def build_report_status(data: ReportData, *, outputs: Sequence[Path] = ()) -> dict[str, Any]:
-    """Return the CLI status payload for rendered report artifacts."""
-    aggregate_rows: list[Any] = list(data.codec_rows) + list(data.sweep_points)
-    failed_rows = [r for r in aggregate_rows if not bool(getattr(r, "ok", False))]
-    unavail_rows = [r for r in failed_rows if _row_is_unavailable(r)]
-    real_failures = [r for r in failed_rows if not _row_is_unavailable(r)]
-    rows_any_ok = (
-        any(bool(getattr(r, "ok", False)) for r in aggregate_rows) if aggregate_rows else True
-    )
-    top_ok = bool(rows_any_ok and not real_failures)
-    degraded = bool(unavail_rows)
-    return {
-        "ok": top_ok,
-        "degraded": degraded,
-        "outputs": [str(p) for p in outputs],
-        "codec_rows": len(data.codec_rows),
-        "codec_rows_ok": sum(1 for r in data.codec_rows if r.ok),
-        "codec_rows_failed": sum(1 for r in data.codec_rows if not r.ok),
-        "codec_rows_unavailable": sum(1 for r in data.codec_rows if _row_is_unavailable(r)),
-        "sweep_points": len(data.sweep_points),
-        "sweep_points_ok": sum(1 for r in data.sweep_points if r.ok),
-        "sweep_points_failed": sum(1 for r in data.sweep_points if not r.ok),
-        "ladder_samples": len(data.ladder_samples),
-        "ladder_rungs": len(data.ladder_rungs),
-        "shots": len(data.shots),
-    }
-
-
-def write_report_outputs(
-    data: ReportData,
-    *,
-    output: Path,
-    format: str,
-    assets_dir: Path | None = None,
-) -> tuple[Path, ...]:
-    """Write report artifacts for a CLI-selected format and return their paths."""
-    if format not in {"html", "markdown", "both"}:
-        raise ValueError(f"unsupported report format {format!r}")
-    output.parent.mkdir(parents=True, exist_ok=True)
-    outputs: list[Path] = []
-    if format in ("html", "both"):
-        html_path = output if format == "html" else output.with_suffix(".html")
-        html_path.write_text(render_html(data), encoding="utf-8")
-        outputs.append(html_path)
-    if format in ("markdown", "both"):
-        md_path = output if format == "markdown" else output.with_suffix(".md")
-        md_path.write_text(render_markdown(data, assets_dir=assets_dir), encoding="utf-8")
-        outputs.append(md_path)
-    return tuple(outputs)
 
 
 # ---------------------------------------------------------------------------
@@ -1965,11 +1928,9 @@ __all__ = [
     "ShotRow",
     "SourceInfo",
     "build_encoder_profile",
-    "build_report_status",
     "codec_metadata",
     "compute_pareto_frontier",
     "probe_source",
     "render_html",
     "render_markdown",
-    "write_report_outputs",
 ]

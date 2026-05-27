@@ -51,13 +51,14 @@ corpus.jsonl ──► vmaf-tune benchmark --target-vmaf T   ──► encoder r
 
 ## JSON artifact portability
 
-Human-facing `vmaf-tune` CLI JSON outputs, report-style artifacts, and local
-sidecar state files are strict RFC-8259 JSON. Diagnostic values that are
-non-finite in memory (`NaN`, `Infinity`, `-Infinity`) are serialized as `null`
-rather than as JavaScript-only tokens, so notebooks, dashboards, FFmpeg profile
-consumers, and MCP clients can parse the files with strict JSON decoders. Corpus
-JSONL rows remain the training interchange format; their feature-missing
-semantics are documented separately in the corpus schema below.
+Human-facing `vmaf-tune` CLI JSON outputs and report-style artifacts are
+strict RFC-8259 JSON. Diagnostic values that are non-finite in memory
+(`NaN`, `Infinity`, `-Infinity`) are serialized as `null` rather than
+as JavaScript-only tokens, so notebooks, dashboards, FFmpeg profile
+consumers, and MCP clients can parse the files with strict JSON
+decoders. Corpus JSONL rows remain the training interchange format;
+their feature-missing semantics are documented separately in the corpus
+schema below.
 
 ## Environment variables
 
@@ -1901,6 +1902,10 @@ The cache lives at `$XDG_CACHE_HOME/vmaf-tune/` (or
   blobs/<key>.bin     — opaque encoded artifact
   __index__.json      — last-access timestamps for LRU eviction
 ```
+
+The cache metadata sidecars are strict JSON. If a pathological score becomes
+non-finite in memory, the metadata writes `null`; later reads treat that entry
+as a cache miss instead of replaying a corrupt VMAF value.
 
 ### Eviction
 

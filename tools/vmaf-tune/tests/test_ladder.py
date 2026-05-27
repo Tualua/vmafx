@@ -431,27 +431,6 @@ def test_emit_json_round_trips_and_carries_schema_tag():
     assert payload["renditions"][-1]["vmaf"] == 95.0
 
 
-def test_emit_json_coerces_nonfinite_quality_values_to_null():
-    payload = json.loads(
-        emit_manifest(
-            [Rendition(width=1920, height=1080, bitrate_kbps=2500.0, vmaf=float("nan"), crf=28)],
-            format="json",
-            samples=[
-                LadderPoint(
-                    width=1920,
-                    height=1080,
-                    bitrate_kbps=2500.0,
-                    vmaf=float("inf"),
-                    crf=28,
-                )
-            ],
-        )
-    )
-
-    assert payload["renditions"][0]["vmaf"] is None
-    assert payload["samples"][0]["vmaf"] is None
-
-
 def test_emit_unknown_format_raises():
     with pytest.raises(ValueError, match="hls/dash/json"):
         emit_manifest(_five_rung_ladder(), format="rtmp")

@@ -15,6 +15,7 @@ Covers the four contracts the cache promises callers:
 from __future__ import annotations
 
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -132,6 +133,20 @@ def test_put_then_get_round_trip(tmp_path):
     assert hit.encode_size_bytes == 4096
     assert hit.artifact_path.exists()
     assert hit.artifact_path == stored.artifact_path
+
+
+def test_cache_meta_is_strict_json_and_nonfinite_score_is_miss(tmp_path):
+    c = TuneCache(tmp_path / "cache")
+    blob = tmp_path / "encode.mp4"
+    blob.write_bytes(b"\x01\x02\x03")
+
+    c.put("k-nan", _result(score=math.nan), blob)
+    meta = c.path / c.META_DIR / "k-nan.json"
+    raw = meta.read_text(encoding="utf-8")
+    assert "NaN" not in raw
+    assert "Infinity" not in raw
+    assert json.loads(raw)["vmaf_score"] is None
+    assert c.get("k-nan") is None
 
 
 def test_default_cache_dir_respects_xdg(monkeypatch, tmp_path):

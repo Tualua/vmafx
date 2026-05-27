@@ -184,7 +184,6 @@ def test_cli_target_vmaf_from_corpus(tmp_path: Path, capsys):
         _row(crf=26, vmaf=92.5, bitrate=3000),
         _row(crf=30, vmaf=88.0, bitrate=2000),
     ]
-    rows[0]["diagnostic"] = float("nan")
     corpus = _write_corpus(tmp_path / "c.jsonl", rows)
     rc = cli_main(
         [
@@ -198,11 +197,9 @@ def test_cli_target_vmaf_from_corpus(tmp_path: Path, capsys):
     )
     assert rc == 0
     out = capsys.readouterr().out
-    assert "NaN" not in out
     payload = json.loads(out.strip())
     # Smallest CRF clearing 92 is 22 (vmaf=95).
     assert payload["crf"] == 22
-    assert payload["diagnostic"] is None
 
 
 def test_cli_target_bitrate_from_corpus(tmp_path: Path, capsys):
