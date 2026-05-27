@@ -11,18 +11,20 @@ KonViD MOS head.
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-SCRIPT_DIR = Path(__file__).resolve().parent
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
-if str(SCRIPT_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPT_DIR))
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_ai_scripts=True)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 from train_konvid_mos_head import (  # noqa: E402
     FEATURE_SCHEMA_CHUG_HDR_DISPLAY_V1,
@@ -30,6 +32,8 @@ from train_konvid_mos_head import (  # noqa: E402
     FEATURE_SCHEMA_KONVID_V1,
 )
 from train_konvid_mos_head import main as _train_mos_head_main  # noqa: E402
+
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 
 DEFAULT_CHUG_DIR = Path(os.environ.get("VMAF_CHUG_DIR", str(REPO_ROOT / ".corpus" / "chug")))
 DEFAULT_CHUG_OUTPUT_DIR = Path(
@@ -45,14 +49,14 @@ def _discover_feature_jsonls(shard_dir: Path) -> list[Path]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
-    parser = argparse.ArgumentParser(
+    raw_argv = collect_cli_argv(argv)
+    parser = make_argument_parser(
         prog="train_chug_hdr_mos_head.py",
         description="Train a local CHUG HDR MOS head from reference-aligned feature JSONL.",
-        epilog=(
-            "Additional MOS-trainer flags such as --epochs, --batch-size, "
-            "--k-folds, --seed, and --no-export are forwarded unchanged."
-        ),
+    )
+    parser.epilog = (
+        "Additional MOS-trainer flags such as --epochs, --batch-size, "
+        "--k-folds, --seed, and --no-export are forwarded unchanged."
     )
     parser.add_argument(
         "--feature-jsonl",
@@ -125,7 +129,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=Path,
         default=DEFAULT_CHUG_OUTPUT_DIR / f"{DEFAULT_MODEL_ID}.json",
     )
-    args, forwarded = parser.parse_known_args(argv)
+    args, forwarded = parser.parse_known_args(raw_argv)
 
     feature_parquets = list(args.feature_parquet)
     feature_jsonls = list(args.feature_jsonl)
@@ -167,7 +171,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--out-manifest",
         str(args.out_manifest),
         "--run-entrypoint",
-        str(Path(__file__).resolve()),
+        str(SCRIPT_PATH),
         "--run-argv-json",
         json.dumps(raw_argv),
     ]
