@@ -82,11 +82,17 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
-SCRIPT_PATH = Path(__file__).resolve()
-REPO_ROOT = SCRIPT_PATH.parents[2]
-AI_SRC = REPO_ROOT / "ai" / "src"
-if AI_SRC.is_dir() and str(AI_SRC) not in sys.path:
-    sys.path.insert(0, str(AI_SRC))
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_vmaf_tune_src=True)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
+
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 # ---------------------------------------------------------------------
 # ADR-0303 production-flip gate constants
@@ -159,7 +165,7 @@ DEFAULT_CORPUS_ROOTS: tuple[Path, ...] = (
 # Codec list — sourced from the runtime predictor's _DEFAULT_COEFFS so
 # the trainer cannot drift away from the runtime contract. Falls back
 # to a hard-coded mirror when the vmaf-tune package is not yet on
-# sys.path (PR #450 still in flight).
+# import path (PR #450 still in flight).
 # ---------------------------------------------------------------------
 
 
@@ -187,9 +193,6 @@ def _resolve_codecs() -> tuple[str, ...]:
         "hevc_qsv",
         "av1_qsv",
     )
-    vmaftune_src = REPO_ROOT / "tools" / "vmaf-tune" / "src"
-    if vmaftune_src.is_dir() and str(vmaftune_src) not in sys.path:
-        sys.path.insert(0, str(vmaftune_src))
     try:
         from vmaftune.predictor import _DEFAULT_COEFFS  # type: ignore[import-not-found]
 
@@ -364,9 +367,6 @@ def loso_folds(
 
 def _import_predictor_train() -> Any:
     """Import the PR #450 trainer module if it is on the path."""
-    vmaftune_src = REPO_ROOT / "tools" / "vmaf-tune" / "src"
-    if vmaftune_src.is_dir() and str(vmaftune_src) not in sys.path:
-        sys.path.insert(0, str(vmaftune_src))
     try:
         from vmaftune import predictor_train  # type: ignore[import-not-found]
 
@@ -723,7 +723,8 @@ def render_human_summary(report: dict) -> str:
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = make_argument_parser(
+        prog="train_predictor_v2_realcorpus.py",
         description="Real-corpus LOSO trainer for the per-codec predictor "
         "models (Phase 2 of the predictor pipeline).",
     )
@@ -808,7 +809,7 @@ def _synthetic_rows_for_codec(codec: str, n_rows: int = 200) -> list[dict]:
 
 def main(argv: Iterable[str] | None = None) -> int:
     parser = _build_arg_parser()
-    raw_argv = list(argv) if argv is not None else sys.argv[1:]
+    raw_argv = collect_cli_argv(argv)
     args = parser.parse_args(raw_argv)
 
     codecs = tuple(args.codec) if args.codec else CODECS
@@ -865,8 +866,6 @@ def main(argv: Iterable[str] | None = None) -> int:
         else:
             reasons = "; ".join(result.failure_reasons) or "(no folds)"
             print(f"    {verdict}: {reasons}", flush=True)
-
-    from aiutils.run_manifest import build_run_provenance, write_manifest_json
 
     report = render_report(results, corpus_files=corpus_files)
     report["run_provenance"] = build_run_provenance(
