@@ -7,7 +7,7 @@ model_dir = '../../model/'
 cuda_dir = './cuda/'
 sycl_dir = './sycl/'
 
-vmaf_base_include = include_directories('./', './feature/common', '../include')
+vmaf_base_include = include_directories('./', './feature', './feature/common', '../include')
 
 vmaf_cflags_common = [
     '-pedantic',

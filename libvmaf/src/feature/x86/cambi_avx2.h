@@ -39,4 +39,16 @@ void calculate_c_values_row_avx2(float *c_values, const uint16_t *histograms, co
                                  uint16_t vlt_luma, const int *diff_weights, const int *all_diffs,
                                  const float *reciprocal_lut);
 
+void calculate_c_values_row_avx2(float *c_values, const uint16_t *histograms, const uint16_t *image,
+                                 const uint16_t *mask, int row, int width, ptrdiff_t stride,
+                                 const uint16_t num_diffs, const uint16_t *tvi_thresholds,
+                                 uint16_t vlt_luma, const int *diff_weights, const int *all_diffs,
+                                 const float *reciprocal_lut);
+
+void calculate_c_values_avx2(struct VmafPicture *pic, const struct VmafPicture *mask_pic,
+                             float *c_values, uint16_t *histograms, uint16_t window_size,
+                             const uint16_t num_diffs, const uint16_t *tvi_for_diff,
+                             uint16_t vlt_luma, const int *diff_weights, const int *all_diffs,
+                             int width, int height);
+
 #endif /* X86_AVX2_CAMBI_H_ */
