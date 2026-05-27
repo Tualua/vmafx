@@ -118,9 +118,12 @@ def test_run_plan_single_selected_cell_encode_ok(tmp_path: Path) -> None:
 
     jsonl = tmp_path / "runs" / "tune_results.jsonl"
     assert jsonl.exists()
-    rows = [json.loads(line) for line in jsonl.read_text(encoding="utf-8").splitlines()]
+    raw = jsonl.read_text(encoding="utf-8")
+    assert "NaN" not in raw
+    rows = [json.loads(line) for line in raw.splitlines()]
     assert len(rows) == 1
     assert rows[0]["crf"] == 23
+    assert rows[0]["vmaf_score"] is None
 
 
 def test_run_plan_skips_non_selected_cells(tmp_path: Path) -> None:

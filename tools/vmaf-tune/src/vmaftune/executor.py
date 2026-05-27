@@ -33,7 +33,6 @@ Design notes (ADR-0454, ADR-0468):
 from __future__ import annotations
 
 import dataclasses
-import json
 import tempfile
 import time
 from collections.abc import Callable
@@ -41,6 +40,7 @@ from pathlib import Path
 from typing import Any
 
 from .encode import EncodeRequest, EncodeResult, run_encode
+from .jsonio import dumps_strict
 from .score import ScoreRequest, ScoreResult, run_score
 
 
@@ -126,6 +126,11 @@ def _make_row(
         for feat, val in sc.feature_stds.items():
             row[f"feature_{feat}_std"] = val
     return row
+
+
+def _write_jsonl_row(fh: Any, row: dict[str, Any]) -> None:
+    """Append one portable JSONL row with non-finite values rendered as null."""
+    fh.write(dumps_strict(row, indent=None, sort_keys=True) + "\n")
 
 
 def run_plan(
@@ -242,7 +247,7 @@ def run_plan(
                         _log(f"executor: score failed for cell " f"{cell.get('cell_index')}: {exc}")
 
             row = _make_row(cell, enc, sc)
-            fh.write(json.dumps(row, sort_keys=True) + "\n")
+            _write_jsonl_row(fh, row)
             fh.flush()
             results.append(ExecuteResult(cell=cell, encode=enc, score=sc, row=row))
 
@@ -443,7 +448,7 @@ def run_plan_per_shot(
                 "shot_count": len(shots),
                 "weighted_vmaf": weighted_vmaf,
             }
-            fh.write(json.dumps(plan_row, sort_keys=True) + "\n")
+            _write_jsonl_row(fh, plan_row)
             fh.flush()
 
             all_results.append(
@@ -615,7 +620,7 @@ def run_plan_saliency(
                 "vmaf_score": sc.vmaf_score if sc else None,
                 "score_exit_status": sc.exit_status if sc else None,
             }
-            fh.write(json.dumps(row, sort_keys=True) + "\n")
+            _write_jsonl_row(fh, row)
             fh.flush()
             results.append(
                 SaliencyExecuteResult(

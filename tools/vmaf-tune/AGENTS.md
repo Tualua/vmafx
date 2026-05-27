@@ -294,6 +294,13 @@ for the option-space digest.
   `NaN`/`Infinity` tokens. Loading a state with those nulls is treated
   as invalid and cold-starts; do not make the loader silently coerce
   them back to zero because that would hide a corrupt correction.
+- **Phase-F executor result JSONL is strict JSON.** `run_plan`,
+  `run_plan_per_shot`, and `run_plan_saliency` write
+  `tune_results*.jsonl` through the shared `vmaftune.jsonio`
+  serialization path. Failed scores and all-failed per-shot weighted
+  means stay `NaN` in memory for caller-side math, but serialize as
+  `null` so strict JSONL consumers, report renderers, and FFmpeg
+  profile readers never ingest JavaScript-only tokens.
 - **Ladder uncertainty is post-hull / pre-knee.** `vmaf-tune ladder
   --with-uncertainty` must run the ADR-0279 prune/insert recipe only
   after `convex_hull()` and before `select_knees()`. Preserve corpus
@@ -611,10 +618,6 @@ for the option-space digest.
   the row is the canonical record, the cache is a sidecar. A cache
   hit must produce a row that is bit-identical to a cache miss
   (modulo `encode_path`, which stays empty unless `--keep-encodes`).
-  Cache index/meta JSON sidecars route through
-  `vmaftune.jsonio.write_json_strict()`; if a metadata value is
-  strict-nullified from a non-finite score, `TuneCache.get()` must
-  return a miss rather than replaying a corrupt cached VMAF value.
 - **Sample-clip windows are mirrored on both sides** ([ADR-0301](../../docs/adr/0301-vmaf-tune-sample-clip.md)).
   The encode side uses FFmpeg input-side `-ss <start> -t <N>`
   (rawvideo demuxer fast-seek); the score side uses libvmaf's

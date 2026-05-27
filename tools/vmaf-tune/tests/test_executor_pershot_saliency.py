@@ -180,6 +180,12 @@ def test_run_plan_per_shot_weighted_vmaf_is_nan_when_all_fail(tmp_path: Path) ->
     assert len(results) == 1
     assert math.isnan(results[0].weighted_vmaf)
 
+    jsonl = tmp_path / "runs" / "tune_results_per_shot.jsonl"
+    raw = jsonl.read_text(encoding="utf-8")
+    assert "NaN" not in raw
+    rows = [json.loads(line) for line in raw.splitlines()]
+    assert rows[0]["weighted_vmaf"] is None
+
 
 # ---------------------------------------------------------------------------
 # Saliency tests
@@ -228,6 +234,9 @@ def test_run_plan_saliency_returns_result_row(tmp_path: Path) -> None:
 
     jsonl = tmp_path / "runs" / "tune_results_saliency.jsonl"
     assert jsonl.exists()
-    rows = [json.loads(line) for line in jsonl.read_text().splitlines()]
+    raw = jsonl.read_text(encoding="utf-8")
+    assert "NaN" not in raw
+    rows = [json.loads(line) for line in raw.splitlines()]
     assert len(rows) == 1
     assert rows[0]["codec"] == "libx264"
+    assert rows[0]["vmaf_score"] is None
