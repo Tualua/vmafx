@@ -10,6 +10,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -223,6 +224,35 @@ def test_emit_report_json_round_trip():
     # Same key set as COMPARE_ROW_KEYS.
     for row in payload["rows"]:
         assert set(row.keys()) == set(COMPARE_ROW_KEYS)
+
+
+def test_emit_report_json_coerces_non_finite_failed_row_to_null():
+    report = ComparisonReport(
+        src="ref.yuv",
+        target_vmaf=92.0,
+        tool_version="0.0.1",
+        wall_time_ms=1.0,
+        rows=(
+            RecommendResult(
+                codec="libx264",
+                best_crf=-1,
+                bitrate_kbps=math.nan,
+                encode_time_ms=math.inf,
+                vmaf_score=math.nan,
+                ok=False,
+                error="timeout",
+            ),
+        ),
+    )
+
+    text = emit_report(report, format="json")
+    payload = json.loads(text)
+
+    assert "NaN" not in text
+    assert "Infinity" not in text
+    assert payload["rows"][0]["bitrate_kbps"] is None
+    assert payload["rows"][0]["encode_time_ms"] is None
+    assert payload["rows"][0]["vmaf_score"] is None
 
 
 def test_emit_report_csv_has_header_and_rows():
