@@ -86,6 +86,29 @@ def test_sidecar_status_json_uses_requested_cache(
     assert (cache_dir / "host-uuid").is_file()
 
 
+def test_sidecar_status_json_coerces_nonfinite_values_to_null(
+    capsys: pytest.CaptureFixture,
+) -> None:
+    cli_module._emit_sidecar_status(
+        {
+            "schema": "vmaf-tune-sidecar-status/v1",
+            "codec": "libx264",
+            "host_uuid": "host",
+            "state_path": "/tmp/state.json",
+            "predictor_version": "test",
+            "schema_version": 1,
+            "n_updates": 0,
+            "recent_residual_rms": float("nan"),
+        },
+        as_json=True,
+    )
+
+    out = capsys.readouterr().out
+    assert "NaN" not in out
+    payload = json.loads(out)
+    assert payload["recent_residual_rms"] is None
+
+
 def test_sidecar_record_then_predict_applies_correction(
     tmp_path: Path, capsys: pytest.CaptureFixture
 ) -> None:

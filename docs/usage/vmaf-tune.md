@@ -51,13 +51,15 @@ corpus.jsonl ──► vmaf-tune benchmark --target-vmaf T   ──► encoder r
 
 ## JSON artifact portability
 
-Report-style JSON artifacts emitted by `compare`, `benchmark`,
-`ladder`, `auto`, and conformal calibration sidecars are strict
-RFC-8259 JSON. Diagnostic values that are non-finite in memory
+Human-facing `vmaf-tune` CLI JSON outputs and report-style artifacts are
+strict RFC-8259 JSON. Diagnostic values that are non-finite in memory
 (`NaN`, `Infinity`, `-Infinity`) are serialized as `null` rather than
 as JavaScript-only tokens, so notebooks, dashboards, FFmpeg profile
 consumers, and MCP clients can parse the files with strict JSON
-decoders.
+decoders. Corpus JSONL rows remain the training interchange format;
+their feature-missing semantics are documented separately in the corpus
+schema below.
+
 
 ## Environment variables
 
@@ -576,7 +578,7 @@ Output formats:
 | Format | Use |
 | --- | --- |
 | `markdown` | PR comments and human review. |
-| `json` | Notebooks, dashboards, and follow-up automation. Non-finite optional diagnostics are emitted as `null`. |
+| `json` | Notebooks, dashboards, and follow-up automation. |
 | `csv` | Spreadsheets and quick plots. |
 
 `--baseline-encoder` controls the bitrate-delta column. When omitted,
@@ -1711,9 +1713,8 @@ The JSON / CSV columns are exported as `vmaftune.compare.COMPARE_ROW_KEYS`:
 `codec`, `adapter`, `runtime_variant`, `ffmpeg_bin`, `encoder_version`,
 `best_crf`, `bitrate_kbps`, `encode_time_ms`, `vmaf_score`, `target_vmaf`,
 `ok`, `error`. Failed rows trail successful ones in the ranking; `ok=False`
-rows carry a human-readable `error` and sentinel numerics in memory (`-1` for
-`best_crf`, `NaN` for the floats; strict JSON emits those floats as `null`).
-`adapter`, `runtime_variant`, and
+rows carry a human-readable `error` and sentinel numerics (`-1` for
+`best_crf`, `NaN` for the floats). `adapter`, `runtime_variant`, and
 `ffmpeg_bin` are provenance fields for `ADAPTER@VARIANT` compare runs; they
 are empty on rows produced by old programmatic predicates that do not bind a
 runtime variant.
@@ -2064,8 +2065,7 @@ The JSON descriptor carries three top-level fields:
 - `schema` — schema identifier (`"vmaf-tune-ladder/v1"`).
 - `renditions[]` — the post-hull rungs that `select_knees` picked.
   Ascending-bitrate order; each entry has `width`, `height`,
-  `bitrate_kbps`, `bandwidth_bps`, `vmaf`, `crf`. If a diagnostic
-  quality value is non-finite in memory, JSON emits `vmaf: null`.
+  `bitrate_kbps`, `bandwidth_bps`, `vmaf`, `crf`.
 - `samples[]` — every encoded `(resolution, crf)` row the sampler
   scored, pre-hull. Ascending by `(pixel_count, bitrate_kbps)`;
   same per-entry shape as `renditions[]`. Added 2026-05-18 per
