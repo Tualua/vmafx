@@ -7,6 +7,19 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## fix/numeric-column-filter-sweep — no rebase impact: AI-only
+
+**No upstream rebase impact**: only `ai/scripts/feature_correlation.py` and
+its test are changed. The fix filters candidate columns through
+`select_dtypes(include='number')` before `to_numpy(dtype=np.float64)`,
+dropping string columns (e.g. codec, chug_orientation) with a log line.
+Upstream Netflix/vmaf does not ship feature_correlation.py.
+Touched files:
+`ai/scripts/feature_correlation.py`,
+`ai/tests/test_feature_correlation.py`,
+`changelog.d/fixed/0527-numeric-column-filter-sweep.md`,
+`docs/rebase-notes.md` (this entry).
+
 ## feat/chug-hdr-held-out-test-validator (ADR-0687) — no rebase impact: AI-only
 
 **No upstream rebase impact**: this PR adds fork-local AI scripts
