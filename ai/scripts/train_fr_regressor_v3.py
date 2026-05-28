@@ -85,6 +85,8 @@ if str(REPO_ROOT / "ai" / "scripts") not in sys.path:
 # parallel constant (per ADR-0302's scaffold landed in PR #401).
 from train_fr_regressor_v2 import ENCODER_VOCAB_V3  # noqa: E402  # type: ignore[import-not-found]
 
+from vmaf_train.registry import write_registry_json  # noqa: E402
+
 # Canonical-6 libvmaf feature columns (ADR-0291 / ADR-0319).
 CANONICAL_6: tuple[str, ...] = (
     "adm2",
@@ -630,7 +632,7 @@ def write_sidecar_and_registry(
     models.append(new_entry)
     models.sort(key=lambda e: e.get("id", ""))
     registry["models"] = models
-    registry_path.write_text(json.dumps(registry, indent=2, sort_keys=True) + "\n")
+    write_registry_json(registry_path, registry)
 
 
 def _write_smoke_corpus(path: Path, n_per_source: int = 4) -> None:

@@ -62,6 +62,7 @@ SCRIPT_PATH = Path(__file__).resolve()
 if str(REPO_ROOT / "ai" / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 
+from vmaf_train.registry import write_registry_json  # noqa: E402
 
 # Subsets shared with ai/scripts/phase3_subset_sweep.py. We re-declare
 # instead of importing so the canonical pool is one file (this script).
@@ -346,7 +347,7 @@ def _export_and_register(
     models.append(new_entry)
     models.sort(key=lambda e: e.get("id", ""))
     registry["models"] = models
-    registry_path.write_text(json.dumps(registry, indent=2, sort_keys=True) + "\n")
+    write_registry_json(registry_path, registry)
 
 
 def main() -> int:

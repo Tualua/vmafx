@@ -49,6 +49,12 @@ Fields documented inline; key invariants:
   this is `BSD-3-Clause-Plus-Patent` (matches libvmaf). Upstream-derived
   models carry the upstream license verbatim (e.g. LPIPS-Sq is `BSD-2-Clause`).
 
+Registry writers in `ai/scripts/` use
+`vmaf_train.registry.write_registry_json()`. That helper writes strict
+RFC-8259 JSON (`NaN` / `Infinity` are serialized as `null`) and keeps keys
+sorted with a trailing newline, so train/export reruns do not leave
+non-portable metadata behind when a diagnostic metric is missing.
+
 ## Validating the registry
 
 The Python validator at

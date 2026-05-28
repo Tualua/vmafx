@@ -28,6 +28,10 @@ ai/
   [`../model/tiny/registry.json`](../model/tiny/) with sha256, upstream
   source, license, and opset. See
   [ADR-0039](../docs/adr/0039-onnx-runtime-op-walk-registry.md).
+- **Registry writers use strict JSON.** Training/export scripts that update
+  `model/tiny/registry.json` call
+  `vmaf_train.registry.write_registry_json()` so missing diagnostic metrics
+  become JSON `null` instead of non-standard `NaN` / `Infinity` tokens.
 - **ONNX opset**: export requests opset 17 but torch dynamo may emit 18
   (downconvert sometimes fails in `onnx.version_converter`). Record the
   emitted opset in the registry sidecar rather than failing the export.

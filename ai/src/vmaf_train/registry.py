@@ -17,12 +17,25 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from aiutils.run_manifest import normalise_manifest_value
+
 SCHEMA_VERSION = 1
 VALID_KINDS = {"fr", "nr", "filter"}
+
+
+def dumps_registry_json(payload: Mapping[str, Any]) -> str:
+    """Serialize model-registry metadata as strict RFC-8259 JSON."""
+    normalised = normalise_manifest_value(payload)
+    return json.dumps(normalised, indent=2, sort_keys=True, allow_nan=False) + "\n"
+
+
+def write_registry_json(path: Path, payload: Mapping[str, Any]) -> None:
+    path.write_text(dumps_registry_json(payload), encoding="utf-8")
 
 
 @dataclass
@@ -44,7 +57,7 @@ class ModelMetadata:
     notes: str | None = None
 
     def to_json(self) -> str:
-        return json.dumps(asdict(self), indent=2, sort_keys=True) + "\n"
+        return dumps_registry_json(asdict(self))
 
 
 def _hash_file(path: Path) -> str:
@@ -106,7 +119,7 @@ def register(
     )
 
     sidecar = onnx_path.with_suffix(".json")
-    sidecar.write_text(meta.to_json())
+    sidecar.write_text(meta.to_json(), encoding="utf-8")
     return sidecar
 
 
