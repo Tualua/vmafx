@@ -111,6 +111,14 @@ notebooks, dashboards, and release tooling can parse the files with standard
 JSON decoders. The Python-side report dictionaries can still use non-finite
 floats internally before the write boundary.
 
+JSONL artifacts use the same strict boundary at row-write time. Corpus
+adapters, table materializers, merge helpers, and extraction scripts should
+serialize rows with `aiutils.jsonl_utils.dumps_jsonl_row()` so row payloads
+stay deterministic and standard JSON without copying serializer options into
+each script.
+
+
+
 Operator-facing AI scripts should also use the small CLI helper layer in
 `aiutils.cli_helpers` when they fit the shared shape. `make_argument_parser()`
 keeps parser formatting consistent, `collect_cli_argv()` preserves the raw

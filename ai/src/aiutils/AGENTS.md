@@ -12,8 +12,9 @@ When writing a new script in `ai/scripts/` or a new module in
 1. **File hashing:** Import `sha256` from `aiutils.file_utils`, not a local `_sha256()`.
 2. **UTC timestamps:** Use `now_iso_8601()` from `aiutils.time_utils` for ISO-8601
    second-precision UTC (not ad hoc `.isoformat()` calls).
-3. **JSONL iteration:** Use `iter_jsonl()` from `aiutils.jsonl_utils` to read
-   newline-delimited JSON, not inline generators.
+3. **JSONL I/O:** Use `iter_jsonl()` from `aiutils.jsonl_utils` to read
+   newline-delimited JSON and `dumps_jsonl_row()` to write JSONL rows. Do not
+   hand-roll `json.dumps(row) + "\n"` in artifact-producing scripts.
 4. **Atomic Parquet writes:** Use `write_parquet_atomic()` from `aiutils.parquet_utils`
    to safely write DataFrames with cleanup on failure.
 5. **Run provenance:** Use `aiutils.run_manifest.write_run_manifest()` for
@@ -39,7 +40,8 @@ When writing a new script in `ai/scripts/` or a new module in
 
 - `file_utils.py` — `sha256(path) -> str`
 - `time_utils.py` — `now_iso_8601() -> str`
-- `jsonl_utils.py` — `iter_jsonl(path) -> Iterator[tuple[int, dict]]`
+- `jsonl_utils.py` — `iter_jsonl(path) -> Iterator[tuple[int, dict]]`,
+  `dumps_jsonl_row(row) -> str`
 - `parquet_utils.py` — `write_parquet_atomic(df, output, **kwargs) -> None`
 - `run_manifest.py` — deterministic `run_provenance` sidecar/stdout helpers
 - `cli_helpers.py` — shared parser/raw-argv/batch-manifest argument helpers

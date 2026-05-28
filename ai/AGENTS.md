@@ -35,6 +35,11 @@ ai/
 - **Operator JSON stdout uses the same strict boundary.** AI scripts that print
   report-style JSON to stdout should call `aiutils.run_manifest.dumps_manifest_json()`
   rather than local `json.dumps()` so file and stdout surfaces agree.
+- **Artifact JSONL rows use the shared strict row writer.** AI corpus,
+  materializer, and extraction scripts that write JSONL rows call
+  `aiutils.jsonl_utils.dumps_jsonl_row()` instead of local
+  `json.dumps(row) + "\n"` so missing/non-finite diagnostics become standard
+  JSON `null`.
 - **ONNX opset**: export requests opset 17 but torch dynamo may emit 18
   (downconvert sometimes fails in `onnx.version_converter`). Record the
   emitted opset in the registry sidecar rather than failing the export.

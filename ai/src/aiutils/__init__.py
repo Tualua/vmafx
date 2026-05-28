@@ -9,7 +9,7 @@ directory and establish standard interfaces for new scripts.
 
 from aiutils.cli_helpers import add_batch_manifest_arguments, collect_cli_argv, make_argument_parser
 from aiutils.file_utils import sha256
-from aiutils.jsonl_utils import iter_jsonl
+from aiutils.jsonl_utils import dumps_jsonl_row, iter_jsonl
 from aiutils.run_manifest import (
     build_run_manifest_payload,
     build_run_provenance,
@@ -26,6 +26,7 @@ __all__ = [
     "build_run_provenance",
     "collect_cli_argv",
     "describe_path",
+    "dumps_jsonl_row",
     "dumps_manifest_json",
     "iter_jsonl",
     "make_argument_parser",
