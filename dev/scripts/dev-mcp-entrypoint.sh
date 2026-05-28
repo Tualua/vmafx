@@ -38,6 +38,12 @@ set -euo pipefail
 # Operators that need to force a single ICD can still set the env var at
 # `docker exec` time per-invocation (e.g. `docker exec -e VK_ICD_FILENAMES=…`).
 unset VK_ICD_FILENAMES VK_DRIVER_FILES || true
+# Clear any stale VK_DRIVER_FILES from /etc/environment left by a previous
+# container invocation (Bug #4 fix: we re-write it below after computing the
+# real ICD list; removing the old line avoids accumulation across rebuilds).
+if [ -f /etc/environment ]; then
+  sed -i '/^VK_DRIVER_FILES=/d' /etc/environment || true
+fi
 
 # ADR-0541: drop the lavapipe software ICD when at least one real GPU ICD
 # is registered. The Vulkan loader enumerates every JSON under
@@ -74,6 +80,28 @@ done
 if [ -n "${_vk_real_icds}" ]; then
   export VK_DRIVER_FILES="${_vk_real_icds}"
   echo "[dev-mcp-entrypoint] Vulkan: pinned non-lavapipe ICDs: ${VK_DRIVER_FILES}"
+  # Bug #4 fix (ADR-0541 follow-up): persist VK_DRIVER_FILES so subsequent
+  # `docker exec` sessions see the correct ICD list.
+  #
+  # Problem: when the entrypoint does `exec tail -F`, the tail process
+  # replaces the shell.  Docker spawns `docker exec` processes from the
+  # container's *base* runtime environment (the union of the Containerfile
+  # ENV layer and the docker-compose `environment:` block), which is frozen
+  # at container create time — it does NOT include variables that were
+  # dynamically `export`-ed inside the entrypoint script.  So VK_DRIVER_FILES
+  # disappears from the view of every `docker exec` session.
+  #
+  # Two complementary write targets cover the common exec patterns:
+  #
+  #   /etc/environment — read by pam_env(8) on PAM-authenticated sessions
+  #   (ssh, `su`, `docker exec` with --user on PAM-enabled images).
+  #
+  #   /etc/profile.d/vmaf-vk.sh — sourced by bash/sh login shells
+  #   (`docker exec ... bash --login`, `bash -l -c '...'`).  This is the
+  #   pattern the dev-mcp operator guide recommends for interactive sessions.
+  printf 'VK_DRIVER_FILES=%s\n' "${_vk_real_icds}" >>/etc/environment || true
+  printf '# Written by dev-mcp-entrypoint.sh at container start (ADR-0541).\nexport VK_DRIVER_FILES=%s\n' \
+    "${_vk_real_icds}" >/etc/profile.d/vmaf-vk.sh || true
 else
   echo "[dev-mcp-entrypoint] Vulkan: no real ICD found; falling back to mesa default search (lavapipe likely)"
 fi
@@ -120,13 +148,43 @@ MODEL_PATH="${VMAF_MODEL_PATH:-/workspace/model}"
 # retry loop avoids spurious WARN lines on healthy hosts without masking a
 # real userspace<->kernel ABI mismatch (which never recovers and keeps
 # failing past the retry window).
+#
+# Bug #2 fix (2026-05-28, surfaced by PR #1561 smoke test): the previous
+# patterns caused false WARN messages even when SYCL and HIP devices were
+# accessible at vmaf invocation time.
+#
+#   SYCL: `sycl-ls` output format is "[level_zero:gpu:N] ..." or
+#   "[opencl:gpu:N] ..." (depending on the Level Zero / OpenCL backend that
+#   enumerates first).  The old pattern `level_zero.*gpu` matched only the
+#   level_zero form and could miss the opencl:gpu fallback.  The updated
+#   pattern `\[(level_zero|opencl):gpu:` anchors to the bracket-prefix that
+#   sycl-ls always emits for real GPU platforms.
+#
+#   HIP: `rocminfo` lists "Agent N" headers and "Device Type: GPU" on separate
+#   lines, so `Agent.*GPU` never matches a single line.  The `gfx[0-9]+`
+#   alternative should match the "Name: gfx1030" line but may not fire when
+#   rocminfo exits non-zero before printing device names (e.g. /dev/kfd not
+#   yet accessible).  The updated pattern adds `Device Type:\s+GPU` as a
+#   third alternative to match the per-agent device-type line that rocminfo
+#   always emits when it opens a GPU agent.
+#
+#   Both probes now also log the raw first line of the command output at INFO
+#   level on the first attempt so operators can distinguish "probe grep
+#   mismatch" from "device truly absent".
 _probe_with_retry() {
   local label="$1" cmd="$2" pattern="$3" advice="$4"
-  local attempt
+  local attempt _out
   for attempt in 1 2 3 4 5 6 7 8 9 10; do
-    if eval "${cmd}" 2>&1 | grep -qE "${pattern}"; then
+    _out="$(eval "${cmd}" 2>&1)"
+    if echo "${_out}" | grep -qE "${pattern}"; then
       echo "[dev-mcp-entrypoint]   ${label} detected (attempt ${attempt})"
       return 0
+    fi
+    # On the first attempt, log the actual output summary so operators can
+    # tell whether the probe command ran at all vs. returning empty output.
+    if [ "${attempt}" -eq 1 ]; then
+      _first_line="$(echo "${_out}" | head -1)"
+      echo "[dev-mcp-entrypoint]   ${label}: probe output line 1: '${_first_line:-<empty>}'"
     fi
     sleep 3
   done
@@ -142,11 +200,16 @@ _probe_with_retry() {
 {
   echo "[dev-mcp-entrypoint] GPU backend visibility probe (ADR-0540):"
   if command -v sycl-ls >/dev/null 2>&1; then
-    _probe_with_retry "SYCL level_zero:gpu" "sycl-ls" "level_zero.*gpu" \
+    # Pattern matches both "[level_zero:gpu:N]" and "[opencl:gpu:N]" prefixes
+    # that sycl-ls emits for any real GPU platform (Arc, Gen12, Xe).
+    _probe_with_retry "SYCL gpu" "sycl-ls" "\[(level_zero|opencl):gpu:" \
       "Check /dev/dri/renderD<N> passthrough, seccomp=unconfined, and host kernel <-> NEO ABI compat."
   fi
   if command -v rocminfo >/dev/null 2>&1; then
-    _probe_with_retry "HIP HSA agent" "rocminfo" "Agent.*GPU|gfx[0-9]+" \
+    # Pattern matches any of: "Name: gfx<N>", "Device Type:   GPU", or
+    # "Device Type:   Cpu" absent means GPU was enumerated.  The "gfx" match
+    # covers the HSA_OVERRIDE_GFX_VERSION remapping (e.g. gfx1036 → gfx1030).
+    _probe_with_retry "HIP HSA gpu agent" "rocminfo" "gfx[0-9]+|Device Type:[[:space:]]+GPU" \
       "Check /dev/kfd passthrough, seccomp=unconfined, and host kernel <-> ROCm KFD ioctl ABI compat."
   fi
 } | tee -a "${LOG_FILE}"

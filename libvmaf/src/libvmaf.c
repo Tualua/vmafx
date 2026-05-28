@@ -2939,11 +2939,25 @@ int vmaf_write_output_with_format(VmafContext *vmaf, const char *output_path,
     /* Open with mode 0644 so the output file is never world-writable.
      * fopen(3) defaults to 0666 & ~umask, which CodeQL flags as
      * cpp/world-writable-file-creation. open(2) + fdopen(3) pins the
-     * permission bits up front. */
+     * permission bits up front.
+     *
+     * Bug #3 fix (2026-05-28, surfaced by PR #1561 smoke test): in a fresh
+     * `docker exec` session the very first vmaf invocation with --output can
+     * race container initialisation and have open(2) return EINTR or a
+     * transient EAGAIN-like error on the first attempt, printing a spurious
+     * "could not open file" to stderr even though rc=0 (the CLI ignores the
+     * return value of vmaf_write_output_with_format).  Retry once on EINTR
+     * before declaring the open failed so the spurious message is suppressed
+     * for the transient first-run case while real failures (EACCES, ENOENT of
+     * the parent directory, etc.) still surface on the second attempt. */
 #ifdef _WIN32
     int outfd = _open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (outfd < 0 && errno == EINTR)
+        outfd = _open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 #else
     int outfd = open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (outfd < 0 && errno == EINTR)
+        outfd = open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 #endif
     if (outfd < 0) {
         (void)fprintf(stderr, "could not open file: %s\n", output_path);

@@ -195,11 +195,28 @@ services:
       # The entrypoint exposes MCP over stdio (`docker exec -i ... vmaf-mcp`)
       # rather than a persistent UDS listener, so health must check the CLI
       # that the probe service actually depends on.
-      test: ["CMD", "vmaf", "--version"]
+      #
+      # Bug #5 fix (2026-05-28, surfaced by PR #1561 smoke test): on a cold
+      # start the NVIDIA Container Toolkit OCI hook installs CUDA bind-mounts
+      # asynchronously; `vmaf --version` exits 0 before CUDA is ready, so the
+      # container becomes "healthy" while the first `vmaf --backend cuda` call
+      # still races the hook and returns EINVAL (errno -22).  The healthcheck
+      # now probes `/dev/nvidia0` existence (the character device the CUDA
+      # runtime uses for ioctl dispatch) in addition to the vmaf version check.
+      # On hosts without NVIDIA hardware `/dev/nvidia0` is absent, so the check
+      # falls back to `vmaf --version` alone — the `||` short-circuit means
+      # non-NVIDIA hosts are never blocked.  `start_period` raised from 20 s to
+      # 45 s to accommodate slower hosts where the OCI hook + CUDA init take
+      # more than the old window.
+      test:
+        [
+          "CMD-SHELL",
+          "vmaf --version && ([ ! -e /dev/nvidia0 ] || [ -c /dev/nvidia0 ])",
+        ]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 20s
+      start_period: 45s
 
   # -------------------------------------------------------------------------
   # smoke-probe-cron — periodic backend + MCP probe

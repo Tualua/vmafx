@@ -7,6 +7,21 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## fix/dev-container-entrypoint-probes-env-healthcheck
+
+No rebase impact: `dev/` is fork-only (the `vmaf-dev-mcp` container is not
+shipped by upstream Netflix/vmaf). `libvmaf/src/libvmaf.c` is touched by the
+Bug #3 EINTR-retry fix, but the change is a one-line retry guard on `open(2)`
+that Netflix's upstream code does not conflict with and that follows standard
+POSIX EINTR-restart practice.
+Touched files:
+`dev/scripts/dev-mcp-entrypoint.sh`,
+`dev/docker-compose.yml`,
+`libvmaf/src/libvmaf.c`,
+`changelog.d/fixed/dev-container-entrypoint-probes-env-healthcheck.md`,
+`docs/state.md`,
+`docs/rebase-notes.md` (this entry).
+
 ## fix/numeric-column-filter-sweep — no rebase impact: AI-only
 
 **No upstream rebase impact**: only `ai/scripts/feature_correlation.py` and
