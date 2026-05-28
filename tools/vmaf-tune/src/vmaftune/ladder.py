@@ -166,11 +166,15 @@ def build_ladder(
 
 
 # Canonical 5-point CRF sweep used by the default sampler (ADR-0307).
-# Spans the perceptually-informative range for libx264; non-x264
-# adapters validate the points against their own ``quality_range``
-# inside ``corpus.iter_rows``. Callers needing a finer grid pass an
-# explicit ``sampler=`` to ``build_ladder``.
-DEFAULT_SAMPLER_CRF_SWEEP: tuple[int, ...] = (18, 23, 28, 33, 38)
+# Starts at 20 — the highest Phase A lower bound across all supported
+# encoders (libsvtav1 quality_range=(20, 50) is the binding constraint;
+# the old start of 18 fell below that bound and caused an immediate
+# ValueError when the ladder was invoked with --encoder libsvtav1).
+# Step-5 spacing and upper bound 40 stay comfortably inside every
+# adapter's informative window. Callers needing a finer grid or a
+# codec-specific window pass an explicit ``sampler=`` to
+# ``build_ladder``.
+DEFAULT_SAMPLER_CRF_SWEEP: tuple[int, ...] = (20, 25, 30, 35, 40)
 
 
 def _default_sampler_preset(encoder: str) -> str:

@@ -7,6 +7,22 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## fix/vmaftune-compare-format-both-json-svtav1-crf — no rebase impact: tools-only
+
+**No upstream rebase impact**: changes are confined to `tools/vmaf-tune/` —
+fork-local code that does not exist in upstream Netflix/vmaf. The two bugs
+fixed (`--format both` missing JSON output; `DEFAULT_SAMPLER_CRF_SWEEP` out
+of libsvtav1 range) are fork-introduced.
+Touched files:
+`tools/vmaf-tune/src/vmaftune/cli.py`,
+`tools/vmaf-tune/src/vmaftune/ladder.py`,
+`tools/vmaf-tune/tests/test_format_both_json.py`,
+`tools/vmaf-tune/tests/test_ladder.py`,
+`tools/vmaf-tune/tests/test_ladder_svtav1_default_crf.py`,
+`changelog.d/fixed/vmaf-tune-compare-format-both-json-svtav1-default-crf.md`,
+`docs/state.md`,
+`docs/rebase-notes.md` (this entry).
+
 ## fix/dev-container-entrypoint-probes-env-healthcheck
 
 No rebase impact: `dev/` is fork-only (the `vmaf-dev-mcp` container is not

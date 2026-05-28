@@ -3524,6 +3524,14 @@ def _write_compare_profile_report(
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     outputs: list[Path] = []
+    if fmt == "both":
+        # ``--format both`` emits all three artefacts side-by-side next to
+        # ``--output``.  The original path receives the machine-readable JSON
+        # so downstream scripts can ``jq`` the result; the human-readable
+        # renders land with their natural suffixes.
+        json_path = output if output.suffix == ".json" else output.with_suffix(".json")
+        json_path.write_text(json.dumps(data.to_dict(), indent=2) + "\n", encoding="utf-8")
+        outputs.append(json_path)
     if fmt in ("html", "both"):
         html_path = output if fmt == "html" else output.with_suffix(".html")
         html_path.write_text(render_html(data), encoding="utf-8")
@@ -4737,6 +4745,16 @@ def _run_report(args: argparse.Namespace) -> int:
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     outputs: list[Path] = []
+    if args.format == "both":
+        # ``--format both`` emits all three artefacts side-by-side next to
+        # ``--output``.  The original path receives the machine-readable JSON
+        # so downstream scripts can ``jq`` the result; the human-readable
+        # renders land with their natural suffixes.
+        json_path = (
+            args.output if args.output.suffix == ".json" else args.output.with_suffix(".json")
+        )
+        json_path.write_text(json.dumps(data.to_dict(), indent=2) + "\n", encoding="utf-8")
+        outputs.append(json_path)
     if args.format in ("html", "both"):
         html_path = args.output if args.format == "html" else args.output.with_suffix(".html")
         html_path.write_text(render_html(data), encoding="utf-8")
