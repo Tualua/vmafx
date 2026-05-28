@@ -65,6 +65,14 @@ upstream Netflix/vmaf. The Python `tools/vmaf-tune/` is unchanged. `go.mod` and
 `go.sum` are fork-local additions that upstream does not carry. Cherry-picks from
 upstream that touch `tools/vmaf-tune/` Python source files are unaffected by this PR.
 
+## feat/vmafx-mcp-go-port (ADR-0704) — fork-only, no Netflix conflict
+
+**No upstream rebase impact**: this PR adds `cmd/vmafx-mcp/`, `pkg/libvmaf/`,
+`go.mod`, and `go.sum` — all entirely fork-local. The Python MCP server at
+`mcp-server/vmaf-mcp/` is unchanged. Netflix/vmaf upstream does not contain
+any Go code or an MCP server. Cherry-picks from upstream are unaffected.
+
+
 ## chore/post-cutover-url-sweep — fork-only URL change, no Netflix conflict
 
 **No upstream rebase impact**: this change replaces all occurrences of the
