@@ -76,6 +76,9 @@ enum {
     ARG_DNN_EP,
     /* ADR-0550 — NCHW tiny-model auto-resize filter. */
     ARG_TINY_RESIZE,
+    /* ADR-0696 — netflix-compat: restore legacy defaults regardless of
+     * binary name. Accepts both dash and underscore forms. */
+    ARG_NETFLIX_COMPAT,
 };
 
 /* Default matches Netflix's pre-fork output exactly so the CPU golden
@@ -179,6 +182,10 @@ static const struct option long_opts[] = {
      * without knowing the fork's internal "tiny-device" naming. */
     {"dnn-ep", 1, NULL, ARG_DNN_EP},
     {"dnn_ep", 1, NULL, ARG_DNN_EP},
+    /* ADR-0696 — netflix-compat: both dash and underscore forms accepted
+     * for consistency with the rest of the flag set. */
+    {"netflix-compat", 0, NULL, ARG_NETFLIX_COMPAT},
+    {"netflix_compat", 0, NULL, ARG_NETFLIX_COMPAT},
     {"no_prediction", 0, NULL, 'n'},
     {"version", 0, NULL, 'v'},
     {"quiet", 0, NULL, 'q'},
@@ -287,6 +294,11 @@ static void usage(const char *const app, const char *const reason, ...)
         "                               Warning: bilinear/nearest/bicubic produce scores\n"
         "                               that differ by ~2%% on the same input -- document\n"
         "                               the filter alongside your model checkpoint.\n"
+        " --netflix-compat:             restore Netflix-upstream legacy defaults regardless\n"
+        "                               of binary name. Forces --backend=cpu and\n"
+        "                               --precision=legacy (%%.6f). Idempotent when invoked\n"
+        "                               as 'vmaf' (already the default). Use with 'vmafx'\n"
+        "                               to override modernized defaults (ADR-0696).\n"
         " --quiet/-q:                  disable FPS meter when run in a TTY\n"
         " --no_prediction/-n:          no prediction, extract features only\n"
         " --version/-v:                print version and exit\n");
@@ -907,6 +919,13 @@ void cli_parse(const int argc, char *const *const argv, CLISettings *const setti
             }
             settings->tiny_resize = optarg;
             break;
+        case ARG_NETFLIX_COMPAT:
+            /* ADR-0696: record the flag here; actual enforcement (force CPU,
+             * force %.6f) happens in the final post-parse block below after
+             * the vmafx_mode modernization pass, so it cleanly overrides
+             * any vmafx defaults that were applied first. */
+            settings->netflix_compat = true;
+            break;
         case 'n':
             settings->no_prediction = true;
             break;
@@ -1029,6 +1048,23 @@ void cli_parse(const int argc, char *const *const argv, CLISettings *const setti
         !settings->precision_legacy) {
         settings->precision_max = true;
         settings->precision_fmt = VMAF_LOSSLESS_PRECISION_FMT;
+    }
+
+    /* ADR-0696: --netflix-compat FINAL pass — overrides any vmafx_mode
+     * modernizations back to the Netflix-upstream legacy defaults.
+     * Applied after the vmafx_mode block so that this flag always wins,
+     * regardless of binary name.  Idempotent on `vmaf` (already the
+     * defaults).  Forces: backend=cpu (all GPU disabled), precision=%.6f. */
+    if (settings->netflix_compat) {
+        settings->no_cuda = true;
+        settings->no_sycl = true;
+        settings->no_vulkan = true;
+        settings->no_hip = true;
+        settings->no_metal = true;
+        settings->use_gpumask = false;
+        settings->precision_max = false;
+        settings->precision_legacy = true;
+        settings->precision_fmt = VMAF_DEFAULT_PRECISION_FMT;
     }
 
     /* ADR-0520: `--no-reference` opts out of the reference-required gate.

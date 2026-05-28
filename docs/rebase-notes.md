@@ -7,6 +7,37 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## feat/vmafx-netflix-compat (ADR-0696)
+
+**No upstream rebase conflict**: `--netflix-compat` is a purely additive,
+fork-local flag. Netflix/vmaf upstream has no `vmafx` mode and no
+`netflix_compat` field. The post-parse block in `cli_parse.c` that enforces the
+flag sits after the `--backend` selector block, so upstream cherry-picks that
+touch `cli_parse.c` apply cleanly as long as they do not rewrite the post-parse
+ordering.
+
+Invariant: the `netflix_compat` enforcement block must run **after** the
+`vmafx_mode` defaults block (ADR-0690) so it wins cleanly over vmafx
+modernizations. Do not reorder these two blocks relative to each other.
+
+Smoke:
+```shell
+# vmafx without flag -> %.17g lossless output (vmafx default)
+vmafx --version
+# Expected: VMAFX <version> (auto-backend, precision=max)
+
+# vmafx with flag -> %.6f CPU output (legacy)
+vmafx --netflix-compat --reference ref.y4m --distorted dist.y4m
+```
+
+Touched files: `libvmaf/tools/cli_parse.c`, `libvmaf/tools/cli_parse.h`,
+`docs/usage/vmafx-cli.md`,
+`docs/adr/0696-vmafx-netflix-compat.md`,
+`docs/adr/README.md` (index row),
+`docs/state.md` (T-VMAFX-NETFLIX-COMPAT-2026-05-28 row),
+`changelog.d/added/vmafx-netflix-compat.md`,
+`docs/rebase-notes.md` (this entry).
+
 ## chore/vmafx-c23-bump (ADR-0692) — C standard bump to C23
 
 **Rebase impact**: `libvmaf/meson.build` `default_options` now specifies `c_std=c23`

@@ -7,8 +7,8 @@ behavior accordingly (ADR-0690).
 
 > **Relationship to `vmaf`.** `vmafx` and `vmaf` share one binary on disk.
 > Every flag documented in [`cli.md`](cli.md) is also accepted by `vmafx`.
-> The only differences are the defaults described on this page. To use legacy
-> defaults with `vmafx`, pass `--precision=legacy` explicitly.
+> The only differences are the defaults described on this page. To restore all
+> legacy defaults with `vmafx`, pass `--netflix-compat` explicitly.
 
 ## Modernized defaults
 
@@ -52,20 +52,49 @@ vmafx --version
 # Output: VMAFX 3.x.y-lusoris.N (auto-backend, precision=max)
 ```
 
-## netflix-compat mode
+## `--netflix-compat` — restore legacy defaults
 
-To reproduce the exact numerical output of `vmaf` (and upstream Netflix/vmaf),
-use either:
+`--netflix-compat` is a single flag that restores the complete set of
+Netflix-upstream legacy defaults, regardless of whether the binary was invoked
+as `vmaf` or `vmafx`. It is the recommended way to ensure output that is
+bit-for-bit identical to upstream Netflix/vmaf.
+
+When `--netflix-compat` is passed, the following defaults are forced as the
+**final** post-parse pass (overriding any vmafx-mode modernizations):
+
+| Setting | `--netflix-compat` forced value |
+|---|---|
+| Backend | CPU only (equivalent to `--backend=cpu`) |
+| Output precision | `%.6f` (equivalent to `--precision=legacy`) |
+
+The flag is idempotent on the `vmaf` binary — `vmaf` already uses these
+defaults, so `vmaf --netflix-compat` is a no-op in practice.
 
 ```shell
-# Option 1: invoke vmaf directly
-vmaf --reference ref.y4m --distorted dist.y4m
+# Restore legacy defaults on vmafx (overrides precision=max and auto-backend)
+vmafx --reference ref.y4m --distorted dist.y4m --netflix-compat
 
-# Option 2: invoke vmafx with explicit legacy precision
-vmafx --reference ref.y4m --distorted dist.y4m --precision=legacy
+# Equivalent explicit form (both flags together)
+vmafx --reference ref.y4m --distorted dist.y4m --backend=cpu --precision=legacy
+
+# On the vmaf binary — idempotent, same output as without the flag
+vmaf --reference ref.y4m --distorted dist.y4m --netflix-compat
 ```
 
-Both produce `%.6f`-formatted scores and satisfy the golden-data gate.
+Both `--netflix-compat` and `--precision=legacy` produce `%.6f`-formatted
+scores. The difference is that `--netflix-compat` also forces `--backend=cpu`,
+ensuring the CPU golden-data path is taken regardless of available GPU hardware.
+
+### When to use `--netflix-compat`
+
+Use `--netflix-compat` when:
+
+- Reproducing results for comparison with upstream Netflix/vmaf.
+- Running a workflow that must satisfy the three golden-data test assertions
+  in `python/test/` (CPU + `%.6f` precision is required — see CLAUDE.md §8).
+- Debugging a numeric difference between `vmafx` and `vmaf` output: adding
+  `--netflix-compat` to the `vmafx` invocation isolates whether the difference
+  is from backend (GPU vs CPU) or precision (`%.17g` vs `%.6f`).
 
 ## AI tool aliases
 
@@ -107,5 +136,7 @@ docker exec vmaf-dev-mcp vmafx --version
   (ADR-0119).
 - [ADR-0690](../adr/0690-vmafx-binary-and-ai-aliases.md) — decision record for
   the symlink implementation and argv[0] detection mechanism.
+- [ADR-0696](../adr/0696-vmafx-netflix-compat.md) — decision record for the
+  `--netflix-compat` flag design and post-parse ordering.
 - [ADR-0686](../adr/0686-vmafx-rebrand-aggressive-modernization.md) — VMAFX
   rebrand umbrella ADR.

@@ -108,6 +108,15 @@ tools/
 
 ## Governing ADRs
 
+- [ADR-0696](../../docs/adr/0696-vmafx-netflix-compat.md) — `--netflix-compat`
+  flag restores legacy defaults (backend=cpu, precision=%.6f) regardless of
+  binary name, applied as the FINAL post-parse pass.
+  **Post-parse ordering invariant**: in `cli_parse()`, the `netflix_compat`
+  enforcement block MUST run after the `vmafx_mode` defaults block (ADR-0690).
+  If upstream syncs reorder or relocate the post-parse section, restore
+  this ordering: `--backend` selector → `vmafx_mode` defaults → `netflix_compat`
+  override. Violating this makes `vmafx --netflix-compat` fail to override
+  vmafx-mode precision.
 - [ADR-0119](../../docs/adr/0119-cli-precision-default-revert.md) — `%.6f`
   default (Netflix-compat) + `--precision=max` for round-trip lossless.
   Supersedes ADR-0006.

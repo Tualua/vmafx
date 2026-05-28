@@ -132,6 +132,12 @@ typedef struct {
      * SYCL>CPU priority already baked in by the backend selector. Absent
      * an explicit --precision flag, the output format switches to %.17g. */
     bool vmafx_mode;
+    /* ADR-0696 — netflix-compat mode: --netflix-compat was passed on the
+     * command line. Applied as a FINAL post-parse pass that overrides any
+     * vmafx_mode modernizations back to the Netflix-upstream legacy
+     * defaults: backend=cpu (all GPU disabled), precision=%.6f.
+     * Idempotent on the `vmaf` binary (already the default). */
+    bool netflix_compat;
 } CLISettings;
 
 void cli_parse(const int argc, char *const *const argv, CLISettings *const settings);
