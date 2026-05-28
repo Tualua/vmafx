@@ -17,6 +17,10 @@ vmaf_cflags_common = [
     # in the final libvmaf.so. This eliminates the 207-symbol leak
     # found by Research-0092 (libsvm C API, pdjson, SIMD internals, etc.)
     '-fvisibility=hidden',
+    # ADR-0692: warn on switch cases that fall through without an explicit
+    # [[fallthrough]] annotation (C23) or /* FALLTHROUGH */ / __attribute__
+    # ((fallthrough)) marker. Complements the JPL Rule-24 requirement.
+    '-Wimplicit-fallthrough',
 ]
 
 

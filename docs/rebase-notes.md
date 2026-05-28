@@ -7,6 +7,26 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## chore/vmafx-c23-bump (ADR-0692) — C standard bump to C23
+
+**Rebase impact**: `libvmaf/meson.build` `default_options` now specifies `c_std=c23`
+instead of `c_std=c11`. Any upstream Netflix/vmaf commit that modifies `meson.build`
+will conflict on this line if it also touches `default_options`. Resolution: keep
+`c23`; Netflix upstream is on `c11` and will remain there for the foreseeable future.
+
+**C23 empty-parameter-list semantics change**: In C23, `void f()` is equivalent to
+`void f(void)` (no parameters), whereas in C11 it meant unspecified parameters. Any
+upstream commit that introduces a callback stub with an empty parameter list and
+assigns it to a typed function pointer will fail to compile under C23. The fix is
+always to add the correct parameter types matching the target function-pointer type.
+Pattern: search for `-Wincompatible-pointer-types` errors in the build log after
+porting an upstream commit.
+
+Touched files: `libvmaf/meson.build`, `libvmaf/src/meson.build`,
+`libvmaf/test/test_propagate_metadata.c`, `docs/principles.md`,
+`docs/adr/0692-vmafx-c23-bump.md`, `docs/rebase-notes.md` (this entry),
+`changelog.d/changed/vmafx-c23-bump.md`.
+
 ## fix/ffmpeg-libvmaf-input-ordering-20260528 (no ADR — doc + patch fix)
 
 **Touches `ffmpeg-patches/0001-libvmaf-add-tiny-model-option.patch`** to

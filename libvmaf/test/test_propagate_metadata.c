@@ -19,8 +19,10 @@
 #include "metadata_handler.h"
 #include "test.h"
 
-void set_meta()
+static void set_meta(void *data, VmafMetadata *metadata)
 {
+    (void)data;
+    (void)metadata;
 }
 
 static char *test_propagate_metadata_init()
