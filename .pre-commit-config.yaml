@@ -27,7 +27,9 @@ repos:
       - id: check-yaml
         # mkdocs.yml uses `!!python/name:...` tags (Material extensions, pymdownx
         # superfences) which the default SafeLoader can't resolve.
-        exclude: '\.clang-format$|^mkdocs\.yml$'
+        # Helm templates under deploy/helm/ contain Go template syntax ({{- if ... }})
+        # which is not valid YAML; exclude them from the YAML linter.
+        exclude: '\.clang-format$|^mkdocs\.yml$|^deploy/helm/.*/templates/'
       - id: check-json
       - id: check-toml
       - id: check-added-large-files

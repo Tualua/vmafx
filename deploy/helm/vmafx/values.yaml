@@ -1,0 +1,272 @@
+# =============================================================================
+# VMAFX Helm chart — default values
+# =============================================================================
+# Override any key with --set or a custom values file.
+#
+# Full documentation: docs/development/k8s-deployment.md
+# GPU scheduling guide: docs/development/gpu-scheduling.md
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Image
+# ---------------------------------------------------------------------------
+image:
+  repository: ghcr.io/lusoris/vmafx
+  tag: ""           # Defaults to .Chart.AppVersion when empty.
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# ---------------------------------------------------------------------------
+# Workload type
+# Select exactly one: Deployment | Job | StatefulSet
+# ---------------------------------------------------------------------------
+workload: Deployment
+
+# ---------------------------------------------------------------------------
+# Deployment — long-running vmafx HTTP scoring server.
+# Active when workload == "Deployment".
+# ---------------------------------------------------------------------------
+deployment:
+  replicaCount: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+# ---------------------------------------------------------------------------
+# Job — one-shot batch scoring (vmaf-tune compare / ladder).
+# Active when workload == "Job".
+# ---------------------------------------------------------------------------
+job:
+  # Command and arguments for the batch job.
+  command: []
+  args: []
+  # Kubernetes Job completion / backoff policy.
+  completions: 1
+  parallelism: 1
+  backoffLimit: 3
+  # Automatically clean up finished Jobs.
+  ttlSecondsAfterFinished: 3600
+
+# ---------------------------------------------------------------------------
+# StatefulSet — MCP server with sticky session state.
+# Active when workload == "StatefulSet".
+# ---------------------------------------------------------------------------
+statefulSet:
+  replicaCount: 1
+  updateStrategy:
+    type: RollingUpdate
+  podManagementPolicy: OrderedReady
+
+# ---------------------------------------------------------------------------
+# Service
+# ---------------------------------------------------------------------------
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+  # Additional named ports (e.g. metrics: 9090).
+  extraPorts: []
+
+# ---------------------------------------------------------------------------
+# Ingress
+# ---------------------------------------------------------------------------
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: vmafx.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: vmafx-tls
+  #    hosts:
+  #      - vmafx.local
+
+# ---------------------------------------------------------------------------
+# GPU — multi-vendor device-plugin selector
+# ---------------------------------------------------------------------------
+# The chart maps "vendor" to the correct Kubernetes resource key:
+#   nvidia  →  nvidia.com/gpu     (CUDA backend + Vulkan-on-NVIDIA)
+#   amd     →  amd.com/gpu        (HIP backend + Vulkan-on-AMD via ROCm)
+#   intel   →  gpu.intel.com/i915 (SYCL backend + Vulkan-on-Intel)
+#   cpu     →  (no device-plugin resource; CPU-only execution)
+#
+# IMPORTANT — Vulkan is NOT a separate Kubernetes resource.
+# Vulkan runs through whichever GPU device-plugin is allocated.  The chart
+# requests the vendor's device-plugin resource; the Vulkan runtime inside the
+# container then addresses that device.  See docs/development/gpu-scheduling.md.
+#
+# The chart also sets VMAFX_BACKEND automatically from vendor (see env below).
+gpu:
+  enabled: true
+  vendor: nvidia    # nvidia | amd | intel | cpu
+  count: 1
+
+# ---------------------------------------------------------------------------
+# Resources
+# ---------------------------------------------------------------------------
+# GPU limits are injected automatically from gpu.vendor + gpu.count.
+# You only need to specify CPU/memory limits here.
+resources:
+  limits:
+    cpu: "4"
+    memory: 8Gi
+  requests:
+    cpu: "1"
+    memory: 2Gi
+
+# ---------------------------------------------------------------------------
+# Environment variables
+# ---------------------------------------------------------------------------
+# VMAFX_BACKEND is set automatically from gpu.vendor.
+# Override individual variables here.
+env: {}
+  # VMAFX_LOG_LEVEL: info
+  # VMAFX_THREADS: "4"
+
+# Additional env vars from ConfigMap / Secret references.
+envFrom: []
+  # - configMapRef:
+  #     name: vmafx-config
+  # - secretRef:
+  #     name: vmafx-secret
+
+# ---------------------------------------------------------------------------
+# ConfigMap
+# Non-secret configuration exposed as environment variables.
+# ---------------------------------------------------------------------------
+config:
+  # Example: VMAFX_MODEL_PATH: /models/vmaf_v0.6.1.json
+  VMAFX_MODEL_DIR: /models
+  VMAFX_OUTPUT_DIR: /output
+
+# ---------------------------------------------------------------------------
+# Persistence
+# ---------------------------------------------------------------------------
+persistence:
+  enabled: false
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  # Corpus input volume (read-only).
+  corpus:
+    enabled: false
+    size: 50Gi
+    mountPath: /corpus
+    # existingClaim: ""
+  # Scored output volume (read-write).
+  output:
+    enabled: false
+    size: 10Gi
+    mountPath: /output
+    # existingClaim: ""
+  # Model weights volume (read-only).
+  models:
+    enabled: false
+    size: 1Gi
+    mountPath: /models
+    # existingClaim: ""
+
+# ---------------------------------------------------------------------------
+# Service Account
+# ---------------------------------------------------------------------------
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# ---------------------------------------------------------------------------
+# Pod security
+# ---------------------------------------------------------------------------
+podAnnotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65534
+  runAsGroup: 65534
+  fsGroup: 65534
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# ---------------------------------------------------------------------------
+# Scheduling
+# ---------------------------------------------------------------------------
+affinity: {}
+  # Example: prefer NVIDIA GPU nodes.
+  # nodeAffinity:
+  #   preferredDuringSchedulingIgnoredDuringExecution:
+  #     - weight: 100
+  #       preference:
+  #         matchExpressions:
+  #           - key: gpu.vendor
+  #             operator: In
+  #             values: [nvidia]
+
+tolerations: []
+  # Typical GPU node taint:
+  # - key: nvidia.com/gpu
+  #   operator: Exists
+  #   effect: NoSchedule
+
+nodeSelector: {}
+
+topologySpreadConstraints: []
+
+# ---------------------------------------------------------------------------
+# Health checks (Deployment / StatefulSet only)
+# ---------------------------------------------------------------------------
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 15
+  periodSeconds: 20
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  failureThreshold: 3
+
+# ---------------------------------------------------------------------------
+# Monitoring — Prometheus ServiceMonitor
+# ---------------------------------------------------------------------------
+monitoring:
+  enabled: false
+  serviceMonitor:
+    # Prometheus operator namespace selector.
+    namespace: ""
+    # Additional labels so Prometheus picks up the ServiceMonitor.
+    labels: {}
+    interval: 30s
+    scrapeTimeout: 10s
+    path: /metrics
+    scheme: http
+    # Honor labels from the target (useful when job labels are in metrics).
+    honorLabels: false
+
+# ---------------------------------------------------------------------------
+# Prometheus Pushgateway (for Job workloads)
+# Requires the prometheus-pushgateway dependency in Chart.yaml.
+# ---------------------------------------------------------------------------
+pushgateway:
+  enabled: false
+
+# ---------------------------------------------------------------------------
+# NOTES.txt / post-install
+# ---------------------------------------------------------------------------
+# No user-facing knobs here; see templates/NOTES.txt.

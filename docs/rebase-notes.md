@@ -7,6 +7,15 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## feat/vmafx-helm-chart-k8s (ADR-0699)
+
+**No upstream rebase impact**: this PR adds `deploy/helm/vmafx/` (new
+top-level directory with no overlap with upstream `libvmaf/`, `python/`,
+`model/`, or `tools/`), `docs/development/k8s-deployment.md`,
+`docs/development/gpu-scheduling.md`, a changelog fragment, and ADR-0699.
+It does not touch any C source, Python binding, or Netflix golden-data
+file. Upstream Netflix/vmaf has no Kubernetes/Helm deployment surface.
+
 ## feat/vmafx-rebrand-umbrella-adr (ADR-0686)
 
 **No upstream rebase impact**: this PR adds the umbrella ADR, a new
