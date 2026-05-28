@@ -19,16 +19,19 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 import urllib.request
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-AI_SRC = REPO_ROOT / "ai" / "src"
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
-if str(AI_SRC) not in sys.path:
-    sys.path.insert(0, str(AI_SRC))
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
 
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 GCS_LIST_URL = "https://storage.googleapis.com/storage/v1/b/ugc-dataset/o"
@@ -97,6 +100,7 @@ def _run_manifest_default(content_manifest: Path) -> Path:
 def _write_run_manifest(
     *,
     args: argparse.Namespace,
+    raw_argv: list[str],
     ranked: list[tuple[str, list[tuple[str, int]]]],
     total_bytes: int,
 ) -> None:
@@ -131,9 +135,9 @@ def _write_run_manifest(
             },
             "stems": stems,
             "run_provenance": build_run_provenance(
-                entrypoint=Path(__file__),
+                entrypoint=SCRIPT_PATH,
                 repo_root=REPO_ROOT,
-                argv=sys.argv,
+                argv=raw_argv,
                 args=args,
                 inputs={"bucket_listing": GCS_LIST_URL},
                 outputs={
@@ -146,8 +150,9 @@ def _write_run_manifest(
     )
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    ap = make_argument_parser(description=__doc__)
     ap.add_argument(
         "--out-dir", type=Path, required=True, help="Directory to drop downloaded mp4/webm into."
     )
@@ -166,7 +171,7 @@ def main() -> int:
         default=None,
         help="Output run-provenance JSON sidecar (default: <manifest>.run-manifest.json).",
     )
-    args = ap.parse_args()
+    args = ap.parse_args(raw_argv)
     if args.run_manifest_out is None:
         args.run_manifest_out = _run_manifest_default(args.manifest)
 
@@ -194,7 +199,7 @@ def main() -> int:
 
     args.manifest.parent.mkdir(parents=True, exist_ok=True)
     args.manifest.write_text(json.dumps(manifest, indent=2) + "\n")
-    _write_run_manifest(args=args, ranked=ranked, total_bytes=total_bytes)
+    _write_run_manifest(args=args, raw_argv=raw_argv, ranked=ranked, total_bytes=total_bytes)
     print(
         f"[ugc-fetch] wrote {args.manifest} ({len(manifest)} stems); "
         f"run manifest {args.run_manifest_out}",
@@ -204,4 +209,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":  # pragma: no cover
-    sys.exit(main())
+    raise SystemExit(main())
