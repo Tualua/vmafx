@@ -39872,6 +39872,32 @@ Touched files:
 `changelog.d/added/0682-tiny-ai-netflix-training-scaffold-2026-05-22.md`,
 `docs/rebase-notes.md` (this entry).
 
+## ADR-0685 — Tiny-AI Netflix corpus training scaffold — 2026-05-27 prep scope
+- **ADR**: [ADR-0685](adr/0685-tiny-netflix-training-scaffold-2026-05-27.md).
+- **Upstream source**: fork-local. Netflix/vmaf has no tiny-AI training surface.
+- **Branch**: `ai/tiny-netflix-training-scaffold`.
+**Key invariants** (carried forward from ADR-0682):
+1. **Data path is local-only.** `.workingdir2/netflix/` is gitignored; YUV files are
+   never committed. Every training script must accept `--data-root` (or the
+   `VMAF_DATA_ROOT` environment variable) as the sole corpus entry point.
+2. **Branch name is the routine's idempotency key.** Once
+   `ai/tiny-netflix-training-scaffold` exists on origin, the daily prep-scaffolding
+   routine exits silently. Do not rename or delete the branch until the follow-up
+   architecture-selection PR has merged.
+3. **Netflix golden pairs are held-out only.** The 3 pairs in
+   `python/test/resource/yuv/` (see `CLAUDE.md §8`) are correctness gates; they are
+   never used as training data.
+4. **Architecture selection is deferred.** ADR-0685 and ADR-0242 document the
+   alternatives table but do not pick an architecture. The follow-up PR must resolve
+   the architecture and training-strategy choices before any training run.
+Touched files:
+`docs/adr/0685-tiny-netflix-training-scaffold-2026-05-27.md`,
+`docs/adr/_index_fragments/0685-tiny-netflix-training-scaffold-2026-05-27.md`,
+`docs/research/0730-tiny-ai-netflix-training-prep-2026-05-27.md`,
+`changelog.d/added/0685-tiny-netflix-training-scaffold-2026-05-27.md`,
+`docs/ai/training-data.md`,
+`docs/rebase-notes.md` (this entry).
+
 ## T-VMAFTUNE-PROFILE-REPORT-AUDIT — profile-report renderer audit research digest
 
 No rebase impact: pure fork-local research digest; no upstream Netflix code touched.
