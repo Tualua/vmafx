@@ -163,9 +163,20 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-from aiutils.jsonl_utils import iter_jsonl
-from aiutils.run_manifest import build_run_provenance, write_manifest_json
-from aiutils.time_utils import now_iso_8601
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
+
+_SCRIPT_PATHS = bootstrap_ai_script(__file__)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
+
+# isort: split
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
+from aiutils.jsonl_utils import iter_jsonl  # noqa: E402
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+from aiutils.time_utils import now_iso_8601  # noqa: E402
 
 _LOG = logging.getLogger("aggregate_corpora")
 
@@ -292,9 +303,7 @@ def convert_mos(native_mos: float, corpus_source: str) -> float:
 def _validate_input_row(path: Path, line_no: int, row: dict) -> None:
     """Hard-fail on rows missing required keys."""
     if not isinstance(row, dict):
-        raise SystemExit(
-            f"error: {path}:{line_no}: expected JSON object, got " f"{type(row).__name__}"
-        )
+        raise SystemExit(f"error: {path}:{line_no}: expected JSON object, got {type(row).__name__}")
     missing = _REQUIRED_INPUT_KEYS - row.keys()
     if missing:
         raise SystemExit(f"error: {path}:{line_no}: missing required keys: {sorted(missing)}")
@@ -447,7 +456,7 @@ def aggregate(
                 # corpus_source) so we don't false-merge unrelated
                 # rows missing a sha. This is a legitimate path for
                 # corpora that pre-date sha enrichment.
-                key = f"__nokey__/{converted.get('src','')}/{corpus_source}"
+                key = f"__nokey__/{converted.get('src', '')}/{corpus_source}"
             else:
                 key = sha
 
@@ -492,7 +501,7 @@ def aggregate(
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    ap = argparse.ArgumentParser(
+    ap = make_argument_parser(
         prog="aggregate_corpora.py",
         description=(
             "Aggregate per-corpus MOS JSONL shards (KonViD-1k, "
@@ -555,9 +564,7 @@ def _parse_overrides(raw: list[str]) -> dict[Path, str]:
     out: dict[Path, str] = {}
     for entry in raw:
         if "=" not in entry:
-            raise SystemExit(
-                f"error: --corpus-source-override expects PATH=LABEL, got " f"{entry!r}"
-            )
+            raise SystemExit(f"error: --corpus-source-override expects PATH=LABEL, got {entry!r}")
         path_str, label = entry.split("=", 1)
         if label not in SCALE_CONVERSIONS:
             raise SystemExit(
@@ -569,6 +576,7 @@ def _parse_overrides(raw: list[str]) -> dict[Path, str]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
     args = _build_parser().parse_args(argv)
     logging.basicConfig(
         level=getattr(logging, args.log_level),
@@ -603,9 +611,9 @@ def main(argv: list[str] | None = None) -> int:
                 for path, label in sorted(overrides.items(), key=lambda item: str(item[0]))
             },
             "run_provenance": build_run_provenance(
-                entrypoint=Path(__file__),
-                repo_root=Path(__file__).resolve().parents[2],
-                argv=sys.argv[1:] if argv is None else argv,
+                entrypoint=SCRIPT_PATH,
+                repo_root=REPO_ROOT,
+                argv=raw_argv,
                 args=args,
                 inputs={"corpus_jsonl": args.inputs},
                 outputs={"jsonl": args.output, "manifest": args.manifest_out},

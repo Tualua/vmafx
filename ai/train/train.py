@@ -49,10 +49,13 @@ import numpy as np
 # below would fail; this shim repoints the sys.path so plain-script
 # invocation works for the documented smoke-test command.
 if __package__ in (None, ""):
-    _here = Path(__file__).resolve()
-    _ai_parent = _here.parent.parent.parent  # repo root
-    if str(_ai_parent) not in sys.path:
-        sys.path.insert(0, str(_ai_parent))
+    _ai_scripts = str(Path(__file__).resolve().parents[1] / "scripts")
+    if _ai_scripts not in sys.path:
+        sys.path.insert(0, _ai_scripts)
+    del _ai_scripts
+    from _script_bootstrap import bootstrap_ai_script
+
+    bootstrap_ai_script(__file__, include_repo_root=True, include_ai_src=True)
     __package__ = "ai.train"  # required for the relative imports below
 
 
@@ -237,11 +240,11 @@ def main(argv: list[str] | None = None) -> int:
     feature_dim = len(DEFAULT_FEATURES)
     module = _build_model(args.model_arch, feature_dim)
     n_params = count_params(module)
-    print(f"[train] arch={args.model_arch} params={n_params} " f"feature_dim={feature_dim}")
+    print(f"[train] arch={args.model_arch} params={n_params} feature_dim={feature_dim}")
 
     if not args.data_root.is_dir():
         print(
-            f"[train] data-root {args.data_root} does not exist — " "exporting initial ONNX only.",
+            f"[train] data-root {args.data_root} does not exist — exporting initial ONNX only.",
             file=sys.stderr,
         )
         export_onnx(module, feature_dim, args.out_dir / f"{args.model_arch}_final.onnx")

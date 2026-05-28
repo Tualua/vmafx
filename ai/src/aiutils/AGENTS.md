@@ -40,6 +40,8 @@ When writing a new script in `ai/scripts/` or a new module in
    `ai/scripts/_script_bootstrap.py` before importing this package; do not move
    that bootstrap into `aiutils` where it would be too late to solve the import.
 
+8. **`ai/train/train.py` bootstrap:** This script lives at `ai/train/` (one level removed from `ai/scripts/`), so it cannot use the standard module-level `try/except` bootstrap pattern. Instead it adds `ai/scripts/` to `sys.path` inside the existing `if __package__ in (None, "")` guard, imports `_script_bootstrap`, calls `bootstrap_ai_script`, then sets `__package__`. Preserve this three-step pattern when rebasing or porting changes to `train.py`.
+
 ## Module inventory
 
 - `file_utils.py` — `sha256(path) -> str`
