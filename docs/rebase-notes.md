@@ -7,6 +7,23 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## feat/chug-hdr-held-out-test-validator (ADR-0687) — no rebase impact: AI-only
+
+**No upstream rebase impact**: this PR adds fork-local AI scripts
+(`ai/scripts/validate_chug_hdr_mos_head.py`), tests, docs, research digest,
+and ADR-0687. No C source, no public headers, no Netflix golden-data files,
+and no upstream-shared Python bindings are modified. Upstream Netflix/vmaf
+does not ship CHUG HDR MOS validation tooling.
+Touched files:
+`ai/scripts/validate_chug_hdr_mos_head.py`,
+`ai/tests/test_validate_chug_hdr_mos_head.py`,
+`changelog.d/added/0687-chug-hdr-held-out-test-validator.md`,
+`docs/adr/0687-chug-hdr-held-out-test-validator.md`,
+`docs/adr/README.md` (index row),
+`docs/ai/chug-hdr-held-out-validator.md`,
+`docs/research/0715-chug-hdr-held-out-test-validation-2026-05-27.md`,
+`docs/rebase-notes.md` (this entry).
+
 ## docs/mcp-tool-catalogue-sync — no rebase impact: doc-only
 
 This PR syncs the MCP tool catalogue in `docs/mcp/index.md` and
