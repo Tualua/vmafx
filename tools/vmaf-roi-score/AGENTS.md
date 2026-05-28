@@ -25,6 +25,9 @@ and ADR-0424.
 - The JSON output schema is pinned by `ROI_RESULT_KEYS`. Adding fields
   is forward-compatible (consumers should ignore unknown keys);
   removing or renaming requires a schema bump.
+- CLI output is strict RFC-8259 JSON. A non-finite pooled score from
+  the underlying `vmaf` run exits with code 65 instead of writing
+  `NaN` / `Infinity` tokens.
 
 ## Things that are deferred (do not silently implement)
 

@@ -22,6 +22,9 @@ code) is **not** in this PR — see
 phased roadmap and the reasons Option C ships first.
 
 User documentation: [`docs/usage/vmaf-roi-score.md`](../../docs/usage/vmaf-roi-score.md).
+The CLI writes strict RFC-8259 JSON and exits instead of emitting
+`NaN` / `Infinity` if the underlying `vmaf` run returns a non-finite
+pooled score.
 
 ## Layout
 

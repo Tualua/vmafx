@@ -211,7 +211,11 @@ def main(argv: list[str] | None = None) -> int:
         )
         return masked.exit_status
 
-    roi = blend_scores(full.vmaf_score, masked.vmaf_score, ns.weight)
+    try:
+        roi = blend_scores(full.vmaf_score, masked.vmaf_score, ns.weight)
+    except ValueError as exc:
+        sys.stderr.write(f"vmaf-roi-score: invalid pooled score: {exc}\n")
+        return 65
 
     payload = {
         "schema_version": SCHEMA_VERSION,
@@ -227,7 +231,7 @@ def main(argv: list[str] | None = None) -> int:
     # Pin key order to the canonical schema; tests assert on this.
     payload = {k: payload[k] for k in ROI_RESULT_KEYS}
 
-    text = json.dumps(payload, indent=2)
+    text = json.dumps(payload, indent=2, allow_nan=False)
     if ns.output is None:
         sys.stdout.write(text + "\n")
     else:

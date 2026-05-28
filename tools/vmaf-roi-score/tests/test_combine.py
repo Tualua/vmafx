@@ -389,3 +389,51 @@ def test_cli_saliency_model_materialises_mask(monkeypatch, tmp_path: Path):
     assert payload["vmaf_masked"] == 95.0
     assert payload["vmaf_roi"] == 91.25
     assert payload["saliency_model"] == str(fake_model)
+
+
+def test_cli_rejects_nonfinite_vmaf_score(
+    monkeypatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+):
+    """A non-finite libvmaf score should not leak as invalid JSON."""
+    ref = tmp_path / "ref.yuv"
+    dis = tmp_path / "dis.yuv"
+    out = tmp_path / "result.json"
+    ref.write_bytes(bytes([10] * 16 + [20] * 4 + [30] * 4))
+    dis.write_bytes(bytes([110] * 16 + [120] * 4 + [130] * 4))
+
+    seen_distorted: list[Path] = []
+
+    def _fake_run(cmd, capture_output=False, text=False, check=False):
+        distorted = Path(cmd[cmd.index("--distorted") + 1])
+        seen_distorted.append(distorted)
+        score = float("nan") if distorted == dis else 95.0
+        Path(cmd[cmd.index("--output") + 1]).write_text(
+            json.dumps({"pooled_metrics": {"vmaf": {"mean": score}}}),
+            encoding="utf-8",
+        )
+        return _FakeCompleted(0, stderr="VMAF version: smoke-mock\n")
+
+    monkeypatch.setattr("vmafroiscore.score.subprocess.run", _fake_run)
+
+    rc = main(
+        [
+            "--reference",
+            str(ref),
+            "--distorted",
+            str(dis),
+            "--width",
+            "4",
+            "--height",
+            "4",
+            "--synthetic-mask",
+            "0.5",
+            "--output",
+            str(out),
+        ]
+    )
+
+    assert rc == 65
+    assert "invalid pooled score" in capsys.readouterr().err
+    assert not out.exists()
