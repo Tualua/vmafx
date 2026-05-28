@@ -7,6 +7,17 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## feat/vmafx-rebrand-umbrella-adr (ADR-0686)
+
+**No upstream rebase impact**: this PR adds the umbrella ADR, a new
+`LICENSE-MIT` file, a dual-license notice at the top of `LICENSE`, a
+changelog fragment, and this rebase-notes entry. It does not touch any
+`libvmaf/src/`, `python/vmaf/`, or `python/test/` file. Netflix-inherited
+C sources, feature implementations, and golden-data assertions are
+unchanged. Future sweep PRs (doc rebrand, SPDX header sweep, CI dedup,
+`vmafx` CLI binary) will each add their own entries if they establish
+rebase-sensitive invariants.
+
 ## feat/ai-run-manifest-helper (ADR-0678)
 
 **No upstream rebase impact**: this touches fork-local AI helper code, AI
