@@ -35,7 +35,8 @@ When writing a new script in `ai/scripts/` or a new module in
    `--base-dir`, `--report-json`, `--report-md`, `--fail-fast`, and optional
    `--allow-row-failures` stay aligned.
 7. **Direct script bootstrap:** `aiutils` itself must stay importable without
-   mutating `sys.path`. Directly executed `ai/scripts/*.py` entrypoints use
+   mutating `sys.path`. Directly executed `ai/scripts/*.py` entrypoints and
+   top-level legacy exporters under `ai/*.py` use
    `ai/scripts/_script_bootstrap.py` before importing this package; do not move
    that bootstrap into `aiutils` where it would be too late to solve the import.
 

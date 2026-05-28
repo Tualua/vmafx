@@ -34,6 +34,18 @@ def test_bootstrap_returns_expected_repo_paths(monkeypatch) -> None:
     assert str(paths.vmaf_tune_src) in sys.path
 
 
+def test_bootstrap_supports_top_level_ai_scripts(monkeypatch) -> None:
+    script = Path(__file__).resolve().parents[1] / "lpips_export.py"
+    monkeypatch.setattr(sys, "path", [])
+
+    paths = bootstrap_ai_script(script)
+
+    repo_root = Path(__file__).resolve().parents[2]
+    assert paths.repo_root == repo_root
+    assert paths.ai_dir == repo_root / "ai"
+    assert str(paths.ai_src) in sys.path
+
+
 def test_bootstrap_does_not_duplicate_paths(monkeypatch) -> None:
     script = Path(__file__).resolve().parents[1] / "scripts" / "dummy.py"
     repo_root = Path(__file__).resolve().parents[2]

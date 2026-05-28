@@ -138,12 +138,12 @@ standard batch-runner flags:
 Table-specific defaults, row schemas, and materializer options stay in the
 individual scripts; the helper only covers boilerplate that should not drift.
 
-Directly executable `ai/scripts/*.py` files should use
-`ai/scripts/_script_bootstrap.py` before importing shared repo-local modules.
-`bootstrap_ai_script(__file__)` resolves the script path, repository root,
-`ai/src`, `ai/scripts`, and the optional `tools/vmaf-tune/src` root without
-copying ad hoc `sys.path.insert(...)` blocks into every script. Enable only the
-roots the script needs:
+Directly executable `ai/scripts/*.py` files and top-level legacy exporters such
+as `ai/lpips_export.py` should use `ai/scripts/_script_bootstrap.py` before
+importing shared repo-local modules. `bootstrap_ai_script(__file__)` resolves
+the script path, repository root, `ai/src`, `ai/scripts`, and the optional
+`tools/vmaf-tune/src` root without copying ad hoc `sys.path.insert(...)`
+blocks into every script. Enable only the roots the script needs:
 
 | Bootstrap option | Use |
 |---|---|

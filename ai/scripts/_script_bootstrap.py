@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
-"""Shared direct-invocation bootstrap for ``ai/scripts`` modules."""
+"""Shared direct-invocation bootstrap for direct AI script modules."""
 
 from __future__ import annotations
 
@@ -28,6 +28,13 @@ def _prepend_path(path: Path) -> None:
         sys.path.insert(0, path_text)
 
 
+def _find_repo_root(script_path: Path) -> Path:
+    for candidate in (script_path.parent, *script_path.parents):
+        if (candidate / "ai" / "src").is_dir() and (candidate / "AGENTS.md").is_file():
+            return candidate
+    raise RuntimeError(f"cannot locate repository root for AI script: {script_path}")
+
+
 def bootstrap_ai_script(
     file_path: str | Path,
     *,
@@ -38,13 +45,14 @@ def bootstrap_ai_script(
 ) -> ScriptBootstrapPaths:
     """Add standard repo-local import roots for a directly executed AI script.
 
-    ``python ai/scripts/foo.py`` starts with ``ai/scripts`` on ``sys.path`` but
-    not necessarily ``ai/src`` or the repository root. Scripts that import
-    ``aiutils`` or sibling materializers should call this once before those
-    imports instead of repeating ad hoc path mutation blocks.
+    ``python ai/scripts/foo.py`` starts with ``ai/scripts`` on ``sys.path`` and
+    ``python ai/foo.py`` starts with ``ai`` on ``sys.path``, but neither form
+    necessarily has ``ai/src`` or the repository root available. Scripts that
+    import ``aiutils`` or sibling materializers should call this once before
+    those imports instead of repeating ad hoc path mutation blocks.
     """
     script_path = Path(file_path).resolve()
-    repo_root = script_path.parents[2]
+    repo_root = _find_repo_root(script_path)
     ai_dir = repo_root / "ai"
     paths = ScriptBootstrapPaths(
         script_path=script_path,
