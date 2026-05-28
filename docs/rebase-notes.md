@@ -39557,3 +39557,12 @@ Touched files:
 `docs/research/0706-tiny-ai-netflix-training-prep-2026-05-22.md`,
 `changelog.d/added/0682-tiny-ai-netflix-training-scaffold-2026-05-22.md`,
 `docs/rebase-notes.md` (this entry).
+
+## T-VMAFTUNE-PROFILE-REPORT-AUDIT — profile-report renderer audit research digest
+
+No rebase impact: pure fork-local research digest; no upstream Netflix code touched.
+
+Touched files:
+`docs/research/vmaftune-profile-report-audit-2026-05-27.md`,
+`changelog.d/added/T-VMAFTUNE-PROFILE-REPORT-AUDIT-research-digest.md`,
+`docs/rebase-notes.md` (this entry).
