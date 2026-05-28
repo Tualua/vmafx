@@ -7,6 +7,17 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## feat/vmafx-production-dockerfile (ADR-0698)
+
+No rebase impact: fork-only. `docker/Dockerfile.production`,
+`docker/Dockerfile.production-gpu`, and
+`.github/workflows/docker-publish-production.yml` are entirely
+fork-added files. Netflix/vmaf upstream ships no production Dockerfile,
+no GHCR image publish workflow, and no cosign/syft supply-chain
+workflow that could conflict. These files will never appear in a
+`git diff upstream/master...HEAD` diff on upstream paths. No merge
+conflict surface.
+
 ## feat/vmafx-helm-chart-k8s (ADR-0699)
 
 **No upstream rebase impact**: this PR adds `deploy/helm/vmafx/` (new

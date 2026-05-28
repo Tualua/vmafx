@@ -1,0 +1,216 @@
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+#
+# docker/Dockerfile.production-gpu — VMAFX production GPU-augmented runtime image
+#
+# Parametrized via GPU_RUNTIME build-arg:
+#   cpu        (default) — identical to Dockerfile.production; no GPU runtime added
+#   cuda12     — adds CUDA 12 runtime libs (libcuda.so stub + libcudart.so)
+#   rocm6      — adds ROCm 6 HIP runtime (libamdhip64.so + libhsa-runtime64.so)
+#   oneapi2026 — adds Intel oneAPI 2026 Level Zero runtime (libze1 + libze_intel_gpu1)
+#   vulkan     — adds Vulkan runtime ICD loader (libvulkan.so + lavapipe ICD JSON)
+#
+# Tag matrix (built by CI):
+#   ghcr.io/lusoris/vmafx:<tag>          (cpu default, same as Dockerfile.production)
+#   ghcr.io/lusoris/vmafx:<tag>-cuda12
+#   ghcr.io/lusoris/vmafx:<tag>-rocm6
+#   ghcr.io/lusoris/vmafx:<tag>-oneapi2026
+#   ghcr.io/lusoris/vmafx:<tag>-vulkan
+#
+# ADR-0698: vmafx-production-dockerfile
+
+ARG GPU_RUNTIME=cpu
+
+# ---------------------------------------------------------------------------
+# Stage 1 — builder (same as Dockerfile.production but WITH GPU backend
+# selected by GPU_RUNTIME so the vmaf binary has the right backend compiled in)
+# ---------------------------------------------------------------------------
+# Builder on debian:12-slim to match the distroless cc-debian12 runtime glibc (2.36).
+FROM debian:12-slim@sha256:0104b334637a5f19aa9c983a91b54c89887c0984081f2068983107a6f6c21eeb AS builder-base
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG VMAF_BUILD_JOBS=4
+
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        gcc \
+        g++ \
+        meson \
+        ninja-build \
+        nasm \
+        pkg-config \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY . .
+
+# --- cpu build (default, no GPU SDK needed) ---
+FROM builder-base AS builder-cpu
+
+RUN meson setup /build libvmaf \
+        --buildtype=release \
+        --strip \
+        -Denable_cuda=false \
+        -Denable_sycl=false \
+        -Denable_dnn=disabled \
+        -Denable_avx512=true \
+    && ninja -C /build -j4 \
+    && mkdir -p /dist/lib /dist/bin /dist/model \
+    && find /build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d -exec cp {} /dist/lib/ \; \
+    && cp /build/tools/vmaf /dist/bin/ \
+    && cp -r model/ /dist/model/
+
+# --- cuda12 build ---
+FROM builder-base AS builder-cuda12
+
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        cuda-toolkit-12-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN meson setup /build libvmaf \
+        --buildtype=release \
+        --strip \
+        -Denable_cuda=true \
+        -Denable_sycl=false \
+        -Denable_dnn=disabled \
+        -Denable_avx512=true \
+    && ninja -C /build -j4 \
+    && mkdir -p /dist/lib /dist/bin /dist/model \
+    && find /build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d -exec cp {} /dist/lib/ \; \
+    && cp /build/tools/vmaf /dist/bin/ \
+    && cp -r model/ /dist/model/
+
+# --- rocm6 build ---
+FROM builder-base AS builder-rocm6
+
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        rocm-hip-runtime-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN meson setup /build libvmaf \
+        --buildtype=release \
+        --strip \
+        -Denable_cuda=false \
+        -Denable_hip=true \
+        -Denable_sycl=false \
+        -Denable_dnn=disabled \
+        -Denable_avx512=true \
+    && ninja -C /build -j4 \
+    && mkdir -p /dist/lib /dist/bin /dist/model \
+    && find /build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d -exec cp {} /dist/lib/ \; \
+    && cp /build/tools/vmaf /dist/bin/ \
+    && cp -r model/ /dist/model/
+
+# --- oneapi2026 build ---
+FROM builder-base AS builder-oneapi2026
+
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        intel-oneapi-dpcpp-cpp-2026.0 \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV ONEAPI_ROOT=/opt/intel/oneapi
+ENV PATH="${ONEAPI_ROOT}/compiler/latest/bin:${PATH}"
+
+RUN meson setup /build libvmaf \
+        --buildtype=release \
+        --strip \
+        -Denable_cuda=false \
+        -Denable_sycl=true \
+        -Denable_dnn=disabled \
+        -Denable_avx512=true \
+    && ninja -C /build -j4 \
+    && mkdir -p /dist/lib /dist/bin /dist/model \
+    && find /build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d -exec cp {} /dist/lib/ \; \
+    && cp /build/tools/vmaf /dist/bin/ \
+    && cp -r model/ /dist/model/
+
+# --- vulkan build ---
+FROM builder-base AS builder-vulkan
+
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libvulkan-dev \
+        glslang-tools \
+        spirv-tools \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN meson setup /build libvmaf \
+        --buildtype=release \
+        --strip \
+        -Denable_cuda=false \
+        -Denable_sycl=false \
+        -Denable_vulkan=true \
+        -Denable_dnn=disabled \
+        -Denable_avx512=true \
+    && ninja -C /build -j4 \
+    && mkdir -p /dist/lib /dist/bin /dist/model \
+    && find /build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d -exec cp {} /dist/lib/ \; \
+    && cp /build/tools/vmaf /dist/bin/ \
+    && cp -r model/ /dist/model/
+
+# ---------------------------------------------------------------------------
+# Runtime base — distroless cc-debian12
+# ---------------------------------------------------------------------------
+FROM gcr.io/distroless/cc-debian12@sha256:aa0b7af67fa8211751ea6e00baa8373ba56cc1417ffc986ec9619bd0e1556b56 AS runtime-base
+
+LABEL org.opencontainers.image.title="vmafx"
+LABEL org.opencontainers.image.description="VMAFX production GPU runtime"
+LABEL org.opencontainers.image.source="https://github.com/lusoris/vmaf"
+LABEL org.opencontainers.image.licenses="BSD-3-Clause-Plus-Patent"
+LABEL org.opencontainers.image.vendor="Lusoris"
+
+ENV LD_LIBRARY_PATH="/usr/local/lib"
+ENV VMAF_MODEL_PATH="/usr/local/share/vmafx/model"
+
+# ---------------------------------------------------------------------------
+# Final targets — one per GPU variant
+# The CI workflow builds the appropriate target based on the tag suffix.
+# ---------------------------------------------------------------------------
+
+FROM runtime-base AS final-cpu
+COPY --from=builder-cpu /dist/lib/   /usr/local/lib/
+COPY --from=builder-cpu /dist/bin/   /usr/local/bin/
+COPY --from=builder-cpu /dist/model/ /usr/local/share/vmafx/model/
+ENTRYPOINT ["/usr/local/bin/vmaf"]
+
+FROM runtime-base AS final-cuda12
+# CUDA runtime libs — only the runtime, not the full toolkit
+COPY --from=nvidia/cuda:12.0-runtime-ubuntu22.04 /usr/local/cuda/lib64/libcudart.so* /usr/local/lib/
+COPY --from=builder-cuda12 /dist/lib/   /usr/local/lib/
+COPY --from=builder-cuda12 /dist/bin/   /usr/local/bin/
+COPY --from=builder-cuda12 /dist/model/ /usr/local/share/vmafx/model/
+ENTRYPOINT ["/usr/local/bin/vmaf"]
+
+FROM runtime-base AS final-rocm6
+# ROCm HIP runtime libs
+COPY --from=rocm/rocm-terminal:6.0 /opt/rocm/lib/libamdhip64.so*       /usr/local/lib/
+COPY --from=rocm/rocm-terminal:6.0 /opt/rocm/lib/libhsa-runtime64.so*  /usr/local/lib/
+COPY --from=builder-rocm6 /dist/lib/   /usr/local/lib/
+COPY --from=builder-rocm6 /dist/bin/   /usr/local/bin/
+COPY --from=builder-rocm6 /dist/model/ /usr/local/share/vmafx/model/
+ENTRYPOINT ["/usr/local/bin/vmaf"]
+
+FROM runtime-base AS final-oneapi2026
+# Level Zero + Intel GPU plugin runtime
+COPY --from=intel/oneapi-basekit:2026.0 /opt/intel/oneapi/compiler/latest/lib/libsycl.so*  /usr/local/lib/
+COPY --from=intel/oneapi-basekit:2026.0 /opt/intel/oneapi/compiler/latest/lib/libOpenCL.so* /usr/local/lib/
+COPY --from=builder-oneapi2026 /dist/lib/   /usr/local/lib/
+COPY --from=builder-oneapi2026 /dist/bin/   /usr/local/bin/
+COPY --from=builder-oneapi2026 /dist/model/ /usr/local/share/vmafx/model/
+ENTRYPOINT ["/usr/local/bin/vmaf"]
+
+FROM runtime-base AS final-vulkan
+# Vulkan ICD loader + lavapipe JSON
+COPY --from=builder-vulkan /dist/lib/   /usr/local/lib/
+COPY --from=builder-vulkan /dist/bin/   /usr/local/bin/
+COPY --from=builder-vulkan /dist/model/ /usr/local/share/vmafx/model/
+ENTRYPOINT ["/usr/local/bin/vmaf"]
