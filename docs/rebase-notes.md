@@ -7,6 +7,19 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## docs/mcp-tool-catalogue-sync — no rebase impact: doc-only
+
+This PR syncs the MCP tool catalogue in `docs/mcp/index.md` and
+`docs/mcp/tools.md` to document 8 tools (probe_backend, vmaf_version,
+vmaf_score_encoded, list_extractors, describe_model, run_compare,
+run_ladder, run_tune_per_shot) that were implemented but not documented.
+No code paths are changed; merging on any branch order is safe.
+Touched files:
+`docs/mcp/index.md`,
+`docs/mcp/tools.md`,
+`changelog.d/fixed/T-MCP-DOCS-TOOL-CATALOGUE-SYNC-2026-05-22.md`,
+`docs/rebase-notes.md` (this entry).
+
 ## fix/hip-wave32-vif-motion-20260528 (ADR-0688)
 
 - **ADR**: [ADR-0688](adr/0688-hip-wave32-vif-motion-fix.md).

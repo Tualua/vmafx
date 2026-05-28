@@ -174,15 +174,6 @@ The server probes `vmaf --help` and looks for `--no_<backend>` flags;
 reports **compiled-in** backends only — a backend may be compiled in but
 its driver missing or non-functional at runtime. Use `probe_backend` to
 verify that a backend can actually run a score.
-  "cpu":  true,
-  "cuda": true,
-  "sycl": false,
-  "hip":  false
-}
-```
-
-The server runs `vmaf --version` with a 5-second timeout and grep's the
-output; `cpu` is reported `true` whenever the binary exists.
 
 ### Errors
 
@@ -190,7 +181,7 @@ output; `cpu` is reported `true` whenever the binary exists.
   raised. Call `list_backends` before other tools to test whether the
   build is usable.
 
-## run_benchmark
+## `run_benchmark`
 
 Run the full multi-fixture benchmark suite (`testdata/bench_all.sh`) against all
 available backends — CPU, CUDA, SYCL, and Vulkan — on three canonical YUV fixture
@@ -560,49 +551,6 @@ Same shape as `vmaf_score`, plus two extra keys:
 
 ---
 
-## Cross-tool error conventions
-
-**ADR-0613 (isError spec-correctness):** From ADR-0613 onward, all tool
-handler exceptions are propagated as raises rather than being caught and
-returned as `TextContent({"error": ...})`. This allows the `mcp` library's
-outer handler (`_make_error_result`) to set `isError=True` on the
-`CallToolResult`, so conformant MCP clients (which branch on `result.isError`)
-correctly treat tool errors as errors. The previous pattern left `isError`
-implicitly `False`, causing clients to misclassify errors as successes.
-
-| Situation                             | MCP-level behavior                                       |
-|---------------------------------------|----------------------------------------------------------|
-| Unknown tool name                     | Raises `ValueError`; mcp sets `isError=True`            |
-| Path outside allowlist                | Raises `ValueError`; mcp sets `isError=True`            |
-| Path does not exist                   | Raises `FileNotFoundError`; mcp sets `isError=True`     |
-| Subprocess non-zero (`vmaf_score`)    | Raises `RuntimeError`; mcp sets `isError=True`          |
-| Missing optional extras               | Raises `RuntimeError`; mcp sets `isError=True`          |
-| `probe_backend` unhealthy backend     | Returns success result with `runtime_healthy: false`    |
-## Cross-tool error conventions
-
-| Situation                               | Shape                                                   |
-|-----------------------------------------|---------------------------------------------------------|
-| Unknown tool name                       | `{"error": "unknown tool: <name>"}`                     |
-| Path outside allowlist                  | `{"error": "path ... not under an allowlisted root"}`   |
-| Path does not exist                     | `{"error": "<resolved-abs-path>"}`                      |
-| Subprocess non-zero (vmaf_score only)   | `{"error": "vmaf exited <rc>: <stderr>"}`               |
-| Missing optional extras                 | `{"error": "... requires the 'eval' extra: ..."}`       |
-
-All exceptions raised inside a tool handler are caught and serialised
-into the `error` shape above — the JSON-RPC channel itself never
-returns a non-200.
-
-## Related
-
-- [MCP server overview](index.md) — install, security model, env vars.
-- [CLI reference](../usage/cli.md) — the CLI that `vmaf_score` wraps.
-- [`vmaf_bench`](../usage/bench.md) — what `run_benchmark` drives.
-- [Tiny-AI inference](../ai/inference.md) — what
-  `eval_model_on_split` / `compare_models` are scoring.
-- [ADR-0613](../adr/0613-mcp-p0-iserror-and-probe-version-encoded.md) — P0 fixes.
-- [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md).
-- [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md).
-
 ## `list_extractors`
 
 Enumerate all `VmafFeatureExtractor` implementations found in the local
@@ -776,4 +724,35 @@ The server sends two progress events per tool call:
 No finer-grained progress is available because the tools delegate to a subprocess.
 Clients without a token receive no progress events (per MCP spec — the server
 must not send unsolicited progress).
-- [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md).
+
+---
+
+## Cross-tool error conventions
+
+**ADR-0613 (isError spec-correctness):** From ADR-0613 onward, all tool
+handler exceptions are propagated as raises rather than being caught and
+returned as `TextContent({"error": ...})`. This allows the `mcp` library's
+outer handler (`_make_error_result`) to set `isError=True` on the
+`CallToolResult`, so conformant MCP clients (which branch on `result.isError`)
+correctly treat tool errors as errors. The previous pattern left `isError`
+implicitly `False`, causing clients to misclassify errors as successes.
+
+| Situation                             | MCP-level behavior                                       |
+|---------------------------------------|----------------------------------------------------------|
+| Unknown tool name                     | Raises `ValueError`; mcp sets `isError=True`            |
+| Path outside allowlist                | Raises `ValueError`; mcp sets `isError=True`            |
+| Path does not exist                   | Raises `FileNotFoundError`; mcp sets `isError=True`     |
+| Subprocess non-zero (`vmaf_score`)    | Raises `RuntimeError`; mcp sets `isError=True`          |
+| Missing optional extras               | Raises `RuntimeError`; mcp sets `isError=True`          |
+| `probe_backend` unhealthy backend     | Returns success result with `runtime_healthy: false`    |
+
+## Related
+
+- [MCP server overview](index.md) — install, security model, env vars.
+- [CLI reference](../usage/cli.md) — the CLI that `vmaf_score` wraps.
+- [`vmaf_bench`](../usage/bench.md) — what `run_benchmark` drives.
+- [Tiny-AI inference](../ai/inference.md) — what
+  `eval_model_on_split` / `compare_models` are scoring.
+- [ADR-0613](../adr/0613-mcp-p0-iserror-and-probe-version-encoded.md) — P0 isError fixes.
+- [ADR-0608](../adr/0638-mcp-p1-vmaftune-extractors-models-progress.md) — P1 tools.
+- [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md) — per-surface doc bar.
