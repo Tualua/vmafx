@@ -7,7 +7,7 @@
   extractor is unchanged (same `input` / `saliency_map` tensor names,
   same NCHW shapes); the new model is a true drop-in. The decoder uses
   `ConvTranspose` for stride-2 upsampling so every op in the graph is
-  on `libvmaf/src/dnn/op_allowlist.c` without an allowlist patch in
+  on `core/src/dnn/op_allowlist.c` without an allowlist patch in
   the same PR. DUTS images are not redistributed in-tree; only the
   trained weights are. The placeholder remains in the registry with
   `smoke: true` for legacy reasons. New model card at

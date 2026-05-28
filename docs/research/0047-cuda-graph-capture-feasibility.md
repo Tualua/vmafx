@@ -4,7 +4,7 @@
 |-------------------|----------------------------------------------------------------------|
 | Date              | 2026-05-02                                                           |
 | Companion ADR     | None (decision is DEFER + lean NO-GO; documented here, no ADR)       |
-| Author            | cuda-graph-capture worktree (VMAFX)                                  |
+| Author            | cuda-graph-capture worktree (Lusoris fork)                           |
 | Trigger           | `cuda-dedup-profile-2026-05-02.md` §Optimization candidates item 5   |
 | Worktree branch   | `feat/cuda-graph-capture-investigation`                              |
 
@@ -81,7 +81,7 @@ Walking the chain against `integer_psnr_cuda.c` and `picture_cuda.c`:
 | (vii) | `lc->finished`, `lc->str`                    | **Yes** |
 
 The picture pool default depth is `pic_cnt = 4` for CUDA
-(`libvmaf/src/libvmaf.c:247`). Each pool slot owns its own
+(`core/src/libvmaf.c:247`). Each pool slot owns its own
 `CUstream picture_stream` and `CUevent dist_ready_event`, exposed via
 `vmaf_cuda_picture_get_stream(pic)` and
 `vmaf_cuda_picture_get_ready_event(pic)`. The slot rotates per frame
@@ -276,11 +276,11 @@ A reasonable trigger for revisiting:
 
 - [CUDA dedup profile 2026-05-02](../development/cuda-dedup-profile-2026-05-02.md)
   §5 "Stream capture / CUDA graph for the submit–readback chain"
-- [`libvmaf/src/cuda/kernel_template.h`](../../libvmaf/src/cuda/kernel_template.h)
+- [`core/src/cuda/kernel_template.h`](../../core/src/cuda/kernel_template.h)
   — `VmafCudaKernelLifecycle.finished` documented as a graph-capture hook point
-- [`libvmaf/src/feature/cuda/integer_psnr_cuda.c`](../../libvmaf/src/feature/cuda/integer_psnr_cuda.c)
+- [`core/src/feature/cuda/integer_psnr_cuda.c`](../../core/src/feature/cuda/integer_psnr_cuda.c)
   — reference consumer of the kernel template
-- [`libvmaf/src/gpu_picture_pool.c`](../../libvmaf/src/gpu_picture_pool.c)
+- [`core/src/gpu_picture_pool.c`](../../core/src/gpu_picture_pool.c)
   — pool round-robin (`pic_cnt = 4` for CUDA)
 - [ADR-0221 (kernel template)](../adr/0221-cuda-kernel-template.md)
 - [ADR-0239 (gpu picture pool dedup)](../adr/0239-gpu-picture-pool-dedup.md)

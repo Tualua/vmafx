@@ -7,7 +7,7 @@
 
 ## Context
 
-The CPU `motion` extractor (`libvmaf/src/feature/integer_motion.c`) emits
+The CPU `motion` extractor (`core/src/feature/integer_motion.c`) emits
 three outputs per frame: `motion_score`, `motion2_score`, and
 `motion3_score`. The GPU twins shipped to date —
 `motion_vulkan` (ADR-0177), `motion_cuda`, `motion_sycl` — emitted
@@ -114,7 +114,7 @@ backend pair is exercised.
 
 ## References
 
-- Upstream extractor: `libvmaf/src/feature/integer_motion.c` (CPU
+- Upstream extractor: `core/src/feature/integer_motion.c` (CPU
   reference; lines 510-560 are the motion3 emission in `extract()`,
   lines 401-438 in `flush()`).
 - Sister GPU motion ADRs: [ADR-0177](0177-vulkan-motion-kernel.md)

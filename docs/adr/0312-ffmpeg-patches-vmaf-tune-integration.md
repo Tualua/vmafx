@@ -60,7 +60,7 @@ series (0007 / 0008 / 0009):
    Glue only.
 
 The new-file headers carry the fork copyright
-(`Copyright 2026 Lusoris`); modifications to
+(`Copyright 2026 Lusoris and Claude (Anthropic)`); modifications to
 upstream-mirrored files (`libx264.c`, `libsvtav1.c`, `libaomenc.c`,
 `ffmpeg_opt.c`, `Makefile`, `allfilters.c`, `configure`) keep their
 existing FFmpeg/LGPL headers.

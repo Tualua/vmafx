@@ -111,7 +111,7 @@ Trade-offs:
 
 `PixelShuffle` in upstream's UpBlocks would export to `DepthToSpace`,
 which is NOT on the fork's strict ONNX op allowlist
-([`libvmaf/src/dnn/op_allowlist.c`](../../../libvmaf/src/dnn/op_allowlist.c)).
+([`core/src/dnn/op_allowlist.c`](../../../core/src/dnn/op_allowlist.c)).
 The export script swaps every `nn.PixelShuffle` instance for an
 allowlist-safe `Reshape`/`Transpose`/`Reshape` decomposition before
 exporting. PixelShuffle has zero learned parameters, so the swap is
@@ -125,7 +125,7 @@ The full op set in the shipped graph is `Add`, `Cast`, `Clip`,
 
 ## Frame window contract
 
-The C extractor (`libvmaf/src/feature/fastdvdnet_pre.c`) maintains a
+The C extractor (`core/src/feature/fastdvdnet_pre.c`) maintains a
 five-slot ring buffer of the most recent normalised luma planes. Each
 `extract()` call:
 
@@ -145,18 +145,18 @@ five-slot ring buffer of the most recent normalised luma planes. Each
 
 ```bash
 # 1. Build libvmaf with DNN support enabled.
-meson setup libvmaf/build-cpu -Denable_dnn=true
-ninja -C libvmaf/build-cpu
+meson setup core/build-cpu -Denable_dnn=true
+ninja -C core/build-cpu
 
 # 2. Run the extractor against a clip, supplying the model path.
-libvmaf/build-cpu/tools/vmaf \
+core/build-cpu/tools/vmaf \
     --reference ref.yuv --distorted dis.yuv \
     --width 1920 --height 1080 --pixel_format yuv420p --bitdepth 8 \
     --feature fastdvdnet_pre=model_path=model/tiny/fastdvdnet_pre.onnx
 
 # Or via env var (matches lpips_sq's pattern):
 VMAF_FASTDVDNET_PRE_MODEL_PATH=model/tiny/fastdvdnet_pre.onnx \
-    libvmaf/build-cpu/tools/vmaf --feature fastdvdnet_pre …
+    core/build-cpu/tools/vmaf --feature fastdvdnet_pre …
 ```
 
 The extractor declines cleanly (non-fatal `-EINVAL`) if neither
@@ -190,7 +190,7 @@ provided the upstream checksum matches.
 ## Smoke test
 
 The C-side registration + options-table contract is exercised by
-`libvmaf/test/test_fastdvdnet_pre.c`, which runs in every build (no ORT
+`core/test/test_fastdvdnet_pre.c`, which runs in every build (no ORT
 session required). To exercise the live ORT path against the shipped
 ONNX, enable DNN and run the suite:
 

@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Unit tests for ``ai/scripts/chug_to_corpus_jsonl.py``."""
 
 from __future__ import annotations

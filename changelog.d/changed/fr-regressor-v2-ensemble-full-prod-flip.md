@@ -11,7 +11,7 @@
   mirroring the canonical `fr_regressor_v2.json` shape (encoder
   vocab v2, codec_block_layout, scaler params, training_recipe)
   plus seed-specific gate evidence — required by
-  `libvmaf/test/dnn/test_registry.sh` for every non-smoke ONNX.
+  `core/test/dnn/test_registry.sh` for every non-smoke ONNX.
   New driver `ai/scripts/export_ensemble_v2_seeds.py` reuses the
   LOSO trainer's `_load_corpus` for codec-block fidelity and fits
   one full-corpus FRRegressor per seed. Going forward, any re-flip

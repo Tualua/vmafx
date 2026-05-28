@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Evaluate the empirical coverage of a ``fr_regressor_v2`` ensemble.
 
 Companion to ``ai/scripts/train_fr_regressor_v2_ensemble.py``. Loads the
@@ -60,11 +60,7 @@ SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.run_manifest import (  # noqa: E402
-    build_run_provenance,
-    dumps_manifest_json,
-    write_manifest_json,
-)
+from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 CANONICAL_6: tuple[str, ...] = (
     "adm2",
@@ -331,7 +327,7 @@ def main(argv: list[str] | None = None) -> int:
         ),
     }
 
-    print(dumps_manifest_json(report), end="")
+    print(json.dumps(report, indent=2))
 
     if args.metrics_out is not None:
         write_manifest_json(args.metrics_out, report)

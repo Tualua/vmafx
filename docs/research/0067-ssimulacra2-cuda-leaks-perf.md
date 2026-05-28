@@ -5,7 +5,7 @@ Companion to [ADR-0356](../adr/0356-ssimulacra2-cuda-leaks-perf.md).
 ## Scope
 
 A 2026-05-09 cuda-reviewer pass over
-[`libvmaf/src/feature/cuda/ssimulacra2_cuda.c`](../../libvmaf/src/feature/cuda/ssimulacra2_cuda.c)
+[`core/src/feature/cuda/ssimulacra2_cuda.c`](../../core/src/feature/cuda/ssimulacra2_cuda.c)
 (originally PR #162 / ADR-0206) flagged six issues. This digest
 records the empirical findings and the rationale for the four that
 this fix-PR addresses; the two architectural ceilings (warnings 3 + 4
@@ -26,7 +26,7 @@ Empirical check on RTX 4090 / driver 595.71.05 / CUDA 13.2:
 
 ```bash
 compute-sanitizer --tool memcheck --leak-check full \
-    libvmaf/build/tools/vmaf \
+    core/build/tools/vmaf \
     --reference testdata/ref_576x324_48f.yuv \
     --distorted testdata/dis_576x324_48f.yuv \
     --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
@@ -91,7 +91,7 @@ to a future PR):
 ```bash
 ncu --section MemoryWorkloadAnalysis \
     --kernel-id ::ssimulacra2_blur_h:1 \
-    libvmaf/build/tools/vmaf … --feature ssimulacra2 --backend cuda
+    core/build/tools/vmaf … --feature ssimulacra2 --backend cuda
 ```
 
 ### 5. Full-resolution H2D / D2H every scale
@@ -150,7 +150,7 @@ in the original prompt holds for those operating points.
 
 ```text
 $ python3 scripts/ci/cross_backend_vif_diff.py \
-    --vmaf-binary libvmaf/build/tools/vmaf \
+    --vmaf-binary core/build/tools/vmaf \
     --reference testdata/ref_576x324_48f.yuv \
     --distorted testdata/dis_576x324_48f.yuv \
     --width 576 --height 324 \

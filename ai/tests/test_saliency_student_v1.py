@@ -1,12 +1,12 @@
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Contract tests for `model/tiny/saliency_student_v1.onnx`.
 
 Locks down four invariants that the C-side `feature_mobilesal.c`
 extractor relies on:
 
 1. Op-allowlist: every op in the graph is on
-   `libvmaf/src/dnn/op_allowlist.c`.
+   `core/src/dnn/op_allowlist.c`.
 2. Tensor-name contract: input named `input`, output named
    `saliency_map`, both with the expected NCHW rank-4 layout.
 3. Dynamic axes: the model accepts arbitrary spatial sizes (H, W)

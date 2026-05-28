@@ -90,10 +90,10 @@ vulkaninfo --summary | head -40
 ## Building libvmaf
 
 ```bash
-meson setup libvmaf libvmaf/build --buildtype release \
+meson setup libvmaf core/build --buildtype release \
   -Denable_vulkan=enabled \
   -Denable_cuda=false -Denable_sycl=false
-ninja -C libvmaf/build
+ninja -C core/build
 ```
 
 The build is identical to the Linux Vulkan build — no macOS-specific
@@ -104,9 +104,9 @@ flags. `volk` (the wrap-pulled Vulkan loader) dlopen()s
 ## Running the smoke test
 
 ```bash
-./libvmaf/build/test/test_vulkan_smoke
-./libvmaf/build/test/test_vulkan_pic_preallocation
-./libvmaf/build/test/test_vulkan_async_pending_fence
+./core/build/test/test_vulkan_smoke
+./core/build/test/test_vulkan_pic_preallocation
+./core/build/test/test_vulkan_async_pending_fence
 ```
 
 The smoke test exercises:
@@ -129,7 +129,7 @@ operator-side check.
 
 ```bash
 python3 scripts/ci/cross_backend_vif_diff.py \
-  --vmaf-binary libvmaf/build/tools/vmaf \
+  --vmaf-binary core/build/tools/vmaf \
   --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
   --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
   --width 576 --height 324 --places 4

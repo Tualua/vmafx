@@ -1,7 +1,7 @@
 ## chore(feature): delete orphan HIP/CUDA TUs (ADR-0546)
 
 Removed 6 dead/orphan translation units found by a deep audit of
-`libvmaf/src/feature/hip/` and `libvmaf/src/feature/cuda/`:
+`core/src/feature/hip/` and `core/src/feature/cuda/`:
 
 - `feature/hip/integer_ciede_hip.c` — duplicate of compiled `ciede_hip.c`;
   both defined `vmaf_fex_ciede_hip`.

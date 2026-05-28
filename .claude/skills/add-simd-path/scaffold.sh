@@ -2,7 +2,7 @@
 # scaffold.sh — create a new SIMD path for an existing feature extractor.
 # Usage: bash .claude/skills/add-simd-path/scaffold.sh <isa> <feature>
 #   <isa>     one of: avx2, avx512, avx10, neon, sve, rvv
-#   <feature> an existing feature name under libvmaf/src/feature/ (adm, vif, motion, ...)
+#   <feature> an existing feature name under core/src/feature/ (adm, vif, motion, ...)
 
 set -euo pipefail
 
@@ -18,17 +18,17 @@ tpl="$repo_root/.claude/skills/add-simd-path/templates"
 
 case "$isa" in
   avx2 | avx512 | avx10)
-    dir="$repo_root/libvmaf/src/feature/x86"
+    dir="$repo_root/core/src/feature/x86"
     header='#include <immintrin.h>'
     align=64
     ;;
   neon | sve)
-    dir="$repo_root/libvmaf/src/feature/arm64"
+    dir="$repo_root/core/src/feature/arm64"
     header='#include <arm_neon.h>'
     align=16
     ;;
   rvv)
-    dir="$repo_root/libvmaf/src/feature/riscv"
+    dir="$repo_root/core/src/feature/riscv"
     header='#include <riscv_vector.h>'
     align=16
     ;;
@@ -52,4 +52,4 @@ sed -e "s/{{FEATURE}}/$feature/g" \
   "$tpl/simd_feature.c.template" >"$out"
 
 echo "wrote $out"
-echo "next: register runtime dispatch in libvmaf/src/feature/${feature}.c and add a bit-exact test."
+echo "next: register runtime dispatch in core/src/feature/${feature}.c and add a bit-exact test."

@@ -20,7 +20,7 @@ not shared-memory ordering, was the remaining failure point.
 
 ## Change Tested
 
-`libvmaf/src/feature/vulkan/shaders/vif.comp` now requires
+`core/src/feature/vulkan/shaders/vif.comp` now requires
 `GL_KHR_shader_subgroup_shuffle` and routes the seven Phase-4 int64
 subgroup reductions through:
 
@@ -52,7 +52,7 @@ Shader compile smoke:
 
 ```bash
 glslc --target-env=vulkan1.3 -O \
-  libvmaf/src/feature/vulkan/shaders/vif.comp -o /tmp/vif.spv
+  core/src/feature/vulkan/shaders/vif.comp -o /tmp/vif.spv
 ```
 
 Cross-backend parity, NVIDIA RTX 4090 + driver 595.71.05:

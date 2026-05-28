@@ -13,7 +13,7 @@
   advertised `integer_vif_cb` / `integer_vif_cr` features and an
   `enable_chroma=true` invocation example that produced nothing on
   master. A new regression test
-  (`libvmaf/test/test_integer_vif_cpu_cuda_parity.c`, suite
+  (`core/test/test_integer_vif_cpu_cuda_parity.c`, suite
   `fast`/`gpu`) asserts CPU vs CUDA `vif_scaleN_score` parity within
   1e-4 and `enable_chroma=true` bit-identity with the default
   invocation. Closes 2026-05-18 deep-audit finding 23 as

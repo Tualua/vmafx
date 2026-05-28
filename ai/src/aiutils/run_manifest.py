@@ -1,12 +1,11 @@
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Shared helpers for AI training/export run provenance manifests."""
 
 from __future__ import annotations
 
 import argparse
 import json
-import math
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -21,8 +20,6 @@ def normalise_manifest_value(value: Any) -> JsonValue:
     """Convert common Python CLI values to deterministic JSON values."""
     if isinstance(value, Path):
         return str(value)
-    if isinstance(value, float):
-        return value if math.isfinite(value) else None
     if isinstance(value, Mapping):
         return {
             str(key): normalise_manifest_value(item)
@@ -176,13 +173,7 @@ def write_run_manifest(
     )
 
 
-def dumps_manifest_json(payload: Any) -> str:
-    """Serialize deterministic strict JSON with a trailing newline."""
-    normalised = normalise_manifest_value(payload)
-    return json.dumps(normalised, indent=2, sort_keys=True, allow_nan=False) + "\n"
-
-
-def write_manifest_json(path: Path, payload: Any) -> None:
+def write_manifest_json(path: Path, payload: Mapping[str, Any]) -> None:
     """Write a deterministic JSON manifest with a trailing newline."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(dumps_manifest_json(payload), encoding="utf-8")
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")

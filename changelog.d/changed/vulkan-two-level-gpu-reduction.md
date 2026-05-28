@@ -27,7 +27,7 @@ init time and reused per frame, mirroring the VIF reducer pattern;
 no per-frame `vkAllocateDescriptorSets` calls in the hot path.
 
 New API: `vmaf_vulkan_buffer_invalidate()` added to
-`libvmaf/src/vulkan/picture_vulkan.{h,c}` — no public header change.
+`core/src/vulkan/picture_vulkan.{h,c}` — no public header change.
 
 See [ADR-0356](docs/adr/0356-vulkan-two-level-gpu-reduction.md) and
 [research digest 0091](docs/research/0091-vulkan-gpu-reduction-perf-analysis.md).

@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """NVIDIA NVENC H.264 codec adapter.
 
 Hardware-accelerated AVC encoder exposed through FFmpeg's ``h264_nvenc``

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Materialise full-reference feature rows from local CHUG clips.
 
 CHUG ships one reference row plus six bitrate-ladder rows for each
@@ -17,14 +17,12 @@ The output rows remain local-only under ``.workingdir2/chug/``.
 
 from __future__ import annotations
 
-import argparse
 import contextlib
 import hashlib
 import json
 import math
 import os
 import subprocess
-import sys
 import tempfile
 from collections import Counter
 from collections.abc import Callable, Iterable
@@ -34,13 +32,14 @@ from typing import Any
 
 import numpy as np
 
-SCRIPT_PATH = Path(__file__).resolve()
-REPO_ROOT = SCRIPT_PATH.parents[2]
-AI_SRC = REPO_ROOT / "ai" / "src"
+try:
+    from _script_bootstrap import bootstrap_ai_script
+except ModuleNotFoundError:
+    from ai.scripts._script_bootstrap import bootstrap_ai_script
 
-if __package__ in (None, ""):
-    sys.path.insert(0, str(REPO_ROOT))
-    sys.path.insert(0, str(AI_SRC))
+_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
+SCRIPT_PATH = _SCRIPT_PATHS.script_path
+REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 from ai.data.feature_extractor import (  # noqa: E402
     DEFAULT_FEATURES,
@@ -52,8 +51,8 @@ from ai.data.feature_extractor import (  # noqa: E402
 )
 
 # isort: split
-from aiutils.jsonl_utils import dumps_jsonl_row  # noqa: E402
-from aiutils.run_manifest import write_manifest_json  # noqa: E402
+from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
+from aiutils.run_manifest import build_run_provenance  # noqa: E402
 
 # Default working directory for CHUG feature extraction; override with
 # ``VMAF_CHUG_DIR`` env var for container / non-maintainer layouts.
@@ -170,7 +169,8 @@ def write_split_manifest(
     }
     if run_provenance is not None:
         payload["run_provenance"] = run_provenance
-    write_manifest_json(output, payload)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return payload
 
 
@@ -383,7 +383,8 @@ def audit_chug_hdr_metadata(
     }
     if run_provenance is not None:
         payload["run_provenance"] = run_provenance
-    write_manifest_json(output, payload)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return payload
 
 
@@ -649,7 +650,10 @@ def _extract_pair_payload(
                 pix_fmt="420",
                 bitdepth=10,
             )
-            write_manifest_json(cache_path, result.to_jsonable())
+            cache_path.write_text(
+                json.dumps(result.to_jsonable(), sort_keys=True),
+                encoding="utf-8",
+            )
         visual_payload = {
             "ref": compute_visual_signals_from_yuv10(
                 ref_yuv,
@@ -662,7 +666,10 @@ def _extract_pair_payload(
                 height=pair.height,
             ),
         }
-        write_manifest_json(visual_cache_path, visual_payload)
+        visual_cache_path.write_text(
+            json.dumps(visual_payload, sort_keys=True),
+            encoding="utf-8",
+        )
 
     return ExtractedPairPayload(
         result=result,
@@ -815,7 +822,7 @@ def run(
                 extractor=extractor,
             )
             out.write(
-                dumps_jsonl_row(
+                json.dumps(
                     _build_output_row(
                         pair,
                         payload.result,
@@ -826,6 +833,7 @@ def run(
                         dis_visual_signals=payload.dis_visual_signals,
                     )
                 )
+                + "\n"
             )
             out.flush()
             done.add(pair_key)
@@ -836,10 +844,11 @@ def run(
 
 
 def main(argv: list[str] | None = None) -> int:
-    from aiutils.run_manifest import build_run_provenance
-
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
-    ap = argparse.ArgumentParser(prog="chug_extract_features.py")
+    raw_argv = collect_cli_argv(argv)
+    ap = make_argument_parser(
+        prog="chug_extract_features.py",
+        description=__doc__,
+    )
     ap.add_argument("--input", type=Path, default=DEFAULT_INPUT)
     ap.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     ap.add_argument("--clips-dir", type=Path, default=DEFAULT_CLIPS_DIR)

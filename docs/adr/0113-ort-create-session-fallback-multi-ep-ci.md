@@ -8,7 +8,7 @@
 ## Context
 
 After [ADR-0112](0112-ort-backend-testability-surface.md) closed Class 3
-(internal-helper edges + NULL guards) for `libvmaf/src/dnn/ort_backend.c`,
+(internal-helper edges + NULL guards) for `core/src/dnn/ort_backend.c`,
 coverage rose 77.3% → 83.6% — still 1.4 percentage points below the 85%
 critical-file gate. `dnn_api.c` was at 79.5% (5.5pp short) for the same
 underlying reason: EP-attach success branches and ORT-API-failure
@@ -165,7 +165,7 @@ case. The fallback strictly improves degraded-mode behaviour.
   selected the production CreateSession fallback as the response,
   with this ADR documenting the production behaviour change.
 - Per-surface doc impact: production correctness change to
-  `libvmaf/src/dnn/ort_backend.c` is user-observable for downstream
+  `core/src/dnn/ort_backend.c` is user-observable for downstream
   consumers building against `onnxruntime-gpu` on hosts without
   NVIDIA hardware. The behavioural change is a strict relaxation
   (errors → success), so no new public-API entry is needed; the

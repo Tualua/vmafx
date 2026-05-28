@@ -8,7 +8,7 @@
 ## Context
 
 The fork's NR tiny-model dispatch (`vmaf_ctx_dnn_run_frame_nchw` in
-`libvmaf/src/libvmaf.c`) is the per-frame handler that feeds the
+`core/src/libvmaf.c`) is the per-frame handler that feeds the
 ONNX Runtime session for image-input tiny models (rank-4 NCHW). The
 shipped NR scorer `model/tiny/nr_metric_v1.onnx` has a fixed input
 shape of `[1, 1, 224, 224]` (KoNViD-1k middle-frame MobileNet trained
@@ -109,8 +109,8 @@ matched-dims path bit-identical regardless of the selected filter.
   U-2-Net / mobilesal / saliency models that resize internally).
 - ADR-0042 — tiny-AI docs required per PR (this ADR ships
   `docs/ai/inference.md §Auto-resize`).
-- `libvmaf/src/dnn/tensor_io.c::vmaf_tensor_from_luma_resize`
+- `core/src/dnn/tensor_io.c::vmaf_tensor_from_luma_resize`
   (this PR).
-- `libvmaf/src/libvmaf.c::vmaf_ctx_dnn_run_frame_nchw` (this PR
+- `core/src/libvmaf.c::vmaf_ctx_dnn_run_frame_nchw` (this PR
   wires the resize through).
 - Source: `req` (post-fix probe Finding 11, 2026-05-18).

@@ -97,7 +97,7 @@ destroying any handle.
      callers (`vmaf_vulkan_state_init_external`) still receive the
      default; extending `VmafVulkanExternalHandles` is deferred to
      a separate ABI bump. Smoke-test contract pinned in
-     `libvmaf/test/test_vulkan_async_pending_fence.c`
+     `core/test/test_vulkan_async_pending_fence.c`
      (`test_ring_size_*` group).
   4. **Timeline semaphore v3**: tracked under T7-29 part 5 once
      a feature kernel actually needs the cross-queue-family
@@ -133,14 +133,14 @@ Audited as part of the 2026-05-08 ADR `Proposed` sweep
 
 Acceptance criteria verified in tree at HEAD `0a8b539e`:
 
-- `libvmaf/include/libvmaf/libvmaf_vulkan.h:64` declares
+- `core/include/libvmaf/libvmaf_vulkan.h:64` declares
   `VmafVulkanConfiguration::max_outstanding_frames`.
-- `libvmaf/src/vulkan/common.c:444-486` implements
+- `core/src/vulkan/common.c:444-486` implements
   `vmaf_vulkan_clamp_ring_size`,
   `vmaf_vulkan_state_max_outstanding_frames`, and the per-frame
   fence ring sized at `s->requested_ring_size`.
-- `libvmaf/src/vulkan/vulkan_internal.h:47-117` documents the
+- `core/src/vulkan/vulkan_internal.h:47-117` documents the
   captured request depth and the ring sizer contract.
 - Verification command:
-  `grep -n "max_outstanding_frames" libvmaf/src/vulkan/*.{c,h}
-  libvmaf/include/libvmaf/libvmaf_vulkan.h`.
+  `grep -n "max_outstanding_frames" core/src/vulkan/*.{c,h}
+  core/include/libvmaf/libvmaf_vulkan.h`.

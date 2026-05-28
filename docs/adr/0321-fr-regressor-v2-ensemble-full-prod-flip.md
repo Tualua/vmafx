@@ -17,7 +17,7 @@ landed the real LOSO trainer + corpus loader.
 
 The first flip attempt (PR #423) tried a pure metadata edit on
 `model/tiny/registry.json` — only flipping `smoke: true → false` on
-the five seed rows. It tripped `libvmaf/test/dnn/test_registry.sh`,
+the five seed rows. It tripped `core/test/dnn/test_registry.sh`,
 which requires a sidecar JSON next to every non-smoke ONNX. Only the
 shared ensemble manifest `fr_regressor_v2_ensemble_v1.json` existed;
 no per-seed sidecars. PR #423 was closed for redo.

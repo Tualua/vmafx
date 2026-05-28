@@ -17,7 +17,7 @@ case "$(basename "$file")" in
 esac
 
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-build_dir="$repo_root/libvmaf/build"
+build_dir="$repo_root/core/build"
 cc_json="$build_dir/compile_commands.json"
 link="$repo_root/compile_commands.json"
 

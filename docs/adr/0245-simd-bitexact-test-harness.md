@@ -34,7 +34,7 @@ own setup, assertion, and CPU-feature gating.
 
 ## Decision
 
-We will introduce `libvmaf/test/simd_bitexact_test.h`, a shared `static
+We will introduce `core/test/simd_bitexact_test.h`, a shared `static
 inline` header that exposes:
 
 - `simd_test_xorshift32(state)` — Marsaglia 2003 PRNG.

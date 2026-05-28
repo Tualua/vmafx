@@ -10,7 +10,7 @@ sidecar under the encode dir and reuses it across every (preset,
 crf) cell. Drop `.y4m` from `_VMAF_RAW_SUFFIXES` (corpus) and
 `VMAF_RAW_SUFFIXES` (score): vmaf-tune always emits
 `--width`/`--height`/`--pixel_format`/`--bitdepth` which flips the
-CLI's `use_yuv` flag (libvmaf/tools/cli_parse.c), so `.y4m` never
+CLI's `use_yuv` flag (core/tools/cli_parse.c), so `.y4m` never
 reaches the Y4M parser. 9 new regression tests including a cross-check
 against `cli_parse.c` so future CLI changes to the `use_yuv`
 discipline are caught at lint-test time.

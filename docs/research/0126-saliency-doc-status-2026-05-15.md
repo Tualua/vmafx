@@ -19,9 +19,9 @@ with the code and registry state already in tree.
 - `docs/ai/models/saliency_student_v2.md` documents a higher-IoU
   resize-decoder ablation staged for later ROI A/B validation; it is
   not the production flip yet.
-- `libvmaf/src/feature/feature_mobilesal.c` still rejects non-8-bit
+- `core/src/feature/feature_mobilesal.c` still rejects non-8-bit
   pictures, so high-bit-depth wording must stay scoped to `vmaf-roi`.
-- `libvmaf/tools/vmaf_roi.c` and `docs/usage/vmaf-roi.md` accept
+- `core/tools/vmaf_roi.c` and `docs/usage/vmaf-roi.md` accept
   `--bitdepth 8|10|12|16`, downscaling high-bit-depth luma into the
   8-bit DNN contract before sidecar generation.
 

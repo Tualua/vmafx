@@ -1,8 +1,8 @@
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """``vmaf-roi-score`` — region-of-interest VMAF *scoring* (Option C).
 
-Distinct surface from `libvmaf/tools/vmaf_roi.c` (ADR-0247), which is
+Distinct surface from `core/tools/vmaf_roi.c` (ADR-0247), which is
 the *encoder-steering* sidecar that emits per-CTU QP offsets. This
 package is the *scoring* counterpart: it produces a saliency-weighted
 combination of two VMAF runs.

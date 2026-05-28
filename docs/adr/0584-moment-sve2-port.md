@@ -22,7 +22,7 @@ f64-accumulator contract (ADR-0179) that maps cleanly onto `svfloat64_t`.
 
 ## Decision
 
-Add `libvmaf/src/feature/arm64/moment_sve2.c` + `moment_sve2.h` implementing
+Add `core/src/feature/arm64/moment_sve2.c` + `moment_sve2.h` implementing
 `compute_1st_moment_sve2` and `compute_2nd_moment_sve2` using the SVE2 VLA
 f32→f64 widening pattern:
 
@@ -60,13 +60,13 @@ NEON remains the fallback.  The SVE2 path is purely additive.
 
 The `moment_sve2.c` TU is compiled in its own static library with
 `-march=armv9-a+sve2 -ffp-contract=off`, registered under the existing
-`if is_sve2_supported` block in `libvmaf/src/meson.build`.  Darwin forces
+`if is_sve2_supported` block in `core/src/meson.build`.  Darwin forces
 `is_sve2_supported = false` per ADR-0419; the TU is therefore never linked on
 Apple Silicon.
 
 ### Parity test
 
-`libvmaf/test/test_moment_simd.c` gains four SVE2 test cases
+`core/test/test_moment_simd.c` gains four SVE2 test cases
 (`test_sve2_seed_{a,b}`, `test_sve2_aligned_w`, `test_sve2_tiny`) using the
 existing `SIMD_BITEXACT_ASSERT_RELATIVE` macro at `MOMENT_REL_TOL = 1e-7`.
 The test cases are guarded by `#if ARCH_AARCH64 && HAVE_SVE2` at compile time

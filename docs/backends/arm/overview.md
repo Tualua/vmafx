@@ -5,7 +5,7 @@ upgrades to ARMv9-A SVE2 at runtime when the host CPU advertises
 `HWCAP2_SVE2`. Unlike the GPU backends, NEON is **always built**
 when the host (or cross) compiler targets aarch64 — there is no
 `-Denable_neon` toggle. Kernels live under
-[`libvmaf/src/feature/arm64/`](../../../libvmaf/src/feature/arm64/)
+[`core/src/feature/arm64/`](../../../core/src/feature/arm64/)
 and are dispatched at runtime via `vmaf_get_cpu_flags()`.
 
 The SVE2 path is purely additive: when the build-time probe

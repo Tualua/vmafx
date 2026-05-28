@@ -4,7 +4,7 @@
   `CVPixelBufferRef` via `CVPixelBufferGetIOSurface`, and routes it
   through new `vmaf_metal_picture_import` /
   `vmaf_metal_read_imported_pictures` C-API entry points
-  (`libvmaf/include/libvmaf/libvmaf_metal.h`). The libvmaf-side
+  (`core/include/libvmaf/libvmaf_metal.h`). The libvmaf-side
   runtime locks the IOSurface read-only and memcpys each plane
   into a shared-storage `VmafPicture` (Apple Silicon unified-memory
   cost is equivalent to a Shared MTLBuffer copy). On hosts without

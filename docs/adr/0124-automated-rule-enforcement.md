@@ -60,7 +60,7 @@ policy:
 
 3. **`adr-backfill-check`** (ADR-0106) — **advisory**. Runs once per
    PR. Lists ADR files added in the PR diff; if zero and the diff
-   touches `libvmaf/include/`, `meson_options.txt`, `.github/`, or any
+   touches `core/include/`, `meson_options.txt`, `.github/`, or any
    `docs/principles.md` edit (structural / policy surface), posts a
    comment asking whether a new ADR is required. Non-blocking by
    design — the false-positive rate on a pure keyword scan is too high

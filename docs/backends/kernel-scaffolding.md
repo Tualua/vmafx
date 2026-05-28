@@ -6,9 +6,9 @@ templates only — no kernel migrations yet.
 This page documents the **per-backend kernel scaffolding templates** that
 sit alongside the CUDA, Vulkan, and HIP backend runtimes:
 
-- [`libvmaf/src/cuda/kernel_template.h`](../../libvmaf/src/cuda/kernel_template.h)
-- [`libvmaf/src/vulkan/kernel_template.h`](../../libvmaf/src/vulkan/kernel_template.h)
-- [`libvmaf/src/hip/kernel_template.h`](../../libvmaf/src/hip/kernel_template.h)
+- [`core/src/cuda/kernel_template.h`](../../core/src/cuda/kernel_template.h)
+- [`core/src/vulkan/kernel_template.h`](../../core/src/vulkan/kernel_template.h)
+- [`core/src/hip/kernel_template.h`](../../core/src/hip/kernel_template.h)
   (T7-10 / [ADR-0241](../adr/0241-hip-first-consumer-psnr.md);
   field-for-field mirror of the CUDA template, helper bodies return
   `-ENOSYS` until the HIP runtime PR T7-10b lands)
@@ -29,7 +29,7 @@ etc.).
 
 The CUDA template formalises the async-stream + event lifecycle every
 fork-added CUDA kernel currently uses. The reference implementation is
-[`integer_psnr_cuda.c`](../../libvmaf/src/feature/cuda/integer_psnr_cuda.c).
+[`integer_psnr_cuda.c`](../../core/src/feature/cuda/integer_psnr_cuda.c).
 
 ### Surface
 
@@ -124,7 +124,7 @@ shared error-handling and partial-init unwind paths, not the line count.
 The Vulkan template captures the descriptor-pool + pipeline + per-WG int64
 partials shape every Vulkan SSBO-only reduction kernel uses today. The
 reference implementation is
-[`psnr_vulkan.c`](../../libvmaf/src/feature/vulkan/psnr_vulkan.c).
+[`psnr_vulkan.c`](../../core/src/feature/vulkan/psnr_vulkan.c).
 
 ### Surface
 
@@ -297,7 +297,7 @@ The trade-offs:
   compiler errors at the helper site, not at some inscrutable point inside
   a macro expansion.
 - **The macros that do pay off live elsewhere**:
-  [`cuda_helper.cuh`](../../libvmaf/src/cuda/cuda_helper.cuh) provides
+  [`cuda_helper.cuh`](../../core/src/cuda/cuda_helper.cuh) provides
   `CHECK_CUDA_GOTO` / `CHECK_CUDA_RETURN`, which are macros precisely because
   their `goto label` form needs textual substitution. The kernel-template
   helpers use those macros internally.
@@ -306,9 +306,9 @@ The trade-offs:
 
 - [ADR-0246](../adr/0246-gpu-kernel-template.md) — design decision and
   alternatives.
-- [`libvmaf/src/cuda/AGENTS.md`](../../libvmaf/src/cuda/AGENTS.md) — kernel
+- [`core/src/cuda/AGENTS.md`](../../core/src/cuda/AGENTS.md) — kernel
   template invariant row.
-- [`libvmaf/src/vulkan/AGENTS.md`](../../libvmaf/src/vulkan/AGENTS.md) —
+- [`core/src/vulkan/AGENTS.md`](../../core/src/vulkan/AGENTS.md) —
   kernel template invariant row.
 - [`docs/backends/cuda/overview.md`](cuda/overview.md) — broader CUDA
   backend overview.

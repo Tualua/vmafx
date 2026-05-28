@@ -138,5 +138,5 @@ def test_quantized_ops_are_allowlisted(tmp_path: Path) -> None:
     forbidden = op_types - allowlist
     assert not forbidden, (
         f"int8 model uses ops libvmaf would reject: {forbidden}. "
-        "Extend libvmaf/src/dnn/op_allowlist.c if the new op is genuinely safe."
+        "Extend core/src/dnn/op_allowlist.c if the new op is genuinely safe."
     )

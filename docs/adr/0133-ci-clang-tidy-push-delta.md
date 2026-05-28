@@ -20,11 +20,11 @@ The asymmetry was silent until the PR #70 squash-merge landed
 (commit `45319133`). The push-event scan then processed every tracked
 C/C++ translation unit, including:
 
-- Vendored libsvm (`libvmaf/src/svm.cpp`) — a
+- Vendored libsvm (`core/src/svm.cpp`) — a
   `clang-analyzer-unix.Malloc` finding at line 2984 on the
   `svm_load_model_buffer` code path (allocation of `support_vectors`
   that the analyzer can't prove gets transferred to `model->SV`).
-- CUDA sources (`libvmaf/src/cuda/*.c`) compiled without CUDA headers
+- CUDA sources (`core/src/cuda/*.c`) compiled without CUDA headers
   because the workflow's `meson setup` uses `-Denable_cuda=false`. The
   resulting `clang-diagnostic-error` cascade ("unknown type name
   'VmafCudaState'", "'windows.h' file not found") was not the PR's
@@ -59,7 +59,7 @@ SHA is reachable locally without a second `git fetch` step.
 | Option | Pros | Cons | Why not chosen |
 |---|---|---|---|
 | Leave full-tree scan, silence svm.cpp warnings via `// NOLINTNEXTLINE` or `.clang-tidy` `HeaderFilterRegex` | No workflow change; addresses the specific finding | Only fixes the currently-visible case. Next vendored-code push or clang-tidy upgrade re-exposes the same class of issue. Vendored libsvm is not ours to annotate | Treats symptom, not cause |
-| Exclude vendored paths (`libvmaf/src/svm.cpp`, `libvmaf/src/compat/`, `libvmaf/src/cuda/`) via a negative-glob list | Pragmatic; keeps the "scan everything" posture | Exclude list drifts from reality; CUDA files *should* be linted under a CUDA-enabled job (future ADR), not permanently excluded | Would hide genuine issues in those paths on the PR that modifies them |
+| Exclude vendored paths (`core/src/svm.cpp`, `core/src/compat/`, `core/src/cuda/`) via a negative-glob list | Pragmatic; keeps the "scan everything" posture | Exclude list drifts from reality; CUDA files *should* be linted under a CUDA-enabled job (future ADR), not permanently excluded | Would hide genuine issues in those paths on the PR that modifies them |
 | Push-delta (this ADR) | Restores the semantic promised by the job name. Auto-scales: any file a PR touches still gets linted, on both PR and the post-merge push. No per-path exclude maintenance | Slight risk that a warning regresses through a file nobody touches for a while; acceptable because that file would have stayed silent under the full-tree scan too | Chosen |
 | Drop the push-event trigger entirely | Simplest workflow YAML | Loses the defence-in-depth check that a PR merge didn't surface something new (e.g. another PR's rebase introduced a conflict). Push still catches this under delta semantics | Over-corrects |
 
@@ -77,7 +77,7 @@ SHA is reachable locally without a second `git fetch` step.
   for whole-repo scans.
 - **Neutral / follow-ups**:
   - A follow-up ADR will decide whether to add a CUDA-enabled
-    clang-tidy leg so `libvmaf/src/cuda/*.c` lints with its
+    clang-tidy leg so `core/src/cuda/*.c` lints with its
     headers present. Not blocking.
   - The `svm.cpp:2984` analyzer finding remains latent; if a future
     PR modifies that file, the delta-scan will surface it and that

@@ -1,6 +1,6 @@
-site_name: "VMAFX"
+site_name: "VMAF — Lusoris fork"
 site_url: https://lusoris.github.io/vmaf/
-site_description: "VMAFX — modernized Lusoris fork of Netflix VMAF, with GPU/SIMD acceleration and tiny-AI quality models."
+site_description: Perceptual video quality assessment with GPU/SIMD acceleration.
 repo_url: https://github.com/lusoris/vmaf
 repo_name: lusoris/vmaf
 edit_uri: edit/master/docs/
@@ -96,7 +96,7 @@ validation:
   # Carve-outs and rationale:
   # - links.not_found: info — Two unfixable populations dominate this class:
   #   (a) intentional pointers from docs to source-tree files
-  #   (`../../libvmaf/src/...`, `../../scripts/ci/...`,
+  #   (`../../core/src/...`, `../../scripts/ci/...`,
   #   `../../.github/workflows/...`) that exist for grep-ability and
   #   GitHub-rendered navigation but cannot be resolved by mkdocs because
   #   they sit outside `docs_dir`; (b) cross-references between ADRs whose
@@ -109,7 +109,7 @@ validation:
   # - links.anchors: warn — actionable; in-doc anchor typos.
   # - links.unrecognized_links: info — same population shape as not_found:
   #   the dominant unrecognized form is a relative pointer to a directory
-  #   in the source tree (`../../libvmaf/src/feature/iqa/`,
+  #   in the source tree (`../../core/src/feature/iqa/`,
   #   `../../tools/vmaf-tune/`, `../../mcp-server/vmaf-mcp/`), kept for
   #   GitHub-rendered navigation and grep-ability. mkdocs cannot resolve
   #   them because they sit outside `docs_dir` and lack an `index.md`.
@@ -171,7 +171,6 @@ nav:
           - Overview: usage/vmaf-tune.md
           - Codec adapters: usage/vmaf-tune-codec-adapters.md
           - Fast path: usage/vmaf-tune-fast-path.md
-          - Fast NR pre-scoring: usage/vmaf-tune-fast-nr.md
           - Score backend: usage/vmaf-tune-score-backend.md
           - Bitrate ladder: usage/vmaf-tune-ladder.md
           - Ladder (default sampler): usage/vmaf-tune-ladder-default-sampler.md

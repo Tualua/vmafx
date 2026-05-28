@@ -25,12 +25,12 @@ construction).
 
 We will add:
 
-1. `calculate_c_values_row_avx512` in `libvmaf/src/feature/x86/cambi_avx512.c`:
+1. `calculate_c_values_row_avx512` in `core/src/feature/x86/cambi_avx512.c`:
    16-lane wide port using `_mm512_i32gather_epi32` (scale=2), AVX-512 mask
    registers (`__mmask16`) for lane predication, and `_mm512_maskz_mov_ps` for
    conditional stores. The scalar tail handles columns where `col + 16 >= width`.
 
-2. `calculate_c_values_row_neon` in `libvmaf/src/feature/arm64/cambi_neon.c`:
+2. `calculate_c_values_row_neon` in `core/src/feature/arm64/cambi_neon.c`:
    NEON has no gather instruction; the NEON contribution is a vectorised
    zero-mask scan (`vmaxvq_u16`) that skips 8-pixel chunks when all masks are
    zero (the common case for flat regions in natural content). Per-active-pixel
@@ -41,7 +41,7 @@ We will add:
    (which uses the avx512 range updaters + avx512 row function); NEON block is
    updated to route through `calculate_c_values_row_neon`.
 
-4. Parity test `libvmaf/test/test_cambi_simd.c` with `SIMD_BITEXACT_ASSERT_MEMCMP`
+4. Parity test `core/test/test_cambi_simd.c` with `SIMD_BITEXACT_ASSERT_MEMCMP`
    on the float output array — byte-exact comparison is correct because no floating-
    point reduction differences exist between scalar and SIMD paths.
 

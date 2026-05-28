@@ -14,7 +14,7 @@ saliency model retired by ADR-0265), and the Vulkan "Step A" precise-decoration
 For each marker class the sweep:
 
 1. Located every occurrence in fork-touched paths (`tools/`, `python/vmaf/`,
-   `python/test/`, `ai/`, `mcp-server/`, `libvmaf/src/`, `libvmaf/test/`).
+   `python/test/`, `ai/`, `mcp-server/`, `core/src/`, `core/test/`).
 2. Classified the file as fork-added vs upstream-mirrored
    (`git log upstream/master -- <path>`).
 3. Read the surrounding context for the documented reopen trigger.
@@ -83,20 +83,20 @@ self-imposed lint discipline holds.
 
 | Cluster | Files | Class | Reopen trigger |
 | --- | --- | --- | --- |
-| HIP feature scaffolds | `libvmaf/src/feature/hip/{adm,float_ssim,float_psnr,float_ansnr,integer_motion_v2,integer_psnr,float_moment,motion,float_motion,ciede,vif}_hip.c` | DEFERRED-VALID | T7-10b runtime PR (ADR-0212 / ADR-0274). Per-TU module headers carry the reopen prose. Smoke test `test_hip_smoke.c` pins the contract. |
-| HIP runtime scaffolds | `libvmaf/src/hip/{common,picture_hip,kernel_template}.c` | DEFERRED-VALID | T7-10b. Header-pinned. |
-| MCP server scaffold | `libvmaf/src/mcp/mcp.c` | DEFERRED-VALID | T5-2b runtime PR (ADR-0209). Smoke test `test_mcp_smoke.c` pins `-ENOSYS`. |
-| DNN built-without stubs | `libvmaf/src/dnn/dnn_api.c:319,334,350,362`, `libvmaf/src/dnn/dnn_attach_api.c:88`, `libvmaf/src/dnn/ort_backend.c` (5 sites) | DEFERRED-VALID (compile-time gate) | These fire only when `VMAF_HAVE_DNN=0`; the with-DNN build links the real implementations. Stubs are correct. |
-| Windows `vmaf_dnn_verify_signature` stub | `libvmaf/src/dnn/model_loader.c:497` | DEFERRED-VALID (platform gate) | Documented "Linux/macOS-only today" — Windows supply-chain workflow is out of scope. |
-| `vmaf_roi.c:258` saliency-model fallback | `libvmaf/tools/vmaf_roi.c` | DEFERRED-VALID (runtime propagation) | Built-without-DNN propagation, not a scaffold. |
-| `libvmaf/src/vulkan/common.c:41` | volk-init failure | DEFERRED-VALID (error path) | Genuine runtime error; not a scaffold. |
+| HIP feature scaffolds | `core/src/feature/hip/{adm,float_ssim,float_psnr,float_ansnr,integer_motion_v2,integer_psnr,float_moment,motion,float_motion,ciede,vif}_hip.c` | DEFERRED-VALID | T7-10b runtime PR (ADR-0212 / ADR-0274). Per-TU module headers carry the reopen prose. Smoke test `test_hip_smoke.c` pins the contract. |
+| HIP runtime scaffolds | `core/src/hip/{common,picture_hip,kernel_template}.c` | DEFERRED-VALID | T7-10b. Header-pinned. |
+| MCP server scaffold | `core/src/mcp/mcp.c` | DEFERRED-VALID | T5-2b runtime PR (ADR-0209). Smoke test `test_mcp_smoke.c` pins `-ENOSYS`. |
+| DNN built-without stubs | `core/src/dnn/dnn_api.c:319,334,350,362`, `core/src/dnn/dnn_attach_api.c:88`, `core/src/dnn/ort_backend.c` (5 sites) | DEFERRED-VALID (compile-time gate) | These fire only when `VMAF_HAVE_DNN=0`; the with-DNN build links the real implementations. Stubs are correct. |
+| Windows `vmaf_dnn_verify_signature` stub | `core/src/dnn/model_loader.c:497` | DEFERRED-VALID (platform gate) | Documented "Linux/macOS-only today" — Windows supply-chain workflow is out of scope. |
+| `vmaf_roi.c:258` saliency-model fallback | `core/tools/vmaf_roi.c` | DEFERRED-VALID (runtime propagation) | Built-without-DNN propagation, not a scaffold. |
+| `core/src/vulkan/common.c:41` | volk-init failure | DEFERRED-VALID (error path) | Genuine runtime error; not a scaffold. |
 | `test_mcp_smoke.c:61`, `test_dnn_session_api.c:46` | Test assertions on the contract | DEFERRED-VALID | Tests *pin* the contract. |
 
 ### 2.5 C `// TODO/FIXME/XXX` comments
 
 11 occurrences. **All** are in upstream-mirrored files
-(`libvmaf/src/feature/adm_tools.c` ×3, `libvmaf/src/feature/integer_adm.c` ×4,
-`libvmaf/src/feature/cuda/integer_adm/adm_dwt2.cu` ×1, `libvmaf/src/svm.cpp`
+(`core/src/feature/adm_tools.c` ×3, `core/src/feature/integer_adm.c` ×4,
+`core/src/feature/cuda/integer_adm/adm_dwt2.cu` ×1, `core/src/svm.cpp`
 ×3 — third-party libsvm vendored from Netflix). Not in scope for the fork's
 sweep policy.
 

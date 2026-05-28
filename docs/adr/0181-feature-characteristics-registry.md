@@ -11,7 +11,7 @@ Today's GPU dispatch decisions are scattered, per-backend, and
 keyed on the wrong axis:
 
 - **SYCL** has a single global graph-replay heuristic in
-  [`libvmaf/src/sycl/common.cpp`](../../libvmaf/src/sycl/common.cpp)
+  [`core/src/sycl/common.cpp`](../../core/src/sycl/common.cpp)
   with `GRAPH_AREA_THRESHOLD = 1280×720`: enable graph replay
   when frame area ≥ 720p, direct submit otherwise. Per-state
   (whole context), not per-feature.
@@ -43,7 +43,7 @@ We introduce a **global feature-characteristics registry**
 consumed by **thin per-backend dispatch-strategy modules**.
 
 **Registry** —
-[`libvmaf/src/feature/feature_characteristics.{c,h}`](../../libvmaf/src/feature/feature_characteristics.h).
+[`core/src/feature/feature_characteristics.{c,h}`](../../core/src/feature/feature_characteristics.h).
 One descriptor per feature, hung off `VmafFeatureExtractor`:
 
 ```c
@@ -85,24 +85,24 @@ behaviour.
 
 **Per-backend glue** — three thin modules, each ~150 LOC:
 
-- [`libvmaf/src/sycl/dispatch_strategy.{c,h}`](../../libvmaf/src/sycl/dispatch_strategy.h) —
+- [`core/src/sycl/dispatch_strategy.{c,h}`](../../core/src/sycl/dispatch_strategy.h) —
   consumes `VmafFeatureCharacteristics` + frame dims + env
   overrides, returns `VmafSyclDispatchStrategy { DIRECT,
   GRAPH_REPLAY }`. Migrates the existing
   `GRAPH_AREA_THRESHOLD` logic from
-  `libvmaf/src/sycl/common.cpp`. Env override:
+  `core/src/sycl/common.cpp`. Env override:
   `VMAF_SYCL_DISPATCH=<feature>:graph,<feature>:direct,...` (per-
   feature overrides) — supersedes the existing
   `VMAF_SYCL_USE_GRAPH` / `VMAF_SYCL_NO_GRAPH` knobs (kept as
   aliases for one release cycle, then deprecated).
 
-- [`libvmaf/src/cuda/dispatch_strategy.{c,h}`](../../libvmaf/src/cuda/dispatch_strategy.h) —
+- [`core/src/cuda/dispatch_strategy.{c,h}`](../../core/src/cuda/dispatch_strategy.h) —
   returns `VmafCudaDispatchStrategy { DIRECT, GRAPH_CAPTURE }`.
   Default behaviour today is always DIRECT; registry-driven
   decisions enable opt-in graph capture for high-dispatch-count
   features (ADM mainly) when the frame is large enough.
 
-- [`libvmaf/src/vulkan/dispatch_strategy.{c,h}`](../../libvmaf/src/vulkan/dispatch_strategy.h) —
+- [`core/src/vulkan/dispatch_strategy.{c,h}`](../../core/src/vulkan/dispatch_strategy.h) —
   returns `VmafVulkanDispatchStrategy { PRIMARY_CMDBUF,
   SECONDARY_CMDBUF_REUSE }`. Default today is always
   `PRIMARY_CMDBUF`; opt-in reuse is the future optimisation
@@ -170,7 +170,7 @@ under existing load before adding 14 new metrics.
   backend decision); [ADR-0175](0175-vulkan-backend-scaffold.md)
   (Vulkan scaffold).
 - Existing dispatch logic this consolidates:
-  [`libvmaf/src/sycl/common.cpp:855-866`](../../libvmaf/src/sycl/common.cpp)
+  [`core/src/sycl/common.cpp:855-866`](../../core/src/sycl/common.cpp)
   (current `GRAPH_AREA_THRESHOLD` decision).
 - Subsumes / closes: T7-17 (SYCL fp64-less device performance —
   becomes a per-feature strategy), T7-18 (Vulkan-on-NVIDIA

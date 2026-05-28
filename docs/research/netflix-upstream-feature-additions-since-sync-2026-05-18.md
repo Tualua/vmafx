@@ -13,8 +13,8 @@ correct porting strategy for each.
 
 ### 1. `aim` — Anchored Integer Motion (adm sub-feature)
 
-- **CPU location**: `libvmaf/src/feature/float_adm.c` and
-  `libvmaf/src/feature/adm.c`.
+- **CPU location**: `core/src/feature/float_adm.c` and
+  `core/src/feature/adm.c`.
 - **Mechanism**: The `compute_adm()` function in `adm.c` runs a second
   `adm_cm` pass per scale with the CSF of `decouple_r` (not `decouple_a`)
   and with `noise_weight = 0`. The result is accumulated into
@@ -28,7 +28,7 @@ correct porting strategy for each.
 
 ### 2. `adm3` — ADM Version 3 (adm sub-feature)
 
-- **CPU location**: `libvmaf/src/feature/float_adm.c`.
+- **CPU location**: `core/src/feature/float_adm.c`.
 - **Mechanism**: Derived in `extract()` from `score` (adm2) and
   `score_aim` (AIM) as either a harmonic mean (when
   `adm_adm3_apply_hm=true`) or a linear blend weighted by
@@ -40,7 +40,7 @@ correct porting strategy for each.
 
 ### 3. `motion3` — Motion Version 3 (motion sub-feature)
 
-- **CPU location**: `libvmaf/src/feature/integer_motion.c`.
+- **CPU location**: `core/src/feature/integer_motion.c`.
 - **Mechanism**: Post-processing of motion2 via a moving average of
   blended scores; options `motion_blend_factor`, `motion_blend_offset`,
   `motion_fps_weight`, `motion_moving_average`, `motion_max_val`.
@@ -51,8 +51,8 @@ correct porting strategy for each.
 ### 4. `chroma_from_luma` — Chroma Prediction Correction
 
 - **Investigation**: Searched for `chroma_from_luma` across
-  `libvmaf/src/feature/` and `libvmaf/include/`. Found references only
-  in `libvmaf/src/model.h` and `libvmaf/src/model.c` as a field of the
+  `core/src/feature/` and `core/include/`. Found references only
+  in `core/src/model.h` and `core/src/model.c` as a field of the
   model's predictor configuration, not as a feature extractor.
 - **CUDA status**: Not applicable — this is a model-level predictor
   attribute, not a GPU kernel. No feature extractor symbol
@@ -60,7 +60,7 @@ correct porting strategy for each.
 
 ### 5. `cambi_eotf` / `effective_eotf` — PQ/HLG EOTF Support in CAMBI
 
-- **CPU location**: `libvmaf/src/feature/cambi.c`.
+- **CPU location**: `core/src/feature/cambi.c`.
 - **Mechanism**: `eotf` option selects PQ/HLG inverse EOTF pre-processing
   applied to the input luma plane before CAMBI computation.
   `effective_eotf` is the resolved EOTF name stored in feature output.

@@ -31,7 +31,7 @@ Upstream's AIM derivation calls `adm_cm` twice:
 2. `adm_cm(decouple_r, csf_a, csf_f, …, noise_weight=DEFAULT, …)` —
    noise-masking enabled (= the existing DLM-style call).
 
-The fork's `adm_cm_s` (in `libvmaf/src/feature/adm_tools.c`) hardcodes
+The fork's `adm_cm_s` (in `core/src/feature/adm_tools.c`) hardcodes
 `noise_weight = DEFAULT_ADM_NOISE_WEIGHT = 0.03125` via its internal
 `adm_sum_cube_s(csf_a, …)` call — there is no parameter to disable it.
 

@@ -117,7 +117,7 @@ the point of v1's "we'll fix it when we have data" framing.
 
 Option 1 (per-frame fence ring, FIFO, default depth 4).
 Implementation lands as
-`libvmaf/src/vulkan/import.c` rewrite preserving the public
+`core/src/vulkan/import.c` rewrite preserving the public
 ABI; the ring is keyed by `frame_index % ring_size`. See
 ADR-0251 for the full rationale and the measurement gate
 that flips Status to Accepted.

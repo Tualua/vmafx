@@ -16,17 +16,17 @@ on 2026-05-09 confirmed:
   (oldest visible run 2026-04-16, latest 2026-05-08). The
   `clang-tidy-full` and `netflix-benchmark` jobs succeed; only the
   `ThreadSanitizer` job fails. TSan reports a **real data race in
-  `div_lookup_generator` at `libvmaf/src/feature/integer_adm.h:32-38`** —
+  `div_lookup_generator` at `core/src/feature/integer_adm.h:32-38`** —
   a static `div_lookup[65537]` table populated concurrently by
   multiple worker threads spawned from `vmaf_thread_pool_create` in
-  `libvmaf/src/thread_pool.c:169`. Failing tests: `test_model`,
+  `core/src/thread_pool.c:169`. Failing tests: `test_model`,
   `test_framesync`, `test_pic_preallocation` (3 of 50).
 
 - `fuzz.yml` — 4 consecutive `schedule` failures on `master`
   (2026-05-05 through 2026-05-08). The `fuzz_yuv_input` and
   `fuzz_cli_parse` matrix legs succeed; only `fuzz_y4m_input` fails.
   Crash: `AddressSanitizer SEGV` in `fread` at
-  `libvmaf/tools/y4m_input.c:877` from a `YUV4MPEG2 W-8 H4 F30:1 Ip
+  `core/tools/y4m_input.c:877` from a `YUV4MPEG2 W-8 H4 F30:1 Ip
   A1:1 C422` reproducer (negative width parses but leaves
   `_y4m->dst_buf == NULL` while `dst_buf_read_sz > 0`, NULL-deref on
   the `fread` destination). Distinct from the Y4M-411-OOB crash that
@@ -84,7 +84,7 @@ this triage PR and will be fixed in dedicated follow-up PRs.
     reject `W <= 0` / `H <= 0` before any allocation; the fuzz
     reproducer (artifact `crash-645a8f241b71d80ff496c10984d9b493d03dbfe1`,
     auto-uploaded by run 25538384046) should be promoted to
-    `libvmaf/test/fuzz/y4m_input_known_crashes/` until the fix lands.
+    `core/test/fuzz/y4m_input_known_crashes/` until the fix lands.
   - Both rows added to `docs/state.md` Open section in the same PR
     as this ADR; reopen triggers cite the fix-PR commit SHAs (filled
     in when the fixes land).

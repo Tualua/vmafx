@@ -13,9 +13,9 @@ no integer twin upstream, second-most-impactful gap on the matrix
 after `motion_v2`.
 
 The CPU reference is
-[`float_ansnr.c`](../../libvmaf/src/feature/float_ansnr.c) +
-[`ansnr.c`](../../libvmaf/src/feature/ansnr.c) +
-[`ansnr_tools.c`](../../libvmaf/src/feature/ansnr_tools.c). The
+[`float_ansnr.c`](../../core/src/feature/float_ansnr.c) +
+[`ansnr.c`](../../core/src/feature/ansnr.c) +
+[`ansnr_tools.c`](../../core/src/feature/ansnr_tools.c). The
 2D-filter path (the active build's default — `ANSNR_OPT_FILTER_1D`
 and `ANSNR_OPT_NORMALIZE` are both off) is structurally simple:
 
@@ -78,7 +78,7 @@ For all three backends:
 CPU `ansnr_tools.c::ansnr_filter1d_s` / `ansnr_filter2d_s` use
 the **edge-replicating** reflective mirror
 (`2 * size - idx - 1`), same as
-[`integer_motion_v2.c`](../../libvmaf/src/feature/integer_motion_v2.c)
+[`integer_motion_v2.c`](../../core/src/feature/integer_motion_v2.c)
 and the float_ansnr GPU twins. NOT the skip-boundary mirror
 (`2 * (size - 1) - idx`) used by `motion`'s GPU kernels. Same
 footgun called out in [ADR-0193](0193-motion-v2-vulkan.md); the
@@ -145,9 +145,9 @@ risk.
 - Parent: [ADR-0192](0192-gpu-long-tail-batch-3.md) — batch 3 scope.
 - Sibling: [ADR-0193](0193-motion-v2-vulkan.md) — first batch 3 metric.
 - CPU reference:
-  [`float_ansnr.c`](../../libvmaf/src/feature/float_ansnr.c) +
-  [`ansnr.c`](../../libvmaf/src/feature/ansnr.c) +
-  [`ansnr_tools.c`](../../libvmaf/src/feature/ansnr_tools.c).
+  [`float_ansnr.c`](../../core/src/feature/float_ansnr.c) +
+  [`ansnr.c`](../../core/src/feature/ansnr.c) +
+  [`ansnr_tools.c`](../../core/src/feature/ansnr_tools.c).
 - Verification: cross-backend gate
   [`scripts/ci/cross_backend_vif_diff.py`](../../scripts/ci/cross_backend_vif_diff.py)
   with `--feature float_ansnr --places 4`. New step in the

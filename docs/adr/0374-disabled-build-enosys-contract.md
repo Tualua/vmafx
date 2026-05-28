@@ -10,7 +10,7 @@
 The fork exposes several build-time-optional features behind meson boolean
 options: `-Denable_dnn`, `-Denable_cuda`, `-Denable_sycl`, `-Denable_hip`,
 `-Denable_vulkan`, `-Denable_metal`, `-Denable_mcp`. Each feature has a
-public C-API surface declared in a header under `libvmaf/include/libvmaf/`.
+public C-API surface declared in a header under `core/include/libvmaf/`.
 
 When a feature is disabled, its public symbols must still be present in the
 final shared/static library so that callers compiled against the headers
@@ -20,7 +20,7 @@ references them conditionally or that links against a pre-built libvmaf
 where the build configuration is opaque.
 
 A Phase-A audit (2026-05-10) flagged the five `-ENOSYS` return sites in
-`libvmaf/src/dnn/dnn_api.c` and the one in `libvmaf/src/dnn/dnn_attach_api.c`
+`core/src/dnn/dnn_api.c` and the one in `core/src/dnn/dnn_attach_api.c`
 as "needs clarification: intentional or real gap?" This ADR records the
 answer: they are intentional.
 
@@ -69,13 +69,13 @@ TU (see `dnn_api.c` §"disabled-build stub contract" and `dnn_attach_api.c`
 
 ## References
 
-- `libvmaf/src/dnn/dnn_api.c` lines 14–17 (existing stub-contract comment)
-- `libvmaf/src/dnn/dnn_attach_api.c` lines 14–24 (stub-contract comment added in this PR)
-- Same pattern in: `libvmaf/src/sycl/dmabuf_import.cpp` lines 529–588,
-  `libvmaf/src/mcp/mcp.c` (scaffold stubs per ADR-0209),
-  `libvmaf/src/hip/common.c` + `kernel_template.c` (scaffold stubs per ADR-0212),
-  `libvmaf/src/vulkan/common.c` (scaffold stubs per ADR-0175),
-  `libvmaf/src/feature/metal/` (scaffold stubs per ADR-0361).
+- `core/src/dnn/dnn_api.c` lines 14–17 (existing stub-contract comment)
+- `core/src/dnn/dnn_attach_api.c` lines 14–24 (stub-contract comment added in this PR)
+- Same pattern in: `core/src/sycl/dmabuf_import.cpp` lines 529–588,
+  `core/src/mcp/mcp.c` (scaffold stubs per ADR-0209),
+  `core/src/hip/common.c` + `kernel_template.c` (scaffold stubs per ADR-0212),
+  `core/src/vulkan/common.c` (scaffold stubs per ADR-0175),
+  `core/src/feature/metal/` (scaffold stubs per ADR-0361).
 - Phase-A audit finding: `dnn_api.c` and `dnn_attach_api.c` `-ENOSYS` stubs
   flagged as "Phase-A-ish — needs clarification: intentional or real gaps?"
   Decision: intentional per this ADR.

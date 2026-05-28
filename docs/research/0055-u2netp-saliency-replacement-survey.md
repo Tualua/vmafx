@@ -128,7 +128,7 @@ ONNX exporter lowers `F.upsample(..., mode='bilinear')` to the
 opset 17 emits `Resize` exclusively).
 
 The fork's ONNX op allowlist
-(`libvmaf/src/dnn/op_allowlist.c`) does **not** include `Resize`:
+(`core/src/dnn/op_allowlist.c`) does **not** include `Resize`:
 
 ```
 /* structural / shape */         Identity, Reshape, Flatten, Squeeze,
@@ -210,7 +210,7 @@ Both are independent ADR-scope decisions, neither bundleable into a
 `f1226310…`, `smoke: true`) and document the second-tier blocker in
 [ADR-0265](../adr/0265-u2netp-saliency-replacement-blocked.md). The
 `mobilesal` extractor remains usable end-to-end — every C-side test
-in `libvmaf/test/test_mobilesal.c` passes against the placeholder —
+in `core/test/test_mobilesal.c` passes against the placeholder —
 but `saliency_mean` stays a content-independent constant (~0.5)
 until at least one of the unblock paths lands. The C contract does
 not change; any future drop-in (U-2-Net via mirror + allowlist
@@ -240,7 +240,7 @@ before another saliency-replacement attempt.
   Object Detection"*, Pattern Recognition 2020.
 - ONNX `Resize` op spec:
   <https://onnx.ai/onnx/operators/onnx__Resize.html>.
-- `libvmaf/src/dnn/op_allowlist.c` — the canonical allowlist
+- `core/src/dnn/op_allowlist.c` — the canonical allowlist
   enumeration this digest audited against.
 - Source: paraphrased — task brief directive "if u2netp weights
   download fails, ship a docs-only blocker PR similar to #328's

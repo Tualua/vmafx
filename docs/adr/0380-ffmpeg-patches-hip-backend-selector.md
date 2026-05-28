@@ -17,7 +17,7 @@ regular `libvmaf` filter:
 | CUDA    | 0010 (`cuda` boolean) | — (upstream `libvmaf_cuda` filter) |
 | **HIP** | **missing** | **missing** |
 
-The HIP backend is real: `libvmaf/include/libvmaf/libvmaf_hip.h` is a
+The HIP backend is real: `core/include/libvmaf/libvmaf_hip.h` is a
 public C-API header with `vmaf_hip_state_init` / `vmaf_hip_import_state`
 / `vmaf_hip_state_free`. PRs #695 / #696 / #710 landed the runtime; 6 of
 11 HIP kernels are real post-PR-#710 / ADR-0375. CLAUDE.md §12 r14
@@ -110,7 +110,7 @@ documented in `docs/state.md` and `docs/rebase-notes.md`.
   [ADR-0350](0350-ffmpeg-libvmaf-cuda-backend-selector.md) (CUDA selector),
   [ADR-0186](0186-vulkan-image-import-impl.md) (Vulkan dedicated filter),
   [ADR-0238](0238-vulkan-picture-preallocation.md) (lazy pool init pattern).
-- HIP C-API: [`libvmaf/include/libvmaf/libvmaf_hip.h`](../../libvmaf/include/libvmaf/libvmaf_hip.h).
+- HIP C-API: [`core/include/libvmaf/libvmaf_hip.h`](../../core/include/libvmaf/libvmaf_hip.h).
 - HIP runtime: ADR-0212 (scaffold), ADR-0372 / 0373 / 0375 (real kernels).
 - CLAUDE.md §12 r14 (ffmpeg-patches surface gate — triggering rule).
 - req: user directive to add missing HIP FFmpeg integration patches for

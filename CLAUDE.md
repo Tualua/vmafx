@@ -20,7 +20,7 @@ Non-Claude agents: see [AGENTS.md](AGENTS.md) (same content, tool-agnostic).
   - SYCL / CUDA / HIP GPU backends (runtime-selected).
   - AVX2 / AVX-512 / NEON SIMD paths.
   - `--precision` CLI flag (default `%.6f` matching upstream golden gate; `--precision=max` opts in to `%.17g` IEEE-754 round-trip lossless — ADR-0119 supersedes ADR-0006).
-  - Tiny-AI (ONNX Runtime) model surface — see `ai/`, `libvmaf/src/dnn/`.
+  - Tiny-AI (ONNX Runtime) model surface — see `ai/`, `core/src/dnn/`.
   - MCP server — see `mcp-server/vmaf-mcp/`.
 - License: BSD-3-Clause-Plus-Patent (upstream license preserved). See [LICENSE](LICENSE).
 - Default branch on this fork: `master`. Upstream is tracked as remote `upstream`.
@@ -80,7 +80,7 @@ Skills: `/format-all`, `/lint-all`.
 ## 5. Where the code is
 
 ```
-libvmaf/
+core/                         # C library + build root (was libvmaf/, ADR-0700)
   src/                        # C sources (metric engine, feature extractors)
     feature/                  # per-feature CPU implementations
       x86/                    # AVX2 / AVX-512 SIMD paths
@@ -90,11 +90,11 @@ libvmaf/
     cuda/                     # CUDA backend runtime (picture, dispatch)
     sycl/                     # SYCL backend runtime (queue, USM, dmabuf)
     dnn/                      # ONNX Runtime integration (tiny AI, Phase 3k)
-  include/libvmaf/            # public C API headers
+  include/libvmaf/            # public C API headers (install path unchanged)
   tools/                      # CLI: vmaf.c, vmaf_bench.c, cli_parse.c
   test/                       # C unit tests
-python/vmaf/                  # Python bindings + classic training harness
-  workspace/                  # harness scratch — was ROOT/workspace/ upstream; see docs/architecture/workspace.md
+compat/python-vmaf/           # Python harness package (was python/vmaf/, ADR-0700)
+python/vmaf/                  # Shim — re-exports from compat/python-vmaf/
 python/test/                  # Python tests — contains Netflix golden assertions
 ai/                           # Tiny-AI training (Python / PyTorch + Lightning)
 mcp-server/vmaf-mcp/          # MCP JSON-RPC server (Python)
@@ -186,7 +186,7 @@ Use `/prep-release` to dry-run locally before merging a release PR.
 6. **Every** commit message is Conventional Commits (`type(scope): subject`). Enforced
    by the `commit-msg` git hook.
 7. **Every** new `.c` / `.h` / `.cpp` / `.cu` starts with the license header. Use
-   `Copyright 2026 Lusoris` for wholly-new files, Netflix
+   `Copyright 2026 Lusoris and Claude (Anthropic)` for wholly-new files, Netflix
    header for upstream-touched files.
 8. **Every** non-trivial architectural, policy, or scope decision gets its own
    ADR file `docs/adr/NNNN-kebab-case.md` following
@@ -223,7 +223,7 @@ Use `/prep-release` to dry-run locally before merging a release PR.
 10. **Every** PR that adds or changes a user-discoverable surface ships
     **human-readable documentation** under `docs/` in the same PR as the code.
     User-discoverable means: CLI flags or binaries, public C API under
-    `libvmaf/include/`, feature extractors, GPU backends / SIMD paths,
+    `core/include/`, feature extractors, GPU backends / SIMD paths,
     `meson_options.txt` build flags, ffmpeg filter options, MCP tools, tiny-AI
     surfaces, and user-visible log / error / output-schema changes. Docs land
     in the existing topic tree — CLI in [`docs/usage/`](docs/usage/), C API in
@@ -330,7 +330,7 @@ Use `/prep-release` to dry-run locally before merging a release PR.
     entire class of yak shave. The rule:
     - **Before any non-trivial vmaf / vmaf-tune / ai / MCP run**:
       rebuild the container if its image predates the last `master`
-      sync that touched anything under `libvmaf/`, `mcp-server/`,
+      sync that touched anything under `core/`, `mcp-server/`,
       `ai/`, `tools/vmaf-tune/`, or `dev/`. One-liner:
       `docker compose --project-directory $(git rev-parse --show-toplevel)
       -f dev/docker-compose.yml build dev-mcp && docker compose
@@ -348,7 +348,7 @@ Use `/prep-release` to dry-run locally before merging a release PR.
       in the container — diagnose the container first; if it's a real
       container gap, fix the Containerfile rather than the host
       build-flag soup. Host-side builds remain available
-      (`build/`, `libvmaf/build-cuda`, `libvmaf/build-all`) but are
+      (`build/`, `core/build-cuda`, `core/build-all`) but are
       no longer the default mental model.
     - **Don't multiplex the same device across parallel jobs.** When
       a long-running job (CHUG re-extract, BVI-DVC sweep) is pinned to

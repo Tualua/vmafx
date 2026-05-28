@@ -46,7 +46,7 @@ The decision is which surface to modify:
 
 We will ship `tools/vmaf-roi-score/` as a fork-local Python tool
 implementing **Option C** (the name disambiguates from the existing
-`libvmaf/tools/vmaf_roi.c` encoder-steering sidecar shipped under
+`core/tools/vmaf_roi.c` encoder-steering sidecar shipped under
 ADR-0247): drive the `vmaf` CLI twice (full-frame + saliency-masked
 distorted YUV), blend the two pooled scores via a user weight in
 `[0, 1]`, and emit a JSON record with both scalars and the blend. The

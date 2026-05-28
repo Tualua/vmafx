@@ -105,7 +105,7 @@ multi-codec Phase A corpus and tracked as backlog item
   - C-side runtime adapter (read manifest, open 5 sessions, fan-out
     inputs, aggregate `mu / sigma`) — separate PR after this
     scaffold; exposes `vmaf_dnn_score_with_interval` to
-    `libvmaf/src/dnn/`.
+    `core/src/dnn/`.
   - `vmaf-tune --quality-confidence` flag — Phase B follow-up to
     ADR-0237; consumer of the new C-side adapter.
 

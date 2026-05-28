@@ -10,7 +10,7 @@ Fix dispatch-strategy registry gaps across SYCL, Vulkan, HIP, and Metal backends
   `"float_motion"`, `"VMAF_integer_feature_motion2_v2_score"` instead of
   `"motion2_v2_score"`).
 - Add `scripts/ci/check-dispatch-registry.sh` reproducer.
-- Add dispatch-registry invariant notes to `libvmaf/src/hip/AGENTS.md` and
-  `libvmaf/src/metal/AGENTS.md`.
+- Add dispatch-registry invariant notes to `core/src/hip/AGENTS.md` and
+  `core/src/metal/AGENTS.md`.
 
 Audit: `docs/research/0135-dispatch-strategy-registry-audit-2026-05-15.md`.

@@ -1,6 +1,6 @@
-- **`libvmaf/src/output.c` writer-format coverage 28% → 95% (R3 from
+- **`core/src/output.c` writer-format coverage 28% → 95% (R3 from
   [`docs/development/coverage-gap-analysis-2026-05-02.md`](docs/development/coverage-gap-analysis-2026-05-02.md)).**
-  Adds [`libvmaf/test/test_output.c`](libvmaf/test/test_output.c) (8 unit
+  Adds [`core/test/test_output.c`](core/test/test_output.c) (8 unit
   tests, 230 lines instrumented) exercising the four writer formats
   (XML / JSON / CSV / SUB) end-to-end through `tmpfile()`-backed sinks
   and a synthetic `VmafFeatureCollector`. Branches newly covered: NaN /

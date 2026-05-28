@@ -1,4 +1,4 @@
-# Included from libvmaf/src/meson.build when get_option('enable_{{BACKEND}}') is enabled.
+# Included from core/src/meson.build when get_option('enable_{{BACKEND}}') is enabled.
 
 {{BACKEND}}_sources = files(
   '{{BACKEND}}/common.c',

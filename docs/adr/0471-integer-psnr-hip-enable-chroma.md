@@ -65,5 +65,5 @@ No changes to the `.hip` kernel source — it is already plane-agnostic.
 
 - [ADR-0453](0453-psnr-enable-chroma-gpu-parity.md) — original CUDA/SYCL/Vulkan fix
 - [ADR-0372](../adr/0372-integer-psnr-hip-real-kernel.md) — HIP PSNR kernel promotion (noted chroma as follow-up)
-- CPU reference: `libvmaf/src/feature/integer_psnr.c` (init geometry + enable_chroma guard)
-- CUDA twin: `libvmaf/src/feature/cuda/integer_psnr_cuda.c`
+- CPU reference: `core/src/feature/integer_psnr.c` (init geometry + enable_chroma guard)
+- CUDA twin: `core/src/feature/cuda/integer_psnr_cuda.c`

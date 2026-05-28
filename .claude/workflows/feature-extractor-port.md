@@ -48,10 +48,10 @@ runtime dispatch + register the kernel + add a smoke test.
 
 Mandatory steps:
 
-1. Read the scalar reference: `libvmaf/src/feature/{{FEATURE}}.c`.
+1. Read the scalar reference: `core/src/feature/{{FEATURE}}.c`.
 2. Scaffold via `/add-gpu-backend` if {{BACKEND}} doesn't exist yet,
    otherwise add the kernel directly under
-   `libvmaf/src/feature/{{BACKEND}}/`.
+   `core/src/feature/{{BACKEND}}/`.
 3. Register the new `vmaf_fex_{{FEATURE}}_{{BACKEND}}` symbol in
    the backend dispatch table.
 4. Cross-backend ULP gate at `places=4`:
@@ -83,7 +83,7 @@ Mandatory steps:
   device atomic) + numerical-stability analysis.
 - Decision matrix: alternative reduction strategies / image vs
   buffer descriptors / FP16 vs FP32 trade-off.
-- AGENTS.md note in `libvmaf/src/feature/{{BACKEND}}/AGENTS.md`
+- AGENTS.md note in `core/src/feature/{{BACKEND}}/AGENTS.md`
   (create if absent) listing the new kernel file + parity-gate
   expectations.
 - Changelog fragment under `changelog.d/added/`.
@@ -98,4 +98,4 @@ Mandatory steps:
 - Branch name + PR URL.
 - Cross-backend ULP table for `{{FEATURE}}` across all enabled
   backends.
-- Kernel-source path: `libvmaf/src/feature/{{BACKEND}}/{{FEATURE}}_{{BACKEND}}.{c,cpp,cu}`.
+- Kernel-source path: `core/src/feature/{{BACKEND}}/{{FEATURE}}_{{BACKEND}}.{c,cpp,cu}`.

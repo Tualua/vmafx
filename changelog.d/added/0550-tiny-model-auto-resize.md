@@ -3,7 +3,7 @@
 - **`--tiny-resize {bilinear,nearest,bicubic,disabled}` CLI flag** plus
   matching public C API `vmaf_dnn_set_resize_mode(ctx, mode)` and
   `VmafDnnResizeMode` enum
-  (`libvmaf/include/libvmaf/dnn.h`): select the resize filter the NCHW
+  (`core/include/libvmaf/dnn.h`): select the resize filter the NCHW
   tiny-model dispatch uses when the user-supplied frame dims don't
   match the model's expected input shape (e.g. 576x324 YUV against
   the 224x224 `nr_metric_v1.onnx` NR scorer). Default is `disabled`
@@ -13,7 +13,7 @@
   ~2% on the same input — document filter choice with the model.
   ADR-0550.
 - **`vmaf_tensor_from_luma_resize()`**
-  (`libvmaf/src/dnn/tensor_io.{c,h}`): separable nearest /
+  (`core/src/dnn/tensor_io.{c,h}`): separable nearest /
   bilinear / Catmull-Rom-bicubic resampling helper with
   replicate-edge clamping. Bit-identical to `vmaf_tensor_from_luma`
   on the no-resize fast path. ADR-0550.

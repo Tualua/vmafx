@@ -6,7 +6,7 @@ Orientation for agents working on the tiny-AI **training** side. Parent:
 ## Scope
 
 Python package for training, exporting, and registering tiny-AI
-checkpoints that are then consumed by [libvmaf/src/dnn/](../libvmaf/src/dnn/AGENTS.md)
+checkpoints that are then consumed by [core/src/dnn/](../core/src/dnn/AGENTS.md)
 at runtime. Stack: PyTorch + Lightning → ONNX.
 
 ```text
@@ -22,29 +22,12 @@ ai/
 
 - **Parent rules** apply (see [../AGENTS.md](../AGENTS.md)).
 - **Boundary is `.onnx` + sidecar JSON on disk.** Training lives here,
-  runtime lives in `libvmaf/src/dnn/`, and the two communicate only through
+  runtime lives in `core/src/dnn/`, and the two communicate only through
   files in `model/tiny/`. No imports cross this boundary.
 - **Every shipped `.onnx` has a registry entry** in
   [`../model/tiny/registry.json`](../model/tiny/) with sha256, upstream
   source, license, and opset. See
   [ADR-0039](../docs/adr/0039-onnx-runtime-op-walk-registry.md).
-- **Registry writers use strict JSON.** Training/export scripts that update
-  `model/tiny/registry.json` call
-  `vmaf_train.registry.write_registry_json()` so missing diagnostic metrics
-  become JSON `null` instead of non-standard `NaN` / `Infinity` tokens.
-- **Operator JSON stdout uses the same strict boundary.** AI scripts that print
-  report-style JSON to stdout should call `aiutils.run_manifest.dumps_manifest_json()`
-  rather than local `json.dumps()` so file and stdout surfaces agree.
-- **Legacy report/cache JSON uses the same strict boundary.** AI scripts that
-  keep an existing JSON cache or report schema should call
-  `aiutils.run_manifest.write_manifest_json()` rather than local
-  `Path.write_text(json.dumps(...))` so non-finite diagnostics serialize as
-  standard JSON `null`.
-- **Artifact JSONL rows use the shared strict row writer.** AI corpus,
-  materializer, and extraction scripts that write JSONL rows call
-  `aiutils.jsonl_utils.dumps_jsonl_row()` instead of local
-  `json.dumps(row) + "\n"` so missing/non-finite diagnostics become standard
-  JSON `null`.
 - **ONNX opset**: export requests opset 17 but torch dynamo may emit 18
   (downconvert sometimes fails in `onnx.version_converter`). Record the
   emitted opset in the registry sidecar rather than failing the export.
@@ -125,7 +108,7 @@ runnable Netflix-corpus prep stack:
   assume_dims=)` is the only public surface.
 - [`ai/data/feature_extractor.py`](data/feature_extractor.py) — wraps
   the libvmaf CLI in JSON mode. Defaults to
-  `libvmaf/build-cpu/tools/vmaf`; honours `$VMAF_BIN`. Raises
+  `core/build-cpu/tools/vmaf`; honours `$VMAF_BIN`. Raises
   `RuntimeError` with explicit build instructions on missing binary.
 - [`ai/data/scores.py`](data/scores.py) — `vmaf_v0.6.1` distillation
   scores (per-frame + pooled). Honours `$VMAF_MODEL_PATH`.
@@ -583,7 +566,7 @@ reference, libx264 CRF 35 distorted side) but emits the current
 
 **Rebase-sensitive invariants:**
 
-- Use `libvmaf/build-cpu/tools/vmaf` or an explicitly verified fresh
+- Use `core/build-cpu/tools/vmaf` or an explicitly verified fresh
   dev-container binary. Do not let the script fall back to
   `/usr/local/bin/vmaf`; system installs have previously lacked
   fork-only extractors such as `motion_v2`, `ssimulacra2`, and the
@@ -734,10 +717,10 @@ threshold). When extending these scripts:
   If any required field is absent (K150K-A clips, incomplete rows), the
   function returns `None` and `_probe_geometry(mp4)` is called as fallback.
   Do not remove the fallback — K150K-A clips have no sidecar.
-- **Binary requirement:** the script requires `libvmaf/build-cpu/tools/vmaf`
+- **Binary requirement:** the script requires `core/build-cpu/tools/vmaf`
   (fork build); the system `/usr/local/bin/vmaf` v3.0.0 lacks `ssimulacra2`
   and `motion_v2`. The `--vmaf-bin` default (in `main()`) now points to
-  `libvmaf/build-cpu/tools/vmaf`. Do NOT switch to `build-cuda/tools/vmaf`
+  `core/build-cpu/tools/vmaf`. Do NOT switch to `build-cuda/tools/vmaf`
   as the default — the CUDA binary has a latent CLI double-write bug when
   `--feature <x>` is combined with the auto-loaded default VMAF model
   (see Research-0096 / ADR-0382 for details).
@@ -890,7 +873,7 @@ unrelated workstreams.
 | `fr_regressor_v3plus_features` | v3 (16-slot) | canonical-6 + `encoder_internal` + shot-boundary + `hwcap` | **reserved** (ADR-0349) — registry row lands with the future PR that ships the `.onnx` |
 
 The reservation is documentation-only because
-[`libvmaf/test/dnn/test_registry.sh`](../libvmaf/test/dnn/test_registry.sh)
+[`core/test/dnn/test_registry.sh`](../core/test/dnn/test_registry.sh)
 treats every registry row as a hard contract (file must exist, sha256 must
 match, sidecar must accompany every `smoke: false` entry); a stub row would
 fail CI on day one. The future `_v3plus_features` PR populates the row in

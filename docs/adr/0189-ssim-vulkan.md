@@ -12,10 +12,10 @@
 separable Gaussian filter is the scaffolding `ms_ssim` reuses.
 
 The active CPU SSIM extractor is `vmaf_fex_float_ssim`
-([`libvmaf/src/feature/float_ssim.c`](../../libvmaf/src/feature/float_ssim.c))
+([`core/src/feature/float_ssim.c`](../../core/src/feature/float_ssim.c))
 — **not** the historical `integer_ssim` (which is unregistered;
 see comment in
-[`integer_ssim.c`](../../libvmaf/src/feature/integer_ssim.c)
+[`integer_ssim.c`](../../core/src/feature/integer_ssim.c)
 line 275). The float path:
 
 1. `picture_copy(ref, dis)` — uint sample → `float` in `[0, 255]` range, luma plane only.
@@ -42,7 +42,7 @@ pipeline** with **host-side decimation**:
 ### v1 scale=1 only (no decimation)
 
 The CPU's `ssim_decimate_pair` lives behind `static` linkage in
-[`ssim.c`](../../libvmaf/src/feature/ssim.c) and the underlying
+[`ssim.c`](../../core/src/feature/ssim.c) and the underlying
 `iqa_decimate` is in `iqa/decimate.c`. v1 does **not** expose
 either to the Vulkan host glue (touching ssim.c would modify
 an upstream-mirrored file unnecessarily for a non-correctness
@@ -201,6 +201,6 @@ CPU at the 11-pixel border.
 - Sibling kernels: ciede Vulkan (PR #136 / ADR-0187), moment
   Vulkan (PR #133), psnr Vulkan (PR #125).
 - CPU references:
-  [`float_ssim.c`](../../libvmaf/src/feature/float_ssim.c),
-  [`ssim.c`](../../libvmaf/src/feature/ssim.c),
-  [`iqa/ssim_tools.{c,h}`](../../libvmaf/src/feature/iqa/ssim_tools.c).
+  [`float_ssim.c`](../../core/src/feature/float_ssim.c),
+  [`ssim.c`](../../core/src/feature/ssim.c),
+  [`iqa/ssim_tools.{c,h}`](../../core/src/feature/iqa/ssim_tools.c).

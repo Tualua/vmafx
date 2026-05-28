@@ -65,7 +65,7 @@ non-zero index (e.g. when frame 0 has no scores but frame 3 does).
 
 ## Decision
 
-Apply four targeted fixes across `libvmaf/src/output.c` and `libvmaf/src/libvmaf.c`:
+Apply four targeted fixes across `core/src/output.c` and `core/src/libvmaf.c`:
 
 1. **`>` → `>=` in all seven capacity bounds checks** in `output.c`, fixing the
    heap-buffer-overread UB. Add `/* ADR-0606: >= not > */` comments at each site.
@@ -115,5 +115,5 @@ Apply four targeted fixes across `libvmaf/src/output.c` and `libvmaf/src/libvmaf
   commit `798a202fe`.
 - Failing CI run: 26065652545, job 76635756665, `2026-05-19T04:10:25.973Z`.
 - Predecessor: [ADR-0602](0602-macos-vmaf-write-output-segv.md).
-- Fixed files: `libvmaf/src/output.c`, `libvmaf/src/libvmaf.c`.
+- Fixed files: `core/src/output.c`, `core/src/libvmaf.c`.
 - req: "fix macOS SIGSEGV in test_output + test_public_api_score (PR #1403 follow-up, ADR-0602 deep-fix)"

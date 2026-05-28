@@ -1,5 +1,5 @@
-- **docs(mcp)**: `libvmaf/src/mcp/AGENTS.md` and the
-  `libvmaf/src/mcp/mcp_internal.h` doc-comment header refreshed to the
+- **docs(mcp)**: `core/src/mcp/AGENTS.md` and the
+  `core/src/mcp/mcp_internal.h` doc-comment header refreshed to the
   current live v3 state. The earlier text still described the subtree as
   the audit-first T5-2a stub ("stdio runtime only; SSE/UDS still return
   `-ENOSYS`"), which has been wrong since T5-2b shipped the stdio

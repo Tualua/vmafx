@@ -10,7 +10,7 @@
   Intel `icpx` remains the **primary** toolchain — fork-shipped
   binaries, Intel discrete-GPU codegen, and the OpenVINO / NPU
   enablement story stay icpx-coupled. New header
-  `libvmaf/src/feature/sycl/sycl_compat.h` exposes a
+  `core/src/feature/sycl/sycl_compat.h` exposes a
   `VMAF_SYCL_REQD_SG_SIZE(N)` macro that reduces to
   `[[intel::reqd_sub_group_size(N)]]` under icpx and to a no-op
   under AdaptiveCpp; ten previously hard-coded kernel-attribute

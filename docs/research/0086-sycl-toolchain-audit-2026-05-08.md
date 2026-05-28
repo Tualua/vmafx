@@ -61,12 +61,12 @@ timings against the previous version's numbers
 The fork uses `sycl::atomic_ref<int64_t, sycl::memory_order::relaxed,
 sycl::memory_scope::device, sycl::access::address_space::global_space>`
 in five distinct call sites:
-[`integer_motion_v2_sycl.cpp:199`](../../libvmaf/src/feature/sycl/integer_motion_v2_sycl.cpp),
-[`integer_moment_sycl.cpp:89`](../../libvmaf/src/feature/sycl/integer_moment_sycl.cpp),
-[`integer_psnr_sycl.cpp:98`](../../libvmaf/src/feature/sycl/integer_psnr_sycl.cpp),
-[`integer_motion_sycl.cpp:375`](../../libvmaf/src/feature/sycl/integer_motion_sycl.cpp),
-[`integer_adm_sycl.cpp:1103,1113`](../../libvmaf/src/feature/sycl/integer_adm_sycl.cpp),
-[`integer_vif_sycl.cpp:795,1286`](../../libvmaf/src/feature/sycl/integer_vif_sycl.cpp).
+[`integer_motion_v2_sycl.cpp:199`](../../core/src/feature/sycl/integer_motion_v2_sycl.cpp),
+[`integer_moment_sycl.cpp:89`](../../core/src/feature/sycl/integer_moment_sycl.cpp),
+[`integer_psnr_sycl.cpp:98`](../../core/src/feature/sycl/integer_psnr_sycl.cpp),
+[`integer_motion_sycl.cpp:375`](../../core/src/feature/sycl/integer_motion_sycl.cpp),
+[`integer_adm_sycl.cpp:1103,1113`](../../core/src/feature/sycl/integer_adm_sycl.cpp),
+[`integer_vif_sycl.cpp:795,1286`](../../core/src/feature/sycl/integer_vif_sycl.cpp).
 
 Every site uses the same `(relaxed, device, global)` triple — the
 loosest legal contract. icpx 2025.3 (LLVM-20-based) lowers
@@ -81,9 +81,9 @@ session.
 
 1. Build the SYCL backend with both toolchains (`/opt/intel/oneapi-2025.0.4`
    and `/opt/intel/oneapi-2025.3`) into separate trees:
-   `meson setup libvmaf/build-sycl-2025.0 -Denable_sycl=true -Denable_cuda=false`,
+   `meson setup core/build-sycl-2025.0 -Denable_sycl=true -Denable_cuda=false`,
    activated under each `setvars.sh`.
-2. Run `libvmaf/build-sycl-XYZ/tools/vmaf_bench --feature=motion --backend=sycl`
+2. Run `core/build-sycl-XYZ/tools/vmaf_bench --feature=motion --backend=sycl`
    over the 3 Netflix golden-data CPU pairs (the same fixtures that
    already gate fork numerical correctness — see `CLAUDE.md §8`).
 3. Capture median-of-5 per-frame `motion_sycl` and `adm_sycl` timings in
@@ -126,7 +126,7 @@ removes the `_mm`-style fallback we wrote against older Arc gen."*
 **Static-analysis findings**:
 
 The VIF horizontal kernel at
-[`integer_vif_sycl.cpp:560`](../../libvmaf/src/feature/sycl/integer_vif_sycl.cpp)
+[`integer_vif_sycl.cpp:560`](../../core/src/feature/sycl/integer_vif_sycl.cpp)
 implements a two-phase reduction documented in the in-tree comment at
 lines 506-518:
 
@@ -149,7 +149,7 @@ wrote against older Arc gen" — does not match the current source.
 Either (a) the fallback was removed in a prior cleanup the checklist
 predates, or (b) the checklist was a forward-looking note for code
 that never landed. The fork ships zero `sub_group::shuffle_*` direct
-call sites today (`grep -rn "shuffle" libvmaf/src/feature/sycl/`
+call sites today (`grep -rn "shuffle" core/src/feature/sycl/`
 returns 0 lines outside comments).
 
 **Codegen-change risk for icpx 2025.3 vs 2025.0.4**: `[UNVERIFIED]`
@@ -191,7 +191,7 @@ compilation if the hardware can't support the requested SG size."*
 
 **Static-analysis findings**:
 
-`grep -rn "intel::reqd_sub_group_size" libvmaf/src/` returns 10 call
+`grep -rn "intel::reqd_sub_group_size" core/src/` returns 10 call
 sites. Listed in source order:
 
 | File | Line | Requested N |
@@ -256,7 +256,7 @@ register pressure and may help on Battlemage."*
 **Static-analysis findings**:
 
 The ADM DWT vertical pass at
-[`integer_adm_sycl.cpp:206`](../../libvmaf/src/feature/sycl/integer_adm_sycl.cpp)
+[`integer_adm_sycl.cpp:206`](../../core/src/feature/sycl/integer_adm_sycl.cpp)
 implements a manual cooperative tile load (lines 281-307):
 
 ```cpp
@@ -296,8 +296,8 @@ type-erased cast.
 **Sketch (NOT to be applied in this PR — research only)**:
 
 ```diff
---- a/libvmaf/src/feature/sycl/integer_adm_sycl.cpp
-+++ b/libvmaf/src/feature/sycl/integer_adm_sycl.cpp
+--- a/core/src/feature/sycl/integer_adm_sycl.cpp
++++ b/core/src/feature/sycl/integer_adm_sycl.cpp
 @@ -281,29 +281,17 @@
 -    if (interior) {
 -        // Fast path: no boundary checks
@@ -381,10 +381,10 @@ path."*
 
 The fork's `--tiny-device` flag accepts `auto | cpu | cuda | openvino |
 rocm` today, parsed at
-[`libvmaf/tools/cli_parse.c:204`](../../libvmaf/tools/cli_parse.c) and
-resolved in `libvmaf/tools/vmaf.c:509` (`resolve_tiny_device`). There
+[`core/tools/cli_parse.c:204`](../../core/tools/cli_parse.c) and
+resolved in `core/tools/vmaf.c:509` (`resolve_tiny_device`). There
 is **no** `npu` arm in the resolver and no NPU EP wiring in
-[`libvmaf/src/dnn/`](../../libvmaf/src/dnn/) (the directory ships
+[`core/src/dnn/`](../../core/src/dnn/) (the directory ships
 `ort_backend.c`, `ort_backend_internal.h`, `model_loader.c`,
 `tensor_io.c`, plus the public-API surface in `dnn_api.c`).
 
@@ -411,7 +411,7 @@ has not been performed.
    error-path).
 4. Build: probe for NPU EP availability at configure time, skip
    advertising if absent (`meson_options.txt` boolean,
-   `libvmaf/src/dnn/meson.build`, ~20 LOC).
+   `core/src/dnn/meson.build`, ~20 LOC).
 5. Docs: extend `docs/ai/inference.md` Device-table at line 153 with
    a `--tiny-device=npu` row, document the Lunar Lake hardware
    requirement (~15 LOC of doc).
@@ -462,7 +462,7 @@ adoption target for `std::expected` / `std::print`:
 - `std::expected` is a host-side error-channel type. Fork SYCL
   kernels return via `int64_t` accumulators or `atomic_ref` writes,
   not via Boost-Outcome-style error-or-value sums. The host harness
-  in `libvmaf/src/sycl/picture_sycl.cpp` already uses `int rc` return
+  in `core/src/sycl/picture_sycl.cpp` already uses `int rc` return
   codes integrated with the libvmaf C-API error contract — switching
   to `std::expected` would either decouple the host wrapper from the
   C-API (backwards-incompatible) or introduce a translation layer
@@ -478,7 +478,7 @@ adoption target for `std::expected` / `std::print`:
 **Validation of the existing recommendation**: the "defer until a
 clear use case (likely the tiny-AI dispatch layer when the NPU EP
 lands)" note is **partially right**. The tiny-AI dispatch layer in
-`libvmaf/src/dnn/` is C, not C++; if NPU EP work introduces a new
+`core/src/dnn/` is C, not C++; if NPU EP work introduces a new
 C++ shim (it might, for ORT EP registration ergonomics), `std::expected`
 could enter through that shim and only that shim. Everything else
 should stay on the current pattern.
@@ -537,7 +537,7 @@ plumbing.
 
 ### B.2 — Build-system delta
 
-Current `libvmaf/src/feature/sycl/meson.build` invokes the C++
+Current `core/src/feature/sycl/meson.build` invokes the C++
 compiler the user-environment exposes; `meson_options.txt` carries
 `enable_sycl=true`. To support both toolchains, the meson logic
 would branch on `cxx == 'icpx' or cxx == 'dpcpp'` vs `cxx ==
@@ -547,8 +547,8 @@ would branch on `cxx == 'icpx' or cxx == 'dpcpp'` vs `cxx ==
 - acpp: `--acpp-targets="generic"` (single-source SPIR-V) or
   `"omp;cuda:sm_75"` (multi-target).
 
-Estimated meson-side change: ~80 LOC across `libvmaf/meson.build` +
-`libvmaf/src/feature/sycl/meson.build`.
+Estimated meson-side change: ~80 LOC across `core/meson.build` +
+`core/src/feature/sycl/meson.build`.
 
 ### B.3 — Test-coverage upside
 
@@ -596,7 +596,7 @@ contributor explicitly requests non-Intel SYCL portability.
   own ADR ("AdaptiveCpp second-toolchain support"). Out-of-scope
   for any in-flight PR.
 - [ ] **Sized at ~30 LOC**: introduce a `VMAF_SYCL_REQD_SG_SIZE(N)`
-  macro in `libvmaf/src/feature/sycl/sycl_compat.h` (new file) that
+  macro in `core/src/feature/sycl/sycl_compat.h` (new file) that
   expands to `[[intel::reqd_sub_group_size(N)]]` on icpx and to
   empty on acpp; touch all 10 call sites. Can land **before** the
   acpp build path as a refactor PR.

@@ -34,12 +34,12 @@ first-party objects and are not excluded.
 
 ## Decision
 
-Apply `-fvisibility=hidden` to `vmaf_cflags_common` in `libvmaf/src/meson.build`,
+Apply `-fvisibility=hidden` to `vmaf_cflags_common` in `core/src/meson.build`,
 making all symbols hidden by default. Introduce a `VMAF_EXPORT` macro in
-`libvmaf/include/libvmaf/macros.h` that maps to
+`core/include/libvmaf/macros.h` that maps to
 `__attribute__((visibility("default")))` on GCC/Clang and
 `__declspec(dllexport)` on MSVC. Annotate every public `vmaf_*` function
-declaration in `libvmaf/include/libvmaf/*.h` with `VMAF_EXPORT`. The result is
+declaration in `core/include/libvmaf/*.h` with `VMAF_EXPORT`. The result is
 that the dynamic symbol table of `libvmaf.so.3` contains only the 44 intentional
 public-API symbols, down from 207 + 44 = 251.
 

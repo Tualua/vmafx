@@ -9,7 +9,7 @@ without going through FFmpeg.
 The tool is **built but not installed**. It only compiles when SYCL +
 Intel VPL + libva + libva-drm are all present at configure time. The
 canonical invocation is from the build tree
-(`./build/libvmaf/tools/vmaf_vpl`). For most users the
+(`./build/core/tools/vmaf_vpl`). For most users the
 [`vmaf_libvmaf_sycl` FFmpeg filter](ffmpeg.md#dedicated-sycl-filter-libvmaf_sycl)
 is the right entry point; `vmaf_vpl` is for libvmaf SYCL contributors
 debugging the import path itself.
@@ -22,7 +22,7 @@ debugging the import path itself.
 
 If any of the above is missing, meson silently skips the
 `vmaf_vpl` target — `meson setup build` will succeed without it and
-the binary will not appear under `build/libvmaf/tools/`.
+the binary will not appear under `build/core/tools/`.
 
 ## Flags
 
@@ -40,7 +40,7 @@ the binary will not appear under `build/libvmaf/tools/`.
 ## Smoke invocation
 
 ```bash
-./build/libvmaf/tools/vmaf_vpl \
+./build/core/tools/vmaf_vpl \
   --ref testdata/ref_576x324_48f.yuv \
   --dis testdata/dis_576x324_48f.yuv \
   --model model/vmaf_v0.6.1.json \

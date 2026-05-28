@@ -14,7 +14,7 @@ Python harness all happily loaded the same files?
    `"problem loading tiny model …: -95"`. `errno 95` is `ENOTSUP` on
    glibc.
 2. **Search for the error path.** `grep` for the message located
-   `libvmaf/tools/vmaf.c::configure_tiny_model` printing whatever
+   `core/tools/vmaf.c::configure_tiny_model` printing whatever
    `vmaf_use_tiny_model` returned. Tracing that into
    `dnn_attach_api.c` showed three places that could surface
    `ENOTSUP`: the ONNX Runtime CreateSession, the input-shape probe,

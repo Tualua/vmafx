@@ -2,7 +2,7 @@
   ([ADR-0254](../docs/adr/0254-hip-second-consumer-float-psnr.md)).**
   Promotes `float_psnr_hip` from a scaffold stub (returning `-ENOSYS`)
   to a functional HIP kernel. Device code in
-  `libvmaf/src/feature/hip/float_psnr/float_psnr_score.hip` implements
+  `core/src/feature/hip/float_psnr/float_psnr_score.hip` implements
   the same per-pixel `(ref - dis)^2` warp reduction as the CUDA twin;
   the host-side `10 * log10(peak^2 / noise)` formula is identical.
   When `enable_hipcc=true`, `hipcc` compiles the `.hip` source to a

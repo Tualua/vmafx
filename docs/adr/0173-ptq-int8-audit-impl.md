@@ -68,7 +68,7 @@ matching sidecar.
 
 ### 3. Sidecar parser + new public enum
 
-[`libvmaf/src/dnn/model_loader.h`](../../libvmaf/src/dnn/model_loader.h)
+[`core/src/dnn/model_loader.h`](../../core/src/dnn/model_loader.h)
 gains a `VmafModelQuantMode` enum (FP32 / DYNAMIC / STATIC / QAT)
 and a matching field on `VmafModelSidecar`. The C-side parser at
 `vmaf_dnn_sidecar_load` reads the new `quant_mode` string from the
@@ -143,7 +143,7 @@ moving CI leg lands when there's a model to gate.
   + `ptq_static.py` import cleanly and surface useful CLI help. The
   full quantisation round-trip needs `onnxruntime.quantization`
   installed; the test marker auto-skips if not.
-- `libvmaf/test/dnn/test_model_loader.c` (extended) — new sub-test
+- `core/test/dnn/test_model_loader.c` (extended) — new sub-test
   that parses a sidecar JSON with `"quant_mode": "dynamic"` and
   asserts `out->quant_mode == VMAF_QUANT_DYNAMIC`. Also covers the
   unknown-value fallback (`"foo"` → FP32) and the absent-field

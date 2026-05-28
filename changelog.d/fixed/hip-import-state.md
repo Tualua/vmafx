@@ -1,6 +1,6 @@
 - **`vmaf_hip_import_state` returned `-ENOSYS`, breaking
   `vmaf --backend hip` on every AMD ROCm host.** The
-  library-side state-binding stub in `libvmaf/src/hip/common.c`
+  library-side state-binding stub in `core/src/hip/common.c`
   returned `-ENOSYS` with a stale comment promising a follow-up
   PR that had since landed (ADR-0468 added the first real HIP
   feature kernel, `float_adm_hip`, months earlier). The CLI's
@@ -11,8 +11,8 @@
   fully healthy AMD gfx1036 host with ROCm 6.4 (HIP state init,
   stream create, device probe all succeeded under
   `AMD_LOG_LEVEL=3`; only the library bind was missing).
-  Fix moves the function from `libvmaf/src/hip/common.c` into
-  `libvmaf/src/libvmaf.c` and implements it as a SYCL / Vulkan /
+  Fix moves the function from `core/src/hip/common.c` into
+  `core/src/libvmaf.c` and implements it as a SYCL / Vulkan /
   Metal-style "stash the borrowed state pointer on the
   VmafContext and return 0" wrapper. Verified end-to-end against
   the Netflix golden src01 pair inside the `vmaf-dev-mcp`

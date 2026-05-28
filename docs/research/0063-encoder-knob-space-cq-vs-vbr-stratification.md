@@ -120,14 +120,14 @@ at fixed bitrate based on Intel's published QSV calibrations).
 ```bash
 # Bare-default cq sweep (already in runs/phase_a/full_grid/nvenc_full.jsonl)
 python3 scripts/dev/hw_encoder_corpus.py \
-  --vmaf-bin libvmaf/build-cuda/tools/vmaf \
+  --vmaf-bin core/build-cuda/tools/vmaf \
   --source .workingdir2/netflix/ref/BigBuckBunny_25fps.yuv \
   --width 1920 --height 1080 --pix-fmt yuv420p --framerate 25 \
   --encoder h264_nvenc --cq 30 --out /tmp/bare.jsonl
 
 # Tuned VOD-HQ cq sweep (same source, same cq, hq recipe)
 python3 scripts/dev/hw_encoder_corpus.py \
-  --vmaf-bin libvmaf/build-cuda/tools/vmaf \
+  --vmaf-bin core/build-cuda/tools/vmaf \
   --source .workingdir2/netflix/ref/BigBuckBunny_25fps.yuv \
   --width 1920 --height 1080 --pix-fmt yuv420p --framerate 25 \
   --encoder h264_nvenc --preset p4 --cq 30 \

@@ -7,7 +7,7 @@
 
 ## Context
 
-[ADR-0420](0420-metal-backend-runtime-t8-1b.md) (T8-1b) landed the Metal backend's runtime: real `MTLDevice` + `MTLCommandQueue` + `MTLBuffer` lifecycle, kernel-template helpers, accessor pair. Every public entry point works on Apple-Family-7+; the runtime returns `-ENODEV` elsewhere. Eight feature-extractor scaffolds under `libvmaf/src/feature/metal/` register their extractors against the runtime but each `init()` still returns `-ENOSYS` because no real Metal Shading Language kernel exists yet.
+[ADR-0420](0420-metal-backend-runtime-t8-1b.md) (T8-1b) landed the Metal backend's runtime: real `MTLDevice` + `MTLCommandQueue` + `MTLBuffer` lifecycle, kernel-template helpers, accessor pair. Every public entry point works on Apple-Family-7+; the runtime returns `-ENODEV` elsewhere. Eight feature-extractor scaffolds under `core/src/feature/metal/` register their extractors against the runtime but each `init()` still returns `-ENOSYS` because no real Metal Shading Language kernel exists yet.
 
 The strategic answer to "Mac GPU acceleration today" is the [Lusoris Homebrew tap](https://github.com/lusoris/homebrew-tap) shipping `enable_vulkan=enabled` (via MoltenVK). That works but adds a Vulkan → Metal translation hop. The endgame is native Metal kernels — bit-exact with the scalar reference per ADR-0214 — replacing the MoltenVK stopgap once a kernel proves the pipeline.
 
@@ -25,7 +25,7 @@ We will land a real `integer_motion_v2` Metal kernel and accept it as the load-b
 
 ### The kernel (`integer_motion_v2.metal`)
 
-Two `kernel void` functions in [`libvmaf/src/feature/metal/integer_motion_v2.metal`](../../libvmaf/src/feature/metal/integer_motion_v2.metal):
+Two `kernel void` functions in [`core/src/feature/metal/integer_motion_v2.metal`](../../core/src/feature/metal/integer_motion_v2.metal):
 
 - `motion_v2_kernel_8bpc` — `uchar` ref + cur samples; 32-bit y-conv accumulator; 64-bit x-conv accumulator (matches scalar reference's `int64_t accum` for the per-pixel x-conv path).
 - `motion_v2_kernel_16bpc` — `ushort` samples via reinterpret + byte stride; 64-bit y-conv accumulator from the start (26386 × 65535 × 5 ≈ 8.6e9 overflows int32, same widening rule as the CUDA twin).
@@ -49,7 +49,7 @@ The T8-1 scaffold (`.c` returning `-ENOSYS`) is converted to Obj-C++ (`.mm`) and
 
 The dispatch uses the `vmaf_metal_context_{device,queue}_handle()` accessors added in T8-1b — no struct-layout coupling between `.mm` files.
 
-### The metallib pipeline (`libvmaf/src/metal/meson.build`)
+### The metallib pipeline (`core/src/metal/meson.build`)
 
 - `xcrun -sdk macosx metal -c <kernel>.metal -o <kernel>.air` (per-kernel custom_target)
 - `xcrun -sdk macosx metallib <kernel>.air -o default.metallib` (single target combining every kernel into one library)
@@ -58,7 +58,7 @@ The dispatch uses the `vmaf_metal_context_{device,queue}_handle()` accessors add
 
 ### Smoke test
 
-[`libvmaf/test/test_metal_smoke.c`](../../libvmaf/test/test_metal_smoke.c) stays at the T8-1b runtime-expectation shape (kernel-template lifecycle works, `state_init` returns 0 on Apple-Family-7+ or `-ENODEV` elsewhere). End-to-end bit-exactness against the scalar reference is checked by the `places=4` cross-backend-diff CI lane (ADR-0214) once an Apple Silicon runner is available.
+[`core/test/test_metal_smoke.c`](../../core/test/test_metal_smoke.c) stays at the T8-1b runtime-expectation shape (kernel-template lifecycle works, `state_init` returns 0 on Apple-Family-7+ or `-ENODEV` elsewhere). End-to-end bit-exactness against the scalar reference is checked by the `places=4` cross-backend-diff CI lane (ADR-0214) once an Apple Silicon runner is available.
 
 ## Alternatives considered
 
@@ -93,7 +93,7 @@ The dispatch uses the `vmaf_metal_context_{device,queue}_handle()` accessors add
 - [ADR-0192](0192-gpu-long-tail-batch-3.md) / [ADR-0193](0193-motion-v2-vulkan.md) — motion_v2 GPU port across backends
 - [ADR-0214](0214-gpu-parity-ci-gate.md) — `places=4` bit-exactness gate (the validation contract)
 - [ADR-0246](0246-cuda-kernel-template.md) — origin of the lifecycle template this Metal port replicates
-- [`libvmaf/src/feature/cuda/integer_motion_v2/motion_v2_score.cu`](../../libvmaf/src/feature/cuda/integer_motion_v2/motion_v2_score.cu) — CUDA twin (algorithmic reference)
+- [`core/src/feature/cuda/integer_motion_v2/motion_v2_score.cu`](../../core/src/feature/cuda/integer_motion_v2/motion_v2_score.cu) — CUDA twin (algorithmic reference)
 - Issue [#763](https://github.com/lusoris/vmaf/issues/763) — T8-1b/c tracking
 - [Lusoris Homebrew tap](https://github.com/lusoris/homebrew-tap) — currently ships MoltenVK stopgap; flips to native once this kernel validates
 - Source: `req` — paraphrased: contributor asked for all eight Metal kernels in one PR; this is the anchor (T8-1c) with the remaining seven landing in the same PR as mechanical replicas.

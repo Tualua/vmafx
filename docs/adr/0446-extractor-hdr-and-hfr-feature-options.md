@@ -13,7 +13,7 @@ CHUG MOS-HDR ingest (5 992 clips, ~14 h ETA on RTX 4090). The script
 emitted `--feature <name>` arguments to the libvmaf CLI without ever
 using the `--feature <name>=k=v:k=v` per-feature options grammar.
 
-(libvmaf/tools/cli_parse.c:407-438 implements the parser:
+(core/tools/cli_parse.c:407-438 implements the parser:
 `strsep(&optarg, "=")` consumes the extractor name first, then `:`
 separates the `key=value` pairs. The `name=<extractor>:k=v` shape is
 NOT part of the grammar and trips
@@ -79,7 +79,7 @@ Extend `extract_k150k_features.py` to:
 
    The whitelist is sourced from each extractor's `static const
    VmafOption options[]` table in
-   `libvmaf/src/feature/{,cuda/}*.c`.
+   `core/src/feature/{,cuda/}*.c`.
 
 5. **Surface the per-clip metadata in the parquet.** The output dict
    gains `fps`, `is_hdr`, and `motion_fps_weight` columns so trainers
@@ -138,10 +138,10 @@ Extend `extract_k150k_features.py` to:
 - [`docs/research/0135-hdr-ugc-dataset-license-audit-2026-05-15.md`](../research/0135-hdr-ugc-dataset-license-audit-2026-05-15.md)
   — HDR dataset audit (CHUG inventory + HFR clip count).
 - libvmaf `--feature` per-feature-option grammar:
-  `libvmaf/src/feature/feature_extractor.c::vmaf_feature_dictionary_set`.
-- libvmaf CAMBI `eotf` knob: `libvmaf/src/feature/cambi.c`.
+  `core/src/feature/feature_extractor.c::vmaf_feature_dictionary_set`.
+- libvmaf CAMBI `eotf` knob: `core/src/feature/cambi.c`.
 - libvmaf motion `motion_fps_weight` knob:
-  `libvmaf/src/feature/integer_motion.c:107` +
-  `libvmaf/src/feature/integer_motion_v2.c:110`.
+  `core/src/feature/integer_motion.c:107` +
+  `core/src/feature/integer_motion_v2.c:110`.
 - Source: `req` — direct user direction (Slack 2026-05-15: "we do
   extract the full cambi right? like for hdr? rofl … i mean on chug").

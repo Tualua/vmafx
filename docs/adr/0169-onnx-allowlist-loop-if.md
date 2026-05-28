@@ -10,7 +10,7 @@
 [BACKLOG T6-5](../../.workingdir2/BACKLOG.md) calls for "Op-allowlist
 expansion (`Loop`, `If` with bounded-iteration guard). Unlocks MUSIQ /
 RAFT / small VLMs. `Scan` stays rejected." The existing allowlist in
-[`libvmaf/src/dnn/op_allowlist.c`](../../libvmaf/src/dnn/op_allowlist.c)
+[`core/src/dnn/op_allowlist.c`](../../core/src/dnn/op_allowlist.c)
 contains pure feed-forward ops (arithmetic, conv, normalisation,
 activations, dense, dropout, QDQ, structural, constants). Every
 control-flow op was rejected outright.
@@ -29,7 +29,7 @@ to the top-level scanner would let an attacker hide forbidden ops
 inside a Loop body — defeating the whole point of the allowlist.
 
 The fork's existing scanner
-([`onnx_scan.c`](../../libvmaf/src/dnn/onnx_scan.c)) walks the
+([`onnx_scan.c`](../../core/src/dnn/onnx_scan.c)) walks the
 ModelProto wire format three levels deep (Model → Graph → Node →
 op_type) and explicitly does not recurse into `NodeProto.attribute`,
 which is where the embedded subgraphs live (per ADR D39's bounded-
@@ -39,7 +39,7 @@ auditable-scope justification for not pulling in `libprotobuf-c`).
 
 ### 1. Add `Loop` and `If` to the C allowlist; keep `Scan` rejected
 
-[`op_allowlist.c`](../../libvmaf/src/dnn/op_allowlist.c) gains two
+[`op_allowlist.c`](../../core/src/dnn/op_allowlist.c) gains two
 new entries under a `/* control flow */` section. `Scan` stays off
 the list — its variant-typed input/output binding (sequence-typed
 inputs/outputs, axis specifications, scan_input_directions) makes
@@ -48,7 +48,7 @@ if a concrete consumer model surfaces.
 
 ### 2. Recursive subgraph scan in the C wire-format scanner
 
-[`onnx_scan.c`](../../libvmaf/src/dnn/onnx_scan.c) gains a
+[`onnx_scan.c`](../../core/src/dnn/onnx_scan.c) gains a
 `scan_attribute` helper that walks `AttributeProto` and, for every
 `AttributeProto.g` (single embedded `GraphProto`, field 6) or
 `AttributeProto.graphs` (repeated `GraphProto`, field 11),
@@ -167,12 +167,12 @@ a separate ADR keeps this PR's scope honest.
 
 Test changes in this PR:
 
-- `libvmaf/test/dnn/test_op_allowlist.c`
+- `core/test/dnn/test_op_allowlist.c`
   - Renamed `test_custom_ops_rejected` to keep just the
     NULL/empty/unknown checks.
   - New `test_control_flow_ops_allowed` asserts Loop + If accepted,
     Scan still rejected.
-- `libvmaf/test/dnn/test_onnx_scan.c`
+- `core/test/dnn/test_onnx_scan.c`
   - `test_disallowed_op_loop` → `test_loop_top_level_allowed`
     (flipped expectation).
   - `test_disallowed_op_if_after_allowed` →

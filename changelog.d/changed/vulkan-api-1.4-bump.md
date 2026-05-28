@@ -2,8 +2,8 @@
 
 - vulkan: bump instance + VMA `apiVersion` from `VK_API_VERSION_1_3` to
   `VK_API_VERSION_1_4` across the four pinned sites in
-  [`libvmaf/src/vulkan/common.c`](libvmaf/src/vulkan/common.c) (lines 54,
-  264, 374) and [`libvmaf/src/vulkan/vma_impl.cpp`](libvmaf/src/vulkan/vma_impl.cpp)
+  [`core/src/vulkan/common.c`](core/src/vulkan/common.c) (lines 54,
+  264, 374) and [`core/src/vulkan/vma_impl.cpp`](core/src/vulkan/vma_impl.cpp)
   (`VMA_VULKAN_VERSION 1003000` → `1004000`). This is "Step B" of the
   multi-step VIF / ciede API-1.4 fix chain documented in
   [ADR-0264](docs/adr/0264-vulkan-1-4-bump-blocked-on-fp-contraction.md) /

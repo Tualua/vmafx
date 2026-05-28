@@ -1,6 +1,6 @@
 ### Vulkan image-import entry points marked fully implemented
 
-The public header `libvmaf/include/libvmaf/libvmaf_vulkan.h` previously
+The public header `core/include/libvmaf/libvmaf_vulkan.h` previously
 contained stale `@return -ENOSYS until T7-29 part 2 lands` comments on
 `vmaf_vulkan_import_image`, `vmaf_vulkan_wait_compute`, and
 `vmaf_vulkan_read_imported_pictures`. All three functions have been fully

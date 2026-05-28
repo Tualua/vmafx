@@ -7,7 +7,7 @@
   pyramid levels. The CUDA twin already disables this via
   `cuda_cu_extra_flags : ['--fmad=false']`; the HIP scaffolding had
   no equivalent dispatch. Adds a `hip_cu_extra_flags` dict in
-  `libvmaf/src/meson.build` mirroring the CUDA pattern, with first
+  `core/src/meson.build` mirroring the CUDA pattern, with first
   entry `'ssimulacra2_blur' : ['-ffp-contract=off']`. Other kernels
   fall through to byte-identical command lines. Verified on the
   iGPU (gfx1036) Netflix golden pair — `--backend hip --feature

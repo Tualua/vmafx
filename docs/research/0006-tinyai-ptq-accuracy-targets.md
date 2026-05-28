@@ -157,7 +157,7 @@ shipping a quantised model would be a net loss.
 
 Mitigation: the registry gains a `quant_min_cpu_features` array (e.g.
 `["vnni"]` or `["neoverse_n1"]`). The runtime in
-`libvmaf/src/dnn/load.c` checks `cpuid` / `getauxval` at init, and
+`core/src/dnn/load.c` checks `cpuid` / `getauxval` at init, and
 falls back to the fp32 model if the current CPU doesn't support the
 required features. This is invisible to the user except in a log
 message ("tiny-AI: CPU lacks VNNI, falling back to fp32 model").

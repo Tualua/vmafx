@@ -49,10 +49,10 @@ detected mechanically; remaining items found by spot-reading.
   fastdvdnet so check if the intended ADR is `0041-lpips-sq-extractor.md`
   or `0250-tiny-ai-extractor-template.md`).
 - `docs/backends/cuda/overview.md:125` —
-  `../../../libvmaf/src/cuda/ring_buffer.c` does not exist (file was
-  renamed/removed; only `libvmaf/src/cuda/common.c` etc. ship today).
+  `../../../core/src/cuda/ring_buffer.c` does not exist (file was
+  renamed/removed; only `core/src/cuda/common.c` etc. ship today).
 - `docs/backends/nvtx/profiling.md:22` — same dead
-  `libvmaf/src/cuda/ring_buffer.c` reference.
+  `core/src/cuda/ring_buffer.c` reference.
 - `docs/backends/vulkan/overview.md:24` and `:276` —
   `../../adr/0127-vulkan-backend-decision.md` → real slug
   `0127-vulkan-compute-backend.md` (same drift as `api/gpu.md`).
@@ -77,9 +77,9 @@ detected mechanically; remaining items found by spot-reading.
   unfinished rename audit.)
 - `docs/rebase-notes.md:531` — `docs/adr/NNNN-slug.md` (literal
   template placeholder leaked into a tracked doc).
-- `docs/rebase-notes.md:2580` — `../libvmaf/test/test_ring_buffer.c#L23`
-  — file does not exist (no `test_ring_buffer.c` under `libvmaf/test/`).
-- `docs/rebase-notes.md:4171` — `../libvmaf/src/cuda/ring_buffer.c`
+- `docs/rebase-notes.md:2580` — `../core/test/test_ring_buffer.c#L23`
+  — file does not exist (no `test_ring_buffer.c` under `core/test/`).
+- `docs/rebase-notes.md:4171` — `../core/src/cuda/ring_buffer.c`
   does not exist.
 - `docs/rebase-notes.md:4724` — narrative `ADR-0049` mention; no
   ADR-0049 exists. Likely a placeholder for the (later renumbered)
@@ -100,12 +100,12 @@ certainly verbatim-copied from ADR bodies during release-please runs):
   copy-pasted from a `docs/adr/_index_fragments/` body where two
   `../` were correct.
 - `CHANGELOG.md:366,368,1122,2729` — bare `docs/adr/…` /
-  `libvmaf/test/…` paths that resolve fine in source but point at
+  `core/test/…` paths that resolve fine in source but point at
   files that no longer exist (e.g.
   `docs/adr/0138-simd-bit-exactness-policy.md`,
   `docs/adr/0140-ssimulacra2-simd-bitexact.md`,
   `docs/adr/0178-integer-adm-vulkan.md`,
-  `libvmaf/test/test_ring_buffer.c`). Slug-drift / file-removed.
+  `core/test/test_ring_buffer.c`). Slug-drift / file-removed.
 
 Decision the maintainer should take: either rewrite these path-prefix
 errors in-place, or stop emitting `../` paths from
@@ -153,7 +153,7 @@ configuration so future entries land path-correct.
 - `docs/rebase-notes.md` is 9 055 lines and contains both
   template leakage (line 531: `docs/adr/NNNN-slug.md`) and
   references to two source files that have been removed
-  (`libvmaf/test/test_ring_buffer.c`, `libvmaf/src/cuda/ring_buffer.c`).
+  (`core/test/test_ring_buffer.c`, `core/src/cuda/ring_buffer.c`).
   These look like un-updated entries from before the
   ring-buffer refactor.
 
@@ -177,12 +177,12 @@ configuration so future entries land path-correct.
 
 ### libvmaf C API headers
 
-- `libvmaf/include/libvmaf/libvmaf_mcp.h` ships but is not mentioned
+- `core/include/libvmaf/libvmaf_mcp.h` ships but is not mentioned
   in any `docs/api/*.md`. ADR-0100 per-surface bar requires a doc.
   Either fold a section into `docs/api/index.md` or split into
   `docs/api/mcp.md`. (Independent from `docs/mcp/`, which covers
   the *server*; this gap is on the *embedded C API*.)
-- `libvmaf/include/libvmaf/feature.h`, `model.h`, `picture.h`,
+- `core/include/libvmaf/feature.h`, `model.h`, `picture.h`,
   `vmaf_assert.h` lack dedicated `docs/api/*.md` pages. They are
   mentioned in `docs/api/index.md` so this is a per-surface-bar
   judgement call rather than an outright omission; flag for triage.
@@ -190,11 +190,11 @@ configuration so future entries land path-correct.
 ### Backends
 
 - `docs/backends/x86/` only has `avx512.md`. AVX2 paths exist
-  throughout `libvmaf/src/feature/x86/` (`adm_avx2.c`,
+  throughout `core/src/feature/x86/` (`adm_avx2.c`,
   `motion_avx2.c`, `psnr_hvs_avx2.c`, `iqa_convolve_avx2.c`,
   `ssim_avx2.c`, …) — no `docs/backends/x86/avx2.md`.
 - `docs/backends/arm/overview.md` is the sole ARM/NEON page despite
-  ~14 NEON kernels under `libvmaf/src/feature/arm64/`. Per-kernel
+  ~14 NEON kernels under `core/src/feature/arm64/`. Per-kernel
   pages aren't required, but a kernel-coverage table on
   `overview.md` would close the bar.
 

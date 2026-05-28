@@ -4,21 +4,21 @@
   ([ADR-0212](../docs/adr/0212-hip-backend-scaffold.md)) and the
   original Vulkan T5-1 split
   ([ADR-0175](../docs/adr/0175-vulkan-backend-scaffold.md)). New public
-  header [`libvmaf_metal.h`](../libvmaf/include/libvmaf/libvmaf_metal.h)
+  header [`libvmaf_metal.h`](../core/include/libvmaf/libvmaf_metal.h)
   declaring `VmafMetalState` / `VmafMetalConfiguration` /
   `vmaf_metal_state_init` / `_import_state` / `_state_free` /
   `vmaf_metal_list_devices` / `vmaf_metal_available`. New
-  [`libvmaf/src/metal/`](../libvmaf/src/metal/) tree (common,
+  [`core/src/metal/`](../core/src/metal/) tree (common,
   picture_metal, dispatch_strategy, kernel_template, AGENTS.md) plus
   first-consumer kernel scaffold
-  [`libvmaf/src/feature/metal/integer_motion_v2_metal.c`](../libvmaf/src/feature/metal/integer_motion_v2_metal.c)
+  [`core/src/feature/metal/integer_motion_v2_metal.c`](../core/src/feature/metal/integer_motion_v2_metal.c)
   registering `vmaf_fex_integer_motion_v2_metal` (extractor name
   `motion_v2_metal`, `VMAF_FEATURE_EXTRACTOR_TEMPORAL` flag). All entry
   points return `-ENOSYS` until the runtime PR (T8-1b) lands. New
   `enable_metal` feature option (default **`auto`**: probes for
   `Metal.framework` / `MetalKit.framework` on macOS, disabled
   elsewhere). New 14-sub-test smoke at
-  `libvmaf/test/test_metal_smoke.c` pinning the `-ENOSYS` contract for
+  `core/test/test_metal_smoke.c` pinning the `-ENOSYS` contract for
   every public C-API entry point, the kernel-template helpers, and
   the first-consumer registration. New CI matrix row
   `Build — macOS Metal (T8-1 scaffold)` compiling on `macos-latest`

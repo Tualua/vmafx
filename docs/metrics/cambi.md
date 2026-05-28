@@ -16,10 +16,10 @@ The CAMBI score starts at 0, meaning no banding is detected. A higher CAMBI scor
 
 ## How to run CAMBI
 
-To invoke CAMBI using the VMAF command line, follow the [instruction](../../libvmaf/tools/README.md) and use `cambi` as the feature name. For example, after downloading the input video [`src01_hrc01_576x324.yuv`](https://github.com/Netflix/vmaf_resource/blob/master/python/test/resource/yuv/src01_hrc01_576x324.yuv), invoke CAMBI via:
+To invoke CAMBI using the VMAF command line, follow the [instruction](../../core/tools/README.md) and use `cambi` as the feature name. For example, after downloading the input video [`src01_hrc01_576x324.yuv`](https://github.com/Netflix/vmaf_resource/blob/master/python/test/resource/yuv/src01_hrc01_576x324.yuv), invoke CAMBI via:
 
 ```bash
-libvmaf/build/tools/vmaf \
+core/build/tools/vmaf \
     --reference src01_hrc01_576x324.yuv \
     --distorted src01_hrc01_576x324.yuv \
     --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
@@ -65,7 +65,7 @@ The CAMBI feature extractor also supports additional optional parameters as list
 An example using the `enc_width` and `enc_height` options on the input video [`KristenAndSara_1280x720_8bit_processed.yuv`](https://github.com/Netflix/vmaf_resource/blob/master/python/test/resource/yuv/KristenAndSara_1280x720_8bit_processed.yuv) which has been encoded at 540p and later upscaled to 1280p (specifying the accurate encoding width and height as input allows CAMBI to more accurately assess the banding artifact):
 
 ```bash
-libvmaf/build/tools/vmaf \
+core/build/tools/vmaf \
     --reference KristenAndSara_1280x720_8bit_processed.yuv \
     --distorted KristenAndSara_1280x720_8bit_processed.yuv \
     --width 1280 --height 720 --pixel_format 420 --bitdepth 8 \
@@ -90,7 +90,7 @@ This will yield the output:
 If no encoding width and height parameters are specified:
 
 ```bash
-libvmaf/build/tools/vmaf \
+core/build/tools/vmaf \
     --reference KristenAndSara_1280x720_8bit_processed.yuv \
     --distorted KristenAndSara_1280x720_8bit_processed.yuv \
     --width 1280 --height 720 --pixel_format 420 --bitdepth 8 \

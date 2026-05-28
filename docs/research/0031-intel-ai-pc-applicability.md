@@ -6,7 +6,7 @@
 
 ## Question
 
-Should the fork's tiny-AI surface (`libvmaf/src/dnn/`, `--tiny-device`,
+Should the fork's tiny-AI surface (`core/src/dnn/`, `--tiny-device`,
 `docs/ai/inference.md`) add first-class support for Intel's "AI PC"
 silicon — meaning the NPU (Neural Processing Unit) that ships on
 Meteor Lake / Lunar Lake / Arrow Lake client CPUs, plus the integrated
@@ -47,7 +47,7 @@ should be re-verified before any code lands. The in-tree sources
   on the Intel Arc A380 via the OpenVINO 2026.1 GPU plugin.
 - [`docs/research/0006-tinyai-ptq-accuracy-targets.md`](0006-tinyai-ptq-accuracy-targets.md)
   — int8 PTQ accuracy targets and the OpenVINO Arc int8 failure mode.
-- [`libvmaf/src/dnn/ort_backend.c`](../../libvmaf/src/dnn/ort_backend.c)
+- [`core/src/dnn/ort_backend.c`](../../core/src/dnn/ort_backend.c)
   header comment — enumerates the EPs the fork already wires
   (`CPU / CUDA / OpenVINO / ROCm`).
 - ORT execution-provider documentation

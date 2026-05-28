@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Per-frame feature extraction via the libvmaf CLI.
 
 The extractor mirrors what ``vmaf_v0.6.1`` consumes::
@@ -8,7 +8,7 @@ The extractor mirrors what ``vmaf_v0.6.1`` consumes::
                         "vif_scale2", "vif_scale3", "motion2")
 
 It calls the local CPU build of ``vmaf`` (default
-``libvmaf/build-cpu/tools/vmaf``) in JSON mode, parses the per-frame
+``core/build-cpu/tools/vmaf``) in JSON mode, parses the per-frame
 metrics, and returns a NumPy ``(n_frames, n_features)`` matrix plus a 4-stat aggregate
 ``(mean, p10, p90, std)`` per feature for clip-level pooling.
 
@@ -45,7 +45,7 @@ DEFAULT_VMAF_BINARY = Path("libvmaf") / "build-cpu" / "tools" / "vmaf"
 # Excludes lpips (DNN-based, expensive) and float_moment (image
 # statistics, not quality-relevant). The 26 features below cover the
 # bit-exact CPU + AVX2 + AVX-512 + NEON + (mostly) CUDA / SYCL / Vulkan
-# extractors registered in libvmaf/src/feature/.  The 4 speed_* features
+# extractors registered in core/src/feature/.  The 4 speed_* features
 # are CPU-only until GPU twins land (ADR-0557, ADR-0558).
 FULL_FEATURES: tuple[str, ...] = (
     # ADM (5 features) — `adm2` is the detail-loss aggregate; the
@@ -82,7 +82,7 @@ FULL_FEATURES: tuple[str, ...] = (
     "psnr_hvs",
     "ssimulacra2",
     # SpEED chroma/temporal (4 features) — CPU-only extractors from
-    # libvmaf/src/feature/speed.c (Netflix speed_ported branch, ported to
+    # core/src/feature/speed.c (Netflix speed_ported branch, ported to
     # fork per ADR-0559).  Required by the anticipated Netflix HDR VMAF model.
     # GPU twins are tracked in ADR-0557 (CUDA) and ADR-0558 (HIP); until
     # those land these features are always extracted on the CPU residual pass.
@@ -157,7 +157,7 @@ _METRIC_TO_EXTRACTOR: dict[str, str] = {
     "float_ansnr": "float_ansnr",
     "float_anpsnr": "float_ansnr",
     # SpEED chroma/temporal — CPU-only (ADR-0559; GPU twins in ADR-0557/0558).
-    # Short alias names registered in libvmaf/src/feature/alias.c.
+    # Short alias names registered in core/src/feature/alias.c.
     "speed_temporal": "speed_temporal",
     "speed_chroma_u": "speed_chroma",
     "speed_chroma_v": "speed_chroma",
@@ -201,8 +201,8 @@ def _ensure_binary(binary: Path) -> None:
     if not binary.is_file():
         raise RuntimeError(
             "libvmaf CLI not found at "
-            f"{binary}. Build it first with `meson setup libvmaf/build-cpu "
-            "&& ninja -C libvmaf/build-cpu`, or set $VMAF_BIN to point at an "
+            f"{binary}. Build it first with `meson setup core/build-cpu "
+            "&& ninja -C core/build-cpu`, or set $VMAF_BIN to point at an "
             "existing binary."
         )
 

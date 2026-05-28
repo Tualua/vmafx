@@ -43,7 +43,7 @@ dominant that the path needs to ship before the kernels are real.
   clean CUDA-source-compatibility for the kernel patterns the fork
   uses (separable convolution, integer-domain reductions, async
   memcpy). Confirmed by spot-checking the integer_motion CUDA kernel
-  in `libvmaf/src/feature/cuda/`: every CUDA primitive used has a
+  in `core/src/feature/cuda/`: every CUDA primitive used has a
   documented HIP equivalent (no warp-level intrinsics that diverge
   meaningfully between architectures).
 - Distribution coverage: Ubuntu 22.04 LTS / 24.04 LTS, RHEL 8 / 9,

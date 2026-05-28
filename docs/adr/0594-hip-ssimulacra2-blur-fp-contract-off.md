@@ -10,7 +10,7 @@
 The fork's HIP backend builds device kernels via `hipcc --genco`, the resulting
 HSACO blobs are `xxd`-embedded into the libvmaf .so, and the host TUs load
 them at runtime via `hipModuleLoadData`. Each kernel is registered as a
-single entry in the `hip_kernel_sources` dict in `libvmaf/src/meson.build`,
+single entry in the `hip_kernel_sources` dict in `core/src/meson.build`,
 and every entry was compiled with the same flat command line: `--genco`,
 `hip_offload_arch_flags`, `hip_include_flags`, and a fixed `-I` set.
 
@@ -38,7 +38,7 @@ GPU.
 ## Decision
 
 Mirror the CUDA dispatch pattern. Introduce a `hip_cu_extra_flags` dict
-in `libvmaf/src/meson.build` keyed by the same logical kernel name used
+in `core/src/meson.build` keyed by the same logical kernel name used
 in `hip_kernel_sources`, defaulting to an empty list per kernel via
 `.get(name, [])`. The hipcc `custom_target` command line gains
 `per_kernel_flags` between `hip_include_flags` and the `-I` block, so the

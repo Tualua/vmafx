@@ -7,7 +7,7 @@
 
 ## Context
 
-The fork's tiny-AI surface (`ai/`, `libvmaf/src/dnn/`) ships small ONNX
+The fork's tiny-AI surface (`ai/`, `core/src/dnn/`) ships small ONNX
 full-reference (FR) regressors trained from libvmaf feature vectors. Until
 now those models were trained on the five canonical public datasets documented
 in `docs/ai/training.md` (NFLX Public, KoNViD-1k, LIVE-VQC, YouTube-UGC,

@@ -16,7 +16,7 @@ emitted by `lcov`/`geninfo` during the "Gather lcov report" step:
 
 ```text
 geninfo: ERROR: Unexpected negative count '-44224' for
-  /home/runner/work/vmaf/vmaf/libvmaf/src/feature/x86/vif_avx2.c:673.
+  /home/runner/work/vmaf/vmaf/core/src/feature/x86/vif_avx2.c:673.
         Perhaps you need to compile with '-fprofile-update=atomic'
 ```
 

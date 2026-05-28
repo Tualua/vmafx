@@ -36,8 +36,8 @@
    - **port** — bug-fix / build-fix worth porting (new T-row);
    - **defer** — recognised, out-of-scope right now;
    - **diverged** — fork has consciously diverged with an ADR.
-4. Cross-check fork files (`libvmaf/src/feature/`,
-   `libvmaf/include/`, `.github/workflows/`) for the per-commit
+4. Cross-check fork files (`core/src/feature/`,
+   `core/include/`, `.github/workflows/`) for the per-commit
    marker symbols.
 
 ## Per-commit triage
@@ -73,14 +73,14 @@ The following follow-up entries are recommended for the next
 - **T-NEW-1 — port `feature/speed`** (`d3647c73` `speed_chroma` +
   `speed_temporal`, `9dac0a59` alias-map for speed). The fork does
   not currently have a `speed*` extractor in
-  `libvmaf/src/feature/`; upstream PR #1433 also adds a related
+  `core/src/feature/`; upstream PR #1433 also adds a related
   speed-extractor surface. Investigate whether to port the upstream
   C extractor wholesale, or to absorb it into the fork's tiny-AI
   speed metric. Pairs with audit row 1 / 3.
 - **T-NEW-2 — port adm + vif test deltas from `c70debb1`.** The
   speed half of `c70debb1` blocks on T-NEW-1; the adm + vif halves
   should drop in cleanly on top of fork's existing port chain
-  (Research-0024). Goal: keep `libvmaf/test/test_*.c` test-data
+  (Research-0024). Goal: keep `core/test/test_*.c` test-data
   parity with upstream wherever the fork's algorithmic content
   matches.
 - **T-NEW-3 — port 32-bit ADM/cpu fallbacks** (`8a289703` +
@@ -110,7 +110,7 @@ The following follow-up entries are recommended for the next
   fork via the Research-0024 chain or earlier ADR-tracked ports
   and were verified via spot-check (`vif_sigma_nsq`, `motion_v2`,
   `VMAF_FEATURE_EXTRACTOR_PREV_REF` all present in
-  `libvmaf/src/feature/`).
+  `core/src/feature/`).
 
 ## Reproducer
 

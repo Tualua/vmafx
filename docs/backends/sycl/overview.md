@@ -26,7 +26,7 @@ Meson options:
 ### `icpx` const-correctness on string default options
 
 Per-extractor `VmafOption` rows declare `default_val.s` as `char *`
-(matching the C API contract in `libvmaf/include/libvmaf/libvmaf.h`).
+(matching the C API contract in `core/include/libvmaf/libvmaf.h`).
 The DPC++ compiler (`icpx`) is stricter than g++ about C++
 const-correctness and rejects initializing a `char *` member from a
 `const char *` source. SYCL feature kernels that need a string default
@@ -53,12 +53,12 @@ iGPU or a specific Arc card.
 ## Source layout
 
 ```text
-libvmaf/src/sycl/                        # queue, USM, surface import
+core/src/sycl/                        # queue, USM, surface import
   common.{cpp,h}                         # SYCL queue + device selection
   picture_sycl.{cpp,h}                   # USM picture upload / CPU path
   dmabuf_import.{cpp,h}                  # Linux: zero-copy VA-API dmabuf import
   d3d11_import.cpp                       # Windows: D3D11 staging-texture import
-libvmaf/src/feature/sycl/                # per-feature kernels
+core/src/feature/sycl/                # per-feature kernels
   integer_vif_sycl.cpp
   integer_adm_sycl.cpp
   float_adm_sycl.cpp                     # float ADM extractor (ADR-0202)
@@ -76,7 +76,7 @@ libvmaf/src/feature/sycl/                # per-feature kernels
 - **Zero-copy dmabuf import.** When the input is a VA-API surface (e.g. from
   a QSV-decoded FFmpeg frame), the backend imports the dmabuf directly via
   `ext::oneapi::experimental::external_memory` — no CPU upload. See
-  [dmabuf_import.cpp](../../../libvmaf/src/sycl/dmabuf_import.cpp).
+  [dmabuf_import.cpp](../../../core/src/sycl/dmabuf_import.cpp).
 - **D3D11 staging-texture import (Windows).** The `vmaf_sycl_import_d3d11_surface`
   API accepts an `ID3D11Texture2D*` from a Windows decoder (MediaFoundation, DXVA2,
   Direct3D11 VideoProcessor). The implementation creates a staging texture with
@@ -86,7 +86,7 @@ libvmaf/src/feature/sycl/                # per-feature kernels
   — throughput is bounded by PCIe upstream (staging Map) + PCIe downstream
   (SYCL H2D). A zero-copy equivalent would need DXGI NT-handle sharing +
   DPC++ D3D11 interop,
-  which isn't documented in oneAPI as of 2025.1. See [d3d11_import.cpp](../../../libvmaf/src/sycl/d3d11_import.cpp)
+  which isn't documented in oneAPI as of 2025.1. See [d3d11_import.cpp](../../../core/src/sycl/d3d11_import.cpp)
   and ADR-0103.
 - **In-order queues per extractor.** Each feature extractor owns a SYCL
   in-order queue. The host-side dispatcher submits work without explicit
@@ -325,9 +325,9 @@ the deviation:
   `motion_add_uv=true` path is independent from motion3 and remains
   **not yet wired through to the SYCL backend** — UV-plane motion
   stays CPU-only. The SYCL `picture_copy()` callsites at
-  [`src/feature/sycl/integer_ms_ssim_sycl.cpp`](../../../libvmaf/src/feature/sycl/integer_ms_ssim_sycl.cpp)
+  [`src/feature/sycl/integer_ms_ssim_sycl.cpp`](../../../core/src/feature/sycl/integer_ms_ssim_sycl.cpp)
   and
-  [`src/feature/sycl/integer_ssim_sycl.cpp`](../../../libvmaf/src/feature/sycl/integer_ssim_sycl.cpp)
+  [`src/feature/sycl/integer_ssim_sycl.cpp`](../../../core/src/feature/sycl/integer_ssim_sycl.cpp)
   pass `0` for the new trailing `channel` argument (Y-plane only,
   preserving SYCL pre-port behaviour).
 - **SSIMULACRA 2** — `ssimulacra2_sycl` shipped per

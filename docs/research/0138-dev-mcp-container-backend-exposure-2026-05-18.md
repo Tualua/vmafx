@@ -131,10 +131,10 @@ $ grep -nB1 'enable_hip' /tmp/dev-mcp-build.log
 ```
 
 So libvmaf has HIP linked. The strict-mode error comes from the vmaf
-CLI binary, not libvmaf. `grep -n "HAVE_HIP" libvmaf/tools/vmaf.c`
+CLI binary, not libvmaf. `grep -n "HAVE_HIP" core/tools/vmaf.c`
 reveals 8 `#ifdef HAVE_HIP` guards around `libvmaf_hip.h` include,
 `VmafHipState` init/cleanup, and the `--backend hip` arm. Cross-check
-in `libvmaf/tools/meson.build`:
+in `core/tools/meson.build`:
 
 ```meson
 if get_option('enable_cuda')
@@ -170,7 +170,7 @@ by hand.
 | `libhwloc.so.15` not findable | `dev/Containerfile` env layer | Append `${ONEAPI_ROOT}/tcm/latest/lib` to `LD_LIBRARY_PATH`. |
 | Vulkan ICD env pinned to non-existent path | `dev/Containerfile` env layer + `dev/scripts/dev-mcp-entrypoint.sh` | Delete the `ENV VK_ICD_FILENAMES=…` line (do NOT replace with empty-string — the loader treats `""` the same as a non-existent file); `unset VK_ICD_FILENAMES VK_DRIVER_FILES` at entrypoint start so operators can still override per-`docker exec`. |
 | `/dev/dri/by-path` symlinks dropped by Docker `devices:` | `dev/docker-compose.yml` | Add read-only bind-mount of `/dev/dri/by-path` to both services. |
-| vmaf CLI missing `-DHAVE_HIP=1` cflag despite `enable_hip=true` | `libvmaf/tools/meson.build` | Add a `if get_option('enable_hip') ... vmaf_tool_cflags += ['-DHAVE_HIP=1'] endif` block mirroring the existing CUDA/SYCL/Vulkan conditionals. |
+| vmaf CLI missing `-DHAVE_HIP=1` cflag despite `enable_hip=true` | `core/tools/meson.build` | Add a `if get_option('enable_hip') ... vmaf_tool_cflags += ['-DHAVE_HIP=1'] endif` block mirroring the existing CUDA/SYCL/Vulkan conditionals. |
 | Silent regressions to `-Denable_hip=true` (and friends) | `dev/Containerfile` post-install layer | Add a build-time backend probe loop scanning for "built without X support". |
 | Future rebases re-introducing any of the above | `dev/AGENTS.md` | Add four invariants documenting each constraint with the bug class it prevents. |
 

@@ -42,7 +42,7 @@ load served a 32-byte-aligned address.
 `--buildtype=debug -Db_lto=false`, which keeps every
 `_mm512_loadu_si512` as `vmovdqu64` (unaligned) and so runs fine. The
 `--suite=unit` filter in `tests-and-quality-gates.yml` also matches
-zero tests in `libvmaf/test/meson.build`, so the job reports green
+zero tests in `core/test/meson.build`, so the job reports green
 even if the link succeeds. Tracked separately — the suite filter
 needs to be corrected.
 
@@ -57,7 +57,7 @@ every other 64-byte slot.
 
 **Fix applied in this fork:** annotate the stack array with
 `_Alignas(64)` at
-[`libvmaf/src/feature/x86/adm_avx512.c:1317`](../../libvmaf/src/feature/x86/adm_avx512.c#L1317).
+[`core/src/feature/x86/adm_avx512.c:1317`](../../core/src/feature/x86/adm_avx512.c#L1317).
 The unaligned load remains correct, and the LTO-promoted aligned
 form is now also correct.
 
@@ -98,4 +98,4 @@ rewritten in the period-based (`period = 2*n`) form that bounces
 correctly for any offset. See
 [`docs/adr/0125-ms-ssim-decimate-simd.md`](../adr/0125-ms-ssim-decimate-simd.md)
 and the inline comment in
-[`libvmaf/src/feature/iqa/convolve.c`](../../libvmaf/src/feature/iqa/convolve.c).
+[`core/src/feature/iqa/convolve.c`](../../core/src/feature/iqa/convolve.c).

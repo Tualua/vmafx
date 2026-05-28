@@ -16,7 +16,7 @@ extractors operate on integer YUV and accumulate `int64` sums —
 no transcendentals, deterministic reductions.
 
 ciede2000 (batch 1c) is structurally different. Per pixel, the
-CPU reference (`libvmaf/src/feature/ciede.c`) does:
+CPU reference (`core/src/feature/ciede.c`) does:
 
 1. YUV → BT.709 RGB (3 multiplies + adds).
 2. RGB → linear via the sRGB transfer (`pow(x, 2.4)` piecewise).
@@ -148,4 +148,4 @@ mistake.
   long-tail batch scope.
 - Sibling kernels: psnr Vulkan (PR #125), moment Vulkan
   (PR #133), moment CUDA + SYCL (PR #135).
-- CPU reference: [`libvmaf/src/feature/ciede.c`](../../libvmaf/src/feature/ciede.c).
+- CPU reference: [`core/src/feature/ciede.c`](../../core/src/feature/ciede.c).

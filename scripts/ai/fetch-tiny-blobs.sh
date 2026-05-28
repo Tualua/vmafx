@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 #
 # Fetch + sha256-verify the model/tiny/*.onnx blobs that are too large to
 # inline in git history. Per ADR-0457, blobs >= 1 MB live as attachments

@@ -18,7 +18,7 @@ A systematic audit (see research digest
 `docs/research/feature-coverage-audit-2026-05-18.md`) found:
 
 1. `speed_chroma` and `speed_temporal` exist as CPU-only extractors in
-   `libvmaf/src/feature/speed.c` and are registered in
+   `core/src/feature/speed.c` and are registered in
    `feature_extractor_list[]` under `#if VMAF_FLOAT_FEATURES`.
 2. Only `ai/scripts/extract_k150k_features.py` already included them (added
    2026-05-15). All other extraction scripts (`chug_extract_features.py`,
@@ -95,6 +95,6 @@ copies exist. Re-extract deferred to the corpus agent.
 - ADR-0558 (speed_chroma GPU port, parallel agent)
 - ADR-0346 (FR-from-NR adapter, K150K extraction context)
 - ADR-0382 (K150K-A parallelism, where speed features were first added)
-- `libvmaf/src/feature/speed.c` — extractor implementation
+- `core/src/feature/speed.c` — extractor implementation
 - Netflix upstream `speed_ported` branch — upstream context
 - `req: feature-coverage-audit-2026-05-18` (task directive)

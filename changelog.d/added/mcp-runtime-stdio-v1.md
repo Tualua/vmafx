@@ -10,11 +10,11 @@
   validates `reference_path` / `distorted_path` and returns a
   deferred-to-v2 marker; binding to the scoring engine lands in
   v2). Vendors cJSON v1.7.18 (MIT) under
-  `libvmaf/src/mcp/3rdparty/cJSON/`. SSE and UDS transports
+  `core/src/mcp/3rdparty/cJSON/`. SSE and UDS transports
   remain `-ENOSYS` and ship with the v2 mongoose vendoring PR;
   v1 stdio uses line-delimited JSON-RPC, with LSP `Content-Length:`
   framing also deferred to v2. Smoke test
-  (`libvmaf/test/test_mcp_smoke.c`) flipped from pinning the
+  (`core/test/test_mcp_smoke.c`) flipped from pinning the
   scaffold contract to driving 15 end-to-end JSON-RPC
   round-trips over a `pipe(2)` pair. Build flag unchanged
   (`-Denable_mcp=true -Denable_mcp_stdio=true`); default off.

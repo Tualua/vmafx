@@ -19,23 +19,23 @@ Batch 2 picks up the **next-most-impactful** trio:
 
 - **`ssim`** — single-scale SSIM. CPU reference is the Xiph
   integer port at
-  [`libvmaf/src/feature/integer_ssim.c`](../../libvmaf/src/feature/integer_ssim.c)
+  [`core/src/feature/integer_ssim.c`](../../core/src/feature/integer_ssim.c)
   (286 LOC) with a separable Gaussian filter (kernel size
   computed dynamically from σ; ~9 taps at σ=1.5) and per-pixel
   ΔE-style combine over 6 weighted moments (μx, μy, x², xy,
   y², w). Float twin
-  ([`float_ssim.c`](../../libvmaf/src/feature/float_ssim.c),
+  ([`float_ssim.c`](../../core/src/feature/float_ssim.c),
   211 LOC) follows the same shape with `float` accumulators.
 - **`ms_ssim`** — multi-scale SSIM. Stack of 5 SSIM levels with
   decimation between them
-  ([`ms_ssim.c`](../../libvmaf/src/feature/ms_ssim.c) +
-  [`ms_ssim_decimate.c`](../../libvmaf/src/feature/ms_ssim_decimate.c)).
+  ([`ms_ssim.c`](../../core/src/feature/ms_ssim.c) +
+  [`ms_ssim_decimate.c`](../../core/src/feature/ms_ssim_decimate.c)).
   Each level is a 2× downsample + SSIM compute. Final score is
   a weighted product of per-scale SSIMs. Approximately 4× the
   work of single-scale SSIM.
 - **`psnr_hvs`** — DCT-based perceptual PSNR. CPU reference is
   the Xiph third-party port at
-  [`libvmaf/src/feature/third_party/xiph/psnr_hvs.c`](../../libvmaf/src/feature/third_party/xiph/psnr_hvs.c)
+  [`core/src/feature/third_party/xiph/psnr_hvs.c`](../../core/src/feature/third_party/xiph/psnr_hvs.c)
   (473 LOC). Per-block 8×8 DCT with quantization-table-weighted
   squared-error accumulation. Largest of the three —
   introduces the first DCT compute kernel in the fork's GPU
@@ -156,6 +156,6 @@ Each per-metric/per-backend PR ships:
   moment (Vulkan #133, CUDA + SYCL #135), ciede
   (Vulkan #136, CUDA + SYCL #137).
 - CPU references:
-  [`integer_ssim.c`](../../libvmaf/src/feature/integer_ssim.c),
-  [`ms_ssim.c`](../../libvmaf/src/feature/ms_ssim.c),
-  [`third_party/xiph/psnr_hvs.c`](../../libvmaf/src/feature/third_party/xiph/psnr_hvs.c).
+  [`integer_ssim.c`](../../core/src/feature/integer_ssim.c),
+  [`ms_ssim.c`](../../core/src/feature/ms_ssim.c),
+  [`third_party/xiph/psnr_hvs.c`](../../core/src/feature/third_party/xiph/psnr_hvs.c).

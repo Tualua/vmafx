@@ -11,7 +11,7 @@ behaviour.
 Tolerance is `places=4` (1e-4). Both the phase-1 `cbrtf` and the
 phase-3 sRGB EOTF (`powf((x + 0.055)/1.055, 2.4)`) have been
 replaced with deterministic host-independent implementations in
-`libvmaf/src/feature/ssimulacra2_math.h` — a Newton–Raphson
+`core/src/feature/ssimulacra2_math.h` — a Newton–Raphson
 cube root (accuracy ~7e-7) and a 1024-entry LUT for the EOTF
 (accuracy ~5e-7, LUT values committed as hardcoded hex-float
 literals by the `scripts/gen_ssimulacra2_eotf_lut.py` generator).

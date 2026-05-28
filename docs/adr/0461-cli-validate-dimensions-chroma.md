@@ -7,7 +7,7 @@
 
 ## Context
 
-`validate_videos()` in `libvmaf/tools/vmaf.c` checked that the two input streams
+`validate_videos()` in `core/tools/vmaf.c` checked that the two input streams
 had matching dimensions, matching pixel formats, and a supported bitdepth for the
 reference stream — but it did not:
 
@@ -52,6 +52,6 @@ count to a non-zero exit.
 
 ## References
 
-- `.workingdir/audit-todo-fixme-2026-05-16.md` item #9 (`libvmaf/tools/vmaf.c:107`).
+- `.workingdir/audit-todo-fixme-2026-05-16.md` item #9 (`core/tools/vmaf.c:107`).
 - ADR-0141 (touched-file lint-clean rule).
 - ADR-0278 (NOLINT citation rule).

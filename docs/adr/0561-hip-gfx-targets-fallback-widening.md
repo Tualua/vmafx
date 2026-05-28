@@ -9,7 +9,7 @@
 
 ## Context
 
-`libvmaf/src/meson.build` resolves the list of AMD GPU ISA targets for `hipcc
+`core/src/meson.build` resolves the list of AMD GPU ISA targets for `hipcc
 --genco` in this order:
 
 1. The `-Dhip_gfx_targets=<csv>` Meson option (explicit operator override).

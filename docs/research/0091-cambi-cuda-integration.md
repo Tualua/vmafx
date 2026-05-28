@@ -18,12 +18,12 @@ template.
 
 ## Sources
 
-- `libvmaf/src/feature/cambi.c` — CPU reference
-- `libvmaf/src/feature/cambi_internal.h` — trampoline API for GPU twins
-- `libvmaf/src/feature/vulkan/cambi_vulkan.c` — Vulkan Strategy II precedent
-- `libvmaf/src/feature/cuda/integer_psnr_cuda.c` — submit/collect lifecycle pattern
-- `libvmaf/src/feature/cuda/integer_ssim_cuda.c` — 2D block geometry pattern
-- `libvmaf/src/cuda/kernel_template.h` — `VmafCudaKernelLifecycle` / `VmafCudaKernelReadback`
+- `core/src/feature/cambi.c` — CPU reference
+- `core/src/feature/cambi_internal.h` — trampoline API for GPU twins
+- `core/src/feature/vulkan/cambi_vulkan.c` — Vulkan Strategy II precedent
+- `core/src/feature/cuda/integer_psnr_cuda.c` — submit/collect lifecycle pattern
+- `core/src/feature/cuda/integer_ssim_cuda.c` — 2D block geometry pattern
+- `core/src/cuda/kernel_template.h` — `VmafCudaKernelLifecycle` / `VmafCudaKernelReadback`
 - [Research-0032](0032-cambi-vulkan-integration.md) — buffer-pair vs trampoline analysis
 
 ## Findings

@@ -1,7 +1,7 @@
 - **`y4m_convert_411_422jpeg` 1-byte heap-buffer-overflow on
   4:1:1 streams whose destination chroma row reduces to a single
   pixel (`dst_c_w == 1`).** The Daala-derived 4:1:1 → 4:2:2-jpeg
-  chroma upsample in `libvmaf/tools/y4m_input.c` runs three sub-loops
+  chroma upsample in `core/tools/y4m_input.c` runs three sub-loops
   over the destination row; only the third carried the
   `(x << 1 | 1) < dst_c_w` guard around the secondary write. The
   first two sub-loops wrote `_dst[(x << 1) | 1]` unconditionally,
@@ -13,7 +13,7 @@
   not just a sanitiser warning. Surfaced by the libFuzzer scaffold
   staged in PR #348 within seconds of corpus startup. Fix mirrors
   the third sub-loop's guard onto the first two; new regression
-  test `libvmaf/test/test_y4m_411_oob.c` drives the parser through
+  test `core/test/test_y4m_411_oob.c` drives the parser through
   `video_input_open` + `video_input_fetch_frame` and is ASan-clean
   post-fix, faulting at `y4m_input.c:507` with `WRITE of size 1`
   pre-fix. Netflix CPU golden tests unaffected (none use 4:1:1 with

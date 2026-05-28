@@ -1,6 +1,6 @@
 # vmaf-dev-llm
 
-Local-LLM helpers for developers working on VMAFX — review,
+Local-LLM helpers for developers working on the Lusoris VMAF fork — review,
 commit-message drafting, and doc-block generation. Ollama-first (offline by
 default); cloud providers (Anthropic, OpenAI-compatible) are opt-in via the
 `cloud` extra.
@@ -25,14 +25,14 @@ ollama pull qwen2.5-coder:7b
 
 ```bash
 # Code review of a single file (picks the right prompt by extension)
-vmaf-dev-llm review --file libvmaf/src/feature/adm.c
+vmaf-dev-llm review --file core/src/feature/adm.c
 
 # Draft a Conventional-Commits message from the staged diff
 git add -p
 vmaf-dev-llm commitmsg
 
 # Draft Doxygen @brief/@param blocks for a function
-vmaf-dev-llm docgen --file libvmaf/src/dnn/tensor_io.c --symbol vmaf_tensor_from_luma
+vmaf-dev-llm docgen --file core/src/dnn/tensor_io.c --symbol vmaf_tensor_from_luma
 ```
 
 Configuration lives at `~/.config/vmaf-dev-llm/config.yaml`:

@@ -17,7 +17,7 @@ variants (follow-ups).
 ## Decision
 
 We ship a scalar-only `vmaf_fex_ssimulacra2` feature extractor in
-[`libvmaf/src/feature/ssimulacra2.c`](../../libvmaf/src/feature/ssimulacra2.c)
+[`core/src/feature/ssimulacra2.c`](../../core/src/feature/ssimulacra2.c)
 that:
 
 1. Ingests YUV 4:2:0 / 4:2:2 / 4:4:4 at 8/10/12 bpc with nearest-neighbor

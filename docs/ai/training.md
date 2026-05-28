@@ -42,7 +42,7 @@ manifests only record hashes, not bytes.
 #    libvmaf CPU backend.
 vmaf-train extract-features \
     --dataset nflx \
-    --vmaf-binary libvmaf/build-cpu/tools/vmaf \
+    --vmaf-binary core/build-cpu/tools/vmaf \
     --output ai/data/nflx_features.parquet
 
 # 2. Train a 2-layer MLP on the extracted features.
@@ -104,25 +104,6 @@ should use `aiutils.run_manifest.write_run_manifest()` so the repeated
 between scripts. The Claude workflow for adding or auditing those sidecars is
 `.claude/skills/ai-run-manifest/SKILL.md`.
 
-Run manifests and report JSON written through `aiutils.run_manifest` are strict
-RFC-8259 JSON. Non-finite diagnostics produced during exploratory training
-(`NaN`, `Infinity`, `-Infinity`) are serialized as `null`, so model cards,
-notebooks, dashboards, and release tooling can parse the files with standard
-JSON decoders. The Python-side report dictionaries can still use non-finite
-floats internally before the write boundary. Scripts that expose the same
-report payload on stdout use `aiutils.run_manifest.dumps_manifest_json()` so
-stdout and `--out-json` paths have the same null-for-non-finite behavior.
-Legacy cache/report JSON files that do not need a new provenance envelope use
-`aiutils.run_manifest.write_manifest_json()` for the same strict JSON write
-boundary; this covers per-clip feature caches and old evaluation reports while
-leaving their existing schemas intact.
-
-JSONL artifacts use the same strict boundary at row-write time. Corpus
-adapters, table materializers, merge helpers, and extraction scripts should
-serialize rows with `aiutils.jsonl_utils.dumps_jsonl_row()` so row payloads
-stay deterministic and standard JSON without copying serializer options into
-each script.
-
 Operator-facing AI scripts should also use the small CLI helper layer in
 `aiutils.cli_helpers` when they fit the shared shape. `make_argument_parser()`
 keeps parser formatting consistent, `collect_cli_argv()` preserves the raw
@@ -138,12 +119,12 @@ standard batch-runner flags:
 Table-specific defaults, row schemas, and materializer options stay in the
 individual scripts; the helper only covers boilerplate that should not drift.
 
-Directly executable `ai/scripts/*.py` files and top-level legacy exporters such
-as `ai/lpips_export.py` should use `ai/scripts/_script_bootstrap.py` before
-importing shared repo-local modules. `bootstrap_ai_script(__file__)` resolves
-the script path, repository root, `ai/src`, `ai/scripts`, and the optional
-`tools/vmaf-tune/src` root without copying ad hoc `sys.path.insert(...)`
-blocks into every script. Enable only the roots the script needs:
+Directly executable `ai/scripts/*.py` files should use
+`ai/scripts/_script_bootstrap.py` before importing shared repo-local modules.
+`bootstrap_ai_script(__file__)` resolves the script path, repository root,
+`ai/src`, `ai/scripts`, and the optional `tools/vmaf-tune/src` root without
+copying ad hoc `sys.path.insert(...)` blocks into every script. Enable only the
+roots the script needs:
 
 | Bootstrap option | Use |
 |---|---|
@@ -516,13 +497,13 @@ binary explicitly:
 # smoke
 python ai/scripts/konvid_to_full_features.py \
     --konvid-root "$VMAF_KONVID_1K_DIR" \
-    --vmaf-bin libvmaf/build-cpu/tools/vmaf \
+    --vmaf-bin core/build-cpu/tools/vmaf \
     --max-clips 5
 
 # full run
 python ai/scripts/konvid_to_full_features.py \
     --konvid-root "$VMAF_KONVID_1K_DIR" \
-    --vmaf-bin libvmaf/build-cpu/tools/vmaf
+    --vmaf-bin core/build-cpu/tools/vmaf
 ```
 
 This writes `runs/full_features_konvid.parquet` plus

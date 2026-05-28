@@ -72,7 +72,7 @@ The clips themselves are not committed to this repository.
 ## Op-allowlist conformance
 
 Every op in the graph is on
-[`libvmaf/src/dnn/op_allowlist.c`](../../../libvmaf/src/dnn/op_allowlist.c):
+[`core/src/dnn/op_allowlist.c`](../../../core/src/dnn/op_allowlist.c):
 `Conv`, `Relu`, `DepthwiseConv`, `GlobalAveragePool`, `Flatten`,
 `Gemm` (or equivalent `MatMul` + `Add`).
 

@@ -12,7 +12,7 @@ excessive smem pressure?
 
 ## Sources
 
-- Original kernel: `libvmaf/src/feature/cuda/integer_cambi/cambi_score.cu`
+- Original kernel: `core/src/feature/cuda/integer_cambi/cambi_score.cu`
   lines 68-125 (pre-change), accessed 2026-05-16.
 - Research-0091 — CAMBI CUDA integration trade-offs; noted "49 global reads per
   thread" as the known cost accepted during the initial T3-15a port.

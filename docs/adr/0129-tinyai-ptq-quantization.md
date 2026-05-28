@@ -7,7 +7,7 @@
 
 ## Context
 
-The fork's tiny-AI surface (`ai/` for training, `libvmaf/src/dnn/` for
+The fork's tiny-AI surface (`ai/` for training, `core/src/dnn/` for
 the ONNX Runtime integration) currently ships fp32 ONNX models. Even
 the smallest fork-trained model (`tiny-vmaf-v1.onnx`, ~4 MB) dominates
 per-frame CPU cost on low-end boxes and embedded ARM platforms. The
@@ -78,7 +78,7 @@ the fp32 originals.
   against the `quant_accuracy_budget_plcc` threshold from the registry.
   A drop beyond budget fails the PR.
 - **Runtime switch**: the ONNX Runtime initialisation in
-  `libvmaf/src/dnn/` inspects the registry entry and loads the
+  `core/src/dnn/` inspects the registry entry and loads the
   quantised file transparently. Users see no API change; the model
   just runs faster on int8-capable CPUs.
 - **First target models**:

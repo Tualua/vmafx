@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Train a deep ensemble of ``fr_regressor_v2`` for probabilistic VMAF.
 
 PR-#354 audit Bucket #18 (top-3 ranked) calls for a *probabilistic* head
@@ -80,7 +80,6 @@ if str(REPO_ROOT / "ai" / "src") not in sys.path:
 
 from aiutils.file_utils import sha256  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
-from vmaf_train.registry import write_registry_json  # noqa: E402
 
 CANONICAL_6: tuple[str, ...] = (
     "adm2",
@@ -346,7 +345,7 @@ def _update_registry(
         )
     keep.sort(key=lambda e: e.get("id", ""))
     registry["models"] = keep
-    write_registry_json(registry_path, registry)
+    registry_path.write_text(json.dumps(registry, indent=2, sort_keys=True) + "\n")
 
 
 def main(argv: list[str] | None = None) -> int:

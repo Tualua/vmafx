@@ -72,7 +72,7 @@ ONNX op set:
 | `Resize` | no | **yes** (`mode='linear'`, `coordinate_transformation_mode='half_pixel'`) |
 
 Every op is on
-[`libvmaf/src/dnn/op_allowlist.c`](../../libvmaf/src/dnn/op_allowlist.c)
+[`core/src/dnn/op_allowlist.c`](../../core/src/dnn/op_allowlist.c)
 post-[ADR-0258](../../docs/adr/0258-onnx-allowlist-resize.md).
 ADR-0258 admits `Resize` op-type-only; attribute enforcement is
 delegated to ORT, which accepts the bilinear / half-pixel

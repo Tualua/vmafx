@@ -2,7 +2,7 @@
 
 Three consumer surfaces share one runtime: `vmaf` CLI, libvmaf C API, and
 ffmpeg filters. All three funnel through
-[`libvmaf/src/dnn/ort_backend.c`](../../libvmaf/src/dnn/ort_backend.c).
+[`core/src/dnn/ort_backend.c`](../../core/src/dnn/ort_backend.c).
 
 ## Prerequisites
 

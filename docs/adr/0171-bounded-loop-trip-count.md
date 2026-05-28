@@ -63,7 +63,7 @@ pipelines.
 
 **Layer 2 — C wire-format scanner (counter cap)**
 
-[`onnx_scan.c`](../../libvmaf/src/dnn/onnx_scan.c) gains a counter
+[`onnx_scan.c`](../../core/src/dnn/onnx_scan.c) gains a counter
 that increments every time we see `op_type == "Loop"` at any depth
 (top-level graph or any embedded subgraph). The counter is shared
 across the recursion via a new `unsigned *loop_count` parameter
@@ -173,7 +173,7 @@ of Loops within Loops" attack purely from wire-format observation.
   - Existing `test_loop_body_with_allowed_op_passes` updated to
     use a `Constant` trip count (the previous fixture used a
     graph input M, which now fails the bounded check by design).
-- `libvmaf/test/dnn/test_onnx_scan.c` (1 new):
+- `core/test/dnn/test_onnx_scan.c` (1 new):
   - `test_too_many_loop_nodes_rejected` — 17 top-level Loops trip
     the `VMAF_DNN_MAX_LOOP_NODES = 16` cap with `-EPERM` and
     `first_bad = "Loop"`.

@@ -65,7 +65,7 @@ non-YUV400 sources.
 
 ## References
 
-- CPU reference: `libvmaf/src/feature/integer_psnr.c` lines 58–96 (options
+- CPU reference: `core/src/feature/integer_psnr.c` lines 58–96 (options
   table) and lines 123–125 (init guard).
 - [Research-0136](../research/0136-psnr-enable-chroma-cross-backend-2026-05-16.md)
 - [ADR-0216](0216-vulkan-chroma-psnr.md) — Vulkan chroma extension

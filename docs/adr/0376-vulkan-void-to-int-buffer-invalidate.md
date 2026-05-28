@@ -11,12 +11,12 @@ GCC 16 promotes `-Wreturn-mismatch` to a hard error. This surfaced four sites in
 Vulkan feature-extractor files where `return <int-expr>;` appeared inside functions
 declared `static void`:
 
-- `libvmaf/src/feature/vulkan/float_ansnr_vulkan.c:299` — `return err_inv;`
+- `core/src/feature/vulkan/float_ansnr_vulkan.c:299` — `return err_inv;`
   inside `static void reduce_partials(...)`
-- `libvmaf/src/feature/vulkan/float_ansnr_vulkan.c:302` — same
-- `libvmaf/src/feature/vulkan/cambi_vulkan.c:884` — `return err_inv_img;`
+- `core/src/feature/vulkan/float_ansnr_vulkan.c:302` — same
+- `core/src/feature/vulkan/cambi_vulkan.c:884` — `return err_inv_img;`
   inside `static void cambi_vk_readback_image(...)`
-- `libvmaf/src/feature/vulkan/cambi_vulkan.c:904` — `return err_inv_mask;`
+- `core/src/feature/vulkan/cambi_vulkan.c:904` — `return err_inv_mask;`
   inside `static void cambi_vk_readback_mask(...)`
 
 These are not cosmetic type-system accidents. All four sites guard calls to
@@ -69,9 +69,9 @@ be propagated, not ignored.
 ## References
 
 - GCC 16 release notes: `-Wreturn-mismatch` promoted to hard error.
-- `libvmaf/src/feature/vulkan/float_ansnr_vulkan.c` lines 294–313 (pre-fix),
+- `core/src/feature/vulkan/float_ansnr_vulkan.c` lines 294–313 (pre-fix),
   lines 367–376 (`reduce_partials` call site).
-- `libvmaf/src/feature/vulkan/cambi_vulkan.c` lines 880–917 (pre-fix),
+- `core/src/feature/vulkan/cambi_vulkan.c` lines 880–917 (pre-fix),
   lines 1266–1268 (call sites).
 - ADR-0186 (Vulkan image-import implementation) — background on the Vulkan
   host-mapped buffer coherency model used by the fork.

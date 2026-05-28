@@ -7,7 +7,7 @@
 
 ## Context
 
-The fork's `libvmaf/src/thread_pool.c` allocates and frees a
+The fork's `core/src/thread_pool.c` allocates and frees a
 `VmafThreadPoolJob` *and* a separate payload buffer on every
 `vmaf_thread_pool_enqueue` call. Callers submit tiny payloads
 (`struct { VmafPicture ref, dist; ... }` in the main extractor path,
@@ -128,7 +128,7 @@ Bit-exactness and throughput are both load-bearing:
   - Netflix #1464 is still open upstream. If it ever lands, keep
     the fork's version on conflict (fork's `void **thread_data`
     signature is required for the fork's per-worker data path —
-    see [`libvmaf/src/AGENTS.md`](../../libvmaf/src/AGENTS.md)).
+    see [`core/src/AGENTS.md`](../../core/src/AGENTS.md)).
 
 ## References
 

@@ -53,6 +53,6 @@ on computed scores.
 
 ## References
 
-- `libvmaf/src/feature/integer_adm.c` — DEFERRED comment at `adm_cm_partial_*` p-norm step
+- `core/src/feature/integer_adm.c` — DEFERRED comment at `adm_cm_partial_*` p-norm step
 - TODO/FIXME audit: `.workingdir/audit-todo-fixme-2026-05-16.md` item #6
 - `python/vmaf/core/quality_runner.py` — `adm_p_norm=3.0f` hardcoded in Python harness

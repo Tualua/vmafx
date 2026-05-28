@@ -98,7 +98,7 @@ false positives cost ≤ 30 seconds of contributor time.
     conflict surface, but its existence informs whoever runs the
     next sync that ffmpeg-patches integrity is now machine-checked.
   - Future enhancement: extend the consumed-set extractor to also
-    parse CLI flag names declared in `libvmaf/tools/cli_parse.c`
+    parse CLI flag names declared in `core/tools/cli_parse.c`
     (currently only meson_options surfaces). Out of scope for the
     initial gate.
 

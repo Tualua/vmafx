@@ -49,7 +49,7 @@ The collision is fundamental to the volk-vs-libvulkan-loader
 choice: both are full Vulkan loaders. They can coexist only
 when one is internal (private to a single .so) and the other is
 the publicly-resolved one. libvmaf's volk usage is purely
-internal — the kernels in `libvmaf/src/feature/vulkan/` call
+internal — the kernels in `core/src/feature/vulkan/` call
 `vkXxx` only inside libvmaf — so volk's symbols never need to
 be exported.
 
@@ -88,7 +88,7 @@ Linker compatibility:
 | `-Wl,--exclude-libs,ALL` (chosen) | Two lines in meson.build; covers volk, VMA, and any future static-archive Vulkan dep without listing each one; widely-supported GNU-ld feature | Linux/mingw only | Best signal-to-cost ratio. macOS and Windows don't have the conflict in the first place. |
 | Per-archive `-Wl,--exclude-libs,libvolk.a:libvk-mem-alloc.a` | More explicit | List grows when we add static-archive deps; archive names depend on meson's wrap layout | Brittle — easier to use `ALL` and inherit broad protection |
 | GNU ld version script (`--version-script vmaf.map`) | Most precise; lets us declare the exact public API once | Requires maintaining an explicit list of every `vmaf_*` export — drift between header and .map; touches every PR that adds a public function | Too much maintenance for a single-bug fix |
-| Drop volk; link `libvulkan.so` dynamically with `dlopen` | Matches FFmpeg's model; eliminates the conflict at the source | Significant refactor of [`libvmaf/src/vulkan/common.c`](../../libvmaf/src/vulkan/common.c)'s init path; volk's whole-vulkan-API loader is replaced with hand-written `dlsym` for every entry we use | Too much code churn for a build-system fix |
+| Drop volk; link `libvulkan.so` dynamically with `dlopen` | Matches FFmpeg's model; eliminates the conflict at the source | Significant refactor of [`core/src/vulkan/common.c`](../../core/src/vulkan/common.c)'s init path; volk's whole-vulkan-API loader is replaced with hand-written `dlsym` for every entry we use | Too much code churn for a build-system fix |
 | Mark volk symbols `__attribute__((visibility("hidden")))` at the C level | Per-symbol granularity | Requires editing volk's source (a vendored subproject); rebases when we bump volk; misses `vk*` symbols volk emits with its own attributes | Brittle — meson `link_args` is the right layer |
 
 ## Consequences

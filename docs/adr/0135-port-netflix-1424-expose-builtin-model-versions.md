@@ -104,8 +104,8 @@ to prevent the same bugs from re-emerging in a caller.
 - **Negative**: Fork-local diff from upstream (three semantic
   corrections + test rewrite + header-doc expansion). Next
   `/sync-upstream` after Netflix merges #1424 will need manual
-  conflict resolution in `libvmaf/src/model.c` and
-  `libvmaf/test/test_model.c`; the resolution is simply "keep
+  conflict resolution in `core/src/model.c` and
+  `core/test/test_model.c`; the resolution is simply "keep
   fork version" — document in `rebase-notes.md`.
 - **Neutral / follow-ups**:
   - Consider exposing `VmafBuiltInModel` as a small opaque struct

@@ -29,8 +29,8 @@ this ADR records only the CUDA-specific choices.
 ## Decision
 
 We implement a CUDA twin of `vmaf_fex_cambi` under
-`libvmaf/src/feature/cuda/integer_cambi_cuda.c` with three CUDA kernels
-in `libvmaf/src/feature/cuda/integer_cambi/cambi_score.cu`.
+`core/src/feature/cuda/integer_cambi_cuda.c` with three CUDA kernels
+in `core/src/feature/cuda/integer_cambi/cambi_score.cu`.
 
 **GPU kernel inventory** (three kernels, Strategy II scope):
 
@@ -61,7 +61,7 @@ accumulates the per-scale contribution. The final score is clamped to
 **Build wiring**:
 
 - `cambi_score.cu` is compiled via the existing `cuda_cu_sources` dict in
-  `libvmaf/src/meson.build` (nvcc → fatbin → bin2c → `cambi_score_ptx[]`
+  `core/src/meson.build` (nvcc → fatbin → bin2c → `cambi_score_ptx[]`
   linked into `libcuda_common_vmaf_lib`).
 - `integer_cambi_cuda.c` is added to the CUDA feature sources list in the
   same `meson.build`.

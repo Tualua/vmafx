@@ -16,13 +16,13 @@ Netflix upstream issue
 The cause is that MS-SSIM is defined as a **5-level** Gaussian
 pyramid with an **11-tap** filter (constants `SCALES = 5` and
 `GAUSSIAN_LEN = 11` in
-[`libvmaf/src/feature/iqa/ssim_tools.h`](../../libvmaf/src/feature/iqa/ssim_tools.h)).
+[`core/src/feature/iqa/ssim_tools.h`](../../core/src/feature/iqa/ssim_tools.h)).
 Each level down-samples the image by 2×. For the 11-tap Gaussian
 to still fit at level 4 (the deepest scale), the input must
 satisfy `min(w, h) >= GAUSSIAN_LEN << (SCALES - 1) = 11 << 4 =
 176`. Below that, the pyramid walks off the kernel footprint at
 a mid-level scale and
-[`ms_ssim_check_scale_ok`](../../libvmaf/src/feature/ms_ssim.c)
+[`ms_ssim_check_scale_ok`](../../core/src/feature/ms_ssim.c)
 emits `"error: scale below 1x1!\n"` mid-run, followed by a
 cascading `"problem reading pictures"` / `"problem flushing
 context"` that makes the real failure hard to find in tooling
@@ -38,7 +38,7 @@ begun processing. No init-time guard.
 Reject small resolutions up front at init time.
 
 1. In
-   [`libvmaf/src/feature/float_ms_ssim.c`](../../libvmaf/src/feature/float_ms_ssim.c),
+   [`core/src/feature/float_ms_ssim.c`](../../core/src/feature/float_ms_ssim.c),
    compute the minimum supported dimension from the existing
    `GAUSSIAN_LEN` + `SCALES` constants:
    ```c
@@ -57,9 +57,9 @@ Reject small resolutions up front at init time.
    under the ADR-0141 60-line `readability-function-size` limit
    after the new 12-line guard block is added.
 3. Unit test:
-   [`libvmaf/test/test_float_ms_ssim_min_dim.c`](../../libvmaf/test/test_float_ms_ssim_min_dim.c),
+   [`core/test/test_float_ms_ssim_min_dim.c`](../../core/test/test_float_ms_ssim_min_dim.c),
    registered in
-   [`libvmaf/test/meson.build`](../../libvmaf/test/meson.build).
+   [`core/test/meson.build`](../../core/test/meson.build).
    Three subtests — registration, reject below minimum (5
    boundary cases: 160×144, 160×200, 200×160, 175×176, 176×175),
    and accept at/above the minimum (176×176 exact, 576×324).
@@ -123,7 +123,7 @@ it stays in sync if upstream ever changes `SCALES` or
   - `test_float_ms_ssim_init_rejects_below_min_dim`
   - `test_float_ms_ssim_init_accepts_min_dim`
 - **Reducer verified**: `git stash push
-  libvmaf/src/feature/float_ms_ssim.c && ninja -C build &&
+  core/src/feature/float_ms_ssim.c && ninja -C build &&
   meson test -C build test_float_ms_ssim_min_dim` reports
   `Fail: 1` — the test is a real gate, not a tautology.
 - Reproducer from the upstream issue (with a 160×144 YUV):
@@ -131,7 +131,7 @@ it stays in sync if upstream ever changes `SCALES` or
   libvmaf ERROR float_ms_ssim: input resolution 160x144 is too small;
   the 5-level 11-tap MS-SSIM pyramid requires at least 176x176 (Netflix#1414)
   ```
-- `clang-tidy -p build libvmaf/src/feature/float_ms_ssim.c` →
+- `clang-tidy -p build core/src/feature/float_ms_ssim.c` →
   zero warnings (`init` stays within the
   `readability-function-size` budget via the extracted
   `ms_ssim_init_simd_dispatch` helper).

@@ -14,7 +14,7 @@ in `feature_dump.py` — wrong pix_fmt default and missing
 `integer_<name>` fallback. A CI run against the Netflix golden YUV
 pair is the cheapest place to keep that guarantee.
 
-The test is skipped if either the vmaf binary under `libvmaf/build-cpu/tools/`
+The test is skipped if either the vmaf binary under `core/build-cpu/tools/`
 or the Netflix YUV fixtures are missing, so it no-ops on a fresh
 checkout without a build.
 """

@@ -13,7 +13,7 @@ expects perceptual error. T6-2b is the encoder-steering counterpart: a
 CLI sidecar that consumes the same saliency map and emits a per-CTU
 QP-offset file the encoder reads back. Two surfaces, one model.
 
-The fork already ships several CLI tools under `libvmaf/tools/` (`vmaf`,
+The fork already ships several CLI tools under `core/tools/` (`vmaf`,
 `vmaf_bench`); a new sidecar binary slots into that pattern with no
 public C-API impact and no library link surface beyond the existing
 `libvmaf/dnn.h` session API.
@@ -27,7 +27,7 @@ that downstream encoder drivers will depend on.
 ## Decision
 
 We ship `vmaf-roi` as a fork-local sidecar binary at
-`libvmaf/tools/vmaf_roi.c` that:
+`core/tools/vmaf_roi.c` that:
 
 1. Consumes raw planar YUV input + a 0-based frame index, seeks to the
    requested frame with `fseeko` (>2 GiB safe), reads only the luma

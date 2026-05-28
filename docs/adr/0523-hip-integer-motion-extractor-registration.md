@@ -7,7 +7,7 @@
 
 ## Context
 
-`libvmaf/src/feature/hip/integer_motion_hip.c` defines
+`core/src/feature/hip/integer_motion_hip.c` defines
 `vmaf_fex_integer_motion_hip` (extractor name `"motion_hip"`, emitting
 `VMAF_integer_feature_motion_score`, `_motion2_score`, and `_motion3_score`).
 The source file's own comment at line 663 states the extractor is
@@ -28,7 +28,7 @@ which triggered a broader audit of HIP extractor registrations.
 
 Add the missing `extern VmafFeatureExtractor vmaf_fex_integer_motion_hip;`
 declaration inside the `#if HAVE_HIP` block in
-`libvmaf/src/feature/feature_extractor.c`, and register
+`core/src/feature/feature_extractor.c`, and register
 `&vmaf_fex_integer_motion_hip` in `feature_extractor_list[]` (also inside
 `#if HAVE_HIP`) immediately after the `vmaf_fex_integer_motion_v2_hip` entry,
 mirroring the CUDA twin's position relative to `vmaf_fex_integer_motion_v2_cuda`.
@@ -59,8 +59,8 @@ mirroring the CUDA twin's position relative to `vmaf_fex_integer_motion_v2_cuda`
 
 ## References
 
-- Source file: `libvmaf/src/feature/hip/integer_motion_hip.c` (lines 663–694)
-- Broken test: `libvmaf/test/test_hip_motion3_parity.c` (line 162)
+- Source file: `core/src/feature/hip/integer_motion_hip.c` (lines 663–694)
+- Broken test: `core/test/test_hip_motion3_parity.c` (line 162)
 - Surfaced by: PR #1279 / [ADR-0519](0519-hip-import-state-implementation.md) HIP import-state audit
-- CUDA twin registration: `libvmaf/src/feature/feature_extractor.c` line 257 (`vmaf_fex_integer_motion_cuda`)
+- CUDA twin registration: `core/src/feature/feature_extractor.c` line 257 (`vmaf_fex_integer_motion_cuda`)
 - `req`: "fix the latent dead-code — `vmaf_fex_integer_motion_hip` is declared but never registered"

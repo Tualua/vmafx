@@ -94,7 +94,7 @@ the follow-up backlog and out of scope here.
 - [`docs/usage/vmaf-tune.md`](../usage/vmaf-tune.md) — user-discoverable
   flag + accuracy caveat documentation.
 - libvmaf CLI: `--frame_skip_ref` / `--frame_cnt` — see
-  `libvmaf/tools/cli_parse.c`.
+  `core/tools/cli_parse.c`.
 - Source: `req` — direct user request 2026-05-03 to add a sample-clip
   mode to vmaf-tune that encodes only a short representative slice
   (e.g. 10 seconds) per grid point instead of the full video, with the

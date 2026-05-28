@@ -9,7 +9,7 @@
   Both ONNX blobs were tracked on `master` and documented as
   production-shipped, but their `registry.json` rows were absent —
   any `--tiny-model=<id>` lookup would have failed despite the ONNX
-  files being present and signed. `libvmaf/test/dnn/test_registry.sh`
+  files being present and signed. `core/test/dnn/test_registry.sh`
   now reports `OK: 23 registry entries verified`.
 - Also restored `vmaf_tiny_v1` + `vmaf_tiny_v1_medium` rows. The ONNX
   blobs are tracked on `master` and actively referenced by

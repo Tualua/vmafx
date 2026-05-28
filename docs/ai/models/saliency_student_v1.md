@@ -107,7 +107,7 @@ wiring.
 
 ## Op-allowlist
 
-Every op in the graph is on `libvmaf/src/dnn/op_allowlist.c`:
+Every op in the graph is on `core/src/dnn/op_allowlist.c`:
 `Conv`, `BatchNormalization` (folded into `Conv` at export by
 constant folding), `Relu`, `MaxPool`, `ConvTranspose`, `Concat`,
 `Sigmoid`. `Resize` is *not* used — the decoder upsamples with

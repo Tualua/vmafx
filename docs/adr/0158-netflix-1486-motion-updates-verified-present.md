@@ -29,13 +29,13 @@ A verification pass confirmed that **both commits are already fully
 present in the fork's `master`**:
 
 - `edge_8` `+ 2` fix: present in
-  [`libvmaf/src/feature/integer_motion.c:240`](../../libvmaf/src/feature/integer_motion.c),
-  [`x86/motion_avx2.c:147`](../../libvmaf/src/feature/x86/motion_avx2.c),
-  [`x86/motion_avx512.c:147`](../../libvmaf/src/feature/x86/motion_avx512.c).
+  [`core/src/feature/integer_motion.c:240`](../../core/src/feature/integer_motion.c),
+  [`x86/motion_avx2.c:147`](../../core/src/feature/x86/motion_avx2.c),
+  [`x86/motion_avx512.c:147`](../../core/src/feature/x86/motion_avx512.c).
 - `motion_max_val` option: present at `integer_motion.c:57,118-120`
   and in the options table.
 - `VMAF_integer_feature_motion3_score`: present at
-  [`libvmaf/src/feature/alias.c:92`](../../libvmaf/src/feature/alias.c)
+  [`core/src/feature/alias.c:92`](../../core/src/feature/alias.c)
   and in `integer_motion.c` output plumbing.
 - Netflix golden updates: the 73 `(results[N][key], value, places=)`
   tuples from upstream commit `62f47d5` are present in the fork's
@@ -88,7 +88,7 @@ reference.
     moving-average, blend, fps_weight) are additions on top of
     Netflix#1486; future upstream changes to motion extractor
     internals may conflict with them. That invariant is noted
-    in `libvmaf/src/feature/AGENTS.md` under the existing
+    in `core/src/feature/AGENTS.md` under the existing
     motion_v2 NEON entry.
   - The pre-existing `readability-braces-around-statements`
     warnings on `integer_motion.h:38-48` (noticed during
@@ -103,10 +103,10 @@ reference.
 - Markers verified present via:
   ```bash
   grep -n "height - (i_tap - height + 2)\|motion_max_val\|VMAF_integer_feature_motion3_score" \
-      libvmaf/src/feature/integer_motion.c \
-      libvmaf/src/feature/alias.c \
-      libvmaf/src/feature/x86/motion_avx2.c \
-      libvmaf/src/feature/x86/motion_avx512.c
+      core/src/feature/integer_motion.c \
+      core/src/feature/alias.c \
+      core/src/feature/x86/motion_avx2.c \
+      core/src/feature/x86/motion_avx512.c
   ```
 - 73-triple golden-value match on python tests verified by
   programmatic AST-style scan (details in subagent report).

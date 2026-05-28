@@ -74,7 +74,7 @@ stderr line always agree.
 ## Example — round-trip check
 
 ```shell
-./build/libvmaf/tools/vmaf \
+./build/core/tools/vmaf \
   --reference  src01_hrc00_576x324.yuv \
   --distorted  src01_hrc01_576x324.yuv \
   --width 576 --height 324 --pixel_format 420 --bitdepth 8 \

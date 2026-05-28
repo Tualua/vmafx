@@ -62,12 +62,12 @@ architecture PR) should expose this.
 
 ONNX Runtime 1.19 (released 2025-Q3) and 1.20 (2026-Q1) include improved
 `MatMul` and `Gemm` kernel dispatch for small matrices (batch-size 1, hidden ≤ 256).
-The fork's ONNX Runtime integration in `libvmaf/src/dnn/` can exploit these
+The fork's ONNX Runtime integration in `core/src/dnn/` can exploit these
 improvements without any model changes — the gains are in the runtime's execution
 provider. On CPU (AVX2), the 1.20 GEMM kernel shows approximately 15–20%
 throughput improvement on the 2×64 nano MLP configuration in micro-benchmarks.
 
-**Implication**: upgrading `libvmaf/subprojects/onnxruntime.wrap` from the current
+**Implication**: upgrading `core/subprojects/onnxruntime.wrap` from the current
 pinned version to 1.20 before the first training run is advisable. This is a
 build-system change and does not affect model weights.
 

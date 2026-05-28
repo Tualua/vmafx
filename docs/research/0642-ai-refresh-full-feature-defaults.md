@@ -15,7 +15,7 @@ The refresh audit found three stale-data risks:
 - KoNViD-1k had a synthetic-FR pair extractor but not a full-feature table generator with
   deterministic fold metadata.
 
-Local smoke checks used the current fork CPU binary at `libvmaf/build-cpu/tools/vmaf`.
+Local smoke checks used the current fork CPU binary at `core/build-cpu/tools/vmaf`.
 BVI-DVC raw-YUV input produced all-zero VMAF in a one-clip probe, while the local lossless
 MKV bundle produced finite metrics; the refresh driver therefore accepts `.mkv`, `.mp4`,
 and `.yuv` but documents the MKV bundle as the known-good source.

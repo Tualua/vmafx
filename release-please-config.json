@@ -32,7 +32,7 @@
       "extra-files": [
         {
           "type": "generic",
-          "path": "libvmaf/meson.build"
+          "path": "core/meson.build"
         }
       ]
     },

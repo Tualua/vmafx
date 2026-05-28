@@ -38,7 +38,7 @@ def test_vmaf_binary_prefers_usr_local(monkeypatch, tmp_path):
 
 
 def test_vmaf_binary_falls_back_to_libvmaf_build(monkeypatch, tmp_path):
-    """When /usr/local/bin/vmaf is absent the libvmaf/build path is next."""
+    """When /usr/local/bin/vmaf is absent the core/build path is next."""
     monkeypatch.delenv("VMAF_BIN", raising=False)
     monkeypatch.setattr(srv, "_repo_root", lambda: tmp_path)
 
@@ -60,7 +60,7 @@ def test_vmaf_binary_falls_back_to_libvmaf_build(monkeypatch, tmp_path):
 
 
 def test_vmaf_binary_falls_back_to_libvmaf_when_all_absent(monkeypatch, tmp_path):
-    """When no candidate exists, returns libvmaf/build path as the best guess."""
+    """When no candidate exists, returns core/build path as the best guess."""
     monkeypatch.delenv("VMAF_BIN", raising=False)
     monkeypatch.setattr(srv, "_repo_root", lambda: tmp_path)
 
@@ -128,7 +128,7 @@ def test_run_benchmark_injects_vmaf_root(monkeypatch, tmp_path):
 
 def test_run_benchmark_injects_vmaf_bin(monkeypatch, tmp_path):
     """_run_benchmark must pass VMAF_BIN so bench_all.sh does not fall back to
-    the relative in-tree path (libvmaf/build/tools/vmaf) that is absent in
+    the relative in-tree path (core/build/tools/vmaf) that is absent in
     the container after ``make install`` (ADR-0513 root cause #2)."""
     import anyio
 

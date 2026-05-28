@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Train ``fr_regressor_v3`` — codec-aware FR regressor on ENCODER_VOCAB v3 (16-slot).
 
 Closes the v3 retrain deferral documented in
@@ -84,8 +84,6 @@ if str(REPO_ROOT / "ai" / "scripts") not in sys.path:
 # Import the v3 vocab from the v2 trainer where it's documented as a
 # parallel constant (per ADR-0302's scaffold landed in PR #401).
 from train_fr_regressor_v2 import ENCODER_VOCAB_V3  # noqa: E402  # type: ignore[import-not-found]
-
-from vmaf_train.registry import write_registry_json  # noqa: E402
 
 # Canonical-6 libvmaf feature columns (ADR-0291 / ADR-0319).
 CANONICAL_6: tuple[str, ...] = (
@@ -632,7 +630,7 @@ def write_sidecar_and_registry(
     models.append(new_entry)
     models.sort(key=lambda e: e.get("id", ""))
     registry["models"] = models
-    write_registry_json(registry_path, registry)
+    registry_path.write_text(json.dumps(registry, indent=2, sort_keys=True) + "\n")
 
 
 def _write_smoke_corpus(path: Path, n_per_source: int = 4) -> None:

@@ -6,7 +6,7 @@
 
 ## Finding
 
-The 10-bit (HBD) YUV pixel path in `libvmaf/tools/vmaf.c` reads raw bytes from
+The 10-bit (HBD) YUV pixel path in `core/tools/vmaf.c` reads raw bytes from
 the YUV file via `fread(buf, 1, N, fin)` and then accesses them as `uint16_t *`
 (e.g. lines 139–148, 176–187). Standard YUV HBD files store pixels as
 little-endian 16-bit samples. On a big-endian host, the `uint16_t *` cast
@@ -14,9 +14,9 @@ would produce byte-swapped pixel values without any byte-swap correction,
 yielding silently wrong VMAF scores.
 
 The same pattern appears in:
-- `libvmaf/tools/vmaf.c` (HBD branch in `video_open_yuv` and `video_open_y4m`)
-- `libvmaf/src/dnn/tensor_io.h` (documented as "little-endian per pixel" at line 73)
-- `libvmaf/src/feature/hip/float_psnr/float_psnr_score.hip` (comment line 95)
+- `core/tools/vmaf.c` (HBD branch in `video_open_yuv` and `video_open_y4m`)
+- `core/src/dnn/tensor_io.h` (documented as "little-endian per pixel" at line 73)
+- `core/src/feature/hip/float_psnr/float_psnr_score.hip` (comment line 95)
 
 The DNN tensor_io surface documents the assumption explicitly; the YUV reader does not.
 

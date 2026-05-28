@@ -98,9 +98,9 @@ to the `ffmpeg-patches/` series that:
   [ADR-0238](0238-vulkan-picture-preallocation.md)
   (lazy pool init pattern this ADR copies).
 - libvmaf CUDA C-API:
-  [`libvmaf/include/libvmaf/libvmaf_cuda.h`](../../libvmaf/include/libvmaf/libvmaf_cuda.h),
+  [`core/include/libvmaf/libvmaf_cuda.h`](../../core/include/libvmaf/libvmaf_cuda.h),
   ownership contract documented in
-  [`libvmaf/src/cuda/AGENTS.md`](../../libvmaf/src/cuda/AGENTS.md).
+  [`core/src/cuda/AGENTS.md`](../../core/src/cuda/AGENTS.md).
 - Source: `req` (user task — close the FFmpeg integration gap so
   `--enable-libvmaf-cuda` is exposed alongside the existing
   `--enable-libvmaf-sycl` / `--enable-libvmaf-vulkan`).

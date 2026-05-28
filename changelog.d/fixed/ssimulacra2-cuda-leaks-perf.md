@@ -25,7 +25,7 @@
   The H-pass non-coalesced reads and V-pass L1 pressure ceilings
   remain known follow-ups (require a shared-memory tile-transpose
   rewrite). The `cuModuleUnload` rule is propagated to
-  `libvmaf/src/cuda/AGENTS.md § Lifecycle invariants` so future
+  `core/src/cuda/AGENTS.md § Lifecycle invariants` so future
   agent passes pin it on every CUDA extractor; every existing
   extractor leaks the same way (separate `T-CUDA-MODULE-UNLOAD-SWEEP`
   PR).

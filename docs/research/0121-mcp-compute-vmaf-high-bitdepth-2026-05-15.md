@@ -38,10 +38,10 @@ which path ran.
 ## Validation
 
 ```bash
-meson setup libvmaf/build-mcp-hbd libvmaf \
+meson setup core/build-mcp-hbd libvmaf \
   -Denable_mcp=true -Denable_mcp_stdio=true \
   -Denable_mcp_uds=true -Denable_mcp_sse=enabled
-meson test -C libvmaf/build-mcp-hbd test_mcp_smoke --print-errorlogs
+meson test -C core/build-mcp-hbd test_mcp_smoke --print-errorlogs
 ```
 
 ## References

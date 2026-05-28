@@ -1,4 +1,4 @@
-- Added three unit tests to `libvmaf/test/test_output.c` covering
+- Added three unit tests to `core/test/test_output.c` covering
   previously untested public API entry points identified in the
   2026-05-16 test-coverage audit (§2):
   `vmaf_version()` (non-NULL + digit presence check),

@@ -1,7 +1,7 @@
 # Fuzzing libvmaf
 
 Operator runbook for the libFuzzer harnesses under
-[`libvmaf/test/fuzz/`](../../libvmaf/test/fuzz/). Tracked under
+[`core/test/fuzz/`](../../core/test/fuzz/). Tracked under
 [ADR-0270](../adr/0270-fuzzing-scaffold.md) (initial scaffold) and
 [ADR-0311](../adr/0311-libfuzzer-harness-expansion.md) (`fuzz_yuv_input`
 and `fuzz_cli_parse` expansion). The harnesses satisfy the OSSF
@@ -13,12 +13,12 @@ check.
 
 | Harness          | Surface                                                                     | Source                                                                           | Seed corpus                                                                | Known crashes                                                                                  |
 |------------------|-----------------------------------------------------------------------------|----------------------------------------------------------------------------------|----------------------------------------------------------------------------|------------------------------------------------------------------------------------------------|
-| `fuzz_y4m_input` | YUV4MPEG2 parser exposed via `video_input_open` / `_fetch_frame` / `_close` | [`libvmaf/test/fuzz/fuzz_y4m_input.c`](../../libvmaf/test/fuzz/fuzz_y4m_input.c) | [`y4m_input_corpus/`](../../libvmaf/test/fuzz/y4m_input_corpus/) (6 seeds) | 1 (411-chroma OOB write — see ADR-0270 §Consequences).                                         |
-| `fuzz_yuv_input` | Headerless raw-YUV reader exposed via `raw_input_open` / `_fetch_frame`     | [`libvmaf/test/fuzz/fuzz_yuv_input.c`](../../libvmaf/test/fuzz/fuzz_yuv_input.c) | [`yuv_input_corpus/`](../../libvmaf/test/fuzz/yuv_input_corpus/) (6 seeds) | 0                                                                                              |
-| `fuzz_cli_parse` | `cli_parse` argv tokeniser + colon-delimited `--feature` / `--model` parser | [`libvmaf/test/fuzz/fuzz_cli_parse.c`](../../libvmaf/test/fuzz/fuzz_cli_parse.c) | [`cli_parse_corpus/`](../../libvmaf/test/fuzz/cli_parse_corpus/) (6 seeds) | 1 (`--threads=<garbage>` abbreviation tripping `error()` assert — see ADR-0311 §Consequences). |
+| `fuzz_y4m_input` | YUV4MPEG2 parser exposed via `video_input_open` / `_fetch_frame` / `_close` | [`core/test/fuzz/fuzz_y4m_input.c`](../../core/test/fuzz/fuzz_y4m_input.c) | [`y4m_input_corpus/`](../../core/test/fuzz/y4m_input_corpus/) (6 seeds) | 1 (411-chroma OOB write — see ADR-0270 §Consequences).                                         |
+| `fuzz_yuv_input` | Headerless raw-YUV reader exposed via `raw_input_open` / `_fetch_frame`     | [`core/test/fuzz/fuzz_yuv_input.c`](../../core/test/fuzz/fuzz_yuv_input.c) | [`yuv_input_corpus/`](../../core/test/fuzz/yuv_input_corpus/) (6 seeds) | 0                                                                                              |
+| `fuzz_cli_parse` | `cli_parse` argv tokeniser + colon-delimited `--feature` / `--model` parser | [`core/test/fuzz/fuzz_cli_parse.c`](../../core/test/fuzz/fuzz_cli_parse.c) | [`cli_parse_corpus/`](../../core/test/fuzz/cli_parse_corpus/) (6 seeds) | 1 (`--threads=<garbage>` abbreviation tripping `error()` assert — see ADR-0311 §Consequences). |
 
 New harnesses follow the README at
-[`libvmaf/test/fuzz/README.md`](../../libvmaf/test/fuzz/README.md).
+[`core/test/fuzz/README.md`](../../core/test/fuzz/README.md).
 
 ## Build the harness
 
@@ -40,7 +40,7 @@ ninja -C build-fuzz test/fuzz/fuzz_y4m_input \
 
 Two non-default Meson flags are load-bearing:
 
-- `-Dfuzz=true` — opts the `libvmaf/test/fuzz/` subdirectory into
+- `-Dfuzz=true` — opts the `core/test/fuzz/` subdirectory into
   the build (default `false`).
 - `-Db_lundef=false` — clang's libFuzzer runtime defines symbols
   that resolve at final-link time; the default `b_lundef=true`
@@ -56,15 +56,15 @@ mkdir -p /tmp/fuzz-smoke-y4m /tmp/fuzz-smoke-yuv /tmp/fuzz-smoke-cli
 
 ./build-fuzz/test/fuzz/fuzz_y4m_input \
     -max_total_time=60 -rss_limit_mb=2048 -malloc_limit_mb=1024 -timeout=10 \
-    /tmp/fuzz-smoke-y4m libvmaf/test/fuzz/y4m_input_corpus/
+    /tmp/fuzz-smoke-y4m core/test/fuzz/y4m_input_corpus/
 
 ./build-fuzz/test/fuzz/fuzz_yuv_input \
     -max_total_time=60 -rss_limit_mb=2048 -malloc_limit_mb=1024 -timeout=10 \
-    /tmp/fuzz-smoke-yuv libvmaf/test/fuzz/yuv_input_corpus/
+    /tmp/fuzz-smoke-yuv core/test/fuzz/yuv_input_corpus/
 
 ./build-fuzz/test/fuzz/fuzz_cli_parse \
     -max_total_time=60 -rss_limit_mb=2048 -malloc_limit_mb=1024 -timeout=10 \
-    /tmp/fuzz-smoke-cli libvmaf/test/fuzz/cli_parse_corpus/
+    /tmp/fuzz-smoke-cli core/test/fuzz/cli_parse_corpus/
 ```
 
 Expected output on a clean run:
@@ -86,8 +86,8 @@ single artefact for a clean stack trace:
 
 Then file the bug per the
 [bug-tracking workflow in `docs/state.md`](../state.md), park the
-reproducer under `libvmaf/test/fuzz/<target>_known_crashes/`
-(see [`libvmaf/test/fuzz/README.md` § Known crashes](../../libvmaf/test/fuzz/README.md#known-crashes))
+reproducer under `core/test/fuzz/<target>_known_crashes/`
+(see [`core/test/fuzz/README.md` § Known crashes](../../core/test/fuzz/README.md#known-crashes))
 so the regression is caught the moment the fix lands.
 
 ## Continuous fuzzing in CI
@@ -102,10 +102,10 @@ editing the harness invocations.
 ## Adding a new harness
 
 See the step list in
-[`libvmaf/test/fuzz/README.md` § Add a new harness](../../libvmaf/test/fuzz/README.md#add-a-new-harness).
+[`core/test/fuzz/README.md` § Add a new harness](../../core/test/fuzz/README.md#add-a-new-harness).
 The summary is: drop `fuzz_<target>.c` next to the existing
 harnesses, add an `executable(...)` block in
-[`libvmaf/test/fuzz/meson.build`](../../libvmaf/test/fuzz/meson.build),
+[`core/test/fuzz/meson.build`](../../core/test/fuzz/meson.build),
 ship a small seed corpus under `<target>_corpus/`, register the
 target in the matrix in `.github/workflows/fuzz.yml`, and update
 the table at the top of this file.

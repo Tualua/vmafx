@@ -1,4 +1,4 @@
-# AGENTS.md — VMAFX
+# AGENTS.md — VMAF Fork (Lusoris)
 
 ## 🌟 GLOBAL PROJECT RULES (TOP PRIORITY)
 
@@ -55,10 +55,10 @@ make format-check  # dry-run (CI / pre-commit)
 
 See [CLAUDE.md §5](CLAUDE.md) — identical. Briefly:
 
-- `libvmaf/src/` — C engine
-- `libvmaf/src/{cuda,sycl,dnn}/` — GPU / DNN backends
-- `libvmaf/src/feature/{x86,arm64,cuda,sycl}/` — per-platform feature implementations
-- `libvmaf/tools/` — `vmaf` CLI + `vmaf_bench`
+- `core/src/` — C engine
+- `core/src/{cuda,sycl,dnn}/` — GPU / DNN backends
+- `core/src/feature/{x86,arm64,cuda,sycl}/` — per-platform feature implementations
+- `core/tools/` — `vmaf` CLI + `vmaf_bench`
 - `python/vmaf/` + `python/test/` — Python bindings + tests (golden-data here)
 - `ai/` — PyTorch tiny-model training
 - `mcp-server/` — MCP JSON-RPC server
@@ -156,12 +156,12 @@ tracking upstream version + a fork suffix. Signing is keyless via Sigstore / Git
 5. Every commit message is Conventional Commits (`type(scope): subject`) — enforced by
    the `commit-msg` git hook.
 6. Every new `.c` / `.h` / `.cpp` / `.cu` file starts with the applicable license
-   header (wholly-new fork files: `Copyright 2026 Lusoris`;
+   header (wholly-new fork files: `Copyright 2026 Lusoris and Claude (Anthropic)`;
    files touching Netflix code: Netflix header preserved).
 7. Every PR that adds or changes a user-discoverable surface ships
    **human-readable documentation** under `docs/` in the same PR as the code.
    User-discoverable means: CLI flags or binaries, public C API under
-   `libvmaf/include/`, feature extractors, GPU backends / SIMD paths,
+   `core/include/`, feature extractors, GPU backends / SIMD paths,
    `meson_options.txt` build flags, ffmpeg filter options, MCP tools, tiny-AI
    surfaces, and user-visible log / error / output-schema changes. Docs land
    in the existing topic tree (CLI → `docs/usage/`, C API → `docs/api/`,
@@ -210,7 +210,7 @@ tracking upstream version + a fork suffix. Signing is keyless via Sigstore / Git
    `port-upstream-commit` PRs are exempt. The PR template
    ([.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md))
    carries the checklist.
-10. Every PR leaves every file it touches **lint-clean** to VMAFX's
+10. Every PR leaves every file it touches **lint-clean** to the fork's
     strictest profile (clang-tidy + cppcheck + `make lint`), whether the
     file is fork-local or upstream-mirror. "Touches" = any hunk in the
     PR's diff against its merge base. Refactor first; `// NOLINT` is
@@ -265,8 +265,8 @@ tracking upstream version + a fork suffix. Signing is keyless via Sigstore / Git
     - **Don't reinvent host builds** when a backend isn't reproducing
       in the container — diagnose the container first; fix the
       Containerfile rather than the host build-flag soup. Host-side
-      builds remain available (`build/`, `libvmaf/build-cuda`,
-      `libvmaf/build-all`) but are no longer the default mental model.
+      builds remain available (`build/`, `core/build-cuda`,
+      `core/build-all`) but are no longer the default mental model.
     - **Don't multiplex the same device across parallel jobs.** When
       a long-running job (CHUG re-extract, BVI-DVC sweep) is pinned
       to one device (e.g. CUDA), schedule sibling parallel work on a
@@ -280,7 +280,7 @@ tracking upstream version + a fork suffix. Signing is keyless via Sigstore / Git
 
 ## 12a. Worktree discipline ([ADR-0332](docs/adr/0332-agent-worktree-drift-hard-guard.md))
 
-Background coding agents on VMAFX run in isolated git worktrees
+Background coding agents on this fork run in isolated git worktrees
 under `.claude/worktrees/agent-<id>/`. Two layers keep them from
 clobbering the main checkout:
 
@@ -336,7 +336,7 @@ linked AGENTS.md before resolving conflicts.
   (batch 2: ssim / ms_ssim / psnr_hvs),
   [ADR-0192](docs/adr/0192-gpu-long-tail-batch-3.md) (batch 3:
   motion_v2 / float_ansnr / float-twins / ssimulacra2 / cambi).
-  See [libvmaf/src/feature/AGENTS.md](libvmaf/src/feature/AGENTS.md).
+  See [core/src/feature/AGENTS.md](core/src/feature/AGENTS.md).
 - **Vulkan backend (scaffold + image import)**:
   [ADR-0175](docs/adr/0175-vulkan-backend-scaffold.md) +
   [ADR-0184](docs/adr/0184-vulkan-image-import-scaffold.md) +
@@ -345,7 +345,7 @@ linked AGENTS.md before resolving conflicts.
   [ADR-0185](docs/adr/0185-vulkan-hide-volk-symbols.md) +
   [ADR-0198](docs/adr/0198-volk-priv-remap-static-archive.md) +
   [ADR-0200](docs/adr/0200-volk-priv-remap-pkgconfig-leak-fix.md).
-  See [libvmaf/src/vulkan/AGENTS.md](libvmaf/src/vulkan/AGENTS.md).
+  See [core/src/vulkan/AGENTS.md](core/src/vulkan/AGENTS.md).
 - **ssim / ms_ssim Vulkan kernels**:
   [ADR-0188](docs/adr/0188-gpu-long-tail-batch-2.md) +
   [ADR-0189](docs/adr/0189-ssim-vulkan.md) +
@@ -358,11 +358,11 @@ linked AGENTS.md before resolving conflicts.
 - **cambi Vulkan integration (T7-36, ADR-0210)**:
   [ADR-0210](docs/adr/0210-cambi-vulkan-integration.md) — Strategy II
   hybrid host/GPU; closes ADR-0192 long-tail terminus. See
-  [libvmaf/src/feature/AGENTS.md](libvmaf/src/feature/AGENTS.md).
+  [core/src/feature/AGENTS.md](core/src/feature/AGENTS.md).
 - **MCP embedded scaffold (T5-2a, ADR-0209)**:
   [ADR-0209](docs/adr/0209-mcp-embedded-scaffold.md). Public header
   `libvmaf_mcp.h`, audit-first `-ENOSYS` stubs in
-  `libvmaf/src/mcp/mcp.c`, `enable_mcp` + 3 transport sub-flags. T5-2b
+  `core/src/mcp/mcp.c`, `enable_mcp` + 3 transport sub-flags. T5-2b
   (cJSON + mongoose + transport bodies) is open. See
   [libvmaf/AGENTS.md §Rebase-sensitive invariants](libvmaf/AGENTS.md).
 - **HIP scaffold (T7-10, ADR-0212 placeholder, PR #200)** —
@@ -395,7 +395,7 @@ linked AGENTS.md before resolving conflicts.
   [ADR-0220](docs/adr/0220-sycl-fp64-fallback.md). SYCL feature
   kernels are unconditionally fp64-free; a single fp64 instruction
   in any lambda blocks the whole TU on Arc A-series. See
-  [libvmaf/src/sycl/AGENTS.md](libvmaf/src/sycl/AGENTS.md).
+  [core/src/sycl/AGENTS.md](core/src/sycl/AGENTS.md).
 - **Model registry + Sigstore (T6-9, ADR-0211 placeholder, PR #199)**:
   `--tiny-model-verify` flag + registry schema + Sigstore bundle
   paths. Pairs with

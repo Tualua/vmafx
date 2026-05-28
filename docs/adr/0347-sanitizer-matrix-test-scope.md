@@ -16,7 +16,7 @@ sanitizer matrix (ASan + UBSan + TSan) but left the test-set
 underspecified. The lane in
 [`tests-and-quality-gates.yml`](../../.github/workflows/tests-and-quality-gates.yml)
 runs `meson test -C build --suite=unit`, but no `test()` call in
-[`libvmaf/test/meson.build`](../../libvmaf/test/meson.build) carries a
+[`core/test/meson.build`](../../core/test/meson.build) carries a
 `suite: 'unit'` tag — the entire C unit-test set lands in the default
 suite. Result: every sanitizer leg in the matrix prints
 `No suitable tests defined.` and exits 0 with **zero correctness
@@ -57,7 +57,7 @@ Concretely:
   `c_args+cpp_args=-fno-sanitize=function`. The `function` check
   trips on the K&R-prototype `static char *test_X()` pattern in
   ~50 minunit-style harness files
-  ([`libvmaf/test/test.h`](../../libvmaf/test/test.h) + every
+  ([`core/test/test.h`](../../core/test/test.h) + every
   `test/test_*.c`), which is upstream Netflix harness code we are
   not refactoring in this PR; suppressing the `function` check
   surfaces every other UBSan signal cleanly. Run all C unit tests
@@ -88,7 +88,7 @@ non-sanitized golden lane, so we keep the two concerns separated.
 The DNN suite is excluded by virtue of not enabling
 `-Denable_dnn=enabled` in the sanitizer build (the existing matrix
 configuration). ONNX Runtime ships uninstrumented binaries that
-would generate spurious sanitizer reports across `libvmaf/src/dnn/`;
+would generate spurious sanitizer reports across `core/src/dnn/`;
 the dnn lane has its own job (`dnn:` in
 `tests-and-quality-gates.yml`) which exercises those paths without
 sanitizers. Adding a sanitized dnn run is a separate ADR.
@@ -156,9 +156,9 @@ meson test -C build-asan --print-errorlogs $(meson test -C build-asan --list \
 
 | Sanitizer | Build flags (added on top of existing job) | Tests run | Wall (test exec only) | Deselected | Defect class | First-bad evidence |
 | --- | --- | --- | --- | --- | --- | --- |
-| ASan | none (b_sanitize=address) | 36 / 36 OK | ~5.3 s | `test_model`, `test_predict`, `test_float_ms_ssim_min_dim` | (a) `test_model::test_json_model_synthetic_branches` — `SVMModelParser::parse_support_vectors` (`libvmaf/src/svm.cpp:2955`) requests `0xfffffffffffffff8`-byte allocation on malformed JSON model buffer (allocation-size-too-big); (b) `test_predict::test_propagate_metadata` — direct + indirect leaks of metadata `dict` entries (`libvmaf/src/dict.c:124`) and string keys not freed when `feature_collector_dispatch_metadata` re-enters; (c) `test_float_ms_ssim_min_dim::test_float_ms_ssim_init_*` — direct calloc leaks in test-side `invoke_init` (`test/test_float_ms_ssim_min_dim.c:33`) — `init` allocates an extractor state never reclaimed | ASan abort + stack traces in the PR description |
-| UBSan | `c_args=-fno-sanitize=function`, `cpp_args=-fno-sanitize=function` | 38 / 38 OK | ~5.4 s | `test_model` | `test_model::test_json_model_synthetic_branches` — `SVMModelParser::parse_support_vectors` passes NULL as `memcpy` arg2 (`libvmaf/src/svm.cpp:2989`, declared `__nonnull`) on malformed JSON model buffer | UBSan runtime-error + abort (same defect as ASan finding `(a)` — both surface the same parse path's missing-validation bug from different angles) |
-| TSan | none (b_sanitize=thread) | 36 / 36 OK | ~1.3 s | `test_model`, `test_pic_preallocation`, `test_framesync` | (d) `test_model` — same defect as ASan/UBSan finding `(a)`; (e) `test_pic_preallocation` — `div_lookup` global table init in `div_lookup_generator` (`libvmaf/src/feature/integer_adm.h:36`) is racing across worker threads (`integer_adm.c::init` runs from `vmaf_thread_pool_runner`) — write-write race on `div_lookup[idx]`, classic missing-atomic on a "compute-once-cache-forever" lookup table; (f) `test_framesync` — `vmaf_framesync_submit_filled_data` reads `count` (`libvmaf/src/framesync.c:125`) under one mutex while `vmaf_framesync_acquire_new_buf` writes the same `count` (`framesync.c:102`) under a different mutex — mutex-domain mismatch on the per-buffer state | TSan WARNING: data race + abort |
+| ASan | none (b_sanitize=address) | 36 / 36 OK | ~5.3 s | `test_model`, `test_predict`, `test_float_ms_ssim_min_dim` | (a) `test_model::test_json_model_synthetic_branches` — `SVMModelParser::parse_support_vectors` (`core/src/svm.cpp:2955`) requests `0xfffffffffffffff8`-byte allocation on malformed JSON model buffer (allocation-size-too-big); (b) `test_predict::test_propagate_metadata` — direct + indirect leaks of metadata `dict` entries (`core/src/dict.c:124`) and string keys not freed when `feature_collector_dispatch_metadata` re-enters; (c) `test_float_ms_ssim_min_dim::test_float_ms_ssim_init_*` — direct calloc leaks in test-side `invoke_init` (`test/test_float_ms_ssim_min_dim.c:33`) — `init` allocates an extractor state never reclaimed | ASan abort + stack traces in the PR description |
+| UBSan | `c_args=-fno-sanitize=function`, `cpp_args=-fno-sanitize=function` | 38 / 38 OK | ~5.4 s | `test_model` | `test_model::test_json_model_synthetic_branches` — `SVMModelParser::parse_support_vectors` passes NULL as `memcpy` arg2 (`core/src/svm.cpp:2989`, declared `__nonnull`) on malformed JSON model buffer | UBSan runtime-error + abort (same defect as ASan finding `(a)` — both surface the same parse path's missing-validation bug from different angles) |
+| TSan | none (b_sanitize=thread) | 36 / 36 OK | ~1.3 s | `test_model`, `test_pic_preallocation`, `test_framesync` | (d) `test_model` — same defect as ASan/UBSan finding `(a)`; (e) `test_pic_preallocation` — `div_lookup` global table init in `div_lookup_generator` (`core/src/feature/integer_adm.h:36`) is racing across worker threads (`integer_adm.c::init` runs from `vmaf_thread_pool_runner`) — write-write race on `div_lookup[idx]`, classic missing-atomic on a "compute-once-cache-forever" lookup table; (f) `test_framesync` — `vmaf_framesync_submit_filled_data` reads `count` (`core/src/framesync.c:125`) under one mutex while `vmaf_framesync_acquire_new_buf` writes the same `count` (`framesync.c:102`) under a different mutex — mutex-domain mismatch on the per-buffer state | TSan WARNING: data race + abort |
 
 The `function`-check exclusion under UBSan is documented in the
 ADR, not deferred to a TODO: the K&R-prototype harness pattern is

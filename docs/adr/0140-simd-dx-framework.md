@@ -25,9 +25,9 @@ visible as a tax on future SIMD work. Three concrete costs surfaced:
    a scalar-only dispatch that silently eats the SIMD code at link
    time.
 3. **Repeated test + meson scaffolding.** Each new SIMD TU needs a
-   matching entry in `libvmaf/src/meson.build` under the correct
+   matching entry in `core/src/meson.build` under the correct
    `is_asm_enabled` / AVX-512 guard, plus a
-   `libvmaf/test/meson.build` test target with the right
+   `core/test/meson.build` test target with the right
    `platform_specific_cpu_objects` inclusion and `host_machine.cpu_family`
    filter.
 
@@ -53,7 +53,7 @@ Two fork constraints shape the design:
 We will ship a two-part SIMD DX framework under **PR #A** (this
 ADR):
 
-1. **A new header `libvmaf/src/feature/simd_dx.h`** containing
+1. **A new header `core/src/feature/simd_dx.h`** containing
    ISA-specific macros for the recurring patterns identified in
    ADR-0138 / ADR-0139. Macros are per-ISA by name (no cross-ISA
    abstraction): e.g.
@@ -117,7 +117,7 @@ real code* before PR #B consumes it at scale.
   - PR #A ships no user-visible speedup — its value is in PR #B
     and beyond.
 - **Neutral / follow-ups**:
-  - [`libvmaf/src/feature/AGENTS.md`](../../libvmaf/src/feature/AGENTS.md)
+  - [`core/src/feature/AGENTS.md`](../../core/src/feature/AGENTS.md)
     rebase invariant: `simd_dx.h` is fork-local and must not
     conflict with upstream. On rebase, keep the fork's version.
   - [`docs/rebase-notes.md`](../rebase-notes.md) entry: document
@@ -165,11 +165,11 @@ Audited as part of the 2026-05-08 ADR `Proposed` sweep
 
 Acceptance criteria verified in tree at HEAD `0a8b539e`:
 
-- `libvmaf/src/feature/simd_dx.h` — present.
+- `core/src/feature/simd_dx.h` — present.
 - `/add-simd-path` skill carries the kernel-spec flags documented in
   `.claude/skills/add-simd-path/SKILL.md`.
 - Demo kernels (convolve NEON, ssim NEON bit-exactness audit) are
   tracked under follow-up ADRs (ADR-0145 motion_v2 NEON, ADR-0159
   / 0160 psnr_hvs AVX2 / NEON, ADR-0161 / 0162 / 0163 ssimulacra2
   SIMD), all of which cite the framework.
-- Verification command: `ls libvmaf/src/feature/simd_dx.h`.
+- Verification command: `ls core/src/feature/simd_dx.h`.

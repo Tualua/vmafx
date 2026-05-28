@@ -91,7 +91,7 @@ Adjacent (search / package-registry checks):
 
 **libvmaf is plain C99 + Meson + (optional) ONNX Runtime, with no
 hard POSIX-only dependency on the CPU path.** The CPU code reads
-YUV from a `FILE*` only via the CLI (`libvmaf/tools/vmaf.c`); the
+YUV from a `FILE*` only via the CLI (`core/tools/vmaf.c`); the
 library API itself takes pictures through `VmafPicture`, a memory
 struct, so a WASM caller can marshal frames in from JavaScript
 without touching libc file I/O.
@@ -108,7 +108,7 @@ without touching libc file I/O.
   `gets` / `sprintf` / `system`, all of which Emscripten's libc
   either omits or stubs to errors. The CPU path should not trip
   any unsupported syscall.
-- `libvmaf/src/feature/` already has a dedicated NEON tree under
+- `core/src/feature/` already has a dedicated NEON tree under
   `arm64/`. NEON intrinsics are **not** directly portable to WASM
   — there is no `arm_neon.h` analogue. WASM exposes its own
   fixed-width 128-bit SIMD via `<wasm_simd128.h>` and the

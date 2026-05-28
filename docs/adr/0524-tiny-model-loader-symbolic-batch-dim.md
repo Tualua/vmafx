@@ -20,7 +20,7 @@ frame: [batch, 1, 224, 224]
 where the first dimension is the symbolic ONNX `dim_param` token
 `'batch'`. ONNX Runtime exposes symbolic dims through the C API
 (`GetDimensions`) as `-1`. The libvmaf-side bridge
-(`vmaf_ctx_dnn_attach` → `dnn_attach_nchw` in `libvmaf/src/libvmaf.c`)
+(`vmaf_ctx_dnn_attach` → `dnn_attach_nchw` in `core/src/libvmaf.c`)
 rejected anything other than `in_shape[0] == 1`, so every model exported
 with a Pythonic dynamic batch failed at attach time with `-ENOTSUP`
 (errno 95). The CLI agent (PR #1280) flagged this as the next blocker
@@ -65,11 +65,11 @@ Concrete changes:
 - `dnn_attach_feature_vector` (libvmaf.c): add the same batch policy
   before the feature-width check.
 - Same policy applied to the optional second-input shape probe.
-- Test fixtures (`libvmaf/test/dnn/test_vmaf_use_tiny_model.c`): add a
+- Test fixtures (`core/test/dnn/test_vmaf_use_tiny_model.c`): add a
   regression case that synthesises a minimal rank-4 ONNX with
   `dim_param='batch'` on the first axis and asserts it attaches
   successfully via the public `vmaf_use_tiny_model` API.
-- `libvmaf/test/dnn/test_cli.sh` step 5b: switch the `--no-reference`
+- `core/test/dnn/test_cli.sh` step 5b: switch the `--no-reference`
   smoke from `dists_sq.onnx` (which load-fails for unrelated reasons)
   to `nr_metric_v1.onnx`, which now loads + scores end-to-end. The
   pre-existing comment "the shipped NR-marked models all use a

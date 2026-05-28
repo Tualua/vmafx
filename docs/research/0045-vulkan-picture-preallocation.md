@@ -37,7 +37,7 @@ under the same name would invite the wrong mental model.
 3. **Y-plane only DEVICE backing** — matches SYCL. Chroma kernel
    work in this fork still allocates its own buffers per-feature;
    no Vulkan extractor currently consumes preallocated chroma.
-4. **`pthread_mutex_t` instead of C++** — `libvmaf/src/vulkan/` is
+4. **`pthread_mutex_t` instead of C++** — `core/src/vulkan/` is
    pure C; the SYCL pool's `std::mutex` doesn't translate. The
    round-robin counter is the only contended state.
 5. **Pool lives on `VmafContext`, not on `VmafVulkanState`** —
@@ -103,10 +103,10 @@ where bytes live, not which bytes the kernel reads).
 
 - VMA `AUTO_PREFER_HOST` semantics:
   <https://gpuopen.com/learn/vulkan-renderers-memory-allocation/>.
-- SYCL pool reference: `libvmaf/src/sycl/picture_sycl.cpp`
+- SYCL pool reference: `core/src/sycl/picture_sycl.cpp`
   (`vmaf_sycl_picture_pool_init`).
 - CUDA preallocation reference:
-  `libvmaf/include/libvmaf/libvmaf_cuda.h`,
-  `libvmaf/src/libvmaf.c::vmaf_cuda_preallocate_pictures`.
+  `core/include/libvmaf/libvmaf_cuda.h`,
+  `core/src/libvmaf.c::vmaf_cuda_preallocate_pictures`.
 - Parallel surfaces: ADR-0186 / ADR-0251 (zero-copy import) — not
   replaced by this PR; preallocation serves the host-driven path.

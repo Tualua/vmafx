@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 #
 # Step 02: Generate the Phase A canonical-6 corpus from operator-supplied
 # Netflix reference YUVs. Wraps scripts/dev/hw_encoder_corpus.py in a
@@ -14,7 +14,7 @@
 #   CQS            Comma-separated CQ values (default: 19,25,31,37)
 #   OUT_DIR        Run output dir (default: $REPO_ROOT/runs/ensemble_v2_real)
 #   PHASE_A_DIR    Phase A output dir (default: $REPO_ROOT/runs/phase_a/full_grid)
-#   LIBVMAF_BIN    libvmaf-CUDA binary (default: $REPO_ROOT/libvmaf/build-cuda/tools/vmaf)
+#   LIBVMAF_BIN    libvmaf-CUDA binary (default: $REPO_ROOT/core/build-cuda/tools/vmaf)
 #   WIDTH HEIGHT   Frame dimensions (default: 1920 1080)
 #   PIX_FMT        Pixel format (default: yuv420p)
 #   FRAMERATE      Source framerate (default: 25)
@@ -36,7 +36,7 @@ ENCODERS="${ENCODERS:-$(detect_default_encoders)}"
 CQS="${CQS:-19,25,31,37}"
 OUT_DIR="${OUT_DIR:-$REPO_ROOT/runs/ensemble_v2_real}"
 PHASE_A_DIR="${PHASE_A_DIR:-$REPO_ROOT/runs/phase_a/full_grid}"
-LIBVMAF_BIN="${LIBVMAF_BIN:-$REPO_ROOT/libvmaf/build-cuda/tools/vmaf}"
+LIBVMAF_BIN="${LIBVMAF_BIN:-$REPO_ROOT/core/build-cuda/tools/vmaf}"
 WIDTH="${WIDTH:-1920}"
 HEIGHT="${HEIGHT:-1080}"
 PIX_FMT="${PIX_FMT:-yuv420p}"

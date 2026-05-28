@@ -35,7 +35,7 @@ master push from going green on the MinGW64 leg.
 
 Extract the temp-file path setup into a helper
 `make_temp_output_path(out, out_len)` that mirrors the precedent set in
-`libvmaf/test/dnn/test_model_loader.c::test_sidecar_parses` (added for
+`core/test/dnn/test_model_loader.c::test_sidecar_parses` (added for
 the same MinGW64 reason):
 
 - **On Windows** (`#ifdef _WIN32`): query `GetTempPathA()` and
@@ -88,7 +88,7 @@ already gates correctly).
 - Failing job example: `gh run view --repo lusoris/vmaf 26021988312`
   (job `76485707408`) — `test_public_api_score → test_vmaf_write_output:
   fail, mkstemp failed`.
-- Precedent: `libvmaf/test/dnn/test_model_loader.c::test_sidecar_parses`
+- Precedent: `core/test/dnn/test_model_loader.c::test_sidecar_parses`
   (uses `GetTempPathA` on `#ifdef _WIN32`).
 - Source: `req` — operator brief identifying the MinGW64 build as
   pre-existing-red on master and requesting the conservative-scope

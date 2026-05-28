@@ -1,5 +1,5 @@
 - **CUDA build fixed against gcc-16 host libstdc++.** Adds `--std c++20`
-  to the nvcc invocation in `libvmaf/src/meson.build`. nvcc's default
+  to the nvcc invocation in `core/src/meson.build`. nvcc's default
   C++17 host parser chokes on the C++20 features (`char8_t`,
   `constexpr` semantics in `bits/utility.h`) that gcc 16's bundled
   libstdc++ uses; symptom on dev machines with `pacman` `gcc 16.1.1` +

@@ -12,38 +12,6 @@ Using FFmpeg+libvmaf is very powerful, as you can create complex filters to calc
 
 We provide a few examples how you can construct the FFmpeg command line and use VMAF as a filter. Note that you may need to download the test videos from [vmaf_resource](https://github.com/Netflix/vmaf_resource/tree/master/python/test/resource).
 
-## Input ordering convention — read this first {#input-ordering}
-
-**WARNING — input ordering is the OPPOSITE of the Python runner and
-vmaf CLI.** The `libvmaf` FFmpeg filter follows the FFmpeg framesync
-convention: `[0:v]` is the **distorted (main)** stream; `[1:v]` is
-the **reference**. Every other VMAF surface in this repo — the Python
-runner and the `vmaf` CLI — takes `(ref, dis)` in that order. Passing
-inputs in the natural ref-first order silently inflates the score
-(e.g. 83.78 instead of the correct 76.67 on the Netflix golden pair)
-with no error or warning from FFmpeg.
-
-Correct (distorted first, reference second):
-
-```bash
-ffmpeg -i distorted.yuv -i reference.yuv \
-  -lavfi "[0:v][1:v]libvmaf=log_fmt=json:log_path=/dev/stdout" \
-  -f null -
-```
-
-Wrong — silently wrong score (reference first, distorted second):
-
-```bash
-ffmpeg -i reference.yuv -i distorted.yuv \
-  -lavfi "[0:v][1:v]libvmaf=log_fmt=json:log_path=/dev/stdout" \
-  -f null -
-```
-
-This convention is inherited from upstream FFmpeg and cannot be
-reversed without breaking compatibility. The fork's
-`ffmpeg-patches/0001-libvmaf-add-tiny-model-option.patch` emits an
-`AV_LOG_INFO` message at filter init as a reminder.
-
 Below is an example on how you can run FFmpeg+libvmaf on a pair of YUV files. First, download the reference video [`src01_hrc00_576x324.yuv`](https://github.com/Netflix/vmaf_resource/blob/master/python/test/resource/yuv/src01_hrc00_576x324.yuv) and the distorted video [`src01_hrc01_576x324.yuv`](https://github.com/Netflix/vmaf_resource/blob/master/python/test/resource/yuv/src01_hrc01_576x324.yuv). `-r 24` sets the frame rate (note that it needs to be before `-i`), and `PTS-STARTPTS` synchronizes the PTS (presentation timestamp) of the two videos (this is crucial if one of your videos does not start at PTS 0, for example, if you cut your video out of a long video stream). It is important to set the frame rate and the PTS right, since FFmpeg filters synchronize based on timestamps instead of frames.
 
 The `log_path` is set to standard output `/dev/stdout`. It uses the `model_path` at location `/usr/local/share/model/vmaf_float_v0.6.1.json` (which is the default and can be omitted).

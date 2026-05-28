@@ -1,7 +1,7 @@
 # Nightly libFuzzer smoke run.
 #
 # Satisfies the OSSF Scorecard `Fuzzing` check by exercising every
-# committed harness under `libvmaf/test/fuzz/` against its seed
+# committed harness under `core/test/fuzz/` against its seed
 # corpus for `MAX_TOTAL_TIME` seconds per night. Crash / OOM /
 # timeout artefacts are uploaded for triage.
 #
@@ -42,11 +42,11 @@ jobs:
       matrix:
         include:
           - target: fuzz_y4m_input
-            corpus: libvmaf/test/fuzz/y4m_input_corpus
+            corpus: core/test/fuzz/y4m_input_corpus
           - target: fuzz_yuv_input
-            corpus: libvmaf/test/fuzz/yuv_input_corpus
+            corpus: core/test/fuzz/yuv_input_corpus
           - target: fuzz_cli_parse
-            corpus: libvmaf/test/fuzz/cli_parse_corpus
+            corpus: core/test/fuzz/cli_parse_corpus
     env:
       # Per-harness wall-clock seconds. ADR-0311 picked 60s/harness
       # × 3 harnesses ≈ 180s of fuzz wall time per night, so the

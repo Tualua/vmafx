@@ -87,7 +87,7 @@ to all four backend TUs without duplicating the implementations.
 
 ## References
 
-- CPU reference implementation: `libvmaf/src/feature/speed.c`
+- CPU reference implementation: `core/src/feature/speed.c`
 - ADR-0214: per-backend places=4 numerical parity gate.
 - ADR-0353: Vulkan submit pool pattern.
 - ADR-0533: HIP extractor registration sweep (precedent for `feature_extractor.c` additions).

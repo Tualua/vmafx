@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Generate the 1024-entry sRGB EOTF LUT committed at
-libvmaf/src/feature/ssimulacra2_eotf_lut.h.
+core/src/feature/ssimulacra2_eotf_lut.h.
 
 Ensures deterministic ssimulacra2 output across hosts: libm powf
 varies by ~1 ulp between glibc/musl/macOS libSystem, which compounded
@@ -17,7 +17,7 @@ SRGB_PIECEWISE_THRESHOLD = 0.04045
 
 print("/**")
 print(" *")
-print(" *  Copyright 2026 Lusoris")
+print(" *  Copyright 2026 Lusoris and Claude (Anthropic)")
 print(" *")
 print(' *     Licensed under the BSD+Patent License (the "License");')
 print(" *")

@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Tests for the Intel QSV codec adapters (ADR-0281).
 
 The QSV encoders share preset vocabulary, quality knob, and ICQ range,

@@ -6,7 +6,7 @@
 - **Tags**: `sycl`, `gpu`, `cambi`, `feature-extractor`, `fork-local`, `t3-15`
 
 > **Status update 2026-05-12.** Implementation shipped as
-> [`libvmaf/src/feature/sycl/integer_cambi_sycl.cpp`](../../libvmaf/src/feature/sycl/integer_cambi_sycl.cpp)
+> [`core/src/feature/sycl/integer_cambi_sycl.cpp`](../../core/src/feature/sycl/integer_cambi_sycl.cpp)
 > (≈ 37 kB, three SYCL kernels + host fallback for `calculate_c_values`
 > and top-K spatial pooling per the hybrid design below). Marks the
 > SYCL feature-extractor parity matrix as 17 of 17 versus CUDA.
@@ -82,7 +82,7 @@ The host residual runs the exact CPU code from `cambi_internal.h`.
 - ADR-0205 / ADR-0210: CAMBI Vulkan twin (original Strategy II precedent).
 - ADR-0335: AdaptiveCpp dual-toolchain support.
 - ADR-0138 / ADR-0139: Numerical correctness invariants for GPU ports.
-- `libvmaf/src/feature/cuda/integer_cambi_cuda.c` — CUDA reference.
-- `libvmaf/src/feature/cuda/integer_cambi/cambi_score.cu` — CUDA kernels.
-- `libvmaf/src/feature/sycl/integer_cambi_sycl.cpp` — this PR's SYCL port.
+- `core/src/feature/cuda/integer_cambi_cuda.c` — CUDA reference.
+- `core/src/feature/cuda/integer_cambi/cambi_score.cu` — CUDA kernels.
+- `core/src/feature/sycl/integer_cambi_sycl.cpp` — this PR's SYCL port.
 - Source: per user direction (agent task brief 2026-05-10).

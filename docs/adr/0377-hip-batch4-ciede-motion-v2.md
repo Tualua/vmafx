@@ -82,7 +82,7 @@ exactly as the CUDA twin.
 ### Meson
 
 `ciede_score` and `motion_v2_score` added to `hip_kernel_sources` in
-`libvmaf/src/meson.build` (batch-4 comment added to the existing
+`core/src/meson.build` (batch-4 comment added to the existing
 batch-1/2/3 comment block). HIP real-kernel count: 8/11.
 
 ## Alternatives considered

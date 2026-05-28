@@ -24,7 +24,7 @@ WARNINGs against current `master`. Two populations dominate and
 neither is fixable under existing fork policy:
 
 1. **Cross-tree pointers** (~820 warnings): docs link to source-tree
-   files / dirs that sit outside `docs_dir` (`../../libvmaf/src/...`,
+   files / dirs that sit outside `docs_dir` (`../../core/src/...`,
    `../../scripts/ci/...`, `../../.github/workflows/...`). They render
    fine on GitHub's web view (which is where contributors most often
    read these files), but mkdocs cannot resolve them because they're

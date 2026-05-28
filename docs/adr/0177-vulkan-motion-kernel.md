@@ -30,7 +30,7 @@ gate (ADR-0176). T5-1c extends the Vulkan kernel matrix to ADM, motion,
 and motion_v2. This ADR covers the **motion** half of T5-1c (motion +
 motion_v2 in one PR, ADM in a follow-up per the user's split decision).
 
-The CPU integer-motion extractor at `libvmaf/src/feature/integer_motion.c`
+The CPU integer-motion extractor at `core/src/feature/integer_motion.c`
 implements a separable 5-tap Gaussian blur (filter
 `{3571, 16004, 26386, 16004, 3571}`, sum = 65536) followed by SAD between
 the current and previous blurred reference frames. `motion_score = SAD /

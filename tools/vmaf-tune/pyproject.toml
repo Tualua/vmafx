@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 [project]
 name = "vmaf-tune"
 version = "0.0.1"
@@ -22,9 +22,6 @@ fast = ["optuna>=4.8.0"]
 
 [project.scripts]
 vmaf-tune = "vmaftune.cli:main"
-# ADR-0690: vmafx-tune is a console-script alias for the same callable.
-# Both names install identical entry-point wrappers; new code uses vmafx-tune.
-vmafx-tune = "vmaftune.cli:main"
 
 [build-system]
 requires = ["hatchling"]

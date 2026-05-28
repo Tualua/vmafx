@@ -6,7 +6,7 @@
   Vulkan port. Three-element readback array in `PsnrStateCuda`
   (`rb[3]`) carries per-plane device-SSE accumulators + pinned-host
   slots; the kernel (`calculate_psnr_kernel_{8,16}bpc` in
-  `libvmaf/src/feature/cuda/integer_psnr/psnr_score.cu`) gains a
+  `core/src/feature/cuda/integer_psnr/psnr_score.cu`) gains a
   `plane` parameter so it indexes `data[plane] / stride[plane]`
   instead of the hard-coded `[0]`. A single private stream +
   submit/finished event pair issues all per-plane launches

@@ -9,7 +9,7 @@
 
 The nightly `fuzz.yml` `fuzz_y4m_input` job reported an
 AddressSanitizer SEGV on address `0x000000000000` inside `fread`,
-called from `y4m_input_fetch_frame` (`libvmaf/tools/y4m_input.c`),
+called from `y4m_input_fetch_frame` (`core/tools/y4m_input.c`),
 for every scheduled run from 2026-05-05 through 2026-05-08
 (T-FUZZ-Y4M-NEG-WIDTH-SEGV). The reproducer header
 `YUV4MPEG2 W-8 H4 F30:1 Ip A1:1 C422` passes the tag scanner
@@ -59,7 +59,7 @@ INT32-C (avoid signed integer overflow in size arithmetic).
   The error message prints the rejected W/H values so operators can
   identify malformed sources in production logs.
 - **Positive**: The reproducer byte sequence is promoted to
-  `libvmaf/test/fuzz/y4m_input_known_crashes/y4m_neg_width_null_deref.y4m`
+  `core/test/fuzz/y4m_input_known_crashes/y4m_neg_width_null_deref.y4m`
   — a permanent regression seed that libFuzzer replays on every run.
 - **Negative**: Callers that previously received a SEGV now receive a
   clean `-1` error return and a `stderr` message. This is a strict

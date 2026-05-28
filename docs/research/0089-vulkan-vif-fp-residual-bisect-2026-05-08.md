@@ -40,11 +40,11 @@ re-running the gate against the live NVIDIA lane) is recorded as
   + [research-0055](0055-ciede-vulkan-nvidia-f32-f64-root-cause.md) —
   ciede2000 sibling investigation that proved the structural
   f32-vs-f64 hypothesis on the chained colour-space chain.
-- [`libvmaf/src/feature/integer_vif.c`](../../libvmaf/src/feature/integer_vif.c) —
+- [`core/src/feature/integer_vif.c`](../../core/src/feature/integer_vif.c) —
   CPU reference (the `double`-precision side of the bisect).
-- [`libvmaf/src/feature/sycl/integer_vif_sycl.cpp`](../../libvmaf/src/feature/sycl/integer_vif_sycl.cpp) —
+- [`core/src/feature/sycl/integer_vif_sycl.cpp`](../../core/src/feature/sycl/integer_vif_sycl.cpp) —
   SYCL companion, all-`float` (already passes the gate).
-- [`libvmaf/src/feature/vulkan/shaders/vif.comp`](../../libvmaf/src/feature/vulkan/shaders/vif.comp) —
+- [`core/src/feature/vulkan/shaders/vif.comp`](../../core/src/feature/vulkan/shaders/vif.comp) —
   the Vulkan path under investigation.
 
 ## Approach
@@ -73,13 +73,13 @@ the **static** half of that bisect:
 ### 1. The optimised SPIR-V has only 5 float-arithmetic ops, all `NoContraction`-decorated
 
 Re-running glslc 2026.1 + spirv-dis at `--target-env=vulkan1.4 -O`
-against [`vif.comp`](../../libvmaf/src/feature/vulkan/shaders/vif.comp)
+against [`vif.comp`](../../core/src/feature/vulkan/shaders/vif.comp)
 on this worktree (`research/vif-1.4-residual-bisect-2026-05-08`,
 fork master tip `0a8b539e`):
 
 <!-- markdownlint-disable-next-line MD013 -->
 ```bash
-glslc --target-env=vulkan1.4 -O libvmaf/src/feature/vulkan/shaders/vif.comp -o /tmp/vif-14.spv
+glslc --target-env=vulkan1.4 -O core/src/feature/vulkan/shaders/vif.comp -o /tmp/vif-14.spv
 spirv-dis /tmp/vif-14.spv | grep -E 'OpFDiv|OpFMul|OpFAdd|OpFSub'
 ```
 
@@ -153,7 +153,7 @@ Five structural differences:
 
 ### 3. SYCL is all-`float` and passes the gate
 
-[`libvmaf/src/feature/sycl/integer_vif_sycl.cpp`](../../libvmaf/src/feature/sycl/integer_vif_sycl.cpp)
+[`core/src/feature/sycl/integer_vif_sycl.cpp`](../../core/src/feature/sycl/integer_vif_sycl.cpp)
 lines 706–716 show SYCL uses `float g`, `float sv_sq`, `float
 gg_sigma_f` — identical precision contract to the Vulkan shader.
 SYCL passes the cross-backend gate at `places=4` on every backend
@@ -220,14 +220,14 @@ NVIDIA + RADV + lavapipe lanes — instrument every stage of the
 inner expression (g, sv_sq, gg_sigma_f, log-LUT inputs) on both
 CPU and Vulkan, dump per-frame, ULP-diff. That requires:
 
-- A debug-build of `libvmaf/src/feature/integer_vif.c` with
+- A debug-build of `core/src/feature/integer_vif.c` with
   per-stage `fprintf` on the active branch of frame 0..47.
 - A modified `vif.comp` writing the same per-stage values to an
   SSBO (the shader currently emits only the 7-field int64
   accumulator per workgroup).
 - Re-runs against all three Vulkan ICDs.
 - A local API-1.4 bump (4-site change in
-  `libvmaf/src/vulkan/common.c` + `vma_impl.cpp`) that is not on
+  `core/src/vulkan/common.c` + `vma_impl.cpp`) that is not on
   master.
 
 The session this digest was produced in did not run that
@@ -331,8 +331,8 @@ descending preference:
 
 The Phase 2 follow-up ran the live NVIDIA RTX 4090 + driver
 `595.71.05` + Vulkan loader `1.4.341` lane this session with the
-local API-1.4 bump applied (`libvmaf/src/vulkan/common.c` 3 sites +
-`libvmaf/src/vulkan/vma_impl.cpp` `VMA_VULKAN_VERSION 1004000`) and a
+local API-1.4 bump applied (`core/src/vulkan/common.c` 3 sites +
+`core/src/vulkan/vma_impl.cpp` `VMA_VULKAN_VERSION 1004000`) and a
 fresh build (`-Denable_vulkan=enabled`, glslc 2026.1, vulkan1.3
 target-env). The Phase 2 brief was to instrument 5 SSBO writes after
 each FP op in `vif.comp` and produce a per-stage ULP table; the
@@ -395,7 +395,7 @@ Two facts neither the digest body nor research-0053 captured:
 
 The reported `vif_scale2 = 1.000000` is the CPU-side reduction
 formula's `den <= 0` fallback in `reduce_and_emit()` of
-`libvmaf/src/feature/vulkan/vif_vulkan.c`:
+`core/src/feature/vulkan/vif_vulkan.c`:
 `(scale_den[i] > 0.0) ? scale_num[i] / scale_den[i] : 1.0`. The
 score never reflects the ALU output when `den` flips sign — it just
 collapses to 1.0 ≡ "perfect VIF", which is the 45/48 frames the gate
@@ -479,9 +479,9 @@ signature of a memory-model issue, not a codegen one.
 ```bash
 # Apply the local API-1.4 bump (off-master, manual reproducer).
 sed -i 's/VK_API_VERSION_1_3/VK_API_VERSION_1_4/g' \
-    libvmaf/src/vulkan/common.c
+    core/src/vulkan/common.c
 sed -i 's/VMA_VULKAN_VERSION 1003000/VMA_VULKAN_VERSION 1004000/' \
-    libvmaf/src/vulkan/vma_impl.cpp
+    core/src/vulkan/vma_impl.cpp
 
 # Build with Vulkan only.
 cd libvmaf

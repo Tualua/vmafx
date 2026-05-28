@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Export the *real* upstream FastDVDnet temporal denoiser into the
 fork's luma-only 5-frame ONNX contract (T6-7b).
 
@@ -13,7 +13,7 @@ sha256 ``9d9d8413c33e3d9d961d07c530237befa1197610b9d60602ff42fd77975d2a17``)
 is a 2.48M-parameter two-stage UNet that consumes RGB + a per-pixel
 noise map and returns RGB.
 
-The fork's C-side extractor (``libvmaf/src/feature/fastdvdnet_pre.c``,
+The fork's C-side extractor (``core/src/feature/fastdvdnet_pre.c``,
 ADR-0215) was scoped luma-only with the contract
 
     input  "frames"   : float32 NCHW [1, 5, H, W]   # [t-2, t-1, t, t+1, t+2]
@@ -125,7 +125,7 @@ class _PixelShuffleAllowlistSafe(nn.Module):
     """Drop-in replacement for ``nn.PixelShuffle(r)`` that exports as
     Reshape/Transpose/Reshape rather than ``DepthToSpace``.
 
-    The fork's ONNX op allowlist (``libvmaf/src/dnn/op_allowlist.c``)
+    The fork's ONNX op allowlist (``core/src/dnn/op_allowlist.c``)
     does not include ``DepthToSpace`` — the op is bounded and safe but
     has been kept out of the list to avoid widening the trusted
     surface for the rare cases that need it.  PixelShuffle is purely

@@ -93,7 +93,7 @@ the deliverable is absent.
 ## Dead ends / considered-and-rejected
 
 - **Blocking `doc-substance-check`**: initial sketch blocked PRs
-  that edited `libvmaf/src/feature/*.c` without a `docs/metrics/`
+  that edited `core/src/feature/*.c` without a `docs/metrics/`
   diff. The `fix(libvmaf/feature): free VIF init base pointer`
   commit on PR #47 would have been blocked by this — a pure bug
   fix with no user-visible delta (the exemption in ADR-0100).

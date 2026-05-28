@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Export production-quality ``fr_regressor_v2_ensemble_v1_seed{0..4}`` ONNX members.
 
 Companion to ``ai/scripts/train_fr_regressor_v2_ensemble_loso.py`` (ADR-0319,
@@ -19,7 +19,7 @@ Each seed also gets a sidecar JSON ``..._seed{N}.json`` with the
 canonical sidecar shape (mirrors ``model/tiny/fr_regressor_v2.json``):
 encoder vocab v2, codec block layout, scaler params, training recipe,
 gate-pass evidence from PROMOTE.json. The sidecar is required by
-``libvmaf/test/dnn/test_registry.sh`` for every non-smoke registry
+``core/test/dnn/test_registry.sh`` for every non-smoke registry
 entry.
 
 Usage::

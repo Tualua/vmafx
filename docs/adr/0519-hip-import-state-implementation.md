@@ -8,11 +8,11 @@
 ## Context
 
 ADR-0514 closed the container-side HIP exposure gap and added
-`-DHAVE_HIP=1` to `libvmaf/tools/meson.build` so the CLI's
+`-DHAVE_HIP=1` to `core/tools/meson.build` so the CLI's
 `#ifdef HAVE_HIP` blocks compile in. After ADR-0514 landed, the only
 remaining gap blocking `vmaf --backend hip` was the library-side
 state-binding stub: `vmaf_hip_import_state` in
-`libvmaf/src/hip/common.c:149` returned `-ENOSYS` with the comment
+`core/src/hip/common.c:149` returned `-ENOSYS` with the comment
 "stays unwired until the first feature kernel lands". ADR-0468 had
 since landed the first real HIP feature kernel (`float_adm_hip`), so
 the rationale for the stub was stale; only the function body itself
@@ -28,20 +28,20 @@ missing). Tracked in `docs/state.md` as Open bug
 `T-HIP-IMPORT-STATE-ENOSYS-2026-05-18`.
 
 The fix surface is small. The CUDA / SYCL / Vulkan / Metal twins all
-implement `_import_state` in `libvmaf/src/libvmaf.c` (next to the
+implement `_import_state` in `core/src/libvmaf.c` (next to the
 `VmafContext` struct) as a thin "stash the borrowed state pointer on
 the context, return 0" wrapper. The HIP variant should follow the
 same pattern — the HIP feature extractors do not yet set the
 `VMAF_FEATURE_EXTRACTOR_HIP` flag bit (every kernel registration
 deliberately clears it, per the rebase-sensitive invariants in
-`libvmaf/src/hip/AGENTS.md`), so dispatch routes them through their
+`core/src/hip/AGENTS.md`), so dispatch routes them through their
 CPU twins; the bound state is captured for the future
 picture-buffer-type plumbing that flips the flag on.
 
 ## Decision
 
-We will move `vmaf_hip_import_state` from `libvmaf/src/hip/common.c`
-into `libvmaf/src/libvmaf.c` and implement it as a SYCL / Vulkan /
+We will move `vmaf_hip_import_state` from `core/src/hip/common.c`
+into `core/src/libvmaf.c` and implement it as a SYCL / Vulkan /
 Metal-style "stash the borrowed state pointer on the VmafContext and
 return 0" wrapper. The CUDA twin's by-value copy semantics
 (`vmaf->cuda.state = *cu_state;`) are not the right precedent here
@@ -52,7 +52,7 @@ because the HIP backend, like SYCL / Vulkan / Metal, uses an opaque
 and `vmaf_close()` clears the pointer without freeing the
 underlying state.
 
-The HIP smoke test (`libvmaf/test/test_hip_smoke.c`) updates to
+The HIP smoke test (`core/test/test_hip_smoke.c`) updates to
 verify the new contract: NULL arguments return `-EINVAL`, and the
 device-bound happy path (skipped when no AMD GPU is visible)
 covers the `vmaf_init` → `vmaf_hip_import_state` → `vmaf_close` →
@@ -63,7 +63,7 @@ covers the `vmaf_init` → `vmaf_hip_import_state` → `vmaf_close` →
 | Option | Pros | Cons | Why not chosen |
 |---|---|---|---|
 | Mirror the CUDA by-value copy (`vmaf->hip.state = *state;`) | Closest field-for-field parallel to the CUDA twin; obvious diff for future readers | Requires exposing the full `VmafHipState` struct definition to `libvmaf.c`, breaking the header-purity invariant the HIP backend pinned in ADR-0212 (`<hip/hip_runtime.h>` types stay on the implementation side); also adds an ownership-transfer ambiguity the SYCL / Vulkan / Metal twins deliberately avoid | Caller-owned pointer model matches the rest of the GPU backends; ADR-0212 header-purity invariant survives |
-| Implement the function in `libvmaf/src/hip/common.c` and forward-declare a setter on `VmafContext` | Keeps every HIP-backend entry point in one TU | Inverts the existing pattern (CUDA / SYCL / Vulkan / Metal all live in `libvmaf.c`); future maintainers would not find the HIP variant where they expect it | Convention beats novelty for a 1-line wrapper |
+| Implement the function in `core/src/hip/common.c` and forward-declare a setter on `VmafContext` | Keeps every HIP-backend entry point in one TU | Inverts the existing pattern (CUDA / SYCL / Vulkan / Metal all live in `libvmaf.c`); future maintainers would not find the HIP variant where they expect it | Convention beats novelty for a 1-line wrapper |
 | Wire `VMAF_FEATURE_EXTRACTOR_HIP` on the HIP-flagged extractors as part of the same PR | Unlocks the device-resident dispatch path simultaneously | Out of scope; the dispatch flip requires the picture buffer-type plumbing (`VMAF_PICTURE_BUFFER_TYPE_HIP_DEVICE`) per the AGENTS.md invariant — a separate, larger PR | Keep PR scope tight; the import-state fix alone unblocks `--backend hip` end-to-end |
 
 ## Consequences
@@ -102,7 +102,7 @@ covers the `vmaf_init` → `vmaf_hip_import_state` → `vmaf_close` →
   which exposed the gap by closing every other layer of the
   `--backend hip` stack.
 - Mirrors the SYCL / Vulkan / Metal `_import_state` pattern at
-  `libvmaf/src/libvmaf.c:458` / `:571` / `:677`.
+  `core/src/libvmaf.c:458` / `:571` / `:677`.
 - [ADR-0212](0212-hip-backend-scaffold.md) — HIP scaffold + header
   purity invariant.
 - [ADR-0214](0214-gpu-parity-ci-gate.md) — `places=4` (1e-4)

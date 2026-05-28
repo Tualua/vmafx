@@ -117,13 +117,13 @@ echo "test-state-md-touch-check: running fixtures…"
 
 # Case 1: fix: prefix, no state.md edit, no opt-out → FAIL ----------
 reset_repo
-make_commit "fix: NPD-1080p fallback" "libvmaf/src/feature/feature_x.c" "fix"
+make_commit "fix: NPD-1080p fallback" "core/src/feature/feature_x.c" "fix"
 got=$(run_gate "fix: NPD-1080p fallback in YUV geometry parser" "Body without opt-out.")
 expect "1. fix: title + no state.md + no opt-out" "FAIL" "$got"
 
 # Case 2: fix: prefix, body has 'no state delta: REASON' → PASS ------
 reset_repo
-make_commit "fix: cosmetic" "libvmaf/src/feature/feature_x.c" "fix"
+make_commit "fix: cosmetic" "core/src/feature/feature_x.c" "fix"
 got=$(run_gate "fix: cosmetic typo in log message" \
   "## Summary
 
@@ -134,14 +134,14 @@ expect "2. fix: title + opt-out 'no state delta: ...'" "PASS" "$got"
 
 # Case 3: fix: prefix, diff touches docs/state.md → PASS ------------
 reset_repo
-make_commit "fix: real fix" "libvmaf/src/feature/feature_x.c" "fix"
+make_commit "fix: real fix" "core/src/feature/feature_x.c" "fix"
 make_commit "docs(state): record fix" "docs/state.md" "Recently closed row"
 got=$(run_gate "fix: real fix that closes a bug" "Body with no opt-out.")
 expect "3. fix: title + docs/state.md in diff" "PASS" "$got"
 
 # Case 4: neutral title, UNCHECKED Bug-status checkbox → FAIL --------
 reset_repo
-make_commit "feat: refactor X" "libvmaf/src/feature/feature_x.c" "ref"
+make_commit "feat: refactor X" "core/src/feature/feature_x.c" "ref"
 got=$(run_gate "feat: refactor feature X" \
   "## Bug-status hygiene (ADR-0165)
 
@@ -160,13 +160,13 @@ expect "5. neutral title + docs-only diff + no trigger" "PASS" "$got"
 
 # Regression: 'debug' in title must NOT fire ----------------------
 reset_repo
-make_commit "feat: debug-mode flag" "libvmaf/src/feature/feature_x.c" "ref"
+make_commit "feat: debug-mode flag" "core/src/feature/feature_x.c" "ref"
 got=$(run_gate "feat: add --debug-mode CLI flag" "Plain body, no opt-out.")
 expect "R1. 'debug' substring must not trigger" "PASS" "$got"
 
 # Regression: 'Closes #123' in body must fire even with neutral title -
 reset_repo
-make_commit "feat: tweak" "libvmaf/src/feature/feature_x.c" "ref"
+make_commit "feat: tweak" "core/src/feature/feature_x.c" "ref"
 got=$(run_gate "feat: small tweak" \
   "## Summary
 
@@ -175,7 +175,7 @@ expect "R2. 'Closes #123' in body triggers gate" "FAIL" "$got"
 
 # Regression: 'BUG-1234' in title (caps) must fire -----------------
 reset_repo
-make_commit "feat: tweak" "libvmaf/src/feature/feature_x.c" "ref"
+make_commit "feat: tweak" "core/src/feature/feature_x.c" "ref"
 got=$(run_gate "BUG-1234 fix the foo" "Body without opt-out.")
 expect "R3. 'BUG-' uppercase token triggers gate" "FAIL" "$got"
 

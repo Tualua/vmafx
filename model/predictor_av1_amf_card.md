@@ -27,7 +27,7 @@ predict-then-verify loop.
 
 ## 3. Op allowlist compliance
 
-Validated against `libvmaf/src/dnn/op_allowlist.c` via
+Validated against `core/src/dnn/op_allowlist.c` via
 `ai/src/vmaf_train/op_allowlist.py`:
 
 - **Status**: OK

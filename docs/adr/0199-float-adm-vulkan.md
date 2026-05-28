@@ -10,10 +10,10 @@
 [ADR-0192](0192-gpu-long-tail-batch-3.md) lists `float_adm` as the
 sixth and final Group B float twin in the GPU long-tail batch 3
 roadmap. CPU reference:
-[`float_adm.c`](../../libvmaf/src/feature/float_adm.c) (thin wrapper)
-+ [`adm.c::compute_adm`](../../libvmaf/src/feature/adm.c) (4-scale
+[`float_adm.c`](../../core/src/feature/float_adm.c) (thin wrapper)
++ [`adm.c::compute_adm`](../../core/src/feature/adm.c) (4-scale
 orchestration) +
-[`adm_tools.c`](../../libvmaf/src/feature/adm_tools.c) (the float
+[`adm_tools.c`](../../core/src/feature/adm_tools.c) (the float
 `_s`-suffixed primitives: `adm_dwt2_s`, `adm_decouple_s`, `adm_csf_s`,
 `adm_csf_den_scale_s`, `adm_cm_s`, `adm_sum_cube_s`).
 
@@ -117,11 +117,11 @@ scalar reference at the same threshold as the other batch 3 metrics.
   GPU port's `-2` mirror; this ADR documents that float_adm does NOT
   hit the same trap (both CPU paths use `-1`).
 - CPU reference:
-  [`float_adm.c`](../../libvmaf/src/feature/float_adm.c),
-  [`adm.c`](../../libvmaf/src/feature/adm.c),
-  [`adm_tools.c`](../../libvmaf/src/feature/adm_tools.c).
+  [`float_adm.c`](../../core/src/feature/float_adm.c),
+  [`adm.c`](../../core/src/feature/adm.c),
+  [`adm_tools.c`](../../core/src/feature/adm_tools.c).
 - AVX2 fast path:
-  [`x86/float_adm_avx2.c`](../../libvmaf/src/feature/x86/float_adm_avx2.c).
+  [`x86/float_adm_avx2.c`](../../core/src/feature/x86/float_adm_avx2.c).
 - Verification: cross-backend gate
   [`scripts/ci/cross_backend_vif_diff.py`](../../scripts/ci/cross_backend_vif_diff.py)
   with `--feature float_adm --places 4`. New step in the lavapipe

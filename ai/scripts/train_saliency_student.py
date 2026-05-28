@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Train ``saliency_student_v1`` from scratch on DUTS-TR.
 
 Background
@@ -37,7 +37,7 @@ A tiny U-Net (~50–100K params, well under the 200K target):
     head   Sigmoid
 
 Upsampling uses ``ConvTranspose`` rather than ``Resize`` because the
-fork's ONNX op-allowlist (``libvmaf/src/dnn/op_allowlist.c``) only
+fork's ONNX op-allowlist (``core/src/dnn/op_allowlist.c``) only
 accepts the former at the time of training; this keeps the resulting
 graph load-clean against vanilla origin/master without an allowlist
 patch in the same PR.
@@ -61,13 +61,13 @@ Usage
 ::
 
     # 1. fetch DUTS-TR (~270 MB) -- not redistributed in-tree
-    mkdir -p ~/datasets/duts && cd ~/datasets/duts
+    mkdir -p /home/kilian/datasets/duts && cd /home/kilian/datasets/duts
     wget https://saliencydetection.net/duts/download/DUTS-TR.zip
     unzip DUTS-TR.zip
 
     # 2. train + export
     .venv/bin/python ai/scripts/train_saliency_student.py \\
-        --duts-root ~/datasets/duts/DUTS-TR \\
+        --duts-root /home/kilian/datasets/duts/DUTS-TR \\
         --output    model/tiny/saliency_student_v1.onnx \\
         --epochs    50 --batch-size 32 --lr 1e-3
 

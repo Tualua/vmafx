@@ -1,4 +1,4 @@
-# Copyright 2026 Lusoris
+# Copyright 2026 Lusoris and Claude (Anthropic)
 """Regression tests for the four P0 fixes shipped in ADR-0608.
 
 Fixes covered:

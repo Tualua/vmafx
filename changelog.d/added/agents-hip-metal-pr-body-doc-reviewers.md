@@ -1,9 +1,9 @@
 - Four new sub-agent definitions under `.claude/agents/` per audit
   slice G coverage gaps:
-  - `hip-reviewer.md` — reviews `libvmaf/src/{hip,feature/hip}/`
+  - `hip-reviewer.md` — reviews `core/src/{hip,feature/hip}/`
     code; classifies stub-vs-real status, CUDA-twin parity,
     `enable_hipcc` build-mode awareness.
-  - `metal-reviewer.md` — reviews `libvmaf/src/{metal,feature/metal}/`
+  - `metal-reviewer.md` — reviews `core/src/{metal,feature/metal}/`
     Obj-C++ + MSL pairs; checks Apple-Family-7 gating, ARC
     correctness, IOSurface zero-copy contracts.
   - `pr-body-checker.md` — local mirror of the

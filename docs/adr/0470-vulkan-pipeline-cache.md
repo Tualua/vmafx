@@ -72,5 +72,5 @@ owns the device lifecycle and may have its own caching policy.
 - Vulkan spec §10.6 — Pipeline Cache Objects
 - Perf audit finding VK-4: `.workingdir/perf-audit-vulkan-sycl-2026-05-16.md`
 - PR #867 — SPIR-V embed (prior cold-start fix)
-- `libvmaf/src/vulkan/common.c` — `pipeline_cache_load` / `pipeline_cache_save_and_destroy`
-- `libvmaf/src/vulkan/kernel_template.h` — `vmaf_vulkan_kernel_pipeline_init`, `vmaf_vulkan_kernel_pipeline_add_variant`
+- `core/src/vulkan/common.c` — `pipeline_cache_load` / `pipeline_cache_save_and_destroy`
+- `core/src/vulkan/kernel_template.h` — `vmaf_vulkan_kernel_pipeline_init`, `vmaf_vulkan_kernel_pipeline_add_variant`

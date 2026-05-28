@@ -41,7 +41,7 @@ upstream commit + curl `.pth` from raw GitHub URL + wrap with adapter
    verified by reading `model/u2net.py` at upstream HEAD) at every
    decoder stage. PyTorch's ONNX exporter lowers
    `F.upsample(..., mode='bilinear')` to the `Resize` op; the
-   `libvmaf/src/dnn/op_allowlist.c` list does **not** include
+   `core/src/dnn/op_allowlist.c` list does **not** include
    `Resize` (it includes `Conv`, `ConvTranspose`, `MaxPool`,
    `AveragePool`, the BN/activation set, `Reshape`/`Transpose`/
    `Concat`/`Slice`/`Gather`, but no scale-changing op). Replacing

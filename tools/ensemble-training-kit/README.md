@@ -110,7 +110,7 @@ auto-handles whichever container the bundle was built with.
 | OS              | Linux (Ubuntu 22.04+ / Fedora 40+ / Arch / similar)                                   |
 | GPU             | NVIDIA, ≥ 6 GB VRAM free, driver supporting CUDA toolkit ≥ 12.x                       |
 | ffmpeg          | Built with `--enable-libnvenc` (`ffmpeg -encoders \| grep nvenc` shows `h264_nvenc`)  |
-| libvmaf (CUDA)  | `libvmaf/build-cuda/tools/vmaf` — `meson setup build-cuda -Denable_cuda=true && ninja -C build-cuda` |
+| libvmaf (CUDA)  | `core/build-cuda/tools/vmaf` — `meson setup build-cuda -Denable_cuda=true && ninja -C build-cuda` |
 | Python          | ≥ 3.12 with `torch` (CUDA-enabled), `numpy`, `pandas`, `onnx`, `onnxruntime`, `scipy`, `scikit-learn` |
 | Reference YUVs  | One per source, as raw `.yuv` files in a single directory                             |
 | Free disk       | ≥ 5 GB for Phase-A intermediate mp4/yuv + ≥ 1 GB under the run output dir             |
@@ -226,7 +226,7 @@ Build it from the repo root:
 ```bash
 meson setup build-cuda -Denable_cuda=true -Denable_sycl=false
 ninja -C build-cuda
-ls libvmaf/build-cuda/tools/vmaf
+ls core/build-cuda/tools/vmaf
 ```
 
 If meson cannot find nvcc, set `CUDA_HOME=/opt/cuda` (or wherever the

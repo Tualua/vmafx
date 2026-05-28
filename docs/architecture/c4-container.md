@@ -1,7 +1,7 @@
 # C4 Level 2 — Container view
 
 > **Status.** Stub. Scaffolded 2026-04-17 as part of the golusoris-alignment
-> sweep. Fill in per-container interfaces and data flows as VMAFX's
+> sweep. Fill in per-container interfaces and data flows as the fork's
 > internal boundaries stabilise. See [c4-context.md](c4-context.md) for
 > Level 1 and [index.md](index.md) for the on-disk repo map.
 
@@ -11,15 +11,15 @@
 @startuml vmaf-c4-container
 !include <C4/C4_Container>
 
-title VMAFX — Containers
+title VMAF (Lusoris fork) — Containers
 
 Person(user, "Video engineer")
 Person(agent, "Coding agent")
 
-System_Boundary(vmaf, "VMAFX") {
+System_Boundary(vmaf, "VMAF (Lusoris fork)") {
   Container(libvmaf, "libvmaf", "C11", "Metric engine, feature extractors, backend dispatch, public API")
   Container(cli, "vmaf + vmaf_bench", "C11", "End-user CLI and micro-benchmark harness — link libvmaf")
-  Container(dnn, "libvmaf/src/dnn", "C11 + ONNX Runtime", "Tiny-AI inference layer (loader, op-allowlist, session)")
+  Container(dnn, "core/src/dnn", "C11 + ONNX Runtime", "Tiny-AI inference layer (loader, op-allowlist, session)")
   Container(ai, "ai/", "Python 3.12 + PyTorch + Lightning", "Tiny-AI training + ONNX export (vmaf-train CLI)")
   Container(mcp, "mcp-server/vmaf-mcp", "Python JSON-RPC", "MCP tools: vmaf_score, list_models, list_backends, run_benchmark")
   Container(py, "python/vmaf", "Python", "Classic SVM training harness + Python bindings")
@@ -55,12 +55,12 @@ Rel(gh, testdata, "CI validates snapshot JSONs against backends")
 | Container | Language | Responsibility | AGENTS.md |
 | --- | --- | --- | --- |
 | libvmaf | C11 | Metric engine, feature extractors, backend dispatch, public API | [../../libvmaf/AGENTS.md](../../libvmaf/AGENTS.md) |
-| libvmaf/src/dnn | C11 | Tiny-AI inference layer (loader + op-allowlist + ORT session) | [../../libvmaf/src/dnn/AGENTS.md](../../libvmaf/src/dnn/AGENTS.md) |
-| libvmaf/src/feature | C11 + SIMD + CUDA + SYCL | Per-feature scalar + vector + GPU kernels | [../../libvmaf/src/feature/AGENTS.md](../../libvmaf/src/feature/AGENTS.md) |
-| libvmaf/src/cuda | C + CUDA | CUDA backend runtime (picture, stream, ring buffer) | [../../libvmaf/src/cuda/AGENTS.md](../../libvmaf/src/cuda/AGENTS.md) |
-| libvmaf/src/sycl | C++ + SYCL/DPC++ | SYCL backend runtime (USM, dmabuf) | [../../libvmaf/src/sycl/AGENTS.md](../../libvmaf/src/sycl/AGENTS.md) |
-| libvmaf/tools | C11 | `vmaf` + `vmaf_bench` CLI binaries | [../../libvmaf/tools/AGENTS.md](../../libvmaf/tools/AGENTS.md) |
-| libvmaf/test | C11 | C unit tests (µnit-style) | [../../libvmaf/test/AGENTS.md](../../libvmaf/test/AGENTS.md) |
+| core/src/dnn | C11 | Tiny-AI inference layer (loader + op-allowlist + ORT session) | [../../core/src/dnn/AGENTS.md](../../core/src/dnn/AGENTS.md) |
+| core/src/feature | C11 + SIMD + CUDA + SYCL | Per-feature scalar + vector + GPU kernels | [../../core/src/feature/AGENTS.md](../../core/src/feature/AGENTS.md) |
+| core/src/cuda | C + CUDA | CUDA backend runtime (picture, stream, ring buffer) | [../../core/src/cuda/AGENTS.md](../../core/src/cuda/AGENTS.md) |
+| core/src/sycl | C++ + SYCL/DPC++ | SYCL backend runtime (USM, dmabuf) | [../../core/src/sycl/AGENTS.md](../../core/src/sycl/AGENTS.md) |
+| libvmaf/tools | C11 | `vmaf` + `vmaf_bench` CLI binaries | [../../core/tools/AGENTS.md](../../core/tools/AGENTS.md) |
+| libvmaf/test | C11 | C unit tests (µnit-style) | [../../core/test/AGENTS.md](../../core/test/AGENTS.md) |
 | ai/ | Python + PyTorch + Lightning | Tiny-AI training + ONNX export (`vmaf-train` CLI) | [../../ai/AGENTS.md](../../ai/AGENTS.md) |
 | mcp-server/vmaf-mcp | Python JSON-RPC | MCP tool surface | [../../mcp-server/AGENTS.md](../../mcp-server/AGENTS.md) |
 | python/vmaf | Python | Classic SVM harness + bindings + golden-data tests | [../../python/vmaf/AGENTS.md](../../python/vmaf/AGENTS.md) |
@@ -72,7 +72,7 @@ Rel(gh, testdata, "CI validates snapshot JSONs against backends")
 1. **libvmaf is C-only** on the runtime path. Python and PyTorch are
    training-only and never linked into the shipped library.
 2. **Training ↔ runtime boundary** is `.onnx` + sidecar JSON on disk.
-   `ai/` and `libvmaf/src/dnn/` communicate only through files in
+   `ai/` and `core/src/dnn/` communicate only through files in
    `model/tiny/`. See [ADR-0021](../adr/0021-training-stack-pytorch-lightning.md)
    and [ADR-0022](../adr/0022-inference-runtime-onnx.md).
 3. **Untrusted ONNX input** — every `.onnx` loaded via `--tiny-model` is
@@ -85,7 +85,7 @@ Rel(gh, testdata, "CI validates snapshot JSONs against backends")
 ## Next levels
 
 - **Level 3 — Component**: one diagram per container showing its internal
-  modules. Add as components stabilise (starting with libvmaf/src/dnn since
+  modules. Add as components stabilise (starting with core/src/dnn since
   that is the newest, most active boundary).
 - **Level 4 — Code**: generated on demand via `ctags` / clang AST, not
   hand-maintained.

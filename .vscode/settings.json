@@ -19,8 +19,8 @@
   ],
   "clangd.fallbackFlags": [
     "-std=c11",
-    "-I${workspaceFolder}/libvmaf/include",
-    "-I${workspaceFolder}/libvmaf/src"
+    "-I${workspaceFolder}/core/include",
+    "-I${workspaceFolder}/core/src"
   ],
   "clangd.onConfigChanged": "restart",
   "clangd.checkUpdates": false,
@@ -90,6 +90,6 @@
 
   "cmake.configureOnOpen": false,
   "cmake.sourceDirectory": "",
-  "C_Cpp.default.compileCommands": "/home/kilian/dev/vmaf/libvmaf/builddir/compile_commands.json",
+  "C_Cpp.default.compileCommands": "/home/kilian/dev/vmaf/core/builddir/compile_commands.json",
   "C_Cpp.default.configurationProvider": "mesonbuild.mesonbuild"
 }

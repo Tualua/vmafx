@@ -7,7 +7,7 @@
 
 ## Context
 
-`libvmaf/test/test_cli_parse_long_only_args.c::test_threads_invalid_optarg_does_not_assert`
+`core/test/test_cli_parse_long_only_args.c::test_threads_invalid_optarg_does_not_assert`
 has been failing on `master`. It is a regression test for the long-only
 short-option synthesis bug closed by ADR-0316 / ADR-0438 — invoking
 `vmaf --threads abc` used to trip `assert(long_opts[n].name)` inside
@@ -54,7 +54,7 @@ closing in the same change:
 
 Two coordinated changes:
 
-1. **Test harness (`libvmaf/test/test_cli_parse_long_only_args.c`)**:
+1. **Test harness (`core/test/test_cli_parse_long_only_args.c`)**:
    refactor the parent's pipe reader into a `read_head_drain_tail()`
    helper that captures the first 511 bytes (enough for the
    "Invalid argument …" line) and then drains the remainder of the
@@ -62,7 +62,7 @@ Two coordinated changes:
    or `SIGPIPE`s. Extract the child-side `dup2 + cli_parse + _exit`
    into a `child_parse_via_pipe()` helper to keep `run_parse_expect_usage_error`
    under the `readability-function-size` threshold.
-2. **Product code (`libvmaf/tools/cli_parse.c::error()`)**: replace
+2. **Product code (`core/tools/cli_parse.c::error()`)**: replace
    `assert(long_opts[n].name)` with an explicit `if (!found) { usage(…); return; }`
    fallback so the SIGABRT path is unreachable even if a future
    case arm regresses. Replace the two `sprintf(optname, …)` calls
@@ -98,7 +98,7 @@ Two coordinated changes:
 
 - ADR-0316 — original long-only short-option synthesis fix.
 - ADR-0438 — short-option handler coverage invariant.
-- `libvmaf/test/fuzz/cli_parse_corpus/cli_threads_abbrev_assert.argv` — parked fuzzer reproducer.
+- `core/test/fuzz/cli_parse_corpus/cli_threads_abbrev_assert.argv` — parked fuzzer reproducer.
 - Source: agent dispatch dossier (verbatim user request) — "Fix the
   pre-existing `test_cli_parse_long_only_args::test_threads_invalid_optarg_does_not_assert`
   failure".

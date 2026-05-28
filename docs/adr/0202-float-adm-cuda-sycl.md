@@ -15,14 +15,14 @@ following the established two-PR pattern from earlier batches
 (motion_v2 #146 → #147, psnr_hvs #143 → #144, etc.).
 
 CPU reference:
-[`float_adm.c`](../../libvmaf/src/feature/float_adm.c) (thin wrapper)
-+ [`adm.c::compute_adm`](../../libvmaf/src/feature/adm.c) (4-scale
+[`float_adm.c`](../../core/src/feature/float_adm.c) (thin wrapper)
++ [`adm.c::compute_adm`](../../core/src/feature/adm.c) (4-scale
 orchestration) +
-[`adm_tools.c`](../../libvmaf/src/feature/adm_tools.c) (the float
+[`adm_tools.c`](../../core/src/feature/adm_tools.c) (the float
 `_s`-suffixed primitives). Vulkan structural reference:
-[`float_adm_vulkan.c`](../../libvmaf/src/feature/vulkan/float_adm_vulkan.c)
+[`float_adm_vulkan.c`](../../core/src/feature/vulkan/float_adm_vulkan.c)
 and
-[`float_adm.comp`](../../libvmaf/src/feature/vulkan/shaders/float_adm.comp).
+[`float_adm.comp`](../../core/src/feature/vulkan/shaders/float_adm.comp).
 
 ## Decision
 
@@ -33,8 +33,8 @@ extractor's `places=4` precision contract is preserved by both
 backends.
 
 ### CUDA twin —
-[`float_adm_cuda.c`](../../libvmaf/src/feature/cuda/float_adm_cuda.c)
-([`float_adm_score.cu`](../../libvmaf/src/feature/cuda/float_adm/float_adm_score.cu))
+[`float_adm_cuda.c`](../../core/src/feature/cuda/float_adm_cuda.c)
+([`float_adm_score.cu`](../../core/src/feature/cuda/float_adm/float_adm_score.cu))
 
 - Single `.cu` file with four `__global__` entry points (one per
   stage), same shape as the float_vif CUDA kernel from
@@ -54,7 +54,7 @@ backends.
   ownership and easier debugging.
 
 ### SYCL twin —
-[`float_adm_sycl.cpp`](../../libvmaf/src/feature/sycl/float_adm_sycl.cpp)
+[`float_adm_sycl.cpp`](../../core/src/feature/sycl/float_adm_sycl.cpp)
 
 - Single `.cpp` file with four `launch_*` templates over `SCALE`,
   same shape as `float_vif_sycl.cpp`. Self-contained
@@ -98,8 +98,8 @@ clamped against the wrong bounds and let the parent reads
 wander into uninitialised memory at scale 1+. Symptom:
 `max_abs_diff = 3.6e-4` at `adm_scale3` and `1.4e-4` at `adm2`
 on the Netflix normal pair. Fix:
-[`float_adm_cuda.c::submit_fex_cuda`](../../libvmaf/src/feature/cuda/float_adm_cuda.c)
-+ [`float_adm_sycl.cpp::submit_fex_sycl`](../../libvmaf/src/feature/sycl/float_adm_sycl.cpp)
+[`float_adm_cuda.c::submit_fex_cuda`](../../core/src/feature/cuda/float_adm_cuda.c)
++ [`float_adm_sycl.cpp::submit_fex_sycl`](../../core/src/feature/sycl/float_adm_sycl.cpp)
 both now pass `scale_w/h[scale]`. Cited inline at the
 declaration so future refactors don't regress the bounds.
 
@@ -157,16 +157,16 @@ declaration so future refactors don't regress the bounds.
 PATH="/opt/intel/oneapi/compiler/latest/bin:/opt/cuda/bin:$PATH" \
 CXX=/opt/intel/oneapi/compiler/latest/bin/icpx \
 CC=/opt/intel/oneapi/compiler/latest/bin/icx \
-  meson setup libvmaf/build_cs --reconfigure \
+  meson setup core/build_cs --reconfigure \
     -Denable_cuda=true -Denable_sycl=true -Denable_vulkan=enabled \
     -Denable_float=true \
     -Dsycl_compiler=/opt/intel/oneapi/compiler/latest/bin/icpx \
     libvmaf
-ninja -C libvmaf/build_cs
+ninja -C core/build_cs
 
 # Cross-backend gate, places=4.
 python3 scripts/ci/cross_backend_vif_diff.py \
-  --vmaf-binary libvmaf/build_cs/tools/vmaf \
+  --vmaf-binary core/build_cs/tools/vmaf \
   --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
   --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
   --width 576 --height 324 --feature float_adm \
@@ -195,7 +195,7 @@ that touches the same SYCL TU.
 [Research-0086 §A.4](../research/0086-sycl-toolchain-audit-2026-05-08.md)
 emitted a GO recommendation to rewrite the ADM DWT vertical and
 horizontal passes in
-[`integer_adm_sycl.cpp`](../../libvmaf/src/feature/sycl/integer_adm_sycl.cpp)
+[`integer_adm_sycl.cpp`](../../core/src/feature/sycl/integer_adm_sycl.cpp)
 on top of `sycl::ext::oneapi::experimental::group_load`. The rewrite
 was attempted on 2026-05-08 and **deferred** under
 [ADR-0332](0332-sycl-adm-dwt-group-load-deferral.md). Two blockers

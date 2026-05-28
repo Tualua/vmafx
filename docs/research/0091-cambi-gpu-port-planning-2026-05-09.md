@@ -59,13 +59,13 @@ Per-backend port PRs follow per the ordered plan.
 
 | Path | Where | LOC | Notes |
 | --- | --- | ---: | --- |
-| Scalar CPU + dispatcher | `libvmaf/src/feature/cambi.c` | 1619 | Hot path is `calculate_c_values` (sliding 1024-bin histogram per output column, range +1 / -1 updates per row). |
-| AVX2 SIMD twin | `libvmaf/src/feature/x86/cambi_avx2.c` + `.h` | 95 + hdr | Vectorises the histogram increment / decrement within a single row. Row-to-row state stays sequential. |
-| AVX-512 SIMD twin | `libvmaf/src/feature/x86/cambi_avx512.c` + `.h` | 94 + hdr | Same shape as AVX2, wider lanes. PR #493 (T3-9). |
-| NEON SIMD twin | `libvmaf/src/feature/arm64/cambi_neon.c` + `.h` | 95 + hdr | ARM equivalent. PR #493 (T3-9). |
-| Internal helper header | `libvmaf/src/feature/cambi_internal.h` | 113 | Exposes file-static helpers (`vmaf_cambi_calculate_c_values`, `vmaf_cambi_decimate`, `vmaf_cambi_filter_mode`, `vmaf_cambi_get_spatial_mask`, `vmaf_cambi_preprocessing`, `vmaf_cambi_default_callbacks`) for GPU twins per ADR-0210 §Decision point 3. |
-| Vulkan host glue | `libvmaf/src/feature/vulkan/cambi_vulkan.c` | 1368 | Shipped by PR #196 (T7-36). Mirrors the scaffold from ADR-0210. |
-| Vulkan shaders | `libvmaf/src/feature/vulkan/shaders/cambi_*.comp` | 548 total | 5 files: preprocess (99), decimate (64), derivative (103), filter_mode (112), mask_dp (170 — fuses row-SAT, col-SAT, threshold via `PASS` spec const). |
+| Scalar CPU + dispatcher | `core/src/feature/cambi.c` | 1619 | Hot path is `calculate_c_values` (sliding 1024-bin histogram per output column, range +1 / -1 updates per row). |
+| AVX2 SIMD twin | `core/src/feature/x86/cambi_avx2.c` + `.h` | 95 + hdr | Vectorises the histogram increment / decrement within a single row. Row-to-row state stays sequential. |
+| AVX-512 SIMD twin | `core/src/feature/x86/cambi_avx512.c` + `.h` | 94 + hdr | Same shape as AVX2, wider lanes. PR #493 (T3-9). |
+| NEON SIMD twin | `core/src/feature/arm64/cambi_neon.c` + `.h` | 95 + hdr | ARM equivalent. PR #493 (T3-9). |
+| Internal helper header | `core/src/feature/cambi_internal.h` | 113 | Exposes file-static helpers (`vmaf_cambi_calculate_c_values`, `vmaf_cambi_decimate`, `vmaf_cambi_filter_mode`, `vmaf_cambi_get_spatial_mask`, `vmaf_cambi_preprocessing`, `vmaf_cambi_default_callbacks`) for GPU twins per ADR-0210 §Decision point 3. |
+| Vulkan host glue | `core/src/feature/vulkan/cambi_vulkan.c` | 1368 | Shipped by PR #196 (T7-36). Mirrors the scaffold from ADR-0210. |
+| Vulkan shaders | `core/src/feature/vulkan/shaders/cambi_*.comp` | 548 total | 5 files: preprocess (99), decimate (64), derivative (103), filter_mode (112), mask_dp (170 — fuses row-SAT, col-SAT, threshold via `PASS` spec const). |
 
 CUDA, SYCL, HIP have **no** cambi twin today. ADR-0192 §Out of scope
 parked them for "follow per-backend cadence after the Vulkan terminus
@@ -334,15 +334,15 @@ own six-deliverables set as usual.
   HIP first consumer cadence.
 - Sibling ADR: [ADR-0335](../adr/0335-sycl-adaptivecpp-second-toolchain.md)
   (in-flight in PR #498) — dual SYCL toolchain scope.
-- CPU reference: [`libvmaf/src/feature/cambi.c`](../../libvmaf/src/feature/cambi.c)
+- CPU reference: [`core/src/feature/cambi.c`](../../core/src/feature/cambi.c)
   (1619 LOC) + SIMD twins + `cambi_internal.h`.
-- Vulkan reference: [`libvmaf/src/feature/vulkan/cambi_vulkan.c`](../../libvmaf/src/feature/vulkan/cambi_vulkan.c)
+- Vulkan reference: [`core/src/feature/vulkan/cambi_vulkan.c`](../../core/src/feature/vulkan/cambi_vulkan.c)
   (1368 LOC) + 5 shaders (548 LOC).
-- CUDA template reference: `libvmaf/src/feature/cuda/integer_adm_cuda.c`
+- CUDA template reference: `core/src/feature/cuda/integer_adm_cuda.c`
   (1364 LOC) + `integer_adm/*.cu` (~1330 LOC).
-- SYCL template reference: `libvmaf/src/feature/sycl/integer_adm_sycl.cpp`
+- SYCL template reference: `core/src/feature/sycl/integer_adm_sycl.cpp`
   (1663 LOC).
-- HIP template reference: `libvmaf/src/feature/hip/integer_psnr_hip.c`
+- HIP template reference: `core/src/feature/hip/integer_psnr_hip.c`
   + `adm_hip.c`.
 - User direction: standing CLAUDE.md §12 r10/r11 (every fork-local PR
   ships the six deep-dive deliverables; doc-substance rule applies);

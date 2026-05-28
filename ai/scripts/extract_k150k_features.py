@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Extract FULL_FEATURES (Research-0026) from KoNViD-150k-A using FR-from-NR adapter.
 
 KoNViD-150k-A (K150K-A) is a no-reference corpus: each clip carries a human MOS
@@ -157,7 +157,7 @@ CUDA_EXTRACTOR_NAMES: tuple[str, ...] = (
 
 # 2026-05-15: float_ssim promoted from the CPU residual pass to the
 # CUDA primary pass (it has shipped a CUDA implementation since
-# libvmaf/src/feature/cuda/float_ssim_cuda.c landed). cambi stays
+# core/src/feature/cuda/float_ssim_cuda.c landed). cambi stays
 # on this CPU residual pass — its CUDA twin segfaults (Issue #857).
 CUDA_CPU_RESIDUAL_EXTRACTOR_NAMES: tuple[str, ...] = (
     "cambi",
@@ -232,7 +232,7 @@ _METRIC_ALIASES: dict[str, tuple[str, ...]] = {
     "psnr_hvs": ("psnr_hvs",),
     "vmaf": ("vmaf",),
     # 2026-05-15 additions — short aliases registered in
-    # libvmaf/src/feature/alias.c.
+    # core/src/feature/alias.c.
     "speed_temporal": (
         "speed_temporal",
         "Speed_temporal_feature_speed_temporal_score",
@@ -381,7 +381,7 @@ def _motion_fps_weight(fps: float) -> float:
 
 # Per-extractor option support. CUDA twins ship a reduced VmafOption
 # table vs their CPU counterparts (verified against
-# libvmaf/src/feature/cuda/{integer_cambi_cuda,integer_ms_ssim_cuda,
+# core/src/feature/cuda/{integer_cambi_cuda,integer_ms_ssim_cuda,
 # integer_motion_cuda}.c); options not present here are silently
 # dropped from the --feature arg rather than triggering
 # "problem loading feature extractor" at runtime.
@@ -400,7 +400,7 @@ _FEATURE_OPTION_SUPPORT: dict[str, frozenset[str]] = {
 def _feature_arg(extractor: str, is_hdr: bool, motion_fps_weight: float) -> str:
     """Build the ``--feature`` argument value for one extractor.
 
-    Per libvmaf/tools/cli_parse.c the CLI grammar is
+    Per core/tools/cli_parse.c the CLI grammar is
     ``EXTRACTOR=key1=val1:key2=val2``: ``strsep(&optarg, "=")`` consumes
     the extractor name first, then ``:`` separates the ``key=value``
     pairs.  The leading literal ``name=`` token is NOT part of the
@@ -1115,7 +1115,7 @@ def main() -> int:
         default=REPO_ROOT / "libvmaf" / "build-cpu" / "tools" / "vmaf",
         help=(
             "Path to the fork vmaf binary (built with ssimulacra2 + motion_v2).  "
-            "Default: libvmaf/build-cpu/tools/vmaf.  Passing a CUDA-capable binary "
+            "Default: core/build-cpu/tools/vmaf.  Passing a CUDA-capable binary "
             "enables the split CUDA-safe feature pass plus CPU residual pass "
             "(ADR-0431)."
         ),
@@ -1127,7 +1127,7 @@ def main() -> int:
         help=(
             "CPU vmaf binary used for residual CPU-only feature passes when "
             "--vmaf-bin points at a CUDA-capable binary. Default: "
-            "libvmaf/build-cpu/tools/vmaf."
+            "core/build-cpu/tools/vmaf."
         ),
     )
     ap.add_argument(
@@ -1191,7 +1191,7 @@ def main() -> int:
         action="store_true",
         help=(
             "Disable CUDA backend flags on the vmaf invocation.  This is the "
-            "default when using libvmaf/build-cpu/tools/vmaf (the recommended "
+            "default when using core/build-cpu/tools/vmaf (the recommended "
             "binary); only needed if passing a CUDA-capable binary explicitly."
         ),
     )
@@ -1234,9 +1234,9 @@ def main() -> int:
         print(
             f"error: vmaf binary not found: {args.vmaf_bin}\n"
             "Build the fork vmaf binary with:\n"
-            "  meson setup libvmaf/build-cpu libvmaf -Denable_cuda=false "
-            "--buildtype=release && ninja -C libvmaf/build-cpu\n"
-            "Then re-run with --vmaf-bin libvmaf/build-cpu/tools/vmaf",
+            "  meson setup core/build-cpu libvmaf -Denable_cuda=false "
+            "--buildtype=release && ninja -C core/build-cpu\n"
+            "Then re-run with --vmaf-bin core/build-cpu/tools/vmaf",
             file=sys.stderr,
         )
         return 2

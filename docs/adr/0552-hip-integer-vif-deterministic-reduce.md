@@ -13,7 +13,7 @@ end-to-end (no GPU memory fault), but the cross-backend parity gate showed a
 0.031 VMAF-score divergence vs CPU on the BBB testdata fixture.
 
 Investigation traced the divergence to the horizontal accumulation kernels in
-`libvmaf/src/feature/hip/integer_vif/vif_statistics.hip`. Each thread that
+`core/src/feature/hip/integer_vif/vif_statistics.hip`. Each thread that
 computed a non-zero per-pixel statistic issued its own independent `atomicAdd`
 call on the seven `int64_t` accumulator fields. AMD hardware serialises
 concurrent `atomicAdd` operations on the same address by queuing them as
@@ -103,7 +103,7 @@ Replace the per-thread `atomicAdd` pattern in both horizontal-pass kernels
 - ADR-0214: Cross-backend parity gate (places=4 at VMAF-score level).
 - ADR-0537: Prior integer VIF HIP kernel fix (crash level defects).
 - ADR-0554: Supersedes ADR-0537's per-feature tolerance; mandates places=4.
-- CUDA twin reference: `libvmaf/src/cuda/cuda_helper.cuh` `warp_reduce()`,
-  `libvmaf/src/feature/cuda/integer_vif/filter1d.cu` lines 424–432, 765–772.
+- CUDA twin reference: `core/src/cuda/cuda_helper.cuh` `warp_reduce()`,
+  `core/src/feature/cuda/integer_vif/filter1d.cu` lines 424–432, 765–772.
 - AMD wavefront size: GCN/RDNA default = 64 lanes. RDNA2+ supports wave32 via
   kernel attribute but this kernel does not request it.

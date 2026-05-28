@@ -23,11 +23,11 @@
 | CPU (scalar) | `/tmp/rebase-train/build_local` | OK (enable_asm=true, enable_avx512=true) |
 | CPU (AVX2) | same build, cpumask=48 | OK |
 | CPU (AVX-512) | same build, cpumask=0 | OK |
-| CUDA | worktree `agent-ad00524b91af3a92f/libvmaf/build-cuda` | OK (CUDA 13.2, sm_89) |
+| CUDA | worktree `agent-ad00524b91af3a92f/core/build-cuda` | OK (CUDA 13.2, sm_89) |
 | SYCL | not built | **BLOCKED** — `icpx` not present on this host |
 | Vulkan | attempted `/tmp/vmaf_vulkan_build` | **FAILED** — GCC 16 rejects `return <val>` in `void` functions (`-Wreturn-mismatch` is now fatal): `float_ansnr_vulkan.c:299`, `cambi_vulkan.c:884,904`. See §6. Fixed by PR #699 (ADR-0376). |
-| Vulkan (post-PR-#699) | `/tmp/bench-vulkan-hip/libvmaf/build-vk` | **OK** — all 3 GPUs tested. See §11. |
-| HIP (ROCm) | `/tmp/bench-vulkan-hip/libvmaf/build-hip` | **PARTIAL** — `enable_hipcc=false` build succeeds; `enable_hipcc=true` blocked by missing `float_motion/float_motion_score.hip` kernel file (PR #686 regression). See §12. |
+| Vulkan (post-PR-#699) | `/tmp/bench-vulkan-hip/core/build-vk` | **OK** — all 3 GPUs tested. See §11. |
+| HIP (ROCm) | `/tmp/bench-vulkan-hip/core/build-hip` | **PARTIAL** — `enable_hipcc=false` build succeeds; `enable_hipcc=true` blocked by missing `float_motion/float_motion_score.hip` kernel file (PR #686 regression). See §12. |
 
 ---
 
@@ -148,7 +148,7 @@ fatal error: cuda_helper.cuh: No such file or directory
    #include "cuda_helper.cuh"
 ```
 
-This is a pre-existing include-path misconfiguration in that specific build tree (header not in nvcc search path). The worktree build at `agent-ad00524b91af3a92f/libvmaf/build-cuda` is intact and was used for all CUDA measurements above.
+This is a pre-existing include-path misconfiguration in that specific build tree (header not in nvcc search path). The worktree build at `agent-ad00524b91af3a92f/core/build-cuda` is intact and was used for all CUDA measurements above.
 
 ### SYCL — Not Built
 
@@ -263,7 +263,7 @@ for cpumask in 0 48 63; do
 done
 
 # CUDA bench (1080p)
-CUDA_VMAF=/tmp/rebase-train/.claude/worktrees/agent-ad00524b91af3a92f/libvmaf/build-cuda/tools/vmaf
+CUDA_VMAF=/tmp/rebase-train/.claude/worktrees/agent-ad00524b91af3a92f/core/build-cuda/tools/vmaf
 $CUDA_VMAF -r /tmp/vmaf_test/ref_1920x1080.yuv \
   -d /tmp/vmaf_test/dis_1920x1080.yuv \
   -w 1920 -h 1080 -p 420 -b 8 \
@@ -272,7 +272,7 @@ $CUDA_VMAF -r /tmp/vmaf_test/ref_1920x1080.yuv \
 
 # Per-feature bench with CUDA support
 VMAF_TEST_DATA=/tmp/vmaf_test \
-  /tmp/rebase-train/.claude/worktrees/agent-ad00524b91af3a92f/libvmaf/build-cuda/tools/vmaf_bench \
+  /tmp/rebase-train/.claude/worktrees/agent-ad00524b91af3a92f/core/build-cuda/tools/vmaf_bench \
   --frames 48 --resolution 1920x1080
 ```
 
@@ -283,7 +283,7 @@ VMAF_TEST_DATA=/tmp/vmaf_test \
 **Context:** PR #699 (ADR-0376) fixed the GCC 16 `-Wreturn-mismatch` build failure that blocked all Vulkan bench runs in the prior session. This section fills the gap by benching all three GPUs in the machine across all three target resolutions.
 
 **Build:** Worktree at `/tmp/bench-vulkan-hip` from `origin/master` (commit `943e29aa`).
-Configuration: `meson setup libvmaf/build-vk libvmaf -Denable_cuda=false -Denable_sycl=false -Denable_vulkan=enabled -Denable_avx512=true -Dbuildtype=release`.
+Configuration: `meson setup core/build-vk libvmaf -Denable_cuda=false -Denable_sycl=false -Denable_vulkan=enabled -Denable_avx512=true -Dbuildtype=release`.
 
 **Vulkan device enumeration (vulkaninfo):**
 
@@ -298,7 +298,7 @@ Configuration: `meson setup libvmaf/build-vk libvmaf -Denable_cuda=false -Denabl
 **Bench command (same fixture set as §3, model: `vmaf_v0.6.1.json`, 3 runs each):**
 
 ```bash
-VMAF=/tmp/bench-vulkan-hip/libvmaf/build-vk/tools/vmaf
+VMAF=/tmp/bench-vulkan-hip/core/build-vk/tools/vmaf
 MODEL=/tmp/bench-vulkan-hip/model/vmaf_v0.6.1.json
 
 # For each device index N (0=NVIDIA, 1=Arc A380, 2=AMD iGPU) and each resolution:
@@ -399,7 +399,7 @@ hipcc: HIP version 7.2.53211-9999, AMD clang 22.0.0git
 **HIP build attempt:**
 
 ```bash
-PATH="/opt/rocm/bin:$PATH" meson setup libvmaf/build-hip libvmaf \
+PATH="/opt/rocm/bin:$PATH" meson setup core/build-hip libvmaf \
   -Denable_hip=true -Denable_hipcc=true \
   -Denable_cuda=false -Denable_sycl=false -Denable_vulkan=disabled \
   -Dbuildtype=release
@@ -411,7 +411,7 @@ PATH="/opt/rocm/bin:$PATH" meson setup libvmaf/build-hip libvmaf \
 ERROR: File ./feature/hip/float_motion/float_motion_score.hip does not exist.
 ```
 
-**Root cause:** PR #686 (ADR-0373 batch-2, `float_motion_hip` real kernel) updated `libvmaf/src/meson.build` to add `float_motion_score` to `hip_kernel_sources`, but the device kernel file `libvmaf/src/feature/hip/float_motion/float_motion_score.hip` was never committed to the repository. The meson.build entry and the C wrapper (`float_motion_hip.c`) are present; only the `.hip` GPU kernel file is missing. This is a straightforward omission that needs a follow-up fix PR.
+**Root cause:** PR #686 (ADR-0373 batch-2, `float_motion_hip` real kernel) updated `core/src/meson.build` to add `float_motion_score` to `hip_kernel_sources`, but the device kernel file `core/src/feature/hip/float_motion/float_motion_score.hip` was never committed to the repository. The meson.build entry and the C wrapper (`float_motion_hip.c`) are present; only the `.hip` GPU kernel file is missing. This is a straightforward omission that needs a follow-up fix PR.
 
 **Workaround bench (enable_hipcc=false):**
 
@@ -431,7 +431,7 @@ Building with `-Denable_hipcc=false` succeeds — this compiles the HIP C wrappe
 | adm | no .hip kernel | -ENOSYS stub (deferred per ADR-0374) |
 | vif | no .hip kernel | -ENOSYS stub (deferred per ADR-0374) |
 
-**Action required:** Commit the missing `libvmaf/src/feature/hip/float_motion/float_motion_score.hip` kernel source (the HIP port of `feature/cuda/float_motion/float_motion_score.cu`). Once that file exists, all 7 real kernel slots become compilable and `enable_hipcc=true` builds will succeed. A bench run on gfx1036 can then be performed and appended here.
+**Action required:** Commit the missing `core/src/feature/hip/float_motion/float_motion_score.hip` kernel source (the HIP port of `feature/cuda/float_motion/float_motion_score.cu`). Once that file exists, all 7 real kernel slots become compilable and `enable_hipcc=true` builds will succeed. A bench run on gfx1036 can then be performed and appended here.
 
 **ROCm/HIP bench results: DEFERRED** — pending fix for the missing kernel file. No fps numbers recorded; all HIP dispatch falls to CPU in the current tree.
 
@@ -441,7 +441,7 @@ Building with `-Denable_hipcc=false` succeeds — this compiles the HIP C wrappe
 
 ```bash
 # Vulkan bench (all 3 GPUs, all 3 resolutions)
-VMAF=/tmp/bench-vulkan-hip/libvmaf/build-vk/tools/vmaf
+VMAF=/tmp/bench-vulkan-hip/core/build-vk/tools/vmaf
 MODEL=/tmp/bench-vulkan-hip/model/vmaf_v0.6.1.json
 REF_SD=/tmp/rebase-train/testdata/ref_576x324_48f.yuv
 DIS_SD=/tmp/rebase-train/testdata/dis_576x324_48f.yuv

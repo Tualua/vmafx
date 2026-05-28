@@ -9,7 +9,7 @@
 
 The `integer_ms_ssim_cuda` feature extractor was the loudest remaining
 host-blocking caller after the engine-scope CUDA fence-batching helper
-(`libvmaf/src/cuda/drain_batch.{h,c}`) was introduced. Every other
+(`core/src/cuda/drain_batch.{h,c}`) was introduced. Every other
 template-based CUDA extractor (psnr_cuda, …) and the four legacy
 extractors (motion, adm, vif, ssimulacra2) already participate in the
 batched drain — `vmaf_cuda_drain_batch_flush` waits on every registered
@@ -97,13 +97,13 @@ between launches.
 ## References
 
 - T-GPU-OPT-2 (this ADR's task identifier).
-- `libvmaf/src/cuda/drain_batch.{h,c}` — the helper and its
+- `core/src/cuda/drain_batch.{h,c}` — the helper and its
   bit-exactness invariant (places=4).
-- `libvmaf/src/cuda/kernel_template.h` — `vmaf_cuda_kernel_collect_wait`
+- `core/src/cuda/kernel_template.h` — `vmaf_cuda_kernel_collect_wait`
   fast path that participating extractors short-circuit through.
 - [ADR-0246](0246-gpu-kernel-template.md) — per-backend GPU kernel
   scaffolding template (CUDA template introduced).
 - [ADR-0214](0214-gpu-parity-ci-gate.md) — cross-backend parity gate.
-- Reference consumer: `libvmaf/src/feature/cuda/integer_psnr_cuda.c` —
+- Reference consumer: `core/src/feature/cuda/integer_psnr_cuda.c` —
   pattern this ADR follows verbatim for the lifecycle hand-off.
 - Source: `req` (direct user instruction in the agent task brief).

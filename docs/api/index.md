@@ -1,6 +1,6 @@
 # Public C API reference
 
-libvmaf ships a stable C API under [`libvmaf/include/libvmaf/`](../../libvmaf/include/libvmaf/).
+libvmaf ships a stable C API under [`core/include/libvmaf/`](../../core/include/libvmaf/).
 This page is the canonical reference for the *core* API (context / picture /
 feature / model). GPU-backend entry points and the DNN session API each get
 their own page:
@@ -15,19 +15,19 @@ their own page:
 
 | Header | Symbols | Purpose |
 | --- | --- | --- |
-| [`libvmaf.h`](../../libvmaf/include/libvmaf/libvmaf.h) | `VmafContext`, `VmafConfiguration`, lifecycle + scoring functions | Main entry point. Everything else is pulled in transitively. |
-| [`picture.h`](../../libvmaf/include/libvmaf/picture.h) | `VmafPicture`, `VmafPixelFormat`, alloc / unref | Per-frame pixel container (YUV planes + metadata). |
-| [`feature.h`](../../libvmaf/include/libvmaf/feature.h) | `VmafFeatureDictionary` | Key/value options passed to a feature extractor. |
-| [`model.h`](../../libvmaf/include/libvmaf/model.h) | `VmafModel`, `VmafModelConfig`, `VmafModelCollection*` | Classic SVM model + bootstrap model collection. |
-| [`dnn.h`](../../libvmaf/include/libvmaf/dnn.h) | `VmafDnnSession`, `VmafDnnConfig`, tiny-model attach | Tiny-AI (ONNX Runtime) surface. [Deep dive](dnn.md). |
-| [`libvmaf_cuda.h`](../../libvmaf/include/libvmaf/libvmaf_cuda.h) | `VmafCudaState`, CUDA picture prealloc | CUDA backend. Only usable in a build with `-Denable_cuda=true`. [Deep dive](gpu.md#cuda). |
-| [`libvmaf_sycl.h`](../../libvmaf/include/libvmaf/libvmaf_sycl.h) | `VmafSyclState`, zero-copy frame buffers, dmabuf / VA / D3D11 import | SYCL backend. Only usable in a build with `-Denable_sycl=true`. [Deep dive](gpu.md#sycl). |
-| [`libvmaf_vulkan.h`](../../libvmaf/include/libvmaf/libvmaf_vulkan.h) | `VmafVulkanState`, queue / device lifecycle, zero-copy `VkImage` import | Vulkan compute backend. Only usable in a build with `-Denable_vulkan=true`. [Deep dive](gpu.md#vulkan). |
-| [`libvmaf_hip.h`](../../libvmaf/include/libvmaf/libvmaf_hip.h) | `VmafHipState`, lifecycle, picture prealloc | AMD HIP/ROCm backend. Only usable in a build with `-Denable_hip=true`. [Deep dive](gpu.md#hip). |
-| [`libvmaf_metal.h`](../../libvmaf/include/libvmaf/libvmaf_metal.h) | `VmafMetalState`, lifecycle, IOSurface import | Apple Metal backend. Runtime, IOSurface import, and the first eight feature kernels are usable in a build with `-Denable_metal=auto/enabled` on Apple Silicon; unsupported hosts return `-ENODEV`. [Deep dive](gpu.md#metal). |
-| [`libvmaf_mcp.h`](../../libvmaf/include/libvmaf/libvmaf_mcp.h) | `VmafMcpServer`, `VmafMcpConfig`, transport start/stop | Embedded MCP server. Only usable in a build with `-Denable_mcp=true`. [Deep dive](mcp.md). |
-| [`vmaf_assert.h`](../../libvmaf/include/libvmaf/vmaf_assert.h) | `VMAF_ASSERT*` macros | Internal assertion helpers. Not for public use — may disappear. |
-| [`version.h`](../../libvmaf/include/libvmaf/libvmaf.h) (generated) | `VMAF_VERSION_MAJOR` etc. | Compile-time version constants. Run-time: `vmaf_version()`. |
+| [`libvmaf.h`](../../core/include/libvmaf/libvmaf.h) | `VmafContext`, `VmafConfiguration`, lifecycle + scoring functions | Main entry point. Everything else is pulled in transitively. |
+| [`picture.h`](../../core/include/libvmaf/picture.h) | `VmafPicture`, `VmafPixelFormat`, alloc / unref | Per-frame pixel container (YUV planes + metadata). |
+| [`feature.h`](../../core/include/libvmaf/feature.h) | `VmafFeatureDictionary` | Key/value options passed to a feature extractor. |
+| [`model.h`](../../core/include/libvmaf/model.h) | `VmafModel`, `VmafModelConfig`, `VmafModelCollection*` | Classic SVM model + bootstrap model collection. |
+| [`dnn.h`](../../core/include/libvmaf/dnn.h) | `VmafDnnSession`, `VmafDnnConfig`, tiny-model attach | Tiny-AI (ONNX Runtime) surface. [Deep dive](dnn.md). |
+| [`libvmaf_cuda.h`](../../core/include/libvmaf/libvmaf_cuda.h) | `VmafCudaState`, CUDA picture prealloc | CUDA backend. Only usable in a build with `-Denable_cuda=true`. [Deep dive](gpu.md#cuda). |
+| [`libvmaf_sycl.h`](../../core/include/libvmaf/libvmaf_sycl.h) | `VmafSyclState`, zero-copy frame buffers, dmabuf / VA / D3D11 import | SYCL backend. Only usable in a build with `-Denable_sycl=true`. [Deep dive](gpu.md#sycl). |
+| [`libvmaf_vulkan.h`](../../core/include/libvmaf/libvmaf_vulkan.h) | `VmafVulkanState`, queue / device lifecycle, zero-copy `VkImage` import | Vulkan compute backend. Only usable in a build with `-Denable_vulkan=true`. [Deep dive](gpu.md#vulkan). |
+| [`libvmaf_hip.h`](../../core/include/libvmaf/libvmaf_hip.h) | `VmafHipState`, lifecycle, picture prealloc | AMD HIP/ROCm backend. Only usable in a build with `-Denable_hip=true`. [Deep dive](gpu.md#hip). |
+| [`libvmaf_metal.h`](../../core/include/libvmaf/libvmaf_metal.h) | `VmafMetalState`, lifecycle, IOSurface import | Apple Metal backend. Runtime, IOSurface import, and the first eight feature kernels are usable in a build with `-Denable_metal=auto/enabled` on Apple Silicon; unsupported hosts return `-ENODEV`. [Deep dive](gpu.md#metal). |
+| [`libvmaf_mcp.h`](../../core/include/libvmaf/libvmaf_mcp.h) | `VmafMcpServer`, `VmafMcpConfig`, transport start/stop | Embedded MCP server. Only usable in a build with `-Denable_mcp=true`. [Deep dive](mcp.md). |
+| [`vmaf_assert.h`](../../core/include/libvmaf/vmaf_assert.h) | `VMAF_ASSERT*` macros | Internal assertion helpers. Not for public use — may disappear. |
+| [`version.h`](../../core/include/libvmaf/libvmaf.h) (generated) | `VMAF_VERSION_MAJOR` etc. | Compile-time version constants. Run-time: `vmaf_version()`. |
 
 All declarations are C (with `extern "C"` guards for C++ callers). The fork has
 no C++ entry points in its public API.
@@ -175,7 +175,7 @@ typedef struct VmafConfiguration {
 
 > **`gpumask` caveat.** Despite the `uint64_t` type and "bitmask" name,
 > the field is treated as a boolean: any non-zero value disables *both*
-> CUDA and SYCL in [`libvmaf.c:694-698`](../../libvmaf/src/libvmaf.c).
+> CUDA and SYCL in [`libvmaf.c:694-698`](../../core/src/libvmaf.c).
 > There is no per-backend bit. Use `--no_cuda` / `--no_sycl` on the
 > CLI for per-backend opt-out.
 >

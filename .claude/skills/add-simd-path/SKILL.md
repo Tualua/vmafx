@@ -12,7 +12,7 @@ description: Scaffold a new SIMD implementation for an existing feature. Creates
 ```
 
 - `<isa>` ∈ `avx2`, `avx512`, `avx512icl`, `neon`.
-- `<feature>` ∈ the set of feature names under `libvmaf/src/feature/` (e.g. `vif`,
+- `<feature>` ∈ the set of feature names under `core/src/feature/` (e.g. `vif`,
   `adm`, `ansnr`, `motion`, `ciede`, `ssim`, `convolve`, `ssimulacra2`).
 - `--kernel-spec=<spec>` (optional) — one of:
   - `widen-add-f32-f64` — single-rounded `float * float` → widen to
@@ -35,19 +35,19 @@ description: Scaffold a new SIMD implementation for an existing feature. Creates
 
 | Path                                                       | Purpose                         |
 |------------------------------------------------------------|---------------------------------|
-| `libvmaf/src/feature/x86/<feature>_<isa>.c`                | Intrinsics impl (or arm64/…)    |
-| `libvmaf/src/feature/x86/<feature>_<isa>.h`                | Prototype + ISA guard           |
-| `libvmaf/test/test_<feature>_<isa>_bitexact.c`             | Bit-exact vs scalar comparison  |
+| `core/src/feature/x86/<feature>_<isa>.c`                | Intrinsics impl (or arm64/…)    |
+| `core/src/feature/x86/<feature>_<isa>.h`                | Prototype + ISA guard           |
+| `core/test/test_<feature>_<isa>_bitexact.c`             | Bit-exact vs scalar comparison  |
 
 ## Files patched
 
-- `libvmaf/src/cpu.c` or `cpu.h` — dispatch table entry if not present.
-- `libvmaf/src/feature/<feature>.c` or the dispatching tools file
+- `core/src/cpu.c` or `cpu.h` — dispatch table entry if not present.
+- `core/src/feature/<feature>.c` or the dispatching tools file
   (e.g. `iqa/ssim_tools.c` for SSIM/convolve) — select SIMD impl
   when `cpu_supports_<isa>()`.
-- `libvmaf/src/meson.build` — add `<feature>_<isa>.c` under the
+- `core/src/meson.build` — add `<feature>_<isa>.c` under the
   matching `is_asm_enabled` / AVX-512 guard.
-- `libvmaf/test/meson.build` — register the new bit-exact test with
+- `core/test/meson.build` — register the new bit-exact test with
   the right `host_machine.cpu_family` filter and
   `platform_specific_cpu_objects` inclusion.
 
@@ -71,7 +71,7 @@ body with the actual intrinsics while keeping the DX macros in place.
 
 ## Guardrails
 
-- Refuses if `libvmaf/src/feature/x86/<feature>_<isa>.c` (or
+- Refuses if `core/src/feature/x86/<feature>_<isa>.c` (or
   `arm64/...`) already exists.
 - The bit-exact test MUST pass before merge. The
   `--kernel-spec=widen-add-f32-f64` and `per-lane-scalar-double`
@@ -101,4 +101,4 @@ body with the actual intrinsics while keeping the DX macros in place.
   per-lane scalar double reduction pattern.
 - [ADR-0140](../../../docs/adr/0140-simd-dx-framework.md) — this
   skill's upgrade + `simd_dx.h`.
-- [simd_dx.h](../../../libvmaf/src/feature/simd_dx.h) — the macros.
+- [simd_dx.h](../../../core/src/feature/simd_dx.h) — the macros.

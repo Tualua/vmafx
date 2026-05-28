@@ -89,7 +89,7 @@ mask real queued or failed ready-for-review checks.
 ### Advisory surface-path lists
 
 Both advisory jobs grep the diff for specific path prefixes
-(`libvmaf/include/`, `meson_options.*`, `mcp-server/`, etc.).
+(`core/include/`, `meson_options.*`, `mcp-server/`, etc.).
 These mirror
 [ADR-0100](../docs/adr/0100-project-wide-doc-substance-rule.md) §Per-surface
 and the ADR-policy-surface list from
@@ -173,7 +173,7 @@ applies a per-sanitizer regex deselect:
 - `undefined` — excludes `test_model`. Build also adds
   `-Dc_args=-fno-sanitize=function` and the `cpp_args` twin to
   suppress the K&R-prototype harness UB across ~50 test files
-  (`libvmaf/test/test.h` callers).
+  (`core/test/test.h` callers).
 - `thread` — excludes `test_model`, `test_pic_preallocation`,
   `test_framesync`.
 
@@ -184,7 +184,7 @@ silently widen the deselect list to "make CI pass" — per
 `feedback_no_test_weakening`, every addition needs an ADR
 referencing the underlying bug. Reverting `--suite=unit` would
 re-introduce the zero-coverage gap (no `test()` call carries a
-`suite: 'unit'` tag in `libvmaf/test/meson.build`); the workflow
+`suite: 'unit'` tag in `core/test/meson.build`); the workflow
 must keep enumerating from `meson test --list`.
 
 ## Windows CUDA setup path (ADR-0664)

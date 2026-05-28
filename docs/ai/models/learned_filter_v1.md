@@ -58,7 +58,7 @@ degradation recovery. The clips are not committed to this repository.
 ## Op-allowlist conformance
 
 Every op in the graph is on
-[`libvmaf/src/dnn/op_allowlist.c`](../../../libvmaf/src/dnn/op_allowlist.c):
+[`core/src/dnn/op_allowlist.c`](../../../core/src/dnn/op_allowlist.c):
 `Conv`, `Relu`, `Add` (residual skip connection).
 
 ## Degradation recipe

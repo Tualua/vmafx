@@ -26,7 +26,7 @@ Three sub-questions:
 
 ## Prior art surveyed
 
-- **libvmaf CLI** (`libvmaf/tools/cli_parse.c`) — confirms `--backend`
+- **libvmaf CLI** (`core/tools/cli_parse.c`) — confirms `--backend`
   values and the `auto|cpu|cuda|sycl|vulkan` alternation in the help
   text. The help line is the cheapest binary-capability oracle.
 - **Netflix/vmaf upstream** does not have a CLI-side backend selector

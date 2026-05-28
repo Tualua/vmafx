@@ -30,15 +30,15 @@ adopt the companion test recalibrations.
 
 C-side files taken verbatim from `upstream/master`:
 
-- `libvmaf/src/feature/vif.c`
-- `libvmaf/src/feature/vif.h`
-- `libvmaf/src/feature/vif_tools.c`
-- `libvmaf/src/feature/vif_tools.h`
-- `libvmaf/src/feature/vif_options.h`
+- `core/src/feature/vif.c`
+- `core/src/feature/vif.h`
+- `core/src/feature/vif_tools.c`
+- `core/src/feature/vif_tools.h`
+- `core/src/feature/vif_options.h`
 
 Public-API change: `compute_vif()` gains an `int vif_skip_scale0` parameter
 between `vif_kernelscale` and `vif_sigma_nsq`. The single in-tree non-trivial
-caller, `libvmaf/src/feature/float_vif.c::extract()`, threads
+caller, `core/src/feature/float_vif.c::extract()`, threads
 `s->vif_skip_scale0 ? 1 : 0` through to the new slot. The internal
 `compute_vifdiff` recursion in `vif.c` already passes `0` for the new
 parameter (upstream pattern).

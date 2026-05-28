@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Extract FULL_FEATURES (+ teacher VMAF) over a UGC manifest.
 
 For each (orig, dis) pair in the YouTube UGC vp9 manifest written by
@@ -31,21 +31,18 @@ from pathlib import Path
 
 import pandas as pd
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
-    from ai.scripts._script_bootstrap import bootstrap_ai_script
+SCRIPT_PATH = Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+if str(REPO_ROOT / "ai" / "src") not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 
-_SCRIPT_PATHS = bootstrap_ai_script(__file__, include_repo_root=True)
-SCRIPT_PATH = _SCRIPT_PATHS.script_path
-REPO_ROOT = _SCRIPT_PATHS.repo_root
-
-from ai.data.feature_extractor import (  # noqa: E402, I001
+from ai.data.feature_extractor import (  # noqa: E402
     DEFAULT_VMAF_BINARY,
     FULL_FEATURES,
     _extractors_for,
 )
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 
 SCHEMA_COLS = (*FULL_FEATURES, "vmaf")
 
@@ -230,8 +227,8 @@ def _write_manifest(
 
 
 def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
-    ap = make_argument_parser(description=__doc__)
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    ap = argparse.ArgumentParser()
     ap.add_argument("--manifest", type=Path, required=True)
     ap.add_argument(
         "--yuv-dir",

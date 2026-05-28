@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Export the *real* upstream TransNet V2 shot-boundary detector into the
 fork's [1, 100, 3, 27, 48] -> [1, 100] ONNX contract (T6-3a-followup).
 
@@ -12,7 +12,7 @@ under the MIT license at github.com/soCzech/TransNetV2 pinned to commit
 under ``inference/transnetv2-weights/`` as a TensorFlow SavedModel
 (saved_model.pb + variables/, ~30 MiB through git-LFS).
 
-The fork's C-side extractor (``libvmaf/src/feature/transnet_v2.c``,
+The fork's C-side extractor (``core/src/feature/transnet_v2.c``,
 ADR-0223) was scoped against an [N, T, C, H, W] = [1, 100, 3, 27, 48]
 input contract (NTCHW) plus a [1, 100] logits output. Upstream's
 SavedModel takes [N, T, H, W, C] = [1, 100, 27, 48, 3] (NTHWC) and

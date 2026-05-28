@@ -47,7 +47,7 @@ signals — none of which fit a CLI-wrapping process.
 The PR creates:
 
 - Public header
-  [`libvmaf/include/libvmaf/libvmaf_mcp.h`](../../libvmaf/include/libvmaf/libvmaf_mcp.h):
+  [`core/include/libvmaf/libvmaf_mcp.h`](../../core/include/libvmaf/libvmaf_mcp.h):
   declares `VmafMcpServer`, `VmafMcpConfig`, `VmafMcpSseConfig`,
   `VmafMcpUdsConfig`, `VmafMcpStdioConfig`, `VmafMcpTransport`;
   entry points `vmaf_mcp_available`,
@@ -58,7 +58,7 @@ The PR creates:
   opaque server handle is forward-declared. Mirrors the
   CUDA/SYCL/Vulkan public-header pattern.
 - Stub TU at
-  [`libvmaf/src/mcp/mcp.c`](../../libvmaf/src/mcp/mcp.c) — every
+  [`core/src/mcp/mcp.c`](../../core/src/mcp/mcp.c) — every
   public entry point validates its arguments (returns `-EINVAL`
   for NULLs) then returns `-ENOSYS` (or 0 / no-op for `_stop` /
   `_close`). NASA Power-of-10 rule 7 satisfied: every non-void
@@ -68,17 +68,17 @@ The PR creates:
   **false**) plus per-transport sub-flags `enable_mcp_sse`,
   `enable_mcp_uds`, `enable_mcp_stdio` (boolean, default
   **false**) in
-  [`libvmaf/meson_options.txt`](../../libvmaf/meson_options.txt).
+  [`core/meson_options.txt`](../../core/meson_options.txt).
   Conditional `subdir('mcp')` in
-  [`libvmaf/src/meson.build`](../../libvmaf/src/meson.build);
+  [`core/src/meson.build`](../../core/src/meson.build);
   `mcp_sources` + `mcp_defines` threaded through the `library()`
   call alongside the existing `dnn_sources` aggregation.
 - Smoke test
-  [`libvmaf/test/test_mcp_smoke.c`](../../libvmaf/test/test_mcp_smoke.c)
+  [`core/test/test_mcp_smoke.c`](../../core/test/test_mcp_smoke.c)
   with 12 sub-tests pinning the scaffold contract
   (availability, NULL guards on every entry point, the `-ENOSYS`
   body, idempotent close). Wired in
-  [`libvmaf/test/meson.build`](../../libvmaf/test/meson.build)
+  [`core/test/meson.build`](../../core/test/meson.build)
   under `if get_option('enable_mcp')`.
 - New docs at
   [`docs/mcp/embedded.md`](../mcp/embedded.md) — design summary,
@@ -174,7 +174,7 @@ touching `meson_options.txt`.
 
 ## Tests
 
-- `libvmaf/test/test_mcp_smoke.c` (12 sub-tests, all pass
+- `core/test/test_mcp_smoke.c` (12 sub-tests, all pass
   locally on the worktree CPU build):
   - `test_available_returns_one`
   - `test_transport_available_unknown_id_is_zero`
@@ -221,12 +221,12 @@ The scaffold's `-ENOSYS` body has been replaced with a working
 v1 stdio runtime (HP-4 from the Phase-A audit). Delta:
 
 - **Vendored cJSON v1.7.18** (MIT) under
-  `libvmaf/src/mcp/3rdparty/cJSON/` — single `cJSON.c`/`cJSON.h`
+  `core/src/mcp/3rdparty/cJSON/` — single `cJSON.c`/`cJSON.h`
   pair, ~3,400 LOC; LICENSE preserved verbatim.
-- **JSON-RPC 2.0 dispatcher** at `libvmaf/src/mcp/dispatcher.c`
+- **JSON-RPC 2.0 dispatcher** at `core/src/mcp/dispatcher.c`
   routing `initialize`, `tools/list`, `tools/call`,
   `resources/list`. Method-not-found returns `-32601` envelope.
-- **stdio transport** at `libvmaf/src/mcp/transport_stdio.c` —
+- **stdio transport** at `core/src/mcp/transport_stdio.c` —
   one dedicated MCP pthread, line-delimited JSON-RPC framing,
   64 KiB per-line cap (NASA Power-of-10 rule 2).
 - **Tools shipped**: `list_features` (real — walks the canonical

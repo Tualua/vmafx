@@ -150,15 +150,11 @@ regenerate it from the upstream weights:
 
 # export
 .venv/bin/python ai/lpips_export.py \
-    --output model/tiny/lpips_sq.onnx \
+    --out model/tiny/lpips_sq.onnx \
     --sidecar model/tiny/lpips_sq.json
 
 # update the registry sha256 if anything changed (exporter prints it)
 ```
-
-`--out` remains accepted as a compatibility alias for `--output`. The sidecar
-records the emitted ONNX opset and `run_provenance` block so the exported model
-can be traced back to the exact CLI invocation.
 
 The exporter absorbs the *inverse*-ImageNet transform into the graph so
 that the C side can feed it tensors from the shared

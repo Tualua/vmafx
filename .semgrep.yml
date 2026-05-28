@@ -40,9 +40,9 @@ rules:
           regex: '.*(score|vmaf|aggregate|metric)_?.*'
     paths:
       include:
-        - /libvmaf/src/output.c
-        - /libvmaf/src/libvmaf.c
-        - /libvmaf/tools/vmaf.c
+        - /core/src/output.c
+        - /core/src/libvmaf.c
+        - /core/tools/vmaf.c
     message: >
       VMAF score output must be IEEE-754 round-trip lossless (%.17g). Lower
       precision in user-facing output silently truncates score deltas (see D11).
@@ -57,7 +57,7 @@ rules:
       exclude:
         # Upstream Netflix SVM cross-validation uses rand() for fold shuffling.
         # Tracked as cleanup debt; not gated here.
-        - /libvmaf/src/svm.cpp
+        - /core/src/svm.cpp
     message: Use a deterministic, seedable RNG (see CERT MSC30-C). VMAF must be reproducible.
     languages: [c, cpp]
     severity: ERROR
@@ -70,19 +70,19 @@ rules:
     paths:
       exclude:
         # Upstream Netflix tree — tracked as cleanup debt, not gated here:
-        # libvmaf/tools/cli_parse.c (sprintf with fixed-size local buffer),
-        # libvmaf/tools/y4m_input.c (strcpy into fixed struct field),
+        # core/tools/cli_parse.c (sprintf with fixed-size local buffer),
+        # core/tools/y4m_input.c (strcpy into fixed struct field),
         # matlab/**               (MATLAB MEX sources, not shipped in libvmaf).
         - /matlab/**
-        - /libvmaf/tools/cli_parse.c
-        - /libvmaf/tools/y4m_input.c
+        - /core/tools/cli_parse.c
+        - /core/tools/y4m_input.c
         # Vendored third-party code — kept verbatim under their original
         # license so upstream security fixes can be picked up unchanged.
         # cJSON v1.7.18 (MIT) is used by the embedded MCP server
         # (ADR-0128 / ADR-0209). The library is bound-checked internally
         # via its own input-length tracking; we accept it as-is rather
         # than fork the upstream sources.
-        - /libvmaf/src/mcp/3rdparty/**
+        - /core/src/mcp/3rdparty/**
     message: Use strncpy/strncat/snprintf with explicit bound. (CERT STR31-C / Power-of-10 Rule 9.)
     languages: [c, cpp]
     severity: ERROR

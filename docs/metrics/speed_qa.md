@@ -115,7 +115,7 @@ that does not require float compilation.
 
 ## Test coverage
 
-`libvmaf/test/test_speed_qa.c` provides five smoke tests:
+`core/test/test_speed_qa.c` provides five smoke tests:
 
 1. Registration by name and feature-name round-trip.
 2. VTable completeness (init/extract/close non-NULL, priv_size > 0).

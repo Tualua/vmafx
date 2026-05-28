@@ -7,8 +7,8 @@
 
 ## Context
 
-The fork vendors a copy of cJSON (`libvmaf/src/mcp/3rdparty/cJSON/`) as an internal
-dependency of the libvmaf MCP server (`libvmaf/src/mcp/`). The
+The fork vendors a copy of cJSON (`core/src/mcp/3rdparty/cJSON/`) as an internal
+dependency of the libvmaf MCP server (`core/src/mcp/`). The
 `docs/principles.md` §1.2 rule 30 and the fork-wide touched-file lint rule
 ([ADR-0141](0141-touched-file-cleanup-rule.md)) ban `sprintf`, `strcpy`, `strcat`,
 `strtok`, `atoi`, `atof`, `gets`, `rand`, and `system` in all code the fork touches,
@@ -33,7 +33,7 @@ explicitly as `(void)` only where the surrounding code already has a length-chec
 that makes the return value redundant; where the return value is used downstream
 (e.g., `print_number`), keep the assignment.
 
-Add an `AGENTS.md` in `libvmaf/src/mcp/3rdparty/cJSON/` that documents the vendor
+Add an `AGENTS.md` in `core/src/mcp/3rdparty/cJSON/` that documents the vendor
 policy, the banned-function rule, and the update procedure so future sync passes do not
 re-introduce the violations.
 

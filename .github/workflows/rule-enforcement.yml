@@ -138,31 +138,31 @@ jobs:
           }
 
           # libvmaf public headers → docs/api/
-          check_pair '^libvmaf/include/libvmaf/libvmaf_cuda\.h$' \
+          check_pair '^core/include/libvmaf/libvmaf_cuda\.h$' \
                      '^docs/api/gpu\.md$' 'CUDA API header'
-          check_pair '^libvmaf/include/libvmaf/libvmaf_sycl\.h$' \
+          check_pair '^core/include/libvmaf/libvmaf_sycl\.h$' \
                      '^docs/api/gpu\.md$' 'SYCL API header'
-          check_pair '^libvmaf/include/libvmaf/libvmaf_dnn\.h$' \
+          check_pair '^core/include/libvmaf/libvmaf_dnn\.h$' \
                      '^docs/api/dnn\.md$' 'DNN API header'
-          check_pair '^libvmaf/include/libvmaf/(libvmaf|picture|model)\.h$' \
+          check_pair '^core/include/libvmaf/(libvmaf|picture|model)\.h$' \
                      '^docs/api/index\.md$' 'core API header'
 
           # feature extractors + their SIMD/GPU twins → docs/metrics/
-          check_pair '^libvmaf/src/feature/(feature_|integer_)[^/]+\.c$' \
+          check_pair '^core/src/feature/(feature_|integer_)[^/]+\.c$' \
                      '^docs/metrics/' 'feature extractor'
-          check_pair '^libvmaf/src/feature/(x86|arm64)/[^/]+\.(c|h)$' \
+          check_pair '^core/src/feature/(x86|arm64)/[^/]+\.(c|h)$' \
                      '^docs/metrics/' 'SIMD path'
-          check_pair '^libvmaf/src/feature/cuda/[^/]+\.(c|cu|h|cuh)$' \
+          check_pair '^core/src/feature/cuda/[^/]+\.(c|cu|h|cuh)$' \
                      '^docs/(metrics/|backends/cuda/)' 'CUDA feature kernel'
-          check_pair '^libvmaf/src/feature/sycl/[^/]+\.(cpp|hpp)$' \
+          check_pair '^core/src/feature/sycl/[^/]+\.(cpp|hpp)$' \
                      '^docs/(metrics/|backends/sycl/)' 'SYCL feature kernel'
 
           # CLI + tools → docs/usage/
-          check_pair '^libvmaf/tools/(cli_parse|vmaf|vmaf_bench)\.c$' \
+          check_pair '^core/tools/(cli_parse|vmaf|vmaf_bench)\.c$' \
                      '^docs/usage/' 'CLI tool'
 
           # build flags
-          check_pair '^libvmaf/meson_options\.txt$' \
+          check_pair '^core/meson_options\.txt$' \
                      '^docs/development/build-flags\.md$' 'build flag'
 
           # MCP server
@@ -284,14 +284,14 @@ jobs:
           fi
 
           policy_hit=0
-          if grep -qE '^(libvmaf/include/|meson_options\.(txt|toml)|\.github/|docs/principles\.md$|CLAUDE\.md$|AGENTS\.md$|\.pre-commit-config\.yaml$)' /tmp/diff_files.txt; then
+          if grep -qE '^(core/include/|meson_options\.(txt|toml)|\.github/|docs/principles\.md$|CLAUDE\.md$|AGENTS\.md$|\.pre-commit-config\.yaml$)' /tmp/diff_files.txt; then
             policy_hit=1
           fi
 
           if [ "${policy_hit}" -eq 1 ] && [ "${adr_added}" -eq 0 ]; then
             echo "ADR-0106 advisory: policy / public-surface paths changed without a new ADR."
             echo "Policy paths in this PR:"
-            grep -E '^(libvmaf/include/|meson_options\.|\.github/|docs/principles\.md$|CLAUDE\.md$|AGENTS\.md$|\.pre-commit-config\.yaml$)' /tmp/diff_files.txt || true
+            grep -E '^(core/include/|meson_options\.|\.github/|docs/principles\.md$|CLAUDE\.md$|AGENTS\.md$|\.pre-commit-config\.yaml$)' /tmp/diff_files.txt || true
             echo ""
             echo "If the change is a refactor or a pure bug fix, no new ADR is required."
             echo "Otherwise write docs/adr/NNNN-*.md before merging (see ADR-0106)."

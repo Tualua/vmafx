@@ -41,6 +41,6 @@ is the precision target (places=4 cross-backend gate per ADR-0214).
 - req: "IMPLEMENT REAL Metal cambi kernel (NOT a stub). 20 min budget." (paraphrased)
 - ADR-0360: CUDA CAMBI Strategy II hybrid
 - ADR-0214: cross-backend ULP gate (places=4)
-- `libvmaf/src/feature/cuda/integer_cambi/cambi_score.cu` — CUDA kernel reference
-- `libvmaf/src/feature/metal/integer_cambi.metal` — MSL port
-- `libvmaf/src/feature/metal/integer_cambi_metal.mm` — host dispatch
+- `core/src/feature/cuda/integer_cambi/cambi_score.cu` — CUDA kernel reference
+- `core/src/feature/metal/integer_cambi.metal` — MSL port
+- `core/src/feature/metal/integer_cambi_metal.mm` — host dispatch

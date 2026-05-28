@@ -2,7 +2,7 @@
 
 Region-of-interest VMAF *scoring* for the lusoris vmaf fork.
 
-> **Note on naming**: the existing `libvmaf/tools/vmaf_roi.c` (ADR-0247)
+> **Note on naming**: the existing `core/tools/vmaf_roi.c` (ADR-0247)
 > ships a binary named `vmaf-roi` that emits per-CTU QP-offset sidecars
 > for *encoder steering*. This package is the *scoring* counterpart —
 > different surface, different output, related model. The names diverge
@@ -22,9 +22,6 @@ code) is **not** in this PR — see
 phased roadmap and the reasons Option C ships first.
 
 User documentation: [`docs/usage/vmaf-roi-score.md`](../../docs/usage/vmaf-roi-score.md).
-The CLI writes strict RFC-8259 JSON and exits instead of emitting
-`NaN` / `Infinity` if the underlying `vmaf` run returns a non-finite
-pooled score.
 
 ## Layout
 
@@ -84,6 +81,6 @@ The tests mock `subprocess.run` so no `vmaf` binary is needed.
 
 - ADR-0296 — vmaf-roi-score saliency-weighted (Option C + Option A roadmap)
 - Research-0063 — option-space digest (Option A vs B vs C)
-- ADR-0247 — `libvmaf/tools/vmaf_roi.c` (the encoder-steering sibling)
+- ADR-0247 — `core/tools/vmaf_roi.c` (the encoder-steering sibling)
 - ADR-0286 — `saliency_student_v1` (the upstream-of-this saliency model)
 - ADR-0042 — tiny-AI docs-required-per-PR rule

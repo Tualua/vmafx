@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Find actionable modernization gaps across repo code, docs, and local state.
 
 The audit is intentionally read-only. It scans curated source/doc roots plus
@@ -174,12 +174,12 @@ AREA_RULES: tuple[tuple[str, str], ...] = (
     ("ai", "tiny-ai"),
     ("model", "models"),
     ("mcp-server", "mcp"),
-    ("libvmaf/src/feature", "feature-extractors"),
-    ("libvmaf/src/cuda", "cuda"),
-    ("libvmaf/src/sycl", "sycl"),
-    ("libvmaf/src/vulkan", "vulkan"),
-    ("libvmaf/src/hip", "hip"),
-    ("libvmaf/src/dnn", "dnn"),
+    ("core/src/feature", "feature-extractors"),
+    ("core/src/cuda", "cuda"),
+    ("core/src/sycl", "sycl"),
+    ("core/src/vulkan", "vulkan"),
+    ("core/src/hip", "hip"),
+    ("core/src/dnn", "dnn"),
     ("libvmaf", "libvmaf"),
     (".github", "ci"),
     ("scripts", "developer-tools"),
@@ -277,7 +277,7 @@ def _python_not_implemented_is_actionable(line: str) -> bool:
 def _enosys_is_contract(path: str, context: str) -> bool:
     if Path(path).suffix == ".md":
         return True
-    if path.startswith("libvmaf/src/dnn/"):
+    if path.startswith("core/src/dnn/"):
         return True
     return bool(ENOSYS_CONTRACT_RE.search(context) or ERROR_TRANSLATION_CONTEXT_RE.search(context))
 

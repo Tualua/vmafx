@@ -24,9 +24,9 @@
 
 3. ~~**HIP backend has zero CI coverage**~~ — **false positive** (the
    audit agent worked off a stale worktree). Verified post-audit:
-   `libvmaf/src/hip/` ships 7 files on master (common.{c,h},
+   `core/src/hip/` ships 7 files on master (common.{c,h},
    dispatch_strategy.{c,h}, picture_hip.{c,h}, meson.build) plus 4
-   kernel stubs at `libvmaf/src/feature/hip/`, all landed by PR #200
+   kernel stubs at `core/src/feature/hip/`, all landed by PR #200
    (T7-10), and the `Build — Ubuntu HIP (T7-10 scaffold)` CI matrix
    row already exercises them with `-Denable_hip=true`. Status: not
    affecting the fork.
@@ -61,7 +61,7 @@ nightly TSan/clang-tidy-full pair.
 | --- | --- | --- | --- |
 | **FFmpeg + Vulkan integration** | none | `ffmpeg-vulkan` matrix entry: install `mesa-vulkan-drivers libvulkan-dev glslc lavapipe`, build vmaf with `-Denable_vulkan=enabled`, apply patches, configure FFmpeg `--enable-libvmaf-vulkan`, build `vf_libvmaf_vulkan.o`, `nm` symbol assertion | **urgent — closed by PR #235** |
 | **`ffmpeg-patches/` apply check vs pinned `n8.1`** | partial (covered by `ffmpeg-integration.yml` build) | 2-min job: `git clone -b n8.1 --depth=1 FFmpeg && for p in ffmpeg-patches/000*-*.patch; do git -C ffmpeg apply --check "$p"; done`. Catches CLAUDE §12 r14 drift fast | nice-to-have (covered locally by PR #236 hook) |
-| ~~**HIP backend**~~ | ~~empty dir~~ → **already covered** | n/a — `Build — Ubuntu HIP (T7-10 scaffold)` lane in `libvmaf-build-matrix.yml` exercises the 7-file scaffold from PR #200 + 4 kernel stubs at `libvmaf/src/feature/hip/`. Audit agent's worktree was stale. **False positive.** | n/a (closed) |
+| ~~**HIP backend**~~ | ~~empty dir~~ → **already covered** | n/a — `Build — Ubuntu HIP (T7-10 scaffold)` lane in `libvmaf-build-matrix.yml` exercises the 7-file scaffold from PR #200 + 4 kernel stubs at `core/src/feature/hip/`. Audit agent's worktree was stale. **False positive.** | n/a (closed) |
 | **MCP server smoke test** | `supply-chain.yml::mcp-build` builds the wheel; nothing runs `pytest mcp-server/vmaf-mcp/tests/` | `mcp-smoke` job: build with `-Denable_mcp=true`, `pip install -e mcp-server/vmaf-mcp[test]`, `pytest`. ~5 min | **urgent** (per CLAUDE §12 r10) |
 | **Tiny-AI training scripts smoke** | `dnn` job runs `ai/tests/`; `ai/scripts/*.py` (parquet producers) have no smoke runs | `ai-scripts-smoke` step: dry-run `--help` + 1-frame `extract_full_features.py` against cached YUV. ~30 s | nice-to-have |
 | **Cross-backend bit-exactness** beyond Vulkan | none usable on hosted runners | document gap in `docs/development/self-hosted-runner.md`; consider Cirun.io / BuildJet for managed GPU minutes. **No new lane** until runner exists | nice-to-have (blocked) |

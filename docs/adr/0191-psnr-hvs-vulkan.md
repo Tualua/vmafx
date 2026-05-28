@@ -13,7 +13,7 @@
 in batch 2 and the first DCT-based GPU kernel in the fork.
 
 The active CPU `psnr_hvs` extractor
-([`third_party/xiph/psnr_hvs.c`](../../libvmaf/src/feature/third_party/xiph/psnr_hvs.c))
+([`third_party/xiph/psnr_hvs.c`](../../core/src/feature/third_party/xiph/psnr_hvs.c))
 is the Xiph integer-DCT reference, ~470 LOC. Per-block flow
 (matches `calc_psnrhvs`):
 
@@ -263,9 +263,9 @@ real algorithmic regressions.
 - Sibling: [ADR-0190](0190-ms-ssim-vulkan.md) — ms_ssim
   Vulkan.
 - CPU reference:
-  [`third_party/xiph/psnr_hvs.c`](../../libvmaf/src/feature/third_party/xiph/psnr_hvs.c).
+  [`third_party/xiph/psnr_hvs.c`](../../core/src/feature/third_party/xiph/psnr_hvs.c).
 - AVX2 / NEON parity:
-  [`x86/psnr_hvs_avx2.c`](../../libvmaf/src/feature/x86/psnr_hvs_avx2.c),
-  [`arm64/psnr_hvs_neon.c`](../../libvmaf/src/feature/arm64/psnr_hvs_neon.c).
+  [`x86/psnr_hvs_avx2.c`](../../core/src/feature/x86/psnr_hvs_avx2.c),
+  [`arm64/psnr_hvs_neon.c`](../../core/src/feature/arm64/psnr_hvs_neon.c).
 - Xiph DCT background: Ponomarenko et al., "On between-coefficient
   contrast masking of DCT basis functions", VPQM-07.

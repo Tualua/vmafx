@@ -7,7 +7,7 @@
 ## Question
 
 The v3 task brief pre-decided the implementation: vendor
-cesanta/mongoose (`libvmaf/src/mcp/3rdparty/mongoose/`) and wire
+cesanta/mongoose (`core/src/mcp/3rdparty/mongoose/`) and wire
 its SSE feature set into a new `transport_sse.c`. Pre-vendor
 verification surfaced a license-compatibility blocker. Two
 sub-questions opened:
@@ -68,7 +68,7 @@ transport already implements four of those primitives;
 extending them to AF_INET costs a few dozen lines.
 
 The chosen path adds ~500 LOC of fork-owned C to
-`libvmaf/src/mcp/transport_sse.c`, comparable in size to the
+`core/src/mcp/transport_sse.c`, comparable in size to the
 existing `transport_uds.c` (179 LOC) plus the HTTP-specific
 helpers. The SSE framing logic itself is ~30 LOC because
 WHATWG SSE §9.2 is a small spec.
@@ -90,12 +90,12 @@ the working PR #533 v2 test.
 
 This finding is encoded in `vmaf_mcp_stop`'s SSE branch and
 documented in `docs/mcp/embedded.md` § "Listener-shutdown
-invariant" + `libvmaf/src/mcp/AGENTS.md`.
+invariant" + `core/src/mcp/AGENTS.md`.
 
 ## Recommendation
 
 Implement the SSE transport in plain POSIX sockets in
-`libvmaf/src/mcp/transport_sse.c` with the `shutdown`-first
+`core/src/mcp/transport_sse.c` with the `shutdown`-first
 stop sequence; do not vendor mongoose; do not vendor any
 GPL-licensed alternative. Update CLAUDE.md §1 first if a
 future PR ever needs to revisit this trade-off.

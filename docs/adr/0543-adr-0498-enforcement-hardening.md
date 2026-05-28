@@ -11,7 +11,7 @@ ADR-0498 introduced the explicit-backend gate: when the user passes
 `--backend NAME` (anything other than `auto` / `cpu`), an init failure
 for the requested backend must surface as a hard error rather than
 silently falling back to CPU. The gate was wired into
-`init_gpu_backends` in `libvmaf/tools/vmaf.c` and returned `-1` on
+`init_gpu_backends` in `core/tools/vmaf.c` and returned `-1` on
 failure, which propagates to `main()`'s `return ret`. POSIX truncates
 that return to an unsigned 8-bit exit status (255), which is
 technically non-zero.
@@ -59,7 +59,7 @@ the same PR (`fix/adr-0498-enforcement`):
 
 1. **Dedicated exit code 100 for explicit-backend init failure.**
    Define `VMAF_EXIT_BACKEND_INIT_FAILED = 100` in
-   `libvmaf/tools/vmaf.c`. `init_gpu_backends` now returns the
+   `core/tools/vmaf.c`. `init_gpu_backends` now returns the
    sentinel `VMAF_INIT_GPU_EXPLICIT_FAIL = -100` (instead of `-1`)
    for the explicit-backend failure path; `main()` maps the sentinel
    to `VMAF_EXIT_BACKEND_INIT_FAILED` for the binary's exit code,

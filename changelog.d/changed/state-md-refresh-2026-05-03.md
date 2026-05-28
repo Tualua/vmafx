@@ -7,7 +7,7 @@
   to Accepted. Added a new Open-bugs row for the
   `y4m_convert_411_422jpeg` heap-buffer-overflow surfaced by the
   PR #348 libFuzzer scaffold (reproducer parked at
-  `libvmaf/test/fuzz/y4m_input_known_crashes/y4m_411_w2_h4_oob_dst.y4m`,
+  `core/test/fuzz/y4m_input_known_crashes/y4m_411_w2_h4_oob_dst.y4m`,
   fix follow-up TBD). Audited "Recently closed" for stale draft-PR
   refs: six rows updated to cite merged commit SHAs and slug-correct
   ADR refs (ADR-0246 for the kernel-template, not 0221 which is now

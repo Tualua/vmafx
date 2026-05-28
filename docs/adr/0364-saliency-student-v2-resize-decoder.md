@@ -12,12 +12,12 @@
 (~113 K params, ConvTranspose stride-2 upsample) trained on DUTS-TR
 as the production weights for the C-side `mobilesal` extractor. v1
 deliberately avoided `Resize` because the ONNX op-allowlist
-([`libvmaf/src/dnn/op_allowlist.c`](../../libvmaf/src/dnn/op_allowlist.c))
+([`core/src/dnn/op_allowlist.c`](../../core/src/dnn/op_allowlist.c))
 did not yet admit it; v1's "Alternatives considered" table records the
 trade-off explicitly:
 
 > Use `Resize` for upsampling instead of `ConvTranspose` … `Resize`
-> is not on `libvmaf/src/dnn/op_allowlist.c` at the time of this PR;
+> is not on `core/src/dnn/op_allowlist.c` at the time of this PR;
 > adding it widens the PR scope into a new C-side audit + scanner
 > change in the same diff as the training run. Rejected — `ConvTranspose`
 > is on the allowlist already and produces a numerically equivalent

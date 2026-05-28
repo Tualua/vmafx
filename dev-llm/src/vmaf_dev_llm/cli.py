@@ -139,7 +139,7 @@ def modelcard(
     ),
     repo_root: Path | None = typer.Option(
         None, "--repo-root",
-        help="Repo root (used to find libvmaf/src/dnn/op_allowlist.c). "
+        help="Repo root (used to find core/src/dnn/op_allowlist.c). "
              "Defaults to the current working directory."
     ),
     facts_only: bool = typer.Option(

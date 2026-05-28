@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 #
 # Step 01: Prerequisite check for the ensemble training kit (ADR-0324).
 #
@@ -10,7 +10,7 @@
 # and exits non-zero so the operator sees one problem at a time.
 #
 # Environment overrides:
-#   LIBVMAF_BIN  Path to libvmaf-CUDA binary (default: libvmaf/build-cuda/tools/vmaf)
+#   LIBVMAF_BIN  Path to libvmaf-CUDA binary (default: core/build-cuda/tools/vmaf)
 #   GPU_MIN_MIB  Minimum free GPU memory in MiB (default: 6144)
 
 set -euo pipefail
@@ -23,7 +23,7 @@ REPO_ROOT="${REPO_ROOT:-$(cd "$KIT_DIR/../.." && pwd)}"
 source "$KIT_DIR/_platform_detect.sh"
 PLATFORM="$(detect_platform)"
 
-LIBVMAF_BIN="${LIBVMAF_BIN:-$REPO_ROOT/libvmaf/build-cuda/tools/vmaf}"
+LIBVMAF_BIN="${LIBVMAF_BIN:-$REPO_ROOT/core/build-cuda/tools/vmaf}"
 GPU_MIN_MIB="${GPU_MIN_MIB:-6144}"
 
 echo "[prereqs] platform=$PLATFORM"

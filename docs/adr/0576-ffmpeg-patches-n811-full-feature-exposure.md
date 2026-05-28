@@ -75,6 +75,6 @@ to document the new patch.
 - `ffmpeg-patches/series.txt` — updated to include 0014.
 - `ffmpeg-patches/README.md` — updated Contents + verification note.
 - `ffmpeg-patches/0014-libvmaf-expose-cpumask-and-gpumask-on-all-vmaf-filte.patch`
-- `libvmaf/include/libvmaf/libvmaf.h` — `VmafConfiguration.cpumask` / `.gpumask`
+- `core/include/libvmaf/libvmaf.h` — `VmafConfiguration.cpumask` / `.gpumask`
 - Prior verification: ADR-0277 (2026-05-04), n8.1 → n8.1.1 bump (2026-05-09).
 - req: "Full sync of the in-tree ffmpeg-patches/ stack: bump to latest stable FFmpeg + expose EVERY libvmaf feature/extractor/option that the patches currently don't expose."

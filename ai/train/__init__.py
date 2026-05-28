@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Tiny-AI training entry points for the Netflix corpus.
 
 * :mod:`ai.train.dataset`  — PyTorch :class:`Dataset` over per-frame

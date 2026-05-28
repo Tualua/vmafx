@@ -9,27 +9,27 @@
 Can the MS-SSIM decimate step be accelerated on x86 (AVX2 + AVX-512)
 while still producing byte-identical float output to a scalar
 reference, without modifying the vendored BSD-2011 Tom Distler
-`libvmaf/src/feature/iqa/` subtree? What summation order does the
+`core/src/feature/iqa/` subtree? What summation order does the
 scalar reference need to use for that to hold?
 
 ## Sources
 
-- [`libvmaf/src/feature/ms_ssim.c`](../../libvmaf/src/feature/ms_ssim.c)
+- [`core/src/feature/ms_ssim.c`](../../core/src/feature/ms_ssim.c)
   — defines the 9×9 2-D LPF `g_lpf` (lines 35–54) and the separable
   1-D forms `g_lpf_h` / `g_lpf_v` (lines 56–60). The 1-D coefficients
   are already present but unused by `_iqa_decimate`.
-- [`libvmaf/src/feature/iqa/decimate.c`](../../libvmaf/src/feature/iqa/decimate.c)
+- [`core/src/feature/iqa/decimate.c`](../../core/src/feature/iqa/decimate.c)
   — scalar reference: calls `_iqa_filter_pixel` once per destination
   pixel with the 2-D kernel; invokes the kernel-wide function-pointer
   boundary handler `KBND_SYMMETRIC`.
-- [`libvmaf/src/feature/iqa/convolve.c`](../../libvmaf/src/feature/iqa/convolve.c)
+- [`core/src/feature/iqa/convolve.c`](../../core/src/feature/iqa/convolve.c)
   — `_iqa_filter_pixel` implementation; confirms 81 multiply-adds per
   output pixel for a 9×9 kernel.
-- [`libvmaf/src/feature/iqa/ssim_tools.c`](../../libvmaf/src/feature/iqa/ssim_tools.c)
+- [`core/src/feature/iqa/ssim_tools.c`](../../core/src/feature/iqa/ssim_tools.c)
   — existing AVX2 / AVX-512 dispatch pattern for SSIM primitives via
   `_iqa_ssim_set_dispatch`. This is the template the MS-SSIM decimate
   dispatch follows.
-- Existing `libvmaf/src/feature/x86/*_avx2.c` files — established
+- Existing `core/src/feature/x86/*_avx2.c` files — established
   convention: one kernel per file, `<feature>_avx{2,512}.h` declares
   the entry point, dispatch lives in the caller.
 - Rouse, D. & Hemami, S. — *Analyzing the Role of Visual Structure in
@@ -136,21 +136,21 @@ the invariants (`VMAF_ASSERT_DEBUG`) for defence in depth (Power-of-10
      scratch buffer. Simple but allocates.
 - **Chosen (pending implementation)**: option 1 — scalar border,
   SIMD inner. Matches the approach used in
-  `libvmaf/src/feature/x86/adm_avx2.c` and keeps the bit-exactness
+  `core/src/feature/x86/adm_avx2.c` and keeps the bit-exactness
   story simple: the border uses the same scalar-separable reference
   the tests compare against.
 
 ### Prior art / existing SIMD convolution patterns in this tree
 
-- [`libvmaf/src/feature/x86/adm_avx2.c`](../../libvmaf/src/feature/x86/adm_avx2.c)
+- [`core/src/feature/x86/adm_avx2.c`](../../core/src/feature/x86/adm_avx2.c)
   does a separable 5-tap horizontal + vertical convolution for the
   ADM CSF filter. Same pattern, shorter kernel. The horizontal pass
   uses `_mm256_fmadd_ps` with pre-broadcast coefficients; the
   vertical pass accumulates 8 rows at a time.
-- [`libvmaf/src/feature/x86/integer_adm_avx512.c`](../../libvmaf/src/feature/x86/integer_adm_avx512.c)
+- [`core/src/feature/x86/integer_adm_avx512.c`](../../core/src/feature/x86/integer_adm_avx512.c)
   has the 16-lane AVX-512 variant of the same pattern. Direct
   structural template for our AVX-512 decimate.
-- `libvmaf/src/feature/common/convolution.c` has a generic scalar
+- `core/src/feature/common/convolution.c` has a generic scalar
   separable convolution but it is integer-typed (`uint16_t` inputs).
   Not directly reusable for the `float` decimate path.
 
@@ -198,7 +198,7 @@ of total runtime; profiling will update this digest.
 - Is the observed decimate-share actually ~40 % of MS-SSIM wall time
   on the fork-added benchmark YUVs, or is that figure from a
   different codebase? Verify with
-  `perf record -g -- ./build/libvmaf/tools/vmaf_bench --feature
+  `perf record -g -- ./build/core/tools/vmaf_bench --feature
   ms_ssim …` before/after and record numbers here.
 - Does AVX-512 deliver the expected 14× over scalar separable, or
   does the downclocking penalty (Skylake-X behaviour) flatten the
@@ -216,7 +216,7 @@ of total runtime; profiling will update this digest.
 - [ADR-0012](../adr/0012-coding-standards-jpl-cert-misra.md) —
   Power-of-10 §5 assertion density, applied to new SIMD files.
 - Sibling SIMD implementations in
-  [`libvmaf/src/feature/x86/`](../../libvmaf/src/feature/x86/) —
+  [`core/src/feature/x86/`](../../core/src/feature/x86/) —
   structural templates.
 - PR for this workstream: TBD (opened after scalar-separable,
   AVX2, and AVX-512 land on `feat/ms-ssim-decimate-simd`).

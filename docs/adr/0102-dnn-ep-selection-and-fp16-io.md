@@ -7,7 +7,7 @@
 
 ## Context
 
-Before this ADR, `libvmaf/src/dnn/ort_backend.c` exposed a three-field
+Before this ADR, `core/src/dnn/ort_backend.c` exposed a three-field
 `VmafDnnConfig` (`device`, `device_index`, `threads`, `fp16_io`) and
 wired exactly one of those fields: `threads`. The other three were
 accepted at the public surface and then silently dropped by the backend:

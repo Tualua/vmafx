@@ -17,7 +17,7 @@ Research Digest 0019 (Netflix corpus methodology).
   distortion variants per source where complete (some sources have
   fewer; `(n)` columns below).
 * Teacher: `vmaf_v0.6.1` per-frame scores via the libvmaf CLI in
-  `libvmaf/build/tools/vmaf`.
+  `core/build/tools/vmaf`.
 * Architecture: `mlp_small` (257 params) — see ADR-0203.
 * Training: 30 epochs per fold, default optimizer / lr / seed. Each
   fold trains on the 8 non-held-out sources and is scored on the

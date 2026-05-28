@@ -30,7 +30,7 @@ libvmaf's metric path.
 ## Decision
 
 We will ship `vmaf-perShot` as a standalone executable under
-`libvmaf/tools/vmaf_per_shot.c` with the following v1 contract:
+`core/tools/vmaf_per_shot.c` with the following v1 contract:
 
 - **Input**: planar YUV420P (8 / 10 / 12-bit), a target VMAF, and CRF
   clamp bounds.

@@ -93,6 +93,6 @@ The `--fmad=false` nvcc flag already applied to `float_adm_score.cu`
   motion3, chroma_from_luma, cambi_eotf"
 - `docs/research/netflix-upstream-feature-additions-since-sync-2026-05-18.md`
 - ADR-0192 / ADR-0202 — original float_adm CUDA twin specification
-- AGENTS.md in `libvmaf/src/feature/cuda/` — `--fmad=false` invariant
+- AGENTS.md in `core/src/feature/cuda/` — `--fmad=false` invariant
   and `cuLaunchKernel` arg-pointer rule
 - ADR-0535: ADR atomic allocator

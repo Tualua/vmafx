@@ -20,7 +20,7 @@ scripts/
 ```
 
 This is the catch-all for tooling that doesn't belong in
-`libvmaf/tools/` (the C CLI lives there) or `tools/` (fork-original
+`core/tools/` (the C CLI lives there) or `tools/` (fork-original
 Python/shell user tooling). Most files here are fork-original and
 have no upstream-Netflix equivalent.
 
@@ -83,7 +83,7 @@ The fixture-generation scripts must produce byte-identical output
 on re-run. The shipped `model/tiny/smoke_v0.onnx` and
 `model/tiny/mobilesal.onnx` are checked-in, sha256-pinned in
 `model/tiny/registry.json`, and verified by the C-side loader
-(`libvmaf/src/dnn/model_loader.c`). A non-deterministic regen breaks
+(`core/src/dnn/model_loader.c`). A non-deterministic regen breaks
 the registry sha256 + the smoke gate. **On rebase**: keep
 `onnx.helper.make_model(..., producer_name=..., producer_version=...,
 ir_version=...)` pinned at fixed values; do not let `onnx` minor
@@ -92,7 +92,7 @@ in `ai/AGENTS.md` for the bisect-cache fixtures.
 
 ### `gen_ssimulacra2_eotf_lut.py` regen is a Netflix-golden-adjacent event
 
-The generated LUT at `libvmaf/src/feature/ssimulacra2_eotf_lut.h`
+The generated LUT at `core/src/feature/ssimulacra2_eotf_lut.h`
 removes the runtime `libm powf` dependency from the SSIMULACRA 2
 hot path. `powf` varies by ~1 ULP between glibc / musl / macOS
 libSystem, which compounds to ~2e-4 per-frame drift in the pooled

@@ -2,7 +2,7 @@
 
 Training, exporting, registering, and evaluating **tiny perceptual-quality
 models** for libvmaf. Shipped artefacts are ONNX; runtime loading happens in
-[libvmaf/src/dnn/](../libvmaf/src/dnn/) through ONNX Runtime.
+[core/src/dnn/](../core/src/dnn/) through ONNX Runtime.
 
 Three model families:
 

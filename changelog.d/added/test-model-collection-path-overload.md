@@ -9,7 +9,7 @@ public C API symbols that had zero unit-test coverage:
 - `vmaf_model_collection_feature_overload`: NULL-pointer guard (NULL
   `model_collection` argument returns non-zero without crashing).
 
-Wire `test_model_collection_api` into `libvmaf/test/meson.build` under
+Wire `test_model_collection_api` into `core/test/meson.build` under
 `suite: fast` with `JSON_MODEL_PATH` injected via `c_args` so the
 path-based load test resolves the model file at build time, matching the
 pattern used by `test_model`.  No YUV frames are required.

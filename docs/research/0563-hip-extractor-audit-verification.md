@@ -19,12 +19,12 @@ The 9: `ciede_hip`, `float_moment_hip`, `float_ansnr_hip`,
 
 ## Methodology
 
-Static source audit against `libvmaf/src/feature/hip/<name>_hip.c` for each:
+Static source audit against `core/src/feature/hip/<name>_hip.c` for each:
 
 1. Does `init()` contain a `#ifdef HAVE_HIPCC` branch calling real HIP module
    APIs (`hipModuleLoadData`, `hipModuleGetFunction`)?
 2. Does a `.hip` kernel source file exist in the matching subdirectory?
-3. Is the kernel registered in `hip_kernel_sources` in `libvmaf/src/meson.build`?
+3. Is the kernel registered in `hip_kernel_sources` in `core/src/meson.build`?
 4. Is the extractor's `_hsaco` symbol absent from `hip_hsaco_stubs.c`?
 
 Cross-reference against `docs/state.md` recently-closed entries for

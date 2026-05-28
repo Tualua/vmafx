@@ -31,7 +31,7 @@ weights drop tracked as T6-7b.
 ## Decision
 
 We will ship FastDVDnet as a registered feature extractor
-`fastdvdnet_pre` in `libvmaf/src/feature/fastdvdnet_pre.c`, backed by an
+`fastdvdnet_pre` in `core/src/feature/fastdvdnet_pre.c`, backed by an
 ONNX model whose I/O contract is
 
 ```text
@@ -83,7 +83,7 @@ weights against a real FastDVDnet checkpoint.
     edge-clamp behaviour are now load-bearing; any rebase that touches
     `fastdvdnet_pre.c` must preserve both.
   - **Op allowlist**: the placeholder graph uses only ops already in
-    [`libvmaf/src/dnn/op_allowlist.c`](../../libvmaf/src/dnn/op_allowlist.c)
+    [`core/src/dnn/op_allowlist.c`](../../core/src/dnn/op_allowlist.c)
     (`Conv`, `Relu`, `Slice`, `Mul`, `Add`, `Clip`, `Constant`); the
     real FastDVDnet weights drop will need to verify the allowlist
     still covers the upstream graph's ops before flipping the smoke flag.

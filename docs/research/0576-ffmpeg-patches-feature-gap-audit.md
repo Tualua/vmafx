@@ -13,12 +13,12 @@ require dedicated patches?
 
 ## Sources
 
-- `libvmaf/include/libvmaf/libvmaf.h` — `VmafConfiguration` struct
-- `libvmaf/include/libvmaf/feature.h` — `VmafFeatureDictionary` API
-- `libvmaf/include/libvmaf/dnn.h` — DNN session API
-- `libvmaf/include/libvmaf/libvmaf_cuda.h`, `libvmaf_sycl.h`,
+- `core/include/libvmaf/libvmaf.h` — `VmafConfiguration` struct
+- `core/include/libvmaf/feature.h` — `VmafFeatureDictionary` API
+- `core/include/libvmaf/dnn.h` — DNN session API
+- `core/include/libvmaf/libvmaf_cuda.h`, `libvmaf_sycl.h`,
   `libvmaf_vulkan.h`, `libvmaf_hip.h`, `libvmaf_metal.h` — backend APIs
-- `libvmaf/src/feature/feature_extractor.c` — `feature_extractor_list[]`
+- `core/src/feature/feature_extractor.c` — `feature_extractor_list[]`
 - `ffmpeg-patches/` (all 13 patches) — current exposure state
 - FFmpeg `libavfilter/vf_libvmaf.c` (upstream n8.1.1 + cumulative patches)
 

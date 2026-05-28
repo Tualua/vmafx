@@ -82,6 +82,6 @@ there.
 - ADR-0371 — CAMBI SYCL port (Strategy II hybrid rationale)
 - ADR-0360 — CAMBI CUDA port (v1 synchronous posture)
 - ADR-0415 — CAMBI SYCL port PR record
-- `libvmaf/src/feature/sycl/integer_cambi_sycl.cpp`
-- `libvmaf/src/feature/sycl/AGENTS.md` — updated invariant note
+- `core/src/feature/sycl/integer_cambi_sycl.cpp`
+- `core/src/feature/sycl/AGENTS.md` — updated invariant note
 - req: "perf fix smallest unaddressed in vulkan or sycl"

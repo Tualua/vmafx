@@ -17,7 +17,7 @@ expected bug density vs harness-authoring cost.
 
 The fuzz-amenable surfaces in libvmaf split into four buckets:
 
-### Bucket A — pure-C parsers in `libvmaf/tools/` (text + binary input)
+### Bucket A — pure-C parsers in `core/tools/` (text + binary input)
 
 | Surface                                                | Shape                                                                 | Reachability                                       | Harness LOC | Risk class           |
 |--------------------------------------------------------|-----------------------------------------------------------------------|----------------------------------------------------|-------------|----------------------|
@@ -27,7 +27,7 @@ The fuzz-amenable surfaces in libvmaf split into four buckets:
 | `tools/vmaf_per_shot.c` — per-shot JSONL writer/parser | Line-at-a-time fgets + sscanf                                         | Indirect (only consumes its own emitted JSONL)     | ~110        | Low (closed-loop)    |
 | `tools/vmaf_roi.c` — per-CTU QP offset writer/parser   | Line-at-a-time fgets + atoi                                           | Indirect (consumes well-formed input from sidecar) | ~110        | Low                  |
 
-### Bucket B — `libvmaf/src/` library-internal parsers
+### Bucket B — `core/src/` library-internal parsers
 
 | Surface                                                          | Shape                                              | Reachability                          | Harness LOC | Risk class                |
 |------------------------------------------------------------------|----------------------------------------------------|---------------------------------------|-------------|---------------------------|
@@ -101,11 +101,11 @@ mkdir -p /tmp/fuzz-smoke-yuv /tmp/fuzz-smoke-cli
 
 ./build-fuzz/test/fuzz/fuzz_yuv_input \
     -seed=0 -runs=1000 \
-    /tmp/fuzz-smoke-yuv libvmaf/test/fuzz/yuv_input_corpus/
+    /tmp/fuzz-smoke-yuv core/test/fuzz/yuv_input_corpus/
 
 ./build-fuzz/test/fuzz/fuzz_cli_parse \
     -seed=0 -runs=1000 \
-    /tmp/fuzz-smoke-cli libvmaf/test/fuzz/cli_parse_corpus/
+    /tmp/fuzz-smoke-cli core/test/fuzz/cli_parse_corpus/
 ```
 
 A clean smoke prints `Done 1000 runs in <N> second(s)` with no

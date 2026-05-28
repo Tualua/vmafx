@@ -20,8 +20,8 @@
 #      Cache as a regex-friendly pipe-joined union in $tmp_consumed.
 #
 #   2. For the diff: collect every added/removed/renamed identifier
-#      from non-comment lines under libvmaf/include/libvmaf/*.h, and
-#      from lines under libvmaf/meson_options.txt that touch an
+#      from non-comment lines under core/include/libvmaf/*.h, and
+#      from lines under core/meson_options.txt that touch an
 #      `option('<name>'` declaration.
 #
 #   3. If the consumed-set intersects the diff-set AND no
@@ -142,7 +142,7 @@ fi
 # We extract identifiers from the union of `+` and `-` lines (added or
 # removed in the diff). Pure `+ // comment` or `+ /* comment */` lines
 # are filtered.
-header_diff="$(git diff "${diff_base}..${diff_head}" -- 'libvmaf/include/libvmaf/*.h' || true)"
+header_diff="$(git diff "${diff_base}..${diff_head}" -- 'core/include/libvmaf/*.h' || true)"
 
 if [ -n "$header_diff" ]; then
   printf '%s\n' "$header_diff" |
@@ -154,7 +154,7 @@ fi
 
 # meson_options.txt changes — capture any `option('<name>'` declaration
 # touched in `+` or `-` lines.
-meson_diff="$(git diff "${diff_base}..${diff_head}" -- 'libvmaf/meson_options.txt' || true)"
+meson_diff="$(git diff "${diff_base}..${diff_head}" -- 'core/meson_options.txt' || true)"
 
 if [ -n "$meson_diff" ]; then
   printf '%s\n' "$meson_diff" |

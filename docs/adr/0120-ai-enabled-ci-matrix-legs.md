@@ -7,7 +7,7 @@
 
 ## Context
 
-The fork's tiny-AI surface (`libvmaf/src/dnn/`, `ai/`) compiles only when
+The fork's tiny-AI surface (`core/src/dnn/`, `ai/`) compiles only when
 `-Denable_dnn=enabled` is passed to meson. Until this ADR, the only CI job
 that actually built with that flag was the dedicated `Tiny AI (DNN Suite +
 ai/ Pytests)` job in [tests-and-quality-gates.yml](../../.github/workflows/tests-and-quality-gates.yml).
@@ -26,7 +26,7 @@ The single-leg coverage hides three real failure modes:
    year because no leg exercised it; both regressions surfaced from
    downstream user reports rather than CI.
 3. **DNN suite coverage breadth** — the `dnn` meson test suite (9 tests
-   under `libvmaf/test/dnn/meson.build`) only ran on the Tiny AI job's
+   under `core/test/dnn/meson.build`) only ran on the Tiny AI job's
    gcc-only build, so a DNN test failure that depends on libstdc++ vs
    libc++ STL behaviour would not surface until release.
 

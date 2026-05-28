@@ -15,17 +15,17 @@ description: Scaffold a new feature extractor (e.g. a novel metric) with C sourc
 
 | Path                                        | Purpose                                    |
 |---------------------------------------------|--------------------------------------------|
-| `libvmaf/src/feature/<name>.c`              | Scalar reference implementation            |
-| `libvmaf/src/feature/<name>.h`              | Prototype                                  |
-| `libvmaf/test/test_<name>.c`                | Smoke test (1 frame, fixed expected value) |
+| `core/src/feature/<name>.c`              | Scalar reference implementation            |
+| `core/src/feature/<name>.h`              | Prototype                                  |
+| `core/test/test_<name>.c`                | Smoke test (1 frame, fixed expected value) |
 | `docs/<name>.md`                            | Metric documentation (inputs, range, refs) |
 
 ## Files patched
 
-- `libvmaf/src/feature/feature_extractor.c` — registry row.
-- `libvmaf/src/feature/all.c` — `#include "<name>.h"` + array entry.
-- `libvmaf/src/meson.build` — new source in the feature set.
-- `libvmaf/test/meson.build` — register test.
+- `core/src/feature/feature_extractor.c` — registry row.
+- `core/src/feature/all.c` — `#include "<name>.h"` + array entry.
+- `core/src/meson.build` — new source in the feature set.
+- `core/test/meson.build` — register test.
 
 ## Template fills
 

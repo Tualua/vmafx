@@ -47,8 +47,8 @@ cause and decides the path forward.
 
 | Failing feature | Shader file | Workgroup geometry | Float math hot path |
 |---|---|---|---|
-| `integer_vif_scale2` | [`libvmaf/src/feature/vulkan/shaders/vif.comp`](../../libvmaf/src/feature/vulkan/shaders/vif.comp) | 32 × 4 | `g = sigma12 / sigma1_sq`, `sv_sq = sigma2_sq − g·sigma12`, `gg = g·g·sigma1_sq` (lines 498–503) — three FMA-reorderable expressions on float32 |
-| `ciede2000` | [`libvmaf/src/feature/vulkan/shaders/ciede.comp`](../../libvmaf/src/feature/vulkan/shaders/ciede.comp) | 16 × 8 | yuv→rgb 3×3 mat-mul, sRGB `pow`, xyz→Lab cube root, ciede2000 chained `pow`/`sqrt`/`sin`/`cos`/`atan` (lines 132–260) — entire per-pixel chain is float32 with no `precise` qualifiers |
+| `integer_vif_scale2` | [`core/src/feature/vulkan/shaders/vif.comp`](../../core/src/feature/vulkan/shaders/vif.comp) | 32 × 4 | `g = sigma12 / sigma1_sq`, `sv_sq = sigma2_sq − g·sigma12`, `gg = g·g·sigma1_sq` (lines 498–503) — three FMA-reorderable expressions on float32 |
+| `ciede2000` | [`core/src/feature/vulkan/shaders/ciede.comp`](../../core/src/feature/vulkan/shaders/ciede.comp) | 16 × 8 | yuv→rgb 3×3 mat-mul, sRGB `pow`, xyz→Lab cube root, ciede2000 chained `pow`/`sqrt`/`sin`/`cos`/`atan` (lines 132–260) — entire per-pixel chain is float32 with no `precise` qualifiers |
 
 Both shaders run scalar float32 throughout. Neither uses
 `shaderFloat16` or any subgroup FP reduction; the FP math is
@@ -56,7 +56,7 @@ per-thread.
 
 ### 2. SPIR-V is byte-identical between target-env vulkan1.3 and 1.4
 
-The fork's [`libvmaf/src/vulkan/meson.build`](../../libvmaf/src/vulkan/meson.build)
+The fork's [`core/src/vulkan/meson.build`](../../core/src/vulkan/meson.build)
 hardcodes `glslc --target-env=vulkan1.3` (line 106). The hypothetical
 1.4 bump only touches `VkApplicationInfo.apiVersion` and
 `VmaAllocatorCreateInfo.vulkanApiVersion` — not the shader compile
@@ -184,9 +184,9 @@ two-step shader-side fix:
    the SPIR-V now declares the contract. Re-run the cross-backend
    gate at `apiVersion = 1.4` against NVIDIA + RADV + lavapipe.
 2. **Step B** — Once step A is clean, bump the three sites in
-   `libvmaf/src/vulkan/common.c` (`apiVersion = VK_API_VERSION_1_4` at
+   `core/src/vulkan/common.c` (`apiVersion = VK_API_VERSION_1_4` at
    line 54 + 264 + 374) and the `VMA_VULKAN_VERSION` define in
-   `libvmaf/src/vulkan/vma_impl.cpp` (line 22) to `1004000`. Re-run
+   `core/src/vulkan/vma_impl.cpp` (line 22) to `1004000`. Re-run
    the gate. Land in one PR with the digest cross-link.
 
 The fork has no current need for any 1.4-promoted feature
@@ -213,9 +213,9 @@ worktree:
 
 ```sh
 glslc --target-env=vulkan1.3 -O \
-  libvmaf/src/feature/vulkan/shaders/vif.comp -o /tmp/vif-13.spv
+  core/src/feature/vulkan/shaders/vif.comp -o /tmp/vif-13.spv
 glslc --target-env=vulkan1.4 -O \
-  libvmaf/src/feature/vulkan/shaders/vif.comp -o /tmp/vif-14.spv
+  core/src/feature/vulkan/shaders/vif.comp -o /tmp/vif-14.spv
 cmp /tmp/vif-13.spv /tmp/vif-14.spv      # identical
 spirv-dis /tmp/vif-13.spv | grep -E 'ExecutionMode|NoContraction'
 # Only emits: OpExecutionMode %main LocalSize 32 4 1
@@ -251,7 +251,7 @@ Netflix normal pair (`src01_hrc00_576x324.yuv` vs
 - [ADR-0187](../adr/0187-ciede-vulkan.md) — ciede2000 Vulkan port
   (precision contract).
 - Existing in-tree precedent for FMA-reordering mitigations:
-  [`libvmaf/src/vulkan/meson.build`](../../libvmaf/src/vulkan/meson.build)
+  [`core/src/vulkan/meson.build`](../../core/src/vulkan/meson.build)
   lines 80–99 — the `psnr_hvs_strict_shaders` `-O0` list (`ssimulacra2_blur`,
   `ssimulacra2_xyb`, `ssimulacra2_ssim`) already documents this class
   of issue at the build level.

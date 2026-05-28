@@ -1,4 +1,4 @@
-Added `libvmaf/test/test_sycl_motion3_parity.c`: cross-backend parity test
+Added `core/test/test_sycl_motion3_parity.c`: cross-backend parity test
 asserting that `VMAF_integer_feature_motion3_score` from the CPU `motion`
 extractor and the SYCL `motion_sycl` extractor agree to within 1e-4
 (places=4, ADR-0214) at frame index 1. Closes the SYCL half of the

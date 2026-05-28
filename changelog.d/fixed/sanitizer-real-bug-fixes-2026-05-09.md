@@ -4,7 +4,7 @@
   test matrix; the fixes harden the implementation rather than
   relaxing any sanitizer gate (per `feedback_no_test_weakening`).
   - `SAN-INTEGER-ADM-DIV-LOOKUP-RACE` — `div_lookup_generator()` in
-    `libvmaf/src/feature/integer_adm.h` was called once per ADM
+    `core/src/feature/integer_adm.h` was called once per ADM
     feature-extractor `init`, i.e. once per worker thread spawned by
     `vmaf_thread_pool_create`, with no synchronisation around the
     65 537-entry static `div_lookup` table. TSan reported the
@@ -12,7 +12,7 @@
     `test_pic_preallocation`. Wrapped the populator in a
     `pthread_once_t` guard; the table contents are loop-invariant
     (`div_Q_factor / i`) so once-init preserves bit-exactness.
-  - `SAN-FRAMESYNC-MUTEX-DOMAIN` — `libvmaf/src/framesync.c`
+  - `SAN-FRAMESYNC-MUTEX-DOMAIN` — `core/src/framesync.c`
     mutated the `buf_que` linked-list spine (next pointers, `buf_cnt`,
     FREE/ACQUIRED/RETRIEVED transitions) under `acquire_lock` (M0)
     while `submit_filled_data` and `retrieve_filled_data` walked the
@@ -25,7 +25,7 @@
     the wait so producers can append. Every `pthread_mutex_*` /
     `pthread_cond_*` return value is now checked or `(void)`-cast.
   - `SAN-MODEL-MALLOC-OOB` + `SAN-PREDICT-METADATA-LEAK` —
-    `libvmaf/src/svm.cpp` `parse_header()` and `parse_support_vectors()`
+    `core/src/svm.cpp` `parse_header()` and `parse_support_vectors()`
     fed unbounded `nr_class` / `total_sv` parsed from the SVM model
     file straight into `Malloc(...)` size calculations and
     `memcpy(_, sv_buffer.data(), sizeof(svm_node) * sv_buffer.size())`
@@ -36,7 +36,7 @@
     where `nr_class` / `total_sv` is consumed, with explicit pre-alloc
     `> 0` and `<= MAX` checks via `exceptAssert`. The `sv_buffer`
     empty-after-parse case now throws cleanly instead of feeding 0
-    to `Malloc` + `memcpy`. Companion fix in `libvmaf/test/test_predict.c`
+    to `Malloc` + `memcpy`. Companion fix in `core/test/test_predict.c`
     closes the metadata-dispatch leak: `test_propagate_metadata`
     populated a local `VmafDictionary *dict` via
     `feature_collector_dispatch_metadata` -> `vmaf_dictionary_set`

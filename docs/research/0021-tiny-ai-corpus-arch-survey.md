@@ -14,7 +14,7 @@ itself has shipped to production since the original `vmaf_v0.6.1` paper.
 
 ## 1. Context
 
-The fork's tiny-AI surface (under `ai/` for training, `libvmaf/src/dnn/`
+The fork's tiny-AI surface (under `ai/` for training, `core/src/dnn/`
 for ONNX Runtime CPU inference) just landed its first canonical sweep on
 the original Netflix VMAF training corpus — three architectures
 (`mlp_small`, `mlp_medium`, `linear`) trained against 9 source clips with
@@ -310,7 +310,7 @@ Listed benchmarks: MMLU Pro 60.0 %, GPQA Diamond 43.4 %, MMMU Pro
 For the tiny-AI fork, this is **explicitly out of scope** as a
 deployment target. The q4 quantised model alone is on the order of
 gigabytes of disk; the inference cost on CPU-only ONNX Runtime
-(which is the fork's deployment posture for `libvmaf/src/dnn/`) is
+(which is the fork's deployment posture for `core/src/dnn/`) is
 seconds-per-frame at best, not the milliseconds-per-frame the VMAF
 metric pipeline requires. The relevance is narrower and indirect:
 it's one of the more thoroughly-validated public examples of
@@ -443,7 +443,7 @@ two-phase rollout the project owner should consider.
 ### 2.9 Uploaded files (sweep result)
 
 **Sweep result**: A `find` over the worktree (`-newer
-libvmaf/meson_options.txt`, excluding `.git` / `build`) returned
+core/meson_options.txt`, excluding `.git` / `build`) returned
 only the expected list of testdata fixtures, benchmark JSONs,
 working-directory scratch (`testdata/scores_*.json`,
 `testdata/perf_benchmark_results.json`), the in-tree `model/`

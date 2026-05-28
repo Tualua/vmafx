@@ -102,8 +102,8 @@ build FFmpeg with `--enable-libvmaf-cuda` to enable it.
 ## Source layout
 
 ```text
-libvmaf/src/cuda/                # queue, picture, ring-buffer runtime
-libvmaf/src/feature/cuda/        # per-feature kernels
+core/src/cuda/                # queue, picture, ring-buffer runtime
+core/src/feature/cuda/        # per-feature kernels
   integer_vif_cuda.{c,h}         # VIF extractor dispatch
   integer_vif/                   # VIF .cu kernels
   integer_adm_cuda.{c,h}         # ADM extractor dispatch
@@ -124,14 +124,14 @@ Adding a new CUDA extractor: see [`/add-feature-extractor`](../../../.claude/ski
   depend on the CUDA Runtime API. This keeps libvmaf linkable against FFmpeg
   builds that already load CUDA dynamically.
 - **Pinned host staging.** Input pictures are uploaded from
-  `cuMemHostAlloc`-pinned buffers. See [picture_cuda.c](../../../libvmaf/src/cuda/picture_cuda.c).
+  `cuMemHostAlloc`-pinned buffers. See [picture_cuda.c](../../../core/src/cuda/picture_cuda.c).
 - **Non-default streams per extractor.** Each feature extractor owns its own
   stream so submit/collect for different features can overlap.
 - **Ring-buffered double-buffer submit.** Frame N+1 starts uploading while
   frame N is still on the device. The legacy `ring_buffer.c` was folded
   into the per-stream dispatch strategy and event-drain machinery — see
-  [`dispatch_strategy.c`](../../../libvmaf/src/cuda/dispatch_strategy.c)
-  and [`drain_batch.c`](../../../libvmaf/src/cuda/drain_batch.c).
+  [`dispatch_strategy.c`](../../../core/src/cuda/dispatch_strategy.c)
+  and [`drain_batch.c`](../../../core/src/cuda/drain_batch.c).
 - **Shared primary context.** We retain the device's primary context with
   `cuDevicePrimaryCtxRetain` so FFmpeg and VMAF share one GPU context rather
   than fighting over time-sliced contexts.
@@ -139,7 +139,7 @@ Adding a new CUDA extractor: see [`/add-feature-extractor`](../../../.claude/ski
   a private non-blocking stream + a `finished` event for its DtoH readback;
   the engine collects every frame's pending events in a single thread-local
   drain batch
-  ([`src/cuda/drain_batch.c`](../../../libvmaf/src/cuda/drain_batch.c))
+  ([`src/cuda/drain_batch.c`](../../../core/src/cuda/drain_batch.c))
   and waits on them in one `cuStreamSynchronize(drain_str)` between submit
   and collect phases. A frame's per-extractor `collect()` calls then become
   host-side buffer reads only — the per-stream sync is short-circuited via
@@ -239,7 +239,7 @@ to surface an unexpected delta.
   `motion_add_uv=true` path is independent from motion3 and
   remains **not yet wired through to the CUDA backend**. The CUDA
   `picture_copy()` callsite at
-  [`src/feature/cuda/integer_ms_ssim_cuda.c`](../../../libvmaf/src/feature/cuda/integer_ms_ssim_cuda.c)
+  [`src/feature/cuda/integer_ms_ssim_cuda.c`](../../../core/src/feature/cuda/integer_ms_ssim_cuda.c)
   passes `0` for the new trailing `channel` argument (Y-plane only,
   preserving CUDA pre-port behaviour). UV-plane motion on GPU is a
   follow-up tracked in [docs/state.md](../../state.md).

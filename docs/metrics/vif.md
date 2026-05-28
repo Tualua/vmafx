@@ -54,13 +54,13 @@ All features are computed on the luma (Y) plane only.
 
 ```bash
 # Luma-only VIF (the only mode that exists across every backend)
-libvmaf/build/tools/vmaf \
+core/build/tools/vmaf \
     --reference ref.yuv --distorted dist.yuv \
     --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
     --no_prediction --feature integer_vif --output /dev/stdout
 
 # Skip scale-0 (GPU-parity mode)
-libvmaf/build/tools/vmaf \
+core/build/tools/vmaf \
     --reference ref.yuv --distorted dist.yuv \
     --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
     --no_prediction --feature 'integer_vif:vif_skip_scale0=true' --output /dev/stdout
@@ -68,7 +68,7 @@ libvmaf/build/tools/vmaf \
 
 ## Cross-backend parity
 
-The `libvmaf/test/test_integer_vif_cpu_cuda_parity.c` smoke test (suite
+The `core/test/test_integer_vif_cpu_cuda_parity.c` smoke test (suite
 `fast`, runs when `enable_cuda=true`) asserts CPU vs CUDA `vif_scaleN_score`
 agreement within `1e-5` on the Netflix `src01_hrc00_576x324` reference pair
 — making the luma-only parity claim a regression gate.

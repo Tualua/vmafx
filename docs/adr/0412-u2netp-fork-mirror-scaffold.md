@@ -27,7 +27,7 @@ extractor's underlying weights to U-2-Net's `u2netp` checkpoint:
    pinnable raw URL, so the FastDVDnet pattern (pin upstream commit
    + `curl -L -O <raw>` in CI) does not reproduce.
 2. **ONNX op allowlist**: U-2-Net's bilinear `F.upsample` lowers to
-   `Resize`, which was not on `libvmaf/src/dnn/op_allowlist.c` at
+   `Resize`, which was not on `core/src/dnn/op_allowlist.c` at
    the time.
 
 The op-allowlist blocker (axis 2) was resolved by

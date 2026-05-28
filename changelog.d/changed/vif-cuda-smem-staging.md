@@ -1,6 +1,6 @@
 ## Changed
 
-- **VIF CUDA filter passes now stage data in shared memory** (`libvmaf/src/feature/cuda/integer_vif/filter1d.cu`):
+- **VIF CUDA filter passes now stage data in shared memory** (`core/src/feature/cuda/integer_vif/filter1d.cu`):
   all four filter template functions (`filter1d_8_vertical_kernel`,
   `filter1d_8_horizontal_kernel`, `filter1d_16_vertical_kernel`,
   `filter1d_16_horizontal_kernel`) load a per-block tile into `__shared__`

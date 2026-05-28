@@ -12,16 +12,16 @@ correctly with ffmpeg.
 
 ```
 /build-ffmpeg-with-vmaf [--ffmpeg-ref=master|n7.0|<sha>] [--ffmpeg-dir=/tmp/ffmpeg]
-                        [--libvmaf-build=libvmaf/build] [--jobs=N]
+                        [--libvmaf-build=core/build] [--jobs=N]
                         [--run-filter-smoketest]
 ```
 
-Defaults: `master` at HEAD, `/tmp/ffmpeg` checkout, our latest `libvmaf/build`, `$(nproc)`
+Defaults: `master` at HEAD, `/tmp/ffmpeg` checkout, our latest `core/build`, `$(nproc)`
 jobs, smoke-test enabled.
 
 ## Steps
 
-1. Ensure `libvmaf/build/src/libvmaf.so.3.0.0` + `libvmaf/build/src/libvmaf.pc` exist.
+1. Ensure `core/build/src/libvmaf.so.3.0.0` + `core/build/src/libvmaf.pc` exist.
    If not, call `/build-vmaf --backend=cpu` first.
 2. Clone or fetch the ffmpeg repo into `--ffmpeg-dir`. `git clean -fdx` before applying
    patches (to keep idempotent).
@@ -31,8 +31,8 @@ jobs, smoke-test enabled.
    `/refresh-ffmpeg-patches`.
 5. Configure ffmpeg:
    ```
-   PKG_CONFIG_PATH=$repo/libvmaf/build/src:$PKG_CONFIG_PATH \
-   LD_LIBRARY_PATH=$repo/libvmaf/build/src:$LD_LIBRARY_PATH \
+   PKG_CONFIG_PATH=$repo/core/build/src:$PKG_CONFIG_PATH \
+   LD_LIBRARY_PATH=$repo/core/build/src:$LD_LIBRARY_PATH \
    ./configure --prefix=/tmp/ffmpeg-install --enable-libvmaf --enable-gpl \
                --enable-version3
    ```

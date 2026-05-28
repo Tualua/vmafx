@@ -27,7 +27,7 @@ the scalar reference under `memcmp` on the SSIMULACRA 2 test fixtures.
 ## Decision
 
 We will ship an aarch64 SVE2 sister TU
-(`libvmaf/src/feature/arm64/ssimulacra2_sve2.c`) that mirrors the NEON
+(`core/src/feature/arm64/ssimulacra2_sve2.c`) that mirrors the NEON
 port lane-for-lane, with every kernel locked to a fixed 4-lane
 predicate (`svwhilelt_b32(0, 4)`). The wider lanes that SVE2 hardware
 may expose stay false, so the arithmetic order and per-lane reductions
@@ -37,10 +37,10 @@ behind a `getauxval(AT_HWCAP2) & HWCAP2_SVE2` runtime probe.
 
 The dispatch table in `ssimulacra2.c::init_simd_dispatch` overrides
 NEON with SVE2 when the bit is set. Test
-`libvmaf/test/test_ssimulacra2_simd.c` picks SVE2 over NEON in its
+`core/test/test_ssimulacra2_simd.c` picks SVE2 over NEON in its
 `pick_*` helpers and prints the selected path to stderr so qemu vs
 native runs are distinguishable in CI logs. Build-time gating uses
-a `cc.compiles()` probe in `libvmaf/src/meson.build` that exercises
+a `cc.compiles()` probe in `core/src/meson.build` that exercises
 `-march=armv9-a+sve2` against `<arm_sve.h>` — failure leaves
 `HAVE_SVE2` unset and the binary falls back to NEON.
 
@@ -66,7 +66,7 @@ a `cc.compiles()` probe in `libvmaf/src/meson.build` that exercises
   - Build matrix grows by one cross-file
     (`build-aux/aarch64-linux-gnu-sve2.ini`) and one optional static
     library (`arm64_ssimulacra2_sve2`).
-  - `libvmaf/src/arm/cpu.c` now depends on `<sys/auxv.h>` on Linux —
+  - `core/src/arm/cpu.c` now depends on `<sys/auxv.h>` on Linux —
     portable enough but introduces a Linux-only fast path.
 - **Neutral / follow-ups**:
   - Native aarch64 perf runner (T7-?? backlog) — replace qemu timings

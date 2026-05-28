@@ -25,7 +25,7 @@ where saliency could attach are, in order from "deepest" to "outermost":
    CUDA, SYCL, Vulkan).
 2. **In the per-frame collector** — between the feature kernel and the
    per-frame scalar, weight the running sum by the saliency mask. Lives
-   in `libvmaf/src/feature/feature_collector.c`. One file, one path,
+   in `core/src/feature/feature_collector.c`. One file, one path,
    but bit-exactness contract still applies.
 3. **In the model JSON's `feature_norm`** — saliency-weight the
    normalised feature vector before the SVR predict call. Adds a new

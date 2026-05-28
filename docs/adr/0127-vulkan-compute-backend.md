@@ -36,7 +36,7 @@ SPIR-V kernels — but the payoff is that the fork becomes runnable on
 every consumer GPU sold since 2017 plus all Apple Silicon, without
 asking users to install a vendor SDK.
 
-The existing backend tree under [`libvmaf/src/`](../../libvmaf/src/)
+The existing backend tree under [`core/src/`](../../core/src/)
 has converged on a consistent shape: each backend has a runtime
 directory (`cuda/`, `sycl/`, etc.), per-feature kernel source trees
 under `feature/<backend>/`, a public header (`libvmaf_cuda.h`,
@@ -162,8 +162,8 @@ Audited as part of the 2026-05-08 ADR `Proposed` sweep
 
 Acceptance criteria verified in tree at HEAD `0a8b539e`:
 
-- Public header `libvmaf/include/libvmaf/libvmaf_vulkan.h` — present.
-- Backend runtime tree `libvmaf/src/vulkan/` — present (common.c,
+- Public header `core/include/libvmaf/libvmaf_vulkan.h` — present.
+- Backend runtime tree `core/src/vulkan/` — present (common.c,
   dispatch_strategy.{c,h}, picture_vulkan.{c,h}, kernel_template.h,
   import.c, import_picture.h, AGENTS.md, meson.build).
 - `enable_vulkan` Meson option declared and live.
@@ -171,7 +171,7 @@ Acceptance criteria verified in tree at HEAD `0a8b539e`:
   (Accepted) shipped the VkImage zero-copy import; ADR-0251 (this
   sweep) shipped the async pending-fence v2 model.
 - Verification command:
-  `ls libvmaf/include/libvmaf/libvmaf_vulkan.h libvmaf/src/vulkan/`.
+  `ls core/include/libvmaf/libvmaf_vulkan.h core/src/vulkan/`.
 ### Status update 2026-05-09: MoltenVK validation lane added
 
 Added an advisory CI lane on `macos-latest` (Apple Silicon) that

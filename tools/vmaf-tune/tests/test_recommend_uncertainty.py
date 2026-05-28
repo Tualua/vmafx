@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Unit tests for the uncertainty-aware recommend predicate (ADR-0279).
 
 Exercises :func:`vmaftune.recommend.pick_target_vmaf_with_uncertainty`

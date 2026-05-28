@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """vmaf binary driver — Phase A.
 
 Spawns the libvmaf CLI (`vmaf`) against a (reference YUV, distorted
@@ -261,7 +261,7 @@ def _decode_to_raw_yuv(
 # from the extension. It does not — vmaf-tune always passes
 # ``--width`` / ``--height`` / ``--pixel_format`` / ``--bitdepth``
 # (see :func:`build_vmaf_command`) which flips the libvmaf CLI's
-# ``use_yuv`` flag (libvmaf/tools/cli_parse.c) and routes both inputs
+# ``use_yuv`` flag (core/tools/cli_parse.c) and routes both inputs
 # through ``raw_input_open``. Y4M files then trip the file-size
 # mismatch guard inside ``raw_input_open``. The empty-suffix entry is
 # kept for fixture trees that name raw YUV without a ``.yuv``

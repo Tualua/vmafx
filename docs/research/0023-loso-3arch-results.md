@@ -17,7 +17,7 @@ covered `mlp_small` alone) and [ADR-0203](../adr/0203-tiny-ai-training-prep-impl
 
 * Corpus: `.workingdir2/netflix/{ref,dis}/`, 9 reference YUVs.
 * Teacher: `vmaf_v0.6.1` per-frame scores via the libvmaf CLI in
-  `libvmaf/build/tools/vmaf`.
+  `core/build/tools/vmaf`.
 * Architectures (params):
   * `mlp_small` — 257
   * `mlp_medium` — 2 561

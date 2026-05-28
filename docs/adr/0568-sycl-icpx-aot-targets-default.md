@@ -29,7 +29,7 @@ must be default-active to protect operators who do not customise the option.
 
 ## Decision
 
-Add a `sycl_icpx_aot_targets` Meson string option to `libvmaf/meson_options.txt`.
+Add a `sycl_icpx_aot_targets` Meson string option to `core/meson_options.txt`.
 Its default value is a comma-separated list of Intel GPU micro-architecture
 codenames covering:
 

@@ -45,13 +45,13 @@ implemented in `ssim_cuda.c` (CUDA), `integer_ssim_hip.c` (HIP), and
 
 ```bash
 # Luma-only SSIM (default)
-libvmaf/build/tools/vmaf \
+core/build/tools/vmaf \
     --reference ref.yuv --distorted dist.yuv \
     --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
     --no_prediction --feature integer_ssim --output /dev/stdout
 
 # Per-channel SSIM (luma + Cb + Cr)
-libvmaf/build/tools/vmaf \
+core/build/tools/vmaf \
     --reference ref.yuv --distorted dist.yuv \
     --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
     --no_prediction --feature 'integer_ssim:enable_chroma=true' --output /dev/stdout

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
-# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris and Claude (Anthropic)
 """Join NR/MOS second-opinion scores onto already-extracted feature tables.
 
 The script is deliberately table-side: it does not invoke external VQA models
@@ -27,7 +27,6 @@ SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.jsonl_utils import dumps_jsonl_row  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 KEY_CANDIDATES: tuple[str, ...] = (
@@ -119,10 +118,15 @@ def _write_table(df: pd.DataFrame, path: Path) -> None:
     if suffix in (".jsonl", ".ndjson"):
         with path.open("w", encoding="utf-8") as f:
             for row in df.to_dict(orient="records"):
-                f.write(dumps_jsonl_row(_json_safe(row)))
+                f.write(json.dumps(_json_safe(row), sort_keys=True) + "\n")
         return
     if suffix == ".json":
-        write_manifest_json(path, {"rows": _json_safe(df.to_dict(orient="records"))})
+        path.write_text(
+            json.dumps(
+                {"rows": _json_safe(df.to_dict(orient="records"))}, indent=2, sort_keys=True
+            ),
+            encoding="utf-8",
+        )
         return
     raise ValueError(f"unsupported output format for {path}; use parquet, jsonl, ndjson, or json")
 

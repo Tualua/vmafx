@@ -68,7 +68,7 @@ called from error labels are defined outside the guard with internal
 `enable_hipcc`, `init()` returns `-ENOSYS` (scaffold contract preserved).
 
 `moment_score` and `ssim_score` are added to the `hip_kernel_sources` dict in
-`libvmaf/src/meson.build`, extending the `hipcc --genco` → HSACO → `xxd -i`
+`core/src/meson.build`, extending the `hipcc --genco` → HSACO → `xxd -i`
 pipeline established by ADR-0372.
 
 HIP real-kernel count: **6 of 11 extractors**.

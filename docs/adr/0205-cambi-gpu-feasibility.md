@@ -19,11 +19,11 @@ ADR-0192 explicitly conditioned cambi's implementation on a
 *feasibility spike* — the **`calculate_c_values`** pass maintains a
 sliding 65 × 65 window histogram per output column and updates it
 row-by-row using +1 / -1 range modifications. The CPU's
-[`get_derivative_data_for_row`](../../libvmaf/src/feature/cambi.c#L460)
+[`get_derivative_data_for_row`](../../core/src/feature/cambi.c#L460)
 hot path likewise walks left-to-right per row. The AVX2 / AVX-512 /
 NEON SIMD paths only vectorise *within a single histogram update*
 across columns
-([`cambi_avx2.c::cambi_increment_range_avx2`](../../libvmaf/src/feature/x86/cambi_avx2.c#L23));
+([`cambi_avx2.c::cambi_increment_range_avx2`](../../core/src/feature/x86/cambi_avx2.c#L23));
 the row-to-row state dependency is preserved sequentially. That
 combination — sequential-state running update + 1024-bin histogram
 per output column — is the single most SIMT-hostile shape in the
@@ -277,7 +277,7 @@ empirical validation is required.
 - Companion: [research digest 0020](../research/0020-cambi-gpu-strategies.md)
   — full strategy comparison, bandwidth analysis, literature
   survey (Blelloch 1990, Sengupta 2007, Merrill & Grimshaw 2016).
-- CPU reference: [`libvmaf/src/feature/cambi.c`](../../libvmaf/src/feature/cambi.c)
+- CPU reference: [`core/src/feature/cambi.c`](../../core/src/feature/cambi.c)
   (1533 LOC); SIMD paths in `x86/cambi_avx2.c`,
   `x86/cambi_avx512.c`, `arm64/cambi_neon.c`.
 - Banding-detection literature: Tandon et al., "CAMBI: Contrast-

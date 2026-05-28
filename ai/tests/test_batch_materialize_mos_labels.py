@@ -1,5 +1,5 @@
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
-# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris and Claude (Anthropic)
 """Tests for ``ai/scripts/batch_materialize_mos_labels.py``."""
 
 from __future__ import annotations

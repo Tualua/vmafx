@@ -92,15 +92,15 @@ The mapping covers:
 
 | Surface | Expected docs path |
 |---|---|
-| `libvmaf/include/libvmaf_cuda.h`, `libvmaf_sycl.h` | `docs/api/gpu.md` |
-| `libvmaf/include/libvmaf_dnn.h` | `docs/api/dnn.md` |
-| `libvmaf/include/{libvmaf,picture,model}.h` | `docs/api/index.md` |
-| `libvmaf/src/feature/{feature_,integer_}*.c` | `docs/metrics/` |
-| `libvmaf/src/feature/{x86,arm64}/*.c` | `docs/metrics/` |
-| `libvmaf/src/feature/cuda/*.{c,cu}` | `docs/metrics/` or `docs/backends/cuda/` |
-| `libvmaf/src/feature/sycl/*.cpp` | `docs/metrics/` or `docs/backends/sycl/` |
-| `libvmaf/tools/{cli_parse,vmaf,vmaf_bench}.c` | `docs/usage/` |
-| `libvmaf/meson_options.txt` | `docs/development/build-flags.md` |
+| `core/include/libvmaf_cuda.h`, `libvmaf_sycl.h` | `docs/api/gpu.md` |
+| `core/include/libvmaf_dnn.h` | `docs/api/dnn.md` |
+| `core/include/{libvmaf,picture,model}.h` | `docs/api/index.md` |
+| `core/src/feature/{feature_,integer_}*.c` | `docs/metrics/` |
+| `core/src/feature/{x86,arm64}/*.c` | `docs/metrics/` |
+| `core/src/feature/cuda/*.{c,cu}` | `docs/metrics/` or `docs/backends/cuda/` |
+| `core/src/feature/sycl/*.cpp` | `docs/metrics/` or `docs/backends/sycl/` |
+| `core/tools/{cli_parse,vmaf,vmaf_bench}.c` | `docs/usage/` |
+| `core/meson_options.txt` | `docs/development/build-flags.md` |
 | `mcp-server/vmaf-mcp/*` | `docs/mcp/` |
 | `ai/src/vmaf_train/cli/*` | `docs/ai/` |
 | `ffmpeg-patches/*.patch` | `docs/usage/` |

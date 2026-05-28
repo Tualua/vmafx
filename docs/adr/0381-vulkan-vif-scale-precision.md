@@ -47,7 +47,7 @@ via `(scale_den > 0.0) ? num/den : 1.0`.
 Apply two independent fixes in the same PR:
 
 1. Add `shaders/float_vif.comp` to the `psnr_hvs_strict_shaders` list in
-   `libvmaf/src/vulkan/meson.build` so it is compiled with `glslc -O0`. Add
+   `core/src/vulkan/meson.build` so it is compiled with `glslc -O0`. Add
    `precise` qualifiers to the accumulator variables in `main_compute()`'s
    vertical and horizontal passes and to the `sigma1_sq / sigma2_sq / sigma12`
    declarations as defence-in-depth against driver-side FMA contraction (Vulkan

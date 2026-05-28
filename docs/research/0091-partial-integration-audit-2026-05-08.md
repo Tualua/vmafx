@@ -8,7 +8,7 @@
 ## TL;DR
 
 The fork ships **22 user-facing feature extractors** (CPU registry in
-`libvmaf/src/feature/feature_extractor.c`), most of them with rich SIMD
+`core/src/feature/feature_extractor.c`), most of them with rich SIMD
 and GPU-backend coverage. End-to-end integration is not the bottleneck
 on the **engine** rungs (1-3). The bottleneck sits squarely on the
 **learning** rungs (4-6):
@@ -42,7 +42,7 @@ on the **engine** rungs (1-3). The bottleneck sits squarely on the
   every shipped extractor inline; standalone pages exist only for
   CAMBI today.
 - **Engine-broken (rung 1):** integer-fixed `ssim` defines
-  `vmaf_fex_ssim` in `libvmaf/src/feature/integer_ssim.c:280` but is
+  `vmaf_fex_ssim` in `core/src/feature/integer_ssim.c:280` but is
   **never registered** in `feature_extractor_list[]`
   (`feature_extractor.c` lines 145-225). The symbol is dead — the only
   CPU SSIM that actually runs is `float_ssim`. The
@@ -53,7 +53,7 @@ on the **engine** rungs (1-3). The bottleneck sits squarely on the
   / SYCL / Vulkan kernels but no CPU file (`integer_psnr_hvs.c`
   doesn't exist; only `integer_psnr_hvs_cuda.c`,
   `integer_psnr_hvs_sycl.cpp`, `psnr_hvs_vulkan.c`); the CPU
-  `psnr_hvs` extractor at `libvmaf/src/feature/psnr.c` (no — see
+  `psnr_hvs` extractor at `core/src/feature/psnr.c` (no — see
   inline note in `features.md`) covers it via a different path.
 
 The single highest-ROI gap for the user's stated framing ("we can only
@@ -66,7 +66,7 @@ layer, not at the model layer.
 
 Each row in the matrix below is scored against eight rungs:
 
-1. **CPU reference** — `.c` file under `libvmaf/src/feature/`, registered in
+1. **CPU reference** — `.c` file under `core/src/feature/`, registered in
    `feature_extractor_list[]`.
 2. **All shipped backends covered** — CUDA + SYCL + Vulkan + HIP, where
    each is meaningful.
@@ -118,7 +118,7 @@ Legend: ✅ full, ⚠️ partial, ❌ missing, – not applicable.
 ### Footnotes
 
 ¹ HIP exposes `ciede`, `motion`, `vif`, `adm` via the C-side `_hip.c`
-files in `libvmaf/src/feature/hip/` but several are still labelled "HIP
+files in `core/src/feature/hip/` but several are still labelled "HIP
 nth-consumer scaffold" (T7-10a/b series, ADR-0273/0274) — kernels run
 under `hipLaunchKernelGGL` but several sibling agents (`feat/hip-*`
 worktrees) are completing the bit-exact-vs-CUDA gate. Treat ⚠️ as
@@ -140,13 +140,13 @@ recurring `/cross-backend-diff` debt items (see ADR-0186 +
 `docs/state.md` SYCL section).
 
 ⁴ HIP coverage gaps: `float_adm`, `psnr_hvs`, `float_ms_ssim`,
-`ssimulacra2` have no `_hip.c` file in `libvmaf/src/feature/hip/`.
+`ssimulacra2` have no `_hip.c` file in `core/src/feature/hip/`.
 T7-10b consumer plan (ADR-0273) tracks the rollout; not all 8
 consumers have landed.
 
 ⁵ CAMBI SIMD: `cambi_avx2.c` and `cambi_avx512.c` exist
-(`libvmaf/src/feature/x86/`) and `cambi_neon.c`
-(`libvmaf/src/feature/arm64/`) — but `docs/metrics/features.md`'s
+(`core/src/feature/x86/`) and `cambi_neon.c`
+(`core/src/feature/arm64/`) — but `docs/metrics/features.md`'s
 table reports "—" for CAMBI SIMD. Either the doc is stale or the
 SIMD paths exist but are not runtime-dispatched. Needs verification.
 
@@ -165,7 +165,7 @@ the AVX-512 gap is intentional per ADR-pending; it is not
 
 ⁸ **SSIM (fixed) is dead.** `integer_ssim.c:280` defines
 `VmafFeatureExtractor vmaf_fex_ssim` but `feature_extractor_list[]`
-in `libvmaf/src/feature/feature_extractor.c:145-225` does **not**
+in `core/src/feature/feature_extractor.c:145-225` does **not**
 include `&vmaf_fex_ssim`. The Vulkan kernel
 (`ssim_vulkan.c`) and the doc row in `docs/metrics/features.md` both
 imply the feature ships, but `--feature ssim` cannot resolve at the
@@ -175,7 +175,7 @@ other reference to `vmaf_fex_ssim` returns only the definition
 itself.
 
 ⁹ Float moment SIMD: `moment_avx2.c` and `moment_neon.c` ship
-(`libvmaf/src/feature/x86/`, `libvmaf/src/feature/arm64/`); AVX-512 is
+(`core/src/feature/x86/`, `core/src/feature/arm64/`); AVX-512 is
 absent (matches `features.md` "AVX2, NEON" row).
 
 ᴬ LPIPS dispatches through ORT's execution provider (CPU / CUDA /
@@ -339,11 +339,11 @@ SOTA web-research strand.
 
 - `float_moment` — no `test_moment.c`; only `test_moment_simd.c`
   covers the SIMD path. Netflix-golden coverage absent.
-- `float_ansnr` — no dedicated test file under `libvmaf/test/`.
+- `float_ansnr` — no dedicated test file under `core/test/`.
 - `lpips`, `mobilesal`, `transnet_v2`, `fastdvdnet_pre` —
   `test_mobilesal.c`, `test_transnet_v2.c`, `test_fastdvdnet_pre.c`
   exist; `test_lpips.c` does not. LPIPS is engine-tested via the
-  ORT smoke (`libvmaf/test/dnn/`) but lacks a Netflix-golden row.
+  ORT smoke (`core/test/dnn/`) but lacks a Netflix-golden row.
 - `ssim` (fixed) — no test, dead symbol.
 - Saliency-student — Python-side tests exist
   (`tools/vmaf-tune/tests/`); not a libvmaf C test.
@@ -379,7 +379,7 @@ Ranked by AI-stack ROI; each item is a single PR scope.
    - Depends on item 1; piggy-backs on the schema bump.
 
 5. **SSIM-fixed dead-symbol cleanup** (rung 1).
-   - File: `libvmaf/src/feature/feature_extractor.c` (register) **or**
+   - File: `core/src/feature/feature_extractor.c` (register) **or**
      delete the integer SSIM family. Quick ADR either way.
    - Touched-file cleanup per ADR-0141.
 
@@ -414,7 +414,7 @@ Ranked by AI-stack ROI; each item is a single PR scope.
 
 ## Appendix: source-of-truth file paths
 
-- CPU registration: `libvmaf/src/feature/feature_extractor.c:145`
+- CPU registration: `core/src/feature/feature_extractor.c:145`
   (the `feature_extractor_list[]` table).
 - Corpus schema: `tools/vmaf-tune/src/vmaftune/__init__.py:22-53`
   (`SCHEMA_VERSION` and `CORPUS_ROW_KEYS`).
@@ -426,4 +426,4 @@ Ranked by AI-stack ROI; each item is a single PR scope.
 - Predictor `ShotFeatures`:
   `tools/vmaf-tune/src/vmaftune/predictor.py:53-86`.
 - Dead `vmaf_fex_ssim` definition:
-  `libvmaf/src/feature/integer_ssim.c:280`.
+  `core/src/feature/integer_ssim.c:280`.

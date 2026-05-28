@@ -2,7 +2,7 @@
 
 ## Problem characterisation
 
-`libvmaf/src/meson.build` discovers the AMD GPU ISA targets for `hipcc --genco`
+`core/src/meson.build` discovers the AMD GPU ISA targets for `hipcc --genco`
 through a four-step probe chain. When all dynamic probes fail (typical in
 no-GPU build sandboxes), the build fell back to a hardcoded string. That string
 was `gfx90a` — a single CDNA2 server target — which worked for AWS and GCP GPU
@@ -60,8 +60,8 @@ objects:
 ```bash
 hipcc --genco --offload-arch=gfx90a --offload-arch=gfx1030 \
       --offload-arch=gfx1036 --offload-arch=gfx1100 \
-      -I libvmaf/src -I libvmaf/src/feature -I libvmaf/include \
-      libvmaf/src/feature/hip/integer_vif/vif_statistics.hip \
+      -I libvmaf/src -I core/src/feature -I libvmaf/include \
+      core/src/feature/hip/integer_vif/vif_statistics.hip \
       -o /tmp/vif_stats.hsaco
 # Inspect targets:
 python3 -c "
@@ -74,7 +74,7 @@ print([hex(o) for o in range(0,len(data),4) if b'gfx' in data[o:o+8]])
 Runtime smoke test (requires AMD GPU on host):
 
 ```bash
-docker exec vmaf-dev-mcp /workspace/build-hip/libvmaf/tools/vmaf \
+docker exec vmaf-dev-mcp /workspace/build-hip/core/tools/vmaf \
   --backend hip \
   --reference /workspace/testdata/ref_576x324_48f.yuv \
   --distorted /workspace/testdata/dis_576x324_48f.yuv \

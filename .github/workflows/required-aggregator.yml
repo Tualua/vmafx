@@ -50,6 +50,7 @@ jobs:
             const required = [
               'Build — Ubuntu gcc (CPU) + DNN',
               'Build — Ubuntu clang (CPU) + DNN',
+              'Build — Windows MinGW64 (CPU) (MINGW64, mingw-w64-x86_64)',
               'Build — Windows MSVC + CUDA (build only)',
               'Build — Windows MSVC + oneAPI SYCL (build only)',
               'CodeQL',

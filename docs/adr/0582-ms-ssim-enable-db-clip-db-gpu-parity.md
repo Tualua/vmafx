@@ -73,7 +73,7 @@ pre-patch binary on both backends.
 
 ## References
 
-- CPU reference: `libvmaf/src/feature/float_ms_ssim.c` lines 52–76
+- CPU reference: `core/src/feature/float_ms_ssim.c` lines 52–76
   (options table) and lines 131, 185–221 (enable_db / enable_lcs paths).
 - [ADR-0243](0243-ms-ssim-enable-lcs.md) — enable_lcs on CUDA (T7-35)
 - [ADR-0453](0453-psnr-enable-chroma-gpu-parity.md) — precedent for this

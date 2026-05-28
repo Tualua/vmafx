@@ -3,12 +3,12 @@
 # Usage: coverage-check.sh <gcovr-summary.json> <overall_min%> <critical_min%>
 #
 # Overall = unweighted average line coverage across every file in the gcovr
-# summary (already filtered by gcovr to libvmaf/src/* and exclude test code,
+# summary (already filtered by gcovr to core/src/* and exclude test code,
 # subprojects, /usr/*). Applies to upstream *and* fork-added code — we will
 # be modifying upstream paths over time (SIMD fixes, refactors, bug fixes)
 # and need a safety net.
 #
-# Security-critical = files under libvmaf/src/dnn/, plus opt.c and
+# Security-critical = files under core/src/dnn/, plus opt.c and
 # read_json_model.c (JSON + option parsing: user-supplied input paths).
 # Files with zero gcovr data are skipped (no tests → nothing to assert).
 #
@@ -31,9 +31,9 @@ CRITICAL_MIN="${3:-85}"
 # lower bar. See ADR-0114 for the EP-availability structural ceiling on
 # the dnn/ort_backend.c + dnn/dnn_api.c entries.
 declare -A PER_FILE_MIN=(
-  ["libvmaf/src/dnn/ort_backend.c"]=78
-  ["libvmaf/src/dnn/dnn_api.c"]=78
-  # libvmaf/src/dnn/tiny_extractor_template.h is a refactor template
+  ["core/src/dnn/ort_backend.c"]=78
+  ["core/src/dnn/dnn_api.c"]=78
+  # core/src/dnn/tiny_extractor_template.h is a refactor template
   # of `static inline` helpers conditionally instantiated by per-extractor
   # callers. By design each new extractor uses a different subset of the
   # macro/helper menu (the whole point of the refactor is per-extractor
@@ -42,7 +42,7 @@ declare -A PER_FILE_MIN=(
   # adding tests just to inflate this number would be code-shaped padding,
   # not real correctness coverage. Distinct from opt.c / read_json_model.c
   # which parse user-supplied input and are properly security-critical.
-  ["libvmaf/src/dnn/tiny_extractor_template.h"]=10
+  ["core/src/dnn/tiny_extractor_template.h"]=10
 )
 
 if ! command -v python3 >/dev/null; then
@@ -58,7 +58,7 @@ fi
 # Pull the overall percent + per-file rows out of gcovr's --json-summary
 # format. The schema:
 #   { "line_percent": 73.4, "files": [
-#       { "filename": "libvmaf/src/foo.c",
+#       { "filename": "core/src/foo.c",
 #         "line_percent": 81.2,
 #         "line_total": 412, "line_covered": 335 }, ... ] }
 # Note: avoid f-strings here. Python <3.12 forbids backslashes inside f-string
@@ -97,7 +97,7 @@ fail=0
 while IFS=$'\t' read -r path pct total; do
   [ -z "$path" ] && continue
   case "$path" in
-    *libvmaf/src/dnn/* | *libvmaf/src/opt.c | *libvmaf/src/read_json_model.c)
+    *core/src/dnn/* | *core/src/opt.c | *core/src/read_json_model.c)
       if [ "$total" = "0" ] || awk -v c="$pct" 'BEGIN{exit !(c+0 == 0)}'; then
         echo "  critical (no tests yet — not enforced): $path — ${pct}%"
         continue

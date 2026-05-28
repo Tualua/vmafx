@@ -10,7 +10,7 @@
 [ADR-0192](0192-gpu-long-tail-batch-3.md) lists `float_motion` as the
 second **Group B** metric — float twin of `integer_motion` (which
 ships on CUDA / SYCL / Vulkan). The CPU reference is
-[`float_motion.c`](../../libvmaf/src/feature/float_motion.c) (276 LOC):
+[`float_motion.c`](../../core/src/feature/float_motion.c) (276 LOC):
 
 1. `picture_copy(offset=-128)` normalises raw samples to float in
    `[-128, peak-128]`.
@@ -122,15 +122,15 @@ magnitude.
 - Sibling: [ADR-0193](0193-motion-v2-vulkan.md) (motion_v2),
   [ADR-0195](0195-float-psnr-gpu.md) (float_psnr).
 - Existing motion GPU kernels: motion_vulkan (
-  [`motion.comp`](../../libvmaf/src/feature/vulkan/shaders/motion.comp) +
-  [`motion_vulkan.c`](../../libvmaf/src/feature/vulkan/motion_vulkan.c)),
+  [`motion.comp`](../../core/src/feature/vulkan/shaders/motion.comp) +
+  [`motion_vulkan.c`](../../core/src/feature/vulkan/motion_vulkan.c)),
   motion_cuda
-  ([`motion_score.cu`](../../libvmaf/src/feature/cuda/integer_motion/motion_score.cu) +
-  [`integer_motion_cuda.c`](../../libvmaf/src/feature/cuda/integer_motion_cuda.c)),
+  ([`motion_score.cu`](../../core/src/feature/cuda/integer_motion/motion_score.cu) +
+  [`integer_motion_cuda.c`](../../core/src/feature/cuda/integer_motion_cuda.c)),
   motion_sycl
-  ([`integer_motion_sycl.cpp`](../../libvmaf/src/feature/sycl/integer_motion_sycl.cpp)).
+  ([`integer_motion_sycl.cpp`](../../core/src/feature/sycl/integer_motion_sycl.cpp)).
 - CPU reference:
-  [`float_motion.c`](../../libvmaf/src/feature/float_motion.c) (276 LOC).
+  [`float_motion.c`](../../core/src/feature/float_motion.c) (276 LOC).
 - Verification: cross-backend gate
   [`scripts/ci/cross_backend_vif_diff.py`](../../scripts/ci/cross_backend_vif_diff.py)
   with `--feature float_motion --places 4`. New step in the lavapipe

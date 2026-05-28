@@ -18,7 +18,7 @@ the caller requested `integer_ssim` (feature name `"ssim"`). Specifically:
 - **SYCL**: `integer_ssim_sycl.cpp` registered only `vmaf_fex_float_ssim_sycl`; there
   was no `vmaf_fex_integer_ssim_sycl` at all.
 
-The CPU `integer_ssim` algorithm (`libvmaf/src/feature/integer_ssim.c`) uses:
+The CPU `integer_ssim` algorithm (`core/src/feature/integer_ssim.c`) uses:
 - A 9-tap Gaussian kernel with **integer** weights `[2,9,28,55,68,55,28,9,2]`
   (sigma=1.5, `KERNEL_WEIGHT=256`, sum=256)
 - `int64_t` accumulators for all per-pixel moments (mux, muy, x2, xy, y2, w)
@@ -81,12 +81,12 @@ We add real integer_ssim GPU kernels for all three backends and register them as
 
 ## References
 
-- `libvmaf/src/feature/integer_ssim.c` — CPU reference implementation
-- `libvmaf/src/feature/cuda/integer_ssim/integer_ssim_score.cu` — new CUDA kernel
-- `libvmaf/src/feature/cuda/ssim_cuda.c` — new CUDA host glue
-- `libvmaf/src/feature/hip/integer_ssim_hip.c` — rewritten HIP host glue
-- `libvmaf/src/feature/hip/integer_ssim/integer_ssim_score.hip` — pre-existing HIP kernel
-- `libvmaf/src/feature/sycl/integer_ssim_sycl.cpp` — new SYCL extractor appended
+- `core/src/feature/integer_ssim.c` — CPU reference implementation
+- `core/src/feature/cuda/integer_ssim/integer_ssim_score.cu` — new CUDA kernel
+- `core/src/feature/cuda/ssim_cuda.c` — new CUDA host glue
+- `core/src/feature/hip/integer_ssim_hip.c` — rewritten HIP host glue
+- `core/src/feature/hip/integer_ssim/integer_ssim_score.hip` — pre-existing HIP kernel
+- `core/src/feature/sycl/integer_ssim_sycl.cpp` — new SYCL extractor appended
 - [ADR-0220](0220-sycl-fp64-free-kernel-constraint.md) — fp64-free SYCL kernel constraint
 - [ADR-0533](0533-hip-all-extractors-registration-sweep.md) — HIP extractor registration sweep
 - Source: req (the user required bit-exact GPU integer_ssim; "Don't ship 'almost-right' integer-ssim — the whole purpose of integer SSIM is bit-exactness. Better to keep dispatching CPU on a backend than ship a wrong kernel.")

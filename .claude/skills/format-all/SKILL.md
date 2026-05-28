@@ -30,7 +30,7 @@ description: Apply clang-format, black, isort, and shfmt across the whole repo. 
 ## Guardrails
 
 - Never formats files under `subprojects/` (vendored upstream code) or
-  `libvmaf/test/data/`.
+  `core/test/data/`.
 - Never reformats Netflix-authored files in a way that diverges from upstream
   style — our `.clang-format` matches upstream's settings.
 - Refuses to run if `git status` shows un-staged conflicts.

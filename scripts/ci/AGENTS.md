@@ -85,7 +85,7 @@ behaviour.
 upstream. The risk on `/sync-upstream` is the opposite: an upstream
 change to a feature extractor's emitted-metric names would silently
 invalidate `FEATURE_METRICS` rows. Re-run the matrix gate after any
-upstream sync that touches `libvmaf/src/feature/`.
+upstream sync that touches `core/src/feature/`.
 
 ## PR-body deliverables validator (`validate-pr-body.sh`)
 

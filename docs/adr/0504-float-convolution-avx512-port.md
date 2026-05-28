@@ -15,7 +15,7 @@ cycles on a representative 1080p run):
 - `extract.lto_priv.17` (inlined per-scale loop): 35.89 %
 
 All three hot spots route through the two separable scanline helpers in
-`libvmaf/src/feature/common/convolution_avx.c`, which are 256-bit (8 floats
+`core/src/feature/common/convolution_avx.c`, which are 256-bit (8 floats
 per FMA). Modern server and consumer CPUs (Skylake-X, Ice Lake, Sapphire
 Rapids, Zen 4, and their successors) expose AVX-512F, which allows 16 floats
 per FMA — doubling the arithmetic throughput in the inner convolution loop with
@@ -28,13 +28,13 @@ their declared `places` tolerance.
 
 ## Decision
 
-We will create `libvmaf/src/feature/common/convolution_avx512.c` porting the
+We will create `core/src/feature/common/convolution_avx512.c` porting the
 four static scanline helpers and the three public wrappers
 (`convolution_f32_avx512_s`, `_sq_s`, `_xy_s`) from `__m256` to `__m512`
 with `_mm512_fmadd_ps`. The dispatch in `vif_tools.c` is updated to prefer
 AVX-512 when `VMAF_X86_CPU_FLAG_AVX512` is set, falling back to AVX2, then
 scalar. The new TU is compiled with `-mavx512f -mavx512dq -mavx512bw` inside
-the existing `x86_avx512_static_lib` in `libvmaf/src/meson.build`.
+the existing `x86_avx512_static_lib` in `core/src/meson.build`.
 
 The invariants from ADR-0143 are preserved in the new file:
 - Scanline helpers carry `static` linkage.

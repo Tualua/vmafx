@@ -47,15 +47,15 @@ of the Vulkan hybrid host/GPU pipeline**:
 - **GPU responsibilities**:
   - `ssimulacra2_mul3` — elementwise 3-plane multiply for ref²,
     dis², ref·dis. CUDA fatbin in
-    `libvmaf/src/feature/cuda/ssimulacra2/ssimulacra2_mul.cu`;
+    `core/src/feature/cuda/ssimulacra2/ssimulacra2_mul.cu`;
     SYCL `parallel_for` lambda inline in
-    `libvmaf/src/feature/sycl/ssimulacra2_sycl.cpp`.
+    `core/src/feature/sycl/ssimulacra2_sycl.cpp`.
   - `ssimulacra2_blur_h` / `ssimulacra2_blur_v` — separable
     Charalampidis 2016 3-pole recursive Gaussian (sigma=1.5). One
     work-item per row (H pass) / per column (V pass). CUDA fatbin
-    in `libvmaf/src/feature/cuda/ssimulacra2/ssimulacra2_blur.cu`;
+    in `core/src/feature/cuda/ssimulacra2/ssimulacra2_blur.cu`;
     SYCL templated `launch_blur<PASS>` in
-    `libvmaf/src/feature/sycl/ssimulacra2_sycl.cpp`.
+    `core/src/feature/sycl/ssimulacra2_sycl.cpp`.
 
 The CUDA fex uses `.extract` (synchronous) rather than
 `.submit`/`.collect`. The per-scale host downsample + host XYB
@@ -79,7 +79,7 @@ into FMAs and the recursive Gaussian's per-step rounding compounds
 across the radius × 6-scale pyramid into a places=2 drift versus
 CPU.
 
-- **CUDA**: a per-kernel flag map in `libvmaf/src/meson.build`
+- **CUDA**: a per-kernel flag map in `core/src/meson.build`
   (`cuda_cu_extra_flags`) routes
   `-Xcompiler=-ffp-contract=off --fmad=false` to the
   `ssimulacra2_blur` fatbin only. The integer-arithmetic kernels
@@ -89,7 +89,7 @@ CPU.
   per-kernel-flags pattern introduced for `float_adm_score` in
   PR #157 ([ADR-0202](0202-float-adm-cuda-sycl.md)).
 - **SYCL**: the existing `-fp-model=precise` on the SYCL feature
-  build line (set in `libvmaf/src/meson.build` for the
+  build line (set in `core/src/meson.build` for the
   whole-extractor build, not per-kernel) blocks `icpx` from FMA
   contraction in the kernel lambdas — equivalent to NVCC's
   `--fmad=false`. No new SYCL build flag is needed.

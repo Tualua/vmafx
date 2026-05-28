@@ -32,17 +32,17 @@ to answer two questions at once:
 ## Sources
 
 - **Scalar references**:
-  [`_iqa_convolve`](../../libvmaf/src/feature/iqa/convolve.c)
+  [`_iqa_convolve`](../../core/src/feature/iqa/convolve.c)
   and
-  [`ssim_accumulate_default_scalar`](../../libvmaf/src/feature/iqa/ssim_tools.c).
+  [`ssim_accumulate_default_scalar`](../../core/src/feature/iqa/ssim_tools.c).
 - **Existing AVX2 / AVX-512 SIMD**:
-  [`ssim_avx2.c`](../../libvmaf/src/feature/x86/ssim_avx2.c) /
-  [`ssim_avx512.c`](../../libvmaf/src/feature/x86/ssim_avx512.c) /
-  [`convolve_avx2.c`](../../libvmaf/src/feature/x86/convolve_avx2.c) /
-  [`convolve_avx512.c`](../../libvmaf/src/feature/x86/convolve_avx512.c)
+  [`ssim_avx2.c`](../../core/src/feature/x86/ssim_avx2.c) /
+  [`ssim_avx512.c`](../../core/src/feature/x86/ssim_avx512.c) /
+  [`convolve_avx2.c`](../../core/src/feature/x86/convolve_avx2.c) /
+  [`convolve_avx512.c`](../../core/src/feature/x86/convolve_avx512.c)
   as of commit `6db63310` (PR #76 HEAD).
 - **Existing NEON SIMD**:
-  [`ssim_neon.c`](../../libvmaf/src/feature/arm64/ssim_neon.c)
+  [`ssim_neon.c`](../../core/src/feature/arm64/ssim_neon.c)
   as of commit `be1f74d1` (PR #76 pre-DX).
 - **Upstream baseline**: Netflix/vmaf `origin/master` has **no** SSIM
   SIMD on *any* ISA. `convolve_neon` doesn't exist upstream — the
@@ -68,7 +68,7 @@ to answer two questions at once:
 
 ### SIMD-gap inventory (9 gaps; shaped PR #A + PR #B scope)
 
-Audit of `libvmaf/src/feature/` against the fork's existing
+Audit of `core/src/feature/` against the fork's existing
 AVX2 / AVX-512 / NEON coverage:
 
 | # | Feature | AVX2 | AVX-512 | NEON | Gap class |
@@ -140,13 +140,13 @@ under `/usr/aarch64-linux-gnu`. QEMU is invoked with
 `/lib/ld-linux-aarch64.so.1` resolves.
 
 One pre-existing test-gate bug surfaced during this audit:
-[`libvmaf/test/dnn/test_cli.sh`](../../libvmaf/test/dnn/test_cli.sh)
+[`core/test/dnn/test_cli.sh`](../../core/test/dnn/test_cli.sh)
 invokes `$VMAF_BIN` directly from bash. Meson's `exe_wrapper` is not
 applied to env-provided binaries inside shell scripts, and the host's
 binfmt_misc entry doesn't know about the aarch64 sysroot prefix — so
 qemu fails to load the aarch64 dynamic linker. Fixed by gating the
 `test_cli` registration on `not meson.is_cross_build()` in
-[`libvmaf/test/dnn/meson.build`](../../libvmaf/test/dnn/meson.build).
+[`core/test/dnn/meson.build`](../../core/test/dnn/meson.build).
 Unrelated to the NEON work; fix is in-scope for PR #A because PR #A
 introduces the aarch64 cross-compile lane.
 

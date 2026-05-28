@@ -9,7 +9,7 @@
 
 After [ADR-0111](0111-coverage-gate-gcovr-with-ort.md) landed (gcovr +
 ORT in the coverage job), the per-file 85% gate exposed
-`libvmaf/src/dnn/ort_backend.c` at 77.3% line coverage — short of the
+`core/src/dnn/ort_backend.c` at 77.3% line coverage — short of the
 threshold by ~8 percentage points (~31 lines of 397).
 
 Auditing the uncovered lines showed three structurally unreachable
@@ -57,7 +57,7 @@ through ORT itself.
 
 ## Decision
 
-Add a private internal header `libvmaf/src/dnn/ort_backend_internal.h`
+Add a private internal header `core/src/dnn/ort_backend_internal.h`
 that exposes thin extern wrappers around the `static` helpers
 (`fp32_to_fp16`, `fp16_to_fp32`, `resolve_name`). The originals
 remain `static` so production call sites (`build_input_tensor`,
@@ -139,7 +139,7 @@ constraint), not to add fault-injection or multi-EP CI.
   `vmaf_ort_internal_resolve_name`). They are namespaced and
   documented as test-only in the header; downstream callers that
   treat them as public API are misusing the surface.
-- Adds a header (`ort_backend_internal.h`) under `libvmaf/src/`
+- Adds a header (`ort_backend_internal.h`) under `core/src/`
   that is not part of the public include tree — slightly more
   layout to keep straight.
 

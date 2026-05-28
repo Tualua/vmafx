@@ -7,8 +7,8 @@
   resolve, refreshed the stale "Phase A scaffold" framing in
   `tools/vmaf-tune/README.md` and the top of `docs/usage/vmaf-tune.md`
   to reflect the current 17 codec adapters + 8 subcommands, replaced
-  references to removed `libvmaf/src/cuda/ring_buffer.c` /
-  `libvmaf/test/test_ring_buffer.c` with their current equivalents,
+  references to removed `core/src/cuda/ring_buffer.c` /
+  `core/test/test_ring_buffer.c` with their current equivalents,
   added a new [`docs/api/mcp.md`](../docs/api/mcp.md) page covering
   `libvmaf_mcp.h`, regenerated `docs/adr/README.md` from
   `_index_fragments/` (70 missing fragments authored, 2 misnamed

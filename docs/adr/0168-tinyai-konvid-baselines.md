@@ -117,9 +117,9 @@ val).
 [`model/tiny/registry.schema.json`](../../model/tiny/registry.schema.json)
 gains `"filter"` as a third allowed enum for `kind`. The matching
 C-side `VmafModelKind` enum in
-[`libvmaf/include/libvmaf/model.h`](../../libvmaf/include/libvmaf/model.h)
+[`core/include/libvmaf/model.h`](../../core/include/libvmaf/model.h)
 gains `VMAF_MODEL_KIND_DNN_FILTER = 3`, and the sidecar parser in
-[`libvmaf/src/dnn/model_loader.c`](../../libvmaf/src/dnn/model_loader.c)
+[`core/src/dnn/model_loader.c`](../../core/src/dnn/model_loader.c)
 recognises the new string. Filter models are registry-tracked
 (SHA-256-pinned, signed in release) for trust-root hygiene but are
 not loaded by the libvmaf scoring path — the ffmpeg `vmaf_pre`

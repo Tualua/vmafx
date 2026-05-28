@@ -4,7 +4,7 @@
 ## Summary
 
 Local CHUG FULL_FEATURES extraction used `ai/scripts/extract_k150k_features.py`
-with `libvmaf/build-cuda/tools/vmaf --backend cuda`. The all-feature bundle
+with `core/build-cuda/tools/vmaf --backend cuda`. The all-feature bundle
 failed on 10-bit CHUG clips with duplicate feature-key warnings and
 `context could not be synchronized`.
 
@@ -35,7 +35,7 @@ bad generic `--backend cuda` command.
 PYTHONPATH=ai/src .venv/bin/python ai/scripts/extract_k150k_features.py \
   --clips-dir .workingdir2/chug/clips \
   --scores .workingdir2/chug/chug_scores.csv \
-  --vmaf-bin libvmaf/build-cuda/tools/vmaf \
+  --vmaf-bin core/build-cuda/tools/vmaf \
   --cpu-vmaf-bin build-cpu/tools/vmaf \
   --out .workingdir2/chug/debug/split_real.parquet \
   --threads 2 --threads-cuda 1 --flush-every 1 \

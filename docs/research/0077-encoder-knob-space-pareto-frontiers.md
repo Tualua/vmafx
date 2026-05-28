@@ -100,7 +100,7 @@ the adapter default for that (codec, rc_mode) pair.
 mkdir -p runs/phase_a/full_grid/
 python3 scripts/dev/hw_encoder_corpus.py \
   --sweep-spec scripts/dev/sweep_specs/comprehensive.yaml \
-  --vmaf-bin libvmaf/build-cuda/tools/vmaf \
+  --vmaf-bin core/build-cuda/tools/vmaf \
   --score-backend cuda \
   --out runs/phase_a/full_grid/comprehensive.jsonl
 

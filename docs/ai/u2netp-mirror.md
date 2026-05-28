@@ -216,7 +216,7 @@ for the per-clause walk.
 | `cosign verify-blob` fails with "no matching signatures" | Wrong `--certificate-identity-regexp` | Use the regex shown above; the cert binds to `lusoris/vmaf` workflow runs |
 | `cosign verify-blob` fails with "expired certificate" | Sigstore short-lived certs need a fresh Rekor lookup | Cosign v3+ does this automatically; ensure your `cosign` is up to date |
 | sha256 mismatch | Wrong asset, partial download, or stale model card | Re-download; re-check model card on the same release tag |
-| ONNX load fails with "unsupported op" | Wire-format scanner rejecting an op | Check [`libvmaf/src/dnn/op_allowlist.c`](../../libvmaf/src/dnn/op_allowlist.c); `Resize` was added by ADR-0258 — older fork commits won't load this graph |
+| ONNX load fails with "unsupported op" | Wire-format scanner rejecting an op | Check [`core/src/dnn/op_allowlist.c`](../../core/src/dnn/op_allowlist.c); `Resize` was added by ADR-0258 — older fork commits won't load this graph |
 
 ## References
 

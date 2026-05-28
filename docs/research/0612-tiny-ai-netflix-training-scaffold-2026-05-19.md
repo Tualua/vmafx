@@ -22,7 +22,7 @@ The `vmaf_v0.6.1` SVM fuses four elementary features (VIF at four scales, DLM,
 motion coherence, ADM) trained on approximately 79 Netflix clips spanning H.264
 and H.265 encode ladders.  The SVM ε-SVR with RBF kernel is the distillation
 teacher for the fork's tiny-AI FR models.  The full feature pipeline is
-documented in `libvmaf/src/feature/`.
+documented in `core/src/feature/`.
 
 ### 1.2 Bootstrap confidence intervals (2018)
 
@@ -122,7 +122,7 @@ ONNX Runtime 1.19 (released 2024-Q2) added improved graph optimisations for
 `MatMul + Add + Relu` patterns common in MLP regressors, yielding up to 15%
 CPU throughput improvement on AVX2 hosts compared to 1.18.  ONNX Runtime 1.20
 (2024-Q4) extended this to ARM64 NEON.  Both are relevant to the fork's
-`libvmaf/src/dnn/` integration.
+`core/src/dnn/` integration.
 
 Target opset for export: **opset 17** (stable across ORT 1.16–1.20).  Opset 18
 operators (`AveragePool` with dilations) are not needed by MLP models and would

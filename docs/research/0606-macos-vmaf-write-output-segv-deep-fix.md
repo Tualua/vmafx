@@ -143,7 +143,7 @@ Fix: `bool first_frame = true` flag, flipped after the first emission.
 Linux (with MALLOC_PERTURB_=198 simulation):
 
 ```
-MALLOC_PERTURB_=198 meson test -C libvmaf/build test_output test_public_api_score
+MALLOC_PERTURB_=198 meson test -C core/build test_output test_public_api_score
 1/2 fast - libvmaf:test_output           OK   0.00s
 2/2 fast - libvmaf:test_public_api_score OK   0.01s
 ```

@@ -10,8 +10,8 @@
 An exploratory bump of `VkApplicationInfo.apiVersion` and
 `VmaAllocatorCreateInfo.vulkanApiVersion` from `VK_API_VERSION_1_3` to
 `VK_API_VERSION_1_4` (four sites total in
-[`libvmaf/src/vulkan/common.c`](../../libvmaf/src/vulkan/common.c) +
-[`libvmaf/src/vulkan/vma_impl.cpp`](../../libvmaf/src/vulkan/vma_impl.cpp))
+[`core/src/vulkan/common.c`](../../core/src/vulkan/common.c) +
+[`core/src/vulkan/vma_impl.cpp`](../../core/src/vulkan/vma_impl.cpp))
 moves NVIDIA's GPU output for two compute kernels above the
 `places=4` cross-backend gate ([ADR-0214](0214-gpu-parity-ci-gate.md)):
 
@@ -63,8 +63,8 @@ backlog item **T-VK-1.4-BUMP** in two steps:
    `places=4`.
 2. **Step B (only after Step A is clean on all three drivers)** —
    Bump the three `apiVersion = VK_API_VERSION_1_3` sites in
-   `libvmaf/src/vulkan/common.c` (lines 54, 264, 374) and the
-   `VMA_VULKAN_VERSION` define in `libvmaf/src/vulkan/vma_impl.cpp`
+   `core/src/vulkan/common.c` (lines 54, 264, 374) and the
+   `VMA_VULKAN_VERSION` define in `core/src/vulkan/vma_impl.cpp`
    (line 22, `1003000` → `1004000`). Re-run the gate.
 
 Until both steps land, `master` stays on `VK_API_VERSION_1_3`. Lowering
@@ -75,7 +75,7 @@ explicitly rejected — see *Alternatives considered*.
 
 | Option | Pros | Cons | Why not chosen |
 |---|---|---|---|
-| **Defer + audit + bump (chosen)** | Honours `places=4` gate; bit-exact on all measured drivers post-fix; matches the existing `psnr_hvs_strict_shaders` precedent in [`libvmaf/src/vulkan/meson.build`](../../libvmaf/src/vulkan/meson.build); zero operational cost (no feature requires 1.4 today) | Defers the bump indefinitely if the audit slips | Highest-quality outcome; aligns with no-test-weakening rule |
+| **Defer + audit + bump (chosen)** | Honours `places=4` gate; bit-exact on all measured drivers post-fix; matches the existing `psnr_hvs_strict_shaders` precedent in [`core/src/vulkan/meson.build`](../../core/src/vulkan/meson.build); zero operational cost (no feature requires 1.4 today) | Defers the bump indefinitely if the audit slips | Highest-quality outcome; aligns with no-test-weakening rule |
 | Bump now and lower the cross-backend gate to `places=3` | Unblocks the API bump immediately | Violates [the no-test-weakening rule](../../CLAUDE.md) and [ADR-0214](0214-gpu-parity-ci-gate.md) — the gate exists precisely to catch this class of drift | Rejected on principle |
 | Bump now and gate NVIDIA out of the cross-backend run | Unblocks for lavapipe + RADV CI | Violates the no-skip-shortcuts rule; lawrence's local NVIDIA GPU is the only NVIDIA validation lane; CI doesn't run NVIDIA today so the "fix" is illusory | Rejected — turns a known regression into invisible debt |
 | Bump now and regenerate the GPU snapshot at 1.4 NVIDIA output | One-line change | Bakes the driver-side codegen flip into the fork's snapshot ledger; CPU is ground truth per [§8 of CLAUDE.md](../../CLAUDE.md) — GPU snapshots track CPU, not their own driver-current behaviour | Rejected — wrong direction for a numerical fork |
@@ -119,13 +119,13 @@ explicitly rejected — see *Alternatives considered*.
   cross-backend parity gate.
 - [ADR-0187](0187-ciede-vulkan.md) — ciede2000 Vulkan port +
   precision contract.
-- [`libvmaf/src/feature/vulkan/shaders/vif.comp`](../../libvmaf/src/feature/vulkan/shaders/vif.comp)
+- [`core/src/feature/vulkan/shaders/vif.comp`](../../core/src/feature/vulkan/shaders/vif.comp)
   — integer VIF compute shader.
-- [`libvmaf/src/feature/vulkan/shaders/ciede.comp`](../../libvmaf/src/feature/vulkan/shaders/ciede.comp)
+- [`core/src/feature/vulkan/shaders/ciede.comp`](../../core/src/feature/vulkan/shaders/ciede.comp)
   — ciede2000 compute shader.
-- [`libvmaf/src/vulkan/common.c`](../../libvmaf/src/vulkan/common.c)
+- [`core/src/vulkan/common.c`](../../core/src/vulkan/common.c)
   — three `apiVersion` sites.
-- [`libvmaf/src/vulkan/vma_impl.cpp`](../../libvmaf/src/vulkan/vma_impl.cpp)
+- [`core/src/vulkan/vma_impl.cpp`](../../core/src/vulkan/vma_impl.cpp)
   — `VMA_VULKAN_VERSION` define.
 - Source: `req` (parent-agent investigation request, 2026-05-03):
   paraphrased — *bumping `VK_API_VERSION_1_3` → `VK_API_VERSION_1_4`

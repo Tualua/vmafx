@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Tests for the AMD AMF codec adapters (h264_amf / hevc_amf / av1_amf).
 
 Mocks ``subprocess.run`` so the suite needs neither an AMD GPU nor

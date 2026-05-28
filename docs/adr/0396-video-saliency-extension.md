@@ -102,7 +102,7 @@ BSD-3-Clause-Plus-Patent) by distilling from UNISAL on DHF1K:
   feature map**. The recurrence is implemented as a learned
   per-channel EMA gate (one `Mul` + one `Add` per timestep, with the
   EMA coefficient itself a learned per-channel parameter). All ops
-  must be on `libvmaf/src/dnn/op_allowlist.c` at the time of the PR
+  must be on `core/src/dnn/op_allowlist.c` at the time of the PR
   — no new allowlist entries in the same PR.
 - **Loss**: per-frame BCE + Dice on the saliency mask, plus a
   KL-divergence soft-label loss against the teacher's saliency

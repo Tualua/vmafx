@@ -22,7 +22,7 @@ case where two kernels run on the picture stream with implicit
 happens-before ordering between them.
 
 This ADR adds the **eighth consumer** — `float_ssim_hip`, the HIP
-twin of `libvmaf/src/feature/cuda/integer_ssim_cuda.c` (384 LOC,
+twin of `core/src/feature/cuda/integer_ssim_cuda.c` (384 LOC,
 which despite its filename registers `vmaf_fex_float_ssim_cuda` and
 emits the `float_ssim` feature). It pins two new shapes:
 **two-dispatch separable Gaussian** (horizontal pass writes five
@@ -41,7 +41,7 @@ the kernel-template's `-ENOSYS`.
 
 ## Decision
 
-We add `libvmaf/src/feature/hip/float_ssim_hip.{c,h}` as the eighth
+We add `core/src/feature/hip/float_ssim_hip.{c,h}` as the eighth
 kernel-template consumer. The TU mirrors the CUDA twin
 call-graph-for-call-graph: identical state struct (modulo the
 CUDA-driver `CUfunction` slots and the `VmafCudaBuffer *`-vs-`uintptr_t`
@@ -99,5 +99,5 @@ the addition.
 - [ADR-0273](0273-hip-seventh-consumer-float-motion.md) — seventh consumer (this PR).
 - [ADR-0246](0246-gpu-kernel-template.md) — GPU kernel-template pattern.
 - [ADR-0214](0214-gpu-parity-ci-gate.md) — `places=4` cross-backend gate.
-- CUDA twin: `libvmaf/src/feature/cuda/integer_ssim_cuda.c` (registers `vmaf_fex_float_ssim_cuda`).
+- CUDA twin: `core/src/feature/cuda/integer_ssim_cuda.c` (registers `vmaf_fex_float_ssim_cuda`).
 - Source: `req` (user dispatch) — "Add the seventh + eighth HIP runtime kernel-template consumers. ... Pick two more cleanest CUDA twins."

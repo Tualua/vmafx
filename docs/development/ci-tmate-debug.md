@@ -42,16 +42,16 @@ has at least one SSH public key registered at <https://github.com/settings/keys>
 ## What to debug once connected
 
 The source tree is at `/Users/runner/work/vmaf/vmaf`.
-Test binaries are under `libvmaf/build/test/`.
+Test binaries are under `core/build/test/`.
 
 ### Typical session for a SIGSEGV in the test suite
 
 ```bash
 # Find which test binary triggered the crash
-ls /Users/runner/work/vmaf/vmaf/libvmaf/build/test/
+ls /Users/runner/work/vmaf/vmaf/core/build/test/
 
 # Attach lldb to the binary that crashed
-lldb /Users/runner/work/vmaf/vmaf/libvmaf/build/test/test_output
+lldb /Users/runner/work/vmaf/vmaf/core/build/test/test_output
 
 # Inside lldb:
 run
@@ -68,7 +68,7 @@ the standard allocator hides:
 
 ```bash
 MallocScribble=1 MallocGuardEdges=1 \
-  lldb /Users/runner/work/vmaf/vmaf/libvmaf/build/test/test_output
+  lldb /Users/runner/work/vmaf/vmaf/core/build/test/test_output
 ```
 
 `MALLOC_PERTURB_=198` (the value used to expose the ADR-0606 off-by-one) is
@@ -76,7 +76,7 @@ also useful:
 
 ```bash
 MALLOC_PERTURB_=198 \
-  lldb /Users/runner/work/vmaf/vmaf/libvmaf/build/test/test_output
+  lldb /Users/runner/work/vmaf/vmaf/core/build/test/test_output
 ```
 
 ## Session limits

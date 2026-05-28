@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Predictor training pipeline — fits a per-codec MLP to a Phase A corpus.
 
 The predict-then-verify loop (:mod:`vmaftune.predictor`) loads one ONNX
@@ -770,7 +770,7 @@ predict-then-verify loop.
 
 ## 3. Op allowlist compliance
 
-Validated against `libvmaf/src/dnn/op_allowlist.c` via
+Validated against `core/src/dnn/op_allowlist.c` via
 `ai/src/vmaf_train/op_allowlist.py`:
 
 - **Status**: {op_status}

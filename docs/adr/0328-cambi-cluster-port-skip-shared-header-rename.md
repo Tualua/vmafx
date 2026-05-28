@@ -13,9 +13,9 @@ commits verbatim. The tenth — `41bacc83` "feature/cambi: move shared code to
 cambi.h" — relocates the shared inline helpers (`update_histogram_*`,
 `uh_slide`, `uh_slide_edge`, `MAX`/`MIN`, `VmafRangeUpdater` typedef, the
 `reciprocal_lut` LUT) and the `MAX/MIN` macros from `cambi.c` into a new
-`libvmaf/src/feature/cambi.h` (renaming `cambi_reciprocal_lut.h` to it). It
+`core/src/feature/cambi.h` (renaming `cambi_reciprocal_lut.h` to it). It
 also moves `calculate_c_values_avx2` from `cambi.c` into
-`libvmaf/src/feature/x86/cambi_avx2.c`, since that function now needs the
+`core/src/feature/x86/cambi_avx2.c`, since that function now needs the
 shared helpers too.
 
 The fork's port of `933cccb4` (frame-level calc_c_values dispatch) introduced
@@ -26,7 +26,7 @@ while binding to ISA-specific updaters at compile time. With the macro in
 place, the helper inlines never need to be visible outside `cambi.c`, so
 the upstream rename has no fork-side benefit.
 
-The fork also has a separate `libvmaf/src/feature/cambi_internal.h` whose
+The fork also has a separate `core/src/feature/cambi_internal.h` whose
 purpose is ABI-stable shim functions for the Vulkan twin (ADR-0205 Strategy
 II). Adopting upstream's `cambi.h` would create a second cambi public-ish
 header file with overlapping responsibilities, which is exactly the kind of
@@ -71,8 +71,8 @@ cambi inline" header.
 - Upstream cluster: `d655cefe` … `41bacc83` (10 commits, see
   [`docs/research/0089-upstream-sync-coverage-2026-05-08.md`](../research/0089-upstream-sync-coverage-2026-05-08.md)).
 - Fork macro: `CAMBI_CALC_C_VALUES_BODY` in
-  `libvmaf/src/feature/cambi.c` (introduced by the port of `933cccb4`).
-- Fork shim header: `libvmaf/src/feature/cambi_internal.h` (ADR-0205
+  `core/src/feature/cambi.c` (introduced by the port of `933cccb4`).
+- Fork shim header: `core/src/feature/cambi_internal.h` (ADR-0205
   Strategy II).
 - ADR maintenance rule: [ADR-0028](0028-adr-maintenance-rule.md).
 - Touched-file lint-clean rule: [ADR-0141](0141-touched-file-cleanup-rule.md).

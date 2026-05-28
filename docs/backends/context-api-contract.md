@@ -14,7 +14,7 @@ decision record.
 
 Every backend named `<backend>` (e.g., `hip`, `metal`, `vulkan`) **must** expose
 exactly these three functions in its public header
-`libvmaf/src/<backend>/common.h`:
+`core/src/<backend>/common.h`:
 
 ```c
 /* Allocate and initialise a new context bound to device_index.
@@ -93,7 +93,7 @@ ADR-0212), Metal (`vmaf_metal_context_device_handle`,
 
 When adding a new GPU backend, verify:
 
-- [ ] `vmaf_<backend>_context_new` is declared in `libvmaf/src/<backend>/common.h`.
+- [ ] `vmaf_<backend>_context_new` is declared in `core/src/<backend>/common.h`.
 - [ ] `vmaf_<backend>_context_destroy` accepts NULL without crashing.
 - [ ] `vmaf_<backend>_device_count` returns `>= 0` on success, `-ENODEV` on
       discovery failure.

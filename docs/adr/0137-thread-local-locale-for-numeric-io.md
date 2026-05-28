@@ -41,12 +41,12 @@ corrections:
    `vmaf_write_output_{xml,json,csv}` take a trailing `score_format`
    parameter (from ADR-0119); pass `NULL` (library default) in all
    three test calls.
-2. **Merge conflict resolution in `libvmaf/src/output.c`** — keep fork's
+2. **Merge conflict resolution in `core/src/output.c`** — keep fork's
    `return ferror(outfile) ? -EIO : 0;` contract (ADR-0119) on top of
    upstream's `vmaf_thread_locale_pop(locale_state);` cleanup; keep
    fork's `const char *sf = fmt_or_default(score_format);` locals and
    drop upstream's unused `int leading_zeros_count;` stragglers.
-3. **Merge conflict resolution in `libvmaf/src/svm.cpp`** — replace
+3. **Merge conflict resolution in `core/src/svm.cpp`** — replace
    the fork's previous `setlocale()/strdup/setlocale()` bracket (now
    demonstrably racy under the multi-session symptom Lawrence reported
    on Discord) with `vmaf_thread_locale_push_c/pop`; keep fork's K&R

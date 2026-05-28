@@ -94,14 +94,14 @@ generated on a CPU-only build at the current master HEAD.
     ~2e-4 in the pooled score.
   - **Proper fix (shipped)**: replace libm `cbrtf` and `powf` with
     deterministic host-independent implementations in
-    `libvmaf/src/feature/ssimulacra2_math.h` —
+    `core/src/feature/ssimulacra2_math.h` —
     - `vmaf_ss2_cbrtf()`: bit-trick initial estimate + 2 Newton–
       Raphson iterations, accuracy ~7e-7, pure IEEE-754 float
       arithmetic.
     - `vmaf_ss2_srgb_eotf()`: 1024-entry LUT with linear
       interpolation, accuracy ~5e-7. LUT values committed as
       hardcoded hex-float literals in
-      `libvmaf/src/feature/ssimulacra2_eotf_lut.h`, generated
+      `core/src/feature/ssimulacra2_eotf_lut.h`, generated
       offline by `scripts/gen_ssimulacra2_eotf_lut.py`.
     Both are used consistently across scalar + AVX2 + AVX-512 +
     NEON paths, preserving the ADR-0161/0162/0163 scalar-vs-SIMD

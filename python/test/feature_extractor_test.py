@@ -2957,7 +2957,7 @@ class FeatureExtractorTest(MyTestCase):
     @unittest.skip(
         "VifFrameDifferenceFeatureExtractor calls ExternalProgramCaller.call_vifdiff_feature(), "
         "which shells out to the 'vmaf_feature' binary removed upstream in Netflix/vmaf. "
-        "The binary no longer exists in libvmaf/build/tools/. "
+        "The binary no longer exists in core/build/tools/. "
         "Fix: port VifFrameDifferenceFeatureExtractor to use the vmafexec / libvmaf C API "
         "path (same pattern as VmafQualityRunner), or delete the extractor if vifdiff is "
         "not needed. (scaffold-audit ADR-0621 P3-3)"

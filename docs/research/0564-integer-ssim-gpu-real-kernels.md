@@ -84,10 +84,10 @@ work groups. The host divides `sum(float_partials)` by `(double)sum(int64_wgt)`.
 
 ## Files touched
 
-- `libvmaf/src/feature/cuda/integer_ssim/integer_ssim_score.cu` (new)
-- `libvmaf/src/feature/cuda/ssim_cuda.c` (new)
-- `libvmaf/src/feature/cuda/ssim_cuda.h` (new)
-- `libvmaf/src/feature/hip/integer_ssim_hip.c` (rewritten)
-- `libvmaf/src/feature/sycl/integer_ssim_sycl.cpp` (appended extractor)
-- `libvmaf/src/feature/feature_extractor.c` (extern + list entries)
-- `libvmaf/src/meson.build` (new PTX and C source entries)
+- `core/src/feature/cuda/integer_ssim/integer_ssim_score.cu` (new)
+- `core/src/feature/cuda/ssim_cuda.c` (new)
+- `core/src/feature/cuda/ssim_cuda.h` (new)
+- `core/src/feature/hip/integer_ssim_hip.c` (rewritten)
+- `core/src/feature/sycl/integer_ssim_sycl.cpp` (appended extractor)
+- `core/src/feature/feature_extractor.c` (extern + list entries)
+- `core/src/meson.build` (new PTX and C source entries)

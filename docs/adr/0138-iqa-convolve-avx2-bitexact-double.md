@@ -15,9 +15,9 @@ hot-spot has moved:
 
 | Symbol | File | Self % | Cumulative % |
 | --- | --- | --- | --- |
-| `_iqa_convolve` | `libvmaf/src/feature/iqa/convolve.c:152` | 51.4 | 51.4 |
-| `_iqa_filter_pixel` | `libvmaf/src/feature/iqa/convolve.c:264` | 36.0 | 87.4 |
-| `_iqa_decimate` | `libvmaf/src/feature/iqa/decimate.c:53` | 0.6 | — |
+| `_iqa_convolve` | `core/src/feature/iqa/convolve.c:152` | 51.4 | 51.4 |
+| `_iqa_filter_pixel` | `core/src/feature/iqa/convolve.c:264` | 36.0 | 87.4 |
+| `_iqa_decimate` | `core/src/feature/iqa/decimate.c:53` | 0.6 | — |
 
 The 36% `_iqa_filter_pixel` cost belongs to the SSIM extractor's
 scalar `_iqa_decimate` (which calls it per-pixel) and is a separate
@@ -25,16 +25,16 @@ workstream. The 51.4% `_iqa_convolve` cost is the focus of this ADR.
 
 `_iqa_convolve` is called five times per `_iqa_ssim` invocation
 (`ref_mu`, `cmp_mu`, `ref_sigma_sqd`, `cmp_sigma_sqd`, `sigma_both`
-at [`ssim_tools.c:170–189`](../../libvmaf/src/feature/iqa/ssim_tools.c#L170-L189))
+at [`ssim_tools.c:170–189`](../../core/src/feature/iqa/ssim_tools.c#L170-L189))
 and MS-SSIM runs `_iqa_ssim` for each of 5 pyramid scales — 25
 convolutions per frame for MS-SSIM alone, plus SSIM's own five per
 frame at each scale. The kernel is the 11-tap separable Gaussian
 declared as `g_gaussian_window_h` / `g_gaussian_window_v` in
-[`ssim_tools.h:77-83`](../../libvmaf/src/feature/iqa/ssim_tools.h#L77-L83);
+[`ssim_tools.h:77-83`](../../core/src/feature/iqa/ssim_tools.h#L77-L83);
 both arrays are `static const float` with compile-time-constant values.
 
 The scalar implementation (in the 1-D separable branch selected by
-`IQA_CONVOLVE_1D` defined in [`iqa_options.h:25`](../../libvmaf/src/feature/iqa/iqa_options.h#L25))
+`IQA_CONVOLVE_1D` defined in [`iqa_options.h:25`](../../core/src/feature/iqa/iqa_options.h#L25))
 accumulates into a `double sum` and casts once at store:
 
 ```c
@@ -54,7 +54,7 @@ or `-mfma`, GCC does **not** fuse, and the scalar path is two-op
 
 Two fork-wide rules shape the implementation:
 
-- [`libvmaf/src/feature/iqa/`](../../libvmaf/src/feature/iqa/) is a
+- [`core/src/feature/iqa/`](../../core/src/feature/iqa/) is a
   verbatim BSD-2011 Tom Distler import. The fork leaves it untouched
   for rebase hygiene ([ADR-0125](0125-ms-ssim-decimate-simd.md) §Ground
   rules).
@@ -66,10 +66,10 @@ Two fork-wide rules shape the implementation:
 ## Decision
 
 We add a bit-exact AVX2 fast path for `_iqa_convolve` in a new
-`libvmaf/src/feature/x86/convolve_avx2.{c,h}` plus a matching entry
-point declared in `libvmaf/src/feature/iqa/convolve.h` guarded by
+`core/src/feature/x86/convolve_avx2.{c,h}` plus a matching entry
+point declared in `core/src/feature/iqa/convolve.h` guarded by
 `#if defined(HAVE_AVX2)`. Dispatch happens in
-`libvmaf/src/feature/iqa/ssim_tools.c` (the only hot caller)
+`core/src/feature/iqa/ssim_tools.c` (the only hot caller)
 via a new `_iqa_convolve_set_dispatch(fn)` setter symmetric to the
 existing `_iqa_ssim_set_dispatch` pattern; the scalar
 `_iqa_convolve` remains the default fallback. The vendored file
@@ -121,7 +121,7 @@ Borders (the `dst_w`-tail and `dst_h`-tail edge strips plus the
 `|y| < vc` and `|x| < uc` guard region) are handled by calling
 back to the scalar inner loop on those pixels — we do not vectorise
 the border, matching the
-[`ms_ssim_decimate_avx2`](../../libvmaf/src/feature/x86/ms_ssim_decimate_avx2.c)
+[`ms_ssim_decimate_avx2`](../../core/src/feature/x86/ms_ssim_decimate_avx2.c)
 precedent.
 
 NEON is deferred to a follow-up PR. AVX-512 is also deferred — at
@@ -163,7 +163,7 @@ layout and is a small-delta follow-up.
   - `docs/metrics/ms_ssim.md` (if present) / `docs/metrics/ssim.md`
     gets a "SIMD paths" entry; per [ADR-0100](0100-project-wide-doc-substance-rule.md)
     SIMD paths surface at the metric-doc level.
-  - `libvmaf/src/feature/AGENTS.md` rebase invariant: the AVX2
+  - `core/src/feature/AGENTS.md` rebase invariant: the AVX2
     kernel assumes `GAUSSIAN_LEN = 11`, `SQUARE_LEN = 8`,
     `normalized = 1`, `kernel_h` / `kernel_v` pointer identity
     against `g_gaussian_window_{h,v}` / `g_square_window_{h,v}`.
@@ -197,7 +197,7 @@ layout and is a small-delta follow-up.
   and `build/profiles/2026-04-20/ms_ssim_1080p_cpu_topN.txt`.
 - Vendored convolve origin:
   [Tom Distler IQA library, 2011](http://tdistler.com) — header in
-  [`libvmaf/src/feature/iqa/convolve.c`](../../libvmaf/src/feature/iqa/convolve.c).
+  [`core/src/feature/iqa/convolve.c`](../../core/src/feature/iqa/convolve.c).
 
 ### Status update 2026-05-08: Accepted
 
@@ -206,12 +206,12 @@ Audited as part of the 2026-05-08 ADR `Proposed` sweep
 
 Acceptance criteria verified in tree at HEAD `0a8b539e`:
 
-- `libvmaf/src/feature/x86/convolve_avx2.{c,h}` — present.
+- `core/src/feature/x86/convolve_avx2.{c,h}` — present.
 - The bit-exactness pattern (single-rounded float mul, widen to
   double, double add, no FMA) is cited as load-bearing by ADR-0140
   `simd_dx.h` (`SIMD_WIDEN_ADD_F32_F64_AVX2`).
 - Verification command:
-  `ls libvmaf/src/feature/x86/convolve_avx2.{c,h}`.
+  `ls core/src/feature/x86/convolve_avx2.{c,h}`.
 
 ### AVX-512 audit 2026-05-09: AUDIT-PASS at 1.300x / 1.173x (T3-9 sub-row c)
 

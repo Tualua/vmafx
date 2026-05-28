@@ -37,8 +37,8 @@ plus host double accumulation, per ADR-0187) sits between
 
 The PR ships:
 
-- **`libvmaf/src/feature/hip/ciede_hip.{c,h}`** — mirrors
-  `libvmaf/src/feature/cuda/integer_ciede_cuda.c`'s call graph
+- **`core/src/feature/hip/ciede_hip.{c,h}`** — mirrors
+  `core/src/feature/cuda/integer_ciede_cuda.c`'s call graph
   verbatim: `init → context_new + lifecycle_init + readback_alloc +
   feature_name_dict`, `submit → -ENOSYS` (the runtime PR will fill
   in the live `hipStreamWaitEvent` + dispatch + event-record + DtoH
@@ -51,13 +51,13 @@ The PR ships:
   twin so the runtime PR's `partials_count` math agrees.
 - **Registration**: `vmaf_fex_ciede_hip` is added to
   `feature_extractor_list` in
-  `libvmaf/src/feature/feature_extractor.c` under `#if HAVE_HIP`,
+  `core/src/feature/feature_extractor.c` under `#if HAVE_HIP`,
   immediately after the second consumer. Same posture as ADR-0241 /
   ADR-0254: registration succeeds, `VMAF_FEATURE_EXTRACTOR_HIP`
   flag stays cleared.
-- **Smoke test extension**: `libvmaf/test/test_hip_smoke.c` grows
+- **Smoke test extension**: `core/test/test_hip_smoke.c` grows
   one sub-test (`test_ciede_hip_extractor_registered`).
-- **Meson wiring**: `libvmaf/src/hip/meson.build` adds
+- **Meson wiring**: `core/src/hip/meson.build` adds
   `../feature/hip/ciede_hip.c` to `hip_sources`. No new dependency
   — the consumer compiles on a stock Ubuntu runner without any AMD
   packages installed.
@@ -120,7 +120,7 @@ handles failures today.
 - [ADR-0187](0187-ciede-vulkan.md) — ciede precision /
   `places=4` empirical floor argument; carries to the HIP twin via
   the per-block float partials + host double accumulation pattern.
-- `libvmaf/src/feature/cuda/integer_ciede_cuda.c` — the CUDA
+- `core/src/feature/cuda/integer_ciede_cuda.c` — the CUDA
   reference whose call graph this consumer mirrors.
 - `req` — user direction in T7-10b implementation prompt
   (paraphrased: "Land the third and fourth HIP runtime

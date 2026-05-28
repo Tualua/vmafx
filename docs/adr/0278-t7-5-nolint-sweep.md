@@ -20,7 +20,7 @@ chipped away at that backlog:
   (`_iqa_convolve`, `_iqa_ssim`, `vif_statistic_s_avx2`). After this PR
   the `iqa/` directory was fully lint-clean and no
   `bugprone-reserved-identifier` / `cert-dcl37-c` suppressions on
-  `_iqa_*` symbols remain in `libvmaf/src/`.
+  `_iqa_*` symbols remain in `core/src/`.
 - **PR #293** — Sweeps B+C. Cite-only pass that added inline ADR-0138 /
   ADR-0139 / ADR-0141 references to 30 NOLINTs in fork-added SIMD
   paths (`x86/ssimulacra2_avx2.c`, `x86/ssimulacra2_avx512.c`,
@@ -53,7 +53,7 @@ explicitly.
 
 The audit also confirmed the original T7-5 cluster framing is now
 factually closed: there are zero `_iqa_*` reserved-identifier
-NOLINTs anywhere in `libvmaf/src/`, and there are zero bare /
+NOLINTs anywhere in `core/src/`, and there are zero bare /
 uncited `readability-function-size` NOLINTs after this PR.
 
 ## Decision
@@ -90,7 +90,7 @@ of every `NOLINT(readability-function-size)` site reports
 
 - **Positive**:
   - Programmatic audit of `NOLINT(readability-function-size)` across
-    `libvmaf/src/` + `libvmaf/tools/` reports **75 sites, 0 missing
+    `core/src/` + `core/tools/` reports **75 sites, 0 missing
     ADR / Research citations**.
   - Backlog item **T7-5** is closed. Future PRs that add new NOLINT
     sites are governed by ADR-0141 §2 directly; there is no

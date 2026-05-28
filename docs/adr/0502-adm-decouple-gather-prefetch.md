@@ -8,7 +8,7 @@
 ## Context
 
 The `adm_decouple_avx512` function in
-`libvmaf/src/feature/x86/adm_avx512.c` spends 66.5 % of its own
+`core/src/feature/x86/adm_avx512.c` spends 66.5 % of its own
 cycles — 2.31 % of total VMAF wall time — on three `vpgatherdd`
 instructions that look up the 256 KB `adm_div_lookup` table
 (65 537 × int32, indexed by `band_h/v/d + 32768`).

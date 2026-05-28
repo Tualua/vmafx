@@ -36,9 +36,9 @@ Measured on RTX 4090, driver 595.71.05, Vulkan 1.4.350:
 - **Vulkan build:** `meson setup build-vulkan-profile -Denable_vulkan=enabled
   -Denable_cuda=false -Denable_sycl=false -Dbuildtype=release -Db_ndebug=false
   -Dc_args='-g -fno-omit-frame-pointer' -Dcpp_args='-g -fno-omit-frame-pointer'`
-  → `libvmaf/build-vulkan-profile/tools/vmaf`
+  → `core/build-vulkan-profile/tools/vmaf`
 - **CUDA build:** same flags with `-Denable_cuda=true -Denable_vulkan=disabled`
-  → `libvmaf/build-cuda-profile/tools/vmaf`
+  → `core/build-cuda-profile/tools/vmaf`
 - **Git hash:** commit `7b10b27a2` (branch `fix/saliency-per-mb-eval-2026-05-15`)
 
 ---
@@ -46,8 +46,8 @@ Measured on RTX 4090, driver 595.71.05, Vulkan 1.4.350:
 ## Reproducer Commands
 
 ```bash
-VMAF_VK=/path/to/libvmaf/build-vulkan-profile/tools/vmaf
-VMAF_CUDA=/path/to/libvmaf/build-cuda-profile/tools/vmaf
+VMAF_VK=/path/to/core/build-vulkan-profile/tools/vmaf
+VMAF_CUDA=/path/to/core/build-cuda-profile/tools/vmaf
 REF=/path/to/testdata/ref_576x324_48f.yuv
 DIS=/path/to/testdata/dis_576x324_48f.yuv
 MODEL=/path/to/model/vmaf_v0.6.1.json
@@ -238,11 +238,11 @@ NVIDIA discrete GPU.
   against a header embedded in the file; invalidate on mismatch.
 
 **Implementation sites:**
-- `libvmaf/src/vulkan/common.c`: create/load/save cache in `vmaf_vulkan_context_new`
+- `core/src/vulkan/common.c`: create/load/save cache in `vmaf_vulkan_context_new`
   / `vmaf_vulkan_context_destroy`.
-- `libvmaf/src/vulkan/kernel_template.h:300,689`: replace `VK_NULL_HANDLE` with
+- `core/src/vulkan/kernel_template.h:300,689`: replace `VK_NULL_HANDLE` with
   `ctx->pipeline_cache`.
-- `libvmaf/src/vulkan/vulkan_internal.h`: add `VkPipelineCache pipeline_cache` to
+- `core/src/vulkan/vulkan_internal.h`: add `VkPipelineCache pipeline_cache` to
   `VmafVulkanContext`.
 
 **Risk:** Driver pipeline cache format is vendor-opaque and not forward-compatible.

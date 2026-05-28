@@ -11,14 +11,14 @@
   SYCL feature kernel is already fp64-free in its device code:
   ADM gain limiting uses an int64 Q31 split-multiply
   (`gain_limit_to_q31` + `launch_decouple_csf<false>` in
-  `libvmaf/src/feature/sycl/integer_adm_sycl.cpp`), VIF gain
+  `core/src/feature/sycl/integer_adm_sycl.cpp`), VIF gain
   limiting uses fp32 `sycl::fmin`, and accumulators use
   `sycl::plus<int64_t>`. There is no fp64-emulation fallback — the
   previous wording suggested one. New
   [`docs/backends/sycl/overview.md`](docs/backends/sycl/overview.md)
   § "fp64-less device contract (T7-17)" documents the
   no-`double`-in-kernel-lambdas rule + the SPIR-V module-taint
-  rationale; new `libvmaf/src/sycl/AGENTS.md` invariant row pins
+  rationale; new `core/src/sycl/AGENTS.md` invariant row pins
   the contract on rebase. The originally reported 5–10× Arc A380
   vs Vulkan perf gap has a different root cause (kernel geometry,
   sub-group size, memory pattern) — out of T7-17's scope. See
@@ -44,7 +44,7 @@
   See [ADR-0214](docs/adr/0214-gpu-parity-ci-gate.md).
 - **FastDVDnet temporal pre-filter (T6-7)** — new feature
   extractor `fastdvdnet_pre` under
-  [`libvmaf/src/feature/fastdvdnet_pre.c`](libvmaf/src/feature/fastdvdnet_pre.c)
+  [`core/src/feature/fastdvdnet_pre.c`](core/src/feature/fastdvdnet_pre.c)
   registers a 5-frame-sliding-window temporal denoiser backed by
   the public `vmaf_dnn_session_*` API. ONNX I/O contract:
   `frames` float32 NCHW `[1, 5, H, W]` (channel axis stacks
@@ -64,7 +64,7 @@
   [ADR-0215](docs/adr/0215-fastdvdnet-pre-filter.md), user-facing
   doc [`docs/ai/models/fastdvdnet_pre.md`](docs/ai/models/fastdvdnet_pre.md),
   registration smoke test
-  [`libvmaf/test/test_fastdvdnet_pre.c`](libvmaf/test/test_fastdvdnet_pre.c)
+  [`core/test/test_fastdvdnet_pre.c`](core/test/test_fastdvdnet_pre.c)
   mirroring `test_lpips.c`. Closes backlog item T6-7.
 - **Vulkan PSNR — chroma extension (T3-15(b))** — `psnr_vulkan`
   now emits `psnr_cb` and `psnr_cr` alongside `psnr_y`. Three
@@ -81,15 +81,15 @@
 
 - **Embedded MCP server scaffold (T5-2, audit-first)** — new
   public header
-  [`libvmaf/include/libvmaf/libvmaf_mcp.h`](libvmaf/include/libvmaf/libvmaf_mcp.h)
+  [`core/include/libvmaf/libvmaf_mcp.h`](core/include/libvmaf/libvmaf_mcp.h)
   declaring the in-process MCP API (`vmaf_mcp_init` /
   `_start_sse` / `_start_uds` / `_start_stdio` / `_stop` /
   `_close` / `_available` / `_transport_available`); stub TU at
-  `libvmaf/src/mcp/mcp.c` returning `-ENOSYS` (or `-EINVAL` on
+  `core/src/mcp/mcp.c` returning `-ENOSYS` (or `-EINVAL` on
   bad arguments); new umbrella `enable_mcp` boolean (default
   `false`) plus per-transport sub-flags `enable_mcp_sse`,
   `enable_mcp_uds`, `enable_mcp_stdio`; 12-sub-test smoke at
-  `libvmaf/test/test_mcp_smoke.c` pinning the `-ENOSYS` +
+  `core/test/test_mcp_smoke.c` pinning the `-ENOSYS` +
   NULL-guard contract; user-facing doc at
   [`docs/mcp/embedded.md`](docs/mcp/embedded.md). **Scaffold
   only** — the T5-2b follow-up PR vendors cJSON + mongoose,
@@ -120,7 +120,7 @@
   `posix_spawnp(3p)` against the registry's `sigstore_bundle` path,
   failing closed on missing bundle / missing cosign / non-zero exit.
   Public C entry point: `vmaf_dnn_verify_signature()` in
-  [`libvmaf/include/libvmaf/dnn.h`](libvmaf/include/libvmaf/dnn.h).
+  [`core/include/libvmaf/dnn.h`](core/include/libvmaf/dnn.h).
   Python validator at
   [`ai/scripts/validate_model_registry.py`](ai/scripts/validate_model_registry.py)
   (Draft 2020-12 with a structural fallback when `jsonschema` is
@@ -130,7 +130,7 @@
   [`docs/ai/inference.md`](docs/ai/inference.md) and
   [`docs/ai/security.md`](docs/ai/security.md). Tests:
   `python/test/model_registry_schema_test.py` (10 cases) and
-  `libvmaf/test/dnn/test_tiny_model_verify.c` (18 failure-mode
+  `core/test/dnn/test_tiny_model_verify.c` (18 failure-mode
   cases on Unix + 1 NULL-arg case covering malformed JSON,
   default-registry
   derivation, fake-cosign success / non-zero exit, and
@@ -151,7 +151,7 @@
   constant `VMAF_DNN_DEFAULT_MAX_BYTES` (50 MB) as the single source
   of truth. Callers that genuinely need a larger envelope must bump
   the constant in
-  [`libvmaf/src/dnn/model_loader.h`](libvmaf/src/dnn/model_loader.h)
+  [`core/src/dnn/model_loader.h`](core/src/dnn/model_loader.h)
   and rebuild. The two env-driven unit tests
   (`test_session_open_respects_max_bytes_env`,
   `test_session_open_ignores_invalid_max_bytes_env`) are removed; all
@@ -180,11 +180,11 @@
   One PR closes three S-effort follow-ups identified by the
   2026-04-28 BACKLOG audit. (a) `motion_v2` AVX2 `srlv_epi64`
   audit: new fork-local libvmaf C unit test
-  [`libvmaf/test/test_motion_v2_simd.c`](libvmaf/test/test_motion_v2_simd.c)
+  [`core/test/test_motion_v2_simd.c`](core/test/test_motion_v2_simd.c)
   exercises adversarial negative-`accum` 16-bit fixtures (10-bit
   and 12-bit, uniform-negative and alternating-mixed-sign) against
   the AVX2 path in
-  [`libvmaf/src/feature/x86/motion_v2_avx2.c`](libvmaf/src/feature/x86/motion_v2_avx2.c);
+  [`core/src/feature/x86/motion_v2_avx2.c`](core/src/feature/x86/motion_v2_avx2.c);
   on the bench host the post-`abs()` aggregation absorbs the
   per-lane logical-vs-arithmetic shift difference and SAD totals
   match scalar — the test stays as a permanent regression guard
@@ -246,7 +246,7 @@
   (`b949cebf` float_motion-only side) because float_motion has
   no precomputed-table investment to protect. Two new invariants
   added to
-  [`libvmaf/src/feature/AGENTS.md`](libvmaf/src/feature/AGENTS.md)
+  [`core/src/feature/AGENTS.md`](core/src/feature/AGENTS.md)
   documenting the vif and adm divergences so future sessions
   don't accidentally re-port the chains. No code change.
 
@@ -315,20 +315,20 @@
 
 - **HIP (AMD ROCm) compute backend — scaffold-only audit-first PR
   (T7-10, ADR-0212)**: new public header
-  [`libvmaf/include/libvmaf/libvmaf_hip.h`](libvmaf/include/libvmaf/libvmaf_hip.h)
+  [`core/include/libvmaf/libvmaf_hip.h`](core/include/libvmaf/libvmaf_hip.h)
   declaring `VmafHipState`, `VmafHipConfiguration`,
   `vmaf_hip_state_init` / `_import_state` / `_state_free`,
   `vmaf_hip_list_devices`, `vmaf_hip_available`. New
-  `libvmaf/src/hip/` (`common.{c,h}`, `picture_hip.{c,h}`,
-  `dispatch_strategy.{c,h}`) + `libvmaf/src/feature/hip/` (3 kernel
+  `core/src/hip/` (`common.{c,h}`, `picture_hip.{c,h}`,
+  `dispatch_strategy.{c,h}`) + `core/src/feature/hip/` (3 kernel
   stubs: `adm_hip.c`, `vif_hip.c`, `motion_hip.c`). All entry points
   return `-ENOSYS` until the runtime PR (T7-10b) lands. New
   `enable_hip` boolean option (default **false**) in
-  [`libvmaf/meson_options.txt`](libvmaf/meson_options.txt) with
+  [`core/meson_options.txt`](core/meson_options.txt) with
   conditional `subdir('hip')` in
-  [`libvmaf/src/meson.build`](libvmaf/src/meson.build). New 9-sub-test
+  [`core/src/meson.build`](core/src/meson.build). New 9-sub-test
   smoke at
-  [`libvmaf/test/test_hip_smoke.c`](libvmaf/test/test_hip_smoke.c)
+  [`core/test/test_hip_smoke.c`](core/test/test_hip_smoke.c)
   pinning the `-ENOSYS` / `-EINVAL` contract for every public
   C-API entry point. New CI matrix row `Build — Ubuntu HIP (T7-10
   scaffold)` in
@@ -348,7 +348,7 @@
 
 - **SSIMULACRA 2 SVE2 SIMD parity (T7-38, ADR-0213)** (fork-local):
   new aarch64 SVE2 sister TU
-  ([`libvmaf/src/feature/arm64/ssimulacra2_sve2.c`](libvmaf/src/feature/arm64/ssimulacra2_sve2.c))
+  ([`core/src/feature/arm64/ssimulacra2_sve2.c`](core/src/feature/arm64/ssimulacra2_sve2.c))
   ports the seven SSIMULACRA 2 SIMD entry points (`multiply_3plane`,
   `linear_rgb_to_xyb`, `downsample_2x2`, `ssim_map`, `edge_diff_map`,
   `blur_plane`, `picture_to_linear_rgb`) under a fixed 4-lane
@@ -358,12 +358,12 @@
   [ADR-0139](docs/adr/0139-ssim-simd-bitexact-double.md) /
   [ADR-0140](docs/adr/0140-ssimulacra2-simd-bitexact.md) byte-exact
   contract. New runtime probe
-  [`libvmaf/src/arm/cpu.c`](libvmaf/src/arm/cpu.c) reads
+  [`core/src/arm/cpu.c`](core/src/arm/cpu.c) reads
   `getauxval(AT_HWCAP2) & HWCAP2_SVE2`; new build probe in
-  [`libvmaf/src/meson.build`](libvmaf/src/meson.build) runs
+  [`core/src/meson.build`](core/src/meson.build) runs
   `cc.compiles(... -march=armv9-a+sve2)` so toolchains without SVE2
   intrinsics gracefully fall back to NEON. The dispatch table in
-  [`libvmaf/src/feature/ssimulacra2.c`](libvmaf/src/feature/ssimulacra2.c)
+  [`core/src/feature/ssimulacra2.c`](core/src/feature/ssimulacra2.c)
   is purely additive: NEON stays the fallback; SVE2 overrides only
   when the bit is set. Validated under `qemu-aarch64-static -cpu max`:
   dispatch reports `NEON=1 SVE2=1`, all 11 `test_ssimulacra2_simd`
@@ -554,17 +554,17 @@
   blur (`ssimulacra2_blur_h` / `ssimulacra2_blur_v`). The CUDA
   IIR fatbin is pinned with `-Xcompiler=-ffp-contract=off
   --fmad=false` via a per-kernel `cuda_cu_extra_flags` map in
-  `libvmaf/src/meson.build`; SYCL relies on the existing
+  `core/src/meson.build`; SYCL relies on the existing
   `-fp-model=precise` for the same effect. Empirical: Netflix
   normal pair `max_abs_diff = 1.0e-6` on CUDA, both checkerboard
   pairs **bit-exact** (0.0). New extractor names:
   `ssimulacra2_cuda`, `ssimulacra2_sycl` (pair with
   `--backend cuda` / `--backend sycl` for exclusive GPU
   dispatch). New sources:
-  `libvmaf/src/feature/cuda/ssimulacra2_cuda.{c,h}`,
-  `libvmaf/src/feature/cuda/ssimulacra2/ssimulacra2_blur.cu`,
-  `libvmaf/src/feature/cuda/ssimulacra2/ssimulacra2_mul.cu`,
-  `libvmaf/src/feature/sycl/ssimulacra2_sycl.cpp`. With Vulkan
+  `core/src/feature/cuda/ssimulacra2_cuda.{c,h}`,
+  `core/src/feature/cuda/ssimulacra2/ssimulacra2_blur.cu`,
+  `core/src/feature/cuda/ssimulacra2/ssimulacra2_mul.cu`,
+  `core/src/feature/sycl/ssimulacra2_sycl.cpp`. With Vulkan
   ([ADR-0201](docs/adr/0201-ssimulacra2-vulkan-kernel.md))
   already in master and float_adm twins
   ([ADR-0202](docs/adr/0202-float-adm-cuda-sycl.md)) merging in
@@ -620,7 +620,7 @@
   ([ADR-0205](docs/adr/0205-cambi-gpu-feasibility.md)) + research
   digest + reference shader scaffolds (`cambi_derivative.comp`,
   `cambi_decimate.comp`, `cambi_filter_mode.comp` under
-  [`libvmaf/src/feature/vulkan/shaders/`](libvmaf/src/feature/vulkan/shaders/))
+  [`core/src/feature/vulkan/shaders/`](core/src/feature/vulkan/shaders/))
   + dormant `cambi_vulkan.c` host skeleton (not yet build-wired,
   matching ssimulacra2 precedent). After the integration follow-up
   PR lands, every registered feature extractor in the fork has at
@@ -660,7 +660,7 @@
   extractors (T7-23 / ADR-0192 / ADR-0194)** (fork-local): closes
   the ANSNR matrix gap (was CPU-only float, no GPU twin). Single-
   dispatch GPU kernels apply the CPU's 3x3 ref filter
-  ([`ansnr_tools.c::ansnr_filter2d_ref_s`](libvmaf/src/feature/ansnr_tools.c))
+  ([`ansnr_tools.c::ansnr_filter2d_ref_s`](core/src/feature/ansnr_tools.c))
   and 5x5 dis filter (Netflix-tuned weights summing to 1.0,
   `/571`) inline from a 20×20 shared / SLM tile, then accumulate
   per-pixel `sig = ref_filtr²` and `noise = (ref_filtr - filtd)²`
@@ -673,11 +673,11 @@
   (10-bit, 3 frames) on **all three backends with identical
   numbers** (Vulkan = CUDA = SYCL — strong evidence the kernel
   logic is correct). Files: new
-  [`shaders/float_ansnr.comp`](libvmaf/src/feature/vulkan/shaders/float_ansnr.comp),
-  [`float_ansnr_vulkan.c`](libvmaf/src/feature/vulkan/float_ansnr_vulkan.c),
-  [`float_ansnr/float_ansnr_score.cu`](libvmaf/src/feature/cuda/float_ansnr/float_ansnr_score.cu),
-  [`float_ansnr_cuda.c`](libvmaf/src/feature/cuda/float_ansnr_cuda.c),
-  [`float_ansnr_sycl.cpp`](libvmaf/src/feature/sycl/float_ansnr_sycl.cpp).
+  [`shaders/float_ansnr.comp`](core/src/feature/vulkan/shaders/float_ansnr.comp),
+  [`float_ansnr_vulkan.c`](core/src/feature/vulkan/float_ansnr_vulkan.c),
+  [`float_ansnr/float_ansnr_score.cu`](core/src/feature/cuda/float_ansnr/float_ansnr_score.cu),
+  [`float_ansnr_cuda.c`](core/src/feature/cuda/float_ansnr_cuda.c),
+  [`float_ansnr_sycl.cpp`](core/src/feature/sycl/float_ansnr_sycl.cpp).
   New `float_ansnr` lavapipe gate step in
   [`tests-and-quality-gates.yml`](.github/workflows/tests-and-quality-gates.yml)
   + `FEATURE_METRICS` entry in the cross-backend gate.
@@ -685,7 +685,7 @@
 ### Changed
 
 - **Port Netflix upstream `314db130` — remove empty translation unit
-  `libvmaf/src/feature/all.c`** (upstream port): the file had been
+  `core/src/feature/all.c`** (upstream port): the file had been
   reduced to includes + forward declarations + a `MIN` macro with no
   active call sites in the fork (`compute_*` entry points are reached
   via per-extractor TUs, not via `all.c`). Upstream removed it as
@@ -699,8 +699,8 @@
   that has long since landed. Updated `libvmaf_vulkan.h` (top-level
   header doc-comment + the T7-29 zero-copy import block), the
   `ssimulacra2.c` SIMD blurb (ADR-0161 / 0162 / 0164 + GPU twins
-  ADR-0201 / 0206), and the Vulkan blurbs in `libvmaf/src/meson.build`
-  + `libvmaf/meson_options.txt`. Comment-only; no behavioural change.
+  ADR-0201 / 0206), and the Vulkan blurbs in `core/src/meson.build`
+  + `core/meson_options.txt`. Comment-only; no behavioural change.
   Closes Section C of `docs/backlog-audit-2026-04-28.md`.
 
 - **Whole-codebase lint sweep — auto-fix subset (52% findings cleared)**
@@ -726,9 +726,9 @@
   shipped via ADR-0138/0139/0140 — verified 3.2× wall-clock
   speedup vs `--cpumask 0xfffffffe`. **CAMBI scalar fallback**
   already exists at
-  [`cambi.c:446-460`](libvmaf/src/feature/cambi.c). **motion_v2
+  [`cambi.c:446-460`](core/src/feature/cambi.c). **motion_v2
   NEON** already exists at
-  [`arm64/motion_v2_neon.c`](libvmaf/src/feature/arm64/motion_v2_neon.c).
+  [`arm64/motion_v2_neon.c`](core/src/feature/arm64/motion_v2_neon.c).
   **integer `ansnr`** is a phantom row — no extractor is
   registered. **T7-21** (`psnr_hvs` AVX-512) closes as **AVX2
   ceiling** with empirical evidence (1.17× speedup of AVX2 vs
@@ -745,7 +745,7 @@
   (fork-local CI fix): `.github/workflows/lint-and-format.yml`'s
   `Clang-Tidy (Changed C/C++ Files)` step used `git diff --name-only`
   without `--diff-filter=d`, so a deleted file (e.g.
-  `libvmaf/src/feature/all.c` in this PR's upstream port of
+  `core/src/feature/all.c` in this PR's upstream port of
   `314db130`) was passed to `clang-tidy`, which then failed with
   `clang-diagnostic-error: no such file or directory`. Added
   `--diff-filter=d` to all three `git diff` invocations in the
@@ -801,7 +801,7 @@
   SASS now matches CPU rounding bit-exactly.
 
 - **`libvmaf_vulkan.h` now installs under the prefix when
-  `-Denable_vulkan=enabled`** (fork-local): `libvmaf/include/libvmaf/meson.build`
+  `-Denable_vulkan=enabled`** (fork-local): `core/include/core/meson.build`
   had install gates for `is_cuda_enabled` and `is_sycl_enabled` but
   none for Vulkan, so `meson install` dropped `libvmaf_cuda.h` and
   `libvmaf_sycl.h` under `<prefix>/include/libvmaf/` but never
@@ -831,11 +831,11 @@
   bit-exact CPU-equivalent pools and no GPU speedup. Symptom on
   bench fixtures: identical fps + identical `vmaf` pool across
   `cpu` / `cuda` / `sycl` rows. Fix in
-  [`libvmaf/tools/cli_parse.c`](libvmaf/tools/cli_parse.c) — set
+  [`core/tools/cli_parse.c`](core/tools/cli_parse.c) — set
   `gpumask = 0` (default) so the runtime engages CUDA after
   `vmaf_cuda_state_init` succeeds. `--gpumask=N --backend cuda`
   combinations preserve the user-supplied N. 5 new regression tests
-  in [`libvmaf/test/test_cli_parse.c`](libvmaf/test/test_cli_parse.c)
+  in [`core/test/test_cli_parse.c`](core/test/test_cli_parse.c)
   cover the four backends + the explicit-gpumask case. End-to-end
   smoke: `--backend cuda` on the Netflix golden 576×324 pair now
   emits 12 feature keys (CUDA extractor set) instead of 15 (CPU
@@ -865,7 +865,7 @@
   was installed to `/opt/ffbuild/`. Fix: move the `-include` off
   `volk_dep.compile_args` and onto libvmaf's private `c_args`
   via `vmaf_cflags_common += ['-include', volk_priv_remap_h_path]`
-  in `libvmaf/src/vulkan/meson.build`, where the path is pulled
+  in `core/src/vulkan/meson.build`, where the path is pulled
   from `subproject('volk').get_variable('volk_priv_remap_h_path')`.
   `c_args:` on a `library()` are private to the target and do
   NOT leak into the generated pkg-config Cflags; the
@@ -927,7 +927,7 @@
 
   Fixed by passing `-Wl,--exclude-libs,ALL` on the libvmaf.so
   link command in
-  [`libvmaf/src/meson.build`](libvmaf/src/meson.build); gated
+  [`core/src/meson.build`](core/src/meson.build); gated
   off Darwin / Windows where the flag isn't supported (those
   linkers don't auto-export static-archive symbols anyway).
   Verified via `nm -D libvmaf.so` (zero `vk*` / `volk*` post-
@@ -947,9 +947,9 @@
   - **CUDA**: nested 5x5 filter on the (prev - cur) diff loaded into
     a 20x20 shared int32 tile, warp-reduced via `__shfl_down_sync`,
     `atomicAdd` to a single int64 device buffer. New
-    [`integer_motion_v2/motion_v2_score.cu`](libvmaf/src/feature/cuda/integer_motion_v2/motion_v2_score.cu)
+    [`integer_motion_v2/motion_v2_score.cu`](core/src/feature/cuda/integer_motion_v2/motion_v2_score.cu)
     (~180 LOC PTX) +
-    [`integer_motion_v2_cuda.c`](libvmaf/src/feature/cuda/integer_motion_v2_cuda.c)
+    [`integer_motion_v2_cuda.c`](core/src/feature/cuda/integer_motion_v2_cuda.c)
     (~290 LOC host glue with submit/collect async stream pattern).
     Bit-exact vs CPU on 8-bit (48 frames) and 10-bit (3 frames) —
     `max_abs_diff = 0.0` on RTX 4090.
@@ -960,7 +960,7 @@
     needs the previous frame's raw ref pixels which the
     `shared_frame` luma buffer doesn't preserve across calls — same
     pattern as ciede_sycl). New
-    [`integer_motion_v2_sycl.cpp`](libvmaf/src/feature/sycl/integer_motion_v2_sycl.cpp)
+    [`integer_motion_v2_sycl.cpp`](core/src/feature/sycl/integer_motion_v2_sycl.cpp)
     (~330 LOC). Bit-exact vs CPU on Intel Arc A380 + oneAPI 2025.3.
 - **GPU long-tail batch 3 part 1a — `motion_v2_vulkan` extractor
   (T7-23 / ADR-0192 / ADR-0193)** (fork-local): first kernel of
@@ -1011,11 +1011,11 @@
   fix: features.md row claimed `float_psnr_y / _cb / _cr` plane
   outputs which were wrong — the CPU extractor only emits a single
   luma `float_psnr` score; corrected in this PR. New
-  [`shaders/float_psnr.comp`](libvmaf/src/feature/vulkan/shaders/float_psnr.comp),
-  [`float_psnr_vulkan.c`](libvmaf/src/feature/vulkan/float_psnr_vulkan.c),
-  [`float_psnr/float_psnr_score.cu`](libvmaf/src/feature/cuda/float_psnr/float_psnr_score.cu),
-  [`float_psnr_cuda.c`](libvmaf/src/feature/cuda/float_psnr_cuda.c),
-  [`float_psnr_sycl.cpp`](libvmaf/src/feature/sycl/float_psnr_sycl.cpp).
+  [`shaders/float_psnr.comp`](core/src/feature/vulkan/shaders/float_psnr.comp),
+  [`float_psnr_vulkan.c`](core/src/feature/vulkan/float_psnr_vulkan.c),
+  [`float_psnr/float_psnr_score.cu`](core/src/feature/cuda/float_psnr/float_psnr_score.cu),
+  [`float_psnr_cuda.c`](core/src/feature/cuda/float_psnr_cuda.c),
+  [`float_psnr_sycl.cpp`](core/src/feature/sycl/float_psnr_sycl.cpp).
   New `float_psnr` lavapipe gate step + `FEATURE_METRICS` entry.
 - **GPU long-tail batch 3 part 4 — `float_motion_{vulkan,cuda,sycl}`
   extractors (T7-23 / ADR-0192 / ADR-0196)** (fork-local): second
@@ -1032,11 +1032,11 @@
   frames) / `1e-6` (10-bit, 3 frames) across all three backends —
   strong correctness signal (any algebraic bug would produce
   backend-specific drift). New
-  [`shaders/float_motion.comp`](libvmaf/src/feature/vulkan/shaders/float_motion.comp),
-  [`float_motion_vulkan.c`](libvmaf/src/feature/vulkan/float_motion_vulkan.c),
-  [`float_motion/float_motion_score.cu`](libvmaf/src/feature/cuda/float_motion/float_motion_score.cu),
-  [`float_motion_cuda.{c,h}`](libvmaf/src/feature/cuda/float_motion_cuda.c),
-  [`float_motion_sycl.cpp`](libvmaf/src/feature/sycl/float_motion_sycl.cpp).
+  [`shaders/float_motion.comp`](core/src/feature/vulkan/shaders/float_motion.comp),
+  [`float_motion_vulkan.c`](core/src/feature/vulkan/float_motion_vulkan.c),
+  [`float_motion/float_motion_score.cu`](core/src/feature/cuda/float_motion/float_motion_score.cu),
+  [`float_motion_cuda.{c,h}`](core/src/feature/cuda/float_motion_cuda.c),
+  [`float_motion_sycl.cpp`](core/src/feature/sycl/float_motion_sycl.cpp).
   New `float_motion` lavapipe gate step + `FEATURE_METRICS` entry.
 - **GPU long-tail batch 3 part 5 — `float_vif_{vulkan,cuda,sycl}`
   extractors (T7-23 / ADR-0192 / ADR-0197)** (fork-local): third
@@ -1049,9 +1049,9 @@
   samples at `(2*gx, 2*gy)` with mirror padding handling taps near
   the edge. **Mirror-asymmetry fix:** CPU has two H-mirror formulas
   that differ by 1 —
-  [`vif_mirror_tap_h`](libvmaf/src/feature/vif_tools.c) returns
+  [`vif_mirror_tap_h`](core/src/feature/vif_tools.c) returns
   `2 * extent - idx - 1` (scalar fallback only), while
-  [`convolution_edge_s`](libvmaf/src/feature/common/convolution_internal.h)
+  [`convolution_edge_s`](core/src/feature/common/convolution_internal.h)
   returns `2 * width - idx - 2` (AVX2 production border path). The
   GPU follows the AVX2 form because that's what production runs;
   using scalar's form drifted `5.46e-4` at scale 1, the AVX2 form
@@ -1059,11 +1059,11 @@
   identical numbers across all three backends** (`1e-6 / 1.4e-5
   / 1.8e-5 / 3.7e-5` at 8-bit, tighter at 10-bit on Intel Arc A380,
   Mesa anv, NVIDIA RTX 4090, oneAPI 2025.3). New
-  [`shaders/float_vif.comp`](libvmaf/src/feature/vulkan/shaders/float_vif.comp),
-  [`float_vif_vulkan.c`](libvmaf/src/feature/vulkan/float_vif_vulkan.c),
-  [`float_vif/float_vif_score.cu`](libvmaf/src/feature/cuda/float_vif/float_vif_score.cu),
-  [`float_vif_cuda.{c,h}`](libvmaf/src/feature/cuda/float_vif_cuda.c),
-  [`float_vif_sycl.cpp`](libvmaf/src/feature/sycl/float_vif_sycl.cpp).
+  [`shaders/float_vif.comp`](core/src/feature/vulkan/shaders/float_vif.comp),
+  [`float_vif_vulkan.c`](core/src/feature/vulkan/float_vif_vulkan.c),
+  [`float_vif/float_vif_score.cu`](core/src/feature/cuda/float_vif/float_vif_score.cu),
+  [`float_vif_cuda.{c,h}`](core/src/feature/cuda/float_vif_cuda.c),
+  [`float_vif_sycl.cpp`](core/src/feature/sycl/float_vif_sycl.cpp).
   New `float_vif` lavapipe gate step + `FEATURE_METRICS` entry at
   places=4.
 - **Tiny-AI training scaffold for the Netflix VMAF corpus (ADR-0242)**
@@ -1086,9 +1086,9 @@
   `-1` mirror form, same fused stage 3 with cross-band CM
   threshold, same per-scale 6-slot WG partials reduced on the
   host in `double`. New files:
-  [`libvmaf/src/feature/cuda/float_adm/float_adm_score.cu`](libvmaf/src/feature/cuda/float_adm/float_adm_score.cu),
-  [`libvmaf/src/feature/cuda/float_adm_cuda.{c,h}`](libvmaf/src/feature/cuda/float_adm_cuda.c),
-  [`libvmaf/src/feature/sycl/float_adm_sycl.cpp`](libvmaf/src/feature/sycl/float_adm_sycl.cpp).
+  [`core/src/feature/cuda/float_adm/float_adm_score.cu`](core/src/feature/cuda/float_adm/float_adm_score.cu),
+  [`core/src/feature/cuda/float_adm_cuda.{c,h}`](core/src/feature/cuda/float_adm_cuda.c),
+  [`core/src/feature/sycl/float_adm_sycl.cpp`](core/src/feature/sycl/float_adm_sycl.cpp).
   Two precision-critical fixes from bring-up: (1) `--fmad=false`
   on the `float_adm_score` fatbin via a new per-kernel
   `cuda_cu_extra_flags` dict in `meson.build` — NVCC's default
@@ -1113,8 +1113,8 @@
   ([ADR-0178](docs/adr/0178-integer-adm-vulkan.md)) — same 4-stage
   / 4-scale wave-of-stages design (16 pipelines) but with float
   buffers and host-side `double` accumulation. New files:
-  [`libvmaf/src/feature/vulkan/float_adm_vulkan.c`](libvmaf/src/feature/vulkan/float_adm_vulkan.c),
-  [`libvmaf/src/feature/vulkan/shaders/float_adm.comp`](libvmaf/src/feature/vulkan/shaders/float_adm.comp).
+  [`core/src/feature/vulkan/float_adm_vulkan.c`](core/src/feature/vulkan/float_adm_vulkan.c),
+  [`core/src/feature/vulkan/shaders/float_adm.comp`](core/src/feature/vulkan/shaders/float_adm.comp).
   Mirror-asymmetry status: float_adm has NO trap analogous to
   [ADR-0197](docs/adr/0197-float-vif-gpu.md) — both the scalar
   `adm_dwt2_s` and the AVX2 `float_adm_dwt2_avx2` consume the same
@@ -1174,16 +1174,16 @@
   `10·log10(1/score)` per plane and combined
   `psnr_hvs = 0.8·Y + 0.1·(Cb + Cr)`.
   - **CUDA** (~270 LOC PTX in
-    [`integer_psnr_hvs/psnr_hvs_score.cu`](libvmaf/src/feature/cuda/integer_psnr_hvs/psnr_hvs_score.cu)
+    [`integer_psnr_hvs/psnr_hvs_score.cu`](core/src/feature/cuda/integer_psnr_hvs/psnr_hvs_score.cu)
     + ~330 LOC host in
-    [`integer_psnr_hvs_cuda.{c,h}`](libvmaf/src/feature/cuda/integer_psnr_hvs_cuda.c)):
+    [`integer_psnr_hvs_cuda.{c,h}`](core/src/feature/cuda/integer_psnr_hvs_cuda.c)):
     picture_copy host-side via `cuMemcpy2DAsync` D2H per
     plane (honours pitched `cuMemAllocPitch` device buffer —
     same fix as ms_ssim_cuda PR #142). Per-plane state arrays
     (`d_ref[3] / d_dist[3] / d_partials[3]`) + pinned host
     staging.
   - **SYCL** (~420 LOC, single TU
-    [`integer_psnr_hvs_sycl.cpp`](libvmaf/src/feature/sycl/integer_psnr_hvs_sycl.cpp)):
+    [`integer_psnr_hvs_sycl.cpp`](core/src/feature/sycl/integer_psnr_hvs_sycl.cpp)):
     self-contained submit/collect (mirrors `ms_ssim_sycl`).
     Host-pinned USM staging carries the picture_copy-
     normalised float planes per plane. Inline picture_copy
@@ -1218,8 +1218,8 @@
   partials in `double` per plane, applies
   `score / pixels / samplemax²` then `10·log10(1/score)` per
   plane. Combined `psnr_hvs = 0.8·Y + 0.1·(Cb + Cr)`. New
-  [`libvmaf/src/feature/vulkan/shaders/psnr_hvs.comp`](libvmaf/src/feature/vulkan/shaders/psnr_hvs.comp)
-  + [`libvmaf/src/feature/vulkan/psnr_hvs_vulkan.c`](libvmaf/src/feature/vulkan/psnr_hvs_vulkan.c)
+  [`core/src/feature/vulkan/shaders/psnr_hvs.comp`](core/src/feature/vulkan/shaders/psnr_hvs.comp)
+  + [`core/src/feature/vulkan/psnr_hvs_vulkan.c`](core/src/feature/vulkan/psnr_hvs_vulkan.c)
   (~540 LOC host). Three pipelines (one per plane, baked-in
   PLANE + BPC specialisation constants); CSF tables per plane
   baked into shader as `const float[64]` arrays. Rejects
@@ -1244,9 +1244,9 @@
   for the `MS-SSIM = ∏_i l[i]^α[i]·c[i]^β[i]·s[i]^γ[i]`
   combine.
   - **CUDA** (~210 LOC PTX in
-    [`integer_ms_ssim/ms_ssim_score.cu`](libvmaf/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu)
+    [`integer_ms_ssim/ms_ssim_score.cu`](core/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu)
     + ~470 LOC host in
-    [`integer_ms_ssim_cuda.{c,h}`](libvmaf/src/feature/cuda/integer_ms_ssim_cuda.c)):
+    [`integer_ms_ssim_cuda.{c,h}`](core/src/feature/cuda/integer_ms_ssim_cuda.c)):
     picture_copy normalisation runs on the host (uint → float in
     `[0, 255]`) via `cuMemcpy2DAsync` D2H of the pitched device
     plane into a contiguous pinned host buffer, then H2D upload
@@ -1258,7 +1258,7 @@
     + `dstPitch = width·bpc` produces the contiguous host buffer
     `picture_copy` expects.
   - **SYCL** (~510 LOC, single TU
-    [`integer_ms_ssim_sycl.cpp`](libvmaf/src/feature/sycl/integer_ms_ssim_sycl.cpp)):
+    [`integer_ms_ssim_sycl.cpp`](core/src/feature/sycl/integer_ms_ssim_sycl.cpp)):
     self-contained submit/collect (does NOT register with
     `vmaf_sycl_graph_register` — same rationale as ssim_sycl).
     Host-pinned USM staging carries the picture_copy-normalised
@@ -1277,18 +1277,18 @@
   extractor (T7-23 / ADR-0188 / ADR-0190)** (fork-local):
   Wang multi-scale SSIM on Vulkan. 5-level pyramid built via
   9-tap 9/7 biorthogonal LPF + 2× downsample
-  ([`ms_ssim_decimate.comp`](libvmaf/src/feature/vulkan/shaders/ms_ssim_decimate.comp),
+  ([`ms_ssim_decimate.comp`](core/src/feature/vulkan/shaders/ms_ssim_decimate.comp),
   matches `ms_ssim_decimate_scalar` byte-for-byte). Per-scale
   SSIM compute via a variant of `ssim.comp` that emits **three**
   per-WG partials (`l, c, s`) instead of a single combined
   SSIM
-  ([`ms_ssim.comp`](libvmaf/src/feature/vulkan/shaders/ms_ssim.comp)).
+  ([`ms_ssim.comp`](core/src/feature/vulkan/shaders/ms_ssim.comp)).
   Host accumulates partials in `double` per scale, applies the
   Wang weights `α/β/γ` (matches `ms_ssim.c::g_alphas/g_betas/
   g_gammas` byte-for-byte) for the
   `MS-SSIM = ∏_i l[i]^α[i]·c[i]^β[i]·s[i]^γ[i]` combine on host.
   New
-  [`libvmaf/src/feature/vulkan/ms_ssim_vulkan.c`](libvmaf/src/feature/vulkan/ms_ssim_vulkan.c)
+  [`core/src/feature/vulkan/ms_ssim_vulkan.c`](core/src/feature/vulkan/ms_ssim_vulkan.c)
   (~700 LOC). Min-dim guard mirrors
   [ADR-0153](docs/adr/0153-float-ms-ssim-min-dim-netflix-1414.md)
   (176×176 minimum). v1 does **not** implement `enable_lcs` (15
@@ -1313,15 +1313,15 @@
   SSIM combine + per-WG / per-block float partial sums; host
   accumulates in `double`).
   - **CUDA** (~210 LOC PTX in
-    [`integer_ssim/ssim_score.cu`](libvmaf/src/feature/cuda/integer_ssim/ssim_score.cu)
+    [`integer_ssim/ssim_score.cu`](core/src/feature/cuda/integer_ssim/ssim_score.cu)
     + ~340 LOC host in
-    [`integer_ssim_cuda.{c,h}`](libvmaf/src/feature/cuda/integer_ssim_cuda.c)):
+    [`integer_ssim_cuda.{c,h}`](core/src/feature/cuda/integer_ssim_cuda.c)):
     `picture_copy` normalisation (uint → float / scaler) inlined
     in the horizontal kernel — no extra host-side conversion
     since picture_cuda already uploaded the raw uint plane.
     Per-block float partials reduced on host in `double`.
   - **SYCL** (~370 LOC, single TU
-    [`integer_ssim_sycl.cpp`](libvmaf/src/feature/sycl/integer_ssim_sycl.cpp)):
+    [`integer_ssim_sycl.cpp`](core/src/feature/sycl/integer_ssim_sycl.cpp)):
     self-contained submit/collect (does NOT register with
     `vmaf_sycl_graph_register` — `shared_frame` is luma-only
     packed at uint width and SSIM needs `picture_copy`-normalised
@@ -1355,8 +1355,8 @@
   `g_gaussian_window_h` in `iqa/ssim_tools.h`. picture_copy
   host-side normalises uint sample → float `[0, 255]` before
   upload (matches `float_ssim.c::extract`). New
-  [`libvmaf/src/feature/vulkan/shaders/ssim.comp`](libvmaf/src/feature/vulkan/shaders/ssim.comp)
-  + [`libvmaf/src/feature/vulkan/ssim_vulkan.c`](libvmaf/src/feature/vulkan/ssim_vulkan.c)
+  [`core/src/feature/vulkan/shaders/ssim.comp`](core/src/feature/vulkan/shaders/ssim.comp)
+  + [`core/src/feature/vulkan/ssim_vulkan.c`](core/src/feature/vulkan/ssim_vulkan.c)
   (~510 LOC host). **v1 limitation**: GPU path supports
   `scale=1` only — auto-detect rejects `scale > 1` with
   `-EINVAL`; production 1080p needs
@@ -1376,7 +1376,7 @@
   Vulkan ciede kernel shipped in PR #136. Both emit the
   `ciede2000` metric (logarithmic transform `45 - 20·log10(mean_ΔE)`).
   - **CUDA** (~270 LOC PTX +
-    [`integer_ciede_cuda.{c,h}`](libvmaf/src/feature/cuda/integer_ciede_cuda.c)
+    [`integer_ciede_cuda.{c,h}`](core/src/feature/cuda/integer_ciede_cuda.c)
     ~245 LOC host): per-pixel float ciede2000 (chroma read
     inline at the subsampled position — avoids the host-side
     upscale step), per-block partials reduced on the host in
@@ -1388,7 +1388,7 @@
     wrong for ciede. Bitmask now picks `0x7` for any pix_fmt
     other than YUV400P; CUDA chroma-aware kernels are unblocked.
   - **SYCL** (~470 LOC, single TU
-    [`integer_ciede_sycl.cpp`](libvmaf/src/feature/sycl/integer_ciede_sycl.cpp)):
+    [`integer_ciede_sycl.cpp`](core/src/feature/sycl/integer_ciede_sycl.cpp)):
     self-contained submit/collect (does **not** register with
     `vmaf_sycl_graph_register` — `shared_frame` buffers are
     luma-only). Host-pinned USM staging upscales chroma to
@@ -1411,14 +1411,14 @@
   the fork. Per-pixel ciede2000 ΔE uses ~40 transcendental ops
   (`pow` / `sqrt` / `sin` / `atan2`), so bit-exactness against
   the libm-based CPU is not on the table. New GLSL shader
-  ([`libvmaf/src/feature/vulkan/shaders/ciede.comp`](libvmaf/src/feature/vulkan/shaders/ciede.comp))
+  ([`core/src/feature/vulkan/shaders/ciede.comp`](core/src/feature/vulkan/shaders/ciede.comp))
   emits per-WG `float` partial sums; host accumulates in
   `double`, divides by W·H, and applies the CPU's logarithmic
   transform `45 - 20·log10(mean_ΔE)` for the final `ciede2000`
   metric. 6 storage-buffer bindings (ref + dis Y/U/V at full
   luma resolution); chroma upscaled host-side via the same
   pattern as `ciede.c::scale_chroma_planes`. New
-  [`libvmaf/src/feature/vulkan/ciede_vulkan.c`](libvmaf/src/feature/vulkan/ciede_vulkan.c)
+  [`core/src/feature/vulkan/ciede_vulkan.c`](core/src/feature/vulkan/ciede_vulkan.c)
   (~480 LOC). Empirical: 48 frames at 576×324 on **Intel Arc
   A380** vs CPU scalar — `max_abs = 1.0e-5`, `0/48 places=4
   mismatches`. Empirical floor lands well under `places=4`
@@ -1436,13 +1436,13 @@
   `float_moment_ref2nd`, `float_moment_dis2nd` — in **one
   kernel pass** via four atomic int64 counters.
   - **CUDA** (~120 LOC PTX +
-    [`integer_moment_cuda.{c,h}`](libvmaf/src/feature/cuda/integer_moment_cuda.c)
+    [`integer_moment_cuda.{c,h}`](core/src/feature/cuda/integer_moment_cuda.c)
     ~225 LOC host): warp-shuffle int64 reduction (uint64 via
     two uint32 shuffles, same trick as `psnr_score.cu`) + four
     `atomicAdd(unsigned long long *)`. Same async submit /
     collect model as `psnr_cuda` (PR #129).
   - **SYCL** (~270 LOC, single TU
-    [`integer_moment_sycl.cpp`](libvmaf/src/feature/sycl/integer_moment_sycl.cpp)):
+    [`integer_moment_sycl.cpp`](core/src/feature/sycl/integer_moment_sycl.cpp)):
     `sycl::atomic_ref<int64_t, ...>` × 4 in a single kernel.
     Rides the existing combined-graph submit / wait machinery
     via `vmaf_sycl_graph_register` (mirrors `psnr_sycl`,
@@ -1465,7 +1465,7 @@
   semaphore wait per frame, no-op-release `VmafPicture` builder
   so `read_imported_pictures` routes through standard
   `vmaf_read_pictures`. New
-  [`vmaf_vulkan_state_init_external`](libvmaf/include/libvmaf/libvmaf_vulkan.h)
+  [`vmaf_vulkan_state_init_external`](core/include/libvmaf/libvmaf_vulkan.h)
   adopts the caller's VkInstance/VkDevice (required because
   source VkImage handles are device-bound). FFmpeg side: new
   [`ffmpeg-patches/0006-libvmaf-add-libvmaf-vulkan-filter.patch`](ffmpeg-patches/0006-libvmaf-add-libvmaf-vulkan-filter.patch)
@@ -1497,7 +1497,7 @@
 - **GPU long-tail batch 1d part 1 — `float_moment_vulkan`
   extractor (T7-23 / ADR-0182)** (fork-local): Vulkan twin of
   the CPU `float_moment` extractor. Single GLSL compute kernel
-  ([`libvmaf/src/feature/vulkan/shaders/moment.comp`](libvmaf/src/feature/vulkan/shaders/moment.comp))
+  ([`core/src/feature/vulkan/shaders/moment.comp`](core/src/feature/vulkan/shaders/moment.comp))
   emits all four metrics — `float_moment_ref1st`,
   `float_moment_dis1st`, `float_moment_ref2nd`,
   `float_moment_dis2nd` — in one dispatch via four atomic
@@ -1507,7 +1507,7 @@
   shared array, then a single cross-subgroup
   `atomicAdd` per accumulator. Host divides the four sums by
   `width × height` to recover the raw moments. New
-  [`libvmaf/src/feature/vulkan/moment_vulkan.c`](libvmaf/src/feature/vulkan/moment_vulkan.c)
+  [`core/src/feature/vulkan/moment_vulkan.c`](core/src/feature/vulkan/moment_vulkan.c)
   (~370 LOC) mirrors the `psnr_vulkan` scaffolding (3-binding
   descriptor set, single dispatch per frame, 8/10/12/16 bpc via
   spec constants). Empirical: 48 frames at 576×324 on Intel Arc
@@ -1524,7 +1524,7 @@
   into a shared device counter. Single kernel per frame, rides
   the existing combined-graph submit/wait machinery via
   `vmaf_sycl_graph_register`. New
-  [`libvmaf/src/feature/sycl/integer_psnr_sycl.cpp`](libvmaf/src/feature/sycl/integer_psnr_sycl.cpp)
+  [`core/src/feature/sycl/integer_psnr_sycl.cpp`](core/src/feature/sycl/integer_psnr_sycl.cpp)
   (~280 LOC). Empirical: 48 frames at 576×324 on Intel Arc
   A380 vs CPU scalar — `max_abs_diff = 0.0`, `0/48 places=4
   mismatches` via `scripts/ci/cross_backend_vif_diff.py
@@ -1538,9 +1538,9 @@
   (same pattern as `motion_score.cu`'s SAD reduction).
   Single dispatch per frame; emits luma-only `psnr_y` v1.
   New
-  [`libvmaf/src/feature/cuda/integer_psnr/psnr_score.cu`](libvmaf/src/feature/cuda/integer_psnr/psnr_score.cu)
+  [`core/src/feature/cuda/integer_psnr/psnr_score.cu`](core/src/feature/cuda/integer_psnr/psnr_score.cu)
   (~120 LOC PTX) +
-  [`libvmaf/src/feature/cuda/integer_psnr_cuda.{c,h}`](libvmaf/src/feature/cuda/integer_psnr_cuda.c)
+  [`core/src/feature/cuda/integer_psnr_cuda.{c,h}`](core/src/feature/cuda/integer_psnr_cuda.c)
   (~210 LOC host using CUDA's async submit/collect model).
   Empirical: 48 frames at 576×324 on NVIDIA RTX 4090 vs CPU
   scalar — `max_abs_diff = 0.0`, `0/48 places=4 mismatches`
@@ -1550,7 +1550,7 @@
 - **Vulkan VkImage zero-copy import C-API scaffold — T7-29
   part 1 (ADR-0184)** (fork-local): adds three new entry
   points in
-  [`libvmaf_vulkan.h`](libvmaf/include/libvmaf/libvmaf_vulkan.h)
+  [`libvmaf_vulkan.h`](core/include/libvmaf/libvmaf_vulkan.h)
   — `vmaf_vulkan_import_image`, `vmaf_vulkan_wait_compute`,
   `vmaf_vulkan_read_imported_pictures` — mirroring the SYCL
   backend's existing import surface. Lets future FFmpeg-side
@@ -1584,7 +1584,7 @@
   compute, `libvmaf_sycl=…` for QSV hwdec + zero-copy SYCL.
   Validated on Intel Arc A380. **T7-29** (Vulkan VkImage import)
   remains open — needs new C-API surface in
-  [`libvmaf_vulkan.h`](libvmaf/include/libvmaf/libvmaf_vulkan.h)
+  [`libvmaf_vulkan.h`](core/include/libvmaf/libvmaf_vulkan.h)
   before the FFmpeg-side filter can land. See
   [ADR-0183](docs/adr/0183-ffmpeg-libvmaf-sycl-filter.md).
 
@@ -1594,9 +1594,9 @@
   backend; emits `psnr_y` (luma-only v1; chroma is a focused
   follow-up since `picture_vulkan` upload is luma-only today).
   New
-  [`libvmaf/src/feature/vulkan/shaders/psnr.comp`](libvmaf/src/feature/vulkan/shaders/psnr.comp)
+  [`core/src/feature/vulkan/shaders/psnr.comp`](core/src/feature/vulkan/shaders/psnr.comp)
   (89 LOC GLSL, 16×8 WG, subgroup-int64 reduction) +
-  [`libvmaf/src/feature/vulkan/psnr_vulkan.c`](libvmaf/src/feature/vulkan/psnr_vulkan.c)
+  [`core/src/feature/vulkan/psnr_vulkan.c`](core/src/feature/vulkan/psnr_vulkan.c)
   (391 LOC host C, single dispatch/frame, no temporal state).
   Cross-backend gate gains a 4th step ("PSNR cross-backend diff")
   on the lavapipe lane. Empirical: 48 frames at 576×324 on
@@ -1611,11 +1611,11 @@
   dispatch-strategy modules** (fork-local): consolidates the
   per-context SYCL graph-replay heuristic into a per-feature
   decision driven by a registry on `VmafFeatureExtractor`. New
-  [`libvmaf/src/feature/feature_characteristics.h`](libvmaf/src/feature/feature_characteristics.h)
+  [`core/src/feature/feature_characteristics.h`](core/src/feature/feature_characteristics.h)
   exposes the descriptor struct (`n_dispatches_per_frame`,
   `is_reduction_only`, `min_useful_frame_area`,
   `dispatch_hint`). Per-backend glue under
-  [`libvmaf/src/{cuda,sycl,vulkan}/dispatch_strategy.{c,h}`](libvmaf/src/sycl/dispatch_strategy.cpp)
+  [`core/src/{cuda,sycl,vulkan}/dispatch_strategy.{c,h}`](core/src/sycl/dispatch_strategy.cpp)
   translates the descriptor to backend primitives (SYCL graph
   replay today; CUDA graph capture and Vulkan secondary-cmdbuf
   reuse are stubs that ship the env-override surface for a
@@ -1640,19 +1640,19 @@
 - **`float_moment` SIMD parity (AVX2 + NEON) — T7-19, closes
   the only fully-scalar row in the SIMD-coverage matrix**
   (fork-local): new
-  [`libvmaf/src/feature/x86/moment_avx2.{c,h}`](libvmaf/src/feature/x86/moment_avx2.c)
-  and [`libvmaf/src/feature/arm64/moment_neon.{c,h}`](libvmaf/src/feature/arm64/moment_neon.c)
+  [`core/src/feature/x86/moment_avx2.{c,h}`](core/src/feature/x86/moment_avx2.c)
+  and [`core/src/feature/arm64/moment_neon.{c,h}`](core/src/feature/arm64/moment_neon.c)
   implement `compute_1st_moment` / `compute_2nd_moment` 8-wide
   (AVX2) and 4-wide (NEON) following the `ansnr_avx2.c` pattern:
   square in float, accumulate into `double` via scattered-tmp
   (AVX2) or lane-pair widening via `vcvt_f64_f32` (NEON).
   Dispatched from
-  [`float_moment.c::init`](libvmaf/src/feature/float_moment.c)
+  [`float_moment.c::init`](core/src/feature/float_moment.c)
   via function pointers selected from `vmaf_get_cpu_flags()`.
   Tolerance-bounded contract (1e-7 relative — ~500× tighter than
   the production snapshot gate's `places=4`), matching the
   established kernel header documentation. New
-  [`test_moment_simd`](libvmaf/test/test_moment_simd.c) runs
+  [`test_moment_simd`](core/test/test_moment_simd.c) runs
   four cases per arch (two random seeds, an aligned width, and a
   tiny edge case to exercise the per-row tail). End-to-end CLI
   output unchanged at JSON `%g` precision. See
@@ -1661,7 +1661,7 @@
 - **Vulkan ADM kernel + cross-backend gate fixes — T5-1c (closes T5-1c)**
   (fork-local): replaces the 37-line adm_vulkan.c stub with a real
   `VmafFeatureExtractor` (~700 LOC) backed by a new GLSL compute shader
-  [`shaders/adm.comp`](libvmaf/src/feature/vulkan/shaders/adm.comp)
+  [`shaders/adm.comp`](core/src/feature/vulkan/shaders/adm.comp)
   (~660 LOC). Implements 4-scale CDF 9/7 DWT, decouple+CSF fused
   pass, and per-band CSF-denominator + contrast-measure reductions.
   16 pipelines per extractor (one per `(scale, stage)`). Provides the
@@ -1707,7 +1707,7 @@
 - **Vulkan motion kernel — T5-1c (motion + motion2)** (fork-local):
   replaces the 37-line motion_vulkan.c stub with a real
   `VmafFeatureExtractor` backed by a new GLSL compute shader
-  [`shaders/motion.comp`](libvmaf/src/feature/vulkan/shaders/motion.comp).
+  [`shaders/motion.comp`](core/src/feature/vulkan/shaders/motion.comp).
   Separable 5-tap Gaussian blur (`{3571, 16004, 26386, 16004, 3571}`,
   sum=65536) + per-WG `int64` SAD reduction; ping-pong blurred-frame
   storage; `integer_motion2` emitted with the standard 1-frame lag.
@@ -1751,7 +1751,7 @@
   (auto: discrete > integrated > virtual > cpu; override via
   `device_index`), creates a dedicated compute queue family, attaches
   a VMA allocator, and exposes a command pool that per-feature dispatch
-  wrappers under `libvmaf/src/feature/vulkan/` reuse. New `vma_impl.cpp`
+  wrappers under `core/src/feature/vulkan/` reuse. New `vma_impl.cpp`
   (C++17 TU isolating the VMA implementation), new `picture_vulkan.{c,h}`
   (VkBuffer alloc / flush / mapped-host pointer accessors). `volk` and
   `VulkanMemoryAllocator` pulled via Meson wrap files (no system install
@@ -1781,10 +1781,10 @@
   `text` (MD040).
 - **Vulkan compute backend — scaffold-only audit-first PR**
   (fork-local): closes BACKLOG T5-1 audit half. New public header
-  [`libvmaf_vulkan.h`](libvmaf/include/libvmaf/libvmaf_vulkan.h)
+  [`libvmaf_vulkan.h`](core/include/libvmaf/libvmaf_vulkan.h)
   declaring the `VmafVulkanState` API surface (state_init,
   import_state, state_free, list_devices, available). New
-  `libvmaf/src/vulkan/` + `libvmaf/src/feature/vulkan/` trees with
+  `core/src/vulkan/` + `core/src/feature/vulkan/` trees with
   every entry point returning `-ENOSYS`. New `enable_vulkan`
   feature option (default **disabled**) and conditional
   `subdir('vulkan')` in libvmaf's meson. New 4-sub-test smoke
@@ -1824,7 +1824,7 @@
   `ptq_static.py`, `qat_train.py` — the last is a CLI scaffold that
   raises `NotImplementedError` until a per-model QAT PR lands the
   trainer hook). New `VmafModelQuantMode` enum + sidecar parser
-  branch in `libvmaf/src/dnn/model_loader.{h,c}`; default FP32
+  branch in `core/src/dnn/model_loader.{h,c}`; default FP32
   fail-safe on unknown sidecar values. 4 Python smoke tests + 3 C
   sidecar tests. **No shipped model flips its `quant_mode`** in
   this PR — runtime `.int8.onnx` redirect + the `ai-quant-accuracy`
@@ -1884,7 +1884,7 @@
 - **ONNX op-allowlist admits `Loop` + `If`** (fork-local): unblocks
   MUSIQ / RAFT / small-VLM-class tiny-AI baselines that need
   control-flow ops. The wire-format scanner in
-  [`onnx_scan.c`](libvmaf/src/dnn/onnx_scan.c) gains mutually-recursive
+  [`onnx_scan.c`](core/src/dnn/onnx_scan.c) gains mutually-recursive
   `scan_attribute` / `scan_node` / `scan_graph` helpers that descend
   into `NodeProto.attribute` → `AttributeProto.g` / `.graphs` so a
   forbidden op cannot hide inside a `Loop.body` /
@@ -2111,7 +2111,7 @@
 
 - **`vmaf_cuda_state_free()` public API** (Netflix upstream issue
   [#1300](https://github.com/Netflix/vmaf/issues/1300)). New
-  symbol in [`libvmaf/include/libvmaf/libvmaf_cuda.h`](libvmaf/include/libvmaf/libvmaf_cuda.h)
+  symbol in [`core/include/libvmaf/libvmaf_cuda.h`](core/include/libvmaf/libvmaf_cuda.h)
   that frees a `VmafCudaState` allocated by `vmaf_cuda_state_init()`.
   Must be called AFTER `vmaf_close()` on any VmafContext that
   imported the state. Mirrors the SYCL backend's
@@ -2186,7 +2186,7 @@
 - **ADM `i4_adm_cm` int32 rounding overflow** (Netflix upstream
   issue [#955](https://github.com/Netflix/vmaf/issues/955)) is
   deliberately preserved. `add_bef_shift_flt[idx] = (1u <<
-  (shift_flt[idx] - 1))` in `libvmaf/src/feature/integer_adm.c`
+  (shift_flt[idx] - 1))` in `core/src/feature/integer_adm.c`
   scales 1–3 overflows `int32_t` (`1u << 31 = 0x80000000` wraps
   to `-2147483648`), so every `(prod + add_bef_shift) >> 32`
   subtracts 2^31 instead of adding it — ADM scales 1–3 biased
@@ -2256,7 +2256,7 @@
   upstream issue [#1481](https://github.com/Netflix/vmaf/issues/1481)).
   New matrix row in `.github/workflows/libvmaf-build-matrix.yml`
   (`Build — Ubuntu i686 gcc (CPU, no-asm)`) invokes
-  `meson setup libvmaf libvmaf/build --cross-file=build-aux/i686-linux-gnu.ini -Denable_asm=false`,
+  `meson setup libvmaf core/build --cross-file=build-aux/i686-linux-gnu.ini -Denable_asm=false`,
   pinning the workaround documented in upstream's bug report.
   New cross-file `build-aux/i686-linux-gnu.ini` (gcc + `-m32`,
   `cpu_family = 'x86'`, `cpu = 'i686'`) + new install-deps step
@@ -2348,7 +2348,7 @@
 
 - **Thread-pool job-object recycling** (perf, fork-local port of
   Netflix upstream PR [#1464](https://github.com/Netflix/vmaf/pull/1464),
-  thread-pool portion only). `libvmaf/src/thread_pool.c` now recycles
+  thread-pool portion only). `core/src/thread_pool.c` now recycles
   `VmafThreadPoolJob` slots via a mutex-protected free list rather
   than `malloc`/`free` on every enqueue, and stores payloads ≤ 64
   bytes inline in the job struct (`char inline_data[64]`) so the
@@ -2363,7 +2363,7 @@
   See [ADR-0147](docs/adr/0147-thread-pool-job-pool.md).
 
 - **Function-size NOLINT sweep** — refactored every
-  `readability-function-size` NOLINT suppression in `libvmaf/src/` (20
+  `readability-function-size` NOLINT suppression in `core/src/` (20
   sites across 12 files: `dict.c`, `picture.c`, `picture_pool.c`,
   `predict.c`, `libvmaf.c`, `output.c`, `read_json_model.c`,
   `feature/feature_extractor.c`, `feature/feature_collector.c`,
@@ -2385,7 +2385,7 @@
 
 - **VIF AVX2 convolve: generalised for arbitrary filter widths** (port of
   Netflix upstream [`f3a628b4`](https://github.com/Netflix/vmaf/commit/f3a628b4),
-  Kyle Swanson, 2026-04-21). `libvmaf/src/feature/common/convolution_avx.c`
+  Kyle Swanson, 2026-04-21). `core/src/feature/common/convolution_avx.c`
   drops from 2,747 LoC of branch-unrolled kernels specialised to
   `fwidth ∈ {3, 5, 9, 17}` down to 247 LoC of a single parametric 1-D
   scanline pair. New `MAX_FWIDTH_AVX_CONV` ceiling in `convolution.h`
@@ -2435,7 +2435,7 @@
     `model/registry.json`).
 - **SIMD DX framework — `simd_dx.h` + upgraded `/add-simd-path` skill**:
   fork-internal header
-  ([`libvmaf/src/feature/simd_dx.h`](libvmaf/src/feature/simd_dx.h))
+  ([`core/src/feature/simd_dx.h`](core/src/feature/simd_dx.h))
   that codifies the ADR-0138 (widen-then-add) and ADR-0139 (per-lane
   scalar-double reduce) patterns as ISA-suffixed macros
   (`SIMD_WIDEN_ADD_F32_F64_AVX2_4L` / `_AVX512_8L` / `_NEON_4L`,
@@ -2449,7 +2449,7 @@
   scaffold from a short declaration instead of a cold copy-paste.
   Demonstrated on two real kernels in the same PR: a new bit-exact
   `iqa_convolve_neon`
-  ([`libvmaf/src/feature/arm64/convolve_neon.c`](libvmaf/src/feature/arm64/convolve_neon.c))
+  ([`core/src/feature/arm64/convolve_neon.c`](core/src/feature/arm64/convolve_neon.c))
   and a bit-exactness fix for `ssim_accumulate_neon` that mirrors the
   ADR-0139 x86 fix. Together they complete the SSIM / MS-SSIM SIMD
   coverage on aarch64. See
@@ -2485,12 +2485,12 @@
   test); see [ADR-0135](docs/adr/0135-port-netflix-1424-expose-builtin-model-versions.md).
 - **Build**: libvmaf now exports `libvmaf_dep` via `declare_dependency`
   and registers an `override_dependency('libvmaf', ...)` in
-  `libvmaf/src/meson.build`, so the fork is consumable as a meson
+  `core/src/meson.build`, so the fork is consumable as a meson
   subproject with the standard `dependency('libvmaf')` idiom. Ports
   [Netflix#1451](https://github.com/Netflix/vmaf/pull/1451); see
   [ADR-0134](docs/adr/0134-port-netflix-1451-meson-declare-dependency.md).
 - **Metric**: SSIMULACRA 2 scalar feature extractor
-  ([`libvmaf/src/feature/ssimulacra2.c`](libvmaf/src/feature/ssimulacra2.c))
+  ([`core/src/feature/ssimulacra2.c`](core/src/feature/ssimulacra2.c))
   — port of libjxl's perceptual similarity metric on top of the fork's
   YUV pipeline. Ingests YUV 4:2:0/4:2:2/4:4:4 at 8/10/12 bpc with a
   configurable YUV→RGB matrix (`yuv_matrix` option, BT.709 limited
@@ -2532,7 +2532,7 @@
   arm64. Netflix MS-SSIM golden passes at places=4 through every
   dispatched path; 10 synthetic `memcmp` cases (1x1 border, odd
   dimensions, 1920x1080) verify strict byte-equality in
-  [`libvmaf/test/test_ms_ssim_decimate.c`](libvmaf/test/test_ms_ssim_decimate.c).
+  [`core/test/test_ms_ssim_decimate.c`](core/test/test_ms_ssim_decimate.c).
   See [ADR-0125](docs/adr/0125-ms-ssim-decimate-simd.md).
 - **AI-agent scaffolding**: `.claude/` directory with 7 specialized review
   agents (c-, cuda-, sycl-, vulkan-, simd-, meson-reviewer, perf-profiler),
@@ -2575,12 +2575,12 @@
   See [ADR-0121](docs/adr/0121-windows-gpu-build-only-legs.md) +
   [`docs/rebase-notes.md` entry 0022](docs/rebase-notes.md).
 - **Build**: Win32 `pthread.h` compat shim at
-  [`libvmaf/src/compat/win32/pthread.h`](libvmaf/src/compat/win32/pthread.h)
+  [`core/src/compat/win32/pthread.h`](core/src/compat/win32/pthread.h)
   — header-only, maps the in-use pthread subset (mutex / cond / thread
   create+join+detach + `PTHREAD_MUTEX_INITIALIZER` /
   `PTHREAD_COND_INITIALIZER`) onto Win32 SRWLOCK + CONDITION_VARIABLE +
   `_beginthreadex`. Wired in via a new `pthread_dependency` in
-  `libvmaf/meson.build`, gated on `cc.check_header('pthread.h')`
+  `core/meson.build`, gated on `cc.check_header('pthread.h')`
   failing — POSIX and MinGW (winpthreads) builds are untouched. Lets
   the Windows MSVC GPU legs from ADR-0121 actually compile the libvmaf
   core (~14 TUs `#include <pthread.h>` unconditionally). Pattern
@@ -2589,7 +2589,7 @@
   path through `cuda_extra_includes` / `sycl_inc_flags` on Windows
   (custom targets bypass meson's `dependencies:` plumbing).
 - **Build**: SYCL Windows host-arg handling in
-  [`libvmaf/src/meson.build`](libvmaf/src/meson.build) — `icpx-cl`
+  [`core/src/meson.build`](core/src/meson.build) — `icpx-cl`
   on Windows targets `x86_64-pc-windows-msvc` and rejects `-fPIC`.
   `sycl_common_args` / `sycl_feature_args` now route the flag through
   `sycl_pic_arg = host_machine.system() != 'windows' ? ['-fPIC'] : []`
@@ -2597,22 +2597,22 @@
   dropping the flag is the correct build-system fix, not a workaround.
 - **Build**: SYCL Windows source portability — four MSVC C++
   blockers fixed so `icpx-cl` compiles the SYCL TUs.
-  (1) [`libvmaf/src/ref.h`](libvmaf/src/ref.h) +
-  [`libvmaf/src/feature/feature_extractor.h`](libvmaf/src/feature/feature_extractor.h)
+  (1) [`core/src/ref.h`](core/src/ref.h) +
+  [`core/src/feature/feature_extractor.h`](core/src/feature/feature_extractor.h)
   (UPSTREAM) gained an `#if defined(__cplusplus) && defined(_MSC_VER)`
   branch that pulls `atomic_int` via `using std::atomic_int;` —
   MSVC's `<stdatomic.h>` only surfaces the C11 typedefs in
   `namespace std::` under C++, while gcc/clang expose them globally
   via a GNU extension. POSIX paths fall through to the original
   `<stdatomic.h>` line; ABI unchanged. (2)
-  [`libvmaf/src/sycl/d3d11_import.cpp`](libvmaf/src/sycl/d3d11_import.cpp)
+  [`core/src/sycl/d3d11_import.cpp`](core/src/sycl/d3d11_import.cpp)
   switched `<libvmaf/log.h>` (non-existent) to `"log.h"` (the actual
   internal header). (3)
-  [`libvmaf/src/sycl/dmabuf_import.cpp`](libvmaf/src/sycl/dmabuf_import.cpp)
+  [`core/src/sycl/dmabuf_import.cpp`](core/src/sycl/dmabuf_import.cpp)
   moved `<unistd.h>` inside `#if HAVE_SYCL_DMABUF` — POSIX `close()`
   is only used in the VA-API path, so non-DMA-BUF hosts (Windows
   MSVC, macOS) no longer fail with `'unistd.h' file not found`. (4)
-  [`libvmaf/src/sycl/common.cpp`](libvmaf/src/sycl/common.cpp)
+  [`core/src/sycl/common.cpp`](core/src/sycl/common.cpp)
   replaced POSIX `clock_gettime(CLOCK_MONOTONIC)` with
   `std::chrono::steady_clock` — guaranteed monotonic by the C++
   standard and portable on every supported host. All four preserve
@@ -2620,7 +2620,7 @@
   [`docs/rebase-notes.md` entry 0022](docs/rebase-notes.md).
 - **Build**: CUDA Windows source portability — fifth MSVC blocker
   fixed on the CUDA leg's CPU SIMD compile path.
-  [`libvmaf/src/feature/x86/motion_avx2.c`](libvmaf/src/feature/x86/motion_avx2.c)
+  [`core/src/feature/x86/motion_avx2.c`](core/src/feature/x86/motion_avx2.c)
   (UPSTREAM) line 529 indexed an `__m256i` directly
   (`final_accum[0] + ... + final_accum[3]`) — gcc/clang allow this
   via the GNU vector extension, MSVC rejects it with `C2088:
@@ -2632,20 +2632,20 @@
   finishes the MSVC compile of the libvmaf CPU SIMD layer.
   Round-19 surfaced the same vector-extension pattern at 19 more
   call sites plus 6 GCC-style `(__m256i)x` casts.
-  [`libvmaf/src/feature/x86/adm_avx2.c`](libvmaf/src/feature/x86/adm_avx2.c)
+  [`core/src/feature/x86/adm_avx2.c`](core/src/feature/x86/adm_avx2.c)
   (UPSTREAM) had 6 lines using
   `(__m256i)(_mm256_cmp_ps(...))` casts (replaced with
   `_mm256_castps_si256(...)`) and 12 sites of `__m128i[N]`
   lane-extract reductions (replaced with `_mm_extract_epi64`).
-  [`libvmaf/src/feature/x86/adm_avx512.c`](libvmaf/src/feature/x86/adm_avx512.c)
+  [`core/src/feature/x86/adm_avx512.c`](core/src/feature/x86/adm_avx512.c)
   (UPSTREAM) had 6 sister lane-extract reductions on the
   AVX-512 paths.
-  [`libvmaf/src/feature/x86/motion_avx512.c`](libvmaf/src/feature/x86/motion_avx512.c)
+  [`core/src/feature/x86/motion_avx512.c`](core/src/feature/x86/motion_avx512.c)
   (UPSTREAM, ported from PR #1486) had one final lane-extract
   reduction. All 19 + 6 fixes are bit-exact rewrites — gcc/clang
   emit identical vextract+padd sequences either way.
   Additionally
-  [`libvmaf/src/sycl/d3d11_import.cpp`](libvmaf/src/sycl/d3d11_import.cpp)
+  [`core/src/sycl/d3d11_import.cpp`](core/src/sycl/d3d11_import.cpp)
   switched from C-style COBJMACROS helpers
   (`ID3D11Device_CreateTexture2D`, etc.) to C++ method-call syntax
   (`device->CreateTexture2D`) because d3d11.h gates COBJMACROS
@@ -2662,9 +2662,9 @@
   (`/std:c11`). The pre-existing portable `ALIGNED(x)` macro in
   `vif_avx{2,512}.c` was already MSVC-clean and remains untouched.
 - **Build**: `mkdirp` Windows portability —
-  [`libvmaf/src/feature/mkdirp.c`](libvmaf/src/feature/mkdirp.c)
+  [`core/src/feature/mkdirp.c`](core/src/feature/mkdirp.c)
   and
-  [`libvmaf/src/feature/mkdirp.h`](libvmaf/src/feature/mkdirp.h)
+  [`core/src/feature/mkdirp.h`](core/src/feature/mkdirp.h)
   (third-party MIT-licensed micro-library) gate `<unistd.h>` to
   non-Windows, add `<direct.h>` + `_mkdir` on MSVC, and provide a
   local `mode_t` typedef (MSVC's `<sys/types.h>` doesn't declare
@@ -2672,11 +2672,11 @@
   path — same behaviour as before for POSIX callers. See
   [`docs/rebase-notes.md` entry 0022](docs/rebase-notes.md).
 - **Build**: round-21 MSVC mop-up —
-  [`libvmaf/src/feature/x86/adm_avx512.c`](libvmaf/src/feature/x86/adm_avx512.c)
+  [`core/src/feature/x86/adm_avx512.c`](core/src/feature/x86/adm_avx512.c)
   (UPSTREAM) adds six more `_mm_extract_epi64` rewrites at lines
   2128 / 2135 / 2142 / 2589 / 2595 / 2601 that the round-19 sweep
   missed (bit-exact).
-  [`libvmaf/src/log.c`](libvmaf/src/log.c) (UPSTREAM) gates
+  [`core/src/log.c`](core/src/log.c) (UPSTREAM) gates
   `<unistd.h>` to non-Windows and pulls `_isatty` / `_fileno` from
   `<io.h>` on MSVC via macro redirection; the single `isatty(fileno
   (stderr))` call site compiles unchanged on every platform.
@@ -2694,41 +2694,41 @@
   Source changes:
   (i) eight C99 variable-length arrays converted to compile-time
   constants or heap allocations —
-  [`libvmaf/src/predict.c:385,453`](libvmaf/src/predict.c),
-  [`libvmaf/src/libvmaf.c:1741`](libvmaf/src/libvmaf.c),
-  [`libvmaf/src/read_json_model.c:517,520`](libvmaf/src/read_json_model.c),
-  [`libvmaf/test/test_feature_extractor.c:56`](libvmaf/test/test_feature_extractor.c),
-  [`libvmaf/test/test_cambi.c:254`](libvmaf/test/test_cambi.c),
-  [`libvmaf/test/test_pic_preallocation.c:382,506`](libvmaf/test/test_pic_preallocation.c);
+  [`core/src/predict.c:385,453`](core/src/predict.c),
+  [`core/src/libvmaf.c:1741`](core/src/libvmaf.c),
+  [`core/src/read_json_model.c:517,520`](core/src/read_json_model.c),
+  [`core/test/test_feature_extractor.c:56`](core/test/test_feature_extractor.c),
+  [`core/test/test_cambi.c:254`](core/test/test_cambi.c),
+  [`core/test/test_pic_preallocation.c:382,506`](core/test/test_pic_preallocation.c);
   (ii) fork-added POSIX/GNU `getopt_long` shim at
-  [`libvmaf/tools/compat/win32/`](libvmaf/tools/compat/win32/)
+  [`core/tools/compat/win32/`](core/tools/compat/win32/)
   (header + ~260-line companion source) declared via a single
   `getopt_dependency` in
-  [`libvmaf/meson.build`](libvmaf/meson.build) that
+  [`core/meson.build`](core/meson.build) that
   auto-propagates the .c into the `vmaf` CLI and
   `test_cli_parse`;
   (iii) `pthread_dependency` threaded through the eleven test
   targets in
-  [`libvmaf/test/meson.build`](libvmaf/test/meson.build)
+  [`core/test/meson.build`](core/test/meson.build)
   that transitively include `<pthread.h>` via
   `feature_collector.h`;
   (iv) `<unistd.h>` → `<io.h>` redirection
   (`isatty`/`fileno` → `_isatty`/`_fileno`) added to
-  [`libvmaf/tools/vmaf.c`](libvmaf/tools/vmaf.c);
+  [`core/tools/vmaf.c`](core/tools/vmaf.c);
   (v) `<unistd.h>` → `<windows.h>` + `Sleep` macros
   added to
-  [`libvmaf/test/test_ring_buffer.c`](libvmaf/test/test_ring_buffer.c)
+  [`core/test/test_ring_buffer.c`](core/test/test_ring_buffer.c)
   and
-  [`libvmaf/test/test_pic_preallocation.c`](libvmaf/test/test_pic_preallocation.c)
+  [`core/test/test_pic_preallocation.c`](core/test/test_pic_preallocation.c)
   for `usleep` / `sleep`;
   (vi) `__builtin_clz` / `__builtin_clzll` MSVC fallback via
   `__lzcnt` / `__lzcnt64` extracted into
-  [`libvmaf/src/feature/compat_builtin.h`](libvmaf/src/feature/compat_builtin.h)
+  [`core/src/feature/compat_builtin.h`](core/src/feature/compat_builtin.h)
   and included from the three TUs that use the builtin
   (`integer_adm.c`, `x86/adm_avx2.c`, `x86/adm_avx512.c`);
   (vii) `extern "C"` wrap added around
   `#include "log.h"` in
-  [`libvmaf/src/sycl/d3d11_import.cpp`](libvmaf/src/sycl/d3d11_import.cpp)
+  [`core/src/sycl/d3d11_import.cpp`](core/src/sycl/d3d11_import.cpp)
   so `vmaf_log` resolves against the C-linkage symbol
   produced by `log.c` when this .cpp TU gets pulled into
   a SYCL-enabled test executable by icpx-cl. Upstream
@@ -2748,7 +2748,7 @@
   paragraphs (h)–(p).
 - **CUDA**: out-of-the-box GPU coverage for Ampere `sm_86` (RTX 30xx)
   and Ada `sm_89` (RTX 40xx). The gencode array in
-  [`libvmaf/src/meson.build`](libvmaf/src/meson.build) now
+  [`core/src/meson.build`](core/src/meson.build) now
   unconditionally emits cubins for `sm_75` / `sm_80` / `sm_86` /
   `sm_89` plus a `compute_80` PTX backward-JIT fallback, independent
   of host `nvcc` version. Upstream Netflix only shipped cubins at Txx
@@ -2758,7 +2758,7 @@
   [ADR-0122](docs/adr/0122-cuda-gencode-coverage-and-init-hardening.md)
   and [`docs/rebase-notes.md` entry 0023](docs/rebase-notes.md).
 - **CUDA**: actionable init-failure logging in
-  [`libvmaf/src/cuda/common.c`](libvmaf/src/cuda/common.c). When
+  [`core/src/cuda/common.c`](core/src/cuda/common.c). When
   `cuda_load_functions()` (the `nv-codec-headers` dlopen wrapper
   around `libcuda.so.1`) fails, `vmaf_cuda_state_init()` now emits a
   multi-line message naming the missing library, the loader-path
@@ -2788,7 +2788,7 @@
   First `--all-files` pass also backfilled 18 pre-existing missing
   headers (13 upstream C files Netflix 2016–2026, 4 fork-authored
   NEON sources + `python/compat/config.h` Lusoris+Claude 2026);
-  `libvmaf/src/pdjson.{c,h}` (vendored JSON parser) and
+  `core/src/pdjson.{c,h}` (vendored JSON parser) and
   `python/vmaf/matlab/` (upstream MATLAB MEX) are excluded from
   the hook rather than receiving synthetic headers. See
   [ADR-0124](docs/adr/0124-automated-rule-enforcement.md) and
@@ -2845,13 +2845,13 @@
   into multiple targets, fixing the `dnn_api.c — 1176%` over-count
   that surfaced after (1)+(2) on the first attempt. (4) Install
   ONNX Runtime in the coverage job and build with
-  `-Denable_dnn=enabled` so `libvmaf/src/dnn/*.c` contribute real
+  `-Denable_dnn=enabled` so `core/src/dnn/*.c` contribute real
   coverage instead of stubs (the 85% per-critical-file gate was
   previously unmeasurable). Coverage artifact is now
   `coverage.{xml,json,txt}` (Cobertura + gcovr JSON summary +
   human-readable text). (5) Carve `vmaf_use_tiny_model` out of
-  `libvmaf/src/dnn/dnn_api.c` into a new
-  `libvmaf/src/dnn/dnn_attach_api.c` so the unit-test binaries —
+  `core/src/dnn/dnn_api.c` into a new
+  `core/src/dnn/dnn_attach_api.c` so the unit-test binaries —
   which pull in `dnn_sources` for `feature_lpips.c` but never link
   `libvmaf.c` — don't end up with an undefined reference to
   `vmaf_ctx_dnn_attach` once `enable_dnn=enabled` activates the real
@@ -2895,7 +2895,7 @@
 
 - **SSIM / MS-SSIM NEON bit-exactness to scalar**: fork-local
   `ssim_accumulate_neon`
-  ([`libvmaf/src/feature/arm64/ssim_neon.c`](libvmaf/src/feature/arm64/ssim_neon.c))
+  ([`core/src/feature/arm64/ssim_neon.c`](core/src/feature/arm64/ssim_neon.c))
   previously carried the same ~0.13 float-ULP drift on
   `float_ms_ssim` / ~6 × 10⁻⁸ drift on `float_ssim` that ADR-0139
   fixed for AVX2 / AVX-512 — it was never surfaced because CI has no
@@ -2913,8 +2913,8 @@
   [research digest 0013](docs/research/0013-simd-dx-framework.md).
 - **SSIM / MS-SSIM AVX2 + AVX-512 bit-exactness to scalar**: fork-local
   `ssim_accumulate_avx2` / `ssim_accumulate_avx512`
-  ([`libvmaf/src/feature/x86/ssim_avx2.c`](libvmaf/src/feature/x86/ssim_avx2.c),
-  [`libvmaf/src/feature/x86/ssim_avx512.c`](libvmaf/src/feature/x86/ssim_avx512.c))
+  ([`core/src/feature/x86/ssim_avx2.c`](core/src/feature/x86/ssim_avx2.c),
+  [`core/src/feature/x86/ssim_avx512.c`](core/src/feature/x86/ssim_avx512.c))
   previously computed the `l`, `c`, `s` factors as vector float and
   produced the `l * c * s` triple product in float before accumulating
   to double — that diverged from the scalar reference by ~0.13 float
@@ -2939,7 +2939,7 @@
   `cuMemFreeAsync(ptr, stream)` enqueued the free on a stream that
   was destroyed two statements later. The fork swaps the async call
   for synchronous `cuMemFree` at
-  [`libvmaf/src/cuda/picture_cuda.c:247`](libvmaf/src/cuda/picture_cuda.c#L247);
+  [`core/src/cuda/picture_cuda.c:247`](core/src/cuda/picture_cuda.c#L247);
   the preceding `cuStreamSynchronize` already removed any async
   overlap so perf is unchanged. Ports
   [Netflix#1382](https://github.com/Netflix/vmaf/pull/1382)
@@ -2950,7 +2950,7 @@
   instead of walking a local cursor, overwriting the head element
   with its own successor and losing every entry past the second.
   Fork rewrites mount/unmount in
-  [`libvmaf/src/feature/feature_collector.c`](libvmaf/src/feature/feature_collector.c)
+  [`core/src/feature/feature_collector.c`](core/src/feature/feature_collector.c)
   with a correct traversal, and `unmount_model` now returns
   `-ENOENT` (not `-EINVAL`) when the requested model isn't mounted
   so callers can distinguish misuse from not-found. Test coverage
@@ -2962,7 +2962,7 @@
   single time, which leaves out-of-bounds values whenever the input
   dimension is smaller than the kernel half-width (for the 9-tap
   MS-SSIM LPF, `n ≤ 3`). The fork rewrites `KBND_SYMMETRIC` in
-  [`libvmaf/src/feature/iqa/convolve.c`](libvmaf/src/feature/iqa/convolve.c)
+  [`core/src/feature/iqa/convolve.c`](core/src/feature/iqa/convolve.c)
   and the scalar / AVX2 / AVX-512 / NEON `ms_ssim_decimate_mirror`
   helpers into the period-based form (`period = 2*n`) that bounces
   correctly for any offset. Netflix golden outputs are unchanged
@@ -2976,7 +2976,7 @@
   alignment inference promotes them to `vmovdqa64`, which faults
   because the C default stack alignment for `int64_t[16]` is 8
   bytes. Annotating the array with `_Alignas(64)` at
-  [`libvmaf/src/feature/x86/adm_avx512.c:1317`](libvmaf/src/feature/x86/adm_avx512.c#L1317)
+  [`core/src/feature/x86/adm_avx512.c:1317`](core/src/feature/x86/adm_avx512.c#L1317)
   keeps both the unaligned source form and the LTO-promoted aligned
   form correct. Debug / no-LTO builds, and every CI sanitizer job,
   are unaffected.
@@ -2985,7 +2985,7 @@
   `VmafModel` via `vmaf_model_load` and never freed it, so
   LeakSanitizer reported 208 B direct + 23 KiB indirect per test.
   Paired each load with `vmaf_model_destroy(model)` in
-  [`libvmaf/test/test_pic_preallocation.c`](libvmaf/test/test_pic_preallocation.c).
+  [`core/test/test_pic_preallocation.c`](core/test/test_pic_preallocation.c).
 - **`libvmaf_cuda` ffmpeg filter segfault on first frame**: external
   reporter (2026-04-19) hit a SIGSEGV in `vmaf_ref_fetch_increment` on
   every invocation of ffmpeg's `libvmaf_cuda` filter against the fork's
@@ -3002,7 +3002,7 @@
   `translate_picture_device` early-returns without downloading, and
   `ref_host` stays zero-initialised — the subsequent
   `vmaf_picture_ref(&prev_ref, &ref_host)` deref'd `NULL`. Fix is a
-  narrow null-guard at `libvmaf/src/libvmaf.c:1428`
+  narrow null-guard at `core/src/libvmaf.c:1428`
   (`if (ref && ref->ref) vmaf_picture_ref(...)`). Semantically correct,
   not merely defensive: the only `VMAF_FEATURE_EXTRACTOR_PREV_REF`
   consumer is CPU `integer_motion_v2`, which is never registered
@@ -3010,7 +3010,7 @@
   does not touch `prev_ref`). Always-on picture pool stays. See
   [ADR-0123](docs/adr/0123-cuda-post-cubin-load-regression-32b115df.md);
   follow-up item to port the null-guard upstream to Netflix/vmaf.
-- **VIF `init()` fail-path leak**: `libvmaf/src/feature/integer_vif.c`'s
+- **VIF `init()` fail-path leak**: `core/src/feature/integer_vif.c`'s
   `init()` carves one `aligned_malloc` into the VifBuffer sub-pointers by
   walking a `uint8_t *data` cursor forward through the allocation. When
   `vmaf_feature_name_dict_from_provided_features` returned NULL, the
@@ -3036,7 +3036,7 @@
   master 2026-04-15 → 2026-04-19; surfaced by ADR-0115's CI consolidation
   routing tox through master-targeting PRs.
 - **`--frame_skip_ref` / `--frame_skip_dist` hang**: the skip loops in
-  `libvmaf/tools/vmaf.c` fetched pictures from the preallocated picture
+  `core/tools/vmaf.c` fetched pictures from the preallocated picture
   pool (now always-on per ADR-0104) but never `vmaf_picture_unref`'d
   them, exhausting the pool after N skips and blocking the next fetch
   indefinitely. Each skipped picture is now unref'd immediately after
@@ -3052,7 +3052,7 @@
   workaround. Surfaced by ADR-0115's CI trigger consolidation, which finally
   ran tox on PRs to master.
 
-- **SYCL build with non-icpx host CXX**: `libvmaf/src/meson.build`
+- **SYCL build with non-icpx host CXX**: `core/src/meson.build`
   unconditionally added `-fsycl` to the libvmaf shared-library link args
   whenever SYCL was enabled, even when the project's C++ compiler was
   gcc / clang / msvc. The host link driver does not understand `-fsycl`

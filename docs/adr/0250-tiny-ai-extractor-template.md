@@ -26,7 +26,7 @@ extractor-specific tensor wiring, not ~150 LOC where 70 % is plumbing.
 
 ## Decision
 
-We will introduce `libvmaf/src/dnn/tiny_extractor_template.h`, a shared
+We will introduce `core/src/dnn/tiny_extractor_template.h`, a shared
 header that exposes three `static inline` helpers and one
 struct-literal-emitting macro:
 
@@ -85,7 +85,7 @@ worthwhile. The recipe lives in `docs/ai/extractor-template.md`.
   [ADR-0042](0042-tinyai-docs-required-per-pr.md) (tiny-AI doc bar),
   [ADR-0215](0215-fastdvdnet-pre-filter.md) (FastDVDnet),
   [ADR-0218](0218-mobilesal-saliency-extractor.md) (MobileSal).
-- Implementation: `libvmaf/src/dnn/tiny_extractor_template.h`,
-  `libvmaf/src/feature/feature_lpips.c`,
-  `libvmaf/src/feature/fastdvdnet_pre.c`.
+- Implementation: `core/src/dnn/tiny_extractor_template.h`,
+  `core/src/feature/feature_lpips.c`,
+  `core/src/feature/fastdvdnet_pre.c`.
 - Recipe doc: [`docs/ai/extractor-template.md`](../ai/extractor-template.md).

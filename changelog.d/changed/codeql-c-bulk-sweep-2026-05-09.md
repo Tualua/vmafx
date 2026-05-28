@@ -9,8 +9,8 @@
   remaining 14 `cpp/large-parameter` alerts on the `VifBuffer` SIMD ABI
   (integer_vif.{c,h}, x86/vif_avx2.c, x86/vif_avx512.c) are deferred to a
   coordinated multi-backend follow-up: changing the VIF calling convention
-  ripples to the NEON path (libvmaf/src/feature/arm64/vif_neon.{c,h}) which is
+  ripples to the NEON path (core/src/feature/arm64/vif_neon.{c,h}) which is
   not in this sweep's scope and shares the upstream-mirror pass-by-value
   invariant. Touched files left lint-clean per CLAUDE rule §12 r12; one
-  unrelated IWYU warning absorbed in libvmaf/test/test_cpu.c (dropped unused
+  unrelated IWYU warning absorbed in core/test/test_cpu.c (dropped unused
   `config.h` include after deleting the AVX2 mask-test corpse).

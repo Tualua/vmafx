@@ -73,7 +73,7 @@ Pairs:         10 553 (train images + binary masks, 1:1)
 Four candidate architectures were reviewed against the existing C
 contract (`input` `[1, 3, H, W]` → `saliency_map` `[1, 1, H, W]`)
 and the fork's ONNX op-allowlist
-(`libvmaf/src/dnn/op_allowlist.c`):
+(`core/src/dnn/op_allowlist.c`):
 
 | Architecture | Approx. params | Notes | Picked? |
 | --- | --- | --- | --- |
@@ -105,7 +105,7 @@ content-dependent saliency signal on DUTS-TR.
 ## Op-allowlist analysis
 
 Every op in the exported ONNX graph was verified against
-`libvmaf/src/dnn/op_allowlist.c` at export time via
+`core/src/dnn/op_allowlist.c` at export time via
 `ai/src/vmaf_train/op_allowlist.py::check_model`. The graph contains
 exactly the ops `Conv`, `BatchNormalization` (folded into `Conv` by
 constant folding at export), `Relu`, `MaxPool`, `ConvTranspose`,

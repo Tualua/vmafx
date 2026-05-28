@@ -49,12 +49,6 @@ Fields documented inline; key invariants:
   this is `BSD-3-Clause-Plus-Patent` (matches libvmaf). Upstream-derived
   models carry the upstream license verbatim (e.g. LPIPS-Sq is `BSD-2-Clause`).
 
-Registry writers in `ai/scripts/` use
-`vmaf_train.registry.write_registry_json()`. That helper writes strict
-RFC-8259 JSON (`NaN` / `Infinity` are serialized as `null`) and keeps keys
-sorted with a trailing newline, so train/export reruns do not leave
-non-portable metadata behind when a diagnostic metric is missing.
-
 ## Validating the registry
 
 The Python validator at
@@ -112,7 +106,7 @@ deployments should set it on. `cosign` must be on `$PATH`; install
 prebuilt binaries from the [Sigstore release page](https://github.com/sigstore/cosign/releases).
 
 The C entry point is `vmaf_dnn_verify_signature(onnx_path, registry_path)`
-in [`libvmaf/include/libvmaf/dnn.h`](../../libvmaf/include/libvmaf/dnn.h);
+in [`core/include/libvmaf/dnn.h`](../../core/include/libvmaf/dnn.h);
 both arguments are NULL-tolerant in the documented way.
 
 ## Directory jail — `VMAF_TINY_MODEL_DIR`
@@ -142,7 +136,7 @@ together for production deployments.
   models may use sidecar `output_names[]` to provide stable scalar-score
   suffixes for report keys.
 - **Not** the operator-allowlist source of truth — that's
-  `libvmaf/src/dnn/op_allowlist.c`. The registry pins identity; the
+  `core/src/dnn/op_allowlist.c`. The registry pins identity; the
   allowlist constrains content.
 - **Not** a path allowlist — use `VMAF_TINY_MODEL_DIR` when deployments
   need to reject model paths outside a caller-trusted directory.

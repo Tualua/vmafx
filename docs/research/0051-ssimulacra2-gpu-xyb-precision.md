@@ -42,7 +42,7 @@ T-GPU-OPT-VK-3 spike answers both.
 
 Worktree: `feat/ssimulacra2-gpu-xyb-shader-precision` at master tip
 (`e266bf8e`). Toggle introduced as a compile-time `SS2V_USE_GPU_XYB`
-macro in `libvmaf/src/feature/vulkan/ssimulacra2_vulkan.c`
+macro in `core/src/feature/vulkan/ssimulacra2_vulkan.c`
 (default 0 = host XYB; 1 = GPU XYB). The shader source itself was
 **not modified** — the existing `ssimulacra2_xyb.comp` already ships
 every known precision mitigation:
@@ -72,7 +72,7 @@ in `libvmaf/`. Cross-backend gate:
 VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/nvidia_icd.json \
   python3 scripts/ci/cross_backend_vif_diff.py \
     --feature ssimulacra2 --backend vulkan --places 4 \
-    --vmaf-binary libvmaf/build/tools/vmaf \
+    --vmaf-binary core/build/tools/vmaf \
     --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
     --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
     --width 576 --height 324 --pixel-format 420 --bitdepth 8
@@ -168,7 +168,7 @@ cd ..
 VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/nvidia_icd.json \
   python3 scripts/ci/cross_backend_vif_diff.py \
     --feature ssimulacra2 --backend vulkan --places 4 \
-    --vmaf-binary libvmaf/build/tools/vmaf \
+    --vmaf-binary core/build/tools/vmaf \
     --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
     --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
     --width 576 --height 324 --pixel-format 420 --bitdepth 8
@@ -204,9 +204,9 @@ VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/nvidia_icd.json \
   long-tail scope; ssimulacra2 is part 7.
 - [ADR-0164](../adr/0164-ssimulacra2-deterministic-eotf-cbrt.md) —
   deterministic sRGB EOTF + cbrt scalar reference.
-- `libvmaf/src/feature/vulkan/shaders/ssimulacra2_xyb.comp` —
+- `core/src/feature/vulkan/shaders/ssimulacra2_xyb.comp` —
   the shader under investigation.
-- `libvmaf/src/feature/ssimulacra2_math.h::vmaf_ss2_cbrtf` —
+- `core/src/feature/ssimulacra2_math.h::vmaf_ss2_cbrtf` —
   scalar cube-root the shader mirrors.
 - `scripts/ci/cross_backend_vif_diff.py` — the gate the
   measurement was taken with.

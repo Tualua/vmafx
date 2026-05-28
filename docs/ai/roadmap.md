@@ -16,7 +16,7 @@ what we're adding that the current scope ([ADR-0020](../adr/0020-tinyai-four-cap
 Shipped and wired:
 
 - **Training** — `ai/` (PyTorch + Lightning), `vmaf-train` CLI.
-- **Inference** — `libvmaf/src/dnn/` (ONNX Runtime C API behind a 67-op
+- **Inference** — `core/src/dnn/` (ONNX Runtime C API behind a 67-op
   allowlist, ≤ 50 MB model cap, path-hardened loader).
 - **C API** — `vmaf_use_tiny_model()`, `VmafDnnSession` open/run/close.
 - **CLI** — `vmaf --tiny-model PATH --tiny-device {auto|cpu|cuda|openvino|rocm}`.
@@ -70,7 +70,7 @@ The C2 + C3 first training run exercised the full pipeline end-to-end:
 with an externally-validated reference point. SqueezeNet variant fits
 comfortably under the size cap (~2.5M params + ~1.25M frozen features).
 
-**Integration.** New feature extractor under `libvmaf/src/feature/` that
+**Integration.** New feature extractor under `core/src/feature/` that
 calls `vmaf_dnn_session_*`. Emits `lpips_sq` per frame alongside VMAF's
 own composite features.
 
@@ -84,7 +84,7 @@ Exports cleanly at opset 17. No custom ops. Upstream reference:
 companion to LPIPS. The extractor surface is now shipped with a smoke
 checkpoint; production weights remain `T7-DISTS-followup`.
 
-**Integration.** `libvmaf/src/feature/feature_dists.c` mirrors LPIPS'
+**Integration.** `core/src/feature/feature_dists.c` mirrors LPIPS'
 two-input DNN session and emits `dists_sq` per frame.
 
 ### 2.3 MobileSal → saliency-weighted VMAF *and* encoder ROI
@@ -230,7 +230,7 @@ risk (infinite compute, adversarial model).
 - **RAFT-Small** (~1M) optical flow — iterative GRU update.
 - **Small VLMs** (SmolVLM 256M family) — transformer decoder.
 
-**Implementation.** Extend `libvmaf/src/dnn/op_allowlist.c`:
+**Implementation.** Extend `core/src/dnn/op_allowlist.c`:
 
 1. Add `Loop` and `If` to the allowed set.
 2. During `model_loader` graph walk, if a `Loop` node is present, read
@@ -266,7 +266,7 @@ to Moondream2 (1.8B quantized Q4 fits in 4 GB VRAM).
 **Sandbox.** VLM runs via ONNX Runtime under the extended allowlist
 (§4). Absolute path resolution and ≤ 50 MB cap still apply; larger
 VLMs will need the compile-time `VMAF_DNN_DEFAULT_MAX_BYTES` constant
-in [`libvmaf/src/dnn/model_loader.h`](../../libvmaf/src/dnn/model_loader.h)
+in [`core/src/dnn/model_loader.h`](../../core/src/dnn/model_loader.h)
 bumped and the library rebuilt (the historical
 `VMAF_MAX_MODEL_BYTES` env override was retired in T7-12).
 
@@ -300,7 +300,7 @@ Not on the roadmap, for clarity:
 - Cloud-only / API-dependent models. Everything runs local.
 - Models > 50 MB. The cap is the compile-time
   `VMAF_DNN_DEFAULT_MAX_BYTES` constant; bump it in
-  [`libvmaf/src/dnn/model_loader.h`](../../libvmaf/src/dnn/model_loader.h)
+  [`core/src/dnn/model_loader.h`](../../core/src/dnn/model_loader.h)
   and rebuild when a use case genuinely needs it (the previous
   `VMAF_MAX_MODEL_BYTES` env-override hatch was retired in T7-12).
 - `Scan` and arbitrary control flow. See §4 non-goal.

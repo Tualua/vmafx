@@ -7,7 +7,7 @@ extractor): same model, two surfaces — scoring the residual vs steering
 the encoder.
 
 > **Binary name note:** Built and installed as `vmaf_roi` (underscore,
-> per `libvmaf/tools/meson.build`). Throughout this page the
+> per `core/tools/meson.build`). Throughout this page the
 > `vmaf-roi` (hyphen) form refers to the same binary; if you typed
 > `vmaf-roi` and got "command not found", fall back to `vmaf_roi`.
 
@@ -36,7 +36,7 @@ ninja -C build tools/vmaf_roi
 ```
 
 The binary depends only on libvmaf's public DNN surface
-([`libvmaf/dnn.h`](../../libvmaf/include/libvmaf/dnn.h)); when libvmaf is
+([`libvmaf/dnn.h`](../../core/include/libvmaf/dnn.h)); when libvmaf is
 built with `-Denable_dnn=false` the `--saliency-model` path returns
 `-ENOSYS` and the tool falls back to a deterministic radial placeholder
 useful only for smoke-testing the sidecar plumbing.

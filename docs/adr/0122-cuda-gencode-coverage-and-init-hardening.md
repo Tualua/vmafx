@@ -7,7 +7,7 @@
 
 ## Context
 
-Upstream Netflix `libvmaf/src/meson.build` ships CUDA cubins only at Txx
+Upstream Netflix `core/src/meson.build` ships CUDA cubins only at Txx
 major-generation boundaries (sm_75, sm_80, sm_90, sm_100, sm_120) plus a
 single PTX at the highest compute cap the host nvcc supports. On CUDA
 12.x toolchains that PTX is `compute_90` or `compute_120`, neither of
@@ -17,7 +17,7 @@ consumer GPUs in the wild today; any user on a 3080/3090/4070/4090 who
 builds libvmaf against a default CUDA 12.x toolchain ends up with a
 library that has no runnable kernels for their GPU.
 
-Separately, the CUDA init path in `libvmaf/src/cuda/common.c` returned
+Separately, the CUDA init path in `core/src/cuda/common.c` returned
 `-EINVAL` with only the message `"Error: failed to load CUDA
 functions"` when `cuda_load_functions()` (the nv-codec-headers wrapper
 around `dlopen("libcuda.so.1")`) failed. That is the single most common
@@ -45,7 +45,7 @@ threading modes) for focused bisect / revert / gate investigation.
 Two independent changes, shipped together because they share the PR /
 CI cost:
 
-1. **Extend `libvmaf/src/meson.build` to unconditionally include cubins
+1. **Extend `core/src/meson.build` to unconditionally include cubins
    for `sm_86` and `sm_89`** (in addition to the existing
    sm_75/sm_80/sm_90/sm_100/sm_120 entries), and **emit a `compute_80`
    PTX as an unconditional backward-JIT fallback** so every sm_80+ GPU
@@ -55,7 +55,7 @@ CI cost:
    support these archs.
 
 2. **Harden `vmaf_cuda_state_init()` in
-   `libvmaf/src/cuda/common.c`**: when `cuda_load_functions()` fails,
+   `core/src/cuda/common.c`**: when `cuda_load_functions()` fails,
    log a multi-line actionable message that names the missing library
    (`libcuda.so.1`), the mechanism (dlopen via nv-codec-headers), the
    check command (`ldconfig -p | grep libcuda`), and the docs section
@@ -107,7 +107,7 @@ CI cost:
 
 ## References
 
-- Upstream `libvmaf/src/meson.build` gencode array (Netflix 2aab9ef1
+- Upstream `core/src/meson.build` gencode array (Netflix 2aab9ef1
   head).
 - `ffnvcodec/dynlink_loader.h::cuda_load_functions` — the dlopen entry
   point libvmaf uses.

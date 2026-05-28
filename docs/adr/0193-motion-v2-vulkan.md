@@ -10,13 +10,13 @@
 [ADR-0192](0192-gpu-long-tail-batch-3.md) scopes batch 3 with
 `motion_v2` as the first metric: smallest CPU reference (300 LOC),
 builds directly on the already-shipped
-[`motion_vulkan`](../../libvmaf/src/feature/vulkan/motion_vulkan.c)
+[`motion_vulkan`](../../core/src/feature/vulkan/motion_vulkan.c)
 ([ADR-0177](0177-vulkan-motion-kernel.md)) — same 5-tap separable
 Gaussian filter, same int64 partial-sum reduction, same
 VkSpecializationInfo shape.
 
 The CPU reference is
-[`integer_motion_v2.c`](../../libvmaf/src/feature/integer_motion_v2.c).
+[`integer_motion_v2.c`](../../core/src/feature/integer_motion_v2.c).
 Stateless variant of `integer_motion`: instead of storing blurred
 ref frames between `extract` calls, it exploits convolution
 linearity:
@@ -150,10 +150,10 @@ work needed; the kernel only emits `motion_v2_sad_score`.
 - Sibling kernel: [ADR-0177](0177-vulkan-motion-kernel.md) — the
   motion Vulkan kernel this one builds on.
 - CPU reference:
-  [`integer_motion_v2.c`](../../libvmaf/src/feature/integer_motion_v2.c)
+  [`integer_motion_v2.c`](../../core/src/feature/integer_motion_v2.c)
   (300 LOC).
 - Mirror divergence vs `motion.comp`:
-  [`motion_v2.comp`](../../libvmaf/src/feature/vulkan/shaders/motion_v2.comp)
+  [`motion_v2.comp`](../../core/src/feature/vulkan/shaders/motion_v2.comp)
   `dev_mirror` comment block.
 - Verification: cross-backend gate
   [`scripts/ci/cross_backend_vif_diff.py`](../../scripts/ci/cross_backend_vif_diff.py)

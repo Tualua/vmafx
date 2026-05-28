@@ -26,7 +26,7 @@ ninja -C build
 # 2. Cross-backend diff at places=4.
 cd ..
 python3 scripts/ci/cross_backend_vif_diff.py \
-    --vmaf-binary $PWD/libvmaf/build/tools/vmaf \
+    --vmaf-binary $PWD/core/build/tools/vmaf \
     --reference testdata/ref_576x324_48f.yuv \
     --distorted testdata/dis_576x324_48f.yuv \
     --width 576 --height 324 \
@@ -55,7 +55,7 @@ BT.709 → linear-RGB → XYZ → Lab chain in `double`, narrowing to
 `float` only on assignment to `LABColor`; the Vulkan shader is `float`
 throughout) was tested by a controlled experiment:
 
-1. Replace `libvmaf/src/feature/ciede.c::get_lab_color` (and its two
+1. Replace `core/src/feature/ciede.c::get_lab_color` (and its two
    helpers `rgb_to_xyz_map`, `xyz_to_lab_map`) with f32 implementations
    that mirror the Vulkan shader's precision contract bit-for-bit
    (literal constants narrowed to `float`, `powf` instead of `pow`,
@@ -142,7 +142,7 @@ The diagnostic patch (not committed) replaced these helpers with f32
 twins. Reproduce via:
 
 ```c
-// In libvmaf/src/feature/ciede.c, add:
+// In core/src/feature/ciede.c, add:
 static float rgb_to_xyz_map_f(float c) {
     if (c > 10.f / 255.f) {
         const float A = 0.055f;
@@ -164,5 +164,5 @@ static float xyz_to_lab_map_f(float c) {
 - PR #346 — `precise` decorations on vif + ciede
 - ADR-0187 — original ciede Vulkan kernel
 - ADR-0273 — this digest's decision
-- `libvmaf/src/feature/ciede.c::get_lab_color` (CPU reference, double)
-- `libvmaf/src/feature/vulkan/shaders/ciede.comp::yuv_to_lab` (GPU shader, float)
+- `core/src/feature/ciede.c::get_lab_color` (CPU reference, double)
+- `core/src/feature/vulkan/shaders/ciede.comp::yuv_to_lab` (GPU shader, float)

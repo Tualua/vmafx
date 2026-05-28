@@ -17,7 +17,7 @@ run:
    runner against any action that still ships a Node 20 entry point. Forced
    migration to Node 24 starts 2026-06-02.
 2. `(WARNING) Ignoring suspicious hits in
-   .../libvmaf/src/feature/ansnr_tools.c:207: 4932845568: 207-block 1.` —
+   .../core/src/feature/ansnr_tools.c:207: 4932845568: 207-block 1.` —
    gcovr 8 flagging a hit count above its built-in sanity threshold (~2³² /
    4.29 G). The line is the inner loop of the ANSNR border-replicate
    convolution; on a single 1080p frame that loop runs `1920 × 1080 × 5 × 5

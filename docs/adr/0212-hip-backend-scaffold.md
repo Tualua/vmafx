@@ -38,32 +38,32 @@ follow have a stable base to land on.
 The PR creates:
 
 - Public header
-  [`libvmaf/include/libvmaf/libvmaf_hip.h`](../../libvmaf/include/libvmaf/libvmaf_hip.h):
+  [`core/include/libvmaf/libvmaf_hip.h`](../../core/include/libvmaf/libvmaf_hip.h):
   declares `VmafHipState`, `VmafHipConfiguration`,
   `vmaf_hip_state_init` / `_import_state` / `_state_free`,
   `vmaf_hip_list_devices`, `vmaf_hip_available`. Mirrors the CUDA +
   Vulkan + SYCL pattern.
 - Backend tree under
-  [`libvmaf/src/hip/`](../../libvmaf/src/hip/) — `common.{c,h}`,
+  [`core/src/hip/`](../../core/src/hip/) — `common.{c,h}`,
   `picture_hip.{c,h}`, `dispatch_strategy.{c,h}`, `meson.build`. All
   entry points return `-ENOSYS` or do-nothing.
 - Kernel stubs at
-  [`libvmaf/src/feature/hip/`](../../libvmaf/src/feature/hip/) —
+  [`core/src/feature/hip/`](../../core/src/feature/hip/) —
   `adm_hip.c`, `vif_hip.c`, `motion_hip.c`. `_init` / `_run` entry
   points return `-ENOSYS` until kernels arrive.
 - New `enable_hip` boolean option (default **false**) in
-  [`libvmaf/meson_options.txt`](../../libvmaf/meson_options.txt).
+  [`core/meson_options.txt`](../../core/meson_options.txt).
 - Conditional `subdir('hip')` in
-  [`libvmaf/src/meson.build`](../../libvmaf/src/meson.build);
+  [`core/src/meson.build`](../../core/src/meson.build);
   `hip_sources` + `hip_deps` threaded through
   `libvmaf_feature_static_lib` alongside the existing CUDA / SYCL /
   Vulkan / DNN aggregations.
 - Smoke test
-  [`libvmaf/test/test_hip_smoke.c`](../../libvmaf/test/test_hip_smoke.c)
+  [`core/test/test_hip_smoke.c`](../../core/test/test_hip_smoke.c)
   with 9 sub-tests pinning the scaffold contract — the four internal
   context-lifecycle checks plus one `-ENOSYS` (or NULL-safe `-EINVAL`)
   expectation per public C-API entry point. Wired in
-  [`libvmaf/test/meson.build`](../../libvmaf/test/meson.build) under
+  [`core/test/meson.build`](../../core/test/meson.build) under
   `if get_option('enable_hip') == true`.
 - New CI matrix row "Build — Ubuntu HIP (T7-10 scaffold)" in
   [`libvmaf-build-matrix.yml`](../../.github/workflows/libvmaf-build-matrix.yml)
@@ -156,7 +156,7 @@ the same syntax (`-Denable_<vendor>=true|false`).
 
 ## Tests
 
-- `libvmaf/test/test_hip_smoke.c` (9 sub-tests, all pass locally):
+- `core/test/test_hip_smoke.c` (9 sub-tests, all pass locally):
   - `test_context_new_returns_zeroed_struct`
   - `test_context_new_rejects_null_out`
   - `test_context_destroy_null_is_noop`
@@ -230,18 +230,18 @@ The T7-10b runtime PR landed against a host with a working ROCm
 7.2.x install and a `gfx1036` AMD GPU visible to `hipGetDeviceCount`.
 It flips:
 
-- `libvmaf/src/hip/kernel_template.c` — every helper now wraps a
+- `core/src/hip/kernel_template.c` — every helper now wraps a
   real HIP runtime call (`hipStreamCreateWithFlags`,
   `hipEventCreateWithFlags`, `hipMalloc`, `hipHostMalloc`,
   `hipMemsetAsync`, `hipStreamWaitEvent`, `hipStreamSynchronize`,
   `hipStreamDestroy`, `hipEventDestroy`, `hipFree`, `hipHostFree`).
   Rolls back on partial-failure paths.
-- `libvmaf/src/hip/common.c` — `vmaf_hip_device_count`,
+- `core/src/hip/common.c` — `vmaf_hip_device_count`,
   `vmaf_hip_state_init`, `vmaf_hip_state_free`, and
   `vmaf_hip_list_devices` now invoke real HIP runtime calls.
   `vmaf_hip_import_state` stays at `-ENOSYS` pending T7-10c (the
   first-feature-kernel PR wires the dispatch hookup).
-- `libvmaf/src/hip/meson.build` — flips `dependency('hip-lang')`
+- `core/src/hip/meson.build` — flips `dependency('hip-lang')`
   from `required: false` to a hard linkage. Falls back to
   `cc.find_library('amdhip64', dirs: hip_search_paths)` rooted at
   `/opt/rocm/lib` (and `HIP_PATH` if set) because the ROCm 7.x
@@ -249,7 +249,7 @@ It flips:
   expectation breaks under meson's CMake probe. The fallback path
   attaches `-D__HIP_PLATFORM_AMD__=1` and the ROCm include dir as
   a system include.
-- `libvmaf/test/test_hip_smoke.c` — the four kernel-template
+- `core/test/test_hip_smoke.c` — the four kernel-template
   helpers + `vmaf_hip_state_init` + `vmaf_hip_list_devices` now
   pin the runtime contract (success on a host with `>=1` HIP
   device, `-ENODEV` when none). Adds a pinned-host → device →

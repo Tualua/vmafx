@@ -56,9 +56,9 @@ vmaf/
 
 | Concern                                | Home                                          |
 | -------------------------------------- | --------------------------------------------- |
-| Add a SIMD path                        | `libvmaf/src/feature/<isa>/`                  |
-| Add a GPU backend                      | `libvmaf/src/<backend>/` + `src/feature/<backend>/` |
-| Add a feature extractor                | `libvmaf/src/feature/`                        |
+| Add a SIMD path                        | `core/src/feature/<isa>/`                  |
+| Add a GPU backend                      | `core/src/<backend>/` + `src/feature/<backend>/` |
+| Add a feature extractor                | `core/src/feature/`                        |
 | Ship a new VMAF model                  | `model/` (JSON/pkl) or `model/tiny/` (ONNX)   |
 | Train a new tiny model                 | `ai/src/vmaf_train/models/`                   |
 | Python harness scratch                 | `python/vmaf/workspace/` (see [workspace.md](workspace.md)) |

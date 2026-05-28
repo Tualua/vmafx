@@ -87,5 +87,5 @@ is not adopted here; migrating the HIP host TU is a follow-up.
 - ADR-0537: `vif_statistics.hip` adopted the same per-thread atomicAdd
   reduction pattern that this ADR carries into ADM.
 - ADR-0214: cross-backend numerical-parity gate (places=4).
-- Upstream CUDA twins: `libvmaf/src/feature/cuda/integer_adm/adm_*.cu`.
+- Upstream CUDA twins: `core/src/feature/cuda/integer_adm/adm_*.cu`.
 - Source: `req` (user direction): "no stubs anywhere".

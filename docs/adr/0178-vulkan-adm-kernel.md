@@ -12,7 +12,7 @@ motion_v2. PR #119 (commit `32e31e45`) landed the motion kernel; this
 ADR covers the **ADM** half of T5-1c (the wavelet-based kernel that's
 the largest and most complex of the three).
 
-The CPU integer-ADM extractor at `libvmaf/src/feature/integer_adm.c`
+The CPU integer-ADM extractor at `core/src/feature/integer_adm.c`
 (3527 LOC) implements a 4-scale DWT (CDF 9/7 / DB2 wavelet) followed
 by per-band decoupling, CSF weighting, and contrast masking. The SYCL
 implementation at `integer_adm_sycl.cpp` (1626 LOC) was the closest

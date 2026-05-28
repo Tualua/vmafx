@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 #
-#  Copyright 2026 Lusoris
-#  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+#  Copyright 2026 Lusoris and Claude (Anthropic)
+#  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 #
 """Export LPIPS-SqueezeNet as a two-input ONNX for libvmaf's tiny-AI surface.
 
@@ -43,6 +43,8 @@ non-zero exit if atol>1e-4.
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import sys
 from pathlib import Path
 
@@ -50,18 +52,6 @@ import numpy as np
 import onnx
 import torch
 import torch.nn as nn
-
-try:
-    from scripts._script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
-    from ai.scripts._script_bootstrap import bootstrap_ai_script
-
-_SCRIPT_PATHS = bootstrap_ai_script(__file__)
-REPO_ROOT = _SCRIPT_PATHS.repo_root
-
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.file_utils import sha256  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
@@ -190,15 +180,8 @@ def _parity_check(onnx_path: Path, atol: float = 1e-4) -> None:
     print(f"[ok] parity: max|Δ|={diff:.3e} ≤ atol={atol:.1e}")
 
 
-def _write_sidecar(
-    onnx_path: Path,
-    opset: int,
-    *,
-    sidecar_path: Path | None = None,
-    args: argparse.Namespace | None = None,
-    argv: list[str] | None = None,
-) -> Path:
-    sidecar = sidecar_path or onnx_path.with_suffix(".json")
+def _write_sidecar(onnx_path: Path, opset: int) -> Path:
+    sidecar = onnx_path.with_suffix(".json")
     payload = {
         "input_name": "ref",
         "kind": "fr",
@@ -212,40 +195,27 @@ def _write_sidecar(
         "onnx_opset": opset,
         "output_name": "score",
     }
-    if args is not None and argv is not None:
-        payload["run_provenance"] = build_run_provenance(
-            entrypoint=Path(__file__),
-            repo_root=REPO_ROOT,
-            argv=argv,
-            args=args,
-            outputs={"onnx": onnx_path, "sidecar": sidecar},
-        )
-    write_manifest_json(sidecar, payload)
+    sidecar.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
     return sidecar
 
 
-def _display_path(path: Path) -> Path:
-    try:
-        return path.resolve().relative_to(REPO_ROOT.resolve())
-    except ValueError:
-        return path
+def _sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
-    default_out = REPO_ROOT / "model" / "tiny" / "lpips_sq.onnx"
+    repo_root = Path(__file__).resolve().parent.parent
+    default_out = repo_root / "model" / "tiny" / "lpips_sq.onnx"
 
-    parser = make_argument_parser(prog="lpips_export.py", description=__doc__.splitlines()[0])
-    parser.add_argument("--output", "--out", dest="output", type=Path, default=default_out)
-    parser.add_argument(
-        "--sidecar",
-        type=Path,
-        default=None,
-        help="Sidecar JSON path. Defaults to <output>.json.",
-    )
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--output", type=Path, default=default_out)
     parser.add_argument("--opset", type=int, default=17)
     parser.add_argument("--skip-parity", action="store_true")
-    args = parser.parse_args(raw_argv)
+    args = parser.parse_args(argv)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     effective_opset = _export(args.output, args.opset)
@@ -255,21 +225,14 @@ def main(argv: list[str] | None = None) -> int:
             "sidecar + registry should use the emitted value",
             file=sys.stderr,
         )
-    sidecar = _write_sidecar(
-        args.output,
-        effective_opset,
-        sidecar_path=args.sidecar,
-        args=args,
-        argv=raw_argv,
-    )
+    _write_sidecar(args.output, effective_opset)
     if not args.skip_parity:
         _parity_check(args.output)
 
-    digest = sha256(args.output)
+    sha = _sha256(args.output)
     size = args.output.stat().st_size
-    print(f"[ok] wrote {_display_path(args.output)} ({size} bytes)")
-    print(f"     sidecar {_display_path(sidecar)}")
-    print(f"     sha256 {digest}")
+    print(f"[ok] wrote {args.output.relative_to(repo_root)} ({size} bytes)")
+    print(f"     sha256 {sha}")
     print("     add this digest to model/tiny/registry.json")
     return 0
 

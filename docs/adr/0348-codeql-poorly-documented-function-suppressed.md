@@ -22,7 +22,7 @@ header block on every internal helper would add boilerplate without
 adding signal.
 
 The two policies collide on ~15 alerts in the latest CodeQL scan,
-spread across `libvmaf/src/`. Each alert points at a function that is
+spread across `core/src/`. Each alert points at a function that is
 genuinely fine under the project standard. Agent #538 reviewed the
 class and explicitly recommended a global config-level suppression
 rather than per-instance review or mass-comment-add: the rule is

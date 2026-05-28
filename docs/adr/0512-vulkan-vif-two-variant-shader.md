@@ -82,7 +82,7 @@ ADR-0492 retains its body unchanged per the ADR-maintenance rule
     (this PR).
   - `changelog.d/fixed/vulkan-fp32-fallback.md` fragment added
     (this PR).
-  - AGENTS.md note in `libvmaf/src/feature/vulkan/AGENTS.md`
+  - AGENTS.md note in `core/src/feature/vulkan/AGENTS.md`
     records the two-variant invariant (this PR).
   - Existing tests cover the fp64 path on shaderFloat64-capable
     devices; this PR adds a fp32-fallback smoke and an

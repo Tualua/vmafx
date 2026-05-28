@@ -20,12 +20,12 @@ the default `3.0` exponent in the SIMD path.
 
 ## Files Audited
 
-- `libvmaf/src/feature/integer_adm.c`
-- `libvmaf/src/feature/x86/adm_avx2.c`
-- `libvmaf/src/feature/x86/adm_avx512.c`
-- `libvmaf/src/feature/x86/adm_avx2.h`
-- `libvmaf/src/feature/x86/adm_avx512.h`
-- `libvmaf/test/test_integer_adm_simd.c`
+- `core/src/feature/integer_adm.c`
+- `core/src/feature/x86/adm_avx2.c`
+- `core/src/feature/x86/adm_avx512.c`
+- `core/src/feature/x86/adm_avx2.h`
+- `core/src/feature/x86/adm_avx512.h`
+- `core/test/test_integer_adm_simd.c`
 
 ## Result
 

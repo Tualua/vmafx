@@ -46,7 +46,7 @@ divergent" extractor in a single systematic pass.
 
 ## 3. Registered Extractor Inventory
 
-Extractors enumerated from `libvmaf/src/feature/feature_extractor.c`
+Extractors enumerated from `core/src/feature/feature_extractor.c`
 `feature_extractor_list[]` (all build flags enabled):
 
 **CPU / scalar extractors (20):**

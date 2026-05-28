@@ -11,7 +11,7 @@ re-shape the `float_vif` extractor's option surface: arbitrary-value
 `float_vif` already diverges from upstream — it carries precomputed
 `vif_filter1d_table_s` tables indexed by `vif_kernelscale_enum`,
 runtime-resolved by `resolve_kernelscale_index` in
-`libvmaf/src/feature/vif.c:61`.
+`core/src/feature/vif.c:61`.
 
 **Can the fork port the upstream chain (`4ad6e0ea` → `41d42c9e` →
 `bc744aa3` → `8c645ce3`) without breaking the Netflix golden-data
@@ -20,7 +20,7 @@ deliberately diverge on?**
 
 ## Background — fork state
 
-[`vif_tools.h`](../../libvmaf/src/feature/vif_tools.h) carries a
+[`vif_tools.h`](../../core/src/feature/vif_tools.h) carries a
 **closed enum** of 11 supported kernelscale values:
 
 ```c
@@ -44,9 +44,9 @@ extern const int   vif_filter1d_width[11][4];
 Each `(kernelscale, scale)` pair has a **precomputed Gaussian kernel**
 of up to 65 taps. Kernel values are **frozen as `const float`
 literals** — the SIMD paths
-([`vif_avx2.c`](../../libvmaf/src/feature/x86/vif_avx2.c),
-[`vif_avx512.c`](../../libvmaf/src/feature/x86/vif_avx512.c),
-[`vif_neon.c`](../../libvmaf/src/feature/arm64/vif_neon.c)) consume
+([`vif_avx2.c`](../../core/src/feature/x86/vif_avx2.c),
+[`vif_avx512.c`](../../core/src/feature/x86/vif_avx512.c),
+[`vif_neon.c`](../../core/src/feature/arm64/vif_neon.c)) consume
 those exact floats; the Netflix golden goldens at
 `python/test/feature_extractor_test.py::test_vmafexec_vif_v0_6_1`
 encode the resulting per-frame VIF scores at `places=4`.
@@ -71,7 +71,7 @@ pre-ADR-0138 cross-ISA drift.
 ## Background — upstream state
 
 Netflix master (as of 2026-04-28 `9dac0a59`) ships
-[`vif_tools.c`](https://github.com/Netflix/vmaf/blob/9dac0a59/libvmaf/src/feature/vif_tools.c)
+[`vif_tools.c`](https://github.com/Netflix/vmaf/blob/9dac0a59/core/src/feature/vif_tools.c)
 with **runtime-computed** filters:
 
 ```c

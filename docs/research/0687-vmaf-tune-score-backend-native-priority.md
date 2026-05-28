@@ -8,7 +8,7 @@ Vulkan when `auto` chooses a score backend.
 
 ## Findings
 
-- `libvmaf/tools/cli_parse.c` already advertises
+- `core/tools/cli_parse.c` already advertises
   `auto|cpu|cuda|sycl|vulkan|hip|metal` and configures `--backend hip` with
   `hip_device=0` plus the expected exclusive-backend disables.
 - `docs/backends/hip/overview.md` records `vmaf --backend hip` as end-to-end

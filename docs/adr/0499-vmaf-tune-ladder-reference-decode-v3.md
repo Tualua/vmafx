@@ -26,7 +26,7 @@ A secondary finding: `_VMAF_RAW_SUFFIXES = {".yuv", ".y4m", ""}` lists
 `.y4m` as "no decode needed". This is wrong. `vmaf-tune` always
 passes `--width` / `--height` / `--pixel_format` / `--bitdepth` (see
 `vmaftune.score.build_vmaf_command`) — each of those flags flips
-`settings->use_yuv = true` in `libvmaf/tools/cli_parse.c` (lines
+`settings->use_yuv = true` in `core/tools/cli_parse.c` (lines
 637–651 as of 2026-05-18) which routes both inputs through
 `raw_input_open`. `.y4m` files therefore trip the file-size mismatch
 guard the same way `.mp4` does. The empty-suffix entry is kept for
@@ -86,7 +86,7 @@ path the binary cannot parse.
 - Predecessor: [ADR-0498](0498-vmaf-tune-bbb-e2e-v2-bug-cluster.md) (v2 cluster)
 - Earlier predecessor: [ADR-0497](0497-vmaf-tune-bbb-e2e-bug-cluster.md) (v1 cluster)
 - Container build policy: [ADR-0496](0496-prefer-dev-mcp-container-rule.md)
-- libvmaf CLI source: `libvmaf/tools/cli_parse.c` (lines 637–651)
+- libvmaf CLI source: `core/tools/cli_parse.c` (lines 637–651)
 - Source: `req` (direct user direction in the agent dispatch
   briefing on 2026-05-18 — paraphrased: "ladder fails because only
   the distorted leg is decoded; mirror that fix to the reference

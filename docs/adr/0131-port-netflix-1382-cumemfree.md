@@ -16,7 +16,7 @@ statements later by `cuStreamDestroy(priv->cuda.str)`. Under
 concurrent access the driver observes a stream that no longer owns
 the deferred free and fails the internal assertion.
 
-The fork is known-affected. `libvmaf/src/cuda/picture_cuda.c:247`
+The fork is known-affected. `core/src/cuda/picture_cuda.c:247`
 issues exactly the same `cuMemFreeAsync` call, and the fork's
 2026-04-18 upstream-backlog audit
 ([`analysis/upstream-backlog-audit.md`](../../.workingdir2/analysis/upstream-backlog-audit.md))
@@ -31,7 +31,7 @@ non-regressive for performance.
 ## Decision
 
 We port the upstream one-line change to
-`libvmaf/src/cuda/picture_cuda.c:247`, replacing
+`core/src/cuda/picture_cuda.c:247`, replacing
 `cuMemFreeAsync((CUdeviceptr)pic->data[i], priv->cuda.str)` with
 `cuMemFree((CUdeviceptr)pic->data[i])`. The fork's 3-arg
 `CHECK_CUDA(cu_f, ...)` macro form and the `(CUdeviceptr)` cast

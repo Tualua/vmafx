@@ -1,6 +1,6 @@
 ### motion_vulkan: parity fixes vs CUDA/Metal/HIP (Metal #1018 + HIP #1037 audit)
 
-Two host-side correctness fixes in `libvmaf/src/feature/vulkan/motion_vulkan.c`:
+Two host-side correctness fixes in `core/src/feature/vulkan/motion_vulkan.c`:
 
 - **`extract_force_zero`**: removed the erroneous `frame_index > 0` guard that
   suppressed `motion_score` on frame 0. Every frame now receives `motion2_score=0`

@@ -16,7 +16,7 @@ and aggregate full-feature tables were rebuilt by ad hoc concatenation.
 
 ## Decision
 
-We will make the current fork CPU binary (`libvmaf/build-cpu/tools/vmaf`) the shared default
+We will make the current fork CPU binary (`core/build-cpu/tools/vmaf`) the shared default
 for AI feature extraction, add real full-feature refresh drivers for KoNViD-1k and UGC,
 allow BVI-DVC refreshes from the known-good lossless MKV bundle, and require aggregate
 training tables to be rebuilt through `ai/scripts/combine_full_feature_parquets.py`.
@@ -36,7 +36,7 @@ training tables to be rebuilt through `ai/scripts/combine_full_feature_parquets.
   contract and one aggregate schema. Folded KoNViD output becomes reproducible across
   machines because fold labels are deterministic hashes over clip keys.
 - **Negative**: Full-feature UGC/KoNViD refreshes are slower than the old shortcuts, and
-  local jobs need a current `libvmaf/build-cpu/tools/vmaf` build before running.
+  local jobs need a current `core/build-cpu/tools/vmaf` build before running.
 - **Neutral / follow-ups**: Model retraining waits for the long-running refresh jobs
   (CHUG, KoNViD, UGC, Netflix) to finish. The combiner intentionally writes gitignored
   parquet outputs; model-card number updates belong in the follow-up retrain PR.

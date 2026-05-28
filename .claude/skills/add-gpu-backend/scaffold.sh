@@ -44,9 +44,9 @@ for feat in adm vif motion; do
     >"$src/feature/$backend/${feat}_${backend}.c"
 done
 
-echo "scaffolded $backend backend under libvmaf/src/$backend/ + libvmaf/src/feature/$backend/"
+echo "scaffolded $backend backend under core/src/$backend/ + core/src/feature/$backend/"
 echo "next steps:"
-echo "  1. add 'option('enable_$backend', type: 'feature', value: 'auto')' to libvmaf/meson_options.txt"
-echo "  2. wire libvmaf/src/$backend/meson.build into libvmaf/meson.build"
+echo "  1. add 'option('enable_$backend', type: 'feature', value: 'auto')' to core/meson_options.txt"
+echo "  2. wire core/src/$backend/meson.build into core/meson.build"
 echo "  3. fill in the TODOs in common.c / *_${backend}.c"
 echo "  4. add a matrix row for $backend in .github/workflows/libvmaf-build-matrix.yml"

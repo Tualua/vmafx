@@ -36,17 +36,17 @@ for cand in "${ONEAPI_CANDIDATES[@]}"; do
   fi
 done
 
-cd "${VMAF_ROOT:-$(git rev-parse --show-toplevel)}" || exit 1
+cd "${VMAF_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || echo /home/kilian/dev/vmaf)}" || exit 1
 
 # Honour $VMAF_BIN if set (e.g. for an out-of-tree build); otherwise default
-# to the in-tree fork build at libvmaf/build/tools/vmaf. Earlier revisions
+# to the in-tree fork build at core/build/tools/vmaf. Earlier revisions
 # fell back to /usr/local/bin/vmaf, which on most dev hosts is stuck at
 # v3.0.0 (predates upstream a44e5e61's motion edge-mirror fix). Bench rows
 # captured against that stale binary then drifted ~1e-3 from every fork
 # build that has ever existed; see PR #305 for the bisect. Operators who
 # really want the system binary should set VMAF_BIN=/usr/local/bin/vmaf
 # explicitly.
-VMAF="${VMAF_BIN:-libvmaf/build/tools/vmaf}"
+VMAF="${VMAF_BIN:-core/build/tools/vmaf}"
 MODEL=model/vmaf_v0.6.1.json
 # ADR-0513: OUTDIR defaults to /tmp/vmaf-bench-$$ so the script works from
 # read-only mounts (e.g. the vmaf-dev-mcp container where /workspace is ro).
@@ -61,7 +61,7 @@ mkdir -p "$OUTDIR"
 # before any output had flushed (probe finding 2026-05-17 #3).
 if [[ ! -x "$VMAF" ]]; then
   echo "ERROR: vmaf binary not found or not executable at: $VMAF" >&2
-  echo "  Build first: meson compile -C libvmaf/build" >&2
+  echo "  Build first: meson compile -C core/build" >&2
   echo "  Or set VMAF_BIN to an installed vmaf binary." >&2
   exit 2
 fi

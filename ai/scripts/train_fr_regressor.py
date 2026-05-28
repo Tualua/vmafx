@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Train ``fr_regressor_v1`` (Wave-1 C1 baseline).
 
 T6-1a unblocked: the Netflix Public Dataset is locally available at
@@ -62,7 +62,6 @@ SCRIPT_PATH = Path(__file__).resolve()
 if str(REPO_ROOT / "ai" / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 
-from vmaf_train.registry import write_registry_json  # noqa: E402
 
 # Subsets shared with ai/scripts/phase3_subset_sweep.py. We re-declare
 # instead of importing so the canonical pool is one file (this script).
@@ -347,7 +346,7 @@ def _export_and_register(
     models.append(new_entry)
     models.sort(key=lambda e: e.get("id", ""))
     registry["models"] = models
-    write_registry_json(registry_path, registry)
+    registry_path.write_text(json.dumps(registry, indent=2, sort_keys=True) + "\n")
 
 
 def main() -> int:

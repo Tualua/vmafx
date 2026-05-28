@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Drive C2 + C3 training on KoNViD-1k frames extracted by
 ``ai/scripts/extract_konvid_frames.py``.
 
@@ -32,14 +32,8 @@ import torch
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from torch.utils.data import DataLoader, Subset
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
-    from ai.scripts._script_bootstrap import bootstrap_ai_script
-
-_SCRIPT_PATHS = bootstrap_ai_script(__file__)
-SCRIPT_PATH = _SCRIPT_PATHS.script_path
-REPO_ROOT = _SCRIPT_PATHS.repo_root
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 
 from vmaf_train.data.frame_dataset import FrameMOSDataset, PairedFrameDataset  # noqa: E402
 from vmaf_train.data.splits import split_keys  # noqa: E402
@@ -125,7 +119,9 @@ def train_c2(args: argparse.Namespace) -> Path:
     tr, va, _te = _split_dataset(ds, args.val_frac, args.test_frac, args.seed)
     model = NRMetric(in_channels=1, width=args.c2_width)
     output = Path(args.output_c2)
-    print(f"[c2] training NRMetric on {len(tr)}/{len(va)} train/val frames; width={args.c2_width}")
+    print(
+        f"[c2] training NRMetric on {len(tr)}/{len(va)} train/val frames; " f"width={args.c2_width}"
+    )
     return _train_one(
         model=model,
         train_set=tr,

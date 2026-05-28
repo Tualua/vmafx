@@ -32,7 +32,7 @@ Three Vulkan devices visible from the dev host's `vulkan-tools`:
   without `shaderFloat64`.
 
 For each device, run the host-side
-`libvmaf/build-all/tools/vmaf --backend vulkan --vulkan_device <N>`
+`core/build-all/tools/vmaf --backend vulkan --vulkan_device <N>`
 against the canonical Netflix golden CPU fixture:
 
 ```text

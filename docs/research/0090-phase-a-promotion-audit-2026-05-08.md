@@ -47,7 +47,7 @@ Repo-wide grep for `Phase A only|Phase A scaffold|Phase B
 pending|scaffold-only|stub-only`, then for `raise
 NotImplementedError|FIXME.*ADR-[0-9]+|TODO.*Phase [BCDEF]`.
 Cross-referenced ADR `Status:` lines against shipped code under
-`libvmaf/src/`, `tools/`, `ai/`. Verified each scaffold marker by
+`core/src/`, `tools/`, `ai/`. Verified each scaffold marker by
 following the import graph from the CLI / public-API entry point to
 the seam that should be wired. Sibling-agent overlap is flagged
 explicitly per the spec.
@@ -174,10 +174,10 @@ explicitly per the spec.
 - **Effort**: medium (~250 LOC, ~1 day). The work is purely glue —
   every primitive it needs ships in a sibling module already.
 
-### HP-4. Embedded MCP scaffold (`libvmaf/src/mcp/mcp.c`) returns -ENOSYS unconditionally
+### HP-4. Embedded MCP scaffold (`core/src/mcp/mcp.c`) returns -ENOSYS unconditionally
 
 - **Files**:
-  `libvmaf/src/mcp/mcp.c:1-20` (header docstring + every entry
+  `core/src/mcp/mcp.c:1-20` (header docstring + every entry
   point), `docs/mcp/embedded.md:27`, `docs/mcp/index.md:11`,
   ADR-0209 / ADR-0128 (Status: Proposed since 2026-04-27).
 - **Current state**: every public entry point in the embedded MCP
@@ -206,10 +206,10 @@ explicitly per the spec.
 
 ### HP-5. HIP feature kernels return -ENOSYS pending T7-10b runtime
 
-- **Files**: `libvmaf/src/feature/hip/*.c` (every TU),
-  `libvmaf/src/feature/feature_extractor.c:211-217` (registry-side
+- **Files**: `core/src/feature/hip/*.c` (every TU),
+  `core/src/feature/feature_extractor.c:211-217` (registry-side
   scaffold note), `docs/backends/hip/overview.md:216` (`scaffold-only
-  audit-first PR` framing), `libvmaf/src/hip/AGENTS.md:245`.
+  audit-first PR` framing), `core/src/hip/AGENTS.md:245`.
 - **Current state**: every HIP feature extractor — `adm_hip.c`,
   `float_ssim_hip.c`, `float_psnr_hip.c`, `float_moment_hip.c`,
   `integer_psnr_hip.c` — returns `-ENOSYS` from `init` and `extract`,
@@ -299,7 +299,7 @@ PR or roll them into the docs cleanup sibling agent's queue.
   (ADR-…) shipped". Stale framing in a patch header that has
   since been overtaken by the Vulkan kernel ports.
 - `docs/backends/vulkan/overview.md:279`,
-  `libvmaf/src/vulkan/AGENTS.md:139` — "scaffold-only audit-first
+  `core/src/vulkan/AGENTS.md:139` — "scaffold-only audit-first
   PR (T5-1)" framing in pages that now describe a Vulkan backend
   with 15+ feature kernels. Status-flip alongside ADR-0127.
 
@@ -339,12 +339,12 @@ in the Decision section.
 
 - **ADR-0125 (`ms-ssim-decimate-simd`)** — AVX2 +
   AVX-512 implementations under
-  `libvmaf/src/feature/x86/ms_ssim_decimate_avx2.c` /
+  `core/src/feature/x86/ms_ssim_decimate_avx2.c` /
   `..._avx512.c` ship and are bit-exact-tested. ADR header says
   "Proposed (amended 2026-04-20 — separable-form chosen with…".
 - **ADR-0127 (`vulkan-compute-backend`)** — 15+ feature kernels
-  under `libvmaf/src/feature/vulkan/`,
-  `libvmaf/src/vulkan/{import,picture_vulkan,dispatch_strategy}.c`,
+  under `core/src/feature/vulkan/`,
+  `core/src/vulkan/{import,picture_vulkan,dispatch_strategy}.c`,
   GPU-parity CI gate (T6-8 / ADR-0214) green for all but the
   ciede precision gap (Research-0055).
 - **ADR-0128 (`embedded-mcp-in-libvmaf`)** — *do not flip*. Still

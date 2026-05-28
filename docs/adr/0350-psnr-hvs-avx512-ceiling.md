@@ -28,7 +28,7 @@ concluded ceiling, T3-9's escape clause requires the
 re-measurement to land before T3-9 (a) can close.
 
 The AVX2 path
-([`libvmaf/src/feature/x86/psnr_hvs_avx2.c`](../../libvmaf/src/feature/x86/psnr_hvs_avx2.c))
+([`core/src/feature/x86/psnr_hvs_avx2.c`](../../core/src/feature/x86/psnr_hvs_avx2.c))
 vectorises only the integer 8×8 DCT (`od_bin_fdct8x8_avx2`); the
 per-block scalar reductions (`load_block_and_means`,
 `compute_vars`, `compute_masks`'s float fold, `accumulate_error`)

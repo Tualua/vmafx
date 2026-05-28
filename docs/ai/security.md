@@ -15,7 +15,7 @@ frame touches a graph.
 
 ## Layer 1 — operator allowlist
 
-[`libvmaf/src/dnn/op_allowlist.{h,c}`](../../libvmaf/src/dnn/op_allowlist.h)
+[`core/src/dnn/op_allowlist.{h,c}`](../../core/src/dnn/op_allowlist.h)
 holds a curated set of ONNX operator names. Before creating an ORT session
 the loader walks the graph and rejects any node whose op is not on the
 list.
@@ -41,7 +41,7 @@ attributes; consumers shipping their own ONNX are expected to keep
 on quantised inputs and not exercised by any in-tree consumer).
 
 For `Loop` / `If`, the wire-format scanner in
-[`onnx_scan.c`](../../libvmaf/src/dnn/onnx_scan.c) recurses into the
+[`onnx_scan.c`](../../core/src/dnn/onnx_scan.c) recurses into the
 embedded subgraphs (`Loop.body`, `If.then_branch`, `If.else_branch`)
 and applies the same allowlist check at every depth (capped at 8
 levels of nesting as a defence-in-depth bound). A forbidden op cannot
@@ -79,7 +79,7 @@ concrete model that needs the addition.
 
 - **Size cap.** Loader refuses files larger than
   `VMAF_DNN_DEFAULT_MAX_BYTES` (50 MB, compile-time constant in
-  [`libvmaf/src/dnn/model_loader.h`](../../libvmaf/src/dnn/model_loader.h)).
+  [`core/src/dnn/model_loader.h`](../../core/src/dnn/model_loader.h)).
   Applies before mapping the file. The historical
   `VMAF_MAX_MODEL_BYTES` env override was retired in T7-12 once two
   release cycles passed without a shipped model approaching the cap;
@@ -132,7 +132,7 @@ the `--tiny-model-verify` flag invokes `cosign verify-blob` at load time
 via `posix_spawnp(3p)` and fails closed if the signature is missing or
 bad. Off by default for dev-friendliness; strongly recommended on for
 production deployments. The flag drives `vmaf_dnn_verify_signature()` in
-[`libvmaf/include/libvmaf/dnn.h`](../../libvmaf/include/libvmaf/dnn.h),
+[`core/include/libvmaf/dnn.h`](../../core/include/libvmaf/dnn.h),
 which looks up the model's `sigstore_bundle` field in
 [`model/tiny/registry.json`](../../model/tiny/registry.json) — see
 [model-registry.md](model-registry.md) for the full schema and CLI flow.

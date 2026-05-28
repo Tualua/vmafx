@@ -125,10 +125,10 @@ matters.
 ```bash
 # 1. Build with all backends (oneAPI 2025.3 sourced for icx/icpx + Arc visibility)
 source /opt/intel/oneapi-2025.3/setvars.sh
-CC=icx CXX=icpx meson setup libvmaf/build libvmaf \
+CC=icx CXX=icpx meson setup core/build libvmaf \
     -Denable_cuda=true -Denable_sycl=true -Denable_vulkan=enabled \
     -Db_lto=false --buildtype=release
-ninja -C libvmaf/build
+ninja -C core/build
 
 # 2. Acquire fixtures (gitignored — don't commit)
 #    a) Netflix golden 576x324 + 1080p_5frames already live in
@@ -147,7 +147,7 @@ ffmpeg -y -i /tmp/bbb4k.mp4 -frames:v 200 -c:v libx264 -crf 35 -preset veryfast 
 #    with codec parameters but the fps numbers don't.
 
 # 3. Run the bench
-VMAF_BIN="$(pwd)/libvmaf/build/tools/vmaf" bash testdata/bench_all.sh
+VMAF_BIN="$(pwd)/core/build/tools/vmaf" bash testdata/bench_all.sh
 
 # 4. Verify each backend engaged via per-row metrics-key counts in the
 #    bench output ("CPU 15 keys, CUDA 12 keys, SYCL/Vulkan 34 keys").

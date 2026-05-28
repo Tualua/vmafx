@@ -68,7 +68,7 @@ ignore the return value.
 The C-side preset table mirrors the Python trainer's
 `PRESET_ORDINAL` dict (lines 169..234 of
 `ai/scripts/train_fr_regressor_v2.py`). Both must update together
-when the trainer adds an encoder; the `libvmaf/src/dnn/AGENTS.md`
+when the trainer adds an encoder; the `core/src/dnn/AGENTS.md`
 note flags both files as a co-edit pair. A cleaner long-term move
 would be for the trainer to emit the table into the sidecar JSON so
 the C side reads it, but that needs a sidecar-schema bump that

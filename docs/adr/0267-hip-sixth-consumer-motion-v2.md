@@ -17,7 +17,7 @@ before it lands so the helper-body flip can validate the
 motion-class metrics require.
 
 This ADR adds the **sixth consumer** — `motion_v2_hip`, the HIP twin
-of `libvmaf/src/feature/cuda/integer_motion_v2_cuda.c` (320 LOC).
+of `core/src/feature/cuda/integer_motion_v2_cuda.c` (320 LOC).
 `motion_v2` is the simplest temporal extractor in the CUDA tree:
 single-dispatch (uses convolution linearity to compute SAD over
 `prev - cur` directly), single int64 atomic accumulator, plus a
@@ -26,7 +26,7 @@ the current frame's plane as "prev".
 
 ## Decision
 
-We add `libvmaf/src/feature/hip/integer_motion_v2_hip.{c,h}` as the
+We add `core/src/feature/hip/integer_motion_v2_hip.{c,h}` as the
 sixth kernel-template consumer. The TU mirrors the CUDA twin
 call-graph-for-call-graph, including the `flush()` callback and the
 `VMAF_FEATURE_EXTRACTOR_TEMPORAL` flag bit. The ping-pong buffer pair
@@ -72,5 +72,5 @@ addition.
 - [ADR-0260](0260-hip-fourth-consumer-float-moment.md) — fourth consumer.
 - [ADR-0266](0266-hip-fifth-consumer-float-ansnr.md) — fifth consumer (this PR).
 - [ADR-0246](0246-gpu-kernel-template.md) — GPU kernel-template pattern.
-- CUDA twin: `libvmaf/src/feature/cuda/integer_motion_v2_cuda.c`.
+- CUDA twin: `core/src/feature/cuda/integer_motion_v2_cuda.c`.
 - Source: `req` (user dispatch) — "Add the fifth and sixth HIP runtime kernel-template consumers. ... Pick two more cleanest CUDA twins to port."

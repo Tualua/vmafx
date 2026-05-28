@@ -80,7 +80,7 @@ Concrete pieces:
     model loads; when the model has a codec block but the user
     supplied no flags, the pre-seeded "unknown" baseline stays in
     place (no behaviour change vs ADR-0518).
-- **Tests** (`libvmaf/test/dnn/test_codec_block.c` +
+- **Tests** (`core/test/dnn/test_codec_block.c` +
   `test_cli.sh` extension):
   - C unit test: `vmaf_dnn_codec_block_fill` produces the right
     layout for `(libx264, medium, 28)` and returns `-ENOENT` for
@@ -118,7 +118,7 @@ Concrete pieces:
 - **Negative**:
   - The PRESET_ORDINAL table is duplicated between Python
     (`train_fr_regressor_v2.py`) and C (`model_loader.c`). The
-    AGENTS.md note under `libvmaf/src/dnn/` flags both sites as a
+    AGENTS.md note under `core/src/dnn/` flags both sites as a
     co-edit pair; a future refactor could move the table into the
     sidecar JSON itself so the C side reads it instead of duplicating.
   - The "unknown" pre-seed remains the default for callers that omit

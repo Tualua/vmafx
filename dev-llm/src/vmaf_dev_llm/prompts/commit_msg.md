@@ -1,4 +1,4 @@
-You are drafting a commit message for VMAFX, which requires
+You are drafting a commit message for the Lusoris VMAF fork, which requires
 **Conventional Commits** format strictly.
 
 Rules:

@@ -2,9 +2,9 @@
 
 **Date**: 2026-05-16
 **Author**: Claude (Anthropic) on behalf of Lusoris
-**Scope**: `libvmaf/src/feature/cuda/integer_psnr_cuda.c`,
-           `libvmaf/src/feature/sycl/integer_psnr_sycl.cpp`,
-           `libvmaf/src/feature/vulkan/psnr_vulkan.c`
+**Scope**: `core/src/feature/cuda/integer_psnr_cuda.c`,
+           `core/src/feature/sycl/integer_psnr_sycl.cpp`,
+           `core/src/feature/vulkan/psnr_vulkan.c`
 **Status**: Resolved by ADR-0452 (PR to follow)
 
 ## Finding
@@ -88,6 +88,6 @@ python3 scripts/ci/cross_backend_parity_gate.py \
 ## References
 
 - ADR-0452 (accompanying decision record)
-- CPU reference: `libvmaf/src/feature/integer_psnr.c::init` lines 123-125
+- CPU reference: `core/src/feature/integer_psnr.c::init` lines 123-125
 - PR #880 (motion_fps_weight option-parity pattern)
 - Audit plan: `.workingdir/feature-option-parity-audit-2026-05-16.md` (P1 item)

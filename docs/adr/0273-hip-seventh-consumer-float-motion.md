@@ -21,7 +21,7 @@ ADR-0266); and the temporal-extractor `flush()` + ping-pong shape
 (`motion_v2_hip`, ADR-0267, in PR #340).
 
 This ADR adds a **seventh consumer** — `float_motion_hip`, the HIP
-twin of `libvmaf/src/feature/cuda/float_motion_cuda.c` (361 LOC, the
+twin of `core/src/feature/cuda/float_motion_cuda.c` (361 LOC, the
 smallest unported CUDA twin after the six already shipped or in
 flight). It pins a new shape: **per-WG SAD float partials computed
 against a blurred-frame ping-pong, with a separate raw-pixel cache
@@ -33,7 +33,7 @@ ping-pong.
 
 ## Decision
 
-We add `libvmaf/src/feature/hip/float_motion_hip.{c,h}` as the seventh
+We add `core/src/feature/hip/float_motion_hip.{c,h}` as the seventh
 kernel-template consumer. The TU mirrors the CUDA twin
 call-graph-for-call-graph: identical state struct (modulo the
 CUDA-driver `CUfunction` slots and the `VmafCudaBuffer *`-vs-`uintptr_t`
@@ -85,5 +85,5 @@ flag bit; CHANGELOG and rebase-notes carry the addition.
 - [ADR-0267](0267-hip-sixth-consumer-motion-v2.md) — sixth consumer (`motion_v2_hip`, PR #340).
 - [ADR-0274](0274-hip-eighth-consumer-float-ssim.md) — eighth consumer (`float_ssim_hip`, this PR).
 - [ADR-0246](0246-gpu-kernel-template.md) — GPU kernel-template pattern.
-- CUDA twin: `libvmaf/src/feature/cuda/float_motion_cuda.c`.
+- CUDA twin: `core/src/feature/cuda/float_motion_cuda.c`.
 - Source: `req` (user dispatch) — "Add the seventh + eighth HIP runtime kernel-template consumers. ... Pick two more cleanest CUDA twins."

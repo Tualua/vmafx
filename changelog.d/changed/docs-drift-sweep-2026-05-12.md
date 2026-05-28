@@ -19,7 +19,7 @@ from the implementation:
   (commit `fb14bc33`) but `_order.txt` still pointed at the dead slug.
 - **ADR-0415 status flipped from Proposed to Accepted** — the CAMBI
   SYCL port shipped as
-  `libvmaf/src/feature/sycl/integer_cambi_sycl.cpp` (≈ 37 kB) so the
+  `core/src/feature/sycl/integer_cambi_sycl.cpp` (≈ 37 kB) so the
   Proposed marker was code-vs-doc drift; added a status-update
   paragraph pointing at the implementation file.
 - **`--precision` default claim fixed in three places** (`AGENTS.md`,
@@ -28,7 +28,7 @@ from the implementation:
   golden-gate compat per [ADR-0119](docs/adr/0119-cli-precision-default-revert.md),
   supersedes [ADR-0006](docs/adr/0006-cli-precision-17g-default.md));
   `--precision=max` opts in to `%.17g`. The previous text claimed the
-  default was `%.17g` — the inverse of what `libvmaf/tools/cli_parse.c`
+  default was `%.17g` — the inverse of what `core/tools/cli_parse.c`
   actually does (`VMAF_DEFAULT_PRECISION_FMT = "%.6f"`,
   `VMAF_LOSSLESS_PRECISION_FMT = "%.17g"`).
 

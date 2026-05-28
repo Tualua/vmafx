@@ -26,13 +26,13 @@ The five items audited:
    frames).
 2. **CAMBI scalar fallback**: matrix bullet claimed "no pure-C
    scalar path"; in fact
-   [`cambi.c`](../../libvmaf/src/feature/cambi.c)
+   [`cambi.c`](../../core/src/feature/cambi.c)
    ships `increment_range` / `decrement_range` /
    `get_derivative_data_for_row` as scalar defaults in `init`,
    overridden only when AVX2 / AVX-512 / NEON is detected.
 3. **motion_v2 NEON**: matrix bullet claimed "x86 SIMD but no
    NEON"; in fact
-   [`arm64/motion_v2_neon.c`](../../libvmaf/src/feature/arm64/motion_v2_neon.c)
+   [`arm64/motion_v2_neon.c`](../../core/src/feature/arm64/motion_v2_neon.c)
    is a 13kB bit-exact NEON port, fully wired in dispatch and
    meson sources, shipped since 2026-04.
 4. **integer `ansnr`** matrix row: there is no `integer_ansnr`
@@ -117,7 +117,7 @@ frame. AVX-512 closes as AVX2 ceiling for both kernels.
 - Matrix: [`metrics-backends-matrix.md`](../../.workingdir2/analysis/metrics-backends-matrix.md)
   — five rows / bullets corrected.
 - Files re-verified during audit:
-  [`float_ms_ssim.c:88`](../../libvmaf/src/feature/float_ms_ssim.c#L88),
-  [`cambi.c:446-460`](../../libvmaf/src/feature/cambi.c#L446),
-  [`arm64/motion_v2_neon.c`](../../libvmaf/src/feature/arm64/motion_v2_neon.c),
-  [`integer_motion_v2.c:202-204`](../../libvmaf/src/feature/integer_motion_v2.c#L202).
+  [`float_ms_ssim.c:88`](../../core/src/feature/float_ms_ssim.c#L88),
+  [`cambi.c:446-460`](../../core/src/feature/cambi.c#L446),
+  [`arm64/motion_v2_neon.c`](../../core/src/feature/arm64/motion_v2_neon.c),
+  [`integer_motion_v2.c:202-204`](../../core/src/feature/integer_motion_v2.c#L202).

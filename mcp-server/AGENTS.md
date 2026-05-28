@@ -34,7 +34,7 @@ Locked in [ADR-0009](../docs/adr/0009-mcp-server-tool-surface.md):
 - **Parent rules** apply (see [../AGENTS.md](../AGENTS.md)).
 - **Never shell out to `vmaf` with user-controlled args** — the MCP server
   is the trusted front-end; tool arguments are untrusted. Use the Python
-  bindings in [../python/vmaf/](../python/vmaf/) or in-process libvmaf via
+  bindings in [../compat/python-vmaf/](../compat/python-vmaf/) or in-process libvmaf via
   ctypes / cffi. If shelling out is unavoidable, pass args as a list and
   validate against an explicit schema.
 - **No paths escape the caller's workspace** — any filesystem arg is

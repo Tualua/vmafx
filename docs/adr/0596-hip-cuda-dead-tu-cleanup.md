@@ -7,7 +7,7 @@
 
 ## Context
 
-A deep audit of `libvmaf/src/feature/hip/` and `libvmaf/src/feature/cuda/`
+A deep audit of `core/src/feature/hip/` and `core/src/feature/cuda/`
 identified six translation units that were either not compiled into the build
 (orphans absent from every `meson.build`) or defined the same linker symbol as
 a compiled TU (duplicates that would cause a multiple-definition link error if
@@ -20,7 +20,7 @@ both were ever included).
 - `feature/hip/integer_moment_hip.c`: defined `vmaf_fex_float_moment_hip`, the
   same symbol exported by the compiled `feature/hip/float_moment_hip.c`.
 
-**CUDA orphan — duplicate symbol, not in `libvmaf/src/meson.build`:**
+**CUDA orphan — duplicate symbol, not in `core/src/meson.build`:**
 
 - `feature/cuda/float_ssim_cuda.c`: defined `vmaf_fex_float_ssim_cuda`, the
   same symbol exported by the compiled `feature/cuda/integer_ssim_cuda.c`.

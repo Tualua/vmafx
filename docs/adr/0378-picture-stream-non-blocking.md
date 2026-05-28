@@ -36,7 +36,7 @@ and the per-extractor compute stream (`MotionStateCuda.str`, created in
 
 We will replace `cuStreamCreate(&priv->cuda.str, CU_STREAM_DEFAULT)` with
 `cuStreamCreateWithPriority(&priv->cuda.str, CU_STREAM_NON_BLOCKING, 0)` in
-`vmaf_cuda_picture_alloc` (`libvmaf/src/cuda/picture_cuda.c`).
+`vmaf_cuda_picture_alloc` (`core/src/cuda/picture_cuda.c`).
 
 All three CUDA stream-creation sites in the runtime now consistently use
 `CU_STREAM_NON_BLOCKING`. No other code changes are required: the picture
@@ -77,9 +77,9 @@ path.
   behaviour).
 - NVIDIA Developer Blog "GPU Pro Tip: CUDA 7 Streams Simplify Concurrency"
   (background on non-blocking streams).
-- `libvmaf/src/cuda/common.c` — `init_with_primary_context` / `init_with_provided_context`
+- `core/src/cuda/common.c` — `init_with_primary_context` / `init_with_provided_context`
   already use `CU_STREAM_NON_BLOCKING`; this ADR aligns `picture_cuda.c`.
-- `libvmaf/src/feature/cuda/integer_motion_cuda.c:262` — extractor stream
+- `core/src/feature/cuda/integer_motion_cuda.c:262` — extractor stream
   correctly uses `cuStreamCreateWithPriority(..., CU_STREAM_NON_BLOCKING, 0)`.
 - `docs/research/0092-motion-cuda-sub4k-perf-root-cause-2026-05-10.md` — perf
   benchmark data and root-cause analysis.

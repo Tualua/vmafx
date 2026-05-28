@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # check-dispatch-registry.sh — cross-reference vmaf_fex_*_<backend> symbols
-# defined in libvmaf/src/feature/<backend>/ against feature_extractor_list[]
+# defined in core/src/feature/<backend>/ against feature_extractor_list[]
 # in feature_extractor.c.
 #
 # Usage: scripts/ci/check-dispatch-registry.sh [repo-root]
@@ -10,13 +10,13 @@
 # Duplicate entries are reported as warnings (non-fatal: first-match
 # semantics make duplicates functionally harmless, but they are noise).
 #
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 
 set -euo pipefail
 
 ROOT="${1:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-FEX="$ROOT/libvmaf/src/feature/feature_extractor.c"
+FEX="$ROOT/core/src/feature/feature_extractor.c"
 
 if [[ ! -f "$FEX" ]]; then
   echo "ERROR: feature_extractor.c not found at $FEX" >&2
@@ -27,7 +27,7 @@ rc=0
 
 check_backend() {
   local backend="$1"
-  local src_dir="$ROOT/libvmaf/src/feature/$backend"
+  local src_dir="$ROOT/core/src/feature/$backend"
   local found_any=0
 
   if [[ ! -d "$src_dir" ]]; then

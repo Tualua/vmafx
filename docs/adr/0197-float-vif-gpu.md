@@ -9,9 +9,9 @@
 
 [ADR-0192](0192-gpu-long-tail-batch-3.md) lists `float_vif` as the third
 **Group B** float twin. CPU reference:
-[`float_vif.c`](../../libvmaf/src/feature/float_vif.c) +
-[`vif.c::compute_vif`](../../libvmaf/src/feature/vif.c) +
-[`vif_tools.c`](../../libvmaf/src/feature/vif_tools.c).
+[`float_vif.c`](../../core/src/feature/float_vif.c) +
+[`vif.c::compute_vif`](../../core/src/feature/vif.c) +
+[`vif_tools.c`](../../core/src/feature/vif_tools.c).
 
 The algorithm: 4-scale Gaussian pyramid with separable filters (widths
 `{17, 9, 5, 3}` for the production default `vif_kernelscale = 1.0`), 2x
@@ -133,12 +133,12 @@ Identical numbers across backends. All under `places=4` threshold
 - Sibling: [ADR-0193](0193-motion-v2-vulkan.md), [ADR-0194](0194-float-ansnr-gpu.md),
   [ADR-0195](0195-float-psnr-gpu.md), [ADR-0196](0196-float-motion-gpu.md).
 - CPU reference:
-  [`float_vif.c`](../../libvmaf/src/feature/float_vif.c),
-  [`vif.c`](../../libvmaf/src/feature/vif.c),
-  [`vif_tools.c`](../../libvmaf/src/feature/vif_tools.c).
+  [`float_vif.c`](../../core/src/feature/float_vif.c),
+  [`vif.c`](../../core/src/feature/vif.c),
+  [`vif_tools.c`](../../core/src/feature/vif_tools.c).
 - AVX2 fast path:
-  [`convolution_avx.c`](../../libvmaf/src/feature/common/convolution_avx.c),
-  [`convolution_internal.h`](../../libvmaf/src/feature/common/convolution_internal.h).
+  [`convolution_avx.c`](../../core/src/feature/common/convolution_avx.c),
+  [`convolution_internal.h`](../../core/src/feature/common/convolution_internal.h).
 - Verification: cross-backend gate
   [`scripts/ci/cross_backend_vif_diff.py`](../../scripts/ci/cross_backend_vif_diff.py)
   with `--feature float_vif --places 4`. New step in the lavapipe

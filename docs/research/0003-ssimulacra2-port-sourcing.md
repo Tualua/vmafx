@@ -98,7 +98,7 @@ upstream and is expected to fire ~0–2 times per year.
 
 - **Which port source?** libjxl C++ reference (ADR-0126 decision).
 - **Which license flag goes in the ported header?** The libvmaf
-  `Copyright 2026 Lusoris` header on top +
+  `Copyright 2026 Lusoris and Claude (Anthropic)` header on top +
   a second block acknowledging libjxl BSD-3-Clause, per
   [ADR-0105](../adr/0105-copyright-handling-dual-notice.md).
 - **Do we bit-equal the reference?** No. Bit-closeness within a
@@ -119,7 +119,7 @@ upstream and is expected to fire ~0–2 times per year.
   path means we need the full YUV → RGB → XYB conversion at the
   extractor entry point. Confirm the BT.709 / BT.2020 matrix choice
   matches the VMAF `enable_transform` convention in
-  [`libvmaf/src/feature/vif.c`](../../libvmaf/src/feature/vif.c).
+  [`core/src/feature/vif.c`](../../core/src/feature/vif.c).
 - **SIMD speedup ceiling**: libjxl's highway backend reports ~6×
   AVX2 vs scalar for the Gaussian-pyramid stage; XYB conversion is
   element-wise and vectorises ~linearly. Budget the follow-up SIMD
@@ -127,7 +127,7 @@ upstream and is expected to fire ~0–2 times per year.
 
 ## Next steps
 
-1. Scalar C port lands under `libvmaf/src/feature/ssimulacra2.c`
+1. Scalar C port lands under `core/src/feature/ssimulacra2.c`
    (workstream-opened PR after governance merges).
 2. Snapshot `testdata/scores_cpu_ssimulacra2.json` generated via
    [`/regen-snapshots`](../../.claude/skills/regen-snapshots/SKILL.md)

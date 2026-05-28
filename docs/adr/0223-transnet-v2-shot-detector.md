@@ -36,7 +36,7 @@ placeholder ONNX, with the real weights drop tracked as
 ## Decision
 
 We will ship TransNet V2 as a registered feature extractor
-`transnet_v2` in `libvmaf/src/feature/transnet_v2.c`, backed by an
+`transnet_v2` in `core/src/feature/transnet_v2.c`, backed by an
 ONNX model whose I/O contract is
 
 ```text
@@ -107,7 +107,7 @@ against a TF→ONNX-converted Soucek & Lokoc 2020 checkpoint.
     now load-bearing; any rebase that touches `transnet_v2.c` must
     preserve all three.
   - **Op allowlist**: the placeholder graph uses only ops already in
-    [`libvmaf/src/dnn/op_allowlist.c`](../../libvmaf/src/dnn/op_allowlist.c)
+    [`core/src/dnn/op_allowlist.c`](../../core/src/dnn/op_allowlist.c)
     (`Reshape`, `MatMul`, `Add`, `Relu`); the real upstream weights
     drop will need to verify the allowlist still covers TransNet V2's
     upstream graph (DDCNN-style 3D dilated convolutions) before

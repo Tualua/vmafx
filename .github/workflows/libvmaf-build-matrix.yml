@@ -46,17 +46,39 @@ jobs:
       matrix:
         include:
           # --- CPU-only builds ---
-          # T-CI-DEDUP-689: `Build — Ubuntu gcc (CPU)` removed — the DNN leg
-          # below (`Build — Ubuntu gcc (CPU) + DNN`) compiles the entire CPU
-          # source tree with the same compiler and additionally links ORT; any
-          # regression the bare CPU leg could catch also trips the DNN leg.
-          # Same rationale applies to `Build — Ubuntu clang (CPU)` and
-          # `Build — macOS clang (CPU)`: the DNN counterparts supersede them.
-          # See ADR-0689.
+          - os: ubuntu-latest
+            CC: ccache gcc
+            CXX: ccache g++
+            name: Build — Ubuntu gcc (CPU)
+          - os: ubuntu-latest
+            CC: ccache clang
+            CXX: ccache clang++
+            name: Build — Ubuntu clang (CPU)
+          - os: macos-latest
+            CC: ccache clang
+            CXX: ccache clang++
+            name: Build — macOS clang (CPU)
+            experimental: true
           - os: ubuntu-24.04-arm
             CC: ccache clang
             CXX: ccache clang++
             name: Build — Ubuntu ARM clang (CPU)
+
+          # --- i686 (32-bit x86) build — reproduces Netflix#1481 ---
+          # Verifies libvmaf still compiles on 32-bit x86 with
+          # -Denable_asm=false. The documented workaround for the
+          # `_mm256_extract_epi64` implicit-declaration failure on
+          # 32-bit x86 is to disable the asm path; this job pins
+          # that contract so any future 32-bit-only regression trips
+          # the matrix. Tests are skipped (meson cross-build marks
+          # them SKIP 77 — host can run i686 binaries natively but
+          # meson doesn't know that). See ADR-0151.
+          - os: ubuntu-latest
+            CC: ccache gcc
+            CXX: ccache g++
+            i686: true
+            meson_extra: --cross-file=build-aux/i686-linux-gnu.ini -Denable_asm=false
+            name: Build — Ubuntu i686 gcc (CPU, no-asm)
 
           # --- DNN-enabled builds (ADR-0120) ---
           # Build with -Denable_dnn=enabled across compiler/OS combinations
@@ -65,12 +87,6 @@ jobs:
           # (Linux: MS tarball pinned to 1.22.0; macOS: Homebrew) and runs
           # the meson dnn suite. macOS leg stays `experimental: true` so a
           # Homebrew ORT bump that breaks ABI doesn't block merge.
-          #
-          # T-CI-DEDUP-689: these three DNN legs now also serve as the primary
-          # CPU build gates — the separate bare CPU rows (`Build — Ubuntu gcc
-          # (CPU)`, `Build — Ubuntu clang (CPU)`, `Build — macOS clang (CPU)`)
-          # were dropped because they were proper subsets of the DNN legs.
-          # See ADR-0689.
           - os: ubuntu-latest
             CC: ccache gcc
             CXX: ccache g++
@@ -97,7 +113,7 @@ jobs:
           # meson setup; lavapipe is the software ICD that exposes
           # a compute-capable VkPhysicalDevice on headless runners
           # so the smoke test can run end-to-end. Wraps for volk +
-          # VMA are sha256-pinned in libvmaf/subprojects/.
+          # VMA are sha256-pinned in core/subprojects/.
           - os: ubuntu-latest
             CC: ccache gcc
             CXX: ccache g++
@@ -105,14 +121,32 @@ jobs:
             meson_extra: -Denable_vulkan=enabled
             name: Build — Ubuntu Vulkan (T5-1b runtime)
 
-          # T-CI-DEDUP-689: `Build — macOS Vulkan via MoltenVK (advisory)` removed
-          # from the PR matrix. The lane was `continue-on-error: true` and
-          # `experimental: true` — never required. It consumed ~12+ min of
-          # macOS runner time per PR and had known fragile dependencies
-          # (`GL_EXT_shader_atomic_int64` / Metal Tier-2 argument buffers).
-          # Coverage is preserved in nightly.yml where the slower, advisory
-          # nature is appropriate. See ADR-0689 and docs/backends/vulkan/
-          # moltenvk.md for the known-limitations matrix.
+          # --- macOS Vulkan via MoltenVK (ADR-0338, advisory) ---
+          # Validates the MoltenVK passthrough route on Apple
+          # Silicon: brew installs `molten-vk` (the Vulkan-on-Metal
+          # translation layer ICD) plus the Khronos `vulkan-loader`
+          # and `vulkan-headers`. `VK_ICD_FILENAMES` points the
+          # loader at MoltenVK's `MoltenVK_icd.json` so the loader
+          # enumerates exactly one ICD (Apple GPU via Metal). The
+          # smoke test pins the runtime contract; the cross-backend
+          # gate runs at `places=4` to confirm shader correctness.
+          #
+          # `experimental: true` + `continue-on-error` mark the lane
+          # advisory until one green run on master, per ADR-0338.
+          # Primary risk: `moment.comp` uses
+          # `GL_EXT_shader_atomic_int64` (atomicAdd on int64), which
+          # MoltenVK maps to Metal Tier-2 argument buffers — well-
+          # supported on M1+ but the most fragile dependency. Other
+          # shaders only use non-atomic int64 arithmetic
+          # (`GL_EXT_shader_explicit_arithmetic_types_int64`) which
+          # lowers to native Metal `long` and should pass.
+          - os: macos-latest
+            CC: ccache clang
+            CXX: ccache clang++
+            moltenvk: true
+            meson_extra: -Denable_vulkan=enabled
+            experimental: true
+            name: Build — macOS Vulkan via MoltenVK (advisory)
 
           # --- HIP T7-10b runtime (ADR-0212) ---
           # Real HIP runtime build — compiles + links against
@@ -173,7 +207,7 @@ jobs:
 
           # --- SYCL build (icpx for both host + SYCL sources so the device
           #     image is registered at the .so link step; see post-T7-8
-          #     SYCL revival in libvmaf/src/meson.build) ---
+          #     SYCL revival in core/src/meson.build) ---
           - os: ubuntu-latest
             CC: icx
             CXX: icpx
@@ -181,12 +215,13 @@ jobs:
             meson_extra: -Denable_sycl=true -Db_lto=false
             name: Build — Ubuntu SYCL
 
-          # T-CI-DEDUP-689: `Build — Ubuntu CUDA` (dynamic, gcc+nvcc) removed.
-          # The SYCL+CUDA combined leg below builds every CUDA translation
-          # unit with the same nvcc toolchain; the standalone CUDA-dynamic leg
-          # caught no regression class not already caught by the combined leg.
-          # CUDA-static (`Build — Ubuntu CUDA Static`) is retained because it
-          # exercises a distinct NVCC-static interaction. See ADR-0689.
+          # --- CUDA build (gcc + nvcc) ---
+          - os: ubuntu-latest
+            CC: ccache gcc
+            CXX: ccache g++
+            cuda: true
+            meson_extra: -Denable_cuda=true -Denable_nvcc=true
+            name: Build — Ubuntu CUDA
 
           # --- SYCL + CUDA combined (icpx host so SYCL link works; nvcc
           #     handles the CUDA TUs separately via -Denable_nvcc=true) ---
@@ -200,12 +235,11 @@ jobs:
 
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
-    # T-CI-DEDUP-689: the macOS MoltenVK lane (ADR-0338) was removed from this
-    # PR matrix and moved to nightly.yml. The remaining `experimental: true`
-    # rows (macOS DNN, macOS Metal) use `continue-on-error: false` — they are
-    # still blocking, just labelled experimental so that a Homebrew bump or an
-    # unexpected macOS toolchain issue is visible. Set to false for all rows.
-    continue-on-error: false
+    # ADR-0338: macOS Vulkan-via-MoltenVK lane is advisory until one
+    # green run on master. Other matrix entries default to
+    # `continue-on-error: false`. The `|| false` coalesce keeps any
+    # non-`moltenvk` row strict.
+    continue-on-error: ${{ matrix.experimental == true && matrix.moltenvk == true }}
     env:
       CC: ${{ matrix.CC }}
       CXX: ${{ matrix.CXX }}
@@ -254,7 +288,7 @@ jobs:
           pip install meson
 
       - name: Install dependencies (ubuntu)
-        if: startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip
+        if: startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.i686 && !matrix.hip
         run: |
           sudo apt-get update
           sudo -E apt-get -yq install ccache ninja-build nasm libomp-dev pkg-config
@@ -262,6 +296,14 @@ jobs:
           *gcc)   sudo -E apt-get -yq install gcc g++ ;;
           *clang) sudo -E apt-get -yq install clang ;;
           esac
+
+      - name: Install dependencies (ubuntu i686)
+        if: matrix.i686
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo -E apt-get -yq install ccache ninja-build pkg-config \
+            gcc g++ gcc-multilib g++-multilib
 
       - name: Install dependencies (mac)
         if: matrix.os == 'macos-latest'
@@ -383,7 +425,7 @@ jobs:
       # libvulkan.so + vulkan-headers + glslc + lavapipe (software
       # ICD so the headless runner can enumerate a compute-capable
       # VkPhysicalDevice). volk + VMA come via meson wraps in
-      # libvmaf/subprojects/ — no apt package needed.
+      # core/subprojects/ — no apt package needed.
       #
       # Cache the meson `subprojects/packagecache/` so volk + VMA wrap
       # archives (sha256-pinned, fetched from GitHub releases on every
@@ -397,8 +439,8 @@ jobs:
         if: matrix.vulkan
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
-          path: libvmaf/subprojects/packagecache
-          key: meson-packagecache-vulkan-${{ hashFiles('libvmaf/subprojects/*.wrap') }}
+          path: core/subprojects/packagecache
+          key: meson-packagecache-vulkan-${{ hashFiles('core/subprojects/*.wrap') }}
           restore-keys: |
             meson-packagecache-vulkan-
       - name: Install Vulkan SDK
@@ -417,6 +459,64 @@ jobs:
           fi
           glslc --version | head -2
           vulkaninfo --summary || true
+
+      # ---------- MoltenVK + Vulkan loader/headers (macOS lane) ----------
+      # Apple Silicon GHA runners (`macos-latest`) ship with no Vulkan
+      # ICD by default — Metal is the native API. This step installs:
+      #   - `molten-vk`     — Vulkan-on-Metal translation ICD; lays
+      #                       MoltenVK_icd.json under
+      #                       /opt/homebrew/etc/vulkan/icd.d/ per the
+      #                       homebrew formula's install layout
+      #                       (see ADR-0338 and docs/backends/vulkan/moltenvk.md).
+      #   - `vulkan-loader` — Khronos `libvulkan.dylib`; volk dlopen()s
+      #                       this at runtime.
+      #   - `vulkan-headers`— `vulkan/vulkan.h` etc., consumed by the
+      #                       libvmaf build's wrap-fallback path.
+      #   - `glslc`         — GLSL → SPIR-V compiler (ships with
+      #                       `shaderc`).
+      # `VK_ICD_FILENAMES` pins the loader to MoltenVK so the lane is
+      # deterministic regardless of any future homebrew default-ICD
+      # changes. `vulkaninfo --summary` proves the Apple GPU is the
+      # device the loader sees (output captured to stdout for triage).
+      - name: Install MoltenVK + Vulkan loader/headers (macOS)
+        if: matrix.moltenvk
+        run: |
+          brew install -q molten-vk vulkan-loader vulkan-headers shaderc
+          BREW_PREFIX=$(brew --prefix)
+          ICD_JSON="${BREW_PREFIX}/etc/vulkan/icd.d/MoltenVK_icd.json"
+          if [ ! -f "${ICD_JSON}" ]; then
+            echo "::error::MoltenVK_icd.json not found at ${ICD_JSON}"
+            ls -la "${BREW_PREFIX}/etc/vulkan/icd.d/" || true
+            ls -la "${BREW_PREFIX}/share/vulkan/icd.d/" || true
+            exit 1
+          fi
+          echo "VK_ICD_FILENAMES=${ICD_JSON}" >> $GITHUB_ENV
+          # Make libvulkan.dylib + glslc visible to meson / volk dlopen.
+          echo "DYLD_LIBRARY_PATH=${BREW_PREFIX}/lib:${DYLD_LIBRARY_PATH:-}" >> $GITHUB_ENV
+          echo "PKG_CONFIG_PATH=${BREW_PREFIX}/lib/pkgconfig:${PKG_CONFIG_PATH:-}" >> $GITHUB_ENV
+          # brew's `vulkan-headers` is keg-only on macOS — install does
+          # not symlink `<vulkan/vk_platform.h>` etc. into
+          # ${BREW_PREFIX}/include, so the volk subproject fails with
+          # `fatal error: 'vulkan/vk_platform.h' file not found`. The
+          # headers live at $(brew --prefix vulkan-headers)/include;
+          # surface that path via CPATH so clang finds them without
+          # touching the meson cross-file. (PR #760 round 4)
+          VK_HEADERS_INCLUDE="$(brew --prefix vulkan-headers)/include"
+          echo "CPATH=${VK_HEADERS_INCLUDE}:${CPATH:-}" >> $GITHUB_ENV
+          echo "CPLUS_INCLUDE_PATH=${VK_HEADERS_INCLUDE}:${CPLUS_INCLUDE_PATH:-}" >> $GITHUB_ENV
+          # Sanity: confirm MoltenVK is the loaded ICD. `|| true`
+          # because vulkaninfo non-zero-exits on some macOS warning
+          # paths even when enumeration succeeds; the grep below is
+          # the actual gate.
+          # Stderr redirected to /dev/null: hosted macOS runners emit
+          # GPU-capability warnings (no bare-metal GPU access) that
+          # appear as CI annotations even though enumeration succeeds.
+          # The tee of stdout is the real diagnostic (ADR-0635).
+          vulkaninfo --summary 2>/dev/null | tee /tmp/vulkaninfo.txt || true
+          if ! grep -qi 'MoltenVK\|Apple' /tmp/vulkaninfo.txt; then
+            echo "::debug::vulkaninfo did not report MoltenVK/Apple GPU — see /tmp/vulkaninfo.txt (expected on hosted runners without bare-metal GPU)"
+          fi
+          glslc --version | head -2
 
       # ---------- ROCm / HIP runtime (T7-10b) ----------
       # Installs `rocm-hip-runtime-dev` from the official AMD apt repo
@@ -486,7 +586,7 @@ jobs:
           if [ "${{ matrix.sycl }}" = "true" ]; then
             source /opt/intel/oneapi/setvars.sh
           fi
-          meson setup libvmaf libvmaf/build --buildtype release \
+          meson setup libvmaf core/build --buildtype release \
             --prefix $PWD/install \
             -Denable_float=true \
             ${{ matrix.meson_extra }}
@@ -497,7 +597,7 @@ jobs:
             source /opt/intel/oneapi/setvars.sh
           fi
           sudo -E PATH="$PATH" LD_LIBRARY_PATH="$LD_LIBRARY_PATH" \
-            ninja -vC libvmaf/build install
+            ninja -vC core/build install
 
       # Surface ccache hit/miss counters in the CI log so the savings
       # claim from Research-0089 §3.1 can be verified per-run. Runs
@@ -532,12 +632,15 @@ jobs:
         # user's $HOME so a bare `sudo meson` reports "command not found".
         # Sudo is needed because the preceding `sudo ninja install` step
         # left build artifacts owned by root.
-        run: sudo $(which meson) test -C libvmaf/build --suite=dnn --print-errorlogs
+        run: sudo $(which meson) test -C core/build --suite=dnn --print-errorlogs
 
-      # CPU-only: full test suite + tox.
+      # CPU-only: full test suite + tox (skipped for i686 cross-build
+      # because meson marks cross-compiled tests SKIP 77 regardless of
+      # whether the host can actually run them; the build itself is
+      # what Netflix#1481 needs to pin).
       - name: Run tests
         if: "!matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686 && !matrix.moltenvk"
-        run: sudo ninja -vC libvmaf/build test
+        run: sudo ninja -vC core/build test
 
       # ---------- SSH debug session (macOS × workflow_dispatch only) ----------
       # Fires ONLY when:
@@ -563,15 +666,47 @@ jobs:
           # within that window the step unblocks and the job completes.
           connect-timeout-seconds: 1800
 
-      # T-CI-DEDUP-689: macOS MoltenVK smoke test step removed — the
-      # `Build — macOS Vulkan via MoltenVK (advisory)` matrix row was moved to
-      # nightly.yml. This step was only active when matrix.moltenvk was true.
-      # See ADR-0689 and nightly.yml for the new location.
+      # ---------- Vulkan smoke test (macOS MoltenVK lane) ----------
+      # Runs ONLY the Vulkan-tagged smoke binaries and captures the
+      # ICD enumeration output for triage. Per ADR-0338 the lane is
+      # advisory: a kernel-pipeline failure (e.g. a SPIR-V capability
+      # MoltenVK rejects) is a known limitation, not a merge blocker.
+      # The failure mode + suspected MoltenVK gap are documented in
+      # docs/backends/vulkan/moltenvk.md "Known limitations".
+      #
+      # No `sudo` here — macOS brew installs run as the runner user,
+      # so the build artifacts are user-owned. `meson test --suite`
+      # filters to the Vulkan suite (registered in
+      # core/test/meson.build alongside the other suite labels).
+      - name: Run Vulkan smoke tests (macOS MoltenVK)
+        if: matrix.moltenvk
+        run: |
+          set +e
+          echo "=== Loaded ICD ==="
+          vulkaninfo --summary 2>&1 | head -80 || true
+          echo ""
+          echo "=== test_vulkan_smoke ==="
+          ./core/build/test/test_vulkan_smoke
+          smoke_rc=$?
+          echo "=== test_vulkan_pic_preallocation ==="
+          ./core/build/test/test_vulkan_pic_preallocation
+          prealloc_rc=$?
+          echo "=== test_vulkan_async_pending_fence ==="
+          ./core/build/test/test_vulkan_async_pending_fence
+          fence_rc=$?
+          echo ""
+          echo "smoke_rc=${smoke_rc} prealloc_rc=${prealloc_rc} fence_rc=${fence_rc}"
+          # Report any non-zero rc as advisory failure (lane is
+          # `continue-on-error: true` until one green run on master).
+          if [ ${smoke_rc} -ne 0 ] || [ ${prealloc_rc} -ne 0 ] || [ ${fence_rc} -ne 0 ]; then
+            echo "::warning::MoltenVK Vulkan smoke surfaced failures — see docs/backends/vulkan/moltenvk.md for the known-limitations matrix."
+            exit 1
+          fi
 
       - name: Cache Netflix vmaf_resource fixtures
         # Insulates the tox lanes from the recurring HTTP-502s on
         # raw.githubusercontent.com when fetching python/test/resource/
-        # fixtures via download_reactively (python/vmaf/config.py).
+        # fixtures via download_reactively (compat/python-vmaf/config.py).
         if: "((startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686) || matrix.os == 'macos-latest') && !matrix.moltenvk"
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
@@ -582,14 +717,14 @@ jobs:
             vmaf-fixtures-resource-
 
       - name: Run tox tests (ubuntu)
-        if: "startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip"
+        if: "startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686"
         run: |
           mkdir -p ~/.ccache && sudo chown -R $(whoami) ~/.ccache
           pip install tox
           tox -c python
 
       - name: Run tox tests (mac)
-        if: matrix.os == 'macos-latest'
+        if: matrix.os == 'macos-latest' && !matrix.moltenvk
         run: |
           mkdir -p ~/.ccache && sudo chown -R $(whoami) ~/.ccache
           pip install tox
@@ -602,7 +737,7 @@ jobs:
       - name: Run CPU-only tests (GPU build)
         if: matrix.sycl || matrix.cuda
         run: |
-          cd libvmaf/build
+          cd core/build
           for t in test_dict test_ref test_log test_thread_pool test_cpu \
                    test_feature test_cli_parse test_model test_predict \
                    test_ciede test_cambi test_psnr test_luminance_tools \
@@ -618,7 +753,7 @@ jobs:
       - name: Run HIP smoke test (no GPU)
         if: matrix.hip
         run: |
-          cd libvmaf/build
+          cd core/build
           ./test/test_hip_smoke
 
       # ---------- Artifacts ----------
@@ -629,11 +764,103 @@ jobs:
           name: ${{ matrix.name }}-vmaf
           path: ./install/bin/vmaf
 
+  # ===== Windows (MSYS2 / MinGW-w64) =====
+  # Folded in from the now-deleted .github/workflows/windows.yml so the
+  # full build matrix lives in one workflow file. See ADR-0115.
+  # MINGW32 is intentionally disabled (vmaf score mismatch — upstream note);
+  # 32-bit support would need a SIMD audit before re-enabling.
+  #
+  # Job key renamed `build` → `windows` and display name set to Title Case
+  # per ADR-0116. The matrix-expanded required status check on master is
+  # re-pinned to `Build — Windows MinGW64 (CPU)` immediately after this
+  # workflow lands (see ADR-0116 §Consequences).
+  windows:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: Build — Windows MinGW64 (CPU)
+    runs-on: windows-2025
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # - msystem: MINGW32
+          #   MINGW_PACKAGE_PREFIX: mingw-w64-i686
+          #   CFLAGS: -msse2 -mfpmath=sse -mstackrealign
+          - msystem: MINGW64
+            MINGW_PACKAGE_PREFIX: mingw-w64-x86_64
+    env:
+      CC: ccache gcc
+      CXX: ccache g++
+      CFLAGS: -pipe -static -O3 -mtune=generic -D_FILE_OFFSET_BITS=64 -mthreads
+      CXXFLAGS: -pipe -static -O3 -mtune=generic -D_FILE_OFFSET_BITS=64 -mthreads
+      LDFLAGS: -pipe -static -static-libgcc -static-libstdc++
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Cache ccache files
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
+        with:
+          path: .ccache
+          key: ${{ runner.os }}-${{ matrix.msystem }}-0-${{ hashFiles('**/*.c') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.msystem }}-0-
+            ${{ runner.os }}-${{ matrix.msystem }}-
+
+      - uses: msys2/setup-msys2@e9898307ac31d1a803454791be09ab9973336e1c  # v2.31.1
+        with:
+          msystem: ${{ matrix.msystem }}
+          install: >-
+            ${{ matrix.MINGW_PACKAGE_PREFIX }}-ccache
+            ${{ matrix.MINGW_PACKAGE_PREFIX }}-nasm
+            ${{ matrix.MINGW_PACKAGE_PREFIX }}-pkg-config
+            ${{ matrix.MINGW_PACKAGE_PREFIX }}-gcc
+            ${{ matrix.MINGW_PACKAGE_PREFIX }}-meson
+            ${{ matrix.MINGW_PACKAGE_PREFIX }}-ninja
+            vim make diffutils
+          update: true
+          path-type: inherit
+
+      - name: Set ccache dir
+        run: echo "CCACHE_DIR=$PWD/.ccache" >> $GITHUB_ENV
+
+      - name: Configure vmaf
+        run: |
+          meson setup libvmaf core/build --buildtype release \
+            --default-library static --prefix "$MINGW_PREFIX" \
+            -Denable_cuda=false -Denable_sycl=false -Denable_float=true
+
+      - name: Build vmaf
+        run: meson install -C core/build
+
+      - name: Test vmaf
+        # --print-errorlogs surfaces the failing test's stdout/stderr
+        # inline in the CI log instead of only writing it to
+        # meson-logs/testlog.txt, so cross-platform debugging (e.g.
+        # MinGW64-specific locale assertions) does not require an
+        # artifact round-trip.
+        run: meson test -C core/build --num-processes $(nproc) --print-errorlogs
+
+      - name: Show binary info and stage artifact
+        id: stage
+        run: |
+          ldd "$MINGW_PREFIX/bin/vmaf.exe" || true
+          mkdir -p artifact
+          cp "$MINGW_PREFIX/bin/vmaf.exe" artifact/vmaf.exe
+          echo "path=$(cygpath -m "$PWD/artifact/vmaf.exe")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload vmaf.exe artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: ${{ matrix.msystem }}-vmaf
+          path: ${{ steps.stage.outputs.path }}
+          if-no-files-found: error
+
   # ===== Windows GPU build-only (MSVC + CUDA, MSVC + oneAPI SYCL) =====
-  # VMAFX rebrand Phase 1C (ADR-0691): MinGW64 GCC Windows build was removed
-  # from this file. Windows coverage is now provided exclusively by the two
-  # MSVC GPU legs below (CUDA + oneAPI SYCL), which exercise the paths the
-  # fork adds and remain required status checks.
   # Build-only legs — no GPU on the windows-2025 runner, so the test
   # step is intentionally omitted. The point is verifying that the
   # CUDA / SYCL backend code compiles & links on the MSVC toolchain,
@@ -676,7 +903,7 @@ jobs:
           # shared build produces an empty import lib and the tool targets
           # fail with LNK1181. Mirrors the MinGW leg's `--default-library
           # static` at line 387. Also lets the vmaf CLI pick the static
-          # archive via libvmaf/tools/meson.build:26 without the
+          # archive via core/tools/meson.build:26 without the
           # get_shared_lib() branch.
           - backend: cuda
             meson_extra: --default-library=static -Denable_cuda=true -Denable_nvcc=true -Denable_sycl=false
@@ -785,7 +1012,7 @@ jobs:
 
       # ---------- nv-codec-headers (CUDA leg only) ----------
       # libvmaf's CUDA path includes `<ffnvcodec/dynlink_cuda.h>`
-      # (see libvmaf/src/meson.build §324). The Linux CUDA leg
+      # (see core/src/meson.build §324). The Linux CUDA leg
       # installs this via `git clone … && make install`. On
       # Windows there's no `make install` story, but the package
       # is header-only — clone, copy the `include/ffnvcodec/`
@@ -834,9 +1061,9 @@ jobs:
             ${{ matrix.meson_extra }}
 
       # ---------- Level Zero loader (SYCL leg only) ----------
-      # libvmaf/src/meson.build:492 calls
+      # core/src/meson.build:492 calls
       # `cc.find_library('ze_loader', required : true)` and
-      # `libvmaf/src/sycl/common.cpp:26` includes
+      # `core/src/sycl/common.cpp:26` includes
       # `<level_zero/ze_api.h>`. The Linux SYCL leg picks both up
       # from `intel-level-zero-gpu` / `level-zero-dev` apt packages.
       # Windows oneAPI BaseKit does NOT ship `ze_loader.lib`, so

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 #
 # extract-corpus.sh — contributor-side companion to
 # prepare-gdrive-bundle.sh. Decodes the lossless HEVC / FFV1 / AV1

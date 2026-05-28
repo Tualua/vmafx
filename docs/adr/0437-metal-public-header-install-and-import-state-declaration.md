@@ -11,7 +11,7 @@ Audit slice B (2026-05-15) identified two gaps that block downstream FFmpeg
 `--enable-libvmaf-metal` integration:
 
 1. **Install gap**: `libvmaf_metal.h` was absent from the `platform_specific_headers`
-   list in `libvmaf/include/libvmaf/meson.build`. Every other backend header
+   list in `core/include/core/meson.build`. Every other backend header
    (`libvmaf_cuda.h`, `libvmaf_sycl.h`, `libvmaf_vulkan.h`, `libvmaf_hip.h`,
    `libvmaf_mcp.h`, `dnn.h`) has a conditional `install_headers` entry; Metal
    did not. A `meson install -Denable_metal=enabled` build therefore left the
@@ -23,8 +23,8 @@ Audit slice B (2026-05-15) identified two gaps that block downstream FFmpeg
 2. **Declaration gap**: `vmaf_metal_import_state` (the entry point that hands a
    `VmafMetalState` to a `VmafContext`, mirroring `vmaf_cuda_import_state` /
    `vmaf_vulkan_import_state` / `vmaf_sycl_import_state`) was implemented in
-   `libvmaf/src/libvmaf.c:648` but the public declaration was missing from
-   `libvmaf/include/libvmaf/libvmaf_metal.h`. Without it callers could not bind
+   `core/src/libvmaf.c:648` but the public declaration was missing from
+   `core/include/libvmaf/libvmaf_metal.h`. Without it callers could not bind
    a `VmafContext` to the Metal backend even if the header were installed.
    (Subsequent review confirmed the declaration was added to the header in an
    earlier PR before this ADR was written; the install gap was the surviving
@@ -42,7 +42,7 @@ the header". This ADR applies the identical logic to Metal's feature option.
 
 We will:
 
-1. Add a `is_metal_enabled` boolean in `libvmaf/include/libvmaf/meson.build`
+1. Add a `is_metal_enabled` boolean in `core/include/core/meson.build`
    that resolves to `true` when `enable_metal` is `enabled` or `auto`, and
    conditionally append `libvmaf_metal.h` to `platform_specific_headers`.
 2. Verify `vmaf_metal_import_state` is correctly declared in
@@ -56,7 +56,7 @@ We will:
    `vmaf_metal_state_init_external`, `vmaf_metal_picture_import`,
    `vmaf_metal_wait_compute`, `vmaf_metal_read_imported_pictures`).
 4. Add a macOS-only compile+link smoke test
-   `libvmaf/test/test_metal_install_header.c` that takes function-pointer
+   `core/test/test_metal_install_header.c` that takes function-pointer
    addresses for every public Metal symbol — a type mismatch is a compile
    error, so the test catches ABI drift between header and library.
 

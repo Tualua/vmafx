@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Phase A corpus orchestrator.
 
 Sweeps a (preset, crf) grid against one or more raw YUV references,
@@ -71,7 +71,7 @@ _LOG = logging.getLogger(__name__)
 # the extension. It does not — vmaf-tune always passes ``--width`` /
 # ``--height`` / ``--pixel_format`` / ``--bitdepth`` (see
 # :func:`vmaftune.score.build_vmaf_command`), which flips the CLI's
-# ``use_yuv`` flag (libvmaf/tools/cli_parse.c) and routes both inputs
+# ``use_yuv`` flag (core/tools/cli_parse.c) and routes both inputs
 # through ``raw_input_open``. Y4M files then trip the file-size-mismatch
 # guard inside ``raw_input_open``. The empty-suffix entry is kept for
 # operators who name raw YUV without a ``.yuv`` extension (a long-

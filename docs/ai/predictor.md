@@ -109,7 +109,7 @@ predictor input, not the ROI encode path from `recommend-saliency`.
 ## 3. Op allowlist compliance
 
 The trainer validates every exported ONNX against the libvmaf C-side
-allowlist (`libvmaf/src/dnn/op_allowlist.c`) via
+allowlist (`core/src/dnn/op_allowlist.c`) via
 `ai/src/vmaf_train/op_allowlist.py`. Failure aborts the export.
 
 The shipped MLP graph uses only allowlisted ops:

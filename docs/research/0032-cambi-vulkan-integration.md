@@ -27,7 +27,7 @@ because:
   full `VmafPicture` pair anyway from `s->pics[0]` / `s->pics[1]`.
 
 Tactical alternative: keep the CPU signatures unchanged, expose the
-file-static helpers via `libvmaf/src/feature/cambi_internal.h`, and
+file-static helpers via `core/src/feature/cambi_internal.h`, and
 let the Vulkan twin allocate its own `VmafPicture` pair as readback
 targets. Cost: one full-frame readback per scale.
 
@@ -135,5 +135,5 @@ once the GPU twin grows full-ref support.
 - ADR-0205 — feasibility spike + strategy choice.
 - ADR-0210 — this PR's integration ADR.
 - Research-0020 — strategy comparison.
-- `libvmaf/src/feature/cambi.c` — CPU reference.
-- `libvmaf/src/feature/vulkan/cambi_vulkan.c` — Vulkan integration.
+- `core/src/feature/cambi.c` — CPU reference.
+- `core/src/feature/vulkan/cambi_vulkan.c` — Vulkan integration.

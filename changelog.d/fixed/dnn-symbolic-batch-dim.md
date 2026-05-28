@@ -19,7 +19,7 @@
   sharpened to distinguish symbolic H/W from "C != 1" so the
   failure mode is observable. Regression test
   `test_attach_accepts_symbolic_batch_rank4` in
-  `libvmaf/test/dnn/test_vmaf_use_tiny_model.c` exercises the
+  `core/test/dnn/test_vmaf_use_tiny_model.c` exercises the
   fixture `model/tiny/smoke_v0_symbolic_batch.onnx`; the
   `test_cli.sh` `--no-reference` smoke now uses
   `nr_metric_v1.onnx` end-to-end (replacing the prior

@@ -50,8 +50,8 @@ Add a per-file critical-coverage override map to
 
 ```bash
 declare -A PER_FILE_MIN=(
-    ["libvmaf/src/dnn/ort_backend.c"]=78
-    ["libvmaf/src/dnn/dnn_api.c"]=78
+    ["core/src/dnn/ort_backend.c"]=78
+    ["core/src/dnn/dnn_api.c"]=78
 )
 ```
 
@@ -70,7 +70,7 @@ fallback's nested error paths).
 The override map *requires* an ADR citation in the comment above
 each entry. Future contributors adding entries must add a new ADR
 or extend this one. Drift control is exactly the same pattern as
-the per-file `lint-disable` comments under `libvmaf/src/feature/`.
+the per-file `lint-disable` comments under `core/src/feature/`.
 
 ## Alternatives considered
 

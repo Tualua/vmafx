@@ -38,7 +38,7 @@ device 2: type=INTEGRATED_GPU score=50  name=AMD Ryzen 9 9950X3D 16-Core Process
 ```
 
 (Probed with a 30-line `vkEnumeratePhysicalDevices` + `devtype_score`
-program that mirrors `libvmaf/src/vulkan/common.c`'s sort. `VK_API_VERSION_1_3`
+program that mirrors `core/src/vulkan/common.c`'s sort. `VK_API_VERSION_1_3`
 and `VK_API_VERSION_1_4` enumerate in identical order on this host.)
 
 The `enumerate_compute_devices` insertion sort in `common.c` is **stable**
@@ -72,15 +72,15 @@ claim looked plausible" below for how PR #511's report ended up inverted.)
 git checkout fix/vulkan-vif-arc-mesa-anv-int64-reduction  # this PR's branch
 
 # Local API-1.4 bump (same 4 sites as research-0089).
-sed -i 's/VK_API_VERSION_1_3/VK_API_VERSION_1_4/g' libvmaf/src/vulkan/common.c
-sed -i 's/VMA_VULKAN_VERSION 1003000/VMA_VULKAN_VERSION 1004000/' libvmaf/src/vulkan/vma_impl.cpp
+sed -i 's/VK_API_VERSION_1_3/VK_API_VERSION_1_4/g' core/src/vulkan/common.c
+sed -i 's/VMA_VULKAN_VERSION 1003000/VMA_VULKAN_VERSION 1004000/' core/src/vulkan/vma_impl.cpp
 
 cd libvmaf && meson setup build -Denable_vulkan=enabled -Denable_cuda=false \
     -Denable_sycl=false -Denable_avx512=true && ninja -C build
 cd ..
 
 python3 scripts/ci/cross_backend_vif_diff.py \
-    --vmaf-binary libvmaf/build/tools/vmaf \
+    --vmaf-binary core/build/tools/vmaf \
     --reference testdata/ref_576x324_48f.yuv \
     --distorted testdata/dis_576x324_48f.yuv \
     --width 576 --height 324 \
@@ -88,8 +88,8 @@ python3 scripts/ci/cross_backend_vif_diff.py \
 # device 0 = NVIDIA RTX 4090 on this host. Reproduces 45/48 scale-2.
 
 # Revert the API-1.4 bump for the shipping default.
-sed -i 's/VK_API_VERSION_1_4/VK_API_VERSION_1_3/g' libvmaf/src/vulkan/common.c
-sed -i 's/VMA_VULKAN_VERSION 1004000/VMA_VULKAN_VERSION 1003000/' libvmaf/src/vulkan/vma_impl.cpp
+sed -i 's/VK_API_VERSION_1_4/VK_API_VERSION_1_3/g' core/src/vulkan/common.c
+sed -i 's/VMA_VULKAN_VERSION 1004000/VMA_VULKAN_VERSION 1003000/' core/src/vulkan/vma_impl.cpp
 ```
 
 ## Candidates tested

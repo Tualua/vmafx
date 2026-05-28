@@ -68,11 +68,11 @@ and 2 continue to return `-EINVAL`.
 
 Patch sites:
 
-- [`libvmaf/src/feature/feature_collector.c`](../../libvmaf/src/feature/feature_collector.c)
+- [`core/src/feature/feature_collector.c`](../../core/src/feature/feature_collector.c)
   `vmaf_feature_collector_get_score`: the "not written" branch
   now returns `-EAGAIN`. The "out-of-range / not-found" branch
   keeps `-EINVAL`.
-- [`libvmaf/src/feature/feature_collector.h`](../../libvmaf/src/feature/feature_collector.h)
+- [`core/src/feature/feature_collector.h`](../../core/src/feature/feature_collector.h)
   `vmaf_feature_vector_get_score` (inline fast-path): split the
   previous combined `return -1` into `-EINVAL` (null pointer /
   out-of-range) and `-EAGAIN` (not written). Add `#include
@@ -167,7 +167,7 @@ flush before pooling.
     programmer-error cases — inverted range, NULL score — still
     return `-EINVAL`, not `-EAGAIN`).
 - **Reducer verified**: `git stash push
-  libvmaf/src/feature/feature_collector.{c,h} && ninja -C
+  core/src/feature/feature_collector.{c,h} && ninja -C
   build && meson test -C build test_score_pooled_eagain`
   reports `Fail: 1` — the test is a real gate, not a tautology.
 - Reproducer standalone binary (matches the issue's code
@@ -182,8 +182,8 @@ flush before pooling.
   flush -> 0
   final_pool(0..2) -> rc=0 score=97.428043
   ```
-- `clang-tidy -p build libvmaf/src/feature/feature_collector.c
-  libvmaf/src/feature/feature_collector.h` → zero warnings.
+- `clang-tidy -p build core/src/feature/feature_collector.c
+  core/src/feature/feature_collector.h` → zero warnings.
 
 ## References
 

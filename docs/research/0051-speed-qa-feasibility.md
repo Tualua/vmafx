@@ -49,7 +49,7 @@ required.
 The Netflix tree was scanned 2026-05-03 against `upstream/master` and
 the historical `upstream/speed_ported` branch:
 
-- **Source code** — `libvmaf/src/feature/speed.c` (1,567 LOC,
+- **Source code** — `core/src/feature/speed.c` (1,567 LOC,
   scalar-only) was ported by upstream commit
   [`d3647c73`](https://github.com/Netflix/vmaf/commit/d3647c73)
   ("feature/speed: port speed_chroma and speed_temporal extractors")
@@ -60,7 +60,7 @@ the historical `upstream/speed_ported` branch:
   and `speed_temporal` (single score over a small cyclic buffer).
   Both gated behind `-Denable_float=true` /
   `VMAF_FLOAT_FEATURES=1`. Verified by `grep -nE
-  "vmaf_fex_speed" libvmaf/src/feature/feature_extractor.c`.
+  "vmaf_fex_speed" core/src/feature/feature_extractor.c`.
 - **No SpEED-QA reduction** — neither upstream nor the fork ships a
   `speed_qa` extractor that turns the per-block field into a single
   full-frame quality score in the form the 2017 paper describes.
@@ -202,8 +202,8 @@ Verify the SpEED state on the fork at digest time:
 
 ```bash
 # Confirm extractors registered:
-grep -nE "vmaf_fex_speed" libvmaf/src/feature/feature_extractor.c
-grep -nE "speed_chroma|speed_temporal" libvmaf/src/feature/alias.c
+grep -nE "vmaf_fex_speed" core/src/feature/feature_extractor.c
+grep -nE "speed_chroma|speed_temporal" core/src/feature/alias.c
 
 # Confirm no model consumes SpEED features:
 grep -lr "Speed_chroma_feature\|Speed_temporal_feature" model/ || echo "no consumer (expected)"

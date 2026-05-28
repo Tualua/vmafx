@@ -8,14 +8,14 @@
 ## Context
 
 [ADR-0270](0270-fuzzing-scaffold.md) landed the libFuzzer scaffold under
-`libvmaf/test/fuzz/` with one initial harness (`fuzz_y4m_input`). That
+`core/test/fuzz/` with one initial harness (`fuzz_y4m_input`). That
 harness already paid for itself: a 60-second smoke run surfaced a heap-
 buffer-overflow in `y4m_convert_411_422jpeg` (fixed in PR #357). The
 scaffold was always intended as the *first* harness — the meson plumbing,
 the nightly workflow, and the corpus-management convention are
 deliberately generic so additional parsers can land in the same shape.
 
-Two sibling parsers in `libvmaf/tools/` are the obvious next targets:
+Two sibling parsers in `core/tools/` are the obvious next targets:
 
 1. **`yuv_input.c`** — the headerless raw-YUV reader. Where Y4M parses
    a header, YUV is *unparsed* and the caller supplies dimensions; the
@@ -39,7 +39,7 @@ and ranks complexity / risk.
 ## Decision
 
 We will land two additional harnesses (`fuzz_yuv_input.c`,
-`fuzz_cli_parse.c`) under `libvmaf/test/fuzz/`, register them in the
+`fuzz_cli_parse.c`) under `core/test/fuzz/`, register them in the
 existing `meson.build` opt-in (`-Dfuzz=true`), seed each with 6 hand-
 crafted inputs covering branch-significant shapes, and add both to the
 nightly `.github/workflows/fuzz.yml` matrix at 60 s/harness/night.
@@ -61,7 +61,7 @@ ADR for the scaffold itself; this ADR is a strict expansion.
 ## Consequences
 
 - **Positive**:
-  - Coverage of every pure parser surface in `libvmaf/tools/` —
+  - Coverage of every pure parser surface in `core/tools/` —
     Y4M, raw YUV, and CLI argv. Future Y4M / YUV chroma-conversion
     bugs (the same shape as the 411 OOB write) get caught in the
     raw path too, not only the Y4M front door.
@@ -70,7 +70,7 @@ ADR for the scaffold itself; this ADR is a strict expansion.
     no unit-test coverage.
   - The 60-second smoke run on the seed corpus already surfaced
     a real `assert(long_opts[n].name)` failure in
-    `error()` ([`libvmaf/tools/cli_parse.c:250`](../../libvmaf/tools/cli_parse.c)):
+    `error()` ([`core/tools/cli_parse.c:250`](../../core/tools/cli_parse.c)):
     handlers for the long-only options `ARG_THREADS` /
     `ARG_SUBSAMPLE` / `ARG_CPUMASK` call
     `parse_unsigned(optarg, 't' / 's' / 'c', argv[0])` with a
@@ -78,7 +78,7 @@ ADR for the scaffold itself; this ADR is a strict expansion.
     `long_opts[]`. Any abbreviated `--threads` / `--subsample` /
     `--cpumask` invocation with a non-numeric argument trips
     the assertion. Captured reproducer parked under
-    [`libvmaf/test/fuzz/cli_parse_known_crashes/cli_threads_abbrev_assert.argv`](../../libvmaf/test/fuzz/cli_parse_known_crashes/cli_threads_abbrev_assert.argv);
+    [`core/test/fuzz/cli_parse_known_crashes/cli_threads_abbrev_assert.argv`](../../core/test/fuzz/cli_parse_known_crashes/cli_threads_abbrev_assert.argv);
     the fuzzer harness carries an early-reject filter for the
     `--th*` / `--s*` / `--c*` token prefixes so the nightly
     job stays green until the fix lands. Tracked as a follow-up

@@ -11,7 +11,7 @@
 The seven Vulkan feature extractors landed via T-GPU-DEDUP-18..24 (PRs
 #284–#290) adopted `vmaf_vulkan_kernel_pipeline_create` /
 `vmaf_vulkan_kernel_pipeline_destroy` from
-`libvmaf/src/vulkan/kernel_template.h` (ADR-0221), but each kept inline
+`core/src/vulkan/kernel_template.h` (ADR-0221), but each kept inline
 per-frame `vkCreateFence` / `vkAllocateCommandBuffers` /
 `vkAllocateDescriptorSets` (and matching destroy/free calls). The
 2026-05-02 Vulkan profile run on an RTX 4090 with the NVIDIA
@@ -64,7 +64,7 @@ cross-PR merge conflicts that would otherwise hit each follow-up.
 ## Decision
 
 Land DEDUP-25 + VK-1 + VK-4 as a single PR against
-`libvmaf/src/vulkan/kernel_template.h` plus the kernel TUs that have
+`core/src/vulkan/kernel_template.h` plus the kernel TUs that have
 already adopted the template. The actual scope of the migration is
 **five extractors** — `psnr_hvs_vulkan`, `vif_vulkan`,
 `float_vif_vulkan`, `float_adm_vulkan`, `ssimulacra2_vulkan` — not

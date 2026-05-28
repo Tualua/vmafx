@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Unit tests for ``ai/scripts/analyze_knob_sweep.py`` (ADR-0305 / Research-0077).
 
 Synthetic 20-row JSONL fixture; the live 12,636-cell sweep at

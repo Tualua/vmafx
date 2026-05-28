@@ -3,7 +3,7 @@
   drives the `vmaf` CLI twice (full-frame + saliency-masked) and
   blends the two pooled scalars via a user-controlled weight
   `w ∈ [0, 1]`: `roi_vmaf = (1 - w) * vmaf_full + w * vmaf_masked`.
-  Distinct from the existing `libvmaf/tools/vmaf_roi.c` binary
+  Distinct from the existing `core/tools/vmaf_roi.c` binary
   (ADR-0247) — that surface emits encoder QP-offset sidecars; this
   one produces a saliency-weighted score. Combine math
   (`vmafroiscore.blend_scores`), CLI surface (`--reference /

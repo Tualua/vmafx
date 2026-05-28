@@ -38,14 +38,14 @@ Breakdown by link target (top 8 of 1,187 `not_found`):
 | `../../.github/workflows/tests-and-quality-gates.yml` | 18 | Cross-tree (workflow) |
 | `../../scripts/ci/cross_backend_parity_gate.py` | 15 | Cross-tree (CI script) |
 | `0253-fastdvdnet-pre-real-weights.md` | 9 | Renamed-ADR (slug now `0255-...`) |
-| `../../libvmaf/src/feature/third_party/xiph/psnr_hvs.c` | 9 | Cross-tree (vendored source) |
-| `../../libvmaf/include/libvmaf/libvmaf_vulkan.h` | 9 | Cross-tree (public header) |
+| `../../core/src/feature/third_party/xiph/psnr_hvs.c` | 9 | Cross-tree (vendored source) |
+| `../../core/include/libvmaf/libvmaf_vulkan.h` | 9 | Cross-tree (public header) |
 
 The "cross-tree" class — links from docs to source-tree files / dirs outside
 `docs_dir` — is by far the dominant population. mkdocs cannot resolve them
 because they sit outside the rendered site, but they render fine on GitHub's
 web view (where contributors most often read these files), and the fork's
-ADR convention deliberately uses `../../libvmaf/src/...` to point at the
+ADR convention deliberately uses `../../core/src/...` to point at the
 source the ADR is about.
 
 ## What's fixable vs. not, per population

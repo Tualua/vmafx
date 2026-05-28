@@ -7,7 +7,7 @@
 
 ## Context
 
-The fork's tiny-AI surface (`ai/`, `libvmaf/src/dnn/`) targets a lightweight
+The fork's tiny-AI surface (`ai/`, `core/src/dnn/`) targets a lightweight
 full-reference (FR) regressor that can be distilled from the public
 `vmaf_v0.6.1` SVM model or trained directly against subjective scores.  The
 user holds the original Netflix VMAF training corpus locally at

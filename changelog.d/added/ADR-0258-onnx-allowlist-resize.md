@@ -1,5 +1,5 @@
 - **ONNX op-allowlist gains `Resize` (ADR-0258 / T7-32).**
-  One-line addition under `libvmaf/src/dnn/op_allowlist.c`'s
+  One-line addition under `core/src/dnn/op_allowlist.c`'s
   `/* convolutional */` block unblocks U-2-Net (PR #341 follow-up)
   and the wider saliency / segmentation surface — mobilesal,
   BASNet, PiDiNet, FPN-style detectors all rely on `Resize` for

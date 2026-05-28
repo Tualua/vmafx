@@ -3,8 +3,8 @@
   classified every `@pytest.mark.skip` / `@unittest.skip` / `pytest.skip` /
   `_*_DEFERRED` / `raise NotImplementedError` / `// TODO|FIXME|XXX` /
   `return -ENOSYS` / `#error "unimplemented"` marker in fork-touched paths
-  (`tools/`, `python/vmaf/`, `ai/`, `mcp-server/`, `libvmaf/src/`,
-  `libvmaf/test/`). Outcome: ~95 markers DEFERRED-VALID with documented
+  (`tools/`, `python/vmaf/`, `ai/`, `mcp-server/`, `core/src/`,
+  `core/test/`). Outcome: ~95 markers DEFERRED-VALID with documented
   reopen triggers (HIP T7-10b scaffolds per ADR-0212/ADR-0274, MCP T5-2b
   scaffold per ADR-0209, `vmaf-tune fast` production wiring per
   ADR-0276 / PR #467, `vmaf-roi-score` T6-2c per ADR-0288, environment-

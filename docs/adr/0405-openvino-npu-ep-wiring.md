@@ -75,12 +75,12 @@ by power-state transitions) and is opt-in only.
   [Research-0031](../research/0031-intel-ai-pc-applicability.md)
   (predecessor; verdict was DEFER, this ADR is the GO follow-up).
 - Touched files:
-  `libvmaf/include/libvmaf/dnn.h`,
-  `libvmaf/src/dnn/ort_backend.{c,h}`,
-  `libvmaf/tools/vmaf.c`,
-  `libvmaf/tools/cli_parse.{c,h}`,
-  `libvmaf/test/dnn/test_ep_fp16.c`,
-  `libvmaf/test/dnn/test_cli.sh`,
+  `core/include/libvmaf/dnn.h`,
+  `core/src/dnn/ort_backend.{c,h}`,
+  `core/tools/vmaf.c`,
+  `core/tools/cli_parse.{c,h}`,
+  `core/test/dnn/test_ep_fp16.c`,
+  `core/test/dnn/test_cli.sh`,
   `docs/ai/inference.md`,
   `docs/usage/cli.md`,
   `docs/development/oneapi-install.md`.

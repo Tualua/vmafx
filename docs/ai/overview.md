@@ -33,7 +33,7 @@ lives in [`dev-llm/`](../../dev-llm/).
                     │
                     ▼
    ┌──────────────────────────────────────┐
-   │     libvmaf/src/dnn/  (C, ORT)       │   one runtime
+   │     core/src/dnn/  (C, ORT)       │   one runtime
    │     vmaf_use_tiny_model(...)         │   shared by all surfaces
    └──────────────┬────────────┬──────────┘
                   │            │

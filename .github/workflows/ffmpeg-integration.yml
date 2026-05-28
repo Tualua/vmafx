@@ -77,8 +77,8 @@ jobs:
 
       - name: Build vmaf
         run: |
-          meson setup libvmaf libvmaf/build --buildtype release
-          sudo ninja -vC libvmaf/build install
+          meson setup libvmaf core/build --buildtype release
+          sudo ninja -vC core/build install
 
       - name: Build FFmpeg
         run: |
@@ -132,7 +132,7 @@ jobs:
 
       - name: Build vmaf with SYCL
         env:
-          # Required by libvmaf/src/meson.build: enable_sycl=true forces
+          # Required by core/src/meson.build: enable_sycl=true forces
           # icpx as the project C++ compiler so the .so link step embeds
           # SPIR-V device images via clang-offload-wrapper.
           CC: icx
@@ -142,10 +142,10 @@ jobs:
           # b_lto=false: see libvmaf-build-matrix.yml note; icx + meson's
           # -flto=auto leaves the static archive without LTO bitcode and
           # breaks the .so link.
-          meson setup libvmaf libvmaf/build --buildtype release \
+          meson setup libvmaf core/build --buildtype release \
             -Denable_float=true -Denable_sycl=true -Db_lto=false
           sudo -E PATH="$PATH" LD_LIBRARY_PATH="$LD_LIBRARY_PATH" \
-            ninja -vC libvmaf/build install
+            ninja -vC core/build install
 
       - name: Build FFmpeg with SYCL patch series
         run: |
@@ -173,7 +173,7 @@ jobs:
   #
   # Why this lane exists: PR #234 was a build break in `vf_libvmaf.c` caused
   # by `-DVK_NO_PROTOTYPES` propagating from `libvmaf.pc` Cflags (via
-  # libvmaf/subprojects/volk-vulkan-sdk-1.4.341.0/meson.build's
+  # core/subprojects/volk-vulkan-sdk-1.4.341.0/meson.build's
   # `compile_args : ['-DVK_NO_PROTOTYPES']`) into FFmpeg's compile of the
   # libvmaf filter. The fork had zero CI coverage of FFmpeg + Vulkan, so the
   # break was first reported by an external user. This lane closes that gap:
@@ -244,13 +244,13 @@ jobs:
           # PKG_CONFIG_PATH at the temp tree, which is the exact scenario
           # PR #234 broke under (libvmaf.pc Cflags leaking -DVK_NO_PROTOTYPES
           # into vf_libvmaf.c's compile).
-          meson setup libvmaf libvmaf/build --buildtype release \
+          meson setup libvmaf core/build --buildtype release \
             --prefix "$PWD/install" \
             -Denable_float=true \
             -Denable_vulkan=enabled \
             -Denable_cuda=false \
             -Denable_sycl=false
-          ninja -vC libvmaf/build install
+          ninja -vC core/build install
 
       - name: Build FFmpeg with Vulkan patch series
         run: |

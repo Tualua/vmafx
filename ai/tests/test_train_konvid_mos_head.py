@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Phase 3 of ADR-0325 — synthetic-corpus smoke + gate tests for the MOS head.
 
 The trainer in :mod:`ai.scripts.train_konvid_mos_head` produces a
@@ -707,7 +707,7 @@ def test_smoke_run_produces_allowlist_conformant_onnx(tmp_path: Path) -> None:
     assert manifest["run_provenance"]["args"]["smoke"] is True
 
     # ONNX op-allowlist conformance — every op must appear in
-    # libvmaf/src/dnn/op_allowlist.c.
+    # core/src/dnn/op_allowlist.c.
     model = onnx_pkg.load(str(onnx_path))
     onnx_pkg.checker.check_model(model)
     ops = {n.op_type for n in model.graph.node}

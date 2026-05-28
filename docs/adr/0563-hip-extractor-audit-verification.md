@@ -41,14 +41,14 @@ updated accordingly.
 
 For each extractor the following were checked:
 
-1. **Host TU** (`libvmaf/src/feature/hip/<name>_hip.c`): does `init()`
+1. **Host TU** (`core/src/feature/hip/<name>_hip.c`): does `init()`
    contain a `#ifdef HAVE_HIPCC` branch that calls a real
    `hipModuleLoadData` / `hipModuleGetFunction` path (as opposed to
    returning `-ENOSYS` unconditionally)?
 2. **Kernel source**: is there a `.hip` file in the matching subdirectory
-   (`libvmaf/src/feature/hip/<family>/`)?
+   (`core/src/feature/hip/<family>/`)?
 3. **Meson wiring**: is the kernel registered under a key in
-   `hip_kernel_sources` in `libvmaf/src/meson.build`?
+   `hip_kernel_sources` in `core/src/meson.build`?
 4. **Stub status**: is the extractor's `_hsaco` symbol absent from
    `hip_hsaco_stubs.c` (i.e., the weak fallback has been removed)?
 5. **State.md cross-reference**: does a recently-closed entry confirm

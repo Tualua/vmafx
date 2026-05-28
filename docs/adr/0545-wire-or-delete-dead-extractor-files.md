@@ -9,8 +9,8 @@
 
 A deep audit (Finding 24 in `.workingdir/bbb_reports/DEEP_AUDIT_2026_05_18.md`)
 flagged ~3500 LOC of feature-extractor source files under
-`libvmaf/src/feature/vulkan/` and `libvmaf/src/feature/metal/` that were defined
-on disk but never listed in the corresponding `libvmaf/src/{vulkan,metal}/meson.build`
+`core/src/feature/vulkan/` and `core/src/feature/metal/` that were defined
+on disk but never listed in the corresponding `core/src/{vulkan,metal}/meson.build`
 source list. Several of them defined `VmafFeatureExtractor vmaf_fex_*` symbols that
 either (a) duplicated an already-wired sibling, (b) had no `extern` declaration in
 `feature_extractor.c` (pure orphans), or (c) were referenced as `extern` and even
@@ -38,7 +38,7 @@ apply one of three actions:
 The applied per-file dispositions are recorded in the PR body's decision table.
 
 In summary:
-- **Wired**: `libvmaf/src/feature/metal/float_ms_ssim_metal.mm` +
+- **Wired**: `core/src/feature/metal/float_ms_ssim_metal.mm` +
   `float_ms_ssim.metal` (ADR-0490 was Accepted but the meson wiring was missed).
 - **Deleted**: 7 Vulkan `.c` files + 7 orphan `.comp` shaders, 11 Metal `.mm`
   files + 11 paired `.metal` kernel files, and one dead `extern` declaration

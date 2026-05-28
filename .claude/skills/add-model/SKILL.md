@@ -25,9 +25,9 @@ description: Register a new VMAF model (.json / .pkl / .onnx) with the build, va
    with `run_provenance.schema == "ai-run-provenance-v1"`. If the producing
    script lacks that evidence, run `/ai-run-manifest` first and fix the script
    before registering the model.
-7. Patch `libvmaf/src/meson.build` or `model/meson.build` to add the file to the
+7. Patch `core/src/meson.build` or `model/meson.build` to add the file to the
    install set if `--install` is passed.
-8. Add a loader test in `libvmaf/test/test_model.c` that loads the model, asserts
+8. Add a loader test in `core/test/test_model.c` that loads the model, asserts
    basic metadata is read, and unloads cleanly.
 9. Emit a summary: model name, type, install target, test added.
 
@@ -36,7 +36,7 @@ description: Register a new VMAF model (.json / .pkl / .onnx) with the build, va
 - `.pkl` models are loaded in a sandboxed Python subprocess with `restrictedpython` or
   equivalent; never trusted to execute arbitrary code at load time.
 - `.onnx` models run through `onnxruntime.InferenceSession` with the operator allowlist
-  specified in `libvmaf/src/dnn/allowed_ops.txt`.
+  specified in `core/src/dnn/allowed_ops.txt`.
 - Tiny-AI model artifacts must have replay evidence. New exporter/trainer
   sidecars use `aiutils.run_manifest.write_run_manifest()` unless they are
   embedding provenance into an already-stable report schema.

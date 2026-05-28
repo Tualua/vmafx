@@ -22,19 +22,19 @@ fp64-less devices were stuck on the slow path.
 
 Auditing the kernels showed the warning text was wrong:
 
-- `libvmaf/src/feature/sycl/integer_adm_sycl.cpp` already implements gain
+- `core/src/feature/sycl/integer_adm_sycl.cpp` already implements gain
   limiting via the int64 Q31 split-multiply (`gain_limit_to_q31` +
   `launch_decouple_csf<false>`); the `<true>` (fp64) instantiation is
   never compiled. The comment block in that file explicitly cites the
   Intel Arc A-series rationale and warns that even a single `double`
   operand inside a sibling lambda would taint the whole SPIR-V module
   and crash the runtime on fp64-less devices.
-- `libvmaf/src/feature/sycl/integer_vif_sycl.cpp` runs gain limiting
+- `core/src/feature/sycl/integer_vif_sycl.cpp` runs gain limiting
   entirely in fp32 (`sycl::fmin(g, vif_enhn_gain_limit)` over `float`
   operands). The launcher casts the host's `double
   vif_enhn_gain_limit` to `float` before kernel submission.
-- `libvmaf/src/feature/sycl/integer_ciede_sycl.cpp` and
-  `libvmaf/src/feature/sycl/integer_ssim_sycl.cpp` accumulate via
+- `core/src/feature/sycl/integer_ciede_sycl.cpp` and
+  `core/src/feature/sycl/integer_ssim_sycl.cpp` accumulate via
   `sycl::reduction<int64_t>` / `sycl::plus<int64_t>`; neither reaches for
   `sycl::reduction<double>`.
 - The float-input extractors (`float_vif_sycl.cpp`,
@@ -95,8 +95,8 @@ gain-limiting, because there is no fp64 kernel to dispatch to.
 - ADR-0181 (feature-characteristics registry) — possible host for a
   future `requires_fp64` aspect field if a fp64-only optimisation ever
   lands.
-- `libvmaf/src/feature/sycl/integer_adm_sycl.cpp` lines 460–520 — the
+- `core/src/feature/sycl/integer_adm_sycl.cpp` lines 460–520 — the
   gain-limit Q31 design comment.
-- `libvmaf/src/feature/sycl/integer_ciede_sycl.cpp` lines 60–80 — the
+- `core/src/feature/sycl/integer_ciede_sycl.cpp` lines 60–80 — the
   fp64-free accumulator commentary.
 - Related issues / PRs: this ADR's PR.

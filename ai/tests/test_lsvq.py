@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Unit tests for :mod:`ai.scripts.lsvq_to_corpus_jsonl` (ADR-0367).
 
 These tests exercise the LSVQ adapter's pure-Python contract

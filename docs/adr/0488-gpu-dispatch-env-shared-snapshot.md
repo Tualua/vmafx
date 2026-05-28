@@ -15,7 +15,7 @@ are launched and cache it — calling `getenv()` from concurrent threads is
 POSIX.1-2008 §2.2.2 `concurrency-mt-unsafe` if another thread may be calling
 `setenv()`/`putenv()` simultaneously.
 
-The CUDA backend (`libvmaf/src/cuda/dispatch_strategy.c`, ADR-0181) already
+The CUDA backend (`core/src/cuda/dispatch_strategy.c`, ADR-0181) already
 used a bespoke `pthread_once` / `InitOnceExecuteOnce` block (~35 LOC) to
 snapshot `VMAF_CUDA_DISPATCH`. The Vulkan and SYCL backends called `getenv()`
 directly on every `select_strategy()` invocation, leaving the same latent
@@ -26,7 +26,7 @@ the same posture without duplicating the boilerplate.
 
 ## Decision
 
-Introduce `libvmaf/src/gpu_dispatch_env.{h,c}` with a single function:
+Introduce `core/src/gpu_dispatch_env.{h,c}` with a single function:
 
 ```c
 const char *vmaf_gpu_dispatch_env_get(const char *var_name);

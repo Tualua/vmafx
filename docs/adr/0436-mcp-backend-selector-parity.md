@@ -26,7 +26,7 @@ Concretely:
 - `_list_backends()` returned a 4-key dict (`cpu`, `cuda`, `sycl`,
   `hip`) that omitted `vulkan` and `metal` entirely.
 
-The libvmaf CLI itself (`libvmaf/tools/cli_parse.c`) has shipped
+The libvmaf CLI itself (`core/tools/cli_parse.c`) has shipped
 `--no_vulkan`, `--no_hip`, and `--no_metal` for months; the MCP
 surface had simply not caught up.
 
@@ -89,6 +89,6 @@ libvmaf's CLI by:
 ## References
 
 - Audit slice D §D.1.1 (`.workingdir/audit-2026-05-15/D-mcp-and-backends.md`).
-- `libvmaf/tools/cli_parse.c` — source of the `--no_<backend>` flags.
+- `core/tools/cli_parse.c` — source of the `--no_<backend>` flags.
 - ADR-0451 — local dev-MCP container that exercises this surface.
 - Test fixture: `mcp-server/vmaf-mcp/tests/test_backend_dispatch.py`.

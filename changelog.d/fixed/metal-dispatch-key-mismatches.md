@@ -1,5 +1,5 @@
 Fix five wrong or spurious entries in the Metal backend dispatch support table
-(`libvmaf/src/metal/dispatch_strategy.c`). Three feature-key strings did not
+(`core/src/metal/dispatch_strategy.c`). Three feature-key strings did not
 match the values emitted by their extractors' `provided_features[]` arrays,
 causing `vmaf_metal_dispatch_supports()` to silently return false for
 `float_motion` motion/motion2, `integer_motion` motion2, and

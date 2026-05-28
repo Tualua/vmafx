@@ -18,16 +18,16 @@ full-frame `memcpy` per frame.
 
 The port touches five files:
 
-- `libvmaf/tools/vidinput.h` — new `video_input_fetch_into_vmaf_picture_func`
+- `core/tools/vidinput.h` — new `video_input_fetch_into_vmaf_picture_func`
   typedef, new `fetch_into_vmaf_picture` vtable member, new public declaration.
-- `libvmaf/tools/vidinput.c` — new `video_input_fetch_into_vmaf_picture()`
+- `core/tools/vidinput.c` — new `video_input_fetch_into_vmaf_picture()`
   dispatcher.
-- `libvmaf/tools/yuv_input.c` — `yuv_fetch_into_vmaf_picture()` implementation
+- `core/tools/yuv_input.c` — `yuv_fetch_into_vmaf_picture()` implementation
   + vtable update.
-- `libvmaf/tools/y4m_input.c` — `y4m_fetch_into_vmaf_picture()` implementation
+- `core/tools/y4m_input.c` — `y4m_fetch_into_vmaf_picture()` implementation
   (falls back to `-1` when a colour-space conversion is required) + vtable
   update.
-- `libvmaf/tools/vmaf.c` — `fetch_picture()` restructured so the
+- `core/tools/vmaf.c` — `fetch_picture()` restructured so the
   `#ifdef USE_DIRECT_READ` path calls `video_input_fetch_into_vmaf_picture`;
   the non-`USE_DIRECT_READ` path retains the old `video_input_fetch_frame` +
   `copy_picture_data` sequence.  Pool default raised from 2 to 3 pictures.

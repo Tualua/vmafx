@@ -1,9 +1,9 @@
 # Tiny-AI extractor template
 
 This page is the recipe for adding a new tiny-AI feature extractor to
-`libvmaf/src/feature/`. It pairs with [ADR-0250](../adr/0250-tiny-ai-extractor-template.md)
+`core/src/feature/`. It pairs with [ADR-0250](../adr/0250-tiny-ai-extractor-template.md)
 and the shared scaffolding header
-[`libvmaf/src/dnn/tiny_extractor_template.h`](../../libvmaf/src/dnn/tiny_extractor_template.h).
+[`core/src/dnn/tiny_extractor_template.h`](../../core/src/dnn/tiny_extractor_template.h).
 
 ## Why a template
 
@@ -18,7 +18,7 @@ single-frame extractor is ~30 LOC of model-specific tensor wiring.
 
 Three `static inline` helpers + one struct-literal-emitting macro,
 documented inline in
-[`tiny_extractor_template.h`](../../libvmaf/src/dnn/tiny_extractor_template.h):
+[`tiny_extractor_template.h`](../../core/src/dnn/tiny_extractor_template.h):
 
 | Symbol | Purpose |
 |---|---|
@@ -220,7 +220,7 @@ the way of the per-frame data shape.
   the failure log line is uniform and `vmaf_dnn_validate_onnx` is run
   before `CreateSession` (the public API performs this; the helper
   doesn't bypass it).
-- **Do** ship a smoke unit test under `libvmaf/test/test_<name>.c`
+- **Do** ship a smoke unit test under `core/test/test_<name>.c`
   mirroring `test_lpips.c` — exercises registration + options-table
   contract.
 - **Don't** add `getenv` calls outside `vmaf_tiny_ai_resolve_model_path`
@@ -244,7 +244,7 @@ tiny-AI PR ships docs in the same PR. Minimum:
    shipped.
 3. **Registry entry** in `model/tiny/registry.json` — sha256, license,
    `smoke: true` for placeholder weights.
-4. **Unit test** in `libvmaf/test/test_<name>.c`.
+4. **Unit test** in `core/test/test_<name>.c`.
 5. **ADR** under `docs/adr/` — design + alternatives.
 
 The template doesn't change the documentation bar — it just shrinks

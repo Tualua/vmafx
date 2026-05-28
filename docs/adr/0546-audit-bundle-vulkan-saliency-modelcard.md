@@ -12,7 +12,7 @@ touch entirely different files and have no coupling, yet each is small enough
 that a dedicated PR per finding would add more review overhead than value.
 
 **Vulkan-01 — `integer_motion_vulkan` extractor missing from dispatch list.**
-`libvmaf/src/feature/vulkan/integer_motion_vulkan.c` exports the symbol
+`core/src/feature/vulkan/integer_motion_vulkan.c` exports the symbol
 `vmaf_fex_integer_motion_vulkan_impl` and its source comment states that
 `feature_extractor.c` "registers both" this extractor and the legacy
 `motion_vulkan` one.  The `extern` declaration (line 99) existed in

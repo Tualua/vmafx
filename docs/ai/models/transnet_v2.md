@@ -82,7 +82,7 @@ involved); see `_replace_segmentsum` in `ai/scripts/export_transnet_v2.py`.
 
 ## Op allowlist update
 
-This PR extends `libvmaf/src/dnn/op_allowlist.c` with six new ops that
+This PR extends `core/src/dnn/op_allowlist.c` with six new ops that
 appear in the upstream TransNet V2 graph: `BitShift`, `GatherND`, `Pad`,
 `Reciprocal`, `ReduceProd`, `ScatterND`. Each is a deterministic
 standard ONNX op with bounded runtime cost (no control-flow, no host
@@ -91,7 +91,7 @@ allocation). Rationale + alternatives in
 
 ## Frame window contract
 
-The C extractor (`libvmaf/src/feature/transnet_v2.c`) maintains a
+The C extractor (`core/src/feature/transnet_v2.c`) maintains a
 100-slot ring buffer of pre-resized RGB thumbnail tensors. Each
 `extract()` call:
 
@@ -121,18 +121,18 @@ detector hasn't seen enough context to make a confident decision.
 
 ```bash
 # 1. Build libvmaf with DNN support enabled.
-meson setup libvmaf/build-cpu -Denable_dnn=true
-ninja -C libvmaf/build-cpu
+meson setup core/build-cpu -Denable_dnn=true
+ninja -C core/build-cpu
 
 # 2. Run the extractor against a clip, supplying the model path.
-libvmaf/build-cpu/tools/vmaf \
+core/build-cpu/tools/vmaf \
     --reference ref.yuv --distorted dis.yuv \
     --width 1920 --height 1080 --pixel_format yuv420p --bitdepth 8 \
     --feature transnet_v2=model_path=model/tiny/transnet_v2.onnx
 
 # Or via env var (matches lpips_sq / fastdvdnet_pre):
 VMAF_TRANSNET_V2_MODEL_PATH=model/tiny/transnet_v2.onnx \
-    libvmaf/build-cpu/tools/vmaf --feature transnet_v2 ...
+    core/build-cpu/tools/vmaf --feature transnet_v2 ...
 ```
 
 The extractor declines cleanly (non-fatal `-EINVAL`) if neither
@@ -174,10 +174,10 @@ SavedModel before declaring success.
 ## Smoke test
 
 The C-side registration + options-table contract + dual-feature
-surface is exercised by `libvmaf/test/test_transnet_v2.c`:
+surface is exercised by `core/test/test_transnet_v2.c`:
 
 ```bash
-meson test -C libvmaf/build test_transnet_v2
+meson test -C core/build test_transnet_v2
 ```
 
 To smoke the full 100-frame round-trip via Python ORT:

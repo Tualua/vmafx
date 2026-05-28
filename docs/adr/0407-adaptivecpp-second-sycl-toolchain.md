@@ -28,7 +28,7 @@ open-source SYCL implementation in 2026.
 The audit identified two showstoppers: (1) ten kernel sites use the
 Intel-specific `[[intel::reqd_sub_group_size(32)]]` attribute (and
 one uses `SG_SIZE` parameterised) that AdaptiveCpp rejects; (2) the
-`libvmaf/src/meson.build` SYCL block hard-codes icpx-only flags
+`core/src/meson.build` SYCL block hard-codes icpx-only flags
 (`-fsycl`, `-fp-model=precise`) and Intel runtime libraries (`svml`,
 `irc`). Both are mechanical to wrap.
 
@@ -39,19 +39,19 @@ one uses `SG_SIZE` parameterised) that AdaptiveCpp rejects; (2) the
 
 Concretely:
 
-1. **`libvmaf/src/feature/sycl/sycl_compat.h`** (new, ~60 LOC). One
+1. **`core/src/feature/sycl/sycl_compat.h`** (new, ~60 LOC). One
    public macro: `VMAF_SYCL_REQD_SG_SIZE(N)`. Expands to the Intel
    attribute under `__INTEL_LLVM_COMPILER`, to a no-op under
    `SYCL_IMPLEMENTATION_ACPP` / `SYCL_IMPLEMENTATION_HIPSYCL`. The
    ten previously hard-coded call sites switch to the macro.
-2. **`libvmaf/src/meson.build`** detects the configured
+2. **`core/src/meson.build`** detects the configured
    `sycl_compiler` by basename. `acpp` / `syclcc` / `syclcc-clang`
    take the AdaptiveCpp path: `--acpp-targets=<value>` instead of
    `-fsycl`, `-ffp-contract=off` instead of `-fp-model=precise`,
    and `libacpp-rt.so` (with `libhipSYCL-rt.so` legacy fallback) as
    the runtime library. Intel `svml` / `irc` are skipped under
    AdaptiveCpp.
-3. **`libvmaf/meson_options.txt`** adds `sycl_acpp_targets` (default
+3. **`core/meson_options.txt`** adds `sycl_acpp_targets` (default
    `generic`) so contributors can override the AdaptiveCpp target
    list (e.g. `omp;cuda:sm_75`). `sycl_compiler` description is
    updated to advertise both toolchains.
@@ -131,7 +131,7 @@ ships the build plumbing only).
   recipe + clang-tidy wrapper.
 - [ADR-0220](0220-sycl-fp64-fallback.md) — fp64-free kernel
   contract (preserved verbatim under both toolchains).
-- [`libvmaf/src/sycl/AGENTS.md`](../../libvmaf/src/sycl/AGENTS.md)
+- [`core/src/sycl/AGENTS.md`](../../core/src/sycl/AGENTS.md)
   — SYCL invariants on rebase.
 - AdaptiveCpp upstream: <https://adaptivecpp.github.io/AdaptiveCpp/>
   (compiler identification macros, target syntax).

@@ -50,12 +50,12 @@ backends.
 Land the IOSurface import path in a single PR carrying both the
 C-API surface and the working implementation:
 
-- **Public API additions** in `libvmaf/include/libvmaf/libvmaf_metal.h`:
+- **Public API additions** in `core/include/libvmaf/libvmaf_metal.h`:
   `VmafMetalExternalHandles`, `vmaf_metal_state_init_external`,
   `vmaf_metal_picture_import`, `vmaf_metal_wait_compute`,
   `vmaf_metal_read_imported_pictures`. Lifetime + same-device model
   symmetric to the Vulkan import surface (ADR-0184 / ADR-0186).
-- **Implementation** in `libvmaf/src/metal/picture_import.mm`:
+- **Implementation** in `core/src/metal/picture_import.mm`:
   `IOSurfaceLock(kIOSurfaceLockReadOnly)` + per-row memcpy into a
   shared-storage `VmafPicture` allocated via `vmaf_picture_alloc`.
   Ring depth of 2 slots matches the SYCL preallocation pool and
@@ -76,7 +76,7 @@ C-API surface and the working implementation:
   an `AVMetalDeviceContext`; the documented limitation is a
   multi-GPU Mac Pro device-match gap covered by the same-device
   invariant inherited from ADR-0184.
-- **Tests** in `libvmaf/test/test_metal_smoke.c`: input-validation
+- **Tests** in `core/test/test_metal_smoke.c`: input-validation
   assertions on every new entry point + a
   default-device-success-or-`-ENODEV` skip semantics for
   `vmaf_metal_state_init_external`.

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Validate the exported ``vmaf_tiny_v4.onnx`` against ground truth.
 
 Mirrors ``validate_vmaf_tiny_v3.py``. Loads the exported ONNX, runs

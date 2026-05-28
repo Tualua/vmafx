@@ -40,7 +40,7 @@ op-allowlist analysis behind the choice of TinyU-Net (~113 K params,
 3 down + 3 up + skip connections, `ConvTranspose` upsample) trained
 with BCE + Dice loss on Adam lr=1e-3 for 50 epochs. The chosen
 architecture uses only ops already on
-`libvmaf/src/dnn/op_allowlist.c` so the resulting graph loads
+`core/src/dnn/op_allowlist.c` so the resulting graph loads
 unchanged against vanilla origin/master without an allowlist patch in
 the same PR.
 
@@ -70,7 +70,7 @@ redistributed in-tree; only the trained weights are.
 | Re-investigate U-2-Net `u2netp` real-weights swap | Apache-2.0 codebase; pure RGB; well-known SOD architecture; pretrained `u2netp` is 4.7 MB | Trained checkpoints distributed via Google Drive viewer URLs (same problem ADR-0257 hit on MobileSal); 4.7 MB dwarfs every other entry under `model/tiny/`; legal review still required for the trained-weight redistribution chain | Rejected — the licence-compatible code surface is welcome but the licence-compatible weights surface still isn't reachable |
 | Ship the placeholder forever and rely on `saliency_mean` as a content-independent constant | Zero engineering | Defeats the purpose of having `saliency_mean` as a feature; downstream consumers see no signal; ADR-0257's "Negative" consequence stays open | Rejected — the deferral was always meant to unblock |
 | Train on a larger / multi-dataset corpus (DUTS-TR ∪ MSRA10K ∪ HKU-IS) | Better absolute IoU; more diverse content | Multiple licence audits; bigger training script; longer wall-clock | Held in reserve as `saliency_student_v2`; v1 establishes the pattern with the simplest possible single-dataset recipe |
-| Use `Resize` for upsampling instead of `ConvTranspose` | More common in upstream SOD code; one fewer parameter group | `Resize` is not on `libvmaf/src/dnn/op_allowlist.c` at the time of this PR; adding it widens the PR scope into a new C-side audit + scanner change in the same diff as the training run | Rejected — `ConvTranspose` is on the allowlist already and produces a numerically equivalent stride-2 upsample for our purposes |
+| Use `Resize` for upsampling instead of `ConvTranspose` | More common in upstream SOD code; one fewer parameter group | `Resize` is not on `core/src/dnn/op_allowlist.c` at the time of this PR; adding it widens the PR scope into a new C-side audit + scanner change in the same diff as the training run | Rejected — `ConvTranspose` is on the allowlist already and produces a numerically equivalent stride-2 upsample for our purposes |
 | Rename the C-side extractor `mobilesal` → `saliency` | Reflects the new model lineage | Breaks every external consumer's `--feature mobilesal` flag and every JSON output column named `saliency_mean` (which it stays, regardless of the underlying weights); pure churn | Rejected — the extractor name is API surface; the model identity changes, the extractor doesn't |
 
 ## Consequences

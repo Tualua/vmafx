@@ -37,7 +37,7 @@ Lawrence's BtbN-style fully-static FFmpeg build (cross-toolchain,
 ```
 $ pkg-config --cflags libvmaf
 -I/opt/ffbuild/include/libvmaf -DVK_NO_PROTOTYPES \
-  -include /45-vmaf/lusoris/libvmaf/build/subprojects/volk-vulkan-sdk-1.4.341.0/volk_priv_remap.h \
+  -include /45-vmaf/lusoris/core/build/subprojects/volk-vulkan-sdk-1.4.341.0/volk_priv_remap.h \
   -pthread
 ```
 
@@ -47,7 +47,7 @@ with the leaked Cflags, hit:
 
 ```
 <command-line>: fatal error: \
-  /45-vmaf/lusoris/libvmaf/build/subprojects/volk-vulkan-sdk-1.4.341.0/volk_priv_remap.h: \
+  /45-vmaf/lusoris/core/build/subprojects/volk-vulkan-sdk-1.4.341.0/volk_priv_remap.h: \
   No such file or directory
 compilation terminated.
 ```
@@ -123,14 +123,14 @@ them either way.
   configure log showing the leaked path.
 - Pre-fix verification (this dev box):
   ```
-  $ grep Cflags libvmaf/build-vk-static-test/meson-private/libvmaf.pc
+  $ grep Cflags core/build-vk-static-test/meson-private/libvmaf.pc
   Cflags: -I${includedir} -I${includedir}/libvmaf -DVK_NO_PROTOTYPES \
-          -include /home/kilian/dev/vmaf/libvmaf/build-vk-static-test/subprojects/.../volk_priv_remap.h \
+          -include /home/kilian/dev/vmaf/core/build-vk-static-test/subprojects/.../volk_priv_remap.h \
           -pthread
   ```
 - Post-fix verification:
   ```
-  $ grep Cflags libvmaf/build-vk-static-test/meson-private/libvmaf.pc
+  $ grep Cflags core/build-vk-static-test/meson-private/libvmaf.pc
   Cflags: -I${includedir} -I${includedir}/libvmaf -DVK_NO_PROTOTYPES -pthread
   ```
 - Parent: [ADR-0198](0198-volk-priv-remap-static-archive.md) —

@@ -1,6 +1,6 @@
 - **`float_ansnr_hip`: `hipMemcpy2DAsync` direction tagged
   `hipMemcpyDeviceToDevice` for host→device transfer**: `submit_fex_hip`
-  in `libvmaf/src/feature/hip/float_ansnr_hip.c:324,330` copied
+  in `core/src/feature/hip/float_ansnr_hip.c:324,330` copied
   host-side `ref_pic->data[0]` / `dist_pic->data[0]` into device-side
   staging buffers `s->ref_in` / `s->dis_in` but tagged the transfer
   direction as `hipMemcpyDeviceToDevice`. Modern ROCm tolerates this

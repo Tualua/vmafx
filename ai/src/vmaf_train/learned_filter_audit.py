@@ -9,7 +9,7 @@ over a corpus of representative frames and flags any of four failure
 modes before the model is shipped.
 
 Scope note: this is a pre-deploy Python QA tool, not a runtime vmaf
-feature extractor. We decided against a libvmaf/src/feature/
+feature extractor. We decided against a core/src/feature/
 learned_filter_audit.c plugin because the audit only needs to run
 once per model release, not per frame in production — the cost of
 wiring a new C feature extractor + dispatch integration exceeds the

@@ -8,7 +8,7 @@
 ## Context
 
 Backlog item T3-5 called for an AVX2 + NEON port of
-[`psnr_hvs`](../../libvmaf/src/feature/third_party/xiph/psnr_hvs.c)
+[`psnr_hvs`](../../core/src/feature/third_party/xiph/psnr_hvs.c)
 — a perceptual PSNR variant based on Xiph/Daala's 8×8 integer DCT
 with contrast-sensitivity weighting and masking. Per user popup
 2026-04-24, the scope is split:
@@ -48,7 +48,7 @@ This ADR re-applies the same rule to psnr_hvs.
 ## Decision
 
 Port `calc_psnrhvs` to AVX2 in a new TU
-[`libvmaf/src/feature/x86/psnr_hvs_avx2.c`](../../libvmaf/src/feature/x86/psnr_hvs_avx2.c)
+[`core/src/feature/x86/psnr_hvs_avx2.c`](../../core/src/feature/x86/psnr_hvs_avx2.c)
 under the constraint that **every `od_coeff` emitted by the DCT and
 every final `psnr_hvs_{y,cb,cr,psnr_hvs}` feature score is
 byte-identical between the scalar path and the AVX2 path on all
@@ -186,7 +186,7 @@ NOLINT accounting (all with inline ADR-0141 citations):
 ## References
 
 - Xiph/Daala DCT source:
-  [`libvmaf/src/feature/third_party/xiph/psnr_hvs.c`](../../libvmaf/src/feature/third_party/xiph/psnr_hvs.c)
+  [`core/src/feature/third_party/xiph/psnr_hvs.c`](../../core/src/feature/third_party/xiph/psnr_hvs.c)
   (BSD-licensed, `Copyright 2001-2012 Xiph.Org`).
 - [ADR-0138](0138-iqa-convolve-avx2-bitexact-double.md) — AVX2
   convolve bit-exact via double accumulators.

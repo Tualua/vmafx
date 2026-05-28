@@ -177,10 +177,10 @@ Same six deliverables as batches 1 + 2, per
 - Per-metric ADRs (batch 1 + 2 precedent): [ADR-0183](0183-ffmpeg-libvmaf-sycl-filter.md)
   ... [ADR-0191](0191-psnr-hvs-vulkan.md).
 - CPU references for batch 3:
-  [`integer_motion_v2.c`](../../libvmaf/src/feature/integer_motion_v2.c),
-  [`float_ansnr.c`](../../libvmaf/src/feature/float_ansnr.c),
-  [`ssimulacra2.c`](../../libvmaf/src/feature/ssimulacra2.c),
-  [`cambi.c`](../../libvmaf/src/feature/cambi.c).
+  [`integer_motion_v2.c`](../../core/src/feature/integer_motion_v2.c),
+  [`float_ansnr.c`](../../core/src/feature/float_ansnr.c),
+  [`ssimulacra2.c`](../../core/src/feature/ssimulacra2.c),
+  [`cambi.c`](../../core/src/feature/cambi.c).
 - User direction: AskUserQuestion popup, 2026-04-27 — "All remaining
   gaps in one batch" / "Yes, draft ADR-0192 now".
 
@@ -205,7 +205,7 @@ in the same session. `psnr_sycl` now emits `psnr_y` / `psnr_cb` /
 `psnr_cr`. The implementation differs from CUDA in one structural
 respect: SYCL's existing shared frame buffer
 (`vmaf_sycl_shared_frame_init`) is luma-only by design (see
-[`libvmaf/src/sycl/common.h`](../../libvmaf/src/sycl/common.h)), so
+[`core/src/sycl/common.h`](../../core/src/sycl/common.h)), so
 chroma planes ride on per-extractor device buffers populated by
 host-side staging copies in the combined-graph `pre_fn`. Luma stays
 graph-recorded; chroma kernels run direct in `post_fn` on the same

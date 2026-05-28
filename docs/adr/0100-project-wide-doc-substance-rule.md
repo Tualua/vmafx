@@ -36,9 +36,9 @@ changes are excluded.
 
 Anything a user or contributor might need to learn to use it:
 
-- New or changed **CLI flag** or CLI binary (`libvmaf/tools/`, `ai/`, `mcp-server/`).
-- New or changed **public C API** (anything under `libvmaf/include/`).
-- New or changed **feature extractor** (`libvmaf/src/feature/feature_*.c`).
+- New or changed **CLI flag** or CLI binary (`core/tools/`, `ai/`, `mcp-server/`).
+- New or changed **public C API** (anything under `core/include/`).
+- New or changed **feature extractor** (`core/src/feature/feature_*.c`).
 - New or changed **GPU backend** or SIMD path (user-visible through
   backend selection or perf characteristics).
 - New or changed **build flag** (`meson_options.txt`), including what
@@ -57,7 +57,7 @@ Anything a user or contributor might need to learn to use it:
 | --- | --- |
 | **Tiny-AI (models, extractors, training CLI, MCP VLM tools)** | As [ADR-0042](0042-tinyai-docs-required-per-pr.md): (a) plain-English description, (b) output range + interpretation, (c) runnable copy-pasteable example, (d) checkpoint provenance + sha256, (e) known limitations. |
 | **CLI flag / binary** (`vmaf`, `vmaf_bench`, `vmaf-train`, future `vmaf-roi`, `vmaf-perShot`) | (a) what it does, (b) arguments + defaults, (c) runnable example producing concrete output, (d) how the output surfaces (stderr / file format / exit code), (e) interaction with other flags or known limitations. |
-| **Public C API** (additions / changes under `libvmaf/include/`) | (a) what the function / type does, (b) inputs + outputs, including ownership + lifetime, (c) thread-safety note, (d) ABI stability tag (stable / experimental), (e) runnable C snippet, (f) error semantics (return codes / errno / `VMAF_ERR_*`). |
+| **Public C API** (additions / changes under `core/include/`) | (a) what the function / type does, (b) inputs + outputs, including ownership + lifetime, (c) thread-safety note, (d) ABI stability tag (stable / experimental), (e) runnable C snippet, (f) error semantics (return codes / errno / `VMAF_ERR_*`). |
 | **Feature extractor** | (a) what the feature measures in plain English, (b) numeric range + how to interpret it, (c) invocation example via `--feature=` or C API, (d) supported input formats (bit-depth, chroma subsampling, color space), (e) known limitations vs the reference paper or upstream implementation. |
 | **GPU backend / SIMD path** | (a) what it enables and the prerequisites (toolchain, SDK version), (b) how to build with it (`meson setup` line), (c) how to invoke (backend selection flag or feature name), (d) numerical agreement vs CPU reference (ULP budget), (e) known gaps (which features not yet ported). |
 | **Build flag** (`meson_options.txt`) | (a) what it enables, (b) default, (c) dependencies pulled in, (d) runtime effect (fatal if missing at runtime? graceful fallback? feature simply unavailable?). |
@@ -111,7 +111,7 @@ navigation consistent with what MkDocs already renders.
   - [AGENTS.md](../../AGENTS.md) §12 rule 7 mirrored.
   - [README.md](README.md) index updated with the ADR-0100 row.
   - Future work: a lightweight CI script that flags PRs whose diff
-    touches specific path sets (e.g. `libvmaf/include/`,
+    touches specific path sets (e.g. `core/include/`,
     `meson_options.txt`, `mcp-server/`) without a corresponding `docs/`
     diff. Not blocking v1 — human review carries the rule for now.
 

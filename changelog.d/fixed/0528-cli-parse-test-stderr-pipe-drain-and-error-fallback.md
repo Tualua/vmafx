@@ -1,6 +1,6 @@
 # fix(cli): unbreak `test_cli_parse_long_only_args::test_threads_invalid_optarg_does_not_assert` + harden `error()` (ADR-0528)
 
-`libvmaf/test/test_cli_parse_long_only_args.c`'s `test_threads_invalid_optarg_does_not_assert`
+`core/test/test_cli_parse_long_only_args.c`'s `test_threads_invalid_optarg_does_not_assert`
 (regression test for ADR-0316 / ADR-0438) was failing on master even though
 the product code itself was correct — invoking `vmaf --threads abc` from a
 shell exits `rc=1` with an "Invalid argument" diagnostic.
@@ -14,13 +14,13 @@ rejected the run.
 
 Fix:
 
-- Test (`libvmaf/test/test_cli_parse_long_only_args.c`): extract a
+- Test (`core/test/test_cli_parse_long_only_args.c`): extract a
   `read_head_drain_tail()` helper that captures the first 511 bytes (enough
   for the "Invalid argument …" needle that always precedes the usage block)
   and then drains the remainder into a scratch buffer so the writer never
   blocks or `SIGPIPE`s. Extract the child-side `dup2 + cli_parse + _exit`
   into `child_parse_via_pipe()` for `readability-function-size` headroom.
-- Product (`libvmaf/tools/cli_parse.c::error()`): replace
+- Product (`core/tools/cli_parse.c::error()`): replace
   `assert(long_opts[n].name)` with an explicit `usage()` fallback (banned
   macro per `principles.md §1.2 rule 30`; `-DNDEBUG` would silently no-op
   the check anyway). Replace two `sprintf(optname, …)` calls on a 256-byte

@@ -19,8 +19,8 @@ extend-exclude = '''
   | dist
   | subprojects
   | python/test/resource
-  | python/vmaf/resource
-  | python/vmaf/matlab
+  | compat/python-vmaf/resource
+  | compat/python-vmaf/matlab
 )/
 '''
 
@@ -33,8 +33,8 @@ skip_glob = [
   "build/*",
   "subprojects/*",
   "python/test/resource/*",
-  "python/vmaf/resource/*",
-  "python/vmaf/matlab/*",
+  "compat/python-vmaf/resource/*",
+  "compat/python-vmaf/matlab/*",
 ]
 
 [tool.ruff]
@@ -44,8 +44,8 @@ extend-exclude = [
   "build",
   "subprojects",
   "python/test/resource",
-  "python/vmaf/resource",
-  "python/vmaf/matlab",
+  "compat/python-vmaf/resource",
+  "compat/python-vmaf/matlab",
 ]
 
 [tool.ruff.lint]
@@ -97,7 +97,7 @@ known-first-party = ["vmaf", "ai", "vmaf_train", "corpus", "aiutils"]
 # (Resource tree is also in [tool.ruff] extend-exclude; this per-file
 # ignore block stays as a belt-and-suspenders guard for any files that
 # slip past the directory exclude.)
-"python/vmaf/resource/**" = [
+"compat/python-vmaf/resource/**" = [
     "S", "PL", "B", "SIM", "RUF", "I001",
     "F401", "F541", "F841",
     "E401", "E402", "E701", "E711", "E722", "W291", "W292",
@@ -114,18 +114,6 @@ markers = [
   "netflix_golden: the 3 Netflix CPU golden test pairs (D24) — must always pass",
   "slow: tests that take more than 30s",
   "gpu: requires a GPU backend (CUDA/SYCL)",
-]
-# Suppress DeprecationWarnings from PyTorch 2.9+ that fire unconditionally
-# when torch.onnx.export is called with dynamo=False (the legacy TorchScript
-# path).  The fork intentionally pins dynamo=False for all ONNX exports
-# because the dynamo exporter does not yet handle the quantisation-related
-# intermediate buffers produced by convert_fx (see ADR-0207 §Why two-step).
-# The warnings originate inside torch/onnx/__init__.py and cannot be avoided
-# by callers — suppression at the pytest config level is the standard remedy.
-filterwarnings = [
-    "ignore:You are using the legacy TorchScript-based ONNX export:DeprecationWarning",
-    "ignore:from_dynamic_axes_to_dynamic_shapes is deprecated:DeprecationWarning",
-    "ignore:The feature will be removed. Please remove usage of this function:DeprecationWarning",
 ]
 
 [tool.mypy]

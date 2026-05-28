@@ -1,7 +1,7 @@
 ### Added
 
 - HIP (AMD ROCm) backend runtime — flips
-  `libvmaf/src/hip/{common,kernel_template}.c` from the audit-first
+  `core/src/hip/{common,kernel_template}.c` from the audit-first
   `-ENOSYS` scaffold (ADR-0212) to real HIP runtime calls. New
   builds with `-Denable_hip=true` now hard-link `libamdhip64` and
   expose a working `vmaf_hip_state_init` /

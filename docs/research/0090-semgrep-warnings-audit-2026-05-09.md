@@ -30,7 +30,7 @@ with cite; rule-not-applicable → defer with reason.
 
 The 25 parser warnings are semgrep-OSS C-parser limitations (`Failure:
 ii_of_name: IdDeref`, "single name expected for simple var" on legitimate
-code in `libvmaf/src/sycl/common.cpp`, `libvmaf/src/feature/adm.c`, etc).
+code in `core/src/sycl/common.cpp`, `core/src/feature/adm.c`, etc).
 They are not actionable without an upstream semgrep fix; they do not
 suppress findings (the rule simply skips the file).
 

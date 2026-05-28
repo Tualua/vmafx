@@ -13,7 +13,7 @@ landed in PR #139 + PR #140 with empirical `places=4`,
 `max_abs = 1.0e-6`. ms_ssim picks up where ssim left off.
 
 The active CPU `float_ms_ssim` extractor
-([`float_ms_ssim.c`](../../libvmaf/src/feature/float_ms_ssim.c))
+([`float_ms_ssim.c`](../../core/src/feature/float_ms_ssim.c))
 runs the Wang multi-scale variant:
 
 1. `picture_copy` → float ref/cmp at `[0, 255]` per ssim's
@@ -26,9 +26,9 @@ runs the Wang multi-scale variant:
    `ms_ssim_decimate_avx512` /
    `ms_ssim_decimate_neon`). Coefficients are bit-exact across
    the SIMD paths — the rebase-sensitive invariant in
-   [`ms_ssim_decimate.c`](../../libvmaf/src/feature/ms_ssim_decimate.c)
+   [`ms_ssim_decimate.c`](../../core/src/feature/ms_ssim_decimate.c)
    pins them to `g_lpf_h` / `g_lpf_v` in
-   [`ms_ssim.c`](../../libvmaf/src/feature/ms_ssim.c).
+   [`ms_ssim.c`](../../core/src/feature/ms_ssim.c).
 3. **Per scale (5×)**: run SSIM with the 11-tap Gaussian
    window, but emit three separate aggregates — `l_mean`,
    `c_mean`, `s_mean` — instead of just the combined SSIM mean.
@@ -41,7 +41,7 @@ runs the Wang multi-scale variant:
    Note: α[0..3] = 0, so `l[i]` contributes only at scale 4.
 
 Each scale's `l, c, s` formulas (from
-[`ssim_tools.c`](../../libvmaf/src/feature/iqa/ssim_tools.c)
+[`ssim_tools.c`](../../core/src/feature/iqa/ssim_tools.c)
 `ssim_accumulate_default_scalar`):
 
 ```
@@ -208,7 +208,7 @@ to a focused follow-up.
   176×176 minimum input for the 5-level pyramid + 11-tap
   Gaussian.
 - CPU references:
-  [`float_ms_ssim.c`](../../libvmaf/src/feature/float_ms_ssim.c),
-  [`ms_ssim.c`](../../libvmaf/src/feature/ms_ssim.c),
-  [`ms_ssim_decimate.c`](../../libvmaf/src/feature/ms_ssim_decimate.c),
-  [`iqa/ssim_tools.c`](../../libvmaf/src/feature/iqa/ssim_tools.c).
+  [`float_ms_ssim.c`](../../core/src/feature/float_ms_ssim.c),
+  [`ms_ssim.c`](../../core/src/feature/ms_ssim.c),
+  [`ms_ssim_decimate.c`](../../core/src/feature/ms_ssim_decimate.c),
+  [`iqa/ssim_tools.c`](../../core/src/feature/iqa/ssim_tools.c).

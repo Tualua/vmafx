@@ -12,7 +12,7 @@
   reserved here in [ADR-0349](../docs/adr/0349-fr-regressor-v3-namespace.md)
   + [`ai/AGENTS.md`](../ai/AGENTS.md). The reservation is
   documentation-only because
-  [`libvmaf/test/dnn/test_registry.sh`](../libvmaf/test/dnn/test_registry.sh)
+  [`core/test/dnn/test_registry.sh`](../core/test/dnn/test_registry.sh)
   treats every registry row as a hard contract — a stub row would
   fail CI on day one, so the row lands with the future PR that
   ships the `.onnx`. Rejected: renaming the existing v3 to

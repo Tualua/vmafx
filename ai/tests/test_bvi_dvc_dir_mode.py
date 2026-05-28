@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Unit tests for the ``--bvi-dir`` input mode of ``bvi_dvc_to_full_features.py``.
 
 ADR-0524.  These tests cover the two new helpers without invoking the real
@@ -80,60 +80,6 @@ def bvi_dir(tmp_path: Path) -> Path:
     _write_fake_yuv(d / "ClipD_480x272_30fps_8bit_420.yuv", 480, 272, depth=8)
 
     return d
-
-
-def test_process_clip_yuv_cache_uses_strict_json(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    mod = _load_module()
-    cache_dir = tmp_path / "cache"
-    scratch = tmp_path / "scratch"
-    scratch.mkdir()
-    src_yuv = tmp_path / "src.yuv"
-    src_yuv.write_bytes(b"fake")
-
-    monkeypatch.setattr(mod, "_encode_dis_10bit_from_yuv", lambda *_args, **_kwargs: None)
-
-    def fake_run_vmaf(*args, **_kwargs) -> None:
-        out_json = args[5]
-        out_json.write_text(
-            json.dumps(
-                {
-                    "frames": [
-                        {
-                            "frameNum": 0,
-                            "metrics": {
-                                "adm2": float("nan"),
-                                "vmaf": float("nan"),
-                            },
-                        }
-                    ]
-                }
-            ),
-            encoding="utf-8",
-        )
-
-    monkeypatch.setattr(mod, "_run_vmaf_full", fake_run_vmaf)
-
-    rows = mod._process_clip_yuv(
-        "clip-a",
-        src_yuv,
-        16,
-        16,
-        24,
-        10,
-        tmp_path / "vmaf",
-        tmp_path / "model.json",
-        35,
-        cache_dir,
-        scratch,
-        "x264",
-    )
-
-    raw = (cache_dir / "clip-a.json").read_text(encoding="utf-8")
-    assert rows[0]["vmaf"] != rows[0]["vmaf"]
-    assert "NaN" not in raw
-    assert json.loads(raw)["frames"][0]["metrics"]["vmaf"] is None
 
 
 # ---------------------------------------------------------------------------

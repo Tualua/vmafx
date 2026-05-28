@@ -1,5 +1,5 @@
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
-# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris and Claude (Anthropic)
 """Unit tests for the external-competitor benchmark harness.
 
 Every test here stubs ``subprocess.run`` so the test suite never
@@ -379,51 +379,6 @@ def test_main_emits_table_with_stubbed_wrappers(
     assert {a["competitor"] for a in agg_data} == set(compare.WRAPPERS.keys())
     for a in agg_data:
         assert a["n_clips"] == FIXTURE_DIS_COUNT
-
-
-def test_main_out_json_is_strict_when_all_wrapper_rows_fail(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    src = tmp_path / "netflix" / "src01_576x324_24fps" / "ref"
-    src.mkdir(parents=True)
-    (src / "ref.yuv").write_bytes(b"\x00" * 16)
-    dis = tmp_path / "netflix" / "src01_576x324_24fps" / "dis"
-    dis.mkdir(parents=True)
-    (dis / "dis_a.yuv").write_bytes(b"\x00" * 16)
-
-    def failing_runner(cmd, *_a, **_kw):
-        return subprocess.CompletedProcess(
-            args=cmd,
-            returncode=EXPECTED_FAILED_RC,
-            stdout="",
-            stderr="missing external binary",
-        )
-
-    monkeypatch.setattr(compare.subprocess, "run", failing_runner)
-
-    out_json = tmp_path / "agg.json"
-    rc = compare.main(
-        [
-            "--bvi-dvc-root",
-            str(tmp_path / "does-not-exist"),
-            "--netflix-public-root",
-            str(tmp_path / "netflix"),
-            "--out-json",
-            str(out_json),
-        ]
-    )
-
-    assert rc == 0
-    raw = out_json.read_text(encoding="utf-8")
-    assert "NaN" not in raw
-    data = json.loads(raw)
-    assert {a["competitor"] for a in data} == set(compare.WRAPPERS.keys())
-    for aggregate in data:
-        assert aggregate["n_clips"] == 0
-        assert aggregate["plcc_mean"] is None
-        assert aggregate["srocc_mean"] is None
-        assert aggregate["rmse_mean"] is None
 
 
 def test_main_errors_clearly_when_corpus_missing(

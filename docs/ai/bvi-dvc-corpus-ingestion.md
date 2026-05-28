@@ -63,7 +63,7 @@ instead of `--bvi-zip` to skip the streaming-extraction step entirely:
 python ai/scripts/bvi_dvc_to_full_features.py \
     --bvi-dir /path/to/bvi-dvc-extracted \
     --tier D \
-    --vmaf-bin libvmaf/build-cpu/tools/vmaf \
+    --vmaf-bin core/build-cpu/tools/vmaf \
     --out runs/full_features_bvi_dvc_D.parquet
 ```
 

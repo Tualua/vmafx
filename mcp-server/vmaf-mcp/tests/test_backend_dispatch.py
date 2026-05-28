@@ -1,4 +1,4 @@
-# Copyright 2026 Lusoris
+# Copyright 2026 Lusoris and Claude (Anthropic)
 """Verify ``_run_vmaf_score`` emits the correct ``--no_<backend>`` flag set
 for each backend selector — including ``vulkan``, ``hip``, ``metal``, which
 were missing before this PR and silently fell through to ``auto``."""

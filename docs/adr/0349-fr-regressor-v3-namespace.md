@@ -46,7 +46,7 @@ moves, sha256 unchanged) and reserve `fr_regressor_v3plus_features` as the
 namespace for the canonical-6 + `encoder_internal` + shot + `hwcap`
 feature-set bump. The reservation is documentation-only at this ADR's
 landing — the registry stays unchanged because
-[`libvmaf/test/dnn/test_registry.sh`](../../libvmaf/test/dnn/test_registry.sh)
+[`core/test/dnn/test_registry.sh`](../../core/test/dnn/test_registry.sh)
 treats every registry row as a hard contract (file must exist, sha256 must
 match, sidecar must accompany every `smoke: false` entry). A stub row would
 fail the test on day one. The future PR that ships the new model populates

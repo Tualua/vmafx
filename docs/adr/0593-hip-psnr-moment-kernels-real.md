@@ -11,7 +11,7 @@ Three HIP feature extractors — `integer_psnr_hip`, `integer_psnr_hvs_hip`,
 and `integer_moment_hip` — each ship a host translation unit that loads a
 kernel module via `hipModuleLoadData(..., <name>_hsaco)`.  Prior PRs landed
 the real `.hip` kernel sources for all three under
-`libvmaf/src/feature/hip/integer_{psnr,psnr_hvs,moment}/*.hip`, and the
+`core/src/feature/hip/integer_{psnr,psnr_hvs,moment}/*.hip`, and the
 meson `hip_kernel_sources` dict already pointed at the `integer_psnr` and
 `integer_psnr_hvs` files.
 
@@ -30,7 +30,7 @@ of psnr / psnr_hvs / integer_moment.
 ## Decision
 
 Add a new `integer_moment_score` entry to `hip_kernel_sources` in
-`libvmaf/src/meson.build` pointing at the existing real kernel source
+`core/src/meson.build` pointing at the existing real kernel source
 `feature/hip/integer_moment/moment_score.hip`.  The custom_target emits
 `integer_moment_score_hsaco.c` whose symbol satisfies the
 `integer_moment_hip.c` reference.  The `moment_score` key for float_moment

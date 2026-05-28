@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Empirical bit-equivalence test: polynomial approximation vs the integer-VIF
-log2 lookup table used in `libvmaf/src/feature/integer_vif.c`.
+log2 lookup table used in `core/src/feature/integer_vif.c`.
 
 The table is generated as:
 
@@ -46,7 +46,7 @@ import numpy as np
 
 
 def reference_table() -> np.ndarray:
-    """Match `log_generate()` in libvmaf/src/feature/integer_vif.c."""
+    """Match `log_generate()` in core/src/feature/integer_vif.c."""
     table = np.zeros(65536, dtype=np.uint16)
     # Use float32 + roundf (banker's via numpy.rint after cast).
     idx = np.arange(32767, 65536, dtype=np.uint32)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Train ``saliency_student_v2`` from scratch on DUTS-TR.
 
 This is a fork of ``train_saliency_student.py`` (v1) with **one**
@@ -16,7 +16,7 @@ Background
 ----------
 v1 (ADR-0286, shipped 2026-05-03) deliberately avoided ``Resize``
 because the ONNX op-allowlist
-(``libvmaf/src/dnn/op_allowlist.c``) did not yet admit it.
+(``core/src/dnn/op_allowlist.c``) did not yet admit it.
 ADR-0258 (accepted 2026-05-03) widened the allowlist to include
 ``Resize``. v2 exercises the new affordance and tests whether the
 "Resize + Conv" pattern — the standard U-Net upsampling shape used by
@@ -61,7 +61,7 @@ Usage
 ::
 
     .venv/bin/python ai/scripts/train_saliency_student_v2.py \\
-        --duts-root ~/datasets/duts/DUTS-TR \\
+        --duts-root /home/kilian/datasets/duts/DUTS-TR \\
         --output    model/tiny/saliency_student_v2.onnx \\
         --epochs    50 --batch-size 32 --lr 1e-3 --seed 42
 

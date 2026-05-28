@@ -67,7 +67,7 @@ errors or warnings against the modified kernel.
 Numerical verification (to be run in the vmaf-dev-mcp container per the scope
 specification):
 ```bash
-docker exec vmaf-dev-mcp /workspace/build-hip/libvmaf/tools/vmaf \
+docker exec vmaf-dev-mcp /workspace/build-hip/core/tools/vmaf \
   --backend hip \
   --reference /workspace/testdata/ref_576x324_48f.yuv \
   --distorted /workspace/testdata/dis_576x324_48f.yuv \

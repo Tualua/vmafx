@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Validate the exported ``saliency_student_v1.onnx``.
 
 Three checks:
 
 1. **Op-allowlist**: every op in the graph is on
-   ``libvmaf/src/dnn/op_allowlist.c`` (parsed via
+   ``core/src/dnn/op_allowlist.c`` (parsed via
    ``ai/src/vmaf_train/op_allowlist.py``).
 2. **PyTorch ↔ ONNX parity**: random ImageNet-normalised input fed
    through the live PyTorch checkpoint and the exported ONNX must agree

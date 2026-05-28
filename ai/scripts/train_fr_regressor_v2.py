@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Train ``fr_regressor_v2`` — codec-aware FR regressor (Phase B prereq).
 
 Scaffold-only. Consumes the JSONL corpus emitted by the
@@ -80,7 +80,6 @@ SCRIPT_PATH = Path(__file__).resolve()
 if str(REPO_ROOT / "ai" / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "ai" / "src"))
 
-from vmaf_train.registry import write_registry_json  # noqa: E402
 
 # Canonical-6 feature subset, identical to v1 so the libvmaf input
 # contract stays stable between the two regressor checkpoints.
@@ -651,7 +650,7 @@ def _write_sidecar_and_registry(
     models.append(new_entry)
     models.sort(key=lambda e: e.get("id", ""))
     registry["models"] = models
-    write_registry_json(registry_path, registry)
+    registry_path.write_text(json.dumps(registry, indent=2, sort_keys=True) + "\n")
     return sidecar
 
 

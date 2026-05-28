@@ -33,13 +33,13 @@ reference `"psnr_hvs"`.
 
 ```bash
 # Luma-only PSNR-HVS (default)
-libvmaf/build/tools/vmaf \
+core/build/tools/vmaf \
     --reference ref.yuv --distorted dist.yuv \
     --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
     --no_prediction --feature psnr_hvs --output /dev/stdout
 
 # Per-channel PSNR-HVS (luma + Cb + Cr)
-libvmaf/build/tools/vmaf \
+core/build/tools/vmaf \
     --reference ref.yuv --distorted dist.yuv \
     --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
     --no_prediction --feature 'psnr_hvs:enable_chroma=true' --output /dev/stdout

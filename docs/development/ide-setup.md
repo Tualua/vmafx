@@ -16,7 +16,7 @@ SYCL headers and lights up every `VkInstance` / `VmafCudaBuffer`
 
 Fix: configure the IDE build with every backend you have a
 toolchain for. The minimum useful setup for working on
-`libvmaf/src/feature/vulkan/`:
+`core/src/feature/vulkan/`:
 
 ```bash
 meson setup build -Denable_vulkan=enabled -Denable_float=true
@@ -60,11 +60,11 @@ of these via `--vmaf-binary`.
 
 - `unknown type name 'VkInstance'` (or `VkDevice`, `VkPipeline`,
   `VkCommandBuffer`, …) on every file under
-  `libvmaf/src/feature/vulkan/` or `libvmaf/src/vulkan/`.
+  `core/src/feature/vulkan/` or `core/src/vulkan/`.
 - `unknown type name 'VmafCudaBuffer'` / `VmafCudaState'` on
-  files under `libvmaf/src/feature/cuda/`.
+  files under `core/src/feature/cuda/`.
 - `'sycl/sycl.hpp' file not found` on files under
-  `libvmaf/src/feature/sycl/`.
+  `core/src/feature/sycl/`.
 - `Included header errno.h is not used directly` warnings (a
   consequence of the indexer giving up after the first error).
 

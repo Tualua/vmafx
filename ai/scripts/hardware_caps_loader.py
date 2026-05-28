@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Hardware-capability fingerprint loader (ADR-0335).
 
 Reads ``ai/data/hardware_caps.csv`` and emits per-row capability
@@ -55,7 +55,6 @@ _REPO_ROOT = _SCRIPT_PATHS.repo_root
 _DEFAULT_CSV = _REPO_ROOT / "ai" / "data" / "hardware_caps.csv"
 
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.run_manifest import dumps_manifest_json  # noqa: E402
 
 REQUIRED_COLUMNS: tuple[str, ...] = (
     "arch_name",
@@ -380,6 +379,8 @@ def row_as_dict(row: HardwareCapRow) -> dict[str, object]:
 
 def _main(argv: list[str] | None = None) -> int:  # pragma: no cover
     """Tiny CLI: print the loaded table as JSON for debugging."""
+    import json
+
     raw_argv = collect_cli_argv(argv)
     parser = make_argument_parser(
         prog="hardware_caps_loader.py",
@@ -404,9 +405,15 @@ def _main(argv: list[str] | None = None) -> int:  # pragma: no cover
     table = HardwareCapsTable.load(args.csv)
     if args.encoder:
         vec = cap_vector_for(table, encoder=args.encoder, encoder_arch_hint=args.arch)
-        print(dumps_manifest_json(vec), end="")
+        print(json.dumps(vec, indent=2, sort_keys=True))
         return 0
-    print(dumps_manifest_json({"rows": [row_as_dict(r) for r in table.rows]}), end="")
+    print(
+        json.dumps(
+            {"rows": [row_as_dict(r) for r in table.rows]},
+            indent=2,
+            sort_keys=True,
+        )
+    )
     return 0
 
 

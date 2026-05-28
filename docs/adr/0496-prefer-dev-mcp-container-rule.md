@@ -67,7 +67,7 @@ AGENTS.md's renumbered list) codifying the workflow:
    `--backend $name` (exclusive) or `--no_<backend>` (negative) to
    pin each parallel run to its own silicon.
 
-Host-side builds (`build/`, `libvmaf/build-cuda`, `libvmaf/build-all`)
+Host-side builds (`build/`, `core/build-cuda`, `core/build-all`)
 remain available and are still the right call for: clang-tidy
 end-to-end runs, integration with the IDE's clangd, gdb on a
 crash, sanitizer suites. They are no longer the default mental

@@ -27,11 +27,11 @@ dominant cost. The expected end-to-end gain on `float_ssim` /
   `sum += img[i] * k[j]` under `FLT_EVAL_METHOD == 0`.
 - [ADR-0140](../adr/0140-simd-dx-framework.md) — bit-exactness lockstep
   between AVX2 / AVX-512 / NEON paths.
-- Scalar reference: [`libvmaf/src/feature/iqa/convolve.c`](../../libvmaf/src/feature/iqa/convolve.c)
+- Scalar reference: [`core/src/feature/iqa/convolve.c`](../../core/src/feature/iqa/convolve.c)
   inner loop `sum += img[img_offset + u] * k->kernel_h[k_offset];`
   with `double sum`.
 - Kernel coefficients:
-  [`libvmaf/src/feature/iqa/ssim_tools.h:77-83`](../../libvmaf/src/feature/iqa/ssim_tools.h#L77-L83) —
+  [`core/src/feature/iqa/ssim_tools.h:77-83`](../../core/src/feature/iqa/ssim_tools.h#L77-L83) —
   11-tap Gaussian, `float` storage, all six distinct values.
 - Netflix golden gate: [CLAUDE.md §8](../../CLAUDE.md), `places=4`
   for MS-SSIM averages, `places=10`–`places=17` for individual SSIM
@@ -131,7 +131,7 @@ existing measurements (PR #333 profile) show the bottleneck is the
 ### Modify the scalar reference to use FMA / block reduction
 
 Would let the SIMD paths follow. **Rejected** because
-[`libvmaf/src/feature/iqa/`](../../libvmaf/src/feature/iqa/) is a
+[`core/src/feature/iqa/`](../../core/src/feature/iqa/) is a
 verbatim BSD-2011 Tom Distler import that the fork explicitly leaves
 untouched for rebase hygiene
 ([ADR-0125 §Ground rules](../adr/0125-ms-ssim-decimate-simd.md)).

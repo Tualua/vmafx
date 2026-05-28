@@ -10,7 +10,7 @@
 [Research-0086 §A.4](../research/0086-sycl-toolchain-audit-2026-05-08.md)
 emitted a GO recommendation to rewrite the ADM DWT vertical and
 horizontal passes in
-[`integer_adm_sycl.cpp`](../../libvmaf/src/feature/sycl/integer_adm_sycl.cpp)
+[`integer_adm_sycl.cpp`](../../core/src/feature/sycl/integer_adm_sycl.cpp)
 on top of `sycl::ext::oneapi::experimental::group_load` /
 `group_store`, citing claimed register-pressure reduction on Intel
 Xe2 (Battlemage). This ADR records the implementation-time finding
@@ -43,7 +43,7 @@ Two technical blockers were identified during implementation:
    < 1` — also not legal.
 
 The horizontal pass at
-[`integer_adm_sycl.cpp:358`](../../libvmaf/src/feature/sycl/integer_adm_sycl.cpp)
+[`integer_adm_sycl.cpp:358`](../../core/src/feature/sycl/integer_adm_sycl.cpp)
 was a non-target from the start. It carries no SLM tile; each
 work-item reads four mirrored input columns directly. There is no
 cooperative load to replace with `group_load`.
@@ -118,7 +118,7 @@ The path is reopened only when both of the following are satisfied:
   twin parent ADR (gains a Status update appendix in this PR).
 - [ADR-0028](0028-adr-maintenance-rule.md) — ADR immutability rule
   (Status updates as appendices, original body untouched).
-- [`integer_adm_sycl.cpp`](../../libvmaf/src/feature/sycl/integer_adm_sycl.cpp)
+- [`integer_adm_sycl.cpp`](../../core/src/feature/sycl/integer_adm_sycl.cpp)
   lines 206-351 (vert pass with manual cooperative SLM tile load),
   lines 354-457 (hori pass — no SLM tile, per-WI mirrored reads).
 - `/opt/intel/oneapi/compiler/2025.3/include/sycl/ext/oneapi/experimental/group_load_store.hpp` —

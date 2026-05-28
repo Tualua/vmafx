@@ -40,7 +40,7 @@ post-dispatch reduction in the per-frame budget.
 ## Decision
 
 Split `vmaf_vulkan_buffer_alloc` into two sibling functions in
-`libvmaf/src/vulkan/picture_vulkan.{c,h}`:
+`core/src/vulkan/picture_vulkan.{c,h}`:
 
 - `vmaf_vulkan_buffer_alloc()` — UPLOAD buffers (CPU writes, GPU reads).
   Unchanged VMA flag: `HOST_ACCESS_SEQUENTIAL_WRITE | MAPPED`.
@@ -101,7 +101,7 @@ mask/scratch) still support both `vmaFlushAllocation` (CPU→device) and
   lint rule can enforce this.
 - `vmaf_vulkan_buffer_invalidate` must be called after every fence-wait before
   reading a readback buffer.  This invariant is documented in `picture_vulkan.h`
-  and `libvmaf/src/vulkan/AGENTS.md`.
+  and `core/src/vulkan/AGENTS.md`.
 - No change to the SPIR-V shaders, descriptor layouts, or pipeline caches.
 - No change to the public libvmaf API or ffmpeg-patches surface.
 

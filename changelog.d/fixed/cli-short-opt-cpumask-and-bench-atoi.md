@@ -8,12 +8,12 @@
   `case ARG_CPUMASK:`, matching the `ARG_TINY_DEVICE` / `ARG_DNN_EP` alias pattern
   already in the same switch. A code comment documents the invariant: every entry in
   `short_opts[]` must have a matching `case` arm. New regression test
-  `test_cpumask_short_opt` in `libvmaf/test/test_cli_parse.c` asserts that `-c 0xff`
+  `test_cpumask_short_opt` in `core/test/test_cli_parse.c` asserts that `-c 0xff`
   sets `cpumask == 255` and `-c 3` sets `cpumask == 3`.
   See [ADR-0438](../../docs/adr/0438-cli-parse-short-opt-handler-coverage.md).
 
 - **Banned `atoi()` in `vmaf_bench.c` `--device` parser replaced.** The GPU device
-  index parser in `libvmaf/tools/vmaf_bench.c` used `atoi(argv[++i])` for the
+  index parser in `core/tools/vmaf_bench.c` used `atoi(argv[++i])` for the
   `--device N` argument. `atoi` is on the banned-function list in `CLAUDE.md §6` /
   `docs/principles.md §1.2 r30` because it returns 0 silently on invalid input,
   making non-numeric or out-of-range values indistinguishable from a legitimate

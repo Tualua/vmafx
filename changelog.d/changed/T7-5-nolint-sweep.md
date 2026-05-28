@@ -1,8 +1,8 @@
 - T7-5 — NOLINT-sweep closeout (ADR-0278). Cite-only pass that adds
   explicit `(ADR-0141 §2 ... load-bearing invariant; T7-5 sweep
   closeout — ADR-0278)` references to the 22 surviving
-  `readability-function-size` NOLINT sites in `libvmaf/src/` +
-  `libvmaf/tools/` whose comments described the invariant in prose
+  `readability-function-size` NOLINT sites in `core/src/` +
+  `core/tools/` whose comments described the invariant in prose
   without naming an ADR explicitly. Touches `integer_adm.c`
   (1 site, upstream-mirror Netflix `966be8d5`),
   `cuda/ssimulacra2_cuda.c` (3 sites),

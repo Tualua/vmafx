@@ -7,7 +7,7 @@
 
 ## Context
 
-ADR-0521 introduced POSIX-to-MSVC alias macros in `libvmaf/tools/yuv_input.c`
+ADR-0521 introduced POSIX-to-MSVC alias macros in `core/tools/yuv_input.c`
 under `#ifdef _WIN32` to allow `yuv_check_file_size()` to compile under
 `cl.exe` and `icx-cl`:
 
@@ -56,7 +56,7 @@ SDK 10.0.22621.0.
 
 ## Decision
 
-Two changes to `libvmaf/tools/yuv_input.c`:
+Two changes to `core/tools/yuv_input.c`:
 
 1. **Move `#include <sys/stat.h>` before the macro block** so the system
    header parses in its pristine form, without any `stat`-aliasing macros

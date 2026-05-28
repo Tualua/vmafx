@@ -33,7 +33,7 @@ new 3-channel architecture.
 
 ### 1. New `vmaf_dnn_session_run_plane16` entrypoint
 
-Adds [`vmaf_dnn_session_run_plane16`](../../libvmaf/include/libvmaf/dnn.h)
+Adds [`vmaf_dnn_session_run_plane16`](../../core/include/libvmaf/dnn.h)
 alongside the existing `_luma8`. Signature:
 
 ```c
@@ -50,7 +50,7 @@ and `out_stride` are in **bytes** (not samples), matching `luma8`'s
 convention.
 
 Two matching tensor helpers land in
-[`tensor_io.{h,c}`](../../libvmaf/src/dnn/tensor_io.h):
+[`tensor_io.{h,c}`](../../core/src/dnn/tensor_io.h):
 
 - `vmaf_tensor_from_plane16(src, stride, w, h, bpc, layout, dtype,
   mean, std, dst)` — packed `uint16` LE plane → normalised `float32`
@@ -146,7 +146,7 @@ chroma through.
 
 ## Tests
 
-- `libvmaf/test/dnn/test_tensor_io.c`:
+- `core/test/dnn/test_tensor_io.c`:
   - `test_plane16_10bit_roundtrip` — 8-pixel 10-bit plane survives
     `from → to` byte-identical.
   - `test_plane16_rejects_bad_bpc` — `bpc=8` (too low) and `bpc=17`

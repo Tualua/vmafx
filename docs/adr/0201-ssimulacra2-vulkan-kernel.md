@@ -193,7 +193,7 @@ is dominated by the IIR (still GPU). Net wall-time impact under
     are deferrable optimisations — measure-first if profiling
     flags them.
   - The `psnr_hvs_strict_shaders` list in
-    `libvmaf/src/vulkan/meson.build` grows by 4 entries; the list
+    `core/src/vulkan/meson.build` grows by 4 entries; the list
     name is now misnamed but renaming it is out of scope for this
     PR (rename in a follow-up).
 

@@ -210,5 +210,3 @@ sample clips longer than a second.
   vmaf-tune umbrella spec.
 - [`tools/vmaf-tune/AGENTS.md`](../../tools/vmaf-tune/AGENTS.md) —
   rebase-sensitive invariants for the harness.
-- [`vmaf-tune-fast-nr.md`](vmaf-tune-fast-nr.md) — NR early-elimination
-  (`--fast-nr`) to cut bisect FR calls by 2–4× on in-domain content.

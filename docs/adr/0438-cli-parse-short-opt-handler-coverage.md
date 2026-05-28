@@ -8,7 +8,7 @@
 ## Context
 
 An audit of the `vmaf` CLI (slice A, 2026-05-15) found that
-`libvmaf/tools/cli_parse.c` declared `short_opts[] = "r:d:w:h:p:b:m:c:o:nvq"`,
+`core/tools/cli_parse.c` declared `short_opts[] = "r:d:w:h:p:b:m:c:o:nvq"`,
 advertising `-c` as the short form of `--cpumask`, but the `switch` statement in
 `cli_parse()` had only `case ARG_CPUMASK:` (the long-option enum value 264) with no
 corresponding `case 'c':`. As a result `getopt_long` correctly consumed `-c <value>`
@@ -36,7 +36,7 @@ We will:
 2. Add a code comment near the switch documenting the invariant: every short option
    declared in `short_opts[]` must have a `case` arm in the switch.
 3. Add regression tests `test_cpumask_short_opt` in
-   `libvmaf/test/test_cli_parse.c` that assert `-c 0xff` sets `cpumask == 255` and
+   `core/test/test_cli_parse.c` that assert `-c 0xff` sets `cpumask == 255` and
    `-c 3` sets `cpumask == 3`.
 
 ## Alternatives considered

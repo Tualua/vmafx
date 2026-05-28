@@ -1,32 +1,3 @@
-DUAL-LICENSE NOTICE (VMAFX fork — Lusoris)
-==========================================
-
-This repository contains two categories of code, each governed by a different
-license:
-
-1. Fork-added code — files authored by Lusoris and Claude (Anthropic) after
-   the fork diverged from Netflix/vmaf — is dual-licensed under:
-
-       BSD-3-Clause-Plus-Patent OR MIT
-
-   You may elect either license for those files. The MIT license text is in
-   LICENSE-MIT at the root of this repository. The BSD-3-Clause-Plus-Patent
-   text is the body of this file (below). SPDX identifier for fork-added files:
-   LicenseRef-BSD-3-Clause-Plus-Patent OR MIT
-
-   Upstream cherry-picks and improvements to Netflix-originated feature
-   implementations (ADM, VIF, SSIM, motion, CAMBI, etc.) track the Netflix
-   license below and are not dual-licensed.
-
-2. Netflix-inherited code — all files that originate from the Netflix/vmaf
-   upstream repository — is licensed exclusively under BSD-3-Clause-Plus-Patent
-   (the body below). That license is not changed by this fork.
-
-Per-file SPDX headers in fork-added source files will reflect the dual-license
-identifier once the sweep PR that adds them lands (see ADR-0686).
-
----
-
 LICENSE - BSD+Patent
 SPDX short identifier: BSD-2-Clause-Patent
 

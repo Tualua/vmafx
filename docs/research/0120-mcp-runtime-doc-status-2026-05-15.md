@@ -19,7 +19,7 @@ promotions?
   T5-2b, and a fallback-only recommendation.
 - `docs/development/build-flags.md` still labelled `enable_mcp` and all
   transport sub-flags as stub-only. It also listed `enable_mcp_sse` as a
-  boolean defaulting false, while `libvmaf/meson_options.txt` now defines
+  boolean defaulting false, while `core/meson_options.txt` now defines
   it as a feature option defaulting `auto`.
 - `libvmaf/AGENTS.md` still carried the pre-runtime rebase invariant
   saying `src/mcp/mcp.c` was a stub TU whose entry points validate and
@@ -56,7 +56,7 @@ notes without changing runtime code:
   `-ENOSYS` to builds that omit `-Denable_mcp=true`.
 - Build-flag docs now match the current Meson option types and
   transport behaviour.
-- `libvmaf/meson_options.txt` descriptions stop promising future bodies
+- `core/meson_options.txt` descriptions stop promising future bodies
   that already landed.
 - `libvmaf/AGENTS.md` now preserves the actual runtime invariants:
   early argument validation, `compute_vmaf` using an ephemeral
@@ -75,7 +75,7 @@ notes without changing runtime code:
 ```bash
 rg -n 'every entry point currently returns|Stub-only until T5-2b|all `libvmaf_metal.h` entry points return|all entry points return `-ENOSYS` until|4 consumers registered|Placeholder scoreboard|stubbing out via the placeholder predicate|Large / throughput-bound runs land on Metal once the runtime PR ships|Build — macOS Metal \(T8-1 scaffold\)' \
   docs/api docs/backends docs/development docs/usage docs/ai \
-  libvmaf/meson_options.txt libvmaf/AGENTS.md
+  core/meson_options.txt libvmaf/AGENTS.md
 ```
 
 ## References

@@ -91,21 +91,21 @@ arrives.
 
 ### File split
 
-- `libvmaf/src/vulkan/import.c` (new, ~310 LOC): the buffer
+- `core/src/vulkan/import.c` (new, ~310 LOC): the buffer
   lifecycle, command-buffer recording, fence wait, and the
   `vmaf_vulkan_state_build_pictures()` builder.
-- `libvmaf/src/vulkan/import_picture.h` (new): exposes the
+- `core/src/vulkan/import_picture.h` (new): exposes the
   builder so `libvmaf.c` can include it without inheriting
   `<volk.h>`.
-- `libvmaf/src/vulkan/vulkan_internal.h`: gains
+- `core/src/vulkan/vulkan_internal.h`: gains
   `VmafVulkanImportSlots`, `owns_handles`, and promotes
   `VmafVulkanState` from `common.c` so both files can see the
   slot layout.
-- `libvmaf/src/vulkan/common.c`: adds
+- `core/src/vulkan/common.c`: adds
   `vmaf_vulkan_state_init_external` + the matching internal
   `vmaf_vulkan_context_new_external` that adopts caller-
   supplied handles, skipping `vkCreate{Instance,Device}`.
-- `libvmaf/src/libvmaf.c`: implements
+- `core/src/libvmaf.c`: implements
   `vmaf_vulkan_read_imported_pictures()` next to the existing
   `vmaf_vulkan_import_state()`.
 - `ffmpeg-patches/0006-libvmaf-add-libvmaf-vulkan-filter.patch`
@@ -177,7 +177,7 @@ the score matches the CPU-path baseline at `places=4`. For
 this PR, validation is **contract-level**:
 
 - 10/10 unit tests in
-  [`libvmaf/test/test_vulkan_smoke.c`](../../libvmaf/test/test_vulkan_smoke.c)
+  [`core/test/test_vulkan_smoke.c`](../../core/test/test_vulkan_smoke.c)
   cover: NULL-state rejection, `vk_image == 0` rejection,
   `wait_compute` on an idle state returns 0,
   `read_imported_pictures` on a NULL ctx → -EINVAL.
@@ -195,7 +195,7 @@ this PR, validation is **contract-level**:
 - Pattern source: SYCL trio
   (`vmaf_sycl_import_va_surface` /
   `vmaf_sycl_wait_compute` / `vmaf_read_pictures_sycl`)
-  in [`libvmaf_sycl.h`](../../libvmaf/include/libvmaf/libvmaf_sycl.h).
+  in [`libvmaf_sycl.h`](../../core/include/libvmaf/libvmaf_sycl.h).
 - Source: T7-29 in
   [`.workingdir2/BACKLOG.md`](../../.workingdir2/BACKLOG.md).
 - Per-PR rule: ADR-0108 deep-dive deliverables checklist.

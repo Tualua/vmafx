@@ -172,7 +172,7 @@ python ai/scripts/train_fr_regressor_v3.py --smoke
 
 # Tests + registry verification:
 pytest ai/tests/test_train_fr_regressor_v3.py -v
-bash libvmaf/test/dnn/test_registry.sh
+bash core/test/dnn/test_registry.sh
 ```
 
 ## References

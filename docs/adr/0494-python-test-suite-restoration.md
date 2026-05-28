@@ -58,7 +58,7 @@ addresses each cluster at its root:
 - **E**: in `vmafexec_test.py`, restore upstream's `places=2` on the
   three akiyo `VMAFEXEC_score` asserts and cite the upstream precedent
   inline.
-- **F**: in `libvmaf/src/feature/third_party/xiph/psnr_hvs.c`, flip
+- **F**: in `core/src/feature/third_party/xiph/psnr_hvs.c`, flip
   `enable_chroma` default from `false` to `true`, restoring upstream
   Netflix's YCbCr-weighted `psnr_hvs` output for callers that don't
   override.

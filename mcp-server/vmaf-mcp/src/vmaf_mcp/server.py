@@ -69,7 +69,7 @@ def _vmaf_binary() -> Path:
     Resolution order:
     1. VMAF_BIN environment variable (explicit override).
     2. /usr/local/bin/vmaf -- installed by make install or the container.
-    3. <repo>/libvmaf/build/tools/vmaf -- in-tree fork build.
+    3. <repo>/core/build/tools/vmaf -- in-tree fork build.
     4. <repo>/build/tools/vmaf -- legacy build-dir name.
 
     Returns the first candidate that exists on disk. If none exist the
@@ -734,7 +734,7 @@ async def _run_benchmark() -> dict[str, Any]:
        ``env/vars.sh`` scripts, which hang or exit non-zero, aborting the
        outer script before any output is emitted.
     2. ``VMAF_BIN`` was not injected into the subprocess environment, so the
-       script fell back to the relative path ``libvmaf/build/tools/vmaf``
+       script fell back to the relative path ``core/build/tools/vmaf``
        which is absent in the container after ``make install``.
     """
     script = _repo_root() / "testdata" / "bench_all.sh"
@@ -797,6 +797,11 @@ async def _run_benchmark() -> dict[str, Any]:
     return payload
 
 
+
+
+
+
+
 # ---------------------------------------------------------------------------
 # list_extractors — enumerate VmafFeatureExtractor implementations (ADR-0608)
 # ---------------------------------------------------------------------------
@@ -837,7 +842,7 @@ def _list_extractors() -> list[dict[str, Any]]:
     """Walk the libvmaf C source tree and collect every VmafFeatureExtractor
     registered in it.
 
-    Parses only ``libvmaf/src/feature/`` (recursively) — the top-level extractor
+    Parses only ``core/src/feature/`` (recursively) — the top-level extractor
     structs are always defined there.  Option-struct inner ``.name`` fields are
     filtered out because those structs are always preceded by the word ``Option``
     or ``VmafOption``, not ``VmafFeatureExtractor``.
@@ -1022,7 +1027,6 @@ def _vmaftune_binary() -> Path:
 # _send_progress — MCP progress notification helper (ADR-0608)
 # ---------------------------------------------------------------------------
 
-
 async def _send_progress(
     progress_token: str | int | None,
     progress: float,
@@ -1055,6 +1059,7 @@ async def _send_progress(
         pass
     except Exception:
         pass
+
 
 
 # ---------------------------------------------------------------------------
@@ -1311,7 +1316,7 @@ async def _run_benchmark(
        ``env/vars.sh`` scripts, which hang or exit non-zero, aborting the
        outer script before any output is emitted.
     2. ``VMAF_BIN`` was not injected into the subprocess environment, so the
-       script fell back to the relative path ``libvmaf/build/tools/vmaf``
+       script fell back to the relative path ``core/build/tools/vmaf``
        which is absent in the container after ``make install``.
 
     Progress notifications (ADR-0608): emitted at start and completion.
@@ -1382,6 +1387,8 @@ async def _run_benchmark(
             "Re-run with `bash -x testdata/bench_all.sh` to bisect."
         )
     return payload
+
+
 
 
 # probe_backend — runtime health check (ADR-0608 / C-P0-1)
@@ -2276,58 +2283,6 @@ async def _run() -> None:
 
 
 def main() -> None:
-    """Entry point for ``vmaf-mcp`` / ``vmafx-mcp``.
-
-    Transport selection (ADR-0701):
-    - ``--transport stdio`` (default) — JSON-RPC over stdin/stdout for IDE/MCP clients.
-    - ``--transport http [--port PORT]`` — aiohttp HTTP server with /healthz, /readyz,
-      /metrics, and /v1/score endpoints.
-
-    HTTP mode env-var config (12-factor §III, ADR-0701):
-    - ``VMAFX_PORT``        — listen port (default 8080; overridden by ``--port``).
-    - ``VMAFX_LOG_LEVEL``   — Python log level (default ``INFO``).
-    - ``VMAFX_VMAF_BINARY`` — vmaf binary path (falls through to ``VMAF_BIN``).
-    - ``VMAFX_MODEL_DIR``   — extra model search root (appended to ``VMAF_MCP_ALLOW``).
-    """
-    import argparse
-
-    parser = argparse.ArgumentParser(prog="vmaf-mcp", add_help=True)
-    parser.add_argument(
-        "--transport",
-        choices=["stdio", "http"],
-        default="stdio",
-        help="Transport mode: 'stdio' (default, for MCP clients) or 'http' (REST server).",
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=None,
-        help="HTTP listen port (default: $VMAFX_PORT or 8080). Ignored for stdio.",
-    )
-    parser.add_argument(
-        "--log-level",
-        default=None,
-        help=(
-            "Python log level for HTTP mode (default: $VMAFX_LOG_LEVEL or INFO). Ignored for stdio."
-        ),
-    )
-    args, _ = parser.parse_known_args()
-
-    if args.transport == "http":
-        from vmaf_mcp.http_transport import (
-            _apply_env_overrides,
-            _resolve_log_level,
-            _resolve_port,
-            run_http_server,
-        )
-
-        _apply_env_overrides()
-        port = _resolve_port(args.port)
-        log_level = _resolve_log_level(args.log_level)
-        run_http_server(port=port, log_level=log_level)
-        return
-
-    # Default: stdio transport (original behaviour).
     anyio_impl = os.environ.get("VMAF_MCP_ASYNC", "asyncio")
     if anyio_impl == "asyncio":
         asyncio.run(_run())

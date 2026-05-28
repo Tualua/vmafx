@@ -10,7 +10,7 @@
 - **P3-5** `docs/ai/model-registry.md`: new "CI-only smoke fixtures" section documents the
   six `smoke: true` registry entries as CI-only test fixtures exempt from ADR-0042.
   `lpips_sq_v1` / `lpips_sq.md` name mismatch documented as a tracked cosmetic gap.
-- **P3-6** `.semgrepignore`: exclude `libvmaf/src/mcp/3rdparty/cJSON/cJSON.c` to silence
+- **P3-6** `.semgrepignore`: exclude `core/src/mcp/3rdparty/cJSON/cJSON.c` to silence
   three upstream cJSON `TODO`/`FIXME` markers without diverging from upstream.
 - **SD-1** `docs/state.md`: add Open-bugs row for `T-VULKAN-MOTION-LAVAPIPE-INIT` (Vulkan
   motion / motion_v2 advisory CI gate) with a stated closure condition.

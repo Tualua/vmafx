@@ -10,7 +10,7 @@
 
 The dispatch-strategy layer consists of two separate surfaces:
 
-1. `feature_extractor_list[]` in `libvmaf/src/feature/feature_extractor.c`
+1. `feature_extractor_list[]` in `core/src/feature/feature_extractor.c`
    — the linear table walked by `vmaf_get_feature_extractor_by_name` and
    `vmaf_get_feature_extractor_by_feature_name`.
 
@@ -41,8 +41,8 @@ Fix all four defects mechanically:
   actual `.name` and `provided_features[]` values.
 
 Add `scripts/ci/check-dispatch-registry.sh` to catch regressions, and
-add invariant notes to `libvmaf/src/hip/AGENTS.md` and
-`libvmaf/src/metal/AGENTS.md`.
+add invariant notes to `core/src/hip/AGENTS.md` and
+`core/src/metal/AGENTS.md`.
 
 ## Alternatives considered
 

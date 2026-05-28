@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """ADR-0331: schema-v2 corpus rows still load on a v3 reader.
 
 The reader fills missing canonical-6 columns with ``NaN`` and preserves

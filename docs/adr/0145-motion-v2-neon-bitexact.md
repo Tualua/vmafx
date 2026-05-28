@@ -9,7 +9,7 @@
 
 The fork's `motion_v2` feature extractor shipped with scalar C +
 AVX2 + AVX-512 paths but no NEON variant
-(`libvmaf/src/feature/integer_motion_v2.c` dispatches only under
+(`core/src/feature/integer_motion_v2.c` dispatches only under
 `#if ARCH_X86`). Aarch64 users ran the scalar reference, which
 gives ~1× throughput of the AVX2 path on x86 and is the slowest
 feature in the metric pipeline for that ISA. T3-4 in
@@ -50,13 +50,13 @@ Two subtle numerical invariants surfaced while porting:
 ## Decision
 
 We will port `motion_v2` to NEON in a new fork-local TU
-[`libvmaf/src/feature/arm64/motion_v2_neon.c`](../../libvmaf/src/feature/arm64/motion_v2_neon.c)
+[`core/src/feature/arm64/motion_v2_neon.c`](../../core/src/feature/arm64/motion_v2_neon.c)
 with a companion header
-[`motion_v2_neon.h`](../../libvmaf/src/feature/arm64/motion_v2_neon.h).
+[`motion_v2_neon.h`](../../core/src/feature/arm64/motion_v2_neon.h).
 The NEON path:
 
 1. Matches the scalar reference `motion_score_pipeline_{8,16}` in
-   [`integer_motion_v2.c`](../../libvmaf/src/feature/integer_motion_v2.c)
+   [`integer_motion_v2.c`](../../core/src/feature/integer_motion_v2.c)
    byte-for-byte. Verified via QEMU user-mode diff
    (cpumask=0 vs cpumask=255) on `src01_hrc00/01_576x324.yuv`.
 2. Uses arithmetic right-shift throughout (`vshrq_n_s64(v, 16)`
@@ -66,11 +66,11 @@ The NEON path:
    fork's AVX2 variant's `_mm256_srlv_epi64` (logical) — see
    §Consequences for the follow-up audit.
 3. Dispatches via `VMAF_ARM_CPU_FLAG_NEON` in
-   [`integer_motion_v2.c`](../../libvmaf/src/feature/integer_motion_v2.c)
+   [`integer_motion_v2.c`](../../core/src/feature/integer_motion_v2.c)
    under `#if ARCH_AARCH64`, mirroring the existing AVX2 /
    AVX-512 dispatch blocks.
 4. Is registered in the `arm64_sources` list of
-   [`libvmaf/src/meson.build`](../../libvmaf/src/meson.build).
+   [`core/src/meson.build`](../../core/src/meson.build).
 5. Keeps every function below the ADR-0141
    `readability-function-size` budget (60 post-preprocessor lines)
    via small `static inline` helpers — `x_conv_block4_neon`,
@@ -116,7 +116,7 @@ The NEON path:
     describing the arithmetic-shift invariant so a future upstream
     sync doesn't silently revert it.
   - Add
-    [`libvmaf/src/feature/AGENTS.md`](../../libvmaf/src/feature/AGENTS.md)
+    [`core/src/feature/AGENTS.md`](../../core/src/feature/AGENTS.md)
     rebase-sensitive invariant (V-axis mirror `- 1`, shift
     arithmetic, 4-lane stride).
   - Queue follow-up T-N: audit AVX2 `srlv_epi64` path against
@@ -126,11 +126,11 @@ The NEON path:
 ## References
 
 - Upstream scalar reference:
-  [`integer_motion_v2.c`](../../libvmaf/src/feature/integer_motion_v2.c)
+  [`integer_motion_v2.c`](../../core/src/feature/integer_motion_v2.c)
   (`motion_score_pipeline_{8,16}`, committed upstream
   `dae6c1a0`).
 - Fork-local AVX2 variant:
-  [`x86/motion_v2_avx2.c`](../../libvmaf/src/feature/x86/motion_v2_avx2.c).
+  [`x86/motion_v2_avx2.c`](../../core/src/feature/x86/motion_v2_avx2.c).
 - Related ADRs:
   [ADR-0140](0140-simd-dx-framework.md) — SIMD DX framework
   (kernel-specs for float-arithmetic patterns; integer patterns

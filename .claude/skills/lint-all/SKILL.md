@@ -34,5 +34,5 @@ description: Run clang-tidy, cppcheck, include-what-you-use, ruff, and semgrep i
 ## Guardrails
 
 - Honors `.clang-tidy` `HeaderFilterRegex` so we never lint vendored headers.
-- Skips files under `subprojects/`, `build/`, `libvmaf/test/data/`.
+- Skips files under `subprojects/`, `build/`, `core/test/data/`.
 - semgrep runs in offline mode (no rule fetch over the network in CI).

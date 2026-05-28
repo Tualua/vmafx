@@ -11,7 +11,7 @@ The Metal backend (T8-1b, ADR-0420/ADR-0421) and the HIP backend (ADR-0212
 scaffold) are fully wired at the engine level — feature extractors are
 registered under `HAVE_METAL` / `HAVE_HIP` guards and imported into
 `VmafContext` via `vmaf_metal_import_state` / `vmaf_hip_import_state`. However,
-the standalone `vmaf` CLI (`libvmaf/tools/`) lacked the surface flags to
+the standalone `vmaf` CLI (`core/tools/`) lacked the surface flags to
 activate either backend at runtime:
 
 - No `--no_hip` / `--hip_device` flags existed (HIP shipped with engine wiring
@@ -54,7 +54,7 @@ backends.
   now correctly disables all five GPU backends.
 - **Positive**: Test coverage added (`test_backend_hip`, `test_backend_metal`,
   `test_hip_device_explicit`, `test_metal_device_explicit`,
-  `test_no_hip_no_metal_flags` in `libvmaf/test/test_cli_parse.c`).
+  `test_no_hip_no_metal_flags` in `core/test/test_cli_parse.c`).
 - **Neutral**: `docs/usage/cli.md` updated; no ffmpeg-patches update required
   (the patches consume `libvmaf` C API / public headers, not the `vmaf` CLI
   tool flags).

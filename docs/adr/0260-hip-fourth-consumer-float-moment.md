@@ -29,8 +29,8 @@ shape pre-runtime keeps T7-10b's diff small.
 
 The PR ships:
 
-- **`libvmaf/src/feature/hip/float_moment_hip.{c,h}`** — mirrors
-  `libvmaf/src/feature/cuda/integer_moment_cuda.c`'s call graph
+- **`core/src/feature/hip/float_moment_hip.{c,h}`** — mirrors
+  `core/src/feature/cuda/integer_moment_cuda.c`'s call graph
   verbatim: `init → context_new + lifecycle_init + readback_alloc(4
   uint64) + feature_name_dict`, `submit → submit_pre_launch +
   -ENOSYS`, `collect → collect_wait + -ENOSYS`, `close →
@@ -40,12 +40,12 @@ The PR ships:
   reduction has the same constant available verbatim.
 - **Registration**: `vmaf_fex_float_moment_hip` is added to
   `feature_extractor_list` in
-  `libvmaf/src/feature/feature_extractor.c` under `#if HAVE_HIP`,
+  `core/src/feature/feature_extractor.c` under `#if HAVE_HIP`,
   immediately after the third consumer. Same scaffold posture as
   ADR-0241 / ADR-0254 / ADR-0259.
-- **Smoke test extension**: `libvmaf/test/test_hip_smoke.c` grows
+- **Smoke test extension**: `core/test/test_hip_smoke.c` grows
   one sub-test (`test_float_moment_hip_extractor_registered`).
-- **Meson wiring**: `libvmaf/src/hip/meson.build` adds
+- **Meson wiring**: `core/src/hip/meson.build` adds
   `../feature/hip/float_moment_hip.c` to `hip_sources`. No new
   dependency.
 
@@ -101,7 +101,7 @@ The PR ships:
   the same PR.
 - [ADR-0221](0221-gpu-kernel-template.md) — original CUDA kernel
   template that ADR-0241 mirrored onto HIP.
-- `libvmaf/src/feature/cuda/integer_moment_cuda.c` — the CUDA
+- `core/src/feature/cuda/integer_moment_cuda.c` — the CUDA
   reference whose call graph this consumer mirrors.
 - `req` — user direction in T7-10b implementation prompt
   (paraphrased: "Land the third and fourth HIP runtime

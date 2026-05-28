@@ -34,14 +34,14 @@ master tip `4c170667`.
 **Mostly already shipped, partially in flight.**
 
 - DISTS extractor: `docs/adr/0043-dists-extractor-design.md`,
-  `0236-dists-extractor.md`. Source under `libvmaf/src/feature/`
+  `0236-dists-extractor.md`. Source under `core/src/feature/`
   (paired with research `docs/research/0043-dists-extractor-design.md`).
 - LPIPS (squeezenet variant): `model/tiny/lpips_sq.onnx`,
-  `libvmaf/src/feature/feature_lpips.c`, ADR-0041 / model-card
+  `core/src/feature/feature_lpips.c`, ADR-0041 / model-card
   `docs/ai/models/lpips_sq.md`.
 - SSIMULACRA2: scalar + SIMD ports
   (`docs/adr/0003`/`0007`/`0015..0018`).
-- SpEED-QA: scalar implementation present (`libvmaf/src/feature/speed.c`),
+- SpEED-QA: scalar implementation present (`core/src/feature/speed.c`),
   ADR-0010 / ADR-0051 / ADR-0253 covering the upstream-direction
   question.
 - NR (no-reference) metric: `model/tiny/nr_metric_v1.onnx` +
@@ -145,7 +145,7 @@ restrictions, not bugs.
 
 ### 5. TODO/FIXME/XXX hotspots
 
-`grep -rn "TODO|FIXME|XXX" tools/vmaf-tune/src/ ai/ libvmaf/src/dnn/`
+`grep -rn "TODO|FIXME|XXX" tools/vmaf-tune/src/ ai/ core/src/dnn/`
 returns **zero hits** — no Claude-punted markers in the
 fork-local Python or the DNN runtime. (The repo at large has them
 in upstream-mirror C, out of scope here.)

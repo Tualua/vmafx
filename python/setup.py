@@ -14,11 +14,14 @@ from setuptools import setup
 
 PYTHON_PROJECT = os.path.dirname(os.path.abspath(__file__))
 
+# Real package location after ADR-0700 repo-layout move.
+COMPAT_VMAF = os.path.normpath(os.path.join(PYTHON_PROJECT, "..", "compat", "python-vmaf"))
+
 
 def get_version():
-    """Version from vmaf __init__"""
+    """Version from vmaf __init__ (reads from the real package location)."""
     try:
-        with open(os.path.join(PYTHON_PROJECT, "vmaf", "__init__.py")) as fh:
+        with open(os.path.join(COMPAT_VMAF, "__init__.py")) as fh:
             for line in fh:
                 if line.startswith("__version__"):
                     return line.strip().rpartition(" ")[2].replace('"', "")
@@ -39,14 +42,15 @@ class LazyExtensions(list):
             from Cython.Build import cythonize
 
             self._extensions = cythonize(
-                ["vmaf/core/adm_dwt2_cy.pyx"], compiler_directives={"language_level": "3"}
+                [os.path.join(COMPAT_VMAF, "core", "adm_dwt2_cy.pyx")],
+                compiler_directives={"language_level": "3"},
             )
-            # compat/ contains a stub config.h that disables SIMD dispatch
-            # (the SIMD .c files are not compiled into this extension)
+            # python/compat/ contains a stub config.h that disables SIMD
+            # dispatch (the SIMD .c files are not compiled into this extension).
             self._extensions[0].include_dirs = [
                 numpy.get_include(),
                 os.path.join(PYTHON_PROJECT, "compat"),
-                "../libvmaf/src",
+                "../core/src",
             ]
 
         return self._extensions
@@ -70,6 +74,7 @@ setup(
     long_description=open(os.path.join(PYTHON_PROJECT, "README.rst")).read(),
     long_description_content_type="text/x-rst",
     url="https://github.com/Netflix/vmaf",
+    package_dir={"vmaf": COMPAT_VMAF},
     packages=["vmaf", "vmaf.tools", "vmaf.core", "vmaf.script"],
     include_package_data=True,
     install_requires=[

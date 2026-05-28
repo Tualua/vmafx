@@ -121,7 +121,7 @@ int vmaf_<backend>_picture_fetch(VmafContext *vmaf, VmafPicture *pic);
 ```
 
 The implementation MUST delegate to the backend-agnostic
-`VmafGpuPicturePool` (`libvmaf/src/gpu_picture_pool.{h,c}`) per
+`VmafGpuPicturePool` (`core/src/gpu_picture_pool.{h,c}`) per
 ADR-0239 — do not reimplement the round-robin / mutex / unwind
 shape. Each backend supplies the alloc / free / synchronize callbacks
 + a per-pool cookie carrying its state pointer.
@@ -146,7 +146,7 @@ safe to free the source).
   the end of the struct, never in the middle.
 - Opaque state types (`Vmaf<Backend>State`) are forward-declared in
   the public header; their layout lives in
-  `libvmaf/src/<backend>/<backend>_internal.h` (or equivalent
+  `core/src/<backend>/<backend>_internal.h` (or equivalent
   per-backend internal header) so kernel TUs can read the device /
   queue / allocator handles without crossing the public surface.
 - Public ABI changes (renames, removed entry points,
@@ -158,7 +158,7 @@ safe to free the source).
 The corresponding backend-internal files follow their own pattern:
 
 ```
-libvmaf/src/<backend>/
+core/src/<backend>/
   common.{c,h}              # state init / device enumeration / queue setup
   picture_<backend>.{c,h}   # buffer / picture allocation
   dispatch_strategy.{c,h}   # per-feature dispatch helpers
@@ -169,7 +169,7 @@ The `gpu_picture_pool.{c,h}` round-robin is **shared** — every backend
 that wants a preallocation pool delegates to it (ADR-0239).
 
 The feature kernel host glue — what every `<feature>_<backend>.c`
-under `libvmaf/src/feature/<backend>/` ships — has its own boilerplate
+under `core/src/feature/<backend>/` ships — has its own boilerplate
 extraction in flight as PR4 of the GPU dedup sequence (T-GPU-DEDUP-3,
 ~250/500 LOC shared per file × 10+ files × 3 backends).
 
@@ -182,5 +182,5 @@ extraction in flight as PR4 of the GPU dedup sequence (T-GPU-DEDUP-3,
 - [ADR-0250](../adr/0250-tiny-ai-extractor-template.md) — tiny-AI
   extractor template (the model for "pattern-doc + shared helpers
   rather than codegen").
-- [`libvmaf/include/libvmaf/AGENTS.md`](../../libvmaf/include/libvmaf/AGENTS.md)
+- [`core/include/libvmaf/AGENTS.md`](../../core/include/libvmaf/AGENTS.md)
   — the public-headers-tree invariant note that points back here.

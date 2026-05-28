@@ -54,7 +54,7 @@ install: $(BUILD_DIR) $(NINJA)
 
 clean:
 	rm -rf $(BUILD_DIR) $(DEBUG_DIR)
-	rm -f python/vmaf/core/adm_dwt2_cy.c*
+	rm -f compat/python-vmaf/core/adm_dwt2_cy.c*
 
 distclean: clean
 	rm -rf $(VENV)
@@ -104,7 +104,7 @@ lint-c: $(BUILD_DIR)
 	@command -v clang-tidy >/dev/null || { echo "clang-tidy not found; skipping"; exit 0; }
 	@command -v cppcheck >/dev/null   || { echo "cppcheck not found; skipping"; exit 0; }
 	@echo "--- clang-tidy ---"
-	@FILES=$$(git ls-files 'libvmaf/src/**/*.c' 'libvmaf/src/**/*.cpp' 'libvmaf/tools/*.c' \
+	@FILES=$$(git ls-files 'core/src/**/*.c' 'core/src/**/*.cpp' 'core/tools/*.c' \
 	         | grep -v '^subprojects/'); \
 	 clang-tidy -p $(BUILD_DIR) --quiet $$FILES
 	@echo "--- cppcheck ---"
@@ -127,7 +127,7 @@ lint-sh:
 format:
 	@command -v clang-format >/dev/null && \
 	 clang-format -i $$(git ls-files '*.c' '*.h' '*.cpp' '*.hpp' '*.cu' '*.cuh' \
-	                   | grep -v '^subprojects/' | grep -v '^libvmaf/test/data/') || true
+	                   | grep -v '^subprojects/' | grep -v '^core/test/data/') || true
 	@command -v black >/dev/null && black python/ ai/ scripts/ 2>/dev/null || true
 	@command -v isort >/dev/null && isort python/ ai/ scripts/ 2>/dev/null || true
 	@command -v shfmt >/dev/null && shfmt -w -i 2 -ci $$(git ls-files '*.sh') || true
@@ -137,7 +137,7 @@ format-check:
 	@command -v clang-format >/dev/null && \
 	 clang-format --dry-run --Werror \
 	   $$(git ls-files '*.c' '*.h' '*.cpp' '*.hpp' '*.cu' '*.cuh' \
-	      | grep -v '^subprojects/' | grep -v '^libvmaf/test/data/') || true
+	      | grep -v '^subprojects/' | grep -v '^core/test/data/') || true
 	@command -v black >/dev/null && black --check python/ ai/ scripts/ 2>/dev/null || true
 	@command -v isort >/dev/null && isort --check-only python/ ai/ scripts/ 2>/dev/null || true
 	@command -v shfmt >/dev/null && shfmt -d -i 2 -ci $$(git ls-files '*.sh') || true
@@ -224,7 +224,7 @@ coverage-html: coverage
 	@echo "open $(COVERAGE_DIR)/html/index.html"
 
 # Enforce the coverage thresholds from docs/principles.md §3.
-# Overall: ≥70% line coverage. Security-critical (libvmaf/src/dnn/, opt.c,
+# Overall: ≥70% line coverage. Security-critical (core/src/dnn/, opt.c,
 # read_json_model.c): ≥85% line coverage.
 coverage-check: coverage
 	@scripts/ci/coverage-check.sh $(COVERAGE_DIR)/coverage.filtered.info \

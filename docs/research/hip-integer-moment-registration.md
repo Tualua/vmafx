@@ -14,16 +14,16 @@ TUs without introducing weak stubs?
 
 ## Findings
 
-1. `libvmaf/src/feature/hip/integer_psnr/psnr_score.hip` — real kernel
+1. `core/src/feature/hip/integer_psnr/psnr_score.hip` — real kernel
    already exists (~133 LoC). Registered in meson under key `psnr_score`.
    Emits symbol `psnr_score_hsaco`. Consumed by
    `integer_psnr_hip.c::hipModuleLoadData(..., psnr_score_hsaco)`.
    **Status: complete pre-existing**.
-2. `libvmaf/src/feature/hip/integer_psnr_hvs/psnr_hvs_score.hip` — real
+2. `core/src/feature/hip/integer_psnr_hvs/psnr_hvs_score.hip` — real
    kernel already exists (~357 LoC). Registered under key
    `psnr_hvs_score`. Emits `psnr_hvs_score_hsaco`. Consumed by
    `integer_psnr_hvs_hip.c`. **Status: complete pre-existing**.
-3. `libvmaf/src/feature/hip/integer_moment/moment_score.hip` — real
+3. `core/src/feature/hip/integer_moment/moment_score.hip` — real
    kernel already exists (~149 LoC). **Not registered.** The meson key
    `moment_score` resolves to a different file (`hip/float_moment/
    moment_score.hip` — the float twin), so no `integer_moment_score_hsaco`
@@ -38,9 +38,9 @@ Verified all three sources compile to HSACO via direct hipcc invocation:
 
 ```bash
 hipcc --genco --offload-arch=gfx1100 \
-  -I libvmaf/src -I libvmaf/src/feature \
-  -I libvmaf/src/feature/hip -I libvmaf/src/hip \
-  libvmaf/src/feature/hip/integer_moment/moment_score.hip \
+  -I libvmaf/src -I core/src/feature \
+  -I core/src/feature/hip -I core/src/hip \
+  core/src/feature/hip/integer_moment/moment_score.hip \
   -o /tmp/integer_moment_score.hsaco
 # → 15200 bytes, no errors
 ```
@@ -50,7 +50,7 @@ Same for `psnr_score.hip` (12600 bytes) and `psnr_hvs_score.hip`
 
 ## Minimal fix
 
-Add one entry to `hip_kernel_sources` in `libvmaf/src/meson.build`:
+Add one entry to `hip_kernel_sources` in `core/src/meson.build`:
 
 ```meson
 'integer_moment_score' : feature_src_dir + 'hip/integer_moment/moment_score.hip',

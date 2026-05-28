@@ -7,10 +7,10 @@
 
 ## Context
 
-The public headers [libvmaf/include/libvmaf/libvmaf.h](../../libvmaf/include/libvmaf/libvmaf.h)
+The public headers [core/include/libvmaf/libvmaf.h](../../core/include/libvmaf/libvmaf.h)
 declared `vmaf_preallocate_pictures` and `vmaf_fetch_preallocated_picture`
-unconditionally, but the definitions in [libvmaf/src/libvmaf.c](../../libvmaf/src/libvmaf.c)
-and [libvmaf/src/picture_pool.c](../../libvmaf/src/picture_pool.c) were behind
+unconditionally, but the definitions in [core/src/libvmaf.c](../../core/src/libvmaf.c)
+and [core/src/picture_pool.c](../../core/src/picture_pool.c) were behind
 `#ifdef VMAF_PICTURE_POOL`. That flag was set by no default build, so any
 external consumer linking against libvmaf.so got a link error on those symbols.
 Issue #NN picked option **B** (always compile the pool) over **A** (gate the
@@ -22,7 +22,7 @@ every run (Netflix golden gate, D24): `vmaf_picture_pool_fetch` blocked forever
 in `pthread_cond_wait` because the pool was sized `(thread_cnt+1)*2` (or `2`
 when `thread_cnt==0`) — one short of the live set. The internal
 `vmaf->prev_ref` holds a reference to the previous frame's ref picture across
-the frame boundary for motion features (see [libvmaf.c:978](../../libvmaf/src/libvmaf.c#L978))
+the frame boundary for motion features (see [libvmaf.c:978](../../core/src/libvmaf.c#L978))
 so that slot is not returned until the *next* frame's prev_ref reassignment.
 
 ## Decision

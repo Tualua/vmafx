@@ -24,7 +24,7 @@ into a single housekeeping PR without touching any functional path:
    `smoke: false` entry (`lpips_sq_v1`) lacked a model card or had a card-name mismatch.
    No ADR-0042 bar applies to smoke fixtures; the lpips_sq_v1 mismatch is documented.
 6. **P3-6** — Three upstream cJSON `TODO`/`FIXME` markers in
-   `libvmaf/src/mcp/3rdparty/cJSON/cJSON.c` were firing the semgrep TODO-hunter rule.
+   `core/src/mcp/3rdparty/cJSON/cJSON.c` were firing the semgrep TODO-hunter rule.
    Fixing them would diverge from upstream cJSON; the correct action is to exclude the file.
 
 State drift gaps:
@@ -50,7 +50,7 @@ State drift gaps:
 5. Add a "CI-only smoke fixtures" section to `docs/ai/model-registry.md` listing the six
    `smoke: true` entries and explaining why they are exempt from ADR-0042. Document the
    `lpips_sq_v1` / `lpips_sq.md` name mismatch as a tracked cosmetic gap.
-6. Add `libvmaf/src/mcp/3rdparty/cJSON/cJSON.c` to `.semgrepignore` with an explanatory
+6. Add `core/src/mcp/3rdparty/cJSON/cJSON.c` to `.semgrepignore` with an explanatory
    comment, preserving upstream cJSON parity.
 7. Add an Open-bugs row for `T-VULKAN-MOTION-LAVAPIPE-INIT` in `docs/state.md` with a
    stated closure condition (promote both advisory CI steps to required once the kernel

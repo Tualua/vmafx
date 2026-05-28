@@ -1,6 +1,6 @@
 # DNN session API — `libvmaf/dnn.h`
 
-The DNN surface in [`libvmaf/include/libvmaf/dnn.h`](../../libvmaf/include/libvmaf/dnn.h)
+The DNN surface in [`core/include/libvmaf/dnn.h`](../../core/include/libvmaf/dnn.h)
 lets callers load and run tiny ONNX models from C, either attached to a
 `VmafContext` (so DNN scores show up next to SVM scores in the normal VMAF
 report) or as a standalone session (luma-in / luma-out filter-style
@@ -307,7 +307,7 @@ Only works when libvmaf was built with `-Denable_dnn=true`.
 
 The fork ships a Sigstore-keyless verification primitive for tiny-AI
 ONNX bundles, surfaced by both the C API
-(`vmaf_dnn_verify_signature` in `libvmaf/include/libvmaf/dnn.h`) and
+(`vmaf_dnn_verify_signature` in `core/include/libvmaf/dnn.h`) and
 the CLI flag `--tiny-model-verify` on the `vmaf` binary
 (see [`docs/usage/cli.md`](../usage/cli.md)).
 
@@ -331,7 +331,7 @@ errno on failure, and the cosign stderr text via `*err` (caller frees).
   `cosign` via `posix_spawnp`; absence is reported as a clear
   `cosign not found` error message rather than silently passing.
 - Windows is **not supported**: the function returns `-ENOSYS`
-  unconditionally on Windows builds (`libvmaf/src/dnn/model_loader.c`
+  unconditionally on Windows builds (`core/src/dnn/model_loader.c`
   short-circuits on `_WIN32`). The Sigstore offline-verify path
   depends on `posix_spawnp` and a few sibling POSIX primitives that
   do not have a clean Windows equivalent in our build matrix.

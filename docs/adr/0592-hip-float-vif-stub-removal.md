@@ -8,11 +8,11 @@
 ## Context
 
 ADR-0379 (PR #1025, 2026-03-29) landed a real HIP kernel for `float_vif`
-at `libvmaf/src/feature/hip/float_vif/float_vif_score.hip` and registered
-it in `libvmaf/src/meson.build` under `hip_kernel_sources`. A later
+at `core/src/feature/hip/float_vif/float_vif_score.hip` and registered
+it in `core/src/meson.build` under `hip_kernel_sources`. A later
 follow-up (PR #1303, "extend hip_hsaco_stubs.c to cover all 13 weak
 symbols") added a `__attribute__((weak))` 1-byte stub for
-`float_vif_score_hsaco` to `libvmaf/src/feature/hip/hip_hsaco_stubs.c` so
+`float_vif_score_hsaco` to `core/src/feature/hip/hip_hsaco_stubs.c` so
 the host link always succeeded — even on configurations where the real
 HSACO blob did not build.
 
@@ -27,9 +27,9 @@ anywhere" for HIP HSACO symbols that have a real kernel behind them.
 ## Decision
 
 Remove the `VMAF_HSACO_WEAK_STUB(float_vif_score_hsaco)` entry from
-`libvmaf/src/feature/hip/hip_hsaco_stubs.c`. The real
+`core/src/feature/hip/hip_hsaco_stubs.c`. The real
 `float_vif_score.hsaco` blob produced from
-`libvmaf/src/feature/hip/float_vif/float_vif_score.hip` becomes the only
+`core/src/feature/hip/float_vif/float_vif_score.hip` becomes the only
 definition of the symbol, the LTO warning disappears, and the stub TU
 shrinks by one line. The remaining 11 weak stubs (four ADM kernels, two
 ssimulacra2 kernels, and five other HIP extractors whose `.hip` sources

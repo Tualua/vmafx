@@ -56,7 +56,7 @@ meson test -C build  # includes test_mcp_smoke
 
 | Flag | Default | Purpose |
 |---|---|---|
-| `-Denable_mcp` | `false` | Umbrella — compiles `libvmaf/src/mcp/` + installs `libvmaf_mcp.h` + builds `test_mcp_smoke`. |
+| `-Denable_mcp` | `false` | Umbrella — compiles `core/src/mcp/` + installs `libvmaf_mcp.h` + builds `test_mcp_smoke`. |
 | `-Denable_mcp_sse` | `auto` (compiled in unless explicitly disabled) | Compile in the Server-Sent-Events / loopback HTTP transport. Requires `enable_mcp=true`. Implemented in plain POSIX sockets — no third-party HTTP library is vendored. |
 | `-Denable_mcp_uds` | `false` | Compile in the Unix domain socket transport. POSIX-only; non-POSIX hosts return `-ENODEV` at runtime. Requires `enable_mcp=true`. |
 | `-Denable_mcp_stdio` | `false` | Compile in the stdio (LSP-framed JSON-RPC on a caller-supplied fd pair) transport. Requires `enable_mcp=true`. |
@@ -97,7 +97,7 @@ vmaf_mcp_close(&server);
 ```
 
 The full API is documented in
-[`libvmaf/include/libvmaf/libvmaf_mcp.h`](../../libvmaf/include/libvmaf/libvmaf_mcp.h).
+[`core/include/libvmaf/libvmaf_mcp.h`](../../core/include/libvmaf/libvmaf_mcp.h).
 
 ## Transport summary
 
@@ -127,7 +127,7 @@ The full API is documented in
   application/json' -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
   http://127.0.0.1:<port>/mcp/sse` returns a JSON-RPC `tools/list`
   response. The C smoke test in
-  [`libvmaf/test/test_mcp_smoke.c::test_sse_event_stream`](../../libvmaf/test/test_mcp_smoke.c)
+  [`core/test/test_mcp_smoke.c::test_sse_event_stream`](../../core/test/test_mcp_smoke.c)
   performs the same round-trip without a `curl` subprocess
   dependency.
 - **Use case:** Claude Desktop, Cursor, and other agents speaking
@@ -204,15 +204,15 @@ This differs from the UDS transport (AF_UNIX), where plain
   then the embedded surface is read-only plus out-of-band scoring.
 
 These invariants are documented in the public header
-([`libvmaf_mcp.h`](../../libvmaf/include/libvmaf/libvmaf_mcp.h)).
+([`libvmaf_mcp.h`](../../core/include/libvmaf/libvmaf_mcp.h)).
 
 ## Status table
 
 | Component | Status | PR / ADR |
 |---|---|---|
 | Public header `libvmaf_mcp.h` | Landed | T5-2 / [ADR-0209](../adr/0209-mcp-embedded-scaffold.md) |
-| TU `libvmaf/src/mcp/mcp.c` | Landed (v1 runtime; init / start_stdio / stop / close wired) | T5-2b / ADR-0209 § Status update 2026-05-08 |
-| Vendored cJSON v1.7.18 (MIT) under `libvmaf/src/mcp/3rdparty/cJSON/` | Landed | T5-2b |
+| TU `core/src/mcp/mcp.c` | Landed (v1 runtime; init / start_stdio / stop / close wired) | T5-2b / ADR-0209 § Status update 2026-05-08 |
+| Vendored cJSON v1.7.18 (MIT) under `core/src/mcp/3rdparty/cJSON/` | Landed | T5-2b |
 | JSON-RPC dispatcher (`tools/list`, `tools/call`, `resources/list`, `initialize`) | Landed | T5-2b |
 | Build flags + per-transport sub-flags | Landed (default off) | T5-2 |
 | Smoke + protocol test (15 sub-tests, real round-trip) | Landed | T5-2b |
@@ -280,4 +280,4 @@ Tool response (MCP `content` envelope wrapping the tool's JSON):
   the existing standalone Python MCP server.
 - [ADR-0128](../adr/0128-embedded-mcp-in-libvmaf.md) — governance.
 - [Research-0005](../research/0005-embedded-mcp-transport.md) — design.
-- [`libvmaf/include/libvmaf/libvmaf_mcp.h`](../../libvmaf/include/libvmaf/libvmaf_mcp.h) — API reference.
+- [`core/include/libvmaf/libvmaf_mcp.h`](../../core/include/libvmaf/libvmaf_mcp.h) — API reference.

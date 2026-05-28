@@ -50,7 +50,7 @@ Worktree drift guard: every command ran against
 
 | # | Row | Verdict | Verification |
 |---|-----|---------|--------------|
-| O1 | T-VK-1.4-BUMP | **VERIFIED — GENUINELY OPEN** | ADR-0264 `Status: Accepted`; Step A landed via PR #346 (MERGED 2026-05-04) but Step B `apiVersion` bump is *not* in `libvmaf/src/vulkan/common.c` on master (`grep "VK_API_VERSION_1_4" libvmaf/src/vulkan/common.c` → none). PR #512 (Phase 3b stronger-fence experiments) `OPEN`. Blocker is real. |
+| O1 | T-VK-1.4-BUMP | **VERIFIED — GENUINELY OPEN** | ADR-0264 `Status: Accepted`; Step A landed via PR #346 (MERGED 2026-05-04) but Step B `apiVersion` bump is *not* in `core/src/vulkan/common.c` on master (`grep "VK_API_VERSION_1_4" core/src/vulkan/common.c` → none). PR #512 (Phase 3b stronger-fence experiments) `OPEN`. Blocker is real. |
 | O2 | T-VK-CIEDE-F32-F64 | **VERIFIED — GENUINELY OPEN (documented debt)** | ADR-0273 `Status: Accepted`; row explicitly states "no code action planned — accepted as documented debt". The structural f32/f64 gap is unchanged on current master. |
 | O3 | T-VK-VIF-1.4-RESIDUAL-ARC | **VERIFIED — GENUINELY OPEN** | Phase-3 NVIDIA fix (PR #511, MERGED 2026-05-09) closed NVIDIA + RADV but explicitly does NOT close Arc-A380 / Mesa-ANV per ADR-0269 Phase-3 status appendix lines 190-220. PR #512 carries the Phase-3b experiments (`OPEN`). |
 

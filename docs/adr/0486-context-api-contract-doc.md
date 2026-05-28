@@ -53,8 +53,8 @@ are modified; the doc alone closes the drift risk.
 
 - Dedup audit: `.workingdir/dedup-audit-gpu-templates-2026-05-16.md` §4
   "Context API surface shape".
-- HIP context API: `libvmaf/src/hip/common.h` (ADR-0212).
-- Metal context API: `libvmaf/src/metal/common.h` (ADR-0361).
-- Vulkan context API: `libvmaf/src/vulkan/vulkan_common.h` (ADR-0175).
-- CUDA deviation: `libvmaf/src/cuda/common.h` (upstream Netflix API).
+- HIP context API: `core/src/hip/common.h` (ADR-0212).
+- Metal context API: `core/src/metal/common.h` (ADR-0361).
+- Vulkan context API: `core/src/vulkan/vulkan_common.h` (ADR-0175).
+- CUDA deviation: `core/src/cuda/common.h` (upstream Netflix API).
 - Related: ADR-0108 (deep-dive deliverables rule).

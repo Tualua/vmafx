@@ -7,7 +7,7 @@
 
 ## Context
 
-A targeted cuda-reviewer pass on `libvmaf/src/feature/cuda/integer_motion_cuda.c`
+A targeted cuda-reviewer pass on `core/src/feature/cuda/integer_motion_cuda.c`
 on 2026-05-09 surfaced four real defects that were latent only because the
 default golden gate exercises a single configuration (`motion_fps_weight = 1.0`,
 `motion_moving_average = false`):
@@ -102,7 +102,7 @@ We will:
 - **Negative**: `__shared__` footprint of the motion blur kernels grows by
   64 bytes per block — irrelevant at the 48 KB SM cap.
 - **Neutral / follow-ups**: the cuda-reviewer pass also flagged
-  `libvmaf/src/cuda/common.c:388,416` for an inverted stream-select
+  `core/src/cuda/common.c:388,416` for an inverted stream-select
   condition (no live callers); deferred to a separate small PR per the
   agent brief. Motion3 GPU coverage (T3-15(c)) remains a separate
   feature track and is *not* expanded here.
@@ -111,7 +111,7 @@ We will:
 
 - `req`: cuda-reviewer 2026-05-09 brief identifying BLOCKERS 1+2,
   NEEDS-CHANGES 3+4, and ADVISORIES 5+6.
-- CPU reference: `libvmaf/src/feature/integer_motion.c:523, 563`.
-- Existing correct pattern: `libvmaf/src/feature/cuda/integer_motion_v2_cuda.c:188`.
+- CPU reference: `core/src/feature/integer_motion.c:523, 563`.
+- Existing correct pattern: `core/src/feature/cuda/integer_motion_v2_cuda.c:188`.
 - Related: ADR-0219 (motion3 CUDA scaffold), ADR-0242 (engine-scope
   fence batching).

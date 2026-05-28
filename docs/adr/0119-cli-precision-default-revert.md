@@ -62,10 +62,10 @@ pre-fork output exactly.** Round-trip-lossless `%.17g` is opt-in via
 
 Concretely:
 
-- `libvmaf/tools/cli_parse.c:43` — `VMAF_DEFAULT_PRECISION_FMT` flips from
+- `core/tools/cli_parse.c:43` — `VMAF_DEFAULT_PRECISION_FMT` flips from
   `"%.17g"` to `"%.6f"`. New macro `VMAF_LOSSLESS_PRECISION_FMT "%.17g"` is
   what `--precision=max|full` resolves to.
-- `libvmaf/src/output.c:29` — `DEFAULT_SCORE_FORMAT` flips from `"%.17g"` to
+- `core/src/output.c:29` — `DEFAULT_SCORE_FORMAT` flips from `"%.17g"` to
   `"%.6f"`. Library callers passing `score_format=NULL` to
   `vmaf_write_output_with_format()` get golden-compatible output by default.
 - `python/vmaf/core/result.py:132,153` — diagnostic per-frame and aggregate

@@ -1,5 +1,5 @@
 - **Vulkan `integer_vif` shader memory-model race in cross-subgroup
-  int64 reduction.** `libvmaf/src/feature/vulkan/shaders/vif.comp`
+  int64 reduction.** `core/src/feature/vulkan/shaders/vif.comp`
   used bare `barrier()` calls between the cooperative shared-memory
   writes (Phase-1 tile load, Phase-2 vertical convolution, Phase-4
   cross-subgroup `s_lmem` accumulator) and the corresponding reads

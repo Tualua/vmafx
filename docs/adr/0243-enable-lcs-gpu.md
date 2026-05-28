@@ -8,7 +8,7 @@
 ## Context
 
 The `float_ms_ssim` extractor's `enable_lcs` option (defined in
-[`libvmaf/src/feature/float_ms_ssim.c`](../../libvmaf/src/feature/float_ms_ssim.c))
+[`core/src/feature/float_ms_ssim.c`](../../core/src/feature/float_ms_ssim.c))
 emits 15 extra per-scale metrics — `float_ms_ssim_{l,c,s}_scale{0..4}` —
 on top of the combined Wang-product score. The fork's GPU twins
 (`float_ms_ssim_cuda` from
@@ -17,7 +17,7 @@ on top of the combined Wang-product score. The fork's GPU twins
 [ADR-0190](0190-float-ms-ssim-cuda.md) / PR #141) shipped the
 combined score only — both deferred `enable_lcs` to a follow-up
 (see the file-header comment at
-[`integer_ms_ssim_cuda.c:29`](../../libvmaf/src/feature/cuda/integer_ms_ssim_cuda.c#L29)
+[`integer_ms_ssim_cuda.c:29`](../../core/src/feature/cuda/integer_ms_ssim_cuda.c#L29)
 and the option help-text reading "(reserved; not yet implemented in
 the GPU path)" on the Vulkan side).
 
@@ -47,7 +47,7 @@ emitted metrics at `places=4` against the CPU reference per the
 existing `float_ms_ssim` contract from ADR-0190.
 
 The SYCL MS-SSIM twin
-([`integer_ms_ssim_sycl.cpp`](../../libvmaf/src/feature/sycl/integer_ms_ssim_sycl.cpp))
+([`integer_ms_ssim_sycl.cpp`](../../core/src/feature/sycl/integer_ms_ssim_sycl.cpp))
 does not currently expose `enable_lcs` (its `options` table is
 empty). It therefore stays out-of-scope for this ADR; if SYCL ever
 adopts the option-bool, the same wiring applies (the SYCL kernel
@@ -60,7 +60,7 @@ already computes the same per-scale means).
 | **A. Gate 15 host-side `feature_collector_append` calls on the existing `enable_lcs` bool** (chosen) | No kernel changes; default path bit-identical; one ADR, ~30 LOC | None of substance | This is the trivial extension — the GPU vert kernel already emits L/C/S means; only the host-side emission was missing. |
 | B. Add 15 separate device readback buffers (one per metric) for parity with the CPU's metric-by-metric `compute_ms_ssim` API | Conceptual symmetry with CPU `l_scores[]` / `c_scores[]` / `s_scores[]` arrays | 15× the D2H bandwidth; allocates ~60 MB of pinned host buffers at 4K; redundant — the per-WG-block partials already reduce to per-scale means at host | Wasteful and not faster; the per-scale double accumulator already runs every frame. |
 | C. Treat LCS as a separate feature extractor (`float_ms_ssim_lcs_cuda` / `_vulkan`) | Cleaner registration; one extractor = one set of metrics | Forces a second pyramid + intermediates allocation; doubles VRAM; breaks API parity (CPU is one extractor with an option, not two) | API-parity with CPU is a hard constraint per [ADR-0190](0190-float-ms-ssim-cuda.md). |
-| D. Order the emitted metric names metric-wise (`{l_scale0..4, c_scale0..4, s_scale0..4}`) vs scale-wise (`{l_scale0, c_scale0, s_scale0, l_scale1, ...}`) | Either ordering works | Metric-wise matches CPU [`float_ms_ssim.c:189`](../../libvmaf/src/feature/float_ms_ssim.c#L189-L221) — that's what consumers (`pip install meson-python`) see today | We chose metric-wise to mirror the CPU emission order; downstream JSON consumers see identical key ordering across all backends. |
+| D. Order the emitted metric names metric-wise (`{l_scale0..4, c_scale0..4, s_scale0..4}`) vs scale-wise (`{l_scale0, c_scale0, s_scale0, l_scale1, ...}`) | Either ordering works | Metric-wise matches CPU [`float_ms_ssim.c:189`](../../core/src/feature/float_ms_ssim.c#L189-L221) — that's what consumers (`pip install meson-python`) see today | We chose metric-wise to mirror the CPU emission order; downstream JSON consumers see identical key ordering across all backends. |
 
 ## Consequences
 
@@ -96,5 +96,5 @@ already computes the same per-scale means).
 - [ADR-0214](0214-gpu-parity-ci-gate.md) — matrix gate that picks up the new pseudo-feature.
 - Source: `req` — user direction 2026-04-28: "implement, do not de-advertise".
 - Implementation files:
-  [`libvmaf/src/feature/cuda/integer_ms_ssim_cuda.c`](../../libvmaf/src/feature/cuda/integer_ms_ssim_cuda.c),
-  [`libvmaf/src/feature/vulkan/ms_ssim_vulkan.c`](../../libvmaf/src/feature/vulkan/ms_ssim_vulkan.c).
+  [`core/src/feature/cuda/integer_ms_ssim_cuda.c`](../../core/src/feature/cuda/integer_ms_ssim_cuda.c),
+  [`core/src/feature/vulkan/ms_ssim_vulkan.c`](../../core/src/feature/vulkan/ms_ssim_vulkan.c).

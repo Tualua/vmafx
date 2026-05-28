@@ -10,8 +10,8 @@
   The script parses every patch under `ffmpeg-patches/` once,
   extracts a "consumed set" of `vmaf_*` / `Vmaf*` / `libvmaf_*` /
   `--enable-libvmaf-*` tokens, and intersects the set against the
-  PR's diff over `libvmaf/include/libvmaf/*.h` and
-  `libvmaf/meson_options.txt`; fails when the intersection is
+  PR's diff over `core/include/libvmaf/*.h` and
+  `core/meson_options.txt`; fails when the intersection is
   non-empty and no `ffmpeg-patches/*.patch` is in the diff. Per-PR
   opt-out is `no ffmpeg-patches update needed: REASON` in the PR
   body, matching the ADR-0108 family convention. Sub-second runtime

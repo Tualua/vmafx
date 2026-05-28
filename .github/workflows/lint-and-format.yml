@@ -91,36 +91,36 @@ jobs:
           PUSH_BEFORE_SHA: ${{ github.event.before }}
         run: |
           # Collect the delta for both PR and push events so master-post-merge
-          # doesn't re-scan every vendored .c/.cpp (e.g. libvmaf/src/svm.cpp)
+          # doesn't re-scan every vendored .c/.cpp (e.g. core/src/svm.cpp)
           # and surface pre-existing warnings unrelated to the push.
           #
           # Excluded path families — the shared reason is that the compile
           # commands in `build/compile_commands.json` don't cover these TUs
           # (CPU-only + ARM-only build here), so clang-tidy parses them with
           # default flags and spurious `clang-diagnostic-error` output:
-          #   - libvmaf/src/feature/arm64/ — NEON, needs cross-toolchain.
-          #   - libvmaf/src/cuda/ + libvmaf/src/feature/cuda/ — require
+          #   - core/src/feature/arm64/ — NEON, needs cross-toolchain.
+          #   - core/src/cuda/ + core/src/feature/cuda/ — require
           #     `-Denable_cuda=true` meson setup to generate compile_commands
           #     (follow-up: add a parallel CUDA clang-tidy job once a
           #     self-hosted CUDA runner lands, backlog T7-3).
-          #   - libvmaf/test/test_cuda_*.c + test_gpu_picture_pool.c — GPU-gated
+          #   - core/test/test_cuda_*.c + test_gpu_picture_pool.c — GPU-gated
           #     tests whose build entries only exist under the CUDA build.
           #     test_gpu_picture_pool.c is the renamed test_ring_buffer.c per
           #     ADR-0239 (still CUDA-only — it pulls in libvmaf_cuda.h).
-          #   - libvmaf/src/sycl/ + libvmaf/src/feature/sycl/ +
-          #     libvmaf/test/test_sycl* — require `-Denable_sycl=true` and
+          #   - core/src/sycl/ + core/src/feature/sycl/ +
+          #     core/test/test_sycl* — require `-Denable_sycl=true` and
           #     the `icpx` compiler; no compile_commands in the CPU-only
-          #     `build/`. Local lint runs against `libvmaf/build-sycl/`.
-          #   - libvmaf/tools/vmaf_vpl.c — VAAPI integration; needs
+          #     `build/`. Local lint runs against `core/build-sycl/`.
+          #   - core/tools/vmaf_vpl.c — VAAPI integration; needs
           #     `va/va.h` from libva-dev plus the CUDA/SYCL link path; no
           #     compile_commands entry in the CPU-only build.
-          #   - libvmaf/src/mcp/ + libvmaf/test/test_mcp_smoke.c —
+          #   - core/src/mcp/ + core/test/test_mcp_smoke.c —
           #     gated by `-Denable_mcp=true`; the CPU-only lint build
           #     has the umbrella flag off (ADR-0209 audit-first
           #     scaffold, T5-2). Local lint runs against a build
           #     configured with `-Denable_mcp=true -Denable_mcp_sse=true
           #     -Denable_mcp_uds=true -Denable_mcp_stdio=true`.
-          # Local lint on these files runs against `libvmaf/build-cuda/`.
+          # Local lint on these files runs against `core/build-cuda/`.
           # `--diff-filter=d` excludes Deleted entries — clang-tidy can't
           # lint a file that no longer exists on disk; without this filter
           # the script passes a missing path to clang-tidy and fails with
@@ -129,25 +129,25 @@ jobs:
             files=$(git diff --name-only --diff-filter=d \
               "origin/${PR_BASE_REF}...HEAD" \
               -- '*.c' '*.h' '*.cpp' '*.hpp' \
-              | grep -v '^libvmaf/src/feature/arm64/' \
-              | grep -v '^libvmaf/src/cuda/' \
-              | grep -v '^libvmaf/src/feature/cuda/' \
-              | grep -v '^libvmaf/test/test_cuda_' \
-              | grep -v '^libvmaf/test/test_gpu_picture_pool\.c$' \
-              | grep -v '^libvmaf/test/tiny_ai_test_template\.h$' \
-              | grep -v '^libvmaf/src/sycl/' \
-              | grep -v '^libvmaf/src/feature/sycl/' \
-              | grep -v '^libvmaf/test/test_sycl' \
-              | grep -v '^libvmaf/tools/vmaf_vpl\.c$' \
-              | grep -v '^libvmaf/src/vulkan/' \
-              | grep -v '^libvmaf/src/feature/vulkan/' \
-              | grep -v '^libvmaf/test/test_vulkan' \
-              | grep -v '^libvmaf/src/mcp/' \
-              | grep -v '^libvmaf/test/test_mcp' \
-              | grep -v '^libvmaf/src/hip/' \
-              | grep -v '^libvmaf/src/feature/hip/' \
-              | grep -v '^libvmaf/test/test_hip' \
-              | grep -v '^libvmaf/test/fuzz/' \
+              | grep -v '^core/src/feature/arm64/' \
+              | grep -v '^core/src/cuda/' \
+              | grep -v '^core/src/feature/cuda/' \
+              | grep -v '^core/test/test_cuda_' \
+              | grep -v '^core/test/test_gpu_picture_pool\.c$' \
+              | grep -v '^core/test/tiny_ai_test_template\.h$' \
+              | grep -v '^core/src/sycl/' \
+              | grep -v '^core/src/feature/sycl/' \
+              | grep -v '^core/test/test_sycl' \
+              | grep -v '^core/tools/vmaf_vpl\.c$' \
+              | grep -v '^core/src/vulkan/' \
+              | grep -v '^core/src/feature/vulkan/' \
+              | grep -v '^core/test/test_vulkan' \
+              | grep -v '^core/src/mcp/' \
+              | grep -v '^core/test/test_mcp' \
+              | grep -v '^core/src/hip/' \
+              | grep -v '^core/src/feature/hip/' \
+              | grep -v '^core/test/test_hip' \
+              | grep -v '^core/test/fuzz/' \
               | tr '\n' ' ')
           elif [ "$GH_EVENT_NAME" = "push" ]; then
             before="$PUSH_BEFORE_SHA"
@@ -158,25 +158,25 @@ jobs:
               if git rev-parse HEAD~1 >/dev/null 2>&1; then
                 files=$(git diff --name-only --diff-filter=d HEAD~1..HEAD \
                   -- '*.c' '*.h' '*.cpp' '*.hpp' \
-                  | grep -v '^libvmaf/src/feature/arm64/' \
-              | grep -v '^libvmaf/src/cuda/' \
-              | grep -v '^libvmaf/src/feature/cuda/' \
-              | grep -v '^libvmaf/test/test_cuda_' \
-              | grep -v '^libvmaf/test/test_gpu_picture_pool\.c$' \
-              | grep -v '^libvmaf/test/tiny_ai_test_template\.h$' \
-              | grep -v '^libvmaf/src/sycl/' \
-              | grep -v '^libvmaf/src/feature/sycl/' \
-              | grep -v '^libvmaf/test/test_sycl' \
-              | grep -v '^libvmaf/tools/vmaf_vpl\.c$' \
-              | grep -v '^libvmaf/src/vulkan/' \
-              | grep -v '^libvmaf/src/feature/vulkan/' \
-              | grep -v '^libvmaf/test/test_vulkan' \
-              | grep -v '^libvmaf/src/mcp/' \
-              | grep -v '^libvmaf/test/test_mcp' \
-              | grep -v '^libvmaf/src/hip/' \
-              | grep -v '^libvmaf/src/feature/hip/' \
-              | grep -v '^libvmaf/test/test_hip' \
-              | grep -v '^libvmaf/test/fuzz/' \
+                  | grep -v '^core/src/feature/arm64/' \
+              | grep -v '^core/src/cuda/' \
+              | grep -v '^core/src/feature/cuda/' \
+              | grep -v '^core/test/test_cuda_' \
+              | grep -v '^core/test/test_gpu_picture_pool\.c$' \
+              | grep -v '^core/test/tiny_ai_test_template\.h$' \
+              | grep -v '^core/src/sycl/' \
+              | grep -v '^core/src/feature/sycl/' \
+              | grep -v '^core/test/test_sycl' \
+              | grep -v '^core/tools/vmaf_vpl\.c$' \
+              | grep -v '^core/src/vulkan/' \
+              | grep -v '^core/src/feature/vulkan/' \
+              | grep -v '^core/test/test_vulkan' \
+              | grep -v '^core/src/mcp/' \
+              | grep -v '^core/test/test_mcp' \
+              | grep -v '^core/src/hip/' \
+              | grep -v '^core/src/feature/hip/' \
+              | grep -v '^core/test/test_hip' \
+              | grep -v '^core/test/fuzz/' \
               | tr '\n' ' ')
               else
                 files=""
@@ -184,25 +184,25 @@ jobs:
             else
               files=$(git diff --name-only --diff-filter=d "$before"..HEAD \
                 -- '*.c' '*.h' '*.cpp' '*.hpp' \
-                | grep -v '^libvmaf/src/feature/arm64/' \
-              | grep -v '^libvmaf/src/cuda/' \
-              | grep -v '^libvmaf/src/feature/cuda/' \
-              | grep -v '^libvmaf/test/test_cuda_' \
-              | grep -v '^libvmaf/test/test_gpu_picture_pool\.c$' \
-              | grep -v '^libvmaf/test/tiny_ai_test_template\.h$' \
-              | grep -v '^libvmaf/src/sycl/' \
-              | grep -v '^libvmaf/src/feature/sycl/' \
-              | grep -v '^libvmaf/test/test_sycl' \
-              | grep -v '^libvmaf/tools/vmaf_vpl\.c$' \
-              | grep -v '^libvmaf/src/vulkan/' \
-              | grep -v '^libvmaf/src/feature/vulkan/' \
-              | grep -v '^libvmaf/test/test_vulkan' \
-              | grep -v '^libvmaf/src/mcp/' \
-              | grep -v '^libvmaf/test/test_mcp' \
-              | grep -v '^libvmaf/src/hip/' \
-              | grep -v '^libvmaf/src/feature/hip/' \
-              | grep -v '^libvmaf/test/test_hip' \
-              | grep -v '^libvmaf/test/fuzz/' \
+                | grep -v '^core/src/feature/arm64/' \
+              | grep -v '^core/src/cuda/' \
+              | grep -v '^core/src/feature/cuda/' \
+              | grep -v '^core/test/test_cuda_' \
+              | grep -v '^core/test/test_gpu_picture_pool\.c$' \
+              | grep -v '^core/test/tiny_ai_test_template\.h$' \
+              | grep -v '^core/src/sycl/' \
+              | grep -v '^core/src/feature/sycl/' \
+              | grep -v '^core/test/test_sycl' \
+              | grep -v '^core/tools/vmaf_vpl\.c$' \
+              | grep -v '^core/src/vulkan/' \
+              | grep -v '^core/src/feature/vulkan/' \
+              | grep -v '^core/test/test_vulkan' \
+              | grep -v '^core/src/mcp/' \
+              | grep -v '^core/test/test_mcp' \
+              | grep -v '^core/src/hip/' \
+              | grep -v '^core/src/feature/hip/' \
+              | grep -v '^core/test/test_hip' \
+              | grep -v '^core/test/fuzz/' \
               | tr '\n' ' ')
             fi
           else
@@ -210,25 +210,25 @@ jobs:
             # but deliberate — operator asked for it).
             files=$(git ls-files '*.c' '*.h' '*.cpp' '*.hpp' \
               | grep -v '^subprojects/' \
-              | grep -v '^libvmaf/src/feature/arm64/' \
-              | grep -v '^libvmaf/src/cuda/' \
-              | grep -v '^libvmaf/src/feature/cuda/' \
-              | grep -v '^libvmaf/test/test_cuda_' \
-              | grep -v '^libvmaf/test/test_gpu_picture_pool\.c$' \
-              | grep -v '^libvmaf/test/tiny_ai_test_template\.h$' \
-              | grep -v '^libvmaf/src/sycl/' \
-              | grep -v '^libvmaf/src/feature/sycl/' \
-              | grep -v '^libvmaf/test/test_sycl' \
-              | grep -v '^libvmaf/tools/vmaf_vpl\.c$' \
-              | grep -v '^libvmaf/src/vulkan/' \
-              | grep -v '^libvmaf/src/feature/vulkan/' \
-              | grep -v '^libvmaf/test/test_vulkan' \
-              | grep -v '^libvmaf/src/mcp/' \
-              | grep -v '^libvmaf/test/test_mcp' \
-              | grep -v '^libvmaf/src/hip/' \
-              | grep -v '^libvmaf/src/feature/hip/' \
-              | grep -v '^libvmaf/test/test_hip' \
-              | grep -v '^libvmaf/test/fuzz/' \
+              | grep -v '^core/src/feature/arm64/' \
+              | grep -v '^core/src/cuda/' \
+              | grep -v '^core/src/feature/cuda/' \
+              | grep -v '^core/test/test_cuda_' \
+              | grep -v '^core/test/test_gpu_picture_pool\.c$' \
+              | grep -v '^core/test/tiny_ai_test_template\.h$' \
+              | grep -v '^core/src/sycl/' \
+              | grep -v '^core/src/feature/sycl/' \
+              | grep -v '^core/test/test_sycl' \
+              | grep -v '^core/tools/vmaf_vpl\.c$' \
+              | grep -v '^core/src/vulkan/' \
+              | grep -v '^core/src/feature/vulkan/' \
+              | grep -v '^core/test/test_vulkan' \
+              | grep -v '^core/src/mcp/' \
+              | grep -v '^core/test/test_mcp' \
+              | grep -v '^core/src/hip/' \
+              | grep -v '^core/src/feature/hip/' \
+              | grep -v '^core/test/test_hip' \
+              | grep -v '^core/test/fuzz/' \
               | tr '\n' ' ')
           fi
           [ -z "$files" ] && { echo "no C/C++ changes"; exit 0; }
@@ -286,10 +286,10 @@ jobs:
           if [ "$GH_EVENT_NAME" = "pull_request" ]; then
             files=$(git diff --name-only --diff-filter=d \
               "origin/${PR_BASE_REF}...HEAD" \
-              -- 'libvmaf/src/sycl/*.cpp' 'libvmaf/src/sycl/*.hpp' \
-                 'libvmaf/src/feature/sycl/*.cpp' \
-                 'libvmaf/src/feature/sycl/*.hpp' \
-                 'libvmaf/test/test_sycl*.c' 'libvmaf/test/test_sycl*.cpp' \
+              -- 'core/src/sycl/*.cpp' 'core/src/sycl/*.hpp' \
+                 'core/src/feature/sycl/*.cpp' \
+                 'core/src/feature/sycl/*.hpp' \
+                 'core/test/test_sycl*.c' 'core/test/test_sycl*.cpp' \
               | tr '\n' ' ')
           elif [ "$GH_EVENT_NAME" = "push" ]; then
             before="$PUSH_BEFORE_SHA"
@@ -297,30 +297,30 @@ jobs:
             if [ -z "$before" ] || [ "$before" = "$zero" ]; then
               if git rev-parse HEAD~1 >/dev/null 2>&1; then
                 files=$(git diff --name-only --diff-filter=d HEAD~1..HEAD \
-                  -- 'libvmaf/src/sycl/*.cpp' 'libvmaf/src/sycl/*.hpp' \
-                     'libvmaf/src/feature/sycl/*.cpp' \
-                     'libvmaf/src/feature/sycl/*.hpp' \
-                     'libvmaf/test/test_sycl*.c' \
-                     'libvmaf/test/test_sycl*.cpp' \
+                  -- 'core/src/sycl/*.cpp' 'core/src/sycl/*.hpp' \
+                     'core/src/feature/sycl/*.cpp' \
+                     'core/src/feature/sycl/*.hpp' \
+                     'core/test/test_sycl*.c' \
+                     'core/test/test_sycl*.cpp' \
                   | tr '\n' ' ')
               else
                 files=""
               fi
             else
               files=$(git diff --name-only --diff-filter=d "$before"..HEAD \
-                -- 'libvmaf/src/sycl/*.cpp' 'libvmaf/src/sycl/*.hpp' \
-                   'libvmaf/src/feature/sycl/*.cpp' \
-                   'libvmaf/src/feature/sycl/*.hpp' \
-                   'libvmaf/test/test_sycl*.c' \
-                   'libvmaf/test/test_sycl*.cpp' \
+                -- 'core/src/sycl/*.cpp' 'core/src/sycl/*.hpp' \
+                   'core/src/feature/sycl/*.cpp' \
+                   'core/src/feature/sycl/*.hpp' \
+                   'core/test/test_sycl*.c' \
+                   'core/test/test_sycl*.cpp' \
                 | tr '\n' ' ')
             fi
           else
             files=$(git ls-files \
-              'libvmaf/src/sycl/*.cpp' 'libvmaf/src/sycl/*.hpp' \
-              'libvmaf/src/feature/sycl/*.cpp' \
-              'libvmaf/src/feature/sycl/*.hpp' \
-              'libvmaf/test/test_sycl*.c' 'libvmaf/test/test_sycl*.cpp' \
+              'core/src/sycl/*.cpp' 'core/src/sycl/*.hpp' \
+              'core/src/feature/sycl/*.cpp' \
+              'core/src/feature/sycl/*.hpp' \
+              'core/test/test_sycl*.c' 'core/test/test_sycl*.cpp' \
               | tr '\n' ' ')
           fi
           echo "files=$files" >> "$GITHUB_OUTPUT"

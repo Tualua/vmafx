@@ -38,9 +38,9 @@ Each registration:
 - New extractor registration (`vmaf_fex_<name>_<backend>`) +
   matching `set_fex_<backend>_state()` wiring in `libvmaf.c`.
 - New kernel under
-  `libvmaf/src/feature/<backend>/<metric>_<backend>.{c,cpp,cu}`.
+  `core/src/feature/<backend>/<metric>_<backend>.{c,cpp,cu}`.
 - Vulkan: new GLSL compute shader under
-  `libvmaf/src/feature/vulkan/shaders/<metric>.comp`.
+  `core/src/feature/vulkan/shaders/<metric>.comp`.
 - Cross-backend gate extension:
   `scripts/ci/cross_backend_vif_diff.py` gains
   `--feature {psnr,ciede,moment}` selectors.

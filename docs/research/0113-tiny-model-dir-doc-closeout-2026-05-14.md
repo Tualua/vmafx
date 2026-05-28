@@ -11,10 +11,10 @@ security feature after the loader and tests already enforce it?
 
 ## Sources
 
-- [`libvmaf/src/dnn/model_loader.c`](../../libvmaf/src/dnn/model_loader.c) —
+- [`core/src/dnn/model_loader.c`](../../core/src/dnn/model_loader.c) —
   `enforce_tiny_model_jail()` and the `getenv("VMAF_TINY_MODEL_DIR")` call in
   `vmaf_dnn_validate_onnx`.
-- [`libvmaf/test/dnn/test_model_loader.c`](../../libvmaf/test/dnn/test_model_loader.c)
+- [`core/test/dnn/test_model_loader.c`](../../core/test/dnn/test_model_loader.c)
   — regression coverage for unset jail, allowed in-jail model, outside model,
   sibling-prefix escape, symlink escape, missing jail, non-directory jail, and
   trailing-slash normalisation.

@@ -1,6 +1,6 @@
 ### Fixed: `test_context` and `test_log` built but never registered as meson test cases
 
-`libvmaf/test/meson.build` defined `test_context` and `test_log` as
+`core/test/meson.build` defined `test_context` and `test_log` as
 `executable()` targets but never called `test()` for either. Both
 executables were compiled by `ninja -C build` yet were invisible to
 `meson test` (and therefore to CI and the `--suite=fast` pre-push gate).

@@ -38,10 +38,10 @@ against a real corpus.
 | `mobilesal` (saliency placeholder) | `model/tiny/mobilesal.onnx` | ROI weighting for saliency-aware tuning (real-weights swap deferred per ADR-0257) |
 | Canonical-6 source features | `ai/src/vmaf_train/canonical6.py` | Source descriptor that all per-title predictors consume |
 | FFmpeg patches with libvmaf filter | `ffmpeg-patches/0001-…` through `0006-…` | In-process scoring during encode-search |
-| `vf_libvmaf_vulkan` zero-copy | `libvmaf/src/vulkan/`, ADR-0186 | GPU verify path with no PCIe round-trip |
-| Vulkan / CUDA / SYCL VMAF backends | `libvmaf/src/{cuda,sycl,vulkan}/` | Verify-side acceleration |
+| `vf_libvmaf_vulkan` zero-copy | `core/src/vulkan/`, ADR-0186 | GPU verify path with no PCIe round-trip |
+| Vulkan / CUDA / SYCL VMAF backends | `core/src/{cuda,sycl,vulkan}/` | Verify-side acceleration |
 | MCP server | `mcp-server/vmaf-mcp/` | Phase F surface — agent-callable tools |
-| `--precision` flag (lossless floats) | `libvmaf/tools/cli_parse.c` | Pareto-frontier needs IEEE-round-trip JSONL |
+| `--precision` flag (lossless floats) | `core/tools/cli_parse.c` | Pareto-frontier needs IEEE-round-trip JSONL |
 
 The audit's premise: **most of the 18 buckets are 80% built already
 in the metric stack**; what's missing is the orchestration layer in

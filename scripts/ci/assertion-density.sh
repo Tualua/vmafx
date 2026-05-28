@@ -5,8 +5,8 @@
 # average; we enforce "any non-trivial fork-added function has at least
 # one assert" in CI, and report the ≥2 average informationally.
 #
-# Scope: files whose copyright header reads "Copyright * Lusoris" (without a
-# Netflix co-holder). Upstream Netflix files are exempted (separate cleanup ticket).
+# Scope: files whose copyright header reads "Lusoris and Claude".
+# Upstream Netflix files are exempted (separate cleanup ticket).
 #
 # Exit 0 on pass, 1 on any fork-added function ≥MIN_LINES lines with zero asserts.
 
@@ -16,11 +16,10 @@ MIN_LINES="${MIN_LINES:-20}"
 
 # Collect fork-added files by header scan.
 mapfile -t FILES < <(
-  git ls-files 'libvmaf/src/**/*.c' 'libvmaf/src/**/*.cpp' 'libvmaf/tools/*.c' \
+  git ls-files 'core/src/**/*.c' 'core/src/**/*.cpp' 'core/tools/*.c' \
     2>/dev/null | while read -r f; do
     [ -f "$f" ] || continue
-    if head -n 20 "$f" 2>/dev/null | grep -q "Copyright.*Lusoris" &&
-      ! head -n 20 "$f" 2>/dev/null | grep -q "Copyright.*Netflix"; then
+    if head -n 20 "$f" 2>/dev/null | grep -q "Lusoris and Claude"; then
       echo "$f"
     fi
   done
@@ -118,7 +117,7 @@ for f in "${FILES[@]}"; do
             } else {
                 # Count both assert() (standard) and VMAF_ASSERT_DEBUG()
                 # (fork-specific, zero-cost in release; see
-                # libvmaf/include/libvmaf/vmaf_assert.h and
+                # core/include/libvmaf/vmaf_assert.h and
                 # docs/principles.md §1.2 rule 5).
                 if (line ~ /(^|[^a-zA-Z_])assert[[:space:]]*\(/) n_asserts++
                 if (line ~ /VMAF_ASSERT_DEBUG[[:space:]]*\(/) n_asserts++

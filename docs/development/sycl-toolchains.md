@@ -8,7 +8,7 @@ toolchains:
 | Intel oneAPI `icpx` | yes | ~2.6 GB | closed-binary | Production builds, Intel hardware (iGPU, Arc, Battlemage), OpenVINO / NPU enablement. |
 | AdaptiveCpp `acpp` | no | ~50 MB | open-source (BSL) | Contributor builds without Intel hardware, second-toolchain CI lane, AMD HIP / NVIDIA CUDA SYCL targets. |
 
-Both use the same `libvmaf/src/feature/sycl/*.cpp` kernels — the
+Both use the same `core/src/feature/sycl/*.cpp` kernels — the
 build plumbing branches on the configured `sycl_compiler` basename.
 See [ADR-0335](../adr/0335-adaptivecpp-second-sycl-toolchain.md) for
 the design rationale.
@@ -94,7 +94,7 @@ tested.
 | `sycl::local_accessor` | yes | yes | All targets. |
 | `sycl::sub_group`, `reduce_over_group` | yes | yes | CUDA / HIP / SPIR-V. |
 | `sycl::atomic_ref<int64, relaxed, device, global>` | yes | yes | int64 atomics on older AMD HIP devices may need a fallback at HIP target build time. |
-| `[[intel::reqd_sub_group_size(N)]]` | yes (verbatim) | **no — neutralised by `VMAF_SYCL_REQD_SG_SIZE(N)` macro** | AdaptiveCpp picks sub-group size per backend at JIT time. The macro reduces to a no-op under acpp; see `libvmaf/src/feature/sycl/sycl_compat.h`. |
+| `[[intel::reqd_sub_group_size(N)]]` | yes (verbatim) | **no — neutralised by `VMAF_SYCL_REQD_SG_SIZE(N)` macro** | AdaptiveCpp picks sub-group size per backend at JIT time. The macro reduces to a no-op under acpp; see `core/src/feature/sycl/sycl_compat.h`. |
 | `sycl::ext::oneapi::experimental::*` | yes | no | Intel-specific extensions. The fork uses **none** today. |
 | `joint_matrix` | yes | partial / target-dependent | The fork uses none. |
 | Level Zero zero-copy import (`get_native<ext_oneapi_level_zero>`) | yes | conditional — works only when targeting an Intel L0 backend under acpp | Defaults to icpx-only in practice; AdaptiveCpp on non-Intel HW falls back to host-staged copies. |
@@ -114,7 +114,7 @@ The build replaces `-fp-model=precise` (an icpx-specific strict-FP
 flag) with `-ffp-contract=off` (which AdaptiveCpp's underlying clang
 accepts). This blocks FMA contraction in the kernel lambdas — the
 load-bearing invariant per
-[`libvmaf/src/sycl/AGENTS.md`](../../libvmaf/src/sycl/AGENTS.md) §
+[`core/src/sycl/AGENTS.md`](../../core/src/sycl/AGENTS.md) §
 "`-fp-model=precise` is load-bearing".
 
 When a future PR extends the cross-backend ULP-tolerance gate

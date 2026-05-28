@@ -13,7 +13,7 @@ in i4_adm_cm") reports an integer-overflow bug in ADM's scale-1/2/3
 "integer 4" code path:
 
 ```c
-/* libvmaf/src/feature/integer_adm.c (scale loop) */
+/* core/src/feature/integer_adm.c (scale loop) */
 const uint32_t shift_flt[3] = {32, 32, 32};
 int32_t add_bef_shift_dst[3], add_bef_shift_flt[3];
 
@@ -126,7 +126,7 @@ verification is the *absence* of change:
 - `make test-netflix-golden` → the three Netflix CPU golden
   pairs produce bit-identical VMAF scores (76.66890… on
   `src01_hrc00/01_576x324`) before and after this PR.
-- `clang-tidy -p build libvmaf/src/feature/integer_adm.c` →
+- `clang-tidy -p build core/src/feature/integer_adm.c` →
   zero new warnings (the overflow-site is narrated, not
   suppressed; clang-tidy does not flag `(1u << 31)` assigned
   into `int32_t` as a warning on this codebase).

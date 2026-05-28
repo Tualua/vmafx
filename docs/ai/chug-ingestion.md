@@ -96,7 +96,7 @@ PYTHONPATH=ai/src python ai/scripts/chug_extract_features.py \
   --cache-dir .workingdir2/chug/feature-cache \
   --split-manifest .workingdir2/chug/chug_splits.json \
   --audit-output .workingdir2/chug/chug_hdr_audit.json \
-  --vmaf-bin libvmaf/build-cpu/tools/vmaf \
+  --vmaf-bin core/build-cpu/tools/vmaf \
   --feature-set canonical \
   --full
 ```

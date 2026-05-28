@@ -104,11 +104,8 @@ Not enforced as PR-blocking; informational in review.
 
 ### 1.5 Style
 
-- **C:** C23 (`-std=c23`, bumped from C11 by [ADR-0692](adr/0692-vmafx-c23-bump.md)
-  as part of the VMAFX rebrand Phase 1D). Existing libvmaf conventions preserved
-  (K&R braces, 4-space indent, 100-char columns). Codified in
-  [.clang-format](../.clang-format). New C23 features (`typeof`, `ckd_*`,
-  `[[fallthrough]]`) are adopted incrementally in targeted follow-up PRs.
+- **C:** Existing libvmaf conventions preserved (K&R braces, 4-space indent, 100-char
+  columns). Codified in [.clang-format](../.clang-format).
 - **C++ (SYCL code):** same as C where applicable; RAII encouraged for queue/context
   wrappers; no exceptions in hot paths.
 - **Python:** PEP 8 + black (line-length 100) + isort + ruff. Codified in

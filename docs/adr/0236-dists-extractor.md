@@ -37,7 +37,7 @@ existing `lpips_sq` shape:
   SqueezeNet variant naming convention used in `lpips_sq.onnx`.)
 - **Inputs**: two NCHW float32 tensors `ref` + `dist`, ImageNet-
   normalised — byte-identical to `lpips_sq.onnx` so the host-side
-  preprocessing in [`libvmaf/src/dnn/`](../../libvmaf/src/dnn/) can
+  preprocessing in [`core/src/dnn/`](../../core/src/dnn/) can
   be reused.
 - **Output**: scalar `score` per frame.
 - **Public surface**: registers via `VmafFeatureExtractor`-style
@@ -78,7 +78,7 @@ No new op gating needed.
 
 - Closes Research-0033 actionable #5 (DISTS as LPIPS companion).
 - Symmetric extractor surface with LPIPS — reuses the same
-  preprocessing path in `libvmaf/src/dnn/`, the same op-allowlist
+  preprocessing path in `core/src/dnn/`, the same op-allowlist
   framework, and the same model-card / license / sigstore-bundle
   pattern.
 - Provides the second FR deep-feature metric that the Bristol audit's
@@ -89,7 +89,7 @@ No new op gating needed.
 1. **T7-DISTS** — implementation PR. Scaffold the C extractor
    (~300 lines mirroring `feature_lpips.c`), the meson wiring, the
    placeholder ONNX export script under `ai/scripts/`, the registry
-   entry, the smoke test under `libvmaf/test/test_dists.c`, the
+   entry, the smoke test under `core/test/test_dists.c`, the
    model card under `docs/ai/models/dists_sq.md`. Effort: M (3-5
    days).
 2. **T7-DISTS-followup** — replace the placeholder ONNX with
@@ -146,8 +146,8 @@ Audited as part of the 2026-05-08 ADR `Proposed` sweep
 This ADR scoped the API + op-allowlist contract before the
 implementation PR. The acceptance criteria are not yet in tree:
 
-- No `libvmaf/src/feature/dists*` files
-  (`ls libvmaf/src/feature/dists*` returns no match).
+- No `core/src/feature/dists*` files
+  (`ls core/src/feature/dists*` returns no match).
 - No `dists_sq` row in `model/tiny/registry.json`.
 - No placeholder ONNX, no env-var consumer, no smoke test.
 
@@ -161,7 +161,7 @@ appendix.
 Verification command:
 
 ```sh
-ls libvmaf/src/feature/dists* 2>&1 | grep -E "no match|cannot access"
+ls core/src/feature/dists* 2>&1 | grep -E "no match|cannot access"
 grep -c '"dists_sq"' model/tiny/registry.json   # expects 0
 ```
 
@@ -169,11 +169,11 @@ grep -c '"dists_sq"' model/tiny/registry.json   # expects 0
 
 The implementation PR closes the original `T7-DISTS` surface:
 
-- `libvmaf/src/feature/feature_dists.c` registers `dists_sq` and consumes
+- `core/src/feature/feature_dists.c` registers `dists_sq` and consumes
   `model_path` or `VMAF_DISTS_SQ_MODEL_PATH`.
 - `model/tiny/dists_sq.onnx` and `model/tiny/dists_sq.json` ship the
   smoke checkpoint contract with registry id `dists_sq_placeholder_v0`.
-- `libvmaf/test/test_dists.c` locks registration and missing-model
+- `core/test/test_dists.c` locks registration and missing-model
   behaviour.
 - [`docs/metrics/dists.md`](../metrics/dists.md) and
   [`docs/ai/models/dists_sq.md`](../ai/models/dists_sq.md) document the

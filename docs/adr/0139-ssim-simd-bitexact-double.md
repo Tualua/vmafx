@@ -8,9 +8,9 @@
 ## Context
 
 The fork ships AVX2 and AVX-512 SIMD paths for SSIM and MS-SSIM at
-[`libvmaf/src/feature/x86/ssim_avx2.c`](../../libvmaf/src/feature/x86/ssim_avx2.c)
+[`core/src/feature/x86/ssim_avx2.c`](../../core/src/feature/x86/ssim_avx2.c)
 and
-[`libvmaf/src/feature/x86/ssim_avx512.c`](../../libvmaf/src/feature/x86/ssim_avx512.c),
+[`core/src/feature/x86/ssim_avx512.c`](../../core/src/feature/x86/ssim_avx512.c),
 introduced in commit `81fcd42e`. Upstream Netflix/vmaf has AVX2 /
 AVX-512 for VIF / ADM / motion / CAMBI but no SSIM SIMD at all — the
 SSIM SIMD surface is entirely fork-local. PR #18 (`f082cfd3`)
@@ -41,7 +41,7 @@ or `ssim_precompute_*` / `ssim_variance_*`:
 - `ssim_accumulate_*` is where the divergence lives.
 
 Reading scalar `ssim_accumulate_default_scalar` in
-[`ssim_tools.c:174-205`](../../libvmaf/src/feature/iqa/ssim_tools.c#L174-L205):
+[`ssim_tools.c:174-205`](../../core/src/feature/iqa/ssim_tools.c#L174-L205):
 
 ```c
 float  srsc = sqrtf(ref_sigma_sqd[i] * cmp_sigma_sqd[i]);
@@ -152,7 +152,7 @@ non-reducing elementwise float ops.
   confirm. Added ~30 LoC per SIMD file (temp buffers + scalar
   reduction loop) against ~20 LoC removed.
 - **Neutral / follow-ups**:
-  - `libvmaf/src/feature/AGENTS.md` rebase invariant: any future
+  - `core/src/feature/AGENTS.md` rebase invariant: any future
     upstream-port that changes `ssim_accumulate_default_scalar`
     **must** preserve the `2.0 *` double-precision literal and
     the `float → double` promotion of `sv` — both are load-bearing
@@ -183,7 +183,7 @@ non-reducing elementwise float ops.
   [ADR-0108](0108-deep-dive-deliverables-rule.md) — six deep-dive
   deliverables apply.
 - Scalar reference:
-  [`ssim_accumulate_default_scalar`](../../libvmaf/src/feature/iqa/ssim_tools.c#L174-L205)
+  [`ssim_accumulate_default_scalar`](../../core/src/feature/iqa/ssim_tools.c#L174-L205)
   in `ssim_tools.c`.
 - Prior attempt at bit-exactness:
   PR #18 (`f082cfd3`) "SIMD bit-identical reductions + CI fixes".
@@ -195,12 +195,12 @@ Audited as part of the 2026-05-08 ADR `Proposed` sweep
 
 Acceptance criteria verified in tree at HEAD `0a8b539e`:
 
-- `libvmaf/src/feature/x86/ssim_avx2.{c,h}` and
+- `core/src/feature/x86/ssim_avx2.{c,h}` and
   `ssim_avx512.{c,h}` carry the per-lane scalar-double reduction
   pattern.
 - ADR-0140 codifies the reduction macro
   (`SIMD_PER_LANE_SCALAR_DOUBLE_REDUCE_AVX2/AVX512`) and cites this
   ADR as the load-bearing rationale for the inline form.
 - Verification command:
-  `ls libvmaf/src/feature/x86/ssim_avx2.{c,h}
-  libvmaf/src/feature/x86/ssim_avx512.{c,h}`.
+  `ls core/src/feature/x86/ssim_avx2.{c,h}
+  core/src/feature/x86/ssim_avx512.{c,h}`.

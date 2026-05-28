@@ -34,11 +34,11 @@ Assumes you want the installed artefacts at `C:/vmaf-install` — change the
 ```bash
 cd <vmaf-repo-root>
 mkdir C:/vmaf-install
-meson setup libvmaf libvmaf/build \
+meson setup libvmaf core/build \
   --buildtype release \
   --default-library static \
   --prefix C:/vmaf-install
-meson install -C libvmaf/build
+meson install -C core/build
 ```
 
 The fork's GPU backends (`-Denable_cuda=true`, `-Denable_sycl=true`) are not

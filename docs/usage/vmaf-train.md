@@ -132,7 +132,7 @@ the right EP for a given target.
 ### `audit-compat`
 
 Walk every ONNX model in `model/` and verify each conforms to the
-fork's op-allowlist (`libvmaf/src/dnn/op_allowlist.c`).
+fork's op-allowlist (`core/src/dnn/op_allowlist.c`).
 
 | Flag | Purpose |
 | --- | --- |
@@ -247,11 +247,6 @@ The block records:
 Use that block when attaching reports to model cards, promotion PRs, or
 regression investigations; it is the reproducibility pointer for the exact
 files and thresholds behind the table.
-
-JSON reports and manifest sidecars written through the shared AI provenance
-helper are strict RFC-8259 JSON. Non-finite training diagnostics serialize as
-`null` instead of JavaScript-only `NaN` / `Infinity` tokens, which keeps the
-artifacts portable across notebooks, dashboards, and release automation.
 
 ## Common workflows
 

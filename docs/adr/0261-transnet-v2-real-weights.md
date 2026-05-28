@@ -10,7 +10,7 @@
 [ADR-0223](0223-transnet-v2-shot-detector.md) shipped the TransNet V2
 shot-boundary contract — a registered feature extractor `transnet_v2`,
 a 100-slot RGB-thumbnail ring buffer in
-`libvmaf/src/feature/transnet_v2.c`, a smoke-only placeholder ONNX
+`core/src/feature/transnet_v2.c`, a smoke-only placeholder ONNX
 under `model/tiny/transnet_v2.onnx`, and the smoke test plumbing. The
 placeholder was a randomly-initialised tiny MLP matching the declared
 I/O shape (`frames` `[1, 100, 3, 27, 48]` luma-broadcast RGB,
@@ -71,7 +71,7 @@ The rewrite is mechanical — no learned parameters change — and
 preserves the original semantics:
 `output[ids[i,j]] += data[i,j]` for all (i, j).
 
-We extend `libvmaf/src/dnn/op_allowlist.c` with the six new standard
+We extend `core/src/dnn/op_allowlist.c` with the six new standard
 ONNX ops the upstream graph relies on (`BitShift`, `GatherND`, `Pad`,
 `Reciprocal`, `ReduceProd`, `ScatterND`). Each is deterministic, has
 bounded runtime cost, and ships in upstream onnxruntime; widening the
@@ -113,12 +113,12 @@ historical reproducibility).
   T6-3a; T6-3b (per-shot CRF predictor) can consume real
   `shot_boundary_probability` signal instead of placeholder noise.
   The C-side contract from ADR-0223 is unchanged, so the smoke test
-  in `libvmaf/test/test_transnet_v2.c` and any downstream pipeline
+  in `core/test/test_transnet_v2.c` and any downstream pipeline
   built against the placeholder graph keeps working.
 
 - **Negative**: The shipped ONNX is 30 MiB (vs the placeholder's
   125 KiB) — close to but well under the 50 MiB DNN cap in
-  `libvmaf/src/dnn/model_loader.h`. Loading the model the first time
+  `core/src/dnn/model_loader.h`. Loading the model the first time
   in a session adds a one-off ~50 ms ORT-init overhead. The
   ColorHistograms branch is the largest contributor (`ScatterND`
   with 51200-element scratch); leaving it in is a deliberate trade

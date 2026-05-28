@@ -19,7 +19,7 @@ is met via parallel CPU workers.
 
 ### 1. Serial CPU baseline
 
-Single-clip timing with `libvmaf/build-cpu/tools/vmaf`, `--threads 4`, 11 feature
+Single-clip timing with `core/build-cpu/tools/vmaf`, `--threads 4`, 11 feature
 extractors on `orig_10000251326_540_5s.mp4` (960×540, yuv420p, ~150 frames):
 
 ```
@@ -30,7 +30,7 @@ At 0.141 clip/s, full-corpus runtime is ~296 hours.
 
 ### 2. CUDA binary timing
 
-Timing the worktree CUDA binary (`libvmaf/build-cuda/tools/vmaf`,
+Timing the worktree CUDA binary (`core/build-cuda/tools/vmaf`,
 `-Denable_cuda=true --buildtype=release`) with `--threads 1 --backend cuda` on the
 same clip:
 

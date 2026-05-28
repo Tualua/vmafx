@@ -57,8 +57,8 @@ records the closing of that follow-up.
 
 ## Decision
 
-Rewrite `libvmaf/src/feature/hip/integer_vif/vif_statistics.hip` and
-`libvmaf/src/feature/hip/integer_vif_hip.c` to correct all four
+Rewrite `core/src/feature/hip/integer_vif/vif_statistics.hip` and
+`core/src/feature/hip/integer_vif_hip.c` to correct all four
 defects, then re-enable `VMAF_FEATURE_EXTRACTOR_HIP` on
 `vmaf_fex_integer_vif_hip`:
 

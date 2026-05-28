@@ -23,7 +23,7 @@ moving in priority order.
 
 We add AVX2 (8-wide) and NEON (4-wide) implementations of
 `compute_1st_moment` / `compute_2nd_moment` under
-`libvmaf/src/feature/{x86,arm64}/moment_*.{c,h}` and dispatch to
+`core/src/feature/{x86,arm64}/moment_*.{c,h}` and dispatch to
 them from `float_moment.c` via function pointers selected at
 `init()` from `vmaf_get_cpu_flags()`. Both paths follow the
 `ansnr_avx2.c` pattern: square in float (matching the scalar

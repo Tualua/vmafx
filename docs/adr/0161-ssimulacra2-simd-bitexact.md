@@ -9,7 +9,7 @@
 
 Backlog items T3-1 (AVX2) + T3-2 (AVX-512 + NEON) called for a
 SIMD port of the scalar SSIMULACRA 2 extractor
-[`libvmaf/src/feature/ssimulacra2.c`](../../libvmaf/src/feature/ssimulacra2.c)
+[`core/src/feature/ssimulacra2.c`](../../core/src/feature/ssimulacra2.c)
 (ADR-0130). Per user popup 2026-04-24, scope is **all three ISAs
 in a single PR** with the same byte-for-byte bit-exactness
 contract as prior fork SIMD ports (ADR-0138 / ADR-0139 /
@@ -91,7 +91,7 @@ Bit-exactness strategy:
   is kept for portability with clang / MSVC.
 
 Runtime dispatch in
-[`ssimulacra2.c`](../../libvmaf/src/feature/ssimulacra2.c)
+[`ssimulacra2.c`](../../core/src/feature/ssimulacra2.c)
 via a `init_simd_dispatch()` helper: scalar default → AVX2 if
 host supports it → AVX-512 overrides AVX2 if supported (x86) →
 NEON on aarch64 if supported. Kept as a separate helper so

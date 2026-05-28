@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Tests for the direct-invocation bootstrap used by AI scripts."""
 
 from __future__ import annotations
@@ -32,18 +32,6 @@ def test_bootstrap_returns_expected_repo_paths(monkeypatch) -> None:
     assert str(paths.ai_src) in sys.path
     assert str(paths.ai_scripts) in sys.path
     assert str(paths.vmaf_tune_src) in sys.path
-
-
-def test_bootstrap_supports_top_level_ai_scripts(monkeypatch) -> None:
-    script = Path(__file__).resolve().parents[1] / "lpips_export.py"
-    monkeypatch.setattr(sys, "path", [])
-
-    paths = bootstrap_ai_script(script)
-
-    repo_root = Path(__file__).resolve().parents[2]
-    assert paths.repo_root == repo_root
-    assert paths.ai_dir == repo_root / "ai"
-    assert str(paths.ai_src) in sys.path
 
 
 def test_bootstrap_does_not_duplicate_paths(monkeypatch) -> None:

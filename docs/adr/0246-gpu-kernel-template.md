@@ -36,9 +36,9 @@ would force a lowest-common-denominator API that captures neither.
 
 Land **per-backend** kernel scaffolding templates as header-only inline
 helpers under
-[`libvmaf/src/cuda/kernel_template.h`](../../libvmaf/src/cuda/kernel_template.h)
+[`core/src/cuda/kernel_template.h`](../../core/src/cuda/kernel_template.h)
 and
-[`libvmaf/src/vulkan/kernel_template.h`](../../libvmaf/src/vulkan/kernel_template.h).
+[`core/src/vulkan/kernel_template.h`](../../core/src/vulkan/kernel_template.h).
 The templates are **template-only**: no existing kernel includes them in
 this PR. Each future kernel migration ships in its own PR, gated by the
 existing `places=4` cross-backend-diff lane (per
@@ -77,19 +77,19 @@ existing `places=4` cross-backend-diff lane (per
   - User-facing doc lives at
     [`docs/backends/kernel-scaffolding.md`](../backends/kernel-scaffolding.md).
   - Rebase invariant rows added to
-    [`libvmaf/src/cuda/AGENTS.md`](../../libvmaf/src/cuda/AGENTS.md) and a
+    [`core/src/cuda/AGENTS.md`](../../core/src/cuda/AGENTS.md) and a
     new
-    [`libvmaf/src/vulkan/AGENTS.md`](../../libvmaf/src/vulkan/AGENTS.md);
+    [`core/src/vulkan/AGENTS.md`](../../core/src/vulkan/AGENTS.md);
     the templates are fork-local additions that an upstream sync must
     not silently drop.
 
 ## References
 
 - Reference CUDA kernel:
-  [`libvmaf/src/feature/cuda/integer_psnr_cuda.c`](../../libvmaf/src/feature/cuda/integer_psnr_cuda.c)
+  [`core/src/feature/cuda/integer_psnr_cuda.c`](../../core/src/feature/cuda/integer_psnr_cuda.c)
   (T7-23 / [ADR-0182](0182-gpu-long-tail-batch-1.md)).
 - Reference Vulkan kernel:
-  [`libvmaf/src/feature/vulkan/psnr_vulkan.c`](../../libvmaf/src/feature/vulkan/psnr_vulkan.c)
+  [`core/src/feature/vulkan/psnr_vulkan.c`](../../core/src/feature/vulkan/psnr_vulkan.c)
   (T7-23 / [ADR-0216](0216-vulkan-chroma-psnr.md)).
 - Cross-backend gate that gates each migration:
   [ADR-0214](0214-gpu-parity-ci-gate.md).

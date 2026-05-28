@@ -1,4 +1,4 @@
-- **DNN `vmaf_ort_run` — eliminate per-call heap allocation** (`libvmaf/src/dnn/ort_backend.c`):
+- **DNN `vmaf_ort_run` — eliminate per-call heap allocation** (`core/src/dnn/ort_backend.c`):
   Replace five `calloc`/`free` pairs (input/output name and value pointer arrays,
   plus the input scratch buffer array) with fixed-size stack arrays bounded by
   `VMAF_ORT_MAX_IO = 8`. Removes five heap round-trips per `vmaf_ort_run` call.

@@ -73,14 +73,14 @@ artefacts by:
 The full upstream paper is *Tandon et al., "CAMBI: Contrast-Aware
 Multiscale Banding Index", PCS 2021, IEEE.*  The reference C
 implementation lives in
-[`libvmaf/src/feature/cambi.c`](../../libvmaf/src/feature/cambi.c)
+[`core/src/feature/cambi.c`](../../core/src/feature/cambi.c)
 (1533 LOC); the AVX2 / AVX-512 / NEON SIMD paths sit alongside in
 the per-arch sub-directories.
 
 ## Where the SIMT challenge actually is
 
 The five top-level phases of `cambi_score`
-([`cambi.c:1366`](../../libvmaf/src/feature/cambi.c#L1366)) split
+([`cambi.c:1366`](../../core/src/feature/cambi.c#L1366)) split
 neatly into "easy on GPU" and "hard on GPU":
 
 | Phase | CPU function | LOC | GPU shape | Difficulty |
@@ -110,7 +110,7 @@ column ranges `[j - pad, j + pad)` — i.e. they're "increment a
 contiguous range" operations that the AVX2 / AVX-512 / NEON SIMD
 paths vectorise as 16/32-wide `_mm256_add_epi16` / `vaddq_u16` over
 the column range
-([`cambi_avx2.c::cambi_increment_range_avx2`](../../libvmaf/src/feature/x86/cambi_avx2.c#L23)).
+([`cambi_avx2.c::cambi_increment_range_avx2`](../../core/src/feature/x86/cambi_avx2.c#L23)).
 The SIMD paths thus parallelise **within a single histogram update**
 across columns, but the row-to-row dependency is preserved
 sequentially.

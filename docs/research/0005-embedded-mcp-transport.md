@@ -247,7 +247,7 @@ leg is additive, one leg.
 ## Next steps
 
 1. Governance PR (this one) lands — unblocks the implementation ADRs.
-2. Skeleton PR: `libvmaf/src/mcp/` runtime scaffold, empty transport
+2. Skeleton PR: `core/src/mcp/` runtime scaffold, empty transport
    stubs, `libvmaf_mcp.h` header, build flags wired, cJSON + mongoose
    vendored.
 3. SSE transport PR: end-to-end `vmaf.status` over SSE against a test

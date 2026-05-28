@@ -26,9 +26,9 @@ lawrence's crash — a separate investigation (this ADR) was opened.
 1. Build libvmaf with CUDA enabled:
 
    ```bash
-   meson setup libvmaf/build-cuda -Denable_cuda=true -Denable_sycl=false
-   ninja -C libvmaf/build-cuda
-   DESTDIR=/tmp/vmaf-install ninja -C libvmaf/build-cuda install
+   meson setup core/build-cuda -Denable_cuda=true -Denable_sycl=false
+   ninja -C core/build-cuda
+   DESTDIR=/tmp/vmaf-install ninja -C core/build-cuda install
    ```
 
 2. Build ffmpeg n8.1 against the uninstalled libvmaf, with
@@ -72,7 +72,7 @@ Thread 41 "fc0" received signal SIGSEGV.
 
 ### Root cause
 
-[libvmaf.c:1428](../../libvmaf/src/libvmaf.c#L1428) does an
+[libvmaf.c:1428](../../core/src/libvmaf.c#L1428) does an
 unguarded
 
 ```c
@@ -123,7 +123,7 @@ null-deref, not to re-gate the pool.
 ## Decision
 
 Land a narrow null-guard at
-[libvmaf.c:1428](../../libvmaf/src/libvmaf.c#L1428) that short-circuits
+[libvmaf.c:1428](../../core/src/libvmaf.c#L1428) that short-circuits
 the `prev_ref` update when the selected `ref` has no refcount —
 the situation that arises when all registered extractors are CUDA
 and `ref_host` was therefore never populated:
@@ -140,7 +140,7 @@ skipping the prev-ref update in this case is semantically correct,
 not merely defensive.
 
 SYCL is unaffected: `vmaf_read_pictures_sycl`
-([libvmaf.c:1467](../../libvmaf/src/libvmaf.c#L1467)) does not
+([libvmaf.c:1467](../../core/src/libvmaf.c#L1467)) does not
 touch `vmaf->prev_ref` at all. The upstream fix still wants to land
 upstream for the non-fork consumers.
 

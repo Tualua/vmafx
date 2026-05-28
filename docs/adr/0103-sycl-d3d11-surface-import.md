@@ -7,7 +7,7 @@
 
 ## Context
 
-The public header [`libvmaf/include/libvmaf/libvmaf_sycl.h`](../../libvmaf/include/libvmaf/libvmaf_sycl.h)
+The public header [`core/include/libvmaf/libvmaf_sycl.h`](../../core/include/libvmaf/libvmaf_sycl.h)
 declared `vmaf_sycl_import_d3d11_surface()` under `#ifdef _WIN32`
 alongside its doc block ("Creates a staging texture, copies the decoded
 surface, maps it for CPU read, and uploads via H2D memcpy"), but **no
@@ -34,7 +34,7 @@ The user chose option 2.
 
 ### Surface
 
-Implemented in a new TU [`libvmaf/src/sycl/d3d11_import.cpp`](../../libvmaf/src/sycl/d3d11_import.cpp).
+Implemented in a new TU [`core/src/sycl/d3d11_import.cpp`](../../core/src/sycl/d3d11_import.cpp).
 The entire file body is wrapped in `#ifdef _WIN32` so the TU is a
 compile-clean no-op on Linux / macOS — it slots into `sycl_sources`
 alongside `dmabuf_import.cpp` without gating the Meson source list on
@@ -86,7 +86,7 @@ verifying the Wine-derived header family exports all 25 required APIs
 
 ### Meson wiring
 
-- [`libvmaf/src/meson.build`](../../libvmaf/src/meson.build) appends
+- [`core/src/meson.build`](../../core/src/meson.build) appends
   `d3d11_import.cpp` to `sycl_sources`. On non-Windows the TU compiles
   to an empty `.o` (verified: 3312-byte icpx output on Linux).
 - When `host_machine.system() == 'windows'`, the build adds `-ld3d11

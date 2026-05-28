@@ -11,11 +11,11 @@ The 2026-05-02 GPU dedup audit (`docs/research/0046-gpu-dedup-audit.md`)
 identified the picture-pool lifecycle as the single most duplicated
 GPU surface in the fork:
 
-- `libvmaf/src/cuda/ring_buffer.c` (143 LOC, callback-based round-robin
+- `core/src/cuda/ring_buffer.c` (143 LOC, callback-based round-robin
   pool — original Netflix code).
-- `libvmaf/src/sycl/picture_sycl.cpp` (~80 LOC of pool init / fetch /
+- `core/src/sycl/picture_sycl.cpp` (~80 LOC of pool init / fetch /
   close, hand-rolled C++ with `std::mutex` + inline alloc).
-- `libvmaf/src/vulkan/picture_vulkan_pool.c` (~180 LOC, freshly added
+- `core/src/vulkan/picture_vulkan_pool.c` (~180 LOC, freshly added
   in PR #264, deliberately mirrors the SYCL shape line-for-line).
 
 The shape is identical across the three: validate config → calloc the
@@ -33,8 +33,8 @@ PR.
 
 ## Decision
 
-We will promote `libvmaf/src/cuda/ring_buffer.{c,h}` out of the
-`cuda/` subdirectory into `libvmaf/src/gpu_picture_pool.{c,h}` and
+We will promote `core/src/cuda/ring_buffer.{c,h}` out of the
+`cuda/` subdirectory into `core/src/gpu_picture_pool.{c,h}` and
 rename its symbols to remove the CUDA-specific naming (Netflix's
 `VmafRingBuffer` was always agnostic in shape — only the directory
 and symbol names implied otherwise):
@@ -88,7 +88,7 @@ round-robin implementation across all three backends.
     travels with the file — preserved verbatim, just relocated.
 - **Negative**:
   - File-rename churn affects rebases pulling upstream changes that
-    touch `libvmaf/src/cuda/ring_buffer.c`. Unlikely (Netflix hasn't
+    touch `core/src/cuda/ring_buffer.c`. Unlikely (Netflix hasn't
     touched this file since `cb1d49c6`); rebase-notes 0100 documents
     the rename.
   - CUDA's `VmafRingBuffer*` was technically a public-internal name
@@ -123,11 +123,11 @@ Audited as part of the 2026-05-08 ADR `Proposed` sweep
 
 Acceptance criteria verified in tree at HEAD `0a8b539e`:
 
-- `libvmaf/src/gpu_picture_pool.{c,h}` — present.
-- `libvmaf/src/cuda/ring_buffer.*` — removed (verified by `ls`
+- `core/src/gpu_picture_pool.{c,h}` — present.
+- `core/src/cuda/ring_buffer.*` — removed (verified by `ls`
   returning no match), confirming the rename + promotion happened.
 - The promotion landed alongside the rename matrix declared in the
   Decision section (`VmafRingBuffer` → `VmafGpuPicturePool`, etc.).
 - Verification command:
-  `ls libvmaf/src/gpu_picture_pool.{c,h};
-  ls libvmaf/src/cuda/ring_buffer.* 2>&1 | grep -i 'no match'`.
+  `ls core/src/gpu_picture_pool.{c,h};
+  ls core/src/cuda/ring_buffer.* 2>&1 | grep -i 'no match'`.

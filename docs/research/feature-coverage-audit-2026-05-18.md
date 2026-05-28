@@ -64,7 +64,7 @@ include speed features. The fr_regressor family similarly uses canonical-6.**
 
 ## B. Feature Extractor Catalog
 
-Source: `libvmaf/src/feature/feature_extractor.c` (as of 2026-05-18).
+Source: `core/src/feature/feature_extractor.c` (as of 2026-05-18).
 
 ### Float-mode extractors (require `VMAF_FLOAT_FEATURES=1`)
 
@@ -198,11 +198,11 @@ set will be needed.
 
 ### Extractor existence
 
-- `libvmaf/src/feature/speed.c` (1,566 LoC): confirmed present.
+- `core/src/feature/speed.c` (1,566 LoC): confirmed present.
 - Registered in `feature_extractor_list[]` under `#if VMAF_FLOAT_FEATURES`.
 - Emits 4 feature keys: `Speed_chroma_feature_speed_chroma_u_score`,
   `speed_chroma_v_score`, `speed_chroma_uv_score`, `Speed_temporal_feature_speed_temporal_score`.
-- Short aliases registered in `libvmaf/src/feature/alias.c`.
+- Short aliases registered in `core/src/feature/alias.c`.
 - **No GPU twin exists** (CUDA/SYCL/Vulkan/HIP/Metal all absent).
 
 ### Script coverage before this PR
@@ -254,7 +254,7 @@ model). Status: documented fallback to SDR model.
 
 ### Feature signals in C source
 
-`grep -rn "hdr|HDR|pq|hlg|bt2020|vmaf_hdr|vmaf_v1|vmaf_4k_v1" libvmaf/src/`:
+`grep -rn "hdr|HDR|pq|hlg|bt2020|vmaf_hdr|vmaf_v1|vmaf_4k_v1" core/src/`:
 results are confined to CAMBI's `luminance_tools.c` / `barten_csf_tools.h`
 (HDR perceptual masking math for CAMBI), ARM NEON SSIMULACRA2 luma helpers,
 and CUDA/SYCL CAMBI ports. No HDR VMAF model loader or feature-name

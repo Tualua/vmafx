@@ -8,7 +8,7 @@
 ## Context
 
 The libFuzzer harness expansion in PR #408 (ADR-0311 / Research-0083)
-surfaced a real assertion crash in `libvmaf/tools/cli_parse.c`. The
+surfaced a real assertion crash in `core/tools/cli_parse.c`. The
 handlers for the long-only options `--threads` (`ARG_THREADS`),
 `--subsample` (`ARG_SUBSAMPLE`) and `--cpumask` (`ARG_CPUMASK`) called
 `parse_unsigned(optarg, 't' / 's' / 'c', argv[0])` with a hardcoded
@@ -21,7 +21,7 @@ are long-only. Result: any non-numeric `--threads`, `--subsample`, or
 abbreviation) crashed the binary with `SIGABRT` instead of emitting a
 clean usage error and exiting with status 1.
 
-The fuzz harness (`libvmaf/test/fuzz/fuzz_cli_parse.c`) carried an
+The fuzz harness (`core/test/fuzz/fuzz_cli_parse.c`) carried an
 early-reject filter (`known_assert_in_input`) suppressing this bug
 class so the nightly stayed green; the parked reproducer is
 `cli_parse_known_crashes/cli_threads_abbrev_assert.argv`. ADR-0311
@@ -69,7 +69,7 @@ fuzzer carries it as a permanent regression seed.
   - Promoted `cli_threads_abbrev_assert.argv` from
     `cli_parse_known_crashes/` to `cli_parse_corpus/` so the
     abbreviation-driven path is a permanent regression seed.
-  - New unit test `libvmaf/test/test_cli_parse_long_only_args.c`
+  - New unit test `core/test/test_cli_parse_long_only_args.c`
     guards all four shapes (`--threads abc`, `--subsample xyz`,
     `--cpumask qqq`, `--th=foosoxe`) via fork()/waitpid() — POSIX
     only, gated off Windows alongside `test_y4m_411_oob`.

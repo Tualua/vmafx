@@ -8,13 +8,13 @@ accurate on current master?
 
 ## Findings
 
-- `libvmaf/src/libvmaf.c::vmaf_sycl_preallocate_pictures()` rejects missing
+- `core/src/libvmaf.c::vmaf_sycl_preallocate_pictures()` rejects missing
   contexts / missing SYCL state, rejects duplicate pools with `-EBUSY`, and
   creates a 2-deep SYCL picture pool for `DEVICE` and `HOST`.
-- `libvmaf/src/libvmaf.c::vmaf_sycl_picture_fetch()` fetches from that pool
+- `core/src/libvmaf.c::vmaf_sycl_picture_fetch()` fetches from that pool
   when configured, and only falls back to `vmaf_picture_alloc()` when no pool
   exists.
-- `libvmaf/test/test_sycl_pic_preallocation.c` covers `NONE`, `DEVICE`,
+- `core/test/test_sycl_pic_preallocation.c` covers `NONE`, `DEVICE`,
   `HOST`, duplicate-preallocation rejection, and invalid enum rejection.
 - `docs/backends/sycl/overview.md` already describes the real pool semantics;
   only the generic GPU API page was stale.
@@ -36,5 +36,5 @@ callers that want the backend-managed Y-plane double buffer.
 ## Validation
 
 Documentation-only change. The code claim is grounded in
-`libvmaf/src/libvmaf.c` and the existing `test_sycl_pic_preallocation`
+`core/src/libvmaf.c` and the existing `test_sycl_pic_preallocation`
 coverage.

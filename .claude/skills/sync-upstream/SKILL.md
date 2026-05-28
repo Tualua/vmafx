@@ -112,15 +112,15 @@ a merge.
     ```
     Conflict policy (matches D16):
     - Fork wins for: `.github/`, `README.md`, `CLAUDE.md`, `AGENTS.md`,
-      `.claude/`, `Dockerfile*`, `libvmaf/meson_options.txt`, anything under
-      `libvmaf/src/cuda/`, `libvmaf/src/sycl/`, `libvmaf/src/feature/{cuda,sycl}/`,
-      `libvmaf/src/feature/x86/`, `libvmaf/src/feature/arm64/`.
+      `.claude/`, `Dockerfile*`, `core/meson_options.txt`, anything under
+      `core/src/cuda/`, `core/src/sycl/`, `core/src/feature/{cuda,sycl}/`,
+      `core/src/feature/x86/`, `core/src/feature/arm64/`.
     - Upstream wins for: feature metric code not touched by the fork —
       identify by checking `git log --follow origin/master -- <path>` for
       any fork commits.
-    - Manual resolution required: `libvmaf/include/libvmaf/libvmaf.h`,
-      `libvmaf/src/libvmaf.c`, `libvmaf/meson.build`,
-      `libvmaf/tools/cli_parse.c`, `libvmaf/tools/vmaf.c`.
+    - Manual resolution required: `core/include/libvmaf/libvmaf.h`,
+      `core/src/libvmaf.c`, `core/meson.build`,
+      `core/tools/cli_parse.c`, `core/tools/vmaf.c`.
     For manual conflicts, STOP and surface them with `file:line` context. Do
     NOT resolve.
 

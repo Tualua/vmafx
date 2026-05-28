@@ -1,6 +1,6 @@
 <!--
-  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
-  Copyright 2026 Lusoris
+  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+  Copyright 2026 Lusoris and Claude (Anthropic)
 -->
 
 # CUDA Profile — 2026-05-03 (Post-Sprint Rerun)
@@ -101,7 +101,7 @@ Without nsys, kernel-level GPU time is estimated from: (a) vmaf_bench Avg ms
 
 ### Hotspot 1: psnr_hvs_score.cu — thread-0-serial execution
 
-**Location**: `/libvmaf/src/feature/cuda/integer_psnr_hvs/psnr_hvs_score.cu`, line 225.
+**Location**: `/core/src/feature/cuda/integer_psnr_hvs/psnr_hvs_score.cu`, line 225.
 
 ```c
 if (local_idx != 0u)
@@ -134,7 +134,7 @@ drain batch. `collect_fex_cuda` now calls `vmaf_cuda_kernel_collect_wait`
 before reducing `h_partials[]`, so the per-extractor stream sync is skipped
 when the engine has already drained the batch.
 
-**Location**: `/libvmaf/src/feature/cuda/integer_psnr_hvs_cuda.c`, lines 383-390.
+**Location**: `/core/src/feature/cuda/integer_psnr_hvs_cuda.c`, lines 383-390.
 
 ```c
 /* D2H readback all 3 planes' partials, then sync. */
@@ -162,7 +162,7 @@ sync with `vmaf_cuda_kernel_collect_wait` in collect).
 
 ### Hotspot 3: integer_ms_ssim_cuda.c — picture-stream sync stalls in submit
 
-**Location**: `/libvmaf/src/feature/cuda/integer_ms_ssim_cuda.c`, lines 281, 298.
+**Location**: `/core/src/feature/cuda/integer_ms_ssim_cuda.c`, lines 281, 298.
 
 Two `cuStreamSynchronize` calls block the host thread inside `submit_fex_cuda`
 while waiting for the picture-pool stream to complete. This prevents concurrent
@@ -266,18 +266,18 @@ nsys stats /tmp/cuda-prof-*.nsys-rep
 ```bash
 # Build
 WDIR=/home/kilian/dev/vmaf/.claude/worktrees/agent-a539f22f5d0e40d37
-meson setup $WDIR/libvmaf/build_prof $WDIR/libvmaf \
+meson setup $WDIR/core/build_prof $WDIR/libvmaf \
   --buildtype=release -Db_ndebug=false \
   -Dc_args='-g -fno-omit-frame-pointer' \
   -Denable_cuda=true -Denable_sycl=false -Denable_vulkan=disabled
-ninja -C $WDIR/libvmaf/build_prof
+ninja -C $WDIR/core/build_prof
 
 # Single-extractor vmaf_bench
 VMAF_TEST_DATA=$WDIR/testdata \
-  $WDIR/libvmaf/build_prof/tools/vmaf_bench --frames 48 --resolution 576x324
+  $WDIR/core/build_prof/tools/vmaf_bench --frames 48 --resolution 576x324
 
 # 7-extractor CLI benchmark (30 runs)
-VMAF=$WDIR/libvmaf/build_prof/tools/vmaf
+VMAF=$WDIR/core/build_prof/tools/vmaf
 MODEL=$WDIR/model/vmaf_v0.6.1.json
 REF=/home/kilian/dev/vmaf/python/test/resource/yuv/src01_hrc00_576x324.yuv
 DIS=/home/kilian/dev/vmaf/python/test/resource/yuv/src01_hrc01_576x324.yuv

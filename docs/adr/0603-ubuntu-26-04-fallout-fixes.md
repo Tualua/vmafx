@@ -67,7 +67,7 @@ defensive additions:
 
 2. **CUDA Fix B — `-D__MATH_NO_INLINES` in meson.build.** Add
    `-D__MATH_NO_INLINES` to the nvcc `cuda_flags` in
-   `libvmaf/src/meson.build`. This flag tells glibc to suppress the inline
+   `core/src/meson.build`. This flag tells glibc to suppress the inline
    math-function definitions (including the noexcept-annotated `rsqrt` overload),
    eliminating the redeclaration conflict even if a future CUDA patch version
    accidentally re-introduces the mismatch. Harmless on older glibc versions.

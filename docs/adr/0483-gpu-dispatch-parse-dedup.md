@@ -24,7 +24,7 @@ parsing with no effect on kernel-launch order or accumulator state).
 ## Decision
 
 Extract a single `static inline` function `vmaf_gpu_dispatch_parse_env` into a
-new header `libvmaf/src/gpu_dispatch_parse.h`. The function takes a
+new header `core/src/gpu_dispatch_parse.h`. The function takes a
 NULL-terminated `strategy_names` array instead of backend-specific enum types,
 returning an integer index that each backend maps to its own enum. The header is
 C89-compatible and free of backend-specific includes, so it can be included from

@@ -11,7 +11,7 @@ Step 6 of the Phase 1 integration (`sycl → master`) had many conflicts because
 
 ## Decision
 
-We will resolve merge conflicts with: fork-side wins for CI/README/build/SYCL-CUDA-SIMD files; upstream wins for metric code not touched by the fork; manual merge for `libvmaf/include/libvmaf/libvmaf.h`, `libvmaf/src/libvmaf.c`, and `libvmaf/meson.build`.
+We will resolve merge conflicts with: fork-side wins for CI/README/build/SYCL-CUDA-SIMD files; upstream wins for metric code not touched by the fork; manual merge for `core/include/libvmaf/libvmaf.h`, `core/src/libvmaf.c`, and `core/meson.build`.
 
 ## Alternatives considered
 

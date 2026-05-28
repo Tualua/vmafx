@@ -18,7 +18,7 @@ atomic readback (`float_moment_hip`, ADR-0260) are the four already
 landed.
 
 This ADR adds a **fifth consumer** — `float_ansnr_hip`, the HIP twin
-of `libvmaf/src/feature/cuda/float_ansnr_cuda.c` (297 LOC). It pins a
+of `core/src/feature/cuda/float_ansnr_cuda.c` (297 LOC). It pins a
 new shape: **interleaved (sig, noise) per-block float partials** where
 two doubles are reduced on the host before the score formula. Same
 `submit_pre_launch` bypass as `ciede_hip` (no atomic, no memset
@@ -28,7 +28,7 @@ post-reduction two-feature emission path (`float_ansnr` +
 
 ## Decision
 
-We add `libvmaf/src/feature/hip/float_ansnr_hip.{c,h}` as the fifth
+We add `core/src/feature/hip/float_ansnr_hip.{c,h}` as the fifth
 kernel-template consumer. The TU mirrors the CUDA twin
 call-graph-for-call-graph: identical state struct, identical
 `init/submit/collect/close` lifecycle, identical template-helper
@@ -70,5 +70,5 @@ rebase-notes carry the addition.
 - [ADR-0260](0260-hip-fourth-consumer-float-moment.md) — fourth consumer (`float_moment_hip`, PR #330).
 - [ADR-0267](0267-hip-sixth-consumer-motion-v2.md) — sixth consumer (this PR).
 - [ADR-0246](0246-gpu-kernel-template.md) — GPU kernel-template pattern.
-- CUDA twin: `libvmaf/src/feature/cuda/float_ansnr_cuda.c`.
+- CUDA twin: `core/src/feature/cuda/float_ansnr_cuda.c`.
 - Source: `req` (user dispatch) — "Add the fifth and sixth HIP runtime kernel-template consumers. ... Pick two more cleanest CUDA twins to port."

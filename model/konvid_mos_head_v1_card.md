@@ -85,7 +85,7 @@ LayerNorm(12)
 - **Opset**: 17.
 - **Ops emitted**: `LayerNormalization`, `Concat`, `Gemm`, `Relu`,
   `Sigmoid`, `Add`, `Mul`, `Squeeze` — all on the fork's ONNX
-  op-allowlist (`libvmaf/src/dnn/op_allowlist.c`).
+  op-allowlist (`core/src/dnn/op_allowlist.c`).
 
 The parameter count is below the ~30K–100K range from the task
 brief. The brief allowed a wider range to absorb future feature

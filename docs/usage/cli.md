@@ -6,8 +6,8 @@ extractors), and writes per-frame + pooled scores to an XML / JSON / CSV /
 subtitle log.
 
 > **Scope.** This page is the canonical flag reference for the `vmaf` binary
-> in VMAFX. It supersedes the abbreviated help string in
-> [`libvmaf/tools/README.md`](../../libvmaf/tools/README.md) — the code's
+> in the Lusoris fork. It supersedes the abbreviated help string in
+> [`core/tools/README.md`](../../core/tools/README.md) — the code's
 > `--help` is authoritative for the *set* of flags at any given commit; this
 > page adds defaults, interactions, and runnable examples per
 > [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md).
@@ -155,7 +155,7 @@ variable that overrides it.
 | `--no_metal` | off | Forbid Metal dispatch even if the Metal backend is built in (macOS only). |
 | `--metal_device <N>` | disabled (opt-in) | Pick Metal GPU by ordinal (macOS only). Pass `0` for the first Metal device (typically the integrated Apple GPU on Apple Silicon). Without this flag the Metal backend is never used, even on macOS builds. Mirrors `--vulkan_device` semantics. See [../backends/metal/overview.md](../backends/metal/overview.md). |
 | `--backend <name>` | `auto` | Exclusive backend selector — `auto` (default; whichever backends are built compete by registry order), `cpu`, `cuda`, `sycl`, `vulkan`, `hip`, `metal`. Setting a specific backend disables the others via the matching `--no_X` flags BEFORE dispatch and pins the device index for the chosen backend (`gpumask=0` for CUDA, `sycl_device=0` for SYCL, `vulkan_device=0` for Vulkan, `hip_device=0` for HIP, `metal_device=0` for Metal). Closes the multi-backend dispatcher conflict in which `vmaf_get_feature_extractor_by_feature_name`'s first-match-wins rule silently routed Vulkan-flagged work to CUDA when both backends had state imported. |
-| `--cpumask <bitmask>` (`-c`) | all ISAs enabled | Mask out specific CPU ISAs (e.g. force scalar, disable AVX-512). Values are fork-internal — see `libvmaf/src/cpu.h`. |
+| `--cpumask <bitmask>` (`-c`) | all ISAs enabled | Mask out specific CPU ISAs (e.g. force scalar, disable AVX-512). Values are fork-internal — see `core/src/cpu.h`. |
 | `--gpumask <bitmask>` | all GPU ops enabled | Mask out specific GPU ops. |
 | `--threads <N>` | host `nproc` | CPU-side worker thread count. |
 
@@ -341,7 +341,7 @@ curl -sSLO https://github.com/Netflix/vmaf_resource/raw/master/python/test/resou
 Run VMAF plus PSNR:
 
 ```shell
-./build/libvmaf/tools/vmaf \
+./build/core/tools/vmaf \
   --reference  src01_hrc00_576x324.yuv \
   --distorted  src01_hrc01_576x324.yuv \
   --width 576 --height 324 --pixel_format 420 --bitdepth 8 \

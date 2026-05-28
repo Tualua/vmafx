@@ -8,7 +8,7 @@ caller wants to weight quality measurements toward salient regions
 important.
 
 > **Don't confuse this with `vmaf-roi`.** That binary
-> (`libvmaf/tools/vmaf_roi.c`, ADR-0247) consumes a saliency map and
+> (`core/tools/vmaf_roi.c`, ADR-0247) consumes a saliency map and
 > emits **encoder QP-offset sidecars** for x265 / SVT-AV1. `vmaf-roi-score`
 > is the *scoring*-side counterpart — same model lineage, different
 > output.
@@ -104,10 +104,6 @@ Output (JSON to stdout):
 }
 ```
 
-The output is strict RFC-8259 JSON. If the underlying `vmaf` run
-returns a non-finite pooled score, `vmaf-roi-score` exits with code 65
-instead of writing `NaN` or `Infinity` tokens.
-
 In synthetic mode `--synthetic-mask FILL` supplies a constant mask.
 `--threshold` and `--fade` are applied the same way as they are for a
 real saliency model, so `--threshold 0 --fade 1 --synthetic-mask 0.5`
@@ -153,7 +149,7 @@ the interval between them is blended.
 |---|---|
 | 0 | success |
 | 64 | saliency-mask materialisation failed (missing runtime deps, unsupported pix_fmt, bad mask shape) |
-| 65 | `vmaf` ran but produced JSON missing the pooled scalar, or the pooled scalar was non-finite |
+| 65 | `vmaf` ran but produced JSON missing the pooled scalar |
 | other | passed through from the underlying `vmaf` invocation |
 
 ## See also

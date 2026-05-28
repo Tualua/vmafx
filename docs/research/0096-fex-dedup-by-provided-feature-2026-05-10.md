@@ -99,16 +99,16 @@ CUDA binary produced 750+ "cannot be overwritten" warnings per scoring run
 `src01_hrc00_576x324.yuv` vs `src01_hrc01_576x324.yuv` (same as master).
 
 **Unit test:** `test_fex_vector_dedup_by_provided_feature_name` in
-`libvmaf/test/test_feature_extractor.c` exercises the new dedup path with
+`core/test/test_feature_extractor.c` exercises the new dedup path with
 two synthetic extractors that share a provided-feature name, without
 requiring CUDA to be compiled in.
 
 ## Scope of change
 
-- `libvmaf/src/fex_ctx_vector.c` — new `provided_features_overlap()` helper
+- `core/src/fex_ctx_vector.c` — new `provided_features_overlap()` helper
   + updated `feature_extractor_vector_append()` dedup logic.
-- `libvmaf/test/test_feature_extractor.c` — regression test.
-- `libvmaf/test/meson.build` — adds `fex_ctx_vector.c` to the test target
+- `core/test/test_feature_extractor.c` — regression test.
+- `core/test/meson.build` — adds `fex_ctx_vector.c` to the test target
   sources (was not linked in previously; the test exercised only the
   registry, not the vector).
 - No public C-API change; no FFmpeg-patch impact; no model changes.

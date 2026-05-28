@@ -22,7 +22,7 @@ The `vmaf_v0.6.1` SVM fuses four elementary features (VIF at four scales, DLM,
 motion coherence, ADM) trained on approximately 79 Netflix clips spanning H.264
 and H.265 encode ladders.  The SVM ε-SVR with RBF kernel is the distillation
 teacher for the fork's tiny-AI FR models.  The full feature pipeline is
-documented in `libvmaf/src/feature/`.
+documented in `core/src/feature/`.
 
 ### 1.2 Bootstrap confidence intervals and HDR extension (2018–2020)
 

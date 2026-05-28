@@ -52,7 +52,7 @@ harness works fine if you delete them entirely.
 | ------------------------ | --------------------------------------------- | --------------------------------------------------------- |
 | Classic Netflix SVM      | `python/vmaf/workspace/model/*.pkl`           | Read by the classic Python harness.                       |
 | Shipped `vmaf_v0.6.1`    | [`model/`](../../model/) (JSON/pkl)           | Read by libvmaf via `--model path=...`.                   |
-| Fork Tiny-AI (C1/C2/C3)  | [`model/tiny/*.onnx`](../../model/tiny/)      | Read by libvmaf/src/dnn/ via ONNX Runtime — see [docs/ai/](../ai/overview.md). |
+| Fork Tiny-AI (C1/C2/C3)  | [`model/tiny/*.onnx`](../../model/tiny/)      | Read by core/src/dnn/ via ONNX Runtime — see [docs/ai/](../ai/overview.md). |
 
 **If you are adding a new fork feature** (a SIMD path, a GPU backend, a
 metric), you almost certainly do not need this directory.

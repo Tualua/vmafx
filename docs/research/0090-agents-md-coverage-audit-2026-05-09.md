@@ -1,6 +1,6 @@
 # AGENTS.md per-package coverage audit (2026-05-09)
 
-Scope: every code-bearing directory under `libvmaf/src/`, `tools/`, `ai/`,
+Scope: every code-bearing directory under `core/src/`, `tools/`, `ai/`,
 `python/vmaf/`, `mcp-server/`, `scripts/`. Goal: confirm that every
 package with rebase-sensitive invariants ships an `AGENTS.md` per
 CLAUDE.md §12 r11 / [ADR-0108](../adr/0108-deep-dive-deliverables-rule.md).
@@ -31,31 +31,31 @@ CLAUDE.md §12 r11 / [ADR-0108](../adr/0108-deep-dive-deliverables-rule.md).
 | `/` | EXISTS | current |
 | `.github/` | EXISTS | current |
 | `libvmaf/` | EXISTS | current |
-| `libvmaf/include/libvmaf/` | EXISTS | current |
-| `libvmaf/src/` | N/A — covered by `libvmaf/AGENTS.md` (thread_pool, output, gpu_picture_pool, fuzz, MCP scaffold) | none |
-| `libvmaf/src/arm/` | MISSING | backfill (SVE2 HWCAP2 fork-local fallback per T7-38) |
-| `libvmaf/src/x86/` | N/A — verbatim from dav1d, no fork-local additions | none |
-| `libvmaf/src/ext/x86/` | N/A — `x86inc.asm` is upstream-verbatim third-party | none |
-| `libvmaf/src/compat/{gcc,win32}/` | N/A — single-shim toolchain compat headers | none |
-| `libvmaf/src/cuda/` | EXISTS | current |
-| `libvmaf/src/dnn/` | EXISTS | current |
-| `libvmaf/src/feature/` | EXISTS | current (includes ssimulacra2, ms_ssim, motion_v2, cambi, fastdvdnet, transnet_v2 invariants) |
-| `libvmaf/src/feature/x86/` | MISSING | backfill (AVX2 / AVX-512 twin-update rules per ADR-0138 / 0139 / 0143 / 0148 / 0159 / 0161 / 0162 / 0163 / 0252) |
-| `libvmaf/src/feature/arm64/` | MISSING | backfill (NEON / SVE2 twin-update rules per ADR-0125 / 0139 / 0140 / 0145 / 0160 / 0161 / 0162 / 0163 / 0213 / 0252) |
-| `libvmaf/src/feature/iqa/` | MISSING | backfill (third-party tdistler scalar reference; ADR-0148 reserved-id renames; ADR-0146 helper decomposition) |
-| `libvmaf/src/feature/common/` | MISSING | backfill (ADR-0143 generalised AVX scanline helpers; `static` + `ptrdiff_t` invariants) |
-| `libvmaf/src/feature/cuda/` | MISSING | backfill (feature-kernel host glue; mirror contract with upstream-mirror `cuda/` runtime + per-feature kernel-template fields) |
-| `libvmaf/src/feature/sycl/` | MISSING | backfill (fp64-free contract per ADR-0220; `-fp-model=precise` via parent meson) |
-| `libvmaf/src/feature/vulkan/` | MISSING | backfill (host-glue twin-of-shaders contract; descriptor pool sizing) |
-| `libvmaf/src/feature/vulkan/shaders/` | MISSING | backfill (GLSL `precise` / `NoContraction` precision invariants per ADR-0264 / 0269) |
-| `libvmaf/src/feature/hip/` | N/A — covered by `libvmaf/src/hip/AGENTS.md` (kernel-template + per-consumer mirror invariants) | none |
-| `libvmaf/src/feature/third_party/xiph/` | MISSING | backfill (Xiph `psnr_hvs.c` is the bit-exact scalar reference for ADR-0159 / 0160 SIMD ports; do not edit without lockstep SIMD updates) |
-| `libvmaf/src/hip/` | EXISTS | current |
-| `libvmaf/src/mcp/` | MISSING | backfill (audit-first scaffold contract per ADR-0209; smoke pins `-ENOSYS` until T5-2b) |
-| `libvmaf/src/sycl/` | EXISTS | current |
-| `libvmaf/src/vulkan/` | EXISTS | current |
-| `libvmaf/test/` | EXISTS | current |
-| `libvmaf/tools/` | EXISTS | current |
+| `core/include/libvmaf/` | EXISTS | current |
+| `core/src/` | N/A — covered by `libvmaf/AGENTS.md` (thread_pool, output, gpu_picture_pool, fuzz, MCP scaffold) | none |
+| `core/src/arm/` | MISSING | backfill (SVE2 HWCAP2 fork-local fallback per T7-38) |
+| `core/src/x86/` | N/A — verbatim from dav1d, no fork-local additions | none |
+| `core/src/ext/x86/` | N/A — `x86inc.asm` is upstream-verbatim third-party | none |
+| `core/src/compat/{gcc,win32}/` | N/A — single-shim toolchain compat headers | none |
+| `core/src/cuda/` | EXISTS | current |
+| `core/src/dnn/` | EXISTS | current |
+| `core/src/feature/` | EXISTS | current (includes ssimulacra2, ms_ssim, motion_v2, cambi, fastdvdnet, transnet_v2 invariants) |
+| `core/src/feature/x86/` | MISSING | backfill (AVX2 / AVX-512 twin-update rules per ADR-0138 / 0139 / 0143 / 0148 / 0159 / 0161 / 0162 / 0163 / 0252) |
+| `core/src/feature/arm64/` | MISSING | backfill (NEON / SVE2 twin-update rules per ADR-0125 / 0139 / 0140 / 0145 / 0160 / 0161 / 0162 / 0163 / 0213 / 0252) |
+| `core/src/feature/iqa/` | MISSING | backfill (third-party tdistler scalar reference; ADR-0148 reserved-id renames; ADR-0146 helper decomposition) |
+| `core/src/feature/common/` | MISSING | backfill (ADR-0143 generalised AVX scanline helpers; `static` + `ptrdiff_t` invariants) |
+| `core/src/feature/cuda/` | MISSING | backfill (feature-kernel host glue; mirror contract with upstream-mirror `cuda/` runtime + per-feature kernel-template fields) |
+| `core/src/feature/sycl/` | MISSING | backfill (fp64-free contract per ADR-0220; `-fp-model=precise` via parent meson) |
+| `core/src/feature/vulkan/` | MISSING | backfill (host-glue twin-of-shaders contract; descriptor pool sizing) |
+| `core/src/feature/vulkan/shaders/` | MISSING | backfill (GLSL `precise` / `NoContraction` precision invariants per ADR-0264 / 0269) |
+| `core/src/feature/hip/` | N/A — covered by `core/src/hip/AGENTS.md` (kernel-template + per-consumer mirror invariants) | none |
+| `core/src/feature/third_party/xiph/` | MISSING | backfill (Xiph `psnr_hvs.c` is the bit-exact scalar reference for ADR-0159 / 0160 SIMD ports; do not edit without lockstep SIMD updates) |
+| `core/src/hip/` | EXISTS | current |
+| `core/src/mcp/` | MISSING | backfill (audit-first scaffold contract per ADR-0209; smoke pins `-ENOSYS` until T5-2b) |
+| `core/src/sycl/` | EXISTS | current |
+| `core/src/vulkan/` | EXISTS | current |
+| `core/test/` | EXISTS | current |
+| `core/tools/` | EXISTS | current |
 | `tools/vmaf-roi-score/` | EXISTS | current |
 | `tools/vmaf-tune/` | EXISTS | current |
 | `tools/ensemble-training-kit/` | MISSING | backfill (ADR-0324 fork-original training kit; numbered-step contract + bundled-binary directory layout invariants) |
@@ -81,7 +81,7 @@ CLAUDE.md §12 r11 / [ADR-0108](../adr/0108-deep-dive-deliverables-rule.md).
    real code and real ADRs. The fork's discipline of updating AGENTS.md
    in the same PR as the code change has held up across the last ~50
    PRs.
-2. **The biggest gap was under `libvmaf/src/feature/`.** The parent
+2. **The biggest gap was under `core/src/feature/`.** The parent
    `feature/AGENTS.md` is comprehensive (655 lines) and captures the
    per-extractor invariants, but the SIMD-twin / GPU-twin / scalar-
    reference tree split underneath it had no per-package orientation.

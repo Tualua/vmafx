@@ -36,7 +36,7 @@ extractors, quality runners, models).
   `/cross-backend-diff` with `--tolerance-ulp=2`. If you need a larger
   tolerance, open a CODEOWNERS-approved exception.
 - **License headers** — every new C/C++/CUDA file starts with a header. Use
-  `Copyright 2026 Lusoris` for wholly-new files
+  `Copyright 2026 Lusoris and Claude (Anthropic)` for wholly-new files
   and the Netflix header for files touched in upstream.
 - **No `git push --force` to `master`**. No `--no-verify` skipping hooks.
   `master` is merge-via-squash-or-ff-only via branch protection.
@@ -123,7 +123,7 @@ For both cases, one can follow the procedure below:
 
 For the concepts of `FeatureExtractor`, `QualityRunner` and `VmafQualityRunner`, please refer to the [Core Classes](docs/usage/python.md#core-classes) section of the VMAF Python library documentation.
 
-For algorithmic contribution, for a clean organization of the repo, it is advised to submit new files under directory prefixed with `third_party/[orginization]`. For example, for a new model trained, it should go under `model/third_party/[organization]/`. As another example, the [PSNR-HVS feature extractor](https://github.com/Netflix/vmaf/commit/ce2ad1af0b1ba8dd1fbae3e03da0329f078e6bc6) code sits under `libvmaf/src/feature/third_party/xiph/`.
+For algorithmic contribution, for a clean organization of the repo, it is advised to submit new files under directory prefixed with `third_party/[orginization]`. For example, for a new model trained, it should go under `model/third_party/[organization]/`. As another example, the [PSNR-HVS feature extractor](https://github.com/Netflix/vmaf/commit/ce2ad1af0b1ba8dd1fbae3e03da0329f078e6bc6) code sits under `core/src/feature/third_party/xiph/`.
 
 ### Creating a New `FeatureExtractor`
 
@@ -138,8 +138,8 @@ To create a subclass of `FeatureExtractor` in native Python code, a minimalist e
 
 #### Python Calling `libvmaf` in C
 Very often the feature extractor implementation is in the C library `libvmaf`. In this case we simply create a thin Python `FeatureExtractor` subclass to call the `vmaf` command line executable. For more information on implementing a new feature extractor in `libvmaf`, refer to [this section](libvmaf/README.md#contributing-a-new-vmaffeatureextractor). An example to follow is the PSNR-HVS feature extractor (see the [code diff](https://github.com/Netflix/vmaf/commit/ce2ad1af0b1ba8dd1fbae3e03da0329f078e6bc6)). The following steps discuss the implementation strategy.
-  - Add a new feature extractor implementation `vmaf_fex_psnr_hvs` in file `libvmaf/src/feature/third_party/xiph/psnr_hvs.c`. It is recommended to put the code under directory `third_party/[org]`.
-  - In `libvmaf/src/feature/feature_extractor.c`:
+  - Add a new feature extractor implementation `vmaf_fex_psnr_hvs` in file `core/src/feature/third_party/xiph/psnr_hvs.c`. It is recommended to put the code under directory `third_party/[org]`.
+  - In `core/src/feature/feature_extractor.c`:
     - Declare the new feature extractor as `extern`:
         ```c
         extern VmafFeatureExtractor vmaf_fex_psnr_hvs;
@@ -152,7 +152,7 @@ Very often the feature extractor implementation is in the C library `libvmaf`. I
         ...
         };
         ```
-  - In `libvmaf/src/meson.build`, add the new `psnr_hvs.c` file to the `libvmaf_feature_sources` list:
+  - In `core/src/meson.build`, add the new `psnr_hvs.c` file to the `libvmaf_feature_sources` list:
       ```c
         libvmaf_feature_sources = [
         ...

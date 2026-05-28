@@ -12,7 +12,7 @@ and [ADR-0186](../adr/0186-vulkan-image-import-impl.md) (impl +
 ffmpeg-patch wiring).
 
 The public header is
-[`libvmaf/include/libvmaf/libvmaf_vulkan.h`](../../libvmaf/include/libvmaf/libvmaf_vulkan.h).
+[`core/include/libvmaf/libvmaf_vulkan.h`](../../core/include/libvmaf/libvmaf_vulkan.h).
 The Vulkan backend overview lives in
 [`docs/backends/vulkan/overview.md`](../backends/vulkan/overview.md).
 
@@ -126,7 +126,7 @@ on the host.
 
 - [`docs/backends/vulkan/overview.md`](../backends/vulkan/overview.md)
   — backend overview, kernel matrix, build flags.
-- [`libvmaf/include/libvmaf/libvmaf_vulkan.h`](../../libvmaf/include/libvmaf/libvmaf_vulkan.h)
+- [`core/include/libvmaf/libvmaf_vulkan.h`](../../core/include/libvmaf/libvmaf_vulkan.h)
   — authoritative API surface.
 - [`docs/usage/ffmpeg.md`](../usage/ffmpeg.md) — `vf_libvmaf_vulkan`
   filter that consumes the import API end-to-end.

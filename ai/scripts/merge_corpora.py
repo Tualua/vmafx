@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Merge two or more vmaf-tune corpus JSONL files into one.
 
 The vmaf-tune corpus schema is the row contract emitted by
@@ -28,6 +28,7 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from collections.abc import Iterable
 from pathlib import Path
@@ -44,7 +45,7 @@ _REPO_ROOT = _SCRIPT_PATHS.repo_root
 from vmaftune import CORPUS_ROW_KEYS  # noqa: E402
 
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.jsonl_utils import dumps_jsonl_row, iter_jsonl  # noqa: E402
+from aiutils.jsonl_utils import iter_jsonl  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 _REQUIRED_KEYS: frozenset[str] = frozenset(CORPUS_ROW_KEYS)
@@ -116,7 +117,7 @@ def merge(inputs: Iterable[Path], output: Path) -> tuple[int, int, int, int]:
                 src = row.get("src_sha256", "")
                 if isinstance(src, str) and src:
                     unique_sources.add(src)
-                out_fp.write(dumps_jsonl_row(row))
+                out_fp.write(json.dumps(row, sort_keys=True) + "\n")
                 rows_out += 1
     return rows_in, rows_out, duplicates, len(unique_sources)
 

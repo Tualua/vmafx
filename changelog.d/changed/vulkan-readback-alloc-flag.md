@@ -1,5 +1,5 @@
 - **Vulkan backend (perf):** Separate UPLOAD and READBACK buffer allocations
-  in the Vulkan compute backend (`libvmaf/src/vulkan/picture_vulkan.{c,h}`).
+  in the Vulkan compute backend (`core/src/vulkan/picture_vulkan.{c,h}`).
   `vmaf_vulkan_buffer_alloc()` (UPLOAD: CPU writes, GPU reads) keeps
   `VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT` (write-combining
   BAR heap on dGPU, optimal for host→device streaming).

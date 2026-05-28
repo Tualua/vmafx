@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Codec-comparison smoke tests (research-0061 Bucket #7).
 
 The recommend predicate is mocked; no ffmpeg / vmaf binaries required.

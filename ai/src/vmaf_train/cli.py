@@ -458,7 +458,7 @@ def check_ops_cmd(
 ) -> None:
     """Check an ONNX model against libvmaf's op allowlist.
 
-    Parses libvmaf/src/dnn/op_allowlist.c (the runtime source of truth)
+    Parses core/src/dnn/op_allowlist.c (the runtime source of truth)
     and reports any op the model uses that libvmaf would reject at load
     time. Exits 2 if forbidden ops are found.
     """
@@ -470,7 +470,7 @@ def check_ops_cmd(
         return
     console.print(f"[red]{report.pretty()}[/red]")
     console.print(
-        "[yellow]Extend libvmaf/src/dnn/op_allowlist.c only when a shipped model "
+        "[yellow]Extend core/src/dnn/op_allowlist.c only when a shipped model "
         "genuinely needs the op — see docs/tiny-ai/security.md[/yellow]"
     )
     raise typer.Exit(code=2)

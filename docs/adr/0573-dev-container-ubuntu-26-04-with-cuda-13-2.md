@@ -133,7 +133,7 @@ v0.2.35 supports 13.2.0 (verified in `src/links/linux-links.ts` and
     `printf` line in the Containerfile from `noble` to `resolute`.
   - Monitor CUDA 13.2 release notes for additional glibc 2.43 caveats.
   - If rsqrt errors recur in a future CUDA bump, the documented fallback is
-    `-D__MATH_NO_INLINES` in `libvmaf/src/cuda/meson.build` NVCC flags.
+    `-D__MATH_NO_INLINES` in `core/src/cuda/meson.build` NVCC flags.
   - Close PR #1330 (prior failed attempt: chore/dev-container-ubuntu-26-04).
   - Update `docs/development/dev-mcp.md` with the 26.04 + CUDA 13.2 baseline
     and the numpy 2.x migration note.

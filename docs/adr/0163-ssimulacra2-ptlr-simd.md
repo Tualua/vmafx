@@ -39,7 +39,7 @@ using the established phase-1 pattern:
 - **Scalar tail** for `w % N` leftover pixels — verbatim copy of the
   scalar reference body.
 
-New decoupling header `libvmaf/src/feature/ssimulacra2_simd_common.h`
+New decoupling header `core/src/feature/ssimulacra2_simd_common.h`
 defines `simd_plane_t { const void *data; ptrdiff_t stride;
 unsigned w; unsigned h; }`. The dispatch wrapper in `ssimulacra2.c`
 unpacks `VmafPicture` fields into `simd_plane_t[3]` and invokes the

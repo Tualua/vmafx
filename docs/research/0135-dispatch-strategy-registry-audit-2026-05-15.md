@@ -18,15 +18,15 @@ categories of defect were found and fixed in this PR:
 
 ## Audit Scope
 
-Every `VmafFeatureExtractor vmaf_fex_*` definition in `libvmaf/src/`
+Every `VmafFeatureExtractor vmaf_fex_*` definition in `core/src/`
 was extracted via `git grep`.  The resulting symbol sets were
 cross-referenced against:
 
-- `feature_extractor_list[]` in `libvmaf/src/feature/feature_extractor.c`
+- `feature_extractor_list[]` in `core/src/feature/feature_extractor.c`
   (the central dispatch table that `vmaf_get_feature_extractor_by_name`
   and `vmaf_get_feature_extractor_by_feature_name` walk).
 - `vmaf_<backend>_dispatch_supports()` in
-  `libvmaf/src/<backend>/dispatch_strategy.c`
+  `core/src/<backend>/dispatch_strategy.c`
   (the per-backend predicate callers use to test whether a named feature
   can route to that backend before binding GPU pictures).
 
@@ -41,13 +41,13 @@ cross-referenced against:
 
 ### CUDA
 
-17 symbols defined in `libvmaf/src/feature/cuda/`.
+17 symbols defined in `core/src/feature/cuda/`.
 All 17 appear exactly once in `feature_extractor_list[]`.
 **Result: CLEAN.**
 
 ### SYCL
 
-17 symbols defined in `libvmaf/src/feature/sycl/`.
+17 symbols defined in `core/src/feature/sycl/`.
 All 17 appear in `feature_extractor_list[]`, but 6 were duplicated
 (appeared twice): `psnr_sycl`, `psnr_hvs_sycl`, `float_ssim_sycl`,
 `float_ms_ssim_sycl`, `float_moment_sycl`, `ciede_sycl`.
@@ -56,7 +56,7 @@ All 17 appear in `feature_extractor_list[]`, but 6 were duplicated
 
 ### Vulkan
 
-17 symbols defined in `libvmaf/src/feature/vulkan/`.
+17 symbols defined in `core/src/feature/vulkan/`.
 All 17 appear in `feature_extractor_list[]`, but the table contained
 ~62 pointer entries for 17 distinct symbols.  Worst cases:
 `psnr_hvs_vulkan` and `float_ms_ssim_vulkan` appeared 11 times each.
@@ -65,7 +65,7 @@ All 17 appear in `feature_extractor_list[]`, but the table contained
 
 ### HIP
 
-8 symbols defined in `libvmaf/src/feature/hip/`:
+8 symbols defined in `core/src/feature/hip/`:
 
 | Symbol | `.name` field | In `feature_extractor_list[]` | In `vmaf_hip_dispatch_supports()` |
 |--------|--------------|-------------------------------|-----------------------------------|
@@ -82,7 +82,7 @@ All 17 appear in `feature_extractor_list[]`, but the table contained
 
 ### Metal
 
-8 symbols defined in `libvmaf/src/feature/metal/`.
+8 symbols defined in `core/src/feature/metal/`.
 All 8 in `feature_extractor_list[]`, but `g_metal_features[]` in
 `vmaf_metal_dispatch_supports()` had wrong feature names:
 

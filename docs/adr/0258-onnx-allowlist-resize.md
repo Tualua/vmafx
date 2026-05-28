@@ -9,7 +9,7 @@
 
 The fork's tiny-AI surface gates ONNX models behind a curated operator
 allowlist
-([`libvmaf/src/dnn/op_allowlist.c`](../../libvmaf/src/dnn/op_allowlist.c)).
+([`core/src/dnn/op_allowlist.c`](../../core/src/dnn/op_allowlist.c)).
 PR #341 (U-2-Net mobilesal blocker) surfaced that `Resize` is not on
 the list, which hard-stops every saliency / segmentation backbone
 that ships bilinear or nearest-neighbour upsampling — U-2-Net,
@@ -25,7 +25,7 @@ which is bounded by the ADR-0167 model-size cap (50 MB) plus ORT's
 own tensor-allocation guards.
 
 The fork's wire-format scanner
-([`onnx_scan.c`](../../libvmaf/src/dnn/onnx_scan.c)) gates op-type
+([`onnx_scan.c`](../../core/src/dnn/onnx_scan.c)) gates op-type
 strings, **not** attributes — per ADR-0169 / ADR D39 the scanner
 deliberately stays inside a bounded-auditable scope and refuses to
 pull in `libprotobuf-c`. Per-attribute restrictions (e.g. "only
@@ -38,7 +38,7 @@ know the supported subset.
 ## Decision
 
 Add `"Resize"` to the C allowlist's `/* convolutional */` block in
-[`op_allowlist.c`](../../libvmaf/src/dnn/op_allowlist.c). The
+[`op_allowlist.c`](../../core/src/dnn/op_allowlist.c). The
 addition is one line plus a comment block citing this ADR and
 the supported-mode contract (`nearest`, `linear` recommended;
 `cubic` not exercised by any in-tree consumer and numerically less
@@ -88,10 +88,10 @@ new entry automatically.
 
 ## Tests
 
-- `libvmaf/test/dnn/test_op_allowlist.c` — `test_resize_op_allowed`
+- `core/test/dnn/test_op_allowlist.c` — `test_resize_op_allowed`
   asserts `Resize` accepted and case-sensitive (lowercase / uppercase
   variants still rejected).
-- `libvmaf/test/dnn/test_onnx_scan.c` — `test_resize_top_level_allowed`
+- `core/test/dnn/test_onnx_scan.c` — `test_resize_top_level_allowed`
   hand-crafts a `ModelProto { graph = { node = Resize } }` wire fixture
   and asserts the scanner accepts it.
 - `ai/tests/test_op_allowlist.py` — `test_resize_now_allowed` asserts

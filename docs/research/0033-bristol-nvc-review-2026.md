@@ -80,7 +80,7 @@ Source: §5.4, §6.1, Tables 3-4, ref [255] (Bjøntegaard).
 
 ### 5. DISTS extractor as LPIPS companion (1 week, ADR)
 
-**Surface**: `libvmaf/src/dnn/`, `model/tiny/`.
+**Surface**: `core/src/dnn/`, `model/tiny/`.
 
 §5.3 discusses LPIPS [239] *and* DISTS [240, Ding et al. PAMI 2020]
 as the deep-feature FR pair widely used for video quality. We ship
@@ -109,8 +109,8 @@ title fragment appears in our tree.
 | [221] | 2020 | Mercat — **UVG** dataset                 | tangential                  | not used as training set |
 | [222] | 2016 | Wang — **MCL-JCV** dataset               | tangential                  | not used |
 | [225] | 2022 | Zhao — AOM CTC v3                        | already-cited               | `docs/metrics/ctc/aom.md` |
-| [226] | 2004 | Wang — **SSIM**                          | already-cited               | `libvmaf/src/feature/ssim.c` (origin) |
-| [231] | 2006 | Sheikh & Bovik — **VIF**                 | already-cited               | `libvmaf/src/feature/vif.c` |
+| [226] | 2004 | Wang — **SSIM**                          | already-cited               | `core/src/feature/ssim.c` (origin) |
+| [231] | 2006 | Sheikh & Bovik — **VIF**                 | already-cited               | `core/src/feature/vif.c` |
 | [234] | 2010 | Seshadrinathan — **MOVIE**               | tangential                  | mentioned only in literature |
 | [235] | 2016 | Li — **VMAF (Netflix Tech Blog)**        | already-cited               | `model/vmaf_*.json`, `docs/metrics/vmaf.md` |
 | [236] | 2018 | Bampis — **ST-VMAF**                     | **directly-relevant + new** | `ai/src/vmaf_train/models/fr_regressor.py` (motion-aware fusion) |
@@ -123,7 +123,7 @@ title fragment appears in our tree.
 | [243] | 2025 | Feng — Towards unified VQA               | tangential                  | survey-level |
 | [244-254] | 2023-25 | LMM-VQA series (Q-Align / Q-Insight) | tangential              | out of scope for current tiny-AI bar |
 | [255] | 2001 | Bjøntegaard — **BD-rate** definition     | already-cited               | `python/vmaf/tools/bd_rate_calculator.py` |
-| [257] | 2003 | Wang/Simoncelli/Bovik — **MS-SSIM**      | already-cited               | `libvmaf/src/feature/ms_ssim.c`, ADR-0125 |
+| [257] | 2003 | Wang/Simoncelli/Bovik — **MS-SSIM**      | already-cited               | `core/src/feature/ms_ssim.c`, ADR-0125 |
 
 **Not-relevant count**: ~225 of 258 — entropy-coding theory, NeRF /
 Gaussian-splatting variants, end-to-end NVC architectures (DCVC-*,

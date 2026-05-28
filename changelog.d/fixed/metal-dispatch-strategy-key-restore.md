@@ -1,7 +1,7 @@
 fix(metal): restore correct dispatch_strategy keys clobbered by PR #1088
 
 PR #1088's squash merge reverted the five key-string corrections that
-PR #1104 applied to `libvmaf/src/metal/dispatch_strategy.c`:
+PR #1104 applied to `core/src/metal/dispatch_strategy.c`:
 
 - `motion2_v2_score` → `VMAF_integer_feature_motion2_v2_score`
 - `float_motion` → `VMAF_feature_motion_score` + `VMAF_feature_motion2_score`

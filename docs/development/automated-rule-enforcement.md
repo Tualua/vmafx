@@ -109,9 +109,9 @@ Runs on every PR, never fails the check (`continue-on-error: true`).
 Scans the diff for paths matching the user-discoverable surface list
 from ADR-0100:
 
-- `libvmaf/include/` — public C API
-- `libvmaf/src/feature/feature_*.c` and `integer_*.c` — extractors
-- `libvmaf/tools/` — CLI binaries
+- `core/include/` — public C API
+- `core/src/feature/feature_*.c` and `integer_*.c` — extractors
+- `core/tools/` — CLI binaries
 - `meson_options.txt` / `meson_options.toml` — build flags
 - `mcp-server/` — MCP JSON-RPC surface
 - `ai/src/vmaf_train/cli` — training CLI
@@ -128,7 +128,7 @@ docs and the advisory can be ignored with a one-line reviewer ack.
 Also advisory. Flags PRs that touch policy or public-surface paths
 without adding a new `docs/adr/NNNN-*.md`:
 
-- `libvmaf/include/`
+- `core/include/`
 - `meson_options.{txt,toml}`
 - `.github/` (any workflow change)
 - `docs/principles.md`
@@ -157,7 +157,7 @@ mechanically-decidable property.
 ### Exclusions
 
 - `subprojects/` — vendored upstream trees
-- `libvmaf/test/data/` — binary fixtures
+- `core/test/data/` — binary fixtures
 - `python/vmaf/resource/` and `python/test/resource/` — upstream
   Netflix training-harness assets that predate the fork
 - `*config.h.in` — Meson-templated headers
@@ -195,7 +195,7 @@ runs in two passes:
      `libvmaf_vulkan`, …)
    - `--enable-libvmaf-*` — FFmpeg configure flags
 2. **Build the diff set.** From the PR's diff against
-   `libvmaf/include/libvmaf/*.h` and `libvmaf/meson_options.txt`,
+   `core/include/libvmaf/*.h` and `core/meson_options.txt`,
    extract the same identifier shapes from `+`/`-` lines (single-line
    `//` and `/* … */` comments stripped best-effort).
 

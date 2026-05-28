@@ -10,15 +10,15 @@
 ## Context
 
 MS-SSIM runs a 5-scale pyramid. Each scale reduction in
-[`libvmaf/src/feature/ms_ssim.c`](../../libvmaf/src/feature/ms_ssim.c)
-calls [`_iqa_decimate`](../../libvmaf/src/feature/iqa/decimate.c) to
+[`core/src/feature/ms_ssim.c`](../../core/src/feature/ms_ssim.c)
+calls [`_iqa_decimate`](../../core/src/feature/iqa/decimate.c) to
 low-pass-filter the previous-scale image with a fixed 9×9 9/7
 biorthogonal wavelet kernel (`g_lpf`) and subsample by factor 2. The
 vendored decimate implementation walks every destination pixel and
 invokes `_iqa_filter_pixel`, which evaluates the full 9×9 kernel in
 scalar C (81 multiply-adds per destination pixel) and delegates
 out-of-bounds access through a function pointer
-([`KBND_SYMMETRIC`](../../libvmaf/src/feature/iqa/convolve.c)). On
+([`KBND_SYMMETRIC`](../../core/src/feature/iqa/convolve.c)). On
 1920×1080 inputs the decimate step alone accounts for roughly 40 % of
 MS-SSIM wall time in profiling; the per-pixel function-pointer
 indirection defeats the compiler's ability to keep kernel coefficients
@@ -26,7 +26,7 @@ in registers.
 
 The SSIM primitives MS-SSIM reuses already have AVX2 and AVX-512
 specialisations wired through `_iqa_ssim_set_dispatch` in
-[`libvmaf/src/feature/iqa/ssim_tools.c`](../../libvmaf/src/feature/iqa/ssim_tools.c),
+[`core/src/feature/iqa/ssim_tools.c`](../../core/src/feature/iqa/ssim_tools.c),
 so x86 SIMD paths already exist elsewhere on this hot path; the decimate
 step is the remaining scalar gap. The 9×9 LPF is also known to be
 separable — `ms_ssim.c` defines the 1-D horizontal and vertical
@@ -35,7 +35,7 @@ coefficients (`g_lpf_h`, `g_lpf_v`) alongside the 2-D form, but
 
 Two fork-wide rules shape the implementation:
 
-- The `libvmaf/src/feature/iqa/` subtree is a verbatim BSD-2011 Tom
+- The `core/src/feature/iqa/` subtree is a verbatim BSD-2011 Tom
   Distler import. The fork treats it the same as upstream Netflix code
   for rebase hygiene — we do not modify it unless we have to.
 - The Netflix CPU golden gate ([CLAUDE.md §8](../../CLAUDE.md)) does
@@ -47,10 +47,10 @@ Two fork-wide rules shape the implementation:
 ## Decision
 
 We add MS-SSIM-specialised decimate kernels under
-`libvmaf/src/feature/x86/ms_ssim_decimate_avx2.{c,h}` and
-`libvmaf/src/feature/x86/ms_ssim_decimate_avx512.{c,h}`, plus a new
+`core/src/feature/x86/ms_ssim_decimate_avx2.{c,h}` and
+`core/src/feature/x86/ms_ssim_decimate_avx512.{c,h}`, plus a new
 scalar-separable reference
-`libvmaf/src/feature/ms_ssim_decimate.{c,h}` that becomes the fallback
+`core/src/feature/ms_ssim_decimate.{c,h}` that becomes the fallback
 scalar path. Each SIMD kernel evaluates the separable 9-tap LPF
 (using `g_lpf_h` / `g_lpf_v`) with the factor-2 subsampling fused into
 the horizontal pass (only `w_out = w/2 + (w&1)` output columns are
@@ -65,16 +65,16 @@ kernels assume the MS-SSIM use case:
 invariants falls back to the scalar `_iqa_decimate`. Dispatch lives in
 `ms_ssim.c` (or a companion `ms_ssim_dispatch.c` if it grows), chosen
 by the same `vmaf_get_cpu()` flags the SSIM dispatch uses. The vendored
-`libvmaf/src/feature/iqa/decimate.c` is **not modified** — the
+`core/src/feature/iqa/decimate.c` is **not modified** — the
 dispatching happens in the MS-SSIM caller, not in the iqa/ helper.
 
 Bit-exactness is the correctness contract *between scalar-separable and
-SIMD*. A new `libvmaf/test/test_ms_ssim_decimate.c` runs scalar-separable,
+SIMD*. A new `core/test/test_ms_ssim_decimate.c` runs scalar-separable,
 AVX2, and AVX-512 against the same synthetic + real-YUV inputs and
 asserts byte-identical float output across all three (the SIMD reduction
 order mirrors the scalar-separable reduction order via explicit sequential
 `fmaf` / single-pass FMA reductions, following the fork pattern in
-[`libvmaf/src/feature/x86/float_motion_avx2.c`](../../libvmaf/src/feature/x86/float_motion_avx2.c)).
+[`core/src/feature/x86/float_motion_avx2.c`](../../core/src/feature/x86/float_motion_avx2.c)).
 
 The **scalar path itself** changes from the vendored 2-D `_iqa_decimate`
 to the new separable path. This introduces a bounded numerical delta
@@ -117,7 +117,7 @@ scaffold leaves a clear slot for `ms_ssim_decimate_neon` to plug into.
   decimate share of runtime (claim of ~40% is unverified, measured in
   the PR); the vendored `iqa/` subtree stays identical to its 2011
   upstream; the new kernels follow the established
-  `libvmaf/src/feature/x86/*_avx2.c` pattern and are unit-tested for
+  `core/src/feature/x86/*_avx2.c` pattern and are unit-tested for
   bit-exactness between scalar-separable / AVX2 / AVX-512; the
   dispatch scaffold makes the NEON follow-up a pure add rather than a
   refactor.
@@ -140,7 +140,7 @@ scaffold leaves a clear slot for `ms_ssim_decimate_neon` to plug into.
   - `docs/metrics/ms_ssim.md` (or a dedicated section in the nearest
     existing MS-SSIM doc) gets a "SIMD paths" subsection per ADR-0100
     per-surface bar for SIMD paths.
-  - `.github/AGENTS.md` (or `libvmaf/src/feature/AGENTS.md` if we add
+  - `.github/AGENTS.md` (or `core/src/feature/AGENTS.md` if we add
     a per-subtree one) gets a rebase-sensitive invariant note: the
     9×9 LPF coefficients in `ms_ssim.c` must match the coefficients
     hard-coded in `ms_ssim_decimate_{avx2,avx512}.c`; any upstream
@@ -153,7 +153,7 @@ scaffold leaves a clear slot for `ms_ssim_decimate_neon` to plug into.
   - NEON follow-up PR (arm64): `ms_ssim_decimate_neon.c`, same
     bit-exactness harness, smaller scope.
   - Reproducer command (for PR description): `meson test -C build
-    test_ms_ssim_decimate` + `./build/libvmaf/tools/vmaf --feature
+    test_ms_ssim_decimate` + `./build/core/tools/vmaf --feature
     ms_ssim -r python/test/resource/yuv/src01_hrc00_576x324.yuv -d
     python/test/resource/yuv/src01_hrc01_576x324.yuv -w 576 -h 324 -p
     yuv420p`.
@@ -180,7 +180,7 @@ scaffold leaves a clear slot for `ms_ssim_decimate_neon` to plug into.
   (Rouse/Hemami)").
 - Vendored decimate origin:
   [Tom Distler IQA library, 2011](http://tdistler.com) — header in
-  [`libvmaf/src/feature/iqa/decimate.c`](../../libvmaf/src/feature/iqa/decimate.c).
+  [`core/src/feature/iqa/decimate.c`](../../core/src/feature/iqa/decimate.c).
 
 ### Status update 2026-05-08: Accepted
 
@@ -189,15 +189,15 @@ Audited as part of the 2026-05-08 ADR `Proposed` sweep
 
 Acceptance criteria verified in tree at HEAD `0a8b539e`:
 
-- `libvmaf/src/feature/x86/ms_ssim_decimate_avx2.{c,h}` — present.
-- `libvmaf/src/feature/x86/ms_ssim_decimate_avx512.{c,h}` — present.
-- `libvmaf/src/feature/ms_ssim_decimate.{c,h}` (scalar-separable
+- `core/src/feature/x86/ms_ssim_decimate_avx2.{c,h}` — present.
+- `core/src/feature/x86/ms_ssim_decimate_avx512.{c,h}` — present.
+- `core/src/feature/ms_ssim_decimate.{c,h}` (scalar-separable
   reference) — present.
-- `libvmaf/test/test_ms_ssim_decimate.c` — present (bit-exactness
+- `core/test/test_ms_ssim_decimate.c` — present (bit-exactness
   harness scalar-separable / AVX2 / AVX-512).
 - Verification command:
-  `ls libvmaf/src/feature/x86/ms_ssim_decimate* libvmaf/src/feature/ms_ssim_decimate.* libvmaf/test/test_ms_ssim_decimate.c`.
+  `ls core/src/feature/x86/ms_ssim_decimate* core/src/feature/ms_ssim_decimate.* core/test/test_ms_ssim_decimate.c`.
 
 NEON follow-up tracked separately under the SIMD-DX framework
 ([ADR-0140](0140-simd-dx-framework.md)) and the touched-file invariant
-note in `libvmaf/src/feature/AGENTS.md`.
+note in `core/src/feature/AGENTS.md`.

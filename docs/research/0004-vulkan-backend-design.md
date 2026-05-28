@@ -7,7 +7,7 @@
 ## Question
 
 For a Vulkan compute backend that lives alongside CUDA / SYCL / HIP
-under `libvmaf/src/vulkan/` and `libvmaf/src/feature/vulkan/`, what
+under `core/src/vulkan/` and `core/src/feature/vulkan/`, what
 are the concrete tool-chain and memory-model choices? Specifically:
 
 1. Which Vulkan loader do we link (`vulkan.h` + `libvulkan.so` vs
@@ -19,9 +19,9 @@ are the concrete tool-chain and memory-model choices? Specifically:
 ## Sources
 
 - Existing backend scaffolding:
-  - [`libvmaf/src/cuda/`](../../libvmaf/src/cuda/) — dlopen-based
+  - [`core/src/cuda/`](../../core/src/cuda/) — dlopen-based
     loader pattern for `libcuda.so.1`.
-  - [`libvmaf/src/sycl/`](../../libvmaf/src/sycl/) — USM picture pool
+  - [`core/src/sycl/`](../../core/src/sycl/) — USM picture pool
     and D3D11 external-handle import ([ADR-0101](../adr/0101-sycl-usm-picture-pool.md),
     [ADR-0103](../adr/0103-sycl-d3d11-surface-import.md)).
 - [Khronos Vulkan 1.3 spec](https://registry.khronos.org/vulkan/specs/1.3/html/)

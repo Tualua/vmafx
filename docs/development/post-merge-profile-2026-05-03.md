@@ -81,7 +81,7 @@ Cache statistics (5 × 48 frames, perf stat):
 
 ### 4.1 `iqa_convolve_avx512` (39.5 %)
 
-Source: `libvmaf/src/feature/x86/convolve_avx512.c`
+Source: `core/src/feature/x86/convolve_avx512.c`
 
 Hot lines concentrate on two idioms in `h_tap8_avx512` and `v_tap8_avx512`:
 
@@ -107,7 +107,7 @@ scalar `sum += float*float` followed by `(double)` widening. The
 
 ### 4.2 `ssim_accumulate_block_avx512.constprop.0` (18.0 %)
 
-Source: `libvmaf/src/feature/x86/ssim_avx512.c`, lines 88–125.
+Source: `core/src/feature/x86/ssim_avx512.c`, lines 88–125.
 
 Hot lines are the scalar per-lane reduction loop body:
 
@@ -134,7 +134,7 @@ implementation uses scalar fallback after SIMD float prep.
 
 ### 4.3 `vif_statistic_8_avx512` (11.1 %)
 
-Source: `libvmaf/src/feature/x86/vif_avx512.c`, lines ~85–160.
+Source: `core/src/feature/x86/vif_avx512.c`, lines ~85–160.
 
 Hot lines are gather instructions:
 

@@ -84,7 +84,7 @@ When `--data-root` points to a directory with the layout above, the loader:
 vmaf-train extract-features \
     --data-root .workingdir2/netflix \
     --dataset nflx-local \
-    --vmaf-binary libvmaf/build-cpu/tools/vmaf \
+    --vmaf-binary core/build-cpu/tools/vmaf \
     --output ai/data/nflx_local_features.parquet
 
 # If VMAF_DATA_ROOT is set instead:
@@ -168,9 +168,3 @@ Determinism`.
   survey update, feature-reweighting alternative added (2026-05-20 scaffold iteration)
 - [Research digest 0615](../research/0615-tiny-ai-netflix-training-2026-05-20.md) —
   EfficientVMAF (CVPR 2024), IQA-PyTorch distillation, ORT 1.20 update (2026-05-20)
-- [ADR-0685](../adr/0685-tiny-netflix-training-scaffold-2026-05-27.md) — distillation
-  convergence stability, ORT 1.21, small-corpus architecture evidence (2026-05-27 scaffold
-  iteration)
-- [Research digest 0730](../research/0730-tiny-ai-netflix-training-prep-2026-05-27.md) —
-  NeurIPS 2024–2025 distillation stability, ORT 1.21 INT8 MatMul, 3×128 MLP confirmation
-  (2026-05-27)

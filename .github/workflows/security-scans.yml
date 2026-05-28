@@ -108,7 +108,7 @@ jobs:
           queries: security-and-quality
           config-file: ./.github/codeql-config.yml
       - name: Build
-        working-directory: libvmaf
+        working-directory: core
         run: |
           sudo apt-get update
           sudo apt-get install -y meson ninja-build nasm

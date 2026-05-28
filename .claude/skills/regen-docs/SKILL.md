@@ -49,7 +49,7 @@ description: Regenerate the mkdocs-material site, validate cross-references, sur
 ## Notes
 
 - The legacy Doxygen + Sphinx setup was retired around 2026-04-30 in favour
-  of mkdocs-material. `Doxyfile.in` at `libvmaf/doc/Doxyfile.in` survives but
+  of mkdocs-material. `Doxyfile.in` at `core/doc/Doxyfile.in` survives but
   is not wired into a build target.
 - mkdocs `INFO` messages are **not** promoted to warnings under `--strict`
   by default. To make doc-to-doc drift fatal, set

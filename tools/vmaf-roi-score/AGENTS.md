@@ -8,7 +8,7 @@ pooled scores. Pure Python; no libvmaf C-side changes. See ADR-0296
 and ADR-0424.
 
 > **Naming guard**: do **not** rename this tool to `vmaf-roi`. That
-> name belongs to `libvmaf/tools/vmaf_roi.c` (ADR-0247), the
+> name belongs to `core/tools/vmaf_roi.c` (ADR-0247), the
 > encoder-steering sibling that emits per-CTU QP-offset sidecars.
 > Different surface, different output, related model. Confusing the
 > two would silently break downstream encoder pipelines.
@@ -25,9 +25,6 @@ and ADR-0424.
 - The JSON output schema is pinned by `ROI_RESULT_KEYS`. Adding fields
   is forward-compatible (consumers should ignore unknown keys);
   removing or renaming requires a schema bump.
-- CLI output is strict RFC-8259 JSON. A non-finite pooled score from
-  the underlying `vmaf` run exits with code 65 instead of writing
-  `NaN` / `Infinity` tokens.
 
 ## Things that are deferred (do not silently implement)
 

@@ -9,7 +9,7 @@
 
 Upstream PR [Netflix#1406][pr1406] (open, 1 commit, +117/-33) fixes two
 bugs in the feature-collector's singly-linked model list under
-`libvmaf/src/feature/feature_collector.c`:
+`core/src/feature/feature_collector.c`:
 
 1. `vmaf_feature_collector_mount_model()` advances `*head`
    (dereferencing the pointer-to-pointer and assigning back) instead
@@ -64,7 +64,7 @@ size threshold.
   as failure, so behaviour is preserved.
 - **Neutral / follow-ups**:
   - Shared `load_three_test_models()` helper lives in
-    `libvmaf/test/test_feature_collector.c`; not promoted to a
+    `core/test/test_feature_collector.c`; not promoted to a
     general test utility (only one consumer).
   - On upstream merge of #1406, the fork's line count will differ
     slightly due to the shared-helper refactor; the conflict will be

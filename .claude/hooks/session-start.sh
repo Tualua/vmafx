@@ -23,7 +23,7 @@ cc="$repo_root/compile_commands.json"
 if [[ -L "$cc" ]]; then
   target=$(readlink "$cc")
   if [[ -f "$target" ]]; then
-    for mf in libvmaf/meson.build libvmaf/meson_options.txt; do
+    for mf in core/meson.build core/meson_options.txt; do
       [[ -f "$mf" && "$mf" -nt "$target" ]] && {
         echo "  WARN: $mf is newer than compile_commands.json — rebuild to refresh clangd" >&2
         break

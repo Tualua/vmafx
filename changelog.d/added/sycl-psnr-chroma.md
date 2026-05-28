@@ -3,7 +3,7 @@
   batch 4 (T3-15(b)). Sibling to the CUDA twin in PR #520 / commit
   7f3d58a5; mirrors the Vulkan twin shipped in PR #204 /
   [ADR-0216](docs/adr/0216-vulkan-chroma-psnr.md) and the CPU contract
-  at [`libvmaf/src/feature/integer_psnr.c`](libvmaf/src/feature/integer_psnr.c).
+  at [`core/src/feature/integer_psnr.c`](core/src/feature/integer_psnr.c).
   Chroma rides on per-extractor device buffers populated by host-side
   staging copies in the graph `pre_fn` (the existing SYCL shared frame
   buffer is luma-only by design); luma stays graph-recorded, chroma

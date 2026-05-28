@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Phase A real-corpus runner — hardware encoder x CUDA-VMAF pipeline.
 
 Encodes a raw YUV with NVENC / QSV / VAAPI at a CRF/CQ grid, decodes back
@@ -15,7 +15,7 @@ pooled-only schema the smoke output had).
 
 Usage:
     python3 scripts/dev/hw_encoder_corpus.py \\
-        --vmaf-bin libvmaf/build-cuda/tools/vmaf \\
+        --vmaf-bin core/build-cuda/tools/vmaf \\
         --source .workingdir2/netflix/ref/BigBuckBunny_25fps.yuv \\
         --width 1920 --height 1080 --pix-fmt yuv420p --framerate 25 \\
         --encoder h264_nvenc --cq 19 --cq 25 --cq 31 --cq 37 \\

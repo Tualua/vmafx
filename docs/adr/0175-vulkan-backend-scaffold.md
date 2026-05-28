@@ -27,30 +27,30 @@ base to land on.
 The PR creates:
 
 - Public header
-  [`libvmaf/include/libvmaf/libvmaf_vulkan.h`](../../libvmaf/include/libvmaf/libvmaf_vulkan.h):
+  [`core/include/libvmaf/libvmaf_vulkan.h`](../../core/include/libvmaf/libvmaf_vulkan.h):
   declares `VmafVulkanState`, `VmafVulkanConfiguration`,
   `vmaf_vulkan_state_init` / `_import_state` / `_state_free`,
   `vmaf_vulkan_list_devices`, `vmaf_vulkan_available`. Mirrors the
   CUDA + SYCL pattern.
 - Backend tree under
-  [`libvmaf/src/vulkan/`](../../libvmaf/src/vulkan/) — `common.{c,h}`,
+  [`core/src/vulkan/`](../../core/src/vulkan/) — `common.{c,h}`,
   `picture_vulkan.{c,h}`, `meson.build`. All entry points return
   `-ENOSYS` or do-nothing.
 - Kernel stubs at
-  [`libvmaf/src/feature/vulkan/`](../../libvmaf/src/feature/vulkan/) —
+  [`core/src/feature/vulkan/`](../../core/src/feature/vulkan/) —
   `adm_vulkan.c`, `vif_vulkan.c`, `motion_vulkan.c`. `_init` /
   `_run` entry points return `-ENOSYS`.
 - New `enable_vulkan` feature option (default **disabled**) in
-  [`libvmaf/meson_options.txt`](../../libvmaf/meson_options.txt).
+  [`core/meson_options.txt`](../../core/meson_options.txt).
 - Conditional `subdir('vulkan')` in
-  [`libvmaf/src/meson.build`](../../libvmaf/src/meson.build);
+  [`core/src/meson.build`](../../core/src/meson.build);
   `vulkan_sources` + `vulkan_deps` threaded through the `library()`
   call alongside the existing CUDA / SYCL / DNN aggregations.
 - Smoke test
-  [`libvmaf/test/test_vulkan_smoke.c`](../../libvmaf/test/test_vulkan_smoke.c)
+  [`core/test/test_vulkan_smoke.c`](../../core/test/test_vulkan_smoke.c)
   with 4 sub-tests pinning the scaffold contract
   (context_new / NULL-out / destroy-NULL / device_count returns 0).
-  Wired in [`libvmaf/test/meson.build`](../../libvmaf/test/meson.build)
+  Wired in [`core/test/meson.build`](../../core/test/meson.build)
   under `if get_option('enable_vulkan').enabled()`.
 - New CI matrix row "Build — Ubuntu Vulkan Scaffold (stub kernels)"
   in [`libvmaf-build-matrix.yml`](../../.github/workflows/libvmaf-build-matrix.yml)
@@ -151,7 +151,7 @@ to run flip `-Denable_vulkan=enabled` explicitly.
 
 ## Tests
 
-- `libvmaf/test/test_vulkan_smoke.c` (4 sub-tests, all pass
+- `core/test/test_vulkan_smoke.c` (4 sub-tests, all pass
   locally):
   - `test_context_new_returns_zeroed_struct`
   - `test_context_new_rejects_null_out`

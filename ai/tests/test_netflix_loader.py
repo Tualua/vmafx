@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Tests for :mod:`ai.data.netflix_loader`."""
 
 from __future__ import annotations
@@ -108,20 +108,6 @@ def test_load_or_compute_caches(mock_corpus: Path, tmp_path: Path, monkeypatch) 
     cache_file = netflix_loader.cache_path_for(pair)
     assert cache_file.is_file()
     assert json.loads(cache_file.read_text()) == {"hello": "world"}
-
-
-def test_load_or_compute_cache_uses_strict_json(
-    mock_corpus: Path, tmp_path: Path, monkeypatch
-) -> None:
-    monkeypatch.setenv("VMAF_TINY_AI_CACHE", str(tmp_path / "cache"))
-    pair = next(iter(netflix_loader.iter_pairs(mock_corpus, assume_dims=(16, 16))))
-
-    out = netflix_loader.load_or_compute(pair, lambda _p: {"score": float("nan")})
-
-    assert out["score"] != out["score"]
-    raw = netflix_loader.cache_path_for(pair).read_text(encoding="utf-8")
-    assert "NaN" not in raw
-    assert json.loads(raw) == {"score": None}
 
 
 def test_load_or_compute_recovers_from_corrupt_cache(

@@ -20,7 +20,7 @@ masked-region score stays self-consistent at non-default values.
 
 The fork differs from upstream here in one structural way: a
 fork-local AVX2 SIMD variant `vif_statistic_s_avx2` under
-`libvmaf/src/feature/x86/vif_statistic_avx2.c` that upstream does
+`core/src/feature/x86/vif_statistic_avx2.c` that upstream does
 not ship. Upstream's commit touches only the scalar path and the
 scalar-facing headers. A plain cherry-pick leaves the AVX2 path
 with the old two-argument signature, breaks the call-site link in
@@ -89,7 +89,7 @@ agree on the new contract. Rules:
     touched files, the default-path invariant, and the
     fork-vs-upstream float-discipline divergence.
   - `CHANGELOG.md` entry under Unreleased → Added.
-  - `libvmaf/src/feature/AGENTS.md` gains a rebase-sensitive
+  - `core/src/feature/AGENTS.md` gains a rebase-sensitive
     note about the AVX2 variant's new parameter.
   - Python tests for the new parameter inherited verbatim from
     upstream (`feature_extractor_test.py`,

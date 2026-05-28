@@ -60,5 +60,5 @@ import onnx
 onnx.checker.check_model(onnx.load("model/tiny/fr_regressor_v1.onnx"))
 PY
 
-bash libvmaf/test/dnn/test_registry.sh
+bash core/test/dnn/test_registry.sh
 ```

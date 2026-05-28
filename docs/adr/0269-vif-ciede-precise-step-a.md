@@ -16,8 +16,8 @@ the `VK_API_VERSION_1_3 → 1_4` bump pending a two-step fix:
   contraction; the OpenCL `OpExecutionMode ContractionOff` is rejected
   by Vulkan).
 - **Step B** — bump the four API-version sites in
-  [`libvmaf/src/vulkan/common.c`](../../libvmaf/src/vulkan/common.c)
-  + [`libvmaf/src/vulkan/vma_impl.cpp`](../../libvmaf/src/vulkan/vma_impl.cpp).
+  [`core/src/vulkan/common.c`](../../core/src/vulkan/common.c)
+  + [`core/src/vulkan/vma_impl.cpp`](../../core/src/vulkan/vma_impl.cpp).
 
 This ADR records the implementation outcome of Step A.
 [Research-0054](../research/0056-vif-ciede-precise-step-a-implementation.md)
@@ -56,12 +56,12 @@ debt. This PR repays most of it.
 
 We will **ship the partial Step A fix**. The shader edits land:
 
-- [`libvmaf/src/feature/vulkan/shaders/vif.comp`](../../libvmaf/src/feature/vulkan/shaders/vif.comp)
+- [`core/src/feature/vulkan/shaders/vif.comp`](../../core/src/feature/vulkan/shaders/vif.comp)
   — `precise` on `g`, `sv_sq`, `gg_sigma_f` (lines 493–502 in master).
   Lowers to 62 `OpDecorate NoContraction` lines in the optimised
   SPIR-V. Bit-exact at API 1.3 (still 0/48 mismatches at
   `places=4`).
-- [`libvmaf/src/feature/vulkan/shaders/ciede.comp`](../../libvmaf/src/feature/vulkan/shaders/ciede.comp)
+- [`core/src/feature/vulkan/shaders/ciede.comp`](../../core/src/feature/vulkan/shaders/ciede.comp)
   — `precise` on `yuv_to_rgb` outputs (`r`, `g`, `b`), the
   `rgb_to_xyz` 3×3 matmul accumulators (`x`, `y`, `z`), the
   `ciede2000` chroma magnitudes (`c1_chroma`, `c2_chroma`), the
@@ -96,7 +96,7 @@ don't repeat the experiment.
 | Aggressive `precise` (helpers + Lab axes) | Tighter contract on every chained mul-add | ciede regresses 5/48 → 46/48 on NVIDIA; the helpers' un-decorated folds happen to align with the CPU compiler's folds, and forcing strict-eval breaks that alignment | Strictly worse on the load-bearing kernel — rejected on the no-test-weakening principle |
 | Defer Step A entirely; wait for `GL_EXT_shader_float_controls2` glslc support | Could unlock `OpExecutionMode SignedZeroInfNanPreserveFloat32` etc | Indefinite wait (extension is rejected by glslc 2026.1 today); leaves the silent ciede regression at 1.3 unrepaired | Rejected — we have a 19× partial fix in hand, ship it |
 | Ship Step A + Step B together in one PR | Closes the workstream in one merge | Step A doesn't fully fix vif at 1.4 (45/48 mismatches remain); merging Step B would land a known regression | Rejected — violates [the no-test-weakening rule](../../CLAUDE.md) and [ADR-0264](0264-vulkan-1-4-bump-blocked-on-fp-contraction.md)'s no-skip-shortcuts principle |
-| Add `vif.comp` to [`psnr_hvs_strict_shaders`](../../libvmaf/src/vulkan/meson.build) (`-O0`) | Mirrors the existing FMA-mitigation pattern | Doesn't change the SPIR-V the *driver* sees in a way that affects FMA contraction (the bug is in driver-side codegen, not glslc-side optimisation); not measured here, deferred follow-up | Low expected value; tracked as backlog under ADR-0264 |
+| Add `vif.comp` to [`psnr_hvs_strict_shaders`](../../core/src/vulkan/meson.build) (`-O0`) | Mirrors the existing FMA-mitigation pattern | Doesn't change the SPIR-V the *driver* sees in a way that affects FMA contraction (the bug is in driver-side codegen, not glslc-side optimisation); not measured here, deferred follow-up | Low expected value; tracked as backlog under ADR-0264 |
 | Hand-edit the SPIR-V to add `OpExecutionMode SignedZeroInfNanPreserveFloat32` via a `.spv` post-processing step | Reachable today; sidesteps glslc | Adds a build-time SPIR-V edit step; binds the fork to a specific spirv-tools version; intrusive | Rejected for this PR — research-0054 §"Open questions" tracks it |
 
 ## Consequences
@@ -128,7 +128,7 @@ don't repeat the experiment.
     (b) decide whether the residual 5/48 ciede tail is reducible
     on the GPU side or requires a CPU-side intervention.
   - The `psnr_hvs_strict_shaders` `-O0` workaround in
-    [`libvmaf/src/vulkan/meson.build`](../../libvmaf/src/vulkan/meson.build)
+    [`core/src/vulkan/meson.build`](../../core/src/vulkan/meson.build)
     is *not* extended to `vif.comp` / `ciede.comp` in this PR.
     Whether to add them is a separate decision pending the
     NV_SHADER_DUMP investigation.

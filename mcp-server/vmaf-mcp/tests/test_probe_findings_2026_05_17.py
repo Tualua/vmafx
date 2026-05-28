@@ -1,4 +1,4 @@
-# Copyright 2026 Lusoris
+# Copyright 2026 Lusoris and Claude (Anthropic)
 """Regression tests for the five MCP probe findings of 2026-05-17.
 
 See `docs/adr/0495-mcp-probe-bug-fixes.md` for the cluster write-up.

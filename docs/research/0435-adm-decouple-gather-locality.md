@@ -10,7 +10,7 @@ of two candidate acceleration strategies.
 ### LUT properties
 
 - `adm_div_lookup` is declared `int32_t div_lookup[65537]` in
-  `libvmaf/src/feature/integer_adm.h` (line 33), populated once via
+  `core/src/feature/integer_adm.h` (line 33), populated once via
   `pthread_once`.
 - Size: 65 537 × 4 = 262 148 bytes ≈ 256 KB.
 - Typical L1 data cache: 32–48 KB.  Typical L2: 256–512 KB.

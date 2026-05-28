@@ -12,7 +12,7 @@ After PR #1274 (ADR-0515) fixed the MinGW64 leg by replacing the `/tmp`-hardcode
 SYCL` matrix legs remained red on master for two distinct reasons:
 
 **MSVC+CUDA failure (`vif_avx512.c`):**
-`libvmaf/src/feature/x86/vif_avx512.c` used the GCC/Clang extension
+`core/src/feature/x86/vif_avx512.c` used the GCC/Clang extension
 `__attribute__((noinline, noclone))` on two private helpers
 (`vif_subsample_rd_8_vert_j`, `vif_subsample_rd_8_horiz_j`) introduced by
 ADR-0503 to isolate register pressure in the AVX-512 VIF kernel.
@@ -21,7 +21,7 @@ MSVC's `cl.exe` does not support `__attribute__` syntax at all — it raises
 `C2065: undeclared identifier` errors for every parameter in the function body.
 
 **MSVC+SYCL failure (`yuv_input.c`):**
-`libvmaf/tools/yuv_input.c::yuv_check_file_size` called `fstat()` and
+`core/tools/yuv_input.c::yuv_check_file_size` called `fstat()` and
 `S_ISREG()` on the return of `fileno(fin)`.  The file already guarded
 `<unistd.h>` and `fileno` → `_fileno` correctly, but `S_ISREG` is a POSIX
 macro not defined by MSVC's `<sys/stat.h>`.  Intel's oneAPI SYCL compiler

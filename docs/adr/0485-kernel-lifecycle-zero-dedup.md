@@ -43,7 +43,7 @@ init functions.
 
 ## Decision
 
-Introduce `libvmaf/src/kernel_lifecycle_common.h` with a single
+Introduce `core/src/kernel_lifecycle_common.h` with a single
 `VMAF_LIFECYCLE_ZERO(lc)` macro backed by `memset(lc, 0, sizeof(*lc))`.  Both
 `hip/kernel_template.c` and `metal/kernel_template.mm` include this header and
 replace the field-by-field zero blocks with `VMAF_LIFECYCLE_ZERO`.
@@ -70,7 +70,7 @@ shared header is intentionally minimal — it contains only the zero macro and t
 - The zero-init pattern is named and grep-able (`VMAF_LIFECYCLE_ZERO`).
 
 **Negative**
-- Adds `libvmaf/src/kernel_lifecycle_common.h` as a new internal header that
+- Adds `core/src/kernel_lifecycle_common.h` as a new internal header that
   future GPU backends should also include.
 
 **Neutral**
@@ -81,9 +81,9 @@ shared header is intentionally minimal — it contains only the zero macro and t
 ## References
 
 - Audit file: `.workingdir/dedup-audit-gpu-templates-2026-05-16.md` — opportunity #2
-- `libvmaf/src/kernel_lifecycle_common.h` — implementation
-- `libvmaf/src/hip/kernel_template.c` — HIP consumer
-- `libvmaf/src/metal/kernel_template.mm` — Metal consumer
+- `core/src/kernel_lifecycle_common.h` — implementation
+- `core/src/hip/kernel_template.c` — HIP consumer
+- `core/src/metal/kernel_template.mm` — Metal consumer
 - [ADR-0241](0241-hip-first-consumer-psnr.md) — HIP kernel template introduction
 - [ADR-0361](0361-metal-compute-backend.md) — Metal kernel template introduction
 - [ADR-0484](0484-kernel-scaffolding-hip-metal-doc.md) — kernel-scaffolding doc extension

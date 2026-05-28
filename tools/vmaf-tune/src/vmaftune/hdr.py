@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """HDR detection + codec-specific HDR encode flag dispatch.
 
 Bucket #9 of the Phase A capability audit (Research-0054). HDR sources

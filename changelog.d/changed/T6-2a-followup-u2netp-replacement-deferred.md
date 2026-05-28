@@ -11,7 +11,7 @@
   no pinnable raw URL — same blocker as MobileSal in ADR-0257); and
   (2) U-2-Net's `F.upsample(..., mode='bilinear')` lowers to the
   ONNX `Resize` op which is **not** on the fork's
-  `libvmaf/src/dnn/op_allowlist.c`, and bilinear resampling has no
+  `core/src/dnn/op_allowlist.c`, and bilinear resampling has no
   exact decomposition into the existing allowlist primitives at
   dynamic stride. The smoke-only synthetic placeholder
   (`mobilesal_placeholder_v0`, `smoke: true`) remains shipped

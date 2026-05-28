@@ -20,15 +20,15 @@ without giving up SIMD?
 ## Sources
 
 - Scalar reference:
-  [`ssim_accumulate_default_scalar` in `ssim_tools.c`](../../libvmaf/src/feature/iqa/ssim_tools.c)
+  [`ssim_accumulate_default_scalar` in `ssim_tools.c`](../../core/src/feature/iqa/ssim_tools.c)
   (lines 174–205).
 - Prior SIMD:
-  [`ssim_accumulate_avx2`](../../libvmaf/src/feature/x86/ssim_avx2.c) /
-  [`ssim_accumulate_avx512`](../../libvmaf/src/feature/x86/ssim_avx512.c)
+  [`ssim_accumulate_avx2`](../../core/src/feature/x86/ssim_avx2.c) /
+  [`ssim_accumulate_avx512`](../../core/src/feature/x86/ssim_avx512.c)
   as of commit `f28d853e`.
 - Upstream baseline: Netflix/vmaf `origin/master` has **no** SSIM
   SIMD at all — AVX2 / AVX-512 for VIF / ADM / motion / CAMBI only.
-  `git log upstream/master -- libvmaf/src/feature/x86/ssim_*` → empty.
+  `git log upstream/master -- core/src/feature/x86/ssim_*` → empty.
   First SSIM SIMD touch is fork commit `81fcd42e`.
 - Measurement:
   - `vmaf --cpumask 255 ...` (all SIMD blocked — scalar path)
@@ -202,7 +202,7 @@ across scalar / AVX2 / AVX-512 dispatch.
 ## Open questions / follow-ups
 
 - **NEON parity?** The fork ships
-  [`ssim_neon.c`](../../libvmaf/src/feature/arm64/ssim_neon.c)
+  [`ssim_neon.c`](../../core/src/feature/arm64/ssim_neon.c)
   with the same three dispatch entry points. The same pattern
   applies — this research digest covers x86 only. Defer to a
   follow-up: confirm NEON is bit-exact at `--precision max` on an

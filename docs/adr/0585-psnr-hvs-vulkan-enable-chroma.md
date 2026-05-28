@@ -55,7 +55,7 @@ callers that do not pass the option see identical behaviour.
 
 ## Files changed
 
-- `libvmaf/src/feature/vulkan/psnr_hvs_vulkan.c` — implementation
+- `core/src/feature/vulkan/psnr_hvs_vulkan.c` — implementation
 
 ## References
 

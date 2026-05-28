@@ -85,7 +85,7 @@ struct if a real workload needs depth > 2.
     matching the SYCL pattern; no per-extractor cleanup needed.
 - **Negative**:
   - One additional translation unit
-    (`libvmaf/src/vulkan/picture_vulkan_pool.c`, ~180 LOC).
+    (`core/src/vulkan/picture_vulkan_pool.c`, ~180 LOC).
   - Public ABI grows two entry points + one enum + one struct.
     Backwards compatibility is preserved (additive only).
   - The pool currently allocates only the Y plane — same as SYCL.
@@ -146,11 +146,11 @@ unmodified.
 - Source: `req` 2026-05-02 — popup answer "do 1 first then 4"
   (test_speed fix, then per-feature picture preallocation for Vulkan).
 - [`docs/api/gpu.md`](../api/gpu.md) — flagged the gap.
-- [`libvmaf/include/libvmaf/libvmaf_cuda.h`](../../libvmaf/include/libvmaf/libvmaf_cuda.h)
+- [`core/include/libvmaf/libvmaf_cuda.h`](../../core/include/libvmaf/libvmaf_cuda.h)
   — CUDA reference surface (`VmafCudaPicturePreallocationMethod`).
-- [`libvmaf/include/libvmaf/libvmaf_sycl.h`](../../libvmaf/include/libvmaf/libvmaf_sycl.h)
+- [`core/include/libvmaf/libvmaf_sycl.h`](../../core/include/libvmaf/libvmaf_sycl.h)
   — SYCL reference surface (chosen mirror).
-- [`libvmaf/src/sycl/picture_sycl.cpp`](../../libvmaf/src/sycl/picture_sycl.cpp)
+- [`core/src/sycl/picture_sycl.cpp`](../../core/src/sycl/picture_sycl.cpp)
   — SYCL pool implementation (the model for `picture_vulkan_pool.c`).
 - [ADR-0186](0186-vulkan-image-import-impl.md) — the existing
   zero-copy import path; preallocation is a parallel surface, not a
@@ -167,11 +167,11 @@ Audited as part of the 2026-05-08 ADR `Proposed` sweep
 
 Acceptance criteria verified in tree at HEAD `0a8b539e`:
 
-- `libvmaf/include/libvmaf/libvmaf_vulkan.h` declares
+- `core/include/libvmaf/libvmaf_vulkan.h` declares
   `VmafVulkanPicturePreallocationMethod` (line 153),
   `VmafVulkanPictureConfiguration::pic_prealloc_method` (line 165),
   `vmaf_vulkan_preallocate_pictures` (line 180),
   `vmaf_vulkan_picture_fetch` (line 191).
 - Verification command:
   `grep -nE "VmafVulkanPicturePreallocationMethod|vmaf_vulkan_preallocate_pictures|vmaf_vulkan_picture_fetch"
-  libvmaf/include/libvmaf/libvmaf_vulkan.h`.
+  core/include/libvmaf/libvmaf_vulkan.h`.

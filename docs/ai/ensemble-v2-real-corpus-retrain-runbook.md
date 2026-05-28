@@ -75,7 +75,7 @@ for src in "${sources[@]}"; do
   for enc in "${encoders[@]}"; do
     out="$out_root/parts/${src}__${enc}.jsonl"
     python3 scripts/dev/hw_encoder_corpus.py \
-      --vmaf-bin libvmaf/build-cpu/tools/vmaf \
+      --vmaf-bin core/build-cpu/tools/vmaf \
       --source "$src_yuv" \
       --width 1920 --height 1080 --pix-fmt yuv420p --framerate 25 \
       --encoder "$enc" \

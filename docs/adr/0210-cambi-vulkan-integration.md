@@ -15,10 +15,10 @@ locks the v1 implementation that lands in that follow-up.
 
 After the spike PR, the in-tree state was:
 
-- `libvmaf/src/feature/vulkan/cambi_vulkan.c` — 200-line scaffold
+- `core/src/feature/vulkan/cambi_vulkan.c` — 200-line scaffold
   with `init_stub` / `extract_stub` / `close_stub` returning
   `-ENOSYS`. Not wired into `feature_extractor_list[]`.
-- `libvmaf/src/feature/vulkan/shaders/{cambi_decimate,cambi_derivative,cambi_filter_mode}.comp`
+- `core/src/feature/vulkan/shaders/{cambi_decimate,cambi_derivative,cambi_filter_mode}.comp`
   — 3 of the 6 shaders ADR-0205 specifies. Compiled but unused.
 
 This PR implements:
@@ -186,7 +186,7 @@ day one.
   — strategy comparison.
 - Companion: [docs/research/0032-cambi-vulkan-integration.md](../research/0032-cambi-vulkan-integration.md)
   — integration-time trade-offs (this ADR's research digest).
-- CPU reference: [`libvmaf/src/feature/cambi.c`](../../libvmaf/src/feature/cambi.c).
+- CPU reference: [`core/src/feature/cambi.c`](../../core/src/feature/cambi.c).
 - Backlog: T7-36 (cambi GPU integration PR).
 - User direction: standing CLAUDE.md §12 r10/r11 (every fork-local
   PR ships the six deep-dive deliverables; doc-substance rule

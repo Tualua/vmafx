@@ -105,7 +105,7 @@ folded into a larger fork PR.
 | `45e2bd52` | libvmaf: make `vmaf_register_metadata_handler` private | API-narrowing change. The fork still exposes the symbol (and FFmpeg's `vf_libvmaf` patch consumes the public surface). Skipping preserves ABI stability per ADR-0186 (FFmpeg-patch invariant). |
 | `84614a8b` | Add `enable_tools` option (#1460) | meson-options surface change — would require an ADR on fork; fork already has its own meson option topology. Skip unless an explicit need arises. |
 | `44a92543` | Additional AVX optimizations with build and vmaf accuracy fixes (#1452) | fork has independently diverged on AVX paths (see Research-0024 and the multiple ADR-0142/0143/0144 family entries). Re-porting risks reintroducing rounding deltas that the fork's golden gate already locked down. |
-| `f5f36644` | libvmaf/meson: build libsvm as separate static lib | fork's meson layout has fork-specific library partitioning; would require an ADR. Skip pending a meson re-architecture review. |
+| `f5f36644` | core/meson: build libsvm as separate static lib | fork's meson layout has fork-specific library partitioning; would require an ADR. Skip pending a meson re-architecture review. |
 
 ## Recommended next ports (top 5)
 

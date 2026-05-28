@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Train the KonViD MOS head v1 — Phase 3 of ADR-0325.
 
 Phases 1 + 2 of ADR-0325 land the KonViD-1k / KonViD-150k corpora as
@@ -82,23 +82,11 @@ from typing import Any
 
 import numpy as np
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
-    from ai.scripts._script_bootstrap import bootstrap_ai_script
+from aiutils.file_utils import sha256
+from aiutils.run_manifest import build_run_provenance, describe_path, write_manifest_json
 
-_SCRIPT_PATHS = bootstrap_ai_script(__file__)
-SCRIPT_PATH = _SCRIPT_PATHS.script_path
-REPO_ROOT = _SCRIPT_PATHS.repo_root
-
-# isort: split
-from aiutils.cli_helpers import collect_cli_argv  # noqa: E402
-from aiutils.file_utils import sha256  # noqa: E402
-from aiutils.run_manifest import (  # noqa: E402
-    build_run_provenance,
-    describe_path,
-    write_manifest_json,
-)
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT_PATH = Path(__file__).resolve()
 
 # ---------------------------------------------------------------------
 # Constants — the KonViD schema is predictor-facing and must stay in sync with
@@ -1185,17 +1173,17 @@ def _build_manifest(
 
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="train_konvid_mos_head.py")
-    raw_argv = collect_cli_argv(argv)
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
     _konvid_1k_dir = Path(
         os.environ.get(
             "VMAF_KONVID_1K_DIR",
-            str(REPO_ROOT / ".corpus" / "konvid-1k"),
+            str(Path(__file__).resolve().parents[2] / ".corpus" / "konvid-1k"),
         )
     )
     _konvid_150k_dir = Path(
         os.environ.get(
             "VMAF_KONVID_150K_DIR",
-            str(REPO_ROOT / ".corpus" / "konvid-150k"),
+            str(Path(__file__).resolve().parents[2] / ".corpus" / "konvid-150k"),
         )
     )
     ap.add_argument(
@@ -1336,7 +1324,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     if display_profile is not None and not uses_display_profile:
         print(
-            f"[{args.log_prefix}] display profile ignored by feature schema {args.feature_schema}",
+            f"[{args.log_prefix}] display profile ignored by feature schema "
+            f"{args.feature_schema}",
             file=sys.stderr,
         )
 

@@ -53,13 +53,13 @@ root causes were responsible (Research-0138):
    into `/etc/vulkan/icd.d/nvidia_icd.json`, and the Intel/AMD ICDs
    the mesa-vulkan-drivers package installs into
    `/usr/share/vulkan/icd.d/`.
-4. **HIP — `libvmaf/tools/meson.build` missing `-DHAVE_HIP=1` cflag.**
+4. **HIP — `core/tools/meson.build` missing `-DHAVE_HIP=1` cflag.**
    The Containerfile passes `-Denable_hip=true` to meson, the meson
    summary reports `enable_hip : true`, and `libvmaf.so.3` links
    against `libamdhip64.so.6`. But the vmaf CLI's HIP support gate is
    `#ifdef HAVE_HIP` (compile-time guards around `#include
    "libvmaf/libvmaf_hip.h"`, the `VmafHipState` init/cleanup, and the
-   `--backend hip` strict-mode arm). `libvmaf/tools/meson.build`
+   `--backend hip` strict-mode arm). `core/tools/meson.build`
    conditionally appends `-DHAVE_CUDA=1` / `-DHAVE_SYCL=1` /
    `-DHAVE_VULKAN=1` to `vmaf_tool_cflags` but had no matching
    `-DHAVE_HIP=1` branch — so the CLI compiled with the
@@ -108,7 +108,7 @@ hosts that have the matching silicon. Concretely:
    cannot truly unset, and operators that need to force a single ICD
    can still pass it per-invocation via `docker exec -e
    VK_ICD_FILENAMES=…`.
-4. **`libvmaf/tools/meson.build`** — add `-DHAVE_HIP=1` to
+4. **`core/tools/meson.build`** — add `-DHAVE_HIP=1` to
    `vmaf_tool_cflags` when `enable_hip` is true, mirroring the
    existing CUDA / SYCL / Vulkan conditionals. Without this the vmaf
    CLI's HIP gate (`#ifdef HAVE_HIP` in `vmaf.c`) is inactive even
@@ -166,7 +166,7 @@ hosts that have the matching silicon. Concretely:
     once this PR ships, `vmaf --backend hip` proceeds past the CLI
     compile-time gate, initialises HIP state successfully, and then
     fails at `vmaf_hip_import_state` because the function in
-    `libvmaf/src/hip/common.c:149` still returns `-ENOSYS` with the
+    `core/src/hip/common.c:149` still returns `-ENOSYS` with the
     comment "stays unwired until the first feature kernel lands"
     (despite ADR-0468 having landed the first HIP feature kernel).
     Wiring `vmaf_hip_import_state` to stash the HIP state on the

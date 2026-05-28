@@ -10,7 +10,7 @@
 The `vmaf_pre` FFmpeg filter (added in `ffmpeg-patches/0002-add-vmaf_pre-filter.patch`)
 shipped a `parse_device()` helper that only recognized five device strings — `auto`, `cpu`,
 `cuda`, `openvino`, and `rocm` — matching the initial state of the `VmafDnnDevice` enum at
-the time the filter was authored. Subsequent PRs extended `VmafDnnDevice` in `libvmaf/include/libvmaf/dnn.h`
+the time the filter was authored. Subsequent PRs extended `VmafDnnDevice` in `core/include/libvmaf/dnn.h`
 with seven additional values (`openvino-npu`, `openvino-cpu`, `openvino-gpu`, `coreml`,
 `coreml-ane`, `coreml-gpu`, `coreml-cpu`), but the patch was not updated in lockstep.
 As a result, any `vmaf_pre=device=coreml` or `vmaf_pre=device=openvino-npu` invocation
@@ -44,6 +44,6 @@ its in-line description string change.
 
 - Deep audit finding #14: `.workingdir/AUDIT-DEEP-2026-05-15.md`
 - `ffmpeg-patches/0002-add-vmaf_pre-filter.patch`
-- `libvmaf/include/libvmaf/dnn.h` — `VmafDnnDevice` enum
+- `core/include/libvmaf/dnn.h` — `VmafDnnDevice` enum
 - `ffmpeg-patches/0001-libvmaf-add-tiny-model-option.patch` — reference implementation (12-entry map)
 - CLAUDE.md §12 r14 (ffmpeg-patches must stay in sync with public API)

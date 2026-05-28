@@ -143,7 +143,7 @@ forward is being used as the upstream authors intended.
 `f1226310…`) and document the blocker in
 [ADR-0257](../adr/0257-mobilesal-real-weights-deferred.md). The
 `mobilesal` extractor remains usable end-to-end — every C-side test
-in `libvmaf/test/test_mobilesal.c` passes against the placeholder —
+in `core/test/test_mobilesal.c` passes against the placeholder —
 but `saliency_mean` stays a content-independent constant (~0.5)
 until a permissive replacement lands. The C contract does not
 change; any future drop-in (U-2-Net export, distilled student, or

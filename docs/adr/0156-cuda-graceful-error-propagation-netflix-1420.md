@@ -18,7 +18,7 @@ Assertion `0' failed.
 ```
 
 Root cause: the `CHECK_CUDA` macro in
-[`libvmaf/src/cuda/cuda_helper.cuh`](../../libvmaf/src/cuda/cuda_helper.cuh)
+[`core/src/cuda/cuda_helper.cuh`](../../core/src/cuda/cuda_helper.cuh)
 called `assert(0)` on *any* CUDA error:
 
 ```c
@@ -50,7 +50,7 @@ consequences:
 
 `vmaf_cuda_buffer_alloc` already returned `int` and every call
 site used the `ret |= ...` pattern (see
-`libvmaf/src/feature/cuda/integer_motion_cuda.c:159–167`,
+`core/src/feature/cuda/integer_motion_cuda.c:159–167`,
 `integer_vif_cuda.c:150–155`, `integer_adm_cuda.c:1035–1054`).
 Callers were *ready* to handle a failure — but the macro never
 let the failure propagate.
@@ -65,7 +65,7 @@ story.
 
 Replace `CHECK_CUDA`'s abort-on-error with **graceful error
 propagation** across the entire CUDA backend. Two new macros in
-[`libvmaf/src/cuda/cuda_helper.cuh`](../../libvmaf/src/cuda/cuda_helper.cuh):
+[`core/src/cuda/cuda_helper.cuh`](../../core/src/cuda/cuda_helper.cuh):
 
 - **`CHECK_CUDA_GOTO(funcs, CALL, label)`** — on CUDA failure,
   logs the error (file / line / CUresult name / call text) and
@@ -121,7 +121,7 @@ failures reach their callers:
   `integer_compute_adm_cuda`.
 
 Public ABI is unchanged: every function exported via
-`libvmaf/include/libvmaf/libvmaf_cuda.h` already returned `int`
+`core/include/libvmaf/libvmaf_cuda.h` already returned `int`
 and continues to return `int` with the same sign convention.
 Previously-undocumented failure modes (OOM, stream creation
 failure, kernel dispatch failure) now reach callers as
@@ -178,7 +178,7 @@ the process.
     ABI change.
 - **Neutral / follow-ups**:
   - New reducer test
-    [`libvmaf/test/test_cuda_buffer_alloc_oom.c`](../../libvmaf/test/test_cuda_buffer_alloc_oom.c)
+    [`core/test/test_cuda_buffer_alloc_oom.c`](../../core/test/test_cuda_buffer_alloc_oom.c)
     exercises `cuMemAlloc(1 TiB)`, verifies the return is
     `-ENOMEM` (not abort). GPU-gated — runs only when CUDA is
     available at test time; skips cleanly otherwise.
@@ -198,7 +198,7 @@ the process.
 
 ## Verification
 
-- `meson test -C libvmaf/build-cuda` → **39/39 pass** (was:
+- `meson test -C core/build-cuda` → **39/39 pass** (was:
   38/38 pre-PR; + new `test_cuda_buffer_alloc_oom`).
 - `meson test -C build` (CPU-only) → **35/35 pass**.
 - Reducer test verified to hit the OOM branch on this host:
@@ -206,7 +206,7 @@ the process.
   → `vmaf_cuda_result_to_errno(2) = -ENOMEM` → caller
   receives `-ENOMEM`, process continues. Pre-fix, the same
   line fired `assert(0)` and aborted.
-- `clang-tidy -p libvmaf/build-cuda --quiet <6 files>` →
+- `clang-tidy -p core/build-cuda --quiet <6 files>` →
   **exit 0** on every file (zero errors in the
   `WarningsAsErrors` set). NOLINT brackets added for
   `performance-no-int-to-ptr` at 47 CUDA device-pointer-cast

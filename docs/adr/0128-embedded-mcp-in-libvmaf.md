@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Status update 2026-05-15**: implemented;
-  `libvmaf/include/libvmaf/libvmaf_mcp.h` and `libvmaf/src/mcp/`
+  `core/include/libvmaf/libvmaf_mcp.h` and `core/src/mcp/`
   present on master; `vmaf_mcp_start()` symbol in tree.
 - **Date**: 2026-04-20
 - **Deciders**: Lusoris, Claude (Anthropic)
@@ -75,7 +75,7 @@ runtime** and independently buildable. The design:
   default `auto` (on when the parent flag is on, off otherwise).
   Lets distro maintainers ship a subset cleanly.
 - **Public API**: one new header
-  `libvmaf/include/libvmaf/libvmaf_mcp.h`. Functions
+  `core/include/libvmaf/libvmaf_mcp.h`. Functions
   `vmaf_mcp_start(VmafContext *, VmafMcpConfig *, VmafMcpServer **)`
   and `vmaf_mcp_stop(VmafMcpServer *)`. Idempotent; thread-safe;
   can be called multiple times to run several transports
@@ -204,12 +204,12 @@ Audited as part of the 2026-05-08 ADR `Proposed` sweep
 The strategic decision in this ADR is shipped in stages:
 
 - The public C-API surface
-  (`libvmaf/include/libvmaf/libvmaf_mcp.h`) is shipped via the
+  (`core/include/libvmaf/libvmaf_mcp.h`) is shipped via the
   audit-first scaffold in [ADR-0209](0209-mcp-embedded-scaffold.md)
   (Accepted).
 - Build wiring (`enable_mcp` / `enable_mcp_sse` /
   `enable_mcp_uds` / `enable_mcp_stdio`) is shipped.
-- The stub TU at `libvmaf/src/mcp/mcp.c` returns `-ENOSYS` for
+- The stub TU at `core/src/mcp/mcp.c` returns `-ENOSYS` for
   every entry point.
 
 What remains unshipped (tracked as backlog item **T5-2b**):
@@ -218,7 +218,7 @@ What remains unshipped (tracked as backlog item **T5-2b**):
 - Dedicated MCP `pthread` and SPSC ring drain at frame boundaries.
 - SSE / UDS / stdio transport bodies.
 - Tool-surface expansion past the contract pinned by
-  `libvmaf/test/test_mcp_smoke.c`.
+  `core/test/test_mcp_smoke.c`.
 
 Because the stub returns `-ENOSYS` rather than the runtime behaviour
 the Decision section promised, this ADR stays **Proposed** until
@@ -230,8 +230,8 @@ Accepted via a follow-up status-update appendix.
 Verification command:
 
 ```sh
-head -25 libvmaf/include/libvmaf/libvmaf_mcp.h     # docstring
+head -25 core/include/libvmaf/libvmaf_mcp.h     # docstring
                                                     # explicitly
                                                     # notes -ENOSYS
-head -25 libvmaf/src/mcp/mcp.c                     # stub TU
+head -25 core/src/mcp/mcp.c                     # stub TU
 ```

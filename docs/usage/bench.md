@@ -20,7 +20,7 @@ intentionally moved a baseline.
 # build with CUDA + SYCL so vmaf_bench can compare all three backends
 meson setup build -Denable_cuda=true -Denable_sycl=true
 ninja -C build
-# binary lives at: build/libvmaf/tools/vmaf_bench
+# binary lives at: build/core/tools/vmaf_bench
 ```
 
 `vmaf_bench` compiles in every build configuration; CUDA / SYCL rows are
@@ -92,7 +92,7 @@ unless justified inline ([`.github/PULL_REQUEST_TEMPLATE.md`](../../.github/PULL
 ## Example — single 1080p benchmark
 
 ```shell
-./build/libvmaf/tools/vmaf_bench \
+./build/core/tools/vmaf_bench \
   --resolution 1920x1080 \
   --frames 10 \
   --data-dir /tmp/vmaf_test
@@ -112,7 +112,7 @@ integer_motion    34.6 ms        1.9 ms       0.3 ms       0.4 ms
 ## Example — cross-backend validation
 
 ```shell
-./build/libvmaf/tools/vmaf_bench --validate --resolution 1920x1080 --frames 10
+./build/core/tools/vmaf_bench --validate --resolution 1920x1080 --frames 10
 ```
 
 Expected output:
@@ -130,7 +130,7 @@ psnr             max |Δ| = 1e-9    max |Δ| = 1e-9     OK
 
 - Test data must be pre-staged. `vmaf_bench` does not download anything.
 - Resolution list is hard-coded to `576x324`, `640x480`, `1280x720`,
-  `1920x1080`, `3840x2160` (per `libvmaf/tools/vmaf_bench.c:291-293`).
+  `1920x1080`, `3840x2160` (per `core/tools/vmaf_bench.c:291-293`).
   Pass `--resolution WxH` to restrict to a single size; adding new
   resolutions requires source changes.
 - `--gpu-profile` requires a SYCL build (not wired for CUDA).

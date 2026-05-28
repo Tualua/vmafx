@@ -126,16 +126,16 @@ source /opt/intel/oneapi-2025.3/setvars.sh        # side-by-side install
 source /opt/intel/oneapi/setvars.sh               # default install
 
 # Force a clean SYCL build (icpx version is baked into compile_commands):
-rm -rf libvmaf/build-sycl-lint
-meson setup libvmaf/build-sycl-lint libvmaf \
+rm -rf core/build-sycl-lint
+meson setup core/build-sycl-lint libvmaf \
     -Denable_sycl=true -Denable_cuda=false
-ninja -C libvmaf/build-sycl-lint
+ninja -C core/build-sycl-lint
 ```
 
 Verify the SYCL kernels still link:
 
 ```bash
-ls -la libvmaf/build-sycl-lint/src/libvmaf.so.3.0.0
+ls -la core/build-sycl-lint/src/libvmaf.so.3.0.0
 ```
 
 ## Post-bump audit checklist
@@ -190,12 +190,12 @@ injects the oneAPI SYCL include path so stock LLVM `clang-tidy` resolves
 `<sycl/sycl.hpp>`:
 
 ```bash
-echo "libvmaf/src/sycl/picture_sycl.cpp
-libvmaf/src/feature/sycl/integer_adm_sycl.cpp
-libvmaf/src/feature/sycl/integer_motion_sycl.cpp
-libvmaf/src/feature/sycl/integer_vif_sycl.cpp" \
+echo "core/src/sycl/picture_sycl.cpp
+core/src/feature/sycl/integer_adm_sycl.cpp
+core/src/feature/sycl/integer_motion_sycl.cpp
+core/src/feature/sycl/integer_vif_sycl.cpp" \
   | parallel -j$(nproc) "scripts/ci/clang-tidy-sycl.sh \
-      -p libvmaf/build-sycl-lint --quiet {}" \
+      -p core/build-sycl-lint --quiet {}" \
   | grep -E "warning:|error:" \
   | wc -l
 # Expected: 0 across all four files. T7-7 cleared the SYCL findings;
@@ -209,7 +209,7 @@ at the install:
 
 ```bash
 ICPX_ROOT=/opt/intel/oneapi-2025.3/compiler/latest/linux \
-  scripts/ci/clang-tidy-sycl.sh -p libvmaf/build-sycl-lint --quiet <file>
+  scripts/ci/clang-tidy-sycl.sh -p core/build-sycl-lint --quiet <file>
 ```
 
 ## CI vs local

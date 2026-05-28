@@ -1,6 +1,6 @@
 - chore(feature): wire-or-delete dead Vulkan/Metal extractor source files
   (~3500 LOC removed). Wires `float_ms_ssim_metal.mm` + `float_ms_ssim.metal`
-  into `libvmaf/src/metal/meson.build` to honour ADR-0490's accepted Metal
+  into `core/src/metal/meson.build` to honour ADR-0490's accepted Metal
   port (was missing meson entry — latent link-time bomb on macOS Metal builds
   via `feature_extractor_list[]`). Deletes 7 Vulkan `.c` files (duplicates of
   wired siblings such as `vif_vulkan.c` / `moment_vulkan.c`, or abandoned WIP

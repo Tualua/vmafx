@@ -11,12 +11,12 @@ if [[ -z "$file" ]] && command -v jq >/dev/null 2>&1; then
 fi
 [[ -z "$file" ]] && exit 0
 
-# In bash case-globs, '*' matches '/', so '*/libvmaf/src/feature/*.c'
+# In bash case-globs, '*' matches '/', so '*/core/src/feature/*.c'
 # also catches files in subdirectories (x86/, arm64/, cuda/, sycl/).
 case "$file" in
-  */libvmaf/src/feature/*.c | */libvmaf/src/feature/*.h | \
-    */libvmaf/src/feature/*.cu | */libvmaf/src/feature/*.cuh | \
-    */libvmaf/src/feature/*.cpp | */libvmaf/src/feature/*.hpp)
+  */core/src/feature/*.c | */core/src/feature/*.h | \
+    */core/src/feature/*.cu | */core/src/feature/*.cuh | \
+    */core/src/feature/*.cpp | */core/src/feature/*.hpp)
     cat >&2 <<EOF
 NOTICE: edited feature extractor code: $file
 

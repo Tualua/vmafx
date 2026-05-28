@@ -10,8 +10,8 @@
 
 The fork tracks upstream Netflix/vmaf's supported-version policy for the parts
 of the code inherited from upstream. Fork-only code paths
-(`libvmaf/src/{cuda,sycl,vulkan,mcp}/`,
-`libvmaf/src/feature/{cuda,sycl,vulkan}/`, GPU backend runtimes, Tiny-AI /
+(`core/src/{cuda,sycl,vulkan,mcp}/`,
+`core/src/feature/{cuda,sycl,vulkan}/`, GPU backend runtimes, Tiny-AI /
 ONNX Runtime surface, embedded + standalone MCP servers) are supported on
 the current `master` and the latest two tagged releases.
 

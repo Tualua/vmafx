@@ -16,7 +16,7 @@ ADR-0110 did not (and could not) address:
 1. **`dnn_api.c` reported 1176% line coverage.** The race fixes were
    correctly applied — empirically verified by the geninfo log — yet
    `lcov --capture --directory build-coverage` still summed every
-   `.gcda` it found. Each `libvmaf/src/dnn/dnn_api.c` source is
+   `.gcda` it found. Each `core/src/dnn/dnn_api.c` source is
    compiled into both `libvmaf.so` *and* most test binaries
    (`build-coverage/test/test_X.p/.._src_dnn_api.c.gcda`). `lcov`
    aggregates these as if they were the same compilation unit and
@@ -27,7 +27,7 @@ ADR-0110 did not (and could not) address:
    removes them from the *report* but not from the aggregation.
 2. **The DNN critical files are unmeasurable in the CPU coverage
    build.** `meson setup build-coverage` did *not* set
-   `-Denable_dnn=enabled`, so `libvmaf/src/dnn/*.c` only compiled
+   `-Denable_dnn=enabled`, so `core/src/dnn/*.c` only compiled
    their stub branches. The 85% per-critical-file gate then enforced a
    threshold against synthetic stub coverage, not real DNN code paths.
    The companion "Tiny AI" job installs ORT and runs the dnn suite,
@@ -45,7 +45,7 @@ Two changes, applied to both the CPU and the (advisory) GPU coverage jobs:
    produces native Cobertura XML (for downstream tooling) and a
    `--json-summary` that the gate script can parse with `python3 -c`
    instead of grep-and-awk over `lcov --list` text. Output now lands
-   as `coverage.{xml,json,txt}` in `libvmaf/build-coverage/` and the
+   as `coverage.{xml,json,txt}` in `core/build-coverage/` and the
    uploaded artifact is renamed `coverage-cpu` / `coverage-gpu`
    (was: `coverage-lcov-cpu` / `coverage-lcov-gpu`).
 
@@ -53,7 +53,7 @@ Two changes, applied to both the CPU and the (advisory) GPU coverage jobs:
    `-Denable_dnn=enabled`.** Mirrors the dnn job's ORT-install step
    (the pinned `1.22.0` Linux x86_64 tarball + a hand-rolled
    `libonnxruntime.pc`). The DNN test suite then runs against real
-   ORT and `libvmaf/src/dnn/*.c` contributes honest coverage. The
+   ORT and `core/src/dnn/*.c` contributes honest coverage. The
    85% per-critical-file gate now measures real code, not stubs.
 
 The `-fprofile-update=atomic` build flag and the
@@ -90,7 +90,7 @@ not address them.
   30-minute job budget.
 - **Negative**: New per-critical-file numbers will likely show real
   gaps (existing DNN tests are limited; e.g.
-  [`test_op_allowlist.c`](../../libvmaf/test/dnn/test_op_allowlist.c)
+  [`test_op_allowlist.c`](../../core/test/dnn/test_op_allowlist.c)
   is only 37 lines). Closing the gap requires writing tests, which is
   in scope for the same PR per user direction ("Keep 85%; write tests
   now"). Files that fall short get tests added in the same PR or a

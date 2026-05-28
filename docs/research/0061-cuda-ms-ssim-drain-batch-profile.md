@@ -8,7 +8,7 @@
 ## Question
 
 After T-GPU-OPT-1 introduced the engine-scope CUDA fence-batching helper
-(`libvmaf/src/cuda/drain_batch.{h,c}`) and migrated psnr_cuda + the four
+(`core/src/cuda/drain_batch.{h,c}`) and migrated psnr_cuda + the four
 legacy extractors (motion, adm, vif, ssimulacra2), the fork's
 `vmaf_v0.6.1` model path saw N-1 host-blocking `cuStreamSynchronize`
 calls per frame collapse into a single `cuStreamSynchronize(drain_str)`.
@@ -108,10 +108,10 @@ host-compiler pair.
 ## References
 
 - ADR-0271 (this research's companion).
-- `libvmaf/src/cuda/drain_batch.{h,c}` — helper docstrings + Failure
+- `core/src/cuda/drain_batch.{h,c}` — helper docstrings + Failure
   mode.
-- `libvmaf/src/cuda/kernel_template.h` — `vmaf_cuda_kernel_collect_wait`
+- `core/src/cuda/kernel_template.h` — `vmaf_cuda_kernel_collect_wait`
   fast path.
-- `libvmaf/src/feature/cuda/integer_psnr_cuda.c` — pattern this PR
+- `core/src/feature/cuda/integer_psnr_cuda.c` — pattern this PR
   mirrors verbatim.
 - ADR-0214 — cross-backend `places=4` parity gate (unchanged).

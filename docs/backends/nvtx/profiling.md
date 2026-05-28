@@ -19,11 +19,11 @@ NVTX range macros compile to no-ops.
 The CUDA backend and feature-extractor dispatcher are instrumented with
 `nvtx3` C++ ranges:
 
-- [libvmaf/src/cuda/dispatch_strategy.c](../../../libvmaf/src/cuda/dispatch_strategy.c)
-  and [libvmaf/src/cuda/drain_batch.c](../../../libvmaf/src/cuda/drain_batch.c) —
+- [core/src/cuda/dispatch_strategy.c](../../../core/src/cuda/dispatch_strategy.c)
+  and [core/src/cuda/drain_batch.c](../../../core/src/cuda/drain_batch.c) —
   per-frame submit/collect boundaries (formerly under the removed
   `ring_buffer.c`).
-- [libvmaf/src/feature/feature_extractor.c](../../../libvmaf/src/feature/feature_extractor.c) —
+- [core/src/feature/feature_extractor.c](../../../core/src/feature/feature_extractor.c) —
   one range per `(feature, scale)` pair so you can tell VIF-scale-1 from
   ADM-scale-3 in a timeline.
 

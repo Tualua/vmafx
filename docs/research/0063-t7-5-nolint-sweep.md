@@ -16,7 +16,7 @@ reserved-identifier suppressions. Three predecessor PRs (#82 / ADR-0146,
 ## Inventory before the sweep
 
 Programmatic walk of every `NOLINT(readability-function-size)` site in
-`libvmaf/src/` and `libvmaf/tools/`, with the preceding contiguous
+`core/src/` and `core/tools/`, with the preceding contiguous
 comment-only block (up to 14 lines), classifying each by whether the
 comment cites an `ADR-NNNN` or `Research-NNNN` identifier explicitly.
 
@@ -43,7 +43,7 @@ comment cites an `ADR-NNNN` or `Research-NNNN` identifier explicitly.
 | `third_party/xiph/psnr_hvs.c` | 1 NOLINTBEGIN block | upstream-vendored block, scoped | 0 |
 | **Total** | **~75 sites** | **~53** | **22** |
 
-`_iqa_*` reserved-identifier NOLINTs in `libvmaf/src/`: **zero** (cleared
+`_iqa_*` reserved-identifier NOLINTs in `core/src/`: **zero** (cleared
 by ADR-0146 / PR #82 already; the `iqa/` directory is fully lint-clean
 and the renamed helpers — `iqa_convolve_horizontal_pass`,
 `iqa_convolve_vertical_pass`, `ssim_compute_stats`, etc. — sit in named
@@ -120,7 +120,7 @@ python3 - <<'PY'
 import re, os
 paths = [os.path.join(r, f) for r, _, fs in os.walk('libvmaf/src')
          for f in fs if f.endswith(('.c','.cpp','.h'))]
-paths.append('libvmaf/tools/vmaf.c')
+paths.append('core/tools/vmaf.c')
 miss = total = 0
 for p in paths:
     with open(p) as fh:

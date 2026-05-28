@@ -27,7 +27,7 @@ had fired — producing empty stdout and stderr and exit code 1.
 
 **Root cause 2 — `VMAF_BIN` not injected into subprocess environment**
 
-`bench_all.sh` defaults `VMAF` to `libvmaf/build/tools/vmaf` (a relative in-tree path)
+`bench_all.sh` defaults `VMAF` to `core/build/tools/vmaf` (a relative in-tree path)
 when `VMAF_BIN` is not set. In the `vmaf-dev-mcp` container the binary is installed at
 `/usr/local/bin/vmaf` and the in-tree path does not exist. `_run_benchmark()` computed
 the correct binary via `_vmaf_binary()` but did not export `VMAF_BIN` to the subprocess,

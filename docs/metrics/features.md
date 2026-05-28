@@ -112,7 +112,7 @@ direct submit on SYCL; graph-capture vs streams on CUDA;
 secondary-cmdbuf reuse vs primary on Vulkan). The descriptor lives
 on the extractor and is consumed by the per-backend
 `dispatch_strategy` modules under
-[`libvmaf/src/{cuda,sycl,vulkan}/dispatch_strategy.{c,h}`](../../libvmaf/src/sycl/dispatch_strategy.cpp).
+[`core/src/{cuda,sycl,vulkan}/dispatch_strategy.{c,h}`](../../core/src/sycl/dispatch_strategy.cpp).
 
 Defaults are calibrated to match pre-T7-26 SYCL behaviour
 byte-for-byte (graph replay above 720p area, direct submit below).
@@ -284,9 +284,9 @@ Y plane only.
 **Options** — none.
 
 **Backends** — AVX2, AVX-512, NEON, CUDA, SYCL, Vulkan
-([`motion_v2_vulkan`](../../libvmaf/src/feature/vulkan/motion_v2_vulkan.c),
-[`integer_motion_v2_cuda.c`](../../libvmaf/src/feature/cuda/integer_motion_v2_cuda.c),
-[`integer_motion_v2_sycl.cpp`](../../libvmaf/src/feature/sycl/integer_motion_v2_sycl.cpp)).
+([`motion_v2_vulkan`](../../core/src/feature/vulkan/motion_v2_vulkan.c),
+[`integer_motion_v2_cuda.c`](../../core/src/feature/cuda/integer_motion_v2_cuda.c),
+[`integer_motion_v2_sycl.cpp`](../../core/src/feature/sycl/integer_motion_v2_sycl.cpp)).
 
 All three GPU kernels (per [ADR-0193](../adr/0193-motion-v2-vulkan.md))
 are **bit-exact** vs the CPU scalar reference on 8-bit and 10-bit
@@ -561,19 +561,19 @@ work tracked under T7-35.
 
 **MS-SSIM decimate (fork-local)** — the 9-tap 9/7 biorthogonal wavelet
 LPF that produces scales 1–4 runs through `ms_ssim_decimate` in
-[`libvmaf/src/feature/ms_ssim_decimate.c`](../../libvmaf/src/feature/ms_ssim_decimate.c).
+[`core/src/feature/ms_ssim_decimate.c`](../../core/src/feature/ms_ssim_decimate.c).
 SIMD variants live in
-[`libvmaf/src/feature/x86/ms_ssim_decimate_avx2.c`](../../libvmaf/src/feature/x86/ms_ssim_decimate_avx2.c)
+[`core/src/feature/x86/ms_ssim_decimate_avx2.c`](../../core/src/feature/x86/ms_ssim_decimate_avx2.c)
 (8-wide),
-[`libvmaf/src/feature/x86/ms_ssim_decimate_avx512.c`](../../libvmaf/src/feature/x86/ms_ssim_decimate_avx512.c)
+[`core/src/feature/x86/ms_ssim_decimate_avx512.c`](../../core/src/feature/x86/ms_ssim_decimate_avx512.c)
 (16-wide), and
-[`libvmaf/src/feature/arm64/ms_ssim_decimate_neon.c`](../../libvmaf/src/feature/arm64/ms_ssim_decimate_neon.c)
+[`core/src/feature/arm64/ms_ssim_decimate_neon.c`](../../core/src/feature/arm64/ms_ssim_decimate_neon.c)
 (4-wide). Dispatch prefers AVX-512 > AVX2 > scalar on x86 and
 NEON > scalar on aarch64 at runtime via `vmaf_get_cpu_flags()`; all
 four paths are strictly **byte-identical** (per-lane `fmaf` /
 `_mm{256,512}_fmadd_ps` / `vfmaq_n_f32` with broadcast coefficients
 and scalar-fallback borders). The contract is verified by
-`libvmaf/test/test_ms_ssim_decimate.c` across
+`core/test/test_ms_ssim_decimate.c` across
 1x1 / 8x8 / 9x9 / border-edge / 1920x1080 cases. See
 [ADR-0125](../adr/0125-ms-ssim-decimate-simd.md).
 
@@ -659,7 +659,7 @@ that ignore the pragma rely on the split-library `-ffp-contract=off`
 flag.
 
 **Bit-exactness** — scalar and SIMD outputs are byte-identical on the
-fork's host matrix (verified by `libvmaf/test/test_ssimulacra2_simd.c`,
+fork's host matrix (verified by `core/test/test_ssimulacra2_simd.c`,
 11 unit tests). Cross-host determinism is pinned by replacing libm
 `cbrtf` and `powf(x, 2.4)` with deterministic polynomials —
 `vmaf_ss2_cbrtf` (bit-trick init + 2 Newton-Raphson iterations,
@@ -1023,7 +1023,7 @@ considered (flicker, judder).
 - **Invocation** — `--feature speed_temporal` (build with
   `-Denable_float=true`).
 - **Output metrics** — `Speed_temporal_*_score` family (see the
-  registered `provided_features[]` in `libvmaf/src/feature/speed.c`).
+  registered `provided_features[]` in `core/src/feature/speed.c`).
 - **Input formats** — YUV 4:2:0 / 4:2:2 / 4:4:4, 8 / 10 / 12 / 16 bpc.
 - **Backends** — scalar only.
 
@@ -1035,7 +1035,7 @@ including `speed_kernelscale`, `speed_prescale`,
 `bilinear`), `speed_sigma_nn`, `speed_nn_floor`, `speed_max_val`,
 `speed_weight_var_mode` (`speed_chroma` only), and
 `speed_use_ref_diff` (`speed_temporal` only). See
-`libvmaf/src/feature/speed.c` for the per-option `help` strings and
+`core/src/feature/speed.c` for the per-option `help` strings and
 ranges; defaults match Netflix upstream.
 
 **Stability** — research; the option grammar and score scale may

@@ -20,7 +20,7 @@ T7-29 has no such pre-existing C-API. FFmpeg's
 `AVVkFrame` (one per plane) plus timeline semaphores
 (`VkSemaphore` + `uint64_t` wait/signal value). To consume those
 zero-copy, libvmaf needs a new public surface in
-[`libvmaf_vulkan.h`](../../libvmaf/include/libvmaf/libvmaf_vulkan.h)
+[`libvmaf_vulkan.h`](../../core/include/libvmaf/libvmaf_vulkan.h)
 that accepts external `VkImage` + `VkSemaphore` and either
 exposes them to the existing compute kernels or copies them
 into the internal `VmafVulkanBuffer` shape that the kernels
@@ -36,7 +36,7 @@ follow-up PR (T7-29 part 2).
 ## Decision
 
 Add three new entry points to
-[`libvmaf_vulkan.h`](../../libvmaf/include/libvmaf/libvmaf_vulkan.h),
+[`libvmaf_vulkan.h`](../../core/include/libvmaf/libvmaf_vulkan.h),
 all returning `-ENOSYS` in this scaffold PR:
 
 ```c
@@ -141,7 +141,7 @@ because its call path needs the implementation to exist.
   (T7-28 SYCL filter — the symmetric surface this T7-29 work
   closes against).
 - C-API surface to mirror:
-  [`libvmaf_sycl.h`](../../libvmaf/include/libvmaf/libvmaf_sycl.h) —
+  [`libvmaf_sycl.h`](../../core/include/libvmaf/libvmaf_sycl.h) —
   `vmaf_sycl_import_va_surface`,
   `vmaf_sycl_wait_compute`,
   `vmaf_read_pictures_sycl`.

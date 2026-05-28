@@ -5,7 +5,7 @@ model: sonnet
 tools: Read, Grep, Glob, Bash
 ---
 
-You review Meson build-system changes for VMAFX. Scope: `meson.build`
+You review Meson build-system changes for the Lusoris VMAF fork. Scope: `meson.build`
 (all levels), `meson_options.txt`, `subprojects/*.wrap`.
 
 ## What to check
@@ -20,7 +20,7 @@ You review Meson build-system changes for VMAFX. Scope: `meson.build`
    platform.
 4. **Install targets** — public headers install to `include/libvmaf/`; shared lib to
    `lib/`; CLI to `bin/`; test binaries NOT installed.
-5. **Test registration** — every unit test file under `libvmaf/test/` has a
+5. **Test registration** — every unit test file under `core/test/` has a
    `test(...)` declaration with a unique name, `suite: 'fast'` or `'slow'` tag.
 6. **Link ordering** — `-Wl,--as-needed` preserved; no accidental overlink. Backend
    libs link only when their feature is enabled.

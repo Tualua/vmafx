@@ -1,15 +1,12 @@
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """JSONL file I/O utilities."""
 
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Iterator
-
-from aiutils.run_manifest import normalise_manifest_value
+from typing import Iterator
 
 
 def iter_jsonl(path: Path) -> Iterator[tuple[int, dict]]:
@@ -34,22 +31,3 @@ def iter_jsonl(path: Path) -> Iterator[tuple[int, dict]]:
                 yield line_no, json.loads(stripped)
             except json.JSONDecodeError as exc:
                 raise SystemExit(f"error: {path}:{line_no}: invalid JSON ({exc})") from exc
-
-
-def dumps_jsonl_row(
-    row: Mapping[str, Any],
-    *,
-    sort_keys: bool = True,
-    separators: tuple[str, str] | None = None,
-) -> str:
-    """Serialize one strict JSONL object row with a trailing newline."""
-    normalised = normalise_manifest_value(row)
-    return (
-        json.dumps(
-            normalised,
-            sort_keys=sort_keys,
-            allow_nan=False,
-            separators=separators,
-        )
-        + "\n"
-    )

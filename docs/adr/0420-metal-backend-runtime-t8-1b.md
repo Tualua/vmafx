@@ -7,27 +7,27 @@
 
 ## Context
 
-[ADR-0361](0361-metal-compute-backend.md) (T8-1) landed the Metal scaffold: public header [`libvmaf/include/libvmaf/libvmaf_metal.h`](../../libvmaf/include/libvmaf/libvmaf_metal.h), the backend tree under [`libvmaf/src/metal/`](../../libvmaf/src/metal/) with `common.c`, `picture_metal.c`, `dispatch_strategy.c`, `kernel_template.c`, and eight feature-kernel scaffolds in [`libvmaf/src/feature/metal/`](../../libvmaf/src/feature/metal/). Every entry point returned `-ENOSYS`. The scaffold's purpose was to fix the C-level surface ahead of any runtime work so consumers and CI lanes could land without churn.
+[ADR-0361](0361-metal-compute-backend.md) (T8-1) landed the Metal scaffold: public header [`core/include/libvmaf/libvmaf_metal.h`](../../core/include/libvmaf/libvmaf_metal.h), the backend tree under [`core/src/metal/`](../../core/src/metal/) with `common.c`, `picture_metal.c`, `dispatch_strategy.c`, `kernel_template.c`, and eight feature-kernel scaffolds in [`core/src/feature/metal/`](../../core/src/feature/metal/). Every entry point returned `-ENOSYS`. The scaffold's purpose was to fix the C-level surface ahead of any runtime work so consumers and CI lanes could land without churn.
 
 A contributor reported a contradictory state from a user perspective: a Mac build of the fork has no working GPU acceleration today. The Vulkan-via-MoltenVK path covers most of the gap (the [Lusoris Homebrew tap's `libvmaf` formula](https://github.com/lusoris/homebrew-tap/blob/master/Formula/libvmaf.rb) ships it as the default on macOS) but it routes every SPIR-V kernel through MoltenVK's Vulkan → Metal translation layer, paying translation overhead and a couple of extension gaps (`atomicInt64`, external memory). The endgame for macOS is the native Metal backend per ADR-0361 §"Apple Silicon-only"; this PR closes the runtime half of that gap.
 
 ## Decision
 
-We will replace the pure-C scaffold TUs in `libvmaf/src/metal/` with Objective-C++ (`.mm`) implementations that drive `Metal.framework` directly. The public-header ABI (handles cross as `uintptr_t` / `void *`) stays verbatim — the scaffold's purpose was to pin it, and the runtime PR respects it.
+We will replace the pure-C scaffold TUs in `core/src/metal/` with Objective-C++ (`.mm`) implementations that drive `Metal.framework` directly. The public-header ABI (handles cross as `uintptr_t` / `void *`) stays verbatim — the scaffold's purpose was to pin it, and the runtime PR respects it.
 
 ### Three `.mm` TUs
 
-- [`libvmaf/src/metal/common.mm`](../../libvmaf/src/metal/common.mm) — `MTLDevice` + `MTLCommandQueue` lifecycle. `MTLCreateSystemDefaultDevice()` for `device_index = -1`; `MTLCopyAllDevices()` for explicit indexing on macOS (no-op on iOS). Apple-Family-7 gate via `[device supportsFamily:MTLGPUFamilyApple7]` — Intel Macs, non-Apple hosts, and pre-M1 iOS surface as `-ENODEV` from both `vmaf_metal_context_new` and `vmaf_metal_state_init`.
-- [`libvmaf/src/metal/picture_metal.mm`](../../libvmaf/src/metal/picture_metal.mm) — `MTLBuffer` allocator with `MTLResourceStorageModeShared` (zero-copy unified memory on Apple Silicon).
-- [`libvmaf/src/metal/kernel_template.mm`](../../libvmaf/src/metal/kernel_template.mm) — private `MTLCommandQueue` + two `MTLSharedEvent` handles per consumer; per-frame submit-side `MTLBlitCommandEncoder fillBuffer` + cross-queue `encodeWaitForEvent`; collect-side drain via `commandBuffer waitUntilCompleted`. Mirrors `hip/kernel_template.c`'s sequence one-to-one modulo the unified-memory buffer collapse.
+- [`core/src/metal/common.mm`](../../core/src/metal/common.mm) — `MTLDevice` + `MTLCommandQueue` lifecycle. `MTLCreateSystemDefaultDevice()` for `device_index = -1`; `MTLCopyAllDevices()` for explicit indexing on macOS (no-op on iOS). Apple-Family-7 gate via `[device supportsFamily:MTLGPUFamilyApple7]` — Intel Macs, non-Apple hosts, and pre-M1 iOS surface as `-ENODEV` from both `vmaf_metal_context_new` and `vmaf_metal_state_init`.
+- [`core/src/metal/picture_metal.mm`](../../core/src/metal/picture_metal.mm) — `MTLBuffer` allocator with `MTLResourceStorageModeShared` (zero-copy unified memory on Apple Silicon).
+- [`core/src/metal/kernel_template.mm`](../../core/src/metal/kernel_template.mm) — private `MTLCommandQueue` + two `MTLSharedEvent` handles per consumer; per-frame submit-side `MTLBlitCommandEncoder fillBuffer` + cross-queue `encodeWaitForEvent`; collect-side drain via `commandBuffer waitUntilCompleted`. Mirrors `hip/kernel_template.c`'s sequence one-to-one modulo the unified-memory buffer collapse.
 
 ### Memory ownership: ARC + bridge casts
 
-All three `.mm` TUs compile with `-fobjc-arc`. C-struct slots that hold Metal handles are `void *` (or `uintptr_t` for the kernel-template ABI) populated via `(__bridge_retained void *)id` (id → void *, +1 retain) and drained via `(__bridge_transfer id)void *` (void * → id, -1 retain) on destroy/free. This keeps `<Metal/Metal.h>` out of every header in `libvmaf/src/metal/` and out of every consumer TU under `libvmaf/src/feature/metal/`, honouring the [ADR-0361 §"Header purity"](0361-metal-compute-backend.md) contract.
+All three `.mm` TUs compile with `-fobjc-arc`. C-struct slots that hold Metal handles are `void *` (or `uintptr_t` for the kernel-template ABI) populated via `(__bridge_retained void *)id` (id → void *, +1 retain) and drained via `(__bridge_transfer id)void *` (void * → id, -1 retain) on destroy/free. This keeps `<Metal/Metal.h>` out of every header in `core/src/metal/` and out of every consumer TU under `core/src/feature/metal/`, honouring the [ADR-0361 §"Header purity"](0361-metal-compute-backend.md) contract.
 
 ### Internal accessor pair, not struct-layout coupling
 
-`picture_metal.mm` and `kernel_template.mm` need the device + queue handles that `common.mm` stashes on the context. We expose them via two accessors added to [`libvmaf/src/metal/common.h`](../../libvmaf/src/metal/common.h):
+`picture_metal.mm` and `kernel_template.mm` need the device + queue handles that `common.mm` stashes on the context. We expose them via two accessors added to [`core/src/metal/common.h`](../../core/src/metal/common.h):
 
 ```c
 void *vmaf_metal_context_device_handle(VmafMetalContext *ctx);
@@ -38,7 +38,7 @@ Both return the bridge-retained `void *` — caller never releases. Same pattern
 
 ### Build wiring
 
-[`libvmaf/src/metal/meson.build`](../../libvmaf/src/metal/meson.build) gains:
+[`core/src/metal/meson.build`](../../core/src/metal/meson.build) gains:
 
 - `.mm` source entries for the three runtime TUs alongside the existing C consumer files.
 - `dependency('Foundation', required: true)` + `dependency('Metal', required: true)` (was `required: false` in T8-1). Apple's frameworks are guaranteed present on macOS; the parent `subdir('metal')` gate already restricts this branch to Darwin hosts.
@@ -46,7 +46,7 @@ Both return the bridge-retained `void *` — caller never releases. Same pattern
 
 ### Smoke-test expectations
 
-[`libvmaf/test/test_metal_smoke.c`](../../libvmaf/test/test_metal_smoke.c) flips from the T8-1 `-ENOSYS` pin to runtime expectations:
+[`core/test/test_metal_smoke.c`](../../core/test/test_metal_smoke.c) flips from the T8-1 `-ENOSYS` pin to runtime expectations:
 
 - `vmaf_metal_state_init`, `vmaf_metal_context_new`, `vmaf_metal_kernel_lifecycle_init`, `vmaf_metal_kernel_buffer_alloc`: each returns `0` on Apple-Family-7+ devices, `-ENODEV` on every other host. The test gracefully short-circuits on `-ENODEV` rather than failing — keeps the test green on Intel-Mac CI lanes if any are ever added.
 - `vmaf_metal_list_devices`, `vmaf_metal_device_count`: return a non-negative count (`0` is fine for non-Apple-7+).

@@ -25,7 +25,7 @@ The backticks around `AGENTS.md` mean that a PR author who ticks the
 template verbatim produces a body line like:
 
 ```markdown
-- [x] **`AGENTS.md` invariant note** — added to libvmaf/src/cuda/AGENTS.md ...
+- [x] **`AGENTS.md` invariant note** — added to core/src/cuda/AGENTS.md ...
 ```
 
 The checker's regex `.*AGENTS.md invariant note` expects exactly one

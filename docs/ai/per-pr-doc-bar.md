@@ -2,7 +2,7 @@
 
 [ADR-0042](../adr/0042-tinyai-docs-required-per-pr.md) sets a tighter
 **5-point doc bar** for any PR touching the tiny-AI surface (`ai/`,
-`libvmaf/src/dnn/`, anything model-card-bearing). It is the
+`core/src/dnn/`, anything model-card-bearing). It is the
 specialisation of the project-wide
 [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md) doc-
 substance rule for tiny-AI.
@@ -27,7 +27,7 @@ independently.
 - Model files under `model/tiny/`.
 - Model cards under `docs/ai/models/`.
 - Training, export, quantisation, or calibration scripts under `ai/`.
-- Runtime inference paths under `libvmaf/src/dnn/`.
+- Runtime inference paths under `core/src/dnn/`.
 - Registry, model-verification, or tiny-device selector changes.
 
 ## Practical Checklist

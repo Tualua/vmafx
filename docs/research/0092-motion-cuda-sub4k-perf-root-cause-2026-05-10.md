@@ -106,7 +106,7 @@ To confirm the improvement:
 
 ```bash
 ncu --section LaunchStats --section MemoryWorkloadAnalysis \
-    ./build-cuda/libvmaf/tools/vmaf_bench --resolution 576x324 --gpu-only --frames 20
+    ./build-cuda/core/tools/vmaf_bench --resolution 576x324 --gpu-only --frames 20
 ```
 
 Before fix: `LaunchStats` will show high `Idle` cycles and low SM occupancy at
@@ -114,5 +114,5 @@ Before fix: `LaunchStats` will show high `Idle` cycles and low SM occupancy at
 
 ## Files affected
 
-- `libvmaf/src/cuda/picture_cuda.c` line 226 — the fix.
+- `core/src/cuda/picture_cuda.c` line 226 — the fix.
 - `docs/adr/0378-picture-stream-non-blocking.md` — architectural decision.

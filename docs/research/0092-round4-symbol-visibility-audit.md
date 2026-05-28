@@ -74,16 +74,16 @@ ABI surface that prevents future renaming without a major-version bump.
 ### Option A — `-fvisibility=hidden` + explicit `VMAF_EXPORT` attributes (recommended)
 
 Add `-fvisibility=hidden` to `vmaf_cflags_common` in
-`libvmaf/src/meson.build`. Add `__attribute__((visibility("default")))` (macro
+`core/src/meson.build`. Add `__attribute__((visibility("default")))` (macro
 `VMAF_EXPORT`) to every `vmaf_*` entry point in the public headers under
-`libvmaf/include/libvmaf/`. The linker will then only export the annotated
+`core/include/libvmaf/`. The linker will then only export the annotated
 symbols.
 
 **Scope of changes**:
-- `libvmaf/src/meson.build`: add `-fvisibility=hidden` (~2 lines)
-- `libvmaf/include/libvmaf/*.h`: add `VMAF_EXPORT` to every public function
+- `core/src/meson.build`: add `-fvisibility=hidden` (~2 lines)
+- `core/include/libvmaf/*.h`: add `VMAF_EXPORT` to every public function
   declaration (~60–80 entry points across 8 headers)
-- `libvmaf/include/libvmaf/libvmaf.h`: define the `VMAF_EXPORT` macro
+- `core/include/libvmaf/libvmaf.h`: define the `VMAF_EXPORT` macro
   (platform-aware: `__declspec(dllexport)` on MSVC, `__attribute__((visibility("default")))` on GCC/Clang)
 - Verify: `nm -D --defined-only build/src/libvmaf.so.* | grep ' [TW] ' | grep -v ' vmaf_'` should return empty
 

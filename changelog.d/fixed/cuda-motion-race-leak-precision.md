@@ -1,5 +1,5 @@
 - **CUDA `motion` correctness — four real bugs + two perf advisories.**
-  Cuda-reviewer pass on `libvmaf/src/feature/cuda/integer_motion_cuda.c`
+  Cuda-reviewer pass on `core/src/feature/cuda/integer_motion_cuda.c`
   (2026-05-09) surfaced and this PR fixes:
   - **Cross-stream race on the SAD accumulator** —
     `cuMemsetD8Async(s->sad->data, ..., s->str)` on the drain stream

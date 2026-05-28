@@ -35,8 +35,8 @@ behaviour rather than collapsing to the first-consumer assertion.
 
 The PR ships:
 
-- **`libvmaf/src/feature/hip/float_psnr_hip.{c,h}`** — mirrors
-  `libvmaf/src/feature/cuda/float_psnr_cuda.c`'s call graph
+- **`core/src/feature/hip/float_psnr_hip.{c,h}`** — mirrors
+  `core/src/feature/cuda/float_psnr_cuda.c`'s call graph
   verbatim: `init → context_new + lifecycle_init + readback_alloc +
   feature_name_dict`, `submit → submit_pre_launch + (kernel-launch +
   event-record + DtoH copy land in T7-10b)`, `collect → collect_wait
@@ -49,19 +49,19 @@ The PR ships:
   load-bearing artefact this PR pins.
 - **Registration**: `vmaf_fex_float_psnr_hip` is added to the
   `feature_extractor_list` in
-  `libvmaf/src/feature/feature_extractor.c` under `#if HAVE_HIP`,
+  `core/src/feature/feature_extractor.c` under `#if HAVE_HIP`,
   immediately after the first consumer. Same posture as
   ADR-0241: registration succeeds, the
   `VMAF_FEATURE_EXTRACTOR_HIP` flag stays cleared until T7-10b, no
   device buffer-type plumbing is added yet.
-- **Smoke test extension**: `libvmaf/test/test_hip_smoke.c` grows one
+- **Smoke test extension**: `core/test/test_hip_smoke.c` grows one
   sub-test (`test_float_psnr_hip_extractor_registered`) that mirrors
   the existing first-consumer registration assertion but for
   `float_psnr_hip`. The smoke test file's table-driven structure
   keeps `run_tests()` flat (15 sub-tests after this PR; the
   `readability-function-size` 15-branch budget is comfortably under
   the threshold).
-- **Meson wiring**: `libvmaf/src/hip/meson.build` adds
+- **Meson wiring**: `core/src/hip/meson.build` adds
   `../feature/hip/float_psnr_hip.c` to `hip_sources`. No new
   dependency — the consumer compiles on a stock Ubuntu runner
   without any AMD packages installed (same posture as ADR-0212 +
@@ -152,7 +152,7 @@ becomes runtime-visible and must be debugged against a real device.
   template that ADR-0241 mirrored onto HIP.
 - [ADR-0246](0246-gpu-kernel-template.md) — kernel-template
   generalisation across GPU backends.
-- `libvmaf/src/feature/cuda/float_psnr_cuda.c` — the CUDA reference
+- `core/src/feature/cuda/float_psnr_cuda.c` — the CUDA reference
   whose call graph this consumer mirrors.
 - `req` — user direction in T7-10b implementation prompt
   (paraphrased: "Land the next HIP runtime kernel body — pick the

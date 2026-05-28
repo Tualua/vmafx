@@ -27,12 +27,12 @@ This is a real coverage hole:
 1. Windows is a tier-1 platform for the libvmaf binary distribution
    (vmaf.exe artifact is uploaded by the MinGW job and consumed by
    downstream users).
-2. The CUDA backend's host code (`libvmaf/src/cuda/*.c`) uses POSIX
+2. The CUDA backend's host code (`core/src/cuda/*.c`) uses POSIX
    patterns (e.g. `pthread_*` aliases, file descriptors for dma-buf
    import paths) that need conditional `#ifdef _WIN32` guards. A
    Linux-only CI cannot catch a regression that breaks the MSVC build.
 3. The SYCL backend's `vmaf_sycl_*` C-API entry points
-   (`libvmaf/src/sycl/`) similarly need to compile cleanly under
+   (`core/src/sycl/`) similarly need to compile cleanly under
    `icx-cl` (the Windows DPC++ driver), which has subtly different
    `__declspec(dllexport)` and CRT-linkage requirements than the
    Linux `icpx` driver.
@@ -130,12 +130,12 @@ Both legs:
     install` to a job-local prefix. Its `include/` and `lib/`
     are appended to `INCLUDE` and `LIB` via `GITHUB_ENV` so
     meson's `cc.find_library('ze_loader', required: true)` at
-    `libvmaf/src/meson.build:492` resolves. Windows oneAPI
+    `core/src/meson.build:492` resolves. Windows oneAPI
     BaseKit ships the SYCL runtime but not the L0 loader
     `ze_loader.lib`; building from source is the
     Intel-documented path on Windows.
 - Make `svml` / `irc` runtime-library lookup Linux-only in
-  `libvmaf/src/meson.build`. Those explicit `cc.find_library`
+  `core/src/meson.build`. Those explicit `cc.find_library`
   calls exist so a non-Intel host linker (gcc/g++) can resolve
   Intel runtime symbols emitted by icpx-compiled objects. On
   Windows the host C/C++ compiler is **icx-cl** itself — the
@@ -151,12 +151,12 @@ Both legs:
   surfaced this as `fatal error C1083: Cannot open include
   file: 'pthread.h'` in six CUDA host TUs once the nvvm device
   compiler started running. Resolved by adding a header-only
-  shim at [`libvmaf/src/compat/win32/pthread.h`](../../libvmaf/src/compat/win32/pthread.h)
+  shim at [`core/src/compat/win32/pthread.h`](../../core/src/compat/win32/pthread.h)
   that maps the in-use pthread subset onto Win32 SRWLOCK +
   CONDITION_VARIABLE + `_beginthreadex`, mirroring the
   long-standing `compat/gcc/stdatomic.h` pattern. Wired in
   via a new `pthread_dependency` declared in
-  [`libvmaf/meson.build`](../../libvmaf/meson.build) and gated on
+  [`core/meson.build`](../../core/meson.build) and gated on
   `cc.check_header('pthread.h')` failing — so MinGW and POSIX
   paths are untouched. Shim covers `pthread_t`,
   `pthread_mutex_*`, `pthread_cond_*`, `pthread_create`,
@@ -173,7 +173,7 @@ Both legs:
   'x86_64-pc-windows-msvc'`). PIC is the default for Windows
   DLLs anyway, so dropping the flag on Windows is the correct
   build-system fix, not a workaround. Resolved in
-  [`libvmaf/src/meson.build`](../../libvmaf/src/meson.build) by
+  [`core/src/meson.build`](../../core/src/meson.build) by
   introducing `sycl_pic_arg = host_machine.system() != 'windows'
   ? ['-fPIC'] : []` and threading it into both
   `sycl_common_args` and `sycl_feature_args` in place of the

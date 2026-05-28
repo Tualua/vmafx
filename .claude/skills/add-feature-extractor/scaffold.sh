@@ -15,7 +15,7 @@ name_pascal=$(echo "$name" | awk -F_ '{for(i=1;i<=NF;i++)$i=toupper(substr($i,1,
 
 repo_root=$(git rev-parse --show-toplevel)
 tpl="$repo_root/.claude/skills/add-feature-extractor/templates"
-dst="$repo_root/libvmaf/src/feature"
+dst="$repo_root/core/src/feature"
 
 for suffix in h c; do
   out="$dst/${name}.${suffix}"
@@ -30,4 +30,4 @@ for suffix in h c; do
   echo "wrote $out"
 done
 
-echo "next: register $name in libvmaf/src/feature/feature_extractor.c and add a model-json entry."
+echo "next: register $name in core/src/feature/feature_extractor.c and add a model-json entry."

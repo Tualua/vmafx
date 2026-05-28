@@ -10,7 +10,7 @@
 [ADR-0215](0215-fastdvdnet-pre-filter.md) shipped the FastDVDnet
 temporal pre-filter contract — a registered feature extractor
 `fastdvdnet_pre`, a 5-frame ring buffer in
-`libvmaf/src/feature/fastdvdnet_pre.c`, a smoke-only placeholder ONNX
+`core/src/feature/fastdvdnet_pre.c`, a smoke-only placeholder ONNX
 under `model/tiny/fastdvdnet_pre.onnx`, and the smoke test plumbing.
 The placeholder was a randomly-initialised 3-layer CNN matching the
 declared I/O shape (`frames` `[1, 5, H, W]` luma, `denoised`
@@ -27,7 +27,7 @@ Two structural mismatches blocked a verbatim weights drop:
 2. **PixelShuffle.** Upstream's UpBlock uses `nn.PixelShuffle`, which
    PyTorch's ONNX exporter emits as `DepthToSpace`. `DepthToSpace` is
    not on the fork's strict ONNX op allowlist
-   (`libvmaf/src/dnn/op_allowlist.c`).
+   (`core/src/dnn/op_allowlist.c`).
 
 Both mismatches need resolving in the same PR or the weights drop
 breaks either the C extractor or the model loader's allowlist scan.

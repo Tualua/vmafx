@@ -9,7 +9,7 @@
 
 The 2026-05-18 deep audit (`.workingdir/bbb_reports/DEEP_AUDIT_2026_05_18.md`,
 finding 23) flagged
-`libvmaf/src/feature/cuda/integer_vif_cuda.c:180` (`s->n_planes = 1; /* CUDA
+`core/src/feature/cuda/integer_vif_cuda.c:180` (`s->n_planes = 1; /* CUDA
 path: chroma dispatch not yet implemented */`) as a real "not implemented"
 gap, on the premise that the CPU twin processes three planes and the CUDA
 twin only one — and that this would be a source of cross-backend chroma
@@ -17,7 +17,7 @@ drift.
 
 The premise is wrong on every count:
 
-1. **CPU `integer_vif`** (`libvmaf/src/feature/integer_vif.c`, master)
+1. **CPU `integer_vif`** (`core/src/feature/integer_vif.c`, master)
    processes the luma plane only. Its `extract()` reads
    `ref_pic->data[0]` and `dist_pic->data[0]` directly (lines 804–815);
    there is no `enable_chroma` option in its `options[]` table and no
@@ -34,7 +34,7 @@ The premise is wrong on every count:
    `metal/integer_vif_metal.mm`) reads `data[0]` only — confirmed by
    grep across the tree.
 4. **Upstream Netflix/vmaf `master`**
-   (`libvmaf/src/feature/cuda/integer_vif_cuda.c` at upstream HEAD
+   (`core/src/feature/cuda/integer_vif_cuda.c` at upstream HEAD
    `32780bd9b6`) hardcodes the same `data[0]`-only access and has no
    `n_planes` field at all.
 
@@ -92,7 +92,7 @@ is documentation drift.
    `docs/state.md`, citing this ADR and the cross-backend numerical
    parity test added by this PR.
 5. **Add a CPU-vs-CUDA parity smoke test**
-   (`libvmaf/test/test_integer_vif_cpu_cuda_parity.c`, suite `fast`,
+   (`core/test/test_integer_vif_cpu_cuda_parity.c`, suite `fast`,
    guarded by `enable_cuda`) running both backends against the
    Netflix `src01_hrc00_576x324.yuv` / `src01_hrc01_576x324.yuv`
    4:2:0 pair and asserting that the four `vif_scaleN_score`

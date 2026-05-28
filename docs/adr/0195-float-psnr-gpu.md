@@ -11,7 +11,7 @@
 first **Group B** metric — float twin of an int kernel that already
 ships on GPU (`psnr_y` on CUDA / SYCL / Vulkan emits the int-domain
 luma PSNR). The CPU reference is
-[`float_psnr.c`](../../libvmaf/src/feature/float_psnr.c) (170 LOC):
+[`float_psnr.c`](../../core/src/feature/float_psnr.c) (170 LOC):
 
 1. `picture_copy(offset=0)` normalises raw samples to float in
    `[0, peak]` (peak = 255.0 for bpc=8, etc.).
@@ -123,7 +123,7 @@ back-to-back (no win). Native kernel is cleaner.
 - Parent: [ADR-0192](0192-gpu-long-tail-batch-3.md) — batch 3 scope.
 - Sibling: [ADR-0193](0193-motion-v2-vulkan.md), [ADR-0194](0194-float-ansnr-gpu.md).
 - CPU reference:
-  [`float_psnr.c`](../../libvmaf/src/feature/float_psnr.c) (170 LOC).
+  [`float_psnr.c`](../../core/src/feature/float_psnr.c) (170 LOC).
 - Verification: cross-backend gate
   [`scripts/ci/cross_backend_vif_diff.py`](../../scripts/ci/cross_backend_vif_diff.py)
   with `--feature float_psnr --places 4`. New step in the lavapipe

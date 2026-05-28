@@ -10,7 +10,7 @@
 Netflix upstream commit
 [`f3a628b4`](https://github.com/Netflix/vmaf/commit/f3a628b4)
 (2026-04-21) replaces four large specialised AVX convolve kernels
-in `libvmaf/src/feature/common/convolution_avx.c` (each hard-coded
+in `core/src/feature/common/convolution_avx.c` (each hard-coded
 to a specific filter width ∈ {3, 5, 9, 17}) with a single
 generalised pair of 1-D scanline routines. The old file was 2,747
 lines of branch-unrolled code; the new one is 247 lines. The
@@ -96,7 +96,7 @@ generalised `convolution_avx.c` is left lint-clean:
     upstream divergence on the static-linkage + `ptrdiff_t`
     cleanup.
   - `CHANGELOG.md` entry under Unreleased → Changed.
-  - `libvmaf/src/feature/AGENTS.md` gains a rebase-sensitive
+  - `core/src/feature/AGENTS.md` gains a rebase-sensitive
     note about the static helpers and `ptrdiff_t` strides.
 
 ## References

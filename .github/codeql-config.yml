@@ -16,7 +16,7 @@ queries:
 #   the WHY is non-obvious." Mass-adding boilerplate doc comments to
 #   self-documenting helpers would violate that standard, and per-file
 #   `lgtm[...]` annotations would scatter ~15 noise comments across
-#   `libvmaf/src/`. Suppressing globally is the project-rule-aligned
+#   `core/src/`. Suppressing globally is the project-rule-aligned
 #   resolution. NOT a "skip the failing tests" pattern — the rule is
 #   over-zealous against this project's documented style, not flagging
 #   real correctness issues.

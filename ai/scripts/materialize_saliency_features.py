@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Append saliency aggregate columns to feature-table rows.
 
 The signal-mix audit needs saliency / ROI columns in refreshed feature
@@ -35,7 +35,6 @@ SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.jsonl_utils import dumps_jsonl_row  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 SubprocessRunner = Callable[..., subprocess.CompletedProcess[str]]
@@ -103,7 +102,7 @@ def write_table(path: Path, rows: Iterable[dict[str, Any]]) -> None:
     if suffix == ".jsonl":
         with path.open("w", encoding="utf-8") as fh:
             for row in rows_list:
-                fh.write(dumps_jsonl_row(row, separators=(",", ":")))
+                fh.write(json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n")
         return
     if suffix == ".parquet":
         try:

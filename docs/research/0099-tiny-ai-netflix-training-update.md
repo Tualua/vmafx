@@ -85,7 +85,7 @@ This is **not** in scope for the scaffold PR — it is a Phase 2 experiment.
 
 ## 2. ONNX Runtime 1.18–1.21 changes relevant to the fork
 
-The fork's ONNX inference path is in `libvmaf/src/dnn/` and `ai/`. The runtime
+The fork's ONNX inference path is in `core/src/dnn/` and `ai/`. The runtime
 version pinned in `ai/pyproject.toml` (or `setup.cfg`) should track the changes
 below.
 
@@ -97,7 +97,7 @@ tiny-AI FR regressors:
 
 - **`QuantizeLinear` / `DequantizeLinear` block_size parameter** (opset 21, ORT 1.20):
   enables per-block quantization for 4-bit INT4 models. The fork's Phase 3k
-  quantization work (see `libvmaf/src/dnn/` and `docs/ai/quantization.md`) can use
+  quantization work (see `core/src/dnn/` and `docs/ai/quantization.md`) can use
   this to reduce the exported ONNX model below the 4 KB micro-class threshold from
   ADR-0242 §C.
 - **Expanded `GroupNormalization` support** (opset 21): useful if the architecture
@@ -128,7 +128,7 @@ ORT ≥ 1.20; opset 17 is the current safe minimum per `docs/ai/inference.md`.
 ORT 1.21 introduced a `stream_outputs` option for `InferenceSession.run()`, enabling
 per-frame streaming for sequential inference. For the fork's per-frame feature
 extraction pipeline, this would eliminate the current "collect all frames, batch,
-run ONNX" design in `libvmaf/src/dnn/`. Assessment: the current batch approach works
+run ONNX" design in `core/src/dnn/`. Assessment: the current batch approach works
 correctly and the streaming mode would be a refactor with no accuracy benefit for
 clip-level VMAF. Defer unless per-frame latency becomes a bottleneck.
 

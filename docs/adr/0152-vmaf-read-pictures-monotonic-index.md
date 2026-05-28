@@ -12,14 +12,14 @@ pair to each registered feature extractor. Several extractors
 maintain sliding-window internal state keyed by `index % N`:
 
 - `integer_motion` (motion, motion2, motion3) in
-  [`libvmaf/src/feature/integer_motion.c`](../../libvmaf/src/feature/integer_motion.c)
+  [`core/src/feature/integer_motion.c`](../../core/src/feature/integer_motion.c)
   holds a 3-frame Gaussian-blur ring plus a 5-frame window; it
   indexes the ring with
   `const unsigned blur_idx_0 = (index + 0) % 3;`
   `const unsigned blur_idx_1 = (index + 1) % 3;`
   `const unsigned blur_idx_2 = (index + 2) % 3;`.
 - `integer_motion_v2` in
-  [`integer_motion_v2.c`](../../libvmaf/src/feature/integer_motion_v2.c)
+  [`integer_motion_v2.c`](../../core/src/feature/integer_motion_v2.c)
   keeps a single previous frame (`prev_ref` in the `VmafContext`
   plus the extractor's own `prev`).
 
@@ -50,7 +50,7 @@ Enforce a monotonically-increasing index contract at the API
 boundary in `vmaf_read_pictures`:
 
 1. Add two fields to `VmafContext` in
-   [`libvmaf/src/libvmaf.c`](../../libvmaf/src/libvmaf.c):
+   [`core/src/libvmaf.c`](../../core/src/libvmaf.c):
    `unsigned last_index` + `bool have_last_index`. Zero-
    initialised by `vmaf_init` (every other `VmafContext` field
    is already `memset(…, 0, …)`'d on init).
@@ -64,7 +64,7 @@ boundary in `vmaf_read_pictures`:
    `vmaf->last_index = index; vmaf->have_last_index = true;`
    so subsequent calls see the guard.
 4. Add a unit test
-   [`libvmaf/test/test_read_pictures_monotonic.c`](../../libvmaf/test/test_read_pictures_monotonic.c)
+   [`core/test/test_read_pictures_monotonic.c`](../../core/test/test_read_pictures_monotonic.c)
    with three subtests:
    - strictly-increasing indices with gaps are accepted;
    - duplicate indices are rejected with `-EINVAL`;
@@ -72,7 +72,7 @@ boundary in `vmaf_read_pictures`:
      rejects the two out-of-order submissions and accepts the
      next increasing index (3975).
 5. Register the test in
-   [`libvmaf/test/meson.build`](../../libvmaf/test/meson.build).
+   [`core/test/meson.build`](../../core/test/meson.build).
 
 The contract's semantic shape:
 
@@ -143,10 +143,10 @@ The contract's semantic shape:
   subtests pass: `accepts_increasing`, `rejects_duplicate`,
   `rejects_out_of_order`.
 - **Reducer behaviour confirmed**: temporarily reverting the
-  guard (via `git stash` on `libvmaf/src/libvmaf.c`) and
+  guard (via `git stash` on `core/src/libvmaf.c`) and
   re-running the test reports `Fail: 1` — the test is a real
   reducer, not a tautology.
-- `clang-tidy -p build libvmaf/src/libvmaf.c` → zero warnings
+- `clang-tidy -p build core/src/libvmaf.c` → zero warnings
   (the new state fits inside the existing
   `read_pictures_validate_and_prep` helper; function size
   unchanged).

@@ -8,7 +8,7 @@
 ## Context
 
 The feature-option parity audit of 2026-05-16 identified that the CPU
-floating-point MS-SSIM extractor (`libvmaf/src/feature/float_ms_ssim.c`,
+floating-point MS-SSIM extractor (`core/src/feature/float_ms_ssim.c`,
 registered as `float_ms_ssim`) always computed MS-SSIM only on the luma
 plane and emitted a single `float_ms_ssim` score per frame. No option
 existed to request per-plane chroma scores.
@@ -60,8 +60,8 @@ Update `provided_features` to advertise all three names.
 
 ## References
 
-- `libvmaf/src/feature/float_ms_ssim.c` — implementation
-- `libvmaf/src/feature/integer_psnr.c` — `enable_chroma` pattern precedent (ADR-0453)
+- `core/src/feature/float_ms_ssim.c` — implementation
+- `core/src/feature/integer_psnr.c` — `enable_chroma` pattern precedent (ADR-0453)
 - [ADR-0460](0460-ssim-enable-chroma.md) — `enable_chroma` for integer SSIM (PR #939)
 - req: user brief 2026-05-16 ("Apply enable_chroma pattern to float_ms_ssim and
   integer_ms_ssim extractors; same pattern as psnr enable_chroma PR#895 and PR#939")

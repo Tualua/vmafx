@@ -20,7 +20,7 @@ subcommands already called `select_backend()` first and raised `BackendUnavailab
 the failure mid-bisect as a cryptic vmaf binary error, not a clean exit-2 message.
 Tracked as T-PYTHON-COMPARE-NO-BACKEND-PRECHECK in `docs/state.md` (ADR-0556).
 
-**P1-2 — `libvmaf/src/hip/picture_hip.c` is a full stub.**
+**P1-2 — `core/src/hip/picture_hip.c` is a full stub.**
 `vmaf_hip_picture_alloc` and `vmaf_hip_picture_free` returned `-ENOSYS`
 unconditionally, blocking zero-copy HIP picture upload for all 9 HIP extractors that
 called these functions.  Tracked as part of the T7-10 follow-up backlog.

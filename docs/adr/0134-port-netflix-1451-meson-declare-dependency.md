@@ -23,7 +23,7 @@ reaching into the subproject with `declare_dependency(link_with: ...)`
 from the parent — leaks the subproject's include layout into the
 parent's build file and breaks whenever upstream reshuffles headers.
 
-The idiomatic fix is two lines at the end of `libvmaf/src/meson.build`:
+The idiomatic fix is two lines at the end of `core/src/meson.build`:
 
 ```meson
 libvmaf_dep = declare_dependency(
@@ -41,7 +41,7 @@ when available as a subproject — the standard meson pattern.
 ## Decision
 
 Port upstream's diff substance into
-[`libvmaf/src/meson.build`](../../libvmaf/src/meson.build) just after
+[`core/src/meson.build`](../../core/src/meson.build) just after
 the existing `pkg_mod.generate(...)` block. One deviation: the fork
 terminates the `include_directories:` argument with a trailing comma
 (meson style convention throughout the fork's build files) whereas

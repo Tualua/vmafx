@@ -42,7 +42,7 @@ implementation via `vmaf_cuda_preallocate_pictures` + `VmafRingBuffer`
 ## Decision
 
 Implement a USM-backed picture pool for SYCL — `VmafSyclPicturePool` in
-`libvmaf/src/sycl/picture_sycl.{h,cpp}` — and wire
+`core/src/sycl/picture_sycl.{h,cpp}` — and wire
 `vmaf_sycl_preallocate_pictures()` / `vmaf_sycl_picture_fetch()` /
 `vmaf_close()` to use it.
 
@@ -98,7 +98,7 @@ host source (transparent D2D or H2D depending on allocator kind).
     GPU memory baseline increase (e.g., 2 × 1920×1080 × 1 B ≈ 4 MB on
     default 8-bit 1080p runs).
 - **Neutral / follow-ups**:
-  - New test: `libvmaf/test/test_sycl_pic_preallocation.c` covers NONE /
+  - New test: `core/test/test_sycl_pic_preallocation.c` covers NONE /
     DEVICE / HOST / no-state / double-preallocate / refcount-cycle paths.
   - `docs/api/gpu.md` updated — removes the "SYCL preallocation is a
     no-op" callout introduced in PR #25.
@@ -109,8 +109,8 @@ host source (transparent D2D or H2D depending on allocator kind).
 
 - Issue #26 — "SYCL: `vmaf_sycl_preallocate_pictures` is a no-op stub"
 - PR #25 — original SYCL preallocation scaffolding (public API surface)
-- `libvmaf/src/cuda/ring_buffer.c` — CUDA reference implementation
-- `libvmaf/src/sycl/common.cpp` (`vmaf_sycl_shared_frame_upload`) — confirms
+- `core/src/cuda/ring_buffer.c` — CUDA reference implementation
+- `core/src/sycl/common.cpp` (`vmaf_sycl_shared_frame_upload`) — confirms
   SYCL copy-queue memcpy is allocator-agnostic
 - Source: `req` — user selected "Option 1 — implement USM properly" and "Yes —
   full ADR under docs/adr/" in session 90ad1e1d AskUserQuestion popup.

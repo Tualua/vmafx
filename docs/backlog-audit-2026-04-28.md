@@ -84,11 +84,11 @@ The `enable_lcs` config option is exposed on the GPU backends
 (advertised in CLI option metadata) but the GPU kernels never use it,
 and there is no T-number tracking the gap.
 
-- [`libvmaf/src/feature/cuda/integer_ms_ssim_cuda.c:29`](../libvmaf/src/feature/cuda/integer_ms_ssim_cuda.c) —
+- [`core/src/feature/cuda/integer_ms_ssim_cuda.c:29`](../core/src/feature/cuda/integer_ms_ssim_cuda.c) —
   `implement enable_lcs (15 extra metrics) — defer to follow-up.`
-- [`libvmaf/src/feature/vulkan/ms_ssim_vulkan.c:61`](../libvmaf/src/feature/vulkan/ms_ssim_vulkan.c) —
+- [`core/src/feature/vulkan/ms_ssim_vulkan.c:61`](../core/src/feature/vulkan/ms_ssim_vulkan.c) —
   `bool enable_lcs; /* Currently unused; kept for option parity. */`
-- [`libvmaf/src/feature/vulkan/ms_ssim_vulkan.c:131`](../libvmaf/src/feature/vulkan/ms_ssim_vulkan.c) —
+- [`core/src/feature/vulkan/ms_ssim_vulkan.c:131`](../core/src/feature/vulkan/ms_ssim_vulkan.c) —
   `.help = "(reserved; not yet implemented in the GPU path)"`
 
 Recommendation: either promote to a T-number under Tier 7 or
@@ -117,11 +117,11 @@ points at an "integration PR" that wires the scaffold into
 `feature_extractor.c` and replaces the `_stub` triple with the
 real Vulkan-aware lifecycle. No T-number tracks the integration PR.
 
-- [`libvmaf/src/feature/vulkan/cambi_vulkan.c:6-7`](../libvmaf/src/feature/vulkan/cambi_vulkan.c) —
+- [`core/src/feature/vulkan/cambi_vulkan.c:6-7`](../core/src/feature/vulkan/cambi_vulkan.c) —
   *"This file ships as an architectural reference for the cambi GPU port; it is not yet wired into the [registry]."*
-- [`libvmaf/src/feature/vulkan/cambi_vulkan.c:130-131`](../libvmaf/src/feature/vulkan/cambi_vulkan.c) —
+- [`core/src/feature/vulkan/cambi_vulkan.c:130-131`](../core/src/feature/vulkan/cambi_vulkan.c) —
   *"The integration PR replaces this `init_stub`/`extract_stub`/`close_stub` triple with the real Vulkan-aware lifecycle."*
-- [`libvmaf/src/feature/vulkan/shaders/cambi_filter_mode.comp:27`](../libvmaf/src/feature/vulkan/shaders/cambi_filter_mode.comp) —
+- [`core/src/feature/vulkan/shaders/cambi_filter_mode.comp:27`](../core/src/feature/vulkan/shaders/cambi_filter_mode.comp) —
   *"Status: scaffold only. See ADR-0205."* (and 2 more shader files identical)
 
 Recommendation: promote to T-number; pairs naturally with the upstream
@@ -135,11 +135,11 @@ extractor's `provided_features[]` deliberately omits `motion3`.
 T4-1 closed Netflix#1486 with a CPU-side verify-only PR; the GPU
 gap was never tracked.
 
-- [`libvmaf/src/feature/vulkan/motion_vulkan.c:23-28`](../libvmaf/src/feature/vulkan/motion_vulkan.c) —
+- [`core/src/feature/vulkan/motion_vulkan.c:23-28`](../core/src/feature/vulkan/motion_vulkan.c) —
   *"motion3_score (the 5-frame window) … `provided_features[]` deliberately omits motion3"*
-- [`libvmaf/src/feature/vulkan/motion_vulkan.c:645`](../libvmaf/src/feature/vulkan/motion_vulkan.c) —
+- [`core/src/feature/vulkan/motion_vulkan.c:645`](../core/src/feature/vulkan/motion_vulkan.c) —
   *"DELIBERATE: motion3_score is omitted (5-frame window deferred)."*
-- [`libvmaf/src/feature/vulkan/shaders/motion.comp:44`](../libvmaf/src/feature/vulkan/shaders/motion.comp) —
+- [`core/src/feature/vulkan/shaders/motion.comp:44`](../core/src/feature/vulkan/shaders/motion.comp) —
   *"average post-processing. Defer to a follow-up PR."*
 
 Recommendation: T-number under Tier 3 GPU coverage; same kernel-side
@@ -150,11 +150,11 @@ gap likely exists on CUDA / SYCL — confirm before opening.
 PSNR Vulkan v1 emits luma-only because the upload path can't carry
 chroma. Cited in three places, no T-number.
 
-- [`libvmaf/src/feature/vulkan/psnr_vulkan.c:9-12`](../libvmaf/src/feature/vulkan/psnr_vulkan.c) —
+- [`core/src/feature/vulkan/psnr_vulkan.c:9-12`](../core/src/feature/vulkan/psnr_vulkan.c) —
   *"Single dispatch per channel; this v1 emits luma-only (`psnr_y`). … `picture_vulkan` upload path is luma-only today."*
-- [`libvmaf/src/feature/vulkan/psnr_vulkan.c:448`](../libvmaf/src/feature/vulkan/psnr_vulkan.c) —
+- [`core/src/feature/vulkan/psnr_vulkan.c:448`](../core/src/feature/vulkan/psnr_vulkan.c) —
   *"Provided features — luma-only v1. Chroma is a focused follow-up …"*
-- [`libvmaf/src/feature/cuda/integer_psnr/psnr_score.cu:22-24`](../libvmaf/src/feature/cuda/integer_psnr/psnr_score.cu) —
+- [`core/src/feature/cuda/integer_psnr/psnr_score.cu:22-24`](../core/src/feature/cuda/integer_psnr/psnr_score.cu) —
   same scope note (CUDA mirrors Vulkan).
 - [`scripts/ci/cross_backend_vif_diff.py:74`](../scripts/ci/cross_backend_vif_diff.py) —
   *"follow-up (the picture_vulkan upload path is luma-only today)."*
@@ -247,13 +247,13 @@ ADR-0122 calls these out as predating the CUDA hardening but does
 not add them to the backlog. ADR-0122's note: *"`libvmaf.c:1447`
 `//^FIXME: move to picture callback` — predates [the hardening]"*.
 
-- [`libvmaf/src/libvmaf.c:309`](../libvmaf/src/libvmaf.c) —
+- [`core/src/libvmaf.c:309`](../core/src/libvmaf.c) —
   `//TODO: preallocate host pics`
-- [`libvmaf/src/libvmaf.c:1428,1437`](../libvmaf/src/libvmaf.c) —
+- [`core/src/libvmaf.c:1428,1437`](../core/src/libvmaf.c) —
   `//^FIXME: move to picture callback` (×2)
-- [`libvmaf/src/libvmaf.c:1957`](../libvmaf/src/libvmaf.c) —
+- [`core/src/libvmaf.c:1957`](../core/src/libvmaf.c) —
   `//TODO: dedupe, vmaf_bootstrap_predict_score_at_index()`
-- [`libvmaf/src/predict.c:473`](../libvmaf/src/predict.c) —
+- [`core/src/predict.c:473`](../core/src/predict.c) —
   `//TODO: dedupe, vmaf_score_pooled_model_collection()`
 
 These are upstream-Netflix TODOs and would normally be exempt under
@@ -289,7 +289,7 @@ untracked item. **Move to "tracked".**
 
 ### B.2 — `iqa_convolve` AVX-512 ADR-0138 follow-up
 
-- [`libvmaf/src/feature/x86/convolve_avx512.h:37`](../libvmaf/src/feature/x86/convolve_avx512.h) —
+- [`core/src/feature/x86/convolve_avx512.h:37`](../core/src/feature/x86/convolve_avx512.h) —
   *"See docs/adr/0138-iqa-convolve-avx2-bitexact-double.md §Follow-up."*
 
 The cited "§Follow-up" section in ADR-0138 promises an AVX-512
@@ -361,7 +361,7 @@ import implementation + `libvmaf_vulkan` FFmpeg filter,
 `ffmpeg-patches/0006-libvmaf-add-libvmaf-vulkan-filter.patch`). The
 header still advertises the entry points as `-ENOSYS` stubs.
 
-- [`libvmaf/include/libvmaf/libvmaf_vulkan.h:141-142`](../libvmaf/include/libvmaf/libvmaf_vulkan.h) —
+- [`core/include/libvmaf/libvmaf_vulkan.h:141-142`](../core/include/libvmaf/libvmaf_vulkan.h) —
   *"Status: scaffold only (T7-29 part 1). Every function returns
   -ENOSYS pending the real implementation"*
 
@@ -375,36 +375,36 @@ T5-1b (full runtime) landed (ADR-0178); kernel matrix is now full
 GPU-long-tail batches landing in PR #122–#159). The header still
 says *"every entry point currently returns -ENOSYS unconditionally."*
 
-- [`libvmaf/include/libvmaf/libvmaf_vulkan.h:14-22`](../libvmaf/include/libvmaf/libvmaf_vulkan.h) —
+- [`core/include/libvmaf/libvmaf_vulkan.h:14-22`](../core/include/libvmaf/libvmaf_vulkan.h) —
   *"**Status: scaffold only.** Every entry point currently returns
   -ENOSYS [pending the kernels]."*
 
 Action: rewrite header doc-comment.
 
-### C.3 — `libvmaf/src/feature/ssimulacra2.c:38` "AVX2/AVX-512/NEON SIMD variants are follow-up PRs"
+### C.3 — `core/src/feature/ssimulacra2.c:38` "AVX2/AVX-512/NEON SIMD variants are follow-up PRs"
 
 T3-1 (AVX2) → ADR-0161, T3-2 (AVX-512+NEON) → ADR-0162, T3-3
 (snapshot gate) → ADR-0164 all landed 2026-04-25.
 
-- [`libvmaf/src/feature/ssimulacra2.c:38`](../libvmaf/src/feature/ssimulacra2.c) —
+- [`core/src/feature/ssimulacra2.c:38`](../core/src/feature/ssimulacra2.c) —
   *"Scalar-only for now; AVX2/AVX-512/NEON SIMD variants are
   follow-up PRs."*
 
 Action: update line 38 to state the SIMD paths ship under
 ADR-0161 / 0162 / 0163.
 
-### C.4 — `libvmaf/src/meson.build:47-59` "Vulkan compute backend, scaffold-only"
+### C.4 — `core/src/meson.build:47-59` "Vulkan compute backend, scaffold-only"
 
 Same Vulkan-runtime delta as C.1 / C.2: meson option blurb still
 calls Vulkan a scaffold-only backend. ADR-0175 (scaffold) was
 followed by ADR-0178 (T5-1b runtime) and ADR-0193 (kernel matrix
 complete for the default model).
 
-- [`libvmaf/src/meson.build:47`](../libvmaf/src/meson.build) —
+- [`core/src/meson.build:47`](../core/src/meson.build) —
   `# ADR-0175 / T5-1: Vulkan compute backend, scaffold-only for now.`
-- [`libvmaf/src/meson.build:59`](../libvmaf/src/meson.build) —
+- [`core/src/meson.build:59`](../core/src/meson.build) —
   same.
-- [`libvmaf/meson_options.txt:69`](../libvmaf/meson_options.txt) —
+- [`core/meson_options.txt:69`](../core/meson_options.txt) —
   `description: 'Build Vulkan compute backend (scaffold only; ADR-0127 / ADR-0175). … flip to enabled when the kernels land.'`
 
 Action: rewrite the three blurbs to reflect post-T5-1b reality.
@@ -419,14 +419,14 @@ Action: rewrite the three blurbs to reflect post-T5-1b reality.
   work. The audit deliberately drops those — only kept "v2" when
   paired with "deferred" or "follow-up" in the same comment.
 - **`stub` / `scaffold`** keywords appear extensively in the
-  intentionally-permanent stub-build path of `libvmaf/src/dnn/`
+  intentionally-permanent stub-build path of `core/src/dnn/`
   (real-ORT vs disabled-ORT branch). All such hits were dropped as
   not-deferred-work.
 - **ADR `Neutral / follow-ups` blocks** are template-driven and
   often contain "no action; this is documented elsewhere" rather
   than untracked work. Only flagged when the prose names a
   concrete deliverable.
-- **Upstream-Netflix TODOs** (in `libvmaf/src/feature/iqa/`,
+- **Upstream-Netflix TODOs** (in `core/src/feature/iqa/`,
   `python/vmaf/matlab/strred/`, `python/vmaf/core/`) were dropped
   unless the comment described a fork-affecting issue. The fork
   preserves these for rebase fidelity per CLAUDE.md §12 r7.

@@ -60,7 +60,7 @@ is guaranteed by construction.
 
 ## References
 
-- CPU reference: `libvmaf/src/feature/float_ms_ssim.c` lines 67–79
+- CPU reference: `core/src/feature/float_ms_ssim.c` lines 67–79
   (options), 131–136 (init), 185–186 (collect).
 - [ADR-0453](0453-psnr-enable-chroma-gpu-parity.md) — PSNR `enable_chroma`
   option-parity precedent.

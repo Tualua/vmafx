@@ -75,7 +75,7 @@ make clean; make
 Check if build is successful:
 
 ```bash
-./libvmaf/build/tools/vmaf --version
+./core/build/tools/vmaf --version
 ```
 
 Install the rest of the required Python packages:

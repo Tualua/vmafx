@@ -3,7 +3,7 @@
 `cambi_cuda` segfaulted on every invocation regardless of resolution, bit
 depth, or EOTF setting. The root cause was in the three kernel dispatch
 helpers (`dispatch_mask`, `dispatch_decimate`, `dispatch_filter_mode`) in
-`libvmaf/src/feature/cuda/integer_cambi_cuda.c`.
+`core/src/feature/cuda/integer_cambi_cuda.c`.
 
 The CUDA driver API contract for `cuLaunchKernel` requires that each
 `kernelParams[i]` points to the **value** to pass to the kernel — for a

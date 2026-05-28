@@ -1,6 +1,6 @@
 """Parse libvmaf's ONNX op allowlist and check models against it.
 
-Single source of truth is libvmaf/src/dnn/op_allowlist.c — parsing the C
+Single source of truth is core/src/dnn/op_allowlist.c — parsing the C
 string table keeps Python and C from drifting. Any model whose graph uses
 an op not on the list will be rejected by vmaf_dnn_op_allowed() at
 session-init time, so catching it at export time turns a runtime load
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import onnx
 
-_ALLOWLIST_C = Path(__file__).resolve().parents[3] / "libvmaf/src/dnn/op_allowlist.c"
+_ALLOWLIST_C = Path(__file__).resolve().parents[3] / "core/src/dnn/op_allowlist.c"
 _STRING_RE = re.compile(r'"([A-Za-z][A-Za-z0-9_]*)"')
 
 
@@ -65,7 +65,7 @@ def _collect_op_types(graph: "onnx.GraphProto") -> set[str]:
     """Walk a GraphProto and collect every op_type, recursing into the
     embedded subgraphs of control-flow ops (Loop.body, If.then_branch,
     If.else_branch). Mirrors the C-side scanner's recursion in
-    `libvmaf/src/dnn/onnx_scan.c` so the export-time check and the
+    `core/src/dnn/onnx_scan.c` so the export-time check and the
     runtime load-time check stay in lockstep (ADR-0169 / T6-5)."""
     used: set[str] = set()
     for node in graph.node:

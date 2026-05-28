@@ -56,7 +56,7 @@ The drift survives `--cpumask 0` (force scalar) and an `enable_asm=false` build,
 ruling out SIMD divergence.
 
 The smoking-gun diff is in the **edge-mirror helpers** used by motion's
-convolution stages. Compare `libvmaf/src/feature/integer_motion.h`:
+convolution stages. Compare `core/src/feature/integer_motion.h`:
 
 **v3.0.0** (off-by-one mirror, the buggy upstream behaviour the system binary
 was built with):

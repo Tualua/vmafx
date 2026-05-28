@@ -12,19 +12,19 @@ ADR-0523 / PR #1283 fixed a single missing registration
 extractor TU declares a `VmafFeatureExtractor vmaf_fex_<name>_hip`
 symbol and mirrors a CUDA twin call-graph-for-call-graph, but the TU is
 never compiled into the HIP runtime archive and the symbol is never
-declared in `libvmaf/src/feature/feature_extractor.c`. The result is
+declared in `core/src/feature/feature_extractor.c`. The result is
 the registry lookup returns NULL and the extractor is dead code.
 
 A repository-wide audit surfaced six more HIP TUs in the same state:
 
 | Source                                                   | Symbol                            | Extractor name        |
 |----------------------------------------------------------|-----------------------------------|-----------------------|
-| `libvmaf/src/feature/hip/float_vif_hip.c`                | `vmaf_fex_float_vif_hip`          | `float_vif_hip`       |
-| `libvmaf/src/feature/hip/integer_adm_hip.c`              | `vmaf_fex_integer_adm_hip`        | `adm_hip`             |
-| `libvmaf/src/feature/hip/integer_ms_ssim_hip.c`          | `vmaf_fex_integer_ms_ssim_hip`    | `integer_ms_ssim_hip` |
-| `libvmaf/src/feature/hip/integer_psnr_hvs_hip.c`         | `vmaf_fex_psnr_hvs_hip`           | `psnr_hvs_hip`        |
-| `libvmaf/src/feature/hip/integer_ssim_hip.c`             | `vmaf_fex_integer_ssim_hip`       | `integer_ssim_hip`    |
-| `libvmaf/src/feature/hip/ssimulacra2_hip.c`              | `vmaf_fex_ssimulacra2_hip`        | `ssimulacra2_hip`     |
+| `core/src/feature/hip/float_vif_hip.c`                | `vmaf_fex_float_vif_hip`          | `float_vif_hip`       |
+| `core/src/feature/hip/integer_adm_hip.c`              | `vmaf_fex_integer_adm_hip`        | `adm_hip`             |
+| `core/src/feature/hip/integer_ms_ssim_hip.c`          | `vmaf_fex_integer_ms_ssim_hip`    | `integer_ms_ssim_hip` |
+| `core/src/feature/hip/integer_psnr_hvs_hip.c`         | `vmaf_fex_psnr_hvs_hip`           | `psnr_hvs_hip`        |
+| `core/src/feature/hip/integer_ssim_hip.c`             | `vmaf_fex_integer_ssim_hip`       | `integer_ssim_hip`    |
+| `core/src/feature/hip/ssimulacra2_hip.c`              | `vmaf_fex_ssimulacra2_hip`        | `ssimulacra2_hip`     |
 
 Each TU already mirrors a long-shipped CUDA twin
 (`float_vif_cuda` / `integer_adm_cuda` / `integer_ms_ssim_cuda` /
@@ -35,7 +35,7 @@ direct CLI invocation (`vmaf … --feature <name>`) and the dispatch
 fall-back path fail at the name-lookup step before ever reaching the
 backend's runtime check.
 
-The three remaining `.c` files under `libvmaf/src/feature/hip/` —
+The three remaining `.c` files under `core/src/feature/hip/` —
 `adm_hip.c`, `motion_hip.c`, `vif_hip.c` — are not affected. They
 hold legacy plumbing stubs (`vmaf_hip_<metric>_run` helpers), not
 `VmafFeatureExtractor` definitions, and are intentionally absent
@@ -50,15 +50,15 @@ separately.
 In a single sweep:
 
 1. Add the six HIP source files to `hip_sources` in
-   `libvmaf/src/hip/meson.build`.
+   `core/src/hip/meson.build`.
 2. Add an `extern VmafFeatureExtractor vmaf_fex_<symbol>;` declaration
    inside the `#if HAVE_HIP` block in
-   `libvmaf/src/feature/feature_extractor.c` for each symbol.
+   `core/src/feature/feature_extractor.c` for each symbol.
 3. Add a `&vmaf_fex_<symbol>,` entry to `feature_extractor_list[]`
    (also inside `#if HAVE_HIP`) immediately after
    `vmaf_fex_float_adm_hip` so the new rows extend the existing
    ADR-0523 region.
-4. Pin the registration in `libvmaf/test/test_hip_smoke.c` with one
+4. Pin the registration in `core/test/test_hip_smoke.c` with one
    `vmaf_get_feature_extractor_by_name(<name>) != NULL` assertion per
    newly-registered extractor.
 
@@ -100,12 +100,12 @@ location, same registry-entry style, same smoke-test shape.
 - ADR-0523 — fixed the analogous single-extractor case
   (`vmaf_fex_integer_motion_hip`). This sweep generalises the same
   pattern to the rest of the HIP TUs.
-- `libvmaf/src/feature/feature_extractor.c` lines 174–199 (extern
+- `core/src/feature/feature_extractor.c` lines 174–199 (extern
   block, post-edit), lines 322–337 (registry block, post-edit).
-- `libvmaf/src/hip/meson.build` lines 107–127 — `hip_sources` sweep.
-- `libvmaf/test/test_hip_smoke.c` — new per-extractor registration
+- `core/src/hip/meson.build` lines 107–127 — `hip_sources` sweep.
+- `core/test/test_hip_smoke.c` — new per-extractor registration
   assertions.
 - `req`: "Register ALL the HIP feature extractors in lusoris/vmaf.
   PR #1283 only registered `vmaf_fex_integer_motion_hip` because
-  the spec was too narrow — but `libvmaf/src/feature/hip/` has 20+
+  the spec was too narrow — but `core/src/feature/hip/` has 20+
   kernel files that all need to land in `feature_extractor_list[]`."

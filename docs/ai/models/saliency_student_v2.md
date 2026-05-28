@@ -70,7 +70,7 @@ trained weights are.
 ## Op-allowlist conformance
 
 Every op in the v2 graph is on
-[`libvmaf/src/dnn/op_allowlist.c`](../../../libvmaf/src/dnn/op_allowlist.c)
+[`core/src/dnn/op_allowlist.c`](../../../core/src/dnn/op_allowlist.c)
 post-ADR-0258:
 
 ```text

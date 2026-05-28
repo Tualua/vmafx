@@ -29,14 +29,14 @@ well but deferred to v3 — see *Alternatives considered*.
 
 We will land MCP runtime v2 with two additions on top of PR #490:
 
-1. **UDS transport** in `libvmaf/src/mcp/transport_uds.c`. Standard
+1. **UDS transport** in `core/src/mcp/transport_uds.c`. Standard
    POSIX `socket(AF_UNIX, SOCK_STREAM, 0)` + `bind` + `listen` +
    `accept` loop; per-connection serial dispatch through the
    existing `dispatcher.c`; line-delimited JSON-RPC framing
    identical to the stdio transport. The socket file is created
    with `chmod 0700` after `bind` per ADR-0128 § "Operational
    guardrails".
-2. **`compute_vmaf` real binding** in `libvmaf/src/mcp/compute_vmaf.c`.
+2. **`compute_vmaf` real binding** in `core/src/mcp/compute_vmaf.c`.
    Per-call ephemeral `VmafContext` (so the host's main scoring
    run is not perturbed), `vmaf_model_load` of the requested
    `model_version` (default `vmaf_v0.6.1`), POSIX YUV reader for
@@ -44,7 +44,7 @@ We will land MCP runtime v2 with two additions on top of PR #490:
    `vmaf_score_pooled` with `VMAF_POOL_METHOD_MEAN`. Returns
    `{score, frames_scored, model_version, pool_method}`.
 
-The smoke test (`libvmaf/test/test_mcp_smoke.c`) is extended with
+The smoke test (`core/test/test_mcp_smoke.c`) is extended with
 a UDS round-trip and a `compute_vmaf` real-score check against the
 testdata 576x324 48-frame YUV pair. The pinned-`-ENOSYS`
 expectation for UDS is dropped; SSE remains pinned at `-ENOSYS`
@@ -98,7 +98,7 @@ The SSE transport deferred above has now landed. Delta:
   BSD-3-Clause-Plus-Patent license preserved per CLAUDE.md §1.
   We therefore implement the minimal HTTP/1.1 + SSE surface
   needed in plain POSIX sockets in
-  [`libvmaf/src/mcp/transport_sse.c`](../../libvmaf/src/mcp/transport_sse.c)
+  [`core/src/mcp/transport_sse.c`](../../core/src/mcp/transport_sse.c)
   (~500 LOC), reusing the same accept/read/write patterns as
   `transport_uds.c`.
 - **Loopback-only HTTP server** on a configurable TCP port
@@ -118,12 +118,12 @@ The SSE transport deferred above has now landed. Delta:
   (verified empirically); the SSE stop path uses
   `shutdown(SHUT_RDWR)` before `close()` to release the worker.
 - **Build wiring.** `enable_mcp_sse` was promoted from `boolean`
-  to `feature` (`auto` default) in `libvmaf/meson_options.txt`,
+  to `feature` (`auto` default) in `core/meson_options.txt`,
   matching the Vulkan/CUDA convention. The flag still gates the
   `HAVE_MCP_SSE` define and `transport_sse.c` is unconditionally
   compiled in when enabled — there are no third-party prereqs
   after the mongoose pivot.
-- **Smoke coverage.** `libvmaf/test/test_mcp_smoke.c::test_sse_event_stream`
+- **Smoke coverage.** `core/test/test_mcp_smoke.c::test_sse_event_stream`
   spawns the server on an ephemeral port, verifies
   `Content-Type: text/event-stream` + the `event:` / `data:` /
   blank-line framing per WHATWG SSE §9.2 (accessed 2026-05-09:

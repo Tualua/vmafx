@@ -7,7 +7,7 @@
 
 ## Summary
 
-Two related defects in `libvmaf/src/thread_pool.c` (fork-local additions
+Two related defects in `core/src/thread_pool.c` (fork-local additions
 made when the inline-data job pool and the `n_workers_created` separation
 were added):
 
@@ -64,7 +64,7 @@ instead of the mutable `n_threads`.
 ## Verification
 
 - `meson test -C /tmp/build-tp` → 54/54 OK.
-- `pre-commit run --files libvmaf/src/thread_pool.c` → all checks pass.
+- `pre-commit run --files core/src/thread_pool.c` → all checks pass.
 
 ## Alternatives considered
 

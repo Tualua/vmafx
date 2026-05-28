@@ -9,7 +9,7 @@
 ## Context
 
 ADR-0256 landed the `VmafVulkanKernelSubmitPool` infrastructure in
-`libvmaf/src/vulkan/kernel_template.h` and migrated five extractors
+`core/src/vulkan/kernel_template.h` and migrated five extractors
 (`psnr_hvs_vulkan`, `vif_vulkan`, `float_vif_vulkan`, `float_adm_vulkan`,
 `ssimulacra2_vulkan`) off per-frame `vkCreateFence` /
 `vkAllocateCommandBuffers` / `vkAllocateDescriptorSets`. At the time of

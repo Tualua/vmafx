@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
-# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris and Claude (Anthropic)
 #
 # dev/scripts/dev-mcp-probe.sh — run a single smoke probe against the
 # running dev-MCP container and print results to stdout.

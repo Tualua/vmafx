@@ -15,7 +15,7 @@ separate PR). This ADR covers the aarch64 NEON follow-up.
 The bit-exactness invariant set by ADR-0159 carries through:
 `od_coeff` (int32) DCT output and final `psnr_hvs_{y,cb,cr,psnr_hvs}`
 feature scores are byte-identical to the scalar reference in
-[`libvmaf/src/feature/third_party/xiph/psnr_hvs.c`](../../libvmaf/src/feature/third_party/xiph/psnr_hvs.c)
+[`core/src/feature/third_party/xiph/psnr_hvs.c`](../../core/src/feature/third_party/xiph/psnr_hvs.c)
 on every Netflix golden pair.
 
 The AVX2 implementation exposed one subtle bit-exactness hazard
@@ -34,7 +34,7 @@ rule for future ISA ports.
 ## Decision
 
 Port `calc_psnrhvs` to aarch64 NEON in a new TU
-[`libvmaf/src/feature/arm64/psnr_hvs_neon.c`](../../libvmaf/src/feature/arm64/psnr_hvs_neon.c)
+[`core/src/feature/arm64/psnr_hvs_neon.c`](../../core/src/feature/arm64/psnr_hvs_neon.c)
 under the same byte-for-byte bit-exactness contract as the AVX2
 variant.
 
@@ -164,7 +164,7 @@ NOLINT accounting (all with inline ADR-0141 citations):
   port precedent (motion_v2 NEON followed AVX2; this PR mirrors
   that split for psnr_hvs).
 - Xiph/Daala DCT source:
-  [`libvmaf/src/feature/third_party/xiph/psnr_hvs.c`](../../libvmaf/src/feature/third_party/xiph/psnr_hvs.c)
+  [`core/src/feature/third_party/xiph/psnr_hvs.c`](../../core/src/feature/third_party/xiph/psnr_hvs.c)
   (BSD-licensed, `Copyright 2001-2012 Xiph.Org`).
 - [rebase-notes 0052](../rebase-notes.md) — upstream-sync
   invariants (shared with ADR-0159; NEON TU added to the

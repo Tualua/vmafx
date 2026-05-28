@@ -2,8 +2,8 @@
 
 - **Status**: Accepted
 - **Status update 2026-05-15**: CUDA + SYCL ports implemented;
-  `libvmaf/src/feature/cuda/integer_cambi_cuda.c` and
-  `libvmaf/src/feature/sycl/integer_cambi_sycl.cpp` present on
+  `core/src/feature/cuda/integer_cambi_cuda.c` and
+  `core/src/feature/sycl/integer_cambi_sycl.cpp` present on
   master; cross-backend gate at places=4 active. HIP port deferred
   to a separate follow-up task.
 - **Date**: 2026-05-09

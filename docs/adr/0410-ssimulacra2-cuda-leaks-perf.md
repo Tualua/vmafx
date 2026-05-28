@@ -8,7 +8,7 @@
 ## Context
 
 A 2026-05-09 cuda-reviewer pass over
-[`libvmaf/src/feature/cuda/ssimulacra2_cuda.c`](../../libvmaf/src/feature/cuda/ssimulacra2_cuda.c)
+[`core/src/feature/cuda/ssimulacra2_cuda.c`](../../core/src/feature/cuda/ssimulacra2_cuda.c)
 (originally landed in PR #162 / [ADR-0206](0206-ssimulacra2-cuda-sycl.md))
 surfaced four issues in the `extract` and `close` paths:
 
@@ -131,7 +131,7 @@ We will:
     CUDA extractor that calls `cuModuleLoadData` (sweep candidate
     `T-CUDA-MODULE-UNLOAD-SWEEP`). None of the existing extractors
     honour it; that's pre-existing fork debt outside this PR's scope.
-  - `libvmaf/src/cuda/AGENTS.md` gains a `## Lifecycle invariants`
+  - `core/src/cuda/AGENTS.md` gains a `## Lifecycle invariants`
     section pinning the `cuModuleLoadData` ↔ `cuModuleUnload`
     pairing rule for future agent passes.
 

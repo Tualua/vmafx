@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Download KoNViD-1k UGC video dataset for tiny-AI training (T6-1 / C2 / C3).
 
 The repository deliberately does not redistribute the dataset (license +
@@ -29,21 +29,18 @@ from __future__ import annotations
 import argparse
 import os
 import ssl
+import sys
 import time
 import urllib.request
 import zipfile
 from pathlib import Path
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
-    from ai.scripts._script_bootstrap import bootstrap_ai_script
+REPO_ROOT = Path(__file__).resolve().parents[2]
+AI_SRC = REPO_ROOT / "ai" / "src"
 
-_SCRIPT_PATHS = bootstrap_ai_script(__file__)
-SCRIPT_PATH = _SCRIPT_PATHS.script_path
-REPO_ROOT = _SCRIPT_PATHS.repo_root
+if str(AI_SRC) not in sys.path:
+    sys.path.insert(0, str(AI_SRC))
 
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 VIDEOS_URL = "https://datasets.vqa.mmsp-kn.de/archives/KoNViD_1k_videos.zip"
@@ -144,7 +141,6 @@ def _archive_record(label: str, *, url: str, path: Path, min_bytes: int) -> dict
 def _write_fetch_manifest(
     *,
     args: argparse.Namespace,
-    raw_argv: list[str],
     root: Path,
     manifest_out: Path,
     archives: list[dict[str, object]],
@@ -166,9 +162,9 @@ def _write_fetch_manifest(
                 "metadata_dir_exists": metadata_dir.is_dir(),
             },
             "run_provenance": build_run_provenance(
-                entrypoint=SCRIPT_PATH,
+                entrypoint=Path(__file__),
                 repo_root=REPO_ROOT,
-                argv=raw_argv,
+                argv=sys.argv,
                 args=args,
                 inputs={"videos_url": VIDEOS_URL, "metadata_url": METADATA_URL},
                 outputs={
@@ -182,9 +178,8 @@ def _write_fetch_manifest(
     )
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
-    parser = make_argument_parser(description=__doc__)
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--root",
         type=Path,
@@ -200,7 +195,7 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Output run-provenance JSON sidecar (default: <root>/fetch_manifest.json).",
     )
-    args = parser.parse_args(raw_argv)
+    args = parser.parse_args()
 
     root = args.root or default_root()
     root.mkdir(parents=True, exist_ok=True)
@@ -229,13 +224,7 @@ def main(argv: list[str] | None = None) -> int:
                 z.unlink()
 
     args.manifest_out = manifest_out
-    _write_fetch_manifest(
-        args=args,
-        raw_argv=raw_argv,
-        root=root,
-        manifest_out=manifest_out,
-        archives=archives,
-    )
+    _write_fetch_manifest(args=args, root=root, manifest_out=manifest_out, archives=archives)
     print(f"[konvid] complete. dataset root: {root}")
     print(f"[konvid] fetch manifest: {manifest_out}")
     print("[konvid] next: vmaf-train manifest-scan --dataset konvid-1k --root", root)
@@ -243,4 +232,4 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())

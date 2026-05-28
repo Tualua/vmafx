@@ -7,7 +7,7 @@
 
 ## Context
 
-`feature_extractor_vector_append()` in `libvmaf/src/fex_ctx_vector.c`
+`feature_extractor_vector_append()` in `core/src/fex_ctx_vector.c`
 is the single registration point for all feature extractors. Before
 each frame is scored, the registered vector is iterated and every
 extractor's `extract()` callback writes its results into the shared

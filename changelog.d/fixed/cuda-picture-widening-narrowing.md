@@ -1,6 +1,6 @@
 - **CUDA `picture_cuda.c` integer-type precision fixes (round-5 clang-tidy
   `bugprone-*` sweep).** Five type-precision defects corrected in
-  `libvmaf/src/cuda/picture_cuda.c`:
+  `core/src/cuda/picture_cuda.c`:
   (1) `vmaf_cuda_picture_download_async` and `vmaf_cuda_picture_upload_async`:
   `CUDA_MEMCPY2D.WidthInBytes` is `size_t` but was computed as a bare
   `unsigned × unsigned` product — for frames wider than ~2 GiB the result

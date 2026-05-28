@@ -23,9 +23,9 @@ paths. Code inspection identified the root causes:
 
 1. **`VmafCudaState` struct ownership ambiguity** —
    `vmaf_cuda_state_init(&cu_state, cfg)` at
-   [`libvmaf/src/cuda/common.c`](../../libvmaf/src/cuda/common.c)
+   [`core/src/cuda/common.c`](../../core/src/cuda/common.c)
    mallocs a `VmafCudaState`. `vmaf_cuda_import_state` at
-   [`libvmaf/src/libvmaf.c`](../../libvmaf/src/libvmaf.c) **copies
+   [`core/src/libvmaf.c`](../../core/src/libvmaf.c) **copies
    the struct by value** (`vmaf->cuda.state = *cu_state;`) but does
    **not** take ownership of the pointer. `vmaf_close` calls
    `vmaf_cuda_release(&vmaf->cuda.state)` on the copy — which
@@ -33,7 +33,7 @@ paths. Code inspection identified the root causes:
    returned to the caller is never freed. There was **no public
    `vmaf_cuda_state_free` API**; `vmaf_cuda_release` lives in the
    internal header
-   [`libvmaf/src/cuda/common.h`](../../libvmaf/src/cuda/common.h)
+   [`core/src/cuda/common.h`](../../core/src/cuda/common.h)
    and is unavailable to callers. Per-cycle host-memory leak: one
    `VmafCudaState` struct (~80 bytes).
 
@@ -48,7 +48,7 @@ paths. Code inspection identified the root causes:
 
 3. **`pthread_mutex_destroy` missing in ring-buffer close** —
    `vmaf_ring_buffer_close` at
-   [`libvmaf/src/cuda/ring_buffer.c:80`](../../libvmaf/src/cuda/ring_buffer.c)
+   [`core/src/cuda/ring_buffer.c:80`](../../core/src/cuda/ring_buffer.c)
    **locks** `ring_buffer->busy`, frees the pictures, frees the
    buffer memory, but never **unlocks** or **destroys** the mutex.
    Destroying a locked mutex is POSIX UB; on glibc the mutex
@@ -84,7 +84,7 @@ PR:
 ### New public API
 
 ```c
-/* libvmaf/include/libvmaf/libvmaf_cuda.h */
+/* core/include/libvmaf/libvmaf_cuda.h */
 
 /**
  * Free VmafCudaState allocated by `vmaf_cuda_state_init()`.
@@ -101,7 +101,7 @@ PR:
 int vmaf_cuda_state_free(VmafCudaState *cu_state);
 ```
 
-Implementation in `libvmaf/src/cuda/common.c` is a NULL-safe
+Implementation in `core/src/cuda/common.c` is a NULL-safe
 `free()` wrapper — `vmaf_close` / `vmaf_cuda_release` already
 destroyed the stream, popped the context, and
 `memset`'d the struct. The only remaining owned resource is the
@@ -134,7 +134,7 @@ so any failure in the inner init free both `c` and `c->f` cleanly.
 
 ### GPU-gated reducer test
 
-[`libvmaf/test/test_cuda_preallocation_leak.c`](../../libvmaf/test/test_cuda_preallocation_leak.c)
+[`core/test/test_cuda_preallocation_leak.c`](../../core/test/test_cuda_preallocation_leak.c)
 — a 10-cycle reducer that does init → preallocate → fetch 10 pictures
 → close **with full cleanup on each cycle** (`vmaf_cuda_state_free`,
 `vmaf_model_destroy`). GPU-gated: cycle 0 probes the driver; no
@@ -193,7 +193,7 @@ the test-side cleanup gap that masked the framework leaks before.
 
 ## Verification
 
-- `meson test -C libvmaf/build-cuda` → **40/40 pass** (was 39/39
+- `meson test -C core/build-cuda` → **40/40 pass** (was 39/39
   pre-PR + new reducer).
 - `meson test -C build` (CPU-only) → **35/35 pass**.
 - `ASAN_OPTIONS='detect_leaks=1:leak_check_at_exit=1'
@@ -201,10 +201,10 @@ the test-side cleanup gap that masked the framework leaks before.
   leaked in 4 allocations**, **all in `libcuda.so.1` driver
   internal state** (cuInit cache — persists for process lifetime,
   does NOT grow per cycle; verified by N=1 vs N=10 comparison).
-  **Zero `libvmaf/src/*` frames** in the leak traces.
+  **Zero `core/src/*` frames** in the leak traces.
 - `clang-tidy -p build-cuda --quiet <5 touched files>` → **exit 0**.
 - CI-equivalent `clang-tidy -p build --quiet
-  libvmaf/include/libvmaf/libvmaf_cuda.h` (the only CI-visible
+  core/include/libvmaf/libvmaf_cuda.h` (the only CI-visible
   file after the ADR-0156 exclusion filter) → **exit 0**.
 - `pre-commit run --files <touched>` → all hooks pass.
 - Reducer verified to exercise the fix: pre-fix (with the sweep

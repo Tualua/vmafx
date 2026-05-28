@@ -45,14 +45,14 @@ exposed two **further** upstream-sync gaps the fork was carrying:
 Take upstream HEAD versions of all seven ADM + VIF-prescale C files
 verbatim (same strategy as PR #758):
 
-- `libvmaf/src/feature/adm.c`
-- `libvmaf/src/feature/adm.h`
-- `libvmaf/src/feature/adm_tools.c`
-- `libvmaf/src/feature/adm_tools.h`
-- `libvmaf/src/feature/adm_options.h`
-- `libvmaf/src/feature/adm_csf_tools.h`
-- `libvmaf/src/feature/float_adm.c`
-- `libvmaf/src/feature/float_vif.c`
+- `core/src/feature/adm.c`
+- `core/src/feature/adm.h`
+- `core/src/feature/adm_tools.c`
+- `core/src/feature/adm_tools.h`
+- `core/src/feature/adm_options.h`
+- `core/src/feature/adm_csf_tools.h`
+- `core/src/feature/float_adm.c`
+- `core/src/feature/float_vif.c`
 
 Add the four new ADM options to `AdmState` + threading through
 `compute_adm()`. Add `vif_prescale` / `vif_prescale_method` to

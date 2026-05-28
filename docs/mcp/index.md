@@ -1,6 +1,6 @@
 # MCP server — `vmaf-mcp`
 
-**VMAFX** ships **two** MCP surfaces:
+The Lusoris VMAF fork ships **two** MCP surfaces:
 
 1. **External Python MCP server** (`vmaf-mcp`, this document) —
    wraps the `vmaf` CLI, recommended for "score a video and hand
@@ -17,31 +17,20 @@
 The two surfaces are additive; running both at once is fine.
 
 `vmaf-mcp` is a [Model Context Protocol](https://modelcontextprotocol.io)
-server that exposes VMAFX's scoring CLI to LLM tooling
+server that exposes the Lusoris VMAF fork's scoring CLI to LLM tooling
 (Claude Desktop, Cursor, custom MCP clients) over JSON-RPC on stdio.
 It lives in [mcp-server/vmaf-mcp/](../../mcp-server/vmaf-mcp/).
 
 Use it when you want an LLM to:
 
 - score a `(reference, distorted)` YUV pair and reason about the result,
-- score a pair of **encoded video files** (MP4, MKV, Y4M, WebM) without
-  manual geometry entry (`vmaf_score_encoded` probes geometry via ffprobe),
 - enumerate which VMAF models shipped with the build,
-- look up metadata (feature names, model type, size) for a specific model,
-- probe which runtime backends (CPU / CUDA / SYCL / Vulkan / HIP / Metal)
-  the local binary was compiled with (`list_backends`) or can actually run
-  a score on right now (`probe_backend`),
-- confirm the fork build version and compile flags before scoring,
+- probe which runtime backends (CPU / CUDA / SYCL / Vulkan / HIP / Metal) the local
+  binary can dispatch to,
 - run the Netflix benchmark harness and summarise the output,
-- list all `VmafFeatureExtractor` implementations in the C source tree,
 - evaluate a tiny-AI ONNX regressor against a parquet feature cache
   on a deterministic split and report PLCC / SROCC / RMSE,
-- rank several candidate tiny-AI models on the same split,
-- extract the N worst-VMAF frames as PNGs and get a VLM description of
-  visible artefacts,
-- compare codec adapters at one or more target VMAF scores via `vmaf-tune`,
-- build a per-title bitrate ladder via convex-hull sweep,
-- get per-shot CRF recommendations targeting a VMAF score.
+- rank several candidate tiny-AI models on the same split.
 
 The server exec's the repo's own built `vmaf` binary under argv — it
 never passes a shell string — and refuses any file path that is not
@@ -49,28 +38,19 @@ under an allowlisted root. See [security](#security-model) below.
 
 ## Tool catalogue
 
-| Tool | Purpose | Added | Detail |
-| --- | --- | --- | --- |
-| `vmaf_score` | Score one `(ref, dis)` YUV pair; return the full JSON report | initial | [tools.md#vmaf_score](tools.md#vmaf_score) |
-| `list_models` | Enumerate `.json` / `.pkl` / `.onnx` under `model/` | initial | [tools.md#list_models](tools.md#list_models) |
-| `list_backends` | Report which backends the local `vmaf` binary was compiled with | initial | [tools.md#list_backends](tools.md#list_backends) |
-| `run_benchmark` | Run `testdata/bench_all.sh` across all backends on three canonical fixtures | initial | [tools.md#run_benchmark](tools.md#run_benchmark) |
-| `eval_model_on_split` | Evaluate a tiny-AI ONNX model on a parquet feature cache, report PLCC / SROCC / RMSE | initial | [tools.md#eval_model_on_split](tools.md#eval_model_on_split) |
-| `compare_models` | Rank several ONNX models on the same split by descending PLCC | initial | [tools.md#compare_models](tools.md#compare_models) |
-| `describe_worst_frames` | Score a pair, extract the N worst-VMAF frames as PNGs, describe artefacts via VLM | ADR-0172 | [tools.md#describe_worst_frames](tools.md#describe_worst_frames) |
-| `probe_backend` | 1-frame health-check: distinguish compiled-in from driver-present-and-functional | ADR-0613 | [tools.md#probe_backend](tools.md#probe_backend) |
-| `vmaf_version` | Return the local binary's path, version string, and build flags | ADR-0613 | [tools.md#vmaf_version](tools.md#vmaf_version) |
-| `vmaf_score_encoded` | Score encoded video files (MP4/MKV/Y4M/…); geometry probed via `ffprobe` | ADR-0613 | [tools.md#vmaf_score_encoded](tools.md#vmaf_score_encoded) |
-| `list_extractors` | Enumerate `VmafFeatureExtractor` implementations in the C source tree | ADR-0608 | [tools.md#list_extractors](tools.md#list_extractors) |
-| `describe_model` | Return metadata (type, feature names, size) for a model by name or path | ADR-0608 | [tools.md#describe_model](tools.md#describe_model) |
-| `run_compare` | Wrap `vmaf-tune compare`: rank codec adapters at one or more VMAF targets | ADR-0608 | [tools.md#run_compare](tools.md#run_compare) |
-| `run_ladder` | Wrap `vmaf-tune ladder`: convex-hull bitrate ladder in HLS / DASH / JSON | ADR-0608 | [tools.md#run_ladder](tools.md#run_ladder) |
-| `run_tune_per_shot` | Wrap `vmaf-tune tune-per-shot`: per-shot CRF recommendations | ADR-0608 | [tools.md#run_tune_per_shot](tools.md#run_tune_per_shot) |
+| Tool | Purpose | Detail |
+|---|---|---|
+| `vmaf_score` | Score one `(ref, dis)` YUV pair; return the full JSON report | [tools.md#vmaf_score](tools.md#vmaf_score) |
+| `list_models` | Enumerate `.json` / `.pkl` / `.onnx` under `model/` | [tools.md#list_models](tools.md#list_models) |
+| `list_backends` | Report which backends the local `vmaf` binary was built with | [tools.md#list_backends](tools.md#list_backends) |
+| `run_benchmark` | Run `testdata/bench_all.sh` on a pair | [tools.md](tools.md) |
+| `eval_model_on_split` | Evaluate a tiny-AI ONNX model on a parquet feature cache | [tools.md#eval_model_on_split](tools.md#eval_model_on_split) |
+| `compare_models` | Rank several ONNX models on the same split by descending PLCC | [tools.md#compare_models](tools.md#compare_models) |
+| `describe_worst_frames` | Score a pair, extract the N worst-VMAF frames as PNGs, and describe visible artefacts via a local VLM  | [tools.md#describe_worst_frames](tools.md#describe_worst_frames) |
 
 All tools return a single `TextContent` message whose body is a JSON
-document. On error the body raises an exception (since ADR-0613) so the
-`mcp` library sets `isError=True` on the `CallToolResult`. See
-[tools.md — Cross-tool error conventions](tools.md#cross-tool-error-conventions).
+document. On error the body is `{"error": "<message>"}` with the same
+shape so the client can always `json.loads()` the response.
 
 ## Install
 

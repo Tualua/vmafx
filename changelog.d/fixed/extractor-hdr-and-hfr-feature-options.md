@@ -8,7 +8,7 @@
   auto-emit `--feature cambi=eotf=pq:full_ref=true` and
   `--feature float_ms_ssim=enable_db=false`; HFR sources auto-emit
   `--feature motion[_v2]=motion_fps_weight=<30/fps>`. The grammar is
-  per `libvmaf/tools/cli_parse.c:407`: `<extractor>=key=val:key=val`,
+  per `core/tools/cli_parse.c:407`: `<extractor>=key=val:key=val`,
   not the `name=<extractor>:k=v` shape an earlier draft used (which
   trips `problem loading feature extractor: name`).
   Output parquet gains `fps`, `is_hdr`, `motion_fps_weight` columns

@@ -28,7 +28,7 @@ modern codecs and heterogeneous compute" — shipping SSIMULACRA 2 as a
 first-class feature extractor closes the most-requested metric gap.
 
 The fork's feature-extractor surface is well-established:
-[`libvmaf/src/feature/AGENTS.md`](../../libvmaf/src/feature/AGENTS.md)
+[`core/src/feature/AGENTS.md`](../../core/src/feature/AGENTS.md)
 documents the `VmafFeatureExtractor` contract and the
 `add-feature-extractor` skill scaffolds the file layout. SSIMULACRA 2
 fits that mould cleanly — it is a full-reference, per-frame metric
@@ -45,7 +45,7 @@ compatible with our BSD-3-Clause-Plus-Patent fork license.
 
 We will **port the libjxl C++ reference implementation to a new C
 feature extractor** under
-`libvmaf/src/feature/ssimulacra2.c`, matching libjxl's numerical output
+`core/src/feature/ssimulacra2.c`, matching libjxl's numerical output
 on an agreed float tolerance. The extractor will register under the
 name `ssimulacra2` and provide scores `ssimulacra2` (main score, 0–100
 scale where 100 = pristine), plus the three per-scale MSSIM-like
@@ -136,13 +136,13 @@ Audited as part of the 2026-05-08 ADR `Proposed` sweep
 
 Acceptance criteria verified in tree at HEAD `0a8b539e`:
 
-- `libvmaf/src/feature/ssimulacra2.c` — present.
-- `libvmaf/src/feature/ssimulacra2_eotf_lut.h` /
+- `core/src/feature/ssimulacra2.c` — present.
+- `core/src/feature/ssimulacra2_eotf_lut.h` /
   `ssimulacra2_math.h` / `ssimulacra2_simd_common.h` — present.
-- `libvmaf/src/meson.build` registers the extractor (lines 137 and
+- `core/src/meson.build` registers the extractor (lines 137 and
   the arm64 NEON sub-library at 350-360).
 - ADR-0130 (Accepted) was the implementation closeout for this ADR;
   the SSIMU2 SIMD bit-exact follow-ups are tracked under
   ADR-0161/0162/0163.
 - Verification command:
-  `ls libvmaf/src/feature/ssimulacra2.c libvmaf/src/feature/ssimulacra2_*.h`.
+  `ls core/src/feature/ssimulacra2.c core/src/feature/ssimulacra2_*.h`.

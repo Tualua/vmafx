@@ -113,7 +113,7 @@ weights distributed under a BSD-/Apache-/MIT-compatible licence with
 direct-HTTP download as of this digest's date — the ZenithChaser
 model is reproducible from the published paper but has no off-the-shelf
 ONNX export, and Mamba's selective-state-space op is not on the
-fork's `libvmaf/src/dnn/op_allowlist.c`.
+fork's `core/src/dnn/op_allowlist.c`.
 
 The shippable path is therefore **knowledge distillation**:
 distil a tiny student (target ~150–250 K params, similar regime to
@@ -162,7 +162,7 @@ ConvLSTM-vs-2D gap" finding [6]. Ships in days, not weeks.
 mirrors `saliency_student_v1` (TinyU-Net) plus a Bypass-RNN-style
 single-state recurrence — i.e., the Phase-1 EMA promoted into a
 learned per-pixel update rule, exported as one ONNX graph. Use only
-ops on `libvmaf/src/dnn/op_allowlist.c` (the existing TinyU-Net
+ops on `core/src/dnn/op_allowlist.c` (the existing TinyU-Net
 op-set plus a `Where` / `Mul` / `Add` chain that already lives in
 ONNX opset 17). Training script under
 `ai/scripts/train_video_saliency_student.py`, recipe modelled on

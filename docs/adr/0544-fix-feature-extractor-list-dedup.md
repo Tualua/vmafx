@@ -7,7 +7,7 @@
 
 ## Context
 
-`libvmaf/src/feature/feature_extractor.c` exposes the runtime registry
+`core/src/feature/feature_extractor.c` exposes the runtime registry
 through a single static array, `feature_extractor_list[]`.  Two iterator
 clients walk that array on the hot path:
 
@@ -62,7 +62,7 @@ We will:
    created, so a regression fails fast at init time instead of silently
    doubling per-pic work.
 4. Add a C unit test (`test_feature_extractor_list_no_duplicates` in
-   `libvmaf/test/test_feature_extractor.c`) that exercises the audit
+   `core/test/test_feature_extractor.c`) that exercises the audit
    helper on the live registry.  This wires the check into the
    `meson test` suite that already gates pushes.
 

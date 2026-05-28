@@ -17,7 +17,7 @@ but on inspection that turned out to be stale: since
 (`integer_ciede_cuda`, the first chroma-aware CUDA extractor)
 landed, `libvmaf.c::translate_picture_host` has uploaded all three
 planes for any non-`YUV400P` input — see the `upload_mask` branch
-in `libvmaf/src/libvmaf.c`. The luma-only kernels (psnr / motion /
+in `core/src/libvmaf.c`. The luma-only kernels (psnr / motion /
 adm / vif / moment) just don't read `data[1..2]`.
 
 CPU `integer_psnr.c` emits `psnr_y / psnr_cb / psnr_cr`
@@ -116,9 +116,9 @@ Mirrors the same posture chosen for Vulkan in ADR-0216.
   scaffolding template (private stream + event pair + readback
   helpers); the per-plane readback array reuses the existing
   helper unchanged.
-- `libvmaf/src/feature/integer_psnr.c` — CPU scalar reference for
+- `core/src/feature/integer_psnr.c` — CPU scalar reference for
   `psnr_y / psnr_cb / psnr_cr` and the `psnr_max[p]` default.
-- `libvmaf/src/libvmaf.c::translate_picture_host` — chroma upload
+- `core/src/libvmaf.c::translate_picture_host` — chroma upload
   path, already in place since the `ciede_cuda` landing
   (batch 1c).
 - Source: `req` (T3-15(b) prompt — "Add U + V plane upload + bind

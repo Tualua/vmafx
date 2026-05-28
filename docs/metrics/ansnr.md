@@ -32,13 +32,13 @@ files reference `"float_ansnr"`.
 
 ```bash
 # Luma-only ANSNR (default)
-libvmaf/build/tools/vmaf \
+core/build/tools/vmaf \
     --reference ref.yuv --distorted dist.yuv \
     --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
     --no_prediction --feature float_ansnr --output /dev/stdout
 
 # Per-channel ANSNR (luma + Cb + Cr)
-libvmaf/build/tools/vmaf \
+core/build/tools/vmaf \
     --reference ref.yuv --distorted dist.yuv \
     --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
     --no_prediction --feature 'float_ansnr:enable_chroma=true' --output /dev/stdout

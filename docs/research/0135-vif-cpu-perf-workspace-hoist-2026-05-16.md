@@ -13,7 +13,7 @@ extractor, identified in the CPU perf audit (`.workingdir/perf-audit-cpu-2026-05
 - **Win 1 (implemented)**: Hoist the 10-plane VIF scratch buffer from per-frame
   `aligned_malloc` / `aligned_free` to the `VifState` init/close lifecycle.
 - **Win 2 (already active, no code change)**: `VIF_OPT_FAST_LOG2` is already
-  unconditionally defined in `libvmaf/src/feature/vif_options.h` line 28.
+  unconditionally defined in `core/src/feature/vif_options.h` line 28.
 
 ---
 
@@ -21,7 +21,7 @@ extractor, identified in the CPU perf audit (`.workingdir/perf-audit-cpu-2026-05
 
 ### Before
 
-`compute_vif` (`libvmaf/src/feature/vif.c:116`) allocated:
+`compute_vif` (`core/src/feature/vif.c:116`) allocated:
 
 ```
 10 × ALIGN_CEIL(w × sizeof(float)) × h bytes  per frame
@@ -71,7 +71,7 @@ The perf audit task description stated that `VIF_OPT_FAST_LOG2` was "missing
 from every `meson.build`". Inspection of the tree reveals:
 
 ```
-libvmaf/src/feature/vif_options.h:28:  #define VIF_OPT_FAST_LOG2
+core/src/feature/vif_options.h:28:  #define VIF_OPT_FAST_LOG2
 ```
 
 The define is unconditional and is included by `vif_tools.c`, which applies
@@ -128,8 +128,8 @@ meson test -C build 2>&1 | tail -5
 
 - ADR-0452: decision document
 - CPU perf audit: `.workingdir/perf-audit-cpu-2026-05-16.md`
-- `libvmaf/src/feature/vif.c` — Win 1 implementation
-- `libvmaf/src/feature/float_vif.c` — VifState extension
-- `libvmaf/src/feature/vif.h` — updated signature
-- `libvmaf/src/feature/vif_tools.c:43–91` — `log2f_approx` implementation
-- `libvmaf/src/feature/vif_options.h:28` — `VIF_OPT_FAST_LOG2` define
+- `core/src/feature/vif.c` — Win 1 implementation
+- `core/src/feature/float_vif.c` — VifState extension
+- `core/src/feature/vif.h` — updated signature
+- `core/src/feature/vif_tools.c:43–91` — `log2f_approx` implementation
+- `core/src/feature/vif_options.h:28` — `VIF_OPT_FAST_LOG2` define

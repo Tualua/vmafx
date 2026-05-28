@@ -4,15 +4,15 @@
   ([ADR-0361](../docs/adr/0361-metal-compute-backend.md)) with
   three Objective-C++ (`.mm`) implementations that drive
   `Metal.framework` directly:
-  [`libvmaf/src/metal/common.mm`](../libvmaf/src/metal/common.mm)
+  [`core/src/metal/common.mm`](../core/src/metal/common.mm)
   (MTLDevice + MTLCommandQueue lifecycle,
   `MTLCreateSystemDefaultDevice` for auto-pick,
   `MTLCopyAllDevices` for explicit indexing on macOS, Apple-Family-7
   gate),
-  [`libvmaf/src/metal/picture_metal.mm`](../libvmaf/src/metal/picture_metal.mm)
+  [`core/src/metal/picture_metal.mm`](../core/src/metal/picture_metal.mm)
   (MTLBuffer allocator using `MTLResourceStorageModeShared` —
   zero-copy unified memory on Apple Silicon), and
-  [`libvmaf/src/metal/kernel_template.mm`](../libvmaf/src/metal/kernel_template.mm)
+  [`core/src/metal/kernel_template.mm`](../core/src/metal/kernel_template.mm)
   (private MTLCommandQueue + two MTLSharedEvent handles per
   consumer, submit-side `[MTLBlitCommandEncoder fillBuffer:…value:0]`
   + cross-queue `encodeWaitForEvent`, collect-side drain via
@@ -20,8 +20,8 @@
   with `-fobjc-arc`; C-struct slots that hold Metal handles are
   `void *` / `uintptr_t` populated via `__bridge_retained` and
   drained via `__bridge_transfer`, so `<Metal/Metal.h>` stays out
-  of every header in `libvmaf/src/metal/` and out of every
-  consumer TU under `libvmaf/src/feature/metal/` (header-purity
+  of every header in `core/src/metal/` and out of every
+  consumer TU under `core/src/feature/metal/` (header-purity
   contract from [ADR-0361 §"Header purity"](../docs/adr/0361-metal-compute-backend.md)).
   Two new internal accessors —
   `vmaf_metal_context_device_handle()` and
@@ -33,7 +33,7 @@
   `dispatch_strategy.c` and the per-feature scaffolds under
   `feature/metal/` are untouched — consumer TUs remain pure-C.
   Smoke test
-  [`libvmaf/test/test_metal_smoke.c`](../libvmaf/test/test_metal_smoke.c)
+  [`core/test/test_metal_smoke.c`](../core/test/test_metal_smoke.c)
   flips from the T8-1 `-ENOSYS` pin to runtime expectations:
   `vmaf_metal_state_init`, `vmaf_metal_context_new`,
   `vmaf_metal_kernel_lifecycle_init`, and

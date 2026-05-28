@@ -73,4 +73,4 @@ are float-identical to those previously computed per-frame.
 - `req`: per-user direction to implement Win #1 (LUT shrink) and Win #3 (filter cache)
   from `/tmp/perf_findings.md`.
 - ADR-0138 / ADR-0139: bit-exactness invariants for SIMD VIF paths.
-- Related: `vif_statistic_avx512` function in `libvmaf/src/feature/x86/vif_avx512.c`.
+- Related: `vif_statistic_avx512` function in `core/src/feature/x86/vif_avx512.c`.

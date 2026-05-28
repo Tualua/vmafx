@@ -7,7 +7,7 @@
 
 ## Context
 
-`compute_vif` in `libvmaf/src/feature/vif.c` allocated a contiguous
+`compute_vif` in `core/src/feature/vif.c` allocated a contiguous
 `10 × ALIGN_CEIL(w × sizeof(float)) × h` byte block on every frame
 call and freed it on return. At 1080p (stride = 7712, h = 1080) this is
 approximately 79 MB of allocator traffic per frame, consisting of ten

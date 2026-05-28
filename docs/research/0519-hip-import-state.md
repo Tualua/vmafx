@@ -7,7 +7,7 @@
 ## Question
 
 After ADR-0514 unblocked the container-side HIP exposure (added
-`-DHAVE_HIP=1` to `libvmaf/tools/meson.build`), `vmaf --backend hip`
+`-DHAVE_HIP=1` to `core/tools/meson.build`), `vmaf --backend hip`
 still failed with "problem during vmaf_hip_import_state" + exit 255
 on an AMD gfx1036 host inside the `vmaf-dev-mcp` container. What is
 the minimum library-side change to make HIP a fully working backend
@@ -16,32 +16,32 @@ on AMD?
 ## Method
 
 1. Grep `vmaf_hip_import_state` across the tree. Found:
-   - Declaration: `libvmaf/include/libvmaf/libvmaf_hip.h:80`.
-   - Definition: `libvmaf/src/hip/common.c:149` returning `-ENOSYS`
+   - Declaration: `core/include/libvmaf/libvmaf_hip.h:80`.
+   - Definition: `core/src/hip/common.c:149` returning `-ENOSYS`
      with a comment "stays unwired until the first feature kernel
      lands (T7-10c)".
-   - Callers: `libvmaf/tools/vmaf.c:641` (the CLI `--backend hip`
-     path), `libvmaf/test/test_hip_smoke.c:152` (explicit
-     -ENOSYS assertion), `libvmaf/test/test_hip_motion3_parity.c:159`
+   - Callers: `core/tools/vmaf.c:641` (the CLI `--backend hip`
+     path), `core/test/test_hip_smoke.c:152` (explicit
+     -ENOSYS assertion), `core/test/test_hip_motion3_parity.c:159`
      (uses the function but the test was never functional on master
      because it also depends on `vmaf_fex_integer_motion_hip` being
      registered, which it isn't).
 
 2. Compare against the four other GPU backends' `_import_state`
    functions:
-   - `vmaf_cuda_import_state` (`libvmaf/src/libvmaf.c:307`):
+   - `vmaf_cuda_import_state` (`core/src/libvmaf.c:307`):
      by-value copy `vmaf->cuda.state = *cu_state;` — historic
      ownership-transfer semantics.
-   - `vmaf_sycl_import_state` (`libvmaf/src/libvmaf.c:458`):
+   - `vmaf_sycl_import_state` (`core/src/libvmaf.c:458`):
      pointer-stash `vmaf->sycl.state = sycl_state;` — caller-owned
      opaque state.
-   - `vmaf_vulkan_import_state` (`libvmaf/src/libvmaf.c:571`):
+   - `vmaf_vulkan_import_state` (`core/src/libvmaf.c:571`):
      pointer-stash, identical shape.
-   - `vmaf_metal_import_state` (`libvmaf/src/libvmaf.c:677`):
+   - `vmaf_metal_import_state` (`core/src/libvmaf.c:677`):
      pointer-stash, identical shape.
 
 3. Check whether the HIP-flagged extractors actually need the
-   stashed state. `libvmaf/src/hip/AGENTS.md` rebase-sensitive
+   stashed state. `core/src/hip/AGENTS.md` rebase-sensitive
    invariants section pins: "`vmaf_fex_psnr_hip` is registered
    without the `VMAF_FEATURE_EXTRACTOR_HIP` flag bit set
    (fork-local, ADR-0241). The flag bit (`1 << 6`) is reserved in
@@ -69,8 +69,8 @@ on AMD?
 
 The minimum library-side change is three edits:
 
-1. **Move `vmaf_hip_import_state` from `libvmaf/src/hip/common.c`
-   into `libvmaf/src/libvmaf.c`.** The function needs
+1. **Move `vmaf_hip_import_state` from `core/src/hip/common.c`
+   into `core/src/libvmaf.c`.** The function needs
    `VmafContext` field-level access; placing it next to the CUDA
    / SYCL / Vulkan / Metal twins keeps the four "stash the
    borrowed state pointer on the context" implementations in one
@@ -91,7 +91,7 @@ The minimum library-side change is three edits:
    / Metal; documented in the existing comments cloned from the
    Vulkan block.
 
-The smoke test (`libvmaf/test/test_hip_smoke.c`) must replace its
+The smoke test (`core/test/test_hip_smoke.c`) must replace its
 `test_import_state_returns_enosys` assertion with two new ones:
 NULL-argument validation (`-EINVAL`) and a device-bound happy-path
 that exercises `vmaf_init` → `vmaf_hip_import_state` →
@@ -127,7 +127,7 @@ explicit -ENOSYS assertion that was the stop-gate).
   to the picture buffer-type dispatch + a HIP picture pool — a
   separate, larger PR.
 - Registering `vmaf_fex_integer_motion_hip` in
-  `libvmaf/src/feature/feature_extractor.c`'s
+  `core/src/feature/feature_extractor.c`'s
   `feature_extractor_list[]`. The extractor is `extern`-declared
   but never added to the list, so `vmaf_use_feature("motion_hip", ...)`
   returns `-EINVAL`. This is a pre-existing latent bug from PR

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Cross-backend feature diff — gates GPU compute kernels (CUDA, SYCL,
 Vulkan) against the CPU scalar reference. Runs `vmaf` twice on the
 same (ref, dist) pair: once with the CPU integer extractor, once with
@@ -16,7 +16,7 @@ controlled by ``--feature {vif,motion,adm}`` and
 Default tolerance is ``places=4`` (matches the fork's GPU-vs-CPU
 snapshot contract — see ``docs/principles.md`` and the user's "GPU is
 NOT bit-exact" invariant). Empirically the GLSL kernels under
-``libvmaf/src/feature/vulkan/shaders/`` are essentially bit-exact
+``core/src/feature/vulkan/shaders/`` are essentially bit-exact
 with the scalar reference because both sides use deterministic
 ``int64`` accumulators. CUDA / SYCL kernels have their own histories.
 
@@ -383,9 +383,7 @@ def diff(
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument(
-        "--vmaf-binary", type=Path, required=True, help="path to libvmaf/build/tools/vmaf"
-    )
+    ap.add_argument("--vmaf-binary", type=Path, required=True, help="path to core/build/tools/vmaf")
     ap.add_argument("--reference", type=Path, required=True)
     ap.add_argument("--distorted", type=Path, required=True)
     ap.add_argument("--width", type=int, required=True)

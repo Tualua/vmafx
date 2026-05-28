@@ -13,7 +13,7 @@
    `AMD_LOG_LEVEL=3`.  Capture the `rocvirtual.cpp` argument-dump for
    every kernel launch.
 2. **Compare against the CUDA twin**
-   (`libvmaf/src/feature/cuda/integer_vif/{filter1d.cu,vif_statistics.cuh}`)
+   (`core/src/feature/cuda/integer_vif/{filter1d.cu,vif_statistics.cuh}`)
    to identify structural divergence in (a) kernel signature, (b) host
    `args[]` array, (c) filter-coefficient handling, (d) downsample
    pipeline.
@@ -48,7 +48,7 @@ void *args_vert[] = {buf, &ref_in, &dis_in, &w, &h,
 ```
 
 `vif_filter1d_table` is a **host-side** `static const uint16_t[4][18]`
-defined in `libvmaf/src/feature/integer_vif.h`.  `vif_filter1d_table[0]`
+defined in `core/src/feature/integer_vif.h`.  `vif_filter1d_table[0]`
 decays to a host pointer.  `hipModuleLaunchKernel` then copied that
 host address into the kernel argument region, and the GPU dereferenced
 it on the first `filter[fi]` load.  AMD ROCm faulted with:

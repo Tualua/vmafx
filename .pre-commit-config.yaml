@@ -20,9 +20,9 @@ repos:
       # .onnx.data (ONNX external-data sidecar) is intentionally listed
       # alongside .onnx — they are raw float tensors, never text.
       - id: trailing-whitespace
-        exclude: '\.patch$|^subprojects/|^libvmaf/test/data/|^model/|^python/test/resource/|^python/vmaf/resource/|^python/vmaf/matlab/|^testdata/|\.(pkl|mexa64|mexw64|mexmaci64|onnx|onnx\.data|bin|yuv|npy|so|a|dylib|dll)$'
+        exclude: '\.patch$|^subprojects/|^core/test/data/|^model/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|^testdata/|\.(pkl|mexa64|mexw64|mexmaci64|onnx|onnx\.data|bin|yuv|npy|so|a|dylib|dll)$'
       - id: end-of-file-fixer
-        exclude: '\.patch$|^subprojects/|^libvmaf/test/data/|^model/|^python/test/resource/|^python/vmaf/resource/|^python/vmaf/matlab/|^testdata/|\.(pkl|mexa64|mexw64|mexmaci64|onnx|onnx\.data|bin|yuv|npy|so|a|dylib|dll)$'
+        exclude: '\.patch$|^subprojects/|^core/test/data/|^model/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|^testdata/|\.(pkl|mexa64|mexw64|mexmaci64|onnx|onnx\.data|bin|yuv|npy|so|a|dylib|dll)$'
       - id: check-merge-conflict
       - id: check-yaml
         # mkdocs.yml uses `!!python/name:...` tags (Material extensions, pymdownx
@@ -41,7 +41,7 @@ repos:
         # some ONNX / .bin payloads and rewrites bytes inside the serialized
         # model, which then fails sha256 pinning in registry.json.
         # .onnx.data added alongside .onnx (external tensor sidecar; raw bytes).
-        exclude: '\.patch$|^subprojects/|^libvmaf/test/data/|^model/|^python/test/resource/|^python/vmaf/resource/|^python/vmaf/matlab/|^testdata/|\.(pkl|mexa64|mexw64|mexmaci64|onnx|onnx\.data|bin|yuv|npy|so|a|dylib|dll)$'
+        exclude: '\.patch$|^subprojects/|^core/test/data/|^model/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|^testdata/|\.(pkl|mexa64|mexw64|mexmaci64|onnx|onnx\.data|bin|yuv|npy|so|a|dylib|dll)$'
       - id: detect-private-key
 
   - repo: https://github.com/pre-commit/mirrors-clang-format
@@ -49,7 +49,7 @@ repos:
     hooks:
       - id: clang-format
         types_or: [c, c++, cuda]
-        exclude: '^subprojects/|^libvmaf/test/data/'
+        exclude: '^subprojects/|^core/test/data/'
 
   - repo: https://github.com/psf/black
     rev: 26.5.1
@@ -60,21 +60,21 @@ repos:
         # pyproject.toml [tool.black] extend-exclude. Black's extend-exclude
         # only filters during directory walks, not explicitly-passed files,
         # so pre-commit needs its own exclude to skip them.
-        exclude: '^python/test/resource/|^python/vmaf/resource/|^python/vmaf/matlab/'
+        exclude: '^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/'
 
   - repo: https://github.com/PyCQA/isort
     rev: 5.13.2
     hooks:
       - id: isort
         files: '^(python|ai|scripts|tools)/.*\.py$'
-        exclude: '^python/test/resource/|^python/vmaf/resource/|^python/vmaf/matlab/'
+        exclude: '^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/'
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.13
     hooks:
       - id: ruff-check
         files: '^(python|ai|scripts|tools)/.*\.py$'
-        exclude: '^python/test/resource/|^python/vmaf/resource/|^python/vmaf/matlab/'
+        exclude: '^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/'
         args: ["--fix"]
 
   - repo: https://github.com/scop/pre-commit-shfmt
@@ -128,11 +128,11 @@ repos:
         language: script
         # Exclusions: (a) upstream vendored subprojects, (b) test fixtures,
         # (c) resource directories that ship upstream assets unchanged,
-        # (d) libvmaf/src/pdjson.{c,h} — vendored 3rd-party JSON parser
+        # (d) core/src/pdjson.{c,h} — vendored 3rd-party JSON parser
         # retaining its own in-file "Vendored 3rd-party" banner,
-        # (e) python/vmaf/matlab/ — upstream Netflix training-harness MATLAB
+        # (e) compat/python-vmaf/matlab/ — upstream Netflix training-harness MATLAB
         # MEX C sources, already excluded from other hygiene hooks.
-        exclude: '^subprojects/|^libvmaf/test/data/|^python/vmaf/resource/|^python/test/resource/|^python/vmaf/matlab/|^libvmaf/src/pdjson\.(c|h)$'
+        exclude: '^subprojects/|^core/test/data/|^compat/python-vmaf/resource/|^python/test/resource/|^compat/python-vmaf/matlab/|^core/src/pdjson\.(c|h)$'
         types_or: [c, c++, cuda]
 
       - id: check-adr-numbering
@@ -194,13 +194,13 @@ repos:
         # Mirror `check-copyright`'s exclude list — same upstream /
         # vendored paths that ship with their own hygiene contract:
         # (a) upstream vendored subprojects, (b) test fixtures,
-        # (c) python/vmaf/resource/ + python/test/resource/ assets,
-        # (d) libvmaf/src/pdjson.{c,h} 3rd-party JSON parser,
-        # (e) python/vmaf/matlab/ — Netflix-upstream MATLAB MEX C
+        # (c) compat/python-vmaf/resource/ + python/test/resource/ assets,
+        # (d) core/src/pdjson.{c,h} 3rd-party JSON parser,
+        # (e) compat/python-vmaf/matlab/ — Netflix-upstream MATLAB MEX C
         # sources (they call `sprintf` / `strcpy` etc., which are
         # banned by .semgrep.yml but are out of scope for fork-local
         # hygiene; cleaning them up is an upstream change, not ours).
-        exclude: '^subprojects/|^libvmaf/test/data/|^python/vmaf/resource/|^python/test/resource/|^python/vmaf/matlab/|^libvmaf/src/pdjson\.(c|h)$'
+        exclude: '^subprojects/|^core/test/data/|^compat/python-vmaf/resource/|^python/test/resource/|^compat/python-vmaf/matlab/|^core/src/pdjson\.(c|h)$'
         # Runs at pre-commit time — fast on a single-file diff and the
         # rules in .semgrep.yml are the project's own, not p/cert-c-strict.
         # `pass_filenames: true` (the default) because semgrep accepts

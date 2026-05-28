@@ -94,13 +94,13 @@ triggers (see *Consequences → Follow-ups*).
   Entropic Differencing for Image and Video Quality", IEEE SPL 24(9),
   1333–1337, 2017,
   [DOI 10.1109/LSP.2017.2726542](https://ieeexplore.ieee.org/document/7979533/).
-- Upstream code: `libvmaf/src/feature/speed.c` (port commit
+- Upstream code: `core/src/feature/speed.c` (port commit
   [`d3647c73`](https://github.com/Netflix/vmaf/commit/d3647c73),
   alias-map merge
   [`9dac0a59`](https://github.com/Netflix/vmaf/commit/9dac0a59)).
-- Fork: PR #213 (SpEED port), `libvmaf/src/feature/feature_extractor.c`
-  (registration), `libvmaf/src/feature/alias.c` (aliases),
-  `libvmaf/test/test_speed.c` (registration tests),
+- Fork: PR #213 (SpEED port), `core/src/feature/feature_extractor.c`
+  (registration), `core/src/feature/alias.c` (aliases),
+  `core/test/test_speed.c` (registration tests),
   [`docs/metrics/features.md`](../metrics/features.md) §"Speed
   (chroma)" / §"Speed (temporal)" (existing user-facing docs).
 - Source: `req` — paraphrased from user direction 2026-05-03,
@@ -117,7 +117,7 @@ The deliverable for a defer-shape decision is the documented
 position itself; verification consists of confirming the position
 is unchanged in tree:
 
-- No `speed_qa` reduction in `libvmaf/src/feature/`.
+- No `speed_qa` reduction in `core/src/feature/`.
 - No SpEED-driven model in `model/`.
 - `speed_chroma` / `speed_temporal` extractors remain unchanged
   (Netflix port from upstream `d3647c73`, gated behind
@@ -125,13 +125,13 @@ is unchanged in tree:
 - The three reversal triggers stay open and are documented in the
   Consequences section.
 - Verification command:
-  `ls libvmaf/src/feature/speed_*.c;
+  `ls core/src/feature/speed_*.c;
   grep -i speed model/registry.json`.
 
 ### Status update 2026-05-09
 
 A minimal `vmaf_fex_speed_qa` extractor scaffold has landed in
-`libvmaf/src/feature/speed_qa.c`. The scaffold registers the feature
+`core/src/feature/speed_qa.c`. The scaffold registers the feature
 name `"speed_qa"`, returns a placeholder score of 0.0 per frame, and
 builds cleanly against the CPU-only backend. No real spatial or
 temporal entropic-difference algorithm is implemented; the core
@@ -145,7 +145,7 @@ three named reversal triggers fires.
 
 Reversal trigger 2 of the defer decision ("Explicit user request for SpEED-QA")
 has fired. The real spatial and temporal entropic-difference algorithm has
-replaced the placeholder scaffold in `libvmaf/src/feature/speed_qa.c`.
+replaced the placeholder scaffold in `core/src/feature/speed_qa.c`.
 
 Implementation summary:
 - Non-overlapping 7x7 luma blocks; separable Gaussian window (sigma=1.166, Q16).
@@ -156,5 +156,5 @@ Implementation summary:
 - Output per frame: score = S + T.
 - Self-contained (no float dependency); integer pixels, double accumulation;
   VMAF_FEATURE_EXTRACTOR_TEMPORAL flag set for in-order delivery.
-- Five unit tests in `libvmaf/test/test_speed_qa.c` (all pass).
+- Five unit tests in `core/test/test_speed_qa.c` (all pass).
 - Documentation: `docs/metrics/speed_qa.md`.

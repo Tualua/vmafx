@@ -49,8 +49,8 @@ twin.
 
 ## References
 
-- CPU source: `libvmaf/src/feature/float_ms_ssim.c`
-- CUDA twin: `libvmaf/src/feature/cuda/integer_ms_ssim/`
+- CPU source: `core/src/feature/float_ms_ssim.c`
+- CUDA twin: `core/src/feature/cuda/integer_ms_ssim/`
 - Existing Metal twin pattern: `feature/metal/float_ssim_metal.mm` (ADR-0421)
 - ADR-0153: min-dim guard (176 × 176)
 - ADR-0421: Metal backend feature extractor infrastructure

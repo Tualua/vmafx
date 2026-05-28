@@ -27,13 +27,13 @@ files plus one delete/modify conflict:
 
 | file | conflict class |
 |---|---|
-| `libvmaf/src/feature/cuda/integer_motion/motion_score.cu` | content |
-| `libvmaf/src/feature/cuda/integer_motion_cuda.c` | content |
-| `libvmaf/src/feature/cuda/integer_vif_cuda.c` | content |
-| `libvmaf/src/libvmaf.c` | content |
-| `libvmaf/src/meson.build` | content |
-| `libvmaf/src/picture.h` | content |
-| `libvmaf/tools/vmaf.c` | content |
+| `core/src/feature/cuda/integer_motion/motion_score.cu` | content |
+| `core/src/feature/cuda/integer_motion_cuda.c` | content |
+| `core/src/feature/cuda/integer_vif_cuda.c` | content |
+| `core/src/libvmaf.c` | content |
+| `core/src/meson.build` | content |
+| `core/src/picture.h` | content |
+| `core/tools/vmaf.c` | content |
 | `resource/doc/docker.md` | delete-vs-modify (fork removed `resource/doc/`) |
 
 The fork's CUDA backend has progressed past the upstream baseline this
@@ -47,8 +47,8 @@ cleanly onto the fork.
 A future PR should re-implement each of the three axes independently:
 
 1. **`nv-codec-headers` runtime load** — adopt `<ffnvcodec/dynlink_loader.h>`
-   in `libvmaf/src/cuda/common.c`/`common.h`, replace the direct
-   `libcuda.so` linkage in `libvmaf/src/meson.build`, and add a fallback
+   in `core/src/cuda/common.c`/`common.h`, replace the direct
+   `libcuda.so` linkage in `core/src/meson.build`, and add a fallback
    path for environments without `nv-codec-headers` so existing CI rows
    keep working. Likely needs an ADR (build-system delta).
 2. **Clang+CUDA compilation** — extend the existing `enable_cuda` meson

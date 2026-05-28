@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Cross-codec corpus benchmark reporting for ``vmaf-tune``.
 
 Phase G consumes existing Phase-A JSONL rows and answers the common

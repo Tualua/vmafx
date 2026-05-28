@@ -35,7 +35,7 @@ of a codegen pipeline:
    — the recipe new GPU backends follow (state lifecycle, optional
    sections for `_available` / `_list_devices` / picture preallocation
    / hwaccel zero-copy import, Doxygen + ABI conventions).
-2. [`libvmaf/include/libvmaf/AGENTS.md`](../../libvmaf/include/libvmaf/AGENTS.md)
+2. [`core/include/libvmaf/AGENTS.md`](../../core/include/libvmaf/AGENTS.md)
    — a public-headers-tree invariant note that points back at the
    template + pins the rebase-sensitive ordering of the four
    existing backend headers.
@@ -102,5 +102,5 @@ so future backends can't reimplement the round-robin lifecycle.
   for "recipe doc + shared helpers, not codegen".
 - [`docs/development/gpu-backend-template.md`](../development/gpu-backend-template.md)
   — the recipe.
-- [`libvmaf/include/libvmaf/AGENTS.md`](../../libvmaf/include/libvmaf/AGENTS.md)
+- [`core/include/libvmaf/AGENTS.md`](../../core/include/libvmaf/AGENTS.md)
   — the public-headers-tree invariant note.

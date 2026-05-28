@@ -1,6 +1,6 @@
 ### Fixed: `meson test --suite=fast` pre-push gate ran zero tests
 
-`libvmaf/test/meson.build` declared ~40 `test()` entries but none carried a
+`core/test/meson.build` declared ~40 `test()` entries but none carried a
 `suite:` argument. Running `meson test -C build --suite=fast` — the
 pre-push gate documented in `CLAUDE.md §3` — reported no tests and
 silently exited 0, giving contributors a false green signal.

@@ -27,7 +27,7 @@ runner is most likely to surface there first.
 ## Method
 
 1. Inventory the fork's Vulkan shaders under
-   [`libvmaf/src/feature/vulkan/shaders/`](../../libvmaf/src/feature/vulkan/shaders/)
+   [`core/src/feature/vulkan/shaders/`](../../core/src/feature/vulkan/shaders/)
    and grep for GLSL extension `#extension` directives + atomic
    intrinsics.
 2. Cross-reference each capability against the
@@ -195,7 +195,7 @@ flips `continue-on-error` off and adds the job name to
 - [Apple Metal Feature Set Tables](https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf)
 - [GitHub Actions macOS runner spec](https://github.com/actions/runner-images/blob/main/images/macos/macos-15-arm64-Readme.md)
 - Fork shader inventory:
-  [`libvmaf/src/feature/vulkan/shaders/`](../../libvmaf/src/feature/vulkan/shaders/)
+  [`core/src/feature/vulkan/shaders/`](../../core/src/feature/vulkan/shaders/)
 - [ADR-0127](../adr/0127-vulkan-compute-backend.md) — Vulkan
   compute backend.
 - [ADR-0338](../adr/0338-macos-vulkan-via-moltenvk-lane.md) —

@@ -29,26 +29,26 @@ rel="${file#"${repo_root}"/}"
 # not a user-discoverable surface, exit silently.
 expected_doc=""
 case "$rel" in
-  libvmaf/include/libvmaf/libvmaf_cuda.h | libvmaf/include/libvmaf/libvmaf_sycl.h)
+  core/include/libvmaf/libvmaf_cuda.h | core/include/libvmaf/libvmaf_sycl.h)
     expected_doc="docs/api/gpu.md"
     ;;
-  libvmaf/include/libvmaf/libvmaf.h | libvmaf/include/libvmaf/picture.h | \
-    libvmaf/include/libvmaf/model.h)
+  core/include/libvmaf/libvmaf.h | core/include/libvmaf/picture.h | \
+    core/include/libvmaf/model.h)
     expected_doc="docs/api/index.md"
     ;;
-  libvmaf/include/libvmaf/libvmaf_dnn.h)
+  core/include/libvmaf/libvmaf_dnn.h)
     expected_doc="docs/api/dnn.md"
     ;;
-  libvmaf/src/feature/feature_*.c | libvmaf/src/feature/integer_*.c | \
-    libvmaf/src/feature/x86/*.c | libvmaf/src/feature/arm64/*.c | \
-    libvmaf/src/feature/cuda/*.c | libvmaf/src/feature/cuda/*.cu | \
-    libvmaf/src/feature/sycl/*.cpp)
+  core/src/feature/feature_*.c | core/src/feature/integer_*.c | \
+    core/src/feature/x86/*.c | core/src/feature/arm64/*.c | \
+    core/src/feature/cuda/*.c | core/src/feature/cuda/*.cu | \
+    core/src/feature/sycl/*.cpp)
     expected_doc="docs/metrics/features.md"
     ;;
-  libvmaf/tools/cli_parse.c | libvmaf/tools/vmaf.c | libvmaf/tools/vmaf_bench.c)
+  core/tools/cli_parse.c | core/tools/vmaf.c | core/tools/vmaf_bench.c)
     expected_doc="docs/usage/cli.md"
     ;;
-  meson_options.txt | libvmaf/meson_options.txt)
+  meson_options.txt | core/meson_options.txt)
     expected_doc="docs/development/build-flags.md"
     ;;
   mcp-server/vmaf-mcp/src/*.py | mcp-server/vmaf-mcp/pyproject.toml)

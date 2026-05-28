@@ -1,10 +1,10 @@
 - **`vif.comp` + `ciede.comp` shaders — `precise` decorations on the
   load-bearing FP reductions (ADR-0269 / Step A of the Vulkan 1.4 bump
   path)** — tags the FP accumulators in
-  [`libvmaf/src/feature/vulkan/shaders/vif.comp`](libvmaf/src/feature/vulkan/shaders/vif.comp)
+  [`core/src/feature/vulkan/shaders/vif.comp`](core/src/feature/vulkan/shaders/vif.comp)
   (`g`, `sv_sq`, `gg_sigma_f` — the three lines that compute the per-frame
   VIF stats) and
-  [`libvmaf/src/feature/vulkan/shaders/ciede.comp`](libvmaf/src/feature/vulkan/shaders/ciede.comp)
+  [`core/src/feature/vulkan/shaders/ciede.comp`](core/src/feature/vulkan/shaders/ciede.comp)
   (yuv→rgb outputs, rgb→xyz matmul accumulators, ciede2000 chroma
   magnitudes + half-axes + s_l/c/h + lightness/chroma/hue + final ΔE)
   with the GLSL `precise` qualifier. glslc 2026.1 lowers each tagged

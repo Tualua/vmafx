@@ -63,10 +63,10 @@ jobs:
           python3 -m pip install --user -r python/requirements.txt pytest pytest-timeout
 
       - name: Build (CPU, release)
-        # Build inside libvmaf/ so the CLI lands at libvmaf/build/tools/vmaf
+        # Build inside libvmaf/ so the CLI lands at core/build/tools/vmaf
         # — python/vmaf/__init__.py hardcodes that relative path when no
         # external vmaf binary is configured via vmaf_path() / vmafexec_path().
-        working-directory: libvmaf
+        working-directory: core
         run: |
           meson setup build -Denable_cuda=false -Denable_sycl=false \
             -Denable_float=true -Denable_avx512=true --buildtype=release
@@ -132,7 +132,7 @@ jobs:
           sudo apt-get install -y meson ninja-build nasm pkg-config python3-pip
           python3 -m pip install --user numpy
       - name: Build CPU
-        working-directory: libvmaf
+        working-directory: core
         run: |
           meson setup build -Denable_cuda=false -Denable_sycl=false --buildtype=release
           meson compile -C build
@@ -140,14 +140,200 @@ jobs:
         run: |
           ./testdata/bench_all.sh --backend=cpu --snapshot-only --tolerance-ulp=2
 
-  # T-CI-DEDUP-689: `vulkan-vif-cross-backend` removed. This job ran 12
-  # per-feature cross-backend diff steps (one timeout-gated step per feature
-  # using `cross_backend_vif_diff.py`). The `vulkan-parity-matrix-gate` below
-  # covers the identical surface in a single `cross_backend_parity_gate.py`
-  # invocation that sweeps all 17 features in one pass with calibrated ULP
-  # tolerances from `scripts/ci/gpu_ulp_calibration.yaml`. Running both was
-  # pure duplication — same fixtures, same binary, same lavapipe ICD.
-  # All feature coverage is preserved by the parity gate (ADR-0214 / ADR-0689).
+  # ===== Vulkan VIF cross-backend gate (lavapipe) =====
+  # Builds CPU + Vulkan, runs `vmaf` twice on the Netflix normal pair, diffs
+  # the per-frame integer_vif_scale0..3 scores at places=4 against the CPU
+  # scalar reference. Uses Mesa's lavapipe (software Vulkan 1.3) so the lane
+  # runs on stock GitHub-hosted Ubuntu — no self-hosted GPU runner needed.
+  # See ADR-0176 § "Lavapipe vs hardware ICD" for the rationale.
+  vulkan-vif-cross-backend:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: "Vulkan VIF Cross-Backend (lavapipe, places=4)"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          submodules: recursive
+      - name: Install build + lavapipe deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build nasm pkg-config \
+            python3-pip glslc \
+            mesa-vulkan-drivers vulkan-tools libvulkan-dev
+      - name: Verify lavapipe is selectable
+        env:
+          VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        run: |
+          vulkaninfo --summary | head -40
+      - name: Build CPU + Vulkan
+        working-directory: core
+        run: |
+          meson setup build -Denable_cuda=false -Denable_sycl=false \
+                            -Denable_vulkan=enabled -Denable_float=true \
+                            --buildtype=release
+          meson compile -C build
+      - name: Cache Netflix vmaf_resource fixtures
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
+        with:
+          path: python/test/resource/yuv
+          # Bump the version suffix (-v1 → -v2 etc.) when fixtures change.
+          # `restore-keys` lets older caches partially populate the dir;
+          # missing files re-download lazily via curl on cache miss.
+          key: vmaf-fixtures-yuv-v1
+          restore-keys: vmaf-fixtures-yuv-
+      - name: Fetch Netflix normal-pair fixtures (skips downloads on cache hit)
+        run: |
+          mkdir -p python/test/resource/yuv
+          for name in src01_hrc00_576x324.yuv src01_hrc01_576x324.yuv; do
+            if [ -s "python/test/resource/yuv/$name" ]; then
+              echo "cache hit: $name"
+              continue
+            fi
+            curl -sSL --retry 5 --retry-delay 2 --retry-all-errors \
+              -o "python/test/resource/yuv/$name" \
+              "https://github.com/Netflix/vmaf_resource/raw/master/python/test/resource/yuv/$name"
+          done
+      - name: VIF cross-backend diff (CPU vs Vulkan/lavapipe)
+        env:
+          VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 16
+        run: |
+          timeout --kill-after=30s 15m python3 scripts/ci/cross_backend_vif_diff.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+            --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+            --width 576 --height 324 --feature vif --places 4
+      - name: ADM cross-backend diff (CPU vs Vulkan/lavapipe)
+        env:
+          VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 9
+        run: |
+          timeout --kill-after=30s 8m python3 scripts/ci/cross_backend_vif_diff.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+            --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+            --width 576 --height 324 --feature adm --places 4
+      - name: float_moment cross-backend diff (CPU vs Vulkan/lavapipe)
+        env:
+          VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
+        run: |
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+            --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+            --width 576 --height 324 --feature float_moment --places 4
+      - name: PSNR cross-backend diff (CPU vs Vulkan/lavapipe)
+        env:
+          VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
+        run: |
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+            --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+            --width 576 --height 324 --feature psnr --places 4
+      - name: ciede cross-backend diff (CPU vs Vulkan/lavapipe)
+        env:
+          VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
+        run: |
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+            --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+            --width 576 --height 324 --feature ciede --places 4
+      - name: float_ssim cross-backend diff (CPU vs Vulkan/lavapipe)
+        env:
+          VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
+        run: |
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+            --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+            --width 576 --height 324 --feature float_ssim --places 4
+      - name: float_ms_ssim cross-backend diff (CPU vs Vulkan/lavapipe)
+        env:
+          VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
+        run: |
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+            --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+            --width 576 --height 324 --feature float_ms_ssim --places 4
+      - name: float_ansnr cross-backend diff (CPU vs Vulkan/lavapipe)
+        env:
+          VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
+        run: |
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+            --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+            --width 576 --height 324 --feature float_ansnr --places 4
+      - name: float_vif cross-backend diff (CPU vs Vulkan/lavapipe)
+        env:
+          VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
+        run: |
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+            --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+            --width 576 --height 324 --feature float_vif --places 4
+      - name: float_motion cross-backend diff (CPU vs Vulkan/lavapipe)
+        env:
+          VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
+        run: |
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+            --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+            --width 576 --height 324 --feature float_motion --places 4
+      - name: float_psnr cross-backend diff (CPU vs Vulkan/lavapipe)
+        env:
+          VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
+        run: |
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+            --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+            --width 576 --height 324 --feature float_psnr --places 4
+      - name: psnr_hvs cross-backend diff (CPU vs Vulkan/lavapipe)
+        env:
+          VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
+        run: |
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+            --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+            --width 576 --height 324 --feature psnr_hvs --places 3
+      - name: float_adm cross-backend diff (CPU vs Vulkan/lavapipe)
+        env:
+          VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 5
+        run: |
+          timeout --kill-after=30s 4m python3 scripts/ci/cross_backend_vif_diff.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+            --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+            --width 576 --height 324 --feature float_adm --places 4
+      - name: ssimulacra2 cross-backend diff (CPU vs Vulkan/lavapipe)
+        env:
+          VK_LOADER_DRIVERS_SELECT: '*lvp*'
+        timeout-minutes: 9
+        run: |
+          timeout --kill-after=30s 8m python3 scripts/ci/cross_backend_vif_diff.py \
+            --vmaf-binary core/build/tools/vmaf \
+            --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+            --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+            --width 576 --height 324 --feature ssimulacra2 --places 4
 
   # ===== GPU-parity matrix gate (T6-8 / ADR-0214) =====
   # Single matrix gate over every (feature, backend-pair) cell. Uses Mesa
@@ -176,7 +362,7 @@ jobs:
         run: |
           vulkaninfo --summary | head -40
       - name: Build CPU + Vulkan
-        working-directory: libvmaf
+        working-directory: core
         run: |
           meson setup build -Denable_cuda=false -Denable_sycl=false \
                             -Denable_vulkan=enabled -Denable_float=true \
@@ -215,7 +401,7 @@ jobs:
           # canonical integer_motion_vulkan twin; the legacy
           # motion_vulkan extractor remains explicit-name only.
           timeout --kill-after=30s 20m python3 scripts/ci/cross_backend_parity_gate.py \
-            --vmaf-binary libvmaf/build/tools/vmaf \
+            --vmaf-binary core/build/tools/vmaf \
             --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
             --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
             --width 576 --height 324 \
@@ -249,7 +435,7 @@ jobs:
         with:
           submodules: recursive
       - name: Build CPU + Vulkan
-        working-directory: libvmaf
+        working-directory: core
         run: |
           meson setup build -Denable_cuda=false -Denable_sycl=false \
                             -Denable_vulkan=enabled -Denable_float=true \
@@ -258,21 +444,21 @@ jobs:
       - name: VIF cross-backend diff (CPU vs Vulkan/Arc)
         run: |
           python3 scripts/ci/cross_backend_vif_diff.py \
-            --vmaf-binary libvmaf/build/tools/vmaf \
+            --vmaf-binary core/build/tools/vmaf \
             --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
             --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
             --width 576 --height 324 --feature vif --places 4
       - name: Motion cross-backend diff (CPU vs Vulkan/Arc)
         run: |
           python3 scripts/ci/cross_backend_vif_diff.py \
-            --vmaf-binary libvmaf/build/tools/vmaf \
+            --vmaf-binary core/build/tools/vmaf \
             --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
             --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
             --width 576 --height 324 --feature motion --places 4
       - name: ADM cross-backend diff (CPU vs Vulkan/Arc)
         run: |
           python3 scripts/ci/cross_backend_vif_diff.py \
-            --vmaf-binary libvmaf/build/tools/vmaf \
+            --vmaf-binary core/build/tools/vmaf \
             --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
             --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
             --width 576 --height 324 --feature adm --places 4
@@ -310,12 +496,12 @@ jobs:
         # ADR-0347: under UBSan, suppress the `function` check via
         # `-fno-sanitize=function`. The pre-existing K&R-prototype
         # `static char *test_X()` pattern across ~50 minunit-style
-        # harness files (`libvmaf/test/test.h` + every `test_*.c`)
+        # harness files (`core/test/test.h` + every `test_*.c`)
         # trips UBSan's function-pointer-type check unconditionally;
         # rewriting all 50 files to `(void)` is a separate T7-5-style
         # sweep PR. The suppression preserves UBSan signal on
         # library code while skipping the harness-only UB.
-        working-directory: libvmaf
+        working-directory: core
         shell: bash
         env:
           CC: clang-18
@@ -334,13 +520,13 @@ jobs:
       - name: Run unit tests under sanitizer
         # ADR-0347: replace the previous `--suite=unit` invocation
         # (which matched zero tests because no `test()` call in
-        # `libvmaf/test/meson.build` carries a `suite: 'unit'` tag).
+        # `core/test/meson.build` carries a `suite: 'unit'` tag).
         # We now run the full C unit-test set with a per-sanitizer
         # deselect list — each excluded test corresponds to a real
         # defect tracked in `docs/state.md` and removed from the list
         # when the underlying bug-fix PR lands. Companion research
         # digest: `docs/research/0090-sanitizer-matrix-test-scope.md`.
-        working-directory: libvmaf
+        working-directory: core
         shell: bash
         run: |
           case "${{ matrix.sanitizer }}" in
@@ -456,13 +642,13 @@ jobs:
           echo "/opt/onnxruntime/lib" | sudo tee /etc/ld.so.conf.d/onnxruntime.conf
           sudo ldconfig
       - name: Build libvmaf (dnn enabled)
-        working-directory: libvmaf
+        working-directory: core
         run: |
           meson setup build -Denable_cuda=false -Denable_sycl=false \
             -Denable_dnn=enabled --buildtype=release
           meson compile -C build
       - name: Run meson dnn suite
-        working-directory: libvmaf
+        working-directory: core
         run: meson test -C build --suite=dnn --print-errorlogs
       - name: Set up Python + install vmaf-train
         run: |
@@ -485,7 +671,7 @@ jobs:
 
   # ===== MCP smoke gate (T7-MCP-SMOKE-CI / Research-0034 gap #3) =====
   # Builds libvmaf with the full MCP transport matrix (sse + uds + stdio)
-  # and exercises both the embedded C-side scaffold smoke (libvmaf/test/
+  # and exercises both the embedded C-side scaffold smoke (core/test/
   # test_mcp_smoke.c — pins the -ENOSYS contract per ADR-0209) and the
   # Python MCP server pytest suite under mcp-server/vmaf-mcp/tests/.
   #
@@ -528,11 +714,11 @@ jobs:
 
       - name: Build libvmaf (full MCP transport matrix)
         # Mirrors the local-lint configuration documented in
-        # lint-and-format.yml (libvmaf/build-mcp/ with all four
+        # lint-and-format.yml (core/build-mcp/ with all four
         # enable_mcp* flags) so this lane sees identical symbol
         # availability. Disabling CUDA / SYCL keeps the build
         # ubuntu-hosted-runner-only — no GPU toolchain required.
-        working-directory: libvmaf
+        working-directory: core
         run: |
           meson setup build-mcp \
             -Denable_cuda=false -Denable_sycl=false \
@@ -545,9 +731,9 @@ jobs:
         # ADR-0209 / T5-2: pins the -ENOSYS contract on every public
         # vmaf_mcp_* entry point so a future runtime PR (T5-2b) cannot
         # silently wire a transport without flipping the expectations.
-        # The test is registered as `test_mcp_smoke` in libvmaf/test/
+        # The test is registered as `test_mcp_smoke` in core/test/
         # meson.build (no suite tag — it lands in the default suite).
-        working-directory: libvmaf
+        working-directory: core
         run: meson test -C build-mcp test_mcp_smoke --print-errorlogs
 
       - name: Set up Python venv + install vmaf-mcp[dev]
@@ -564,12 +750,12 @@ jobs:
         # The MCP server's `_vmaf_binary()` defaults to
         # `<repo-root>/build/tools/vmaf` (`Path(__file__).parents[4]`
         # is the top-level repo root, not `libvmaf/`). The CI build
-        # lives at `libvmaf/build-mcp/tools/vmaf`, so point
+        # lives at `core/build-mcp/tools/vmaf`, so point
         # `VMAF_BIN` there explicitly so
         # test_call_tool_list_backends_includes_cpu's `_list_backends`
         # probe returns `cpu: True`.
         env:
-          VMAF_BIN: ${{ github.workspace }}/libvmaf/build-mcp/tools/vmaf
+          VMAF_BIN: ${{ github.workspace }}/core/build-mcp/tools/vmaf
         run: |
           test -x "$VMAF_BIN" || {
             echo "vmaf binary missing at $VMAF_BIN" >&2
@@ -580,7 +766,7 @@ jobs:
 
   # ===== Coverage gate (principles.md §3) =====
   # ≥70% overall line coverage, ≥85% on security-critical files
-  # (libvmaf/src/dnn/, opt.c, read_json_model.c).
+  # (core/src/dnn/, opt.c, read_json_model.c).
   coverage:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: "Coverage Gate (Ramping to 70% / 85% Critical)"
@@ -660,8 +846,8 @@ jobs:
           sudo ldconfig
       - name: Build with gcov instrumentation
         # Build inside libvmaf/ so python/vmaf/__init__.py finds the CLI at
-        # libvmaf/build-coverage/tools/vmaf (it hardcodes that relative path).
-        working-directory: libvmaf
+        # core/build-coverage/tools/vmaf (it hardcodes that relative path).
+        working-directory: core
         run: |
           # AVX-512 on so SIMD paths are exercised. enable_dnn=enabled +
           # ORT installed above so dnn/*.c contribute real coverage (not
@@ -685,17 +871,17 @@ jobs:
             -Dcpp_args=-fprofile-update=atomic
           ninja -C build-coverage
       - name: Run meson unit suite (with gcov counters)
-        working-directory: libvmaf
+        working-directory: core
         run: meson test -C build-coverage --print-errorlogs --num-processes 1
       - name: Run full Python test suite (instrumented libvmaf.so + vmaf CLI)
         env:
           PYTHONPATH: ${{ github.workspace }}/python
-          LD_LIBRARY_PATH: ${{ github.workspace }}/libvmaf/build-coverage/src
+          LD_LIBRARY_PATH: ${{ github.workspace }}/core/build-coverage/src
         run: |
-          # python/vmaf/__init__.py hardcodes libvmaf/build/tools/vmaf as the
+          # python/vmaf/__init__.py hardcodes core/build/tools/vmaf as the
           # CLI path. Symlink build-coverage → build so coverage runs find it.
-          ln -sf build-coverage libvmaf/build
-          export PATH="${{ github.workspace }}/libvmaf/build-coverage/tools:$PATH"
+          ln -sf build-coverage core/build
+          export PATH="${{ github.workspace }}/core/build-coverage/tools:$PATH"
           python3 -m pip install --user pytest-timeout
           # Wrap in `timeout` + --kill-after so stuck vmaf CLI subprocesses
           # from failing vmafexec tests can't zombie-hang the step past the
@@ -722,7 +908,7 @@ jobs:
             --ignore=python/test/cambi_test.py \
             --deselect python/test/command_line_test.py::CommandLineTest || true
       - name: Gather coverage report (gcovr)
-        working-directory: libvmaf
+        working-directory: core
         run: |
           # gcovr deduplicates .gcno files belonging to the same source
           # compiled into multiple targets — fixes the lcov over-counting
@@ -767,16 +953,16 @@ jobs:
           #          coverage from ~39% to 37.7%. The floor tracks the measured
           #          floor, not the aspirational target; ratchet upward as
           #          targeted tests land for those paths.
-          scripts/ci/coverage-check.sh libvmaf/build-coverage/coverage.json 37 85
+          scripts/ci/coverage-check.sh core/build-coverage/coverage.json 37 85
       - name: Upload coverage artifact
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: coverage-cpu
           path: |
-            libvmaf/build-coverage/coverage.xml
-            libvmaf/build-coverage/coverage.json
-            libvmaf/build-coverage/coverage.txt
+            core/build-coverage/coverage.xml
+            core/build-coverage/coverage.json
+            core/build-coverage/coverage.txt
           retention-days: 14
 
   # ===== GPU coverage (self-hosted) =====
@@ -801,9 +987,9 @@ jobs:
         with:
           submodules: recursive
       - name: Build with gcov + CUDA + SYCL + AVX-512
-        working-directory: libvmaf
+        working-directory: core
         env:
-          # icpx required for SYCL link — see libvmaf/src/meson.build.
+          # icpx required for SYCL link — see core/src/meson.build.
           CC: icx
           CXX: icpx
         run: |
@@ -822,23 +1008,23 @@ jobs:
             -Dcpp_args=-fprofile-update=atomic
           ninja -C build-coverage-gpu
       - name: Run meson unit suite
-        working-directory: libvmaf
+        working-directory: core
         # See CPU coverage job for --num-processes 1 rationale: serialise
         # to keep multi-process .gcda merges race-free.
         run: meson test -C build-coverage-gpu --print-errorlogs --num-processes 1
       - name: Run Python suite on CUDA + SYCL backends
         env:
           PYTHONPATH: ${{ github.workspace }}/python
-          LD_LIBRARY_PATH: ${{ github.workspace }}/libvmaf/build-coverage-gpu/src
+          LD_LIBRARY_PATH: ${{ github.workspace }}/core/build-coverage-gpu/src
         run: |
-          export PATH="${{ github.workspace }}/libvmaf/build-coverage-gpu/tools:$PATH"
+          export PATH="${{ github.workspace }}/core/build-coverage-gpu/tools:$PATH"
           python3 -m pip install --user -r python/requirements.txt pytest
           VMAF_FORCE_BACKEND=cuda python3 -m pytest python/test/ -v \
             -m "not slow" --tb=short --ignore=python/test/resource || true
           VMAF_FORCE_BACKEND=sycl python3 -m pytest python/test/ -v \
             -m "not slow" --tb=short --ignore=python/test/resource || true
       - name: Gather coverage report (gcovr)
-        working-directory: libvmaf
+        working-directory: core
         run: |
           # Same gcovr migration as CPU coverage job (see ADR-0110); same
           # suspicious-hits stderr filter as the CPU job (see ADR-0117).
@@ -859,16 +1045,16 @@ jobs:
           cat build-coverage-gpu/coverage.txt
       - name: Enforce coverage thresholds (GPU)
         run: |
-          scripts/ci/coverage-check.sh libvmaf/build-coverage-gpu/coverage.json 70 85
+          scripts/ci/coverage-check.sh core/build-coverage-gpu/coverage.json 70 85
       - name: Upload GPU coverage artifact
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: coverage-gpu
           path: |
-            libvmaf/build-coverage-gpu/coverage.xml
-            libvmaf/build-coverage-gpu/coverage.json
-            libvmaf/build-coverage-gpu/coverage.txt
+            core/build-coverage-gpu/coverage.xml
+            core/build-coverage-gpu/coverage.json
+            core/build-coverage-gpu/coverage.txt
           retention-days: 14
 
   # ===== Power of 10 rule 5 — assertion density =====

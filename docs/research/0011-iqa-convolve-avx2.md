@@ -20,24 +20,24 @@ accumulator width and reduction order does bit-exactness require?
   - `build/profiles/2026-04-20/ms_ssim_1080p_cpu.callgrind`
   - `build/profiles/2026-04-20/ms_ssim_1080p_cpu_topN.txt`
   - `build/profiles/2026-04-20/ms_ssim_1080p_cpu.svg` (flamegraph)
-- [`libvmaf/src/feature/iqa/convolve.c`](../../libvmaf/src/feature/iqa/convolve.c)
+- [`core/src/feature/iqa/convolve.c`](../../core/src/feature/iqa/convolve.c)
   — scalar reference. 1-D separable branch is active by default (see
   `IQA_CONVOLVE_1D` in
-  [`iqa/iqa_options.h:25`](../../libvmaf/src/feature/iqa/iqa_options.h#L25)).
-- [`libvmaf/src/feature/iqa/ssim_tools.c`](../../libvmaf/src/feature/iqa/ssim_tools.c)
+  [`iqa/iqa_options.h:25`](../../core/src/feature/iqa/iqa_options.h#L25)).
+- [`core/src/feature/iqa/ssim_tools.c`](../../core/src/feature/iqa/ssim_tools.c)
   — the only hot caller of `_iqa_convolve`: five calls per
   `_iqa_ssim` (lines 170, 171, 187, 188, 189).
-- [`libvmaf/src/feature/iqa/ssim_tools.h`](../../libvmaf/src/feature/iqa/ssim_tools.h)
+- [`core/src/feature/iqa/ssim_tools.h`](../../core/src/feature/iqa/ssim_tools.h)
   — defines `GAUSSIAN_LEN = 11`, `SQUARE_LEN = 8`, and the
   static `const float g_gaussian_window_{h,v}` /
   `g_square_window_{h,v}` 1-D coefficient arrays used by MS-SSIM.
-- [`libvmaf/src/feature/ms_ssim.c`](../../libvmaf/src/feature/ms_ssim.c)
+- [`core/src/feature/ms_ssim.c`](../../core/src/feature/ms_ssim.c)
   — drives `_iqa_ssim` for 5 pyramid scales, so 25
   `_iqa_convolve` calls per MS-SSIM frame.
-- [`libvmaf/src/feature/x86/ms_ssim_decimate_avx2.c`](../../libvmaf/src/feature/x86/ms_ssim_decimate_avx2.c)
+- [`core/src/feature/x86/ms_ssim_decimate_avx2.c`](../../core/src/feature/x86/ms_ssim_decimate_avx2.c)
   — established dispatch + border-scalar precedent.
-- [`libvmaf/src/feature/x86/ssim_avx2.c`](../../libvmaf/src/feature/x86/ssim_avx2.c)
-  / [`ssim_avx512.c`](../../libvmaf/src/feature/x86/ssim_avx512.c)
+- [`core/src/feature/x86/ssim_avx2.c`](../../core/src/feature/x86/ssim_avx2.c)
+  / [`ssim_avx512.c`](../../core/src/feature/x86/ssim_avx512.c)
   — existing SSIM inner-primitive SIMD paths wired through
   `_iqa_ssim_set_dispatch`; the same pattern applies here.
 - IEEE 754-2008 §4.3 — associativity of addition (not guaranteed).
@@ -48,7 +48,7 @@ accumulator width and reduction order does bit-exactness require?
 
 The vmaf_bench profile runs both SSIM and MS-SSIM features. SSIM's
 scalar `_iqa_decimate` (in
-[`ssim.c:158`](../../libvmaf/src/feature/ssim.c#L158)) calls
+[`ssim.c:158`](../../core/src/feature/ssim.c#L158)) calls
 `_iqa_filter_pixel` per output pixel. MS-SSIM uses the
 already-SIMD `ms_ssim_decimate` path and does **not** call
 `_iqa_filter_pixel`. The 36 % cost therefore belongs to SSIM's
@@ -58,7 +58,7 @@ decimate — a separate T3 workstream. This ADR targets only the
 ### Bit-exactness contract: `__m256d` with separate mul + add
 
 The scalar loop at
-[`convolve.c:159-161`](../../libvmaf/src/feature/iqa/convolve.c#L159-L161)
+[`convolve.c:159-161`](../../core/src/feature/iqa/convolve.c#L159-L161)
 is:
 
 ```c
@@ -144,7 +144,7 @@ Any violation short-circuits to the scalar `_iqa_convolve`.
 ### Border handling — scalar fallback, matches the decimate precedent
 
 The separable scalar path at
-[`convolve.c:152-179`](../../libvmaf/src/feature/iqa/convolve.c#L152-L179)
+[`convolve.c:152-179`](../../core/src/feature/iqa/convolve.c#L152-L179)
 only touches **interior pixels** — output columns
 `0..dst_w-1 = w - k->w + 1` on rows `-vc..dst_h+vc-1`. The border
 pixels (the first and last `uc` / `vc` columns / rows) are skipped;
@@ -158,9 +158,9 @@ simply skip the output tail columns that aren't a multiple of 4
 output lanes wide, and call the scalar inner loop on the last few.
 
 Matches the
-[`libvmaf/src/feature/x86/adm_avx2.c`](../../libvmaf/src/feature/x86/adm_avx2.c)
+[`core/src/feature/x86/adm_avx2.c`](../../core/src/feature/x86/adm_avx2.c)
 precedent (5-tap separable CSF filter) and
-[`ms_ssim_decimate_avx2.c`](../../libvmaf/src/feature/x86/ms_ssim_decimate_avx2.c)
+[`ms_ssim_decimate_avx2.c`](../../core/src/feature/x86/ms_ssim_decimate_avx2.c)
 (scalar-border, SIMD-inner).
 
 ### FLOP accounting + expected speed-up
@@ -195,18 +195,18 @@ separable kernel:
 
 ### Prior art / existing SIMD convolution patterns in this tree
 
-- [`libvmaf/src/feature/x86/adm_avx2.c`](../../libvmaf/src/feature/x86/adm_avx2.c)
+- [`core/src/feature/x86/adm_avx2.c`](../../core/src/feature/x86/adm_avx2.c)
   — separable 5-tap CSF filter. Structural template. Uses
   `_mm256_fmadd_ps` (float path) because ADM is not bit-exactness
   constrained — different rounding from the scalar is inside the
   documented golden tolerance.
-- [`libvmaf/src/feature/x86/ms_ssim_decimate_avx2.c`](../../libvmaf/src/feature/x86/ms_ssim_decimate_avx2.c)
+- [`core/src/feature/x86/ms_ssim_decimate_avx2.c`](../../core/src/feature/x86/ms_ssim_decimate_avx2.c)
   — most recent fork precedent. Scalar-border, SIMD-inner. Uses
   `fmaf()` for the scalar reference and `_mm256_fmadd_ps` for SIMD,
   both in single-precision. That path was written fresh — we had
   the freedom to choose single-precision end-to-end. `_iqa_convolve`
   is vendored, so we do not.
-- [`libvmaf/src/feature/common/convolution.c`](../../libvmaf/src/feature/common/convolution.c)
+- [`core/src/feature/common/convolution.c`](../../core/src/feature/common/convolution.c)
   — integer-typed (uint16_t); not reusable.
 - Public Gaussian-blur SIMD in libjxl
   (`lib/jxl/gauss_blur.cc`) uses 4-lane double recursion for the

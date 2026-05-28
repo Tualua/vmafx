@@ -19,7 +19,7 @@ one of them.
 The libvmaf attack surface that fuzzes well is parser-shaped: it
 takes attacker-controlled bytes, performs `sscanf` / `memcpy` /
 size-derived `malloc`, and emits a structured object. The
-vendored Daala Y4M parser (`libvmaf/tools/y4m_input.c`) is the
+vendored Daala Y4M parser (`core/tools/y4m_input.c`) is the
 closest match in-tree — it ingests headers from disk, drives
 chroma-conversion callbacks selected by the parsed format string,
 and was originally written for offline transcoding rather than
@@ -38,7 +38,7 @@ at filesystem paths.
 ## Decision
 
 We will land an opt-in libFuzzer scaffold under
-`libvmaf/test/fuzz/`, gated by a new `-Dfuzz=true` Meson option,
+`core/test/fuzz/`, gated by a new `-Dfuzz=true` Meson option,
 with one initial harness (`fuzz_y4m_input`) wrapping the public
 `video_input_open` / `video_input_fetch_frame` /
 `video_input_close` surface. The scaffold ships with a small
@@ -65,13 +65,13 @@ the same pattern; the README documents the steps.
     "≥ 1 fuzz target present" tier the moment this PR merges.
   - The 60-second smoke run on the seed corpus already
     surfaced a heap-buffer-overflow in
-    `y4m_convert_411_422jpeg` (`libvmaf/tools/y4m_input.c:507`)
+    `y4m_convert_411_422jpeg` (`core/tools/y4m_input.c:507`)
     when `c_w == 1` and the destination chroma width
     `dst_c_w == 1` — the first sub-loop unconditionally writes
     `_dst[1]` without the `(x << 1 | 1) < dst_c_w` guard the
     third sub-loop carries. Tracked in `docs/state.md` as a new
     Open bug; reproducer parked under
-    `libvmaf/test/fuzz/y4m_input_known_crashes/`. Per the
+    `core/test/fuzz/y4m_input_known_crashes/`. Per the
     project workflow, the fix lands as a follow-up PR; this PR
     only ships the harness + the bug report.
   - Future parser bugs (Y4M extensions, future raw-YUV format
@@ -89,7 +89,7 @@ the same pattern; the README documents the steps.
     cite this one).
   - Add a `fuzz_<feature>` harness for the next attacker-reachable
     surface (likely the JSON model loader,
-    `libvmaf/src/read_json_model.c`) once the Y4M fix lands.
+    `core/src/read_json_model.c`) once the Y4M fix lands.
   - Once the harness has soaked for ~1 month with no spurious
     failures, file an OSS-Fuzz onboarding PR — keep the in-tree
     scaffold as the local reproducibility surface.
@@ -115,16 +115,16 @@ Audited as part of the 2026-05-08 ADR `Proposed` sweep
 
 Acceptance criteria verified in tree at HEAD `0a8b539e`:
 
-- `libvmaf/test/fuzz/fuzz_y4m_input.c` — present (initial harness).
-- `libvmaf/test/fuzz/fuzz_yuv_input.c` /
+- `core/test/fuzz/fuzz_y4m_input.c` — present (initial harness).
+- `core/test/fuzz/fuzz_yuv_input.c` /
   `fuzz_cli_parse.c` — present (added by ADR-0311 follow-up).
 - Seed corpora (`y4m_input_corpus/`,
   `y4m_input_known_crashes/`, `yuv_input_corpus/`,
   `cli_parse_corpus/`) — present.
-- `libvmaf/meson_options.txt` declares `option('fuzz', ...)`.
+- `core/meson_options.txt` declares `option('fuzz', ...)`.
 - `.github/workflows/fuzz.yml` — present (nightly 5-min run per
   harness with crash artefact upload).
 - Operator runbook `docs/development/fuzzing.md` exists.
 - Verification command:
-  `ls libvmaf/test/fuzz/ .github/workflows/fuzz.yml;
-  grep "option('fuzz'" libvmaf/meson_options.txt`.
+  `ls core/test/fuzz/ .github/workflows/fuzz.yml;
+  grep "option('fuzz'" core/meson_options.txt`.

@@ -14,12 +14,12 @@ causing the cross-backend `places=4` parity gate to fail on those widths.
 Even-dimension inputs were unaffected.
 
 The fix replaces both floor expressions with the ceiling form in
-`libvmaf/src/feature/vulkan/psnr_vulkan.c` and updates the surrounding
+`core/src/feature/vulkan/psnr_vulkan.c` and updates the surrounding
 comment and the file-level header.
 
 Surfaced by the C feature-twin dedup audit (`.workingdir/dedup-audit-c-feature-twins-2026-05-16.md`
 finding #5); algorithm correctness documented in Research-0094.
 
-Regression test: `libvmaf/test/test_psnr_vulkan_chroma_geom.c` — pure-C
+Regression test: `core/test/test_psnr_vulkan_chroma_geom.c` — pure-C
 geometry unit test for 1921×1081 and 999×540 YUV420 that does not require a
 Vulkan device.

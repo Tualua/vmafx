@@ -548,7 +548,7 @@ for the option-space digest.
   (`cpu`, `cuda`, `sycl`, `vulkan`) are the exact set the libvmaf CLI
   accepts; widening the harness without widening the binary produces
   silent strict-mode failures on hosts that probe positively for the
-  new value. Cross-reference: `libvmaf/tools/cli_parse.c` `--backend`
+  new value. Cross-reference: `core/tools/cli_parse.c` `--backend`
   alternation.
 - **HDR detection is fail-safe to SDR (ADR-0295).** `hdr.detect_hdr`
   returns `None` on any classification ambiguity (missing file,

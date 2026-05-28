@@ -84,7 +84,7 @@ Upstream's patch drops the `dependencies : [pthread_dependency]`
 line from `cuda_static_lib`, on the assumption that commit 1
 removed the only `pthread.h` pull (`cuda/common.h`).
 
-**Fork keeps the dependency**: `libvmaf/src/cuda/ring_buffer.c`
+**Fork keeps the dependency**: `core/src/cuda/ring_buffer.c`
 is part of `cuda_static_lib` and directly `#include`s
 `<pthread.h>`. Removing the explicit `pthread_dependency` would
 relink-fail on hosts where pthread is not transitively available
@@ -151,15 +151,15 @@ the IQA header guards.
 
 ## Verification
 
-- `meson setup libvmaf libvmaf/build-cuda-port -Denable_cuda=true
+- `meson setup libvmaf core/build-cuda-port -Denable_cuda=true
   -Denable_sycl=false -Denable_nvcc=true` → OK.
-- `ninja -C libvmaf/build-cuda-port` → 6 `.fatbin` files produced
+- `ninja -C core/build-cuda-port` → 6 `.fatbin` files produced
   (`adm_cm`, `adm_csf`, `adm_csf_den`, `adm_dwt2`, `filter1d`,
   `motion_score`), `tools/vmaf` CLI linked.
-- `meson test -C libvmaf/build-cuda-port` → 35/35 pass.
+- `meson test -C core/build-cuda-port` → 35/35 pass.
 - `meson test -C build` (CPU-only) → 32/32 pass.
-- `clang-tidy -p build libvmaf/src/cuda/common.h
-  libvmaf/src/picture.h libvmaf/src/feature/integer_adm.h` → zero
+- `clang-tidy -p build core/src/cuda/common.h
+  core/src/picture.h core/src/feature/integer_adm.h` → zero
   warnings.
 - Windows build: requires a Windows + MSYS2 + MSVC BuildTools +
   CUDA runner; not validated in this PR.

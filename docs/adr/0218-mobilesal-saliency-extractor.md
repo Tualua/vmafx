@@ -43,7 +43,7 @@ This ADR covers T6-2a only. Open questions resolved here:
 ## Decision
 
 We add a new no-reference feature extractor `mobilesal` under
-`libvmaf/src/feature/feature_mobilesal.c` that runs a single ONNX
+`core/src/feature/feature_mobilesal.c` that runs a single ONNX
 saliency session over the distorted frame and emits a scalar
 `saliency_mean` per frame via `vmaf_feature_collector_append`. The
 session binds tensors by name — input `input` (NCHW float32 RGB,

@@ -9,7 +9,7 @@
 
 The fork inherits the upstream
 [IQA library](https://github.com/tjdistler/iqa) under
-`libvmaf/src/feature/iqa/` plus the IQA-derived `_iqa_*` API
+`core/src/feature/iqa/` plus the IQA-derived `_iqa_*` API
 surface used by `ssim.c`, `ms_ssim.c`, `float_ssim.c`,
 `float_ms_ssim.c`, and the SIMD bit-exact paths
 (`x86/convolve_avx2.c`, `x86/convolve_avx512.c`,
@@ -22,7 +22,7 @@ The fork's
 the rename as a candidate cleanup. On execution, the rename had
 two surprises:
 
-1. **No NOLINTs to clear.** A `grep -rn 'NOLINT' libvmaf/src/feature/iqa/`
+1. **No NOLINTs to clear.** A `grep -rn 'NOLINT' core/src/feature/iqa/`
    returned zero hits — the supposed reserved-identifier
    suppressions in `ssim.c` / `ms_ssim.c` / `float_ms_ssim.c`
    never existed; CI simply never inspected those files because
@@ -51,7 +51,7 @@ positives". This ADR captures the resulting scope.
 Land a single PR that:
 
 1. **Renames every `_iqa_*` symbol** to its non-reserved form
-   across `libvmaf/src/feature/`:
+   across `core/src/feature/`:
 
    | Was | Now |
    | --- | --- |

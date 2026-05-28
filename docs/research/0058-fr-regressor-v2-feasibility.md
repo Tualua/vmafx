@@ -40,7 +40,7 @@ the bulk of the signal; the codec block is a corrective bias term.
 
 ## Why MLP, not GBDT
 
-The fork's runtime DNN surface (`libvmaf/src/dnn/`) is built around
+The fork's runtime DNN surface (`core/src/dnn/`) is built around
 ONNX Runtime with a strict op allowlist (see
 `ai/src/vmaf_train/op_allowlist.py`). GBDT exports (LightGBM /
 XGBoost) require either an in-tree forest evaluator or `Gather`-heavy

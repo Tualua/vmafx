@@ -42,7 +42,7 @@ first quantised model because:
 
 ### 2. Runtime `.int8.onnx` redirect in `vmaf_dnn_session_open`
 
-[`libvmaf/src/dnn/dnn_api.c`](../../libvmaf/src/dnn/dnn_api.c) gains
+[`core/src/dnn/dnn_api.c`](../../core/src/dnn/dnn_api.c) gains
 a redirect block right after `vmaf_dnn_sidecar_load`. When the
 sidecar declares `quant_mode != FP32`, the loader:
 

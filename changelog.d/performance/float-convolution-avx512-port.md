@@ -1,6 +1,6 @@
 ### Performance
 
-- **Float VIF convolution: AVX-512F port** (`libvmaf/src/feature/common/convolution_avx512.c`, ADR-0504)
+- **Float VIF convolution: AVX-512F port** (`core/src/feature/common/convolution_avx512.c`, ADR-0504)
   The separable float convolution inner loops (`vif_filter1d_s`, `_sq_s`, `_xy_s`) now
   prefer a 16-wide `_mm512_fmadd_ps` path on CPUs that expose AVX-512F, doubling the FMA
   width versus the AVX2 (8-wide) path. Expected +40–50 % throughput on the float VIF path

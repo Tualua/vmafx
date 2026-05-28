@@ -57,7 +57,7 @@ the surrounding context dereference).
 
 ## Decision
 
-Two targeted fixes in `libvmaf/src/libvmaf.c` and `libvmaf/src/output.c`:
+Two targeted fixes in `core/src/libvmaf.c` and `core/src/output.c`:
 
 1. **Guard `vmaf` and `vmaf->feature_collector` up front** in
    `vmaf_write_output_with_format`, before any pointer dereference.
@@ -72,7 +72,7 @@ Two targeted fixes in `libvmaf/src/libvmaf.c` and `libvmaf/src/output.c`:
    present in `vmaf_write_output_xml`.
 
 4. **Add `test_write_output_pic_cnt_zero`** regression test to
-   `libvmaf/test/test_output.c` that exercises the JSON and XML paths with
+   `core/test/test_output.c` that exercises the JSON and XML paths with
    `pic_cnt == 0` on Linux, ensuring any future regression surfaces in the
    fast suite before reaching macOS CI.
 
@@ -103,8 +103,8 @@ Two targeted fixes in `libvmaf/src/libvmaf.c` and `libvmaf/src/output.c`:
 
 - PR #1355 (incomplete fix — `output_path` NULL guard only):
   commit `34f80d05be999ebd2e5169e0a72aa3aa72116ffb`.
-- Failing tests: `libvmaf/test/test_output.c:504`,
-  `libvmaf/test/test_public_api_score.c:227`.
-- Fixed files: `libvmaf/src/libvmaf.c`, `libvmaf/src/output.c`,
-  `libvmaf/test/test_output.c`.
+- Failing tests: `core/test/test_output.c:504`,
+  `core/test/test_public_api_score.c:227`.
+- Fixed files: `core/src/libvmaf.c`, `core/src/output.c`,
+  `core/test/test_output.c`.
 - req: "fix macOS SIGSEGV in vmaf_write_output (PR #1355 follow-up)"

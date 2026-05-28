@@ -1,7 +1,7 @@
 # Meson build flags
 
 Complete reference for every build-time option libvmaf exposes via
-[`libvmaf/meson_options.txt`](../../libvmaf/meson_options.txt), plus the
+[`core/meson_options.txt`](../../core/meson_options.txt), plus the
 standard Meson options that materially change what ships in the binary.
 
 Per [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md), build
@@ -25,8 +25,8 @@ ninja -C build
 
 | Option | Type | Default | Effect |
 | --- | --- | --- | --- |
-| `enable_tests` | bool | `true` | Build `libvmaf/test/` unit tests; `meson test -C build` needs this |
-| `enable_docs` | bool | `true` | Build the Doxygen C-API HTML under `build/libvmaf/doc/` |
+| `enable_tests` | bool | `true` | Build `core/test/` unit tests; `meson test -C build` needs this |
+| `enable_docs` | bool | `true` | Build the Doxygen C-API HTML under `build/core/doc/` |
 | `enable_tools` | bool | `true` | Build the `vmaf` and `vmaf_bench` CLI binaries |
 | `enable_asm` | bool | `true` | Compile any `*.asm` source files (nasm); disables all SIMD paths when `false` |
 | `enable_avx512` | bool | `true` | Build the AVX-512 kernels (requires nasm ≥ 2.14); auto-disabled on hosts without AVX-512 headers |
@@ -45,7 +45,7 @@ ninja -C build
 | `enable_mcp_stdio` | bool | `false` | Compile in the stdio transport: newline-delimited JSON-RPC on a caller-supplied fd pair. Requires `enable_mcp=true`; LSP `Content-Length:` framing remains a future compatibility addition. |
 | `enable_hip` | bool | `false` | Compile the HIP (AMD ROCm) compute backend. Default off. With `enable_hipcc=false` the public C-API entry points return `-ENOSYS` for unported features; with `enable_hipcc=true` the real kernels are compiled and 8/11 features run on-device (psnr, integer_psnr, float_ansnr, float_motion, float_moment, float_ssim, ciede, integer_motion_v2). Adm/vif/integer_motion remain `-ENOSYS` stubs. ROCm 6+ + `gfx1036` (RDNA 2) tested. See [ADR-0212](../adr/0212-hip-backend-scaffold.md), [ADR-0373](../adr/0373-hip-batch2-float-motion.md), [backends/hip/overview.md](../backends/hip/overview.md). |
 | `enable_hipcc` | bool | `false` | Compile real HIP kernels via `hipcc` (vs ENOSYS-stub host TUs only). Required for any real-on-device kernel dispatch. Pair with `enable_hip=true`. |
-| `fuzz` | bool | `false` | Build libFuzzer harnesses under `libvmaf/test/fuzz/` ([ADR-0270](../adr/0270-fuzzing-scaffold.md), OSSF Scorecard `Fuzzing` remediation). Requires `clang`. Pair with `-Db_sanitize=address` for heap coverage. Default off — opt-in only. |
+| `fuzz` | bool | `false` | Build libFuzzer harnesses under `core/test/fuzz/` ([ADR-0270](../adr/0270-fuzzing-scaffold.md), OSSF Scorecard `Fuzzing` remediation). Requires `clang`. Pair with `-Db_sanitize=address` for heap coverage. Default off — opt-in only. |
 
 ### Flag interactions
 
@@ -76,7 +76,7 @@ ninja -C build
 ### Options referenced in docs but not present
 
 (All build flags referenced elsewhere in the docs are now defined in
-`libvmaf/meson_options.txt`. `enable_hip` was added by ADR-0212
+`core/meson_options.txt`. `enable_hip` was added by ADR-0212
 (T7-10) — the option exists but the backend it enables is a scaffold
 returning `-ENOSYS`; see the table above and
 [backends/hip/overview.md](../backends/hip/overview.md).)
@@ -130,7 +130,7 @@ meson setup build \
 
 ## How feature flags land in the binary
 
-`libvmaf/src/meson.build` reads each option once and stores it in a
+`core/src/meson.build` reads each option once and stores it in a
 `configuration_data()` block that drives:
 
 - the `#define HAVE_AVX512 …` macro baked into the library headers,
@@ -138,7 +138,7 @@ meson setup build \
 - whether the `libvmaf_cuda.h` / `libvmaf_sycl.h` headers are installed
   (these headers are omitted from the installed tree when their backend
   is disabled at build — see
-  [libvmaf/include/libvmaf/meson.build](../../libvmaf/include/libvmaf/meson.build)).
+  [core/include/core/meson.build](../../core/include/core/meson.build)).
 
 To inspect the resolved configuration of an existing build tree:
 
@@ -151,8 +151,8 @@ meson configure build | head -40
 ## Symbol visibility
 
 All translation units in `libvmaf` are compiled with `-fvisibility=hidden`
-(see `libvmaf/src/meson.build`). Only symbols explicitly annotated with
-`VMAF_EXPORT` (defined in `libvmaf/include/libvmaf/macros.h`) appear in
+(see `core/src/meson.build`). Only symbols explicitly annotated with
+`VMAF_EXPORT` (defined in `core/include/libvmaf/macros.h`) appear in
 the dynamic symbol table of `libvmaf.so`. This eliminates silent symbol
 interposition from embedded third-party code (libsvm, pdjson) and internal
 helper symbols.

@@ -6,7 +6,7 @@
 # `'sycl/sycl.hpp' file not found` clang-diagnostic-errors. This wrapper
 # injects the SYCL include path + the device-only macro guard + a couple
 # of warning suppressions so the changed-file CI lint gate can cover
-# files under libvmaf/src/sycl/ and libvmaf/src/feature/sycl/.
+# files under core/src/sycl/ and core/src/feature/sycl/.
 #
 # Usage (mirrors clang-tidy):
 #   scripts/ci/clang-tidy-sycl.sh -p <build-sycl-dir> [other args] <file>

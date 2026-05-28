@@ -144,7 +144,7 @@ scores = sess.run(["score"], {"features": x.astype(np.float32)})[0]
 # 1. Make sure a fresh Netflix feature table exists. Regenerate via:
 python ai/scripts/extract_full_features.py \
     --data-root .workingdir2/netflix \
-    --vmaf-bin libvmaf/build-cpu/tools/vmaf \
+    --vmaf-bin core/build-cpu/tools/vmaf \
     --out runs/full_features_netflix_refresh_YYYYMMDD.parquet
 
 # 2. Train + export (defaults match the shipped checkpoint).

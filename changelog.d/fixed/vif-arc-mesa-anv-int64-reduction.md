@@ -3,7 +3,7 @@
   candidate stronger-fence variants on top of PR #511's
   `memoryBarrierShared(); barrier();` baseline, against the
   Phase-4 cross-subgroup int64 reduction site in
-  `libvmaf/src/feature/vulkan/shaders/vif.comp`: (C1) `shared coherent`
+  `core/src/feature/vulkan/shaders/vif.comp`: (C1) `shared coherent`
   / `shared volatile` qualifiers — _not buildable_, glslc 2026.1
   rejects with "memory qualifiers cannot be used on this type" (per
   GLSL 4.50 §4.10, those qualifiers apply to buffer + image variables

@@ -21,8 +21,8 @@ T7-8 (oneAPI 2025.0.4 → 2025.3.1 bump):
    not the per-shell switch recipe; non-CI users had to reverse-engineer
    it from `setvars.sh` source.
 2. **Lint gap.** The CI changed-file `clang-tidy` job in
-   `.github/workflows/lint-and-format.yml` excludes `libvmaf/src/sycl/`
-   and `libvmaf/src/feature/sycl/` because the CPU-only `build/` lacks
+   `.github/workflows/lint-and-format.yml` excludes `core/src/sycl/`
+   and `core/src/feature/sycl/` because the CPU-only `build/` lacks
    `compile_commands.json` entries for those TUs. T7-7 left 4 residual
    `'sycl/sycl.hpp' file not found` errors when invoking stock
    `clang-tidy` against a `build-sycl/` tree — Intel's `icpx`
@@ -59,8 +59,8 @@ Land two thin shims:
      stock `clang-tidy` doesn't recognise.
 3. Wire the wrapper into the lint workflow as a new
    `clang-tidy-sycl` job that scans only files under
-   `libvmaf/src/sycl/` + `libvmaf/src/feature/sycl/` +
-   `libvmaf/test/test_sycl*` against a SYCL build tree. Job stays
+   `core/src/sycl/` + `core/src/feature/sycl/` +
+   `core/test/test_sycl*` against a SYCL build tree. Job stays
    advisory (`continue-on-error: true`) on this initial PR; the
    tightened gate flips after a green run on master proves the
    wrapper holds across the full SYCL TU set.
@@ -80,7 +80,7 @@ Land two thin shims:
 
 - **Positive**: SYCL files become eligible for the changed-file
   `clang-tidy` CI gate; CLAUDE.md §12 r12 (touched-file lint-clean) now
-  enforceable on `libvmaf/src/sycl/**`. The 4 residual
+  enforceable on `core/src/sycl/**`. The 4 residual
   `'sycl/sycl.hpp' file not found` errors from T7-7 are cleared. Local
   developers can run `vmaf_bench` against either compiler version with
   a single `eval`.

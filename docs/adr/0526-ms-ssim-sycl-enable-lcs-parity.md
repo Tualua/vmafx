@@ -42,4 +42,4 @@ The default-path output (both flags false) is bit-for-bit unchanged.
 
 - Option-parity audit: `.workingdir/feature-option-parity-audit-2026-05-16.md`
 - ADR-0485: `enable_db`/`clip_db` parity (this PR extends the same SYCL file)
-- CUDA reference implementation: `libvmaf/src/feature/cuda/integer_ms_ssim_cuda.c`
+- CUDA reference implementation: `core/src/feature/cuda/integer_ms_ssim_cuda.c`

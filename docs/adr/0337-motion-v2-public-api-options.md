@@ -45,7 +45,7 @@ matching picture-pool sizing in `vmaf_read_pictures` (n‑threads × 2
 monotonic-index gate) and existing `dnn`-block additions to
 `VmafContext` diverge from upstream's layout; porting the
 `prev_prev_ref` plumbing surfaces a four-conflict-region merge in
-`libvmaf/src/libvmaf.c` plus one in `libvmaf/tools/vmaf.c`. The
+`core/src/libvmaf.c` plus one in `core/tools/vmaf.c`. The
 3-frame default mode (`motion_five_frame_window=false`) does not
 need that plumbing — it touches only `prev_ref`, which the fork
 already provides.

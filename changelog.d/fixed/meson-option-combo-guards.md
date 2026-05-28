@@ -8,6 +8,6 @@
 - `enable_avx512=true` + `enable_asm=false` now warns: "enable_avx512=true has no effect when enable_asm=false"
 - `enable_hipcc=true` + `enable_hip=false` now warns: "enable_hipcc=true has no effect when enable_hip=false"
 
-The validation runs at configuration time in `libvmaf/src/meson.build` before any subdirectory inclusions, ensuring users see the problem immediately.
+The validation runs at configuration time in `core/src/meson.build` before any subdirectory inclusions, ensuring users see the problem immediately.
 
-**Also:** bumped `meson_version` constraint from `>= 0.56.1` to `>= 0.58.0` in `libvmaf/meson.build` because `libvmaf/src/vulkan/meson.build:118` uses `str.replace()`, which requires meson 0.58.0.
+**Also:** bumped `meson_version` constraint from `>= 0.56.1` to `>= 0.58.0` in `core/meson.build` because `core/src/vulkan/meson.build:118` uses `str.replace()`, which requires meson 0.58.0.

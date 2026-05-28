@@ -52,7 +52,7 @@ secondary.
 ## What's wired
 
 - Public state-level API in
-  [`libvmaf/include/libvmaf/libvmaf_vulkan.h`][hdr] —
+  [`core/include/libvmaf/libvmaf_vulkan.h`][hdr] —
   `VmafVulkanState`, `VmafVulkanConfiguration`,
   `vmaf_vulkan_state_init` / `_import_state` / `_state_free`,
   `vmaf_vulkan_list_devices`, `vmaf_vulkan_available`. The
@@ -74,20 +74,20 @@ secondary.
   = default 4; clamped to [1, 8]); read back the clamped
   value with `vmaf_vulkan_state_max_outstanding_frames()`.
 - Backend runtime under
-  [`libvmaf/src/vulkan/`](../../../libvmaf/src/vulkan/) —
+  [`core/src/vulkan/`](../../../core/src/vulkan/) —
   `common.{c,h}` (volk + VkInstance / VkDevice / compute queue +
   VMA allocator + command pool), `picture_vulkan.{c,h}` (VkBuffer
   alloc / flush / mapped-host pointer accessors), `vma_impl.cpp`
   (VMA C++17 implementation TU).
 - Live feature kernels under
-  [`libvmaf/src/feature/vulkan/`](../../../libvmaf/src/feature/vulkan/) —
+  [`core/src/feature/vulkan/`](../../../core/src/feature/vulkan/) —
   - `vif_vulkan.c` + GLSL shader
-    [`shaders/vif.comp`](../../../libvmaf/src/feature/vulkan/shaders/vif.comp).
+    [`shaders/vif.comp`](../../../core/src/feature/vulkan/shaders/vif.comp).
     Four pipelines (one per `SCALE` specialization constant) compiled
     to SPIR-V via `glslc`, embedded as a byte array, dispatched in a
     single command buffer with pipeline barriers between scales.
   - `motion_vulkan.c` + GLSL shader
-    [`shaders/motion.comp`](../../../libvmaf/src/feature/vulkan/shaders/motion.comp).
+    [`shaders/motion.comp`](../../../core/src/feature/vulkan/shaders/motion.comp).
     Separable 5-tap Gaussian blur (`{3571, 16004, 26386, 16004, 3571}`,
     sum=65536) + per-workgroup `int64` SAD reduction; ping-pong
     blurred-frame storage between calls; motion2 emitted with a
@@ -98,9 +98,9 @@ secondary.
     (`motion_five_frame_window=true`) returns `-ENOTSUP` at
     `init()` since the GPU still uses a 2-deep blur ring.
   - `integer_adm_vulkan.c` (canonical, ADR-0468) + GLSL shaders
-    [`shaders/integer_adm.comp`](../../../libvmaf/src/feature/vulkan/shaders/integer_adm.comp)
+    [`shaders/integer_adm.comp`](../../../core/src/feature/vulkan/shaders/integer_adm.comp)
     and
-    [`shaders/integer_adm_reduce.comp`](../../../libvmaf/src/feature/vulkan/shaders/integer_adm_reduce.comp).
+    [`shaders/integer_adm_reduce.comp`](../../../core/src/feature/vulkan/shaders/integer_adm_reduce.comp).
     Registered as `"integer_adm_vulkan"`. The legacy `adm_vulkan.c`
     (registered as `"adm_vulkan"`) is retained as a build-compatibility
     shim; the model dispatch tables reference the canonical extractor
@@ -114,11 +114,11 @@ secondary.
     deterministic reductions matching the CPU integer reference.
   - `cambi_vulkan.c` (T7-36 / [ADR-0210](../../adr/0210-cambi-vulkan-integration.md))
     with GLSL shaders
-    [`shaders/cambi_preprocess.comp`](../../../libvmaf/src/feature/vulkan/shaders/cambi_preprocess.comp),
-    [`cambi_derivative.comp`](../../../libvmaf/src/feature/vulkan/shaders/cambi_derivative.comp),
-    [`cambi_filter_mode.comp`](../../../libvmaf/src/feature/vulkan/shaders/cambi_filter_mode.comp),
-    [`cambi_decimate.comp`](../../../libvmaf/src/feature/vulkan/shaders/cambi_decimate.comp),
-    [`cambi_mask_dp.comp`](../../../libvmaf/src/feature/vulkan/shaders/cambi_mask_dp.comp).
+    [`shaders/cambi_preprocess.comp`](../../../core/src/feature/vulkan/shaders/cambi_preprocess.comp),
+    [`cambi_derivative.comp`](../../../core/src/feature/vulkan/shaders/cambi_derivative.comp),
+    [`cambi_filter_mode.comp`](../../../core/src/feature/vulkan/shaders/cambi_filter_mode.comp),
+    [`cambi_decimate.comp`](../../../core/src/feature/vulkan/shaders/cambi_decimate.comp),
+    [`cambi_mask_dp.comp`](../../../core/src/feature/vulkan/shaders/cambi_mask_dp.comp).
     Strategy II hybrid: GPU services preprocess (scaffold, see ADR-0210),
     per-pixel derivative, the 7×7 spatial-mask SAT (one shader,
     `PASS=0/1/2` spec const for row-SAT / col-SAT / threshold), 2×
@@ -134,7 +134,7 @@ secondary.
     GPU twin (lpips delegates to ORT EPs per
     [ADR-0022](../../adr/0022-inference-runtime-onnx.md)).
   - `psnr_vulkan.c` with GLSL shader
-    [`shaders/psnr.comp`](../../../libvmaf/src/feature/vulkan/shaders/psnr.comp).
+    [`shaders/psnr.comp`](../../../core/src/feature/vulkan/shaders/psnr.comp).
     Single plane-agnostic compute shader (per-pixel `(ref - dis)²`
     with per-WG `int64` reduction), dispatched three times per frame
     against per-plane buffers — Y, Cb, Cr. Per-plane width / height
@@ -160,20 +160,20 @@ secondary.
     [ADR-0201](../../adr/0201-ssimulacra2-vulkan-kernel.md) and
     [ADR-0252](../../adr/0252-ssimulacra2-host-xyb-simd.md).
 - Build system: `enable_vulkan` feature option (default **disabled**)
-  in [`libvmaf/meson_options.txt`](../../../libvmaf/meson_options.txt);
+  in [`core/meson_options.txt`](../../../core/meson_options.txt);
   conditional `subdir('vulkan')` in
-  [`libvmaf/src/meson.build`](../../../libvmaf/src/meson.build);
+  [`core/src/meson.build`](../../../core/src/meson.build);
   `vulkan_sources` folded into `libvmaf_feature_static_lib` so test
   binaries link them; `vulkan_deps` (volk + VMA + dependency on
   `glslc`) threaded through.
 - CLI plumbing in
-  [`libvmaf/tools/vmaf.c`](../../../libvmaf/tools/vmaf.c) +
-  [`libvmaf/tools/cli_parse.c`](../../../libvmaf/tools/cli_parse.c) —
+  [`core/tools/vmaf.c`](../../../core/tools/vmaf.c) +
+  [`core/tools/cli_parse.c`](../../../core/tools/cli_parse.c) —
   `--vulkan_device <N>` (auto-pick = `-1`, default disabled) and
   `--no_vulkan`. Routing happens through
   `VMAF_FEATURE_EXTRACTOR_VULKAN = 1 << 5` and
   `compute_fex_flags()` in
-  [`libvmaf/src/libvmaf.c`](../../../libvmaf/src/libvmaf.c) — the
+  [`core/src/libvmaf.c`](../../../core/src/libvmaf.c) — the
   dispatcher prefers the Vulkan-flagged extractor over the CPU
   default whenever a Vulkan state has been imported.
 - Cross-backend gate at [`cross_backend_vif_diff.py`][diff-script] —
@@ -182,7 +182,7 @@ secondary.
   `lavapipe` lane runs on every PR (Mesa software ICD on
   `ubuntu-24.04`); the Arc-A380 lane runs nightly (parked until a
   self-hosted runner with label `vmaf-arc` is registered).
-- Smoke test at [`libvmaf/test/test_vulkan_smoke.c`][smoke-test] —
+- Smoke test at [`core/test/test_vulkan_smoke.c`][smoke-test] —
   pins the runtime contract (`device_count >= 0`, `context_new`
   succeeds when devices ≥ 1, NULL-safety, out-of-range rejection).
 
@@ -207,7 +207,7 @@ via Meson wrap files; no system install required.
 When libvmaf is built with `default_library=static -Denable_vulkan=enabled`,
 volk's `vk*` PFN dispatchers are renamed to `vmaf_priv_vk*` at the C
 preprocessor level via a force-included header
-([`subprojects/packagefiles/volk/gen_priv_remap.py`](../../../libvmaf/subprojects/packagefiles/volk/gen_priv_remap.py)).
+([`subprojects/packagefiles/volk/gen_priv_remap.py`](../../../core/subprojects/packagefiles/volk/gen_priv_remap.py)).
 The rename lets `libvmaf.a` coexist with the Khronos `libvulkan.a`
 in a fully-static link line (`gcc -static main.o libvmaf.a libvulkan.a
 -ldl`) without GNU-ld multi-definition errors. See
@@ -292,7 +292,7 @@ pre-allocated set on every subsequent frame. Ping-pong kernels retain one
 changes each frame.
 
 The required tear-down ordering — pool destroy before pipeline destroy —
-is documented in `libvmaf/src/feature/vulkan/AGENTS.md`.
+is documented in `core/src/feature/vulkan/AGENTS.md`.
 
 ## What lands next
 
@@ -394,8 +394,8 @@ buffers.
   — the skill that produced the initial scaffold (subsequently
   hand-finished here).
 
-[hdr]: ../../../libvmaf/include/libvmaf/libvmaf_vulkan.h
-[smoke-test]: ../../../libvmaf/test/test_vulkan_smoke.c
+[hdr]: ../../../core/include/libvmaf/libvmaf_vulkan.h
+[smoke-test]: ../../../core/test/test_vulkan_smoke.c
 [diff-script]: ../../../scripts/ci/cross_backend_vif_diff.py
 
 ## Performance

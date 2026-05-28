@@ -1,7 +1,4 @@
-# VMAFX
-
-> Modernized Lusoris fork of Netflix VMAF,
-> dual-licensed BSD-3-Clause-Plus-Patent OR MIT.
+# VMAF — Lusoris Fork
 
 [![Tests & Quality Gates](https://github.com/lusoris/vmaf/actions/workflows/tests-and-quality-gates.yml/badge.svg)](https://github.com/lusoris/vmaf/actions/workflows/tests-and-quality-gates.yml)
 [![Lint & Format](https://github.com/lusoris/vmaf/actions/workflows/lint-and-format.yml/badge.svg)](https://github.com/lusoris/vmaf/actions/workflows/lint-and-format.yml)
@@ -13,9 +10,9 @@
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/lusoris/vmaf/badge)](https://securityscorecards.dev/viewer/?uri=github.com/lusoris/vmaf)
 [![ko-fi](https://img.shields.io/badge/ko--fi-support%20lusoris-ff5e5b?logo=kofi&logoColor=white)](https://ko-fi.com/lusoris)
 
-**VMAFX** is a GPU-accelerated, full-precision, signed-release fork of
-[Netflix/vmaf](https://github.com/Netflix/vmaf) — perceptual video quality
-assessment, Emmy-winning, extended with:
+**A GPU-accelerated, full-precision, signed-release fork of
+[Netflix/vmaf](https://github.com/Netflix/vmaf)** — perceptual video quality
+assessment, Emmy-winning, now with:
 
 - **SYCL / oneAPI** GPU backend (Intel, NVIDIA, AMD via Codeplay plugins),
   with a fp64-less device fallback path for Intel Arc / iGPU silicon.
@@ -40,7 +37,7 @@ assessment, Emmy-winning, extended with:
   experiments — Netflix + KoNViD-1k combined-corpus trainer, LOSO eval
   harness, multi-seed validation, QAT + PTQ paths. See [`ai/`](ai/).
 - **MCP servers** — both an in-process embedded scaffold
-  ([`libvmaf/include/libvmaf/libvmaf_mcp.h`](libvmaf/include/libvmaf/libvmaf_mcp.h),
+  ([`core/include/libvmaf/libvmaf_mcp.h`](core/include/libvmaf/libvmaf_mcp.h),
   flag `-Denable_mcp=true`) and the standalone Python JSON-RPC server
   under [`mcp-server/vmaf-mcp/`](mcp-server/vmaf-mcp/).
 - **GPU-parity CI gate** — every PR runs a CPU ↔ Vulkan/lavapipe variance
@@ -50,7 +47,7 @@ assessment, Emmy-winning, extended with:
 - **Signed releases** — every tag carries SBOM (SPDX + CycloneDX), Sigstore
   keyless signatures, and SLSA L3 provenance.
 
-Upstream Netflix/vmaf stays authoritative for the scoring algorithm; VMAFX
+Upstream Netflix/vmaf stays authoritative for the scoring algorithm; the fork
 adds backends, tooling, and productization without changing the numerical
 contract. The three Netflix CPU golden-data tests (1 normal + 2 checkerboard
 pairs) run as a required CI gate on every PR — see
@@ -149,7 +146,7 @@ through a single ONNX Runtime-backed inference path inside libvmaf.
 | C4 | **LLM dev helpers** | Ollama-backed review / commit-msg / docgen helpers, never linked into libvmaf. | [`dev-llm/`](dev-llm/), `.claude/skills/dev-llm-*` |
 
 - Training: [`ai/`](ai/) (`pip install -e ai && vmaf-train --help`).
-- Inference runtime: [`libvmaf/src/dnn/`](libvmaf/src/dnn/) (C, ONNX Runtime).
+- Inference runtime: [`core/src/dnn/`](core/src/dnn/) (C, ONNX Runtime).
 - CLI usage: `vmaf --tiny-model model/tiny/vmaf_tiny_fr_v1.onnx [--tiny-device cuda]`.
 - Meson flag: `-Denable_dnn=auto|enabled|disabled` (default `auto`).
 - ffmpeg: apply [`ffmpeg-patches/*.patch`](ffmpeg-patches/) for
@@ -198,8 +195,8 @@ opens a PR on every push to `master`; merging it tags and fires signing.
 [BSD-3-Clause-Plus-Patent](LICENSE) — preserved from upstream Netflix/vmaf.
 
 Fork-authored code (SYCL backend, `.claude/` scaffolding, MCP server, Tiny-AI
-surface) is © 2024-2026 Lusoris, dual-licensed under
-BSD-3-Clause-Plus-Patent OR MIT (see ADR-0686).
+surface) is © 2024-2026 Lusoris and Claude (Anthropic), licensed under the
+same BSD-3-Clause-Plus-Patent terms as the rest of the project.
 
 ## Attribution
 

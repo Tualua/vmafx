@@ -8,7 +8,7 @@
 ## Context
 
 The K150K-A corpus scoring driver (`ai/scripts/extract_k150k_features.py`, ADR-0362) ran
-clips serially: one vmaf invocation at a time, using `libvmaf/build-cpu/tools/vmaf`.  At
+clips serially: one vmaf invocation at a time, using `core/build-cpu/tools/vmaf`.  At
 7.1 s per 540p 5-second clip with 4 CPU threads, the serial baseline achieved 0.14 clip/s
 — a 296-hour projected runtime for all 152,265 clips.
 
@@ -21,7 +21,7 @@ accelerate per-clip scoring.  Investigation revealed two blockers:
    sub-HD resolution; the compute kernels themselves are not the bottleneck.
 
 2. **CUDA binary double-write bug (regression from commit `30179695a`, April 28).**  The
-   `feature_extractor_list[]` table in `libvmaf/src/feature/feature_extractor.c` had 6 CUDA
+   `feature_extractor_list[]` table in `core/src/feature/feature_extractor.c` had 6 CUDA
    extractors registered twice (psnr_cuda, float_moment_cuda, ciede_cuda, float_ssim_cuda,
    float_ms_ssim_cuda, psnr_hvs_cuda), causing "cannot be overwritten" warnings for those
    features.  After the dedup fix, a deeper issue remained: when no explicit `--model` is
@@ -43,11 +43,11 @@ speedup over the 0.14 clip/s serial baseline.
 We will redesign `ai/scripts/extract_k150k_features.py` to use
 `concurrent.futures.ProcessPoolExecutor` with a configurable number of workers
 (`--threads-cuda`, default 8), each independently decoding one clip to a private YUV
-scratch file, scoring it via `libvmaf/build-cpu/tools/vmaf`, aggregating frame metrics,
+scratch file, scoring it via `core/build-cpu/tools/vmaf`, aggregating frame metrics,
 and cleaning up the scratch file.  The main process collects results, writes the `.done`
 checkpoint, and flushes the parquet periodically.
 
-The default binary remains `libvmaf/build-cpu/tools/vmaf`.  The `--threads-cuda` flag
+The default binary remains `core/build-cpu/tools/vmaf`.  The `--threads-cuda` flag
 retains its name for CLI compatibility; the workers run on CPU regardless of backend.
 The `--no-cuda` flag passes `--no_cuda --no_sycl --no_vulkan` to the vmaf binary for
 explicit CPU-only operation.

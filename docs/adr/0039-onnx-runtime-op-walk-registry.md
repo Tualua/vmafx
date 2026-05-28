@@ -7,11 +7,11 @@
 
 ## Context
 
-Audit on 2026-04-17 found that `libvmaf/src/dnn/op_allowlist.c::vmaf_dnn_op_allowed` existed with unit-test coverage but was never called at model load time from `ort_backend.c::vmaf_ort_open`. The comment in `model_loader.c:200-202` claiming "deep op-allowlist walk is done by ort_backend.c" was aspirational — any `.onnx` containing disallowed ops (`Loop`, `If`, custom ops) loaded successfully via `--tiny-model`. In parallel, ADR-0036 queues 7+ `.onnx` files across Wave 1 sub-tracks with no source-of-truth manifest. Both gaps must close before the Wave 1 smoke PR ships any positive-path inference.
+Audit on 2026-04-17 found that `core/src/dnn/op_allowlist.c::vmaf_dnn_op_allowed` existed with unit-test coverage but was never called at model load time from `ort_backend.c::vmaf_ort_open`. The comment in `model_loader.c:200-202` claiming "deep op-allowlist walk is done by ort_backend.c" was aspirational — any `.onnx` containing disallowed ops (`Loop`, `If`, custom ops) loaded successfully via `--tiny-model`. In parallel, ADR-0036 queues 7+ `.onnx` files across Wave 1 sub-tracks with no source-of-truth manifest. Both gaps must close before the Wave 1 smoke PR ships any positive-path inference.
 
 ## Decision
 
-Land in the Wave 1 smoke PR: (1) minimal ONNX protobuf-wire-format scanner at `libvmaf/src/dnn/onnx_scan.c` — parses `ModelProto.graph` (field 7) → `GraphProto.node` (field 1, repeated) → `NodeProto.op_type` (field 4) with strict bounds-checking; (2) called from `vmaf_dnn_validate_onnx` before `CreateSession`; (3) `realpath` + symlink-escape hardening in the same entry point; (4) `model/tiny/registry.json` schema v0 with SHA-256 per entry, populated via `vmaf-train register`; (5) end-to-end CI smoke gate loading a generated 1KB `smoke_v0.onnx` via the full `vmaf --tiny-model` path.
+Land in the Wave 1 smoke PR: (1) minimal ONNX protobuf-wire-format scanner at `core/src/dnn/onnx_scan.c` — parses `ModelProto.graph` (field 7) → `GraphProto.node` (field 1, repeated) → `NodeProto.op_type` (field 4) with strict bounds-checking; (2) called from `vmaf_dnn_validate_onnx` before `CreateSession`; (3) `realpath` + symlink-escape hardening in the same entry point; (4) `model/tiny/registry.json` schema v0 with SHA-256 per entry, populated via `vmaf-train register`; (5) end-to-end CI smoke gate loading a generated 1KB `smoke_v0.onnx` via the full `vmaf --tiny-model` path.
 
 ## Alternatives considered
 

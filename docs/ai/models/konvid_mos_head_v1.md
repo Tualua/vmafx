@@ -79,7 +79,7 @@ LayerNorm(12)
 
 Ops emitted: `LayerNormalization`, `Concat`, `Gemm`, `Relu`, `Sigmoid`,
 `Add`, `Mul`, `Squeeze` — all on the allowlist in
-`libvmaf/src/dnn/op_allowlist.c`.
+`core/src/dnn/op_allowlist.c`.
 
 ## Training
 
@@ -209,7 +209,7 @@ fork's BSD-3-Clause-Plus-Patent licence.
 `konvid_mos_head_v1` was trained on 11 features (canonical-6 + 5 saliency /
 scene-transition signals). It does **not** consume `speed_chroma` or
 `speed_temporal`. These CPU-only extractors (Netflix `speed_ported` branch,
-ported to the fork's libvmaf as `libvmaf/src/feature/speed.c`) are expected
+ported to the fork's libvmaf as `core/src/feature/speed.c`) are expected
 inputs to a future Netflix HDR VMAF model.
 
 A `konvid_mos_head_v2` that includes speed features in its input vector will

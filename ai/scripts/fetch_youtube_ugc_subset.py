@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Fetch a small subset of the YouTube UGC dataset for tiny-AI corpus
 expansion (T6-x — vmaf_tiny_v5 candidate).
 
@@ -19,19 +19,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import urllib.request
 from pathlib import Path
 
-try:
-    from _script_bootstrap import bootstrap_ai_script
-except ModuleNotFoundError:
-    from ai.scripts._script_bootstrap import bootstrap_ai_script
+REPO_ROOT = Path(__file__).resolve().parents[2]
+AI_SRC = REPO_ROOT / "ai" / "src"
 
-_SCRIPT_PATHS = bootstrap_ai_script(__file__)
-SCRIPT_PATH = _SCRIPT_PATHS.script_path
-REPO_ROOT = _SCRIPT_PATHS.repo_root
+if str(AI_SRC) not in sys.path:
+    sys.path.insert(0, str(AI_SRC))
 
-from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
 from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
 
 GCS_LIST_URL = "https://storage.googleapis.com/storage/v1/b/ugc-dataset/o"
@@ -100,7 +97,6 @@ def _run_manifest_default(content_manifest: Path) -> Path:
 def _write_run_manifest(
     *,
     args: argparse.Namespace,
-    raw_argv: list[str],
     ranked: list[tuple[str, list[tuple[str, int]]]],
     total_bytes: int,
 ) -> None:
@@ -135,9 +131,9 @@ def _write_run_manifest(
             },
             "stems": stems,
             "run_provenance": build_run_provenance(
-                entrypoint=SCRIPT_PATH,
+                entrypoint=Path(__file__),
                 repo_root=REPO_ROOT,
-                argv=raw_argv,
+                argv=sys.argv,
                 args=args,
                 inputs={"bucket_listing": GCS_LIST_URL},
                 outputs={
@@ -150,9 +146,8 @@ def _write_run_manifest(
     )
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
-    ap = make_argument_parser(description=__doc__)
+def main() -> int:
+    ap = argparse.ArgumentParser()
     ap.add_argument(
         "--out-dir", type=Path, required=True, help="Directory to drop downloaded mp4/webm into."
     )
@@ -171,7 +166,7 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Output run-provenance JSON sidecar (default: <manifest>.run-manifest.json).",
     )
-    args = ap.parse_args(raw_argv)
+    args = ap.parse_args()
     if args.run_manifest_out is None:
         args.run_manifest_out = _run_manifest_default(args.manifest)
 
@@ -199,7 +194,7 @@ def main(argv: list[str] | None = None) -> int:
 
     args.manifest.parent.mkdir(parents=True, exist_ok=True)
     args.manifest.write_text(json.dumps(manifest, indent=2) + "\n")
-    _write_run_manifest(args=args, raw_argv=raw_argv, ranked=ranked, total_bytes=total_bytes)
+    _write_run_manifest(args=args, ranked=ranked, total_bytes=total_bytes)
     print(
         f"[ugc-fetch] wrote {args.manifest} ({len(manifest)} stems); "
         f"run manifest {args.run_manifest_out}",
@@ -209,4 +204,4 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":  # pragma: no cover
-    raise SystemExit(main())
+    sys.exit(main())

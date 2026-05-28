@@ -84,9 +84,9 @@ PRs in future iterations of this rule.
 
 The four items touch four different subsystems:
 
-- T0-1: `libvmaf/src/cuda/picture_cuda.c` (CUDA backend)
-- T4-4: `libvmaf/src/feature/feature_collector.c` + test
-- T4-5: `libvmaf/src/meson.build` (build)
+- T0-1: `core/src/cuda/picture_cuda.c` (CUDA backend)
+- T4-4: `core/src/feature/feature_collector.c` + test
+- T4-5: `core/src/meson.build` (build)
 - T4-6: `libvmaf/{include,src,test}` of model surface (public API)
 
 Four independent diffs with minimal cross-interaction. Bundling them

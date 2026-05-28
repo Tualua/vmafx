@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """argparse entry-point for ``vmaf-roi-score``.
 
 Option C drives the ``vmaf`` binary twice (full-frame +
@@ -28,7 +28,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "a full-frame VMAF run with a saliency-masked VMAF run via a "
             "user-supplied weight. Useful for content where bad "
             "background should not penalise a good salient region. "
-            "Distinct from the libvmaf/tools/vmaf_roi binary (ADR-0247), "
+            "Distinct from the core/tools/vmaf_roi binary (ADR-0247), "
             "which emits encoder QP-offset sidecars."
         ),
     )
@@ -211,11 +211,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return masked.exit_status
 
-    try:
-        roi = blend_scores(full.vmaf_score, masked.vmaf_score, ns.weight)
-    except ValueError as exc:
-        sys.stderr.write(f"vmaf-roi-score: invalid pooled score: {exc}\n")
-        return 65
+    roi = blend_scores(full.vmaf_score, masked.vmaf_score, ns.weight)
 
     payload = {
         "schema_version": SCHEMA_VERSION,
@@ -231,7 +227,7 @@ def main(argv: list[str] | None = None) -> int:
     # Pin key order to the canonical schema; tests assert on this.
     payload = {k: payload[k] for k in ROI_RESULT_KEYS}
 
-    text = json.dumps(payload, indent=2, allow_nan=False)
+    text = json.dumps(payload, indent=2)
     if ns.output is None:
         sys.stdout.write(text + "\n")
     else:

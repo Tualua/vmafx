@@ -5,4 +5,4 @@
   4:2:2 width) before the main loop, printing a descriptive error to stderr and
   exiting non-zero instead of crashing or producing undefined output.
   The distorted-stream bitdepth range (8–16) is now also checked independently
-  of the reference stream. (`libvmaf/tools/vmaf.c`, ADR-0461)
+  of the reference stream. (`core/tools/vmaf.c`, ADR-0461)

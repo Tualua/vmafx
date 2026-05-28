@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Distillation scores: per-frame ``vmaf_v0.6.1`` predictions as targets.
 
 ADR-0203 picks distillation from ``vmaf_v0.6.1`` over Netflix's

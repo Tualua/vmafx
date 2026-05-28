@@ -17,9 +17,9 @@ should be the first harness?
    anything that takes attacker-controllable bytes and runs
    `sscanf` / `memcpy` / size-derived `malloc` against them. Three
    candidates fell out:
-    - `libvmaf/tools/y4m_input.c` — vendored Daala YUV4MPEG2 parser.
-    - `libvmaf/src/read_json_model.c` — JSON model deserialiser.
-    - `libvmaf/tools/yuv_input.c` — raw-YUV opener (driven by
+    - `core/tools/y4m_input.c` — vendored Daala YUV4MPEG2 parser.
+    - `core/src/read_json_model.c` — JSON model deserialiser.
+    - `core/tools/yuv_input.c` — raw-YUV opener (driven by
       caller-supplied `width`, `height`, `pix_fmt` — fewer
       header-parsed code paths).
 2. Read the OSSF Scorecard `Fuzzing` definition: any committed
@@ -69,7 +69,7 @@ should be the first harness?
   the first does not. Reproducer:
   `YUV4MPEG2 W2 H4 F30:1 Ip C411\n` followed by a `FRAME\n`
   header and ~120 bytes of payload (full reproducer at
-  `libvmaf/test/fuzz/y4m_input_known_crashes/y4m_411_w2_h4_oob_dst.y4m`).
+  `core/test/fuzz/y4m_input_known_crashes/y4m_411_w2_h4_oob_dst.y4m`).
 
 ## Conclusion
 
@@ -99,11 +99,11 @@ mkdir -p /tmp/fuzz-smoke-y4m
     -malloc_limit_mb=1024 \
     -timeout=10 \
     /tmp/fuzz-smoke-y4m \
-    libvmaf/test/fuzz/y4m_input_corpus/
+    core/test/fuzz/y4m_input_corpus/
 
 # Verify the known-crash reproducer triggers the same bug:
 ./build-fuzz/test/fuzz/fuzz_y4m_input \
-    libvmaf/test/fuzz/y4m_input_known_crashes/y4m_411_w2_h4_oob_dst.y4m
+    core/test/fuzz/y4m_input_known_crashes/y4m_411_w2_h4_oob_dst.y4m
 ```
 
 The first run reaches `Done <N> runs in 60 second(s)` with no

@@ -9,7 +9,7 @@
 
 [ADR-0212](0212-hip-backend-scaffold.md) shipped the HIP backend as a
 build-only scaffold (T7-10 audit half): public header, backend tree
-under `libvmaf/src/hip/`, three feature stubs (ADM / VIF / motion), a
+under `core/src/hip/`, three feature stubs (ADM / VIF / motion), a
 CI matrix lane (`Build — Ubuntu HIP (T7-10 scaffold)`), and a 9-sub-test
 smoke pinning the `-ENOSYS` contract for every public C-API entry
 point. The runtime (T7-10b) and the first real kernel were
@@ -19,9 +19,9 @@ This ADR is that follow-up's first half: land the **first kernel-template
 consumer** so the per-frame async lifecycle the runtime PR will need
 to implement is anchored to a concrete consumer, mirroring the role
 [ADR-0221](0221-gpu-kernel-template.md) and
-`libvmaf/src/feature/cuda/integer_psnr_cuda.c` play on the CUDA side.
+`core/src/feature/cuda/integer_psnr_cuda.c` play on the CUDA side.
 
-The CUDA kernel template (`libvmaf/src/cuda/kernel_template.h`) is the
+The CUDA kernel template (`core/src/cuda/kernel_template.h`) is the
 canonical scaffolding for fork-added GPU feature kernels — every CUDA
 feature extractor migrated to it under T-GPU-DEDUP-4..17. HIP's
 runtime API is a near-clone of CUDA's (`hipStream_t` ↔ `CUstream`,
@@ -36,7 +36,7 @@ contract to fill in.
 
 The PR ships:
 
-- **`libvmaf/src/hip/kernel_template.h`** — declares
+- **`core/src/hip/kernel_template.h`** — declares
   `VmafHipKernelLifecycle` (private stream + submit/finished event
   pair) and `VmafHipKernelReadback` (device accumulator + pinned host
   slot), plus six lifecycle helpers
@@ -46,15 +46,15 @@ The PR ships:
   `vmaf_hip_kernel_collect_wait`). Field-for-field mirror of the CUDA
   template; HIP runtime types cross the ABI as `uintptr_t` to keep the
   header free of `<hip/hip_runtime.h>` (same convention
-  [`libvmaf_hip.h`](../../libvmaf/include/libvmaf/libvmaf_hip.h) uses
+  [`libvmaf_hip.h`](../../core/include/libvmaf/libvmaf_hip.h) uses
   per ADR-0212).
-- **`libvmaf/src/hip/kernel_template.c`** — out-of-line bodies for
+- **`core/src/hip/kernel_template.c`** — out-of-line bodies for
   every helper. Returns `-ENOSYS` until the runtime PR (T7-10b) swaps
   in real `hipStreamCreate` / `hipMemsetAsync` / `hipStreamSynchronize`
   calls. Close + free helpers are no-ops on zero handles (matches the
   CUDA "safe to call on a partially-initialised lifecycle" contract).
-- **`libvmaf/src/feature/hip/integer_psnr_hip.{c,h}`** — first consumer.
-  Mirrors `libvmaf/src/feature/cuda/integer_psnr_cuda.c`'s call graph
+- **`core/src/feature/hip/integer_psnr_hip.{c,h}`** — first consumer.
+  Mirrors `core/src/feature/cuda/integer_psnr_cuda.c`'s call graph
   verbatim: `init → context_new + lifecycle_init + readback_alloc +
   feature_name_dict`; `submit → submit_pre_launch + (kernel-launch +
   event-record + DtoH copy land in T7-10b)`; `collect → collect_wait
@@ -64,7 +64,7 @@ The PR ships:
   call-site shape is the load-bearing artefact this PR pins.
 - **Registration**: `vmaf_fex_psnr_hip` is added to the
   `feature_extractor_list` in
-  `libvmaf/src/feature/feature_extractor.c` under `#if HAVE_HIP`. A
+  `core/src/feature/feature_extractor.c` under `#if HAVE_HIP`. A
   caller asking for `psnr_hip` by name now gets "extractor found,
   runtime not ready (-ENOSYS at init)" instead of "no such
   extractor". A new `VMAF_FEATURE_EXTRACTOR_HIP = 1 << 6` flag is
@@ -72,7 +72,7 @@ The PR ships:
   ABI shuffle; the first consumer does not set the flag yet because
   the picture buffer-type plumbing (HIP-device buffer type tag) is
   the runtime PR's responsibility.
-- **Smoke test extension**: `libvmaf/test/test_hip_smoke.c` grows
+- **Smoke test extension**: `core/test/test_hip_smoke.c` grows
   five sub-tests pinning the kernel-template scaffold contract
   (`lifecycle_init` / `readback_alloc` return `-ENOSYS`;
   `lifecycle_close` / `readback_free` are no-ops on zero handles;

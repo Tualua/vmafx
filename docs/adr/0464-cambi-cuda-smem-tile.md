@@ -8,7 +8,7 @@
 ## Context
 
 The `cambi_spatial_mask_kernel` in
-`libvmaf/src/feature/cuda/integer_cambi/cambi_score.cu` computes a 7x7
+`core/src/feature/cuda/integer_cambi/cambi_score.cu` computes a 7x7
 zero_deriv box sum for every output pixel by reading 49 positions from global
 memory, with each position requiring three global loads (p, right-neighbor, below-
 neighbor) = 147 global reads per thread.  Adjacent threads in a warp share a

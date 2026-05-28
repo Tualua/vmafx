@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Status update 2026-05-15**: scaffold implemented (T8-1 complete);
-  `libvmaf/include/libvmaf/libvmaf_metal.h` and `libvmaf/src/metal/`
+  `core/include/libvmaf/libvmaf_metal.h` and `core/src/metal/`
   tree present on master; `-ENOSYS` stubs in place.
 - **Date**: 2026-05-09
 - **Deciders**: Lusoris, Claude (Anthropic)
@@ -55,34 +55,34 @@ that follow have a stable base to land on.
 The PR creates:
 
 - Public header
-  [`libvmaf/include/libvmaf/libvmaf_metal.h`](../../libvmaf/include/libvmaf/libvmaf_metal.h):
+  [`core/include/libvmaf/libvmaf_metal.h`](../../core/include/libvmaf/libvmaf_metal.h):
   declares `VmafMetalState`, `VmafMetalConfiguration`,
   `vmaf_metal_state_init` / `_import_state` / `_state_free`,
   `vmaf_metal_list_devices`, `vmaf_metal_available`. Mirrors the
   CUDA + Vulkan + HIP + SYCL pattern.
 - Backend tree under
-  [`libvmaf/src/metal/`](../../libvmaf/src/metal/) — `common.{c,h}`,
+  [`core/src/metal/`](../../core/src/metal/) — `common.{c,h}`,
   `picture_metal.{c,h}`, `dispatch_strategy.{c,h}`,
   `kernel_template.{c,h}`, `meson.build`. Every entry point returns
   `-ENOSYS` or do-nothing.
 - First feature kernel scaffold at
-  [`libvmaf/src/feature/metal/integer_motion_v2_metal.c`](../../libvmaf/src/feature/metal/integer_motion_v2_metal.c)
+  [`core/src/feature/metal/integer_motion_v2_metal.c`](../../core/src/feature/metal/integer_motion_v2_metal.c)
   — registers `vmaf_fex_integer_motion_v2_metal` so callers asking
   by name resolve to a clean `-ENOSYS` from `init()`, mirroring the
   HIP sixth consumer (ADR-0267). The Objective-C / Metal Shading
   Language source files (`.m`, `.metal`) arrive with the runtime PR
   (T8-1b).
 - New `enable_metal` feature option in
-  [`libvmaf/meson_options.txt`](../../libvmaf/meson_options.txt),
+  [`core/meson_options.txt`](../../core/meson_options.txt),
   defaulting to **`auto`**: probes for `Metal.framework` /
   `MetalKit.framework` on macOS hosts, disabled elsewhere.
 - Conditional `subdir('metal')` in
-  [`libvmaf/src/meson.build`](../../libvmaf/src/meson.build);
+  [`core/src/meson.build`](../../core/src/meson.build);
   `metal_sources` + `metal_deps` threaded through
   `libvmaf_feature_static_lib` alongside the existing CUDA / SYCL /
   Vulkan / HIP / DNN aggregations.
 - Smoke test
-  [`libvmaf/test/test_metal_smoke.c`](../../libvmaf/test/test_metal_smoke.c)
+  [`core/test/test_metal_smoke.c`](../../core/test/test_metal_smoke.c)
   pinning the `-ENOSYS` contract for every public C-API entry
   point, plus the kernel-template helpers and the
   `motion_v2_metal` extractor registration (mirrors
@@ -241,7 +241,7 @@ loader.
 
 ## Tests
 
-- `libvmaf/test/test_metal_smoke.c` (sub-tests pin the scaffold
+- `core/test/test_metal_smoke.c` (sub-tests pin the scaffold
   contract):
   - `test_context_new_returns_zeroed_struct`
   - `test_context_new_rejects_null_out`

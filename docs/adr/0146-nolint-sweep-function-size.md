@@ -7,7 +7,7 @@
 
 ## Context
 
-Prior to this PR, `libvmaf/src/` carried 20 `// NOLINTNEXTLINE(readability-function-size)`
+Prior to this PR, `core/src/` carried 20 `// NOLINTNEXTLINE(readability-function-size)`
 suppressions covering functions that exceeded the `.clang-tidy` budget
 (LineThreshold=60, StatementThreshold=120, BranchThreshold=15,
 NestingThreshold=4). Seventeen of those sat in fork-touched infrastructure
@@ -103,7 +103,7 @@ this PR does.
   and for a deliberate buffer-end NUL-byte write.
 
 None of these suppressions cover `readability-function-size`. After this
-PR, a `grep -rn 'NOLINT.*readability-function-size' libvmaf/src/` returns
+PR, a `grep -rn 'NOLINT.*readability-function-size' core/src/` returns
 zero matches.
 
 ## Alternatives considered
@@ -118,7 +118,7 @@ zero matches.
 ## Consequences
 
 - **Positive**:
-  - `libvmaf/src/` has zero `readability-function-size` NOLINTs; the
+  - `core/src/` has zero `readability-function-size` NOLINTs; the
     ADR-0141 touched-file rule no longer carries historical debt for
     this check.
   - Public-API entry points (`vmaf_read_pictures`, `flush_context`,

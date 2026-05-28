@@ -14,7 +14,7 @@ the regular `libvmaf` filter forces a `hwdownload,format=yuv420p`
 round-trip — GPU decode, CPU readback, GPU re-upload — which
 negates most of the hwdec win. The fork already had the
 zero-copy import primitives at the C-API level
-([`libvmaf_sycl.h`](../../libvmaf/include/libvmaf/libvmaf_sycl.h)
+([`libvmaf_sycl.h`](../../core/include/libvmaf/libvmaf_sycl.h)
 exposes `vmaf_sycl_import_va_surface` and
 `vmaf_sycl_dmabuf_import`), but they were not plumbed through
 FFmpeg. T7-28 captured this gap.
@@ -56,7 +56,7 @@ This closes T7-28. **T7-29 (Vulkan zero-copy)** remains open
 because there is no `vmaf_vulkan_import_image` C-API surface
 yet — that's an L-sized follow-up needing new
 `VkExternalMemoryImageCreateInfo` / `VkSemaphore` plumbing in
-[`libvmaf_vulkan.h`](../../libvmaf/include/libvmaf/libvmaf_vulkan.h).
+[`libvmaf_vulkan.h`](../../core/include/libvmaf/libvmaf_vulkan.h).
 
 ## Alternatives considered
 
@@ -91,6 +91,6 @@ yet — that's an L-sized follow-up needing new
   [`.workingdir2/BACKLOG.md`](../../.workingdir2/BACKLOG.md).
 - Pairs with: [`ffmpeg-patches/0003-libvmaf-wire-sycl-backend-selector.patch`](../../ffmpeg-patches/0003-libvmaf-wire-sycl-backend-selector.patch)
   (sycl_device option on the regular libvmaf filter).
-- Companion C-API: [`libvmaf/include/libvmaf/libvmaf_sycl.h`](../../libvmaf/include/libvmaf/libvmaf_sycl.h)
+- Companion C-API: [`core/include/libvmaf/libvmaf_sycl.h`](../../core/include/libvmaf/libvmaf_sycl.h)
   — `vmaf_sycl_import_va_surface`, `vmaf_sycl_dmabuf_import`,
   `vmaf_sycl_wait_compute`.

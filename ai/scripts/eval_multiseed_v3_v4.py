@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Multi-seed leave-one-source-out eval for ``vmaf_tiny_v3`` + ``vmaf_tiny_v4``.
 
 Mirrors the methodology of ``eval_loso_vmaf_tiny_v3.py`` (PR #294) and

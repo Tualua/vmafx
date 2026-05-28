@@ -85,7 +85,7 @@ Output:
 
 The `H` and `W` are dynamic (the existing LPIPS pipeline already
 handles this via runtime input-shape determination in
-[`libvmaf/src/dnn/`](../../libvmaf/src/dnn/)).
+[`core/src/dnn/`](../../core/src/dnn/)).
 
 ## Op-allowlist sanity check
 
@@ -107,7 +107,7 @@ DISTS-from-VGG-16 hits these ONNX ops:
 
 No new ops needed beyond what `lpips_sq` already requires per
 [Research-0006](0006-tinyai-ptq-accuracy-targets.md) §2. The
-op-allowlist gate in `libvmaf/src/dnn/op_allowlist.c` (or wherever it
+op-allowlist gate in `core/src/dnn/op_allowlist.c` (or wherever it
 lives) does not need to grow.
 
 ## PTQ posture

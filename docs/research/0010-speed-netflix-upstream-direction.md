@@ -23,7 +23,7 @@ it isn't caught flat-footed when a successor lands?
 
 ### Upstream code / PRs
 - Netflix PR [#1488](https://github.com/Netflix/vmaf/pull/1488) "port speed updates", opened 2026-04-20 (Kyle Swanson / @kylophone). 7 files, +570 / -222. Commits `18c07b22`, `cc615237`.
-- Netflix branch `upstream/speed_ported` — 4 commits, tip `86d929fc`. Carries `libvmaf/src/feature/speed.c` (1,566 LoC, commit `1e67d38d`, Swanson + Miret 2025-05-02). PR #1488 ships only the **first** of those four commits.
+- Netflix branch `upstream/speed_ported` — 4 commits, tip `86d929fc`. Carries `core/src/feature/speed.c` (1,566 LoC, commit `1e67d38d`, Swanson + Miret 2025-05-02). PR #1488 ships only the **first** of those four commits.
 - Netflix PR [#1391](https://github.com/Netflix/vmaf/pull/1391) "Add vmaf_v0.6.1still.json", opened 2024-10-11 by @cosmin (Meta). The only genuinely-pending model JSON anywhere in Netflix-upstream review.
 - [`resource/doc/models.md`](https://github.com/Netflix/vmaf/blob/master/resource/doc/models.md) — authoritative upstream model catalog; describes `--phone-model` as a score-transform applied to `vmaf_v0.6.1.json`, not a separate JSON.
 - Netflix issue [#645](https://github.com/Netflix/vmaf/issues/645) "Did the HDR model ever get released?" — CLOSED 2025-07-25.
@@ -46,7 +46,7 @@ it isn't caught flat-footed when a successor lands?
 
 The SpEED C implementation does exist in the Netflix tree, but only on
 branch `upstream/speed_ported` — not on upstream `master`, and not in
-PR #1488. The source (`libvmaf/src/feature/speed.c`, 1,566 LoC)
+PR #1488. The source (`core/src/feature/speed.c`, 1,566 LoC)
 defines two extractors that emit four feature names:
 
 - `Speed_chroma_feature_speed_chroma_u_score`
@@ -59,7 +59,7 @@ Two hard-blocker gaps exist on the `speed_ported` branch itself:
 1. **No model consumes the features.** `git grep Speed_chroma_feature
    model/` and `git grep Speed_temporal_feature model/` both return
    zero matches in every `.json` in the Netflix tree.
-2. **The extractors are not registered.** `libvmaf/src/feature/feature_extractor.c`
+2. **The extractors are not registered.** `core/src/feature/feature_extractor.c`
    does not extern-declare `vmaf_fex_speed_chroma` or
    `vmaf_fex_speed_temporal`, so they are not added to the global
    feature list. Even if the file were compiled into the shared
@@ -115,7 +115,7 @@ phone screen viewing. This model can be invoked by adding
 score-transform applied to `vmaf_v0.6.1.json`, not as a separate
 JSON. No corroborating internal artefact exists.
 
-`libvmaf/src/model.c` does not reference any JSON that is missing
+`core/src/model.c` does not reference any JSON that is missing
 from disk; grep for `phone|mobile` in `resource/doc/*.md` matched
 only the existing phone-transform prose. No draft PR or branch
 stages a new 4K / HDR / mobile / internal model.

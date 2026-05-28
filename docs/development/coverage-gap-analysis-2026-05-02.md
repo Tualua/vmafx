@@ -74,48 +74,48 @@ Filtered to ≥ 50 lines so trivially-small files don't dominate.
 
 | Pct    | Lines | File                                                    | Bucket          |
 |--------|-------|---------------------------------------------------------|-----------------|
-|  0.0 % |   103 | `libvmaf/src/feature/common/blur_array.c`               | feature_cpu     |
-|  0.0 % |    57 | `libvmaf/src/feature/float_moment.c`                    | feature_cpu     |
-|  0.0 % |   115 | `libvmaf/src/feature/integer_motion_v2.c`               | feature_cpu     |
-|  0.0 % |    73 | `libvmaf/src/feature/motion.c`                          | feature_cpu     |
-|  0.0 % |   712 | `libvmaf/src/feature/speed.c`                           | feature_cpu     |
-|  0.0 % |   480 | `libvmaf/src/feature/ssimulacra2.c`                     | feature_cpu     |
-|  0.0 % |   161 | `libvmaf/src/feature/third_party/xiph/psnr_hvs.c`       | feature_cpu     |
-|  0.0 % |    61 | `libvmaf/src/gpu_picture_pool.c`                        | core (GPU glue) |
-|  8.5 % | 1 959 | `libvmaf/src/svm.cpp`                                   | core            |
-| 15.3 % |   131 | `libvmaf/src/feature/transnet_v2.c`                     | feature_cpu     |
-| 16.3 % |   123 | `libvmaf/src/feature/fastdvdnet_pre.c`                  | feature_cpu     |
-| 18.4 % | 1 619 | `libvmaf/src/feature/integer_adm.c`                     | feature_cpu     |
-| 21.3 % |   254 | `libvmaf/src/feature/ciede.c`                           | feature_cpu     |
-| 22.7 % |    88 | `libvmaf/src/feature/feature_mobilesal.c`               | feature_cpu     |
-| 23.3 % |    90 | `libvmaf/src/feature/feature_lpips.c`                   | feature_cpu     |
-| 28.3 % |   230 | `libvmaf/src/output.c`                                  | core            |
-| 29.5 % |   352 | `libvmaf/src/feature/vif_tools.c`                       | feature_cpu     |
-| 33.5 % |   669 | `libvmaf/src/feature/adm_tools.c`                       | feature_cpu     |
-| 36.5 % |    85 | `libvmaf/src/feature/ansnr_tools.c`                     | feature_cpu     |
-| 45.4 % |   302 | `libvmaf/src/predict.c`                                 | core            |
-| 52.2 % |   556 | `libvmaf/src/pdjson.c`                                  | core            |
-| 55.4 % |   616 | `libvmaf/src/libvmaf.c`                                 | core            |
-| 62.6 % |   163 | `libvmaf/src/model.c`                                   | core            |
+|  0.0 % |   103 | `core/src/feature/common/blur_array.c`               | feature_cpu     |
+|  0.0 % |    57 | `core/src/feature/float_moment.c`                    | feature_cpu     |
+|  0.0 % |   115 | `core/src/feature/integer_motion_v2.c`               | feature_cpu     |
+|  0.0 % |    73 | `core/src/feature/motion.c`                          | feature_cpu     |
+|  0.0 % |   712 | `core/src/feature/speed.c`                           | feature_cpu     |
+|  0.0 % |   480 | `core/src/feature/ssimulacra2.c`                     | feature_cpu     |
+|  0.0 % |   161 | `core/src/feature/third_party/xiph/psnr_hvs.c`       | feature_cpu     |
+|  0.0 % |    61 | `core/src/gpu_picture_pool.c`                        | core (GPU glue) |
+|  8.5 % | 1 959 | `core/src/svm.cpp`                                   | core            |
+| 15.3 % |   131 | `core/src/feature/transnet_v2.c`                     | feature_cpu     |
+| 16.3 % |   123 | `core/src/feature/fastdvdnet_pre.c`                  | feature_cpu     |
+| 18.4 % | 1 619 | `core/src/feature/integer_adm.c`                     | feature_cpu     |
+| 21.3 % |   254 | `core/src/feature/ciede.c`                           | feature_cpu     |
+| 22.7 % |    88 | `core/src/feature/feature_mobilesal.c`               | feature_cpu     |
+| 23.3 % |    90 | `core/src/feature/feature_lpips.c`                   | feature_cpu     |
+| 28.3 % |   230 | `core/src/output.c`                                  | core            |
+| 29.5 % |   352 | `core/src/feature/vif_tools.c`                       | feature_cpu     |
+| 33.5 % |   669 | `core/src/feature/adm_tools.c`                       | feature_cpu     |
+| 36.5 % |    85 | `core/src/feature/ansnr_tools.c`                     | feature_cpu     |
+| 45.4 % |   302 | `core/src/predict.c`                                 | core            |
+| 52.2 % |   556 | `core/src/pdjson.c`                                  | core            |
+| 55.4 % |   616 | `core/src/libvmaf.c`                                 | core            |
+| 62.6 % |   163 | `core/src/model.c`                                   | core            |
 
 The **top three** non-GPU/non-SIMD targets by absolute uncovered line
 count are:
 
-1. `libvmaf/src/svm.cpp` — 1 959 lines, 8.5 %
+1. `core/src/svm.cpp` — 1 959 lines, 8.5 %
    (~1 793 uncovered lines). Upstream-imported libsvm; only the
    prediction path is exercised by classic VMAF model inference. The
    training path (`svm_train`, `svm_save_model`, `svm_check_parameter`,
    the SMO solver) is dead in production but still instrumented.
-2. `libvmaf/src/feature/integer_adm.c` — 1 619 lines, 18.4 %
+2. `core/src/feature/integer_adm.c` — 1 619 lines, 18.4 %
    (~1 321 uncovered lines). Fixed-point ADM scale 1–4 inner loops, dwt
    stages, plus the 8/10/12-bit width specialisations.
-3. `libvmaf/src/feature/adm_tools.c` — 669 lines, 33.5 %
+3. `core/src/feature/adm_tools.c` — 669 lines, 33.5 %
    (~445 uncovered lines). Float ADM helper paths (CSF tables, decouple,
    contrast-mask), exercised partially by the float ADM test.
 
 ## 4. Critical-path status
 
-`scripts/ci/coverage-check.sh` flags files under `libvmaf/src/dnn/`,
+`scripts/ci/coverage-check.sh` flags files under `core/src/dnn/`,
 `opt.c`, `read_json_model.c` as security-critical (85 % min, with
 ADR-0114 per-file overrides for `ort_backend.c` / `dnn_api.c` at 78 %
 and `tiny_extractor_template.h` at 10 %).
@@ -147,14 +147,14 @@ coverage on touched lines).
 
 ### R1 — Exclude libsvm training path from the coverage corpus (Priority: HIGH)
 
-- **What:** Add `libvmaf/src/svm.cpp` to the `gcovr --exclude` filter
+- **What:** Add `core/src/svm.cpp` to the `gcovr --exclude` filter
   in `tests-and-quality-gates.yml`, or split it so only the prediction
   half (`svm_predict_*`, `svm_load_model`, `svm_destroy_*`) is
   instrumented. The training half is unreachable from libvmaf at runtime
   (we never call `svm_train`).
 - **Impact:** Removes ~1 793 dead uncovered lines from the denominator.
   Headline jumps from **43.2 % → ~50.7 %** with zero new test code.
-- **Scope:** ~5 lines of YAML, optionally a small `libvmaf/meson.build`
+- **Scope:** ~5 lines of YAML, optionally a small `core/meson.build`
   hunk plus one ADR documenting the decision (analogue to the
   `tiny_extractor_template.h` carve-out). **~30 min, no test fixtures.**
 - **Risk:** Must document the reasoning (otherwise future maintainers
@@ -164,7 +164,7 @@ coverage on touched lines).
 ### R2 — Add an `integer_adm` golden-equivalence test (Priority: HIGH)
 
 - **What:** Extend `python/test/feature_extractor_test.py` (or a new C
-  unit test under `libvmaf/test/`) with a 1080p YUV fixture that walks
+  unit test under `core/test/`) with a 1080p YUV fixture that walks
   `integer_adm.c` scale 0–3 across 8/10/12-bit widths. The Netflix
   golden fixtures already cover one width — we need the other two
   bit-depths to hit the dead specialisations (most of the 1 321
@@ -269,7 +269,7 @@ gcovr --root .. --filter 'src/.*' --exclude '.*/test/.*' \
   --print-summary --txt build-coverage/coverage.txt \
   --json-summary build-coverage/coverage.json \
   build-coverage
-scripts/ci/coverage-check.sh libvmaf/build-coverage/coverage.json 40 85
+scripts/ci/coverage-check.sh core/build-coverage/coverage.json 40 85
 ```
 
 This investigation used the CI artifact directly

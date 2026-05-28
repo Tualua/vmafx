@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Cross-backend GPU-parity CI gate (T6-8 / ADR-0214).
 
 Generalisation of ``cross_backend_vif_diff.py``: iterates every
@@ -628,7 +628,7 @@ def parse_args() -> argparse.Namespace:
         "--vmaf-binary",
         type=Path,
         required=True,
-        help="path to libvmaf/build/tools/vmaf",
+        help="path to core/build/tools/vmaf",
     )
     ap.add_argument("--reference", type=Path, required=True)
     ap.add_argument("--distorted", type=Path, required=True)

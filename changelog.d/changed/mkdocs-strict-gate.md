@@ -7,7 +7,7 @@
   omitted_files}` to `warn`; keeps `links.{not_found,
   unrecognized_links}` at `info` because the dominant population is
   intentional cross-tree pointers from docs to source files
-  (`../../libvmaf/src/...`, `../../scripts/ci/...`,
+  (`../../core/src/...`, `../../scripts/ci/...`,
   `../../.github/workflows/...`) plus ADR-bodies whose target slug
   has been renamed — both unfixable under the existing fork policy
   (ADR-0028 / ADR-0106 immutability for the latter, no `index.md`

@@ -7,8 +7,8 @@ happens manually in a local Windows VM.
 
 ## When you need to run this
 
-- You changed [libvmaf/src/sycl/d3d11_import.cpp](../../libvmaf/src/sycl/d3d11_import.cpp).
-- You changed [libvmaf/src/sycl/common.cpp](../../libvmaf/src/sycl/common.cpp)
+- You changed [core/src/sycl/d3d11_import.cpp](../../core/src/sycl/d3d11_import.cpp).
+- You changed [core/src/sycl/common.cpp](../../core/src/sycl/common.cpp)
   in a way that affects `vmaf_sycl_upload_plane` (the import path's sink).
 - You bumped the Intel oneAPI DPC++ toolkit version.
 

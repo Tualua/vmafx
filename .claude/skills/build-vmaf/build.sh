@@ -112,5 +112,5 @@ t1=$(date +%s)
 
 echo
 echo "built in $((t1 - t0))s"
-echo "cli : $repo_root/libvmaf/build/tools/vmaf"
-echo "lib : $repo_root/libvmaf/build/src/libvmaf.so.3.0.0"
+echo "cli : $repo_root/core/build/tools/vmaf"
+echo "lib : $repo_root/core/build/src/libvmaf.so.3.0.0"

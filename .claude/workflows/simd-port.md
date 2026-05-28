@@ -78,7 +78,7 @@ Mandatory steps:
   the golden pair).
 - Decision matrix in the ADR's `## Alternatives considered`:
   shipped-as-default vs ceiling-row vs deferred.
-- AGENTS.md note in `libvmaf/src/feature/x86/AGENTS.md` (or
+- AGENTS.md note in `core/src/feature/x86/AGENTS.md` (or
   `arm64/AGENTS.md` for NEON) listing the new file pair.
 - Changelog fragment under `changelog.d/added/` if shipped, or
   `changelog.d/changed/` if widening, or none if ceiling.

@@ -57,7 +57,7 @@ cd libvmaf && meson setup build \
 # Run the matrix gate on the fork's stock 576×324 fixture
 cd ..
 python3 scripts/ci/cross_backend_parity_gate.py \
-    --vmaf-binary libvmaf/build/tools/vmaf \
+    --vmaf-binary core/build/tools/vmaf \
     --reference testdata/ref_576x324_48f.yuv \
     --distorted testdata/dis_576x324_48f.yuv \
     --width 576 --height 324 \

@@ -12,7 +12,7 @@ landed luma-only — `provided_features = {"psnr_y", NULL}` and a
 single dispatch per frame against a luma-sized SSBO. The original
 header comment justified the omission with "the picture_vulkan
 upload path is luma-only today", but that turned out to be wrong on
-inspection: `libvmaf/src/vulkan/picture_vulkan.c` is a generic VMA
+inspection: `core/src/vulkan/picture_vulkan.c` is a generic VMA
 byte-buffer allocator and the per-feature kernels (`psnr_vulkan.c`,
 `vif_vulkan.c`, etc.) already memcpy plane data into their own
 buffers. The host loop in `psnr_vulkan.c::extract` was already
@@ -96,7 +96,7 @@ layout makes it a one-line change if needed.
   [ADR-0175](0175-vulkan-backend-scaffold.md) — Vulkan backend
   framework already covers the buffer / descriptor / dispatch
   patterns this PR reuses; no fresh research digest needed.
-- `libvmaf/src/feature/integer_psnr.c` — CPU scalar reference for
+- `core/src/feature/integer_psnr.c` — CPU scalar reference for
   `psnr_y / psnr_cb / psnr_cr` and the `psnr_max[p]` default.
 - Source: `req` (T3-15(b) prompt — "Extend psnr_vulkan.c to
   compute psnr_cb and psnr_cr alongside the existing psnr_y").

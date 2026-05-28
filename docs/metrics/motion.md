@@ -76,13 +76,13 @@ are CPU-only; GPU paths return `-ENOTSUP` at `init()` when these are set.
 
 ```bash
 # Integer motion (default)
-libvmaf/build/tools/vmaf \
+core/build/tools/vmaf \
     --reference ref.yuv --distorted dist.yuv \
     --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
     --no_prediction --feature motion --output /dev/stdout
 
 # With FPS weight
-libvmaf/build/tools/vmaf \
+core/build/tools/vmaf \
     --reference ref.yuv --distorted dist.yuv \
     --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
     --no_prediction --feature 'motion:motion_fps_weight=0.8' \
@@ -205,13 +205,13 @@ SYCL, and Vulkan backends (ADR-0196).
 
 ```bash
 # Float motion (default options)
-libvmaf/build/tools/vmaf \
+core/build/tools/vmaf \
     --reference ref.yuv --distorted dist.yuv \
     --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
     --no_prediction --feature float_motion --output /dev/stdout
 
 # With 3-tap filter
-libvmaf/build/tools/vmaf \
+core/build/tools/vmaf \
     --reference ref.yuv --distorted dist.yuv \
     --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
     --no_prediction --feature 'float_motion:motion_filter_size=3' \

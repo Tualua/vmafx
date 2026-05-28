@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Regression tests for the 2026-05-18 BBB end-to-end v2 bug cluster.
 
 The follow-up Big Buck Bunny end-to-end smoke run (after PR #1253 /
@@ -355,7 +355,7 @@ def test_vmaf_explicit_backend_failure_errors() -> None:
     on CI hosts without Vulkan, CUDA, etc.
     """
     repo_root = Path(__file__).resolve().parents[3]
-    src = (repo_root / "libvmaf/tools/vmaf.c").read_text(encoding="utf-8")
+    src = (repo_root / "core/tools/vmaf.c").read_text(encoding="utf-8")
     # The explicit-backend gate must be defined exactly once.
     assert "explicit_backend" in src, "missing explicit_backend variable in vmaf.c"
     assert 'strcmp(c->backend, "auto") != 0' in src, "auto exemption missing"

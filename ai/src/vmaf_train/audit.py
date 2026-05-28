@@ -1,6 +1,6 @@
 """Audit shipped tiny models for compatibility with libvmaf's feature contract.
 
-Feature extractors in libvmaf/src/feature/ evolve independently from the
+Feature extractors in core/src/feature/ evolve independently from the
 tiny models trained against their output vector. A new VIF scale, a
 renamed motion feature, or a bit-depth change in the NR input can
 silently break scoring. This audits every `.onnx` under a model dir and

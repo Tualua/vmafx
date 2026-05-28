@@ -25,7 +25,7 @@ metadata columns?
 Sources: published papers + the IQA-PyTorch leaderboard. The
 common denominator across the three competitive Apache-licensed
 predictors is roughly `4M+` params plus a backbone the fork's ONNX
-op-allowlist (`libvmaf/src/dnn/op_allowlist.c`) does not admit
+op-allowlist (`core/src/dnn/op_allowlist.c`) does not admit
 without `Resize` / patch-embed / multi-head-attention surgery.
 
 ## Design constraint — ONNX-allowlist conformance

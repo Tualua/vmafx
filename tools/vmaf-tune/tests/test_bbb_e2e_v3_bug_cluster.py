@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
 """Regression tests for the 2026-05-18 BBB end-to-end v3 bug cluster.
 
 The v3 follow-up smoke run (after PR #1255 / ADR-0498 closed the v2
@@ -349,7 +349,7 @@ def test_vmaf_raw_suffixes_matches_cli_acceptance() -> None:
     vmaf-tune always passes ``--width`` / ``--height`` /
     ``--pixel_format`` / ``--bitdepth``; the CLI's ``cli_parse.c``
     flips ``settings->use_yuv = true`` on each of those flags
-    (libvmaf/tools/cli_parse.c lines 637-651 as of 2026-05-18) which
+    (core/tools/cli_parse.c lines 637-651 as of 2026-05-18) which
     routes both inputs through ``raw_input_open`` — never through
     Y4M auto-detection. ``.y4m`` files therefore fail with a file-
     size mismatch and must NOT be listed as "no decode needed".
@@ -366,7 +366,7 @@ def test_vmaf_raw_suffixes_matches_cli_acceptance() -> None:
 def test_vmaf_raw_suffixes_matches_libvmaf_cli_source() -> None:
     """Cross-check the suffix table against the libvmaf CLI source.
 
-    Walks ``libvmaf/tools/cli_parse.c`` and asserts that the flags
+    Walks ``core/tools/cli_parse.c`` and asserts that the flags
     vmaf-tune emits unconditionally (``-w`` / ``-h`` / ``-p`` / ``-b``)
     still set ``use_yuv = true``. If upstream ever changes the
     surface to accept Y4M via extension auto-detect even with explicit

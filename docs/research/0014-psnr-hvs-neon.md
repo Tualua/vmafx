@@ -20,12 +20,12 @@ against the AVX2 TU?
 ## What we already had
 
 - **Scalar reference**:
-  [`third_party/xiph/psnr_hvs.c`](../../libvmaf/src/feature/third_party/xiph/psnr_hvs.c)
+  [`third_party/xiph/psnr_hvs.c`](../../core/src/feature/third_party/xiph/psnr_hvs.c)
   — Xiph/Daala 8×8 integer DCT + contrast-sensitivity weighting
   + masking, floats only for per-block means / variances / mask
   / error accumulators.
 - **AVX2 sister**:
-  [`x86/psnr_hvs_avx2.c`](../../libvmaf/src/feature/x86/psnr_hvs_avx2.c)
+  [`x86/psnr_hvs_avx2.c`](../../core/src/feature/x86/psnr_hvs_avx2.c)
   — vectorizes the DCT 8 columns in parallel via `__m256i` (one
   register per row, 8× int32). Non-SIMD helpers (`load_block_and_means`,
   `compute_vars`, `compute_masks` minus the DCT call,
@@ -39,7 +39,7 @@ against the AVX2 TU?
   captured in rebase-notes §0052 invariant #3. **This port
   inherits the fixed signature.**
 - **NEON precedent**:
-  [`arm64/motion_v2_neon.c`](../../libvmaf/src/feature/arm64/motion_v2_neon.c)
+  [`arm64/motion_v2_neon.c`](../../core/src/feature/arm64/motion_v2_neon.c)
   (ADR-0145) — confirmed the NEON-after-AVX2 split works well
   and the test harness layout (new `test_psnr_hvs_neon.c`
   arch-gated in `meson.build`) is reusable.
