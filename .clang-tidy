@@ -25,6 +25,17 @@ Checks: >
   -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
   -misc-include-cleaner,
   -misc-no-recursion
+  # ADR-0694: tighter CERT-C enforcement (Phase 2B / ADR-0686 umbrella).
+  # cert-err33-c   — every non-void return value must be checked or (void)-cast.
+  #                  Advisory (not in WarningsAsErrors): 394 pre-existing
+  #                  violations detected on 2026-05-28; a follow-up sweep PR
+  #                  will fix the tree and promote to errors.
+  # bugprone-not-null-terminated-result — catches strncpy/strlcpy results
+  #                  that may not be null-terminated (0 violations detected;
+  #                  included for completeness of the CERT-C surface).
+  # Both checks are already covered by bugprone-* and cert-* globs above,
+  # but listing them explicitly documents intent and allows targeted
+  # WarningsAsErrors promotion in a follow-up PR without glob collateral.
 
 WarningsAsErrors: >
   bugprone-use-after-move,
@@ -37,6 +48,10 @@ WarningsAsErrors: >
   clang-analyzer-deadcode.DeadStores,
   clang-analyzer-security.*,
   performance-no-int-to-ptr
+  # ADR-0694: cert-err33-c and bugprone-not-null-terminated-result are
+  # intentionally EXCLUDED from WarningsAsErrors in this PR because 394
+  # cert-err33-c violations exist in the current tree. They will be
+  # promoted once the violation-fix sweep PR lands (see ADR-0694).
 
 # Lint our code; skip vendored / generated.
 HeaderFilterRegex: '^(libvmaf/(include|src|tools|test)|python|ai)/.*\.(h|hpp|hxx|cuh)$'

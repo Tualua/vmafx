@@ -37,6 +37,35 @@ this PR. If a future PR adds a new required check, the author must update
 configuration. Netflix/vmaf uses a different CI setup. No upstream-shared C
 sources, headers, or build scripts are modified.
 
+## ci/vmafx-phase2b-lint-sanitizer-gates (ADR-0694)
+
+**Rebase impact: advisory.** `.clang-tidy` is a fork-local file with no upstream
+Netflix/vmaf equivalent (upstream does not ship a `.clang-tidy` at the repo root).
+Upstream syncs that touch C source files will not conflict with this change.
+
+However, if a future upstream sync adds C code that triggers `cert-err33-c`
+violations (unchecked non-void return values), the advisory warnings will now
+appear in the fork's PR-scoped clang-tidy pass. This is expected and beneficial —
+it surfaces upstream-introduced violations that the fork's CLAUDE.md §6 rule
+already requires to be fixed.
+
+**Sanitizer gate invariant**: the three sanitizer jobs (`address`, `undefined`,
+`thread`) are required CI gates via the Required Checks Aggregator. Upstream
+syncs that add new C source files or modify existing ones must pass the sanitizer
+suite. Known exclusion: `test_model` is deselected across all three sanitizer
+flavours (pre-existing defect in `svm.cpp` parser — tracked as
+`T-SANITIZER-DEFECTS-REVEALED-758` in `docs/state.md`). If upstream modifies
+`svm.cpp` in a way that fixes the underlying defect, remove `test_model` from
+the `EXCLUDE` list in the sanitizer job in `tests-and-quality-gates.yml`.
+
+Smoke:
+`find libvmaf/src libvmaf/tools -name '*.c' | xargs clang-tidy -p /tmp/build-tidy-scan --checks='-*,cert-err33-c,bugprone-not-null-terminated-result' 2>&1 | grep -c '\[cert-err33-c\]'`
+Expected: 394 (or fewer if the sweep PR has landed).
+
+Touched files: `.clang-tidy`, `docs/adr/0694-vmafx-lint-sanitizer-gates.md`,
+`docs/state.md`, `docs/rebase-notes.md`,
+`changelog.d/changed/vmafx-stricter-lint-sanitizers.md`.
+
 ## feat/ai-run-manifest-helper (ADR-0678)
 
 **No upstream rebase impact**: this touches fork-local AI helper code, AI
