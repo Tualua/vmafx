@@ -36,7 +36,7 @@ for cand in "${ONEAPI_CANDIDATES[@]}"; do
   fi
 done
 
-cd "${VMAF_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || echo /home/kilian/dev/vmaf)}" || exit 1
+cd "${VMAF_ROOT:-$(git rev-parse --show-toplevel)}" || exit 1
 
 # Honour $VMAF_BIN if set (e.g. for an out-of-tree build); otherwise default
 # to the in-tree fork build at libvmaf/build/tools/vmaf. Earlier revisions
