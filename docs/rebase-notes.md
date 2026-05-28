@@ -7,6 +7,40 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## fix/hip-wave32-vif-motion-20260528 (ADR-0688)
+
+- **ADR**: [ADR-0688](adr/0688-hip-wave32-vif-motion-fix.md).
+- **Upstream source**: fork-local HIP kernels.  Netflix/vmaf does not ship a HIP
+  backend; there is no upstream equivalent of `libvmaf/src/feature/hip/`.
+- **Branch**: `fix/hip-wave32-vif-motion-20260528`.
+- **Rebase impact**: low.  Both changed files (`integer_motion/motion_score.hip`,
+  `integer_vif/vif_statistics.hip`) are fork-local with no upstream counterpart.
+  A rebase onto a future upstream master that adds a HIP backend would require
+  manually porting these fixes.
+
+**Key invariants**:
+1. **`wavefront_reduce_i64` must use the carry-preserving two-shuffle pattern.**
+   The split lo/hi pattern (independent `__shfl_xor` on each half) loses carry
+   and produces wrong int64 sums for negative values.  Never revert to the split
+   pattern.  See ADR-0688 §Sub-fix 2 for the proof.
+2. **`warpSize` (runtime variable) must replace every compile-time warp-size
+   constant** in HIP kernel reduction loops and lane-0 guards.  AMD RDNA2/RDNA3
+   (`gfx1030`/`gfx1036`) runs wave32; a hardcoded 64 breaks the SAD reduction.
+3. The residual 0.228 VMAF-score delta vs CPU is from `log_generate()` using
+   hardware `log2f()` — a pre-existing limitation not introduced by this fix.
+   Do not add a test that asserts HIP == CPU at places=4 for the full VMAF score
+   until the integer-LUT log2 follow-up lands.
+
+Touched files:
+`libvmaf/src/feature/hip/integer_motion/motion_score.hip`,
+`libvmaf/src/feature/hip/integer_vif/vif_statistics.hip`,
+`docs/adr/0688-hip-wave32-vif-motion-fix.md`,
+`docs/research/0688-hip-raphael-igpu-divergence.md`,
+`changelog.d/fixed/hip-wave32-vif-motion-carry-loss.md`,
+`docs/state.md`,
+`docs/backends/hip/overview.md`,
+`docs/rebase-notes.md` (this entry).
+
 ## docs/vmaf-tune-fast-nr-nav-gap — no rebase impact: doc-only
 
 This PR adds `docs/usage/vmaf-tune-fast-nr.md` to the mkdocs nav, fixes a

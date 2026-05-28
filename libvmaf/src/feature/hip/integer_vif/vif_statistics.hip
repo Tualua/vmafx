@@ -68,9 +68,30 @@
  *    - Horizontal pass + accumulation: BLOCK_X=128, BLOCK_Y=1,
  *      scalar per thread, wavefront reduce → lane-0 atomicAdd.
  *
- *  Wavefront size constant: AMD GCN/RDNA default wavefront size is 64.
- *  RDNA2+ can be configured to wave32 mode via `__launch_bounds__`; this
- *  kernel does NOT set wave32 so the default 64-lane mode applies.
+ *  Wavefront size: this kernel uses the device-side `warpSize` variable
+ *  (the standard HIP/CUDA implicit kernel parameter that holds the actual
+ *  hardware wavefront width at runtime) rather than a hardcoded constant.
+ *  RDNA2/RDNA3 targets compiled for gfx1030/gfx103x default to wave32 mode
+ *  in ROCm 5.x+; GCN/VEGA targets use wave64.  Using `warpSize` makes the
+ *  kernel correct on both families without requiring per-target recompilation.
+ *
+ *  ADR-0688: `AMD_WAVEFRONT_SIZE 64` was the pre-fix constant.  On gfx1036
+ *  (Raphael iGPU, spoofed as gfx1030 via HSA_OVERRIDE_GFX_VERSION=10.3.0)
+ *  the hardware executes wave32; `__shfl_xor(lo, 32)` exchanged with a lane
+ *  outside the 32-lane wavefront, writing corrupted values into the
+ *  accumulator.  `integer_vif_scale0..3` collapsed to near-zero, pulling
+ *  VMAF from 76.668 down to 57.335 (19-point divergence).  Fix: replace all
+ *  uses of `AMD_WAVEFRONT_SIZE` with `(unsigned)warpSize`.
+ *
+ *  Second sub-fix (ADR-0688): carry-preserving int64 wavefront reduction.
+ *  The prior split lo/hi XOR-reduce lost the carry from the low 32-bit word to
+ *  the high word during independent per-half reductions.  For negative int64
+ *  values (lo ≈ 2^32), every partial sum generates a carry that was silently
+ *  dropped, corrupting all 7 accumulator fields even after the warpSize fix.
+ *  Fixed by mirroring the CUDA twin's warp_reduce (cuda_helper.cuh): keep x
+ *  as int64_t throughout, reconstruct the neighbour's int64 per step via two
+ *  32-bit __shfl_xor calls and OR, then add it — 64-bit addition preserves the
+ *  carry implicitly.  This is the actual root cause of the 57.335 divergence.
  */
 
 #include <hip/hip_runtime.h>
@@ -182,10 +203,12 @@ __device__ __forceinline__ static void vif_statistic_one(
 }
 
 /* --------------------------------------------------------------------------
- * Boundary helper — clamp at the edge.  CPU reference path pre-pads the
- * buffer (PADDING_SQ_DATA), so a clamp inside the kernel reproduces the
- * same boundary value (replicate the last row/column).  Matches both the
- * CPU and CUDA twins within the ADR-0214 places=4 tolerance.
+ * Boundary helper — replicate: clamp coordinate to [lo, hi].
+ * Both the vertical and horizontal passes use this to match the CPU
+ * reference's PADDING_SQ_DATA replicate-pad (integer_vif.h lines 95-128).
+ * The remaining ~0.001-0.003 per-scale HIP vs CPU delta vs CUDA (which uses
+ * reflect-101 boundary in its smem-tile load) comes from single-precision
+ * log2f() rounding differences, not from this boundary treatment.
  * -------------------------------------------------------------------------- */
 
 __device__ __forceinline__ static int clamp_i(int v, int lo, int hi)
@@ -194,32 +217,54 @@ __device__ __forceinline__ static int clamp_i(int v, int lo, int hi)
 }
 
 /* --------------------------------------------------------------------------
- * Wavefront-level reduction for int64_t (ADR-0552).
+ * Wavefront-level reduction for int64_t (ADR-0552, corrected ADR-0688).
  *
- * AMD GCN/RDNA default wavefront size = 64.  We use XOR-reduce
- * (__shfl_xor) with strides 32, 16, 8, 4, 2, 1 — equivalent to the
- * CUDA twin's __shfl_down_sync reduction over 32 lanes, but extended to
- * 64 lanes.  __shfl_xor is the portable AMD intrinsic: it does not
- * require a sync mask argument (AMD wavefronts are inherently lock-step).
+ * XOR-reduce (__shfl_xor) with strides warpSize/2 .. 1.  __shfl_xor is the
+ * portable AMD intrinsic; AMD wavefronts are inherently lock-step so no
+ * sync mask is needed.
  *
- * The int64_t value is split into low/high 32-bit halves, each shuffled
- * separately, then reassembled — the same bitcast trick as the CUDA twin's
- * warp_reduce in cuda_helper.cuh.
+ * Carry-preserving implementation (ADR-0688 sub-fix 2):
+ * The int64_t value is NOT split into independent lo/hi halves.  Splitting
+ * and reducing halves independently loses the carry from the low 32-bit word
+ * to the high 32-bit word, corrupting all int64 fields when the partial sums
+ * have their high lo-bit set (which always happens for small negative values
+ * like the per-pixel shift amounts in x, x2, etc.).  Instead, at each step
+ * we reconstruct the neighbour lane's full int64 from two 32-bit shuffles and
+ * add it to the running int64 — 64-bit addition is exact (carry implicit).
+ * This mirrors the CUDA twin's warp_reduce in cuda_helper.cuh exactly.
  * -------------------------------------------------------------------------- */
 
-#define AMD_WAVEFRONT_SIZE 64
+/* ADR-0688: removed AMD_WAVEFRONT_SIZE compile-time constant; use runtime
+ * `warpSize` instead so the kernel is correct on both wave32 (gfx1030/1036)
+ * and wave64 (GCN/Vega) targets without recompilation.
+ * The WARPS_PER_BLOCK value is not needed here (we use a direct atomicAdd per
+ * wavefront lane-0 rather than a shared-memory partial-sum array).
+ *
+ * ADR-0688 sub-fix 2: carry-preserving int64 reduction.
+ * The previous split lo/hi approach lost carries when the low 32 bits of the
+ * accumulated sum overflowed, producing wrong results for negative int64 values
+ * (which have lo ≈ 2^32, generating carries on every addition).
+ *
+ * The correct approach — mirroring the CUDA twin's warp_reduce in cuda_helper.cuh —
+ * keeps `x` as int64_t throughout.  At each XOR-reduce step we fetch the
+ * neighbour lane's full int64_t by shuffling lo and hi halves separately and
+ * OR-ing them back, then ADD that to x (64-bit addition, so carry is implicit
+ * in the int64 arithmetic — no carry is lost).  This exactly matches:
+ *   x += int64_t(__shfl_down_sync(0xffffffff, x & 0xffffffff, i)) |
+ *        int64_t(__shfl_down_sync(0xffffffff, x >> 32, i) << 32)
+ * from the CUDA twin, translated to the HIP XOR-reduce idiom. */
 
 __device__ __forceinline__ static int64_t wavefront_reduce_i64(int64_t x)
 {
-    /* Low 32 bits and high 32 bits shuffled independently. */
-    uint32_t lo = (uint32_t)(x & 0xffffffffLL);
-    uint32_t hi = (uint32_t)((uint64_t)x >> 32);
-#pragma unroll
-    for (int stride = AMD_WAVEFRONT_SIZE / 2; stride > 0; stride >>= 1) {
-        lo += __shfl_xor(lo, stride);
-        hi += __shfl_xor(hi, stride);
+    for (unsigned stride = (unsigned)warpSize / 2u; stride > 0u; stride >>= 1u) {
+        /* Fetch the neighbour's int64 via two 32-bit shuffles, then OR-reconstruct
+         * the full 64-bit value and add it to x.  64-bit addition preserves the
+         * carry from the low word to the high word — the carry is never lost. */
+        int64_t neighbour = (int64_t)((uint64_t)(unsigned)__shfl_xor((int)(x & 0xffffffff), (int)stride) |
+                                      ((uint64_t)(unsigned)__shfl_xor((int)((uint64_t)x >> 32), (int)stride) << 32));
+        x += neighbour;
     }
-    return (int64_t)lo | ((int64_t)hi << 32);
+    return x;
 }
 
 /* Reduce all 7 fields of a vif_accums_hip across the wavefront.
@@ -351,10 +396,11 @@ __global__ void filter1d_8_horizontal_kernel_2_17_9(
     }
 
     /* ADR-0552: wavefront-level reduction before a single atomicAdd per wavefront.
-     * Replaces 128 per-thread atomics with 2 per field (one per 64-lane wavefront).
-     * Only lane 0 of each wavefront writes to global memory. */
+     * ADR-0688: use runtime warpSize for the lane-0 check (was AMD_WAVEFRONT_SIZE=64,
+     * incorrect on wave32 gfx1030/gfx1036 targets).  Only lane 0 of each wavefront
+     * writes to global memory. */
     thr = wavefront_reduce_accums(thr);
-    if ((threadIdx.x % AMD_WAVEFRONT_SIZE) == 0) {
+    if ((threadIdx.x % (unsigned)warpSize) == 0u) {
         atomicAdd((unsigned long long *)&accum_out->x,           (unsigned long long)thr.x);
         atomicAdd((unsigned long long *)&accum_out->x2,          (unsigned long long)thr.x2);
         atomicAdd((unsigned long long *)&accum_out->num_x,       (unsigned long long)thr.num_x);
@@ -499,10 +545,9 @@ __device__ __forceinline__ static void vif_hori_16_body(
     }
 
     /* ADR-0552: wavefront-level reduction before a single atomicAdd per wavefront.
-     * Replaces 128 per-thread atomics with 2 per field (one per 64-lane wavefront).
-     * Only lane 0 of each wavefront writes to global memory. */
+     * ADR-0688: use runtime warpSize for the lane-0 check.  Only lane 0 writes. */
     thr = wavefront_reduce_accums(thr);
-    if ((threadIdx.x % AMD_WAVEFRONT_SIZE) == 0) {
+    if ((threadIdx.x % (unsigned)warpSize) == 0u) {
         atomicAdd((unsigned long long *)&accum_out->x,           (unsigned long long)thr.x);
         atomicAdd((unsigned long long *)&accum_out->x2,          (unsigned long long)thr.x2);
         atomicAdd((unsigned long long *)&accum_out->num_x,       (unsigned long long)thr.num_x);

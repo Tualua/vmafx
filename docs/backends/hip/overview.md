@@ -1,15 +1,21 @@
 # HIP (AMD ROCm) compute backend
 
-> **Status (2026-05-18):** `vmaf --backend hip` is end-to-end working on AMD
-> ROCm hosts following [ADR-0519](../../adr/0519-hip-import-state-implementation.md).
-> The library-side `vmaf_hip_import_state` was promoted from `-ENOSYS` to a
-> real implementation; the CLI now produces a valid VMAF JSON on any AMD GPU
-> visible to ROCm. Verified on AMD gfx1036 (Radeon 680M) inside the
-> `vmaf-dev-mcp` container: VMAF = 76.66783 on the Netflix golden src01
-> pair, bit-exact match against the CPU backend (delta = 0; meets the
-> `places=4` cross-backend gate from [ADR-0214](../../adr/0214-gpu-parity-ci-gate.md)
-> with room to spare). HIP joins CUDA / SYCL / Vulkan as a fully working
-> runtime-selected backend.
+> **Status (2026-05-28):** `vmaf --backend hip` is end-to-end working on AMD
+> ROCm hosts.  VMAF = 76.440 on the Netflix golden src01 pair on AMD gfx1036
+> (Radeon 680M, `HSA_OVERRIDE_GFX_VERSION=10.3.0`) inside the `vmaf-dev-mcp`
+> container.  The residual 0.228 delta from CPU (76.668) comes from the VIF
+> kernel's `log_generate()` using hardware `log2f()` (24-bit mantissa) vs the
+> CPU's precomputed integer LUT; this is a known precision limitation, not a
+> correctness bug.  Motion metrics are bit-exact vs CPU (delta = 0).  See
+> [ADR-0688](../../adr/0688-hip-wave32-vif-motion-fix.md) for the 19-point
+> divergence fix (wave32 warpSize + carry-preserving int64 reduction).
+>
+> **Prior note (2026-05-18):** An earlier status note claimed the HIP backend
+> was bit-exact vs CPU (VMAF delta = 0).  This was incorrect — ADR-0552 had
+> fixed the per-frame `atomicAdd` non-determinism in the VIF kernel but a
+> second deeper bug (split lo/hi int64 reduction losing carry bits, exposed
+> only on RDNA2/3 wave32 targets) went undetected until PR #1561.  The ADR-0519
+> "bit-exact" claim is superseded by ADR-0688.
 >
 > **Dispatch posture (2026-05-18, updated per
 > [ADR-0530](../../adr/0530-hip-feature-flag-promotion-and-picture-buffer.md)):**
