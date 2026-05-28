@@ -63,6 +63,19 @@ packages = ["src/vmaf_train", "src/aiutils"]
 "src/vmaf_train/data/manifests" = "vmaf_train/data/manifests"
 "configs" = "vmaf_train/configs"
 
+[tool.pytest.ini_options]
+# Suppress PyTorch 2.9+ DeprecationWarning that fires unconditionally when
+# torch.onnx.export is called with dynamo=False (legacy TorchScript path).
+# The fork intentionally pins dynamo=False for all ONNX exports because
+# the dynamo exporter does not yet support the quantisation-related intermediate
+# buffers produced by convert_fx (see ADR-0207 §Why two-step).  The warning
+# originates inside torch/onnx/__init__.py and cannot be avoided by callers.
+filterwarnings = [
+    "ignore:You are using the legacy TorchScript-based ONNX export:DeprecationWarning",
+    "ignore:from_dynamic_axes_to_dynamic_shapes is deprecated:DeprecationWarning",
+    "ignore:The feature will be removed. Please remove usage of this function:DeprecationWarning",
+]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
