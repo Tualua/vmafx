@@ -39766,6 +39766,20 @@ Touched files:
 
 ---
 
+## Research-0733 — VMAFX eBPF optimization target — 2026-05-28
+
+No rebase impact: docs-only PR. All touched files (`docs/research/`, `changelog.d/`,
+`docs/state.md`, `docs/rebase-notes.md`) are fork-local with no upstream Netflix/vmaf
+equivalent. No C source, no build system, no test assertions changed.
+
+Touched files:
+`docs/research/0733-vmafx-ebpf-optimization-target.md` (new),
+`changelog.d/changed/ebpf-research.md` (new),
+`docs/state.md` (new row),
+`docs/rebase-notes.md` (this entry).
+
+---
+
 ## `cmd/vmafx-operator` — Kubernetes Operator kubebuilder skeleton (ADR-0714)
 
 **No rebase impact** on upstream C/Python code: the operator is entirely
