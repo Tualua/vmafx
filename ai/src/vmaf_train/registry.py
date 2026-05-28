@@ -22,7 +22,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from aiutils.run_manifest import normalise_manifest_value
+from aiutils.run_manifest import dumps_manifest_json
 
 SCHEMA_VERSION = 1
 VALID_KINDS = {"fr", "nr", "filter"}
@@ -30,8 +30,7 @@ VALID_KINDS = {"fr", "nr", "filter"}
 
 def dumps_registry_json(payload: Mapping[str, Any]) -> str:
     """Serialize model-registry metadata as strict RFC-8259 JSON."""
-    normalised = normalise_manifest_value(payload)
-    return json.dumps(normalised, indent=2, sort_keys=True, allow_nan=False) + "\n"
+    return dumps_manifest_json(payload)
 
 
 def write_registry_json(path: Path, payload: Mapping[str, Any]) -> None:

@@ -60,7 +60,11 @@ SCRIPT_PATH = _SCRIPT_PATHS.script_path
 REPO_ROOT = _SCRIPT_PATHS.repo_root
 
 from aiutils.cli_helpers import collect_cli_argv, make_argument_parser  # noqa: E402
-from aiutils.run_manifest import build_run_provenance, write_manifest_json  # noqa: E402
+from aiutils.run_manifest import (  # noqa: E402
+    build_run_provenance,
+    dumps_manifest_json,
+    write_manifest_json,
+)
 
 CANONICAL_6: tuple[str, ...] = (
     "adm2",
@@ -327,7 +331,7 @@ def main(argv: list[str] | None = None) -> int:
         ),
     }
 
-    print(json.dumps(report, indent=2))
+    print(dumps_manifest_json(report), end="")
 
     if args.metrics_out is not None:
         write_manifest_json(args.metrics_out, report)

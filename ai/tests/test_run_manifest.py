@@ -13,6 +13,7 @@ from aiutils.run_manifest import (
     build_run_manifest_payload,
     build_run_provenance,
     describe_path,
+    dumps_manifest_json,
     normalise_namespace,
     write_manifest_json,
     write_run_manifest,
@@ -119,6 +120,15 @@ def test_write_manifest_json_is_strict_for_nonfinite_values(tmp_path: Path) -> N
         "rmse": None,
         "srocc": None,
     }
+
+
+def test_dumps_manifest_json_matches_write_boundary() -> None:
+    raw = dumps_manifest_json({"z": math.inf, "a": {"score": math.nan}})
+
+    assert raw.endswith("\n")
+    assert "Infinity" not in raw
+    assert "NaN" not in raw
+    assert json.loads(raw) == {"a": {"score": None}, "z": None}
 
 
 def test_build_run_manifest_payload_deduplicates_common_envelope(tmp_path: Path) -> None:

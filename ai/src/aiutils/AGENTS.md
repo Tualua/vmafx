@@ -23,6 +23,8 @@ When writing a new script in `ai/scripts/` or a new module in
    existing report schema. Do not hand-roll path hashing or the manifest
    envelope in each script. Manifest JSON is strict RFC-8259 JSON:
    non-finite floats are serialized as `null`, never `NaN` or `Infinity`.
+   Use `dumps_manifest_json()` for stdout JSON paths that expose the same
+   report payload without writing it to disk.
 6. **CLI setup:** Use `make_argument_parser()` and `collect_cli_argv()` from
    `aiutils.cli_helpers` for new operator-facing scripts. Batch manifest runners
    must also use `add_batch_manifest_arguments()` so `--manifest`,
@@ -39,5 +41,5 @@ When writing a new script in `ai/scripts/` or a new module in
 - `time_utils.py` — `now_iso_8601() -> str`
 - `jsonl_utils.py` — `iter_jsonl(path) -> Iterator[tuple[int, dict]]`
 - `parquet_utils.py` — `write_parquet_atomic(df, output, **kwargs) -> None`
-- `run_manifest.py` — deterministic `run_provenance` sidecar helpers
+- `run_manifest.py` — deterministic `run_provenance` sidecar/stdout helpers
 - `cli_helpers.py` — shared parser/raw-argv/batch-manifest argument helpers
