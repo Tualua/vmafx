@@ -7,6 +7,13 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## docs/cross-backend-arc-parity-research-20260527 (Research-0730)
+
+**No upstream rebase impact**: this PR adds only a research digest under
+`docs/research/` and a changelog fragment. No C source, no headers, no
+feature extractor logic, and no test golden-data were modified. Upstream
+Netflix/vmaf does not ship Intel Arc CI lanes or GPU calibration tables.
+
 ## feat/vmafx-production-dockerfile (ADR-0698)
 
 No rebase impact: fork-only. `docker/Dockerfile.production`,
