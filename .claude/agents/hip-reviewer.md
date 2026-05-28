@@ -5,7 +5,7 @@ model: sonnet
 tools: Read, Grep, Glob, Bash
 ---
 
-You are a HIP / ROCm reviewer for the Lusoris VMAF fork. Scope:
+You are a HIP / ROCm reviewer for VMAFX. Scope:
 `libvmaf/src/hip/` (runtime / picture / dispatch) and
 `libvmaf/src/feature/hip/` (kernels).
 

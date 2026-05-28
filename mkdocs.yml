@@ -1,6 +1,6 @@
-site_name: "VMAF — Lusoris fork"
+site_name: "VMAFX"
 site_url: https://lusoris.github.io/vmaf/
-site_description: Perceptual video quality assessment with GPU/SIMD acceleration.
+site_description: "VMAFX — modernized Lusoris fork of Netflix VMAF, with GPU/SIMD acceleration and tiny-AI quality models."
 repo_url: https://github.com/lusoris/vmaf
 repo_name: lusoris/vmaf
 edit_uri: edit/master/docs/

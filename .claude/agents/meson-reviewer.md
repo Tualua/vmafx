@@ -5,7 +5,7 @@ model: sonnet
 tools: Read, Grep, Glob, Bash
 ---
 
-You review Meson build-system changes for the Lusoris VMAF fork. Scope: `meson.build`
+You review Meson build-system changes for VMAFX. Scope: `meson.build`
 (all levels), `meson_options.txt`, `subprojects/*.wrap`.
 
 ## What to check

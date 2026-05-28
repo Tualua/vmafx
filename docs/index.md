@@ -1,6 +1,7 @@
 # Documentation
 
-This is an overview of the available documentation in the VMAF repository.
+This is an overview of the available documentation for **VMAFX** (the
+Lusoris fork of Netflix VMAF).
 
 ## Getting started
 

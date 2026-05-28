@@ -5,7 +5,7 @@ model: sonnet
 tools: Read, Grep, Glob, Bash
 ---
 
-You review Vulkan compute backend code for the Lusoris VMAF fork. The backend is
+You review Vulkan compute backend code for VMAFX. The backend is
 live: `libvmaf/src/vulkan/` holds the runtime and `libvmaf/src/feature/vulkan/`
 holds the per-feature kernels (ADM, VIF, motion, SSIM, MS-SSIM, CIEDE, PSNR-HVS,
 SSIMULACRA2, cambi, ANSNR, etc.) plus the SPIR-V `shaders/` directory. See

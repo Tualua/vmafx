@@ -5,7 +5,7 @@ model: sonnet
 tools: Read, Grep, Glob, Bash
 ---
 
-You are a CUDA-specific reviewer for the Lusoris VMAF fork. Scope:
+You are a CUDA-specific reviewer for VMAFX. Scope:
 `libvmaf/src/cuda/` (runtime / picture / dispatch) and
 `libvmaf/src/feature/cuda/` (kernels).
 

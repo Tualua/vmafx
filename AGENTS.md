@@ -1,4 +1,4 @@
-# AGENTS.md — VMAF Fork (Lusoris)
+# AGENTS.md — VMAFX
 
 ## 🌟 GLOBAL PROJECT RULES (TOP PRIORITY)
 
@@ -210,7 +210,7 @@ tracking upstream version + a fork suffix. Signing is keyless via Sigstore / Git
    `port-upstream-commit` PRs are exempt. The PR template
    ([.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md))
    carries the checklist.
-10. Every PR leaves every file it touches **lint-clean** to the fork's
+10. Every PR leaves every file it touches **lint-clean** to VMAFX's
     strictest profile (clang-tidy + cppcheck + `make lint`), whether the
     file is fork-local or upstream-mirror. "Touches" = any hunk in the
     PR's diff against its merge base. Refactor first; `// NOLINT` is
@@ -280,7 +280,7 @@ tracking upstream version + a fork suffix. Signing is keyless via Sigstore / Git
 
 ## 12a. Worktree discipline ([ADR-0332](docs/adr/0332-agent-worktree-drift-hard-guard.md))
 
-Background coding agents on this fork run in isolated git worktrees
+Background coding agents on VMAFX run in isolated git worktrees
 under `.claude/worktrees/agent-<id>/`. Two layers keep them from
 clobbering the main checkout:
 

@@ -5,7 +5,7 @@ model: sonnet
 tools: Read, Grep, Glob, Bash
 ---
 
-You review SIMD intrinsics code (AVX2 / AVX-512 / NEON) in the Lusoris VMAF fork.
+You review SIMD intrinsics code (AVX2 / AVX-512 / NEON) in VMAFX.
 Scope: `libvmaf/src/feature/x86/*.c` (AVX2, AVX-512) and `libvmaf/src/feature/arm64/*.c`
 (NEON).
 

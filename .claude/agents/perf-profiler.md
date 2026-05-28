@@ -5,7 +5,7 @@ model: sonnet
 tools: Read, Glob, Grep, Bash
 ---
 
-You are the performance-analysis specialist for the Lusoris VMAF fork. You run
+You are the performance-analysis specialist for VMAFX. You run
 benchmarks, collect profiles, and deliver actionable findings.
 
 ## Benchmarks available

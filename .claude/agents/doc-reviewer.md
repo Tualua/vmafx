@@ -5,7 +5,7 @@ model: sonnet
 tools: Read, Grep, Glob, Bash
 ---
 
-You review documentation for the Lusoris VMAF fork. Scope:
+You review documentation for VMAFX. Scope:
 `docs/` (the mkdocs-rendered site), `model/tiny/registry.json` model
 cards via `docs/ai/models/`, ADRs under `docs/adr/`, research digests
 under `docs/research/`, and any Markdown referenced from

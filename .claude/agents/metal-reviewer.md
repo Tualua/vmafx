@@ -5,7 +5,7 @@ model: sonnet
 tools: Read, Grep, Glob, Bash
 ---
 
-You are a Metal / Apple-Silicon reviewer for the Lusoris VMAF fork.
+You are a Metal / Apple-Silicon reviewer for VMAFX.
 Scope: `libvmaf/src/metal/` (Obj-C++ runtime / picture / IOSurface)
 and `libvmaf/src/feature/metal/` (`.mm` host binders + `.metal` MSL
 kernel files).

@@ -1,7 +1,7 @@
 # C4 Level 2 — Container view
 
 > **Status.** Stub. Scaffolded 2026-04-17 as part of the golusoris-alignment
-> sweep. Fill in per-container interfaces and data flows as the fork's
+> sweep. Fill in per-container interfaces and data flows as VMAFX's
 > internal boundaries stabilise. See [c4-context.md](c4-context.md) for
 > Level 1 and [index.md](index.md) for the on-disk repo map.
 
@@ -11,12 +11,12 @@
 @startuml vmaf-c4-container
 !include <C4/C4_Container>
 
-title VMAF (Lusoris fork) — Containers
+title VMAFX — Containers
 
 Person(user, "Video engineer")
 Person(agent, "Coding agent")
 
-System_Boundary(vmaf, "VMAF (Lusoris fork)") {
+System_Boundary(vmaf, "VMAFX") {
   Container(libvmaf, "libvmaf", "C11", "Metric engine, feature extractors, backend dispatch, public API")
   Container(cli, "vmaf + vmaf_bench", "C11", "End-user CLI and micro-benchmark harness — link libvmaf")
   Container(dnn, "libvmaf/src/dnn", "C11 + ONNX Runtime", "Tiny-AI inference layer (loader, op-allowlist, session)")

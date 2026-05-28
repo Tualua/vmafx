@@ -4,7 +4,7 @@
 |-------------------|----------------------------------------------------------------------|
 | Date              | 2026-05-02                                                           |
 | Companion ADR     | None (decision is DEFER + lean NO-GO; documented here, no ADR)       |
-| Author            | cuda-graph-capture worktree (Lusoris fork)                           |
+| Author            | cuda-graph-capture worktree (VMAFX)                                  |
 | Trigger           | `cuda-dedup-profile-2026-05-02.md` §Optimization candidates item 5   |
 | Worktree branch   | `feat/cuda-graph-capture-investigation`                              |
 

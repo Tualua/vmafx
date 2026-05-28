@@ -1,4 +1,7 @@
-# VMAF — Lusoris Fork
+# VMAFX
+
+> Modernized Lusoris fork of Netflix VMAF,
+> dual-licensed BSD-3-Clause-Plus-Patent OR MIT.
 
 [![Tests & Quality Gates](https://github.com/lusoris/vmaf/actions/workflows/tests-and-quality-gates.yml/badge.svg)](https://github.com/lusoris/vmaf/actions/workflows/tests-and-quality-gates.yml)
 [![Lint & Format](https://github.com/lusoris/vmaf/actions/workflows/lint-and-format.yml/badge.svg)](https://github.com/lusoris/vmaf/actions/workflows/lint-and-format.yml)
@@ -10,9 +13,9 @@
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/lusoris/vmaf/badge)](https://securityscorecards.dev/viewer/?uri=github.com/lusoris/vmaf)
 [![ko-fi](https://img.shields.io/badge/ko--fi-support%20lusoris-ff5e5b?logo=kofi&logoColor=white)](https://ko-fi.com/lusoris)
 
-**A GPU-accelerated, full-precision, signed-release fork of
-[Netflix/vmaf](https://github.com/Netflix/vmaf)** — perceptual video quality
-assessment, Emmy-winning, now with:
+**VMAFX** is a GPU-accelerated, full-precision, signed-release fork of
+[Netflix/vmaf](https://github.com/Netflix/vmaf) — perceptual video quality
+assessment, Emmy-winning, extended with:
 
 - **SYCL / oneAPI** GPU backend (Intel, NVIDIA, AMD via Codeplay plugins),
   with a fp64-less device fallback path for Intel Arc / iGPU silicon.
@@ -47,7 +50,7 @@ assessment, Emmy-winning, now with:
 - **Signed releases** — every tag carries SBOM (SPDX + CycloneDX), Sigstore
   keyless signatures, and SLSA L3 provenance.
 
-Upstream Netflix/vmaf stays authoritative for the scoring algorithm; the fork
+Upstream Netflix/vmaf stays authoritative for the scoring algorithm; VMAFX
 adds backends, tooling, and productization without changing the numerical
 contract. The three Netflix CPU golden-data tests (1 normal + 2 checkerboard
 pairs) run as a required CI gate on every PR — see

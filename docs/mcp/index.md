@@ -1,6 +1,6 @@
 # MCP server — `vmaf-mcp`
 
-The Lusoris VMAF fork ships **two** MCP surfaces:
+**VMAFX** ships **two** MCP surfaces:
 
 1. **External Python MCP server** (`vmaf-mcp`, this document) —
    wraps the `vmaf` CLI, recommended for "score a video and hand
@@ -17,7 +17,7 @@ The Lusoris VMAF fork ships **two** MCP surfaces:
 The two surfaces are additive; running both at once is fine.
 
 `vmaf-mcp` is a [Model Context Protocol](https://modelcontextprotocol.io)
-server that exposes the Lusoris VMAF fork's scoring CLI to LLM tooling
+server that exposes VMAFX's scoring CLI to LLM tooling
 (Claude Desktop, Cursor, custom MCP clients) over JSON-RPC on stdio.
 It lives in [mcp-server/vmaf-mcp/](../../mcp-server/vmaf-mcp/).
 
@@ -39,14 +39,14 @@ under an allowlisted root. See [security](#security-model) below.
 ## Tool catalogue
 
 | Tool | Purpose | Detail |
-|---|---|---|
+| --- | --- | --- |
 | `vmaf_score` | Score one `(ref, dis)` YUV pair; return the full JSON report | [tools.md#vmaf_score](tools.md#vmaf_score) |
 | `list_models` | Enumerate `.json` / `.pkl` / `.onnx` under `model/` | [tools.md#list_models](tools.md#list_models) |
 | `list_backends` | Report which backends the local `vmaf` binary was built with | [tools.md#list_backends](tools.md#list_backends) |
 | `run_benchmark` | Run `testdata/bench_all.sh` on a pair | [tools.md](tools.md) |
 | `eval_model_on_split` | Evaluate a tiny-AI ONNX model on a parquet feature cache | [tools.md#eval_model_on_split](tools.md#eval_model_on_split) |
 | `compare_models` | Rank several ONNX models on the same split by descending PLCC | [tools.md#compare_models](tools.md#compare_models) |
-| `describe_worst_frames` | Score a pair, extract the N worst-VMAF frames as PNGs, and describe visible artefacts via a local VLM  | [tools.md#describe_worst_frames](tools.md#describe_worst_frames) |
+| `describe_worst_frames` | Score a pair, extract the N worst-VMAF frames as PNGs, and describe visible artefacts via a local VLM | [tools.md#describe_worst_frames](tools.md#describe_worst_frames) |
 
 All tools return a single `TextContent` message whose body is a JSON
 document. On error the body is `{"error": "<message>"}` with the same

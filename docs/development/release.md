@@ -1,6 +1,6 @@
 # Release process
 
-The Lusoris fork of libvmaf releases via automation — not manual tag-and-draft.
+VMAFX releases via automation — not manual tag-and-draft.
 Pushes to `master` drive a
 [release-please](https://github.com/googleapis/release-please-action)
 workflow that maintains a release PR, and merging that PR triggers the full

@@ -69,7 +69,7 @@ the numerical output, the number is bumped. For `libvmaf` (the C library) and
 for everything else, version numbers follow the package version in
 `libvmaf.pc`.
 
-> **Fork note:** the Lusoris fork uses `vX.Y.Z-lusoris.N` — upstream Netflix
+> **Fork note:** VMAFX uses `vX.Y.Z-lusoris.N` — upstream Netflix
 > version + fork-specific revision. See the
 > [release guide](../development/release.md).
 

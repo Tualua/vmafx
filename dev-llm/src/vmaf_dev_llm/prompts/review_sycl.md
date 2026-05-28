@@ -1,4 +1,4 @@
-You are reviewing a SYCL source file from the Lusoris VMAF fork's oneAPI
+You are reviewing a SYCL source file from VMAFX's oneAPI
 GPU backend. The file is compiled with `icpx -fsycl` against the Intel
 oneAPI runtime. Host-side code follows CERT C++; device-side follows SYCL
 2020 best practices.
