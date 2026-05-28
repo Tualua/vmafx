@@ -7,7 +7,11 @@ Local patches against FFmpeg **n8.1.1** for integrating this VMAF fork into
 
 - **`0001-libvmaf-add-tiny-model-option.patch`** — adds `tiny_model` /
   `tiny_device` / `tiny_threads` / `tiny_fp16` options on the existing
-  `libvmaf` filter; calls `vmaf_use_tiny_model()` when set.
+  `libvmaf` filter; calls `vmaf_use_tiny_model()` when set. Also emits
+  an `AV_LOG_INFO` message at filter init reminding the caller that
+  `[0:v]` is the **distorted** (main) stream and `[1:v]` is the
+  **reference** — the opposite of the Python runner and `vmaf` CLI
+  (`ref, dis` order). See `docs/usage/ffmpeg.md` §Input ordering.
 - **`0002-add-vmaf_pre-filter.patch`** — new `vmaf_pre` filter: luma-in /
   luma-out learned pre-processing via `vmaf_dnn_session_*`. Chroma
   planes pass through.

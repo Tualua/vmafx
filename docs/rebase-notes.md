@@ -7,6 +7,18 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## fix/ffmpeg-libvmaf-input-ordering-20260528 (no ADR — doc + patch fix)
+
+**Touches `ffmpeg-patches/0001-libvmaf-add-tiny-model-option.patch`** to
+add an `AV_LOG_INFO` at filter init naming the input-ordering convention
+(`[0:v]` distorted, `[1:v]` reference). When the next upstream sync
+modifies `libavfilter/vf_libvmaf.c`, re-apply the patch with
+`git am --3way` — the only conflict-prone area is the `init()` function
+where the new `av_log` is inserted near the existing one. No upstream
+parity risk: the convention itself is unchanged, only the in-band
+documentation is added. `docs/usage/ffmpeg.md` is fork-local and not
+upstream-shared.
+
 ## fix/vmaftune-compare-format-both-json-svtav1-crf — no rebase impact: tools-only
 
 **No upstream rebase impact**: changes are confined to `tools/vmaf-tune/` —
