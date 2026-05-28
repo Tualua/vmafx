@@ -18,6 +18,17 @@ unchanged. Future sweep PRs (doc rebrand, SPDX header sweep, CI dedup,
 `vmafx` CLI binary) will each add their own entries if they establish
 rebase-sensitive invariants.
 
+## ci/vmafx-ci-matrix-dedupe (ADR-0689)
+
+**No upstream rebase impact**: all changes are in `.github/workflows/` — files that
+Netflix/vmaf does not include in its own upstream repository (the fork added them
+wholesale). Rebasing from `upstream/master` will never conflict with these edits because
+there is no upstream counterpart to merge against.
+
+Invariant: the `required-aggregator.yml` list of required checks was NOT changed in
+this PR. If a future PR adds a new required check, the author must update
+`required-aggregator.yml` in the same PR.
+
 ## chore/drop-legacy-build-paths (ADR-0691)
 
 **No upstream rebase impact**: changes are confined to

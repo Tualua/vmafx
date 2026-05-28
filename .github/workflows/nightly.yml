@@ -57,6 +57,91 @@ jobs:
           name: clang-tidy-full-report
           path: clang-tidy-full.log
 
+  # ===== macOS Vulkan via MoltenVK (advisory, nightly only) =====
+  # T-CI-DEDUP-689: moved from the PR build matrix (was advisory,
+  # continue-on-error: true). MoltenVK's `GL_EXT_shader_atomic_int64`
+  # coverage (Metal Tier-2 argument buffers) is too fragile for every PR;
+  # nightly cadence matches the risk/reward. See ADR-0338, ADR-0689.
+  moltenvk-build:
+    name: Build — macOS Vulkan via MoltenVK (advisory, nightly)
+    runs-on: macos-latest
+    continue-on-error: true
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Setup python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: 3.14.5
+
+      - name: Install meson and ninja
+        run: python -m pip install --upgrade pip && pip install meson
+
+      - name: Install macOS base deps + MoltenVK + Vulkan loader/headers
+        run: |
+          brew install -q ninja nasm ccache llvm pkg-config \
+            molten-vk vulkan-loader vulkan-headers shaderc
+          BREW_PREFIX=$(brew --prefix)
+          ICD_JSON="${BREW_PREFIX}/etc/vulkan/icd.d/MoltenVK_icd.json"
+          if [ ! -f "${ICD_JSON}" ]; then
+            echo "::error::MoltenVK_icd.json not found at ${ICD_JSON}"
+            ls -la "${BREW_PREFIX}/etc/vulkan/icd.d/" || true
+            ls -la "${BREW_PREFIX}/share/vulkan/icd.d/" || true
+            exit 1
+          fi
+          echo "VK_ICD_FILENAMES=${ICD_JSON}" >> $GITHUB_ENV
+          echo "DYLD_LIBRARY_PATH=${BREW_PREFIX}/lib:${DYLD_LIBRARY_PATH:-}" >> $GITHUB_ENV
+          echo "PKG_CONFIG_PATH=${BREW_PREFIX}/lib/pkgconfig:${PKG_CONFIG_PATH:-}" >> $GITHUB_ENV
+          VK_HEADERS_INCLUDE="$(brew --prefix vulkan-headers)/include"
+          echo "CPATH=${VK_HEADERS_INCLUDE}:${CPATH:-}" >> $GITHUB_ENV
+          echo "CPLUS_INCLUDE_PATH=${VK_HEADERS_INCLUDE}:${CPLUS_INCLUDE_PATH:-}" >> $GITHUB_ENV
+          vulkaninfo --summary 2>/dev/null | tee /tmp/vulkaninfo.txt || true
+          if ! grep -qi 'MoltenVK\|Apple' /tmp/vulkaninfo.txt; then
+            echo "::debug::vulkaninfo did not report MoltenVK/Apple GPU (expected on hosted runners)"
+          fi
+          glslc --version | head -2
+
+      - name: Cache meson subprojects (Vulkan wraps)
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
+        with:
+          path: libvmaf/subprojects/packagecache
+          key: meson-packagecache-vulkan-${{ hashFiles('libvmaf/subprojects/*.wrap') }}
+          restore-keys: |
+            meson-packagecache-vulkan-
+
+      - name: Configure + build libvmaf (Vulkan/MoltenVK)
+        env:
+          CC: ccache clang
+          CXX: ccache clang++
+        run: |
+          meson setup libvmaf libvmaf/build --buildtype release \
+            --prefix $PWD/install \
+            -Denable_float=true -Denable_vulkan=enabled
+          ninja -vC libvmaf/build install
+
+      - name: Run Vulkan smoke tests
+        run: |
+          set +e
+          echo "=== Loaded ICD ==="
+          vulkaninfo --summary 2>&1 | head -80 || true
+          echo ""
+          echo "=== test_vulkan_smoke ==="
+          ./libvmaf/build/test/test_vulkan_smoke
+          smoke_rc=$?
+          echo "=== test_vulkan_pic_preallocation ==="
+          ./libvmaf/build/test/test_vulkan_pic_preallocation
+          prealloc_rc=$?
+          echo "=== test_vulkan_async_pending_fence ==="
+          ./libvmaf/build/test/test_vulkan_async_pending_fence
+          fence_rc=$?
+          echo ""
+          echo "smoke_rc=${smoke_rc} prealloc_rc=${prealloc_rc} fence_rc=${fence_rc}"
+          if [ ${smoke_rc} -ne 0 ] || [ ${prealloc_rc} -ne 0 ] || [ ${fence_rc} -ne 0 ]; then
+            echo "::warning::MoltenVK Vulkan smoke surfaced failures — see docs/backends/vulkan/moltenvk.md"
+            exit 1
+          fi
+
   netflix-benchmark:
     name: Netflix benchmark suite
     runs-on: ubuntu-24.04
