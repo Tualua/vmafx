@@ -18,6 +18,14 @@ unchanged. Future sweep PRs (doc rebrand, SPDX header sweep, CI dedup,
 `vmafx` CLI binary) will each add their own entries if they establish
 rebase-sensitive invariants.
 
+## chore/drop-legacy-build-paths (ADR-0691)
+
+**No upstream rebase impact**: changes are confined to
+`.github/workflows/libvmaf-build-matrix.yml` and
+`.github/workflows/required-aggregator.yml`, both of which are fork-local CI
+configuration. Netflix/vmaf uses a different CI setup. No upstream-shared C
+sources, headers, or build scripts are modified.
+
 ## feat/ai-run-manifest-helper (ADR-0678)
 
 **No upstream rebase impact**: this touches fork-local AI helper code, AI

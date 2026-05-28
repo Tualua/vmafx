@@ -64,22 +64,6 @@ jobs:
             CXX: ccache clang++
             name: Build — Ubuntu ARM clang (CPU)
 
-          # --- i686 (32-bit x86) build — reproduces Netflix#1481 ---
-          # Verifies libvmaf still compiles on 32-bit x86 with
-          # -Denable_asm=false. The documented workaround for the
-          # `_mm256_extract_epi64` implicit-declaration failure on
-          # 32-bit x86 is to disable the asm path; this job pins
-          # that contract so any future 32-bit-only regression trips
-          # the matrix. Tests are skipped (meson cross-build marks
-          # them SKIP 77 — host can run i686 binaries natively but
-          # meson doesn't know that). See ADR-0151.
-          - os: ubuntu-latest
-            CC: ccache gcc
-            CXX: ccache g++
-            i686: true
-            meson_extra: --cross-file=build-aux/i686-linux-gnu.ini -Denable_asm=false
-            name: Build — Ubuntu i686 gcc (CPU, no-asm)
-
           # --- DNN-enabled builds (ADR-0120) ---
           # Build with -Denable_dnn=enabled across compiler/OS combinations
           # to ensure the ORT C-API surface compiles on every CPU leg, not
@@ -288,7 +272,7 @@ jobs:
           pip install meson
 
       - name: Install dependencies (ubuntu)
-        if: startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.i686 && !matrix.hip
+        if: startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip
         run: |
           sudo apt-get update
           sudo -E apt-get -yq install ccache ninja-build nasm libomp-dev pkg-config
@@ -296,14 +280,6 @@ jobs:
           *gcc)   sudo -E apt-get -yq install gcc g++ ;;
           *clang) sudo -E apt-get -yq install clang ;;
           esac
-
-      - name: Install dependencies (ubuntu i686)
-        if: matrix.i686
-        run: |
-          sudo dpkg --add-architecture i386
-          sudo apt-get update
-          sudo -E apt-get -yq install ccache ninja-build pkg-config \
-            gcc g++ gcc-multilib g++-multilib
 
       - name: Install dependencies (mac)
         if: matrix.os == 'macos-latest'
@@ -634,12 +610,9 @@ jobs:
         # left build artifacts owned by root.
         run: sudo $(which meson) test -C libvmaf/build --suite=dnn --print-errorlogs
 
-      # CPU-only: full test suite + tox (skipped for i686 cross-build
-      # because meson marks cross-compiled tests SKIP 77 regardless of
-      # whether the host can actually run them; the build itself is
-      # what Netflix#1481 needs to pin).
+      # CPU-only: full test suite + tox.
       - name: Run tests
-        if: "!matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686 && !matrix.moltenvk"
+        if: "!matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.moltenvk"
         run: sudo ninja -vC libvmaf/build test
 
       # ---------- SSH debug session (macOS × workflow_dispatch only) ----------
@@ -707,7 +680,7 @@ jobs:
         # Insulates the tox lanes from the recurring HTTP-502s on
         # raw.githubusercontent.com when fetching python/test/resource/
         # fixtures via download_reactively (python/vmaf/config.py).
-        if: "((startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686) || matrix.os == 'macos-latest') && !matrix.moltenvk"
+        if: "((startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip) || matrix.os == 'macos-latest') && !matrix.moltenvk"
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
           path: python/test/resource
@@ -717,7 +690,7 @@ jobs:
             vmaf-fixtures-resource-
 
       - name: Run tox tests (ubuntu)
-        if: "startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip && !matrix.i686"
+        if: "startsWith(matrix.os, 'ubuntu') && !matrix.sycl && !matrix.cuda && !matrix.hip"
         run: |
           mkdir -p ~/.ccache && sudo chown -R $(whoami) ~/.ccache
           pip install tox
@@ -764,103 +737,11 @@ jobs:
           name: ${{ matrix.name }}-vmaf
           path: ./install/bin/vmaf
 
-  # ===== Windows (MSYS2 / MinGW-w64) =====
-  # Folded in from the now-deleted .github/workflows/windows.yml so the
-  # full build matrix lives in one workflow file. See ADR-0115.
-  # MINGW32 is intentionally disabled (vmaf score mismatch — upstream note);
-  # 32-bit support would need a SIMD audit before re-enabling.
-  #
-  # Job key renamed `build` → `windows` and display name set to Title Case
-  # per ADR-0116. The matrix-expanded required status check on master is
-  # re-pinned to `Build — Windows MinGW64 (CPU)` immediately after this
-  # workflow lands (see ADR-0116 §Consequences).
-  windows:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    name: Build — Windows MinGW64 (CPU)
-    runs-on: windows-2025
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # - msystem: MINGW32
-          #   MINGW_PACKAGE_PREFIX: mingw-w64-i686
-          #   CFLAGS: -msse2 -mfpmath=sse -mstackrealign
-          - msystem: MINGW64
-            MINGW_PACKAGE_PREFIX: mingw-w64-x86_64
-    env:
-      CC: ccache gcc
-      CXX: ccache g++
-      CFLAGS: -pipe -static -O3 -mtune=generic -D_FILE_OFFSET_BITS=64 -mthreads
-      CXXFLAGS: -pipe -static -O3 -mtune=generic -D_FILE_OFFSET_BITS=64 -mthreads
-      LDFLAGS: -pipe -static -static-libgcc -static-libstdc++
-    defaults:
-      run:
-        shell: msys2 {0}
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          fetch-depth: 0
-
-      - name: Cache ccache files
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
-        with:
-          path: .ccache
-          key: ${{ runner.os }}-${{ matrix.msystem }}-0-${{ hashFiles('**/*.c') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.msystem }}-0-
-            ${{ runner.os }}-${{ matrix.msystem }}-
-
-      - uses: msys2/setup-msys2@e9898307ac31d1a803454791be09ab9973336e1c  # v2.31.1
-        with:
-          msystem: ${{ matrix.msystem }}
-          install: >-
-            ${{ matrix.MINGW_PACKAGE_PREFIX }}-ccache
-            ${{ matrix.MINGW_PACKAGE_PREFIX }}-nasm
-            ${{ matrix.MINGW_PACKAGE_PREFIX }}-pkg-config
-            ${{ matrix.MINGW_PACKAGE_PREFIX }}-gcc
-            ${{ matrix.MINGW_PACKAGE_PREFIX }}-meson
-            ${{ matrix.MINGW_PACKAGE_PREFIX }}-ninja
-            vim make diffutils
-          update: true
-          path-type: inherit
-
-      - name: Set ccache dir
-        run: echo "CCACHE_DIR=$PWD/.ccache" >> $GITHUB_ENV
-
-      - name: Configure vmaf
-        run: |
-          meson setup libvmaf libvmaf/build --buildtype release \
-            --default-library static --prefix "$MINGW_PREFIX" \
-            -Denable_cuda=false -Denable_sycl=false -Denable_float=true
-
-      - name: Build vmaf
-        run: meson install -C libvmaf/build
-
-      - name: Test vmaf
-        # --print-errorlogs surfaces the failing test's stdout/stderr
-        # inline in the CI log instead of only writing it to
-        # meson-logs/testlog.txt, so cross-platform debugging (e.g.
-        # MinGW64-specific locale assertions) does not require an
-        # artifact round-trip.
-        run: meson test -C libvmaf/build --num-processes $(nproc) --print-errorlogs
-
-      - name: Show binary info and stage artifact
-        id: stage
-        run: |
-          ldd "$MINGW_PREFIX/bin/vmaf.exe" || true
-          mkdir -p artifact
-          cp "$MINGW_PREFIX/bin/vmaf.exe" artifact/vmaf.exe
-          echo "path=$(cygpath -m "$PWD/artifact/vmaf.exe")" >> "$GITHUB_OUTPUT"
-
-      - name: Upload vmaf.exe artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
-        with:
-          name: ${{ matrix.msystem }}-vmaf
-          path: ${{ steps.stage.outputs.path }}
-          if-no-files-found: error
-
   # ===== Windows GPU build-only (MSVC + CUDA, MSVC + oneAPI SYCL) =====
+  # VMAFX rebrand Phase 1C (ADR-0691): MinGW64 GCC Windows build was removed
+  # from this file. Windows coverage is now provided exclusively by the two
+  # MSVC GPU legs below (CUDA + oneAPI SYCL), which exercise the paths the
+  # fork adds and remain required status checks.
   # Build-only legs — no GPU on the windows-2025 runner, so the test
   # step is intentionally omitted. The point is verifying that the
   # CUDA / SYCL backend code compiles & links on the MSVC toolchain,
