@@ -57,6 +57,14 @@ The `docs/principles.md`, `docs/development/languages.md`, `.gitignore`, and
 (`go-build`, `go-test`, `rust-build`, `rust-test`) and do not conflict with any
 upstream Makefile target.
 
+## feat/vmafx-tune-go-stage1 (ADR-0705) — fork-only, no Netflix conflict
+
+**No upstream rebase impact**: the Go port lives entirely under `cmd/vmafx-tune/`,
+`pkg/encoder/`, `pkg/bisect/`, and `pkg/report/`. These directories do not exist in
+upstream Netflix/vmaf. The Python `tools/vmaf-tune/` is unchanged. `go.mod` and
+`go.sum` are fork-local additions that upstream does not carry. Cherry-picks from
+upstream that touch `tools/vmaf-tune/` Python source files are unaffected by this PR.
+
 ## chore/post-cutover-url-sweep — fork-only URL change, no Netflix conflict
 
 **No upstream rebase impact**: this change replaces all occurrences of the
