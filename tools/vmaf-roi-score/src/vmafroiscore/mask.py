@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris and Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 """Saliency mask materialiser for the Option C ROI-VMAF tool.
 
 Given a reference YUV and a saliency ONNX model, produce a distorted

@@ -1,6 +1,6 @@
 /**
- *  Copyright 2026 Lusoris and Claude (Anthropic)
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  Copyright 2026 Lusoris
+ *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
  *
  *  Real integer_ssim feature extractor on the CUDA backend (ADR-0553).
  *

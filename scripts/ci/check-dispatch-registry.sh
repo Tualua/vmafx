@@ -10,8 +10,8 @@
 # Duplicate entries are reported as warnings (non-fatal: first-match
 # semantics make duplicates functionally harmless, but they are noise).
 #
-# Copyright 2026 Lusoris and Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 
 set -euo pipefail
 

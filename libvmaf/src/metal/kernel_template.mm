@@ -1,6 +1,6 @@
 /**
- *  Copyright 2026 Lusoris and Claude (Anthropic)
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  Copyright 2026 Lusoris
+ *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
  *
  *  Metal kernel-template helper bodies — runtime implementation
  *  (T8-1b / ADR-0420). Replaces the C scaffold's -ENOSYS stubs with

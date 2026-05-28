@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris and Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 """libx265 codec adapter — ADR-0288 + ADR-0333.
 
 Mirrors :mod:`vmaftune.codec_adapters.x264` shape; differs only in the

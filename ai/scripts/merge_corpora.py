@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris and Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 """Merge two or more vmaf-tune corpus JSONL files into one.
 
 The vmaf-tune corpus schema is the row contract emitted by

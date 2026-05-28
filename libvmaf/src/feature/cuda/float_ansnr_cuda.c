@@ -1,6 +1,6 @@
 /**
- *  Copyright 2026 Lusoris and Claude (Anthropic)
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  Copyright 2026 Lusoris
+ *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
  *
  *  float_ansnr feature kernel on the CUDA backend (T7-23 / batch 3
  *  part 2b — ADR-0192 / ADR-0194). CUDA twin of float_ansnr_vulkan.

@@ -1,6 +1,6 @@
 /**
- *  Copyright 2026 Lusoris and Claude (Anthropic)
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  Copyright 2026 Lusoris
+ *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
  *
  *  HIP per-feature kernel scaffolding template — first-consumer
  *  mirror of `libvmaf/src/cuda/kernel_template.h` (ADR-0221).

@@ -1,6 +1,6 @@
 /**
- *  Copyright 2026 Lusoris and Claude (Anthropic)
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  Copyright 2026 Lusoris
+ *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
  *
  *  cambi feature kernel on the Vulkan backend (T7-36 / ADR-0205,
  *  Strategy II hybrid). Vulkan twin of the CPU `cambi` extractor in

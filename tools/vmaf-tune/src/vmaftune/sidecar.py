@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris and Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 """Local sidecar training — on-host bias-correction model.
 
 Companion to :mod:`vmaftune.predictor`. The shipped predictor is a

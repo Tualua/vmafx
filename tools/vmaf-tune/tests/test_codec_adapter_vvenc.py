@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris and Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 """Smoke tests for the libvvenc (VVC / H.266) codec adapter.
 
 The adapter exposes a curated set of real VVenC 1.14.0 tuning knobs

@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris and Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 """Apple VideoToolbox HEVC codec adapter.
 
 FFmpeg encoder name: ``hevc_videotoolbox``. Hardware-accelerated HEVC

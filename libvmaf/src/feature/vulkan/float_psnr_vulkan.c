@@ -1,6 +1,6 @@
 /**
- *  Copyright 2026 Lusoris and Claude (Anthropic)
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  Copyright 2026 Lusoris
+ *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
  *
  *  float_psnr feature kernel on the Vulkan backend (T7-23 / batch 3
  *  part 3a — ADR-0192 / ADR-0195). Single-dispatch GLSL kernel

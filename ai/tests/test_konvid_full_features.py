@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris and Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 """Tests for ``ai/scripts/konvid_to_full_features.py``.
 
 The real script runs ffmpeg + libvmaf over KoNViD-1k. These tests keep

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris and Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 """Cross-backend feature diff — gates GPU compute kernels (CUDA, SYCL,
 Vulkan) against the CPU scalar reference. Runs `vmaf` twice on the
 same (ref, dist) pair: once with the CPU integer extractor, once with

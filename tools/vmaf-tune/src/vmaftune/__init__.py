@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris and Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 """vmaf-tune — quality-aware encode automation harness (Phase A).
 
 Phase A ships a grid-sweep corpus generator over libx264. The JSONL

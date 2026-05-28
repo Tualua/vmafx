@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris and Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 """``vmaf-roi-score`` — region-of-interest VMAF *scoring* (Option C).
 
 Distinct surface from `libvmaf/tools/vmaf_roi.c` (ADR-0247), which is

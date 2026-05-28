@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris and Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 """Unit tests for the F.4 per-content-type recipe overrides (ADR-0325).
 
 The recipe table at ``vmaftune.auto._CONTENT_RECIPE_TABLE`` maps four

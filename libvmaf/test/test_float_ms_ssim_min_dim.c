@@ -1,6 +1,6 @@
 /**
- *  Copyright 2026 Lusoris and Claude (Anthropic)
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  Copyright 2026 Lusoris
+ *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
  *
  *  Netflix#1414 / ADR-0153 — `float_ms_ssim` init must reject input
  *  resolutions below 176x176 cleanly with -EINVAL. The 5-level 11-tap

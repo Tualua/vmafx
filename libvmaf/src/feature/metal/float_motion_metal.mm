@@ -1,6 +1,6 @@
 /**
- *  Copyright 2026 Lusoris and Claude (Anthropic)
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  Copyright 2026 Lusoris
+ *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
  *
  *  float_motion feature extractor on the Metal backend (T8-1h / ADR-0421).
  *  Dispatches `float_motion_kernel_{8,16}bpc` from float_motion.metal.

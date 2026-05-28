@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
-# Copyright 2026 Lusoris and Claude (Anthropic)
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
+# Copyright 2026 Lusoris
 """Run explicit MOS-label materialization for multiple feature tables."""
 
 from __future__ import annotations

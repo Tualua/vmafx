@@ -1,6 +1,6 @@
 /**
- *  Copyright 2026 Lusoris and Claude (Anthropic)
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  Copyright 2026 Lusoris
+ *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
  *
  *  vmaf-roi — sidecar binary that consumes a saliency map (per-frame) from
  *  a tiny ONNX model and emits a per-CTU QP-offset sidecar file consumable

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris and Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 """Combined Netflix + KoNViD-1k tiny-AI training driver.
 
 Concatenates the 9-source Netflix Public corpus

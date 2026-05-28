@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris and Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 """Smoke tests for :mod:`ai.src.corpus.base` (ADR-0371).
 
 Exercises the shared base class on a tiny synthetic corpus without

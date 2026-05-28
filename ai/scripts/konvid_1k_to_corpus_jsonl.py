@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris and Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 """KoNViD-1k -> MOS-corpus JSONL adapter (Phase 1 of ADR-0325).
 
 ADR-0325 plans a two-phase ingestion of the Konstanz UGC datasets. This

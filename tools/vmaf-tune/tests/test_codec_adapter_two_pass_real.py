@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris and Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 """Real 2-pass argv coverage for every codec adapter (ADR-0546).
 
 Extends the Phase F suite (``test_codec_adapter_x265_two_pass.py``) to

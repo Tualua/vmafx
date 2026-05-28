@@ -11,7 +11,7 @@ The fork adds wholly-new files (SYCL backend, tiny-AI, MCP server, dev tooling) 
 
 ## Decision
 
-We will: preserve Netflix copyright on Netflix-authored files; bump the year range `2016-2020` → `2016-2026` on those files; put `Copyright 2026 Lusoris and Claude (Anthropic)` on wholly-new fork files under the same BSD-3-Clause-Plus-Patent license; use a dual-copyright notice on mixed files.
+We will: preserve Netflix copyright on Netflix-authored files; bump the year range `2016-2020` → `2016-2026` on those files; put `Copyright 2026 Lusoris` on wholly-new fork files under the same BSD-3-Clause-Plus-Patent license; use a dual-copyright notice on mixed files.
 
 ## Alternatives considered
 

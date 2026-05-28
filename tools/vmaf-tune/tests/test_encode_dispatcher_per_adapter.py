@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris and Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 """Per-adapter live-encode smoke tests for the HP-1 dispatcher pivot.
 
 Phase-A audit item HP-1 (ADR-0326) replaced three hardcode sites that

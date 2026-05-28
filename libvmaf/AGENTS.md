@@ -32,7 +32,7 @@ libvmaf/
 - **Coding standards**: NASA/JPL Power of 10 + JPL-C-STD + SEI CERT C (see
   [../docs/principles.md](../docs/principles.md)). `.clang-tidy` enforces.
 - **License headers**: Netflix-header-preserving for upstream-touched files;
-  `Copyright 2026 Lusoris and Claude (Anthropic)` for wholly-new files.
+  `Copyright 2026 Lusoris` for wholly-new files.
   See [ADR-0025](../docs/adr/0025-copyright-handling-dual-notice.md).
 - **Style**: K&R, 4-space, 100-char columns, `.clang-format` authoritative.
 - **Banned functions** (see `docs/principles.md §1.2 rule 30`): `gets`,

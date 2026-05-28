@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris and Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 """Cross-backend GPU-parity CI gate (T6-8 / ADR-0214).
 
 Generalisation of ``cross_backend_vif_diff.py``: iterates every

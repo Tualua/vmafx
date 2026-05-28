@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris and Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 """Waterloo IVC 4K-VQA -> MOS-corpus JSONL adapter (ADR-0369).
 
 Waterloo IVC 4K-VQA (Li, Duanmu, Liu, Wang; ICIAR 2019) -- the University

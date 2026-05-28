@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Copyright 2026 Lusoris and Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 #
 # Step 05: Bundle the LOSO verdict + per-seed ONNX exports for return
 # transport.

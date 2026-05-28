@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris and Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 """Export ``vmaf_tiny_v4`` to a self-contained ONNX file.
 
 Mirrors ``export_vmaf_tiny_v3.py`` exactly except for the architecture

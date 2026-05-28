@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris and Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 """Shared uncertainty-aware recipe helpers for vmaf-tune.
 
 The conformal-VQA prediction surface shipped in PR #488 (ADR-0279)

@@ -1,6 +1,6 @@
 /**
- *  Copyright 2026 Lusoris and Claude (Anthropic)
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  Copyright 2026 Lusoris
+ *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
  *
  *  Metal compute kernel for integer_motion_v2 (T8-1c / ADR-0421).
  *  Translation of `libvmaf/src/feature/cuda/integer_motion_v2/

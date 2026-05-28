@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris and Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 """Phase E smoke tests — convex hull, knee selection, manifest emit.
 
 Mocks the corpus generator so neither ffmpeg nor vmaf binaries are

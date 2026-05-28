@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris and Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 """Per-seed training schema test for the ensemble LOSO trainer (ADR-0319).
 
 Trains a 2-epoch sanity model on a synthetic 12-row JSONL corpus and

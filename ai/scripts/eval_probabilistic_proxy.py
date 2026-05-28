@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris and Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 """Evaluate the empirical coverage of a ``fr_regressor_v2`` ensemble.
 
 Companion to ``ai/scripts/train_fr_regressor_v2_ensemble.py``. Loads the

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris and Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 """Train the KonViD MOS head v1 — Phase 3 of ADR-0325.
 
 Phases 1 + 2 of ADR-0325 land the KonViD-1k / KonViD-150k corpora as

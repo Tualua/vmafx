@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris and Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 """Regression tests for the BBB end-to-end probe v6 bug cluster (ADR-0506).
 
 The v6 probe surfaced three follow-ups against the v5 fixes:

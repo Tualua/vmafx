@@ -1,7 +1,7 @@
 # Research-0090 — arXiv tech-note draft: production-flip gates and conformal prediction for VMAF predictors
 
 - **Status**: DRAFT — preprint under preparation; not yet submitted to arXiv.
-- **Authors**: Lusoris and Claude (Anthropic) — fork repository
+- **Authors**: Lusoris — fork repository
   <https://github.com/lusoris/vmaf>.
 - **Date**: 2026-05-09
 - **Tags**: tiny-ai, fr-regressor, ensemble, conformal-prediction, deployment-gate,

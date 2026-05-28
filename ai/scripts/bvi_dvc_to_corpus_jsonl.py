@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris and Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 """BVI-DVC → vmaf-tune corpus JSONL adapter (ADR-0310).
 
 Companion to :mod:`ai.scripts.bvi_dvc_to_full_features`. The parquet

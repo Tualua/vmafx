@@ -1,6 +1,6 @@
 /**
- *  Copyright 2026 Lusoris and Claude (Anthropic)
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  Copyright 2026 Lusoris
+ *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
  *
  *  ssimulacra2 feature kernel on the SYCL backend (T7-23 / GPU
  *  long-tail batch 3 part 7c — ADR-0192 / ADR-0204). SYCL twin of

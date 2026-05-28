@@ -198,8 +198,8 @@ opens a PR on every push to `master`; merging it tags and fires signing.
 [BSD-3-Clause-Plus-Patent](LICENSE) — preserved from upstream Netflix/vmaf.
 
 Fork-authored code (SYCL backend, `.claude/` scaffolding, MCP server, Tiny-AI
-surface) is © 2024-2026 Lusoris and Claude (Anthropic), licensed under the
-same BSD-3-Clause-Plus-Patent terms as the rest of the project.
+surface) is © 2024-2026 Lusoris, dual-licensed under
+BSD-3-Clause-Plus-Patent OR MIT (see ADR-0686).
 
 ## Attribution
 

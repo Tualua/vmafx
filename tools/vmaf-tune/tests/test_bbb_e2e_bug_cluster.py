@@ -1,5 +1,5 @@
-# Copyright 2026 Lusoris and Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 """Regression tests for the 2026-05-17 BBB end-to-end bug cluster.
 
 The Big Buck Bunny end-to-end smoke run flagged seven distinct bugs in

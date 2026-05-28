@@ -160,7 +160,7 @@ repos:
         types_or: [c, c++]
         stages: [pre-push]
         # The script self-discovers fork-added files via the
-        # "Lusoris and Claude" copyright marker; pre-commit must not
+        # "Copyright * Lusoris" copyright marker; pre-commit must not
         # pass per-file paths or the awk pass aborts mid-stream.
         pass_filenames: false
 

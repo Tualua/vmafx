@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Copyright 2026 Lusoris and Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 #
 # Step 02: Generate the Phase A canonical-6 corpus from operator-supplied
 # Netflix reference YUVs. Wraps scripts/dev/hw_encoder_corpus.py in a

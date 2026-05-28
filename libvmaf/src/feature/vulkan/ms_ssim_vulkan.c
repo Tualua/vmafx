@@ -1,6 +1,6 @@
 /**
- *  Copyright 2026 Lusoris and Claude (Anthropic)
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  Copyright 2026 Lusoris
+ *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
  *
  *  float_ms_ssim feature kernel on the Vulkan backend
  *  (T7-23 / ADR-0188 / ADR-0190, GPU long-tail batch 2 part 2a).

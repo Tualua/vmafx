@@ -4150,7 +4150,7 @@ than per-PR. Future PRs add entries individually.
   `libvmaf/src/dnn/`) and every Netflix-touched file (year range
   `2016 → 2016–2026`).
 - **Invariant**: wholly-new fork files carry
-  `Copyright 2026 Lusoris and Claude (Anthropic)` under the same
+  `Copyright 2026 Lusoris` under the same
   BSD-3-Clause-Plus-Patent license; mixed files use a dual-copyright
   notice. An upstream commit that resets a Netflix file's year range
   (e.g. back to `2016–2020`) must be partially rejected — keep the
@@ -11957,7 +11957,7 @@ print('OK: fr_regressor_v3 production row unchanged')
 
 ## ADR-0209 v1 stdio runtime (T5-2b) — Embedded MCP server (2026-05-08)
 - **Touches**: `libvmaf/src/mcp/{mcp.c,dispatcher.c,transport_stdio.c,mcp_internal.h,meson.build,3rdparty/cJSON/{cJSON.c,cJSON.h,LICENSE}}`, `libvmaf/test/test_mcp_smoke.c`, `libvmaf/test/meson.build`. All paths are fork-local. cJSON is vendored verbatim from upstream `DaveGamble/cJSON@v1.7.18` under its MIT license.
-- **Invariant**: every TU under `libvmaf/src/mcp/` (other than the vendored cJSON dir) is fork-local with the `Copyright 2026 Lusoris and Claude (Anthropic)` header; cJSON keeps its upstream MIT header verbatim. The public ABI in `libvmaf/include/libvmaf/libvmaf_mcp.h` is unchanged from T5-2 — only function bodies flipped from `-ENOSYS` to working implementations. SSE / UDS still return `-ENOSYS` so the v2 PR can wire them without touching the public surface.
+- **Invariant**: every TU under `libvmaf/src/mcp/` (other than the vendored cJSON dir) is fork-local with the `Copyright 2026 Lusoris` header; cJSON keeps its upstream MIT header verbatim. The public ABI in `libvmaf/include/libvmaf/libvmaf_mcp.h` is unchanged from T5-2 — only function bodies flipped from `-ENOSYS` to working implementations. SSE / UDS still return `-ENOSYS` so the v2 PR can wire them without touching the public surface.
 - **On upstream sync**: no action required. Netflix/vmaf upstream has no embedded MCP surface; the entire `libvmaf/src/mcp/` subtree is fork-local. If upstream ever adds an MCP surface, expect a port-only sync since names will collide.
   cd libvmaf && meson setup build -Denable_cuda=false -Denable_sycl=false \
                                   -Denable_mcp=true -Denable_mcp_stdio=true
@@ -14620,7 +14620,7 @@ than per-PR. Future PRs add entries individually.
   `libvmaf/src/dnn/`) and every Netflix-touched file (year range
   `2016 → 2016–2026`).
 - **Invariant**: wholly-new fork files carry
-  `Copyright 2026 Lusoris and Claude (Anthropic)` under the same
+  `Copyright 2026 Lusoris` under the same
   BSD-3-Clause-Plus-Patent license; mixed files use a dual-copyright
   notice. An upstream commit that resets a Netflix file's year range
   (e.g. back to `2016–2020`) must be partially rejected — keep the
@@ -22476,7 +22476,7 @@ print('OK: fr_regressor_v3 production row unchanged')
 
 ## ADR-0209 v1 stdio runtime (T5-2b) — Embedded MCP server (2026-05-08)
 - **Touches**: `libvmaf/src/mcp/{mcp.c,dispatcher.c,transport_stdio.c,mcp_internal.h,meson.build,3rdparty/cJSON/{cJSON.c,cJSON.h,LICENSE}}`, `libvmaf/test/test_mcp_smoke.c`, `libvmaf/test/meson.build`. All paths are fork-local. cJSON is vendored verbatim from upstream `DaveGamble/cJSON@v1.7.18` under its MIT license.
-- **Invariant**: every TU under `libvmaf/src/mcp/` (other than the vendored cJSON dir) is fork-local with the `Copyright 2026 Lusoris and Claude (Anthropic)` header; cJSON keeps its upstream MIT header verbatim. The public ABI in `libvmaf/include/libvmaf/libvmaf_mcp.h` is unchanged from T5-2 — only function bodies flipped from `-ENOSYS` to working implementations. SSE / UDS still return `-ENOSYS` so the v2 PR can wire them without touching the public surface.
+- **Invariant**: every TU under `libvmaf/src/mcp/` (other than the vendored cJSON dir) is fork-local with the `Copyright 2026 Lusoris` header; cJSON keeps its upstream MIT header verbatim. The public ABI in `libvmaf/include/libvmaf/libvmaf_mcp.h` is unchanged from T5-2 — only function bodies flipped from `-ENOSYS` to working implementations. SSE / UDS still return `-ENOSYS` so the v2 PR can wire them without touching the public surface.
 - **On upstream sync**: no action required. Netflix/vmaf upstream has no embedded MCP surface; the entire `libvmaf/src/mcp/` subtree is fork-local. If upstream ever adds an MCP surface, expect a port-only sync since names will collide.
   cd libvmaf && meson setup build -Denable_cuda=false -Denable_sycl=false \
                                   -Denable_mcp=true -Denable_mcp_stdio=true
@@ -24980,7 +24980,7 @@ than per-PR. Future PRs add entries individually.
   `libvmaf/src/dnn/`) and every Netflix-touched file (year range
   `2016 → 2016–2026`).
 - **Invariant**: wholly-new fork files carry
-  `Copyright 2026 Lusoris and Claude (Anthropic)` under the same
+  `Copyright 2026 Lusoris` under the same
   BSD-3-Clause-Plus-Patent license; mixed files use a dual-copyright
   notice. An upstream commit that resets a Netflix file's year range
   (e.g. back to `2016–2020`) must be partially rejected — keep the
@@ -32874,7 +32874,7 @@ print('OK: fr_regressor_v3 production row unchanged')
 
 ## ADR-0209 v1 stdio runtime (T5-2b) — Embedded MCP server (2026-05-08)
 - **Touches**: `libvmaf/src/mcp/{mcp.c,dispatcher.c,transport_stdio.c,mcp_internal.h,meson.build,3rdparty/cJSON/{cJSON.c,cJSON.h,LICENSE}}`, `libvmaf/test/test_mcp_smoke.c`, `libvmaf/test/meson.build`. All paths are fork-local. cJSON is vendored verbatim from upstream `DaveGamble/cJSON@v1.7.18` under its MIT license.
-- **Invariant**: every TU under `libvmaf/src/mcp/` (other than the vendored cJSON dir) is fork-local with the `Copyright 2026 Lusoris and Claude (Anthropic)` header; cJSON keeps its upstream MIT header verbatim. The public ABI in `libvmaf/include/libvmaf/libvmaf_mcp.h` is unchanged from T5-2 — only function bodies flipped from `-ENOSYS` to working implementations. SSE / UDS still return `-ENOSYS` so the v2 PR can wire them without touching the public surface.
+- **Invariant**: every TU under `libvmaf/src/mcp/` (other than the vendored cJSON dir) is fork-local with the `Copyright 2026 Lusoris` header; cJSON keeps its upstream MIT header verbatim. The public ABI in `libvmaf/include/libvmaf/libvmaf_mcp.h` is unchanged from T5-2 — only function bodies flipped from `-ENOSYS` to working implementations. SSE / UDS still return `-ENOSYS` so the v2 PR can wire them without touching the public surface.
 - **On upstream sync**: no action required. Netflix/vmaf upstream has no embedded MCP surface; the entire `libvmaf/src/mcp/` subtree is fork-local. If upstream ever adds an MCP surface, expect a port-only sync since names will collide.
   cd libvmaf && meson setup build -Denable_cuda=false -Denable_sycl=false \
                                   -Denable_mcp=true -Denable_mcp_stdio=true

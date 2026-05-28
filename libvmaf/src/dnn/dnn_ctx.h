@@ -1,6 +1,6 @@
 /**
- *  Copyright 2026 Lusoris and Claude (Anthropic)
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  Copyright 2026 Lusoris
+ *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
  *
  *  Internal bridge between the public `dnn.h` surface (dnn_api.c) and the
  *  VmafContext-owning translation unit (libvmaf.c). Keeps VmafContext opaque

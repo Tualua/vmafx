@@ -98,7 +98,7 @@ upstream and is expected to fire ~0–2 times per year.
 
 - **Which port source?** libjxl C++ reference (ADR-0126 decision).
 - **Which license flag goes in the ported header?** The libvmaf
-  `Copyright 2026 Lusoris and Claude (Anthropic)` header on top +
+  `Copyright 2026 Lusoris` header on top +
   a second block acknowledging libjxl BSD-3-Clause, per
   [ADR-0105](../adr/0105-copyright-handling-dual-notice.md).
 - **Do we bit-equal the reference?** No. Bit-closeness within a

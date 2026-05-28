@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2026 Lusoris and Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 """LOSO eval harness for vmaf_tiny_v3 (mlp_medium) on the Netflix parquet.
 
 Mirrors the methodology used to validate v2 (PLCC 0.9978 ± 0.0021) but

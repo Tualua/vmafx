@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Copyright 2026 Lusoris and Claude (Anthropic)
-# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+# Copyright 2026 Lusoris
+# SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
 #
 # Convenience wrapper for the Netflix-corpus tiny-AI training entry
 # point. ADR-0203. Honours $VMAF_DATA_ROOT, $VMAF_BIN, and

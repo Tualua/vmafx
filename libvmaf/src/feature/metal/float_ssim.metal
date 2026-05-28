@@ -1,6 +1,6 @@
 /**
- *  Copyright 2026 Lusoris and Claude (Anthropic)
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  Copyright 2026 Lusoris
+ *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent OR MIT
  *
  *  Metal compute kernels for float_ssim (T8-1j / ADR-0421).
  *  Direct port of `libvmaf/src/feature/vulkan/shaders/ssim.comp`.
