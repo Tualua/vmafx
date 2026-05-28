@@ -7,6 +7,28 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## feat/vmafx-server-foundation-20260528 (ADR-0701)
+
+**No upstream rebase impact**: this PR is entirely fork-local.
+`mcp-server/vmaf-mcp/src/vmaf_mcp/http_transport.py` is a new fork-added file.
+`mcp-server/vmaf-mcp/pyproject.toml` and `server.py` additions are fork-only
+(the `[http]` optional dependency group and `--transport http` wiring do not
+exist upstream). `docs/mcp/http-transport.md` is fork-added. Netflix/vmaf
+upstream has no MCP server or HTTP transport surface. No C source, Python
+binding, or Netflix golden-data file is touched.
+
+Touched files:
+`mcp-server/vmaf-mcp/src/vmaf_mcp/http_transport.py` (new),
+`mcp-server/vmaf-mcp/src/vmaf_mcp/server.py` (HTTP wiring in `main()`),
+`mcp-server/vmaf-mcp/pyproject.toml` (`[http]` optional dep group),
+`mcp-server/vmaf-mcp/tests/test_http_transport.py` (new),
+`docs/mcp/http-transport.md` (new),
+`docs/adr/0701-vmafx-cloud-native-redesign.md` (new),
+`docs/adr/README.md` (index row),
+`changelog.d/added/vmafx-server-foundation.md` (new),
+`docs/state.md` (T-VMAFX-SERVER-FOUNDATION-2026-05-28 row),
+`docs/rebase-notes.md` (this entry).
+
 ## feat/vmafx-netflix-compat (ADR-0696)
 
 **No upstream rebase conflict**: `--netflix-compat` is a purely additive,

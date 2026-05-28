@@ -17,6 +17,13 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=9.0.3", "pytest-asyncio>=1.3.0", "ruff>=0.15.14", "mypy>=2.1.0"]
+# Optional: HTTP transport mode (--transport http).  Pulls in aiohttp and
+# prometheus-client.  Off by default to keep the base MCP install light.
+# ADR-0701.
+http = [
+  "aiohttp>=3.9.0",
+  "prometheus-client>=0.20.0",
+]
 # Optional: enables `eval_model_on_split` + `compare_models`. Pulls in the
 # ONNX / pandas / scipy stack, so it's off by default to keep the base MCP
 # install light for callers that only want `vmaf_score`.
