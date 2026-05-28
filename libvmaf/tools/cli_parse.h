@@ -126,6 +126,12 @@ typedef struct {
      * (libvmaf default of bilinear applies). Accepted values:
      * "bilinear" (default), "nearest", "bicubic", "disabled". */
     const char *tiny_resize;
+    /* ADR-0690 — vmafx mode: binary was invoked as "vmafx" (or a symlink
+     * whose basename is "vmafx"). When true, modernized defaults are applied
+     * post-parse: precision=max, and --backend auto with the CUDA>Vulkan>
+     * SYCL>CPU priority already baked in by the backend selector. Absent
+     * an explicit --precision flag, the output format switches to %.17g. */
+    bool vmafx_mode;
 } CLISettings;
 
 void cli_parse(const int argc, char *const *const argv, CLISettings *const settings);

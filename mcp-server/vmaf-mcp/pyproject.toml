@@ -40,6 +40,9 @@ vlm = [
 
 [project.scripts]
 vmaf-mcp = "vmaf_mcp.server:main"
+# ADR-0690: vmafx-mcp is a console-script alias for the same callable.
+# Both names install identical entry-point wrappers; new code uses vmafx-mcp.
+vmafx-mcp = "vmaf_mcp.server:main"
 
 [build-system]
 requires = ["hatchling"]

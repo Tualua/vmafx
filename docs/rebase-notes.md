@@ -49,6 +49,38 @@ Invariant: the `required-aggregator.yml` list of required checks was NOT changed
 this PR. If a future PR adds a new required check, the author must update
 `required-aggregator.yml` in the same PR.
 
+## feat/vmafx-binary-and-ai-aliases (ADR-0690)
+
+**No upstream rebase conflict**: the `vmafx` symlink, `detect_vmafx_mode()`
+helper, and `vmafx_mode` field in `CLISettings` are purely additive and
+fork-local. Netflix/vmaf upstream has no `vmafx` binary, no `argv[0]`
+detection, and no `vmafx-*` tool aliases. The changes to `cli_parse.c`,
+`cli_parse.h`, `vmaf.c`, and `libvmaf/tools/meson.build` sit entirely in
+the new code paths guarded by `settings->vmafx_mode`, so cherry-picks from
+upstream that touch those same files will apply cleanly.
+
+Invariant: the `vmafx_mode` defaults block in `cli_parse.c` must run after
+the `--backend` selector block and after all getopt processing, so user-
+supplied `--precision` flags always win over the vmafx-mode default. Do not
+move the block before the getopt loop.
+
+Smoke:
+```shell
+# after meson install (or container rebuild):
+vmafx --version
+# Expected: VMAFX <version> (auto-backend, precision=max)
+```
+
+Touched files: `libvmaf/tools/cli_parse.c`, `libvmaf/tools/cli_parse.h`,
+`libvmaf/tools/vmaf.c`, `libvmaf/tools/meson.build`,
+`ai/pyproject.toml`, `tools/vmaf-tune/pyproject.toml`,
+`mcp-server/vmaf-mcp/pyproject.toml`,
+`docs/adr/0690-vmafx-binary-and-ai-aliases.md`,
+`docs/adr/README.md` (index row),
+`docs/usage/vmafx-cli.md`,
+`changelog.d/added/vmafx-binary-and-aliases.md`,
+`docs/rebase-notes.md` (this entry).
+
 ## chore/drop-legacy-build-paths (ADR-0691)
 
 **No upstream rebase impact**: changes are confined to

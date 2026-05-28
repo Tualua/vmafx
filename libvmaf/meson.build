@@ -7,7 +7,7 @@ project('libvmaf', ['c', 'cpp'],
                        'default_library=both',
                        'b_lto=true',
                       ],
-    meson_version: '>= 0.58.0')
+    meson_version: '>= 0.61.0') # install_symlink (ADR-0690) requires 0.61
 
 vmaf_soname_version       = '3.0.0'
 vmaf_api_version_array    = vmaf_soname_version.split('.')

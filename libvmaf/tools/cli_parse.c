@@ -681,6 +681,30 @@ static void parse_nflx_ctc(CLISettings *settings, const char *const optarg, cons
     usage(app, "bad nflx_ctc version \"%s\"", optarg);
 }
 
+/* ADR-0690 — detect whether the binary was invoked as "vmafx" by inspecting
+ * the basename of argv[0].  We accept both the plain name and any path-
+ * prefixed form (e.g. /usr/local/bin/vmafx).  On POSIX `strrchr` gives the
+ * last separator; on Windows the separator may be '\\' or '/'.  We never
+ * modify argv[0] itself. */
+static bool detect_vmafx_mode(const char *prog)
+{
+    if (!prog)
+        return false;
+    /* Locate the last path separator, platform-independently. */
+    const char *base = prog;
+    const char *p = prog;
+    while (*p) {
+        if (*p == '/'
+#ifdef _WIN32
+            || *p == '\\'
+#endif
+        )
+            base = p + 1;
+        p++;
+    }
+    return strncmp(base, "vmafx", 5) == 0 && (base[5] == '\0' || base[5] == '.');
+}
+
 void cli_parse(const int argc, char *const *const argv, CLISettings *const settings)
 {
     memset(settings, 0, sizeof(*settings));
@@ -692,6 +716,10 @@ void cli_parse(const int argc, char *const *const argv, CLISettings *const setti
     settings->precision_fmt = VMAF_DEFAULT_PRECISION_FMT;
     settings->tiny_device = "auto";
     settings->tiny_crf = -1; /* ADR-0522: -1 = unset; 0..63 user-supplied */
+
+    /* ADR-0690: detect vmafx mode early so post-parse defaults can branch. */
+    settings->vmafx_mode = detect_vmafx_mode(argc > 0 ? argv[0] : NULL);
+
     int o;
 
     while ((o = getopt_long(argc, argv, short_opts, long_opts, NULL)) >= 0) {
@@ -886,7 +914,13 @@ void cli_parse(const int argc, char *const *const argv, CLISettings *const setti
             settings->quiet = true;
             break;
         case 'v':
-            (void)fprintf(stderr, "%s\n", vmaf_version());
+            /* ADR-0690: vmafx mode prefixes the identity so the user sees
+             * which binary personality is active alongside the version. */
+            if (settings->vmafx_mode) {
+                (void)fprintf(stderr, "VMAFX %s (auto-backend, precision=max)\n", vmaf_version());
+            } else {
+                (void)fprintf(stderr, "%s\n", vmaf_version());
+            }
             exit(0);
         default:
             break;
@@ -984,6 +1018,17 @@ void cli_parse(const int argc, char *const *const argv, CLISettings *const setti
             settings->gpumask = 0;
             settings->use_gpumask = true;
         }
+    }
+
+    /* ADR-0690: vmafx modernized defaults — applied only when the binary was
+     * invoked as "vmafx" AND the user did not supply an explicit --precision
+     * flag.  We detect "not supplied" by checking precision_n == -1 (unset)
+     * AND precision_max == false AND precision_legacy == false.  This lets
+     * `vmafx --precision=legacy` still opt back into the %.6f behaviour. */
+    if (settings->vmafx_mode && settings->precision_n == -1 && !settings->precision_max &&
+        !settings->precision_legacy) {
+        settings->precision_max = true;
+        settings->precision_fmt = VMAF_LOSSLESS_PRECISION_FMT;
     }
 
     /* ADR-0520: `--no-reference` opts out of the reference-required gate.

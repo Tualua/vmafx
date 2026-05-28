@@ -1258,7 +1258,14 @@ int main(int argc, char *argv[])
 #endif
 
     if (istty && !c.quiet) {
-        (void)fprintf(stderr, "VMAF version %s\n", vmaf_version());
+        /* ADR-0690: vmafx mode announces the VMAFX identity and the active
+         * precision so the user sees the modernized defaults are in effect. */
+        if (c.vmafx_mode) {
+            (void)fprintf(stderr, "VMAFX version %s (precision=%s)\n", vmaf_version(),
+                          c.precision_max ? "max" : c.precision_fmt);
+        } else {
+            (void)fprintf(stderr, "VMAF version %s\n", vmaf_version());
+        }
     }
 
     /* ADR-0520: --no-reference mode opens the distorted file twice and

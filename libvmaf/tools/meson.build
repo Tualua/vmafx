@@ -51,6 +51,17 @@ vmaf = executable(
     install : true,
 )
 
+# ADR-0690 — vmafx symlink: installs a symlink named "vmafx" pointing to the
+# vmaf binary in the same prefix/bin directory.  The binary detects "vmafx"
+# via argv[0] basename detection in cli_parse.c and applies modernized defaults
+# (precision=max, auto-backend CUDA>Vulkan>SYCL>CPU).  No separate binary or
+# extra source file is required — one binary, one symlink, zero code duplication.
+install_symlink(
+    'vmafx',
+    pointing_to : 'vmaf',
+    install_dir : get_option('bindir'),
+)
+
 # vmaf-perShot — T6-3b per-shot CRF predictor sidecar (ADR-0222).
 # Standalone tool: only links against libvmaf for future transnet_v2
 # integration; v1 itself uses libc-only frame-difference heuristic.

@@ -51,6 +51,9 @@ dev  = [
 
 [project.scripts]
 vmaf-train = "vmaf_train.cli:app"
+# ADR-0690: vmafx-train is a console-script alias for the same callable.
+# Both names install identical entry-point wrappers; new code uses vmafx-train.
+vmafx-train = "vmaf_train.cli:app"
 
 [build-system]
 requires = ["hatchling"]
