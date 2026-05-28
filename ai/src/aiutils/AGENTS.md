@@ -21,7 +21,8 @@ When writing a new script in `ai/scripts/` or a new module in
    output metadata plus adapter-specific counts/config. Use
    `build_run_provenance()` only when embedding the provenance block into an
    existing report schema. Do not hand-roll path hashing or the manifest
-   envelope in each script.
+   envelope in each script. Manifest JSON is strict RFC-8259 JSON:
+   non-finite floats are serialized as `null`, never `NaN` or `Infinity`.
 6. **CLI setup:** Use `make_argument_parser()` and `collect_cli_argv()` from
    `aiutils.cli_helpers` for new operator-facing scripts. Batch manifest runners
    must also use `add_batch_manifest_arguments()` so `--manifest`,

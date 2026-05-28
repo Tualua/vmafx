@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,8 @@ def normalise_manifest_value(value: Any) -> JsonValue:
     """Convert common Python CLI values to deterministic JSON values."""
     if isinstance(value, Path):
         return str(value)
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
     if isinstance(value, Mapping):
         return {
             str(key): normalise_manifest_value(item)
@@ -176,4 +179,8 @@ def write_run_manifest(
 def write_manifest_json(path: Path, payload: Mapping[str, Any]) -> None:
     """Write a deterministic JSON manifest with a trailing newline."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    normalised = normalise_manifest_value(payload)
+    path.write_text(
+        json.dumps(normalised, indent=2, sort_keys=True, allow_nan=False) + "\n",
+        encoding="utf-8",
+    )

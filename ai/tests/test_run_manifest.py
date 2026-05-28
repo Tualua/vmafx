@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 
 from aiutils.run_manifest import (
@@ -47,6 +48,14 @@ def test_normalise_namespace_serializes_paths_and_sorts_keys(tmp_path: Path) -> 
     assert normalised["beta"] == [str(tmp_path / "b"), None]
 
 
+def test_normalise_namespace_replaces_nonfinite_floats(tmp_path: Path) -> None:
+    args = argparse.Namespace(alpha=math.nan, beta=math.inf, gamma=-math.inf, delta=1.25)
+
+    normalised = normalise_namespace(args)
+
+    assert normalised == {"alpha": None, "beta": None, "delta": 1.25, "gamma": None}
+
+
 def test_build_run_provenance_records_inputs_outputs_and_args(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     root.mkdir()
@@ -84,6 +93,32 @@ def test_write_manifest_json_is_sorted_and_newline_terminated(tmp_path: Path) ->
     assert raw.endswith("\n")
     assert raw.splitlines()[1].strip().startswith('"a"')
     assert json.loads(raw) == {"a": {"b": 2}, "z": 1}
+
+
+def test_write_manifest_json_is_strict_for_nonfinite_values(tmp_path: Path) -> None:
+    manifest = tmp_path / "manifest.json"
+
+    write_manifest_json(
+        manifest,
+        {
+            "metrics": {
+                "plcc": math.nan,
+                "srocc": math.inf,
+                "rmse": -math.inf,
+                "ok": 0.75,
+            }
+        },
+    )
+
+    raw = manifest.read_text(encoding="utf-8")
+    assert "NaN" not in raw
+    assert "Infinity" not in raw
+    assert json.loads(raw)["metrics"] == {
+        "ok": 0.75,
+        "plcc": None,
+        "rmse": None,
+        "srocc": None,
+    }
 
 
 def test_build_run_manifest_payload_deduplicates_common_envelope(tmp_path: Path) -> None:
