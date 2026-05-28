@@ -176,13 +176,13 @@ def write_run_manifest(
     )
 
 
-def dumps_manifest_json(payload: Mapping[str, Any]) -> str:
+def dumps_manifest_json(payload: Any) -> str:
     """Serialize deterministic strict JSON with a trailing newline."""
     normalised = normalise_manifest_value(payload)
     return json.dumps(normalised, indent=2, sort_keys=True, allow_nan=False) + "\n"
 
 
-def write_manifest_json(path: Path, payload: Mapping[str, Any]) -> None:
+def write_manifest_json(path: Path, payload: Any) -> None:
     """Write a deterministic JSON manifest with a trailing newline."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(dumps_manifest_json(payload), encoding="utf-8")

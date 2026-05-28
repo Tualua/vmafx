@@ -122,6 +122,17 @@ def test_write_manifest_json_is_strict_for_nonfinite_values(tmp_path: Path) -> N
     }
 
 
+def test_write_manifest_json_accepts_json_lists(tmp_path: Path) -> None:
+    cache = tmp_path / "cache.json"
+
+    write_manifest_json(cache, [{"score": math.nan}, {"score": 1.0}])
+
+    raw = cache.read_text(encoding="utf-8")
+    assert raw.endswith("\n")
+    assert "NaN" not in raw
+    assert json.loads(raw) == [{"score": None}, {"score": 1.0}]
+
+
 def test_dumps_manifest_json_matches_write_boundary() -> None:
     raw = dumps_manifest_json({"z": math.inf, "a": {"score": math.nan}})
 

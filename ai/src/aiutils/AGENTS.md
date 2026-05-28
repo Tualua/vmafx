@@ -17,7 +17,8 @@ When writing a new script in `ai/scripts/` or a new module in
    hand-roll `json.dumps(row) + "\n"` in artifact-producing scripts.
 4. **Atomic Parquet writes:** Use `write_parquet_atomic()` from `aiutils.parquet_utils`
    to safely write DataFrames with cleanup on failure.
-5. **Run provenance:** Use `aiutils.run_manifest.write_run_manifest()` for
+5. **Run provenance / strict JSON artifacts:** Use
+   `aiutils.run_manifest.write_run_manifest()` for
    script-specific sidecars that need stable entrypoint, args, input, and
    output metadata plus adapter-specific counts/config. Use
    `build_run_provenance()` only when embedding the provenance block into an
@@ -25,7 +26,9 @@ When writing a new script in `ai/scripts/` or a new module in
    envelope in each script. Manifest JSON is strict RFC-8259 JSON:
    non-finite floats are serialized as `null`, never `NaN` or `Infinity`.
    Use `dumps_manifest_json()` for stdout JSON paths that expose the same
-   report payload without writing it to disk.
+   report payload without writing it to disk. Use `write_manifest_json()` for
+   legacy report/cache JSON artifacts that do not need a new provenance
+   envelope but still need the same strict serialization boundary.
 6. **CLI setup:** Use `make_argument_parser()` and `collect_cli_argv()` from
    `aiutils.cli_helpers` for new operator-facing scripts. Batch manifest runners
    must also use `add_batch_manifest_arguments()` so `--manifest`,

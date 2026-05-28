@@ -109,15 +109,19 @@ RFC-8259 JSON. Non-finite diagnostics produced during exploratory training
 (`NaN`, `Infinity`, `-Infinity`) are serialized as `null`, so model cards,
 notebooks, dashboards, and release tooling can parse the files with standard
 JSON decoders. The Python-side report dictionaries can still use non-finite
-floats internally before the write boundary.
+floats internally before the write boundary. Scripts that expose the same
+report payload on stdout use `aiutils.run_manifest.dumps_manifest_json()` so
+stdout and `--out-json` paths have the same null-for-non-finite behavior.
+Legacy cache/report JSON files that do not need a new provenance envelope use
+`aiutils.run_manifest.write_manifest_json()` for the same strict JSON write
+boundary; this covers per-clip feature caches and old evaluation reports while
+leaving their existing schemas intact.
 
 JSONL artifacts use the same strict boundary at row-write time. Corpus
 adapters, table materializers, merge helpers, and extraction scripts should
 serialize rows with `aiutils.jsonl_utils.dumps_jsonl_row()` so row payloads
 stay deterministic and standard JSON without copying serializer options into
 each script.
-
-
 
 Operator-facing AI scripts should also use the small CLI helper layer in
 `aiutils.cli_helpers` when they fit the shared shape. `make_argument_parser()`

@@ -83,6 +83,55 @@ def test_assign_folds_is_deterministic_and_balanced() -> None:
     assert counts == {"fold0": 4, "fold1": 4, "fold2": 4, "fold3": 4, "fold4": 4}
 
 
+def test_process_clip_cache_uses_strict_json(tmp_path: Path, monkeypatch) -> None:
+    mod = _load_module()
+    cache_dir = tmp_path / "cache"
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+
+    monkeypatch.setattr(mod, "_decode_yuv", lambda *_args, **_kwargs: (16, 16, "h264"))
+    monkeypatch.setattr(mod, "_encode_dis", lambda *_args, **_kwargs: None)
+
+    def fake_run_vmaf(*args, **_kwargs) -> None:
+        out_json = args[5]
+        out_json.write_text(
+            json.dumps(
+                {
+                    "frames": [
+                        {
+                            "frameNum": 0,
+                            "metrics": {
+                                "adm2": float("nan"),
+                                "vmaf": float("nan"),
+                            },
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(mod, "_run_vmaf_full", fake_run_vmaf)
+
+    rows = mod._process_clip(
+        "clip-a",
+        tmp_path / "src.mp4",
+        tmp_path / "vmaf",
+        tmp_path / "model.json",
+        35,
+        cache_dir,
+        scratch,
+        "x264",
+        False,
+    )
+
+    cache_path = mod._cache_path(cache_dir, "clip-a", 35)
+    raw = cache_path.read_text(encoding="utf-8")
+    assert rows[0]["vmaf"] != rows[0]["vmaf"]
+    assert "NaN" not in raw
+    assert json.loads(raw)["frames"][0]["metrics"]["vmaf"] is None
+
+
 def test_main_writes_full_and_folded_parquets(tmp_path: Path, monkeypatch) -> None:
     mod = _load_module()
     root = tmp_path / "konvid-1k"

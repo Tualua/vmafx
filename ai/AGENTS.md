@@ -35,6 +35,11 @@ ai/
 - **Operator JSON stdout uses the same strict boundary.** AI scripts that print
   report-style JSON to stdout should call `aiutils.run_manifest.dumps_manifest_json()`
   rather than local `json.dumps()` so file and stdout surfaces agree.
+- **Legacy report/cache JSON uses the same strict boundary.** AI scripts that
+  keep an existing JSON cache or report schema should call
+  `aiutils.run_manifest.write_manifest_json()` rather than local
+  `Path.write_text(json.dumps(...))` so non-finite diagnostics serialize as
+  standard JSON `null`.
 - **Artifact JSONL rows use the shared strict row writer.** AI corpus,
   materializer, and extraction scripts that write JSONL rows call
   `aiutils.jsonl_utils.dumps_jsonl_row()` instead of local
