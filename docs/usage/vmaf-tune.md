@@ -1692,6 +1692,7 @@ from the ADR-0641 profile-report path (`--format both`) and list
 | `--preset` | adapter default | Preset forwarded to the codec adapter. |
 | `--crf-min / --crf-max` | adapter range | Inclusive CRF search window. Pass both or neither. |
 | `--max-iterations` | `8` | Encode+score round-trip cap per codec. |
+| `--fast-nr` | off | Enable NR early-elimination in the Phase-B bisect (ADR-0615 / ADR-0624). Uses `nr_metric_v1.onnx` to score the distorted stream cheaply; skips the full-reference call when the calibrated proxy is far from the target. Typical wall-time reduction: 2–4×. The final accepted CRF always receives a full-reference confirmation. Requires `onnxruntime` + `numpy`; the model is in-tree at `model/tiny/`. See [`vmaf-tune-fast-nr.md`](vmaf-tune-fast-nr.md) for calibration and content-type guidance. |
 | `--vmaf-model` | `vmaf_v0.6.1` | VMAF model forwarded to the scorer. |
 | `--score-backend` | scorer default | `cpu`, `cuda`, `sycl`, `hip`, `vulkan`, or `auto`. |
 | `--ffmpeg-bin / --vmaf-bin` | `ffmpeg` / `vmaf` | Binary overrides. |
@@ -2643,6 +2644,7 @@ shell script of the per-segment + concat commands.
 | `--max-iterations N` | `8` | Maximum encode+score iterations per detected shot. |
 | `--vmaf-model NAME` | `vmaf_v0.6.1` | VMAF model forwarded to the per-shot scorer. |
 | `--score-backend NAME` | `auto` | libvmaf scoring backend for the per-shot scorer (`auto`, `cpu`, `cuda`, `sycl`, `hip`, `vulkan`). |
+| `--fast-nr` | off | Enable NR early-elimination in the per-shot Phase-B bisect (ADR-0615 / ADR-0624). Same semantics as `compare --fast-nr`; savings are per-shot. See [`vmaf-tune-fast-nr.md`](vmaf-tune-fast-nr.md). |
 | `--predicate-module SPEC` | — | Advanced hook `MODULE:CALLABLE` matching `(shot, target_vmaf, encoder) -> (crf, measured_vmaf)`; bypasses real bisect. |
 | `--workdir PATH` | `None` | Directory under which to create the per-run temporary scratch directory. Overrides `VMAFTUNE_WORKDIR`. See `compare --workdir` for full semantics. ([ADR-0549](../adr/0549-vmaftune-workdir-relocation.md)) |
 | `--max-concurrent-decodes N` | `1` | Maximum number of simultaneous reference-YUV decode operations across all per-shot bisect threads. Default `1` (serial decodes). See `compare --max-concurrent-decodes` for full semantics. ([ADR-0577](../adr/0577-vmaftune-bisect-concurrency-cap-and-aggressive-cleanup.md)) |

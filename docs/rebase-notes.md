@@ -7,6 +7,20 @@ PR that touches upstream-shared paths or establishes a rebase-sensitive
 invariant adds an entry here. PRs with no rebase impact state "no
 rebase impact" in the PR description and skip the entry.
 
+## docs/vmaf-tune-fast-nr-nav-gap — no rebase impact: doc-only
+
+This PR adds `docs/usage/vmaf-tune-fast-nr.md` to the mkdocs nav, fixes a
+broken cross-link in that file, and adds `--fast-nr` entries to the
+`compare` and `tune-per-shot` CLI flag tables in `vmaf-tune.md`. No code
+paths are changed; merging on any branch order is safe.
+Touched files:
+`mkdocs.yml`,
+`docs/usage/vmaf-tune-fast-nr.md`,
+`docs/usage/vmaf-tune-bisect.md`,
+`docs/usage/vmaf-tune.md`,
+`changelog.d/fixed/vmaf-tune-fast-nr-nav-gap.md`,
+`docs/rebase-notes.md` (this entry).
+
 ## docs/cross-backend-arc-parity-research-20260527 (Research-0730)
 
 **No upstream rebase impact**: this PR adds only a research digest under

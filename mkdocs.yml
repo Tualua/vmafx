@@ -171,6 +171,7 @@ nav:
           - Overview: usage/vmaf-tune.md
           - Codec adapters: usage/vmaf-tune-codec-adapters.md
           - Fast path: usage/vmaf-tune-fast-path.md
+          - Fast NR pre-scoring: usage/vmaf-tune-fast-nr.md
           - Score backend: usage/vmaf-tune-score-backend.md
           - Bitrate ladder: usage/vmaf-tune-ladder.md
           - Ladder (default sampler): usage/vmaf-tune-ladder-default-sampler.md
