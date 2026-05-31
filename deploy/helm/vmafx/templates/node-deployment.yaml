@@ -61,6 +61,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
+        {{- include "vmafx.sidecarContainer" . | nindent 8 }}
         - name: vmafx-node
           image: {{ include "vmafx.nodeImage" . }}
           imagePullPolicy: {{ .Values.node.image.pullPolicy | default "IfNotPresent" }}
@@ -121,6 +122,7 @@ spec:
         - name: models
           persistentVolumeClaim:
             claimName: {{ include "vmafx.fullname" . }}-models
-            readOnly: true
+            {{- /* sidecar writes checkpoints; node reads base model */}}
+            readOnly: {{ not .Values.sidecar.trainer.enabled }}
         {{- end }}
 {{- end }}
