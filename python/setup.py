@@ -89,6 +89,7 @@ setup(
     url="https://github.com/Netflix/vmaf",
     package_dir={"vmaf": COMPAT_VMAF_REL},
     packages=["vmaf", "vmaf.tools", "vmaf.core", "vmaf.script"],
+    package_data={"vmaf": ["py.typed"]},
     include_package_data=True,
     install_requires=[
         "numpy>=2.4.6",
@@ -100,6 +101,9 @@ setup(
         "h5py>=3.16.0",
         "sureal>=0.9.0",
         "dill>=0.4.1",
+        "PyWavelets>=1.9.0",
+        "python-slugify>=8.0.4",
+        "libsvm-official>=3.37",
     ],
     entry_points={
         "console_scripts": [
@@ -110,7 +114,6 @@ setup(
             "run_toddnoiseclassifier=vmaf.script.run_toddnoiseclassifier:main",
             "run_vmaf=vmaf.script.run_vmaf:main",
             "run_vmaf_cross_validation=vmaf.script.run_vmaf_cross_validation:main",
-            "run_vmaf_in_batch=vmaf.script.run_vmaf_in_batch:main",
             "run_vmaf_training=vmaf.script.run_vmaf_training:main",
         ],
     },
