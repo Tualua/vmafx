@@ -76,13 +76,20 @@ static int init_with_primary_context(VmafCudaState *cu_state)
     CHECK_CUDA_GOTO(cu_state->f,
                     cuStreamCreateWithPriority(&cu_state->str, CU_STREAM_NON_BLOCKING, prio2),
                     fail);
-    CHECK_CUDA_GOTO(cu_state->f, cuCtxPopCurrent(NULL), fail_after_pop);
+    CHECK_CUDA_GOTO(cu_state->f, cuCtxPopCurrent(NULL), fail_after_stream);
     return 0;
 
 fail:
     if (ctx_pushed)
         (void)cu_state->f->cuCtxPopCurrent(NULL);
-fail_after_pop:
+fail_after_stream:
+    /* ADR-0960 (round-25 audit A.1) — destroy the stream before releasing
+     * the primary context; cuCtxPopCurrent failure on the success path
+     * previously jumped past cuStreamDestroy, leaking cu_state->str. */
+    if (cu_state->str)
+        (void)cu_state->f->cuStreamDestroy(cu_state->str);
+    cu_state->str = 0;
+    /* fall-through after fail_after_stream - no explicit goto target */
     /* Netflix#1300 — release the primary context we just retained so
      * vmaf_cuda_state_init's unwind only has to free c + c->f. Without
      * this the driver keeps the primary context alive for the lifetime
@@ -124,14 +131,21 @@ static int init_with_provided_context(VmafCudaState *cu_state, CUcontext cu_cont
     CHECK_CUDA_GOTO(cu_state->f,
                     cuStreamCreateWithPriority(&cu_state->str, CU_STREAM_NON_BLOCKING, prio2),
                     fail);
-    CHECK_CUDA_GOTO(cu_state->f, cuCtxPopCurrent(NULL), fail_after_pop);
+    CHECK_CUDA_GOTO(cu_state->f, cuCtxPopCurrent(NULL), fail_after_stream);
 
     return 0;
 
 fail:
     if (ctx_pushed)
         (void)cu_state->f->cuCtxPopCurrent(NULL);
-fail_after_pop:
+fail_after_stream:
+    /* ADR-0960 (round-25 audit A.1) — destroy the stream before returning
+     * the error; cuCtxPopCurrent failure on the success path previously
+     * jumped past cuStreamDestroy, leaking cu_state->str. */
+    if (cu_state->str)
+        (void)cu_state->f->cuStreamDestroy(cu_state->str);
+    cu_state->str = 0;
+    /* fall-through after fail_after_stream - no explicit goto target */
     return _cuda_err;
 }
 
