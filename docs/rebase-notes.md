@@ -1382,6 +1382,19 @@ file is touched; no rebase conflict possible.
 Netflix/vmaf has no Go layer. All new files are test-only and never enter
 the libvmaf C build, the Python harness, or the FFmpeg patch stack. No
 production code is touched, so the upstream rebase boundary is unaffected.
+## nightly-workflow-audit (2026-05-29, ADR-0793)
+
+**Files touched:**
+`.github/workflows/nightly.yml`, `.github/workflows/nightly-bisect.yml`
+
+**Rebase impact:** None. The modified files are fork-local CI workflows that do
+not exist in upstream Netflix/vmaf master. No rebase conflict is possible.
+## ci-runner-ubuntu-24-pin (2026-05-29, ADR-0802)
+
+**Files touched:** `.github/workflows/*.yml` (15 files)
+
+**Rebase impact:** None. CI workflow files are fork-local and are never
+present in upstream Netflix/vmaf master. No rebase conflict is possible.
 
 ---
 
@@ -43148,3 +43161,8 @@ Fork-local files:
 `.github/workflows/security-scans.yml`,
 `docs/adr/0811-security-codeql-go-pvr.md`,
 `changelog.d/security/0811-codeql-go-config-fix.md`.
+
+## release-please draft mode
+
+no rebase impact: release-tooling-only change (`release-please-config.json`
+`"draft": true`). No C sources, headers, or test logic modified.
