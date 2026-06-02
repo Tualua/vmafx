@@ -540,7 +540,7 @@ endif
 config_h_target = configure_file(output: 'config.h', configuration: cdata)
 
 libvmaf_cpu_sources = [
-    src_dir + 'cpu.cpp',
+    src_dir + 'cpu.c',
 ]
 
 if is_asm_enabled
@@ -1449,7 +1449,7 @@ libvmaf_feature_sources = [
     feature_src_dir + 'picture_copy.c',
     feature_src_dir + 'integer_psnr.c',
     feature_src_dir + 'third_party/xiph/psnr_hvs.c',
-    feature_src_dir + 'feature_extractor.c',
+    feature_src_dir + 'feature_extractor.cpp',
     feature_src_dir + 'feature_name.c',
     feature_src_dir + 'alias.c',
     feature_src_dir + 'integer_adm.c',
@@ -1678,6 +1678,58 @@ metadata_handler_cpp20_lib = static_library(
     install : false,
 )
 
+# ADR-0708 (Wave 1, second pilot after dict — supersedes PR #42 / ADR-0722):
+# log.cpp converts the libvmaf logging subsystem from C to C++23. The public
+# C ABI in src/log.h is preserved verbatim via `extern "C"` guards; this
+# isolated static-library pattern keeps the cpp_std=c++23 override scoped to
+# the single TU so it cannot leak into other C++ TUs that may still need a
+# lower floor (notably the SYCL device-image TUs compiled by icpx).
+log_cpp23_lib = static_library(
+    'log_cpp23',
+    src_dir + 'log.cpp',
+    include_directories : [vmaf_base_include, libvmaf_include],
+    # libvmaf_cpu_cpp_std is the compiler-aware token defined above
+    # (gcc/clang: 'c++23', MSVC: 'vc++latest', icx-cl: 'c++latest').
+    override_options : ['cpp_std=' + libvmaf_cpu_cpp_std],
+    pic : true,
+    install : false,
+)
+
+# ADR-0761: opt.cpp and predict.cpp — C++23 Wave 8. Isolated static libs so
+# cpp_std=c++23 does not propagate to the remaining C TUs in libvmaf.
+# Linked into libvmaf.so via extract_all_objects() in the library() call below.
+opt_cpp23_lib = static_library(
+    'opt_cpp23',
+    src_dir + 'opt.cpp',
+    include_directories : [vmaf_base_include, libvmaf_include],
+    override_options : ['cpp_std=c++23'],
+    pic : true,
+    install : false,
+)
+
+# ADR-0858: gpu_dispatch_env.cpp is compiled as an isolated C++23 static lib
+# so its cpp_std override (c++23) does not propagate to any other TU — same
+# isolation pattern as metadata_handler_cpp20_lib (ADR-0708).  The public C
+# symbol vmaf_gpu_dispatch_env_get retains its extern "C" linkage; callers
+# in C translation units link without modification.
+gpu_dispatch_env_cpp23_lib = static_library(
+    'gpu_dispatch_env_cpp23',
+    src_dir + 'gpu_dispatch_env.cpp',
+    include_directories : [vmaf_base_include, libvmaf_include],
+    override_options : ['cpp_std=c++23'],
+    pic : true,
+    install : false,
+)
+
+read_json_model_cpp23_lib = static_library(
+    'read_json_model_cpp23',
+    src_dir + 'read_json_model.cpp',
+    include_directories : [vmaf_base_include, libvmaf_include],
+    override_options : ['cpp_std=c++23'],
+    pic : true,
+    install : false,
+)
+
 libvmaf_sources = [
     src_dir + 'libvmaf.c',
     src_dir + 'predict.c',
@@ -1688,20 +1740,17 @@ libvmaf_sources = [
     src_dir + 'fex_ctx_vector.c',
     src_dir + 'thread_pool.c',
     src_dir + 'dict.c',
-    src_dir + 'opt.c',
+    # opt.cpp compiled as opt_cpp23_lib (ADR-0761)
     src_dir + 'ref.c',
-    src_dir + 'read_json_model.c',
+    # read_json_model.cpp compiled as read_json_model_cpp23_lib (ADR-0761)
     src_dir + 'pdjson.c',
-    src_dir + 'log.c',
+    # log.cpp is compiled as log_cpp23_lib (ADR-0708 Wave 1 pilot)
     src_dir + 'framesync.c',
     # metadata_handler.cpp is compiled as metadata_handler_cpp20_lib (ADR-0708)
     src_dir + 'picture_pool.c',
     src_dir + 'thread_locale.c',
     src_dir + 'gpu_picture_pool.c',
-    # ADR-0461: thread-safe once-snapshot of GPU dispatch env variables.
-    # Compiled unconditionally so it is available to every GPU backend
-    # (CUDA, SYCL, HIP, Metal) without a per-backend Meson guard.
-    src_dir + 'gpu_dispatch_env.c',
+    # gpu_dispatch_env.cpp is compiled as gpu_dispatch_env_cpp23_lib (ADR-0858)
     # ADR-0707: TAD Rust extractor C wrapper — compiled directly into
     # the libvmaf library() target so it is not included in the static
     # intermediate libs (avoids unresolved vmafx_tad_* refs in test
@@ -1779,6 +1828,14 @@ libvmaf = library(
         libsvm_static_lib.extract_all_objects(recursive: true),
         # ADR-0708: C++20 pilot TU compiled as isolated static lib.
         metadata_handler_cpp20_lib.extract_all_objects(recursive: true),
+        # ADR-0708 Wave 1: log.cpp C++23 pilot TU compiled as isolated
+        # static lib. Same isolation rationale as metadata_handler_cpp20_lib.
+        log_cpp23_lib.extract_all_objects(recursive: true),
+        # ADR-0858: C++23 gpu_dispatch_env TU compiled as isolated static lib.
+        gpu_dispatch_env_cpp23_lib.extract_all_objects(recursive: true),
+        # ADR-0761: C++23 Wave 8 isolated static libs.
+        opt_cpp23_lib.extract_all_objects(recursive: true),
+        read_json_model_cpp23_lib.extract_all_objects(recursive: true),
     ],
     version : vmaf_soname_version,
     soversion : vmaf_soversion,

@@ -38,9 +38,7 @@ const GracefulShutdownTimeout = 30 * time.Second
 type jobQueueSource interface {
 	PendingCount() int
 	RunningCount() int
-}
-
-// NewLogger creates a JSON-structured slog.Logger writing to stdout.
+}// NewLogger creates a JSON-structured slog.Logger writing to stdout.
 // levelStr is a slog.Level string (e.g. "DEBUG", "INFO", "WARN", "ERROR").
 // Unrecognised strings default to INFO.
 func NewLogger(levelStr string) *slog.Logger {
@@ -53,8 +51,7 @@ func NewLogger(levelStr string) *slog.Logger {
 	return slog.New(handler)
 }
 
-// Metrics holds all Prometheus instruments registered by the vmafx-server
-// and vmafx-controller.
+// Metrics holds all Prometheus instruments registered by the vmafx-server.
 type Metrics struct {
 	// ScoreRequests is the total number of /v1/score / Score RPC calls.
 	ScoreRequests prometheus.Counter
@@ -66,12 +63,6 @@ type Metrics struct {
 	HealthRequests prometheus.Counter
 	// ReadyRequests counts /readyz calls.
 	ReadyRequests prometheus.Counter
-	// JobsSubmitted counts jobs accepted by the controller queue.
-	JobsSubmitted prometheus.Counter
-	// JobsCompleted counts jobs that finished successfully.
-	JobsCompleted prometheus.Counter
-	// JobsFailed counts jobs that finished with an error.
-	JobsFailed prometheus.Counter
 }
 
 // NewMetrics registers and returns the vmafx-server Prometheus metrics.
@@ -172,9 +163,7 @@ func (m *Metrics) SetControllerSources(q jobQueueSource, r registry.Counter) {
 			Subsystem: "controller",
 			Name:      "nodes_live",
 			Help:      "Current number of registered (live) vmafx-node instances.",
-		}, func() float64 { return float64(r.Count()) }))
-	}
-}
+		}, func() float64 { return float64(r.Count()) }))	}}
 
 // WaitForShutdown blocks until SIGTERM or SIGINT is received, then cancels
 // the context returned by NewShutdownContext and waits up to timeout for the

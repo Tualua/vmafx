@@ -1507,9 +1507,39 @@ Adds a token-boundary check after `strncmp(v, strategy_names[idx],
 slen)` so a trailing non-terminator byte (e.g. `directx` for
 `direct`) is treated as no match rather than silently routing to
 the prefix-shared strategy.
+## feature-extractor-cpp-rename (2026-05-29, ADR-0772)
+
+**Files touched:**
+`core/src/feature/feature_extractor.c` (deleted),
+`core/src/feature/feature_extractor.cpp` (new),
+`core/src/feature/feature_extractor.h`,
+`core/src/meson.build`, `core/test/meson.build`
+
+**Rebase impact:** Low. When Netflix/vmaf modifies `feature_extractor.c`
+upstream, the patch will apply against the now-deleted path. To apply an
+upstream patch: `git apply --reject` against `feature_extractor.cpp` and
+resolve manually, or `git show <sha> -- libvmaf/src/feature/feature_extractor.c
+| patch -p1 core/src/feature/feature_extractor.cpp`. The `extern "C"` block
+in the header must be preserved during any upstream-port of header changes.
+---
+## cli-cpp23-wave8 (2026-05-29, ADR-0809)
+
+**Files touched:**
+`core/tools/cli_parse.c` (deleted), `core/tools/cli_parse.cpp` (new),
+`core/tools/vmaf.c` (deleted), `core/tools/vmaf.cpp` (new),
+`core/tools/cli_parse.h` (extern "C" guards), `core/tools/spinner.h` (static linkage),
+`core/tools/meson.build` (source list updated, cpp_std=c++23 override added).
+
+**Rebase impact:** Moderate. Upstream Netflix/vmaf still has `vmaf.c` and
+`cli_parse.c`. On an upstream sync the patch context will show the upstream `.c`
+files conflicting with our deleted entries and new `.cpp` files. Resolution:
+- Accept upstream functional changes into the `.cpp` files (not into the deleted `.c`).
+- Re-apply the C++23 idioms (nullptr, static_cast, string_view, [[nodiscard]]) to any
+  new code paths added upstream.
+- If upstream adds new CLI flags, add them to both the `.cpp` file and the `long_opts[]`
+  table in `cli_parse.cpp`.
 
 ---
-
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**
@@ -1539,6 +1569,21 @@ affects the fork-local tree.
 **Rule for future cpp23 conversions:** when renaming `foo.c` → `foo.cpp` in
 meson.build, always `git rm core/src/foo.c` in the same commit. Leaving
 both files in tree causes the source tree to diverge from the build definition.
+
+---
+
+## feat/cpp23-gpu-dispatch-env-20260529 — ADR-0858 (2026-05-29)
+
+**Files touched:** `core/src/gpu_dispatch_env.c` (deleted), `core/src/gpu_dispatch_env.cpp`
+(new), `core/src/meson.build` (adds `gpu_dispatch_env_cpp23_lib`).
+
+**Rebase impact:** Low. `gpu_dispatch_env.c` and `.h` are fork-local files with no
+Netflix upstream equivalent (see ADR-0461 entry above at line 1808). Future upstream
+syncs will not touch either file. If Netflix ever introduces their own dispatch env
+helper, merge by adopting their approach. The isolated static lib pattern is identical
+to ADR-0708 (`metadata_handler_cpp20_lib`); any future merge conflict in `meson.build`
+should follow the same resolution — keep the `gpu_dispatch_env_cpp23_lib` block and
+the `extract_all_objects` line in the `libvmaf` `objects:` list.
 
 ---
 
@@ -42187,7 +42232,22 @@ part of any public API.
 
 ---
 
-### ADR-0762 — CUDA CIEDE2000 __ldg() F3 fix (2026-05-29)
+### ADR-0761 — C++23 Wave 8: opt.cpp activation + read_json_model.cpp (2026-05-29)
+
+**Touches**: `core/src/opt.cpp`, `core/src/opt.h`, `core/src/opt.c` (removed
+from build), `core/src/read_json_model.cpp` (new), `core/src/read_json_model.c`
+(removed from build), `core/src/read_json_model.h`, `core/src/log.h`,
+`core/src/model.h`, `core/src/meson.build`, `core/test/meson.build`,
+`scripts/ci/coverage-check.sh`.
+
+**Upstream collision risk**: Low. Netflix upstream does not touch
+`read_json_model.c` or `opt.c` in the same cadence as the fork's C++23
+migration. If upstream modifies either file, the port author should check
+whether the upstream fix applies to the `.cpp` version; typically a
+mechanical `port-upstream-commit` handles it cleanly since the `.cpp` is
+a structural clone of the `.c`.
+
+---### ADR-0762 — CUDA CIEDE2000 __ldg() F3 fix (2026-05-29)
 
 No rebase impact on upstream C/Python code.
 
@@ -43242,3 +43302,37 @@ targets in the Go workspace section, ADR-0702 scope),
 the skip-safe envtest pattern), and the `changelog.d/fixed/` fragment.
 `cmd/vmafx-operator/` is fork-added per ADR-0714 — upstream Netflix/vmaf
 ships no Go sources, so no upstream merge can reach these files.
+
+## log.c → log.cpp C++23 pilot (ADR-0708 Wave 1, 2026-05-30)
+
+Upstream Netflix `libvmaf/src/log.c` is fork-renamed to
+`core/src/log.cpp`. Future port-upstream-commit runs that touch
+`libvmaf/src/log.c` must apply changes to `core/src/log.cpp` instead — the
+fork-rename mapping is recorded here.
+
+Public C ABI is preserved: `core/src/log.h` retains the same two function
+prototypes (`vmaf_log`, `vmaf_set_log_level`) and now carries `extern "C"`
+guards so it is includable from both C and C++ TUs. The C-mangled exported
+symbols are unchanged (`nm libvmaf.so` shows `vmaf_log` and
+`vmaf_set_log_level` with the same C-mangling as the prior log.c build).
+
+Meson wiring: log.cpp compiles in an isolated `log_cpp23_lib` static_library
+with `override_options: ['cpp_std=' + libvmaf_cpu_cpp_std]`, mirroring the
+`metadata_handler_cpp20_lib` pattern (ADR-0708 metadata_handler pilot). Test
+executables that previously direct-compiled `../src/log.c` (test_lpips,
+test_dists, test_feature_extractor, test_speed, ...) now pick up log symbols
+via the shared `log_cpp23_test_objects` aggregate in
+`core/test/meson.build`.
+
+Fork-local files:
+`core/src/log.cpp` (was: `core/src/log.c`, removed),
+`core/src/log.h` (added `extern "C"` guards),
+`core/src/meson.build` (replaced `log.c` source entry with `log_cpp23_lib`),
+`core/test/meson.build` (added `log_cpp23_test_objects`, removed inline
+`'../src/log.c'` source entries from ~20 test execs, wired `test_log` into
+the fast suite),
+`docs/adr/0708-vmafx-cpp23-internals-pilot.md` (consequences cross-link),
+`changelog.d/changed/log-c-to-cpp23.md`.**`extern "C"` guards added**: `log.h`, `model.h`, `read_json_model.h`,
+`opt.h`. Any upstream commit that adds new declarations to these headers
+must include the guard-wrapped declaration for correctness. Flag in the
+port if upstream adds a declaration outside the guard block.
