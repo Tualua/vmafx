@@ -38,9 +38,59 @@ backend and the fdopen-based file writer are fork-local. On upstream sync,
 hunks; the CUDA-backend changes in `cuda/common.c` are entirely fork-local
 and will not conflict.
 
+## SYCL kernel coverage round 4 (ADR-0957, 2026-05-31)
+
+**Files touched:**
+`core/test/test_sycl_float_moment_parity.c`,
+`core/test/test_sycl_speed_chroma_parity.c`,
+`core/test/test_sycl_speed_temporal_parity.c`,
+`core/test/test_sycl_ssimulacra2_parity.c`,
+`core/test/meson.build`,
+`core/src/feature/sycl/AGENTS.md`,
+`docs/adr/0957-sycl-kernel-coverage-round4.md` (+ index fragment),
+`docs/research/0957-sycl-kernel-coverage-round4-2026-05-31.md`,
+`changelog.d/added/0957-sycl-kernel-coverage-round4.md`.
+
+**Rebase impact:** None. All four new test files and the meson
+wiring block are fork-original (upstream Netflix/vmaf has no SYCL
+backend). The AGENTS.md table row updates are in-place edits of
+fork-local rows. The only file that overlaps with parallel fork PRs
+is `core/test/meson.build` — the round-4 block is appended
+immediately after the round-3 block (PR #446) inside the
+`if get_option('enable_sycl')` guard; if #446 merges first, this
+PR's block appends cleanly; if this PR merges first, #446 must
+insert its block before the round-4 block.
+
+---
+
+## SYCL kernel coverage round 3 (ADR-0946, 2026-05-31)
+
+**Files touched:**
+`core/test/test_sycl_float_psnr_parity.c`,
+`core/test/test_sycl_float_adm_parity.c`,
+`core/test/test_sycl_float_vif_parity.c`,
+`core/test/test_sycl_float_motion_parity.c`,
+`core/test/test_sycl_psnr_hvs_parity.c`,
+`core/test/meson.build`,
+`core/src/feature/sycl/AGENTS.md`,
+`docs/adr/0946-sycl-kernel-coverage-round3.md` (+ index fragment),
+`docs/research/0946-sycl-kernel-coverage-round3-2026-05-31.md`,
+`changelog.d/added/0946-sycl-kernel-coverage-round3.md`.
+
+**Rebase impact:** None. All five test files and the meson wiring
+block are fork-original (upstream Netflix/vmaf has no SYCL backend).
+The AGENTS.md table row additions are append-only. The only file
+that overlaps with parallel fork PRs is `core/test/meson.build` —
+the round-3 block is appended immediately after the round-2 block
+(PR #376) inside the `if get_option('enable_sycl')` guard; if #376
+merges first, this PR's block appends cleanly; if this PR merges
+first, #376 must insert its block before the round-3 block.
+
 ---
 
 ## libvmaf.Score / ScoreDirect ctx.Context plumbing (2026-05-31, fix/libvmaf-score-ctx)
+
+## SIMD bit-exactness round-2 — SSIMULACRA 2 FMA unification + lib-FP-model extension (2026-05-30, ADR-0891)
 
 **Files touched:**
 `pkg/libvmaf/libvmaf.go` (Score signature: ctx as first param;
@@ -43166,3 +43216,29 @@ Fork-local files:
 
 no rebase impact: release-tooling-only change (`release-please-config.json`
 `"draft": true`). No C sources, headers, or test logic modified.
+
+## Coverage-overrides audit — tighten tiny_extractor_template.h (ADR-0881, 2026-05-30)
+
+no rebase impact: REASON — changes are confined to fork-only files:
+`scripts/ci/coverage-check.sh` (fork-only CI gate), the new
+`docs/adr/0881-*.md` ADR, the new `docs/research/0881-*.md` digest, the
+ADR index fragment under `docs/adr/_index_fragments/`, and the
+`changelog.d/changed/` fragment. The threshold ratchet only tightens an
+existing override (10 → 75) — does not introduce a new path Netflix
+upstream might also override. Future audits per the codified rule (see
+ADR-0881 §Decision) are also fork-only since `coverage-check.sh` itself
+is fork-only (Netflix upstream has no equivalent gate).
+
+## vmafx-operator envtest etcd setup (2026-05-30)
+
+no rebase impact: REASON — all changes are in fork-added paths only.
+Files touched: `Makefile` (new `setup-envtest` + `setup-envtest-env`
+targets in the Go workspace section, ADR-0702 scope),
+`.github/workflows/go-ci.yml` (new pre-test step installing
+`sigs.k8s.io/controller-runtime/tools/setup-envtest@latest` + exporting
+`KUBEBUILDER_ASSETS`), `cmd/vmafx-operator/internal/controller/suite_test.go`
+(top-of-`TestControllers` `t.Skip()` guard + nil-`testEnv` bailout in
+`AfterSuite`), `cmd/vmafx-operator/AGENTS.md` (new invariant #6 documenting
+the skip-safe envtest pattern), and the `changelog.d/fixed/` fragment.
+`cmd/vmafx-operator/` is fork-added per ADR-0714 — upstream Netflix/vmaf
+ships no Go sources, so no upstream merge can reach these files.

@@ -1420,28 +1420,77 @@ test_sycl_motion3_parity = executable('test_sycl_motion3_parity',
 test('test_sycl_motion3_parity', test_sycl_motion3_parity,
     suite : ['fast', 'gpu'])
 
-# ADR-0964 — speed_chroma + speed_temporal CPU vs. SYCL parity gates.
-# Pin the cross-backend tolerance (places=4) for the SpEED-family GPU
-# twins that this PR wires.  Both tests skip cleanly when no SYCL device
-# is visible (mirrors test_sycl_motion3_parity.c).
-test_sycl_speed_chroma_parity = executable('test_sycl_speed_chroma_parity',
-    ['test.c', 'test_sycl_speed_chroma_parity.c'],
+# ADR-0946 — SYCL kernel coverage round 3. Five new CPU vs. SYCL
+# parity gates filling the float-family + PSNR-HVS gaps left after
+# rounds 1 (#351: integer psnr / vif) and 2 (#376: integer adm /
+# ciede / ssim / ms_ssim / motion_v2). Each test mirrors the
+# round-1 / round-2 pattern: 256x144 synthetic YUV420P fixture,
+# places=4 (1e-4) ADR-0214 tolerance, skip-on-no-device.
+test_sycl_float_psnr_parity = executable('test_sycl_float_psnr_parity',
+    ['test.c', 'test_sycl_float_psnr_parity.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
     c_args: ['-DHAVE_SYCL=1']
 )
-test('test_sycl_speed_chroma_parity', test_sycl_speed_chroma_parity,
+test('test_sycl_float_psnr_parity', test_sycl_float_psnr_parity,
     suite : ['fast', 'gpu'])
 
-test_sycl_speed_temporal_parity = executable('test_sycl_speed_temporal_parity',
-    ['test.c', 'test_sycl_speed_temporal_parity.c'],
+test_sycl_float_adm_parity = executable('test_sycl_float_adm_parity',
+    ['test.c', 'test_sycl_float_adm_parity.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
     c_args: ['-DHAVE_SYCL=1']
 )
-test('test_sycl_speed_temporal_parity', test_sycl_speed_temporal_parity,
+test('test_sycl_float_adm_parity', test_sycl_float_adm_parity,
+    suite : ['fast', 'gpu'])
+
+test_sycl_float_vif_parity = executable('test_sycl_float_vif_parity',
+    ['test.c', 'test_sycl_float_vif_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_float_vif_parity', test_sycl_float_vif_parity,
+    suite : ['fast', 'gpu'])
+
+test_sycl_float_motion_parity = executable('test_sycl_float_motion_parity',
+    ['test.c', 'test_sycl_float_motion_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_float_motion_parity', test_sycl_float_motion_parity,
+    suite : ['fast', 'gpu'])
+
+test_sycl_psnr_hvs_parity = executable('test_sycl_psnr_hvs_parity',
+    ['test.c', 'test_sycl_psnr_hvs_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_psnr_hvs_parity', test_sycl_psnr_hvs_parity,
+    suite : ['fast', 'gpu'])
+
+# ADR-0957 — SYCL kernel coverage round 4. Four new CPU vs. SYCL
+# parity gates closing the last uncovered SYCL extractors after
+# round 3 (#446: float family + PSNR-HVS): float_moment_sycl,
+# speed_chroma_sycl, speed_temporal_sycl, ssimulacra2_sycl. The
+# first three use places=4 (1e-4) ADR-0214 tolerance; ssimulacra2
+# uses 5e-3 to match the ADR-0214 `FEATURE_TOLERANCE` entry for
+# its multi-stage XYB + IIR + SSIM-combine pipeline.
+test_sycl_float_moment_parity = executable('test_sycl_float_moment_parity',
+    ['test.c', 'test_sycl_float_moment_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_float_moment_parity', test_sycl_float_moment_parity,
     suite : ['fast', 'gpu'])
 
 # ADR-0884 — SYCL kernel coverage round 2.
@@ -1529,6 +1578,41 @@ test_sycl_vif_parity = executable('test_sycl_vif_parity',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_vif_parity', test_sycl_vif_parity,
+    suite : ['fast', 'gpu'])
+
+# ADR-0964 — speed_chroma + speed_temporal CPU vs. SYCL parity gates.
+# Pin the cross-backend tolerance (places=4) for the SpEED-family GPU
+# twins that this PR wires.  Both tests skip cleanly when no SYCL device
+# is visible (mirrors test_sycl_motion3_parity.c).
+
+test_sycl_speed_chroma_parity = executable('test_sycl_speed_chroma_parity',
+    ['test.c', 'test_sycl_speed_chroma_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_speed_chroma_parity', test_sycl_speed_chroma_parity,
+    suite : ['fast', 'gpu'])
+
+test_sycl_speed_temporal_parity = executable('test_sycl_speed_temporal_parity',
+    ['test.c', 'test_sycl_speed_temporal_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_speed_temporal_parity', test_sycl_speed_temporal_parity,
+    suite : ['fast', 'gpu'])
+
+test_sycl_ssimulacra2_parity = executable('test_sycl_ssimulacra2_parity',
+    ['test.c', 'test_sycl_ssimulacra2_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_ssimulacra2_parity', test_sycl_ssimulacra2_parity,
     suite : ['fast', 'gpu'])
 endif
 
