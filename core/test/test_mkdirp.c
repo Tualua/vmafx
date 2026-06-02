@@ -34,10 +34,57 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#ifdef _WIN32
+#include <windows.h>
+#include <direct.h> /* _rmdir */
+/* MSVC / MinGW's <sys/stat.h> ships _S_IFMT / _S_IFDIR but not the POSIX
+ * S_ISDIR macro that this test uses to introspect mode bits. Define it
+ * here so the cross-platform stat()-result check below compiles. */
+#ifndef S_ISDIR
+#define S_ISDIR(mode) (((mode) & _S_IFMT) == _S_IFDIR)
+#endif
+#else
 #include <unistd.h>
+#endif
 
 #include "feature/mkdirp.h"
 #include "test.h"
+
+/* Portable mkdtemp replacement: MSYS2/MinGW64 in GitHub Actions does not
+ * expose a usable /tmp from the MINGW64 shell.  On _WIN32 we query
+ * GetTempPathA() and create a uniquely-named subdirectory with
+ * CreateDirectoryA().  On POSIX we initialise the buffer with a
+ * /tmp/vmaf_mkdirp_XXXXXX template and delegate to mkdtemp(3).
+ * The caller passes an uninitialised char buffer + its size; the helper
+ * fills it and returns a pointer to it on success (NULL on failure).
+ * The caller must remove the resulting directory via rmdir / _rmdir. */
+static char *portable_mkdtemp(char *tmpl, size_t tmpl_len)
+{
+#ifdef _WIN32
+    char base[MAX_PATH];
+    DWORD baselen = GetTempPathA((DWORD)sizeof(base), base);
+    if (baselen == 0 || baselen >= (DWORD)sizeof(base))
+        return NULL;
+    int n =
+        snprintf(tmpl, tmpl_len, "%svmaf_mkdirp_%lu", base, (unsigned long)GetCurrentProcessId());
+    if (n <= 0 || (size_t)n >= tmpl_len)
+        return NULL;
+    if (!CreateDirectoryA(tmpl, NULL))
+        return NULL;
+    return tmpl;
+#else
+    int n = snprintf(tmpl, tmpl_len, "/tmp/vmaf_mkdirp_XXXXXX");
+    if (n <= 0 || (size_t)n >= tmpl_len)
+        return NULL;
+    return mkdtemp(tmpl);
+#endif
+}
+#define MKDTEMP(tmpl, len) portable_mkdtemp(tmpl, len)
+#ifdef _WIN32
+#define RMDIR(p) (void)_rmdir(p)
+#else
+#define RMDIR(p) (void)rmdir(p)
+#endif
 
 static char *test_mkdirp_null_path(void)
 {
@@ -48,9 +95,9 @@ static char *test_mkdirp_null_path(void)
 
 static char *test_mkdirp_single_level(void)
 {
-    /* Use mkdtemp to get a unique parent the test owns. */
-    char tmpl[] = "/tmp/vmaf_mkdirp_test_XXXXXX";
-    char *parent = mkdtemp(tmpl);
+    /* Use portable mkdtemp to get a unique parent the test owns. */
+    char tmpl[260];
+    char *parent = MKDTEMP(tmpl, sizeof(tmpl));
     mu_assert("mkdtemp must succeed", parent != NULL);
 
     char path[256];
@@ -64,15 +111,15 @@ static char *test_mkdirp_single_level(void)
     mu_assert("mkdirp must actually create the directory", rc_stat == 0 && S_ISDIR(st.st_mode));
 
     /* Cleanup. */
-    (void)rmdir(path);
-    (void)rmdir(parent);
+    RMDIR(path);
+    RMDIR(parent);
     return NULL;
 }
 
 static char *test_mkdirp_idempotent_eexist(void)
 {
-    char tmpl[] = "/tmp/vmaf_mkdirp_eexist_XXXXXX";
-    char *parent = mkdtemp(tmpl);
+    char tmpl[260];
+    char *parent = MKDTEMP(tmpl, sizeof(tmpl));
     mu_assert("mkdtemp must succeed", parent != NULL);
 
     char path[256];
@@ -85,8 +132,8 @@ static char *test_mkdirp_idempotent_eexist(void)
     rc = mkdirp(path, 0770);
     mu_assert("re-running mkdirp on an existing path must return 0 (EEXIST)", rc == 0);
 
-    (void)rmdir(path);
-    (void)rmdir(parent);
+    RMDIR(path);
+    RMDIR(parent);
     return NULL;
 }
 
@@ -94,8 +141,8 @@ static char *test_mkdirp_normalize_double_slash(void)
 {
     /* path_normalize must collapse consecutive slashes; verify the
      * recursive walk produces a single nested directory regardless. */
-    char tmpl[] = "/tmp/vmaf_mkdirp_norm_XXXXXX";
-    char *parent = mkdtemp(tmpl);
+    char tmpl[260];
+    char *parent = MKDTEMP(tmpl, sizeof(tmpl));
     mu_assert("mkdtemp must succeed", parent != NULL);
 
     char path[512];
@@ -116,10 +163,10 @@ static char *test_mkdirp_normalize_double_slash(void)
     char d1[512];
     (void)snprintf(d2, sizeof(d2), "%s/a/b", parent);
     (void)snprintf(d1, sizeof(d1), "%s/a", parent);
-    (void)rmdir(clean);
-    (void)rmdir(d2);
-    (void)rmdir(d1);
-    (void)rmdir(parent);
+    RMDIR(clean);
+    RMDIR(d2);
+    RMDIR(d1);
+    RMDIR(parent);
     return NULL;
 }
 
