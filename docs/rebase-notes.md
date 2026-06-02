@@ -86,6 +86,19 @@ the round-3 block is appended immediately after the round-2 block
 merges first, this PR's block appends cleanly; if this PR merges
 first, #376 must insert its block before the round-3 block.
 
+## ide-lint-config-adr-0700-paths (2026-05-30, ADR-0700)
+
+**Files touched:** `.vscode/c_cpp_properties.json`, `.zed/settings.json`,
+`.github/CODEOWNERS`, `.clang-tidy`, `.dockerignore`, `.gitignore`.
+
+**Rebase impact:** None. All six are fork-local config files; upstream
+Netflix/vmaf does not ship `.vscode/`, `.zed/`, `CODEOWNERS`,
+`.dockerignore`, or the same `.clang-tidy` profile, and the upstream
+`.gitignore` does not include the fork's `subprojects/` extraction
+rules. The change is a mechanical `libvmaf/` → `core/` substitution
+inside paths/regexes that the ADR-0700 rename missed. No upstream sync
+will conflict on these hunks.
+
 ---
 
 ## libvmaf.Score / ScoreDirect ctx.Context plumbing (2026-05-31, fix/libvmaf-score-ctx)
@@ -1540,6 +1553,27 @@ files conflicting with our deleted entries and new `.cpp` files. Resolution:
   table in `cli_parse.cpp`.
 
 ---
+
+## adr-0726 vulkan user-surfaces sweep (2026-05-30)
+
+**Files touched:** `README.md`, `mkdocs.yml`, `pkg/gpu/detect{,_test}.go`,
+`cmd/vmafx-mcp/{impl,tools}.go`,
+`cmd/vmafx-controller/proto/controller.proto`,
+`mcp-server/vmaf-mcp/{README.md,src/vmaf_mcp/server.py}`,
+`tools/vmaf-tune/{README.md,AGENTS.md,src/vmaftune/*.py}`, and the
+corresponding test suites.
+
+**Rebase impact:** None. Every touched file is fork-local — neither
+Netflix/vmaf upstream nor any upstream-tracking patch references the
+Vulkan backend, the `vmafx-*` Go commands, the MCP server, or the
+`vmaf-tune` tool. The sweep aligns the user-discoverable surfaces
+with ADR-0726, which removed the Vulkan backend from libvmaf on
+2026-05-28. Companion PRs (#295 covers `docs/index.md` and the API /
+metrics / build-flags docs; #299 deletes the orphan Vulkan source
+tree under `core/`).
+
+---
+
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
 
 **Files touched:**
@@ -43377,3 +43411,30 @@ Fork-local files touched:
 `core/tools/vmaf.c` (commit #1 — call-site updates for signature change),
 `core/src/feature/feature_extractor.c` (commit #2 — remove CPU v2),
 `core/src/meson.build` (commits #2, #5 — add speed_avx2/512, remove motion_v2 CPU build).
+
+---
+
+## ADR-0700 Dockerfile path residuals — 2026-05-30
+
+no rebase impact: REASON — touches only fork-added Dockerfiles
+(`docker/Dockerfile.production`, `docker/Dockerfile.production-gpu`,
+`docker/dev/{alpine-3.20,arch,fedora-40}.Dockerfile`) and the fork-added
+`dev/Containerfile`. None of these files have an upstream Netflix/vmaf
+counterpart. The change is a literal `libvmaf/` → `core/` substitution at
+source-tree positions (`meson setup … core`, `COPY core/`, `cd core`);
+install-path / package / filter-name occurrences (`/usr/local/include/libvmaf/`,
+`libvmaf.so`, `libvmaf-dev`, `--enable-libvmaf*`) are deliberately preserved
+because they describe the shipped library / package / ffmpeg-filter surface,
+not the source layout.
+---
+
+## ADR-0709 residual ANSNR references in docs + ai/data — 2026-05-30
+
+no rebase impact: REASON — all changes are fork-local. Touched files are
+`ai/data/feature_extractor.py` (fork-added Python helper, no upstream
+counterpart), `docs/metrics/ansnr.md`, `docs/backends/index.md`,
+`docs/backends/cuda/overview.md`, `docs/backends/hip/overview.md`. The
+HIP and CUDA overviews and the metric page are fork-only docs; the
+backends index page is also fork-only. No upstream Netflix/vmaf source is
+touched. The cleanup closes residual references left over after PR #38
+(ADR-0709) removed the `float_ansnr` extractor from every backend.
