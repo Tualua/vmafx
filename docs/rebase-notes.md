@@ -24,6 +24,20 @@ syncs from `upstream/master` (Netflix/vmaf). Required by
 **Rebase impact:** no rebase impact — all changes are test files and CI workflows.
 None of these files have upstream counterparts in Netflix/vmaf.
 
+## pr125-errno-defects (2026-05-29)
+
+**Files touched:**
+`core/src/libvmaf.c`, `core/src/cuda/common.c`
+
+**Rebase impact:** Low. Changes are confined to error-return paths:
+`open(2)` errno propagation, `cuInit` errno mapping, `vmaf_close`
+return-value propagation, `-EBUSY` guard, and `vmaf_init` error passthrough.
+None of these paths exist in upstream Netflix/vmaf as the fork-added CUDA
+backend and the fdopen-based file writer are fork-local. On upstream sync,
+`core/src/libvmaf.c` will need a three-way merge against the errno-propagation
+hunks; the CUDA-backend changes in `cuda/common.c` are entirely fork-local
+and will not conflict.
+
 ---
 
 ## libvmaf.Score / ScoreDirect ctx.Context plumbing (2026-05-31, fix/libvmaf-score-ctx)
@@ -1386,6 +1400,37 @@ new and CPU-only — no upstream collision possible.
 The shape of the fix (`*pool = NULL` on every goto-free label) is
 mechanically replayable; if upstream later refactors `ring_buffer_init`
 the same way, the diffs will be parallel rather than colliding.
+
+## vmaf-bench-unchecked-returns (2026-05-30)
+
+**Files touched:** `core/tools/vmaf_bench.c`
+
+**Rebase impact:** None. `vmaf_bench.c` is a fork-added benchmark binary
+that does not exist upstream Netflix/vmaf master (the upstream tools/
+directory has `vmaf.c` only). No rebase conflict is possible. The change
+hardens three S9 unchecked-return sites (`fseek` x2 in `yuv_pair_read_frame`,
+`vmaf_picture_alloc` x2 + `vmaf_read_pictures` flush in
+`run_sycl_gpu_profile`) to JPL Power-of-10 r7.
+
+---
+
+## gpu-dispatch-parse-strict-strategy-match (2026-05-30)
+
+**Files touched:**
+`core/src/gpu_dispatch_parse.h`,
+`core/test/test_gpu_dispatch_parse.c` (new),
+`core/test/meson.build`.
+
+**Rebase impact:** None. `gpu_dispatch_parse.h` is fork-added
+(ADR-0483 dedup helper for `VMAF_<BACKEND>_DISPATCH` env-variable
+parsing) and does not exist in upstream Netflix/vmaf. The new test
+binary lives only on the fork side. No rebase conflict is
+possible.
+
+Adds a token-boundary check after `strncmp(v, strategy_names[idx],
+slen)` so a trailing non-terminator byte (e.g. `directx` for
+`direct`) is treated as no match rather than silently routing to
+the prefix-shared strategy.
 
 ---
 
@@ -43015,3 +43060,15 @@ in the merge.
 The two-pass restructuring (allocate all, then strip `priv`/`ref`)
 avoids a buffer leak on partial allocation failure. No ABI change; no
 conflict risk unless upstream also restructures this function.
+
+## HIP/Metal -ENOSYS stubs for public API (2026-05-30)
+
+no rebase impact: REASON — all touched code is fork-local. The two
+new TUs (`core/src/hip/stubs.c`, `core/src/metal/stubs.c`) implement
+the public contract documented in
+`core/include/libvmaf/libvmaf_hip.h` / `libvmaf_metal.h`, both of
+which are fork-added headers with no upstream counterpart. The Meson
+gating change in `core/src/meson.build` is inside the
+`if is_hip_enabled / else` / `if is_metal_enabled / else` blocks that
+are also fork-local. Upstream Netflix/vmaf has no HIP or Metal
+backend.
