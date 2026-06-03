@@ -1369,6 +1369,31 @@ Netflix/vmaf has no Go layer. All new files are test-only and never enter
 the libvmaf C build, the Python harness, or the FFmpeg patch stack. No
 production code is touched, so the upstream rebase boundary is unaffected.
 
+## python-type-annotations-audit (2026-05-30)
+
+**Files touched:**
+`ai/src/aiutils/{__init__,jsonl_utils,parquet_utils}.py`,
+`ai/src/corpus/base.py`,
+`mcp-server/vmaf-mcp/src/vmaf_mcp/{server,http_transport}.py`,
+`tools/vmaf-tune/src/vmaftune/{auto,benchmark,corpus,encoder_profile,
+fr_from_nr_adapter,hdr,predictor_features,report,saliency,score,
+score_backend,sidecar}.py`,
+`tools/vmaf-tune/src/vmaftune/codec_adapters/_gop_common.py`,
+`pyproject.toml`.
+
+**Rebase impact:** None. Every touched file is fork-added (`ai/`,
+`mcp-server/`, `tools/vmaf-tune/`) or fork-only mypy config
+(`pyproject.toml` `[tool.mypy.overrides]`). Upstream Netflix/vmaf
+does not ship any of these trees; on a future upstream sync there is
+no conflict surface.
+
+The change is a pure type-annotation tightening — no runtime
+semantics change. The one functional change is the removal of a
+dead-code duplicate `_run_benchmark()` definition in
+`mcp-server/vmaf-mcp/src/vmaf_mcp/server.py`; the deleted copy was
+silently shadowed at import time by the progress-token-aware
+implementation 575 lines later, so removal is behaviour-preserving.
+
 ---
 
 ## cuda-ms-ssim-vert-lcs-horiz-ldg (2026-05-29, ADR-0757)
@@ -42998,6 +43023,25 @@ Fork-local files:
 `core/src/feature/arm64/ssimulacra2_host_neon.c`,
 `changelog.d/fixed/simd-float-adm-dwt2-unchecked-aligned-malloc.md`.
 
+## ai/ tempfile + path-safety bandit sweep — 2026-05-30
+
+no rebase impact: REASON — every touched file lives under `ai/scripts/`
+or `ai/tests/`, all of which are wholly fork-local (Netflix upstream
+ships no tiny-AI training, dataset acquisition, or ONNX export
+pipeline). No upstream Netflix/vmaf file is touched. Fork-local files:
+`ai/scripts/bvi_dvc_to_full_features.py`,
+`ai/scripts/konvid_to_full_features.py`,
+`ai/scripts/export_tiny_models.py`,
+`ai/scripts/export_u2netp_mirror.py`,
+`ai/scripts/export_vmaf_tiny_v{2,3,4}.py`,
+`ai/scripts/fetch_konvid_1k.py`,
+`ai/scripts/fetch_youtube_ugc_subset.py`,
+`ai/tests/test_corpus_base.py`,
+`ai/tests/test_feature_extractor_defaults.py`,
+`ai/tests/test_merge_corpora.py`,
+`ai/tests/test_train_predictor_v2_realcorpus.py`,
+`changelog.d/security/ai-tempfile-and-path-safety.md`.
+
 ## Go controller / server / MCP test coverage expansion (2026-05-30)
 
 No rebase impact: all touched files are fork-added Go tests under `cmd/` —
@@ -43227,3 +43271,27 @@ upstream counterpart. The test and doc updates are purely fork-local.
 ## ADR-0777 — Thread-Safety Audit: CUDA / SYCL / HIP Backends (2026-05-29)
 
 no rebase impact: docs/research + docs/adr only; no source files were changed.
+
+## Python dep freshness sweep (ADR-0879, 2026-05-30)
+
+no rebase impact: all touched files are fork-local — `ai/pyproject.toml`,
+`mcp-server/vmaf-mcp/pyproject.toml`, `dev-llm/pyproject.toml`,
+`tools/vmaf-tune/pyproject.toml`, `tools/vmaf-roi-score/pyproject.toml`,
+`python/test/requirements.txt`. Netflix upstream does not ship the `ai/`,
+`mcp-server/`, `dev-llm/`, or `tools/vmaf-*` trees; the only file shared
+with upstream (`python/test/requirements.txt`) gained a `>=7.1.0` floor on
+`pytest-cov` which is purely additive over upstream's bare `pytest-cov`
+line. On rebase, keep the bumped floor; if upstream introduces its own
+ceiling on `pytest-cov`, intersect rather than overwrite.
+
+## pyright-strict-audit (2026-05-30, ADR-0888)
+
+no rebase impact: REASON — all touched files are fork-added Python sources
+under `ai/src/` and `tools/vmaf-tune/src/` (and the `CodecAdapter` Protocol
+in `tools/vmaf-tune/src/vmaftune/codec_adapters/__init__.py`, also fork-added).
+No upstream Netflix/vmaf file is touched. The annotation tightening
+(`TYPE_CHECKING` torch import, `assert`-based Optional narrowing, `cast`
+through stub gaps, dropped dead Optional comparisons) does not change runtime
+behaviour — all 12 fixes are pure type-checker compliance. The audit's
+companion file `pyrightconfig.audit.json` is intentionally gitignored so this
+PR doesn't introduce a CI gate before the long-tail cleanup is done.
