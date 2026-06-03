@@ -1063,8 +1063,27 @@ intact. Same pattern PR #327 (round 2) used for `feature.h` / `model.h` /
 `dnn.h`. If a future upstream sync changes the guard form (unlikely —
 these have been stable for years), the NOLINT cites become redundant and
 can be removed in a follow-on cleanup.
+## libvmaf-public-header-doc-gaps-round2 (2026-05-30)
 
-No source/binary symbol renames; consumers of the patch stack
+**Files touched:**
+- `core/include/libvmaf/feature.h` (doc comments + NOLINT-cited guard)
+- `core/include/libvmaf/model.h` (doc comments + NOLINT-cited guard)
+- `core/include/libvmaf/dnn.h` (`vmaf_dnn_session_close` doc + NOLINT-cited guard)
+
+**Rebase impact:** Low. The doc-comment additions land above unchanged
+upstream-mirror declarations; any future Netflix upstream that touches the
+same function signatures will produce a tractable 3-way merge — the doc text
+is fork-local and `git merge` will preserve our `/** ... */` block above
+whatever upstream rewrites the signature to. No identifier renames; no
+ABI/source impact.
+
+The NOLINT annotations on `__VMAF_FEATURE_H__` / `__VMAF_MODEL_H__` /
+`__VMAF_DNN_H__` are inline comments only — they do not alter the include
+guard symbols themselves, so upstream's preprocessor identity remains
+intact. If a future upstream sync changes the guard form (unlikely — these
+have been stable for years), the NOLINT cites become redundant and can be
+removed in a follow-on cleanup.
+/binary symbol renames; consumers of the patch stack
 (`ffmpeg-patches/`) and the Go/Rust bindings see identical declarations.
 
 ## Bash strict-mode + trap-cleanup sweep (2026-05-30, ADR-0899)
@@ -42978,6 +42997,22 @@ Fork-local files:
 `core/src/feature/arm64/float_adm_neon.c`,
 `core/src/feature/arm64/ssimulacra2_host_neon.c`,
 `changelog.d/fixed/simd-float-adm-dwt2-unchecked-aligned-malloc.md`.
+
+## Go controller / server / MCP test coverage expansion (2026-05-30)
+
+No rebase impact: all touched files are fork-added Go tests under `cmd/` —
+none have an upstream Netflix/vmaf counterpart (upstream ships no Go
+sources). The PR adds:
+
+- `cmd/vmafx-controller/main_extra_test.go` (new)
+- `cmd/vmafx-controller/nodes/registry_edge_test.go` (new)
+- `cmd/vmafx-server/main_extra_test.go` (new)
+- `cmd/vmafx-mcp/impl_test.go` (new)
+- `changelog.d/added/go-controller-mcp-coverage.md` (new)
+- `docs/state.md` (one `_Updated:` annotation line; no row change)
+- `docs/rebase-notes.md` (this entry)
+
+No upstream-mirror file is touched.
 
 ## ADR-0848 — Per-surface doc compliance audit (2026-05-29)
 
