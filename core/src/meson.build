@@ -711,6 +711,19 @@ if is_asm_enabled
     endif
 
     if host_machine.cpu_family().startswith('x86')
+      # icx (Intel oneAPI DPC++/C++, meson id 'intel-llvm' or 'intel-llvm-cl')
+      # ignores #pragma STDC FP_CONTRACT OFF in source files at -O3 unless
+      # -fp-model=precise is also passed on the command line. For strict-FP
+      # carve-out static libs we add it alongside -ffp-contract=off so that
+      # both scalar tails and any C-level glue inside the SIMD TUs stay
+      # bit-exact with the scalar reference even under the icx optimizer.
+      # GCC and vanilla Clang do not recognise -fp-model=precise; we detect
+      # icx via cc.get_id() and append the flag only for that compiler.
+      _cc_id_x86 = cc.get_id()
+      _x86_simd_strict_fp_extra = []
+      if _cc_id_x86 == 'intel-llvm' or _cc_id_x86 == 'intel-llvm-cl'
+          _x86_simd_strict_fp_extra = ['-fp-model=precise']
+      endif
       x86_avx2_sources = [
           feature_src_dir + 'common/convolution_avx.c',
           feature_src_dir + 'x86/motion_avx2.c',
@@ -751,6 +764,7 @@ if is_asm_enabled
           c_args : ['-mavx', '-mavx2', '-mfma', '-ffp-contract=off'] + vmaf_cflags_common,
       )
 
+
       # psnr_hvs_avx2 + ms_ssim_decimate_avx2 carve-outs (mirror of
       # ssimulacra2 below). Reason: under -mfma + GCC silently
       # ignoring `#pragma STDC FP_CONTRACT OFF`, plain C `a*b+c`
@@ -762,13 +776,13 @@ if is_asm_enabled
           'x86_psnr_hvs_avx2',
           feature_src_dir + 'x86/psnr_hvs_avx2.c',
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma', '-ffp-contract=off'] + vmaf_cflags_common,
+          c_args : ['-mavx', '-mavx2', '-mfma', '-ffp-contract=off'] + _x86_simd_strict_fp_extra + vmaf_cflags_common,
       )
       x86_ms_ssim_decimate_avx2_lib = static_library(
           'x86_ms_ssim_decimate_avx2',
           feature_src_dir + 'x86/ms_ssim_decimate_avx2.c',
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma', '-ffp-contract=off'] + vmaf_cflags_common,
+          c_args : ['-mavx', '-mavx2', '-mfma', '-ffp-contract=off'] + _x86_simd_strict_fp_extra + vmaf_cflags_common,
       )
 
       # ssimulacra2 AVX2 compiles in its own static lib with
@@ -786,7 +800,7 @@ if is_asm_enabled
               feature_src_dir + 'x86/ssimulacra2_host_avx2.c',
           ],
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma', '-ffp-contract=off'] + vmaf_cflags_common,
+          c_args : ['-mavx', '-mavx2', '-mfma', '-ffp-contract=off'] + _x86_simd_strict_fp_extra + vmaf_cflags_common,
       )
 
       platform_specific_cpu_objects += x86_avx2_static_lib.extract_all_objects(recursive: true)
@@ -853,7 +867,7 @@ if is_asm_enabled
             include_directories : vmaf_base_include,
             c_args : ['-mavx512f', '-mavx512dq', '-mavx512bw', '-mavx512cd',
                       '-mavx512vbmi', '-mavx512vl', '-ffp-contract=off'] +
-                     vmaf_cflags_common,
+                     _x86_simd_strict_fp_extra + vmaf_cflags_common,
         )
 
         platform_specific_cpu_objects += x86_avx512_static_lib.extract_all_objects(recursive: true)
@@ -1641,6 +1655,20 @@ if is_sycl_enabled
     endforeach
 endif
 
+# ADR-0891 (round-2 SIMD bit-exact fix, follow-up to #339):
+# Under icx, `-ffp-contract=off` alone does not constrain the
+# optimizer's relaxed FP-model defaults. Scalar reference TUs
+# inside `libvmaf_feature_static_lib` (e.g. `ms_ssim_decimate_scalar`)
+# end up with non-strict floating-point semantics, while the SIMD
+# carve-out libs already gained `-fp-model=precise` in #339. The
+# resulting asymmetry caused `test_ms_ssim_decimate` to diverge
+# from the SIMD path. Mirror the same flag onto every static-lib
+# that owns scalar references the SIMD tests compare against.
+_libvmaf_feature_icx_args = []
+if cc.get_id() == 'intel-llvm' or cc.get_id() == 'intel-llvm-cl'
+    _libvmaf_feature_icx_args = ['-fp-model=precise']
+endif
+
 # ssimulacra2.c scalar extractor compiles in its own static lib with
 # `-ffp-contract=off`. Rationale: `compute_vars` / `compute_masks` /
 # `accumulate_error` and the scalar fallback functions mix with the
@@ -1654,14 +1682,14 @@ libvmaf_ssimulacra2_static_lib = static_library(
     feature_src_dir + 'ssimulacra2.c',
     include_directories : [libvmaf_include, vmaf_include, cuda_dir],
     dependencies: [stdatomic_dependency, pthread_dependency, cuda_dependency, sycl_dependency],
-    c_args: vmaf_cflags_common + ['-ffp-contract=off'],
+    c_args: vmaf_cflags_common + ['-ffp-contract=off'] + _libvmaf_feature_icx_args,
 )
 
 libvmaf_feature_static_lib = static_library(
     'libvmaf_feature',
     libvmaf_feature_sources + hip_sources + hip_hsaco_sources + metal_sources,
     include_directories : [libvmaf_include, vmaf_include, cuda_dir],
-    c_args : vmaf_cflags_common,
+    c_args : vmaf_cflags_common + _libvmaf_feature_icx_args,
     dependencies: [stdatomic_dependency, pthread_dependency, cuda_dependency, sycl_dependency, hip_deps, metal_deps],
     objects: [common_cuda_objects, common_sycl_objects, sycl_feature_objects,
               libvmaf_ssimulacra2_static_lib.extract_all_objects(recursive: false)]
