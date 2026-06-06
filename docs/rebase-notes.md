@@ -45114,3 +45114,12 @@ fragment are modified. No C source, public API, or upstream-mirrored file is
 touched.
 
 ---
+
+## fix/pic-prealloc-asan-leak (2026-06-06)
+
+no rebase impact: single-line change in `core/src/libvmaf.c` setting
+`fex_ctx->is_initialized = true` before the batch-flush loop in
+`flush_context_threaded`. The change is additive — it enables the existing
+`vmaf_feature_extractor_context_close` teardown path to run correctly on
+shared (never-initialized) contexts. No upstream-mirrored file is modified,
+no public API is affected, no test fixtures change.
