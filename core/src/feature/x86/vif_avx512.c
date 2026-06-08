@@ -1,6 +1,7 @@
 /**
      *
      *  Copyright 2016-2026 Netflix, Inc.
+ *  Copyright 2026 Lusoris
      *
      *     Licensed under the BSD+Patent License (the "License"); you may not
      *     use this file except in compliance with the License. You may obtain a
@@ -391,7 +392,7 @@ void vif_statistic_8_avx512(struct VifPublicState *s, float *num, float *den, un
             uint64_t accum_ref_dis = 0;
 
             for (unsigned fi = 0; fi < fwidth; ++fi) {
-                int ii = i - fwidth_half;
+                int ii = (int)i - fwidth_half;
                 int ii_check = ii + fi;
                 const uint16_t fcoeff = vif_filt[fi];
                 const uint8_t *ref = (uint8_t *)buf.ref;
@@ -638,7 +639,7 @@ void vif_statistic_16_avx512(struct VifPublicState *s, float *num, float *den, u
 
     for (unsigned i = 0; i < h; ++i) {
         //VERTICAL
-        int ii = i - fwidth_half;
+        int ii = (int)i - fwidth_half;
         int n = w >> 5;
         for (int j = 0; j < n << 5; j = j + 32) {
 
@@ -1387,7 +1388,7 @@ void vif_subsample_rd_8_avx512(VifBuffer buf, unsigned w, unsigned h)
     for (unsigned i = 0; i < h; ++i) {
         //VERTICAL
         int n = w >> 5;
-        int ii = i - fwidth_half;
+        int ii = (int)i - fwidth_half;
         for (int j = 0; j < n << 5; j = j + 32) {
             vif_subsample_rd_8_vert_j(ref, dis, buf.stride, ii, j, &vc, buf.tmp.ref_convol,
                                       buf.tmp.dis_convol);
@@ -1457,7 +1458,7 @@ void vif_subsample_rd_16_avx512(VifBuffer buf, unsigned w, unsigned h, int scale
         //VERTICAL
 
         int n = w >> 4;
-        int ii = i - fwidth_half;
+        int ii = (int)i - fwidth_half;
         for (int j = 0; j < n << 4; j = j + 32) {
             int ii_check = ii;
             __m512i accumr_lo;

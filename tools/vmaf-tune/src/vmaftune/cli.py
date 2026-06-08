@@ -2741,23 +2741,28 @@ def _run_recommend_saliency(args: argparse.Namespace) -> int:
         crf=crf,
         output=args.output,
     )
-    cfg = (
-        SaliencyConfig(
+    if not args.saliency_aware:
+        # --saliency-aware was not set; run a plain encode without touching
+        # the saliency model.  Calling saliency_aware_encode with config=None
+        # would silently create a default SaliencyConfig() and run the model
+        # anyway — guard here to enforce the intent.
+        from .encode import run_encode
+
+        result = run_encode(request, ffmpeg_bin=args.ffmpeg_bin)
+    else:
+        cfg = SaliencyConfig(
             foreground_offset=args.saliency_offset,
             temporal_aggregator=args.saliency_aggregator,
             ema_alpha=args.saliency_ema_alpha,
             allow_unsupported_encoder_fallback=args.saliency_fallback_plain,
         )
-        if args.saliency_aware
-        else None
-    )
-    result = saliency_aware_encode(
-        request,
-        duration_frames=args.duration_frames,
-        model_path=args.saliency_model,
-        config=cfg,
-        ffmpeg_bin=args.ffmpeg_bin,
-    )
+        result = saliency_aware_encode(
+            request,
+            duration_frames=args.duration_frames,
+            model_path=args.saliency_model,
+            config=cfg,
+            ffmpeg_bin=args.ffmpeg_bin,
+        )
     payload = {
         "encoder": result.request.encoder,
         "preset": result.request.preset,
@@ -3605,6 +3610,15 @@ def _write_compare_profile_report(
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     outputs: list[Path] = []
+    if fmt == "both":
+        # Write the raw JSON artifact alongside HTML and MD so that
+        # downstream tools can re-render or diff two reports without
+        # re-running the encode pipeline.
+        import json as _json  # noqa: PLC0415
+
+        json_path = output.with_suffix(".json")
+        json_path.write_text(_json.dumps(data.to_dict(), indent=2) + "\n", encoding="utf-8")
+        outputs.append(json_path)
     if fmt in ("html", "both"):
         html_path = output if fmt == "html" else output.with_suffix(".html")
         html_path.write_text(render_html(data), encoding="utf-8")

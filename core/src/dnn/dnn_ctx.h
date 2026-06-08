@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  Internal bridge between the public `dnn.h` surface (dnn_api.c) and the
  *  VmafContext-owning translation unit (libvmaf.c). Keeps VmafContext opaque
@@ -66,6 +66,14 @@ int vmaf_ctx_dnn_set_codec_context(VmafContext *ctx, const char *codec_name, con
  * `vmaf_ctx_dnn_run_frame_nchw`.
  */
 int vmaf_ctx_dnn_set_resize_mode(VmafContext *ctx, int mode);
+
+/**
+ * Bridge for the public `vmaf_dnn_is_codec_aware` query (dnn.h).
+ * Returns 1 if the attached tiny model has a sidecar with codec_aware=true
+ * and a non-zero codec block (extra_in_buf / extra_in_width allocated).
+ * Returns 0 if no model is attached, no sidecar, or no codec block.
+ */
+int vmaf_ctx_dnn_is_codec_aware(const VmafContext *ctx);
 
 #ifdef __cplusplus
 }

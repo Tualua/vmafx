@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  Licensed under the BSD+Patent License (the "License");
  *  you may not use this file except in compliance with the License.
@@ -49,8 +49,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "libvmaf.h"
-#include "picture.h"
+#include <libvmaf/libvmaf.h>
+#include <libvmaf/picture.h>
 
 #ifdef __cplusplus
 extern "C" {

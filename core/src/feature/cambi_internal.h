@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  Internal header exposing cambi.c's per-stage helpers to the GPU
  *  twins (integer_cambi_cuda.c, integer_cambi_hip.c).
@@ -40,6 +40,18 @@ extern "C" {
 #define VMAF_CAMBI_NUM_SCALES 5
 /* 7×7 spatial-mask filter window (matches cambi.c::MASK_FILTER_SIZE). */
 #define VMAF_CAMBI_MASK_FILTER_SIZE 7
+
+/* Minimum input width or height (in either dimension) below which CAMBI
+ * rejects the frame as too small to score meaningfully. Shared across the
+ * CPU, CUDA, and HIP implementations so all three backends enforce the same
+ * gate. */
+#define CAMBI_MIN_WIDTH_HEIGHT 216
+
+/* Window-size divisor: (CAMBI_4K_WIDTH + CAMBI_4K_HEIGHT) / 16
+ * = (3840 + 2160) / 16 = 375.  Combined into a single constant so that
+ * the three backends (cambi.c, integer_cambi_cuda.c, integer_cambi_hip.c)
+ * stay numerically identical if the 4K reference resolution ever changes. */
+#define CAMBI_WINDOW_DIVISOR 375
 
 /* Range update + derivative callback signatures (mirrors cambi.c
  * internal typedefs). */

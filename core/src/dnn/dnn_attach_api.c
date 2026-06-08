@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  `vmaf_use_tiny_model` — public entry point that opens an ORT session
  *  via ort_backend.c and hands ownership to libvmaf.c via the `dnn_ctx`
@@ -109,6 +109,20 @@ int vmaf_dnn_set_codec_context(VmafContext *ctx, const char *codec_name, const c
     (void)preset;
     (void)crf;
     return -ENOSYS;
+#endif
+}
+
+/* Public query for codec-awareness of the attached tiny model. The context
+ * state lives in libvmaf.c; delegate to the bridge in dnn_ctx.h. When built
+ * without DNN support the function always returns 0 (no session, no codec
+ * block) so callers do not need an #ifdef guard. */
+int vmaf_dnn_is_codec_aware(const VmafContext *ctx)
+{
+#if defined(VMAF_HAVE_DNN) && VMAF_HAVE_DNN
+    return vmaf_ctx_dnn_is_codec_aware(ctx);
+#else
+    (void)ctx;
+    return 0;
 #endif
 }
 

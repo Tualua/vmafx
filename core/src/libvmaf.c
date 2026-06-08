@@ -298,6 +298,11 @@ free_framesync:
 free_v:
     free(v);
 fail:
+    /* NULL the caller's handle so it cannot be passed to vmaf_close()
+     * or dereferenced after a failed vmaf_init(). ASan/LeakSan: avoids
+     * a dangling-pointer UAF if the caller checks the return code but
+     * still reads *vmaf. CERT MEM30-C. */
+    *vmaf = NULL;
     /* Return the actual error code from the failing sub-init rather than
      * a hardcoded -ENOMEM (which is only correct when the malloc fails).
      * CERT ERR33-C: callers must be able to distinguish OOM from a
@@ -751,6 +756,24 @@ int vmaf_ctx_dnn_set_resize_mode(VmafContext *ctx, int mode)
         return -EINVAL;
     ctx->dnn.resize_mode = mode;
     return 0;
+}
+
+/* Bridge for vmaf_dnn_is_codec_aware (dnn.h public API).
+ * A model is "codec-aware" iff:
+ *   - a session is attached (sess != NULL),
+ *   - the sidecar is present and declares codec_aware=true, AND
+ *   - the codec block buffer was allocated at attach time (extra_in_width > 0).
+ * All three conditions must hold; any mismatch indicates a model that either
+ * has no codec block or whose sidecar was absent at load time. */
+int vmaf_ctx_dnn_is_codec_aware(const VmafContext *ctx)
+{
+    if (!ctx || !ctx->dnn.sess)
+        return 0;
+    if (!ctx->dnn.has_sidecar || !ctx->dnn.meta.codec_aware)
+        return 0;
+    if (ctx->dnn.extra_in_width == 0u || ctx->dnn.extra_in_buf == NULL)
+        return 0;
+    return 1;
 }
 
 static bool dnn_feature_name_char_ok(char c)

@@ -1,6 +1,6 @@
 /**
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: BSD-3-Clause-Plus-Patent
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  motion_v2 feature kernel on the CUDA backend (T7-23 / batch 3
  *  part 1b — ADR-0192 / ADR-0193). CUDA twin of motion_v2_vulkan
@@ -304,8 +304,10 @@ static int flush_fex_cuda(VmafFeatureExtractor *fex, VmafFeatureCollector *featu
             motion2 = score_cur;
         }
 
-        vmaf_feature_collector_append(feature_collector, "VMAF_integer_feature_motion2_v2_score",
-                                      motion2, i);
+        int append_err = vmaf_feature_collector_append(
+            feature_collector, "VMAF_integer_feature_motion2_v2_score", motion2, i);
+        if (append_err)
+            return append_err;
     }
 
     return 1;
