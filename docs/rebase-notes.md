@@ -1,6 +1,29 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## test/ai-scripts-coverage-round3 (2026-06-06, no ADR — test-only)
+
+no rebase impact: adds two new test files
+(`ai/tests/test_calibrate_phase_f_recipes_unit.py` and
+`ai/tests/test_analyze_knob_sweep_unit.py`) and one changelog fragment. No
+existing C source, public API, upstream-mirrored Python, or golden assertion
+is modified.
+
+## docs/r12-c-api-doc-completeness (2026-06-06, no ADR — doc-only)
+
+no rebase impact: comment-only changes to `core/include/libvmaf/libvmaf_cuda.h`,
+`core/include/libvmaf/libvmaf_sycl.h`, `core/include/libvmaf/dnn.h`,
+`core/include/libvmaf/picture_v2.h`, `core/include/libvmaf/libvmaf.h`, and
+`core/include/libvmaf/model.h`. No C sources, build files, or public API
+signatures touched — Doxygen comment additions only.
+
+## docs/doxygen-private-headers-r4 (2026-06-07)
+
+no rebase impact: purely additive Doxygen comment blocks inserted into 10
+internal headers under `core/src/`. No include paths, struct layouts, or
+function signatures are changed. Conflicts only if another branch inserts
+text at the same line positions in these headers.
+
 ## fix/pic-pool-odr-cuda-gpumask-cov-floor (2026-06-08)
 `core/src/meson.build`: adds `cpp_args` to `picture_pool_cpp23_lib`. Conflicts
 possible if another branch modifies the same `static_library()` block; resolve
@@ -129,7 +152,14 @@ no rebase impact: single-file change to
 `motion_score_pipeline_16_neon`.  No public API, no header, no test data,
 no upstream-mirrored file is modified.  Conflicts only if another branch
 edits the same static helper region of that file.
+## fix/helm-values-completeness-adr-1074 (ADR-1074, 2026-06-06)
 
+no rebase impact: changes are confined to `deploy/helm/vmafx/values.yaml`,
+`deploy/helm/vmafx/values.schema.json`, and three templates
+(`templates/statefulset.yaml`, `templates/node.yaml`,
+`templates/networkpolicy.yaml`). No C source, public header, upstream-mirrored
+file, Python test, or golden-data assertion is touched. Conflict risk exists
+only if another branch edits those same Helm files concurrently.
 ## fix/sanitizer-deselect-tests-and-quality-gates (2026-06-06)
 
 no rebase impact: CI-only change to `.github/workflows/tests-and-quality-gates.yml`
