@@ -1649,6 +1649,14 @@ static void threaded_extract_batch_func(void *e, void **thread_data)
         if (shared_fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA)
             continue;
 
+        /* SYCL extractors are dispatched via the SYCL command-graph path in
+         * read_pictures_dispatch_one(); the CPU thread pool must skip them
+         * symmetrically with CUDA to prevent double-dispatch.  Without this
+         * guard, every SYCL extractor runs once via the SYCL path and once
+         * via this pool, corrupting the feature-collector state. */
+        if (shared_fex->flags & VMAF_FEATURE_EXTRACTOR_SYCL)
+            continue;
+
         if (shared_fex->flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL)
             continue;
 
@@ -1980,12 +1988,24 @@ static int flush_context_cuda(VmafContext *vmaf)
     RegisteredFeatureExtractors rfe = vmaf->registered_feature_extractors;
     for (unsigned i = 0; i < rfe.cnt; i++) {
         if (rfe.fex_ctx[i]->fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA) {
-            // Collect any pending double-buffered CUDA work
+            /* Collect any pending double-buffered CUDA work.  The thread pool
+             * path (flush_context_threaded) does not drain gpu_pending for
+             * CUDA extractors, so this collect must run regardless. */
             if (rfe.fex_ctx[i]->gpu_pending) {
                 err |= vmaf_feature_extractor_context_collect(
                     rfe.fex_ctx[i], rfe.fex_ctx[i]->gpu_pending_index, vmaf->feature_collector);
                 rfe.fex_ctx[i]->gpu_pending = false;
             }
+            /* flush_context_threaded already called
+             * vmaf_feature_extractor_context_flush() on every TEMPORAL
+             * extractor (including those also flagged CUDA) via its first
+             * loop (lines ~1896-1899).  Calling flush a second time on the
+             * same feature_collector index produces a duplicate-write
+             * -EINVAL and leaves cuCtxSynchronize in an error state.
+             * Skip the flush here for temporal-CUDA extractors when the
+             * thread pool was active. */
+            if (vmaf->thread_pool && (rfe.fex_ctx[i]->fex->flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL))
+                continue;
             err |= vmaf_feature_extractor_context_flush(rfe.fex_ctx[i], vmaf->feature_collector);
         }
     }
@@ -2292,6 +2312,11 @@ static bool read_pictures_should_skip(VmafContext *vmaf, VmafFeatureExtractorCon
         }
     }
 
+    /* CPU extractors with a thread pool go to the threaded batch path.
+     * CUDA + SYCL extractors run serially via their respective dispatch loops.
+     * Skipping them in the threaded batch and skipping them ALSO from the serial
+     * loop here would leak — be careful to keep these in sync with the changes
+     * to threaded_extract_batch_func. */
     if (!(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA) &&
         !(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_SYCL) && vmaf->thread_pool) {
         if (!(fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_TEMPORAL))

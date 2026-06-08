@@ -56,10 +56,8 @@ Backend dispatch rules + runtime precedence:
     ...                                     write into .data[i]
     vmaf_read_pictures()
   vmaf_score_pooled()
-  vmaf_close()
-  /* state is owned by VmafContext after import; freed with vmaf_close().
-   * Use vmaf_cuda_state_free() only when the import never happened —
-   * see "Explicit free" below. */
+  vmaf_close()              /* destroys the by-value copy of CUDA state */
+  vmaf_cuda_state_free()    /* always required — frees the original allocation */
 ```
 
 ### State
@@ -71,9 +69,9 @@ typedef struct VmafCudaConfiguration {
     void *cu_ctx;   /* CUcontext; NULL → libvmaf creates one on device 0 */
 } VmafCudaConfiguration;
 
-int vmaf_cuda_state_init(VmafCudaState **out, VmafCudaConfiguration cfg);
-int vmaf_cuda_import_state(VmafContext *ctx, VmafCudaState *state);
-void vmaf_cuda_state_free(VmafCudaState **state);
+int vmaf_cuda_state_init(VmafCudaState **cu_state, VmafCudaConfiguration cfg);
+int vmaf_cuda_import_state(VmafContext *vmaf, VmafCudaState *cu_state);
+int vmaf_cuda_state_free(VmafCudaState *cu_state);
 ```
 
 - `cu_ctx = NULL` — libvmaf creates a fresh CUDA context on CUDA device 0.
@@ -84,17 +82,25 @@ void vmaf_cuda_state_free(VmafCudaState **state);
 
 ### Ownership and explicit free
 
-After `vmaf_cuda_import_state(ctx, state)`, the **context owns the
-state** — `vmaf_close(ctx)` frees it. Do not import the same state into
-two contexts.
+`vmaf_cuda_import_state(vmaf, cu_state)` copies the `VmafCudaState`
+**by value** into the `VmafContext` — it does not transfer ownership of
+the original heap allocation. `vmaf_close(vmaf)` tears down the
+**embedded copy** (destroying the CUDA stream and, if libvmaf created
+the context, releasing the primary context). After `vmaf_close()`
+returns, the caller **must** call `vmaf_cuda_state_free(cu_state)` to
+release the original heap allocation. Skipping this call leaks the
+allocation. Do not import the same state into two contexts.
 
-`vmaf_cuda_state_free(VmafCudaState **state)` (added in [ADR-0157](../adr/0157-cuda-preallocation-leak-netflix-1300.md))
-is the **escape hatch for the pre-import path**: the caller built a
-`VmafCudaState` via `vmaf_cuda_state_init()` but never handed it to a
-context (e.g. early `vmaf_init()` failure, or a benchmark harness that
-constructs and tears down a state without scoring). It tears down the
-ring buffer + mutex and releases the cold-start primary context. After
-the call the pointer is set to `NULL`.
+`vmaf_cuda_state_free(VmafCudaState *cu_state)` (added in
+[ADR-0157](../adr/0157-cuda-preallocation-leak-netflix-1300.md))
+is a NULL-safe `free()` wrapper for the original pointer returned by
+`vmaf_cuda_state_init()`. At the time of the call, `vmaf_close()` has
+already run `vmaf_cuda_release()` on the embedded copy (destroying the
+stream and context), so `vmaf_cuda_state_free()` only needs to `free()`
+the struct. It also serves as the escape hatch when the state was built
+via `vmaf_cuda_state_init()` but never imported (e.g. an early
+`vmaf_init()` failure), in which case it additionally tears down the
+stream and context before freeing.
 
 ```c
 VmafCudaState *cuda = NULL;
@@ -102,21 +108,26 @@ int err = vmaf_cuda_state_init(&cuda, (VmafCudaConfiguration){ .cu_ctx = NULL })
 if (err) { return err; }
 
 if (some_unrelated_setup_failed()) {
-    vmaf_cuda_state_free(&cuda);   /* not yet imported — caller frees */
+    vmaf_cuda_state_free(cuda);   /* not yet imported — also destroys stream/ctx */
     return -1;
 }
 
 err = vmaf_cuda_import_state(ctx, cuda);
-/* From here on, ctx owns cuda; vmaf_close(ctx) handles the free.
- * Calling vmaf_cuda_state_free(&cuda) AFTER a successful import is
- * undefined behaviour — the context will double-free at vmaf_close. */
+/* ctx now holds a by-value copy of the state.
+ * vmaf_close(ctx) destroys that copy (stream + context).
+ * vmaf_cuda_state_free(cuda) must still be called afterwards to
+ * release the original heap allocation from vmaf_cuda_state_init(). */
+vmaf_close(ctx);
+vmaf_cuda_state_free(cuda);  /* always required after import + vmaf_close */
 ```
 
-The asymmetry with the SYCL flavour (`vmaf_sycl_state_free` — see
-below — is **always** required) is deliberate: CUDA state is
-context-owned post-import; SYCL state outlives a single scoring session
-because the queue is queue-scoped. Match the API to the lifetime model
-of the underlying runtime.
+The CUDA and SYCL lifetime models differ deliberately: CUDA state is
+copied by value into the context; the caller still owns the heap pointer.
+SYCL state is also always caller-freed after `vmaf_close()` (the queue is
+queue-scoped and survives a scoring session boundary). Both require an
+explicit free after `vmaf_close()` — CUDA via `vmaf_cuda_state_free`,
+SYCL via `vmaf_sycl_state_free`. Match the API to the lifetime model of
+the underlying runtime.
 
 ### Picture preallocation
 
@@ -195,7 +206,8 @@ int main(void) {
     printf("VMAF: %.17g\n", score);
 
     vmaf_model_destroy(model);
-    vmaf_close(vmaf);  /* also frees the CUDA state */
+    vmaf_close(vmaf);         /* tears down the by-value copy of CUDA state */
+    vmaf_cuda_state_free(cuda); /* releases the original heap allocation */
     return 0;
 }
 ```
@@ -207,10 +219,6 @@ int main(void) {
   `vmaf_cuda_state_init()` (via `cuCtxSetCurrent` or `cudaSetDevice`).
 - No stream parameter. libvmaf runs its own streams internally; interop with
   an external stream is not exposed in v1.
-- No HIP path in this header. The HIP / AMD-ROCm backend is being
-  scaffolded under T7-10 (PR #200, in flight) — a future
-  `libvmaf_hip.h` will mirror this surface. See
-  [backends/index.md](../backends/index.md).
 
 ## SYCL
 
@@ -555,25 +563,86 @@ back to a host-backed picture if the caller skipped
 
 ## HIP
 
-`libvmaf_hip.h` exposes the AMD ROCm/HIP lifecycle surface. It follows the
-CUDA header shape closely:
+### Header
 
-- `vmaf_hip_state_init` creates a backend state for a selected HIP device.
-- `vmaf_hip_import_state` hands the state to a `VmafContext`. Note:
-  `vmaf_hip_import_state` currently returns `-ENOSYS` — it remains a stub
-  until the first real HIP feature extractor wires HIP dispatch
-  (`vmaf_hip_state_init` and `vmaf_hip_list_devices` are fully implemented).
-- `vmaf_hip_state_free` releases the state and any backend-owned resources.
-- `vmaf_hip_list_devices` enumerates visible ROCm devices.
+[`core/include/libvmaf/libvmaf_hip.h`](../../core/include/libvmaf/libvmaf_hip.h)
 
-The HIP backend is compile-time gated behind `-Denable_hip=true` and the HIP
-compiler option used by this fork's build matrix. Runtime support depends on a
-ROCm-capable AMD GPU and a matching driver stack. The public API is stable, but
-the feature set is still narrower than CUDA/SYCL/Vulkan: PSNR, CIEDE, float
-PSNR, float PSNR, float moment, SSIM, MS-SSIM, PSNR-HVS, CAMBI, and
-SSIMULACRA 2 are wired; ADM, VIF, and integer motion remain the known
-follow-up kernels. The `float_ansnr` extractor was removed in commit
-70ed8b3ce3 (PR #38); it is no longer registered on any backend.
+`libvmaf_hip.h` exposes the AMD ROCm/HIP lifecycle surface. It is available
+only in builds with `-Denable_hip=true -Denable_hipcc=true`; without those
+flags the symbols are absent and calls will not link. HIP runtime types
+(`hipDevice_t`, `hipStream_t`) cross the public ABI as `uintptr_t` to keep
+the header free of `<hip/hip_runtime.h>` — cast on the caller side.
+
+### Core lifecycle API
+
+| Symbol | Description |
+| --- | --- |
+| `vmaf_hip_available` | Returns 1 if libvmaf was built with `-Denable_hip=true`, 0 otherwise. Cheap to call; no HIP runtime is touched until `vmaf_hip_state_init()`. |
+| `vmaf_hip_state_init` | Allocates a `VmafHipState` pinned to a HIP device. `device_index = -1` selects the first compute-capable HIP device; 0+ selects a specific ordinal. Returns `-ENODEV` when no compatible device is found. |
+| `vmaf_hip_import_state` | Hands an allocated `VmafHipState` to a `VmafContext`. The caller retains ownership and must call `vmaf_hip_state_free` after `vmaf_close`. Returns `-EINVAL` when `ctx` or `state` is `NULL`. |
+| `vmaf_hip_state_free` | Releases a state allocated via `vmaf_hip_state_init`. Safe to pass `NULL` or a state that was never imported. Sets the pointer to `NULL` on return. |
+| `vmaf_hip_list_devices` | Enumerates compute-capable HIP devices visible to the runtime. Prints one line per device with its ordinal, name, and compute capability. Returns device count or `-ENOSYS` when built without HIP. |
+
+### State
+
+```c
+typedef struct VmafHipState VmafHipState;
+
+typedef struct VmafHipConfiguration {
+    int device_index; /**< -1 = first HIP device with compute capability */
+    int flags;        /**< reserved for future use; pass 0 */
+} VmafHipConfiguration;
+
+int  vmaf_hip_available(void);
+int  vmaf_hip_state_init(VmafHipState **out, VmafHipConfiguration cfg);
+int  vmaf_hip_import_state(VmafContext *ctx, VmafHipState *state);
+void vmaf_hip_state_free(VmafHipState **state);
+int  vmaf_hip_list_devices(void);
+```
+
+### Ownership
+
+The HIP backend follows the same caller-owned-state model as SYCL: after
+`vmaf_hip_import_state(ctx, state)` the **caller still owns the state** and
+must call `vmaf_hip_state_free(&state)` after `vmaf_close(ctx)`. This differs
+from the CUDA model (where the context takes ownership post-import). The
+rationale mirrors SYCL: HIP state may outlive a single scoring session when
+the caller manages a multi-pass workflow against the same device.
+
+### Typical call sequence
+
+```text
+vmaf_init()
+vmaf_hip_state_init(&state, cfg)     ← allocate state for device N
+vmaf_hip_import_state(vmaf, state)   ← hands state to ctx; caller still owns it
+loop:
+  vmaf_read_pictures(vmaf, &ref, &dist, i)
+vmaf_score_pooled(vmaf, ...)
+vmaf_close(vmaf)
+vmaf_hip_state_free(&state)          ← caller frees after vmaf_close
+```
+
+### Limitations and current feature coverage
+
+The HIP backend is compile-time gated behind `-Denable_hip=true` and requires
+ROCm 7.0+ at runtime. As of ADR-0533 / ADR-0539, 21 feature extractors are
+registered and end-to-end verified on AMD gfx hardware:
+
+PSNR, float-PSNR, CIEDE, float-moment, integer-moment, float-SSIM,
+MS-SSIM, PSNR-HVS, CAMBI, SSIMULACRA2, integer-motion, integer-motion-v2,
+float-motion, float-VIF, integer-VIF, integer-ADM, float-ADM,
+integer-SSIM, speed-chroma, speed-temporal, integer-CIEDE.
+
+Three legacy-API stubs (`adm_hip`, `vif_hip`, `motion_hip`) exist in tree but
+use an older `_init/_run/_destroy` API shape that is not compatible with the
+`VmafFeatureExtractor` registration system; they return `-ENOSYS` at `init()`
+and are not selectable via `--feature`. The `float_ansnr` extractor was
+removed in commit 70ed8b3ce3 (PR #38); it is no longer registered on any
+backend.
+
+See [../backends/hip/overview.md](../backends/hip/overview.md) for the
+complete extractor table, build flags, HSACO fat-binary target selection,
+FFmpeg integration (`hip_device=N` — ADR-0380), and per-kernel notes.
 
 ## Metal
 
@@ -636,8 +705,9 @@ Metal runtime contract for those devices.
 - [dnn.md](dnn.md) — tiny-AI session API (separate from classic GPU dispatch)
 - [../usage/cli.md#backend-selection](../usage/cli.md#backend-selection) —
   `--no_cuda` / `--no_sycl` / `--sycl_device` flags
-- [../backends/cuda/overview.md](../backends/cuda/overview.md) and
-  [../backends/sycl/overview.md](../backends/sycl/overview.md) —
+- [../backends/cuda/overview.md](../backends/cuda/overview.md),
+  [../backends/sycl/overview.md](../backends/sycl/overview.md), and
+  [../backends/hip/overview.md](../backends/hip/overview.md) —
   user-facing backend pages
 - [../usage/bench.md](../usage/bench.md) — `vmaf_bench`, which consumes
   these APIs to produce the perf + validation tables
