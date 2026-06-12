@@ -366,7 +366,7 @@ def _get_backend_probe_lock() -> asyncio.Lock:
     Deferred creation avoids constructing the Lock before the event loop
     is running (e.g. during import-time module initialisation).
     """
-    global _BACKEND_PROBE_LOCK  # noqa: PLW0603 — intentional module singleton
+    global _BACKEND_PROBE_LOCK
     if _BACKEND_PROBE_LOCK is None:
         _BACKEND_PROBE_LOCK = asyncio.Lock()
     return _BACKEND_PROBE_LOCK
@@ -391,7 +391,7 @@ def _get_probe_lock_dict_lock() -> asyncio.Lock:
     causing "attached to a different loop" errors in tests that spin up their
     own loops.
     """
-    global _BACKEND_PROBE_LOCK_DICT_LOCK  # noqa: PLW0603
+    global _BACKEND_PROBE_LOCK_DICT_LOCK
     if _BACKEND_PROBE_LOCK_DICT_LOCK is None:
         _BACKEND_PROBE_LOCK_DICT_LOCK = asyncio.Lock()
     return _BACKEND_PROBE_LOCK_DICT_LOCK
@@ -1201,6 +1201,8 @@ def _describe_model_file(path: Path, repo: Path) -> dict[str, Any]:
             result["model_type"] = model_dict.get("model_type")
             result["feature_names"] = model_dict.get("feature_names")
         except (json.JSONDecodeError, OSError):
+            # Malformed or unreadable JSON — fall back to the partial metadata
+            # already accumulated above (name, path, format, size_bytes).
             pass
 
     return result
@@ -1435,6 +1437,8 @@ async def _run_ladder(
         try:
             return {"manifest": json.loads(stdout_s), "format": format}
         except json.JSONDecodeError:
+            # vmaf-tune unexpectedly emitted non-JSON despite --format json;
+            # fall through and return the raw stdout as a plain manifest string.
             pass
     return {"manifest": stdout_s, "format": format}
 
@@ -1511,6 +1515,8 @@ async def _run_tune_per_shot(
             parsed: dict[str, Any] = json.loads(stdout_s)
             return parsed
         except json.JSONDecodeError:
+            # vmaf-tune unexpectedly emitted non-JSON despite --format json;
+            # fall through and return exit_code / raw stdout / stderr.
             pass
     return {"exit_code": proc.returncode, "stdout": stdout_s, "stderr": stderr_s}
 
@@ -2426,6 +2432,8 @@ async def _call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         if meta is not None:
             progress_token = getattr(meta, "progressToken", None)
     except (LookupError, AttributeError):
+        # No active request context (e.g. unit tests) or params.meta is absent;
+        # progress notifications will simply be skipped for this call.
         pass
     # ADR-0608 / E-1 (spec-correctness fix): do NOT catch exceptions here.
     # Raising from this handler lets the mcp library's outer try/except
@@ -2631,7 +2639,9 @@ def _emit_parse_error(raw_line: str, exc: Exception) -> None:
         _raw_id = _partial.get("id") if isinstance(_partial, dict) else None
         if isinstance(_raw_id, (str, int)):
             _id = _raw_id
-    except Exception:  # noqa: BLE001
+    except Exception:
+        # raw_line is not valid JSON (or not a dict); _id stays None and the
+        # JSON-RPC error response will carry id=null, which is spec-conformant.
         pass
 
     _err_payload = json.dumps(

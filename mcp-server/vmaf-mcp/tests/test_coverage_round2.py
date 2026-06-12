@@ -57,12 +57,12 @@ ADR-0108 deliverables for this PR are captured in:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import io
 import json
 import logging
 import os
 import signal
-import subprocess
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -70,6 +70,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
 from vmaf_mcp import http_transport as ht
 from vmaf_mcp import server as srv
 
@@ -480,7 +481,7 @@ async def test_score_returns_500_when_scorer_raises(
         raise RuntimeError("scorer exploded")
 
     with (
-        patch.object(srv, "_validate_path", side_effect=lambda p: Path(p)),
+        patch.object(srv, "_validate_path", side_effect=Path),
         patch.object(srv, "_run_vmaf_score", new=AsyncMock(side_effect=_boom)),
     ):
         resp = await round2_client.post(
@@ -1097,10 +1098,9 @@ def test_main_uses_asyncio_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     def _capture_and_close(coro: Any, *_a: Any, **_k: Any) -> None:
         captured.append(coro)
         # Close the coroutine to suppress unawaited-coroutine warnings.
-        try:
+        # Suppress all errors: coro may already be closed or not a real coroutine.
+        with contextlib.suppress(Exception):
             coro.close()
-        except Exception:
-            pass
 
     monkeypatch.setattr(srv.asyncio, "run", _capture_and_close)
     srv.main()
@@ -1222,7 +1222,7 @@ def test_call_tool_dispatch_vmaf_score_success(
     async def _fake_score(_req: Any) -> dict[str, Any]:
         return {"vmaf": 99.0}
 
-    monkeypatch.setattr(srv, "_validate_path", lambda p: Path(p))
+    monkeypatch.setattr(srv, "_validate_path", Path)
     monkeypatch.setattr(srv, "_run_vmaf_score", _fake_score)
 
     contents = asyncio.run(
@@ -1272,7 +1272,7 @@ def test_call_tool_dispatch_describe_worst_frames_success(
     async def _fake_dwf(req: Any, *, n: int) -> dict[str, Any]:
         return {"model_id": None, "frames": [], "n_requested": n}
 
-    monkeypatch.setattr(srv, "_validate_path", lambda p: Path(p))
+    monkeypatch.setattr(srv, "_validate_path", Path)
     monkeypatch.setattr(srv, "_describe_worst_frames", _fake_dwf)
 
     contents = asyncio.run(
@@ -1307,7 +1307,7 @@ def test_call_tool_dispatch_vmaf_score_encoded_success(
     async def _fake(*_a: Any, **_k: Any) -> dict[str, Any]:
         return {"vmaf": 88.0, "reference_encoded": str(ref)}
 
-    monkeypatch.setattr(srv, "_validate_path", lambda p: Path(p))
+    monkeypatch.setattr(srv, "_validate_path", Path)
     monkeypatch.setattr(srv, "_run_vmaf_score_encoded", _fake)
 
     contents = asyncio.run(
