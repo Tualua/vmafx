@@ -352,6 +352,62 @@ def _resolution_mismatch_warning(model: str, width: int, height: int) -> str | N
 # Cache of the host vmaf binary's advertised backends, indexed by absolute
 # binary path. Populated lazily on first `_probe_backends` call.
 _BACKEND_PROBE_CACHE: dict[str, frozenset[str]] = {}
+# Round-5 race fix (finding #7): guards _probe_backends_async against TOCTOU —
+# multiple concurrent coroutines all seeing a cache miss and each dispatching
+# a blocking subprocess to the thread pool.  A single asyncio.Lock is sufficient
+# because the event loop is single-threaded; the double-checked pattern inside
+# _probe_backends_async ensures only one subprocess fires per key.
+_BACKEND_PROBE_LOCK: asyncio.Lock | None = None
+
+
+def _get_backend_probe_lock() -> asyncio.Lock:
+    """Return (creating on first call) the module-level asyncio.Lock.
+
+    Deferred creation avoids constructing the Lock before the event loop
+    is running (e.g. during import-time module initialisation).
+    """
+    global _BACKEND_PROBE_LOCK  # noqa: PLW0603 — intentional module singleton
+    if _BACKEND_PROBE_LOCK is None:
+        _BACKEND_PROBE_LOCK = asyncio.Lock()
+    return _BACKEND_PROBE_LOCK
+
+
+# Per-key asyncio locks used by _probe_backends_async to prevent TOCTOU: if N
+# coroutines all see a cache miss simultaneously and each dispatches a thread,
+# the subprocess runs N times and the final cached value is undefined-order.
+# The first coroutine that acquires the per-key lock does the work; subsequent
+# coroutines wait on the same lock and then hit the cache.
+_BACKEND_PROBE_LOCKS: dict[str, asyncio.Lock] = {}
+# Guards mutation of _BACKEND_PROBE_LOCKS itself (the dict is not thread-safe
+# under concurrent asyncio coroutine creation).
+_BACKEND_PROBE_LOCK_DICT_LOCK: asyncio.Lock | None = None
+
+
+def _get_probe_lock_dict_lock() -> asyncio.Lock:
+    """Return (lazily creating) the lock that guards _BACKEND_PROBE_LOCKS.
+
+    Deferred creation avoids creating an asyncio.Lock at module import time,
+    which would bind it to whatever event loop happens to be current then —
+    causing "attached to a different loop" errors in tests that spin up their
+    own loops.
+    """
+    global _BACKEND_PROBE_LOCK_DICT_LOCK  # noqa: PLW0603
+    if _BACKEND_PROBE_LOCK_DICT_LOCK is None:
+        _BACKEND_PROBE_LOCK_DICT_LOCK = asyncio.Lock()
+    return _BACKEND_PROBE_LOCK_DICT_LOCK
+
+
+async def _get_or_create_probe_lock(key: str) -> asyncio.Lock:
+    """Return a per-*key* asyncio.Lock, creating it if absent.
+
+    All writes to :data:`_BACKEND_PROBE_LOCKS` are serialised through
+    :data:`_BACKEND_PROBE_LOCK_DICT_LOCK` so no two coroutines can create
+    duplicate lock objects for the same key.
+    """
+    async with _get_probe_lock_dict_lock():
+        if key not in _BACKEND_PROBE_LOCKS:
+            _BACKEND_PROBE_LOCKS[key] = asyncio.Lock()
+        return _BACKEND_PROBE_LOCKS[key]
 
 
 def _probe_backends(vmaf: Path) -> frozenset[str]:
@@ -403,15 +459,32 @@ async def _probe_backends_async(vmaf: Path) -> frozenset[str]:
     """Async-safe wrapper around :func:`_probe_backends`.
 
     Returns the cached result immediately on a cache hit (no thread
-    hop needed).  On a cache miss — i.e. the first call for @p vmaf —
-    delegates to a thread pool via ``asyncio.to_thread`` so that the
-    blocking ``subprocess.run`` inside :func:`_probe_backends` does not
-    stall the event loop (ADR-1023).
+    hop needed).  On a cache miss the function serialises concurrent
+    waiters through a per-*vmaf-path* asyncio.Lock before delegating
+    to a thread pool via ``asyncio.to_thread``, so the blocking
+    ``subprocess.run`` inside :func:`_probe_backends` runs at most once
+    per binary path and does not stall the event loop (ADR-1023).
+
+    Without the lock a TOCTOU window exists: N coroutines can all
+    observe a cache miss simultaneously, each dispatch a thread, and
+    produce N redundant subprocess invocations whose ordering is
+    undefined.  The per-key lock collapses all concurrent waiters onto
+    a single probe: the first coroutine acquires the lock, runs the
+    probe, populates the cache, then releases; every subsequent
+    coroutine acquires the lock, finds the cache already populated, and
+    returns immediately.
     """
     key = str(vmaf)
+    # Fast path — avoids acquiring either lock when the cache is already warm.
     if key in _BACKEND_PROBE_CACHE:
         return _BACKEND_PROBE_CACHE[key]
-    return await asyncio.to_thread(_probe_backends, vmaf)
+    lock = await _get_or_create_probe_lock(key)
+    async with lock:
+        # Re-check after acquiring the lock: a sibling coroutine may have
+        # completed the probe while we were waiting.
+        if key in _BACKEND_PROBE_CACHE:
+            return _BACKEND_PROBE_CACHE[key]
+        return await asyncio.to_thread(_probe_backends, vmaf)
 
 
 async def _run_vmaf_score(req: ScoreRequest) -> dict[str, Any]:
