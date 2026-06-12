@@ -6,14 +6,29 @@
 // A context is created with a [`ContextBuilder`] (or the `Context::new`
 // default) and drives the scoring pipeline: model registration, picture
 // ingestion, pooled-score readout.
+//
+// # Lifetime parameter `'a`
+//
+// `vmaf_use_features_from_model` causes libvmaf to store the raw `VmafModel*`
+// pointer inside the context's feature-collector linked list and uses it later
+// during prediction (see `vmaf_feature_collector_mount_model` in
+// `core/src/feature/feature_collector.c`).  If the Rust `Model` wrapper were
+// dropped while the context is still alive, every subsequent libvmaf call that
+// dereferences the stored pointer would be a use-after-free.
+//
+// The lifetime parameter `'a` encodes that every `Model` passed to
+// `use_features_from_model` must outlive the `Context`.  A freshly-constructed
+// `Context<'static>` carries no borrow; calling `use_features_from_model`
+// narrows the lifetime to that of the shortest-lived registered model.
 
+use std::marker::PhantomData;
 use std::ptr;
 
 use vmafx_sys::{
     VmafConfiguration, VmafContext as RawContext, VmafLogLevel_VMAF_LOG_LEVEL_DEBUG,
     VmafLogLevel_VMAF_LOG_LEVEL_ERROR, VmafLogLevel_VMAF_LOG_LEVEL_INFO,
     VmafLogLevel_VMAF_LOG_LEVEL_NONE, VmafLogLevel_VMAF_LOG_LEVEL_WARNING, vmaf_close, vmaf_init,
-    vmaf_read_pictures, vmaf_score_pooled, vmaf_use_features_from_model,
+    vmaf_picture_unref, vmaf_read_pictures, vmaf_score_pooled, vmaf_use_features_from_model,
 };
 
 use crate::error::{Error, Result};
@@ -114,7 +129,7 @@ impl ContextBuilder {
     /// Returns [`Error::Libvmaf`] (or a mapped variant) if libvmaf fails to
     /// initialise the context, or [`Error::InvalidState`] if libvmaf reports
     /// success but returns a null pointer.
-    pub fn build(self) -> Result<Context> {
+    pub fn build(self) -> Result<Context<'static>> {
         let cfg = VmafConfiguration {
             log_level: self.log_level.to_raw(),
             n_threads: self.n_threads,
@@ -131,21 +146,33 @@ impl ContextBuilder {
                 "vmaf_init returned success but null pointer",
             ));
         }
-        Ok(Context { inner: ctx })
+        Ok(Context { inner: ctx, _models: PhantomData })
     }
 }
 
 /// RAII wrapper around a `*mut VmafContext`.
-pub struct Context {
+///
+/// The lifetime parameter `'a` encodes that every [`Model`] registered with
+/// [`Context::use_features_from_model`] must outlive this context.  A freshly
+/// constructed `Context<'static>` carries no model borrow.  Callers that need
+/// to pass the context across lifetime boundaries should ensure all registered
+/// models are kept alive for at least as long as the context.
+pub struct Context<'a> {
     inner: *mut RawContext,
+    /// Encodes the lifetime of every `Model` that has been registered with
+    /// `use_features_from_model`.  `PhantomData<&'a mut Model>` is invariant
+    /// over `'a` — i.e. `Context<'a>` cannot be coerced to a longer-lived
+    /// `Context<'b>` — which prevents the caller from extending the apparent
+    /// lifetime of the borrow.
+    _models: PhantomData<&'a mut Model>,
 }
 
 // SAFETY: a libvmaf context is self-contained heap state; moving it across
 // threads is safe. The C API documents that a single context must not be
 // driven concurrently from multiple threads, so we do not implement `Sync`.
-unsafe impl Send for Context {}
+unsafe impl<'a> Send for Context<'a> {}
 
-impl Context {
+impl<'a> Context<'a> {
     /// Build a [`Context`] with libvmaf defaults.
     ///
     /// Equivalent to `ContextBuilder::new().build()`.
@@ -167,10 +194,18 @@ impl Context {
     ///
     /// Must be called once per model before [`Self::read_pictures`].
     ///
+    /// `model` must outlive this [`Context`].  libvmaf stores the raw model
+    /// pointer inside the context's feature-collector and dereferences it
+    /// during score computation; dropping the model before the context would
+    /// be a use-after-free.  The lifetime parameter `'a` on `Context<'a>`
+    /// encodes this requirement: after this call the context cannot outlive
+    /// `model`.
+    ///
     /// # Errors
     /// Returns [`Error::Libvmaf`] (or a mapped variant) if libvmaf rejects the model.
-    pub fn use_features_from_model(&mut self, model: &mut Model) -> Result<()> {
+    pub fn use_features_from_model(&mut self, model: &'a mut Model) -> Result<()> {
         // SAFETY: both pointers are non-null and valid for the call's duration.
+        // The `'a` bound ensures `model` outlives `self`.
         let rc = unsafe { vmaf_use_features_from_model(self.inner, model.as_mut_ptr()) };
         Error::from_libvmaf_rc(rc)
     }
@@ -183,6 +218,8 @@ impl Context {
     ///
     /// # Errors
     /// Returns [`Error::Libvmaf`] (or a mapped variant) if libvmaf fails to enqueue the frame.
+    /// On error the picture plane buffers are freed before returning; the caller
+    /// must not use the pictures after this call regardless of the outcome.
     pub fn read_pictures(&mut self, ref_pic: Picture, dist_pic: Picture, index: u32) -> Result<()> {
         // Take ownership of the raw structs; the `Picture` wrappers' `Drop`
         // will no-op because `into_raw_owned` cleared the `owned` flag.
@@ -191,6 +228,17 @@ impl Context {
         // SAFETY: both pointers are non-null and the structs are
         // fully-initialised owners of allocated planes.
         let rc = unsafe { vmaf_read_pictures(self.inner, &raw mut r_raw, &raw mut d_raw, index) };
+        if rc < 0 {
+            // libvmaf rejected the frame and did not take ownership of the
+            // plane buffers. Free them here to prevent a memory leak; the
+            // `RawPicture` struct has no `Drop` implementation of its own.
+            // SAFETY: both structs were allocated by `vmaf_picture_alloc` and
+            // have not been handed to — or consumed by — the C library.
+            unsafe {
+                let _ = vmaf_picture_unref(&raw mut r_raw);
+                let _ = vmaf_picture_unref(&raw mut d_raw);
+            }
+        }
         Error::from_libvmaf_rc(rc)
     }
 
@@ -245,7 +293,7 @@ impl Context {
     }
 }
 
-impl Drop for Context {
+impl Drop for Context<'_> {
     fn drop(&mut self) {
         if !self.inner.is_null() {
             // SAFETY: sole owner; no further access after this point.

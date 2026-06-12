@@ -297,6 +297,7 @@ free_framesync:
     vmaf_framesync_destroy(v->framesync);
 free_v:
     free(v);
+    *vmaf = NULL; /* prevent dangling pointer — matches gpu_picture_pool.c:99 pattern */
 fail:
     /* NULL the caller's handle so it cannot be passed to vmaf_close()
      * or dereferenced after a failed vmaf_init(). ASan/LeakSan: avoids
@@ -1325,7 +1326,14 @@ static int vmaf_ctx_dnn_run_frame_feature_vector(VmafContext *vmaf, unsigned ind
         }
         const double raw = dnn_lookup_feature(vmaf->feature_collector, short_name, index);
         float v = (float)raw;
-        if (meta && meta->has_feature_scaler && meta->feature_std[i] > 0.f) {
+        /* Apply the C-side StandardScaler only when the model sidecar carries
+         * mean/std values (has_feature_scaler) AND the scaler is NOT already
+         * baked into the ONNX graph as Constant nodes (onnx_has_scaler).
+         * vmaf_tiny_v2/v3/v4 set onnx_has_scaler=true in their sidecars
+         * (ADR-0244); applying the scaler here for those models would
+         * double-scale every feature and corrupt scores. */
+        if (meta && meta->has_feature_scaler && !meta->onnx_has_scaler &&
+            meta->feature_std[i] > 0.f) {
             v = (v - meta->feature_mean[i]) / meta->feature_std[i];
         }
         vmaf->dnn.in_buf[i] = v;
@@ -1466,8 +1474,10 @@ int vmaf_use_feature(VmafContext *vmaf, const char *feature_name, VmafFeatureDic
             return err;
     }
 
-    VmafFeatureExtractorContext *fex_ctx;
+    VmafFeatureExtractorContext *fex_ctx = NULL;
     err = vmaf_feature_extractor_context_create(&fex_ctx, fex, d);
+    if (err)
+        return err;
 #ifdef HAVE_CUDA
     err |= set_fex_cuda_state(fex_ctx, vmaf);
 #endif
@@ -1475,8 +1485,10 @@ int vmaf_use_feature(VmafContext *vmaf, const char *feature_name, VmafFeatureDic
     err |= set_fex_sycl_state(fex_ctx, vmaf);
 #endif
     err |= set_fex_framesync(fex_ctx, vmaf);
-    if (err)
+    if (err) {
+        (void)vmaf_feature_extractor_context_destroy(fex_ctx);
         return err;
+    }
 
     RegisteredFeatureExtractors *rfe = &(vmaf->registered_feature_extractors);
     err = feature_extractor_vector_append(rfe, fex_ctx, 0);
@@ -1540,7 +1552,7 @@ int vmaf_use_features_from_model(VmafContext *vmaf, VmafModel *model)
             return -EINVAL;
         }
 
-        VmafFeatureExtractorContext *fex_ctx;
+        VmafFeatureExtractorContext *fex_ctx = NULL;
         VmafDictionary *d = NULL;
         if (model->feature[i].opts_dict) {
             err = vmaf_dictionary_copy(&model->feature[i].opts_dict, &d);
@@ -1548,6 +1560,8 @@ int vmaf_use_features_from_model(VmafContext *vmaf, VmafModel *model)
                 return err;
         }
         err = vmaf_feature_extractor_context_create(&fex_ctx, fex, d);
+        if (err)
+            return err;
 #ifdef HAVE_CUDA
         err |= set_fex_cuda_state(fex_ctx, vmaf);
 #endif
@@ -1555,8 +1569,10 @@ int vmaf_use_features_from_model(VmafContext *vmaf, VmafModel *model)
         err |= set_fex_sycl_state(fex_ctx, vmaf);
 #endif
         err |= set_fex_framesync(fex_ctx, vmaf);
-        if (err)
+        if (err) {
+            (void)vmaf_feature_extractor_context_destroy(fex_ctx);
             return err;
+        }
         err = feature_extractor_vector_append(rfe, fex_ctx, 0);
         if (err) {
             err |= vmaf_feature_extractor_context_destroy(fex_ctx);
