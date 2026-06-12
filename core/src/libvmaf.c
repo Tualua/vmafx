@@ -1908,7 +1908,7 @@ static int validate_pic_params(VmafContext *vmaf, VmafPicture *ref, VmafPicture 
     if ((ref->pix_fmt != dist->pix_fmt) || (ref->pix_fmt != vmaf->pic_params.pix_fmt)) {
         return -EINVAL;
     }
-    if ((ref->bpc != dist->bpc) && (ref->bpc != vmaf->pic_params.bpc))
+    if ((ref->bpc != dist->bpc) || (ref->bpc != vmaf->pic_params.bpc))
         return -EINVAL;
     if (ref_priv->buf_type != dist_priv->buf_type)
         return -EINVAL;
@@ -2236,8 +2236,13 @@ static int read_pictures_cuda_translate(VmafContext *vmaf, VmafPicture *ref, Vma
     int err = translate_picture(vmaf, ref, ref_host, ref_device, hw_flags);
     if (err)
         return err;
-    /* Upstream code ignores the dist translation return value — preserved. */
-    (void)translate_picture(vmaf, dist, dist_host, dist_device, hw_flags);
+    /* Propagate dist translate failure: dist_device may be partially
+     * populated if the call returns an error, leading to a corrupt frame
+     * being passed to CUDA extractors.  The original code swallowed this
+     * error with a (void) cast; mirror the ref path instead. */
+    err = translate_picture(vmaf, dist, dist_host, dist_device, hw_flags);
+    if (err)
+        return err;
     return 0;
 }
 
@@ -2485,6 +2490,13 @@ static int read_pictures_extractor_loop_cuda(VmafContext *vmaf, VmafPicture *ref
         err = vmaf_feature_extractor_context_collect(fex_ctx, fex_ctx->gpu_pending_index,
                                                      vmaf->feature_collector);
         fex_ctx->gpu_pending = false;
+        /* Release the prev_ref reference that was acquired in the Phase 2
+         * submit loop (ADR-0778 Fix-B).  The GPU work has completed by the
+         * time collect() returns, so it is safe to drop the ref now. */
+        if (fex_ctx->fex->prev_ref.ref) {
+            (void)vmaf_picture_unref(&fex_ctx->fex->prev_ref);
+            memset(&fex_ctx->fex->prev_ref, 0, sizeof(fex_ctx->fex->prev_ref));
+        }
         if (err) {
             vmaf_cuda_drain_batch_close();
             return err;
@@ -2509,12 +2521,28 @@ static int read_pictures_extractor_loop_cuda(VmafContext *vmaf, VmafPicture *ref
              * to ``extract``. The non-CUDA pass below handles those. */
             continue;
         }
+        /* Mirror the sync path (read_pictures_dispatch_one): use
+         * vmaf_picture_ref rather than a bare struct copy so that the
+         * CUDA-batch submit path holds its own counted reference to the
+         * previous-frame buffer.  Without this, vmaf->prev_ref can be
+         * decremented by read_pictures_update_prev_ref on the next frame
+         * while a CUDA extractor carrying VMAF_FEATURE_EXTRACTOR_PREV_REF
+         * is still reading its data — a latent UAF that becomes live the
+         * moment such an extractor is registered.  ADR-0778 Fix-B. */
         if ((fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF) && vmaf->prev_ref.ref) {
-            fex_ctx->fex->prev_ref = vmaf->prev_ref;
+            err = vmaf_picture_ref(&fex_ctx->fex->prev_ref, &vmaf->prev_ref);
+            if (err) {
+                vmaf_cuda_drain_batch_close();
+                return err;
+            }
         }
         err = vmaf_feature_extractor_context_submit(fex_ctx, ref_device, NULL, dist_device, NULL,
                                                     index);
         if (err) {
+            if (fex_ctx->fex->prev_ref.ref) {
+                (void)vmaf_picture_unref(&fex_ctx->fex->prev_ref);
+                memset(&fex_ctx->fex->prev_ref, 0, sizeof(fex_ctx->fex->prev_ref));
+            }
             vmaf_cuda_drain_batch_close();
             return err;
         }
