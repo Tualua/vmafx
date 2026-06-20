@@ -18,7 +18,7 @@
 //
 //	VMAFX_HTTP_ADDR              -> http.addr     HTTP listen address (default ":8080").
 //	VMAFX_GRPC_LISTEN            -> grpc.listen   gRPC listen address (golusoris default ":9090").
-//	VMAFX_LOG_LEVEL             (-> log.level; golusoris reads it directly, #234) slog level (default "INFO").
+//	VMAFX_LOG_LEVEL             -> log.level (golusoris v0.5.0 #234) slog level (default "INFO").
 //	VMAFX_VMAF_BINARY            -> vmaf.binary   Path to the vmaf CLI binary (default: PATH lookup).
 //	VMAFX_MODEL_DIR              -> model.dir     Directory containing VMAF .json model files.
 //	VMAFX_MAX_CONCURRENT_SCORES  -> max.concurrent.scores  Max simultaneous Score calls (default: NumCPU).
@@ -45,7 +45,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"runtime"
 
 	"github.com/go-chi/chi/v5"
@@ -75,27 +74,36 @@ var buildVersion = "dev"
 // version returns the build-time version string, falling back to "dev".
 func version() string { return buildVersion }
 
+// serverEnvOptions pins the VMAFX_ env contract for this binary. golusoris'
+// grpc.Module reads four underscore-bearing leaf keys (grpc.cert_file,
+// grpc.key_file, grpc.max_recv_size, grpc.max_send_size); the env transform
+// splits EVERY underscore on the delimiter, so VMAFX_GRPC_MAX_RECV_SIZE would
+// otherwise map to grpc.max.recv.size and silently fail to bind. Declaring each
+// as a CompoundKey keeps its leaf underscores intact through the transform.
+// watch is true for the binary (a mounted ConfigMap update triggers reload) and
+// false for tests (no watcher goroutine).
+func serverEnvOptions(watch bool) config.Options {
+	return config.Options{
+		EnvPrefix: "VMAFX_",
+		Delimiter: ".",
+		Watch:     watch,
+		CompoundKeys: []string{
+			"grpc.cert_file",
+			"grpc.key_file",
+			"grpc.max_recv_size",
+			"grpc.max_send_size",
+		},
+	}
+}
+
 func main() {
-	// Interim env bridges, applied BEFORE fx.New so the config + log modules
-	// observe them. Each works around a golusoris gap that is merged to
-	// golusoris main but not yet in the pinned v0.4.0 tag; remove when the
-	// carrying tag lands.
-
-	// golusoris#234: the v0.4.0 log module reads bare LOG_LEVEL/LOG_FORMAT and
-	// ignores the VMAFX_ prefix, so bridge the prefixed vars across.
-	if v := os.Getenv("VMAFX_LOG_LEVEL"); v != "" && os.Getenv("LOG_LEVEL") == "" {
-		_ = os.Setenv("LOG_LEVEL", v)
-	}
-	if v := os.Getenv("VMAFX_LOG_FORMAT"); v != "" && os.Getenv("LOG_FORMAT") == "" {
-		_ = os.Setenv("LOG_FORMAT", v)
-	}
-
 	fx.New(
 		// golusoris foundation: config + log + clock + id + validate + crypto,
 		// the OTel module, and the build-version supply (ADR-1119).
 		bootstrap.Base,
-		// Override the env prefix so the whole graph reads VMAFX_* config keys.
-		fx.Replace(config.Options{EnvPrefix: "VMAFX_", Delimiter: ".", Watch: true}),
+		// Override the env prefix so the whole graph reads VMAFX_* config keys,
+		// keeping the underscore-bearing grpc.* leaves intact (serverEnvOptions).
+		fx.Replace(serverEnvOptions(true)),
 		// Route fx lifecycle events onto the golusoris slog logger.
 		bootstrap.FxLogger(),
 
