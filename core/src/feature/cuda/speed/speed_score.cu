@@ -79,30 +79,29 @@ __global__ void speed_means_kernel(const float *__restrict__ plane, /* downscale
                                    uint32_t submatrix_w,            /* submatrix_width     */
                                    uint32_t submatrix_h)            /* submatrix_height    */
 {
-    const uint32_t tile_idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (tile_idx >= num_blocks)
+    /* One thread per element position (er, ec) in the 5x5 block template.
+     * CPU parity (compute_mean, called from compute_covariance_matrix): each of
+     * the 25 means is over a single GLOBAL window across the whole truncated
+     * plane at start (er, ec) — NOT per-tile. The historic per-tile origin
+     * (tile_y*5+er) over-read the plane and produced 25*num_blocks block-local
+     * means, giving a wrong covariance and ~7x-low SpEED scores. means[] is
+     * over-allocated (25*num_blocks); only [0,25) are written/read now. */
+    (void)op_width;
+    (void)num_blocks_h;
+    (void)num_blocks;
+    const uint32_t elem = blockIdx.x * blockDim.x + threadIdx.x;
+    if (elem >= SP_ELEMENTS)
         return;
+    const uint32_t er = elem / SP_BLOCK_SIZE;
+    const uint32_t ec = elem % SP_BLOCK_SIZE;
 
-    const uint32_t tile_x = tile_idx % num_blocks_h; /* tile column */
-    const uint32_t tile_y = tile_idx / num_blocks_h; /* tile row    */
-
-    /* For each of the 25 positions (r, c) within the 5×5 block: */
-    for (uint32_t elem = 0; elem < SP_ELEMENTS; ++elem) {
-        const uint32_t er = elem / SP_BLOCK_SIZE;
-        const uint32_t ec = elem % SP_BLOCK_SIZE;
-        /* starting pixel of position (er, ec) within this tile */
-        const uint32_t start_row = tile_y * SP_BLOCK_SIZE + er;
-        const uint32_t start_col = tile_x * SP_BLOCK_SIZE + ec;
-
-        /* Accumulate mean over the submatrix window. */
-        double acc = 0.0;
-        for (uint32_t i = 0; i < submatrix_h; ++i) {
-            for (uint32_t j = 0; j < submatrix_w; ++j) {
-                acc += (double)plane[(start_row + i) * stride_px + (start_col + j)];
-            }
+    double acc = 0.0;
+    for (uint32_t i = 0; i < submatrix_h; ++i) {
+        for (uint32_t j = 0; j < submatrix_w; ++j) {
+            acc += (double)plane[(er + i) * stride_px + (ec + j)];
         }
-        means[elem * num_blocks + tile_idx] = (float)(acc / (double)(submatrix_w * submatrix_h));
     }
+    means[elem] = (float)(acc / (double)(submatrix_w * submatrix_h));
 }
 
 /* ------------------------------------------------------------------ */
@@ -134,41 +133,33 @@ __global__ void speed_cov_kernel(const float *__restrict__ plane,
     if (x_index >= SP_ELEMENTS || y_index >= SP_ELEMENTS)
         return;
 
+    (void)num_blocks_h;
+    (void)num_blocks;
     const uint32_t tid = threadIdx.x;
 
     __shared__ double s_partial[COV_BLOCK];
-    s_partial[tid] = 0.0;
-    __syncthreads();
 
     /* Pixel coordinates within the 5×5 block for x_index and y_index */
     const uint32_t xr = x_index / SP_BLOCK_SIZE;
     const uint32_t xc = x_index % SP_BLOCK_SIZE;
     const uint32_t yr = y_index / SP_BLOCK_SIZE;
     const uint32_t yc = y_index % SP_BLOCK_SIZE;
+    const double mean_x = (double)means[x_index];
+    const double mean_y = (double)means[y_index];
 
-    /* Each thread covers a strided subset of tiles. */
+    /* CPU parity (compute_covariance): one GLOBAL submatrix sweep with the
+     * scalar global means, divided by N once. The historic per-tile loop
+     * (displaced origins tile_y*5+xr, per-tile means, per-tile /N) summed
+     * num_blocks block-local covariances instead — wrong matrix, ~7x-low
+     * scores. Threads stride over the submatrix_h × submatrix_w pixels. */
+    const uint32_t total = submatrix_h * submatrix_w;
     double local_sum = 0.0;
-    for (uint32_t tile_idx = tid; tile_idx < num_blocks; tile_idx += COV_BLOCK) {
-        const uint32_t tile_x = tile_idx % num_blocks_h;
-        const uint32_t tile_y = tile_idx / num_blocks_h;
-
-        const double mean_x = (double)means[x_index * num_blocks + tile_idx];
-        const double mean_y = (double)means[y_index * num_blocks + tile_idx];
-
-        const uint32_t start_row_x = tile_y * SP_BLOCK_SIZE + xr;
-        const uint32_t start_col_x = tile_x * SP_BLOCK_SIZE + xc;
-        const uint32_t start_row_y = tile_y * SP_BLOCK_SIZE + yr;
-        const uint32_t start_col_y = tile_x * SP_BLOCK_SIZE + yc;
-
-        double cov = 0.0;
-        for (uint32_t i = 0; i < submatrix_h; ++i) {
-            for (uint32_t j = 0; j < submatrix_w; ++j) {
-                double vx = (double)plane[(start_row_x + i) * stride_px + (start_col_x + j)];
-                double vy = (double)plane[(start_row_y + i) * stride_px + (start_col_y + j)];
-                cov += (vx - mean_x) * (vy - mean_y);
-            }
-        }
-        local_sum += cov / (double)(submatrix_w * submatrix_h);
+    for (uint32_t p = tid; p < total; p += COV_BLOCK) {
+        const uint32_t i = p / submatrix_w;
+        const uint32_t j = p % submatrix_w;
+        const double vx = (double)plane[(xr + i) * stride_px + (xc + j)];
+        const double vy = (double)plane[(yr + i) * stride_px + (yc + j)];
+        local_sum += (vx - mean_x) * (vy - mean_y);
     }
     s_partial[tid] = local_sum;
     __syncthreads();
@@ -181,7 +172,7 @@ __global__ void speed_cov_kernel(const float *__restrict__ plane,
     }
 
     if (tid == 0)
-        cov_mat[x_index * SP_ELEMENTS + y_index] = (float)s_partial[0];
+        cov_mat[x_index * SP_ELEMENTS + y_index] = (float)(s_partial[0] / (double)total);
 }
 
 /* ------------------------------------------------------------------ */
@@ -289,7 +280,8 @@ __global__ void speed_solve_kernel(const float *__restrict__ R, /* [25×25] uppe
  * CPU reference: update_entropy, get_speed_score.
  *
  * Inputs:
- *   eigenvalues[25] — from CPU eigendecomp of the covariance matrix.
+ *   ref_eigenvalues[25] — from CPU eigendecomp of the REFERENCE covariance.
+ *   dis_eigenvalues[25] — from CPU eigendecomp of the DISTORTED covariance.
  *   ref_sol[25 × num_blocks] — linear system solution for reference.
  *   dis_sol[25 × num_blocks] — linear system solution for distorted.
  *   ref_indterm[25 × num_blocks] — independent terms for reference.
@@ -304,7 +296,8 @@ __global__ void speed_solve_kernel(const float *__restrict__ R, /* [25×25] uppe
 #define SPEED_PI_F (3.14159265358979323846f)
 #define SPEED_E_F (2.71828182845904523536f)
 
-__global__ void speed_score_kernel(const float *__restrict__ eigenvalues, /* [25] */
+__global__ void speed_score_kernel(const float *__restrict__ ref_eigenvalues, /* [25] */
+                                   const float *__restrict__ dis_eigenvalues, /* [25] */
                                    const float *__restrict__ ref_sol,     /* [25 × num_blocks] */
                                    const float *__restrict__ dis_sol,     /* [25 × num_blocks] */
                                    const float *__restrict__ ref_indterm, /* [25 × num_blocks] */
@@ -337,13 +330,17 @@ __global__ void speed_score_kernel(const float *__restrict__ eigenvalues, /* [25
 
     /* Step 9 (CPU: update_entropy for each eigenvalue k):
      * entropy = sum_k { log2(L_k * var + sigma_nn) + log2(2πe) }
-     * where L_k = max(0, eigenvalues[k]). */
+     * where L_k = max(0, eigenvalues[k]). The CPU reference (est_params in
+     * speed.c) eigendecomposes SEPARATE ref and dis covariance matrices, so
+     * the ref entropy uses ref_eigenvalues and the dis entropy uses
+     * dis_eigenvalues — they are NOT shared. */
     float ref_ent = 0.0f;
     float dis_ent = 0.0f;
     for (uint32_t k = 0; k < SP_ELEMENTS; ++k) {
-        float lk = eigenvalues[k] < 0.0f ? 0.0f : eigenvalues[k];
-        ref_ent += log2f(lk * ref_var + sigma_nn) + log2e_2pi;
-        dis_ent += log2f(lk * dis_var + sigma_nn) + log2e_2pi;
+        float ref_lk = ref_eigenvalues[k] < 0.0f ? 0.0f : ref_eigenvalues[k];
+        float dis_lk = dis_eigenvalues[k] < 0.0f ? 0.0f : dis_eigenvalues[k];
+        ref_ent += log2f(ref_lk * ref_var + sigma_nn) + log2e_2pi;
+        dis_ent += log2f(dis_lk * dis_var + sigma_nn) + log2e_2pi;
     }
     ref_entropies[tile] = ref_ent;
     dis_entropies[tile] = dis_ent;

@@ -89,7 +89,8 @@ typedef struct SpeedTemporalCudaState {
     CUdeviceptr d_sol_ref;
     CUdeviceptr d_sol_dis;
     CUdeviceptr d_R;
-    CUdeviceptr d_eigenvalues;
+    CUdeviceptr d_eigenvalues;     /* holds dis eigenvalues after the dis linalg */
+    CUdeviceptr d_eigenvalues_ref; /* ref eigenvalues, stashed before dis linalg */
     CUdeviceptr d_ref_entropies;
     CUdeviceptr d_ref_variances;
     CUdeviceptr d_dis_entropies;
@@ -250,6 +251,7 @@ static void free_cuda_buffers_st(SpeedTemporalCudaState *s, CudaFunctions *cu_f)
     FREE_D(s->d_sol_dis);
     FREE_D(s->d_R);
     FREE_D(s->d_eigenvalues);
+    FREE_D(s->d_eigenvalues_ref);
     FREE_D(s->d_ref_entropies);
     FREE_D(s->d_ref_variances);
     FREE_D(s->d_dis_entropies);
@@ -391,17 +393,11 @@ static int run_score_st(SpeedTemporalCudaState *s, CudaFunctions *cu_f, float *s
 
     {
         const uint32_t grid = (num_blocks + ST_SCORE_BLOCK - 1u) / ST_SCORE_BLOCK;
-        void *args[] = {(void *)&s->d_eigenvalues,
-                        (void *)&s->d_sol_ref,
-                        (void *)&s->d_sol_dis,
-                        (void *)&s->d_indterm_ref,
-                        (void *)&s->d_indterm_dis,
-                        (void *)&s->d_ref_entropies,
-                        (void *)&s->d_ref_variances,
-                        (void *)&s->d_dis_entropies,
-                        (void *)&s->d_dis_variances,
-                        (void *)&num_blocks,
-                        (void *)&sigma_nn};
+        void *args[] = {
+            (void *)&s->d_eigenvalues_ref, (void *)&s->d_eigenvalues,   (void *)&s->d_sol_ref,
+            (void *)&s->d_sol_dis,         (void *)&s->d_indterm_ref,   (void *)&s->d_indterm_dis,
+            (void *)&s->d_ref_entropies,   (void *)&s->d_ref_variances, (void *)&s->d_dis_entropies,
+            (void *)&s->d_dis_variances,   (void *)&num_blocks,         (void *)&sigma_nn};
         CHECK_CUDA_GOTO(cu_f,
                         cuLaunchKernel(s->func_score, grid, 1u, 1u, ST_SCORE_BLOCK, 1u, 1u, 0u,
                                        s->stream, args, NULL),
@@ -503,6 +499,7 @@ static int init_fex_st(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, 
     ALLOC_D(d_sol_dis, indterm_bytes);
     ALLOC_D(d_R, cov_bytes);
     ALLOC_D(d_eigenvalues, ST_ELEMENTS * sizeof(float));
+    ALLOC_D(d_eigenvalues_ref, ST_ELEMENTS * sizeof(float));
     ALLOC_D(d_ref_entropies, score_bytes);
     ALLOC_D(d_ref_variances, score_bytes);
     ALLOC_D(d_dis_entropies, score_bytes);
@@ -527,7 +524,7 @@ static int init_fex_st(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, 
     s->h_dis[1] = (float *)aligned_malloc(plane_alloc, 32);
     s->h_eigenvalues = (float *)aligned_malloc(ST_ELEMENTS * sizeof(float), 32);
     s->h_eig_scratch =
-        (float *)aligned_malloc((ST_ELEMENTS * ST_ELEMENTS + 3u * ST_ELEMENTS) * sizeof(float), 32);
+        (float *)aligned_malloc((ST_ELEMENTS * ST_ELEMENTS + 4u * ST_ELEMENTS) * sizeof(float), 32);
     s->h_Q = (float *)aligned_malloc(cov_bytes, 32);
     s->h_R = (float *)aligned_malloc(cov_bytes, 32);
     s->h_qr_scratch = (float *)aligned_malloc(4u * cov_bytes, 32);
@@ -557,6 +554,7 @@ free_all:
     return err;
 fail_pop:
     (void)cu_f->cuCtxPopCurrent(NULL);
+    free_cuda_buffers_st(s, cu_f);
     return -EIO;
 fail:
     return -EIO;
@@ -577,9 +575,45 @@ static int extract_fex_st(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     const int cyclic = (int)(index % 2u);
     const int other = (int)((index + 1u) % 2u);
 
+    /* The CUDA pipeline feeds DEVICE-resident pictures (ref_pic->data[] are
+     * CUdeviceptr), but picture_copy reads HOST memory — download the luma
+     * plane first (same device-pointer SEGV as speed_chroma_cuda). The DtoH
+     * copy needs the CUDA context active (the GPU pipeline below pushes it
+     * again later, so push/pop locally here). */
+    const size_t raw_ref_bytes = (size_t)ref_pic->h[0] * ref_pic->stride[0];
+    const size_t raw_dis_bytes = (size_t)dist_pic->h[0] * dist_pic->stride[0];
+    uint8_t *raw_ref = (uint8_t *)aligned_malloc(raw_ref_bytes, 32);
+    uint8_t *raw_dis = (uint8_t *)aligned_malloc(raw_dis_bytes, 32);
+    if (!raw_ref || !raw_dis) {
+        aligned_free(raw_ref);
+        aligned_free(raw_dis);
+        return -ENOMEM;
+    }
+    if (cu_f->cuCtxPushCurrent(fex->cu_state->ctx) != CUDA_SUCCESS) {
+        aligned_free(raw_ref);
+        aligned_free(raw_dis);
+        return -EIO;
+    }
+    _cuda_err = (cu_f->cuMemcpyDtoH(raw_ref, (CUdeviceptr)ref_pic->data[0], raw_ref_bytes) !=
+                     CUDA_SUCCESS ||
+                 cu_f->cuMemcpyDtoH(raw_dis, (CUdeviceptr)dist_pic->data[0], raw_dis_bytes) !=
+                     CUDA_SUCCESS);
+    (void)cu_f->cuCtxPopCurrent(NULL);
+    if (_cuda_err) {
+        aligned_free(raw_ref);
+        aligned_free(raw_dis);
+        return -EIO;
+    }
+    VmafPicture host_ref = *ref_pic;
+    VmafPicture host_dis = *dist_pic;
+    host_ref.data[0] = raw_ref;
+    host_dis.data[0] = raw_dis;
+
     /* Copy current frame luma planes to ping-pong buffers. */
-    picture_copy(s->h_ref[cyclic], s->float_stride, ref_pic, -128, ref_pic->bpc, 0);
-    picture_copy(s->h_dis[cyclic], s->float_stride, dist_pic, -128, ref_pic->bpc, 0);
+    picture_copy(s->h_ref[cyclic], s->float_stride, &host_ref, -128, ref_pic->bpc, 0);
+    picture_copy(s->h_dis[cyclic], s->float_stride, &host_dis, -128, ref_pic->bpc, 0);
+    aligned_free(raw_ref);
+    aligned_free(raw_dis);
 
     /* Frame 0: emit score 0 (no previous frame to diff against). */
     if (index == 0) {
@@ -620,21 +654,30 @@ static int extract_fex_st(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     if (err)
         goto pop_ctx;
 
-    float saved_cov[ST_ELEMENTS * ST_ELEMENTS];
-    (void)memcpy(saved_cov, s->h_cov_mat, sizeof(saved_cov));
-
+    /* CPU eigendecomp + QR for the reference diff. Uploads ref eigenvalues
+     * into the shared s->d_eigenvalues buffer. */
     err = run_cpu_linalg_st(s, cu_f, s->h_indterm_ref, s->d_sol_ref);
     if (err)
         goto pop_ctx;
 
-    /* GPU pipeline for distorted diff. */
+    /* Stash the reference eigenvalues aside before the distorted linalg pass
+     * overwrites s->d_eigenvalues. The CPU reference (est_params in speed.c)
+     * computes SEPARATE ref and dis covariance + eigenvalues; the score kernel
+     * needs both. Synchronize first so the async eigenvalue H2D from
+     * run_cpu_linalg_st is complete before the DtoD copy. */
+    CHECK_CUDA_GOTO(cu_f, cuStreamSynchronize(s->stream), pop_ctx);
+    CHECK_CUDA_GOTO(
+        cu_f, cuMemcpyDtoD(s->d_eigenvalues_ref, s->d_eigenvalues, ST_ELEMENTS * sizeof(float)),
+        pop_ctx);
+
+    /* GPU pipeline for distorted diff (keeps the DIS covariance in h_cov_mat —
+     * no save/restore of the ref covariance). */
     err = run_gpu_pipeline_st(s, cu_f, s->h_dis[other], s->d_indterm_dis, plane_op_bytes);
     if (err)
         goto pop_ctx;
 
-    /* Restore reference cov (SpEED uses reference basis for both). */
-    (void)memcpy(s->h_cov_mat, saved_cov, sizeof(saved_cov));
-
+    /* CPU eigendecomp + QR for the distorted diff (uses the DIS cov_mat).
+     * Uploads dis eigenvalues into s->d_eigenvalues. */
     err = run_cpu_linalg_st(s, cu_f, s->h_indterm_dis, s->d_sol_dis);
     if (err)
         goto pop_ctx;
