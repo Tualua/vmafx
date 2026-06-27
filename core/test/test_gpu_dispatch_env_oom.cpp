@@ -53,6 +53,28 @@ extern "C" {
 
 #include "gpu_dispatch_env.h"
 
+/* Sanitizer detection. The OOM-injection mechanism below replaces the global
+ * `operator new` / `operator delete`. The sanitizer runtimes (TSan, ASan, MSan)
+ * ALSO interpose their own global `operator new` / `delete`, so a replacement
+ * here collides at link time under lld:
+ *   ld.lld: error: duplicate symbol: operator new(unsigned long)
+ * Under any sanitizer we therefore skip the replacement entirely and turn the
+ * OOM test into a no-op skip. The bug it guards (R2-9: a transient allocation
+ * failure on the value snapshot must not poison the dispatch-env slot) is a
+ * pure control-flow check the non-sanitized suites still exercise on every
+ * push, so coverage is not lost — only this one sanitizer configuration opts
+ * out of the global-new override that is fundamentally incompatible with the
+ * sanitizer allocator interceptors. */
+#if defined(__SANITIZE_THREAD__) || defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_MEMORY__)
+#define VMAF_OOM_TEST_SANITIZED 1
+#elif defined(__has_feature)
+#if __has_feature(thread_sanitizer) || __has_feature(address_sanitizer) ||                         \
+    __has_feature(memory_sanitizer)
+#define VMAF_OOM_TEST_SANITIZED 1
+#endif
+#endif
+
+#ifndef VMAF_OOM_TEST_SANITIZED
 /* When armed, the next operator new call throws std::bad_alloc.  A plain bool
  * suffices (single-threaded test); std::atomic keeps it tidy and avoids any
  * tearing concern under sanitizers. */
@@ -79,10 +101,17 @@ void operator delete(void *p, std::size_t) noexcept
 {
     std::free(p);
 }
+#endif /* !VMAF_OOM_TEST_SANITIZED */
 
 /* R2-9: a transient OOM on the value snapshot must not poison the slot. */
 static char *test_env_oom_does_not_poison_slot(void)
 {
+#ifdef VMAF_OOM_TEST_SANITIZED
+    /* Skip under sanitizers: the global-new override that arms the fault is
+     * compiled out (it duplicates the sanitizer allocator symbols), so the
+     * injection point does not exist here. Returning NULL signals a pass. */
+    return NULL;
+#else
     const char *const var = "VMAFX_TEST_DISPATCH_OOM_R2_9";
     const char *const want = "vif:graph,adm:direct";
     /* NOLINTNEXTLINE(concurrency-mt-unsafe) — single-thread test setup. */
@@ -113,10 +142,22 @@ static char *test_env_oom_does_not_poison_slot(void)
      * snapshot to its real value.  Under the R2-9 bug the slot was cached
      * as unset on the first (failing) call, so this returns NULL forever. */
     const char *recovered = vmaf_gpu_dispatch_env_get(var);
-    mu_assert("set var must not be permanently cached as unset after a transient OOM",
-              recovered != NULL);
-    mu_assert("recovered snapshot value matches the env", strcmp(recovered, want) == 0);
+    /* test.h's `mu_assert` returns its message as `char *`. The harness is
+     * C-first, where a string literal -> `char *` is legal; this is the only
+     * test whose body is a C++ TU, and under MSVC /std:c++latest that
+     * conversion is a hard error (C2440) that `-Wno-write-strings` cannot
+     * silence (it is an error, not a warning, and that flag is GCC/Clang-only).
+     * Hold the messages in `static char[]` buffers (mutable arrays decay to
+     * `char *` with no conversion, and static storage keeps the pointer valid
+     * after the function returns) so the assert compiles identically on every
+     * compiler. */
+    static char msg_not_cached[] =
+        "set var must not be permanently cached as unset after a transient OOM";
+    static char msg_value_match[] = "recovered snapshot value matches the env";
+    mu_assert(msg_not_cached, recovered != NULL);
+    mu_assert(msg_value_match, strcmp(recovered, want) == 0);
     return NULL;
+#endif /* VMAF_OOM_TEST_SANITIZED */
 }
 
 extern "C" char *run_tests(void)
