@@ -35,7 +35,7 @@ All models are libsvm ν-SVR JSONs, built into libvmaf (`model.c` exposes
 `--model path=…json`.
 
 | Scenario | Display | Viewing distance | Model file | Score range |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | Standard 1080p | 1080p | 3H | `vmaf_v1.0.16_3d0h.json` | [0, 100] |
 | Phone | 1080p | 5H | `vmaf_v1.0.16_5d0h.json` | [0, 100] |
 | **4K (default)** | 2160p | 1.5H | `vmaf_v1.0.16_1d5h_2160.json` | [0, 100] |
@@ -51,7 +51,7 @@ high frame rates.
 
 The v1 standard model's `feature_names` (from `vmaf_v1.0.16_3d0h.json`):
 
-```
+```text
 Cambi_feature_cambi_score
 Speed_chroma_feature_speed_chroma_uv_score
 VMAF_integer_feature_adm3_score
@@ -59,7 +59,7 @@ VMAF_integer_feature_motion3_score
 ```
 
 | | v0 (`vmaf_v0.6.1`) | **v1 (`vmaf_v1.0.16`)** |
-|---|---|---|
+| --- | --- | --- |
 | features | adm2, **vif_scale0..3**, motion2 | **cambi**, **speed_chroma_uv**, **adm3**, **motion3** |
 | count | 6 | **4** |
 | VIF | 4 scales (dominant cost) | **removed** |
@@ -102,7 +102,7 @@ VMAF_integer_feature_motion3_score
 The fork already implements **almost every v1 feature on GPU/SIMD**:
 
 | v1 feature | Fork status |
-|---|---|
+| --- | --- |
 | `adm3` | ADM extractor present (CUDA/SYCL/HIP); adm scales incl. scale 3 |
 | `motion3` | present (`integer_motion3` column already emitted) |
 | `cambi` | present (`cambi_sycl`, `integer_cambi_*`); **SYCL parity currently FAILING** (`test_sycl_cambi_parity` exit 1 — see Phase-3 verify) |

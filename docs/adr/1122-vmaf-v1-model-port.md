@@ -4,7 +4,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-07-01
-- **Deciders**: Lusoris Dev (dsp@mvdnet.org)
+- **Deciders**: Lusoris Dev (<dsp@mvdnet.org>)
 - **Tags**: `vmaf`, `models`, `upstream-port`, `cambi`, `chroma`, `sycl`, `golden-gate`
 
 ## Context
@@ -13,8 +13,8 @@ Netflix shipped **VMAF v1** in libvmaf `v3.2.0` (2026-06-20) — a new generatio
 of models (`model/vmaf_v1.0.16/`). It is still a libsvm ν-SVR fusion, but the
 **feature set changed**: VIF is removed, and CAMBI (banding) plus a chroma
 feature (`speed_chroma_uv`) become core features; ADM/motion move to the
-`adm3`/`motion3` variants. v1 adds viewing-condition-calibrated models (1080p@3H,
-phone@5H, 4K@1.5H, 4K@3H), an `_hfr` high-frame-rate variant, a **[0, 110]**
+`adm3`/`motion3` variants. v1 adds viewing-condition-calibrated models (`1080p@3H`,
+`phone@5H`, `4K@1.5H`, `4K@3H`), an `_hfr` high-frame-rate variant, a **[0, 110]**
 score range for 4K@3H, CAMBI encode-side parameters, and a recommendation to
 measure at **10-bit** even for 8-bit SDR. Details and citations are in the
 [research digest](../research/2026-07-01-vmaf-v1-models.md).
