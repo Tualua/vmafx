@@ -46730,7 +46730,6 @@ does not produce upstream — give such functions their real prototypes rather
 than reverting the standard. `-Wimplicit-fallthrough` is also enabled fork-wide,
 so an unannotated switch fallthrough in ported code needs an explicit
 `[[fallthrough]]`.
-<<<<<<< HEAD
 
 ## FFmpeg n8.1.1 → n9.0.1 (landed 2026-08-30)
 
@@ -46771,7 +46770,6 @@ constructs to preserve when rebasing:
 
 Point 3 is the one to watch: a conflict resolved in upstream's favour restores a
 green-but-dead gate with no test failure to signal it.
-=======
 ## fix/sycl-qsv-zerocopy-p010-normalize — SYCL QSV zero-copy P010 normalization + separate-session contract (2026-06-30)
 no ffmpeg-patch impact: edits the fork-added SYCL zero-copy path only
 (`core/src/sycl/dmabuf_import.cpp`, `core/src/sycl/common.cpp`/`.h`,
@@ -46803,4 +46801,3 @@ VA-import (byte-identical output, ~15–25% slower at 4K); do NOT let the
 host-upload-tuned area-threshold re-select graph for it.
 (4) D-03 verification targets are the de-contaminated oracle (VMAF 97.2350,
 `integer_motion` max 26.6935), not the old shared-session 96.133894 baseline.
->>>>>>> 1b7657ad1 (docs(sycl): ADR-1121 + docs for QSV zero-copy P010 normalization fix)

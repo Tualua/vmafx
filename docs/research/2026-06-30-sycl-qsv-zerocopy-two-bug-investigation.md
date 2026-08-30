@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # SYCL QSV Zero-Copy — Two-Bug Investigation (Phase 3 fix digest)
 
 **Branch:** `fix/libvmaf-sycl-zerocopy-nan`

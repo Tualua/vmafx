@@ -518,9 +518,8 @@ extern "C" int vmaf_sycl_shared_frame_init(VmafSyclState *state, unsigned w, uns
         vmaf_log(VMAF_LOG_LEVEL_INFO,
                  "VMAF_SYCL_IMPORT_DEBUG shared_bufs: "
                  "ref[0]=%p ref[1]=%p dis[0]=%p dis[1]=%p (size=%zu)\n",
-                 state->shared_ref_buf[0], state->shared_ref_buf[1],
-                 state->shared_dis_buf[0], state->shared_dis_buf[1],
-                 buf_size);
+                 state->shared_ref_buf[0], state->shared_ref_buf[1], state->shared_dis_buf[0],
+                 state->shared_dis_buf[1], buf_size);
     }
 
     return 0;
@@ -1130,8 +1129,8 @@ extern "C" void vmaf_sycl_advance_frame(VmafSyclState *state)
 /* Diagnostic checksum probe                                           */
 /* ------------------------------------------------------------------ */
 
-extern "C" int vmaf_sycl_checksum_y_slot(VmafSyclState *state, int is_ref,
-                                          unsigned frame_index, const char *path_tag)
+extern "C" int vmaf_sycl_checksum_y_slot(VmafSyclState *state, int is_ref, unsigned frame_index,
+                                         const char *path_tag)
 {
     /* Zero-cost gate — must be first, before any allocation or queue work.
      * Mirror the VMAF_SYCL_PROFILE gate at common.cpp:230. */
@@ -1146,8 +1145,7 @@ extern "C" int vmaf_sycl_checksum_y_slot(VmafSyclState *state, int is_ref,
      * In the VA-import path cur_compute is permanently 0; in the host-upload
      * path it toggles each frame.  Do NOT hard-code slot 1 — pitfall 3. */
     int slot = state->cur_compute;
-    void *dev_buf = is_ref ? state->shared_ref_buf[slot]
-                           : state->shared_dis_buf[slot];
+    void *dev_buf = is_ref ? state->shared_ref_buf[slot] : state->shared_dis_buf[slot];
     if (!dev_buf)
         return 0;
 
@@ -1178,9 +1176,8 @@ extern "C" int vmaf_sycl_checksum_y_slot(VmafSyclState *state, int is_ref,
     free(host_buf);
 
     vmaf_log(VMAF_LOG_LEVEL_INFO,
-             "VMAF_SYCL_CHECKSUM path=%s frame=%u slot=%d %s buf=%p crc=0x%08x\n",
-             path_tag, frame_index, slot,
-             is_ref ? "ref" : "dis", dev_buf, (unsigned)crc);
+             "VMAF_SYCL_CHECKSUM path=%s frame=%u slot=%d %s buf=%p crc=0x%08x\n", path_tag,
+             frame_index, slot, is_ref ? "ref" : "dis", dev_buf, (unsigned)crc);
     return 0;
 }
 

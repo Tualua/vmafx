@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 MD060 -->
 # SYCL Zero-Copy NaN Diagnosis — Phase 1 Research Digest
 
 **Diagnostic branch:** `fix/libvmaf-sycl-zerocopy-nan`  
@@ -32,8 +33,8 @@ via `probe-diag.patch` build-context patch (not pushed to remote).
 **Input pair (Pair 1 — 4K HDR, PRIMARY):**
 
 | Role | Codec | Pixel Format | Resolution |
-|------|-------|-------------|------------|
-| REF  | HEVC Main10 | yuv420p10le | 3840x2160 |
+| ------ | ------- | ------------- | ------------ |
+| REF | HEVC Main10 | yuv420p10le | 3840x2160 |
 | DIST | AV1 Main | yuv420p10le | 3840x2160 |
 
 Both decoded with QSV (`hevc_qsv` / `av1_qsv`). Formats match — no conversion needed.
@@ -51,7 +52,7 @@ proven working at ~119fps). Input converted via `hwdownload,format=p010le` befor
 ### Aggregate VMAF
 
 | Filter | VMAF score | NaN frames |
-|--------|-----------|-----------|
+| -------- | ----------- | ----------- |
 | Oracle (host-upload, NO_GRAPH=1) | **95.934579** | 0 / 100 |
 | Reproducer (VA-import zero-copy) | **NaN** | reproduced |
 
@@ -62,8 +63,8 @@ perturb the result.
 
 The D2H probe reads `state->cur_compute` and logs it as `slot=N` for each frame.
 
-| Path   | Slots observed |
-|--------|---------------|
+| Path | Slots observed |
+| -------- | --------------- |
 | Oracle (host-upload) | 0, 1, 0, 1, 0, 1, … (correct double-buffer toggle) |
 | Reproducer (VA-import) | 0, 0, 0, 0, 0, 0, … (permanently stuck at 0) |
 
@@ -76,13 +77,13 @@ only `frame_counter`, not `cur_compute` — `cur_compute` stays 0 forever.
 80 frames compared (oracle: 100 frames; sycl: 80 frames before VA surface error).
 
 | Metric | Result |
-|--------|--------|
+| -------- | -------- |
 | REF CRC mismatches | **80 / 80** (100%) |
 | DIS CRC mismatches | **80 / 80** (100%) |
 
 **Sample rows:**
 
-```
+```text
 Frame  Host-slot  Host-ref-CRC  Host-dis-CRC  Sycl-slot  Sycl-ref-CRC  Sycl-dis-CRC  Match
     0          0    0x09271dc5    0x09271dc5          0    0xa3471dc5    0xa3471dc5    DIFF/DIFF
     8          0    0x09271dc5    0x09271dc5          0    0xbcf83fca    0xa3471dc5    DIFF/DIFF
@@ -103,13 +104,13 @@ import. Phase 2 should instrument `vmaf_sycl_get_shared_dis` to confirm the poin
 
 ### Per-Frame VMAF
 
-| Frame | Host VMAF | Host int_motion | Sycl VMAF   | Sycl int_motion |
-|-------|-----------|-----------------|-------------|-----------------|
-|     0 | 97.428027 |        0.000000 | 97.428027   |        0.000000 |
-|     1 | 97.428027 |        0.000000 | 100.000000  |     1024.000000 |
-|     8 | 97.428027 |        0.000000 | 100.000000  |     4131.519855 |
-|    10 | 94.389818 |       48.582123 | 100.000000  |     4131.657814 |
-|    17 | 94.590208 |        0.201475 | 100.000000  |     4384.052737 |
+| Frame | Host VMAF | Host int_motion | Sycl VMAF | Sycl int_motion |
+| ------- | ----------- | ----------------- | ------------- | ----------------- |
+| 0 | 97.428027 | 0.000000 | 97.428027 | 0.000000 |
+| 1 | 97.428027 | 0.000000 | 100.000000 | 1024.000000 |
+| 8 | 97.428027 | 0.000000 | 100.000000 | 4131.519855 |
+| 10 | 94.389818 | 48.582123 | 100.000000 | 4131.657814 |
+| 17 | 94.590208 | 0.201475 | 100.000000 | 4384.052737 |
 
 Sycl VMAF=100.000000 (ref==dist, impossible) from frame 1 onwards. Sycl integer_motion mean
 4157.5, max 4903.3 (vs oracle normal range 0–48). Both signatures match HANDOFF.md predictions.
@@ -128,7 +129,7 @@ correctness. Hyp-2 determination uses frames >= 1.
 
 ## Verdict
 
-**hyp 1: buffer content wrong (slot/overwrite race) → Phase 2 = FIX-01**
+### hyp 1: buffer content wrong (slot/overwrite race) → Phase 2 = FIX-01
 
 ANY frame having `crc_host != crc_sycl` for ref or dis selects hyp 1. We have 80/80 such
 frames — an unambiguous result.
@@ -154,7 +155,7 @@ buffer pointer entirely.
 ## Research Predictions vs Observations
 
 | Prediction (01-RESEARCH.md) | Observation |
-|-----------------------------|-------------|
+| ----------------------------- | ------------- |
 | `cur_compute` = 0 permanently | Confirmed: sycl always slot=0 |
 | Host-upload toggles correctly | Confirmed: oracle slot=0,1,0,1,... |
 | `integer_motion` extreme (~3109) | Confirmed: sycl max 4903.3, mean 4157.5 |
@@ -174,7 +175,7 @@ or consumed by `ffmpeg-patches/0005-*`. No patch update required (CLAUDE.md rule
 ## Files Referenced
 
 | File | Location | Contents |
-|------|----------|----------|
+| ------ | ---------- | ---------- |
 | `host_checksums.csv` | `/tmp/vmafx-diag-results/` (gitignored) | 200 oracle checksum lines |
 | `sycl_checksums.csv` | `/tmp/vmafx-diag-results/` (gitignored) | 160 sycl checksum lines |
 | `host_vmaf.csv` | `/tmp/vmafx-diag-results/` (gitignored) | 101-row per-frame VMAF (oracle) |

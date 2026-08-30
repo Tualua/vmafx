@@ -367,8 +367,8 @@ void *vmaf_sycl_get_last_upload_event(VmafSyclState *state);
  *
  * @return 0 on success, negative errno on failure (e.g. -ENOMEM, -EIO).
  */
-int vmaf_sycl_checksum_y_slot(VmafSyclState *state, int is_ref,
-                               unsigned frame_index, const char *path_tag);
+int vmaf_sycl_checksum_y_slot(VmafSyclState *state, int is_ref, unsigned frame_index,
+                              const char *path_tag);
 
 /* ---- Combined command graph (merges all extractors into one replay) ---- */
 

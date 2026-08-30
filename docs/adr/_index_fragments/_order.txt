@@ -878,8 +878,5 @@
 1118-perceptual-sidedata-weighting
 1119-golusoris-go-framework-adoption
 1120-pelorus-abi-minor3-resync-complexity
-<<<<<<< HEAD
 1122-vmaf-v1-model-port
-=======
 1121-sycl-qsv-zerocopy-p010-normalization
->>>>>>> 1b7657ad1 (docs(sycl): ADR-1121 + docs for QSV zero-copy P010 normalization fix)

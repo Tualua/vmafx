@@ -221,9 +221,8 @@ static sycl::event launch_p010_normalize(sycl::queue *q, void *buf, unsigned w, 
     size_t num_pixels = (size_t)w * h;
     uint16_t *pixels = static_cast<uint16_t *>(buf);
 
-    return q->parallel_for(sycl::range<1>(num_pixels), [=](sycl::id<1> id) {
-        pixels[id[0]] >>= shift;
-    });
+    return q->parallel_for(sycl::range<1>(num_pixels),
+                           [=](sycl::id<1> id) { pixels[id[0]] >>= shift; });
 }
 
 /* ------------------------------------------------------------------ */
@@ -306,8 +305,8 @@ static int vmaf_sycl_import_va_surface_readback(VmafSyclState *state, void *va_d
     uint32_t y_pitch = va_img.pitches[0];
     size_t y_row_bytes = (size_t)w * bytes_per_pixel;
 
-    void *target_buf = is_ref ? vmaf_sycl_get_shared_ref_upload(state)
-                               : vmaf_sycl_get_shared_dis_upload(state);
+    void *target_buf =
+        is_ref ? vmaf_sycl_get_shared_ref_upload(state) : vmaf_sycl_get_shared_dis_upload(state);
 
     if (!target_buf) {
         vaUnmapBuffer(va_dpy, va_img.buf);
@@ -437,8 +436,8 @@ extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_displa
     }
 
     /* Get target shared frame buffer (upload slot — cur_upload, not cur_compute) */
-    void *target_buf = is_ref ? vmaf_sycl_get_shared_ref_upload(state)
-                               : vmaf_sycl_get_shared_dis_upload(state);
+    void *target_buf =
+        is_ref ? vmaf_sycl_get_shared_ref_upload(state) : vmaf_sycl_get_shared_dis_upload(state);
 
     if (!target_buf) {
         vmaf_sycl_dmabuf_free(state, imported_ptr);
@@ -454,8 +453,7 @@ extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_displa
     if (vmaf_sycl_import_debug_enabled(state)) {
         vmaf_log(VMAF_LOG_LEVEL_INFO,
                  "VMAF_SYCL_IMPORT_DEBUG [%s] va_surf=%u imported_ptr=%p target_buf=%p\n",
-                 is_ref ? "ref" : "dis", va_surface_id,
-                 imported_ptr, target_buf);
+                 is_ref ? "ref" : "dis", va_surface_id, imported_ptr, target_buf);
     }
 
     sycl::queue *q = (sycl::queue *)vmaf_sycl_get_queue_ptr(state);

@@ -4,7 +4,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-06-30
-- **Deciders**: Lusoris Dev (dsp@mvdnet.org)
+- **Deciders**: Lusoris Dev (<dsp@mvdnet.org>)
 - **Tags**: `sycl`, `gpu`, `ffmpeg`, `correctness`, `perf`, `dispatch`
 
 ## Context
