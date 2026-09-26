@@ -5964,6 +5964,7 @@
         ".github/workflows/release-please.yml": 1,
         ".github/workflows/rule-enforcement.yml": 1,
         "scripts/ci/release-pr-exempt.sh": 1,
+        "scripts/ci/tests/test_research_digest_ids.py": 1,
         "scripts/release/tests/test-verify-release-version.sh": 1,
         "scripts/release/verify-release-version.sh": 1
       },
@@ -6739,6 +6740,8 @@
         ".github/workflows/rule-enforcement.yml": 1,
         ".github/workflows/supply-chain.yml": 1,
         "python/test/setup_metadata_test.py": 1,
+        "scripts/release/rollover-changelog-fragments.sh": 1,
+        "scripts/release/tests/test-rollover-changelog-fragments.sh": 1,
         "scripts/release/tests/test-verify-release-version.sh": 2,
         "scripts/release/verify-release-version.sh": 2
       },
@@ -7652,7 +7655,6 @@
     },
     "0864": {
       "evidence": [
-        "changelog.d/added/wire-markdownlint-into-lint.md",
         "docs/adr/0866-wire-markdownlint-into-lint-pipeline.md",
         "docs/adr/0980-markdown-lint-full-ruleset-discharge.md"
       ],
