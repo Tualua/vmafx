@@ -545,6 +545,12 @@ source, leaving their exact content in the versioned changelog section and a
 SHA-256 receipt under `changelog.d/releases/`. The removals are recoverable
 from Git history. A second identical invocation is a no-op.
 
+A long body goes to `docs/changelog-archive/X.Y.Z.md` (see `--archive-over`).
+The first release's archive holds the whole fragment history and is larger than
+the 1 MB `check-added-large-files` limit, so top-level Markdown files in that
+directory are exempt from it ([ADR-1345](../adr/1345-changelog-archive-large-file-exemption.md)).
+Nothing else in the directory is.
+
 A release candidate is cut the same way, with its full version:
 `--version 1.0.0-rc.1`. The script accepts exactly the shapes the tag-time
 verifier accepts, `X.Y.Z` and `X.Y.Z-rc.N`, and each candidate gets its own
@@ -558,6 +564,26 @@ release-please bumps a fix on `1.0.0-rc.1` to `1.0.1-rc.1`: its patch update
 keeps the prerelease tag and never counts candidates. Put a
 `Release-As: 1.0.0-rc.2` footer on the last commit merged before the next cut,
 and check the release PR title before cutting it.
+
+How a candidate moves through the rest of the pipeline:
+
+- **Draft pause.** While a `vX.Y.Z` or `vX.Y.Z-rc.N` draft waits for
+  publication, `release-please.yml` skips both release-please phases, so later
+  pushes to `master` neither move nor duplicate it. More than one waiting draft
+  stops the job for operator cleanup.
+- **Version strings.** A release build checked out at its tag reports the
+  `git describe` form from `vmaf --version`, for example
+  `v1.0.0-rc.1-0-gd0f0e7e` or `v1.0.0-0-g8820048`.
+  `scripts/release/verify-native-release-artifacts.sh` accepts exactly that
+  form (distance 0) or the bare version, never a later commit.
+- **Python distributions.** Python tools name distributions by the PEP 440
+  spelling, `1.0.0rc1`, not `1.0.0-rc.1`. `supply-chain.yml` derives that
+  spelling once with `scripts/release/pep440-version.sh` and matches the
+  `vmaf-mcp` wheel and sdist by it.
+- **Pushing the cut.** The local pre-push PR-body hook exempts the bot release
+  PR, as CI's Deliverables Checklist does, through
+  `scripts/ci/release-pr-exempt.sh`. The exemption needs `gh` to be
+  authenticated and the PR's head ref to be the branch being pushed.
 
 [ADR-1128](../adr/1128-fragment-owned-release-cuts.md) governs this cutover.
 

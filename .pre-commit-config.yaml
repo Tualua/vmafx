@@ -50,6 +50,12 @@ repos:
       - id: check-toml
       - id: check-added-large-files
         args: ["--maxkb=1024"]
+        # ADR-1345: a release's changelog archive is the only remaining copy of
+        # the fragments its cut consumed (scripts/release/rollover-changelog-
+        # fragments.sh), so it cannot be generated at build time the way
+        # ADR-1115 embeds the BRISQUE model. Only top-level .md files under
+        # docs/changelog-archive/ are exempt; every other path keeps the limit.
+        exclude: '^docs/changelog-archive/[^/]+\.md$'
       - id: mixed-line-ending
         args: ["--fix=lf"]
         # Same binary-file exclusions as trailing-whitespace / end-of-file-fixer
@@ -772,10 +778,12 @@ repos:
         pass_filenames: false
 
       - id: test-pr-body-lookup
-        name: PR-body metadata lookup fails closed without hanging
+        name: PR-body metadata lookup fails closed and exempts only the bot release PR
         entry: python3 scripts/git-hooks/test-pre-push-pr-body-lint.py
         language: system
-        files: '^(scripts/git-hooks/(?:pre-push-pr-body-lint\.sh|test-pre-push-pr-body-lint\.py)|\.pre-commit-config\.yaml)$'
+        # The hook consults the shared release-PR predicate (ADR-1151), so a
+        # change to that predicate re-runs the hook's exemption cases too.
+        files: '^(scripts/git-hooks/(?:pre-push-pr-body-lint\.sh|test-pre-push-pr-body-lint\.py)|scripts/ci/release-pr-exempt\.sh|\.pre-commit-config\.yaml)$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 

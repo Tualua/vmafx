@@ -54448,3 +54448,25 @@ against an RC cut to hold them together. Checks that pin historical prose to a
 follows a cut into `CHANGELOG.md` and `docs/changelog-archive/`; a raw read of
 the fragment breaks the next release cut. No native/public API, numerical or
 FFmpeg rebase impact.
+
+## ADR-1345 — changelog archive large-file exemption (2026-09-27)
+
+`.pre-commit-config.yaml` exempts `^docs/changelog-archive/[^/]+\.md$` from
+`check-added-large-files`. The pattern and the rollover's archive path
+(`docs/changelog-archive/X.Y.Z.md` in
+`scripts/release/rollover-changelog-fragments.sh`) move together;
+`test-rollover-changelog-fragments.sh` T18 pins the exact pattern and fails if
+the two diverge. No native/public API, numerical or FFmpeg rebase impact.
+
+## 1.0.0-rc.1 release-path fixes (2026-09-27)
+
+Release-candidate handling must stay consistent across every place that reads
+a version. `verify-release-version.sh`, `rollover-changelog-fragments.sh`,
+`verify-native-release-artifacts.sh`, `pep440-version.sh` and the draft check
+in `release-please.yml` all accept exactly `X.Y.Z` or `X.Y.Z-rc.N`, and
+`test-release-please-draft-gate.sh` proves parity for the workflow's inline jq
+regex. Python distribution names use the PEP 440 spelling from
+`pep440-version.sh`. The pre-push PR-body hook must keep calling
+`scripts/ci/release-pr-exempt.sh` rather than re-implementing it. No test may
+read a `changelog.d/` fragment's contents: every release cut deletes them.
+No native/public API, numerical or FFmpeg rebase impact.

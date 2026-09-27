@@ -179,7 +179,8 @@
         "scripts/ci/release-pr-exempt.sh": 1,
         "scripts/ci/tests/test-pr-body-input-selection.sh": 3,
         "scripts/ci/validate-pr-body.sh": 1,
-        "scripts/git-hooks/pre-push-pr-body-lint.sh": 2
+        "scripts/git-hooks/pre-push-pr-body-lint.sh": 3,
+        "scripts/git-hooks/test-pre-push-pr-body-lint.py": 2
       },
       "target": "0108-deep-dive-deliverables-rule.md"
     },
@@ -5825,6 +5826,7 @@
     },
     "1115": {
       "sites": {
+        ".pre-commit-config.yaml": 1,
         "core/src/feature/brisque.c": 2,
         "core/src/feature/brisque_math.h": 2,
         "core/src/feature/brisque_model.h": 2,
@@ -5950,12 +5952,13 @@
     },
     "1127": {
       "sites": {
-        ".github/workflows/release-please.yml": 1,
+        ".github/workflows/release-please.yml": 2,
         "bindings/rust/vmafx-sys/Cargo.toml": 1,
         "bindings/rust/vmafx/Cargo.toml": 1,
         "core/src/feature/rust/tad/Cargo.toml": 1,
         "deploy/helm/vmafx/Chart.yaml": 1,
-        "pyproject.toml": 1
+        "pyproject.toml": 1,
+        "scripts/release/tests/test-release-please-draft-gate.sh": 2
       },
       "target": "1127-single-semver-release-stream.md"
     },
@@ -6439,6 +6442,7 @@
         ".github/workflows/required-aggregator.yml": 2,
         ".github/workflows/rule-enforcement.yml": 13,
         ".github/workflows/supply-chain.yml": 1,
+        ".pre-commit-config.yaml": 1,
         "bindings/rust/vmafx-sys/Cargo.toml": 1,
         "bindings/rust/vmafx/Cargo.toml": 1,
         "core/meson.build": 1,
@@ -6450,6 +6454,8 @@
         "pyproject.toml": 1,
         "scripts/ci/release-pr-exempt.sh": 3,
         "scripts/ci/tests/test-release-pr-exempt.sh": 1,
+        "scripts/git-hooks/pre-push-pr-body-lint.sh": 6,
+        "scripts/git-hooks/test-pre-push-pr-body-lint.py": 2,
         "scripts/release/check-release-bot-secrets.sh": 2,
         "scripts/release/rollover-changelog-fragments.sh": 1,
         "scripts/release/tests/test-rollover-changelog-fragments.sh": 2,
@@ -6737,12 +6743,18 @@
       "sites": {
         ".github/workflows/docker-publish-operator-node.yml": 1,
         ".github/workflows/docker-publish-production.yml": 2,
+        ".github/workflows/release-please.yml": 2,
         ".github/workflows/rule-enforcement.yml": 1,
-        ".github/workflows/supply-chain.yml": 1,
+        ".github/workflows/supply-chain.yml": 2,
         "python/test/setup_metadata_test.py": 1,
+        "scripts/release/pep440-version.sh": 1,
         "scripts/release/rollover-changelog-fragments.sh": 1,
+        "scripts/release/tests/test-pep440-version.sh": 1,
+        "scripts/release/tests/test-release-please-draft-gate.sh": 1,
         "scripts/release/tests/test-rollover-changelog-fragments.sh": 1,
+        "scripts/release/tests/test-verify-native-release-artifacts.sh": 2,
         "scripts/release/tests/test-verify-release-version.sh": 2,
+        "scripts/release/verify-native-release-artifacts.sh": 1,
         "scripts/release/verify-release-version.sh": 2
       },
       "target": "1201-release-candidates-before-1-0-0.md"
@@ -7594,6 +7606,13 @@
         "scripts/ci/tests/test_python_dependency_locks.py": 1
       },
       "target": "1344-lock-fingerprint-ignores-project-version.md"
+    },
+    "1345": {
+      "sites": {
+        ".pre-commit-config.yaml": 1,
+        "scripts/release/tests/test-rollover-changelog-fragments.sh": 1
+      },
+      "target": "1345-changelog-archive-large-file-exemption.md"
     }
   },
   "retired": {

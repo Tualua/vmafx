@@ -78,6 +78,11 @@ receipt; rc.1 cut retires one-shot fields, as `verify-release-version.sh`
 demands at every tag. Marker extractor keeps optional `-rc.N` group, same
 as verifier; without it `1.0.0-rc.1` marker reads `1.0.0`, mismatches.
 
+Archive path `docs/changelog-archive/X.Y.Z.md` exempt from 1 MB
+`check-added-large-files` gate (ADR-1345): exclusion
+`^docs/changelog-archive/[^/]+\.md$` in `.pre-commit-config.yaml`. Move
+archive path -> move exclusion in same PR; never widen it. T18 pins both.
+
 Test coverage:
 `scripts/release/tests/test-rollover-changelog-fragments.sh` (T14 runs
 verifier against RC cut).
@@ -148,6 +153,37 @@ identically before and after cut.
 Test coverage:
 `scripts/release/tests/test-verify-release-version.sh`.
 
+## pep440-version.sh (ADR-1201)
+
+Tag, manifest, markers carry SemVer spelling (`1.0.0-rc.1`). Hatchling
+names vmaf-mcp wheel + sdist after PEP 440 normalized version:
+`vmaf_mcp-1.0.0rc1-py3-none-any.whl`, `vmaf_mcp-1.0.0rc1.tar.gz`.
+`supply-chain.yml` `validate-release` derives `pep440_version` output
+once via this script; every version-bound `vmaf_mcp-*` filename glob and
+PyPI JSON release URL use it (`VMAFX_PEP440_VERSION`). SemVer glob
+matches zero wheels on RC -> `mcp-build` fails, SBOM / signing / PyPI /
+attachment skipped.
+
+Converter exact for verifier's two shapes only: `X.Y.Z` -> `X.Y.Z`,
+`X.Y.Z-rc.N` -> `X.Y.ZrcN`; anything else exit 64, no output. No
+`packaging` import: `validate-release` installs nothing, and ADR-1305
+forbids unhashed install. Widen verifier shape -> widen converter + test
+in same PR.
+
+SBOM identity checks stay on SemVer `version`, not `pep440_version`:
+hatchling 1.32 writes pyproject spelling (`1.0.0-rc.1`) into METADATA;
+Syft 1.51 copies it verbatim into SPDX `versionInfo` and purl
+`pkg:pypi/vmaf-mcp@1.0.0-rc.1`. Filenames normalized, metadata not --
+never "fix" one to match other. Hatchling or Syft bump -> re-check both.
+
+Version-bound sdist pattern has no wildcard: nullglob keeps literal
+path. Every version-bound count check also requires
+`-f "${sdists[0]}"`.
+
+Test coverage: `scripts/release/tests/test-pep440-version.sh`
+(converter cases, workflow wiring, glob resolution against
+hatchling-shaped filenames with decoys, SemVer-regression fixtures).
+
 ## Publication environment binding
 
 Environment names must also *exist server-side with required
@@ -189,6 +225,21 @@ upload/download round trip. Round-trip job restores `vmaf`'s
 executable bit first — raw artifact and release downloads do not
 carry POSIX mode metadata. Never replace runtime check with
 filename-only assertion.
+
+Version check (ADR-1201). `VERSION` argument = narrow tag shape minus
+`v`: `X.Y.Z` or `X.Y.Z-rc.N`, no leading zero; anything else exit 64.
+`vmaf --version` prints `VMAF_VERSION` from `core/include/meson.build`
+`git describe --tags --long --match 'v*.*.*'`, so build checked out
+at tag normally reports `vX.Y.Z[-rc.N]-0-g<hex>`, not bare `X.Y.Z`
+(reproduced on real CPU builds: `v1.0.0-rc.1-0-gd0f0e7e`,
+`v1.0.0-0-g8820048`). Accept exactly two strings: that describe form
+(distance `0`, lowercase hex 7–64) or bare `X.Y.Z[-rc.N]` vcs_tag
+fallback (tagless checkout; `verify-release-version.sh` pins
+`core/meson.build` marker to tag). Never prefix-match: `-N-g` with N>0
+= commit after tag, other suffix = not tagged tree (`-dirty` rejected as
+defence in depth; `vcs_tag` passes no `--dirty`, so it never appears), `rc.10`
+never satisfies `rc.1`. Changing `vcs_tag` command or `--version`
+output format -> update verifier + test fixtures in same PR.
 
 Test coverage:
 `scripts/release/tests/test-verify-native-release-artifacts.sh`.
