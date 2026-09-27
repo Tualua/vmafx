@@ -14069,6 +14069,23 @@ See `docs/research/0755-hip-backend-audit-20260529.md`.
   landing upstream in `VMAFx/pelorus`. (ADR-1113, ADR-0141)
 
 
+- Native release artifacts are built on a GitHub-hosted runner inside the
+  `build-deps` container stage ([ADR-1346](../docs/adr/1346-hosted-slim-container-release-build.md),
+  supersedes ADR-1178). `build-artifacts` in `supply-chain.yml` no longer waits
+  for a self-hosted runner that is not registered. It builds the release tag's
+  own `build-deps` stage (digest-pinned Ubuntu 26.04 plus Ubuntu archive
+  packages, no third-party downloads) with
+  `scripts/ci/build-dev-container-stage.sh build-deps`, with no external layer
+  cache and no registry, then compiles, stages, stamps and verifies the bundle
+  inside it with `docker run --pull never --network none`, refusing to build a
+  checkout other than `GITHUB_SHA`. The Dev Container PR gate rehearses that
+  release build on every container-affecting pull request. The Linux bundle is
+  CPU-only, built without the ONNX Runtime backend, and needs glibc 2.43 or
+  newer (Ubuntu 26.04-class); it does not run on Ubuntu 24.04 or Debian 13 in
+  1.0.0-rc.1. `check-container-build.sh --verify` now rejects a symlinked
+  provenance stamp.
+
+
 docs(research): hardware backend audit recommends dropping Vulkan backend (#733)
 
 Research digest 0733 audits all six GPU backends (CUDA, HIP, SYCL, Vulkan, Metal)
@@ -15304,9 +15321,6 @@ promoted to module scope as a side effect.
   `make docs-fragments-check` had been failing on across every branch — the gate
   is a required check, and it fails on pristine master whenever merged PRs add
   fragments without the block being re-rendered.
-
-
-- **Native release artifacts built on self-hosted canonical runner (ADR-1178, Phase 4b.9).** Native release binaries (`libvmaf.so` SONAME chain, `vmaf` CLI binary, `models.tar.gz`) in `.github/workflows/supply-chain.yml` now build on the Arc A380 containerised self-hosted runner (`runs-on: [self-hosted, linux, x64, sycl-arc]`, provisioned by ADR-1177 / PR #1304) inside the local canonical dev container environment (`vmaf-sycl-arc-runner:local`, built `FROM vmaf-dev-mcp:local`) rather than on a bare `ubuntu-latest` runner host, bypassing the 29.5 GB layer pull blocker. Staged release artifacts are stamped with container-build provenance via `scripts/ci/check-container-build.sh --stamp`, verified in `verify-native-artifacts` on `ubuntu-latest` via `--verify`, and required fail-closed by `scripts/release/verify-native-release-artifacts.sh` and `attach-to-release`. `.github/workflows/dev-container-publish.yml` publishes and Cosign-signs the dev container image on master pushes touching `dev/Containerfile` or `dev/scripts/**` as optional provenance. Closes `T-PUBLISH-NATIVE-RELEASE-NOT-CONTAINERISED-2026-09-03`.
 
 
 - `release-please.yml` now accepts a `RELEASE_BOT_TOKEN` PAT as an alternative release-bot
@@ -23152,6 +23166,13 @@ discover Arc GPUs. ADR-0528.
   accommodate slower host CUDA-init sequences.
 
 
+- `dev-container-publish.yml` finishes and signs the dev container image again.
+  Six of its last ten master runs were cancelled at the 60-minute timeout while
+  exporting a layer cache that cannot fit GitHub's 10 GB cache limit, after the
+  image was pushed but before cosign signed it. The cache export is gone and the
+  timeout is 90 minutes.
+
+
 - **Dev container builds:** make pipeline failure handling explicit per stage,
   export the ccache directory to both libvmaf configure and compile commands,
   and use explicit build paths before cleanup. Golden-test collection failures
@@ -26284,6 +26305,12 @@ so that MCP output is Netflix-compatible without explicit precision argument (AD
 
 
 - `mcp-server/vmaf-mcp/tests/test_smoke_e2e.py`: replace the hardcoded `_EXPECTED_VMAF_SCORE = 76.69926` (which never matched the Netflix golden it claimed to source) with `76.66890519623612` from `quality_runner_test.py::test_run_vmaf_runner`. Tolerance widened from 1e-3 to 1e-2 to match the Netflix gate's own `places=2`.
+
+
+- The required MCP Smoke check no longer times out on healthy runs. Most runs
+  take 11 minutes against a 12-minute limit, so a slightly slow runner
+  cancelled a run whose every step passed and turned `master` red; the limit
+  is now 25 minutes.
 
 
 - Refreshed the fork-added SSIMULACRA2 snapshot gate for the current

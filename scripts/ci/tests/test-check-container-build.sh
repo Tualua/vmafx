@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
-# Test harness for scripts/ci/check-container-build.sh (ADR-1102).
+# Test harness for scripts/ci/check-container-build.sh (ADR-1102, ADR-1346).
 #
 # Proves the container-only publishing gate in both directions:
 #
 #   * it FAILS on a non-container (host) build, in every mode, and
 #   * it PASSES on a container build, and on an artifact tree stamped by one.
+#
+# ADR-1346 moved the release build into the `build-deps` stage of
+# dev/Containerfile on a hosted runner. That stage writes the marker and every
+# later stage (`libvmaf-build`, the local `vmaf-dev-mcp`) inherits it, so the
+# gate accepts exactly one identity (`vmaf-dev-mcp`) and rejects the retired
+# self-hosted runner title (`vmaf-sycl-arc-runner`, ADR-1178) plus near-miss
+# spellings.
 #
 # The container is simulated by pointing VMAFX_CONTAINER_MARKER at a marker
 # file inside $(mktemp -d) whose contents are byte-identical to the one
@@ -66,6 +73,34 @@ else
   echo "note dev/Containerfile not found at ${CONTAINERFILE}; drift check skipped"
 fi
 
+# The build-deps stage the release job runs in (ADR-1346) must write the
+# marker, exactly once, and libvmaf-build must inherit it through gpu-sdks.
+if [ -f "$CONTAINERFILE" ]; then
+  writes="$(grep -c '> /etc/vmafx-dev-container' "$CONTAINERFILE" || true)"
+  marker_line="$(grep -n '> /etc/vmafx-dev-container' "$CONTAINERFILE" | head -1 | cut -d: -f1)"
+  deps_line="$(grep -n '^FROM .* AS build-deps$' "$CONTAINERFILE" | head -1 | cut -d: -f1)"
+  sdks_line="$(grep -n '^FROM build-deps AS gpu-sdks$' "$CONTAINERFILE" | head -1 | cut -d: -f1)"
+  if [ "$writes" = "1" ] && [ -n "$deps_line" ] && [ -n "$sdks_line" ] &&
+    [ "$marker_line" -gt "$deps_line" ] && [ "$marker_line" -lt "$sdks_line" ] &&
+    grep -qx 'FROM gpu-sdks AS libvmaf-build' "$CONTAINERFILE"; then
+    PASS=$((PASS + 1))
+    echo "ok   build-deps writes the single marker and libvmaf-build inherits it"
+  else
+    FAIL=$((FAIL + 1))
+    echo "FAIL marker is not written once in build-deps and inherited by libvmaf-build"
+  fi
+
+  # The gate's accepted identity is the Containerfile's, not a second spelling.
+  baked_title="$(sed -n 's/^image_title=//p' "$EXTRACTED")"
+  if [ -n "$baked_title" ] && grep -qx "CANONICAL_TITLE=\"${baked_title}\"" "$GATE"; then
+    PASS=$((PASS + 1))
+    echo "ok   gate accepts exactly the title dev/Containerfile bakes (${baked_title})"
+  else
+    FAIL=$((FAIL + 1))
+    echo "FAIL gate CANONICAL_TITLE does not match dev/Containerfile's '${baked_title}'"
+  fi
+fi
+
 # A marker from some other project's container: present, but not ours.
 FOREIGN_MARKER="${WORKDIR}/foreign-marker"
 cat >"$FOREIGN_MARKER" <<'EOF'
@@ -79,7 +114,9 @@ vmafx_dev_container=0
 image_title=vmaf-dev-mcp
 EOF
 
-# A marker from the self-hosted canonical runner (vmaf-sycl-arc-runner).
+# The retired ADR-1178 self-hosted runner identity. No image writes it (the
+# runner image inherits the dev-container marker unchanged), and ADR-1346
+# removed it from the accepted set, so it must now be rejected everywhere.
 RUNNER_MARKER="${WORKDIR}/runner-marker"
 cat >"$RUNNER_MARKER" <<'EOF'
 vmafx_dev_container=1
@@ -87,6 +124,14 @@ image_title=vmaf-sycl-arc-runner
 containerfile=dev/Containerfile.runner
 source=https://github.com/VMAFx/vmafx
 EOF
+
+# write_marker_with_title <path> <title>
+# A well-formed marker whose image_title is the given (possibly near-miss)
+# value; used for the identity boundary cases below.
+write_marker_with_title() {
+  printf 'vmafx_dev_container=1\nimage_title=%s\ncontainerfile=dev/Containerfile\nsource=https://github.com/VMAFx/vmafx\n' \
+    "$2" >"$1"
+}
 
 # Our key set, but image_title is unauthorized.
 UNAUTHORIZED_TITLE_MARKER="${WORKDIR}/unauthorized-title-marker"
@@ -128,8 +173,27 @@ run_case "assert with vmafx_dev_container=0" 1 "$NEGATED_MARKER"
 run_case "assert with a truncated marker" 1 "$TRUNCATED_MARKER"
 run_case "assert inside the dev container" 0 "$CONTAINER_MARKER"
 run_case "assert (explicit --assert), container" 0 "$CONTAINER_MARKER" --assert
-run_case "assert inside the self-hosted canonical runner" 0 "$RUNNER_MARKER"
+run_case "assert with the retired sycl-arc runner title" 1 "$RUNNER_MARKER"
 run_case "assert with unauthorized image_title" 1 "$UNAUTHORIZED_TITLE_MARKER"
+if [ -s "$EXTRACTED" ]; then
+  run_case "assert with the marker build-deps writes" 0 "$EXTRACTED"
+fi
+
+echo
+echo "=== identity boundaries: one exact title, no near misses ==="
+CRLF_MARKER="${WORKDIR}/crlf-marker"
+printf 'vmafx_dev_container=1\r\nimage_title=vmaf-dev-mcp\r\n' >"$CRLF_MARKER"
+run_case "assert with a CRLF marker (CR is stripped)" 0 "$CRLF_MARKER"
+NEAR_MARKER="${WORKDIR}/near-miss-marker"
+for near_miss in vmafx-dev-mcp vmafx-sycl-arc-runner VMAF-DEV-MCP \
+  vmaf-dev-mcp-build-deps "vmaf-dev-mcp " " vmaf-dev-mcp" vmaf-dev-mc; do
+  write_marker_with_title "$NEAR_MARKER" "$near_miss"
+  run_case "assert rejects image_title='${near_miss}'" 1 "$NEAR_MARKER"
+done
+FIRST_WINS_MARKER="${WORKDIR}/first-wins-marker"
+printf 'vmafx_dev_container=1\nimage_title=vmaf-sycl-arc-runner\nimage_title=vmaf-dev-mcp\n' \
+  >"$FIRST_WINS_MARKER"
+run_case "assert reads the first image_title only" 1 "$FIRST_WINS_MARKER"
 
 echo
 echo "=== --stamp: only a container build may stamp an artifact tree ==="
@@ -164,17 +228,34 @@ fi
 RUNNER_ARTIFACTS="${WORKDIR}/runner-artifacts"
 mkdir -p "$RUNNER_ARTIFACTS"
 printf 'ELF-ish\n' >"${RUNNER_ARTIFACTS}/vmaf"
-run_case "stamp from inside the self-hosted canonical runner" 0 "$RUNNER_MARKER" --stamp "$RUNNER_ARTIFACTS"
-RUNNER_STAMP="${RUNNER_ARTIFACTS}/container-build-provenance.txt"
-if grep -qx 'schema=vmafx-container-build-provenance/1' "$RUNNER_STAMP" &&
-  grep -qx 'vmafx_dev_container=1' "$RUNNER_STAMP" &&
-  grep -qx 'image_title=vmaf-sycl-arc-runner' "$RUNNER_STAMP"; then
-  PASS=$((PASS + 1))
-  echo "ok   runner stamp carries schema, flag and runner image title"
-else
+run_case "stamp with the retired sycl-arc runner title fails" 1 "$RUNNER_MARKER" --stamp "$RUNNER_ARTIFACTS"
+if [ -e "${RUNNER_ARTIFACTS}/container-build-provenance.txt" ]; then
   FAIL=$((FAIL + 1))
-  echo "FAIL runner stamp is malformed:"
-  sed 's/^/       | /' "$RUNNER_STAMP"
+  echo "FAIL a rejected runner-title stamp still wrote a provenance file"
+else
+  PASS=$((PASS + 1))
+  echo "ok   a rejected runner-title stamp wrote no provenance file"
+fi
+
+STAGE_ARTIFACTS="${WORKDIR}/build-deps-artifacts"
+if [ -s "$EXTRACTED" ]; then
+  mkdir -p "$STAGE_ARTIFACTS"
+  printf 'ELF-ish\n' >"${STAGE_ARTIFACTS}/vmaf"
+  GITHUB_SHA=0123456789abcdef0123456789abcdef01234567 SOURCE_DATE_EPOCH=0 \
+    run_case "stamp inside the build-deps stage marker" 0 "$EXTRACTED" \
+    --stamp "$STAGE_ARTIFACTS"
+  STAGE_STAMP="${STAGE_ARTIFACTS}/container-build-provenance.txt"
+  if grep -qx 'image_title=vmaf-dev-mcp' "$STAGE_STAMP" &&
+    grep -qx 'containerfile=dev/Containerfile' "$STAGE_STAMP" &&
+    grep -qx 'git_commit=0123456789abcdef0123456789abcdef01234567' "$STAGE_STAMP" &&
+    grep -qx 'stamped_at=1970-01-01T00:00:00Z' "$STAGE_STAMP"; then
+    PASS=$((PASS + 1))
+    echo "ok   build-deps stamp records title, Containerfile, commit and epoch"
+  else
+    FAIL=$((FAIL + 1))
+    echo "FAIL build-deps stamp is malformed:"
+    sed 's/^/       | /' "$STAGE_STAMP"
+  fi
 fi
 
 UNAUTH_ARTIFACTS="${WORKDIR}/unauth-artifacts"
@@ -187,7 +268,17 @@ echo "=== --verify: fail-closed on anything but a valid stamp ==="
 # Deliberately verified with the HOST marker: verification must not depend on
 # the verifying job being containerised, only on the stamp.
 run_case "verify a container-stamped tree (from host)" 0 "$HOST_MARKER" --verify "$CONTAINER_ARTIFACTS"
-run_case "verify a runner-stamped tree (from host)" 0 "$HOST_MARKER" --verify "$RUNNER_ARTIFACTS"
+if [ -s "$EXTRACTED" ]; then
+  run_case "verify a build-deps-stamped tree (from host)" 0 "$HOST_MARKER" --verify "$STAGE_ARTIFACTS"
+fi
+RETIRED_RUNNER_DIR="${WORKDIR}/retired-runner-stamp"
+mkdir -p "$RETIRED_RUNNER_DIR"
+cat >"${RETIRED_RUNNER_DIR}/container-build-provenance.txt" <<'EOF'
+schema=vmafx-container-build-provenance/1
+vmafx_dev_container=1
+image_title=vmaf-sycl-arc-runner
+EOF
+run_case "verify a stamp with the retired runner title" 1 "$HOST_MARKER" --verify "$RETIRED_RUNNER_DIR"
 run_case "verify an unstamped tree" 1 "$HOST_MARKER" --verify "$HOST_ARTIFACTS"
 
 EMPTY_DIR="${WORKDIR}/empty-stamp"
@@ -231,17 +322,63 @@ image_title=
 EOF
 run_case "verify a stamp with an empty image_title" 1 "$HOST_MARKER" --verify "$TITLELESS_DIR"
 
+# A symlink to a valid stamp elsewhere is still not a staged stamp; the
+# release verifier rejects one too, and the two gates must agree.
+SYMLINK_DIR="${WORKDIR}/symlinked-stamp"
+mkdir -p "$SYMLINK_DIR"
+ln -s "${CONTAINER_ARTIFACTS}/container-build-provenance.txt" \
+  "${SYMLINK_DIR}/container-build-provenance.txt"
+run_case "verify a symlinked stamp (target is valid)" 1 "$HOST_MARKER" --verify "$SYMLINK_DIR"
+if grep -q 'is a symlink, not a staged stamp' "${WORKDIR}/out.log"; then
+  PASS=$((PASS + 1))
+  echo "ok   symlinked stamp is named as a symlink"
+else
+  FAIL=$((FAIL + 1))
+  echo "FAIL symlinked stamp rejection does not name the symlink:"
+  sed 's/^/       | /' "${WORKDIR}/out.log"
+fi
+DANGLING_DIR="${WORKDIR}/dangling-stamp"
+mkdir -p "$DANGLING_DIR"
+ln -s "${WORKDIR}/no-such-stamp" "${DANGLING_DIR}/container-build-provenance.txt"
+run_case "verify a dangling symlinked stamp" 1 "$HOST_MARKER" --verify "$DANGLING_DIR"
+
 echo
 echo "=== consumer verifier: verify-native-release-artifacts.sh fails closed ==="
 VERIFY_NATIVE="${SCRIPT_DIR}/../../release/verify-native-release-artifacts.sh"
-if [ -f "$VERIFY_NATIVE" ]; then
-  if bash "$VERIFY_NATIVE" "$HOST_ARTIFACTS" 3.2.1 >"${WORKDIR}/verify-native.log" 2>&1; then
-    FAIL=$((FAIL + 1))
-    echo "FAIL verify-native-release-artifacts.sh accepted an unstamped tree"
-  else
+PROVENANCE_ERROR='staged container-build provenance is missing, empty, or a symlink'
+
+# expect_native_provenance_failure <label> <dir>
+# The verifier must fail on <dir> and name the provenance stamp as the reason.
+expect_native_provenance_failure() {
+  local label="$1" dir="$2" rc=0
+  bash "$VERIFY_NATIVE" "$dir" 3.2.1 >"${WORKDIR}/verify-native.log" 2>&1 || rc=$?
+  if [ "$rc" -ne 0 ] && grep -qF "$PROVENANCE_ERROR" "${WORKDIR}/verify-native.log"; then
     PASS=$((PASS + 1))
-    echo "ok   verify-native-release-artifacts.sh rejects an unstamped tree"
+    echo "ok   verify-native-release-artifacts.sh rejects ${label}"
+  else
+    FAIL=$((FAIL + 1))
+    echo "FAIL verify-native-release-artifacts.sh on ${label} (exit ${rc}), expected: ${PROVENANCE_ERROR}"
+    sed 's/^/       | /' "${WORKDIR}/verify-native.log"
   fi
+}
+
+if [ -f "$VERIFY_NATIVE" ]; then
+  # Everything the verifier checks before the stamp is present and valid: an
+  # executable regular `vmaf` and a non-empty regular `libvmaf.so`. Only the
+  # provenance stamp is missing, so the stamp check is what must fail.
+  NATIVE_DIR="${WORKDIR}/native-unstamped"
+  mkdir -p "$NATIVE_DIR"
+  printf 'ELF-ish\n' >"${NATIVE_DIR}/vmaf"
+  chmod 0755 "${NATIVE_DIR}/vmaf"
+  printf 'ELF-ish\n' >"${NATIVE_DIR}/libvmaf.so"
+  expect_native_provenance_failure "an unstamped tree" "$NATIVE_DIR"
+
+  NATIVE_LINKED_DIR="${WORKDIR}/native-symlinked-stamp"
+  mkdir -p "$NATIVE_LINKED_DIR"
+  cp -p "${NATIVE_DIR}/vmaf" "${NATIVE_DIR}/libvmaf.so" "$NATIVE_LINKED_DIR/"
+  ln -s "${CONTAINER_ARTIFACTS}/container-build-provenance.txt" \
+    "${NATIVE_LINKED_DIR}/container-build-provenance.txt"
+  expect_native_provenance_failure "a symlinked stamp" "$NATIVE_LINKED_DIR"
 fi
 
 echo

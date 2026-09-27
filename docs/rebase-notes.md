@@ -54470,3 +54470,25 @@ regex. Python distribution names use the PEP 440 spelling from
 `scripts/ci/release-pr-exempt.sh` rather than re-implementing it. No test may
 read a `changelog.d/` fragment's contents: every release cut deletes them.
 No native/public API, numerical or FFmpeg rebase impact.
+
+## ADR-1346 — hosted-runner release build in the build-deps stage (2026-09-27)
+
+`build-artifacts` must keep building the tag's `build-deps` stage through
+`scripts/ci/build-dev-container-stage.sh build-deps` and compiling through
+`scripts/release/build-native-release-artifacts.sh` under
+`docker run --pull never --network none`, with no `GITHUB_TOKEN` on that step
+and no job-level concurrency group. Never restore the `sycl-arc` label, a host
+compile, a GHCR pull or a `libvmaf-build` release build. Keep the stage-build
+script's target allowlist, its per-target secret forwarding, and its freedom
+from `--cache-from`/`--cache-to` and `--build-arg`;
+`check-dev-container-build-secret.py` derives the secret-consuming stages from
+`dev/Containerfile` and binds both workflow callers. The Dev Container PR gate
+must keep its release rehearsal (same script, same `docker run`, local
+`v<manifest version>` tag). Keep the `gcc-ar`/`gcc-nm`/`gcc-ranlib`
+`update-alternatives` slaves in `build-deps` (without them LTO links against
+`libvmaf.a` fail there), `-Denable_dnn=disabled`, `CCACHE_DISABLE=1` and the
+`GITHUB_SHA` == `HEAD` check in the release script, and keep
+`verify-native-artifacts` on `ubuntu-26.04` while the bundle needs glibc 2.43
+(`T-RELEASE-NATIVE-BUNDLE-RELEASE-TRACK-2026-09-27`).
+`check-container-build.sh` accepts exactly `vmaf-dev-mcp` and rejects a
+symlinked stamp. No native/public API, numerical or FFmpeg rebase impact.

@@ -4,12 +4,16 @@
 # dev-container-publish.yml — build, push, and sign the canonical dev container
 # image (libvmaf-build stage) to GHCR.
 #
-# Motivation (ADR-1102, ADR-1178):
+# Motivation (ADR-1102, ADR-1178, ADR-1346):
 # All canonical build artifacts (release binaries, published images) must be
 # produced inside the canonical dev container rather than on the bare runner host.
 # This workflow publishes ghcr.io/vmafx/vmafx-dev-mcp on every change to
-# dev/Containerfile or dev/scripts/** so that downstream release workflows
-# (such as supply-chain.yml) can pull a pre-built, pinned image.
+# dev/Containerfile or dev/scripts/** for transparency and contributor
+# convenience. It is not on the release path: supply-chain.yml builds the
+# smaller `build-deps` stage from the release tag itself (ADR-1346) and never
+# pulls this image. This is the one workflow build of dev/Containerfile that
+# does not go through scripts/ci/build-dev-container-stage.sh, because it
+# pushes to a registry; check-dev-container-build-secret.py checks its secret.
 #
 # Produces:
 #   ghcr.io/vmafx/vmafx-dev-mcp:sha-<commit>
@@ -38,7 +42,9 @@ jobs:
   publish:
     name: Build, push, and sign dev container (libvmaf-build stage)
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # The uncached stage build takes 28-35 min on a hosted runner (the
+    # Dev Container PR gate); pushing ~29.5 GB adds several more.
+    timeout-minutes: 90
     permissions:
       contents: read
       packages: write
@@ -70,8 +76,11 @@ jobs:
           tags: |
             ghcr.io/vmafx/vmafx-dev-mcp:sha-${{ github.sha }}
             ghcr.io/vmafx/vmafx-dev-mcp:master
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # No GitHub Actions layer cache: exporting every layer of this
+          # ~29.5 GB stage (mode=max) into a cache capped at 10 GB per
+          # repository never finished, and six of ten master runs were
+          # cancelled at the timeout after pushing but before cosign signed
+          # the image.
           # BuildKit secret for the NEO release lookup; without it the
           # unauthenticated GitHub API rate limit fails the build.
           secrets: |
