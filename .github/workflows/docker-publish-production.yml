@@ -57,6 +57,7 @@ jobs:
       is-latest: ${{ steps.release.outputs.is_latest }}
       recovery: ${{ steps.release.outputs.recovery }}
       recipe-sha: ${{ steps.release.outputs.recipe_sha }}
+      source-sha: ${{ steps.release.outputs.source_sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -98,8 +99,11 @@ jobs:
             echo "ERROR: workflow source SHA $GITHUB_SHA does not match checked-out tag" >&2
             exit 1
           fi
-          echo "recovery=$recovery" >> "$GITHUB_OUTPUT"
-          echo "recipe_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          {
+            echo "recovery=$recovery"
+            echo "recipe_sha=$GITHUB_SHA"
+            echo "source_sha=$(git rev-parse HEAD)"
+          } >> "$GITHUB_OUTPUT"
           release_json="$RUNNER_TEMP/github-release.json"
           gh api "repos/$GITHUB_REPOSITORY/releases/tags/$PUBLISH_TAG" > "$release_json"
           if [[ "$(jq -r '.tag_name' "$release_json")" != "$PUBLISH_TAG" || \
@@ -198,6 +202,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           labels: |
             io.vmafx.build-recipe=${{ needs.validate-release.outputs.recipe-sha }}
+            org.opencontainers.image.revision=${{ needs.validate-release.outputs.source-sha }}
           tags: |
             type=raw,value=${{ env.PUBLISH_TAG }}
             type=raw,value=latest,enable=${{ needs.validate-release.outputs.is-latest == 'true' }}
@@ -301,6 +306,23 @@ jobs:
             --version
           echo "Smoke test passed: --version exited 0"
 
+      - name: Score with the built-in default model
+        run: |
+          # `--version` never loads a model: the first v1.0.0-rc.1 images passed it
+          # although their builder lacked xxd and embedded no model. Scoring
+          # without --model only works when the default model is compiled in.
+          frames="${RUNNER_TEMP}/smoke-frames"
+          mkdir -p "${frames}"
+          # Two identical 576x324 4:2:0 frames, large enough for the default
+          # model's cambi and speed_chroma minimums.
+          head -c $((576 * 324 * 3)) /dev/urandom > "${frames}/ref.yuv"
+          docker run --rm -v "${frames}:/frames:ro" \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-cpu.outputs.digest }}" \
+            --reference /frames/ref.yuv --distorted /frames/ref.yuv \
+            --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+            --json --output /dev/stdout \
+            | jq -e '.pooled_metrics.vmaf.mean'
+
   # -----------------------------------------------------------------------
   # GPU variant: CUDA 13 (amd64 only)
   # -----------------------------------------------------------------------
@@ -354,6 +376,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           labels: |
             io.vmafx.build-recipe=${{ needs.validate-release.outputs.recipe-sha }}
+            org.opencontainers.image.revision=${{ needs.validate-release.outputs.source-sha }}
           tags: |
             type=raw,value=${{ env.PUBLISH_TAG }}-cuda13
 
@@ -473,6 +496,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           labels: |
             io.vmafx.build-recipe=${{ needs.validate-release.outputs.recipe-sha }}
+            org.opencontainers.image.revision=${{ needs.validate-release.outputs.source-sha }}
           tags: |
             type=raw,value=${{ env.PUBLISH_TAG }}-rocm10
 
@@ -592,6 +616,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           labels: |
             io.vmafx.build-recipe=${{ needs.validate-release.outputs.recipe-sha }}
+            org.opencontainers.image.revision=${{ needs.validate-release.outputs.source-sha }}
           tags: |
             type=raw,value=${{ env.PUBLISH_TAG }}-oneapi2025
 
@@ -701,6 +726,14 @@ jobs:
 
       - name: Pull and run each GPU entrypoint
         run: |
+          # `--version` never loads a model: the first v1.0.0-rc.1 images passed it
+          # although their builder lacked xxd and embedded no model. Scoring
+          # without --model only works when the default model is compiled in.
+          frames="${RUNNER_TEMP}/smoke-frames"
+          mkdir -p "${frames}"
+          # Two identical 576x324 4:2:0 frames, large enough for the default
+          # model's cambi and speed_chroma minimums.
+          head -c $((576 * 324 * 3)) /dev/urandom > "${frames}/ref.yuv"
           for digest in \
             "${{ needs.build-cuda13.outputs.digest }}" \
             "${{ needs.build-rocm10.outputs.digest }}" \
@@ -708,7 +741,27 @@ jobs:
             image="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${digest}"
             docker pull "${image}"
             docker run --rm "${image}" --version
+            # The runner has no GPU, so score on the CPU path of the same binary.
+            docker run --rm -v "${frames}:/frames:ro" "${image}" \
+              --backend cpu --reference /frames/ref.yuv --distorted /frames/ref.yuv \
+              --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+              --json --output /dev/stdout \
+              | jq -e '.pooled_metrics.vmaf.mean'
           done
+
+      - name: Check the oneAPI runtime adapters resolve
+        run: |
+          # SYCL dlopen()s the Unified Runtime adapters only at device
+          # discovery, so `--version` passed on v1.0.0-rc.1 while every adapter
+          # lacked libumf.so.1 and no SYCL device could be found.
+          image="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-oneapi2025.outputs.digest }}"
+          docker run --rm --entrypoint /bin/bash "${image}" -c '
+            for adapter in /opt/intel/oneapi/redist/lib/libur_adapter_*.so.0; do
+              if ldd "${adapter}" | grep "not found"; then
+                echo "unresolved dependency in ${adapter}" >&2
+                exit 1
+              fi
+            done'
 
   # (ADR-0726: Vulkan backend removed; build-vulkan job deleted)
 
@@ -770,6 +823,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           labels: |
             io.vmafx.build-recipe=${{ needs.validate-release.outputs.recipe-sha }}
+            org.opencontainers.image.revision=${{ needs.validate-release.outputs.source-sha }}
           tags: |
             type=raw,value=${{ env.PUBLISH_TAG }}-server
 
@@ -864,6 +918,20 @@ jobs:
           docker pull "${image}"
           docker run --rm --entrypoint /venv/bin/python "${image}" --version
           docker run --rm --entrypoint /venv/bin/vmaf-mcp "${image}" --help
+          # `--version` never loads a model: the first v1.0.0-rc.1 images passed it
+          # although their builder lacked xxd and embedded no model. Scoring
+          # without --model only works when the default model is compiled in.
+          frames="${RUNNER_TEMP}/smoke-frames"
+          mkdir -p "${frames}"
+          # Two identical 576x324 4:2:0 frames, large enough for the default
+          # model's cambi and speed_chroma minimums.
+          head -c $((576 * 324 * 3)) /dev/urandom > "${frames}/ref.yuv"
+          docker run --rm --entrypoint /usr/local/bin/vmaf \
+            -v "${frames}:/frames:ro" "${image}" \
+            --reference /frames/ref.yuv --distorted /frames/ref.yuv \
+            --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+            --json --output /dev/stdout \
+            | jq -e '.pooled_metrics.vmaf.mean'
           smoke_token="$(openssl rand -hex 32)"
           container_id="$(docker run --detach \
             --publish 127.0.0.1:18080:8080 \

@@ -367,8 +367,8 @@ ADR-1178's self-hosted runner) meets that on a GitHub-hosted runner:
 ### Release recovery dispatches
 
 Use the manual supply-chain and Docker dispatches only to recover an existing,
-published, non-prerelease GitHub release. Run each workflow at the immutable
-tag ref and pass that same tag as its input:
+published GitHub release (a final release or a candidate). To re-run a workflow
+unchanged, run it at the immutable tag ref and pass that same tag as its input:
 
 ```bash
 tag=vX.Y.Z
@@ -377,11 +377,14 @@ gh workflow run docker-publish-production.yml --ref "$tag" -f tag="$tag"
 gh workflow run docker-publish-operator-node.yml --ref "$tag" -f tag="$tag"
 ```
 
-The tag/ref equality is a release invariant in all three workflows:
-dispatching from `master` or a different ref would make rebuilt artefacts,
-containers, and signed provenance refer to source other than the published
-release. Each preflight also verifies the coordinated versions and published
-GitHub release before any write or OIDC job starts.
+`supply-chain.yml` only runs at the tag: its release binaries and their
+signatures must come from the tag's own workflow. The two image workflows can
+also be dispatched on `master` when the tag's build recipe itself was broken;
+that run builds the tag's source with `master`'s `docker/` recipe and signs as
+`master` ([ADR-1347](../adr/1347-image-recovery-from-default-branch.md), see
+[Recovering a release's container images](#recovering-a-releases-container-images)).
+Each preflight verifies the coordinated versions and the published GitHub
+release before any write or OIDC job starts.
 The protected deployment environments still apply on recovery runs; approval
 authorizes the write-bearing jobs only, after the read-only preflight has
 proved the tag/ref/release identity.
@@ -525,7 +528,22 @@ cosign verify ghcr.io/vmafx/vmafx@sha256:DIGEST \
   --certificate-identity \
     "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-production.yml@refs/heads/master" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+# vmafx-server, vmafx-operator and vmafx-node come from the other workflow.
+cosign verify ghcr.io/vmafx/vmafx-node@sha256:DIGEST \
+  --certificate-identity \
+    "https://github.com/VMAFx/vmafx/.github/workflows/docker-publish-operator-node.yml@refs/heads/master" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
+
+For a recovered image the tag identities above fail with `no matching
+CertificateIdentity found`, and so does `gh attestation verify` pinned to the
+tag with `--source-ref refs/tags/<tag>` or `--source-digest <tag commit>`. The
+GitHub build-provenance attestation records the run that built the image:
+`refs/heads/master` and the recipe commit. The built source is the tag's
+commit, which a recovery run also writes into `org.opencontainers.image.revision`.
+The v1.0.0-rc.1 images were recovered before that label was corrected, so
+theirs names the recipe commit `a919f3596` instead of the tag's `ce00cf245`.
 
 The post-push smoke jobs in both Docker workflows run the matching cosign
 verification recipe before pulling an image, with the identity of the run that
@@ -622,11 +640,16 @@ receipt. The first candidate's cut also retires `release-as` and
 `bootstrap-sha`, because the verifier refuses them at every tag, candidates
 included.
 
-Later candidates need an explicit version. With `versioning: default`,
-release-please bumps a fix on `1.0.0-rc.1` to `1.0.1-rc.1`: its patch update
-keeps the prerelease tag and never counts candidates. Put a
-`Release-As: 1.0.0-rc.2` footer on the last commit merged before the next cut,
-and check the release PR title before cutting it.
+Later candidates are numbered automatically. The root package uses
+release-please's `prerelease` versioning
+([ADR-1348](../adr/1348-release-candidate-prerelease-versioning.md)): a fix,
+feature or breaking change on `1.0.0-rc.1` gives `1.0.0-rc.2`, and so on. The
+release PR stays open as a proposal; merge it only when the next candidate is
+due, and check its title before cutting it. For the final release, set
+`"prerelease": false`: the same strategy then proposes `1.0.0`. With the
+earlier `versioning: default`, a fix on `1.0.0-rc.1` gave `1.0.1-rc.1`, and the
+Release Script Contract job now rejects that setting while the manifest is a
+release candidate.
 
 How a candidate moves through the rest of the pipeline:
 
@@ -687,15 +710,23 @@ The run verifies the published tag, builds the tag's source with `master`'s
 
 #### Making the container images public
 
-GHCR creates each package private on its first push, and the REST API cannot
-change a package's visibility: the packages endpoints offer only read and
-delete. After the first release of a package (`vmafx`, `vmafx-server`,
-`vmafx-operator`, `vmafx-node`), an organization owner switches it once in the
-web UI: **Package settings → Danger Zone → Change visibility → Public**, then
-types the package name to confirm. The option is greyed out ("disabled by
-organization administrators") unless **Organization settings → Packages →
-Package creation → Public** is checked; the VMAFx organization has had it
-checked since v1.0.0-rc.1. Later pushes keep the package's visibility.
+The four packages (`vmafx`, `vmafx-server`, `vmafx-operator`, `vmafx-node`)
+must be public so that anyone can pull the release images. The organization
+setting **Organization settings → Packages → Package creation → Public** decides
+what a new package gets; it has been checked since v1.0.0-rc.1:
+
+- **Setting checked.** A package first pushed from this public repository is
+  created public, as `vmafx-operator` was for v1.0.0-rc.1, and no further step
+  is needed.
+- **Setting unchecked.** The package is created private, and the per-package
+  option is greyed out ("disabled by organization administrators"). `vmafx`
+  and `vmafx-server` were created this way before v1.0.0-rc.1. Once the setting
+  is checked, an organization owner switches such a package once in the web
+  UI: **Package settings → Danger Zone → Change visibility → Public**, then
+  types the package name to confirm. The REST API cannot do this, because the
+  packages endpoints offer only read and delete.
+
+Later pushes keep the package's visibility.
 
 Check that an anonymous client can pull:
 
