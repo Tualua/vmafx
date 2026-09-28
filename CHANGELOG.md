@@ -18,6 +18,16 @@
 
 ### Fixed
 
+- `--model` and `--feature` values keep their backslashes, so Windows paths work
+  as typed: `path=..\..\models\m.json`, `path=\\server\share\m.json` and
+  `path=C:\models\.cache\m.json` used to lose a backslash each (`\.` and `\\`
+  were escapes in values too). `\:` and `\=` still escape a delimiter, and a
+  backslash run directly before `:` or `=`, or at the end of a value, is read in
+  pairs so a backslash in front of a delimiter stays writable. Keys and
+  overload names keep the full escape set (ADR-1355). If you wrote a UNC path
+  as `\\\\server\share` per the earlier advice, write `\\server\share` now.
+
+
 - Container publication finishes for the large images. The GPU image jobs free
   runner disk before `syft` scans the pushed image (the 1.0.0-rc.1 ROCm SBOM
   failed with "no space left on device" after the image was pushed and
@@ -130,6 +140,13 @@
   directory. The release build now sets the staged CLI's RUNPATH to exactly
   `$ORIGIN`, and the release gate runs the CLI without `LD_LIBRARY_PATH` and
   rejects any other RUNPATH.
+
+
+- libvmaf builds against libc++ 23 again. The vendored libsvm
+  (`core/src/svm.cpp`) defined its own global `swap` template, and libc++ 23's
+  `std::vector` internals now call `swap` unqualified, so both it and
+  `std::swap` matched and the file failed with "call to 'swap' is ambiguous".
+  libsvm now uses `std::swap`; scores are unchanged.
 
 
 - **Whole-tree clang-tidy ratchet ignores generated build products**: `tidy-ratchet.py`
