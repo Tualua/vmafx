@@ -287,12 +287,6 @@ cold-start cost. The build forwards `-device <list>` with
 unqualified `-Xs` also reaches the portable `spir64` target and oneAPI reports
 the device selector as unused.
 
-One exception: `integer_psnr_hvs_sycl` (`psnr_hvs_sycl`) is compiled without
-`lnl-m`, `bmg-g21` and `bmg-g31`, because the Intel Graphics Compiler in
-compute-runtime 26.35 crashes compiling that kernel for Xe2. On those devices it
-falls back to SPIR-V, and the same compiler fault currently makes it fail at run
-time on an Arc B580. Configure prints the exclusion.
-
 ### What the build needs and checks
 
 AOT needs Intel's `ocloc` offline compiler on `PATH`. The Linux oneAPI compiler
@@ -648,6 +642,57 @@ row, which cost 0.602 s of a 1.03 s run over 48 frames of 1080p. See
 [the CUDA overview](../cuda/overview.md#cambi-reads-its-device-buffers-in-one-transfer-2026-09-17)
 for the measurements. **If you add a GPU twin that reads a plane back, copy it
 in one transfer.**
+
+## Arc B580, small frames and device faults (2026-09-29)
+
+Three fixes from one investigation on an Arc B580 (Xe2) and a UHD 770
+(Xe-LP); the measurements are in
+[Research-2123](../../research/2123-sycl-b580-psnr-hvs-and-tile-halo-faults.md).
+
+- **`psnr_hvs_sycl` runs on Xe2.** It used to crash the process with
+  SIGSEGV on the B580: the Intel GPU compiler (IGC 2.41.5) crashed while
+  compiling the kernel at SIMD32. Its 8x8 DCT now runs in local memory instead
+  of one work-item's private memory. Scores are bit-identical wherever the old
+  kernel ran, and a 4K frame costs 130 ms instead of 208 ms on the UHD 770.
+- **Small frames no longer lose the device.** Frames 64 rows high or less
+  used to end in `UR_RESULT_ERROR_DEVICE_LOST` with `adm_sycl`, and so did
+  small frames with `vif_sycl` and `motion_sycl` on the B580. The tiled kernels
+  now keep their tile loads inside the plane; scores for other frames are
+  unchanged.
+- **`vif_sycl` needs frames of at least 16x16.** Each VIF scale halves the
+  plane and reflects its filter taps once, which only stays inside a plane of
+  at least 9, 10, 12 and 16 pixels for scales 0 to 3. When libvmaf picks the
+  twin itself, from a model's VIF features, frames below 16 pixels in either
+  dimension are computed by the CPU `vif` extractor, with the log line
+  `feature extractor 'vif_sycl' cannot honour WxH; computing 'vif' on the CPU`,
+  and the scores are the CPU's. (The default model cannot run below 17x17
+  anyway: its ADM needs that on every backend.) Naming the twin directly, as in
+  `--feature vif_sycl`, fails instead:
+  ``vif_sycl requires width >= 16 and height >= 16 (got 8x8); the CPU extractor
+  `vif` computes smaller frames``. The CUDA, HIP and Metal twins do not check
+  this yet (`T-GPU-INTEGER-VIF-MIN-DIM-TWINS-2026-09-29`).
+- **`vif_sycl` is correct for odd widths.** When a scale's width was odd
+  (854x480, 1366x768 and 853x480 are common examples), scales 1 to 3 were read
+  at the wrong row stride and drifted from the CPU by up to 1.2e-3, which moved
+  the VMAF score as well. They now agree with the CPU within 1e-6 at those
+  sizes.
+- **A device fault fails the run.** When the device reports a fault, the
+  graph extractors (`adm_sycl`, `vif_sycl`, `motion_sycl`, `psnr_sycl`,
+  `float_moment_sycl`) and `psnr_hvs_sycl` return `-EIO` for the frame, and the
+  CLI stops with an error after a line such as
+  `libvmaf ERROR SYCL graph wait: level_zero backend failed with error: 20
+  (UR_RESULT_ERROR_DEVICE_LOST)`. Before, the graph extractors emitted scores
+  for the faulted frame from stale buffers (about 1.0 for every ADM scale);
+  only a later frame's upload noticed the fault, so a one-frame run exited 0.
+
+At 3840x2160, `psnr_hvs_sycl` differs from the CPU `psnr_hvs` by up to
+8.4e-4 dB per frame; at 576x324 the difference is 8.4e-5. The CPU accumulates
+all per-coefficient errors of a plane in one `float`, whose rounding error
+grows with the frame size, and the twin sums per block. The cross-backend gate
+therefore scales the `psnr_hvs` tolerance with the frame's block count: 5e-4
+up to 576x324, 3.34e-3 at 3840x2160
+([ADR-1361](../../adr/1361-psnr-hvs-area-scaled-parity-tolerance.md),
+[the gate guide](../../development/cross-backend-gate.md)).
 
 ## Licensing of the SYCL kernels (ADR-1250)
 

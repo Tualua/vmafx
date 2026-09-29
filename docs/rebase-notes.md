@@ -54726,3 +54726,53 @@ check, which runs the CLI with no `LD_LIBRARY_PATH` so it also proves the
 RUNPATH `$ORIGIN` from the note above. `patchelf` for that RUNPATH lives in
 `release-build` only; do not reinstall it in `build-deps`. No native/public
 API, numerical or FFmpeg rebase impact.
+
+## SYCL B580 psnr_hvs crash, tile-halo faults, graph-wait result, VIF size and stride, psnr_hvs gate scaling (2026-09-29)
+
+`fix/sycl-b580-psnr-hvs-adm-tiny`, Research-2123, ADR-1361.
+
+- `core/src/feature/sycl/integer_psnr_hvs_sycl.cpp`: the 8x8 DCT runs in local
+  memory (`hvs_fdct8_pass()`, `hvs_ratios_and_first_pass()`,
+  `hvs_second_pass()`), one 1-D transform per work-item and pass; work-item 0
+  reads coefficients from local memory and recomputes `mask[i][j]` per
+  coefficient. Do not bring back per-work-item `int[64]` / `float[64]` arrays
+  or `od_bin_fdct8x8()` on a private block: IGC 2.41.5 crashes the host
+  compiling that at SIMD32 for Xe2, and `test_sycl_psnr_hvs_parity_simd32`
+  forces SIMD32 to catch it on any Intel GPU.
+- `core/src/feature/sycl/sycl_tile_index.h`: every SYCL tile loader that
+  reflects once (`integer_adm` vertical DWT, `integer_vif` vertical and fused,
+  `integer_motion`, `integer_motion_v2`, `float_motion`, `float_vif`) passes the
+  reflected index through `vmaf_sycl_tile_index()`. An upstream or twin change
+  to a tile geometry or mirror must keep it; dropping it brings back
+  `UR_RESULT_ERROR_DEVICE_LOST` on small frames. It is the identity for every
+  consumed sample, so it never explains a score change.
+- `core/src/sycl/common.cpp`: `vmaf_sycl_graph_wait()` sets
+  `graph_waited_frame` only after `wait_and_throw()` succeeds, so after a
+  device fault every collector's call waits again and fails; the five graph
+  collectors return its result before reading host buffers. Keep both halves
+  when rebasing a collector or the wait.
+
+- `core/src/feature/sycl/integer_vif_sycl.cpp`: `VIF_MIN_DIM` (16, from the
+  filter tables, `static_assert`ed) is declared through the ADR-1324
+  `context_check` / `context_fallback_name = "vif"` pair and guarded again in
+  `init()`; the next scale reads the rd buffer at the ceiling stride it was
+  written with. An upstream VIF sync that touches the scale loop or the
+  filter tables must keep both.
+- `scripts/ci/cross_backend_calibration.py`: `area_tolerance_factor()` and
+  `metric_delta()` are shared by both gates (ADR-1361). A new psnr_hvs
+  tolerance in `FEATURE_TOLERANCE` or the calibration table is the 576x324
+  contract; do not pre-scale it.
+- `.standards-baseline.json` was re-recorded downward, 201 -> 190, from a
+  clean clone with the pinned engine (`f41e74d8f`), and the README debt line
+  follows. The baseline is keyed `file:line` (cordanaLLM/praetor#29), so the
+  include and comment lines added to `integer_adm_sycl.cpp` moved its seven
+  pre-existing HISS-04 functions without changing them; `collect_fex_sycl`
+  grew 125 -> 126 lines for the fail-closed graph wait. The other eleven
+  removed entries were debt `master` had already paid down. A rebase that
+  moves lines in that file re-records again the same way; never with
+  `--allow-increase`.
+
+No public API, CLI syntax or FFmpeg patch impact. Scores are bit-identical to
+the previous kernels wherever those ran, except `vif_sycl` scales 1-3 on
+odd-width ladders, which now match the CPU, and frames below 16 pixels that
+model dispatch now scores with the CPU `vif`.

@@ -38,6 +38,7 @@
 #include <sycl/sycl.hpp>
 
 #include "sycl_compat.h"
+#include "sycl_tile_index.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -76,6 +77,37 @@ constexpr uint32_t vif_filter1d_table[VIF_NUM_SCALES][VIF_FILTER_TABLE_PAD] = {
 
 constexpr int vif_fwidth[VIF_NUM_SCALES] = {17, 9, 5, 3};
 constexpr int vif_fwidth_rd[VIF_NUM_SCALES] = {9, 5, 3, 0};
+
+/*
+ * Smallest frame dimension every scale can filter (T-INTEGER-VIF-TINY-FRAME-
+ * GUARD-2026-09-29). Scale s works on floor(dim / 2^s) samples and reflects
+ * each filter tap once (dev_mirror); a tap half-width of k stays inside the
+ * plane only while floor(dim / 2^s) >= k + 1, i.e. dim >= (k + 1) << s. The
+ * scale filters {17, 9, 5, 3} need {9, 10, 12, 16} and the decimation filters
+ * {9, 5, 3} need {5, 6, 8}, so the bound is 16: the value float VIF's
+ * vif_get_min_dim() gives for the same widths. Below it a consumed tap reads
+ * outside the plane, faulting the device on an Arc B580 and a UHD 770 at 8x8.
+ */
+namespace
+{
+constexpr unsigned vif_min_dim()
+{
+    unsigned min_dim = 1U;
+    for (unsigned scale = 0U; scale < (unsigned)VIF_NUM_SCALES; scale++) {
+        const unsigned half = (unsigned)vif_fwidth[scale] / 2U;
+        const unsigned rd_half = (unsigned)vif_fwidth_rd[scale] / 2U;
+        const unsigned filter_need = (half + 1U) << scale;
+        const unsigned rd_need = (vif_fwidth_rd[scale] > 0) ? (rd_half + 1U) << scale : 1U;
+        // Parenthesised: windows.h, pulled in by the SYCL headers under
+        // MSVC, defines a function-like max macro.
+        min_dim = (std::max)({min_dim, filter_need, rd_need});
+    }
+    return min_dim;
+}
+} // namespace
+
+constexpr unsigned VIF_MIN_DIM = vif_min_dim();
+static_assert(VIF_MIN_DIM == 16U, "integer VIF filter footprint changed; revisit the fallback");
 
 constexpr int64_t SIGMA_NSQ = 131072; // 2 * 65536
 
@@ -357,7 +389,8 @@ static inline void dev_vert_load_tile(sycl::nd_item<2> item, const void *p_ref, 
             const unsigned tr = i / WG_X;
             const unsigned tc = i % WG_X;
             int px = tile_col_x + (int)tc;
-            const int py = dev_mirror(tile_origin_y + (int)tr, (int)height);
+            const int py =
+                vmaf_sycl_tile_index(dev_mirror(tile_origin_y + (int)tr, (int)height), (int)height);
             if (std::cmp_less(px, width)) {
                 px = dev_mirror(px, (int)width);
                 s_ref[tr][tc] = dev_read_pixel<SCALE>(p_ref, py, px, src_stride, bpc);
@@ -1024,8 +1057,10 @@ static inline void dev_fused_load_tile(sycl::nd_item<2> item, const void *p_ref,
         for (unsigned i = lid; i < tile_elems; i += WG_SIZE) {
             const unsigned tr = i / TILE_W;
             const unsigned tc = i % TILE_W;
-            const int py = dev_mirror(tile_origin_y + (int)tr, (int)height);
-            const int px = dev_mirror(tile_origin_x + (int)tc, (int)width);
+            const int py =
+                vmaf_sycl_tile_index(dev_mirror(tile_origin_y + (int)tr, (int)height), (int)height);
+            const int px =
+                vmaf_sycl_tile_index(dev_mirror(tile_origin_x + (int)tc, (int)width), (int)width);
             s_ref[tr * TILE_W + tc] = dev_read_pixel<SCALE>(p_ref, py, px, src_stride, bpc);
             s_dis[tr * TILE_W + tc] = dev_read_pixel<SCALE>(p_dis, py, px, src_stride, bpc);
         }
@@ -1491,10 +1526,27 @@ static int vif_register_graph(VmafFeatureExtractor *fex, VmafSyclState *state, V
 
 namespace
 {
+/* ADR-1324 first-picture gate: model dispatch computes frames below
+ * VIF_MIN_DIM with the CPU `vif` extractor instead of this twin. */
+static int check_context_sycl(VmafFeatureExtractor * /*fex*/, enum VmafPixelFormat /*pix_fmt*/,
+                              unsigned /*bpc*/, unsigned w, unsigned h)
+{
+    return (w < VIF_MIN_DIM || h < VIF_MIN_DIM) ? -ENOTSUP : 0;
+}
+
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
     (void)pix_fmt;
+    /* Direct `vif_sycl` requests get no fallback (ADR-1324): refuse rather
+     * than read outside the plane. Before any device work, so nothing to free. */
+    if (w < VIF_MIN_DIM || h < VIF_MIN_DIM) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "vif_sycl requires width >= %u and height >= %u (got %ux%u); the CPU "
+                 "extractor `vif` computes smaller frames\n",
+                 VIF_MIN_DIM, VIF_MIN_DIM, w, h);
+        return -EINVAL;
+    }
     auto *s = static_cast<VifStateSycl *>(fex->priv);
     s->width = w;
     s->height = h;
@@ -1560,15 +1612,22 @@ static inline void enqueue_vif_work_impl(sycl::queue &q, VifStateSycl *s, void *
 {
     unsigned cur_w = s->width;
     unsigned cur_h = s->height;
+    unsigned src_stride = (s->bpc > 8) ? (cur_w * 2) : cur_w;
 
     for (int scale = 0; scale < VIF_NUM_SCALES; scale++) {
         const void *ref_src = (scale == 0) ? shared_ref : s->d_rd_ref;
         const void *dis_src = (scale == 0) ? shared_dis : s->d_rd_dis;
-        const unsigned src_stride = (scale == 0 && s->bpc > 8) ? (cur_w * 2) : cur_w;
         int64_t *const scale_accum = s->d_accum + (ptrdiff_t)scale * ACCUM_FIELDS;
 
         vif_dispatch_scale(q, s, scale, ref_src, dis_src, cur_w, cur_h, src_stride, scale_accum);
 
+        /* dev_downsample_rd() writes the next scale at the ceiling stride
+         * (cur_w + 1) / 2; the next scale filters floor(cur_w / 2) columns
+         * of it, like the CPU, but must step rows at that same stride. Reading
+         * with stride cur_w / 2 skewed every row of scales 1-3 once an odd
+         * width appeared (17x17: integer_vif_scale1 0.0962 against the CPU's
+         * 0.0765; T-SYCL-VIF-ODD-WIDTH-RD-STRIDE-2026-09-29). */
+        src_stride = (cur_w + 1U) / 2U;
         cur_w /= 2;
         cur_h /= 2;
     }
@@ -1673,7 +1732,10 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     auto *s = static_cast<VifStateSycl *>(fex->priv);
     VmafSyclState *state = fex->sycl_state;
 
-    vmaf_sycl_graph_wait(state);
+    /* A failed wait leaves the accumulators stale: fail, never score them. */
+    int const wait_err = vmaf_sycl_graph_wait(state);
+    if (wait_err)
+        return wait_err;
 
     struct vif_accums accums[VIF_NUM_SCALES];
     std::memcpy(accums, s->h_accum, sizeof(accums));
@@ -1815,4 +1877,6 @@ extern "C" VmafFeatureExtractor vmaf_fex_integer_vif_sycl = {
     .priv_size = sizeof(VifStateSycl),
     .flags = VMAF_FEATURE_EXTRACTOR_SYCL,
     .provided_features = provided_features,
+    .context_check = check_context_sycl,
+    .context_fallback_name = "vif",
 };

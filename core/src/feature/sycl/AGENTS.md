@@ -169,6 +169,22 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   downsampling path, ensure all three sites (two kernel variants + allocation) use
   same ceiling formula. For even widths/heights result identical to
   truncating division.
+  **Reader side too** (T-SYCL-VIF-ODD-WIDTH-RD-STRIDE-2026-09-29):
+  `enqueue_vif_work_impl` passes scale s > 0 the stride `(prev_w + 1U) / 2U`
+  it was written with, while `cur_w` stays `prev_w / 2` (CPU floor). Reading
+  at `cur_w` skewed scales 1-3 on any odd-width scale (17x17 scale1 0.0962 vs
+  CPU 0.0765; 854x480 scale3 9.3e-4 off). Guard: `test_sycl_vif_min_dim`
+  (17x17, 853x480 at places=4).
+
+- **`integer_vif_sycl.cpp` minimum frame = 16 px, declared through ADR-1324**
+  (T-INTEGER-VIF-TINY-FRAME-GUARD-2026-09-29, maintainer decision: CPU
+  fallback). `VIF_MIN_DIM` = max over scales of `(half_width + 1) << s` for
+  `vif_fwidth` / `vif_fwidth_rd` (`static_assert` 16): below it a consumed tap
+  sits more than one reflection outside the plane -> device lost.
+  `.context_check` returns -ENOTSUP below it, `.context_fallback_name = "vif"`
+  -> model dispatch (and CLI twin selection) runs the CPU `vif`; direct
+  `vif_sycl` fails `init()` with -EINVAL before touching device state. On
+  rebase: filter-table change -> update the `static_assert`, keep both guards.
 
 - **`integer_vif_sycl.cpp` warning-clean phase boundaries are load-bearing.**
   Keep `dev_vert_accumulate`, `dev_hori_item_step`, `vif_init_resources`,
@@ -198,6 +214,35 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   upstream Netflix changes chroma-dimension formula in
   `integer_psnr.c::init`, propagate here and to CUDA and Vulkan twins
   in same PR.
+
+- **`integer_psnr_hvs_sycl.cpp` DCT lives in local memory, never in one
+  work-item's private arrays** (T-SYCL-PSNR-HVS-B580-SIGSEGV-2026-09-29,
+  Research-2123). Old shape: work-item 0 ran the whole 8x8 DCT + masking on
+  five private 64-element arrays; IGC 2.41.5 SIGSEGVs the host compiling that
+  at SIMD32 for Xe2 (Arc B580). Now: `hvs_fdct8_pass()` = one 1-D transform per
+  work-item per pass (items 8-23 pass 1 while items 0-1 take the variance
+  ratios; items 0-15 pass 2), work-item 0 streams coefficients from local
+  memory, `hvs_mask_at()` recomputes the mask per coefficient. Float reductions
+  keep CPU `i, j` order -> bit-identical to the old kernel. Guard:
+  `test_sycl_psnr_hvs_parity_simd32` (`IGC_ForceOCLSIMDWidth=32`,
+  `NEO_CACHE_PERSISTENT=0`). On rebase: no private `int[64]` / `float[64]` in
+  this kernel; do not "fix" by pinning `VMAF_SYCL_REQD_SG_SIZE(16)` instead.
+
+- **Tile loaders clamp after reflecting (`sycl_tile_index.h`)**
+  (T-SYCL-TILE-HALO-OOB-READ-2026-09-29, Research-2123). Fixed-size SLM tiles
+  load padding lanes too; one reflection of those leaves the plane on small
+  frames (ADM vertical DWT: row 16 of an 8-row plane -> -1) and reads outside
+  the USM buffer -> `UR_RESULT_ERROR_DEVICE_LOST` when the page is unmapped.
+  Every single-reflection loader wraps the reflected index in
+  `vmaf_sycl_tile_index()`: `integer_adm` `launch_dwt_vert_pair`, `integer_vif`
+  `dev_vert_load_tile` + `dev_fused_load_tile`, `integer_motion`
+  `motion_load_tile`, `integer_motion_v2` `mv2_load_diff`, `float_motion`
+  `fm_load_tile`, `float_vif` `load_vif_tile`. Identity for consumed samples ->
+  no score change. New tiled kernel = same wrap. Per-output reflections
+  (`dev_hori_convolve_border`, float VIF decimate) are consumed-only and stay
+  unwrapped; each extractor's minimum frame size keeps them in the plane
+  (integer VIF: `VIF_MIN_DIM` above). Guards: `test_sycl_adm_tiny_frames`,
+  `test_sycl_vif_min_dim`.
 
 - **`integer_psnr_hvs_sycl.cpp` uses ceiling division for chroma plane
   geometry** (PR #1031). `init_fex_sycl` computes 4:2:0 / 4:2:2 chroma

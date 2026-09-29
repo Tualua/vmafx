@@ -38,6 +38,7 @@
 #include <sycl/sycl.hpp>
 
 #include "sycl_compat.h"
+#include "sycl_tile_index.h"
 
 #include <cassert>
 #include <cerrno>
@@ -427,6 +428,13 @@ inline int32_t adm_s0_csf_a(uint32_t i_rfactor, int32_t a_val, int band)
 /* SYCL Kernel: DWT Vertical Pass (ref+dis fused)                     */
 /* ------------------------------------------------------------------ */
 
+/* Output row n reads input rows 2n-1 .. 2n+2, inside [-1, h + 1], which one
+ * reflection covers. The SLM tile also holds the rows of padding work-items,
+ * up to 2 * n_start + 16: on a plane of 8 rows or fewer one reflection leaves
+ * those below zero (row 16 of an 8-row plane mirrors to -1, of a 3-row plane
+ * to -11), so every frame 64 rows high or less read before the band's
+ * allocation at scale 3 and lost the device. read_px clamps the reflected row
+ * with vmaf_sycl_tile_index() (sycl_tile_index.h). */
 // NOLINTNEXTLINE(readability-function-size): SYCL kernel-launch / lifecycle entry — body is dominated by accessor declarations + a single `parallel_for` lambda. Splitting either inlines via macro (no readability win) or introduces a free function the compiler cannot inline back into the device kernel. Keeping it large is the pattern shared across every SYCL TU in this fork (ADR-0141 §2 load-bearing invariant; T7-5 sweep closeout — ADR-0278).
 sycl::event launch_dwt_vert_pair(sycl::queue &q, const void *input_ref, int32_t *dwt_tmp_ref,
                                  const void *input_dis, int32_t *dwt_tmp_dis, int scale,
@@ -478,9 +486,9 @@ sycl::event launch_dwt_vert_pair(sycl::queue &q, const void *input_ref, int32_t 
             int const n_start = (int)(item.get_group(1) * WG_Y);
             int const row_start = 2 * n_start - 1; // first input row
 
-            // Read pixel from source at (x, y) with mirroring
+            // Read pixel from source at (x, y) with mirroring (clamped, see above)
             auto read_px = [&](int x, int y) -> int32_t {
-                y = dev_mirror_adm(y, (int)e_h);
+                y = vmaf_sycl_tile_index(dev_mirror_adm(y, (int)e_h), (int)e_h);
                 if (std::cmp_greater_equal(x, e_w))
                     return 0;
                 if (e_scale == 0) {
@@ -1767,9 +1775,10 @@ int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     auto *s = static_cast<AdmStateSycl *>(fex->priv);
     VmafSyclState *state = fex->sycl_state;
 
-    // Combined graph wait (idempotent per frame — first extractor wins)
-    vmaf_sycl_graph_wait(state);
+    // Combined graph wait (once per frame); a failed wait leaves stale accumulators.
     s->has_pending = false;
+    if (int const wait_err = vmaf_sycl_graph_wait(state))
+        return wait_err;
 
     // Read back accumulators
     int64_t cm_results[ADM_NUM_SCALES][ADM_NUM_BANDS];

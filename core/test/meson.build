@@ -3668,6 +3668,16 @@ test_sycl_psnr_hvs_parity = executable('test_sycl_psnr_hvs_parity',
 test('test_sycl_psnr_hvs_parity', test_sycl_psnr_hvs_parity,
     suite : ['fast', 'gpu', 'sycl'],
     is_parallel : false)
+# T-SYCL-PSNR-HVS-B580-SIGSEGV-2026-09-29: the Intel GPU compiler crashed
+# (host SIGSEGV) building the psnr_hvs kernel at SIMD32 for Xe2 while the
+# DCT ran in work-item 0's private memory. IGC picks the SIMD width itself,
+# so the same executable runs again with SIMD32 forced; the persistent
+# compiler cache is off so a cached SIMD16 binary cannot stand in for it.
+# Other drivers and toolchains ignore both variables.
+test('test_sycl_psnr_hvs_parity_simd32', test_sycl_psnr_hvs_parity,
+    env : ['IGC_ForceOCLSIMDWidth=32', 'NEO_CACHE_PERSISTENT=0'],
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
 
 # ADR-0957 — SYCL kernel coverage round 4. Four new CPU vs. SYCL
 # parity gates closing the last uncovered SYCL extractors after
@@ -3731,6 +3741,21 @@ test_sycl_adm_tiny_frames = executable('test_sycl_adm_tiny_frames',
     c_args: ['-DHAVE_SYCL=1']
 )
 test('test_sycl_adm_tiny_frames', test_sycl_adm_tiny_frames,
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
+
+# T-INTEGER-VIF-TINY-FRAME-GUARD-2026-09-29 — vif_sycl declares its 16-pixel
+# minimum through the ADR-1324 gate: model dispatch falls back to the CPU `vif`
+# below it (bit-identical), a direct request fails init, and 16x16 stays on
+# the device within the VIF parity tolerance.
+test_sycl_vif_min_dim = executable('test_sycl_vif_min_dim',
+    ['test.c', 'test_sycl_vif_min_dim.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_vif_min_dim', test_sycl_vif_min_dim,
     suite : ['fast', 'gpu', 'sycl'],
     is_parallel : false)
 
