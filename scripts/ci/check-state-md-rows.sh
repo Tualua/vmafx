@@ -157,7 +157,13 @@ report="$(awk '
     # against its own annotated copy, finds them unequal and reports clean:
     # 13 prose-led rows were duplicated in exactly that shape and were
     # invisible to both checks, because a prose-led row has no id either.
-    gsub(/_\(verified [0-9]{4}-[0-9]{2}-[0-9]{2}:[^)]*\)_/, "", row)
+    #
+    # No regex in this program uses an interval such as `{4}` or `{0,2}`:
+    # the mawk of Debian 12 (1.3.4 20200120) reads the braces literally, and
+    # this gate then counted no id-bearing rows at all and passed every file.
+    # `(\*\*|\*)?` rather than `\*?\*?` for the same reason: that mawk strips
+    # one asterisk with the latter, so every bold id kept a leading `*`.
+    gsub(/_\(verified [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]:[^)]*\)_/, "", row)
     gsub(/[[:space:]]+/, " ", row)
     sub(/[[:space:]]+$/, "", row)
     rowcount[row]++
@@ -203,9 +209,9 @@ report="$(awk '
     # The id opens the first cell, optionally bold. Shapes in use:
     #   **T-ID**  T-ID  **T7-16**  Netflix#NNN  **Netflix/vmaf#NNN**
     line = $0
-    if (match(line, /^\| \*{0,2}(T-[A-Z0-9._-]+|T[0-9]+-[0-9]+|Netflix(\/vmaf)?#[0-9]+)/)) {
+    if (match(line, /^\| (\*\*|\*)?(T-[A-Z0-9._-]+|T[0-9]+-[0-9]+|Netflix(\/vmaf)?#[0-9]+)/)) {
       id = substr(line, RSTART, RLENGTH)
-      sub(/^\| \*{0,2}/, "", id)
+      sub(/^\| (\*\*|\*)?/, "", id)
       idcount[id]++
       idlines[id] = idlines[id] " " NR
       if (sec == "Open bugs") {
@@ -309,9 +315,12 @@ if [[ -n "$dupes" ]]; then
   echo "copies are often NOT interchangeable and the newer one is not always" >&2
   echo "the later line -- read both before deleting either." >&2
   echo "" >&2
-  echo "Mid-rebase, this resolves the common case for you:" >&2
+  echo "If a rebase is still stopped on docs/state.md (not yet 'git add'-ed)," >&2
+  echo "redo the resolution three-way by bug id instead. The resolver moves," >&2
+  echo "edits and deletes rows the way each side did, runs this check on its" >&2
+  echo "result, and names any row both sides changed differently:" >&2
   echo "  python3 scripts/dev/resolve-state-md-conflict.py docs/state.md" >&2
-  echo "then re-run this check before 'git rebase --continue'." >&2
+  echo "Once the resolution is committed, fix the rows by hand." >&2
   exit 1
 fi
 
