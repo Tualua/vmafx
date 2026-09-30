@@ -186,6 +186,13 @@
   the new `feature_backends` array says where each extractor ran.
 
 
+- **The Gitleaks check scans only the commit it checked out.** It ran
+  `git log --all` over a full-history checkout, so a finding on any branch in
+  the repository, including a commit a force-push had already replaced,
+  failed every other open pull request. Each run now scans the history of
+  its own `HEAD`: on a pull request, master plus the PR's commits.
+
+
 - The oneAPI container image no longer crashes on Arc B580 (Battlemage)
   GPUs. Through v1.0.0-rc.2 it shipped the Intel GPU compute runtime of
   Intel's `oneapi-runtime:2025.3.1` image (version 25.18), and every
