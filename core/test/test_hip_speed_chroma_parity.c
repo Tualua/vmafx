@@ -57,6 +57,11 @@
 #include "libvmaf/libvmaf_hip.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): this is a
+ * C23 translation unit, but the required MSVC C lane does not provide the C
+ * nullptr spelling clang-tidy proposes. Keep the portable C API form under
+ * ADR-1138. */
+
 /* SpEED needs >= 4× downscale room plus 5×5 blocks; 768x432 gives
  * 192×108 after 2× prescale → 48×27 operating resolution → 9×5 blocks.
  * Matches test_cuda_speed_chroma_parity.c for cross-backend comparability. */
@@ -98,6 +103,47 @@ static int fill_fixture(VmafPicture *pic, unsigned frame_idx, int distort)
     return 0;
 }
 
+static char *feed_chroma_frames(VmafContext *vmaf, int use_hip, VmafHipState **hip_state,
+                                int *skipped)
+{
+    for (unsigned i = 0; i < NUM_FRAMES; i++) {
+        VmafPicture ref;
+        VmafPicture dist;
+        int err = fill_fixture(&ref, i, 0);
+        mu_assert("fill_fixture(ref) failed", !err);
+        err = fill_fixture(&dist, i, 1);
+        mu_assert("fill_fixture(dist) failed", !err);
+        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+        if (use_hip && err == -ENOSYS) {
+            return hip_parity_skip(vmaf, hip_state, skipped, " on submit");
+        }
+        mu_assert("vmaf_read_pictures failed", !err);
+    }
+    const int err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    mu_assert("vmaf_read_pictures(EOS) failed", !err);
+    return NULL;
+}
+
+static char *init_chroma_vmaf(VmafContext **vmaf_out, const char *fex_name, int use_hip,
+                              VmafHipState **hip_state, int *skipped)
+{
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    int err = vmaf_init(vmaf_out, cfg);
+    mu_assert("vmaf_init failed", !err);
+
+    if (use_hip) {
+        err = vmaf_hip_import_state(*vmaf_out, *hip_state);
+        mu_assert("vmaf_hip_import_state failed", !err);
+    }
+
+    err = vmaf_use_feature(*vmaf_out, fex_name, NULL);
+    if (use_hip && err == -ENOSYS) {
+        return hip_parity_skip(*vmaf_out, hip_state, skipped, "");
+    }
+    mu_assert("vmaf_use_feature failed", !err);
+    return NULL;
+}
+
 /* Run `fex_name` over NUM_FRAMES synthetic frames.
  * Returns NULL on success; leaves *out_score as NAN if skipped.
  * *skipped is set to 1 if the HIP device was unavailable or if the
@@ -118,44 +164,27 @@ static char *drive(const char *fex_name, int use_hip, double *out_score, int *sk
         }
     }
 
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
-    int err = vmaf_init(&vmaf, cfg);
-    mu_assert("vmaf_init failed", !err);
-
-    if (use_hip) {
-        err = vmaf_hip_import_state(vmaf, hip_state);
-        mu_assert("vmaf_hip_import_state failed", !err);
+    char *msg = init_chroma_vmaf(&vmaf, fex_name, use_hip, &hip_state, skipped);
+    if (msg || *skipped) {
+        return msg;
     }
 
-    err = vmaf_use_feature(vmaf, fex_name, NULL);
-    if (use_hip && err == -ENOSYS)
-        return hip_parity_skip(vmaf, &hip_state, skipped, "");
-    mu_assert("vmaf_use_feature failed", !err);
-
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
-        err = fill_fixture(&ref, i, 0);
-        mu_assert("fill_fixture(ref) failed", !err);
-        err = fill_fixture(&dist, i, 1);
-        mu_assert("fill_fixture(dist) failed", !err);
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        if (use_hip && err == -ENOSYS)
-            return hip_parity_skip(vmaf, &hip_state, skipped, " on submit");
-        mu_assert("vmaf_read_pictures failed", !err);
+    msg = feed_chroma_frames(vmaf, use_hip, &hip_state, skipped);
+    if (msg || *skipped) {
+        return msg;
     }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("vmaf_read_pictures(EOS) failed", !err);
 
-    err = vmaf_feature_score_at_index(vmaf, "Speed_chroma_feature_speed_chroma_uv_score", out_score,
-                                      0u);
+    int err = vmaf_feature_score_at_index(vmaf, "Speed_chroma_feature_speed_chroma_uv_score",
+                                          out_score, 0u);
     mu_assert("vmaf_feature_score_at_index(speed_chroma_uv) failed", !err);
 
     err = vmaf_close(vmaf);
     mu_assert("vmaf_close failed", !err);
 
-    if (hip_state)
+    if (hip_state) {
         vmaf_hip_state_free(&hip_state);
+    }
     return NULL;
 }
 
@@ -173,8 +202,9 @@ static char *test_speed_chroma_cpu_hip_parity(void)
     if (msg)
         return msg;
 
-    if (skipped || isnan(hip_score))
+    if (skipped || isnan(hip_score)) {
         return NULL;
+    }
 
     const double delta = fabs(cpu_score - hip_score);
     if (delta > PARITY_TOL) {
@@ -191,3 +221,5 @@ char *run_tests(void)
     mu_run_test(test_speed_chroma_cpu_hip_parity);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

@@ -60,6 +60,11 @@
 #include "libvmaf/libvmaf_hip.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): this is a
+ * C23 translation unit, but the required MSVC C lane does not provide the C
+ * nullptr spelling clang-tidy proposes. Keep the portable C API form under
+ * ADR-1138. */
+
 /* Geometry matters here, unlike in the existing SpEED parity tests.
  *
  * SpEED estimates a 25x25 covariance from one 25-vector per 5x5 block, so the
@@ -214,6 +219,32 @@ static char *feed_mode_frames(VmafContext *vmaf, int mode, int use_gpu, int *sca
     return NULL;
 }
 
+static char *init_singular_vmaf(VmafContext **vmaf_out, const char *fex_name, int use_gpu,
+                                VmafHipState **hip_state, int *skipped)
+{
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    int err = vmaf_init(vmaf_out, cfg);
+    mu_assert("vmaf_init failed", !err);
+
+    if (use_gpu) {
+        err = vmaf_hip_import_state(*vmaf_out, *hip_state);
+        mu_assert("vmaf_hip_import_state failed", !err);
+    }
+
+    err = vmaf_use_feature(*vmaf_out, fex_name, NULL);
+    if (err == -ENOSYS) {
+        (void)fprintf(stderr, "[skip: HIP scaffold ENOSYS] ");
+        *skipped = 1;
+        (void)vmaf_close(*vmaf_out);
+        if (use_gpu) {
+            vmaf_hip_state_free(hip_state);
+        }
+        return NULL;
+    }
+    mu_assert("vmaf_use_feature failed", !err);
+    return NULL;
+}
+
 /* Run `fex_name` over the fixture selected by `mode` and read `key` at
  * `read_index`. On a machine without a HIP device (or under the enable_hipcc=false scaffold posture)
  * `*skipped` is set and the score is left NaN. */
@@ -234,34 +265,21 @@ static char *drive(const char *fex_name, int use_gpu, int mode, const char *key,
         }
     }
 
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
-    int err = vmaf_init(&vmaf, cfg);
-    mu_assert("vmaf_init failed", !err);
-
-    if (use_gpu) {
-        err = vmaf_hip_import_state(vmaf, hip_state);
-        mu_assert("vmaf_hip_import_state failed", !err);
+    char *msg = init_singular_vmaf(&vmaf, fex_name, use_gpu, &hip_state, skipped);
+    if (msg || *skipped) {
+        return msg;
     }
-
-    err = vmaf_use_feature(vmaf, fex_name, NULL);
-    if (err == -ENOSYS) {
-        (void)fprintf(stderr, "[skip: HIP scaffold ENOSYS] ");
-        *skipped = 1;
-        (void)vmaf_close(vmaf);
-        if (use_gpu)
-            vmaf_hip_state_free(&hip_state);
-        return NULL;
-    }
-    mu_assert("vmaf_use_feature failed", !err);
 
     int scaffold = 0;
-    char *msg = feed_mode_frames(vmaf, mode, use_gpu, &scaffold);
-    if (msg)
+    msg = feed_mode_frames(vmaf, mode, use_gpu, &scaffold);
+    if (msg) {
         return msg;
-    if (scaffold)
+    }
+    if (scaffold) {
         return hip_parity_skip(vmaf, &hip_state, skipped, " on submit");
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    }
+    int err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("vmaf_read_pictures(EOS) failed", !err);
 
     err = vmaf_feature_score_at_index(vmaf, key, out_score, read_index);
@@ -269,8 +287,9 @@ static char *drive(const char *fex_name, int use_gpu, int mode, const char *key,
 
     err = vmaf_close(vmaf);
     mu_assert("vmaf_close failed", !err);
-    if (use_gpu)
+    if (use_gpu) {
         vmaf_hip_state_free(&hip_state);
+    }
     return NULL;
 }
 
@@ -283,13 +302,16 @@ static char *assert_parity(const char *cpu_fex, const char *gpu_fex, int mode, c
     int skipped = 0;
 
     char *msg = drive(cpu_fex, 0, mode, key, read_index, &cpu, &skipped);
-    if (msg)
+    if (msg) {
         return msg;
+    }
     msg = drive(gpu_fex, 1, mode, key, read_index, &gpu, &skipped);
-    if (msg)
+    if (msg) {
         return msg;
-    if (skipped || isnan(gpu))
+    }
+    if (skipped || isnan(gpu)) {
         return NULL;
+    }
 
     mu_assert("CPU SpEED score is non-finite", isfinite(cpu));
     mu_assert("GPU SpEED score is non-finite", isfinite(gpu));
@@ -340,3 +362,5 @@ char *run_tests(void)
     mu_run_test(test_speed_chroma_both_singular_parity);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

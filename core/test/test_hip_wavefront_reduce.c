@@ -26,6 +26,11 @@
 
 #include "test.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): this is a
+ * C23 translation unit, but the required MSVC C lane does not provide the C
+ * nullptr spelling clang-tidy proposes. Keep the portable C API form under
+ * ADR-1138. */
+
 /* Mirrors the host-side warp-partial accumulation pattern used in the
  * HIP kernels after the PR #850 fix.  Each "warp" contributes one
  * partial sum into smem[0..warps_per_block).  The final thread then
@@ -40,16 +45,19 @@ static float host_warp_reduce_sum(const float *values, int n, int warp_size)
         float warp_sum = 0.0f;
         int lo = w * warp_size;
         int hi = lo + warp_size;
-        if (hi > n)
+        if (hi > n) {
             hi = n;
-        for (int i = lo; i < hi; i++)
+        }
+        for (int i = lo; i < hi; i++) {
             warp_sum += values[i];
+        }
         smem[w] = warp_sum;
     }
 
     float total = 0.0f;
-    for (int w = 0; w < warps; w++)
+    for (int w = 0; w < warps; w++) {
         total += smem[w];
+    }
     return total;
 }
 
@@ -57,8 +65,9 @@ static char *test_wave32_reduce_produces_correct_sum(void)
 {
     /* 256 values == one block on wave32 (8 warps of 32). */
     float vals[256];
-    for (int i = 0; i < 256; i++)
+    for (int i = 0; i < 256; i++) {
         vals[i] = 1.0f;
+    }
 
     float got = host_warp_reduce_sum(vals, 256, 32);
     mu_assert("wave32 reduce of 256×1.0 must equal 256.0", fabsf(got - 256.0f) < 1e-4f);
@@ -69,8 +78,9 @@ static char *test_wave64_reduce_produces_correct_sum(void)
 {
     /* 256 values == one block on wave64 (4 warps of 64). */
     float vals[256];
-    for (int i = 0; i < 256; i++)
+    for (int i = 0; i < 256; i++) {
         vals[i] = 1.0f;
+    }
 
     float got = host_warp_reduce_sum(vals, 256, 64);
     mu_assert("wave64 reduce of 256×1.0 must equal 256.0", fabsf(got - 256.0f) < 1e-4f);
@@ -80,8 +90,9 @@ static char *test_wave64_reduce_produces_correct_sum(void)
 static char *test_wave32_and_wave64_agree_on_identical_input(void)
 {
     float vals[256];
-    for (int i = 0; i < 256; i++)
+    for (int i = 0; i < 256; i++) {
         vals[i] = (float)(i + 1) * 0.5f;
+    }
 
     float r32 = host_warp_reduce_sum(vals, 256, 32);
     float r64 = host_warp_reduce_sum(vals, 256, 64);
@@ -97,3 +108,5 @@ char *run_tests(void)
     mu_run_test(test_wave32_and_wave64_agree_on_identical_input);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

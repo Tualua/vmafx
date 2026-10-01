@@ -361,7 +361,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 844,
+  "total_warnings": 840,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -480,7 +480,6 @@
     "core/test/test_dict.cpp": 33,
     "core/test/test_feature_collector.c": 12,
     "core/test/test_gpu_picture_pool.c": 5,
-    "core/test/test_hip_wavefront_reduce.c": 4,
     "core/test/test_locale_handling.c": 21,
     "core/test/test_log.c": 4,
     "core/test/test_luminance_tools.cpp": 11,
@@ -990,6 +989,21 @@
         }
       },
       "previous_baseline_sha256": "c9af66d3f9e28be30af9dc17baeec351e506a7fbe0af284fd58b9aaf6f2a7978"
+    },
+    {
+      "sources": [
+        "core/test/test_hip_wavefront_reduce.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/test/test_hip_wavefront_reduce.c": {
+          "warnings": [
+            4,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "99019a62da5da7df3d38e1e2870a9eb3d0373ab7997dc881de569b952c21f33f"
     }
   ]
 }

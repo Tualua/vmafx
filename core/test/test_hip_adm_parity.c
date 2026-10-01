@@ -46,6 +46,10 @@
 #include "libvmaf/libvmaf_hip.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy proposes `nullptr`, but the required MSVC C build does
+ * not provide that keyword. Preserve the portable C spelling. ADR-1138. */
+
 /* Fixture geometry — wide enough for the ADM DWT2 pyramid (each scale
  * halves the dimensions, so >= 32x32 keeps scale 3 from collapsing). */
 #ifndef FIXTURE_W
@@ -90,8 +94,9 @@ static int fill_ref(VmafPicture *pic)
     }
     for (unsigned p = 1; p < 3; p++) {
         uint8_t *plane = (uint8_t *)pic->data[p];
-        for (unsigned row = 0; row < pic->h[p]; row++)
+        for (unsigned row = 0; row < pic->h[p]; row++) {
             memset(plane + row * pic->stride[p], 128, pic->w[p]);
+        }
     }
     return 0;
 }
@@ -109,17 +114,20 @@ static int fill_dis(VmafPicture *pic)
         for (unsigned col = 0; col < pic->w[0]; col++) {
             int v = (int)((row * 3u + col) & 0xFFu);
             v += (int)((row ^ col) & 0x07u) - 3; /* +/- 3 per-pixel jitter */
-            if (v < 0)
+            if (v < 0) {
                 v = 0;
-            if (v > 255)
+            }
+            if (v > 255) {
                 v = 255;
+            }
             y[row * pic->stride[0] + col] = (uint8_t)v;
         }
     }
     for (unsigned p = 1; p < 3; p++) {
         uint8_t *plane = (uint8_t *)pic->data[p];
-        for (unsigned row = 0; row < pic->h[p]; row++)
+        for (unsigned row = 0; row < pic->h[p]; row++) {
             memset(plane + row * pic->stride[p], 128, pic->w[p]);
+        }
     }
     return 0;
 }
@@ -134,7 +142,8 @@ static int fill_dis(VmafPicture *pic)
 static char *adm_submit_one_frame(VmafContext *vmaf, unsigned i, int *enosys_skip)
 {
     *enosys_skip = 0;
-    VmafPicture ref, dist;
+    VmafPicture ref;
+    VmafPicture dist;
     int err = fill_ref(&ref);
     mu_assert("fill_ref failed", !err);
     err = fill_dis(&dist);
@@ -170,6 +179,57 @@ static char *read_adm_scores(VmafContext *vmaf, double scores[NUM_ADM_FEATURES])
     return NULL;
 }
 
+/* Submit frames through vmaf. Helper for run_extractor. */
+static char *feed_adm_frames(VmafContext *vmaf, int *skipped)
+{
+    for (unsigned i = 0; i < NUM_FRAMES; i++) {
+        int enosys_skip = 0;
+        char *msg = adm_submit_one_frame(vmaf, i, &enosys_skip);
+        if (msg) {
+            return msg;
+        }
+        if (enosys_skip) {
+            (void)fprintf(stderr, "[skip: HIP kernels not built (enable_hipcc=false)] ");
+            mu_skipped = 1;
+            *skipped = 1;
+            return NULL;
+        }
+    }
+    return NULL;
+}
+
+static char *init_adm_vmaf(VmafContext **vmaf_out, const char *feature_name,
+                           VmafHipState *hip_state, int use_hip)
+{
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafContext *vmaf = NULL;
+    int err = vmaf_init(&vmaf, cfg);
+    mu_assert("vmaf_init failed", !err);
+
+    if (use_hip) {
+        err = vmaf_hip_import_state(vmaf, hip_state);
+        mu_assert("vmaf_hip_import_state failed", !err);
+    }
+
+    err = vmaf_use_feature(vmaf, feature_name, NULL);
+    mu_assert("vmaf_use_feature failed", !err);
+
+    *vmaf_out = vmaf;
+    return NULL;
+}
+
+static char *finish_adm_vmaf(VmafContext *vmaf, double scores[NUM_ADM_FEATURES])
+{
+    int err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    mu_assert("vmaf_read_pictures(EOS) failed", !err);
+
+    mu_assert_msg(read_adm_scores(vmaf, scores));
+
+    err = vmaf_close(vmaf);
+    mu_assert("vmaf_close failed", !err);
+    return NULL;
+}
+
 /* Run one extractor over the fixture; fill scores[] for kAdmFeatures. */
 static char *run_extractor(const char *feature_name, int use_hip, double scores[NUM_ADM_FEATURES],
                            int *skipped)
@@ -187,46 +247,36 @@ static char *run_extractor(const char *feature_name, int use_hip, double scores[
         }
     }
 
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
-    int err = vmaf_init(&vmaf, cfg);
-    mu_assert("vmaf_init failed", !err);
-
-    if (use_hip) {
-        err = vmaf_hip_import_state(vmaf, hip_state);
-        mu_assert("vmaf_hip_import_state failed", !err);
-    }
-
-    err = vmaf_use_feature(vmaf, feature_name, NULL);
-    mu_assert("vmaf_use_feature failed", !err);
-
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        int enosys_skip = 0;
-        char *msg = adm_submit_one_frame(vmaf, i, &enosys_skip);
-        if (msg)
-            return msg;
-        if (enosys_skip) {
-            (void)fprintf(stderr, "[skip: HIP kernels not built (enable_hipcc=false)] ");
-            mu_skipped = 1;
-            *skipped = 1;
-            (void)vmaf_close(vmaf);
-            if (hip_state)
-                vmaf_hip_state_free(&hip_state);
-            return NULL;
+    char *msg = init_adm_vmaf(&vmaf, feature_name, hip_state, use_hip);
+    if (msg) {
+        if (hip_state) {
+            vmaf_hip_state_free(&hip_state);
         }
+        return msg;
     }
 
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("vmaf_read_pictures(EOS) failed", !err);
+    msg = feed_adm_frames(vmaf, skipped);
+    if (msg) {
+        (void)vmaf_close(vmaf);
+        if (hip_state) {
+            vmaf_hip_state_free(&hip_state);
+        }
+        return msg;
+    }
+    if (*skipped) {
+        (void)vmaf_close(vmaf);
+        if (hip_state) {
+            vmaf_hip_state_free(&hip_state);
+        }
+        return NULL;
+    }
 
-    mu_assert_msg(read_adm_scores(vmaf, scores));
-
-    err = vmaf_close(vmaf);
-    mu_assert("vmaf_close failed", !err);
-
-    if (hip_state)
+    msg = finish_adm_vmaf(vmaf, scores);
+    if (hip_state) {
         vmaf_hip_state_free(&hip_state);
-    return NULL;
+    }
+    return msg;
 }
 
 static char *test_integer_adm_cpu_hip_parity(void)
@@ -238,18 +288,21 @@ static char *test_integer_adm_cpu_hip_parity(void)
     /* CPU baseline: the upstream `adm` extractor (integer_adm.c) emits
      * the four scale ratios under their `integer_adm_scale*` keys. */
     char *msg = run_extractor("adm", /*use_hip=*/0, cpu_scores, &skipped);
-    if (msg)
+    if (msg) {
         return msg;
+    }
 
     /* HIP comparand: the fork's `adm_hip` extractor (integer_adm_hip.c
      * line 1391) — NOT `"adm"`, which would silently re-run the CPU
      * extractor a second time and pass trivially.  See ADR-0950. */
     msg = run_extractor("adm_hip", /*use_hip=*/1, hip_scores, &skipped);
-    if (msg)
+    if (msg) {
         return msg;
+    }
 
-    if (skipped)
+    if (skipped) {
         return NULL; /* No HIP device or no HIPCC kernels — skip cleanly. */
+    }
 
     for (size_t f = 0; f < NUM_ADM_FEATURES; f++) {
         double d = fabs(cpu_scores[f] - hip_scores[f]);
@@ -259,6 +312,28 @@ static char *test_integer_adm_cpu_hip_parity(void)
         }
         mu_assert("integer_adm CPU vs HIP delta exceeds places=4 tolerance", d <= PARITY_TOL);
     }
+    return NULL;
+}
+
+static char *check_adm_option_match(const VmafOption *a, const VmafOption *gpu_options)
+{
+    const VmafOption *b = NULL;
+    for (unsigned j = 0; gpu_options[j].name; j++) {
+        if (!strcmp(gpu_options[j].name, a->name)) {
+            b = &gpu_options[j];
+            break;
+        }
+    }
+    if (!b) {
+        (void)fprintf(stderr, "\nadm_hip is missing CPU option \"%s\"\n", a->name);
+    }
+    mu_assert("adm_hip option table is missing a CPU option", b != NULL);
+    mu_assert("adm_hip option type differs from CPU", a->type == b->type);
+    mu_assert("adm_hip feature-param flag differs from CPU",
+              (a->flags & VMAF_OPT_FLAG_FEATURE_PARAM) == (b->flags & VMAF_OPT_FLAG_FEATURE_PARAM));
+    mu_assert("adm_hip option alias differs from CPU",
+              (a->alias == NULL) == (b->alias == NULL) &&
+                  (a->alias == NULL || !strcmp(a->alias, b->alias)));
     return NULL;
 }
 
@@ -285,25 +360,10 @@ static char *test_integer_adm_hip_option_table_mirrors_cpu(void)
 
     for (unsigned i = 0; cpu->options[i].name; i++) {
         const VmafOption *a = &cpu->options[i];
-        if (!strcmp(a->name, "adm_skip_aim"))
+        if (!strcmp(a->name, "adm_skip_aim")) {
             continue;
-        const VmafOption *b = NULL;
-        for (unsigned j = 0; gpu->options[j].name; j++) {
-            if (!strcmp(gpu->options[j].name, a->name)) {
-                b = &gpu->options[j];
-                break;
-            }
         }
-        if (!b)
-            (void)fprintf(stderr, "\nadm_hip is missing CPU option \"%s\"\n", a->name);
-        mu_assert("adm_hip option table is missing a CPU option", b != NULL);
-        mu_assert("adm_hip option type differs from CPU", a->type == b->type);
-        mu_assert("adm_hip feature-param flag differs from CPU",
-                  (a->flags & VMAF_OPT_FLAG_FEATURE_PARAM) ==
-                      (b->flags & VMAF_OPT_FLAG_FEATURE_PARAM));
-        mu_assert("adm_hip option alias differs from CPU",
-                  (a->alias == NULL) == (b->alias == NULL) &&
-                      (a->alias == NULL || !strcmp(a->alias, b->alias)));
+        mu_assert_msg(check_adm_option_match(a, gpu->options));
     }
     return NULL;
 }
@@ -333,3 +393,5 @@ char *run_tests(void)
     mu_run_test(test_integer_adm_cpu_hip_parity);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

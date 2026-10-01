@@ -292,7 +292,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 613,
+  "total_warnings": 609,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -386,7 +386,6 @@
     "core/test/test_float_adm_dwt2_neon.c": 4,
     "core/test/test_float_adm_neon.c": 7,
     "core/test/test_float_motion_neon.c": 3,
-    "core/test/test_hip_wavefront_reduce.c": 4,
     "core/test/test_locale_handling.c": 21,
     "core/test/test_log.c": 4,
     "core/test/test_moment_simd.c": 1,
@@ -420,6 +419,21 @@
         }
       },
       "previous_baseline_sha256": "7591d763dab87543a50adeedad08e213c9feca49978105253dffddd27f89256a"
+    },
+    {
+      "sources": [
+        "core/test/test_hip_wavefront_reduce.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/test/test_hip_wavefront_reduce.c": {
+          "warnings": [
+            4,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "9dc11391c930c9982ab66a3b73767b6ab1f7fb4e261abe9c211dd3a5ccd19746"
     }
   ]
 }

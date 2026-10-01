@@ -351,7 +351,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 910,
+  "total_warnings": 754,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -458,16 +458,6 @@
     "core/test/test_dict.cpp": 33,
     "core/test/test_feature_collector.c": 12,
     "core/test/test_framesync.c": 8,
-    "core/test/test_hip_adm_parity.c": 19,
-    "core/test/test_hip_ciede_parity.c": 18,
-    "core/test/test_hip_motion_parity.c": 18,
-    "core/test/test_hip_psnr_hvs_parity.c": 18,
-    "core/test/test_hip_psnr_parity.c": 20,
-    "core/test/test_hip_speed_chroma_parity.c": 14,
-    "core/test/test_hip_speed_singular_parity.c": 13,
-    "core/test/test_hip_speed_temporal_parity.c": 14,
-    "core/test/test_hip_vif_parity.c": 18,
-    "core/test/test_hip_wavefront_reduce.c": 4,
     "core/test/test_locale_handling.c": 21,
     "core/test/test_log.c": 4,
     "core/test/test_luminance_tools.cpp": 11,
@@ -735,6 +725,108 @@
         }
       },
       "previous_baseline_sha256": "db98837a71c5c9f393c4d295e9347ef08798a31d3c8595f8bcb20c1e3a160f32"
+    },
+    {
+      "sources": [
+        "core/test/test_hip_adm_parity.c",
+        "core/test/test_hip_ciede_parity.c",
+        "core/test/test_hip_motion_parity.c",
+        "core/test/test_hip_psnr_hvs_parity.c",
+        "core/test/test_hip_psnr_parity.c",
+        "core/test/test_hip_speed_chroma_parity.c",
+        "core/test/test_hip_speed_singular_parity.c",
+        "core/test/test_hip_speed_temporal_parity.c",
+        "core/test/test_hip_vif_parity.c",
+        "core/test/test_hip_wavefront_reduce.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/test/test_hip_adm_parity.c": {
+          "warnings": [
+            19,
+            1
+          ]
+        },
+        "core/test/test_hip_ciede_parity.c": {
+          "warnings": [
+            18,
+            0
+          ]
+        },
+        "core/test/test_hip_motion_parity.c": {
+          "warnings": [
+            18,
+            0
+          ]
+        },
+        "core/test/test_hip_psnr_hvs_parity.c": {
+          "warnings": [
+            18,
+            0
+          ]
+        },
+        "core/test/test_hip_psnr_parity.c": {
+          "warnings": [
+            20,
+            0
+          ]
+        },
+        "core/test/test_hip_speed_chroma_parity.c": {
+          "warnings": [
+            14,
+            0
+          ]
+        },
+        "core/test/test_hip_speed_singular_parity.c": {
+          "warnings": [
+            13,
+            0
+          ]
+        },
+        "core/test/test_hip_speed_temporal_parity.c": {
+          "warnings": [
+            14,
+            0
+          ]
+        },
+        "core/test/test_hip_vif_parity.c": {
+          "warnings": [
+            18,
+            0
+          ]
+        },
+        "core/test/test_hip_wavefront_reduce.c": {
+          "warnings": [
+            4,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "db98837a71c5c9f393c4d295e9347ef08798a31d3c8595f8bcb20c1e3a160f32"
+    },
+    {
+      "sources": [
+        "core/test/test_hip_adm_parity.c",
+        "core/test/test_hip_ciede_parity.c",
+        "core/test/test_hip_motion_parity.c",
+        "core/test/test_hip_psnr_hvs_parity.c",
+        "core/test/test_hip_psnr_parity.c",
+        "core/test/test_hip_speed_chroma_parity.c",
+        "core/test/test_hip_speed_singular_parity.c",
+        "core/test/test_hip_speed_temporal_parity.c",
+        "core/test/test_hip_vif_parity.c",
+        "core/test/test_hip_wavefront_reduce.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/test/test_hip_adm_parity.c": {
+          "warnings": [
+            1,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "c749558e824aefea9cbf9af39a83a57caa6aad9983a87e5166bf6338b367ac59"
     }
   ]
 }

@@ -39,6 +39,11 @@
 #include "libvmaf/libvmaf_hip.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): this is a
+ * C23 translation unit, but the required MSVC C lane does not provide the C
+ * nullptr spelling clang-tidy proposes. Keep the portable C API form under
+ * ADR-1138. */
+
 #ifndef FIXTURE_W
 #define FIXTURE_W 256u
 #endif
@@ -114,6 +119,29 @@ static char *run_cpu_motion(double *score)
     return NULL;
 }
 
+static char *hip_motion_pipeline(VmafContext *vmaf, VmafHipState **hip_state, double *score)
+{
+    /* `debug` defaults to false on the twin too, as on the CPU. */
+    VmafFeatureDictionary *opts = NULL;
+    int err = vmaf_feature_dictionary_set(&opts, "debug", "true");
+    mu_assert("HIP: vmaf_feature_dictionary_set(debug) failed", !err);
+    err = vmaf_use_feature(vmaf, "motion_hip", opts);
+    mu_assert("HIP: vmaf_use_feature(motion_hip) failed", !err);
+    err = feed_two_frames(vmaf);
+    if (err == -ENOSYS) {
+        (void)fprintf(stderr, "[skip: HIP extractor is a scaffold (-ENOSYS)] ");
+        (void)vmaf_close(vmaf);
+        vmaf_hip_state_free(hip_state);
+        return NULL;
+    }
+    mu_assert("HIP: feed_two_frames failed", !err);
+    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    mu_assert("HIP: vmaf_read_pictures(EOS) failed", !err);
+    err = vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_motion_score", score, 1u);
+    mu_assert("HIP: motion_score missing", !err);
+    return NULL;
+}
+
 static char *run_hip_motion(double *score)
 {
     *score = NAN;
@@ -130,29 +158,11 @@ static char *run_hip_motion(double *score)
     mu_assert("HIP: vmaf_init failed", !err);
     err = vmaf_hip_import_state(vmaf, hip_state);
     mu_assert("HIP: vmaf_hip_import_state failed", !err);
-    /* `debug` defaults to false on the twin too, as on the CPU. */
-    VmafFeatureDictionary *opts = NULL;
-    err = vmaf_feature_dictionary_set(&opts, "debug", "true");
-    mu_assert("HIP: vmaf_feature_dictionary_set(debug) failed", !err);
-    err = vmaf_use_feature(vmaf, "motion_hip", opts);
-    mu_assert("HIP: vmaf_use_feature(motion_hip) failed", !err);
-    err = feed_two_frames(vmaf);
-    if (err == -ENOSYS) {
-        /* Documented scaffold contract: an unimplemented HIP extractor returns
-         * -ENOSYS from init (see the HIP extractors under
-         * core/src/feature/hip/). That is a not-built-yet signal, not a
-         * regression, so skip exactly as the no-device branch above does.
-         * Any other error still fails. */
-        (void)fprintf(stderr, "[skip: HIP extractor is a scaffold (-ENOSYS)] ");
-        (void)vmaf_close(vmaf);
-        vmaf_hip_state_free(&hip_state);
-        return NULL;
+
+    char *msg = hip_motion_pipeline(vmaf, &hip_state, score);
+    if (msg || hip_state == NULL) {
+        return msg;
     }
-    mu_assert("HIP: feed_two_frames failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("HIP: vmaf_read_pictures(EOS) failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_motion_score", score, 1u);
-    mu_assert("HIP: motion_score missing", !err);
     err = vmaf_close(vmaf);
     mu_assert("HIP: vmaf_close failed", !err);
     vmaf_hip_state_free(&hip_state);
@@ -172,13 +182,16 @@ static char *test_motion_cpu_hip_parity(void)
     double cpu = 0.0;
     double gpu = NAN;
     char *msg = run_cpu_motion(&cpu);
-    if (msg)
+    if (msg) {
         return msg;
+    }
     msg = run_hip_motion(&gpu);
-    if (msg)
+    if (msg) {
         return msg;
-    if (isnan(gpu))
+    }
+    if (isnan(gpu)) {
         return NULL;
+    }
     double delta = fabs(cpu - gpu);
     if (delta > PARITY_TOL) {
         (void)fprintf(stderr, "\nmotion parity FAIL: cpu=%.8f hip=%.8f delta=%.2e tol=%.2e\n", cpu,
@@ -194,3 +207,5 @@ char *run_tests(void)
     mu_run_test(test_motion_cpu_hip_parity);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

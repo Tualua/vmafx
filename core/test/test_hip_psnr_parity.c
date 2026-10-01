@@ -32,6 +32,11 @@
 #include "libvmaf/libvmaf_hip.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): this is a
+ * C23 translation unit, but the required MSVC C lane does not provide the C
+ * nullptr spelling clang-tidy proposes. Keep the portable C API form under
+ * ADR-1138. */
+
 #ifndef FIXTURE_W
 #define FIXTURE_W 256u
 #endif
@@ -78,6 +83,17 @@ static int feed_frame(VmafContext *vmaf)
     return vmaf_read_pictures(vmaf, &ref, &dist, 0u);
 }
 
+static char *get_psnr_scores(VmafContext *vmaf, double *y, double *cb, double *cr)
+{
+    int err = vmaf_feature_score_at_index(vmaf, "psnr_y", y, 0u);
+    mu_assert("psnr_y missing", !err);
+    err = vmaf_feature_score_at_index(vmaf, "psnr_cb", cb, 0u);
+    mu_assert("psnr_cb missing", !err);
+    err = vmaf_feature_score_at_index(vmaf, "psnr_cr", cr, 0u);
+    mu_assert("psnr_cr missing", !err);
+    return NULL;
+}
+
 static char *run_cpu_psnr(double *y, double *cb, double *cr)
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
@@ -90,15 +106,32 @@ static char *run_cpu_psnr(double *y, double *cb, double *cr)
     mu_assert("CPU: feed_frame failed", !err);
     err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "psnr_y", y, 0u);
-    mu_assert("CPU: psnr_y missing", !err);
-    err = vmaf_feature_score_at_index(vmaf, "psnr_cb", cb, 0u);
-    mu_assert("CPU: psnr_cb missing", !err);
-    err = vmaf_feature_score_at_index(vmaf, "psnr_cr", cr, 0u);
-    mu_assert("CPU: psnr_cr missing", !err);
+    char *msg = get_psnr_scores(vmaf, y, cb, cr);
+    if (msg) {
+        (void)vmaf_close(vmaf);
+        return msg;
+    }
     err = vmaf_close(vmaf);
     mu_assert("CPU: vmaf_close failed", !err);
     return NULL;
+}
+
+static char *hip_psnr_pipeline(VmafContext *vmaf, VmafHipState **hip_state, double *y, double *cb,
+                               double *cr)
+{
+    int err = vmaf_use_feature(vmaf, "psnr_hip", NULL);
+    mu_assert("HIP: vmaf_use_feature(psnr_hip) failed", !err);
+    err = feed_frame(vmaf);
+    if (err == -ENOSYS) {
+        (void)fprintf(stderr, "[skip: HIP extractor is a scaffold (-ENOSYS)] ");
+        (void)vmaf_close(vmaf);
+        vmaf_hip_state_free(hip_state);
+        return NULL;
+    }
+    mu_assert("HIP: feed_frame failed", !err);
+    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    mu_assert("HIP: vmaf_read_pictures(EOS) failed", !err);
+    return get_psnr_scores(vmaf, y, cb, cr);
 }
 
 static char *run_hip_psnr(double *y, double *cb, double *cr)
@@ -119,29 +152,11 @@ static char *run_hip_psnr(double *y, double *cb, double *cr)
     mu_assert("HIP: vmaf_init failed", !err);
     err = vmaf_hip_import_state(vmaf, hip_state);
     mu_assert("HIP: vmaf_hip_import_state failed", !err);
-    err = vmaf_use_feature(vmaf, "psnr_hip", NULL);
-    mu_assert("HIP: vmaf_use_feature(psnr_hip) failed", !err);
-    err = feed_frame(vmaf);
-    if (err == -ENOSYS) {
-        /* Documented scaffold contract: an unimplemented HIP extractor returns
-         * -ENOSYS from init (see the HIP extractors under
-         * core/src/feature/hip/). That is a not-built-yet signal, not a
-         * regression, so skip exactly as the no-device branch above does.
-         * Any other error still fails. */
-        (void)fprintf(stderr, "[skip: HIP extractor is a scaffold (-ENOSYS)] ");
-        (void)vmaf_close(vmaf);
-        vmaf_hip_state_free(&hip_state);
-        return NULL;
+
+    char *msg = hip_psnr_pipeline(vmaf, &hip_state, y, cb, cr);
+    if (msg || hip_state == NULL) {
+        return msg;
     }
-    mu_assert("HIP: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("HIP: vmaf_read_pictures(EOS) failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "psnr_y", y, 0u);
-    mu_assert("HIP: psnr_y missing", !err);
-    err = vmaf_feature_score_at_index(vmaf, "psnr_cb", cb, 0u);
-    mu_assert("HIP: psnr_cb missing", !err);
-    err = vmaf_feature_score_at_index(vmaf, "psnr_cr", cr, 0u);
-    mu_assert("HIP: psnr_cr missing", !err);
     err = vmaf_close(vmaf);
     mu_assert("HIP: vmaf_close failed", !err);
     vmaf_hip_state_free(&hip_state);
@@ -150,8 +165,9 @@ static char *run_hip_psnr(double *y, double *cb, double *cr)
 
 static char *check_pair(const char *label, double cpu, double gpu)
 {
-    if (isnan(gpu))
+    if (isnan(gpu)) {
         return NULL;
+    }
     double delta = fabs(cpu - gpu);
     if (delta > PARITY_TOL) {
         (void)fprintf(stderr, "\n%s parity FAIL: cpu=%.8f hip=%.8f delta=%.2e tol=%.2e\n", label,
@@ -201,3 +217,5 @@ char *run_tests(void)
     mu_run_test(test_psnr_cpu_hip_parity);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */
