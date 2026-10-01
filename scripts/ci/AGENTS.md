@@ -184,9 +184,16 @@ Does not replace lane-specific ratchet measurements or their baselines.
 
 ### SYCL custom-command lint database
 
-Meson emits per-feature SYCL translation units as `CUSTOM_COMMAND` rules, so
+Meson emits per-feature SYCL translation units as `CUSTOM_COMMAND` rules
+(`CUSTOM_COMMAND_DEP` + two `DEPFILE` lines when the target has a depfile:
+feature and runtime TUs since PR #1764, test probes not), so
 `gen-sycl-compile-commands.py` must augment the native compilation database
-before clang-tidy can see them. Keep both legacy `-Xs` removal and the current
+before clang-tidy can see them. Generator counts build statements compiling a
+`.cpp` with icpx; fewer parsed -> exit 1, database untouched. Rule name or
+layout changes again -> extend `SYCL_COMMAND_PATTERN`, never loosen the count
+(a lane measuring no SYCL TU still reports clean:
+`T-SYCL-TIDY-COMPDB-DEPFILE-RULE-2026-10-02`). Analyzer command drops
+`-MD -MF <file>`: build's depfile stays the build's. Keep both legacy `-Xs` removal and the current
 target-scoped pair (`-Xsycl-target-backend=spir64_gen` plus its following
 backend argument) in the translator; passing either device-only option to
 stock clang++ breaks the analyzer lane. `test_sycl_aot_command.py` is the

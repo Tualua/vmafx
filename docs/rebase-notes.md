@@ -1,6 +1,23 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## The SYCL lint database reads both Ninja rule forms (2026-10-02)
+
+`fix/sycl-tidy-compdb-depfile-rule`, closes
+`T-SYCL-TIDY-COMPDB-DEPFILE-RULE-2026-10-02` (follows the entry below).
+
+- `scripts/ci/gen-sycl-compile-commands.py`: `SYCL_COMMAND_PATTERN` matches
+  `CUSTOM_COMMAND` and `CUSTOM_COMMAND_DEP` (Ninja's name for a rule with a
+  depfile). **On rebase**: a custom target that compiles a SYCL source in a
+  third form needs the pattern extended; the generator exits 1 when
+  `SYCL_BUILD_STATEMENT` counts more icpx `.cpp` statements than were parsed.
+  Do not remove that count.
+- `clang_tidy_command()` drops `-MD`, `-MMD` and `-MF <file>`.
+- Tests: `scripts/ci/tests/test_gen_sycl_compile_commands.py`
+  (`ParseNinjaTests`), wired through the
+  `test-sycl-compile-command-generator` hook.
+- No Netflix golden-data, public API or FFmpeg patch impact.
+
 ## SYCL translation units track their headers through compiler depfiles (2026-10-01)
 
 `fix/sycl-feature-header-deps`, closes `T-SYCL-TU-HEADER-DEPS-UNTRACKED-2026-10-01`
