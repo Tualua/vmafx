@@ -215,6 +215,31 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+def _make_provenance(
+    script_path: Path,
+    repo_root: Path,
+    argv: list[str] | None,
+    args: argparse.Namespace,
+) -> dict | None:
+    # Build run_provenance lazily so aiutils import errors surface only when
+    # the sidecar is actually written (keeps the module importable without aiutils).
+    try:
+        _ai_src = str(script_path.parent / "src")
+        if _ai_src not in sys.path:
+            sys.path.insert(0, _ai_src)
+        from aiutils.run_manifest import build_run_provenance
+
+        return build_run_provenance(
+            entrypoint=script_path,
+            repo_root=repo_root,
+            argv=sys.argv[1:] if argv is None else list(argv),
+            args=vars(args),
+            outputs={"onnx": args.output},
+        )
+    except ImportError:
+        return None
+
+
 def main(argv: list[str] | None = None) -> int:
     script_path = Path(__file__).resolve()
     repo_root = script_path.parent.parent
@@ -240,24 +265,7 @@ def main(argv: list[str] | None = None) -> int:
             "sidecar + registry should use the emitted value",
             file=sys.stderr,
         )
-    # Build run_provenance lazily so aiutils import errors surface only when
-    # the sidecar is actually written (keeps the module importable without aiutils).
-    run_provenance: dict | None = None
-    try:
-        _ai_src = str(script_path.parent / "src")
-        if _ai_src not in sys.path:
-            sys.path.insert(0, _ai_src)
-        from aiutils.run_manifest import build_run_provenance
-
-        run_provenance = build_run_provenance(
-            entrypoint=script_path,
-            repo_root=repo_root,
-            argv=sys.argv[1:] if argv is None else list(argv),
-            args=vars(args),
-            outputs={"onnx": args.output},
-        )
-    except ImportError:
-        pass
+    run_provenance = _make_provenance(script_path, repo_root, argv, args)
     _write_sidecar(
         args.output,
         effective_opset,

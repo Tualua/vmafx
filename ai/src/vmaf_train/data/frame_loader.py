@@ -59,6 +59,43 @@ def _frame_shape(source: FrameSource) -> tuple[int, ...]:
     return (source.height, source.width, channels)
 
 
+def _cleanup_and_check_proc(proc: _PopenLike, source_path: Path) -> None:
+    try:
+        proc.stdout.close()
+    except OSError as exc:  # pragma: no cover — defensive
+        _LOG.debug("stdout.close() during iter_frames cleanup raised %s", exc)
+    try:
+        rc = proc.wait(timeout=_FFMPEG_WAIT_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        # Don't leave a runaway ffmpeg dangling — kill it and recover.
+        _LOG.warning(
+            "ffmpeg failed to exit within %.1fs after stdout EOF for %s; killing",
+            _FFMPEG_WAIT_TIMEOUT_S,
+            source_path,
+        )
+        proc.kill()
+        try:
+            rc = proc.wait(timeout=5.0)
+        except subprocess.TimeoutExpired:
+            rc = -1
+    stderr = b""
+    if proc.stderr is not None:
+        try:
+            stderr = proc.stderr.read() or b""
+        except OSError as exc:  # pragma: no cover — defensive
+            _LOG.debug("stderr.read() during iter_frames cleanup raised %s", exc)
+        finally:
+            try:
+                proc.stderr.close()
+            except OSError as exc:  # pragma: no cover — defensive
+                _LOG.debug("stderr.close() during iter_frames cleanup raised %s", exc)
+    if rc != 0:
+        diag = stderr.decode("utf-8", errors="replace").strip()[:500]
+        raise RuntimeError(
+            f"ffmpeg decode of {source_path} exited rc={rc}: {diag or '<no stderr>'}"
+        )
+
+
 def iter_frames(
     source: FrameSource,
     ffmpeg: str = "ffmpeg",
@@ -98,43 +135,9 @@ def iter_frames(
     )
     assert proc.stdout is not None
     try:
-        while True:
-            buf = proc.stdout.read(frame_bytes)
+        for buf in iter(lambda: proc.stdout.read(frame_bytes), b""):
             if len(buf) < frame_bytes:
-                return
+                break
             yield np.frombuffer(buf, dtype=np.uint8).reshape(shape).copy()
     finally:
-        try:
-            proc.stdout.close()
-        except OSError as exc:  # pragma: no cover — defensive
-            _LOG.debug("stdout.close() during iter_frames cleanup raised %s", exc)
-        try:
-            rc = proc.wait(timeout=_FFMPEG_WAIT_TIMEOUT_S)
-        except subprocess.TimeoutExpired:
-            # Don't leave a runaway ffmpeg dangling — kill it and recover.
-            _LOG.warning(
-                "ffmpeg failed to exit within %.1fs after stdout EOF for %s; killing",
-                _FFMPEG_WAIT_TIMEOUT_S,
-                source.path,
-            )
-            proc.kill()
-            try:
-                rc = proc.wait(timeout=5.0)
-            except subprocess.TimeoutExpired:
-                rc = -1
-        stderr = b""
-        if proc.stderr is not None:
-            try:
-                stderr = proc.stderr.read() or b""
-            except OSError as exc:  # pragma: no cover — defensive
-                _LOG.debug("stderr.read() during iter_frames cleanup raised %s", exc)
-            finally:
-                try:
-                    proc.stderr.close()
-                except OSError as exc:  # pragma: no cover — defensive
-                    _LOG.debug("stderr.close() during iter_frames cleanup raised %s", exc)
-        if rc != 0:
-            diag = stderr.decode("utf-8", errors="replace").strip()[:500]
-            raise RuntimeError(
-                f"ffmpeg decode of {source.path} exited rc={rc}: {diag or '<no stderr>'}"
-            )
+        _cleanup_and_check_proc(proc, source.path)

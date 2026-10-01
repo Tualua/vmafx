@@ -1,18 +1,10 @@
 {
   "version": 1,
-  "generated_at": "2026-10-01T21:16:27Z",
+  "generated_at": "2026-10-01T21:18:59Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "5b51790dd36f3dbf5b607fc1fddd8b4582934ba7",
-  "total_infractions": 353,
+  "commit_sha": "1cb2f0d7c92c443c5427b0a2fc62c7e7d7df7717",
+  "total_infractions": 344,
   "infractions": [
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/lpips_export.py",
-      "line_number": 218,
-      "symbol": "main",
-      "message": "Function 'main' (62 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/lpips_export.py:218:HISS-04"
-    },
     {
       "rule_id": "HISS-04",
       "file_path": "ai/scripts/aggregate_corpora.py",
@@ -895,13 +887,6 @@
       "fingerprint": "ai/sidecar/tests/test_socket_permissions.py:617:HISS-04"
     },
     {
-      "rule_id": "HISS-02",
-      "file_path": "ai/src/aiutils/file_utils.py",
-      "line_number": 50,
-      "message": "Legacy unbounded while True loop in Python",
-      "fingerprint": "ai/src/aiutils/file_utils.py:50:HISS-02"
-    },
-    {
       "rule_id": "HISS-01",
       "file_path": "ai/src/aiutils/jsonl_utils.py",
       "line_number": 22,
@@ -958,37 +943,6 @@
       "fingerprint": "ai/src/aiutils/run_manifest.py:78:HISS-01"
     },
     {
-      "rule_id": "HISS-02",
-      "file_path": "ai/src/corpus/base.py",
-      "line_number": 76,
-      "message": "Legacy unbounded while True loop in Python",
-      "fingerprint": "ai/src/corpus/base.py:76:HISS-02"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/src/corpus/base.py",
-      "line_number": 147,
-      "symbol": "probe_geometry",
-      "message": "Function 'probe_geometry' (90 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/src/corpus/base.py:147:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/src/corpus/base.py",
-      "line_number": 328,
-      "symbol": "download_clip",
-      "message": "Function 'download_clip' (65 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/src/corpus/base.py:328:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/src/corpus/base.py",
-      "line_number": 631,
-      "symbol": "run",
-      "message": "Function 'run' (145 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/src/corpus/base.py:631:HISS-04"
-    },
-    {
       "rule_id": "HISS-04",
       "file_path": "ai/src/vmaf_train/bisect_model_quality.py",
       "line_number": 88,
@@ -1019,28 +973,6 @@
       "symbol": "bisect_model_quality_cmd",
       "message": "Function 'bisect_model_quality_cmd' (71 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "ai/src/vmaf_train/cli.py:678:HISS-04"
-    },
-    {
-      "rule_id": "HISS-02",
-      "file_path": "ai/src/vmaf_train/data/frame_loader.py",
-      "line_number": 101,
-      "message": "Legacy unbounded while True loop in Python",
-      "fingerprint": "ai/src/vmaf_train/data/frame_loader.py:101:HISS-02"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/src/vmaf_train/data/frame_loader.py",
-      "line_number": 62,
-      "symbol": "iter_frames",
-      "message": "Function 'iter_frames' (79 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/src/vmaf_train/data/frame_loader.py:62:HISS-04"
-    },
-    {
-      "rule_id": "HISS-02",
-      "file_path": "ai/src/vmaf_train/data/manifest_scan.py",
-      "line_number": 33,
-      "message": "Legacy unbounded while True loop in Python",
-      "fingerprint": "ai/src/vmaf_train/data/manifest_scan.py:33:HISS-02"
     },
     {
       "rule_id": "HISS-04",

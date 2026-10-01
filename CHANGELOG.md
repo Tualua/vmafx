@@ -715,6 +715,9 @@
 - Refactored ai/scripts exporter and validator utilities to satisfy HISS-04 complexity limits (ADR-1142).
 
 
+- Refactored `ai/src/` and `ai/lpips_export.py` functions to resolve HISS-02 while loops and HISS-04 size violations under ADR-1142.
+
+
 - Refactored Go packages (`cmd/` and `pkg/`) to resolve HISS-02 context timeouts and HISS-07 exit/panic violations under ADR-1142.
 
 

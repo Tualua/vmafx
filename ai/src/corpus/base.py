@@ -73,10 +73,7 @@ def sha256_file(path: Path) -> str:
     """Stream a chunked SHA-256 over ``path`` and return the hex digest."""
     h = hashlib.sha256()
     with path.open("rb") as fh:
-        while True:
-            chunk = fh.read(_SHA_CHUNK_BYTES)
-            if not chunk:
-                break
+        for chunk in iter(lambda: fh.read(_SHA_CHUNK_BYTES), b""):
             h.update(chunk)
     return h.hexdigest()
 
@@ -144,25 +141,12 @@ def _parse_framerate(rate: str) -> float:
 _PROBE_GEOMETRY_TIMEOUT_S: float = 60.0
 
 
-def probe_geometry(
+def _run_ffprobe_raw(
     clip_path: Path,
-    *,
-    ffprobe_bin: str = "ffprobe",
-    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
-    timeout_s: float = _PROBE_GEOMETRY_TIMEOUT_S,
+    ffprobe_bin: str,
+    runner: Callable[..., subprocess.CompletedProcess[str]],
+    timeout_s: float,
 ) -> dict[str, Any] | None:
-    """Return a geometry dict for the first video stream in ``clip_path``.
-
-    The dict has keys ``width``, ``height``, ``framerate``,
-    ``duration_s``, ``pix_fmt``, and ``encoder_upstream``.  Returns
-    ``None`` on any failure (bad rc, no stream, JSON parse error,
-    subprocess timeout).
-
-    The ``runner`` kwarg is a test seam; production callers leave it as
-    the default :func:`subprocess.run`.  ``timeout_s`` caps the wall-clock
-    for a single ffprobe invocation; on timeout the function logs a
-    warning and returns ``None`` (the clip is treated as broken).
-    """
     cmd = [
         ffprobe_bin,
         "-v",
@@ -187,7 +171,6 @@ def probe_geometry(
         return None
 
     rc = getattr(proc, "returncode", 1)
-    stdout = getattr(proc, "stdout", "") or ""
     if rc != 0:
         _LOG.warning(
             "ffprobe rc=%d for %s; stderr=%s",
@@ -198,11 +181,14 @@ def probe_geometry(
         return None
 
     try:
-        payload = json.loads(stdout)
+        raw = json.loads(getattr(proc, "stdout", "") or "")
+        return raw if isinstance(raw, dict) else None
     except json.JSONDecodeError as exc:
         _LOG.warning("ffprobe non-JSON output for %s: %s", clip_path.name, exc)
         return None
 
+
+def _parse_geometry_payload(payload: dict[str, Any], clip_path: Path) -> dict[str, Any] | None:
     streams = payload.get("streams") or []
     if not streams:
         _LOG.warning("ffprobe: no video streams in %s", clip_path.name)
@@ -234,6 +220,31 @@ def probe_geometry(
         "pix_fmt": str(s.get("pix_fmt") or ""),
         "encoder_upstream": str(s.get("codec_name") or ""),
     }
+
+
+def probe_geometry(
+    clip_path: Path,
+    *,
+    ffprobe_bin: str = "ffprobe",
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+    timeout_s: float = _PROBE_GEOMETRY_TIMEOUT_S,
+) -> dict[str, Any] | None:
+    """Return a geometry dict for the first video stream in ``clip_path``.
+
+    The dict has keys ``width``, ``height``, ``framerate``,
+    ``duration_s``, ``pix_fmt``, and ``encoder_upstream``.  Returns
+    ``None`` on any failure (bad rc, no stream, JSON parse error,
+    subprocess timeout).
+
+    The ``runner`` kwarg is a test seam; production callers leave it as
+    the default :func:`subprocess.run`.  ``timeout_s`` caps the wall-clock
+    for a single ffprobe invocation; on timeout the function logs a
+    warning and returns ``None`` (the clip is treated as broken).
+    """
+    payload = _run_ffprobe_raw(clip_path, ffprobe_bin, runner, timeout_s)
+    if payload is None:
+        return None
+    return _parse_geometry_payload(payload, clip_path)
 
 
 # ---------------------------------------------------------------------------
@@ -325,6 +336,32 @@ def should_attempt(state: dict[str, dict[str, Any]], filename: str, clip_path: P
 # ---------------------------------------------------------------------------
 
 
+def _run_curl_download(
+    cmd: list[str],
+    runner: Callable[..., subprocess.CompletedProcess[str]],
+    timeout_s: int,
+    part: Path,
+) -> tuple[bool, str]:
+    try:
+        proc = runner(
+            cmd, check=False, capture_output=True, text=True, timeout=float(timeout_s) + 30.0
+        )
+    except subprocess.TimeoutExpired:
+        with contextlib.suppress(OSError):
+            part.unlink()
+        return False, f"curl-spawn-timeout: exceeded {timeout_s}s+30s"
+    except (FileNotFoundError, OSError) as exc:
+        return False, f"curl-spawn-failed: {exc}"
+
+    rc = getattr(proc, "returncode", 1)
+    if rc != 0:
+        with contextlib.suppress(OSError):
+            part.unlink()
+        stderr = (getattr(proc, "stderr", "") or "").strip()
+        return False, f"curl-rc={rc}: {stderr[:200]}"
+    return True, ""
+
+
 def download_clip(
     *,
     url: str,
@@ -358,27 +395,9 @@ def download_clip(
         str(part),
         url,
     ]
-    # Cap the runner wall-clock generously above curl's own ``--max-time``
-    # so that ``curl --max-time`` is the authoritative timeout for a healthy
-    # process, but a wedged DNS resolver / process-spawn / signal-handler
-    # path cannot stall the ingest run forever.
-    try:
-        proc = runner(
-            cmd, check=False, capture_output=True, text=True, timeout=float(timeout_s) + 30.0
-        )
-    except subprocess.TimeoutExpired:
-        with contextlib.suppress(OSError):
-            part.unlink()
-        return False, f"curl-spawn-timeout: exceeded {timeout_s}s+30s"
-    except (FileNotFoundError, OSError) as exc:
-        return False, f"curl-spawn-failed: {exc}"
-
-    rc = getattr(proc, "returncode", 1)
-    if rc != 0:
-        with contextlib.suppress(OSError):
-            part.unlink()
-        stderr = (getattr(proc, "stderr", "") or "").strip()
-        return False, f"curl-rc={rc}: {stderr[:200]}"
+    ok, reason = _run_curl_download(cmd, runner, timeout_s, part)
+    if not ok:
+        return False, reason
 
     if not part.is_file() or part.stat().st_size == 0:
         with contextlib.suppress(OSError):
@@ -628,23 +647,11 @@ class CorpusIngestBase(ABC):
     # Run orchestrator
     # ------------------------------------------------------------------
 
-    def run(self) -> RunStats:
-        """Execute the ingest loop and return aggregate :class:`RunStats`.
-
-        Steps for each manifest row:
-
-        1. If the clip is not on disk, attempt to download it via curl
-           (respecting the resumable-download progress state).
-        2. Probe geometry via ffprobe; skip if unusable.
-        3. SHA-256 the clip; skip if already in the output JSONL.
-        4. Append one JSON row to the output.
-        5. Flush the progress state periodically and at the end.
-        """
+    def _init_run(self) -> tuple[dict[str, Any], set[str], list[tuple[Path, dict[str, Any]]]]:
         if not self.corpus_dir.is_dir():
             raise FileNotFoundError(f"Corpus directory not found: {self.corpus_dir}")
 
         clips_dir = self.clips_dir_path()
-
         state = load_progress(self.progress_path)
         if state:
             already_done = sum(1 for v in state.values() if v.get("state") == STATE_DONE)
@@ -661,12 +668,7 @@ class CorpusIngestBase(ABC):
         if seen_sha:
             self._log.info("resume: %d existing rows already in %s", len(seen_sha), self.output)
 
-        ingested_at_utc = self.now_fn()
-        stats = RunStats()
-        saves_since_flush = 0
-        rows_iter = self.iter_source_rows(clips_dir)
-        rows: list[tuple[Path, dict[str, Any]]] = list(rows_iter)
-
+        rows = list(self.iter_source_rows(clips_dir))
         if self.max_rows is not None and len(rows) > self.max_rows:
             self._log.info(
                 "capping manifest at max_rows=%d (full CSV had %d)",
@@ -674,66 +676,90 @@ class CorpusIngestBase(ABC):
                 len(rows),
             )
             rows = rows[: self.max_rows]
+        return state, seen_sha, rows
 
+    def _ensure_clip_available(
+        self,
+        clip_path: Path,
+        manifest_row: dict[str, Any],
+        state: dict[str, Any],
+        stats: RunStats,
+    ) -> tuple[bool, bool]:
+        filename = clip_path.name
+        if not clip_path.is_file():
+            if not should_attempt(state, filename, clip_path):
+                stats.skipped_download += 1
+                return False, False
+            url = manifest_row.get("url", "")
+            ok, reason = download_clip(
+                url=url,
+                dest=clip_path,
+                curl_bin=self.curl_bin,
+                runner=self.runner,
+                timeout_s=self.download_timeout_s,
+            )
+            if not ok:
+                self._log.warning("download failed for %s: %s", filename, reason)
+                mark_failed(state, filename, reason)
+                stats.skipped_download += 1
+                return False, True
+            mark_done(state, filename)
+            return True, True
+        if state.get(filename, {}).get("state") != STATE_DONE:
+            mark_done(state, filename)
+            return True, True
+        return True, False
+
+    def _probe_and_record(
+        self,
+        clip_path: Path,
+        manifest_row: dict[str, Any],
+        seen_sha: set[str],
+        stats: RunStats,
+        ingested_at_utc: str,
+        fp: Any,
+    ) -> None:
+        geometry = probe_geometry(clip_path, ffprobe_bin=self.ffprobe_bin, runner=self.runner)
+        if geometry is None:
+            stats.skipped_broken += 1
+            return
+        if geometry["width"] <= 0 or geometry["height"] <= 0:
+            self._log.warning("ffprobe returned zero geometry for %s; skipping", clip_path.name)
+            stats.skipped_broken += 1
+            return
+
+        sha = sha256_file(clip_path)
+        if sha in seen_sha:
+            stats.dedups += 1
+            return
+
+        row = self._build_jsonl_row(clip_path, manifest_row, geometry, ingested_at_utc, sha)
+        fp.write(json.dumps(row, sort_keys=True) + "\n")
+        seen_sha.add(sha)
+        stats.written += 1
+
+    def run(self) -> RunStats:
+        """Execute the ingest loop and return aggregate :class:`RunStats`."""
+        state, seen_sha, rows = self._init_run()
+        ingested_at_utc = self.now_fn()
+        stats = RunStats()
+        saves_since_flush = 0
         total = len(rows)
 
         with self.output.open("a", encoding="utf-8") as fp:
             for idx, (clip_path, manifest_row) in enumerate(rows, start=1):
-                filename = clip_path.name
-
-                # Step 1: ensure the clip is on disk.
-                if not clip_path.is_file():
-                    if not should_attempt(state, filename, clip_path):
-                        stats.skipped_download += 1
-                        continue
-                    url = manifest_row.get("url", "")
-                    ok, reason = download_clip(
-                        url=url,
-                        dest=clip_path,
-                        curl_bin=self.curl_bin,
-                        runner=self.runner,
-                        timeout_s=self.download_timeout_s,
-                    )
-                    if not ok:
-                        self._log.warning("download failed for %s: %s", filename, reason)
-                        mark_failed(state, filename, reason)
-                        stats.skipped_download += 1
-                        saves_since_flush += 1
-                        if saves_since_flush >= 50:
-                            save_progress(self.progress_path, state)
-                            saves_since_flush = 0
-                        continue
-                    mark_done(state, filename)
+                ok, saved = self._ensure_clip_available(clip_path, manifest_row, state, stats)
+                if saved:
                     saves_since_flush += 1
-                else:
-                    if state.get(filename, {}).get("state") != STATE_DONE:
-                        mark_done(state, filename)
-                        saves_since_flush += 1
+                if not ok:
+                    if saves_since_flush >= 50:
+                        save_progress(self.progress_path, state)
+                        saves_since_flush = 0
+                    continue
 
-                # Step 2: probe geometry.
-                geometry = probe_geometry(
-                    clip_path, ffprobe_bin=self.ffprobe_bin, runner=self.runner
+                self._probe_and_record(
+                    clip_path, manifest_row, seen_sha, stats, ingested_at_utc, fp
                 )
-                if geometry is None:
-                    stats.skipped_broken += 1
-                    continue
-                if geometry["width"] <= 0 or geometry["height"] <= 0:
-                    self._log.warning("ffprobe returned zero geometry for %s; skipping", filename)
-                    stats.skipped_broken += 1
-                    continue
-
-                # Step 3: SHA-256 and dedup.
-                sha = sha256_file(clip_path)
-                if sha in seen_sha:
-                    stats.dedups += 1
-                    continue
-
-                # Step 4: build and append the row.
-                row = self._build_jsonl_row(clip_path, manifest_row, geometry, ingested_at_utc, sha)
-                fp.write(json.dumps(row, sort_keys=True) + "\n")
-                seen_sha.add(sha)
-                stats.written += 1
-
                 if saves_since_flush >= 50:
                     save_progress(self.progress_path, state)
                     saves_since_flush = 0
@@ -749,9 +775,7 @@ class CorpusIngestBase(ABC):
                         stats.dedups,
                     )
 
-        # Step 5: final flush.
         save_progress(self.progress_path, state)
-
         if total > 0:
             stats.attrition_pct = stats.skipped_download / total
 
@@ -762,14 +786,11 @@ class CorpusIngestBase(ABC):
             stats.skipped_broken,
             stats.dedups,
         )
-
         if stats.attrition_pct > self.attrition_warn_threshold:
             self._log.warning(
-                "download attrition %.1f%% exceeds advisory threshold %.1f%% "
-                "(check %s for failure reasons)",
+                "download attrition %.1f%% exceeds advisory threshold %.1f%% (check %s for reasons)",
                 stats.attrition_pct * 100.0,
                 self.attrition_warn_threshold * 100.0,
                 self.progress_path,
             )
-
         return stats
