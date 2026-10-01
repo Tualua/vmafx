@@ -242,10 +242,25 @@ def is_exact_pair(feature: str, backend_a: str, backend_b: str) -> bool:
 # 576x324 and larger; it leaves two orders of magnitude over the measurement
 # and four below the fp32 twins' ``FEATURE_TOLERANCE``. Such a cell runs at
 # ``--precision max`` like an exact one.
+#
+# ADR-1430: ``speed_chroma_cuda`` is the same case with one function. The
+# device rounds ``log2`` correctly (ADR-1380); ``speed.c`` calls the C
+# library's ``log2f``, and glibc's returns the neighbouring float for 0.015 %
+# to 0.97 % of the arguments of a binade. Run against a CPU whose ``log2f`` is
+# correctly rounded the twin returns the CPU's bits on every output (789 of
+# 789 on the fixtures); against glibc 13 of those 789 differ, by one to five
+# steps of the fp32 score (4.8e-7 to 1.4e-6 for scores of 3 to 11). The
+# bound is that count in the coarsest steps the fixtures have: the scores are
+# fp32 values below 16, where a step is at most 2^-20, and five steps are
+# 5 * 2^-20 = 4.77e-6, written as 5e-6. A fixture whose scores are larger
+# needs the same count in its own step (a synthetic frame scoring 22.5 is
+# 3.8e-6 away, two steps of 2^-19). It is not a statement about the twin's
+# arithmetic, which has no known difference left.
 # ---------------------------------------------------------------------------
 
 LIBM_TWINS: dict[str, dict[str, float]] = {
     "ciede": {"cuda": 1e-9},
+    "speed_chroma": {"cuda": 5e-6},
 }
 LIBM_TWIN_SOURCE = "libm:ADR-1426"
 

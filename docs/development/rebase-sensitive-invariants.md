@@ -156,6 +156,15 @@ linked AGENTS.md before resolving conflicts.
   (every CUDA fatbin's, ADR-1403).
   `core/test/test_cuda_device_resident_contract.py` guards the design. See
   [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
+- **CUDA `speed_chroma` gate cell ([ADR-1430](../adr/1430-cuda-speed-chroma-log2f-bound.md))**:
+  the twin's `log2` stays correctly rounded; the only difference from a
+  glibc CPU is that library's `log2f` (13 of 789 measured values, 1.4e-6 at
+  most, none with a correctly rounded `log2f` preloaded). The cell's bound is
+  `LIBM_TWINS["speed_chroma"]` in `scripts/ci/cross_backend_calibration.py`
+  (`5e-6`, sized for scores below 16), and
+  `core/test/test_cuda_speed_chroma_parity.c` keeps its 960x960 textured
+  fixture: a smaller or ramp fixture has a singular covariance and never
+  reaches the scoring path.
 - **SYCL strict FP line on every feature TU ([ADR-1367](../adr/1367-sycl-strict-fp-every-feature-tu.md))**:
   `core/src/meson.build` defines `sycl_strict_fp_args` once, between the
   `BEGIN/END VMAF SYCL strict FP policy` markers: icpx gets

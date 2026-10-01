@@ -410,6 +410,15 @@ glibc 2.43, 6 of 48 `speed_chroma_u` frames on the Netflix pair, by at most
 Netflix pair and on BBB 4K, by at most 1.4e-6. The CPU extractor itself then
 differs by the same amount between its gcc and icx builds.
 
+For the CUDA twin the outputs are listed one by one in
+[Research-1430](../research/1430-cuda-speed-chroma-log2f-bound.md): 13 of 789
+values on the Netflix pair at four bit depths, both 1080p checkerboard pairs
+and 200 BBB 4K frames, each one to five steps of the fp32 score, and all 789
+identical once the CPU run has a correctly rounded `log2f` preloaded. The
+parity gate compares the CPU and CUDA `speed_chroma` scores at `5e-6`
+([ADR-1430](../adr/1430-cuda-speed-chroma-log2f-bound.md)); that bound is
+sized for scores below 16, where one float step is at most 9.5e-7.
+
 The CPU build must not fuse multiply-adds either. icx does when FMA
 instructions are available, for example with `-march=native`, which is how the
 `vmaf-dev-mcp` image builds its own `/usr/local/bin/vmaf`: that binary's

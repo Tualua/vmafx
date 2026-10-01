@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-01T21:55:52Z",
+  "generated_at": "2026-10-01T21:56:42Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "495b19519052baad11225fa2ead67979df40453a",
-  "total_infractions": 274,
+  "commit_sha": "202152f51d2e28c6b9d14cd6fb307447f31f521c",
+  "total_infractions": 273,
   "infractions": [
     {
       "rule_id": "HISS-04",
@@ -1670,14 +1670,6 @@
       "symbol": "_is_local_source",
       "message": "Function '_is_local_source' (71 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "scripts/ci/check_python_dependency_locks.py:581:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "scripts/ci/cross_backend_vif_diff.py",
-      "line_number": 274,
-      "symbol": "run_vmaf",
-      "message": "Function 'run_vmaf' (68 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "scripts/ci/cross_backend_vif_diff.py:274:HISS-04"
     },
     {
       "rule_id": "HISS-01",

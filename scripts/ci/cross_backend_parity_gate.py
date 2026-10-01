@@ -186,6 +186,12 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
     ),
     "ssimulacra2": ("ssimulacra2",),
     "cambi": ("cambi",),
+    # ADR-1430: the three scores of `speed_chroma` (speed.c).
+    "speed_chroma": (
+        "speed_chroma_u",
+        "speed_chroma_v",
+        "speed_chroma_uv",
+    ),
 }
 
 # ---------------------------------------------------------------------------
@@ -248,6 +254,9 @@ FEATURE_TOLERANCE: dict[str, float] = {
     "ssimulacra2": 5e-3,
     # Integer pipeline — places=4 (5e-5). ADR-0360.
     "cambi": 5e-5,
+    # places=4 for a twin that is not listed. The CPU <-> CUDA cell takes its
+    # tolerance from LIBM_TWINS instead (ADR-1430).
+    "speed_chroma": 5e-5,
 }
 
 # Backend → extractor-name suffix and CLI device-selection flag.

@@ -226,6 +226,12 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
     # bit-identical score — places=4 (canonical floor) per
     # ADR-0205 §Precision contract.
     "cambi": ("cambi",),
+    # ADR-1430: the three scores of `speed_chroma` (speed.c).
+    "speed_chroma": (
+        "speed_chroma_u",
+        "speed_chroma_v",
+        "speed_chroma_uv",
+    ),
 }
 
 # Some `--feature` keys here are pseudo-names that map to a real
@@ -271,7 +277,7 @@ def feature_extractor_name(feature: str, backend: str | None) -> str:
     return f"{extractor_name}={opt_string}" if opt_string else extractor_name
 
 
-def run_vmaf(
+def build_vmaf_command(
     binary: Path,
     ref: Path,
     dist: Path,
@@ -284,13 +290,7 @@ def run_vmaf(
     backend: str | None,
     device: int | None,
     precision: str | None = None,
-) -> None:
-    """Invoke `vmaf` with `--feature <feature>` (or its backend twin)
-    and `--no_prediction` so the default model doesn't auto-load the
-    CPU extractor alongside the GPU one and race them on the same
-    feature names. See PR #120 commit message for the silent-CPU bug
-    that motivated this contract.
-    """
+) -> list[str]:
     extractor = feature_extractor_name(feature, backend)
     cmd = [
         str(binary),
@@ -314,11 +314,6 @@ def run_vmaf(
         "--json",
     ]
     if backend is not None:
-        # --backend forces backend exclusivity so a build with multiple
-        # backends doesn't try
-        # to init the unselected ones (which can hang on SYCL when
-        # the device map differs between backends). The device flag
-        # still pins the index for the chosen backend.
         cmd += ["--backend", backend]
         if device is not None:
             cmd += [BACKEND_DEVICE_FLAG[backend], str(device)]
@@ -326,6 +321,43 @@ def run_vmaf(
         cmd += ["--backend", "cpu"]
     if precision is not None:
         cmd += ["--precision", precision]
+    return cmd
+
+
+def run_vmaf(
+    binary: Path,
+    ref: Path,
+    dist: Path,
+    w: int,
+    h: int,
+    pix_fmt: str,
+    bitdepth: int,
+    feature: str,
+    output: Path,
+    backend: str | None,
+    device: int | None,
+    precision: str | None = None,
+) -> None:
+    """Invoke `vmaf` with `--feature <feature>` (or its backend twin)
+    and `--no_prediction` so the default model doesn't auto-load the
+    CPU extractor alongside the GPU one and race them on the same
+    feature names. See PR #120 commit message for the silent-CPU bug
+    that motivated this contract.
+    """
+    cmd = build_vmaf_command(
+        binary,
+        ref,
+        dist,
+        w,
+        h,
+        pix_fmt,
+        bitdepth,
+        feature,
+        output,
+        backend,
+        device,
+        precision,
+    )
     proc = run_command(
         cmd,
         allowed_executables=(binary,),

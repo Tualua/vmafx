@@ -250,7 +250,7 @@ Netflix 576x324 pair, both 1080p checkerboard pairs and BBB 3840x2160:
 | Twin | Agreement with the CPU |
 |---|---|
 | `vif`, `motion`, `motion_v2`, `psnr`, `psnr_hvs`, `float_psnr`, `float_moment`, `float_motion`, `float_ssim`, `cambi`, `speed_temporal`, `float_ms_ssim` | bit-identical on every frame |
-| `speed_chroma` | bit-identical except the frames where glibc misrounds `log2f` (6 of 312 outputs, 1.4e-6) |
+| `speed_chroma` | bit-identical except where glibc misrounds `log2f`: 13 of 789 outputs, 1.4e-6 at most, and none with a correctly rounded `log2f` preloaded ([ADR-1430](../../adr/1430-cuda-speed-chroma-log2f-bound.md), 200 BBB frames) |
 | `ssimulacra2` | bit-identical on every frame since [ADR-1433](../../adr/1433-cuda-ssimulacra2-cpu-sum-order.md) (7.3e-11 before: the terms were added in a tree) |
 | `ssim` | bit-identical on every frame since [ADR-1424](../../adr/1424-cuda-ssim-cpu-frame-sum.md) (1.1e-11 before: the terms were added per block) |
 | `adm` | bit-identical on every frame since [ADR-1416](../../adr/1416-cuda-adm-cpu-row-rounding.md) (2.1e-7 before: the host computed its own CSF weights) |

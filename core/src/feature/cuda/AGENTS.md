@@ -1034,6 +1034,15 @@ with a new ADR and measurements, never by reviving ADR-0753 text.
   chroma planes give 4x2 = 8 blocks for 25x25 covariance — singular on
   every frame, so never reach regular path at all. Any new
   SpEED test needing regular frame must be at least 960x960.
+- **`speed_log2()` stays correctly rounded; CPU `log2f` = only
+  difference left** (ADR-1430). `speed_chroma_cuda` vs glibc CPU: 13 of
+  789 values off by 1-5 fp32 steps (1.4e-6 max); vs CPU with CR `log2f`
+  preloaded: 0. Never port glibc's `log2f` to the device (ties twin to
+  one libm; icx build = `libimf`, rounds correctly). Gate cell =
+  `LIBM_TWINS["speed_chroma"]` 5e-6, scores < 16.
+  `test_cuda_speed_chroma_parity`: 960x960 texture (regular covariance),
+  three scores, every frame, relative 1e-6. A new difference there or in
+  the gate = twin regression until the preload run says otherwise.
 - **`float_adm` options must reach KERNELS, not option
   table alone** (ADR-1220) — `adm_p_norm` (`apn`), `adm_bypass_cm` (`bcm`)
   and, on Metal, `adm_skip_scale0` (`ssz`) =

@@ -3164,8 +3164,10 @@ test('test_cuda_speed_temporal_smoke', test_cuda_speed_temporal_smoke,
     is_parallel : false)
 
 # ADR-0965 — speed_chroma + speed_temporal CPU vs. CUDA parity gates.
-# Pin the cross-backend tolerance (places=4) for the CUDA SpEED twins wired
-# in this repair PR.  Both tests skip cleanly when no CUDA device is visible
+# speed_temporal pins the cross-backend tolerance (places=4); speed_chroma
+# compares its three scores at every frame to one part in a million on a
+# fixture with a regular covariance (ADR-1430: what is left is the CPU's
+# log2f).  Both tests skip cleanly when no CUDA device is visible
 # (mirrors test_cuda_motion3_parity.c).
 test_cuda_speed_chroma_parity = executable('test_cuda_speed_chroma_parity',
     ['test.c', 'test_cuda_speed_chroma_parity.c'],

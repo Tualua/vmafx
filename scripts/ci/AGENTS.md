@@ -579,6 +579,12 @@ calibration rows; `--fp16-features` still wins. NOT an exact twin: never
 move it to `EXACT_TWINS` without 0 on every fixture. Bound holds from
 576x324 up (one float-step pixel weighs `8.7 * 2^-23 * (v / mean) / px`).
 Listing a twin needs per-pixel attribution of the residual + ADR.
+`speed_chroma`: `cuda` = 5e-6 (ADR-1430): device `log2` correctly rounded
+(ADR-1380), CPU = C library `log2f`; glibc 2.44 -> 13 of 789 values off by
+1-5 fp32 steps (1.4e-6 max), 0 with CR `log2f` preloaded. Bound sized for
+scores < 16 (step <= 9.5e-7); bigger scores -> scale it, never loosen for
+another reason. Gate feature `speed_chroma` = `speed_chroma_u` / `_v` /
+`_uv`; other twins places=4.
 
 `float_ms_ssim` + `float_ms_ssim_lcs`: `sycl` listed (ADR-1414, Arc A380:
 every per-scale mean = CPU's). Exact cell = ONE binary on both sides ->

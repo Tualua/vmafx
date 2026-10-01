@@ -900,7 +900,7 @@ def test_ciede_cuda_cell_is_bounded_by_its_math_library_and_other_twins_are_not(
             backends=(backend_a, backend_b),
         )
 
-    assert LIBM_TWINS == {"ciede": {"cuda": 1e-9}}
+    assert LIBM_TWINS["ciede"] == {"cuda": 1e-9}
     assert not is_exact_pair("ciede", "cpu", "cuda")
     assert libm_pair_tolerance("ciede", "cpu", "cuda") == LIBM_TWINS["ciede"]["cuda"]
     assert libm_pair_tolerance("ciede", "cpu", "sycl") is None
@@ -920,6 +920,43 @@ def test_ciede_cuda_cell_is_bounded_by_its_math_library_and_other_twins_are_not(
         gpu_id=None,
         backends=("cpu", "cuda"),
     ) == (DEFAULT_FP16_TOLERANCE, "fp16")
+
+
+def test_speed_chroma_cuda_cell_is_bounded_by_the_cpu_log2f() -> None:
+    """ADR-1430: the device rounds log2 correctly, glibc's log2f does not."""
+
+    def cell(backend_a: str, backend_b: str) -> tuple[float, str]:
+        return resolve_cell_tolerance(
+            "speed_chroma",
+            fp16_features=[],
+            calibration=None,
+            gpu_id=None,
+            width=3840,
+            height=2160,
+            backends=(backend_a, backend_b),
+        )
+
+    assert FEATURE_METRICS["speed_chroma"] == (
+        "speed_chroma_u",
+        "speed_chroma_v",
+        "speed_chroma_uv",
+    )
+    assert LIBM_TWINS["speed_chroma"] == {"cuda": 5e-6}
+    assert not is_exact_pair("speed_chroma", "cpu", "cuda")
+    assert cell("cpu", "cuda") == (5e-6, LIBM_TWIN_SOURCE)
+    assert cell("cuda", "cpu") == (5e-6, LIBM_TWIN_SOURCE)
+    # The largest measured difference (BBB frame 21, speed_chroma_v) passes;
+    # the places=4 default it replaces would have hidden ten times more.
+    largest_measured = 1.431e-6
+    assert largest_measured < LIBM_TWINS["speed_chroma"]["cuda"]
+    assert LIBM_TWINS["speed_chroma"]["cuda"] < FEATURE_TOLERANCE["speed_chroma"] / 5
+    for pair in (("cpu", "sycl"), ("cpu", "hip"), ("cuda", "sycl")):
+        tolerance, source = cell(*pair)
+        assert _close(tolerance, FEATURE_TOLERANCE["speed_chroma"]), pair
+        assert source == "default", pair
+    # The extractor keeps the feature's name on every backend.
+    assert feature_extractor_name("speed_chroma", "cpu") == "speed_chroma"
+    assert feature_extractor_name("speed_chroma", "cuda") == "speed_chroma_cuda"
 
 
 def test_psnr_hvs_per_block_twin_keeps_area_scaled_tolerance() -> None:

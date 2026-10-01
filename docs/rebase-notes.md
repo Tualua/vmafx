@@ -57285,3 +57285,23 @@ ADR-1422).
   `core/test/test_sycl_vif_exact_gain_contract.py` (seven planted
   regressions).
 - No Netflix golden-data, public API or FFmpeg patch impact.
+
+## ADR-1430 — speed_chroma on CUDA joins the parity gate with a log2f bound (2026-10-01)
+
+`fix/cuda-speed-chroma-libm-bound`, Research-1430, ADR-1430.
+
+- No source of `speed_chroma_cuda` changes. `speed_log2()` in
+  `core/src/feature/cuda/speed/speed_score.cu` stays correctly rounded; do
+  not replace it by a port of a C library's `log2f`.
+- `scripts/ci/cross_backend_parity_gate.py` and
+  `scripts/ci/cross_backend_vif_diff.py`: new feature `speed_chroma`
+  (`speed_chroma_u`, `speed_chroma_v`, `speed_chroma_uv`), places=4 for an
+  unlisted twin. `scripts/ci/cross_backend_calibration.py`:
+  `LIBM_TWINS["speed_chroma"] = {"cuda": 5e-6}`.
+- `core/test/test_cuda_speed_chroma_parity.c`: 960x960 textured fixture
+  (regular covariance), all three scores of every frame, relative bound
+  `1e-6`. If upstream changes `speed.c`'s `log2f` calls or scoring, re-run it
+  and the gate cell; a new difference is the twin's until a run with a
+  correctly rounded `log2f` preloaded shows otherwise.
+- No Netflix golden-data, public C API or FFmpeg patch impact; `speed.c` and
+  the SYCL, HIP and Metal twins are untouched.
