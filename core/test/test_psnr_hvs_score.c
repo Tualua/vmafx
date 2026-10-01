@@ -188,14 +188,14 @@ static char *test_compacted_block_all_zeros(void)
     float terms[3 * TERMS];
     fill(terms, TERMS, 1.0f);
     fill(terms + TERMS, TERMS, 0.0f);
-    terms[2 * TERMS] = BIG;
-    fill(terms + 2 * TERMS + 1, TERMS - 1u, 1.0f);
+    terms[TWO_BLOCKS] = BIG;
+    fill(terms + TWO_BLOCKS + 1, TERMS - 1u, 1.0f);
 
     float compact[2 * TERMS];
     fill(compact, TERMS, 1.0f);
     compact[TERMS] = BIG;
     fill(compact + TERMS + 1, TERMS - 1u, 1.0f);
-    const size_t n_compact = (size_t)2 * TERMS;
+    const size_t n_compact = TWO_BLOCKS;
 
     const double uncompacted = vmaf_psnr_hvs_plane_score(terms, 3u, 8u);
     const double compacted = vmaf_psnr_hvs_plane_score_compacted(compact, n_compact, 3u, 8u);
@@ -240,7 +240,7 @@ static char *test_compacted_rejects_bad_input(void)
     return NULL;
 }
 
-char *run_tests(void)
+static char *run_basic_tests(void)
 {
     mu_run_test(test_sum_is_one_running_float);
     mu_run_test(test_sum_follows_term_order);
@@ -249,11 +249,23 @@ char *run_tests(void)
     mu_run_test(test_plane_score_rejects_bad_input);
     mu_run_test(test_combined_score);
     mu_run_test(test_score_db);
+    return NULL;
+}
+
+static char *run_compacted_tests(void)
+{
     mu_run_test(test_compacted_plane_all_zeros);
     mu_run_test(test_compacted_plane_starts_with_zeros);
     mu_run_test(test_compacted_block_all_zeros);
     mu_run_test(test_compacted_sign_of_zero_behavior);
     mu_run_test(test_compacted_rejects_bad_input);
+    return NULL;
+}
+
+char *run_tests(void)
+{
+    mu_run_test(run_basic_tests);
+    mu_run_test(run_compacted_tests);
     return NULL;
 }
 

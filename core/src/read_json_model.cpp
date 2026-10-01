@@ -31,6 +31,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <utility>
 
 #define MODEL_FEATURE_INITIAL_CAP 8u
 #define MODEL_KNOT_INITIAL_CAP 4u
@@ -762,7 +763,7 @@ int model_collection_parse_loop(json_stream *s, VmafModel **model,
         if (i == 0)
             c->name = cfg_name;
         const int n = snprintf(cfg_name, cfg_name_sz, "%s_%04u", name, ++i);
-        if (n < 0 || static_cast<size_t>(n) >= cfg_name_sz) {
+        if (n < 0 || std::cmp_greater_equal(n, cfg_name_sz)) {
             teardown_models(model, model_collection);
             return -EINVAL;
         }

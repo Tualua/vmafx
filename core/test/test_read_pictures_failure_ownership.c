@@ -145,6 +145,19 @@ static char *test_mismatched_pictures_release_the_pictures(void)
     return NULL;
 }
 
+static char *verify_pool_pairs_returned(VmafContext *vmaf, unsigned count)
+{
+    for (unsigned i = 0; i < count; i++) {
+        VmafPicture ref;
+        VmafPicture dist;
+        mu_assert("the pair of a flushed context did not return to the pool",
+                  fetch_pair(vmaf, &ref, &dist) == 0);
+        mu_assert("unref ref failed", vmaf_picture_unref(&ref) == 0);
+        mu_assert("unref dist failed", vmaf_picture_unref(&dist) == 0);
+    }
+    return NULL;
+}
+
 static char *test_flushed_context_releases_the_pictures(void)
 {
     VmafContext *vmaf = pooled_context();
@@ -155,14 +168,7 @@ static char *test_flushed_context_releases_the_pictures(void)
     mu_assert("flush failed", vmaf_read_pictures(vmaf, NULL, NULL, 0) == 0);
     mu_assert("a flushed context accepted a pair", submit_pooled(vmaf, 1) == -EINVAL);
     /* The pair is back in the pool: further pairs can be fetched. */
-    for (unsigned i = 0; i < 4u; i++) {
-        VmafPicture ref;
-        VmafPicture dist;
-        mu_assert("the pair of a flushed context did not return to the pool",
-                  fetch_pair(vmaf, &ref, &dist) == 0);
-        mu_assert("unref ref failed", vmaf_picture_unref(&ref) == 0);
-        mu_assert("unref dist failed", vmaf_picture_unref(&dist) == 0);
-    }
+    mu_assert_msg(verify_pool_pairs_returned(vmaf, 4u));
 
     disarm_watchdog();
     mu_assert("close failed", vmaf_close(vmaf) == 0);

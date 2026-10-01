@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright 2016-2025 Netflix, Inc.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -324,7 +325,7 @@ int pool_attach_priv(VmafPicturePool *pool, VmafPicture *pic, unsigned idx)
     pic->priv = reinterpret_cast<VmafPicturePrivate *>(priv);
 
     if (pool->cfg.attach_picture_callback) {
-        int err = pool->cfg.attach_picture_callback(pic, idx, pool->cfg.cookie);
+        const int err = pool->cfg.attach_picture_callback(pic, idx, pool->cfg.cookie);
         if (err) {
             std::free(priv);
             pic->priv = nullptr;

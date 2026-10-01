@@ -1,6 +1,25 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## The CPU clang-tidy lane brought back to baseline (2026-10-02)
+
+`fix/cpu-tidy-regressions`, closes `T-TIDY-CPU-LANE-ABOVE-BASELINE-2026-10-02`.
+
+- `core/src/picture_pool.cpp`: `default_picture_free()` const-qualifies the error
+  variable from `munmap()` (`misc-const-correctness`).
+- `core/src/read_json_model.cpp`: uses `std::cmp_greater_equal()` to safely
+  compare signed file size against unsigned buffer capacity (`modernize-use-integer-sign-comparison`).
+- `core/test/test_psnr_hvs_score.c`: casts multiplication operands to `size_t`
+  (`bugprone-implicit-widening-of-multiplication-result`) and extracts test buffer
+  allocation into helper `alloc_test_buffers()` to keep function length under 50 LOC
+  (`readability-function-size`).
+- `core/test/test_read_pictures_failure_ownership.c`: extracts picture pool
+  ownership verification into helper `verify_pictures_returned_to_pool()` to keep
+  function length under 60 LOC (`readability-function-size`).
+- `core/tools/vmaf.cpp`: replaces runtime `assert()` in `FrameReader::read_frame()`
+  with explicit boundary check returning `-EINVAL` (`cert-dcl03-c,misc-static-assert`).
+- No Netflix golden-data, public API or FFmpeg patch impact.
+
 ## The SYCL lint database reads both Ninja rule forms (2026-10-02)
 
 `fix/sycl-tidy-compdb-depfile-rule`, closes
