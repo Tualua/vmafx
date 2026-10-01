@@ -995,13 +995,15 @@ feature/
   fp32 sum, fp32 divide: NOT the old table's decimals (26 of 34 taps
   differ, centre tap of scale 0 by 14 ulp). GPU twin must take taps from
   `vif_get_filter()` on host, never a literal table: stale table =
-  3.8e-5 on Netflix pair (ADR-1412 CUDA fixed, ADR-1422 SYCL fixed; HIP /
-  Metal open, `T-GPU-FLOAT-VIF-CPU-ARITHMETIC-2026-10-01`). Also load-bearing for
+  3.8e-5 on Netflix pair (ADR-1412 CUDA fixed, ADR-1422 SYCL fixed, ADR-1444
+  HIP fixed; Metal open,
+  `T-GPU-FLOAT-VIF-CPU-ARITHMETIC-2026-10-01`). Also load-bearing for
   twins: `VIF_OPT_FAST_LOG2` (`vif_options.h`) makes CPU `log2f` the
   polynomial `log2f_approx()`, no libm; `vif_pixel_statistic_s()` keeps
   `vif_sigma_nsq` in `double`; `vif_statistic_s()` sums row by row in
   fp32. Change any of these -> change
-  `cuda/float_vif/float_vif_device.h` and
+  `float_vif_gpu_common.h` (CUDA + HIP twins, ADR-1444; CUDA spelling in
+  `cuda/float_vif/float_vif_device.h`) and
   `sycl/sycl_float_vif_math.h` same PR
   (`test_float_vif_device_math`, `test_sycl_float_vif_math` fail until
   they follow).

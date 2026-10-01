@@ -1144,3 +1144,4 @@
 1440-hip-float-psnr-exact-block-sums
 1443-sycl-ssim-cpu-arithmetic
 1441-hip-float-ssim-cpu-window-sums
+1444-hip-float-vif-cpu-arithmetic

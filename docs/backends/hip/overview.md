@@ -412,8 +412,10 @@ core/src/feature/hip/          # per-feature kernels
   [ssimulacra2](../../metrics/ssimulacra2.md). Emits `ssimulacra2`.
 - **`float_adm_hip`** — ADM float pipeline, ninth kernel-template consumer
   (ADR-0468). Mirrors `float_adm_cuda.c`. Emits `float_adm2`.
-- **`float_vif_hip`** — multi-scale VIF float pipeline; respects
-  `vif_skip_scale0` (PR #1180). Emits `float_vif_scale0..3`.
+- **`float_vif_hip`** — multi-scale VIF float pipeline; bit-identical to the
+  CPU `float_vif` (see
+  [float_vif_hip returns the CPU's scores](#float_vif_hip-returns-the-cpus-scores-bit-for-bit-2026-10-02)).
+  Emits `float_vif_scale0..3`.
 
 ## Remaining stubs
 
@@ -945,6 +947,82 @@ python3 scripts/ci/cross_backend_parity_gate.py --vmaf-binary build-hip/tools/vm
     --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
     --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
     --width 576 --height 324 --backends cpu hip --features vif
+```
+
+### `float_vif_hip` returns the CPU's scores bit for bit (2026-10-02)
+
+`--backend hip --feature float_vif_hip` gives the same `vif_scale0..3` as
+`--backend cpu --feature float_vif`, to the last bit, and with `debug=true`
+the same frame ratio and per-scale numerator and denominator sums
+([ADR-1444](../../adr/1444-hip-float-vif-cpu-arithmetic.md)). The twin runs
+the arithmetic of the CUDA twin from one shared header
+(`core/src/feature/float_vif_gpu_common.h`): the Gaussian taps the CPU
+computes with `vif_get_filter()`, the CPU's polynomial `log2`, the noise
+variance as a `double`, and one `float` sum per row and then over the rows.
+Before, the kernel held a table of taps the CPU no longer uses, called the
+device `log2f()`, took the noise variance as a `float` and added per wave and
+per 16x16 block.
+
+Measured on a gfx1036 at `--precision max`, frames whose score equals the
+CPU's on scale 0 / 1 / 2 / 3:
+
+| Fixture | Frames | Before | Max abs diff before | After |
+|---|---|---|---|---|
+| Netflix 576x324, 8 bit | 48 | 0 / 0 / 0 / 0 | 3.8e-5 | 48 / 48 / 48 / 48 |
+| Checkerboard 1 px, 1920x1080 | 3 | 0 / 0 / 0 / 0 | 1.05e-6 | 3 / 3 / 3 / 3 |
+| Checkerboard 10 px, 1920x1080 | 3 | 1 / 3 / 3 / 3 | 1.1e-12 | 3 / 3 / 3 / 3 |
+| Netflix 576x324, 10 bit | 3 | 0 / 0 / 0 / 0 | 1.07e-5 | 3 / 3 / 3 / 3 |
+| Sparks 480x270, 10 bit | 5 | 0 / 0 / 0 / 0 | 3.4e-6 | 5 / 5 / 5 / 5 |
+| BBB 3840x2160 | 48 | 0 / 0 / 0 / 0 | 7.0e-6 | 48 / 48 / 48 / 48 |
+| Netflix 576x324, 12 and 16 bit | 3 each | 0 / 0 / 0 / 0 | 1.07e-5 | all |
+| Netflix 576x324, 10-bit 4:2:2 | 48 | 0 / 0 / 0 / 0 | 3.8e-5 | 48 / 48 / 48 / 48 |
+| Full-range noise 576x324 at 8, 10, 12, 16 bit | 3 each | 0 / 0 / 0 / 0 | 1.0e-8 | all |
+| Bright 16 bit, 1920x1080 | 2 | 0 / 0 / 0 / 0 | 1.06e-4 | 2 / 2 / 2 / 2 |
+
+10 of 712 scores before, 712 of 712 after. The 1.06e-4 of the bright 16-bit
+pair was above the 5e-5 the parity gate allowed the twin. With `debug=true`,
+`vif_enhn_gain_limit=1.0` with `vif_sigma_nsq=1.5`, `vif_sigma_nsq=4.7`,
+`vif_skip_scale0` and the per-scale floors (`vif_scale1_min_val`,
+`vif_scale3_min_val`, new on this twin) the outputs are identical too on 62
+frames of six of those fixtures (1922 values).
+
+The old kernel also read in front of its buffer on a plane smaller than a
+16x16 tile, and the gfx1036 faults on that read: `float_vif_hip` on a 64x64,
+56x56 or 40x40 frame ended with `Memory access fault by GPU node-1` on three
+of three runs each. Frames from 16x16 now run and return the CPU's bits
+(16x16, 17x33, 71x20 checked).
+
+A frame takes longer. Steady state inside one process, 11 interleaved pairs
+of runs, host load average 3 to 13:
+
+| Frame | Before | After | |
+|---|---|---|---|
+| 1920x1080 | 20.7 ms | 26.0 ms | +26 % |
+| 3840x2160 | 86.0 ms | 147.1 ms | +71 % |
+
+Where the increase goes, measured by taking one property out of the new twin
+at a time: evaluating the two quotients in `double` costs 4.4 ms at 1920x1080
+and 8.3 ms at 3840x2160; the plane of per-pixel terms that the row sums read
+(two floats per pixel, 66 MB at 3840x2160) costs 1.1 ms and 37.8 ms; adding
+each row in one thread costs 0.6 ms at 1920x1080 and nothing measurable at
+3840x2160. On this integrated GPU the twin is slower than the CPU extractor
+(46 ms per 3840x2160 frame on 16 threads). Tuning is tracked as
+`T-HIP-FLOAT-VIF-EXACT-THROUGHPUT-2026-10-02`; the scores must stay
+bit-identical.
+
+Stored `float_vif_hip` scores change by up to 3.8e-5 on typical content;
+re-run them if you compare against the CPU.
+
+```bash
+python3 scripts/ci/run_meson_test.py -- -C build-hip \
+    test_hip_float_vif_parity test_hip_float_vif_parity_large \
+    test_hip_float_vif_exact_contract test_float_vif_device_math
+python3 scripts/dev/speed_gpu_parity.py --backend hip \
+    --vmaf "$PWD/build-hip/tools/vmaf" --feature float_vif
+python3 scripts/ci/cross_backend_parity_gate.py --vmaf-binary build-hip/tools/vmaf \
+    --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+    --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+    --width 576 --height 324 --backends cpu hip --features float_vif
 ```
 
 ## SpEED-chroma reports singularity separately from failure (ADR-1202, 2026-09-06)

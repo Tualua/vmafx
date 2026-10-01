@@ -20,6 +20,10 @@ and passes on the new one. ``test_float_vif_device_math`` checks the
 arithmetic of the shared header against the CPU routines on the host, and
 ``test_cuda_float_vif_parity`` checks the scores on a device; this contract
 keeps the design from eroding on hosts without one.
+
+The arithmetic and the kernel argument blocks are in the backend-neutral
+``float_vif_gpu_common.h`` since ``float_vif_hip`` runs them too (ADR-1444);
+``cuda/float_vif/float_vif_device.h`` gives it the CUDA device spelling.
 """
 
 from __future__ import annotations
@@ -34,6 +38,7 @@ FEATURE_ROOT = ROOT / "core" / "src" / "feature"
 HOST = "cuda/float_vif_cuda.c"
 KERNEL = "cuda/float_vif/float_vif_score.cu"
 DEVICE = "cuda/float_vif/float_vif_device.h"
+MATH = "float_vif_gpu_common.h"
 CPU_OPTIONS = "vif_options.h"
 
 COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
@@ -47,6 +52,15 @@ FP64_NUMERATOR = (
     "const double num_arg = FVIF_DADD(1.0, FVIF_DDIV((double)gain_sq_sigma1, num_den));",
     "const double den_arg = FVIF_DADD(1.0, FVIF_DDIV((double)sigma1_sq, vif_sigma_nsq));",
     "if ((double)sigma1_sq < vif_sigma_nsq) {",
+)
+# What the CUDA header adds to the shared arithmetic: the include, and device
+# operators that round once whatever the compiler's contraction setting is.
+CUDA_SPELLING = (
+    '#include "feature/float_vif_gpu_common.h"',
+    "#define FVIF_FMUL(a, b) __fmul_rn((a), (b))",
+    "#define FVIF_FADD(a, b) __fadd_rn((a), (b))",
+    "#define FVIF_DADD(a, b) __dadd_rn((a), (b))",
+    "#define FVIF_DDIV(a, b) __ddiv_rn((a), (b))",
 )
 ROW_ACCUMULATION = (
     "accum_num = FVIF_FADD(accum_num, terms[at]);",
@@ -65,13 +79,13 @@ def _code(source: str) -> str:
 def _sources() -> dict[str, str]:
     return {
         name: (FEATURE_ROOT / name).read_text(encoding="utf-8")
-        for name in (HOST, KERNEL, DEVICE, CPU_OPTIONS)
+        for name in (HOST, KERNEL, DEVICE, MATH, CPU_OPTIONS)
     }
 
 
 def _tap_failures(sources: dict[str, str]) -> list[str]:
     failures: list[str] = []
-    for name in (KERNEL, DEVICE):
+    for name in (KERNEL, DEVICE, MATH):
         if TAP_LITERAL.search(_code(sources[name])):
             failures.append(f"{name}: a filter tap is a source literal, not vif_get_filter()'s")
     host = _code(sources[HOST])
@@ -89,7 +103,7 @@ def _log2_failures(sources: dict[str, str]) -> list[str]:
             f"{CPU_OPTIONS}: VIF_OPT_FAST_LOG2 is gone, so the CPU calls libm's log2f() and "
             "fvif_log2() no longer mirrors it"
         )
-    for name in (KERNEL, DEVICE):
+    for name in (KERNEL, DEVICE, MATH):
         if LIBM_LOG2.search(_code(sources[name])):
             failures.append(f"{name}: a libm log2 call replaces the reference's polynomial")
     return failures
@@ -97,12 +111,16 @@ def _log2_failures(sources: dict[str, str]) -> list[str]:
 
 def _type_failures(sources: dict[str, str]) -> list[str]:
     failures: list[str] = []
-    device = _code(sources[DEVICE])
+    math = _code(sources[MATH])
     for piece in FP64_NUMERATOR:
+        if piece not in math:
+            failures.append(f"{MATH}: vif_sigma_nsq no longer enters in fp64 ({piece})")
+    if "double vif_sigma_nsq;" not in math:
+        failures.append(f"{MATH}: the kernel argument vif_sigma_nsq is no longer a double")
+    device = _code(sources[DEVICE])
+    for piece in CUDA_SPELLING:
         if piece not in device:
-            failures.append(f"{DEVICE}: vif_sigma_nsq no longer enters in fp64 ({piece})")
-    if "double vif_sigma_nsq;" not in device:
-        failures.append(f"{DEVICE}: the kernel argument vif_sigma_nsq is no longer a double")
+            failures.append(f"{DEVICE}: the CUDA device spelling is incomplete ({piece})")
     if ".vif_sigma_nsq = s->vif_sigma_nsq," not in _code(sources[HOST]):
         failures.append(f"{HOST}: vif_sigma_nsq is narrowed before it reaches the kernel")
     return failures
@@ -110,10 +128,10 @@ def _type_failures(sources: dict[str, str]) -> list[str]:
 
 def _order_failures(sources: dict[str, str]) -> list[str]:
     failures: list[str] = []
-    device = _code(sources[DEVICE])
+    math = _code(sources[MATH])
     for piece in ROW_ACCUMULATION:
-        if piece not in device:
-            failures.append(f"{DEVICE}: a row is no longer one fp32 accumulation ({piece})")
+        if piece not in math:
+            failures.append(f"{MATH}: a row is no longer one fp32 accumulation ({piece})")
     kernel = _code(sources[KERNEL])
     if BLOCK_REDUCTION.search(kernel):
         failures.append(f"{KERNEL}: a per-warp or per-block reduction replaces the row sums")
@@ -165,7 +183,7 @@ class FloatVifCudaExactContract(unittest.TestCase):
     def test_libm_log2_is_detected(self) -> None:
         # The pre-ADR-1412 statistic.
         sources = _sources()
-        sources[DEVICE] = sources[DEVICE].replace(
+        sources[MATH] = sources[MATH].replace(
             "float num = fvif_log2((float)num_arg);", "float num = log2f((float)num_arg);", 1
         )
         self.assertTrue(any("libm log2" in item for item in _contract_failures(sources)))
@@ -180,7 +198,7 @@ class FloatVifCudaExactContract(unittest.TestCase):
     def test_fp32_sigma_nsq_is_detected(self) -> None:
         # The pre-ADR-1412 kernel took `float vif_sigma_nsq`.
         sources = _sources()
-        sources[DEVICE] = sources[DEVICE].replace(
+        sources[MATH] = sources[MATH].replace(
             "const double num_den = FVIF_DADD((double)sv_sq, vif_sigma_nsq);",
             "const float num_den = FVIF_FADD(sv_sq, (float)vif_sigma_nsq);",
             1,
@@ -191,6 +209,15 @@ class FloatVifCudaExactContract(unittest.TestCase):
         failures = _contract_failures(sources)
         self.assertTrue(any("no longer enters in fp64" in item for item in failures))
         self.assertTrue(any("narrowed" in item for item in failures))
+
+    def test_plain_device_operators_are_detected(self) -> None:
+        # The shared header's default operators: correct on a host and on HIP,
+        # where the build flags forbid contraction, but not under nvcc.
+        sources = _sources()
+        sources[DEVICE] = sources[DEVICE].replace(
+            "#define FVIF_FMUL(a, b) __fmul_rn((a), (b))", "", 1
+        )
+        self.assertTrue(any("CUDA device spelling" in item for item in _contract_failures(sources)))
 
     def test_warp_reduction_is_detected(self) -> None:
         # The pre-ADR-1412 fvif_warp_reduce().

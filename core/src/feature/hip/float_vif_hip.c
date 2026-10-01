@@ -3,35 +3,37 @@
  *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
- *  float_vif feature extractor on the HIP backend — ninth
- *  kernel-template consumer (T7-10b batch-5 / ADR-0379).
+ *  float_vif feature extractor on the HIP backend (ADR-0379; the CPU's
+ *  arithmetic since ADR-1444).
  *
- *  This TU mirrors `core/src/feature/cuda/float_vif_cuda.c`
- *  call-graph-for-call-graph: same private-state struct shape, same
- *  init/submit/collect/close lifecycle, same provided_features list,
- *  and the same `vif_kernelscale == 1.0` validation gate.
+ *  Numerical contract: every output is the CPU extractor's, bit for bit. The
+ *  CPU extractor fixes four things a twin has to copy for that, and this twin
+ *  copies them the way the CUDA twin does (ADR-1412):
  *
- *  Per-frame flow: 4 compute + 3 decimate kernel launches, all on a
- *  single stream so they serialise naturally.  Per-block (num, den)
- *  float partials are copied to pinned host memory.  The host
- *  accumulates them in double.
+ *   - the Gaussian taps are vif_get_filter()'s, computed at init in fp32 as
+ *     float_vif.c computes them, and handed to every launch by value;
+ *   - log2 is the polynomial log2f_approx(), not a math-library call;
+ *   - vif_sigma_nsq is a double, so the two log arguments are fp64 quotients
+ *     and sums rounded to fp32 once;
+ *   - the per-pixel terms are added row by row into one fp32 accumulator and
+ *     the rows into another.
  *
- *  When `HAVE_HIPCC` is defined (enable_hipcc=true at configure time),
- *  the real HIP Module API path is active.  Without it the scaffold
- *  posture is preserved: every lifecycle helper returns -ENOSYS.
+ *  The arithmetic is feature/float_vif_gpu_common.h, which the kernels
+ *  (float_vif/float_vif_score.hip), this file, the CUDA twin and the
+ *  device-free test core/test/test_float_vif_device_math.c all compile.
  *
- *  HIP adaptation notes vs CUDA twin:
- *  - Warp size 64 on GCN/RDNA; the kernel accounts for this via
- *    FVIF_WARP_SIZE=64 and FVIF_WARPS_PER_BLOCK=4 for a 16x16 WG.
- *  - Kernel args are raw pointers (no VmafCudaBuffer indirection).
- *  - HtoD copy uses hipMemcpy2DAsync with hipMemcpyHostToDevice because
- *    pictures arrive as CPU VmafPictures (VMAF_FEATURE_EXTRACTOR_HIP
- *    flag not yet set — same posture as all other HIP consumers).
- *  - Device-only buffers (ref_buf[], dis_buf[], num_partials[],
- *    den_partials[]) are plain hipMalloc allocations; the raw planes
- *    (ref_raw, dis_raw) come from the context's shared frame (ADR-1408).
- *  - Pinned host readback for (num, den) partials uses hipHostMalloc,
- *    mirroring the CUDA twin's vmaf_cuda_buffer_host_alloc pattern.
+ *  Per frame and scale on one stream: a decimate launch (scales 1 to 3), a
+ *  compute launch that stores the two terms of every pixel, and a row-sum
+ *  launch with one thread per row. The readback is two floats per row per
+ *  scale into pinned host memory; collect() adds the rows with
+ *  fvif_sum_rows().
+ *
+ *  When `HAVE_HIPCC` is defined (enable_hipcc=true at configure time) the
+ *  kernels are built and run. Without it every lifecycle helper returns
+ *  -ENOSYS.
+ *
+ *  The raw planes (ref_raw, dis_raw) come from the context's shared frame
+ *  (ADR-1408); the other device buffers are plain hipMalloc allocations.
  */
 
 #include <errno.h>
@@ -46,6 +48,7 @@
 #include "feature_extractor.h"
 #include "feature_name.h"
 #include "feature/nonfinite_score.h"
+#include "float_vif_gpu_common.h"
 #include "vif_tools.h"
 #include "libvmaf/picture.h"
 #include "log.h"
@@ -68,9 +71,6 @@
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 #endif /* HAVE_HIPCC */
 
-#define FVIF_BX 16u
-#define FVIF_BY 16u
-
 typedef struct FloatVifStateHip {
     VmafHipKernelLifecycle lc;
     VmafHipContext *ctx;
@@ -79,12 +79,19 @@ typedef struct FloatVifStateHip {
     double vif_enhn_gain_limit;
     double vif_kernelscale;
     double vif_sigma_nsq;
+    double vif_scale1_min_val;
+    double vif_scale2_min_val;
+    double vif_scale3_min_val;
     bool vif_skip_scale0; /* host-side suppression: emit 0.0 for scale-0, mirrors float_vif.c */
+
+    /* vif_get_filter() per scale, as float_vif.c caches it. */
+    FloatVifGpuTaps taps[FVIF_SCALES];
 
 #ifdef HAVE_HIPCC
     hipModule_t module;
     hipFunction_t func_compute;
     hipFunction_t func_decimate;
+    hipFunction_t func_row_sums;
 
     /* This frame's raw luma planes on the device: the context's shared frame,
      * or `planes`' own buffers when there is none (ADR-1408). */
@@ -94,15 +101,15 @@ typedef struct FloatVifStateHip {
     /* Intermediate float buffers — ping-pong across scales 1-3. */
     void *ref_buf[2];
     void *dis_buf[2];
-    /* Per-block (num, den) partial sums — one slot per workgroup per scale. */
-    void *num_partials[4];
-    void *den_partials[4];
-    /* Pinned host readback for partials. */
-    float *num_host[4];
-    float *den_host[4];
+    /* The numerator and denominator term of every pixel of the scale being
+     * computed (sized for scale 0, reused by the others on the same stream),
+     * then per scale the sums of each row, on the device and read back into
+     * pinned host memory. */
+    void *terms;
+    void *rows[FVIF_SCALES];
+    float *rows_host[FVIF_SCALES];
 #endif /* HAVE_HIPCC */
 
-    unsigned wg_count[4];
     unsigned width;
     unsigned height;
     unsigned bpc;
@@ -143,6 +150,39 @@ static const VmafOption options[] = {
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM | VMAF_OPT_FLAG_DEFAULT_ONLY,
     },
     {
+        .name = "vif_scale1_min_val",
+        .alias = "s1miv",
+        .help = "minimum value allowed; smaller values will be set to this value",
+        .offset = offsetof(FloatVifStateHip, vif_scale1_min_val),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = 0.0,
+        .min = 0.0,
+        .max = 1.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "vif_scale2_min_val",
+        .alias = "s2miv",
+        .help = "minimum value allowed; smaller values will be set to this value",
+        .offset = offsetof(FloatVifStateHip, vif_scale2_min_val),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = 0.0,
+        .min = 0.0,
+        .max = 1.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
+        .name = "vif_scale3_min_val",
+        .alias = "s3miv",
+        .help = "minimum value allowed; smaller values will be set to this value",
+        .offset = offsetof(FloatVifStateHip, vif_scale3_min_val),
+        .type = VMAF_OPT_TYPE_DOUBLE,
+        .default_val.d = 0.0,
+        .min = 0.0,
+        .max = 1.0,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+    },
+    {
         .name = "vif_sigma_nsq",
         .alias = "snsq",
         .help = "neural noise variance",
@@ -175,6 +215,26 @@ static void compute_per_scale_dims(FloatVifStateHip *s)
     }
 }
 
+/* Each scale's Gaussian, from the CPU's own routine. float_vif.c::init() fills
+ * its filter cache with vif_get_filter_size() and vif_get_filter() for
+ * (float)vif_kernelscale; the same two calls here give the kernels the same
+ * fp32 taps. A filter wider than the kernels' tile halo is refused (it cannot
+ * occur at the only kernelscale init accepts). */
+static int fvif_hip_init_taps(FloatVifStateHip *s)
+{
+    for (int scale = 0; scale < FVIF_SCALES; scale++) {
+        float filter[128] = {0};
+        const int width = vif_get_filter_size(scale, (float)s->vif_kernelscale);
+        if (width < 1 || width > FVIF_MAX_FW)
+            return -EINVAL;
+        vif_get_filter(filter, scale, (float)s->vif_kernelscale);
+        memset(&s->taps[scale], 0, sizeof(s->taps[scale]));
+        memcpy(s->taps[scale].coeff, filter, (size_t)width * sizeof(filter[0]));
+        s->taps[scale].width = width;
+    }
+    return 0;
+}
+
 #ifdef HAVE_HIPCC
 /* Translate a HIP error code to a negative errno. */
 static int fvif_hip_rc(hipError_t rc)
@@ -197,7 +257,7 @@ static int fvif_hip_rc(hipError_t rc)
     }
 }
 
-/* Load the HSACO module and look up the two kernel entry points. */
+/* Load the HSACO module and look up the three kernel entry points. */
 static int fvif_hip_module_load(FloatVifStateHip *s)
 {
     hipError_t rc = hipModuleLoadData(&s->module, float_vif_score_hsaco);
@@ -207,6 +267,8 @@ static int fvif_hip_module_load(FloatVifStateHip *s)
     rc = hipModuleGetFunction(&s->func_compute, s->module, "float_vif_compute");
     if (rc == hipSuccess)
         rc = hipModuleGetFunction(&s->func_decimate, s->module, "float_vif_decimate");
+    if (rc == hipSuccess)
+        rc = hipModuleGetFunction(&s->func_row_sums, s->module, "float_vif_row_sums");
     if (rc != hipSuccess) {
         (void)hipModuleUnload(s->module);
         s->module = NULL;
@@ -214,22 +276,10 @@ static int fvif_hip_module_load(FloatVifStateHip *s)
     return fvif_hip_rc(rc);
 }
 
-/* Per-scale (num, den) partials + pinned host readback for one scale. */
-static bool fvif_hip_partials_alloc(FloatVifStateHip *s, int i)
+/* The per-row sums of one scale: num and den per row. */
+static size_t fvif_hip_rows_bytes(const FloatVifStateHip *s, int scale)
 {
-    const size_t pbytes = (size_t)s->wg_count[i] * sizeof(float);
-    /* hipHostMalloc's C prototype is (void **, size_t, unsigned). The
-     * num_host / den_host buffers are float* (host-side reduction loop
-     * indexes them as floats), so &s->num_host[i] is float** and needs
-     * an explicit (void **) cast in C. HIP's C++ header provides a
-     * templated hipHostMalloc<T>(T**, ...) overload, but this TU is
-     * compiled as C by icx so the template isn't visible. Without the
-     * cast, icx emits -Wincompatible-pointer-types as a hard error
-     * under the container's strict CFLAGS. */
-    return (hipMalloc(&s->num_partials[i], pbytes) == hipSuccess) &&
-           (hipMalloc(&s->den_partials[i], pbytes) == hipSuccess) &&
-           (hipHostMalloc((void **)&s->num_host[i], pbytes, 0) == hipSuccess) &&
-           (hipHostMalloc((void **)&s->den_host[i], pbytes, 0) == hipSuccess);
+    return (size_t)s->scale_h[scale] * FVIF_TERM_FLOATS * sizeof(float);
 }
 
 /* Allocate all device + pinned-host buffers. On failure the buffers already
@@ -237,17 +287,23 @@ static bool fvif_hip_partials_alloc(FloatVifStateHip *s, int i)
  * fvif_hip_bufs_free(). */
 static int fvif_hip_bufs_alloc(FloatVifStateHip *s)
 {
-    /* Intermediate float buffers: scale_w[1]*scale_h[1] floats each.
-     * Ping-pong: even scales use ref_buf[0]/dis_buf[0], odd use [1]. */
+    /* Intermediate float buffers: scale_w[1]*scale_h[1] floats each. Scales 1
+     * and 3 are written to pair 0, scale 2 to pair 1. */
     const size_t fbytes = (size_t)s->scale_w[1] * s->scale_h[1] * sizeof(float);
+    const size_t term_bytes = (size_t)s->width * s->height * FVIF_TERM_FLOATS * sizeof(float);
 
-    bool ok = true;
+    bool ok = (hipMalloc(&s->terms, term_bytes) == hipSuccess);
     for (int i = 0; i < 2 && ok; i++) {
         ok = (hipMalloc(&s->ref_buf[i], fbytes) == hipSuccess) &&
              (hipMalloc(&s->dis_buf[i], fbytes) == hipSuccess);
     }
-    for (int i = 0; i < 4 && ok; i++)
-        ok = fvif_hip_partials_alloc(s, i);
+    for (int i = 0; i < FVIF_SCALES && ok; i++) {
+        /* hipHostMalloc's C prototype takes void **; rows_host[] is float *
+         * because fvif_sum_rows() reads it as floats. */
+        const size_t row_bytes = fvif_hip_rows_bytes(s, i);
+        ok = (hipMalloc(&s->rows[i], row_bytes) == hipSuccess) &&
+             (hipHostMalloc((void **)&s->rows_host[i], row_bytes, 0) == hipSuccess);
+    }
     return ok ? 0 : -ENOMEM;
 }
 
@@ -255,22 +311,14 @@ static int fvif_hip_bufs_alloc(FloatVifStateHip *s)
  * Safe to call with NULL handles. */
 static void fvif_hip_bufs_free(FloatVifStateHip *s)
 {
-    for (int i = 3; i >= 0; i--) {
-        if (s->den_host[i] != NULL) {
-            (void)hipHostFree(s->den_host[i]);
-            s->den_host[i] = NULL;
+    for (int i = FVIF_SCALES - 1; i >= 0; i--) {
+        if (s->rows_host[i] != NULL) {
+            (void)hipHostFree(s->rows_host[i]);
+            s->rows_host[i] = NULL;
         }
-        if (s->num_host[i] != NULL) {
-            (void)hipHostFree(s->num_host[i]);
-            s->num_host[i] = NULL;
-        }
-        if (s->den_partials[i] != NULL) {
-            (void)hipFree(s->den_partials[i]);
-            s->den_partials[i] = NULL;
-        }
-        if (s->num_partials[i] != NULL) {
-            (void)hipFree(s->num_partials[i]);
-            s->num_partials[i] = NULL;
+        if (s->rows[i] != NULL) {
+            (void)hipFree(s->rows[i]);
+            s->rows[i] = NULL;
         }
     }
     for (int i = 1; i >= 0; i--) {
@@ -283,6 +331,10 @@ static void fvif_hip_bufs_free(FloatVifStateHip *s)
             s->ref_buf[i] = NULL;
         }
     }
+    if (s->terms != NULL) {
+        (void)hipFree(s->terms);
+        s->terms = NULL;
+    }
     vmaf_hip_plane_source_close(&s->planes);
     s->dis_raw = NULL;
     s->ref_raw = NULL;
@@ -292,83 +344,84 @@ static void fvif_hip_bufs_free(FloatVifStateHip *s)
     }
 }
 
-/* Reset partial buffers for one scale, then launch float_vif_compute. */
-static int fvif_launch_compute(FloatVifStateHip *s, hipStream_t str, int scale, void *ref_raw_d,
-                               void *dis_raw_d, ptrdiff_t raw_stride, void *ref_f_d, void *dis_f_d)
+/* The planes scale `scale` is computed from: the raw luma planes at scale 0,
+ * otherwise the pair the decimate launch of that scale wrote (scales 1 and 3
+ * into pair 0, scale 2 into pair 1). */
+static FloatVifGpuInput fvif_hip_scale_input(const FloatVifStateHip *s, int scale)
 {
-    const size_t pbytes = (size_t)s->wg_count[scale] * sizeof(float);
-    hipError_t rc = hipMemsetAsync(s->num_partials[scale], 0, pbytes, str);
-    if (rc != hipSuccess)
-        return fvif_hip_rc(rc);
-    rc = hipMemsetAsync(s->den_partials[scale], 0, pbytes, str);
-    if (rc != hipSuccess)
-        return fvif_hip_rc(rc);
-
-    unsigned w = s->scale_w[scale];
-    unsigned h = s->scale_h[scale];
-    ptrdiff_t f_stride = (ptrdiff_t)s->scale_w[scale];
-    ptrdiff_t nf_stride = 0;
-    unsigned gx = (w + FVIF_BX - 1u) / FVIF_BX;
-    unsigned gy = (h + FVIF_BY - 1u) / FVIF_BY;
-    void *num_d = s->num_partials[scale];
-    void *den_d = s->den_partials[scale];
-    const bool is_raw = (scale == 0);
-    const float *ref_fp = is_raw ? NULL : (const float *)ref_f_d;
-    const float *dis_fp = is_raw ? NULL : (const float *)dis_f_d;
-    ptrdiff_t used_stride = is_raw ? nf_stride : f_stride;
-
-    /* vif_sigma_nsq / vif_enhn_gain_limit are VMAF_OPT_FLAG_FEATURE_PARAM
-     * options; the compute kernel used to hardcode their defaults, which
-     * silently ignored every non-default value (ADR-1217).  sigma_max_inv is
-     * derived exactly as the CPU does in vif_tools.c::vif_statistic_s:
-     * powf(nsq, 2.0f) in float, divided in double, narrowed to float. */
-    const float vif_nsq_f = (float)s->vif_sigma_nsq;
-    const float vif_egl_f = (float)s->vif_enhn_gain_limit;
-    const float sigma_max_inv = (float)(powf((float)s->vif_sigma_nsq, 2.0f) / (255.0 * 255.0));
-
-    void *args[] = {
-        (void *)&scale,  (void *)&ref_raw_d, (void *)&dis_raw_d,   (void *)&raw_stride,
-        (void *)&ref_fp, (void *)&dis_fp,    (void *)&used_stride, (void *)&num_d,
-        (void *)&den_d,  (void *)&w,         (void *)&h,           (void *)&s->bpc,
-        (void *)&gx,     (void *)&vif_nsq_f, (void *)&vif_egl_f,   (void *)&sigma_max_inv,
+    FloatVifGpuInput in = {
+        .width = s->scale_w[scale],
+        .height = s->scale_h[scale],
+        .bpc = s->bpc,
     };
-    rc = hipModuleLaunchKernel(s->func_compute, gx, gy, 1, FVIF_BX, FVIF_BY, 1, 0, str, args, NULL);
-    return fvif_hip_rc(rc);
+    if (scale == 0) {
+        in.ref = (uint64_t)(uintptr_t)s->ref_raw;
+        in.dis = (uint64_t)(uintptr_t)s->dis_raw;
+        in.stride = (int64_t)s->width * (s->bpc <= 8u ? 1 : 2);
+        in.is_raw = 1u;
+        return in;
+    }
+    const int idx = (scale - 1) % 2;
+    in.ref = (uint64_t)(uintptr_t)s->ref_buf[idx];
+    in.dis = (uint64_t)(uintptr_t)s->dis_buf[idx];
+    in.stride = (int64_t)s->scale_w[scale];
+    return in;
 }
 
-/* Launch float_vif_decimate at `next_scale` then compute.
- * Extracted to keep submit_fex_hip readable. */
-static int fvif_launch_decimate_and_compute(FloatVifStateHip *s, hipStream_t str, int next_scale,
-                                            void *ref_raw_d, void *dis_raw_d, ptrdiff_t raw_stride)
+/* Filter scale `scale - 1` with this scale's taps and keep every second
+ * sample: the input of scale `scale`. */
+static int fvif_hip_launch_decimate(FloatVifStateHip *s, hipStream_t str, int scale)
 {
-    const int dst_idx = (next_scale - 1) % 2;
-    const bool prev_raw = (next_scale == 1);
-    void *ref_in = prev_raw ? ref_raw_d : (dst_idx == 0 ? s->ref_buf[1] : s->ref_buf[0]);
-    void *dis_in = prev_raw ? dis_raw_d : (dst_idx == 0 ? s->dis_buf[1] : s->dis_buf[0]);
-    void *ref_out = (dst_idx == 0) ? s->ref_buf[0] : s->ref_buf[1];
-    void *dis_out = (dst_idx == 0) ? s->dis_buf[0] : s->dis_buf[1];
-    ptrdiff_t in_f = prev_raw ? 0 : (ptrdiff_t)s->scale_w[next_scale - 1];
-    ptrdiff_t out_f = (ptrdiff_t)s->scale_w[next_scale];
-    unsigned out_w = s->scale_w[next_scale];
-    unsigned out_h = s->scale_h[next_scale];
-    unsigned in_w = s->scale_w[next_scale - 1];
-    unsigned in_h = s->scale_h[next_scale - 1];
-    unsigned dgx = (out_w + FVIF_BX - 1u) / FVIF_BX;
-    unsigned dgy = (out_h + FVIF_BY - 1u) / FVIF_BY;
-
-    void *dargs[] = {
-        (void *)&next_scale, (void *)&ref_raw_d, (void *)&dis_raw_d, (void *)&raw_stride,
-        (void *)&ref_in,     (void *)&dis_in,    (void *)&in_f,      (void *)&ref_out,
-        (void *)&dis_out,    (void *)&out_f,     (void *)&out_w,     (void *)&out_h,
-        (void *)&in_w,       (void *)&in_h,      (void *)&s->bpc,
+    const FloatVifGpuInput out = fvif_hip_scale_input(s, scale);
+    FloatVifGpuDecimateArgs args = {
+        .in = fvif_hip_scale_input(s, scale - 1),
+        .taps = s->taps[scale],
+        .ref_out = out.ref,
+        .dis_out = out.dis,
+        .out_width = out.width,
+        .out_height = out.height,
     };
-    hipError_t rc = hipModuleLaunchKernel(s->func_decimate, dgx, dgy, 1, FVIF_BX, FVIF_BY, 1, 0,
-                                          str, dargs, NULL);
+    const unsigned grid_x = (out.width + FVIF_BX - 1u) / FVIF_BX;
+    const unsigned grid_y = (out.height + FVIF_BY - 1u) / FVIF_BY;
+    void *params[] = {&args};
+    return fvif_hip_rc(hipModuleLaunchKernel(s->func_decimate, grid_x, grid_y, 1, FVIF_BX, FVIF_BY,
+                                             1, 0, str, params, NULL));
+}
+
+/* The per-pixel terms of one scale, then their row sums.
+ *
+ * vif_sigma_nsq / vif_enhn_gain_limit are VMAF_OPT_FLAG_FEATURE_PARAM options
+ * and reach the kernel as arguments (ADR-1217). vif_sigma_nsq stays a double
+ * and sigma_max_inv is derived as vif_tools.c::vif_statistic_s derives it:
+ * powf(nsq, 2.0f) in float, divided in double, narrowed to float. */
+static int fvif_hip_launch_scale(FloatVifStateHip *s, hipStream_t str, int scale)
+{
+    FloatVifGpuComputeArgs args = {
+        .in = fvif_hip_scale_input(s, scale),
+        .taps = s->taps[scale],
+        .terms = (uint64_t)(uintptr_t)s->terms,
+        .vif_sigma_nsq = s->vif_sigma_nsq,
+        .vif_enhn_gain_limit = (float)s->vif_enhn_gain_limit,
+        .sigma_max_inv = (float)(powf((float)s->vif_sigma_nsq, 2.0f) / (255.0 * 255.0)),
+    };
+    const unsigned grid_x = (args.in.width + FVIF_BX - 1u) / FVIF_BX;
+    const unsigned grid_y = (args.in.height + FVIF_BY - 1u) / FVIF_BY;
+    void *params[] = {&args};
+    const hipError_t rc = hipModuleLaunchKernel(s->func_compute, grid_x, grid_y, 1, FVIF_BX,
+                                                FVIF_BY, 1, 0, str, params, NULL);
     if (rc != hipSuccess)
         return fvif_hip_rc(rc);
 
-    return fvif_launch_compute(s, str, next_scale, ref_raw_d, dis_raw_d, raw_stride, ref_out,
-                               dis_out);
+    FloatVifGpuRowArgs row_args = {
+        .terms = args.terms,
+        .rows = (uint64_t)(uintptr_t)s->rows[scale],
+        .width = args.in.width,
+        .height = args.in.height,
+    };
+    const unsigned row_grid = (args.in.height + FVIF_ROW_THREADS - 1u) / FVIF_ROW_THREADS;
+    void *row_params[] = {&row_args};
+    return fvif_hip_rc(hipModuleLaunchKernel(s->func_row_sums, row_grid, 1, 1, FVIF_ROW_THREADS, 1,
+                                             1, 0, str, row_params, NULL));
 }
 #endif /* HAVE_HIPCC */
 
@@ -425,6 +478,8 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     FloatVifStateHip *s = fex->priv;
 
     int err = fvif_hip_check_config(s, w, h);
+    if (err == 0)
+        err = fvif_hip_init_taps(s);
     if (err != 0)
         return err;
 
@@ -432,12 +487,6 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     s->height = h;
     s->bpc = bpc;
     compute_per_scale_dims(s);
-
-    for (int i = 0; i < 4; i++) {
-        const unsigned gx = (s->scale_w[i] + FVIF_BX - 1u) / FVIF_BX;
-        const unsigned gy = (s->scale_h[i] + FVIF_BY - 1u) / FVIF_BY;
-        s->wg_count[i] = gx * gy;
-    }
 
     err = vmaf_hip_context_new(&s->ctx, 0);
     if (err == 0)
@@ -462,7 +511,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
 #ifdef HAVE_HIPCC
 /* Bridge the kernels' stream to the private stream: record the submit event
  * on `pic_stream`, make the private stream wait for it, enqueue the DtoH
- * copies of every scale's partials and record the finished event. */
+ * copies of every scale's row sums and record the finished event. */
 static int fvif_hip_readback(FloatVifStateHip *s, hipStream_t pic_stream)
 {
     hipStream_t str = vmaf_hip_stream_of(s->lc.str);
@@ -471,13 +520,9 @@ static int fvif_hip_readback(FloatVifStateHip *s, hipStream_t pic_stream)
     if (rc == hipSuccess)
         rc = hipStreamWaitEvent(str, submit_ev, 0);
 
-    for (int i = 0; i < 4 && rc == hipSuccess; i++) {
-        const size_t pbytes = (size_t)s->wg_count[i] * sizeof(float);
-        rc = hipMemcpyAsync(s->num_host[i], s->num_partials[i], pbytes, hipMemcpyDeviceToHost, str);
-        if (rc == hipSuccess) {
-            rc = hipMemcpyAsync(s->den_host[i], s->den_partials[i], pbytes, hipMemcpyDeviceToHost,
-                                str);
-        }
+    for (int i = 0; i < FVIF_SCALES && rc == hipSuccess; i++) {
+        rc = hipMemcpyAsync(s->rows_host[i], s->rows[i], fvif_hip_rows_bytes(s, i),
+                            hipMemcpyDeviceToHost, str);
     }
     if (rc != hipSuccess)
         return fvif_hip_rc(rc);
@@ -509,8 +554,6 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
 
 #ifdef HAVE_HIPCC
     hipStream_t pic_stream = vmaf_hip_stream_of(0u);
-    const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
-    const ptrdiff_t raw_stride = (ptrdiff_t)(s->width * bpp);
 
     /* The tightly-pitched ref and dist luma planes on the device. Returns
      * once both pictures are read: the caller recycles them when submit()
@@ -525,11 +568,12 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     if (err != 0)
         return err;
 
-    /* Launch: compute at scale 0, then decimate + compute for scales 1-3. */
-    err = fvif_launch_compute(s, pic_stream, 0, s->ref_raw, s->dis_raw, raw_stride, NULL, NULL);
-    for (int ns = 1; ns < 4 && err == 0; ns++) {
-        err =
-            fvif_launch_decimate_and_compute(s, pic_stream, ns, s->ref_raw, s->dis_raw, raw_stride);
+    /* Per scale: decimate (scales 1 to 3), the terms, their row sums. */
+    for (int scale = 0; scale < FVIF_SCALES && err == 0; scale++) {
+        if (scale > 0)
+            err = fvif_hip_launch_decimate(s, pic_stream, scale);
+        if (err == 0)
+            err = fvif_hip_launch_scale(s, pic_stream, scale);
     }
     if (err != 0)
         return err;
@@ -554,30 +598,24 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
         return err;
 
 #ifdef HAVE_HIPCC
-    double scores[8];
-    for (int i = 0; i < 4; i++) {
-        double n = 0.0;
-        double d = 0.0;
-        for (unsigned j = 0; j < s->wg_count[i]; j++) {
-            n += (double)s->num_host[i][j];
-            d += (double)s->den_host[i][j];
-        }
-        scores[2 * i + 0] = n;
-        scores[2 * i + 1] = d;
-    }
+    /* compute_vif(): each scale's num and den are the fp32 sums of
+     * vif_statistic_s(), widened to double. */
+    double scores[2 * FVIF_SCALES];
+    for (size_t i = 0u; i < FVIF_SCALES; i++)
+        fvif_sum_rows(s->rows_host[i], s->scale_h[i], &scores[2u * i], &scores[2u * i + 1u]);
 
-    const size_t start = s->vif_skip_scale0 ? 2u : 0u;
     VmafVifScoreSet output = {
+        .minimum = {s->vif_scale1_min_val, s->vif_scale2_min_val, s->vif_scale3_min_val},
+        .use_minimums = true,
         .skip_scale0 = s->vif_skip_scale0,
         .debug = s->debug,
     };
-    for (size_t i = 0u; i < 8u; ++i) {
-        output.scale[i] = scores[i];
-        if (i >= start) {
-            output.score_num += (i % 2u == 0u) ? scores[i] : 0.0;
-            output.score_den += (i % 2u != 0u) ? scores[i] : 0.0;
-        }
+    for (size_t scale = s->vif_skip_scale0 ? 1u : 0u; scale < FVIF_SCALES; ++scale) {
+        output.score_num += scores[scale * 2u];
+        output.score_den += scores[scale * 2u + 1u];
     }
+    for (size_t i = 0u; i < sizeof(scores) / sizeof(scores[0]); ++i)
+        output.scale[i] = scores[i];
     output.score = output.score_den > 0.0 ? output.score_num / output.score_den : NAN;
     return vmaf_vif_emit_scores(feature_collector, s->feature_name_dict, "float_vif_hip", &output,
                                 VMAF_VIF_FLOAT_NAMES, index);

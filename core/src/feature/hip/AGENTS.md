@@ -1374,3 +1374,27 @@ Scores = `integer_vif.c`'s bits (gfx1036: 440 of 440 scores, six fixtures;
 - Guards: `test_hip_speed_device_math` (replay vs CPU extractor),
   `test_hip_device_resident_contract.py`, `test_hip_speed_*_parity` on
   device.
+
+## float_vif_hip = CPU bits (ADR-1444)
+
+- Exact twin `float_vif` (`scripts/ci/exact_twins.d/float_vif.hip`); gfx1036:
+  712 of 712 scores, 1922 values with debug + options.
+- Arithmetic + argument blocks = `../float_vif_gpu_common.h`, shared with
+  `float_vif_cuda` (ADR-1412). `float_vif/float_vif_score.hip` = tiling only:
+  decimate, per-pixel terms (column-major, `fvif_term_index()`), one thread
+  per row (`fvif_row_sum()`). Host `fvif_sum_rows()` top to bottom, fp32.
+- Never in the `.hip` file: a tap literal, `log2f()`, `__shfl_*` / `warpSize`
+  / atomic reduction, a `#define FVIF_F*` / `FVIF_D*`. Defaults = plain
+  operators; `hip_strict_fp_args` makes them round once. fp64 `+` `/` on
+  gfx1036 = host bits (33.5 M operand pairs). Another device: re-measure
+  before declaring.
+- Host: taps = `vif_get_filter()` (`fvif_hip_init_taps()`), `.taps` +
+  `.vif_sigma_nsq` (double) in one by-value block per launch.
+- Tile loads go through `vmaf_hip_tile_index()`. Old kernel reflected once,
+  no clamp: frame < 72 px either way = GPU memory fault (64x64, 56x56, 40x40,
+  3 of 3 runs each).
+- Options = CPU table incl. `vif_scale1..3_min_val`.
+- Cost: 20.7 -> 26.0 ms 1080p, 86.0 -> 147.1 ms 4K. 4K: term plane 66 MB =
+  37.8 ms, fp64 = 8.3 ms. `T-HIP-FLOAT-VIF-EXACT-THROUGHPUT-2026-10-02`.
+- Guards: `test_hip_float_vif_parity` (+ `_large`),
+  `test_hip_float_vif_exact_contract.py`, `test_float_vif_device_math`.

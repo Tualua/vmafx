@@ -64,8 +64,8 @@ What this means when you use it:
   score below its floor is reported as the floor.
 - `vif_prescale` and `vif_prescale_method` remain CPU-only. Passing either to
   `float_vif_cuda` is an error; request `float_vif` for prescaled scoring.
-- The SYCL twin returns the CPU's values too (next section). The HIP and
-  Metal twins agree with the CPU to four decimal places, not bit for bit.
+- The SYCL and HIP twins return the CPU's values too (next two sections).
+  The Metal twin agrees with the CPU to four decimal places, not bit for bit.
 
 Check it on your own device:
 
@@ -108,6 +108,53 @@ Check it on your own device:
 ```shell
 ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/dev/speed_gpu_parity.py \
     --backend sycl --vmaf "$PWD/build/tools/vmaf" --feature float_vif
+```
+
+### `float_vif` on HIP returns the CPU's values
+
+`float_vif_hip` gives the same number as `--backend cpu --feature float_vif`
+for every output of every frame, down to the last bit of the `--precision max`
+output ([ADR-1444](../adr/1444-hip-float-vif-cpu-arithmetic.md)). It runs the
+arithmetic of the CUDA twin from the same source file: the CPU's Gaussian
+taps, the CPU's per-pixel statistic with its polynomial `log2` and its
+`double` noise variance, and one `float` sum per row, then the rows. Measured
+on an AMD gfx1036 (ROCm 7.2.4) on the Netflix 576x324 pair at 8, 10, 12 and
+16 bits and as 10-bit 4:2:2, both 1920x1080 checkerboard pairs, Sparks
+480x270, full-range noise at four bit depths, a bright 16-bit 1920x1080 pair
+and 48 frames at 3840x2160 (712 scores), with `debug=true` and the feature
+options as well.
+
+What this means when you use it:
+
+- You can mix CPU, CUDA, SYCL and HIP `float_vif` results in one data set.
+  Before ADR-1444 the HIP twin was up to 3.8e-5 from the CPU on typical
+  content and 1.06e-4 on bright 16-bit content, which is more than the 5e-5
+  its own parity gate allowed; `float_vif_hip` outputs stored before it differ
+  from new ones by that much.
+- Frames smaller than 72 pixels in either dimension work. Before ADR-1444
+  `float_vif_hip` ended with `Memory access fault by GPU node-1` on them (the
+  CPU extractor accepts frames from 16x16).
+- `float_vif_hip` accepts `vif_scale1_min_val`, `vif_scale2_min_val` and
+  `vif_scale3_min_val` (aliases `s1miv`, `s2miv`, `s3miv`; default 0, range 0
+  to 1), as the CPU extractor does.
+- `vif_prescale` and `vif_prescale_method` remain CPU-only. Passing either to
+  `float_vif_hip` is an error; request `float_vif` for prescaled scoring.
+- Name the extractor: `--backend hip --feature float_vif_hip`. In a default
+  build `--backend hip --feature float_vif` prints
+  `the hip backend has no twin of this extractor; computing it on the CPU`
+  and runs the CPU extractor (the `enable_float_vif_hip_autodispatch` build
+  option, off by default, changes that).
+- It is slower than before and, on an integrated GPU, slower than the CPU: a
+  1920x1080 frame takes 26.0 ms on a gfx1036 (20.7 ms before ADR-1444) and a
+  3840x2160 frame 147 ms (86 ms before); the CPU extractor takes 46 ms for the
+  latter on 16 threads. Most of the 4K increase is the per-pixel term plane
+  the row sums need (`T-HIP-FLOAT-VIF-EXACT-THROUGHPUT-2026-10-02`).
+
+Check it on your own device:
+
+```shell
+python3 scripts/dev/speed_gpu_parity.py --backend hip \
+    --vmaf "$PWD/build-hip/tools/vmaf" --feature float_vif
 ```
 
 ## `integer_vif` extractor

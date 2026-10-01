@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-01T23:15:12Z",
+  "generated_at": "2026-10-01T23:23:38Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "efd2ae6e627a41d793bac22e76471da5cb278626",
-  "total_infractions": 271,
+  "commit_sha": "6e5896e0ba36dd97dab36ec390c13336f863679e",
+  "total_infractions": 270,
   "infractions": [
     {
       "rule_id": "HISS-04",
@@ -1080,14 +1080,6 @@
       "symbol": "filter1d_16_horizontal_kernel",
       "message": "Function 'filter1d_16_horizontal_kernel' (183 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "core/src/feature/cuda/integer_vif/filter1d.cu:621:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/hip/float_vif/float_vif_score.hip",
-      "line_number": 146,
-      "symbol": "float_vif_compute",
-      "message": "Function 'float_vif_compute' (152 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/hip/float_vif/float_vif_score.hip:146:HISS-04"
     },
     {
       "rule_id": "HISS-04",

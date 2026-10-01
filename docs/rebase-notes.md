@@ -57502,3 +57502,34 @@ ADR-1422).
   shared is edited.
 - No Netflix golden-data, public API or FFmpeg patch impact. The CPU
   extractor's table and scores are unchanged.
+
+## ADR-1444 — `float_vif_hip` runs the CUDA twin's arithmetic from a shared header (2026-10-02)
+
+`fix/hip-float-vif-cpu-arithmetic`, `T-GPU-FLOAT-VIF-CPU-ARITHMETIC-2026-10-01`
+(HIP part), `T-HIP-FLOAT-VIF-SMALL-FRAME-GPU-FAULT-2026-10-02`.
+
+- `core/src/feature/float_vif_gpu_common.h` (new): the arithmetic and the
+  kernel argument blocks that were in
+  `core/src/feature/cuda/float_vif/float_vif_device.h`, unchanged, with the
+  rounding operators as overridable macros and the blocks named
+  `FloatVifGpu*`. The CUDA header keeps the `DEVICE_CODE` mapping to
+  `__fmul_rn()` and friends, includes the new header and aliases
+  `FloatVifCuda*`. A rebase that brings a change to the old header's
+  arithmetic applies it to the new header instead; the CUDA header must not
+  regain a copy.
+- `core/src/feature/hip/float_vif/float_vif_score.hip` and
+  `core/src/feature/hip/float_vif_hip.c`: rewritten after
+  `float_vif_score.cu` / `float_vif_cuda.c`. Three kernels, each taking one
+  argument block by value; the old discrete argument lists are gone. Keep
+  kernel and host from the same side of a conflict.
+- Mirror list, same PR when the CPU side changes: `vif_get_filter()`,
+  `VIF_OPT_FAST_LOG2` / `log2f_approx()`, `vif_pixel_statistic_s()`,
+  `vif_statistic_s()` in `vif_tools.c` change `float_vif_gpu_common.h`
+  (`test_float_vif_device_math` fails until it follows).
+- `scripts/ci/exact_twins.d/float_vif.hip` (new) declares the twin exact
+  (ADR-1428).
+- `core/test/test_cuda_float_vif_exact_contract.py` reads the shared header
+  for the arithmetic checks and the CUDA header for the device spelling.
+- No Netflix golden-data, public API or FFmpeg patch impact. The CPU
+  extractor's scores are unchanged; `float_vif_cuda` measured bit-identical
+  on an RTX 4090 after the split (48 of 48 and 50 of 50 frames).

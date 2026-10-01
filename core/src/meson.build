@@ -363,6 +363,7 @@ if is_hipcc_enabled and is_hip_enabled
         # Its host half includes the backend-neutral row-sum tail.
         'feature/float_motion_sad.h',
         'feature/hip/float_vif_hip.h',
+        'feature/float_vif_gpu_common.h',
         'feature/hip/ssimulacra2_hip.h',
         'feature/ssimulacra2_math.h',
         'feature/ssimulacra2_eotf_lut.h',
@@ -1523,6 +1524,7 @@ if is_cuda_enabled
         'feature/cuda/float_motion_cuda.h',
         'feature/cuda/float_vif_cuda.h',
         'feature/cuda/float_vif/float_vif_device.h',
+        'feature/float_vif_gpu_common.h',
         'feature/cuda/ssimulacra2_cuda.h',
         'feature/ssimulacra2_eotf_lut.h',
         'feature/ssimulacra2_math.h',

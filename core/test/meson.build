@@ -264,6 +264,18 @@ test('test_cuda_float_vif_exact_contract',
     timeout : 30,
 )
 
+# ADR-1444: float_vif_hip returns the CPU's scores bit for bit by running the
+# arithmetic the CUDA twin runs (src/feature/float_vif_gpu_common.h) -- the
+# taps are vif_get_filter()'s, no kernel holds a tap or calls a math-library
+# log2, vif_sigma_nsq reaches the kernel as a double and the terms are added
+# row by row. Device-free; the device check is test_hip_float_vif_parity.
+test('test_hip_float_vif_exact_contract',
+    import('python').find_installation(),
+    args : files('test_hip_float_vif_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-1416: adm_cuda returns the CPU's scores bit for bit -- the CSF weights,
 # the rounding shifts and the float conclusion are the CPU's routines
 # (integer_adm_kernels.h), and the denominator is folded once per row.
@@ -4084,8 +4096,9 @@ test_vif_lifecycle = executable('test_vif_lifecycle',
 )
 test('test_vif_lifecycle', test_vif_lifecycle, suite : ['fast'])
 
-# ADR-1412 — the arithmetic float_vif_cuda's kernels run
-# (src/feature/cuda/float_vif/float_vif_device.h), compiled for the host and
+# ADR-1412 — the arithmetic float_vif_cuda's and float_vif_hip's kernels run
+# (src/feature/float_vif_gpu_common.h, through the CUDA spelling header
+# src/feature/cuda/float_vif/float_vif_device.h), compiled for the host and
 # compared bit for bit with vif_statistic_s() and compute_vif(). Device-free,
 # so it runs in the fast suite of every build, with or without CUDA. The
 # reference it pins is the contraction-free one: the header's host operators
@@ -5525,6 +5538,12 @@ test('test_hip_float_psnr_parity', test_hip_float_psnr_parity,
     is_parallel : false,
     timeout : 60)
 
+# ADR-1444: float_vif_hip returns the CPU's outputs bit for bit. The cases are
+# float_vif_twin_parity.h's (default, debug, model options, skip_scale0, the
+# per-scale floors, 10 bit, a 50x38 frame), compared with ==; a `_large`
+# variant runs them at 960x540. The device-free halves are
+# test_float_vif_device_math (the arithmetic) and
+# test_hip_float_vif_exact_contract (the design).
 test_hip_float_vif_parity = executable('test_hip_float_vif_parity',
     ['test.c', 'test_hip_float_vif_parity.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
@@ -5535,7 +5554,7 @@ test_hip_float_vif_parity = executable('test_hip_float_vif_parity',
 test('test_hip_float_vif_parity', test_hip_float_vif_parity,
     suite : ['fast', 'gpu'],
     is_parallel : false,
-    timeout : 60)
+    timeout : 120)
 # ADR-1212 — float_moment CPU vs. HIP parity, at 8 bpc and (via
 # -DFIXTURE_BPC=10u) at 10 bpc. The HIP twin had no cross-backend gate at all,
 # which is how it shipped accumulating the raw high-bit-depth codeword.
@@ -5911,6 +5930,7 @@ hip_parity_large_fixture_tests = [
     'test_hip_float_motion_parity',
     'test_hip_float_psnr_parity',
     'test_hip_float_ssim_parity',
+    'test_hip_float_vif_parity',
     'test_hip_motion3_parity',
     'test_hip_motion_parity',
     'test_hip_motion_v2_parity',

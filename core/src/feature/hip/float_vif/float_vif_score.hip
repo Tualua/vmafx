@@ -3,120 +3,61 @@
  *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
- *  HIP compute kernels for the float_vif feature extractor.
- *  Direct port of the CUDA twin at
- *  `libvmaf/src/feature/cuda/float_vif/float_vif_score.cu`.
+ *  HIP kernels of the float_vif feature extractor (ADR-0379; the CPU's
+ *  arithmetic since ADR-1444). They are the kernels of the CUDA twin
+ *  (cuda/float_vif/float_vif_score.cu, ADR-1412) for a HIP device.
  *
- *  Two operating modes:
- *    float_vif_compute:  read ref+dis at this scale, apply separable
- *      V→H filter inline (5 outputs: mu1, mu2, ref², dis², ref·dis),
- *      run vif_stat per pixel, reduce (num, den) per block.
- *    float_vif_decimate: apply this scale's filter at the previous
- *      scale's full dimensions, sample at (2*gx, 2*gy) for output.
- *      CPU's VIF_OPT_HANDLE_BORDERS branch — mirror padding for taps
- *      near the edge.
+ *  Per scale, in this order on one stream:
+ *    float_vif_decimate  (scales 1..3) filters the previous scale with this
+ *                        scale's Gaussian and keeps every second sample of
+ *                        every second row: vif.c::vif_downsample().
+ *    float_vif_compute   filters the five moments (mu1, mu2, ref^2, dis^2,
+ *                        ref*dis) and stores the numerator and denominator
+ *                        term of every pixel: vif_filter1d_*_s() and
+ *                        vif_pixel_statistic_s().
+ *    float_vif_row_sums  adds the terms of each row, left to right, in one
+ *                        thread per row: the inner loop of vif_statistic_s().
+ *  The host adds the rows, top to bottom (fvif_sum_rows()).
  *
- *  Mirror padding: reflect-102 (both axes):
- *    idx < 0  →  -idx
- *    idx >= sup  →  2*sup - idx - 2
+ *  Numerical contract (ADR-1407, ADR-1444): every output is the CPU
+ *  extractor's, bit for bit. The arithmetic is feature/float_vif_gpu_common.h,
+ *  which the CUDA twin and a host test compile too; what this file adds is
+ *  the tiling. The header's operators are the plain ones here: this file is
+ *  built with the strict FP list of core/src/meson.build, so no product is
+ *  fused into a sum and fp32 `/` is correctly rounded, and the gfx1036's fp64
+ *  `+` and `/` return the host's bits (33.5 million operand pairs, ADR-1444).
+ *  The CPU's frame sums are sequential fp32 accumulations whose result
+ *  depends on the order, so no kernel here reduces per block or per wave: a
+ *  partial sum in any other order is a different number.
  *
- *  Per scale: 4 compute + 3 decimate launches. Filter coefficients
- *  constant-folded per scale.
- *
- *  HIP adaptation from CUDA:
- *  - GCN/RDNA1 warp size is 64; RDNA2+ (gfx1030/gfx1100/gfx1101) is 32.
- *    The per-block warp partial array is sized for the minimum warp size (32)
- *    so it is large enough on wave32 hardware (256/32 = 8 warps needed).
- *    On wave64 hardware only 4 of the 8 slots are populated — no overflow.
- *    `warpSize` is used at runtime for the reduction loop and lane detection.
- *  - `__shfl_down` used without mask (HIP convention).
- *  - Entry-point names match the CUDA twin so the host Module API lookup
- *    in `float_vif_hip.c` resolves correctly without a name change.
- *
- *  Precision contract: places=3 (same as CUDA twin per ADR-0192).
+ *  Mirror padding is reflect-101 on both axes, as convolution_edge_s() and
+ *  vif_mirror_index() do it. A tile also loads samples that no output of the
+ *  plane consumes (the padding threads of the last row and column of blocks);
+ *  those indices are clamped so the load stays inside the plane on frames
+ *  smaller than a tile (hip_tile_index.h).
  */
 
 #include <hip/hip_runtime.h>
+#include <stddef.h>
 #include <stdint.h>
 
-#define FVIF_BX            16
-#define FVIF_BY            16
-#define FVIF_MAX_FW        17
-#define FVIF_MAX_HFW        8
+#include "../hip_tile_index.h"
 
-/* Minimum HIP warp size across supported AMD targets (wave32 = RDNA2+).
- * The warp partial array is sized for the minimum (32) so it is large enough
- * on wave32 hardware (BX*BY/32 = 8 slots).  At runtime `warpSize` is used
- * for the reduction loop and lane/warp_id calculation. */
-#define FVIF_MIN_WARP_SIZE    32
-#define FVIF_WARPS_PER_BLOCK  (FVIF_BX * FVIF_BY / FVIF_MIN_WARP_SIZE)
+#define FVIF_HD __device__ __forceinline__
+#define FVIF_FLOAT_AS_UINT(value) __float_as_uint(value)
+#define FVIF_UINT_AS_FLOAT(bits) __uint_as_float(bits)
+#define FVIF_DEVICE_ONLY
+#include "feature/float_vif_gpu_common.h"
 
-__device__ static const float FVIF_COEFF_S0[FVIF_MAX_FW] = {
-    0.00745626912f, 0.0142655009f, 0.0250313189f, 0.0402820669f, 0.0594526194f, 0.0804751068f,
-    0.0999041125f,  0.113746084f,  0.118773937f,  0.113746084f,  0.0999041125f, 0.0804751068f,
-    0.0594526194f,  0.0402820669f, 0.0250313189f, 0.0142655009f, 0.00745626912f};
-__device__ static const float FVIF_COEFF_S1[FVIF_MAX_FW] = {
-    0.0189780835f, 0.0558981746f, 0.120920904f,  0.192116052f, 0.224173605f, 0.192116052f,
-    0.120920904f,  0.0558981746f, 0.0189780835f, 0.0f,         0.0f,         0.0f,
-    0.0f,          0.0f,          0.0f,           0.0f,         0.0f};
-__device__ static const float FVIF_COEFF_S2[FVIF_MAX_FW] = {
-    0.054488685f, 0.244201347f, 0.402619958f, 0.244201347f, 0.054488685f, 0.0f, 0.0f, 0.0f, 0.0f,
-    0.0f,         0.0f,         0.0f,         0.0f,         0.0f,         0.0f, 0.0f, 0.0f};
-__device__ static const float FVIF_COEFF_S3[FVIF_MAX_FW] = {
-    0.166378498f, 0.667243004f, 0.166378498f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-    0.0f,         0.0f,         0.0f,         0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+#define FVIF_MAX_TILE_W (FVIF_BX + 2 * FVIF_MAX_HFW)
 
-__device__ __forceinline__ const float *fvif_coeffs(int scale)
+/* picture_copy() with offset -128: an 8-bit sample as is, a 10-, 12- or
+ * 16-bit sample divided by 4, 16 or 256 (exact in fp32). */
+__device__ static __forceinline__ float fvif_read_raw(const uint8_t *plane, ptrdiff_t stride_bytes,
+                                                      int y, int x, unsigned bpc)
 {
-    if (scale == 0)
-        return FVIF_COEFF_S0;
-    if (scale == 1)
-        return FVIF_COEFF_S1;
-    if (scale == 2)
-        return FVIF_COEFF_S2;
-    return FVIF_COEFF_S3;
-}
-
-__device__ __forceinline__ int fvif_fw(int scale)
-{
-    const int fw[4] = {17, 9, 5, 3};
-    return fw[scale];
-}
-
-__device__ __forceinline__ int fvif_mirror_v(int idx, int sup)
-{
-    if (idx < 0)
-        return -idx;
-    if (idx >= sup)
-        return 2 * sup - idx - 2;
-    return idx;
-}
-
-__device__ __forceinline__ int fvif_mirror_h(int idx, int sup)
-{
-    if (idx < 0)
-        return -idx;
-    if (idx >= sup)
-        return 2 * sup - idx - 2;
-    return idx;
-}
-
-/* HIP warp-level float reduction — uses warpSize at runtime to handle
- * both wave64 (GCN/RDNA1, warpSize=64) and wave32 (RDNA2+, warpSize=32). */
-__device__ __forceinline__ float fvif_warp_reduce(float v)
-{
-    for (int off = (int)warpSize / 2; off > 0; off >>= 1)
-        v += __shfl_down(v, off);
-    return v;
-}
-
-/* Read raw pixel (uint8/16) and convert to float. */
-__device__ __forceinline__ float fvif_read_raw(const uint8_t *plane, int stride_bytes, int y,
-                                               int x, unsigned bpc)
-{
-    if (bpc <= 8u) {
-        return (float)plane[y * stride_bytes + x] - 128.0f;
-    }
+    if (bpc <= 8u)
+        return FVIF_FSUB((float)plane[y * stride_bytes + x], 128.0f);
     const uint16_t v = reinterpret_cast<const uint16_t *>(plane + y * stride_bytes)[x];
     float scaler = 1.0f;
     if (bpc == 10u)
@@ -125,226 +66,203 @@ __device__ __forceinline__ float fvif_read_raw(const uint8_t *plane, int stride_
         scaler = 16.0f;
     else if (bpc == 16u)
         scaler = 256.0f;
-    return (float)v / scaler - 128.0f;
+    return FVIF_FSUB(FVIF_FDIV((float)v, scaler), 128.0f);
+}
+
+/* One sample of each input plane at (x, y), already inside the plane. */
+__device__ static __forceinline__ void fvif_read_pair(const FloatVifGpuInput &in, int y, int x,
+                                                      float *ref, float *dis)
+{
+    if (in.is_raw != 0u) {
+        *ref = fvif_read_raw(reinterpret_cast<const uint8_t *>(in.ref), (ptrdiff_t)in.stride, y, x,
+                             in.bpc);
+        *dis = fvif_read_raw(reinterpret_cast<const uint8_t *>(in.dis), (ptrdiff_t)in.stride, y, x,
+                             in.bpc);
+        return;
+    }
+    const size_t at = (size_t)y * (size_t)in.stride + (size_t)x;
+    *ref = reinterpret_cast<const float *>(in.ref)[at];
+    *dis = reinterpret_cast<const float *>(in.dis)[at];
+}
+
+/* Reflect-101 for a consumed sample, clamped for one that is not. */
+__device__ static __forceinline__ int fvif_plane_index(int idx, int extent)
+{
+    return vmaf_hip_tile_index(vmaf_hip_reflect_101(idx, extent), extent);
+}
+
+/* The five vertically filtered moments of a block: FVIF_BY rows over every
+ * tile column. */
+struct FvifMoments {
+    float mu1[FVIF_BY * FVIF_MAX_TILE_W];
+    float mu2[FVIF_BY * FVIF_MAX_TILE_W];
+    float xx[FVIF_BY * FVIF_MAX_TILE_W];
+    float yy[FVIF_BY * FVIF_MAX_TILE_W];
+    float xy[FVIF_BY * FVIF_MAX_TILE_W];
+};
+
+/* Phase 1: this thread's share of the block's tile, mirrored at the plane
+ * edges. The tile is the block plus `hfw` samples on every side. */
+__device__ static __forceinline__ void fvif_load_tile(const FloatVifGpuInput &in, int hfw,
+                                                      float *s_ref, float *s_dis)
+{
+    const int tile_w = FVIF_BX + 2 * hfw;
+    const int tile_h = FVIF_BY + 2 * hfw;
+    const int tile_oy = (int)blockIdx.y * FVIF_BY - hfw;
+    const int tile_ox = (int)blockIdx.x * FVIF_BX - hfw;
+    const int lid = (int)threadIdx.y * FVIF_BX + (int)threadIdx.x;
+    for (int i = lid; i < tile_h * tile_w; i += FVIF_BX * FVIF_BY) {
+        const int tr = i / tile_w;
+        const int tc = i - tr * tile_w;
+        const int py = fvif_plane_index(tile_oy + tr, (int)in.height);
+        const int px = fvif_plane_index(tile_ox + tc, (int)in.width);
+        fvif_read_pair(in, py, px, &s_ref[tr * FVIF_MAX_TILE_W + tc],
+                       &s_dis[tr * FVIF_MAX_TILE_W + tc]);
+    }
+}
+
+/* Phase 2: this thread's share of the vertical pass, taps in order. */
+__device__ static __forceinline__ void fvif_vertical_pass(const FloatVifGpuTaps &taps,
+                                                          const float *s_ref, const float *s_dis,
+                                                          FvifMoments *v)
+{
+    const int tile_w = FVIF_BX + 2 * (taps.width / 2);
+    const int lid = (int)threadIdx.y * FVIF_BX + (int)threadIdx.x;
+    for (int i = lid; i < FVIF_BY * tile_w; i += FVIF_BX * FVIF_BY) {
+        const int r = i / tile_w;
+        const int c = i - r * tile_w;
+        float a_mu1 = 0.0f;
+        float a_mu2 = 0.0f;
+        float a_xx = 0.0f;
+        float a_yy = 0.0f;
+        float a_xy = 0.0f;
+        for (int k = 0; k < taps.width; k++) {
+            const float c_k = taps.coeff[k];
+            const float ref_v = s_ref[(r + k) * FVIF_MAX_TILE_W + c];
+            const float dis_v = s_dis[(r + k) * FVIF_MAX_TILE_W + c];
+            a_mu1 = fvif_tap(a_mu1, c_k, ref_v);
+            a_mu2 = fvif_tap(a_mu2, c_k, dis_v);
+            a_xx = fvif_tap(a_xx, c_k, FVIF_FMUL(ref_v, ref_v));
+            a_yy = fvif_tap(a_yy, c_k, FVIF_FMUL(dis_v, dis_v));
+            a_xy = fvif_tap(a_xy, c_k, FVIF_FMUL(ref_v, dis_v));
+        }
+        v->mu1[r * FVIF_MAX_TILE_W + c] = a_mu1;
+        v->mu2[r * FVIF_MAX_TILE_W + c] = a_mu2;
+        v->xx[r * FVIF_MAX_TILE_W + c] = a_xx;
+        v->yy[r * FVIF_MAX_TILE_W + c] = a_yy;
+        v->xy[r * FVIF_MAX_TILE_W + c] = a_xy;
+    }
+}
+
+/* Phase 3: this thread's pixel. The horizontal pass over the vertically
+ * filtered moments, then the statistic. */
+__device__ static __forceinline__ void
+fvif_pixel_terms(const FloatVifGpuComputeArgs &args, const FvifMoments *v, float *num, float *den)
+{
+    const int at = (int)threadIdx.y * FVIF_MAX_TILE_W + (int)threadIdx.x;
+    float mu1 = 0.0f;
+    float mu2 = 0.0f;
+    float xx = 0.0f;
+    float yy = 0.0f;
+    float xy = 0.0f;
+    for (int k = 0; k < args.taps.width; k++) {
+        const float c_k = args.taps.coeff[k];
+        mu1 = fvif_tap(mu1, c_k, v->mu1[at + k]);
+        mu2 = fvif_tap(mu2, c_k, v->mu2[at + k]);
+        xx = fvif_tap(xx, c_k, v->xx[at + k]);
+        yy = fvif_tap(yy, c_k, v->yy[at + k]);
+        xy = fvif_tap(xy, c_k, v->xy[at + k]);
+    }
+    fvif_pixel_statistic(mu1, mu2, xx, yy, xy, args.sigma_max_inv, args.vif_enhn_gain_limit,
+                         args.vif_sigma_nsq, num, den);
 }
 
 extern "C" {
 
-/**
- * Compute kernel — reads ref+dis at `scale`, applies separable V→H filter,
- * computes vif_stat per pixel, reduces (num, den) per block.
- *
- * At scale=0, ref_raw/dis_raw are the source pixel planes (uint8/16).
- * At scale>0, ref_f/dis_f are float buffers at this scale's dimensions.
- */
-__global__ void float_vif_compute(int scale, const uint8_t *ref_raw, const uint8_t *dis_raw,
-                                  ptrdiff_t raw_stride, const float *ref_f, const float *dis_f,
-                                  ptrdiff_t f_stride_floats, float *num_partials,
-                                  float *den_partials, unsigned width, unsigned height,
-                                  unsigned bpc, unsigned grid_x_count, float vif_sigma_nsq,
-                                  float vif_egl, float sigma_max_inv)
+/* One block of 16x16 pixels: load the tile with its filter halo, filter
+ * vertically for the block's 16 rows over every tile column, then each thread
+ * filters horizontally and stores its pixel's two terms. */
+__global__ void float_vif_compute(FloatVifGpuComputeArgs args)
 {
-    const int fw  = fvif_fw(scale);
-    const int hfw = fw / 2;
-    const float *coeff = fvif_coeffs(scale);
+    __shared__ float s_ref[FVIF_MAX_TILE_W * FVIF_MAX_TILE_W];
+    __shared__ float s_dis[FVIF_MAX_TILE_W * FVIF_MAX_TILE_W];
+    __shared__ FvifMoments s_v;
 
-    /* MAX_TILE_W = FVIF_BX + 2*FVIF_MAX_HFW = 32. */
-    const int MAX_TILE_W = FVIF_BX + 2 * FVIF_MAX_HFW;
-    const int tile_w     = FVIF_BX + 2 * hfw;
-    const int tile_h     = FVIF_BY + 2 * hfw;
-
-    __shared__ float s_ref[32 * 32];
-    __shared__ float s_dis[32 * 32];
-    __shared__ float s_v_mu1[FVIF_BY * 32];
-    __shared__ float s_v_mu2[FVIF_BY * 32];
-    __shared__ float s_v_xx [FVIF_BY * 32];
-    __shared__ float s_v_yy [FVIF_BY * 32];
-    __shared__ float s_v_xy [FVIF_BY * 32];
-
-    const int gx  = blockIdx.x * blockDim.x + threadIdx.x;
-    const int gy  = blockIdx.y * blockDim.y + threadIdx.y;
-    const int lx  = threadIdx.x;
-    const int ly  = threadIdx.y;
-    const unsigned lid  = ly * FVIF_BX + lx;
-    const bool valid    = (gx < (int)width && gy < (int)height);
-
-    const int tile_oy    = blockIdx.y * FVIF_BY - hfw;
-    const int tile_ox    = blockIdx.x * FVIF_BX - hfw;
-    const int tile_elems = tile_h * tile_w;
-    const bool is_raw    = (scale == 0);
-
-    /* Phase 1: tile load with mirror padding. */
-    for (int i = lid; i < tile_elems; i += FVIF_BX * FVIF_BY) {
-        const int tr = i / tile_w;
-        const int tc = i - tr * tile_w;
-        const int py = fvif_mirror_v(tile_oy + tr, (int)height);
-        const int px = fvif_mirror_h(tile_ox + tc, (int)width);
-        float r, d;
-        if (is_raw) {
-            r = fvif_read_raw(ref_raw, (int)raw_stride, py, px, bpc);
-            d = fvif_read_raw(dis_raw, (int)raw_stride, py, px, bpc);
-        } else {
-            r = ref_f[(size_t)py * f_stride_floats + px];
-            d = dis_f[(size_t)py * f_stride_floats + px];
-        }
-        s_ref[tr * MAX_TILE_W + tc] = r;
-        s_dis[tr * MAX_TILE_W + tc] = d;
-    }
+    fvif_load_tile(args.in, args.taps.width / 2, s_ref, s_dis);
+    __syncthreads();
+    fvif_vertical_pass(args.taps, s_ref, s_dis, &s_v);
     __syncthreads();
 
-    /* Phase 2: vertical filter for WG_Y output rows × tile_w cols. */
-    const int vert_total = FVIF_BY * tile_w;
-    for (int i = lid; i < vert_total; i += FVIF_BX * FVIF_BY) {
-        const int r = i / tile_w;
-        const int c = i - r * tile_w;
-        float a_mu1 = 0.0f, a_mu2 = 0.0f, a_xx = 0.0f, a_yy = 0.0f, a_xy = 0.0f;
-        for (int k = 0; k < fw; k++) {
-            const float c_k   = coeff[k];
-            const float ref_v = s_ref[(r + k) * MAX_TILE_W + c];
-            const float dis_v = s_dis[(r + k) * MAX_TILE_W + c];
-            a_mu1 += c_k * ref_v;
-            a_mu2 += c_k * dis_v;
-            a_xx  += c_k * (ref_v * ref_v);
-            a_yy  += c_k * (dis_v * dis_v);
-            a_xy  += c_k * (ref_v * dis_v);
-        }
-        s_v_mu1[r * MAX_TILE_W + c] = a_mu1;
-        s_v_mu2[r * MAX_TILE_W + c] = a_mu2;
-        s_v_xx [r * MAX_TILE_W + c] = a_xx;
-        s_v_yy [r * MAX_TILE_W + c] = a_yy;
-        s_v_xy [r * MAX_TILE_W + c] = a_xy;
-    }
-    __syncthreads();
-
-    /* Phase 3: per-thread horizontal filter + vif_stat. */
-    float my_num = 0.0f, my_den = 0.0f;
-    if (valid) {
-        float mu1 = 0.0f, mu2 = 0.0f, xx = 0.0f, yy = 0.0f, xy = 0.0f;
-        for (int k = 0; k < fw; k++) {
-            const float c_k = coeff[k];
-            mu1 += c_k * s_v_mu1[ly * MAX_TILE_W + (lx + k)];
-            mu2 += c_k * s_v_mu2[ly * MAX_TILE_W + (lx + k)];
-            xx  += c_k * s_v_xx [ly * MAX_TILE_W + (lx + k)];
-            yy  += c_k * s_v_yy [ly * MAX_TILE_W + (lx + k)];
-            xy  += c_k * s_v_xy [ly * MAX_TILE_W + (lx + k)];
-        }
-        const float eps           = 1.0e-10f;
-        /* vif_sigma_nsq / vif_egl / sigma_max_inv arrive as kernel arguments;
-         * they used to be hardcoded to the option defaults here, which silently
-         * ignored every non-default value — including the
-         * `vif_enhn_gain_limit = 1.0` that model/vmaf_float_v0.6.1neg.json sets
-         * on all four VIF scales.  ADR-1217. */
-
-        float sigma1_sq = xx - mu1 * mu1;
-        float sigma2_sq = yy - mu2 * mu2;
-        float sigma12   = xy - mu1 * mu2;
-        sigma1_sq = (sigma1_sq < 0.0f) ? 0.0f : sigma1_sq;
-        sigma2_sq = (sigma2_sq < 0.0f) ? 0.0f : sigma2_sq;
-        float g     = sigma12 / (sigma1_sq + eps);
-        float sv_sq = sigma2_sq - g * sigma12;
-        if (sigma1_sq < eps) {
-            g         = 0.0f;
-            sv_sq     = sigma2_sq;
-            sigma1_sq = 0.0f;
-        }
-        if (sigma2_sq < eps) {
-            g     = 0.0f;
-            sv_sq = 0.0f;
-        }
-        if (g < 0.0f) {
-            sv_sq = sigma2_sq;
-            g     = 0.0f;
-        }
-        sv_sq = (sv_sq < eps) ? eps : sv_sq;
-        g     = (g > vif_egl) ? vif_egl : g;
-
-        float num_val = log2f(1.0f + (g * g * sigma1_sq) / (sv_sq + vif_sigma_nsq));
-        float den_val = log2f(1.0f + sigma1_sq / vif_sigma_nsq);
-        if (sigma12 < 0.0f)
-            num_val = 0.0f;
-        if (sigma1_sq < vif_sigma_nsq) {
-            num_val = 1.0f - sigma2_sq * sigma_max_inv;
-            den_val = 1.0f;
-        }
-        my_num = num_val;
-        my_den = den_val;
-    }
-
-    /* Phase 4: warp + cross-warp reduction. */
-    __shared__ float s_num_warps[FVIF_WARPS_PER_BLOCK];
-    __shared__ float s_den_warps[FVIF_WARPS_PER_BLOCK];
-    const float wn              = fvif_warp_reduce(my_num);
-    const float wd              = fvif_warp_reduce(my_den);
-    const unsigned ws           = (unsigned)warpSize;
-    const unsigned lane         = lid % ws;
-    const unsigned warp_id      = lid / ws;
-    const unsigned warps_active = (FVIF_BX * FVIF_BY) / ws;
-    if (lane == 0) {
-        s_num_warps[warp_id] = wn;
-        s_den_warps[warp_id] = wd;
-    }
-    __syncthreads();
-    if (lid == 0) {
-        float total_num = 0.0f, total_den = 0.0f;
-        for (unsigned i = 0; i < warps_active; i++) {
-            total_num += s_num_warps[i];
-            total_den += s_den_warps[i];
-        }
-        const unsigned wg_idx = blockIdx.y * grid_x_count + blockIdx.x;
-        num_partials[wg_idx]  = total_num;
-        den_partials[wg_idx]  = total_den;
-    }
-}
-
-/**
- * Decimate kernel — applies `scale`'s filter at the previous scale's
- * dimensions, samples at (2*gx, 2*gy) for output.
- * Output dimensions: in_w / 2, in_h / 2.
- */
-__global__ void float_vif_decimate(int scale, const uint8_t *ref_raw, const uint8_t *dis_raw,
-                                   ptrdiff_t raw_stride, const float *ref_f, const float *dis_f,
-                                   ptrdiff_t f_stride_floats, float *ref_out, float *dis_out,
-                                   ptrdiff_t out_stride_floats, unsigned out_w, unsigned out_h,
-                                   unsigned in_w, unsigned in_h, unsigned bpc)
-{
-    const int gx = blockIdx.x * blockDim.x + threadIdx.x;
-    const int gy = blockIdx.y * blockDim.y + threadIdx.y;
-    if (gx >= (int)out_w || gy >= (int)out_h)
+    const uint32_t gx = blockIdx.x * FVIF_BX + threadIdx.x;
+    const uint32_t gy = blockIdx.y * FVIF_BY + threadIdx.y;
+    if (gx >= args.in.width || gy >= args.in.height)
         return;
 
-    const int fw   = fvif_fw(scale);
-    const int hfw  = fw / 2;
-    const float *coeff = fvif_coeffs(scale);
+    float num = 0.0f;
+    float den = 0.0f;
+    fvif_pixel_terms(args, &s_v, &num, &den);
+
+    float *terms = reinterpret_cast<float *>(args.terms);
+    const size_t at = fvif_term_index(gx, gy, args.in.height);
+    terms[at] = num;
+    terms[at + 1u] = den;
+}
+
+/* The sequential sum of one row per thread. */
+__global__ void float_vif_row_sums(FloatVifGpuRowArgs args)
+{
+    const uint32_t y = blockIdx.x * FVIF_ROW_THREADS + threadIdx.x;
+    if (y >= args.height)
+        return;
+    float num = 0.0f;
+    float den = 0.0f;
+    fvif_row_sum(reinterpret_cast<const float *>(args.terms), args.width, args.height, y, &num,
+                 &den);
+    float *rows = reinterpret_cast<float *>(args.rows);
+    rows[(size_t)y * FVIF_TERM_FLOATS] = num;
+    rows[(size_t)y * FVIF_TERM_FLOATS + 1u] = den;
+}
+
+/* vif_downsample(): this scale's filter over the previous scale's plane,
+ * sampled at (2 * gx, 2 * gy). The vertical pass of each of the `fw` columns
+ * the horizontal pass reads, then the horizontal pass over them, which is
+ * what vif_filter1d_s() computes for that sample. */
+__global__ void float_vif_decimate(FloatVifGpuDecimateArgs args)
+{
+    const int gx = blockIdx.x * FVIF_BX + threadIdx.x;
+    const int gy = blockIdx.y * FVIF_BY + threadIdx.y;
+    if (gx >= (int)args.out_width || gy >= (int)args.out_height)
+        return;
+
+    const int fw = args.taps.width;
+    const int hfw = fw / 2;
+    const float *coeff = args.taps.coeff;
+    const int in_w = (int)args.in.width;
+    const int in_h = (int)args.in.height;
     const int in_x = 2 * gx;
     const int in_y = 2 * gy;
-    const bool is_raw = (scale == 1);
 
-    /* V-inner / H-outer ordering matches CPU vif_filter1d_s. */
-    float acc_ref = 0.0f, acc_dis = 0.0f;
+    float acc_ref = 0.0f;
+    float acc_dis = 0.0f;
     for (int kj = 0; kj < fw; kj++) {
-        const float c_j = coeff[kj];
-        const int px    = fvif_mirror_h(in_x - hfw + kj, (int)in_w);
-        float v_ref = 0.0f, v_dis = 0.0f;
+        const int px = vmaf_hip_reflect_101(in_x - hfw + kj, in_w);
+        float v_ref = 0.0f;
+        float v_dis = 0.0f;
         for (int ki = 0; ki < fw; ki++) {
-            const float c_i = coeff[ki];
-            const int py    = fvif_mirror_v(in_y - hfw + ki, (int)in_h);
-            float r, d;
-            if (is_raw) {
-                r = fvif_read_raw(ref_raw, (int)raw_stride, py, px, bpc);
-                d = fvif_read_raw(dis_raw, (int)raw_stride, py, px, bpc);
-            } else {
-                r = ref_f[(size_t)py * f_stride_floats + px];
-                d = dis_f[(size_t)py * f_stride_floats + px];
-            }
-            v_ref += c_i * r;
-            v_dis += c_i * d;
+            const int py = vmaf_hip_reflect_101(in_y - hfw + ki, in_h);
+            float r = 0.0f;
+            float d = 0.0f;
+            fvif_read_pair(args.in, py, px, &r, &d);
+            v_ref = fvif_tap(v_ref, coeff[ki], r);
+            v_dis = fvif_tap(v_dis, coeff[ki], d);
         }
-        acc_ref += c_j * v_ref;
-        acc_dis += c_j * v_dis;
+        acc_ref = fvif_tap(acc_ref, coeff[kj], v_ref);
+        acc_dis = fvif_tap(acc_dis, coeff[kj], v_dis);
     }
 
-    ref_out[(size_t)gy * out_stride_floats + gx] = acc_ref;
-    dis_out[(size_t)gy * out_stride_floats + gx] = acc_dis;
+    const size_t at = (size_t)gy * (size_t)args.out_width + (size_t)gx;
+    reinterpret_cast<float *>(args.ref_out)[at] = acc_ref;
+    reinterpret_cast<float *>(args.dis_out)[at] = acc_dis;
 }
 
 } /* extern "C" */

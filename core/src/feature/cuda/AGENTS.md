@@ -960,8 +960,12 @@ with a new ADR and measurements, never by reviving ADR-0753 text.
   `float_vif_row_sums` one thread per row left to right, host
   `fvif_sum_rows()` top to bottom, fp32 both. NO warp / block / atomic
   reduction, no fp64 host sum.
-  Arithmetic lives in `float_vif/float_vif_device.h` (plain C + CUDA C++);
-  every device rounding = explicit `__f*_rn` / `__d*_rn`. Mirror list,
+  Arithmetic + argument blocks live in `../float_vif_gpu_common.h` (plain C,
+  shared with `float_vif_hip`, ADR-1444); `float_vif/float_vif_device.h` =
+  CUDA spelling only: maps `FVIF_F*` / `FVIF_D*` to explicit `__f*_rn` /
+  `__d*_rn` under `DEVICE_CODE`, includes the common header, aliases
+  `FloatVifCuda*` = `FloatVifGpu*`. Never drop the mapping: common header's
+  default = plain operators, nvcc may contract them. Mirror list,
   same PR when CPU side changes: `vif_get_filter()`, `log2f_approx()` /
   `VIF_OPT_FAST_LOG2`, `vif_pixel_statistic_s()`, `vif_statistic_s()`,
   `vif_filter1d_*_s()` tap order, `picture_copy()`. Guards:

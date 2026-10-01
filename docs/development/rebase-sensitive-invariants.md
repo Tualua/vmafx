@@ -496,7 +496,10 @@ linked AGENTS.md before resolving conflicts.
 - **`float_vif_cuda` returns the CPU's scores bit for bit ([ADR-1412](../adr/1412-cuda-float-vif-cpu-arithmetic.md))**:
   the host takes each scale's Gaussian from `vif_get_filter()`, as
   `float_vif.c` does, and hands it to the kernels; no kernel file holds a tap.
-  `core/src/feature/cuda/float_vif/float_vif_device.h` is
+  `core/src/feature/float_vif_gpu_common.h` (shared with `float_vif_hip`
+  since [ADR-1444](../adr/1444-hip-float-vif-cpu-arithmetic.md); CUDA compiles
+  it through `core/src/feature/cuda/float_vif/float_vif_device.h`, which maps
+  its operators to the `__fmul_rn()` family) is
   `vif_pixel_statistic_s()` and `log2f_approx()` operation for operation
   (`vif_sigma_nsq` in fp64), `float_vif_row_sums` adds the terms of a row in
   one thread, and `fvif_sum_rows()` adds the rows on the host, both in fp32 as
@@ -508,6 +511,17 @@ linked AGENTS.md before resolving conflicts.
   `test_cuda_float_vif_parity` on one; the parity gate compares the twin with
   tolerance 0 (`EXACT_TWINS`). See
   [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
+- **`float_vif_hip` returns the CPU's scores bit for bit ([ADR-1444](../adr/1444-hip-float-vif-cpu-arithmetic.md))**:
+  the twin compiles `core/src/feature/float_vif_gpu_common.h` with its default
+  operators, which round once only because every HIP kernel is built with
+  `hip_strict_fp_args`; `float_vif_score.hip` defines no operator, holds no
+  tap and reduces nothing per block. The host takes the taps from
+  `vif_get_filter()` and passes `vif_sigma_nsq` as a `double`. A change to the
+  shared header is a change to both twins:
+  `core/test/test_hip_float_vif_exact_contract.py` and
+  `core/test/test_float_vif_device_math.c` guard it without a device,
+  `test_hip_float_vif_parity` on one. See
+  [core/src/feature/hip/AGENTS.md](../../core/src/feature/hip/AGENTS.md).
 - **Integer AIM is not clipped, float AIM is ([ADR-1417](../adr/1417-integer-aim-unclipped-upstream-parity.md))**:
   `core/src/feature/integer_adm.c` reports `aim_num / den`
   (`vmaf_adm_scale_ratios()`), `core/src/feature/adm.c` reports
