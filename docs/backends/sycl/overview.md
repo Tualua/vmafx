@@ -90,6 +90,32 @@ The options that shape a SYCL build:
     build's too. The option applies to the host link only; the device code
     and its math libraries do not change.
 
+### Choosing the C compiler
+
+The SYCL kernels are C++ and need `icpx`. The CPU feature code is C and can be
+built by either `icx` or GCC:
+
+```bash
+# GCC for C, icpx for C++ and SYCL (what dev/Containerfile and Containerfile.vmafx use):
+CC=gcc CXX=icpx CC_LD=lld CXX_LD=lld meson setup build core \
+    -Denable_sycl=true -Db_lto=false
+
+# icx for C as well (what CI and the release images use):
+CC=icx CXX=icpx CC_LD=lld CXX_LD=lld meson setup build core -Denable_sycl=true
+```
+
+Both return the same CPU scores: the strict floating-point policy applies to
+every C and C++ translation unit
+([ADR-1461](../../adr/1461-strict-fp-every-translation-unit.md); with GCC for C
+the C++ files compiled by `icpx` take icpx's strict spelling,
+`-fp-model=precise -ffp-contract=off`), and every icx / icpx link uses glibc's
+`libm` (see the note above). `-Db_lto=false` is
+required: GCC LTO objects cannot go through the icpx link. With SYCL on, the
+test executables link as C++, because the SYCL link arguments (`-fsycl`, the
+AOT targets) are accepted only by the icpx driver. SYCL results are the same
+with either C compiler. See
+[ADR-1593](../../adr/1593-hybrid-gcc-cpu-icpx-sycl.md).
+
 ## Run
 
 ```bash
