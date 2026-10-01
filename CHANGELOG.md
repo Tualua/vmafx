@@ -38,6 +38,14 @@
   [the retest guide](docs/development/rc3-home-gpu-retest.md) (ADR-1386).
 
 
+- **actionlint pre-commit hook and Makefile target**: Wired `actionlint`
+  pinned to `v1.7.12` (HISS-11 hermetic supply chain pin) into
+  `.pre-commit-config.yaml` to validate all 35 GitHub Actions workflow files
+  under `.github/workflows/` against `.github/actionlint.yaml`. Added
+  `make lint-actions` target and documented workflow linting in
+  `docs/development/pre-commit-hooks.md`.
+
+
 ### Changed
 
 - Migrated the Windows MSYS2 MinGW build matrix leg in

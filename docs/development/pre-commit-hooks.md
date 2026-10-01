@@ -139,6 +139,24 @@ selection and checking; their target must resolve to an existing regular file
 inside the checkout. External, dangling, looping or directory targets fail.
 The command always derives its own scope; filename arguments do not narrow it.
 
+## GitHub Actions workflow validation
+
+Workflow files under `.github/workflows/` are validated against
+`.github/actionlint.yaml` using `actionlint` pinned to `v1.7.12`
+(HISS-11 hermetic supply chain pin).
+
+The pre-commit hook runs on staged workflow files:
+
+```bash
+pre-commit run actionlint --all-files
+```
+
+To validate workflows across the repository without pre-commit, run:
+
+```bash
+make lint-actions
+```
+
 ## Existing hooks and migration
 
 The installer recognizes its own dispatchers, unmodified framework

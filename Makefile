@@ -126,7 +126,7 @@ cythonize-deps: $(VENV_PIP)
 # Fork-specific targets (lusoris). The upstream targets above are preserved as-is.
 # ============================================================================
 
-.PHONY: lint lint-c lint-py lint-sh lint-md lint-go tidy-ratchet tidy-ratchet-write \
+.PHONY: lint lint-c lint-py lint-sh lint-md lint-go lint-actions tidy-ratchet tidy-ratchet-write \
 	base-images-sync cuda-pin-sync python-deps-sync \
 	python-locks-check python-locks-write \
 	preflight \
@@ -136,7 +136,7 @@ cythonize-deps: $(VENV_PIP)
         silent-revert-check
 
 # Top-level lint — runs every analyzer we own. Uses the meson compile_commands.json.
-lint: lint-c lint-py lint-sh lint-md lint-go docs-fragments-check lint-reuse python-locks-check
+lint: lint-c lint-py lint-sh lint-md lint-go lint-actions docs-fragments-check lint-reuse python-locks-check
 	@echo "=== all lints passed ==="
 
 # REUSE 3.3 compliance check (BUG-003). Ensures 100% license and copyright coverage.
@@ -163,6 +163,13 @@ lint-go:
 	$(call require-tool,gosec,go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0)
 	@echo "--- gosec (exclude-generated) ---"
 	@gosec -exclude-generated -quiet ./...
+
+# GitHub Actions workflow lint (actionlint). Validates all 35 workflow
+# files under .github/workflows/ against .github/actionlint.yaml.
+lint-actions:
+	$(call require-tool,actionlint,go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12)
+	@echo "--- actionlint (.github/workflows) ---"
+	@actionlint
 
 # Fragment-tree drift check (ADR-0221). Verifies CHANGELOG.md and
 # docs/adr/README.md are in sync with fragments, and ADR tags/nav match sources.
@@ -645,6 +652,7 @@ help:
 	@echo "  make lint             — configured C/C++ + Python, shell, Markdown, Go and docs checks"
 	@echo "  make lint-c           — tracked native sources in BUILD_DIR (LINT_JOBS=4; receipts under build)"
 	@echo "  make lint-md          — markdownlint-cli2 on changed *.md (MDLINT_SCOPE=all for full tree, ADR-0866)"
+	@echo "  make lint-actions     — actionlint on .github/workflows/ against .github/actionlint.yaml"
 	@echo "  make format           — clang-format + black + ruff + shfmt (writes)"
 	@echo "  make format-check     — same, no writes (CI gate)"
 	@echo "  make sec              — semgrep (CERT-C + CWE + fork rules)"

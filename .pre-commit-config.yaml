@@ -163,6 +163,11 @@ repos:
         #   to changed files.
         exclude: '^subprojects/|^core/test/data/|^python/test/resource/|^compat/python-vmaf/resource/|^compat/python-vmaf/matlab/|^model/|(^|/)testdata/|^docs/adr/README\.md$|^CHANGELOG\.md$|^docs/adr/_index_fragments/|^changelog\.d/'
 
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
     hooks:
