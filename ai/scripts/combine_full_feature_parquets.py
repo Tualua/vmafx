@@ -67,6 +67,30 @@ def _normalise_frame_index(series: pd.Series, n_rows: int) -> pd.Series:
     return series.fillna(0).astype("int64")
 
 
+def _resolve_shard_teacher(df: pd.DataFrame, path: Path, assume_teacher: str | None) -> str:
+    if "teacher_model" in df.columns:
+        distinct = [str(x) for x in df["teacher_model"].dropna().unique()]
+        if len(distinct) > 1:
+            raise ValueError(f"{path}: mixed teacher_model values in shard: {distinct}")
+        if len(distinct) == 0:
+            if not assume_teacher:
+                raise ValueError(
+                    f"{path}: empty 'teacher_model' column; pass --assume-teacher <name>"
+                )
+            return assume_teacher
+        shard_teacher = distinct[0]
+        if assume_teacher is not None and assume_teacher != shard_teacher:
+            raise ValueError(
+                f"{path}: shard teacher_model '{shard_teacher}' conflicts with --assume-teacher '{assume_teacher}'"
+            )
+        return shard_teacher
+    if assume_teacher is None:
+        raise ValueError(
+            f"{path}: missing required 'teacher_model' column; pass --assume-teacher <name> to ingest legacy tables"
+        )
+    return assume_teacher
+
+
 def _normalise_shard(
     label: str,
     path: Path,
@@ -96,29 +120,7 @@ def _normalise_shard(
         out["frame_index"] = pd.Series(range(len(df)), index=df.index, dtype="int64")
 
     out["codec"] = df["codec"].astype(str) if "codec" in df.columns else "unknown"
-
-    if "teacher_model" in df.columns:
-        distinct = [str(x) for x in df["teacher_model"].dropna().unique()]
-        if len(distinct) > 1:
-            raise ValueError(f"{path}: mixed teacher_model values in shard: {distinct}")
-        if len(distinct) == 0:
-            if not assume_teacher:
-                raise ValueError(
-                    f"{path}: empty 'teacher_model' column; pass --assume-teacher <name>"
-                )
-            shard_teacher = assume_teacher
-        else:
-            shard_teacher = distinct[0]
-            if assume_teacher is not None and assume_teacher != shard_teacher:
-                raise ValueError(
-                    f"{path}: shard teacher_model '{shard_teacher}' conflicts with --assume-teacher '{assume_teacher}'"
-                )
-    else:
-        if assume_teacher is None:
-            raise ValueError(
-                f"{path}: missing required 'teacher_model' column; pass --assume-teacher <name> to ingest legacy tables"
-            )
-        shard_teacher = assume_teacher
+    shard_teacher = _resolve_shard_teacher(df, path, assume_teacher)
     out["teacher_model"] = shard_teacher
 
     missing = [feature for feature in FULL_FEATURES if feature not in df.columns]
@@ -133,8 +135,7 @@ def _normalise_shard(
     return out
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
+def _build_parser() -> argparse.ArgumentParser:
     parser = make_argument_parser(
         prog="combine_full_feature_parquets.py",
         description=__doc__,
@@ -169,18 +170,22 @@ def main(argv: list[str] | None = None) -> int:
             "and exact CLI args used to build the derived parquet."
         ),
     )
-    args = parser.parse_args(raw_argv)
-    if args.manifest_out is None:
-        args.manifest_out = args.out.with_suffix(".manifest.json")
+    return parser
 
+
+def _load_shards(
+    inputs: list[tuple[str, Path]],
+    max_rows_per_input: int | None,
+    assume_teacher: str | None,
+) -> tuple[list[pd.DataFrame], list[dict[str, object]]]:
     shards: list[pd.DataFrame] = []
     input_stats: list[dict[str, object]] = []
-    for label, path in args.inputs:
+    for label, path in inputs:
         shard = _normalise_shard(
             label,
             path,
-            args.max_rows_per_input,
-            assume_teacher=args.assume_teacher,
+            max_rows_per_input,
+            assume_teacher=assume_teacher,
         )
         missing = list(shard.attrs.get("missing_features", []))
         print(
@@ -198,18 +203,17 @@ def main(argv: list[str] | None = None) -> int:
             }
         )
         shards.append(shard)
+    return shards, input_stats
 
-    teachers = {shard.attrs["teacher_model"] for shard in shards if not shard.empty}
-    if len(teachers) > 1:
-        raise ValueError(
-            f"Cannot combine shards with conflicting teacher models: {sorted(teachers)}"
-        )
-    combined_teacher = next(iter(teachers)) if teachers else (args.assume_teacher or "unknown")
 
-    combined = pd.concat(shards, ignore_index=True, sort=False)
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    combined.to_parquet(args.out, index=False)
-    corpora = {str(key): int(value) for key, value in combined["corpus"].value_counts().items()}
+def _write_combined_manifest(
+    combined_teacher: str,
+    combined: pd.DataFrame,
+    input_stats: list[dict[str, object]],
+    corpora: dict[str, int],
+    args: argparse.Namespace,
+    raw_argv: list[str],
+) -> None:
     write_manifest_json(
         args.manifest_out,
         {
@@ -234,6 +238,28 @@ def main(argv: list[str] | None = None) -> int:
             ),
         },
     )
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _build_parser().parse_args(raw_argv)
+    if args.manifest_out is None:
+        args.manifest_out = args.out.with_suffix(".manifest.json")
+
+    shards, input_stats = _load_shards(args.inputs, args.max_rows_per_input, args.assume_teacher)
+
+    teachers = {shard.attrs["teacher_model"] for shard in shards if not shard.empty}
+    if len(teachers) > 1:
+        raise ValueError(
+            f"Cannot combine shards with conflicting teacher models: {sorted(teachers)}"
+        )
+    combined_teacher = next(iter(teachers)) if teachers else (args.assume_teacher or "unknown")
+
+    combined = pd.concat(shards, ignore_index=True, sort=False)
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    combined.to_parquet(args.out, index=False)
+    corpora = {str(key): int(value) for key, value in combined["corpus"].value_counts().items()}
+    _write_combined_manifest(combined_teacher, combined, input_stats, corpora, args, raw_argv)
     print(
         f"[combine-full] wrote {args.out}: rows={len(combined)} "
         f"corpora={corpora} manifest={args.manifest_out}",

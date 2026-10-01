@@ -34,6 +34,7 @@ import time
 import urllib.request
 import zipfile
 from pathlib import Path
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 AI_SRC = REPO_ROOT / "ai" / "src"
@@ -67,6 +68,36 @@ def _humanize(n: int) -> str:
     return f"{n:.1f} TiB"
 
 
+def _stream_response_to_file(resp: Any, dst: Path) -> None:
+    total = int(resp.headers.get("Content-Length", 0))
+    bytes_so_far = 0
+    last_print = time.monotonic()
+    with dst.open("wb") as out:
+        for _ in range(100_000):
+            chunk = resp.read(1 << 20)  # 1 MiB
+            if not chunk:
+                break
+            out.write(chunk)
+            bytes_so_far += len(chunk)
+            now = time.monotonic()
+            if now - last_print >= 1.0:
+                if total:
+                    pct = 100.0 * bytes_so_far / total
+                    print(
+                        f"[konvid] {dst.name}: {_humanize(bytes_so_far)} / "
+                        f"{_humanize(total)} ({pct:.1f}%)",
+                        flush=True,
+                    )
+                else:
+                    print(
+                        f"[konvid] {dst.name}: {_humanize(bytes_so_far)} (size unknown)",
+                        flush=True,
+                    )
+                last_print = now
+        else:
+            raise RuntimeError(f"Download exceeded chunk ceiling for {dst}")
+
+
 def _download(url: str, dst: Path, min_bytes: int) -> Path:
     """Stream ``url`` to ``dst`` with a coarse progress line every ~1 s."""
     if dst.exists() and dst.stat().st_size >= min_bytes:
@@ -93,31 +124,7 @@ def _download(url: str, dst: Path, min_bytes: int) -> Path:
     # nosec B310: scheme is restricted to http(s) above; URL provenance
     # is the hardcoded VIDEOS_URL / METADATA_URL module constants.
     with urllib.request.urlopen(req, timeout=60, context=ctx) as resp:  # nosec B310
-        total = int(resp.headers.get("Content-Length", 0))
-        bytes_so_far = 0
-        last_print = time.monotonic()
-        with dst.open("wb") as out:
-            while True:
-                chunk = resp.read(1 << 20)  # 1 MiB
-                if not chunk:
-                    break
-                out.write(chunk)
-                bytes_so_far += len(chunk)
-                now = time.monotonic()
-                if now - last_print >= 1.0:
-                    if total:
-                        pct = 100.0 * bytes_so_far / total
-                        print(
-                            f"[konvid] {dst.name}: {_humanize(bytes_so_far)} / "
-                            f"{_humanize(total)} ({pct:.1f}%)",
-                            flush=True,
-                        )
-                    else:
-                        print(
-                            f"[konvid] {dst.name}: {_humanize(bytes_so_far)} (size unknown)",
-                            flush=True,
-                        )
-                    last_print = now
+        _stream_response_to_file(resp, dst)
 
     final_sz = dst.stat().st_size
     if final_sz < min_bytes:

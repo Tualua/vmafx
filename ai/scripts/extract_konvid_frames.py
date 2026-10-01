@@ -30,6 +30,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -159,8 +160,7 @@ def _write_manifest(
     )
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--root",
@@ -180,31 +180,32 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Replay manifest JSON sidecar (default: ai/data/konvid_frames_manifest.json).",
     )
-    args = parser.parse_args(raw_argv)
-    if args.manifest_out is None:
-        args.manifest_out = DATA_DIR / "konvid_frames_manifest.json"
+    return parser
 
+
+def _load_entries() -> list[dict[str, Any]]:
     if not MANIFEST.exists():
-        sys.exit(f"manifest not found: {MANIFEST}; run vmaf-train manifest-scan first")
+        raise FileNotFoundError(
+            f"manifest not found: {MANIFEST}; run vmaf-train manifest-scan first"
+        )
 
     with MANIFEST.open() as fh:
         doc = yaml.safe_load(fh)
     entries = doc.get("entries") or []
     if not entries:
-        sys.exit("manifest has no entries")
+        raise ValueError("manifest has no entries")
+    return entries
 
-    root = args.root or _default_root()
-    if not root.is_dir():
-        sys.exit(f"dataset root not found: {root}")
 
-    c2_dir = root / "_frames_c2"
-    c3_dir = root / "_frames_c3_pairs"
-    c2_dir.mkdir(parents=True, exist_ok=True)
-    c3_dir.mkdir(parents=True, exist_ok=True)
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-    c2_rows = []
-    c3_rows = []
+def _process_entries(
+    entries: list[dict[str, Any]],
+    root: Path,
+    c2_dir: Path,
+    c3_dir: Path,
+    target_hw: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int, int]:
+    c2_rows: list[dict[str, Any]] = []
+    c3_rows: list[dict[str, Any]] = []
     missing_count = 0
     error_count = 0
     n = len(entries)
@@ -222,7 +223,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if not c2_path.exists():
             try:
-                clean = _extract_middle_frame_y(mp4, args.target_hw)
+                clean = _extract_middle_frame_y(mp4, target_hw)
             except Exception as exc:
                 print(f"[error] {mp4.name}: {exc}")
                 error_count += 1
@@ -246,6 +247,33 @@ def main(argv: list[str] | None = None) -> int:
         if (i + 1) % 50 == 0 or i + 1 == n:
             print(f"[extract] {i + 1}/{n} clips")
 
+    return c2_rows, c3_rows, missing_count, error_count
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = _build_parser().parse_args(raw_argv)
+    if args.manifest_out is None:
+        args.manifest_out = DATA_DIR / "konvid_frames_manifest.json"
+
+    try:
+        entries = _load_entries()
+    except (FileNotFoundError, ValueError) as exc:
+        sys.exit(str(exc))
+    root = args.root or _default_root()
+    if not root.is_dir():
+        sys.exit(f"dataset root not found: {root}")
+
+    c2_dir = root / "_frames_c2"
+    c3_dir = root / "_frames_c3_pairs"
+    c2_dir.mkdir(parents=True, exist_ok=True)
+    c3_dir.mkdir(parents=True, exist_ok=True)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+    c2_rows, c3_rows, missing_count, error_count = _process_entries(
+        entries, root, c2_dir, c3_dir, args.target_hw
+    )
+
     pd.DataFrame(c2_rows).to_parquet(C2_PARQUET, index=False)
     pd.DataFrame(c3_rows).to_parquet(C3_PARQUET, index=False)
     _write_manifest(
@@ -253,7 +281,7 @@ def main(argv: list[str] | None = None) -> int:
         args=args,
         raw_argv=raw_argv,
         root=root,
-        manifest_entries=n,
+        manifest_entries=len(entries),
         processed_count=len(c2_rows),
         missing_count=missing_count,
         error_count=error_count,

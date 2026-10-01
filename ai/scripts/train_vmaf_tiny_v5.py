@@ -22,7 +22,9 @@ exporter can be reused.
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -154,8 +156,7 @@ def _load(parquet: Path, name: str, assume_teacher: str | None = None):  # type:
     return df[keep]
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
+def _build_parser() -> argparse.ArgumentParser:
     ap = make_argument_parser(prog="train_vmaf_tiny_v5.py", description=__doc__)
     ap.add_argument(
         "--parquet-base",
@@ -180,12 +181,76 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--batch-size", type=int, default=256)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--seed", type=int, default=0)
-    args = ap.parse_args(raw_argv)
+    return ap
 
-    import pandas as pd
+
+def _save_artifacts(
+    model: Any,
+    teacher_model: str,
+    mean: np.ndarray,
+    std: np.ndarray,
+    metrics: dict[str, float],
+    n_train_rows: int,
+    args: argparse.Namespace,
+    raw_argv: list[str],
+) -> None:
     import torch
 
     from aiutils.run_manifest import build_run_provenance, write_manifest_json
+
+    args.out_ckpt.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(
+        {
+            "state_dict": model.state_dict(),
+            "teacher_model": teacher_model,
+            "features": list(CANONICAL_6),
+            "input_mean": mean.tolist(),
+            "input_std": std.tolist(),
+            "train_metrics": metrics,
+            "epochs": args.epochs,
+            "lr": args.lr,
+            "batch_size": args.batch_size,
+            "seed": args.seed,
+        },
+        args.out_ckpt,
+    )
+    stats_payload = {
+        "teacher_model": teacher_model,
+        "features": list(CANONICAL_6),
+        "input_mean": mean.tolist(),
+        "input_std": std.tolist(),
+        "train_metrics": metrics,
+        "epochs": args.epochs,
+        "lr": args.lr,
+        "batch_size": args.batch_size,
+        "seed": args.seed,
+        "n_train_rows": n_train_rows,
+        "parquet_base": str(args.parquet_base),
+        "parquet_extra": str(args.parquet_extra),
+        "run_provenance": build_run_provenance(
+            entrypoint=SCRIPT_PATH,
+            repo_root=REPO_ROOT,
+            argv=raw_argv,
+            args=args,
+            inputs={
+                "parquet_base": args.parquet_base,
+                "parquet_extra": args.parquet_extra,
+            },
+            outputs={
+                "checkpoint_target": str(args.out_ckpt),
+                "stats_target": str(args.out_stats),
+            },
+        ),
+    }
+    write_manifest_json(args.out_stats, stats_payload)
+    print(f"[train-v5] wrote {args.out_ckpt} and {args.out_stats}")
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _build_parser().parse_args(raw_argv)
+
+    import pandas as pd
 
     base = _load(args.parquet_base, "base", assume_teacher=args.assume_teacher)
     extra = _load(args.parquet_extra, "extra", assume_teacher=args.assume_teacher)
@@ -224,52 +289,16 @@ def main(argv: list[str] | None = None) -> int:
         flush=True,
     )
 
-    args.out_ckpt.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(
-        {
-            "state_dict": model.state_dict(),
-            "teacher_model": base["teacher_model"].iloc[0],
-            "features": list(CANONICAL_6),
-            "input_mean": mean.tolist(),
-            "input_std": std.tolist(),
-            "train_metrics": metrics,
-            "epochs": args.epochs,
-            "lr": args.lr,
-            "batch_size": args.batch_size,
-            "seed": args.seed,
-        },
-        args.out_ckpt,
+    _save_artifacts(
+        model,
+        base["teacher_model"].iloc[0],
+        mean,
+        std,
+        metrics,
+        len(df),
+        args,
+        raw_argv,
     )
-    stats_payload = {
-        "teacher_model": base["teacher_model"].iloc[0],
-        "features": list(CANONICAL_6),
-        "input_mean": mean.tolist(),
-        "input_std": std.tolist(),
-        "train_metrics": metrics,
-        "epochs": args.epochs,
-        "lr": args.lr,
-        "batch_size": args.batch_size,
-        "seed": args.seed,
-        "n_train_rows": len(df),
-        "parquet_base": str(args.parquet_base),
-        "parquet_extra": str(args.parquet_extra),
-        "run_provenance": build_run_provenance(
-            entrypoint=SCRIPT_PATH,
-            repo_root=REPO_ROOT,
-            argv=raw_argv,
-            args=args,
-            inputs={
-                "parquet_base": args.parquet_base,
-                "parquet_extra": args.parquet_extra,
-            },
-            outputs={
-                "checkpoint_target": str(args.out_ckpt),
-                "stats_target": str(args.out_stats),
-            },
-        ),
-    }
-    write_manifest_json(args.out_stats, stats_payload)
-    print(f"[train-v5] wrote {args.out_ckpt} and {args.out_stats}")
     return 0
 
 

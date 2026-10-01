@@ -455,7 +455,7 @@ def _build_metrics_payload(
     return payload
 
 
-def main(argv: list[str] | None = None) -> int:
+def _build_parser() -> argparse.ArgumentParser:
     parser = make_argument_parser(
         prog="train_saliency_student.py",
         description=__doc__,
@@ -479,8 +479,101 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--metrics-out", type=Path, default=None, help="Optional JSON file to dump training metrics"
     )
+    return parser
+
+
+def _run_training_loop(
+    model: nn.Module,
+    train_loader: DataLoader,
+    val_loader: DataLoader,
+    opt: torch.optim.Optimizer,
+    sched: torch.optim.lr_scheduler.LRScheduler,
+    epochs: int,
+    device: torch.device,
+) -> tuple[float, dict | None, list[dict], float]:
+    best_iou = -1.0
+    best_state: dict | None = None
+    history: list[dict] = []
+    t0 = time.time()
+    for epoch in range(1, epochs + 1):
+        ep_t = time.time()
+        train_loss = train_epoch(model, train_loader, opt, device)
+        val_loss, val_iou = validate(model, val_loader, device)
+        sched.step()
+        elapsed = time.time() - ep_t
+        line = (
+            f"epoch {epoch:02d}/{epochs}  "
+            f"train_loss={train_loss:.4f}  val_loss={val_loss:.4f}  "
+            f"val_iou={val_iou:.4f}  ({elapsed:.1f}s)"
+        )
+        print(line, flush=True)
+        history.append(
+            {
+                "epoch": epoch,
+                "train_loss": train_loss,
+                "val_loss": val_loss,
+                "val_iou": val_iou,
+                "elapsed_sec": elapsed,
+            }
+        )
+        if val_iou > best_iou:
+            best_iou = val_iou
+            best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+            print(f"  -> new best val_iou={best_iou:.4f}", flush=True)
+
+    total_time = time.time() - t0
+    print(f"training done. best val_iou={best_iou:.4f}  total={total_time:.1f}s", flush=True)
+    return best_iou, best_state, history, total_time
+
+
+def _export_and_dump_metrics(
+    model: nn.Module,
+    best_iou: float,
+    n_params: int,
+    history: list[dict],
+    total_time: float,
+    device: torch.device,
+    args: argparse.Namespace,
+    raw_argv: list[str],
+) -> None:
+    model = model.cpu().eval()
+    export_onnx(model, args.output, opset=args.opset)
+    onnx_bytes = args.output.read_bytes()
+    digest = hashlib.sha256(onnx_bytes).hexdigest()
+    print(f"exported {args.output}  ({len(onnx_bytes)} bytes  sha256={digest})", flush=True)
+
+    diff = parity_check(model, args.output, threshold=1e-5, seed=args.seed)
+    print(f"PT <-> ORT parity max-abs-diff = {diff:.3e}  (threshold 1e-5)", flush=True)
+
+    if args.metrics_out is not None:
+        write_manifest_json(
+            args.metrics_out,
+            _build_metrics_payload(
+                best_val_iou=best_iou,
+                param_count=n_params,
+                args=args,
+                history=history,
+                total_time_sec=total_time,
+                onnx_bytes=len(onnx_bytes),
+                onnx_sha256=digest,
+                pt_onnx_max_abs_diff=diff,
+                device=device,
+                run_provenance=build_run_provenance(
+                    entrypoint=SCRIPT_PATH,
+                    repo_root=REPO_ROOT,
+                    argv=raw_argv,
+                    args=args,
+                    inputs={"duts_root": args.duts_root},
+                    outputs={"onnx": args.output, "metrics": args.metrics_out},
+                ),
+            ),
+        )
+        print(f"wrote metrics -> {args.metrics_out}", flush=True)
+
+
+def main(argv: list[str] | None = None) -> int:
     raw_argv = collect_cli_argv(argv)
-    args = parser.parse_args(raw_argv)
+    args = _build_parser().parse_args(raw_argv)
 
     set_seed(args.seed)
 
@@ -524,84 +617,16 @@ def main(argv: list[str] | None = None) -> int:
     opt = torch.optim.Adam(model.parameters(), lr=args.lr)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=args.epochs)
 
-    best_iou = -1.0
-    best_state: dict | None = None
-    history: list[dict] = []
-    t0 = time.time()
-    for epoch in range(1, args.epochs + 1):
-        ep_t = time.time()
-        train_loss = train_epoch(model, train_loader, opt, device)
-        val_loss, val_iou = validate(model, val_loader, device)
-        sched.step()
-        elapsed = time.time() - ep_t
-        line = (
-            f"epoch {epoch:02d}/{args.epochs}  "
-            f"train_loss={train_loss:.4f}  val_loss={val_loss:.4f}  "
-            f"val_iou={val_iou:.4f}  ({elapsed:.1f}s)"
-        )
-        print(line, flush=True)
-        history.append(
-            {
-                "epoch": epoch,
-                "train_loss": train_loss,
-                "val_loss": val_loss,
-                "val_iou": val_iou,
-                "elapsed_sec": elapsed,
-            }
-        )
-        if val_iou > best_iou:
-            best_iou = val_iou
-            best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
-            print(f"  -> new best val_iou={best_iou:.4f}", flush=True)
-
-    total_time = time.time() - t0
-    print(f"training done. best val_iou={best_iou:.4f}  total={total_time:.1f}s", flush=True)
+    best_iou, best_state, history, total_time = _run_training_loop(
+        model, train_loader, val_loader, opt, sched, args.epochs, device
+    )
 
     if best_state is None:
         print("FATAL: no checkpoint was saved (training did not run)", file=sys.stderr)
         return 1
     model.load_state_dict(best_state)
 
-    # Move to CPU before ONNX export — the legacy TorchScript exporter
-    # in this PyTorch build trips on cross-device tracing when the
-    # parameters live on CUDA.
-    model = model.cpu().eval()
-    export_onnx(model, args.output, opset=args.opset)
-    onnx_bytes = args.output.read_bytes()
-    digest = hashlib.sha256(onnx_bytes).hexdigest()
-    print(f"exported {args.output}  ({len(onnx_bytes)} bytes  sha256={digest})", flush=True)
-
-    # Always validate PyTorch <-> ONNX parity in the same process while
-    # the live state_dict is still loaded — guarantees the shipped
-    # weights match the trained checkpoint within numerical noise.
-    diff = parity_check(model, args.output, threshold=1e-5, seed=args.seed)
-    print(f"PT <-> ORT parity max-abs-diff = {diff:.3e}  (threshold 1e-5)", flush=True)
-
-    if args.metrics_out is not None:
-        write_manifest_json(
-            args.metrics_out,
-            _build_metrics_payload(
-                best_val_iou=best_iou,
-                param_count=n_params,
-                args=args,
-                history=history,
-                total_time_sec=total_time,
-                onnx_bytes=len(onnx_bytes),
-                onnx_sha256=digest,
-                pt_onnx_max_abs_diff=diff,
-                device=device,
-                run_provenance=build_run_provenance(
-                    entrypoint=SCRIPT_PATH,
-                    repo_root=REPO_ROOT,
-                    argv=raw_argv,
-                    args=args,
-                    inputs={"duts_root": args.duts_root},
-                    outputs={"onnx": args.output, "metrics": args.metrics_out},
-                ),
-            ),
-        )
-        print(f"wrote metrics -> {args.metrics_out}", flush=True)
-
+    _export_and_dump_metrics(model, best_iou, n_params, history, total_time, device, args, raw_argv)
     return 0
 
 

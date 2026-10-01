@@ -356,6 +356,39 @@ def _build_parser() -> argparse.ArgumentParser:
     return ap
 
 
+def _write_manifest(
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    stats: RunStats,
+    max_rows: int | None,
+) -> None:
+    write_ingest_manifest(
+        args.manifest_out,
+        schema="waterloo-ivc-corpus-jsonl-manifest-v1",
+        entrypoint=SCRIPT_PATH,
+        repo_root=REPO_ROOT,
+        argv=raw_argv,
+        args=args,
+        corpus_label=_CORPUS_LABEL,
+        stats=stats,
+        inputs={
+            "waterloo_ivc_dir": args.waterloo_ivc_dir,
+            "manifest_csv": args.manifest_csv,
+            "progress_path": args.progress_path,
+        },
+        outputs={"jsonl": args.output, "manifest": args.manifest_out},
+        config={
+            "clips_subdir": args.clips_subdir,
+            "clip_suffix": args.clip_suffix,
+            "min_csv_rows": _WATERLOO_IVC_MIN_ROWS,
+            "max_rows": max_rows,
+            "full": args.full,
+            "corpus_version": args.corpus_version,
+            "attrition_warn_threshold": args.attrition_warn_threshold,
+        },
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     raw_argv = collect_cli_argv(argv)
     args = _build_parser().parse_args(raw_argv)
@@ -385,8 +418,6 @@ def main(argv: list[str] | None = None) -> int:
         )
     except FileNotFoundError as exc:
         msg = str(exc)
-        # Append acquisition hint when the corpus root is missing so
-        # operators know where to get the data (test asserts on the hint).
         if "corpus directory not found" in msg.lower():
             msg += (
                 "\n  Obtain the dataset from https://ivc.uwaterloo.ca/database/4KVQA.html"
@@ -397,31 +428,7 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
-    write_ingest_manifest(
-        args.manifest_out,
-        schema="waterloo-ivc-corpus-jsonl-manifest-v1",
-        entrypoint=SCRIPT_PATH,
-        repo_root=REPO_ROOT,
-        argv=raw_argv,
-        args=args,
-        corpus_label=_CORPUS_LABEL,
-        stats=stats,
-        inputs={
-            "waterloo_ivc_dir": args.waterloo_ivc_dir,
-            "manifest_csv": args.manifest_csv,
-            "progress_path": args.progress_path,
-        },
-        outputs={"jsonl": args.output, "manifest": args.manifest_out},
-        config={
-            "clips_subdir": args.clips_subdir,
-            "clip_suffix": args.clip_suffix,
-            "min_csv_rows": _WATERLOO_IVC_MIN_ROWS,
-            "max_rows": max_rows,
-            "full": args.full,
-            "corpus_version": args.corpus_version,
-            "attrition_warn_threshold": args.attrition_warn_threshold,
-        },
-    )
+    _write_manifest(args, raw_argv, stats, max_rows)
     return 0
 
 

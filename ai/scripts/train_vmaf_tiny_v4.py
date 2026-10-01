@@ -23,8 +23,10 @@ statistics, both consumed by ``export_vmaf_tiny_v4.py``.
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -143,8 +145,7 @@ def _count_params(model) -> int:  # type: ignore[no-untyped-def]
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
+def _build_parser() -> argparse.ArgumentParser:
     ap = make_argument_parser(prog="train_vmaf_tiny_v4.py", description=__doc__)
     ap.add_argument(
         "--parquet",
@@ -171,51 +172,22 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--batch-size", type=int, default=256)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--seed", type=int, default=0)
-    args = ap.parse_args(raw_argv)
+    return ap
 
-    import pandas as pd
+
+def _save_artifacts(
+    model: Any,
+    mean: np.ndarray,
+    std: np.ndarray,
+    metrics: dict[str, float],
+    n_params: int,
+    n_train_rows: int,
+    args: argparse.Namespace,
+    raw_argv: list[str],
+) -> None:
     import torch
 
     from aiutils.run_manifest import build_run_provenance, write_manifest_json
-
-    df = pd.read_parquet(args.parquet)
-    missing = [c for c in CANONICAL_6 if c not in df.columns]
-    if missing:
-        print(f"[train-v4] parquet missing columns: {missing}", file=sys.stderr)
-        return 2
-    if "vmaf" not in df.columns:
-        print("[train-v4] parquet missing 'vmaf' target column", file=sys.stderr)
-        return 2
-
-    print(f"[train-v4] parquet={args.parquet} rows={len(df)} features={list(CANONICAL_6)}")
-    x = df[list(CANONICAL_6)].to_numpy(dtype=np.float64)
-    y = df["vmaf"].to_numpy(dtype=np.float64)
-
-    # Fit StandardScaler on the FULL corpus (production model — no
-    # holdout). v2/v3 train docstring rationale applies verbatim: the
-    # corpus-wide statistics get baked into the exported ONNX graph.
-    mean = x.mean(axis=0)
-    std = x.std(axis=0, ddof=0)
-    std = np.where(std < 1e-8, 1.0, std)
-    x_std = (x - mean) / std
-
-    print(f"[train-v4] mean={mean.round(4).tolist()}\n" f"           std ={std.round(4).tolist()}")
-    print(f"[train-v4] training mlp_large for {args.epochs} epochs (lr={args.lr})")
-    model = _train(
-        x_std,
-        y,
-        epochs=args.epochs,
-        batch_size=args.batch_size,
-        lr=args.lr,
-        seed=args.seed,
-    )
-    n_params = _count_params(model)
-    metrics = _train_metrics(model, x_std, y)
-    print(
-        f"[train-v4] arch=mlp_large n_params={n_params}  "
-        f"train metrics: PLCC={metrics['plcc']:.4f} "
-        f"SROCC={metrics['srocc']:.4f} RMSE={metrics['rmse']:.3f}"
-    )
 
     args.out_ckpt.parent.mkdir(parents=True, exist_ok=True)
     torch.save(
@@ -246,7 +218,7 @@ def main(argv: list[str] | None = None) -> int:
         "lr": args.lr,
         "batch_size": args.batch_size,
         "seed": args.seed,
-        "n_train_rows": len(df),
+        "n_train_rows": n_train_rows,
         "run_provenance": build_run_provenance(
             entrypoint=SCRIPT_PATH,
             repo_root=REPO_ROOT,
@@ -261,6 +233,51 @@ def main(argv: list[str] | None = None) -> int:
     }
     write_manifest_json(args.out_stats, stats_payload)
     print(f"[train-v4] wrote {args.out_ckpt} and {args.out_stats}")
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _build_parser().parse_args(raw_argv)
+
+    import pandas as pd
+
+    df = pd.read_parquet(args.parquet)
+    missing = [c for c in CANONICAL_6 if c not in df.columns]
+    if missing:
+        print(f"[train-v4] parquet missing columns: {missing}", file=sys.stderr)
+        return 2
+    if "vmaf" not in df.columns:
+        print("[train-v4] parquet missing 'vmaf' target column", file=sys.stderr)
+        return 2
+
+    print(f"[train-v4] parquet={args.parquet} rows={len(df)} features={list(CANONICAL_6)}")
+    x = df[list(CANONICAL_6)].to_numpy(dtype=np.float64)
+    y = df["vmaf"].to_numpy(dtype=np.float64)
+
+    mean = x.mean(axis=0)
+    std = x.std(axis=0, ddof=0)
+    std = np.where(std < 1e-8, 1.0, std)
+    x_std = (x - mean) / std
+
+    print(f"[train-v4] mean={mean.round(4).tolist()}\n" f"           std ={std.round(4).tolist()}")
+    print(f"[train-v4] training mlp_large for {args.epochs} epochs (lr={args.lr})")
+    model = _train(
+        x_std,
+        y,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        lr=args.lr,
+        seed=args.seed,
+    )
+    n_params = _count_params(model)
+    metrics = _train_metrics(model, x_std, y)
+    print(
+        f"[train-v4] arch=mlp_large n_params={n_params}  "
+        f"train metrics: PLCC={metrics['plcc']:.4f} "
+        f"SROCC={metrics['srocc']:.4f} RMSE={metrics['rmse']:.3f}"
+    )
+
+    _save_artifacts(model, mean, std, metrics, n_params, len(df), args, raw_argv)
     return 0
 
 

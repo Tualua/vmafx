@@ -31,6 +31,7 @@ Output: ``runs/bvi_dvc_corpus.jsonl`` (gitignored).
 
 from __future__ import annotations
 
+import argparse
 import datetime as _dt
 import hashlib
 import json
@@ -38,6 +39,7 @@ import math
 import sys
 import uuid
 from pathlib import Path
+from typing import Any
 
 from _script_bootstrap import bootstrap_ai_script
 
@@ -64,6 +66,45 @@ def _stable_sha(key: str) -> str:
     return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
 
+def _parse_geometry(key: str) -> tuple[int, int, float]:
+    parts = key.split("_")
+    if len(parts) >= 3 and "x" in parts[1]:
+        width, height = (int(x) for x in parts[1].split("x"))
+        fps_token = parts[2]
+        framerate = float(fps_token.replace("fps", "")) if fps_token.endswith("fps") else 0.0
+        return width, height, framerate
+    return 0, 0, 0.0
+
+
+def _extract_canonical_aggs(pooled_metrics: dict[str, Any]) -> dict[str, float]:
+    canonical_aggs: dict[str, float] = {}
+    for feature in CANONICAL6_FEATURES:
+        pooled_feature = pooled_metrics.get(feature, {})
+        canonical_aggs[f"{feature}_mean"] = float(pooled_feature.get("mean", math.nan))
+        canonical_aggs[f"{feature}_std"] = float(pooled_feature.get("stddev", math.nan))
+    return canonical_aggs
+
+
+_DEFAULT_AUX_METRICS: dict[str, Any] = {
+    "hdr_transfer": "",
+    "hdr_primaries": "",
+    "hdr_forced": False,
+    "shot_count": 0,
+    "shot_avg_duration_sec": 0.0,
+    "shot_duration_std_sec": 0.0,
+    "enc_internal_qp_mean": 0.0,
+    "enc_internal_qp_std": 0.0,
+    "enc_internal_bits_mean": 0.0,
+    "enc_internal_bits_std": 0.0,
+    "enc_internal_mv_mean": 0.0,
+    "enc_internal_mv_std": 0.0,
+    "enc_internal_itex_mean": 0.0,
+    "enc_internal_ptex_mean": 0.0,
+    "enc_internal_intra_ratio": 0.0,
+    "enc_internal_skip_ratio": 0.0,
+}
+
+
 def _row_from_cache(
     cache_path: Path,
     *,
@@ -72,7 +113,7 @@ def _row_from_cache(
     encoder: str,
     pix_fmt: str,
     vmaf_model: str = DEFAULT_MODEL,
-) -> dict:
+) -> dict[str, Any]:
     """Build one :data:`CORPUS_ROW_KEYS`-shaped row from a cached vmaf JSON."""
     payload = json.loads(cache_path.read_text())
     pooled = payload.get("pooled_metrics", {}).get("vmaf", {})
@@ -80,22 +121,9 @@ def _row_from_cache(
     frames = payload.get("frames", [])
 
     key = cache_path.stem
-    # Filename pattern: e.g. "DBookcaseBVITexture_480x272_120fps_10bit_420".
-    parts = key.split("_")
-    if len(parts) >= 3 and "x" in parts[1]:
-        width, height = (int(x) for x in parts[1].split("x"))
-        fps_token = parts[2]  # e.g. "120fps"
-        framerate = float(fps_token.replace("fps", "")) if fps_token.endswith("fps") else 0.0
-    else:
-        width, height, framerate = 0, 0, 0.0
-
+    width, height, framerate = _parse_geometry(key)
     duration_s = (len(frames) / framerate) if framerate > 0 else 0.0
-    canonical_aggs: dict[str, float] = {}
-    pooled_metrics = payload.get("pooled_metrics", {})
-    for feature in CANONICAL6_FEATURES:
-        pooled_feature = pooled_metrics.get(feature, {})
-        canonical_aggs[f"{feature}_mean"] = float(pooled_feature.get("mean", math.nan))
-        canonical_aggs[f"{feature}_std"] = float(pooled_feature.get("stddev", math.nan))
+    canonical_aggs = _extract_canonical_aggs(payload.get("pooled_metrics", {}))
 
     row: dict = {
         "schema_version": SCHEMA_VERSION,
@@ -127,33 +155,15 @@ def _row_from_cache(
         # pipeline does not slice them via the ADR-0297
         # sample-clip mode, so the corpus row is always "full".
         "clip_mode": "full",
-        # The BVI-DVC cache adapter predates HDR/shot/encoder-stat schema
-        # columns. Preserve a uniform v3 row with explicit unavailable values.
-        "hdr_transfer": "",
-        "hdr_primaries": "",
-        "hdr_forced": False,
-        "shot_count": 0,
-        "shot_avg_duration_sec": 0.0,
-        "shot_duration_std_sec": 0.0,
         **canonical_aggs,
-        "enc_internal_qp_mean": 0.0,
-        "enc_internal_qp_std": 0.0,
-        "enc_internal_bits_mean": 0.0,
-        "enc_internal_bits_std": 0.0,
-        "enc_internal_mv_mean": 0.0,
-        "enc_internal_mv_std": 0.0,
-        "enc_internal_itex_mean": 0.0,
-        "enc_internal_ptex_mean": 0.0,
-        "enc_internal_intra_ratio": 0.0,
-        "enc_internal_skip_ratio": 0.0,
+        **_DEFAULT_AUX_METRICS,
     }
     missing = set(CORPUS_ROW_KEYS) - row.keys()
     assert not missing, f"row missing keys {missing}"
     return row
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
+def _build_parser() -> argparse.ArgumentParser:
     ap = make_argument_parser(prog="bvi_dvc_to_corpus_jsonl.py")
     ap.add_argument(
         "--cache-dir",
@@ -189,7 +199,41 @@ def main(argv: list[str] | None = None) -> int:
             "CLI args used to build the JSONL."
         ),
     )
-    args = ap.parse_args(raw_argv)
+    return ap
+
+
+def _write_corpus_manifest(
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    caches: list[Path],
+    rows: int,
+) -> None:
+    write_manifest_json(
+        args.manifest_out,
+        {
+            "schema": "bvi-dvc-corpus-jsonl-manifest-v1",
+            "row_schema_version": SCHEMA_VERSION,
+            "vmaf_model": args.vmaf_model,
+            "stats": {"cache_files": len(caches), "rows": rows},
+            "encoder": args.encoder,
+            "preset": args.preset,
+            "crf": args.crf,
+            "pix_fmt": args.pix_fmt,
+            "run_provenance": build_run_provenance(
+                entrypoint=SCRIPT_PATH,
+                repo_root=_REPO_ROOT,
+                argv=raw_argv,
+                args=args,
+                inputs={"cache_dir": args.cache_dir},
+                outputs={"jsonl": args.output, "manifest": args.manifest_out},
+            ),
+        },
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _build_parser().parse_args(raw_argv)
     if args.manifest_out is None:
         args.manifest_out = args.output.with_suffix(".manifest.json")
 
@@ -215,27 +259,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             fp.write(json.dumps(row, sort_keys=True) + "\n")
             rows += 1
-    write_manifest_json(
-        args.manifest_out,
-        {
-            "schema": "bvi-dvc-corpus-jsonl-manifest-v1",
-            "row_schema_version": SCHEMA_VERSION,
-            "vmaf_model": args.vmaf_model,
-            "stats": {"cache_files": len(caches), "rows": rows},
-            "encoder": args.encoder,
-            "preset": args.preset,
-            "crf": args.crf,
-            "pix_fmt": args.pix_fmt,
-            "run_provenance": build_run_provenance(
-                entrypoint=SCRIPT_PATH,
-                repo_root=_REPO_ROOT,
-                argv=raw_argv,
-                args=args,
-                inputs={"cache_dir": args.cache_dir},
-                outputs={"jsonl": args.output, "manifest": args.manifest_out},
-            ),
-        },
-    )
+    _write_corpus_manifest(args, raw_argv, caches, rows)
     print(
         f"[bvi-dvc-jsonl] wrote {rows} rows to {args.output}; manifest {args.manifest_out}",
         file=sys.stderr,
