@@ -1229,6 +1229,25 @@ ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/ci/cross_backend_parity_gate
     --width 576 --height 324
 ```
 
+## `vif_sycl` rounds its sums as the CPU does (2026-10-01)
+
+`vif_sycl` stores each scale's numerator and denominator sum in a `float`,
+divides in single precision and adds the rounded sums for the debug outputs,
+as `integer_vif.c` does. It kept them in `double` before, which put every
+score of every frame up to 3.5e-7 from the CPU. On an Arc A380 the
+denominator sums are now identical on every frame, and the scores on 12 to 41
+of the 48 Netflix frames, depending on the scale, and on 140 to 196 of 200
+BBB 3840x2160 frames; none was before. The remaining frames are one or a few
+`float` steps off in a numerator, because the kernel forms the per-pixel gain
+in `float` where the CPU uses `double`. The table is in the
+[VIF metric guide](../../metrics/vif.md#vif_sycl-rounds-where-the-cpu-rounds).
+The kernels are unchanged.
+
+The twin's `debug` option now defaults to `false`, the CPU's default. A run
+that relied on the eleven debug outputs (`integer_vif`, `integer_vif_num`,
+`integer_vif_den` and the per-scale sums) asks for them:
+`--feature vif_sycl=debug=true`.
+
 ## Licensing of the SYCL kernels (ADR-1250)
 
 As with the other backends, a SYCL kernel implementing an upstream Netflix

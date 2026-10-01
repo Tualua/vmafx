@@ -226,6 +226,23 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   CPU 0.0765; 854x480 scale3 9.3e-4 off). Guard: `test_sycl_vif_min_dim`
   (17x17, 853x480 at places=4).
 
+- **`integer_vif_sycl.cpp` host tail = `integer_vif.c` rounding points.**
+  CPU: `vif_store_residuals()` stores each scale's num / den in `float`,
+  `write_scores()` adds the ROUNDED values for debug sums, emitter divides
+  single precision (`.single_precision_ratio = true`). Twin:
+  `vif_scale_sums()` -> two `(float)(...)` casts per scale,
+  `vif_score_set()` mirrors `write_scores()`. `double` sums = every score
+  up to 3.5e-7 off (was the state until 2026-10-01). `debug` default =
+  `false` like CPU (was `true`: eleven extra outputs per run). After fix,
+  Arc A380: den sums identical every frame; scores identical on 12-41 of
+  48 Netflix frames, 140-196 of 200 BBB 4K. Residual = kernel gain
+  (`dev_vif_stats_log_domain()`: fp32 `g`, `sycl::fma` `sv_sq`, CPU fp64)
+  moves a numerator one or a few fp32 steps:
+  `T-SYCL-VIF-FP32-GAIN-2026-10-01`. Guards:
+  `test_sycl_vif_float_sums_contract.py` (device-free),
+  `test_sycl_vif_parity` (den `==`, single-precision outputs, default
+  output set).
+
 - **`integer_vif_sycl.cpp` minimum frame = 16 px, declared through ADR-1324**
   (T-INTEGER-VIF-TINY-FRAME-GUARD-2026-09-29, maintainer decision: CPU
   fallback). `VIF_MIN_DIM` = max over scales of `(half_width + 1) << s` for
@@ -743,7 +760,7 @@ ADR-0884 / ADR-0946 backlog must update in same PR.
 | `integer_motion_pipeline_sycl.cpp` (motion + motion_v2 SAD) | `integer_motion.c`, `integer_motion_v2.c` | `test_sycl_motion_tiny_frames.c` (bit-exact, 3x3 .. 1283x723) | T-SYCL-MOTION-TINY-FRAME-PARITY-2026-09-29 |
 | `integer_motion_sycl.cpp` (motion_add_uv) | `float_motion.c` | `test_sycl_motion_add_uv_parity.c` | ADR-0989 |
 | `integer_psnr_sycl.cpp` | `integer_psnr.c` | `test_sycl_psnr_parity.c` | ADR-0868 (round 1) |
-| `integer_vif_sycl.cpp` | `integer_vif.c` | `test_sycl_vif_parity.c` | ADR-0868 (round 1) |
+| `integer_vif_sycl.cpp` | `integer_vif.c` | `test_sycl_vif_parity.c` (den sums bit-exact, scores single-precision and within 5e-6) | ADR-0868 (round 1) |
 | `integer_adm_sycl.cpp` | `integer_adm.c` | `test_sycl_adm_parity.c` | ADR-0884 (round 2) |
 | `integer_ciede_sycl.cpp` | `ciede.c` | `test_sycl_ciede_parity.c` | ADR-0884 (round 2) |
 | `integer_ssim_sycl.cpp` | `integer_ssim.c` | `test_sycl_ssim_parity.c` | ADR-0884 (round 2) |

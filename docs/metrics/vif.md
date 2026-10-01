@@ -105,6 +105,35 @@ on such a frame fails at `init()` with `-EINVAL` and a message such as
 `vif_cuda requires width >= 16 and height >= 16`. The Metal twin does not
 declare it yet (`T-GPU-INTEGER-VIF-MIN-DIM-TWINS-2026-09-29`).
 
+### `vif_sycl` rounds where the CPU rounds
+
+The integer extractor leaves integer arithmetic at the end of a frame: it
+stores each scale's numerator and denominator sum in a `float`, divides the
+two in single precision, and (with `debug=true`) adds the rounded sums.
+`vif_sycl` kept the sums in `double`, so every score of every frame was up to
+3.5e-7 from `--backend cpu --feature vif`. It now rounds at the same points.
+
+Measured on an Arc A380 at `--precision max`, frames with identical scores
+before and after:
+
+| Fixture | Before | After (scale 0 / 1 / 2 / 3) |
+| --- | --- | --- |
+| Netflix 576x324, 48 frames | 0 on every scale | 41 / 31 / 16 / 12 |
+| Checkerboard 1920x1080, 1 px shift, 3 frames | 0 | 3 / 3 / 3 / 2 |
+| Checkerboard 1920x1080, 10 px shift, 3 frames | 1 / 3 / 3 / 3 | 3 / 3 / 3 / 3 |
+| BBB 3840x2160, 200 frames | 0 (first 20) | 196 / 174 / 184 / 140 |
+
+The denominator sums (`integer_vif_den*` with `debug=true`) are identical on
+every frame. A numerator sum still differs by one or a few steps of a `float`
+on the remaining frames, at most 3.6e-7 in a score: the kernel computes the
+per-pixel gain in `float`, the CPU in `double`
+(`T-SYCL-VIF-FP32-GAIN-2026-10-01` in [`state.md`](../state.md)). The CUDA
+twin has `double` on the device and equals the CPU.
+
+`vif_sycl` also emits the CPU's default outputs now: the four per-scale
+scores. Its `debug` option defaulted to `true`, which added the eleven debug
+outputs to every run; request them with `--feature vif_sycl=debug=true`.
+
 ### Output features
 
 All features are computed on the luma (Y) plane only.

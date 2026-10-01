@@ -56960,3 +56960,25 @@ Netflix golden assertions are untouched.
   `hip` next to `cuda`. A textual merge of two branches that each add an
   `"adm"` entry leaves two dictionary keys, and Python keeps only the last
   one; keep one entry with every twin.
+
+## `vif_sycl` rounds its sums as the CPU does (2026-10-01)
+
+`fix/sycl-vif-cpu-float-sums`. No ADR: a bug fix with one way to do it.
+
+- `core/src/feature/sycl/integer_vif_sycl.cpp`: `vif_compute_scores()` is
+  gone. `vif_scale_sums()` rounds each scale's numerator and denominator to
+  `float` (the two `(float)(...)` casts mirror
+  `integer_vif.c::vif_store_residuals()`), and `vif_score_set()` mirrors
+  `integer_vif.c::write_scores()`: it adds the rounded values and sets
+  `.single_precision_ratio = true`. **On rebase**: if the other side still
+  computes `double` sums in `collect_fex_sycl()`, keep this side; if upstream
+  Netflix changes where `integer_vif.c` rounds, mirror it here, in
+  `cuda/integer_vif_cuda.c` and in `hip/integer_vif_hip.c`, which carry the
+  same tail.
+- The twin's `debug` option defaults to `false`, as on the CPU.
+- The kernels are unchanged. `dev_vif_stats_log_domain()` still forms the
+  gain in fp32 (`T-SYCL-VIF-FP32-GAIN-2026-10-01`).
+- Tests: `core/test/test_sycl_vif_parity.c` (device) and
+  `core/test/test_sycl_vif_float_sums_contract.py` (device-free, four planted
+  regressions).
+- No Netflix golden-data, public API or FFmpeg patch impact.

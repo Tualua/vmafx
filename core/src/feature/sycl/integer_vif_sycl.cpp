@@ -189,7 +189,8 @@ const VmafOption options[] = {
         .help = "debug mode: enable additional output",
         .offset = offsetof(VifStateSycl, debug),
         .type = VMAF_OPT_TYPE_BOOL,
-        .default_val = {.b = true},
+        /* The CPU extractor's default (integer_vif.c). */
+        .default_val = {.b = false},
     },
     {
         .name = "vif_enhn_gain_limit",
@@ -1824,27 +1825,47 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
 
 namespace
 {
-static inline void vif_compute_scores(const struct vif_accums *accums, bool vif_skip_scale0,
-                                      double &score_num, double &score_den, double *vif_scale_num,
-                                      double *vif_scale_den)
+/* integer_vif.c::vif_store_residuals() stores each scale's numerator and
+ * denominator in a `float`: the fp64 expression is rounded to fp32 once, and
+ * every value published afterwards (the per-scale ratio, the sums of the debug
+ * outputs) is formed from the rounded pair. The twin rounds at the same
+ * points: its denominators are then the CPU's bit for bit, and its numerators
+ * differ only where the kernel's fp32 gain moved a sum across an fp32 step. */
+static inline void vif_scale_sums(const struct vif_accums *accums, float *vif_scale_num,
+                                  float *vif_scale_den)
 {
-    score_num = 0.0;
-    score_den = 0.0;
     for (int scale = 0; scale < VIF_NUM_SCALES; scale++) {
-        const double num =
-            accums[scale].num_log / 2048.0 + accums[scale].x2 +
-            (accums[scale].den_non_log - (accums[scale].num_non_log / 16384.0) / 65025.0);
+        vif_scale_num[scale] =
+            (float)(accums[scale].num_log / 2048.0 + accums[scale].x2 +
+                    (accums[scale].den_non_log - (accums[scale].num_non_log / 16384.0) / 65025.0));
+        vif_scale_den[scale] =
+            (float)(accums[scale].den_log / 2048.0 - (accums[scale].x + accums[scale].num_x * 17) +
+                    accums[scale].den_non_log);
+    }
+}
 
-        const double den = accums[scale].den_log / 2048.0 -
-                           (accums[scale].x + accums[scale].num_x * 17) + accums[scale].den_non_log;
-
-        vif_scale_num[scale] = num;
-        vif_scale_den[scale] = den;
-        if (!vif_skip_scale0 || scale > 0) {
-            score_num += num;
-            score_den += den;
+/* integer_vif.c::write_scores(): the frame sums add the rounded per-scale
+ * values, and the per-scale ratio is a single-precision division. */
+static inline VmafVifScoreSet vif_score_set(const VifStateSycl *s, const float *vif_scale_num,
+                                            const float *vif_scale_den)
+{
+    VmafVifScoreSet output = {
+        .single_precision_ratio = true,
+        .skip_scale0 = s->vif_skip_scale0,
+        .debug = s->debug,
+    };
+    const int scale_start = s->vif_skip_scale0 ? 1 : 0;
+    for (int scale = 0; scale < VIF_NUM_SCALES; ++scale) {
+        const size_t offset = (size_t)scale * 2u;
+        output.scale[offset] = vif_scale_num[scale];
+        output.scale[offset + 1u] = vif_scale_den[scale];
+        if (scale >= scale_start) {
+            output.score_num += vif_scale_num[scale];
+            output.score_den += vif_scale_den[scale];
         }
     }
+    output.score = output.score_den > 0.0 ? output.score_num / output.score_den : NAN;
+    return output;
 }
 } // namespace
 
@@ -1864,26 +1885,10 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     struct vif_accums accums[VIF_NUM_SCALES];
     std::memcpy(accums, s->h_accum, sizeof(accums));
 
-    double score_num = 0.0;
-    double score_den = 0.0;
-    double vif_scale_num[VIF_NUM_SCALES];
-    double vif_scale_den[VIF_NUM_SCALES];
-
-    vif_compute_scores(accums, s->vif_skip_scale0, score_num, score_den, vif_scale_num,
-                       vif_scale_den);
-
-    VmafVifScoreSet output = {
-        .score = score_den > 0.0 ? score_num / score_den : NAN,
-        .score_num = score_num,
-        .score_den = score_den,
-        .skip_scale0 = s->vif_skip_scale0,
-        .debug = s->debug,
-    };
-    for (int scale = 0; scale < VIF_NUM_SCALES; ++scale) {
-        const size_t offset = (size_t)scale * 2u;
-        output.scale[offset] = vif_scale_num[scale];
-        output.scale[offset + 1u] = vif_scale_den[scale];
-    }
+    float vif_scale_num[VIF_NUM_SCALES];
+    float vif_scale_den[VIF_NUM_SCALES];
+    vif_scale_sums(accums, vif_scale_num, vif_scale_den);
+    const VmafVifScoreSet output = vif_score_set(s, vif_scale_num, vif_scale_den);
     const int err =
         vmaf_vif_emit_scores(feature_collector, s->feature_name_dict, "integer_vif_sycl", &output,
                              VMAF_VIF_INTEGER_NAMES, index);

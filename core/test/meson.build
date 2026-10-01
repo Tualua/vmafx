@@ -255,6 +255,16 @@ test('test_cuda_adm_exact_contract',
 )
 
 
+# vif_sycl's host tail rounds each scale's sums to float and divides in
+# single precision, as integer_vif.c does, and its debug option defaults to
+# the CPU's false. Device-free; the device check is test_sycl_vif_parity.
+test('test_sycl_vif_float_sums_contract',
+    import('python').find_installation(),
+    args : files('test_sycl_vif_float_sums_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # A default scale=0 is only executable by the GPU float-SSIM twins while the
 # CPU auto-scale resolves to 1. Pin the model-only, first-frame fallback seam
 # and all four backend declarations without requiring an accelerator.
