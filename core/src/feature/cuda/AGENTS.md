@@ -370,22 +370,20 @@ HIP / Metal motion twins listed in Twin-update table below — same PR.
   in same PR.
 
 - **`float_adm_cuda.c` / `float_adm/float_adm_score.cu` AIM/ADM3
-  slot-sync invariant** (ADR-0574). `FADM_ACCUM_SLOTS = 9` must
-  remain identical in both files. `.cu` compile unit defines
-  per-WG slot layout (`[0..2]`=csf\_den, `[3..5]`=cm\_num,
-  `[6..8]`=aim\_cm); `.c` host file uses same constant for
-  buffer allocation, `cuMemsetD8Async` size, D2H copy byte-count,
-  and per-WG accumulator read in `collect_fex_cuda`. Slot-count
-  mismatch silently overwrites adjacent host memory, or produces
-  incorrect AIM/ADM3 scores without any crash.
-  If `.cu` file replaced by rebase with pre-ADR-0574
-  version (`FADM_ACCUM_SLOTS = 6`), update `float_adm_cuda.c`
-  accordingly in same commit. `--fmad=false` (every fatbin, ADR-1403)
-  covers all six kernels of `float_adm_score.cu` including two new
-  AIM stages (`float_adm_csf_r`, `float_adm_aim_cm`); do not remove
-  it. AIM/ADM3 options: `adm_bypass_cm`, `adm_adm3_apply_hm`,
-  `adm_p_norm`, `adm_dlm_weight`, `adm_min_val`, `adm_skip_aim_scale`
-  must keep same defaults as `float_adm.c`.
+  slot layout** (ADR-0574, relaid by ADR-1420). `FADM_TERM_SLOTS = 9`
+  lives in ONE place, `float_adm/float_adm_device.h`, included by host
+  and kernels: `FADM_SLOT_DEN` 0..2, `FADM_SLOT_CM` 3..5,
+  `FADM_SLOT_AIM` 6..8 (h, v, d each). Term buffer =
+  `fadm_term_index()` (slot, then column, then row); row-sum buffer =
+  `fadm_row_index()`, per-scale span at `row_offset[scale]`. Never
+  index either by hand. Pre-ADR-1420 `FADM_ACCUM_SLOTS`, per-WG
+  accumulators, `float_adm_csf_cm` / `float_adm_csf_r` /
+  `float_adm_aim_cm` = gone; a rebase that brings them back brings
+  back the 1.3e-5 twin. `--fmad=false` (every fatbin, ADR-1403)
+  covers all five kernels; do not remove it. AIM/ADM3 options:
+  `adm_bypass_cm`, `adm_adm3_apply_hm`, `adm_p_norm`,
+  `adm_dlm_weight`, `adm_min_val`, `adm_skip_aim_scale` must keep
+  same defaults as `float_adm.c`.
 
 - **`motion_fps_weight` = cross-backend parity parameter** — all
   motion-family GPU twins must expose `motion_fps_weight` in their
@@ -589,7 +587,7 @@ CUDA feature TUs compile only when `meson setup -Denable_cuda=true`.
   SSIMULACRA2 CUDA blur: 3-channel kernel fusion + V-pass transpose.
 - [ADR-0574](../../../../docs/adr/0574-hdr-features-cuda-twins-phase-1.md) —
   CUDA twins for HDR-model `aim` and `adm3` sub-features (Phase 1);
-  `FADM_ACCUM_SLOTS` 6→9 slot-sync invariant.
+  slot layout now `FADM_TERM_SLOTS` in `float_adm_device.h` (ADR-1420).
 
 ## RC3 CPU parity: motion order, option tables, tiny frames (ADR-1372, ADR-1373, ADR-1374)
 
@@ -956,6 +954,46 @@ with a new ADR and measurements, never by reviving ADR-0753 text.
   `test_cuda_float_vif_exact_contract.py`, `test_cuda_float_vif_parity`
   (`==`, 7 cases). Option table carries CPU `vif_scale1..3_min_val`.
   Throughput debt: `T-CUDA-FLOAT-VIF-EXACT-THROUGHPUT-2026-10-01`; tune
+  only with both tests green.
+- **`float_adm_cuda` = CPU bits** (ADR-1420, `EXACT_TWINS`). Each alone
+  breaks identity:
+  (1) `fadm_divs()` = `adm_tools.c::DIVS()`: x86 CPU multiplies by
+  `rcp_s()`, a Newton step on the processor's `RCPSS` estimate (NOT
+  `t / o`, differs for 2.6M of 8.4M mantissas). Device evaluates the
+  HOST's estimate: `adm_reciprocal_model_probe()` (host, init) fills +
+  proves a 4096-entry table, `adm_reciprocal_model_bits()` (integer
+  only) reads it. Mode from probe, never hardcoded:
+  `ADM_DIVISION_RECIPROCAL_TABLE` / `_IEEE` (CPU build divides: MSVC,
+  ARM) / `_RECIPROCAL_IEEE` (model failed; logs when not exact);
+  (2) angle threshold `(cos^2 * |o|^2) * |t|^2`, that association
+  (1.3e-5 alone); `cos^2` from `adm_decouple_cos_1deg_sq_s()`;
+  (3) gain limit fp64 kernel argument, product fp64, rounded once;
+  clamps = CPU ternaries, two sequential `if`, not `else if`, not
+  `fminf` / `fmaxf`;
+  (4) `FADM_ONE_BY_30` / `FADM_ONE_BY_15` double literals: 1/30 product
+  fp64, centre tap an fp64 addend; no `f` suffix;
+  (5) threshold = one nine-term sum per band, centre FIFTH, then the
+  three band sums (`fadm_thresh_band()` / `fadm_threshold()`);
+  (6) sums = CPU order: `float_adm_terms` stores nine terms per sample
+  of reduced region, `float_adm_row_sums` one thread per (slot, row)
+  left to right, host `fadm_fold_rows()` top to bottom, fp32 both. NO
+  warp / block / atomic reduction, no fp64 host sum of partials;
+  (7) host concludes with CPU routines (`adm_float_reference.h`):
+  `adm_csf_rfactor_s()` (no copy of `dwt_quant_step()`: old copy was
+  1-3 ulp off on 4 of 8 default weights), `adm_border_s()`,
+  `adm_pool_bands_s()`; floor of frame sums `1e-10`, not `1e-2`.
+  Not exact, by design: `adm_p_norm` other than 1 or 3 (device `powf`
+  vs glibc, 1.1e-7). Frames < 17x17: CPU reads outside its bands
+  (`T-FLOAT-ADM-TINY-FRAME-BAND-READS-2026-10-01`); device clamps
+  (`fadm_before()`, `fadm_mirror()`), no parity there. Mirror list, same
+  PR when CPU side changes: `adm_decouple_s()`, `adm_csf_s()`,
+  `adm_cm_thresh3x3_s()`, `adm_csf_den_scale_s()`, `adm_cm_s()`,
+  `rcp_s()`, `ADM_OPT_AVOID_ATAN`, `compute_adm()` floor. Guards:
+  `test_float_adm_device_math` (device-free, bit compare vs those
+  routines + reciprocal model vs host instruction),
+  `test_cuda_float_adm_exact_contract.py`,
+  `test_cuda_float_adm_parity` (`==`, 15 cases + `apn` tolerance case).
+  Throughput debt: `T-CUDA-FLOAT-ADM-EXACT-THROUGHPUT-2026-10-01`; tune
   only with both tests green.
 - **SpEED's singular-covariance path has TWO obligations** (ADR-1202 for
   chroma, ADR-1218 for both families). 25x25 SpEED covariance =

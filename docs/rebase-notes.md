@@ -57111,3 +57111,54 @@ Netflix golden assertions are untouched.
   `core/test/test_sycl_float_vif_exact_contract.py` (eleven planted
   regressions), `scripts/ci/test_cross_backend_parity_gate.py`.
 - No Netflix golden-data, public API or FFmpeg patch impact.
+## ADR-1420 — float_adm_cuda computes the CPU's arithmetic and is bit-identical to it (2026-10-01)
+
+`fix/cuda-float-adm-cpu-arithmetic`, Research-1420, ADR-1420.
+
+- `core/src/feature/adm_tools.c` (Netflix file): three changes, none in the
+  arithmetic. `rcp_s()` reads the processor's estimate through
+  `rcp_estimate_s()`; `adm_decouple_s()` reads `cos^2` from
+  `adm_decouple_cos_1deg_sq_s()`; the tails of `adm_csf_den_scale_s()`,
+  `adm_csf_den_scale_s_p3()`, `adm_cm_s()` and `adm_cm_s_p3()` call
+  `adm_pool_bands_s()`. `adm_border_s()` and `adm_csf_rfactor_s()` lost
+  `static`, and `AdmBorderS` moved to the new
+  `core/src/feature/adm_float_reference.h`, which declares all of these plus
+  `adm_divs_is_reciprocal_s()` / `adm_divs_reciprocal_estimate_s()`. On an
+  upstream sync that touches these functions keep the exported names and the
+  single pooling routine: `float_adm_cuda.c` calls them, and
+  `core/test/test_cuda_float_adm_exact_contract.py` counts the four call
+  sites. CPU scores are unchanged (4 752 outputs over six fixtures and twelve
+  option sets).
+- `core/src/feature/adm_reciprocal_model.{c,h}` (new): the table model of the
+  host's `RCPSS` estimate and its probe. The header's
+  `adm_reciprocal_model_bits()` is integer-only and is compiled by the device
+  as well.
+- `core/src/feature/cuda/float_adm/float_adm_device.h` (new): the kernel
+  argument blocks and the per-sample arithmetic, in plain C and CUDA C++:
+  `fadm_divs()` = `DIVS()`, `fadm_angle_flag()` = `adm_angle_flag_s()` (the
+  `ADM_OPT_AVOID_ATAN` branch), `fadm_decouple_band()` =
+  `adm_decouple_band_s()`, `fadm_csf_flt()` = the `flt` store of
+  `adm_csf_s()`, `fadm_thresh_band()` / `fadm_threshold()` =
+  `adm_cm_thresh3x3_s()`, `fadm_den_term()` / `fadm_cm_term()` = the terms of
+  `adm_csf_den_scale_s()` / `adm_cm_s()`, `fadm_row_sum()` /
+  `fadm_fold_rows()` = their two accumulators. If upstream Netflix changes
+  any of those, change this header in the same PR;
+  `core/test/test_float_adm_device_math.c` (device-free, bit compare against
+  the CPU routines) and the contract fail until it follows.
+- `core/src/feature/cuda/float_adm/float_adm_score.cu`: the DWT kernels are
+  unchanged except that `fadm_mirror()` stays inside a one-sample input.
+  `float_adm_csf_cm`, `float_adm_csf_r` and `float_adm_aim_cm` are gone, with
+  `FADM_ACCUM_SLOTS` and every warp reduction; `float_adm_decouple_csf`
+  writes both CSF pairs, `float_adm_terms` stores nine terms per sample of
+  the reduced region (slot by slot, column by column), `float_adm_row_sums`
+  adds one row per thread. Each takes one by-value argument block.
+- `core/src/feature/cuda/float_adm_cuda.c`: no copy of `dwt_quant_step()`;
+  the readback is nine floats per row per scale (`rows_host`); the frame sums
+  are floored at `1e-10`, as in `compute_adm()`.
+- `scripts/ci/cross_backend_calibration.py`: `EXACT_TWINS["float_adm"] =
+  {"cuda"}`. On a conflict with another twin's entry keep both.
+- `core/test/test_cuda_float_adm_parity.c` is rewritten around a case table
+  and asserts equality.
+- No Netflix golden-data, public C API or FFmpeg patch impact. The
+  `float_adm_sycl`, `float_adm_hip` and `float_adm_metal` twins are untouched
+  (`T-GPU-FLOAT-ADM-CPU-ARITHMETIC-2026-10-01`).

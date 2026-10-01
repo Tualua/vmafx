@@ -463,6 +463,39 @@ modes 0–3 on CPU, CUDA, SYCL, HIP, and Metal. See
 [ADR-1316](../adr/1316-gpu-option-value-capability-fallback.md) and
 [ADR-1325](../adr/1325-integer-adm-barten-fixed-point-normalization.md).
 
+##### `float_adm` on CUDA returns the CPU's values
+
+`float_adm_cuda` gives the same number as `--backend cpu --feature float_adm`
+for every output of every frame, down to the last bit of the `--precision max`
+output ([ADR-1420](../adr/1420-cuda-float-adm-cpu-arithmetic.md)). Measured on
+an RTX 4090 on the Netflix 576x324 pair at 8, 10, 12 and 16 bits, both
+1920x1080 checkerboard pairs and 3840x2160, with `debug=true` as well.
+
+What this means when you use it:
+
+- You can mix CPU and CUDA `float_adm` results in one data set. Before
+  ADR-1420 the CUDA twin was up to 1.3e-5 from the CPU (the fifth decimal
+  place of `adm_scale0` could differ); `float_adm_cuda` outputs stored before
+  it differ from new ones by that much.
+- For content with almost no reference detail, scored with
+  `adm_noise_weight=0`, the twin used to report `adm2 = 1` where the CPU
+  reports 0. It now reports the CPU's value.
+- "The CPU" is the CPU of the same machine. On x86 the float ADM divides with
+  the processor's reciprocal-estimate instruction (`RCPSS`), whose low bits
+  are not the same on every processor model, so `float_adm` itself can differ
+  in its last digits between two machines. `float_adm_cuda` measures the
+  host's instruction when the extractor starts (about 10 ms) and reproduces
+  it. If it cannot, it logs a warning that begins
+  `float_adm_cuda: this processor's reciprocal estimate is neither`, and its
+  scores are close to `float_adm`'s instead of equal.
+- One option is not identical: with `adm_p_norm` other than 1 or 3 the twin
+  is within 1.1e-7 of the CPU, because the two sides raise each term with
+  different `powf` implementations.
+- Frames smaller than 17x17 are outside this guarantee; see the next section.
+
+The SYCL, HIP and Metal `float_adm` twins agree with the CPU to four decimal
+places.
+
 ##### Small frames
 
 The fixed-point `adm` extractor needs at least 17x17 pixels, on every
@@ -478,6 +511,11 @@ libvmaf ERROR adm_cuda requires width >= 17 and height >= 17 (got 16x16)
 
 The CUDA, HIP and SYCL twins (`adm_cuda`, `adm_hip`, `adm_sycl`) used to
 accept such frames; they now refuse them like the CPU and Metal extractors.
+
+`float_adm` has no such check yet. Below 17x17 its coarsest level has a single
+sample and the CPU extractor reads outside it, so its scores there are not
+meaningful (a random 8x8 pair scores `adm_scale3 = 1.05`), and
+`float_adm_cuda` does not reproduce them. Use frames of at least 17x17.
 
 Frames from 17 to 32 pixels wide or high are the smallest it accepts. These
 were wrong at those sizes and are fixed:

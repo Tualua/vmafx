@@ -6,32 +6,32 @@
  */
 
 /*
- * ADR-0956 — float_adm CPU vs. CUDA parity test (round 4).
+ * float_adm CPU vs. CUDA parity (ADR-0956 round 4; exact since ADR-1420).
  *
- * The float-path ADM extractor is implemented independently in
- * core/src/feature/float_adm.c (CPU) and
- * core/src/feature/cuda/float_adm_cuda.c (CUDA). Both emit the
- * `VMAF_feature_adm2_score` family plus the four `adm_scale[0..3]`
- * sub-scores. The integer-path twin (`adm_cuda`) is gated by PR #374
- * (round 2); the float-path was the last uncovered ADM kernel.
+ * The float-path ADM extractor is float_adm.c / adm.c / adm_tools.c on the
+ * CPU and float_adm_cuda.c plus float_adm/float_adm_score.cu on CUDA. Since
+ * ADR-1420 the kernels run the reference's arithmetic operation for
+ * operation, the row sums are added in the reference's order and the host
+ * concludes with the reference's own routines, so this test asserts equality,
+ * not a tolerance: every output of every exact case has the CPU's bits, the
+ * per-scale numerators and denominators of `debug=true` included.
  *
- * Without this test, a SIMD pivot on the CPU side or a kernel-grid
- * change on the CUDA side could silently shift the float-path ADM
- * scores away from the CPU reference and only surface weeks later via
- * a CHUG re-extract diff against the float `vmaf_float_*` model
- * lineage.
+ * Before ADR-1420 the twin divided where the reference multiplies by a
+ * refined reciprocal estimate, associated the angle test's threshold
+ * differently, formed the masking threshold in another order with fp32
+ * constants, reduced each row in tiles and floored the frame sums at 1e-2
+ * where the reference floors them at 1e-10. Every exact case below fails on
+ * that twin; the isolated-sample case fails by a whole unit of adm2.
  *
- * Fixture: 256x144 YUV420P 8-bpc, 3 frames, ref/dist deterministic
- * ramps that differ so the ADM score is non-trivial and finite. We
- * read the score at frame index 1 and assert agreement at
- * `places=4` / 1e-4 (ADR-0214 cross-backend gate).
+ * One option is not exact: adm_p_norm other than 3 raises each term with
+ * powf(), and the device's powf is not glibc's. That case keeps a tolerance.
  *
- * Skip behaviour: if vmaf_cuda_state_init() fails (no driver / no
- * device) the test emits "[skip: no CUDA device]" and passes.
- * Mirrors test_cuda_motion3_parity.c.
+ * Skip behaviour: if vmaf_cuda_state_init() fails (no CUDA driver / no device)
+ * the test emits "[skip: no CUDA device]" and passes.
  */
 
 #include <math.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -45,314 +45,514 @@
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
  * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this test mirrors
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
  * the C spelling of the surface it exercises. ADR-1138. */
 
+/* Fixture geometry — large enough for the 4-scale ADM DWT pyramid. */
 #ifndef FIXTURE_W
 #define FIXTURE_W 256u
 #endif
 #ifndef FIXTURE_H
 #define FIXTURE_H 144u
 #endif
-#define FIXTURE_BPC 8u
-#define NUM_FRAMES 3u
 
-/* ADR-0214 cross-backend tolerance (places=4 → 1e-4). */
-#define PARITY_TOL 1e-4
+#define MAX_KEYS 18u
 
-/* Subset of ADM features that BOTH CPU (`float_adm`) and CUDA
- * (`float_adm_cuda`) emit on the same name. We compare:
- *   - the aggregate score (adm2)
- *   - all four scale sub-scores (drift here is the most common
- *     SIMD-vs-kernel divergence signal). */
-#define NUM_ADM_FEATURES 5u
-static const char *const ADM_FEATURES[NUM_ADM_FEATURES] = {
-    "VMAF_feature_adm2_score",       "VMAF_feature_adm_scale0_score",
-    "VMAF_feature_adm_scale1_score", "VMAF_feature_adm_scale2_score",
-    "VMAF_feature_adm_scale3_score",
-};
+/* Device powf() against glibc's, through the p-norm root and the score
+ * ratio. Measured on the Netflix pair, both checkerboard pairs and 50 4K
+ * frames at adm_p_norm 2, 4.5 and 20: 1.1e-7 at most. */
+#define P_NORM_TOL 1e-6
 
-/* ADR-1220 — derived feature keys for the two option variants.
- *
- * Both options are VMAF_OPT_FLAG_FEATURE_PARAM, so setting one changes the key
- * the score is filed under (ADR-1183): the alias base plus `_<alias>_<%g
- * value>`. `adm_p_norm` aliases to `apn`, `adm_bypass_cm` to `bcm`. */
-static const char *const ADM_FEATURES_APN[NUM_ADM_FEATURES] = {
-    "adm2_apn_2", "adm_scale0_apn_2", "adm_scale1_apn_2", "adm_scale2_apn_2", "adm_scale3_apn_2",
-};
-static const char *const ADM_FEATURES_BCM[NUM_ADM_FEATURES] = {
-    "adm2_bcm_1", "adm_scale0_bcm_1", "adm_scale1_bcm_1", "adm_scale2_bcm_1", "adm_scale3_bcm_1",
-};
-static const char *const ADM_FEATURES_SCF[NUM_ADM_FEATURES] = {
-    "adm2_scf_2", "adm_scale0_scf_2", "adm_scale1_scf_2", "adm_scale2_scf_2", "adm_scale3_scf_2",
-};
+typedef enum Content {
+    CONTENT_TEXTURE,  /* a textured ramp with a position-dependent error */
+    CONTENT_NOISE,    /* independent hashes: every band and angle populated */
+    CONTENT_CONTRAST, /* the reference with its contrast raised by a quarter */
+    CONTENT_ISOLATED, /* a flat frame; the reference has one sample one level up */
+} Content;
 
-/* Build the option dictionary for a variant, or leave it NULL for defaults. */
-static int adm_opts_build(VmafFeatureDictionary **opts, const char *name, const char *val)
+/* One frame geometry of a case. */
+typedef struct Fixture {
+    unsigned w;
+    unsigned h;
+    unsigned bpc;
+    Content content;
+} Fixture;
+
+/* Deterministic position hash. */
+static unsigned position_hash(unsigned row, unsigned col, unsigned salt)
 {
-    if (!name)
-        return 0;
-    return vmaf_feature_dictionary_set(opts, name, val);
+    unsigned x = row * 73856093u ^ col * 19349663u ^ salt * 83492791u;
+    x ^= x >> 13;
+    x *= 0x5bd1e995u;
+    x ^= x >> 15;
+    return x;
 }
 
-static int fill_ref(VmafPicture *pic, unsigned frame_idx)
+static unsigned textured_luma(unsigned row, unsigned col, bool distorted)
 {
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
+    unsigned v = ((row * 3u + col * 2u) & 0xFFu) ^ (((row >> 2) * (col >> 3)) & 0x1Fu);
+    if (distorted)
+        v += 9u + ((row * 5u + col * 7u) % 11u);
+    return v & 0xFFu;
+}
+
+static unsigned noise_luma(unsigned row, unsigned col, bool distorted)
+{
+    const unsigned base = 64u + (position_hash(row >> 1, col >> 1, 3u) & 0x7Fu);
+    if (!distorted)
+        return base;
+    return base + (position_hash(row, col, 4u) % 17u);
+}
+
+/* A reference with detail and the same picture at 1.25 times the contrast:
+ * every band of the distorted picture is the reference's times 1.25, so the
+ * decouple's angle test passes everywhere and the restored signal is bounded
+ * by the enhancement gain limit. */
+static unsigned contrast_luma(unsigned row, unsigned col, bool distorted)
+{
+    const int detail = (int)(position_hash(row, col, 5u) % 81u) - 40;
+    return (unsigned)(128 + (distorted ? (detail * 5) / 4 : detail));
+}
+
+/* Luma in units of the bit depth's least significant level for the isolated
+ * fixture, in units of an 8-bit level otherwise. */
+static unsigned fixture_luma(const Fixture *fx, unsigned row, unsigned col, bool distorted)
+{
+    const unsigned gain = 1u << (fx->bpc - 8u);
+    switch (fx->content) {
+    case CONTENT_NOISE:
+        return noise_luma(row, col, distorted) * gain;
+    case CONTENT_CONTRAST:
+        return contrast_luma(row, col, distorted) * gain;
+    case CONTENT_ISOLATED:
+        return 128u * gain + ((!distorted && row == fx->h / 2u && col == fx->w / 2u) ? 1u : 0u);
+    case CONTENT_TEXTURE:
+    default:
+        return textured_luma(row, col, distorted) * gain;
+    }
+}
+
+static void put_sample(VmafPicture *pic, unsigned plane, unsigned row, unsigned col, unsigned v)
+{
+    const unsigned peak = (1u << pic->bpc) - 1u;
+    uint8_t *line = (uint8_t *)pic->data[plane] + (size_t)row * (size_t)pic->stride[plane];
+    if (pic->bpc <= 8u) {
+        line[col] = (uint8_t)(v > peak ? peak : v);
+    } else {
+        ((uint16_t *)line)[col] = (uint16_t)(v > peak ? peak : v);
+    }
+}
+
+static int fill_picture(VmafPicture *pic, const Fixture *fx, bool distorted)
+{
+    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, fx->bpc, fx->w, fx->h);
     if (err)
         return err;
-
-    uint8_t *y = (uint8_t *)pic->data[0];
     for (unsigned row = 0; row < pic->h[0]; row++) {
-        for (unsigned col = 0; col < pic->w[0]; col++) {
-            y[row * pic->stride[0] + col] = (uint8_t)((row + col + frame_idx * 7u) & 0xFFu);
-        }
+        for (unsigned col = 0; col < pic->w[0]; col++)
+            put_sample(pic, 0u, row, col, fixture_luma(fx, row, col, distorted));
     }
     for (unsigned p = 1; p < 3; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
         for (unsigned row = 0; row < pic->h[p]; row++) {
-            memset(plane + row * pic->stride[p], 128, pic->w[p]);
+            for (unsigned col = 0; col < pic->w[p]; col++)
+                put_sample(pic, p, row, col, 128u << (fx->bpc - 8u));
         }
     }
     return 0;
 }
 
-static int fill_dist(VmafPicture *pic, unsigned frame_idx)
+static char *feed_one_frame(VmafContext *vmaf, const Fixture *fx)
 {
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
-    if (err)
-        return err;
+    VmafPicture ref;
+    VmafPicture dist;
+    mu_assert("fill reference failed", !fill_picture(&ref, fx, false));
+    mu_assert("fill distorted failed", !fill_picture(&dist, fx, true));
+    mu_assert("vmaf_read_pictures failed", !vmaf_read_pictures(vmaf, &ref, &dist, 0u));
+    return NULL;
+}
 
-    uint8_t *y = (uint8_t *)pic->data[0];
-    for (unsigned row = 0; row < pic->h[0]; row++) {
-        for (unsigned col = 0; col < pic->w[0]; col++) {
-            const unsigned base = (row + col + frame_idx * 7u) & 0xFFu;
-            const unsigned noise = ((row * 3u + col * 2u + frame_idx) % 13u);
-            y[row * pic->stride[0] + col] = (uint8_t)((base + noise) & 0xFFu);
+/* One scoring run of the CPU `float_adm` or the CUDA `float_adm_cuda`
+ * extractor. */
+typedef struct {
+    bool use_cuda;
+    VmafContext *vmaf;
+    VmafCudaState *cu_state;
+} AdmRun;
+
+/* Create the context (and the CUDA state for the CUDA twin). `*skipped` is set
+ * when the CUDA leg finds no device. */
+static char *adm_run_init(AdmRun *run, int *skipped)
+{
+    if (run->use_cuda) {
+        VmafCudaConfiguration cuda_cfg = {0};
+        if (vmaf_cuda_state_init(&run->cu_state, cuda_cfg) != 0 || run->cu_state == NULL) {
+            (void)fprintf(stderr, "[skip: no CUDA device] ");
+            mu_skipped = 1;
+            *skipped = 1;
+            return NULL;
         }
     }
-    for (unsigned p = 1; p < 3; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
-        for (unsigned row = 0; row < pic->h[p]; row++) {
-            memset(plane + row * pic->stride[p], 128, pic->w[p]);
-        }
-    }
-    return 0;
-}
-
-static char *feed_parity_frames(VmafContext *vmaf)
-{
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref;
-        VmafPicture dist;
-        int err = fill_ref(&ref, i);
-        mu_assert("fill_ref failed", !err);
-        err = fill_dist(&dist, i);
-        mu_assert("fill_dist failed", !err);
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("vmaf_read_pictures failed", !err);
-    }
-    int err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("vmaf_read_pictures(EOS) failed", !err);
-    return NULL;
-}
-
-static char *read_feature_scores(VmafContext *vmaf, const char *const *keys, double *out_scores)
-{
-    for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
-        int err = vmaf_feature_score_at_index(vmaf, keys[m], &out_scores[m], 1u);
-        mu_assert("vmaf_feature_score_at_index failed", !err);
-    }
-    return NULL;
-}
-
-static char *run_cpu(const char *opt_name, const char *opt_val, const char *const *keys,
-                     double *out_scores)
-{
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    int err = vmaf_init(&vmaf, cfg);
-    mu_assert("CPU: vmaf_init failed", !err);
-
-    VmafFeatureDictionary *opts = NULL;
-    err = adm_opts_build(&opts, opt_name, opt_val);
-    mu_assert("CPU: adm_opts_build failed", !err);
-    err = vmaf_use_feature(vmaf, "float_adm", opts);
-    if (err)
-        (void)vmaf_feature_dictionary_free(&opts);
-    mu_assert("CPU: vmaf_use_feature(float_adm) failed", !err);
-
-    mu_assert_msg(feed_parity_frames(vmaf));
-    mu_assert_msg(read_feature_scores(vmaf, keys, out_scores));
-
-    err = vmaf_close(vmaf);
-    mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
-}
-
-static char *setup_cuda_context(VmafContext **out_vmaf, VmafCudaState **out_cu_state,
-                                const char *opt_name, const char *opt_val)
-{
-    *out_vmaf = NULL;
-    *out_cu_state = NULL;
-
-    VmafCudaState *cu_state = NULL;
-    VmafCudaConfiguration cuda_cfg = {0};
-    int err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
-    if (err != 0 || cu_state == NULL) {
-        (void)fprintf(stderr, "[skip: no CUDA device] ");
-        return NULL;
+    mu_assert("vmaf_init failed", !vmaf_init(&run->vmaf, cfg));
+    if (run->use_cuda) {
+        mu_assert("vmaf_cuda_import_state failed",
+                  !vmaf_cuda_import_state(run->vmaf, run->cu_state));
     }
-
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("CUDA: vmaf_init failed", !err);
-
-    err = vmaf_cuda_import_state(vmaf, cu_state);
-    mu_assert("CUDA: vmaf_cuda_import_state failed", !err);
-
-    VmafFeatureDictionary *opts = NULL;
-    err = adm_opts_build(&opts, opt_name, opt_val);
-    mu_assert("CUDA: adm_opts_build failed", !err);
-    err = vmaf_use_feature(vmaf, "float_adm_cuda", opts);
-    if (err)
-        (void)vmaf_feature_dictionary_free(&opts);
-    mu_assert("CUDA: vmaf_use_feature(float_adm_cuda) failed", !err);
-
-    *out_vmaf = vmaf;
-    *out_cu_state = cu_state;
     return NULL;
 }
 
-static char *run_cuda(const char *opt_name, const char *opt_val, const char *const *keys,
-                      double *out_scores, int *skipped)
+/* Open the run with `opts` (NULL for defaults), which it always takes over:
+ * vmaf_use_feature() consumes it, and it is freed here when the run never gets
+ * that far. */
+static char *adm_run_open(AdmRun *run, VmafFeatureDictionary *opts, int *skipped)
 {
     *skipped = 0;
-    for (unsigned m = 0; m < NUM_ADM_FEATURES; m++)
-        out_scores[m] = NAN;
-
-    VmafContext *vmaf = NULL;
-    VmafCudaState *cu_state = NULL;
-    mu_assert_msg(setup_cuda_context(&vmaf, &cu_state, opt_name, opt_val));
-    if (!vmaf) {
-        *skipped = 1;
-        return NULL;
+    char *msg = adm_run_init(run, skipped);
+    if (msg || *skipped) {
+        (void)vmaf_feature_dictionary_free(&opts);
+        return msg;
     }
-
-    mu_assert_msg(feed_parity_frames(vmaf));
-    mu_assert_msg(read_feature_scores(vmaf, keys, out_scores));
-
-    int err = vmaf_close(vmaf);
-    mu_assert("CUDA: vmaf_close failed", !err);
-    err = vmaf_cuda_state_free(cu_state);
-    mu_assert("CUDA: vmaf_cuda_state_free failed", !err);
+    mu_assert("vmaf_use_feature failed",
+              !vmaf_use_feature(run->vmaf, run->use_cuda ? "float_adm_cuda" : "float_adm", opts));
     return NULL;
 }
 
-static char *test_float_adm_cpu_cuda_parity(void)
+/* Feed the fixture frame, flush, and read every key in `keys`. */
+static char *adm_run_score(const AdmRun *run, const Fixture *fx, const char *const *keys,
+                           size_t count, double *out)
 {
-    double cpu_scores[NUM_ADM_FEATURES] = {0};
-    double cuda_scores[NUM_ADM_FEATURES] = {0};
-    int skipped = 0;
-
-    char *msg = run_cpu(NULL, NULL, ADM_FEATURES, cpu_scores);
+    char *msg = feed_one_frame(run->vmaf, fx);
     if (msg)
         return msg;
-    msg = run_cuda(NULL, NULL, ADM_FEATURES, cuda_scores, &skipped);
-    if (msg)
-        return msg;
-    if (skipped)
-        return NULL;
-
-    for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
-        mu_assert("CPU float_adm score is non-finite", isfinite(cpu_scores[m]));
-        mu_assert("CUDA float_adm score is non-finite", isfinite(cuda_scores[m]));
-
-        const double delta = fabs(cpu_scores[m] - cuda_scores[m]);
-        if (delta > PARITY_TOL) {
-            (void)fprintf(stderr,
-                          "\nfloat_adm parity FAIL %s: cpu=%.8f cuda=%.8f delta=%.2e tol=%.2e\n",
-                          ADM_FEATURES[m], cpu_scores[m], cuda_scores[m], delta, PARITY_TOL);
+    mu_assert("vmaf_read_pictures(EOS) failed", !vmaf_read_pictures(run->vmaf, NULL, NULL, 0));
+    for (size_t k = 0; k < count; k++) {
+        if (vmaf_feature_score_at_index(run->vmaf, keys[k], &out[k], 0u)) {
+            (void)fprintf(stderr, "\nmissing feature-name key: %s (%s twin)\n", keys[k],
+                          run->use_cuda ? "CUDA" : "CPU");
+            return "float ADM feature-name key not emitted";
         }
-        mu_assert("float_adm CPU vs. CUDA delta exceeds places=4 tolerance (1e-4)",
-                  delta <= PARITY_TOL);
     }
     return NULL;
 }
 
-/* ------------------------------------------------------------------ */
-/* ADR-1220 — adm_p_norm and adm_bypass_cm must reach the kernels.     */
-/*                                                                     */
-/* Both are VMAF_OPT_FLAG_FEATURE_PARAM options the twin declares with */
-/* the CPU's names, aliases, defaults and ranges. The kernels          */
-/* hardcoded the cube sum and the host pooling hardcoded the 1/3 root, */
-/* so `apn` moved only the AIM exponent and produced a hybrid          */
-/* quantity, and `bcm` was accepted and then read by nothing at all.   */
-/* The default-options test above cannot see either, because p = 3 IS  */
-/* the hardcoded exponent and bypass = 0 IS the hardcoded behaviour.   */
-/* ------------------------------------------------------------------ */
-static char *assert_opt_parity(const char *opt_name, const char *opt_val, const char *const *keys,
-                               const char *label)
+static char *adm_run_close(AdmRun *run)
 {
-    double cpu_scores[NUM_ADM_FEATURES] = {0};
-    double gpu_scores[NUM_ADM_FEATURES] = {0};
+    if (run->vmaf)
+        mu_assert("vmaf_close failed", !vmaf_close(run->vmaf));
+    if (run->cu_state)
+        mu_assert("vmaf_cuda_state_free failed", !vmaf_cuda_state_free(run->cu_state));
+    return NULL;
+}
+
+/* Score one frame on the CPU or CUDA twin and read `keys` into `out`. Without a
+ * CUDA device the CUDA leg is skipped and `out` stays NaN. */
+static char *run_adm(bool use_cuda, const Fixture *fx, VmafFeatureDictionary *opts,
+                     const char *const *keys, size_t count, double *out)
+{
+    for (size_t k = 0; k < count; k++)
+        out[k] = NAN;
+    AdmRun run = {.use_cuda = use_cuda};
     int skipped = 0;
+    char *msg = adm_run_open(&run, opts, &skipped);
+    if (!msg && !skipped)
+        msg = adm_run_score(&run, fx, keys, count, out);
+    char *close_msg = adm_run_close(&run);
+    return msg ? msg : close_msg;
+}
 
-    char *msg = run_cpu(opt_name, opt_val, keys, cpu_scores);
-    if (msg)
-        return msg;
-    msg = run_cuda(opt_name, opt_val, keys, gpu_scores, &skipped);
-    if (msg)
-        return msg;
-    if (skipped)
+/* One case: a fixture, an option (NULL for none) and the keys to compare. */
+typedef struct Case {
+    const char *what;
+    Fixture fx;
+    const char *option;
+    const char *value;
+    bool debug;
+    const char *const *keys;
+    size_t count;
+} Case;
+
+static VmafFeatureDictionary *case_opts(const Case *c)
+{
+    VmafFeatureDictionary *d = NULL;
+    if (c->debug && vmaf_feature_dictionary_set(&d, "debug", "true"))
         return NULL;
-
-    for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
-        mu_assert("CPU float_adm score is non-finite", isfinite(cpu_scores[m]));
-        mu_assert("CUDA float_adm score is non-finite", isfinite(gpu_scores[m]));
-        const double delta = fabs(cpu_scores[m] - gpu_scores[m]);
-        if (delta > PARITY_TOL) {
-            (void)fprintf(stderr,
-                          "\nfloat_adm %s parity FAIL key=%s: cpu=%.8f cuda=%.8f delta=%.2e "
-                          "tol=%.2e\n",
-                          label, keys[m], cpu_scores[m], gpu_scores[m], delta, PARITY_TOL);
-        }
-        mu_assert("float_adm with a non-default option drifts from the CPU reference",
-                  delta <= PARITY_TOL);
+    if (c->option && vmaf_feature_dictionary_set(&d, c->option, c->value)) {
+        (void)vmaf_feature_dictionary_free(&d);
+        return NULL;
     }
+    return d;
+}
+
+/* Every key of the case within `tol` of the CPU on the CUDA twin; tol = 0 is
+ * equality. A skipped CUDA leg passes. `cpu_out` (may be NULL) receives the
+ * CPU's values. */
+static char *check_case(const Case *c, double tol, double *cpu_out)
+{
+    double cpu[MAX_KEYS];
+    double gpu[MAX_KEYS];
+    mu_assert("check_case: too many keys", c->count <= MAX_KEYS);
+    char *msg = run_adm(false, &c->fx, case_opts(c), c->keys, c->count, cpu);
+    if (msg)
+        return msg;
+    if (cpu_out)
+        memcpy(cpu_out, cpu, c->count * sizeof(double));
+    msg = run_adm(true, &c->fx, case_opts(c), c->keys, c->count, gpu);
+    if (msg || isnan(gpu[0]))
+        return msg;
+    unsigned mismatches = 0u;
+    for (size_t k = 0; k < c->count; k++) {
+        mu_assert("CPU float_adm output is non-finite", isfinite(cpu[k]));
+        if (cpu[k] == gpu[k] || fabs(cpu[k] - gpu[k]) <= tol)
+            continue;
+        mismatches++;
+        (void)fprintf(stderr, "\n%s %ux%u %u-bit %s: cpu=%.17g cuda=%.17g delta=%.3e\n", c->what,
+                      c->fx.w, c->fx.h, c->fx.bpc, c->keys[k], cpu[k], gpu[k],
+                      fabs(cpu[k] - gpu[k]));
+    }
+    mu_assert("float_adm_cuda differs from the CPU extractor", mismatches == 0u);
     return NULL;
 }
 
-static char *test_float_adm_p_norm_reaches_kernel(void)
+/* The seven scores under an option's feature-name suffix, and the sums
+ * `debug=true` adds. The CPU files the debug ratio `adm` without the suffix,
+ * so option cases leave it out. */
+#define SCORE_KEYS(suffix)                                                                         \
+    "adm2" suffix, "aim" suffix, "adm3" suffix, "adm_scale0" suffix, "adm_scale1" suffix,          \
+        "adm_scale2" suffix, "adm_scale3" suffix
+#define SUM_KEYS(suffix)                                                                           \
+    "adm_num" suffix, "adm_den" suffix, "adm_num_scale0" suffix, "adm_den_scale0" suffix,          \
+        "adm_num_scale1" suffix, "adm_den_scale1" suffix, "adm_num_scale2" suffix,                 \
+        "adm_den_scale2" suffix, "adm_num_scale3" suffix, "adm_den_scale3" suffix
+
+static const char *const DEBUG_KEYS[] = {
+    "VMAF_feature_adm2_score",
+    "VMAF_feature_aim_score",
+    "VMAF_feature_adm3_score",
+    "VMAF_feature_adm_scale0_score",
+    "VMAF_feature_adm_scale1_score",
+    "VMAF_feature_adm_scale2_score",
+    "VMAF_feature_adm_scale3_score",
+    "adm",
+    SUM_KEYS(""),
+};
+#define NUM_DEBUG_KEYS (sizeof(DEBUG_KEYS) / sizeof(DEBUG_KEYS[0]))
+
+#define OPTION_KEYS(name, suffix)                                                                  \
+    static const char *const name[] = {SCORE_KEYS(suffix), SUM_KEYS(suffix)}
+OPTION_KEYS(EGL_KEYS, "_egl_1.2");
+OPTION_KEYS(BCM_KEYS, "_bcm_1");
+OPTION_KEYS(NW_KEYS, "_nw_0");
+OPTION_KEYS(SASC_KEYS, "_sasc_1");
+OPTION_KEYS(NVD_KEYS, "_nvd_1.5");
+OPTION_KEYS(SCF_KEYS, "_scf_2");
+#define NUM_OPTION_KEYS (sizeof(EGL_KEYS) / sizeof(EGL_KEYS[0]))
+/* The scores only: the sums are fp32 values in the hundreds, where one unit
+ * in the last place is 1.5e-5. */
+static const char *const APN_KEYS[] = {SCORE_KEYS("_apn_2")};
+#define NUM_APN_KEYS (sizeof(APN_KEYS) / sizeof(APN_KEYS[0]))
+
+static char *check_default(const char *what, unsigned w, unsigned h, unsigned bpc, Content content)
 {
-    return assert_opt_parity("adm_p_norm", "2.0", ADM_FEATURES_APN, "apn=2.0");
+    const Case c = {.what = what,
+                    .fx = {w, h, bpc, content},
+                    .debug = true,
+                    .keys = DEBUG_KEYS,
+                    .count = NUM_DEBUG_KEYS};
+    return check_case(&c, 0.0, NULL);
 }
 
-static char *test_float_adm_bypass_cm_reaches_kernel(void)
+static char *check_option(const char *what, Content content, const char *option, const char *value,
+                          const char *const *keys, double tol)
 {
-    return assert_opt_parity("adm_bypass_cm", "1", ADM_FEATURES_BCM, "bcm=1");
+    const Case c = {.what = what,
+                    .fx = {FIXTURE_W, FIXTURE_H, 8u, content},
+                    .option = option,
+                    .value = value,
+                    .debug = true,
+                    .keys = keys,
+                    .count = NUM_OPTION_KEYS};
+    return check_case(&c, tol, NULL);
 }
 
-/* ADR-1214 — adm_csf_scale must be a no-op in the Watson-97 mode this twin
- * implements, exactly as it is on the CPU (`adm_tools.c::adm_csf_rfactor_s`
- * consults it only in Barten mode). The twins used to multiply it into every
- * CSF rfactor, and declared it under the alias `cs` where the CPU says `scf`,
- * so the same request produced a different feature key as well as a different
- * score. The fix landed as 64ea351be without this regression test.
- *
- * The key suffix follows ADR-1183: the alias base plus `_<alias>_<%g value>`,
- * so `adm_csf_scale=2.0` files the scores under `_scf_2`. */
+/* Default options, every output including the per-scale sums. */
+static char *test_float_adm_default_exact(void)
+{
+    return check_default("float_adm", FIXTURE_W, FIXTURE_H, 8u, CONTENT_TEXTURE);
+}
+
+static char *test_float_adm_noise_exact(void)
+{
+    return check_default("float_adm noise", FIXTURE_W, FIXTURE_H, 8u, CONTENT_NOISE);
+}
+
+static char *test_float_adm_10bit_exact(void)
+{
+    return check_default("float_adm", FIXTURE_W, FIXTURE_H, 10u, CONTENT_NOISE);
+}
+
+static char *test_float_adm_12bit_exact(void)
+{
+    return check_default("float_adm", FIXTURE_W, FIXTURE_H, 12u, CONTENT_TEXTURE);
+}
+
+static char *test_float_adm_16bit_exact(void)
+{
+    return check_default("float_adm", FIXTURE_W, FIXTURE_H, 16u, CONTENT_NOISE);
+}
+
+/* Odd at every scale: 322x182 halves to 161x91, 81x46, 41x23 and 21x12. */
+static char *test_float_adm_odd_frame_exact(void)
+{
+    return check_default("float_adm odd", 322u, 182u, 8u, CONTENT_NOISE);
+}
+
+/* 17x17 is the smallest frame whose coarsest bands still have two samples a
+ * side (9, 5, 3, 2). The reduced region of every scale reaches the band's
+ * edges there, so the mirrored and clamped taps of the masking threshold are
+ * part of every sum. */
+static char *test_float_adm_smallest_frame_exact(void)
+{
+    return check_default("float_adm smallest", 17u, 17u, 8u, CONTENT_NOISE);
+}
+
+static char *test_float_adm_narrow_frame_exact(void)
+{
+    return check_default("float_adm narrow", 18u, 131u, 8u, CONTENT_NOISE);
+}
+
+/* A scale-0 row of the reduced region is 768 samples, longer than any tile of
+ * the old reduction, and there are 432 of them. */
+static char *test_float_adm_1080p_exact(void)
+{
+    return check_default("float_adm 1080p", 1920u, 1080u, 8u, CONTENT_NOISE);
+}
+
+/* The enhancement gain limit is a double the reference multiplies in fp64:
+ * 1.2 is not an fp32 value, and with the contrast fixture the limited product
+ * is the restored signal of most samples. */
+static char *test_float_adm_gain_limit_exact(void)
+{
+    return check_option("float_adm egl=1.2", CONTENT_CONTRAST, "adm_enhn_gain_limit", "1.2",
+                        EGL_KEYS, 0.0);
+}
+
+static char *test_float_adm_bypass_cm_exact(void)
+{
+    return check_option("float_adm bcm=1", CONTENT_NOISE, "adm_bypass_cm", "1", BCM_KEYS, 0.0);
+}
+
+static char *test_float_adm_skip_aim_scale_exact(void)
+{
+    return check_option("float_adm sasc=1", CONTENT_NOISE, "adm_skip_aim_scale", "1", SASC_KEYS,
+                        0.0);
+}
+
+static char *test_float_adm_view_dist_exact(void)
+{
+    return check_option("float_adm nvd=1.5", CONTENT_NOISE, "adm_norm_view_dist", "1.5", NVD_KEYS,
+                        0.0);
+}
+
+/* ADR-1214 — adm_csf_scale is a no-op in the Watson-97 mode this twin
+ * implements, exactly as it is on the CPU (adm_csf_rfactor_s() consults it
+ * only in Barten mode), and it files the scores under the CPU's `scf` alias. */
 static char *test_float_adm_csf_scale_is_a_watson_mode_noop(void)
 {
-    return assert_opt_parity("adm_csf_scale", "2.0", ADM_FEATURES_SCF, "scf=2.0");
+    return check_option("float_adm scf=2", CONTENT_NOISE, "adm_csf_scale", "2.0", SCF_KEYS, 0.0);
+}
+
+/* ADR-1220 — adm_p_norm reaches the kernels. Not exact: both sides raise the
+ * terms with powf(), and the device's is not glibc's. */
+static char *test_float_adm_p_norm_reaches_kernel(void)
+{
+    const Case c = {.what = "float_adm apn=2",
+                    .fx = {FIXTURE_W, FIXTURE_H, 8u, CONTENT_NOISE},
+                    .option = "adm_p_norm",
+                    .value = "2.0",
+                    .keys = APN_KEYS,
+                    .count = NUM_APN_KEYS};
+    double cpu[MAX_KEYS];
+    double def[MAX_KEYS];
+    char *msg = check_case(&c, P_NORM_TOL, cpu);
+    if (msg)
+        return msg;
+    /* The exponent is honoured, not merely accepted: the scores differ from
+     * the default exponent's by far more than the tolerance. */
+    const Case d = {.what = "float_adm", .fx = c.fx, .keys = DEBUG_KEYS, .count = NUM_APN_KEYS};
+    msg = check_case(&d, 0.0, def);
+    if (msg)
+        return msg;
+    mu_assert("adm_p_norm = 2 must change adm2", fabs(cpu[0] - def[0]) > 1e-4);
+    return NULL;
+}
+
+/* A flat 16-bit frame whose reference has one sample one level up, scored
+ * without the noise floor. The reference band energy is then about 3e-4 and
+ * the distorted picture has none: the CPU reports adm2 = 0. The twin floored
+ * its frame sums at 1e-2 * area / 1080p where the CPU floors them at 1e-10 of
+ * that, zeroed the denominator and reported adm2 = 1. */
+static char *test_float_adm_small_sums_are_not_floored(void)
+{
+    const Case c = {.what = "float_adm isolated",
+                    .fx = {576u, 324u, 16u, CONTENT_ISOLATED},
+                    .option = "adm_noise_weight",
+                    .value = "0",
+                    .debug = true,
+                    .keys = NW_KEYS,
+                    .count = NUM_OPTION_KEYS};
+    double cpu[MAX_KEYS];
+    char *msg = check_case(&c, 0.0, cpu);
+    if (msg)
+        return msg;
+    /* NW_KEYS: [0] adm2, [8] adm_den. */
+    mu_assert("the isolated fixture must leave a denominator below the old floor",
+              cpu[8] > 0.0 && cpu[8] < 1e-2 * (576.0 * 324.0) / (1920.0 * 1080.0));
+    mu_assert("the CPU reports adm2 = 0 for the isolated fixture", cpu[0] == 0.0);
+    return NULL;
+}
+
+static char *run_exact_bit_depth_cases(void)
+{
+    mu_run_test(test_float_adm_default_exact);
+    mu_run_test(test_float_adm_noise_exact);
+    mu_run_test(test_float_adm_10bit_exact);
+    mu_run_test(test_float_adm_12bit_exact);
+    mu_run_test(test_float_adm_16bit_exact);
+    return NULL;
+}
+
+static char *run_exact_geometry_cases(void)
+{
+    mu_run_test(test_float_adm_odd_frame_exact);
+    mu_run_test(test_float_adm_smallest_frame_exact);
+    mu_run_test(test_float_adm_narrow_frame_exact);
+    mu_run_test(test_float_adm_1080p_exact);
+    return NULL;
+}
+
+static char *run_exact_option_cases(void)
+{
+    mu_run_test(test_float_adm_gain_limit_exact);
+    mu_run_test(test_float_adm_bypass_cm_exact);
+    mu_run_test(test_float_adm_skip_aim_scale_exact);
+    mu_run_test(test_float_adm_view_dist_exact);
+    mu_run_test(test_float_adm_csf_scale_is_a_watson_mode_noop);
+    return NULL;
+}
+
+static char *run_other_cases(void)
+{
+    mu_run_test(test_float_adm_p_norm_reaches_kernel);
+    mu_run_test(test_float_adm_small_sums_are_not_floored);
+    return NULL;
 }
 
 char *run_tests(void)
 {
-    mu_run_test(test_float_adm_cpu_cuda_parity);
-    mu_run_test(test_float_adm_p_norm_reaches_kernel);
-    mu_run_test(test_float_adm_bypass_cm_reaches_kernel);
-    mu_run_test(test_float_adm_csf_scale_is_a_watson_mode_noop);
+    mu_assert_msg(run_exact_bit_depth_cases());
+    mu_assert_msg(run_exact_geometry_cases());
+    mu_assert_msg(run_exact_option_cases());
+    mu_assert_msg(run_other_cases());
     return NULL;
 }
 

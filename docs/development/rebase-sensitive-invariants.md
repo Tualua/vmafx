@@ -446,6 +446,26 @@ linked AGENTS.md before resolving conflicts.
   has no integer AIM above 1 and would not notice.
   `core/test/test_integer_adm_aim_unclipped.c` pins both sides.
 
+- **`float_adm_cuda` returns the CPU's scores bit for bit ([ADR-1420](../adr/1420-cuda-float-adm-cpu-arithmetic.md))**:
+  `core/src/feature/cuda/float_adm/float_adm_device.h` is the decouple, the
+  CSF, the masking threshold and the reduction terms of `adm_tools.c`
+  operation for operation (the gain limit and the 1/30 and 1/15 constants in
+  fp64, the angle threshold as `(cos^2 * |o|^2) * |t|^2`), and its division is
+  the reference's: a reciprocal refined from the host processor's `RCPSS`
+  estimate, which `core/src/feature/adm_reciprocal_model.c` probes into a
+  table. `float_adm_row_sums` adds each row in one thread and the host adds
+  the rows, both in fp32. The weights, the reduced region, the pooling and the
+  angle constant come from `adm_tools.c` itself through
+  `core/src/feature/adm_float_reference.h`; keep those exports, and keep the
+  four reductions of `adm_tools.c` on `adm_pool_bands_s()`. A change to
+  `adm_decouple_s()`, `adm_csf_s()`, `adm_cm_thresh3x3_s()`,
+  `adm_csf_den_scale_s()` or `adm_cm_s()` changes the device header in the
+  same PR. `core/test/test_float_adm_device_math.c` and
+  `core/test/test_cuda_float_adm_exact_contract.py` guard it without a device,
+  `test_cuda_float_adm_parity` on one; the parity gate compares the twin with
+  tolerance 0 (`EXACT_TWINS`). See
+  [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
+
 - **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:
   [ADR-0922](../adr/0922-coverage-ratchet-aggressive.md). Absolute
   floors live in `scripts/ci/coverage-check.sh`

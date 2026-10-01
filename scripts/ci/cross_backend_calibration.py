@@ -132,6 +132,12 @@ EXACT_TWINS: dict[str, frozenset[str]] = {
     # integers next to a rounding boundary), measured on an Arc A380. The HIP
     # and Metal ``float_vif`` twins keep the places=4 tolerance.
     "float_vif": frozenset({"cuda", "sycl"}),
+    # ADR-1420: ``float_adm_cuda`` runs ``adm_tools.c``'s decouple, CSF and
+    # masking arithmetic in its types, divides through the host's probed
+    # reciprocal estimate, adds each reduction row by row in fp32 and concludes
+    # with the CPU's own routines. The other ``float_adm`` twins keep the
+    # places=4 tolerance.
+    "float_adm": frozenset({"cuda"}),
 }
 EXACT_TWIN_TOLERANCE = 0.0
 EXACT_TWIN_PRECISION = "max"

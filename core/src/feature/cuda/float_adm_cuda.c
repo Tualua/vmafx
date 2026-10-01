@@ -4,20 +4,19 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  float_adm feature kernel on the CUDA backend (T7-23 / batch 3
- *  part 6b — ADR-0192 / ADR-0202). CUDA twin of float_adm_vulkan
- *  (PR #154 / ADR-0199). Same four pipeline stages, same `-1` mirror
- *  form, same fused stage 3 with cross-band CM threshold.
+ *  part 6b — ADR-0192 / ADR-0202), with the AIM and ADM3 sub-features of
+ *  ADR-0574.
  *
- *  ADR-0574: AIM (Anchored Impairment Metric) and ADM3 sub-features
- *  added. Two new kernel stages (2b and 3b) compute the AIM CM
- *  numerator using decouple_r CSF buffers. Host-side collect()
- *  derives aim_score and adm3_score from accumulator slots 6..8.
+ *  The twin returns the CPU extractor's values bit for bit (ADR-1420). Per
+ *  scale the device runs the DWT, then the decouple and the CSF in the
+ *  reference's arithmetic (float_adm/float_adm_device.h), then the per-sample
+ *  terms of the three reductions, then one fp32 sum per row and slot. The
+ *  host adds the rows top to bottom in fp32 and concludes with the
+ *  reference's own routines (feature/adm_float_reference.h): its reduced
+ *  region, its CSF weights and its pooling of the band accumulators.
  *
- *  Per-frame flow: 24 launches (6 stages x 4 scales) + a pinned-host
- *  D2H copy of the per-scale partial buffers. Reduction across WGs
- *  happens on the host in double precision — same trick as the Vulkan
- *  host wrapper, matches CPU adm_csf_den_scale_s / adm_cm_s
- *  row-by-row order to keep the places=4 contract.
+ *  Per-frame flow: 20 launches (5 stages x 4 scales) and one pinned-host D2H
+ *  copy of the row sums.
  */
 
 #include <errno.h>
@@ -26,13 +25,17 @@
 #include <string.h>
 
 #include "common.h"
+#include "feature/adm_float_reference.h"
 #include "feature/adm_options.h"
+#include "feature/adm_reciprocal_model.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
 #include "feature/adm_score.h"
 #include "feature/nonfinite_score.h"
+#include "log.h"
 
+#include "cuda/float_adm/float_adm_device.h"
 #include "cuda/float_adm_cuda.h"
 #include "cuda/kernel_template.h"
 #include "cuda_helper.cuh"
@@ -44,18 +47,6 @@
  * translation unit whose sources spell the null pointer constant `NULL` and
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
-#define FADM_NUM_SCALES 4
-#define FADM_NUM_BANDS 3
-#define FADM_BX 16
-#define FADM_BY 16
-#define FADM_BORDER_FACTOR 0.1
-/* ADR-0574: 9 slots per WG: [0..2]=csf_den, [3..5]=cm_num, [6..8]=aim_cm. */
-#define FADM_ACCUM_SLOTS 9
 
 #ifndef DEFAULT_ADM_MIN_VAL
 #define DEFAULT_ADM_MIN_VAL 0.0
@@ -84,7 +75,11 @@ typedef struct {
     unsigned bpc;
     unsigned buf_stride;
 
-    float rfactor[12];
+    /* The reference's constants, from its own routines (ADR-1420). */
+    float rfactor[FADM_SCALES][FADM_BANDS];
+    AdmBorderS region[FADM_SCALES];
+    float cos_1deg_sq;
+    AdmReciprocalModel division;
 
     /* Stream + event pair owned by `cuda/kernel_template.h` lifecycle
      * (ADR-0246). Multi-stage DWT + CSF pipeline state stays outside
@@ -93,34 +88,37 @@ typedef struct {
     CUfunction func_dwt_vert;
     CUfunction func_dwt_hori;
     CUfunction func_decouple_csf;
-    CUfunction func_csf_cm;
-    /* ADR-0574: AIM pass kernels. */
-    CUfunction func_csf_r;
-    CUfunction func_aim_cm;
+    CUfunction func_terms;
+    CUfunction func_row_sums;
 
     VmafCudaBuffer *src_ref;
     VmafCudaBuffer *src_dis;
     VmafCudaBuffer *dwt_tmp_ref;
     VmafCudaBuffer *dwt_tmp_dis;
-    VmafCudaBuffer *ref_band[FADM_NUM_SCALES];
-    VmafCudaBuffer *dis_band[FADM_NUM_SCALES];
+    VmafCudaBuffer *ref_band[FADM_SCALES];
+    VmafCudaBuffer *dis_band[FADM_SCALES];
+    /* CSF of decouple_a and of decouple_r, each with its |.| / 30 companion. */
     VmafCudaBuffer *csf_a;
-    VmafCudaBuffer *csf_f;
-    /* ADR-0574: CSF buffers for decouple_r (AIM pass). */
-    VmafCudaBuffer *csf_a_aim;
-    VmafCudaBuffer *csf_f_aim;
-    VmafCudaBuffer *accum[FADM_NUM_SCALES];
-    float *accum_host[FADM_NUM_SCALES];
+    VmafCudaBuffer *csf_fa;
+    VmafCudaBuffer *csf_r;
+    VmafCudaBuffer *csf_fr;
+    VmafCudaBuffer *rcp_table;
+    /* Per-sample terms of the scale in flight, then the per-row sums of all
+     * four scales (row_offset[] floats into `rows`). */
+    VmafCudaBuffer *terms;
+    VmafCudaBuffer *rows;
+    float *rows_host;
+    size_t row_offset[FADM_SCALES];
+    size_t row_floats;
 
-    unsigned wg_count[FADM_NUM_SCALES];
-    unsigned scale_w[FADM_NUM_SCALES];
-    unsigned scale_h[FADM_NUM_SCALES];
-    unsigned scale_half_w[FADM_NUM_SCALES];
-    unsigned scale_half_h[FADM_NUM_SCALES];
+    unsigned scale_w[FADM_SCALES];
+    unsigned scale_h[FADM_SCALES];
+    unsigned scale_half_w[FADM_SCALES];
+    unsigned scale_half_h[FADM_SCALES];
 
-    /* PTX module backing the DWT/CSF/AIM kernels — owned here so
-     * `close_fex_cuda` can unload it. Skipping the unload leaks
-     * ~200-500 KB of GPU-resident PTX backing store per vmaf_close(). */
+    /* PTX module backing the kernels — owned here so `close_fex_cuda` can
+     * unload it. Skipping the unload leaks ~200-500 KB of GPU-resident PTX
+     * backing store per vmaf_close(). */
     CUmodule module;
 
     VmafDictionary *feature_name_dict;
@@ -250,41 +248,22 @@ static const VmafOption options[] = {
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {0}};
 
-/* DB2/CDF-9-7 wavelet noise model — matches dwt_7_9_YCbCr_threshold[0]
- * (Y-plane row) in adm_tools.h. */
-static const float fadm_dwt_basis_amp[6][4] = {
-    {0.62171f, 0.67234f, 0.72709f, 0.67234f},     {0.34537f, 0.41317f, 0.49428f, 0.41317f},
-    {0.18004f, 0.22727f, 0.28688f, 0.22727f},     {0.091401f, 0.11792f, 0.15214f, 0.11792f},
-    {0.045943f, 0.059758f, 0.077727f, 0.059758f}, {0.023013f, 0.030018f, 0.039156f, 0.030018f},
-};
-static const float fadm_dwt_a_Y = 0.495f;
-static const float fadm_dwt_k_Y = 0.466f;
-static const float fadm_dwt_f0_Y = 0.401f;
-static const float fadm_dwt_g_Y[4] = {1.501f, 1.0f, 0.534f, 1.0f};
-
-static float fadm_dwt_quant_step(int lambda, int theta, double view_dist, int display_h)
-{
-    /* Bit-for-bit replica of dwt_quant_step in adm_tools.h. */
-    const float r = (float)(view_dist * (double)display_h * M_PI / 180.0);
-    const float temp = (float)log10(pow(2.0, (double)(lambda + 1)) * (double)fadm_dwt_f0_Y *
-                                    (double)fadm_dwt_g_Y[theta] / (double)r);
-    const float Q = (float)(2.0 * (double)fadm_dwt_a_Y *
-                            pow(10.0, (double)fadm_dwt_k_Y * (double)temp * (double)temp) /
-                            (double)fadm_dwt_basis_amp[lambda][theta]);
-    return Q;
-}
-
 static void compute_per_scale_dims(FloatAdmStateCuda *s)
 {
     unsigned cw = s->width;
     unsigned ch = s->height;
-    for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
+    s->row_floats = 0u;
+    for (int scale = 0; scale < FADM_SCALES; scale++) {
         const unsigned hw = (cw + 1u) / 2u;
         const unsigned hh = (ch + 1u) / 2u;
         s->scale_w[scale] = cw;
         s->scale_h[scale] = ch;
         s->scale_half_w[scale] = hw;
         s->scale_half_h[scale] = hh;
+        s->region[scale] = adm_border_s((int)hw, (int)hh, ADM_BORDER_FACTOR);
+        s->row_offset[scale] = s->row_floats;
+        s->row_floats +=
+            (size_t)FADM_TERM_SLOTS * (size_t)(s->region[scale].bottom - s->region[scale].top);
         cw = hw;
         ch = hh;
     }
@@ -307,21 +286,21 @@ static int float_adm_release_buffers(VmafFeatureExtractor *fex, FloatAdmStateCud
     float_adm_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->src_dis));
     float_adm_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->dwt_tmp_ref));
     float_adm_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->dwt_tmp_dis));
-    for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
+    for (int scale = 0; scale < FADM_SCALES; scale++) {
         float_adm_preserve_error(&rc,
                                  vmaf_cuda_buffer_free_owned(fex->cu_state, &s->ref_band[scale]));
         float_adm_preserve_error(&rc,
                                  vmaf_cuda_buffer_free_owned(fex->cu_state, &s->dis_band[scale]));
     }
     float_adm_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->csf_a));
-    float_adm_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->csf_f));
-    float_adm_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->csf_a_aim));
-    float_adm_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->csf_f_aim));
-    for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
-        float_adm_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->accum[scale]));
-        float_adm_preserve_error(
-            &rc, vmaf_cuda_buffer_host_free_owned(fex->cu_state, (void **)&s->accum_host[scale]));
-    }
+    float_adm_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->csf_fa));
+    float_adm_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->csf_r));
+    float_adm_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->csf_fr));
+    float_adm_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->rcp_table));
+    float_adm_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->terms));
+    float_adm_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->rows));
+    float_adm_preserve_error(
+        &rc, vmaf_cuda_buffer_host_free_owned(fex->cu_state, (void **)&s->rows_host));
     return rc;
 }
 
@@ -342,71 +321,107 @@ static int float_adm_init_unwind(VmafFeatureExtractor *fex, FloatAdmStateCuda *s
     return rc;
 }
 
-/* float_adm_init_rfactors - per-scale CSF rfactor table.
+/* float_adm_init_reference - the constants the reference derives per frame,
+ * taken from its own routines so they cannot drift from it (ADR-1420).
  *
- * HISS-04: lifted verbatim out of init_fex_cuda so that function stays
- * inside the 60-LOC limit. The arithmetic and the order of the stores are
- * unchanged, so the rfactor table is bit-identical.
+ * The CSF weights come from adm_csf_rfactor_s() with the options float_adm.c
+ * passes: no per-scale override (this twin does not declare adm_f1sN /
+ * adm_f2sN) and the reference's luminance level. In the Watson-97 mode this
+ * twin supports the weights ignore adm_csf_scale / adm_csf_diag_scale, as on
+ * the CPU (ADR-1214).
+ *
+ * The division model is probed on the host: the reference's quotient is
+ * built on the processor's reciprocal estimate, which the device then
+ * evaluates from the probed table.
  */
-static void float_adm_init_rfactors(FloatAdmStateCuda *s)
+static void float_adm_init_reference(FloatAdmStateCuda *s)
 {
-    for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
-        const float f1 =
-            fadm_dwt_quant_step(scale, 1, s->adm_norm_view_dist, s->adm_ref_display_height);
-        const float f2 =
-            fadm_dwt_quant_step(scale, 2, s->adm_norm_view_dist, s->adm_ref_display_height);
-        /* ADR-1214: match the CPU reference exactly. In the Watson-97 mode this
-         * twin supports (adm_csf_mode == 0) `adm_tools.c::adm_csf_rfactor_s`
-         * sets rfactor = 1 / dwt_quant_step(...) and does NOT consult
-         * adm_csf_scale / adm_csf_diag_scale — those two options only enter the
-         * Barten branch (mode 1). Multiplying them in here made a non-default
-         * scale change the GPU score while the CPU ignored it, and the comment
-         * that used to sit here claimed the opposite of what adm_tools.c does. */
-        s->rfactor[scale * 3 + 0] = 1.0f / f1;
-        s->rfactor[scale * 3 + 1] = 1.0f / f1;
-        s->rfactor[scale * 3 + 2] = 1.0f / f2;
+    for (int scale = 0; scale < FADM_SCALES; scale++) {
+        adm_csf_rfactor_s(scale, s->adm_norm_view_dist, s->adm_ref_display_height, s->adm_csf_mode,
+                          DEFAULT_ADM_CSF_LUMINANCE_LEVEL, s->adm_csf_scale, s->adm_csf_diag_scale,
+                          -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, s->rfactor[scale]);
     }
+    s->cos_1deg_sq = adm_decouple_cos_1deg_sq_s();
+    adm_reciprocal_model_probe(&s->division);
+    if (!s->division.reproduces_reference) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "float_adm_cuda: this processor's reciprocal estimate is neither a table of "
+                 "its top mantissa bits nor the IEEE reciprocal; scores are close to "
+                 "float_adm's, not bit-identical\n");
+    }
+}
+
+/* float_adm_resolve_module - load the fatbin and look up every kernel. The
+ * caller holds the context. */
+static int float_adm_resolve_module(FloatAdmStateCuda *s, CudaFunctions *cu_f)
+{
+    const struct {
+        CUfunction *function;
+        const char *name;
+    } kernels[] = {
+        {&s->func_dwt_vert, "float_adm_dwt_vert"},
+        {&s->func_dwt_hori, "float_adm_dwt_hori"},
+        {&s->func_decouple_csf, "float_adm_decouple_csf"},
+        {&s->func_terms, "float_adm_terms"},
+        {&s->func_row_sums, "float_adm_row_sums"},
+    };
+    CHECK_CUDA_RETURN(cu_f, cuModuleLoadData(&s->module, float_adm_score_ptx));
+    for (size_t i = 0u; i < sizeof(kernels) / sizeof(kernels[0]); i++) {
+        CHECK_CUDA_RETURN(cu_f,
+                          cuModuleGetFunction(kernels[i].function, s->module, kernels[i].name));
+    }
+    return 0;
 }
 
 /* float_adm_load_kernels - module load plus every kernel handle lookup.
  *
- * CHECK_CUDA_GOTO keeps the context-pop boundary local; failures then enter
- * the shared phase-ordered init unwind with the original CUDA errno.
+ * The context is popped again on every path; the caller unwinds.
  */
-static int float_adm_load_kernels(VmafFeatureExtractor *fex, FloatAdmStateCuda *s,
-                                  CudaFunctions *cu_f)
+static int float_adm_load_kernels(VmafFeatureExtractor *fex, FloatAdmStateCuda *s)
 {
-    int _cuda_err = 0;
-    int ctx_pushed = 0;
-    CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
-    ctx_pushed = 1;
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, float_adm_score_ptx), fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_dwt_vert, s->module, "float_adm_dwt_vert"),
-                    fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_dwt_hori, s->module, "float_adm_dwt_hori"),
-                    fail);
-    CHECK_CUDA_GOTO(cu_f,
-                    cuModuleGetFunction(&s->func_decouple_csf, s->module, "float_adm_decouple_csf"),
-                    fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_csf_cm, s->module, "float_adm_csf_cm"),
-                    fail);
-    /* ADR-0574: AIM pass kernel handles. */
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_csf_r, s->module, "float_adm_csf_r"), fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_aim_cm, s->module, "float_adm_aim_cm"),
-                    fail);
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail);
-    return 0;
+    CudaFunctions *cu_f = fex->cu_state->f;
+    CHECK_CUDA_RETURN(cu_f, cuCtxPushCurrent(fex->cu_state->ctx));
+    const int err = float_adm_resolve_module(s, cu_f);
+    const CUresult popped = cu_f->cuCtxPopCurrent(NULL);
+    return err ? err : vmaf_cuda_result_to_errno((int)popped);
+}
 
-fail:
-    if (ctx_pushed)
-        (void)cu_f->cuCtxPopCurrent(NULL);
-    return float_adm_init_unwind(fex, s, _cuda_err);
+/* float_adm_alloc_reduction_buffers - what the stages past the DWT need.
+ *
+ * The CSF buffers and the term buffer are reused per scale and sized for
+ * scale 0, whose bands and reduced region are the largest.
+ */
+static int float_adm_alloc_reduction_buffers(VmafFeatureExtractor *fex, FloatAdmStateCuda *s)
+{
+    const size_t csf_bytes =
+        (size_t)FADM_BANDS * s->buf_stride * s->scale_half_h[0] * sizeof(float);
+    int ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->csf_a, csf_bytes);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->csf_fa, csf_bytes);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->csf_r, csf_bytes);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->csf_fr, csf_bytes);
+
+    const AdmBorderS *r0 = &s->region[0];
+    const size_t term_bytes = (size_t)FADM_TERM_SLOTS * (size_t)(r0->right - r0->left) *
+                              (size_t)(r0->bottom - r0->top) * sizeof(float);
+    const size_t row_bytes = s->row_floats * sizeof(float);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->terms, term_bytes);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->rows, row_bytes);
+    if (!ret)
+        ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->rows_host, row_bytes);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->rcp_table, sizeof(s->division.table));
+    return ret;
 }
 
 /* float_adm_alloc_device_buffers - every device and pinned-host allocation.
  *
- * Allocations retain their original order and stop at the first error. The
- * caller releases any partial ownership through float_adm_init_unwind().
+ * Allocations stop at the first error. The caller releases any partial
+ * ownership through float_adm_init_unwind().
  */
 static int float_adm_alloc_device_buffers(VmafFeatureExtractor *fex, FloatAdmStateCuda *s,
                                           unsigned w, unsigned h, unsigned bpc)
@@ -427,7 +442,7 @@ static int float_adm_alloc_device_buffers(VmafFeatureExtractor *fex, FloatAdmSta
     /* Per-scale band buffers — 4 bands x buf_stride x half_h. The
      * scale-(s+1) DWT vert kernel reads scale-s's LL band, so each
      * scale needs its own ref_band/dis_band buffer. */
-    for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
+    for (int scale = 0; scale < FADM_SCALES; scale++) {
         const size_t band_bytes =
             (size_t)4u * s->buf_stride * s->scale_half_h[scale] * sizeof(float);
         if (!ret)
@@ -436,37 +451,22 @@ static int float_adm_alloc_device_buffers(VmafFeatureExtractor *fex, FloatAdmSta
             ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->dis_band[scale], band_bytes);
     }
 
-    /* csf_a + csf_f reused per-scale (sized to scale 0 worst case). */
-    const size_t csf_bytes =
-        (size_t)FADM_NUM_BANDS * s->buf_stride * s->scale_half_h[0] * sizeof(float);
     if (!ret)
-        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->csf_a, csf_bytes);
-    if (!ret)
-        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->csf_f, csf_bytes);
-    /* ADR-0574: AIM pass CSF buffers — same size as csf_a / csf_f. */
-    if (!ret)
-        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->csf_a_aim, csf_bytes);
-    if (!ret)
-        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->csf_f_aim, csf_bytes);
-
-    for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
-        const int hh = (int)s->scale_half_h[scale];
-        int top = (int)((double)hh * FADM_BORDER_FACTOR - 0.5);
-        if (top < 0)
-            top = 0;
-        const int bottom = hh - top;
-        const unsigned num_rows = (bottom > top) ? (unsigned)(bottom - top) : 1u;
-        const unsigned wg_count = 3u * num_rows;
-        s->wg_count[scale] = wg_count;
-        const size_t accum_bytes = (size_t)wg_count * FADM_ACCUM_SLOTS * sizeof(float);
-        if (!ret)
-            ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->accum[scale], accum_bytes);
-        if (!ret) {
-            ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->accum_host[scale],
-                                              accum_bytes);
-        }
-    }
+        ret = float_adm_alloc_reduction_buffers(fex, s);
     return ret;
+}
+
+/* float_adm_upload_division - the reciprocal table the decouple kernel reads.
+ * Init only, so the copy may be synchronous. */
+static int float_adm_upload_division(VmafFeatureExtractor *fex, FloatAdmStateCuda *s)
+{
+    CudaFunctions *cu_f = fex->cu_state->f;
+    CHECK_CUDA_RETURN(cu_f, cuCtxPushCurrent(fex->cu_state->ctx));
+    const CUresult copied =
+        cu_f->cuMemcpyHtoD(s->rcp_table->data, s->division.table, sizeof(s->division.table));
+    const CUresult popped = cu_f->cuCtxPopCurrent(NULL);
+    const int err = vmaf_cuda_result_to_errno((int)copied);
+    return err ? err : vmaf_cuda_result_to_errno((int)popped);
 }
 
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
@@ -474,7 +474,6 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 {
     (void)pix_fmt;
     FloatAdmStateCuda *s = fex->priv;
-    CudaFunctions *cu_f = fex->cu_state->f;
 
     if (s->adm_csf_mode != 0)
         return -EINVAL;
@@ -483,17 +482,15 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     s->height = h;
     s->bpc = bpc;
     compute_per_scale_dims(s);
-    float_adm_init_rfactors(s);
+    float_adm_init_reference(s);
 
     int err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
-    if (err)
-        return float_adm_init_unwind(fex, s, err);
-
-    err = float_adm_load_kernels(fex, s, cu_f);
-    if (err)
-        return err;
-
-    err = float_adm_alloc_device_buffers(fex, s, w, h, bpc);
+    if (!err)
+        err = float_adm_load_kernels(fex, s);
+    if (!err)
+        err = float_adm_alloc_device_buffers(fex, s, w, h, bpc);
+    if (!err)
+        err = float_adm_upload_division(fex, s);
     if (err)
         return float_adm_init_unwind(fex, s, err);
 
@@ -504,15 +501,8 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     return 0;
 }
 
-/* FloatAdmScalePass - the per-frame and per-scale constants that the six
- * kernel launches of submit_fex_cuda share.
- *
- * HISS-04: introduced only so the launch blocks could move into named
- * helpers and keep submit_fex_cuda under the 60-LOC limit. Every field
- * holds exactly the value the identically named local held before; nothing
- * is recomputed and no arithmetic expression was split across the helper
- * boundary, so every launch argument is bit-identical.
- */
+/* FloatAdmScalePass - the per-frame and per-scale constants that the kernel
+ * launches of submit_fex_cuda share. */
 typedef struct FloatAdmScalePass {
     CUstream stream;
     ptrdiff_t raw_stride;
@@ -520,24 +510,13 @@ typedef struct FloatAdmScalePass {
     CUdeviceptr dis_raw;
     CUdeviceptr dwt_ref;
     CUdeviceptr dwt_dis;
-    CUdeviceptr csf_a;
-    CUdeviceptr csf_f;
-    CUdeviceptr csf_a_aim;
-    CUdeviceptr csf_f_aim;
     CUdeviceptr ref_band;
     CUdeviceptr dis_band;
     CUdeviceptr parent_ref_band;
     CUdeviceptr parent_dis_band;
-    CUdeviceptr accum;
-    float pnorm;
     float scaler;
     float pixel_offset;
-    float rfactor_h;
-    float rfactor_v;
-    float rfactor_d;
-    float gain_limit;
     unsigned bpc;
-    int bypass_cm;
     int buf_stride;
     int scale;
     int cur_w;
@@ -548,18 +527,9 @@ typedef struct FloatAdmScalePass {
     int parent_h;
     int parent_half_h;
     int parent_buf_stride;
-    int left;
-    int top;
-    int right;
-    int bottom;
-    int active_h;
 } FloatAdmScalePass;
 
-/* fadm_init_pass - the per-frame half of FloatAdmScalePass.
- *
- * HISS-04: the statements are lifted verbatim from submit_fex_cuda's
- * prologue and run in the same order.
- */
+/* fadm_init_pass - the per-frame half of FloatAdmScalePass. */
 static void fadm_init_pass(const FloatAdmStateCuda *s, FloatAdmScalePass *p, CUstream stream)
 {
     const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
@@ -581,24 +551,10 @@ static void fadm_init_pass(const FloatAdmStateCuda *s, FloatAdmScalePass *p, CUs
     p->dis_raw = (CUdeviceptr)s->src_dis->data;
     p->dwt_ref = (CUdeviceptr)s->dwt_tmp_ref->data;
     p->dwt_dis = (CUdeviceptr)s->dwt_tmp_dis->data;
-    p->csf_a = (CUdeviceptr)s->csf_a->data;
-    p->csf_f = (CUdeviceptr)s->csf_f->data;
-    p->csf_a_aim = (CUdeviceptr)s->csf_a_aim->data;
-    p->csf_f_aim = (CUdeviceptr)s->csf_f_aim->data;
     p->buf_stride = (int)s->buf_stride;
-
-    /* adm_p_norm and adm_bypass_cm are VMAF_OPT_FLAG_FEATURE_PARAM options the
-     * twin advertises. Until ADR-1220 the kernels hardcoded p = 3 and always
-     * subtracted the masking threshold, so `apn` moved only the AIM exponent
-     * and `bcm` did nothing at all. */
-    p->pnorm = (float)s->adm_p_norm;
-    p->bypass_cm = s->adm_bypass_cm;
 }
 
-/* fadm_set_pass_scale - the per-scale half of FloatAdmScalePass.
- *
- * HISS-04: lifted verbatim from the head of submit_fex_cuda's scale loop.
- */
+/* fadm_set_pass_scale - the per-scale half of FloatAdmScalePass. */
 static void fadm_set_pass_scale(const FloatAdmStateCuda *s, FloatAdmScalePass *p, int scale)
 {
     p->scale = scale;
@@ -611,9 +567,7 @@ static void fadm_set_pass_scale(const FloatAdmStateCuda *s, FloatAdmScalePass *p
      * `compute_per_scale_dims`: scale_w[s] is the *input* dim at
      * scale s, which equals the parent's LL output dim).
      * Mirror reads in stage 0 must clamp against these, NOT
-     * scale_w[scale-1] (full parent image dims).  This matches
-     * the Vulkan kernel's `read_band_a_at`, which uses
-     * `pc.cur_w/cur_h` = the same thing. */
+     * scale_w[scale-1] (full parent image dims). */
     p->parent_w = (scale > 0) ? (int)s->scale_w[scale] : 0;
     p->parent_h = (scale > 0) ? (int)s->scale_h[scale] : 0;
     p->parent_half_h = (scale > 0) ? (int)s->scale_half_h[scale - 1] : 0;
@@ -623,62 +577,35 @@ static void fadm_set_pass_scale(const FloatAdmStateCuda *s, FloatAdmScalePass *p
     p->dis_band = (CUdeviceptr)s->dis_band[scale]->data;
     p->parent_ref_band = (scale > 0) ? (CUdeviceptr)s->ref_band[scale - 1]->data : (CUdeviceptr)0;
     p->parent_dis_band = (scale > 0) ? (CUdeviceptr)s->dis_band[scale - 1]->data : (CUdeviceptr)0;
-    p->accum = (CUdeviceptr)s->accum[scale]->data;
-
-    int top = (int)((double)p->half_h * FADM_BORDER_FACTOR - 0.5);
-    int left = (int)((double)p->half_w * FADM_BORDER_FACTOR - 0.5);
-    if (top < 0)
-        top = 0;
-    if (left < 0)
-        left = 0;
-    p->top = top;
-    p->left = left;
-    p->bottom = p->half_h - top;
-    p->right = p->half_w - left;
-    p->active_h = p->bottom - top;
-
-    p->rfactor_h = s->rfactor[scale * 3 + 0];
-    p->rfactor_v = s->rfactor[scale * 3 + 1];
-    p->rfactor_d = s->rfactor[scale * 3 + 2];
-    p->gain_limit = (float)s->adm_enhn_gain_limit;
 }
 
-/* fadm_submit_upload - H2D staging plus the accumulator reset.
- *
- * HISS-04: lifted verbatim out of submit_fex_cuda. The two 2D copies and the
- * memsets are still issued on the picture stream in the same order.
- */
+/* fadm_copy_luma - one luma plane into its tightly packed raw buffer. */
+static int fadm_copy_luma(const FloatAdmStateCuda *s, CudaFunctions *cu_f, const VmafPicture *pic,
+                          const VmafCudaBuffer *raw, const FloatAdmScalePass *p)
+{
+    const CUDA_MEMCPY2D copy = {
+        .srcMemoryType = CU_MEMORYTYPE_DEVICE,
+        .srcDevice = (CUdeviceptr)pic->data[0],
+        .srcPitch = pic->stride[0],
+        .dstMemoryType = CU_MEMORYTYPE_DEVICE,
+        .dstDevice = (CUdeviceptr)raw->data,
+        .dstPitch = (size_t)p->raw_stride,
+        .WidthInBytes = (size_t)p->raw_stride,
+        .Height = s->height,
+    };
+    CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&copy, p->stream));
+    return 0;
+}
+
+/* fadm_submit_upload - stage the two luma planes on the picture stream. */
 static int fadm_submit_upload(const FloatAdmStateCuda *s, CudaFunctions *cu_f,
                               const VmafPicture *ref_pic, const VmafPicture *dist_pic,
                               const FloatAdmScalePass *p)
 {
-    CUDA_MEMCPY2D cpy = {0};
-    cpy.srcMemoryType = CU_MEMORYTYPE_DEVICE;
-    cpy.srcDevice = (CUdeviceptr)ref_pic->data[0];
-    cpy.srcPitch = ref_pic->stride[0];
-    cpy.dstMemoryType = CU_MEMORYTYPE_DEVICE;
-    cpy.dstDevice = (CUdeviceptr)s->src_ref->data;
-    cpy.dstPitch = p->raw_stride;
-    cpy.WidthInBytes = p->raw_stride;
-    cpy.Height = s->height;
-    CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&cpy, p->stream));
-
-    CUDA_MEMCPY2D cpy_d = cpy;
-    cpy_d.srcDevice = (CUdeviceptr)dist_pic->data[0];
-    cpy_d.srcPitch = dist_pic->stride[0];
-    cpy_d.dstDevice = (CUdeviceptr)s->src_dis->data;
-    CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&cpy_d, p->stream));
-
-    /* Reset accumulator buffers — stage 3 writes slots 0..5 per WG;
-     * stage 3b writes slots 6..8. All slots start zero so that
-     * skipped-scale AIM entries contribute zero to the host sum. */
-    for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
-        CHECK_CUDA_RETURN(
-            cu_f, cuMemsetD8Async(s->accum[scale]->data, 0,
-                                  (size_t)s->wg_count[scale] * FADM_ACCUM_SLOTS * sizeof(float),
-                                  p->stream));
-    }
-    return 0;
+    const int err = fadm_copy_luma(s, cu_f, ref_pic, s->src_ref, p);
+    if (err)
+        return err;
+    return fadm_copy_luma(s, cu_f, dist_pic, s->src_dis, p);
 }
 
 /* fadm_launch_dwt_vert - stage 0, DWT vertical (z=2 fused ref+dis). */
@@ -750,88 +677,84 @@ static int fadm_launch_dwt_hori(CudaFunctions *cu_f, const FloatAdmStateCuda *s,
     return 0;
 }
 
-/* fadm_launch_csf - stages 2 and 2b, decouple + CSF.
- *
- * HISS-04: the two stages differed only in the kernel handle and in which
- * pair of CSF buffers they wrote, so both now share this body. The grid,
- * the block shape and the argument order are the ones both stages used.
- */
-static int fadm_launch_csf(CudaFunctions *cu_f, CUfunction func, const FloatAdmScalePass *p,
-                           CUdeviceptr csf_a, CUdeviceptr csf_f)
+/* The band block every kernel past the DWT takes. */
+static FloatAdmCudaBands fadm_bands(const FloatAdmStateCuda *s, const FloatAdmScalePass *p)
 {
+    FloatAdmCudaBands b = {
+        .ref_band = (uint64_t)p->ref_band,
+        .dis_band = (uint64_t)p->dis_band,
+        .csf_a = (uint64_t)s->csf_a->data,
+        .csf_fa = (uint64_t)s->csf_fa->data,
+        .csf_r = (uint64_t)s->csf_r->data,
+        .csf_fr = (uint64_t)s->csf_fr->data,
+        .half_w = p->half_w,
+        .half_h = p->half_h,
+        .buf_stride = p->buf_stride,
+    };
+    memcpy(b.rfactor, s->rfactor[p->scale], sizeof(b.rfactor));
+    return b;
+}
+
+/* fadm_launch_decouple - stage 2: decouple, then the CSF of both parts. */
+static int fadm_launch_decouple(CudaFunctions *cu_f, const FloatAdmStateCuda *s,
+                                const FloatAdmScalePass *p)
+{
+    FloatAdmCudaDecoupleArgs args = {
+        .bands = fadm_bands(s, p),
+        .rcp_table = (uint64_t)s->rcp_table->data,
+        .adm_enhn_gain_limit = s->adm_enhn_gain_limit,
+        .cos_1deg_sq = s->cos_1deg_sq,
+        .division = s->division.division,
+    };
+    void *params[] = {&args};
     const unsigned gx = ((unsigned)p->half_w + FADM_BX - 1u) / FADM_BX;
     const unsigned gy = ((unsigned)p->half_h + FADM_BY - 1u) / FADM_BY;
-    int half_w_arg = p->half_w;
-    int half_h_arg = p->half_h;
-    int buf_stride_arg = p->buf_stride;
-    float rfh = p->rfactor_h;
-    float rfv = p->rfactor_v;
-    float rfd = p->rfactor_d;
-    float gl = p->gain_limit;
-    CUdeviceptr ref_band_d = p->ref_band;
-    CUdeviceptr dis_band_d = p->dis_band;
-    CUdeviceptr csf_a_d = csf_a;
-    CUdeviceptr csf_f_d = csf_f;
-    void *args[] = {&ref_band_d,     &dis_band_d, &csf_a_d, &csf_f_d, &half_w_arg, &half_h_arg,
-                    &buf_stride_arg, &rfh,        &rfv,     &rfd,     &gl};
-    CHECK_CUDA_RETURN(
-        cu_f, cuLaunchKernel(func, gx, gy, 1, FADM_BX, FADM_BY, 1, 0, p->stream, args, NULL));
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_decouple_csf, gx, gy, 1, FADM_BX, FADM_BY, 1, 0,
+                                           p->stream, params, NULL));
     return 0;
 }
 
-/* fadm_launch_cm - stages 3 and 3b, CSF denominator + CM numerator.
- *
- * HISS-04: 1D dispatch over 3 bands x num_active_rows. Stage 3 writes accum
- * slots 0..5 and stage 3b slots 6..8; the two differed only in the kernel
- * handle and the CSF buffer pair, so both now share this body.
- */
-static int fadm_launch_cm(CudaFunctions *cu_f, CUfunction func, const FloatAdmScalePass *p,
-                          CUdeviceptr csf_a, CUdeviceptr csf_f)
+/* fadm_launch_reductions - stages 3 and 4: the per-sample terms of the three
+ * reductions over the reduced region, then one sum per row and slot into this
+ * scale's span of `rows`. */
+static int fadm_launch_reductions(CudaFunctions *cu_f, const FloatAdmStateCuda *s,
+                                  const FloatAdmScalePass *p)
 {
-    const unsigned num_rows = (unsigned)(p->active_h > 0 ? p->active_h : 1);
-    const unsigned gx = 3u * num_rows;
-    int half_w_arg = p->half_w;
-    int half_h_arg = p->half_h;
-    int buf_stride_arg = p->buf_stride;
-    int active_left_arg = p->left;
-    int active_top_arg = p->top;
-    int active_right_arg = p->right;
-    int active_bottom_arg = p->bottom;
-    float rfh = p->rfactor_h;
-    float rfv = p->rfactor_v;
-    float rfd = p->rfactor_d;
-    float gl = p->gain_limit;
-    float pnorm_f = p->pnorm;
-    int bypass_cm_arg = p->bypass_cm;
-    CUdeviceptr ref_band_d = p->ref_band;
-    CUdeviceptr dis_band_d = p->dis_band;
-    CUdeviceptr csf_a_d = csf_a;
-    CUdeviceptr csf_f_d = csf_f;
-    CUdeviceptr accum_d = p->accum;
-    void *args[] = {&ref_band_d,
-                    &dis_band_d,
-                    &csf_a_d,
-                    &csf_f_d,
-                    &accum_d,
-                    &half_w_arg,
-                    &half_h_arg,
-                    &buf_stride_arg,
-                    &active_left_arg,
-                    &active_top_arg,
-                    &active_right_arg,
-                    &active_bottom_arg,
-                    &rfh,
-                    &rfv,
-                    &rfd,
-                    &gl,
-                    &pnorm_f,
-                    &bypass_cm_arg};
-    CHECK_CUDA_RETURN(
-        cu_f, cuLaunchKernel(func, gx, 1u, 1u, FADM_BX, FADM_BY, 1, 0, p->stream, args, NULL));
+    const AdmBorderS *r = &s->region[p->scale];
+    const unsigned region_w = (unsigned)(r->right - r->left);
+    const unsigned region_h = (unsigned)(r->bottom - r->top);
+    FloatAdmCudaTermArgs term_args = {
+        .bands = fadm_bands(s, p),
+        .terms = (uint64_t)s->terms->data,
+        .left = r->left,
+        .top = r->top,
+        .region_w = region_w,
+        .region_h = region_h,
+        .p_norm = (float)s->adm_p_norm,
+        .is_cube = (s->adm_p_norm == 3.0) ? 1u : 0u,
+        .bypass_cm = (s->adm_bypass_cm != 0) ? 1u : 0u,
+    };
+    void *term_params[] = {&term_args};
+    const unsigned gx = (region_w + FADM_BX - 1u) / FADM_BX;
+    const unsigned gy = (region_h + FADM_BY - 1u) / FADM_BY;
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_terms, gx, gy, 1, FADM_BX, FADM_BY, 1, 0,
+                                           p->stream, term_params, NULL));
+
+    FloatAdmCudaRowArgs row_args = {
+        .terms = (uint64_t)s->terms->data,
+        .rows = (uint64_t)s->rows->data + s->row_offset[p->scale] * sizeof(float),
+        .region_w = region_w,
+        .region_h = region_h,
+    };
+    void *row_params[] = {&row_args};
+    const unsigned sums = FADM_TERM_SLOTS * region_h;
+    const unsigned blocks = (sums + FADM_ROW_THREADS - 1u) / FADM_ROW_THREADS;
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_row_sums, blocks, 1, 1, FADM_ROW_THREADS, 1, 1,
+                                           0, p->stream, row_params, NULL));
     return 0;
 }
 
-/* fadm_submit_scale - the six kernel launches one scale needs. */
+/* fadm_submit_scale - the five kernel launches one scale needs. */
 static int fadm_submit_scale(CudaFunctions *cu_f, const FloatAdmStateCuda *s,
                              const FloatAdmScalePass *p)
 {
@@ -841,37 +764,20 @@ static int fadm_submit_scale(CudaFunctions *cu_f, const FloatAdmStateCuda *s,
     err = fadm_launch_dwt_hori(cu_f, s, p);
     if (err)
         return err;
-    err = fadm_launch_csf(cu_f, s->func_decouple_csf, p, p->csf_a, p->csf_f);
+    err = fadm_launch_decouple(cu_f, s, p);
     if (err)
         return err;
-    err = fadm_launch_cm(cu_f, s->func_csf_cm, p, p->csf_a, p->csf_f);
-    if (err)
-        return err;
-    /* Stage 2b — CSF on decouple_r (AIM pass, ADR-0574). Writes csf_a_aim +
-     * csf_f_aim for stage 3b. */
-    err = fadm_launch_csf(cu_f, s->func_csf_r, p, p->csf_a_aim, p->csf_f_aim);
-    if (err)
-        return err;
-    /* Stage 3b — AIM CM numerator (noise_weight=0, ADR-0574). Uses
-     * csf_a_aim / csf_f_aim from stage 2b; skipped if
-     * adm_skip_aim_scale == scale. */
-    if (s->adm_skip_aim_scale == p->scale)
-        return 0;
-    return fadm_launch_cm(cu_f, s->func_aim_cm, p, p->csf_a_aim, p->csf_f_aim);
+    return fadm_launch_reductions(cu_f, s, p);
 }
 
-/* fadm_submit_download - sync to the secondary stream and copy the partials. */
+/* fadm_submit_download - sync to the secondary stream and copy the row sums. */
 static int fadm_submit_download(VmafFeatureExtractor *fex, FloatAdmStateCuda *s,
                                 CudaFunctions *cu_f, CUstream pic_stream)
 {
     CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->lc.submit, pic_stream));
     CHECK_CUDA_RETURN(cu_f, cuStreamWaitEvent(s->lc.str, s->lc.submit, CU_EVENT_WAIT_DEFAULT));
-    for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
-        CHECK_CUDA_RETURN(
-            cu_f, cuMemcpyDtoHAsync(s->accum_host[scale], (CUdeviceptr)s->accum[scale]->data,
-                                    (size_t)s->wg_count[scale] * FADM_ACCUM_SLOTS * sizeof(float),
-                                    s->lc.str));
-    }
+    CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(s->rows_host, (CUdeviceptr)s->rows->data,
+                                              s->row_floats * sizeof(float), s->lc.str));
     return vmaf_cuda_kernel_submit_post_record(&s->lc, fex->cu_state);
 }
 
@@ -895,26 +801,19 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     if (err)
         return err;
 
-    for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
+    for (int scale = 0; scale < FADM_SCALES; scale++) {
         fadm_set_pass_scale(s, &pass, scale);
         err = fadm_submit_scale(cu_f, s, &pass);
         if (err)
             return err;
     }
 
-    /* Sync over to the secondary stream + D2H copy partials. */
+    /* Sync over to the secondary stream + D2H copy of the row sums. */
     return fadm_submit_download(fex, s, cu_f, pic_stream);
 }
 
-/* FloatAdmBandTotals - the three per-scale, per-band accumulator sums that
- * collect_fex_cuda reduces out of the pinned-host partial buffers. */
-typedef struct FloatAdmBandTotals {
-    double cm[FADM_NUM_SCALES][FADM_NUM_BANDS];
-    double csf[FADM_NUM_SCALES][FADM_NUM_BANDS];
-    double aim_cm[FADM_NUM_SCALES][FADM_NUM_BANDS];
-} FloatAdmBandTotals;
-
-/* FloatAdmPooled - what the per-scale pooling loop produces. */
+/* FloatAdmPooled - what the per-scale pooling loop produces: compute_adm()'s
+ * `scores`, `num`, `den`, `aim_num` and `aim_den`. */
 typedef struct FloatAdmPooled {
     double scores[8];
     double score_num;
@@ -924,7 +823,7 @@ typedef struct FloatAdmPooled {
 } FloatAdmPooled;
 
 /* FloatAdmFinal - the headline scores, plus the numerator and denominator
- * after the numden_limit clamp (the debug features report the clamped
+ * after the numden_limit floor (the debug features report the floored
  * values, so they have to survive the split). */
 typedef struct FloatAdmFinal {
     double score;
@@ -934,99 +833,59 @@ typedef struct FloatAdmFinal {
     double score_den;
 } FloatAdmFinal;
 
-/* fadm_reduce_accum - per-scale double accumulation across WGs.
+/* fadm_pool_scales - compute_adm()'s scale loop past the kernels.
  *
- * HISS-04: lifted verbatim out of collect_fex_cuda. The traversal order is
- * scale -> workgroup -> band exactly as before, so the double sums are
- * bit-identical.
+ * The frame accumulators are the reference's: one fp32 value per band that
+ * the row sums are added to top to bottom. Each scale is then concluded by
+ * the reference's own adm_pool_bands_s(), with the noise weight for the
+ * denominator and the adm2 numerator and with none for the AIM numerator.
  */
-static void fadm_reduce_accum(const FloatAdmStateCuda *s, FloatAdmBandTotals *t)
-{
-    for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
-        const float *slots = s->accum_host[scale];
-        const unsigned wg_count = s->wg_count[scale];
-        for (unsigned wg = 0u; wg < wg_count; wg++) {
-            const float *p = slots + (size_t)wg * FADM_ACCUM_SLOTS;
-            for (int b = 0; b < FADM_NUM_BANDS; b++) {
-                t->csf[scale][b] += (double)p[b];
-                t->cm[scale][b] += (double)p[3 + b];
-                t->aim_cm[scale][b] += (double)p[6 + b];
-            }
-        }
-    }
-}
-
-/* fadm_pool_scales - the per-scale pooling loop.
- *
- * HISS-04: lifted verbatim out of collect_fex_cuda. Every accumulation
- * statement is unchanged and stays whole inside this function, so no
- * expression crosses the helper boundary and FP contraction is unaffected.
- */
-static void fadm_pool_scales(const FloatAdmStateCuda *s, const FloatAdmBandTotals *t,
-                             FloatAdmPooled *o)
+static void fadm_pool_scales(const FloatAdmStateCuda *s, FloatAdmPooled *o)
 {
     o->score_num = 0.0;
     o->score_den = 0.0;
     o->aim_num = 0.0;
     o->aim_den = 0.0;
-    for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
-        const int hw = (int)s->scale_half_w[scale];
-        const int hh = (int)s->scale_half_h[scale];
-        int left = (int)((double)hw * FADM_BORDER_FACTOR - 0.5);
-        int top = (int)((double)hh * FADM_BORDER_FACTOR - 0.5);
-        if (left < 0)
-            left = 0;
-        if (top < 0)
-            top = 0;
-        const int right = hw - left;
-        const int bottom = hh - top;
-        /* The pooling root and the noise constant are 1/adm_p_norm, not a
-         * hardcoded 1/3: adm_tools.c uses powf(accum, 1.0f / adm_p_norm) and
-         * get_noise_constant(..., adm_p_norm). ADR-1220. */
-        const float inv_p = 1.0f / (float)s->adm_p_norm;
-        const float area_cbrt =
-            powf((float)((bottom - top) * (right - left)) * (float)s->adm_noise_weight, inv_p);
-        float num_scale = 0.0f;
-        float den_scale = 0.0f;
-        for (int b = 0; b < FADM_NUM_BANDS; b++) {
-            num_scale += powf((float)t->cm[scale][b], inv_p) + area_cbrt;
-            den_scale += powf((float)t->csf[scale][b], inv_p) + area_cbrt;
+    for (int scale = 0; scale < FADM_SCALES; scale++) {
+        const AdmBorderS *r = &s->region[scale];
+        const int region_w = r->right - r->left;
+        const int region_h = r->bottom - r->top;
+        const float *rows = s->rows_host + s->row_offset[scale];
+        float accum[FADM_TERM_SLOTS];
+        for (unsigned slot = 0u; slot < FADM_TERM_SLOTS; slot++) {
+            accum[slot] = fadm_fold_rows(rows + fadm_row_index(slot, 0u, (uint32_t)region_h),
+                                         (uint32_t)region_h);
         }
-        o->scores[2 * scale + 0] = num_scale;
-        o->scores[2 * scale + 1] = den_scale;
+
+        const float den_scale = adm_pool_bands_s(accum + FADM_SLOT_DEN, region_w, region_h,
+                                                 s->adm_noise_weight, s->adm_p_norm);
+        const float num_scale = adm_pool_bands_s(accum + FADM_SLOT_CM, region_w, region_h,
+                                                 s->adm_noise_weight, s->adm_p_norm);
+        const float aim_num_scale =
+            adm_pool_bands_s(accum + FADM_SLOT_AIM, region_w, region_h, 0.0, s->adm_p_norm);
+
         o->score_num += num_scale;
         o->score_den += den_scale;
-
-        /* ADR-0574: AIM accumulation — same CSF denominator as adm2
-         * (den_scale). Skip this scale if adm_skip_aim_scale matches.
-         * Slots 6..8 are zero for skipped scales (stage 3b was not
-         * launched), so aim_num contribution is 0 naturally. */
-        float aim_num_scale = 0.0f;
-        for (int b = 0; b < FADM_NUM_BANDS; b++) {
-            aim_num_scale += powf((float)t->aim_cm[scale][b], inv_p);
-        }
         if (s->adm_skip_aim_scale != scale) {
             o->aim_den += den_scale;
             o->aim_num += aim_num_scale;
         }
+        o->scores[2 * scale + 0] = num_scale;
+        o->scores[2 * scale + 1] = den_scale;
     }
 }
 
-/* fadm_final_scores - numden clamp, adm2, AIM and ADM3.
- *
- * HISS-04: lifted verbatim out of collect_fex_cuda. score_num / score_den
- * are carried out clamped, which is the value the debug features have
- * always reported.
- */
+/* fadm_final_scores - numden floor, adm2, AIM and ADM3, as compute_adm() and
+ * float_adm.c's extract() conclude. score_num / score_den are carried out
+ * floored, which is the value the debug features report. */
 static int fadm_final_scores(const FloatAdmStateCuda *s, const FloatAdmPooled *o, FloatAdmFinal *f,
                              unsigned index)
 {
     f->score_num = o->score_num;
     f->score_den = o->score_den;
-    /* numden_limit per ADM_OPT_SINGLE_PRECISION (matches adm.c L88). */
-    const int w = (int)s->scale_w[0];
-    const int h = (int)s->scale_h[0];
-    const double numden_limit = 1e-2 * (double)(w * h) / (1920.0 * 1080.0);
+    const int w = (int)s->width;
+    const int h = (int)s->height;
+    const double numden_limit = 1e-10 * (w * h) / (1920.0 * 1080.0);
     int err = vmaf_adm_floor_pair_named("float_adm_cuda", index, f->score_num, f->score_den,
                                         numden_limit, &f->score_num, &f->score_den);
     if (err)
@@ -1044,9 +903,9 @@ static int fadm_final_scores(const FloatAdmStateCuda *s, const FloatAdmPooled *o
 static int fadm_append_scores(VmafFeatureCollector *fc, const FloatAdmStateCuda *s,
                               const FloatAdmPooled *o, const FloatAdmFinal *f, unsigned index)
 {
-    double scale_scores[FADM_NUM_SCALES];
-    int err = vmaf_adm_scale_ratios_named("float_adm_cuda", index, o->scores, FADM_NUM_SCALES,
-                                          scale_scores);
+    double scale_scores[FADM_SCALES];
+    int err =
+        vmaf_adm_scale_ratios_named("float_adm_cuda", index, o->scores, FADM_SCALES, scale_scores);
     if (err)
         return err;
 
@@ -1091,29 +950,18 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index, VmafFeatu
     /* Explicit barrier on the D2H stream (s->lc.str) after collect_wait.
      *
      * Race condition (reproduced on gfx1030 RDNA2, ~31% of frames):
-     * The D2H copies of accum_host[] execute on s->lc.str.  The batch
+     * The D2H copy of rows_host executes on s->lc.str.  The batch
      * drain (ADR-0242) waits on lc.finished (recorded on lc.str AFTER
      * the D2H), but the drain_stream synchronise does not block the
      * calling CPU thread until lc.str itself has retired the memcpy —
      * it only guarantees lc.finished has been signalled from the
-     * driver's perspective.  On AMD GFX and some NVIDIA configs a
-     * visible window exists between the event signal and the host
-     * seeing the DMA data, especially when the next frame's
-     * cuMemsetD8Async on pic_stream races with the D2H on lc.str for
-     * the same device buffer.  An explicit cuStreamSynchronize on
-     * lc.str is the conservative fix: it costs one per-frame CPU stall
-     * (cheap vs. the ~24-kernel compute budget) and eliminates the
-     * window entirely. */
+     * driver's perspective.  An explicit cuStreamSynchronize on lc.str
+     * is the conservative fix: it costs one per-frame CPU stall and
+     * eliminates the window entirely. */
     CHECK_CUDA_RETURN(cu_f, cuStreamSynchronize(s->lc.str));
 
-    /* Per-scale double accumulation across WGs, mirroring the Vulkan
-     * host wrapper's reduce_and_emit.
-     * ADR-0574: aim_cm totals accumulate slots 6..8. */
-    FloatAdmBandTotals totals = {0};
-    fadm_reduce_accum(s, &totals);
-
     FloatAdmPooled pooled = {0};
-    fadm_pool_scales(s, &totals, &pooled);
+    fadm_pool_scales(s, &pooled);
 
     FloatAdmFinal fin = {0};
     int err = fadm_final_scores(s, &pooled, &fin, index);
@@ -1144,6 +992,7 @@ static const char *provided_features[] = {
     "adm_num_scale0", "adm_den_scale0", "adm_num_scale1", "adm_den_scale1", "adm_num_scale2",
     "adm_den_scale2", "adm_num_scale3", "adm_den_scale3", NULL};
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as `extern VmafFeatureExtractor vmaf_fex_float_adm_cuda` by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_adm_cuda = {
     .name = "float_adm_cuda",
     .init = init_fex_cuda,

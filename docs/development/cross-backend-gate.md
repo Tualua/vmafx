@@ -37,6 +37,7 @@ explicitly accepts its skip.
   | `psnr_hvs` (a twin that is not listed as exact) | `5e-4` at 576x324 and below, `5e-4 × √(N / N₅₇₆ₓ₃₂₄)` above | ADR-0191 (DCT plus per-block float reduction); ADR-1361 (area scaling) |
   | `float_motion` (every pair of CPU, CUDA, SYCL and HIP) | `0` (bit-identical, compared at `--precision max`) | ADR-1409, ADR-1411, ADR-1419 (the twins add their SAD in the CPU's order); the row above stays for Metal |
   | `float_vif` (CPU ↔ CUDA, CPU ↔ SYCL, CUDA ↔ SYCL) | `0` (bit-identical, compared at `--precision max`) | ADR-1412, ADR-1422 (the twins compute the CPU's arithmetic and add in the CPU's order); the `5e-5` row stays for HIP and Metal |
+  | `float_adm` (CPU ↔ CUDA) | `0` (bit-identical, compared at `--precision max`) | ADR-1420 (the twin computes the CPU's arithmetic, divides through the host's reciprocal estimate and adds in the CPU's order); the `5e-5` row stays for the other twins |
   | `ssimulacra2` | `5e-3` | ADR-0192 (XYB cube root plus IIR blur) |
   | `float_ms_ssim`, `float_ms_ssim_lcs` (CPU ↔ SYCL) | `0` (bit-identical, compared at `--precision max`) | ADR-1414 (the twin computes the CPU's arithmetic); the `5e-5` row above stays for the other twins |
 
@@ -120,13 +121,19 @@ explicitly accepts its skip.
   ([ADR-1422](../adr/1422-sycl-float-vif-cpu-arithmetic.md), measured on an
   Arc A380: 0 on the Netflix pair, both 1080p checkerboard pairs and 200
   frames of BBB 3840x2160).
+  `float_adm_cuda` runs the CPU's decouple, CSF and masking arithmetic in the
+  CPU's types, evaluates the reciprocal estimate of the host processor that
+  the CPU's division is built on, and adds each reduction row by row
+  ([ADR-1420](../adr/1420-cuda-float-adm-cpu-arithmetic.md)). The gate runs
+  it with default options; `adm_p_norm` other than 3 is within 1.1e-7, not
+  equal.
   `EXACT_TWINS` in `scripts/ci/cross_backend_calibration.py` lists such twins.
   A cell whose two sides are the CPU extractor or a listed twin is compared
   with tolerance `0`, at every frame size and ahead of any calibration row,
   and both sides run with `--precision max` so that a last-bit difference
   is not rounded away by the default `%.6f` output. The label in the output is
   `exact:ADR-1397` for every listed twin. Measured on an RTX 4090 (CUDA, for
-  all three features), an Arc A380 (SYCL, for all three features)
+  all five features), an Arc A380 (SYCL, for `psnr_hvs`, `float_motion` and `float_vif`)
   and a gfx1036 (HIP, for `psnr_hvs`): 0 on all 200 frames of the BBB
   3840x2160 fixture and on the Netflix 576x324 pair. An explicit
   `--fp16-features psnr_hvs` still selects the FP16 contract. Adding a twin to

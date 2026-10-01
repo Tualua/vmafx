@@ -276,6 +276,20 @@ test('test_sycl_vif_float_sums_contract',
     timeout : 30,
 )
 
+# ADR-1420 — float_adm_cuda reproduces the CPU extractor bit for bit: the
+# decouple divides through the host's probed reciprocal estimate, the angle
+# threshold, the gain and the two CSF constants have the reference's types and
+# association, every reduction is added row by row in fp32, and the weights,
+# the region, the pooling and the floor are the reference's own. Device-free;
+# the arithmetic check is test_float_adm_device_math, the device check is
+# test_cuda_float_adm_parity.
+test('test_cuda_float_adm_exact_contract',
+    import('python').find_installation(),
+    args : files('test_cuda_float_adm_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # A default scale=0 is only executable by the GPU float-SSIM twins while the
 # CPU auto-scale resolves to 1. Pin the model-only, first-frame fallback seam
 # and all four backend declarations without requiring an accelerator.
@@ -4013,6 +4027,34 @@ test_float_adm_coverage = executable('test_float_adm_coverage',
     ] + wave8_opt_only_objects
 )
 test('test_float_adm_coverage', test_float_adm_coverage, suite : ['fast'])
+
+# ADR-1420 — the arithmetic float_adm_cuda's kernels run
+# (src/feature/cuda/float_adm/float_adm_device.h), compiled for the host and
+# compared bit for bit with adm_decouple_s(), adm_csf_s(),
+# adm_csf_den_scale_s() and adm_cm_s(), plus the reciprocal model against the
+# processor's own estimate. Device-free, so it runs in the fast suite of every
+# build, with or without CUDA. The header's host operators round like the
+# device only without FMA contraction (hence the flag), and adm_tools.c is
+# contraction-free by construction on x86-64 only (its baseline has no FMA),
+# so the test is registered there.
+if host_machine.cpu_family() == 'x86_64'
+test_float_adm_device_math = executable('test_float_adm_device_math',
+    ['test.c', 'test_float_adm_device_math.c'] + _float_fex_test_sources_common + dnn_sources,
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines + vmaf_strict_fp_args,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                    predict_test_dependencies, dnn_deps],
+    objects : [
+        common_cuda_objects,
+        platform_specific_cpu_objects,
+        libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+        log_cpp23_test_objects,
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+        libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+test('test_float_adm_device_math', test_float_adm_device_math, suite : ['fast'])
+endif
 
 test_float_motion_coverage = executable('test_float_motion_coverage',
     ['test.c', 'test_float_motion_coverage.c'] + _float_fex_test_sources_common + dnn_sources,

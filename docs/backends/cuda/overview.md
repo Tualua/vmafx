@@ -254,7 +254,7 @@ Netflix 576x324 pair, both 1080p checkerboard pairs and BBB 3840x2160:
 | `ssimulacra2` | 7.3e-11 at most |
 | `ssim` | bit-identical on every frame since [ADR-1424](../../adr/1424-cuda-ssim-cpu-frame-sum.md) (1.1e-11 before: the terms were added per block) |
 | `adm` | bit-identical on every frame since [ADR-1416](../../adr/1416-cuda-adm-cpu-row-rounding.md) (2.1e-7 before: the host computed its own CSF weights) |
-| `float_adm` | 1.3e-5 at most |
+| `float_adm` | bit-identical on every frame since [ADR-1420](../../adr/1420-cuda-float-adm-cpu-arithmetic.md) (1.3e-5 before: the angle test's threshold was associated differently) |
 | `ciede` | 62 of 113 frames identical, the rest within 1.4e-11, since [ADR-1426](../../adr/1426-cuda-ciede-cpu-arithmetic.md) (1.1e-5 before: the kernel computed in fp32); the remainder is glibc's math library against CUDA's |
 | `float_vif` | bit-identical on every frame since [ADR-1412](../../adr/1412-cuda-float-vif-cpu-arithmetic.md) (3.8e-5 before: the kernel's tap table was not the one the CPU computes) |
 

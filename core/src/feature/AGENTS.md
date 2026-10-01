@@ -1008,6 +1008,29 @@ feature/
   [Research-0024](../../../docs/research/0024-vif-upstream-divergence.md)
   = history of the table era.
 
+- **Float ADM reference exports for GPU twins** (ADR-1420,
+  [`adm_float_reference.h`](adm_float_reference.h)). `adm_tools.c`
+  exports `adm_border_s()`, `adm_csf_rfactor_s()`,
+  `adm_pool_bands_s()`, `adm_decouple_cos_1deg_sq_s()`,
+  `adm_divs_is_reciprocal_s()`, `adm_divs_reciprocal_estimate_s()`.
+  `float_adm_cuda.c` calls them instead of copying. Keep: the four
+  reductions (`adm_csf_den_scale_s[_p3]`, `adm_cm_s[_p3]`) end in
+  `adm_pool_bands_s()`; `rcp_s()` and the exported estimate share
+  `rcp_estimate_s()`. Twin copies drift: old CUDA copy of
+  `dwt_quant_step()` was 1-3 ulp off.
+  CPU float ADM = host-dependent: `DIVS()` on x86 (gcc / clang) builds
+  on the processor's `RCPSS` estimate, specified by error bound only
+  (`T-FLOAT-ADM-RECIPROCAL-ESTIMATE-HOST-DEPENDENT-2026-10-01`).
+  [`adm_reciprocal_model.{c,h}`](adm_reciprocal_model.h) = table model
+  of that estimate + host probe; device-compilable lookup. Twin types
+  that matter: gain limit `double`, `FLOAT_ONE_BY_30` / `_15` double
+  literals, threshold centre tap fifth, angle threshold
+  `(cos^2 * |o|^2) * |t|^2`, fp32 row + frame accumulators. Change any
+  -> change `cuda/float_adm/float_adm_device.h` same PR
+  (`test_float_adm_device_math` fails until it follows). SYCL / HIP /
+  Metal twins still old arithmetic:
+  `T-GPU-FLOAT-ADM-CPU-ARITHMETIC-2026-10-01`.
+
 - **`compute_adm` signature stays on fork's parameter
   list — Strategy E in Research-0024.** Netflix upstream
   `4dcc2f7c` adds 12 new parameters (`luminance_level`,

@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright 2016-2020 Netflix, Inc.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -25,6 +26,7 @@
 #endif
 
 #include "mem.h"
+#include "adm_float_reference.h"
 #include "adm_options.h"
 #include "adm_tools.h"
 
@@ -40,9 +42,19 @@
 
 #include <emmintrin.h>
 
+#define ADM_DIVS_IS_RECIPROCAL 1
+
+/* The processor's reciprocal estimate. RCPSS is specified by an error bound
+ * (1.5 * 2^-12 relative), not bit for bit, so its value is a property of the
+ * processor that runs it. */
+static inline float rcp_estimate_s(float x)
+{
+    return _mm_cvtss_f32(_mm_rcp_ss(_mm_load_ss(&x)));
+}
+
 static float rcp_s(float x)
 {
-    float xi = _mm_cvtss_f32(_mm_rcp_ss(_mm_load_ss(&x)));
+    float xi = rcp_estimate_s(x);
     return xi + xi * (1.0f - x * xi);
 }
 
@@ -51,6 +63,24 @@ static float rcp_s(float x)
 #else
 #define DIVS(n, d) ((n) / (d))
 #endif // __SSE2__
+
+#ifndef ADM_DIVS_IS_RECIPROCAL
+#define ADM_DIVS_IS_RECIPROCAL 0
+#endif
+
+bool adm_divs_is_reciprocal_s(void)
+{
+    return ADM_DIVS_IS_RECIPROCAL != 0;
+}
+
+float adm_divs_reciprocal_estimate_s(float x)
+{
+#if ADM_DIVS_IS_RECIPROCAL
+    return rcp_estimate_s(x);
+#else
+    return 1.0f / x;
+#endif
+}
 
 static const float dwt2_db2_coeffs_lo_s[4] = {0.482962913144690, 0.836516303737469,
                                               0.224143868041857, -0.129409522550921};
@@ -79,16 +109,9 @@ static float get_noise_constant(int w, int h, double weight, double adm_p_norm)
 /* Shared prologues                                                          */
 /* ------------------------------------------------------------------------- */
 
-typedef struct AdmBorderS {
-    int left;
-    int top;
-    int right;
-    int bottom;
-} AdmBorderS;
-
 /* Region that takes part in the reductions: `border_factor` of each frame
  * edge is excluded. */
-static AdmBorderS adm_border_s(int w, int h, double border_factor)
+AdmBorderS adm_border_s(int w, int h, double border_factor)
 {
     AdmBorderS b;
     b.left = (int)(w * border_factor - 0.5);
@@ -154,11 +177,11 @@ static void adm_csf_factor_overrides_s(int scale, double f1s0, double f1s1, doub
 /* CSF weights of DWT scale `scale` for the (h, v) bands (rfactor[0..1]) and
  * the (d) band (rfactor[2]). For ADM, scales go from 0 to 3 while the noise
  * floor paper numbers them 1 to 4 (finest to coarsest). */
-static void adm_csf_rfactor_s(int scale, double adm_norm_view_dist, int adm_ref_display_height,
-                              int adm_csf_mode, double luminance_level, double adm_csf_scale,
-                              double adm_csf_diag_scale, double adm_f1s0, double adm_f1s1,
-                              double adm_f1s2, double adm_f1s3, double adm_f2s0, double adm_f2s1,
-                              double adm_f2s2, double adm_f2s3, float rfactor[3])
+void adm_csf_rfactor_s(int scale, double adm_norm_view_dist, int adm_ref_display_height,
+                       int adm_csf_mode, double luminance_level, double adm_csf_scale,
+                       double adm_csf_diag_scale, double adm_f1s0, double adm_f1s1, double adm_f1s2,
+                       double adm_f1s3, double adm_f2s0, double adm_f2s1, double adm_f2s2,
+                       double adm_f2s3, float rfactor[3])
 {
     float factor1;
     float factor2;
@@ -194,6 +217,22 @@ static inline void adm_fold3_s(float inner[3], float accum[3])
         accum[k] += inner[k];
         inner[k] = 0;
     }
+}
+
+/* One scale's value from its three band accumulators (h, v, d): the p-norm
+ * root of each plus the noise floor of the reduced region, added in band
+ * order. The exponent is 1 / adm_p_norm rounded to float once, which at the
+ * default adm_p_norm = 3 is the float 1.0f / 3.0f. */
+float adm_pool_bands_s(const float accum[3], int region_w, int region_h, double adm_noise_weight,
+                       double adm_p_norm)
+{
+    const float noise_c = get_noise_constant(region_w, region_h, adm_noise_weight, adm_p_norm);
+    const float inv_p = 1.0f / adm_p_norm;
+    const float scale_h = powf(accum[0], inv_p) + noise_c;
+    const float scale_v = powf(accum[1], inv_p) + noise_c;
+    const float scale_d = powf(accum[2], inv_p) + noise_c;
+
+    return (scale_h + scale_v + scale_d);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -333,12 +372,19 @@ static inline float adm_decouple_band_s(float o, float t, float eps, int angle_f
     return rst;
 }
 
+/* cos(1 degree) squared, the angle test's threshold, as the fp32 the decouple
+ * compares with. */
+float adm_decouple_cos_1deg_sq_s(void)
+{
+    return cos(1.0 * M_PI / 180.0) * cos(1.0 * M_PI / 180.0);
+}
+
 void adm_decouple_s(const adm_dwt_band_t_s *ref, const adm_dwt_band_t_s *dis,
                     const adm_dwt_band_t_s *r, const adm_dwt_band_t_s *a, int w, int h,
                     int ref_stride, int dis_stride, int r_stride, int a_stride,
                     double border_factor, double adm_enhn_gain_limit)
 {
-    const float cos_1deg_sq = cos(1.0 * M_PI / 180.0) * cos(1.0 * M_PI / 180.0);
+    const float cos_1deg_sq = adm_decouple_cos_1deg_sq_s();
     const float eps = 1e-30;
 
     const int ref_px_stride = ref_stride / sizeof(float);
@@ -481,17 +527,8 @@ float adm_csf_den_scale_s(const adm_dwt_band_t_s *src, int orig_h, int scale, in
         adm_fold3_s(inner, accum);
     }
 
-    const float den_scale_h =
-        powf(accum[0], 1.0f / adm_p_norm) +
-        get_noise_constant(b.right - b.left, b.bottom - b.top, adm_noise_weight, adm_p_norm);
-    const float den_scale_v =
-        powf(accum[1], 1.0f / adm_p_norm) +
-        get_noise_constant(b.right - b.left, b.bottom - b.top, adm_noise_weight, adm_p_norm);
-    const float den_scale_d =
-        powf(accum[2], 1.0f / adm_p_norm) +
-        get_noise_constant(b.right - b.left, b.bottom - b.top, adm_noise_weight, adm_p_norm);
-
-    return (den_scale_h + den_scale_v + den_scale_d);
+    return adm_pool_bands_s(accum, b.right - b.left, b.bottom - b.top, adm_noise_weight,
+                            adm_p_norm);
 }
 
 /* Fast-path: p_norm == 3.0. Removes 3 inner-loop branches from the hot path.
@@ -536,13 +573,7 @@ float adm_csf_den_scale_s_p3(const adm_dwt_band_t_s *src, int orig_h, int scale,
         adm_fold3_s(inner, accum);
     }
 
-    const float noise_c =
-        get_noise_constant(b.right - b.left, b.bottom - b.top, adm_noise_weight, 3.0);
-    const float den_scale_h = powf(accum[0], 1.0f / 3.0f) + noise_c;
-    const float den_scale_v = powf(accum[1], 1.0f / 3.0f) + noise_c;
-    const float den_scale_d = powf(accum[2], 1.0f / 3.0f) + noise_c;
-
-    return (den_scale_h + den_scale_v + den_scale_d);
+    return adm_pool_bands_s(accum, b.right - b.left, b.bottom - b.top, adm_noise_weight, 3.0);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -760,14 +791,8 @@ float adm_cm_s(const adm_dwt_band_t_s *src, const adm_dwt_band_t_s *csf_f,
     }
     adm_fold3_s(inner, accum);
 
-    const float noise_c =
-        get_noise_constant(b.right - b.left, b.bottom - b.top, adm_noise_weight, adm_p_norm);
-    const float inv_p = 1.0f / adm_p_norm;
-    const float num_scale_h = powf(accum[0], inv_p) + noise_c;
-    const float num_scale_v = powf(accum[1], inv_p) + noise_c;
-    const float num_scale_d = powf(accum[2], inv_p) + noise_c;
-
-    return (num_scale_h + num_scale_v + num_scale_d);
+    return adm_pool_bands_s(accum, b.right - b.left, b.bottom - b.top, adm_noise_weight,
+                            adm_p_norm);
 }
 
 /* Fast-path: p_norm == 3.0. Removes 3 inner-loop branches from the hot path.
@@ -817,13 +842,7 @@ float adm_cm_s_p3(const adm_dwt_band_t_s *src, const adm_dwt_band_t_s *csf_f,
     }
     adm_fold3_s(inner, accum);
 
-    const float noise_c =
-        get_noise_constant(b.right - b.left, b.bottom - b.top, adm_noise_weight, 3.0);
-    const float num_scale_h = powf(accum[0], 1.0f / 3.0f) + noise_c;
-    const float num_scale_v = powf(accum[1], 1.0f / 3.0f) + noise_c;
-    const float num_scale_d = powf(accum[2], 1.0f / 3.0f) + noise_c;
-
-    return (num_scale_h + num_scale_v + num_scale_d);
+    return adm_pool_bands_s(accum, b.right - b.left, b.bottom - b.top, adm_noise_weight, 3.0);
 }
 
 /* ------------------------------------------------------------------------- */

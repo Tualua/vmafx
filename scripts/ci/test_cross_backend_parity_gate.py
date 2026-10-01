@@ -911,6 +911,7 @@ def test_exact_pair_is_cpu_and_listed_twins_only() -> None:
         "float_motion": frozenset({"cuda", "sycl", "hip"}),
         "psnr_hvs": frozenset(_EXACT_PSNR_HVS),
         "float_vif": frozenset({"cuda", "sycl"}),
+        "float_adm": frozenset({"cuda"}),
     } == EXACT_TWINS
     for backend in _EXACT_PSNR_HVS:
         assert is_exact_pair("psnr_hvs", "cpu", backend), backend
@@ -1072,6 +1073,28 @@ def test_ciede_cuda_cell_is_bounded_by_its_math_library_and_other_twins_are_not(
         gpu_id=None,
         backends=("cpu", "cuda"),
     ) == (DEFAULT_FP16_TOLERANCE, "fp16")
+
+
+def test_float_adm_cuda_cell_is_exact_and_other_twins_are_not() -> None:
+    """ADR-1420: only the CUDA twin computes the CPU's float_adm arithmetic."""
+
+    def cell(backend_a: str, backend_b: str) -> tuple[float, str]:
+        return resolve_cell_tolerance(
+            "float_adm",
+            fp16_features=[],
+            calibration=None,
+            gpu_id=None,
+            width=3840,
+            height=2160,
+            backends=(backend_a, backend_b),
+        )
+
+    assert cell("cpu", "cuda") == (0.0, EXACT_TWIN_SOURCE)
+    assert cell("cuda", "cpu") == (0.0, EXACT_TWIN_SOURCE)
+    for pair in (("cpu", "sycl"), ("cpu", "hip"), ("cuda", "sycl")):
+        tolerance, source = cell(*pair)
+        assert _close(tolerance, FEATURE_TOLERANCE["float_adm"]), pair
+        assert source == "default", pair
 
 
 def test_psnr_hvs_per_block_twin_keeps_area_scaled_tolerance() -> None:
