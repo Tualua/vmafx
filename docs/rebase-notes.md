@@ -1,6 +1,17 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## `integer_vif_cuda` resets its accumulators on the picture stream (2026-10-01)
+
+`fix/cuda-vif-accum-reset-order`, closes `T-UPSTREAM-1305-CUDA-VIF-ACCUM-STREAM-2026-10-01`.
+
+- `core/src/feature/cuda/integer_vif_cuda.c`, `vif_submit_plane()`: the
+  `cuMemsetD8Async` of `s->buf.accum_data` takes `vmaf_cuda_picture_get_stream(ref_pic)`
+  where upstream's `extract_fex_cuda()` takes `s->str`. **On rebase**: keep the
+  picture stream. Upstream still has the private stream (Netflix/vmaf#1305;
+  the patch there is the same one-argument change).
+- No public API, ABI, FFmpeg patch or Netflix golden-data impact.
+
 ## `float_adm_sycl` uses no scratch memory; the scratch ratchet list is empty (2026-10-01)
 
 `fix/sycl-float-adm-cpu-arithmetic`, closes `T-SYCL-XE-SCRATCH-WRONG-RESULTS-2026-10-01`.

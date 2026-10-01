@@ -1150,6 +1150,22 @@ with a new ADR and measurements, never by reviving ADR-0753 text.
 - Guard: `test_gpu_adm_bright_16bit_parity` in `test_gpu_adm_tiny_frames.c`
   (parity only; device wrap hides the UB itself).
 
+## Accumulator reset runs on the stream of the kernels that add into it (T-UPSTREAM-1305-CUDA-VIF-ACCUM-STREAM-2026-10-01)
+
+- Rule: `cuMemsetD8Async` of an accumulator + the kernels that `atomicAdd` into it
+  = same stream. Streams order only within themselves.
+- `integer_vif_cuda.c`: reset on the picture stream (scale 0 kernels run there),
+  scales 1-3 run on `s->str` after an event recorded behind reset + scale 0,
+  DtoH on `s->str`. Reset on `s->str` raced scale 0 under GPU contention: late
+  reset erased the first adds, vif scales wrong with >= 2 instances on one
+  device (Netflix/vmaf#1305).
+- Audited same rule, no change needed: motion SAD (`integer_motion_sad_cuda.c`),
+  `integer_adm_cuda.c` (all on `s->str`), `float_adm_cuda.c`,
+  `float_psnr_cuda.c`, `integer_psnr_cuda.c`, `integer_cambi_cuda.c`,
+  `kernel_template.h`.
+- Guard: `test_cuda_multi_instance` (4 instances, shared `CUcontext`, scores `==`
+  a single instance; fails without the fix on every run).
+
 ## Device-resident CAMBI and SpEED (ADR-1379, ADR-1380)
 
 - **One readback, one wait per frame.** `cambi_cuda`: 88-byte

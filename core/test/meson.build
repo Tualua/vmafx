@@ -3326,6 +3326,21 @@ test('test_cuda_motion_tiny_frames', test_cuda_motion_tiny_frames,
     suite : ['fast', 'gpu'],
     is_parallel : false)
 
+# T-UPSTREAM-1305-CUDA-VIF-ACCUM-STREAM-2026-10-01 (Netflix/vmaf#1305) — four
+# libvmaf CUDA instances on one CUcontext score the same pictures as one
+# instance does, bit for bit. integer_vif_cuda reset its accumulators on a
+# stream the scale 0 kernels did not wait for; skips (77) with no CUDA device.
+test_cuda_multi_instance = executable('test_cuda_multi_instance',
+    ['test.c', 'test_cuda_multi_instance.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_multi_instance', test_cuda_multi_instance,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
+
 # T-GPU-INTEGER-VIF-MIN-DIM-TWINS-2026-09-29 / ADR-1374 — vif_cuda declares its
 # 16-pixel minimum through the ADR-1324 gate: model dispatch falls back to the
 # CPU `vif` below it (bit-identical) and a direct request fails init. The

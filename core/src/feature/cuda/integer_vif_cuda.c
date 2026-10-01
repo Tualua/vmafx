@@ -731,14 +731,20 @@ static int vif_submit_scales(VifStateCuda *s, CudaFunctions *cu_f, VmafPicture *
 /* vif_submit_plane - one plane's four scales and its accumulator readback.
  *
  * HISS-04: the loop body of submit_fex_cuda, moved whole: the same memset,
- * waits, dispatches, event and readback, in the same order and on the same
- * streams.
+ * waits, dispatches, event and readback, in the same order.
+ *
+ * The accumulator reset runs on the picture stream, the stream of the scale 0
+ * kernels that add into it (Netflix/vmaf#1305). On the private
+ * stream it was ordered against nothing the scale 0 kernels wait for, so
+ * under GPU contention it could land after their first atomic adds and erase
+ * them. Scales 1 to 3 run on the private stream after an event recorded behind
+ * the reset and scale 0, and the readback runs there too.
  */
 static int vif_submit_plane(VifStateCuda *s, CudaFunctions *cu_f, VmafPicture *ref_pic,
                             VmafPicture *dist_pic, unsigned plane)
 {
-    CHECK_CUDA_RETURN(cu_f,
-                      cuMemsetD8Async(s->buf.accum_data->data, 0, sizeof(vif_accums) * 4, s->str));
+    CHECK_CUDA_RETURN(cu_f, cuMemsetD8Async(s->buf.accum_data->data, 0, sizeof(vif_accums) * 4,
+                                            vmaf_cuda_picture_get_stream(ref_pic)));
     CHECK_CUDA_RETURN(cu_f, cuStreamWaitEvent(vmaf_cuda_picture_get_stream(ref_pic),
                                               vmaf_cuda_picture_get_ready_event(dist_pic),
                                               CU_EVENT_WAIT_DEFAULT));
