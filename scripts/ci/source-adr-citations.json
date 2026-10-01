@@ -8758,15 +8758,14 @@
     "1420": {
       "sites": {
         "core/src/feature/adm_float_reference.h": 1,
-        "core/src/feature/adm_reciprocal_model.c": 1,
-        "core/src/feature/adm_reciprocal_model.h": 1,
         "core/src/feature/cuda/float_adm/float_adm_device.h": 1,
         "core/src/feature/cuda/float_adm/float_adm_score.cu": 1,
         "core/src/feature/cuda/float_adm_cuda.c": 3,
         "core/test/meson.build": 2,
-        "core/test/test_cuda_float_adm_exact_contract.py": 11,
+        "core/test/test_cuda_float_adm_exact_contract.py": 10,
         "core/test/test_cuda_float_adm_parity.c": 3,
-        "core/test/test_float_adm_device_math.c": 2
+        "core/test/test_float_adm_device_math.c": 1,
+        "core/test/test_float_adm_divides_contract.py": 1
       },
       "target": "1420-cuda-float-adm-cpu-arithmetic.md"
     },
@@ -8975,6 +8974,20 @@
         "scripts/ci/exact_twins.d/float_ssim_lcs.hip": 1
       },
       "target": "1441-hip-float-ssim-cpu-window-sums.md"
+    },
+    "1442": {
+      "sites": {
+        "core/src/feature/adm_float_reference.h": 1,
+        "core/src/feature/adm_options.h": 1,
+        "core/src/feature/adm_tools.c": 2,
+        "core/src/feature/cuda/float_adm/float_adm_device.h": 2,
+        "core/src/feature/cuda/float_adm_cuda.c": 1,
+        "core/test/meson.build": 2,
+        "core/test/test_cuda_float_adm_exact_contract.py": 1,
+        "core/test/test_float_adm_device_math.c": 2,
+        "core/test/test_float_adm_divides_contract.py": 3
+      },
+      "target": "1442-float-adm-reference-divides.md"
     },
     "1443": {
       "sites": {

@@ -57533,3 +57533,36 @@ ADR-1422).
 - No Netflix golden-data, public API or FFmpeg patch impact. The CPU
   extractor's scores are unchanged; `float_vif_cuda` measured bit-identical
   on an RTX 4090 after the split (48 of 48 and 50 of 50 frames).
+## ADR-1442 — float ADM divides; no reciprocal estimate (2026-10-02)
+
+`fix/float-adm-reference-divides`, Research-1442, ADR-1442.
+
+This is a deliberate divergence from upstream in two Netflix files. A sync
+must keep the fork's side of both:
+
+- `core/src/feature/adm_options.h`: upstream has
+  `#define ADM_OPT_RECIP_DIVISION`. The fork has a comment in its place and
+  no definition. Do not take the upstream line back.
+- `core/src/feature/adm_tools.c`: upstream has, under `__SSE2__` and that
+  macro, `#include <emmintrin.h>`, `rcp_s()` built on `_mm_rcp_ss()`, and
+  `#define DIVS(n, d) ((n) * rcp_s(d))`. The fork has one
+  `#define DIVS(n, d) ((n) / (d))` and an `#error` when the macro is defined.
+  Keep that block whole. If upstream changes how the decouple uses `DIVS()`,
+  port the change with the quotient.
+- `core/src/feature/adm_reciprocal_model.{c,h}` and the exports
+  `adm_divs_is_reciprocal_s()` / `adm_divs_reciprocal_estimate_s()`
+  (ADR-1420) are deleted. Nothing may bring them back; a twin divides with
+  its device's correctly rounded fp32 division.
+- `core/src/feature/cuda/float_adm/float_adm_device.h`: `fadm_divs(n, d)` is
+  `FADM_FDIV(n, d)`, `__fdiv_rn()` on the device. `float_adm_cuda.c` has no
+  probe, no table buffer and no upload.
+- Guards: `core/test/test_float_adm_divides_contract.py` (the reference,
+  every `*float_adm*` file under `core/src/feature/` and the CUDA flags in
+  `core/src/meson.build`) and `test_decouple_divides` in
+  `core/test/test_float_adm_device_math.c`. Both fail on upstream's code.
+- Scores: x86 `float_adm` moves by up to 1.3e-7 against upstream and against
+  earlier fork releases. The Netflix golden assertions hold unchanged
+  (271 passed); no file under `python/test/` is touched.
+- No public C API or FFmpeg patch impact. The SYCL, HIP and Metal twins are
+  untouched (`T-GPU-FLOAT-ADM-CPU-ARITHMETIC-2026-10-01`); an in-flight twin
+  that includes `adm_reciprocal_model.h` no longer builds and has to divide.

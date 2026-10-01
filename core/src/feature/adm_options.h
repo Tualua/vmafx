@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright 2016-2020 Netflix, Inc.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -30,8 +31,12 @@
 /* Whether to save intermediate results to files. */
 /* #define ADM_OPT_DEBUG_DUMP */
 
-/* Whether to perform division by reciprocal-multiplication. */
-#define ADM_OPT_RECIP_DIVISION
+/* Upstream defines ADM_OPT_RECIP_DIVISION here: division by multiplying with a
+ * reciprocal refined from the processor's RCPSS estimate. That estimate is
+ * specified by an error bound, not bit for bit, so float ADM's scores depended
+ * on the processor. The fork divides (ADR-1442): the decouple's quotient is
+ * the IEEE fp32 one on every host and compiler. Do not define the macro;
+ * adm_tools.c refuses to compile with it. */
 
 /* Enhancement gain imposed on adm, must be >= 1.0, where 1.0 means the gain is completely disabled */
 #define DEFAULT_ADM_ENHN_GAIN_LIMIT (100.0)

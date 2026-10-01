@@ -37,50 +37,13 @@
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 
-#ifdef __SSE2__
+/* The decouple's quotient is the IEEE fp32 one (ADR-1442). Upstream offers a
+ * reciprocal refined from the processor's RCPSS estimate here
+ * (ADM_OPT_RECIP_DIVISION), whose value differs between processors. */
 #ifdef ADM_OPT_RECIP_DIVISION
-
-#include <emmintrin.h>
-
-#define ADM_DIVS_IS_RECIPROCAL 1
-
-/* The processor's reciprocal estimate. RCPSS is specified by an error bound
- * (1.5 * 2^-12 relative), not bit for bit, so its value is a property of the
- * processor that runs it. */
-static inline float rcp_estimate_s(float x)
-{
-    return _mm_cvtss_f32(_mm_rcp_ss(_mm_load_ss(&x)));
-}
-
-static float rcp_s(float x)
-{
-    float xi = rcp_estimate_s(x);
-    return xi + xi * (1.0f - x * xi);
-}
-
-#define DIVS(n, d) ((n) * rcp_s(d))
-#endif //ADM_OPT_RECIP_DIVISION
-#else
+#error "ADM_OPT_RECIP_DIVISION is not supported: float ADM divides (ADR-1442)"
+#endif
 #define DIVS(n, d) ((n) / (d))
-#endif // __SSE2__
-
-#ifndef ADM_DIVS_IS_RECIPROCAL
-#define ADM_DIVS_IS_RECIPROCAL 0
-#endif
-
-bool adm_divs_is_reciprocal_s(void)
-{
-    return ADM_DIVS_IS_RECIPROCAL != 0;
-}
-
-float adm_divs_reciprocal_estimate_s(float x)
-{
-#if ADM_DIVS_IS_RECIPROCAL
-    return rcp_estimate_s(x);
-#else
-    return 1.0f / x;
-#endif
-}
 
 static const float dwt2_db2_coeffs_lo_s[4] = {0.482962913144690, 0.836516303737469,
                                               0.224143868041857, -0.129409522550921};

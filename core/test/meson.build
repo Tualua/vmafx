@@ -333,8 +333,7 @@ test('test_sycl_vif_float_sums_contract',
     timeout : 30,
 )
 
-# ADR-1420 — float_adm_cuda reproduces the CPU extractor bit for bit: the
-# decouple divides through the host's probed reciprocal estimate, the angle
+# ADR-1420 — float_adm_cuda reproduces the CPU extractor bit for bit: the angle
 # threshold, the gain and the two CSF constants have the reference's types and
 # association, every reduction is added row by row in fp32, and the weights,
 # the region, the pooling and the floor are the reference's own. Device-free;
@@ -355,6 +354,17 @@ test('test_cuda_float_adm_exact_contract',
 test('test_sycl_vif_exact_gain_contract',
     import('python').find_installation(),
     args : files('test_sycl_vif_exact_gain_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# ADR-1442 — float ADM divides: the decouple's quotient is the IEEE fp32 one in
+# the CPU reference and in float_adm_cuda, with no reciprocal estimate, probe
+# or table anywhere and no fast-math flag that would bring one back.
+# Device-free; the value check is test_float_adm_device_math.
+test('test_float_adm_divides_contract',
+    import('python').find_installation(),
+    args : files('test_float_adm_divides_contract.py'),
     suite : ['fast'],
     timeout : 30,
 )
@@ -4144,8 +4154,9 @@ test('test_float_adm_coverage', test_float_adm_coverage, suite : ['fast'])
 # ADR-1420 — the arithmetic float_adm_cuda's kernels run
 # (src/feature/cuda/float_adm/float_adm_device.h), compiled for the host and
 # compared bit for bit with adm_decouple_s(), adm_csf_s(),
-# adm_csf_den_scale_s() and adm_cm_s(), plus the reciprocal model against the
-# processor's own estimate. Device-free, so it runs in the fast suite of every
+# adm_csf_den_scale_s() and adm_cm_s(), plus the decouple against the IEEE
+# quotient on inputs where a reciprocal estimate differs (ADR-1442).
+# Device-free, so it runs in the fast suite of every
 # build, with or without CUDA. The header's host operators round like the
 # device only without FMA contraction (hence the flag), and adm_tools.c is
 # contraction-free by construction on x86-64 only (its baseline has no FMA),

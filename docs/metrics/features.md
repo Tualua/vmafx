@@ -463,6 +463,35 @@ modes 0–3 on CPU, CUDA, SYCL, HIP, and Metal. See
 [ADR-1316](../adr/1316-gpu-option-value-capability-fallback.md) and
 [ADR-1325](../adr/1325-integer-adm-barten-fixed-point-normalization.md).
 
+##### `float_adm` does not depend on the processor
+
+`float_adm` gives the same scores on every processor and with every compiler
+([ADR-1442](../adr/1442-float-adm-reference-divides.md)). One step of the
+metric, the decouple, divides the distorted wavelet coefficient by the
+reference one. Upstream Netflix forms that quotient on x86 from the
+processor's reciprocal-estimate instruction (`RCPSS`) and one correction
+step. The instruction is specified by an error bound, not bit for bit: its
+low bits differ between processor models, so the same pair of frames could
+score differently on two x86 machines, and differently again on ARM and
+under MSVC, which never used it. This fork divides.
+
+What this means when you use it:
+
+- `float_adm` scores from different machines can be compared and mixed
+  without a last-digit caveat.
+- Against earlier releases of this fork, and against upstream Netflix on
+  x86, `float_adm` scores move in the seventh decimal place. Measured on a
+  Ryzen 9 9950X3D: 147 of 791 scores changed, by at most 1.3e-7 (Netflix
+  576x324 at 8, 10, 12 and 16 bits, both 1920x1080 checkerboard pairs, 50
+  frames of 3840x2160). The `vmaf_float_v0.6.1`, `vmaf_float_v0.6.1neg` and
+  `vmaf_float_4k_v0.6.1` models, which take `float_adm` as an input, move by
+  up to 1.2e-5 on a frame and 2.7e-6 on a clip's mean. Builds for ARM and
+  MSVC builds are unchanged: they divided already.
+- The default models (`vmaf_v0.6.1` and the other fixed-point ones) do not
+  use `float_adm` and do not change.
+- It is not slower. The extractor takes the same time or a little less at
+  576x324, 1920x1080 and 3840x2160 with the scalar, AVX2 and AVX-512 paths.
+
 ##### `float_adm` on CUDA returns the CPU's values
 
 `float_adm_cuda` gives the same number as `--backend cpu --feature float_adm`
@@ -480,14 +509,10 @@ What this means when you use it:
 - For content with almost no reference detail, scored with
   `adm_noise_weight=0`, the twin used to report `adm2 = 1` where the CPU
   reports 0. It now reports the CPU's value.
-- "The CPU" is the CPU of the same machine. On x86 the float ADM divides with
-  the processor's reciprocal-estimate instruction (`RCPSS`), whose low bits
-  are not the same on every processor model, so `float_adm` itself can differ
-  in its last digits between two machines. `float_adm_cuda` measures the
-  host's instruction when the extractor starts (about 10 ms) and reproduces
-  it. If it cannot, it logs a warning that begins
-  `float_adm_cuda: this processor's reciprocal estimate is neither`, and its
-  scores are close to `float_adm`'s instead of equal.
+- "The CPU" is any CPU. See
+  [`float_adm` does not depend on the processor](#float_adm-does-not-depend-on-the-processor)
+  below: the twin divides as the CPU extractor does, and no longer measures
+  anything of the host when it starts.
 - One option is not identical: with `adm_p_norm` other than 1 or 3 the twin
   is within 1.1e-7 of the CPU, because the two sides raise each term with
   different `powf` implementations.

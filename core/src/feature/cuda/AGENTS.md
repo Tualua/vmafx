@@ -977,14 +977,12 @@ with a new ADR and measurements, never by reviving ADR-0753 text.
   only with both tests green.
 - **`float_adm_cuda` = CPU bits** (ADR-1420, `EXACT_TWINS`). Each alone
   breaks identity:
-  (1) `fadm_divs()` = `adm_tools.c::DIVS()`: x86 CPU multiplies by
-  `rcp_s()`, a Newton step on the processor's `RCPSS` estimate (NOT
-  `t / o`, differs for 2.6M of 8.4M mantissas). Device evaluates the
-  HOST's estimate: `adm_reciprocal_model_probe()` (host, init) fills +
-  proves a 4096-entry table, `adm_reciprocal_model_bits()` (integer
-  only) reads it. Mode from probe, never hardcoded:
-  `ADM_DIVISION_RECIPROCAL_TABLE` / `_IEEE` (CPU build divides: MSVC,
-  ARM) / `_RECIPROCAL_IEEE` (model failed; logs when not exact);
+  (1) `fadm_divs()` = `adm_tools.c::DIVS()` = IEEE fp32 quotient since
+  ADR-1442 (CPU divides on every host). Device: `FADM_FDIV` =
+  `__fdiv_rn()`, never plain `/` (flag-proof), never a reciprocal, no
+  host probe, no table (`adm_reciprocal_model.*` deleted). No
+  `--use_fast_math` / `-prec-div=false` in CUDA flags.
+  `test_float_adm_divides_contract.py` guards;
   (2) angle threshold `(cos^2 * |o|^2) * |t|^2`, that association
   (1.3e-5 alone); `cos^2` from `adm_decouple_cos_1deg_sq_s()`;
   (3) gain limit fp64 kernel argument, product fp64, rounded once;
@@ -1003,14 +1001,13 @@ with a new ADR and measurements, never by reviving ADR-0753 text.
   1-3 ulp off on 4 of 8 default weights), `adm_border_s()`,
   `adm_pool_bands_s()`; floor of frame sums `1e-10`, not `1e-2`.
   Not exact, by design: `adm_p_norm` other than 1 or 3 (device `powf`
-  vs glibc, 1.1e-7). Frames < 17x17: CPU reads outside its bands
-  (`T-FLOAT-ADM-TINY-FRAME-BAND-READS-2026-10-01`); device clamps
-  (`fadm_before()`, `fadm_mirror()`), no parity there. Mirror list, same
+  vs glibc, 1.1e-7). Frames < 17x17: CPU and twin both refuse
+  (`adm_frame_size_check()`). Mirror list, same
   PR when CPU side changes: `adm_decouple_s()`, `adm_csf_s()`,
   `adm_cm_thresh3x3_s()`, `adm_csf_den_scale_s()`, `adm_cm_s()`,
-  `rcp_s()`, `ADM_OPT_AVOID_ATAN`, `compute_adm()` floor. Guards:
+  `DIVS()`, `ADM_OPT_AVOID_ATAN`, `compute_adm()` floor. Guards:
   `test_float_adm_device_math` (device-free, bit compare vs those
-  routines + reciprocal model vs host instruction),
+  routines + decouple vs IEEE quotient),
   `test_cuda_float_adm_exact_contract.py`,
   `test_cuda_float_adm_parity` (`==`, 15 cases + `apn` tolerance case).
   Throughput debt: `T-CUDA-FLOAT-ADM-EXACT-THROUGHPUT-2026-10-01`; tune

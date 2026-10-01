@@ -537,9 +537,8 @@ linked AGENTS.md before resolving conflicts.
   CSF, the masking threshold and the reduction terms of `adm_tools.c`
   operation for operation (the gain limit and the 1/30 and 1/15 constants in
   fp64, the angle threshold as `(cos^2 * |o|^2) * |t|^2`), and its division is
-  the reference's: a reciprocal refined from the host processor's `RCPSS`
-  estimate, which `core/src/feature/adm_reciprocal_model.c` probes into a
-  table. `float_adm_row_sums` adds each row in one thread and the host adds
+  the reference's, the IEEE fp32 quotient (`__fdiv_rn()`; see the next entry).
+  `float_adm_row_sums` adds each row in one thread and the host adds
   the rows, both in fp32. The weights, the reduced region, the pooling and the
   angle constant come from `adm_tools.c` itself through
   `core/src/feature/adm_float_reference.h`; keep those exports, and keep the
@@ -552,6 +551,20 @@ linked AGENTS.md before resolving conflicts.
   tolerance 0 (`EXACT_TWINS`). See
   [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
 
+- **Float ADM divides ([ADR-1442](../adr/1442-float-adm-reference-divides.md))**:
+  `core/src/feature/adm_options.h` does not define `ADM_OPT_RECIP_DIVISION`
+  and `core/src/feature/adm_tools.c` has one `DIVS()`, the plain quotient,
+  with an `#error` if the macro is defined. Upstream Netflix defines the macro
+  and multiplies by a reciprocal refined from the processor's `RCPSS`
+  estimate, which made the scores depend on the processor. An upstream sync
+  that touches either file keeps the fork's side of both hunks: no macro, no
+  `rcp_s()`, no `<emmintrin.h>` in `adm_tools.c`. No twin may bring a
+  reciprocal estimate, a probe of the host or a table of it back, and no
+  CUDA flag may relax the division (`--use_fast_math`, `-prec-div=false`).
+  `core/test/test_float_adm_divides_contract.py` scans the reference, every
+  `float_adm` file of every backend and `core/src/meson.build`;
+  `core/test/test_float_adm_device_math.c` checks the value on inputs where
+  the estimate and the quotient differ.
 - **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:
   [ADR-0922](../adr/0922-coverage-ratchet-aggressive.md). Absolute
   floors live in `scripts/ci/coverage-check.sh`

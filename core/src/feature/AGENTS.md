@@ -1013,18 +1013,11 @@ feature/
 - **Float ADM reference exports for GPU twins** (ADR-1420,
   [`adm_float_reference.h`](adm_float_reference.h)). `adm_tools.c`
   exports `adm_border_s()`, `adm_csf_rfactor_s()`,
-  `adm_pool_bands_s()`, `adm_decouple_cos_1deg_sq_s()`,
-  `adm_divs_is_reciprocal_s()`, `adm_divs_reciprocal_estimate_s()`.
+  `adm_pool_bands_s()`, `adm_decouple_cos_1deg_sq_s()`.
   `float_adm_cuda.c` calls them instead of copying. Keep: the four
   reductions (`adm_csf_den_scale_s[_p3]`, `adm_cm_s[_p3]`) end in
-  `adm_pool_bands_s()`; `rcp_s()` and the exported estimate share
-  `rcp_estimate_s()`. Twin copies drift: old CUDA copy of
-  `dwt_quant_step()` was 1-3 ulp off.
-  CPU float ADM = host-dependent: `DIVS()` on x86 (gcc / clang) builds
-  on the processor's `RCPSS` estimate, specified by error bound only
-  (`T-FLOAT-ADM-RECIPROCAL-ESTIMATE-HOST-DEPENDENT-2026-10-01`).
-  [`adm_reciprocal_model.{c,h}`](adm_reciprocal_model.h) = table model
-  of that estimate + host probe; device-compilable lookup. Twin types
+  `adm_pool_bands_s()`. Twin copies drift: old CUDA copy of
+  `dwt_quant_step()` was 1-3 ulp off. Twin types
   that matter: gain limit `double`, `FLOAT_ONE_BY_30` / `_15` double
   literals, threshold centre tap fifth, angle threshold
   `(cos^2 * |o|^2) * |t|^2`, fp32 row + frame accumulators. Change any
@@ -1032,6 +1025,23 @@ feature/
   (`test_float_adm_device_math` fails until it follows). SYCL / HIP /
   Metal twins still old arithmetic:
   `T-GPU-FLOAT-ADM-CPU-ARITHMETIC-2026-10-01`.
+
+- **Float ADM DIVIDES; no reciprocal estimate, ever** (ADR-1442,
+  fork-local, diverges from upstream). `adm_options.h`: NO
+  `#define ADM_OPT_RECIP_DIVISION`. `adm_tools.c`: one
+  `#define DIVS(n, d) ((n) / (d))` + `#error` when macro defined; no
+  `rcp_s()`, no `_mm_rcp_ss`, no `<emmintrin.h>`. Reason: upstream
+  `t * rcp_s(o)` builds on `RCPSS`, specified by error bound only ->
+  scores = property of processor (Zen 5: 2.6M of 8.4M mantissas off
+  quotient), different again on MSVC / ARM (never used instruction).
+  Quotient = IEEE fp32 everywhere. Upstream sync touching either file:
+  keep fork side of both hunks. Twins: correctly rounded fp32 division
+  (`__fdiv_rn()` CUDA), no host probe, no table;
+  `adm_reciprocal_model.{c,h}` deleted, stay deleted. Golden gate held
+  (271 passed). Guards: `test_float_adm_divides_contract.py` (reference,
+  every `*float_adm*` file of every backend, `core/src/meson.build`
+  flags), `test_float_adm_device_math` (`test_decouple_divides`: four
+  inputs where estimate != quotient on Zen 5).
 
 - **`float_adm` refuses frames below 17x17** (fork-local; upstream has no
   check). `float_adm.c::init()` -> `adm_frame_size_check("float_adm", w, h)`

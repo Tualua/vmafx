@@ -12,11 +12,8 @@
  *  for bit. Everything below is adm_tools.c written out operation for
  *  operation, in the reference's types:
  *
- *   - fadm_divs() is DIVS(). On x86 the reference multiplies by a reciprocal
- *     refined from the processor's RCPSS estimate; the device evaluates the
- *     host's estimate from the table adm_reciprocal_model_probe() built
- *     (adm_reciprocal_model.h). Where the reference build divides, so does
- *     the device.
+ *   - fadm_divs() is DIVS(): the IEEE fp32 quotient on both sides (ADR-1442;
+ *     `__fdiv_rn()` on the device, whatever the compiler's division flags).
  *   - fadm_angle_flag() and fadm_decouple_band() are adm_angle_flag_s() and
  *     adm_decouple_band_s(): the threshold is (cos^2 * |o|^2) * |t|^2 in that
  *     association, the clamp is the reference's two ternaries, and the
@@ -99,8 +96,6 @@ static inline float fadm_host_from_bits(uint32_t bits)
 }
 #endif
 
-#include "../../adm_reciprocal_model.h"
-
 /* adm_tools.c's constants, in its spelling: double literals. FLOAT_ONE_BY_30
  * and FLOAT_ONE_BY_15 stay fp64 where they are used; the decouple's epsilon is
  * `const float eps = 1e-30`. */
@@ -136,10 +131,9 @@ typedef struct FloatAdmCudaBands {
 
 typedef struct FloatAdmCudaDecoupleArgs {
     FloatAdmCudaBands bands;
-    uint64_t rcp_table;         /* uint32_t[ADM_RECIPROCAL_TABLE_SIZE] */
     double adm_enhn_gain_limit; /* fp64, like the reference's argument */
     float cos_1deg_sq;
-    uint32_t division; /* ADM_DIVISION_* */
+    uint32_t pad_;
 } FloatAdmCudaDecoupleArgs;
 
 typedef struct FloatAdmCudaTermArgs {
@@ -211,22 +205,10 @@ FADM_HD float fadm_abs(float x)
     return FADM_FROM_BITS(FADM_BITS(x) & 0x7fffffffu);
 }
 
-/* DIVS(n, d). */
-FADM_HD float fadm_divs(uint32_t division, const uint32_t *rcp_table, float n, float d)
+/* DIVS(n, d): the IEEE fp32 quotient (ADR-1442). */
+FADM_HD float fadm_divs(float n, float d)
 {
-    if (division == ADM_DIVISION_IEEE)
-        return FADM_FDIV(n, d);
-
-    float xi;
-    if (division == ADM_DIVISION_RECIPROCAL_TABLE) {
-        xi = FADM_FROM_BITS(adm_reciprocal_model_bits(rcp_table, FADM_BITS(d)));
-    } else {
-        xi = FADM_FDIV(1.0f, d);
-    }
-    /* rcp_s(): xi + xi * (1.0f - d * xi) */
-    const float residual = FADM_FSUB(1.0f, FADM_FMUL(d, xi));
-    const float rcp = FADM_FADD(xi, FADM_FMUL(xi, residual));
-    return FADM_FMUL(n, rcp);
+    return FADM_FDIV(n, d);
 }
 
 /* adm_angle_flag_s() with ADM_OPT_AVOID_ATAN: the angle between (oh, ov) and
@@ -242,10 +224,10 @@ FADM_HD int fadm_angle_flag(float oh, float ov, float th, float tv, float cos_1d
 }
 
 /* adm_decouple_band_s(): the restored signal of one band. */
-FADM_HD float fadm_decouple_band(const FloatAdmCudaDecoupleArgs *a, const uint32_t *rcp_table,
-                                 float o, float t, int angle_flag)
+FADM_HD float fadm_decouple_band(const FloatAdmCudaDecoupleArgs *a, float o, float t,
+                                 int angle_flag)
 {
-    float k = fadm_divs(a->division, rcp_table, t, FADM_FADD(o, FADM_EPS));
+    float k = fadm_divs(t, FADM_FADD(o, FADM_EPS));
     k = k < 0.0f ? 0.0f : (k > 1.0f ? 1.0f : k);
     float rst = FADM_FMUL(k, o);
 
@@ -278,11 +260,10 @@ typedef struct FloatAdmCsfSample {
 
 /* adm_decouple_s() and both adm_csf_s() calls of compute_adm() for band
  * `band` of one sample. */
-FADM_HD FloatAdmCsfSample fadm_decouple_csf(const FloatAdmCudaDecoupleArgs *a,
-                                            const uint32_t *rcp_table, int band, float o, float t,
-                                            int angle_flag)
+FADM_HD FloatAdmCsfSample fadm_decouple_csf(const FloatAdmCudaDecoupleArgs *a, int band, float o,
+                                            float t, int angle_flag)
 {
-    const float rst = fadm_decouple_band(a, rcp_table, o, t, angle_flag);
+    const float rst = fadm_decouple_band(a, o, t, angle_flag);
     const float add = FADM_FSUB(t, rst);
     FloatAdmCsfSample c;
     c.csf_a = FADM_FMUL(a->bands.rfactor[band], add);

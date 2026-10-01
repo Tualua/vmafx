@@ -1551,6 +1551,7 @@ nav:
         - "ADR-1438: hip-ssim-cpu-frame-sum": adr/1438-hip-ssim-cpu-frame-sum.md
         - "ADR-1440: hip-float-psnr-exact-block-sums": adr/1440-hip-float-psnr-exact-block-sums.md
         - "ADR-1441: hip-float-ssim-cpu-window-sums": adr/1441-hip-float-ssim-cpu-window-sums.md
+        - "ADR-1442: float-adm-reference-divides": adr/1442-float-adm-reference-divides.md
         - "ADR-1443: sycl-ssim-cpu-arithmetic": adr/1443-sycl-ssim-cpu-arithmetic.md
         - "ADR-1444: hip-float-vif-cpu-arithmetic": adr/1444-hip-float-vif-cpu-arithmetic.md
       - "By tag":

@@ -6,9 +6,9 @@
 The CPU extractor (``float_adm.c`` / ``adm.c`` / ``adm_tools.c``) fixes six
 things a twin has to copy to return its bits:
 
-- the decouple divides by multiplying with a reciprocal refined from the
-  processor's RCPSS estimate, which the device evaluates from a table the
-  host probes;
+- the decouple divides: the IEEE fp32 quotient on both sides since ADR-1442
+  (``test_float_adm_divides_contract.py`` pins that one, for the CPU and the
+  twin together);
 - the angle test's threshold is ``(cos^2 * |o|^2) * |t|^2`` in that
   association, with ``cos^2`` the reference's own constant;
 - the enhancement gain limit is a ``double`` and is applied in fp64;
@@ -46,12 +46,6 @@ BLOCK_REDUCTION = re.compile(r"__shfl_\w+\s*\(|\batomicAdd\s*\(")
 # cos(1 degree)^2 or one of the two CSF constants written as an fp32 literal.
 FP32_CONSTANT = re.compile(r"\b0\.(?:9996954\d*|0333333351|0666666701)f\b")
 
-RECIPROCAL = (
-    "xi = FADM_FROM_BITS(adm_reciprocal_model_bits(rcp_table, FADM_BITS(d)));",
-    "const float residual = FADM_FSUB(1.0f, FADM_FMUL(d, xi));",
-    "const float rcp = FADM_FADD(xi, FADM_FMUL(xi, residual));",
-    "return FADM_FMUL(n, rcp);",
-)
 ANGLE_THRESHOLD = "const float rhs = FADM_FMUL(FADM_FMUL(cos_1deg_sq, o_mag_sq), t_mag_sq);"
 FP64_GAIN = "const double gained = FADM_DMUL((double)rst, a->adm_enhn_gain_limit);"
 FP64_FILTER = "return (float)FADM_DMUL(FADM_ONE_BY_30, (double)fadm_abs(csf));"
@@ -73,25 +67,6 @@ def _sources() -> dict[str, str]:
         name: (FEATURE_ROOT / name).read_text(encoding="utf-8")
         for name in (HOST, KERNEL, DEVICE, CPU, CPU_OPTIONS)
     }
-
-
-def _division_failures(sources: dict[str, str]) -> list[str]:
-    failures: list[str] = []
-    device = _code(sources[DEVICE])
-    for piece in RECIPROCAL:
-        if piece not in device:
-            failures.append(f"{DEVICE}: DIVS() is no longer the refined reciprocal ({piece})")
-    host = _code(sources[HOST])
-    if "adm_reciprocal_model_probe(&s->division);" not in host:
-        failures.append(f"{HOST}: the division model is no longer probed on the host")
-    if ".division = s->division.division," not in host:
-        failures.append(f"{HOST}: the probed division mode does not reach the decouple kernel")
-    cpu = _code(sources[CPU])
-    if "float xi = rcp_estimate_s(x);" not in cpu or "return rcp_estimate_s(x);" not in cpu:
-        failures.append(
-            f"{CPU}: rcp_s() and adm_divs_reciprocal_estimate_s() no longer share one estimate"
-        )
-    return failures
 
 
 def _decouple_failures(sources: dict[str, str]) -> list[str]:
@@ -176,8 +151,7 @@ def _reference_failures(sources: dict[str, str]) -> list[str]:
 
 def _contract_failures(sources: dict[str, str]) -> list[str]:
     return (
-        _division_failures(sources)
-        + _decouple_failures(sources)
+        _decouple_failures(sources)
         + _threshold_failures(sources)
         + _reduction_failures(sources)
         + _reference_failures(sources)
@@ -195,17 +169,6 @@ def _planted(name: str, old: str, new: str) -> list[str]:
 class FloatAdmCudaExactContract(unittest.TestCase):
     def test_sources_satisfy_the_contract(self) -> None:
         self.assertEqual(_contract_failures(_sources()), [])
-
-    def test_ieee_division_is_detected(self) -> None:
-        # The pre-ADR-1420 `k = t / (o + eps)`.
-        failures = _planted(DEVICE, "return FADM_FMUL(n, rcp);", "return FADM_FDIV(n, d);")
-        self.assertTrue(any("refined reciprocal" in item for item in failures))
-
-    def test_unprobed_division_is_detected(self) -> None:
-        failures = _planted(
-            HOST, ".division = s->division.division,", ".division = ADM_DIVISION_IEEE,"
-        )
-        self.assertTrue(any("does not reach the decouple kernel" in item for item in failures))
 
     def test_angle_threshold_association_is_detected(self) -> None:
         # The pre-ADR-1420 `FADM_COS_1DEG_SQ * (o_mag * t_mag)`.

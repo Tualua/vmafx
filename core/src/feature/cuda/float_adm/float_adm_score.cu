@@ -210,7 +210,6 @@ __global__ void float_adm_decouple_csf(const FloatAdmCudaDecoupleArgs a)
 
     const float *ref_band = reinterpret_cast<const float *>(bd->ref_band);
     const float *dis_band = reinterpret_cast<const float *>(bd->dis_band);
-    const uint32_t *rcp_table = reinterpret_cast<const uint32_t *>(a.rcp_table);
     float *csf_a = reinterpret_cast<float *>(bd->csf_a);
     float *csf_fa = reinterpret_cast<float *>(bd->csf_fa);
     float *csf_r = reinterpret_cast<float *>(bd->csf_r);
@@ -228,7 +227,7 @@ __global__ void float_adm_decouple_csf(const FloatAdmCudaDecoupleArgs a)
 
 #pragma unroll
     for (int b = 0; b < FADM_BANDS; b++) {
-        const FloatAdmCsfSample c = fadm_decouple_csf(&a, rcp_table, b, o[b], t[b], angle_flag);
+        const FloatAdmCsfSample c = fadm_decouple_csf(&a, b, o[b], t[b], angle_flag);
         const size_t idx = fadm_band_index(b, gy, gx, bd->buf_stride, bd->half_h);
         csf_a[idx] = c.csf_a;
         csf_fa[idx] = c.csf_fa;

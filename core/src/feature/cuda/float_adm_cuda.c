@@ -28,7 +28,6 @@
 #include "feature/adm_csf_fixed_point.h"
 #include "feature/adm_float_reference.h"
 #include "feature/adm_options.h"
-#include "feature/adm_reciprocal_model.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
@@ -80,7 +79,6 @@ typedef struct {
     float rfactor[FADM_SCALES][FADM_BANDS];
     AdmBorderS region[FADM_SCALES];
     float cos_1deg_sq;
-    AdmReciprocalModel division;
 
     /* Stream + event pair owned by `cuda/kernel_template.h` lifecycle
      * (ADR-0246). Multi-stage DWT + CSF pipeline state stays outside
@@ -103,7 +101,6 @@ typedef struct {
     VmafCudaBuffer *csf_fa;
     VmafCudaBuffer *csf_r;
     VmafCudaBuffer *csf_fr;
-    VmafCudaBuffer *rcp_table;
     /* Per-sample terms of the scale in flight, then the per-row sums of all
      * four scales (row_offset[] floats into `rows`). */
     VmafCudaBuffer *terms;
@@ -297,7 +294,6 @@ static int float_adm_release_buffers(VmafFeatureExtractor *fex, FloatAdmStateCud
     float_adm_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->csf_fa));
     float_adm_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->csf_r));
     float_adm_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->csf_fr));
-    float_adm_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->rcp_table));
     float_adm_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->terms));
     float_adm_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->rows));
     float_adm_preserve_error(
@@ -331,9 +327,9 @@ static int float_adm_init_unwind(VmafFeatureExtractor *fex, FloatAdmStateCuda *s
  * twin supports the weights ignore adm_csf_scale / adm_csf_diag_scale, as on
  * the CPU (ADR-1214).
  *
- * The division model is probed on the host: the reference's quotient is
- * built on the processor's reciprocal estimate, which the device then
- * evaluates from the probed table.
+ * The decouple's division needs nothing from the host: the reference divides
+ * and the device divides (`__fdiv_rn()`), both the IEEE fp32 quotient
+ * (ADR-1442).
  */
 static void float_adm_init_reference(FloatAdmStateCuda *s)
 {
@@ -343,13 +339,6 @@ static void float_adm_init_reference(FloatAdmStateCuda *s)
                           -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, s->rfactor[scale]);
     }
     s->cos_1deg_sq = adm_decouple_cos_1deg_sq_s();
-    adm_reciprocal_model_probe(&s->division);
-    if (!s->division.reproduces_reference) {
-        vmaf_log(VMAF_LOG_LEVEL_WARNING,
-                 "float_adm_cuda: this processor's reciprocal estimate is neither a table of "
-                 "its top mantissa bits nor the IEEE reciprocal; scores are close to "
-                 "float_adm's, not bit-identical\n");
-    }
 }
 
 /* float_adm_resolve_module - load the fatbin and look up every kernel. The
@@ -414,8 +403,6 @@ static int float_adm_alloc_reduction_buffers(VmafFeatureExtractor *fex, FloatAdm
         ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->rows, row_bytes);
     if (!ret)
         ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->rows_host, row_bytes);
-    if (!ret)
-        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->rcp_table, sizeof(s->division.table));
     return ret;
 }
 
@@ -457,19 +444,6 @@ static int float_adm_alloc_device_buffers(VmafFeatureExtractor *fex, FloatAdmSta
     return ret;
 }
 
-/* float_adm_upload_division - the reciprocal table the decouple kernel reads.
- * Init only, so the copy may be synchronous. */
-static int float_adm_upload_division(VmafFeatureExtractor *fex, FloatAdmStateCuda *s)
-{
-    CudaFunctions *cu_f = fex->cu_state->f;
-    CHECK_CUDA_RETURN(cu_f, cuCtxPushCurrent(fex->cu_state->ctx));
-    const CUresult copied =
-        cu_f->cuMemcpyHtoD(s->rcp_table->data, s->division.table, sizeof(s->division.table));
-    const CUresult popped = cu_f->cuCtxPopCurrent(NULL);
-    const int err = vmaf_cuda_result_to_errno((int)copied);
-    return err ? err : vmaf_cuda_result_to_errno((int)popped);
-}
-
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -497,8 +471,6 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         err = float_adm_load_kernels(fex, s);
     if (!err)
         err = float_adm_alloc_device_buffers(fex, s, w, h, bpc);
-    if (!err)
-        err = float_adm_upload_division(fex, s);
     if (err)
         return float_adm_init_unwind(fex, s, err);
 
@@ -709,10 +681,9 @@ static int fadm_launch_decouple(CudaFunctions *cu_f, const FloatAdmStateCuda *s,
 {
     FloatAdmCudaDecoupleArgs args = {
         .bands = fadm_bands(s, p),
-        .rcp_table = (uint64_t)s->rcp_table->data,
         .adm_enhn_gain_limit = s->adm_enhn_gain_limit,
         .cos_1deg_sq = s->cos_1deg_sq,
-        .division = s->division.division,
+        .pad_ = 0u,
     };
     void *params[] = {&args};
     const unsigned gx = ((unsigned)p->half_w + FADM_BX - 1u) / FADM_BX;

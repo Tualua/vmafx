@@ -13,8 +13,9 @@
  * decouple, term and row-sum kernels runs. This test compiles the same header
  * for the host and checks it against adm_tools.c, bit for bit:
  *
- *   - the reciprocal model against the estimate the reference's division is
- *     built on, over inputs the probe did not sample;
+ *   - the reference's decouple against the IEEE quotient, on inputs where a
+ *     reciprocal refined from the processor's RCPSS estimate gives another
+ *     float (ADR-1442: the reference divides, on every host);
  *   - fadm_decouple_csf() against adm_decouple_s() followed by adm_csf_s(),
  *     sample by sample, over bands that reach every branch of the decouple
  *     (aligned and opposed vectors, enhancement above and below the gain
@@ -26,10 +27,9 @@
  *   - adm_pool_bands_s() against the cube-root form the reference spelled out
  *     before it had one pooling routine.
  *
- * An IEEE quotient, an fp32 gain or fp32 1/30 and 1/15 constants, a threshold
- * summed in another order, cos^2 * (|o|^2 * |t|^2) and a sum per tile each
- * fail at least one of these, which is how the twin differed from the CPU
- * before ADR-1420. A host replay cannot see the device's scheduling, its
+ * A reciprocal in place of the quotient, an fp32 gain or fp32 1/30 and 1/15
+ * constants, a threshold summed in another order, cos^2 * (|o|^2 * |t|^2) and
+ * a sum per tile each fail at least one of these. A host replay cannot see the device's scheduling, its
  * compiler or its DWT; test_cuda_float_adm_parity covers those on an NVIDIA
  * device.
  */
@@ -45,7 +45,6 @@
 
 #include "feature/adm_float_reference.h"
 #include "feature/adm_options.h"
-#include "feature/adm_reciprocal_model.h"
 #include "feature/adm_tools.h"
 #include "feature/cuda/float_adm/float_adm_device.h"
 
@@ -54,7 +53,6 @@
 #define MAX_W 136
 #define MAX_H 80
 #define BAND_FLOATS ((size_t)MAX_W * MAX_H)
-#define RECIPROCAL_SAMPLES 2000000u
 #define DECOUPLE_TRIALS 64
 
 /* Deterministic generator: the same inputs on every host. */
@@ -98,7 +96,6 @@ typedef struct Scale {
     float *cpu[6]; /* decouple_r, decouple_a, csf_a, csf_fa, csf_r, csf_fr of the reference */
     float *terms;
     float *rows;
-    AdmReciprocalModel division;
 } Scale;
 
 static int scale_alloc(Scale *s)
@@ -118,7 +115,6 @@ static int scale_alloc(Scale *s)
         s->cpu[i] = calloc(3u * BAND_FLOATS, sizeof(float));
         ok = ok && s->cpu[i];
     }
-    adm_reciprocal_model_probe(&s->division);
     return ok ? 0 : -1;
 }
 
@@ -204,7 +200,7 @@ typedef struct Options {
     int scale;
 } Options;
 
-static FloatAdmCudaDecoupleArgs decouple_args(const Scale *s, int w, int h, const Options *o)
+static FloatAdmCudaDecoupleArgs decouple_args(int w, int h, const Options *o)
 {
     FloatAdmCudaDecoupleArgs a;
     memset(&a, 0, sizeof(a));
@@ -217,7 +213,6 @@ static FloatAdmCudaDecoupleArgs decouple_args(const Scale *s, int w, int h, cons
                       a.bands.rfactor);
     a.adm_enhn_gain_limit = o->gain_limit;
     a.cos_1deg_sq = adm_decouple_cos_1deg_sq_s();
-    a.division = s->division.division;
     return a;
 }
 
@@ -237,8 +232,7 @@ static void replay_decouple(Scale *s, const FloatAdmCudaDecoupleArgs *a)
             }
             const int flag = fadm_angle_flag(o[0], o[1], t[0], t[1], a->cos_1deg_sq);
             for (int b = 0; b < FADM_BANDS; b++) {
-                const FloatAdmCsfSample c =
-                    fadm_decouple_csf(a, s->division.table, b, o[b], t[b], flag);
+                const FloatAdmCsfSample c = fadm_decouple_csf(a, b, o[b], t[b], flag);
                 const size_t idx = fadm_band_index(b, y, x, w, h);
                 s->csf_a[idx] = c.csf_a;
                 s->csf_fa[idx] = c.csf_fa;
@@ -353,43 +347,82 @@ static void replay_scale(Scale *s, const FloatAdmCudaDecoupleArgs *a, const Opti
 
 /* ------------------------------------------------------------------ */
 
-static char *test_reciprocal_model_is_the_host_estimate(void)
+/* Decouple inputs (diagonal band) whose restored value depends on how t / o is
+ * formed. `quotient` is k * o with k the IEEE quotient t / (o + eps). On a
+ * Ryzen 9 9950X3D the reciprocal refined from RCPSS, which the reference used
+ * before ADR-1442, gives the neighbouring float named in each comment. */
+typedef struct DivideCase {
+    uint32_t o;
+    uint32_t t;
+    uint32_t quotient;
+} DivideCase;
+
+#define DIVIDE_CASES 4
+
+static const DivideCase divide_cases[DIVIDE_CASES] = {
+    {0xc1c597beu, 0xc19e4395u, 0xc19e4395u}, /* -24.6990929, -19.782999; estimate 0xc19e4396 */
+    {0x4327548au, 0x42a9643cu, 0x42a9643cu}, /* 167.330231, 84.6957703; estimate 0x42a9643b */
+    {0x42fda1e5u, 0x422582a9u, 0x422582a9u}, /* 126.8162, 41.3775978; estimate 0x422582aa */
+    {0x41effe8du, 0x417e215bu, 0x417e215bu}, /* 29.9992924, 15.8831434; estimate 0x417e215d */
+};
+
+/* A 2x2 band: h and v are perpendicular between reference and distorted, so
+ * the angle test fails and the gain limit stays out; d carries the cases. */
+static void fill_divide_cases(Scale *s)
 {
-    AdmReciprocalModel model;
-    adm_reciprocal_model_probe(&model);
-
-    if (!adm_divs_is_reciprocal_s()) {
-        mu_assert("a reference that divides must be modelled as IEEE division",
-                  model.division == ADM_DIVISION_IEEE && model.reproduces_reference);
-        return NULL;
+    const size_t plane = (size_t)DIVIDE_CASES;
+    for (size_t i = 0; i < plane; i++) {
+        s->ref[plane + i] = 1.0f;      /* h */
+        s->ref[2u * plane + i] = 0.0f; /* v */
+        s->dis[plane + i] = 0.0f;
+        s->dis[2u * plane + i] = 1.0f;
+        s->ref[3u * plane + i] = float_of(divide_cases[i].o); /* d */
+        s->dis[3u * plane + i] = float_of(divide_cases[i].t);
     }
-    mu_assert("a reciprocal reference is modelled by a table or by the IEEE reciprocal",
-              model.division == ADM_DIVISION_RECIPROCAL_TABLE ||
-                  model.division == ADM_DIVISION_RECIPROCAL_IEEE);
-    if (model.division != ADM_DIVISION_RECIPROCAL_TABLE) {
-        (void)fprintf(stderr, "[skip: host reciprocal estimate is not a mantissa table] ");
-        return NULL;
-    }
+}
 
-    /* Inputs the probe did not visit: random bit patterns of every class. */
-    for (uint32_t i = 0u; i < RECIPROCAL_SAMPLES; i++) {
-        const uint32_t in = rng_next() ^ (rng_next() << 13);
-        const uint32_t host = bits_of(adm_divs_reciprocal_estimate_s(float_of(in)));
-        const uint32_t dev = adm_reciprocal_model_bits(model.table, in);
-        const bool both_nan = isnan(float_of(host)) && isnan(float_of(dev));
-        if (host != dev && !both_nan) {
-            (void)fprintf(stderr, "\nreciprocal model: in=%08x host=%08x model=%08x\n", in, host,
-                          dev);
+/* The reference's decouple and the shared header both restore with the IEEE
+ * quotient. A reciprocal estimate in either fails here on a host whose
+ * estimate differs from the quotient, as this one's does on every case. */
+static char *test_decouple_divides(void)
+{
+    Scale s;
+    mu_assert("allocation failed", scale_alloc(&s) == 0);
+    fill_divide_cases(&s);
+    const Options o = {
+        .gain_limit = 100.0, .noise_weight = DEFAULT_ADM_NOISE_WEIGHT, .p_norm = 3.0};
+    float unused[3];
+    reference_scale(&s, 2, 2, &o, unused);
+    const FloatAdmCudaDecoupleArgs a = decouple_args(2, 2, &o);
+
+    char *msg = NULL;
+    for (size_t i = 0; i < (size_t)DIVIDE_CASES && !msg; i++) {
+        const float od = float_of(divide_cases[i].o);
+        const float td = float_of(divide_cases[i].t);
+        const volatile float k = td / (od + FADM_EPS);
+        const volatile float quotient = k * od;
+        const uint32_t cpu = bits_of(s.cpu[0][2u * (size_t)DIVIDE_CASES + i]);
+        const uint32_t dev = bits_of(fadm_decouple_band(&a, od, td, 0));
+        if (cpu != divide_cases[i].quotient || dev != divide_cases[i].quotient) {
+            (void)fprintf(stderr, "\ndecouple case %zu: quotient=%08x cpu=%08x header=%08x\n", i,
+                          divide_cases[i].quotient, cpu, dev);
         }
-        mu_assert("the reciprocal model must return the host's estimate", host == dev || both_nan);
+        if (bits_of(quotient) != divide_cases[i].quotient) {
+            msg = "the IEEE quotient of a decouple case is not the recorded one";
+        } else if (cpu != divide_cases[i].quotient) {
+            msg = "adm_decouple_s() does not restore with the IEEE quotient";
+        } else if (dev != divide_cases[i].quotient) {
+            msg = "fadm_decouple_band() does not restore with the IEEE quotient";
+        }
     }
-    return NULL;
+    scale_free(&s);
+    return msg;
 }
 
 static char *check_decouple(Scale *s, int w, int h, const Options *o)
 {
     float unused[3];
-    const FloatAdmCudaDecoupleArgs a = decouple_args(s, w, h, o);
+    const FloatAdmCudaDecoupleArgs a = decouple_args(w, h, o);
     reference_scale(s, w, h, o, unused);
     replay_decouple(s, &a);
 
@@ -415,11 +448,6 @@ static char *test_decouple_csf_matches_reference(void)
 {
     Scale s;
     mu_assert("allocation failed", scale_alloc(&s) == 0);
-    if (!s.division.reproduces_reference) {
-        (void)fprintf(stderr, "[skip: host reciprocal estimate cannot be reproduced] ");
-        scale_free(&s);
-        return NULL;
-    }
     static const double gains[4] = {100.0, 1.2, 1.0, 3.7};
     static const float amplitudes[4] = {1.0f, 37.5f, 4000.0f, 1e-3f};
     char *msg = NULL;
@@ -442,7 +470,7 @@ static char *check_scale(Scale *s, int w, int h, const Options *o)
 {
     float want[3];
     float got[3];
-    const FloatAdmCudaDecoupleArgs a = decouple_args(s, w, h, o);
+    const FloatAdmCudaDecoupleArgs a = decouple_args(w, h, o);
     reference_scale(s, w, h, o, want);
     replay_scale(s, &a, o, got);
     static const char *const names[3] = {"den_scale", "num_scale", "aim_num_scale"};
@@ -461,11 +489,6 @@ static char *test_scale_reductions_match_reference(void)
 {
     Scale s;
     mu_assert("allocation failed", scale_alloc(&s) == 0);
-    if (!s.division.reproduces_reference) {
-        (void)fprintf(stderr, "[skip: host reciprocal estimate cannot be reproduced] ");
-        scale_free(&s);
-        return NULL;
-    }
     /* Bands of 14 samples or fewer keep their edges in the reduced region,
      * so the mirrored and clamped threshold taps are part of the sums. */
     static const int dims[8][2] = {{2, 2},   {5, 9},   {9, 5},    {14, 14},
@@ -514,7 +537,7 @@ static char *test_pool_bands_is_the_reference_tail(void)
 
 char *run_tests(void)
 {
-    mu_run_test(test_reciprocal_model_is_the_host_estimate);
+    mu_run_test(test_decouple_divides);
     mu_run_test(test_decouple_csf_matches_reference);
     mu_run_test(test_scale_reductions_match_reference);
     mu_run_test(test_pool_bands_is_the_reference_tail);
