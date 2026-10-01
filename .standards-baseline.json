@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-01T20:24:18Z",
+  "generated_at": "2026-10-01T20:24:47Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "c0b5ee34bbf428a22533a6245fad0a41cf99e914",
-  "total_infractions": 378,
+  "commit_sha": "4ae168bc06e2531cf7811c7e0ab7d3f20f790650",
+  "total_infractions": 365,
   "infractions": [
     {
       "rule_id": "HISS-04",
@@ -1358,62 +1358,6 @@
       "fingerprint": "bindings/rust/vmafx-sys/src/safe.rs:339:HISS-07"
     },
     {
-      "rule_id": "HISS-02",
-      "file_path": "cmd/vmafx-mcp/main.go",
-      "line_number": 213,
-      "message": "Context without a deadline reaches a call; derive it with context.WithTimeout or context.WithDeadline",
-      "fingerprint": "cmd/vmafx-mcp/main.go:213:HISS-02"
-    },
-    {
-      "rule_id": "HISS-02",
-      "file_path": "cmd/vmafx-ort-runner/main.go",
-      "line_number": 162,
-      "message": "Context without a deadline reaches a call; derive it with context.WithTimeout or context.WithDeadline",
-      "fingerprint": "cmd/vmafx-ort-runner/main.go:162:HISS-02"
-    },
-    {
-      "rule_id": "HISS-02",
-      "file_path": "cmd/vmafx-tune/cmd/golusoris.go",
-      "line_number": 96,
-      "message": "Context without a deadline reaches a call; derive it with context.WithTimeout or context.WithDeadline",
-      "fingerprint": "cmd/vmafx-tune/cmd/golusoris.go:96:HISS-02"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "cmd/vmafx-tune/cmd/root.go",
-      "line_number": 96,
-      "message": "os.Exit ends the process from library code; return an error to main.main instead",
-      "fingerprint": "cmd/vmafx-tune/cmd/root.go:96:HISS-07"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "cmd/vmafx-tune/cmd/root.go",
-      "line_number": 99,
-      "message": "os.Exit ends the process from library code; return an error to main.main instead",
-      "fingerprint": "cmd/vmafx-tune/cmd/root.go:99:HISS-07"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "cmd/vmafx-tune/cmd/root.go",
-      "line_number": 102,
-      "message": "os.Exit ends the process from library code; return an error to main.main instead",
-      "fingerprint": "cmd/vmafx-tune/cmd/root.go:102:HISS-07"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "cmd/vmafx-tune/cmd/root.go",
-      "line_number": 105,
-      "message": "os.Exit ends the process from library code; return an error to main.main instead",
-      "fingerprint": "cmd/vmafx-tune/cmd/root.go:105:HISS-07"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "cmd/vmafx-tune/cmd/root.go",
-      "line_number": 109,
-      "message": "os.Exit ends the process from library code; return an error to main.main instead",
-      "fingerprint": "cmd/vmafx-tune/cmd/root.go:109:HISS-07"
-    },
-    {
       "rule_id": "HISS-04",
       "file_path": "compat/python-vmaf/__init__.py",
       "line_number": 204,
@@ -2401,41 +2345,6 @@
       "symbol": "_check_depth",
       "message": "Direct recursion in _check_depth; the call graph must form an acyclic DAG",
       "fingerprint": "mcp-server/vmaf-mcp/src/vmaf_mcp/server.py:4373:HISS-01"
-    },
-    {
-      "rule_id": "HISS-02",
-      "file_path": "pkg/libvmaf/direct.go",
-      "line_number": 377,
-      "message": "Context without a deadline reaches a call; derive it with context.WithTimeout or context.WithDeadline",
-      "fingerprint": "pkg/libvmaf/direct.go:377:HISS-02"
-    },
-    {
-      "rule_id": "HISS-02",
-      "file_path": "pkg/libvmaf/libvmaf.go",
-      "line_number": 150,
-      "message": "Context without a deadline reaches a call; derive it with context.WithTimeout or context.WithDeadline",
-      "fingerprint": "pkg/libvmaf/libvmaf.go:150:HISS-02"
-    },
-    {
-      "rule_id": "HISS-02",
-      "file_path": "pkg/storage/fuse_mount.go",
-      "line_number": 206,
-      "message": "exec.Command takes no context, so no deadline bounds it; use exec.CommandContext",
-      "fingerprint": "pkg/storage/fuse_mount.go:206:HISS-02"
-    },
-    {
-      "rule_id": "HISS-02",
-      "file_path": "pkg/tune/predictor/predictor.go",
-      "line_number": 44,
-      "message": "Context without a deadline reaches a call; derive it with context.WithTimeout or context.WithDeadline",
-      "fingerprint": "pkg/tune/predictor/predictor.go:44:HISS-02"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "pkg/tune/pyjson/pyjson.go",
-      "line_number": 36,
-      "message": "Legacy panic invocation in production code path",
-      "fingerprint": "pkg/tune/pyjson/pyjson.go:36:HISS-07"
     },
     {
       "rule_id": "HISS-04",

@@ -87,6 +87,9 @@ const (
 	// gracefulShutdownTimeout bounds the HTTP transport's graceful drain on
 	// OnStop. Mirrors the pre-fx observability.GracefulShutdownTimeout.
 	gracefulShutdownTimeout = 30 * time.Second
+
+	// defaultStdioSessionTimeout bounds the stdio transport session (HISS-02).
+	defaultStdioSessionTimeout = 24 * time.Hour
 )
 
 func main() {
@@ -204,7 +207,7 @@ func bridgeLogEnv(name string) {
 // transport nobody is talking to. R3: the StdioTransport owns stdout; nothing else in the
 // graph writes there.
 func appendStdioHooks(lc fx.Lifecycle, srv *mcp.Server, log *slog.Logger, sd fx.Shutdowner) {
-	runCtx, cancel := context.WithCancel(context.Background())
+	runCtx, cancel := context.WithTimeout(context.Background(), defaultStdioSessionTimeout)
 	lc.Append(fx.Hook{
 		OnStart: func(_ context.Context) error {
 			log.Info("vmafx-mcp starting on stdio")

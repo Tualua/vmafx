@@ -50,6 +50,7 @@ import (
 	"io"
 	"os"
 	"sync"
+	"time"
 	"unsafe"
 )
 
@@ -330,15 +331,37 @@ func LogDirectPathSelected() {
 // abandon the loop, and let the deferred ordered owner close the context then
 // destroy the model.  Cancelled calls return ctx.Err() wrapped
 // in fmt.Errorf so callers can use errors.Is(err, context.Canceled).
-// Passing nil ctx is treated as context.Background().
-// Fixes T-LIBVMAF-SCORE-NEEDS-CTX-2026-05-31.
-func ScoreDirect(ctx context.Context, req ScoreDirectRequest) (
-	result *ScoreDirectResult, retErr error,
-) {
+func openDirectPair(ref, dis string) (*os.File, *os.File, error) {
+	refF, err := os.Open(ref) //nolint:gosec // path is operator-supplied
+	if err != nil {
+		return nil, nil, fmt.Errorf("ScoreDirect: open ref %q: %w", ref, ErrPictureRead)
+	}
+	disF, err := os.Open(dis) //nolint:gosec // path is operator-supplied
+	if err != nil {
+		refF.Close()
+		return nil, nil, fmt.Errorf("ScoreDirect: open dis %q: %w", dis, ErrPictureRead)
+	}
+	return refF, disF, nil
+}
+
+func withDefaultDirectTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if err := ctx.Err(); err != nil {
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		return context.WithTimeout(ctx, 30*time.Minute)
+	}
+	return ctx, func() {}
+}
+
+// ScoreDirect evaluates VMAF directly over two raw YUV files using libvmaf's
+// C API via CGO.
+func ScoreDirect(ctx context.Context, req ScoreDirectRequest) (
+	result *ScoreDirectResult, retErr error,
+) {
+	runCtx, cancel := withDefaultDirectTimeout(ctx)
+	defer cancel()
+	if err := runCtx.Err(); err != nil {
 		return nil, fmt.Errorf("ScoreDirect: context cancelled before start: %w", err)
 	}
 	if err := validateScoreDirectRequest(req); err != nil {
@@ -363,18 +386,14 @@ func ScoreDirect(ctx context.Context, req ScoreDirectRequest) (
 		return nil, err
 	}
 
-	refF, err := os.Open(req.Ref) //nolint:gosec // path is operator-supplied
+	refF, disF, err := openDirectPair(req.Ref, req.Dis)
 	if err != nil {
-		return nil, fmt.Errorf("ScoreDirect: open ref %q: %w", req.Ref, ErrPictureRead)
+		return nil, err
 	}
 	defer refF.Close()
-	disF, err := os.Open(req.Dis) //nolint:gosec // path is operator-supplied
-	if err != nil {
-		return nil, fmt.Errorf("ScoreDirect: open dis %q: %w", req.Dis, ErrPictureRead)
-	}
 	defer disF.Close()
 
-	frameIdx, err := feedDirectFrames(ctx, vmafCtx, refF, disF, newDirectGeometry(req))
+	frameIdx, err := feedDirectFrames(runCtx, vmafCtx, refF, disF, newDirectGeometry(req))
 	if err != nil {
 		return nil, err
 	}

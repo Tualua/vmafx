@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/golusoris/golusoris/core/config"
 	"github.com/golusoris/golusoris/otel"
@@ -57,6 +58,19 @@ func configOptions() config.Options {
 // non-zero exit code on failure. We therefore build the fx app ourselves via
 // bootstrap.Base, populate the dependencies, run the function, and return its
 // error through clikit.WithRunE so cobra sets the process exit status.
+func newTuneApp(d *deps) (*fx.App, error) {
+	app := fx.New(
+		bootstrap.Base,
+		fx.Replace(configOptions()),
+		fx.NopLogger,
+		fx.Populate(&d.Log, &d.Cfg, &d.OTel),
+	)
+	if err := app.Err(); err != nil {
+		return nil, fmt.Errorf("vmafx-tune: build dependency graph: %w", err)
+	}
+	return app, nil
+}
+
 func withGolusoris(run func(ctx context.Context, d deps, args []string) error) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
@@ -65,22 +79,9 @@ func withGolusoris(run func(ctx context.Context, d deps, args []string) error) f
 		}
 
 		var d deps
-		app := fx.New(
-			bootstrap.Base,
-			fx.Replace(configOptions()),
-			// golusoris v0.5.0's log module reads log.level / log.format from the
-			// shared VMAFX_-prefixed config singleton (golusoris#234), so the
-			// auto-built *slog.Logger already honors VMAFX_LOG_LEVEL — no decorator.
-			// Silence fx's own provide/invoke/lifecycle event stream. A one-shot
-			// CLI must not flood stdout/stderr with dependency-graph chatter on
-			// every invocation; the injected *slog.Logger still carries domain
-			// diagnostics. (bootstrap.FxLogger(), which routes fx events onto the
-			// app logger, is for long-running services, not a CLI.)
-			fx.NopLogger,
-			fx.Populate(&d.Log, &d.Cfg, &d.OTel),
-		)
-		if err := app.Err(); err != nil {
-			return fmt.Errorf("vmafx-tune: build dependency graph: %w", err)
+		app, err := newTuneApp(&d)
+		if err != nil {
+			return err
 		}
 
 		startCtx, cancelStart := context.WithTimeout(ctx, app.StartTimeout())
@@ -89,11 +90,18 @@ func withGolusoris(run func(ctx context.Context, d deps, args []string) error) f
 			return fmt.Errorf("vmafx-tune: start dependency graph: %w", err)
 		}
 
+		runCtx := ctx
+		var cancelRun context.CancelFunc
+		if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+			runCtx, cancelRun = context.WithTimeout(ctx, 30*time.Minute)
+			defer cancelRun()
+		}
+
 		// One SpanTuneCommand span per invocation is the CLI's top-level job
 		// span (ADR-0782); the cobra command path (e.g. "vmafx-tune-go sidecar
 		// status") is its bounded-cardinality attribute. It ends before
 		// app.Stop so the OTel OnStop flush exports it.
-		spanCtx, span := observability.StartSpan(ctx, observability.SpanTuneCommand,
+		spanCtx, span := observability.StartSpan(runCtx, observability.SpanTuneCommand,
 			observability.AttrTuneCommand.String(cmd.CommandPath()))
 		runErr := run(spanCtx, d, args)
 		observability.EndSpan(span, &runErr)

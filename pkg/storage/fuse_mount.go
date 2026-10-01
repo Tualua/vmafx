@@ -203,7 +203,9 @@ func (s *FUSEMountStorage) unmount(mountDir string) error {
 		// #nosec G204 -- `bin` is one of {fusermount3, fusermount, umount} from
 		// the const-string loop above; `args` is either {"-u", mountDir} or
 		// {mountDir} where mountDir is the os.MkdirTemp output passed in.
-		out, err := exec.Command(bin, args...).CombinedOutput()
+		cmdCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		out, err := exec.CommandContext(cmdCtx, bin, args...).CombinedOutput()
+		cancel()
 		if err == nil {
 			return nil
 		}

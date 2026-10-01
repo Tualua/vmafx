@@ -686,6 +686,9 @@
   build harness (ADR-1263). All tests pass on AMD gfx1036.
 
 
+- Refactored Go packages (`cmd/` and `pkg/`) to resolve HISS-02 context timeouts and HISS-07 exit/panic violations under ADR-1142.
+
+
 - Added missing SPDX-License-Identifier declarations across 387 clean source
   and header files in accordance with ADR-1250 and repository provenance,
   skipping 131 files with baselined debt, 5 vendored Pelorus mirror paths,

@@ -18,11 +18,17 @@
 package main
 
 import (
+	"os"
+
 	"github.com/VMAFx/vmafx/cmd/vmafx-tune/cmd"
 )
 
 // version is set at build time via -ldflags.
 var version = "dev"
+
+func init() {
+	cmd.SetExitHandler(os.Exit)
+}
 
 func main() {
 	cmd.Execute(version)

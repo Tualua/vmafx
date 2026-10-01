@@ -147,7 +147,14 @@ func (s *Scorer) Score(ctx context.Context, ref, dis, modelName string) (float64
 		}
 	}()
 
-	if err := s.runScoreBinary(ctx, scoreArgv(ref, dis, modelPath, tmpOut.Name())); err != nil {
+	runCtx := ctx
+	var cancel context.CancelFunc
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		runCtx, cancel = context.WithTimeout(ctx, 30*time.Minute)
+		defer cancel()
+	}
+
+	if err := s.runScoreBinary(runCtx, scoreArgv(ref, dis, modelPath, tmpOut.Name())); err != nil {
 		return 0, nil, err
 	}
 	return parseOutput(tmpOut.Name())

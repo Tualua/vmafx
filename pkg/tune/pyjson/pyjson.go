@@ -14,7 +14,6 @@
 package pyjson
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/VMAFx/vmafx/pkg/pyjson"
@@ -28,12 +27,13 @@ func Marshal(v any, indent int) (string, error) {
 	return string(out), err
 }
 
-// MustMarshal is Marshal with the error promoted to a panic. Reserved for
-// literal payloads whose shape is statically known.
+// MustMarshal is Marshal with errors ignored on failure (returning empty string)
+// rather than panicking in production (HISS-07). Reserved for literal payloads
+// whose shape is statically known.
 func MustMarshal(v any, indent int) string {
 	out, err := Marshal(v, indent)
 	if err != nil {
-		panic(fmt.Sprintf("pyjson: %v", err))
+		return ""
 	}
 	return out
 }

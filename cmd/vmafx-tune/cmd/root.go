@@ -9,7 +9,6 @@ package cmd
 
 import (
 	"errors"
-	"os"
 
 	"github.com/golusoris/golusoris/core/clikit"
 
@@ -74,6 +73,38 @@ type exitCoder interface {
 	ExitCode() int
 }
 
+// exitHandler is invoked by Execute on failure. Defaults to nil.
+var exitHandler func(code int)
+
+// SetExitHandler sets the function called by Execute to terminate the process.
+func SetExitHandler(fn func(code int)) {
+	exitHandler = fn
+}
+
+func resolveExitCode(err error) int {
+	// Match our OWN error type, not the exitCoder interface. *exec.ExitError
+	// also satisfies exitCoder (via the embedded *os.ProcessState), so a bare
+	// interface match reports a failed ffmpeg/vmaf child's exit status as
+	// vmafx-tune's own -- e.g. ffmpeg exiting 42 made the CLI exit 42, which
+	// collides with the documented usage/verdict codes. Both construction
+	// styles are in the tree, so check pointer and value forms.
+	if codePtr, ok := errors.AsType[*exitCodeError](err); ok {
+		return codePtr.ExitCode()
+	}
+	if codeVal, ok := errors.AsType[exitCodeError](err); ok {
+		return codeVal.ExitCode()
+	}
+	if code, ok := fastExitCode(err); ok {
+		return code
+	}
+	if errors.Is(err, errFallBackVerdict) {
+		return 2
+	}
+	// exitCodeOf recognises group 4's exitCodeError and otherwise
+	// returns 1, so it composes with the checks above.
+	return exitCodeOf(err)
+}
+
 // Execute builds the clikit root, wires all subcommands, and runs the CLI.
 //
 // Cobra maps any RunE error to exit 1. Subcommands that carry their own exit
@@ -86,26 +117,9 @@ func Execute(version string) {
 	// Most subcommands exit 1 on failure; encode-profile propagates FFmpeg's
 	// own status instead (see exitcode.go).
 	if err := newRoot(version).Execute(); err != nil {
-		// Match our OWN error type, not the exitCoder interface. *exec.ExitError
-		// also satisfies exitCoder (via the embedded *os.ProcessState), so a bare
-		// interface match reports a failed ffmpeg/vmaf child's exit status as
-		// vmafx-tune's own -- e.g. ffmpeg exiting 42 made the CLI exit 42, which
-		// collides with the documented usage/verdict codes. Both construction
-		// styles are in the tree, so check pointer and value forms.
-		if codePtr, ok := errors.AsType[*exitCodeError](err); ok {
-			os.Exit(codePtr.ExitCode())
+		code := resolveExitCode(err)
+		if exitHandler != nil {
+			exitHandler(code)
 		}
-		if codeVal, ok := errors.AsType[exitCodeError](err); ok {
-			os.Exit(codeVal.ExitCode())
-		}
-		if code, ok := fastExitCode(err); ok {
-			os.Exit(code)
-		}
-		if errors.Is(err, errFallBackVerdict) {
-			os.Exit(2)
-		}
-		// exitCodeOf recognises group 4's exitCodeError and otherwise
-		// returns 1, so it composes with the checks above.
-		os.Exit(exitCodeOf(err))
 	}
 }

@@ -18,6 +18,7 @@ package predictor
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	"github.com/VMAFx/vmafx/pkg/predictor"
 )
@@ -33,7 +34,7 @@ type Predictor = predictor.Predictor
 type Coefficients = predictor.Coefficients
 
 // New is the constructor the sidecar CLI calls: predictor.NewWithModel with a
-// background context. modelPath "" is the analytical curve; a model path that
+// bounded timeout context (HISS-02). modelPath "" is the analytical curve; a model path that
 // does not resolve is an error, matching the Python FileNotFoundError; a
 // resolvable one attaches the ORT session lazily. A nil log falls back to
 // slog.Default so a degraded --model run is still reported once.
@@ -41,7 +42,9 @@ func New(modelPath string, log *slog.Logger) (*Predictor, error) {
 	if log == nil {
 		log = slog.Default()
 	}
-	return predictor.NewWithModel(context.Background(), modelPath, log)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return predictor.NewWithModel(ctx, modelPath, log)
 }
 
 // PickCRF is (*predictor.Predictor).PickCRF under the old package-level name.

@@ -42,6 +42,7 @@ import (
 	"math"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/VMAFx/vmafx/pkg/libvmaf"
 )
@@ -159,7 +160,9 @@ func infer(open openFunc, modelPath, inputName string, inputs []float32) ([]floa
 		return nil, fmt.Errorf("open %s: %w", modelPath, err)
 	}
 	defer sess.Close()
-	out, err := sess.Predict(context.Background(), inputName, inputs, 1, len(inputs))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	out, err := sess.Predict(ctx, inputName, inputs, 1, len(inputs))
 	if err != nil {
 		return nil, fmt.Errorf("run %s: %w", modelPath, err)
 	}
