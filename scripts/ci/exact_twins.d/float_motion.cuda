@@ -1,0 +1,2 @@
+adr: ADR-1409
+evidence: RTX 4090, --precision max: Netflix 576x324, 1080p checkerboards, BBB 3840x2160 motion, motion2, motion3 identical to --backend cpu.

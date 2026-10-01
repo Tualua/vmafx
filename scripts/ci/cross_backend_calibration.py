@@ -26,8 +26,9 @@ from __future__ import annotations
 
 import dataclasses
 import math
+import re
 import sys
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -85,65 +86,128 @@ AREA_SCALED_FEATURES = ("psnr_hvs",)
 # this table only with a measurement that shows bit-identity and an ADR that
 # records it; a twin that sums per block (``psnr_hvs_metal``, outside the
 # gates' backend list) keeps the ADR-1361 tolerance.
-#
-# ADR-1409: ``float_motion_cuda`` joins it. The CPU's SAD is a running fp32
-# sum per row and another over the rows; the twin adds each row on the device
-# in that order and the rows on the host (``float_motion_sad.h``), over a blur
-# built without FMA contraction (ADR-1403). ADR-1411: ``float_motion_sycl``
-# does the same, one work-item per row over a blur built with the SYCL strict
-# FP line (ADR-1367), measured on an Arc A380. ADR-1419: ``float_motion_hip``
-# stores every absolute difference and adds each row in the CPU's order, over
-# a blur built with the HIP strict FP list (ADR-1407), measured on a gfx1036.
-# The Metal ``float_motion`` twin still reduces per block and keeps the
-# places=4 tolerance.
-#
-# ``EXACT_TWIN_SOURCE`` names ADR-1397 for every listed twin: it is the ADR
-# of the exact cell itself, not of a twin's arithmetic.
-#
-# ADR-1414: ``float_ms_ssim_sycl`` joins it, with and without ``enable_lcs``.
-# Its kernels follow ``ms_ssim_decimate.c``, ``iqa_convolve()`` and
-# ``ssim_accumulate_default_scalar()`` type for type (fp64 values as exact
-# fp32 pairs, frame sums in int64 fixed point) and the host rounds each
-# per-scale mean to fp32 as ``iqa_ssim()`` does. Measured on an Arc A380. The
-# cell runs one binary, so the CPU side must be the scalar arithmetic too
-# (#1706 for icx builds on AVX-512 hosts).
+# ADR-1428 (fragment pattern, ADR-0221): the listing is not a literal. Each
+# (feature, backend) pair is one file ``exact_twins.d/<feature>.<backend>``
+# naming the ADR that establishes exactness and one line of evidence, so
+# declaring a twin exact adds one file and edits nothing shared. The ADR in
+# each fragment is the ADR of that twin's arithmetic; ``EXACT_TWIN_SOURCE``
+# names ADR-1397 for every listed twin because it is the ADR of the exact cell
+# itself.
 # ---------------------------------------------------------------------------
 
-EXACT_TWINS: dict[str, frozenset[str]] = {
-    # ADR-1424: ``integer_ssim_cuda`` stores the CPU's double term of every
-    # pixel and the host adds them in ``calc_ssim()``'s raster order. The
-    # other ``ssim`` twins reduce per block and keep the places=4 tolerance.
-    "ssim": frozenset({"cuda"}),
-    # ADR-1416: ``adm_cuda`` takes its CSF weights, rounding shifts and score
-    # conclusion from the CPU's routines (``integer_adm_kernels.h``) and folds
-    # the denominator once per row. ADR-1423: ``adm_hip`` does the same,
-    # measured on a gfx1036. The other ``adm`` twins keep places=4.
-    "adm": frozenset({"cuda", "hip"}),
-    "float_ms_ssim": frozenset({"sycl"}),
-    "float_ms_ssim_lcs": frozenset({"sycl"}),
-    "float_motion": frozenset({"cuda", "sycl", "hip"}),
-    "psnr_hvs": frozenset({"cuda", "sycl", "hip"}),
-    # ADR-1433: ``ssimulacra2_cuda`` returns the sums of ``ssim_map()`` and
-    # ``edge_diff_map()``, which add each term pixel after pixel into one
-    # double, from chunk-wise integer increments (``feature/ordered_sum.h``).
-    # The other ``ssimulacra2`` twins add in a tree and keep places=2.
-    "ssimulacra2": frozenset({"cuda"}),
-    # ADR-1412: ``float_vif_cuda`` filters with ``vif_get_filter()``'s taps,
-    # evaluates ``vif_tools.c``'s statistic in its types (the polynomial
-    # ``log2f_approx()``, ``vif_sigma_nsq`` in fp64) and adds the terms of a
-    # row, then the rows, in the CPU's two fp32 accumulators. ADR-1422:
-    # ``float_vif_sycl`` does the same without an fp64 type on the device
-    # (exact fp32 pairs, and the reference's fp64 operations replayed in
-    # integers next to a rounding boundary), measured on an Arc A380. The HIP
-    # and Metal ``float_vif`` twins keep the places=4 tolerance.
-    "float_vif": frozenset({"cuda", "sycl"}),
-    # ADR-1420: ``float_adm_cuda`` runs ``adm_tools.c``'s decouple, CSF and
-    # masking arithmetic in its types, divides through the host's probed
-    # reciprocal estimate, adds each reduction row by row in fp32 and concludes
-    # with the CPU's own routines. The other ``float_adm`` twins keep the
-    # places=4 tolerance.
-    "float_adm": frozenset({"cuda"}),
-}
+EXACT_TWINS_DIR = Path(__file__).parent / "exact_twins.d"
+ADR_DIR = Path(__file__).resolve().parents[2] / "docs" / "adr"
+FRAGMENT_KEYS = ("adr", "evidence")
+_FRAGMENT_NAME = re.compile(r"^(?P<feature>[a-z0-9_]+)\.(?P<backend>[a-z0-9_]+)$")
+_ADR_LIST = re.compile(r"^ADR-\d{4}(, ADR-\d{4})*$")
+
+
+class ExactTwinError(ValueError):
+    """An ``exact_twins.d`` fragment or the directory itself is malformed."""
+
+
+@dataclasses.dataclass(frozen=True)
+class ExactTwin:
+    """One listed twin: ``backend`` returns the CPU extractor's bits for ``feature``."""
+
+    feature: str
+    backend: str
+    adrs: tuple[str, ...]
+    evidence: str
+
+
+def _parse_fragment_lines(path: Path) -> dict[str, str]:
+    """Return the ``key: value`` pairs of one fragment; reject anything else."""
+
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if not any(line.strip() for line in lines):
+        raise ExactTwinError(f"{path.name}: empty fragment")
+    fields: dict[str, str] = {}
+    for number, line in enumerate(lines, start=1):
+        key, sep, value = line.partition(":")
+        key, value = key.strip(), value.strip()
+        if not sep or not value:
+            raise ExactTwinError(f"{path.name}:{number}: expected 'key: value', got {line!r}")
+        if key not in FRAGMENT_KEYS:
+            raise ExactTwinError(f"{path.name}:{number}: unknown key {key!r}")
+        if key in fields:
+            raise ExactTwinError(f"{path.name}:{number}: duplicate key {key!r}")
+        fields[key] = value
+    return fields
+
+
+def _check_adrs(path: Path, value: str, adr_dir: Path) -> tuple[str, ...]:
+    if not _ADR_LIST.match(value):
+        raise ExactTwinError(f"{path.name}: adr must be 'ADR-NNNN[, ADR-NNNN...]', got {value!r}")
+    adrs = tuple(item.strip() for item in value.split(","))
+    for adr in adrs:
+        if not list(adr_dir.glob(f"{adr[4:]}-*.md")):
+            raise ExactTwinError(f"{path.name}: {adr} has no file under {adr_dir}")
+    return adrs
+
+
+def parse_exact_twin_fragment(path: Path, adr_dir: Path = ADR_DIR) -> ExactTwin:
+    """Parse and validate one ``<feature>.<backend>`` fragment file."""
+
+    match = _FRAGMENT_NAME.match(path.name)
+    if not path.is_file() or match is None or match["backend"] == "cpu":
+        raise ExactTwinError(f"{path.name}: name must be <feature>.<backend> (backend not cpu)")
+    fields = _parse_fragment_lines(path)
+    for key in FRAGMENT_KEYS:
+        if key not in fields:
+            raise ExactTwinError(f"{path.name}: missing key {key!r}")
+    return ExactTwin(
+        feature=match["feature"],
+        backend=match["backend"],
+        adrs=_check_adrs(path, fields["adr"], adr_dir),
+        evidence=fields["evidence"],
+    )
+
+
+def load_exact_twin_fragments(
+    directory: Path = EXACT_TWINS_DIR, adr_dir: Path = ADR_DIR
+) -> tuple[ExactTwin, ...]:
+    """Load every fragment in ``directory``, sorted by (feature, backend).
+
+    One file per pair makes a duplicate pair impossible; a duplicate key
+    inside a file is rejected by the parser.
+
+    A missing or empty directory is an error: it would otherwise silently
+    turn every exact cell back into a tolerance cell.
+    """
+
+    if not directory.is_dir():
+        raise ExactTwinError(f"{directory}: exact-twin fragment directory is missing")
+    paths = sorted(directory.iterdir())
+    if not paths:
+        raise ExactTwinError(f"{directory}: no exact-twin fragments")
+    twins = tuple(parse_exact_twin_fragment(path, adr_dir) for path in paths)
+    return tuple(sorted(twins, key=lambda twin: (twin.feature, twin.backend)))
+
+
+def build_exact_twins(twins: tuple[ExactTwin, ...]) -> dict[str, frozenset[str]]:
+    """Group listed twins into ``feature -> backends``."""
+
+    grouped: dict[str, set[str]] = {}
+    for twin in twins:
+        grouped.setdefault(twin.feature, set()).add(twin.backend)
+    return {feature: frozenset(grouped[feature]) for feature in sorted(grouped)}
+
+
+def validate_exact_twins(
+    twins: tuple[ExactTwin, ...], features: Collection[str], backends: Collection[str]
+) -> None:
+    """Reject a fragment naming a feature or backend the gate does not know."""
+
+    for twin in twins:
+        if twin.feature not in features:
+            raise ExactTwinError(f"{twin.feature}.{twin.backend}: unknown feature")
+        if twin.backend not in backends:
+            raise ExactTwinError(f"{twin.feature}.{twin.backend}: unknown backend")
+
+
+EXACT_TWIN_FRAGMENTS: tuple[ExactTwin, ...] = load_exact_twin_fragments()
+EXACT_TWINS: dict[str, frozenset[str]] = build_exact_twins(EXACT_TWIN_FRAGMENTS)
 EXACT_TWIN_TOLERANCE = 0.0
 EXACT_TWIN_PRECISION = "max"
 EXACT_TWIN_SOURCE = "exact:ADR-1397"

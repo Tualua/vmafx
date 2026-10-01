@@ -1,0 +1,2 @@
+adr: ADR-1433
+evidence: RTX 4090, --precision max: 113 of 113 frames (Netflix 8 to 16 bit, 1080p checkerboards, BBB 4K 50 frames) identical to --backend cpu; gate 0 on 200 BBB frames.

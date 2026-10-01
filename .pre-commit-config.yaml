@@ -861,5 +861,5 @@ repos:
         entry: make docs-fragments-check
         language: system
         stages: [pre-commit]
-        files: '^(docs/adr/|changelog\.d/|scripts/docs/|scripts/release/concat-changelog-fragments\.sh$|mkdocs\.yml$|CHANGELOG\.md$|Makefile$)'
+        files: '^(docs/adr/|changelog\.d/|scripts/docs/|scripts/release/concat-changelog-fragments\.sh$|scripts/ci/exact_twins\.d/|scripts/ci/cross_backend_calibration\.py$|docs/development/cross-backend-exact-twins\.md$|mkdocs\.yml$|CHANGELOG\.md$|Makefile$)'
         pass_filenames: false

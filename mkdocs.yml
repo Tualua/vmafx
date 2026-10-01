@@ -1539,6 +1539,7 @@ nav:
         - "ADR-1424: cuda-ssim-cpu-frame-sum": adr/1424-cuda-ssim-cpu-frame-sum.md
         - "ADR-1426: cuda-ciede-cpu-arithmetic": adr/1426-cuda-ciede-cpu-arithmetic.md
         - "ADR-1427: hip-clear-after-upload": adr/1427-hip-clear-after-upload.md
+        - "ADR-1428: exact-twins-fragments": adr/1428-exact-twins-fragments.md
         - "ADR-1429: read-pictures-index-gaps-accepted": adr/1429-read-pictures-index-gaps-accepted.md
         - "ADR-1431: read-pictures-owns-pictures-on-every-return": adr/1431-read-pictures-owns-pictures-on-every-return.md
         - "ADR-1433: cuda-ssimulacra2-cpu-sum-order": adr/1433-cuda-ssimulacra2-cpu-sum-order.md

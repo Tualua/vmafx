@@ -80,6 +80,7 @@ GENERATED_PREFIXES = (
     "docs/adr/by-tag/",
     "docs/adr/README.md",
     "CHANGELOG.md",
+    "docs/development/cross-backend-exact-twins.md",
     "mkdocs.yml",
     ".standards-baseline.json",
     "scripts/ci/tidy-baseline-",

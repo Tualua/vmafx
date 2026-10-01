@@ -28,19 +28,12 @@ explicitly accepts its skip.
   |---|---:|---|
   | `vif`, `motion`, `motion_debug`, `motion_v2`, `adm`, `psnr`, `float_moment`, `cambi` | `5e-5` | ADR-0125 / ADR-0138 / ADR-0140 / ADR-0360; `motion_debug` is `motion` with `debug=true` and adds `integer_motion` ([ADR-1418](../adr/1418-motion-parity-gate-metric-alignment.md)) |
   | `ssim` (the fixed-point extractor; its twins are `integer_ssim_<backend>`) | `5e-5` | ADR-0564 (int64 moments, one double term per pixel) |
-  | `ssim` (CPU ↔ CUDA) | `0` (bit-identical, compared at `--precision max`) | ADR-1424 (the host adds the twin's per-pixel terms in the CPU's raster order); the `5e-5` row stays for the other twins |
+  | any feature, cell whose two sides are `cpu` or [listed exact twins](cross-backend-exact-twins.md) | `0` (bit-identical, compared at `--precision max`) | the ADR in the twin's fragment under `scripts/ci/exact_twins.d/`; the rows above and below stay for every other backend ([Exact twins](#exact-twins)) |
   | `float_ssim`, `float_ssim_lcs`, `float_ms_ssim`, `float_ms_ssim_lcs`, `float_psnr`, `float_motion`, `float_vif`, `float_adm` | `5e-5` | ADR-0188 / ADR-0192 / ADR-0215 / ADR-1382 |
-  | `adm` (every pair of CPU, CUDA and HIP) | `0` (bit-identical, compared at `--precision max`) | ADR-1416, ADR-1423 (the twins run the CPU's host routines and fold the denominator per row); the `5e-5` row stays for the other twins |
   | `ciede` | `5e-3` | ADR-0187 (per-pixel pow/sqrt/sin/atan2) |
   | `ciede` (CPU ↔ CUDA) | `1e-9`, compared at `--precision max` | ADR-1426 (the twin runs the CPU's fp64 arithmetic and the CPU's sum; only the math library differs, `LIBM_TWINS`); the `5e-3` row stays for the other twins |
-  | `psnr_hvs` (every pair of CPU, CUDA, SYCL and HIP) | `0` (bit-identical, compared at `--precision max`) | ADR-1397, ADR-1401 (the twins reproduce the CPU's running float sum) |
   | `psnr_hvs` (a twin that is not listed as exact) | `5e-4` at 576x324 and below, `5e-4 × √(N / N₅₇₆ₓ₃₂₄)` above | ADR-0191 (DCT plus per-block float reduction); ADR-1361 (area scaling) |
-  | `float_motion` (every pair of CPU, CUDA, SYCL and HIP) | `0` (bit-identical, compared at `--precision max`) | ADR-1409, ADR-1411, ADR-1419 (the twins add their SAD in the CPU's order); the row above stays for Metal |
-  | `float_vif` (CPU ↔ CUDA, CPU ↔ SYCL, CUDA ↔ SYCL) | `0` (bit-identical, compared at `--precision max`) | ADR-1412, ADR-1422 (the twins compute the CPU's arithmetic and add in the CPU's order); the `5e-5` row stays for HIP and Metal |
-  | `float_adm` (CPU ↔ CUDA) | `0` (bit-identical, compared at `--precision max`) | ADR-1420 (the twin computes the CPU's arithmetic, divides through the host's reciprocal estimate and adds in the CPU's order); the `5e-5` row stays for the other twins |
   | `ssimulacra2` | `5e-3` | ADR-0192 (XYB cube root plus IIR blur) |
-  | `ssimulacra2` (CPU ↔ CUDA) | `0` (bit-identical, compared at `--precision max`) | ADR-1433 (the twin returns the sums of the CPU's loops); the `5e-3` row stays for the other twins |
-  | `float_ms_ssim`, `float_ms_ssim_lcs` (CPU ↔ SYCL) | `0` (bit-identical, compared at `--precision max`) | ADR-1414 (the twin computes the CPU's arithmetic); the `5e-5` row above stays for the other twins |
 
 - **Twins that differ only in their math library.** `ciede_cuda` evaluates
   `ciede.c`'s expressions in its types and the host adds the per-pixel values
@@ -88,76 +81,51 @@ explicitly accepts its skip.
   Metal is not a gate backend), so no `psnr_hvs` cell of the matrix uses it;
   it stays for a caller that names no backends and for a twin added later.
 
-- **Exact twins.** `adm_cuda` takes its CSF weights, rounding shifts and
-  score conclusion from the CPU's own routines and folds the denominator once
-  per row ([ADR-1416](../adr/1416-cuda-adm-cpu-row-rounding.md)), and
-  `adm_hip` does the same
-  ([ADR-1423](../adr/1423-hip-adm-cpu-row-rounding.md), measured on a gfx1036:
-  0 on 21 fixture pairs from 18x22 to 3840x2160 at 8 to 16 bits).
-  `psnr_hvs_cuda`, `psnr_hvs_sycl` and
-  `psnr_hvs_hip` store every term the CPU sums and the host adds them in the
-  CPU's order, so their scores are the CPU's bit for bit
-  ([ADR-1397](../adr/1397-psnr-hvs-twins-cpu-float-sum.md) for CUDA,
-  [ADR-1401](../adr/1401-psnr-hvs-sycl-hip-exact-twins.md) for SYCL and HIP).
-  `float_motion_cuda` adds the absolute differences of each row on the device
-  in the CPU's order and the rows on the host, with the same result
-  ([ADR-1409](../adr/1409-float-motion-twins-cpu-float-sum.md)), and
-  `float_motion_sycl` does so too
-  ([ADR-1411](../adr/1411-sycl-float-motion-cpu-float-sum.md), measured on an
-  Arc A380: 0 on the Netflix pair, both 1080p checkerboard pairs and 200
-  frames of BBB 3840x2160). `float_motion_hip` stores every absolute
-  difference and adds each row in the same order, with every option of the
-  extractor
-  ([ADR-1419](../adr/1419-hip-float-motion-cpu-float-sum.md), measured on a
-  gfx1036: 0 on the Netflix pair at 8 and 10 bits, both 1080p checkerboard
-  pairs and BBB 3840x2160).
-  `integer_ssim_cuda` stores the CPU's double term of every pixel and the host
-  adds them in the CPU's raster order
-  ([ADR-1424](../adr/1424-cuda-ssim-cpu-frame-sum.md)).
-  `float_vif_cuda` filters with the taps the CPU extractor computes, evaluates
-  the CPU's per-pixel statistic in the CPU's types and adds the terms of each
-  row on the device and the rows on the host, in the CPU's order
-  ([ADR-1412](../adr/1412-cuda-float-vif-cpu-arithmetic.md)).
-  `float_vif_sycl` does the same without an fp64 type on the device
-  ([ADR-1422](../adr/1422-sycl-float-vif-cpu-arithmetic.md), measured on an
-  Arc A380: 0 on the Netflix pair, both 1080p checkerboard pairs and 200
-  frames of BBB 3840x2160).
-  `float_adm_cuda` runs the CPU's decouple, CSF and masking arithmetic in the
-  CPU's types, evaluates the reciprocal estimate of the host processor that
-  the CPU's division is built on, and adds each reduction row by row
-  ([ADR-1420](../adr/1420-cuda-float-adm-cpu-arithmetic.md)). The gate runs
-  it with default options; `adm_p_norm` other than 3 is within 1.1e-7, not
-  equal.
-  `EXACT_TWINS` in `scripts/ci/cross_backend_calibration.py` lists such twins.
-  A cell whose two sides are the CPU extractor or a listed twin is compared
-  with tolerance `0`, at every frame size and ahead of any calibration row,
-  and both sides run with `--precision max` so that a last-bit difference
-  is not rounded away by the default `%.6f` output. The label in the output is
-  `exact:ADR-1397` for every listed twin. Measured on an RTX 4090 (CUDA, for
-  all five features), an Arc A380 (SYCL, for `psnr_hvs`, `float_motion` and `float_vif`)
-  and a gfx1036 (HIP, for `psnr_hvs`): 0 on all 200 frames of the BBB
-  3840x2160 fixture and on the Netflix 576x324 pair. An explicit
-  `--fp16-features psnr_hvs` still selects the FP16 contract. Adding a twin to
-  the table needs a measurement that shows bit-identity and an ADR that
-  records it.
-
-  The equality holds between runs of one `vmaf` binary, which is how the gate
-  runs a cell. The dB value goes through the host's `log10`: a binary built
-  with oneAPI `icx` uses Intel's `libimf`, a gcc build uses glibc, and the
-  two round differently by one unit in the last place on a few frames (3 of
-  the 48 Netflix frames), for the CPU extractor and the twins alike. Do not
-  compare a twin from one build with the CPU extractor of another.
-
-  `float_ms_ssim_sycl` is listed for `float_ms_ssim` and `float_ms_ssim_lcs`
-  ([ADR-1414](../adr/1414-sycl-float-ms-ssim-cpu-arithmetic.md)): its kernels
-  follow the CPU reference type for type and its per-scale means are the
-  CPU's on every frame measured on an Arc A380. An exact cell runs one
-  binary on both sides, so it also needs the CPU extractor of that binary to
-  be the reference arithmetic; for an icx build on an AVX-512 host that
-  needs the x86 SIMD libraries built without FP contraction (#1706).
+- **Exact twins.** A cell whose two sides are the CPU extractor or a listed
+  exact twin is compared with tolerance `0`; see [Exact twins](#exact-twins).
 
 - **FP16 features.** Names passed through `--fp16-features` use the `1e-2`
   FP16 absolute-tolerance contract.
+
+## Exact twins
+
+A GPU twin that returns the CPU
+extractor's bits for a feature is listed by adding one file,
+`scripts/ci/exact_twins.d/<feature>.<backend>` (for example `psnr_hvs.cuda`),
+and nothing else shared ([ADR-1428](../adr/1428-exact-twins-fragments.md)).
+The file holds two `key: value` lines: `adr:` (one or more `ADR-NNNN` that
+exist under `docs/adr/`, the ADR that establishes exactness) and `evidence:`
+(one line: fixtures and result). `cross_backend_calibration.py` builds
+`EXACT_TWINS` from the directory at import and rejects an unknown key, a
+missing key, an empty file, an unknown feature or backend, and a missing or
+empty directory. The [generated table of exact twins](cross-backend-exact-twins.md)
+is rendered from the same files by `make docs-fragments-write`.
+
+A cell whose two sides are the CPU extractor or a listed twin is compared
+with tolerance `0`, at every frame size and ahead of any calibration row,
+and both sides run with `--precision max` so that a last-bit difference
+is not rounded away by the default `%.6f` output. The label in the output is
+`exact:ADR-1397` for every listed twin. An explicit
+`--fp16-features <feature>` still selects the FP16 contract. A cell with a
+backend that is not listed keeps the tolerance of the rows above.
+
+The rule: listing needs a measurement that shows bit-identity (`--precision
+max`, the Netflix 576x324 pairs, the 1080p checkerboard pairs and
+`testdata/bbb` 4K) and an ADR that records it. A listed twin that drifts is
+fixed; it is never given a tolerance and never taken off the list to make a
+gate pass.
+
+The equality holds between runs of one `vmaf` binary, which is how the gate
+runs a cell. The dB value goes through the host's `log10`: a binary built
+with oneAPI `icx` uses Intel's `libimf`, a gcc build uses glibc, and the
+two round differently by one unit in the last place on a few frames (3 of
+the 48 Netflix frames), for the CPU extractor and the twins alike. Do not
+compare a twin from one build with the CPU extractor of another.
+
+An exact cell runs one binary on both sides, so it also needs the CPU
+extractor of that binary to be the reference arithmetic; for an icx build on
+an AVX-512 host that needs the x86 SIMD libraries built without FP
+contraction (#1706).
 
 ## Run it locally
 
@@ -216,10 +184,15 @@ A cell's status is one of:
    feature extractor.
 2. Add a `FEATURE_TOLERANCE` entry only when the feature differs from the
    default `5e-5`, and cite the measurement or ADR that owns the relaxation.
-3. Add or update unit tests in
+3. Declare a twin exact, once it is measured bit-identical, by adding
+   `scripts/ci/exact_twins.d/<feature>.<backend>` (`adr:` and `evidence:`),
+   then run `make docs-fragments-write`. Do not edit the calibration module,
+   the tests or this page for it.
+4. Add or update unit tests in
    `scripts/ci/test_cross_backend_parity_gate.py` and update the tolerance
-   table above.
-4. For a new backend, extend the suffix and device-selection maps, add
+   table above where the feature's tolerance changed. The exact-twin tests hold
+   for any set of fragments and need no edit.
+5. For a new backend, extend the suffix and device-selection maps, add
    executable coverage, and update the consuming workflow explicitly. Adding
    support to the script alone does not create CI coverage.
 

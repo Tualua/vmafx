@@ -1,0 +1,2 @@
+adr: ADR-1414
+evidence: Arc A380 (xe): every per-scale mean on Netflix (48 frames, 8 to 16 bit, 4:2:2), 1080p checkerboards, BBB 4K identical to --backend cpu.

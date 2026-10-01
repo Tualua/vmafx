@@ -57193,3 +57193,17 @@ Netflix golden assertions are untouched.
 - No Netflix golden-data, public C API or FFmpeg patch impact; `ssimulacra2.c`
   is not touched. The SYCL, HIP and Metal twins are untouched
   (`T-GPU-SSIMULACRA2-SUM-ORDER-2026-10-01`).
+## ADR-1428 — exact twins are declared by fragment files (2026-10-01)
+
+`refactor/exact-twins-fragments`, ADR-1428.
+
+- `scripts/ci/exact_twins.d/<feature>.<backend>` (new, one per listed twin;
+  `adr:` and `evidence:`) replaces the `EXACT_TWINS` dict literal in
+  `scripts/ci/cross_backend_calibration.py`, which now loads and validates the
+  directory at import. A pull request that adds `EXACT_TWINS[...]` entries,
+  per-feature exact tests or enumerating prose conflicts with this once:
+  drop those hunks and add a fragment file instead (steps in
+  `scripts/ci/AGENTS.md`). Never reintroduce the literal.
+- `docs/development/cross-backend-exact-twins.md` is generated
+  (`scripts/docs/generate-exact-twins.py`, `make docs-fragments-write`): on a
+  conflict take master's side and regenerate.

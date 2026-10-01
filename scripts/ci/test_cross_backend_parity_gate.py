@@ -21,16 +21,23 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.ci.cross_backend_calibration import (
+    ADR_DIR,
+    EXACT_TWIN_FRAGMENTS,
     EXACT_TWIN_SOURCE,
     EXACT_TWINS,
+    EXACT_TWINS_DIR,
     LIBM_TWIN_SOURCE,
     LIBM_TWINS,
     CalibrationEntry,
     CalibrationTable,
+    ExactTwinError,
     area_tolerance_factor,
+    build_exact_twins,
     is_exact_pair,
     libm_pair_tolerance,
+    load_exact_twin_fragments,
     psnr_hvs_term_count,
+    validate_exact_twins,
 )
 from scripts.ci.cross_backend_parity_gate import (
     BACKEND_EXTRACTOR_ALIASES,
@@ -51,6 +58,7 @@ from scripts.ci.cross_backend_parity_gate import (
     resolve_cell_tolerance,
     run_cell,
 )
+from scripts.lib.safe_subprocess import run as run_command
 
 
 def _close(actual: float, expected: float) -> bool:
@@ -275,28 +283,6 @@ def test_ssim_twins_are_named_after_the_cpu_file() -> None:
     assert feature_extractor_name("ssim", "sycl") == "integer_ssim_sycl"
     assert feature_extractor_name("ssim", "hip") == "integer_ssim_hip"
     assert FEATURE_METRICS["ssim"] == ("ssim",)
-
-
-def test_ssim_cuda_cell_is_exact_and_other_twins_are_not() -> None:
-    """ADR-1424: only the CUDA twin adds the terms in the CPU's order."""
-
-    def cell(backend_a: str, backend_b: str) -> tuple[float, str]:
-        return resolve_cell_tolerance(
-            "ssim",
-            fp16_features=[],
-            calibration=None,
-            gpu_id=None,
-            width=3840,
-            height=2160,
-            backends=(backend_a, backend_b),
-        )
-
-    assert cell("cpu", "cuda") == (0.0, EXACT_TWIN_SOURCE)
-    assert cell("cuda", "cpu") == (0.0, EXACT_TWIN_SOURCE)
-    for pair in (("cpu", "sycl"), ("cpu", "hip"), ("cuda", "sycl")):
-        tolerance, source = cell(*pair)
-        assert _close(tolerance, FEATURE_TOLERANCE["ssim"]), pair
-        assert source == "default", pair
 
 
 def test_backend_extractor_aliases_are_consistent_with_backend_suffix() -> None:
@@ -886,8 +872,6 @@ _FLOAT_THRESHOLD_576 = 4.374e-7
 # One unit in the last place of a 30 dB score: what a different host log10
 # moves (glibc against Intel's libimf), and so what two binaries may differ by.
 _ONE_ULP_30_DB = 3.553e-15
-# Backends whose psnr_hvs twin returns the CPU's bits.
-_EXACT_PSNR_HVS = ("cuda", "sycl", "hip")
 
 
 def _psnr_hvs_cell(backend_a: str, backend_b: str, width: int, height: int) -> tuple[float, str]:
@@ -900,176 +884,6 @@ def _psnr_hvs_cell(backend_a: str, backend_b: str, width: int, height: int) -> t
         height=height,
         backends=(backend_a, backend_b),
     )
-
-
-def test_exact_pair_is_cpu_and_listed_twins_only() -> None:
-    assert {
-        "ssim": frozenset({"cuda"}),
-        "adm": frozenset({"cuda", "hip"}),
-        "float_ms_ssim": frozenset({"sycl"}),
-        "float_ms_ssim_lcs": frozenset({"sycl"}),
-        "float_motion": frozenset({"cuda", "sycl", "hip"}),
-        "psnr_hvs": frozenset(_EXACT_PSNR_HVS),
-        "ssimulacra2": frozenset({"cuda"}),
-        "float_vif": frozenset({"cuda", "sycl"}),
-        "float_adm": frozenset({"cuda"}),
-    } == EXACT_TWINS
-    for backend in _EXACT_PSNR_HVS:
-        assert is_exact_pair("psnr_hvs", "cpu", backend), backend
-        assert is_exact_pair("psnr_hvs", backend, "cpu"), backend
-    # Two exact twins agree with each other as well.
-    assert is_exact_pair("psnr_hvs", "cuda", "sycl")
-    assert is_exact_pair("psnr_hvs", "sycl", "hip")
-    # The Metal twin still sums per block: no cell with it on a side is exact.
-    assert not is_exact_pair("psnr_hvs", "cpu", "metal")
-    assert not is_exact_pair("psnr_hvs", "cuda", "metal")
-    # A feature without an entry is never exact, whatever the backends.
-    for backend in _EXACT_PSNR_HVS:
-        assert not is_exact_pair("vif", "cpu", backend), backend
-        assert not is_exact_pair("ciede", "cpu", backend), backend
-
-
-def test_adm_cuda_and_hip_cells_are_exact_and_other_twins_are_not() -> None:
-    """ADR-1416, ADR-1423: the CUDA and HIP twins run the CPU's ADM host routines."""
-
-    def cell(backend_a: str, backend_b: str) -> tuple[float, str]:
-        return resolve_cell_tolerance(
-            "adm",
-            fp16_features=[],
-            calibration=None,
-            gpu_id=None,
-            width=3840,
-            height=2160,
-            backends=(backend_a, backend_b),
-        )
-
-    for pair in (("cpu", "cuda"), ("cuda", "cpu"), ("cpu", "hip"), ("hip", "cpu"), ("cuda", "hip")):
-        assert cell(*pair) == (0.0, EXACT_TWIN_SOURCE), pair
-    # A twin that is not listed keeps the places=4 tolerance, alone or against
-    # a listed one.
-    for pair in (("cpu", "sycl"), ("hip", "sycl"), ("cpu", "metal")):
-        tolerance, source = cell(*pair)
-        assert _close(tolerance, FEATURE_TOLERANCE["adm"]), pair
-        assert source == "default", pair
-
-
-def test_psnr_hvs_exact_cells_are_exact_at_every_size() -> None:
-    pairs = [("cpu", backend) for backend in _EXACT_PSNR_HVS] + [("cuda", "sycl"), ("hip", "sycl")]
-    for pair in pairs:
-        for width, height in ((8, 8), (576, 324), (1920, 1080), (3840, 2160), (7680, 4320)):
-            tolerance, source = _psnr_hvs_cell(*pair, width, height)
-            assert tolerance == 0.0, (pair, width, height)
-            assert source == EXACT_TWIN_SOURCE
-
-
-def test_float_motion_cuda_sycl_and_hip_cells_are_exact_and_other_twins_are_not() -> None:
-    """ADR-1409, ADR-1411, ADR-1419: these twins add their SAD in the CPU's order."""
-
-    def cell(backend_a: str, backend_b: str) -> tuple[float, str]:
-        return resolve_cell_tolerance(
-            "float_motion",
-            fp16_features=[],
-            calibration=None,
-            gpu_id=None,
-            width=3840,
-            height=2160,
-            backends=(backend_a, backend_b),
-        )
-
-    exact = (
-        ("cpu", "cuda"),
-        ("cuda", "cpu"),
-        ("cpu", "sycl"),
-        ("cuda", "sycl"),
-        ("cpu", "hip"),
-        ("hip", "cpu"),
-        ("sycl", "hip"),
-        ("cuda", "hip"),
-    )
-    for pair in exact:
-        assert cell(*pair) == (0.0, EXACT_TWIN_SOURCE), pair
-    # The Metal twin still sums per block: no cell with it on a side is exact.
-    for pair in (("cpu", "metal"), ("hip", "metal")):
-        tolerance, source = cell(*pair)
-        assert _close(tolerance, FEATURE_TOLERANCE["float_motion"]), pair
-        assert source == "default", pair
-
-
-def test_float_vif_cuda_and_sycl_cells_are_exact_and_other_twins_are_not() -> None:
-    """ADR-1412, ADR-1422: the CUDA and SYCL twins compute the CPU's float_vif arithmetic."""
-
-    def cell(backend_a: str, backend_b: str) -> tuple[float, str]:
-        return resolve_cell_tolerance(
-            "float_vif",
-            fp16_features=[],
-            calibration=None,
-            gpu_id=None,
-            width=3840,
-            height=2160,
-            backends=(backend_a, backend_b),
-        )
-
-    for pair in (("cpu", "cuda"), ("cuda", "cpu"), ("cpu", "sycl"), ("cuda", "sycl")):
-        assert cell(*pair) == (0.0, EXACT_TWIN_SOURCE), pair
-    for pair in (("cpu", "hip"), ("sycl", "hip")):
-        tolerance, source = cell(*pair)
-        assert _close(tolerance, FEATURE_TOLERANCE["float_vif"]), pair
-        assert source == "default", pair
-
-
-def test_ssimulacra2_cuda_cell_is_exact_and_other_twins_are_not() -> None:
-    """ADR-1433: only the CUDA twin returns the sums of the CPU's loops."""
-
-    def cell(backend_a: str, backend_b: str) -> tuple[float, str]:
-        return resolve_cell_tolerance(
-            "ssimulacra2",
-            fp16_features=[],
-            calibration=None,
-            gpu_id=None,
-            width=3840,
-            height=2160,
-            backends=(backend_a, backend_b),
-        )
-
-    assert cell("cpu", "cuda") == (0.0, EXACT_TWIN_SOURCE)
-    assert cell("cuda", "cpu") == (0.0, EXACT_TWIN_SOURCE)
-    for pair in (("cpu", "sycl"), ("cpu", "hip"), ("cuda", "sycl")):
-        tolerance, source = cell(*pair)
-        assert _close(tolerance, FEATURE_TOLERANCE["ssimulacra2"]), pair
-        assert source == "default", pair
-    # 7.3e-11, the largest difference the tree sum left on the fixtures, fails
-    # the exact cell; the places=2 default let it through.
-    reference = [{"frameNum": 0, "metrics": {"ssimulacra2": 71.0}}]
-    measured = [{"frameNum": 0, "metrics": {"ssimulacra2": 71.0 + 7.3e-11}}]
-    _, exact_mismatch = diff_frames(reference, measured, ("ssimulacra2",), 0.0)
-    _, default_mismatch = diff_frames(
-        reference, measured, ("ssimulacra2",), FEATURE_TOLERANCE["ssimulacra2"]
-    )
-    assert exact_mismatch == {"ssimulacra2": 1}
-    assert default_mismatch == {"ssimulacra2": 0}
-
-
-def test_float_ms_ssim_sycl_cells_are_exact_and_other_twins_are_not() -> None:
-    """ADR-1414: the SYCL twin computes the CPU's arithmetic, per-scale means included."""
-
-    def cell(feature: str, backend_a: str, backend_b: str) -> tuple[float, str]:
-        return resolve_cell_tolerance(
-            feature,
-            fp16_features=[],
-            calibration=None,
-            gpu_id=None,
-            width=3840,
-            height=2160,
-            backends=(backend_a, backend_b),
-        )
-
-    for feature in ("float_ms_ssim", "float_ms_ssim_lcs"):
-        assert cell(feature, "cpu", "sycl") == (0.0, EXACT_TWIN_SOURCE), feature
-        assert cell(feature, "sycl", "cpu") == (0.0, EXACT_TWIN_SOURCE), feature
-        for pair in (("cpu", "cuda"), ("cpu", "hip"), ("cuda", "sycl")):
-            tolerance, source = cell(feature, *pair)
-            assert _close(tolerance, FEATURE_TOLERANCE[feature]), (feature, pair)
-            assert source == "default", (feature, pair)
 
 
 def test_ciede_cuda_cell_is_bounded_by_its_math_library_and_other_twins_are_not() -> None:
@@ -1108,28 +922,6 @@ def test_ciede_cuda_cell_is_bounded_by_its_math_library_and_other_twins_are_not(
     ) == (DEFAULT_FP16_TOLERANCE, "fp16")
 
 
-def test_float_adm_cuda_cell_is_exact_and_other_twins_are_not() -> None:
-    """ADR-1420: only the CUDA twin computes the CPU's float_adm arithmetic."""
-
-    def cell(backend_a: str, backend_b: str) -> tuple[float, str]:
-        return resolve_cell_tolerance(
-            "float_adm",
-            fp16_features=[],
-            calibration=None,
-            gpu_id=None,
-            width=3840,
-            height=2160,
-            backends=(backend_a, backend_b),
-        )
-
-    assert cell("cpu", "cuda") == (0.0, EXACT_TWIN_SOURCE)
-    assert cell("cuda", "cpu") == (0.0, EXACT_TWIN_SOURCE)
-    for pair in (("cpu", "sycl"), ("cpu", "hip"), ("cuda", "sycl")):
-        tolerance, source = cell(*pair)
-        assert _close(tolerance, FEATURE_TOLERANCE["float_adm"]), pair
-        assert source == "default", pair
-
-
 def test_psnr_hvs_per_block_twin_keeps_area_scaled_tolerance() -> None:
     # ADR-1361 stays the contract of a twin outside EXACT_TWINS, and of a
     # caller that names no backends.
@@ -1147,39 +939,137 @@ def test_psnr_hvs_per_block_twin_keeps_area_scaled_tolerance() -> None:
     assert "+area x" in source
 
 
+# ---------------------------------------------------------------------------
+# ADR-1428: the exact twins come from scripts/ci/exact_twins.d/. These tests
+# hold for any set of fragments; none names a feature or backend.
+# ---------------------------------------------------------------------------
+
+_GATE_BACKENDS = tuple(backend for backend in BACKEND_SUFFIX if backend != "cpu")
+# A backend outside the gate's list: never exact, whatever the fragments say.
+_OFF_GATE_BACKEND = "metal"
+
+
+def _twin_cell(
+    feature: str,
+    backend_a: str,
+    backend_b: str,
+    *,
+    width: int = 3840,
+    height: int = 2160,
+    fp16_features: list[str] | None = None,
+    calibration: CalibrationTable | None = None,
+    gpu_id: str | None = None,
+) -> tuple[float, str]:
+    return resolve_cell_tolerance(
+        feature,
+        fp16_features=fp16_features or [],
+        calibration=calibration,
+        gpu_id=gpu_id,
+        width=width,
+        height=height,
+        backends=(backend_a, backend_b),
+    )
+
+
+def _exact_pairs() -> list[tuple[str, str, str]]:
+    """Every (feature, a, b) cell whose two sides are cpu or listed twins."""
+
+    pairs: list[tuple[str, str, str]] = []
+    for feature, backends in EXACT_TWINS.items():
+        sides = ["cpu", *sorted(backends)]
+        pairs.extend((feature, a, b) for a in sides for b in sides if a != b)
+    return pairs
+
+
+def test_every_fragment_is_valid() -> None:
+    assert EXACT_TWIN_FRAGMENTS
+    validate_exact_twins(EXACT_TWIN_FRAGMENTS, FEATURE_METRICS, BACKEND_SUFFIX)
+    for twin in EXACT_TWIN_FRAGMENTS:
+        assert twin.feature in FEATURE_METRICS, twin
+        assert twin.backend in BACKEND_SUFFIX and twin.backend != "cpu", twin
+        assert twin.adrs and twin.evidence, twin
+        for adr in twin.adrs:
+            assert list(ADR_DIR.glob(f"{adr[4:]}-*.md")), (twin, adr)
+        assert (EXACT_TWINS_DIR / f"{twin.feature}.{twin.backend}").is_file()
+
+
+def test_exact_twins_is_the_sorted_grouping_of_the_fragments() -> None:
+    assert build_exact_twins(EXACT_TWIN_FRAGMENTS) == EXACT_TWINS
+    assert list(EXACT_TWINS) == sorted(EXACT_TWINS)
+    keys = [(twin.feature, twin.backend) for twin in EXACT_TWIN_FRAGMENTS]
+    assert keys == sorted(keys)
+    assert load_exact_twin_fragments() == EXACT_TWIN_FRAGMENTS
+
+
+def test_exact_pair_is_cpu_and_listed_twins_only() -> None:
+    for feature, backends in EXACT_TWINS.items():
+        for backend in backends:
+            assert is_exact_pair(feature, "cpu", backend), (feature, backend)
+            assert is_exact_pair(feature, backend, "cpu"), (feature, backend)
+            # A side that is not listed spoils the cell, whichever side it is.
+            assert not is_exact_pair(feature, backend, _OFF_GATE_BACKEND), (feature, backend)
+            assert not is_exact_pair(feature, _OFF_GATE_BACKEND, backend), (feature, backend)
+        assert not is_exact_pair(feature, "cpu", _OFF_GATE_BACKEND), feature
+        for a in backends:
+            for b in backends:
+                assert is_exact_pair(feature, a, b), (feature, a, b)
+        for backend in set(_GATE_BACKENDS) - backends:
+            assert not is_exact_pair(feature, "cpu", backend), (feature, backend)
+    # A feature without a fragment is never exact, whatever the backends.
+    for feature in set(FEATURE_METRICS) - set(EXACT_TWINS):
+        for backend in (*_GATE_BACKENDS, _OFF_GATE_BACKEND):
+            assert not is_exact_pair(feature, "cpu", backend), (feature, backend)
+    assert not is_exact_pair("no_such_feature", "cpu", "cuda")
+
+
+def test_exact_cells_are_exact_at_every_size() -> None:
+    for feature, a, b in _exact_pairs():
+        for width, height in ((8, 8), (576, 324), (1920, 1080), (3840, 2160), (7680, 4320)):
+            cell = _twin_cell(feature, a, b, width=width, height=height)
+            assert cell == (0.0, EXACT_TWIN_SOURCE), (feature, a, b, width, height)
+
+
 def test_exact_cell_ignores_a_calibration_row() -> None:
-    table = _calibration_table(("cuda:8.9", {"psnr_hvs": 5e-4}))
-    for backend in _EXACT_PSNR_HVS:
-        tolerance, source = resolve_cell_tolerance(
-            "psnr_hvs",
-            fp16_features=[],
-            calibration=table,
-            gpu_id="cuda:8.9",
-            width=3840,
-            height=2160,
-            backends=("cpu", backend),
-        )
-        assert tolerance == 0.0, backend
-        assert source == EXACT_TWIN_SOURCE
+    for feature, a, b in _exact_pairs():
+        table = _calibration_table(("cuda:8.9", {feature: 5e-4}))
+        cell = _twin_cell(feature, a, b, calibration=table, gpu_id="cuda:8.9")
+        assert cell == (0.0, EXACT_TWIN_SOURCE), (feature, a, b)
 
 
 def test_exact_cell_yields_to_an_explicit_fp16_contract() -> None:
-    tolerance, source = resolve_cell_tolerance(
-        "psnr_hvs",
-        fp16_features=["psnr_hvs"],
-        calibration=None,
-        gpu_id=None,
-        width=576,
-        height=324,
-        backends=("cpu", "cuda"),
-    )
-    assert _close(tolerance, DEFAULT_FP16_TOLERANCE)
-    assert source == "fp16"
+    for feature, a, b in _exact_pairs():
+        tolerance, source = _twin_cell(feature, a, b, fp16_features=[feature])
+        assert _close(tolerance, DEFAULT_FP16_TOLERANCE), (feature, a, b)
+        assert source == "fp16", (feature, a, b)
+
+
+def test_unlisted_backend_cells_keep_their_tolerance_contract() -> None:
+    exact = set(_exact_pairs())
+    sides = ("cpu", *_GATE_BACKENDS)
+    for feature in FEATURE_METRICS:
+        for a in sides:
+            for b in sides:
+                if a == b or (feature, a, b) in exact:
+                    continue
+                tolerance, source = _twin_cell(feature, a, b)
+                assert source != EXACT_TWIN_SOURCE, (feature, a, b)
+                if libm_pair_tolerance(feature, a, b) is not None:
+                    # A math-library twin (ADR-1426) has its own bound and test.
+                    assert source == LIBM_TWIN_SOURCE, (feature, a, b)
+                    continue
+                # The same tolerance a caller naming no backends gets.
+                plain = resolve_cell_tolerance(
+                    feature,
+                    fp16_features=[],
+                    calibration=None,
+                    gpu_id=None,
+                    width=3840,
+                    height=2160,
+                )
+                assert (tolerance, source) == plain, (feature, a, b)
 
 
 def test_exact_cell_fails_the_differences_a_per_block_sum_left() -> None:
-    metrics = FEATURE_METRICS["psnr_hvs"]
-    reference = [_make_frame(dict.fromkeys(metrics, 30.0))]
     deltas = (
         _PRE_1397_CUDA_576,
         _PRE_1397_CUDA_4K,
@@ -1189,18 +1079,20 @@ def test_exact_cell_fails_the_differences_a_per_block_sum_left() -> None:
         2.0**-45,
         _ONE_ULP_30_DB,
     )
-    for backend in _EXACT_PSNR_HVS:
-        tolerance, _ = _psnr_hvs_cell("cpu", backend, 3840, 2160)
+    for feature, a, b in _exact_pairs():
+        metrics = FEATURE_METRICS[feature]
+        tolerance, _ = _twin_cell(feature, a, b)
+        reference = [_make_frame(dict.fromkeys(metrics, 30.0))]
         for delta in deltas:
             drifted = [_make_frame(dict.fromkeys(metrics, 30.0 + delta))]
             _, mismatches = diff_frames(reference, drifted, metrics, tolerance)
-            assert all(count == 1 for count in mismatches.values()), (backend, delta)
+            assert all(count == 1 for count in mismatches.values()), (feature, a, b, delta)
         _, mismatches = diff_frames(reference, reference, metrics, tolerance)
-        assert all(count == 0 for count in mismatches.values()), backend
+        assert all(count == 0 for count in mismatches.values()), (feature, a, b)
 
 
 def test_exact_cell_runs_both_sides_at_full_precision(tmp_path: Path) -> None:
-    def command(backend: str, precision: str | None) -> list[str]:
+    def command(feature: str, backend: str, precision: str | None) -> list[str]:
         return build_command(
             binary=tmp_path / "vmaf",
             ref=tmp_path / "ref.yuv",
@@ -1209,18 +1101,144 @@ def test_exact_cell_runs_both_sides_at_full_precision(tmp_path: Path) -> None:
             height=2160,
             pix_fmt="420",
             bitdepth=8,
-            feature="psnr_hvs",
+            feature=feature,
             backend=backend,
             device=None if backend == "cpu" else 1,
             output=tmp_path / "out.json",
             precision=precision,
         )
 
-    for backend in ("cpu", *_EXACT_PSNR_HVS):
-        cmd = command(backend, "max")
-        assert cmd[cmd.index("--precision") + 1] == "max"
-        # A tolerance cell keeps the CLI's default output precision.
-        assert "--precision" not in command(backend, None)
+    for feature, backends in EXACT_TWINS.items():
+        for backend in ("cpu", *backends):
+            cmd = command(feature, backend, "max")
+            assert cmd[cmd.index("--precision") + 1] == "max"
+            # A tolerance cell keeps the CLI's default output precision.
+            assert "--precision" not in command(feature, backend, None)
+
+
+# -- the loader ---------------------------------------------------------------
+
+
+def _adr_dir(tmp_path: Path) -> Path:
+    adr_dir = tmp_path / "adr"
+    adr_dir.mkdir()
+    (adr_dir / "0001-fixture.md").write_text("# ADR-0001\n", encoding="utf-8")
+    return adr_dir
+
+
+def _fragments(tmp_path: Path, files: dict[str, str]) -> Path:
+    directory = tmp_path / "exact_twins.d"
+    directory.mkdir()
+    for name, text in files.items():
+        (directory / name).write_text(text, encoding="utf-8")
+    return directory
+
+
+# The generator's exit status for an unreadable fragment set (sysexits EX_DATAERR).
+_EX_DATAERR = 65
+_GOOD = "adr: ADR-0001\nevidence: fixtures and result\n"
+
+
+def test_loader_reads_sorted_fragments_from_a_directory(tmp_path: Path) -> None:
+    directory = _fragments(
+        tmp_path,
+        {"vif.sycl": _GOOD, "adm.hip": _GOOD, "adm.cuda": "adr: ADR-0001, ADR-0001\nevidence: e\n"},
+    )
+    twins = load_exact_twin_fragments(directory, _adr_dir(tmp_path))
+    assert [(twin.feature, twin.backend) for twin in twins] == [
+        ("adm", "cuda"),
+        ("adm", "hip"),
+        ("vif", "sycl"),
+    ]
+    assert twins[0].adrs == ("ADR-0001", "ADR-0001")
+    assert twins[1].evidence == "fixtures and result"
+    assert build_exact_twins(twins) == {
+        "adm": frozenset({"cuda", "hip"}),
+        "vif": frozenset({"sycl"}),
+    }
+
+
+def test_loader_rejects_a_missing_or_empty_directory(tmp_path: Path) -> None:
+    adr_dir = _adr_dir(tmp_path)
+    with _raises(ExactTwinError):
+        load_exact_twin_fragments(tmp_path / "absent", adr_dir)
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    with _raises(ExactTwinError):
+        load_exact_twin_fragments(empty, adr_dir)
+
+
+def test_loader_rejects_each_malformed_fragment(tmp_path: Path) -> None:
+    adr_dir = _adr_dir(tmp_path)
+    bad = {
+        "empty file": ("adm.cuda", ""),
+        "blank file": ("adm.cuda", "\n  \n"),
+        "unknown key": ("adm.cuda", _GOOD + "note: x\n"),
+        "missing adr": ("adm.cuda", "evidence: e\n"),
+        "missing evidence": ("adm.cuda", "adr: ADR-0001\n"),
+        "duplicate key": ("adm.cuda", _GOOD + "adr: ADR-0001\n"),
+        "no colon": ("adm.cuda", "adr ADR-0001\nevidence: e\n"),
+        "empty value": ("adm.cuda", "adr:\nevidence: e\n"),
+        "adr not a reference": ("adm.cuda", "adr: 1397\nevidence: e\n"),
+        "adr without a file": ("adm.cuda", f"adr: ADR-{'9' * 4}\nevidence: e\n"),
+        "name without backend": ("adm", _GOOD),
+        "name with a suffix": ("adm.cuda.txt", _GOOD),
+        "cpu is not a twin": ("adm.cpu", _GOOD),
+        "upper case name": ("ADM.cuda", _GOOD),
+    }
+    for label, (name, text) in bad.items():
+        case = tmp_path / label.replace(" ", "_")
+        case.mkdir()
+        directory = _fragments(case, {name: text})
+        with _raises(ExactTwinError):
+            load_exact_twin_fragments(directory, adr_dir)
+
+
+def test_loader_rejects_a_directory_entry(tmp_path: Path) -> None:
+    directory = _fragments(tmp_path, {"adm.cuda": _GOOD})
+    (directory / "sub.dir").mkdir()
+    with _raises(ExactTwinError):
+        load_exact_twin_fragments(directory, _adr_dir(tmp_path))
+
+
+def test_validate_rejects_an_unknown_feature_or_backend(tmp_path: Path) -> None:
+    directory = _fragments(tmp_path, {"adm.cuda": _GOOD})
+    twins = load_exact_twin_fragments(directory, _adr_dir(tmp_path))
+    validate_exact_twins(twins, {"adm"}, {"cuda"})
+    with _raises(ExactTwinError):
+        validate_exact_twins(twins, {"vif"}, {"cuda"})
+    with _raises(ExactTwinError):
+        validate_exact_twins(twins, {"adm"}, {"sycl"})
+
+
+def test_generated_twin_table_is_current_and_follows_the_fragments(tmp_path: Path) -> None:
+    script = Path(__file__).resolve().parents[1] / "docs" / "generate-exact-twins.py"
+    directory = _fragments(tmp_path, {"adm.cuda": _GOOD})
+    output = tmp_path / "table.md"
+    args = ["--fragments", str(directory), "--adr-dir", str(_adr_dir(tmp_path)), "--output"]
+
+    def run(*extra: str) -> int:
+        # ADR-1242: the fixed repository generator on a disposable fixture, no shell.
+        result = run_command(
+            (sys.executable, str(script), *extra, *args, str(output)),
+            allowed_executables=(sys.executable,),
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout_seconds=60,
+        )
+        return result.returncode
+
+    assert run("--check") == 1  # nothing rendered yet
+    assert run("--write") == 0
+    assert run("--check") == 0
+    assert "| `adm` | `cuda` | [ADR-0001](../adr/0001-fixture.md) | fixtures and result |" in (
+        output.read_text(encoding="utf-8")
+    )
+    (directory / "vif.hip").write_text(_GOOD, encoding="utf-8")
+    assert run("--check") == 1  # a new fragment makes the file stale
+    (directory / "vif.hip").write_text("evidence: e\n", encoding="utf-8")
+    assert run("--check") == _EX_DATAERR  # a malformed fragment fails loudly
 
 
 def test_feature_metrics_motion_reads_default_emitted_keys() -> None:

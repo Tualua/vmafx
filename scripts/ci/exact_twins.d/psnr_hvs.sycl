@@ -1,0 +1,2 @@
+adr: ADR-1401
+evidence: Arc A380 (xe): Netflix, 1080p checkerboards, BBB 1080p and 4K identical to --backend cpu; gate 0 on 200 BBB 4K frames.

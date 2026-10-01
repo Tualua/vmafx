@@ -80,7 +80,12 @@ linked AGENTS.md before resolving conflicts.
   `scripts/ci/cross_backend_parity_gate.py`. Adding a new GPU twin
   requires (1) `FEATURE_METRICS` entry, (2) `FEATURE_TOLERANCE` entry
   if it relaxes places=4, (3) row in
-  `docs/development/cross-backend-gate.md`. See
+  `docs/development/cross-backend-gate.md`. Declaring a twin
+  bit-identical adds one file `scripts/ci/exact_twins.d/<feature>.<backend>`
+  ([ADR-1428](../adr/1428-exact-twins-fragments.md)) and edits no shared
+  line; on a conflict in the generated
+  `docs/development/cross-backend-exact-twins.md` take master's side and run
+  `make docs-fragments-write`. See
   [core/AGENTS.md](../../core/AGENTS.md).
 - **`psnr_hvs_cuda` returns the CPU's scores bit for bit ([ADR-1397](../adr/1397-psnr-hvs-twins-cpu-float-sum.md))**:
   `psnr_hvs_score.cu` stores the 64 terms `calc_psnrhvs()` sums per block, in

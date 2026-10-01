@@ -56,6 +56,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 # script execution and package-aware type checking.
 from scripts.ci.cross_backend_calibration import (
     DEFAULT_CALIBRATION_PATH,
+    EXACT_TWIN_FRAGMENTS,
     EXACT_TWIN_PRECISION,
     EXACT_TWIN_SOURCE,
     EXACT_TWIN_TOLERANCE,
@@ -66,6 +67,7 @@ from scripts.ci.cross_backend_calibration import (
     libm_pair_tolerance,
     load_calibration_table,
     metric_delta,
+    validate_exact_twins,
 )
 from scripts.lib.safe_subprocess import run as run_command
 
@@ -268,6 +270,10 @@ BACKEND_DEFAULT_DEVICE: dict[str, int] = {
     "sycl": 0,
     "hip": 0,
 }
+
+# A fragment in scripts/ci/exact_twins.d naming a feature or backend this gate
+# does not run fails at import, not as a cell that is silently never exact.
+validate_exact_twins(EXACT_TWIN_FRAGMENTS, FEATURE_METRICS, BACKEND_SUFFIX)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -564,6 +570,96 @@ def _reference_tolerance(
     return feature_default, f"placeholder-default:{entry.gpu_id_pattern}"
 
 
+def _cell_error(
+    cell: Cell,
+    tolerance: float,
+    tolerance_source: str,
+    note: str,
+    *,
+    metrics: tuple[str, ...],
+    n_frames: int = 0,
+) -> CellResult:
+    return CellResult(
+        feature=cell.feature,
+        backend_a=cell.backend_a,
+        backend_b=cell.backend_b,
+        tolerance=tolerance,
+        n_frames=n_frames,
+        per_metric_max=dict.fromkeys(metrics, 0.0),
+        per_metric_mismatches=dict.fromkeys(metrics, 0),
+        status="ERROR",
+        note=note,
+        tolerance_source=tolerance_source,
+    )
+
+
+def _diff_cell_outputs(
+    cell: Cell,
+    out_a: Path,
+    out_b: Path,
+    *,
+    metrics: tuple[str, ...],
+    tolerance: float,
+    tolerance_source: str,
+) -> CellResult:
+    a_frames = load_frames(out_a)
+    b_frames = load_frames(out_b)
+    if len(a_frames) != len(b_frames):
+        note = f"frame-count mismatch a={len(a_frames)} b={len(b_frames)}"
+        return _cell_error(cell, tolerance, tolerance_source, note, metrics=metrics)
+
+    missing_a = missing_metrics(a_frames, metrics)
+    missing_b = missing_metrics(b_frames, metrics)
+    if missing_a or missing_b:
+        note = (
+            f"missing metrics: backend_a {cell.backend_a} lacks {missing_a}; "
+            f"backend_b {cell.backend_b} lacks {missing_b}"
+        )
+        return _cell_error(
+            cell, tolerance, tolerance_source, note, metrics=metrics, n_frames=len(a_frames)
+        )
+
+    per_max, per_mismatch = diff_frames(a_frames, b_frames, metrics, tolerance)
+    fail = any(c > 0 for c in per_mismatch.values())
+    return CellResult(
+        feature=cell.feature,
+        backend_a=cell.backend_a,
+        backend_b=cell.backend_b,
+        tolerance=tolerance,
+        n_frames=len(a_frames),
+        per_metric_max=per_max,
+        per_metric_mismatches=per_mismatch,
+        status="FAIL" if fail else "OK",
+        tolerance_source=tolerance_source,
+    )
+
+
+def _run_cell_side(
+    cell: Cell,
+    label: str,
+    backend: str,
+    out: Path,
+    ctx: tuple[Path, Path, Path, int, int, str, int],
+    devices: dict[str, int],
+    precision: str | None,
+    tolerance: float,
+    tolerance_source: str,
+    metrics: tuple[str, ...],
+) -> CellResult | None:
+    rc, err = run_one(
+        *ctx,
+        cell.feature,
+        backend,
+        devices.get(backend),
+        out,
+        precision,
+    )
+    if rc != 0:
+        note = f"{label} {backend} failed: {err.strip()[:200]}"
+        return _cell_error(cell, tolerance, tolerance_source, note, metrics=metrics)
+    return None
+
+
 def run_cell(
     cell: Cell,
     *,
@@ -579,124 +675,49 @@ def run_cell(
     tolerance: float,
     tolerance_source: str = "default",
 ) -> CellResult:
-    """Execute one cell of the parity matrix and diff it.
-
-    An exact cell (``tolerance_source`` is ``EXACT_TWIN_SOURCE``) and a
-    math-library cell (``LIBM_TWIN_SOURCE``) run both sides with
-    ``--precision max``, so the comparison sees every bit of the scores
-    rather than six decimals.
-    """
-
+    """Execute one cell of the parity matrix and diff it."""
     metrics = FEATURE_METRICS[cell.feature]
     full_precision = tolerance_source in (EXACT_TWIN_SOURCE, LIBM_TWIN_SOURCE)
     precision = EXACT_TWIN_PRECISION if full_precision else None
     out_a = workdir / f"{cell.feature}_{cell.backend_a}.json"
     out_b = workdir / f"{cell.feature}_{cell.backend_b}.json"
 
-    rc_a, err_a = run_one(
-        binary,
-        ref,
-        dist,
-        width,
-        height,
-        pix_fmt,
-        bitdepth,
-        cell.feature,
+    ctx = (binary, ref, dist, width, height, pix_fmt, bitdepth)
+    res_a = _run_cell_side(
+        cell,
+        "backend_a",
         cell.backend_a,
-        devices.get(cell.backend_a),
         out_a,
+        ctx,
+        devices,
         precision,
+        tolerance,
+        tolerance_source,
+        metrics,
     )
-    if rc_a != 0:
-        return CellResult(
-            feature=cell.feature,
-            backend_a=cell.backend_a,
-            backend_b=cell.backend_b,
-            tolerance=tolerance,
-            n_frames=0,
-            per_metric_max=dict.fromkeys(metrics, 0.0),
-            per_metric_mismatches=dict.fromkeys(metrics, 0),
-            status="ERROR",
-            note=f"backend_a {cell.backend_a} failed: {err_a.strip()[:200]}",
-            tolerance_source=tolerance_source,
-        )
-
-    rc_b, err_b = run_one(
-        binary,
-        ref,
-        dist,
-        width,
-        height,
-        pix_fmt,
-        bitdepth,
-        cell.feature,
+    if res_a is not None:
+        return res_a
+    res_b = _run_cell_side(
+        cell,
+        "backend_b",
         cell.backend_b,
-        devices.get(cell.backend_b),
         out_b,
+        ctx,
+        devices,
         precision,
+        tolerance,
+        tolerance_source,
+        metrics,
     )
-    if rc_b != 0:
-        return CellResult(
-            feature=cell.feature,
-            backend_a=cell.backend_a,
-            backend_b=cell.backend_b,
-            tolerance=tolerance,
-            n_frames=0,
-            per_metric_max=dict.fromkeys(metrics, 0.0),
-            per_metric_mismatches=dict.fromkeys(metrics, 0),
-            status="ERROR",
-            note=f"backend_b {cell.backend_b} failed: {err_b.strip()[:200]}",
-            tolerance_source=tolerance_source,
-        )
+    if res_b is not None:
+        return res_b
 
-    a_frames = load_frames(out_a)
-    b_frames = load_frames(out_b)
-    if len(a_frames) != len(b_frames):
-        return CellResult(
-            feature=cell.feature,
-            backend_a=cell.backend_a,
-            backend_b=cell.backend_b,
-            tolerance=tolerance,
-            n_frames=0,
-            per_metric_max=dict.fromkeys(metrics, 0.0),
-            per_metric_mismatches=dict.fromkeys(metrics, 0),
-            status="ERROR",
-            note=f"frame-count mismatch a={len(a_frames)} b={len(b_frames)}",
-            tolerance_source=tolerance_source,
-        )
-
-    missing_a = missing_metrics(a_frames, metrics)
-    missing_b = missing_metrics(b_frames, metrics)
-    if missing_a or missing_b:
-        # A twin that stops emitting a metric must not pass: the cell reports
-        # which side lacks what and the matrix carries on (ADR-1418).
-        return CellResult(
-            feature=cell.feature,
-            backend_a=cell.backend_a,
-            backend_b=cell.backend_b,
-            tolerance=tolerance,
-            n_frames=len(a_frames),
-            per_metric_max=dict.fromkeys(metrics, 0.0),
-            per_metric_mismatches=dict.fromkeys(metrics, 0),
-            status="ERROR",
-            note=(
-                f"missing metrics: backend_a {cell.backend_a} lacks {missing_a}; "
-                f"backend_b {cell.backend_b} lacks {missing_b}"
-            ),
-            tolerance_source=tolerance_source,
-        )
-
-    per_max, per_mismatch = diff_frames(a_frames, b_frames, metrics, tolerance)
-    fail = any(c > 0 for c in per_mismatch.values())
-    return CellResult(
-        feature=cell.feature,
-        backend_a=cell.backend_a,
-        backend_b=cell.backend_b,
+    return _diff_cell_outputs(
+        cell,
+        out_a,
+        out_b,
+        metrics=metrics,
         tolerance=tolerance,
-        n_frames=len(a_frames),
-        per_metric_max=per_max,
-        per_metric_mismatches=per_mismatch,
-        status="FAIL" if fail else "OK",
         tolerance_source=tolerance_source,
     )
 
