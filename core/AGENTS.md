@@ -108,6 +108,14 @@ core/
   Shared kernel header changes (e.g., `integer_adm_cuda.h`, `vif_cuda.h`) trigger
   incremental device binary rebuilds without manual `touch` workarounds. Rebase preserves
   dependency declarations.
+- **SYCL TU header dependency tracking** (ADR-1320 applied to SYCL,
+  `T-SYCL-TU-HEADER-DEPS-UNTRACKED-2026-10-01`). `sycl_common_<name>` +
+  `sycl_feature_<name>` custom targets in `core/src/meson.build` declare
+  `depfile` + pass `sycl_depfile_args` (`-MD -MF @DEPFILE@`; empty on
+  Windows, lane builds clean). New SYCL compile target -> same two lines.
+  Without: header edit (`feature/sycl/sycl_*.h` = kernel arithmetic) leaves
+  old kernels in the library, `ninja` says nothing to do. Guard:
+  `core/test/test_device_target_header_dependencies.py`.
 - **Windows UTF-8 path contract and internal path shims**
   ([ADR-1182](../docs/adr/1182-windows-utf8-path-contract.md);
   [Research-1182](../docs/research/1182-windows-utf8-path-contract.md)):

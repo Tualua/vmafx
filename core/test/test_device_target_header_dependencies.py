@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Deterministic regression contract for CUDA fatbin and HIP HSACO header dependencies (ADR-1320)."""
+"""Deterministic regression contract for device-target header dependencies (ADR-1320).
+
+CUDA fatbins, HIP HSACOs and the SYCL translation units are built by custom
+targets, which track only what they declare. Each must rebuild when a header
+it includes changes.
+"""
 
 from __future__ import annotations
 
@@ -22,6 +27,11 @@ BUILD_DIR = Path(os.environ.get("VMAFX_DEVICE_DEP_BUILD_DIR", ROOT / "build")).r
 
 EXPECTED_CUDA_TARGET_COUNT = 21
 EXPECTED_HIP_TARGET_COUNT = 20
+# The SYCL custom targets that compile a translation unit, by name prefix.
+SYCL_TU_TARGETS = ("sycl_common_", "sycl_feature_")
+# A header only SYCL kernels include, and a feature TU that includes it.
+SYCL_PROBE_HEADER = CORE_SRC / "feature" / "sycl" / "sycl_exact_fp.h"
+SYCL_PROBE_OBJECT = "src/ssimulacra2_sycl.o"
 
 
 def run_ninja(ninja_exe: str, args: list[str], cwd: str | Path) -> subprocess.CompletedProcess[str]:
@@ -278,6 +288,68 @@ class DeviceTargetHeaderDependencyContractTest(unittest.TestCase):
             self.assertTrue(
                 header_path.exists(), f"HIP shared header does not exist: {header_path}"
             )
+
+    def test_meson_build_sycl_translation_units_write_depfiles(self) -> None:
+        """Every SYCL TU target declares a depfile and asks the compiler for it."""
+        content = MESON_BUILD.read_text(encoding="utf-8")
+        self.assertIn("sycl_tracks_headers = host_machine.system() != 'windows'", content)
+        self.assertIn(
+            "sycl_depfile_args = sycl_tracks_headers ? ['-MD', '-MF', '@DEPFILE@'] : []", content
+        )
+        for prefix in SYCL_TU_TARGETS:
+            targets = re.findall(
+                rf"custom_target\('{prefix}' \+ name,(.*?)\n        \)", content, re.DOTALL
+            )
+            self.assertEqual(len(targets), 1, f"{prefix}: expected one custom_target")
+            self.assertIn("depfile : sycl_tracks_headers ? name + '.o.d' : '',", targets[0])
+            self.assertIn("sycl_depfile_args", targets[0], f"{prefix}: no depfile arguments")
+
+    def test_sycl_target_without_depfile_is_detected(self) -> None:
+        """The static check rejects a SYCL TU target that lost its depfile."""
+        content = MESON_BUILD.read_text(encoding="utf-8")
+        declaration = "            depfile : sycl_tracks_headers ? name + '.o.d' : '',\n"
+        self.assertEqual(content.count(declaration), len(SYCL_TU_TARGETS))
+        stripped = content.replace(declaration, "", 1)
+        missing = [
+            prefix
+            for prefix in SYCL_TU_TARGETS
+            if "depfile :"
+            not in re.findall(
+                rf"custom_target\('{prefix}' \+ name,(.*?)\n        \)", stripped, re.DOTALL
+            )[0]
+        ]
+        self.assertEqual(len(missing), 1)
+
+    def test_live_sycl_object_rebuilds_on_header_touch(self) -> None:
+        """A built SYCL object is planned for rebuild when a header it includes changes."""
+        ninja_exe = shutil.which("ninja")
+        build_ninja = BUILD_DIR / "build.ninja"
+        if not ninja_exe or not build_ninja.exists():
+            self.skipTest("ninja or build/build.ninja not available")
+        if sys.platform == "win32":
+            self.skipTest("the SYCL depfile is not requested on Windows; that lane builds clean")
+        refresh_ninja_manifest(ninja_exe)
+        manifest = build_ninja.read_text(encoding="utf-8")
+        if f"build {SYCL_PROBE_OBJECT}:" not in manifest:
+            self.skipTest("build/build.ninja has no SYCL translation units")
+        self.assertRegex(manifest, rf"build {re.escape(SYCL_PROBE_OBJECT)}: CUSTOM_COMMAND_DEP ")
+        if not (BUILD_DIR / SYCL_PROBE_OBJECT).exists():
+            self.skipTest("the SYCL objects are not built yet: no recorded dependencies")
+
+        self.assertTrue(SYCL_PROBE_HEADER.exists())
+        original = SYCL_PROBE_HEADER.stat()
+        try:
+            res = run_ninja(ninja_exe, ["-C", str(BUILD_DIR), "-n", SYCL_PROBE_OBJECT], ROOT)
+            if "ninja: no work to do." not in res.stdout:
+                self.skipTest("the SYCL object is already out of date")
+            future_mtime = time.time() + 10.0
+            os.utime(SYCL_PROBE_HEADER, (future_mtime, future_mtime))
+            res = run_ninja(ninja_exe, ["-C", str(BUILD_DIR), "-n", SYCL_PROBE_OBJECT], ROOT)
+            self.assertNotIn("ninja: no work to do.", res.stdout)
+            self.assertIn("sycl_feature_ssimulacra2_sycl", res.stdout)
+        finally:
+            # Restore exact timestamps so this probe does not perturb later builds.
+            os.utime(SYCL_PROBE_HEADER, ns=(original.st_atime_ns, original.st_mtime_ns))
 
     def test_cuda_windows_fallback_covers_repo_include_closure(self) -> None:
         """CUDA's no-depfile Windows path must list every repo-local included header."""

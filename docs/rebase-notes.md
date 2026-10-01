@@ -1,6 +1,20 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## SYCL translation units track their headers through compiler depfiles (2026-10-01)
+
+`fix/sycl-feature-header-deps`, closes `T-SYCL-TU-HEADER-DEPS-UNTRACKED-2026-10-01`
+(ADR-1320 applied to SYCL).
+
+- `core/src/meson.build`: the `sycl_common_<name>` and `sycl_feature_<name>`
+  custom targets declare `depfile` and pass `sycl_depfile_args`
+  (`-MD -MF @DEPFILE@`, empty on Windows). **On rebase**: a new custom target
+  that compiles a SYCL source takes both; without them an edit to a header
+  that source includes leaves the old kernels in the library.
+- `core/test/test_device_target_header_dependencies.py` guards it.
+- Fork-local build wiring; upstream Netflix/vmaf has no SYCL backend. No
+  public API, ABI, FFmpeg patch or Netflix golden-data impact.
+
 ## `integer_vif_cuda` resets its accumulators on the picture stream (2026-10-01)
 
 `fix/cuda-vif-accum-reset-order`, closes `T-UPSTREAM-1305-CUDA-VIF-ACCUM-STREAM-2026-10-01`.

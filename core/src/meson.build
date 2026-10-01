@@ -1875,14 +1875,25 @@ if is_sycl_enabled
         message('SYCL D3D11 import: enabled (Windows target)')
     endif
 
+    # ADR-1320 for the SYCL translation units: the compiler writes the
+    # headers a TU includes to a depfile, so editing one (the arithmetic a
+    # kernel runs lives in headers such as feature/sycl/sycl_exact_fp.h)
+    # rebuilds the object instead of leaving a stale kernel in the library.
+    # Not on Windows, where the depfile of the icpx driver is unverified;
+    # that lane builds from clean.
+    sycl_tracks_headers = host_machine.system() != 'windows'
+    sycl_depfile_args = sycl_tracks_headers ? ['-MD', '-MF', '@DEPFILE@'] : []
+
     # Compile each SYCL common source with icpx
     foreach src : sycl_sources
         name = fs.stem(src)
         common_sycl_objects += custom_target('sycl_common_' + name,
             output : name + '.o',
             input : src,
+            depfile : sycl_tracks_headers ? name + '.o.d' : '',
             command : [icpx] + sycl_common_args + sycl_inc_flags
-                      + sycl_surface_args + ['@INPUT@', '-o', '@OUTPUT@'],
+                      + sycl_surface_args + sycl_depfile_args
+                      + ['@INPUT@', '-o', '@OUTPUT@'],
         )
     endforeach
 
@@ -2253,8 +2264,9 @@ if is_sycl_enabled
         sycl_feature_objects += custom_target('sycl_feature_' + name,
             output : name + '.o',
             input : src,
+            depfile : sycl_tracks_headers ? name + '.o.d' : '',
             command : [icpx] + vmaf_cflags_common + ['-c'] + tu_toolchain_args
-                      + sycl_feature_tail_args + sycl_feature_inc
+                      + sycl_feature_tail_args + sycl_feature_inc + sycl_depfile_args
                       + ['@INPUT@', '-o', '@OUTPUT@'],
         )
     endforeach
