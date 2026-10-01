@@ -14,6 +14,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -138,6 +139,25 @@ def test_train_one_seed_min_max_consistent(tmp_path: Path) -> None:
         assert summary["max_plcc"] == pytest.approx(max(plcc_vals))
 
 
+def _assert_loso_provenance(report: dict[str, Any], corpus_path: Path, out_dir: Path) -> None:
+    provenance = report["run_provenance"]
+    assert provenance["schema"] == "ai-run-provenance-v1"
+    assert provenance["entrypoint"]["path"] == "ai/scripts/train_fr_regressor_v2_ensemble_loso.py"
+    assert provenance["argv"] == [
+        "--seeds",
+        "7",
+        "--corpus",
+        str(corpus_path),
+        "--out-dir",
+        str(out_dir),
+        "--epochs",
+        "3",
+    ]
+    assert provenance["args"]["seeds"] == [7]
+    assert provenance["inputs"]["corpus"]["kind"] == "file"
+    assert provenance["outputs"]["report_target"] == str(out_dir / "loso_seed7.json")
+
+
 def test_main_loso_report_records_run_provenance(monkeypatch, tmp_path: Path) -> None:
     corpus_path = tmp_path / "synth.jsonl"
     out_dir = tmp_path / "loso"
@@ -184,19 +204,4 @@ def test_main_loso_report_records_run_provenance(monkeypatch, tmp_path: Path) ->
 
     assert rc == 0
     report = json.loads((out_dir / "loso_seed7.json").read_text(encoding="utf-8"))
-    provenance = report["run_provenance"]
-    assert provenance["schema"] == "ai-run-provenance-v1"
-    assert provenance["entrypoint"]["path"] == "ai/scripts/train_fr_regressor_v2_ensemble_loso.py"
-    assert provenance["argv"] == [
-        "--seeds",
-        "7",
-        "--corpus",
-        str(corpus_path),
-        "--out-dir",
-        str(out_dir),
-        "--epochs",
-        "3",
-    ]
-    assert provenance["args"]["seeds"] == [7]
-    assert provenance["inputs"]["corpus"]["kind"] == "file"
-    assert provenance["outputs"]["report_target"] == str(out_dir / "loso_seed7.json")
+    _assert_loso_provenance(report, corpus_path, out_dir)
