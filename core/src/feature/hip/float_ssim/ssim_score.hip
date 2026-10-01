@@ -29,6 +29,14 @@
  *       structure terms (ssim_pixel()). One double per block in `partials`
  *       (shared-memory tree).
  *
+ *    The window sums of both passes and the l / c / s terms are the CPU's
+ *    (ADR-1441): iqa_convolve() adds the eleven fp32 products of a window in
+ *    fp64 and rounds once per pass, and so do the kernels, through the
+ *    arithmetic float_ms_ssim_hip shares with the CPU
+ *    (../integer_ms_ssim/ms_ssim_arith.h: an exact fp32 pair in place of the
+ *    fp64 sum). An fp32 running sum, which these kernels had, rounds at
+ *    every tap and left the score up to 4.8e-7 from the CPU's.
+ *
  *    2b. calculate_ssim_hip_vert_combine_lcs (`enable_lcs`, ADR-1382): the
  *       same pass 2, plus the block sums of the per-pixel l, c and s.
  *
@@ -49,6 +57,7 @@
 #include <hip/hip_runtime.h>
 #include <stdint.h>
 
+#include "../integer_ms_ssim/ms_ssim_arith.h"
 #include "ssim_decimate.h"
 
 #define SSIM_BX 16
@@ -56,74 +65,37 @@
 #define SSIM_K 11
 #define SSIM_BLOCK_SIZE (SSIM_BX * SSIM_BY)
 
-/* 11-tap Gaussian kernel (same constants as the CUDA twin). */
-__device__ static const float SSIM_G[SSIM_K] = {
-    0.001028f, 0.007599f, 0.036001f, 0.109361f, 0.213006f, 0.266012f,
-    0.213006f, 0.109361f, 0.036001f, 0.007599f, 0.001028f,
-};
+/* The window is iqa/ssim_tools.h's 11-tap Gaussian, whose taps and sums live
+ * in ms_ssim_arith.h. */
+static_assert(SSIM_K == VMAF_HIP_MS_SSIM_WINDOW, "float_ssim and float_ms_ssim share the window");
 
 /* Device helpers are called only by the kernels of this translation unit,
  * so they live in an anonymous namespace (internal linkage). */
 namespace
 {
 
-/* The five vertically filtered moments of one output pixel. */
-struct SsimMoments {
-    float ref_mu;
-    float cmp_mu;
-    float ref_sq;
-    float cmp_sq;
-    float refcmp;
-};
-
-/* Vertical 11-tap pass over the five horizontal planes at (x, y). */
-__device__ __forceinline__ SsimMoments
+/* Vertical 11-tap pass over the five horizontal planes at (x, y):
+ * iqa_convolve()'s vertical pass, through the shared arithmetic. */
+__device__ __forceinline__ VmafHipMsWindow
 ssim_vertical_moments(const float *__restrict__ h_ref_mu, const float *__restrict__ h_cmp_mu,
                       const float *__restrict__ h_ref_sq, const float *__restrict__ h_cmp_sq,
                       const float *__restrict__ h_refcmp, unsigned w_horiz, unsigned x, unsigned y)
 {
-    SsimMoments m = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-    for (int v = 0; v < SSIM_K; v++) {
-        const unsigned src_idx = (y + (unsigned)v) * w_horiz + x;
-        const float w = SSIM_G[v];
-        m.ref_mu += w * h_ref_mu[src_idx];
-        m.cmp_mu += w * h_cmp_mu[src_idx];
-        m.ref_sq += w * h_ref_sq[src_idx];
-        m.cmp_sq += w * h_cmp_sq[src_idx];
-        m.refcmp += w * h_refcmp[src_idx];
-    }
-    return m;
-}
-
-/* Per-pixel L / C / S of CPU iqa/ssim_tools.c in its own types:
- * ssim_variance_scalar() clamps both variances at zero;
- * ssim_accumulate_default_scalar() takes sigma_ref * sigma_cmp as one fp32
- * square root, forms L and C in double over fp32 denominators, clamps a
- * negative covariance to zero on a flat window, and divides S in fp32, with
- * C3 = C2 / 2. */
-__device__ __forceinline__ void ssim_lcs(const SsimMoments &m, float c1, float c2, double *l,
-                                         double *c, double *s)
-{
-#pragma clang fp contract(off)
-    const float ref_raw = m.ref_sq - m.ref_mu * m.ref_mu;
-    const float cmp_raw = m.cmp_sq - m.cmp_mu * m.cmp_mu;
-    const float ref_var = ref_raw < 0.0f ? 0.0f : ref_raw;
-    const float cmp_var = cmp_raw < 0.0f ? 0.0f : cmp_raw;
-    const float covar = m.refcmp - m.ref_mu * m.cmp_mu;
-    const float sigma_product = sqrtf(ref_var * cmp_var);
-    const float c3 = c2 / 2.0f;
-    const float flat_covar = (covar < 0.0f && sigma_product <= 0.0f) ? 0.0f : covar;
-    *l = (2.0 * m.ref_mu * m.cmp_mu + c1) / (m.ref_mu * m.ref_mu + m.cmp_mu * m.cmp_mu + c1);
-    *c = (2.0 * sigma_product + c2) / (ref_var + cmp_var + c2);
-    *s = (flat_covar + c3) / (sigma_product + c3);
+    const VmafHipMsPlanes planes = {h_ref_mu, h_cmp_mu, h_ref_sq, h_cmp_sq, h_refcmp};
+    return vmaf_hip_ms_ssim_vertical(&planes, (size_t)y * w_horiz + x, w_horiz);
 }
 
 /* One pixel's SSIM term as the CPU adds it into ssim_sum: (l * c) * s in
- * double. Writes the three factors to `lcs` for the enable_lcs kernel. */
-__device__ __forceinline__ double ssim_pixel(const SsimMoments &m, float c1, float c2,
+ * double, from ssim_accumulate_default_scalar()'s l, c and s with C3 = C2 / 2
+ * (the shared arithmetic). Writes the three factors to `lcs` for the
+ * enable_lcs kernel. */
+__device__ __forceinline__ double ssim_pixel(const VmafHipMsWindow &m, float c1, float c2,
                                              double lcs[3])
 {
-    ssim_lcs(m, c1, c2, &lcs[0], &lcs[1], &lcs[2]);
+    const VmafHipMsLcs terms = vmaf_hip_ms_ssim_lcs(&m, c1, c2, c2 / 2.0f);
+    lcs[0] = terms.l;
+    lcs[1] = terms.c;
+    lcs[2] = terms.s;
     return lcs[0] * lcs[1] * lcs[2];
 }
 
@@ -178,29 +150,23 @@ ssim_horiz(const uint8_t *ref, ptrdiff_t ref_stride, const uint8_t *cmp, ptrdiff
 
     const Sample *ref_row = reinterpret_cast<const Sample *>(ref + (ptrdiff_t)y * ref_stride);
     const Sample *cmp_row = reinterpret_cast<const Sample *>(cmp + (ptrdiff_t)y * cmp_stride);
-    float ref_mu_h = 0.0f;
-    float cmp_mu_h = 0.0f;
-    float ref_sq_h = 0.0f;
-    float cmp_sq_h = 0.0f;
-    float refcmp_h = 0.0f;
+    /* The window's eleven samples of each row as picture_copy() values;
+     * iqa_convolve()'s horizontal pass over them. */
+    float ref_taps[SSIM_K];
+    float cmp_taps[SSIM_K];
     for (int u = 0; u < SSIM_K; u++) {
         const unsigned src_x = x + (unsigned)u;
-        const float r = (float)ref_row[src_x] * sample_scale;
-        const float c = (float)cmp_row[src_x] * sample_scale;
-        const float w = SSIM_G[u];
-        ref_mu_h += w * r;
-        cmp_mu_h += w * c;
-        ref_sq_h += w * (r * r);
-        cmp_sq_h += w * (c * c);
-        refcmp_h += w * (r * c);
+        ref_taps[u] = (float)ref_row[src_x] * sample_scale;
+        cmp_taps[u] = (float)cmp_row[src_x] * sample_scale;
     }
+    const VmafHipMsWindow sums = vmaf_hip_ms_ssim_horizontal(ref_taps, cmp_taps);
 
     const unsigned dst_idx = y * w_horiz + x;
-    out.ref_mu[dst_idx] = ref_mu_h;
-    out.cmp_mu[dst_idx] = cmp_mu_h;
-    out.ref_sq[dst_idx] = ref_sq_h;
-    out.cmp_sq[dst_idx] = cmp_sq_h;
-    out.refcmp[dst_idx] = refcmp_h;
+    out.ref_mu[dst_idx] = sums.ref_mu;
+    out.cmp_mu[dst_idx] = sums.cmp_mu;
+    out.ref_sq[dst_idx] = sums.ref_sq;
+    out.cmp_sq[dst_idx] = sums.cmp_sq;
+    out.refcmp[dst_idx] = sums.refcmp;
 }
 
 /* Decimation body: output sample (x, y) of both planes, the window centred
@@ -333,7 +299,7 @@ __global__ void calculate_ssim_hip_vert_combine(
 
     double my_ssim = 0.0;
     if (x < w_final && y < h_final) {
-        const SsimMoments m =
+        const VmafHipMsWindow m =
             ssim_vertical_moments(h_ref_mu, h_cmp_mu, h_ref_sq, h_cmp_sq, h_refcmp, w_horiz, x, y);
         double lcs[3];
         my_ssim = ssim_pixel(m, c1, c2, lcs);
@@ -362,7 +328,7 @@ __global__ void calculate_ssim_hip_vert_combine_lcs(
     double my_ssim = 0.0;
     double lcs[3] = {0.0, 0.0, 0.0};
     if (x < w_final && y < h_final) {
-        const SsimMoments m =
+        const VmafHipMsWindow m =
             ssim_vertical_moments(h_ref_mu, h_cmp_mu, h_ref_sq, h_cmp_sq, h_refcmp, w_horiz, x, y);
         my_ssim = ssim_pixel(m, c1, c2, lcs);
     }

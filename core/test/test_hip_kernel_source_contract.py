@@ -87,6 +87,13 @@ MS_HOST_CALLS = (
     "s_means[i] = vmaf_hip_ms_ssim_scale_mean(total_s, n_pix);",
     "vmaf_hip_ms_ssim_combine(l_means, c_means, s_means);",
 )
+# float_ssim_hip goes through the same header for both window passes and for
+# l / c / s (ADR-1441).
+FSSIM_KERNEL_CALLS = (
+    "vmaf_hip_ms_ssim_horizontal(ref_taps, cmp_taps);",
+    "vmaf_hip_ms_ssim_vertical(&planes, (size_t)y * w_horiz + x, w_horiz);",
+    "vmaf_hip_ms_ssim_lcs(&m, c1, c2, c2 / 2.0f);",
+)
 # `x += a * b`: neither the reference's fused decimate tap nor its fp64
 # window sum.
 MULTIPLY_ACCUMULATE = re.compile(r"\b[\w.>-]+ \+= [^;]*\*[^;]*;")
@@ -297,6 +304,18 @@ def _float_ssim_decimation_failures(src: dict[str, str]) -> list[str]:
     return failures
 
 
+def _float_ssim_arithmetic_failures(src: dict[str, str]) -> list[str]:
+    """ADR-1441: float_ssim_hip's window sums and l / c / s are the shared CPU arithmetic."""
+    failures: list[str] = []
+    kernel = _code(src[FSSIM_KERNEL])
+    for call in FSSIM_KERNEL_CALLS:
+        if call not in kernel:
+            failures.append(f"{FSSIM_KERNEL}: does not compute through {MS_ARITH} ({call})")
+    if MULTIPLY_ACCUMULATE.search(kernel) or MS_OWN_MATH.search(kernel):
+        failures.append(f"{FSSIM_KERNEL}: the kernel has window or l / c / s arithmetic of its own")
+    return failures
+
+
 def _guard_failures(src: dict[str, str]) -> list[str]:
     failures: list[str] = []
     load = _function_body(
@@ -380,12 +399,7 @@ def _option_failures(src: dict[str, str]) -> list[str]:
     if "f.lum_num == f.lum_den" in src[ISSIM_KERNEL]:
         failures.append(f"{ISSIM_KERNEL}: an identical window is forced to its weight again")
     failures += _issim_raster_failures(src)
-    fssim = _function_body(
-        src[FSSIM_KERNEL].replace("__device__ __forceinline__ void", "static void"),
-        "ssim_lcs",
-    )
-    if "#pragma clang fp contract(off)" not in fssim:
-        failures.append(f"{FSSIM_KERNEL}: the CPU-typed L / C / S may be contracted")
+    failures += _float_ssim_arithmetic_failures(src)
     if "calculate_ssim_hip_vert_combine_lcs" not in src[FSSIM_HOST]:
         failures.append(f"{FSSIM_HOST}: enable_lcs has no device kernel")
     if "return lcs[0] * lcs[1] * lcs[2];" not in src[FSSIM_KERNEL] or re.search(
@@ -684,15 +698,41 @@ class HipKernelSourceContractTest(unittest.TestCase):
         )
         self.assert_detected(src, "ascending order")
 
-    def test_contracted_float_ssim_is_detected(self) -> None:
-        src = _sources()
-        kernel = src[FSSIM_KERNEL]
-        start = kernel.index("__device__ __forceinline__ void ssim_lcs")
-        pragma = kernel.index("#pragma clang fp contract(off)\n", start)
-        src[FSSIM_KERNEL] = (
-            kernel[:pragma] + kernel[pragma + len("#pragma clang fp contract(off)\n") :]
+    def test_fp32_float_ssim_window_sum_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            FSSIM_KERNEL,
+            "    const VmafHipMsWindow sums = vmaf_hip_ms_ssim_horizontal(ref_taps, cmp_taps);",
+            "    VmafHipMsWindow sums = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f};\n"
+            "    for (int u = 0; u < SSIM_K; u++)\n"
+            "        sums.ref_mu += vmaf_hip_ms_ssim_window_tap(u) * ref_taps[u];",
         )
-        self.assert_detected(src, "may be contracted")
+        self.assert_detected(src, "vmaf_hip_ms_ssim_horizontal(ref_taps, cmp_taps);")
+        self.assert_detected(src, "arithmetic of its own")
+
+    def test_fp32_float_ssim_vertical_sum_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            FSSIM_KERNEL,
+            "    return vmaf_hip_ms_ssim_vertical(&planes, (size_t)y * w_horiz + x, w_horiz);",
+            "    VmafHipMsWindow m = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f};\n"
+            "    for (int v = 0; v < SSIM_K; v++)\n"
+            "        m.ref_mu += vmaf_hip_ms_ssim_window_tap(v) * planes.ref_mu[(y + v) * w_horiz + x];\n"
+            "    return m;",
+        )
+        self.assert_detected(src, "vmaf_hip_ms_ssim_vertical(")
+
+    def test_float_ssim_terms_of_its_own_are_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            FSSIM_KERNEL,
+            "    const VmafHipMsLcs terms = vmaf_hip_ms_ssim_lcs(&m, c1, c2, c2 / 2.0f);",
+            "    VmafHipMsLcs terms;\n"
+            "    terms.l = (2.0 * m.ref_mu * m.cmp_mu + c1) / (m.ref_mu * m.ref_mu + c1);\n"
+            "    terms.c = (2.0 * sqrtf(m.ref_sq * m.cmp_sq) + c2) / (m.ref_sq + m.cmp_sq + c2);\n"
+            "    terms.s = 1.0;",
+        )
+        self.assert_detected(src, "vmaf_hip_ms_ssim_lcs(&m, c1, c2, c2 / 2.0f);")
 
     def test_forced_identical_float_ssim_is_detected(self) -> None:
         src = _replace(

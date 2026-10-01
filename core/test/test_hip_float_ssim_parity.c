@@ -11,9 +11,12 @@
  * `float_ssim_hip` decimates on the device exactly as ssim.c does
  * (bit-identical planes, test_hip_float_ssim_decimate.c), then runs the
  * separable 11-tap Gaussian and forms each pixel's term as the CPU does
- * (l * c * s in double, ADR-1382). What is left against the CPU is the
- * rounding of the fp32 Gaussian sums, so the tolerance is the cross-backend
- * gate's 5e-5 (`float_ssim` in scripts/ci/cross_backend_parity_gate.py).
+ * (l * c * s in double, ADR-1382). Since ADR-1441 the Gaussian sums are the
+ * CPU's too: iqa_convolve() adds the eleven fp32 products of a window in fp64
+ * and rounds once per pass, and the kernels do the same through the
+ * arithmetic float_ms_ssim_hip shares with the CPU. Every score of every case
+ * is therefore compared with ==. With the fp32 running sums the kernels had
+ * before, the first case differs from the CPU in the seventh digit.
  *
  * Coverage (every case scores the same frames on both sides, per frame):
  *   positive  the FIXTURE_W x FIXTURE_H auto case (256x144 = scale 1; the
@@ -60,7 +63,6 @@
 #define FIXTURE_H 144u
 #endif
 
-#define PARITY_TOL 5e-05
 #define N_FRAMES 3u
 #define N_SCORES 4u
 
@@ -244,14 +246,15 @@ static char *compare_case(const ParityCase *pc)
     const unsigned n_scores = pc->enable_lcs ? N_SCORES : 1u;
     for (unsigned i = 0; i < N_FRAMES; i++) {
         for (unsigned k = 0; k < n_scores; k++) {
-            const double delta = fabs(cpu[i][k] - gpu[i][k]);
-            if (delta > PARITY_TOL) {
-                (void)fprintf(stderr, "\n%s %ux%u %u-bit scale=%s frame %u: cpu=%.9f hip=%.9f\n",
+            const bool same = isfinite(cpu[i][k]) && cpu[i][k] == gpu[i][k];
+            if (!same) {
+                (void)fprintf(stderr,
+                              "\n%s %ux%u %u-bit scale=%s frame %u: cpu=%.17g hip=%.17g "
+                              "delta=%.3e\n",
                               score_names[k], pc->w, pc->h, pc->bpc, pc->scale ? pc->scale : "auto",
-                              i, cpu[i][k], gpu[i][k]);
+                              i, cpu[i][k], gpu[i][k], fabs(cpu[i][k] - gpu[i][k]));
             }
-            mu_assert("float_ssim CPU vs. HIP delta exceeds the parity gate's 5e-5",
-                      delta <= PARITY_TOL);
+            mu_assert("float_ssim_hip is not bit-identical to the CPU float_ssim extractor", same);
         }
     }
     return NULL;

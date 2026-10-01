@@ -8961,6 +8961,16 @@
       },
       "target": "1440-hip-float-psnr-exact-block-sums.md"
     },
+    "1441": {
+      "sites": {
+        "core/src/feature/hip/float_ssim/ssim_score.hip": 1,
+        "core/test/test_hip_float_ssim_parity.c": 1,
+        "core/test/test_hip_kernel_source_contract.py": 2,
+        "scripts/ci/exact_twins.d/float_ssim.hip": 1,
+        "scripts/ci/exact_twins.d/float_ssim_lcs.hip": 1
+      },
+      "target": "1441-hip-float-ssim-cpu-window-sums.md"
+    },
     "1443": {
       "sites": {
         "core/src/feature/sycl/integer_ssim_sycl.cpp": 2,

@@ -1198,7 +1198,8 @@ The twin falls back to the CPU extractor only when the decimated plane is
 smaller than the 11x11 SSIM window (for example 100x100 at `scale=10`) or the
 scale is above 128; `--feature float_ssim_hip` fails at init in those cases.
 
-Measured on a gfx1036 against `--backend cpu` at `--precision max`:
+Measured on a gfx1036 against `--backend cpu` at `--precision max` when
+ADR-1405 landed:
 
 | Clip | Scale | Max abs diff | Twin | CPU, 16 threads | Before (CPU fallback) |
 |---|---|---|---|---|---|
@@ -1206,6 +1207,37 @@ Measured on a gfx1036 against `--backend cpu` at `--precision max`:
 | 1920x1080, 24 frames | 4 (auto) | 4.23e-6 | 2.0 ms/frame | 2.7 ms/frame | 6.6 ms/frame |
 | Netflix 576x324, 48 frames | 1 (auto) | 1.79e-7 | unchanged | — | — |
 | Netflix 576x324 | 2, 3, 5, 10 | at most 1.79e-7 | — | — | — |
+
+#### `float_ssim_hip` returns the CPU's score bit for bit (2026-10-01)
+
+Those differences are gone
+([ADR-1441](../../adr/1441-hip-float-ssim-cpu-window-sums.md)). The CPU adds
+the eleven products of a Gaussian window in `double` and rounds once per
+pass; the twin added them in single precision. It now forms both window
+passes and the luminance, contrast and structure terms through the same
+arithmetic as `integer_ms_ssim_hip`, which carries the `double` sum as an
+exact pair of floats.
+
+Measured on a gfx1036 at `--precision max`: 178 of 178 frames identical to
+`--backend cpu` (27 before; the Netflix 576x324 pair at 8, 10, 12 and 16 bits
+and as 10-bit 4:2:2, both 1920x1080 checkerboard pairs, Sparks 480x270 at 10
+bits, 48 frames of BBB 3840x2160, full-range noise at four depths, a bright
+16-bit 1080p pair), and all four outputs of `enable_lcs=true` on the same
+frames (712 values). `scale=1`, `scale=3`, `enable_db` and `clip_db` are
+identical too.
+
+The exact sums cost time. Steady state, medians of 11 interleaved pairs of
+runs:
+
+| Run | Before | After | Change |
+|---|---|---|---|
+| 1920x1080, default scale (4) | 1.72 ms | 2.02 ms | +17 % |
+| 3840x2160, default scale (8) | 4.86 ms | 5.18 ms | +7 % |
+| 1920x1080, `enable_lcs=true` | 1.98 ms | 2.31 ms | +17 % |
+| 1920x1080, `scale=1` | 17.7 ms | 23.4 ms | +32 % |
+| 3840x2160, `scale=1` | 82.3 ms | 109.6 ms | +33 % |
+
+Stored `float_ssim_hip` scores change by up to 4.8e-7.
 
 ### Measured on a gfx1036 (2026-10-01)
 

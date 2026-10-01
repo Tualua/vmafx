@@ -1143,3 +1143,4 @@
 1436-sycl-ciede-cpu-arithmetic
 1440-hip-float-psnr-exact-block-sums
 1443-sycl-ssim-cpu-arithmetic
+1441-hip-float-ssim-cpu-window-sums

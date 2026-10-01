@@ -1205,13 +1205,22 @@ Scores = `integer_vif.c`'s bits (gfx1036: 440 of 440 scores, six fixtures;
   loop, or route them through `issim_pixel_term()`:
   `test_hip_ssim_tiny_frames` (`==`, device) and
   `test_hip_kernel_source_contract.py` fail.
+- `float_ssim_hip` = CPU bits (ADR-1441, exact twin `float_ssim` /
+  `float_ssim_lcs`; gfx1036: 178 of 178 frames, 712 values with
+  `enable_lcs`). Window sums + terms = `integer_ms_ssim/ms_ssim_arith.h`,
+  never a copy: pass 1 `vmaf_hip_ms_ssim_horizontal(ref_taps, cmp_taps)`,
+  pass 2 `vmaf_hip_ms_ssim_vertical()`, terms `vmaf_hip_ms_ssim_lcs(&m, c1,
+  c2, c2 / 2.0f)`. No tap table, no `+=` of a product, no `sqrtf` / `fmaf` in
+  `float_ssim/ssim_score.hip`. fp32 running sum = rounds every tap, was up to
+  4.8e-7 off (only `float_ssim_l` matched). Contraction off by build flag
+  (ADR-1407). Cost of the pair sums: +17 % 1080p, +7 % 4K at default scale,
+  +32 % at `scale=1`.
 - `float_ssim_hip`: no identical-window shortcut. CPU is 1 - 2^-24 on some
-  identical frames (fp32 luminance denominator, 72.247 dB). Pass 2 =
-  CPU `ssim_accumulate_default_scalar()`: `ssim_pixel()` = `(l * c) * s` in
-  double from `ssim_lcs()` (CPU types, `#pragma clang fp contract(off)`
-  load-bearing: hipcc default contraction fuses across statements), one
-  double partial per block; host `fssim_hip_cpu_mean()` rounds mean to fp32.
-  Do not bring back the combined Wang formula or `num == den ? 1`.
+  identical frames (fp32 luminance denominator, 72.247 dB). `ssim_pixel()` =
+  `(l * c) * s` in double, one double partial per block; host
+  `fssim_hip_cpu_mean()` rounds mean to fp32 (absorbs the block order, same
+  caveat as `float_ms_ssim`). Do not bring back the combined Wang formula or
+  `num == den ? 1`.
 - `float_ssim_hip` scale > 1 (ADR-1405): `calculate_ssim_hip_decimate_{8,16}bpc`
   before pass 1 -> fp32 planes == CPU `iqa_decimate()` bit for bit. Window sum
   = `float_ssim/ssim_decimate.h` (`vmaf_hip_ssim_decimate_sample`): fp32
@@ -1224,9 +1233,10 @@ Scores = `integer_vif.c`'s bits (gfx1036: 440 of 440 scores, six fixtures;
   (`horiz_{8,16}bpc`), decimated planes above (`horiz_f32`); one template
   body. `check_context_hip()` refuses only decimated < 11x11 or scale > 128.
 - `float_ssim_hip` `enable_lcs`: separate kernel
-  `calculate_ssim_hip_vert_combine_lcs`, CPU `iqa/ssim_tools.c` types
-  (clamped fp32 variances, double L/C, fp32 S, flat-window covariance clamp),
-  double per-block partials in `rb_lcs`. Default kernel stays LCS-free.
+  `calculate_ssim_hip_vert_combine_lcs`, same `ssim_pixel()` (the header's
+  CPU types: clamped fp32 variances, double L/C, fp32 S, flat-window
+  covariance clamp), double per-block partials in `rb_lcs`. Default kernel
+  stays LCS-free.
 - `float_motion_hip`: `motion_max_val` (`mmxv`); every emitted `motion` /
   `motion2`, debug and flush tail included, through `fm_hip_motion_clip()`.
 - `float_motion_hip` option table == CPU `float_motion.c` table, same order

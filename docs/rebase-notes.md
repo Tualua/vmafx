@@ -57462,6 +57462,23 @@ ADR-1422).
   (ADR-1428). The CUDA, SYCL and Metal twins still reduce in fp32.
 - No Netflix golden-data, public API or FFmpeg patch impact. The CPU
   extractor is untouched.
+## ADR-1441 — `float_ssim_hip` uses the shared window arithmetic (2026-10-01)
+
+`fix/hip-float-ssim-cpu-arithmetic`, `T-HIP-FLOAT-SSIM-NOT-CPU-ARITHMETIC-2026-10-01`.
+
+- `core/src/feature/hip/float_ssim/ssim_score.hip` includes
+  `../integer_ms_ssim/ms_ssim_arith.h`. `SSIM_G`, `struct SsimMoments` and
+  `ssim_lcs()` are gone; `ssim_horiz()` calls `vmaf_hip_ms_ssim_horizontal()`,
+  `ssim_vertical_moments()` returns `vmaf_hip_ms_ssim_vertical()` and
+  `ssim_pixel()` calls `vmaf_hip_ms_ssim_lcs()`. A rebase that restores an
+  fp32 running sum or a local `l` / `c` / `s` makes the twin inexact again;
+  `test_hip_kernel_source_contract.py` rejects both.
+- A change to `iqa/convolve.c` or to `ssim_accumulate_default_scalar()` now
+  reaches `float_ssim_hip` and `float_ms_ssim_hip` through one header.
+- `scripts/ci/exact_twins.d/float_ssim.hip` and `float_ssim_lcs.hip` (new)
+  declare the twin exact (ADR-1428).
+- No Netflix golden-data, public API or FFmpeg patch impact. The CPU
+  extractor is untouched.
 ## ADR-1435 — `vif_hip` reads the CPU's log2 table (2026-10-01)
 
 `fix/hip-vif-cpu-log2-table`, `T-HIP-VIF-DEVICE-LOG2-2026-10-01`.
