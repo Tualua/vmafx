@@ -15,7 +15,14 @@
 > `motion3` differ by up to 1.26e-5 and VIF by up to 5.4e-7; ADM runs on the
 > CPU (see `integer_adm_hip` below). This is close agreement, not
 > bit-exactness, and it is inside the 5e-5 `places=4` cross-backend gate
-> from [ADR-0214](../../adr/0214-gpu-parity-ci-gate.md).
+> from [ADR-0214](../../adr/0214-gpu-parity-ci-gate.md). The motion
+> difference came from `motion_hip` blurring each frame instead of the frame
+> difference; since 2026-09-30 it runs the CPU's arithmetic and matches the
+> CPU exactly (measured on the same gfx1036 on 2026-10-01, see
+> [RC3 CPU parity](#rc3-cpu-parity-motion-tiny-frames-and-cpu-options-2026-09-30)).
+> VIF is then the only difference: 76.667849 against 76.667831, 1.79e-5
+> pooled and at most 4.9e-5 per frame, slightly more than before because the
+> old motion error partly offset the VIF one.
 >
 > **Dispatch posture (2026-05-18, updated per
 > [ADR-0530](../../adr/0530-hip-feature-flag-promotion-and-picture-buffer.md)):**
@@ -236,8 +243,10 @@ core/src/feature/hip/          # per-feature kernels
   float_adm_hip.c                 # ADM float pipeline (ADR-0468)
   ciede_hip.c                     # legacy alias for integer_ciede_hip
   integer_ciede_hip.c             # YUV->Lab, CIEDE2000 dE, warp-64 shfl_down
-  integer_motion_v2_hip.c         # raw-pixel ping-pong, 5-tap Gaussian diff
-  integer_motion_hip.c            # 5-tap Gaussian blur + warp-reduced SAD
+  integer_motion_v2_hip.c         # raw-pixel ping-pong, host motion2/motion3 fold
+  integer_motion_hip.c            # raw-pixel ping-pong, host motion2/motion3 fold
+  integer_motion_sad_hip.c        # diff-first SAD launcher both motion twins call
+  hip_tile_index.h                # tile-load index clamp shared by kernels and host tests
   integer_moment_hip.c            # four uint64 atomic accumulator (integer)
   integer_psnr_hvs_hip.c          # PSNR-HVS frequency-weighted distortion
   integer_ssim_hip.c              # 9-tap int64 moments + per-pixel SSIM (CPU kernel)
@@ -276,9 +285,12 @@ core/src/feature/hip/          # per-feature kernels
   single int64 atomic SAD accumulator, host-side `min(cur, next)` fold in `flush()`.
   Emits `VMAF_integer_feature_motion_v2_sad_score` +
   `VMAF_integer_feature_motion2_v2_score`.
-- **`integer_motion_hip`** — 5-tap Gaussian blur + warp-reduced SAD, ping-pong
-  frame buffer; mirrors `integer_motion_cuda.c` call-graph. Emits
-  `VMAF_feature_motion2_score`.
+- **`integer_motion_hip`** — raw-pixel ping-pong (`pix[2]`) and the shared
+  diff-first SAD kernel of `motion_v2_hip` (`integer_motion_sad_hip.c`), so the
+  SAD is the CPU `motion`'s: `sum |blur(prev - cur)|`, rounded after each pass
+  (ADR-1377). Host-side `motion2` / `motion3` and the debug `motion` score go
+  through the CPU's `motion_fps_weight` / `motion_max_val` clip. Emits
+  `VMAF_integer_feature_motion2_score` + `VMAF_integer_feature_motion3_score`.
 - **`integer_psnr_hvs_hip`** — frequency-weighted distortion per 8×8 block,
   porting the CUDA twin. Emits `psnr_hvs` + per-channel variants.
 - **`integer_ssim_hip`** — the CPU `ssim` extractor's algorithm, ported from
@@ -553,15 +565,30 @@ What this means for a run:
 - Scores are reproducible: every extractor gives the same per-frame output on
   every run and agrees with the CPU within its parity tolerance. Measured on a
   gfx1036 over the 48-frame Netflix pair at 576x324 and scaled to 1920x1080,
-  ten runs each, one extractor per process and all of them in one.
+  ten runs each, one extractor per process and all of them in one. Longer
+  runs on that device also show rare wrong frames that have nothing to do
+  with uploads; see
+  [Known issue: the gfx1036 loses stream commands](#known-issue-the-gfx1036-loses-stream-commands).
 - Throughput on a small device can drop. On the gfx1036 iGPU at 1080p,
   `--model version=vmaf_float_v0.6.1` went from 18.8 to 14.8 frames per second
   (-21 %), because a copy cannot start until the previous extractor's kernels
   leave the GPU and the host now waits for it. `--model version=vmaf_v0.6.1`
   (17.1 to 17.0), eleven extractors in one process (7.3 to 7.2) and the single
   extractors were within run-to-run noise, except `vif_hip` (-7 %). Pinned
-  staging buffers would remove the wait and are tracked as
+  staging buffers remove the wait and are tracked as
   T-HIP-UPLOAD-WAIT-THROUGHPUT-2026-09-19 in [`docs/state.md`](../../state.md).
+
+`motion_hip` and `motion_v2_hip` already stage that way (ADR-1377):
+`vmaf_hip_picture_upload_staged()` copies the reference luma on the host into
+a pinned buffer the extractor owns, so the picture is read before `submit()`
+returns, and enqueues the device copy from that buffer without waiting. The
+buffer is reused next frame, which is safe because libvmaf collects frame
+N - 1, and `collect()` drains the extractor's stream, before it submits frame
+N. The other extractors still use `vmaf_hip_picture_upload()`. On the gfx1036
+iGPU the staged path measured slower than the waiting upload for a single
+motion twin at 4K, because the runtime there copies a pageable picture
+without a host copy; see
+[Measured on a gfx1036](#measured-on-a-gfx1036-2026-10-01).
 
 To check a build on your own hardware, run one extractor twice and compare:
 
@@ -638,3 +665,134 @@ emitting a `0.0` score. The twin also adopts the CPU rule that a channel with
 exactly one singular side (reference or distorted) scores 0 rather than an
 inflated value. The launch-geometry half of ADR-1202 was CUDA-only — this
 twin's solve launch was already correct.
+
+## RC3 CPU parity: motion, tiny frames and CPU options (2026-09-30)
+
+Three changes bring HIP twins onto the CPU's arithmetic. They build for
+gfx90a, gfx1030, gfx1036 and gfx1100 and pass every device-free check, and on
+2026-10-01 they passed on a gfx1036 (Ryzen 9950X3D iGPU, ROCm 7.2.4): every
+HIP device test OK, `motion_hip` equal to the CPU `motion` on every frame, and
+the parity gate within its tolerances (numbers under
+[Measured on a gfx1036](#measured-on-a-gfx1036-2026-10-01)). The commands
+below repeat the check on another AMD device.
+
+**`motion_hip` is expected to match the CPU `motion` exactly**
+([ADR-1377](../../adr/1377-hip-motion-diff-first.md)). The CPU differences the
+two frames, blurs the difference, and rounds after the vertical and after the
+horizontal pass. `motion_hip` used to blur each frame and difference the
+blurred frames, which rounds differently (the 1.26e-5 at the top of this
+page). It now runs the kernel `motion_v2_hip` already used
+(`integer_motion_v2/motion_v2_score.hip`, launched only by
+`integer_motion_sad_hip.c`), and its debug `motion` score carries
+`motion_fps_weight` and `motion_max_val` like the CPU's. Both motion twins
+upload through pinned staging and wait on the host only in `collect()` (see
+[Picture uploads](#picture-uploads)).
+
+**Small frames stay inside the device buffers**
+([ADR-1381](../../adr/1381-hip-integer-tiny-frame-guards.md)). A tiled kernel
+loads a whole tile for every thread, padding threads included, and reflects an
+out-of-plane index once; on a plane smaller than the tile that reflection can
+still land outside it. The motion and float-motion tile loads and the integer
+ADM scale-0 vertical DWT now clamp the reflected index into the plane
+(`hip_tile_index.h`, `integer_adm/adm_dwt2_rows.h`). The clamp is the identity
+for every sample an output reads, so no score changes;
+`test_hip_adm_dwt2_rows` replays every thread of the launch for every plane
+height up to 8192 on the host. `vif_hip` now needs 16x16 frames, as `vif_sycl`
+does: its filters reflect once per scale and need 16 pixels at scale 3. With a
+model, smaller frames run on the CPU `vif`; `--feature vif_hip` below 16x16
+fails at init.
+
+**Four twins take the CPU options**
+([ADR-1382](../../adr/1382-hip-twin-cpu-option-parity.md)):
+
+| Twin | Options added | How |
+|---|---|---|
+| `psnr_hip` | `enable_mse`, `enable_apsnr`, `reduced_hbd_peak`, `min_sse` | Host, from the device SSE, through the CPU's `psnr_score.h`; `apsnr_*` in `flush()` |
+| `integer_ssim_hip` | `enable_db`, `clip_db` | Host, `vmaf_ssim_max_db()` and the shared SSIM emitter |
+| `float_ssim_hip` | `enable_lcs`, `enable_db`, `clip_db` | `enable_lcs` selects a pass-2 kernel that also reduces the per-pixel L, C and S |
+| `float_motion_hip` | `motion_max_val` (`mmxv`) | Host; every emitted score, the debug one included, goes through the CPU's `motion_clip()` |
+
+With `enable_db`, identical frames report what the CPU reports. For
+`integer_ssim_hip` that is `+inf` (or the `clip_db` ceiling) from 3x3 up.
+`float_ssim_hip` computes each pixel's term as the CPU does, `l * c * s` from
+the CPU's own luminance, contrast and structure types, and rounds the frame
+mean to fp32 like the CPU. On some identical frames the CPU's fp32 arithmetic
+leaves 1 - 2^-24, which is 72.247 dB, and the twin reports the same instead
+of a forced `+inf`.
+
+Three more CPU behaviours: `motion_v2_hip` stores its SAD weighted by
+`motion_fps_weight` and capped at `motion_max_val`, as the CPU does, and
+emits `motion2_v2` / `motion3_v2` for a one-frame run; `psnr_hip` sees every
+frame under `--subsample`, so the `apsnr_*` totals cover the clip; and
+`motion_hip` defaults `debug` to false and writes
+`VMAF_integer_feature_motion_sad_score` every frame, like the CPU `motion`.
+With `motion_force_zero=true`, `motion_hip` and `float_motion_hip` write the
+CPU's zero scores; before this change both crashed on the first frame.
+`float_motion_hip` does not emit `motion3` yet
+(`T-HIP-FLOAT-MOTION-MOTION3-OPTIONS-2026-09-30`).
+
+To confirm on an AMD host, build with HIP in the `vmaf-dev-mcp` container and
+run the device tests, which skip (exit 77) without a device:
+
+```bash
+meson setup build-hip core -Denable_hip=true -Denable_hipcc=true \
+    -Dhip_gfx_targets=gfx1036
+ninja -C build-hip
+python3 scripts/ci/run_meson_test.py -- -C build-hip \
+    test_hip_motion_tiny_frames test_hip_twin_option_parity \
+    test_hip_vif_min_dim test_hip_adm_tiny_frames test_hip_upload_race
+python3 scripts/ci/cross_backend_parity_gate.py --vmaf-binary build-hip/tools/vmaf \
+    --reference testdata/ref_576x324_48f.yuv --distorted testdata/dis_576x324_48f.yuv \
+    --width 576 --height 324 --backends cpu hip \
+    --features float_ssim float_ssim_lcs psnr motion_v2 vif
+```
+
+Replace `gfx1036` with your device's target (`rocm_agent_enumerator` prints
+it). The per-row commands, with the expected numbers and a timing run, are in
+[`docs/state.md`](../../state.md) under `T-HIP-MOTION-BLUR-THEN-DIFF-2026-09-29`,
+`T-CUDA-HIP-ADM-DWT-VERT-TINY-HEIGHT-OOB-2026-09-29`,
+`T-GPU-INTEGER-VIF-MIN-DIM-TWINS-2026-09-29` and
+`T-BUG048-GPU-OPTION-PARITY-REMAINDER-2026-09-26`.
+
+### Measured on a gfx1036 (2026-10-01)
+
+| Check | Result |
+|---|---|
+| HIP device tests (`--suite gpu`, 52 tests) | all OK; the only skip marker is `test_hip_float_ssim_parity_large`, because `float_ssim_hip` does not decimate yet |
+| `motion_hip` against `--backend cpu`, Netflix 576x324 pair | `motion2` / `motion3` identical (1.26e-5 apart before) |
+| Parity gate, `float_ssim float_ssim_lcs psnr motion_v2 vif` | every cell OK: 1.0e-5, 1.0e-5, 0, 0, 1.0e-6 |
+| `psnr_hip` with all four CPU options | every per-frame value and every `apsnr_*` identical to the CPU |
+| `float_motion_hip` on 3x3 and 17x17 frames | exits 0, within 4e-6 of the CPU |
+| BBB 4K, ms per frame (master / this change) | `motion_hip` 14.25 / 12.95, `motion_v2_hip` 10.17 / 13.24 |
+
+`motion_v2_hip` got slower on this iGPU because of the staged upload, not
+the kernel: with the waiting `vmaf_hip_picture_upload()` the same kernel
+runs at 10.70 ms per frame, and `motion_hip` at 10.75. On an integrated GPU
+the runtime copies a pageable picture without an extra host copy, so the
+staged path's copy into pinned memory costs more than the wait it saves.
+`T-HIP-UPLOAD-WAIT-THROUGHPUT-2026-09-19` in [`docs/state.md`](../../state.md)
+has the numbers, including runs with several twins, where the two uploads are
+within noise.
+
+### Known issue: the gfx1036 loses stream commands
+
+On this gfx1036 (ROCm 7.2.4, Linux 7.2.8) a HIP stream now and then never
+runs a run of the commands it was given, roughly once per 10^4 frames, on
+master as well. A HIP twin then reports a wrong score for that frame:
+`vif_hip`, for example, reports the sums of two frames when the memset of
+its accumulators is lost, or fails the run with `invalid ratio` when a scale's
+kernel is lost. Nothing in vmafx sets it off, and no runtime setting tried
+stops it. To check a device or a driver update, run the probe that
+reproduces it without vmafx:
+
+```bash
+hipcc -O2 --offload-arch=gfx1036 scripts/dev/hip_dispatch_drop_probe.hip -o /tmp/probe
+for i in 1 2 3 4 5; do /tmp/probe 100000 12 0; done
+```
+
+Each run prints `bad_frames` and `lost` (dispatches that never ran); both
+are 0 on a healthy stack. On the gfx1036 five runs gave 55 bad frames in
+500000 and 382 lost dispatches in 6.0 million. Until a driver update clears
+it, compare HIP scores from this device over repeated runs and treat a
+single-frame mismatch as suspect, not as a code defect
+(`T-HIP-GFX1036-DROPPED-DISPATCHES-2026-10-01`).

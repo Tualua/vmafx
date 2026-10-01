@@ -658,8 +658,10 @@ extractors honour `enable_chroma` (default `true`) and emit `psnr_cb` /
 `enable_chroma=false` for luma-only operation on any backend. `uncapped` is
 mirrored on every GPU twin under the same name and default. `psnr_sycl` and
 `psnr_cuda` also implement `enable_mse`, `enable_apsnr`, `reduced_hbd_peak` and
-`min_sse`, bit-exact with the CPU; on HIP and Metal these four keep `psnr` on
-the CPU (see [PSNR](psnr.md#options)).
+`min_sse`, bit-exact with the CPU. `psnr_hip` implements them through the
+CPU's own helpers as well and matched the CPU bit for bit on a gfx1036
+(ADR-1382). On Metal these four keep `psnr` on the CPU (see
+[PSNR](psnr.md#options)).
 `float_psnr` adds CUDA / SYCL / HIP / Metal twins on the float pipeline and
 accepts `uncapped` on all of them. (The Vulkan backend was removed in
 ADR-0726.)
@@ -762,9 +764,12 @@ scales to the CPU extractor. The CUDA twins
 computes the CPU's per-pixel `l * c * s` and fp32 frame mean, so identical
 frames report the CPU's value (`+inf`, or 72.247 dB for flat frames), and
 still accepts, and ignores, the `enable_chroma` the CPU `float_ssim` never
-had.
-`float_ssim_hip` lacks `enable_db` / `clip_db`; a model setting one of them
-computes that feature on the CPU.
+had. The HIP twins `integer_ssim_hip` and `float_ssim_hip` implement
+`enable_db` / `clip_db` (and `float_ssim_hip` `enable_lcs`); `float_ssim_hip`
+scores each pixel with the CPU's own `l * c * s` arithmetic too, so its
+identical frames report what the CPU reports, including the finite 72.247 dB
+the CPU gives some identical frames
+([ADR-1382](../adr/1382-hip-twin-cpu-option-parity.md)).
 
 **MS-SSIM decimate (fork-local)** — the 9-tap 9/7 biorthogonal wavelet
 LPF that produces scales 1–4 runs through `ms_ssim_decimate` in

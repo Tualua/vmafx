@@ -6,6 +6,17 @@
 ## [Unreleased]
 ### Added
 
+- **`scripts/dev/hip_dispatch_drop_probe.hip` checks whether an AMD GPU runs
+  every command of a HIP stream.** Built with `hipcc`, it runs frames of one
+  memset, several small kernels and a readback on one stream and reports the
+  frames with wrong results and the kernel launches that never ran. On the
+  maintainers' gfx1036 iGPU (ROCm 7.2.4) about one frame in 10^4 loses a run
+  of its commands, which makes a HIP twin report a wrong score for that frame
+  on master as well; the probe tells whether a driver update fixed it. See
+  [the HIP backend guide](docs/backends/hip/overview.md#known-issue-the-gfx1036-loses-stream-commands)
+  (`T-HIP-GFX1036-DROPPED-DISPATCHES-2026-10-01`).
+
+
 - **`vmaf_feature_backend_twin()` and `vmaf_registered_feature_extractor()`**
   in `libvmaf.h`. The first tells a caller which device twin model dispatch
   would use for a CPU extractor on the context's backend, and whether that twin
@@ -53,6 +64,33 @@
   and `float_motion` options give the CPU's scores exactly, `ssim` stays
   within 7.3e-13 dB and `float_ssim` within 6.9e-6 dB of the CPU; see
   [the CUDA backend guide](docs/backends/cuda/overview.md#cpu-options-on-the-psnr-ssim-and-float-motion-twins).
+
+
+- **Four HIP twins take the CPU extractor's options (ADR-1382).** `psnr_hip`
+  now accepts `enable_mse`, `enable_apsnr`, `reduced_hbd_peak` and `min_sse`
+  through the CPU's own `core/src/feature/psnr_score.h`, `apsnr_*` aggregates
+  included; `integer_ssim_hip` accepts `enable_db` / `clip_db`,
+  `float_ssim_hip` `enable_lcs` / `enable_db` / `clip_db` (`float_ssim_l/c/s`
+  computed on the device), and `float_motion_hip` `motion_max_val`, with its
+  debug `motion` score now weighted by `motion_fps_weight` like the CPU's.
+  Before, a model that set one of these options computed the feature on the
+  CPU, and naming the twin with the option failed with `unknown option`.
+  `float_ssim_hip` now scores each pixel as the CPU does (`l * c * s` from the
+  CPU's luminance, contrast and structure terms) and rounds the frame mean to
+  fp32 like the CPU, so with `enable_db` identical frames report what the CPU
+  reports (72.247 dB on a flat frame, where the CPU's fp32 arithmetic leaves
+  1 - 2^-24) instead of a forced `+inf`; `integer_ssim_hip` scores identical
+  frames from 3x3 up exactly 1, as the CPU does. `motion_v2_hip` now stores
+  its SAD weighted by `motion_fps_weight` and capped at `motion_max_val` like
+  the CPU (it weighted at fold time and never capped) and scores one-frame
+  runs; `psnr_hip` now sees every frame under `--subsample`, so `apsnr_*`
+  covers the whole clip; `motion_hip` defaults `debug` to false and emits
+  `VMAF_integer_feature_motion_sad_score`, as the CPU `motion` does. The
+  parity gate (`scripts/ci/cross_backend_parity_gate.py`) takes `--backends
+  hip` and a `float_ssim_lcs` cell. On a gfx1036 `psnr_hip` with all four
+  options matches the CPU exactly, `apsnr_*` included, and the parity gate
+  passes every HIP cell; see
+  [the HIP backend guide](docs/backends/hip/overview.md#measured-on-a-gfx1036-2026-10-01).
 
 
 - **`vmaf` reads its two inputs ahead of scoring, on one thread each
@@ -410,9 +448,54 @@
   `--backend cuda --feature motion_cuda=motion_force_zero=true` (or
   `float_motion_cuda=...`) died with SIGSEGV. The engine now initialises such
   an extractor before it picks the path, so both twins publish zeros for
-  every frame, as the CPU extractors do. The HIP and Metal motion twins make
-  the same switch and take the same engine path
+  every frame, as the CPU extractors do. The Metal motion twin makes the
+  same switch and takes the same engine path; the HIP motion twins keep an
+  asynchronous pair that writes the zeros (see the `motion_hip` entry)
   (`T-GPU-MOTION-FORCE-ZERO-FIRST-FRAME-SEGV-2026-09-30`).
+
+
+- **HIP twins stay inside their buffers on small frames, and `vif_hip` hands
+  frames below 16 pixels to the CPU (ADR-1381).** The HIP motion kernel's tile
+  loads and the integer ADM scale-0 vertical DWT reflect an index once, which
+  leaves the plane for the padding threads of a plane smaller than the tile
+  (the defect that faulted the SYCL twins); both now clamp the reflected row
+  into the plane, which changes no score of any accepted frame.
+  `float_motion_hip` had the same single reflection and read before its input
+  plane on 3x3 to 9x9 and 17x17 frames; its tile loads clamp the same way.
+  `vif_hip` scored frames below 16 pixels from other samples than the CPU (its filters
+  need 16 pixels at every scale); model dispatch now computes those frames
+  with the CPU `vif`, and `--feature vif_hip` below 16x16 fails at init. The
+  device tests pass on a gfx1036 with no GPU memory fault; see
+  [the HIP backend guide](docs/backends/hip/overview.md#measured-on-a-gfx1036-2026-10-01).
+
+
+- **`motion_hip` now computes the CPU `motion` arithmetic (ADR-1377).** The
+  HIP twin blurred each frame and differenced the blurred frames, while the
+  CPU (since the upstream pipelined-motion port) blurs the frame difference
+  and rounds after each filter pass; the two orders round differently, so
+  `motion2` / `motion3` were up to 1.26e-5 off on the Netflix 576x324 pair on
+  a gfx1036. `motion_hip` and `motion_v2_hip` now run one diff-first kernel,
+  the one `motion_v2_hip` already used, and are expected to match
+  `--backend cpu` bit for bit; the debug `motion` score now carries
+  `motion_fps_weight` and `motion_max_val` like the CPU's, and a one-frame
+  run reports `motion3 = 0`. Both motion twins copy the reference luma into
+  pinned memory and upload it without a host wait in `submit()`. Measured on
+  a gfx1036: `motion2` / `motion3` identical to `--backend cpu` on every
+  frame (1.26e-5 apart before); at 4K `motion_hip` takes 12.95 ms per frame
+  (14.25 before) and `motion_v2_hip` 13.24 (10.17 before), the staged upload
+  costing more than the wait it removes on that iGPU; see
+  [the HIP backend guide](docs/backends/hip/overview.md#measured-on-a-gfx1036-2026-10-01).
+
+
+- **`motion_hip` and `float_motion_hip` no longer crash with
+  `motion_force_zero=true`.** Both HIP twins switched to their synchronous
+  zero path inside `init()` and cleared `submit()` / `collect()`, but libvmaf
+  had already chosen the asynchronous path for them, so the first frame
+  called a NULL `submit()` and the process died with SIGSEGV. The twins now
+  keep the asynchronous interface and write the CPU's zeros from
+  `collect()`. Measured on a gfx1036: `--feature motion_hip=motion_force_zero=true`
+  exits 0 with every `integer_motion*_force_0` score 0, as on the CPU
+  (`T-HIP-MOTION-FORCE-ZERO-NULL-SUBMIT-2026-09-30` in `docs/state.md`).
 
 
 - The oneAPI container image no longer crashes on Arc B580 (Battlemage)

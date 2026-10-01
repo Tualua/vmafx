@@ -524,7 +524,12 @@ Rules:
 
 - Stage every plane from `VmafPicture::data` with
   `vmaf_hip_picture_upload()` (`core/src/hip/picture_hip.h`). It enqueues
-  copies, waits on event recorded after them. Do not call
+  copies, waits on event recorded after them. Or, with an extractor-owned
+  pinned buffer (`vmaf_hip_picture_staging_alloc()`), with
+  `vmaf_hip_picture_upload_staged()`: host copy into buffer before return,
+  device copy from buffer, no wait (ADR-1377; `motion_hip`, `motion_v2_hip`).
+  Buffer reuse next frame safe only because `collect()` drains the stream the
+  copies ran on and libvmaf collects frame N - 1 before submit N. Do not call
   `hipMemcpy2DAsync` / `hipMemcpyAsync` on picture plane directly. Copy from
   extractor-owned pinned buffer (`integer_ms_ssim_hip`,
   `integer_psnr_hvs_hip`, SpEED twins) not affected: extractor owns that
@@ -547,9 +552,10 @@ Rules:
   bit-identical. Add new extractor to its `race_cases[]` table.
 
 Wait costs host time: 21 % of `vmaf_float_v0.6.1` throughput at 1080p on
-gfx1036, noise for `vmaf_v0.6.1`. Extractor-owned pinned staging buffers would
-remove it; follow-up = T-HIP-UPLOAD-WAIT-THROUGHPUT-2026-09-19 in
-`docs/state.md`. Do not buy throughput back by dropping wait.
+gfx1036, noise for `vmaf_v0.6.1`. Extractor-owned pinned staging buffers
+remove it (`vmaf_hip_picture_upload_staged()`, motion twins first); rest =
+T-HIP-UPLOAD-WAIT-THROUGHPUT-2026-09-19 in `docs/state.md`. Do not buy
+throughput back by dropping wait.
 
 ## Integer ADM staging buffer requirement (ADR-1154, ADR-1211)
 
@@ -889,3 +895,118 @@ Rebase-sensitive invariants:
 - `test_hip_float_motion_parity` exercises both invariants on a real HIP device.
   Preserve its non-default feature parameter when rebasing this fork-local
   extractor. See [Research-2115](../../../../docs/research/2115-hip-float-motion-lifecycle-flush.md).
+
+## Motion SAD: one diff-first kernel, one launcher (ADR-1377)
+
+- CPU `motion` / `motion_v2` SAD = `sum |H(V(prev - cur))|`: difference raw
+  frames first, vertical 5-tap rounded `>> bpc` (int32 sum at 8 bits, int64
+  above), horizontal rounded `>> 16`, arithmetic shifts.
+- Only kernel: `integer_motion_v2/motion_v2_score.hip`. Only host loader and
+  launcher: `integer_motion_sad_hip.c` (`vmaf_hip_motion_sad_submit()`).
+  `motion_hip` and `motion_v2_hip` both call it; neither TU calls
+  `hipModuleLaunchKernel`.
+- Do not restore per-frame blur ping-pong (`blur[2]`, `motion_score.hip`,
+  pre-ADR-1377 `motion_hip`): rounds unlike CPU, 1.26e-5 on Netflix pair on
+  gfx1036. Do not swap operands to `cur - prev`: arithmetic shift rounds
+  negative sums toward minus infinity.
+- `motion_hip` keeps raw luma ping-pong `pix[2]` + pinned `staging`; frame 0
+  uploads only. `submit()` never waits; `collect()` = one host wait.
+- Staged upload bound = allocated size from owner (`.staging_bytes =
+  s->plane_bytes`), not frame geometry; `submit()` never rewrites
+  `frame_w` / `frame_h`. Error after a copy was enqueued -> drain stream
+  before returning (`*_drain_after_error()`, only in `return` of an error
+  branch; contract test checks).
+- Every emitted `motion_hip` score, debug `motion` included, goes through
+  `motion_clip_hip()` (fps weight, then `motion_max_val`), like CPU
+  `extract()`. One-frame run: `motion3[0] = 0` from `msh_flush_tail()`.
+- Guards: `test_hip_motion_tiny_frames` (`==` vs scalar CPU, 3x3 to 1283x723,
+  8/10/16 bit, skip 77 without device), `test_hip_kernel_source_contract.py`
+  (planted regressions), `test_hip_upload_race` (motion rows).
+
+## Tile loads and ADM scale-0 rows clamp after one reflection (ADR-1381)
+
+- Tiled kernels load whole tile for every thread, padding threads included.
+  One reflect-101 keeps every consumed sample in plane, not padding samples:
+  17-sample motion plane reflects halo 33 to -1.
+- Motion tile loads: `vmaf_hip_tile_index(vmaf_hip_reflect_101(i, n), n)`
+  (`hip_tile_index.h`). Identity for every consumed sample -> no score change.
+  `float_motion_score.hip` same geometry, same clamp (`fm_tile_index()`); its
+  old `fm_mirror()` read before `ref_in` at extents 3-9 and 17.
+- ADM scale-0 vertical DWT: `adm_dwt2_load_column()` reads
+  `adm_dwt2_source_row()` (`integer_adm/adm_dwt2_rows.h`); launch geometry
+  `ADM_DWT2_*` shared by kernel (`static_assert`) and `integer_adm_hip.c`.
+  Bare reflection escapes only for heights 1-8; ADM minimum 17 -> identity.
+  Scale 1-3 vertical kernels read per output row, in bounds from 2 rows.
+- `test_hip_adm_dwt2_rows`: host replay of every launched thread row, heights
+  1-8192, and every motion tile slot, extents 3-1024. Device-free, fast suite.
+- New tiled HIP kernel: route every halo load through `vmaf_hip_tile_index()`.
+
+## vif_hip minimum 16x16 (ADR-1381)
+
+- `vif_hip_min_dim()` from `vif_filter1d_width`: `(half + 1) << scale` over
+  scale filters {17, 9, 5, 3} and decimation filters {9, 5, 3} = 16, same as
+  `vif_sycl`. `mirror2_i()` clamps, so no fault below it, but other samples
+  than CPU; scale 3 empty below 8.
+- `check_context_hip()` + `context_fallback_name = "vif"`: model dispatch runs
+  CPU `vif` below bound (ADR-1324). `init()` refuses direct request with
+  `-EINVAL` before any device work, after the scaffold `-ENOSYS` (ADR-1264).
+  Guard: `test_hip_vif_min_dim` (skips on scaffold builds).
+
+## CPU option tables on psnr / ssim / float_ssim / float_motion (ADR-1382)
+
+- Option tables = CPU tables (names, aliases, types, defaults, ranges, flags).
+  `test_hip_twin_option_parity` compares them device-free.
+- `psnr_hip`: device reduces integer SSE only; host calls `psnr_score.h`
+  (`vmaf_psnr_peak`, `vmaf_psnr_max`, `vmaf_psnr_from_mse`,
+  `vmaf_psnr_aggregate`), `flush_fex_hip()` publishes `apsnr_*`. No local
+  copy of PSNR math (`log10` in TU = regression).
+- `integer_ssim_hip`, `float_ssim_hip`: `enable_db` / `clip_db` via
+  `vmaf_ssim_max_db()` + shared SSIM emitters. `integer_ssim_hip`:
+  `issim_pixel_term()` returns weight when factors equal (CPU raster sum
+  absorbs the quotient's ulp; per-block tree does not). 1x1 / 2x2 still
+  differ: `T-HIP-INTEGER-SSIM-TINY-IDENTICAL-DB-2026-09-30`.
+- `float_ssim_hip`: no identical-window shortcut. CPU is 1 - 2^-24 on some
+  identical frames (fp32 luminance denominator, 72.247 dB). Pass 2 =
+  CPU `ssim_accumulate_default_scalar()`: `ssim_pixel()` = `(l * c) * s` in
+  double from `ssim_lcs()` (CPU types, `#pragma clang fp contract(off)`
+  load-bearing: hipcc default contraction fuses across statements), one
+  double partial per block; host `fssim_hip_cpu_mean()` rounds mean to fp32.
+  Do not bring back the combined Wang formula or `num == den ? 1`.
+- `float_ssim_hip` `enable_lcs`: separate kernel
+  `calculate_ssim_hip_vert_combine_lcs`, CPU `iqa/ssim_tools.c` types
+  (clamped fp32 variances, double L/C, fp32 S, flat-window covariance clamp),
+  double per-block partials in `rb_lcs`. Default kernel stays LCS-free.
+- `float_motion_hip`: `motion_max_val` (`mmxv`); every emitted score, debug
+  and flush tail included, through `fm_hip_motion_clip()`. No `motion3`, no
+  mbf / mbo / mdc / mfs / mau yet: `T-HIP-FLOAT-MOTION-MOTION3-OPTIONS-2026-09-30`.
+- `motion_v2_hip` stores SAD as CPU: `MIN(score * mfw, mmxv)`; `motion2_v2`
+  folds stored value, never re-weights; one-frame run emits motion2_v2 /
+  motion3_v2 = 0 (only `n_frames == 0` returns early).
+- `motion_hip`: `debug` default false (CPU, CUDA); emits
+  `VMAF_integer_feature_motion_sad_score` every frame, 0 at index 0 and under
+  force_zero.
+- gfx1036 (`ryzen-4090-arc`, ROCm 7.2.4) loses a run of a stream's commands
+  about once per 10^4 frames, master too
+  (T-HIP-GFX1036-DROPPED-DISPATCHES-2026-10-01). Symptoms: `vif_hip` frame =
+  CPU sums of it + previous frame (lost accumulator memset), one scale 0/0
+  (`invalid ratio`), scales 1-3 off; lone wrong `motion_v2_hip` SAD. Not a
+  twin bug: moving / replacing the memset, host kernargs, polling, no direct
+  dispatch all still fail. Check with `scripts/dev/hip_dispatch_drop_probe.hip`
+  before chasing a single-frame mismatch on that device; compare repeated
+  runs.
+- `motion_force_zero` (`motion_hip`, `float_motion_hip`): never set
+  `submit` / `collect` to NULL in `init()`. Before #1637 libvmaf picked
+  submit/collect from the descriptor before `init()` ran, then called
+  `fex->submit` after it: a NULL there was a SIGSEGV on frame 0
+  (T-HIP-MOTION-FORCE-ZERO-NULL-SUBMIT-2026-09-30). The engine now runs
+  `init()` first (`init_before_dispatch()`, `core/src/libvmaf.c`,
+  T-GPU-MOTION-FORCE-ZERO-FIRST-FRAME-SEGV-2026-09-30), so a cleared pair
+  would move the twin to the synchronous path instead; the twins do not rely
+  on that. Keep a no-op `submit()` and a `collect()` that writes
+  `extract_force_zero()`'s zeros. Guard:
+  `test_integer_motion_force_zero` in `test_hip_twin_option_parity`.
+- `psnr_hip` TEMPORAL like CPU `psnr`: `--subsample` must not drop frames
+  from `apsnr_*`. Twin's subsample flags (TEMPORAL / PREV_REF) follow CPU;
+  `test_hip_twin_option_parity` checks.
+- HIP error mapping: `vmaf_hip_rc_to_errno()` (`kernel_template.c`, declared in
+  `core/src/hip/common.h`). No new private copies.
