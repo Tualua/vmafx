@@ -1135,3 +1135,4 @@
 1420-cuda-float-adm-cpu-arithmetic
 1433-cuda-ssimulacra2-cpu-sum-order
 1428-exact-twins-fragments
+1432-sycl-integer-vif-exact-gain

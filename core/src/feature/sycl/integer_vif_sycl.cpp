@@ -39,6 +39,7 @@
 #include <sycl/sycl.hpp>
 
 #include "sycl_compat.h"
+#include "sycl_integer_vif_math.h"
 #include "sycl_tile_index.h"
 
 #include <algorithm>
@@ -113,6 +114,8 @@ static_assert(VIF_MIN_DIM == 16U, "integer VIF filter footprint changed; revisit
 
 constexpr int64_t SIGMA_NSQ = 131072; // 2 * 65536
 
+using VifGainLimit = vmaf_sycl_ivif::GainLimit;
+
 constexpr int LOG2_LUT_SIZE = 32768;
 
 /* ------------------------------------------------------------------ */
@@ -130,6 +133,22 @@ struct vif_accums {
     int64_t num_non_log;
     int64_t den_non_log;
 };
+
+/* One pixel's contribution to the seven accumulators. Every term fits in 32
+ * bits (a variance below 2^31, a log2-table difference, an exponent, a
+ * count); dev_reduce_and_accum() widens them when it adds. Carrying them as
+ * int64 through the statistic cost a SIMD-16 kernel 28 of its 128 registers,
+ * and with the gain terms' 64-bit integers next to them (ADR-1432) the scale-0
+ * fused kernel spilled, which this twin must not do (ADR-1395). */
+struct vif_terms {
+    int32_t x;
+    int32_t x2;
+    int32_t num_x;
+    int32_t num_log;
+    int32_t den_log;
+    int32_t num_non_log;
+    int32_t den_non_log;
+};
 } // namespace
 constexpr int ACCUM_FIELDS = 7;
 
@@ -146,6 +165,8 @@ struct VifStateSycl {
     bool debug;
     bool vif_skip_scale0;
     double vif_enhn_gain_limit;
+    /* vif_enhn_gain_limit in the forms the kernels read (init). */
+    VifGainLimit gain_limit;
 
     VmafDictionary *feature_name_dict;
 
@@ -576,25 +597,17 @@ static sycl::event launch_vif_vert(sycl::queue &q, const void *ref_data, const v
 namespace
 {
 static inline void dev_vif_stats_log_domain(int32_t sigma1_sq, int32_t sigma2_sq, int32_t sigma12,
-                                            float vif_enhn_gain_limit, const uint32_t *log2_lut,
-                                            vif_accums &acc)
+                                            const VifGainLimit &gain_limit,
+                                            const uint32_t *log2_lut, vif_terms &acc)
 {
-    float g = 0.0f;
-    float sv_sq = 0.0f;
-    float gg_sigma_f = 0.0f;
-
-    if (sigma12 > 0 && sigma1_sq != 0 && sigma2_sq != 0) {
-        g = static_cast<float>(sigma12) / static_cast<float>(sigma1_sq);
-        /* The CPU evaluates `sigma2_sq - g * sigma12` in fp64 (integer_vif.c).
-         * One fp32 rounding is the nearest this fp64-free kernel (ADR-0220)
-         * gets to it, so the fused form is written out: the TU compiles with
-         * contraction off (ADR-1367), and a separately rounded product moved
-         * the vif scores 6x further from the CPU on the Netflix pair. */
-        sv_sq = sycl::fma(-g, static_cast<float>(sigma12), static_cast<float>(sigma2_sq));
-        if (sv_sq < 0.0f)
-            sv_sq = 0.0f;
-        g = sycl::fmin(g, vif_enhn_gain_limit);
-        gg_sigma_f = g * g * static_cast<float>(sigma1_sq);
+    /* integer_vif.c forms the gain, `sigma2_sq - g * sigma12` and
+     * `g * g * sigma1_sq` in fp64 and truncates the two results.
+     * gain_terms() returns those integers without an fp64 type (ADR-1432);
+     * an fp32 gain put a share of them one off. */
+    vmaf_sycl_ivif::GainTerms gain = {.sv_sq = 0u, .gg_sigma = 0};
+    if (sigma12 > 0 && sigma2_sq > 0) {
+        gain = vmaf_sycl_ivif::gain_terms((uint32_t)sigma1_sq, (uint32_t)sigma2_sq,
+                                          (uint32_t)sigma12, gain_limit);
     }
 
     const uint32_t log_den_stage1 = static_cast<uint32_t>(SIGMA_NSQ + sigma1_sq);
@@ -607,9 +620,9 @@ static inline void dev_vif_stats_log_domain(int32_t sigma1_sq, int32_t sigma2_sq
     const uint32_t den_val = log2_lut[log_den1 - 32768];
 
     if (sigma12 >= 0) {
-        const uint32_t numer1 = static_cast<uint32_t>(sv_sq) + static_cast<uint32_t>(SIGMA_NSQ);
+        const uint32_t numer1 = gain.sv_sq + static_cast<uint32_t>(SIGMA_NSQ);
         const uint64_t numer1_tmp =
-            static_cast<uint64_t>(static_cast<int64_t>(gg_sigma_f)) + static_cast<uint64_t>(numer1);
+            static_cast<uint64_t>(gain.gg_sigma) + static_cast<uint64_t>(numer1);
 
         int x1 = 0;
         int x2_val = 0;
@@ -620,20 +633,21 @@ static inline void dev_vif_stats_log_domain(int32_t sigma1_sq, int32_t sigma2_sq
 
         const int32_t num_val = static_cast<int32_t>(log2_lut[numlog - 32768]) -
                                 static_cast<int32_t>(log2_lut[denlog - 32768]);
-        acc.num_log = static_cast<int64_t>(num_val);
+        acc.num_log = num_val;
     }
 
-    acc.den_log = static_cast<int64_t>(den_val);
+    acc.den_log = static_cast<int32_t>(den_val);
 }
 } // namespace
 
 namespace
 {
-static inline vif_accums dev_compute_vif_stats(uint32_t h_mu1, uint32_t h_mu2, uint64_t h_ref,
-                                               uint64_t h_dis, uint64_t h_ref_dis,
-                                               float vif_enhn_gain_limit, const uint32_t *log2_lut)
+static inline vif_terms dev_compute_vif_stats(uint32_t h_mu1, uint32_t h_mu2, uint64_t h_ref,
+                                              uint64_t h_dis, uint64_t h_ref_dis,
+                                              const VifGainLimit &vif_enhn_gain_limit,
+                                              const uint32_t *log2_lut)
 {
-    vif_accums acc = {};
+    vif_terms acc = {};
     const uint32_t mu1_val = h_mu1;
     const uint32_t mu2_val = h_mu2;
     const uint32_t xx_filt = static_cast<uint32_t>((h_ref + 32768) >> 16);
@@ -668,7 +682,7 @@ static inline vif_accums dev_compute_vif_stats(uint32_t h_mu1, uint32_t h_mu2, u
 namespace
 {
 template <int MAX_SUBGROUPS>
-static inline void dev_reduce_and_accum(sycl::nd_item<2> item, const vif_accums &t_acc,
+static inline void dev_reduce_and_accum(sycl::nd_item<2> item, const vif_terms &t_acc,
                                         const sycl::local_accessor<int64_t, 1> &lmem,
                                         int64_t *accum)
 {
@@ -677,15 +691,18 @@ static inline void dev_reduce_and_accum(sycl::nd_item<2> item, const vif_accums 
     const uint32_t sg_lid = sg.get_local_linear_id();
     const uint32_t n_subgroups = sg.get_group_linear_range();
 
-    const int64_t sg_x = sycl::reduce_over_group(sg, t_acc.x, sycl::plus<int64_t>());
-    const int64_t sg_x2 = sycl::reduce_over_group(sg, t_acc.x2, sycl::plus<int64_t>());
-    const int64_t sg_num_x = sycl::reduce_over_group(sg, t_acc.num_x, sycl::plus<int64_t>());
-    const int64_t sg_num_log = sycl::reduce_over_group(sg, t_acc.num_log, sycl::plus<int64_t>());
-    const int64_t sg_den_log = sycl::reduce_over_group(sg, t_acc.den_log, sycl::plus<int64_t>());
+    const int64_t sg_x = sycl::reduce_over_group(sg, (int64_t)t_acc.x, sycl::plus<int64_t>());
+    const int64_t sg_x2 = sycl::reduce_over_group(sg, (int64_t)t_acc.x2, sycl::plus<int64_t>());
+    const int64_t sg_num_x =
+        sycl::reduce_over_group(sg, (int64_t)t_acc.num_x, sycl::plus<int64_t>());
+    const int64_t sg_num_log =
+        sycl::reduce_over_group(sg, (int64_t)t_acc.num_log, sycl::plus<int64_t>());
+    const int64_t sg_den_log =
+        sycl::reduce_over_group(sg, (int64_t)t_acc.den_log, sycl::plus<int64_t>());
     const int64_t sg_num_nlog =
-        sycl::reduce_over_group(sg, t_acc.num_non_log, sycl::plus<int64_t>());
+        sycl::reduce_over_group(sg, (int64_t)t_acc.num_non_log, sycl::plus<int64_t>());
     const int64_t sg_den_nlog =
-        sycl::reduce_over_group(sg, t_acc.den_non_log, sycl::plus<int64_t>());
+        sycl::reduce_over_group(sg, (int64_t)t_acc.den_non_log, sycl::plus<int64_t>());
 
     if (sg_lid == 0) {
         lmem[0 * MAX_SUBGROUPS + sg_id] = sg_x;
@@ -858,7 +875,7 @@ namespace
 struct VifHoriLaunchParams {
     unsigned width;
     unsigned height;
-    float vif_enhn_gain_limit;
+    VifGainLimit vif_enhn_gain_limit;
     const uint32_t *tmp_mu1;
     const uint32_t *tmp_mu2;
     const uint32_t *tmp_ref;
@@ -883,7 +900,7 @@ static inline void dev_hori_item_step(sycl::nd_item<2> item, const VifHoriLaunch
     const int gx = item.get_global_id(1);
     const int gy = item.get_global_id(0);
     const bool valid = (std::cmp_less(gx, p.width) && std::cmp_less(gy, p.height));
-    vif_accums t_acc = {};
+    vif_terms t_acc = {};
 
     if (valid) {
         uint32_t h_ref_rd = 0;
@@ -917,6 +934,14 @@ namespace
 constexpr int vif_grf_size(int sg_size)
 {
     return (sg_size == 32) ? 256 : 0;
+}
+
+/* The fused kernel of scale 0 carries the widest filter next to the gain
+ * terms' 64-bit integers (ADR-1432): at SIMD-16 it spilled 128 bytes with the
+ * default register file. */
+constexpr int vif_fused_grf_size(int scale, int sg_size)
+{
+    return (sg_size == 32 || scale == 0) ? 256 : 0;
 }
 
 struct VifHoriCoeffs {
@@ -967,11 +992,12 @@ namespace
 {
 template <int SCALE, int SG_SIZE>
 static sycl::event
-launch_vif_hori_impl(sycl::queue &q, unsigned width, unsigned height, float vif_enhn_gain_limit,
-                     const uint32_t *tmp_mu1, const uint32_t *tmp_mu2, const uint32_t *tmp_ref,
-                     const uint32_t *tmp_dis, const uint32_t *tmp_ref_dis,
-                     const uint32_t *tmp_ref_convol, const uint32_t *tmp_dis_convol, int64_t *accum,
-                     uint32_t *rd_ref, uint32_t *rd_dis, const uint32_t *log2_lut)
+launch_vif_hori_impl(sycl::queue &q, unsigned width, unsigned height,
+                     const VifGainLimit &vif_enhn_gain_limit, const uint32_t *tmp_mu1,
+                     const uint32_t *tmp_mu2, const uint32_t *tmp_ref, const uint32_t *tmp_dis,
+                     const uint32_t *tmp_ref_dis, const uint32_t *tmp_ref_convol,
+                     const uint32_t *tmp_dis_convol, int64_t *accum, uint32_t *rd_ref,
+                     uint32_t *rd_dis, const uint32_t *log2_lut)
 {
     const VifHoriCoeffs coeffs = make_vif_hori_coeffs<SCALE>();
 
@@ -1010,7 +1036,7 @@ launch_vif_hori_impl(sycl::queue &q, unsigned width, unsigned height, float vif_
 namespace
 {
 static sycl::event launch_vif_hori_v2(sycl::queue &q, int scale, unsigned width, unsigned height,
-                                      float vif_enhn_gain_limit, uint32_t *tmp_mu1,
+                                      const VifGainLimit &vif_enhn_gain_limit, uint32_t *tmp_mu1,
                                       uint32_t *tmp_mu2, uint32_t *tmp_ref, uint32_t *tmp_dis,
                                       uint32_t *tmp_ref_dis, uint32_t *tmp_ref_convol,
                                       uint32_t *tmp_dis_convol, int64_t *accum, uint32_t *rd_ref,
@@ -1040,7 +1066,7 @@ static sycl::event launch_vif_hori_v2(sycl::queue &q, int scale, unsigned width,
 namespace
 {
 static sycl::event launch_vif_hori_v2_sg16(sycl::queue &q, int scale, unsigned width,
-                                           unsigned height, float vif_enhn_gain_limit,
+                                           unsigned height, const VifGainLimit &vif_enhn_gain_limit,
                                            uint32_t *tmp_mu1, uint32_t *tmp_mu2, uint32_t *tmp_ref,
                                            uint32_t *tmp_dis, uint32_t *tmp_ref_dis,
                                            uint32_t *tmp_ref_convol, uint32_t *tmp_dis_convol,
@@ -1264,7 +1290,7 @@ struct VifFusedLaunchParams {
     unsigned height;
     unsigned src_stride;
     unsigned bpc;
-    float vif_enhn_gain_limit;
+    VifGainLimit vif_enhn_gain_limit;
     int64_t *accum;
     uint32_t *rd_ref;
     uint32_t *rd_dis;
@@ -1328,7 +1354,7 @@ static void dev_fused_item_step(sycl::nd_item<2> item, const void *ref_data, con
         c.fcoeff_rd, s_ref, s_dis, s_vert);
     item.barrier(sycl::access::fence_space::local_space);
 
-    vif_accums t_acc = {};
+    vif_terms t_acc = {};
     uint32_t h_ref_rd = 0;
     uint32_t h_dis_rd = 0;
     if (valid) {
@@ -1375,7 +1401,8 @@ struct VifFusedLocal {
 /* See vif_grf_size(): the SIMD-32 instances take the 256-entry register
  * file (ADR-1395). */
 template <int SCALE, int SG_SIZE>
-class IntegerVifFusedKernel : public VmafSyclKernelShape<SG_SIZE, vif_grf_size(SG_SIZE)>
+class IntegerVifFusedKernel
+    : public VmafSyclKernelShape<SG_SIZE, vif_fused_grf_size(SCALE, SG_SIZE)>
 {
   public:
     using G = VifFusedGeometry<SCALE>;
@@ -1435,9 +1462,9 @@ namespace
 {
 static sycl::event launch_vif_fused(sycl::queue &q, const void *ref_data, const void *dis_data,
                                     int scale, unsigned width, unsigned height, unsigned src_stride,
-                                    unsigned bpc, bool use_simd16, float vif_enhn_gain_limit,
-                                    int64_t *accum, uint32_t *rd_ref, uint32_t *rd_dis,
-                                    const uint32_t *log2_lut)
+                                    unsigned bpc, bool use_simd16,
+                                    const VifGainLimit &vif_enhn_gain_limit, int64_t *accum,
+                                    uint32_t *rd_ref, uint32_t *rd_dis, const uint32_t *log2_lut)
 {
     const VifFusedLaunchParams p = {
         .width = width,
@@ -1677,6 +1704,7 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     s->height = h;
     s->bpc = bpc;
     s->has_pending = false;
+    s->gain_limit = vmaf_sycl_ivif::make_gain_limit(s->vif_enhn_gain_limit);
 
     if (!fex->sycl_state) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "vif_sycl: no SYCL state\n");
@@ -1709,22 +1737,22 @@ static inline void vif_dispatch_scale(sycl::queue &q, VifStateSycl *s, int scale
 {
     if (s->use_fused) {
         launch_vif_fused(q, ref_src, dis_src, scale, cur_w, cur_h, src_stride, s->bpc,
-                         s->use_simd16, static_cast<float>(s->vif_enhn_gain_limit), scale_accum,
-                         s->d_rd_ref, s->d_rd_dis, s->d_log2_lut);
+                         s->use_simd16, s->gain_limit, scale_accum, s->d_rd_ref, s->d_rd_dis,
+                         s->d_log2_lut);
     } else {
         launch_vif_vert(q, ref_src, dis_src, scale, cur_w, cur_h, src_stride, s->bpc, s->d_tmp_mu1,
                         s->d_tmp_mu2, s->d_tmp_ref, s->d_tmp_dis, s->d_tmp_ref_dis,
                         s->d_tmp_ref_convol, s->d_tmp_dis_convol);
         if (s->use_simd16) {
-            launch_vif_hori_v2_sg16(
-                q, scale, cur_w, cur_h, static_cast<float>(s->vif_enhn_gain_limit), s->d_tmp_mu1,
-                s->d_tmp_mu2, s->d_tmp_ref, s->d_tmp_dis, s->d_tmp_ref_dis, s->d_tmp_ref_convol,
-                s->d_tmp_dis_convol, scale_accum, s->d_rd_ref, s->d_rd_dis, s->d_log2_lut);
+            launch_vif_hori_v2_sg16(q, scale, cur_w, cur_h, s->gain_limit, s->d_tmp_mu1,
+                                    s->d_tmp_mu2, s->d_tmp_ref, s->d_tmp_dis, s->d_tmp_ref_dis,
+                                    s->d_tmp_ref_convol, s->d_tmp_dis_convol, scale_accum,
+                                    s->d_rd_ref, s->d_rd_dis, s->d_log2_lut);
         } else {
-            launch_vif_hori_v2(q, scale, cur_w, cur_h, static_cast<float>(s->vif_enhn_gain_limit),
-                               s->d_tmp_mu1, s->d_tmp_mu2, s->d_tmp_ref, s->d_tmp_dis,
-                               s->d_tmp_ref_dis, s->d_tmp_ref_convol, s->d_tmp_dis_convol,
-                               scale_accum, s->d_rd_ref, s->d_rd_dis, s->d_log2_lut);
+            launch_vif_hori_v2(q, scale, cur_w, cur_h, s->gain_limit, s->d_tmp_mu1, s->d_tmp_mu2,
+                               s->d_tmp_ref, s->d_tmp_dis, s->d_tmp_ref_dis, s->d_tmp_ref_convol,
+                               s->d_tmp_dis_convol, scale_accum, s->d_rd_ref, s->d_rd_dis,
+                               s->d_log2_lut);
         }
     }
 }

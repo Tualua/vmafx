@@ -1287,24 +1287,61 @@ ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/dev/speed_gpu_parity.py \
 It prints, per output, how many frames are bit-identical and the largest
 difference, and exits 0 only when every frame is.
 
-## `vif_sycl` rounds its sums as the CPU does (2026-10-01)
+## `vif_sycl` matches the CPU `vif` exactly (2026-10-01)
 
-`vif_sycl` stores each scale's numerator and denominator sum in a `float`,
-divides in single precision and adds the rounded sums for the debug outputs,
-as `integer_vif.c` does. It kept them in `double` before, which put every
-score of every frame up to 3.5e-7 from the CPU. On an Arc A380 the
-denominator sums are now identical on every frame, and the scores on 12 to 41
-of the 48 Netflix frames, depending on the scale, and on 140 to 196 of 200
-BBB 3840x2160 frames; none was before. The remaining frames are one or a few
-`float` steps off in a numerator, because the kernel forms the per-pixel gain
-in `float` where the CPU uses `double`. The table is in the
-[VIF metric guide](../../metrics/vif.md#vif_sycl-rounds-where-the-cpu-rounds).
-The kernels are unchanged.
+`vif_sycl` returns every output of the CPU integer VIF extractor bit for bit
+([ADR-1432](../../adr/1432-sycl-integer-vif-exact-gain.md)). Two changes got
+it there:
 
-The twin's `debug` option now defaults to `false`, the CPU's default. A run
-that relied on the eleven debug outputs (`integer_vif`, `integer_vif_num`,
+- The host stores each scale's numerator and denominator sum in a `float`,
+  divides in single precision and adds the rounded sums for the debug
+  outputs, as `integer_vif.c` does. It kept them in `double` before.
+- `integer_vif.c` forms a pixel's gain in `double` and truncates
+  `sigma2_sq - g * sigma12` and `g * g * sigma1_sq` to integers. The kernel
+  used `float` for it ([fp64-less contract](#fp64-less-device-contract-t7-17)).
+  It now gets both integers from one integer division by `sigma1_sq` and the
+  remainder, and replays the CPU's `double` operations in 64-bit integers for
+  a pixel whose value lies within the `double` chain's own rounding error of
+  an integer: one pixel in 300 000 on real content
+  (`core/src/feature/sycl/sycl_integer_vif_math.h`).
+
+Measured on an Arc A380 (xe driver, Level Zero, icpx 2026.0) at
+`--precision max` against `--backend cpu`, identical frames on the scale
+that has the fewest and largest difference:
+
+| Fixture | Before either change | Host sums only | Now |
+|---|---|---|---|
+| Netflix 576x324, 48 frames | 0 of 48, 3.5e-7 | 12 of 48, 3.6e-7 | 48 of 48 |
+| Checkerboard 1920x1080, 1 px shift, 3 frames | 0 of 3, 3.9e-8 | 2 of 3, 6.0e-8 | 3 of 3 |
+| Checkerboard 1920x1080, 10 px shift, 3 frames | 1 of 3, 1.5e-14 | 3 of 3 | 3 of 3 |
+| BBB 3840x2160, 200 frames | 0 of 20 (first 20), 1.7e-7 | 140 of 200, 1.8e-7 | 200 of 200 |
+
+Also identical now: the Netflix pair at 10, 12 and 16 bits and as 4:2:2
+10-bit, `debug=true` (15 outputs), `vif_enhn_gain_limit` of 1.0, 1.2 and
+37.5, `vif_skip_scale0`, and a 3840x2160 clip scored against itself. The
+reference was a GCC build of the CPU extractor; the CPU extractor of the icx
+build gives the same values.
+
+Through the `vmaf` tool on the A380 a 3840x2160 frame takes 22.21 ms, 21.46
+ms before (medians of 11 paired 100-frame runs), and a 576x324 frame 0.88 ms,
+0.79 before. No kernel of the twin uses
+[scratch memory](#scratch-memory-on-intel-gpus-adr-1395); the fused kernel of
+scale 0 takes the large register file at SIMD-16 for it.
+
+The twin's `debug` option defaults to `false`, the CPU's default. A run that
+relied on the eleven debug outputs (`integer_vif`, `integer_vif_num`,
 `integer_vif_den` and the per-scale sums) asks for them:
-`--feature vif_sycl=debug=true`.
+`--feature vif_sycl=debug=true`. The parity gate compares the twin with
+tolerance 0 ([cross-backend gate](../../development/cross-backend-gate.md)).
+
+`sycl::mul_hi()` on 64-bit operands returned wrong values in a kernel on the
+A380; the twins form wide products in 32-bit limbs
+(`core/src/feature/sycl/sycl_soft_double.h`).
+
+```bash
+ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/dev/speed_gpu_parity.py \
+    --backend sycl --vmaf "$PWD/build/tools/vmaf" --feature vif
+```
 
 ## Licensing of the SYCL kernels (ADR-1250)
 

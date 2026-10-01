@@ -1379,12 +1379,13 @@
         "core/src/feature/sycl/integer_ciede_sycl.cpp": 1,
         "core/src/feature/sycl/integer_psnr_hvs_sycl.cpp": 2,
         "core/src/feature/sycl/integer_ssim_sycl.cpp": 2,
-        "core/src/feature/sycl/integer_vif_sycl.cpp": 1,
         "core/src/feature/sycl/speed_sycl_pipeline.cpp": 1,
         "core/src/feature/sycl/speed_sycl_pipeline.h": 1,
         "core/src/feature/sycl/ssimulacra2_sycl.cpp": 1,
         "core/src/feature/sycl/sycl_exact_fp.h": 1,
         "core/src/feature/sycl/sycl_float_vif_math.h": 1,
+        "core/src/feature/sycl/sycl_integer_vif_math.h": 1,
+        "core/src/feature/sycl/sycl_soft_double.h": 1,
         "core/src/feature/sycl/sycl_ssim_terms.h": 1,
         "core/src/sycl/common.cpp": 1,
         "core/test/meson.build": 1,
@@ -1394,7 +1395,11 @@
         "core/test/test_sycl_float_vif_math.c": 1,
         "core/test/test_sycl_float_vif_math_probe.cpp": 1,
         "core/test/test_sycl_fp_arith_probe.cpp": 1,
+        "core/test/test_sycl_integer_vif_math.c": 1,
+        "core/test/test_sycl_integer_vif_math_probe.cpp": 1,
         "core/test/test_sycl_psnr_hvs_parity.c": 1,
+        "core/test/test_sycl_vif_exact_gain_contract.py": 3,
+        "core/test/test_sycl_vif_parity.c": 1,
         "core/tools/vmaf_per_shot.c": 1,
         "scripts/ci/gpu_ulp_calibration.yaml": 5
       },
@@ -6424,6 +6429,7 @@
         "core/test/test_sycl_float_vif_math.c": 1,
         "core/test/test_sycl_float_vif_parity.c": 1,
         "core/test/test_sycl_fp_arith_contract.c": 1,
+        "core/test/test_sycl_integer_vif_math.c": 1,
         "core/test/test_sycl_motion3_parity.c": 1,
         "core/test/test_sycl_motion_add_uv_parity.c": 1,
         "core/test/test_sycl_motion_tiny_frames.c": 1,
@@ -8074,7 +8080,6 @@
         "core/src/feature/sycl/float_vif_sycl.cpp": 1,
         "core/src/feature/sycl/integer_ms_ssim_sycl.cpp": 2,
         "core/src/feature/sycl/integer_psnr_hvs_sycl.cpp": 1,
-        "core/src/feature/sycl/integer_vif_sycl.cpp": 1,
         "core/src/feature/sycl/speed_sycl_pipeline.h": 1,
         "core/src/feature/sycl/sycl_exact_fp.h": 2,
         "core/src/feature/sycl/sycl_float_vif_math.h": 1,
@@ -8396,16 +8401,17 @@
         "core/src/feature/sycl/float_motion_sycl.cpp": 1,
         "core/src/feature/sycl/float_vif_sycl.cpp": 4,
         "core/src/feature/sycl/integer_psnr_hvs_sycl.cpp": 1,
-        "core/src/feature/sycl/integer_vif_sycl.cpp": 3,
+        "core/src/feature/sycl/integer_vif_sycl.cpp": 4,
         "core/src/feature/sycl/speed_sycl_pipeline.cpp": 1,
         "core/src/feature/sycl/sycl_compat.h": 2,
-        "core/src/feature/sycl/sycl_float_vif_math.h": 1,
+        "core/src/feature/sycl/sycl_soft_double.h": 2,
         "core/src/sycl/common.cpp": 1,
         "core/src/sycl/scratch_check.cpp": 2,
         "core/src/sycl/scratch_check.h": 1,
         "core/test/meson.build": 2,
         "core/test/test_sycl_kernel_scratch.c": 2,
-        "core/test/test_sycl_kernel_source_contract.py": 2
+        "core/test/test_sycl_kernel_source_contract.py": 2,
+        "core/test/test_sycl_vif_exact_gain_contract.py": 1
       },
       "target": "1395-sycl-kernels-no-scratch.md"
     },
@@ -8743,6 +8749,7 @@
       "sites": {
         "core/src/feature/sycl/float_vif_sycl.cpp": 1,
         "core/src/feature/sycl/sycl_float_vif_math.h": 1,
+        "core/src/feature/sycl/sycl_soft_double.h": 1,
         "core/test/float_vif_twin_parity.h": 1,
         "core/test/meson.build": 2,
         "core/test/test_strict_fp_compiler_args.py": 1,
@@ -8824,6 +8831,20 @@
         "core/test/test_validate_pic_params_bpc.c": 1
       },
       "target": "1431-read-pictures-owns-pictures-on-every-return.md"
+    },
+    "1432": {
+      "sites": {
+        "core/src/feature/sycl/integer_vif_sycl.cpp": 3,
+        "core/src/feature/sycl/sycl_integer_vif_math.h": 1,
+        "core/src/feature/sycl/sycl_soft_double.h": 1,
+        "core/test/meson.build": 2,
+        "core/test/test_strict_fp_compiler_args.py": 1,
+        "core/test/test_sycl_integer_vif_math.c": 1,
+        "core/test/test_sycl_integer_vif_math_probe.cpp": 1,
+        "core/test/test_sycl_vif_exact_gain_contract.py": 1,
+        "core/test/test_sycl_vif_parity.c": 3
+      },
+      "target": "1432-sycl-integer-vif-exact-gain.md"
     },
     "1433": {
       "sites": {

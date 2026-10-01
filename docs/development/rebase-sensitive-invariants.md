@@ -271,6 +271,22 @@ linked AGENTS.md before resolving conflicts.
   `core/test/test_sycl_float_vif_parity.c` guard it; every kernel must stay
   free of scratch memory (`test_sycl_kernel_scratch`, ADR-1395). See
   [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
+- **`vif_sycl` returns the CPU's scores bit for bit ([ADR-1432](../adr/1432-sycl-integer-vif-exact-gain.md))**:
+  `core/src/feature/sycl/sycl_integer_vif_math.h` returns the two integers
+  `integer_vif.c::vif_accumulate_pixel()` truncates from its fp64 gain
+  (`sigma2_sq - g * sigma12` and `g * g * sigma1_sq`), from one integer
+  division and, for a sample within the fp64 chain's rounding error of an
+  integer, from the reference's fp64 operations replayed in 64-bit integers
+  (`core/src/feature/sycl/sycl_soft_double.h`, shared with `float_vif_sycl`).
+  The host tail rounds each scale's sums to `float` as
+  `vif_store_residuals()` does. A change to those lines of `integer_vif.c`
+  (the same lines are in `x86/vif_avx2.c`, `x86/vif_avx512.c` and
+  `arm64/vif_neon.c`) changes the header in the same PR. The kernels stay
+  free of fp64, of `sycl::mul_hi()` on 64-bit operands (wrong values on an
+  Arc A380) and of scratch memory. `core/test/test_sycl_integer_vif_math.c`,
+  `core/test/test_sycl_vif_exact_gain_contract.py` and
+  `core/test/test_sycl_vif_parity.c` guard it. See
+  [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
 - **SYCL fp64-less device contract (T7-17, ADR-0220)**:
   [ADR-0220](../adr/0220-sycl-fp64-fallback.md). SYCL feature
   kernels are unconditionally fp64-free; a single fp64 instruction

@@ -18,7 +18,7 @@
  *  and rounded to fp32. That is the reference's value unless the pair lies
  *  within 2^-12 of an fp32 unit of a rounding boundary; for those samples
  *  (about one in 2000) the reference's own sequence of fp64 operations is
- *  replayed in 64-bit integers (SoftDouble below), so the result is the
+ *  replayed in 64-bit integers (sycl_soft_double.h), so the result is the
  *  reference's on every sample by construction, not only in practice.
  *
  *  Every function assumes its translation unit is compiled with contraction
@@ -37,6 +37,7 @@
 #include <limits>
 
 #include "sycl_exact_fp.h"
+#include "sycl_soft_double.h"
 
 namespace vmaf_sycl_fvif
 {
@@ -44,6 +45,12 @@ namespace vmaf_sycl_fvif
 using vmaf_sycl_exact::Ff;
 using vmaf_sycl_exact::ff_add;
 using vmaf_sycl_exact::ff_div;
+using vmaf_sycl_soft::kDoubleTop;
+using vmaf_sycl_soft::soft_add;
+using vmaf_sycl_soft::soft_div;
+using vmaf_sycl_soft::soft_from_float;
+using vmaf_sycl_soft::soft_to_float;
+using vmaf_sycl_soft::SoftDouble;
 
 /* ------------------------------------------------------------------ */
 /* log2f_approx()                                                      */
@@ -80,107 +87,6 @@ inline float log2_approx(float x)
     var = var * t + (float)1.442694803896991;
     var = var * t + 0.0f;
     return log_base + var;
-}
-
-/* ------------------------------------------------------------------ */
-/* The reference's fp64 operations in integers                         */
-/* ------------------------------------------------------------------ */
-
-/* A positive fp64 value, mant * 2^exp with mant in [2^52, 2^53). */
-struct SoftDouble {
-    uint64_t mant;
-    int32_t exp;
-};
-
-inline constexpr uint64_t kDoubleTop = uint64_t{1} << 52;
-
-/* A positive normal fp32 value as a SoftDouble (exact). */
-inline SoftDouble soft_from_float(float x)
-{
-    const auto bits = sycl::bit_cast<uint32_t>(x);
-    const uint64_t mant = uint64_t{(bits & 0x007FFFFFu) | 0x00800000u} << 29;
-    return {.mant = mant, .exp = (int32_t)((bits >> 23) & 0xFFu) - 150 - 29};
-}
-
-/* Round `mant` (below 2^56, three extra bits at the bottom, the last one
- * sticky) to 53 bits, ties to even. */
-inline SoftDouble soft_round(uint64_t mant, int32_t exp)
-{
-    const uint64_t low = mant & 7u;
-    uint64_t kept = mant >> 3;
-    if (low > 4u || (low == 4u && (kept & 1u) != 0u)) {
-        kept += 1u;
-    }
-    if (kept == (kDoubleTop << 1)) {
-        return {.mant = kDoubleTop, .exp = exp + 4};
-    }
-    return {.mant = kept, .exp = exp + 3};
-}
-
-/* fl64(a + b) for positive a and b. */
-inline SoftDouble soft_add(SoftDouble a, SoftDouble b)
-{
-    /* Scalar selects, not a select of the structs: a struct select stays in
-     * private memory on the device (ADR-1395). */
-    const bool swap = (b.exp > a.exp) || (b.exp == a.exp && b.mant > a.mant);
-    const uint64_t big_mant = swap ? b.mant : a.mant;
-    const uint64_t small_mant = swap ? a.mant : b.mant;
-    const int32_t big_exp = swap ? b.exp : a.exp;
-    const int32_t small_exp = swap ? a.exp : b.exp;
-    /* Beyond 59 places the smaller term is below the last kept bit and only
-     * sets the sticky bit; 59 gives the same sum. */
-    const uint32_t distance = (uint32_t)(big_exp - small_exp);
-    const uint32_t shift = distance < 59u ? distance : 59u;
-    const uint64_t small_wide = small_mant << 3;
-    const uint64_t lost = small_wide & ((uint64_t{1} << shift) - 1u);
-    const uint64_t aligned = (small_wide >> shift) | (lost != 0u ? uint64_t{1} : uint64_t{0});
-    uint64_t sum = (big_mant << 3) + aligned;
-    int32_t exp = big_exp - 3;
-    if (sum >= (kDoubleTop << 4)) {
-        sum = (sum >> 1) | (sum & 1u);
-        exp += 1;
-    }
-    return soft_round(sum, exp);
-}
-
-/* fl64(a / b) for positive a and b. Restoring division, one quotient bit per
- * step: 56 bits of quotient and the remainder as the sticky bit. */
-inline SoftDouble soft_div(SoftDouble a, SoftDouble b)
-{
-    uint64_t rem = a.mant;
-    int32_t exp = a.exp - b.exp - 55;
-    if (rem < b.mant) {
-        rem <<= 1;
-        exp -= 1;
-    }
-    uint64_t quot = 0u;
-    for (int step = 0; step < 56; step++) {
-        const bool take = rem >= b.mant;
-        rem -= take ? b.mant : uint64_t{0};
-        quot = (quot << 1) | (take ? uint64_t{1} : uint64_t{0});
-        rem <<= 1;
-    }
-    quot |= rem != 0u ? uint64_t{1} : uint64_t{0};
-    return soft_round(quot, exp);
-}
-
-/* (float)value, ties to even. The value is at least 1 and far below the
- * fp32 range's end here. */
-inline float soft_to_float(SoftDouble value)
-{
-    const uint64_t low = value.mant & ((uint64_t{1} << 29) - 1u);
-    const uint64_t half = uint64_t{1} << 28;
-    uint64_t kept = value.mant >> 29;
-    int32_t exp = value.exp + 29;
-    if (low > half || (low == half && (kept & 1u) != 0u)) {
-        kept += 1u;
-    }
-    if (kept == (uint64_t{1} << 24)) {
-        kept >>= 1;
-        exp += 1;
-    }
-    const auto biased = (uint32_t)(exp + 150);
-    return sycl::bit_cast<float>((biased << 23) | ((uint32_t)kept & 0x007FFFFFu));
 }
 
 /* ------------------------------------------------------------------ */

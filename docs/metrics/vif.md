@@ -138,34 +138,48 @@ on such a frame fails at `init()` with `-EINVAL` and a message such as
 `vif_cuda requires width >= 16 and height >= 16`. The Metal twin does not
 declare it yet (`T-GPU-INTEGER-VIF-MIN-DIM-TWINS-2026-09-29`).
 
-### `vif_sycl` rounds where the CPU rounds
+### `vif_sycl` returns the CPU's values
 
-The integer extractor leaves integer arithmetic at the end of a frame: it
-stores each scale's numerator and denominator sum in a `float`, divides the
-two in single precision, and (with `debug=true`) adds the rounded sums.
-`vif_sycl` kept the sums in `double`, so every score of every frame was up to
-3.5e-7 from `--backend cpu --feature vif`. It now rounds at the same points.
+`vif_sycl` gives the same number as `--backend cpu --feature vif` for every
+output of every frame, down to the last bit of the `--precision max` output
+([ADR-1432](../adr/1432-sycl-integer-vif-exact-gain.md)). Two things used to
+differ:
 
-Measured on an Arc A380 at `--precision max`, frames with identical scores
-before and after:
+- The integer extractor stores each scale's numerator and denominator sum in
+  a `float` and divides the two in single precision. `vif_sycl` kept the sums
+  in `double`.
+- The integer extractor computes a pixel's gain in `double` and truncates two
+  results to integers. A SYCL kernel has no `double`, and `vif_sycl` used
+  `float`, which put a share of those integers one off. It now computes both
+  integers exactly, in integer arithmetic.
 
-| Fixture | Before | After (scale 0 / 1 / 2 / 3) |
-| --- | --- | --- |
-| Netflix 576x324, 48 frames | 0 on every scale | 41 / 31 / 16 / 12 |
-| Checkerboard 1920x1080, 1 px shift, 3 frames | 0 | 3 / 3 / 3 / 2 |
-| Checkerboard 1920x1080, 10 px shift, 3 frames | 1 / 3 / 3 / 3 | 3 / 3 / 3 / 3 |
-| BBB 3840x2160, 200 frames | 0 (first 20) | 196 / 174 / 184 / 140 |
+Measured on an Arc A380 on the Netflix 576x324 pair at 8, 10, 12 and 16 bits,
+both 1920x1080 checkerboard pairs and 200 frames at 3840x2160, with
+`debug=true` as well.
 
-The denominator sums (`integer_vif_den*` with `debug=true`) are identical on
-every frame. A numerator sum still differs by one or a few steps of a `float`
-on the remaining frames, at most 3.6e-7 in a score: the kernel computes the
-per-pixel gain in `float`, the CPU in `double`
-(`T-SYCL-VIF-FP32-GAIN-2026-10-01` in [`state.md`](../state.md)). The CUDA
-twin has `double` on the device and equals the CPU.
+What this means when you use it:
 
-`vif_sycl` also emits the CPU's default outputs now: the four per-scale
-scores. Its `debug` option defaulted to `true`, which added the eleven debug
-outputs to every run; request them with `--feature vif_sycl=debug=true`.
+- You can mix CPU, CUDA and SYCL `vif` results in one data set. `vif_sycl`
+  scores stored before differ from new ones by up to 3.6e-7.
+- `vif_sycl` emits the CPU's default outputs: the four per-scale scores. Its
+  `debug` option defaulted to `true` until October 2026, which added the
+  eleven debug outputs to every run; request them with
+  `--feature vif_sycl=debug=true`.
+- A 3840x2160 frame takes 0.75 ms longer on an Arc A380 (22.2 ms through the
+  `vmaf` tool, 21.5 ms before).
+- With a `vif_enhn_gain_limit` that is not a whole number, a pixel whose gain
+  reaches the limit takes a slower exact path. The scores are the CPU's; the
+  default (100) and the value the NEG models set (1) are not affected.
+
+Check it on your own device:
+
+```shell
+ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/dev/speed_gpu_parity.py \
+    --backend sycl --vmaf "$PWD/build/tools/vmaf" --feature vif
+```
+
+It prints, per output, how many frames are bit-identical and the largest
+difference, and exits 0 only when every frame is.
 
 ### Output features
 

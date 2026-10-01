@@ -290,6 +290,18 @@ test('test_cuda_float_adm_exact_contract',
     timeout : 30,
 )
 
+# ADR-1432: vif_sycl computes the two integers integer_vif.c truncates from
+# its fp64 gain exactly -- integer arithmetic, a replay of the fp64 operations
+# for the undecided samples, no fp32 gain, no sycl::mul_hi(). Device-free; the
+# arithmetic check is test_sycl_integer_vif_math, the device check is
+# test_sycl_vif_parity.
+test('test_sycl_vif_exact_gain_contract',
+    import('python').find_installation(),
+    args : files('test_sycl_vif_exact_gain_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # A default scale=0 is only executable by the GPU float-SSIM twins while the
 # CPU auto-scale resolves to 1. Pin the model-only, first-frame fallback seam
 # and all four backend declarations without requiring an accelerator.
@@ -4308,6 +4320,44 @@ if not is_sycl_acpp and host_machine.cpu_family() == 'x86_64'
         link_language : 'cpp',
     )
     test('test_sycl_float_vif_math', test_sycl_float_vif_math,
+        suite : ['fast', 'gpu', 'sycl'],
+        is_parallel : false)
+endif
+
+# ADR-1432: the gain terms vif_sycl's kernels compute
+# (src/feature/sycl/sycl_integer_vif_math.h) against the reference's fp64
+# expressions, on the host and in a kernel on the default GPU. The probe TU
+# is compiled with the extractors' own arguments, like the probes above. The
+# reference lines are fp64 arithmetic the test compiles itself, so it needs
+# the strict FP flags and no library object.
+if not is_sycl_acpp
+    sycl_integer_vif_math_probe = custom_target('sycl_integer_vif_math_probe',
+        output : 'sycl_integer_vif_math_probe.o',
+        input : 'test_sycl_integer_vif_math_probe.cpp',
+        depend_files : files('../src/feature/sycl/sycl_soft_double.h',
+                             '../src/feature/sycl/sycl_integer_vif_math.h',
+                             '../src/feature/sycl/sycl_compat.h'),
+        command : [icpx] + vmaf_cflags_common + ['-c'] + sycl_toolchain_args
+                  + sycl_feature_tail_args + ['@INPUT@', '-o', '@OUTPUT@'],
+    )
+    sycl_integer_vif_math_probe_objects = [sycl_integer_vif_math_probe]
+    if sycl_msvc_device_link
+        sycl_integer_vif_math_probe_objects += custom_target(
+            'sycl_integer_vif_math_probe_device_link',
+            input : sycl_integer_vif_math_probe,
+            output : 'sycl_integer_vif_math_probe_device_link.obj',
+            command : [icpx] + sycl_device_link_args + sycl_strict_fp_args
+                      + ['@INPUT@', '-o', '@OUTPUT@'],
+        )
+    endif
+    test_sycl_integer_vif_math = executable('test_sycl_integer_vif_math',
+        ['test.c', 'test_sycl_integer_vif_math.c'] + sycl_integer_vif_math_probe_objects,
+        include_directories : [test_inc],
+        dependencies : [math_lib, sycl_dependency],
+        c_args : vmaf_strict_fp_args,
+        link_language : 'cpp',
+    )
+    test('test_sycl_integer_vif_math', test_sycl_integer_vif_math,
         suite : ['fast', 'gpu', 'sycl'],
         is_parallel : false)
 endif

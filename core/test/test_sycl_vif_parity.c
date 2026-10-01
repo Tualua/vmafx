@@ -6,33 +6,34 @@
  */
 
 /*
- * Integer VIF CPU vs. SYCL: the twin rounds where the CPU rounds
- * (first added as a places=3 parity test of scale 0).
+ * Integer VIF CPU vs. SYCL: the twin returns the CPU's outputs bit for bit
+ * (ADR-1432; first added as a places=3 parity test of scale 0).
  *
- * The CPU path is integer_vif.c; the SYCL path is integer_vif_sycl.cpp. Both
- * accumulate in int64 and then leave integer arithmetic. integer_vif.c stores
- * each scale's numerator and denominator in a `float`, adds those rounded
- * values for the debug outputs and divides in single precision. The twin kept
- * all of it in `double`, which put every scale of every frame up to 3.5e-7
- * from the CPU. It now rounds at the same three points, and this test pins
- * what follows from that:
+ * The CPU path is integer_vif.c; the SYCL path is integer_vif_sycl.cpp. Two
+ * things made the twin differ from the CPU, and both are gone:
  *
- *   - the denominator sums, which the kernels accumulate exactly as the CPU
- *     does, are the CPU's bit for bit, per scale and over the frame;
- *   - every score and every numerator sum is a single-precision value, as on
- *     the CPU, and within 5e-6 (relative) of the CPU's. They are not all
- *     equal yet: the kernel forms the gain in fp32 where integer_vif.c uses
- *     fp64, which moves a numerator by an fp32 step or a few on some frames
- *     (T-SYCL-VIF-FP32-GAIN-2026-10-01);
- *   - at 8 and at 10 bits, with `debug=true` and with `vif_skip_scale0=true`,
- *     where scale 0 is published as 0.
+ *   - integer_vif.c stores each scale's numerator and denominator in a
+ *     `float` and divides in single precision; the twin kept them in
+ *     `double` (every score up to 3.5e-7 off);
+ *   - integer_vif.c forms a pixel's gain in fp64 and truncates two results
+ *     to integers; the kernel used fp32 (ADR-0220: no fp64 on the device),
+ *     which put a share of those integers one off and a numerator sum one or
+ *     a few fp32 steps away. The kernel now computes the two integers exactly
+ *     (feature/sycl/sycl_integer_vif_math.h).
+ *
+ * So this test asserts equality on every output of every frame:
+ *
+ *   - the four per-scale scores, at 8 and at 10 bits;
+ *   - with `debug=true`, the frame ratio and the ten numerator / denominator
+ *     sums as well;
+ *   - with `vif_enhn_gain_limit=1.0`, the value the NEG models set, where a
+ *     gain at the limit is the common case;
+ *   - with `vif_skip_scale0=true`, where scale 0 is published as 0.
  *
  * It also pins the default set of outputs: without `debug` the twin emits the
- * four scores only, as the CPU extractor does. Its `debug` option defaulted
- * to true before.
+ * four scores only, as the CPU extractor does.
  *
- * The denominator, single-precision and default-set checks fail on the old
- * twin.
+ * Every equality case fails on the twin before ADR-1432.
  *
  * Skip behaviour: exits 77 when there is no SYCL device.
  */
@@ -70,14 +71,11 @@
 typedef struct VifCase {
     const char *name;
     unsigned bpc;
-    const char *option; /* NULL, or an option set to "true" on both sides */
+    const char *option; /* NULL, or an option set on both sides */
+    const char *value;  /* its value; NULL means "true" */
     unsigned n_keys;
     const char *keys[MAX_KEYS];
 } VifCase;
-
-/* Largest relative distance of a score or numerator sum from the CPU's while
- * the kernel's gain is fp32. Measured: 1.2e-6 on the 10-bit fixture. */
-#define SINGLE_STEP_TOLERANCE 5.0e-6
 
 typedef struct VifScores {
     double v[NUM_FRAMES][MAX_KEYS];
@@ -173,7 +171,7 @@ static char *score_context(VmafSyclState *state, const VifCase *c, VmafContext *
     VmafFeatureDictionary *opts = NULL;
     if (c->option) {
         mu_assert("vmaf_feature_dictionary_set failed",
-                  !vmaf_feature_dictionary_set(&opts, c->option, "true"));
+                  !vmaf_feature_dictionary_set(&opts, c->option, c->value ? c->value : "true"));
     }
     /* vmaf_use_feature() takes the dictionary over, on failure too. */
     mu_assert("vmaf_use_feature failed",
@@ -213,56 +211,29 @@ static uint64_t score_bits(double value)
     return bits;
 }
 
-/* The outputs the kernels accumulate exactly as the CPU does: equal to the
- * last bit once the host rounds as the CPU does. */
-static bool is_denominator(const char *key)
+static char *require_identical(const VifCase *c, const VifScores *cpu, const VifScores *gpu)
 {
-    return strstr(key, "vif_den") != NULL;
-}
-
-/* The frame ratio of the debug outputs is a double quotient of two sums of
- * floats; every other output is a float widened to double. */
-static bool is_single_precision(const char *key)
-{
-    return strcmp(key, "integer_vif") != 0 && strcmp(key, "integer_vif_num") != 0 &&
-           strcmp(key, "integer_vif_den") != 0;
-}
-
-static char *require_cpu_rounding(const VifCase *c, const VifScores *cpu, const VifScores *gpu)
-{
-    unsigned denominators_differing = 0u;
-    unsigned not_single = 0u;
-    unsigned too_far = 0u;
+    unsigned differing = 0u;
     for (unsigned frame = 0; frame < NUM_FRAMES; frame++) {
         for (unsigned key = 0; key < c->n_keys; key++) {
             const double a = cpu->v[frame][key];
             const double b = gpu->v[frame][key];
             mu_assert("the CPU vif output is not finite", isfinite(a));
-            const bool same = score_bits(a) == score_bits(b);
-            const bool single = !is_single_precision(c->keys[key]) || (double)(float)b == b;
-            const bool close = fabs(a - b) <= SINGLE_STEP_TOLERANCE * fabs(a);
-            if (is_denominator(c->keys[key]) && !same)
-                denominators_differing++;
-            not_single += single ? 0u : 1u;
-            too_far += close ? 0u : 1u;
-            if ((is_denominator(c->keys[key]) && !same) || !single || !close) {
-                (void)fprintf(stderr, "\n%s frame %u %s: cpu=%.17g sycl=%.17g delta=%.3e", c->name,
-                              frame, c->keys[key], a, b, fabs(a - b));
-            }
+            if (score_bits(a) == score_bits(b))
+                continue;
+            differing++;
+            (void)fprintf(stderr, "\n%s frame %u %s: cpu=%.17g sycl=%.17g delta=%.3e", c->name,
+                          frame, c->keys[key], a, b, fabs(a - b));
         }
     }
-    if (denominators_differing + not_single + too_far != 0u)
+    if (differing != 0u)
         (void)fprintf(stderr, "\n");
-    mu_assert("vif_sycl's denominator sums must be the CPU's bit for bit",
-              denominators_differing == 0u);
-    mu_assert("vif_sycl must publish single-precision values, as integer_vif.c does",
-              not_single == 0u);
-    mu_assert("vif_sycl is more than 5e-6 (relative) from the CPU", too_far == 0u);
+    mu_assert("vif_sycl must return the CPU's vif outputs bit for bit (ADR-1432)", differing == 0u);
     return NULL;
 }
 
-/* One case on the CPU and on the twin. `cpu_out`, when not NULL, receives the
- * CPU's scores. */
+/* One case on the CPU and on the twin, compared exactly. `cpu_out`, when not
+ * NULL, receives the CPU's scores. */
 static char *compare(const VifCase *c, VifScores *cpu_out)
 {
     VmafSyclState *state = open_device();
@@ -274,7 +245,7 @@ static char *compare(const VifCase *c, VifScores *cpu_out)
     if (!msg)
         msg = score(state, c, &gpu);
     if (!msg)
-        msg = require_cpu_rounding(c, &cpu, &gpu);
+        msg = require_identical(c, &cpu, &gpu);
     if (cpu_out != NULL)
         *cpu_out = cpu;
     vmaf_sycl_state_free(&state);
@@ -289,23 +260,39 @@ static char *test_vif_sycl_registered(void)
     return NULL;
 }
 
-static char *test_vif_scales_round_as_the_cpu(void)
+static char *test_vif_scales_identical(void)
 {
     static const VifCase c = {.name = "default", .bpc = 8u, .n_keys = 4u, .keys = {SCALE_KEYS}};
     return compare(&c, NULL);
 }
 
 /* debug=true publishes the frame ratio and the sums it is formed from. The
- * CPU adds the per-scale sums after rounding each to fp32, so the frame's
- * denominator is equal too. */
-static char *test_vif_debug_outputs_round_as_the_cpu(void)
+ * CPU adds the per-scale sums after rounding each to fp32. */
+static char *test_vif_debug_outputs_identical(void)
 {
     static const VifCase c = {
         .name = "debug", .bpc = 8u, .option = "debug", .n_keys = 15u, .keys = {DEBUG_KEYS}};
     return compare(&c, NULL);
 }
 
-static char *test_vif_10bit_rounds_as_the_cpu(void)
+/* A gain at the limit takes fl64(limit * limit * sigma1_sq), not the
+ * quotient: with the limit at 1 that is the common case on this fixture. The
+ * key carries the option's alias and value. */
+static char *test_vif_gain_limit_identical(void)
+{
+    static const VifCase c = {
+        .name = "egl=1",
+        .bpc = 8u,
+        .option = "vif_enhn_gain_limit",
+        .value = "1.0",
+        .n_keys = 4u,
+        .keys = {"integer_vif_scale0_egl_1", "integer_vif_scale1_egl_1", "integer_vif_scale2_egl_1",
+                 "integer_vif_scale3_egl_1"},
+    };
+    return compare(&c, NULL);
+}
+
+static char *test_vif_10bit_identical(void)
 {
     static const VifCase c = {.name = "10-bit", .bpc = 10u, .n_keys = 4u, .keys = {SCALE_KEYS}};
     return compare(&c, NULL);
@@ -316,7 +303,7 @@ static char *test_vif_10bit_rounds_as_the_cpu(void)
  * The score is filed under the derived key: the alias of
  * "VMAF_integer_feature_vif_scale0_score" is "integer_vif_scale0" and the
  * option alias "ssclz" is appended. */
-static char *test_vif_skip_scale0_score_is_zero(void)
+static char *test_vif_skip_scale0_identical(void)
 {
     static const VifCase c = {
         .name = "vif_skip_scale0",
@@ -365,10 +352,11 @@ static char *test_vif_default_outputs_are_the_cpu_set(void)
 char *run_tests(void)
 {
     mu_run_test(test_vif_sycl_registered);
-    mu_run_test(test_vif_scales_round_as_the_cpu);
-    mu_run_test(test_vif_debug_outputs_round_as_the_cpu);
-    mu_run_test(test_vif_10bit_rounds_as_the_cpu);
-    mu_run_test(test_vif_skip_scale0_score_is_zero);
+    mu_run_test(test_vif_scales_identical);
+    mu_run_test(test_vif_debug_outputs_identical);
+    mu_run_test(test_vif_gain_limit_identical);
+    mu_run_test(test_vif_10bit_identical);
+    mu_run_test(test_vif_skip_scale0_identical);
     mu_run_test(test_vif_default_outputs_are_the_cpu_set);
     return NULL;
 }

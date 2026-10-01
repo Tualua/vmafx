@@ -57248,3 +57248,40 @@ Netflix golden assertions are untouched.
 - No Netflix golden-data, public C API or FFmpeg patch impact. The SYCL, HIP
   and Metal `float_adm` twins are untouched
   (`T-GPU-FLOAT-ADM-TINY-FRAME-FLOOR-2026-10-01`).
+
+## ADR-1432 — `vif_sycl` computes the gain terms exactly (2026-10-01)
+
+`fix/sycl-vif-fp64-gain`, ADR-1432 (follows the host-tail fix above and
+ADR-1422).
+
+- `core/src/feature/sycl/sycl_integer_vif_math.h` (new) mirrors six lines of
+  `integer_vif.c::vif_accumulate_pixel()` (also in `x86/vif_avx2.c`,
+  `x86/vif_avx512.c`, `arm64/vif_neon.c`). If upstream Netflix changes them,
+  change `gain_terms_integer()` and `gain_terms_replayed()` in the same
+  change; `core/test/test_sycl_vif_exact_gain_contract.py` fails when the
+  lines move. `kEpsMant` / `kEpsExp` are the fp64 bits of `65536 * 1.0e-10`.
+- `core/src/feature/sycl/sycl_soft_double.h` (new) holds the soft-fp64
+  primitives; `sycl_float_vif_math.h` lost its own copies of `SoftDouble`,
+  `soft_round()`, `soft_add()`, `soft_div()`, `soft_from_float()` and
+  `soft_to_float()` and includes it. **On rebase**: if the other side edits
+  those functions in `sycl_float_vif_math.h`, move the edit to the shared
+  header.
+- `core/src/feature/sycl/integer_vif_sycl.cpp`: `dev_vif_stats_log_domain()`
+  calls `vmaf_sycl_ivif::gain_terms()`; the fp32 gain, its `sycl::fma` and
+  `sycl::fmin` are gone and must not come back. The gain limit travels as
+  `VifGainLimit` (built in `init`), the per-pixel terms as `vif_terms` (seven
+  `int32_t`), and the fused kernel of scale 0 takes the large register file
+  at SIMD-16 (`vif_fused_grf_size()`). The last two keep the kernels free of
+  scratch memory (ADR-1395).
+- Do not use `sycl::mul_hi()` on 64-bit operands in a kernel: it returned
+  wrong values on an Arc A380. `u128_mul()` forms the product in limbs.
+- `vif` is declared exact for `sycl` by `scripts/ci/exact_twins.d/vif.sycl`
+  (ADR-1397's exact cell in ADR-1428's fragment form); the row in
+  `docs/development/cross-backend-exact-twins.md` is generated
+  (`make docs-fragments-write`).
+- Tests: `core/test/test_sycl_integer_vif_math.c` with its probe
+  `test_sycl_integer_vif_math_probe.cpp` (host and device),
+  `core/test/test_sycl_vif_parity.c` (`==`, every output),
+  `core/test/test_sycl_vif_exact_gain_contract.py` (seven planted
+  regressions).
+- No Netflix golden-data, public API or FFmpeg patch impact.
