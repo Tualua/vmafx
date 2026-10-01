@@ -1536,6 +1536,7 @@ nav:
         - "ADR-1423: hip-adm-cpu-row-rounding": adr/1423-hip-adm-cpu-row-rounding.md
         - "ADR-1424: cuda-ssim-cpu-frame-sum": adr/1424-cuda-ssim-cpu-frame-sum.md
         - "ADR-1426: cuda-ciede-cpu-arithmetic": adr/1426-cuda-ciede-cpu-arithmetic.md
+        - "ADR-1427: hip-clear-after-upload": adr/1427-hip-clear-after-upload.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

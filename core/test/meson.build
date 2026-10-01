@@ -5305,6 +5305,53 @@ test('test_hip_adm_exact', test_hip_adm_exact,
     is_parallel : false,
     timeout : 180)
 
+# ADR-1427: a HIP frame uploads its planes, then clears its accumulators, then
+# launches its kernels; a clear queued ahead of the upload is lost in a later,
+# larger context of a process. Device-free source contract over every HIP
+# twin, with planted regressions; the device check is
+# test_hip_first_frame_clear.
+test('test_hip_clear_after_upload_contract',
+    import('python').find_installation(),
+    args : files('test_hip_clear_after_upload_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
+# ADR-1427 -- the first frame of a HIP context that follows a smaller one in
+# the same process is the CPU's: one frame at 640x360, then one at 3840x2160.
+# A twin that queues its accumulator clear ahead of the frame's upload adds
+# onto the smaller context's sums there. Only the first larger context of a
+# process is exposed, so every twin gets its own binary. HIP-gated.
+hip_first_frame_twins = [
+    'adm_hip',
+    'float_moment_hip',
+    'psnr_hip',
+    'float_psnr_hip',
+    'vif_hip',
+    'float_vif_hip',
+    'float_adm_hip',
+    'ciede_hip',
+    'integer_ssim_hip',
+    'float_ssim_hip',
+    'integer_ms_ssim_hip',
+    'psnr_hvs_hip',
+    'cambi_hip',
+    'ssimulacra2_hip',
+]
+foreach twin : hip_first_frame_twins
+    test_hip_first_frame_clear = executable('test_hip_first_frame_clear_' + twin,
+        ['test.c', 'test_hip_first_frame_clear.c'],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+        link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+        dependencies: [pthread_dependency, hip_deps, math_lib],
+        c_args: ['-DHAVE_HIP=1', '-DFIRST_FRAME_TWIN="' + twin + '"']
+    )
+    test('test_hip_first_frame_clear_' + twin, test_hip_first_frame_clear,
+        suite : ['fast', 'gpu'],
+        is_parallel : false,
+        timeout : 180)
+endforeach
+
 test_hip_ms_ssim_parity = executable('test_hip_ms_ssim_parity',
     ['test.c', 'test_hip_ms_ssim_parity.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],

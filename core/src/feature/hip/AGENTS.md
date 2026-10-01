@@ -502,6 +502,29 @@ Rebase-sensitive:
   `_large` (device, `==`, 48 outputs), `test_hip_kernel_source_contract.py`
   (10 planted regressions).
 
+## Frame order: upload, clear, kernels (ADR-1427)
+
+Every HIP twin, every frame: `vmaf_hip_plane_source_acquire*()` /
+`vmaf_hip_picture_upload*()` FIRST, then `hipMemsetAsync` of accumulators,
+then kernels. Rebase-sensitive:
+
+- Clear queued ahead of the upload = lost on gfx1036 in the first context of
+  a process needing larger planes than earlier contexts. Kernels add onto
+  the earlier context's sums in recycled device memory. Was: `adm_hip` (run
+  fails), `float_moment_hip` (moments +3 %), `vif_hip` (scores -0.02).
+  `vmaf` CLI = one context per process, fresh memory zero, never shows.
+- Clear at allocation = no fix. `hipMemset` on device memory is async on the
+  null stream (hipamd `ihipMemset()`, ROCm 7.2.4); `float_moment_hip` stays
+  wrong with it.
+- Rule holds through helpers: a helper that clears counts as a clear at its
+  call site, a helper that uploads as an upload.
+- New twin: add a row to `cases[]` in `core/test/test_hip_first_frame_clear.c`
+  AND its name to `hip_first_frame_twins` in `core/test/meson.build` (one
+  binary per twin; only the first larger context of a process is exposed).
+- Guards: `test_hip_first_frame_clear_<twin>` (device),
+  `test_hip_clear_after_upload_contract.py` (device-free, every `*.c` under
+  `core/src/feature/hip/` and `core/src/hip/`, six planted regressions).
+
 ## adm_hip = CPU bits (ADR-1423, `EXACT_TWINS`)
 
 Scores = `integer_adm.c`'s bits (gfx1036: 21 pairs, 6192 values with
@@ -531,9 +554,8 @@ Scores = `integer_adm.c`'s bits (gfx1036: 21 pairs, 6192 values with
   upload = lost in the first context needing larger planes than earlier
   contexts of the process (recycled device memory -> NaN numerator, run
   fails). `hipMemset` at allocation = no fix: async on the null stream for
-  device memory (hipamd `ihipMemset()`, ROCm 7.2). Same defect in
-  `float_moment_hip`, `vif_hip`:
-  `T-HIP-FIRST-FRAME-ASYNC-CLEAR-OTHER-TWINS-2026-10-01`.
+  device memory (hipamd `ihipMemset()`, ROCm 7.2). Rule for every twin:
+  "Frame order: upload, clear, kernels" above (ADR-1427).
 - Guards: `test_hip_adm_exact` (device, nine contexts in one process, two
   frames each, `==`), `test_hip_adm_exact_contract.py` (device-free, ten
   planted regressions).

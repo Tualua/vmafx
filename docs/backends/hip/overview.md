@@ -738,6 +738,61 @@ shared, with and without `n_subsample`, and refills both pictures the moment
 a frame has been submitted. `test_hip_shared_frame` and
 `test_hip_shared_frame_contract` check the sharing rules without a device.
 
+### A frame clears its accumulators after its upload (ADR-1427)
+
+Who this concerns: a program that creates more than one `VmafContext` with
+HIP extractors in one process, for example to score a small clip and then a
+larger one. The `vmaf` tool creates one context per process and was not
+affected.
+
+Before 2026-10-01 `float_moment_hip`, `vif_hip` and `adm_hip` returned a
+wrong first frame in the first context of a process that needed larger
+planes than the contexts before it. They cleared their accumulators ahead of
+the frame's upload, and on a gfx1036 such a clear has no effect in that
+situation: the frame's sums were added onto the sums the earlier context had
+left in recycled device memory
+([ADR-1427](../../adr/1427-hip-clear-after-upload.md)). Every HIP extractor
+now uploads, then clears, then launches its kernels.
+
+One frame in a 640x360 context, then one in a 3840x2160 context of the same
+process, on `ryzen-4090-arc` (gfx1036, ROCm 7.2.4):
+
+| First frame of the 3840x2160 context | Before | After | CPU |
+|---|---|---|---|
+| `float_moment_hip`, `float_moment_ref1st` | 130.53 | 127.00 | 127.00 |
+| `vif_hip`, scale 0 | 0.6748 | 0.6934 | 0.6934 |
+| `vif_hip`, scale 2 | 0.8749 | 0.8988 | 0.8988 |
+| `adm_hip` | the run fails | identical | - |
+
+The other eleven extractors of the test were correct before and are now.
+Scores of later frames, of the first context of a process and of the `vmaf`
+tool do not change. Re-run stored `float_moment_hip`, `vif_hip` or `adm_hip`
+scores only if they came from a process that scored clips of rising size
+through the library.
+
+Time per frame is unchanged within the spread of the samples (medians of
+three interleaved runs, `vif_hip` at 1080p of ten, other lanes loading the
+host):
+
+| Extractor | 1920x1080 before | after | 3840x2160 before | after |
+|---|---|---|---|---|
+| `float_moment_hip` | 1.95 | 1.97 | 7.22 | 7.14 |
+| `vif_hip` | 46.86 | 47.84 | 207.30 | 202.10 |
+| `float_psnr_hip` | 0.92 | 0.93 | 3.71 | 3.85 |
+
+To check a device:
+
+```bash
+python3 "$(git rev-parse --show-toplevel)/scripts/ci/run_meson_test.py" -- \
+  -C build test_hip_first_frame_clear_vif_hip \
+  test_hip_first_frame_clear_float_moment_hip test_hip_first_frame_clear_adm_hip
+```
+
+There is one such test per extractor, each in its own process, because only
+the first larger context of a process is exposed.
+`test_hip_clear_after_upload_contract` checks the order in every HIP source
+without a device.
+
 ### Dispatch strategy predicates and environment overrides
 
 Runtime feature dispatch support can be probed via

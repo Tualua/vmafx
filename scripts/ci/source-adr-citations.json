@@ -6253,6 +6253,7 @@
         "core/test/test_hip_cambi_device_math.c": 1,
         "core/test/test_hip_cambi_parity.c": 1,
         "core/test/test_hip_ciede_parity.c": 1,
+        "core/test/test_hip_first_frame_clear.c": 1,
         "core/test/test_hip_float_adm_parity.c": 1,
         "core/test/test_hip_float_moment_parity.c": 1,
         "core/test/test_hip_float_motion_parity.c": 1,
@@ -8709,6 +8710,7 @@
         "core/test/meson.build": 2,
         "core/test/test_hip_adm_exact.c": 2,
         "core/test/test_hip_adm_exact_contract.py": 6,
+        "core/test/test_hip_clear_after_upload_contract.py": 1,
         "scripts/ci/cross_backend_calibration.py": 1,
         "scripts/ci/cross_backend_parity_gate.py": 1,
         "scripts/ci/test_cross_backend_parity_gate.py": 1
@@ -8743,6 +8745,17 @@
         "scripts/ci/test_cross_backend_parity_gate.py": 1
       },
       "target": "1426-cuda-ciede-cpu-arithmetic.md"
+    },
+    "1427": {
+      "sites": {
+        "core/src/feature/hip/float_moment_hip.c": 1,
+        "core/src/feature/hip/float_psnr_hip.c": 1,
+        "core/src/feature/hip/integer_vif_hip.c": 1,
+        "core/test/meson.build": 2,
+        "core/test/test_hip_clear_after_upload_contract.py": 2,
+        "core/test/test_hip_first_frame_clear.c": 1
+      },
+      "target": "1427-hip-clear-after-upload.md"
     }
   },
   "retired": {

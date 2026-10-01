@@ -162,8 +162,8 @@ static int moment_hip_launch_kernel(MomentStateHip *s, ptrdiff_t row_w, hipStrea
 }
 
 /*
- * Per-frame submit body: zero the four uint64 accumulators, HtoD copies
- * of both luma planes, kernel launch, DtoH readback.
+ * Per-frame submit body: HtoD copies of both luma planes, zero the four
+ * uint64 accumulators, kernel launch, DtoH readback.
  */
 static int moment_hip_launch(MomentStateHip *s, VmafPicture *ref_pic, VmafPicture *dist_pic)
 {
@@ -172,15 +172,16 @@ static int moment_hip_launch(MomentStateHip *s, VmafPicture *ref_pic, VmafPictur
     hipStream_t str = vmaf_hip_stream_of(s->lc.str);
     const size_t sums_bytes = (size_t)MOMENT_HIP_COUNTERS * sizeof(uint64_t);
 
-    /* Zero the four uint64 atomic accumulators before dispatch. */
-    hipError_t hip_rc = hipMemsetAsync(s->rb.device, 0, sums_bytes, str);
-    if (hip_rc != hipSuccess)
-        return moment_hip_rc(hip_rc);
-
     /* Returns once both pictures are read: the caller recycles them when
      * submit() returns (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18). */
     int err = vmaf_hip_plane_source_acquire_luma(&s->planes, s->hip_frame, ref_pic, dist_pic,
                                                  s->lc.str, &s->ref_in, &s->dis_in);
+    /* Zero the four uint64 accumulators after the upload, directly ahead of
+     * the kernel that adds into them (ADR-1427): a clear queued ahead of the
+     * upload is lost in the first context of a process that needs larger
+     * planes than the contexts before it. */
+    if (err == 0)
+        err = moment_hip_rc(hipMemsetAsync(s->rb.device, 0, sums_bytes, str));
     if (err == 0)
         err = moment_hip_launch_kernel(s, row_w, str);
     if (err != 0)
@@ -188,7 +189,7 @@ static int moment_hip_launch(MomentStateHip *s, VmafPicture *ref_pic, VmafPictur
 
     /* Record submit event, DtoH copy of the four uint64 accumulators,
      * record finished event. */
-    hip_rc = hipEventRecord(vmaf_hip_event_of(s->lc.submit), str);
+    hipError_t hip_rc = hipEventRecord(vmaf_hip_event_of(s->lc.submit), str);
     if (hip_rc == hipSuccess) {
         hip_rc =
             hipMemcpyAsync(s->rb.host_pinned, s->rb.device, sums_bytes, hipMemcpyDeviceToHost, str);

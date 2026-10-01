@@ -57010,3 +57010,23 @@ Netflix golden assertions are untouched.
 - No Netflix golden-data, public C API or FFmpeg patch impact; `ciede.c` is
   not touched. The `ciede_sycl`, `ciede_hip` and `ciede_metal` twins are
   untouched (`T-GPU-CIEDE-CPU-ARITHMETIC-2026-10-01`).
+## ADR-1427 — a HIP frame clears its accumulators after its upload (2026-10-01)
+
+`fix/hip-first-frame-accumulator-clear`,
+`T-HIP-FIRST-FRAME-ASYNC-CLEAR-OTHER-TWINS-2026-10-01`.
+
+- `core/src/feature/hip/float_moment_hip.c` (`moment_hip_launch()`),
+  `integer_vif_hip.c` (`submit_fex_hip()`) and `float_psnr_hip.c`
+  (`float_psnr_hip_launch()`) queue their `hipMemsetAsync` after
+  `vmaf_hip_plane_source_acquire_luma()`, directly ahead of the kernels.
+  `integer_adm_hip.c` does since ADR-1423. Keep that order in every conflict
+  resolution: a clear queued ahead of the upload is lost on a gfx1036 in the
+  first context of a process that needs larger planes than the contexts
+  before it, and the twin then returns a wrong first frame without an error.
+- `core/test/test_hip_clear_after_upload_contract.py` reads every `*.c` under
+  `core/src/feature/hip/` and `core/src/hip/` and fails on a function that
+  clears and uploads afterwards, helpers included. A new upload entry point
+  or clear call belongs in its `UPLOADS` / `CLEARS` tuples.
+- `core/test/meson.build` builds `test_hip_first_frame_clear.c` once per name
+  in `hip_first_frame_twins`; the contract fails when that list and the
+  test's `cases[]` table differ.

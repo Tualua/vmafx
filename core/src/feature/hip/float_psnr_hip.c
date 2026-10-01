@@ -198,7 +198,7 @@ static int float_psnr_hip_launch_kernel(FloatPsnrStateHip *s, ptrdiff_t plane_pi
 }
 
 /*
- * Per-frame submit body: zero accumulator, HtoD copies, kernel launch,
+ * Per-frame submit body: HtoD copies, zero the partials, kernel launch,
  * submit-event record, DtoH copy.
  */
 static int float_psnr_hip_launch(FloatPsnrStateHip *s, VmafPicture *ref_pic, VmafPicture *dist_pic)
@@ -207,21 +207,23 @@ static int float_psnr_hip_launch(FloatPsnrStateHip *s, VmafPicture *ref_pic, Vma
     const ptrdiff_t plane_pitch = (ptrdiff_t)(s->frame_w * bpp);
     hipStream_t str = vmaf_hip_stream_of(s->lc.str);
 
-    hipError_t hip_rc = hipMemsetAsync(s->rb.device, 0, (size_t)s->wg_count * sizeof(float), str);
-    if (hip_rc != hipSuccess)
-        return hip_err(hip_rc);
-
     /* Returns once both pictures are read: the caller recycles them when
      * submit() returns (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18). */
     int err = vmaf_hip_plane_source_acquire_luma(&s->planes, s->hip_frame, ref_pic, dist_pic,
                                                  s->lc.str, &s->ref_in, &s->dis_in);
+    /* The partials are cleared after the upload, like every HIP twin's
+     * buffers (ADR-1427). The kernel writes every partial, so the frame
+     * does not depend on this clear. */
+    if (err == 0) {
+        err = hip_err(hipMemsetAsync(s->rb.device, 0, (size_t)s->wg_count * sizeof(float), str));
+    }
     if (err == 0)
         err = float_psnr_hip_launch_kernel(s, plane_pitch, str);
     if (err != 0)
         return err;
 
     /* Record submit event, DtoH copy of partials, record finished event. */
-    hip_rc = hipEventRecord(vmaf_hip_event_of(s->lc.submit), str);
+    hipError_t hip_rc = hipEventRecord(vmaf_hip_event_of(s->lc.submit), str);
     if (hip_rc == hipSuccess) {
         hip_rc = hipMemcpyAsync(s->rb.host_pinned, s->rb.device,
                                 (size_t)s->wg_count * sizeof(float), hipMemcpyDeviceToHost, str);
