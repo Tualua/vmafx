@@ -11,20 +11,42 @@
  *  per-scale dims = prev/2 (no border crop); decimate samples at
  *  (2*gx, 2*gy) with mirror padding on input filter taps.
  *
- *  Per-frame flow: 4 compute + 3 decimate launches. Self-contained
- *  submit/collect — does NOT register with vmaf_sycl_graph_register
- *  (the multi-scale layout doesn't fit the shared_frame model).
+ *  Per-frame flow: 3 decimate launches and, per scale, a filter, a
+ *  statistic and a row-sum launch; one readback.
+ *  Self-contained submit/collect — does NOT register with
+ *  vmaf_sycl_graph_register (the multi-scale layout doesn't fit the
+ *  shared_frame model).
+ *
+ *  Numerical contract (ADR-1422, after ADR-1412 for the CUDA twin). The twin
+ *  returns the CPU extractor's values bit for bit:
+ *   - taps: the four filters come from vif_get_filter(), as float_vif.c
+ *     derives them; no kernel holds a tap literal.
+ *   - filters: each tap one rounded fp32 multiply and one rounded fp32 add,
+ *     taps in order, vertical pass then horizontal (the TU builds with
+ *     contraction off, ADR-1367).
+ *   - statistic: vif_pixel_statistic_s() and log2f_approx() operation for
+ *     operation; the two fp64 expressions of the reference without the fp64
+ *     type (sycl_float_vif_math.h).
+ *   - sums: vif_statistic_s() adds the terms of a row into one fp32
+ *     accumulator and the rows into another. The filter kernel stores each
+ *     pixel's variances, the statistic kernel turns them into the two terms,
+ *     a row kernel adds every row left to right, and the host adds the rows.
+ *
+ *  No kernel uses scratch memory (ADR-1395): the statistic has its own
+ *  kernel because its 64-bit integer path spilled next to the filter's tile.
  */
 
 #include <sycl/sycl.hpp>
 
 #include "sycl_compat.h"
+#include "sycl_float_vif_math.h"
 #include "sycl_tile_index.h"
 
 #include <cerrno>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <utility>
 
 #include "config.h"
@@ -45,6 +67,13 @@ constexpr int FVIF_BY = 16;
 constexpr int FVIF_MAX_FW = 17;
 constexpr int FVIF_MAX_HFW = 8;
 
+/* One scale's filter, as a kernel argument. The kernels index it with the
+ * constants of their unrolled tap loops only: an index known at run time
+ * would put the array in private memory (ADR-1395). */
+struct VifTaps {
+    float tap[FVIF_MAX_FW];
+};
+
 } // namespace
 
 namespace
@@ -56,6 +85,9 @@ struct FloatVifStateSycl {
     double vif_kernelscale;
     double vif_sigma_nsq;
     bool vif_skip_scale0; /* host-side suppression: emit 0.0 for scale-0, mirrors float_vif.c */
+    double vif_scale1_min_val;
+    double vif_scale2_min_val;
+    double vif_scale3_min_val;
 
     unsigned width;
     unsigned height;
@@ -74,12 +106,22 @@ struct FloatVifStateSycl {
     float *d_ref_buf[2];
     float *d_dis_buf[2];
 
-    /* Per-scale (num, den) partials. */
-    float *d_num[4];
-    float *d_den[4];
-    float *h_num[4];
-    float *h_den[4];
-    unsigned wg_count[4];
+    /* vif_get_filter() taps of the four scales; a launch hands its scale's
+     * taps to the kernel by value. */
+    VifTaps taps[4];
+    /* Per-pixel planes of the scale being computed (scale-0 size; the queue
+     * is in order, so the scales share them). The filter kernel stores
+     * sigma1_sq, sigma2_sq and sigma12; the statistic kernel replaces the
+     * first two by the numerator and denominator terms. */
+    float *d_num_terms;
+    float *d_den_terms;
+    float *d_sigma12;
+    /* Row sums of every scale, [num rows | den rows] per scale at
+     * row_offset[scale]; one copy to the host per frame. */
+    float *d_rows;
+    float *h_rows;
+    size_t row_offset[4];
+    size_t row_floats;
 
     bool has_pending;
     unsigned pending_index;
@@ -92,36 +134,11 @@ struct FloatVifStateSycl {
 namespace
 {
 
-template <int SCALE> struct VifFilterConstants;
-
-template <> struct VifFilterConstants<0> {
-    static constexpr int width = 17;
-    static constexpr int half_width = 8;
-    static constexpr float coeff[17] = {
-        0.00745626912f, 0.0142655009f, 0.0250313189f, 0.0402820669f, 0.0594526194f, 0.0804751068f,
-        0.0999041125f,  0.113746084f,  0.118773937f,  0.113746084f,  0.0999041125f, 0.0804751068f,
-        0.0594526194f,  0.0402820669f, 0.0250313189f, 0.0142655009f, 0.00745626912f};
-};
-
-template <> struct VifFilterConstants<1> {
-    static constexpr int width = 9;
-    static constexpr int half_width = 4;
-    static constexpr float coeff[9] = {0.0189780835f, 0.0558981746f, 0.120920904f,
-                                       0.192116052f,  0.224173605f,  0.192116052f,
-                                       0.120920904f,  0.0558981746f, 0.0189780835f};
-};
-
-template <> struct VifFilterConstants<2> {
-    static constexpr int width = 5;
-    static constexpr int half_width = 2;
-    static constexpr float coeff[5] = {0.054488685f, 0.244201347f, 0.402619958f, 0.244201347f,
-                                       0.054488685f};
-};
-
-template <> struct VifFilterConstants<3> {
-    static constexpr int width = 3;
-    static constexpr int half_width = 1;
-    static constexpr float coeff[3] = {0.166378498f, 0.667243004f, 0.166378498f};
+/* Filter widths of vif_get_filter_size(scale, 1.0). The taps themselves are
+ * computed on the host by vif_get_filter() and read from device memory. */
+template <int SCALE> struct VifFilterConstants {
+    static constexpr int width = (1 << (4 - SCALE)) + 1;
+    static constexpr int half_width = width / 2;
 };
 
 } // namespace
@@ -136,17 +153,24 @@ struct VifComputeArgs {
     const void *distorted_raw;
     const float *reference_float;
     const float *distorted_float;
-    float *numerator;
-    float *denominator;
+    VifTaps taps;
+    float *sigma1_sq;
+    float *sigma2_sq;
+    float *sigma12;
     unsigned raw_stride;
     unsigned float_stride;
     unsigned width;
     unsigned height;
     unsigned bpc;
-    unsigned group_columns;
-    float noise_variance;
-    float gain_limit;
-    float sigma_max_inverse;
+};
+
+/* What the statistic kernel reads and writes: each pixel's two terms replace
+ * its two variances. */
+struct VifStatisticArgs {
+    float *sigma1_sq_then_numerator;
+    float *sigma2_sq_then_denominator;
+    const float *sigma12;
+    vmaf_sycl_fvif::StatisticParams statistic;
 };
 
 struct VifScratch {
@@ -157,8 +181,6 @@ struct VifScratch {
     VifLocal vertical_reference_square;
     VifLocal vertical_distorted_square;
     VifLocal vertical_cross_product;
-    VifLocal numerator_subgroups;
-    VifLocal denominator_subgroups;
 };
 
 struct VifMoments {
@@ -169,9 +191,14 @@ struct VifMoments {
     float cross_product;
 };
 
-struct VifContribution {
-    float numerator;
-    float denominator;
+/* What the row-sum kernel reads and writes. */
+struct VifRowSumArgs {
+    const float *numerator_terms;
+    const float *denominator_terms;
+    float *numerator_rows;
+    float *denominator_rows;
+    unsigned width;
+    unsigned height;
 };
 
 } // namespace
@@ -184,6 +211,7 @@ struct VifDecimateArgs {
     const void *distorted_raw;
     const float *reference_float;
     const float *distorted_float;
+    VifTaps taps;
     float *reference_output;
     float *distorted_output;
     unsigned raw_stride;
@@ -298,7 +326,8 @@ namespace
 {
 
 template <int SCALE>
-static inline VifMoments vertical_vif_moments(const VifScratch &scratch, int row, int column)
+static inline VifMoments vertical_vif_moments(const VifTaps &taps, const VifScratch &scratch,
+                                              int row, int column)
 {
     using F = VifFilterConstants<SCALE>;
     constexpr int width = F::width;
@@ -306,7 +335,7 @@ static inline VifMoments vertical_vif_moments(const VifScratch &scratch, int row
     VifMoments moments{};
 #pragma unroll
     for (int tap = 0; tap < width; ++tap) {
-        const float coefficient = F::coeff[tap];
+        const float coefficient = taps.tap[tap];
         const size_t index = (size_t)(row + tap) * maximum_tile_width + (size_t)column;
         const float reference = scratch.reference[index];
         const float distorted = scratch.distorted[index];
@@ -325,7 +354,8 @@ namespace
 {
 
 template <int SCALE>
-static inline void filter_vif_vertical(sycl::nd_item<2> item, const VifScratch &scratch)
+static inline void filter_vif_vertical(sycl::nd_item<2> item, const VifTaps &taps,
+                                       const VifScratch &scratch)
 {
     using F = VifFilterConstants<SCALE>;
     constexpr int half_width = F::half_width;
@@ -335,7 +365,7 @@ static inline void filter_vif_vertical(sycl::nd_item<2> item, const VifScratch &
     for (int offset = local; offset < FVIF_BY * tile_width; offset += FVIF_BX * FVIF_BY) {
         const int row = offset / tile_width;
         const int column = offset - row * tile_width;
-        const VifMoments moments = vertical_vif_moments<SCALE>(scratch, row, column);
+        const VifMoments moments = vertical_vif_moments<SCALE>(taps, scratch, row, column);
         const size_t index = (size_t)row * maximum_tile_width + (size_t)column;
         scratch.vertical_reference_mean[index] = moments.reference_mean;
         scratch.vertical_distorted_mean[index] = moments.distorted_mean;
@@ -351,7 +381,8 @@ namespace
 {
 
 template <int SCALE>
-static inline VifMoments horizontal_vif_moments(sycl::nd_item<2> item, const VifScratch &scratch)
+static inline VifMoments horizontal_vif_moments(sycl::nd_item<2> item, const VifTaps &taps,
+                                                const VifScratch &scratch)
 {
     using F = VifFilterConstants<SCALE>;
     constexpr int width = F::width;
@@ -361,7 +392,7 @@ static inline VifMoments horizontal_vif_moments(sycl::nd_item<2> item, const Vif
     VifMoments moments{};
 #pragma unroll
     for (int tap = 0; tap < width; ++tap) {
-        const float coefficient = F::coeff[tap];
+        const float coefficient = taps.tap[tap];
         const size_t index = row + column + (size_t)tap;
         moments.reference_mean += coefficient * scratch.vertical_reference_mean[index];
         moments.distorted_mean += coefficient * scratch.vertical_distorted_mean[index];
@@ -377,81 +408,21 @@ static inline VifMoments horizontal_vif_moments(sycl::nd_item<2> item, const Vif
 namespace
 {
 
-static inline VifContribution vif_contribution(const VifComputeArgs &args,
-                                               const VifMoments &moments)
+/* vif_pixel_statistic_s()'s variances of one pixel, stored for the statistic
+ * kernel. */
+static inline void store_vif_sigmas(sycl::nd_item<2> item, const VifComputeArgs &args,
+                                    const VifMoments &moments)
 {
-    constexpr float epsilon = 1.0e-10f;
-    float reference_variance =
-        moments.reference_square - moments.reference_mean * moments.reference_mean;
-    float distorted_variance =
-        moments.distorted_square - moments.distorted_mean * moments.distorted_mean;
-    const float covariance =
-        moments.cross_product - moments.reference_mean * moments.distorted_mean;
-    reference_variance = sycl::fmax(reference_variance, 0.0f);
-    distorted_variance = sycl::fmax(distorted_variance, 0.0f);
-    float gain = covariance / (reference_variance + epsilon);
-    float residual_variance = distorted_variance - gain * covariance;
-    if (reference_variance < epsilon) {
-        gain = 0.0f;
-        residual_variance = distorted_variance;
-        reference_variance = 0.0f;
-    }
-    if (distorted_variance < epsilon) {
-        gain = 0.0f;
-        residual_variance = 0.0f;
-    }
-    if (gain < 0.0f) {
-        residual_variance = distorted_variance;
-        gain = 0.0f;
-    }
-    residual_variance = sycl::fmax(residual_variance, epsilon);
-    gain = sycl::fmin(gain, args.gain_limit);
-    VifContribution result = {
-        .numerator = sycl::log2(1.0f + (gain * gain * reference_variance) /
-                                           (residual_variance + args.noise_variance)),
-        .denominator = sycl::log2(1.0f + reference_variance / args.noise_variance),
-    };
-    if (covariance < 0.0f) {
-        result.numerator = 0.0f;
-    }
-    if (reference_variance < args.noise_variance) {
-        result.numerator = 1.0f - distorted_variance * args.sigma_max_inverse;
-        result.denominator = 1.0f;
-    }
-    return result;
-}
-
-} // namespace
-
-namespace
-{
-
-static inline void reduce_vif_group(sycl::nd_item<2> item, const VifComputeArgs &args,
-                                    const VifScratch &scratch, VifContribution value)
-{
-    sycl::sub_group const subgroup = item.get_sub_group();
-    const float numerator = sycl::reduce_over_group(subgroup, value.numerator, sycl::plus<float>{});
-    const float denominator =
-        sycl::reduce_over_group(subgroup, value.denominator, sycl::plus<float>{});
-    const uint32_t subgroup_id = subgroup.get_group_linear_id();
-    if (subgroup.get_local_linear_id() == 0) {
-        scratch.numerator_subgroups[subgroup_id] = numerator;
-        scratch.denominator_subgroups[subgroup_id] = denominator;
-    }
-    item.barrier(sycl::access::fence_space::local_space);
-    const size_t local = item.get_local_id(0) * FVIF_BX + item.get_local_id(1);
-    if (local != 0) {
-        return;
-    }
-    float numerator_total = 0.0f;
-    float denominator_total = 0.0f;
-    for (uint32_t group = 0; group < subgroup.get_group_linear_range(); ++group) {
-        numerator_total += scratch.numerator_subgroups[group];
-        denominator_total += scratch.denominator_subgroups[group];
-    }
-    const size_t index = item.get_group(0) * args.group_columns + item.get_group(1);
-    args.numerator[index] = numerator_total;
-    args.denominator[index] = denominator_total;
+    const vmaf_sycl_fvif::Sigmas sigmas =
+        vmaf_sycl_fvif::pixel_sigmas({.mu1 = moments.reference_mean,
+                                      .mu2 = moments.distorted_mean,
+                                      .xx = moments.reference_square,
+                                      .yy = moments.distorted_square,
+                                      .xy = moments.cross_product});
+    const size_t index = item.get_global_id(0) * args.width + item.get_global_id(1);
+    args.sigma1_sq[index] = sigmas.sigma1_sq;
+    args.sigma2_sq[index] = sigmas.sigma2_sq;
+    args.sigma12[index] = sigmas.sigma12;
 }
 
 } // namespace
@@ -464,16 +435,13 @@ static VifScratch make_vif_scratch(sycl::handler &handler)
     constexpr size_t tile_width = FVIF_BX + 2 * FVIF_MAX_HFW;
     const sycl::range<1> tile_range(tile_width * tile_width);
     const sycl::range<1> vertical_range((size_t)FVIF_BY * tile_width);
-    const sycl::range<1> subgroup_range((size_t)FVIF_BX * FVIF_BY / 32);
     return {.reference = VifLocal(tile_range, handler),
             .distorted = VifLocal(tile_range, handler),
             .vertical_reference_mean = VifLocal(vertical_range, handler),
             .vertical_distorted_mean = VifLocal(vertical_range, handler),
             .vertical_reference_square = VifLocal(vertical_range, handler),
             .vertical_distorted_square = VifLocal(vertical_range, handler),
-            .vertical_cross_product = VifLocal(vertical_range, handler),
-            .numerator_subgroups = VifLocal(subgroup_range, handler),
-            .denominator_subgroups = VifLocal(subgroup_range, handler)};
+            .vertical_cross_product = VifLocal(vertical_range, handler)};
 }
 
 } // namespace
@@ -490,8 +458,8 @@ template <int SCALE>
 class FloatVifComputeKernel : public VmafSyclKernelShape<32, float_vif_grf_size<SCALE>()>
 {
   public:
-    FloatVifComputeKernel(const VifComputeArgs &args, const VifScratch &scratch)
-        : args_(args), scratch_(scratch)
+    FloatVifComputeKernel(const VifComputeArgs &args, VifScratch scratch)
+        : args_(args), scratch_(std::move(scratch))
     {
     }
 
@@ -499,13 +467,12 @@ class FloatVifComputeKernel : public VmafSyclKernelShape<32, float_vif_grf_size<
     {
         load_vif_tile<SCALE>(item, args_, scratch_);
         item.barrier(sycl::access::fence_space::local_space);
-        filter_vif_vertical<SCALE>(item, scratch_);
+        filter_vif_vertical<SCALE>(item, args_.taps, scratch_);
         item.barrier(sycl::access::fence_space::local_space);
-        VifContribution value{};
         if (item.get_global_id(1) < args_.width && item.get_global_id(0) < args_.height) {
-            value = vif_contribution(args_, horizontal_vif_moments<SCALE>(item, scratch_));
+            store_vif_sigmas(item, args_,
+                             horizontal_vif_moments<SCALE>(item, args_.taps, scratch_));
         }
-        reduce_vif_group(item, args_, scratch_, value);
     }
 
   private:
@@ -514,35 +481,89 @@ class FloatVifComputeKernel : public VmafSyclKernelShape<32, float_vif_grf_size<
 };
 
 template <int SCALE>
-static sycl::event
-launch_compute(sycl::queue &queue, const void *reference_raw, const void *distorted_raw,
-               unsigned raw_stride, const float *reference_float, const float *distorted_float,
-               unsigned float_stride, float *numerator, float *denominator, unsigned width,
-               unsigned height, unsigned bpc, unsigned group_columns, float noise_variance,
-               float gain_limit, float sigma_max_inverse)
+static sycl::event launch_compute(sycl::queue &queue, const VifComputeArgs &args)
 {
-    const VifComputeArgs args = {.reference_raw = reference_raw,
-                                 .distorted_raw = distorted_raw,
-                                 .reference_float = reference_float,
-                                 .distorted_float = distorted_float,
-                                 .numerator = numerator,
-                                 .denominator = denominator,
-                                 .raw_stride = raw_stride,
-                                 .float_stride = float_stride,
-                                 .width = width,
-                                 .height = height,
-                                 .bpc = bpc,
-                                 .group_columns = group_columns,
-                                 .noise_variance = noise_variance,
-                                 .gain_limit = gain_limit,
-                                 .sigma_max_inverse = sigma_max_inverse};
-    const size_t global_x = ((size_t)width + FVIF_BX - 1) / FVIF_BX * FVIF_BX;
-    const size_t global_y = ((size_t)height + FVIF_BY - 1) / FVIF_BY * FVIF_BY;
+    const size_t global_x = ((size_t)args.width + FVIF_BX - 1) / FVIF_BX * FVIF_BX;
+    const size_t global_y = ((size_t)args.height + FVIF_BY - 1) / FVIF_BY * FVIF_BY;
     return queue.submit([&](sycl::handler &handler) {
-        const VifScratch scratch = make_vif_scratch(handler);
         const sycl::nd_range<2> range({global_y, global_x}, {FVIF_BY, FVIF_BX});
-        const FloatVifComputeKernel<SCALE> kernel(args, scratch);
+        const FloatVifComputeKernel<SCALE> kernel(args, make_vif_scratch(handler));
         handler.parallel_for(range, kernel);
+    });
+}
+
+} // namespace
+
+namespace
+{
+
+/* The rest of vif_pixel_statistic_s() for one pixel. The kernel is separate
+ * from the filter because the statistic's 64-bit integer path does not fit
+ * the filter kernel's registers next to its tile: together they spilled to
+ * scratch memory, which this twin must not use (ADR-1395). One work-item per
+ * pixel, no local memory, sub-group size 8 with the large register file. */
+class FloatVifStatisticKernel : public VmafSyclKernelShape<16, 0>
+{
+  public:
+    explicit FloatVifStatisticKernel(const VifStatisticArgs &args) : args_(args)
+    {
+    }
+
+    VMAF_SYCL_FUNCTOR_SG_SIZE(16) void operator()(sycl::id<1> pixel) const
+    {
+        const size_t index = pixel[0];
+        const vmaf_sycl_fvif::Term term =
+            vmaf_sycl_fvif::pixel_statistic({.sigma1_sq = args_.sigma1_sq_then_numerator[index],
+                                             .sigma2_sq = args_.sigma2_sq_then_denominator[index],
+                                             .sigma12 = args_.sigma12[index]},
+                                            args_.statistic);
+        args_.sigma1_sq_then_numerator[index] = term.num;
+        args_.sigma2_sq_then_denominator[index] = term.den;
+    }
+
+  private:
+    VifStatisticArgs args_;
+};
+
+static sycl::event launch_vif_statistic_terms(sycl::queue &queue, const VifStatisticArgs &args,
+                                              size_t pixels)
+{
+    return queue.submit([&](sycl::handler &handler) {
+        handler.parallel_for(sycl::range<1>(pixels), FloatVifStatisticKernel(args));
+    });
+}
+
+} // namespace
+
+namespace
+{
+
+/* vif_statistic_s()'s inner loop for row `y`: the terms added left to right
+ * into one fp32 accumulator per output. The order is the result; do not
+ * split, stride or reduce these loops. Two scalar accumulators and four USM
+ * pointers, so the kernel needs no scratch memory (ADR-1395). */
+static inline void vif_row_sums(const VifRowSumArgs &args, size_t y)
+{
+    const float *numerator = args.numerator_terms + y * args.width;
+    const float *denominator = args.denominator_terms + y * args.width;
+    float numerator_sum = 0.0f;
+    float denominator_sum = 0.0f;
+    for (unsigned x = 0; x < args.width; x++) {
+        numerator_sum += numerator[x];
+        denominator_sum += denominator[x];
+    }
+    args.numerator_rows[y] = numerator_sum;
+    args.denominator_rows[y] = denominator_sum;
+}
+
+/* One work-item per row, sub-group size 8 (the lanes of a hardware thread
+ * are rows; ADR-1411 measured 8 as the fastest for this shape). */
+static sycl::event launch_vif_row_sums(sycl::queue &queue, const VifRowSumArgs &args)
+{
+    return queue.submit([&](sycl::handler &handler) {
+        handler.parallel_for(sycl::range<1>(args.height),
+                             [=](sycl::id<1> row)
+                                 VMAF_SYCL_REQD_SG_SIZE(8) { vif_row_sums(args, row[0]); });
     });
 }
 
@@ -572,12 +593,12 @@ static inline VifSamplePair decimate_vif_pixel(const VifDecimateArgs &args, int 
     VifSamplePair result{};
 #pragma unroll
     for (int horizontal_tap = 0; horizontal_tap < width; ++horizontal_tap) {
-        const float horizontal_coefficient = F::coeff[horizontal_tap];
+        const float horizontal_coefficient = args.taps.tap[horizontal_tap];
         const int source_x = vif_mirror(2 * x - half_width + horizontal_tap, (int)args.input_width);
         VifSamplePair vertical{};
 #pragma unroll
         for (int vertical_tap = 0; vertical_tap < width; ++vertical_tap) {
-            const float vertical_coefficient = F::coeff[vertical_tap];
+            const float vertical_coefficient = args.taps.tap[vertical_tap];
             const int source_y =
                 vif_mirror(2 * y - half_width + vertical_tap, (int)args.input_height);
             const VifSamplePair sample = read_decimate_pair<SCALE>(args, source_y, source_x);
@@ -620,29 +641,10 @@ namespace
 {
 
 template <int SCALE>
-static sycl::event
-launch_decimate(sycl::queue &queue, const void *reference_raw, const void *distorted_raw,
-                unsigned raw_stride, const float *reference_float, const float *distorted_float,
-                unsigned float_stride, float *reference_output, float *distorted_output,
-                unsigned output_stride, unsigned output_width, unsigned output_height,
-                unsigned input_width, unsigned input_height, unsigned bpc)
+static sycl::event launch_decimate(sycl::queue &queue, const VifDecimateArgs &args)
 {
-    const VifDecimateArgs args = {.reference_raw = reference_raw,
-                                  .distorted_raw = distorted_raw,
-                                  .reference_float = reference_float,
-                                  .distorted_float = distorted_float,
-                                  .reference_output = reference_output,
-                                  .distorted_output = distorted_output,
-                                  .raw_stride = raw_stride,
-                                  .float_stride = float_stride,
-                                  .output_stride = output_stride,
-                                  .output_width = output_width,
-                                  .output_height = output_height,
-                                  .input_width = input_width,
-                                  .input_height = input_height,
-                                  .bpc = bpc};
-    const size_t global_x = ((size_t)output_width + FVIF_BX - 1) / FVIF_BX * FVIF_BX;
-    const size_t global_y = ((size_t)output_height + FVIF_BY - 1) / FVIF_BY * FVIF_BY;
+    const size_t global_x = ((size_t)args.output_width + FVIF_BX - 1) / FVIF_BX * FVIF_BX;
+    const size_t global_y = ((size_t)args.output_height + FVIF_BY - 1) / FVIF_BY * FVIF_BY;
     return queue.submit([&](sycl::handler &handler) {
         const sycl::nd_range<2> range({global_y, global_x}, {FVIF_BY, FVIF_BX});
         const FloatVifDecimateKernel<SCALE> kernel(args);
@@ -697,6 +699,33 @@ static const VmafOption options_float_vif_sycl[] = {
      .min = 0.1,
      .max = 4.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM | VMAF_OPT_FLAG_DEFAULT_ONLY},
+    {.name = "vif_scale1_min_val",
+     .help = "minimum value allowed; smaller values will be set to this value",
+     .alias = "s1miv",
+     .offset = offsetof(FloatVifStateSycl, vif_scale1_min_val),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val = {.d = 0.0},
+     .min = 0.0,
+     .max = 1.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "vif_scale2_min_val",
+     .help = "minimum value allowed; smaller values will be set to this value",
+     .alias = "s2miv",
+     .offset = offsetof(FloatVifStateSycl, vif_scale2_min_val),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val = {.d = 0.0},
+     .min = 0.0,
+     .max = 1.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "vif_scale3_min_val",
+     .help = "minimum value allowed; smaller values will be set to this value",
+     .alias = "s3miv",
+     .offset = offsetof(FloatVifStateSycl, vif_scale3_min_val),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val = {.d = 0.0},
+     .min = 0.0,
+     .max = 1.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "vif_sigma_nsq",
      .help = "neural noise variance",
      .alias = "snsq",
@@ -780,22 +809,32 @@ static bool allocate_vif_planes(FloatVifStateSycl &state)
 namespace
 {
 
-static bool allocate_vif_partials(FloatVifStateSycl &state)
+static bool allocate_vif_sums(FloatVifStateSycl &state)
 {
-    bool allocated = true;
+    const size_t term_bytes = (size_t)state.width * state.height * sizeof(float);
+    state.d_num_terms = static_cast<float *>(vmaf_sycl_malloc_device(state.sycl_state, term_bytes));
+    state.d_den_terms = static_cast<float *>(vmaf_sycl_malloc_device(state.sycl_state, term_bytes));
+    state.d_sigma12 = static_cast<float *>(vmaf_sycl_malloc_device(state.sycl_state, term_bytes));
+    size_t row_floats = 0;
     for (int scale = 0; scale < 4; ++scale) {
-        const unsigned columns = (state.scale_w[scale] + FVIF_BX - 1u) / FVIF_BX;
-        const unsigned rows = (state.scale_h[scale] + FVIF_BY - 1u) / FVIF_BY;
-        state.wg_count[scale] = columns * rows;
-        const size_t bytes = (size_t)state.wg_count[scale] * sizeof(float);
-        state.d_num[scale] = static_cast<float *>(vmaf_sycl_malloc_device(state.sycl_state, bytes));
-        state.d_den[scale] = static_cast<float *>(vmaf_sycl_malloc_device(state.sycl_state, bytes));
-        state.h_num[scale] = static_cast<float *>(vmaf_sycl_malloc_host(state.sycl_state, bytes));
-        state.h_den[scale] = static_cast<float *>(vmaf_sycl_malloc_host(state.sycl_state, bytes));
-        allocated = allocated && state.d_num[scale] != nullptr && state.d_den[scale] != nullptr &&
-                    state.h_num[scale] != nullptr && state.h_den[scale] != nullptr;
+        state.row_offset[scale] = row_floats;
+        row_floats += 2u * (size_t)state.scale_h[scale];
     }
-    return allocated;
+    state.row_floats = row_floats;
+    const size_t row_bytes = row_floats * sizeof(float);
+    state.d_rows = static_cast<float *>(vmaf_sycl_malloc_device(state.sycl_state, row_bytes));
+    state.h_rows = static_cast<float *>(vmaf_sycl_malloc_host(state.sycl_state, row_bytes));
+    return state.d_num_terms != nullptr && state.d_den_terms != nullptr &&
+           state.d_sigma12 != nullptr && state.d_rows != nullptr && state.h_rows != nullptr;
+}
+
+/* The four filters, as float_vif.c::init() derives them. */
+static void init_vif_taps(FloatVifStateSycl &state)
+{
+    for (int scale = 0; scale < 4; ++scale) {
+        state.taps[scale] = {};
+        vif_get_filter(state.taps[scale].tap, scale, (float)state.vif_kernelscale);
+    }
 }
 
 } // namespace
@@ -814,10 +853,11 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     if (configure_error != 0) {
         return configure_error;
     }
-    if (!allocate_vif_planes(state) || !allocate_vif_partials(state)) {
+    if (!allocate_vif_planes(state) || !allocate_vif_sums(state)) {
         (void)close_fex_sycl(fex);
         return -ENOMEM;
     }
+    init_vif_taps(state);
     state.feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, &state);
     if (!state.feature_name_dict) {
@@ -849,29 +889,47 @@ static unsigned upload_vif_pictures(FloatVifStateSycl &state, sycl::queue &queue
     return (unsigned)((size_t)state.width * bytes_per_pixel);
 }
 
-static void reset_vif_partials(FloatVifStateSycl &state, sycl::queue &queue)
-{
-    for (int scale = 0; scale < 4; ++scale) {
-        const size_t bytes = (size_t)state.wg_count[scale] * sizeof(float);
-        queue.memset(state.d_num[scale], 0, bytes);
-        queue.memset(state.d_den[scale], 0, bytes);
-    }
-}
-
 } // namespace
 
 namespace
 {
 
-static void launch_vif_scale_zero(const FloatVifStateSycl &state, sycl::queue &queue,
-                                  unsigned raw_stride, float noise_variance, float gain_limit,
-                                  float sigma_max_inverse)
+/* One scale's statistic: the filter kernel stores the variances, the statistic
+ * kernel turns them into the two terms, the row kernel adds each row. `reference` / `distorted` are the float planes of the scale
+ * (null at scale 0, which reads the raw planes). */
+template <int SCALE>
+static void launch_vif_statistic(const FloatVifStateSycl &state, sycl::queue &queue,
+                                 unsigned raw_stride, const float *reference,
+                                 const float *distorted,
+                                 const vmaf_sycl_fvif::StatisticParams &statistic)
 {
-    const unsigned columns = (state.scale_w[0] + FVIF_BX - 1u) / FVIF_BX;
-    launch_compute<0>(queue, state.d_ref_raw, state.d_dis_raw, raw_stride, nullptr, nullptr,
-                      state.scale_w[0], state.d_num[0], state.d_den[0], state.scale_w[0],
-                      state.scale_h[0], state.bpc, columns, noise_variance, gain_limit,
-                      sigma_max_inverse);
+    constexpr int scale = SCALE;
+    launch_compute<SCALE>(queue, {.reference_raw = state.d_ref_raw,
+                                  .distorted_raw = state.d_dis_raw,
+                                  .reference_float = reference,
+                                  .distorted_float = distorted,
+                                  .taps = state.taps[scale],
+                                  .sigma1_sq = state.d_num_terms,
+                                  .sigma2_sq = state.d_den_terms,
+                                  .sigma12 = state.d_sigma12,
+                                  .raw_stride = raw_stride,
+                                  .float_stride = state.scale_w[scale],
+                                  .width = state.scale_w[scale],
+                                  .height = state.scale_h[scale],
+                                  .bpc = state.bpc});
+    launch_vif_statistic_terms(queue,
+                               {.sigma1_sq_then_numerator = state.d_num_terms,
+                                .sigma2_sq_then_denominator = state.d_den_terms,
+                                .sigma12 = state.d_sigma12,
+                                .statistic = statistic},
+                               (size_t)state.scale_w[scale] * state.scale_h[scale]);
+    float *rows = state.d_rows + state.row_offset[scale];
+    launch_vif_row_sums(queue, {.numerator_terms = state.d_num_terms,
+                                .denominator_terms = state.d_den_terms,
+                                .numerator_rows = rows,
+                                .denominator_rows = rows + state.scale_h[scale],
+                                .width = state.scale_w[scale],
+                                .height = state.scale_h[scale]});
 }
 
 } // namespace
@@ -881,51 +939,38 @@ namespace
 
 template <int SCALE>
 static void launch_vif_scaled(const FloatVifStateSycl &state, sycl::queue &queue,
-                              unsigned raw_stride, float noise_variance, float gain_limit,
-                              float sigma_max_inverse)
+                              unsigned raw_stride, const vmaf_sycl_fvif::StatisticParams &statistic)
 {
     constexpr int scale = SCALE;
     const unsigned output_buffer = (scale - 1) % 2u;
     const bool input_is_raw = scale == 1;
     const unsigned input_buffer = output_buffer == 0 ? 1u : 0u;
-    const float *reference_input = input_is_raw ? nullptr : state.d_ref_buf[input_buffer];
-    const float *distorted_input = input_is_raw ? nullptr : state.d_dis_buf[input_buffer];
-    const unsigned input_stride = input_is_raw ? 0u : state.scale_w[scale - 1];
     float *reference_output = state.d_ref_buf[output_buffer];
     float *distorted_output = state.d_dis_buf[output_buffer];
-    launch_decimate<scale>(queue, state.d_ref_raw, state.d_dis_raw, raw_stride, reference_input,
-                           distorted_input, input_stride, reference_output, distorted_output,
-                           state.scale_w[scale], state.scale_w[scale], state.scale_h[scale],
-                           state.scale_w[scale - 1], state.scale_h[scale - 1], state.bpc);
-    const unsigned columns = (state.scale_w[scale] + FVIF_BX - 1u) / FVIF_BX;
-    launch_compute<scale>(queue, nullptr, nullptr, 0, reference_output, distorted_output,
-                          state.scale_w[scale], state.d_num[scale], state.d_den[scale],
-                          state.scale_w[scale], state.scale_h[scale], state.bpc, columns,
-                          noise_variance, gain_limit, sigma_max_inverse);
-}
-
-static void launch_vif_scaled_ladder(const FloatVifStateSycl &state, sycl::queue &queue,
-                                     unsigned raw_stride, float noise_variance, float gain_limit,
-                                     float sigma_max_inverse)
-{
-    launch_vif_scaled<1>(state, queue, raw_stride, noise_variance, gain_limit, sigma_max_inverse);
-    launch_vif_scaled<2>(state, queue, raw_stride, noise_variance, gain_limit, sigma_max_inverse);
-    launch_vif_scaled<3>(state, queue, raw_stride, noise_variance, gain_limit, sigma_max_inverse);
+    launch_decimate<SCALE>(
+        queue, {.reference_raw = state.d_ref_raw,
+                .distorted_raw = state.d_dis_raw,
+                .reference_float = input_is_raw ? nullptr : state.d_ref_buf[input_buffer],
+                .distorted_float = input_is_raw ? nullptr : state.d_dis_buf[input_buffer],
+                .taps = state.taps[scale],
+                .reference_output = reference_output,
+                .distorted_output = distorted_output,
+                .raw_stride = raw_stride,
+                .float_stride = input_is_raw ? 0u : state.scale_w[scale - 1],
+                .output_stride = state.scale_w[scale],
+                .output_width = state.scale_w[scale],
+                .output_height = state.scale_h[scale],
+                .input_width = state.scale_w[scale - 1],
+                .input_height = state.scale_h[scale - 1],
+                .bpc = state.bpc});
+    launch_vif_statistic<SCALE>(state, queue, raw_stride, reference_output, distorted_output,
+                                statistic);
 }
 
 } // namespace
 
 namespace
 {
-
-static void download_vif_partials(FloatVifStateSycl &state, sycl::queue &queue)
-{
-    for (int scale = 0; scale < 4; ++scale) {
-        const size_t bytes = (size_t)state.wg_count[scale] * sizeof(float);
-        queue.memcpy(state.h_num[scale], state.d_num[scale], bytes);
-        queue.memcpy(state.h_den[scale], state.d_den[scale], bytes);
-    }
-}
 
 static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *reference,
                            VmafPicture *reference_rotated, VmafPicture *distorted,
@@ -939,15 +984,14 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *reference,
         return -EINVAL;
     }
     const unsigned raw_stride = upload_vif_pictures(state, *queue, reference, distorted);
-    reset_vif_partials(state, *queue);
-    const float noise_variance = (float)state.vif_sigma_nsq;
-    const float gain_limit = (float)state.vif_enhn_gain_limit;
-    const float sigma_max_inverse =
-        (float)(std::pow((float)state.vif_sigma_nsq, 2.0f) / (255.0 * 255.0));
-    launch_vif_scale_zero(state, *queue, raw_stride, noise_variance, gain_limit, sigma_max_inverse);
-    launch_vif_scaled_ladder(state, *queue, raw_stride, noise_variance, gain_limit,
-                             sigma_max_inverse);
-    download_vif_partials(state, *queue);
+    const vmaf_sycl_fvif::StatisticParams statistic =
+        vmaf_sycl_fvif::make_statistic_params(state.vif_sigma_nsq, state.vif_enhn_gain_limit);
+    launch_vif_statistic<0>(state, *queue, raw_stride, nullptr, nullptr, statistic);
+    launch_vif_scaled<1>(state, *queue, raw_stride, statistic);
+    launch_vif_scaled<2>(state, *queue, raw_stride, statistic);
+    launch_vif_scaled<3>(state, *queue, raw_stride, statistic);
+    /* The only device-to-host copy of the frame; collect() waits on it. */
+    queue->memcpy(state.h_rows, state.d_rows, state.row_floats * sizeof(float));
     state.pending_index = index;
     state.has_pending = true;
     return 0;
@@ -958,18 +1002,22 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *reference,
 namespace
 {
 
-static void sum_vif_partials(const FloatVifStateSycl &state, double *scores)
+/* vif_statistic_s()'s outer loop: the row sums added top to bottom into one
+ * fp32 accumulator per output. compute_vif() widens the two floats. */
+static void sum_vif_rows(const FloatVifStateSycl &state, double *scores)
 {
     for (int scale = 0; scale < 4; ++scale) {
-        double numerator = 0.0;
-        double denominator = 0.0;
-        for (unsigned group = 0; group < state.wg_count[scale]; ++group) {
-            numerator += (double)state.h_num[scale][group];
-            denominator += (double)state.h_den[scale][group];
+        const float *numerator_rows = state.h_rows + state.row_offset[scale];
+        const float *denominator_rows = numerator_rows + state.scale_h[scale];
+        float numerator = 0.0f;
+        float denominator = 0.0f;
+        for (unsigned row = 0; row < state.scale_h[scale]; ++row) {
+            numerator += numerator_rows[row];
+            denominator += denominator_rows[row];
         }
         const size_t output = (size_t)scale * 2;
-        scores[output] = numerator;
-        scores[output + 1] = denominator;
+        scores[output] = (double)numerator;
+        scores[output + 1] = (double)denominator;
     }
 }
 
@@ -977,6 +1025,8 @@ static int emit_vif_scores(const FloatVifStateSycl &state, const double scores[8
                            VmafFeatureCollector *collector)
 {
     VmafVifScoreSet output = {
+        .minimum = {state.vif_scale1_min_val, state.vif_scale2_min_val, state.vif_scale3_min_val},
+        .use_minimums = true,
         .skip_scale0 = state.vif_skip_scale0,
         .debug = state.debug,
     };
@@ -1008,7 +1058,7 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     }
     queue->wait();
     double scores[8];
-    sum_vif_partials(state, scores);
+    sum_vif_rows(state, scores);
     return emit_vif_scores(state, scores, index, feature_collector);
 }
 
@@ -1035,15 +1085,10 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
             if (s->d_dis_buf[i])
                 vmaf_sycl_free(s->sycl_state, s->d_dis_buf[i]);
         }
-        for (int i = 0; i < 4; i++) {
-            if (s->d_num[i])
-                vmaf_sycl_free(s->sycl_state, s->d_num[i]);
-            if (s->d_den[i])
-                vmaf_sycl_free(s->sycl_state, s->d_den[i]);
-            if (s->h_num[i])
-                vmaf_sycl_free(s->sycl_state, s->h_num[i]);
-            if (s->h_den[i])
-                vmaf_sycl_free(s->sycl_state, s->h_den[i]);
+        float *const sums[] = {s->d_num_terms, s->d_den_terms, s->d_sigma12, s->d_rows, s->h_rows};
+        for (float *buffer : sums) {
+            if (buffer)
+                vmaf_sycl_free(s->sycl_state, buffer);
         }
     }
     if (s->feature_name_dict)

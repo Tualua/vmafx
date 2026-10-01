@@ -1129,3 +1129,4 @@
 1426-cuda-ciede-cpu-arithmetic
 1351-praetor-engine-pin-move
 1427-hip-clear-after-upload
+1422-sycl-float-vif-cpu-arithmetic

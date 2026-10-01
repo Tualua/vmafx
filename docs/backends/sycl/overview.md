@@ -529,8 +529,9 @@ The line does not make scores bit-identical. What still differs from the CPU:
 
 - **Transcendental functions.** `sycl::log2`, `exp`, `pow`, `cbrt`, `sin`
   and `atan2` are not correctly rounded on the device and are not the host's
-  libm. `float_vif` (`log2`) and `ciede` (`pow`, `atan2`, `sin`) call them
-  for every pixel.
+  libm. `ciede` (`pow`, `atan2`, `sin`) calls them for every pixel.
+  `float_vif_sycl` no longer does: it evaluates the CPU's `log2` polynomial
+  (ADR-1422).
 - **Summation order.** Work-group reductions add in a fixed tree, not in the
   CPU's sequential order.
 - **fp64 on the CPU.** SYCL kernels are fp32-only
@@ -1229,6 +1230,62 @@ ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/ci/cross_backend_parity_gate
     --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
     --width 576 --height 324
 ```
+
+## `float_vif_sycl` matches the CPU `float_vif` exactly (2026-10-01)
+
+`float_vif_sycl` returns every output of the CPU extractor bit for bit
+([ADR-1422](../../adr/1422-sycl-float-vif-cpu-arithmetic.md), after ADR-1412
+for the CUDA twin). Four things changed:
+
+- The Gaussian taps come from `vif_get_filter()`, which the CPU extractor
+  calls at start-up. The twin held a table of decimals the CPU stopped using.
+- `log2` is the CPU's polynomial `log2f_approx()`, not the device `log2`.
+- The CPU evaluates `1 + (g * g * sigma1_sq) / (sv_sq + vif_sigma_nsq)` and
+  `1 + sigma1_sq / vif_sigma_nsq` in `double`, because `vif_sigma_nsq` is one.
+  A SYCL kernel has no `double`
+  ([fp64-less contract](#fp64-less-device-contract-t7-17)), so the twin
+  computes both as pairs of floats and, for a sample next to a rounding
+  boundary (about one in 1650), replays the CPU's `double` operations in
+  64-bit integers (`core/src/feature/sycl/sycl_float_vif_math.h`).
+- The per-pixel terms are added as the CPU adds them: a row into one `float`,
+  the rows into another. The twin used to reduce per sub-group and per 16x16
+  block and add the blocks in `double`.
+
+Measured on an Arc A380 (xe driver, Level Zero, icpx 2026.0) at
+`--precision max` against `--backend cpu`, frames identical on all four
+scales and largest difference before and after:
+
+| Fixture | Before | After |
+|---|---|---|
+| Netflix 576x324, 48 frames | 0 of 48, 3.8e-5 | 48 of 48 |
+| Checkerboard 1920x1080, 1 px shift, 3 frames | 0 of 3, 1.0e-6 | 3 of 3 |
+| Checkerboard 1920x1080, 10 px shift, 3 frames | 1 of 3, 1.1e-12 | 3 of 3 |
+| BBB 3840x2160, 200 frames | 0 of 20, 7.0e-6 (first 20) | 200 of 200 |
+
+Also identical after the change: the Netflix pair at 10, 12 and 16 bits,
+`debug=true` (15 outputs), and `vif_enhn_gain_limit`, `vif_sigma_nsq`,
+`vif_skip_scale0` and the per-scale floors at non-default values. The
+reference was a GCC build of the CPU extractor; the CPU extractor of the icx
+build gives the same values.
+
+The twin now runs three kernels per scale (filter, statistic, row sums)
+instead of one. Through the `vmaf` tool on the A380 a 3840x2160 frame takes
+23.95 ms, 20.54 ms before (medians of 15 paired 100-frame runs; the untouched
+`float_psnr_sycl` read 3.34 and 3.33), and a 576x324 frame 0.93 ms, 0.73 ms
+before. It uses 100 MB more device memory at 3840x2160. None of its kernels
+uses [scratch memory](#scratch-memory-on-intel-gpus-adr-1395).
+
+The twin accepts the CPU's `vif_scale1_min_val`, `vif_scale2_min_val` and
+`vif_scale3_min_val` options now. The parity gate compares it with tolerance
+0 ([cross-backend gate](../../development/cross-backend-gate.md)).
+
+```bash
+ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/dev/speed_gpu_parity.py \
+    --backend sycl --vmaf "$PWD/build/tools/vmaf" --feature float_vif
+```
+
+It prints, per output, how many frames are bit-identical and the largest
+difference, and exits 0 only when every frame is.
 
 ## `vif_sycl` rounds its sums as the CPU does (2026-10-01)
 

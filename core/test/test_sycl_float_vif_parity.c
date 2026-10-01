@@ -6,247 +6,120 @@
  */
 
 /*
- * SYCL kernel coverage round 3 — float VIF CPU vs. SYCL parity test
- * (ADR-0946).
+ * float_vif CPU vs. SYCL: the twin returns the CPU's outputs bit for bit
+ * (ADR-1422; first added as a places=4 parity test, ADR-0946).
  *
- * The float VIF extractor is implemented by float_vif.c (CPU scalar /
- * SIMD via vif_tools.c) and by float_vif_sycl.cpp::vmaf_fex_float_vif_sycl
- * (SYCL 4-scale separable Gaussian + per-scale entropy reduction).
- * Round 1 covered the integer VIF kernel (test_sycl_vif_parity.c, PR #351);
- * the float variant carries an independent kernel topology, single-
- * precision accumulator, and CSF lookup and needs its own parity gate.
+ * The CPU path is float_vif.c over vif_tools.c; the SYCL path is
+ * float_vif_sycl.cpp. Since ADR-1422 the twin filters with vif_get_filter()'s
+ * taps, evaluates vif_pixel_statistic_s() in the CPU's types without an fp64
+ * type on the device (feature/sycl/sycl_float_vif_math.h) and adds each row
+ * and then the rows in fp32, as vif_statistic_s() does. So this test asserts
+ * equality, not a tolerance.
  *
- * The kernel under test computes a 9x9 separable Gaussian per scale,
- * accumulates per-block local mean and variance, divides through to
- * an entropy ratio, and emits the per-scale scores. Drift in the
- * sub-group reduction, scale-0 skip path, or atomic add would
- * silently corrupt every float-VMAF model's VIF features on
- * Intel-Arc CHUG re-extracts.
+ * Before ADR-1422 the default case differed from the CPU on every frame (the
+ * kernel carried a table of Gaussian taps that vif_get_filter() does not
+ * compute, called the device log2 and reduced per sub-group), and the twin
+ * had no `vif_scale1..3_min_val` options, so every case here fails on the old
+ * twin.
  *
- * The headline score for this parity gate is
- * VMAF_feature_vif_scale0_score at frame index 0 (per-frame, no
- * temporal dependency).
+ * The fixtures, the comparison and the cases are float_vif_twin_parity.h's.
  *
- * Skip behaviour: if vmaf_sycl_state_init() fails (no oneAPI runtime
- * or no device visible) the test emits "[skip: no SYCL device]" and
- * passes, mirroring test_sycl_motion3_parity.c.
+ * Skip behaviour: exits 77 when there is no SYCL device.
  */
 
-#include <math.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
-
-#include "test.h"
-
-#include "feature/feature_extractor.h"
-#include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_sycl.h"
-#include "libvmaf/picture.h"
+
+#include "float_vif_twin_parity.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
- * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
- * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+ * C23, where clang-tidy proposes `nullptr`, but the required MSVC C build does
+ * not provide that keyword. Preserve the portable C spelling. ADR-1138. */
 
-/* Fixture must be ≥ 64x64 for the 4-scale Gaussian footprint;
- * 256x144 matches the round-1 / round-2 fixture sizing. */
-#ifndef FIXTURE_W
-#define FIXTURE_W 256u
-#endif
-#ifndef FIXTURE_H
-#define FIXTURE_H 144u
-#endif
-#define FIXTURE_BPC 8u
-#define PARITY_TOL 1e-4
-
-static int fill_pic(VmafPicture *pic, unsigned salt)
+static int twin_open(void **state)
 {
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
-    if (err)
-        return err;
-    uint8_t *y = (uint8_t *)pic->data[0];
-    for (unsigned row = 0; row < pic->h[0]; row++) {
-        for (unsigned col = 0; col < pic->w[0]; col++) {
-            /* XOR pattern + salt — gives non-trivial local variance
-             * across each VIF scale's Gaussian footprint. */
-            y[row * pic->stride[0] + col] = (uint8_t)(((row ^ col) + salt * 11u) & 0xFFu);
-        }
-    }
-    for (unsigned p = 1; p < 3; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
-        for (unsigned row = 0; row < pic->h[p]; row++) {
-            memset(plane + row * pic->stride[p], 128, pic->w[p]);
-        }
-    }
+    VmafSyclState *sycl_state = NULL;
+    VmafSyclConfiguration sycl_cfg = {.device_index = -1};
+    const int err = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
+    *state = sycl_state;
+    return err;
+}
+
+static int twin_import(VmafContext *vmaf, void *state)
+{
+    return vmaf_sycl_import_state(vmaf, (VmafSyclState *)state);
+}
+
+static int twin_close(void *state)
+{
+    VmafSyclState *sycl_state = (VmafSyclState *)state;
+    vmaf_sycl_state_free(&sycl_state);
     return 0;
 }
 
-static int feed_frame(VmafContext *vmaf)
-{
-    VmafPicture ref;
-    VmafPicture dist;
-    int err = fill_pic(&ref, 0u);
-    if (err)
-        return err;
-    err = fill_pic(&dist, 1u);
-    if (err) {
-        vmaf_picture_unref(&ref);
-        return err;
-    }
-    return vmaf_read_pictures(vmaf, &ref, &dist, 0u);
-}
-
-/* ADR-1217 — the values model/vmaf_float_v0.6.1neg.json actually ships
- * (`vif_enhn_gain_limit = 1.0` on all four VIF scales), plus a non-default
- * neural-noise variance.  Both are VMAF_OPT_FLAG_FEATURE_PARAM, so the score is
- * filed under a derived key: the alias base plus `_<alias>_<%g value>` per
- * option, sorted by option NAME (`vif_enhn_gain_limit` before
- * `vif_sigma_nsq`). */
-#define NEG_EGL "1.0"
-#define NEG_SNSQ "1.5"
-#define NEG_SCALE0_KEY "vif_scale0_egl_1_snsq_1.5"
-
-// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
-static char *run_cpu(bool neg_opts, const char *key, double *score)
-{
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    int err = vmaf_init(&vmaf, cfg);
-    mu_assert("CPU: vmaf_init failed", !err);
-    VmafFeatureDictionary *opts = NULL;
-    if (neg_opts) {
-        err = vmaf_feature_dictionary_set(&opts, "vif_enhn_gain_limit", NEG_EGL);
-        mu_assert("CPU: dictionary_set(vif_enhn_gain_limit) failed", !err);
-        err = vmaf_feature_dictionary_set(&opts, "vif_sigma_nsq", NEG_SNSQ);
-        mu_assert("CPU: dictionary_set(vif_sigma_nsq) failed", !err);
-    }
-    err = vmaf_use_feature(vmaf, "float_vif", opts);
-    if (err)
-        (void)vmaf_feature_dictionary_free(&opts);
-    mu_assert("CPU: vmaf_use_feature(float_vif) failed", !err);
-    err = feed_frame(vmaf);
-    mu_assert("CPU: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, key, score, 0u);
-    mu_assert("CPU: vif_scale0 score missing", !err);
-    err = vmaf_close(vmaf);
-    mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
-}
-
-// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
-static char *run_sycl(bool neg_opts, const char *key, double *score)
-{
-    *score = NAN;
-    VmafSyclState *sycl_state = NULL;
-    VmafSyclConfiguration sycl_cfg = {.device_index = -1};
-    int err = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
-    if (err != 0 || sycl_state == NULL) {
-        (void)fprintf(stderr, "[skip: no SYCL device] ");
-        return NULL;
-    }
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("SYCL: vmaf_init failed", !err);
-    err = vmaf_sycl_import_state(vmaf, sycl_state);
-    mu_assert("SYCL: vmaf_sycl_import_state failed", !err);
-    VmafFeatureDictionary *opts = NULL;
-    if (neg_opts) {
-        err = vmaf_feature_dictionary_set(&opts, "vif_enhn_gain_limit", NEG_EGL);
-        mu_assert("SYCL: dictionary_set(vif_enhn_gain_limit) failed", !err);
-        err = vmaf_feature_dictionary_set(&opts, "vif_sigma_nsq", NEG_SNSQ);
-        mu_assert("SYCL: dictionary_set(vif_sigma_nsq) failed", !err);
-    }
-    err = vmaf_use_feature(vmaf, "float_vif_sycl", opts);
-    if (err)
-        (void)vmaf_feature_dictionary_free(&opts);
-    mu_assert("SYCL: vmaf_use_feature(float_vif_sycl) failed", !err);
-    err = feed_frame(vmaf);
-    mu_assert("SYCL: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("SYCL: vmaf_read_pictures(EOS) failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, key, score, 0u);
-    mu_assert("SYCL: vif_scale0 score missing", !err);
-    err = vmaf_close(vmaf);
-    mu_assert("SYCL: vmaf_close failed", !err);
-    vmaf_sycl_state_free(&sycl_state);
-    return NULL;
-}
+static const VifTwin twin = {
+    .extractor = "float_vif_sycl",
+    .backend = "SYCL",
+    .open = twin_open,
+    .import = twin_import,
+    .close = twin_close,
+};
 
 static char *test_float_vif_sycl_registered(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_vif_sycl");
-    mu_assert("float_vif_sycl extractor must be registered", fex != NULL);
-    mu_assert("float_vif_sycl name matches", !strcmp(fex->name, "float_vif_sycl"));
-    return NULL;
+    return vif_twin_registered(&twin);
 }
 
-static char *test_float_vif_cpu_sycl_parity(void)
+static char *test_float_vif_default_identical(void)
 {
-    double cpu_score = 0.0;
-    double sycl_score = NAN;
-    char *msg = run_cpu(false, "VMAF_feature_vif_scale0_score", &cpu_score);
-    if (msg)
-        return msg;
-    msg = run_sycl(false, "VMAF_feature_vif_scale0_score", &sycl_score);
-    if (msg)
-        return msg;
-    if (isnan(sycl_score))
-        return NULL;
-    double delta = fabs(cpu_score - sycl_score);
-    if (delta > PARITY_TOL) {
-        (void)fprintf(stderr,
-                      "\nfloat_vif_scale0 parity FAIL: cpu=%.8f sycl=%.8f delta=%.2e tol=%.2e\n",
-                      cpu_score, sycl_score, delta, PARITY_TOL);
-    }
-    mu_assert("float_vif_scale0 CPU vs. SYCL delta exceeds places=4 tolerance (1e-4)",
-              delta <= PARITY_TOL);
-    return NULL;
+    return vif_twin_default_identical(&twin);
 }
 
-/* ------------------------------------------------------------------ */
-/* ADR-1217 — vif_enhn_gain_limit / vif_sigma_nsq must reach the kernel.*/
-/*                                                                     */
-/* The SYCL compute kernel hardcoded both to their defaults, so a       */
-/* non-default value was accepted, folded into the derived feature      */
-/* name, and then silently ignored — the NEG model's                    */
-/* vif_enhn_gain_limit = 1.0 published un-clamped scores under NEG      */
-/* feature keys. The default-options test above cannot see this.        */
-/* ------------------------------------------------------------------ */
-static char *test_float_vif_options_reach_kernel(void)
+static char *test_float_vif_debug_identical(void)
 {
-    double cpu_score = 0.0;
-    double sycl_score = NAN;
-    char *msg = run_cpu(true, NEG_SCALE0_KEY, &cpu_score);
-    if (msg)
-        return msg;
-    msg = run_sycl(true, NEG_SCALE0_KEY, &sycl_score);
-    if (msg)
-        return msg;
-    if (isnan(sycl_score))
-        return NULL;
-    const double delta = fabs(cpu_score - sycl_score);
-    if (delta > PARITY_TOL) {
-        (void)fprintf(stderr,
-                      "\nfloat_vif egl=%s snsq=%s parity FAIL: cpu=%.8f sycl=%.8f delta=%.2e "
-                      "tol=%.2e\n",
-                      NEG_EGL, NEG_SNSQ, cpu_score, sycl_score, delta, PARITY_TOL);
-    }
-    mu_assert("float_vif with non-default egl/snsq drifts from the CPU reference",
-              delta <= PARITY_TOL);
+    return vif_twin_debug_identical(&twin);
+}
+
+static char *test_float_vif_model_options_identical(void)
+{
+    return vif_twin_model_options_identical(&twin);
+}
+
+static char *test_float_vif_skip_scale0_identical(void)
+{
+    return vif_twin_skip_scale0_identical(&twin);
+}
+
+static char *test_float_vif_scale_minimums_identical(void)
+{
+    return vif_twin_scale_minimums_identical(&twin);
+}
+
+static char *test_float_vif_10bit_identical(void)
+{
+    return vif_twin_10bit_identical(&twin);
+}
+
+static char *test_float_vif_small_odd_frame_identical(void)
+{
+    return vif_twin_small_odd_frame_identical(&twin);
+}
+
+static char *run_option_tests(void)
+{
+    mu_run_test(test_float_vif_model_options_identical);
+    mu_run_test(test_float_vif_skip_scale0_identical);
+    mu_run_test(test_float_vif_scale_minimums_identical);
     return NULL;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_float_vif_sycl_registered);
-    mu_run_test(test_float_vif_cpu_sycl_parity);
-    mu_run_test(test_float_vif_options_reach_kernel);
+    mu_run_test(test_float_vif_default_identical);
+    mu_run_test(test_float_vif_debug_identical);
+    mu_assert_msg(run_option_tests());
+    mu_run_test(test_float_vif_10bit_identical);
+    mu_run_test(test_float_vif_small_odd_frame_identical);
     return NULL;
 }
 

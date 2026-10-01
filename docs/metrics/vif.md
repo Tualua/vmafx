@@ -64,8 +64,8 @@ What this means when you use it:
   score below its floor is reported as the floor.
 - `vif_prescale` and `vif_prescale_method` remain CPU-only. Passing either to
   `float_vif_cuda` is an error; request `float_vif` for prescaled scoring.
-- The SYCL, HIP and Metal twins agree with the CPU to four decimal places,
-  not bit for bit.
+- The SYCL twin returns the CPU's values too (next section). The HIP and
+  Metal twins agree with the CPU to four decimal places, not bit for bit.
 
 Check it on your own device:
 
@@ -76,6 +76,39 @@ python3 scripts/dev/speed_gpu_parity.py --backend cuda \
 
 It prints, per output, how many frames are bit-identical and the largest
 difference, and exits 0 only when every frame is.
+
+### `float_vif` on SYCL returns the CPU's values
+
+`float_vif_sycl` gives the same number as `--backend cpu --feature float_vif`
+for every output of every frame, down to the last bit of the `--precision max`
+output ([ADR-1422](../adr/1422-sycl-float-vif-cpu-arithmetic.md)). It follows
+the same rules as the CUDA twin above: the CPU's Gaussian taps, the CPU's
+per-pixel statistic with its polynomial `log2`, and one `float` sum per row,
+then the rows. SYCL kernels have no 64-bit floating-point type, so the two
+expressions the CPU evaluates in `double` are computed in pairs of floats and,
+for the rare sample next to a rounding boundary, in integers. Measured on an
+Arc A380 on the Netflix 576x324 pair at 8, 10, 12 and 16 bits, both 1920x1080
+checkerboard pairs and 200 frames at 3840x2160, with `debug=true` as well.
+
+What this means when you use it:
+
+- You can mix CPU, CUDA and SYCL `float_vif` results in one data set. Before
+  ADR-1422 the SYCL twin was up to 3.8e-5 from the CPU; `float_vif_sycl`
+  outputs stored before it differ from new ones by that much.
+- `float_vif_sycl` accepts `vif_scale1_min_val`, `vif_scale2_min_val` and
+  `vif_scale3_min_val` (aliases `s1miv`, `s2miv`, `s3miv`; default 0, range 0
+  to 1), as the CPU extractor does.
+- `vif_prescale` and `vif_prescale_method` remain CPU-only. Passing either to
+  `float_vif_sycl` is an error; request `float_vif` for prescaled scoring.
+- A 3840x2160 frame takes 24.0 ms on an Arc A380 (20.5 ms before ADR-1422);
+  the CPU extractor takes 68 ms on 16 threads.
+
+Check it on your own device:
+
+```shell
+ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/dev/speed_gpu_parity.py \
+    --backend sycl --vmaf "$PWD/build/tools/vmaf" --feature float_vif
+```
 
 ## `integer_vif` extractor
 

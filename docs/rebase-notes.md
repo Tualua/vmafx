@@ -57030,3 +57030,45 @@ Netflix golden assertions are untouched.
 - `core/test/meson.build` builds `test_hip_first_frame_clear.c` once per name
   in `hip_first_frame_twins`; the contract fails when that list and the
   test's `cases[]` table differ.
+## ADR-1422 — `float_vif_sycl` computes the CPU's arithmetic without fp64 (2026-10-01)
+
+`fix/sycl-float-vif-cpu-arithmetic`, ADR-1422 (follows ADR-1412).
+
+- `core/src/feature/sycl/float_vif_sycl.cpp`: the tap table
+  (`VifFilterConstants<SCALE>::coeff`) is gone; `init_vif_taps()` calls
+  `vif_get_filter()` and every launch passes the scale's `VifTaps` by value.
+  The filter kernel stores `sigma1_sq` / `sigma2_sq` / `sigma12`
+  (`store_vif_sigmas()`); `vif_contribution()`, `reduce_vif_group()`, the
+  sub-group accessors and the per-group partial buffers are gone. New:
+  `FloatVifStatisticKernel` (one work-item per pixel, sub-group size 16) and
+  `vif_row_sums()` (one work-item per row, sub-group size 8); `sum_vif_rows()`
+  adds the rows in fp32. Those loop shapes and types are load-bearing: a
+  group, sub-group, strided or atomic reduction, an fp64 fold of the rows, a
+  tap literal or `sycl::log2` gives a different rounding and the twin stops
+  matching the CPU. **On rebase**: if the other side still has the `coeff`
+  tables, `sycl::log2` or `sycl::reduce_over_group` in this TU, keep this
+  side.
+- `core/src/feature/sycl/sycl_float_vif_math.h` (new) mirrors
+  `vif_tools.c::vif_pixel_statistic_s()` and `log2f_approx()`. If upstream
+  Netflix changes either, `vif_statistic_s()`, `vif_get_filter()` or
+  `VIF_OPT_FAST_LOG2`, mirror it in this header and in
+  `core/src/feature/cuda/float_vif/float_vif_device.h` in the same change.
+  The header is fp64-free outside `make_noise_variance()` and
+  `make_statistic_params()`, which run on the host; do not replace
+  `one_plus_ratio()` by a plain fp32 expression or by the pair alone.
+- The twin has the CPU's `vif_scale1_min_val` / `vif_scale2_min_val` /
+  `vif_scale3_min_val` options now.
+- `scripts/ci/cross_backend_calibration.py`: `EXACT_TWINS["float_vif"]` is
+  `{"cuda", "sycl"}`. Another branch may add twins to the same table; keep
+  both sides' entries.
+- Depends on ADR-1367 (the SYCL strict FP line) and ADR-1395: no kernel of
+  the twin may use scratch memory. The statistic must not move back into
+  the filter kernel, and `soft_add()` / `noise_plus()` must keep selecting
+  scalars, not structs.
+- Tests: `core/test/test_sycl_float_vif_parity.c` over
+  `core/test/float_vif_twin_parity.h` (`==`, every output, device),
+  `core/test/test_sycl_float_vif_math.c` with its probe
+  `test_sycl_float_vif_math_probe.cpp` (host and device),
+  `core/test/test_sycl_float_vif_exact_contract.py` (eleven planted
+  regressions), `scripts/ci/test_cross_backend_parity_gate.py`.
+- No Netflix golden-data, public API or FFmpeg patch impact.

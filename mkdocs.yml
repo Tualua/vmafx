@@ -1533,6 +1533,7 @@ nav:
         - "ADR-1418: motion-parity-gate-metric-alignment": adr/1418-motion-parity-gate-metric-alignment.md
         - "ADR-1419: hip-float-motion-cpu-float-sum": adr/1419-hip-float-motion-cpu-float-sum.md
         - "ADR-1421: rc3-rc8-candidate-map": adr/1421-rc3-rc8-candidate-map.md
+        - "ADR-1422: sycl-float-vif-cpu-arithmetic": adr/1422-sycl-float-vif-cpu-arithmetic.md
         - "ADR-1423: hip-adm-cpu-row-rounding": adr/1423-hip-adm-cpu-row-rounding.md
         - "ADR-1424: cuda-ssim-cpu-frame-sum": adr/1424-cuda-ssim-cpu-frame-sum.md
         - "ADR-1426: cuda-ciede-cpu-arithmetic": adr/1426-cuda-ciede-cpu-arithmetic.md

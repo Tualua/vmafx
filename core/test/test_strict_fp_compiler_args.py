@@ -368,7 +368,11 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
         self.assertEqual(source.count("link_args : sycl_link_args"), 1)
         self.assertLess(source.index(SYCL_POLICY_END), source.index(SYCL_LINK_ARGS))
         self.assertEqual(source.count(SYCL_DEVICE_LINK), 1)
-        self.assertEqual(TEST_MESON.read_text(encoding="utf-8").count(SYCL_DEVICE_LINK), 1)
+        # The tests' probes (ADR-1367, ADR-1422) link their own device images:
+        # every such link carries the policy too.
+        tests = TEST_MESON.read_text(encoding="utf-8")
+        self.assertEqual(tests.count(SYCL_DEVICE_LINK), 2)
+        self.assertEqual(tests.count("sycl_device_link_args"), 2)
         # One definition site: the icpx and acpp branches inside the markers.
         policy = _marked_block(SYCL_POLICY_BEGIN, SYCL_POLICY_END, "SYCL strict-FP")
         self.assertEqual(source.count("sycl_strict_fp_args = "), 2)

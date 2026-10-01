@@ -126,9 +126,12 @@ EXACT_TWINS: dict[str, frozenset[str]] = {
     # ADR-1412: ``float_vif_cuda`` filters with ``vif_get_filter()``'s taps,
     # evaluates ``vif_tools.c``'s statistic in its types (the polynomial
     # ``log2f_approx()``, ``vif_sigma_nsq`` in fp64) and adds the terms of a
-    # row, then the rows, in the CPU's two fp32 accumulators. The other
-    # ``float_vif`` twins keep the places=4 tolerance.
-    "float_vif": frozenset({"cuda"}),
+    # row, then the rows, in the CPU's two fp32 accumulators. ADR-1422:
+    # ``float_vif_sycl`` does the same without an fp64 type on the device
+    # (exact fp32 pairs, and the reference's fp64 operations replayed in
+    # integers next to a rounding boundary), measured on an Arc A380. The HIP
+    # and Metal ``float_vif`` twins keep the places=4 tolerance.
+    "float_vif": frozenset({"cuda", "sycl"}),
 }
 EXACT_TWIN_TOLERANCE = 0.0
 EXACT_TWIN_PRECISION = "max"

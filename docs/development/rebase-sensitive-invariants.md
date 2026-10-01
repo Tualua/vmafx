@@ -242,6 +242,21 @@ linked AGENTS.md before resolving conflicts.
   `iqa/ssim_tools.c` or `ms_ssim.c` changes the header or the twin in the
   same PR. `core/test/test_sycl_ms_ssim_parity.c` (`==` on 18 outputs of 3
   frames) and `core/test/test_sycl_kernel_source_contract.py` guard it. See
+- **`float_vif_sycl` returns the CPU's scores bit for bit ([ADR-1422](../adr/1422-sycl-float-vif-cpu-arithmetic.md))**:
+  the same contract as the CUDA twin, without an fp64 type. The host takes
+  each scale's Gaussian from `vif_get_filter()` and hands it to the kernels by
+  value. `core/src/feature/sycl/sycl_float_vif_math.h` is
+  `vif_pixel_statistic_s()` and `log2f_approx()` operation for operation; its
+  `one_plus_ratio()` evaluates the reference's two fp64 expressions as exact
+  fp32 pairs and replays the fp64 operations in integers next to a rounding
+  boundary. `vif_row_sums()` adds the terms of a row in one work-item and
+  `sum_vif_rows()` adds the rows on the host, both in fp32. A change to
+  `vif_get_filter()`, to `VIF_OPT_FAST_LOG2` / `log2f_approx()`, to
+  `vif_pixel_statistic_s()` or to `vif_statistic_s()` in `vif_tools.c` changes
+  that header in the same PR. `core/test/test_sycl_float_vif_math.c` (host and
+  device), `core/test/test_sycl_float_vif_exact_contract.py` and
+  `core/test/test_sycl_float_vif_parity.c` guard it; every kernel must stay
+  free of scratch memory (`test_sycl_kernel_scratch`, ADR-1395). See
   [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
 - **SYCL fp64-less device contract (T7-17, ADR-0220)**:
   [ADR-0220](../adr/0220-sycl-fp64-fallback.md). SYCL feature

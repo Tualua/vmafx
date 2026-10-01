@@ -254,6 +254,17 @@ test('test_cuda_adm_exact_contract',
     timeout : 30,
 )
 
+# ADR-1422: float_vif_sycl returns the CPU's scores bit for bit -- the taps
+# are vif_get_filter()'s, log2 is the reference's polynomial, the two fp64
+# expressions around vif_sigma_nsq are evaluated without an fp64 type, and the
+# terms are added row by row in fp32. Device-free; the arithmetic check is
+# test_sycl_float_vif_math, the device check is test_sycl_float_vif_parity.
+test('test_sycl_float_vif_exact_contract',
+    import('python').find_installation(),
+    args : files('test_sycl_float_vif_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
 
 # vif_sycl's host tail rounds each scale's sums to float and divides in
 # single precision, as integer_vif.c does, and its debug option defaults to
@@ -4124,6 +4135,54 @@ if not is_sycl_acpp
         link_language : 'cpp',
     )
     test('test_sycl_fp_arith_contract', test_sycl_fp_arith_contract,
+        suite : ['fast', 'gpu', 'sycl'],
+        is_parallel : false)
+endif
+
+# ADR-1422: the arithmetic float_vif_sycl's kernels run
+# (src/feature/sycl/sycl_float_vif_math.h) against vif_statistic_s(), bit for
+# bit, on the host and in a kernel on the default GPU. The probe TU is compiled
+# with the extractors' own arguments, like the ADR-1367 probe above, and the C
+# side links the CPU reference from the static libraries: vif_statistic_s() is
+# not exported. The reference is contraction-free on x86-64 only (its baseline
+# has no FMA), so the test is registered there.
+if not is_sycl_acpp and host_machine.cpu_family() == 'x86_64'
+    sycl_float_vif_math_probe = custom_target('sycl_float_vif_math_probe',
+        output : 'sycl_float_vif_math_probe.o',
+        input : 'test_sycl_float_vif_math_probe.cpp',
+        depend_files : files('../src/feature/sycl/sycl_exact_fp.h',
+                             '../src/feature/sycl/sycl_float_vif_math.h',
+                             '../src/feature/sycl/sycl_compat.h'),
+        command : [icpx] + vmaf_cflags_common + ['-c'] + sycl_toolchain_args
+                  + sycl_feature_tail_args + ['@INPUT@', '-o', '@OUTPUT@'],
+    )
+    sycl_float_vif_math_probe_objects = [sycl_float_vif_math_probe]
+    if sycl_msvc_device_link
+        sycl_float_vif_math_probe_objects += custom_target('sycl_float_vif_math_probe_device_link',
+            input : sycl_float_vif_math_probe,
+            output : 'sycl_float_vif_math_probe_device_link.obj',
+            command : [icpx] + sycl_device_link_args + sycl_strict_fp_args
+                      + ['@INPUT@', '-o', '@OUTPUT@'],
+        )
+    endif
+    test_sycl_float_vif_math = executable('test_sycl_float_vif_math',
+        ['test.c', 'test_sycl_float_vif_math.c'] + sycl_float_vif_math_probe_objects
+        + _float_fex_test_sources_common + dnn_sources,
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+        c_args : vmaf_cflags_common + dnn_defines + vmaf_strict_fp_args,
+        dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                        predict_test_dependencies, dnn_deps, sycl_dependency],
+        objects : [
+            common_cuda_objects,
+            platform_specific_cpu_objects,
+            libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+            log_cpp23_test_objects,
+            libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+            libsvm_static_lib.extract_all_objects(recursive: true),
+        ] + wave8_opt_only_objects,
+        link_language : 'cpp',
+    )
+    test('test_sycl_float_vif_math', test_sycl_float_vif_math,
         suite : ['fast', 'gpu', 'sycl'],
         is_parallel : false)
 endif
