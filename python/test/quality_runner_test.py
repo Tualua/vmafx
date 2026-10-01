@@ -81,15 +81,15 @@ class QualityRunnerTest(MyTestCase):
 
         results = self.runner.results
 
-        self.assertAlmostEqual(results[0]["VMAF_feature_vif_score"], 0.44609306249999997, places=3)
-        self.assertAlmostEqual(results[0]["VMAF_feature_motion_score"], 4.04982535417, places=2)
+        self.assertAlmostEqual(results[0]["VMAF_feature_vif_score"], 0.44641939583333334, places=4)
+        self.assertAlmostEqual(results[0]["VMAF_feature_motion_score"], 4.0488208125, places=4)
         self.assertAlmostEqual(results[0]["VMAF_feature_adm_score"], 0.9345148541666667, places=4)
 
         self.assertAlmostEqual(results[1]["VMAF_feature_vif_score"], 1.0, places=4)
-        self.assertAlmostEqual(results[1]["VMAF_feature_motion_score"], 4.04982535417, places=2)
+        self.assertAlmostEqual(results[1]["VMAF_feature_motion_score"], 4.0488208125, places=4)
         self.assertAlmostEqual(results[1]["VMAF_feature_adm_score"], 1.0, places=4)
 
-        self.assertAlmostEqual(results[0]["VMAF_score"], 77.17414738991636, places=2)
+        self.assertAlmostEqual(results[0]["VMAF_score"], 77.17677179233168, places=3)
         self.assertAlmostEqual(results[1]["VMAF_score"], 100.0, places=4)
 
     def test_run_vmaf_runner(self):
@@ -120,7 +120,7 @@ class QualityRunnerTest(MyTestCase):
             results[0]["VMAF_integer_feature_vif_scale3_score"], 0.9157200890843669, places=4
         )
         self.assertAlmostEqual(
-            results[0]["VMAF_integer_feature_motion2_score"], 3.8953518541666665, places=2
+            results[0]["VMAF_integer_feature_motion2_score"], 3.8943597291666667, places=4
         )
         self.assertAlmostEqual(
             results[0]["VMAF_integer_feature_adm2_score"], 0.9345149030293786, places=4
@@ -139,7 +139,7 @@ class QualityRunnerTest(MyTestCase):
             results[1]["VMAF_integer_feature_vif_scale3_score"], 0.999999399683, places=4
         )
         self.assertAlmostEqual(
-            results[1]["VMAF_integer_feature_motion2_score"], 3.8953518541666665, places=2
+            results[1]["VMAF_integer_feature_motion2_score"], 3.8943597291666667, places=4
         )
         self.assertAlmostEqual(results[1]["VMAF_integer_feature_adm2_score"], 1.0, places=4)
 
@@ -149,7 +149,7 @@ class QualityRunnerTest(MyTestCase):
         with self.assertRaises(KeyError):
             self.assertAlmostEqual(results[1]["VMAF_integer_feature_motion_score"], 1.0, places=4)
 
-        self.assertAlmostEqual(results[0]["VMAF_score"], 76.66890519623612, places=2)
+        self.assertAlmostEqual(results[0]["VMAF_score"], 76.66783025, places=4)
         self.assertAlmostEqual(results[1]["VMAF_score"], 99.946416604585025, places=4)
 
     def test_run_vmaf_runner_3threads(self):
@@ -168,7 +168,7 @@ class QualityRunnerTest(MyTestCase):
 
         results = self.runner.results
 
-        self.assertAlmostEqual(results[0]["VMAF_score"], 76.66890519623612, places=2)
+        self.assertAlmostEqual(results[0]["VMAF_score"], 76.66783025, places=4)
         self.assertAlmostEqual(results[1]["VMAF_score"], 99.946416604585025, places=4)
 
     def test_run_vmaf_runner_v061(self):
@@ -190,19 +190,19 @@ class QualityRunnerTest(MyTestCase):
         results = self.runner.results
 
         self.assertAlmostEqual(
-            results[0]["VMAF_feature_vif_scale0_score"], 0.363420489439, places=3
+            results[0]["VMAF_feature_vif_scale0_score"], 0.3636595790491415, places=4
         )
         self.assertAlmostEqual(
-            results[0]["VMAF_feature_vif_scale1_score"], 0.766647542135, places=2
+            results[0]["VMAF_feature_vif_scale1_score"], 0.7674891489570371, places=4
         )
         self.assertAlmostEqual(
-            results[0]["VMAF_feature_vif_scale2_score"], 0.862854666902, places=3
+            results[0]["VMAF_feature_vif_scale2_score"], 0.8630881475272494, places=4
         )
         self.assertAlmostEqual(
-            results[0]["VMAF_feature_vif_scale3_score"], 0.915971778036, places=3
+            results[0]["VMAF_feature_vif_scale3_score"], 0.9156988075602461, places=4
         )
         self.assertAlmostEqual(
-            results[0]["VMAF_feature_motion2_score"], 3.8953518541666665, places=2
+            results[0]["VMAF_feature_motion2_score"], 3.8943597291666667, places=4
         )
         self.assertAlmostEqual(results[0]["VMAF_feature_adm2_score"], 0.9345149030293786, places=4)
 
@@ -215,7 +215,7 @@ class QualityRunnerTest(MyTestCase):
             results[1]["VMAF_feature_vif_scale3_score"], 0.999999399683, places=4
         )
         self.assertAlmostEqual(
-            results[1]["VMAF_feature_motion2_score"], 3.8953518541666665, places=2
+            results[1]["VMAF_feature_motion2_score"], 3.8943597291666667, places=4
         )
         self.assertAlmostEqual(results[1]["VMAF_feature_adm2_score"], 1.0, places=4)
 
@@ -228,7 +228,7 @@ class QualityRunnerTest(MyTestCase):
         # places=1: VmafQualityRunner score passes through libsvm predict(); the
         # int→float32 conversion inside libsvm's SVM head introduces ~0.05 VMAF
         # of rounding noise at this score level.  The places=1 gate is correct.
-        self.assertAlmostEqual(results[0]["VMAF_score"], 76.68425574067017, places=1)
+        self.assertAlmostEqual(results[0]["VMAF_score"], 76.6674117983704, places=4)
         self.assertAlmostEqual(results[1]["VMAF_score"], 99.946416604585025, places=4)
 
     def test_run_vmaf_runner_with_phone_score(self):
@@ -249,7 +249,7 @@ class QualityRunnerTest(MyTestCase):
 
         results = self.runner.results
 
-        self.assertAlmostEqual(results[0]["VMAF_score"], 92.52240518580402, places=2)
+        self.assertAlmostEqual(results[0]["VMAF_score"], 92.52169893578868, places=4)
         self.assertAlmostEqual(results[1]["VMAF_score"], 100.0, places=4)
 
     def test_run_vmaf_phone_runner(self):
@@ -280,7 +280,7 @@ class QualityRunnerTest(MyTestCase):
 
         results = self.runner.results
 
-        self.assertAlmostEqual(results[0]["VMAF_Phone_score"], 92.52240518580402, places=2)
+        self.assertAlmostEqual(results[0]["VMAF_Phone_score"], 92.52169893578868, places=4)
         self.assertAlmostEqual(results[1]["VMAF_Phone_score"], 100.0, places=4)
 
     def test_run_vmaf_runner_checkerboard(self):
@@ -437,18 +437,18 @@ class QualityRunnerTest(MyTestCase):
         results = self.runner.results
 
         self.assertAlmostEqual(
-            results[0]["VMAF_feature_vif_scale0_score"], 0.363420489439, places=3
+            results[0]["VMAF_feature_vif_scale0_score"], 0.3636595790491415, places=4
         )
         self.assertAlmostEqual(
-            results[0]["VMAF_feature_vif_scale1_score"], 0.766647542135, places=2
+            results[0]["VMAF_feature_vif_scale1_score"], 0.7674891489570371, places=4
         )
         self.assertAlmostEqual(
-            results[0]["VMAF_feature_vif_scale2_score"], 0.862854666902, places=3
+            results[0]["VMAF_feature_vif_scale2_score"], 0.8630881475272494, places=4
         )
         self.assertAlmostEqual(
-            results[0]["VMAF_feature_vif_scale3_score"], 0.915971778036, places=3
+            results[0]["VMAF_feature_vif_scale3_score"], 0.9156988075602461, places=4
         )
-        self.assertAlmostEqual(results[0]["VMAF_feature_motion_score"], 4.04982535417, places=2)
+        self.assertAlmostEqual(results[0]["VMAF_feature_motion_score"], 4.0488208125, places=4)
         self.assertAlmostEqual(results[0]["VMAF_feature_adm2_score"], 0.9345149030293786, places=4)
 
         self.assertAlmostEqual(results[1]["VMAF_feature_vif_scale0_score"], 1.00000001415, places=4)
@@ -459,11 +459,11 @@ class QualityRunnerTest(MyTestCase):
         self.assertAlmostEqual(
             results[1]["VMAF_feature_vif_scale3_score"], 0.999999399683, places=4
         )
-        self.assertAlmostEqual(results[1]["VMAF_feature_motion_score"], 4.04982535417, places=2)
+        self.assertAlmostEqual(results[1]["VMAF_feature_motion_score"], 4.0488208125, places=4)
         self.assertAlmostEqual(results[1]["VMAF_feature_adm2_score"], 1.0, places=4)
 
-        self.assertAlmostEqual(results[0]["VMAF_score"], 74.25323556658451, places=2)
-        self.assertAlmostEqual(results[1]["VMAF_score"], 77.996338095161946, places=2)
+        self.assertAlmostEqual(results[0]["VMAF_score"], 74.25604345163521, places=4)
+        self.assertAlmostEqual(results[1]["VMAF_score"], 77.99516047916666, places=4)
 
     def test_run_ensemblevmaf_runner_same_models(self):
 
@@ -481,16 +481,16 @@ class QualityRunnerTest(MyTestCase):
         results = self.runner.results
 
         self.assertAlmostEqual(
-            results[0]["VMAF_feature_vif_scale0_score"], 0.363420489439, places=3
+            results[0]["VMAF_feature_vif_scale0_score"], 0.3636595790491415, places=4
         )
 
         self.assertAlmostEqual(
-            results[0]["EnsembleVMAF_model_0_score"], 76.68425574067017, places=1
+            results[0]["EnsembleVMAF_model_0_score"], 76.66741179837054, places=4
         )
         self.assertAlmostEqual(
-            results[0]["EnsembleVMAF_model_1_score"], 76.68425574067017, places=1
+            results[0]["EnsembleVMAF_model_1_score"], 76.66741179837054, places=4
         )
-        self.assertAlmostEqual(results[0]["EnsembleVMAF_score"], 76.68425574067017, places=1)
+        self.assertAlmostEqual(results[0]["EnsembleVMAF_score"], 76.66741179837054, places=4)
 
     def test_run_ensemblevmaf_runner_different_models(self):
 
@@ -514,16 +514,14 @@ class QualityRunnerTest(MyTestCase):
         results = self.runner.results
 
         self.assertAlmostEqual(
-            results[0]["VMAF_feature_vif_scale0_score"], 0.363420489439, places=3
+            results[0]["VMAF_feature_vif_scale0_score"], 0.3636595790491415, places=4
         )
 
+        self.assertAlmostEqual(results[0]["EnsembleVMAF_model_0_score"], 76.6674117983703, places=4)
         self.assertAlmostEqual(
-            results[0]["EnsembleVMAF_model_0_score"], 76.68425574067017, places=1
+            results[0]["EnsembleVMAF_model_1_score"], 81.77604343571005, places=3
         )
-        self.assertAlmostEqual(
-            results[0]["EnsembleVMAF_model_1_score"], 81.77005183877434, places=1
-        )
-        self.assertAlmostEqual(results[0]["EnsembleVMAF_score"], 79.22715378972225, places=1)
+        self.assertAlmostEqual(results[0]["EnsembleVMAF_score"], 79.221677703419, places=4)
 
     def test_run_psnr_runner(self):
 
@@ -665,7 +663,7 @@ class QualityRunnerTest(MyTestCase):
         for result in results:
             result.set_score_aggregate_method(ListStats.harmonic_mean)
 
-        self.assertAlmostEqual(results[0]["VMAF_score"], 76.51000590218766, places=2)
+        self.assertAlmostEqual(results[0]["VMAF_score"], 76.50890630088742, places=4)
         self.assertAlmostEqual(results[1]["VMAF_score"], 99.94504634354891, places=4)
 
     def test_run_vmaf_runner_pool_perc10(self):
@@ -686,7 +684,7 @@ class QualityRunnerTest(MyTestCase):
         for result in results:
             result.set_score_aggregate_method(ListStats.perc10)
 
-        self.assertAlmostEqual(results[0]["VMAF_score"], 72.71845922683059, places=2)
+        self.assertAlmostEqual(results[0]["VMAF_score"], 72.71741317765458, places=4)
         self.assertAlmostEqual(results[1]["VMAF_score"], 100.0, places=4)
 
     def test_run_adm2_runner(self):
@@ -704,7 +702,7 @@ class QualityRunnerTest(MyTestCase):
 
         results = self.runner.results
 
-        self.assertAlmostEqual(results[0]["ADM2_score"], 0.9345057708333333, places=4)
+        self.assertAlmostEqual(results[0]["ADM2_score"], 0.9345149030293786, places=4)
         self.assertAlmostEqual(results[1]["ADM2_score"], 1.0, places=4)
 
     def test_run_vif_runner(self):
@@ -1167,14 +1165,14 @@ class QualityRunnerTest(MyTestCase):
 
         results = self.runner.results
 
-        self.assertAlmostEqual(results[0]["BOOTSTRAP_VMAF_score"], 91.71304091659904, places=1)
+        self.assertAlmostEqual(results[0]["BOOTSTRAP_VMAF_score"], 91.70055413913794, places=4)
         self.assertAlmostEqual(results[1]["BOOTSTRAP_VMAF_score"], 100.0, places=4)
         self.assertAlmostEqual(
-            results[0]["BOOTSTRAP_VMAF_bagging_score"], 91.50418140067052, places=1
+            results[0]["BOOTSTRAP_VMAF_bagging_score"], 91.49435511835851, places=4
         )
         self.assertAlmostEqual(results[1]["BOOTSTRAP_VMAF_bagging_score"], 100.0, places=4)
         self.assertAlmostEqual(
-            results[0]["BOOTSTRAP_VMAF_stddev_score"], 0.4609151507341837, places=2
+            results[0]["BOOTSTRAP_VMAF_stddev_score"], 0.4587790260323399, places=4
         )
         self.assertAlmostEqual(results[1]["BOOTSTRAP_VMAF_stddev_score"], 0.0, places=10)
 
@@ -1196,28 +1194,28 @@ class QualityRunnerTest(MyTestCase):
 
         results = self.runner.results
 
-        self.assertAlmostEqual(results[0]["BOOTSTRAP_VMAF_score"], 75.42800743529182, places=1)
+        self.assertAlmostEqual(results[0]["BOOTSTRAP_VMAF_score"], 75.40982012663909, places=4)
         self.assertAlmostEqual(results[1]["BOOTSTRAP_VMAF_score"], 99.95804893252175, places=4)
         self.assertAlmostEqual(
-            results[0]["BOOTSTRAP_VMAF_bagging_score"], 73.08851325162333, places=1
+            results[0]["BOOTSTRAP_VMAF_bagging_score"], 73.10547190141426, places=4
         )
         self.assertAlmostEqual(
-            results[1]["BOOTSTRAP_VMAF_bagging_score"], 99.686116179979152, places=2
+            results[1]["BOOTSTRAP_VMAF_bagging_score"], 99.68537901491972, places=4
         )
         self.assertAlmostEqual(
-            results[0]["BOOTSTRAP_VMAF_stddev_score"], 1.2292399440451214, places=2
+            results[0]["BOOTSTRAP_VMAF_stddev_score"], 1.2281352566804813, places=4
         )
         self.assertAlmostEqual(
             results[1]["BOOTSTRAP_VMAF_stddev_score"], 1.5917514683608882, places=4
         )
         self.assertAlmostEqual(
-            results[0]["BOOTSTRAP_VMAF_ci95_low_score"], 70.79156057918671, places=1
+            results[0]["BOOTSTRAP_VMAF_ci95_low_score"], 70.80670791674116, places=4
         )
         self.assertAlmostEqual(
-            results[1]["BOOTSTRAP_VMAF_ci95_low_score"], 94.784491176494996, places=2
+            results[1]["BOOTSTRAP_VMAF_ci95_low_score"], 94.7834130887179, places=4
         )
         self.assertAlmostEqual(
-            results[0]["BOOTSTRAP_VMAF_ci95_high_score"], 74.84074207742032, places=1
+            results[0]["BOOTSTRAP_VMAF_ci95_high_score"], 74.85640420581932, places=4
         )
         self.assertAlmostEqual(
             results[1]["BOOTSTRAP_VMAF_ci95_high_score"], 99.992560767034618, places=4
@@ -1241,28 +1239,28 @@ class QualityRunnerTest(MyTestCase):
 
         results = self.runner.results
 
-        self.assertAlmostEqual(results[0]["BOOTSTRAP_VMAF_score"], 75.42800743529182, places=1)
+        self.assertAlmostEqual(results[0]["BOOTSTRAP_VMAF_score"], 75.40982012663913, places=4)
         self.assertAlmostEqual(results[1]["BOOTSTRAP_VMAF_score"], 99.95804893252175, places=4)
         self.assertAlmostEqual(
-            results[0]["BOOTSTRAP_VMAF_bagging_score"], 73.09131553704874, places=1
+            results[0]["BOOTSTRAP_VMAF_bagging_score"], 73.10797720731026, places=4
         )
         self.assertAlmostEqual(
-            results[1]["BOOTSTRAP_VMAF_bagging_score"], 99.79000465995409, places=2
+            results[1]["BOOTSTRAP_VMAF_bagging_score"], 99.78938542188111, places=4
         )
         self.assertAlmostEqual(
-            results[0]["BOOTSTRAP_VMAF_stddev_score"], 1.1982762081883995, places=2
+            results[0]["BOOTSTRAP_VMAF_stddev_score"], 1.1971875179455416, places=4
         )
         self.assertAlmostEqual(
-            results[1]["BOOTSTRAP_VMAF_stddev_score"], 1.3028824838324222, places=2
+            results[1]["BOOTSTRAP_VMAF_stddev_score"], 1.3057270008154538, places=3
         )
         self.assertAlmostEqual(
-            results[0]["BOOTSTRAP_VMAF_ci95_low_score"], 70.81472328674501, places=1
+            results[0]["BOOTSTRAP_VMAF_ci95_low_score"], 70.82980423573689, places=4
         )
         self.assertAlmostEqual(
-            results[1]["BOOTSTRAP_VMAF_ci95_low_score"], 94.79667446930989, places=2
+            results[1]["BOOTSTRAP_VMAF_ci95_low_score"], 94.79560574289447, places=4
         )
         self.assertAlmostEqual(
-            results[0]["BOOTSTRAP_VMAF_ci95_high_score"], 74.83768715705374, places=1
+            results[0]["BOOTSTRAP_VMAF_ci95_high_score"], 74.8532602003098, places=4
         )
         self.assertAlmostEqual(
             results[1]["BOOTSTRAP_VMAF_ci95_high_score"], 99.99736657892976, places=4
@@ -1283,28 +1281,28 @@ class QualityRunnerTest(MyTestCase):
 
         results = self.runner.results
 
-        self.assertAlmostEqual(results[0]["BOOTSTRAP_VMAF_score"], 75.41106825492248, places=2)
+        self.assertAlmostEqual(results[0]["BOOTSTRAP_VMAF_score"], 75.41011890598992, places=4)
         self.assertAlmostEqual(results[1]["BOOTSTRAP_VMAF_score"], 99.95804893252175, places=4)
         self.assertAlmostEqual(
-            results[0]["BOOTSTRAP_VMAF_bagging_score"], 74.93633669028638, places=2
+            results[0]["BOOTSTRAP_VMAF_bagging_score"], 74.93529671341122, places=4
         )
         self.assertAlmostEqual(
             results[1]["BOOTSTRAP_VMAF_bagging_score"], 99.93908291255723, places=4
         )
         self.assertAlmostEqual(
-            results[0]["BOOTSTRAP_VMAF_stddev_score"], 1.31580415378762, places=3
+            results[0]["BOOTSTRAP_VMAF_stddev_score"], 1.3159290723692074, places=4
         )
         self.assertAlmostEqual(
             results[1]["BOOTSTRAP_VMAF_stddev_score"], 0.09930398700617331, places=4
         )
         self.assertAlmostEqual(
-            results[0]["BOOTSTRAP_VMAF_ci95_low_score"], 72.95957599695008, places=2
+            results[0]["BOOTSTRAP_VMAF_ci95_low_score"], 72.95835553756686, places=4
         )
         self.assertAlmostEqual(
-            results[1]["BOOTSTRAP_VMAF_ci95_low_score"], 91.11567337246434, places=2
+            results[1]["BOOTSTRAP_VMAF_ci95_low_score"], 91.11407102849, places=4
         )
         self.assertAlmostEqual(
-            results[0]["BOOTSTRAP_VMAF_ci95_high_score"], 77.36730937306012, places=2
+            results[0]["BOOTSTRAP_VMAF_ci95_high_score"], 77.36647719076497, places=4
         )
         self.assertAlmostEqual(results[1]["BOOTSTRAP_VMAF_ci95_high_score"], 100.0, places=4)
 
@@ -1326,14 +1324,14 @@ class QualityRunnerTest(MyTestCase):
 
         results = self.runner.results
 
-        self.assertAlmostEqual(results[0]["BOOTSTRAP_VMAF_score"], 91.70144407600776, places=2)
+        self.assertAlmostEqual(results[0]["BOOTSTRAP_VMAF_score"], 91.70080351460331, places=4)
         self.assertAlmostEqual(results[1]["BOOTSTRAP_VMAF_score"], 100.0, places=4)
         self.assertAlmostEqual(
-            results[0]["BOOTSTRAP_VMAF_bagging_score"], 91.38626993803041, places=2
+            results[0]["BOOTSTRAP_VMAF_bagging_score"], 91.38556127698827, places=4
         )
         self.assertAlmostEqual(results[1]["BOOTSTRAP_VMAF_bagging_score"], 100.0, places=4)
         self.assertAlmostEqual(
-            results[0]["BOOTSTRAP_VMAF_stddev_score"], 0.8796499060403885, places=3
+            results[0]["BOOTSTRAP_VMAF_stddev_score"], 0.8797540835196825, places=4
         )
         self.assertAlmostEqual(results[1]["BOOTSTRAP_VMAF_stddev_score"], 0.0, places=4)
 
@@ -1357,16 +1355,16 @@ class QualityRunnerTest(MyTestCase):
 
         results = self.runner.results
 
-        self.assertAlmostEqual(results[0]["BOOTSTRAP_VMAF_score"], 75.42800743529182, places=1)
+        self.assertAlmostEqual(results[0]["BOOTSTRAP_VMAF_score"], 75.4098201266392, places=4)
         self.assertAlmostEqual(results[1]["BOOTSTRAP_VMAF_score"], 99.95804893252175, places=4)
         self.assertAlmostEqual(
-            results[0]["BOOTSTRAP_VMAF_bagging_score"], 75.1541667848584, places=1
+            results[0]["BOOTSTRAP_VMAF_bagging_score"], 75.14163791740515, places=4
         )
         self.assertAlmostEqual(
             results[1]["BOOTSTRAP_VMAF_bagging_score"], 99.9640738745435, places=4
         )
         self.assertAlmostEqual(
-            results[0]["BOOTSTRAP_VMAF_stddev_score"], 1.415440563303708, places=2
+            results[0]["BOOTSTRAP_VMAF_stddev_score"], 1.4202055545770627, places=4
         )
         self.assertAlmostEqual(
             results[1]["BOOTSTRAP_VMAF_stddev_score"], 0.03321535846597722, places=4
@@ -1496,7 +1494,7 @@ class QualityRunnerTest(MyTestCase):
 
         results = self.runner.results
 
-        self.assertAlmostEqual(results[0]["VMAF_score"], 84.9506475312982, places=2)
+        self.assertAlmostEqual(results[0]["VMAF_score"], 84.94993851497509, places=4)
         self.assertAlmostEqual(results[1]["VMAF_score"], 100.0, places=4)
 
     def test_run_bootstrap_vmaf_runner_with_4k_1d5H_model(self):
@@ -1519,16 +1517,16 @@ class QualityRunnerTest(MyTestCase):
 
         results = self.runner.results
 
-        self.assertAlmostEqual(results[0]["BOOTSTRAP_VMAF_score"], 84.97241763181641, places=1)
+        self.assertAlmostEqual(results[0]["BOOTSTRAP_VMAF_score"], 84.94985671291977, places=4)
         self.assertAlmostEqual(results[1]["BOOTSTRAP_VMAF_score"], 100.0, places=4)
         self.assertAlmostEqual(
-            results[0]["BOOTSTRAP_VMAF_bagging_score"], 83.97551251514652, places=1
+            results[0]["BOOTSTRAP_VMAF_bagging_score"], 83.96882400192007, places=4
         )
         self.assertAlmostEqual(
             results[1]["BOOTSTRAP_VMAF_bagging_score"], 99.976138971781452, places=4
         )
         self.assertAlmostEqual(
-            results[0]["BOOTSTRAP_VMAF_stddev_score"], 0.9285768709567926, places=2
+            results[0]["BOOTSTRAP_VMAF_stddev_score"], 0.927549793485079, places=4
         )
         self.assertAlmostEqual(
             results[1]["BOOTSTRAP_VMAF_stddev_score"], 0.03627354379389184, places=4
@@ -1554,7 +1552,7 @@ class QualityRunnerTest(MyTestCase):
 
         results = self.runner.results
 
-        self.assertAlmostEqual(results[0]["VMAF_score"], 75.42800743529182, places=1)
+        self.assertAlmostEqual(results[0]["VMAF_score"], 75.40982012663899, places=4)
         self.assertAlmostEqual(results[1]["VMAF_score"], 99.95804893252175, places=4)
 
     def test_run_vmaf_runner_input160x90(self):
@@ -1665,19 +1663,19 @@ class QualityRunnerTest(MyTestCase):
         results = self.runner.results
 
         self.assertAlmostEqual(
-            results[0]["VMAF_feature_vif_scale0_score"], 0.363420489439, places=3
+            results[0]["VMAF_feature_vif_scale0_score"], 0.3636595790491415, places=4
         )
         self.assertAlmostEqual(
-            results[0]["VMAF_feature_vif_scale1_score"], 0.766647542135, places=2
+            results[0]["VMAF_feature_vif_scale1_score"], 0.7674891489570371, places=4
         )
         self.assertAlmostEqual(
-            results[0]["VMAF_feature_vif_scale2_score"], 0.862854666902, places=3
+            results[0]["VMAF_feature_vif_scale2_score"], 0.8630881475272494, places=4
         )
         self.assertAlmostEqual(
-            results[0]["VMAF_feature_vif_scale3_score"], 0.915971778036, places=3
+            results[0]["VMAF_feature_vif_scale3_score"], 0.9156988075602461, places=4
         )
         self.assertAlmostEqual(
-            results[0]["VMAF_feature_motion2_score"], 3.8953518541666665, places=2
+            results[0]["VMAF_feature_motion2_score"], 3.8943597291666667, places=4
         )
         self.assertAlmostEqual(results[0]["VMAF_feature_adm2_score"], 0.9345149030293786, places=4)
 
@@ -1690,7 +1688,7 @@ class QualityRunnerTest(MyTestCase):
             results[1]["VMAF_feature_vif_scale3_score"], 0.999999399683, places=4
         )
         self.assertAlmostEqual(
-            results[1]["VMAF_feature_motion2_score"], 3.8953518541666665, places=2
+            results[1]["VMAF_feature_motion2_score"], 3.8943597291666667, places=4
         )
         self.assertAlmostEqual(results[1]["VMAF_feature_adm2_score"], 1.0, places=4)
 
@@ -1700,7 +1698,7 @@ class QualityRunnerTest(MyTestCase):
         with self.assertRaises(KeyError):
             self.assertAlmostEqual(results[1]["VMAF_feature_motion_score"], 1.0, places=4)
 
-        self.assertAlmostEqual(results[0]["VMAF_score"], 76.68425574067017, places=1)
+        self.assertAlmostEqual(results[0]["VMAF_score"], 76.66741179837048, places=4)
         self.assertAlmostEqual(results[1]["VMAF_score"], 99.946416604585025, places=4)
 
     def test_run_bootstrap_vmaf_runner_default_model_json_model(self):
@@ -1721,28 +1719,28 @@ class QualityRunnerTest(MyTestCase):
 
         results = self.runner.results
 
-        self.assertAlmostEqual(results[0]["BOOTSTRAP_VMAF_score"], 75.42800743529182, places=1)
+        self.assertAlmostEqual(results[0]["BOOTSTRAP_VMAF_score"], 75.40982012663915, places=4)
         self.assertAlmostEqual(results[1]["BOOTSTRAP_VMAF_score"], 99.95804893252175, places=4)
         self.assertAlmostEqual(
-            results[0]["BOOTSTRAP_VMAF_bagging_score"], 74.94883517626657, places=1
+            results[0]["BOOTSTRAP_VMAF_bagging_score"], 74.93511444833854, places=4
         )
         self.assertAlmostEqual(
             results[1]["BOOTSTRAP_VMAF_bagging_score"], 99.93908291255723, places=4
         )
         self.assertAlmostEqual(
-            results[0]["BOOTSTRAP_VMAF_stddev_score"], 1.3121299437588092, places=2
+            results[0]["BOOTSTRAP_VMAF_stddev_score"], 1.3161258404304899, places=4
         )
         self.assertAlmostEqual(
             results[1]["BOOTSTRAP_VMAF_stddev_score"], 0.09930398700617331, places=4
         )
         self.assertAlmostEqual(
-            results[0]["BOOTSTRAP_VMAF_ci95_low_score"], 72.97208643408686, places=1
+            results[0]["BOOTSTRAP_VMAF_ci95_low_score"], 72.9578340986488, places=4
         )
         self.assertAlmostEqual(
-            results[1]["BOOTSTRAP_VMAF_ci95_low_score"], 91.1152017392609, places=2
+            results[1]["BOOTSTRAP_VMAF_ci95_low_score"], 91.11369309032479, places=4
         )
         self.assertAlmostEqual(
-            results[0]["BOOTSTRAP_VMAF_ci95_high_score"], 77.36908154045717, places=2
+            results[0]["BOOTSTRAP_VMAF_ci95_high_score"], 77.36719296033387, places=4
         )
         self.assertAlmostEqual(results[1]["BOOTSTRAP_VMAF_ci95_high_score"], 100.0, places=4)
 
@@ -1835,11 +1833,11 @@ class QualityRunnerTest(MyTestCase):
         results = self.runner.results
 
         self.assertAlmostEqual(
-            results[0]["VMAFNEG_score"], 88.030463, places=3
+            results[0]["VMAFNEG_score"], 88.030463, places=4
         )  # 132.7329528948058
 
         self.assertAlmostEqual(
-            results[0]["VMAF_integer_feature_vif_scale0_score"], 0.9837379749630343, places=4
+            results[0]["VMAF_integer_feature_vif_scale0_score"], 0.9837079355759384, places=4
         )
         with self.assertRaises(KeyError):
             _ = results[0][
@@ -1880,7 +1878,7 @@ class QualityRunnerTest(MyTestCase):
         results = self.runner.results
 
         self.assertAlmostEqual(
-            results[0]["VMAF_score"], 88.03295534339294, places=1
+            results[0]["VMAF_score"], 88.02858535506459, places=2
         )  # 132.7329528948058
 
         self.assertAlmostEqual(
@@ -1920,7 +1918,7 @@ class QualityRunnerTest(MyTestCase):
             results[0]["VMAF_integer_feature_vif_scale3_score"], 0.9157200890843669, places=4
         )
         self.assertAlmostEqual(
-            results[0]["VMAF_integer_feature_motion2_score"], 3.8953518541666665, places=2
+            results[0]["VMAF_integer_feature_motion2_score"], 3.8943597291666667, places=4
         )
         self.assertAlmostEqual(
             results[0]["VMAF_integer_feature_adm2_score"], 0.9535583604166833, places=4
@@ -1939,11 +1937,11 @@ class QualityRunnerTest(MyTestCase):
             results[1]["VMAF_integer_feature_vif_scale3_score"], 0.999999399683, places=4
         )
         self.assertAlmostEqual(
-            results[1]["VMAF_integer_feature_motion2_score"], 3.8953518541666665, places=2
+            results[1]["VMAF_integer_feature_motion2_score"], 3.8943597291666667, places=4
         )
         self.assertAlmostEqual(results[1]["VMAF_integer_feature_adm2_score"], 1.0, places=4)
 
-        self.assertAlmostEqual(results[0]["VMAF_score"], 80.60147296308644, places=2)
+        self.assertAlmostEqual(results[0]["VMAF_score"], 80.60039170534735, places=4)
         self.assertAlmostEqual(results[1]["VMAF_score"], 99.946416604585025, places=4)
 
     def test_run_vmaf_runner_float_nvd6(self):
@@ -1967,19 +1965,19 @@ class QualityRunnerTest(MyTestCase):
         results = self.runner.results
 
         self.assertAlmostEqual(
-            results[0]["VMAF_feature_vif_scale0_score"], 0.363420489439, places=3
+            results[0]["VMAF_feature_vif_scale0_score"], 0.3636595790491415, places=4
         )
         self.assertAlmostEqual(
-            results[0]["VMAF_feature_vif_scale1_score"], 0.766647542135, places=2
+            results[0]["VMAF_feature_vif_scale1_score"], 0.7674891489570371, places=4
         )
         self.assertAlmostEqual(
-            results[0]["VMAF_feature_vif_scale2_score"], 0.862854666902, places=3
+            results[0]["VMAF_feature_vif_scale2_score"], 0.8630881475272494, places=4
         )
         self.assertAlmostEqual(
-            results[0]["VMAF_feature_vif_scale3_score"], 0.915971778036, places=3
+            results[0]["VMAF_feature_vif_scale3_score"], 0.9156988075602461, places=4
         )
         self.assertAlmostEqual(
-            results[0]["VMAF_feature_motion2_score"], 3.8953518541666665, places=2
+            results[0]["VMAF_feature_motion2_score"], 3.8943597291666667, places=4
         )
         self.assertAlmostEqual(results[0]["VMAF_feature_adm2_score"], 0.9535689329913465, places=4)
 
@@ -1992,11 +1990,11 @@ class QualityRunnerTest(MyTestCase):
             results[1]["VMAF_feature_vif_scale3_score"], 0.999999399683, places=4
         )
         self.assertAlmostEqual(
-            results[1]["VMAF_feature_motion2_score"], 3.8953518541666665, places=2
+            results[1]["VMAF_feature_motion2_score"], 3.8943597291666667, places=4
         )
         self.assertAlmostEqual(results[1]["VMAF_feature_adm2_score"], 1.0, places=4)
 
-        self.assertAlmostEqual(results[0]["VMAF_score"], 80.61670115719328, places=1)
+        self.assertAlmostEqual(results[0]["VMAF_score"], 80.60027040650554, places=4)
         self.assertAlmostEqual(results[1]["VMAF_score"], 99.946416604585025, places=4)
 
     def test_run_vmaf_runner_rdh540(self):
@@ -2034,7 +2032,7 @@ class QualityRunnerTest(MyTestCase):
                 results[0]["VMAF_integer_feature_vif_scale3_score"], 0.9157200890843669, places=4
             )
             self.assertAlmostEqual(
-                results[0]["VMAF_integer_feature_motion2_score"], 3.8953518541666665, places=4
+                results[0]["VMAF_integer_feature_motion2_score"], 3.8943597291666667, places=4
             )
             self.assertAlmostEqual(
                 results[0]["VMAF_integer_feature_adm2_score"], 0.9179700081140197, places=4
@@ -2053,11 +2051,11 @@ class QualityRunnerTest(MyTestCase):
                 results[1]["VMAF_integer_feature_vif_scale3_score"], 0.999999399683, places=4
             )
             self.assertAlmostEqual(
-                results[1]["VMAF_integer_feature_motion2_score"], 3.8953518541666665, places=4
+                results[1]["VMAF_integer_feature_motion2_score"], 3.8943597291666667, places=4
             )
             self.assertAlmostEqual(results[1]["VMAF_integer_feature_adm2_score"], 1.0, places=4)
 
-            self.assertAlmostEqual(results[0]["VMAF_score"], 73.28968543912883, places=4)
+            self.assertAlmostEqual(results[0]["VMAF_score"], 73.40010627727987, places=4)
             self.assertAlmostEqual(results[1]["VMAF_score"], 99.946416604585025, places=4)
 
     def test_run_vmaf_runner_float_rdh540(self):
@@ -2081,19 +2079,19 @@ class QualityRunnerTest(MyTestCase):
         results = self.runner.results
 
         self.assertAlmostEqual(
-            results[0]["VMAF_feature_vif_scale0_score"], 0.363420489439, places=3
+            results[0]["VMAF_feature_vif_scale0_score"], 0.3636595790491415, places=4
         )
         self.assertAlmostEqual(
-            results[0]["VMAF_feature_vif_scale1_score"], 0.766647542135, places=2
+            results[0]["VMAF_feature_vif_scale1_score"], 0.7674891489570371, places=4
         )
         self.assertAlmostEqual(
-            results[0]["VMAF_feature_vif_scale2_score"], 0.862854666902, places=3
+            results[0]["VMAF_feature_vif_scale2_score"], 0.8630881475272494, places=4
         )
         self.assertAlmostEqual(
-            results[0]["VMAF_feature_vif_scale3_score"], 0.915971778036, places=3
+            results[0]["VMAF_feature_vif_scale3_score"], 0.9156988075602461, places=4
         )
         self.assertAlmostEqual(
-            results[0]["VMAF_feature_motion2_score"], 3.8953518541666665, places=2
+            results[0]["VMAF_feature_motion2_score"], 3.8943597291666667, places=4
         )
         self.assertAlmostEqual(results[0]["VMAF_feature_adm2_score"], 0.9179700081140197, places=4)
 
@@ -2106,11 +2104,11 @@ class QualityRunnerTest(MyTestCase):
             results[1]["VMAF_feature_vif_scale3_score"], 0.999999399683, places=4
         )
         self.assertAlmostEqual(
-            results[1]["VMAF_feature_motion2_score"], 3.8953518541666665, places=2
+            results[1]["VMAF_feature_motion2_score"], 3.8943597291666667, places=4
         )
         self.assertAlmostEqual(results[1]["VMAF_feature_adm2_score"], 1.0, places=4)
 
-        self.assertAlmostEqual(results[0]["VMAF_score"], 73.28968543912883, places=1)
+        self.assertAlmostEqual(results[0]["VMAF_score"], 73.27248246860195, places=4)
         self.assertAlmostEqual(results[1]["VMAF_score"], 99.946416604585025, places=4)
 
     def test_run_vmaf_runner_rdh2160_nvd1d5(self):
@@ -2146,7 +2144,7 @@ class QualityRunnerTest(MyTestCase):
             results[0]["VMAF_integer_feature_vif_scale3_score"], 0.9157200890843669, places=4
         )
         self.assertAlmostEqual(
-            results[0]["VMAF_integer_feature_motion2_score"], 3.8953518541666665, places=2
+            results[0]["VMAF_integer_feature_motion2_score"], 3.8943597291666667, places=4
         )
         self.assertAlmostEqual(
             results[0]["VMAF_integer_feature_adm2_score"], 0.9345149030293786, places=4
@@ -2165,7 +2163,7 @@ class QualityRunnerTest(MyTestCase):
             results[1]["VMAF_integer_feature_vif_scale3_score"], 0.999999399683, places=4
         )
         self.assertAlmostEqual(
-            results[1]["VMAF_integer_feature_motion2_score"], 3.8953518541666665, places=2
+            results[1]["VMAF_integer_feature_motion2_score"], 3.8943597291666667, places=4
         )
         self.assertAlmostEqual(results[1]["VMAF_integer_feature_adm2_score"], 1.0, places=4)
 
@@ -2542,7 +2540,7 @@ class QualityRunnerTest(MyTestCase):
             results[0]["VMAF_integer_feature_vif_scale3_score"], 0.9092599837535159, places=4
         )
         self.assertAlmostEqual(
-            results[0]["VMAF_integer_feature_motion2_score"], 3.8953518541666665, places=2
+            results[0]["VMAF_integer_feature_motion2_score"], 3.8943597291666667, places=4
         )
         self.assertAlmostEqual(
             results[0]["VMAF_integer_feature_adm2_score"], 0.9298444431333371, places=4
@@ -2561,11 +2559,11 @@ class QualityRunnerTest(MyTestCase):
             results[1]["VMAF_integer_feature_vif_scale3_score"], 0.999999399683, places=4
         )
         self.assertAlmostEqual(
-            results[1]["VMAF_integer_feature_motion2_score"], 3.8953518541666665, places=2
+            results[1]["VMAF_integer_feature_motion2_score"], 3.8943597291666667, places=4
         )
         self.assertAlmostEqual(results[1]["VMAF_integer_feature_adm2_score"], 1.0, places=4)
 
-        self.assertAlmostEqual(results[0]["VMAF_score"], 75.07472948234982, places=2)
+        self.assertAlmostEqual(results[0]["VMAF_score"], 75.07365712709452, places=4)
         self.assertAlmostEqual(results[1]["VMAF_score"], 99.94635786905758, places=4)
 
     def test_run_vmaf_runner_with_param_neg_and_model_mfz(self):
@@ -2679,10 +2677,10 @@ class QualityRunnerResultStoreTest(unittest.TestCase):
         self.runner2.run(parallelize=False)
         results2 = self.runner2.results
 
-        self.assertAlmostEqual(results1[0]["VMAF_score"], 73.28968543912883, places=1)
+        self.assertAlmostEqual(results1[0]["VMAF_score"], 73.27248246860131, places=4)
         self.assertAlmostEqual(results1[1]["VMAF_score"], 99.946416604585025, places=4)
 
-        self.assertAlmostEqual(results2[0]["VMAF_score"], 80.61670115719328, places=1)
+        self.assertAlmostEqual(results2[0]["VMAF_score"], 80.60027040650554, places=4)
         self.assertAlmostEqual(results2[1]["VMAF_score"], 99.946416604585025, places=4)
 
 
@@ -2713,7 +2711,7 @@ class QualityRunnerSaveWorkfilesTest(MyTestCase):
 
         results = self.runner.results
 
-        self.assertAlmostEqual(results[0]["VMAF_score"], 76.66890511746402, places=2)
+        self.assertAlmostEqual(results[0]["VMAF_score"], 76.66783041117395, places=4)
         self.assertAlmostEqual(results[1]["VMAF_score"], 99.94642662500576, places=4)
 
     def test_run_psnr_runner_flat_save_workfiles(self):
