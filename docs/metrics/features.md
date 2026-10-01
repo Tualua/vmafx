@@ -491,7 +491,7 @@ What this means when you use it:
 - One option is not identical: with `adm_p_norm` other than 1 or 3 the twin
   is within 1.1e-7 of the CPU, because the two sides raise each term with
   different `powf` implementations.
-- Frames smaller than 17x17 are outside this guarantee; see the next section.
+- Frames smaller than 17x17 are refused by both; see the next section.
 
 The SYCL, HIP and Metal `float_adm` twins agree with the CPU to four decimal
 places.
@@ -512,10 +512,20 @@ libvmaf ERROR adm_cuda requires width >= 17 and height >= 17 (got 16x16)
 The CUDA, HIP and SYCL twins (`adm_cuda`, `adm_hip`, `adm_sycl`) used to
 accept such frames; they now refuse them like the CPU and Metal extractors.
 
-`float_adm` has no such check yet. Below 17x17 its coarsest level has a single
-sample and the CPU extractor reads outside it, so its scores there are not
-meaningful (a random 8x8 pair scores `adm_scale3 = 1.05`), and
-`float_adm_cuda` does not reproduce them. Use frames of at least 17x17.
+`float_adm` and `float_adm_cuda` refuse the same frames, with the same kind of
+message:
+
+```text
+libvmaf ERROR float_adm requires width >= 17 and height >= 17 (got 16x16)
+libvmaf ERROR float_adm_cuda requires width >= 17 and height >= 17 (got 16x16)
+```
+
+They used to accept them. Below 17x17 the coarsest level has a single sample
+and the CPU extractor read outside it: before the start of a buffer at 8
+pixels or fewer, the wrong sample from 9 to 16 (a random 8x8 pair scored
+`adm_scale3 = 1.05`). Scores of such frames from an older build are not
+meaningful. The SYCL, HIP and Metal `float_adm` twins still accept these
+frames; use at least 17x17 with them.
 
 Frames from 17 to 32 pixels wide or high are the smallest it accepts. These
 were wrong at those sizes and are fixed:

@@ -3074,7 +3074,7 @@ test('test_integer_vif_cpu_cuda_parity', test_integer_vif_cpu_cuda_parity,
 # `[skip: no CUDA device]` guard when vmaf_cuda_state_init fails.
 test_cuda_float_adm_parity = executable('test_cuda_float_adm_parity',
     ['test.c', 'test_cuda_float_adm_parity.c'],
-    include_directories : [libvmaf_inc, test_inc],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
     c_args: ['-DHAVE_CUDA=1']

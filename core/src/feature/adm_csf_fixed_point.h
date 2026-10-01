@@ -205,17 +205,18 @@ static inline int adm_csf_check_scale(int scale, const float rfactor1[3], double
                                adm_csf_mode, fixed, &normalization_shift);
 }
 
-/* Smallest frame dimension the integer-ADM pipeline accepts. Each DWT scale
- * halves the band, rounding up: below 17 pixels the scale-3 band is a single
- * sample, which the DWT reads past. The scale-0 horizontal and vertical cube
- * shift, ceil(log2(band) - 4), also goes negative there. */
+/* Smallest frame dimension the ADM pipelines accept, fixed-point and float.
+ * Each DWT scale halves the band, rounding up: below 17 pixels the scale-3
+ * band is a single sample, which the DWT reads past. In the fixed-point
+ * pipeline the scale-0 horizontal and vertical cube shift,
+ * ceil(log2(band) - 4), also goes negative there. */
 #define ADM_MIN_FRAME_DIM (17u)
 
 /**
- * 0 when a `w` x `h` frame is inside the integer-ADM range, otherwise -EINVAL
- * after logging which extractor refused it. The CPU, CUDA, HIP and SYCL
+ * 0 when a `w` x `h` frame is inside the ADM range, otherwise -EINVAL after
+ * logging which extractor refused it. The fixed-point CPU, CUDA, HIP and SYCL
  * extractors call it from init(), and Metal has the same check inline, so every
- * backend refuses the same frames.
+ * backend refuses the same frames. The CPU `float_adm` calls it too.
  */
 static inline int adm_frame_size_check(const char *extractor, unsigned w, unsigned h)
 {

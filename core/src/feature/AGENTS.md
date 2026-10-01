@@ -1031,6 +1031,20 @@ feature/
   Metal twins still old arithmetic:
   `T-GPU-FLOAT-ADM-CPU-ARITHMETIC-2026-10-01`.
 
+- **`float_adm` refuses frames below 17x17** (fork-local; upstream has no
+  check). `float_adm.c::init()` -> `adm_frame_size_check("float_adm", w, h)`
+  (`adm_csf_fixed_point.h`, same floor as fixed-point `adm`), before any
+  allocation. Reason: scale-3 band = 1 sample below 17 px;
+  `adm_cm_thresh3x3_s()` mirror wants index 1, `dwt2_src_indices_1d_s()`
+  fourth tap = index -1 = heap read before the band buffer (ASan, 8x8).
+  Upstream sync touching `float_adm.c::init()`: keep the check.
+  `float_adm_cuda` has it too; SYCL / HIP / Metal float twins not yet
+  (`T-GPU-FLOAT-ADM-TINY-FRAME-FLOOR-2026-10-01`). Guard:
+  `test_float_adm_coverage`. Debug key `adm` stays UNSUFFIXED
+  (`provided_features` lists `adm_scale0`, upstream parity): Netflix golden
+  tests read `VMAF_feature_adm_score` under non-default options; do not
+  "fix" the list (`T-FLOAT-ADM-DEBUG-KEY-UNSUFFIXED-2026-10-01`).
+
 - **`compute_adm` signature stays on fork's parameter
   list — Strategy E in Research-0024.** Netflix upstream
   `4dcc2f7c` adds 12 new parameters (`luminance_level`,

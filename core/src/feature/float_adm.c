@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright 2016-2020 Netflix, Inc.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -28,11 +29,18 @@
 #include "log.h"
 
 #include "adm.h"
+#include "adm_csf_fixed_point.h"
 #include "adm_options.h"
 #include "adm_score.h"
 #include "mem.h"
 #include "nonfinite_score.h"
 #include "picture_copy.h"
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
 typedef struct AdmState {
     size_t float_stride;
@@ -332,6 +340,14 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     (void)pix_fmt;
     (void)bpc;
 
+    /* Below 17 pixels the scale-3 bands have one sample, and adm_tools.c
+     * reads outside them (the contrast-masking mirror wants index 1, the DWT's
+     * fourth tap index -1). The fixed-point extractor refuses the same
+     * frames. */
+    const int size_err = adm_frame_size_check("float_adm", w, h);
+    if (size_err)
+        return size_err;
+
     AdmState *s = fex->priv;
     s->float_stride = ALIGN_CEIL(w * sizeof(float));
     s->ref = aligned_malloc(s->float_stride * h, 32);
@@ -399,7 +415,10 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
 
     double luminance_level = DEFAULT_ADM_CSF_LUMINANCE_LEVEL;
 
-    double score, score_num, score_den, score_aim;
+    double score;
+    double score_num;
+    double score_den;
+    double score_aim;
     double scores[8];
     err = compute_adm(s->ref, s->dist, ref_pic->w[0], ref_pic->h[0], s->float_stride,
                       s->float_stride, &score, &score_num, &score_den, scores, ADM_BORDER_FACTOR,
@@ -458,6 +477,7 @@ static const char *provided_features[] = {"VMAF_feature_adm2_score",
                                           "adm_den_scale3",
                                           NULL};
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_adm = {
     .name = "float_adm",
     .init = init,
@@ -467,3 +487,5 @@ VmafFeatureExtractor vmaf_fex_float_adm = {
     .priv_size = sizeof(AdmState),
     .provided_features = provided_features,
 };
+
+/* NOLINTEND(modernize-use-nullptr) */

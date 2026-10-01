@@ -57229,3 +57229,22 @@ Netflix golden assertions are untouched.
 - `docs/development/cross-backend-exact-twins.md` is generated
   (`scripts/docs/generate-exact-twins.py`, `make docs-fragments-write`): on a
   conflict take master's side and regenerate.
+## float_adm refuses frames below 17x17 (2026-10-01)
+
+`fix/float-adm-min-frame`, `T-FLOAT-ADM-TINY-FRAME-BAND-READS-2026-10-01`.
+
+- `core/src/feature/float_adm.c::init()` calls `adm_frame_size_check()`
+  (`adm_csf_fixed_point.h`) before it allocates. Upstream Netflix has no such
+  check and reads outside the scale-3 bands of smaller frames; on an upstream
+  sync that touches `init()`, keep the check and its place before the
+  allocations.
+- `core/src/feature/cuda/float_adm_cuda.c::init_fex_cuda()` has the same
+  check, before any device resource is claimed.
+- `provided_features` in `float_adm.c` keeps upstream's `adm_scale0` entry.
+  It looks like a mistake (the extractor emits `adm`), and it is why the
+  debug ratio gets no option suffix, but the Netflix golden tests read that
+  unsuffixed key under non-default options
+  (`T-FLOAT-ADM-DEBUG-KEY-UNSUFFIXED-2026-10-01`). Do not change the list.
+- No Netflix golden-data, public C API or FFmpeg patch impact. The SYCL, HIP
+  and Metal `float_adm` twins are untouched
+  (`T-GPU-FLOAT-ADM-TINY-FRAME-FLOOR-2026-10-01`).

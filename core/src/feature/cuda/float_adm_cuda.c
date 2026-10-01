@@ -25,6 +25,7 @@
 #include <string.h>
 
 #include "common.h"
+#include "feature/adm_csf_fixed_point.h"
 #include "feature/adm_float_reference.h"
 #include "feature/adm_options.h"
 #include "feature/adm_reciprocal_model.h"
@@ -474,6 +475,13 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 {
     (void)pix_fmt;
     FloatAdmStateCuda *s = fex->priv;
+
+    /* Same frame-size bound as the CPU float_adm, checked before any device
+     * resource is claimed: below 17 pixels the scale-3 bands have one
+     * sample. */
+    const int size_err = adm_frame_size_check("float_adm_cuda", w, h);
+    if (size_err)
+        return size_err;
 
     if (s->adm_csf_mode != 0)
         return -EINVAL;

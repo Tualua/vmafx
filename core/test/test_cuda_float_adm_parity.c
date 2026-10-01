@@ -34,10 +34,12 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "test.h"
 
+#include "feature/feature_extractor.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_cuda.h"
 #include "libvmaf/picture.h"
@@ -540,10 +542,40 @@ static char *run_exact_option_cases(void)
     return NULL;
 }
 
+/* init() result of the twin for a w x h frame, without a device: the size
+ * check comes before any device resource is claimed. */
+static int twin_init_result(unsigned w, unsigned h)
+{
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_adm_cuda");
+    if (!fex)
+        return 1;
+    void *priv = calloc(1, fex->priv_size);
+    if (!priv)
+        return 1;
+    fex->priv = priv;
+    const int err = fex->init(fex, VMAF_PIX_FMT_YUV420P, 8u, w, h);
+    fex->priv = NULL;
+    free(priv);
+    return err;
+}
+
+/* Below 17x17 the scale-3 bands have one sample. The CPU float_adm refuses
+ * such frames, and so does the twin (it used to clamp the two indices the CPU
+ * read out of the band, and so scored frames the CPU cannot). */
+static char *test_float_adm_cuda_rejects_frames_below_17(void)
+{
+    mu_assert("float_adm_cuda must reject 8x8", twin_init_result(8u, 8u) == -EINVAL);
+    mu_assert("float_adm_cuda must reject 16x16", twin_init_result(16u, 16u) == -EINVAL);
+    mu_assert("float_adm_cuda must reject 17x16", twin_init_result(17u, 16u) == -EINVAL);
+    mu_assert("float_adm_cuda must reject 16x17", twin_init_result(16u, 17u) == -EINVAL);
+    return NULL;
+}
+
 static char *run_other_cases(void)
 {
     mu_run_test(test_float_adm_p_norm_reaches_kernel);
     mu_run_test(test_float_adm_small_sums_are_not_floored);
+    mu_run_test(test_float_adm_cuda_rejects_frames_below_17);
     return NULL;
 }
 

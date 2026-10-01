@@ -11,11 +11,16 @@
  *       float_adm_scale{0-3} scores should all be 1.0 (no distortion).
  *    2. Distinct inputs: scores < 1.0.
  *    3. 10-bit init path (exercises the bpc-dependent picture_copy branch).
+ *    4. init() refuses frames below 17x17. float_adm performs a 4-scale DWT
+ *       decomposition; below 17 pixels the scale-3 bands have one sample and
+ *       adm_tools.c read outside them (a heap read before the band buffer at
+ *       8x8, the wrong sample from 9 to 16). The fixed-point extractor has
+ *       the same floor.
  *
- *  float_adm performs 4-scale DWT decomposition; minimum frame size is 8x8.
  *  Use 32x32 to exercise all four scales safely.
  */
 
+#include <errno.h>
 #include <math.h>
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -161,11 +166,38 @@ static char *test_float_adm_10bit_init(void)
     return NULL;
 }
 
+/* init() result for a w x h 8-bit frame; the context is closed again. */
+static int init_result(unsigned w, unsigned h)
+{
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_adm");
+    if (!fex)
+        return 1;
+    VmafFeatureExtractorContext *ctx = NULL;
+    if (vmaf_feature_extractor_context_create(&ctx, fex, NULL))
+        return 1;
+    const int err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, w, h);
+    (void)vmaf_feature_extractor_context_close(ctx);
+    (void)vmaf_feature_extractor_context_destroy(ctx);
+    return err;
+}
+
+static char *test_float_adm_rejects_frames_below_17(void)
+{
+    mu_assert("init must reject 8x8", init_result(8u, 8u) == -EINVAL);
+    mu_assert("init must reject 16x16", init_result(16u, 16u) == -EINVAL);
+    mu_assert("init must reject 17x16 (height just below)", init_result(17u, 16u) == -EINVAL);
+    mu_assert("init must reject 16x17 (width just below)", init_result(16u, 17u) == -EINVAL);
+    mu_assert("init must accept 17x17", init_result(17u, 17u) == 0);
+    mu_assert("init must accept 576x324", init_result(576u, 324u) == 0);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_float_adm_8bit_identical);
     mu_run_test(test_float_adm_8bit_distinct);
     mu_run_test(test_float_adm_10bit_init);
+    mu_run_test(test_float_adm_rejects_frames_below_17);
     return NULL;
 }
 
