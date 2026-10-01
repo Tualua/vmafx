@@ -389,6 +389,16 @@ between bit-depth variants -> diff two kernel signatures against
 params array before trusting parity test. Also make sure fixture's
 chroma isn't flat, or wrong plane reads same sentinel as right one.
 
+## Device-to-host picture download takes every plane (T-CUDA-DEVICE-INPUT-CHROMA-NOT-DOWNLOADED-2026-10-01)
+
+- `translate_picture_device()` in `core/src/libvmaf.c` calls
+  `vmaf_cuda_picture_download_async(pic, host, mask)` with mask `0x7` (`0x1` for
+  4:0:0), the mask the host-to-device upload uses. Mask `0x1` leaves the chroma of
+  the host picture uninitialised; CPU `psnr` then reads `psnr_cb` = 60 (cap) with
+  no error (Netflix/vmaf#1613).
+- Guard: `test_cuda_device_input_host_extractors` (`gpumask = 1` keeps CUDA twins
+  off, DEVICE pool, `psnr` y/cb/cr `==` CPU run, `n_threads` 0 and 4).
+
 ## Teardown helpers replace the cleanup labels (HISS-21 / 2026-09-21)
 
 `common.c` and `picture_cuda.c` have no explicit `goto` left. `provided_ctx_unwind` holds what

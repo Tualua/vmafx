@@ -1050,6 +1050,15 @@
   `float` arithmetic and the `5e-3` tolerance.
 
 
+- **A CPU extractor scores all three planes of device-resident input.** With
+  the pictures in device memory (the FFmpeg `libvmaf_cuda` path, or the
+  `DEVICE` picture preallocation) and an extractor that runs on the CPU,
+  libvmaf downloaded the luma plane into the host picture only. The chroma
+  planes stayed uninitialised: `psnr_cb` and `psnr_cr` came out as the 60 dB
+  cap (the CPU gives 12.54 dB on the test pictures) and no error was reported.
+  The download now takes every plane the picture has (Netflix/vmaf#1613).
+
+
 - **`float_adm_cuda` returns the CPU's scores bit for bit.** The CUDA twin
   of `float_adm` was up to 1.3e-5 from the CPU extractor (`adm_scale0` at
   3840x2160) and matched it on 144 of 791 measured scores. Nine things

@@ -2947,7 +2947,12 @@ static int translate_picture_device(VmafContext *vmaf, VmafPicture *pic, VmafPic
         return err;
     }
 
-    err = vmaf_cuda_picture_download_async(pic, pic_host, 0x1);
+    /* Every plane the picture has: a CPU extractor reads the chroma planes
+     * of the host picture too (psnr_cb / psnr_cr, ciede), and the planes the
+     * download skips stay as vmaf_picture_alloc() left them. The host-to-device
+     * upload picks its mask the same way. Netflix/vmaf#1613. */
+    const uint8_t plane_mask = (pic->pix_fmt == VMAF_PIX_FMT_YUV400P) ? 0x1 : 0x7;
+    err = vmaf_cuda_picture_download_async(pic, pic_host, plane_mask);
     if (err) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "problem moving cuda pic into host buffer\n");
         return err;

@@ -10,6 +10,14 @@
   where upstream's `extract_fex_cuda()` takes `s->str`. **On rebase**: keep the
   picture stream. Upstream still has the private stream (Netflix/vmaf#1305;
   the patch there is the same one-argument change).
+## `translate_picture_device()` downloads every plane (2026-10-01)
+
+`fix/cuda-device-input-chroma-download`, closes `T-CUDA-DEVICE-INPUT-CHROMA-NOT-DOWNLOADED-2026-10-01`.
+
+- `core/src/libvmaf.c`, `translate_picture_device()`: the plane mask of
+  `vmaf_cuda_picture_download_async()` is `0x7` (`0x1` for 4:0:0) where upstream
+  passes `0x1`. **On rebase**: keep the fork's mask. Upstream still copies luma
+  only (Netflix/vmaf#1613).
 - No public API, ABI, FFmpeg patch or Netflix golden-data impact.
 ## ADR-1429 — `vmaf_read_pictures()` accepts an index gap; the contract is documented (2026-10-01)
 

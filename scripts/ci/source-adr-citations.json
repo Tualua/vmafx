@@ -6199,6 +6199,7 @@
         "core/test/test_cuda_adm_parity.c": 1,
         "core/test/test_cuda_cambi_parity.c": 1,
         "core/test/test_cuda_ciede_parity.c": 1,
+        "core/test/test_cuda_device_input_host_extractors.c": 1,
         "core/test/test_cuda_drain_batch.c": 5,
         "core/test/test_cuda_float_adm_parity.c": 1,
         "core/test/test_cuda_float_moment_parity.c": 1,

@@ -3395,6 +3395,20 @@ test('test_cuda_oom_pictures_released', test_cuda_oom_pictures_released,
     suite : ['fast', 'gpu'],
     is_parallel : false)
 
+# T-CUDA-DEVICE-INPUT-CHROMA-NOT-DOWNLOADED-2026-10-01 (Netflix/vmaf#1613) — a
+# CPU extractor scores device-resident input on all three planes: the download
+# into the host picture copied luma only. Skips (77) without a CUDA device.
+test_cuda_device_input_host_extractors = executable('test_cuda_device_input_host_extractors',
+    ['test.c', 'test_cuda_device_input_host_extractors.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_device_input_host_extractors', test_cuda_device_input_host_extractors,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
+
 # T-GPU-INTEGER-VIF-MIN-DIM-TWINS-2026-09-29 / ADR-1374 — vif_cuda declares its
 # 16-pixel minimum through the ADR-1324 gate: model dispatch falls back to the
 # CPU `vif` below it (bit-identical) and a direct request fails init. The
