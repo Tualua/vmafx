@@ -46,14 +46,9 @@ static int submit_frame(VmafContext *vmaf, unsigned index)
         vmaf_picture_unref(&ref);
         return err;
     }
-    err = vmaf_read_pictures(vmaf, &ref, &dist, index);
-    /* On rejection vmaf_read_pictures does NOT consume the pictures —
-     * unref them here to avoid leaking. On success the API owns them. */
-    if (err) {
-        vmaf_picture_unref(&ref);
-        vmaf_picture_unref(&dist);
-    }
-    return err;
+    /* The context owns both pictures whatever the result, a rejection
+     * included (ADR-1431): they are not released here. */
+    return vmaf_read_pictures(vmaf, &ref, &dist, index);
 }
 
 static char *test_read_pictures_monotonic_accepts_increasing(void)

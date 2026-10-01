@@ -2883,7 +2883,7 @@ static int check_ring_buffer(VmafContext *vmaf)
                                   vmaf->pic_params.pix_fmt, vmaf->pic_params.bpc);
         if (err) {
             vmaf_log(VMAF_LOG_LEVEL_ERROR, "problem during prepare_ring_buffer\n");
-            return -EINVAL;
+            return err;
         }
     }
 
@@ -3556,6 +3556,36 @@ static void read_pictures_frame_select_host(ReadPicturesFrame *fr)
 #endif
 }
 
+#ifdef HAVE_CUDA
+/* A host or device translation of `fr->ref` / `fr->dist` that shares the
+ * caller's picture storage (the translation was a struct copy) is released
+ * with the caller's picture; one with storage of its own is released here. */
+static bool read_pictures_translation_is_fresh(const ReadPicturesFrame *fr, const VmafPicture *pic)
+{
+    return pic->priv != NULL && pic->priv != fr->ref->priv && pic->priv != fr->dist->priv;
+}
+
+/* The translation of a frame failed part-way: release the translations made
+ * so far and the caller's pictures, each once, then report `err`. Whatever
+ * upload was queued on a fresh device picture reads the caller's host
+ * picture, so its stream drains before that picture goes back to its pool. */
+static int read_pictures_translate_abort(VmafContext *vmaf, ReadPicturesFrame *fr, int err)
+{
+    VmafPicture *const fresh[] = {&fr->ref_device, &fr->dist_device, &fr->ref_host, &fr->dist_host};
+    for (size_t i = 0; i < sizeof(fresh) / sizeof(fresh[0]); i++) {
+        VmafPicture *const pic = fresh[i];
+        if (!read_pictures_translation_is_fresh(fr, pic))
+            continue;
+        if (i < 2u && vmaf->cuda.state.f != NULL)
+            (void)vmaf->cuda.state.f->cuStreamSynchronize(vmaf_cuda_picture_get_stream(pic));
+        err |= vmaf_picture_unref(pic);
+    }
+    err |= vmaf_picture_unref(fr->ref);
+    err |= vmaf_picture_unref(fr->dist);
+    return err | read_pictures_wait_sycl_upload(vmaf);
+}
+#endif /* HAVE_CUDA */
+
 /* Release every picture this call still owns and fold the release status
  * into `err`. Always unref the caller's ref/dist: with the always-on picture
  * pool, leaking even one picture per frame holds a pool slot and the next
@@ -3604,17 +3634,21 @@ int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist, u
 {
     if (!vmaf)
         return -EINVAL;
-    if (vmaf->flushed)
-        return -EINVAL;
     if (!ref != !dist)
         return -EINVAL;
     if (!ref && !dist)
-        return flush_context(vmaf);
+        return vmaf->flushed ? -EINVAL : flush_context(vmaf);
 
+    /* From here on the context owns both pictures whatever the result: every
+     * return below releases them (Netflix/vmaf#1420, ADR-1431). A picture
+     * left behind on a failure stays out of the picture pool, and the CLI's
+     * vmaf_close() then waits for it forever. */
+    ReadPicturesFrame fr = {.ref = ref, .dist = dist};
+    if (vmaf->flushed)
+        return read_pictures_frame_cleanup(vmaf, &fr, -EINVAL);
     int err = read_pictures_validate_and_prep(vmaf, ref, dist, index);
     if (err)
-        return err;
-    ReadPicturesFrame fr = {.ref = ref, .dist = dist};
+        return read_pictures_frame_cleanup(vmaf, &fr, err);
     err = resolve_context_fallbacks(vmaf);
     if (err)
         return read_pictures_frame_cleanup(vmaf, &fr, err);
@@ -3625,7 +3659,7 @@ int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist, u
 #ifdef HAVE_CUDA
     err = read_pictures_frame_translate(vmaf, &fr);
     if (err)
-        return err | read_pictures_wait_sycl_upload(vmaf);
+        return read_pictures_translate_abort(vmaf, &fr, err);
 #endif
 
     err = read_pictures_extractor_loop(vmaf, &fr, index);

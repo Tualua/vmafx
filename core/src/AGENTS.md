@@ -495,6 +495,21 @@ these two paths must stay consistent.
 `VMAF_FEATURE_EXTRACTOR_PREV_REF` block in `threaded_extract_batch_func`
 must preserve both unref-before-memset and zero-f->prev_ref.
 
+### `vmaf_read_pictures()` owns both pictures on every return (ADR-1431)
+
+- Context + two pictures given -> every return releases both once. No early
+  `return err;` between argument checks and extractor loop: pool slot leaks,
+  `vmaf_picture_pool_close()` waits forever in `vmaf_close()`, `vmaf` CLI hangs
+  holding the device lock after a VRAM out-of-memory (Netflix/vmaf#1420 on fork).
+- Validation + prep failures -> `read_pictures_frame_cleanup()`. CUDA translation
+  failure -> `read_pictures_translate_abort()`: translations sharing `priv` with
+  caller's picture released with it, fresh ones (ring pictures, downloaded host
+  copy) released here, fresh device stream drained first (upload reads the host
+  picture).
+- No context / one picture `NULL` / flush call (both `NULL`) -> takes nothing.
+- Guards: `test_read_pictures_failure_ownership` (CPU, pool with no spare
+  picture, alarm turns hang into failure), `test_cuda_oom_pictures_released`.
+
 ### SYCL shared uploads finish before either picture cleanup returns (BUG-040)
 
 `vmaf_sycl_shared_frame_upload()` reads caller's host-backed reference and

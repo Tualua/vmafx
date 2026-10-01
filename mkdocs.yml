@@ -1539,6 +1539,7 @@ nav:
         - "ADR-1426: cuda-ciede-cpu-arithmetic": adr/1426-cuda-ciede-cpu-arithmetic.md
         - "ADR-1427: hip-clear-after-upload": adr/1427-hip-clear-after-upload.md
         - "ADR-1429: read-pictures-index-gaps-accepted": adr/1429-read-pictures-index-gaps-accepted.md
+        - "ADR-1431: read-pictures-owns-pictures-on-every-return": adr/1431-read-pictures-owns-pictures-on-every-return.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md
@@ -1927,6 +1928,7 @@ nav:
         - "otel": adr/by-tag/otel.md
         - "output-schema": adr/by-tag/output-schema.md
         - "output": adr/by-tag/output.md
+        - "ownership": adr/by-tag/ownership.md
         - "packaging": adr/by-tag/packaging.md
         - "panel": adr/by-tag/panel.md
         - "pareto": adr/by-tag/pareto.md

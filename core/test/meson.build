@@ -3341,6 +3341,21 @@ test('test_cuda_multi_instance', test_cuda_multi_instance,
     suite : ['fast', 'gpu'],
     is_parallel : false)
 
+# ADR-1431 / Netflix#1420 — an out-of-memory while the first frame is read
+# returns an error and leaves the picture pool whole: the test takes the
+# device's memory itself, submits a pair from a pool of one pair, then submits
+# the same index again. Skips (77) without a CUDA device.
+test_cuda_oom_pictures_released = executable('test_cuda_oom_pictures_released',
+    ['test.c', 'test_cuda_oom_pictures_released.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_oom_pictures_released', test_cuda_oom_pictures_released,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
+
 # T-GPU-INTEGER-VIF-MIN-DIM-TWINS-2026-09-29 / ADR-1374 — vif_cuda declares its
 # 16-pixel minimum through the ADR-1324 gate: model dispatch falls back to the
 # CPU `vif` below it (bit-identical) and a direct request fails init. The
@@ -3622,6 +3637,18 @@ test_read_pictures_monotonic = executable('test_read_pictures_monotonic',
     dependencies: [pthread_dependency, thread_lib],
 )
 test('test_read_pictures_monotonic', test_read_pictures_monotonic, suite : ['fast'])
+
+# ADR-1431 / Netflix#1420 — vmaf_read_pictures() releases the pictures it is
+# given on every return, so a rejected or failed call leaves the picture pool
+# whole (the CLI used to hang in vmaf_close() after an out-of-memory).
+test_read_pictures_failure_ownership = executable('test_read_pictures_failure_ownership',
+    ['test.c', 'test_read_pictures_failure_ownership.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, thread_lib],
+)
+test('test_read_pictures_failure_ownership', test_read_pictures_failure_ownership,
+    suite : ['fast'])
 
 # Regression: validate_pic_params bpc check used && instead of || — ref/dist
 # bpc mismatch was silently accepted on frame 0 (Fable finding

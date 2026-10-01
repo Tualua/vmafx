@@ -21,6 +21,24 @@
   index-gap and `-EAGAIN` text. Upstream's `libvmaf.h` has none of it; on a
   sync keep the fork's text and take upstream's signatures.
 - No code, ABI or FFmpeg patch impact; no Netflix golden-data impact.
+## ADR-1431 — `vmaf_read_pictures()` owns its pictures on every return (2026-10-01)
+
+`fix/read-pictures-consume-on-error`, ADR-1431.
+
+- `core/src/libvmaf.c`, `vmaf_read_pictures()`: builds the `ReadPicturesFrame`
+  before the validation step and returns through `read_pictures_frame_cleanup()`
+  on a flushed context, a failed `read_pictures_validate_and_prep()` and a failed
+  fallback; a failed CUDA translation returns through the new
+  `read_pictures_translate_abort()`. `check_ring_buffer()` returns the real error.
+  **On rebase**: upstream returns the bare error from every one of those
+  points and leaks the pictures; keep the fork's returns. A new early `return err;`
+  between the argument checks and the extractor loop reintroduces the hang of the
+  `vmaf` CLI after an out-of-memory.
+- `docs/api/index.md` and the `vmaf_read_pictures()` Doxygen state the rule
+  (ownership on every return); `test_read_pictures_monotonic` and
+  `test_validate_pic_params_bpc` do not unref after a rejection.
+- No ABI or FFmpeg patch impact (callers already leave the pictures alone); no
+  Netflix golden-data impact.
 
 ## `float_adm_sycl` uses no scratch memory; the scratch ratchet list is empty (2026-10-01)
 

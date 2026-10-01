@@ -47,8 +47,7 @@ static VmafContext *init_context(void)
 
 /*
  * Submit a pair of pictures with the given bpc values.
- * On API rejection the caller is responsible for unref-ing both pictures;
- * on success the API consumes them.
+ * The API consumes both pictures whatever it returns (ADR-1431).
  */
 static int submit_frame_bpc(VmafContext *vmaf, unsigned ref_bpc, unsigned dist_bpc, unsigned index)
 {
@@ -62,13 +61,7 @@ static int submit_frame_bpc(VmafContext *vmaf, unsigned ref_bpc, unsigned dist_b
         (void)vmaf_picture_unref(&ref);
         return err;
     }
-    err = vmaf_read_pictures(vmaf, &ref, &dist, index);
-    if (err) {
-        /* API rejected — caller must unref. */
-        (void)vmaf_picture_unref(&ref);
-        (void)vmaf_picture_unref(&dist);
-    }
-    return err;
+    return vmaf_read_pictures(vmaf, &ref, &dist, index);
 }
 
 /*

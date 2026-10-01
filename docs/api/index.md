@@ -378,11 +378,16 @@ indices 3 to 5 return `-EAGAIN` after the flush.
 
 ### Ownership and lifetime
 
-- After `vmaf_read_pictures(ctx, ref, dist, i)` returns 0, the context owns
-  `ref` and `dist`. Do **not** call `vmaf_picture_unref()` on them — libvmaf
-  will when the extractors are done.
-- On error return from `vmaf_read_pictures`, ownership stays with the caller —
-  you must unref.
+- Once `vmaf_read_pictures(ctx, ref, dist, i)` is called with a context and two
+  pictures, the context owns `ref` and `dist` whatever it returns. Do **not**
+  call `vmaf_picture_unref()` on them, after an error either — libvmaf releases
+  them when the extractors are done, or before the call returns when it fails
+  (a rejected index, pictures that disagree with the stream, an out-of-memory
+  on the device, a failing extractor). Pictures taken from the pool of
+  `vmaf_preallocate_pictures()` go back into it that way
+  ([ADR-1431](../adr/1431-read-pictures-owns-pictures-on-every-return.md)).
+  Only a call that has nothing to take returns with the pictures still yours:
+  a `NULL` context, or one of the two pictures `NULL` (`-EINVAL`).
 - Stride may differ from `w * bytes_per_sample`. Always use `stride[i]` when
   writing pixel data; do not assume packing.
 - `data[i]` alignment is implementation-defined (currently 64-byte aligned for
