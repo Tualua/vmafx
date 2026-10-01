@@ -335,27 +335,29 @@ def _guard_failures(src: dict[str, str]) -> list[str]:
 
 
 def _issim_raster_failures(src: dict[str, str]) -> list[str]:
-    """ADR-1400: frames up to the bound are summed in the CPU's raster order."""
+    """ADR-1438: every frame is summed in the CPU's raster order, on the host."""
     failures: list[str] = []
-    terms = _function_body(
-        src[ISSIM_KERNEL].replace("__global__ void\n", "void "),
-        "integer_ssim_vert_terms",
-    )
-    if "partials[idx] = issim_cpu_term(issim_factors(m, samplemax));" not in terms:
-        failures.append(f"{ISSIM_KERNEL}: the per-pixel pass does not write the CPU's own term")
-    if "const size_t idx = (size_t)y * width + x;" not in terms:
-        failures.append(f"{ISSIM_KERNEL}: the per-pixel terms are not stored in raster order")
+    kernel = src[ISSIM_KERNEL]
+    terms = _function_body(kernel.replace("__global__ void\n", "void "), "integer_ssim_vert_terms")
+    if "terms[(size_t)y * width + x] = issim_cpu_term(issim_factors(m, samplemax));" not in terms:
+        failures.append(f"{ISSIM_KERNEL}: pass 2 does not store the CPU's term in raster order")
+    if "s_term" in kernel or "double my_term" in kernel:
+        failures.append(f"{ISSIM_KERNEL}: the per-pixel terms are reduced on the device")
+    if "s_weight[tid] += s_weight[tid + half];" not in terms:
+        failures.append(f"{ISSIM_KERNEL}: the integer weights are no longer reduced per block")
     host = src[ISSIM_HOST]
-    if "s->raster = (size_t)w * h <= ISSIM_HIP_RASTER_MAX_PIXELS;" not in host:
-        failures.append(f"{ISSIM_HOST}: small frames no longer select the raster sum")
-    if "s->raster ? s->func_vert_terms : s->func_vert;" not in _function_body(
+    if "s->term_count = (size_t)w * h;" not in host:
+        failures.append(f"{ISSIM_HOST}: the terms read back are not one per pixel")
+    if "hipModuleLaunchKernel(s->func_vert_terms," not in _function_body(
         host, "issim_hip_launch_vert"
     ):
-        failures.append(f"{ISSIM_HOST}: the raster path does not launch the per-pixel pass")
-    if "for (unsigned i = 0u; i < s->pair_count; i++) {" not in _function_body(
-        host, "collect_fex_hip"
+        failures.append(f"{ISSIM_HOST}: pass 2 is not the per-pixel kernel at every frame size")
+    collect = _function_body(host, "collect_fex_hip")
+    if (
+        "for (size_t i = 0u; i < s->term_count; i++) total_term += terms[i];"
+        not in _squeeze(collect)
     ):
-        failures.append(f"{ISSIM_HOST}: collect() no longer adds the pairs in ascending order")
+        failures.append(f"{ISSIM_HOST}: collect() no longer adds the terms in ascending order")
     return failures
 
 
@@ -375,8 +377,8 @@ def _option_failures(src: dict[str, str]) -> list[str]:
     for name in (ISSIM_HOST, FSSIM_HOST):
         if "vmaf_ssim_max_db(" not in src[name] or "s->enable_db, s->max_db" not in src[name]:
             failures.append(f"{name}: enable_db / clip_db do not reach the SSIM emitter")
-    if "if (f.lum_num == f.lum_den && f.cs_num == f.cs_den)" not in src[ISSIM_KERNEL]:
-        failures.append(f"{ISSIM_KERNEL}: an identical window no longer scores exactly 1")
+    if "f.lum_num == f.lum_den" in src[ISSIM_KERNEL]:
+        failures.append(f"{ISSIM_KERNEL}: an identical window is forced to its weight again")
     failures += _issim_raster_failures(src)
     fssim = _function_body(
         src[FSSIM_KERNEL].replace("__device__ __forceinline__ void", "static void"),
@@ -626,48 +628,59 @@ class HipKernelSourceContractTest(unittest.TestCase):
         )
         self.assert_detected(src, "do not reach the SSIM emitter")
 
-    def test_integer_ssim_identical_window_is_detected(self) -> None:
+    def test_integer_ssim_forced_identical_window_is_detected(self) -> None:
         src = _replace(
             _sources(),
             ISSIM_KERNEL,
-            "    if (f.lum_num == f.lum_den && f.cs_num == f.cs_den)\n        return f.w_d;\n",
-            "",
+            "    return f.w_d * f.lum_num * f.cs_num / (f.lum_den * f.cs_den);",
+            "    if (f.lum_num == f.lum_den && f.cs_num == f.cs_den)\n        return f.w_d;\n"
+            "    return f.w_d * f.lum_num * f.cs_num / (f.lum_den * f.cs_den);",
         )
-        self.assert_detected(src, "exactly 1")
+        self.assert_detected(src, "forced to its weight again")
 
-    def test_integer_ssim_raster_sum_with_tree_term_is_detected(self) -> None:
+    def test_integer_ssim_unordered_terms_are_detected(self) -> None:
         src = _replace(
             _sources(),
             ISSIM_KERNEL,
-            "partials[idx] = issim_cpu_term(issim_factors(m, samplemax));",
-            "partials[idx] = issim_pixel_term(m, samplemax);",
+            "terms[(size_t)y * width + x] = issim_cpu_term(issim_factors(m, samplemax));",
+            "terms[blockIdx.y * gridDim.x + blockIdx.x] += issim_cpu_term(issim_factors(m, samplemax));",
         )
-        self.assert_detected(src, "does not write the CPU's own term")
+        self.assert_detected(src, "does not store the CPU's term in raster order")
 
-    def test_integer_ssim_raster_path_dropped_is_detected(self) -> None:
+    def test_integer_ssim_device_term_reduction_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            ISSIM_KERNEL,
+            "    __shared__ int64_t s_weight[ISSIM_BLOCK_SZ];",
+            "    __shared__ double s_term[ISSIM_BLOCK_SZ];\n"
+            "    __shared__ int64_t s_weight[ISSIM_BLOCK_SZ];",
+        )
+        self.assert_detected(src, "reduced on the device")
+
+    def test_integer_ssim_block_sized_readback_is_detected(self) -> None:
         src = _replace(
             _sources(),
             ISSIM_HOST,
-            "s->raster = (size_t)w * h <= ISSIM_HIP_RASTER_MAX_PIXELS;",
-            "s->raster = false;",
+            "s->term_count = (size_t)w * h;",
+            "s->term_count = (size_t)s->grid_x * s->grid_y;",
         )
-        self.assert_detected(src, "no longer select the raster sum")
+        self.assert_detected(src, "not one per pixel")
 
-    def test_integer_ssim_raster_kernel_unselected_is_detected(self) -> None:
+    def test_integer_ssim_other_pass_two_kernel_is_detected(self) -> None:
         src = _replace(
             _sources(),
             ISSIM_HOST,
-            "s->raster ? s->func_vert_terms : s->func_vert;",
-            "s->func_vert;",
+            "hipModuleLaunchKernel(s->func_vert_terms,",
+            "hipModuleLaunchKernel(s->func_horiz_8,",
         )
-        self.assert_detected(src, "does not launch the per-pixel pass")
+        self.assert_detected(src, "not the per-pixel kernel at every frame size")
 
     def test_integer_ssim_descending_collect_is_detected(self) -> None:
         src = _replace(
             _sources(),
             ISSIM_HOST,
-            "for (unsigned i = 0u; i < s->pair_count; i++) {",
-            "for (unsigned i = s->pair_count; i-- > 0u;) {",
+            "for (size_t i = 0u; i < s->term_count; i++)",
+            "for (size_t i = s->term_count; i-- > 0u;)",
         )
         self.assert_detected(src, "ascending order")
 

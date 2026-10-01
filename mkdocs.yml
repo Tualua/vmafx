@@ -1546,6 +1546,7 @@ nav:
         - "ADR-1432: sycl-integer-vif-exact-gain": adr/1432-sycl-integer-vif-exact-gain.md
         - "ADR-1433: cuda-ssimulacra2-cpu-sum-order": adr/1433-cuda-ssimulacra2-cpu-sum-order.md
         - "ADR-1437: hip-exact-twins-declared": adr/1437-hip-exact-twins-declared.md
+        - "ADR-1438: hip-ssim-cpu-frame-sum": adr/1438-hip-ssim-cpu-frame-sum.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

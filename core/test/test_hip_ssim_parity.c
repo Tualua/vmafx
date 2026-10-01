@@ -11,10 +11,11 @@
  * SSIM is computed by integer_ssim.c (CPU, extractor `ssim`) and by
  * integer_ssim_hip.c + integer_ssim/integer_ssim_score.hip (HIP, extractor
  * `integer_ssim_hip`); both emit the `ssim` feature. The HIP twin runs the
- * CPU's 9-tap int64 algorithm, so every frame must agree within places=4
- * (1e-4), the gate the CUDA, SYCL and Metal integer_ssim twins use
- * (ADR-0214). Measured deltas are around 1e-14: only the order in which the
- * per-pixel terms are summed differs.
+ * CPU's 9-tap int64 algorithm, forms every pixel's term as the CPU does and
+ * the host adds the terms in the CPU's raster order, so every frame's score
+ * is the CPU's double and this test compares with == (ADR-1438). Before, the
+ * terms were added per block above 4096 pixels and the scores were around
+ * 1e-14 apart; every registration of this test fails on that twin.
  *
  * The fixture (hip_pooled_fixture.h) is N_FRAMES frames fetched from a
  * picture pool sized like the CLI's, so a picture buffer is refilled with the
@@ -52,8 +53,6 @@
  * documented /std:clatest C23 feature set does not include `nullptr` while the
  * required Windows build compiles this TU with cl.exe, and this test mirrors
  * the C spelling of the surface it exercises. ADR-1138. */
-
-#define PARITY_TOL 1e-4
 
 /* Runs `extractor` over the fixture and reads the `ssim` score of every
  * frame into `scores`. Returns 0, or the error of the first failing call. */
@@ -151,18 +150,18 @@ static char *test_ssim_cpu_hip_parity(void)
     msg = run_hip_ssim(gpu, &ran);
     if (msg || !ran)
         return msg;
-    double worst = 0.0;
+    unsigned differing = 0u;
     for (unsigned f = 0u; f < N_FRAMES; f++) {
-        const double delta = fabs(cpu[f] - gpu[f]);
-        if (delta > PARITY_TOL) {
-            (void)fprintf(stderr, "\nssim parity FAIL frame %u: cpu=%.17g hip=%.17g delta=%.3e\n",
-                          f, cpu[f], gpu[f], delta);
+        if (isfinite(cpu[f]) && cpu[f] == gpu[f]) {
+            continue;
         }
-        worst = delta > worst ? delta : worst;
+        differing++;
+        (void)fprintf(stderr, "\nssim frame %u: cpu=%.17g hip=%.17g delta=%.3e\n", f, cpu[f],
+                      gpu[f], fabs(cpu[f] - gpu[f]));
     }
-    (void)fprintf(stderr, "[%ux%u %u bpc, %u frames, max delta %.3e] ", FIXTURE_W, FIXTURE_H,
-                  FIXTURE_BPC, N_FRAMES, worst);
-    mu_assert("ssim CPU vs. HIP delta exceeds places=4 tolerance (1e-4)", worst <= PARITY_TOL);
+    (void)fprintf(stderr, "[%ux%u %u bpc, %u frames, %u differ] ", FIXTURE_W, FIXTURE_H,
+                  FIXTURE_BPC, N_FRAMES, differing);
+    mu_assert("integer_ssim_hip is not bit-identical to the CPU ssim extractor", differing == 0u);
     return NULL;
 }
 

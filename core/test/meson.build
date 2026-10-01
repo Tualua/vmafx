@@ -5238,11 +5238,11 @@ test('test_hip_motion_tiny_frames', test_hip_motion_tiny_frames,
     is_parallel : false,
     timeout : 120)
 
-# T-HIP-INTEGER-SSIM-TINY-IDENTICAL-DB-2026-09-30 / ADR-1400 — integer_ssim_hip
-# against the CPU `ssim` with == and `enable_db` on frames of at most
-# ISSIM_HIP_RASTER_MAX_PIXELS pixels (identical 1x1 and 2x2 included), within
-# 1e-12 just above the bound, and rejection of an empty frame. Skips (77)
-# without a HIP device.
+# T-HIP-INTEGER-SSIM-TINY-IDENTICAL-DB-2026-09-30 / ADR-1400, ADR-1438 —
+# integer_ssim_hip against the CPU `ssim` with == and `enable_db` from 1x1
+# frames up (identical 1x1 and 2x2 included; 65x64 to 322x182, which the twin
+# summed per block before ADR-1438), and rejection of an empty frame. Skips
+# (77) without a HIP device.
 test_hip_ssim_tiny_frames = executable('test_hip_ssim_tiny_frames',
     ['test.c', 'test_hip_ssim_tiny_frames.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],

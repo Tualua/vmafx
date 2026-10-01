@@ -112,27 +112,40 @@ extractor (`integer_ssim.c`) and computes it the same way:
 - the per-pixel SSIM term in double, built with `-ffp-contract=off` so that it
   rounds like the CPU's.
 
-Frames of at most 4096 pixels (64x64) are added up in the CPU's order too: the
-device writes one term per pixel and the host adds them row by row, so the
-score is the CPU's exactly, at every bit depth
-([ADR-1400](../../adr/1400-hip-integer-ssim-raster-sum-small-frames.md)).
-Above that size the device reduces per 16x8 block, and the only difference
-from the CPU is the order in which the per-pixel terms are
-added up, so scores agree to about 1e-14 on natural content. The worst case
-measured on a gfx1036 against the scalar CPU, over 8-, 10-, 12- and 16-bit
-inputs from 1x1 up to 1920x1080 (odd sizes included), was 1.06e-11. That was
-on a 1080p checkerboard whose score is -0.53, where terms of both signs cancel.
-The CUDA twin measures the same. Any frame size is accepted.
+The frame sum is the CPU's as well, at every frame size
+([ADR-1438](../../adr/1438-hip-ssim-cpu-frame-sum.md)): the device writes one
+term per pixel, the host reads the plane back and adds it row by row, as
+`calc_ssim()` does. A sum of doubles depends on its order, so the terms are
+never added on the device; only the window weights, which are integers, are
+reduced per block. The score is therefore the CPU's to the last bit, at every
+bit depth, with and without `enable_db` / `clip_db`. Any frame size is
+accepted.
+
+Measured on a gfx1036 at `--precision max` against `--backend cpu`: 178 of 178
+frames identical (the Netflix 576x324 pair at 8, 10, 12 and 16 bits and as
+10-bit 4:2:2, both 1920x1080 checkerboard pairs, Sparks 480x270 at 10 bits, 48
+frames of BBB 3840x2160, full-range noise at four depths, a bright 16-bit
+1080p pair). Until 2026-10-01 only frames of at most 4096 pixels were summed
+in the CPU's order
+([ADR-1400](../../adr/1400-hip-integer-ssim-raster-sum-small-frames.md));
+larger frames were reduced per 16x8 block and 1 of those 178 frames matched,
+the others up to 1.1e-11 away (on the 1080p checkerboard whose score is -0.53,
+where terms of both signs cancel).
+
+The read-back costs time and memory: 30.0 ms instead of 28.2 ms per 1920x1080
+frame and 98.1 ms instead of 94.3 ms per 3840x2160 frame (medians of 21
+interleaved pairs of runs under other load), and 8 bytes per pixel of device
+and of pinned host memory (66 MB each at 3840x2160).
 
 How it gets selected:
 
 - **Models.** When a model lists `ssim` and the HIP backend is active
   (`--backend hip`, or `vmaf_hip_import_state()` in the C API), the HIP twin
-  computes it. If the model sets an option the twin does not declare
-  (`enable_db` or `clip_db`), that feature is computed on the CPU instead.
-- **CLI `--feature`.** `--feature` takes an extractor name, so
-  `--feature ssim` always runs the CPU extractor, even with `--backend hip`.
-  Name the twin to run it on the GPU:
+  computes it, with `enable_db` and `clip_db` if the model sets them.
+- **CLI `--feature`.** `--backend hip --feature ssim` runs the HIP twin too
+  ([ADR-1359](../../adr/1359-cli-feature-backend-twin.md)); the JSON output
+  names the extractor that ran under `feature_backends`. Naming the twin
+  always registers it:
 
 ```bash
 vmaf --reference ref.yuv --distorted dist.yuv \

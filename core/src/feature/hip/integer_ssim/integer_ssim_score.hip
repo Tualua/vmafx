@@ -22,15 +22,11 @@
  *  Two passes, both over the full W x H frame:
  *    1. integer_ssim_horiz_{8,16}bpc — horizontal 9-tap moments of one row
  *       into six W x H int64 planes (mux, muy, x2, xy, y2, w).
- *    2. the vertical 9-tap over those planes, the per-pixel SSIM term, and
- *       the reduction, in one of two forms the host picks by frame size:
- *       - integer_ssim_vert_combine — one (double term sum, int64 weight
- *         sum) pair per block; the host adds the block pairs.
- *       - integer_ssim_vert_terms — one (double term, int64 weight) pair
- *         per pixel, unreduced, for frames of at most
- *         ISSIM_HIP_RASTER_MAX_PIXELS pixels; the host adds them in raster
- *         order (ADR-1400).
- *  The host divides the term sum by the weight sum.
+ *    2. integer_ssim_vert_terms — the vertical 9-tap over those planes and
+ *       the SSIM term of every pixel in double, stored unreduced at its
+ *       raster position, plus one int64 weight sum per block.
+ *  The host adds the terms in raster order and the block weights, and divides
+ *  the term sum by the weight sum (ADR-1438).
  *
  *  Exactness against the CPU:
  *    - The moments are int64 sums of int64 products, so they are exact and
@@ -40,26 +36,24 @@
  *      file with `-ffp-contract=off` (`hip_strict_fp_args`), so no product
  *      is fused into an FMA and each per-pixel term rounds exactly as the
  *      CPU's does.
- *    - The per-pixel form leaves the sum to the host, which adds the terms
- *      in the CPU's order, so the frame score is the CPU's double. That matters most on identical frames:
- *      the CPU's quotient on an identical window is the weight up to an ulp,
- *      and whether its running sum absorbs the ulp depends on the frame (an
- *      identical 1x1 frame of zeros scores 1 - 2^-52, 156.54 dB with
- *      `enable_db`).
- *    - The per-block form differs in the summation order only: the CPU adds
- *      the terms in raster order into one running double, the kernel adds
- *      them in a per-block tree and the host adds the blocks. A tree does
- *      not absorb the ulp of an identical window, so there the term is the
- *      weight exactly (`issim_pixel_term`, ADR-1382) and an identical frame
- *      scores exactly 1, which is what the CPU reports on all but a few in
- *      a million identical frames of that size (Research-1400). The weights
- *      are integers and add exactly on both sides.
+ *    - The terms are not added here. A sum of doubles is its order:
+ *      calc_ssim() adds them left to right and top to bottom into one
+ *      running double, and no reduction over blocks or waves rounds like
+ *      that sum. The host adds the read-back plane in index order, which is
+ *      the CPU's order, so the frame score is the CPU's double at every
+ *      frame size (ADR-1400 did this up to 4096 pixels; a block tree above
+ *      that left the score up to 1.1e-11 away). That also decides identical
+ *      frames as the CPU does: its quotient on an identical window is the
+ *      weight up to an ulp, and whether the running sum absorbs the ulp
+ *      depends on the frame (an identical 1x1 frame of zeros scores
+ *      1 - 2^-52, 156.54 dB with `enable_db`).
+ *    - The weights are integers; their sum does not depend on the order and
+ *      is reduced per block.
  *
- *  HIP adaptation from the CUDA twin: the block reduction is a shared-memory
- *  tree over all ISSIM_BLOCK_SZ threads instead of a 32-lane
+ *  HIP adaptation from the CUDA twin: the block reduction of the weights is
+ *  a shared-memory tree over all ISSIM_BLOCK_SZ threads instead of a 32-lane
  *  `__shfl_down_sync` reduction, so it is independent of the wavefront size
- *  (wave32 on RDNA, wave64 on GCN / CDNA) and adds in the same order on
- *  every target.
+ *  (wave32 on RDNA, wave64 on GCN / CDNA).
  */
 
 #include <hip/hip_runtime.h>
@@ -223,21 +217,6 @@ __device__ __forceinline__ double issim_cpu_term(const IssimFactors &f)
     return f.w_d * f.lum_num * f.cs_num / (f.lum_den * f.cs_den);
 }
 
-/* The term the per-block tree adds. An identical window has equal numerator
- * and denominator factors (exactly, whenever the moments are exact in
- * double: 8- and 10-bit input), and its term is its weight. The CPU's
- * quotient can round that by an ulp, which its raster-order sum absorbs on
- * nearly every frame above the raster bound; a tree does not, so it adds the
- * weight itself. Identical frames then score exactly 1, and `enable_db`
- * reports +inf / the clip_db ceiling for them (ADR-1382, ADR-1221). */
-__device__ __forceinline__ double issim_pixel_term(const IssimMoments &m, double sm)
-{
-    const IssimFactors f = issim_factors(m, sm);
-    if (f.lum_num == f.lum_den && f.cs_num == f.cs_den)
-        return f.w_d;
-    return issim_cpu_term(f);
-}
-
 } /* namespace */
 
 extern "C" {
@@ -268,72 +247,44 @@ __global__ void integer_ssim_horiz_16bpc(const uint8_t *__restrict__ ref, ptrdif
                           width, height);
 }
 
-/* Pass 2: vertical 9-tap over the pass-1 planes, the per-pixel SSIM term,
- * and one (term sum, weight sum) pair per block at
- * blockIdx.y * gridDim.x + blockIdx.x. `samplemax` is (1 << bpc) - 1. */
-__global__ void
-integer_ssim_vert_combine(const int64_t *__restrict__ d_mux_h, const int64_t *__restrict__ d_muy_h,
-                          const int64_t *__restrict__ d_x2_h, const int64_t *__restrict__ d_xy_h,
-                          const int64_t *__restrict__ d_y2_h, const int64_t *__restrict__ d_w_h,
-                          double *__restrict__ partials, int64_t *__restrict__ partial_weights,
-                          unsigned width, unsigned height, double samplemax)
-{
-    const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
-    const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
-
-    /* Threads outside the frame contribute (0, 0) and still take part in the
-     * reduction: every thread of the block must reach the barriers. */
-    double my_term = 0.0;
-    int64_t my_weight = 0;
-    if (x < width && y < height) {
-        const IssimMoments m = issim_vert_moments(d_mux_h, d_muy_h, d_x2_h, d_xy_h, d_y2_h, d_w_h,
-                                                  x, y, width, height);
-        my_term = issim_pixel_term(m, samplemax);
-        my_weight = m.w;
-    }
-
-    __shared__ double s_term[ISSIM_BLOCK_SZ];
-    __shared__ int64_t s_weight[ISSIM_BLOCK_SZ];
-    const unsigned tid = threadIdx.y * blockDim.x + threadIdx.x;
-    s_term[tid] = my_term;
-    s_weight[tid] = my_weight;
-    __syncthreads();
-    for (unsigned half = ISSIM_BLOCK_SZ / 2u; half > 0u; half >>= 1u) {
-        if (tid < half) {
-            s_term[tid] += s_term[tid + half];
-            s_weight[tid] += s_weight[tid + half];
-        }
-        __syncthreads();
-    }
-    if (tid == 0u) {
-        const unsigned blk = blockIdx.y * gridDim.x + blockIdx.x;
-        partials[blk] = s_term[0];
-        partial_weights[blk] = s_weight[0];
-    }
-}
-
-/* Pass 2 for frames of at most ISSIM_HIP_RASTER_MAX_PIXELS pixels: every
- * pixel's CPU term and weight, unreduced, at partials[y * width + x] /
- * partial_weights[y * width + x]. The host adds them in index order, which is
- * the raster order of calc_ssim() / ssim_reduce_row_range(), so the sums are
- * the CPU's `ssim` and `ssimw` (ADR-1400). Launched over the pass-1 grid. */
+/* Pass 2: vertical 9-tap over the pass-1 planes and every pixel's CPU term,
+ * unreduced, at terms[y * width + x]. The host adds the terms in index order,
+ * which is the raster order of calc_ssim() / ssim_reduce_row_range(), so the
+ * sum is the CPU's `ssim` (ADR-1438). The window weights are integers: one
+ * sum per block at block_weights[blockIdx.y * gridDim.x + blockIdx.x], which
+ * the host adds to the CPU's `ssimw`. `samplemax` is (1 << bpc) - 1. Launched
+ * over the pass-1 grid. */
 __global__ void
 integer_ssim_vert_terms(const int64_t *__restrict__ d_mux_h, const int64_t *__restrict__ d_muy_h,
                         const int64_t *__restrict__ d_x2_h, const int64_t *__restrict__ d_xy_h,
                         const int64_t *__restrict__ d_y2_h, const int64_t *__restrict__ d_w_h,
-                        double *__restrict__ partials, int64_t *__restrict__ partial_weights,
+                        double *__restrict__ terms, int64_t *__restrict__ block_weights,
                         unsigned width, unsigned height, double samplemax)
 {
     const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
-    if (x >= width || y >= height)
-        return;
 
-    const IssimMoments m =
-        issim_vert_moments(d_mux_h, d_muy_h, d_x2_h, d_xy_h, d_y2_h, d_w_h, x, y, width, height);
-    const size_t idx = (size_t)y * width + x;
-    partials[idx] = issim_cpu_term(issim_factors(m, samplemax));
-    partial_weights[idx] = m.w;
+    /* Threads outside the frame contribute weight 0 and still take part in
+     * the reduction: every thread of the block must reach the barriers. */
+    int64_t my_weight = 0;
+    if (x < width && y < height) {
+        const IssimMoments m = issim_vert_moments(d_mux_h, d_muy_h, d_x2_h, d_xy_h, d_y2_h, d_w_h,
+                                                  x, y, width, height);
+        terms[(size_t)y * width + x] = issim_cpu_term(issim_factors(m, samplemax));
+        my_weight = m.w;
+    }
+
+    __shared__ int64_t s_weight[ISSIM_BLOCK_SZ];
+    const unsigned tid = threadIdx.y * blockDim.x + threadIdx.x;
+    s_weight[tid] = my_weight;
+    __syncthreads();
+    for (unsigned half = ISSIM_BLOCK_SZ / 2u; half > 0u; half >>= 1u) {
+        if (tid < half)
+            s_weight[tid] += s_weight[tid + half];
+        __syncthreads();
+    }
+    if (tid == 0u)
+        block_weights[blockIdx.y * gridDim.x + blockIdx.x] = s_weight[0];
 }
 
 } /* extern "C" */

@@ -11,7 +11,7 @@ distorted frame.
 |---|---|---|---|---|
 | `integer_ssim` | CPU | Integer fixed-point | `ssim` | Reference |
 | `vmaf_fex_integer_ssim_cuda` | CUDA | Real int64 moments + double SSIM, summed in the CPU's order | `ssim` | bit-identical at every frame size ([ADR-1424](../adr/1424-cuda-ssim-cpu-frame-sum.md)) |
-| `vmaf_fex_integer_ssim_hip` | HIP | Real int64 moments + double SSIM | `ssim` | bit-exact up to 4096 pixels; ≤ 1.1e-11 measured above (summation order only) |
+| `vmaf_fex_integer_ssim_hip` | HIP | Real int64 moments + double SSIM, summed in the CPU's order | `ssim` | bit-identical at every frame size ([ADR-1438](../adr/1438-hip-ssim-cpu-frame-sum.md)) |
 | `vmaf_fex_integer_ssim_sycl` | SYCL | int64 moments + float32 SSIM | `ssim` | places=4–5 (fp64-free, ADR-0220) |
 | `vmaf_fex_integer_ssim_metal` | Metal | Fixed-point, two-pass separable Gaussian | `ssim` | places=4 (target, ADR-0214) |
 
@@ -25,8 +25,8 @@ can honour the options you set, and the CPU extractor otherwise
 
 The HIP twin was kept out of dispatch until 2026-09-18, because its kernel was an
 11-tap float Gaussian 4.5e-3 away from the CPU. It now runs the CPU's 9-tap int64
-kernel. Against the scalar CPU its worst measured per-frame delta is 1.06e-11
-over 8- to 16-bit inputs from 1x1 to 1920x1080; see the
+kernel and adds the per-pixel terms in the CPU's order, so its score is the CPU's
+bit for bit; see the
 [HIP backend page](../backends/hip/overview.md#integer_ssim_hip).
 
 > **Note**: There is also a `float_ssim` variant on CUDA (11-tap floating-point Gaussian,
@@ -70,6 +70,28 @@ What this means when you use it:
   takes 9.7 ms instead of 2.2 ms. At 576x324 the difference is not
   measurable. The twin also needs 66 MB more device memory and as much pinned
   host memory at 3840x2160.
+
+### `integer_ssim_hip` returns the CPU's value
+
+`--backend hip --feature integer_ssim_hip` gives the same number as
+`--backend cpu --feature ssim` for every frame, down to the last bit of the
+`--precision max` output, with and without `enable_db` / `clip_db`
+([ADR-1438](../adr/1438-hip-ssim-cpu-frame-sum.md)). Measured on a gfx1036 on
+the Netflix 576x324 pair at 8, 10, 12 and 16 bits and as 10-bit 4:2:2, both
+1920x1080 checkerboard pairs, 48 frames of 3840x2160, full-range noise at
+four depths, and frames down to 1x1.
+
+What this means when you use it:
+
+- You can mix CPU and HIP `ssim` results in one data set. Before ADR-1438
+  frames above 4096 pixels differed from the CPU in the last digits (up to
+  1.1e-11); stored `integer_ssim_hip` outputs differ from new ones by that
+  much.
+- It costs a little time and memory. The CPU's sum is sequential, so the
+  twin reads the per-pixel terms back and adds them on the host: on a
+  gfx1036 a 1920x1080 frame takes 30.0 ms instead of 28.2 ms and a 3840x2160
+  frame 98.1 ms instead of 94.3 ms, and the twin needs 66 MB more device
+  memory and as much pinned host memory at 3840x2160.
 
 ## Options
 

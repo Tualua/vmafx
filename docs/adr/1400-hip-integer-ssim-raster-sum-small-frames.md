@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1400: `integer_ssim_hip` sums small frames in the CPU's raster order
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-1438](1438-hip-ssim-cpu-frame-sum.md)
 - **Date**: 2026-10-01
 - **Deciders**: lusoris
 - **Tags**: hip, gpu-parity, numerics, feature-extractor, fork-local

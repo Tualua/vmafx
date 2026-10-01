@@ -57321,3 +57321,29 @@ ADR-1422).
   device covers the listing.
 - No source of a twin changed. No Netflix golden-data, public API or FFmpeg
   patch impact.
+## ADR-1438 — `integer_ssim_hip` adds every frame in the CPU's order (2026-10-01)
+
+`fix/hip-ssim-cpu-frame-sum`, `T-GPU-SSIM-FRAME-SUM-ORDER-2026-10-01` (HIP part).
+
+- `core/src/feature/hip/integer_ssim/integer_ssim_score.hip`:
+  `integer_ssim_vert_combine` and `issim_pixel_term()` are gone.
+  `integer_ssim_vert_terms` is the only pass-2 kernel; its seventh and eighth
+  arguments are now `double *terms` (one per pixel) and
+  `int64_t *block_weights` (one per block). A rebase that restores the
+  per-block term tree, or an identical-window shortcut, makes the twin
+  inexact again; `test_hip_kernel_source_contract.py` rejects both.
+- `core/src/feature/hip/integer_ssim_hip.c`: `raster`, `pair_count` and
+  `func_vert` are gone; `term_count` sizes `rb_ssim` (width x height doubles)
+  and `block_count` sizes `rb_wgt`. `ISSIM_HIP_RASTER_MAX_PIXELS` is removed
+  from `integer_ssim_hip.h`.
+- `docs/adr/1400-hip-integer-ssim-raster-sum-small-frames.md` is superseded
+  (status line and index fragment only).
+- `scripts/ci/silent-revert-allowlist.json` gains two ADR-1438 entries for
+  `integer_ssim_hip.h`: removing ADR-1400's bound returns the header to the
+  blob it had before #1673, which the silent-revert gate reports as a rewind
+  and as a reverse hunk. Both entries can go once this change is on the
+  target.
+- `scripts/ci/exact_twins.d/ssim.hip` (new) declares the twin exact
+  (ADR-1428); nothing shared is edited.
+- No Netflix golden-data, public API or FFmpeg patch impact. The CPU
+  extractor is untouched.

@@ -4,9 +4,9 @@
  */
 
 /*
- * integer_ssim_hip against the CPU `ssim` with ==, `enable_db` on, on frames
- * of at most ISSIM_HIP_RASTER_MAX_PIXELS pixels
- * (T-HIP-INTEGER-SSIM-TINY-IDENTICAL-DB-2026-09-30, ADR-1400).
+ * integer_ssim_hip against the CPU `ssim` with ==, `enable_db` on, from 1x1
+ * frames up (T-HIP-INTEGER-SSIM-TINY-IDENTICAL-DB-2026-09-30, ADR-1400;
+ * every frame size since ADR-1438).
  *
  * The CPU adds one term per pixel into a running double in raster order
  * (integer_ssim.c::calc_ssim()). On an identical window its quotient
@@ -14,20 +14,17 @@
  * running sum absorbs that ulp depends on the frame: an identical flat 1x1
  * frame of 0 scores 1 - 2^-52 (156.54 dB), a flat 2x2 frame of 2 and a flat
  * 3x3 frame of 51 score 1 - 2^-53 (159.55 dB), and larger identical frames
- * mostly, but not always, exactly 1 (+inf). The twin's
- * per-block tree with the identical-window rule of ADR-1382 scored every
- * identical frame exactly 1. For frames up to the bound the device now
- * writes the CPU's quotient per pixel and collect() adds them in the CPU's
- * order, so every score equals the CPU's bit for bit, identical or not, at
- * every bit depth.
+ * mostly, but not always, exactly 1 (+inf). The device writes the CPU's
+ * quotient per pixel and collect() adds them in the CPU's order, so every
+ * score equals the CPU's bit for bit, identical or not, at every bit depth.
  *
  * Positive: 1x1 up to 64x64, strips and odd sizes, at 8, 10, 12 and 16 bits;
  * each run scores identical noise, an identical flat frame, an identical
- * low-variance frame and a distorted frame. Boundary: 64x64 is the last frame
- * on the raster path; 65x64 and 129x33 take the per-block tree, where the
- * distorted frame agrees within 1e-12 and the identical frames still report
- * the CPU's value. Negative: an empty frame is refused with -EINVAL, which
- * needs no device.
+ * low-variance frame and a distorted frame. Boundary: 64x64 was the last
+ * frame ADR-1400 summed in raster order; 65x64, 129x33 and 322x182 took a
+ * per-block tree before ADR-1438, which left the distorted frame's last bits
+ * off, and are held to == here too (they fail on that twin). Negative: an
+ * empty frame is refused with -EINVAL, which needs no device.
  *
  * The device cases skip (exit 77) when no HIP device is visible.
  */
@@ -42,7 +39,6 @@
 #include "test.h"
 
 #include "feature/feature_extractor.h"
-#include "feature/hip/integer_ssim_hip.h"
 #include "libvmaf/feature.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_hip.h"
@@ -62,9 +58,6 @@ enum {
     NUM_FRAMES,
 };
 
-/* Linear tolerance of the per-block tree against the CPU's raster sum. */
-#define TREE_TOLERANCE 1e-12
-
 typedef struct {
     unsigned w;
     unsigned h;
@@ -78,17 +71,18 @@ typedef struct {
     unsigned flat;
 } Case;
 
-/* All at most ISSIM_HIP_RASTER_MAX_PIXELS pixels. 2x37 and 10x5 are sizes
- * where an identical frame is not exactly 1 on the CPU for some contents. */
+/* Up to 64x64. 2x37 and 10x5 are sizes where an identical frame is not
+ * exactly 1 on the CPU for some contents. */
 static const Geometry RASTER[] = {
     {1u, 1u},  {2u, 2u},  {1u, 2u},  {2u, 1u},  {3u, 3u},   {4u, 4u},   {10u, 5u},
     {2u, 37u}, {16u, 8u}, {17u, 9u}, {1u, 97u}, {131u, 1u}, {33u, 31u}, {64u, 64u},
 };
 #define NUM_RASTER (sizeof(RASTER) / sizeof(RASTER[0]))
 
-/* Just above the bound: the per-block tree. */
-static const Geometry TREE[] = {{65u, 64u}, {129u, 33u}};
-#define NUM_TREE (sizeof(TREE) / sizeof(TREE[0]))
+/* Above 4096 pixels, where the twin reduced per block before ADR-1438; the
+ * last one has a partial block on both edges. */
+static const Geometry LARGER[] = {{65u, 64u}, {129u, 33u}, {322u, 182u}};
+#define NUM_LARGER (sizeof(LARGER) / sizeof(LARGER[0]))
 
 static const unsigned BIT_DEPTHS[] = {8u, 10u, 12u, 16u};
 #define NUM_BIT_DEPTHS (sizeof(BIT_DEPTHS) / sizeof(BIT_DEPTHS[0]))
@@ -247,18 +241,17 @@ static char *score_both(const Case *c, int enable_db, double cpu[NUM_FRAMES],
     return NULL;
 }
 
-/* Every frame of the raster path equals the CPU's dB score exactly. */
-static char *check_raster_case(const Case *c, int *skipped)
+/* Every frame equals the CPU's dB score exactly. */
+static char *check_exact_case(const Case *c, int *skipped)
 {
     double cpu[NUM_FRAMES];
     double gpu[NUM_FRAMES];
-    mu_assert("fixture exceeds the raster bound", c->g.w * c->g.h <= ISSIM_HIP_RASTER_MAX_PIXELS);
     mu_assert_msg(score_both(c, 1, cpu, gpu, skipped));
     for (unsigned i = 0; !*skipped && i < NUM_FRAMES; i++) {
         if (cpu[i] != gpu[i]) {
             (void)fprintf(stderr, "\n  %ux%u %u-bit frame %u: cpu=%.17g dB hip=%.17g dB\n", c->g.w,
                           c->g.h, c->bpc, i, cpu[i], gpu[i]);
-            return "integer_ssim_hip differs from the CPU on a raster-path frame";
+            return "integer_ssim_hip differs from the CPU's dB score";
         }
     }
     return NULL;
@@ -270,7 +263,7 @@ static char *test_tiny_frames_equal_cpu_db(void)
         for (size_t i = 0; i < NUM_RASTER; i++) {
             const Case c = {RASTER[i], BIT_DEPTHS[b], 1u << (BIT_DEPTHS[b] - 1u)};
             int skipped = 0;
-            mu_assert_msg(check_raster_case(&c, &skipped));
+            mu_assert_msg(check_exact_case(&c, &skipped));
             if (skipped) {
                 return NULL;
             }
@@ -311,33 +304,15 @@ static char *test_identical_flat_frames_report_cpu_db(void)
     return NULL;
 }
 
-/* Above the bound the per-block tree runs: linear scores within
- * TREE_TOLERANCE, and the identical frames exactly the CPU's. */
-static char *check_tree_case(const Case *c, int *skipped)
-{
-    double cpu[NUM_FRAMES];
-    double gpu[NUM_FRAMES];
-    mu_assert("fixture is not above the raster bound",
-              c->g.w * c->g.h > ISSIM_HIP_RASTER_MAX_PIXELS);
-    mu_assert_msg(score_both(c, 0, cpu, gpu, skipped));
-    for (unsigned i = 0; !*skipped && i < NUM_FRAMES; i++) {
-        const double limit = (i == FRAME_DISTORTED) ? TREE_TOLERANCE : 0.0;
-        if (!(fabs(cpu[i] - gpu[i]) <= limit)) {
-            (void)fprintf(stderr, "\n  %ux%u %u-bit frame %u: cpu=%.17g hip=%.17g\n", c->g.w,
-                          c->g.h, c->bpc, i, cpu[i], gpu[i]);
-            return "integer_ssim_hip differs from the CPU above the raster bound";
-        }
-    }
-    return NULL;
-}
-
-static char *test_frames_above_bound_keep_tree_parity(void)
+/* Sizes the twin summed per block before ADR-1438: the distorted frame's
+ * score is the CPU's to the last bit, in dB as well. */
+static char *test_larger_frames_equal_cpu_db(void)
 {
     for (size_t b = 0; b < NUM_BIT_DEPTHS; b++) {
-        for (size_t i = 0; i < NUM_TREE; i++) {
-            const Case c = {TREE[i], BIT_DEPTHS[b], 1u << (BIT_DEPTHS[b] - 1u)};
+        for (size_t i = 0; i < NUM_LARGER; i++) {
+            const Case c = {LARGER[i], BIT_DEPTHS[b], 1u << (BIT_DEPTHS[b] - 1u)};
             int skipped = 0;
-            mu_assert_msg(check_tree_case(&c, &skipped));
+            mu_assert_msg(check_exact_case(&c, &skipped));
             if (skipped) {
                 return NULL;
             }
@@ -370,7 +345,7 @@ char *run_tests(void)
         MU_TEST(test_empty_frame_is_rejected),
         MU_TEST(test_identical_flat_frames_report_cpu_db),
         MU_TEST(test_tiny_frames_equal_cpu_db),
-        MU_TEST(test_frames_above_bound_keep_tree_parity),
+        MU_TEST(test_larger_frames_equal_cpu_db),
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }

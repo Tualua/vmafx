@@ -240,6 +240,25 @@
       "paths": [
         "docs/adr/0212-hip-backend-scaffold.md"
       ]
+    },
+    {
+      "adr": "ADR-1438",
+      "kind": "reverse-hunk",
+      "undoes": "fbf9d1adde37db579af6385bb4cd7fa8d7d34d1c",
+      "evidence": "(?:ISSIM_HIP_RASTER_MAX_PIXELS|Frames of at most this many luma pixels|order: the device writes one SSIM term per pixel|collect\\(\\) adds them in index order, which|makes the score equal `integer_ssim\\.c::calc_ssim\\(\\)` bit for bit|frames reduce per block on the device \\(ADR-1400\\)|^\\s*\\* read-back\\. \\*/$)",
+      "reason": "ADR-1438 supersedes ADR-1400. fbf9d1add (#1673) made integer_ssim_hip add its terms in the CPU's raster order for frames of at most ISSIM_HIP_RASTER_MAX_PIXELS = 4096 pixels and kept a per-block tree above that. ADR-1438 takes the raster sum at every frame size, so the bound and the comment that explains it have nothing left to describe: the seven lines are that comment and the macro. What fbf9d1add established is kept and widened, not lost: integer_ssim_vert_terms is now the only pass-2 kernel, and test_hip_ssim_tiny_frames still holds 1x1 to 64x64 to == and adds 65x64 to 322x182.",
+      "paths": [
+        "core/src/feature/hip/integer_ssim_hip.h"
+      ]
+    },
+    {
+      "adr": "ADR-1438",
+      "kind": "rewind",
+      "evidence": "^merged blob 0ce8621bb == blob at ef1c16071$",
+      "reason": "The same removal seen by the other detector. fbf9d1add's seven lines were the only change integer_ssim_hip.h had since ef1c16071, so taking them out leaves the header byte-identical to that older blob. ADR-1438 removes the frame-size bound the lines defined; nothing else in the file goes back.",
+      "paths": [
+        "core/src/feature/hip/integer_ssim_hip.h"
+      ]
     }
   ]
 }
