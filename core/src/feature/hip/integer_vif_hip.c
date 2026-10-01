@@ -34,6 +34,7 @@
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 #include "dict.h"
 #include "feature_collector.h"
@@ -62,6 +63,10 @@
 
 extern const unsigned char vif_statistics_hsaco[];
 extern const unsigned int vif_statistics_hsaco_len;
+
+/* The kernels index the CPU's log2 table with their own copy of its size. */
+_Static_assert(VIF_HIP_LOG2_TABLE_SIZE == VIF_LOG2_TABLE_SIZE,
+               "vif_statistics.hip reads the CPU's log2 table");
 #endif /* HAVE_HIPCC */
 
 /* -------------------------------------------------------------------------
@@ -98,6 +103,11 @@ typedef struct VifStateHip {
 
     /* Device buffer holding the 4x18 VIF filter table. ADR-0537. */
     void *vif_filt_dev;
+
+    /* Device copy of the CPU's log2 table, VIF_LOG2_TABLE_SIZE uint16 values
+     * from vif_log2_table_generate(): the statistic reads the host math
+     * library's values instead of the device's log2f() (ADR-1435). */
+    void *log2_table_dev;
 
     /* This frame's ref / dis luma on the device, packed (buf.stride bytes
      * per row). VmafPicture arrives as VMAF_PICTURE_BUFFER_TYPE_HOST; the
@@ -275,11 +285,13 @@ static int vif_hip_filter1d_8(VifStateHip *s, uint8_t *ref_in, uint8_t *dis_in, 
     const int GY_H = h;
 
     vif_accums_hip *accum_ptr = &((vif_accums_hip *)s->accum_dev)[0];
+    void *log2_table_dev = s->log2_table_dev;
     void *args_hori[] = {(void *)buf,
                          (void *)&w,
                          (void *)&h,
                          (void *)&vif_filt_dev,
                          (void *)&s->vif_enhn_gain_limit,
+                         (void *)&log2_table_dev,
                          (void *)&accum_ptr};
     rc = hipModuleLaunchKernel(s->func_hori_8_17_9, (unsigned)GX_H, (unsigned)GY_H, 1u,
                                (unsigned)BX_H, 1u, 1u, 0u, stream, args_hori, NULL);
@@ -356,6 +368,7 @@ static int vif_hip_filter1d_16(VifStateHip *s, uint16_t *ref_in, uint16_t *dis_i
     const int GY_H = h;
 
     vif_accums_hip *accum_ptr = &((vif_accums_hip *)s->accum_dev)[scale];
+    void *log2_table_dev = s->log2_table_dev;
     void *args_hori[] = {(void *)buf,
                          (void *)&w,
                          (void *)&h,
@@ -363,6 +376,7 @@ static int vif_hip_filter1d_16(VifStateHip *s, uint16_t *ref_in, uint16_t *dis_i
                          (void *)&shift_HP,
                          (void *)&vif_filt_dev,
                          (void *)&s->vif_enhn_gain_limit,
+                         (void *)&log2_table_dev,
                          (void *)&accum_ptr};
     rc = hipModuleLaunchKernel(hori_func, (unsigned)GX_H, (unsigned)GY_H, 1u, (unsigned)BX_H, 1u,
                                1u, 0u, stream, args_hori, NULL);
@@ -444,7 +458,7 @@ static void vif_hip_layout_planes(VifStateHip *s, size_t rd_size, unsigned h)
     }
 }
 
-/* Allocate the plane slab, the accumulators and the filter-table buffer. On
+/* Allocate the plane slab, the accumulators and the two table buffers. On
  * failure the buffers already allocated stay set; vif_hip_release() frees
  * them. */
 static int vif_hip_bufs_alloc(VifStateHip *s, size_t data_sz)
@@ -456,7 +470,29 @@ static int vif_hip_bufs_alloc(VifStateHip *s, size_t data_sz)
         rc = hipHostMalloc(&s->accum_host, sizeof(vif_accums_hip) * 4u, 0u);
     if (rc == hipSuccess)
         rc = hipMalloc(&s->vif_filt_dev, sizeof(vif_filter1d_table));
+    if (rc == hipSuccess)
+        rc = hipMalloc(&s->log2_table_dev, VIF_LOG2_TABLE_SIZE * sizeof(uint16_t));
     return (rc == hipSuccess) ? 0 : -ENOMEM;
+}
+
+/* Upload the filter table (ADR-0537) and the CPU's log2 table (ADR-1435).
+ * The log2 table is the one integer_vif.c fills its state with: built here by
+ * the same routine, with the host's log2f() and roundf(), so every lookup in
+ * the kernels returns the value the CPU extractor reads. */
+static int vif_hip_tables_upload(VifStateHip *s)
+{
+    if (hipMemcpy(s->vif_filt_dev, vif_filter1d_table, sizeof(vif_filter1d_table),
+                  hipMemcpyHostToDevice) != hipSuccess)
+        return -EIO;
+
+    const size_t table_sz = VIF_LOG2_TABLE_SIZE * sizeof(uint16_t);
+    uint16_t *log2_table = malloc(table_sz);
+    if (log2_table == NULL)
+        return -ENOMEM;
+    vif_log2_table_generate(log2_table);
+    const hipError_t rc = hipMemcpy(s->log2_table_dev, log2_table, table_sz, hipMemcpyHostToDevice);
+    free(log2_table);
+    return (rc == hipSuccess) ? 0 : -EIO;
 }
 
 /* Tear down everything init() may have set up. Every step tolerates a handle
@@ -477,8 +513,8 @@ static int vif_hip_release(VifStateHip *s)
     vmaf_hip_plane_source_close(&s->planes);
     s->ref_in_dev = NULL;
     s->dis_in_dev = NULL;
-    void **dev_bufs[] = {&s->accum_dev, &s->data_buf, &s->vif_filt_dev};
-    for (unsigned i = 0; i < 3u; i++) {
+    void **dev_bufs[] = {&s->accum_dev, &s->data_buf, &s->vif_filt_dev, &s->log2_table_dev};
+    for (unsigned i = 0; i < 4u; i++) {
         rc = (*dev_bufs[i] != NULL) ? hipFree(*dev_bufs[i]) : hipSuccess;
         *dev_bufs[i] = NULL;
         if (ret == 0)
@@ -581,11 +617,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
         err = vif_hip_bufs_alloc(s, data_sz);
     if (err == 0) {
         vif_hip_layout_planes(s, rd_size, h);
-        /* ADR-0537: upload the host-side static `vif_filter1d_table` to a
-         * device buffer (144 bytes). */
-        if (hipMemcpy(s->vif_filt_dev, vif_filter1d_table, sizeof(vif_filter1d_table),
-                      hipMemcpyHostToDevice) != hipSuccess)
-            err = -EIO;
+        err = vif_hip_tables_upload(s);
     }
     if (err == 0) {
         s->feature_name_dict =

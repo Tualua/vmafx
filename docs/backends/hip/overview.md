@@ -397,7 +397,9 @@ core/src/feature/hip/          # per-feature kernels
 - **`integer_adm_hip`** — full ADM DWT2 + CSF + CM + decouple pipeline (five
   kernel files). Mirrors `integer_adm_cuda.c`. Emits `adm2` + per-scale values.
 - **`integer_vif_hip`** — multi-scale VIF integer pyramid; respects
-  `vif_skip_scale0` (PR #1063) and `vif_enhn_gain_limit`. Emits `vif_scale0..3`.
+  `vif_skip_scale0` (PR #1063) and `vif_enhn_gain_limit`. Emits `vif_scale0..3`,
+  bit-identical to the CPU extractor (ADR-1435). See
+  [`vif_hip` returns the CPU's scores bit for bit](#vif_hip-returns-the-cpus-scores-bit-for-bit-2026-10-01).
 - **`integer_cambi_hip`** — CAMBI banding detection; full HIP port per PR #996
   (ADR-0345 Phase 3). Emits `cambi`.
 - **`ssimulacra2_hip`** — runs the whole frame on the device (ADR-1390, the
@@ -889,6 +891,57 @@ python3 scripts/ci/cross_backend_parity_gate.py --vmaf-binary build-hip/tools/vm
     --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
     --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
     --width 576 --height 324 --backends cpu hip --features adm
+```
+
+### `vif_hip` returns the CPU's scores bit for bit (2026-10-01)
+
+`--backend hip --feature vif_hip` gives the same `integer_vif_scale0..3` as
+`--backend cpu --feature vif`, to the last bit, and with `debug=true` the same
+frame ratio and per-scale numerator and denominator sums
+([ADR-1435](../../adr/1435-hip-vif-cpu-log2-table.md)). The fixed-point VIF
+statistic is integer arithmetic up to its last step and takes every per-pixel
+logarithm from a table of 32768 entries that the CPU extractor fills with the
+host math library. The twin used to evaluate `log2f()` on the device instead,
+which is one ulp from glibc's for about half of the arguments and rounded
+ties the other way; 77 entries came out one lower. It now uploads the CPU's
+table at `init()` (64 KB) and the kernels look every logarithm up.
+
+Measured on a gfx1036 at `--precision max`, frames whose score equals the
+CPU's on scale 0 / 1 / 2 / 3:
+
+| Fixture | Frames | Before | Max abs diff before | After |
+|---|---|---|---|---|
+| Netflix 576x324, 8 bit | 48 | 4 / 0 / 1 / 1 | 5.4e-7 | 48 / 48 / 48 / 48 |
+| Checkerboard 1 px, 1920x1080 | 3 | 2 / 3 / 2 / 3 | 3.0e-8 | 3 / 3 / 3 / 3 |
+| Checkerboard 10 px, 1920x1080 | 3 | 3 / 3 / 3 / 3 | 0 | 3 / 3 / 3 / 3 |
+| Netflix 576x324, 10 bit | 3 | 1 / 0 / 0 / 0 | 3.6e-7 | 3 / 3 / 3 / 3 |
+| Sparks 480x270, 10 bit | 5 | 0 / 0 / 3 / 1 | 3.6e-7 | 5 / 5 / 5 / 5 |
+| BBB 3840x2160 | 48 | 5 / 3 / 5 / 3 | 3.0e-7 | 48 / 48 / 48 / 48 |
+
+49 of 440 scores before, 440 of 440 after. After the change the fifteen
+outputs of `debug=true` are identical too on those fixtures and on the
+Netflix pair at 12 and 16 bits and as 10-bit 4:2:2 (2460 values), and the four
+scores with `vif_enhn_gain_limit=1.0` and with `vif_skip_scale0=true` on the
+same eight small fixtures (464 values each).
+
+A frame takes no longer than before. Steady state inside one process, 21
+interleaved pairs of runs while other lanes loaded the host (load average 10
+to 95): 44.4 ms before and 42.7 ms after at 1920x1080, 188.2 and 163.4 ms at
+3840x2160 (medians; the samples range from 32.3 to 52.8 and 32.4 to 49.1 ms,
+and from 137.5 to 212.4 and 134.3 to 194.6 ms). A lookup replaces each
+`log2f()`, and a pixel in the low-variance branch no longer computes the fp64
+gain it does not use.
+
+Stored `vif_hip` scores change by up to 5.4e-7; re-run them if you compare
+against the CPU at full precision.
+
+```bash
+python3 scripts/ci/run_meson_test.py -- -C build-hip \
+    test_hip_vif_parity test_hip_vif_parity_large test_hip_vif_log2_table_contract
+python3 scripts/ci/cross_backend_parity_gate.py --vmaf-binary build-hip/tools/vmaf \
+    --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+    --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+    --width 576 --height 324 --backends cpu hip --features vif
 ```
 
 ## SpEED-chroma reports singularity separately from failure (ADR-1202, 2026-09-06)

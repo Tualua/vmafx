@@ -229,22 +229,6 @@ static void subsample_rd_16(const VifBuffer *buf, unsigned w, unsigned h, int sc
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 
-static inline void log_generate(uint16_t *log2_table)
-{
-    /*
-     * ADR-0500 LUT shrink: the table now has VIF_LOG2_TABLE_SIZE (16384) entries.
-     * Entry i corresponds to the original entry at index (VIF_LOG2_TABLE_OFFSET + i),
-     * i.e. log2(32768 + i) * 2048.  The scalar accessors log2_32 / log2_64 mask the
-     * normalised mantissa with 0x7FFF (= VIF_LOG2_TABLE_SIZE - 1) to recover i.  The
-     * AVX-512 gather path applies the same mask via _mm256_and_si256 before the gather.
-     * Bit-exactness is preserved: same uint16 values, same arithmetic (roundf() of a
-     * float below 2^15 is the same integer as round() of its double promotion).
-     */
-    for (unsigned i = 0; i < VIF_LOG2_TABLE_SIZE; ++i) {
-        log2_table[i] = (uint16_t)roundf(log2f((float)(VIF_LOG2_TABLE_OFFSET + i)) * 2048);
-    }
-}
-
 /*
  * The scalar statistic is shared, line by line, between vif_statistic_8,
  * vif_statistic_16 and vif_compute_line_residuals (the tail helper the AVX2 /
@@ -609,7 +593,7 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     VifState *s = fex->priv;
 
     vif_init_dispatch(s);
-    log_generate(s->public.log2_table);
+    vif_log2_table_generate(s->public.log2_table);
 
     const int err = vif_buffers_alloc(&s->public.buf, w, h, bpc);
     if (err)

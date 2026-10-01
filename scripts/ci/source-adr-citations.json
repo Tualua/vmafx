@@ -1241,7 +1241,7 @@
         "core/src/feature/cuda/float_vif_cuda.c": 1,
         "core/src/feature/feature_extractor.cpp": 1,
         "core/src/feature/hip/float_vif_hip.c": 1,
-        "core/src/feature/hip/integer_vif/vif_statistics.hip": 3,
+        "core/src/feature/hip/integer_vif/vif_statistics.hip": 2,
         "core/src/feature/metal/float_adm_metal.mm": 1,
         "core/src/feature/metal/float_vif.metal": 1,
         "core/src/feature/metal/float_vif_metal.mm": 2,
@@ -1279,7 +1279,6 @@
         "core/test/test_hip_speed_singular_parity.c": 1,
         "core/test/test_hip_speed_temporal_parity.c": 2,
         "core/test/test_hip_vif_min_dim.c": 1,
-        "core/test/test_hip_vif_parity.c": 3,
         "core/test/test_integer_vif_cpu_cuda_parity.c": 2,
         "core/test/test_metal_float_adm_parity.c": 3,
         "core/test/test_metal_float_moment_parity.c": 1,
@@ -3222,8 +3221,7 @@
     "0500": {
       "sites": {
         "core/src/feature/float_vif.c": 2,
-        "core/src/feature/integer_vif.c": 1,
-        "core/src/feature/integer_vif.h": 2,
+        "core/src/feature/integer_vif.h": 3,
         "core/src/feature/vif.c": 1,
         "core/src/feature/vif.h": 1,
         "core/src/feature/x86/vif_avx512.c": 1,
@@ -3759,12 +3757,6 @@
       },
       "target": "0564-integer-ssim-gpu-real-kernels.md"
     },
-    "0566": {
-      "sites": {
-        "core/test/test_hip_vif_parity.c": 1
-      },
-      "target": "0566-hip-vif-per-feature-places4-gate.md"
-    },
     "0567": {
       "sites": {
         "ai/data/feature_extractor.py": 3,
@@ -3794,7 +3786,6 @@
         "core/meson_options.txt": 1,
         "core/src/feature/hip/integer_vif/vif_statistics.hip": 2,
         "core/src/meson.build": 1,
-        "core/test/test_hip_vif_parity.c": 2,
         "dev/Containerfile": 2
       },
       "target": "0568-sycl-icpx-aot-targets-default.md"
@@ -8870,6 +8861,18 @@
         "core/test/test_ordered_sum.c": 1
       },
       "target": "1433-cuda-ssimulacra2-cpu-sum-order.md"
+    },
+    "1435": {
+      "sites": {
+        "core/src/feature/hip/integer_vif/vif_statistics.hip": 2,
+        "core/src/feature/hip/integer_vif_hip.c": 2,
+        "core/src/feature/integer_vif.h": 1,
+        "core/test/meson.build": 2,
+        "core/test/test_hip_vif_log2_table_contract.py": 1,
+        "core/test/test_hip_vif_parity.c": 1,
+        "scripts/ci/exact_twins.d/vif.hip": 1
+      },
+      "target": "1435-hip-vif-cpu-log2-table.md"
     },
     "1437": {
       "sites": {

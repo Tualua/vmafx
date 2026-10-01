@@ -1430,9 +1430,12 @@ after port-upstream of any of these files.
   fork's `-std=c23` (contraction off) and no `-march` (no FMA) flags; if
   either changes, re-run 31-case `--precision max` matrix in
   [`docs/research/2026-09-02-c-rework-vif-motion-bit-exact.md`](../../../docs/research/2026-09-02-c-rework-vif-motion-bit-exact.md).
-- **`log_generate` uses `roundf`**, proven bit-identical to upstream's
-  `round` over all `VIF_LOG2_TABLE_SIZE` entries. same LUT feeds
-  AVX-512 gather path (ADR-0500); do not switch rounding modes.
+- **`vif_log2_table_generate()` (`integer_vif.h`) uses `roundf`**, proven
+  bit-identical to upstream's `round` over all `VIF_LOG2_TABLE_SIZE` entries.
+  same LUT feeds AVX-512 gather path (ADR-0500); do not switch rounding modes.
+  One definition of the table (was `log_generate()` in `integer_vif.c`):
+  `vif_hip` uploads its values (ADR-1435). Upstream change to the table
+  expression -> change it there, nowhere else.
 - **`write_scores` append order is output contract**: four scale scores,
   then `integer_vif` / `_num` / `_den`, then num / den per scale 0..3.
   `double` totals are explicit left-to-right sums — keep them out of loops.
@@ -1612,7 +1615,7 @@ after port-upstream of any of these files.
   `& (VIF_LOG2_TABLE_SIZE - 1u)` strips bit 15 to get `[0..32767]` index.
   If upstream Netflix changes LUT size or normalisation logic, audit
   mask in `integer_vif.h` and three gather sites in `vif_avx512.c`
-  before merging. new `log_generate` fills `log2_table[i] = log2f(32768+i)*2048`;
+  before merging. `vif_log2_table_generate()` fills `log2_table[i] = log2f(32768+i)*2048`;
   original filled `log2_table[i] = log2f(i)*2048` for `i` in `[32767..65535]`.
 - **compute_vif filter-cache parameter** (ADR-0500): `compute_vif` in `vif.c`
   accepts two nullable trailing parameters `precomputed_filters` /

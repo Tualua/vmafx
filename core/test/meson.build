@@ -141,6 +141,17 @@ test('test_hip_kernel_source_contract',
     timeout : 30,
 )
 
+# ADR-1435: vif_hip reads the log2 table the CPU extractor builds
+# (vif_log2_table_generate() in integer_vif.h, the table's one definition)
+# instead of evaluating log2f() on the device. Device-free, with a planted
+# regression per check; the device check is test_hip_vif_parity.
+test('test_hip_vif_log2_table_contract',
+    import('python').find_installation(),
+    args : files('test_hip_vif_log2_table_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-1408: device-free source guard for the HIP shared frame (an adopted twin
 # asks the context's shared frame for its planes and uploads nothing itself,
 # vmaf_read_pictures() announces and ends the frame around the dispatch loop,
@@ -5631,10 +5642,10 @@ test('test_hip_psnr_parity', test_hip_psnr_parity,
     is_parallel : false,
     timeout : 60)
 
-# GPU-kernel coverage gap-fill — VIF scale0 CPU vs. HIP parity (places=3).
-# Covers integer_vif_hip.c + integer_vif/vif_statistics.hip, the AMD
-# Gaussian filter + M1..M4 statistical accumulator path.
-# HIP-gated: skips cleanly when no AMD GPU is visible.
+# ADR-1435: vif CPU vs. HIP, every output bit for bit (the four scale scores
+# and the debug sums; 8, 10 and 12 bits; vif_enhn_gain_limit and
+# vif_skip_scale0). Covers integer_vif_hip.c + integer_vif/vif_statistics.hip.
+# HIP-gated: exits 77 when no AMD GPU is visible.
 test_hip_vif_parity = executable('test_hip_vif_parity',
     ['test.c', 'test_hip_vif_parity.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],

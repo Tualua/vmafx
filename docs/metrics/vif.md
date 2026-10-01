@@ -138,6 +138,13 @@ on such a frame fails at `init()` with `-EINVAL` and a message such as
 `vif_cuda requires width >= 16 and height >= 16`. The Metal twin does not
 declare it yet (`T-GPU-INTEGER-VIF-MIN-DIM-TWINS-2026-09-29`).
 
+`vif_hip` returns the CPU's scores bit for bit
+([ADR-1435](../adr/1435-hip-vif-cpu-log2-table.md)): its kernels read the log2
+table the CPU extractor builds instead of computing logarithms on the device.
+Measured on a gfx1036, 440 of 440 scores from 480x270 to 3840x2160 are
+identical at `--precision max`; see
+[the HIP backend page](../backends/hip/overview.md#vif_hip-returns-the-cpus-scores-bit-for-bit-2026-10-01).
+
 ### `vif_sycl` returns the CPU's values
 
 `vif_sycl` gives the same number as `--backend cpu --feature vif` for every

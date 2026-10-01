@@ -6,26 +6,33 @@
  */
 
 /*
- * GPU-kernel coverage gap-fill — VIF CPU vs. HIP parity test.
+ * vif CPU vs. HIP: every output has the CPU's bits (ADR-1435).
  *
- * The integer VIF (Visual Information Fidelity) scale0 feature is
- * computed by integer_vif.c (CPU) and by integer_vif_hip.c +
- * integer_vif/vif_statistics.hip (HIP kernel). The HIP path has a
- * smoke test (test_hip_smoke.c) but no cross-backend parity gate; this
- * test closes that gap so a regression in the separable Gaussian filter
- * or the M1/M2/M3/M4 statistical accumulator on AMD GPUs is caught at
- * CI time rather than at downstream model-prediction time.
+ * The fixed-point VIF statistic is integer arithmetic up to its last step:
+ * int64 accumulators per scale, which integer_vif.c turns into two floats and
+ * a single-precision ratio. `vif_hip` accumulates the same integers, so it
+ * can return the CPU's values, and it does once every per-pixel logarithm is
+ * the CPU's: the kernels read the log2 table integer_vif.c builds with the
+ * host math library (vif_log2_table_generate()) instead of evaluating
+ * log2f() on the device. The device's log2f() is one ulp from glibc's on
+ * about half of the table's arguments, which moved 77 of its 32768 entries by
+ * one and with them the numerator or denominator of nearly every frame.
  *
- * Asserts only scale0 because that is the score most sensitive to filter
- * accuracy and avoids the wider tolerance budgets that the lower-resolution
- * scales accumulate.
+ * This test asserts equality, not a tolerance, on every output of every case:
+ * the four scale scores and, with `debug=true`, the frame ratio and the sums
+ * it is formed from. The registration with a 960x540 fixture
+ * (`test_hip_vif_parity_large`) runs the same cases on more pixels. On the
+ * twin that computed its logarithms on the device the first case fails at
+ * both sizes, with scores up to 3.6e-7 from the CPU's.
  *
- * Skip behaviour: if vmaf_hip_state_init() fails (no HIP runtime or
- * no device visible) the test emits "[skip: no HIP device]" and passes.
+ * Skip behaviour: without a HIP device, or on a build without the device
+ * kernels (-ENOSYS), a case reports the skip and the run exits 77.
  */
 
 #include <errno.h>
 #include <math.h>
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -48,115 +55,196 @@
 #ifndef FIXTURE_H
 #define FIXTURE_H 144u
 #endif
-#define FIXTURE_BPC 8u
-/* ADR-0568: mirror2_i boundary fix brings integer_vif_hip to places=6 on real
- * content (max |HIP−CPU| ≈ 1e-6 on the Netflix src01 576×324 pair, all 48
- * frames).  Tighten from places=3 to places=4 per the ADR-0214 gate.
- * The synthetic gradient fixture here is simpler than natural video, so
- * places=6 is achievable; places=4 (1e-4) is the hard gate floor per ADR-0214
- * and ADR-0566. */
-#define PARITY_TOL 1e-4
 
-static int fill_pic(VmafPicture *pic, unsigned salt)
+#define MAX_KEYS 15u
+/* Frames per run: the second one shows that a frame starts from cleared
+ * accumulators. */
+#define NUM_FRAMES 2u
+
+/* One comparison: a bit depth, at most one option, and the keys to compare. */
+typedef struct VifCase {
+    const char *name;
+    unsigned bpc;
+    const char *option; /* NULL, or an option name */
+    const char *value;  /* the option's value */
+    size_t n_keys;
+    const char *keys[MAX_KEYS];
+} VifCase;
+
+/* The four scores under their registered names, and under the names an
+ * option set derives from the aliases ("integer_vif_scale0" + suffix). */
+#define SCALE_KEYS                                                                                 \
+    "VMAF_integer_feature_vif_scale0_score", "VMAF_integer_feature_vif_scale1_score",              \
+        "VMAF_integer_feature_vif_scale2_score", "VMAF_integer_feature_vif_scale3_score"
+
+#define OPTION_SCALE_KEYS(suffix)                                                                  \
+    "integer_vif_scale0" suffix, "integer_vif_scale1" suffix, "integer_vif_scale2" suffix,         \
+        "integer_vif_scale3" suffix
+
+#define DEBUG_KEYS                                                                                 \
+    SCALE_KEYS, "integer_vif", "integer_vif_num", "integer_vif_den", "integer_vif_num_scale0",     \
+        "integer_vif_den_scale0", "integer_vif_num_scale1", "integer_vif_den_scale1",              \
+        "integer_vif_num_scale2", "integer_vif_den_scale2", "integer_vif_num_scale3",              \
+        "integer_vif_den_scale3"
+
+static void put_sample(VmafPicture *pic, unsigned plane, unsigned row, unsigned col, unsigned value)
 {
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
-    if (err)
+    const unsigned peak = (1u << pic->bpc) - 1u;
+    uint8_t *line = (uint8_t *)pic->data[plane] + ((size_t)row * (size_t)pic->stride[plane]);
+    if (pic->bpc <= 8u) {
+        line[col] = (uint8_t)(value & peak);
+    } else {
+        ((uint16_t *)line)[col] = (uint16_t)(value & peak);
+    }
+}
+
+/* Luma of the fixture: a wrapping ramp with texture and a frame-dependent
+ * phase for the reference; the distorted frame adds a periodic error. The
+ * left third is flat, so the statistic takes its low-variance branch there
+ * and its logarithm branch, over a wide range of variances, in the rest. */
+static unsigned luma(unsigned row, unsigned col, unsigned frame, bool distorted, unsigned gain)
+{
+    if (col < FIXTURE_W / 3u) {
+        return 96u * gain;
+    }
+    unsigned value = ((row + col + (frame * 7u) + (((row * 5u) ^ (col * 3u)) % 23u)) * gain) +
+                     ((row * col) % gain);
+    if (distorted) {
+        value += (((row * 2u) + col + (frame * 3u)) % 13u) * gain;
+    }
+    return value;
+}
+
+static int fill_picture(VmafPicture *pic, unsigned bpc, unsigned frame, bool distorted)
+{
+    const int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, bpc, FIXTURE_W, FIXTURE_H);
+    if (err) {
         return err;
-    uint8_t *y = (uint8_t *)pic->data[0];
+    }
+    const unsigned gain = 1u << (bpc - 8u);
     for (unsigned row = 0; row < pic->h[0]; row++) {
         for (unsigned col = 0; col < pic->w[0]; col++) {
-            /* Smooth gradient so the VIF natural-scene statistics see
-             * a wide variance range. salt offsets the dist plane. */
-            y[row * pic->stride[0] + col] = (uint8_t)((row + col + salt * 17u) & 0xFFu);
+            put_sample(pic, 0u, row, col, luma(row, col, frame, distorted, gain));
         }
     }
-    for (unsigned p = 1; p < 3; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
-        for (unsigned row = 0; row < pic->h[p]; row++) {
-            memset(plane + row * pic->stride[p], 128, pic->w[p]);
+    for (unsigned plane = 1; plane < 3; plane++) {
+        for (unsigned row = 0; row < pic->h[plane]; row++) {
+            for (unsigned col = 0; col < pic->w[plane]; col++) {
+                put_sample(pic, plane, row, col, 128u * gain);
+            }
         }
     }
     return 0;
 }
 
-static int feed_frame(VmafContext *vmaf)
+/* Frame `frame` of the fixture through `vmaf`, which takes both pictures. */
+static int feed_frame(VmafContext *vmaf, unsigned bpc, unsigned frame)
 {
     VmafPicture ref;
     VmafPicture dist;
-    int err = fill_pic(&ref, 0u);
-    if (err)
-        return err;
-    err = fill_pic(&dist, 1u);
+    int err = fill_picture(&ref, bpc, frame, false);
     if (err) {
-        vmaf_picture_unref(&ref);
         return err;
     }
-    return vmaf_read_pictures(vmaf, &ref, &dist, 0u);
-}
-
-static char *run_cpu_vif(double *scale0)
-{
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    int err = vmaf_init(&vmaf, cfg);
-    mu_assert("CPU: vmaf_init failed", !err);
-    err = vmaf_use_feature(vmaf, "vif", NULL);
-    mu_assert("CPU: vmaf_use_feature(vif) failed", !err);
-    err = feed_frame(vmaf);
-    mu_assert("CPU: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_vif_scale0_score", scale0, 0u);
-    mu_assert("CPU: vif_scale0 missing", !err);
-    err = vmaf_close(vmaf);
-    mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
-}
-
-static char *hip_vif_pipeline(VmafContext *vmaf, VmafHipState **hip_state, double *scale0)
-{
-    int err = vmaf_use_feature(vmaf, "vif_hip", NULL);
-    mu_assert("HIP: vmaf_use_feature(vif_hip) failed", !err);
-    err = feed_frame(vmaf);
-    if (err == -ENOSYS) {
-        (void)fprintf(stderr, "[skip: HIP extractor is a scaffold (-ENOSYS)] ");
-        (void)vmaf_close(vmaf);
-        vmaf_hip_state_free(hip_state);
-        return NULL;
+    err = fill_picture(&dist, bpc, frame, true);
+    if (err) {
+        (void)vmaf_picture_unref(&ref);
+        return err;
     }
-    mu_assert("HIP: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("HIP: vmaf_read_pictures(EOS) failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "VMAF_integer_feature_vif_scale0_score", scale0, 0u);
-    mu_assert("HIP: vif_scale0 missing", !err);
-    return NULL;
+    return vmaf_read_pictures(vmaf, &ref, &dist, frame);
 }
 
-static char *run_hip_vif(double *scale0)
+/* A context with the CPU `vif` extractor, or with `vif_hip` on `hip_state`,
+ * carrying the case's option. */
+static int vif_context(VmafContext **vmaf, VmafHipState *hip_state, const VifCase *c)
 {
-    *scale0 = NAN;
+    const VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    int err = vmaf_init(vmaf, cfg);
+    if (!err && hip_state) {
+        err = vmaf_hip_import_state(*vmaf, hip_state);
+    }
+    VmafFeatureDictionary *opts = NULL;
+    if (!err && c->option) {
+        err = vmaf_feature_dictionary_set(&opts, c->option, c->value);
+    }
+    if (!err) {
+        /* vmaf_use_feature() takes the dictionary over, on failure too. */
+        err = vmaf_use_feature(*vmaf, hip_state ? "vif_hip" : "vif", opts);
+    }
+    return err;
+}
+
+/* NUM_FRAMES frames through one extractor, and every key of the case of every
+ * frame read into `out` (frame-major). Returns the first error; -ENOSYS is
+ * the scaffold build. */
+static int vif_scores(VmafHipState *hip_state, const VifCase *c, double *out)
+{
+    VmafContext *vmaf = NULL;
+    int err = vif_context(&vmaf, hip_state, c);
+    for (unsigned frame = 0; frame < NUM_FRAMES && !err; frame++) {
+        err = feed_frame(vmaf, c->bpc, frame);
+    }
+    if (!err) {
+        err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    }
+    for (size_t i = 0; i < c->n_keys * NUM_FRAMES && !err; i++) {
+        const char *key = c->keys[i % c->n_keys];
+        err = vmaf_feature_score_at_index(vmaf, key, &out[i], (unsigned)(i / c->n_keys));
+        if (err) {
+            (void)fprintf(stderr, "\n%s: no score for %s (%s)\n", c->name, key,
+                          hip_state ? "HIP" : "CPU");
+        }
+    }
+    const int closed = vmaf ? vmaf_close(vmaf) : 0;
+    return err ? err : closed;
+}
+
+/* The device, or NULL with the reason printed when there is none. */
+static VmafHipState *hip_device(void)
+{
     VmafHipState *hip_state = NULL;
-    VmafHipConfiguration hip_cfg = {.device_index = -1};
-    int err = vmaf_hip_state_init(&hip_state, hip_cfg);
-    if (err != 0 || hip_state == NULL) {
+    const VmafHipConfiguration hip_cfg = {.device_index = -1};
+    if (vmaf_hip_state_init(&hip_state, hip_cfg) != 0 || hip_state == NULL) {
         (void)fprintf(stderr, "[skip: no HIP device] ");
+        mu_skipped = 1;
         return NULL;
     }
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("HIP: vmaf_init failed", !err);
-    err = vmaf_hip_import_state(vmaf, hip_state);
-    mu_assert("HIP: vmaf_hip_import_state failed", !err);
+    return hip_state;
+}
 
-    char *msg = hip_vif_pipeline(vmaf, &hip_state, scale0);
-    if (msg || hip_state == NULL) {
-        return msg;
+/* The outputs of the case whose HIP value is not the CPU's, each one
+ * reported; UINT32_MAX when a run failed. A skipped HIP leg counts as 0. */
+static unsigned exact_mismatches(const VifCase *c)
+{
+    double cpu[MAX_KEYS * NUM_FRAMES] = {0.0};
+    double gpu[MAX_KEYS * NUM_FRAMES] = {0.0};
+    VmafHipState *hip_state = hip_device();
+    if (!hip_state) {
+        return 0u;
     }
-    err = vmaf_close(vmaf);
-    mu_assert("HIP: vmaf_close failed", !err);
+    const int gpu_err = vif_scores(hip_state, c, gpu);
     vmaf_hip_state_free(&hip_state);
-    return NULL;
+    if (gpu_err == -ENOSYS) {
+        (void)fprintf(stderr, "[skip: HIP kernels not built (enable_hipcc=false)] ");
+        mu_skipped = 1;
+        return 0u;
+    }
+    const int cpu_err = gpu_err ? 0 : vif_scores(NULL, c, cpu);
+    if (gpu_err || cpu_err) {
+        (void)fprintf(stderr, "\n%s: run failed (hip %d, cpu %d)\n", c->name, gpu_err, cpu_err);
+        return UINT32_MAX;
+    }
+    unsigned mismatches = 0u;
+    for (size_t i = 0; i < c->n_keys * NUM_FRAMES; i++) {
+        if (isfinite(cpu[i]) && cpu[i] == gpu[i]) {
+            continue;
+        }
+        mismatches++;
+        (void)fprintf(stderr, "\n%s %ux%u frame %u %s: cpu=%.17g hip=%.17g delta=%.3e\n", c->name,
+                      FIXTURE_W, FIXTURE_H, (unsigned)(i / c->n_keys), c->keys[i % c->n_keys],
+                      cpu[i], gpu[i], fabs(cpu[i] - gpu[i]));
+    }
+    return mismatches;
 }
 
 static char *test_vif_hip_registered(void)
@@ -167,35 +255,87 @@ static char *test_vif_hip_registered(void)
     return NULL;
 }
 
-static char *test_vif_cpu_hip_parity(void)
+static char *test_vif_default_exact(void)
 {
-    double cpu = 0.0;
-    double gpu = NAN;
-    char *msg = run_cpu_vif(&cpu);
-    if (msg) {
-        return msg;
-    }
-    msg = run_hip_vif(&gpu);
-    if (msg) {
-        return msg;
-    }
-    if (isnan(gpu)) {
-        return NULL;
-    }
-    double delta = fabs(cpu - gpu);
-    if (delta > PARITY_TOL) {
-        (void)fprintf(stderr, "\nvif_scale0 parity FAIL: cpu=%.8f hip=%.8f delta=%.2e tol=%.2e\n",
-                      cpu, gpu, delta, PARITY_TOL);
-    }
-    mu_assert("vif_scale0 CPU vs. HIP delta exceeds places=4 tolerance (1e-4; ADR-0214/ADR-0568)",
-              delta <= PARITY_TOL);
+    static const VifCase c = {.name = "default", .bpc = 8u, .n_keys = 4u, .keys = {SCALE_KEYS}};
+    mu_assert("vif_hip is not bit-identical to the CPU vif extractor", exact_mismatches(&c) == 0u);
+    return NULL;
+}
+
+/* debug=true publishes the frame ratio and the sums it is formed from: the
+ * accumulators themselves, rounded to float as vif_store_residuals() does. */
+static char *test_vif_debug_exact(void)
+{
+    static const VifCase c = {.name = "debug",
+                              .bpc = 8u,
+                              .option = "debug",
+                              .value = "true",
+                              .n_keys = 15u,
+                              .keys = {DEBUG_KEYS}};
+    mu_assert("vif_hip debug outputs are not the CPU's bit for bit", exact_mismatches(&c) == 0u);
+    return NULL;
+}
+
+/* 10 and 12 bits go through the 16-bit kernels at scale 0, with the rounding
+ * shifts of that bit depth. */
+static char *test_vif_10bit_exact(void)
+{
+    static const VifCase c = {.name = "10-bit",
+                              .bpc = 10u,
+                              .option = "debug",
+                              .value = "true",
+                              .n_keys = 15u,
+                              .keys = {DEBUG_KEYS}};
+    mu_assert("vif_hip is not bit-identical to the CPU at 10 bits", exact_mismatches(&c) == 0u);
+    return NULL;
+}
+
+static char *test_vif_12bit_exact(void)
+{
+    static const VifCase c = {.name = "12-bit", .bpc = 12u, .n_keys = 4u, .keys = {SCALE_KEYS}};
+    mu_assert("vif_hip is not bit-identical to the CPU at 12 bits", exact_mismatches(&c) == 0u);
+    return NULL;
+}
+
+/* vif_enhn_gain_limit=1.0 caps the gain at every pixel whose distorted
+ * variance exceeds the reference's. */
+static char *test_vif_gain_limit_exact(void)
+{
+    static const VifCase c = {.name = "vif_enhn_gain_limit=1.0",
+                              .bpc = 8u,
+                              .option = "vif_enhn_gain_limit",
+                              .value = "1.0",
+                              .n_keys = 4u,
+                              .keys = {OPTION_SCALE_KEYS("_egl_1")}};
+    mu_assert("vif_hip is not bit-identical to the CPU with vif_enhn_gain_limit=1.0",
+              exact_mismatches(&c) == 0u);
+    return NULL;
+}
+
+/* vif_skip_scale0 publishes 0.0 for scale 0 and the CPU's values for the
+ * other three. */
+static char *test_vif_skip_scale0_exact(void)
+{
+    static const VifCase c = {.name = "vif_skip_scale0",
+                              .bpc = 8u,
+                              .option = "vif_skip_scale0",
+                              .value = "true",
+                              .n_keys = 4u,
+                              .keys = {OPTION_SCALE_KEYS("_ssclz")}};
+    mu_assert("vif_hip is not bit-identical to the CPU with vif_skip_scale0",
+              exact_mismatches(&c) == 0u);
     return NULL;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_vif_hip_registered);
-    mu_run_test(test_vif_cpu_hip_parity);
+    mu_run_test(test_vif_default_exact);
+    mu_run_test(test_vif_debug_exact);
+    mu_run_test(test_vif_10bit_exact);
+    mu_run_test(test_vif_12bit_exact);
+    mu_run_test(test_vif_gain_limit_exact);
+    mu_run_test(test_vif_skip_scale0_exact);
     return NULL;
 }
 

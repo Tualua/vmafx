@@ -57347,3 +57347,26 @@ ADR-1422).
   (ADR-1428); nothing shared is edited.
 - No Netflix golden-data, public API or FFmpeg patch impact. The CPU
   extractor is untouched.
+## ADR-1435 — `vif_hip` reads the CPU's log2 table (2026-10-01)
+
+`fix/hip-vif-cpu-log2-table`, `T-HIP-VIF-DEVICE-LOG2-2026-10-01`.
+
+- `core/src/feature/integer_vif.h` (upstream-mirror) gains
+  `vif_log2_table_generate()` and `#include <math.h>`;
+  `core/src/feature/integer_vif.c` loses its `static inline log_generate()`
+  and calls the header's function in `init()`. Same expression, moved. If
+  upstream Netflix changes `log_generate()`, apply the change to
+  `vif_log2_table_generate()` and keep `integer_vif.c` free of a second copy
+  (`test_hip_vif_log2_table_contract.py` rejects one).
+- `core/src/feature/hip/integer_vif/vif_statistics.hip`: the five horizontal
+  kernels take one more argument, `const uint16_t *log2_table`, between
+  `vif_enhn_gain_limit` and `accum_out`; `log_generate()` is `log2_lookup()`.
+  `core/src/feature/hip/integer_vif_hip.c` allocates `log2_table_dev`, fills
+  it in `vif_hip_tables_upload()` and passes it in both `args_hori[]` lists.
+  A rebase that keeps one side's kernel signature and the other's argument
+  list launches the kernels with shifted arguments: keep both from this side.
+- `scripts/ci/exact_twins.d/vif.hip` (new) declares the twin exact
+  (ADR-1428). Another backend's `vif` declaration is another file; nothing
+  shared is edited.
+- No Netflix golden-data, public API or FFmpeg patch impact. The CPU
+  extractor's table and scores are unchanged.

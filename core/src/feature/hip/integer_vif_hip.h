@@ -20,6 +20,13 @@
 #endif
 
 /**
+ * Entries of the log2 table the horizontal kernels read: the CPU's table
+ * (VIF_LOG2_TABLE_SIZE in integer_vif.h, which a kernel cannot include). The
+ * host TU asserts the two are equal.
+ */
+#define VIF_HIP_LOG2_TABLE_SIZE 32768u
+
+/**
  * Per-scale accumulator matching vif_accums in integer_vif_cuda.h.
  * All fields are int64_t to accommodate full-frame accumulations at
  * 4K resolution without overflow.

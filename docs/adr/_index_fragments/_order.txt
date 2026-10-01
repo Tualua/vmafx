@@ -1139,3 +1139,4 @@
 1430-cuda-speed-chroma-log2f-bound
 1437-hip-exact-twins-declared
 1438-hip-ssim-cpu-frame-sum
+1435-hip-vif-cpu-log2-table

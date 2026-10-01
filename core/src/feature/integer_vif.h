@@ -20,6 +20,7 @@
 #ifndef FEATURE_VIF_H_
 #define FEATURE_VIF_H_
 
+#include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -42,6 +43,26 @@
  */
 #define VIF_LOG2_TABLE_SIZE 32768u
 #define VIF_LOG2_TABLE_OFFSET 0x8000u
+
+/*
+ * Fill the VIF_LOG2_TABLE_SIZE entries of the log2 table: entry i is
+ * log2(VIF_LOG2_TABLE_OFFSET + i) * 2048 rounded to an integer, from the host
+ * math library's log2f() and roundf(). log2_32 / log2_64 mask the normalised
+ * mantissa with VIF_LOG2_TABLE_SIZE - 1 to recover i; the AVX-512 gather path
+ * applies the same mask before the gather (ADR-0500). roundf() of a float
+ * below 2^15 is the same integer as round() of its double promotion.
+ *
+ * The one definition of the table. The CPU extractor fills its state with it,
+ * and a twin that is to return the CPU's bits uploads these values instead of
+ * computing them on its device, whose log2f() need not round as the host's
+ * does (vif_hip, ADR-1435).
+ */
+static inline void vif_log2_table_generate(uint16_t *log2_table)
+{
+    for (unsigned i = 0; i < VIF_LOG2_TABLE_SIZE; ++i) {
+        log2_table[i] = (uint16_t)roundf(log2f((float)(VIF_LOG2_TABLE_OFFSET + i)) * 2048);
+    }
+}
 
 static const uint16_t vif_filter1d_table[4][18] = {
     {489, 935, 1640, 2640, 3896, 5274, 6547, 7455, 7784, 7455, 6547, 5274, 3896, 2640, 1640, 935,
