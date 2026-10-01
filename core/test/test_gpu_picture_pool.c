@@ -3,6 +3,8 @@
  *  Copyright 2016-2023 Netflix, Inc.
  *  Copyright 2021 NVIDIA Corporation.
  *
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
  *     You may obtain a copy of the License at
@@ -30,6 +32,12 @@
 
 #include "test.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 #include "libvmaf/libvmaf_cuda.h"
 
 #include "cuda/common.h"
@@ -51,7 +59,7 @@ static char *fetch_and_check(VmafGpuPicturePool *pool, VmafPicture *pic)
     return NULL;
 }
 
-static char *test_ring_buffer()
+static char *test_ring_buffer(void)
 {
     VmafCudaCookie my_cookie = {
         .w = 1920,
@@ -104,8 +112,10 @@ static char *test_ring_buffer()
     return NULL;
 }
 
-char *run_tests()
+char *run_tests(void)
 {
     mu_run_test(test_ring_buffer);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

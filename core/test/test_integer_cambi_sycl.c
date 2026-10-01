@@ -28,16 +28,16 @@
 #include "config.h"
 #include "test.h"
 
-#if HAVE_SYCL
-
-#include "libvmaf/libvmaf_sycl.h"
-#include "feature/feature_extractor.h"
-
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
  * documented /std:clatest C23 feature set does not include `nullptr` while the
  * required Windows build compiles this TU with cl.exe, and this file mirrors
  * the C spelling of the surface it exercises. ADR-1138. */
+
+#if HAVE_SYCL
+
+#include "libvmaf/libvmaf_sycl.h"
+#include "feature/feature_extractor.h"
 
 static VmafSyclState *sycl = NULL;
 static int sycl_init_failed = 0;

@@ -2,6 +2,8 @@
  *
  *  Copyright 2016-2026 Netflix, Inc.
  *
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
  *     You may obtain a copy of the License at
@@ -30,7 +32,7 @@
     } while (0)
 
 #ifdef __cplusplus
-typedef const char *mu_message_t;
+using mu_message_t = const char *;
 extern "C" {
 #else
 typedef char *mu_message_t;
@@ -71,7 +73,11 @@ mu_message_t run_tests(void);
  * includes test.h gets one copy and so the `mu_run_test` macro
  * expansion stays short enough to avoid tripping
  * `readability-function-size` on test bodies that run many cases. */
+#ifdef __cplusplus
+static inline mu_message_t mu_report(const char *name, mu_message_t (*test)())
+#else
 static inline mu_message_t mu_report(const char *name, mu_message_t (*test)(void))
+#endif
 {
     (void)fprintf(stderr, "%s: ", name);
     mu_message_t message = test();
