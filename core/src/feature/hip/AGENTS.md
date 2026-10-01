@@ -285,15 +285,19 @@ wide** on every GCN / CDNA / RDNA target we ship to (gfx906 / gfx90a
 gfx11, falls back to CAS loop on older GCN — HIP runtime handles
 arch selection.
 
-Precedents: `integer_vif/vif_statistics.hip` (ADR-0537) and
-`integer_adm/adm_csf_den.hip` (ADR-0539).
+Precedent: `integer_vif/vif_statistics.hip` (ADR-0537). The pattern holds
+only where each thread adds an unrounded value.
 
-**Integer ADM contrast masking is the explicit exception** (ADR-1167): its
-rounding shift is non-distributive, so `integer_adm/adm_cm.hip` must first
-reduce the complete row and call `adm_cm_round_row_total()` exactly once.
-Per-thread or per-wave rounding followed by `atomicAdd` changes the raw
-accumulator even when the later float score hides it. The device-free
-`test_adm_cm_row_rounding_contract.py` pins both HIP reduction shapes.
+**Integer ADM is the explicit exception**, contrast masking (ADR-1167) and
+denominator (ADR-1423) alike: its rounding shift is non-distributive, so
+`integer_adm/adm_cm.hip` must first reduce the complete row and call
+`adm_cm_round_row_total()` exactly once, and `integer_adm/adm_csf_den.hip`
+reduces the row in shared memory and folds it once. Per-thread or per-wave
+rounding followed by `atomicAdd` changes the raw accumulator even when the
+later float score hides it; `adm_csf_den.hip` did that until ADR-1423 and
+was 4e-7 off on low-detail frames. The device-free
+`test_adm_cm_row_rounding_contract.py` pins both HIP contrast-masking
+reduction shapes and `test_hip_adm_exact_contract.py` the denominator's.
 
 ## ADM `_hsaco` weak-stub slots have been removed (ADR-0539)
 
@@ -497,6 +501,42 @@ Rebase-sensitive:
   10 bit, odd size; two-sum exactness), `test_hip_ms_ssim_parity` +
   `_large` (device, `==`, 48 outputs), `test_hip_kernel_source_contract.py`
   (10 planted regressions).
+
+## adm_hip = CPU bits (ADR-1423, `EXACT_TWINS`)
+
+Scores = `integer_adm.c`'s bits (gfx1036: 21 pairs, 6192 values with
+`debug=true`). Rebase-sensitive:
+
+- Host arithmetic = CPU routines of `integer_adm_kernels.h`, never a copy:
+  `adm_csf_factors()` (weights), `adm_csf_den_ctx_init()` /
+  `i4_adm_csf_den_ctx_init()` (border + every denominator shift, passed to the
+  kernel), `adm_cm_ctx_init()` / `i4_adm_cm_ctx_init()` on an empty
+  `AdmBuffer` + `adm_cm_result()` / `i4_adm_cm_result()` /
+  `adm_csf_den_result()` / `i4_adm_csf_den_result()` (scores). No
+  `dwt_quant_step()`, `adm_csf_factors()`, `conclude_adm_*()` definition in
+  `integer_adm_hip.c`.
+- `adm_skip_scale0`: numerator 0, denominator `(float)1e-10`, BOTH added to
+  the frame sums like `integer_adm_scale0()`.
+- `adm_csf_den.hip`: one block per row + band (`grid = 1 x rows x 3`, 128
+  threads), thread sums in shared memory, ONE fold per row by thread 0
+  through `adm_csf_den_round_row_total()` (`adm_cm_accumulator.h`, also the
+  CPU's fold, ADR-1416).
+  Never fold per thread / wave / block-of-columns: accumulator differs, score
+  differs on low-detail frames (4e-7; 1.5e-5 on the test's sparse frame) and
+  at scale 0 above 2^20 region samples.
+- No logarithm in that file: fp32 `log2f(area) - 20` is off by one for 81
+  areas just above a power of two (962x13542: `adm_scale0` 0.860 vs 0.979).
+- Per frame: `adm_hip_stage_luma()` (upload) FIRST, then
+  `hipMemsetAsync(buf->tmp_res)`, then kernels. Clear queued ahead of the
+  upload = lost in the first context needing larger planes than earlier
+  contexts of the process (recycled device memory -> NaN numerator, run
+  fails). `hipMemset` at allocation = no fix: async on the null stream for
+  device memory (hipamd `ihipMemset()`, ROCm 7.2). Same defect in
+  `float_moment_hip`, `vif_hip`:
+  `T-HIP-FIRST-FRAME-ASYNC-CLEAR-OTHER-TWINS-2026-10-01`.
+- Guards: `test_hip_adm_exact` (device, nine contexts in one process, two
+  frames each, `==`), `test_hip_adm_exact_contract.py` (device-free, ten
+  planted regressions).
 
 ## Wiring a new HIP extractor into the build (ADR-0852 lesson)
 

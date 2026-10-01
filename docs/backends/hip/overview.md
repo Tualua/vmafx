@@ -775,6 +775,54 @@ longer clamps `adm2` (the CPU floors the adm3 expression only), and the
 `numden_limit` precision floor scales with the full-frame area rather than the
 scale-3 area.
 
+### `adm_hip` returns the CPU's values bit for bit (2026-10-01)
+
+`--backend hip --feature adm_hip` gives the same `integer_adm2` and
+`integer_adm_scale0..3` as `--backend cpu --feature adm`, to the last bit, and
+with `debug=true` the same per-scale numerators and denominators
+([ADR-1423](../../adr/1423-hip-adm-cpu-row-rounding.md)). Integer ADM is
+integer arithmetic up to the conclusion of a scale, so the twin can have the
+CPU's accumulators; it now takes its CSF weights, its border, its rounding
+shifts and the conclusion from the CPU extractor's own routines, and rounds
+the denominator once per row as the CPU does.
+
+Measured on a gfx1036 at `--precision max`, 21 fixture pairs (the Netflix
+576x324 pair at 8, 10, 12 and 16 bits and as 4:2:2, both 1080p checkerboard
+pairs, a flat pair, sizes down to 18x22, synthetic noise, stripes, impulses
+and blocks, and 200 frames of BBB 3840x2160):
+
+| | Before | After |
+|---|---|---|
+| Pairs identical to the CPU | 19 of 21 | 21 of 21 (6192 values with `debug=true`) |
+| Gradient against impulses, 576x324 | `integer_adm_scale3` 4.0e-7 off | identical |
+| BBB 3840x2160 | `integer_adm_scale0` up to 1.4e-7 off | identical |
+| A 962x13542 frame | `integer_adm_scale0` 0.860 (CPU 0.979) | 0.979 |
+| First frame of a context after a smaller one in the same process | garbage, the run fails | identical |
+
+The last two rows were defects on unusual input, not rounding. At 962x13542
+the device computed a rounding shift with an fp32 logarithm that is off by one
+for 81 region sizes, and the host concluded with the CPU's shift. And each
+frame cleared the accumulators ahead of its upload, where on this device the
+clear is lost in the first context of a process that needs larger planes than
+the contexts before it; the clear now follows the upload. The `vmaf` tool
+creates one context per process and did not show the second defect; a program
+that scores several clips through the library did.
+
+The options keep their meaning: `adm_csf_mode` 1 to 3, the default model's
+option set, `adm_enhn_gain_limit`, `adm_skip_scale0`, `adm_norm_view_dist` /
+`adm_ref_display_height` and `adm_noise_weight` / `adm_p_norm` are identical
+to the CPU on the same fixtures. A frame takes 19.1 ms at 1920x1080 and about
+80 ms at 3840x2160 on the gfx1036, as before (77.4 and 80.4 in seven
+interleaved runs whose samples overlap).
+
+```bash
+python3 scripts/ci/run_meson_test.py -- -C build-hip test_hip_adm_exact test_hip_adm_exact_contract
+python3 scripts/ci/cross_backend_parity_gate.py --vmaf-binary build-hip/tools/vmaf \
+    --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+    --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+    --width 576 --height 324 --backends cpu hip --features adm
+```
+
 ## SpEED-chroma reports singularity separately from failure (ADR-1202, 2026-09-06)
 
 The HIP SpEED-chroma twin previously treated any non-zero return from its

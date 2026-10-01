@@ -116,8 +116,9 @@ EXACT_TWINS: dict[str, frozenset[str]] = {
     "ssim": frozenset({"cuda"}),
     # ADR-1416: ``adm_cuda`` takes its CSF weights, rounding shifts and score
     # conclusion from the CPU's routines (``integer_adm_kernels.h``) and folds
-    # the denominator once per row. The other ``adm`` twins keep places=4.
-    "adm": frozenset({"cuda"}),
+    # the denominator once per row. ADR-1423: ``adm_hip`` does the same,
+    # measured on a gfx1036. The other ``adm`` twins keep places=4.
+    "adm": frozenset({"cuda", "hip"}),
     "float_ms_ssim": frozenset({"sycl"}),
     "float_ms_ssim_lcs": frozenset({"sycl"}),
     "float_motion": frozenset({"cuda", "sycl", "hip"}),

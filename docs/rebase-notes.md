@@ -56934,3 +56934,29 @@ Netflix golden assertions are untouched.
 - `scripts/ci/cross_backend_calibration.py`: `EXACT_TWINS["float_motion"]`
   gains `hip`; `scripts/ci/test_cross_backend_parity_gate.py` expects it. When
   another backend joins, keep every listed twin.
+## ADR-1423 — `adm_hip` computes with the CPU's routines and folds the denominator per row (2026-10-01)
+
+`fix/hip-adm-cpu-arithmetic`, `T-HIP-ADM-NOT-CPU-ARITHMETIC-2026-10-01`,
+`T-HIP-ADM-FIRST-FRAME-STALE-ACCUMULATORS-2026-10-01`.
+
+- `core/src/feature/hip/integer_adm_hip.c` includes `integer_adm_kernels.h`.
+  Its copies of `dwt_quant_step()`, `adm_csf_factors()`, `conclude_adm_cm()`
+  and `conclude_adm_csf_den()` are gone, and so is
+  `AdmStateHip::csf_normalization_shift`; the scores come from
+  `adm_cm_result()` / `adm_csf_den_result()` and their `i4_` forms. A change
+  to those CPU routines or to the context initialisers reaches the twin
+  without an edit here.
+- `core/src/feature/hip/integer_adm/adm_csf_den.hip`: the two kernels are
+  `adm_csf_den_scale_row_kernel` and `adm_csf_den_s123_row_kernel` (were
+  `..._line_kernel_8_128`), launched as `1 x rows x 3` blocks of 128 threads
+  with the border and the shifts as arguments. The fold calls
+  `adm_csf_den_round_row_total()` (`adm_cm_accumulator.h`, ADR-1416), like the
+  CUDA kernel and the CPU.
+- The per-frame `hipMemsetAsync` of `tmp_res` comes after
+  `adm_hip_stage_luma()`, directly ahead of the kernels. Do not move it back
+  ahead of the upload in a rebase: there it is lost in the first context of a
+  process that needs larger planes than the contexts before it.
+- `scripts/ci/cross_backend_calibration.py`: `EXACT_TWINS["adm"]` lists
+  `hip` next to `cuda`. A textual merge of two branches that each add an
+  `"adm"` entry leaves two dictionary keys, and Python keeps only the last
+  one; keep one entry with every twin.

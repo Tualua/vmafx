@@ -164,6 +164,18 @@ test('test_hip_device_resident_contract',
     timeout : 30,
 )
 
+# ADR-1423: adm_hip takes its CSF weights, border, shifts and score conclusion
+# from the CPU's integer_adm_kernels.h, folds the denominator once per row and
+# clears its accumulators after the frame's upload. Device-free source contract
+# with a planted regression per construct; the device check is
+# test_hip_adm_exact.
+test('test_hip_adm_exact_contract',
+    import('python').find_installation(),
+    args : files('test_hip_adm_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-1407: device-free guard for the HIP strict FP policy (one hipcc flag
 # list for every kernel: contraction off, correctly rounded fp32 division and
 # square root; no per-kernel table; the device probe built with the same
@@ -5235,6 +5247,22 @@ test('test_hip_upload_race', test_hip_upload_race,
     suite : ['fast', 'gpu'],
     is_parallel : false,
     timeout : 120)
+
+# ADR-1423 -- adm_hip returns the CPU extractor's bits: every output of nine
+# cases compared with ==, the per-scale sums of debug=true included. The
+# low-detail, 3840x2160 and shift-boundary cases fail on a twin that folds the
+# denominator per thread or derives a shift on the device. HIP-gated.
+test_hip_adm_exact = executable('test_hip_adm_exact',
+    ['test.c', 'test_hip_adm_exact.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: ['-DHAVE_HIP=1']
+)
+test('test_hip_adm_exact', test_hip_adm_exact,
+    suite : ['fast', 'gpu'],
+    is_parallel : false,
+    timeout : 180)
 
 test_hip_ms_ssim_parity = executable('test_hip_ms_ssim_parity',
     ['test.c', 'test_hip_ms_ssim_parity.c'],

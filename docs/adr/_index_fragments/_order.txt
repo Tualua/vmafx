@@ -1125,3 +1125,4 @@
 1414-sycl-float-ms-ssim-cpu-arithmetic
 1424-cuda-ssim-cpu-frame-sum
 1419-hip-float-motion-cpu-float-sum
+1423-hip-adm-cpu-row-rounding

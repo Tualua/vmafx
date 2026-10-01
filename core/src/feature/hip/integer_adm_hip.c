@@ -40,6 +40,10 @@
 #include "feature_extractor.h"
 #include "feature_name.h"
 #include "integer_adm.h"
+/* The CPU extractor's contexts and result routines: the CSF weights, the
+ * border, every rounding shift and the float conclusion of a scale come from
+ * here, not from a copy (ADR-1423). */
+#include "integer_adm_kernels.h"
 #include "nonfinite_score.h"
 #include "libvmaf/picture.h"
 
@@ -87,7 +91,6 @@ typedef struct AdmStateHip {
     double adm_p_norm;
     float rfactor[12];
     uint32_t i_rfactor[12];
-    uint32_t csf_normalization_shift[4];
     unsigned submit_w, submit_h; /* stored by submit for collect */
 
 #ifdef HAVE_HIPCC
@@ -111,8 +114,8 @@ typedef struct AdmStateHip {
     hipFunction_t func_i4_adm_csf_kernel_1_4;
 
     /* CSF-den kernel handles */
-    hipFunction_t func_adm_csf_den_scale_line_kernel;
-    hipFunction_t func_adm_csf_den_s123_line_kernel;
+    hipFunction_t func_adm_csf_den_scale_row_kernel;
+    hipFunction_t func_adm_csf_den_s123_row_kernel;
 
     /* CM kernel handles */
     hipFunction_t func_adm_cm_reduce_line_kernel_4;
@@ -141,52 +144,6 @@ typedef struct AdmStateHip {
     VmafDictionary *feature_name_dict;
 } AdmStateHip;
 
-/* ------------------------------------------------------------------ */
-/* dwt_quant_step — identical to the CUDA twin                         */
-/* ------------------------------------------------------------------ */
-
-static inline float dwt_quant_step(const struct dwt_model_params *params, int lambda, int theta,
-                                   double adm_norm_view_dist, int adm_ref_display_height)
-{
-    float r = (float)(adm_norm_view_dist * adm_ref_display_height * M_PI / 180.0);
-    float temp = log10(pow(2.0, lambda + 1) * params->f0 * params->g[theta] / r);
-    float Q = 2.0 * params->a * pow(10.0, params->k * (double)temp * temp) /
-              dwt_7_9_basis_function_amplitudes[lambda][theta];
-    return Q;
-}
-
-typedef struct AdmCsfFactors {
-    float factor1; /* horizontal and vertical bands */
-    float factor2; /* diagonal band */
-} AdmCsfFactors;
-
-static AdmCsfFactors adm_csf_factors(int scale, double adm_norm_view_dist,
-                                     int adm_ref_display_height, int adm_csf_mode,
-                                     double adm_csf_scale, double adm_csf_diag_scale)
-{
-    AdmCsfFactors f;
-    if (adm_csf_mode == ADM_CSF_MODE_BARTEN) {
-        f.factor1 = barten_csf(scale, adm_norm_view_dist, adm_ref_display_height,
-                               DEFAULT_ADM_CSF_LUM, adm_csf_scale);
-        f.factor2 = barten_csf(scale, adm_norm_view_dist, adm_ref_display_height,
-                               DEFAULT_ADM_CSF_LUM, adm_csf_diag_scale);
-    } else if (adm_csf_mode == ADM_CSF_MODE_BARTEN_WATSON_BLEND) {
-        f.factor1 = barten_watson_blend_csf(scale, 0, adm_norm_view_dist, adm_ref_display_height);
-        f.factor2 = barten_watson_blend_csf(scale, 1, adm_norm_view_dist, adm_ref_display_height);
-    } else if (adm_csf_mode == ADM_CSF_MODE_BARTEN_WATSON_BLEND_MAE) {
-        f.factor1 =
-            barten_watson_blend_csf_mae(scale, 0, adm_norm_view_dist, adm_ref_display_height);
-        f.factor2 =
-            barten_watson_blend_csf_mae(scale, 1, adm_norm_view_dist, adm_ref_display_height);
-    } else {
-        f.factor1 = 1.0f / dwt_quant_step(&dwt_7_9_YCbCr_threshold[0], scale, 1, adm_norm_view_dist,
-                                          adm_ref_display_height);
-        f.factor2 = 1.0f / dwt_quant_step(&dwt_7_9_YCbCr_threshold[0], scale, 2, adm_norm_view_dist,
-                                          adm_ref_display_height);
-    }
-    return f;
-}
-
 /**
  * Validate a CSF configuration before claiming device resources. Mirrors
  * `adm_csf_config_check()` in core/src/feature/integer_adm.c so the CPU and
@@ -209,13 +166,15 @@ static int adm_csf_config_check(const AdmStateHip *s)
     return 0;
 }
 
-/* CSF weight per scale and band plus its fixed-point form and shared
- * normalisation exponent. */
+/* CSF weight per scale and band, and its fixed-point form: the CPU's
+ * adm_csf_factors() (integer_adm_kernels.h), converted by the shared
+ * adm_csf_fixed_scale(). The host conclusion derives the weights again
+ * through the CPU's context initialisers. */
 static void adm_hip_rfactors(double adm_norm_view_dist, int adm_ref_display_height,
                              int adm_csf_mode, double adm_csf_scale, double adm_csf_diag_scale,
-                             float rfactor[12], uint32_t i_rfactor[12],
-                             uint32_t normalization_shift[4])
+                             float rfactor[12], uint32_t i_rfactor[12])
 {
+    uint32_t normalization_shift[4] = {0u, 0u, 0u, 0u};
     for (unsigned scale = 0; scale < 4; ++scale) {
         const size_t band0 = (size_t)scale * 3u;
         const AdmCsfFactors f =
@@ -242,77 +201,47 @@ static void adm_hip_rfactors(double adm_norm_view_dist, int adm_ref_display_heig
 #ifdef HAVE_HIPCC
 
 /* ------------------------------------------------------------------ */
-/* Score computation helpers (host-side, same as CUDA twin)            */
+/* Score conclusion: the CPU's result routines on the CPU's contexts    */
 /* ------------------------------------------------------------------ */
 
-static void conclude_adm_cm(const int64_t *accum, int h, int w, int scale,
-                            uint32_t normalization_shift, float noise_weight, double p_norm,
-                            float *result)
+/* The numerator of one scale from its three band accumulators: the CPU's
+ * adm_cm_result() / i4_adm_cm_result() on the CPU's own context. The context
+ * initialisers only take addresses inside the buffer they are given, so an
+ * empty one stands in for the host planes this twin does not have. */
+static float adm_hip_cm_scale_result(const AdmStateHip *s, const int64_t accum[3], int w, int h,
+                                     int scale)
 {
-    int left = (int)(w * ADM_BORDER_FACTOR - 0.5);
-    int top = (int)(h * ADM_BORDER_FACTOR - 0.5);
-    int right = w - left;
-    int bottom = h - top;
-    const uint32_t shift_inner_accum = (uint32_t)ceil(log2((double)h));
-    const double p_norm_exp = 1.0 / p_norm;
-
-    const uint32_t shift_xcub[3] = {(uint32_t)ceil(log2((double)w) - 4.0),
-                                    (uint32_t)ceil(log2((double)w) - 4.0),
-                                    (uint32_t)ceil(log2((double)w) - 3.0)};
-    int constant_offset[3] = {52, 52, 57};
-    const int restored_bits = 3 * (int)normalization_shift;
-
-    uint32_t shift_cub = (uint32_t)ceil(log2((double)w));
-    float final_shift[3] = {
-        powf(2.0f, (float)(45 - restored_bits - (int)shift_cub - (int)shift_inner_accum)),
-        powf(2.0f, (float)(39 - restored_bits - (int)shift_cub - (int)shift_inner_accum)),
-        powf(2.0f, (float)(36 - restored_bits - (int)shift_cub - (int)shift_inner_accum))};
-    float powf_add =
-        powf((float)((bottom - top) * (right - left)) * noise_weight, (float)p_norm_exp);
-
-    float f_accum;
-    *result = 0;
-    for (int i = 0; i < 3; ++i) {
-        if (scale == 0) {
-            f_accum =
-                (float)(accum[i] / pow(2.0, (double)(constant_offset[i] - restored_bits -
-                                                     (int)shift_xcub[i] - (int)shift_inner_accum)));
-        } else {
-            f_accum = (float)((double)accum[i] / (double)final_shift[scale - 1]);
-        }
-        *result += powf(f_accum, (float)p_norm_exp) + powf_add;
+    AdmBuffer no_planes;
+    memset(&no_planes, 0, sizeof(no_planes));
+    const AdmCmBounds bd = adm_cm_bounds(w, h);
+    if (scale == 0) {
+        AdmCmCtx c;
+        adm_cm_ctx_init(&c, &no_planes, w, h, 0, 0, s->adm_norm_view_dist,
+                        s->adm_ref_display_height, s->adm_csf_mode, s->adm_csf_scale,
+                        s->adm_csf_diag_scale, false);
+        return adm_cm_result(&c, &bd, accum, s->adm_noise_weight, s->adm_p_norm);
     }
+    I4AdmCmCtx c;
+    i4_adm_cm_ctx_init(&c, &no_planes, w, h, 0, 0, scale, s->adm_norm_view_dist,
+                       s->adm_ref_display_height, s->adm_csf_mode, s->adm_csf_scale,
+                       s->adm_csf_diag_scale, false);
+    return i4_adm_cm_result(&c, &bd, accum, s->adm_noise_weight, s->adm_p_norm);
 }
 
-static void conclude_adm_csf_den(const uint64_t *accum, int h, int w, int scale, float *result,
-                                 const float rfactor[3], float noise_weight)
+/* The denominator of one scale: adm_csf_den_result() / i4_adm_csf_den_result(). */
+static float adm_hip_csf_den_scale_result(const AdmStateHip *s, const uint64_t accum[3], int w,
+                                          int h, int scale)
 {
-    const int left = (int)(w * ADM_BORDER_FACTOR - 0.5);
-    const int top = (int)(h * ADM_BORDER_FACTOR - 0.5);
-    const int right = w - left;
-    const int bottom = h - top;
-    const uint32_t accum_convert_float[4] = {18, 32, 27, 23};
-
-    int32_t shift_accum;
-    double shift_csf;
     if (scale == 0) {
-        shift_accum = (int32_t)ceil(log2((double)((bottom - top) * (right - left))) - 20.0);
-        shift_accum = shift_accum > 0 ? shift_accum : 0;
-        shift_csf = pow(2.0, (double)(accum_convert_float[scale] - (uint32_t)shift_accum));
-    } else {
-        shift_accum = (int32_t)ceil(log2((double)(bottom - top)));
-        const uint32_t shift_cub = (uint32_t)ceil(log2((double)(right - left)));
-        shift_csf =
-            pow(2.0, (double)(accum_convert_float[scale] - (uint32_t)shift_accum - shift_cub));
+        AdmDenCtx c;
+        adm_csf_den_ctx_init(&c, w, h, s->adm_norm_view_dist, s->adm_ref_display_height,
+                             s->adm_csf_mode, s->adm_csf_scale, s->adm_csf_diag_scale);
+        return adm_csf_den_result(&c, accum, s->adm_noise_weight);
     }
-    const float powf_add =
-        powf((float)((bottom - top) * (right - left)) * noise_weight, 1.0f / 3.0f);
-
-    *result = 0;
-    for (int i = 0; i < 3; ++i) {
-        const double csf = (double)(accum[i] / shift_csf) * pow((double)rfactor[i], 3.0);
-        *result += powf((float)csf, 1.0f / 3.0f) + powf_add;
-    }
+    I4AdmDenCtx c;
+    i4_adm_csf_den_ctx_init(&c, scale, w, h, s->adm_norm_view_dist, s->adm_ref_display_height,
+                            s->adm_csf_mode, s->adm_csf_scale, s->adm_csf_diag_scale);
+    return i4_adm_csf_den_result(&c, accum, s->adm_noise_weight);
 }
 
 /* ------------------------------------------------------------------ */
@@ -332,8 +261,6 @@ static void adm_hip_scale_scores(const AdmStateHip *s, unsigned w, unsigned h, d
 {
     const int64_t *adm_cm = (const int64_t *)s->buf.results_host;
     const uint64_t *adm_csf = &((const uint64_t *)s->buf.results_host)[RES_BUFFER_SIZE / 2];
-    float num_scale;
-    float den_scale;
 
     *num = 0;
     *den = 0;
@@ -342,19 +269,16 @@ static void adm_hip_scale_scores(const AdmStateHip *s, unsigned w, unsigned h, d
         w = (w + 1) / 2;
         h = (h + 1) / 2;
 
-        conclude_adm_cm(&adm_cm[band0], (int)h, (int)w, (int)scale,
-                        s->csf_normalization_shift[scale], (float)s->adm_noise_weight,
-                        s->adm_p_norm, &num_scale);
-        conclude_adm_csf_den(&adm_csf[band0], (int)h, (int)w, (int)scale, &den_scale,
-                             &s->rfactor[band0], (float)s->adm_noise_weight);
-
-        /* adm_skip_scale0: exclude scale 0 from num/den accumulation, mirroring
-         * the CPU integer_adm.c fast-path (den_scale = 1e-10, num_scale = 0).
-         * The GPU kernel still computes scale 0; suppression is host-side only. */
-        if (scale == 0u && s->adm_skip_scale0) {
-            scores[0] = 0.0;
-            scores[1] = 1e-10;
-            continue;
+        /* adm_skip_scale0: integer_adm_scale0() leaves the numerator at 0 and
+         * seeds the denominator with 1e-10 narrowed to float; both still enter
+         * the sums and the per-scale outputs. The kernels compute scale 0
+         * regardless; the suppression is host-side only. */
+        float num_scale = 0.0f;
+        float den_scale = (float)1e-10;
+        if (scale != 0u || !s->adm_skip_scale0) {
+            num_scale = adm_hip_cm_scale_result(s, &adm_cm[band0], (int)w, (int)h, (int)scale);
+            den_scale =
+                adm_hip_csf_den_scale_result(s, &adm_csf[band0], (int)w, (int)h, (int)scale);
         }
 
         *num += num_scale;
@@ -779,62 +703,49 @@ static int i4_adm_csf_device_hip(AdmStateHip *s, AdmBufferHip *buf, int scale, i
     return hip_rc(rc);
 }
 
+/* Launch geometry of the denominator kernels: one block per row of the border
+ * region and band (ADM_CSF_DEN_THREADS in adm_csf_den.hip). */
+#define ADM_HIP_CSF_DEN_THREADS 128u
+
 static int adm_csf_den_s123_device_hip(AdmStateHip *s, AdmBufferHip *buf, int scale, int w, int h,
                                        int src_stride, hipStream_t c_stream)
 {
-    int left = (int)(w * (float)(ADM_BORDER_FACTOR)-0.5f);
-    int top = (int)(h * (float)(ADM_BORDER_FACTOR)-0.5f);
-    int right = w - left;
-    int bottom = h - top;
-    int buffer_stride = right - left;
-    int buffer_h = bottom - top;
+    /* The CPU's context: the border and every rounding shift of
+     * adm_csf_den_s123(). */
+    I4AdmDenCtx c;
+    i4_adm_csf_den_ctx_init(&c, scale, w, h, s->adm_norm_view_dist, s->adm_ref_display_height,
+                            s->adm_csf_mode, s->adm_csf_scale, s->adm_csf_diag_scale);
+    const int rows = c.b.bottom - c.b.top;
+    if (rows <= 0 || c.b.right <= c.b.left)
+        return 0;
 
-    const int val_per_thread = 8;
-    const int warps_per_cta = 4;
-    const int BLOCKX = 32 * warps_per_cta;
-
-    uint32_t shift_sq[3] = {31, 30, 31};
-    uint32_t add_shift_sq[3] = {1u << shift_sq[0], 1u << shift_sq[1], 1u << shift_sq[2]};
-
-    void *args[] = {&buf->i4_ref_dwt2,
-                    &h,
-                    &top,
-                    &bottom,
-                    &left,
-                    &right,
-                    &src_stride,
-                    &add_shift_sq[scale - 1],
-                    &shift_sq[scale - 1],
-                    (void *)&buf->adm_csf_den[scale]};
-    hipError_t rc = hipModuleLaunchKernel(
-        s->func_adm_csf_den_s123_line_kernel,
-        (uint32_t)DIV_ROUND_UP(buffer_stride, BLOCKX * val_per_thread), (uint32_t)buffer_h, 3,
-        (uint32_t)BLOCKX, 1, 1, 0, c_stream, args, NULL);
-    return hip_rc(rc);
+    void *args[] = {&buf->i4_ref_dwt2,  &c.b.top,         &c.b.left,
+                    &c.b.right,         &src_stride,      &c.add_shift_sq,
+                    &c.shift_sq,        &c.add_shift_cub, &c.shift_cub,
+                    &c.add_shift_accum, &c.shift_accum,   (void *)&buf->adm_csf_den[scale]};
+    return hip_rc(hipModuleLaunchKernel(s->func_adm_csf_den_s123_row_kernel, 1u, (uint32_t)rows, 3u,
+                                        ADM_HIP_CSF_DEN_THREADS, 1u, 1u, 0u, c_stream, args, NULL));
 }
 
 static int adm_csf_den_scale_device_hip(AdmStateHip *s, AdmBufferHip *buf, int w, int h,
                                         int src_stride, hipStream_t c_stream)
 {
-    int scale = 0;
-    int left = (int)(w * (float)(ADM_BORDER_FACTOR)-0.5f);
-    int top = (int)(h * (float)(ADM_BORDER_FACTOR)-0.5f);
-    int right = w - left;
-    int bottom = h - top;
-    int buffer_stride = right - left;
-    int buffer_h = bottom - top;
+    /* The CPU's context: the border and the rounding shift of
+     * adm_csf_den_scale(). */
+    AdmDenCtx c;
+    adm_csf_den_ctx_init(&c, w, h, s->adm_norm_view_dist, s->adm_ref_display_height,
+                         s->adm_csf_mode, s->adm_csf_scale, s->adm_csf_diag_scale);
+    const int rows = c.b.bottom - c.b.top;
+    if (rows <= 0 || c.b.right <= c.b.left)
+        return 0;
+    uint32_t add_shift_accum = (uint32_t)c.add_shift_accum;
+    uint32_t shift_accum = (uint32_t)c.shift_accum;
 
-    const int val_per_thread = 8;
-    const int warps_per_cta = 4;
-    const int BLOCKX = 32 * warps_per_cta;
-
-    void *args[] = {&buf->ref_dwt2, &h,     &top,        &bottom,
-                    &left,          &right, &src_stride, (void *)&buf->adm_csf_den[scale]};
-    hipError_t rc = hipModuleLaunchKernel(
-        s->func_adm_csf_den_scale_line_kernel,
-        (uint32_t)DIV_ROUND_UP(buffer_stride, BLOCKX * val_per_thread), (uint32_t)buffer_h, 3,
-        (uint32_t)BLOCKX, 1, 1, 0, c_stream, args, NULL);
-    return hip_rc(rc);
+    void *args[] = {&buf->ref_dwt2, &c.b.top,         &c.b.left,    &c.b.right,
+                    &src_stride,    &add_shift_accum, &shift_accum, (void *)&buf->adm_csf_den[0]};
+    return hip_rc(hipModuleLaunchKernel(s->func_adm_csf_den_scale_row_kernel, 1u, (uint32_t)rows,
+                                        3u, ADM_HIP_CSF_DEN_THREADS, 1u, 1u, 0u, c_stream, args,
+                                        NULL));
 }
 
 typedef struct WarpShiftHip {
@@ -1162,14 +1073,18 @@ static int integer_compute_adm_hip(AdmStateHip *s, VmafHipSharedFrame *frame, Vm
     AdmFixedParametersHip p;
     adm_hip_fixed_params(s, w, h, adm_enhn_gain_limit, adm_norm_view_dist, adm_ref_display_height,
                          &p);
-    /* Zero result accumulator */
-    hipError_t hip_err = hipMemsetAsync(buf->tmp_res, 0, sizeof(int64_t) * RES_BUFFER_SIZE, s->str);
-    if (hip_err != hipSuccess)
-        return hip_rc(hip_err);
-
     int err = adm_hip_stage_luma(s, frame, ref_pic, dis_pic);
     if (err)
         return err;
+
+    /* Zero the result accumulators, after the upload: a clear queued ahead of
+     * it is lost in the first context of a process that needs larger planes
+     * than the contexts before, and the frame then adds onto what recycled
+     * device memory holds (ADR-1423,
+     * T-HIP-ADM-FIRST-FRAME-STALE-ACCUMULATORS-2026-10-01). */
+    hipError_t hip_err = hipMemsetAsync(buf->tmp_res, 0, sizeof(int64_t) * RES_BUFFER_SIZE, s->str);
+    if (hip_err != hipSuccess)
+        return hip_rc(hip_err);
 
     const int buf_stride = (int)(buf->ind_size_x >> 2); /* bytes → int32 elements */
     err = adm_hip_scale0(s, buf, ref_pic, dis_pic, &w, &h, buf_stride, &p);
@@ -1301,10 +1216,10 @@ static int adm_hip_get_functions(AdmStateHip *s)
         {s->adm_csf_module, &s->func_adm_csf_kernel_1_4, "adm_csf_kernel_1_4"},
         {s->adm_csf_module, &s->func_i4_adm_csf_kernel_1_4, "i4_adm_csf_kernel_1_4"},
 
-        {s->adm_csf_den_module, &s->func_adm_csf_den_scale_line_kernel,
-         "adm_csf_den_scale_line_kernel_8_128"},
-        {s->adm_csf_den_module, &s->func_adm_csf_den_s123_line_kernel,
-         "adm_csf_den_s123_line_kernel_8_128"},
+        {s->adm_csf_den_module, &s->func_adm_csf_den_scale_row_kernel,
+         "adm_csf_den_scale_row_kernel"},
+        {s->adm_csf_den_module, &s->func_adm_csf_den_s123_row_kernel,
+         "adm_csf_den_s123_row_kernel"},
 
         {s->adm_cm_module, &s->func_adm_cm_reduce_line_kernel_4, "adm_cm_reduce_line_kernel_4"},
         {s->adm_cm_module, &s->func_adm_cm_line_kernel_8, "adm_cm_line_kernel_8"},
@@ -1546,8 +1461,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     }
 
     adm_hip_rfactors(s->adm_norm_view_dist, s->adm_ref_display_height, s->adm_csf_mode,
-                     s->adm_csf_scale, s->adm_csf_diag_scale, s->rfactor, s->i_rfactor,
-                     s->csf_normalization_shift);
+                     s->adm_csf_scale, s->adm_csf_diag_scale, s->rfactor, s->i_rfactor);
 
 #ifndef HAVE_HIPCC
     (void)w;

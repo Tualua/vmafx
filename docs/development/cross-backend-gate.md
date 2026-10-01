@@ -30,7 +30,7 @@ explicitly accepts its skip.
   | `ssim` (the fixed-point extractor; its twins are `integer_ssim_<backend>`) | `5e-5` | ADR-0564 (int64 moments, one double term per pixel) |
   | `ssim` (CPU ↔ CUDA) | `0` (bit-identical, compared at `--precision max`) | ADR-1424 (the host adds the twin's per-pixel terms in the CPU's raster order); the `5e-5` row stays for the other twins |
   | `float_ssim`, `float_ssim_lcs`, `float_ms_ssim`, `float_ms_ssim_lcs`, `float_psnr`, `float_motion`, `float_vif`, `float_adm` | `5e-5` | ADR-0188 / ADR-0192 / ADR-0215 / ADR-1382 |
-  | `adm` (CPU ↔ CUDA) | `0` (bit-identical, compared at `--precision max`) | ADR-1416 (the twin runs the CPU's host routines and folds the denominator per row); the `5e-5` row stays for the other twins |
+  | `adm` (every pair of CPU, CUDA and HIP) | `0` (bit-identical, compared at `--precision max`) | ADR-1416, ADR-1423 (the twins run the CPU's host routines and fold the denominator per row); the `5e-5` row stays for the other twins |
   | `ciede` | `5e-3` | ADR-0187 (per-pixel pow/sqrt/sin/atan2) |
   | `psnr_hvs` (every pair of CPU, CUDA, SYCL and HIP) | `0` (bit-identical, compared at `--precision max`) | ADR-1397, ADR-1401 (the twins reproduce the CPU's running float sum) |
   | `psnr_hvs` (a twin that is not listed as exact) | `5e-4` at 576x324 and below, `5e-4 × √(N / N₅₇₆ₓ₃₂₄)` above | ADR-0191 (DCT plus per-block float reduction); ADR-1361 (area scaling) |
@@ -74,7 +74,10 @@ explicitly accepts its skip.
 
 - **Exact twins.** `adm_cuda` takes its CSF weights, rounding shifts and
   score conclusion from the CPU's own routines and folds the denominator once
-  per row ([ADR-1416](../adr/1416-cuda-adm-cpu-row-rounding.md)).
+  per row ([ADR-1416](../adr/1416-cuda-adm-cpu-row-rounding.md)), and
+  `adm_hip` does the same
+  ([ADR-1423](../adr/1423-hip-adm-cpu-row-rounding.md), measured on a gfx1036:
+  0 on 21 fixture pairs from 18x22 to 3840x2160 at 8 to 16 bits).
   `psnr_hvs_cuda`, `psnr_hvs_sycl` and
   `psnr_hvs_hip` store every term the CPU sums and the host adds them in the
   CPU's order, so their scores are the CPU's bit for bit

@@ -902,7 +902,7 @@ def _psnr_hvs_cell(backend_a: str, backend_b: str, width: int, height: int) -> t
 def test_exact_pair_is_cpu_and_listed_twins_only() -> None:
     assert {
         "ssim": frozenset({"cuda"}),
-        "adm": frozenset({"cuda"}),
+        "adm": frozenset({"cuda", "hip"}),
         "float_ms_ssim": frozenset({"sycl"}),
         "float_ms_ssim_lcs": frozenset({"sycl"}),
         "float_motion": frozenset({"cuda", "sycl", "hip"}),
@@ -924,8 +924,8 @@ def test_exact_pair_is_cpu_and_listed_twins_only() -> None:
         assert not is_exact_pair("ciede", "cpu", backend), backend
 
 
-def test_adm_cuda_cell_is_exact_and_other_twins_are_not() -> None:
-    """ADR-1416: only the CUDA twin runs the CPU's ADM host routines."""
+def test_adm_cuda_and_hip_cells_are_exact_and_other_twins_are_not() -> None:
+    """ADR-1416, ADR-1423: the CUDA and HIP twins run the CPU's ADM host routines."""
 
     def cell(backend_a: str, backend_b: str) -> tuple[float, str]:
         return resolve_cell_tolerance(
@@ -938,9 +938,11 @@ def test_adm_cuda_cell_is_exact_and_other_twins_are_not() -> None:
             backends=(backend_a, backend_b),
         )
 
-    assert cell("cpu", "cuda") == (0.0, EXACT_TWIN_SOURCE)
-    assert cell("cuda", "cpu") == (0.0, EXACT_TWIN_SOURCE)
-    for pair in (("cpu", "sycl"), ("cpu", "hip"), ("cuda", "hip")):
+    for pair in (("cpu", "cuda"), ("cuda", "cpu"), ("cpu", "hip"), ("hip", "cpu"), ("cuda", "hip")):
+        assert cell(*pair) == (0.0, EXACT_TWIN_SOURCE), pair
+    # A twin that is not listed keeps the places=4 tolerance, alone or against
+    # a listed one.
+    for pair in (("cpu", "sycl"), ("hip", "sycl"), ("cpu", "metal")):
         tolerance, source = cell(*pair)
         assert _close(tolerance, FEATURE_TOLERANCE["adm"]), pair
         assert source == "default", pair
