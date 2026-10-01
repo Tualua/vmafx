@@ -56,10 +56,10 @@ Go wrapper around libvmaf C ABI. Provides three scoring surfaces:
 6. **CGO linking fails closed**: `libvmaf.go` deliberately has no `#cgo
    LDFLAGS` fallback. Every build caller must set `CGO_LDFLAGS` to a verified
    fork library: local Make/CI use `core/build-cpu/src`; production container
-   stages use `/usr/local/lib`. This prevents a missing build directory from
-   silently resolving an unrelated distro libvmaf. Keep the Make targets,
-   `go-ci.yml`, `Dockerfile.go-server`, `docker/Dockerfile.node`, the dev
-   container, `scripts/ci/test_go_workflow_contract.py`, and the documented
+   stages use `/usr/local/lib`. This prevents missing build directory from
+   silently resolving unrelated distro libvmaf. Keep Make targets,
+   `go-ci.yml`, `Dockerfile.go-server`, `docker/Dockerfile.node`, dev
+   container, `scripts/ci/test_go_workflow_contract.py`, and documented
    direct-command examples aligned.
 
 7. **`VMAF_MCP_ALLOW` uses `filepath.SplitList`** (`paths.go::AllowedRoots`,
@@ -108,10 +108,10 @@ Go wrapper around libvmaf C ABI. Provides three scoring surfaces:
 
 12. **Context teardown is exact-zero and dependency ordered**
     (`direct.go::cgoScoringOwner`, `stream.go::StreamScorer.Close`):
-    `vmaf_close` returning anything other than zero retains a teardown-only
-    context. Never destroy the registered model until a close attempt returns
-    zero. Stateful `StreamScorer.Close` returns the error and may be retried;
+    `vmaf_close` returning anything other than zero retains teardown-only
+    context. Never destroy registered model until close attempt returns
+    zero. Stateful `StreamScorer.Close` returns error and may be retried;
     `PushFrame` and `Finish` stay disabled after teardown begins. Function-
     scoped `ScoreDirect` and constructor unwinds make one immediate retry and
-    deliberately retain the C owners after persistent failure rather than
-    create a use-after-free.
+    deliberately retain C owners after persistent failure rather than
+    create use-after-free.

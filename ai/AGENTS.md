@@ -97,26 +97,25 @@ ai/
 - **Feature-correlation JSON is finite-only.**
   `ai/scripts/feature_correlation.py` treats `NaN` and both infinities as
   incomplete feature/target rows, rejects non-finite
-  `--redundancy-threshold` values during argument parsing, and validates the
-  complete report with `allow_nan=False` before its atomic manifest write.
-  Preserve the missing-scikit-learn empty-map contract and the repeated
+  `--redundancy-threshold` values during argument parsing, and validates   complete report with `allow_nan=False` before its atomic manifest write.
+  Preserve missing-scikit-learn empty-map contract and repeated
   constant-column check after complete-case filtering; neither `NaN` nor
-  `Infinity` is an RFC-8259 JSON value.
+  `Infinity` is RFC-8259 JSON value.
 - [ADR-0661](../docs/adr/0661-ai-run-manifest-provenance.md) — **AI sidecars carry shared run provenance.** Use `aiutils.run_manifest.write_run_manifest()` for new standalone training/export/fetch/extraction sidecars instead of inventing per-script argument/path JSON; use `build_run_provenance()` only when embedding provenance block into existing stable report schema. CHUG-facing MOS runs record `train_chug_hdr_mos_head.py` as user entrypoint and `train_konvid_mos_head.py` as `shared_trainer` because wrapper delegates into shared loop. Matching Claude workflow = `.claude/skills/ai-run-manifest/SKILL.md`.
 - [ADR-0680](../docs/adr/0680-ai-cli-helper-pattern.md) — **AI batch CLIs share parser boilerplate.** Use `aiutils.cli_helpers.make_argument_parser()` and `collect_cli_argv()` for new operator-facing scripts. Batch manifest runners must use `add_batch_manifest_arguments()` so manifest/report/fail-fast flags stay consistent while table-specific parser fields remain local to each runner.
 - [ADR-0681](../docs/adr/0681-ai-script-bootstrap-helper.md) — **Direct AI scripts share import bootstrap.** Use `ai/scripts/_script_bootstrap.py::bootstrap_ai_script(__file__)` before importing `aiutils`, sibling materializers, or optional `vmaf-tune` helpers from directly executable `ai/scripts/*.py` file. Do not add fresh ad hoc `sys.path.insert(...)` blocks unless helper lacks required import root and same PR extends its tests/docs.
-- **BUG-048 legacy CLI restoration.** The twelve eval/quant/export scripts listed in
+- **BUG-048 legacy CLI restoration.** twelve eval/quant/export scripts listed in
   `ai/tests/test_ai_cli_helper_restoration.py` stay on both ADR-0680 and
   ADR-0681: no local `sys.path.insert`, direct `ArgumentParser`, or raw
-  `sys.argv` handling. A script importing the repository's `ai.*` package must
-  pass `include_repo_root=True` to `bootstrap_ai_script`; the default only adds
-  `ai/src` and cannot support a direct `python ai/scripts/foo.py` invocation.
+  `sys.argv` handling. script importing repository's `ai.*` package must
+  pass `include_repo_root=True` to `bootstrap_ai_script`; default only adds
+  `ai/src` and cannot support direct `python ai/scripts/foo.py` invocation.
 - **GPU calibration fixtures name live backends only.** Vulkan was removed by
   ADR-0726. Keep `collect_gpu_calibration_data.py` help, its manifest fixtures,
-  and backend selections on the registered CUDA/SYCL set; do not revive
+  and backend selections on registered CUDA/SYCL set; do not revive
   `vulkan_device`, `vulkan:lavapipe`, or `backends=["vulkan"]` as harmless test
   data because those examples are copied into real calibration manifests.
-  Its score loader rejects a top-level non-object, a missing/non-list `frames`
+  Its score loader rejects top-level non-object, missing/non-list `frames`
   member, and non-object frame entries before metric pairing.
 - [ADR-0668](../docs/adr/0668-ai-derived-table-provenance.md) — **Derived feature tables need replay manifests.** `extract_k150k_features.py`, `combine_full_feature_parquets.py`, `enrich_k150k_parquet_metadata.py`, `konvid_to_full_features.py`, and `bvi_dvc_to_full_features.py` write `<out>.manifest.json` by default using `aiutils.run_manifest`. Do not add new operator-facing refreshed parquet/table builders leaving no input/output/argv sidecar; anonymous local parquet files aren't acceptable training evidence.
 - [ADR-0669](../docs/adr/0669-ai-corpus-jsonl-provenance.md) — **Corpus JSONL merge outputs need replay manifests.** `aggregate_corpora.py` and `merge_corpora.py` write `<output>.manifest.json` by default with shared `run_provenance`, counters, and schema/dedup policy. Keep JSONL row schemas stable, put run-level evidence in sidecar.
@@ -131,7 +130,7 @@ ai/
 - [ADR-0672](../docs/adr/0672-saliency-materializer-temporal-controls.md) — **saliency materializer rows must be attributable.** `ai/scripts/materialize_saliency_features.py` exposes same temporal reducers as `vmaf-tune` (`mean`, `ema`, `max`, `motion-weighted`), records `saliency_model_id`, `saliency_aggregator`, and `saliency_ema_alpha` for newly materialized rows. Do not overwrite or invent provenance metadata for skipped pre-existing saliency columns; use `--overwrite` when intentionally replacing them.
 - [ADR-0963](../docs/adr/0963-ai-nan-propagation-guards-round25.md) — **NaN propagation guards in `eval.correlations` and `tune._read_best_metric`.** `correlations()` raises `ValueError` on empty inputs, returns `plcc=0.0, srocc=0.0` (with `RuntimeWarning`) for constant-valued inputs. 0.0 sentinel is intentional: gate logic uses `>=` and NaN would silently fail every comparison. `_read_best_metric()` returns `float("inf")` when all metric rows are NaN (diverged training run), preventing Optuna study corruption. Do not change these sentinels without updating downstream `_gate` comparison semantics in `bisect_model_quality.py`.
 - [ADR-0993](../docs/adr/0993-konvid-ugc-bvi-saliency-batch-launch.md) — **KoNViD / UGC / BVI-DVC saliency batch manifests.** In-tree manifests live under `ai/batch-manifests/saliency/`. KoNViD-150K manifest (`konvid-150k.json`) fully wired to `konvid_150k.jsonl` with `path_column=src`, `root=.corpus/konvid-150k/k150ka_extracted/`. UGC (`ugc.json`) and BVI-DVC (`bvi-dvc.json`) = scaffolded stubs with `tables: []` until path-enriched corpus JSONL generated for each (see `_status` / `_resolution` comments in each manifest). Never populate UGC tables using `source` identifier column from full-feature parquet — contains corpus IDs, not file paths. Never populate BVI-DVC tables using `key` column — contains encode parameters, not file paths.
-- [ADR-1097](../docs/adr/1097-ai-script-atomic-writes.md) — **Cache and output file writes must be atomic.** All per-clip cache JSON writes in `ai/scripts/` and all final Parquet / JSONL output writes must go through `aiutils.file_utils.write_text_atomic` (for JSON/text) or `aiutils.parquet_utils.write_parquet_atomic` (for Parquet). Both helpers write to sibling temp file, rename atomically so crash mid-write never leaves partially-truncated file poisoning subsequent resume logic. Do **not** use `Path.write_text(...)` or bare `df.to_parquet(dest)` for any file a resume loop tests with `path.is_file()`. `write_manifest_json` in `aiutils.run_manifest` also made atomic (transparent to callers). `extract_k150k_features._write_parquet_from_rows` uses same pattern as established precedent.
+- [ADR-1097](../docs/adr/1097-ai-script-atomic-writes.md) — **Cache and output file writes must be atomic.** All per-clip cache JSON writes in `ai/scripts/` and all final Parquet / JSONL output writes must go through `aiutils.file_utils.write_text_atomic` (for JSON/text) or `aiutils.parquet_utils.write_parquet_atomic` (for Parquet). Both helpers write to sibling temp file, rename atomically so crash mid-write never leaves partially-truncated file poisoning subsequent resume logic. Do **not** use `Path.write_text(...)` or bare `df.to_parquet(dest)` for any file resume loop tests with `path.is_file()`. `write_manifest_json` in `aiutils.run_manifest` also made atomic (transparent to callers). `extract_k150k_features._write_parquet_from_rows` uses same pattern as established precedent.
 - [ADR-1173](../docs/adr/1173-ai-teacher-follows-default-model.md) — **AI teacher model follows default model single source.** AI training and extraction scripts resolve teacher model through `ai.data.scores.resolve_teacher_model()` (imports `DEFAULT_MODEL` from `vmaftune.defaultmodel`), falling back to `$VMAF_MODEL_PATH` then `DEFAULT_MODEL`. Feature producers stamp `teacher_model` on every row and manifest; combiners and trainers refuse mixed-teacher tables without `--assume-teacher`; raw feature extraction tables append `adm3` to `FULL_FEATURES` and K150K `FEATURE_NAMES` while canonical-6 student features remain frozen.
 
 ## Netflix-corpus training prep (ADR-0242 / ADR-0203)
@@ -308,7 +307,7 @@ LOSO PLCC ≥ 0.95 against `vmaf_v0.6.1` per-frame teacher.
   graph weight matrix column-aligned to it. Reordering
   sidecar `feature_order` field invalidates checkpoint.
 - Refresh PRs must point `--parquet` at current dated Netflix
-  full-feature table (for example
+  full-feature table (e.g.
   `runs/full_features_netflix_refresh_20260520.parquet`), not
   stale historical `runs/full_features_netflix.parquet`, and must
   update model card with new LOSO fold metrics. If
@@ -384,15 +383,14 @@ model card:
 
 **Rebase-sensitive invariants:**
 
-- **Strict helper annotations are part of the CI boundary (ADR-1310).**
+- **Strict helper annotations are part of CI boundary (ADR-1310).**
   `_synthesize_smoke_corpus()` returns exactly three `np.ndarray` values and
   `_load_ensemble_shapes()` uses parameterized manifest/session containers;
-  keep those return contracts explicit when refactoring the evaluator. Test
+  keep those return contracts explicit when refactoring evaluator. Test
   callbacks added under `ai/tests/` also need typed variadic parameters, and
-  parameterized tests must retain their signatures through a typed marker
-  adapter. The required merge-base mypy gate treats a new bare `dict`/`list`,
-  untyped helper return, untyped decorator, or untyped injected callback as a
-  branch finding.
+  parameterized tests must retain their signatures through typed marker
+  adapter. required merge-base mypy gate treats new bare `dict`/`list`,
+  untyped helper return, untyped decorator, or untyped injected callback as   branch finding.
 
 - **Per-member ONNX I/O contract = v2 two-input shape**: inputs
   `features [N, 6]` (canonical-6, StandardScaler-normalised by
@@ -404,9 +402,8 @@ model card:
 - **Manifest layout = runtime entry point**, not registry
   rows. Each member also added to `model/tiny/registry.json` as
   `kind: "fr"` (with id `<ensemble_id>_seed<N>`), so existing
-  tiny-model verifier can SHA-256-check each member without a
-  schema bump. Manifest sidecar's `members[]` list = canonical
-  ordered set C-side adapter iterates over. Adding a schema-version
+  tiny-model verifier can SHA-256-check each member without   schema bump. Manifest sidecar's `members[]` list = canonical
+  ordered set C-side adapter iterates over. Adding schema-version
   field to `registry.schema.json` for `fr_ensemble` kind = future
   option; until then, ensemble lookups go through manifest, not
   registry.
@@ -463,9 +460,7 @@ model card:
   bump after retraining, smoke-flag mutation, ONNX path change)
   requires fresh `PROMOTE.json` verdict with mean PLCC ≥ 0.95 AND
   spread ≤ 0.005. Same two-part gate ADR-0303 defined, ADR-0320
-  honoured. **Never** flip or mutate these rows during a
-  `/sync-upstream` rebase or as side-effect of any other PR — the
-  harness in
+  honoured. **Never** flip or mutate these rows during   `/sync-upstream` rebase or as side-effect of any other PR —   harness in
   [`ai/scripts/run_ensemble_v2_real_corpus_loso.sh`](scripts/run_ensemble_v2_real_corpus_loso.sh)
   and validator emit verdict file but **do not** mutate
   registry. Auto-flipping on PROMOTE was rejected in ADR-0309's
@@ -500,7 +495,7 @@ model card:
   `preset_norm = 0.5` (corpus doesn't record preset) +
   `crf_norm` = `(cq - cq_min) / (cq_max - cq_min)`. Schema changes
   — column rename, encoder-vocab reorder, new required field —
-  require an `ENCODER_VOCAB_VERSION` bump and full ensemble retrain
+  require `ENCODER_VOCAB_VERSION` bump and full ensemble retrain
   per existing closed-vocabulary invariant. Fold-level
   StandardScaler fit on training rows only (mirrors
   `eval_loso_vmaf_tiny_v3.py`); leaking held-out source's
@@ -523,10 +518,9 @@ config example =
    activation, per-channel symmetric `int8` weight (ADR-1293).
 3. QAT fine-tune at 10× reduced LR.
 4. Copy QAT-conditioned weights into fresh fp32 module, export
-   to ONNX (torch.export-based exporter; the target is plain fp32,
-   so the legacy path is not needed), then ORT static-quantize with
-   calibration set drawn from QAT distribution. Output = a
-   QDQ `.int8.onnx`.
+   to ONNX (torch.export-based exporter; target is plain fp32,
+   so legacy path is not needed), then ORT static-quantize with
+   calibration set drawn from QAT distribution. Output =    QDQ `.int8.onnx`.
 
 **Rebase-sensitive invariants:**
 
@@ -539,32 +533,30 @@ config example =
   PyTorch upgrade.
 - State-dict transfer in `_copy_qat_weights_into_fp32` matches
   by submodule name + tensor shape. `torch.export` capture keeps
-  the original parameter names (measured: 20/20 tensors transfer
+  original parameter names (measured: 20/20 tensors transfer
   on `LearnedFilter`), but models using top-level `nn.Sequential`
-  still break this; the `RuntimeError("0 tensors copied")` guard
+  still break this; `RuntimeError("0 tensors copied")` guard
   catches it.
-- An exported graph module rejects `.train()` / `.eval()` and
+- exported graph module rejects `.train()` / `.eval()` and
   needs torchao's `move_exported_model_to_train` / `_to_eval`.
   `_set_mode()` dispatches on `isinstance(module,
   torch.fx.GraphModule)` because `_qat_fine_tune` runs against
-  both the raw Lightning module and the prepared graph. Do not
-  reintroduce a bare `.eval()` on the QAT model.
+  both raw Lightning module and prepared graph. Do not
+  reintroduce bare `.eval()` on QAT model.
 - Graph capture runs on CPU (`torch.export` is flaky on CUDA
   buffers here); trainer migrates to CPU before
   `prepare_qat_pt2e` and back to accelerator afterwards.
-- `torch.ao.quantization` is deprecated wholesale and raises a
-  `DeprecationWarning` the `filterwarnings = ["error"]` setting
-  turns into a test failure. The QAT hook moved to
+- `torch.ao.quantization` is deprecated wholesale and raises   `DeprecationWarning` `filterwarnings = ["error"]` setting
+  turns into test failure. QAT hook moved to
   `torchao.quantization.pt2e` in ADR-1293; do not restore
-  `prepare_qat_fx` or `get_default_qat_qconfig_mapping` on a
-  rebase. `torch.export.export_for_training` does not exist in
+  `prepare_qat_fx` or `get_default_qat_qconfig_mapping` on   rebase. `torch.export.export_for_training` does not exist in
   torch 2.14 — use `torch.export.export(...).module()`.
-- The pt2e recipe keeps the weight side byte-identical
+- pt2e recipe keeps weight side byte-identical
   (`int8`, `per_channel_symmetric`, `ch_axis=0`, [-128, 127])
-  and widens the activation range from the old mapping's
+  and widens activation range from old mapping's
   reduce-range [0, 127] to [0, 255]. That matches ORT
-  `quantize_static`, which bakes the activation ranges that
-  actually ship; the narrower range was the mismatch.
+  `quantize_static`, which bakes activation ranges that
+  ship; narrower range was mismatch.
 
 ## Local workflow
 
@@ -580,8 +572,7 @@ bash ai/scripts/run_training.sh
 
 ## fr_regressor_v2 — codec block layout (ADR-0272)
 
-`ai/scripts/train_fr_regressor_v2.py` consumes vmaf-tune Phase A
-JSONL corpus, emits `model/tiny/fr_regressor_v2.onnx`. Codec
+`ai/scripts/train_fr_regressor_v2.py` consumes vmaf-tune Phase JSONL corpus, emits `model/tiny/fr_regressor_v2.onnx`. Codec
 block layout is **load-bearing** — bumping it requires re-train.
 Pinned invariants:
 
@@ -604,8 +595,8 @@ Pinned invariants:
 
 Current shipped ONNX is from `--smoke` mode and is registered
 `smoke: true` in `model/tiny/registry.json`. Production training run
-is gated on multi-codec Phase A corpus + per-frame feature emission
-in Phase A schema. See ADR-0272 + Research-0054.
+is gated on multi-codec Phase corpus + per-frame feature emission
+in Phase schema. See ADR-0272 + Research-0054.
 
 ## BVI-DVC corpus ingestion (ADR-0310)
 
@@ -650,8 +641,7 @@ by `(src_sha256, encoder, preset, crf)`).
   modes: `--bvi-zip` (original; streams MP4s from archive) and
   `--bvi-dir` (ADR-0527; enumerates pre-extracted `.mp4` / `.yuv` files
   from directory). Tier inferred from resolution via closed
-  `_RES_TO_TIER` dict — any new BVI-DVC release with a
-  non-standard resolution requires adding row there before file
+  `_RES_TO_TIER` dict — any new BVI-DVC release with   non-standard resolution requires adding row there before file
   gets picked up. Dir-mode path does **not** delete source files
   after processing; zip-mode path deletes temporarily extracted
   MP4 after processing (existing behaviour).
@@ -670,8 +660,7 @@ reference, libx264 CRF 35 distorted side) but emits current
 - Use `core/build-cpu/tools/vmaf` or explicitly verified fresh
   dev-container binary. Do not let script fall back to
   `/usr/local/bin/vmaf`; system installs have previously lacked
-  fork-only extractors such as `motion_v2`, `ssimulacra2`, and the
-  SpEED features.
+  fork-only extractors such as `motion_v2`, `ssimulacra2`, and   SpEED features.
 - Folded parquet's `source=fold0..fold4` assignment = stable
   balanced hash over clip keys. Intentionally does not depend on
   directory enumeration order or row count, because
@@ -741,8 +730,7 @@ scripts:
 
 ### Rebase-sensitive invariants
 
-- CHUG data is local-only under `.corpus/chug/`. Do not commit the
-  public `chug.csv`, downloaded MP4s, emitted JSONL, trained local
+- CHUG data is local-only under `.corpus/chug/`. Do not commit   public `chug.csv`, downloaded MP4s, emitted JSONL, trained local
   CHUG heads, or derived features. README/license mismatch is
   handled by treating dataset as non-commercial/share-alike until
   clarified.
@@ -767,7 +755,7 @@ scripts:
   chosen `split` plus `chug_split_key` into every feature row. Do
   not split bitrate-ladder rows independently; that leaks same
   source content across validation.
-- Local HDR metadata audit (`--audit-output`) is a pre-training
+- Local HDR metadata audit (`--audit-output`) is pre-training
   gate for CHUG experiments. Preserve its ffprobe transfer / primaries /
   pix-fmt counters and malformed-PQ/HLG-without-BT.2020 row list when
   touching materialiser.
@@ -782,14 +770,14 @@ scripts:
   `highfreq_abs_mean`, `noise_lap_mad`) for both reference and
   distorted clips plus `feature_delta_*` distorted-minus-reference
   fields. These are diagnostic blur/noise/grain proxies; do not treat
-  them as a replacement for a trained NR VQA model.
+  them as replacement for trained NR VQA model.
 - `ai/scripts/enrich_k150k_parquet_metadata.py` is recovery path for
   FULL_FEATURES parquet jobs that were started without `--metadata-jsonl`.
   It must match metadata by `clip_name` / JSONL basename, fill missing
   metadata cells by default, and keep feature/MOS columns unchanged unless
   `--overwrite-metadata` is explicitly passed.
 
-## K150K-A corpus extraction (ADR-0362, ADR-0382, ADR-0431)
+## K150K-corpus extraction (ADR-0362, ADR-0382, ADR-0431)
 
 **Script:** `ai/scripts/extract_k150k_features.py`
 **Branch:** `chore/ensemble-kit-gdrive-quickstart`
@@ -805,8 +793,7 @@ scripts:
   layer so rows aren't lost on unclean exit. Do not re-introduce per-flush
   parquet writes — they make total parquet I/O O(N²) over corpus size.
 - **Staging file is main-process-only (Research-0135).**
-  `_append_row_to_staging` called only from main process inside the
-  `as_completed()` loop, after `fut.result()` returns. Worker subprocesses
+  `_append_row_to_staging` called only from main process inside   `as_completed()` loop, after `fut.result()` returns. Worker subprocesses
   must never write to staging file. Violating single-writer semantics on
   staging file would corrupt it without error.
 - **ffprobe skipped when sidecar has geometry (Research-0135 Win 2).**
@@ -815,15 +802,14 @@ scripts:
   `chug_bit_depth` from CHUG JSONL sidecar row. Sidecar metadata is
   loaded in `_load_jsonl_metadata`, which must include `chug_bit_depth` in its
   `keep` allowlist so 10-bit clips decode as `yuv420p10le`. Any required
-  field absent (K150K-A clips, incomplete rows) -> function returns `None`
+  field absent (K150K-clips, incomplete rows) -> function returns `None`
   and `_probe_geometry(mp4)` called as fallback. Do not remove fallback —
-  K150K-A clips have no sidecar.
+  K150K-clips have no sidecar.
 - **Scratch directory is auto-selected to `/dev/shm` when available (Research-0135 Win 3):**
   `_choose_scratch_dir(requested)` returns `/dev/shm/k150k_yuv_scratch` when `/dev/shm`
-  is writable and `statvfs` reports >=20 GiB free; otherwise falls back to the OS temp
-  directory. The threshold (20 GiB) covers 8 concurrent workers each holding a
-  ~1.5 GiB 1080p 10-bit 240-frame YUV clip. Pass `--scratch-dir` to override.
-  Do not lower the 20 GiB threshold without updating the headroom analysis in Research-0135.
+  is writable and `statvfs` reports >=20 GiB free; otherwise falls back to OS temp
+  directory. threshold (20 GiB) covers 8 concurrent workers each holding   ~1.5 GiB 1080p 10-bit 240-frame YUV clip. Pass `--scratch-dir` to override.
+  Do not lower 20 GiB threshold without updating headroom analysis in Research-0135.
 - **Binary requirement:** script requires `core/build-cpu/tools/vmaf`
   (fork build); system `/usr/local/bin/vmaf` v3.0.0 lacks `ssimulacra2`
   and `motion_v2`. `--vmaf-bin` default (in `main()`) now points to
@@ -832,8 +818,7 @@ scripts:
   `--feature <x>` is combined with auto-loaded default VMAF model
   (see Research-0096 / ADR-0382 for details).
 - **CUDA split invariant:** operators explicitly passing CUDA-capable
-  `--vmaf-bin` -> script must use explicit CUDA extractor names for the
-  GPU-safe pass and `--cpu-vmaf-bin` for residual CPU pass
+  `--vmaf-bin` -> script must use explicit CUDA extractor names for   GPU-safe pass and `--cpu-vmaf-bin` for residual CPU pass
   (`float_ssim`, `cambi`). Do not re-collapse this into one generic
   `--backend cuda` invocation; CHUG/K150K 10-bit clips can fail
   `context could not be synchronized` through that path.
@@ -844,21 +829,19 @@ scripts:
   threading — libvmaf subprocess invocations not thread-safe for concurrent
   parallel pipelines.
 - **Checkpoint thread-safety:** `_append_done()` called only from main
-  process (after `fut.result()` returns in the `as_completed()` loop). Do not
+  process (after `fut.result()` returns in `as_completed()` loop). Do not
   call it from worker processes — append-only guarantee relies on single-writer
   semantics.
 - **NaN propagation:** `ciede2000` and `psnr_hvs` return `null` from vmaf
   when ref == distorted (identity pair). All-NaN columns are **expected** —
   do not treat them as extraction failures. `np.errstate(all="ignore")`
   in `_aggregate_frames()` suppresses numpy warning; preserve it.
-- **Column-order lock:** `FEATURE_NAMES` (line ~121) defines the 21-feature
+- **Column-order lock:** `FEATURE_NAMES` (line ~121) defines 21-feature
   column order (parquet schema v2) downstream loaders depend on. Appending
   is safe; reordering or removing entries breaks existing parquets and any
-  trained model that consumed them. Increment parquet schema version in a
-  separate ADR if reordering becomes necessary. **Schema v2 invariant
+  trained model that consumed them. Increment parquet schema version in   separate ADR if reordering becomes necessary. **Schema v2 invariant
   (ADR-0431):** `ssimulacra2` omitted from K150K/CHUG self-vs-self
-  extraction. In identity pairs (ref == distorted) it produces a
-  constant ~100, yielding zero training signal while consuming
+  extraction. In identity pairs (ref == distorted) it produces   constant ~100, yielding zero training signal while consuming
   30–50% of GPU time per clip. Operating in FR-from-NR mode (same
   video on both sides) -> all difference-based metrics
   (difference-based ssimulacra2, ciede2000, psnr_hvs, ADM, VIF)
@@ -871,15 +854,12 @@ scripts:
   emitted via `--model` arg in `_run_feature_passes`; all other entries
   = raw features emitted via `--feature` arguments.
 - **vmaf column computed via vmaf_v0.6.1 (Research-0135):** `vmaf`
-  column in CHUG/K150K output parquets is computed by dispatching the
-  SDR `vmaf_v0.6.1` model via `--model version=vmaf_v0.6.1` in the
-  libvmaf CLI invocation. Model is SDR-trained and mis-calibrated on PQ
+  column in CHUG/K150K output parquets is computed by dispatching   SDR `vmaf_v0.6.1` model via `--model version=vmaf_v0.6.1` in   libvmaf CLI invocation. Model is SDR-trained and mis-calibrated on PQ
   HDR clips; scores valid for relative bitrate-ladder comparison within
-  a content group but not meaningful as absolute HDR quality targets.
+  content group but not meaningful as absolute HDR quality targets.
   Replace with Netflix HDR model when it ships (change `--model` arg in
-  `_run_feature_passes`; no schema change required). Do NOT remove the
-  `--model` arg without an ADR — vmaf relationship across ladder rungs
-  is a required training feature per user direction 2026-05-16.
+  `_run_feature_passes`; no schema change required). Do NOT remove   `--model` arg without ADR — vmaf relationship across ladder rungs
+  is required training feature per user direction 2026-05-16.
 - **Checkpoint format:** `.done` file is append-only, one clip name per
   line, no header. Changing format without migration breaks in-progress
   runs. `_load_done_set()` / `_append_done()` helpers = single-exit-point
@@ -896,42 +876,40 @@ scripts:
   write path has matching `len(rows) == len(recovered_rows) + ok`
   assert; preserve it through any future refactor of
   `as_completed` accounting loop.
-- **fsync parquet before unlinking staging (ADR-0862).** Both the
-  no-op branch and end-of-run write path call `_fsync_path(args.out)`
-  AFTER the parquet rename(2) and BEFORE
+- **fsync parquet before unlinking staging (ADR-0862).** Both   no-op branch and end-of-run write path call `_fsync_path(args.out)`
+  AFTER parquet rename(2) and BEFORE
   `staging_path.unlink(missing_ok=True)`. Helper fsyncs file
-  and its parent directory so rename(2) is durable before the
-  companion unlink can race ahead of it on power loss. Do not reorder
-  these calls or drop the `fsync` — staging-as-WAL design depends
-  on the parquet being durable when the WAL is discarded.
+  and its parent directory so rename(2) is durable before   companion unlink can race ahead of it on power loss. Do not reorder
+  these calls or drop `fsync` — staging-as-WAL design depends
+  on parquet being durable when WAL is discarded.
 - **JSONDecodeError surface (ADR-0862).** `_load_staging_rows`
-  reports the count of malformed lines to stderr as a WARNING.
-  Do not revert this to silent `continue`: a truncated-tail
+  reports count of malformed lines to stderr as WARNING.
+  Do not revert this to silent `continue`: truncated-tail
   staging file = leading indicator worker died mid-write,
-  and the operator needs to know.
+  and operator needs to know.
 - **Gitignore:** `runs/full_features_k150k.parquet` and
   `runs/k150k_extract.log` are gitignored (152K-clip output not tracked).
   Do not commit these files.
-- **FR-from-NR adapter:** the script does NOT call `NrToFrAdapter` from
-  the Python training harness — builds vmaf CLI argv directly with
-  ref == distorted, which is the lighter-weight equivalent. Any upstream
-  refactor of the Python adapter is irrelevant to this script.
+- **FR-from-NR adapter:** script does NOT call `NrToFrAdapter` from
+  Python training harness — builds vmaf CLI argv directly with
+  ref == distorted, which is lighter-weight equivalent. Any upstream
+  refactor of Python adapter is irrelevant to this script.
 - **FR-corpus misuse guard (ADR-0509):** script = no-reference adapter.
-  Running it on a full-reference corpus (CHUG: `chug_ref==1` references
+  Running it on full-reference corpus (CHUG: `chug_ref==1` references
   paired with bitrate-ladder distortions for same
-  `chug_content_name`) silently produces a parquet where every clip is
+  `chug_content_name`) silently produces parquet where every clip is
   scored against itself. Every difference-based metric collapses to
   its identity-pair floor (`adm2 == vif_* == 1.0`, `psnr_y == 60`,
-  `ciede2000 / psnr_hvs == NaN`, `vmaf ~= 99`); the parquet carries
+  `ciede2000 / psnr_hvs == NaN`, `vmaf ~= 99`); parquet carries
   zero training signal. `detect_fr_corpus_misuse(meta_by_clip)` returns
   `{misuse_detected: bool, ref_count, dis_count, content_groups_with_both,
   example}`; `main()` exits 2 before spawning any worker when the loaded
-  sidecar carries the FR signature. Use `ai/scripts/chug_extract_features.py`
+  sidecar carries FR signature. Use `ai/scripts/chug_extract_features.py`
   for FR corpora — it pairs each distorted row with its matching
   reference. `--allow-fr-from-nr` opt-in flag is reserved for genuine
-  identity-pair studies on an FR corpus; do NOT default-on it in any
-  script or recipe. Guard runs on the **loaded** `jsonl_meta` dict
-  (after `_load_jsonl_metadata` filters the raw sidecar), so
+  identity-pair studies on FR corpus; do NOT default-on it in any
+  script or recipe. Guard runs on **loaded** `jsonl_meta` dict
+  (after `_load_jsonl_metadata` filters raw sidecar), so
   `_load_jsonl_metadata`'s keep-list MUST preserve `chug_ref` and
   `chug_content_name`. Pinned by 3 unit tests
   (`test_detect_fr_corpus_misuse_*`) in `ai/tests/test_extract_k150k_features.py`.
@@ -956,7 +934,7 @@ ADR-0291 + ADR-0302):
 
   **Status (ADR-0323, 2026-05-06):** First v3 LOSO run shipped
   under [`ai/scripts/train_fr_regressor_v3.py`](scripts/train_fr_regressor_v3.py)
-  on NVENC-only Phase A corpus (5,640 rows, 9 sources × 4 CQs).
+  on NVENC-only Phase corpus (5,640 rows, 9 sources × 4 CQs).
   Mean LOSO PLCC = **0.9975 ± 0.0018** (every source above 0.99) —
   comfortably clears 0.95 ship gate. Model ships under
   `model/tiny/fr_regressor_v3.onnx` with `smoke: false`. Live
@@ -976,8 +954,7 @@ ADR-0291 + ADR-0302):
 - In-tree v2 ONNX (`model/tiny/fr_regressor_v2.onnx`) **must
   not be replaced** until new v3 ONNX clears gate. Load-fallback
   shim collapses unknown v3 strings into v2
-  `unknown` column and lets v2 keep serving every consumer in the
-  meantime.
+  `unknown` column and lets v2 keep serving every consumer in   meantime.
 - Append-only ordering is load-bearing — 13 v2 slot indices
   (0..12) keep their column positions verbatim under v3; three
   new slots append at indices 13/14/15. Reordering silently
@@ -993,7 +970,7 @@ ADR-0291 + ADR-0302):
 
 `fr_regressor` lineage carries two orthogonal axes. Encoder-vocab
 versioning runs on `_v{N}` (v1 = no codec block, v2 = 13-slot, v3 = 16-slot).
-Feature-set versioning runs as `_v{N}plus_features` suffix on the matching
+Feature-set versioning runs as `_v{N}plus_features` suffix on matching
 encoder-vocab base. Names below are claimed; do **not** reuse them for
 unrelated workstreams.
 
@@ -1003,14 +980,14 @@ unrelated workstreams.
 | `fr_regressor_v2` | v2 (13-slot) | canonical-6 + 8-D codec block | shipped (ADR-0272 / ADR-0291) |
 | `fr_regressor_v2_ensemble_v1_seed{0..4}` | v2 (13-slot) | canonical-6 + 8-D codec block | shipped (ADR-0279) |
 | `fr_regressor_v3` | v3 (16-slot) | canonical-6 + 18-D codec block | shipped (ADR-0302 / ADR-0323) |
-| `fr_regressor_v3plus_features` | v3 (16-slot) | canonical-6 + `encoder_internal` + shot-boundary + `hwcap` | **reserved** (ADR-0349) — registry row lands with future PR that ships the `.onnx` |
+| `fr_regressor_v3plus_features` | v3 (16-slot) | canonical-6 + `encoder_internal` + shot-boundary + `hwcap` | **reserved** (ADR-0349) — registry row lands with future PR that ships `.onnx` |
 
 Reservation is documentation-only because
 [`core/test/dnn/test_registry.sh`](../core/test/dnn/test_registry.sh)
 treats every registry row as hard contract (file must exist, sha256 must
 match, sidecar must accompany every `smoke: false` entry); stub row would
 fail CI on day one. Future `_v3plus_features` PR populates row in
-the same commit that ships `.onnx`. See
+same commit that ships `.onnx`. See
 [ADR-0349](../docs/adr/0349-fr-regressor-v3-namespace.md) for namespace
 decision and rejected alternatives.
 
@@ -1053,7 +1030,7 @@ Invariants any follow-up retrain or corpus-shape PR must honour:
   (`PLCC ≥ 0.85`, `SROCC ≥ 0.82`, `RMSE ≤ 0.45`, `spread ≤ 0.005`)
   are constants in trainer (`GATE_*`); changing them requires
   new ADR.
-- **Predictor fallback path is documented behaviour, not a bug.**
+- **Predictor fallback path is documented behaviour, not bug.**
   ONNX missing -> `Predictor.predict_mos` returns
   `(predicted_vmaf - 30) / 14` clamped to `[1, 5]`. That's
   documented contract; tests
@@ -1062,12 +1039,10 @@ Invariants any follow-up retrain or corpus-shape PR must honour:
   pulled ONNX.
 - **CHUG HDR MOS uses CHUG-named entry point.**
   `ai/scripts/train_chug_hdr_mos_head.py` = operator-facing
-  command for CHUG HDR subjective-MOS experiments. May reuse the
-  same small MOS-head training loop, but docs and local commands must
+  command for CHUG HDR subjective-MOS experiments. May reuse   same small MOS-head training loop, but docs and local commands must
   not tell operators to pass CHUG shards through KonViD-named
   flags. Local CHUG manifests use `chug_hdr_mos_head_v1` so HDR
-  MOS signal isn't confused with committed SDR KonViD head. The
-  CHUG wrapper defaults to `FEATURE_SCHEMA_CHUG_HDR_WIDE_V1`
+  MOS signal isn't confused with committed SDR KonViD head.   CHUG wrapper defaults to `FEATURE_SCHEMA_CHUG_HDR_WIDE_V1`
   (`chug-hdr-wide-v1`): canonical-6 means, p10/p90/std temporal
   aggregates, and HDR ladder / geometry metadata. Keep that 34-D order
   append-only for local CHUG checkpoints; use `--feature-schema
@@ -1085,23 +1060,23 @@ Extending `ai/scripts/analyze_knob_sweep.py` or anything that
 consumes its output:
 
 - Recipe regression is *structural* iff it reproduces on **≥7 of
-  the 9** corpus sources within a single
+  9** corpus sources within single
   `(codec, rc_mode, recipe, preset, q)` cell. Structural regressions
   are forbidden as `tools/vmaf-tune/codec_adapters/*` defaults and
   forbidden as `vmaf-tune recommend` outputs without explicit
   override. Known-structural cells are listed in
   Research-0080 §Aggregated-bad-recipe-patterns; do not promote any
-  of them to an adapter-level default in a follow-up PR.
+  of them to adapter-level default in follow-up PR.
 - Recipe regression that hits 1-6 sources is *content-dependent*
   and is filtered at recommend-time via per-slice hull lookup,
   not at adapter-default time.
 - Do NOT modify `ai/scripts/analyze_knob_sweep.py` to relax
   `bitrate_tol_pct` (default 5.0) or `vmaf_tol` (default 0.1)
-  without an ADR. Tolerances calibrated against per-frame VMAF
+  without ADR. Tolerances calibrated against per-frame VMAF
   noise floor and bitrate quantisation in libavformat muxers;
   loosening them silently masks structural cluster (see ADR-0305
   §Consequences).
-- Detector is an **offline** gate (3-hour sweep, ~2 GiB JSONL,
+- Detector is **offline** gate (3-hour sweep, ~2 GiB JSONL,
   single-host variance); do not wire it into CI without first
   designing smaller stratified sample that reproduces
   structural patterns. Tracked as follow-up in ADR-0308 §Decision
@@ -1112,17 +1087,17 @@ consumes its output:
   `(source, bitrate_kbps, vmaf_score, encode_time_ms,
   is_bare_default)`. Producer-side rename not yet landed
   (SCHEMA_VERSION=3 follow-up per ADR-0308 §Decision point 5); any
-  analysis run goes through a throw-away wrapper that performs
-  the rename in-process. Do NOT modify
+  analysis run goes through throw-away wrapper that performs
+  rename in-process. Do NOT modify
   `analyze_knob_sweep.py` to accept both spellings.
 
 ## `u2netp` fork-local mirror invariants (ADR-0412 / ADR-0671)
 
-Fork ships a release-artefact mirror for the upstream U-2-Net
+Fork ships release-artefact mirror for upstream U-2-Net
 `u2netp` checkpoint via GitHub Release attachments. Scaffold
 (license, model card, operator doc, supply-chain staging step)
 landed in PR scope ADR-0412; exporter landed in ADR-0671; binary
-upload is a separate PR.
+upload is separate PR.
 
 - **Never commit `model/u2netp_mirror.onnx` or
   `model/u2netp_mirror.pth` to git.** Both paths are gitignored
@@ -1130,29 +1105,28 @@ upload is a separate PR.
   only — signed via Sigstore, hashed as provenance subject, paired with
   `LICENSES/LicenseRef-Apache-2.0-u2netp.txt` at upload time. Binary
   upload PR ever attempting to commit either file -> ADR-0412
-  contract is broken; reject the PR.
+  contract is broken; reject PR.
 - **Exporter imports upstream code; does not vendor it.**
-  `ai/scripts/export_u2netp_mirror.py` expects an audited local
+  `ai/scripts/export_u2netp_mirror.py` expects audited local
   `xuebinqin/U-2-Net` checkout plus `u2netp.pth`, then exports
-  ONNX and a `u2netp-mirror-export-manifest-v1` sidecar. Keep this
+  ONNX and `u2netp-mirror-export-manifest-v1` sidecar. Keep this
   boundary intact: copying U-2-Net source into this repository or
   silently accepting non-Apache license text breaks ADR-0671.
 - **Recommended saliency weights remain
   `saliency_student_v1`** (ADR-0286, fork-trained DUTS student
-  under BSD-2-Clause-Patent). `u2netp_mirror` is the named
+  under BSD-2-Clause-Patent). `u2netp_mirror` is named
   *fallback* for upstream-lineage citation, comparative
   evaluation, or downstream pipelines pinned to upstream
   behaviour. Do NOT flip `model/tiny/registry.json`'s default
-  `mobilesal` resolution to `u2netp_mirror_v1` without an ADR
+  `mobilesal` resolution to `u2netp_mirror_v1` without ADR
   superseding ADR-0286.
-- **Apache-2.0 §4 (a) + (c) compliance is non-negotiable.**
+- **Apache-2.0 §4 () + (c) compliance is non-negotiable.**
   Every release that carries `u2netp_mirror_v*` must also carry
   `LICENSES/LicenseRef-Apache-2.0-u2netp.txt` with its attribution block
   intact. supply-chain.yml staging step pairs them
   automatically; future refactor decoupling them -> downstream
-  operators inherit a license-non-compliant artefact. §4 (b)
-  applies only to ONNX rewraps (export script writes a
-  `metadata_props` block recording the conversion provenance);
+  operators inherit license-non-compliant artefact. §4 (b)
+  applies only to ONNX rewraps (export script writes   `metadata_props` block recording conversion provenance);
   verbatim `.pth` redistribution does not trigger (b). §4 (d) is
   moot — upstream ships no NOTICE file.
 - **Binary upload PR re-pins upstream commit.** Scaffold-time
@@ -1165,56 +1139,50 @@ upload is a separate PR.
 - MOS-corpus row schema emitted by
   `ai/scripts/lsvq_to_corpus_jsonl.py` (ADR-0367) is byte-identical
   to KonViD-150k Phase 2 adapter
-  (`ai/scripts/konvid_150k_to_corpus_jsonl.py`) modulo the
-  `corpus` and `corpus_version` literals. Both are consumed
+  (`ai/scripts/konvid_150k_to_corpus_jsonl.py`) modulo   `corpus` and `corpus_version` literals. Both are consumed
   through one trainer-side data loader. Do NOT widen schema
-  in only one adapter — adding or removing a column means a
-  lockstep edit across both, plus a `corpus_version` bump.
+  in only one adapter — adding or removing column means   lockstep edit across both, plus `corpus_version` bump.
 
 - **CHUG display-profile training is trainer-side context, not
   corpus-schema mutation.** `train_chug_hdr_mos_head.py` keeps
   `chug-hdr-wide-v1` as no-profile default, and auto-selects
   `chug-hdr-display-v1` only when `--display-profile-json` is supplied
-  without an explicit `--feature-schema`. Row-local display columns win
-  over the target profile so future multi-display HDR corpora remain
+  without explicit `--feature-schema`. Row-local display columns win
+  over target profile so future multi-display HDR corpora remain
   usable. Do not widen CHUG JSONL adapters to carry one operator's
-  local panel profile; profiles are recorded in the emitted manifest
+  local panel profile; profiles are recorded in emitted manifest
   with their source sha256.
 
   `ai/scripts/youtube_ugc_to_corpus_jsonl.py` (ADR-0368) is
-  byte-identical to the LSVQ adapter
-  (`ai/scripts/lsvq_to_corpus_jsonl.py`, ADR-0333) and the
-  KonViD-150k Phase 2 adapter modulo the `corpus` and
+  byte-identical to LSVQ adapter
+  (`ai/scripts/lsvq_to_corpus_jsonl.py`, ADR-0333) and   KonViD-150k Phase 2 adapter modulo `corpus` and
   `corpus_version` literals. All three are consumed through one
   trainer-side data loader. Do NOT widen schema in only one
-  adapter — adding or removing a column means a lockstep edit
-  across all three, plus a `corpus_version` bump. The synthesised
+  adapter — adding or removing column means lockstep edit
+  across all three, plus `corpus_version` bump. synthesised
   bucket-URL path (`--bucket-prefix` flag) is YouTube-UGC-specific
-  because the canonical `original_videos.csv` ships without a
-  `url` column; do not back-port that synthesis seam to the LSVQ
+  because canonical `original_videos.csv` ships without   `url` column; do not back-port that synthesis seam to LSVQ
   / KonViD-150k adapters where it would mask manifest-CSV bugs.
 
   `ai/scripts/waterloo_ivc_to_corpus_jsonl.py` (ADR-0369) is
-  byte-identical to the LSVQ adapter
-  (`ai/scripts/lsvq_to_corpus_jsonl.py`, ADR-0333) and the
-  KonViD-150k Phase 2 adapter
+  byte-identical to LSVQ adapter
+  (`ai/scripts/lsvq_to_corpus_jsonl.py`, ADR-0333) and   KonViD-150k Phase 2 adapter
   (`ai/scripts/konvid_150k_to_corpus_jsonl.py`, ADR-0325 Phase 2)
-  modulo the `corpus` and `corpus_version` literals. All three
+  modulo `corpus` and `corpus_version` literals. All three
   adapters are consumed through one trainer-side data loader. Do
   NOT widen schema in only one adapter — adding or removing
-  a column means a lockstep edit across all three (plus a
-  `corpus_version` bump on each). Waterloo IVC adapter
-  records MOS verbatim on the dataset's native **0–100** scale,
+  column means lockstep edit across all three (plus   `corpus_version` bump on each). Waterloo IVC adapter
+  records MOS verbatim on dataset's native **0–100** scale,
   diverging from KonViD / LSVQ's 1–5 Likert scale; cross-corpus
-  rescaling is a trainer-side concern and is NOT applied at
+  rescaling is trainer-side concern and is NOT applied at
   ingest time on either adapter. Trainer-side normaliser
-  must read each row's `corpus` literal to pick the correct
+  must read each row's `corpus` literal to pick correct
   per-shard rescale factor.
 
 - **`vmaf_train.train.TrainConfig`, `vmaf_train.registry.ModelMetadata`,
   and `vmaf_train.data.datasets.ManifestEntry` are pydantic v2
   `BaseModel`s, not `@dataclass`es.** (ADR-0934.) They parse
-  operator-supplied YAML / JSON, so the boundary needs declared
+  operator-supplied YAML / JSON, so boundary needs declared
   validators + `extra="forbid"` + line-numbered errors. Every other
   dataclass in `ai/src/vmaf_train/` (`NormReport`, `BisectResult`,
   `EvalReport`, `CrossBackendReport`, `ModelAudit`, `ProfileReport`,
@@ -1229,18 +1197,15 @@ upload is a separate PR.
   do not switch it to `BaseModel.model_dump_json()` (different
   formatting — would invalidate sidecar goldens).
 
-- **`extract_k150k_features.py` must fail loud, never write a silent
+- **`extract_k150k_features.py` must fail loud, never write silent
   garbage row.** Two corruption paths were closed (T-K150K-TRAINING-DATA-
-  INTEGRITY-2026-06-20) and the invariants must survive rebases:
-  (1) `_process_clip` **raises** on an empty frame list — never let an
-  all-`NaN` aggregate row reach the corpus + `_append_done` (it would be
-  dropped with no retry). (2) The MOS-label join tolerates a
-  filename↔`video_name` extension mismatch via an `mp4.stem` fallback and
-  is guarded by an up-front coverage check that hard-fails the zero-match
-  case before any multi-day GPU extraction starts. Do not "simplify" the
-  lookup back to a single `mos_map.get(clip_name, NaN)` — that is the bug.
+  INTEGRITY-2026-06-20) and invariants must survive rebases:
+  (1) `_process_clip` **raises** on empty frame list — never let   all-`NaN` aggregate row reach corpus + `_append_done` (it would be
+  dropped with no retry). (2) MOS-label join tolerates   filename↔`video_name` extension mismatch via `mp4.stem` fallback and
+  is guarded by up-front coverage check that hard-fails zero-match
+  case before any multi-day GPU extraction starts. Do not "simplify"   lookup back to single `mos_map.get(clip_name, NaN)` — that is bug.
   Staging→`.done` write order is deliberately staging-first (crash
-  leaves the clip re-processable; the final parquet dedups by `clip_name`,
+  leaves clip re-processable; final parquet dedups by `clip_name`,
   `keep="last"`); do not reorder it.
 
 - **AI teacher model single source and table provenance invariants (ADR-1173).**
@@ -1250,14 +1215,12 @@ upload is a separate PR.
   No script under `ai/` may hardcode `"vmaf_v0.6.1"` or any literal model fallback.
   (2) Feature producers (`extract_full_features.py`, `extract_k150k_features.py`,
   `bvi_dvc_to_full_features.py`, `extract_ugc_features.py`, `konvid_to_full_features.py`,
-  `konvid_to_vmaf_pairs.py`, `bvi_dvc_to_corpus_jsonl.py`) unconditionally write a
-  `teacher_model` column on every row.
+  `konvid_to_vmaf_pairs.py`, `bvi_dvc_to_corpus_jsonl.py`) unconditionally write   `teacher_model` column on every row.
   (3) Combiners and trainers (`combine_full_feature_parquets.py`,
   `train_vmaf_tiny_v5.py`, `eval_loso_vmaf_tiny_v5.py`) verify teacher uniformity within
   and across all input shards. Shards with different teacher models are strictly refused.
-  Tables lacking a `teacher_model` column are rejected unless `--assume-teacher <name>`
+  Tables lacking `teacher_model` column are rejected unless `--assume-teacher <name>`
   is explicitly passed for legacy datasets.
   (4) Raw extraction feature lists (`FULL_FEATURES` in `ai/data/feature_extractor.py` and
-  `FEATURE_NAMES` in `ai/scripts/extract_k150k_features.py`) include `"adm3"`. The
-  canonical-6 student feature set (`DEFAULT_FEATURES`: `adm2`, `vif_scale0..3`, `motion2`)
+  `FEATURE_NAMES` in `ai/scripts/extract_k150k_features.py`) include `"adm3"`.   canonical-6 student feature set (`DEFAULT_FEATURES`: `adm2`, `vif_scale0..3`, `motion2`)
   remains strictly frozen.

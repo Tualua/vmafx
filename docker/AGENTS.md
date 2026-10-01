@@ -1,12 +1,13 @@
+<!-- markdownlint-disable MD013 -->
 # Container image invariants
 
 ## Node model root
 
 `Dockerfile.node` stages contents of `model/` via
-`cp -r model/. /dist/model/`; do not copy the directory itself. Runtime copy
+`cp -r model/. /dist/model/`; do not copy directory itself. Runtime copy
 maps that staging root to `/usr/local/share/vmafx/model` = exact
 `VMAFX_MODEL_DIR`. Builder must keep asserting `/dist/model/vmaf_v0.6.1.json`
-exists, so nested `model/model/` layout fails at build time, not as a worker
+exists, so nested `model/model/` layout fails at build time, not as worker
 unable to resolve its packaged model.
 
 ## Base images come from `build-config.env` (ADR-1231)
@@ -23,14 +24,14 @@ stage = free. Four pins hidden this way were most out-of-date images in repo.
 
 CUDA base images (ADR-1306): `CUDA_BUILDER` and `CUDA_RUNTIME` are digest-pinned
 Ubuntu 26.04 (`ubuntu:26.04@sha256:...`) and must equal `DEV_BASE` exactly,
-including its digest; never re-introduce `nvidia/cuda` base images. The narrow
+including its digest; never re-introduce `nvidia/cuda` base images. narrow
 `dev/ubuntu-26.04-cuda.Dockerfile` compatibility image is part of this owner;
-the Alpine, Arch, and Fedora compatibility files are not. Toolkit compiler and
+Alpine, Arch, and Fedora compatibility files are not. Toolkit compiler and
 runtime packages install via `scripts/ci/install-cuda-toolkit.sh`
 (`--mode=builder` or `--mode=runtime`) with exact `package=version` operands and
-installed-version checks. `build-config.env` owns the release lock and exact
-toolkit/nvcc/cudart versions; a series-only apt package is not a pin.
-Renovate discovers `CUDA_VERSION` through the official NVIDIA redist HTML index
+installed-version checks. `build-config.env` owns release lock and exact
+toolkit/nvcc/cudart versions; series-only apt package is not pin.
+Renovate discovers `CUDA_VERSION` through official NVIDIA redist HTML index
 (`custom.nvidia-cuda-redist`), never through `nvidia/cuda` Docker tags.
 
 oneAPI bases (ADR-1368): `ONEAPI_BUILDER` and `ONEAPI_RUNTIME` equal
@@ -58,37 +59,33 @@ stays alias stage; publish tags digest `-oneapi2026` and `-oneapi2025`
 
 ## FFmpeg stable-release mirror
 
-`build-config.env` owns `FFMPEG_TAG`; `docker/Dockerfile.node` carries a
-generated default mirror and must not choose a release independently. The
-current baseline is `n9.0.2`, and every update must replay all entries in
-`ffmpeg-patches/series.txt` cumulatively before the mirror changes. Run
-`python3 scripts/ci/ffmpeg_patch_stack.py --check` after refresh; a per-patch
-`git apply --check` does not model the stack's cumulative context.
+`build-config.env` owns `FFMPEG_TAG`; `docker/Dockerfile.node` carries generated default mirror and must not choose release independently. current baseline is `n9.0.2`, and every update must replay all entries in
+`ffmpeg-patches/series.txt` cumulatively before mirror changes. Run
+`python3 scripts/ci/ffmpeg_patch_stack.py --check` after refresh; per-patch
+`git apply --check` does not model stack's cumulative context.
 
 Every maintained FFmpeg builder configures with `--fatal-warnings` and scans
-the complete compiler log for `warning:`. The same contract is mirrored by the
-root CUDA image, `Dockerfile.ffmpeg`, `dev/Containerfile`, and
+complete compiler log for `warning:`. same contract is mirrored by root CUDA image, `Dockerfile.ffmpeg`, `dev/Containerfile`, and
 `docker/Dockerfile.node`; `scripts/ci/test_e2e_runtime_contract.py` pins all
 four. Fix new diagnostics in source without warning suppressions or component
-removal. Patch 0019 owns the 126-diagnostic GCC 14/16 hardening for the n9.0.2
-baseline. Use `scripts/ci/checkout-annotated-tag.sh` for the FFmpeg checkout;
-direct shallow clones emit a warning for the annotated release tag and violate
-the same zero-diagnostic image contract.
+removal. Patch 0019 owns 126-diagnostic GCC 14/16 hardening for n9.0.2
+baseline. Use `scripts/ci/checkout-annotated-tag.sh` for FFmpeg checkout;
+direct shallow clones emit warning for annotated release tag and violate
+same zero-diagnostic image contract.
 
 ## Partial libvmaf builder closure
 
-`docker/Dockerfile.node` and root `Dockerfile.go-server` copy only the source
+`docker/Dockerfile.node` and root `Dockerfile.go-server` copy only source
 needed by their `vmaf-builder` stages. Keep that partial context closed over
 all configure inputs: both must copy
 `scripts/ci/check-msvc-clz-shim.sh` before `meson setup`. Their build package
-sets must include `xxd` (otherwise the default built-in models silently turn
-off) and `make` (GCC's numeric LTO partitioning invokes it; without it the
-linker warns and falls back to serial LTRANS).
+sets must include `xxd` (otherwise default built-in models silently turn
+off) and `make` (GCC's numeric LTO partitioning invokes it; without it linker warns and falls back to serial LTRANS).
 
-Stage `libvmaf.so*` with `cp -a` so the SONAME symlink chain survives. Also
+Stage `libvmaf.so*` with `cp -a` so SONAME symlink chain survives. Also
 stage Meson's generated `meson-private/libvmaf.pc`; never synthesize it from
-`VMAFX_VERSION`. The pkg-config version is the libvmaf interface version
-(`3.0.0`), not the release-please product tag (`dev` in a local build).
+`VMAFX_VERSION`. pkg-config version is libvmaf interface version
+(`3.0.0`), not release-please product tag (`dev` in local build).
 `scripts/ci/test_e2e_runtime_contract.py` pins these invariants for both
 Dockerfiles.
 

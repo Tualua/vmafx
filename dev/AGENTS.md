@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD013 -->
 # AGENTS.md — dev/ (container infra)
 
 Parent: [../AGENTS.md](../AGENTS.md).
@@ -35,16 +36,16 @@ creation step, exit code 13.
 
 ### CUDA package names
 
-- Use `scripts/ci/install-cuda-toolkit.sh --mode=full`; do not recreate an apt
-  bootstrap or install a bare `cuda-toolkit-<series>` here. `build-config.env`
-  owns `CUDA_APT_PACKAGE`, `CUDA_APT_LOCK_RELEASE`, and the exact toolkit,
-  nvcc, and cudart Debian versions (ADR-1285 / ADR-1306). The installer passes
-  `package=version` and verifies the installed dpkg values.
+- Use `scripts/ci/install-cuda-toolkit.sh --mode=full`; do not recreate apt
+  bootstrap or install bare `cuda-toolkit-<series>` here. `build-config.env`
+  owns `CUDA_APT_PACKAGE`, `CUDA_APT_LOCK_RELEASE`, and exact toolkit,
+  nvcc, and cudart Debian versions (ADR-1285 / ADR-1306). installer passes
+  `package=version` and verifies installed dpkg values.
 - Do NOT install `libcuda1` (runtime driver) — must come from
   `nvidia-container-runtime` at run-time; baking it in shadows host
   driver.
 - Do NOT install `cuda-compiler` — legacy alias no longer existing in
-  NVIDIA CUDA channels; full mode installs the exact toolkit and nvcc packages.
+  NVIDIA CUDA channels; full mode installs exact toolkit and nvcc packages.
 
 ### Intel oneAPI package name
 
@@ -93,13 +94,10 @@ silently falls back to CPU. Two hard pins live in
   for SYCL `spir64_gen` AOT; no ocloc -> `meson setup` refuses. IGC debs
   land in `/usr/local/lib`, no ldconfig trigger -> keep `ldconfig` after
   NEO install.
-  **GitHub credential transport (ADR-1271):** the optional API token is the
-  BuildKit secret `github_token`, exposed as `GITHUB_TOKEN` only to the NEO
-  fetch `RUN`. Never reintroduce `ARG GITHUB_TOKEN`, `ENV GITHUB_TOKEN`, or a
-  token-valued `--build-arg`. Raw anonymous builds omit `--secret`; Compose
-  maps the host variable and treats unset or empty input as anonymous. Keep
-  `scripts/ci/check-dev-container-build-secret.py`, its fixture tests, and the
-  Docker/Compose `--check` workflow steps wired together.
+  **GitHub credential transport (ADR-1271):** optional API token is   BuildKit secret `github_token`, exposed as `GITHUB_TOKEN` only to NEO
+  fetch `RUN`. Never reintroduce `ARG GITHUB_TOKEN`, `ENV GITHUB_TOKEN`, or   token-valued `--build-arg`. Raw anonymous builds omit `--secret`; Compose
+  maps host variable and treats unset or empty input as anonymous. Keep
+  `scripts/ci/check-dev-container-build-secret.py`, its fixture tests, and   Docker/Compose `--check` workflow steps wired together.
 - **Digest-pinned `rocm-src` stage**
   (`rocm/dev-ubuntu-26.04:10.0.0-full`) replaces old `ARG ROCM_VER` +
   `repo.radeon.com/rocm/apt/` install. **Invariant (ADR-1225 /
@@ -122,21 +120,20 @@ CI / maintainer's host running newer kernel that breaks these pins
 surfaces regression on container start as `WARN: SYCL GPU NOT detected` or
 `WARN: HIP HSA GPU agent NOT detected`. Bump relevant version owner, rebuild.
 
-**The probe runs argv, never a shell string.** `_probe_with_retry` in
+**probe runs argv, never shell string.** `_probe_with_retry` in
 `scripts/dev-mcp-entrypoint.sh` takes one program name and runs it as
-`"${prog}"`. The earlier `eval "${cmd}"` form was removed by PR #350, came
-back through a stale squash-merge (PR #414) and was removed again on
-2026-09-19: the entrypoint is PID 1 with the container's whole environment,
-so a probe value that ever comes from configuration would be command
-injection. A probe that needs flags gets explicit argv handling in the
-function; do not reintroduce `eval` or `bash -c`. Keep the function at top
-level with the opening line `_probe_with_retry() {` —
+`"${prog}"`. earlier `eval "${cmd}"` form was removed by PR #350, came
+back through stale squash-merge (PR #414) and was removed again on
+2026-09-19: entrypoint is PID 1 with container's whole environment,
+so probe value that ever comes from configuration would be command
+injection. probe that needs flags gets explicit argv handling in function; do not reintroduce `eval` or `bash -c`. Keep function at top
+level with opening line `_probe_with_retry() {` —
 `scripts/ci/tests/test-dev-mcp-entrypoint-probe.sh` (pre-commit hook
 `test-dev-mcp-entrypoint-probe`) extracts it by that line. Detection regexes
-are anchored to full runtime records: SYCL accepts only a leading
-`[level_zero:gpu...]` or `[opencl:gpu...]` record; HIP accepts only a full
+are anchored to full runtime records: SYCL accepts only leading
+`[level_zero:gpu...]` or `[opencl:gpu...]` record; HIP accepts only full
 `Name: gfx...` or `Device Type: GPU` line. Do not loosen these to token
-searches that can turn an initialization diagnostic into a false success.
+searches that can turn initialization diagnostic into false success.
 
 ### SHELL / hadolint DL4006
 
@@ -300,7 +297,7 @@ would fail to compile:
    `v1.12.0` 2026-05-18) so future rebases get deterministic build.
    Configure-time check = `check_pkg_config(libvvenc, ...)`, needs
    `.pc` file `VVENC_ENABLE_INSTALL=ON` ships.
-3. **AMF headers vendored from the upstream `GPUOpen-Libraries-
+3. **AMF headers vendored from upstream `GPUOpen-Libraries-
    AndSDKs/AMF` repo (header-only).** FFmpeg's `--enable-amf` needs
    only headers at compile time;
    `libamfrt64.so` runtime resolution = host-side. Do NOT try
@@ -321,20 +318,18 @@ would fail to compile:
    --enable-cuda-nvcc --enable-libvpl --enable-amf`, in addition to
    software codec flags.** Dropping any one silently disappears
    hardware-encoder family from `ffmpeg -encoders` listing, breaks
-   `vmaf-tune compare` sweep. The build-time encoder probe at the end
-   of stage 3.5 fails if any promised encoder is missing; listing a
-   compiled hardware encoder does not require a device. Do NOT add
+   `vmaf-tune compare` sweep. build-time encoder probe at end
+   of stage 3.5 fails if any promised encoder is missing; listing    compiled hardware encoder does not require device. Do NOT add
    `--enable-libnpp`. FFmpeg n9.0.2 has
-   removed libnpp support; the option is a compatibility no-op that
+   removed libnpp support; option is compatibility no-op that
    emits `libnpp has been removed and enabling it does nothing`.
    Keeping it absent preserves warning-clean configure output.
-   `scale_cuda` (built via `--enable-cuda-nvcc`) covers the GPU-scale
-   pipeline. Reconsider only if a future FFmpeg release restores a
-   real libnpp probe and the matching CUDA contract is validated.
+   `scale_cuda` (built via `--enable-cuda-nvcc`) covers GPU-scale
+   pipeline. Reconsider only if future FFmpeg release restores    real libnpp probe and matching CUDA contract is validated.
    AMF and FFmpeg release checkouts use
    `scripts/ci/checkout-annotated-tag.sh`. Direct `git clone --depth=1
    --branch <tag>` emits a warning for both annotated tags in the image's Git
-   version and violates the zero-diagnostic build contract.
+   version and violates zero-diagnostic build contract.
 6. **FFmpeg SYCL patch must use current libvmaf state-free ownership
    contract.** `libvmaf_sycl.h` declares
    `vmaf_sycl_state_free(VmafSyclState **sycl_state)`, matching
@@ -349,42 +344,40 @@ would fail to compile:
 Entrypoint exposes MCP over stdio (`docker exec -i vmaf-dev-mcp
 vmafx-mcp` — Go binary, ADR-1229), doesn't create
 `/sockets/vmaf-mcp.sock` by default. Compose healthcheck must
-therefore remain a CLI check, not `test -S /sockets/vmaf-mcp.sock`.
+therefore remain CLI check, not `test -S /sockets/vmaf-mcp.sock`.
 `dev-mcp-healthcheck.sh` first runs `vmaf --version`; when
-`/dev/nvidia0` exists it also requires `nvidia-smi` to answer a driver query.
-Keep Compose's 45-second start period for CUDA cold-start. The hermetic
+`/dev/nvidia0` exists it also requires `nvidia-smi` to answer driver query.
+Keep Compose's 45-second start period for CUDA cold-start. hermetic
 `test-dev-mcp-healthcheck.sh` and its pre-commit hook pin all three branches.
-Reverting to a socket check leaves the container permanently `unhealthy` and
+Reverting to socket check leaves container permanently `unhealthy` and
 prevents `smoke-probe-cron` from starting even though stdio is usable.
 
 ### Smoke-probe contract (Research-2083)
 
-`dev/scripts/smoke-probe-loop.sh` is evidence-producing code, not a liveness
-ping. Preserve all of these constraints when the CLI, Go MCP server, or probe
+`dev/scripts/smoke-probe-loop.sh` is evidence-producing code, not liveness
+ping. Preserve all of these constraints when CLI, Go MCP server, or probe
 schema is rebased:
 
-1. Every CLI run uses the exclusive `--backend cpu|cuda|sycl|hip` selector,
-   writes `--json` to a real temporary file, and validates both
-   `pooled_metrics.vmaf.mean` and the matching `backend_used` receipt. Raw YUV
-   geometry is `--pixel_format 420 --bitdepth 8`; `yuv420p`, the retired
+1. Every CLI run uses exclusive `--backend cpu|cuda|sycl|hip` selector,
+   writes `--json` to real temporary file, and validates both
+   `pooled_metrics.vmaf.mean` and matching `backend_used` receipt. Raw YUV
+   geometry is `--pixel_format 420 --bitdepth 8`; `yuv420p`, retired
    `--cuda` / `--sycl` / `--hip` switches, and `--no_prediction` are invalid
    probe contracts.
-2. MCP probes execute the production `vmafx-mcp` Go binary over stdio, perform
+2. MCP probes execute production `vmafx-mcp` Go binary over stdio, perform
    `initialize` followed by `notifications/initialized`, and only then call
-   `list_extractors` or `vmaf_score`. The client keeps stdin open until the
-   response with request ID 2 arrives; EOF disconnects the Go SDK session and
-   can otherwise race the response. Do not restore the retired
+   `list_extractors` or `vmaf_score`. client keeps stdin open until    response with request ID 2 arrives; EOF disconnects Go SDK session and
+   can otherwise race response. Do not restore retired
    `vmaf-mcp-server`, `list_features`, or `compute_vmaf` operations.
-3. The JSON keys `mcp_results.list_features` and
+3. JSON keys `mcp_results.list_features` and
    `mcp_results.compute_vmaf` remain stable for existing probe consumers even
-   though the underlying tool names changed. Error text is JSON-encoded, and
-   helper results use a non-whitespace delimiter so an empty score cannot
-   shift the duration and error fields.
-4. Keep `dev/scripts/test-smoke-probe-loop.sh` and the
-   `test-dev-mcp-smoke-probe` pre-commit hook coupled to changes in either
-   script. The MCP stub responds before EOF so the test also rejects the stdio
-   close-before-response race. It covers the healthy path, error strings
-   containing JSON metacharacters/control bytes, and a backend receipt
+   though underlying tool names changed. Error text is JSON-encoded, and
+   helper results use non-whitespace delimiter so empty score cannot
+   shift duration and error fields.
+4. Keep `dev/scripts/test-smoke-probe-loop.sh` and    `test-dev-mcp-smoke-probe` pre-commit hook coupled to changes in either
+   script. MCP stub responds before EOF so test also rejects stdio
+   close-before-response race. It covers healthy path, error strings
+   containing JSON metacharacters/control bytes, and backend receipt
    mismatch.
 
 ### Runtime dependency invariants (ADR-0541 / ADR-0568)
@@ -501,7 +494,7 @@ See [docs/development/base-images.md](../docs/development/base-images.md).
 Native release bundle compiles in `release-build`: separate root
 `FROM ${RELEASE_BUILDER_BASE}` (Debian 13, glibc 2.41), placed before
 `gpu-sdks` so last stage stays `dev-mcp`. Never base it on, or copy from,
-an Ubuntu stage: bundle would bind glibc 2.43 again. Marker write must
+Ubuntu stage: bundle would bind glibc 2.43 again. Marker write must
 stay byte-identical to `build-deps` one (unit suite requires exactly two
 writes). `xxd` load-bearing (built-in model embed); `patchelf` pinned to
 Debian 13 package (`PATCHELF_VERSION`, RUNPATH fix). Moving

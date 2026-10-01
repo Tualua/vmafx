@@ -17,15 +17,13 @@ Parent: [../../../AGENTS.md](../../../AGENTS.md). Established by
   breaks module contract.
 - **Registered-model lifetime is encoded**: `VmafContext<'a>` and
   `VmafContextCloseError<'a>` carry `PhantomData<&'a VmafModel>`.
-  `use_features_from_model` takes a shared `&'a VmafModel`; never erase this
-  lifetime or restore a caller-managed raw model contract. libvmaf retains the
-  model pointer through context teardown, including a failed close retry.
-- **Context guards are not `Send`**: `VmafModel` is deliberately `!Sync`, so a
-  `VmafContext<'a>` or close-retry token carrying `&'a VmafModel` must not
+  `use_features_from_model` takes shared `&'a VmafModel`; never erase this
+  lifetime or restore caller-managed raw model contract. libvmaf retains   model pointer through context teardown, including failed close retry.
+- **Context guards are not `Send`**: `VmafModel` is deliberately `!Sync`, so   `VmafContext<'a>` or close-retry token carrying `&'a VmafModel` must not
   override auto traits with `unsafe impl Send`. Their `Drop` paths retry once
-  only when an explicit retry has not happened; after a failed explicit retry,
-  drop aborts without a third close call. Returning would end the model borrow
-  while libvmaf still retained the pointer.
+  only when explicit retry has not happened; after failed explicit retry,
+  drop aborts without third close call. Returning would end model borrow
+  while libvmaf still retained pointer.
 - **`links = "vmaf"`**: `links` field in `Cargo.toml` tells Cargo crate provides
   native `vmaf` library. Only one crate in build graph may set
   `links = "vmaf"`. Do not add second crate with same links key.
@@ -43,7 +41,7 @@ Parent: [../../../AGENTS.md](../../../AGENTS.md). Established by
   updating `deny.toml` AND citing ADR / research digest approving exception.
   See [ADR-0917](../../../docs/adr/0917-cargo-deny-supply-chain-policy.md) and
   [`docs/development/cargo-deny.md`](../../../docs/development/cargo-deny.md).
-- **`bindgen` is a `[package.metadata.cargo-machete] ignored` dep**:
+- **`bindgen` is `[package.metadata.cargo-machete] ignored` dep**:
   `cargo-machete --with-metadata` mis-flags build-only crates as unused. Do not
   remove `ignored = ["bindgen"]` entry or `cargo-machete` audits surface noisy
   false positive every run. See ADR-0904.
