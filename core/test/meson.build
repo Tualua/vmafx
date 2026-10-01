@@ -1802,11 +1802,13 @@ test('test_ssimulacra2_nonfinite', test_ssimulacra2_nonfinite, suite : ['fast'])
 # non-negative doubles, from chunk-wise integer increments) against that loop:
 # random terms, terms that tie on every add, zeros, 600 binades of range, NaN
 # and infinity, wrong plans. It runs the pieces in the layout of the
-# ssimulacra2 CUDA kernels. No device is needed.
+# ssimulacra2 CUDA kernels. No device is needed. The loop the header is
+# compared with is the test's own, so the test needs the strict FP flags: at
+# its default fast model icx reorders that loop and the comparison fails.
 test_ordered_sum = executable('test_ordered_sum',
     ['test.c', 'test_ordered_sum.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    c_args : vmaf_cflags_common,
+    c_args : vmaf_cflags_common + vmaf_strict_fp_args,
     dependencies : [math_lib],
 )
 test('test_ordered_sum', test_ordered_sum, suite : ['fast'])
