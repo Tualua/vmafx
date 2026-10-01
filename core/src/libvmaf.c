@@ -2910,9 +2910,29 @@ static int dispatch_gpu_double_buffer(VmafContext *vmaf, VmafFeatureExtractorCon
     return 0;
 }
 
+/* A GPU extractor is initialised with its first frame, and its init() may
+ * trade submit() / collect() for a synchronous extract(): the CUDA, HIP and
+ * Metal motion twins do so for motion_force_zero. Initialise it before the
+ * caller chooses between the two paths, so the choice reads the callbacks
+ * init() left in place. Choosing first sent the first frame to
+ * vmaf_feature_extractor_context_submit(), whose lazy init cleared the
+ * submit() it then called. Extractors without submit() / collect() keep
+ * their lazy init in vmaf_feature_extractor_context_extract(). */
+static int init_before_dispatch(VmafFeatureExtractorContext *fex_ctx, const VmafPicture *ref)
+{
+    if (fex_ctx->is_initialized || !fex_ctx->fex->submit || !fex_ctx->fex->collect)
+        return 0;
+    return vmaf_feature_extractor_context_init(fex_ctx, ref->pix_fmt, ref->bpc, ref->w[0],
+                                               ref->h[0]);
+}
+
 static int read_pictures_dispatch_one(VmafContext *vmaf, VmafFeatureExtractorContext *fex_ctx,
                                       VmafPicture *ref, VmafPicture *dist, unsigned index)
 {
+    const int init_err = init_before_dispatch(fex_ctx, ref);
+    if (init_err)
+        return init_err;
+
     /* ADR-0778 Fix-A: use vmaf_picture_ref, not a bare struct copy, so
      * the synchronous non-GPU dispatch holds its own counted reference to
      * the previous-frame buffer.  The CUDA batch path already uses
@@ -3055,9 +3075,15 @@ static int read_pictures_cuda_submit_current(VmafContext *vmaf, VmafPicture *ref
         if (read_pictures_should_skip(vmaf, fex_ctx, index)) {
             continue;
         }
+        err = init_before_dispatch(fex_ctx, ref_device);
+        if (err) {
+            vmaf_cuda_drain_batch_close();
+            return err;
+        }
         if (!fex_ctx->fex->submit || !fex_ctx->fex->collect) {
-            /* CUDA extractor without async submit/collect — falls back
-             * to ``extract``. The non-CUDA pass below handles those. */
+            /* CUDA extractor without async submit/collect, from the start
+             * or since its init() — falls back to ``extract``. The non-CUDA
+             * pass below handles those. */
             continue;
         }
         /* Mirror the sync path (read_pictures_dispatch_one): use
@@ -3174,8 +3200,9 @@ static int read_pictures_extractor_loop(VmafContext *vmaf, ReadPicturesFrame *fr
         /* CUDA extractors with submit+collect were already handled
          * in the batched pass above. Skip them here so we don't
          * double-submit. CUDA extractors WITHOUT async submit/collect
-         * (none today, but possible for purely-synchronous kernels)
-         * still need the legacy dispatch path. */
+         * still need the legacy dispatch path: the motion twins' init()
+         * swaps in a synchronous extract() under motion_force_zero
+         * (init_before_dispatch()). */
         const bool cuda = (fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_CUDA) != 0;
         if (cuda && fex_ctx->fex->submit && fex_ctx->fex->collect) {
             continue;

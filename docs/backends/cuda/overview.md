@@ -144,8 +144,10 @@ core/src/feature/cuda/        # per-feature kernels
   integer_adm/                   # ADM .cu kernels
   float_adm_cuda.{c,h}           # float ADM extractor dispatch (ADR-0202)
   float_adm/                     # float ADM .cu kernels (single fatbin compiled with --fmad=false)
-  integer_motion_cuda.{c,h}      # Motion extractor dispatch
-  integer_motion/                # Motion .cu kernels
+  integer_motion_cuda.{c,h}      # motion extractor dispatch
+  integer_motion_v2_cuda.{c,h}   # motion_v2 extractor dispatch
+  integer_motion_sad_cuda.{c,h}  # motion SAD pipeline shared by both (ADR-1372)
+  integer_motion_v2/             # the one motion SAD kernel (motion_v2_score.cu)
   integer_cambi_cuda.{c,h}      # CAMBI extractor dispatch (T3-15a / ADR-0360)
   integer_cambi/                 # CAMBI .cu kernels (cambi_score.cu)
 ```
@@ -222,11 +224,15 @@ entirely; `--precision=max` exposes it). See
 [ADR-0119](../../adr/0119-cli-precision-default-revert.md) for the
 precision-default rationale.
 
-The `motion` / `motion2` / `motion3` CUDA outputs in particular are
-verified bit-exact against the CPU fixed-point path at `places = 4`
-under default settings on the Netflix `src01_hrc00_576x324.yuv` ↔
-`src01_hrc01_576x324.yuv` pair (0 / 144 mismatches, max_abs =
-0.00e+00). Equivalent parity holds under the non-default
+The `motion` / `motion2` / `motion3` CUDA outputs agreed with the CPU
+fixed-point path at `places = 4` under default settings on the Netflix
+`src01_hrc00_576x324.yuv` ↔ `src01_hrc01_576x324.yuv` pair (0 / 144
+mismatches), but not bit for bit: `motion_cuda` blurred each frame and
+differenced the blurred frames, where the CPU blurs the difference, and the
+two orders round differently (about 1.3e-5 on that pair). Since
+[ADR-1372](../../adr/1372-cuda-motion-diff-first-pipeline.md) it computes the
+CPU's order in the kernel `motion_v2_cuda` already used; see
+[CPU parity: motion, options and tiny frames](#cpu-parity-motion-options-and-tiny-frames-2026-09-30). Equivalent parity holds under the non-default
 `motion_fps_weight ≠ 1.0` and `motion_moving_average = true` paths
 after [ADR-0358](../../adr/0358-cuda-motion-race-and-precision-fixes.md)
 fixed the host-side post-processing: `motion2_score` now applies
@@ -317,7 +323,8 @@ selectively dispatched between GPU and CPU based on option support ([ADR-1183](.
   digit on these fixtures. That is a measurement, **not** a bit-exactness guarantee for the
   CUDA backend in general — the golden gate is CPU-only and pooled `vmaf` still differs by
   1.1e-5 on the Tennis pair because of the ADM / VIF / motion twins.
-- **Motion** (`integer_motion_cuda`) computes motion scores on device while honoring `motion_max_val`.
+- **Motion** (`integer_motion_cuda`) computes motion scores on device while honoring `motion_max_val`,
+  with the CPU's SAD arithmetic since [ADR-1372](../../adr/1372-cuda-motion-diff-first-pipeline.md).
 - **ADM** (`integer_adm_cuda`) runs the default model's ADM **on the device**, including
   `adm_csf_mode: 2`. `T-GPU-ADM-CSF-MODE-NOT-PORTED-2026-09-05` is closed; see
   [the section below](#integer_adm_cuda-runs-the-default-models-adm-on-the-device-2026-09-05)
@@ -347,11 +354,14 @@ selectively dispatched between GPU and CPU based on option support ([ADR-1183](.
   `--feature float_<x>` with `--no_cuda=false` dispatches to GPU
   for those metrics.
 - **`float_motion` extra options (`motion_add_scale1`,
-  `motion_add_uv`, `motion_filter_size`, `motion_max_val`,
-  `motion3_score`)** — these were added to the CPU `float_motion`
-  extractor by the upstream port from Netflix/vmaf
-  [`b949cebf`](https://github.com/Netflix/vmaf/commit/b949cebf)
-  (2026-04-29). As of T3-15(c) /
+  `motion_add_uv`, `motion_filter_size`, `motion3_score`)** — these were
+  added to the CPU `float_motion` extractor by the upstream port from
+  Netflix/vmaf [`b949cebf`](https://github.com/Netflix/vmaf/commit/b949cebf)
+  (2026-04-29). `float_motion_cuda` takes `motion_max_val` since
+  [ADR-1373](../../adr/1373-cuda-twin-cpu-option-parity.md), and emits
+  `motion3_score` with the `motion_blend_factor` / `motion_blend_offset`
+  options since `T-GPU-FLOAT-MOTION3-MISSING-2026-09-30`; the others keep
+  `float_motion` on the CPU. As of T3-15(c) /
   [ADR-0219](../../adr/0219-motion3-gpu-coverage.md), the
   `integer_motion_cuda` kernel emits `motion3_score` in 3-frame
   window mode via host-side `motion_blend()` post-processing of
@@ -696,6 +706,125 @@ gates and the rest of the GPU suite pass.
 **If you add a GPU twin that reads a plane back**, copy it in one transfer.
 A per-row loop looks harmless and is the single most expensive thing this
 pipeline has done.
+
+## CPU parity: motion, options and tiny frames (2026-09-30)
+
+Three changes bring CUDA twins to their CPU extractors' arithmetic and options.
+An RTX 4090 run on 2026-09-30 confirmed them; each row that `docs/state.md`
+names below carries the commands and the measured results:
+
+| Check on an RTX 4090 | Result |
+|---|---|
+| `motion` against the CPU, Netflix pair and 50 frames of 3840x2160 | 0.0 (a `master` build: 1.26e-5 and 6.9e-5) |
+| `psnr` with `enable_mse`, `enable_apsnr`, `reduced_hbd_peak`, `min_sse`, also with `--subsample 2` | identical, `apsnr_*` included |
+| `motion_v2` and `float_motion` with `motion_fps_weight` and `motion_max_val` | identical |
+| `ssim` with `enable_db` / `clip_db` | within 7.3e-13 dB |
+| `float_ssim` with `enable_lcs` / `enable_db` | within 6.9e-6 dB (1.8e-7 linear) |
+| `float_ssim` with `enable_db`, identical flat 64x64 frames | 72.247198959355487 dB on both |
+| `compute-sanitizer` on the ADM and VIF tiny-frame tests | 0 errors |
+
+### `motion_cuda` blurs the frame difference, like the CPU
+
+The CPU `motion` extractor sums `|blur(prev - cur)|`, rounding after the
+vertical and after the horizontal pass. `motion_cuda` blurred each frame and
+summed `|blur(cur) - blur(prev)|`, which is the same sum only without rounding.
+It now runs the kernel `motion_v2_cuda` already used, through one host helper
+(`integer_motion_sad_cuda.c`), so its SAD is the CPU's
+([ADR-1372](../../adr/1372-cuda-motion-diff-first-pipeline.md),
+`T-CUDA-MOTION-BLUR-THEN-DIFF-2026-09-29`). With it:
+
+- the debug `integer_motion` score is the CPU's SAD score, weighted by
+  `motion_fps_weight` and capped at `motion_max_val`; before, it was the raw
+  normalised SAD;
+- each frame's copy of the reference luma waits for the previous frame on the
+  device, through an event, never on the host, and the eight-frame batch
+  readback ([ADR-0845](../../adr/0845-cuda-motion-launch-overhead.md)) waits
+  once instead of twice;
+- `motion_v2_cuda`'s SAD is unchanged (same kernel); its host scoring now
+  weights and caps it like the CPU (see the option section below);
+- with `motion_force_zero`, `motion_cuda` and `float_motion_cuda` publish zeros
+  from the first frame. Their `init()` switches them to a synchronous
+  `extract()`, and the engine used to call the cleared `submit()` on the first
+  frame and crash (`T-GPU-MOTION-FORCE-ZERO-FIRST-FRAME-SEGV-2026-09-30`); it
+  now initialises an extractor before it picks the path.
+
+Check it on the Netflix pair (prints `0.0`; a build from before the change
+prints about 1.3e-5):
+
+```bash
+Y=python/test/resource/yuv
+for b in cpu cuda; do
+  vmaf -r $Y/src01_hrc00_576x324.yuv -d $Y/src01_hrc01_576x324.yuv \
+      -w 576 -h 324 -p 420 -b 8 --no_prediction --feature motion \
+      --backend $b --precision=max --json -q -o /tmp/motion_$b.json
+done
+python3 -c "import json; a, b = (json.load(open(f'/tmp/motion_{x}.json'))['frames'] for x in ('cpu', 'cuda')); print(max(abs(p['metrics']['integer_motion2'] - q['metrics']['integer_motion2']) for p, q in zip(a, b)))"
+```
+
+### CPU options on the PSNR, SSIM and float-motion twins
+
+Four CUDA twins take their CPU extractor's full option table
+([ADR-1373](../../adr/1373-cuda-twin-cpu-option-parity.md)). Before, a model
+that set one of these options computed the feature on the CPU
+([ADR-1183](../../adr/1183-model-options-gate-gpu-twin-selection.md)), and
+naming the twin with the option failed with `unknown option`.
+
+| Twin | Options added | Where the option acts |
+|---|---|---|
+| `psnr_cuda` | `enable_mse`, `enable_apsnr`, `reduced_hbd_peak`, `min_sse` | host, on the device-reduced SSE, through `psnr_score.h` (bit-exact with the CPU) |
+| `integer_ssim_cuda` | `enable_db`, `clip_db` | host, on the device-reduced score (`vmaf_ssim_max_db()`) |
+| `float_ssim_cuda` | `enable_lcs`, `enable_db`, `clip_db` | `enable_lcs`: a second pass-2 kernel reduces L, C and S per block; dB on the host |
+| `float_motion_cuda` | `motion_max_val` (`mmxv`), `motion_blend_factor` (`mbf`), `motion_blend_offset` (`mbo`) | host: every emitted score, the debug `motion` included, is weighted by `motion_fps_weight` and then capped; `motion3` is the CPU's blend of `motion2` (`motion_blend_clip()`) |
+
+The same change fixed how these twins score, not only which options they take:
+
+- **`float_ssim_cuda` computes the CPU's `l * c * s`.** Each pixel uses the
+  CPU's types and rounding points (double numerators over fp32 denominators,
+  `s` in fp32), and the frame mean is rounded to fp32 as the CPU returns it.
+  With `enable_db`, identical frames therefore report what the CPU reports:
+  `+inf` where its mean rounds to 1, a finite value where it does not
+  (identical flat frames: 72.247199 dB, not `+inf`). The default score moves
+  towards the CPU's by an fp32 rounding.
+- **`float_ssim_cuda` still accepts `enable_chroma`**, which the CPU
+  `float_ssim` does not have: it has always been ignored (the twin scores luma
+  only), and now logs a warning that says so.
+- **`integer_ssim_cuda` computes each pixel's term as the CPU does**, without
+  FMA contraction and with the CPU's grouping, so every term equals the CPU's
+  bit for bit. The frame sum runs in a different order (per block, then on
+  the host), so the score can differ from the CPU's by a double rounding; on
+  identical frames with a side below 12 pixels that can put one of the two at
+  `+inf` and the other near 156 dB with `enable_db` and no `clip_db`.
+- **`motion_v2_cuda` publishes the CPU's SAD score**: fps-weighted and capped
+  at `motion_max_val`, with `motion2_v2` and `motion3_v2` derived from it and
+  `0` / `0` for a one-frame input. Before, it stored the raw SAD and did not
+  cap `motion2_v2`, so non-default `motion_fps_weight` / `motion_max_val`
+  gave other scores than the CPU.
+- **`psnr_cuda` sees every frame under `--subsample`**, like the CPU `psnr`,
+  so `enable_apsnr` sums all frames.
+
+```bash
+# psnr_cuda with the CPU options (mse_* per frame, apsnr_* under aggregate_metrics)
+vmaf --reference ref.yuv --distorted dist.yuv \
+    --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+    --backend cuda --no_prediction --json --output out.json \
+    --feature psnr=enable_mse=true:enable_apsnr=true:min_sse=0.5
+```
+
+### Tiny frames: integer ADM rows and the VIF minimum
+
+- **Integer ADM** keeps the CPU's 17x17 minimum. The rows and taps its DWT
+  kernels load now come from `integer_adm/adm_dwt2_rows.h`, which the
+  device-free `test_cuda_adm_dwt2_rows` replays for every plane height up to
+  8192: from 17 rows up every load is inside the plane, and the scale-0 load
+  is clamped into the plane for the padding threads below that
+  ([ADR-1374](../../adr/1374-cuda-integer-tiny-frame-guards.md),
+  `T-CUDA-HIP-ADM-DWT-VERT-TINY-HEIGHT-OOB-2026-09-29`). Scores do not move.
+- **Integer VIF** (`vif_cuda`) needs 16 pixels in each dimension, like
+  `vif_sycl`: every scale reflects its taps once. Under model dispatch and
+  `--backend cuda --feature vif`, smaller frames are computed by the CPU `vif`
+  and match it bit for bit; `--feature vif_cuda` on such a frame fails with
+  `vif_cuda requires width >= 16 and height >= 16`
+  (`T-GPU-INTEGER-VIF-MIN-DIM-TWINS-2026-09-29`).
 
 ## Licensing of the CUDA kernels (ADR-1250)
 

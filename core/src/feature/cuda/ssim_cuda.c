@@ -8,8 +8,9 @@
  *  Real integer_ssim feature extractor on the CUDA backend (ADR-0564).
  *
  *  This extractor provides the `"ssim"` feature (same name as the CPU
- *  `vmaf_fex_ssim` in `libvmaf/src/feature/integer_ssim.c`) using a
- *  fixed-point integer algorithm that is bit-exact with the CPU.
+ *  `vmaf_fex_ssim` in `libvmaf/src/feature/integer_ssim.c`) with the CPU's
+ *  fixed-point moments and the CPU's per-pixel arithmetic; only the order of
+ *  the frame sum differs (see below).
  *
  *  The CPU algorithm uses:
  *    - A 9-tap Gaussian kernel with INTEGER weights [2,9,28,55,68,55,28,9,2]
@@ -33,17 +34,30 @@
  *      double partial sum + int64 weight sum.
  *  Host: ssim = sum(partials) / sum(partial_weights).
  *
- *  Bit-exactness argument:
- *    - The integer Gaussian kernel is fixed (same 9 integer constants).
- *    - CUDA int64 arithmetic is deterministic on NVIDIA hardware.
- *    - The boundary-truncation logic is identical: same k_min/k_max
- *      formulas as the CPU.
- *    - The final double arithmetic is the same formula.
+ *  What matches the CPU, and what does not:
+ *    - The int64 moments are the CPU's: the same 9 integer weights and the
+ *      same boundary truncation (k_min / k_max).
+ *    - Every per-pixel term is the CPU's double expression, operand for
+ *      operand: the kernel builds with --fmad=false and groups the term as
+ *      the CPU does, ((w * a) * b) / den.
+ *    - The frame sum is not: the CPU adds the terms row by row, the kernel
+ *      per warp, per block and then on the host, so the score can differ
+ *      from the CPU's by a double rounding of the sum. On identical frames
+ *      that rounding matters only where the CPU's own sum sits within a few
+ *      ulps of the weight total: the Research-1372 replay found such frames
+ *      only with a side below 12 pixels, where one side can report exactly
+ *      1 (+inf with enable_db) and the other just below it. A single-pixel
+ *      frame has no sum to reorder.
  *    Target: places=6 vs CPU on the Netflix golden fixture (576×324 8bpc).
+ *
+ *  Options: the CPU table, `enable_db` and `clip_db`, applied on the host to
+ *  the device-reduced score through the nonfinite_score.h emitter the CPU
+ *  extractor uses (ADR-1373).
  */
 
 #include <errno.h>
 #include <math.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -99,6 +113,12 @@ typedef struct IssimStateCuda {
     unsigned block_count;
 
     unsigned index;
+    /* CPU integer_ssim.c options, applied on the host to the device-reduced
+     * score with the shared nonfinite_score.h emitter (ADR-1373). `max_db`
+     * is vmaf_ssim_max_db() of `clip_db` and the frame geometry. */
+    bool enable_db;
+    bool clip_db;
+    double max_db;
     /* PTX module backing the SSIM kernels — owned here so
      * `close_fex_cuda` can unload it. Skipping the unload leaks
      * ~200-500 KB of GPU-resident PTX backing store per vmaf_close(). */
@@ -106,7 +126,22 @@ typedef struct IssimStateCuda {
     VmafDictionary *feature_name_dict;
 } IssimStateCuda;
 
+/* The CPU integer_ssim.c table: same names and defaults. */
 static const VmafOption options[] = {
+    {
+        .name = "enable_db",
+        .help = "write SSIM values as dB: -10*log10(1-ssim)",
+        .offset = offsetof(IssimStateCuda, enable_db),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
+    {
+        .name = "clip_db",
+        .help = "clip dB scores to a peak-derived ceiling",
+        .offset = offsetof(IssimStateCuda, clip_db),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
     {0},
 };
 
@@ -222,6 +257,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "integer_ssim_cuda: zero-dimension input %ux%u\n", w, h);
         return -EINVAL;
     }
+    s->max_db = vmaf_ssim_max_db(s->clip_db, bpc, w, h);
 
     int err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
     if (err)
@@ -313,9 +349,18 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
      * the entry point differed, so select the entry point and launch once. */
     CUfunction func_horiz = (s->bpc == 8u) ? s->func_horiz_8 : s->func_horiz_16;
     void *params[] = {
-        &ref_pic->data[0], &ref_stride,     &dist_pic->data[0], &cmp_stride,
-        &s->d_mux->data,   &s->d_muy->data, &s->d_x2->data,     &s->d_xy->data,
-        &s->d_y2->data,    &s->d_w->data,   &s->width,          &s->height,
+        (void *)&ref_pic->data[0],
+        &ref_stride,
+        (void *)&dist_pic->data[0],
+        &cmp_stride,
+        &s->d_mux->data,
+        &s->d_muy->data,
+        &s->d_x2->data,
+        &s->d_xy->data,
+        &s->d_y2->data,
+        &s->d_w->data,
+        &s->width,
+        &s->height,
     };
     CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(func_horiz, s->grid_x, s->grid_y, 1u, ISSIM_CUDA_BLOCK_X,
                                            ISSIM_CUDA_BLOCK_Y, 1u, 0, stream, params, NULL));
@@ -356,7 +401,7 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
     }
     return vmaf_ssim_emit_ratio_score_named(feature_collector, s->feature_name_dict,
                                             "integer_ssim_cuda", "ssim", total_ssim,
-                                            (double)total_wgt, 0, 0.0, index);
+                                            (double)total_wgt, s->enable_db, s->max_db, index);
 }
 
 static int close_fex_cuda(VmafFeatureExtractor *fex)

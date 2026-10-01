@@ -11,9 +11,10 @@ in [`../../cuda/AGENTS.md`](../../cuda/AGENTS.md).
 `float_ssim_cuda.c` removed by ADR-0546 (`chore/hip-cuda-orphan-tu-cleanup`,
 2026-05-18). Defined `vmaf_fex_float_ssim_cuda` but not listed in
 `core/src/meson.build`; `integer_ssim_cuda.c` (which is compiled) also
-defines same symbol and = current canonical TU (adds
-`enable_chroma` option and other improvements absent from orphan copy).
-Do not re-add `float_ssim_cuda.c` without consulting ADR-0546.
+defines same symbol and = current canonical TU. `enable_chroma` stays as
+accepted, ignored option (ADR-1373, HISS-14: was public; CPU `float_ssim` has
+none; kernel reads luma only). Do not re-add `float_ssim_cuda.c` without
+consulting ADR-0546.
 
 ## Scope
 
@@ -63,7 +64,7 @@ same PR:
 | **psnr** | `integer_psnr_cuda.c` ↔ `../sycl/integer_psnr_sycl.cpp` ↔ `../vulkan/psnr_vulkan.c` (+ `psnr.comp`) ↔ `../hip/integer_psnr_hip.c` |
 | **ciede** | `integer_ciede_cuda.c` ↔ `../sycl/integer_ciede_sycl.cpp` ↔ `../vulkan/ciede_vulkan.c` (+ `ciede.comp`) ↔ `../hip/ciede_hip.c` |
 | **moment** | `integer_moment_cuda.c` ↔ `../sycl/integer_moment_sycl.cpp` ↔ `../vulkan/moment_vulkan.c` (+ `moment.comp`) ↔ `../hip/float_moment_hip.c` |
-| **motion** | `integer_motion_cuda.c` ↔ `../sycl/integer_motion_sycl.cpp` ↔ `../vulkan/motion_vulkan.c` (+ `motion.comp`) |
+| **motion** | `integer_motion_cuda.c` (+ shared `integer_motion_sad_cuda.c`, ADR-1372) ↔ `../sycl/integer_motion_sycl.cpp` ↔ `../vulkan/motion_vulkan.c` (+ `motion.comp`) |
 | **motion_v2** | `integer_motion_v2_cuda.c` ↔ `../sycl/integer_motion_v2_sycl.cpp` ↔ `../vulkan/motion_v2_vulkan.c` (+ `motion_v2.comp`) ↔ `../hip/integer_motion_v2_hip.c` |
 | **vif (integer)** | `integer_vif_cuda.c` (+ `integer_vif/filter1d.cu`) ↔ `../sycl/integer_vif_sycl.cpp` ↔ `../vulkan/vif_vulkan.c` (+ `vif.comp`) |
 | **adm (integer)** | `integer_adm_cuda.c` (+ `integer_adm/*.cu`) ↔ `../sycl/integer_adm_sycl.cpp` ↔ `../vulkan/adm_vulkan.c` (+ `adm.comp`) |
@@ -170,15 +171,14 @@ HIP / Metal motion twins listed in Twin-update table below — same PR.
   GPU motion twins in same PR. See [../../AGENTS.md §"motion3_score
   GPU contract"](../../AGENTS.md).
 
-- **`integer_motion_cuda.c::submit_fex_cuda` runs SAD
-  `cuMemsetD8Async` on `pic_stream`, NOT on `s->str`** (ADR-0358).
-  Kernel atomic-adds into same single-int64 buffer on
+- **The motion SAD `cuMemsetD8Async` runs on `pic_stream`, NOT on
+  `s->str`** (ADR-0358). Kernel atomic-adds into same single-int64 buffer on
   `pic_stream`; both streams `CU_STREAM_NON_BLOCKING`, have
   no event linking them, so co-locating memset on same
-  stream as kernel = only thing that orders them.
-  Matching pattern lives at `integer_motion_v2_cuda.c:188`. Any
-  rebase or follow-up reverting memset onto separate
-  stream silently re-introduces cross-stream race.
+  stream as kernel = only thing that orders them. Since ADR-1372 both
+  motion twins do this in one place: `motion_sad_launch()` in
+  `integer_motion_sad_cuda.c`. Any rebase or follow-up reverting memset onto
+  separate stream silently re-introduces cross-stream race.
 
 - **`integer_motion_cuda.c::collect_fex_cuda` and `flush_fex_cuda`
   emit `motion2_score = MIN(score * motion_fps_weight, motion_max_val)`,
@@ -486,6 +486,105 @@ CUDA feature TUs compile only when `meson setup -Denable_cuda=true`.
   CUDA twins for HDR-model `aim` and `adm3` sub-features (Phase 1);
   `FADM_ACCUM_SLOTS` 6→9 slot-sync invariant.
 
+## RC3 CPU parity: motion order, option tables, tiny frames (ADR-1372, ADR-1373, ADR-1374)
+
+- **One motion SAD kernel, both motion twins** (ADR-1372). `motion_cuda` +
+  `motion_v2_cuda` call `vmaf_cuda_motion_sad_submit()`
+  (`integer_motion_sad_cuda.c`) = only host code loading / launching
+  `integer_motion_v2/motion_v2_score.cu`. Kernel stages `prev - cur`
+  (operand order load-bearing: arithmetic shift rounds negative sums down),
+  then CPU `>> bpc` vertical + `>> 16` horizontal rounding. Never restore
+  per-frame blur or second motion kernel; `test_cuda_motion_tiny_frames`
+  compares `==` vs scalar CPU. Module owner in
+  `test_cuda_module_lifecycle_contract.py` = `integer_motion_sad_cuda.c`.
+- **Ping-pong ordered on device.** Submit waits on previous frame's event
+  (`motion_cuda`: `event`; `motion_v2_cuda`: `lc.submit`) before
+  overwriting one raw slot + reading other. Keep `prev_done` even though
+  engine per-frame `cuCtxSynchronize` (ADR-1199) covers it today. No
+  `cuStreamSynchronize` / `cuCtxSynchronize` / collect wait in any submit
+  path.
+- **Motion debug score = CPU SAD score:** `MIN(sad * motion_fps_weight,
+  motion_max_val)`, per `integer_motion.c::extract`.
+- **Tile loads clamp padding indices** (`cuda_tile_index.h`): reflect once
+  like CPU, then `vmaf_cuda_tile_index()` = identity for every consumed
+  sample. Same rule as SYCL `sycl_tile_index.h`.
+- **Option tables = CPU tables** (ADR-1373) on `psnr_cuda`,
+  `integer_ssim_cuda`, `float_ssim_cuda`, `float_motion_cuda`. Host
+  arithmetic = CPU helper, never copy: `psnr_score.h`
+  (`vmaf_psnr_peak/max/from_mse/aggregate`, plus `flush` for `apsnr_*`),
+  `vmaf_ssim_max_db()` + `nonfinite_score.h` emitters, `motion_clip()`.
+  `test_twin_options_are_cpu_options` rejects twin-only keys; sole
+  exception `float_ssim_cuda` `enable_chroma` (accepted no-op, HISS-14,
+  warns when set). Never remove it without `!` + `Migration:`.
+- **`psnr_cuda`: every plane accumulator zeroed on picture stream** (the
+  kernels' stream; memset on `lc.str` races the atomic adds,
+  `kernel_template.h`). **`psnr_cuda` is TEMPORAL** like CPU `psnr`: else
+  `--subsample N` feeds 1 frame in N into `apsnr_*`.
+- **`motion_v2_cuda` publishes CPU SAD score** `MIN(sad * mfw, mmxv)` in
+  collect; flush derives `motion2_v2` / `motion3_v2` from stored values,
+  NO re-weighting, one-frame input -> 0 / 0 (`n_frames == 0` early out
+  only). Mirrors `integer_motion_v2.c::extract` / `flush`.
+- **`ssim_score.cu::ssim_terms()` = CPU `l * c * s`, operand for operand**
+  (`iqa/ssim_tools.c::ssim_variance_scalar` + `iqa/ssim_accumulate_lane.h`):
+  double numerators over fp32 denominators, fp32 `s`, double product, each
+  rounding an intrinsic (`__fmul_rn` / `__fadd_rn` / `__ddiv_rn` ...). Double
+  block partials; host rounds frame means to fp32 (`float_ssim_frame_mean`).
+  NEVER force identical windows to 1: CPU flat identical frames = 72.247 dB,
+  not `+inf` (#1637 review). Both pass-2 kernels share `ssim_terms()`.
+- **`integer_ssim_score` builds with `--fmad=false`** (`cuda_cu_extra_flags`,
+  as HIP `-ffp-contract=off`, ADR-0564 / ADR-1373) and groups term as CPU:
+  `w_d * a * b / den` = `((w * a) * b) / den`. Per-pixel terms = CPU bit for
+  bit; frame sum order differs (warp / block / host vs CPU row-major) -> no
+  bit-exact claim. `test_cuda_kernel_source_contract.py` pins flag + grouping.
+- **Integer ADM DWT row / tap arithmetic in
+  `integer_adm/adm_dwt2_rows.h`** (ADR-1374): `adm_dwt2_load_column()`
+  reads `adm_dwt2_source_row()` (clamped), `calculate_indices()` reads
+  `adm_dwt2_s123_tap()`. `static_assert`s tie kernel instantiation to
+  header geometry; tile / rows-per-thread change = header change;
+  `test_cuda_adm_dwt2_rows` re-checks every height.
+- **`vif_cuda` minimum = 16 pixels** via ADR-1324 gate (`context_check`,
+  `context_fallback_name = "vif"`), derived from `vif_filter1d_width` in
+  `vif_cuda_min_dim()`. `init()` refuses below it BEFORE reading
+  `fex->cu_state` (device-free tests pass none).
+- **`float_motion_cuda` emits CPU `motion3`**
+  (`T-GPU-FLOAT-MOTION3-MISSING-2026-09-30`): `motion_blend_clip()` =
+  CPU `float_motion.c::motion_blend_clip` (fps weight, blend, cap) of
+  `motion2`; frame 0 from the first SAD at index 1, tail from `flush`, `0`
+  for a one-frame input. `motion_blend_factor` / `motion_blend_offset`
+  declared in CPU table order (order spells feature names, e.g.
+  `motion3_mbf_0.5_mbo_2`). `flush` appends through
+  `motion_append_once()` (probe, then append) because the pending collect
+  may already have written the tail.
+- Guards: `test_cuda_kernel_source_contract.py` (planted regression per
+  rule above), `test_cuda_motion_tiny_frames`, `test_cuda_vif_min_dim`,
+  `test_cuda_twin_option_parity`, `test_cuda_adm_dwt2_rows`,
+  `test_cuda_float_motion_parity` (every frame, all three scores).
+
+## Integer reductions: one atomic per block (ADR-1392)
+
+- **`motion_v2_score.cu` and `psnr_score.cu` add ONE `atomicAdd` per
+  block** to the frame's single 64-bit accumulator: warp shuffle, warp sums
+  through `__shared__`, first warp sums them. `integer_moment/moment_score.cu`
+  adds one per accumulator per block (threads 0..3 each sum one accumulator's
+  warp sums; geometry in `integer_moment_cuda.h`, as PSNR's). Per-warp atomics
+  to one address serialised the kernels on the L2 atomic unit (PSNR spent most
+  of its GPU time there). Sums are integers, so any order is exact; never
+  return to per-warp or per-thread atomics on a single address.
+- **Motion SAD vertical pass once per block** into `VTile s_v` (16 output
+  rows x 20 tile columns, CPU `>> bpc` rounding), then 5 horizontal taps
+  (`>> 16`) per output: same integers as the per-output nested loop.
+  `__launch_bounds__(256, 6)`: 6 x 256 = the 1536 threads of an sm_86 /
+  89 / 120 SM (8 exceeded it: ptxas ignored the hint with
+  `.minnctapersm` and capped sm_80 / 90 at 32 registers).
+- **PSNR geometry lives in `integer_psnr_cuda.h`** (`PSNR_BLOCK_X` x
+  `PSNR_BLOCK_Y` threads, `PSNR_COLS_PER_THREAD` columns per thread,
+  `PSNR_BLOCK_X` apart so warp loads stay contiguous); kernel and
+  `psnr_cuda_dispatch()` must both read it.
+- **Never index a by-value `VmafPicture` kernel parameter with a runtime
+  plane** (`pic.data[plane]`): nvcc copies both pictures (192 bytes) to
+  every thread's stack. `psnr_score.cu::plane_row()` selects with constant
+  indices; `cuobjdump --dump-resource-usage` must show `STACK:0`.
+
 ## Stencil/convolution kernel invariant (ADR-0454)
 
 - **Stencil and convolution kernels with data reuse > 2 taps must stage
@@ -619,8 +718,9 @@ See [ADR-0747](../../../../docs/adr/0747-cuda-extern-c-sweep.md).
 
 ## Motion kernel dispatch bottleneck (Research-0760)
 
-- **`calculate_motion_score_kernel_8bpc` dispatch-bottlenecked at all resolutions
-  below 4K.** ncu profile (2026-05-29, RTX 4090) shows GPU busy fraction <1% of
+- **Motion kernel (then `calculate_motion_score_kernel_8bpc`; since
+  ADR-1372 shared `motion_v2_kernel_8bpc`) dispatch-bottlenecked at all
+  resolutions below 4K.** ncu profile (2026-05-29, RTX 4090) shows GPU busy fraction <1% of
   wall time at 576p (kernel 7 µs, dispatch ~12.7 ms/frame). CUDA/CPU ratio = 0.22×
   at 576p, 5.8× at 4K — crossover entirely explained by dispatch overhead.
   Any optimization not addressing per-frame dispatch will not improve
@@ -655,7 +755,11 @@ See [ADR-0747](../../../../docs/adr/0747-cuda-extern-c-sweep.md).
      calls to submit() — would conflict with batch fence logic.
   6. flush() handles final partial batch for frame counts not
      multiple of MOTION_BATCH_DEPTH. `flush_start` clamp to 1 skips frame 0
-     (has no valid SAD — kernel runs but prev_blurred uninitialized).
+     (no SAD: frame 0 only stages luma; kernel skipped).
+  7. Both readback paths go through `motion_readback_slots()`: copies
+     queue on `s->str` behind every chained frame event, then ONE
+     `cuStreamSynchronize` (ADR-1372). Never re-add wait before copies;
+     `test_cuda_kernel_source_contract.py` counts it.
 
 ## Resolution-aware kernel variants: removed (ADR-0753, superseded by ADR-1143)
 

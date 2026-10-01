@@ -112,6 +112,105 @@
   and in `scripts/ci/test_git_fixture_isolation.py`. It scrubs every `GIT_*`
   variable before it creates a repository; keep it that way.
 - No Netflix golden-data, public API or FFmpeg patch impact.
+## fix/cuda-rc3-parity — CUDA motion order, CPU option tables, tiny-frame guards, one atomic per block (ADR-1372, ADR-1373, ADR-1374, ADR-1392) (2026-09-30)
+
+- `core/src/feature/cuda/integer_motion_sad_cuda.{h,c}` (new, fork-only): the
+  one host path to the motion SAD kernel of
+  `integer_motion_v2/motion_v2_score.cu`, used by `motion_cuda` and
+  `motion_v2_cuda`. `integer_motion/motion_score.cu` (upstream NVIDIA
+  blur-each-frame kernel) is deleted with its `motion_score_ptx` target. An
+  upstream sync that brings back `motion_score.cu`, `calculate_motion_score`
+  or the blurred ping-pong reintroduces the blur-then-diff order; keep the
+  diff-first kernel and `test_cuda_motion_tiny_frames` (compares with `==`).
+  If upstream changes `motion_score_pipeline_8` / `_16` in
+  `integer_motion.c`, mirror it in `motion_v2_score.cu` once (both CUDA
+  motion twins).
+- `integer_motion_cuda.c`: raw-luma ping-pong `raw[2]` replaces `blur[2]`;
+  `submit()` passes the previous frame's `event` as `prev_done`, so the
+  copy and the kernel are ordered on the device. The ADR-0845 batch readback
+  (`motion_readback_slots()`) synchronises once; do not restore the extra
+  `cuStreamSynchronize` before the copies. The debug
+  `VMAF_integer_feature_motion_score` is `MIN(sad * mfw, mmxv)`, as in
+  `integer_motion.c::extract`.
+- `integer_adm/adm_dwt2_rows.h` (new): row and tap arithmetic of
+  `adm_dwt2.cu`; `adm_dwt2_load_column()` and `calculate_indices()` call it,
+  and the scale-0 load clamps through `cuda_tile_index.h`. Upstream-mirror
+  NVIDIA code changed here: on a sync, keep the header calls and the
+  `static_assert`s that tie the `DWT_8_VERT_HORI(4, 16, 32768, 128, 8, ...)`
+  instantiation to the header's geometry. `test_cuda_adm_dwt2_rows` replays
+  the arithmetic device-free.
+- `integer_vif_cuda.c`: `context_check` + `context_fallback_name = "vif"` and
+  an `init()` guard below `vif_cuda_min_dim()` (16), before any CUDA state is
+  read (ADR-1324 pattern, as `vif_sycl`).
+- Options (ADR-1373): `integer_psnr_cuda.c` calls `psnr_score.h` for every
+  score and gained a `flush` for `apsnr_*`; `ssim_cuda.c` and
+  `integer_ssim_cuda.c` emit through `vmaf_ssim_max_db()` / the
+  `nonfinite_score.h` emitters; `integer_ssim/ssim_score.cu::ssim_terms()`
+  computes the CPU's `l * c * s` with the CPU's types and rounding points
+  (mirror of `iqa/ssim_tools.c` and `iqa/ssim_accumulate_lane.h`: when an
+  upstream sync changes either, change `ssim_terms()` in the same PR), its
+  partials are doubles and `integer_ssim_cuda.c` rounds the frame means to
+  fp32; it gained `calculate_ssim_vert_combine_lcs`. `core/src/meson.build`
+  builds `integer_ssim_score` with `--fmad=false` (`cuda_cu_extra_flags`, the
+  HIP twin's `-ffp-contract=off`), and `integer_ssim_score.cu` groups each
+  term as `integer_ssim.c` does. `float_ssim_cuda` keeps `enable_chroma` as
+  an ignored option (HISS-14); `float_motion_cuda.c` routes every score
+  through `motion_clip()`. `integer_motion_v2_cuda.c` publishes the CPU's
+  weighted, capped SAD and derives `motion2_v2` / `motion3_v2` from it like
+  `integer_motion_v2.c::flush`. `integer_psnr_cuda.c` is TEMPORAL and zeroes
+  every plane accumulator on the picture stream.
+- Tests: `core/test/test_cuda_module_lifecycle_contract.py` inventory lists
+  `integer_motion_sad_cuda.c` as the motion module owner;
+  `test_device_target_header_dependencies.py` counts 21 CUDA fatbin targets.
+- `core/src/libvmaf.c` (engine, found by the RTX 4090 run):
+  `init_before_dispatch()` initialises an extractor that has `submit()` and
+  `collect()` before `read_pictures_cuda_submit_current()` and
+  `read_pictures_dispatch_one()` choose between the asynchronous path and
+  `extract()`. The motion twins' `init()` swaps in `extract()` under
+  `motion_force_zero`; with the choice made first, the first frame called the
+  cleared `submit()` and crashed. A sync or refactor of those two functions
+  must keep the init ahead of the decision; `test_cuda_kernel_source_contract.py`
+  pins the order, and `test_cuda_motion_tiny_frames` / `test_cuda_twin_option_parity`
+  run `motion_force_zero` on a device.
+- `float_motion_cuda.c` (found by the RTX 4090 run,
+  `T-GPU-FLOAT-MOTION3-MISSING-2026-09-30`): provides
+  `VMAF_feature_motion3_score` and declares `motion_blend_factor` /
+  `motion_blend_offset` in the CPU table's order; `motion_blend_clip()` is
+  `float_motion.c::motion_blend_clip`. If upstream changes the CPU motion3
+  (blend, index-0 or flush emission), change the twin in the same PR;
+  `test_cuda_float_motion_parity` compares every frame of all three scores.
+- ADR-1392 (kernel reductions): `integer_motion_v2/motion_v2_score.cu` computes
+  the vertical pass once per block (`vertical_pass()` into `s_v`) and adds one
+  atomic per block (`add_block_sad()`); `integer_psnr/psnr_score.cu` sums
+  eight pixels per thread (geometry in `integer_psnr_cuda.h`, shared with
+  `psnr_cuda_dispatch()`), adds one atomic per block (`add_block_sse()`) and
+  selects the plane with constant indices (`plane_row()`);
+  `integer_moment/moment_score.cu` takes the same layout
+  (`integer_moment_cuda.h`) and adds one atomic per accumulator per block
+  (`add_block_sums()`). Keep all of it on a sync of these upstream-derived
+  NVIDIA kernels: per-warp atomics to a single accumulator serialise the
+  kernels, and `pic.data[plane]` on the by-value kernel parameter puts both
+  pictures on every thread's stack.
+- clang-tidy clean-up of touched CUDA hosts (HISS-04, no behaviour change):
+  `integer_vif_cuda.c` gained `vif_submit_plane()` / `vif_submit_scales()`
+  and a kernel-name table in `vif_get_filter1d_functions()`;
+  `integer_ssim_cuda.c` split `init_fex_cuda()` into
+  `float_ssim_check_geometry()` / `float_ssim_load_kernels()`. On a conflict
+  keep the helpers and move the upstream statement into them in order.
+
+No public C API, CLI syntax or FFmpeg patch impact. CPU scores are
+bit-identical (no CPU extractor changed; the engine change only moves the
+first-frame `init()` of a submit / collect extractor ahead of the dispatch
+decision). `motion_cuda` scores move to the CPU's (measured on an RTX 4090:
+from 1.26e-5 to 0.0 on the Netflix pair, from 6.9e-5 to 0.0 on 50 frames of
+3840x2160); `motion_v2_cuda` is unchanged; default `float_ssim_cuda`
+moves towards the CPU's by an fp32 rounding; default `integer_ssim_cuda`
+per-pixel terms move to the CPU's (no fused `c1`, `c2`, `y2 * w`; the CPU's
+grouping); `psnr_cuda`, `float_motion_cuda` and `motion_v2_cuda` default
+scores are unchanged (`motion_v2_cuda` moves only with a non-default
+`motion_fps_weight` / `motion_max_val` or a one-frame input);
+`float_motion_cuda` output gains `motion3`, and the ADR-1392 kernels return
+the same integers as before.
 
 ## perf/sycl-adm-aim-device — AIM pass on the SYCL integer ADM twin (ADR-1362) (2026-09-29)
 

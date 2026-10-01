@@ -165,6 +165,25 @@ linked AGENTS.md before resolving conflicts.
   [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md) and
   [core/src/feature/iqa/AGENTS.md](../../core/src/feature/iqa/AGENTS.md).
 
+- **CUDA RC3 CPU parity ([ADR-1372](../adr/1372-cuda-motion-diff-first-pipeline.md),
+  [ADR-1373](../adr/1373-cuda-twin-cpu-option-parity.md),
+  [ADR-1374](../adr/1374-cuda-integer-tiny-frame-guards.md))**: both CUDA
+  motion twins run the diff-first SAD kernel of
+  `integer_motion_v2/motion_v2_score.cu` through `integer_motion_sad_cuda.c`;
+  an upstream sync must not bring back the blur-each-frame `motion_score.cu`.
+  `psnr_cuda`, `integer_ssim_cuda`, `float_ssim_cuda` and `float_motion_cuda`
+  carry the CPU option tables and call the CPU's helpers (`psnr_score.h`,
+  `vmaf_ssim_max_db()`, `motion_clip()`); `ssim_score.cu::ssim_terms()` mirrors
+  the CPU's `l * c * s` rounding point for rounding point, and
+  `integer_ssim_score` builds with `--fmad=false` and the CPU's grouping.
+  The integer ADM DWT row and tap arithmetic lives in
+  `integer_adm/adm_dwt2_rows.h`, and `vif_cuda` falls back to the CPU below 16
+  pixels. `float_motion_cuda` emits the CPU's `motion3` (`motion_blend_clip()`).
+  The motion SAD, PSNR and moment kernels add one atomic per block (per
+  accumulator) and PSNR selects its plane with constant indices
+  ([ADR-1392](../adr/1392-cuda-integer-reductions-one-atomic-per-block.md)).
+  Details: [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
+
 - **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:
   [ADR-0922](../adr/0922-coverage-ratchet-aggressive.md). Absolute
   floors live in `scripts/ci/coverage-check.sh`

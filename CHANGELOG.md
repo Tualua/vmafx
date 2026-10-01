@@ -29,6 +29,32 @@
 
 ### Changed
 
+- **CUDA twins take the CPU extractor's options and arithmetic (ADR-1373).** `psnr_cuda`
+  now accepts `enable_mse`, `enable_apsnr`, `reduced_hbd_peak` and `min_sse`
+  through the same `core/src/feature/psnr_score.h` helpers as the CPU
+  extractor, `apsnr_*` aggregates included; `integer_ssim_cuda` accepts
+  `enable_db` / `clip_db`; `float_ssim_cuda` accepts `enable_lcs` (a device
+  kernel reduces the L, C and S terms) / `enable_db` / `clip_db`; and
+  `float_motion_cuda` accepts `motion_max_val` and weights its debug `motion`
+  score by `motion_fps_weight` like the CPU. Before, a model or a
+  `--backend cuda --feature psnr=enable_mse=true`-style request that set one of
+  these options computed the feature on the CPU, and naming the twin with the
+  option failed with `unknown option`. `float_ssim_cuda` now computes the
+  CPU's per-pixel `l * c * s` with the CPU's rounding and rounds the frame
+  mean to fp32, so with `enable_db` identical frames report the CPU's value
+  (identical flat frames: 72.247 dB, where the twin reported `+inf`);
+  `integer_ssim_cuda` computes each pixel's term as the CPU does;
+  `motion_v2_cuda` publishes the CPU's fps-weighted, capped SAD score and
+  emits `motion2_v2` / `motion3_v2` for a one-frame input; `psnr_cuda` sums
+  every frame into `apsnr_*` under `--subsample`, and its chroma accumulators
+  can no longer be cleared while the chroma kernels run. `float_ssim_cuda`
+  still accepts `enable_chroma`, which the CPU `float_ssim` does not have, and
+  warns that it is ignored. Measured on an RTX 4090: the PSNR, `motion_v2`
+  and `float_motion` options give the CPU's scores exactly, `ssim` stays
+  within 7.3e-13 dB and `float_ssim` within 6.9e-6 dB of the CPU; see
+  [the CUDA backend guide](docs/backends/cuda/overview.md#cpu-options-on-the-psnr-ssim-and-float-motion-twins).
+
+
 - **`vmaf` reads its two inputs ahead of scoring, on one thread each
   (ADR-1366).** The CLI used to read the reference frame, then the distorted
   frame, then score the pair, all on one thread; at 3840x2160 the two reads
@@ -75,6 +101,21 @@
   [the CUDA backend guide](docs/backends/cuda/overview.md) and
   [the psnr_hvs page](docs/metrics/psnr-hvs.md#gpu-twins), which also explains why
   the CPU extractor differs from every GPU twin by up to 1.1e-2 dB at 3840x2160.
+
+
+- **`psnr_cuda`, `float_moment_cuda` and the CUDA motion SAD kernel spend
+  far less GPU time per frame (ADR-1392).** The kernels added one atomic per
+  warp to their 64-bit accumulators, which serialised them in the L2; they
+  now add one per block and accumulator. PSNR and moment threads sum eight
+  coalesced pixels each, PSNR selects its plane without copying both
+  pictures to every thread's stack, and the motion SAD kernel (shared by
+  `motion_cuda` and `motion_v2_cuda`) computes its vertical filter pass once
+  per block. On an RTX 4090 with 3840x2160 8-bit frames the PSNR kernel drops
+  from 1,750.5 to 17.7 us per frame, the motion SAD kernel from 136.5 to
+  59.6 us and the moment kernel from 460.0 to 15.3 us (CUPTI, median of three
+  traces); scores are unchanged. The whole-frame time barely moves, because
+  copying each 4K frame to the device takes about 2.1 ms on that host's PCIe
+  link, far longer than any of these kernels now runs.
 
 
 - **The CUDA SpEED twins run entirely on the device (ADR-1380).**
@@ -288,11 +329,62 @@
   unchanged.
 
 
+- **`float_motion_cuda` emits `motion3`, like the CPU `float_motion`.** The
+  CUDA twin wrote `motion` and `motion2` only, so `--backend cuda --feature
+  float_motion` lost `VMAF_feature_motion3_score` without a warning. It now
+  publishes the CPU's `motion3` (the fps-weighted `motion2`, blended by
+  `motion_blend_factor` / `motion_blend_offset` and capped at
+  `motion_max_val`; frame 0 from the first SAD, `0` for a one-frame input)
+  and accepts both blend options (aliases `mbf` / `mbo`). On an RTX 4090 it
+  stays within 2.8e-6 of the CPU on the Netflix pair, like `motion2`. The
+  SYCL, HIP and Metal twins still write no `motion3`
+  (`T-GPU-FLOAT-MOTION3-MISSING-2026-09-30`).
+
+
+- **`motion_cuda` computes the CPU `motion` arithmetic.** The CUDA twin blurred
+  each frame and differenced the blurred frames, while the CPU (since the
+  upstream pipelined-motion port) blurs the frame difference and rounds after
+  each filter pass; the two orders round differently (the SYCL twin with the
+  same order was up to 2.0e-4 off on 17x17 frames and 1.3e-5 on the Netflix
+  576x324 pair). `motion_cuda` now runs the kernel `motion_v2_cuda` already
+  used, whose arithmetic is the CPU's, and its debug `integer_motion` score
+  is the CPU's (weighted by `motion_fps_weight`, capped at `motion_max_val`).
+  Each frame is ordered against the previous one on the device instead of by
+  the engine's context barrier, and the eight-frame batch readback waits once
+  instead of twice. `motion_v2_cuda`'s SAD is unchanged. On an RTX 4090
+  `integer_motion2` / `integer_motion3` now equal the CPU's on the Netflix
+  pair and on 50 frames of a 3840x2160 clip, where they were 1.26e-5 and
+  6.9e-5 off (ADR-1372; `docs/state.md`,
+  `T-CUDA-MOTION-BLUR-THEN-DIFF-2026-09-29`;
+  [CUDA backend](docs/backends/cuda/overview.md#cpu-parity-motion-options-and-tiny-frames-2026-09-30)).
+- **CUDA integer ADM and VIF guard tiny frames like their SYCL twins.** The
+  integer ADM DWT kernels take their row and tap arithmetic from a header a
+  device-free test replays for every plane height: from the 17-row ADM minimum
+  up no load leaves the plane, and the scale-0 load is clamped into the plane
+  below it. `vif_cuda` needs 16 pixels in each dimension; model dispatch and
+  `--backend cuda --feature vif` compute smaller frames with the CPU `vif`, and
+  `--feature vif_cuda` on such a frame fails `init()` instead of returning
+  scores from clamped taps (ADR-1374).
+
+
 - **The Gitleaks check scans only the commit it checked out.** It ran
   `git log --all` over a full-history checkout, so a finding on any branch in
   the repository, including a commit a force-push had already replaced,
   failed every other open pull request. Each run now scans the history of
   its own `HEAD`: on a pull request, master plus the PR's commits.
+
+
+- **`motion_force_zero` no longer crashes `motion_cuda` and
+  `float_motion_cuda`.** With the option set, the twins' `init()` switches
+  them from the asynchronous `submit()` / `collect()` pair to a synchronous
+  `extract()` that publishes zeros, but the engine had already chosen the
+  asynchronous path and called the cleared `submit()` on the first frame:
+  `--backend cuda --feature motion_cuda=motion_force_zero=true` (or
+  `float_motion_cuda=...`) died with SIGSEGV. The engine now initialises such
+  an extractor before it picks the path, so both twins publish zeros for
+  every frame, as the CPU extractors do. The HIP and Metal motion twins make
+  the same switch and take the same engine path
+  (`T-GPU-MOTION-FORCE-ZERO-FIRST-FRAME-SEGV-2026-09-30`).
 
 
 - The oneAPI container image no longer crashes on Arc B580 (Battlemage)

@@ -29,6 +29,7 @@
 
 #include "cpu.h"
 #include "cuda/integer_adm_cuda.h"
+#include "cuda/integer_adm/adm_dwt2_rows.h"
 /* DEFAULT_ADM_NOISE_WEIGHT / DEFAULT_ADM_CSF_SCALE / DEFAULT_ADM_CSF_DIAG_SCALE and
  * enum ADM_CSF_MODE are pulled in transitively via cuda/integer_adm_cuda.h →
  * feature/integer_adm.h. No separate adm_options.h include is needed here. */
@@ -210,10 +211,11 @@ static int dwt2_8_device(AdmStateCuda *s, const uint8_t *d_picture, cuda_adm_dwt
                          int dst_stride, AdmFixedParametersCuda *p, CudaFunctions *cu_f,
                          CUstream c_stream)
 {
-    int rows_per_thread = 4;
+    /* adm_dwt2_rows.h: the geometry the kernel instantiation assumes. */
+    int rows_per_thread = ADM_DWT2_V_ROWS_PER_THREAD;
 
-    int vert_out_tile_rows = 8;
-    int vert_out_tile_cols = 128;
+    int vert_out_tile_rows = ADM_DWT2_TILE_ROWS;
+    int vert_out_tile_cols = ADM_DWT2_TILE_COLS;
 
     int horz_out_tile_rows = vert_out_tile_rows;
     int horz_out_tile_cols = vert_out_tile_cols / 2 - 2;
@@ -290,10 +292,11 @@ static int adm_dwt2_16_device(AdmStateCuda *s, const uint16_t *d_picture,
                               int h, int src_stride, int dst_stride, int inp_size_bits,
                               AdmFixedParametersCuda *p, CudaFunctions *cu_f, CUstream c_stream)
 {
-    int rows_per_thread = 4;
+    /* adm_dwt2_rows.h: the geometry the kernel instantiation assumes. */
+    int rows_per_thread = ADM_DWT2_V_ROWS_PER_THREAD;
 
-    int vert_out_tile_rows = 8;
-    int vert_out_tile_cols = 128;
+    int vert_out_tile_rows = ADM_DWT2_TILE_ROWS;
+    int vert_out_tile_cols = ADM_DWT2_TILE_COLS;
 
     int horz_out_tile_rows = vert_out_tile_rows;
     int horz_out_tile_cols = vert_out_tile_cols / 2 - 2;
@@ -1609,6 +1612,7 @@ static int adm_cuda_release_device(VmafCudaState *cu_state, AdmStateCuda *s)
 static int adm_cuda_init_device_locked(VmafCudaState *cu_state, AdmStateCuda *s)
 {
     CudaFunctions *const cu_f = cu_state->f;
+    int release_rc = 0;
     int _cuda_err = 0;
     CHECK_CUDA_GOTO(cu_f, cuStreamCreateWithPriority(&s->str, CU_STREAM_NON_BLOCKING, 0), fail);
     CHECK_CUDA_GOTO(cu_f, cuEventCreate(&s->finished, CU_EVENT_DEFAULT), fail);
@@ -1620,10 +1624,8 @@ static int adm_cuda_init_device_locked(VmafCudaState *cu_state, AdmStateCuda *s)
         return 0;
     }
 fail:
-    {
-        const int release_rc = adm_cuda_release_device(cu_state, s);
-        return _cuda_err ? _cuda_err : release_rc;
-    }
+    release_rc = adm_cuda_release_device(cu_state, s);
+    return _cuda_err ? _cuda_err : release_rc;
 }
 
 /* Everything init needs from the device: stream, events, kernels and the SM
