@@ -2,6 +2,8 @@
  *
  *  Copyright 2016-2026 Netflix, Inc.
  *
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
  *     You may obtain a copy of the License at
@@ -19,17 +21,23 @@
 #include "metadata_handler.h"
 #include "test.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
 /* Must match VmafCallbackItem::callback — void (*)(void *, VmafMetadata *).
  * Under C23 an empty parameter list means (void), so the previous
  * `void set_meta()` spelling is a genuine type mismatch rather than the
  * C11 unprototyped-function tolerance it relied on (ADR-0692). */
-void set_meta(void *data, VmafMetadata *metadata)
+static void set_meta(void *data, VmafMetadata *metadata)
 {
     (void)data;
     (void)metadata;
 }
 
-static char *test_propagate_metadata_init()
+static char *test_propagate_metadata_init(void)
 {
     VmafCallbackList *propagate_metadata;
     int err = vmaf_metadata_init(&propagate_metadata);
@@ -42,7 +50,7 @@ static char *test_propagate_metadata_init()
     return NULL;
 }
 
-static char *test_propagate_metadata_destroy()
+static char *test_propagate_metadata_destroy(void)
 {
     VmafCallbackList *propagate_metadata;
     int err = vmaf_metadata_init(&propagate_metadata);
@@ -55,7 +63,7 @@ static char *test_propagate_metadata_destroy()
     return NULL;
 }
 
-static char *test_propagate_metadata_append()
+static char *test_propagate_metadata_append(void)
 {
     VmafCallbackList *propagate_metadata;
     int err = vmaf_metadata_init(&propagate_metadata);
@@ -84,10 +92,12 @@ static char *test_propagate_metadata_append()
     return NULL;
 }
 
-char *run_tests()
+char *run_tests(void)
 {
     mu_run_test(test_propagate_metadata_init);
     mu_run_test(test_propagate_metadata_destroy);
     mu_run_test(test_propagate_metadata_append);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

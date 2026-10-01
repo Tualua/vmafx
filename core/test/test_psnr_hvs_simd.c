@@ -143,6 +143,112 @@ static void ref_od_bin_fdct8x8_hvs(od_coeff_ref *y, int ystride, const od_coeff_
     }
 }
 
+static void init_psnrhvs_mask(float mask[8][8], const float csf[8][8])
+{
+    for (int x = 0; x < 8; x++) {
+        for (int y = 0; y < 8; y++) {
+            /* Match upstream scalar literal: double constant (no f suffix). */
+            mask[x][y] =
+                (float)((csf[x][y] * 0.3885746225901003) * (csf[x][y] * 0.3885746225901003));
+        }
+    }
+}
+
+static void ref_load_block(od_coeff_ref dct_s[64], od_coeff_ref dct_d[64], const unsigned char *src,
+                           int systride, const unsigned char *dst, int dystride, int x, int y,
+                           int depth)
+{
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            if (depth > 8) {
+                dct_s[i * 8 + j] = src[(y + i) * systride + (j + x) * 2] +
+                                   (src[(y + i) * systride + (j + x) * 2 + 1] << 8);
+                dct_d[i * 8 + j] = dst[(y + i) * dystride + (j + x) * 2] +
+                                   (dst[(y + i) * dystride + (j + x) * 2 + 1] << 8);
+            } else {
+                dct_s[i * 8 + j] = src[(y + i) * systride + (j + x)];
+                dct_d[i * 8 + j] = dst[(y + i) * dystride + (j + x)];
+            }
+        }
+    }
+}
+
+static void ref_calc_block_vars(const od_coeff_ref dct_s[64], const od_coeff_ref dct_d[64],
+                                float *out_s_gvar, float *out_d_gvar)
+{
+    float s_means[4] = {0, 0, 0, 0};
+    float d_means[4] = {0, 0, 0, 0};
+    float s_vars[4] = {0, 0, 0, 0};
+    float d_vars[4] = {0, 0, 0, 0};
+    float s_gmean = 0.0f;
+    float d_gmean = 0.0f;
+    float s_gvar = 0.0f;
+    float d_gvar = 0.0f;
+
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            int sub = ((i & 12) >> 2) + ((j & 12) >> 1);
+            s_gmean += (float)dct_s[i * 8 + j];
+            d_gmean += (float)dct_d[i * 8 + j];
+            s_means[sub] += (float)dct_s[i * 8 + j];
+            d_means[sub] += (float)dct_d[i * 8 + j];
+        }
+    }
+    s_gmean /= 64.0f;
+    d_gmean /= 64.0f;
+    for (int i = 0; i < 4; i++) {
+        s_means[i] /= 16.0f;
+        d_means[i] /= 16.0f;
+    }
+
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            int sub = ((i & 12) >> 2) + ((j & 12) >> 1);
+            s_gvar += (dct_s[i * 8 + j] - s_gmean) * (dct_s[i * 8 + j] - s_gmean);
+            d_gvar += (dct_d[i * 8 + j] - d_gmean) * (dct_d[i * 8 + j] - d_gmean);
+            s_vars[sub] += (dct_s[i * 8 + j] - s_means[sub]) * (dct_s[i * 8 + j] - s_means[sub]);
+            d_vars[sub] += (dct_d[i * 8 + j] - d_means[sub]) * (dct_d[i * 8 + j] - d_means[sub]);
+        }
+    }
+    s_gvar *= 1.0f / 63.0f * 64;
+    d_gvar *= 1.0f / 63.0f * 64;
+    for (int i = 0; i < 4; i++) {
+        s_vars[i] *= 1.0f / 15.0f * 16;
+    }
+    for (int i = 0; i < 4; i++) {
+        d_vars[i] *= 1.0f / 15.0f * 16;
+    }
+    if (s_gvar > 0)
+        s_gvar = (s_vars[0] + s_vars[1] + s_vars[2] + s_vars[3]) / s_gvar;
+    if (d_gvar > 0)
+        d_gvar = (d_vars[0] + d_vars[1] + d_vars[2] + d_vars[3]) / d_gvar;
+
+    *out_s_gvar = s_gvar;
+    *out_d_gvar = d_gvar;
+}
+
+static float ref_calc_final_mask(const od_coeff_ref dct_s[64], const od_coeff_ref dct_d[64],
+                                 const float mask[8][8], float s_gvar, float d_gvar)
+{
+    float s_mask = 0.0f;
+    float d_mask = 0.0f;
+    for (int i = 0; i < 8; i++) {
+        for (int j = (i == 0); j < 8; j++) {
+            s_mask += (float)(dct_s[i * 8 + j] * dct_s[i * 8 + j]) * mask[i][j];
+            d_mask += (float)(dct_d[i * 8 + j] * dct_d[i * 8 + j]) * mask[i][j];
+        }
+    }
+
+    /* ADR-0138 key expression: (double) cast before multiply → double sqrt. */
+    // NOLINTNEXTLINE(performance-type-promotion-in-math-fn)
+    s_mask = (float)(sqrt((double)s_mask * s_gvar) / 32.0);
+    // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) — ADR-0138
+    d_mask = (float)(sqrt((double)d_mask * d_gvar) / 32.0);
+    if (d_mask > s_mask)
+        s_mask = d_mask;
+    return s_mask;
+}
+
 /* ref_calc_psnrhvs: scalar reference, including the (double) cast fix. */
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic push
@@ -152,12 +258,6 @@ static void ref_od_bin_fdct8x8_hvs(od_coeff_ref *y, int ystride, const od_coeff_
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
-/* Kept as one function on purpose. This is a transliteration of the upstream
- * scalar PSNR-HVS that the AVX2 kernel is checked against, so its structure
- * IS the contract -- an attempt to split the per-block body out changed the
- * accumulation and produced scalar=inf. ADR-0138 (the double-cast before the
- * multiply is called out inline below) / ADR-0141 / ADR-0278. */
-// NOLINTNEXTLINE(readability-function-size)
 static double ref_calc_psnrhvs(const unsigned char *src, int systride, const unsigned char *dst,
                                int dystride, double par, int depth, int w, int h, int step,
                                float csf[8][8])
@@ -166,108 +266,31 @@ static double ref_calc_psnrhvs(const unsigned char *src, int systride, const uns
     float mask[8][8];
     float ret = 0.0f;
     int pixels = 0;
-    for (int x = 0; x < 8; x++) {
-        for (int y = 0; y < 8; y++) {
-            /* Match upstream scalar literal: double constant (no f suffix). */
-            mask[x][y] =
-                (float)((csf[x][y] * 0.3885746225901003) * (csf[x][y] * 0.3885746225901003));
-        }
-    }
+    init_psnrhvs_mask(mask, csf);
 
     for (int y = 0; y < h - 7; y += step) {
         for (int x = 0; x < w - 7; x += step) {
             od_coeff_ref dct_s[64];
             od_coeff_ref dct_d[64];
-            float s_means[4] = {0, 0, 0, 0};
-            float d_means[4] = {0, 0, 0, 0};
-            float s_vars[4] = {0, 0, 0, 0};
-            float d_vars[4] = {0, 0, 0, 0};
-            float s_gmean = 0.0f;
-            float d_gmean = 0.0f;
             float s_gvar = 0.0f;
             float d_gvar = 0.0f;
-            float s_mask = 0.0f;
-            float d_mask = 0.0f;
 
-            for (int i = 0; i < 8; i++) {
-                for (int j = 0; j < 8; j++) {
-                    int sub = ((i & 12) >> 2) + ((j & 12) >> 1);
-                    if (depth > 8) {
-                        dct_s[i * 8 + j] = src[(y + i) * systride + (j + x) * 2] +
-                                           (src[(y + i) * systride + (j + x) * 2 + 1] << 8);
-                        dct_d[i * 8 + j] = dst[(y + i) * dystride + (j + x) * 2] +
-                                           (dst[(y + i) * dystride + (j + x) * 2 + 1] << 8);
-                    } else {
-                        dct_s[i * 8 + j] = src[(y + i) * systride + (j + x)];
-                        dct_d[i * 8 + j] = dst[(y + i) * dystride + (j + x)];
-                    }
-                    s_gmean += (float)dct_s[i * 8 + j];
-                    d_gmean += (float)dct_d[i * 8 + j];
-                    s_means[sub] += (float)dct_s[i * 8 + j];
-                    d_means[sub] += (float)dct_d[i * 8 + j];
-                }
-            }
-            s_gmean /= 64.0f;
-            d_gmean /= 64.0f;
-            for (int i = 0; i < 4; i++) {
-                s_means[i] /= 16.0f;
-                d_means[i] /= 16.0f;
-            }
-
-            for (int i = 0; i < 8; i++) {
-                for (int j = 0; j < 8; j++) {
-                    int sub = ((i & 12) >> 2) + ((j & 12) >> 1);
-                    s_gvar += (dct_s[i * 8 + j] - s_gmean) * (dct_s[i * 8 + j] - s_gmean);
-                    d_gvar += (dct_d[i * 8 + j] - d_gmean) * (dct_d[i * 8 + j] - d_gmean);
-                    s_vars[sub] +=
-                        (dct_s[i * 8 + j] - s_means[sub]) * (dct_s[i * 8 + j] - s_means[sub]);
-                    d_vars[sub] +=
-                        (dct_d[i * 8 + j] - d_means[sub]) * (dct_d[i * 8 + j] - d_means[sub]);
-                }
-            }
-            s_gvar *= 1.0f / 63.0f * 64;
-            d_gvar *= 1.0f / 63.0f * 64;
-            for (int i = 0; i < 4; i++) {
-                s_vars[i] *= 1.0f / 15.0f * 16;
-            }
-            for (int i = 0; i < 4; i++) {
-                d_vars[i] *= 1.0f / 15.0f * 16;
-            }
-            if (s_gvar > 0)
-                s_gvar = (s_vars[0] + s_vars[1] + s_vars[2] + s_vars[3]) / s_gvar;
-            if (d_gvar > 0)
-                d_gvar = (d_vars[0] + d_vars[1] + d_vars[2] + d_vars[3]) / d_gvar;
+            ref_load_block(dct_s, dct_d, src, systride, dst, dystride, x, y, depth);
+            ref_calc_block_vars(dct_s, dct_d, &s_gvar, &d_gvar);
 
             ref_od_bin_fdct8x8_hvs(dct_s, 8, dct_s, 8);
             ref_od_bin_fdct8x8_hvs(dct_d, 8, dct_d, 8);
 
-            for (int i = 0; i < 8; i++) {
-                for (int j = (i == 0); j < 8; j++) {
-                    s_mask += (float)(dct_s[i * 8 + j] * dct_s[i * 8 + j]) * mask[i][j];
-                }
-            }
-            for (int i = 0; i < 8; i++) {
-                for (int j = (i == 0); j < 8; j++) {
-                    d_mask += (float)(dct_d[i * 8 + j] * dct_d[i * 8 + j]) * mask[i][j];
-                }
-            }
+            float s_mask = ref_calc_final_mask(dct_s, dct_d, mask, s_gvar, d_gvar);
 
-            /* ADR-0138 key expression: (double) cast before multiply → double sqrt. */
-            // NOLINTNEXTLINE(performance-type-promotion-in-math-fn)
-            s_mask = (float)(sqrt((double)s_mask * s_gvar) / 32.0);
-            // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) — ADR-0138
-            d_mask = (float)(sqrt((double)d_mask * d_gvar) / 32.0);
-            if (d_mask > s_mask)
-                s_mask = d_mask;
-
-            for (int i = 0; i < 8; i++) {
-                for (int j = 0; j < 8; j++) {
-                    float err = (float)abs(dct_s[i * 8 + j] - dct_d[i * 8 + j]);
-                    if (i != 0 || j != 0)
-                        err = err < s_mask / mask[i][j] ? 0.0f : err - s_mask / mask[i][j];
-                    ret += (err * csf[i][j]) * (err * csf[i][j]);
-                    pixels++;
-                }
+            for (int k = 0; k < 64; k++) {
+                const int i = k / 8;
+                const int j = k % 8;
+                float err = (float)abs(dct_s[k] - dct_d[k]);
+                if (k != 0)
+                    err = err < s_mask / mask[i][j] ? 0.0f : err - s_mask / mask[i][j];
+                ret += (err * csf[i][j]) * (err * csf[i][j]);
+                pixels++;
             }
         }
     }

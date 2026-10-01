@@ -2,6 +2,8 @@
  *
  *  Copyright 2016-2026 Netflix, Inc.
  *
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
  *     You may obtain a copy of the License at
@@ -23,7 +25,13 @@
 #include "test.h"
 #include "libvmaf/libvmaf.h"
 
-static char *test_context_init_and_close()
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+
+static char *test_context_init_and_close(void)
 {
     int err = 0;
     VmafContext *vmaf = NULL;
@@ -37,7 +45,48 @@ static char *test_context_init_and_close()
     return NULL;
 }
 
-static char *test_get_feature_score()
+static char *verify_feature_scores(VmafContext *vmaf)
+{
+    double score;
+    int err = vmaf_feature_score_at_index(vmaf, "feature_a", &score, 0);
+    mu_assert("problem during vmaf_feature_score_at_index", !err);
+    mu_assert("retrieved feature score does not match", score == 100.);
+    err = vmaf_feature_score_at_index(vmaf, "feature_a", &score, 1);
+    mu_assert("problem during vmaf_feature_score_at_index", !err);
+    mu_assert("retrieved feature score does not match", score == 200.);
+    err = vmaf_feature_score_at_index(vmaf, "feature_a", &score, 2);
+    mu_assert("problem during vmaf_feature_score_at_index", !err);
+    mu_assert("retrieved feature score does not match", score == 300.);
+    return NULL;
+}
+
+static char *test_get_feature_score_at_index(void)
+{
+    int err = 0;
+    VmafContext *vmaf = NULL;
+    VmafConfiguration cfg = {0};
+
+    err = vmaf_init(&vmaf, cfg);
+    mu_assert("problem during vmaf_init", !err);
+
+    err = vmaf_import_feature_score(vmaf, "feature_a", 100., 0);
+    err |= vmaf_import_feature_score(vmaf, "feature_a", 200., 1);
+    err |= vmaf_import_feature_score(vmaf, "feature_a", 300., 2);
+    mu_assert("problem during vmaf_import_feature_score", !err);
+
+    char *msg = verify_feature_scores(vmaf);
+    if (msg) {
+        (void)vmaf_close(vmaf);
+        return msg;
+    }
+
+    err = vmaf_close(vmaf);
+    mu_assert("problem during vmaf_close", !err);
+
+    return NULL;
+}
+
+static char *test_get_feature_score_pooled(void)
 {
     int err = 0;
     VmafContext *vmaf = NULL;
@@ -52,16 +101,6 @@ static char *test_get_feature_score()
     mu_assert("problem during vmaf_import_feature_score", !err);
 
     double score;
-    err = vmaf_feature_score_at_index(vmaf, "feature_a", &score, 0);
-    mu_assert("problem during vmaf_feature_score_at_index", !err);
-    mu_assert("retrieved feature score does not match", score == 100.);
-    err = vmaf_feature_score_at_index(vmaf, "feature_a", &score, 1);
-    mu_assert("problem during vmaf_feature_score_at_index", !err);
-    mu_assert("retrieved feature score does not match", score == 200.);
-    err = vmaf_feature_score_at_index(vmaf, "feature_a", &score, 2);
-    mu_assert("problem during vmaf_feature_score_at_index", !err);
-    mu_assert("retrieved feature score does not match", score == 300.);
-
     err = vmaf_feature_score_pooled(vmaf, "feature_a", VMAF_POOL_METHOD_MEAN, &score, 0, 2);
     mu_assert("problem during vmaf_feature_score_pooled", !err);
     mu_assert("pooled feature score does not match expected value", score == 200.);
@@ -77,7 +116,7 @@ static char *test_get_feature_score()
  * guard that read it returned -EINVAL whenever that stack slot was non-zero:
  * upstream's test_context_init_and_close failed 3 of 3 runs against the
  * fork. A handle holding an open context is overwritten, not rejected. */
-static char *test_vmaf_init_output_only()
+static char *test_vmaf_init_output_only(void)
 {
     VmafContext *vmaf = NULL;
     char dummy = 0;
@@ -101,7 +140,7 @@ static char *test_vmaf_init_output_only()
 
 /* vmaf_context_get_backend — CPU-only path: freshly init'd context returns
  * VMAF_BACKEND_UNKNOWN because no GPU import_state was called. */
-static char *test_get_backend_cpu_returns_unknown()
+static char *test_get_backend_cpu_returns_unknown(void)
 {
     VmafContext *vmaf = NULL;
     VmafConfiguration cfg = {0};
@@ -122,7 +161,7 @@ static char *test_get_backend_cpu_returns_unknown()
 
 /* vmaf_context_get_backend — null-pointer guard: both vmaf=NULL and out=NULL
  * must return -EINVAL without crashing. */
-static char *test_get_backend_null_guard()
+static char *test_get_backend_null_guard(void)
 {
     enum VmafBackend backend = VMAF_BACKEND_UNKNOWN;
     int err = vmaf_context_get_backend(NULL, &backend);
@@ -142,12 +181,15 @@ static char *test_get_backend_null_guard()
     return NULL;
 }
 
-char *run_tests()
+char *run_tests(void)
 {
     mu_run_test(test_context_init_and_close);
-    mu_run_test(test_get_feature_score);
+    mu_run_test(test_get_feature_score_at_index);
+    mu_run_test(test_get_feature_score_pooled);
     mu_run_test(test_vmaf_init_output_only);
     mu_run_test(test_get_backend_cpu_returns_unknown);
     mu_run_test(test_get_backend_null_guard);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

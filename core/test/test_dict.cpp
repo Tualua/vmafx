@@ -2,6 +2,8 @@
  *
  *  Copyright 2016-2026 Netflix, Inc.
  *
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
  *     You may obtain a copy of the License at
@@ -127,13 +129,16 @@ mu_message_t dict_check_lookup_and_overwrite(VmafDictionary **dict)
 
 } // namespace
 
-static mu_message_t test_vmaf_dictionary()
+namespace
 {
-    VmafDictionary *dict = NULL;
+
+mu_message_t test_vmaf_dictionary()
+{
+    VmafDictionary *dict = nullptr;
     mu_assert_msg(dict_fill_past_initial_capacity(&dict));
     mu_assert_msg(dict_check_lookup_and_overwrite(&dict));
 
-    VmafDictionary *new_dict = NULL;
+    VmafDictionary *new_dict = nullptr;
     const int err = vmaf_dictionary_copy(&dict, &new_dict);
     mu_assert("problem during vmaf_dictionary_copy", !err);
     mu_assert("new_dict should no longer be NULL", new_dict);
@@ -144,8 +149,10 @@ static mu_message_t test_vmaf_dictionary()
     vmaf_dictionary_free(&new_dict);
     mu_assert("dictionary should be NULL after free", !new_dict);
 
-    return NULL;
+    return nullptr;
 }
+
+} // namespace
 
 namespace
 {
@@ -178,39 +185,51 @@ mu_message_t dict_merge_duplicate_keys(VmafDictionary **a, VmafDictionary **b)
 
 } // namespace
 
-static mu_message_t test_vmaf_dictionary_merge()
+namespace
 {
-    int err = 0;
-    VmafDictionary *a = NULL;
-    VmafDictionary *b = NULL;
-    VmafDictionary *d = NULL;
-    VmafDictionaryEntry const *entry = NULL;
 
-    d = vmaf_dictionary_merge(&a, &b, 0);
+mu_message_t dict_verify_merged_single(VmafDictionary *d, const char *key, const char *val)
+{
+    mu_assert("merging one NULL and one non-NULL dict should work", d);
+    const VmafDictionaryEntry *entry = vmaf_dictionary_get(&d, key, 0);
+    mu_assert("dictionary should return an entry with valid key", entry);
+    mu_assert("entry should have correct value", !strcmp(entry->val, val));
+    vmaf_dictionary_free(&d);
+    mu_assert("dictionary should be NULL after free", !d);
+    return nullptr;
+}
+
+} // namespace
+
+namespace
+{
+
+mu_message_t dict_merge_null_combinations(VmafDictionary **a, VmafDictionary **b)
+{
+    const VmafDictionary *d = vmaf_dictionary_merge(a, b, 0);
     mu_assert("merging two NULL dicts should result in a NULL dict", !d);
 
-    err = vmaf_dictionary_set(&a, "key_a", "val_a", 0);
+    const int err = vmaf_dictionary_set(a, "key_a", "val_a", 0);
     mu_assert("problem during vmaf_dictionary_set", !err);
-    d = vmaf_dictionary_merge(&a, &b, 0);
-    mu_assert("merging one NULL and one non-NULL dict should work", d);
-    entry = vmaf_dictionary_get(&d, "key_a", 0);
-    mu_assert("dictionary should return an entry with valid key", entry);
-    mu_assert("entry should have correct value", !strcmp(entry->val, "val_a"));
-    vmaf_dictionary_free(&d);
-    mu_assert("dictionary should be NULL after free", !d);
-    d = vmaf_dictionary_merge(&b, &a, 0);
-    mu_assert("merging one NULL and one non-NULL dict should work", d);
-    entry = vmaf_dictionary_get(&d, "key_a", 0);
-    mu_assert("dictionary should return an entry with valid key", entry);
-    mu_assert("entry should have correct value", !strcmp(entry->val, "val_a"));
-    vmaf_dictionary_free(&d);
-    mu_assert("dictionary should be NULL after free", !d);
 
-    err = vmaf_dictionary_set(&b, "key_b", "val_b", 0);
+    mu_assert_msg(dict_verify_merged_single(vmaf_dictionary_merge(a, b, 0), "key_a", "val_a"));
+    mu_assert_msg(dict_verify_merged_single(vmaf_dictionary_merge(b, a, 0), "key_a", "val_a"));
+
+    return nullptr;
+}
+
+} // namespace
+
+namespace
+{
+
+mu_message_t dict_merge_two_non_null(VmafDictionary **a, VmafDictionary **b)
+{
+    const int err = vmaf_dictionary_set(b, "key_b", "val_b", 0);
     mu_assert("problem during vmaf_dictionary_set", !err);
-    d = vmaf_dictionary_merge(&b, &a, 0);
+    VmafDictionary *d = vmaf_dictionary_merge(b, a, 0);
     mu_assert("merging two non-NULL dicts should work", d);
-    entry = vmaf_dictionary_get(&d, "key_a", 0);
+    const VmafDictionaryEntry *entry = vmaf_dictionary_get(&d, "key_a", 0);
     mu_assert("dictionary should return an entry with valid key", entry);
     mu_assert("entry should have correct value", !strcmp(entry->val, "val_a"));
     entry = vmaf_dictionary_get(&d, "key_b", 0);
@@ -219,6 +238,21 @@ static mu_message_t test_vmaf_dictionary_merge()
     vmaf_dictionary_free(&d);
     mu_assert("dictionary should be NULL after free", !d);
 
+    return nullptr;
+}
+
+} // namespace
+
+namespace
+{
+
+mu_message_t test_vmaf_dictionary_merge()
+{
+    VmafDictionary *a = nullptr;
+    VmafDictionary *b = nullptr;
+
+    mu_assert_msg(dict_merge_null_combinations(&a, &b));
+    mu_assert_msg(dict_merge_two_non_null(&a, &b));
     mu_assert_msg(dict_merge_duplicate_keys(&a, &b));
 
     vmaf_dictionary_free(&a);
@@ -226,56 +260,82 @@ static mu_message_t test_vmaf_dictionary_merge()
     vmaf_dictionary_free(&b);
     mu_assert("dictionary should be NULL after free", !b);
 
-    return NULL;
+    return nullptr;
 }
 
-static mu_message_t test_vmaf_dictionary_compare()
+} // namespace
+
+namespace
 {
-    int err = 0;
 
-    VmafDictionary *a = NULL;
-    VmafDictionary *b = NULL;
-
-    err = vmaf_dictionary_set(&a, "key_1", "val_1", 0);
-    err |= vmaf_dictionary_set(&b, "key_2", "val_2", 0);
+mu_message_t dict_compare_keys_1_and_2(VmafDictionary **a, VmafDictionary **b)
+{
+    int err = vmaf_dictionary_set(a, "key_1", "val_1", 0);
+    err |= vmaf_dictionary_set(b, "key_2", "val_2", 0);
     mu_assert("problem during vmaf_dictionary_set", !err);
 
-    err = vmaf_dictionary_compare(a, b);
+    err = vmaf_dictionary_compare(*a, *b);
     mu_assert("dictionaries do not match, compare should fail", err);
 
-    err = vmaf_dictionary_set(&a, "key_2", "val_2", 0);
-    err |= vmaf_dictionary_set(&b, "key_1", "val_1", 0);
+    err = vmaf_dictionary_set(a, "key_2", "val_2", 0);
+    err |= vmaf_dictionary_set(b, "key_1", "val_1", 0);
     mu_assert("problem during vmaf_dictionary_set", !err);
 
-    err = vmaf_dictionary_compare(a, b);
+    err = vmaf_dictionary_compare(*a, *b);
+    mu_assert("dictionaries match, compare should not fail", !err);
+    return nullptr;
+}
+
+} // namespace
+
+namespace
+{
+
+mu_message_t dict_compare_keys_3_and_4(VmafDictionary **a, VmafDictionary **b)
+{
+    int err = vmaf_dictionary_set(a, "key_3", "val_3", 0);
+    mu_assert("problem during vmaf_dictionary_set", !err);
+
+    err = vmaf_dictionary_compare(*a, *b);
+    mu_assert("dictionaries do not match, compare should fail", err);
+
+    err = vmaf_dictionary_set(b, "key_3", "val_3", 0);
+    mu_assert("problem during vmaf_dictionary_set", !err);
+
+    err = vmaf_dictionary_compare(*a, *b);
     mu_assert("dictionaries match, compare should not fail", !err);
 
-    err = vmaf_dictionary_set(&a, "key_3", "val_3", 0);
+    err = vmaf_dictionary_set(a, "key_4", "val_4", 0);
+    err |= vmaf_dictionary_set(b, "key_4", "not_val_4", 0);
     mu_assert("problem during vmaf_dictionary_set", !err);
 
-    err = vmaf_dictionary_compare(a, b);
+    err = vmaf_dictionary_compare(*a, *b);
     mu_assert("dictionaries do not match, compare should fail", err);
+    return nullptr;
+}
 
-    err = vmaf_dictionary_set(&b, "key_3", "val_3", 0);
-    mu_assert("problem during vmaf_dictionary_set", !err);
+} // namespace
 
-    err = vmaf_dictionary_compare(a, b);
-    mu_assert("dictionaries match, compare should not fail", !err);
+namespace
+{
 
-    err = vmaf_dictionary_set(&a, "key_4", "val_4", 0);
-    err |= vmaf_dictionary_set(&b, "key_4", "not_val_4", 0);
-    mu_assert("problem during vmaf_dictionary_set", !err);
+mu_message_t test_vmaf_dictionary_compare()
+{
+    VmafDictionary *a = nullptr;
+    VmafDictionary *b = nullptr;
 
-    err = vmaf_dictionary_compare(a, b);
-    mu_assert("dictionaries do not match, compare should fail", err);
+    mu_assert_msg(dict_compare_keys_1_and_2(&a, &b));
+    mu_assert_msg(dict_compare_keys_3_and_4(&a, &b));
 
     vmaf_dictionary_free(&a);
     mu_assert("dictionary should be NULL after free", !a);
     vmaf_dictionary_free(&b);
     mu_assert("dictionary should be NULL after free", !b);
 
-    return NULL;
+    return nullptr;
 }
+
+} // namespace
 
 namespace
 {
@@ -302,56 +362,58 @@ mu_message_t dict_normalize_no_overwrite(VmafDictionary **d)
 
 } // namespace
 
-static mu_message_t test_vmaf_dictionary_normalize_numerical_val()
+namespace
 {
-    int err = 0;
 
-    VmafDictionary *d = NULL;
-    const VmafDictionaryEntry *e = NULL;
+mu_message_t dict_normalize_variations(VmafDictionary **d)
+{
+    const char *const variations[] = {"1.0", "1", "1.0000"};
+    for (const char *v : variations) {
+        const int err = vmaf_dictionary_set(d, "key", v, VMAF_DICT_NORMALIZE_NUMERICAL_VALUES);
+        mu_assert("problem during vmaf_dictionary_set", !err);
+        const VmafDictionaryEntry *e = vmaf_dictionary_get(d, "key", 0);
+        mu_assert("dictionary should return an entry", e);
+        mu_assert("entry should have normalized val", !strcmp(e->val, "1"));
+    }
+    return nullptr;
+}
 
-    err = vmaf_dictionary_set(&d, "key", "1.0", VMAF_DICT_NORMALIZE_NUMERICAL_VALUES);
-    mu_assert("dictionary should have been created", d);
-    mu_assert("problem during vmaf_dictionary_set", !err);
+} // namespace
 
-    e = vmaf_dictionary_get(&d, "key", 0);
-    mu_assert("dictionary should return an entry", e);
-    mu_assert("entry should have normalized val", !strcmp(e->val, "1"));
+namespace
+{
 
-    err = vmaf_dictionary_set(&d, "key", "1", VMAF_DICT_NORMALIZE_NUMERICAL_VALUES);
-    mu_assert("problem during vmaf_dictionary_set", !err);
+mu_message_t test_vmaf_dictionary_normalize_numerical_val()
+{
+    VmafDictionary *d = nullptr;
 
-    e = vmaf_dictionary_get(&d, "key", 0);
-    mu_assert("dictionary should return an entry", e);
-    mu_assert("entry should have normalized val", !strcmp(e->val, "1"));
-
-    err = vmaf_dictionary_set(&d, "key", "1.0000", VMAF_DICT_NORMALIZE_NUMERICAL_VALUES);
-    mu_assert("problem during vmaf_dictionary_set", !err);
-
-    e = vmaf_dictionary_get(&d, "key", 0);
-    mu_assert("dictionary should return an entry", e);
-    mu_assert("entry should have normalized val", !strcmp(e->val, "1"));
-
+    mu_assert_msg(dict_normalize_variations(&d));
     mu_assert_msg(dict_normalize_no_overwrite(&d));
 
     mu_assert("dictionary should have just 1 entry", d->cnt == 1);
 
-    err = vmaf_dictionary_set(&d, "debug", "true", VMAF_DICT_NORMALIZE_NUMERICAL_VALUES);
+    const int err = vmaf_dictionary_set(&d, "debug", "true", VMAF_DICT_NORMALIZE_NUMERICAL_VALUES);
     mu_assert("problem during vmaf_dictionary_set", !err);
-    e = vmaf_dictionary_get(&d, "debug", 0);
+    const VmafDictionaryEntry *e = vmaf_dictionary_get(&d, "debug", 0);
     mu_assert("dictionary should return an entry", e);
     mu_assert("flag should not affect non-numerical values", !strcmp(e->val, "true"));
 
     vmaf_dictionary_free(&d);
     mu_assert("dictionary should be NULL after free", !d);
 
-    return NULL;
+    return nullptr;
 }
 
-static mu_message_t test_vmaf_feature_dictionary()
+} // namespace
+
+namespace
+{
+
+mu_message_t test_vmaf_feature_dictionary()
 {
     int err = 0;
 
-    VmafFeatureDictionary *dict = NULL;
+    VmafFeatureDictionary *dict = nullptr;
     err = vmaf_feature_dictionary_set(&dict, "option", "value");
     mu_assert("problem during vmaf_feature_dictionary_set", !err);
     mu_assert("dictionary should not be NULL after setting first option", dict);
@@ -359,14 +421,19 @@ static mu_message_t test_vmaf_feature_dictionary()
     mu_assert("problem during vmaf_feature_dictionary_free", !err);
     mu_assert("dictionary should be NULL after free", !dict);
 
-    return NULL;
+    return nullptr;
 }
 
-static mu_message_t test_vmaf_dictionary_alphabetical_sort()
+} // namespace
+
+namespace
+{
+
+mu_message_t test_vmaf_dictionary_alphabetical_sort()
 {
     int err = 0;
 
-    VmafDictionary *dict = NULL;
+    VmafDictionary *dict = nullptr;
     err |= vmaf_dictionary_set(&dict, "z", "z", 0);
     err |= vmaf_dictionary_set(&dict, "y", "y", 0);
     err |= vmaf_dictionary_set(&dict, "x", "x", 0);
@@ -391,27 +458,30 @@ static mu_message_t test_vmaf_dictionary_alphabetical_sort()
     err = vmaf_dictionary_free(&dict);
     mu_assert("problem during vmaf_feature_dictionary_free", !err);
 
-    return NULL;
+    return nullptr;
 }
 
-static mu_message_t test_isnumeric()
+} // namespace
+
+namespace
+{
+
+mu_message_t test_isnumeric()
 {
     // not numeric
-    mu_assert("problem during isnumeric", !isnumeric("abc"));
-    mu_assert("problem during isnumeric", !isnumeric("/a/b/c"));
-    mu_assert("problem during isnumeric", !isnumeric("abc123"));
-    mu_assert("problem during isnumeric", !isnumeric("123abc"));
+    const char *const non_numeric[] = {"abc", "/a/b/c", "abc123", "123abc"};
+    for (const char *s : non_numeric)
+        mu_assert("problem during isnumeric", !isnumeric(s));
 
     // numeric
-    mu_assert("problem during isnumeric", isnumeric("123"));
-    mu_assert("problem during isnumeric", isnumeric("123.456"));
-    mu_assert("problem during isnumeric", isnumeric("    123.456    "));
-    mu_assert("problem during isnumeric", isnumeric("NaN"));
-    mu_assert("problem during isnumeric", isnumeric("inf"));
-    mu_assert("problem during isnumeric", isnumeric("-inf"));
+    const char *const numeric[] = {"123", "123.456", "    123.456    ", "NaN", "inf", "-inf"};
+    for (const char *s : numeric)
+        mu_assert("problem during isnumeric", isnumeric(s));
 
     return nullptr;
 }
+
+} // namespace
 
 namespace
 {

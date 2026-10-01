@@ -2,6 +2,8 @@
  *
  *  Copyright 2016-2026 Netflix, Inc.
  *
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
  *     You may obtain a copy of the License at
@@ -21,6 +23,12 @@
 
 #include "test.h"
 #include "thread_pool.h"
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
 static int fn_a(void *data, void **thread_data)
 {
@@ -58,7 +66,7 @@ static int fn_d(void *data, void **thread_data)
     return 0;
 }
 
-static char *test_thread_pool_create_enqueue_wait_and_destroy()
+static char *test_thread_pool_create_enqueue_wait_and_destroy(void)
 {
     int err;
 
@@ -101,7 +109,7 @@ static char *test_thread_pool_create_enqueue_wait_and_destroy()
  *   - Normal create + destroy must still work (ensures the checked-init
  *     path does not regress the happy path).
  */
-static char *test_thread_pool_create_guards()
+static char *test_thread_pool_create_guards(void)
 {
     int err;
 
@@ -125,9 +133,11 @@ static char *test_thread_pool_create_guards()
     return NULL;
 }
 
-char *run_tests()
+char *run_tests(void)
 {
     mu_run_test(test_thread_pool_create_enqueue_wait_and_destroy);
     mu_run_test(test_thread_pool_create_guards);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

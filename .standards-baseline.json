@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-01T20:44:13Z",
+  "generated_at": "2026-10-01T20:44:38Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "4ae168bc06e2531cf7811c7e0ab7d3f20f790650",
-  "total_infractions": 365,
+  "commit_sha": "a5acac3477c451e562782ed4e6f7cf5842e5e2ef",
+  "total_infractions": 363,
   "infractions": [
     {
       "rule_id": "HISS-04",
@@ -2104,14 +2104,6 @@
     },
     {
       "rule_id": "HISS-04",
-      "file_path": "core/test/test_barten_csf.c",
-      "line_number": 48,
-      "symbol": "test_barten_csf",
-      "message": "Function 'test_barten_csf' (87 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/test/test_barten_csf.c:48:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
       "file_path": "core/test/test_pelorus_interop.c",
       "line_number": 67,
       "symbol": "test_roundtrip",
@@ -2141,14 +2133,6 @@
       "symbol": "test_x265_csv_reader",
       "message": "Function 'test_x265_csv_reader' (79 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "core/test/test_pelorus_interop.c:562:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/test/test_psnr_hvs_simd.c",
-      "line_number": 164,
-      "symbol": "ref_calc_psnrhvs",
-      "message": "Function 'ref_calc_psnrhvs' (115 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/test/test_psnr_hvs_simd.c:164:HISS-04"
     },
     {
       "rule_id": "HISS-07",

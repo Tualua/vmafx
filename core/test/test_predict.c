@@ -2,6 +2,8 @@
  *
  *  Copyright 2016-2026 Netflix, Inc.
  *
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
  *     You may obtain a copy of the License at
@@ -27,6 +29,12 @@
 
 #include <libvmaf/model.h>
 #include <math.h>
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
+ * translation unit whose sources spell the null pointer constant `NULL` and
+ * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
+ * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
 #if defined(__cplusplus)
 #define PREDICT_TEST_NULLPTR nullptr
@@ -438,7 +446,6 @@ static char *test_guided_feature_sentinel_semantics(void)
         const bool actual = float_values_equal(cases[i].lhs, cases[i].rhs);
         mu_assert(cases[i].message, actual == cases[i].expected);
     }
-    /* NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr). */
     return NULL;
 }
 
@@ -446,7 +453,6 @@ static char *test_guided_feature_sentinel_semantics(void)
  * Every ordered comparison against NaN is false, so without an explicit
  * finite-input guard no segment writes `y` and the function reports success
  * with the plausible zero score it assigned before the loop (Issue #1526). */
-/* NOLINTBEGIN(modernize-use-nullptr): retain portable C NULL spelling per ADR-1138. */
 static char *test_piecewise_linear_mapping_rejects_nonfinite_input(void)
 {
     VmafPoint knots[] = {{.x = 0.0, .y = 0.0}, {.x = 100.0, .y = 100.0}};
@@ -462,19 +468,32 @@ static char *test_piecewise_linear_mapping_rejects_nonfinite_input(void)
     mu_assert("a rejected infinity must not overwrite the caller's score", y == 42.0);
     return NULL;
 }
-/* NOLINTEND(modernize-use-nullptr) */
 
-char *run_tests(void)
+static char *run_tests_predict(void)
 {
     mu_run_test(test_predict_score_at_index);
     mu_run_test(test_predict_nonfinite_fails_without_publication);
     mu_run_test(test_find_linear_function_parameters);
     mu_run_test(test_piecewise_linear_mapping);
+    return NULL;
+}
+
+static char *run_tests_mapping(void)
+{
     mu_run_test(test_piecewise_linear_mapping_returns_neg_einval);
     mu_run_test(test_guided_feature_sentinel_semantics);
     mu_run_test(test_piecewise_linear_mapping_rejects_nonfinite_input);
     mu_run_test(test_propagate_metadata);
     return NULL;
 }
+
+char *run_tests(void)
+{
+    mu_run_test(run_tests_predict);
+    mu_run_test(run_tests_mapping);
+    return NULL;
+}
+
+/* NOLINTEND(modernize-use-nullptr) */
 
 #undef PREDICT_TEST_NULLPTR

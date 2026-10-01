@@ -2,6 +2,8 @@
  *
  *  Copyright 2016-2020 Netflix, Inc.
  *
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
  *     You may obtain a copy of the License at
@@ -37,20 +39,18 @@ static int almost_equal(double a, double b)
     return diff < EPS;
 }
 
-/* `readability-function-size` here flags a long sequence of independent
- * `mu_assert(almost_equal(...))` cases. The list is held verbatim against
- * Netflix upstream `c70debb1` so future syncs of this test file remain
- * trivial diff-and-merge — splitting the list into helpers would break
- * the upstream-parity invariant that makes the file rebase-safe.
- * See docs/adr/0141-touched-file-cleanup-rule.md. */
-// NOLINTNEXTLINE(readability-function-size) — ADR-0141 §2 upstream-parity invariant; ADR-0278
-static char *test_barten_csf()
+static char *test_barten_csf_sens(void)
 {
     mu_assert("barten rod/cone sensitivity mismatch",
               almost_equal(barten_rod_cone_sens(150.0), 30.141537));
     mu_assert("barten rod/cone sensitivity mismatch",
               almost_equal(barten_rod_cone_sens(100.0), 30.121951521378232));
     mu_assert("barten mtf mismatch", almost_equal(barten_mtf(3.0), 0.5792610023712589));
+    return NULL;
+}
+
+static char *test_barten_csf_lum_high(void)
+{
     mu_assert("barten csf mismatch lum 100",
               almost_equal(barten_csf(3, 3.0, 1080, 100.0, 1.0), 26.97588185355269));
     mu_assert("barten csf mismatch lum 100",
@@ -59,7 +59,11 @@ static char *test_barten_csf()
               almost_equal(barten_csf(3, 3.0, 1080, 80.0, 1.0), 26.949246017567383));
     mu_assert("barten csf mismatch lum 50",
               almost_equal(barten_csf(3, 3.0, 1080, 50.0, 1.0), 26.9958));
-    // although we clamp below 0.002 for the interpolation, we still use the un-clamped in the rest of the CSF
+    return NULL;
+}
+
+static char *test_barten_csf_lum_low(void)
+{
     mu_assert("barten csf mismatch lum 0.001",
               almost_equal(barten_csf(3, 3.0, 1080, 0.001, 1.0), 0.112742));
     mu_assert("barten csf mismatch lum 0.002",
@@ -68,6 +72,11 @@ static char *test_barten_csf()
               almost_equal(barten_csf(3, 3.0, 1080, 0.01, 1.0), 0.439781));
     mu_assert("barten csf mismatch lum 0.05",
               almost_equal(barten_csf(3, 3.0, 1080, 0.05, 1.0), 1.240470));
+    return NULL;
+}
+
+static char *test_barten_csf_lum_mid(void)
+{
     mu_assert("barten csf mismatch lum 1.0",
               almost_equal(barten_csf(3, 3.0, 1080, 1.0, 1.0), 9.063454));
     mu_assert("barten csf mismatch lum 10.0",
@@ -76,66 +85,121 @@ static char *test_barten_csf()
               almost_equal(barten_csf(3, 3.0, 1080, 150.0, 1.0), 27.113543));
     mu_assert("barten csf mismatch lum 155.0",
               almost_equal(barten_csf(3, 3.0, 1080, 155.0, 1.0), 27.114515));
+    return NULL;
+}
+
+static char *test_barten_csf_interp(void)
+{
     mu_assert("linear interpolate",
               almost_equal(linear_interpolate(log10(20), barten_csf_params[4][1], log10(150.0),
                                               barten_csf_params[5][1], log10(50.0)),
                            0.361679));
+    return NULL;
+}
+
+static char *test_barten_csf_blend_1080p_hv(void)
+{
     mu_assert("csf blend scale 0 H/V 1080p 3H",
               almost_equal(barten_watson_blend_csf(0, 0, 3.0, 1080), 0.01183));
-    mu_assert("csf blend scale 0 D 1080p 3H",
-              almost_equal(barten_watson_blend_csf(0, 1, 3.0, 1080), 0.004302));
     mu_assert("csf blend scale 1 H/V 1080p 3H",
               almost_equal(barten_watson_blend_csf(1, 0, 3.0, 1080), 0.025026));
-    mu_assert("csf blend scale 1 D 1080p 3H",
-              almost_equal(barten_watson_blend_csf(1, 1, 3.0, 1080), 0.011778));
     mu_assert("csf blend scale 2 H/V 1080p 3H",
               almost_equal(barten_watson_blend_csf(2, 0, 3.0, 1080), 0.04295));
-    mu_assert("csf blend scale 2 D 1080p 3H",
-              almost_equal(barten_watson_blend_csf(2, 1, 3.0, 1080), 0.023918));
     mu_assert("csf blend scale 3 H/V 1080p 3H",
               almost_equal(barten_watson_blend_csf(3, 0, 3.0, 1080), 0.058621));
+    return NULL;
+}
+
+static char *test_barten_csf_blend_1080p_d(void)
+{
+    mu_assert("csf blend scale 0 D 1080p 3H",
+              almost_equal(barten_watson_blend_csf(0, 1, 3.0, 1080), 0.004302));
+    mu_assert("csf blend scale 1 D 1080p 3H",
+              almost_equal(barten_watson_blend_csf(1, 1, 3.0, 1080), 0.011778));
+    mu_assert("csf blend scale 2 D 1080p 3H",
+              almost_equal(barten_watson_blend_csf(2, 1, 3.0, 1080), 0.023918));
     mu_assert("csf blend scale 3 D 1080p 3H",
               almost_equal(barten_watson_blend_csf(3, 1, 3.0, 1080), 0.035901));
-    // 2160@1.5H has the same PPD as 1080@3H (1.5*2160 == 3.0*1080 == 56.55 ppd), so values must match
+    return NULL;
+}
+
+static char *test_barten_csf_blend_2160p_hv(void)
+{
     mu_assert("csf blend scale 0 H/V 2160p 1.5H == 1080p 3H",
               almost_equal(barten_watson_blend_csf(0, 0, 1.5, 2160), 0.01183));
-    mu_assert("csf blend scale 0 D 2160p 1.5H == 1080p 3H",
-              almost_equal(barten_watson_blend_csf(0, 1, 1.5, 2160), 0.004302));
     mu_assert("csf blend scale 1 H/V 2160p 1.5H == 1080p 3H",
               almost_equal(barten_watson_blend_csf(1, 0, 1.5, 2160), 0.025026));
-    mu_assert("csf blend scale 1 D 2160p 1.5H == 1080p 3H",
-              almost_equal(barten_watson_blend_csf(1, 1, 1.5, 2160), 0.011778));
     mu_assert("csf blend scale 2 H/V 2160p 1.5H == 1080p 3H",
               almost_equal(barten_watson_blend_csf(2, 0, 1.5, 2160), 0.04295));
-    mu_assert("csf blend scale 2 D 2160p 1.5H == 1080p 3H",
-              almost_equal(barten_watson_blend_csf(2, 1, 1.5, 2160), 0.023918));
     mu_assert("csf blend scale 3 H/V 2160p 1.5H == 1080p 3H",
               almost_equal(barten_watson_blend_csf(3, 0, 1.5, 2160), 0.058621));
+    return NULL;
+}
+
+static char *test_barten_csf_blend_2160p_d(void)
+{
+    mu_assert("csf blend scale 0 D 2160p 1.5H == 1080p 3H",
+              almost_equal(barten_watson_blend_csf(0, 1, 1.5, 2160), 0.004302));
+    mu_assert("csf blend scale 1 D 2160p 1.5H == 1080p 3H",
+              almost_equal(barten_watson_blend_csf(1, 1, 1.5, 2160), 0.011778));
+    mu_assert("csf blend scale 2 D 2160p 1.5H == 1080p 3H",
+              almost_equal(barten_watson_blend_csf(2, 1, 1.5, 2160), 0.023918));
     mu_assert("csf blend scale 3 D 2160p 1.5H == 1080p 3H",
               almost_equal(barten_watson_blend_csf(3, 1, 1.5, 2160), 0.035901));
-    // barten_watson_blend_csf_mae equivalence (v1017 tables)
+    return NULL;
+}
+
+static char *test_barten_csf_blend_mae_hv(void)
+{
     mu_assert("v1017 csf blend scale 0 H/V 2160p 1.5H == 1080p 3H",
               almost_equal(barten_watson_blend_csf_mae(0, 0, 1.5, 2160), 0.011249));
-    mu_assert("v1017 csf blend scale 0 D 2160p 1.5H == 1080p 3H",
-              almost_equal(barten_watson_blend_csf_mae(0, 1, 1.5, 2160), 0.004097));
     mu_assert("v1017 csf blend scale 1 H/V 2160p 1.5H == 1080p 3H",
               almost_equal(barten_watson_blend_csf_mae(1, 0, 1.5, 2160), 0.022606));
-    mu_assert("v1017 csf blend scale 1 D 2160p 1.5H == 1080p 3H",
-              almost_equal(barten_watson_blend_csf_mae(1, 1, 1.5, 2160), 0.010921));
     mu_assert("v1017 csf blend scale 2 H/V 2160p 1.5H == 1080p 3H",
               almost_equal(barten_watson_blend_csf_mae(2, 0, 1.5, 2160), 0.035930));
-    mu_assert("v1017 csf blend scale 2 D 2160p 1.5H == 1080p 3H",
-              almost_equal(barten_watson_blend_csf_mae(2, 1, 1.5, 2160), 0.021430));
     mu_assert("v1017 csf blend scale 3 H/V 2160p 1.5H == 1080p 3H",
               almost_equal(barten_watson_blend_csf_mae(3, 0, 1.5, 2160), 0.045673));
+    return NULL;
+}
+
+static char *test_barten_csf_blend_mae_d(void)
+{
+    mu_assert("v1017 csf blend scale 0 D 2160p 1.5H == 1080p 3H",
+              almost_equal(barten_watson_blend_csf_mae(0, 1, 1.5, 2160), 0.004097));
+    mu_assert("v1017 csf blend scale 1 D 2160p 1.5H == 1080p 3H",
+              almost_equal(barten_watson_blend_csf_mae(1, 1, 1.5, 2160), 0.010921));
+    mu_assert("v1017 csf blend scale 2 D 2160p 1.5H == 1080p 3H",
+              almost_equal(barten_watson_blend_csf_mae(2, 1, 1.5, 2160), 0.021430));
     mu_assert("v1017 csf blend scale 3 D 2160p 1.5H == 1080p 3H",
               almost_equal(barten_watson_blend_csf_mae(3, 1, 1.5, 2160), 0.031313));
     return NULL;
 }
 
-char *run_tests()
+static char *run_tests_csf(void)
 {
-    mu_run_test(test_barten_csf);
+    mu_run_test(test_barten_csf_sens);
+    mu_run_test(test_barten_csf_lum_high);
+    mu_run_test(test_barten_csf_lum_low);
+    mu_run_test(test_barten_csf_lum_mid);
+    mu_run_test(test_barten_csf_interp);
+    return NULL;
+}
+
+static char *run_tests_blend(void)
+{
+    mu_run_test(test_barten_csf_blend_1080p_hv);
+    mu_run_test(test_barten_csf_blend_1080p_d);
+    mu_run_test(test_barten_csf_blend_2160p_hv);
+    mu_run_test(test_barten_csf_blend_2160p_d);
+    mu_run_test(test_barten_csf_blend_mae_hv);
+    mu_run_test(test_barten_csf_blend_mae_d);
+    return NULL;
+}
+
+char *run_tests(void)
+{
+    mu_run_test(run_tests_csf);
+    mu_run_test(run_tests_blend);
     return NULL;
 }
 
