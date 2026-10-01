@@ -981,7 +981,7 @@ RUN --mount=type=cache,target=/root/.cache/ccache,sharing=locked,id=ccache-dev-m
 # 1.5.2 satisfies the >=1.4.36 probe. `--disable-filter=amf_capture` in the
 # FFmpeg configure already neutralises the DisplayCapture.h C++ header change
 # in 1.5.x. Bumped from 1.4.36 per ADR-0568 (SDK audit 2026-05-18).
-ARG AMF_VERSION=1.5.2
+ARG AMF_VERSION=1.5.3
 RUN /build/vmaf/scripts/ci/checkout-annotated-tag.sh \
         https://github.com/GPUOpen-LibrariesAndSDKs/AMF.git "v${AMF_VERSION}" /tmp/AMF \
     && mkdir -p /usr/local/include/AMF \
