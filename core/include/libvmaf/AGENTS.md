@@ -30,7 +30,7 @@ core/include/libvmaf/
   grow at end. Zero-initialised callers from prior version must continue to
   compile + run with default behaviour. Project-wide invariant, not
   per-header.
-- **Never remove or rename a public symbol** without ADR + matching
+- **Never remove or rename public symbol** without ADR + matching
   `ffmpeg-patches/` update per CLAUDE.md §12 r14. `enabled libvmaf*`
   `check_pkg_config` lines in `ffmpeg-patches/000?-*.patch` probe specific
   symbol names.
@@ -60,7 +60,7 @@ only currently-extracted shared internal helper.
 
 ## Rebase-sensitive invariants
 
-- **Include guards use the `LIBVMAF_<BASENAME>_H` pattern**
+- **Include guards use `LIBVMAF_<BASENAME>_H` pattern**
   ([ADR-0972](../../../docs/adr/0972-public-header-iso-reserved-guards.md),
   [Research-0762](../../../docs/research/0762-public-header-iso-reserved-guards-2026-05-31.md)).
   Identifiers starting with `__` or `_` followed by uppercase letter reserved
@@ -97,8 +97,8 @@ only currently-extracted shared internal helper.
   `NONE / HOST / DEVICE` (no `HOST_PINNED` — VMA `AUTO_PREFER_HOST` not
   pinned in CUDA sense). New backends follow SYCL/Vulkan 3-method shape;
   do not introduce fourth method without ADR.
-- **GPU public-header lifecycle prose is an executable contract**: keep
-  `libvmaf_cuda.h` explicit that init returns a caller-owned allocation,
+- **GPU public-header lifecycle prose is executable contract**: keep
+  `libvmaf_cuda.h` explicit that init returns caller-owned allocation,
   import copies it by value without transferring ownership, close precedes
   the single-pointer `vmaf_cuda_state_free`, and that free does not NULL the
   caller's handle. Keep `VmafSyclPicturePreallocationMethod` values explicit
@@ -106,7 +106,7 @@ only currently-extracted shared internal helper.
   mapping (`vmaf_picture_alloc`, `sycl::malloc_device`,
   `sycl::malloc_host`). `core/test/test_gpu_public_header_docs.py` guards
   these semantics against another silent comment-only revert.
-- **`picture.h` v1 is frozen for the v2 deprecation window**
+- **`picture.h` v1 is frozen for v2 deprecation window**
   ([ADR-0928](../../../docs/adr/0928-vmaf-picture-v2-explicit-backend-state.md)).
   Do not add fields to `VmafPicture` v1 — additive growth lands on
   `VmafPicture2` (`picture_v2.h`) instead. v1 struct museum piece for ~12
@@ -117,20 +117,20 @@ only currently-extracted shared internal helper.
   ([ADR-0953](../../../docs/adr/0953-doxygen-public-api-clean.md),
   [ADR-1315](../../../docs/adr/1315-doxygen-public-api-fail-closed.md)):
   every header in directory must produce **zero warnings** via
-  `doxygen core/doc/Doxyfile.public-api`. The build fails closed with
+  `doxygen core/doc/Doxyfile.public-api`. Build fails closed with
   `WARN_AS_ERROR = YES` and CI workflow
   `.github/workflows/doxygen-public-api.yml` enforces
   `DOXYGEN_WARNING_CEILING: "0"`.
-  The vendored Pelorus interop mirror (`core/include/libvmaf/pelorus/`,
+  Vendored Pelorus interop mirror (`core/include/libvmaf/pelorus/`,
   ADR-1113) is excluded from public C API Doxygen scope because it is a
   byte-identical upstream mirror not installed as public libvmaf headers.
   Patterns to avoid (trigger warnings, enforced by
   `core/test/test_gpu_public_header_docs.py`):
-  - **`@field name desc` for struct members** is not a doxygen command — use
+  - **`@field name desc` for struct members** is not doxygen command — use
     per-member inline `/**< desc */`.
   - **`@thread-safety`** parses as unknown command `@thread` with parameter
     `-safety` — use standard `@note Thread safety: ...`.
-  - **`@ref function_name` from a struct doc-block** does not resolve
+  - **`@ref function_name` from struct doc-block** does not resolve
     cross-symbol — use backtick literals (`vmaf_picture_alloc`) instead.
   - **Functions without `@param` per parameter** or **without `@return`**
     trigger `WARN_NO_PARAMDOC` / incomplete-doc warnings.

@@ -131,10 +131,10 @@ Fork-local subtree. Read this before editing any TU under
    and reverted two security fixes
    (`T-VENDORED-CJSON-BANNED-FUNCTIONS-REVERTED-2026-09-19`).
 6. **SSE transport is fork-owned plain POSIX sockets — NOT mongoose.**
-   Original v3 plan to vendor cesanta/mongoose was reversed
-   because mongoose 7.18 is GPL-2.0-only OR commercial, which
-   ADR-0332 judged a licence blocker for vendoring into this
-   tree (verified 2026-05-09). Never re-introduce mongoose (or any
+   Original v3 plan to vendor cesanta/mongoose was reversed.
+   Mongoose 7.18 is GPL-2.0-only OR commercial; ADR-0332
+   judged licence blocker for vendoring into this tree
+   (verified 2026-05-09). Never re-introduce mongoose (or any
    GPL-licensed HTTP library) without first amending CLAUDE §1,
    adding separate license-compatibility ADR. Minimal
    HTTP/1.1 + SSE surface lives in `transport_sse.c` (~500 LOC).

@@ -15,10 +15,10 @@ Nothing in this directory mirrors upstream Netflix/vmaf. Rebase risk
 
 | Module | Consumers | What couples them |
 | --- | --- | --- |
-| `backlog_tracker.py` | `scripts/ci/agent-eligibility-precheck.py` (direct import); future state-audit / status-reporter scripts. | The `BacklogItem` dataclass field names (`id` / `title` / `status` / `priority` / `pr_refs` / `raw_row`) and the status enum strings (OPEN / IN_FLIGHT / DONE / CLOSED / REMOVED / BLOCKED / DEFERRED). Renames are breaking changes for every importer. |
-| `backlog_tracker.py` ↔ `.workingdir/BACKLOG.md` item format | Current rows are Markdown checklists with a stable backtick ID immediately after the checkbox; retired pipe-table rows remain readable. | Never derive an ID from list order, title text, or a GitHub issue reference. An unmarked checklist item, duplicate ID, unknown status marker, checkbox/status contradiction, or existing ledger with zero items must raise `BacklogFormatError`; the precheck turns that into a blocking verdict. Run `python3 -m unittest scripts.lib.test_backlog_tracker scripts.ci.tests.test_agent_eligibility_precheck` after a parser or schema edit. |
-| `GitHubTracker._run` | Wraps the `gh` CLI. | Output schema (`number / title / body / headRefName / mergedAt / state`) is `gh`-version-coupled. Pin behaviour by passing `--json` field lists explicitly; never rely on default columns. |
-| `safe_subprocess.py` | Python automation under `scripts/`. | Every executable is allowlisted, argv/environment/cwd are validated, captured output and runtime are bounded, and POSIX timeout, output-overflow, and caller-cancellation cleanup own the process group. `scripts/__init__.py` plus canonical `scripts.lib.safe_subprocess` imports preserve one runtime/type identity. Do not replace it with a raw `subprocess` call or an `S603` waiver. |
+| `backlog_tracker.py` | `scripts/ci/agent-eligibility-precheck.py` (direct import); future state-audit / status-reporter scripts. | `BacklogItem` dataclass field names (`id` / `title` / `status` / `priority` / `pr_refs` / `raw_row`) and status enum strings (OPEN / IN_FLIGHT / DONE / CLOSED / REMOVED / BLOCKED / DEFERRED). Renames are breaking changes for every importer. |
+| `backlog_tracker.py` ↔ `.workingdir/BACKLOG.md` item format | Current rows are Markdown checklists with stable backtick ID immediately after checkbox; retired pipe-table rows remain readable. | Never derive ID from list order, title text, or GitHub issue reference. Unmarked checklist item, duplicate ID, unknown status marker, checkbox/status contradiction, or existing ledger with zero items must raise `BacklogFormatError`; precheck turns that into blocking verdict. Run `python3 -m unittest scripts.lib.test_backlog_tracker scripts.ci.tests.test_agent_eligibility_precheck` after parser or schema edit. |
+| `GitHubTracker._run` | Wraps `gh` CLI. | Output schema (`number / title / body / headRefName / mergedAt / state`) is `gh`-version-coupled. Pin behaviour by passing `--json` field lists explicitly; never rely on default columns. |
+| `safe_subprocess.py` | Python automation under `scripts/`. | Every executable is allowlisted, argv/environment/cwd are validated, captured output and runtime are bounded, and POSIX timeout, output-overflow, and caller-cancellation cleanup own process group. `scripts/__init__.py` plus canonical `scripts.lib.safe_subprocess` imports preserve one runtime/type identity. Do not replace it with raw `subprocess` call or `S603` waiver. |
 
 ## Read-only invariant
 
@@ -45,19 +45,19 @@ New dep genuinely justified -> write ADR first.
 ## Process-execution invariant
 
 Repository automation under `scripts/` launches external programs through
-`safe_subprocess.run()` or `run_async()`. Every caller supplies the executable
-allowlist and receives a deadline and output ceiling, using stricter explicit
-values where the default is not appropriate. A missing executable, malformed
+`safe_subprocess.run()` or `run_async()`. Every caller supplies executable
+allowlist and receives deadline and output ceiling, using stricter explicit
+values where default is not appropriate. Missing executable, malformed
 argv, timeout, or output flood fails closed.
 Tests that intentionally spell `subprocess` as fixture source text are not
 production launch paths. See [ADR-1270](../../docs/adr/1270-bounded-process-execution.md).
-Keep `scripts/__init__.py` and the two-root mypy regression in
-`scripts/git-hooks/test-pre-push-mypy.py`; removing either recreates the
+Keep `scripts/__init__.py` and two-root mypy regression in
+`scripts/git-hooks/test-pre-push-mypy.py`; removing either recreates
 `lib.safe_subprocess` / `scripts.lib.safe_subprocess` duplicate-module failure.
-Keep the cancellation and fail-soft consumer cases in
+Keep cancellation and fail-soft consumer cases in
 `test_safe_subprocess.py` and
 `scripts/ci/tests/test_agent_eligibility_precheck.py` wired to both commit and
-push hooks; cancellation must terminate descendants and reap the direct child
+push hooks; cancellation must terminate descendants and reap direct child
 before propagating `CancelledError`.
 
 ## Worktree-aware path resolution
@@ -71,8 +71,8 @@ worktree case silently.
 
 ## Testing
 
-The synthetic current-schema corpus lives under `testdata/` and the legacy
-table shape remains covered. Run the unit suite above, then smoke the local
+Synthetic current-schema corpus lives under `testdata/` and legacy
+table shape remains covered. Run unit suite above, then smoke local
 editorial ledger with:
 
 ```bash
@@ -87,6 +87,6 @@ for tid in ['T-RC1-MASTER-GREEN', 'T-RC2-BENCH-TUNE',
 "
 ```
 
-The local ledger is intentionally git-ignored, so never make its current row
-count a CI assertion. The smoke must return at least one item and the named
-phase-order IDs above; as of the 2026-09-23 migration it returns 22 items.
+Local ledger is intentionally git-ignored, so never make current row
+count CI assertion. Smoke must return at least one item and named
+phase-order IDs above; as of 2026-09-23 migration it returns 22 items.

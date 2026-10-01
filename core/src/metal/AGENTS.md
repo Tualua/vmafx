@@ -17,10 +17,10 @@ deeper in [../feature/metal/](../feature/metal/).
 ```text
 metal/
   common.{mm,h}          # Metal context + command-queue management (T8-1b / ADR-0420)
-  picture_metal.{mm,h}   # VmafPicture on a Metal device — MTLBuffer lifecycle (T8-1b)
+  picture_metal.{mm,h}   # VmafPicture on Metal device — MTLBuffer lifecycle (T8-1b)
   dispatch_strategy.{c,h} # Feature-name → landed-kernel support predicate
   kernel_template.{mm,h} # per-feature kernel scaffolding + runtime (T8-1b / ADR-0420)
-  stubs.c                # -ENOSYS fallbacks for the public libvmaf_metal.h
+  stubs.c                # -ENOSYS fallbacks for public libvmaf_metal.h
                          #   entry points when HAVE_METAL is OFF. Wired in
                          #   from core/src/meson.build's `else` branch of
                          #   `if is_metal_enabled`, NOT via `subdir('metal')`.
@@ -112,15 +112,15 @@ metal/
 
 ## Rebase-sensitive invariants
 
-- **The Metal dispatch allowlist uses extractor names and exact provided
+- **Metal dispatch allowlist uses extractor names and exact provided
   feature keys.** `g_metal_features[]` in `dispatch_strategy.c` carries both
   every registered Metal extractor's `.name` and each routable
-  `provided_features[]` string. Do not abbreviate or infer these keys: a
+  `provided_features[]` string. Do not abbreviate or infer these keys:
   mismatch makes `vmaf_metal_dispatch_supports()` return false and silently
-  routes the feature away from Metal. `test_metal_kernel_coverage_audit`
+  routes feature away from Metal. `test_metal_kernel_coverage_audit`
   guards extractor-name coverage and `test_metal_smoke` pins representative
-  provided keys; add an explicit assertion when a new provided key lands.
-  `check-dispatch-registry.sh` checks the separate global extractor registry,
+  provided keys; add explicit assertion when new provided key lands.
+  `check-dispatch-registry.sh` checks separate global extractor registry,
   not this string allowlist. Commit `53c8ef155` established this coupling.
 
 - **`kernel_template.h` mirrors `hip/kernel_template.h` modulo
@@ -137,8 +137,8 @@ metal/
   `vmaf_metal_kernel_collect_wait`) parallel HIP names with
   `_buffer_` substituted for `_readback_` to reflect zero-copy
   posture. **On rebase / refactor**: if fork PR touches
-  `hip/kernel_template.h`'s lifecycle (e.g. adds a third event),
-  walk the diff onto `metal/kernel_template.h` +
+  `hip/kernel_template.h`'s lifecycle (e.g. adds third event),
+  walk diff onto `metal/kernel_template.h` +
   `kernel_template.c` before merging. Buffer-vs-readback name
   asymmetry is intentional and stays.
 
@@ -151,7 +151,7 @@ metal/
   kernel reads. `VMAF_FEATURE_EXTRACTOR_TEMPORAL` flag and
   `flush()` callback contract stay aligned with HIP / CUDA twins.
   **On rebase**: if future PR drifts HIP twin's lifecycle (e.g.
-  adds a third buffer), update Metal twin in same PR.
+  adds third buffer), update Metal twin in same PR.
 
 - **`vmaf_fex_integer_motion_v2_metal` is registered without
   `VMAF_FEATURE_EXTRACTOR_METAL` flag bit set** (fork-local,
@@ -192,17 +192,17 @@ metal/
   `.mm` TUs use `-fobjc-arc`. Metal object handles stashed into C
   `void *` slots with `(__bridge_retained void *)id` (+1 retain),
   released back with `(__bridge_transfer id<...>)void *` (-1
-  release). Borrows within a TU use `(__bridge id<...>)void *` (no
-  refcount change), valid only while the C slot holds the +1. **On
-  rebase**: audit every bridge cast against this pattern; a missing
-  `_retained` leaks, a missing `_transfer` double-frees.
+  release). Borrows within TU use `(__bridge id<...>)void *` (no
+  refcount change), valid only while C slot holds +1. **On
+  rebase**: audit every bridge cast against this pattern; missing
+  `_retained` leaks, missing `_transfer` double-frees.
 
 - **Kernel-template lifecycle mirrors HIP twin** (fork-local,
   ADR-0420). `kernel_template.mm` follows `hip/kernel_template.c`
   field-for-field modulo unified-memory buffer collapse (single
   `MTLBuffer` + `MTLResourceStorageModeShared` vs. HIP's
   `(device, pinned-host)` pair). **On rebase**: if a fork PR grows
-  the HIP twin's lifecycle (e.g. adds a third event slot or a new
+  the HIP twin's lifecycle (e.g. adds third event slot or a new
   staging step), propagate the same change to `kernel_template.mm`
   in the same PR.
 
