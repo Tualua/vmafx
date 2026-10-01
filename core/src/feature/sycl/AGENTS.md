@@ -99,9 +99,10 @@ strict FP line (`sycl_strict_fp_args`, ADR-1367) for every per-kernel TU.
   `test_sycl_kernel_scratch` on Intel GPU after any kernel change;
   `core/src/sycl/scratch_ratchet.txt` is empty and stays empty (no kernel
   left with scratch since 2026-10-01). Smallest trap: private array indexed
-  by a run-time value, e.g. `pixel.original[band]` in the `float_adm_sycl` CM
-  kernels (896 B private, NaN on A380 under xe) -> select by value
-  (`fadm_load_cm_pixel(p, band, y, x)` returns the one band).
+  by a run-time value, e.g. `pixel.original[band]` in the old
+  `float_adm_sycl` CM kernels (896 B private, NaN on A380 under xe) ->
+  select by value: every helper of `sycl_float_adm_math.h` takes its band as
+  a constant, `Bands` holds the CSF weights as three named fields.
 - **Kernel identities and output captures have an explicit boundary**
   ([Research-2090](../../../../docs/research/2090-sycl-silent-revert-residuals-2026-09-24.md)).
   Anonymous kernel lambdas in two translation units can receive identical
@@ -742,11 +743,46 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   the flags reach the host in `FrameResult.singular`. ADR-1218.
 - **`float_adm_sycl.cpp` options must be captured, not hardcoded**
   (ADR-1220) — see canonical note in
-  [`../cuda/AGENTS.md`](../cuda/AGENTS.md). `launch_csf_cm` and
-  `launch_aim_cm` capture `adm_p_norm`; host pooling uses
-  `1.0f / adm_p_norm` for root and noise constant. `adm_bypass_cm`
-  (`bcm`) captured into `FadmCmParams.bypass_cm`; `fadm_cm_threshold`
-  returns 0.0f when non-zero (CPU/CUDA/Metal parity, ADR-1220).
+  [`../cuda/AGENTS.md`](../cuda/AGENTS.md). `launch_terms` captures
+  `adm_p_norm` (`TermArgs.p_norm`, `.is_cube`) and `adm_bypass_cm`
+  (`TermArgs.bypass_cm` -> thresholds 0); host pooling =
+  `adm_pool_bands_s()` with `adm_noise_weight` + `adm_p_norm`.
+- **`float_adm_sycl.cpp` = CPU `float_adm`, bit for bit
+  ([ADR-1434](../../../../docs/adr/1434-sycl-float-adm-cpu-arithmetic.md),
+  after ADR-1420 for CUDA).** Per-work-item code =
+  `sycl_float_adm_math.h` (`decouple_sample()`, `terms_sample()`,
+  `row_item()`), function for function with
+  `../cuda/float_adm/float_adm_device.h`; the `.cpp` only launches.
+  `divs()` = fp32 `n / d` = CPU `DIVS()` since ADR-1442 (reference
+  divides on every host; no reciprocal, no probe, no table; device `/`
+  correctly rounded under ADR-1367's flag line, checked per value by
+  `test_decouple_csf_device`). Never again: a reciprocal in `divs()`;
+  `cos^2 * (o^2 * t^2)` (reference:
+  `(cos^2 * o^2) * t^2`; this alone was 1.28e-5 on BBB 4K); fp32 1/30,
+  1/15 or gain (reference: `double`; no fp64 on device, ADR-0220 ->
+  `times_constant()` / `add_scaled()` = exact fp32 pair, zone 2^-18 of a
+  step, else integer replay on `SoftDouble`; `gain_limited()` = fp32
+  product when the limit is an fp32 value, replay otherwise); centre tap
+  anywhere but fifth; group reduction or a `double` fold (terms kernel
+  stores nine terms per region sample, `row_item()` adds a row left to
+  right at SG 8, host `fold_rows()` in fp32); own CSF weights, region,
+  pooling root or floor (`adm_csf_rfactor_s()`, `adm_border_s()`,
+  `adm_pool_bands_s()`, `1e-10 * (w * h) / (1920.0 * 1080.0)`).
+  `adm_p_norm`: 3 = `(x * x) * x`, 1 = `x`, else device `pow` (1.8e-7
+  from CPU, not exact). Options = CPU's incl. `adm_f1sN` / `adm_f2sN`,
+  `adm_skip_aim_scale`, `adm_skip_scale0`; `adm_csf_mode` != 0 still
+  `-EINVAL`. Upstream change to `adm_decouple_s()`, `adm_csf_s()`,
+  `adm_cm_thresh3x3_s()`, `adm_csf_den_scale_s()`, `adm_cm_s()` ->
+  header + CUDA header same PR. Exact vs the CPU extractor of the SAME
+  build: host `powf` in `adm_pool_bands_s()` is libimf under icx, glibc
+  under GCC (`aim` 1.6e-9 on 2 of 200 BBB frames between the two CPU
+  builds, `T-ICX-LIBIMF-HOST-MATH-2026-10-01`). 4K frame 15.1 -> 12.3 ms.
+  Scratch-free (ADR-1395).
+  Exact twin: `scripts/ci/exact_twins.d/float_adm.sycl`. Guards:
+  `test_sycl_float_adm_math` (host + device vs `adm_tools.c`),
+  `test_sycl_float_adm_parity` (`==`, cases in
+  `core/test/float_adm_twin_parity.h`),
+  `test_sycl_float_adm_exact_contract.py` (15 planted regressions).
 
 - **VAAPI / dmabuf zero-copy import** — FFmpeg `libvmaf_sycl`
   filter (`ffmpeg-patches/0005-*.patch`) consumes
@@ -900,7 +936,7 @@ ADR-0884 / ADR-0946 backlog must update in same PR.
 | `integer_ms_ssim_sycl.cpp` | `ms_ssim.c` | `test_sycl_ms_ssim_parity.c` (+ `_large`; bit-exact, 18 outputs x 3 frames) | ADR-0884 (round 2), ADR-1414 |
 | `integer_motion_v2_sycl.cpp` | `integer_motion_v2.c` | `test_sycl_motion_v2_parity.c` | ADR-0884 (round 2) |
 | `float_psnr_sycl.cpp` | `float_psnr.c` | `test_sycl_float_psnr_parity.c` | ADR-0946 (round 3) |
-| `float_adm_sycl.cpp` | `float_adm.c` | `test_sycl_float_adm_parity.c` | ADR-0946 (round 3) |
+| `float_adm_sycl.cpp` | `float_adm.c` | `test_sycl_float_adm_parity.c` (bit-exact, every output, 8 to 16 bit), `test_sycl_float_adm_math.c` | ADR-0946 (round 3), ADR-1434 |
 | `float_vif_sycl.cpp` | `float_vif.c` | `test_sycl_float_vif_parity.c` (bit-exact, every output, 8 / 10 bit), `test_sycl_float_vif_math.c` | ADR-0946 (round 3), ADR-1422 |
 | `float_motion_sycl.cpp` | `float_motion.c` | `test_sycl_float_motion_parity.c` (bit-exact, every frame, 8 / 10 / 12 bit) | ADR-0946 (round 3), ADR-1411 |
 | `integer_psnr_hvs_sycl.cpp` | `third_party/xiph/psnr_hvs.c` | `test_sycl_psnr_hvs_parity.c` | ADR-0946 (round 3) |

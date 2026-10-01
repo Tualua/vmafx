@@ -1545,6 +1545,7 @@ nav:
         - "ADR-1431: read-pictures-owns-pictures-on-every-return": adr/1431-read-pictures-owns-pictures-on-every-return.md
         - "ADR-1432: sycl-integer-vif-exact-gain": adr/1432-sycl-integer-vif-exact-gain.md
         - "ADR-1433: cuda-ssimulacra2-cpu-sum-order": adr/1433-cuda-ssimulacra2-cpu-sum-order.md
+        - "ADR-1434: sycl-float-adm-cpu-arithmetic": adr/1434-sycl-float-adm-cpu-arithmetic.md
         - "ADR-1435: hip-vif-cpu-log2-table": adr/1435-hip-vif-cpu-log2-table.md
         - "ADR-1436: sycl-ciede-cpu-arithmetic": adr/1436-sycl-ciede-cpu-arithmetic.md
         - "ADR-1437: hip-exact-twins-declared": adr/1437-hip-exact-twins-declared.md

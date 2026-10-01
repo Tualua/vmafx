@@ -346,6 +346,20 @@ test('test_cuda_float_adm_exact_contract',
     timeout : 30,
 )
 
+# ADR-1434: float_adm_sycl returns the CPU's scores bit for bit -- the
+# decouple's quotient is the IEEE fp32 one (ADR-1442), the three
+# fp64 expressions of adm_tools.c are evaluated without an fp64 type, the
+# masking threshold and every reduction are added in the reference's order,
+# and the weights, the region, the pooling and the floor are the reference's
+# own. Device-free; the arithmetic check is test_sycl_float_adm_math, the
+# device check is test_sycl_float_adm_parity.
+test('test_sycl_float_adm_exact_contract',
+    import('python').find_installation(),
+    args : files('test_sycl_float_adm_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-1432: vif_sycl computes the two integers integer_vif.c truncates from
 # its fp64 gain exactly -- integer arithmetic, a replay of the fp64 operations
 # for the undecided samples, no fp32 gain, no sycl::mul_hi(). Device-free; the
@@ -4510,6 +4524,56 @@ if not is_sycl_acpp
         link_language : 'cpp',
     )
     test('test_sycl_integer_ssim_math', test_sycl_integer_ssim_math,
+        suite : ['fast', 'gpu', 'sycl'],
+        is_parallel : false)
+endif
+
+# ADR-1434: what float_adm_sycl's kernels run per work-item
+# (src/feature/sycl/sycl_float_adm_math.h) against adm_tools.c's own routines,
+# bit for bit, on the host and in kernels on the default GPU. The probe TU is
+# compiled with the extractors' own arguments, like the probes above, and the
+# C side links the CPU reference from the static libraries: adm_decouple_s()
+# and its companions are not exported. The reference is contraction-free on
+# x86-64 only (its baseline has no FMA), so the test is registered there.
+if not is_sycl_acpp and host_machine.cpu_family() == 'x86_64'
+    sycl_float_adm_math_probe = custom_target('sycl_float_adm_math_probe',
+        output : 'sycl_float_adm_math_probe.o',
+        input : 'test_sycl_float_adm_math_probe.cpp',
+        depend_files : files('../src/feature/sycl/sycl_exact_fp.h',
+                             '../src/feature/sycl/sycl_soft_double.h',
+                             '../src/feature/sycl/sycl_float_adm_math.h',
+                             '../src/feature/sycl/sycl_compat.h',
+                             'sycl_float_adm_math_probe.h'),
+        command : [icpx] + vmaf_cflags_common + ['-c'] + sycl_toolchain_args
+                  + sycl_feature_tail_args + ['@INPUT@', '-o', '@OUTPUT@'],
+    )
+    sycl_float_adm_math_probe_objects = [sycl_float_adm_math_probe]
+    if sycl_msvc_device_link
+        sycl_float_adm_math_probe_objects += custom_target('sycl_float_adm_math_probe_device_link',
+            input : sycl_float_adm_math_probe,
+            output : 'sycl_float_adm_math_probe_device_link.obj',
+            command : [icpx] + sycl_device_link_args + sycl_strict_fp_args
+                      + ['@INPUT@', '-o', '@OUTPUT@'],
+        )
+    endif
+    test_sycl_float_adm_math = executable('test_sycl_float_adm_math',
+        ['test.c', 'test_sycl_float_adm_math.c'] + sycl_float_adm_math_probe_objects
+        + _float_fex_test_sources_common + dnn_sources,
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+        c_args : vmaf_cflags_common + dnn_defines + vmaf_strict_fp_args,
+        dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                        predict_test_dependencies, dnn_deps, sycl_dependency],
+        objects : [
+            common_cuda_objects,
+            platform_specific_cpu_objects,
+            libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+            log_cpp23_test_objects,
+            libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+            libsvm_static_lib.extract_all_objects(recursive: true),
+        ] + wave8_opt_only_objects,
+        link_language : 'cpp',
+    )
+    test('test_sycl_float_adm_math', test_sycl_float_adm_math,
         suite : ['fast', 'gpu', 'sycl'],
         is_parallel : false)
 endif

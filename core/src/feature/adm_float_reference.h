@@ -22,12 +22,15 @@ extern "C" {
 #endif
 
 /* Half-open region [left, right) x [top, bottom) of one scale's bands. */
-typedef struct AdmBorderS {
+#ifndef __cplusplus
+typedef struct AdmBorderS AdmBorderS;
+#endif
+struct AdmBorderS {
     int left;
     int top;
     int right;
     int bottom;
-} AdmBorderS;
+};
 
 /* The region the reductions run over: `border_factor` of each frame edge is
  * excluded. */

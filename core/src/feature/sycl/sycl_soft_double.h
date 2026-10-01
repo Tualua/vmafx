@@ -259,6 +259,57 @@ inline float soft_to_float(SoftDouble value)
     return sycl::bit_cast<float>((biased << 23) | ((uint32_t)kept & 0x007FFFFFu));
 }
 
+/* A positive finite fp32 value, normal or subnormal, as a SoftDouble
+ * (exact). A subnormal is fraction * 2^-149 without an implicit bit; its
+ * leading bit is moved to the top. */
+inline SoftDouble soft_from_float_any(float x)
+{
+    const auto bits = sycl::bit_cast<uint32_t>(x);
+    const uint32_t biased = (bits >> 23) & 0xFFu;
+    const uint32_t fraction = bits & 0x007FFFFFu;
+    const uint32_t sub_shift = 21u + (uint32_t)sycl::clz(fraction | 1u);
+    const uint64_t sub_mant = (uint64_t)fraction << sub_shift;
+    const int32_t sub_exp = -149 - (int32_t)sub_shift;
+    const uint64_t normal_mant = uint64_t{fraction | 0x00800000u} << 29;
+    const int32_t normal_exp = (int32_t)biased - 150 - 29;
+    const bool subnormal = biased == 0u;
+    return {.mant = subnormal ? sub_mant : normal_mant, .exp = subnormal ? sub_exp : normal_exp};
+}
+
+/* (float)value for any positive value: ties to even, a subnormal or zero
+ * result below the normal range, infinity above it. */
+inline float soft_to_float_any(SoftDouble value)
+{
+    int32_t lead = value.exp + 52; /* the exponent of the leading bit */
+    const bool normal = lead >= -126;
+    /* A normal result keeps 24 bits; a subnormal one keeps what lies at or
+     * above 2^-149. */
+    const int32_t sub_drop = -149 - value.exp;
+    if (!normal && sub_drop > 53) {
+        return 0.0f;
+    }
+    const uint32_t drop = normal ? 29u : (uint32_t)sub_drop;
+    const uint64_t half = uint64_t{1} << (drop - 1u);
+    const uint64_t low = value.mant & ((half << 1) - 1u);
+    uint64_t kept = value.mant >> drop;
+    if (low > half || (low == half && (kept & 1u) != 0u)) {
+        kept += 1u;
+    }
+    if (!normal) {
+        /* 2^23 here is the smallest normal value, with the same bits. */
+        return sycl::bit_cast<float>((uint32_t)kept);
+    }
+    if (kept == (uint64_t{1} << 24)) {
+        kept >>= 1;
+        lead += 1;
+    }
+    if (lead > 127) {
+        return sycl::bit_cast<float>(uint32_t{0x7F800000u});
+    }
+    const auto biased = (uint32_t)(lead + 127);
+    return sycl::bit_cast<float>((biased << 23) | ((uint32_t)kept & 0x007FFFFFu));
+}
+
 /* trunc(fl64(a - t)) for an integer a below 2^31 and 0 < t < a. */
 inline uint32_t soft_sub_trunc(uint32_t a, SoftDouble t)
 {

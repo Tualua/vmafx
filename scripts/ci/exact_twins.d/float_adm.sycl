@@ -1,0 +1,2 @@
+adr: ADR-1434, ADR-1442
+evidence: Arc A380 (xe), --precision max, CPU reference dividing (ADR-1442): Netflix 576x324 at 8, 10, 12 and 16 bit and 4:2:2 10-bit, both 1080p checkerboards, BBB 3840x2160 200 frames identical to --backend cpu of the same build, debug=true included (3600 of 3600 outputs on BBB).

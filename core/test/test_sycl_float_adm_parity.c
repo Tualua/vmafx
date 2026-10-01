@@ -6,331 +6,226 @@
  */
 
 /*
- * SYCL kernel coverage round 3 — float ADM CPU vs. SYCL parity test
- * (ADR-0946).
+ * float_adm CPU vs. SYCL: the twin returns the CPU's outputs bit for bit
+ * (ADR-1434; first added as a places=4 parity test, ADR-0946).
  *
- * The float ADM extractor is implemented by float_adm.c (CPU scalar /
- * SIMD via adm_tools.c) and by float_adm_sycl.cpp::vmaf_fex_float_adm_sycl
- * (SYCL DWT2 + CSF + contrast-masking pipeline). Round 2 covered the
- * integer ADM kernel (test_sycl_adm_parity.c); the float variant has
- * its own DWT topology, accumulator precision, and CSF lookup and
- * needs its own parity gate.
+ * The CPU path is float_adm.c over adm.c and adm_tools.c; the SYCL path is
+ * float_adm_sycl.cpp. Since ADR-1434 the kernels run the reference's
+ * arithmetic operation for operation without an fp64 type on the device
+ * (feature/sycl/sycl_float_adm_math.h), the rows are added in the reference's
+ * order and the host concludes with the reference's own routines. So this
+ * test asserts equality, not a tolerance.
  *
- * The kernel under test fans a 5x5 separable DWT2 over the luma plane,
- * computes per-subband contrast-masking scores against a CSF lookup,
- * and reduces to the VMAF_feature_adm2_score headline column — any
- * USM stride, sub-group mask, or 32-bit accumulator drift would
- * silently corrupt every float-VMAF model's primary feature on
- * Intel-Arc CHUG re-extracts.
+ * Before ADR-1434 the twin multiplied the enhancement gain in fp32, used fp32
+ * 1/30 and 1/15 constants, associated the angle threshold differently, formed
+ * the masking threshold in another order, reduced each row per sub-group and
+ * floored the frame sums at 1e-2 where the reference floors them at 1e-10.
+ * It also lacked `adm_skip_scale0`, `adm_skip_aim_scale` and the per-scale
+ * CSF weight overrides, and accepted frames below 17x17, which the CPU
+ * refuses. Every exact case below fails on that twin; the
+ * isolated-sample case fails by a whole unit of adm2.
  *
- * Skip behaviour: if vmaf_sycl_state_init() fails (no oneAPI runtime
- * or no device visible) the test emits "[skip: no SYCL device]" and
- * passes, mirroring test_sycl_motion3_parity.c.
+ * The fixtures, the comparison and the cases are float_adm_twin_parity.h's.
+ *
+ * Skip behaviour: exits 77 when there is no SYCL device.
  */
 
-#include <math.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
-
-#include "test.h"
-
-#include "feature/feature_extractor.h"
-#include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_sycl.h"
-#include "libvmaf/picture.h"
+
+#include "float_adm_twin_parity.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
- * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
- * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+ * C23, where clang-tidy proposes `nullptr`, but the required MSVC C build does
+ * not provide that keyword. Preserve the portable C spelling. ADR-1138. */
 
-/* Fixture must be ≥ 32x32 for the 4-scale DWT2 + CSF footprint;
- * 256x144 matches the round-2 ADM parity test sizing. */
-#ifndef FIXTURE_W
-#define FIXTURE_W 256u
-#endif
-#ifndef FIXTURE_H
-#define FIXTURE_H 144u
-#endif
-#define FIXTURE_BPC 8u
-#define PARITY_TOL 1e-4
-
-static int fill_pic(VmafPicture *pic, unsigned salt)
+static int twin_open(void **state)
 {
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
-    if (err)
-        return err;
-    uint8_t *y = (uint8_t *)pic->data[0];
-    for (unsigned row = 0; row < pic->h[0]; row++) {
-        for (unsigned col = 0; col < pic->w[0]; col++) {
-            /* XOR pattern + salt — gives non-zero variance across
-             * each DWT2 subband. */
-            y[row * pic->stride[0] + col] = (uint8_t)(((row ^ col) + salt * 17u) & 0xFFu);
-        }
-    }
-    for (unsigned p = 1; p < 3; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
-        for (unsigned row = 0; row < pic->h[p]; row++) {
-            memset(plane + row * pic->stride[p], 128, pic->w[p]);
-        }
-    }
+    VmafSyclState *sycl_state = NULL;
+    VmafSyclConfiguration sycl_cfg = {.device_index = -1};
+    const int err = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
+    *state = sycl_state;
+    return err;
+}
+
+static int twin_import(VmafContext *vmaf, void *state)
+{
+    return vmaf_sycl_import_state(vmaf, (VmafSyclState *)state);
+}
+
+static int twin_close(void *state)
+{
+    VmafSyclState *sycl_state = (VmafSyclState *)state;
+    vmaf_sycl_state_free(&sycl_state);
     return 0;
 }
 
-static int feed_frame(VmafContext *vmaf)
-{
-    VmafPicture ref;
-    VmafPicture dist;
-    int err = fill_pic(&ref, 0u);
-    if (err)
-        return err;
-    err = fill_pic(&dist, 1u);
-    if (err) {
-        vmaf_picture_unref(&ref);
-        return err;
-    }
-    return vmaf_read_pictures(vmaf, &ref, &dist, 0u);
-}
-
-/* ADR-1220 — `adm_p_norm` is a VMAF_OPT_FLAG_FEATURE_PARAM, so setting it
- * changes the key the score is filed under (ADR-1183): the alias base plus
- * `_apn_<%g value>`. */
-#define APN_VAL "2.0"
-
-/* Compare all five ADM features, not just the aggregate: the per-scale
- * sub-scores are where a kernel-vs-CPU divergence shows first, and on this
- * fixture the aggregate alone is not sensitive enough to see the p-norm
- * defect at all. */
-#define NUM_ADM_FEATURES 5u
-static const char *const kAdmFeatures[NUM_ADM_FEATURES] = {
-    "VMAF_feature_adm2_score",       "VMAF_feature_adm_scale0_score",
-    "VMAF_feature_adm_scale1_score", "VMAF_feature_adm_scale2_score",
-    "VMAF_feature_adm_scale3_score",
+static const AdmTwin twin = {
+    .extractor = "float_adm_sycl",
+    .backend = "SYCL",
+    .open = twin_open,
+    .import = twin_import,
+    .close = twin_close,
 };
-static const char *const kAdmFeaturesApn[NUM_ADM_FEATURES] = {
-    "adm2_apn_2", "adm_scale0_apn_2", "adm_scale1_apn_2", "adm_scale2_apn_2", "adm_scale3_apn_2",
-};
-static const char *const kAdmFeaturesScf[NUM_ADM_FEATURES] = {
-    "adm2_scf_2", "adm_scale0_scf_2", "adm_scale1_scf_2", "adm_scale2_scf_2", "adm_scale3_scf_2",
-};
-static const char *const kAdmFeaturesBcm[NUM_ADM_FEATURES] = {
-    "adm2_bcm_1", "adm_scale0_bcm_1", "adm_scale1_bcm_1", "adm_scale2_bcm_1", "adm_scale3_bcm_1",
-};
-
-/* Build the option dictionary for a variant, or leave it NULL for defaults. */
-static int adm_opts_build(VmafFeatureDictionary **opts, const char *name, const char *val)
-{
-    if (!name)
-        return 0;
-    return vmaf_feature_dictionary_set(opts, name, val);
-}
-
-// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
-static char *run_cpu(const char *opt_name, const char *opt_val, const char *const *keys,
-                     double *scores)
-{
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    int err = vmaf_init(&vmaf, cfg);
-    mu_assert("CPU: vmaf_init failed", !err);
-    VmafFeatureDictionary *opts = NULL;
-    err = adm_opts_build(&opts, opt_name, opt_val);
-    mu_assert("CPU: adm_opts_build failed", !err);
-    err = vmaf_use_feature(vmaf, "float_adm", opts);
-    if (err)
-        (void)vmaf_feature_dictionary_free(&opts);
-    mu_assert("CPU: vmaf_use_feature(float_adm) failed", !err);
-    err = feed_frame(vmaf);
-    mu_assert("CPU: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
-    for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
-        err = vmaf_feature_score_at_index(vmaf, keys[m], &scores[m], 0u);
-        mu_assert("CPU: float_adm score missing", !err);
-    }
-    err = vmaf_close(vmaf);
-    mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
-}
-
-// NOLINTNEXTLINE(readability-function-size): test scaffolding (ADR-0141 / ADR-0278) — the body walks the whole allocate / fill / run-CPU / run-SYCL / compare / free sequence in one place so a parity failure points at the exact stage that diverged; splitting it hides which assertion fired.
-static char *run_sycl(const char *opt_name, const char *opt_val, const char *const *keys,
-                      double *scores)
-{
-    for (unsigned m = 0; m < NUM_ADM_FEATURES; m++)
-        scores[m] = NAN;
-    VmafSyclState *sycl_state = NULL;
-    VmafSyclConfiguration sycl_cfg = {.device_index = -1};
-    int err = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
-    if (err != 0 || sycl_state == NULL) {
-        (void)fprintf(stderr, "[skip: no SYCL device] ");
-        return NULL;
-    }
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("SYCL: vmaf_init failed", !err);
-    err = vmaf_sycl_import_state(vmaf, sycl_state);
-    mu_assert("SYCL: vmaf_sycl_import_state failed", !err);
-    VmafFeatureDictionary *opts = NULL;
-    err = adm_opts_build(&opts, opt_name, opt_val);
-    mu_assert("SYCL: adm_opts_build failed", !err);
-    err = vmaf_use_feature(vmaf, "float_adm_sycl", opts);
-    if (err)
-        (void)vmaf_feature_dictionary_free(&opts);
-    mu_assert("SYCL: vmaf_use_feature(float_adm_sycl) failed", !err);
-    err = feed_frame(vmaf);
-    mu_assert("SYCL: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("SYCL: vmaf_read_pictures(EOS) failed", !err);
-    for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
-        err = vmaf_feature_score_at_index(vmaf, keys[m], &scores[m], 0u);
-        mu_assert("SYCL: float_adm score missing", !err);
-    }
-    err = vmaf_close(vmaf);
-    mu_assert("SYCL: vmaf_close failed", !err);
-    vmaf_sycl_state_free(&sycl_state);
-    return NULL;
-}
 
 static char *test_float_adm_sycl_registered(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_adm_sycl");
-    mu_assert("float_adm_sycl extractor must be registered", fex != NULL);
-    mu_assert("float_adm_sycl name matches", !strcmp(fex->name, "float_adm_sycl"));
-    return NULL;
+    return adm_twin_registered(&twin);
 }
 
-static char *test_float_adm_cpu_sycl_parity(void)
+static char *test_float_adm_default_exact(void)
 {
-    double cpu_scores[NUM_ADM_FEATURES] = {0};
-    double sycl_scores[NUM_ADM_FEATURES] = {0};
-    char *msg = run_cpu(NULL, NULL, kAdmFeatures, cpu_scores);
-    if (msg)
-        return msg;
-    msg = run_sycl(NULL, NULL, kAdmFeatures, sycl_scores);
-    if (msg)
-        return msg;
-    if (isnan(sycl_scores[0]))
-        return NULL;
-    for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
-        const double delta = fabs(cpu_scores[m] - sycl_scores[m]);
-        if (delta > PARITY_TOL) {
-            (void)fprintf(stderr,
-                          "\nfloat_adm parity FAIL: %s cpu=%.8f sycl=%.8f delta=%.2e tol=%.2e\n",
-                          kAdmFeatures[m], cpu_scores[m], sycl_scores[m], delta, PARITY_TOL);
-        }
-        mu_assert("float_adm CPU vs. SYCL delta exceeds places=4 tolerance (1e-4)",
-                  delta <= PARITY_TOL);
-    }
-    return NULL;
+    return adm_twin_default_exact(&twin);
 }
 
-/* ADR-1220 — adm_p_norm must reach the kernels. The twin declares it with the
- * CPU's name, alias, default and range, but its kernels hardcoded the cube sum
- * and its host pooling hardcoded the 1/3 root, so a non-default `apn` moved
- * only the AIM exponent and produced a hybrid quantity. The default-options
- * test above cannot see it, because p = 3 IS the hardcoded exponent. */
-static char *test_float_adm_p_norm_reaches_kernel(void)
+static char *test_float_adm_noise_exact(void)
 {
-    double cpu_scores[NUM_ADM_FEATURES] = {0};
-    double sycl_scores[NUM_ADM_FEATURES] = {0};
-    char *msg = run_cpu("adm_p_norm", APN_VAL, kAdmFeaturesApn, cpu_scores);
-    if (msg)
-        return msg;
-    msg = run_sycl("adm_p_norm", APN_VAL, kAdmFeaturesApn, sycl_scores);
-    if (msg)
-        return msg;
-    if (isnan(sycl_scores[0]))
-        return NULL;
-    for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
-        const double delta = fabs(cpu_scores[m] - sycl_scores[m]);
-        if (delta > PARITY_TOL) {
-            (void)fprintf(stderr,
-                          "\nfloat_adm apn=%s parity FAIL: %s cpu=%.8f sycl=%.8f delta=%.2e "
-                          "tol=%.2e\n",
-                          APN_VAL, kAdmFeaturesApn[m], cpu_scores[m], sycl_scores[m], delta,
-                          PARITY_TOL);
-        }
-        mu_assert("float_adm with a non-default adm_p_norm drifts from the CPU reference",
-                  delta <= PARITY_TOL);
-    }
-    return NULL;
+    return adm_twin_noise_exact(&twin);
 }
 
-/* ADR-1214 — adm_csf_scale must be a no-op in the Watson-97 mode this twin
- * implements, exactly as it is on the CPU (`adm_tools.c::adm_csf_rfactor_s`
- * consults it only in Barten mode). The twins used to multiply it into every
- * CSF rfactor, and declared it under the alias `cs` where the CPU says `scf`,
- * so the same request produced a different feature key as well as a different
- * score. The fix landed as 64ea351be without this regression test.
- *
- * The key suffix follows ADR-1183: the alias base plus `_<alias>_<%g value>`,
- * so `adm_csf_scale=2.0` files the scores under `_scf_2`. */
+static char *test_float_adm_10bit_exact(void)
+{
+    return adm_twin_10bit_exact(&twin);
+}
+
+static char *test_float_adm_12bit_exact(void)
+{
+    return adm_twin_12bit_exact(&twin);
+}
+
+static char *test_float_adm_16bit_exact(void)
+{
+    return adm_twin_16bit_exact(&twin);
+}
+
+static char *test_float_adm_odd_frame_exact(void)
+{
+    return adm_twin_odd_frame_exact(&twin);
+}
+
+static char *test_float_adm_smallest_frame_exact(void)
+{
+    return adm_twin_smallest_frame_exact(&twin);
+}
+
+static char *test_float_adm_narrow_frame_exact(void)
+{
+    return adm_twin_narrow_frame_exact(&twin);
+}
+
+static char *test_float_adm_1080p_exact(void)
+{
+    return adm_twin_1080p_exact(&twin);
+}
+
+static char *test_float_adm_gain_limit_exact(void)
+{
+    return adm_twin_gain_limit_exact(&twin);
+}
+
+static char *test_float_adm_bypass_cm_exact(void)
+{
+    return adm_twin_bypass_cm_exact(&twin);
+}
+
+static char *test_float_adm_skip_aim_scale_exact(void)
+{
+    return adm_twin_skip_aim_scale_exact(&twin);
+}
+
+static char *test_float_adm_skip_scale0_exact(void)
+{
+    return adm_twin_skip_scale0_exact(&twin);
+}
+
+static char *test_float_adm_view_dist_exact(void)
+{
+    return adm_twin_view_dist_exact(&twin);
+}
+
+static char *test_float_adm_weight_overrides_exact(void)
+{
+    return adm_twin_weight_overrides_exact(&twin);
+}
+
 static char *test_float_adm_csf_scale_is_a_watson_mode_noop(void)
 {
-    double cpu_scores[NUM_ADM_FEATURES] = {0};
-    double sycl_scores[NUM_ADM_FEATURES] = {0};
-    char *msg = run_cpu("adm_csf_scale", "2.0", kAdmFeaturesScf, cpu_scores);
-    if (msg)
-        return msg;
-    msg = run_sycl("adm_csf_scale", "2.0", kAdmFeaturesScf, sycl_scores);
-    if (msg)
-        return msg;
-    if (isnan(sycl_scores[0]))
-        return NULL;
-    for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
-        const double delta = fabs(cpu_scores[m] - sycl_scores[m]);
-        if (delta > PARITY_TOL) {
-            (void)fprintf(stderr,
-                          "\nfloat_adm scf=2.0 parity FAIL: %s cpu=%.8f sycl=%.8f delta=%.2e "
-                          "tol=%.2e\n",
-                          kAdmFeaturesScf[m], cpu_scores[m], sycl_scores[m], delta, PARITY_TOL);
-        }
-        mu_assert("float_adm applies adm_csf_scale in Watson mode where the CPU ignores it",
-                  delta <= PARITY_TOL);
-    }
+    return adm_twin_csf_scale_is_a_watson_mode_noop(&twin);
+}
+
+static char *test_float_adm_p_norm_one_exact(void)
+{
+    return adm_twin_p_norm_one_exact(&twin);
+}
+
+static char *test_float_adm_p_norm_reaches_kernel(void)
+{
+    return adm_twin_p_norm_reaches_kernel(&twin);
+}
+
+static char *test_float_adm_small_sums_are_not_floored(void)
+{
+    return adm_twin_small_sums_are_not_floored(&twin);
+}
+
+static char *run_exact_bit_depth_cases(void)
+{
+    mu_run_test(test_float_adm_default_exact);
+    mu_run_test(test_float_adm_noise_exact);
+    mu_run_test(test_float_adm_10bit_exact);
+    mu_run_test(test_float_adm_12bit_exact);
+    mu_run_test(test_float_adm_16bit_exact);
     return NULL;
 }
 
-/* ADR-1220 — adm_bypass_cm drops the contrast-masking threshold in both DLM and
- * AIM CM kernels. Verify that setting adm_bypass_cm=1 changes the score and
- * matches the CPU reference within tolerance. */
-static char *test_float_adm_bypass_cm_reaches_kernel(void)
+static char *run_exact_geometry_cases(void)
 {
-    double cpu_scores[NUM_ADM_FEATURES] = {0};
-    double sycl_scores[NUM_ADM_FEATURES] = {0};
-    char *msg = run_cpu("adm_bypass_cm", "1", kAdmFeaturesBcm, cpu_scores);
-    if (msg)
-        return msg;
-    msg = run_sycl("adm_bypass_cm", "1", kAdmFeaturesBcm, sycl_scores);
-    if (msg)
-        return msg;
-    if (isnan(sycl_scores[0]))
-        return NULL;
-    for (unsigned m = 0; m < NUM_ADM_FEATURES; m++) {
-        const double delta = fabs(cpu_scores[m] - sycl_scores[m]);
-        if (delta > PARITY_TOL) {
-            (void)fprintf(stderr,
-                          "\nfloat_adm bcm=1 parity FAIL: %s cpu=%.8f sycl=%.8f delta=%.2e "
-                          "tol=%.2e\n",
-                          kAdmFeaturesBcm[m], cpu_scores[m], sycl_scores[m], delta, PARITY_TOL);
-        }
-        mu_assert("float_adm with adm_bypass_cm=1 drifts from the CPU reference",
-                  delta <= PARITY_TOL);
-    }
+    mu_run_test(test_float_adm_odd_frame_exact);
+    mu_run_test(test_float_adm_smallest_frame_exact);
+    mu_run_test(test_float_adm_narrow_frame_exact);
+    mu_run_test(test_float_adm_1080p_exact);
+    return NULL;
+}
+
+static char *run_exact_scale_option_cases(void)
+{
+    mu_run_test(test_float_adm_gain_limit_exact);
+    mu_run_test(test_float_adm_bypass_cm_exact);
+    mu_run_test(test_float_adm_skip_aim_scale_exact);
+    mu_run_test(test_float_adm_skip_scale0_exact);
+    return NULL;
+}
+
+static char *run_exact_weight_option_cases(void)
+{
+    mu_run_test(test_float_adm_view_dist_exact);
+    mu_run_test(test_float_adm_weight_overrides_exact);
+    mu_run_test(test_float_adm_csf_scale_is_a_watson_mode_noop);
+    mu_run_test(test_float_adm_p_norm_one_exact);
+    return NULL;
+}
+
+/* The CPU float_adm refuses frames below 17x17; the twin accepted them. */
+static char *test_float_adm_sycl_rejects_frames_below_17(void)
+{
+    return adm_twin_rejects_frames_below_17(&twin);
+}
+
+static char *run_other_cases(void)
+{
+    mu_run_test(test_float_adm_p_norm_reaches_kernel);
+    mu_run_test(test_float_adm_small_sums_are_not_floored);
+    mu_run_test(test_float_adm_sycl_rejects_frames_below_17);
     return NULL;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_float_adm_sycl_registered);
-    mu_run_test(test_float_adm_cpu_sycl_parity);
-    mu_run_test(test_float_adm_p_norm_reaches_kernel);
-    mu_run_test(test_float_adm_csf_scale_is_a_watson_mode_noop);
-    mu_run_test(test_float_adm_bypass_cm_reaches_kernel);
+    mu_assert_msg(run_exact_bit_depth_cases());
+    mu_assert_msg(run_exact_geometry_cases());
+    mu_assert_msg(run_exact_scale_option_cases());
+    mu_assert_msg(run_exact_weight_option_cases());
+    mu_assert_msg(run_other_cases());
     return NULL;
 }
 

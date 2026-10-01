@@ -324,12 +324,14 @@ def _float_motion_failures(sources: dict[str, str]) -> list[str]:
 
 # ADR-1395: no SYCL kernel uses scratch memory. The ratchet list of kernels
 # that still did reached zero when float_adm_sycl's contrast-masking kernels
-# stopped indexing a private array with their run-time band; it stays empty,
-# and those kernels keep choosing the band by value.
-FLOAT_ADM = "float_adm_sycl.cpp"
+# stopped indexing a private array with their run-time band; it stays empty.
+# Since ADR-1434 the per-work-item code of that twin lives in
+# sycl_float_adm_math.h, where every helper takes its band as a constant and
+# the three CSF weights are named scalars.
+FLOAT_ADM = "sycl_float_adm_math.h"
 SCRATCH_RATCHET_PATH = ROOT / "core" / "src" / "sycl" / "scratch_ratchet.txt"
 SCRATCH_CHECK_PATH = ROOT / "core" / "src" / "sycl" / "scratch_check.cpp"
-FLOAT_ADM_CM_HELPERS = ("fadm_load_cm_pixel", "fadm_aim_cm_term", "fadm_csf_cm_terms")
+FLOAT_ADM_CM_HELPERS = ("store_csf", "neighbours", "threshold", "store_terms")
 RUN_TIME_BAND_INDEX = re.compile(r"\[\s*(?:\(int\)\s*)?band\s*\]")
 
 
@@ -363,6 +365,9 @@ def _scratch_failures(sources: dict[str, str]) -> list[str]:
             failures.append(
                 f"{FLOAT_ADM}: {helper}() indexes a private array with the run-time band"
             )
+    bands = re.search(r"struct Bands \{(.*?)\};", twin, re.S)
+    if not bands or "[" in bands.group(1):
+        failures.append(f"{FLOAT_ADM}: struct Bands must hold named scalars, no array")
     return failures
 
 
@@ -736,15 +741,21 @@ class SyclKernelSourceContractTest(unittest.TestCase):
 
     def test_band_indexed_private_array_is_detected(self) -> None:
         sources = _scratch_sources()
-        old = "fadm_restore(pixel.original, pixel.transformed, pixel.angle_flag, p.gain_limit);"
+        old = "        den_term(rfactor, src, a.is_cube, a.p_norm);"
         self.assertIn(old, sources[FLOAT_ADM])
         sources[FLOAT_ADM] = sources[FLOAT_ADM].replace(
-            old,
-            "fadm_restore(pixel.original[band], pixel.transformed[band], pixel.angle_flag, "
-            "p.gain_limit);",
+            old, "        den_term(bd.rfactor[band], src, a.is_cube, a.p_norm);"
         )
         failures = _scratch_failures(sources)
         self.assertTrue(any("run-time band" in item for item in failures), failures)
+
+    def test_csf_weight_array_is_detected(self) -> None:
+        sources = _scratch_sources()
+        old = "    float rfactor_h;\n    float rfactor_v;\n    float rfactor_d;\n"
+        self.assertIn(old, sources[FLOAT_ADM])
+        sources[FLOAT_ADM] = sources[FLOAT_ADM].replace(old, "    float rfactor[3];\n")
+        failures = _scratch_failures(sources)
+        self.assertTrue(any("named scalars" in item for item in failures), failures)
 
 if __name__ == "__main__":
     unittest.main()

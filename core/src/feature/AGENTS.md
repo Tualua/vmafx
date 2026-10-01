@@ -1021,10 +1021,11 @@ feature/
   that matter: gain limit `double`, `FLOAT_ONE_BY_30` / `_15` double
   literals, threshold centre tap fifth, angle threshold
   `(cos^2 * |o|^2) * |t|^2`, fp32 row + frame accumulators. Change any
-  -> change `cuda/float_adm/float_adm_device.h` same PR
-  (`test_float_adm_device_math` fails until it follows). SYCL / HIP /
-  Metal twins still old arithmetic:
-  `T-GPU-FLOAT-ADM-CPU-ARITHMETIC-2026-10-01`.
+  -> change `cuda/float_adm/float_adm_device.h` and
+  `sycl/sycl_float_adm_math.h` (ADR-1434, same functions without an fp64
+  type) same PR (`test_float_adm_device_math` /
+  `test_sycl_float_adm_math` fail until they follow). HIP / Metal twins
+  still old arithmetic: `T-GPU-FLOAT-ADM-CPU-ARITHMETIC-2026-10-01`.
 
 - **Float ADM DIVIDES; no reciprocal estimate, ever** (ADR-1442,
   fork-local, diverges from upstream). `adm_options.h`: NO

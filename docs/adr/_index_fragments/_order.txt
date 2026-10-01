@@ -1146,3 +1146,4 @@
 1441-hip-float-ssim-cpu-window-sums
 1444-hip-float-vif-cpu-arithmetic
 1442-float-adm-reference-divides
+1434-sycl-float-adm-cpu-arithmetic

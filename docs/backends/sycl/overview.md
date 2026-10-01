@@ -1475,6 +1475,70 @@ ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/ci/cross_backend_parity_gate
     --width 576 --height 324 --features ssim --backends cpu sycl
 ```
 
+## `float_adm_sycl` matches the CPU `float_adm` exactly (2026-10-02)
+
+`float_adm_sycl` returns every output of the CPU float ADM extractor bit for
+bit ([ADR-1434](../../adr/1434-sycl-float-adm-cpu-arithmetic.md), after
+ADR-1420 for the CUDA twin). The DWT and the decouple's quotient were already
+the CPU's (the CPU divides since
+[ADR-1442](../../adr/1442-float-adm-reference-divides.md)); the rest was not.
+What changed, with the largest difference each item alone leaves on the
+Netflix 576x324 pair and on BBB 3840x2160
+([Research-1434](../../research/1434-sycl-float-adm-fp64-free-arithmetic.md)):
+
+| What the twin did | What `adm_tools.c` does | Netflix | BBB 4K |
+|---|---|---:|---:|
+| compared the angle test with `cos^2 * (o^2 * t^2)` | `(cos^2 * o^2) * t^2` | 2.4e-6 | 1.28e-5 |
+| added the row sums in `double` on the host, per sub-group before | one `float` per row, then one over the rows | 1.9e-7 | 1.8e-7 |
+| used `float` constants for 1/30 and 1/15 | `double` literals | 1.2e-9 | 2.4e-9 |
+| added the centre tap of the masking threshold last | fifth of nine, per band | 1.2e-9 | 2.4e-9 |
+| multiplied the enhancement gain in `float` (at `adm_enhn_gain_limit=1.2`) | in `double` | 0 | 6.0e-10 |
+
+A SYCL kernel has no `double`
+([fp64-less contract](#fp64-less-device-contract-t7-17)). The three `double`
+expressions are evaluated as exact pairs of `float` values; a result that
+lies next to a `float` rounding boundary, about one evaluation in 131 000 by
+the width of the test, replays the CPU's `double` operations in 64-bit
+integers (`core/src/feature/sycl/sycl_float_adm_math.h`). The CSF weights,
+the reduced region, the pooling and the frame floor are the CPU's own
+routines.
+
+Measured on an Arc A380 (xe driver, Level Zero, icpx 2026.0) at
+`--precision max` against `--backend cpu`, outputs identical and the largest
+difference:
+
+| Fixture | Before | Now |
+|---|---|---|
+| Netflix 576x324, 48 frames, 7 outputs | 59 of 336, 2.5e-6 | 336 of 336 |
+| Checkerboard 1920x1080, 1 px shift, 3 frames | 1 of 21, 3.5e-7 | 21 of 21 |
+| Checkerboard 1920x1080, 10 px shift, 3 frames | 4 of 21, 1.5e-7 | 21 of 21 |
+| BBB 3840x2160, 200 frames | 301 of 1400, 1.7e-5 | 1400 of 1400 |
+
+Also identical: the Netflix pair at 10, 12 and 16 bits and as 4:2:2 10-bit,
+`debug=true` (18 outputs), `adm_enhn_gain_limit` of 1.0, 1.2 and 37.5,
+`adm_bypass_cm`, `adm_noise_weight=0`, `adm_p_norm=1`, and the four options
+the twin did not have before: `adm_skip_scale0`, `adm_skip_aim_scale`,
+`adm_f1s0..3` and `adm_f2s0..3`. `adm_p_norm` other than 1 or 3 is within
+1.8e-7 (the device's `pow` against the host's).
+
+The reference in that table is the CPU extractor of the same build, which is
+what the parity gate compares. Against a GCC build of the CPU extractor,
+`aim` and `adm3` differ on 2 of the 200 BBB frames by 1.6e-9: the final roots
+are the host math library's `powf`, Intel's in one build and glibc's in the
+other. That difference is between the two CPU extractors.
+
+Through the `vmaf` tool on the A380 a 3840x2160 frame takes 12.3 ms, 15.1 ms
+before (medians of 11 runs of 50 frames), and a 576x324 frame 0.59 ms, 0.57
+before. The twin stores nine terms per sample of the reduced region, 48 MB
+of device memory at 3840x2160, and copies one block of row sums to the host
+per frame, four before. No kernel uses
+[scratch memory](#scratch-memory-on-intel-gpus-adr-1395).
+
+```bash
+ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/dev/speed_gpu_parity.py \
+    --backend sycl --vmaf "$PWD/build/tools/vmaf" --feature float_adm
+```
+
 ## Licensing of the SYCL kernels (ADR-1250)
 
 As with the other backends, a SYCL kernel implementing an upstream Netflix

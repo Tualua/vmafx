@@ -180,6 +180,56 @@
   `test_validate_pic_params_bpc` do not unref after a rejection.
 - No ABI or FFmpeg patch impact (callers already leave the pictures alone); no
   Netflix golden-data impact.
+## ADR-1434 — `float_adm_sycl` computes the CPU's arithmetic without fp64 (2026-10-01)
+
+`fix/sycl-float-adm-cpu-arithmetic-exact`, ADR-1434 (after ADR-1420 for the
+CUDA twin), closes `T-SYCL-FLOAT-ADM-NOT-CPU-ARITHMETIC-2026-10-01`.
+
+- `core/src/feature/sycl/sycl_float_adm_math.h` (new) mirrors
+  `adm_tools.c`: `divs()` = `DIVS()`, `angle_flag()` = `adm_angle_flag_s()`
+  (the `ADM_OPT_AVOID_ATAN` branch), `decouple_band()` =
+  `adm_decouple_band_s()`, `csf_flt()` = the `flt` store of `adm_csf_s()`,
+  `thresh_band()` / `threshold()` = `adm_cm_thresh3x3_s()`, `den_term()` /
+  `cm_term()` = the terms of `adm_csf_den_scale_s()` / `adm_cm_s()`,
+  `row_sum()` / `fold_rows()` = their two accumulators. It is the same
+  function set as `core/src/feature/cuda/float_adm/float_adm_device.h`. If
+  upstream Netflix changes one of those routines, change both headers in the
+  same change; `core/test/test_sycl_float_adm_exact_contract.py` fails when
+  the mirrored lines move.
+- The header has no fp64 type outside `make_gain_limit()` (host code).
+  `kOneBy30` / `kOneBy15` are the reference's `double` literals
+  `FLOAT_ONE_BY_30` / `FLOAT_ONE_BY_15` as an fp32 pair and as a 53-bit
+  significand. **On rebase**: do not replace `times_constant()`,
+  `add_scaled()` or `gain_limited()` by fp32 arithmetic, and do not add an
+  fp64 type; either breaks the twin (the first by up to 1e-7, the second by
+  rejecting the TU on Arc A-series, ADR-0220).
+- `core/src/feature/sycl/sycl_soft_double.h` gained
+  `soft_from_float_any()` and `soft_to_float_any()` (subnormal inputs and
+  results).
+- `core/src/feature/sycl/float_adm_sycl.cpp`: the kernels after the DWT are
+  `launch_decouple_csf()`, `launch_terms()` and `launch_row_sums()`, each a
+  call into the header. Gone and not to come back: `fadm_dwt_quant_step()`
+  (the weights are `adm_csf_rfactor_s()`), the per-sub-group reductions,
+  `fadm_accumulate_totals()` (a `double` sum), the `1e-2` frame floor. The
+  twin declares the CPU's `adm_f1s0..3`, `adm_f2s0..3`, `adm_skip_aim_scale`
+  and `adm_skip_scale0`.
+- The earlier note below about `fadm_load_cm_pixel()` describes code this
+  change removed. Its rule stands in the new place: every helper of the
+  header takes its band as a constant and `Bands` holds the three CSF
+  weights as named fields (ADR-1395;
+  `core/test/test_sycl_kernel_source_contract.py`).
+- `float_adm` is declared exact for `sycl` by
+  `scripts/ci/exact_twins.d/float_adm.sycl`.
+- Tests: `core/test/test_sycl_float_adm_math.c` with its probe
+  `test_sycl_float_adm_math_probe.cpp` and `sycl_float_adm_math_probe.h`
+  (host and device), `core/test/test_sycl_float_adm_parity.c` over
+  `core/test/float_adm_twin_parity.h` (`==`, every output),
+  `core/test/test_sycl_float_adm_exact_contract.py` (15 planted
+  regressions).
+- Depends on ADR-1420's exports (`adm_float_reference.h`), on ADR-1442
+  (the reference divides: `divs()` is `n / d`, and must not become a
+  product with a reciprocal) and on ADR-1432's `sycl_soft_double.h`.
+- No Netflix golden-data, public API or FFmpeg patch impact.
 
 ## `float_adm_sycl` uses no scratch memory; the scratch ratchet list is empty (2026-10-01)
 

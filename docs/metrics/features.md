@@ -101,10 +101,10 @@ Depending on your build configuration not every backend is available — see
 See [`backends/hip/overview.md`](../backends/hip/overview.md).
 
 ⁶ `aim_score` and `adm3_score` on the **float** path are emitted by
-`float_adm` (CPU) and `float_adm_cuda` (ADR-0574, 2026-05-18). The
-SYCL and HIP `float_adm` twins emit `adm2` / `adm_scale*` only;
-`aim_score` / `adm3_score` Phase 2 (SYCL/HIP) is tracked as a
-follow-up. (The Vulkan backend was removed in ADR-0726.)
+`float_adm` (CPU), `float_adm_cuda` (ADR-0574, 2026-05-18) and
+`float_adm_sycl`, which returns the CPU's values for both
+([ADR-1434](../adr/1434-sycl-float-adm-cpu-arithmetic.md)). (The Vulkan
+backend was removed in ADR-0726.)
 
 ⁷ On the **fixed-point** path, `aim_score` and `adm3_score` are
 emitted by the CPU `adm` extractor, by `integer_adm_cuda`
@@ -450,7 +450,10 @@ only.
 | `adm_dlm_weight`         | `dlmw` | double | `0.5`     | `0.0–1.0`   | Linear blend between DLM and AIM scores; `1.0` = DLM-only (no AIM contribution), `0.0` = AIM-only                                                         |
 | `adm_skip_aim`           | —      | bool   | `false`   | —           | Skip the AIM (Additive Impairment Metric) sub-band calculation entirely; forces AIM contribution to zero                                                  |
 | `adm_bypass_cm`          | `bcm`  | int    | `0`       | `0–1`       | Bypass contrast masking: drops the 3x3 masking threshold from the ADM numerator, so `adm2` rises sharply. Declared and honoured by CPU `adm` / `float_adm`, and by the CUDA, Metal, SYCL, and HIP `float_adm` twins per [ADR-1220](../adr/1220-gpu-float-adm-options-reach-kernels.md). |
-| `adm_skip_scale0`        | `ssz`  | bool   | `false`   | —           | Skip scale-0 (finest wavelet level) calculation; scale-0 outputs forced to `0.0` and excluded from the fused score. Up to v3.2.1 the Metal `float_adm` twin zeroed only the reported `adm_scale0` sub-score while still folding scale 0 into the fused score; fixed per [ADR-1220](../adr/1220-gpu-float-adm-options-reach-kernels.md). |
+| `adm_skip_scale0`        | `ssz`  | bool   | `false`   | —           | Skip scale-0 (finest wavelet level) calculation; scale-0 outputs forced to `0.0` and excluded from the fused score. Up to v3.2.1 the Metal `float_adm` twin zeroed only the reported `adm_scale0` sub-score while still folding scale 0 into the fused score; fixed per [ADR-1220](../adr/1220-gpu-float-adm-options-reach-kernels.md). The SYCL `float_adm` twin takes the option since [ADR-1434](../adr/1434-sycl-float-adm-cpu-arithmetic.md); before, `--feature float_adm_sycl=adm_skip_scale0=true` was rejected as an unknown option. |
+| `adm_skip_aim_scale`     | `sasc` | int    | `-1`      | `0–3`       | Leave one scale out of the AIM score: that scale's numerator and denominator are not added to the AIM sums. `-1` (the default) leaves none out. `adm2` and the scale scores are not affected. CPU `float_adm`, `float_adm_cuda` and `float_adm_sycl`. |
+| `adm_f1s0` … `adm_f1s3`  | `f1s0` … `f1s3` | double | `-1.0` | `-1.0–10.0` | Replace the CSF weight of the horizontal and vertical bands of scale 0 … 3 with this value. A negative value (the default) keeps the weight the CSF model computes. CPU `float_adm` and `float_adm_sycl`. |
+| `adm_f2s0` … `adm_f2s3`  | `f2s0` … `f2s3` | double | `-1.0` | `-1.0–10.0` | The same for the diagonal band of scale 0 … 3. CPU `float_adm` and `float_adm_sycl`. |
 | `adm_min_val`            | `min`  | double | `0.0`     | `0.0–1.0`   | Floor value: fused ADM scores below this threshold are clipped up to it                                                                                   |
 | `adm_p_norm`             | `apn`  | double | `3.0`     | `1.0–20.0`  | p-norm exponent for the contrast-measure finalisation (`x^(1/p)` pooling in `adm_cm`). Honoured on every backend: CPU `adm` / `float_adm`, the x86 AVX2 / AVX-512 `adm` paths, the CUDA / SYCL / HIP / Metal `integer_adm` twins, and — since [ADR-1220](../adr/1220-gpu-float-adm-options-reach-kernels.md) — the CUDA / SYCL / HIP / Metal `float_adm` twins, which previously hardcoded `p = 3` in their kernels and applied the option to the AIM exponent alone. Applies to the numerator only: the CPU denominator (`adm_den_scale_finalise`) is a fixed cube root, and every twin mirrors that. |
 
@@ -518,7 +521,44 @@ What this means when you use it:
   different `powf` implementations.
 - Frames smaller than 17x17 are refused by both; see the next section.
 
-The SYCL, HIP and Metal `float_adm` twins agree with the CPU to four decimal
+##### `float_adm` on SYCL returns the CPU's values
+
+`float_adm_sycl` gives the same number as `--backend cpu --feature float_adm`
+for every output of every frame, down to the last bit of the `--precision max`
+output ([ADR-1434](../adr/1434-sycl-float-adm-cpu-arithmetic.md)). Measured on
+an Arc A380 on the Netflix 576x324 pair at 8, 10, 12 and 16 bits, both
+1920x1080 checkerboard pairs and 200 frames of 3840x2160, with `debug=true`
+as well. A 3840x2160 frame takes 12.3 ms, 15.1 ms before.
+
+What this means when you use it:
+
+- You can mix CPU and SYCL `float_adm` results in one data set. Before
+  ADR-1434 the SYCL twin was up to 1.7e-5 from the CPU (the fifth decimal
+  place of a scale score could differ); `float_adm_sycl` outputs stored
+  before it differ from new ones by that much.
+- For content with almost no reference detail, scored with
+  `adm_noise_weight=0`, the twin used to report `adm2 = 1` where the CPU
+  reports 0. It now reports the CPU's value.
+- The twin takes four options it rejected before: `adm_skip_scale0`,
+  `adm_skip_aim_scale`, `adm_f1s0` … `adm_f1s3` and `adm_f2s0` … `adm_f2s3`
+  (see the table above). With each of them it returns the CPU's values.
+- "The CPU" is the CPU extractor of the same build. The final roots are the
+  math library's `powf`: a libvmaf built with GCC and one built with the
+  Intel compiler can differ in the last digit of `aim` and `adm3` on a few
+  frames (1.6e-9 on 2 of 200 frames measured), CPU extractor against CPU
+  extractor. The processor does not matter; see
+  [`float_adm` does not depend on the processor](#float_adm-does-not-depend-on-the-processor).
+- One option is not identical: with `adm_p_norm` other than 1 or 3 the twin
+  is within 1.8e-7 of the CPU, because the two sides raise each term with
+  different `powf` implementations.
+- With `debug=true` and another option set, the CPU files the ratio under
+  `adm` and the twin under `adm` plus the option suffix (for example
+  `adm_egl_1.2`). The value is the same; every other output has the same
+  name on both.
+- Frames smaller than 17x17 are refused by both; see the next section.
+- The twin uses 48 MB more device memory at 3840x2160.
+
+The HIP and Metal `float_adm` twins agree with the CPU to four decimal
 places.
 
 ##### Small frames
@@ -537,19 +577,20 @@ libvmaf ERROR adm_cuda requires width >= 17 and height >= 17 (got 16x16)
 The CUDA, HIP and SYCL twins (`adm_cuda`, `adm_hip`, `adm_sycl`) used to
 accept such frames; they now refuse them like the CPU and Metal extractors.
 
-`float_adm` and `float_adm_cuda` refuse the same frames, with the same kind of
-message:
+`float_adm`, `float_adm_cuda` and `float_adm_sycl` refuse the same frames,
+with the same kind of message:
 
 ```text
 libvmaf ERROR float_adm requires width >= 17 and height >= 17 (got 16x16)
 libvmaf ERROR float_adm_cuda requires width >= 17 and height >= 17 (got 16x16)
+libvmaf ERROR float_adm_sycl requires width >= 17 and height >= 17 (got 16x16)
 ```
 
 They used to accept them. Below 17x17 the coarsest level has a single sample
 and the CPU extractor read outside it: before the start of a buffer at 8
 pixels or fewer, the wrong sample from 9 to 16 (a random 8x8 pair scored
 `adm_scale3 = 1.05`). Scores of such frames from an older build are not
-meaningful. The SYCL, HIP and Metal `float_adm` twins still accept these
+meaningful. The HIP and Metal `float_adm` twins still accept these
 frames; use at least 17x17 with them.
 
 Frames from 17 to 32 pixels wide or high are the smallest it accepts. These

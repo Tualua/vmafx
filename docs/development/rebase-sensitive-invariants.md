@@ -310,6 +310,25 @@ linked AGENTS.md before resolving conflicts.
   `core/test/test_sycl_ssim_exact_contract.py` and
   `core/test/test_sycl_ssim_parity.c` guard it. See
   [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
+- **`float_adm_sycl` returns the CPU's scores bit for bit ([ADR-1434](../adr/1434-sycl-float-adm-cpu-arithmetic.md))**:
+  `core/src/feature/sycl/sycl_float_adm_math.h` is the same arithmetic as the
+  CUDA twin's device header, without an fp64 type: the three expressions
+  `adm_tools.c` evaluates in `double` (the enhancement gain, the 1/30 product
+  and the centre tap's 1/15 product) are exact fp32 pairs, and a result next
+  to an fp32 rounding boundary replays the fp64 operations in 64-bit integers
+  (`sycl_soft_double.h`). The decouple's quotient is fp32 `n / d`, as the
+  reference's `DIVS()` is since ADR-1442; it must not become a product with a
+  reciprocal. The header also holds what one work-item of the decouple, term
+  and row-sum kernels does; `float_adm_sycl.cpp` only launches them. A row is
+  added by one work-item and the rows by the host, both in fp32. The weights,
+  the region, the pooling and the floor are the reference's own. A change to
+  `adm_decouple_s()`, `adm_csf_s()`, `adm_cm_thresh3x3_s()`,
+  `adm_csf_den_scale_s()` or `adm_cm_s()` changes this header and the CUDA
+  one in the same PR. `core/test/test_sycl_float_adm_math.c` and
+  `core/test/test_sycl_float_adm_exact_contract.py` guard it,
+  `test_sycl_float_adm_parity` on a device; the twin is declared exact by
+  `scripts/ci/exact_twins.d/float_adm.sycl`. See
+  [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
 - **SYCL fp64-less device contract (T7-17, ADR-0220)**:
   [ADR-0220](../adr/0220-sycl-fp64-fallback.md). SYCL feature
   kernels are unconditionally fp64-free; a single fp64 instruction
