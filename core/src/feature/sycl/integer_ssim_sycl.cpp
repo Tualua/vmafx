@@ -51,6 +51,7 @@
 
 #include <sycl/sycl.hpp>
 
+#include <bit>
 #include <cerrno>
 #include <cmath>
 #include <cstdint>
@@ -68,7 +69,9 @@
 #include "picture.h"
 #include "../iqa/decimate_dim.h"
 #include "sycl/common.h"
+#include "sycl_compat.h"
 #include "sycl_exact_fp.h"
+#include "sycl_integer_ssim_math.h"
 #include "sycl_ssim_terms.h"
 
 namespace
@@ -1105,24 +1108,29 @@ extern "C" VmafFeatureExtractor vmaf_fex_float_ssim_sycl = {
 };
 
 /* ============================================================
- * Real integer_ssim SYCL extractor (ADR-0564)
+ * Real integer_ssim SYCL extractor (ADR-0564; the CPU's arithmetic and
+ * the CPU's sum since ADR-1443)
  *
- * Bit-exact int64 moment accumulation matching the CPU integer_ssim.c.
- * Uses the same 9-tap integer Gaussian [2,9,28,55,68,55,28,9,2] and
- * boundary-truncation as the CPU.
+ * int64 moments equal to integer_ssim.c's: the same 9-tap integer
+ * Gaussian [2,9,28,55,68,55,28,9,2] and the same truncation at the
+ * frame's edges.
  *
- * fp64 constraint (ADR-0220 / AGENTS.md): no double inside kernel
- * lambdas. The SSIM formula is computed in float32 per-pixel, then
- * float partials are accumulated on the host in double.  This gives
- * places=4-5 vs CPU (not places=6), documented in ADR-0564.
+ * integer_ssim.c::ssim_reduce_row_range() forms each pixel's term in
+ * fp64 and calc_ssim() adds every term into one double, left to right
+ * and top to bottom. A kernel has no fp64 type (ADR-0220) and a sum of
+ * doubles is its order, so:
  *
- * Two-pass design:
  *   Pass 1 (launch_issim_horiz): 9-tap int64 horizontal moment
- *     accumulation. Writes 6 x (W x H) int64 USM arrays.
- *   Pass 2 (launch_issim_vert_combine): 9-tap int64 vertical
- *     accumulation from horiz arrays, then float SSIM formula,
- *     then float per-WG partial sum + int64 per-WG weight sum.
- * Host: ssim = sum(float_partials * wgt_partials) / sum(wgt_partials).
+ *     accumulation. Writes 5 x (W x H) int64 USM arrays.
+ *   Pass 2 (launch_issim_terms): 9-tap int64 vertical accumulation,
+ *     then the reference's fp64 operations on values held in 64-bit
+ *     integers (sycl_integer_ssim_math.h). Stores the fp64 bit pattern
+ *     of every pixel's term at its raster position; no reduction.
+ *   Host: adds the read-back plane in index order, which is
+ *     calc_ssim()'s order, and divides by the weight sum.
+ *
+ * The window weight is not a plane: it is the product of the two tap
+ * sums, and its frame sum is the product of the two line sums.
  * ============================================================ */
 
 namespace
@@ -1151,10 +1159,6 @@ struct IssimStateSycl {
     /* vmaf_ssim_max_db(): +inf unless clip_db. */
     double max_db;
 
-    unsigned wg_count_x;
-    unsigned wg_count_y;
-    unsigned wg_count;
-
     VmafSyclState *sycl_state;
 
     /* Staging buffers: host-pinned input (packed, no stride). */
@@ -1169,20 +1173,20 @@ struct IssimStateSycl {
     uint16_t *d_ref_u16;
     uint16_t *d_cmp_u16;
 
-    /* Six int64 intermediate device arrays for horizontal pass. */
+    /* Five int64 intermediate device arrays for horizontal pass. */
     int64_t *d_mux;
     int64_t *d_muy;
     int64_t *d_x2;
     int64_t *d_xy;
     int64_t *d_y2;
-    int64_t *d_w;
 
-    /* float per-WG ssim partial sum. */
-    float *d_partials;
-    float *h_partials;
-    /* int64 per-WG weight partial sum. */
-    int64_t *d_wgt;
-    int64_t *h_wgt;
+    /* The fp64 bit pattern of every pixel's term, in raster order. */
+    uint64_t *d_terms;
+    uint64_t *h_terms;
+    /* calc_ssim()'s `ssimw`: the sum of every window's weight. */
+    int64_t total_weight;
+    /* fl64(sm * sm * SSIM_K1) and fl64(sm * sm * SSIM_K2). */
+    vmaf_sycl_issim::Stabilisers stabilisers;
 
     bool has_pending;
     unsigned pending_index;
@@ -1198,7 +1202,7 @@ namespace
 
 static void launch_issim_horiz_8bpc(sycl::queue &q, const uint8_t *d_ref, const uint8_t *d_cmp,
                                     int64_t *d_mux, int64_t *d_muy, int64_t *d_x2, int64_t *d_xy,
-                                    int64_t *d_y2, int64_t *d_w, unsigned width, unsigned height)
+                                    int64_t *d_y2, unsigned width, unsigned height)
 {
     const size_t gx = ((width + ISSIM_WG_X - 1) / ISSIM_WG_X) * ISSIM_WG_X;
     const size_t gy = ((height + ISSIM_WG_Y - 1) / ISSIM_WG_Y) * ISSIM_WG_Y;
@@ -1221,7 +1225,6 @@ static void launch_issim_horiz_8bpc(sycl::queue &q, const uint8_t *d_ref, const 
                 int64_t x2 = 0LL;
                 int64_t xy = 0LL;
                 int64_t y2 = 0LL;
-                int64_t w = 0LL;
                 for (int k = k_min; k < k_max; k++) {
                     const int src_x = (int)x - ISSIM_HALF_K + k;
                     const int64_t s = (int64_t)d_ref[(size_t)y * e_width + (unsigned)src_x];
@@ -1232,7 +1235,6 @@ static void launch_issim_horiz_8bpc(sycl::queue &q, const uint8_t *d_ref, const 
                     x2 += wk * s * s;
                     xy += wk * s * d;
                     y2 += wk * d * d;
-                    w += wk;
                 }
                 const size_t idx = (size_t)y * e_width + x;
                 d_mux[idx] = mux;
@@ -1240,7 +1242,6 @@ static void launch_issim_horiz_8bpc(sycl::queue &q, const uint8_t *d_ref, const 
                 d_x2[idx] = x2;
                 d_xy[idx] = xy;
                 d_y2[idx] = y2;
-                d_w[idx] = w;
             });
     });
 }
@@ -1253,7 +1254,7 @@ namespace
 
 static void launch_issim_horiz_16bpc(sycl::queue &q, const uint16_t *d_ref, const uint16_t *d_cmp,
                                      int64_t *d_mux, int64_t *d_muy, int64_t *d_x2, int64_t *d_xy,
-                                     int64_t *d_y2, int64_t *d_w, unsigned width, unsigned height)
+                                     int64_t *d_y2, unsigned width, unsigned height)
 {
     const size_t gx = ((width + ISSIM_WG_X - 1) / ISSIM_WG_X) * ISSIM_WG_X;
     const size_t gy = ((height + ISSIM_WG_Y - 1) / ISSIM_WG_Y) * ISSIM_WG_Y;
@@ -1276,7 +1277,6 @@ static void launch_issim_horiz_16bpc(sycl::queue &q, const uint16_t *d_ref, cons
                 int64_t x2 = 0LL;
                 int64_t xy = 0LL;
                 int64_t y2 = 0LL;
-                int64_t w = 0LL;
                 for (int k = k_min; k < k_max; k++) {
                     const int src_x = (int)x - ISSIM_HALF_K + k;
                     const int64_t s = (int64_t)d_ref[(size_t)y * e_width + (unsigned)src_x];
@@ -1287,7 +1287,6 @@ static void launch_issim_horiz_16bpc(sycl::queue &q, const uint16_t *d_ref, cons
                     x2 += wk * s * s;
                     xy += wk * s * d;
                     y2 += wk * d * d;
-                    w += wk;
                 }
                 const size_t idx = (size_t)y * e_width + x;
                 d_mux[idx] = mux;
@@ -1295,7 +1294,6 @@ static void launch_issim_horiz_16bpc(sycl::queue &q, const uint16_t *d_ref, cons
                 d_x2[idx] = x2;
                 d_xy[idx] = xy;
                 d_y2[idx] = y2;
-                d_w[idx] = w;
             });
     });
 }
@@ -1305,33 +1303,27 @@ static void launch_issim_horiz_16bpc(sycl::queue &q, const uint16_t *d_ref, cons
 namespace
 {
 
+/* Sub-group size of the term kernel. */
+constexpr int ISSIM_TERM_SG = 16;
+constexpr int ISSIM_TERM_GRF = 256;
+
 struct IntegerVertArgs {
     const int64_t *reference_mean;
     const int64_t *comparison_mean;
     const int64_t *reference_square;
     const int64_t *cross_product;
     const int64_t *comparison_square;
-    const int64_t *weight;
-    float *partials;
-    int64_t *weight_partials;
+    uint64_t *terms;
     unsigned width;
     unsigned height;
-    float sample_max;
-    size_t group_columns;
+    vmaf_sycl_issim::Stabilisers stabilisers;
 };
 
-struct IntegerMoments {
-    int64_t reference_mean;
-    int64_t comparison_mean;
-    int64_t reference_square;
-    int64_t cross_product;
-    int64_t comparison_square;
-    int64_t weight;
-};
-
-struct IssimContribution {
-    float weighted_score;
-    float weight;
+/* The taps of the window at `position` that lie inside a line of `extent`
+ * samples: the reference's k_min and k_max. */
+struct TapRange {
+    int first;
+    int last;
 };
 
 } // namespace
@@ -1339,26 +1331,59 @@ struct IssimContribution {
 namespace
 {
 
-static inline IntegerMoments vertical_integer_moments(const IntegerVertArgs &args, unsigned x,
-                                                      unsigned y)
+static inline TapRange tap_range(unsigned position, unsigned extent)
 {
-    const int first = (int)y < ISSIM_HALF_K ? ISSIM_HALF_K - (int)y : 0;
-    const int last = ((int)y + ISSIM_HALF_K >= (int)args.height) ?
-                         ISSIM_K_SZ - ((int)y + ISSIM_HALF_K - (int)args.height + 1) :
+    const int at = (int)position;
+    const int first = at < ISSIM_HALF_K ? ISSIM_HALF_K - at : 0;
+    const int last = (at + ISSIM_HALF_K >= (int)extent) ?
+                         ISSIM_K_SZ - (at + ISSIM_HALF_K - (int)extent + 1) :
                          ISSIM_K_SZ;
-    IntegerMoments result{};
-    for (int tap = first; tap < last; ++tap) {
+    return {.first = first, .last = last};
+}
+
+/* The sum of the taps of a range: a line's part of the window weight. */
+static inline int64_t tap_weight(TapRange taps)
+{
+    int64_t weight = 0;
+    for (int tap = taps.first; tap < taps.last; ++tap) {
+        weight += (int64_t)ISSIM_KERNEL[tap];
+    }
+    return weight;
+}
+
+} // namespace
+
+namespace
+{
+
+static inline vmaf_sycl_issim::Moments vertical_integer_moments(const IntegerVertArgs &args,
+                                                                unsigned x, unsigned y)
+{
+    const TapRange rows = tap_range(y, args.height);
+    int64_t reference_mean = 0;
+    int64_t comparison_mean = 0;
+    int64_t reference_square = 0;
+    int64_t cross_product = 0;
+    int64_t comparison_square = 0;
+    int64_t row_weight = 0;
+    for (int tap = rows.first; tap < rows.last; ++tap) {
         const unsigned source_y = (unsigned)((int)y - ISSIM_HALF_K + tap);
         const size_t index = (size_t)source_y * args.width + x;
         const int64_t coefficient = (int64_t)ISSIM_KERNEL[tap];
-        result.reference_mean += coefficient * args.reference_mean[index];
-        result.comparison_mean += coefficient * args.comparison_mean[index];
-        result.reference_square += coefficient * args.reference_square[index];
-        result.cross_product += coefficient * args.cross_product[index];
-        result.comparison_square += coefficient * args.comparison_square[index];
-        result.weight += coefficient * args.weight[index];
+        reference_mean += coefficient * args.reference_mean[index];
+        comparison_mean += coefficient * args.comparison_mean[index];
+        reference_square += coefficient * args.reference_square[index];
+        cross_product += coefficient * args.cross_product[index];
+        comparison_square += coefficient * args.comparison_square[index];
+        row_weight += coefficient;
     }
-    return result;
+    /* Every moment is a sum of non-negative products. */
+    return {.mux = (uint64_t)reference_mean,
+            .muy = (uint64_t)comparison_mean,
+            .x2 = (uint64_t)reference_square,
+            .xy = (uint64_t)cross_product,
+            .y2 = (uint64_t)comparison_square,
+            .w = (uint64_t)(row_weight * tap_weight(tap_range(x, args.width)))};
 }
 
 } // namespace
@@ -1366,79 +1391,61 @@ static inline IntegerMoments vertical_integer_moments(const IntegerVertArgs &arg
 namespace
 {
 
-static inline IssimContribution integer_ssim_contribution(const IntegerVertArgs &args, unsigned x,
-                                                          unsigned y)
+/* The fp64 bit pattern of the term ssim_reduce_row_range() adds for the
+ * pixel at (x, y). Flattened into the kernel: a call left in it takes
+ * scratch memory for its frame (ADR-1395). */
+__attribute__((flatten, always_inline)) static inline uint64_t
+integer_ssim_term(const IntegerVertArgs &args, unsigned x, unsigned y)
 {
-    const IntegerMoments moments = vertical_integer_moments(args, x, y);
-    const float weight = (float)moments.weight;
-    const float c1 = args.sample_max * args.sample_max * 0.0001f * weight * weight;
-    const float c2 = args.sample_max * args.sample_max * 0.0009f * weight * weight;
-    const float reference_mean = (float)moments.reference_mean;
-    const float comparison_mean = (float)moments.comparison_mean;
-    /* The CPU integer_ssim.c::ssim_reduce_row_range groups the term as
-     * ((weight * a) * b) / denominator: on border pixels, where weight is
-     * not a power of two, the two round differently. */
-    const float reference_mean_sq = reference_mean * reference_mean;
-    const float comparison_mean_sq = comparison_mean * comparison_mean;
-    const float mean_product = reference_mean * comparison_mean;
-    const float reference_weighted = (float)moments.reference_square * weight;
-    const float comparison_weighted = (float)moments.comparison_square * weight;
-    const float cross_weighted = (float)moments.cross_product * weight;
-    const float reference_variance = reference_weighted - reference_mean_sq;
-    const float comparison_variance = comparison_weighted - comparison_mean_sq;
-    const float covariance = cross_weighted - mean_product;
-    const float a = 2.0f * mean_product + c1;
-    const float b = 2.0f * covariance + c2;
-    const float denominator = (reference_mean_sq + comparison_mean_sq + c1) *
-                              (reference_variance + comparison_variance + c2);
-    if (denominator == 0.0f || moments.weight <= 0LL) {
-        return {};
-    }
-    const float weighted_score = ((weight * a) * b) / denominator;
-    return {.weighted_score = weighted_score, .weight = weight};
+    return vmaf_sycl_issim::term_bits(vertical_integer_moments(args, x, y), args.stabilisers);
 }
 
-} // namespace
-
-namespace
+/* One work-item per pixel stores that pixel's term at its raster position.
+ * There is no reduction on the device: calc_ssim() adds every term into one
+ * double, row after row, and those additions round. */
+class IssimTermKernel : public VmafSyclKernelShape<ISSIM_TERM_SG, ISSIM_TERM_GRF>
 {
-
-static inline void store_integer_group(sycl::nd_item<2> item, const IntegerVertArgs &args,
-                                       IssimContribution contribution)
-{
-    const float score =
-        sycl::reduce_over_group(item.get_group(), contribution.weighted_score, sycl::plus<float>{});
-    const float weight =
-        sycl::reduce_over_group(item.get_group(), contribution.weight, sycl::plus<float>{});
-    if (item.get_local_id(0) == 0 && item.get_local_id(1) == 0) {
-        const size_t index = item.get_group(0) * args.group_columns + item.get_group(1);
-        args.partials[index] = score;
-        args.weight_partials[index] = (int64_t)weight;
+  public:
+    explicit IssimTermKernel(const IntegerVertArgs &args) : a_(args)
+    {
     }
-}
 
-} // namespace
+    VMAF_SYCL_FUNCTOR_SG_SIZE(ISSIM_TERM_SG) void operator()(sycl::id<2> id) const
+    {
+        a_.terms[id[0] * (size_t)a_.width + id[1]] =
+            integer_ssim_term(a_, (unsigned)id[1], (unsigned)id[0]);
+    }
 
-namespace
+  private:
+    IntegerVertArgs a_;
+};
+
+static void launch_issim_terms(sycl::queue &queue, const IntegerVertArgs &args)
 {
-
-static void launch_issim_vert_combine(sycl::queue &queue, const IntegerVertArgs &args)
-{
-    const size_t global_x = ((args.width + ISSIM_WG_X - 1) / ISSIM_WG_X) * ISSIM_WG_X;
-    const size_t global_y = ((args.height + ISSIM_WG_Y - 1) / ISSIM_WG_Y) * ISSIM_WG_Y;
-    sycl::nd_range<2> const range{sycl::range<2>{global_y, global_x},
-                                  sycl::range<2>{ISSIM_WG_Y, ISSIM_WG_X}};
-    queue.submit([=](sycl::handler &handler) {
-        handler.parallel_for(range, [=](sycl::nd_item<2> item) {
-            const unsigned x = (unsigned)item.get_global_id(1);
-            const unsigned y = (unsigned)item.get_global_id(0);
-            IssimContribution contribution{};
-            if (x < args.width && y < args.height) {
-                contribution = integer_ssim_contribution(args, x, y);
-            }
-            store_integer_group(item, args, contribution);
-        });
+    queue.submit([&](sycl::handler &handler) {
+        handler.parallel_for(sycl::range<2>{args.height, args.width}, IssimTermKernel(args));
     });
+}
+
+/* calc_ssim()'s `ssim`: every term added into one double, row after row,
+ * each row left to right. */
+static double integer_ssim_frame_sum(const uint64_t *terms, size_t count)
+{
+    double ssim = 0.0;
+    for (size_t i = 0u; i < count; i++) {
+        ssim += std::bit_cast<double>(terms[i]);
+    }
+    return ssim;
+}
+
+/* The sum of the window weights along a line of `extent` samples. */
+static int64_t line_weight(unsigned extent)
+{
+    int64_t weight = 0;
+    for (unsigned position = 0u; position < extent; position++) {
+        weight += tap_weight(tap_range(position, extent));
+    }
+    return weight;
 }
 
 } // namespace
@@ -1450,8 +1457,7 @@ struct IntegerBufferSizes {
     size_t pixels8;
     size_t pixels16;
     size_t moments;
-    size_t partials;
-    size_t weights;
+    size_t terms;
 };
 
 static int configure_integer_ssim(IssimStateSycl *s, unsigned bpc, unsigned width, unsigned height)
@@ -1465,9 +1471,10 @@ static int configure_integer_ssim(IssimStateSycl *s, unsigned bpc, unsigned widt
     s->height = height;
     s->bpc = bpc;
     s->max_db = vmaf_ssim_max_db(s->clip_db, bpc, width, height);
-    s->wg_count_x = (unsigned)((width + ISSIM_WG_X - 1) / ISSIM_WG_X);
-    s->wg_count_y = (unsigned)((height + ISSIM_WG_Y - 1) / ISSIM_WG_Y);
-    s->wg_count = s->wg_count_x * s->wg_count_y;
+    /* A window's weight is the product of its two tap sums, so the frame's
+     * weight sum is the product of the two line sums. */
+    s->total_weight = line_weight(width) * line_weight(height);
+    s->stabilisers = vmaf_sycl_issim::make_stabilisers(bpc);
     return 0;
 }
 
@@ -1483,8 +1490,7 @@ static IntegerBufferSizes integer_buffer_sizes(const IssimStateSycl *s)
         .pixels8 = pixels * sizeof(uint8_t),
         .pixels16 = pixels * sizeof(uint16_t),
         .moments = pixels * sizeof(int64_t),
-        .partials = (size_t)s->wg_count * sizeof(float),
-        .weights = (size_t)s->wg_count * sizeof(int64_t),
+        .terms = pixels * sizeof(uint64_t),
     };
 }
 
@@ -1508,11 +1514,8 @@ static void allocate_integer_ssim(IssimStateSycl *s, const IntegerBufferSizes &b
     s->d_x2 = allocate_device<int64_t>(s->sycl_state, bytes.moments);
     s->d_xy = allocate_device<int64_t>(s->sycl_state, bytes.moments);
     s->d_y2 = allocate_device<int64_t>(s->sycl_state, bytes.moments);
-    s->d_w = allocate_device<int64_t>(s->sycl_state, bytes.moments);
-    s->d_partials = allocate_device<float>(s->sycl_state, bytes.partials);
-    s->h_partials = allocate_host<float>(s->sycl_state, bytes.partials);
-    s->d_wgt = allocate_device<int64_t>(s->sycl_state, bytes.weights);
-    s->h_wgt = allocate_host<int64_t>(s->sycl_state, bytes.weights);
+    s->d_terms = allocate_device<uint64_t>(s->sycl_state, bytes.terms);
+    s->h_terms = allocate_host<uint64_t>(s->sycl_state, bytes.terms);
 }
 
 } // namespace
@@ -1524,7 +1527,7 @@ static bool integer_ssim_allocations_complete(const IssimStateSycl *s)
 {
     return s->h_ref_u8 && s->h_cmp_u8 && s->h_ref_u16 && s->h_cmp_u16 && s->d_ref_u8 &&
            s->d_cmp_u8 && s->d_ref_u16 && s->d_cmp_u16 && s->d_mux && s->d_muy && s->d_x2 &&
-           s->d_xy && s->d_y2 && s->d_w && s->d_partials && s->h_partials && s->d_wgt && s->h_wgt;
+           s->d_xy && s->d_y2 && s->d_terms && s->h_terms;
 }
 
 } // namespace
@@ -1580,7 +1583,7 @@ static void submit_integer_horizontal(IssimStateSycl *s, sycl::queue &queue, Pic
         queue.memcpy(s->d_ref_u8, s->h_ref_u8, pixels * sizeof(uint8_t));
         queue.memcpy(s->d_cmp_u8, s->h_cmp_u8, pixels * sizeof(uint8_t));
         launch_issim_horiz_8bpc(queue, s->d_ref_u8, s->d_cmp_u8, s->d_mux, s->d_muy, s->d_x2,
-                                s->d_xy, s->d_y2, s->d_w, s->width, s->height);
+                                s->d_xy, s->d_y2, s->width, s->height);
         return;
     }
     pack_integer_plane(s->h_ref_u16, reference, s->width, s->height);
@@ -1588,7 +1591,7 @@ static void submit_integer_horizontal(IssimStateSycl *s, sycl::queue &queue, Pic
     queue.memcpy(s->d_ref_u16, s->h_ref_u16, pixels * sizeof(uint16_t));
     queue.memcpy(s->d_cmp_u16, s->h_cmp_u16, pixels * sizeof(uint16_t));
     launch_issim_horiz_16bpc(queue, s->d_ref_u16, s->d_cmp_u16, s->d_mux, s->d_muy, s->d_x2,
-                             s->d_xy, s->d_y2, s->d_w, s->width, s->height);
+                             s->d_xy, s->d_y2, s->width, s->height);
 }
 
 } // namespace
@@ -1609,21 +1612,17 @@ static int submit_fex_issim_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic
     sycl::queue &q = *qptr;
 
     submit_integer_horizontal(s, q, ref_pic, dist_pic);
-    launch_issim_vert_combine(q, {.reference_mean = s->d_mux,
-                                  .comparison_mean = s->d_muy,
-                                  .reference_square = s->d_x2,
-                                  .cross_product = s->d_xy,
-                                  .comparison_square = s->d_y2,
-                                  .weight = s->d_w,
-                                  .partials = s->d_partials,
-                                  .weight_partials = s->d_wgt,
-                                  .width = s->width,
-                                  .height = s->height,
-                                  .sample_max = (float)((1u << s->bpc) - 1u),
-                                  .group_columns = s->wg_count_x});
+    launch_issim_terms(q, {.reference_mean = s->d_mux,
+                           .comparison_mean = s->d_muy,
+                           .reference_square = s->d_x2,
+                           .cross_product = s->d_xy,
+                           .comparison_square = s->d_y2,
+                           .terms = s->d_terms,
+                           .width = s->width,
+                           .height = s->height,
+                           .stabilisers = s->stabilisers});
 
-    q.memcpy(s->h_partials, s->d_partials, (size_t)s->wg_count * sizeof(float));
-    q.memcpy(s->h_wgt, s->d_wgt, (size_t)s->wg_count * sizeof(int64_t));
+    q.memcpy(s->h_terms, s->d_terms, (size_t)s->width * s->height * sizeof(uint64_t));
 
     s->pending_index = index;
     s->has_pending = true;
@@ -1644,15 +1643,11 @@ static int collect_fex_issim_sycl(VmafFeatureExtractor *fex, unsigned index,
         return -EINVAL;
     qptr->wait();
 
-    double total_ssim = 0.0;
-    int64_t total_wgt = 0LL;
-    for (unsigned i = 0; i < s->wg_count; i++) {
-        total_ssim += (double)s->h_partials[i];
-        total_wgt += s->h_wgt[i];
-    }
-    return vmaf_ssim_emit_ratio_score_named(feature_collector, s->feature_name_dict,
-                                            "integer_ssim_sycl", "ssim", total_ssim,
-                                            (double)total_wgt, s->enable_db, s->max_db, index);
+    /* calc_ssim(): the frame sum in the reference's order, then `ssim / ssimw`. */
+    const double total_ssim = integer_ssim_frame_sum(s->h_terms, (size_t)s->width * s->height);
+    return vmaf_ssim_emit_ratio_score_named(
+        feature_collector, s->feature_name_dict, "integer_ssim_sycl", "ssim", total_ssim,
+        (double)s->total_weight, s->enable_db, s->max_db, index);
 }
 
 } // namespace
@@ -1677,11 +1672,8 @@ static int close_fex_issim_sycl(VmafFeatureExtractor *fex)
         release_buffer(s->sycl_state, s->d_x2);
         release_buffer(s->sycl_state, s->d_xy);
         release_buffer(s->sycl_state, s->d_y2);
-        release_buffer(s->sycl_state, s->d_w);
-        release_buffer(s->sycl_state, s->d_partials);
-        release_buffer(s->sycl_state, s->h_partials);
-        release_buffer(s->sycl_state, s->d_wgt);
-        release_buffer(s->sycl_state, s->h_wgt);
+        release_buffer(s->sycl_state, s->d_terms);
+        release_buffer(s->sycl_state, s->h_terms);
     }
     if (s->feature_name_dict) {
         (void)vmaf_dictionary_free(&s->feature_name_dict);
@@ -1711,10 +1703,10 @@ static const char *provided_features_issim_sycl[] = {"ssim", nullptr};
 
 } // namespace
 
-/* Real integer_ssim SYCL extractor (ADR-0564). Uses 9-tap int64 moments
- * matching the CPU algorithm. The SSIM formula is computed in float32
- * (fp64-free constraint, ADR-0220); expected precision is places=4-5 vs
- * CPU. Load-bearing: declared via extern in feature_extractor.c. */
+/* Real integer_ssim SYCL extractor (ADR-0564). 9-tap int64 moments equal to
+ * the CPU's, the CPU's fp64 term from 64-bit integers (fp64-free, ADR-0220)
+ * and the CPU's raster-order sum on the host: the score is the CPU's bit for
+ * bit (ADR-1443). Load-bearing: declared via extern in feature_extractor.c. */
 extern "C" VmafFeatureExtractor vmaf_fex_integer_ssim_sycl = {
     .name = "integer_ssim_sycl",
     .init = init_fex_issim_sycl,

@@ -47,6 +47,10 @@
  *      carries VMAF_SYCL_FUNCTOR_SG_SIZE(SG), which expands to the
  *      sub-group attribute where VMAF_SYCL_REQD_SG_SIZE does.
  *
+ *    VMAF_SYCL_ALWAYS_INLINE  (ADR-1395)
+ *      `inline` plus the always-inline attribute, for header functions a
+ *      kernel calls: a call left in a kernel is a scratch-memory frame.
+ *
  *  Numerical impact: AdaptiveCpp output is **not** bit-identical to
  *  icpx and not bit-identical to scalar CPU. See
  *  `feedback_golden_gate_cpu_only` and ADR-0335 for the tolerance
@@ -84,6 +88,18 @@
 #else
 #define VMAF_SYCL_KERNEL_PROPERTIES 0
 #define VMAF_SYCL_FUNCTOR_SG_SIZE(N) VMAF_SYCL_REQD_SG_SIZE(N)
+#endif
+
+/* VMAF_SYCL_ALWAYS_INLINE: for a function a kernel calls many times per
+ * work-item (the pair functions of sycl_ff_math.h, the integer fp64
+ * operations of sycl_soft_signed.h). Left to its own judgement the compiler
+ * keeps some of them as calls, and a call inside a kernel takes its frame from
+ * scratch memory, which returns wrong values on Arc A-series under the xe
+ * driver (ADR-1395). */
+#if defined(__GNUC__) || defined(__clang__)
+#define VMAF_SYCL_ALWAYS_INLINE __attribute__((always_inline)) inline
+#else
+#define VMAF_SYCL_ALWAYS_INLINE inline
 #endif
 
 template <int SG_SIZE, int GRF_SIZE> struct VmafSyclKernelShape {

@@ -12,7 +12,7 @@ distorted frame.
 | `integer_ssim` | CPU | Integer fixed-point | `ssim` | Reference |
 | `vmaf_fex_integer_ssim_cuda` | CUDA | Real int64 moments + double SSIM, summed in the CPU's order | `ssim` | bit-identical at every frame size ([ADR-1424](../adr/1424-cuda-ssim-cpu-frame-sum.md)) |
 | `vmaf_fex_integer_ssim_hip` | HIP | Real int64 moments + double SSIM, summed in the CPU's order | `ssim` | bit-identical at every frame size ([ADR-1438](../adr/1438-hip-ssim-cpu-frame-sum.md)) |
-| `vmaf_fex_integer_ssim_sycl` | SYCL | int64 moments + float32 SSIM | `ssim` | places=4–5 (fp64-free, ADR-0220) |
+| `vmaf_fex_integer_ssim_sycl` | SYCL | Real int64 moments + the CPU's double SSIM term computed in 64-bit integers, summed in the CPU's order | `ssim` | bit-identical at every frame size and bit depth ([ADR-1443](../adr/1443-sycl-ssim-cpu-arithmetic.md)) |
 | `vmaf_fex_integer_ssim_metal` | Metal | Fixed-point, two-pass separable Gaussian | `ssim` | places=4 (target, ADR-0214) |
 
 A model that lists the `ssim` feature gets the twin of the active backend
@@ -93,6 +93,38 @@ What this means when you use it:
   frame 98.1 ms instead of 94.3 ms, and the twin needs 66 MB more device
   memory and as much pinned host memory at 3840x2160.
 
+### `integer_ssim_sycl` returns the CPU's value
+
+`--backend sycl --feature ssim` gives the same number as `--backend cpu
+--feature ssim` for every frame, down to the last bit of the `--precision
+max` output ([ADR-1443](../adr/1443-sycl-ssim-cpu-arithmetic.md)). Measured on
+an Arc A380 on the Netflix 576x324 pair at 8, 10, 12 and 16 bits and 4:2:2,
+both 1920x1080 checkerboard pairs, 200 frames of 3840x2160, and frames down
+to 1x1.
+
+A SYCL kernel has no `double` on the GPUs the backend targets. The twin
+therefore runs the CPU's double-precision operations for each pixel in 64-bit
+integers, which gives the CPU's `double` exactly, and adds the per-pixel
+values on the host in the CPU's order.
+
+What this means when you use it:
+
+- You can mix CPU and SYCL `ssim` results in one data set. Before ADR-1443
+  the twin computed in single precision and was 7e-9 to 3e-7 from the CPU on
+  video; stored `integer_ssim_sycl` outputs differ from new ones by that much.
+- 16-bit input works. Before ADR-1443 the twin's single-precision term
+  overflowed on 16-bit frames and the run stopped with `invalid ratio`.
+- With `enable_db`, the linear score is the CPU's and the dB value is
+  computed from it on the host. It equals the CPU's when both come from the
+  same build. Between a build made with the Intel compiler and one made with
+  GCC the last digit of the dB value can differ (3.6e-15 measured), because
+  the two link different `log10` implementations; that affects the CPU
+  extractor in the same way.
+- It costs time at large frames: a 3840x2160 frame takes 31.9 ms instead of
+  17.8 ms on an Arc A380 (0.78 ms instead of 0.45 ms at 576x324). The CPU
+  extractor takes 111 ms for that frame. The twin needs 66 MB more pinned
+  host memory at 3840x2160; its device memory is unchanged.
+
 ## Options
 
 | Option | Type | Default | Effect |
@@ -108,13 +140,12 @@ report the CPU's `+inf` / ceiling for identical frames
 [ADR-1373](../adr/1373-cuda-twin-cpu-option-parity.md),
 [ADR-1382](../adr/1382-hip-twin-cpu-option-parity.md); the HIP twin's
 gfx1036 run is in `T-BUG048-GPU-OPTION-PARITY-REMAINDER-2026-09-26` in
-[`state.md`](../state.md)). The CUDA twin
-computes every per-pixel term as the CPU does and adds the terms in the CPU's
-order, so it reports the CPU's value exactly, finite or `+inf`, at every
-frame size ([ADR-1424](../adr/1424-cuda-ssim-cpu-frame-sum.md)). The HIP twin
-does the same for frames up to 4096 pixels (64x64)
-([ADR-1400](../adr/1400-hip-integer-ssim-raster-sum-small-frames.md)); above
-that it adds per block and can differ from the CPU in the last digits. A model that sets
+[`state.md`](../state.md)). The CUDA, HIP and SYCL twins
+compute every per-pixel term as the CPU does and add the terms in the CPU's
+order, so they report the CPU's value exactly, finite or `+inf`, at every
+frame size ([ADR-1424](../adr/1424-cuda-ssim-cpu-frame-sum.md),
+[ADR-1438](../adr/1438-hip-ssim-cpu-frame-sum.md),
+[ADR-1443](../adr/1443-sycl-ssim-cpu-arithmetic.md)). A model that sets
 an option the active backend's twin lacks computes `ssim` on the CPU
 ([ADR-1183](../adr/1183-model-options-gate-gpu-twin-selection.md)).
 

@@ -16,6 +16,49 @@
 - Tests: `scripts/ci/tests/test_gen_sycl_compile_commands.py`
   (`ParseNinjaTests`), wired through the
   `test-sycl-compile-command-generator` hook.
+## ADR-1443 — `integer_ssim_sycl` computes the CPU's fp64 term in integers (2026-10-02)
+
+`fix/sycl-ssim-cpu-arithmetic`, ADR-1443 (builds on ADR-1432's
+`sycl_soft_double.h`).
+
+- `core/src/feature/sycl/sycl_integer_ssim_math.h` (new) mirrors the term of
+  `integer_ssim.c::ssim_reduce_row_range()` (nine lines from `w_d = m.w;` to
+  the quotient). If upstream Netflix changes them, change `term_bits()`,
+  `product_sums_rounded()` and `product_sums_exact()` in the same change;
+  `core/test/test_sycl_ssim_exact_contract.py` fails when the lines move, and
+  `reference_term()` in `core/test/test_sycl_integer_ssim_math.c` holds a
+  verbatim copy.
+- `core/src/feature/sycl/sycl_soft_signed.h` (new): signed fp64 values in
+  integers (`SoftSigned`), sum and difference with cancellation, conversion
+  from `uint64_t`, a radix-2^19 division. It includes `sycl_soft_double.h`
+  and uses its `soft_mul()`, `soft_round()` and 128-bit helpers. **On
+  rebase**: an edit to those functions in `sycl_soft_double.h` has to keep
+  round-to-nearest-even per operation; `test_sycl_integer_ssim_math` checks
+  every operation against the host's fp64.
+- `core/src/feature/sycl/integer_ssim_sycl.cpp` (fixed-point twin only; the
+  `float_ssim_sycl` half of the file is untouched): the horizontal passes
+  write five planes (no weight plane), `IssimTermKernel` replaces
+  `launch_issim_vert_combine()` and its per-group reduction, the state holds
+  `d_terms` / `h_terms` (one `uint64_t` per pixel) instead of the partials,
+  `collect` adds the plane with `integer_ssim_frame_sum()`. The fp32 formula
+  and `sycl::reduce_over_group` must not come back into this half of the
+  file. Shape: `ISSIM_TERM_SG` 16, `ISSIM_TERM_GRF` 256; any other measured
+  shape uses scratch memory (ADR-1395).
+- `VMAF_SYCL_ALWAYS_INLINE` is defined once, in
+  `core/src/feature/sycl/sycl_compat.h`; `sycl_ff_math.h` (ADR-1436) and
+  `sycl_soft_signed.h` take it from there. **On rebase**: a header whose
+  functions a kernel calls many times uses the macro; a plain `inline` can
+  stay a call, and a call in a kernel is a scratch-memory frame (ADR-1395).
+- `ssim` is declared exact for `sycl` by `scripts/ci/exact_twins.d/ssim.sycl`;
+  the row in `docs/development/cross-backend-exact-twins.md` is generated
+  (`make docs-fragments-write`).
+- Tests: `core/test/ssim_twin_parity.h` (shared cases),
+  `core/test/test_sycl_ssim_parity.c` (`==`),
+  `core/test/test_sycl_integer_ssim_math.c` with its probe
+  `test_sycl_integer_ssim_math_probe.cpp`,
+  `core/test/test_sycl_ssim_exact_contract.py`.
+  `core/test/test_sycl_twin_option_parity.c` holds the twin to equality with
+  `enable_db` / `clip_db` too.
 - No Netflix golden-data, public API or FFmpeg patch impact.
 
 ## SYCL translation units track their headers through compiler depfiles (2026-10-01)

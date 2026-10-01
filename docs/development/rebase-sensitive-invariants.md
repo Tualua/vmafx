@@ -296,6 +296,20 @@ linked AGENTS.md before resolving conflicts.
   `core/test/test_sycl_vif_exact_gain_contract.py` and
   `core/test/test_sycl_vif_parity.c` guard it. See
   [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
+- **`integer_ssim_sycl` returns the CPU's score bit for bit ([ADR-1443](../adr/1443-sycl-ssim-cpu-arithmetic.md))**:
+  `core/src/feature/sycl/sycl_integer_ssim_math.h` runs the fp64 operations of
+  `integer_ssim.c::ssim_reduce_row_range()`'s per-pixel term, one for one and
+  in the reference's order, on values held in 64-bit integers
+  (`core/src/feature/sycl/sycl_soft_signed.h`, on `sycl_soft_double.h`). The
+  kernel stores the bit pattern of every term unreduced and the host adds the
+  plane in `calc_ssim()`'s raster order. A change to that expression in
+  `integer_ssim.c` changes the header in the same PR. The twin stays free of
+  `float` in its term, of a device reduction of the terms, and of scratch
+  memory (SIMD-16 with the 256-entry register file).
+  `core/test/test_sycl_integer_ssim_math.c` (host and device),
+  `core/test/test_sycl_ssim_exact_contract.py` and
+  `core/test/test_sycl_ssim_parity.c` guard it. See
+  [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
 - **SYCL fp64-less device contract (T7-17, ADR-0220)**:
   [ADR-0220](../adr/0220-sycl-fp64-fallback.md). SYCL feature
   kernels are unconditionally fp64-free; a single fp64 instruction

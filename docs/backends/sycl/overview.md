@@ -914,7 +914,7 @@ naming the twin with the option failed with `unknown option`.
 | Twin | Options added | Agreement with `--backend cpu` |
 |---|---|---|
 | `psnr_sycl` | `enable_mse`, `enable_apsnr`, `reduced_hbd_peak`, `min_sse` | bit-exact, `apsnr_*` included |
-| `integer_ssim_sycl` | `enable_db`, `clip_db` | as the linear score (up to 1.5e-8), mapped through the dB slope |
+| `integer_ssim_sycl` | `enable_db`, `clip_db` | bit-exact since [ADR-1443](../../adr/1443-sycl-ssim-cpu-arithmetic.md) (then: as the linear score, up to 1.5e-8, mapped through the dB slope) |
 | `float_ssim_sycl` | `enable_lcs`, `enable_db`, `clip_db` | `float_ssim_l/c/s` within 8.3e-7; dB as above |
 | `float_motion_sycl` | `motion_max_val` (`mmxv`) | within 5.6e-6, as the default score; frames at the cap exact |
 
@@ -1404,6 +1404,75 @@ its frame from scratch memory.
 ```bash
 ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/dev/speed_gpu_parity.py \
     --backend sycl --vmaf "$PWD/build/tools/vmaf" --feature ciede --max-abs-diff 1e-9
+```
+
+## `integer_ssim_sycl` matches the CPU `ssim` exactly (2026-10-02)
+
+`integer_ssim_sycl` returns the CPU fixed-point `ssim` extractor's score bit
+for bit ([ADR-1443](../../adr/1443-sycl-ssim-cpu-arithmetic.md)). Its int64
+window moments were already the CPU's. Two things were not:
+
+- `integer_ssim.c` forms each pixel's term in `double`. The kernel used
+  `float` for it ([fp64-less contract](#fp64-less-device-contract-t7-17)). It
+  now runs the CPU's `double` operations, one for one and in the CPU's order,
+  on a significand and an exponent held in 64-bit integers
+  (`core/src/feature/sycl/sycl_integer_ssim_math.h` on
+  `core/src/feature/sycl/sycl_soft_signed.h`), and stores the bit pattern of
+  the resulting `double`.
+- `calc_ssim()` adds every term into one `double`, left to right and top to
+  bottom. The kernel added `float` partial sums per 16x8 work-group. The host
+  now reads the plane of terms back and adds it in the CPU's order.
+
+Measured on an Arc A380 (xe driver, Level Zero, icpx 2026.0) at
+`--precision max` against `--backend cpu`:
+
+| Fixture | Before | Now |
+|---|---|---|
+| Netflix 576x324, 48 frames | 0 of 48, 6.9e-9 | 48 of 48 |
+| Checkerboard 1920x1080, 1 px shift, 3 frames | 0 of 3, 1.0e-7 | 3 of 3 |
+| Checkerboard 1920x1080, 10 px shift, 3 frames | 0 of 3, 1.1e-7 | 3 of 3 |
+| BBB 3840x2160, 200 frames | 0 of 200, 3.1e-7 | 200 of 200 |
+| Netflix 576x324 at 10 and 12 bits and 4:2:2 10-bit, 3 frames each | 0 of 3, 4.4e-9 | 3 of 3 |
+| Netflix 576x324 at 16 bits, 3 frames | the run failed (`invalid ratio`) | 3 of 3 |
+
+What each cause contributed, from the new twin with one piece put back
+(Netflix, 1 px checkerboard, 10 px checkerboard, BBB 20 frames):
+
+| Piece put back | Largest difference |
+|---|---|
+| The term computed in `float` | 6.6e-9, 9.4e-8, 1.1e-7, 3.1e-7 |
+| `float` partial sums per 16x8 block | 1.3e-8, 6.8e-8, 5.6e-8, 1.5e-8 |
+| The exact term stored as a `float` | 9.4e-11, 3.2e-9, 3.3e-9, 3.7e-10 |
+| `double` sums per 16x8 block (the order alone) | 2.3e-14, 1.6e-12, 1.1e-11, 5.6e-13 |
+
+The reference was a GCC build of the CPU extractor; the CPU extractor of the
+icx build gives the same scores. With `enable_db` the twin equals the CPU
+extractor of its own build on every frame; against the GCC build 10 of 266
+frames differ by at most 3.6e-15, which is the host's `log10` (Intel's math
+library in an icx build, glibc's in a GCC build) and not the twin.
+
+Through the `vmaf` tool on the A380 a 3840x2160 frame takes 31.9 ms, 17.8 ms
+before (medians of 11 runs of 50 frames, host load average 9 to 11; the
+`float_psnr` control read 3.28 ms on both builds), and a 576x324 frame 0.78
+ms, 0.45 before. Of the 31.9 ms, 7.2 are the term's integer arithmetic, 5.8
+the read-back of 66 MB, 2.8 the host's 8.3 million additions and 16.4 the
+uploads and the two moment passes the twin had before. The CPU extractor
+takes 111 ms. The term kernel runs at SIMD-16 with the large register file
+and uses no [scratch memory](#scratch-memory-on-intel-gpus-adr-1395). The
+window weight is no longer a device plane, so device memory is unchanged; the
+twin holds 66 MB more pinned host memory at 3840x2160. Getting the time back
+is `T-SYCL-SSIM-EXACT-THROUGHPUT-2026-10-02` in
+[`state.md`](../../state.md).
+
+The parity gate compares the twin with tolerance 0
+([cross-backend gate](../../development/cross-backend-gate.md)).
+
+```bash
+ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/ci/cross_backend_parity_gate.py \
+    --vmaf-binary build/tools/vmaf \
+    --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+    --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+    --width 576 --height 324 --features ssim --backends cpu sycl
 ```
 
 ## Licensing of the SYCL kernels (ADR-1250)

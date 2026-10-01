@@ -1,0 +1,2 @@
+adr: ADR-1443
+evidence: Arc A380 (xe), --precision max: Netflix 576x324 at 8 bit (48 frames), 10, 12 and 16 bit and 4:2:2 10-bit, both 1080p checkerboards, BBB 3840x2160 200 frames identical to --backend cpu, enable_db and clip_db included.

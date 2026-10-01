@@ -30,17 +30,8 @@
 
 #include <cstdint>
 
+#include "sycl_compat.h"
 #include "sycl_exact_fp.h"
-
-/* A kernel built on these functions calls them dozens of times per work-item.
- * Left to its own judgement the compiler keeps some of them as calls, and a
- * call inside a kernel takes its frame from scratch memory, which returns
- * wrong values on Arc A-series under the xe driver (ADR-1395). */
-#if defined(__GNUC__) || defined(__clang__)
-#define VMAF_SYCL_ALWAYS_INLINE __attribute__((always_inline)) inline
-#else
-#define VMAF_SYCL_ALWAYS_INLINE inline
-#endif
 
 namespace vmaf_sycl_ffm
 {

@@ -321,6 +321,49 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   left-to-right four-term variance sum; the identical-frame cases in
   `test_sycl_twin_option_parity` fail on either.
 
+- **`integer_ssim_sycl` = CPU `ssim`, bit for bit (ADR-1443).** Supersedes
+  the fp32 formula of the bullet above for the fixed-point twin
+  (`float_ssim_sycl` unchanged). CPU: `ssim_reduce_row_range()` forms each
+  pixel's term in fp64 from int64 moments, `calc_ssim()` adds every term
+  into ONE double in raster order. Twin: pass 1 = five int64 horizontal
+  moment planes (no weight plane: weight = product of the two tap sums,
+  `tap_weight(tap_range())`; frame weight sum = `line_weight(w) *
+  line_weight(h)` on host). Pass 2 = `IssimTermKernel`: vertical moments,
+  then `vmaf_sycl_issim::term_bits()` (`sycl_integer_ssim_math.h`) = the
+  reference's fp64 operations one for one, in its order, on
+  `SoftSigned` (sign, 53-bit significand, exponent in integers,
+  `sycl_soft_signed.h`; RN ties-to-even per operation). Stores the fp64
+  BIT PATTERN per pixel (`uint64_t`), NO reduction on device. Host:
+  `integer_ssim_frame_sum()` adds the plane in index order. Three
+  shortcuts, each exact: (a) window weight 2^16 (every window inside the
+  frame) -> product with it = exponent + 16 (`times_weight()`), edge
+  windows take the multiplication; (b) all six integer products below
+  2^52 (always at 8 / 10 bit) -> the four product sums are integers
+  below 2^53, no rounding (`product_sums_exact()`), else
+  `product_sums_rounded()` = each product rounded, sums left to right;
+  (c) quotient = three radix-2^19 digits, digit estimated by fp32 division
+  of the top 24 bits, remainder exact in int64, two corrections each way
+  (`soft_div_digits()`): device division accuracy does not matter.
+  NEVER: an fp32 term (3.1e-7 on 4K, overflow -> `invalid ratio` at 16
+  bit), a per-group reduction (1.1e-11 even in double), `k * (w * w)` for
+  c1 / c2 (reference rounds twice), `w * (a * b)`. Zero has no sign in
+  `SoftSigned` (terms go into a sum). Shape: SIMD-16 + 256-entry register
+  file (`ISSIM_TERM_SG`, `ISSIM_TERM_GRF`); SIMD-16 default file = 3072 B
+  private + 1248 B spill, SIMD-32 spills at both -> wrong values on xe
+  (ADR-1395). Term
+  function `flatten, always_inline`, header functions
+  `VMAF_SYCL_ALWAYS_INLINE`: a call left in the kernel = scratch frame.
+  Arc A380: Netflix 48 / 48, checkerboards 3 / 3, BBB 4K 200 / 200, 10 /
+  12 / 16 bit, 4:2:2, `enable_db` / `clip_db`: identical (vs GCC CPU:
+  dB differs 3.6e-15 on 10 of 266 frames = host `log10`, libimf vs glibc).
+  Cost 17.8 -> 31.9 ms / 4K frame (arithmetic 7.2, read-back 5.8, host
+  adds 2.8): `T-SYCL-SSIM-EXACT-THROUGHPUT-2026-10-02`.
+  `ssim_reduce_row_range()` lines change upstream -> change the header
+  same PR. Guards: `test_sycl_integer_ssim_math` (operations + term vs
+  fp64, host + device), `test_sycl_ssim_parity` (+ `_large`, `==`, 15
+  cases, 12 fail on the old twin), `test_sycl_ssim_exact_contract.py`
+  (13 planted regressions), `test_sycl_kernel_scratch`.
+
 - **`float_motion_sycl.cpp` emits through `motion_clip()`** (ADR-1365).
   Every emitted `motion` / `motion2` (debug score, tail in `flush()`
   included) = `MIN(score * motion_fps_weight, motion_max_val)`, CPU
@@ -852,7 +895,7 @@ ADR-0884 / ADR-0946 backlog must update in same PR.
 | `integer_vif_sycl.cpp` | `integer_vif.c` | `test_sycl_vif_parity.c` (bit-exact, every output, 8 / 10 bit), `test_sycl_integer_vif_math.c` | ADR-0868 (round 1), ADR-1432 |
 | `integer_adm_sycl.cpp` | `integer_adm.c` | `test_sycl_adm_parity.c` | ADR-0884 (round 2) |
 | `integer_ciede_sycl.cpp` | `ciede.c` | `test_sycl_ciede_parity.c` (1e-8, 8 to 16 bit, 4:2:0 / 4:2:2 / 4:4:4), `test_sycl_ciede_math.c` | ADR-0884 (round 2), ADR-1436 |
-| `integer_ssim_sycl.cpp` | `integer_ssim.c` | `test_sycl_ssim_parity.c` | ADR-0884 (round 2) |
+| `integer_ssim_sycl.cpp` | `integer_ssim.c` | `test_sycl_ssim_parity.c` (+ `_large`; bit-exact, 8 to 16 bit), `test_sycl_integer_ssim_math.c` | ADR-0884 (round 2), ADR-1443 |
 | `integer_ssim_sycl.cpp` (`float_ssim_sycl`) | `float_ssim.c` + `ssim.c` | `test_sycl_float_ssim_parity.c` (+ `_large`) | ADR-1370 |
 | `integer_ms_ssim_sycl.cpp` | `ms_ssim.c` | `test_sycl_ms_ssim_parity.c` (+ `_large`; bit-exact, 18 outputs x 3 frames) | ADR-0884 (round 2), ADR-1414 |
 | `integer_motion_v2_sycl.cpp` | `integer_motion_v2.c` | `test_sycl_motion_v2_parity.c` | ADR-0884 (round 2) |

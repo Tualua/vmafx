@@ -53,10 +53,9 @@
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
 #define TOL_EXACT 0.0
-/* Existing twin contracts: test_sycl_ssim_parity.c (1e-4),
+/* Existing twin contracts: test_sycl_ssim_parity.c (equality, ADR-1443),
  * test_sycl_float_ssim_parity.c (5e-4, Research-0985),
  * test_sycl_float_motion_parity.c (1e-4). */
-#define TOL_SSIM 1e-4
 #define TOL_FLOAT_SSIM 5e-4
 #define TOL_MOTION 1e-4
 #define NAME_LEN 64u
@@ -503,8 +502,10 @@ static mu_message_t ssim_db_case(const Fixture *fx, const char *cpu_name, const 
 
 static char *test_integer_ssim_db_options(void)
 {
-    mu_assert_msg(ssim_db_case(&FX_ODD8, "ssim", "integer_ssim_sycl", "ssim", TOL_SSIM));
-    mu_assert_msg(ssim_db_case(&FX_ODD10, "ssim", "integer_ssim_sycl", "ssim", TOL_SSIM));
+    /* The twin returns the CPU's score bit for bit (ADR-1443) and the dB
+     * conversion is the same host code on both sides. */
+    mu_assert_msg(ssim_db_case(&FX_ODD8, "ssim", "integer_ssim_sycl", "ssim", TOL_EXACT));
+    mu_assert_msg(ssim_db_case(&FX_ODD10, "ssim", "integer_ssim_sycl", "ssim", TOL_EXACT));
     /* Identical frames: both sides must hit the clip_db ceiling exactly. */
     mu_assert_msg(ssim_db_case(&FX_SAME8, "ssim", "integer_ssim_sycl", "ssim", TOL_EXACT));
     return NULL;

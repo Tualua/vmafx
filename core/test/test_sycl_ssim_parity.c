@@ -6,177 +6,185 @@
  */
 
 /*
- * SYCL kernel coverage round 2 — integer SSIM CPU vs. SYCL parity test
- * (ADR-0884).
+ * Fixed-point ssim CPU vs. SYCL parity (first added as a places=4 test,
+ * ADR-0884; equality since ADR-1443).
  *
- * The integer SSIM extractor is implemented by integer_ssim.c (CPU
- * scalar / SIMD) and by integer_ssim_sycl.cpp::vmaf_fex_integer_ssim_sycl
- * (SYCL 11x11 Gaussian + per-channel reduction). The companion float
- * extractor in the same TU is covered separately by the cross-backend
- * gate, but the integer variant had no SYCL parity assertion before
- * this test.
+ * SSIM is integer_ssim.c on the CPU (registered as "ssim") and
+ * integer_ssim_sycl.cpp::vmaf_fex_integer_ssim_sycl on SYCL; both emit the
+ * feature "ssim". The window moments are int64 on both sides. The reference
+ * forms each pixel's term in fp64 and adds every term into one double in
+ * raster order. Since ADR-1443 the kernel runs the reference's fp64
+ * operations on values held in 64-bit integers
+ * (feature/sycl/sycl_integer_ssim_math.h; a SYCL kernel has no fp64 type,
+ * ADR-0220), stores the bit pattern of every pixel's term, and the host adds
+ * the plane in the reference's order. The score is the CPU's bit for bit, so
+ * this test asserts equality where it asserted 1e-4.
  *
- * The kernel under test combines an 11x11 separable Gaussian blur,
- * three per-pixel mul/add accumulators, and a final mean reduction —
- * any drift in work-group reduction, USM allocator stride, or sub-group
- * mask would silently corrupt the `ssim` column on Intel-Arc CHUG
- * re-extracts and the libvmaf-2.x default model's SSIM secondary
- * feature.
+ * Before ADR-1443 the kernel formed the term in fp32 and added fp32 partial
+ * sums per 16x8 block; it was 7e-9 to 3e-7 from the CPU on video. Twelve of
+ * the fifteen cases below fail on it: nine differ by 8e-10 to 6e-8 (6.5e-7 in
+ * dB), the one-pixel frame included, and the three 16-bit cases stop with
+ * `invalid ratio` because the fp32 denominator overflows. The three
+ * identical-frame cases pass on both.
  *
- * Skip behaviour: if vmaf_sycl_state_init() fails (no oneAPI runtime
- * or no device visible) the test emits "[skip: no SYCL device]" and
- * passes, mirroring test_sycl_motion3_parity.c.
+ * The fixtures, the comparison and the cases are ssim_twin_parity.h's.
+ *
+ * Skip behaviour: exits 77 when there is no SYCL device.
  */
 
-#include <math.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
-
-#include "test.h"
-
-#include "feature/feature_extractor.h"
-#include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_sycl.h"
-#include "libvmaf/picture.h"
+
+#include "ssim_twin_parity.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
- * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
- * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+ * C23, where clang-tidy proposes `nullptr`, but the required MSVC C build does
+ * not provide that keyword. Preserve the portable C spelling. ADR-1138. */
 
-/* Fixture must be ≥ 11x11 for the Gaussian footprint; 256x144 is the
- * smallest size that still gives stable mean-reduction sub-group
- * coverage on Intel Arc. */
-#ifndef FIXTURE_W
-#define FIXTURE_W 256u
-#endif
-#ifndef FIXTURE_H
-#define FIXTURE_H 144u
-#endif
-#define FIXTURE_BPC 8u
-#define PARITY_TOL 1e-4
-
-static int fill_pic(VmafPicture *pic, unsigned salt)
+static int twin_open(void **state)
 {
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
-    if (err)
-        return err;
-    uint8_t *y = (uint8_t *)pic->data[0];
-    for (unsigned row = 0; row < pic->h[0]; row++) {
-        for (unsigned col = 0; col < pic->w[0]; col++) {
-            /* Sinusoidal-ish pattern via XOR — gives non-trivial
-             * variance across the Gaussian footprint. */
-            y[row * pic->stride[0] + col] = (uint8_t)(((row ^ col) + salt * 13u) & 0xFFu);
-        }
-    }
-    for (unsigned p = 1; p < 3; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
-        for (unsigned row = 0; row < pic->h[p]; row++) {
-            memset(plane + row * pic->stride[p], 128, pic->w[p]);
-        }
-    }
+    VmafSyclState *sycl_state = NULL;
+    VmafSyclConfiguration sycl_cfg = {.device_index = -1};
+    const int err = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
+    *state = sycl_state;
+    return err;
+}
+
+static int twin_import(VmafContext *vmaf, void *state)
+{
+    return vmaf_sycl_import_state(vmaf, (VmafSyclState *)state);
+}
+
+static int twin_close(void *state)
+{
+    VmafSyclState *sycl_state = (VmafSyclState *)state;
+    vmaf_sycl_state_free(&sycl_state);
     return 0;
 }
 
-static int feed_frame(VmafContext *vmaf)
+static const SsimTwin twin = {
+    .extractor = "integer_ssim_sycl",
+    .backend = "SYCL",
+    .open = twin_open,
+    .import = twin_import,
+    .close = twin_close,
+};
+
+static char *test_ssim_sycl_registered(void)
 {
-    VmafPicture ref;
-    VmafPicture dist;
-    int err = fill_pic(&ref, 0u);
-    if (err)
-        return err;
-    err = fill_pic(&dist, 1u);
-    if (err) {
-        vmaf_picture_unref(&ref);
-        return err;
-    }
-    return vmaf_read_pictures(vmaf, &ref, &dist, 0u);
+    return ssim_twin_registered(&twin);
 }
 
-static char *run_cpu_ssim(double *score)
+static char *test_ssim_8bit(void)
 {
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    int err = vmaf_init(&vmaf, cfg);
-    mu_assert("CPU: vmaf_init failed", !err);
-    err = vmaf_use_feature(vmaf, "ssim", NULL);
-    mu_assert("CPU: vmaf_use_feature(ssim) failed", !err);
-    err = feed_frame(vmaf);
-    mu_assert("CPU: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "ssim", score, 0u);
-    mu_assert("CPU: ssim score missing", !err);
-    err = vmaf_close(vmaf);
-    mu_assert("CPU: vmaf_close failed", !err);
+    return ssim_twin_bit_depth(&twin, 8u);
+}
+
+static char *test_ssim_10bit(void)
+{
+    return ssim_twin_bit_depth(&twin, 10u);
+}
+
+static char *test_ssim_12bit(void)
+{
+    return ssim_twin_bit_depth(&twin, 12u);
+}
+
+static char *test_ssim_16bit(void)
+{
+    return ssim_twin_bit_depth(&twin, 16u);
+}
+
+static char *test_ssim_odd_frame(void)
+{
+    return ssim_twin_odd_frame(&twin);
+}
+
+static char *test_ssim_tiny_frame(void)
+{
+    return ssim_twin_tiny_frame(&twin, 8u);
+}
+
+static char *test_ssim_tiny_frame_16bit(void)
+{
+    return ssim_twin_tiny_frame(&twin, 16u);
+}
+
+static char *test_ssim_one_pixel(void)
+{
+    return ssim_twin_one_pixel(&twin);
+}
+
+static char *test_ssim_1080p(void)
+{
+    return ssim_twin_1080p(&twin);
+}
+
+static char *test_ssim_enable_db(void)
+{
+    return ssim_twin_enable_db(&twin);
+}
+
+static char *test_ssim_inverted(void)
+{
+    return ssim_twin_inverted(&twin, 8u);
+}
+
+static char *test_ssim_inverted_16bit(void)
+{
+    return ssim_twin_inverted(&twin, 16u);
+}
+
+static char *test_ssim_identical(void)
+{
+    return ssim_twin_identical(&twin, 323u, 181u, NULL);
+}
+
+static char *test_ssim_identical_clipped(void)
+{
+    return ssim_twin_identical(&twin, 323u, 181u, "clip_db");
+}
+
+static char *test_ssim_identical_tiny(void)
+{
+    return ssim_twin_identical(&twin, 3u, 3u, NULL);
+}
+
+static char *run_bit_depth_cases(void)
+{
+    mu_run_test(test_ssim_8bit);
+    mu_run_test(test_ssim_10bit);
+    mu_run_test(test_ssim_12bit);
+    mu_run_test(test_ssim_16bit);
     return NULL;
 }
 
-static char *run_sycl_ssim(double *score)
+static char *run_geometry_cases(void)
 {
-    *score = NAN;
-    VmafSyclState *sycl_state = NULL;
-    VmafSyclConfiguration sycl_cfg = {.device_index = -1};
-    int err = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
-    if (err != 0 || sycl_state == NULL) {
-        (void)fprintf(stderr, "[skip: no SYCL device] ");
-        return NULL;
-    }
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("SYCL: vmaf_init failed", !err);
-    err = vmaf_sycl_import_state(vmaf, sycl_state);
-    mu_assert("SYCL: vmaf_sycl_import_state failed", !err);
-    err = vmaf_use_feature(vmaf, "integer_ssim_sycl", NULL);
-    mu_assert("SYCL: vmaf_use_feature(integer_ssim_sycl) failed", !err);
-    err = feed_frame(vmaf);
-    mu_assert("SYCL: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("SYCL: vmaf_read_pictures(EOS) failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "ssim", score, 0u);
-    mu_assert("SYCL: ssim score missing", !err);
-    err = vmaf_close(vmaf);
-    mu_assert("SYCL: vmaf_close failed", !err);
-    vmaf_sycl_state_free(&sycl_state);
+    mu_run_test(test_ssim_odd_frame);
+    mu_run_test(test_ssim_tiny_frame);
+    mu_run_test(test_ssim_tiny_frame_16bit);
+    mu_run_test(test_ssim_one_pixel);
+    mu_run_test(test_ssim_1080p);
     return NULL;
 }
 
-static char *test_integer_ssim_sycl_registered(void)
+static char *run_content_and_option_cases(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("integer_ssim_sycl");
-    mu_assert("integer_ssim_sycl extractor must be registered", fex != NULL);
-    mu_assert("integer_ssim_sycl name matches", !strcmp(fex->name, "integer_ssim_sycl"));
-    return NULL;
-}
-
-static char *test_ssim_cpu_sycl_parity(void)
-{
-    double cpu_score = 0.0;
-    double sycl_score = NAN;
-    char *msg = run_cpu_ssim(&cpu_score);
-    if (msg)
-        return msg;
-    msg = run_sycl_ssim(&sycl_score);
-    if (msg)
-        return msg;
-    if (isnan(sycl_score))
-        return NULL;
-    double delta = fabs(cpu_score - sycl_score);
-    if (delta > PARITY_TOL) {
-        (void)fprintf(stderr, "\nssim parity FAIL: cpu=%.8f sycl=%.8f delta=%.2e tol=%.2e\n",
-                      cpu_score, sycl_score, delta, PARITY_TOL);
-    }
-    mu_assert("ssim CPU vs. SYCL delta exceeds places=4 tolerance (1e-4)", delta <= PARITY_TOL);
+    mu_run_test(test_ssim_enable_db);
+    mu_run_test(test_ssim_inverted);
+    mu_run_test(test_ssim_inverted_16bit);
+    mu_run_test(test_ssim_identical);
+    mu_run_test(test_ssim_identical_clipped);
+    mu_run_test(test_ssim_identical_tiny);
     return NULL;
 }
 
 char *run_tests(void)
 {
-    mu_run_test(test_integer_ssim_sycl_registered);
-    mu_run_test(test_ssim_cpu_sycl_parity);
+    mu_run_test(test_ssim_sycl_registered);
+    mu_assert_msg(run_bit_depth_cases());
+    mu_assert_msg(run_geometry_cases());
+    mu_assert_msg(run_content_and_option_cases());
     return NULL;
 }
 

@@ -300,6 +300,17 @@ test('test_sycl_float_vif_exact_contract',
     timeout : 30,
 )
 
+# ADR-1443: integer_ssim_sycl runs the reference's fp64 operations in 64-bit
+# integers, stores every pixel's term unreduced and the host adds the plane in
+# calc_ssim()'s raster order. Device-free; the arithmetic check is
+# test_sycl_integer_ssim_math, the device check is test_sycl_ssim_parity.
+test('test_sycl_ssim_exact_contract',
+    import('python').find_installation(),
+    args : files('test_sycl_ssim_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # vif_sycl's host tail rounds each scale's sums to float and divides in
 # single precision, as integer_vif.c does, and its debug option defaults to
 # the CPU's false. Device-free; the device check is test_sycl_vif_parity.
@@ -4439,6 +4450,46 @@ if not is_sycl_acpp
         is_parallel : false)
 endif
 
+# ADR-1443: the fp64 operations integer_ssim_sycl's kernel runs in 64-bit
+# integers (src/feature/sycl/sycl_soft_signed.h) and the per-pixel term they
+# form (src/feature/sycl/sycl_integer_ssim_math.h) against the reference's
+# fp64 expression, on the host and in a kernel on the default GPU. The probe
+# TU is compiled with the extractors' own arguments, like the probes above.
+# The reference lines are fp64 arithmetic the test compiles itself, so it
+# needs the strict FP flags and no library object.
+if not is_sycl_acpp
+    sycl_integer_ssim_math_probe = custom_target('sycl_integer_ssim_math_probe',
+        output : 'sycl_integer_ssim_math_probe.o',
+        input : 'test_sycl_integer_ssim_math_probe.cpp',
+        depend_files : files('../src/feature/sycl/sycl_soft_double.h',
+                             '../src/feature/sycl/sycl_soft_signed.h',
+                             '../src/feature/sycl/sycl_integer_ssim_math.h',
+                             '../src/feature/sycl/sycl_compat.h'),
+        command : [icpx] + vmaf_cflags_common + ['-c'] + sycl_toolchain_args
+                  + sycl_feature_tail_args + ['@INPUT@', '-o', '@OUTPUT@'],
+    )
+    sycl_integer_ssim_math_probe_objects = [sycl_integer_ssim_math_probe]
+    if sycl_msvc_device_link
+        sycl_integer_ssim_math_probe_objects += custom_target(
+            'sycl_integer_ssim_math_probe_device_link',
+            input : sycl_integer_ssim_math_probe,
+            output : 'sycl_integer_ssim_math_probe_device_link.obj',
+            command : [icpx] + sycl_device_link_args + sycl_strict_fp_args
+                      + ['@INPUT@', '-o', '@OUTPUT@'],
+        )
+    endif
+    test_sycl_integer_ssim_math = executable('test_sycl_integer_ssim_math',
+        ['test.c', 'test_sycl_integer_ssim_math.c'] + sycl_integer_ssim_math_probe_objects,
+        include_directories : [test_inc],
+        dependencies : [math_lib, sycl_dependency],
+        c_args : vmaf_strict_fp_args,
+        link_language : 'cpp',
+    )
+    test('test_sycl_integer_ssim_math', test_sycl_integer_ssim_math,
+        suite : ['fast', 'gpu', 'sycl'],
+        is_parallel : false)
+endif
+
 # ADR-1395: SYCL kernels use no scratch memory (private arrays in memory,
 # register spills) on Intel GPUs, where the Linux xe driver returns wrong
 # values from them. Builds every registered kernel for the default GPU and
@@ -4769,6 +4820,10 @@ test('test_sycl_ciede_parity', test_sycl_ciede_parity,
     suite : ['fast', 'gpu', 'sycl'],
     is_parallel : false)
 
+# ADR-1443: fixed-point ssim CPU vs. SYCL, equality. The cases
+# (ssim_twin_parity.h) cover 8 to 16 bits, frames narrower than the window,
+# negative terms and identical frames in dB; twelve of the fifteen fail on
+# the fp32, per-block twin this replaced (the identical frames do not).
 test_sycl_ssim_parity = executable('test_sycl_ssim_parity',
     ['test.c', 'test_sycl_ssim_parity.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],

@@ -1013,7 +1013,10 @@ smaller inputs with `-EINVAL` and a clear log message — see
 
 **Backends** — `ssim` (fixed): CPU with AVX2 / NEON, plus the GPU twins
 `integer_ssim_cuda`, `integer_ssim_sycl`, `integer_ssim_hip` and
-`integer_ssim_metal` (see [SSIM](ssim.md) for their precision against the CPU).
+`integer_ssim_metal` (see [SSIM](ssim.md) for their precision against the CPU;
+the CUDA and SYCL twins return the CPU's `ssim` bit for bit,
+[ADR-1424](../adr/1424-cuda-ssim-cpu-frame-sum.md) and
+[ADR-1443](../adr/1443-sycl-ssim-cpu-arithmetic.md)).
 `float_ssim` / `float_ms_ssim`: AVX2, AVX-512, NEON, plus the GPU
 twins `float_ms_ssim_cuda`, `float_ms_ssim_sycl` and
 `integer_ms_ssim_hip`. The `enable_lcs` option ships across **all**
