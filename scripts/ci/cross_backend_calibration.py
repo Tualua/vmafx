@@ -148,6 +148,48 @@ def is_exact_pair(feature: str, backend_a: str, backend_b: str) -> bool:
     return all(backend == "cpu" or backend in exact for backend in (backend_a, backend_b))
 
 
+# ---------------------------------------------------------------------------
+# ADR-1426: twins that run the CPU extractor's arithmetic but call another
+# math library.
+#
+# ``ciede_cuda`` evaluates ``ciede.c``'s expressions in its types and the host
+# adds the per-pixel values in the CPU's raster order, so the only difference
+# left is the math library behind ``pow``, ``atan2``, ``sin``, ``cos``,
+# ``exp`` and ``powf``: glibc on the CPU, CUDA's on the device. A few pixels
+# in a million round to the neighbouring float (38 of 8.3 million on a 4K
+# frame, all of them from glibc's ``powf``, which is not correctly rounded).
+# One such pixel moves ``45 - 20 * log10(mean)`` by at most
+# ``8.7 * 2^-23 * (value / mean) / pixels``. Measured on an RTX 4090: 1.4e-11
+# at 3840x2160, 6.9e-13 at 576x324. The tolerance below is for frames of
+# 576x324 and larger; it leaves two orders of magnitude over the measurement
+# and four below the fp32 twins' ``FEATURE_TOLERANCE``. Such a cell runs at
+# ``--precision max`` like an exact one.
+# ---------------------------------------------------------------------------
+
+LIBM_TWINS: dict[str, dict[str, float]] = {
+    "ciede": {"cuda": 1e-9},
+}
+LIBM_TWIN_SOURCE = "libm:ADR-1426"
+
+
+def libm_pair_tolerance(feature: str, backend_a: str, backend_b: str) -> float | None:
+    """Tolerance of a cell whose sides differ only in their math library.
+
+    A side qualifies when it is ``cpu`` or a backend listed for the feature
+    in ``LIBM_TWINS``; the cell's tolerance is the largest listed one. Returns
+    ``None`` for every other cell.
+    """
+
+    twins = LIBM_TWINS.get(feature)
+    if twins is None:
+        return None
+    sides = (backend_a, backend_b)
+    if not all(side == "cpu" or side in twins for side in sides):
+        return None
+    listed = [twins[side] for side in sides if side in twins]
+    return max(listed) if listed else None
+
+
 def psnr_hvs_term_count(width: int, height: int) -> int:
     """Terms ``calc_psnrhvs()`` adds into one float for a ``width x height`` luma plane.
 

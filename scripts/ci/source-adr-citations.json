@@ -965,8 +965,6 @@
     },
     "0187": {
       "sites": {
-        "core/src/feature/cuda/integer_ciede/ciede_score.cu": 3,
-        "core/src/feature/cuda/integer_ciede_cuda.c": 2,
         "core/src/feature/cuda/integer_ciede_cuda.h": 1,
         "core/src/feature/hip/ciede_hip.c": 1,
         "core/src/feature/hip/integer_ciede/ciede_score.hip": 2,
@@ -1784,6 +1782,7 @@
         "core/src/feature/cuda/float_motion_cuda.c": 1,
         "core/src/feature/cuda/float_vif_cuda.c": 1,
         "core/src/feature/cuda/integer_adm_cuda.c": 1,
+        "core/src/feature/cuda/integer_ciede_cuda.c": 1,
         "core/src/feature/cuda/integer_moment_cuda.c": 1,
         "core/src/feature/cuda/integer_motion_cuda.c": 1,
         "core/src/feature/cuda/integer_motion_v2_cuda.c": 1,
@@ -4557,6 +4556,12 @@
       },
       "target": "0761-cpp23-wave8-opt-read-json-model.md"
     },
+    "0762": {
+      "sites": {
+        "core/src/feature/cuda/integer_ciede/ciede_score.cu": 1
+      },
+      "target": "0762-cuda-ciede-ldg.md"
+    },
     "0763": {
       "sites": {
         "core/src/feature/cuda/integer_adm/adm_csf.cu": 2
@@ -6174,6 +6179,7 @@
         "core/test/test_cambi_simd.c": 1,
         "core/test/test_cambi_spatial_mask_simd.c": 1,
         "core/test/test_cambi_stage_simd.c": 1,
+        "core/test/test_ciede_device_math.c": 1,
         "core/test/test_ciede_neon.c": 1,
         "core/test/test_ciede_simd_parity.c": 1,
         "core/test/test_cjson.c": 1,
@@ -8469,6 +8475,7 @@
         "core/src/feature/cuda/float_motion_cuda.c": 1,
         "core/src/feature/cuda/float_vif/float_vif_device.h": 1,
         "core/src/feature/cuda/float_vif/float_vif_score.cu": 1,
+        "core/src/feature/cuda/integer_ciede/ciede_device.h": 1,
         "core/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu": 4,
         "core/src/feature/cuda/integer_ms_ssim_cuda.c": 2,
         "core/src/feature/hip/integer_ms_ssim/ms_ssim_arith.h": 1,
@@ -8710,6 +8717,22 @@
         "scripts/ci/test_cross_backend_parity_gate.py": 2
       },
       "target": "1424-cuda-ssim-cpu-frame-sum.md"
+    },
+    "1426": {
+      "sites": {
+        "core/src/feature/cuda/integer_ciede/ciede_device.h": 1,
+        "core/src/feature/cuda/integer_ciede/ciede_score.cu": 1,
+        "core/src/feature/cuda/integer_ciede_cuda.c": 1,
+        "core/test/meson.build": 2,
+        "core/test/test_ciede_device_math.c": 2,
+        "core/test/test_cuda_ciede_exact_contract.py": 7,
+        "core/test/test_cuda_ciede_parity.c": 3,
+        "scripts/ci/cross_backend_calibration.py": 2,
+        "scripts/ci/cross_backend_parity_gate.py": 2,
+        "scripts/ci/cross_backend_vif_diff.py": 1,
+        "scripts/ci/test_cross_backend_parity_gate.py": 1
+      },
+      "target": "1426-cuda-ciede-cpu-arithmetic.md"
     }
   },
   "retired": {

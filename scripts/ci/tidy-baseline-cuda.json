@@ -361,7 +361,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 840,
+  "total_warnings": 839,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -391,7 +391,6 @@
     "core/src/feature/cuda/float_adm_cuda.c": 3,
     "core/src/feature/cuda/float_psnr_cuda.c": 5,
     "core/src/feature/cuda/integer_cambi_cuda.c": 1,
-    "core/src/feature/cuda/integer_ciede_cuda.c": 1,
     "core/src/feature/cuda/integer_ms_ssim_cuda.c": 4,
     "core/src/feature/feature_characteristics.h": 3,
     "core/src/feature/feature_collector.cpp": 16,
@@ -1004,6 +1003,23 @@
         }
       },
       "previous_baseline_sha256": "99019a62da5da7df3d38e1e2870a9eb3d0373ab7997dc881de569b952c21f33f"
+    },
+    {
+      "sources": [
+        "core/src/feature/cuda/integer_ciede_cuda.c",
+        "core/test/test_ciede_device_math.c",
+        "core/test/test_cuda_ciede_parity.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/cuda/integer_ciede_cuda.c": {
+          "warnings": [
+            1,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "b9b8d2ba40ccdcf8b554af29c7c168d9ddd3ba250ac7500d249702deddc21da2"
     }
   ]
 }

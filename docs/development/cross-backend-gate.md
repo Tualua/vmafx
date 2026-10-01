@@ -32,12 +32,26 @@ explicitly accepts its skip.
   | `float_ssim`, `float_ssim_lcs`, `float_ms_ssim`, `float_ms_ssim_lcs`, `float_psnr`, `float_motion`, `float_vif`, `float_adm` | `5e-5` | ADR-0188 / ADR-0192 / ADR-0215 / ADR-1382 |
   | `adm` (every pair of CPU, CUDA and HIP) | `0` (bit-identical, compared at `--precision max`) | ADR-1416, ADR-1423 (the twins run the CPU's host routines and fold the denominator per row); the `5e-5` row stays for the other twins |
   | `ciede` | `5e-3` | ADR-0187 (per-pixel pow/sqrt/sin/atan2) |
+  | `ciede` (CPU ↔ CUDA) | `1e-9`, compared at `--precision max` | ADR-1426 (the twin runs the CPU's fp64 arithmetic and the CPU's sum; only the math library differs, `LIBM_TWINS`); the `5e-3` row stays for the other twins |
   | `psnr_hvs` (every pair of CPU, CUDA, SYCL and HIP) | `0` (bit-identical, compared at `--precision max`) | ADR-1397, ADR-1401 (the twins reproduce the CPU's running float sum) |
   | `psnr_hvs` (a twin that is not listed as exact) | `5e-4` at 576x324 and below, `5e-4 × √(N / N₅₇₆ₓ₃₂₄)` above | ADR-0191 (DCT plus per-block float reduction); ADR-1361 (area scaling) |
   | `float_motion` (every pair of CPU, CUDA, SYCL and HIP) | `0` (bit-identical, compared at `--precision max`) | ADR-1409, ADR-1411, ADR-1419 (the twins add their SAD in the CPU's order); the row above stays for Metal |
   | `float_vif` (CPU ↔ CUDA) | `0` (bit-identical, compared at `--precision max`) | ADR-1412 (the twin computes the CPU's arithmetic and adds in the CPU's order); the `5e-5` row stays for the other twins |
   | `ssimulacra2` | `5e-3` | ADR-0192 (XYB cube root plus IIR blur) |
   | `float_ms_ssim`, `float_ms_ssim_lcs` (CPU ↔ SYCL) | `0` (bit-identical, compared at `--precision max`) | ADR-1414 (the twin computes the CPU's arithmetic); the `5e-5` row above stays for the other twins |
+
+- **Twins that differ only in their math library.** `ciede_cuda` evaluates
+  `ciede.c`'s expressions in its types and the host adds the per-pixel values
+  in the CPU's order ([ADR-1426](../adr/1426-cuda-ciede-cpu-arithmetic.md)).
+  It is not bit-identical: the CPU calls glibc's `pow`, `atan2`, `sin`, `cos`,
+  `exp` and `powf`, the device CUDA's, and a few pixels per million round to
+  the neighbouring float. `LIBM_TWINS` in
+  `scripts/ci/cross_backend_calibration.py` gives such a cell its own
+  tolerance (`ciede`: `cuda` at `1e-9`, label `libm:ADR-1426`) and runs both
+  sides at `--precision max`. Measured on an RTX 4090: 1.4e-11 on 200 frames
+  of BBB 3840x2160, 6.9e-13 on the Netflix 576x324 pair. The bound is for
+  frames of 576x324 and larger; one such pixel weighs more in a smaller
+  frame.
 
 - **Backend pairs.** The script accepts `cpu`, `cuda`, `sycl`, and `hip`; its
   command line default is `cpu cuda`. `--hip-device` picks the HIP device by

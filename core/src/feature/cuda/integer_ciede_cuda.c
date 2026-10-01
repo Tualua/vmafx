@@ -5,16 +5,13 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent AND MIT
  *
  *  ciede2000 feature extractor on the CUDA backend (T7-23 /
- *  ADR-0182, GPU long-tail batch 1c part 2). CUDA twin of
- *  ciede_vulkan (PR #136 / ADR-0187); shares the float-precision
- *  contract — places=4 empirical floor on real hardware.
+ *  ADR-0182, GPU long-tail batch 1c part 2).
  *
- *  Single dispatch per frame; warp-shuffle reduces 32 thread
- *  contributions to one float, lane 0 atomicAdd's to a single
- *  device counter. Host divides the counter by w*h and applies
- *  the CPU's logarithmic transform `45 - 20*log10(mean_dE)` for
- *  the final `ciede2000` metric. Mirrors psnr_cuda's submit /
- *  collect scaffolding.
+ *  Single dispatch per frame. The kernel computes every pixel's CIEDE2000
+ *  difference in the reference's arithmetic (integer_ciede/ciede_device.h,
+ *  ADR-1426) and stores it at its raster position; the host reads the plane
+ *  back, adds it in raster order into one double as ciede.c's extract() does,
+ *  divides by w * h and applies `45 - 20 * log10(mean)`.
  */
 
 #include <errno.h>
@@ -28,6 +25,7 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "cuda/integer_ciede/ciede_device.h"
 #include "cuda/integer_ciede_cuda.h"
 #include "cuda/kernel_template.h"
 #include "mem.h"
@@ -45,8 +43,8 @@ typedef struct CiedeStateCuda {
     /* Stream + event pair owned by `cuda/kernel_template.h` lifecycle
      * (ADR-0246). */
     VmafCudaKernelLifecycle lc;
-    /* Per-block float partials: device + pinned host. Owned by the
-     * template's readback bundle. */
+    /* One float per pixel, in raster order: device + pinned host. Owned by
+     * the template's readback bundle. */
     VmafCudaKernelReadback rb;
 
     CUfunction funcbpc8;
@@ -55,8 +53,7 @@ typedef struct CiedeStateCuda {
      * `close_fex_cuda` can unload it. Skipping the unload leaks
      * ~200-500 KB of GPU-resident PTX backing store per vmaf_close(). */
     CUmodule module;
-    unsigned partials_capacity;
-    unsigned partials_count;
+    size_t term_capacity;
     unsigned index;
     unsigned frame_w;
     unsigned frame_h;
@@ -69,17 +66,17 @@ typedef struct CiedeStateCuda {
 static const VmafOption options[] = {{0}};
 
 static int ciede_cuda_dispatch(const VmafPicture *ref, const VmafPicture *dis,
-                               VmafCudaBuffer *partials, unsigned width, unsigned height,
-                               unsigned bpc, unsigned ss_hor, unsigned ss_ver, CUfunction funcbpc8,
+                               VmafCudaBuffer *terms, unsigned width, unsigned height, unsigned bpc,
+                               unsigned ss_hor, unsigned ss_ver, CUfunction funcbpc8,
                                CUfunction funcbpc16, CudaFunctions *cu_f, CUstream stream)
 {
-    const int block_dim_x = 16;
-    const int block_dim_y = 16;
+    const int block_dim_x = CIEDE_BLOCK_X;
+    const int block_dim_y = CIEDE_BLOCK_Y;
     const int grid_dim_x = DIV_ROUND_UP(width, block_dim_x);
     const int grid_dim_y = DIV_ROUND_UP(height, block_dim_y);
 
-    void *kernelParams[] = {(void *)ref, (void *)dis, (void *)partials, &width,
-                            &height,     &bpc,        &ss_hor,          &ss_ver};
+    void *kernelParams[] = {(void *)ref, (void *)dis, (void *)terms, &width,
+                            &height,     &bpc,        &ss_hor,       &ss_ver};
     CUfunction func = (bpc == 8) ? funcbpc8 : funcbpc16;
     CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(func, grid_dim_x, grid_dim_y, 1, block_dim_x,
                                            block_dim_y, 1, 0, stream, kernelParams, NULL));
@@ -144,15 +141,10 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     s->ss_hor = (pix_fmt != VMAF_PIX_FMT_YUV444P) ? 1u : 0u;
     s->ss_ver = (pix_fmt == VMAF_PIX_FMT_YUV420P) ? 1u : 0u;
 
-    /* Pre-size partials for the announced (w, h). Submit reuses if
-     * the picture is the same size; reallocates if a larger picture
-     * arrives (rare, but the API doesn't pin geometry). */
-    const unsigned grid_x = (w + 15u) / 16u;
-    const unsigned grid_y = (h + 15u) / 16u;
-    s->partials_capacity = grid_x * grid_y;
+    /* One term per pixel of the announced (w, h). */
+    s->term_capacity = (size_t)w * h;
 
-    err = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state,
-                                          (size_t)s->partials_capacity * sizeof(float));
+    err = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state, s->term_capacity * sizeof(float));
     if (err)
         return ciede_init_unwind(fex, s, err);
 
@@ -182,13 +174,13 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     s->index = index;
     s->frame_w = ref_pic->w[0];
     s->frame_h = ref_pic->h[0];
-    const unsigned grid_x = (s->frame_w + 15u) / 16u;
-    const unsigned grid_y = (s->frame_h + 15u) / 16u;
-    s->partials_count = grid_x * grid_y;
+    const size_t term_count = (size_t)s->frame_w * s->frame_h;
+    if (term_count > s->term_capacity)
+        return -EINVAL;
 
     /* Intentionally inline the pre-launch wait rather than calling
-     * vmaf_cuda_kernel_submit_pre_launch — ciede's kernel writes one
-     * float per block (no atomic), so the template's memset is
+     * vmaf_cuda_kernel_submit_pre_launch — ciede's kernel writes every
+     * term of the plane (no atomic), so the template's memset is
      * unnecessary. The lifecycle / readback / collect helpers still
      * apply. */
     CHECK_CUDA_RETURN(cu_f, cuStreamWaitEvent(vmaf_cuda_picture_get_stream(ref_pic),
@@ -204,9 +196,8 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->lc.submit, vmaf_cuda_picture_get_stream(ref_pic)));
     CHECK_CUDA_RETURN(cu_f, cuStreamWaitEvent(s->lc.str, s->lc.submit, CU_EVENT_WAIT_DEFAULT));
 
-    CHECK_CUDA_RETURN(cu_f,
-                      cuMemcpyDtoHAsync(s->rb.host_pinned, (CUdeviceptr)s->rb.device->data,
-                                        (size_t)s->partials_count * sizeof(float), s->lc.str));
+    CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(s->rb.host_pinned, (CUdeviceptr)s->rb.device->data,
+                                              term_count * sizeof(float), s->lc.str));
     return vmaf_cuda_kernel_submit_post_record(&s->lc, fex->cu_state);
 }
 
@@ -219,18 +210,11 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
     if (err)
         return err;
 
-    /* Per-block partials → host accumulation in double. Same
-     * precision argument as ciede_vulkan (ADR-0187): per-block
-     * sums fit in float7 precision (max ~5000 magnitude); the
-     * cross-block reduction across thousands of partials needs
-     * double to retain places=4. */
-    const float *partials_host = s->rb.host_pinned;
-    double total = 0.0;
-    for (unsigned i = 0; i < s->partials_count; i++)
-        total += (double)partials_host[i];
-    const double n_pixels = (double)s->frame_w * (double)s->frame_h;
-    const double mean_de = total / n_pixels;
-    const double score = 45.0 - 20.0 * log10(mean_de);
+    /* ciede.c's extract(): every pixel's value into one double in raster
+     * order, then `45. - 20. * log10(de00_sum / (w * h))`. */
+    const double de00_sum =
+        ciede_frame_sum((const float *)s->rb.host_pinned, (size_t)s->frame_w * s->frame_h);
+    const double score = 45. - 20. * log10(de00_sum / (s->frame_w * s->frame_h));
 
     return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                    "ciede2000", score, index);
@@ -257,6 +241,7 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
 
 static const char *provided_features[] = {"ciede2000", NULL};
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as `extern VmafFeatureExtractor vmaf_fex_ciede_cuda` by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_ciede_cuda = {
     .name = "ciede_cuda",
     .init = init_fex_cuda,

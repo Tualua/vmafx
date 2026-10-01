@@ -59,9 +59,11 @@ from scripts.ci.cross_backend_calibration import (
     EXACT_TWIN_PRECISION,
     EXACT_TWIN_SOURCE,
     EXACT_TWIN_TOLERANCE,
+    LIBM_TWIN_SOURCE,
     CalibrationTable,
     area_tolerance_factor,
     is_exact_pair,
+    libm_pair_tolerance,
     load_calibration_table,
     metric_delta,
 )
@@ -231,7 +233,9 @@ FEATURE_TOLERANCE: dict[str, float] = {
     "float_vif": 5e-5,
     "float_adm": 5e-5,
     # Transcendentals / DCT — relaxed contract per ADR-0187 / ADR-0188.
-    "ciede": 5e-3,  # per-pixel pow/sqrt/sin/atan2 — places=2.
+    # per-pixel pow/sqrt/sin/atan2 in fp32 — places=2. The CPU <-> CUDA cell
+    # takes its tolerance from LIBM_TWINS instead (ADR-1426).
+    "ciede": 5e-3,
     # DCT + per-block float reductions — places=3 at 576x324; grows with
     # sqrt(term count) above it (area_tolerance_factor, ADR-1361). This is the
     # contract of a twin that sums per block. A cell whose sides are the CPU
@@ -505,6 +509,8 @@ def resolve_cell_tolerance(
     * ``"fp16"``      — feature opted into the FP16 contract.
     * ``"exact:ADR-1397"`` — both sides are bit-exact with the CPU
       extractor; tolerance 0.
+    * ``"libm:ADR-1426"`` — both sides run the CPU extractor's arithmetic
+      and differ only in their math library; the ``LIBM_TWINS`` tolerance.
     * ``"calibrated:<pattern>"`` — calibration table matched and
       supplied a per-feature override; ``status: calibrated`` row.
     * ``"placeholder:<pattern>"`` — calibration table matched but
@@ -523,6 +529,10 @@ def resolve_cell_tolerance(
         return DEFAULT_FP16_TOLERANCE, "fp16"
     if backends is not None and is_exact_pair(feature, *backends):
         return EXACT_TWIN_TOLERANCE, EXACT_TWIN_SOURCE
+    if backends is not None:
+        libm_tolerance = libm_pair_tolerance(feature, *backends)
+        if libm_tolerance is not None:
+            return libm_tolerance, LIBM_TWIN_SOURCE
 
     tolerance, source = _reference_tolerance(feature, calibration=calibration, gpu_id=gpu_id)
     factor = area_tolerance_factor(feature, width, height)
@@ -571,13 +581,15 @@ def run_cell(
 ) -> CellResult:
     """Execute one cell of the parity matrix and diff it.
 
-    An exact cell (``tolerance_source`` is ``EXACT_TWIN_SOURCE``) runs both
-    sides with ``--precision max``, so the comparison sees every bit of the
-    scores rather than six decimals.
+    An exact cell (``tolerance_source`` is ``EXACT_TWIN_SOURCE``) and a
+    math-library cell (``LIBM_TWIN_SOURCE``) run both sides with
+    ``--precision max``, so the comparison sees every bit of the scores
+    rather than six decimals.
     """
 
     metrics = FEATURE_METRICS[cell.feature]
-    precision = EXACT_TWIN_PRECISION if tolerance_source == EXACT_TWIN_SOURCE else None
+    full_precision = tolerance_source in (EXACT_TWIN_SOURCE, LIBM_TWIN_SOURCE)
+    precision = EXACT_TWIN_PRECISION if full_precision else None
     out_a = workdir / f"{cell.feature}_{cell.backend_a}.json"
     out_b = workdir / f"{cell.feature}_{cell.backend_b}.json"
 

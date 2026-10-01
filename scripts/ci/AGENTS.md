@@ -554,6 +554,17 @@ drifts -> fix twin, never give it a tolerance back. Both sides of a cell
 must come from one binary: the dB value goes through the host `log10`,
 and glibc and Intel's libimf differ by one ulp on some frames.
 
+**Math-library twins (ADR-1426).** `LIBM_TWINS` in
+`cross_backend_calibration.py` (`ciede`: `cuda` = 1e-9) = twins running the
+CPU's arithmetic + sum order, differing only in libm (glibc vs device
+`pow` / `atan2` / `sin` / `cos` / `exp` / `powf`). Cell with both sides
+`cpu` or a listed twin (`libm_pair_tolerance`) -> listed tolerance, source
+`libm:ADR-1426`, `--precision max`. Resolved after `EXACT_TWINS`, before
+calibration rows; `--fp16-features` still wins. NOT an exact twin: never
+move it to `EXACT_TWINS` without 0 on every fixture. Bound holds from
+576x324 up (one float-step pixel weighs `8.7 * 2^-23 * (v / mean) / px`).
+Listing a twin needs per-pixel attribution of the residual + ADR.
+
 `float_ms_ssim` + `float_ms_ssim_lcs`: `sycl` listed (ADR-1414, Arc A380:
 every per-scale mean = CPU's). Exact cell = ONE binary on both sides ->
 needs that binary's CPU extractor to be the scalar arithmetic; icx build on

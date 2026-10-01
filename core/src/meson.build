@@ -1514,6 +1514,7 @@ if is_cuda_enabled
         'feature/cuda/integer_psnr_cuda.h',
         'feature/cuda/integer_moment_cuda.h',
         'feature/cuda/integer_ciede_cuda.h',
+        'feature/cuda/integer_ciede/ciede_device.h',
         'feature/cuda/integer_ssim_cuda.h',
         'feature/cuda/ssim_cuda.h',
         'feature/cuda/integer_ms_ssim_cuda.h',

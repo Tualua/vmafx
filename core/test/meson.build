@@ -1139,6 +1139,25 @@ test_ciede = executable('test_ciede',
     dependencies: [pthread_dependency, gpu_all_deps],
 )
 
+# ADR-1426 — the arithmetic ciede_cuda's kernel runs
+# (src/feature/cuda/integer_ciede/ciede_device.h), compiled for the host and
+# replayed over whole frames against the CPU extractor, bit for bit. No CUDA
+# build is needed: the header is plain C on the host and the reference is
+# reached through the public API. The header's fp64 expressions round like
+# the device's only without FMA contraction (hence the flag), and ciede.c is
+# contraction-free by construction on x86-64 only (its baseline has no FMA),
+# so the test is registered there.
+if host_machine.cpu_family() == 'x86_64'
+test_ciede_device_math = executable('test_ciede_device_math',
+    ['test.c', 'test_ciede_device_math.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, gpu_all_deps, math_lib],
+    c_args : vmaf_strict_fp_args,
+)
+test('test_ciede_device_math', test_ciede_device_math, suite : ['fast'])
+endif
+
 test_delta_e_itp = executable('test_delta_e_itp',
     ['test.c', 'test_delta_e_itp.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
@@ -3449,6 +3468,18 @@ test_cuda_ciede_parity = executable('test_cuda_ciede_parity',
 test('test_cuda_ciede_parity', test_cuda_ciede_parity,
     suite : ['fast', 'gpu'],
     is_parallel : false)
+
+# ADR-1426: ciede_cuda runs ciede.c's arithmetic -- fp64 math calls with the
+# promotions C applies written out, float stores where the reference stores a
+# float, no device reduction, the host adding the plane in raster order.
+# Device-free; the arithmetic check is test_ciede_device_math, the device
+# check is test_cuda_ciede_parity.
+test('test_cuda_ciede_exact_contract',
+    import('python').find_installation(),
+    args : files('test_cuda_ciede_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
 
 # ADR-1206 — large-fixture parity variants (resolution blind spot).
 #

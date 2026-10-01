@@ -23,10 +23,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from scripts.ci.cross_backend_calibration import (
     EXACT_TWIN_SOURCE,
     EXACT_TWINS,
+    LIBM_TWIN_SOURCE,
+    LIBM_TWINS,
     CalibrationEntry,
     CalibrationTable,
     area_tolerance_factor,
     is_exact_pair,
+    libm_pair_tolerance,
     psnr_hvs_term_count,
 )
 from scripts.ci.cross_backend_parity_gate import (
@@ -1033,6 +1036,42 @@ def test_float_ms_ssim_sycl_cells_are_exact_and_other_twins_are_not() -> None:
             tolerance, source = cell(feature, *pair)
             assert _close(tolerance, FEATURE_TOLERANCE[feature]), (feature, pair)
             assert source == "default", (feature, pair)
+
+
+def test_ciede_cuda_cell_is_bounded_by_its_math_library_and_other_twins_are_not() -> None:
+    """ADR-1426: ciede_cuda runs the CPU's arithmetic; only the libm differs."""
+
+    def cell(backend_a: str, backend_b: str) -> tuple[float, str]:
+        return resolve_cell_tolerance(
+            "ciede",
+            fp16_features=[],
+            calibration=None,
+            gpu_id=None,
+            width=3840,
+            height=2160,
+            backends=(backend_a, backend_b),
+        )
+
+    assert LIBM_TWINS == {"ciede": {"cuda": 1e-9}}
+    assert not is_exact_pair("ciede", "cpu", "cuda")
+    assert libm_pair_tolerance("ciede", "cpu", "cuda") == LIBM_TWINS["ciede"]["cuda"]
+    assert libm_pair_tolerance("ciede", "cpu", "sycl") is None
+    assert libm_pair_tolerance("ciede", "cpu", "cpu") is None
+    assert libm_pair_tolerance("vif", "cpu", "cuda") is None
+    assert cell("cpu", "cuda") == (1e-9, LIBM_TWIN_SOURCE)
+    assert cell("cuda", "cpu") == (1e-9, LIBM_TWIN_SOURCE)
+    for pair in (("cpu", "sycl"), ("cpu", "hip"), ("cuda", "sycl")):
+        tolerance, source = cell(*pair)
+        assert _close(tolerance, FEATURE_TOLERANCE["ciede"]), pair
+        assert source == "default", pair
+    # The fp16 opt-in still wins, as it does over an exact cell.
+    assert resolve_cell_tolerance(
+        "ciede",
+        fp16_features=["ciede"],
+        calibration=None,
+        gpu_id=None,
+        backends=("cpu", "cuda"),
+    ) == (DEFAULT_FP16_TOLERANCE, "fp16")
 
 
 def test_psnr_hvs_per_block_twin_keeps_area_scaled_tolerance() -> None:

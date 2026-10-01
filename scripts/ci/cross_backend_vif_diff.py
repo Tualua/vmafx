@@ -46,8 +46,10 @@ from scripts.ci.cross_backend_calibration import (
     EXACT_TWIN_PRECISION,
     EXACT_TWIN_SOURCE,
     EXACT_TWIN_TOLERANCE,
+    LIBM_TWIN_SOURCE,
     area_tolerance_factor,
     is_exact_pair,
+    libm_pair_tolerance,
     load_calibration_table,
     metric_delta,
 )
@@ -481,7 +483,11 @@ def run_pair(args: argparse.Namespace, cpu_json: Path, gpu_json: Path) -> None:
     A twin that is bit-exact with the CPU (ADR-1397) is run at
     ``--precision max`` on both sides, so the exact comparison sees every bit.
     """
-    precision = EXACT_TWIN_PRECISION if is_exact_pair(args.feature, "cpu", args.backend) else None
+    full_precision = (
+        is_exact_pair(args.feature, "cpu", args.backend)
+        or libm_pair_tolerance(args.feature, "cpu", args.backend) is not None
+    )
+    precision = EXACT_TWIN_PRECISION if full_precision else None
     print(f"running CPU {args.feature} → {cpu_json}")
     run_vmaf(
         args.vmaf_binary,
@@ -576,6 +582,11 @@ def main() -> int:
         # frame size, whatever --places or a calibration row say.
         tolerance_override = EXACT_TWIN_TOLERANCE
         tolerance_source = EXACT_TWIN_SOURCE
+    elif libm_pair_tolerance(args.feature, "cpu", args.backend) is not None:
+        # ADR-1426: this twin runs the CPU's arithmetic and differs only in
+        # its math library; its own bound replaces --places and calibration.
+        tolerance_override = libm_pair_tolerance(args.feature, "cpu", args.backend)
+        tolerance_source = LIBM_TWIN_SOURCE
     elif factor > 1.0:
         base = tolerance_override if tolerance_override is not None else 0.5 * (10**-args.places)
         tolerance_override = base * factor

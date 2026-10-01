@@ -255,7 +255,7 @@ Netflix 576x324 pair, both 1080p checkerboard pairs and BBB 3840x2160:
 | `ssim` | bit-identical on every frame since [ADR-1424](../../adr/1424-cuda-ssim-cpu-frame-sum.md) (1.1e-11 before: the terms were added per block) |
 | `adm` | bit-identical on every frame since [ADR-1416](../../adr/1416-cuda-adm-cpu-row-rounding.md) (2.1e-7 before: the host computed its own CSF weights) |
 | `float_adm` | 1.3e-5 at most |
-| `ciede` | 1.1e-5 |
+| `ciede` | 62 of 113 frames identical, the rest within 1.4e-11, since [ADR-1426](../../adr/1426-cuda-ciede-cpu-arithmetic.md) (1.1e-5 before: the kernel computed in fp32); the remainder is glibc's math library against CUDA's |
 | `float_vif` | bit-identical on every frame since [ADR-1412](../../adr/1412-cuda-float-vif-cpu-arithmetic.md) (3.8e-5 before: the kernel's tap table was not the one the CPU computes) |
 
 `float_ms_ssim_cuda` became bit-identical with ADR-1403: besides the build
@@ -793,7 +793,7 @@ names below carries the commands and the measured results:
 | `motion` against the CPU, Netflix pair and 50 frames of 3840x2160 | 0.0 (a `master` build: 1.26e-5 and 6.9e-5) |
 | `psnr` with `enable_mse`, `enable_apsnr`, `reduced_hbd_peak`, `min_sse`, also with `--subsample 2` | identical, `apsnr_*` included |
 | `motion_v2` and `float_motion` with `motion_fps_weight` and `motion_max_val` | identical |
-| `ssim` with `enable_db` / `clip_db` | within 7.3e-13 dB |
+| `ssim` with `enable_db` / `clip_db` | within 7.3e-13 dB; identical since [ADR-1424](../../adr/1424-cuda-ssim-cpu-frame-sum.md) |
 | `float_ssim` with `enable_lcs` / `enable_db` | within 6.9e-6 dB (1.8e-7 linear); identical since [ADR-1399](../../adr/1399-cuda-float-ssim-device-decimation.md) |
 | `float_ssim` with `enable_db`, identical flat 64x64 frames | 72.247198959355487 dB on both |
 | `compute-sanitizer` on the ADM and VIF tiny-frame tests | 0 errors |

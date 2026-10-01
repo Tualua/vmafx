@@ -796,7 +796,22 @@ chroma — **does not accept 4:0:0**.
 
 **Options** — none.
 
-**Backends** — AVX2, AVX-512, NEON.
+**Backends** — AVX2, AVX-512, NEON, CUDA, SYCL, HIP, Metal.
+
+**`ciede_cuda` and the CPU.** The CUDA twin evaluates the CPU's formula in
+the CPU's precision (double, with `float` stores where the CPU has them) and
+adds the per-pixel values in the CPU's order
+([ADR-1426](../adr/1426-cuda-ciede-cpu-arithmetic.md)). Measured on an RTX
+4090 at `--precision max`: 62 of 113 frames identical to `--backend cpu`, the
+rest within 1.4e-11 (576x324 at 8 to 16 bits, 1920x1080, 3840x2160). Before
+ADR-1426 it was up to 1.1e-5 away, and stored `ciede_cuda` outputs differ
+from new ones by that much. It is not bit-identical because the CPU calls the
+C library's math functions and the device calls CUDA's: a few pixels per
+million round to the neighbouring `float`. The double-precision math costs
+time: 32.7 ms per 3840x2160 frame on an RTX 4090 (2.8 ms before), against
+222 ms for the CPU extractor on sixteen threads. The SYCL, HIP and Metal
+twins compute in `float` and agree with the CPU to about two decimal places
+of the gate (`5e-3`).
 
 **Limitations** — Assumes BT.709 YCbCr → RGB → CIELAB. No override for
 BT.2020 or BT.601 input yet. Ported from the `av-metrics` Rust crate.

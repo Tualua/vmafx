@@ -388,6 +388,22 @@ linked AGENTS.md before resolving conflicts.
   `core/test/test_cuda_ssim_exact_contract.py` guards it without a device,
   `test_cuda_ssim_parity` on one; the parity gate compares the twin with
   tolerance 0 (`EXACT_TWINS`, feature `ssim`). See
+
+- **`ciede_cuda` runs the CPU's arithmetic ([ADR-1426](../adr/1426-cuda-ciede-cpu-arithmetic.md))**:
+  `core/src/feature/cuda/integer_ciede/ciede_device.h` is `ciede.c`'s
+  `get_lab_color()` and `ciede2000()` statement for statement: fp64 where the
+  reference computes in double, float where it stores in float, every
+  float-to-double promotion of a libm argument written out (the kernel is
+  C++). The kernel stores one float per pixel and
+  `ciede_frame_sum()` adds the read-back plane in raster order. Do not
+  introduce float math functions, a device reduction or another form of the
+  formula. A change to `get_lab_color()`, `ciede2000()`, `get_r_sub_t()` or
+  the order of `extract()`'s sum in `ciede.c` changes that header in the same
+  PR. The twin is not bit-identical (glibc's math library against CUDA's);
+  the gate bounds it at `1e-9` through `LIBM_TWINS`.
+  `core/test/test_ciede_device_math.c` and
+  `core/test/test_cuda_ciede_exact_contract.py` guard it without a device,
+  `test_cuda_ciede_parity` on one. See
   [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
 
 - **`float_vif_cuda` returns the CPU's scores bit for bit ([ADR-1412](../adr/1412-cuda-float-vif-cpu-arithmetic.md))**:

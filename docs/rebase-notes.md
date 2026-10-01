@@ -56982,3 +56982,30 @@ Netflix golden assertions are untouched.
   `core/test/test_sycl_vif_float_sums_contract.py` (device-free, four planted
   regressions).
 - No Netflix golden-data, public API or FFmpeg patch impact.
+
+## ADR-1426 — ciede_cuda computes the CPU's arithmetic; the gate bounds the math library (2026-10-01)
+
+`fix/cuda-ciede-cpu-arithmetic`, Research-1426, ADR-1426.
+
+- `core/src/feature/cuda/integer_ciede/ciede_device.h` (new): `ciede.c`'s
+  `get_lab_color()`, `ciede2000()` and helpers in plain C and CUDA C++, with
+  the reference's fp64 / float split and every libm promotion written out;
+  `CIEDE_POWF` is glibc's `powf` on the host and the correctly rounded power
+  on the device; `ciede_frame_sum()` is `extract()`'s accumulator. If
+  upstream Netflix changes any of those functions, change this header in the
+  same PR; `core/test/test_ciede_device_math.c` (device-free, replays whole
+  frames against the CPU extractor) fails until it follows.
+- `core/src/feature/cuda/integer_ciede/ciede_score.cu`: the fp32 formulation
+  and the warp / block reduction are gone. Both kernels call `ciede_pixel()`
+  and store one float per pixel; channel reads keep the ADR-0762 `__ldg()`
+  pattern.
+- `core/src/feature/cuda/integer_ciede_cuda.c`: the read-back is the term
+  plane (one float per pixel); the score is the reference's expression.
+- `scripts/ci/cross_backend_calibration.py`: new `LIBM_TWINS` /
+  `libm_pair_tolerance()` (`ciede`: `cuda` at `1e-9`), consumed by both
+  gates. Not `EXACT_TWINS`: the twin is not bit-identical.
+- `core/test/test_cuda_ciede_parity.c` is rewritten around a case table at
+  `1e-8`; `core/test/test_cuda_ciede_exact_contract.py` is new.
+- No Netflix golden-data, public C API or FFmpeg patch impact; `ciede.c` is
+  not touched. The `ciede_sycl`, `ciede_hip` and `ciede_metal` twins are
+  untouched (`T-GPU-CIEDE-CPU-ARITHMETIC-2026-10-01`).
