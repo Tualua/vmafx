@@ -26,33 +26,31 @@ Locked in [ADR-0009](../docs/adr/0009-mcp-server-tool-surface.md):
   (`model/tiny/`)
 - `list_backends` — SIMD caps + GPU devices present on host
 - `run_benchmark` — run full multi-fixture benchmark harness
-  (`bench_all.sh`), no args; per-pair scoring belongs in `vmaf_score`
-  (ADR-0513)
+  (`bench_all.sh`), no args; per-pair scoring in `vmaf_score` (ADR-0513)
 - `eval_model_on_split` — evaluate tiny-AI ONNX regressor on parquet split
 - `compare_models` — rank ONNX regressors on same split
 - `describe_worst_frames` — local VLM describes N frames with lowest VMAF
   score
 
-Later additions (ADR-0608 P1 wave, then #1240):
+Additions (ADR-0608 P1 wave, #1240):
 
 - `probe_backend`, `vmaf_version`, `vmaf_score_encoded`, `list_extractors`,
   `describe_model`, `run_compare`, `run_ladder`, `run_tune_per_shot`
-- `vmaf_per_shot`, `vmaf_roi`, `vmaf_bench`, `vmaf_vpl` — one per sidecar CLI
-  binary built next to `vmaf` in [`../core/tools/`](../core/tools/),
+- `vmaf_per_shot`, `vmaf_roi`, `vmaf_bench`, `vmaf_vpl` — sidecar CLI
+  binaries built next to `vmaf` in [`../core/tools/`](../core/tools/),
   documented in [`../docs/mcp/tools.md`](../docs/mcp/tools.md)
 
 ## Ground rules
 
-- **Parent rules** apply (see [../AGENTS.md](../AGENTS.md)).
+- **Parent rules** apply: see [../AGENTS.md](../AGENTS.md).
 - **Never shell out to `vmaf` with user-controlled args** — MCP server =
-  trusted front-end; tool arguments untrusted. Use Python bindings in
+  trusted front-end; arguments untrusted. Use Python bindings in
   [../compat/python-vmaf/](../compat/python-vmaf/) or in-process libvmaf
-  via ctypes / cffi. If shelling out unavoidable: pass args as list,
-  validate against explicit schema.
-- **No paths escape caller's workspace** — filesystem arg resolved via
-  `realpath`, rejected if it escapes configured root.
-- **Tiny-AI surface rule applies**: MCP tools touching tiny-AI path (e.g.
-  `describe_worst_frames`) ship docs under `docs/ai/` in same PR.
+  via ctypes / cffi. If shelling out: pass args as list, validate against schema.
+- **No paths escape caller workspace** — args resolved via `realpath`,
+  rejected if escaping configured root.
+- **Tiny-AI surface rule applies**: tools touching tiny-AI path
+  (`describe_worst_frames`) ship docs under `docs/ai/` in same PR.
   See [ADR-0042](../docs/adr/0042-tinyai-docs-required-per-pr.md).
 
 ## Rebase-sensitive invariants
@@ -63,153 +61,105 @@ Later additions (ADR-0608 P1 wave, then #1240):
 [`src/vmaf_mcp/server.py`](vmaf-mcp/src/vmaf_mcp/server.py) = twins of
 `buildPerShotArgv` / `buildRoiArgv` / `buildBenchArgv` / `buildVplArgv` in
 [`../cmd/vmafx-mcp/impl_sidecar.go`](../cmd/vmafx-mcp/impl_sidecar.go);
-`cmd/vmafx-mcp/sidecar_parity_test.go` runs both, compares. Separate from
-handlers precisely so test calls them without sidecar binary on disk —
+`cmd/vmafx-mcp/sidecar_parity_test.go` compares both without binaries on disk;
 never inline back.
 
 **Float arguments go through `_fmt_float`, never `repr` or f-string
 formatting.** Go writes `strconv.FormatFloat(v, 'f', -1, 64)`: shortest
-round-trip, never exponent notation, no trailing `.0`. Python
-`repr(90.0)` = `"90.0"`, `repr(1e-05)` = `"1e-05"`; both differ from Go's
-bytes — either breaks argv-parity gate.
+round-trip, no exponent, no `.0`. Python `repr(90.0)` = `"90.0"`,
+`repr(1e-05)` = `"1e-05"`; differs from Go bytes, breaks argv-parity gate.
 
 **Five gRPC control-plane tools = Go-only, must NOT be added here**
 (`submit_job`, `get_job`, `cancel_job`, `list_jobs`, `vmaf_score_remote`).
-[ADR-1184](../docs/adr/1184-mcp-grpc-bridge-go-only.md) records decision:
-server deliberately has no gRPC stack — ADR-0704's whole motivation for Go
-port was removing Python wheel chain from deployment path. Adding
-`grpcio` + vendored Python stubs here requires superseding that ADR.
+[ADR-1184](../docs/adr/1184-mcp-grpc-bridge-go-only.md): server has no gRPC
+stack — ADR-0704 Go port removed Python wheel chain from deployment path.
+Adding `grpcio` + vendored Python stubs requires superseding ADR.
 `tests/test_smoke_e2e.py::test_list_tools_returns_expected_names` pins
-exact Python tool set; accidental addition fails suite.
+exact Python tool set.
 
 **`run_benchmark` takes no positional arguments** (ADR-0517).
-`bench_all.sh` = fixed-fixture suite. Never add
-`ref`/`dis`/`width`/`height` args back — corrupts `$@` inside sourced
-Intel oneAPI `setvars.sh`, causes silent abort.
+`bench_all.sh` = fixed-fixture suite. Never add `ref`/`dis`/`width`/`height`
+args back: corrupts `$@` in sourced Intel oneAPI `setvars.sh`, causing abort.
 
 **`bench_all.sh` must have `set +u` / `set -u` around `source setvars.sh`
 call** (ADR-0517). `setvars.sh` references variables (`SETVARS_ARGS`,
-`ia32`) maybe unset in calling context; `set -u` aborts on those
-references, bypasses `|| true`.
+`ia32`) maybe unset; `set -u` aborts on references, bypassing `|| true`.
 
 ## Governing ADRs
 
-- [ADR-0005](../docs/adr/0005-framework-adaptation-full-scope.md) —
-  framework scope includes MCP.
-- [ADR-0009](../docs/adr/0009-mcp-server-tool-surface.md) — four initial
-  tools.
-- [ADR-0036](../docs/adr/0036-tinyai-wave1-scope-expansion.md) —
-  `describe_worst_frames` on Wave 1 list.
+- [ADR-0005](../docs/adr/0005-framework-adaptation-full-scope.md) — MCP scope.
+- [ADR-0009](../docs/adr/0009-mcp-server-tool-surface.md) — initial tools.
+- [ADR-0036](../docs/adr/0036-tinyai-wave1-scope-expansion.md) — `describe_worst_frames`.
 - [ADR-0042](../docs/adr/0042-tinyai-docs-required-per-pr.md) — doc rule.
 
 ## Rebase-sensitive invariants
 
 - **`_probe_backends` reads `vmaf --help`, not `--version`** (ADR-0509,
-  Bug A). Every backend local `vmaf` binary compiled with surfaces in
-  `--help` as `--no_<backend>` disable flag. `--version` banner does NOT
-  list compiled-in GPU backends on this fork — historical banner-grep
-  mis-reported CUDA unavailable on hosts where kernel + driver + binary
-  all supported it (e.g. `vmaf-dev-mcp` container). Results cached
-  per-binary-path for server-process lifetime, so `vmaf_score` does not
-  fork subprocess per call. Regression switching probe source back to
-  `--version` re-introduces silent "CUDA-not-available" false-negative
-  class.
-- **Auto-dispatch backend identity comes from the CLI receipt, never metric
-  counts.** The fork's `vmaf` CLI writes a top-level `backend_used` field in
-  JSON. `_infer_backend_from_payload` accepts only the concrete backend names
-  from that field and returns `unknown` when an older or external binary omits
-  it or emits an invalid value. Metric-key counts vary as extractors evolve and
-  must remain diagnostic observations, not dispatch identities. The red caps
-  cover the dated CPU 15 / CUDA 14 / SYCL 24 observations without making those
-  counts constants.
+  Bug A). Compiled backends surface in `--help` as `--no_<backend>`.
+  `--version` banner does NOT list GPU backends (`vmaf-dev-mcp`). Results cached
+  per-binary-path for server lifetime. Switching to `--version`
+  re-introduces false-negative CUDA detection.
+- **Auto-dispatch backend identity comes from CLI receipt, never metric
+  counts.** `vmaf` CLI writes top-level `backend_used` in JSON.
+  `_infer_backend_from_payload` accepts concrete names from field, returns
+  `unknown` when omitted or invalid. Metric counts (dated CPU 15 / CUDA 14 /
+  SYCL 24) diagnostic observations only, not constants.
 - **Default allowlist includes `/workspace/python/test/resource`
   alongside host-relative `<repo>/python/test/resource`** (ADR-0509,
-  Bug B). Container at [`dev/Containerfile`](../dev/Containerfile)
-  bind-mounts repo root at `/workspace/`, so Netflix golden YUVs sit at
-  absolute container path; without absolute entry, every container-side
-  MCP demo had to set `VMAF_MCP_ALLOW=/workspace/python/test/resource`
-  first. `VMAF_MCP_ALLOW` env-var override preserved, additive — extends
-  default list, does not replace it.
-- [ADR-0517](../docs/adr/0517-mcp-run-benchmark-repair.md) —
-  `run_benchmark` repair.
-- **HTTP transport optional dep group** (PR #1583, ADR-0701). `[http]`
-  optional dependency group in `vmaf-mcp/pyproject.toml` (`aiohttp`,
-  `prometheus-client`) must be preserved on any rebase or
-  `pyproject.toml` edit. `--transport http` flag in
-  `src/vmaf_mcp/server.py::main()` dispatches to
-  `src/vmaf_mcp/http_transport.py`. Transport dispatch block
-  (`if args.transport == "http":`) must return before starting stdio
-  event loop. Production server image installs both `[eval]` and
-  `[http]`; omitting latter makes HTTP entrypoint fail at runtime.
-  Netflix upstream has no MCP server; entire subtree fork-local, never
-  merges upstream.
-- **HTTP transport tests run in the default dev environment** (ADR-1304).
-  The `[dev]` dependency group must keep `pytest-aiohttp` and
-  `prometheus-client`: `tests/test_http_transport_round5.py` skips at module
-  collection when either HTTP dependency is absent. CI and the top-level nox
-  session install `[dev]`, so dropping the Prometheus test dependency turns
-  the import-cycle and per-server runtime regressions into silent skips.
+  Bug B). Container [`dev/Containerfile`](../dev/Containerfile) bind-mounts
+  repo root at `/workspace/`, placing Netflix golden YUVs at absolute path.
+  `VMAF_MCP_ALLOW=/workspace/python/test/resource` extends default list.
+- [ADR-0517](../docs/adr/0517-mcp-run-benchmark-repair.md) — `run_benchmark` repair.
+- **HTTP transport optional dep group** (PR #1583, ADR-0701). `[http]` in
+  `vmaf-mcp/pyproject.toml` (`aiohttp`, `prometheus-client`) preserved on rebase.
+  `--transport http` in `src/vmaf_mcp/server.py::main()` dispatches to
+  `src/vmaf_mcp/http_transport.py`. Dispatch block (`if args.transport == "http":`)
+  returns before stdio loop. Production installs `[eval]` and `[http]`.
+  Subtree fork-local; never merges upstream.
+- **HTTP transport tests run in default dev environment** (ADR-1304).
+  `[dev]` keeps `pytest-aiohttp` and `prometheus-client`:
+  `tests/test_http_transport_round5.py` skips when absent. CI and nox
+  install `[dev]`.
 - **Python transport imports stay acyclic** (CodeQL alerts 917/918).
-  `server.py` installs the canonical scoring adapter through
-  `http_scoring.py`; `http_transport.py` consumes that interface and must
-  never import `server.py` directly.  Keep transport-specific startup in
-  `server.py::main()` and keep validation, `ScoreRequest` construction,
-  scoring, and strict JSON behind the shared interface.  The production
-  package DAG is pinned by `tests/test_import_graph.py`.  Importing the
-  canonical server must not overwrite a runtime installed by an embedding
-  process.  Direct `run_http_server` callers inject their runtime explicitly;
-  the injected object is bound per application and must never temporarily
-  replace the process-wide registry.  Missing registration fails before any
-  socket is bound.  See ADR-1304.
+  `server.py` installs scoring adapter via `http_scoring.py`; `http_transport.py`
+  consumes interface and never imports `server.py` directly. Startup in
+  `server.py::main()`; validation, `ScoreRequest`, scoring, strict JSON
+  behind shared interface. DAG pinned by `tests/test_import_graph.py`.
+  Direct `run_http_server` callers inject runtime explicitly; injected object
+  never replaces process-wide registry. Missing registration fails before
+  socket bind. See ADR-1304.
 - **MCP 2.x uses constructor-registered low-level handlers** (ADR-1129).
   `Server.list_tools()` / `Server.call_tool()` decorators and
   `Server.request_context` removed in mcp 2.1. Keep `_mcp_list_tools` and
-  `_mcp_call_tool` registered through `Server(..., on_list_tools=...,
-  on_call_tool=...)`; call adapter must keep translating dispatcher
-  exceptions into `CallToolResult(isError=True)`, exposing request
-  session through task-local context only while call active.
+  `_mcp_call_tool` registered via `Server(..., on_list_tools=..., on_call_tool=...)`;
+  adapter translates dispatcher exceptions to `CallToolResult(isError=True)`,
+  exposing request session via task-local context during call.
 - **HTTP transport requires explicit env opt-in for 0.0.0.0 bind; auth
-  defaults on** (ADR-0967). Default bind host for `--transport http` =
-  `127.0.0.1` (loopback-only). To listen on all interfaces (required for
-  pod-network reachability in Kubernetes): set
-  `VMAFX_MCP_HTTP_BIND=0.0.0.0`. Authentication enforced by default: if
-  `VMAFX_MCP_HTTP_TOKEN` unset and `VMAFX_MCP_HTTP_NO_AUTH` also unset,
-  server rejects every request with 401. Regression reverting
-  `_resolve_bind_host()` to return `"0.0.0.0"`, or removing security
-  middleware from `_make_app()`, re-introduces Round 26 audit finding
-  A.1 vulnerabilities.
-
-- **Required-argument tools rely on shared `_call_tool`
-  `KeyError`→`ValueError` wrapper** (`tool 'X' missing required argument:
-  'key'`). Read required args with `arguments["key"]`, let missing key
-  raise `KeyError`; never add bespoke per-tool
-  `if "key" not in arguments: raise ValueError("'key' is required ...")`
-  guard. Bespoke messages diverge from uniform string
-  `test_call_tool_missing_*_raises_value_error` asserts (regex
-  `missing required argument.*'key'`), silently reds non-required
-  `MCP Smoke` lane (`probe_backend` 2026-06-20 fix).
-
+  defaults on** (ADR-0967). Default bind host `--transport http` = `127.0.0.1`
+  (loopback). Listening on all interfaces requires `VMAFX_MCP_HTTP_BIND=0.0.0.0`.
+  Auth enforced by default: if `VMAFX_MCP_HTTP_TOKEN` and
+  `VMAFX_MCP_HTTP_NO_AUTH` unset, server rejects request with 401. Reverting
+  `_resolve_bind_host()` returning "0.0.0.0" or removing security middleware from `_make_app()`
+  re-introduces Round 26 audit finding A.1 vulnerabilities.
+- **Required-argument tools rely on shared `_call_tool` `KeyError`→`ValueError` wrapper** (`tool 'X' missing required argument: 'key'`). Read required args with `arguments["key"]`, never add bespoke `if "key" not in arguments: raise ValueError("'key' is required ...")`
+  `KeyError`→`ValueError` wrapper** (`tool 'X' missing required argument: 'key'`).
+  Read required args with `arguments["key"]`, let missing key raise `KeyError`;
+  never add bespoke `if "key" not in arguments: raise ValueError(...)`.
+  Bespoke messages diverge from `test_call_tool_missing_*_raises_value_error`
+  regex `missing required argument.*'key'`, breaking `MCP Smoke` lane
+  (`probe_backend` 2026-06-20 fix).
 - **Go↔Python byte-identical scoring surface** (ADR-1117 / #1240).
-  Python server (`server.py` `_scoring_extra_properties()` +
-  `_extras_from_args` / `_build_vmaf_argv`) and Go server
-  (`cmd/vmafx-mcp/tools.go` + `impl.go` `parseScoreExtras` /
-  `buildVmafArgv`) MUST declare same `vmaf_score` / `vmaf_score_encoded`
-  input schema (property names, types, enums, defaults, required-ness,
-  incl. device selectors `--cpumask`, `--gpumask`, `--sycl_device`,
-  `--hip_device`, `--metal_device`, `output_fmt`, `subsample`, tiny-AI
-  flags). MUST also build identical `vmaf` CLI argv for given input. Any
-  additions must update both servers in lockstep, preserve canonical
-  flag ordering. `tests/test_parity_argv.py` and
-  `TestGoAndPythonArgvParity` enforce cross-server invocation parity.
-  Both servers include `python/test/resource/yuv` in allowed roots so
-  worktree symlinks resolve.
-
-- **`_list_tools()` and `_scoring_extra_properties()` are assembled from
-  helpers (T-HISS-PY-COMPAT-2026-09-21).** Both were split purely to stay
-  under the 60-LOC HISS-04 bound. The group functions are concatenated in
-  declaration order, so the advertised catalogue — names, descriptions,
-  schema key order, enums and defaults — is byte-identical to what the single
-  literal produced, which the ADR-1117 Go parity contract depends on. When
-  adding a tool or a scoring property, append it to the group that already
-  owns its section rather than reflowing the groups, and keep the Go server
-  in lockstep.
+  Python (`server.py` `_scoring_extra_properties()` + `_extras_from_args` /
+  `_build_vmaf_argv`) and Go (`cmd/vmafx-mcp/tools.go` + `impl.go`
+  `parseScoreExtras` / `buildVmafArgv`) MUST declare identical `vmaf_score` /
+  `vmaf_score_encoded` schema (property names, types, enums, defaults,
+  selectors `--cpumask`, `--gpumask`, `--sycl_device`, `--hip_device`,
+  `--metal_device`, `output_fmt`, `subsample`, tiny-AI flags) and identical
+  `vmaf` CLI argv. Additions update both servers in lockstep. Pinned by
+  `tests/test_parity_argv.py` and `TestGoAndPythonArgvParity`. Both include
+  `python/test/resource/yuv` in allowed roots.
+- **`_list_tools()` and `_scoring_extra_properties()` assembled from
+  helpers (T-HISS-PY-COMPAT-2026-09-21).** Split for 60-LOC HISS-04 bound.
+  Group functions concatenated in declaration order; catalogue byte-identical
+  to single literal (ADR-1117 contract). When adding tool or scoring property,
+  append to section group; keep Go server in lockstep.
