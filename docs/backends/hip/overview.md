@@ -314,7 +314,7 @@ in `ffmpeg-patches/`; see [ADR-0380](../../adr/0380-ffmpeg-patches-hip-backend-s
 core/src/hip/                  # HIP runtime (common, picture_hip, dispatch_strategy)
 core/src/feature/hip/          # per-feature kernels
   integer_psnr_hip.c              # uint64 atomic-SSE warp-64 __shfl_down
-  float_psnr_hip.c                # float (ref-dis)^2 reduction per block
+  float_psnr_hip.c                # float (ref-dis)^2, exact integer sum per block
   float_motion_hip.c              # 5x5 Gaussian blur + per-block float SAD
   float_moment_hip.c              # four uint64 atomic accumulator kernel
   float_ssim_hip.c                # two-pass separable 11-tap Gaussian kernel
@@ -343,7 +343,10 @@ core/src/feature/hip/          # per-feature kernels
 
 - **`integer_psnr_hip`** — uint64 atomic-SSE kernel, warp-64 `__shfl_down`
   reduction. Emits `psnr_y`.
-- **`float_psnr_hip`** — float (ref-dis)² reduction per block. Emits `float_psnr`.
+- **`float_psnr_hip`** — the CPU's float (ref-dis)² per pixel, added as an
+  integer per 16x16 block, so the sum is exact and the score is the CPU's bit
+  for bit at 8 to 16 bits (ADR-1440; see [PSNR](../../metrics/psnr.md#float_psnr)).
+  Emits `float_psnr`.
 - **`float_motion_hip`** — temporal extractor. 5×5 separable Gaussian blur +
   per-block float SAD partials, blur ping-pong (`blur[2]`), first-frame
   `compute_sad=0` short-circuit, motion2 / motion3 tail emission in `flush()`.

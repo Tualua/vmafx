@@ -7,18 +7,35 @@
  *  ADR-0254). Direct port of the CUDA twin at
  *  `core/src/feature/cuda/float_psnr/float_psnr_score.cu`.
  *
- *  Per-pixel `(ref - dis)^2` (float), warp-reduced + per-block partial
- *  written to a contiguous float buffer; host accumulates in `double`
- *  and applies the CPU log10 formula.
+ *  Per-pixel `(ref - dis)^2` as float_psnr.c forms it, added per wave and
+ *  per 16x16 block as an integer; the host adds the block sums in double and
+ *  applies the CPU log10 formula.
+ *
+ *  The sums are integers so that they are exact (ADR-1440). float_psnr.c
+ *  adds `(double)(diff * diff)` per row and the rows in double: every term is
+ *  a float, the running sum is exact, and its value is the exact sum of the
+ *  terms. With `scaler` = 2^(bpc - 8), `diff` is the sample difference over
+ *  `scaler`, and its float square is the float square of the sample
+ *  difference over `scaler`^2. So the kernel squares the sample difference in
+ *  float, as the CPU does, and adds that value as an integer:
+ *    - up to 12 bits the square is below 2^24, exact in float, and 256 of
+ *      them fit a uint32 (256 * 4095^2 < 2^32);
+ *    - at 16 bits the square is rounded to 24 bits by the float multiply, as
+ *      on the CPU, and is below 2^32; its low and high 16 bits are added
+ *      separately, each sum below 2^24.
+ *  The host puts the two halves together and divides by `scaler`^2, a power
+ *  of two. Both sides then hold the exact sum of the same terms. A fp32 block
+ *  sum, which this kernel had, is exact only at 8 bits: at 10, 12 and 16 bits
+ *  it rounded once the block's rms difference reached 256 code values, which
+ *  put the score up to 7.6e-8 dB from the CPU's. fp64 sums are exact too and
+ *  cost twice the frame time on a gfx1036 (a double shuffle is two).
  *
  *  HIP warp size varies: 64 on GCN/RDNA1 (wave64), 32 on RDNA2+ (wave32).
- *  The `__shfl_down` intrinsic is available under HIP's `<hip/hip_runtime.h>`
- *  with the same signature as CUDA's `__shfl_down_sync` (HIP masks are
- *  64-bit on GCN/RDNA1, 32-bit on RDNA2+). The shared memory array for warp
- *  partial sums is sized for the minimum warp size (32 = FPSNR_MIN_WARP_SIZE)
- *  so it is large enough on wave32 hardware (8 slots) and wave64 uses only
- *  the first 4 of those slots. Runtime `warpSize` is used in all reduction
- *  loops and lane detection so the same binary runs correctly on both.
+ *  The shared memory array for warp partial sums is sized for the minimum
+ *  warp size (32 = FPSNR_MIN_WARP_SIZE) so it is large enough on wave32
+ *  hardware (8 slots) and wave64 uses only the first 4 of those slots.
+ *  Runtime `warpSize` is used in all reduction loops and lane detection so
+ *  the same binary runs correctly on both.
  *
  *  Compilation: `hipcc --offload-arch=gfx90a --emit-llvm -S` (or
  *  equivalent `--genco` for HSACO fat binary). The meson.build
@@ -40,7 +57,7 @@
 /* Number of warps per block at minimum warp size = (BX * BY) / MIN_WARP_SIZE = 8. */
 #define FPSNR_WARPS_PER_BLOCK (FPSNR_BX * FPSNR_BY / FPSNR_MIN_WARP_SIZE)
 
-__device__ __forceinline__ float fpsnr_warp_reduce(float v)
+__device__ __forceinline__ uint32_t fpsnr_warp_reduce(uint32_t v)
 {
     /* Use warpSize at runtime to handle wave64 (GCN/RDNA1) and wave32 (RDNA2+). */
     for (int off = (int)warpSize / 2; off > 0; off >>= 1)
@@ -48,83 +65,93 @@ __device__ __forceinline__ float fpsnr_warp_reduce(float v)
     return v;
 }
 
+/* The block's sum of `mine` over all threads, valid in thread 0. `s_warps` is
+ * the block's shared scratch array. Threads outside the frame pass 0 and
+ * still take part: every thread of the block must reach the barriers. */
+__device__ __forceinline__ uint32_t fpsnr_block_sum(uint32_t *s_warps, uint32_t mine)
+{
+    const unsigned lid = threadIdx.y * blockDim.x + threadIdx.x;
+    const uint32_t w = fpsnr_warp_reduce(mine);
+    const unsigned ws = (unsigned)warpSize;
+    if (lid % ws == 0u)
+        s_warps[lid / ws] = w;
+    __syncthreads();
+
+    uint32_t total = 0u;
+    if (lid == 0u) {
+        const unsigned warps_active = (FPSNR_BX * FPSNR_BY) / ws;
+        for (unsigned i = 0; i < warps_active; i++)
+            total += s_warps[i];
+    }
+    return total;
+}
+
+/* The float square of a sample difference: float_psnr.c's `diff * diff`
+ * times `scaler`^2. Both factors are exact (the difference is below 2^16 in
+ * magnitude) and the product is an integer below 2^32, rounded to 24 bits
+ * above 2^24 as the CPU's is. */
+__device__ __forceinline__ uint32_t fpsnr_square(int ref, int dis)
+{
+    const float diff = (float)(ref - dis);
+    return (uint32_t)(diff * diff);
+}
+
 extern "C" {
 
 /**
  * 8-bpc kernel: ref/dis are uint8_t arrays (row-major, ref_stride bytes
- * per row). Computes per-pixel (ref - dis)^2 in float and accumulates one
- * partial sum per block into `partials[block_idx]`.
+ * per row). Adds the squared differences of each block and stores the sum
+ * at partials[2 * block]; partials[2 * block + 1], the high half, is 0.
  */
 __global__ void float_psnr_kernel_8bpc(const uint8_t *__restrict__ ref,
                                        const uint8_t *__restrict__ dis,
                                        ptrdiff_t ref_stride,
                                        ptrdiff_t dis_stride,
-                                       float *__restrict__ partials,
+                                       uint32_t *__restrict__ partials,
                                        unsigned width,
                                        unsigned height)
 {
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
-    const unsigned lid = threadIdx.y * blockDim.x + threadIdx.x;
 
-    float my_noise = 0.0f;
+    uint32_t my_noise = 0u;
     if (x < (int)width && y < (int)height) {
-        const float r = (float)ref[(ptrdiff_t)y * ref_stride + x];
-        const float d = (float)dis[(ptrdiff_t)y * dis_stride + x];
-        const float diff = r - d;
-        my_noise = diff * diff;
+        my_noise = fpsnr_square(ref[(ptrdiff_t)y * ref_stride + x],
+                                dis[(ptrdiff_t)y * dis_stride + x]);
     }
 
-    /* Warp-level reduction. */
-    __shared__ float s_warps[FPSNR_WARPS_PER_BLOCK];
-    const float w = fpsnr_warp_reduce(my_noise);
-    const unsigned ws      = (unsigned)warpSize;
-    const unsigned lane    = lid % ws;
-    const unsigned warp_id = lid / ws;
-    if (lane == 0)
-        s_warps[warp_id] = w;
-    __syncthreads();
-
-    /* Thread 0 aggregates warp partials and stores the block result. */
-    if (lid == 0) {
-        float total = 0.0f;
-        const unsigned warps_active = (FPSNR_BX * FPSNR_BY) / ws;
-        for (unsigned i = 0; i < warps_active; i++)
-            total += s_warps[i];
+    __shared__ uint32_t s_warps[FPSNR_WARPS_PER_BLOCK];
+    const uint32_t total = fpsnr_block_sum(s_warps, my_noise);
+    if (threadIdx.x == 0u && threadIdx.y == 0u) {
         const unsigned block_idx = blockIdx.y * gridDim.x + blockIdx.x;
-        partials[block_idx] = total;
+        partials[2u * block_idx] = total;
+        partials[2u * block_idx + 1u] = 0u;
     }
 }
 
 /**
  * 10/12/16-bpc kernel: ref/dis are uint8_t arrays whose elements are
- * interpreted as native uint16_t (little-endian, row-major). The raw
- * uint16 value is divided by `scaler` to convert to the [0,255]
- * float range that the CUDA twin uses.
+ * interpreted as native uint16_t (little-endian, row-major). The squared
+ * differences are added in units of 1 / scaler^2 (scaler = 2^(bpc - 8)); the
+ * host divides. Up to 12 bits a block's sum fits partials[2 * block]; at 16
+ * bits the low 16 bits of each square go there and the rest to
+ * partials[2 * block + 1].
  */
 __global__ void float_psnr_kernel_16bpc(const uint8_t *__restrict__ ref,
                                         const uint8_t *__restrict__ dis,
                                         ptrdiff_t ref_stride,
                                         ptrdiff_t dis_stride,
-                                        float *__restrict__ partials,
+                                        uint32_t *__restrict__ partials,
                                         unsigned width,
                                         unsigned height,
                                         unsigned bpc)
 {
-    float scaler = 1.0f;
-    if (bpc == 10u)
-        scaler = 4.0f;
-    else if (bpc == 12u)
-        scaler = 16.0f;
-    else if (bpc == 16u)
-        scaler = 256.0f;
-    const float inv_scaler = 1.0f / scaler;
-
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
-    const unsigned lid = threadIdx.y * blockDim.x + threadIdx.x;
+    const bool split = bpc > 12u;
 
-    float my_noise = 0.0f;
+    uint32_t my_lo = 0u;
+    uint32_t my_hi = 0u;
     if (x < (int)width && y < (int)height) {
         /* ref/dis are byte-addressed; cast the row pointer to uint16_t*
          * for each pixel access (matches the CUDA twin's pattern). */
@@ -132,28 +159,25 @@ __global__ void float_psnr_kernel_16bpc(const uint8_t *__restrict__ ref,
             reinterpret_cast<const uint16_t *>(ref + (ptrdiff_t)y * ref_stride)[x];
         const uint16_t dv =
             reinterpret_cast<const uint16_t *>(dis + (ptrdiff_t)y * dis_stride)[x];
-        const float r = (float)rv * inv_scaler;
-        const float d = (float)dv * inv_scaler;
-        const float diff = r - d;
-        my_noise = diff * diff;
+        const uint32_t square = fpsnr_square(rv, dv);
+        my_lo = split ? (square & 0xFFFFu) : square;
+        my_hi = split ? (square >> 16) : 0u;
     }
 
-    __shared__ float s_warps[FPSNR_WARPS_PER_BLOCK];
-    const float w = fpsnr_warp_reduce(my_noise);
-    const unsigned ws      = (unsigned)warpSize;
-    const unsigned lane    = lid % ws;
-    const unsigned warp_id = lid / ws;
-    if (lane == 0)
-        s_warps[warp_id] = w;
-    __syncthreads();
-
-    if (lid == 0) {
-        float total = 0.0f;
-        const unsigned warps_active = (FPSNR_BX * FPSNR_BY) / ws;
-        for (unsigned i = 0; i < warps_active; i++)
-            total += s_warps[i];
+    __shared__ uint32_t s_warps[FPSNR_WARPS_PER_BLOCK];
+    const uint32_t total_lo = fpsnr_block_sum(s_warps, my_lo);
+    uint32_t total_hi = 0u;
+    /* `bpc` is the same for every thread, so every thread takes the same
+     * branch and reaches the same barriers. */
+    if (split) {
+        /* The array is free for the second sum once thread 0 has read it. */
+        __syncthreads();
+        total_hi = fpsnr_block_sum(s_warps, my_hi);
+    }
+    if (threadIdx.x == 0u && threadIdx.y == 0u) {
         const unsigned block_idx = blockIdx.y * gridDim.x + blockIdx.x;
-        partials[block_idx] = total;
+        partials[2u * block_idx] = total_lo;
+        partials[2u * block_idx + 1u] = total_hi;
     }
 }
 

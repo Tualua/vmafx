@@ -57385,6 +57385,21 @@ ADR-1422).
   target.
 - `scripts/ci/exact_twins.d/ssim.hip` (new) declares the twin exact
   (ADR-1428); nothing shared is edited.
+## ADR-1440 — `float_psnr_hip` adds integer block sums (2026-10-01)
+
+`fix/hip-float-psnr-exact-block-sums`, `T-HIP-FLOAT-PSNR-FP32-BLOCK-SUMS-2026-10-01`.
+
+- `core/src/feature/hip/float_psnr/float_psnr_score.hip`: both kernels take
+  `uint32_t *partials` (was `float *`) and write two values per block,
+  `partials[2 * block]` and `partials[2 * block + 1]`. `fpsnr_warp_reduce()`
+  reduces `uint32_t`; `fpsnr_square()` and `fpsnr_block_sum()` are new. A
+  rebase that brings a `float` accumulator back makes the twin inexact at 10
+  bits and above; `test_hip_float_psnr_exact_contract.py` rejects it.
+- `core/src/feature/hip/float_psnr_hip.c`: the read-back is
+  `float_psnr_hip_partials_bytes()` (two `uint32` per block), and `collect()`
+  divides the sum by `scaler * scaler`.
+- `scripts/ci/exact_twins.d/float_psnr.hip` (new) declares the twin exact
+  (ADR-1428). The CUDA, SYCL and Metal twins still reduce in fp32.
 - No Netflix golden-data, public API or FFmpeg patch impact. The CPU
   extractor is untouched.
 ## ADR-1435 — `vif_hip` reads the CPU's log2 table (2026-10-01)

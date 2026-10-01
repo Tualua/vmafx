@@ -1141,3 +1141,4 @@
 1438-hip-ssim-cpu-frame-sum
 1435-hip-vif-cpu-log2-table
 1436-sycl-ciede-cpu-arithmetic
+1440-hip-float-psnr-exact-block-sums

@@ -1549,6 +1549,7 @@ nav:
         - "ADR-1436: sycl-ciede-cpu-arithmetic": adr/1436-sycl-ciede-cpu-arithmetic.md
         - "ADR-1437: hip-exact-twins-declared": adr/1437-hip-exact-twins-declared.md
         - "ADR-1438: hip-ssim-cpu-frame-sum": adr/1438-hip-ssim-cpu-frame-sum.md
+        - "ADR-1440: hip-float-psnr-exact-block-sums": adr/1440-hip-float-psnr-exact-block-sums.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

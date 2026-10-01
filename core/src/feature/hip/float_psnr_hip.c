@@ -18,15 +18,22 @@
  *  is undefined and `init()` returns -ENOSYS — same scaffold contract as
  *  the pre-runtime posture (registered, runtime not ready).
  *
- *  Algorithm (mirrors CUDA twin):
- *    - Per-pixel float (ref - dis)^2 reduction, one partial per block.
- *    - Host accumulates partials in double:
- *        noise = sum / (w * h)
+ *  Algorithm:
+ *    - Per-pixel float (ref - dis)^2, as float_psnr.c forms it, added per
+ *      16x16 block as an integer in units of 1 / scaler^2
+ *      (scaler = 2^(bpc - 8)): two uint32 per block, the low and the high
+ *      half of the sum.
+ *    - Host adds the block sums in double:
+ *        noise = sum / scaler^2 / (w * h)
  *        score = 10 * log10(peak^2 / max(noise, 1e-10)), clamped.
  *
- *  Bit-exactness posture: float arithmetic + host double log10, no SIMD
- *  or FMA. Per ADR-0138/0139, scores may differ by 1-2 ULP vs CUDA in
- *  the partial accumulation but are identical at the host log10 step.
+ *  The score is the CPU extractor's bit for bit (ADR-1440): the device's
+ *  integer sums and the host's sum of them are exact, as the CPU's row sums
+ *  of float terms are, so both sides hold the exact sum of the same terms.
+ *  That holds while the frame sum stays below 2^53 units: always up to 12
+ *  bits, and at 16 bits up to a mean squared error of 2^37 / (w * h) on the
+ *  8-bit scale (16570 at 3840x2160, a PSNR below 6 dB), beyond which the
+ *  CPU's own running sum rounds in sequence.
  */
 
 #include <errno.h>
@@ -87,6 +94,9 @@ static int hip_err(hipError_t rc)
 
 #define FPSNR_BX 16
 #define FPSNR_BY 16
+/* uint32 values the kernel writes per block: the low and the high half of
+ * the block's sum (float_psnr_score.hip). */
+#define FPSNR_PARTIALS_PER_BLOCK 2u
 
 typedef struct FloatPsnrStateHip {
     VmafHipKernelLifecycle lc;
@@ -159,6 +169,12 @@ static int float_psnr_hip_resolve_peak_clamp(FloatPsnrStateHip *s, unsigned bpc)
     return 0;
 }
 
+/* Size of the block-sum buffer on the device and on the host. */
+static size_t float_psnr_hip_partials_bytes(const FloatPsnrStateHip *s)
+{
+    return (size_t)s->wg_count * FPSNR_PARTIALS_PER_BLOCK * sizeof(uint32_t);
+}
+
 #ifdef HAVE_HIPCC
 /* Load the HSACO fat binary and resolve both kernel function handles. On
  * failure the module is unloaded again and `s->module` is NULL. */
@@ -215,7 +231,7 @@ static int float_psnr_hip_launch(FloatPsnrStateHip *s, VmafPicture *ref_pic, Vma
      * buffers (ADR-1427). The kernel writes every partial, so the frame
      * does not depend on this clear. */
     if (err == 0) {
-        err = hip_err(hipMemsetAsync(s->rb.device, 0, (size_t)s->wg_count * sizeof(float), str));
+        err = hip_err(hipMemsetAsync(s->rb.device, 0, float_psnr_hip_partials_bytes(s), str));
     }
     if (err == 0)
         err = float_psnr_hip_launch_kernel(s, plane_pitch, str);
@@ -225,8 +241,8 @@ static int float_psnr_hip_launch(FloatPsnrStateHip *s, VmafPicture *ref_pic, Vma
     /* Record submit event, DtoH copy of partials, record finished event. */
     hipError_t hip_rc = hipEventRecord(vmaf_hip_event_of(s->lc.submit), str);
     if (hip_rc == hipSuccess) {
-        hip_rc = hipMemcpyAsync(s->rb.host_pinned, s->rb.device,
-                                (size_t)s->wg_count * sizeof(float), hipMemcpyDeviceToHost, str);
+        hip_rc = hipMemcpyAsync(s->rb.host_pinned, s->rb.device, float_psnr_hip_partials_bytes(s),
+                                hipMemcpyDeviceToHost, str);
     }
     if (hip_rc != hipSuccess)
         return hip_err(hip_rc);
@@ -304,7 +320,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (err == 0)
         err = vmaf_hip_kernel_lifecycle_init(&s->lc, s->ctx);
     if (err == 0)
-        err = vmaf_hip_kernel_readback_alloc(&s->rb, s->ctx, (size_t)s->wg_count * sizeof(float));
+        err = vmaf_hip_kernel_readback_alloc(&s->rb, s->ctx, float_psnr_hip_partials_bytes(s));
 #ifdef HAVE_HIPCC
     if (err == 0)
         err = float_psnr_hip_module_load(s);
@@ -372,13 +388,18 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
     if (err != 0)
         return err;
 
-    const float *partials = (const float *)s->rb.host_pinned;
+    /* Exact: every block sum is an integer below 2^40 and so is their sum
+     * below 2^53 (ADR-1440). The unit is 1 / scaler^2. */
+    const uint32_t *partials = (const uint32_t *)s->rb.host_pinned;
     double total = 0.0;
-    for (unsigned i = 0; i < s->wg_count; i++)
-        total += (double)partials[i];
+    for (size_t i = 0; i < s->wg_count; i++) {
+        total += (double)partials[FPSNR_PARTIALS_PER_BLOCK * i] +
+                 (65536.0 * (double)partials[(FPSNR_PARTIALS_PER_BLOCK * i) + 1u]);
+    }
+    const double scaler = (double)(1u << (s->bpc - 8u));
 
     const double n_pix = (double)s->frame_w * (double)s->frame_h;
-    const double noise = total / n_pix;
+    const double noise = (total / (scaler * scaler)) / n_pix;
     /* Match CPU float_psnr.c — a zero-noise pair reports psnr_max as the
      * infinity sentinel; the truncation at psnr_max applies only when
      * `uncapped` is false. See ADR-1193 / T-UPSTREAM-1109. */

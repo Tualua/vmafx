@@ -152,6 +152,17 @@ test('test_hip_vif_log2_table_contract',
     timeout : 30,
 )
 
+# ADR-1440: float_psnr_hip adds its squared differences as integers (the
+# CPU's float square as uint32, one sum per block, low and high halves at 16
+# bits), so its sums are exact as the CPU's are. Device-free, with a planted
+# regression per check; the device check is test_hip_float_psnr_parity.
+test('test_hip_float_psnr_exact_contract',
+    import('python').find_installation(),
+    args : files('test_hip_float_psnr_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-1408: device-free source guard for the HIP shared frame (an adopted twin
 # asks the context's shared frame for its planes and uploads nothing itself,
 # vmaf_read_pictures() announces and ends the frame around the dispatch loop,
@@ -5444,6 +5455,9 @@ test('test_hip_float_motion_parity', test_hip_float_motion_parity,
     is_parallel : false,
     timeout : 60)
 
+# ADR-1440: float_psnr CPU vs. HIP with == on full-range noise at 8, 10, 12
+# and 16 bits (the input on which a fp32 block sum rounds). Exits 77 when no
+# AMD GPU is visible.
 test_hip_float_psnr_parity = executable('test_hip_float_psnr_parity',
     ['test.c', 'test_hip_float_psnr_parity.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],

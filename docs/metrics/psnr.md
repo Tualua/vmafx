@@ -166,6 +166,17 @@ vmaf --reference ref.yuv --distorted dist.yuv \
 
 `float_psnr` is luma-only on every backend.
 
+`float_psnr_hip` returns the CPU's score bit for bit at 8, 10, 12 and 16 bits
+([ADR-1440](../adr/1440-hip-float-psnr-exact-block-sums.md)): it adds the
+squared differences as integers, so its sum is exact, as the CPU's `double`
+sum is. Measured on a gfx1036, 178 of 178 frames from 480x270 to 3840x2160
+are identical at `--precision max`. Before 2026-10-01 the twin added in
+single precision, which matched the CPU on real clips and was up to 7.6e-8 dB
+off on high-bit-depth input whose differences are large (full-range noise).
+At 16 bits the equality holds up to a mean squared error of
+2^37 / (width x height) on the 8-bit scale (16570 at 3840x2160, a PSNR below
+6 dB); beyond that the CPU's own sum rounds.
+
 ## Output
 
 **Metrics** — `psnr_y`, `psnr_cb`, `psnr_cr` (fixed); `float_psnr` (float).
