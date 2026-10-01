@@ -690,6 +690,19 @@
   now avoids intervals; CI's Ubuntu runner was not affected.
 
 
+- **`vmaf_read_json_model_collection` rejects sub-model name truncation with `-EINVAL`.**
+  Port of the sub-model name truncation check from upstream Netflix/vmaf commit
+  `15f1447c6` ([Netflix/vmaf#1428](https://github.com/Netflix/vmaf/pull/1428)).
+  In both `core/src/read_json_model.cpp` and `core/src/read_json_model.c`,
+  the return value of `snprintf` when formatting generated sub-model names
+  `"%s_%04u"` was ignored via `(void)snprintf`. When a model collection
+  reaches index 9999, `++i` increments to 10000 (5 digits), exceeding
+  `cfg_name_sz` (`strlen(name) + 5 + 1`) and truncating the sub-model name.
+  Both the C++23 parser and its C twin now validate `n < 0 || (size_t)n >= cfg_name_sz`,
+  tear down any allocated model and collection objects without leaking, and
+  return `-EINVAL`.
+
+
 - **SYCL integer ADM row reduction runs spill-free on DG2 and restores Arc A380 parity under `xe`.**
   In `integer_adm_sycl.cpp`, `launch_csf_den_cm` kept nine 64-bit accumulators live across the
   column loop, which IGC compiled at SIMD16 with an 864 B/thread register spill on DG2 (Arc A380).
