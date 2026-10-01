@@ -14,6 +14,46 @@
 - `core/test/test_device_target_header_dependencies.py` guards it.
 - Fork-local build wiring; upstream Netflix/vmaf has no SYCL backend. No
   public API, ABI, FFmpeg patch or Netflix golden-data impact.
+## ADR-1436 — `ciede_sycl` runs the CPU's statements on fp32 pairs (2026-10-01)
+
+`fix/sycl-ciede-cpu-arithmetic`, ADR-1436 (after ADR-1426 for the CUDA twin).
+
+- `core/src/feature/sycl/sycl_ciede_math.h` (new) mirrors `ciede.c`:
+  `rgb_to_xyz_map()`, `xyz_to_lab_map()`, `lab_color()` = `get_lab_color()`,
+  `h_prime()`, `delta_h_prime()`, `upcase_h_bar_prime()`, `upcase_t()`,
+  `r_sub_t()`, `delta_e()` = `ciede2000()`. It is the same function set as
+  `core/src/feature/cuda/integer_ciede/ciede_device.h`. If upstream Netflix
+  changes one of those routines, or the order of `extract()`'s sum, change
+  both headers in the same change;
+  `core/test/test_sycl_ciede_exact_contract.py` fails when the mirrored lines
+  move.
+- `core/src/feature/sycl/sycl_ff_math.h` (new): elementary functions on fp32
+  pairs. Its constants and tables sit between `BEGIN GENERATED` and
+  `END GENERATED`; edit `scripts/dev/gen_sycl_ff_math.py` and run it with
+  `--write`, never the block by hand. **On rebase**: no fp64 type in either
+  header outside `make_pair()` / `make_constants()` (ADR-0220).
+- `core/src/feature/sycl/integer_ciede_sycl.cpp`: the fp32 formula
+  (`srgb_to_linear()` ... `ciede2000_dev()`) and the per-work-group float
+  partials are gone and must not come back. The kernel stores one float per
+  pixel (`d_terms`), the host adds them (`ciede_frame_sum()`), the tables are
+  copied to `d_tables` at the first submit. `ciede_pixel()` keeps
+  `__attribute__((flatten, always_inline))`: without it the kernel uses
+  scratch memory and returns wrong values on Arc A-series under xe. The
+  kernel is the functor `CiedeKernel` at SIMD-16 with the default register
+  file; SIMD-32 spills to scratch memory.
+- `scripts/ci/cross_backend_calibration.py`: `LIBM_TWINS["ciede"]` gains
+  `"sycl": 1e-9`. On a conflict with another twin's entry keep both.
+- `core/test/test_strict_fp_compiler_args.py` no longer pins the number of
+  probe device links in `core/test/meson.build`; it requires every one to
+  carry the strict FP policy. **On rebase**: if the other side changes the
+  pinned number, keep this form.
+- `core/test/meson.build`: the `sycl_ciede_format_variants` loop is gone; the
+  variants are cases of `test_sycl_ciede_parity` (`core/test/ciede_twin_parity.h`).
+- Tests: `core/test/test_sycl_ciede_math.c` with its probe
+  `test_sycl_ciede_math_probe.cpp` and `sycl_ciede_math_probe.h` (host and
+  device), `core/test/test_sycl_ciede_parity.c` (1e-8),
+  `core/test/test_sycl_ciede_exact_contract.py`.
+- No Netflix golden-data, public API or FFmpeg patch impact.
 
 ## `integer_vif_cuda` resets its accumulators on the picture stream (2026-10-01)
 

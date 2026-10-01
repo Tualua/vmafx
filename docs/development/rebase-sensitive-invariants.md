@@ -459,6 +459,26 @@ linked AGENTS.md before resolving conflicts.
   `test_cuda_ciede_parity` on one. See
   [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
 
+- **`ciede_sycl` runs the CPU's arithmetic on fp32 pairs ([ADR-1436](../adr/1436-sycl-ciede-cpu-arithmetic.md))**:
+  `core/src/feature/sycl/sycl_ciede_math.h` is the same statements as the
+  CUDA twin's `ciede_device.h` for a device without an fp64 type: every fp64
+  value is an fp32 pair, every math-library call a function of
+  `core/src/feature/sycl/sycl_ff_math.h`, every `float` of the reference a
+  float rounded from the pair at the reference's statement. The kernel stores
+  one float per pixel and `ciede_frame_sum()` adds the read-back plane in
+  raster order. Do not introduce the device's fp32 math functions, a device
+  reduction, another form of the formula, or a call the compiler does not
+  inline: `ciede_pixel()` is flattened into the kernel because a call frame is
+  scratch memory (ADR-1395). The header's constants and tables come from
+  `scripts/dev/gen_sycl_ff_math.py`; the tables are read from device memory.
+  A change to `get_lab_color()`, `ciede2000()`, `get_r_sub_t()` or the order
+  of `extract()`'s sum in `ciede.c` changes this header and the CUDA one in
+  the same PR. The twin is not bit-identical (the host's `powf`); the gate
+  bounds it at `1e-9` through `LIBM_TWINS`.
+  `core/test/test_sycl_ciede_exact_contract.py` guards it without a device,
+  `test_sycl_ciede_math` and `test_sycl_ciede_parity` on one. See
+  [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
+
 - **`float_vif_cuda` returns the CPU's scores bit for bit ([ADR-1412](../adr/1412-cuda-float-vif-cpu-arithmetic.md))**:
   the host takes each scale's Gaussian from `vif_get_filter()`, as
   `float_vif.c` does, and hands it to the kernels; no kernel file holds a tap.

@@ -574,10 +574,12 @@ Converting an open PR that edits the old literal (one conflict, once):
 3. `make docs-fragments-write`; commit the regenerated table.
 Tests need no edit: they hold for any fragment set.
 
-**Math-library twins (ADR-1426).** `LIBM_TWINS` in
-`cross_backend_calibration.py` (`ciede`: `cuda` = 1e-9) = twins running the
-CPU's arithmetic + sum order, differing only in libm (glibc vs device
-`pow` / `atan2` / `sin` / `cos` / `exp` / `powf`). Cell with both sides
+**Math-library twins (ADR-1426, ADR-1436).** `LIBM_TWINS` in
+`cross_backend_calibration.py` (`ciede`: `cuda` = 1e-9, `sycl` = 1e-9) =
+twins running the CPU's arithmetic + sum order, differing only in libm
+(glibc vs device `pow` / `atan2` / `sin` / `cos` / `exp` / `powf`) and, on
+SYCL (no fp64 type), in the last bits of an fp32 pair (1 pixel in 1.6
+million vs the fp64 evaluation). Cell with both sides
 `cpu` or a listed twin (`libm_pair_tolerance`) -> listed tolerance, source
 `libm:ADR-1426`, `--precision max`. Resolved after `EXACT_TWINS`, before
 calibration rows; `--fp16-features` still wins. NOT an exact twin: never

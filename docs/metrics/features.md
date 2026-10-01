@@ -857,9 +857,29 @@ from new ones by that much. It is not bit-identical because the CPU calls the
 C library's math functions and the device calls CUDA's: a few pixels per
 million round to the neighbouring `float`. The double-precision math costs
 time: 32.7 ms per 3840x2160 frame on an RTX 4090 (2.8 ms before), against
-222 ms for the CPU extractor on sixteen threads. The SYCL, HIP and Metal
-twins compute in `float` and agree with the CPU to about two decimal places
-of the gate (`5e-3`).
+222 ms for the CPU extractor on sixteen threads.
+
+**`ciede_sycl` and the CPU.** The SYCL twin runs the same statements. A SYCL
+kernel has no `double`, so every `double` of the CPU's formula is a pair of
+`float` values and every math function (`pow`, `cbrt`, `atan2`, `sin`, `cos`,
+`exp`) a routine on such pairs
+([ADR-1436](../adr/1436-sycl-ciede-cpu-arithmetic.md)). Measured on an Arc
+A380 at `--precision max` against `--backend cpu`: the Netflix 576x324 pair
+identical on 47 of 48 frames (6.9e-13 on the other), its 10-, 12- and 16-bit
+and 4:2:2 versions and both 1920x1080 checkerboard pairs identical on every
+frame, 3840x2160 within 1.4e-11 on 200 frames. Those are the CUDA twin's
+figures. Before ADR-1436 the twin was up to 1.1e-5 away, and stored
+`ciede_sycl` outputs differ from new ones by that much. It is not
+bit-identical for the reason the CUDA twin is not: the C library's `powf` is
+not correctly rounded, and on a 3840x2160 frame 18 to 64 of 8.3 million
+pixels round to the neighbouring `float`. The pair arithmetic costs time: 50.3 ms
+per 3840x2160 frame on an Arc A380 (16.2 ms before) and 1.2 ms at 576x324
+(0.45 before); the CPU extractor takes 2.5 s per 3840x2160 frame on one
+thread. It also keeps one `float` per pixel on the device and on the
+host, 33 MB each at 3840x2160.
+
+The HIP and Metal twins compute in `float` and agree with the CPU to about
+two decimal places of the gate (`5e-3`).
 
 **Limitations** — Assumes BT.709 YCbCr → RGB → CIELAB. No override for
 BT.2020 or BT.601 input yet. Ported from the `av-metrics` Rust crate.

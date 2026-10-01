@@ -256,10 +256,20 @@ def is_exact_pair(feature: str, backend_a: str, backend_b: str) -> bool:
 # needs the same count in its own step (a synthetic frame scoring 22.5 is
 # 3.8e-6 away, two steps of 2^-19). It is not a statement about the twin's
 # arithmetic, which has no known difference left.
+#
+# ADR-1436: ``ciede_sycl`` runs the same statements on a device without an
+# fp64 type, with every fp64 value as an fp32 pair (about 48 bits) and every
+# math-library call as a pair function (about 2^-44). Its pixels can differ
+# from the CPU's where a pair does not decide a float rounding (about one
+# pixel in 1.6 million against the fp64 evaluation on synthetic colour pairs,
+# none of 24.9 million on three 4K frames) and do differ where the host's
+# ``powf`` is not correctly rounded, as on CUDA (18 to 64 pixels per 4K
+# frame). Measured on an Arc A380: 1.4e-11 at 3840x2160, 6.9e-13 at 576x324,
+# the CUDA twin's figures.
 # ---------------------------------------------------------------------------
 
 LIBM_TWINS: dict[str, dict[str, float]] = {
-    "ciede": {"cuda": 1e-9},
+    "ciede": {"cuda": 1e-9, "sycl": 1e-9},
     "speed_chroma": {"cuda": 5e-6},
 }
 LIBM_TWIN_SOURCE = "libm:ADR-1426"

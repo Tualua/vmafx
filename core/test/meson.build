@@ -265,6 +265,18 @@ test('test_cuda_adm_exact_contract',
     timeout : 30,
 )
 
+# ADR-1436: ciede_sycl runs ciede.c's statements with every fp64 value as an
+# fp32 pair, stores one float per pixel and lets the host add them in the
+# reference's order; the constants and tables of sycl_ff_math.h are the
+# generator's. Device-free; the arithmetic check is test_sycl_ciede_math, the
+# device check is test_sycl_ciede_parity.
+test('test_sycl_ciede_exact_contract',
+    import('python').find_installation(),
+    args : files('test_sycl_ciede_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-1422: float_vif_sycl returns the CPU's scores bit for bit -- the taps
 # are vif_get_filter()'s, log2 is the reference's polynomial, the two fp64
 # expressions around vif_sigma_nsq are evaluated without an fp64 type, and the
@@ -4375,6 +4387,47 @@ if not is_sycl_acpp
         is_parallel : false)
 endif
 
+# ADR-1436: the arithmetic ciede_sycl's kernel runs -- the fp32 pair functions
+# of src/feature/sycl/sycl_ff_math.h against the host's extended-precision
+# math library, and the ciede2000 pixel of src/feature/sycl/sycl_ciede_math.h
+# against the same statements in fp64 (cuda/integer_ciede/ciede_device.h
+# compiled for the host) -- on the host and in kernels on the default GPU. The
+# probe TU is compiled with the extractors' own arguments, like the probes
+# above. The fp64 statements are compiled by the test itself, so it needs the
+# strict FP flags and no library object.
+if not is_sycl_acpp
+    sycl_ciede_math_probe = custom_target('sycl_ciede_math_probe',
+        output : 'sycl_ciede_math_probe.o',
+        input : 'test_sycl_ciede_math_probe.cpp',
+        depend_files : files('../src/feature/sycl/sycl_exact_fp.h',
+                             '../src/feature/sycl/sycl_ff_math.h',
+                             '../src/feature/sycl/sycl_ciede_math.h',
+                             '../src/feature/sycl/sycl_compat.h',
+                             'sycl_ciede_math_probe.h'),
+        command : [icpx] + vmaf_cflags_common + ['-c'] + sycl_toolchain_args
+                  + sycl_feature_tail_args + ['@INPUT@', '-o', '@OUTPUT@'],
+    )
+    sycl_ciede_math_probe_objects = [sycl_ciede_math_probe]
+    if sycl_msvc_device_link
+        sycl_ciede_math_probe_objects += custom_target('sycl_ciede_math_probe_device_link',
+            input : sycl_ciede_math_probe,
+            output : 'sycl_ciede_math_probe_device_link.obj',
+            command : [icpx] + sycl_device_link_args + sycl_strict_fp_args
+                      + ['@INPUT@', '-o', '@OUTPUT@'],
+        )
+    endif
+    test_sycl_ciede_math = executable('test_sycl_ciede_math',
+        ['test.c', 'test_sycl_ciede_math.c'] + sycl_ciede_math_probe_objects,
+        include_directories : [test_inc, include_directories('../src/')],
+        dependencies : [math_lib, sycl_dependency],
+        c_args : vmaf_strict_fp_args,
+        link_language : 'cpp',
+    )
+    test('test_sycl_ciede_math', test_sycl_ciede_math,
+        suite : ['fast', 'gpu', 'sycl'],
+        is_parallel : false)
+endif
+
 # ADR-1395: SYCL kernels use no scratch memory (private arrays in memory,
 # register spills) on Intel GPUs, where the Linux xe driver returns wrong
 # values from them. Builds every registered kernel for the default GPU and
@@ -4704,27 +4757,6 @@ test_sycl_ciede_parity = executable('test_sycl_ciede_parity',
 test('test_sycl_ciede_parity', test_sycl_ciede_parity,
     suite : ['fast', 'gpu', 'sycl'],
     is_parallel : false)
-# ciede_sycl reads chroma at native size with (x >> ss_hor, y >> ss_ver)
-# indexing, so pin the odd-size ceil chroma width (ADR-1213 hazard), 4:2:2
-# with the 16-bit sample path, and 4:4:4 against the CPU extractor.
-sycl_ciede_format_variants = [
-    ['oddw', ['-DFIXTURE_W=577u', '-DFIXTURE_H=325u']],
-    ['422_10b', ['-DFIXTURE_W=577u', '-DFIXTURE_H=325u', '-DFIXTURE_BPC=10u',
-                 '-DFIXTURE_PIX_FMT=VMAF_PIX_FMT_YUV422P']],
-    ['444', ['-DFIXTURE_PIX_FMT=VMAF_PIX_FMT_YUV444P']],
-]
-foreach variant : sycl_ciede_format_variants
-    variant_exe = executable('test_sycl_ciede_parity_' + variant[0],
-        ['test.c', 'test_sycl_ciede_parity.c'],
-        include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-        link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
-        dependencies: [pthread_dependency, sycl_dependency, math_lib],
-        c_args: ['-DHAVE_SYCL=1'] + variant[1]
-    )
-    test('test_sycl_ciede_parity_' + variant[0], variant_exe,
-        suite : ['fast', 'gpu', 'sycl'],
-        is_parallel : false)
-endforeach
 
 test_sycl_ssim_parity = executable('test_sycl_ssim_parity',
     ['test.c', 'test_sycl_ssim_parity.c'],

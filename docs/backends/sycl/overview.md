@@ -529,9 +529,9 @@ The line does not make scores bit-identical. What still differs from the CPU:
 
 - **Transcendental functions.** `sycl::log2`, `exp`, `pow`, `cbrt`, `sin`
   and `atan2` are not correctly rounded on the device and are not the host's
-  libm. `ciede` (`pow`, `atan2`, `sin`) calls them for every pixel.
-  `float_vif_sycl` no longer does: it evaluates the CPU's `log2` polynomial
-  (ADR-1422).
+  libm. `float_vif_sycl` evaluates the CPU's `log2` polynomial instead
+  (ADR-1422), and `ciede_sycl` its own functions on pairs of `float` values
+  (ADR-1436, [below](#ciede_sycl-follows-the-cpu-ciede-to-14e-11-2026-10-01)).
 - **Summation order.** Work-group reductions add in a fixed tree, not in the
   CPU's sequential order.
 - **fp64 on the CPU.** SYCL kernels are fp32-only
@@ -624,9 +624,10 @@ the deviation:
   uploaded at their native size, and the kernel reads chroma at the
   subsampled position (the CUDA and HIP twins index the same way). The
   host no longer upscales chroma to full resolution before the copy,
-  which roughly halves the per-frame time at 4K on an Arc B580. Scores
-  are unchanged; they sit within 1e-4 of the CPU `ciede` (the parity gate
-  allows 5e-3).
+  which roughly halves the per-frame time at 4K on an Arc B580. Since
+  ADR-1436 the scores are within 1.4e-11 of the CPU `ciede` (the parity gate
+  allows 1e-9); see
+  [below](#ciede_sycl-follows-the-cpu-ciede-to-14e-11-2026-10-01).
 - **SSIM / MS-SSIM / PSNR / PSNR-HVS** — SYCL twins exist
   (`integer_ssim_sycl`, `float_ssim_sycl`, `float_ms_ssim_sycl`,
   `psnr_sycl`, `psnr_hvs_sycl`); `float_ansnr` was removed per
@@ -1341,6 +1342,68 @@ A380; the twins form wide products in 32-bit limbs
 ```bash
 ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/dev/speed_gpu_parity.py \
     --backend sycl --vmaf "$PWD/build/tools/vmaf" --feature vif
+```
+
+## `ciede_sycl` follows the CPU `ciede` to 1.4e-11 (2026-10-01)
+
+`ciede.c` computes in `double` and stores in `float`. A SYCL kernel has no
+`double` ([fp64-less contract](#fp64-less-device-contract-t7-17)), and
+`ciede_sycl` used `float` throughout, the device's `float` math functions and
+a sum per 16x16 block. It was up to 1.14e-5 from the CPU. Since
+[ADR-1436](../../adr/1436-sycl-ciede-cpu-arithmetic.md) the kernel runs the
+CPU's statements with every `double` as a pair of `float` values (about 48
+bits) and every math-library call as a function on such pairs
+(`core/src/feature/sycl/sycl_ciede_math.h`,
+`core/src/feature/sycl/sycl_ff_math.h`), rounds to `float` where the CPU
+does, and stores one `float` per pixel; the host adds them in the CPU's
+order.
+
+Each piece of the old twin on its own, largest difference on the Netflix
+576x324 pair and on BBB 3840x2160
+([Research-1436](../../research/1436-sycl-ciede-fp32-pairs.md) has all
+thirteen):
+
+| What the twin did | Netflix | BBB 4K |
+|---|---:|---:|
+| the linear Lab branch as `7.787 t + 16 / 116` (the CPU: `(24389 / 27 * t + 16) / 116`) | 1.12e-5 | 1.05e-6 |
+| the CPU's constants as `float` | 5.3e-7 | 6.7e-7 |
+| `x^2.4` from the device's `float` `pow` | 2.3e-7 | 5.9e-7 |
+| the colour conversion arithmetic in `float` | 2.1e-7 | 2.1e-7 |
+| sums of 256 pixels in `float`, those in `double` | 2.0e-7 | 8.0e-8 |
+| the cube root from the device's `float` `cbrt` | 5.0e-8 | 3.8e-7 |
+
+Measured on an Arc A380 (xe driver, Level Zero, icpx 2026.0) at
+`--precision max` against `--backend cpu`, identical frames and largest
+difference:
+
+| Fixture | Before | Now |
+|---|---|---|
+| Netflix 576x324, 48 frames | 0 of 48, 1.14e-5 | 47 of 48, 6.9e-13 |
+| Netflix 576x324 at 10, 12, 16 bits and 4:2:2 10-bit, 3 frames each | | 3 of 3 each |
+| Checkerboard 1920x1080, 1 px and 10 px shift, 3 frames each | 3 of 3 | 3 of 3 |
+| BBB 3840x2160, 200 frames | 0 of 20 (first 20), 1.3e-6 | 0 of 200, 1.4e-11 |
+
+That is where the CUDA twin is, which has `double`. What is left is the C
+library: on three 3840x2160 frames the device's 24.9 million values equal the
+CPU's statements evaluated with a correctly rounded `powf` on every pixel;
+18 to 64 per frame differ from the GCC build's CPU extractor, where glibc's
+`powf` rounds the other way, and 7 to 30 from the icx build's. The twin is
+therefore not listed as exact; the parity gate compares it at `1e-9`
+([cross-backend gate](../../development/cross-backend-gate.md)).
+
+Through the `vmaf` tool on the A380 a 3840x2160 frame takes 50.3 ms, 16.2 ms
+before (medians of 11 paired runs, paired difference 33.9 ms), and a 576x324
+frame 1.2 ms, 0.45 before. Of the 50 ms, 11 are the uploads, the read-back
+and the host's sum, 19 the two Lab conversions and 21 the difference
+formula. The twin keeps one `float` per pixel on the device
+and in pinned host memory, 33 MB each at 3840x2160. No kernel uses
+[scratch memory](#scratch-memory-on-intel-gpus-adr-1395): the per-pixel
+function is flattened into the kernel, because a call inside a kernel takes
+its frame from scratch memory.
+
+```bash
+ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/dev/speed_gpu_parity.py \
+    --backend sycl --vmaf "$PWD/build/tools/vmaf" --feature ciede --max-abs-diff 1e-9
 ```
 
 ## Licensing of the SYCL kernels (ADR-1250)
