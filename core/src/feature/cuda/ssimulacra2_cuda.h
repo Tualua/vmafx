@@ -26,12 +26,18 @@
 /* Per-pixel kernels: 16 x 8 threads per block. */
 #define SS2C_PIX_BX 16
 #define SS2C_PIX_BY 8
-/* Reduction: 256 threads per block, at most 256 blocks per channel, about 16
- * pixels per thread. The block count depends on the plane size only, so the
- * summation tree is the same on every device. */
+/* Sums (ADR-1433): the CPU adds each of a channel's six terms pixel after
+ * pixel into one double, and the twin returns those bits
+ * (feature/ordered_sum.h). The plane is cut into chunks in raster order; a
+ * chunk is one block of 256 lanes, each lane taking 4 consecutive pixels. */
 #define SS2C_REDUCE_BLOCK 256
-#define SS2C_MAX_GROUPS 256
-#define SS2C_PIXELS_PER_ITEM 16
+#define SS2C_CHUNK_RUN 4
+#define SS2C_CHUNK_PIXELS (SS2C_REDUCE_BLOCK * SS2C_CHUNK_RUN)
+/* The two kernels that follow the chunks in order stage them through shared
+ * memory, SS2C_BATCH chunks at a time (4 per lane), so that the one lane
+ * that walks them does not read device memory chunk by chunk. */
+#define SS2C_BATCH_RUN 4
+#define SS2C_BATCH (SS2C_REDUCE_BLOCK * SS2C_BATCH_RUN)
 
 /* The five blurred quantities of ssimulacra2.c::extract, one blur job each:
  * blur(ref), blur(dis), blur(ref * ref), blur(dis * dis), blur(ref * dis). */
@@ -88,8 +94,9 @@ typedef struct Ss2cBlurArgs {
     unsigned pad_;
 } Ss2cBlurArgs;
 
-/* One scale's SSIM / edge-difference combine. Three compact planes per
- * buffer; `pixels` = width x height of the scale. */
+/* One scale's SSIM / edge-difference sums. Three compact planes per input
+ * buffer; `pixels` = width x height of the scale, `chunks` the number of
+ * SS2C_CHUNK_PIXELS-pixel chunks of one plane (the last may be partial). */
 typedef struct Ss2cCombineArgs {
     const float *mu1;
     const float *mu2;
@@ -98,9 +105,12 @@ typedef struct Ss2cCombineArgs {
     const float *s12;
     const float *img1;
     const float *img2;
-    double *partials; /* [channel][group][sum] */
+    double *chunk_sums; /* [channel][chunk][sum]: each chunk's terms, added in a tree */
+    int16_t *plan;      /* [channel][sum][chunk]: vmaf_ordsum_plan() */
+    int64_t *units;     /* [channel][sum][chunk][2]: VmafOrdsumUnits even, odd */
+    double *totals;     /* [channel][sum] of this scale: the CPU's sums */
     size_t pixels;
-    unsigned groups;
+    unsigned chunks;
     unsigned pad_;
 } Ss2cCombineArgs;
 

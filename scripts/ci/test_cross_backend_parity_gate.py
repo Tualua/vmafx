@@ -910,6 +910,7 @@ def test_exact_pair_is_cpu_and_listed_twins_only() -> None:
         "float_ms_ssim_lcs": frozenset({"sycl"}),
         "float_motion": frozenset({"cuda", "sycl", "hip"}),
         "psnr_hvs": frozenset(_EXACT_PSNR_HVS),
+        "ssimulacra2": frozenset({"cuda"}),
         "float_vif": frozenset({"cuda", "sycl"}),
         "float_adm": frozenset({"cuda"}),
     } == EXACT_TWINS
@@ -1014,6 +1015,38 @@ def test_float_vif_cuda_and_sycl_cells_are_exact_and_other_twins_are_not() -> No
         tolerance, source = cell(*pair)
         assert _close(tolerance, FEATURE_TOLERANCE["float_vif"]), pair
         assert source == "default", pair
+
+
+def test_ssimulacra2_cuda_cell_is_exact_and_other_twins_are_not() -> None:
+    """ADR-1433: only the CUDA twin returns the sums of the CPU's loops."""
+
+    def cell(backend_a: str, backend_b: str) -> tuple[float, str]:
+        return resolve_cell_tolerance(
+            "ssimulacra2",
+            fp16_features=[],
+            calibration=None,
+            gpu_id=None,
+            width=3840,
+            height=2160,
+            backends=(backend_a, backend_b),
+        )
+
+    assert cell("cpu", "cuda") == (0.0, EXACT_TWIN_SOURCE)
+    assert cell("cuda", "cpu") == (0.0, EXACT_TWIN_SOURCE)
+    for pair in (("cpu", "sycl"), ("cpu", "hip"), ("cuda", "sycl")):
+        tolerance, source = cell(*pair)
+        assert _close(tolerance, FEATURE_TOLERANCE["ssimulacra2"]), pair
+        assert source == "default", pair
+    # 7.3e-11, the largest difference the tree sum left on the fixtures, fails
+    # the exact cell; the places=2 default let it through.
+    reference = [{"frameNum": 0, "metrics": {"ssimulacra2": 71.0}}]
+    measured = [{"frameNum": 0, "metrics": {"ssimulacra2": 71.0 + 7.3e-11}}]
+    _, exact_mismatch = diff_frames(reference, measured, ("ssimulacra2",), 0.0)
+    _, default_mismatch = diff_frames(
+        reference, measured, ("ssimulacra2",), FEATURE_TOLERANCE["ssimulacra2"]
+    )
+    assert exact_mismatch == {"ssimulacra2": 1}
+    assert default_mismatch == {"ssimulacra2": 0}
 
 
 def test_float_ms_ssim_sycl_cells_are_exact_and_other_twins_are_not() -> None:

@@ -118,23 +118,36 @@ vmaf -r ref.yuv -d dis.yuv -w 3840 -h 2160 -p 420 -b 8 \
     --backend cuda --no_prediction --feature ssimulacra2_cuda -o out.json --json
 ```
 
-Colour conversion, XYB, blurs and downsample match the CPU bit for bit. CUDA
-devices have double precision, so the per-pixel SSIM and edge terms are the
-CPU's own double expressions; only the order in which they are added differs (a
-fixed tree instead of one after another). The per-frame score is within 1e-9
-of `--backend cpu` (1.5e-12 at worst at 3840x2160) and the same on every run.
-Before ADR-1391 the twin matched the CPU exactly but copied every scale between
-device and host. Check and time it with (`--vmaf` takes an absolute path):
+The score is the CPU extractor's, bit for bit
+([ADR-1433](../adr/1433-cuda-ssimulacra2-cpu-sum-order.md)). Colour conversion,
+XYB, blurs and downsample match the CPU, and CUDA devices have double
+precision, so the per-pixel SSIM and edge terms are the CPU's own double
+expressions. The CPU adds each term pixel after pixel into one double, and
+every such add rounds; the twin returns the result of that loop without
+running it on one thread. While the running sum stays between two powers of
+two, adding a term moves it by a whole number of steps, so the device adds
+those whole numbers per chunk of 1024 pixels in parallel and one pass over the
+chunks puts them together; the few chunks in which the sum passes a power of
+two are added term by term. Measured on an RTX 4090 at `--precision max`: 113
+of 113 frames identical to `--backend cpu` (Netflix 576x324 at 8, 10, 12 and
+16 bits, both 1080p checkerboard pairs, BBB 3840x2160). Before ADR-1433 the
+terms were added in a fixed tree and the score was up to 7.3e-11 from the
+CPU's. A 3840x2160 frame takes 15.6 ms (7.8 ms with the tree; the CPU
+extractor takes 126 ms on sixteen threads). Before ADR-1391 the twin copied
+every scale between device and host. Check and time it with (`--vmaf` takes an
+absolute path):
 
 ```shell
 python3 scripts/dev/speed_gpu_parity.py --backend cuda --feature ssimulacra2 \
-    --max-abs-diff 1e-9 --vmaf "$PWD/build/tools/vmaf" \
+    --vmaf "$PWD/build/tools/vmaf" \
     --netflix-dir python/test/resource/yuv --bbb-dir testdata/bbb
 ```
 
+The default bound of that script is 0: every frame must be bit-identical.
+
 The twin keeps the equivalent of 14.5 full-size three-plane float buffers in
 device memory (the linear-RGB pyramid, XYB, and the two passes of the five
-blurs): about 1.4 GB at 3840x2160.
+blurs): about 1.4 GB at 3840x2160. The sums add 3.8 MB at that size.
 
 ### HIP: device-resident, tiled row pass
 

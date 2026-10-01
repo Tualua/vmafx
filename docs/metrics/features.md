@@ -1155,10 +1155,13 @@ YUV → linear RGB, XYB, the 5 separable IIR blurs, the per-pixel SSIM +
 EdgeDiff terms with their per-channel sums, and the 2×2 downsample, with
 one small readback of the per-scale sums per frame. Their YUV, XYB, blur
 and downsample stages match the CPU bit for bit (contraction off, the
-shared cube root with a correctly rounded division); only the summation
-order of the per-pixel terms differs (fp64 on CUDA, exact fp32 pairs on
-SYCL, a fixed tree on both), so their per-frame scores are within about
-1e-11 of the CPU and the same on every run. The HIP (and Metal)
+shared cube root with a correctly rounded division). The CUDA twin's
+score is the CPU's bit for bit: it evaluates the per-pixel terms in fp64
+and returns the sums of the CPU's loops
+([ADR-1433](../adr/1433-cuda-ssimulacra2-cpu-sum-order.md)). The SYCL
+twin evaluates them in exact fp32 pairs and adds them in a fixed tree, so
+its per-frame score is within about 1e-11 of the CPU and the same on
+every run. The HIP (and Metal)
 twins still run a hybrid host/GPU pipeline: the host does YUV →
 linear-RGB, XYB, the downsample and the fp64 combine, the GPU does the
 3-plane multiplies (`ssimulacra2_mul3`) and the blurs. GPU `cbrtf`

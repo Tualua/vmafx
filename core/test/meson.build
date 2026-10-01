@@ -1798,6 +1798,19 @@ test_ssimulacra2_nonfinite = executable('test_ssimulacra2_nonfinite',
 )
 test('test_ssimulacra2_nonfinite', test_ssimulacra2_nonfinite, suite : ['fast'])
 
+# ADR-1433 — feature/ordered_sum.h (the bits of `for (...) s += x[i];` over
+# non-negative doubles, from chunk-wise integer increments) against that loop:
+# random terms, terms that tie on every add, zeros, 600 binades of range, NaN
+# and infinity, wrong plans. It runs the pieces in the layout of the
+# ssimulacra2 CUDA kernels. No device is needed.
+test_ordered_sum = executable('test_ordered_sum',
+    ['test.c', 'test_ordered_sum.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common,
+    dependencies : [math_lib],
+)
+test('test_ordered_sum', test_ordered_sum, suite : ['fast'])
+
 test_adm_nonfinite_score = executable('test_adm_nonfinite_score',
     ['test.c', 'test_adm_nonfinite_score.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
@@ -3283,6 +3296,18 @@ test_cuda_ssimulacra2_parity = executable('test_cuda_ssimulacra2_parity',
 test('test_cuda_ssimulacra2_parity', test_cuda_ssimulacra2_parity,
     suite : ['fast', 'gpu'],
     is_parallel : false)
+
+# ADR-1433: ssimulacra2_cuda returns the CPU's score bit for bit -- the sums
+# of the per-pixel terms are the sums of the CPU's loops (chunks of pixels in
+# raster order, increments composed in pixel order, one walk per sum with a
+# term-by-term fallback), not a tree. Device-free; the arithmetic check is
+# test_ordered_sum, the device check is test_cuda_ssimulacra2_parity.
+test('test_cuda_ssimulacra2_exact_contract',
+    import('python').find_installation(),
+    args : files('test_cuda_ssimulacra2_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
 
 # Round-2 GPU-kernel coverage gap-fill — adm2/adm3 CPU vs. CUDA parity
 # (places=4). Round-1 (PR #351) covered psnr_cuda + ciede_cuda; ADM was

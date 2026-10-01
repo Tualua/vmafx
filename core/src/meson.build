@@ -1527,6 +1527,7 @@ if is_cuda_enabled
         'feature/ssimulacra2_eotf_lut.h',
         'feature/ssimulacra2_math.h',
         'feature/ssimulacra2_score.h',
+        'feature/ordered_sum.h',
         'feature/cuda/float_adm_cuda.h',
         'feature/cuda/float_adm/float_adm_device.h',
         'feature/adm_reciprocal_model.h',

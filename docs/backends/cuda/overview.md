@@ -251,7 +251,7 @@ Netflix 576x324 pair, both 1080p checkerboard pairs and BBB 3840x2160:
 |---|---|
 | `vif`, `motion`, `motion_v2`, `psnr`, `psnr_hvs`, `float_psnr`, `float_moment`, `float_motion`, `float_ssim`, `cambi`, `speed_temporal`, `float_ms_ssim` | bit-identical on every frame |
 | `speed_chroma` | bit-identical except the frames where glibc misrounds `log2f` (6 of 312 outputs, 1.4e-6) |
-| `ssimulacra2` | 7.3e-11 at most |
+| `ssimulacra2` | bit-identical on every frame since [ADR-1433](../../adr/1433-cuda-ssimulacra2-cpu-sum-order.md) (7.3e-11 before: the terms were added in a tree) |
 | `ssim` | bit-identical on every frame since [ADR-1424](../../adr/1424-cuda-ssim-cpu-frame-sum.md) (1.1e-11 before: the terms were added per block) |
 | `adm` | bit-identical on every frame since [ADR-1416](../../adr/1416-cuda-adm-cpu-row-rounding.md) (2.1e-7 before: the host computed its own CSF weights) |
 | `float_adm` | bit-identical on every frame since [ADR-1420](../../adr/1420-cuda-float-adm-cpu-arithmetic.md) (1.3e-5 before: the angle test's threshold was associated differently) |
@@ -461,17 +461,23 @@ selectively dispatched between GPU and CPU based on option support ([ADR-1183](.
   copy of its own), converts YUV to
   linear RGB and XYB, runs the five blurs of each scale in one
   horizontal and one vertical launch, sums the per-pixel SSIM and
-  edge-difference terms in fp64 over a fixed tree, downsamples, and
-  copies one 864-byte block of per-scale sums to the host, where
-  `collect()` waits once and pools the score. The device kernels
-  build with `--fmad=false`, like every CUDA kernel
-  ([ADR-1403](../../adr/1403-cuda-strict-fp-every-kernel.md)), so everything up to the sums matches the
-  CPU bit for bit, and each per-frame score is within 1e-9 of
-  `--backend cpu` (1.5e-12 at worst on the tested content). On an
-  RTX 4090 a 3840x2160 frame takes about 7 ms instead of about
-  720 ms. Check and time it with
+  edge-difference terms in fp64 in the CPU's order
+  ([ADR-1433](../../adr/1433-cuda-ssimulacra2-cpu-sum-order.md)),
+  downsamples, and copies one 864-byte block of per-scale sums to the
+  host, where `collect()` waits once and pools the score. The device
+  kernels build with `--fmad=false`, like every CUDA kernel
+  ([ADR-1403](../../adr/1403-cuda-strict-fp-every-kernel.md)), so
+  everything up to the sums matches the CPU bit for bit, and since
+  ADR-1433 the sums do too: the CPU adds each term pixel after pixel
+  into one double, and the device returns the bits of that loop from
+  whole-number increments it forms per 1024-pixel chunk, adding term
+  by term only the chunks in which the running sum passes a power of
+  two. The per-frame score equals `--backend cpu` on every measured
+  frame (7.3e-11 at most before). On an RTX 4090 a 3840x2160 frame
+  takes 15.6 ms (7.8 ms with the tree sum, about 720 ms before
+  ADR-1391). Check and time it with
   `python3 scripts/dev/speed_gpu_parity.py --backend cuda --feature
-  ssimulacra2 --max-abs-diff 1e-9 --vmaf "$PWD/build/tools/vmaf"
+  ssimulacra2 --vmaf "$PWD/build/tools/vmaf"
   --netflix-dir python/test/resource/yuv --bbb-dir testdata/bbb`
   (the script wants an absolute `--vmaf` path). 4:0:0 input and
   frames below 8x8 go to the CPU extractor.

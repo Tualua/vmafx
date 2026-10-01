@@ -39,6 +39,7 @@ explicitly accepts its skip.
   | `float_vif` (CPU ↔ CUDA, CPU ↔ SYCL, CUDA ↔ SYCL) | `0` (bit-identical, compared at `--precision max`) | ADR-1412, ADR-1422 (the twins compute the CPU's arithmetic and add in the CPU's order); the `5e-5` row stays for HIP and Metal |
   | `float_adm` (CPU ↔ CUDA) | `0` (bit-identical, compared at `--precision max`) | ADR-1420 (the twin computes the CPU's arithmetic, divides through the host's reciprocal estimate and adds in the CPU's order); the `5e-5` row stays for the other twins |
   | `ssimulacra2` | `5e-3` | ADR-0192 (XYB cube root plus IIR blur) |
+  | `ssimulacra2` (CPU ↔ CUDA) | `0` (bit-identical, compared at `--precision max`) | ADR-1433 (the twin returns the sums of the CPU's loops); the `5e-3` row stays for the other twins |
   | `float_ms_ssim`, `float_ms_ssim_lcs` (CPU ↔ SYCL) | `0` (bit-identical, compared at `--precision max`) | ADR-1414 (the twin computes the CPU's arithmetic); the `5e-5` row above stays for the other twins |
 
 - **Twins that differ only in their math library.** `ciede_cuda` evaluates

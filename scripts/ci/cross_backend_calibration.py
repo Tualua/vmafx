@@ -123,6 +123,11 @@ EXACT_TWINS: dict[str, frozenset[str]] = {
     "float_ms_ssim_lcs": frozenset({"sycl"}),
     "float_motion": frozenset({"cuda", "sycl", "hip"}),
     "psnr_hvs": frozenset({"cuda", "sycl", "hip"}),
+    # ADR-1433: ``ssimulacra2_cuda`` returns the sums of ``ssim_map()`` and
+    # ``edge_diff_map()``, which add each term pixel after pixel into one
+    # double, from chunk-wise integer increments (``feature/ordered_sum.h``).
+    # The other ``ssimulacra2`` twins add in a tree and keep places=2.
+    "ssimulacra2": frozenset({"cuda"}),
     # ADR-1412: ``float_vif_cuda`` filters with ``vif_get_filter()``'s taps,
     # evaluates ``vif_tools.c``'s statistic in its types (the polynomial
     # ``log2f_approx()``, ``vif_sigma_nsq`` in fp64) and adds the terms of a

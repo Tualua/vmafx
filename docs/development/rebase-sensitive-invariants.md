@@ -184,10 +184,18 @@ linked AGENTS.md before resolving conflicts.
   `ssimulacra2_score.h` and `ssimulacra2_eotf_lut.h` into device code through
   the `VMAF_SS2_FUNC` / `VMAF_SS2_EOTF_LUT_STORAGE` hooks, so an upstream change
   to those helpers must stay valid CUDA device code. The per-pixel SSIM / edge
-  terms are fp64 summed over a fixed tree (within about 1e-12 of the CPU).
-  `core/test/test_cuda_ssimulacra2_parity.c` (1e-9) and
-  `scripts/dev/speed_gpu_parity.py --backend cuda --feature ssimulacra2
-  --max-abs-diff 1e-9` re-check parity. See
+  terms are fp64, and their sums are the sums of the CPU's loops
+  ([ADR-1433](../adr/1433-cuda-ssimulacra2-cpu-sum-order.md)): chunks of
+  1024 pixels in raster order, integer increments of the running sum's
+  binade composed in pixel order (`feature/ordered_sum.h`, compiled into
+  device code through the `VMAF_ORDSUM_*` hooks and tested on the host by
+  `core/test/test_ordered_sum.c`), one walk per sum with a term-by-term
+  fallback. The terms must stay non-negative or NaN, and a change to
+  `ssim_map()` / `edge_diff_map()` in `ssimulacra2.c` changes `ss2c_terms()`
+  in the same PR. `core/test/test_cuda_ssimulacra2_parity.c` (`==`),
+  `core/test/test_cuda_ssimulacra2_exact_contract.py` and
+  `scripts/dev/speed_gpu_parity.py --backend cuda --feature ssimulacra2`
+  re-check parity. See
   [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
 - **SYCL kernels use no scratch memory ([ADR-1395](../adr/1395-sycl-kernels-no-scratch.md))**:
   on an Arc A-series GPU under the Linux xe driver, kernels with a private array

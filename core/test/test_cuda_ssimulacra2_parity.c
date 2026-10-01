@@ -6,7 +6,8 @@
  */
 
 /*
- * ADR-0947 — ssimulacra2 CPU vs. CUDA parity test (round 3).
+ * ADR-0947 — ssimulacra2 CPU vs. CUDA parity test (round 3); exact since
+ * ADR-1433.
  *
  * The ssimulacra2 extractor is implemented independently in
  * core/src/feature/ssimulacra2.c (CPU) and
@@ -14,18 +15,25 @@
  * scalar `ssimulacra2` feature.  Since ADR-1391 the CUDA twin runs the
  * whole frame on the device (ssimulacra2/ssimulacra2_device.cu and
  * ssimulacra2/ssimulacra2_blur.cu): YUV conversion, XYB, blurs and
- * downsample reproduce the CPU bit for bit and only the summation order
- * of the per-pixel SSIM / edge terms differs.
+ * downsample reproduce the CPU bit for bit.  Since ADR-1433 the sums of the
+ * per-pixel SSIM / edge terms do too: ssim_map() and edge_diff_map() add
+ * each term pixel after pixel into one double, and the device returns the
+ * bits of that loop (feature/ordered_sum.h).
  *
- * Asserts the ADR-1391 contract, every frame within 1e-9 of the CPU,
- * across 3 frames on a 256x144 YUV420P 8-bpc fixture (and 960x540 in the
- * `_large` variant).  256x144 runs five pyramid scales (the sixth, 8x5,
- * is below the 8x8 floor, which exercises the early stop); 960x540 runs
- * all six.  Skips cleanly when no CUDA device is visible.
+ * Asserts equality, every frame, across 3 frames on a 256x144 YUV420P 8-bpc
+ * fixture (and 960x540 in the `_large` variant), in three forms: a distorted
+ * frame, identical frames (every sum is zero), and a frame distorted in its
+ * lower third only (each sum starts with a run of zeros).  Before ADR-1433
+ * the terms were added in a fixed tree and the score was a few 1e-13 to
+ * 7e-11 from the CPU's, so the distorted cases fail on that twin.  256x144
+ * runs five pyramid scales (the sixth, 8x5, is below the 8x8 floor, which
+ * exercises the early stop); 960x540 runs all six.  Skips cleanly when no
+ * CUDA device is visible.
  */
 
 #include <errno.h>
 #include <math.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -52,7 +60,19 @@
 #define FIXTURE_BPC 8u
 #define NUM_FRAMES 3u
 
-#define PARITY_TOL 1e-9
+/* How the distorted picture differs from the reference. */
+enum distortion {
+    DISTORT_ALL = 0,     /* every pixel */
+    DISTORT_NONE,        /* identical pictures */
+    DISTORT_LOWER_THIRD, /* rows from two thirds down */
+};
+
+static bool row_is_distorted(enum distortion mode, unsigned row, unsigned rows)
+{
+    if (mode == DISTORT_NONE)
+        return false;
+    return mode == DISTORT_ALL || row >= rows - rows / 3u;
+}
 
 static int fill_ref(VmafPicture *pic, unsigned frame_idx)
 {
@@ -80,7 +100,7 @@ static int fill_ref(VmafPicture *pic, unsigned frame_idx)
     return 0;
 }
 
-static int fill_dist(VmafPicture *pic, unsigned frame_idx)
+static int fill_dist(VmafPicture *pic, unsigned frame_idx, enum distortion mode)
 {
     int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
     if (err)
@@ -90,7 +110,9 @@ static int fill_dist(VmafPicture *pic, unsigned frame_idx)
     for (unsigned row = 0; row < pic->h[0]; row++) {
         for (unsigned col = 0; col < pic->w[0]; col++) {
             const unsigned base = (row + col + frame_idx * 5u) & 0xFFu;
-            const unsigned noise = ((row * 2u + col + frame_idx * 3u) % 13u);
+            const unsigned noise = row_is_distorted(mode, row, pic->h[0]) ?
+                                       ((row * 2u + col + frame_idx * 3u) % 13u) :
+                                       0u;
             y[row * pic->stride[0] + col] = (uint8_t)((base + noise) & 0xFFu);
         }
     }
@@ -99,7 +121,9 @@ static int fill_dist(VmafPicture *pic, unsigned frame_idx)
         for (unsigned row = 0; row < pic->h[p]; row++) {
             for (unsigned col = 0; col < pic->w[p]; col++) {
                 const unsigned base = (row * 2u + col + p * 19u + frame_idx) & 0xFFu;
-                const unsigned noise = ((row + col * 3u + frame_idx) % 7u);
+                const unsigned noise = row_is_distorted(mode, row, pic->h[p]) ?
+                                           ((row + col * 3u + frame_idx) % 7u) :
+                                           0u;
                 plane[row * pic->stride[p] + col] = (uint8_t)((base + noise) & 0xFFu);
             }
         }
@@ -107,7 +131,7 @@ static int fill_dist(VmafPicture *pic, unsigned frame_idx)
     return 0;
 }
 
-static int feed_frames(VmafContext *vmaf)
+static int feed_frames(VmafContext *vmaf, enum distortion mode)
 {
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
         VmafPicture ref;
@@ -115,7 +139,7 @@ static int feed_frames(VmafContext *vmaf)
         int err = fill_ref(&ref, i);
         if (err)
             return err;
-        err = fill_dist(&dist, i);
+        err = fill_dist(&dist, i, mode);
         if (err) {
             vmaf_picture_unref(&ref);
             return err;
@@ -137,7 +161,7 @@ static int read_scores(VmafContext *vmaf, double scores[NUM_FRAMES])
     return 0;
 }
 
-static char *run_cpu(double score[NUM_FRAMES])
+static char *run_cpu(enum distortion mode, double score[NUM_FRAMES])
 {
     int err = 0;
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
@@ -148,7 +172,7 @@ static char *run_cpu(double score[NUM_FRAMES])
     err = vmaf_use_feature(vmaf, "ssimulacra2", NULL);
     mu_assert("CPU: vmaf_use_feature(ssimulacra2) failed", !err);
 
-    err = feed_frames(vmaf);
+    err = feed_frames(vmaf, mode);
     mu_assert("CPU: feeding frames failed", !err);
     err = read_scores(vmaf, score);
     mu_assert("CPU: ssimulacra2 score missing", !err);
@@ -159,7 +183,7 @@ static char *run_cpu(double score[NUM_FRAMES])
 }
 
 /* Scores of the CUDA twin on an initialised CUDA state. */
-static char *run_cuda_on(VmafCudaState *cu_state, double score[NUM_FRAMES])
+static char *run_cuda_on(VmafCudaState *cu_state, enum distortion mode, double score[NUM_FRAMES])
 {
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
@@ -172,7 +196,7 @@ static char *run_cuda_on(VmafCudaState *cu_state, double score[NUM_FRAMES])
     err = vmaf_use_feature(vmaf, "ssimulacra2_cuda", NULL);
     mu_assert("CUDA: vmaf_use_feature(ssimulacra2_cuda) failed", !err);
 
-    err = feed_frames(vmaf);
+    err = feed_frames(vmaf, mode);
     mu_assert("CUDA: feeding frames failed", !err);
     err = read_scores(vmaf, score);
     mu_assert("CUDA: ssimulacra2 score missing", !err);
@@ -182,7 +206,7 @@ static char *run_cuda_on(VmafCudaState *cu_state, double score[NUM_FRAMES])
     return NULL;
 }
 
-static char *run_cuda(double score[NUM_FRAMES], int *device_present)
+static char *run_cuda(enum distortion mode, double score[NUM_FRAMES], int *device_present)
 {
     for (unsigned i = 0; i < NUM_FRAMES; i++)
         score[i] = NAN;
@@ -197,7 +221,7 @@ static char *run_cuda(double score[NUM_FRAMES], int *device_present)
     }
     *device_present = 1;
 
-    char *msg = run_cuda_on(cu_state, score);
+    char *msg = run_cuda_on(cu_state, mode, score);
     if (msg)
         return msg; /* the context may still hold the state: leave it */
     err = vmaf_cuda_state_free(cu_state);
@@ -249,39 +273,59 @@ static char *test_ssimulacra2_cuda_context_bounds(void)
     return NULL;
 }
 
-static char *test_ssimulacra2_cpu_cuda_parity(void)
+/* The CUDA twin's score of every frame is the CPU's, bit for bit. A missing
+ * device skips the case. `cpu_score` returns the CPU's scores. */
+static char *check_exact(enum distortion mode, const char *what, double cpu_score[NUM_FRAMES])
 {
-    double cpu_score[NUM_FRAMES] = {0.0};
     double cuda_score[NUM_FRAMES] = {0.0};
     int device_present = 0;
 
-    char *msg = run_cpu(cpu_score);
+    char *msg = run_cpu(mode, cpu_score);
     if (msg)
         return msg;
-    msg = run_cuda(cuda_score, &device_present);
+    msg = run_cuda(mode, cuda_score, &device_present);
     if (msg)
         return msg;
-    if (!device_present)
+    if (!device_present) {
+        mu_skipped = 1;
         return NULL;
+    }
 
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
         mu_assert("CPU ssimulacra2 score is non-finite", isfinite(cpu_score[i]));
-        mu_assert("CUDA ssimulacra2 score is non-finite", isfinite(cuda_score[i]));
-
-        double delta = fabs(cpu_score[i] - cuda_score[i]);
-        if (delta > PARITY_TOL) {
-            (void)fprintf(
-                stderr,
-                "\nssimulacra2 parity FAIL: frame=%u cpu=%.17g cuda=%.17g delta=%.3e tol=%.1e\n", i,
-                cpu_score[i], cuda_score[i], delta, PARITY_TOL);
+        if (cpu_score[i] != cuda_score[i]) {
+            (void)fprintf(stderr, "\nssimulacra2 %s: frame=%u cpu=%.17g cuda=%.17g delta=%.3e\n",
+                          what, i, cpu_score[i], cuda_score[i], fabs(cpu_score[i] - cuda_score[i]));
         }
-        mu_assert("ssimulacra2 CPU vs. CUDA delta exceeds the ADR-1391 contract (1e-9)",
-                  delta <= PARITY_TOL);
+        mu_assert("ssimulacra2_cuda differs from the CPU extractor (ADR-1433)",
+                  cpu_score[i] == cuda_score[i]);
     }
-
-    mu_assert("ssimulacra2 fixture frames must score differently",
-              cpu_score[0] != cpu_score[1] && cpu_score[1] != cpu_score[2]);
     return NULL;
+}
+
+static char *test_ssimulacra2_cpu_cuda_exact(void)
+{
+    double cpu_score[NUM_FRAMES] = {0.0};
+    mu_assert_msg(check_exact(DISTORT_ALL, "distorted", cpu_score));
+    mu_assert("ssimulacra2 fixture frames must score differently",
+              mu_skipped || (cpu_score[0] != cpu_score[1] && cpu_score[1] != cpu_score[2]));
+    return NULL;
+}
+
+/* Every term of every sum is zero. */
+static char *test_ssimulacra2_identical_frames_exact(void)
+{
+    double cpu_score[NUM_FRAMES] = {0.0};
+    mu_assert_msg(check_exact(DISTORT_NONE, "identical", cpu_score));
+    mu_assert("identical pictures must score 100", mu_skipped || cpu_score[0] == 100.0);
+    return NULL;
+}
+
+/* The sums start with a run of zero terms and pick up in the last third. */
+static char *test_ssimulacra2_lower_third_exact(void)
+{
+    double cpu_score[NUM_FRAMES] = {0.0};
+    return check_exact(DISTORT_LOWER_THIRD, "lower third", cpu_score);
 }
 
 char *run_tests(void)
@@ -290,7 +334,9 @@ char *run_tests(void)
     mu_run_test(test_ssimulacra2_cuda_lifecycle);
     mu_run_test(test_ssimulacra2_cuda_context_check);
     mu_run_test(test_ssimulacra2_cuda_context_bounds);
-    mu_run_test(test_ssimulacra2_cpu_cuda_parity);
+    mu_run_test(test_ssimulacra2_cpu_cuda_exact);
+    mu_run_test(test_ssimulacra2_identical_frames_exact);
+    mu_run_test(test_ssimulacra2_lower_third_exact);
     return NULL;
 }
 

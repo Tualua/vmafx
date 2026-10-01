@@ -57162,3 +57162,34 @@ Netflix golden assertions are untouched.
 - No Netflix golden-data, public C API or FFmpeg patch impact. The
   `float_adm_sycl`, `float_adm_hip` and `float_adm_metal` twins are untouched
   (`T-GPU-FLOAT-ADM-CPU-ARITHMETIC-2026-10-01`).
+
+## ADR-1433 — ssimulacra2_cuda returns the sums of the CPU's loops (2026-10-01)
+
+`fix/cuda-ssimulacra2-cpu-sum-order`, Research-1433, ADR-1433.
+
+- `core/src/feature/ordered_sum.h` (new): the bits of
+  `for (...) s += x[i];` over non-negative doubles from chunk-wise integer
+  increments (plan, increments for an even and an odd start, checked walk).
+  Plain C for the host, device code through `VMAF_ORDSUM_FUNC` /
+  `VMAF_ORDSUM_BITS` / `VMAF_ORDSUM_FROM_BITS`. `core/test/test_ordered_sum.c`
+  compares it with the loop on the host.
+- `core/src/feature/cuda/ssimulacra2/ssimulacra2_device.cu`:
+  `ssimulacra2_combine_partials` and `ssimulacra2_combine_final` are gone.
+  `ssimulacra2_chunk_sums`, `ssimulacra2_chunk_plan`,
+  `ssimulacra2_chunk_units` and `ssimulacra2_ordered_totals` replace them;
+  `ss2c_terms()` holds the per-pixel terms of `ssim_map()` and
+  `edge_diff_map()`. If upstream Netflix or libjxl changes those two
+  functions in `ssimulacra2.c` (a term, its clamp, the order of the six
+  sums), change `ss2c_terms()` in the same PR; the terms must stay
+  non-negative or NaN.
+- `core/src/feature/cuda/ssimulacra2_cuda.{c,h}`: four launches per scale for
+  the sums, three small device buffers (`d_chunk_sums`, `d_plan`,
+  `d_units`) instead of `d_partials`; the readback and `collect()` are
+  unchanged.
+- `scripts/ci/cross_backend_calibration.py`: `ssimulacra2` / `cuda` in
+  `EXACT_TWINS`.
+- `core/test/test_cuda_ssimulacra2_parity.c` asserts `==` on three fixtures;
+  `core/test/test_cuda_ssimulacra2_exact_contract.py` is new.
+- No Netflix golden-data, public C API or FFmpeg patch impact; `ssimulacra2.c`
+  is not touched. The SYCL, HIP and Metal twins are untouched
+  (`T-GPU-SSIMULACRA2-SUM-ORDER-2026-10-01`).

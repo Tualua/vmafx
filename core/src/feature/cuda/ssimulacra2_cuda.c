@@ -15,17 +15,21 @@
  *          and ref*dis, one horizontal and one vertical launch
  *          (ssimulacra2_blur.cu);
  *       c. the per-pixel SSIM and edge-difference terms in fp64, summed per
- *          channel in a fixed tree;
+ *          channel in the CPU's order (four launches, ADR-1433);
  *       d. 2x2 downsample of the linear-RGB pyramid.
  *    3. One 864-byte readback of the per-scale sums. collect() waits once,
  *       forms the 108 norms and pools the score exactly as ssimulacra2.c
  *       does.
  *
- *  Numerical contract (ADR-1391): stages 1, 2a, 2b and 2d reproduce the CPU
- *  extractor bit for bit (the device TUs build with --fmad=false and use the
- *  shared helpers of ssimulacra2_math.h). The per-pixel terms of 2c are the
- *  CPU's fp64 expressions; only their summation order differs, so the score is
- *  deterministic and stays within 1e-9 of the CPU.
+ *  Numerical contract (ADR-1391, ADR-1433): the twin returns the CPU
+ *  extractor's score bit for bit. Stages 1, 2a, 2b and 2d reproduce the CPU's
+ *  planes (the device TUs build with --fmad=false and use the shared helpers
+ *  of ssimulacra2_math.h). The per-pixel terms of 2c are the CPU's fp64
+ *  expressions, and their sums are the sums of the CPU's loops: ssim_map()
+ *  and edge_diff_map() add each term pixel after pixel into one double, and
+ *  feature/ordered_sum.h reproduces that rounding from chunk-wise integer
+ *  increments the device forms in parallel, adding the few chunks in which
+ *  the running sum crosses a binade term by term.
  */
 
 #include <errno.h>
@@ -206,8 +210,10 @@ typedef struct Ssimu2StateCuda {
     CUfunction func_blur_v;
     CUfunction func_yuv;
     CUfunction func_xyb;
-    CUfunction func_partials;
-    CUfunction func_final;
+    CUfunction func_chunk_sums;
+    CUfunction func_chunk_plan;
+    CUfunction func_chunk_units;
+    CUfunction func_totals;
     CUfunction func_down;
 
     /* Device buffers; every three-plane buffer holds compact planes of the
@@ -217,7 +223,9 @@ typedef struct Ssimu2StateCuda {
     VmafCudaBuffer *d_xyb[SS2C_IMAGES];
     VmafCudaBuffer *d_pass[SS2C_BLUR_JOBS];    /* horizontal-pass output */
     VmafCudaBuffer *d_blurred[SS2C_BLUR_JOBS]; /* mu1, mu2, s11, s22, s12 */
-    VmafCudaBuffer *d_partials;                /* [channel][group][sum] */
+    VmafCudaBuffer *d_chunk_sums;              /* [channel][chunk][sum] */
+    VmafCudaBuffer *d_plan;                    /* [channel][sum][chunk] */
+    VmafCudaBuffer *d_units;                   /* [channel][sum][chunk][2] */
     VmafCudaBuffer *d_totals;                  /* [scale][channel][sum] */
     double *h_totals;                          /* pinned readback of d_totals */
 } Ssimu2StateCuda;
@@ -362,17 +370,11 @@ static void ss2c_configure_scales(Ssimu2StateCuda *s)
         s->num_scales++;
 }
 
-/* Reduction blocks per channel for one scale: a function of the plane size
- * only, so the summation tree is the same on every device. */
-static unsigned ss2c_reduce_groups(size_t pixels)
+/* Chunks of one plane of `pixels` pixels; the last may be partial. */
+static unsigned ss2c_chunks(size_t pixels)
 {
-    const size_t per_group = (size_t)SS2C_REDUCE_BLOCK * SS2C_PIXELS_PER_ITEM;
-    size_t groups = (pixels + per_group - 1u) / per_group;
-    if (groups < 1u)
-        groups = 1u;
-    if (groups > SS2C_MAX_GROUPS)
-        groups = SS2C_MAX_GROUPS;
-    return (unsigned)groups;
+    const size_t chunk_pixels = (size_t)SS2C_CHUNK_PIXELS;
+    return (unsigned)((pixels + chunk_pixels - 1u) / chunk_pixels);
 }
 
 /* The six sums of each channel to the norms of ssim_map / edge_diff_map. */
@@ -506,6 +508,8 @@ static int ss2c_launch_blurs(const Ssimu2StateCuda *s, CudaFunctions *cu_f, int 
     return 0;
 }
 
+/* The six sums of every channel of one scale, each the sum of the CPU's loop
+ * (ADR-1433): chunk sums, plan, increments, walk. */
 static int ss2c_launch_combine(const Ssimu2StateCuda *s, CudaFunctions *cu_f, int scale,
                                CUstream stream)
 {
@@ -518,19 +522,21 @@ static int ss2c_launch_combine(const Ssimu2StateCuda *s, CudaFunctions *cu_f, in
     a.s12 = (const float *)ss2c_ptr(s->d_blurred[SS2C_S12]);
     a.img1 = (const float *)ss2c_ptr(s->d_xyb[0]);
     a.img2 = (const float *)ss2c_ptr(s->d_xyb[1]);
-    a.partials = (double *)ss2c_ptr(s->d_partials);
+    a.chunk_sums = (double *)ss2c_ptr(s->d_chunk_sums);
+    a.plan = (int16_t *)ss2c_ptr(s->d_plan);
+    a.units = (int64_t *)ss2c_ptr(s->d_units);
+    a.totals = (double *)ss2c_ptr(s->d_totals) + (size_t)scale * SS2C_TOTALS_PER_SCALE;
     a.pixels = (size_t)s->scale_w[scale] * s->scale_h[scale];
-    a.groups = ss2c_reduce_groups(a.pixels);
-    void *part_args[] = {&a};
-    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_partials, a.groups, SS2C_CHANNELS, 1,
-                                           SS2C_REDUCE_BLOCK, 1, 1, 0, stream, part_args, NULL));
-
-    CUdeviceptr partials = s->d_partials->data;
-    CUdeviceptr totals = s->d_totals->data + (size_t)scale * SS2C_TOTALS_PER_SCALE * sizeof(double);
-    unsigned groups = a.groups;
-    void *final_args[] = {&partials, &totals, &groups};
-    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_final, SS2C_CHANNELS, 1, 1, SS2C_REDUCE_BLOCK, 1,
-                                           1, 0, stream, final_args, NULL));
+    a.chunks = ss2c_chunks(a.pixels);
+    void *args[] = {&a};
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_chunk_sums, a.chunks, SS2C_CHANNELS, 1,
+                                           SS2C_REDUCE_BLOCK, 1, 1, 0, stream, args, NULL));
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_chunk_plan, SS2C_SUMS, SS2C_CHANNELS, 1,
+                                           SS2C_REDUCE_BLOCK, 1, 1, 0, stream, args, NULL));
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_chunk_units, a.chunks, SS2C_CHANNELS, 1,
+                                           SS2C_REDUCE_BLOCK, 1, 1, 0, stream, args, NULL));
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_totals, SS2C_SUMS, SS2C_CHANNELS, 1,
+                                           SS2C_REDUCE_BLOCK, 1, 1, 0, stream, args, NULL));
     return 0;
 }
 
@@ -648,7 +654,7 @@ static int ss2c_free_device_buffers(VmafFeatureExtractor *fex, Ssimu2StateCuda *
         &s->d_lin[0][0],  &s->d_lin[0][1],  &s->d_lin[1][0],  &s->d_lin[1][1],  &s->d_xyb[0],
         &s->d_xyb[1],     &s->d_pass[0],    &s->d_pass[1],    &s->d_pass[2],    &s->d_pass[3],
         &s->d_pass[4],    &s->d_blurred[0], &s->d_blurred[1], &s->d_blurred[2], &s->d_blurred[3],
-        &s->d_blurred[4], &s->d_partials,   &s->d_totals,
+        &s->d_blurred[4], &s->d_chunk_sums, &s->d_plan,       &s->d_units,      &s->d_totals,
     };
     int ret = 0;
     for (size_t i = 0; i < sizeof(owned) / sizeof(owned[0]); i++) {
@@ -702,8 +708,10 @@ static int ss2c_get_functions(Ssimu2StateCuda *s, CudaFunctions *cu_f)
         {&s->func_blur_v, s->module_blur, "ssimulacra2_blur_v"},
         {&s->func_yuv, s->module_device, "ssimulacra2_yuv_to_linear"},
         {&s->func_xyb, s->module_device, "ssimulacra2_xyb"},
-        {&s->func_partials, s->module_device, "ssimulacra2_combine_partials"},
-        {&s->func_final, s->module_device, "ssimulacra2_combine_final"},
+        {&s->func_chunk_sums, s->module_device, "ssimulacra2_chunk_sums"},
+        {&s->func_chunk_plan, s->module_device, "ssimulacra2_chunk_plan"},
+        {&s->func_chunk_units, s->module_device, "ssimulacra2_chunk_units"},
+        {&s->func_totals, s->module_device, "ssimulacra2_ordered_totals"},
         {&s->func_down, s->module_device, "ssimulacra2_downsample"},
     };
     for (size_t i = 0; i < sizeof(table) / sizeof(table[0]); i++) {
@@ -736,6 +744,9 @@ static int ss2c_alloc_buffers(VmafFeatureExtractor *fex, Ssimu2StateCuda *s)
     const size_t full = (size_t)SS2C_CHANNELS * s->width * s->height * sizeof(float);
     const size_t half = (size_t)SS2C_CHANNELS * s->scale_w[1] * s->scale_h[1] * sizeof(float);
     const size_t totals = (size_t)SS2C_NUM_SCALES * SS2C_TOTALS_PER_SCALE * sizeof(double);
+    /* Scale 0 has the most chunks; every (channel, sum, chunk) has a sum, a
+     * plan and an increment pair. */
+    const size_t slots = SS2C_TOTALS_PER_SCALE * (size_t)ss2c_chunks((size_t)s->width * s->height);
     const struct {
         VmafCudaBuffer **buf;
         size_t bytes;
@@ -756,7 +767,9 @@ static int ss2c_alloc_buffers(VmafFeatureExtractor *fex, Ssimu2StateCuda *s)
         {&s->d_blurred[2], full},
         {&s->d_blurred[3], full},
         {&s->d_blurred[4], full},
-        {&s->d_partials, (size_t)SS2C_CHANNELS * SS2C_MAX_GROUPS * SS2C_SUMS * sizeof(double)},
+        {&s->d_chunk_sums, slots * sizeof(double)},
+        {&s->d_plan, slots * sizeof(int16_t)},
+        {&s->d_units, slots * 2u * sizeof(int64_t)},
         {&s->d_totals, totals},
     };
     for (size_t i = 0; i < sizeof(table) / sizeof(table[0]); i++) {
@@ -828,9 +841,10 @@ VmafFeatureExtractor vmaf_fex_ssimulacra2_cuda = {
     .context_fallback_name = "ssimulacra2",
     .chars =
         {
-            /* YUV conversion, then per scale XYB, blur H + V, partial and
-             * final sums (6 x 5), and the 5 downsamples between scales. */
-            .n_dispatches_per_frame = 1 + SS2C_NUM_SCALES * 5 + (SS2C_NUM_SCALES - 1),
+            /* YUV conversion, then per scale XYB, blur H + V and the four
+             * launches of the sums (6 x 7), and the 5 downsamples between
+             * scales. */
+            .n_dispatches_per_frame = 1 + SS2C_NUM_SCALES * 7 + (SS2C_NUM_SCALES - 1),
             .is_reduction_only = false,
             .min_useful_frame_area = 0,
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,
