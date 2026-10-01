@@ -45,6 +45,12 @@
 #include "libvmaf/libvmaf_cuda.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this test mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 /* Large enough for non-degenerate eigendecomp; small enough for fast CI.
  * chroma plane is 320x180, operating resolution after 2^4 decimation
  * is 20x11 → 4x2 = 8 blocks per channel. */
@@ -95,16 +101,46 @@ static int fill_fixture(VmafPicture *pic, unsigned frame_idx)
     return 0;
 }
 
+static char *setup_cuda_speed_chroma_context(VmafContext **vmaf, VmafCudaState *cu_state)
+{
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    int err = vmaf_init(vmaf, cfg);
+    mu_assert("CUDA: vmaf_init failed", !err);
+
+    err = vmaf_cuda_import_state(*vmaf, cu_state);
+    mu_assert("CUDA: vmaf_cuda_import_state failed", !err);
+
+    err = vmaf_use_feature(*vmaf, "speed_chroma_cuda", NULL);
+    mu_assert("CUDA: vmaf_use_feature(speed_chroma_cuda) failed", !err);
+    return NULL;
+}
+
+static char *feed_speed_chroma_frames(VmafContext *vmaf)
+{
+    for (unsigned i = 0; i < NUM_FRAMES; i++) {
+        VmafPicture ref;
+        VmafPicture dist;
+        int err = fill_fixture(&ref, i);
+        mu_assert("CUDA: fill_fixture(ref) failed", !err);
+        err = fill_fixture(&dist, i);
+        mu_assert("CUDA: fill_fixture(dist) failed", !err);
+        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
+        mu_assert("CUDA: vmaf_read_pictures failed", !err);
+    }
+    int err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    mu_assert("CUDA: vmaf_read_pictures(EOS) failed", !err);
+    return NULL;
+}
+
 static char *run_speed_chroma_smoke(double *out_scores, int *skipped)
 {
     *skipped = 0;
     for (unsigned c = 0; c < NUM_CHANNELS; c++)
         out_scores[c] = NAN;
 
-    int err = 0;
     VmafCudaState *cu_state = NULL;
     VmafCudaConfiguration cuda_cfg = {0};
-    err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
+    int err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
     if (err != 0 || cu_state == NULL) {
         (void)fprintf(stderr, "[skip: no CUDA device] ");
         mu_skipped = 1; /* exit 77, not a pass */
@@ -112,28 +148,19 @@ static char *run_speed_chroma_smoke(double *out_scores, int *skipped)
         return NULL;
     }
 
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("CUDA: vmaf_init failed", !err);
-
-    err = vmaf_cuda_import_state(vmaf, cu_state);
-    mu_assert("CUDA: vmaf_cuda_import_state failed", !err);
-
-    err = vmaf_use_feature(vmaf, "speed_chroma_cuda", NULL);
-    mu_assert("CUDA: vmaf_use_feature(speed_chroma_cuda) failed", !err);
-
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref, dist;
-        err = fill_fixture(&ref, i);
-        mu_assert("CUDA: fill_fixture(ref) failed", !err);
-        err = fill_fixture(&dist, i);
-        mu_assert("CUDA: fill_fixture(dist) failed", !err);
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("CUDA: vmaf_read_pictures failed", !err);
+    char *msg = setup_cuda_speed_chroma_context(&vmaf, cu_state);
+    if (msg) {
+        (void)vmaf_cuda_state_free(cu_state);
+        return msg;
     }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("CUDA: vmaf_read_pictures(EOS) failed", !err);
+
+    msg = feed_speed_chroma_frames(vmaf);
+    if (msg) {
+        (void)vmaf_close(vmaf);
+        (void)vmaf_cuda_state_free(cu_state);
+        return msg;
+    }
 
     for (unsigned c = 0; c < NUM_CHANNELS; c++) {
         err = vmaf_feature_score_at_index(vmaf, SPEED_CHROMA_FEATURES[c], &out_scores[c], 1u);
@@ -174,3 +201,5 @@ char *run_tests(void)
     mu_run_test(test_speed_chroma_cuda_smoke);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

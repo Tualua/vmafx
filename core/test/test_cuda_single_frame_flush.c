@@ -25,6 +25,12 @@
 #include "feature/feature_extractor.h"
 #include "test.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this test mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 /* Mirrors the fixed single-frame flush: append once, then say "no more". */
 static unsigned stub_flush_calls;
 
@@ -72,7 +78,6 @@ static char *test_single_frame_flush_terminates(void)
     mu_assert("the single-frame back-fill happened exactly once", err == 0 && score == 0.);
 
     vmaf_feature_collector_destroy(vfc);
-    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
     return NULL;
 }
 
@@ -90,7 +95,6 @@ static char *test_pre_fix_shape_would_spin(void)
               stub_flush_never_terminates(NULL, vfc) == 0);
 
     vmaf_feature_collector_destroy(vfc);
-    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
     return NULL;
 }
 
@@ -98,8 +102,7 @@ char *run_tests(void)
 {
     mu_run_test(test_single_frame_flush_terminates);
     mu_run_test(test_pre_fix_shape_would_spin);
-    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
     return NULL;
 }
 
-int tests_run = 0;
+/* NOLINTEND(modernize-use-nullptr) */

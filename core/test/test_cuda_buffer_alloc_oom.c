@@ -27,6 +27,12 @@
 
 #include "cuda/common.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this test mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 static char *test_cuda_buffer_alloc_oom_returns_enomem(void)
 {
     VmafCudaState *cu_state = NULL;
@@ -62,3 +68,5 @@ char *run_tests(void)
     mu_run_test(test_cuda_buffer_alloc_oom_returns_enomem);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

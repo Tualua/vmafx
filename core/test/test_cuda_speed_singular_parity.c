@@ -51,6 +51,12 @@
 #include "libvmaf/libvmaf_cuda.h"
 #include "libvmaf/picture.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this test mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 /* Geometry matters here, unlike in the existing SpEED parity tests.
  *
  * SpEED estimates a 25x25 covariance from one 25-vector per 5x5 block, so the
@@ -165,6 +171,45 @@ static char *feed(VmafContext *vmaf, unsigned index, unsigned ref_pattern, unsig
     return NULL;
 }
 
+static char *init_vmaf_context(VmafContext **vmaf, const char *fex_name, int use_gpu,
+                               VmafCudaState *cu_state)
+{
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    int err = vmaf_init(vmaf, cfg);
+    mu_assert("vmaf_init failed", !err);
+
+    if (use_gpu) {
+        err = vmaf_cuda_import_state(*vmaf, cu_state);
+        mu_assert("vmaf_cuda_import_state failed", !err);
+    }
+
+    err = vmaf_use_feature(*vmaf, fex_name, NULL);
+    mu_assert("vmaf_use_feature failed", !err);
+    return NULL;
+}
+
+static char *feed_stream_singular(VmafContext *vmaf, int mode)
+{
+    const unsigned frames = (mode == MODE_CHROMA_BOTH_SINGULAR) ? CHROMA_FRAMES : TEMPORAL_FRAMES;
+    for (unsigned i = 0; i < frames; i++) {
+        unsigned ref_pattern = i;
+        unsigned dis_pattern = i;
+        int singular_chroma = 0;
+        if (mode == MODE_CHROMA_BOTH_SINGULAR) {
+            singular_chroma = (i == frames - 1u);
+        } else if (mode == MODE_TEMPORAL_ONE_SIDED) {
+            ref_pattern = 0u; /* frozen reference -> zero diff -> singular */
+        } else {
+            ref_pattern = 0u;
+            dis_pattern = 0u;
+        }
+        char *msg = feed(vmaf, i, ref_pattern, dis_pattern, singular_chroma);
+        if (msg)
+            return msg;
+    }
+    return NULL;
+}
+
 /* Run `fex_name` over the fixture selected by `mode` and read `key` at
  * `read_index`. On a machine without a CUDA device (or under no CUDA runtime)
  * `*skipped` is set and the score is left NaN. */
@@ -186,37 +231,23 @@ static char *drive(const char *fex_name, int use_gpu, int mode, const char *key,
         }
     }
 
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     VmafContext *vmaf = NULL;
-    int err = vmaf_init(&vmaf, cfg);
-    mu_assert("vmaf_init failed", !err);
-
-    if (use_gpu) {
-        err = vmaf_cuda_import_state(vmaf, cu_state);
-        mu_assert("vmaf_cuda_import_state failed", !err);
+    char *msg = init_vmaf_context(&vmaf, fex_name, use_gpu, cu_state);
+    if (msg) {
+        if (use_gpu)
+            (void)vmaf_cuda_state_free(cu_state);
+        return msg;
     }
 
-    err = vmaf_use_feature(vmaf, fex_name, NULL);
-    mu_assert("vmaf_use_feature failed", !err);
-
-    const unsigned frames = (mode == MODE_CHROMA_BOTH_SINGULAR) ? CHROMA_FRAMES : TEMPORAL_FRAMES;
-    for (unsigned i = 0; i < frames; i++) {
-        unsigned ref_pattern = i;
-        unsigned dis_pattern = i;
-        int singular_chroma = 0;
-        if (mode == MODE_CHROMA_BOTH_SINGULAR) {
-            singular_chroma = (i == frames - 1u);
-        } else if (mode == MODE_TEMPORAL_ONE_SIDED) {
-            ref_pattern = 0u; /* frozen reference -> zero diff -> singular */
-        } else {
-            ref_pattern = 0u;
-            dis_pattern = 0u;
-        }
-        char *msg = feed(vmaf, i, ref_pattern, dis_pattern, singular_chroma);
-        if (msg)
-            return msg;
+    msg = feed_stream_singular(vmaf, mode);
+    if (msg) {
+        (void)vmaf_close(vmaf);
+        if (use_gpu)
+            (void)vmaf_cuda_state_free(cu_state);
+        return msg;
     }
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+
+    int err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
     mu_assert("vmaf_read_pictures(EOS) failed", !err);
 
     err = vmaf_feature_score_at_index(vmaf, key, out_score, read_index);
@@ -297,3 +328,5 @@ char *run_tests(void)
     mu_run_test(test_speed_chroma_both_singular_parity);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

@@ -43,7 +43,13 @@
 #include "libvmaf/picture.h"
 #include "cuda/picture_cuda.h"
 
-static char *test_pinned_alloc_rejects_overflow_dimensions()
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this test mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
+static char *test_pinned_alloc_rejects_overflow_dimensions(void)
 {
     int err;
     VmafPicture pic;
@@ -71,8 +77,10 @@ static char *test_pinned_alloc_rejects_overflow_dimensions()
     return NULL;
 }
 
-char *run_tests()
+char *run_tests(void)
 {
     mu_run_test(test_pinned_alloc_rejects_overflow_dimensions);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

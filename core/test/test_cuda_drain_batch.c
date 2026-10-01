@@ -23,6 +23,12 @@
 #include "libvmaf/libvmaf.h"
 #include "test.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this test mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
 static char *test_open_claims_the_batch_for_its_owner(void)
 {
     VmafCudaState engine_a = {0};
@@ -35,7 +41,6 @@ static char *test_open_claims_the_batch_for_its_owner(void)
     mu_assert("the entry is pending", vmaf_cuda_drain_batch_pending() == 1);
 
     vmaf_cuda_drain_batch_thread_destroy(&engine_a);
-    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
     return NULL;
 }
 
@@ -58,7 +63,6 @@ static char *test_a_second_engine_never_inherits_the_entries(void)
     mu_assert("engine B starts empty", vmaf_cuda_drain_batch_pending() == 0);
 
     vmaf_cuda_drain_batch_thread_destroy(&engine_b);
-    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
     return NULL;
 }
 
@@ -79,7 +83,6 @@ static char *test_flush_refuses_a_foreign_owner(void)
     mu_assert("the foreign flush did not mark A's flag", drained_a == false);
 
     vmaf_cuda_drain_batch_thread_destroy(&engine_a);
-    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
     return NULL;
 }
 
@@ -99,7 +102,6 @@ static char *test_open_after_a_foreign_owner_drops_stale_entries(void)
     mu_assert("engine B dropped the stale entry", vmaf_cuda_drain_batch_pending() == 0);
 
     vmaf_cuda_drain_batch_thread_destroy(&engine_b);
-    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
     return NULL;
 }
 
@@ -109,8 +111,7 @@ char *run_tests(void)
     mu_run_test(test_a_second_engine_never_inherits_the_entries);
     mu_run_test(test_flush_refuses_a_foreign_owner);
     mu_run_test(test_open_after_a_foreign_owner_drops_stale_entries);
-    // NOLINTNEXTLINE(modernize-use-nullptr): C TU keeps NULL per ADR-1138 (MSVC /std:clatest has no C nullptr).
     return NULL;
 }
 
-int tests_run = 0;
+/* NOLINTEND(modernize-use-nullptr) */
