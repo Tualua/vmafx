@@ -7,10 +7,15 @@ Checks that scripts/ci/cross_backend_parity_gate.py runs without error when
 comparing default features on CPU vs CUDA (e.g. on an RTX 4090). A binary
 built without CUDA, or a host without a CUDA device, has nothing to compare:
 the test is skipped (exit 77), not failed.
+
+A build directory configured without CUDA is skipped before the device lock is
+taken: waiting for a device this build cannot use ran into the test's timeout
+whenever another job held the lock.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -36,18 +41,48 @@ def cuda_unavailable(output: str) -> bool:
     return any(marker in output for marker in NO_CUDA_MARKERS)
 
 
-def main() -> int:
+def build_has_cuda(build_dir: Path) -> bool | None:
+    """Whether Meson configured `build_dir` with CUDA; None when it does not say."""
+    options = build_dir / "meson-info" / "intro-buildoptions.json"
+    try:
+        entries = json.loads(options.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(entries, list):
+        return None
+    for entry in entries:
+        if isinstance(entry, dict) and entry.get("name") == "enable_cuda":
+            value = entry.get("value")
+            return value if isinstance(value, bool) else None
+    return None
+
+
+def find_binary() -> Path | None:
+    """The vmaf CLI of VMAF_BUILD_DIR, of `build/`, or of the working directory."""
     vmaf_bin = os.environ.get("VMAF_BUILD_DIR")
     binary = Path(vmaf_bin) / "tools" / "vmaf" if vmaf_bin else ROOT / "build" / "tools" / "vmaf"
+    if binary.is_file():
+        return binary
+    binary = Path.cwd() / "tools" / "vmaf"
+    return binary if binary.is_file() else None
 
-    if not binary.is_file():
-        binary = Path.cwd() / "tools" / "vmaf"
-        if not binary.is_file():
-            sys.stderr.write(f"vmaf binary not found at {binary}\n")
-            return 77
 
+def skip_reason(binary: Path | None) -> str | None:
+    """Why there is nothing to compare, or None. Decided without the device."""
+    if binary is None:
+        return "vmaf binary not found"
+    if build_has_cuda(binary.parent.parent) is False:
+        return "This build was configured without CUDA"
     if not REF.is_file() or not DIS.is_file():
-        sys.stderr.write("Reference / distorted YUV fixtures not found\n")
+        return "Reference / distorted YUV fixtures not found"
+    return None
+
+
+def main() -> int:
+    binary = find_binary()
+    reason = skip_reason(binary)
+    if reason is not None:
+        sys.stderr.write(f"{reason}; skipping (77)\n")
         return 77
 
     cmd = [
