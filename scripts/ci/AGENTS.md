@@ -557,6 +557,11 @@ must come from one binary: the dB value goes through the host `log10`,
 and glibc and Intel's libimf differ by one ulp on some frames. Exact cell
 also needs that binary's CPU extractor = scalar arithmetic; icx build on
 AVX-512 host needs #1706.
+ADR-1437 rule: list only a twin exact by construction AND measured identical.
+Identical on typical clips is not enough: `float_psnr_hip` (fp32 block sums)
+and `float_moment_hip` (integer squares at 16 bits) matched every real clip
+measured and fail on 10- to 16-bit stress input. Sweep a candidate on
+full-range noise at 8 / 10 / 12 / 16 bits before adding its fragment.
 
 Converting an open PR that edits the old literal (one conflict, once):
 

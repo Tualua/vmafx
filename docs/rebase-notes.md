@@ -57305,3 +57305,19 @@ ADR-1422).
   correctly rounded `log2f` preloaded shows otherwise.
 - No Netflix golden-data, public C API or FFmpeg patch impact; `speed.c` and
   the SYCL, HIP and Metal twins are untouched.
+## ADR-1437 — HIP twins declared exact after a sweep (2026-10-01)
+
+`test/hip-exact-twins-declared`, `T-HIP-EXACT-TWINS-UNDECLARED-2026-10-01`.
+
+- Seven fragment files under `scripts/ci/exact_twins.d/` (ADR-1428) declare
+  the twins: `motion.hip`, `motion_debug.hip`, `motion_v2.hip`, `psnr.hip`,
+  `cambi.hip`, `float_ms_ssim.hip` and `float_ms_ssim_lcs.hip`. Nothing shared
+  is edited; another backend's declaration for the same feature is another
+  file.
+- `core/test/test_hip_exact_twins.c` (new) asserts `==` for the five twins. A
+  rebase that brings a float reduction or a host copy of a CPU routine into
+  `integer_motion_sad_hip.c`, `integer_psnr_hip.c`, `integer_cambi_hip.c` or
+  `integer_ms_ssim/ms_ssim_arith.h` fails it on a device; no test without a
+  device covers the listing.
+- No source of a twin changed. No Netflix golden-data, public API or FFmpeg
+  patch impact.

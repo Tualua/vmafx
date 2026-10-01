@@ -1137,3 +1137,4 @@
 1428-exact-twins-fragments
 1432-sycl-integer-vif-exact-gain
 1430-cuda-speed-chroma-log2f-bound
+1437-hip-exact-twins-declared

@@ -502,6 +502,32 @@ Rebase-sensitive:
   `_large` (device, `==`, 48 outputs), `test_hip_kernel_source_contract.py`
   (10 planted regressions).
 
+## Twins declared exact (ADR-1437, `scripts/ci/exact_twins.d/`)
+
+`motion_hip` (+ `debug=true`), `motion_v2_hip`, `psnr_hip`,
+`integer_ms_ssim_hip` (+ `enable_lcs`), `cambi_hip` = CPU bits, gate tolerance
+0. Measured gfx1036: 178 frames, 480x270 to 3840x2160, 8 to 16 bits, 4:2:2,
+full-range noise; options too. Already listed: `adm_hip`, `float_motion_hip`,
+`psnr_hvs_hip`. Rebase-sensitive:
+
+- Exact because integer on device + CPU helpers on host (motion ADR-1377,
+  psnr ADR-1382, cambi ADR-1378) or CPU arithmetic type for type (ms_ssim
+  ADR-1403). A float reduction, a host copy of a CPU routine, or a device
+  libm call in any of them breaks the listing: fix the twin, never loosen.
+- `integer_ms_ssim_hip`: per-scale fp64 sum in block order, mean rounded to
+  fp32. Rounding absorbs the order except within the sum's own rounding error
+  of an fp32 boundary (estimate: a few means per million). A mean that ever
+  differs -> add in raster order.
+- NOT exact, do not list: `float_psnr_hip` (fp32 16x16 block sums; exact at 8
+  bits, rounds at 10+ bits once a block's rms difference reaches 256 codes),
+  `float_moment_hip` (exact integer squares; CPU rounds each square to float,
+  differs at 16 bits). Both identical on every real clip measured.
+- Guard: `test_hip_exact_twins` (device, four frames, 8 and 10 bit, `==` on
+  every output of all five). Gate unit tests:
+  `scripts/ci/test_cross_backend_parity_gate.py`.
+- Sweep table of every HIP twin:
+  `docs/research/1437-hip-twin-exactness-sweep.md`.
+
 ## Frame order: upload, clear, kernels (ADR-1427)
 
 Every HIP twin, every frame: `vmaf_hip_plane_source_acquire*()` /

@@ -896,6 +896,64 @@ exactly one singular side (reference or distorted) scores 0 rather than an
 inflated value. The launch-geometry half of ADR-1202 was CUDA-only — this
 twin's solve launch was already correct.
 
+## Which HIP twins return the CPU's bits (2026-10-01)
+
+A HIP twin is either an exact twin of its CPU extractor, with the same score
+to the last bit, or it is within a tolerance of it. This table is the state on
+`origin/master` 80c5a0332, measured on a gfx1036 (ROCm 7.2.4) at
+`--precision max` against `--backend cpu`: 110 frames of typical content
+(the Netflix 576x324 pair at 8 and 10 bits, both 1920x1080 checkerboard
+pairs, Sparks 480x270 at 10 bits, 48 frames of BBB 3840x2160) and 68 frames
+that stress the arithmetic (12 and 16 bits, 10-bit 4:2:2, full-range noise at
+four depths, a bright 16-bit 1080p pair). "Largest difference" is over all
+178 frames and all outputs of the twin.
+
+| CPU feature | HIP twin | Outputs identical | Largest difference | Exact twin |
+|---|---|---|---|---|
+| `motion` (also `debug=true`) | `motion_hip` | every frame | 0 | yes ([ADR-1437](../../adr/1437-hip-exact-twins-declared.md)) |
+| `motion_v2` | `motion_v2_hip` | every frame | 0 | yes (ADR-1437) |
+| `psnr` | `psnr_hip` | every frame, three planes | 0 | yes (ADR-1437) |
+| `float_ms_ssim` (also `enable_lcs`) | `integer_ms_ssim_hip` | every frame, 16 outputs | 0 | yes (ADR-1437) |
+| `cambi` | `cambi_hip` | every frame | 0 | yes (ADR-1437) |
+| `adm` | `adm_hip` | every frame | 0 | yes (ADR-1423) |
+| `float_motion` | `float_motion_hip` | every frame | 0 | yes (ADR-1419) |
+| `psnr_hvs` | `psnr_hvs_hip` | every frame (8 to 12 bits) | 0 | yes (ADR-1401) |
+| `vif` | `vif_hip` | 49 of 440 scores on typical content | 5.4e-7 | no; fixed on `fix/hip-vif-cpu-log2-table` (#1768) |
+| `float_psnr` | `float_psnr_hip` | every frame of typical content; none of the 10- to 16-bit stress frames | 7.6e-8 dB | no |
+| `float_moment` | `float_moment_hip` | every frame up to 12 bits; no second moment at 16 bits | 1.0e-4 | no |
+| `ssim` | `integer_ssim_hip` | no frame | 1.1e-11 | no |
+| `float_ssim` (also `enable_lcs`) | `float_ssim_hip` | 15 of 110 scores on typical content | 5.4e-7 | no |
+| `float_vif` | `float_vif_hip` | 10 of 440 scores on typical content | 3.8e-5 on typical content, 1.1e-4 on the bright 16-bit pair | no |
+| `float_adm` | `float_adm_hip` | 145 of 770 values on typical content | 1.3e-5 | no |
+| `ciede` | `ciede_hip` | no frame | 1.1e-5 | no |
+| `ssimulacra2` | `ssimulacra2_hip` | no frame | 7.6e-11 | no |
+
+The parity gate compares an exact twin with tolerance 0
+([cross-backend gate](../../development/cross-backend-gate.md)); the others
+keep their tolerance, and each has a row in `docs/state.md` with the cause
+where it is known. `float_psnr_hip` and `float_moment_hip` show why a twin is
+not listed on measurement alone: both are identical on every real clip
+measured. `float_psnr_hip` adds each 16x16 block in single precision, which
+is exact at 8 bits and rounds at higher depths once the differences in a
+block are large; `float_moment_hip` adds exact integer squares where the CPU
+rounds each square to `float`, which differs at 16 bits. The full table, per
+output and per fixture, is in
+[Research-1437](../../research/1437-hip-twin-exactness-sweep.md).
+
+`float_ms_ssim` is exact up to one rounding: the per-scale means are rounded
+to `float` on both sides, which absorbs the order in which the twin adds the
+windows unless a sum lies within its own rounding error of a rounding
+boundary. No mean differed on these frames.
+
+```bash
+python3 scripts/ci/run_meson_test.py -- -C build-hip test_hip_exact_twins
+python3 scripts/ci/cross_backend_parity_gate.py --vmaf-binary build-hip/tools/vmaf \
+    --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+    --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+    --width 576 --height 324 --backends cpu hip \
+    --features motion motion_debug motion_v2 psnr float_ms_ssim float_ms_ssim_lcs cambi
+```
+
 ## RC3 CPU parity: motion, tiny frames and CPU options (2026-09-30)
 
 Three changes bring HIP twins onto the CPU's arithmetic. They build for

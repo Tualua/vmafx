@@ -6272,6 +6272,7 @@
         "core/test/test_hip_cambi_device_math.c": 1,
         "core/test/test_hip_cambi_parity.c": 1,
         "core/test/test_hip_ciede_parity.c": 1,
+        "core/test/test_hip_exact_twins.c": 1,
         "core/test/test_hip_first_frame_clear.c": 1,
         "core/test/test_hip_float_adm_parity.c": 1,
         "core/test/test_hip_float_moment_parity.c": 1,
@@ -8210,7 +8211,10 @@
         "core/test/test_hip_kernel_source_contract.py": 1,
         "core/test/test_hip_motion_parity.c": 1,
         "core/test/test_hip_motion_tiny_frames.c": 1,
-        "core/test/test_hip_twin_option_parity.c": 1
+        "core/test/test_hip_twin_option_parity.c": 1,
+        "scripts/ci/exact_twins.d/motion.hip": 1,
+        "scripts/ci/exact_twins.d/motion_debug.hip": 1,
+        "scripts/ci/exact_twins.d/motion_v2.hip": 1
       },
       "target": "1377-hip-motion-diff-first.md"
     },
@@ -8225,7 +8229,9 @@
         "core/src/feature/sycl/integer_cambi_sycl.cpp": 4,
         "core/test/meson.build": 2,
         "core/test/test_hip_cambi_device_math.c": 1,
-        "core/test/test_hip_device_resident_contract.py": 1
+        "core/test/test_hip_device_resident_contract.py": 1,
+        "core/test/test_hip_exact_twins.c": 1,
+        "scripts/ci/exact_twins.d/cambi.hip": 1
       },
       "target": "1378-hip-cambi-device-resident.md"
     },
@@ -8299,6 +8305,7 @@
         "core/test/test_nonfinite_collector_wiring.py": 1,
         "scripts/ci/cross_backend_parity_gate.py": 3,
         "scripts/ci/cross_backend_vif_diff.py": 1,
+        "scripts/ci/exact_twins.d/psnr.hip": 1,
         "scripts/ci/test_cross_backend_parity_gate.py": 1
       },
       "target": "1382-hip-twin-cpu-option-parity.md"
@@ -8534,11 +8541,14 @@
         "core/test/test_cuda_float_motion_parity.c": 1,
         "core/test/test_cuda_float_ms_ssim_parity.c": 2,
         "core/test/test_cuda_kernel_source_contract.py": 5,
+        "core/test/test_hip_exact_twins.c": 1,
         "core/test/test_hip_kernel_source_contract.py": 3,
         "core/test/test_hip_ms_ssim_arith.c": 3,
         "core/test/test_hip_ms_ssim_parity.c": 2,
         "core/test/test_psnr_hvs_twin_exact_sum_contract.py": 1,
-        "core/test/test_strict_fp_compiler_args.py": 3
+        "core/test/test_strict_fp_compiler_args.py": 3,
+        "scripts/ci/exact_twins.d/float_ms_ssim.hip": 1,
+        "scripts/ci/exact_twins.d/float_ms_ssim_lcs.hip": 1
       },
       "target": "1403-cuda-strict-fp-every-kernel.md"
     },
@@ -8866,6 +8876,20 @@
         "core/test/test_ordered_sum.c": 1
       },
       "target": "1433-cuda-ssimulacra2-cpu-sum-order.md"
+    },
+    "1437": {
+      "sites": {
+        "core/test/meson.build": 1,
+        "core/test/test_hip_exact_twins.c": 1,
+        "scripts/ci/exact_twins.d/cambi.hip": 1,
+        "scripts/ci/exact_twins.d/float_ms_ssim.hip": 1,
+        "scripts/ci/exact_twins.d/float_ms_ssim_lcs.hip": 1,
+        "scripts/ci/exact_twins.d/motion.hip": 1,
+        "scripts/ci/exact_twins.d/motion_debug.hip": 1,
+        "scripts/ci/exact_twins.d/motion_v2.hip": 1,
+        "scripts/ci/exact_twins.d/psnr.hip": 1
+      },
+      "target": "1437-hip-exact-twins-declared.md"
     }
   },
   "retired": {

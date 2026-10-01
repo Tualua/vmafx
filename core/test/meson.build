@@ -5362,6 +5362,21 @@ test('test_hip_cambi_parity', test_hip_cambi_parity,
     is_parallel : false,
     timeout : 60)
 
+# ADR-1437: the HIP twins declared exact (motion, motion_v2, psnr,
+# float_ms_ssim, cambi) return the CPU extractor's bits: four frames at 8 and
+# at 10 bits, `==` on every output. Exits 77 when no AMD GPU is visible.
+test_hip_exact_twins = executable('test_hip_exact_twins',
+    ['test.c', 'test_hip_exact_twins.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: ['-DHAVE_HIP=1']
+)
+test('test_hip_exact_twins', test_hip_exact_twins,
+    suite : ['fast', 'gpu'],
+    is_parallel : false,
+    timeout : 120)
+
 test_hip_float_adm_parity = executable('test_hip_float_adm_parity',
     ['test.c', 'test_hip_float_adm_parity.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],

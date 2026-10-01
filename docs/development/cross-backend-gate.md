@@ -124,6 +124,16 @@ max`, the Netflix 576x324 pairs, the 1080p checkerboard pairs and
 fixed; it is never given a tolerance and never taken off the list to make a
 gate pass.
 
+Identical on those fixtures is necessary, not sufficient
+([ADR-1437](../adr/1437-hip-exact-twins-declared.md)). A twin is listed when
+it also reaches the CPU's value by construction: integer sums on the device,
+the CPU's own helpers on the host, or the CPU's arithmetic type for type.
+Natural 8-bit content does not tell the two apart, and the repository's 10-,
+12- and 16-bit Netflix clips are the 8-bit clip shifted left. Before listing
+a twin, also run it on full-range noise at 8, 10, 12 and 16 bits:
+`float_psnr_hip` and `float_moment_hip` matched every real clip measured and
+differ there.
+
 The equality holds between runs of one `vmaf` binary, which is how the gate
 runs a cell. The dB value goes through the host's `log10`: a binary built
 with oneAPI `icx` uses Intel's `libimf`, a gcc build uses glibc, and the
