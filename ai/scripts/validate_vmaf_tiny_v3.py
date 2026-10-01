@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -89,7 +90,7 @@ def _write_report(
     write_manifest_json(args.out_json, payload)
 
 
-def main(argv: list[str] | None = None) -> int:
+def _build_parser() -> argparse.ArgumentParser:
     ap = make_argument_parser(description=__doc__)
     ap.add_argument("--onnx", type=Path, required=True)
     ap.add_argument(
@@ -108,8 +109,33 @@ def main(argv: list[str] | None = None) -> int:
         help="Optional v2 ONNX path; if provided, diff v3 vs v2 predictions on the same slice.",
     )
     ap.add_argument("--out-json", type=Path, help="Optional JSON validation report.")
+    return ap
+
+
+def _compute_v2_diff(
+    v2_onnx: Path | None, x: np.ndarray, pred: np.ndarray, input_name: str
+) -> dict[str, Any] | None:
+    if v2_onnx is None or not v2_onnx.exists():
+        return None
+    try:
+        v2_pred = _ort_predict(v2_onnx, x, input_name)
+        delta = pred.astype(np.float64) - v2_pred.astype(np.float64)
+        diff: dict[str, Any] = {
+            "mean": float(delta.mean()),
+            "max_abs": float(np.max(np.abs(delta))),
+        }
+        print(
+            f"[validate-v3] v3-v2 delta: mean={diff['mean']:+.3f} " f"max_abs={diff['max_abs']:.3f}"
+        )
+        return diff
+    except Exception as exc:
+        print(f"[validate-v3] v2 diff skipped: {exc}")
+        return {"error": str(exc)}
+
+
+def main(argv: list[str] | None = None) -> int:
     raw_argv = collect_cli_argv(argv)
-    args = ap.parse_args(raw_argv)
+    args = _build_parser().parse_args(raw_argv)
 
     import pandas as pd
 
@@ -131,23 +157,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[validate-v3] sample preds: {pred[:5].round(3).tolist()}")
     print(f"[validate-v3] sample truth: {y[:5].round(3).tolist()}")
 
-    if args.v2_onnx is not None and args.v2_onnx.exists():
-        try:
-            v2_pred = _ort_predict(args.v2_onnx, x, args.input_name)
-            delta = pred.astype(np.float64) - v2_pred.astype(np.float64)
-            diff = {
-                "mean": float(delta.mean()),
-                "max_abs": float(np.max(np.abs(delta))),
-            }
-            print(
-                f"[validate-v3] v3-v2 delta: mean={diff['mean']:+.3f} "
-                f"max_abs={diff['max_abs']:.3f}"
-            )
-        except Exception as exc:
-            diff = {"error": str(exc)}
-            print(f"[validate-v3] v2 diff skipped: {exc}")
-    else:
-        diff = None
+    diff = _compute_v2_diff(args.v2_onnx, x, pred, args.input_name)
 
     if args.out_json is not None:
         _write_report(

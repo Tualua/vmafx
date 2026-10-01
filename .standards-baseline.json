@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-01T20:58:37Z",
+  "generated_at": "2026-10-01T21:01:28Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "a5acac3477c451e562782ed4e6f7cf5842e5e2ef",
-  "total_infractions": 363,
+  "commit_sha": "59eb9f1bbe2612f7c17506808c9efebb4019f5bc",
+  "total_infractions": 354,
   "infractions": [
     {
       "rule_id": "HISS-04",
@@ -52,14 +52,6 @@
       "symbol": "run_batch",
       "message": "Function 'run_batch' (79 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "ai/scripts/batch_materialize_second_opinion_features.py:86:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/scripts/build_bisect_cache.py",
-      "line_number": 317,
-      "symbol": "main",
-      "message": "Function 'main' (65 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/scripts/build_bisect_cache.py:317:HISS-04"
     },
     {
       "rule_id": "HISS-07",
@@ -367,30 +359,6 @@
       "line_number": 155,
       "message": "sys.exit ends the process from library code; return an error to the __main__ entry point instead",
       "fingerprint": "ai/scripts/export_transnet_v2_placeholder.py:155:HISS-07"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/scripts/export_vmaf_tiny_v2.py",
-      "line_number": 139,
-      "symbol": "main",
-      "message": "Function 'main' (96 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/scripts/export_vmaf_tiny_v2.py:139:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/scripts/export_vmaf_tiny_v3.py",
-      "line_number": 136,
-      "symbol": "main",
-      "message": "Function 'main' (96 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/scripts/export_vmaf_tiny_v3.py:136:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/scripts/export_vmaf_tiny_v4.py",
-      "line_number": 139,
-      "symbol": "main",
-      "message": "Function 'main' (96 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/scripts/export_vmaf_tiny_v4.py:139:HISS-04"
     },
     {
       "rule_id": "HISS-07",
@@ -877,46 +845,6 @@
       "symbol": "_build_and_write_reports",
       "message": "Function '_build_and_write_reports' (69 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "ai/scripts/validate_chug_hdr_mos_head.py:431:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/scripts/validate_model_registry.py",
-      "line_number": 151,
-      "symbol": "_consistency_check",
-      "message": "Function '_consistency_check' (68 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/scripts/validate_model_registry.py:151:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/scripts/validate_model_registry.py",
-      "line_number": 246,
-      "symbol": "main",
-      "message": "Function 'main' (62 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/scripts/validate_model_registry.py:246:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/scripts/validate_vmaf_tiny_v2.py",
-      "line_number": 92,
-      "symbol": "main",
-      "message": "Function 'main' (92 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/scripts/validate_vmaf_tiny_v2.py:92:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/scripts/validate_vmaf_tiny_v3.py",
-      "line_number": 92,
-      "symbol": "main",
-      "message": "Function 'main' (80 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/scripts/validate_vmaf_tiny_v3.py:92:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "ai/scripts/validate_vmaf_tiny_v4.py",
-      "line_number": 97,
-      "symbol": "main",
-      "message": "Function 'main' (86 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "ai/scripts/validate_vmaf_tiny_v4.py:97:HISS-04"
     },
     {
       "rule_id": "HISS-04",

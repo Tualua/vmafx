@@ -314,8 +314,7 @@ def check(
     return 0
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
+def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument(
         "--out",
@@ -346,7 +345,21 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Optional replay manifest JSON sidecar with ADR-0661 run provenance.",
     )
-    args = p.parse_args(raw_argv)
+    return p
+
+
+def _clean_cache_artifacts(out_dir: Path) -> None:
+    parquet = out_dir / "features.parquet"
+    models = out_dir / "models"
+    if parquet.exists():
+        parquet.unlink()
+    if models.exists():
+        shutil.rmtree(models)
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = _build_parser().parse_args(raw_argv)
     if args.check:
         rc = check(args.out, source_features=args.source_features, target_column=args.target_column)
         if args.manifest_out is not None:
@@ -361,12 +374,7 @@ def main(argv: list[str] | None = None) -> int:
         return rc
     # Wipe only generated artifacts; preserve hand-written siblings such as
     # README.md that explain the cache to future readers.
-    parquet = args.out / "features.parquet"
-    models = args.out / "models"
-    if parquet.exists():
-        parquet.unlink()
-    if models.exists():
-        shutil.rmtree(models)
+    _clean_cache_artifacts(args.out)
     regenerate(args.out, source_features=args.source_features, target_column=args.target_column)
     print(f"OK  wrote {args.out}")
     if args.manifest_out is not None:

@@ -703,6 +703,9 @@
   build harness (ADR-1263). All tests pass on AMD gfx1036.
 
 
+- Refactored ai/scripts exporter and validator utilities to satisfy HISS-04 complexity limits (ADR-1142).
+
+
 - Refactored Go packages (`cmd/` and `pkg/`) to resolve HISS-02 context timeouts and HISS-07 exit/panic violations under ADR-1142.
 
 

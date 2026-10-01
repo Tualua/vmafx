@@ -25,6 +25,7 @@ Exit status: 0 = pass, 1 = validation failed, 2 = bad invocation.
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import sys
@@ -148,6 +149,43 @@ def sidecar_for(onnx_path: Path) -> Path:
     return direct
 
 
+def _check_quant_consistency(
+    m: dict[str, Any], mid: str, onnx_path: Path, errors: list[str]
+) -> None:
+    quant_mode = m.get("quant_mode", "fp32")
+    if quant_mode == "fp32":
+        return
+    int8_sha = m.get("int8_sha256")
+    if not int8_sha:
+        errors.append(f"{mid}: quant_mode={quant_mode} requires int8_sha256")
+        return
+    int8_path = onnx_path.with_suffix("").with_suffix(".int8.onnx")
+    if not int8_path.is_file():
+        return
+    got8 = hashlib.sha256(int8_path.read_bytes()).hexdigest()
+    if got8 != int8_sha:
+        errors.append(f"{mid}: int8_sha256 mismatch (file={got8}, registry={int8_sha})")
+    if not graph_bakes_scaler(int8_path):
+        return
+    sidecar8 = sidecar_for(int8_path)
+    if not sidecar8.is_file():
+        errors.append(
+            f"{mid}: {int8_path.name} bakes the scaler but no companion "
+            f"sidecar ({sidecar8.name}) exists to declare onnx_has_scaler"
+        )
+        return
+    try:
+        sdata8 = json.loads(sidecar8.read_text(encoding="utf-8"))
+    except ValueError as err:
+        errors.append(f"{mid}: {sidecar8.name} JSON parse error: {err}")
+    else:
+        if sdata8.get("onnx_has_scaler") is not True:
+            errors.append(
+                f"{mid}: {int8_path.name} bakes scaler ops but "
+                f"{sidecar8.name} does not declare onnx_has_scaler: true"
+            )
+
+
 def _consistency_check(reg: dict[str, Any], registry_dir: Path) -> list[str]:
     """Cross-file invariants the schema cannot express (file existence, sha match)."""
     errors: list[str] = []
@@ -175,42 +213,9 @@ def _consistency_check(reg: dict[str, Any], registry_dir: Path) -> list[str]:
             if not sidecar.is_file():
                 errors.append(f"{mid}: missing sidecar {sidecar.name}")
 
-        quant_mode = m.get("quant_mode", "fp32")
-        if quant_mode != "fp32":
-            int8_sha = m.get("int8_sha256")
-            if not int8_sha:
-                errors.append(f"{mid}: quant_mode={quant_mode} requires int8_sha256")
-            else:
-                int8_path = onnx_path.with_suffix("").with_suffix(".int8.onnx")
-                if int8_path.is_file():
-                    got8 = hashlib.sha256(int8_path.read_bytes()).hexdigest()
-                    if got8 != int8_sha:
-                        errors.append(
-                            f"{mid}: int8_sha256 mismatch (file={got8}, registry={int8_sha})"
-                        )
-                    if graph_bakes_scaler(int8_path):
-                        sidecar8 = sidecar_for(int8_path)
-                        if not sidecar8.is_file():
-                            errors.append(
-                                f"{mid}: {int8_path.name} bakes the scaler but no companion "
-                                f"sidecar ({sidecar8.name}) exists to declare onnx_has_scaler"
-                            )
-                        else:
-                            try:
-                                sdata8 = json.loads(sidecar8.read_text(encoding="utf-8"))
-                            except ValueError as err:
-                                errors.append(f"{mid}: {sidecar8.name} JSON parse error: {err}")
-                            else:
-                                if sdata8.get("onnx_has_scaler") is not True:
-                                    errors.append(
-                                        f"{mid}: {int8_path.name} bakes scaler ops but "
-                                        f"{sidecar8.name} does not declare onnx_has_scaler: true"
-                                    )
+        _check_quant_consistency(m, mid, onnx_path, errors)
 
         bundle_rel = m.get("sigstore_bundle")
-        # Bundle file presence is checked at runtime by --tiny-model-verify,
-        # not here — release-time signing populates the file. We just
-        # enforce the path-shape rule.
         if bundle_rel and not bundle_rel.endswith(".sigstore.json"):
             errors.append(
                 f"{mid}: sigstore_bundle must end with .sigstore.json (got {bundle_rel!r})"
@@ -243,8 +248,7 @@ def validate(registry_path: Path, schema_path: Path) -> tuple[int, list[str]]:
     return (0 if not errors else 1, errors)
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
+def _build_parser() -> argparse.ArgumentParser:
     parser = make_argument_parser(description=__doc__)
     parser.add_argument(
         "registry",
@@ -265,7 +269,39 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Optional JSON validation report with ADR-0661 run provenance.",
     )
-    args = parser.parse_args(raw_argv)
+    return parser
+
+
+def _write_report(
+    out_json: Path,
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    rc: int,
+    errors: list[str],
+    model_count: int,
+) -> None:
+    write_manifest_json(
+        out_json,
+        {
+            "ok": rc == 0,
+            "error_count": len(errors),
+            "errors": errors,
+            "model_count": model_count,
+            "run_provenance": build_run_provenance(
+                entrypoint=SCRIPT_PATH,
+                repo_root=REPO_ROOT,
+                argv=raw_argv,
+                args=args,
+                inputs={"registry": args.registry, "schema": args.schema},
+                outputs={"report": out_json},
+            ),
+        },
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _build_parser().parse_args(raw_argv)
 
     rc, errors = validate(args.registry, args.schema)
     model_count = 0
@@ -287,23 +323,7 @@ def main(argv: list[str] | None = None) -> int:
             rc = 1
             errors = [f"registry count read failed: {exc}"]
     if args.out_json is not None:
-        write_manifest_json(
-            args.out_json,
-            {
-                "ok": rc == 0,
-                "error_count": len(errors),
-                "errors": errors,
-                "model_count": model_count,
-                "run_provenance": build_run_provenance(
-                    entrypoint=SCRIPT_PATH,
-                    repo_root=REPO_ROOT,
-                    argv=raw_argv,
-                    args=args,
-                    inputs={"registry": args.registry, "schema": args.schema},
-                    outputs={"report": args.out_json},
-                ),
-            },
-        )
+        _write_report(args.out_json, args, raw_argv, rc, errors, model_count)
     return rc
 
 
