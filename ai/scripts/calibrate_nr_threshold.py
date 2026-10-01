@@ -382,6 +382,100 @@ def _evaluate_calibration_quality(
 # ---------------------------------------------------------------------------
 
 
+def _render_quality_gate_lines(
+    quality: CalibrationQuality, allow_weak_calibration: bool
+) -> list[str]:
+    if quality.passed:
+        return ["The fit passed the write gate and can update the sidecar JSON."]
+    lines = [
+        (
+            "The fit did not pass the write gate and must not be used for tune "
+            "early-elimination without an explicit override."
+        ),
+        "",
+        "Reasons:",
+    ]
+    lines.extend(f"- {reason}" for reason in quality.reasons)
+    if allow_weak_calibration:
+        lines += [
+            "",
+            (
+                "`--allow-weak-calibration` was set, so the caller accepted this "
+                "weak fit explicitly."
+            ),
+        ]
+    return lines
+
+
+def _render_summary_lines(
+    today: str,
+    corpus_path: str,
+    n_clips: int,
+    n_crfs: int,
+    sample_count: int,
+    a: float,
+    b: float,
+    sigma: float,
+    delta_fast: float,
+    plcc: float,
+    quality: CalibrationQuality,
+    min_samples: int,
+    min_plcc: float,
+    allow_weak_calibration: bool,
+) -> list[str]:
+    lines = [
+        f"# NR metric v1 — Calibration Report ({today})",
+        "",
+        "## Summary",
+        "",
+        f"- **Corpus**: `{corpus_path}`",
+        f"- **Clips**: {n_clips}",
+        f"- **CRF values**: {n_crfs} ({_DEFAULT_CRFS})",
+        f"- **Total samples**: {sample_count}",
+        f"- **Regression**: `vmaf_fr ≈ {a:.4f} × vmaf_nr + {b:.4f}`",
+        f"- **PLCC**: {plcc:.4f}",
+        f"- **σ(residuals)**: {sigma:.4f} VMAF",
+        f"- **δ_fast (2σ)**: **{delta_fast:.2f} VMAF**",
+        f"- **Quality gate**: **{quality.status.upper()}**",
+        f"- **Gate criteria**: samples ≥ {min_samples}, PLCC ≥ {min_plcc:.2f}",
+        "",
+        "## Interpretation",
+        "",
+        (
+            f"During bisect, raw NR is first mapped as `NR_VMAF = {a:.4f} × "
+            f"NR_raw + {b:.4f}`. When |NR_VMAF − target| > {delta_fast:.2f} "
+            "VMAF, the full-reference VMAF call is skipped and the bisect "
+            "window advances in the NR-implied direction. This threshold is "
+            "calibrated to cover >95% of in-domain content residuals correctly "
+            "(2σ coverage)."
+        ),
+        "",
+        "## Quality gate",
+        "",
+    ]
+    lines.extend(_render_quality_gate_lines(quality, allow_weak_calibration))
+    return lines
+
+
+def _render_sample_lines(samples: list[CalibrationSample], a: float, b: float) -> list[str]:
+    lines = [
+        "",
+        "## Per-sample data (first 50)",
+        "",
+        "| Clip | CRF | NR raw | NR→VMAF | FR score | Fit residual |",
+        "|------|-----|--------|---------|----------|--------------|",
+    ]
+    for s in samples[:50]:
+        pred = (a * s.nr_score) + b
+        lines.append(
+            f"| {s.yuv_name} | {s.crf} | {s.nr_score:.2f} | {pred:.2f} | "
+            f"{s.fr_score:.2f} | {s.fr_score - pred:.2f} |"
+        )
+    if len(samples) > 50:
+        lines.append(f"| … | … | … | … | ({len(samples) - 50} more rows omitted) |")
+    return lines
+
+
 def _write_calibration_report(
     samples: list[CalibrationSample],
     *,
@@ -404,72 +498,23 @@ def _write_calibration_report(
     report_name = f"nr_metric_v1-calibration-{today}.md"
     report_path = output_dir / report_name
 
-    lines = [
-        f"# NR metric v1 — Calibration Report ({today})",
-        "",
-        "## Summary",
-        "",
-        f"- **Corpus**: `{corpus_path}`",
-        f"- **Clips**: {n_clips}",
-        f"- **CRF values**: {n_crfs} ({_DEFAULT_CRFS})",
-        f"- **Total samples**: {len(samples)}",
-        f"- **Regression**: `vmaf_fr ≈ {a:.4f} × vmaf_nr + {b:.4f}`",
-        f"- **PLCC**: {plcc:.4f}",
-        f"- **σ(residuals)**: {sigma:.4f} VMAF",
-        f"- **δ_fast (2σ)**: **{delta_fast:.2f} VMAF**",
-        f"- **Quality gate**: **{quality.status.upper()}**",
-        f"- **Gate criteria**: samples ≥ {min_samples}, PLCC ≥ {min_plcc:.2f}",
-        "",
-        "## Interpretation",
-        "",
-        (
-            f"During bisect, raw NR is first mapped as `NR_VMAF = {a:.4f} × "
-            f"NR_raw + {b:.4f}`. When |NR_VMAF − target| > {delta_fast:.2f} "
-            "VMAF, the full-reference VMAF call is skipped and the bisect "
-            "window advances in the NR-implied direction. This threshold is "
-            "calibrated to cover >95% of in-domain content residuals correctly "
-            "(2σ coverage)."
-        ),
-        "",
-        "## Quality gate",
-        "",
-    ]
-    if quality.passed:
-        lines.append("The fit passed the write gate and can update the sidecar JSON.")
-    else:
-        lines += [
-            (
-                "The fit did not pass the write gate and must not be used for tune "
-                "early-elimination without an explicit override."
-            ),
-            "",
-            "Reasons:",
-        ]
-        lines.extend(f"- {reason}" for reason in quality.reasons)
-        if allow_weak_calibration:
-            lines += [
-                "",
-                (
-                    "`--allow-weak-calibration` was set, so the caller accepted this "
-                    "weak fit explicitly."
-                ),
-            ]
-    lines += [
-        "",
-        "## Per-sample data (first 50)",
-        "",
-        "| Clip | CRF | NR raw | NR→VMAF | FR score | Fit residual |",
-        "|------|-----|--------|---------|----------|--------------|",
-    ]
-    for s in samples[:50]:
-        pred = (a * s.nr_score) + b
-        lines.append(
-            f"| {s.yuv_name} | {s.crf} | {s.nr_score:.2f} | {pred:.2f} | "
-            f"{s.fr_score:.2f} | {s.fr_score - pred:.2f} |"
-        )
-    if len(samples) > 50:
-        lines.append(f"| … | … | … | … | ({len(samples) - 50} more rows omitted) |")
-
+    lines = _render_summary_lines(
+        today,
+        corpus_path,
+        n_clips,
+        n_crfs,
+        len(samples),
+        a,
+        b,
+        sigma,
+        delta_fast,
+        plcc,
+        quality,
+        min_samples,
+        min_plcc,
+        allow_weak_calibration,
+    )
+    lines.extend(_render_sample_lines(samples, a, b))
     lines += [
         "",
         "## References",
@@ -488,6 +533,386 @@ def _write_calibration_report(
 # ---------------------------------------------------------------------------
 # Main calibration logic
 # ---------------------------------------------------------------------------
+
+
+def _collect_sample_for_crf(
+    tmpdir: Path,
+    yuv: Path,
+    crf: int,
+    w: int,
+    h: int,
+    pix_fmt: str,
+    codec: str,
+    preset: str,
+    vmaf_bin: str,
+    ffmpeg_bin: str,
+    model_onnx: Path,
+    nr_execution_provider: str,
+) -> CalibrationSample | None:
+    _log.info("Processing %s @ CRF=%d (%dx%d)", yuv.name, crf, w, h)
+    encoded = tmpdir / f"{yuv.stem}_crf{crf}.mkv"
+    if not _encode_yuv(
+        yuv,
+        width=w,
+        height=h,
+        pix_fmt=pix_fmt,
+        codec=codec,
+        preset=preset,
+        crf=crf,
+        output=encoded,
+        ffmpeg_bin=ffmpeg_bin,
+    ):
+        return None
+    dist_yuv = tmpdir / f"{yuv.stem}_crf{crf}_dist.yuv"
+    if not _decode_to_yuv(encoded, dist_yuv, pix_fmt=pix_fmt, ffmpeg_bin=ffmpeg_bin):
+        return None
+    fr = _run_fr_vmaf(
+        yuv,
+        dist_yuv,
+        width=w,
+        height=h,
+        pix_fmt=pix_fmt,
+        vmaf_bin=vmaf_bin,
+    )
+    if fr is None:
+        return None
+    nr = _run_nr_score(
+        dist_yuv,
+        width=w,
+        height=h,
+        pix_fmt=pix_fmt,
+        nr_model_path=model_onnx,
+        nr_use_gpu_ep=nr_execution_provider == "auto",
+    )
+    if nr is None:
+        return None
+    return CalibrationSample(yuv_name=yuv.name, crf=crf, nr_score=nr, fr_score=fr)
+
+
+def _collect_calibration_samples(
+    tmpdir: Path,
+    yuv_files: list[Path],
+    crfs: tuple[int, ...],
+    width: int | None,
+    height: int | None,
+    pix_fmt: str,
+    codec: str,
+    preset: str,
+    vmaf_bin: str,
+    ffmpeg_bin: str,
+    model_onnx: Path,
+    nr_execution_provider: str,
+) -> list[CalibrationSample]:
+    samples: list[CalibrationSample] = []
+    for yuv in yuv_files:
+        geom = _detect_yuv_geometry(yuv) if (width is None or height is None) else None
+        w = width if width is not None else (geom[0] if geom else None)
+        h = height if height is not None else (geom[1] if geom else None)
+        if w is None or h is None:
+            _log.warning("Cannot determine geometry for %s; skip. Pass --width/--height.", yuv.name)
+            continue
+
+        for crf in crfs:
+            sample = _collect_sample_for_crf(
+                tmpdir,
+                yuv,
+                crf,
+                w,
+                h,
+                pix_fmt,
+                codec,
+                preset,
+                vmaf_bin,
+                ffmpeg_bin,
+                model_onnx,
+                nr_execution_provider,
+            )
+            if sample is not None:
+                samples.append(sample)
+    return samples
+
+
+def _update_model_json(
+    model_json: Path,
+    *,
+    a: float,
+    b: float,
+    delta_fast: float,
+    plcc: float,
+    sigma: float,
+    samples: list[CalibrationSample],
+    quality: CalibrationQuality,
+    min_calibration_samples: int,
+    min_plcc: float,
+    allow_weak_calibration: bool,
+    provenance_argv: list[str] | None,
+    provenance_args: argparse.Namespace | dict[str, Any] | None,
+    corpus: Path,
+    corpus_label: str,
+    model_onnx: Path,
+    report_path: Path,
+) -> int:
+    try:
+        existing = json.loads(model_json.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        _log.error("Failed to read %s: %s", model_json, exc)
+        return 1
+
+    existing["calibration_slope"] = round(a, 6)
+    existing["calibration_intercept"] = round(b, 6)
+    existing["calibration_threshold"] = round(delta_fast, 4)
+    existing["calibration_plcc"] = round(plcc, 4)
+    existing["calibration_sigma"] = round(sigma, 4)
+    existing["calibration_date"] = date.today().isoformat()
+    existing["calibration_n_samples"] = len(samples)
+    existing["calibration_quality_status"] = quality.status
+    existing["calibration_quality_reasons"] = list(quality.reasons)
+    existing["calibration_min_samples"] = min_calibration_samples
+    existing["calibration_min_plcc"] = round(min_plcc, 4)
+    existing["calibration_allow_weak"] = allow_weak_calibration
+    if provenance_args is not None:
+        existing["run_provenance"] = build_run_provenance(
+            entrypoint=SCRIPT_PATH,
+            repo_root=_REPO_ROOT,
+            argv=provenance_argv or [],
+            args=provenance_args,
+            inputs={
+                "requested_corpus": corpus,
+                "actual_corpus": Path(corpus_label),
+                "model_onnx": model_onnx,
+            },
+            outputs={
+                "model_json": model_json,
+                "markdown_report": report_path,
+            },
+        )
+
+    write_manifest_json(model_json, existing)
+    print(f"Updated calibration_threshold={delta_fast:.4f} in {model_json}")
+    return 0
+
+
+def _resolve_calibration_corpus(
+    corpus: Path, max_clips: int | None
+) -> tuple[list[Path], str] | None:
+    if corpus.is_dir():
+        yuv_files = _find_yuv_files(corpus)
+        corpus_label = str(corpus)
+    else:
+        _log.info("Corpus dir %s not found; using fallback YUVs from %s", corpus, _FALLBACK_YUV_DIR)
+        yuv_files = sorted(_FALLBACK_YUV_DIR.glob(_FALLBACK_YUV_GLOB))
+        corpus_label = str(_FALLBACK_YUV_DIR)
+
+    if not yuv_files:
+        _log.error("No .yuv files found under %s or fallback dir", corpus)
+        return None
+
+    if max_clips is not None:
+        yuv_files = yuv_files[:max_clips]
+    return yuv_files, corpus_label
+
+
+def _run_calibration_sweep(
+    *,
+    corpus: Path,
+    max_clips: int | None,
+    crfs: tuple[int, ...],
+    width: int | None,
+    height: int | None,
+    pix_fmt: str,
+    codec: str,
+    preset: str,
+    vmaf_bin: str,
+    ffmpeg_bin: str,
+    model_onnx: Path,
+    nr_execution_provider: str,
+) -> tuple[list[CalibrationSample], str] | None:
+    corpus_info = _resolve_calibration_corpus(corpus, max_clips)
+    if corpus_info is None:
+        return None
+    yuv_files, corpus_label = corpus_info
+    _log.info("Found %d YUV files; CRF grid: %s", len(yuv_files), crfs)
+
+    with tempfile.TemporaryDirectory(prefix="calibrate_nr_") as tmp:
+        samples = _collect_calibration_samples(
+            Path(tmp),
+            yuv_files,
+            crfs,
+            width,
+            height,
+            pix_fmt,
+            codec,
+            preset,
+            vmaf_bin,
+            ffmpeg_bin,
+            model_onnx,
+            nr_execution_provider,
+        )
+    if not samples:
+        _log.error("No calibration samples collected; check corpus and tool paths.")
+        return None
+    return samples, corpus_label
+
+
+def _commit_calibration_fit(
+    *,
+    quality: CalibrationQuality,
+    allow_weak_calibration: bool,
+    dry_run: bool,
+    model_json: Path,
+    a: float,
+    b: float,
+    delta_fast: float,
+    plcc: float,
+    sigma: float,
+    samples: list[CalibrationSample],
+    min_calibration_samples: int,
+    min_plcc: float,
+    provenance_argv: list[str] | None,
+    provenance_args: argparse.Namespace | dict[str, Any] | None,
+    corpus: Path,
+    corpus_label: str,
+    model_onnx: Path,
+    report_path: Path,
+) -> int:
+    if not quality.passed and not allow_weak_calibration:
+        print(
+            f"Refusing to update calibration sidecar: {'; '.join(quality.reasons)}.",
+            file=sys.stderr,
+        )
+        return 1
+
+    if not dry_run:
+        return _update_model_json(
+            model_json,
+            a=a,
+            b=b,
+            delta_fast=delta_fast,
+            plcc=plcc,
+            sigma=sigma,
+            samples=samples,
+            quality=quality,
+            min_calibration_samples=min_calibration_samples,
+            min_plcc=min_plcc,
+            allow_weak_calibration=allow_weak_calibration,
+            provenance_argv=provenance_argv,
+            provenance_args=provenance_args,
+            corpus=corpus,
+            corpus_label=corpus_label,
+            model_onnx=model_onnx,
+            report_path=report_path,
+        )
+    print(f"[dry-run] would set calibration_threshold={delta_fast:.4f} in {model_json}")
+    return 0
+
+
+def _fit_samples(
+    samples: list[CalibrationSample],
+    delta_fast_override: float | None,
+    min_calibration_samples: int,
+    min_plcc: float,
+) -> tuple[float, float, float, float, float, CalibrationQuality]:
+    nr_vals = [s.nr_score for s in samples]
+    fr_vals = [s.fr_score for s in samples]
+    a, b, residuals = (
+        _linear_regression(nr_vals, fr_vals)
+        if len(samples) >= 2
+        else (1.0, 0.0, [s.residual for s in samples])
+    )
+    sigma = math.sqrt(sum(r * r for r in residuals) / max(1, len(residuals) - 1))
+    delta_fast = (
+        delta_fast_override if delta_fast_override is not None else _compute_delta_fast(residuals)
+    )
+    plcc = _pearson_r(nr_vals, fr_vals)
+    quality = _evaluate_calibration_quality(
+        sample_count=len(samples),
+        plcc=plcc,
+        min_samples=min_calibration_samples,
+        min_plcc=min_plcc,
+    )
+    return a, b, sigma, delta_fast, plcc, quality
+
+
+def _apply_calibration_fit(
+    samples: list[CalibrationSample],
+    corpus_label: str,
+    cfg: dict[str, Any],
+) -> int:
+    a, b, sigma, delta_fast, plcc, quality = _fit_samples(
+        samples,
+        cfg.get("delta_fast_override"),
+        cfg["min_calibration_samples"],
+        cfg["min_plcc"],
+    )
+    _log.info("Regression: vmaf_fr ≈ %.4f × vmaf_nr + %.4f", a, b)
+    _log.info("PLCC=%.4f  σ=%.4f  δ_fast (2σ)=%.2f", plcc, sigma, delta_fast)
+
+    report_path = _write_calibration_report(
+        samples,
+        a=a,
+        b=b,
+        sigma=sigma,
+        delta_fast=delta_fast,
+        plcc=plcc,
+        n_clips=len({s.yuv_name for s in samples}),
+        n_crfs=len(cfg["crfs"]),
+        corpus_path=corpus_label,
+        output_dir=cfg["report_dir"],
+        quality=quality,
+        min_samples=cfg["min_calibration_samples"],
+        min_plcc=cfg["min_plcc"],
+        allow_weak_calibration=cfg["allow_weak_calibration"],
+    )
+    print(f"Calibration report written to {report_path}")
+
+    return _commit_calibration_fit(
+        quality=quality,
+        allow_weak_calibration=cfg["allow_weak_calibration"],
+        dry_run=cfg["dry_run"],
+        model_json=cfg["model_json"],
+        a=a,
+        b=b,
+        delta_fast=delta_fast,
+        plcc=plcc,
+        sigma=sigma,
+        samples=samples,
+        min_calibration_samples=cfg["min_calibration_samples"],
+        min_plcc=cfg["min_plcc"],
+        provenance_argv=cfg.get("provenance_argv"),
+        provenance_args=cfg.get("provenance_args"),
+        corpus=cfg["corpus"],
+        corpus_label=corpus_label,
+        model_onnx=cfg["model_onnx"],
+        report_path=report_path,
+    )
+
+
+def _calibrate_impl(**kwargs: Any) -> int:
+    sweep = _run_calibration_sweep(
+        corpus=kwargs["corpus"],
+        max_clips=kwargs["max_clips"],
+        crfs=kwargs["crfs"],
+        width=kwargs["width"],
+        height=kwargs["height"],
+        pix_fmt=kwargs["pix_fmt"],
+        codec=kwargs["codec"],
+        preset=kwargs["preset"],
+        vmaf_bin=kwargs["vmaf_bin"],
+        ffmpeg_bin=kwargs["ffmpeg_bin"],
+        model_onnx=kwargs["model_onnx"],
+        nr_execution_provider=kwargs["nr_execution_provider"],
+    )
+    if sweep is None:
+        return 1
+    samples, corpus_label = sweep
+    if len(samples) < 2 and kwargs.get("delta_fast_override") is None:
+        _log.error(
+            "Need at least 2 calibration samples to fit δ_fast; got %d. "
+            "Add CRFs/clips or pass --delta-fast to force a threshold.",
+            len(samples),
+        )
+        return 1
+    return _apply_calibration_fit(samples, corpus_label, kwargs)
 
 
 def calibrate(
@@ -515,201 +940,7 @@ def calibrate(
     provenance_args: argparse.Namespace | dict[str, Any] | None = None,
 ) -> int:
     """Run the calibration sweep and write output. Returns 0 on success."""
-    # Collect YUV files.
-    if corpus.is_dir():
-        yuv_files = _find_yuv_files(corpus)
-        corpus_label = str(corpus)
-    else:
-        _log.info("Corpus dir %s not found; using fallback YUVs from %s", corpus, _FALLBACK_YUV_DIR)
-        yuv_files = sorted(_FALLBACK_YUV_DIR.glob(_FALLBACK_YUV_GLOB))
-        corpus_label = str(_FALLBACK_YUV_DIR)
-
-    if not yuv_files:
-        _log.error("No .yuv files found under %s or fallback dir", corpus)
-        return 1
-
-    if max_clips is not None:
-        yuv_files = yuv_files[:max_clips]
-
-    _log.info("Found %d YUV files; CRF grid: %s", len(yuv_files), crfs)
-
-    samples: list[CalibrationSample] = []
-
-    with tempfile.TemporaryDirectory(prefix="calibrate_nr_") as tmp:
-        tmpdir = Path(tmp)
-
-        for yuv in yuv_files:
-            # Detect geometry from filename or use caller-supplied values.
-            geom = _detect_yuv_geometry(yuv) if (width is None or height is None) else None
-            w = width if width is not None else (geom[0] if geom else None)
-            h = height if height is not None else (geom[1] if geom else None)
-            if w is None or h is None:
-                _log.warning(
-                    "Cannot determine geometry for %s; skip. Pass --width/--height.", yuv.name
-                )
-                continue
-
-            for crf in crfs:
-                _log.info("Processing %s @ CRF=%d (%dx%d)", yuv.name, crf, w, h)
-
-                # Encode reference → encoded MKV.
-                encoded = tmpdir / f"{yuv.stem}_crf{crf}.mkv"
-                if not _encode_yuv(
-                    yuv,
-                    width=w,
-                    height=h,
-                    pix_fmt=pix_fmt,
-                    codec=codec,
-                    preset=preset,
-                    crf=crf,
-                    output=encoded,
-                    ffmpeg_bin=ffmpeg_bin,
-                ):
-                    continue
-
-                # Decode encoded → distorted YUV.
-                dist_yuv = tmpdir / f"{yuv.stem}_crf{crf}_dist.yuv"
-                if not _decode_to_yuv(encoded, dist_yuv, pix_fmt=pix_fmt, ffmpeg_bin=ffmpeg_bin):
-                    continue
-
-                # FR VMAF.
-                fr = _run_fr_vmaf(
-                    yuv,
-                    dist_yuv,
-                    width=w,
-                    height=h,
-                    pix_fmt=pix_fmt,
-                    vmaf_bin=vmaf_bin,
-                )
-                if fr is None:
-                    continue
-
-                # NR VMAF proxy.
-                nr = _run_nr_score(
-                    dist_yuv,
-                    width=w,
-                    height=h,
-                    pix_fmt=pix_fmt,
-                    nr_model_path=model_onnx,
-                    nr_use_gpu_ep=nr_execution_provider == "auto",
-                )
-                if nr is None:
-                    continue
-
-                samples.append(
-                    CalibrationSample(yuv_name=yuv.name, crf=crf, nr_score=nr, fr_score=fr)
-                )
-
-    if not samples:
-        _log.error("No calibration samples collected; check corpus and tool paths.")
-        return 1
-    if len(samples) < 2 and delta_fast_override is None:
-        _log.error(
-            "Need at least 2 calibration samples to fit δ_fast; got %d. "
-            "Add CRFs/clips or pass --delta-fast to force a threshold.",
-            len(samples),
-        )
-        return 1
-
-    # Fit linear regression.
-    nr_vals = [s.nr_score for s in samples]
-    fr_vals = [s.fr_score for s in samples]
-    if len(samples) >= 2:
-        a, b, residuals = _linear_regression(nr_vals, fr_vals)
-    else:
-        a = 1.0
-        b = 0.0
-        residuals = [s.residual for s in samples]
-    sigma = math.sqrt(sum(r * r for r in residuals) / max(1, len(residuals) - 1))
-    delta_fast = (
-        delta_fast_override if delta_fast_override is not None else _compute_delta_fast(residuals)
-    )
-    plcc = _pearson_r(nr_vals, fr_vals)
-    quality = _evaluate_calibration_quality(
-        sample_count=len(samples),
-        plcc=plcc,
-        min_samples=min_calibration_samples,
-        min_plcc=min_plcc,
-    )
-
-    _log.info("Regression: vmaf_fr ≈ %.4f × vmaf_nr + %.4f", a, b)
-    _log.info("PLCC=%.4f  σ=%.4f  δ_fast (2σ)=%.2f", plcc, sigma, delta_fast)
-    if quality.passed:
-        _log.info("Calibration quality gate accepted the fit.")
-    else:
-        _log.warning("Calibration quality gate rejected the fit: %s", "; ".join(quality.reasons))
-
-    # Write calibration report.
-    report_path = _write_calibration_report(
-        samples,
-        a=a,
-        b=b,
-        sigma=sigma,
-        delta_fast=delta_fast,
-        plcc=plcc,
-        n_clips=len({s.yuv_name for s in samples}),
-        n_crfs=len(crfs),
-        corpus_path=corpus_label,
-        output_dir=report_dir,
-        quality=quality,
-        min_samples=min_calibration_samples,
-        min_plcc=min_plcc,
-        allow_weak_calibration=allow_weak_calibration,
-    )
-    print(f"Calibration report written to {report_path}")
-
-    if not quality.passed and not allow_weak_calibration:
-        print(
-            "Refusing to update calibration sidecar: "
-            f"{'; '.join(quality.reasons)}. "
-            "Use --allow-weak-calibration only for diagnostic sidecars.",
-            file=sys.stderr,
-        )
-        return 1
-
-    # Update model/tiny/nr_metric_v1.json.
-    if not dry_run:
-        try:
-            existing = json.loads(model_json.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            _log.error("Failed to read %s: %s", model_json, exc)
-            return 1
-
-        existing["calibration_slope"] = round(a, 6)
-        existing["calibration_intercept"] = round(b, 6)
-        existing["calibration_threshold"] = round(delta_fast, 4)
-        existing["calibration_plcc"] = round(plcc, 4)
-        existing["calibration_sigma"] = round(sigma, 4)
-        existing["calibration_date"] = date.today().isoformat()
-        existing["calibration_n_samples"] = len(samples)
-        existing["calibration_quality_status"] = quality.status
-        existing["calibration_quality_reasons"] = list(quality.reasons)
-        existing["calibration_min_samples"] = min_calibration_samples
-        existing["calibration_min_plcc"] = round(min_plcc, 4)
-        existing["calibration_allow_weak"] = allow_weak_calibration
-        if provenance_args is not None:
-            existing["run_provenance"] = build_run_provenance(
-                entrypoint=SCRIPT_PATH,
-                repo_root=_REPO_ROOT,
-                argv=provenance_argv or [],
-                args=provenance_args,
-                inputs={
-                    "requested_corpus": corpus,
-                    "actual_corpus": Path(corpus_label),
-                    "model_onnx": model_onnx,
-                },
-                outputs={
-                    "model_json": model_json,
-                    "markdown_report": report_path,
-                },
-            )
-
-        write_manifest_json(model_json, existing)
-        print(f"Updated calibration_threshold={delta_fast:.4f} in {model_json}")
-    else:
-        print(f"[dry-run] would set calibration_threshold={delta_fast:.4f} in {model_json}")
-
-    return 0
+    return _calibrate_impl(**locals())
 
 
 # ---------------------------------------------------------------------------
@@ -717,18 +948,7 @@ def calibrate(
 # ---------------------------------------------------------------------------
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    p = make_argument_parser(
-        prog="calibrate_nr_threshold.py",
-        description=(
-            "Calibrate the δ_fast threshold for NR early-elimination "
-            "(ADR-0615 / ADR-0624). "
-            "Walks a YUV corpus, runs FR+NR scoring at a CRF grid, fits "
-            "vmaf_fr ≈ f(vmaf_nr) linear regression, and writes "
-            "calibration_slope/intercept and calibration_threshold = 2σ "
-            "to model/tiny/nr_metric_v1.json."
-        ),
-    )
+def _add_corpus_input_args(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--corpus",
         type=Path,
@@ -770,6 +990,9 @@ def _build_parser() -> argparse.ArgumentParser:
         default=_DEFAULT_PRESET,
         help=f"encoder preset (default: {_DEFAULT_PRESET})",
     )
+
+
+def _add_corpus_format_args(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--width",
         type=int,
@@ -795,6 +1018,9 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="N",
         help="limit to the first N YUV files (useful for quick smoke runs)",
     )
+
+
+def _add_runtime_bin_args(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--vmaf-bin",
         default="vmaf",
@@ -833,6 +1059,9 @@ def _build_parser() -> argparse.ArgumentParser:
             "(default: auto)"
         ),
     )
+
+
+def _add_gate_args(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--min-calibration-samples",
         type=int,
@@ -875,6 +1104,24 @@ def _build_parser() -> argparse.ArgumentParser:
         default=False,
         help="verbose logging",
     )
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    p = make_argument_parser(
+        prog="calibrate_nr_threshold.py",
+        description=(
+            "Calibrate the δ_fast threshold for NR early-elimination "
+            "(ADR-0615 / ADR-0624). "
+            "Walks a YUV corpus, runs FR+NR scoring at a CRF grid, fits "
+            "vmaf_fr ≈ f(vmaf_nr) linear regression, and writes "
+            "calibration_slope/intercept and calibration_threshold = 2σ "
+            "to model/tiny/nr_metric_v1.json."
+        ),
+    )
+    _add_corpus_input_args(p)
+    _add_corpus_format_args(p)
+    _add_runtime_bin_args(p)
+    _add_gate_args(p)
     return p
 
 

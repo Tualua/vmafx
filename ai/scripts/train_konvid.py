@@ -122,7 +122,9 @@ def _train_one(
 
 def train_c2(args: argparse.Namespace) -> Path:
     if not C2_PARQUET.exists():
-        sys.exit(f"missing {C2_PARQUET}; run ai/scripts/extract_konvid_frames.py first")
+        raise FileNotFoundError(
+            f"missing {C2_PARQUET}; run ai/scripts/extract_konvid_frames.py first"
+        )
     ds = FrameMOSDataset(C2_PARQUET)
     tr, va, _te = _split_dataset(ds, args.val_frac, args.test_frac, args.seed)
     model = NRMetric(in_channels=1, width=args.c2_width)
@@ -145,7 +147,9 @@ def train_c2(args: argparse.Namespace) -> Path:
 
 def train_c3(args: argparse.Namespace) -> Path:
     if not C3_PARQUET.exists():
-        sys.exit(f"missing {C3_PARQUET}; run ai/scripts/extract_konvid_frames.py first")
+        raise FileNotFoundError(
+            f"missing {C3_PARQUET}; run ai/scripts/extract_konvid_frames.py first"
+        )
     ds = PairedFrameDataset(C3_PARQUET)
     tr, va, _te = _split_dataset(ds, args.val_frac, args.test_frac, args.seed)
     model = LearnedFilter(channels=1, width=args.c3_width, num_blocks=args.c3_blocks, lr=1e-4)
@@ -167,8 +171,7 @@ def train_c3(args: argparse.Namespace) -> Path:
     )
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", choices=("c2", "c3", "both"), default="both")
 
@@ -196,19 +199,12 @@ def main(argv: list[str] | None = None) -> int:
             "when --model includes c2, else <output-c3>/train_konvid.manifest.json)."
         ),
     )
-    args = parser.parse_args(raw_argv)
+    return parser
 
-    checkpoints: dict[str, Path] = {}
-    if args.model in ("c2", "both"):
-        ck = train_c2(args)
-        print(f"[c2] checkpoint: {ck}")
-        checkpoints["c2_checkpoint"] = ck
-    if args.model in ("c3", "both"):
-        ck = train_c3(args)
-        print(f"[c3] checkpoint: {ck}")
-        checkpoints["c3_checkpoint"] = ck
 
-    # Determine sidecar path and write run-provenance manifest (ADR-0668).
+def _write_train_manifest(
+    args: argparse.Namespace, checkpoints: dict[str, Path], raw_argv: list[str]
+) -> None:
     if args.manifest_out is None:
         anchor = args.output_c2 if args.model in ("c2", "both") else args.output_c3
         args.manifest_out = anchor / "train_konvid.manifest.json"
@@ -233,8 +229,29 @@ def main(argv: list[str] | None = None) -> int:
         },
     )
     print(f"[train-konvid] manifest written to {args.manifest_out}", flush=True)
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _build_parser().parse_args(raw_argv)
+
+    checkpoints: dict[str, Path] = {}
+    try:
+        if args.model in ("c2", "both"):
+            ck = train_c2(args)
+            print(f"[c2] checkpoint: {ck}")
+            checkpoints["c2_checkpoint"] = ck
+        if args.model in ("c3", "both"):
+            ck = train_c3(args)
+            print(f"[c3] checkpoint: {ck}")
+            checkpoints["c3_checkpoint"] = ck
+    except FileNotFoundError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    _write_train_manifest(args, checkpoints, raw_argv)
     return 0
 
 
-if __name__ == "__main__":
-    sys.exit(main())
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())

@@ -31,6 +31,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -121,16 +122,9 @@ def _decode_to_yuv(src: Path, dest: Path, w: int, h: int, max_frames: int) -> in
     return dest.stat().st_size // frame_bytes
 
 
-def _run_vmaf(
-    vmaf_bin: Path,
-    ref: Path,
-    dis: Path,
-    w: int,
-    h: int,
-    n_threads: int,
-    model: Path,
-) -> list[dict]:
-    """Run vmaf with FULL_FEATURES + the v0.6.1 model. Return frames list."""
+def _validate_run_vmaf_args(
+    vmaf_bin: Path, ref: Path, dis: Path, w: int, h: int, n_threads: int, model: Path
+) -> None:
     if not isinstance(w, int) or isinstance(w, bool) or w <= 0:
         raise ValueError(f"w must be a positive integer, got {w!r}")
     if not isinstance(h, int) or isinstance(h, bool) or h <= 0:
@@ -145,10 +139,8 @@ def _run_vmaf(
         if "\0" in s:
             raise ValueError(f"{name} cannot contain null bytes: {s!r}")
 
-    # Per-pair scratch JSON: predictable /tmp paths leak username + invite
-    # collisions on multi-tenant hosts; route through tempfile honouring
-    # VMAF_TINY_AI_SCRATCH (same env-var convention as the BVI-DVC / KoNViD
-    # full-feature scripts).
+
+def _resolve_scratch_file(ref: Path, dis: Path) -> Path:
     raw_scratch = os.environ.get("VMAF_TINY_AI_SCRATCH")
     if raw_scratch is not None:
         if not raw_scratch.strip():
@@ -179,45 +171,70 @@ def _run_vmaf(
     except ValueError as err:
         out.unlink(missing_ok=True)
         raise ValueError(f"Temporary file {out} escaped scratch directory {scratch_dir}") from err
+    return out
 
+
+def _build_vmaf_cmd(
+    vmaf_bin: Path,
+    ref: Path,
+    dis: Path,
+    w: int,
+    h: int,
+    n_threads: int,
+    model: Path,
+    out: Path,
+) -> list[str]:
+    feature_args: list[str] = []
+    for extractor in _extractors_for(FULL_FEATURES):
+        feature_args += ["--feature", extractor]
+    resolved = resolve_teacher_model(model)
+    cmd = [
+        str(vmaf_bin),
+        "-r",
+        str(ref),
+        "-d",
+        str(dis),
+        "-w",
+        str(w),
+        "-h",
+        str(h),
+        "-p",
+        "420",
+        "-b",
+        "8",
+        "-m",
+        resolved.arg,
+        *feature_args,
+        "--threads",
+        str(n_threads),
+        "--no_cuda",
+        "--no_sycl",
+        "--output",
+        str(out),
+        "--json",
+    ]
+    for arg in cmd:
+        if not isinstance(arg, str):
+            raise TypeError(f"Command argument must be a string, got {type(arg).__name__}: {arg!r}")
+        if "\0" in arg:
+            raise ValueError(f"Command argument contains null byte: {arg!r}")
+    return cmd
+
+
+def _run_vmaf(
+    vmaf_bin: Path,
+    ref: Path,
+    dis: Path,
+    w: int,
+    h: int,
+    n_threads: int,
+    model: Path,
+) -> list[dict]:
+    """Run vmaf with FULL_FEATURES + the v0.6.1 model. Return frames list."""
+    _validate_run_vmaf_args(vmaf_bin, ref, dis, w, h, n_threads, model)
+    out = _resolve_scratch_file(ref, dis)
     try:
-        feature_args: list[str] = []
-        for extractor in _extractors_for(FULL_FEATURES):
-            feature_args += ["--feature", extractor]
-        resolved = resolve_teacher_model(model)
-        cmd = [
-            str(vmaf_bin),
-            "-r",
-            str(ref),
-            "-d",
-            str(dis),
-            "-w",
-            str(w),
-            "-h",
-            str(h),
-            "-p",
-            "420",
-            "-b",
-            "8",
-            "-m",
-            resolved.arg,
-            *feature_args,
-            "--threads",
-            str(n_threads),
-            "--no_cuda",
-            "--no_sycl",
-            "--output",
-            str(out),
-            "--json",
-        ]
-        for arg in cmd:
-            if not isinstance(arg, str):
-                raise TypeError(
-                    f"Command argument must be a string, got {type(arg).__name__}: {arg!r}"
-                )
-            if "\0" in arg:
-                raise ValueError(f"Command argument contains null byte: {arg!r}")
-
+        cmd = _build_vmaf_cmd(vmaf_bin, ref, dis, w, h, n_threads, model, out)
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         with out.open() as f:
             doc = json.load(f)
@@ -296,8 +313,7 @@ def _write_manifest(
     )
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
+def _build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser()
     ap.add_argument("--manifest", type=Path, required=True)
     ap.add_argument(
@@ -330,12 +346,10 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Replay manifest JSON sidecar (default: <out-parquet>.manifest.json).",
     )
-    args = ap.parse_args(raw_argv)
-    if args.manifest_out is None:
-        args.manifest_out = args.out_parquet.with_suffix(".manifest.json")
+    return ap
 
-    resolved_teacher = resolve_teacher_model(args.model)
 
+def _validate_prerequisites(args: argparse.Namespace, resolved_teacher: Any) -> int | None:
     if not args.vmaf_bin.is_file():
         print(f"error: vmaf binary not found: {args.vmaf_bin}", file=sys.stderr)
         return 2
@@ -345,113 +359,161 @@ def main(argv: list[str] | None = None) -> int:
     if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
         print("error: ffmpeg/ffprobe not on PATH", file=sys.stderr)
         return 2
+    return None
 
-    manifest = json.loads(args.manifest.read_text())
-    print(f"[ugc-extract] manifest stems={len(manifest)}", flush=True)
+
+def _scale_geometry(ow: int, oh: int, max_height: int) -> tuple[int, int] | None:
+    target_h = min(oh, max_height)
+    target_w = (ow * target_h) // oh
+    target_w -= target_w & 1
+    target_h -= target_h & 1
+    if target_w < 2 or target_h < 2:
+        return None
+    return target_w, target_h
+
+
+def _process_distorted_clip(
+    stem: str,
+    sfx: str,
+    dis_src: Path,
+    ref_yuv: Path,
+    target_w: int,
+    target_h: int,
+    args: argparse.Namespace,
+    resolved_teacher: Any,
+    t0: float,
+    current_row_count: int,
+) -> tuple[list[dict], bool]:
+    dis_yuv = args.yuv_dir / f"{stem}_{sfx}_{target_w}x{target_h}.yuv"
+    try:
+        _decode_to_yuv(dis_src, dis_yuv, target_w, target_h, args.max_frames)
+    except subprocess.CalledProcessError as exc:
+        print(f"  [{stem}/{sfx}] decode-dis failed: {exc}", flush=True)
+        return [], False
+    try:
+        frames = _run_vmaf(
+            args.vmaf_bin,
+            ref_yuv,
+            dis_yuv,
+            target_w,
+            target_h,
+            args.threads,
+            resolved_teacher.arg,
+        )
+    except subprocess.CalledProcessError as exc:
+        print(f"  [{stem}/{sfx}] vmaf failed: {exc}", flush=True)
+        if not args.keep_yuv:
+            dis_yuv.unlink(missing_ok=True)
+        return [], False
 
     rows: list[dict] = []
-    pair_count = 0
-    fail_count = 0
-    t0 = time.monotonic()
-    for stem, files in sorted(manifest.items()):
-        orig = Path(files["orig"])
-        if not orig.is_file():
-            print(f"  [{stem}] missing orig, skip", flush=True)
-            continue
-        try:
-            probe = _ffprobe(orig)
-            ow = int(probe["width"])
-            oh = int(probe["height"])
-            if ow <= 0 or oh <= 0:
-                raise ValueError(f"degenerate geometry {ow}x{oh}")
-        except Exception as exc:  # pragma: no cover
-            # A missing/zero width|height (KeyError / ValueError) or any ffprobe
-            # failure must skip just this clip, not abort the whole run with an
-            # uncaught ZeroDivisionError/KeyError (R3-18).
-            print(f"  [{stem}] ffprobe/geometry failed: {exc}", flush=True)
-            fail_count += 1
-            continue
-        # Down-scale to max_height keeping aspect (oh > 0 guaranteed above).
-        target_h = min(oh, args.max_height)
-        target_w = (ow * target_h) // oh
-        # Make even
-        target_w -= target_w & 1
-        target_h -= target_h & 1
-        if target_w < 2 or target_h < 2:
-            # The integer aspect down-scale rounded a dimension below ffmpeg's
-            # minimum (e.g. a 1px-wide source: (1 * 576) // 720 == 0). Skip the
-            # clip rather than emit a `scale=0:...` error or a ZeroDivisionError
-            # in _decode_to_yuv on resume (R3-18 follow-up).
-            print(
-                f"  [{stem}] degenerate scaled geometry {ow}x{oh} -> "
-                f"{target_w}x{target_h}; skip",
-                flush=True,
-            )
-            fail_count += 1
-            continue
-        ref_yuv = args.yuv_dir / f"{stem}_orig_{target_w}x{target_h}.yuv"
-        try:
-            _decode_to_yuv(orig, ref_yuv, target_w, target_h, args.max_frames)
-        except subprocess.CalledProcessError as exc:
-            print(f"  [{stem}] decode-orig failed: {exc}", flush=True)
-            fail_count += 1
-            continue
+    source_name = f"ugc-{stem}-{sfx}"
+    for frame in frames:
+        m = frame.get("metrics", {})
+        row = _frame_row(m, teacher_model=resolved_teacher.name)
+        row["corpus"] = "ugc"
+        row["source"] = source_name
+        row["frame_index"] = int(frame.get("frameNum", current_row_count + len(rows)))
+        rows.append(row)
+    vmaf_val = frames[0].get("metrics", {}).get("vmaf", "-") if frames else "-"
+    print(
+        f"  [{stem}/{sfx}] {target_w}x{target_h} frames={len(frames)} "
+        f"vmaf~{vmaf_val} ({time.monotonic() - t0:.0f}s)",
+        flush=True,
+    )
+    if not args.keep_yuv:
+        dis_yuv.unlink(missing_ok=True)
+    return rows, True
 
-        for sfx in ("cbr", "vod", "vodlb"):
-            if sfx not in files:
-                continue
-            dis_src = Path(files[sfx])
-            if not dis_src.is_file():
-                continue
-            dis_yuv = args.yuv_dir / f"{stem}_{sfx}_{target_w}x{target_h}.yuv"
-            try:
-                _decode_to_yuv(dis_src, dis_yuv, target_w, target_h, args.max_frames)
-            except subprocess.CalledProcessError as exc:
-                print(f"  [{stem}/{sfx}] decode-dis failed: {exc}", flush=True)
-                fail_count += 1
-                continue
-            try:
-                frames = _run_vmaf(
-                    args.vmaf_bin,
-                    ref_yuv,
-                    dis_yuv,
-                    target_w,
-                    target_h,
-                    args.threads,
-                    resolved_teacher.arg,
-                )
-            except subprocess.CalledProcessError as exc:
-                print(f"  [{stem}/{sfx}] vmaf failed: {exc}", flush=True)
-                fail_count += 1
-                if not args.keep_yuv:
-                    dis_yuv.unlink(missing_ok=True)
-                continue
-            source_name = f"ugc-{stem}-{sfx}"
-            for frame in frames:
-                m = frame.get("metrics", {})
-                row = _frame_row(m, teacher_model=resolved_teacher.name)
-                row["corpus"] = "ugc"
-                row["source"] = source_name
-                row["frame_index"] = int(frame.get("frameNum", len(rows)))
-                rows.append(row)
-            pair_count += 1
-            print(
-                f"  [{stem}/{sfx}] {target_w}x{target_h} frames={len(frames)} "
-                f"vmaf~{frames[0].get('metrics', {}).get('vmaf', '-') if frames else '-'} "
-                f"({time.monotonic() - t0:.0f}s)",
-                flush=True,
-            )
-            if not args.keep_yuv:
-                dis_yuv.unlink(missing_ok=True)
-        if not args.keep_yuv:
-            ref_yuv.unlink(missing_ok=True)
 
-    if not rows:
-        print("error: no rows extracted", file=sys.stderr)
-        return 2
+def _decode_orig(stem: str, orig: Path, args: argparse.Namespace) -> tuple[Path, int, int] | None:
+    try:
+        probe = _ffprobe(orig)
+        ow = int(probe["width"])
+        oh = int(probe["height"])
+        if ow <= 0 or oh <= 0:
+            raise ValueError(f"degenerate geometry {ow}x{oh}")
+    except Exception as exc:
+        print(f"  [{stem}] ffprobe/geometry failed: {exc}", flush=True)
+        return None
 
+    geom = _scale_geometry(ow, oh, args.max_height)
+    if geom is None:
+        print(
+            f"  [{stem}] degenerate scaled geometry {ow}x{oh}; skip",
+            flush=True,
+        )
+        return None
+    target_w, target_h = geom
+
+    ref_yuv = args.yuv_dir / f"{stem}_orig_{target_w}x{target_h}.yuv"
+    try:
+        _decode_to_yuv(orig, ref_yuv, target_w, target_h, args.max_frames)
+    except subprocess.CalledProcessError as exc:
+        print(f"  [{stem}] decode-orig failed: {exc}", flush=True)
+        return None
+    return ref_yuv, target_w, target_h
+
+
+def _process_stem(
+    stem: str,
+    files: dict[str, Any],
+    args: argparse.Namespace,
+    resolved_teacher: Any,
+    t0: float,
+    current_row_count: int,
+) -> tuple[list[dict], int, int]:
+    orig = Path(files["orig"])
+    if not orig.is_file():
+        print(f"  [{stem}] missing orig, skip", flush=True)
+        return [], 0, 0
+    decoded = _decode_orig(stem, orig, args)
+    if decoded is None:
+        return [], 0, 1
+    ref_yuv, target_w, target_h = decoded
+
+    stem_rows: list[dict] = []
+    pairs = 0
+    fails = 0
+    for sfx in ("cbr", "vod", "vodlb"):
+        if sfx not in files:
+            continue
+        dis_src = Path(files[sfx])
+        if not dis_src.is_file():
+            continue
+        rows, ok = _process_distorted_clip(
+            stem,
+            sfx,
+            dis_src,
+            ref_yuv,
+            target_w,
+            target_h,
+            args,
+            resolved_teacher,
+            t0,
+            current_row_count + len(stem_rows),
+        )
+        if ok:
+            stem_rows.extend(rows)
+            pairs += 1
+        else:
+            fails += 1
+    if not args.keep_yuv:
+        ref_yuv.unlink(missing_ok=True)
+    return stem_rows, pairs, fails
+
+
+def _write_output_parquet(
+    rows: list[dict],
+    args: argparse.Namespace,
+    raw_argv: list[str],
+    manifest_len: int,
+    pair_count: int,
+    fail_count: int,
+    resolved_teacher: Any,
+    t0: float,
+) -> None:
     df = pd.DataFrame(rows)
-    # Reorder to canonical schema
     full_cols = ("corpus", "source", "frame_index", *SCHEMA_COLS)
     for c in full_cols:
         if c not in df.columns:
@@ -463,7 +525,7 @@ def main(argv: list[str] | None = None) -> int:
         path=args.manifest_out,
         args=args,
         raw_argv=raw_argv,
-        manifest_items=len(manifest),
+        manifest_items=manifest_len,
         pair_count=pair_count,
         fail_count=fail_count,
         row_count=len(df),
@@ -475,6 +537,40 @@ def main(argv: list[str] | None = None) -> int:
         f"rows={len(df)} sources={df['source'].nunique()} "
         f"wall={time.monotonic() - t0:.0f}s",
         flush=True,
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    ap = _build_parser()
+    args = ap.parse_args(raw_argv)
+    if args.manifest_out is None:
+        args.manifest_out = args.out_parquet.with_suffix(".manifest.json")
+
+    resolved_teacher = resolve_teacher_model(args.model)
+    err = _validate_prerequisites(args, resolved_teacher)
+    if err is not None:
+        return err
+
+    manifest = json.loads(args.manifest.read_text())
+    print(f"[ugc-extract] manifest stems={len(manifest)}", flush=True)
+
+    rows: list[dict] = []
+    pair_count = 0
+    fail_count = 0
+    t0 = time.monotonic()
+    for stem, files in sorted(manifest.items()):
+        stem_rows, pairs, fails = _process_stem(stem, files, args, resolved_teacher, t0, len(rows))
+        rows.extend(stem_rows)
+        pair_count += pairs
+        fail_count += fails
+
+    if not rows:
+        print("error: no rows extracted", file=sys.stderr)
+        return 2
+
+    _write_output_parquet(
+        rows, args, raw_argv, len(manifest), pair_count, fail_count, resolved_teacher, t0
     )
     return 0
 

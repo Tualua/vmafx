@@ -747,6 +747,9 @@
 - Refactored 12 `ai/scripts/` training and corpus tools to satisfy HISS-04 complexity/length limits, bounded loops, and proper entrypoint error reporting under ADR-1142.
 
 
+- Refactored 11 `ai/scripts/` training, feature materialization, and model exporter tools to satisfy HISS-01, HISS-04, and HISS-07 standards (ADR-1142).
+
+
 - Refactored `ai/src/` and `ai/lpips_export.py` functions to resolve HISS-02 while loops and HISS-04 size violations under ADR-1142.
 
 

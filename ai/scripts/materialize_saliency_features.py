@@ -121,6 +121,63 @@ def write_table(path: Path, rows: Iterable[dict[str, Any]]) -> None:
     raise ValueError(f"unsupported output extension {path.suffix!r}; expected .jsonl or .parquet")
 
 
+def _handle_cached_saliency(
+    enriched: dict[str, Any],
+    cfg: SaliencyMaterializeConfig,
+    cached: tuple[float, float] | None,
+    cache_key: str,
+    status_cache: dict[str, str],
+) -> str:
+    if cached is None:
+        status = status_cache.get(cache_key, "decode-failed")
+        _set_status(enriched, cfg, status)
+        return status
+    mean, var = cached
+    enriched["saliency_mean"] = mean
+    enriched["saliency_var"] = var
+    _set_output_metadata(enriched, cfg)
+    _set_status(enriched, cfg, "ok")
+    return "ok"
+
+
+def _materialize_single_row(
+    row: dict[str, Any],
+    cfg: SaliencyMaterializeConfig,
+    saliency_cache: dict[str, tuple[float, float] | None],
+    status_cache: dict[str, str],
+    runner: SubprocessRunner,
+    saliency_fn: SaliencyFn | None,
+) -> tuple[dict[str, Any], str]:
+    enriched = dict(row)
+    if _has_existing_saliency(enriched) and not cfg.overwrite:
+        _set_status(enriched, cfg, "skipped-existing")
+        return enriched, "skipped"
+
+    source = _resolve_source(enriched, cfg)
+    cache_key = str(source) if source is not None else ""
+    if cache_key and cache_key in saliency_cache:
+        status = _handle_cached_saliency(
+            enriched, cfg, saliency_cache[cache_key], cache_key, status_cache
+        )
+        return enriched, ("ok" if status == "ok" else status)
+
+    result = compute_row_saliency(enriched, cfg, runner=runner, saliency_fn=saliency_fn)
+    if cache_key:
+        saliency_cache[cache_key] = result
+    if result is None:
+        failure_status = enriched.get(cfg.status_column)
+        if cache_key and isinstance(failure_status, str):
+            status_cache[cache_key] = failure_status
+        return enriched, (failure_status if isinstance(failure_status, str) else "failed")
+
+    mean, var = result
+    enriched["saliency_mean"] = mean
+    enriched["saliency_var"] = var
+    _set_output_metadata(enriched, cfg)
+    _set_status(enriched, cfg, "ok")
+    return enriched, "ok"
+
+
 def materialize_rows(
     rows: Iterable[dict[str, Any]],
     cfg: SaliencyMaterializeConfig,
@@ -128,42 +185,18 @@ def materialize_rows(
     runner: SubprocessRunner = subprocess.run,
     saliency_fn: SaliencyFn | None = None,
 ) -> tuple[list[dict[str, Any]], MaterializeSummary]:
-    """Return rows enriched with saliency aggregates plus a summary.
-
-    When multiple rows reference the same source file (common in per-frame
-    feature tables where each row represents one frame of a clip), saliency
-    is computed once per unique resolved path and cached for the duration of
-    the call. This avoids redundant decoding when a table has many rows per
-    clip (e.g. the Netflix refresh parquet has ~160 per-frame rows per clip).
-    """
+    """Return rows enriched with saliency aggregates plus a summary."""
     out: list[dict[str, Any]] = []
     ok = 0
     skipped = 0
     failed = 0
     missing_source_count = 0
     missing_col_warned = False
-    # In-process cache: resolved path string -> (mean, var) | None
-    # None means a previous attempt failed; we propagate the failure for all
-    # rows sharing the same source rather than retrying on every row.
     _saliency_cache: dict[str, tuple[float, float] | None] = {}
-    # Parallel cache of the failure status the original attempt set on its
-    # row (e.g. "decode-failed", "model-failed"). Replayed onto sibling rows
-    # in the cached-None branch so they keep the same provenance instead of a
-    # blank status column. Default to "decode-failed" when none was recorded.
     _status_cache: dict[str, str] = {}
     for row in rows:
-        enriched = dict(row)
-        if _has_existing_saliency(enriched) and not cfg.overwrite:
-            skipped += 1
-            _set_status(enriched, cfg, "skipped-existing")
-            out.append(enriched)
-            continue
-        # Emit a one-time warning when the configured path column is absent
-        # from the first row — this almost always means a misconfigured
-        # path_column in the manifest (e.g. "src" when the table uses
-        # "dis_basename").
-        if not missing_col_warned and cfg.path_column not in enriched:
-            available = sorted(enriched.keys())
+        if not missing_col_warned and cfg.path_column not in row:
+            available = sorted(row.keys())
             print(
                 f"saliency materialize: WARNING — path_column={cfg.path_column!r} not found in "
                 f"row; available columns: {available}. "
@@ -171,55 +204,20 @@ def materialize_rows(
                 file=sys.stderr,
             )
             missing_col_warned = True
-        # Resolve the source path once to build a cache key.
-        source = _resolve_source(enriched, cfg)
-        cache_key = str(source) if source is not None else ""
-        if cache_key and cache_key in _saliency_cache:
-            cached = _saliency_cache[cache_key]
-            if cached is None:
-                # Previous attempt for this file failed; propagate the same
-                # failure status without re-running the expensive decode.
-                # Replay the cached status onto this sibling row so the
-                # output keeps a populated status column (provenance) and
-                # missing-source failures stay counted in the summary.
-                status = _status_cache.get(cache_key, "decode-failed")
-                _set_status(enriched, cfg, status)
-                failed += 1
-                if status == "missing-source":
-                    missing_source_count += 1
-                out.append(enriched)
-                continue
-            mean, var = cached
-            enriched["saliency_mean"] = mean
-            enriched["saliency_var"] = var
-            _set_output_metadata(enriched, cfg)
-            _set_status(enriched, cfg, "ok")
-            ok += 1
-            out.append(enriched)
-            continue
-        result = compute_row_saliency(enriched, cfg, runner=runner, saliency_fn=saliency_fn)
-        if cache_key:
-            _saliency_cache[cache_key] = result
-        if result is None:
-            failed += 1
-            failure_status = enriched.get(cfg.status_column)
-            if cache_key and isinstance(failure_status, str):
-                # Remember the precise failure status so sibling rows hitting
-                # the cached-None branch replay it instead of a blank column.
-                _status_cache[cache_key] = failure_status
-            if failure_status == "missing-source":
-                missing_source_count += 1
-            out.append(enriched)
-            continue
-        mean, var = result
-        enriched["saliency_mean"] = mean
-        enriched["saliency_var"] = var
-        _set_output_metadata(enriched, cfg)
-        _set_status(enriched, cfg, "ok")
-        ok += 1
+
+        enriched, status = _materialize_single_row(
+            row, cfg, _saliency_cache, _status_cache, runner, saliency_fn
+        )
         out.append(enriched)
-    # Emit a single summary warning when all failures are missing-source —
-    # this is the fingerprint of a wrong path_column or missing root config.
+        if status == "ok":
+            ok += 1
+        elif status == "skipped":
+            skipped += 1
+        else:
+            failed += 1
+            if status == "missing-source":
+                missing_source_count += 1
+
     if failed > 0 and missing_source_count == failed:
         print(
             f"saliency materialize: WARNING — all {failed} failures have status "
@@ -229,6 +227,46 @@ def materialize_rows(
             file=sys.stderr,
         )
     return out, MaterializeSummary(total=len(out), ok=ok, skipped_existing=skipped, failed=failed)
+
+
+def _decode_clip_to_raw(
+    source: Path,
+    width: int,
+    height: int,
+    frames: int,
+    raw_path: Path,
+    cfg: SaliencyMaterializeConfig,
+    runner: SubprocessRunner,
+) -> bool:
+    extra_input_flags: list[str] = []
+    if source.suffix.lower() == ".yuv":
+        extra_input_flags = [
+            "-f",
+            "rawvideo",
+            "-video_size",
+            f"{width}x{height}",
+            "-pix_fmt",
+            "yuv420p",
+        ]
+    cmd = [
+        cfg.ffmpeg_bin,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        *extra_input_flags,
+        "-i",
+        str(source),
+        "-frames:v",
+        str(frames),
+        "-pix_fmt",
+        "yuv420p",
+        "-f",
+        "rawvideo",
+        str(raw_path),
+    ]
+    proc = runner(cmd, capture_output=True, text=True, check=False)
+    return int(getattr(proc, "returncode", 1)) == 0 and raw_path.is_file()
 
 
 def compute_row_saliency(
@@ -254,37 +292,7 @@ def compute_row_saliency(
     frames = max(1, int(cfg.max_frames))
     with tempfile.TemporaryDirectory(prefix="vmaf-saliency-features-") as tmp:
         raw_path = Path(tmp) / "clip.yuv"
-        # Raw YUV files (.yuv) have no container and need explicit format
-        # flags before the -i argument so ffmpeg can decode them correctly.
-        extra_input_flags: list[str] = []
-        if source.suffix.lower() == ".yuv":
-            extra_input_flags = [
-                "-f",
-                "rawvideo",
-                "-video_size",
-                f"{width}x{height}",
-                "-pix_fmt",
-                "yuv420p",
-            ]
-        cmd = [
-            cfg.ffmpeg_bin,
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-y",
-            *extra_input_flags,
-            "-i",
-            str(source),
-            "-frames:v",
-            str(frames),
-            "-pix_fmt",
-            "yuv420p",
-            "-f",
-            "rawvideo",
-            str(raw_path),
-        ]
-        proc = runner(cmd, capture_output=True, text=True, check=False)
-        if int(getattr(proc, "returncode", 1)) != 0 or not raw_path.is_file():
+        if not _decode_clip_to_raw(source, width, height, frames, raw_path, cfg, runner):
             _set_status(row, cfg, "decode-failed")
             return None
         try:
@@ -414,23 +422,21 @@ def _mean_var(mask: Any) -> tuple[float, float]:
     return (float(arr.mean()), float(arr.var()))
 
 
-def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = make_argument_parser(description=__doc__)
-    parser.add_argument("--input", type=Path, required=True, help="Input .jsonl or .parquet table")
-    parser.add_argument(
-        "--output", type=Path, required=True, help="Output .jsonl or .parquet table"
-    )
-    parser.add_argument("--audit-json", type=Path, default=None, help="Optional audit JSON output")
-    parser.add_argument(
-        "--path-column", default="src", help="Row column containing the source path"
-    )
-    parser.add_argument("--width-column", default="width", help="Row column containing width")
-    parser.add_argument("--height-column", default="height", help="Row column containing height")
-    parser.add_argument("--root", type=Path, default=None, help="Root for relative source paths")
-    parser.add_argument("--ffmpeg-bin", default="ffmpeg")
-    parser.add_argument("--ffprobe-bin", default="ffprobe")
-    parser.add_argument("--model-path", type=Path, default=None)
-    parser.add_argument(
+def _add_table_io_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--input", type=Path, required=True, help="Input .jsonl or .parquet table")
+    p.add_argument("--output", type=Path, required=True, help="Output .jsonl or .parquet table")
+    p.add_argument("--audit-json", type=Path, default=None, help="Optional audit JSON output")
+    p.add_argument("--path-column", default="src", help="Row column containing the source path")
+    p.add_argument("--width-column", default="width", help="Row column containing width")
+    p.add_argument("--height-column", default="height", help="Row column containing height")
+    p.add_argument("--root", type=Path, default=None, help="Root for relative source paths")
+    p.add_argument("--ffmpeg-bin", default="ffmpeg")
+    p.add_argument("--ffprobe-bin", default="ffprobe")
+
+
+def _add_model_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--model-path", type=Path, default=None)
+    p.add_argument(
         "--model-id",
         default=None,
         help=(
@@ -438,44 +444,45 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "saliency_student_v1 for the bundled model or the model-path stem."
         ),
     )
-    parser.add_argument("--max-frames", type=int, default=8)
-    parser.add_argument("--frame-samples", type=int, default=8)
-    parser.add_argument(
+    p.add_argument("--max-frames", type=int, default=8)
+    p.add_argument("--frame-samples", type=int, default=8)
+    p.add_argument(
         "--temporal-aggregator",
         default="mean",
         choices=("mean", "ema", "max", "motion-weighted"),
         help="How sampled per-frame saliency maps are reduced.",
     )
-    parser.add_argument(
+    p.add_argument(
         "--ema-alpha",
         type=float,
         default=0.6,
         help="Current-frame weight when --temporal-aggregator=ema.",
     )
-    parser.add_argument(
-        "--overwrite", action="store_true", help="Recompute existing saliency columns"
-    )
-    parser.add_argument(
+    p.add_argument("--overwrite", action="store_true", help="Recompute existing saliency columns")
+
+
+def _add_metadata_column_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument(
         "--status-column",
         default="saliency_status",
         help="Status column name; pass an empty string to omit it",
     )
-    parser.add_argument(
+    p.add_argument(
         "--model-id-column",
         default="saliency_model_id",
         help="Output metadata column for the model identifier; pass empty to omit.",
     )
-    parser.add_argument(
+    p.add_argument(
         "--aggregator-column",
         default="saliency_aggregator",
         help="Output metadata column for the temporal reducer; pass empty to omit.",
     )
-    parser.add_argument(
+    p.add_argument(
         "--ema-alpha-column",
         default="saliency_ema_alpha",
         help="Output metadata column for EMA alpha; pass empty to omit.",
     )
-    parser.add_argument(
+    p.add_argument(
         "--default-width",
         type=int,
         default=0,
@@ -484,7 +491,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "cannot determine it (e.g. raw YUV corpora). 0 = no fallback."
         ),
     )
-    parser.add_argument(
+    p.add_argument(
         "--default-height",
         type=int,
         default=0,
@@ -493,13 +500,18 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "cannot determine it (e.g. raw YUV corpora). 0 = no fallback."
         ),
     )
+
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = make_argument_parser(description=__doc__)
+    _add_table_io_args(parser)
+    _add_model_args(parser)
+    _add_metadata_column_args(parser)
     return parser.parse_args(argv)
 
 
-def main(argv: list[str] | None = None) -> int:
-    raw_argv = collect_cli_argv(argv)
-    args = _parse_args(raw_argv)
-    cfg = SaliencyMaterializeConfig(
+def _build_config(args: argparse.Namespace) -> SaliencyMaterializeConfig:
+    return SaliencyMaterializeConfig(
         path_column=args.path_column,
         width_column=args.width_column,
         height_column=args.height_column,
@@ -520,38 +532,53 @@ def main(argv: list[str] | None = None) -> int:
         default_width=args.default_width,
         default_height=args.default_height,
     )
+
+
+def _write_audit_artifact(
+    args: argparse.Namespace,
+    cfg: SaliencyMaterializeConfig,
+    summary: MaterializeSummary,
+    raw_argv: list[str],
+) -> None:
+    config = asdict(cfg)
+    for key in ("root", "model_path"):
+        if config[key] is not None:
+            config[key] = str(config[key])
+    write_manifest_json(
+        args.audit_json,
+        {
+            "input": str(args.input),
+            "output": str(args.output),
+            "config": config,
+            "summary": asdict(summary),
+            "run_provenance": build_run_provenance(
+                entrypoint=SCRIPT_PATH,
+                repo_root=REPO_ROOT,
+                argv=raw_argv,
+                args=args,
+                inputs={
+                    "input": args.input,
+                    "root": args.root,
+                    "model_path": args.model_path,
+                },
+                outputs={
+                    "output": str(args.output),
+                    "audit_json": str(args.audit_json),
+                },
+            ),
+        },
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _parse_args(raw_argv)
+    cfg = _build_config(args)
     rows = read_table(args.input)
     enriched, summary = materialize_rows(rows, cfg)
     write_table(args.output, enriched)
     if args.audit_json is not None:
-        config = asdict(cfg)
-        for key in ("root", "model_path"):
-            if config[key] is not None:
-                config[key] = str(config[key])
-        write_manifest_json(
-            args.audit_json,
-            {
-                "input": str(args.input),
-                "output": str(args.output),
-                "config": config,
-                "summary": asdict(summary),
-                "run_provenance": build_run_provenance(
-                    entrypoint=SCRIPT_PATH,
-                    repo_root=REPO_ROOT,
-                    argv=raw_argv,
-                    args=args,
-                    inputs={
-                        "input": args.input,
-                        "root": args.root,
-                        "model_path": args.model_path,
-                    },
-                    outputs={
-                        "output": str(args.output),
-                        "audit_json": str(args.audit_json),
-                    },
-                ),
-            },
-        )
+        _write_audit_artifact(args, cfg, summary, raw_argv)
     print(
         "saliency materialize: "
         f"total={summary.total} ok={summary.ok} "

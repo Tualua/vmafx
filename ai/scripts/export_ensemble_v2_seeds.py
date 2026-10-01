@@ -38,6 +38,7 @@ See ADR-0321 + docs/ai/models/fr_regressor_v2_probabilistic.md.
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 import time
@@ -159,6 +160,75 @@ def _export_onnx(model, onnx_path: Path) -> str:  # type: ignore[no-untyped-def]
     return sha256(onnx_path)
 
 
+def _build_corpus_recipe_dict(
+    corpus_path: str,
+    corpus_sha256: str,
+    n_rows: int,
+    cq_min: float,
+    cq_max: float,
+    epochs: int,
+    batch_size: int,
+    lr: float,
+    weight_decay: float,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    corpus_dict = {
+        "path": corpus_path,
+        "sha256": corpus_sha256,
+        "n_rows": n_rows,
+        "cq_min": cq_min,
+        "cq_max": cq_max,
+    }
+    recipe_dict = {
+        "in_features": len(CANONICAL_6),
+        "hidden": 64,
+        "depth": 2,
+        "dropout": 0.1,
+        "num_codecs": CODEC_BLOCK_DIM,
+        "epochs": epochs,
+        "batch_size": batch_size,
+        "lr": lr,
+        "weight_decay": weight_decay,
+        "optimizer": "Adam",
+        "loss": "MSE",
+        "fit_set": "full_corpus",
+        "scaler": "fit_on_full_corpus",
+    }
+    return corpus_dict, recipe_dict
+
+
+def _build_gate_dict(promote: dict[str, Any], seed: int) -> tuple[dict[str, Any], Any]:
+    gate = promote.get("gate", {})
+    per_seed_plccs = gate.get("per_seed_plccs", {}) or {}
+    per_seed_plcc = per_seed_plccs.get(str(seed))
+    gate_dict = {
+        "verdict": promote.get("verdict"),
+        "mean_plcc": gate.get("mean_plcc"),
+        "mean_plcc_threshold": gate.get("mean_plcc_threshold"),
+        "plcc_spread": gate.get("plcc_spread"),
+        "plcc_spread_max": gate.get("plcc_spread_max"),
+        "per_seed_min_threshold": gate.get("per_seed_min"),
+        "this_seed_loso_plcc": per_seed_plcc,
+        "passed": gate.get("passed"),
+    }
+    return gate_dict, gate.get("mean_plcc")
+
+
+def _build_sidecar_notes(seed: int, n_rows: int, promote: dict[str, Any], mean_plcc: float) -> str:
+    verdict = promote.get("verdict")
+    return (
+        f"Production ensemble member of fr_regressor_v2_ensemble_v1 "
+        f"(seed={seed}). Fit on full Phase A canonical-6 corpus "
+        f"({n_rows} rows) after the 9-fold LOSO gate passed per "
+        f"PROMOTE.json (verdict={verdict}, "
+        f"mean_plcc={mean_plcc:.4f}). 6 canonical libvmaf "
+        f"features (adm2, vif_scale0..3, motion2) + 14-D codec block "
+        f"(12-slot encoder one-hot v2 + preset_norm + crf_norm) -> "
+        f"VMAF teacher score. See docs/ai/models/"
+        f"fr_regressor_v2_probabilistic.md, fr_regressor_v2_ensemble_v1.json "
+        f"(ensemble manifest), ADR-0303, ADR-0309, ADR-0319, ADR-0321."
+    )
+
+
 def _build_sidecar(
     seed: int,
     *,
@@ -178,17 +248,11 @@ def _build_sidecar(
     promote: dict[str, Any],
     run_provenance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Build the per-seed sidecar JSON.
-
-    Mirrors the canonical ``model/tiny/fr_regressor_v2.json`` shape so
-    downstream loaders that already understand v2 sidecars Just Work,
-    but adds ensemble-specific fields (``seed``, ``ensemble_id``,
-    ``loso_mean_plcc``, ``gate``) for traceability.
-    """
-    seed_str = str(seed)
-    gate = promote.get("gate", {})
-    per_seed_plccs = gate.get("per_seed_plccs", {}) or {}
-    per_seed_plcc = per_seed_plccs.get(seed_str)
+    """Build the per-seed sidecar JSON."""
+    corpus_dict, recipe_dict = _build_corpus_recipe_dict(
+        corpus_path, corpus_sha256, n_rows, cq_min, cq_max, epochs, batch_size, lr, weight_decay
+    )
+    gate_dict, mean_plcc = _build_gate_dict(promote, seed)
     sidecar = {
         "id": f"fr_regressor_v2_ensemble_v1_seed{seed}",
         "ensemble_id": "fr_regressor_v2_ensemble_v1",
@@ -206,51 +270,11 @@ def _build_sidecar(
         "onnx": onnx_name,
         "opset": 17,
         "sha256": onnx_sha256,
-        "corpus": {
-            "path": corpus_path,
-            "sha256": corpus_sha256,
-            "n_rows": n_rows,
-            "cq_min": cq_min,
-            "cq_max": cq_max,
-        },
-        "training_recipe": {
-            "in_features": len(CANONICAL_6),
-            "hidden": 64,
-            "depth": 2,
-            "dropout": 0.1,
-            "num_codecs": CODEC_BLOCK_DIM,
-            "epochs": epochs,
-            "batch_size": batch_size,
-            "lr": lr,
-            "weight_decay": weight_decay,
-            "optimizer": "Adam",
-            "loss": "MSE",
-            "fit_set": "full_corpus",
-            "scaler": "fit_on_full_corpus",
-        },
-        "gate": {
-            "verdict": promote.get("verdict"),
-            "mean_plcc": gate.get("mean_plcc"),
-            "mean_plcc_threshold": gate.get("mean_plcc_threshold"),
-            "plcc_spread": gate.get("plcc_spread"),
-            "plcc_spread_max": gate.get("plcc_spread_max"),
-            "per_seed_min_threshold": gate.get("per_seed_min"),
-            "this_seed_loso_plcc": per_seed_plcc,
-            "passed": gate.get("passed"),
-        },
-        "loso_mean_plcc": gate.get("mean_plcc"),
-        "notes": (
-            f"Production ensemble member of fr_regressor_v2_ensemble_v1 "
-            f"(seed={seed}). Fit on full Phase A canonical-6 corpus "
-            f"({n_rows} rows) after the 9-fold LOSO gate passed per "
-            f"PROMOTE.json (verdict={promote.get('verdict')}, "
-            f"mean_plcc={gate.get('mean_plcc'):.4f}). 6 canonical libvmaf "
-            f"features (adm2, vif_scale0..3, motion2) + 14-D codec block "
-            f"(12-slot encoder one-hot v2 + preset_norm + crf_norm) -> "
-            f"VMAF teacher score. See docs/ai/models/"
-            f"fr_regressor_v2_probabilistic.md, fr_regressor_v2_ensemble_v1.json "
-            f"(ensemble manifest), ADR-0303, ADR-0309, ADR-0319, ADR-0321."
-        ),
+        "corpus": corpus_dict,
+        "training_recipe": recipe_dict,
+        "gate": gate_dict,
+        "loso_mean_plcc": mean_plcc,
+        "notes": _build_sidecar_notes(seed, n_rows, promote, mean_plcc),
         "parent_adrs": ["ADR-0303", "ADR-0309", "ADR-0319", "ADR-0321"],
     }
     if run_provenance is not None:
@@ -258,7 +282,7 @@ def _build_sidecar(
     return sidecar
 
 
-def main(argv: list[str] | None = None) -> int:
+def _build_parser() -> argparse.ArgumentParser:
     ap = make_argument_parser(prog="export_ensemble_v2_seeds")
     ap.add_argument(
         "--corpus",
@@ -291,9 +315,12 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Patch sha256 + smoke=false on the 5 seed rows in registry.json.",
     )
-    raw_argv = collect_cli_argv(argv)
-    args = ap.parse_args(raw_argv)
+    return ap
 
+
+def _validate_inputs(
+    args: argparse.Namespace,
+) -> tuple[list[int], dict[str, Any]] | int:
     seeds = [int(s) for s in args.seeds.split(",") if s.strip()]
     if not seeds:
         print("error: --seeds must be non-empty", file=sys.stderr)
@@ -313,6 +340,84 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 3
+    return seeds, promote
+
+
+def _export_single_seed(
+    seed: int,
+    args: argparse.Namespace,
+    corpus: dict[str, Any],
+    corpus_sha: str,
+    feat_norm: np.ndarray,
+    target: np.ndarray,
+    promote: dict[str, Any],
+    run_provenance: dict[str, Any],
+) -> str:
+    t0 = time.time()
+    print(f"[export-ens] seed={seed} training full-corpus model...", flush=True)
+    model = _train_full_corpus(
+        seed,
+        feat_norm,
+        corpus["codec_block"],
+        target,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        lr=args.lr,
+        weight_decay=args.weight_decay,
+    )
+    onnx_name = f"fr_regressor_v2_ensemble_v1_seed{seed}.onnx"
+    onnx_path = args.out_dir / onnx_name
+    sha = _export_onnx(model, onnx_path)
+    sidecar = _build_sidecar(
+        seed,
+        onnx_name=onnx_name,
+        onnx_sha256=sha,
+        feature_mean=corpus["feature_mean"].astype(float).tolist(),
+        feature_std=corpus["feature_std"].astype(float).tolist(),
+        cq_min=corpus["cq_min"],
+        cq_max=corpus["cq_max"],
+        n_rows=corpus["n_rows"],
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        lr=args.lr,
+        weight_decay=args.weight_decay,
+        corpus_path=str(args.corpus.relative_to(REPO_ROOT)),
+        corpus_sha256=corpus_sha,
+        promote=promote,
+        run_provenance=run_provenance,
+    )
+    sidecar_path = args.out_dir / f"fr_regressor_v2_ensemble_v1_seed{seed}.json"
+    write_manifest_json(sidecar_path, sidecar)
+    elapsed = time.time() - t0
+    print(
+        f"[export-ens] seed={seed} wrote {onnx_name} sha={sha[:16]}... "
+        f"+ sidecar ({elapsed:.1f}s)",
+        flush=True,
+    )
+    return sha
+
+
+def _update_registry_json(out_dir: Path, new_shas: dict[int, str]) -> None:
+    reg_path = out_dir / "registry.json"
+    reg = json.loads(reg_path.read_text())
+    for entry in reg.get("models", []):
+        mid = entry.get("id", "")
+        if mid.startswith("fr_regressor_v2_ensemble_v1_seed"):
+            seed = int(mid.rsplit("seed", 1)[-1])
+            if seed in new_shas:
+                entry["sha256"] = new_shas[seed]
+                entry["smoke"] = False
+    write_manifest_json(reg_path, reg)
+    print("[export-ens] patched registry.json: 5 seeds smoke=false + new sha256s")
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = collect_cli_argv(argv)
+    args = _build_parser().parse_args(raw_argv)
+    validated = _validate_inputs(args)
+    if isinstance(validated, int):
+        return validated
+    seeds, promote = validated
 
     print(f"[export-ens] loading corpus from {args.corpus}", flush=True)
     corpus_sha = sha256(args.corpus)
@@ -323,24 +428,13 @@ def main(argv: list[str] | None = None) -> int:
     feature_mean = corpus["feature_mean"]
     feature_std = corpus["feature_std"]
     feat_norm = ((feat_full - feature_mean) / feature_std).astype(np.float32)
-    codec_block = corpus["codec_block"]
-
-    print(
-        f"[export-ens] n_rows={corpus['n_rows']} corpus_sha256={corpus_sha[:16]}... "
-        f"cq=[{corpus['cq_min']}, {corpus['cq_max']}]",
-        flush=True,
-    )
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    new_shas: dict[int, str] = {}
-    output_targets: dict[str, str | None] = {}
-    for seed in seeds:
-        output_targets[f"seed{seed}_onnx"] = str(
-            args.out_dir / f"fr_regressor_v2_ensemble_v1_seed{seed}.onnx"
-        )
-        output_targets[f"seed{seed}_sidecar"] = str(
-            args.out_dir / f"fr_regressor_v2_ensemble_v1_seed{seed}.json"
-        )
+    output_targets: dict[str, str | None] = {
+        f"seed{s}_{ext}": str(args.out_dir / f"fr_regressor_v2_ensemble_v1_seed{s}.{ext}")
+        for s in seeds
+        for ext in ("onnx", "json")
+    }
     output_targets["registry"] = (
         str(args.out_dir / "registry.json") if args.update_registry else None
     )
@@ -352,63 +446,15 @@ def main(argv: list[str] | None = None) -> int:
         inputs={"corpus": args.corpus, "promote_json": args.promote_json},
         outputs=output_targets,
     )
-    for seed in seeds:
-        t0 = time.time()
-        print(f"[export-ens] seed={seed} training full-corpus model...", flush=True)
-        model = _train_full_corpus(
-            seed,
-            feat_norm,
-            codec_block,
-            target,
-            epochs=args.epochs,
-            batch_size=args.batch_size,
-            lr=args.lr,
-            weight_decay=args.weight_decay,
+    new_shas = {
+        seed: _export_single_seed(
+            seed, args, corpus, corpus_sha, feat_norm, target, promote, run_provenance
         )
-
-        onnx_name = f"fr_regressor_v2_ensemble_v1_seed{seed}.onnx"
-        onnx_path = args.out_dir / onnx_name
-        sha = _export_onnx(model, onnx_path)
-        new_shas[seed] = sha
-        sidecar = _build_sidecar(
-            seed,
-            onnx_name=onnx_name,
-            onnx_sha256=sha,
-            feature_mean=feature_mean.astype(float).tolist(),
-            feature_std=feature_std.astype(float).tolist(),
-            cq_min=corpus["cq_min"],
-            cq_max=corpus["cq_max"],
-            n_rows=corpus["n_rows"],
-            epochs=args.epochs,
-            batch_size=args.batch_size,
-            lr=args.lr,
-            weight_decay=args.weight_decay,
-            corpus_path=str(args.corpus.relative_to(REPO_ROOT)),
-            corpus_sha256=corpus_sha,
-            promote=promote,
-            run_provenance=run_provenance,
-        )
-        sidecar_path = args.out_dir / f"fr_regressor_v2_ensemble_v1_seed{seed}.json"
-        write_manifest_json(sidecar_path, sidecar)
-        elapsed = time.time() - t0
-        print(
-            f"[export-ens] seed={seed} wrote {onnx_name} sha={sha[:16]}... "
-            f"+ sidecar ({elapsed:.1f}s)",
-            flush=True,
-        )
+        for seed in seeds
+    }
 
     if args.update_registry:
-        reg_path = args.out_dir / "registry.json"
-        reg = json.loads(reg_path.read_text())
-        for entry in reg.get("models", []):
-            mid = entry.get("id", "")
-            if mid.startswith("fr_regressor_v2_ensemble_v1_seed"):
-                seed = int(mid.rsplit("seed", 1)[-1])
-                if seed in new_shas:
-                    entry["sha256"] = new_shas[seed]
-                    entry["smoke"] = False
-        write_manifest_json(reg_path, reg)
-        print("[export-ens] patched registry.json: 5 seeds smoke=false + new sha256s")
+        _update_registry_json(args.out_dir, new_shas)
 
     print("[export-ens] done. New sha256 per seed:")
     for seed, sha in sorted(new_shas.items()):

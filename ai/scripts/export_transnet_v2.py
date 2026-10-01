@@ -62,11 +62,13 @@ and refreshes the registry sha256.
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
 try:
     from _script_bootstrap import bootstrap_ai_script
@@ -103,21 +105,21 @@ def _verify_upstream(upstream_dir: Path) -> None:
     saved_pb = upstream_dir / "saved_model.pb"
     var_data = upstream_dir / "variables" / "variables.data-00000-of-00001"
     if not saved_pb.is_file() or not var_data.is_file():
-        sys.exit(
+        raise FileNotFoundError(
             f"upstream-dir {upstream_dir} is missing saved_model.pb / variables/.\n"
             "Did you run `git lfs pull -I inference/transnetv2-weights` after cloning?"
         )
     pb_sha = sha256(saved_pb)
     var_sha = sha256(var_data)
     if pb_sha != UPSTREAM_SAVED_MODEL_PB_SHA256:
-        sys.exit(
+        raise ValueError(
             f"saved_model.pb sha256 mismatch:\n"
             f"  expected: {UPSTREAM_SAVED_MODEL_PB_SHA256}\n"
             f"  got:      {pb_sha}\n"
             f"Upstream commit may have moved; bump UPSTREAM_COMMIT after review."
         )
     if var_sha != UPSTREAM_WEIGHTS_VARIABLES_SHA256:
-        sys.exit(
+        raise ValueError(
             f"variables.data sha256 mismatch:\n"
             f"  expected: {UPSTREAM_WEIGHTS_VARIABLES_SHA256}\n"
             f"  got:      {var_sha}"
@@ -191,61 +193,19 @@ def _convert_to_onnx(wrapped_dir: Path, onnx_path: Path, opset: int) -> None:
     subprocess.run(cmd, check=True, env=env)
 
 
-def _replace_segmentsum(onnx_path: Path) -> None:
-    """Splice ColorHistograms/UnsortedSegmentSum -> ScatterND.
-
-    Original semantics (rank-2 segment IDs, num_segments=51200):
-
-        output[51200] = zeros
-        for i in range(100):
-            for j in range(1296):
-                output[ids[i, j]] += data[i, j]
-
-    Equivalent ONNX rewrite:
-
-        flat_ids   = Reshape(ids,  [-1, 1])
-        flat_data  = Reshape(data, [-1])
-        zeros      = ConstantOfShape([51200])
-        output     = ScatterND(zeros, flat_ids, flat_data, reduction='add')
-
-    onnxruntime CPU EP supports ScatterND with ``reduction='add'`` since
-    opset 16; we target opset 17 here.
-    """
-    import numpy as np
-    import onnx
-    from onnx import TensorProto, helper, numpy_helper
-
-    m = onnx.load(str(onnx_path))
-    g = m.graph
-
-    seg_node = None
-    seg_idx = -1
+def _find_segmentsum_node(g: Any) -> tuple[Any | None, int]:
     for i, n in enumerate(g.node):
         if n.op_type == "SegmentSum":
-            seg_node = n
-            seg_idx = i
-            break
-    if seg_node is None:
-        # Already rewritten; idempotent re-run.
-        return
+            return n, i
+    return None, -1
 
-    data_in, ids_in, num_seg_in = seg_node.input
-    out_name = seg_node.output[0]
 
-    num_seg = None
-    for init in g.initializer:
-        if init.name == num_seg_in:
-            num_seg = int(numpy_helper.to_array(init))
-            break
-    if num_seg is None:
-        sys.exit(f"SegmentSum num_segments {num_seg_in!r} not in initializers")
-    if num_seg != NUM_HISTOGRAM_BINS:
-        sys.exit(
-            f"unexpected num_segments {num_seg}; "
-            f"expected {NUM_HISTOGRAM_BINS} (100 frames * 512 bins)"
-        )
+def _build_scatter_replacement(
+    data_in: str, ids_in: str, out_name: str, num_seg: int, prefix: str = "fork_segmentsum_"
+) -> tuple[list[Any], list[Any]]:
+    import numpy as np
+    from onnx import TensorProto, helper, numpy_helper
 
-    prefix = "fork_segmentsum_"
     new_inits = [
         numpy_helper.from_array(np.array([-1], dtype=np.int64), name=prefix + "neg1"),
         numpy_helper.from_array(np.array([-1, 1], dtype=np.int64), name=prefix + "neg1_1"),
@@ -288,7 +248,37 @@ def _replace_segmentsum(onnx_path: Path) -> None:
             name=prefix + "scatter",
         ),
     ]
+    return new_nodes, new_inits
 
+
+def _replace_segmentsum(onnx_path: Path) -> None:
+    """Splice ColorHistograms/UnsortedSegmentSum -> ScatterND."""
+    import onnx
+    from onnx import helper, numpy_helper
+
+    m = onnx.load(str(onnx_path))
+    g = m.graph
+    seg_node, seg_idx = _find_segmentsum_node(g)
+    if seg_node is None:
+        return
+
+    data_in, ids_in, num_seg_in = seg_node.input
+    out_name = seg_node.output[0]
+
+    num_seg = None
+    for init in g.initializer:
+        if init.name == num_seg_in:
+            num_seg = int(numpy_helper.to_array(init))
+            break
+    if num_seg is None:
+        raise ValueError(f"SegmentSum num_segments {num_seg_in!r} not in initializers")
+    if num_seg != NUM_HISTOGRAM_BINS:
+        raise ValueError(
+            f"unexpected num_segments {num_seg}; "
+            f"expected {NUM_HISTOGRAM_BINS} (100 frames * 512 bins)"
+        )
+
+    new_nodes, new_inits = _build_scatter_replacement(data_in, ids_in, out_name, num_seg)
     final_nodes = list(g.node)
     final_nodes.pop(seg_idx)
     final_nodes[seg_idx:seg_idx] = new_nodes
@@ -317,7 +307,7 @@ def _verify_op_allowlist(onnx_path: Path) -> None:
 
     report = check_model(onnx_path)
     if not report.ok:
-        sys.exit(f"op-allowlist check failed: {report.pretty()}")
+        raise RuntimeError(f"op-allowlist check failed: {report.pretty()}")
     print(f"[verify] op-allowlist OK ({len(report.used)} distinct ops)")
 
 
@@ -342,7 +332,7 @@ def _verify_parity(onnx_path: Path, wrapped_sm_dir: Path, *, trials: int = 3) ->
         worst = max(worst, diff)
         print(f"[parity] trial {trial}: max-abs-diff = {diff:.3e}")
     if worst >= 1e-4:
-        sys.exit(f"parity check FAILED: worst max-abs-diff {worst:.3e} >= 1e-4")
+        raise RuntimeError(f"parity check FAILED: worst max-abs-diff {worst:.3e} >= 1e-4")
     print(f"[parity] worst max-abs-diff {worst:.3e} < 1e-4 -> OK")
 
 
@@ -386,7 +376,7 @@ def _write_sidecar(onnx_path: Path, *, run_provenance: dict[str, object] | None 
 
 def _update_registry(onnx_path: Path) -> None:
     if not REGISTRY.exists():
-        sys.exit(f"missing {REGISTRY}")
+        raise FileNotFoundError(f"missing {REGISTRY}")
     doc = json.loads(REGISTRY.read_text())
     models: list[dict] = doc.get("models", [])
     by_id = {m["id"]: m for m in models}
@@ -423,7 +413,7 @@ def _update_registry(onnx_path: Path) -> None:
     REGISTRY.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n")
 
 
-def main(argv: list[str] | None = None) -> None:
+def _build_parser() -> argparse.ArgumentParser:
     parser = make_argument_parser(description=__doc__)
     parser.add_argument(
         "--upstream-dir",
@@ -458,28 +448,10 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="Skip op-allowlist + TF parity verification",
     )
-    raw_argv = collect_cli_argv(argv)
-    args = parser.parse_args(raw_argv)
+    return parser
 
-    _verify_upstream(args.upstream_dir)
-    print(f"[upstream] verified saved_model.pb + variables under {args.upstream_dir}")
 
-    _wrap_to_savedmodel(args.upstream_dir, args.wrapped_savedmodel)
-    print(f"[wrap] wrote {args.wrapped_savedmodel}")
-
-    _convert_to_onnx(args.wrapped_savedmodel, args.output, args.opset)
-    print(f"[convert] wrote {args.output}")
-
-    _replace_segmentsum(args.output)
-    print("[rewrite] spliced ScatterND in place of SegmentSum")
-
-    if not args.skip_verify:
-        _verify_op_allowlist(args.output)
-        _verify_parity(args.output, args.wrapped_savedmodel)
-
-    if args.no_registry:
-        return
-
+def _write_artifacts(args: argparse.Namespace, raw_argv: list[str]) -> None:
     sidecar = _write_sidecar(
         args.output,
         run_provenance=build_run_provenance(
@@ -503,6 +475,33 @@ def main(argv: list[str] | None = None) -> None:
     print(f"[sidecar] wrote {sidecar}")
     _update_registry(args.output)
     print(f"[registry] updated {REGISTRY}")
+
+
+def main(argv: list[str] | None = None) -> None:
+    raw_argv = collect_cli_argv(argv)
+    args = _build_parser().parse_args(raw_argv)
+
+    try:
+        _verify_upstream(args.upstream_dir)
+        print(f"[upstream] verified saved_model.pb + variables under {args.upstream_dir}")
+
+        _wrap_to_savedmodel(args.upstream_dir, args.wrapped_savedmodel)
+        print(f"[wrap] wrote {args.wrapped_savedmodel}")
+
+        _convert_to_onnx(args.wrapped_savedmodel, args.output, args.opset)
+        print(f"[convert] wrote {args.output}")
+
+        _replace_segmentsum(args.output)
+        print("[rewrite] spliced ScatterND in place of SegmentSum")
+
+        if not args.skip_verify:
+            _verify_op_allowlist(args.output)
+            _verify_parity(args.output, args.wrapped_savedmodel)
+
+        if not args.no_registry:
+            _write_artifacts(args, raw_argv)
+    except (FileNotFoundError, ValueError, RuntimeError) as err:
+        sys.exit(str(err))
 
 
 if __name__ == "__main__":

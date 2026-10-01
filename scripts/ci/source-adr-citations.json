@@ -2016,7 +2016,7 @@
     "0291": {
       "sites": {
         "ai/scripts/train_fr_regressor_v2.py": 1,
-        "ai/scripts/train_fr_regressor_v2_ensemble_loso.py": 9,
+        "ai/scripts/train_fr_regressor_v2_ensemble_loso.py": 8,
         "ai/scripts/train_fr_regressor_v3.py": 6,
         "ai/scripts/train_predictor_v2_realcorpus.py": 1,
         "pkg/fast/proxy.go": 1,
@@ -2377,7 +2377,7 @@
         ".github/workflows/security-scans.yml": 1,
         ".github/workflows/sycl-parity.yml": 1,
         ".github/workflows/tests-and-quality-gates.yml": 1,
-        "ai/scripts/train_fr_regressor_v2.py": 4,
+        "ai/scripts/train_fr_regressor_v2.py": 2,
         "tools/vmaf-tune/tests/test_corpus.py": 1,
         "tools/vmaf-tune/tests/test_corpus_schema_v3.py": 1,
         "tools/vmaf-tune/tests/test_corpus_v2_back_compat.py": 2
@@ -4063,12 +4063,6 @@
         "cmd/vmafx-tune/cmd/pershot.go": 1
       },
       "target": "0667-vmaf-tune-score-backend-native-priority.md"
-    },
-    "0668": {
-      "sites": {
-        "ai/scripts/train_konvid.py": 1
-      },
-      "target": "0668-ai-derived-table-provenance.md"
     },
     "0683": {
       "sites": {

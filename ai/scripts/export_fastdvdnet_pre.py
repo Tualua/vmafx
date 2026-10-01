@@ -59,6 +59,7 @@ Provenance (license attribution required by upstream MIT license):
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import json
 import os
@@ -108,18 +109,18 @@ def _load_upstream_class(upstream_dir: Path) -> type[nn.Module]:
     """
     models_py = upstream_dir / "models.py"
     if not models_py.is_file():
-        sys.exit(
+        raise FileNotFoundError(
             f"missing {models_py}; clone {UPSTREAM_REPO} at commit "
             f"{UPSTREAM_COMMIT} and re-run with --upstream-dir."
         )
     spec = importlib.util.spec_from_file_location("upstream_models", models_py)
     if spec is None or spec.loader is None:
-        sys.exit(f"could not load {models_py} as a module")
+        raise ImportError(f"could not load {models_py} as a module")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     cls = getattr(module, "FastDVDnet", None)
     if cls is None:
-        sys.exit(f"{models_py} has no FastDVDnet class")
+        raise AttributeError(f"{models_py} has no FastDVDnet class")
     return cls
 
 
@@ -152,15 +153,22 @@ class _PixelShuffleAllowlistSafe(nn.Module):
 
 
 def _replace_pixel_shuffle(module: nn.Module) -> None:
-    """Recursively swap every ``nn.PixelShuffle`` for the allowlist-safe
+    """Iteratively swap every ``nn.PixelShuffle`` for the allowlist-safe
     variant defined above.  Mutates in place; the upstream UpBlock has
     its PixelShuffle nested inside an ``nn.Sequential`` so we walk the
     full tree."""
-    for name, child in module.named_children():
-        if isinstance(child, nn.PixelShuffle):
-            setattr(module, name, _PixelShuffleAllowlistSafe(child.upscale_factor))
-        else:
-            _replace_pixel_shuffle(child)
+    stack: list[nn.Module] = [module]
+    for _ in range(10_000):
+        if not stack:
+            break
+        curr = stack.pop()
+        for name, child in curr.named_children():
+            if isinstance(child, nn.PixelShuffle):
+                setattr(curr, name, _PixelShuffleAllowlistSafe(child.upscale_factor))
+            else:
+                stack.append(child)
+    else:
+        raise RuntimeError("Module tree traversal exceeded iteration bound (HISS-02)")
 
 
 def _strip_data_parallel(state_dict: dict) -> dict:
@@ -238,7 +246,7 @@ class LumaAdapter(nn.Module):
 def _verify_upstream_weights(weights_path: Path) -> None:
     digest = sha256(weights_path)
     if digest != UPSTREAM_WEIGHTS_SHA256:
-        sys.exit(
+        raise ValueError(
             f"upstream weights digest mismatch:\n"
             f"  got      {digest}\n"
             f"  expected {UPSTREAM_WEIGHTS_SHA256}\n"
@@ -249,7 +257,7 @@ def _verify_upstream_weights(weights_path: Path) -> None:
 def _build_adapter(upstream_dir: Path, sigma: float) -> LumaAdapter:
     weights_path = upstream_dir / "model.pth"
     if not weights_path.is_file():
-        sys.exit(f"missing {weights_path}; download from {UPSTREAM_REPO}")
+        raise FileNotFoundError(f"missing {weights_path}; download from {UPSTREAM_REPO}")
     _verify_upstream_weights(weights_path)
     FastDVDnet = _load_upstream_class(upstream_dir)
     upstream = FastDVDnet(num_input_frames=WINDOW)
@@ -324,7 +332,7 @@ def _write_sidecar(onnx_path: Path, *, run_provenance: dict[str, object] | None 
 
 def _update_registry(onnx_path: Path) -> None:
     if not REGISTRY.exists():
-        sys.exit(f"missing {REGISTRY}")
+        raise FileNotFoundError(f"missing {REGISTRY}")
     doc = json.loads(REGISTRY.read_text())
     models: list[dict] = doc.get("models", [])
     by_id = {m["id"]: m for m in models}
@@ -363,7 +371,7 @@ def _update_registry(onnx_path: Path) -> None:
     REGISTRY.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n")
 
 
-def main(argv: list[str] | None = None) -> None:
+def _build_parser() -> argparse.ArgumentParser:
     parser = make_argument_parser(description=__doc__)
     scratch_root = Path(os.environ.get("VMAF_TINY_AI_SCRATCH", tempfile.gettempdir()))
     default_upstream_dir = scratch_root / "fastdvdnet_upstream"
@@ -401,14 +409,10 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="Skip registry.json + sidecar update (dry-run)",
     )
-    raw_argv = collect_cli_argv(argv)
-    args = parser.parse_args(raw_argv)
+    return parser
 
-    adapter = _build_adapter(args.upstream_dir, args.sigma)
-    _export(adapter, args.output, args.height, args.width, args.opset)
-    print(f"[export] wrote {args.output} ({args.output.stat().st_size} bytes)")
-    if args.no_registry:
-        return
+
+def _write_artifacts(args: argparse.Namespace, raw_argv: list[str]) -> None:
     sidecar = _write_sidecar(
         args.output,
         run_provenance=build_run_provenance(
@@ -431,6 +435,21 @@ def main(argv: list[str] | None = None) -> None:
     print(f"[export] wrote {sidecar}")
     _update_registry(args.output)
     print(f"[export] updated {REGISTRY}")
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = _build_parser()
+    raw_argv = collect_cli_argv(argv)
+    args = parser.parse_args(raw_argv)
+
+    try:
+        adapter = _build_adapter(args.upstream_dir, args.sigma)
+        _export(adapter, args.output, args.height, args.width, args.opset)
+        print(f"[export] wrote {args.output} ({args.output.stat().st_size} bytes)")
+        if not args.no_registry:
+            _write_artifacts(args, raw_argv)
+    except (FileNotFoundError, ImportError, AttributeError, ValueError) as err:
+        sys.exit(str(err))
 
 
 if __name__ == "__main__":
