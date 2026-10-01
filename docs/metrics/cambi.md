@@ -288,12 +288,12 @@ CAMBI has a CUDA backend (T3-15a / [ADR-0360](../adr/0360-cambi-cuda.md)).
 > backend.** The Metal twin carried the first two and gets the same fixes;
 > CUDA and SYCL were unaffected.
 
-The CUDA, HIP and Metal twins use the Strategy II hybrid architecture: the
-integer phases (spatial mask, 2× decimate, 3-tap separable mode filter) run on
-the GPU; the sliding-histogram `calculate_c_values` and the top-K spatial pool
-run on the host after a device-to-host copy at every scale. The SYCL twin runs
-every stage on the device ([below](#sycl)). Cross-backend gate runs at
-`places=4`.
+The HIP and Metal twins use the Strategy II hybrid architecture: the integer
+phases (spatial mask, 2× decimate, 3-tap separable mode filter) run on the GPU;
+the sliding-histogram `calculate_c_values` and the top-K spatial pool run on the
+host after a device-to-host copy at every scale. The SYCL and CUDA twins run
+every stage on the device ([SYCL](#sycl), [CUDA](#cuda)). Cross-backend gate
+runs at `places=4`.
 
 > **Note**: The Vulkan backend (formerly T7-36 / ADR-0210) was removed in
 > [ADR-0726](../adr/0726-drop-vulkan-backend.md). CAMBI no longer has a Vulkan
@@ -311,15 +311,56 @@ ninja -C build-cuda
     -p 420 -b 8 --backend cuda --feature cambi_cuda
 ```
 
-**Implementation note (lusoris/vmaf#870):** `submit_fex_cuda` downloads the distorted
-picture from device memory to a transient host copy before passing it to
-`vmaf_cambi_preprocessing`. This is required because the host-side preprocessing
-path (`decimate_generic_uint8_and_convert_to_10b`) dereferences `pic->data[0]`
-as a host pointer; on a CUDA picture that field holds a `CUdeviceptr` (device
-address), causing SIGSEGV. The download uses `vmaf_cuda_picture_download_async`
-on the picture's private CUDA stream followed by `cuStreamSynchronize`. The host
-copy is unreferenced before `submit_fex_cuda` returns. Cross-backend parity
-versus CPU `cambi` is verified at `places=4` per ADR-0214.
+`cambi_cuda` computes the whole frame on the GPU and reads back one 88-byte
+block of per-scale sums
+([ADR-1379](../adr/1379-cuda-cambi-device-resident-pipeline.md)), the design
+of the SYCL twin below on CUDA. It reads the distorted plane the CUDA engine
+already uploaded, so it adds no transfer of its own, and it waits once per
+frame, in `collect()`, so frames overlap with the other CUDA extractors.
+
+With `--backend cuda`, `--feature cambi` also runs `cambi_cuda`
+([ADR-1359](../adr/1359-cli-feature-backend-twin.md)); the JSON
+`feature_backends` array names the extractor that ran. A model that lists
+`cambi` (the default model does) picks `cambi_cuda` on its own.
+
+The arithmetic is the SYCL twin's: the c-values keep `cambi.c`'s column
+histograms and reciprocal table, and top-K pooling sums the largest `topk`
+fraction exactly as an integer in units of 2^-24. The score therefore equals
+`--backend cpu` to the last bit whenever the CPU's own `double` sum of those
+values is exact, and otherwise differs by that sum's rounding. On a synthetic,
+heavily banded 3840x2160 clip that was at most 3.0e-13, and a CPU build that
+sums in `long double` matched the CUDA twin exactly
+([Research-1379](../research/1379-cuda-cambi-speed-device-resident.md)).
+
+Like the CPU extractor, `cambi_cuda` refuses to initialise when the adjusted
+window exceeds 65 x 65 (the size of the reciprocal table), with "cambi:
+window_size N too large for reciprocal LUT". Before ADR-1379 it had no such
+check.
+
+Measured on an RTX 4090 against an icx build of the CPU extractor, at
+`--precision max`: every per-frame `cambi` is identical to `--backend cpu` on
+the Netflix 576x324 pair (48 frames) and BBB 3840x2160 (50 frames), and on the
+wide, short frames (1920x64 to 3840x128) where the CPU extractor needs the
+`T-CAMBI-SHORT-FRAME-OOB-2026-09-30` fix, the twin equals the fixed CPU with
+`compute-sanitizer` clean. Milliseconds per frame, `(t(N) - t(2)) / (N - 2)`,
+median of 3, before and after ADR-1379 in alternation on the same host
+([Research-1379](../research/1379-cuda-cambi-speed-device-resident.md) has the
+method and the raw numbers):
+
+| Size | `cambi_cuda` before | `cambi_cuda` after | CPU, 16 threads |
+| --- | ---: | ---: | ---: |
+| 3840x2160 | 64.71 | 6.01 | 19.65 |
+| 576x324 | 1.59 | 0.38 | 0.09 |
+
+Re-check parity and timing with
+`python3 scripts/dev/speed_gpu_parity.py --backend cuda --feature cambi --vmaf $PWD/build-cuda/tools/vmaf`.
+
+**Implementation note (before ADR-1379):** the twin downloaded the distorted
+picture to a host copy and preprocessed it there, because the host
+preprocessing path reads `pic->data[0]` as a host pointer and a CUDA picture
+holds a device address in that field (lusoris/vmaf#870); it then read the
+image and mask back at every scale for the host c-values and pooling
+([ADR-0360](../adr/0360-cambi-cuda.md)).
 
 Companion research digest:
 [Research-0091](../research/0091-cambi-cuda-integration.md) (CUDA).
@@ -337,9 +378,8 @@ other SYCL extractors.
 meson setup build-sycl core -Denable_sycl=true
 ninja -C build-sycl
 
-# Name the twin: --feature cambi alone runs the CPU extractor even with
-# --backend sycl. A model that lists cambi (the default model does) picks
-# cambi_sycl on its own.
+# --feature cambi with --backend sycl runs cambi_sycl too (ADR-1359). A model
+# that lists cambi (the default model does) picks cambi_sycl on its own.
 ./build-sycl/tools/vmaf -r ref.yuv -d dis.yuv -w W -h H \
     -p 420 -b 8 --backend sycl --feature cambi_sycl
 ```

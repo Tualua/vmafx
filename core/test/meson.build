@@ -120,6 +120,17 @@ test('test_gpu_option_value_capability_contract',
     timeout : 30,
 )
 
+# ADR-1379 / ADR-1380: device-free guard for the device-resident CUDA CAMBI and
+# SpEED twins -- no host residual or host combine, one readback and one wait
+# per frame at collect, fp64-free kernels with the CPU's rounding spelled out,
+# one argument block per kernel.
+test('test_cuda_device_resident_contract',
+    import('python').find_installation(),
+    args : files('test_cuda_device_resident_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # A default scale=0 is only executable by the GPU float-SSIM twins while the
 # CPU auto-scale resolves to 1. Pin the model-only, first-frame fallback seam
 # and all four backend declarations without requiring an accelerator.
@@ -2759,6 +2770,23 @@ test_cuda_speed_temporal_parity = executable('test_cuda_speed_temporal_parity',
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_speed_temporal_parity', test_cuda_speed_temporal_parity,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
+
+# 1920x1080 variant (T-CUDA-SPEED-TEMPORAL-SOLVE-LAUNCH-1080P-2026-09-30): the
+# 1080p luma plane has 312 SpEED blocks. The host-split twin before ADR-1380
+# launched its solve kernel with ((blocks + 7) / 8) * 32 threads per block,
+# 1248 > 1024, so every frame at 1080p and above failed with
+# CUDA_ERROR_INVALID_VALUE. The 768x432 and 960x540 fixtures stay below 256
+# blocks and never reached it.
+test_cuda_speed_temporal_parity_1080p = executable('test_cuda_speed_temporal_parity_1080p',
+    ['test.c', 'test_cuda_speed_temporal_parity.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1', '-DFIXTURE_W=1920u', '-DFIXTURE_H=1080u']
+)
+test('test_cuda_speed_temporal_parity_1080p', test_cuda_speed_temporal_parity_1080p,
     suite : ['fast', 'gpu'],
     is_parallel : false)
 
