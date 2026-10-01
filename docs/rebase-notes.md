@@ -11,6 +11,16 @@
   picture stream. Upstream still has the private stream (Netflix/vmaf#1305;
   the patch there is the same one-argument change).
 - No public API, ABI, FFmpeg patch or Netflix golden-data impact.
+## ADR-1429 — `vmaf_read_pictures()` accepts an index gap; the contract is documented (2026-10-01)
+
+`docs/api-read-pictures-index-and-eagain`, ADR-1429.
+
+- `core/include/libvmaf/libvmaf.h`: the Doxygen of `vmaf_read_pictures()`
+  (`@param index`), `vmaf_score_at_index()`, `vmaf_feature_score_at_index()`,
+  `vmaf_score_pooled()` and `vmaf_score_pooled_model_collection()` gained the
+  index-gap and `-EAGAIN` text. Upstream's `libvmaf.h` has none of it; on a
+  sync keep the fork's text and take upstream's signatures.
+- No code, ABI or FFmpeg patch impact; no Netflix golden-data impact.
 
 ## `float_adm_sycl` uses no scratch memory; the scratch ratchet list is empty (2026-10-01)
 

@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright 2016-2026 Netflix, Inc.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -377,7 +378,18 @@ VMAF_EXPORT int vmaf_import_feature_score(VmafContext *vmaf, const char *feature
  *
  * @param dist  Distorted picture.
  *
- * @param index Picture index.
+ * @param index Picture index. Submit the pictures of a stream with indices
+ *              0, 1, 2, ... in that order. An index that does not exceed the
+ *              previous one is rejected with `-EINVAL`: the motion extractors
+ *              compare a picture with the one before it, and a repeated or
+ *              earlier index would corrupt that state. An index that skips
+ *              values is accepted, but the motion extractors then have no
+ *              predecessor for the pictures that follow the gap: their
+ *              `motion2` and `motion3` scores stay unwritten, so reading them
+ *              returns `-EAGAIN` even after the flush, and the picture before
+ *              the gap gets the `motion2` the last picture of a stream gets.
+ *              Features that look at one picture only (`psnr`, `vif`, `adm`)
+ *              are not affected.
  *
  *
  * @return 0 on success, or < 0 (a negative errno code) on error.
@@ -399,7 +411,15 @@ VMAF_EXPORT int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPict
  * @param index  Picture index.
  *
  *
- * @return 0 on success, or < 0 (a negative errno code) on error.
+ * @return 0 on success, or < 0 (a negative errno code) on error. `-EAGAIN`
+ *         means a feature this score depends on has not been written yet:
+ *         `motion2` and `motion3` of a picture need the next picture, and a
+ *         GPU backend finishes a frame after the call that submitted it has
+ *         returned, so asking before the
+ *         flush (`vmaf_read_pictures(vmaf, NULL, NULL, 0)`) can return it for
+ *         any index. It is never a partial or placeholder value: a call
+ *         returns either the score or an error. `-EINVAL` is returned for
+ *         invalid arguments.
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
@@ -439,7 +459,10 @@ VMAF_EXPORT int vmaf_score_at_index_model_collection(VmafContext *vmaf,
  * @param score         Score.
  *
  *
- * @return 0 on success, or < 0 (a negative errno code) on error.
+ * @return 0 on success, or < 0 (a negative errno code) on error. `-EAGAIN`
+ *         means the feature has not been written at this index yet (see
+ *         `vmaf_score_at_index()`); `-EINVAL` is returned for invalid
+ *         arguments and for a feature name no registered extractor writes.
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
@@ -462,7 +485,9 @@ VMAF_EXPORT int vmaf_feature_score_at_index(VmafContext *vmaf, const char *featu
  * @param index_high   High picture index of pooling interval.
  *
  *
- * @return 0 on success, or < 0 (a negative errno code) on error.
+ * @return 0 on success, or < 0 (a negative errno code) on error. `-EAGAIN`
+ *         means a picture of the interval has no score yet (see
+ *         `vmaf_score_at_index()`); flush first.
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
@@ -486,7 +511,9 @@ VMAF_EXPORT int vmaf_score_pooled(VmafContext *vmaf, VmafModel *model,
  * @param index_high        High picture index of pooling interval.
  *
  *
- * @return 0 on success, or < 0 (a negative errno code) on error.
+ * @return 0 on success, or < 0 (a negative errno code) on error. `-EAGAIN`
+ *         means a picture of the interval has no score yet (see
+ *         `vmaf_score_at_index()`); flush first.
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */

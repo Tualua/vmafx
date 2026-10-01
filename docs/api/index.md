@@ -242,8 +242,8 @@ typedef struct VmafConfiguration {
 | `vmaf_feature_backend_twin(ctx, "ciede", opts, &pic_cfg, &twin, &key)` | 0 / -errno | Ask for the imported backend's twin of a CPU extractor and whether it can run these options and this geometry. Registers nothing. See [Device twins](#device-twins-and-the-extractors-that-ran). |
 | `vmaf_registered_feature_extractor(ctx, i, &name, &backend)` | 0 / -ENOENT past the end | Name and backend of the `i`-th registered extractor. See [Device twins](#device-twins-and-the-extractors-that-ran). |
 | `vmaf_import_feature_score(ctx, name, value, index)` | 0 / -errno | Inject a pre-computed feature value (e.g. from a different pipeline). |
-| `vmaf_read_pictures(ctx, ref, dist, index)` | 0 / -errno | Feed a frame pair. `ctx` takes ownership via `vmaf_picture_unref()`. `index` must be **strictly increasing** across successive calls — non-monotonic indices return `-EINVAL` (see [ADR-0152](../adr/0152-vmaf-read-pictures-monotonic-index.md)). Pass `NULL, NULL, 0` to flush after the last frame. |
-| `vmaf_score_at_index(ctx, model, *score, index)` | 0 / -errno | Per-frame VMAF score. |
+| `vmaf_read_pictures(ctx, ref, dist, index)` | 0 / -errno | Feed a frame pair. `ctx` takes ownership via `vmaf_picture_unref()`. `index` must be **strictly increasing** across successive calls — non-monotonic indices return `-EINVAL` (see [ADR-0152](../adr/0152-vmaf-read-pictures-monotonic-index.md)). Start at 0 and leave no gaps: after a skipped index the motion extractors have no previous picture, so `motion2` / `motion3` of the later pictures stay unwritten (reading them returns `-EAGAIN`, also after the flush) — see [Scoring before the flush](#scoring-before-the-flush-and-index-gaps). Pass `NULL, NULL, 0` to flush after the last frame. |
+| `vmaf_score_at_index(ctx, model, *score, index)` | 0 / -errno | Per-frame VMAF score. Before the flush it can return `-EAGAIN` (see [Scoring before the flush](#scoring-before-the-flush-and-index-gaps)); it never returns a partial score. |
 | `vmaf_score_at_index_model_collection(ctx, coll, *score, index)` | 0 / -errno | Per-frame bootstrap score (mean + stddev + 95% CI). |
 | `vmaf_feature_score_at_index(ctx, name, *score, index)` | 0 / -errno | Per-frame feature score (e.g. `"psnr_y"`). |
 | `vmaf_score_pooled(ctx, model, method, *score, lo, hi)` | 0 / -errno | Pooled VMAF over `[lo, hi]`. |
@@ -340,6 +340,41 @@ Bits-per-component & storage:
 - `bpc == 8` — each sample is 1 byte.
 - `bpc == 10`, `12`, `16` — each sample is 2 bytes (little-endian), with the
   valid bits in the low N and the high bits zero-padded.
+
+### Scoring before the flush and index gaps
+
+A per-frame query made while pictures are still being read
+(`vmaf_score_at_index()`, `vmaf_feature_score_at_index()`, the pooled calls)
+returns either the final value or an error, never a partial value:
+
+- `-EAGAIN` — a feature the score needs is not written yet. `motion2` and
+  `motion3` of picture *i* need picture *i + 1*; the GPU extractors
+  finish a frame after the call that submitted it has returned (CUDA `motion`
+  in batches of eight), and the worker threads of
+  `n_threads > 0` finish pictures out of step with the caller. Before the
+  query returns this, libvmaf waits for the worker threads and, on CUDA,
+  collects every frame the device has already finished, so a query made a few
+  frames behind the last picture usually succeeds and one for the newest
+  picture does not. Treat it as "not yet": flush
+  (`vmaf_read_pictures(ctx, NULL, NULL, 0)`) and ask again, or ask again after
+  more pictures. `vmaf_score_pooled()` returns it when any picture of the
+  interval is missing a score.
+- `-EINVAL` — invalid arguments, or a feature name no registered extractor
+  writes.
+
+Indices have to increase (`-EINVAL` otherwise) and should not skip values.
+An index that skips values is accepted, because features that look at one
+picture (`psnr`, `vif`, `adm`) do not care, but the motion extractors compare
+each picture with the one before it: after the gap their `motion2` and
+`motion3` are never written for the pictures that follow, and the picture
+before the gap gets the `motion2` the last picture of a stream gets. The
+queries then keep returning `-EAGAIN` after the flush. Feed every index from 0
+without gaps whenever the model uses `motion2` (`vmaf_v0.6.1` and the models
+derived from it do).
+
+Measured on the Netflix 576x324 pair with indices 0, 1, 2, 4, 5: `vmaf` at
+indices 0 to 2 is returned (index 2 with the last-picture `motion2`), and
+indices 3 to 5 return `-EAGAIN` after the flush.
 
 ### Ownership and lifetime
 
