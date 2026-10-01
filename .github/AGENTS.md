@@ -13,13 +13,13 @@ broken `.c` file).
 
 ### Meson parent-environment sanitization (ADR-1333)
 
-Every workflow step that runs a Meson test suite or Ninja's `test` target
+Every workflow step that runs Meson test suite or Ninja's `test` target
 must invoke `scripts/ci/run_meson_test.py` instead. Linux steps that need
 `sudo` resolve both Python and Meson before elevation and pass Meson with
-`--meson-executable`; Windows uses the checked-in Python wrapper path.
+`--meson-executable`; Windows uses checked-in Python wrapper path.
 `core/test/test_meson_secret_env_sanitization.py` inventories each call and
-rejects a raw bypass. Preserve the wrapper boundary because Meson writes its
-parent environment to `testlog.txt` before applying the default setup.
+rejects raw bypass. Preserve wrapper boundary because Meson writes its
+parent environment to `testlog.txt` before applying default setup.
 
 ### Single SemVer release fan-out (ADR-1127)
 
@@ -49,7 +49,7 @@ release reviewer; read-only validation stays outside them. Provenance jobs
 `provenance` / `mcp-provenance` (ADR-1356) hold `id-token` + `attestations`
 write, `contents: read`, so they sit in `release-publish` too; they upload
 bundle only as workflow artifact. Environment-gated attachment job is sole
-release-asset writer. Never give provenance jobs `contents: write` or a
+release-asset writer. Never give provenance jobs `contents: write` or
 release-upload step.
 
 `supply-chain.yml` runs `scripts/release/verify-release-version.sh` before any
@@ -76,9 +76,9 @@ stage mounts no secret; no external layer cache, no registry), compile by
 `scripts/release/build-native-release-artifacts.sh` under
 `docker run --pull never --network none` as runner UID. No job-level
 concurrency group on `build-artifacts` (GitHub cancels older pending job in
-a group); workflow-level per-tag group stays. Dev Container PR gate
+group); workflow-level per-tag group stays. Dev Container PR gate
 rehearses both steps (same script, same `docker run`, local tag
-`v<manifest version>` on HEAD so describe matches a tag build); change one,
+`v<manifest version>` on HEAD so describe matches tag build); change one,
 change other. Never restore self-hosted `sycl-arc` label, host compile, or
 GHCR pull for release build, or `build-deps` (Ubuntu 26.04, glibc 2.43)
 as release stage. `verify-native-artifacts` pinned `ubuntu-24.04`, oldest
@@ -124,32 +124,32 @@ superseding ADR.
 
 ### Fail-closed test and scan outcomes
 
-`scripts/ci/test_fail_closed_ci.py` runs in the blocking
-`deep-dive-checklist` job and through the `fail-closed-ci-contract` local hook.
+`scripts/ci/test_fail_closed_ci.py` runs in blocking
+`deep-dive-checklist` job and through `fail-closed-ci-contract` local hook.
 Keep both callers. Test, coverage, benchmark, scan, and test-discovery commands
-must expose their real exit status. A step may use `continue-on-error` only to
-collect diagnostics when a later `if: always()` step checks its raw
-`steps.<id>.outcome` and fails the job. An advisory job or step may remain
-non-blocking when an existing ADR says so, but its command must not append
-`|| true` and erase the failure outcome.
+must expose their real exit status. step may use `continue-on-error` only to
+collect diagnostics when later `if: always()` step checks its raw
+`steps.<id>.outcome` and fails job. advisory job or step may remain
+non-blocking when existing ADR says so, but its command must not append
+`|| true` and erase failure outcome.
 
 ### Research-digest baseline authority (ADR-1335)
 
-The blocking Rules workflow passes the pull request's exact `base.sha` to
-`check-research-digest-ids.py`. Preserve that binding and the full-history
-checkout: the checker resolves the merge base and rejects a branch baseline
+blocking Rules workflow passes pull request's exact `base.sha` to
+`check-research-digest-ids.py`. Preserve that binding and full-history
+checkout: checker resolves merge base and rejects branch baseline
 that grows collision or H1 debt beyond trusted authority. CI and hooks must
-never invoke `--bootstrap-from-ref`; that full-commit, pre-ratchet path is a
+never invoke `--bootstrap-from-ref`; that full-commit, pre-ratchet path is
 bounded one-time operator action only.
 
 ### Semgrep SARIF authority split (ADR-1314)
 
-Only the repository-owned `.semgrep.yml` result may be uploaded to GitHub Code
-Scanning under the required `Semgrep OSS` identity. The moving
+Only repository-owned `.semgrep.yml` result may be uploaded to GitHub Code
+Scanning under required `Semgrep OSS` identity. moving
 `p/cwe-top-25`, `p/c`, and `p/python` registry packs are advisory discovery
-inputs: keep their scan `continue-on-error: true` and retain their SARIF as an
-ordinary workflow artifact. Never restore a `semgrep-registry` Code Scanning
-category without a superseding ADR that provides a reproducibly pinned policy.
+inputs: keep their scan `continue-on-error: true` and retain their SARIF as
+ordinary workflow artifact. Never restore `semgrep-registry` Code Scanning
+category without superseding ADR that provides reproducibly pinned policy.
 
 ### Opt-out syntax parser
 
@@ -210,48 +210,48 @@ mask real queued or failed ready-for-review checks.
 
 ### Required contexts route work in-job (BUG-098)
 
-A workflow that hosts an aggregator-required context must not use
+workflow that hosts aggregator-required context must not use
 workflow-level `paths:` or `paths-ignore:`. It starts on pull requests and
-master pushes, runs `scripts/ci/plan-ci-impact.py` in an unconditional
-`impact` job, gates expensive `... work` jobs on the selected output, and
-always emits an exact-name gate job. The gate accepts only
+master pushes, runs `scripts/ci/plan-ci-impact.py` in unconditional
+`impact` job, gates expensive `... work` jobs on selected output, and
+always emits exact-name gate job. gate accepts only
 `selected=true/work=success` or `selected=false/work=skipped`; planner failure,
 cancellation, and any other combination fail. Exact gate names belong in
-`strictMustReport` because absence is no longer a legitimate path skip.
+`strictMustReport` because absence is no longer legitimate path skip.
 
 Keep heavy job names distinct from required gate names, including matrix
-fields: otherwise GitHub or the aggregator can select the wrong same-named
+fields: otherwise GitHub or aggregator can select wrong same-named
 check. `scripts/ci/tests/test_ci_impact.py`, `actionlint`, and
 `scripts/ci/check-aggregator-names.sh` pin this structure.
 
-GitHub creates a dependent gate's check run only after every `needs` job has
+GitHub creates dependent gate's check run only after every `needs` job has
 completed. Keep `delayedStrictDependencies` in `required-aggregator.yml`
-aligned with every planner/work display name, including every row of a matrix
-whose aggregate result feeds a gate. The aggregator uses those checks as
-registration proxies and gives the gate a bounded propagation window; without
+aligned with every planner/work display name, including every row of matrix
+whose aggregate result feeds gate. aggregator uses those checks as
+registration proxies and gives gate bounded propagation window; without
 that mapping its two-minute missing-check grace can fail while legitimate work
-is still running. The check-run query must remain paginated: the converted
-workflows can put a full run above the API's 100-item page size.
+is still running. check-run query must remain paginated: converted
+workflows can put full run above API's 100-item page size.
 
 ### Cppcheck POSIX model correction
 
-The required Cppcheck job derives `build/cppcheck-posix-vmafx.cfg` from the
-installed analyzer before analysis. Preserve the generator call and load the
-generated path, not bare `--library=posix`. Older models without a
-`pthread_cond_init` entry receive the correct contract; newer models lose only
-the invalid argument-2 non-null marker because POSIX permits default attributes
-as `NULL`. The real-tool contract test runs after installation and keeps a null
+required Cppcheck job derives `build/cppcheck-posix-vmafx.cfg` from
+installed analyzer before analysis. Preserve generator call and load
+generated path, not bare `--library=posix`. Older models without
+`pthread_cond_init` entry receive correct contract; newer models lose only
+invalid argument-2 non-null marker because POSIX permits default attributes
+as `NULL`. real-tool contract test runs after installation and keeps null
 condition-object negative control, so no warning category or call site is
 suppressed. See `scripts/ci/AGENTS.md` for model-shape and atomicity invariants.
 
 ### Pelorus mirror verification stays in required Pre-Commit (ADR-1113, ADR-1276)
 
-The `Pre-Commit` job in `lint-and-format.yml` resolves the full commit declared
+`Pre-Commit` job in `lint-and-format.yml` resolves full commit declared
 by `scripts/sync-pelorus-interop.sh`, checks out `VMAFx/pelorus` at that exact
-object with credentials disabled, and runs the default mirror/fixture drift
-check. Keep this before `pre-commit --all-files`. Never change `ref` to a
-moving branch or tag, duplicate the pin in workflow YAML, or tolerate a missing
-object: ABI-stable parser safety releases must be able to trigger a reviewed
+object with credentials disabled, and runs default mirror/fixture drift
+check. Keep this before `pre-commit --all-files`. Never change `ref` to
+moving branch or tag, duplicate pin in workflow YAML, or tolerate missing
+object: ABI-stable parser safety releases must be able to trigger reviewed
 re-pin, and CI must prove source provenance rather than local-tree similarity.
 
 ### Go validation (ADRs 1238 and 1338)
@@ -262,9 +262,9 @@ then gates heavyweight steps on `go_checks` (`go` plus `c_core`). Preserve
 its explicit documentation-only no-work result, CPU/optional-backend
 settings, and CI-authority classification. Rules job runs
 `scripts/ci/test_go_workflow_contract.py` before authoring exemptions;
-this test executes aggregator script with failing Go outcomes. The first
+this test executes aggregator script with failing Go outcomes. first
 selected source gate after `setup-go` is exactly `go fix -diff ./...`; keep it
-before native dependency installation/build, non-mutating, and under the same
+before native dependency installation/build, non-mutating, and under same
 impact predicate. Local `go-fix` and `go-fix-check` Make targets must stay
 aligned with that command.
 
@@ -318,7 +318,7 @@ grep -hnE '^\s*(- )?uses:\s+[^@]+@[^ #]+\s*$' .github/workflows/*.yml \
 # before the sync PR can merge.
 ```
 
-**Resolution recipe** when adding a new action or bumping an existing
+**Resolution recipe** when adding new action or bumping existing
 pin:
 
 ```bash
@@ -414,16 +414,16 @@ runs of same event/ref still collapse, keep
 
 ### Meson configure precedes CodeQL extraction (ADR-1222 / Alert 1279)
 
-In [`security-scans.yml`](workflows/security-scans.yml), the `codeql-cpp` job
+In [`security-scans.yml`](workflows/security-scans.yml), `codeql-cpp` job
 must execute `meson setup` before `github/codeql-action/init`, and must place
-the build directory outside the repository checkout in `${{ runner.temp }}/build`.
-The configure step installs Meson and Ninja through the repository's
+build directory outside repository checkout in `${{ runner.temp }}/build`.
+configure step installs Meson and Ninja through repository's
 hash-locked `requirements/locks/build.txt`; keep that root-relative lock path
-when moving the step out of `core/`.
+when moving step out of `core/`.
 Running configure outside extraction prevents Meson compiler probe test snippets
-(such as `testfile.c`) from being ingested into the CodeQL extraction database
+(such as `testfile.c`) from being ingested into CodeQL extraction database
 (closing current hosted probe alert 1279, historical alert 1278, and pre-merge
-alerts 1232–1235). Placing the build root in `${{ runner.temp }}/build` ensures
+alerts 1232–1235). Placing build root in `${{ runner.temp }}/build` ensures
 generated build artifacts are not indexed as repository source. **On rebase or
 workflow sync:** do not move `meson setup` after `codeql-action/init` or
 configure within `$GITHUB_WORKSPACE`.
@@ -432,7 +432,7 @@ configure within `$GITHUB_WORKSPACE`.
 
 `sanitizers` job in
 [`workflows/tests-and-quality-gates.yml`](workflows/tests-and-quality-gates.yml)
-enumerates the full C unit-test set via `meson introspect --tests`, then applies
+enumerates full C unit-test set via `meson introspect --tests`, then applies
 per-sanitizer regex deselect:
 
 - `address` — excludes `test_model`, `test_predict`,
@@ -459,10 +459,10 @@ must keep enumerating from `meson introspect --tests`.
 
 ## Windows CUDA setup path (ADR-0664)
 
-`libvmaf-build-matrix.yml` installs CUDA 13.3.1 directly in the
+`libvmaf-build-matrix.yml` installs CUDA 13.3.1 directly in
 `Windows MSVC+CUDA` leg. Do not restore
-`Jimver/cuda-toolkit` for that Windows leg without a superseding ADR
-and a green required Windows CUDA run: v0.2.35 failed before setup on
+`Jimver/cuda-toolkit` for that Windows leg without superseding ADR
+and green required Windows CUDA run: v0.2.35 failed before setup on
 PR #1463, blocked merge train without Meson or compiler output.
 
 Linux CUDA legs still use `Jimver/cuda-toolkit`; ADR-0664 only
@@ -482,7 +482,7 @@ Invariants:
 
 - `runs-on: windows-11-vs2026-arm`. `windows-11-arm` migrates to same VS 2026
   image 2026-09-21..30 (runner-images #14602); switch only after that, and
-  only with a green run.
+  only with green run.
 - `setup-msvc-dev` `arch: arm64` = `vcvarsall.bat arm64`, ARM64-hosted native
   toolset. Never `amd64_arm64` (x64 cross compiler under emulation). `Show
   compiler` step greps `cl.exe` banner for `for ARM64`; keep it, fails fast on
@@ -585,7 +585,7 @@ pin=$(grep -oE 'codeql-action/upload-sarif@[a-f0-9]{40}' \
 gh api "/repos/github/codeql-action/commits/$pin" --jq '.sha'
 ```
 
-A 422 response here is canary that workflow is about to start
+422 response here is canary that workflow is about to start
 failing on next push. See [ADR-1247](../docs/adr/1247-scorecard-exact-head-gates.md)
 and [Research-0053](../docs/research/0053-ossf-scorecard-investigation.md).
 
@@ -622,31 +622,31 @@ See [ADR-0626](../docs/adr/0626-macos-ci-tmate-debug-on-failure.md) and
 
 [ADR-1259](../docs/adr/1259-ci-build-matrix-as-it-runs.md) lists every lane in
 `libvmaf-build-matrix.yml` and `build.yml` and which ones are required.
-ADR-0689, ADR-0691, ADR-0710 and ADR-0728 are superseded: do not remove a lane
-on their authority, and do not let a merge resolution drop or restore a lane
-without an ADR. That is how `384d97d03` undid two of them.
+ADR-0689, ADR-0691, ADR-0710 and ADR-0728 are superseded: do not remove lane
+on their authority, and do not let merge resolution drop or restore lane
+without ADR. That is how `384d97d03` undid two of them.
 
-The MoltenVK lane (ADR-0338) went with the Vulkan backend (ADR-0726). The
+MoltenVK lane (ADR-0338) went with Vulkan backend (ADR-0726).
 `libvmaf-build` job's `continue-on-error` is now
-`${{ matrix.experimental == true }}`, so the two `experimental: true` rows,
+`${{ matrix.experimental == true }}`, so two `experimental: true` rows,
 `macOS clang` and `macOS clang+DNN`, are advisory: their failure does not
-fail the workflow run. Neither is a required check.
+fail workflow run. Neither is required check.
 
 ## FFmpeg diagnostics are fail-closed
 
 Every FFmpeg build in `workflows/ffmpeg-integration.yml` configures with
-`--fatal-warnings`, captures the complete compiler log, and fails on GCC,
-Clang, or NVCC warning diagnostics. The build compiles all test programs and
-runs every generated, sample-independent FATE target under the same log gate,
-so test translation units share the warning-clean contract with production
-objects. Capture `make -s fate-list` first and select only `fate-*` lines: a
-pristine tree may also emit a generated-makefile status line. Release checkouts
+`--fatal-warnings`, captures complete compiler log, and fails on GCC,
+Clang, or NVCC warning diagnostics. build compiles all test programs and
+runs every generated, sample-independent FATE target under same log gate,
+so test translation units share warning-clean contract with production
+objects. Capture `make -s fate-list` first and select only `fate-*` lines:
+pristine tree may also emit generated-makefile status line. Release checkouts
 must use `scripts/ci/checkout-annotated-tag.sh`; direct shallow clones warn on
-the annotated FFmpeg tag. The ordinary GCC/macOS matrix deliberately
+annotated FFmpeg tag. ordinary GCC/macOS matrix deliberately
 avoids patches 0001-0018 so it tests stock FFmpeg surfaces against libvmaf, but
-applies patch 0019 alone to harden the pinned upstream source. The SYCL lane
-replays the complete series. Both paths require exact `git apply`; never
-restore a fuzz-capable `patch -p1` fallback or quiet compiler output.
+applies patch 0019 alone to harden pinned upstream source. SYCL lane
+replays complete series. Both paths require exact `git apply`; never
+restore fuzz-capable `patch -p1` fallback or quiet compiler output.
 
 ## Renovate (ADR-0363) supersedes Dependabot
 
@@ -659,8 +659,8 @@ Note: pin updates to `codeql-action/upload-sarif` now arrive via Renovate
 - [ADR-1247](../docs/adr/1247-scorecard-exact-head-gates.md) — current OSSF
   Scorecard policy; ADR-0263 is superseded
 - [ADR-0338](../docs/adr/0338-macos-vulkan-via-moltenvk-lane.md) — macOS
-  Vulkan-via-MoltenVK advisory lane (removed with the Vulkan backend, ADR-0726)
-- [ADR-1259](../docs/adr/1259-ci-build-matrix-as-it-runs.md) — the CI build
+  Vulkan-via-MoltenVK advisory lane (removed with Vulkan backend, ADR-0726)
+- [ADR-1259](../docs/adr/1259-ci-build-matrix-as-it-runs.md) — CI build
   matrix as it runs
 - [Research-0002](../docs/research/0002-automated-rule-enforcement.md) — investigation
 - [Research-0053](../docs/research/0053-ossf-scorecard-investigation.md) —
@@ -740,7 +740,7 @@ repository to satisfy `-lze_loader`; Intel's oneAPI APT repository contains no
 
 `.github/workflows/libvmaf-build-matrix.yml` solves same requirement
 differently — it builds `oneapi-src/level-zero` from source at pinned tag,
-because it links shipping artifact, wants known loader version. A
+because it links shipping artifact, wants known loader version.
 static-analysis lane needing only probe to resolve should prefer
 distro package.
 
@@ -760,8 +760,8 @@ Unknown attribute kind (102)
 
 Pass `-Db_lto=false` on every icpx/SYCL `meson setup` in CI. Both SYCL legs of
 `libvmaf-build-matrix.yml` already do, as do `build.yml`'s `Linux Intel LLVM`
-row and the `Tidy SYCL` job. Pinning an older oneAPI does not
-help — the mismatch is against the *system* linker plugin, not a specific
+row and `Tidy SYCL` job. Pinning older oneAPI does not
+help — mismatch is against *system* linker plugin, not specific
 compiler release.
 
 ## Scorecard scope and report authenticity (ADR-1247)

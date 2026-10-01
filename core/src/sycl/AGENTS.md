@@ -40,7 +40,7 @@ sycl/
 - **Numerical snapshots**: same rule as CUDA — see CLAUDE.md §9.
 - **SYCL strict FP line load-bearing
   ([ADR-1367](../../../docs/adr/1367-sycl-strict-fp-every-feature-tu.md)).**
-  `sycl_strict_fp_args` in `core/src/meson.build` (between the
+  `sycl_strict_fp_args` in `core/src/meson.build` (between
   `VMAF SYCL strict FP policy` markers) goes to every feature TU:
   `-fp-model=precise -ffp-contract=off -foffload-fp32-prec-div
   -foffload-fp32-prec-sqrt`, order fixed. precise alone: `a * b + c` still
@@ -54,31 +54,31 @@ sycl/
 - **fp64-free kernels load-bearing
   ([ADR-0220](../../../docs/adr/0220-sycl-fp64-fallback.md), T7-17).**
   Every SYCL feature-kernel lambda must capture and operate on
-  `float` / integer types only. No `double` operand inside a
+  `float` / integer types only. No `double` operand inside
   `parallel_for` body, no `sycl::reduction<double>`, no
   `sycl::plus<double>`. Hard, not soft. Single fp64 instruction
   anywhere in TU's SPIR-V module -> Level Zero runtime rejects entire
-  module on Intel Arc A-series and other fp64-less devices. Applies
+  module on Intel Arc-series and other fp64-less devices. Applies
   even when offending kernel never submitted. `double` allowed
   *outside* kernel lambda (host-side post-processing in `extract` /
   `flush` callbacks, score aggregation, log10 normalisation). ADM gain
-  limiting uses the integer form of the CPU's truncated double product
+  limiting uses integer form of CPU's truncated double product
   (`adm_gain_limit_product()` in `feature/adm_gain_limit.h`, ADR-1413); VIF gain
   limiting uses fp32 `sycl::fmin`. **On rebase**: upstream cherry-pick
   bringing `double` into kernel lambda -> refactor to int64 / fp32
   before merging.
 - **Scratch-free kernels ([ADR-1395](../../../docs/adr/1395-sycl-kernels-no-scratch.md)).**
-  Arc A-series under Linux xe driver returns wrong values from kernels with
+  Arc-series under Linux xe driver returns wrong values from kernels with
   scratch memory (private array in memory, register spill). No new kernel may
   use scratch. `test_sycl_kernel_scratch` (`--suite sycl`, needs Intel GPU)
   fails on any scratch kernel: `scratch_ratchet.txt` is EMPTY since
   2026-10-01 (`float_adm_sycl` CM kernels cleared, A380: 110 kernels, 0 with
   scratch) and `kScratchExtractors` in `scratch_check.cpp` = `""`. Never add
-  a line or a name again; `test_sycl_kernel_source_contract.py` rejects both
-  without a device. Self-test warning then says no libvmaf extractor is
+  line or name again; `test_sycl_kernel_source_contract.py` rejects both
+  without device. Self-test warning then says no libvmaf extractor is
   affected.
   Kernel ids are mangled launcher names: renamed or re-typed launcher shows up
-  as unlisted + unregistered, fix the line. `vmaf_sycl_state_init` calls
+  as unlisted + unregistered, fix line. `vmaf_sycl_state_init` calls
   `vmaf_sycl_scratch_selftest()`: warning only, never refuses device, keep it
   that way. Probe kernel names `VmafSyclScratchProbePrivate` /
   `VmafSyclScratchProbeSpill` stay out of audit; probes must keep using scratch
@@ -129,7 +129,7 @@ sycl/
   per TU; form follows count of device acronyms in `-device`: >= 2 (even one
   shared IP, `dg2-g10,acm-g10`) -> fat binary, `ar` archive, members
   `<bits>.<arch.release.revision>`; exactly 1 -> bare zebin, plain ELF, no
-  archive (`-Dsycl_icpx_aot_targets=dg2-g11`; a TU that
+  archive (`-Dsycl_icpx_aot_targets=dg2-g11`; TU that
   `sycl_icpx_aot_igc_skip` leaves one target). `check_aot_image.py` reads IP
   of bare zebin from `.note.intelgt.compat` (`SHT_NOTE`), IntelGT note type 6
   (`productConfig`, u32 laid out as NEO `HardwareIpVersion`: architecture
@@ -159,7 +159,7 @@ sycl/
   `sycl_link_args` = `/IGNORE:4078` there, `-fsycl` everywhere else.
   `-fsycl-link` crashes on `-fno-sycl-rdc` objects (oneAPI 2025.1), so do
   not re-add it on this path. `sycl_icpx_aot_igc_skip` non-empty = configure
-  error here. Guards: `test_sycl_kernel_registration` (no GPU; runs on the
+  error here. Guards: `test_sycl_kernel_registration` (no GPU; runs on
   `Windows MSVC+SYCL` leg), `test_sycl_coff_anchor`. **On rebase**: keep all
   pieces together; Linux path stays ADR-1360.
 
@@ -180,25 +180,25 @@ sycl/
   ([ADR-1369](../../../docs/adr/1369-sycl-shared-planes-light-twins.md)).**
   Luma: shared frame, uploaded by `read_pictures_sycl_prep` for every run.
   Chroma: opt-in planes in `SyclPlaneState` (`VmafSyclState::planes`, which
-  also holds the fence markers): `vmaf_sycl_shared_chroma_init` at extractor
+  also holds fence markers): `vmaf_sycl_shared_chroma_init` at extractor
   init, idempotent per geometry; `vmaf_sycl_shared_chroma_upload` in
-  `submit()`, first chroma reader of a frame packs into pinned `staging` and
+  `submit()`, first chroma reader of frame packs into pinned `staging` and
   uploads into `cur_compute`, rest return 0 on `frame == frame_counter`;
-  folded into `last_upload_event`. Never copy chroma straight from the
-  pageable picture (a pitched 2-D copy cost 168 ms per 576x324 frame on a
+  folded into `last_upload_event`. Never copy chroma straight from
+  pageable picture (pitched 2-D copy cost 168 ms per 576x324 frame on
   UHD 770). Luma-only runs (default model) never allocate or
-  upload chroma: do not move the chroma upload into
+  upload chroma: do not move chroma upload into
   `vmaf_sycl_shared_frame_upload`. Readers: `psnr_sycl` (chroma in
   `post_fn`, after `graph_submit`'s upload barrier), `psnr_hvs_sycl` and
-  `motion_v2_sycl` on the primary queue behind
+  `motion_v2_sycl` on primary queue behind
   `vmaf_sycl_queue_after_upload()` (= `sycl_apply_input_barriers`).
   `sycl_fence_slot_readers()` in `vmaf_sycl_shared_frame_upload`: upload
   into slot s waits on device for `ext_oneapi_get_last_event()` markers of
-  the primary + combined queues taken when s stopped being compute slot;
-  copy barrier only if a marker is still running. Covers readers the next
-  collect never waits for (`n_subsample` skips). **On rebase**: a new
+  primary + combined queues taken when s stopped being compute slot;
+  copy barrier only if marker is still running. Covers readers next
+  collect never waits for (`n_subsample` skips). **On rebase**: new
   compute queue that reads shared slots must add its marker there; keep
-  the fence before the ref upload; the zero-copy import path imports luma
+  fence before ref upload; zero-copy import path imports luma
   only, so chroma readers must fail (`-EINVAL`) on NULL pictures, never
   read stale chroma. Guards: `test_sycl_shared_planes`,
   `test_sycl_init_unwind` (wraps `vmaf_sycl_shared_chroma_init`).
@@ -209,7 +209,7 @@ sycl/
   expect LSB-aligned values. `>> (16 − bpc)` shift (guarded
   `if (bpc > 8)`, no-op for 8-bit) applied **two ways**:
   - fused into de-tile store for Tile4 / Y-tiled paths — each sample
-    shifted as written, no extra kernel, no second pass; this is the
+    shifted as written, no extra kernel, no second pass; this is
     QSV/DG2 hot path;
   - via standalone `launch_p010_normalize()` kernel for rare LINEAR
     D2D and readback paths (no per-sample store to fuse into), whose
@@ -217,12 +217,12 @@ sycl/
     subsumed by `q->wait_and_throw()` on readback).
 
   **On rebase**: shift must stay on *every* import path — dropping it
-  on any one re-introduces the 64× `integer_motion` / NaN bug for that
-  tiling mode; and do **not** re-add a standalone full-plane normalize
+  on any one re-introduces 64× `integer_motion` / NaN bug for that
+  tiling mode; and do **not** re-add standalone full-plane normalize
   pass on tiled paths (cost ~15% throughput at 4K — keep it fused).
   Chroma needs no normalization (shared frame pipeline luma-only,
-  above). **Do not add a `DMA_BUF_IOCTL_SYNC` coherency flush** — tried
-  and removed: insufficient for the contamination (real fix = separate
+  above). **Do not add `DMA_BUF_IOCTL_SYNC` coherency flush** — tried
+  and removed: insufficient for contamination (real fix = separate
   -per-decoder-QSV-session contract, FIX-03), and its `SYNC_START`
   blocking fence-wait serialised decode→compute.
 
@@ -239,50 +239,49 @@ sycl/
   graph for VA-import.
 
 - **`common.cpp` cleanup + helper boundaries (HISS-21 burn-down).**
-  `sycl_shared_frame_release()` is the single cleanup owner for the shared
-  frame buffers; it replaced the `fail:` label that
-  `vmaf_sycl_shared_frame_init` used before the HISS-01 burn-down. Its body is
-  that label block verbatim — the loop frees `shared_ref_buf[i]` before
-  `shared_dis_buf[i]` for `i = 0` then `i = 1`, each guarded by its own null
-  check, then nulls all four slots — so every error exit frees the same
-  buffers in the same order, and partially-allocated states still rely on
-  those null checks. The helper is idempotent. The `static` helpers extracted
+  `sycl_shared_frame_release()` is single cleanup owner for shared
+  it replaced `fail:` label that `vmaf_sycl_shared_frame_init` used
+  before HISS-01 burn-down.
+  Body is label block verbatim. Loop frees `shared_ref_buf[i]` before
+  `shared_dis_buf[i]` for `i = 0` then `i = 1`, guarded by null check;
+  nulls four slots. Every error exit frees same buffers in same order;
+  partially-allocated states rely on null checks. Helper is idempotent.
   alongside it (`sycl_resolve_device`, `sycl_log_fp64_note`,
   `sycl_profiling_enabled`, `sycl_queue_props`, `sycl_enqueue_plane_upload`,
   `sycl_any_extractor_wants_graph`, `sycl_run_compute_phase`,
   `sycl_apply_input_barriers`, `sycl_enqueue_all_phases`) exist to hold their
-  callers inside the HISS-04 60-LOC bound. **On rebase**: do not reintroduce
-  `goto fail` or an early return between an allocation and the release call;
-  do not move these helpers to another TU or behind a function pointer (that
-  changes inlining and was not what the burn-down verified); keep
+  callers inside HISS-04 60-LOC bound. **On rebase**: do not reintroduce
+  `goto fail` or early return between allocation and release call;
+  do not move these helpers to another TU or behind function pointer (that
+  changes inlining and was not what burn-down verified); keep
   `sycl_resolve_device` and `sycl_enqueue_all_phases` called from *inside*
-  their caller's existing `try` so a `sycl::exception` never crosses the
-  `extern "C"` frame; preserve the in-order enqueue order (ref before dis in
+  their caller's existing `try` so `sycl::exception` never crosses
+  `extern "C"` frame; preserve in-order enqueue order (ref before dis in
   `vmaf_sycl_shared_frame_upload`; graph recording, then `pre_fn`, then
   compute, then `post_fn` in `sycl_enqueue_all_phases`); and keep
   `sycl_enqueue_plane_upload`'s original `static_cast<unsigned>` narrowing on
-  the stride comparison — widening it to `size_t` changes which pictures take
-  the bulk-memcpy path.
+  stride comparison — widening it to `size_t` changes which pictures take
+  bulk-memcpy path.
 
-- **`vmaf_sycl_graph_wait()` counts only a successful wait
+- **`vmaf_sycl_graph_wait()` counts only successful wait
   (T-SYCL-GRAPH-WAIT-ERROR-DROPPED-2026-09-29).** Idempotent per frame, but
-  `graph_waited_frame = frame` is set only after `wait_and_throw()` returns: a
-  failed wait leaves the frame unwaited, so every collector's call waits again
-  and the lost device (`UR_RESULT_ERROR_DEVICE_LOST` is sticky) fails it too.
-  Graph collectors (`adm`, `vif`, `motion`, `psnr`, `float_moment`) return a
+  `graph_waited_frame = frame` is set only after `wait_and_throw()` returns:
+  failed wait leaves frame unwaited, so every collector's call waits again
+  and lost device (`UR_RESULT_ERROR_DEVICE_LOST` is sticky) fails it too.
+  Graph collectors (`adm`, `vif`, `motion`, `psnr`, `float_moment`) return
   non-zero result before touching host buffers. Before: first caller failed,
-  the rest got 0 and scored stale buffers. No new state member on purpose:
+  rest got 0 and scored stale buffers. No new state member on purpose:
   one more public member of `VmafSyclState` is one more
   `misc-non-private-member-variables-in-classes` finding in `common.cpp`.
-  **On rebase**: keep the assignment after the wait, and every collector's
+  **On rebase**: keep assignment after wait, and every collector's
   `if (wait_err) return wait_err;`.
 
 - **`vmaf_sycl_graph_register` allocation order (ADR-0982 / BUG-048 Sec A3).**
   In `vmaf_sycl_graph_register()` (`common.cpp`), ensure `state->combined_queue`
   is allocated (via `std::make_unique<sycl::queue>`) *before* incrementing
-  `state->num_graph_extractors` or populating the extractor entry. If queue
+  `state->num_graph_extractors` or populating extractor entry. If queue
   creation throws or fails, `num_graph_extractors` must not be left dirty with
-  an uninitialized entry in `graph_extractors[]`. On rebase: preserve this
+  uninitialized entry in `graph_extractors[]`. On rebase: preserve this
   allocation-before-registration sequence.
 
 - [ADR-0002](../../../docs/adr/0002-merge-path-master-default.md) —
@@ -296,13 +295,13 @@ sycl/
 - [ADR-0220](../../../docs/adr/0220-sycl-fp64-fallback.md) — SYCL
   feature kernels are unconditionally fp64-free (T7-17).
 - [ADR-0335](../../../docs/adr/0335-adaptivecpp-second-sycl-toolchain.md)
-  — AdaptiveCpp added as a second SYCL toolchain alongside icpx;
+  — AdaptiveCpp added as second SYCL toolchain alongside icpx;
   Intel-specific kernel attributes routed through
   `feature/sycl/sycl_compat.h`.
 - [ADR-0982](../../../docs/adr/0982-gpu-runtime-bug-audit-round-26.md) —
   GPU runtime bug audit — round 26 (init/teardown leak sweep).
 - [ADR-1121](../../../docs/adr/1121-sycl-qsv-zerocopy-p010-normalization.md)
-  — QSV zero-copy P010/P012 MSB→LSB normalization in the VA import +
+  — QSV zero-copy P010/P012 MSB→LSB normalization in VA import +
   separate-per-decoder-session decode contract.
 
 ## Build

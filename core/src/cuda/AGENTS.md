@@ -43,14 +43,14 @@ cuda/
 
 ## Rebase-sensitive invariants
 
-- **Every CUDA picture records the state that allocated it.**
+- **Every CUDA picture records state that allocated it.**
   `vmaf_cuda_picture_alloc_pinned()` (`picture_cuda.c`) sets
-  `priv->cuda.state = cuda_state` next to `priv->cuda.ctx`, like the device
+  `priv->cuda.state = cuda_state` next to `priv->cuda.ctx`, like device
   path. Upstream Netflix/vmaf master sets only `ctx`, so its
-  `default_release_pinned_picture()` loads `state->f` through a NULL state and
-  `test_cuda_pic_preallocation` dies with SIGSEGV in the host-pinned case (the
-  fix is upstream PR Netflix/vmaf#1573, hunk (a)). An upstream sync that takes
-  upstream's `vmaf_cuda_picture_alloc_pinned()` keeps the assignment.
+  `default_release_pinned_picture()` loads `state->f` through NULL state and
+  `test_cuda_pic_preallocation` dies with SIGSEGV in host-pinned case (the
+  fix is upstream PR Netflix/vmaf#1573, hunk (a)). upstream sync that takes
+  upstream's `vmaf_cuda_picture_alloc_pinned()` keeps assignment.
   `test_pinned_picture_release_uses_the_allocating_state`
   (`core/test/test_cuda_runtime_unwind.c`) fails without it and needs no device.
 
@@ -58,7 +58,7 @@ cuda/
   ([ADR-1320](../../../docs/adr/1320-cuda-hip-kernel-header-dependency-tracking.md);
   [Research-2106](../../../docs/research/2106-cuda-hip-kernel-header-dependency-tracking.md)):
   All CUDA fatbin custom targets (`cu_ptx_target_*`) in `core/src/meson.build`
-  must bind `depend_files: cuda_kernel_shared_headers` covering the complete
+  must bind `depend_files: cuda_kernel_shared_headers` covering complete
   repo-local quoted include closure plus `config_h_target`, combined with compiler
   depfiles (`cu_depfile = host_machine.system() == 'windows' ? '' : '@0@.fatbin.d'.format(name)`
   and `nvcc_dep_flags = host_machine.system() == 'windows' ? [] : ['-MD', '-MF', '@DEPFILE@']`).
@@ -127,7 +127,7 @@ cuda/
   `CudaFunctions` driver table (via fork-local
   `cuda_free_functions()` call in `vmaf_cuda_release`) →
   `vmaf_cuda_state_free` frees heap allocation itself. Any nonzero
-  `vmaf_close` retains a teardown-only context and the imported state;
+  `vmaf_close` retains teardown-only context and imported state;
   retry close before releasing dependencies. Call order
   `successful vmaf_close → vmaf_cuda_state_free → vmaf_model_destroy`
   load-bearing; reversing first two = use-after-free. Mirrors SYCL
@@ -136,19 +136,19 @@ cuda/
   2026-04-24. See
   [ADR-0157](../../../docs/adr/0157-cuda-preallocation-leak-netflix-1300.md)
   and [rebase-notes 0050](../../../docs/rebase-notes.md).
-  An initialized state that was never imported is the exception:
+  initialized state that was never imported is exception:
   `vmaf_cuda_state_free` first invokes retry-safe `vmaf_cuda_release` and
-  retains the wrapper on error. Import marks the caller wrapper so imported
+  retains wrapper on error. Import marks caller wrapper so imported
   state-free stays allocation-only after exact-zero context close. Never remove
-  the `-EBUSY` guard against duplicate import or live CUDA-owner overwrite.
+  `-EBUSY` guard against duplicate import or live CUDA-owner overwrite.
 - **`vmaf_gpu_picture_pool_close` mutex destroy order** (fork-local,
   ADR-0157, promoted out of `cuda/` to `core/src/gpu_picture_pool.c`
   per ADR-0239): function does `pthread_mutex_unlock` →
   `pthread_mutex_destroy` → `free(pic)` → `free(pool)`. Destroying
   locked mutex = POSIX UB; old code destroyed it locked. On rebase:
   keep unlock-before-destroy order. Slot release is also two-phase:
-  successful callbacks are marked committed, a failed callback retains the
-  pool, and a retry visits only slots not yet released.
+  successful callbacks are marked committed, failed callback retains
+  pool, and retry visits only slots not yet released.
 
 - **`CHECK_CUDA` graceful error propagation** (fork-local,
   ADR-0156): `CHECK_CUDA` macro in
@@ -263,7 +263,7 @@ cuda/
   `VMAF CUDA device strict FP policy` markers) = `vmaf_cuda_host_strict_fp_args`
   plus `--fmad=false` under nvcc, `-ffp-contract=off` under clang CUDA. Fatbin
   `custom_target` appends it to every kernel's command. No kernel contracts
-  `a * b + c`; fused operation a reference performs = explicit `__fmaf_rn()`
+  `a * b + c`; fused operation reference performs = explicit `__fmaf_rn()`
   in kernel source. Until ADR-1403 only `float_adm_score`
   ([ADR-0202](../../../docs/adr/0202-float-adm-cuda-sycl.md)),
   `ssimulacra2_blur`
@@ -285,24 +285,24 @@ cuda/
 
 - **Feature resources are destroyed with their owning context current
   ([ADR-1336](../../../docs/adr/1336-cuda-context-owned-resource-teardown.md)).**
-  Modules, streams, and events owned by an extractor must use
+  Modules, streams, and events owned by extractor must use
   `vmaf_cuda_module_unload`, `vmaf_cuda_stream_destroy`, and
-  `vmaf_cuda_event_destroy`; feature close/unwind code must not call the raw
-  driver destroy functions. The helpers push `VmafCudaState::ctx`, preserve the
-  first error, restore the caller's previous context, and clear a handle only
+  `vmaf_cuda_event_destroy`; feature close/unwind code must not call raw
+  driver destroy functions. helpers push `VmafCudaState::ctx`, preserve
+  first error, restore caller's previous context, and clear handle only
   after confirmed destruction. `vmaf_cuda_kernel_lifecycle_init` must unwind
-  every successfully created earlier handle if a later step fails. The
+  every successfully created earlier handle if later step fails.
   device-free `test_cuda_runtime_unwind` and complete owner inventory in
-  `test_cuda_module_lifecycle_contract.py` guard this rule. Adding a
-  `cuModuleLoadData` owner requires updating that inventory in the same PR.
+  `test_cuda_module_lifecycle_contract.py` guard this rule. Adding
+  `cuModuleLoadData` owner requires updating that inventory in same PR.
   Wrapped, raw-device, and pinned feature buffers use
   `vmaf_cuda_buffer_free_owned`, `vmaf_cuda_deviceptr_free_owned`, and
-  `vmaf_cuda_buffer_host_free_owned`; a field is cleared only after the driver
-  confirms the actual free. CUDA extractor contexts publish `close_required`
-  before entering `init`, so a failed partial init remains closeable even
+  `vmaf_cuda_buffer_host_free_owned`; field is cleared only after driver
+  confirms actual free. CUDA extractor contexts publish `close_required`
+  before entering `init`, so failed partial init remains closeable even
   though `is_initialized` is false. Do not extend that failed-init behavior to
   non-CUDA extractors without auditing their close callbacks first.
-- **Drain batch belongs to one engine at a time.** `drain_batch.c`'s
+- **Drain batch belongs to one engine at time.** `drain_batch.c`'s
   `g_drain_batch` thread-local (ADR-0242), but two `VmafContext`s can
   run on one OS thread, so it carries owning `VmafCudaState`:
 
@@ -311,7 +311,7 @@ cuda/
   - `vmaf_cuda_drain_batch_flush()` returns 0 without touching CUDA
     when caller isn't owner; clears entries it consumed.
   - `vmaf_cuda_drain_batch_thread_destroy()` first quiesces and destroys its
-    stream; a failure retains the stream, entries, open flag, and owner for
+    stream; failure retains stream, entries, open flag, and owner for
     retry. It clears registration ownership only after success.
 
   Never restore owner-less `open(void)` signature: without it,
@@ -323,13 +323,13 @@ cuda/
 - **ADR-0982 error-path unwinds and partial-init cleanup (BUG-048 Sec A3)**:
   - In `picture_cuda.c`: `vmaf_cuda_picture_alloc` zeroes `priv` struct immediately upon allocation (`memset(priv, 0, sizeof(*priv))`). On plane allocation failure (`device_pic_alloc_planes` non-zero), `device_pic_unwind` is invoked with `DEV_PIC_UNWIND_DATA` so that prior successfully allocated device planes are freed (`cuMemFree(pic->data[i])`) and pointers zeroed (`pic->data[i] = NULL`), rather than `DEV_PIC_UNWIND_FINISHED` which skipped plane unwinding.
   - In `common.c`: `vmaf_cuda_release()` retains `cu_state`, its live handle,
-    and `CudaFunctions` table after a driver failure. Only successful stream
-    quiescence/destruction and primary-context release commit the zeroed state
+    and `CudaFunctions` table after driver failure. Only successful stream
+    quiescence/destruction and primary-context release commit zeroed state
     and function-table free.
   - In `drain_batch.c`: in `drain_stream_ensure()`, if `cuCtxPopCurrent` fails after `cuStreamCreateWithPriority`, execution branches to `fail_after_stream` to destroy `g_drain_batch.drain_str` before returning `-ENOTRECOVERABLE`.
   - Guarded by deterministic mock-driver unit test `core/test/test_cuda_runtime_unwind.c`.
   - On rebase: maintain these unwinds, never bypass `DEV_PIC_UNWIND_DATA` on
-    plane allocation failures, and never clear `VmafCudaState` after a failed
+    plane allocation failures, and never clear `VmafCudaState` after failed
     `vmaf_cuda_release`. Allocator-internal `device_pic_unwind` and
     `device_pic_free_after_pop`, including earlier-slot cleanup during failed
     pool construction, remain best-effort rollback; ADR-1336 retry guarantees
@@ -367,7 +367,7 @@ cuda/
   `ffmpeg-patches/series.txt` against pristine FFmpeg `n9.0.2`.
   CUDA filter selector mirrors picture-pool ownership contract above: state is
   freed only after `vmaf_close()` returns exactly 0. Every nonzero result retains
-  the context and state for retry; reversing order violates ownership.
+  context and state for retry; reversing order violates ownership.
 
 ## Build
 
@@ -391,9 +391,9 @@ chroma isn't flat, or wrong plane reads same sentinel as right one.
 
 ## Teardown helpers replace the cleanup labels (HISS-21 / 2026-09-21)
 
-`common.c` and `picture_cuda.c` have no explicit `goto` left. `provided_ctx_unwind` holds what the
-`fail` -> `fail_after_stream` fall-through used to do, and takes `ctx_pushed` so the caller says
-whether the context pop still has to run; `pinned_alloc_unwind` takes a `PINNED_UNWIND_*` stage
-because it replaced the `free_priv` -> `free_data` -> `fail_no_data` cascade. Adding a resource to
-either path means adding a stage to the helper, not a second exit. The `CHECK_CUDA_GOTO` labels stay
-— they are the macro's jump targets and now just call the helper.
+`common.c` and `picture_cuda.c` have no explicit `goto` left. `provided_ctx_unwind` holds what
+`fail` -> `fail_after_stream` fall-through used to do, and takes `ctx_pushed` so caller says
+whether context pop still has to run; `pinned_alloc_unwind` takes `PINNED_UNWIND_*` stage
+because it replaced `free_priv` -> `free_data` -> `fail_no_data` cascade. Adding resource to
+either path means adding stage to helper, not second exit. `CHECK_CUDA_GOTO` labels stay
+— they are macro's jump targets and now call helper.

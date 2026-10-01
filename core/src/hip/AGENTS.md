@@ -40,7 +40,7 @@ ADR-0372 (batch-1, this PR).
 
 1. **T7-10 audit-first scaffold** (ADR-0212) — common, picture, dispatch,
    feature stubs, public header `libvmaf_hip.h`, CI lane (now `Ubuntu HIP`,
-   a required check), smoke-only `enable_hip` build.
+   required check), smoke-only `enable_hip` build.
    Every public C-API entry point returns `-ENOSYS`.
 2. **T7-10 first consumer** (ADR-0241) — `kernel_template.{h,c}` (mirror
    of `cuda/kernel_template.h`) + `feature/hip/integer_psnr_hip.{c,h}`
@@ -55,7 +55,7 @@ ADR-0372 (batch-1, this PR).
    `float_moment_hip` (four-uint64 atomic-counter readback shape).
 5. **T7-10b fifth + sixth consumers** (ADR-0266 / ADR-0267, PR #340) —
    `feature/hip/integer_motion_v2_hip.{c,h}`. (`float_ansnr_hip.{c,h}`
-   was the fifth consumer per ADR-0266 but was removed in commit 70ed8b3ce3
+   was fifth consumer per ADR-0266 but was removed in commit 70ed8b3ce3
    / PR #38; only `integer_motion_v2_hip` remains from this batch.)
    Pin (b) temporal-extractor shape with `flush()` callback +
    ping-pong buffer carry.
@@ -109,22 +109,22 @@ ADR-0372 (batch-1, this PR).
 
 ## Rebase-sensitive invariants
 
-- **The HIP dispatch allowlist uses exact public names.** Under
+- **HIP dispatch allowlist uses exact public names.** Under
   `HAVE_HIPCC`, `g_hip_features[]` must contain each active HIP extractor's
   `.name` and every `provided_features[]` key that callers may route through
-  `vmaf_hip_dispatch_supports()`. Keep the terminating `NULL` and the
+  `vmaf_hip_dispatch_supports()`. Keep terminating `NULL` and
   fail-closed `direct` / `none` / `disable` environment override semantics.
-  Adding an extractor to `feature_extractor_list[]` without adding its exact
-  dispatch names silently falls back to CPU. The repository's
+  Adding extractor to `feature_extractor_list[]` without adding its exact
+  dispatch names silently falls back to CPU. repository's
   `check-dispatch-registry.sh` guards global symbol registration only; review
-  the extractor's `provided_features[]` and extend the relevant HIP runtime
+  extractor's `provided_features[]` and extend relevant HIP runtime
   test when changing this table. Commit `53c8ef155` established this coupling.
 
 - **HIP HSACO kernel header dependency tracking**
   ([ADR-1320](../../../docs/adr/1320-cuda-hip-kernel-header-dependency-tracking.md);
   [Research-2106](../../../docs/research/2106-cuda-hip-kernel-header-dependency-tracking.md)):
   All HIP HSACO custom targets (`hip_hsaco_*`) in `core/src/meson.build`
-  must bind `depend_files: hip_kernel_shared_headers` covering the complete
+  must bind `depend_files: hip_kernel_shared_headers` covering complete
   repo-local quoted include closure, combined with compiler depfiles
   (`depfile: name + '.hsaco.d'` and
   passing `-Xclang -dependency-file -Xclang @DEPFILE@ -Xclang -MT -Xclang @OUTPUT@`
@@ -275,7 +275,7 @@ do not replace — scaffold invariants already documented above.
 - **`vmaf_hip_import_state` lives in `core/src/libvmaf.c`, not in
   `core/src/hip/common.c`** (fork-local, ADR-0519). Function needs
   `VmafContext` field-level access; placing it next to CUDA / SYCL /
-  Metal `_import_state` twins keeps the borrowed-state implementations in
+  Metal `_import_state` twins keeps borrowed-state implementations in
   one TU.
   Do NOT re-introduce copy of function in `hip/common.c` —
   duplicate-symbol link error is obvious failure mode, but more
@@ -285,7 +285,7 @@ do not replace — scaffold invariants already documented above.
   its SYCL / Metal siblings.
 
 - **`VmafContext::hip` substruct is appended after `metal`**
-  (fork-local, ADR-0519). `hip` struct holds a single
+  (fork-local, ADR-0519). `hip` struct holds single
   `VmafHipState *state` pointer gated by `#ifdef HAVE_HIP`.
   Intentionally appended at end of GPU-backend substructs so
   CPU-only / CUDA-only / etc. builds see no offset shifts. On
@@ -297,7 +297,7 @@ do not replace — scaffold invariants already documented above.
   (fork-local, ADR-0519). `vmaf_close` clears `vmaf->hip.state =
   NULL` without freeing underlying state — caller owns state, frees
   it via `vmaf_hip_state_free()` only after `vmaf_close()` returns exactly 0.
-  Every nonzero close retains the context and borrowed state for retry. This
+  Every nonzero close retains context and borrowed state for retry. This
   deliberately differs from CUDA twin's by-value copy semantics,
   which historically grew ownership-transfer ambiguity newer
   backends avoid. On rebase: if upstream changes CUDA twin's
@@ -403,7 +403,7 @@ do not replace — scaffold invariants already documented above.
 - [ADR-0519](../../../docs/adr/0519-hip-import-state-implementation.md)
   — `vmaf_hip_import_state` implementation; moves function from
   `hip/common.c` to `libvmaf.c`, unblocks `vmaf --backend hip` on
-  AMD ROCm hosts. HIP joins CUDA / SYCL / Metal as a runtime-selected
+  AMD ROCm hosts. HIP joins CUDA / SYCL / Metal as runtime-selected
   backend (scores match CPU bit-exactly because
   dispatch still routes through CPU twins).
 - [ADR-0523](../../../docs/adr/0523-hip-integer-motion-extractor-registration.md)
@@ -414,7 +414,7 @@ do not replace — scaffold invariants already documented above.
   symbols but missing both from `hip_sources` and from `extern` +
   registry block in `feature_extractor.c`. Sweep pinned
   rebase-sensitive invariant: **every TU under
-  `core/src/feature/hip/` that defines a `VmafFeatureExtractor
+  `core/src/feature/hip/` that defines `VmafFeatureExtractor
   vmaf_fex_*` symbol must appear in `hip_sources` and have matching
   `extern` + `&vmaf_fex_*` entry inside `#if HAVE_HIP` blocks of
   `core/src/feature/feature_extractor.c`**. Three legacy plumbing
@@ -443,9 +443,9 @@ meson setup build_full -Denable_hip=true -Denable_hipcc=true \
 ninja -C build_full
 ```
 
-The required CI lane `Ubuntu HIP` leaves `enable_hipcc` at its default
-(`false`): it installs ROCm 10.0.0 from a digest-pinned image (ADR-1225) and
-builds the host side without device kernels. Kernel-enabled builds
+required CI lane `Ubuntu HIP` leaves `enable_hipcc` at its default
+(`false`): it installs ROCm 10.0.0 from digest-pinned image (ADR-1225) and
+builds host side without device kernels. Kernel-enabled builds
 (`-Denable_hipcc=true`) require `hipcc` in `PATH` and ROCm 7.0+.
 
 ## The HIP backend is host-pic — stage before you launch (ADR-1211)
@@ -464,7 +464,7 @@ dead.
 
 Correct shape is in `core/src/feature/hip/integer_psnr_hip.c`: ask
 for device planes in submit (`vmaf_hip_plane_source_acquire()`,
-`fex->hip_frame`; ADR-1408, `shared_frame.h`), close the plane source
+`fex->hip_frame`; ADR-1408, `shared_frame.h`), close plane source
 in close. Context uploads each plane once per frame for all twins;
 twin allocates no picture staging of its own. Two things to get right:
 

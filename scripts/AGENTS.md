@@ -61,16 +61,16 @@ no upstream-Netflix equivalent.
 
 ### `sync-pelorus-interop.sh` reads one exact source object (ADR-1113, ADR-1276)
 
-The Pelorus mirror guard pins a full 40-character released commit and reads
-every source with `git show`. A non-Git source directory or a checkout missing
+Pelorus mirror guard pins full 40-character released commit and reads
+every source with `git show`. non-Git source directory or checkout missing
 that object fails closed; never restore fallback to working-tree bytes. Re-pin
 for reviewed ABI additions and released parser correctness/security fixes,
-even when ABI 1.3 is unchanged. The conformance fixture is a canonical
-VMAFx-authored prefix (including pin and ABI version) plus the transformed
-Pelorus body; the complete file is byte-sensitive through EOF. The guard also
+even when ABI 1.3 is unchanged. conformance fixture is canonical
+VMAFx-authored prefix (including pin and ABI version) plus transformed
+Pelorus body; complete file is byte-sensitive through EOF. guard also
 requires every tracked path in lint-exempt Pelorus namespaces to appear in its
-manifest. Keep lint/format policy outside the shared body, and keep the guard,
-its hermetic test, and the required Pre-Commit workflow checkout in one change.
+manifest. Keep lint/format policy outside shared body, and keep guard,
+its hermetic test, and required Pre-Commit workflow checkout in one change.
 
 ### `dev/cleanup-agent-state.sh` preserves unclassified work
 
@@ -117,7 +117,7 @@ bodies may legitimately contain `## ` or `### ` sub-headings;
 renderer demotes leading `# ` / `## ` to `**bold**` at render
 time as defense-in-depth. Authors should still write **bullets,
 not headers** per `changelog.d/README.md`; demoter for
-backwards-compat, not the contract.
+backwards-compat, not contract.
 
 **Fragment hygiene**: every fragment lives under one of six
 Keep-a-Changelog section directories (`added/`, `changed/`,
@@ -258,7 +258,7 @@ outside such context still is.
 Optional backend contracts naming compile-time guard (`HAVE_*`,
 `enable_*=false`), unavailable loader/runtime path, or CPU fallback also
 = contract prose, not missing-implementation findings. Test-double prose
-("unit tests inject a stub") and ADR allocator `.md.stub` reservation wording
+("unit tests inject stub") and ADR allocator `.md.stub` reservation wording
 likewise suppressed; keep each suppression context-bound so real stubs in
 production paths still rank.
 Same for non-implementation uses of word "stub": Python type-stub
@@ -288,13 +288,13 @@ Paired updates to config, dispatcher, fixture, and
 ### Post-commit state sync preserves worktree identity
 
 [ADR-1280](../docs/adr/1280-worktree-state-sync.md) requires
-`githooks/state-sync.sh` to synchronize from the checkout that created the
+`githooks/state-sync.sh` to synchronize from checkout that created
 commit. Linked worktrees use regular-file ledger mirrors; never replace them
-with a `.workingdir` symlink or run the synchronizer against the main checkout,
+with `.workingdir` symlink or run synchronizer against main checkout,
 because those paths respectively violate Praetor confinement and record false
-Git identity. Keep the common-Git lock fail-closed, preserve worktree-local
+Git identity. Keep common-Git lock fail-closed, preserve worktree-local
 cache content, and copy only derived `STATE.md` back to canonical private
-state. The real-worktree regression in `githooks/tests/test_install.py` must
+state. real-worktree regression in `githooks/tests/test_install.py` must
 cover branch identity, regular files, cache preservation, and symlink refusal.
 
 ### Python pre-push scope follows the PR merge base
@@ -317,51 +317,51 @@ Two invariants:
   `ai/src` = `mypy_path` base -> path under it has two module names -> mypy
   refuses run ("Source file found twice under different module names"), so every
   push touching it failed. `exclude` in `pyproject.toml` stops crawl discovery
-  only, not a path named on command line.
-- `scripts/` is an explicit package. Keep `scripts/__init__.py`, prepend the
+  only, not path named on command line.
+- `scripts/` is explicit package. Keep `scripts/__init__.py`, prepend
   resolved repository root for direct-path execution, and import shared code by
-  its canonical `scripts.*` name. The real-mypy two-root regression checks the
-  helper and hook together; an implicit namespace gives the same file two
+  its canonical `scripts.*` name. real-mypy two-root regression checks
+  helper and hook together; implicit namespace gives same file two
   module names and makes every push fail before findings can be reported.
 - Same files re-checked at merge base in disposable worktree; only new
   fingerprints fail. Fingerprint = path + error code + message, no line number
-  (edit above a finding shifts it, does not change it). Worktree removed in
+  (edit above finding shifts it, does not change it). Worktree removed in
   `finally` (ADR-0332 drift guard). Required `Python Lint` invokes this same
-  runner and propagates its status (ADR-1310); do not restore a raw directory
+  runner and propagates its status (ADR-1310); do not restore raw directory
   scan or advisory shell tail.
 - Blocking runs keep site packages out with `--no-site-packages` and suppress
-  only the resulting `import-not-found` diagnostics. This makes the result
-  independent of the active environment's PEP 561 packages; resolved local and
-  standard-library types remain checked. Hosted CI installs the hash-locked
-  mypy toolchain and intentionally does not install the training stack.
+  only resulting `import-not-found` diagnostics. This makes result
+  independent of active environment's PEP 561 packages; resolved local and
+  standard-library types remain checked. Hosted CI installs hash-locked
+  mypy toolchain and intentionally does not install training stack.
 
-The local default base remains `origin/master`. Hosted pull requests use that
-same authority; hosted master pushes set `VMAFX_MYPY_BASE_REF` to the event's
-exact previous commit so the post-merge job checks the pushed range. Resolve an
+local default base remains `origin/master`. Hosted pull requests use that
+same authority; hosted master pushes set `VMAFX_MYPY_BASE_REF` to event's
+exact previous commit so post-merge job checks pushed range. Resolve
 explicit base through `rev-parse --verify --end-of-options` before merge-base
-selection; an empty or invalid override must fail closed.
+selection; empty or invalid override must fail closed.
 
-Mypy exit 0 is clean and exit 1 is ordinary findings. Every other status is a
+Mypy exit 0 is clean and exit 1 is ordinary findings. Every other status is
 blocking analysis error and fails closed with hook exit 2 even when mypy emitted
 partial parseable findings; exit 1 with no attributable finding also fails
-closed. Do not restore raw exit-status propagation or let an earlier exit 1 mask
-a later blocking status from the second module-identity run.
+closed. Do not restore raw exit-status propagation or let earlier exit 1 mask
+later blocking status from second module-identity run.
 
 `python_version` is `3.14` and tracks `requires-python` (ADR-1282); do not lower
-it. Below 3.12 mypy cannot parse numpy's PEP 695 `type` statement and the
-`ai/src/` pass aborts before checking anything. The delta gate synchronizes the
+it. Below 3.12 mypy cannot parse numpy's PEP 695 `type` statement and
+`ai/src/` pass aborts before checking anything. delta gate synchronizes
 branch's checker configuration files (`pyproject.toml`, `mypy.ini`, `.mypy.ini`,
-`setup.cfg`) into the disposable baseline worktree while preserving merge-base
+`setup.cfg`) into disposable baseline worktree while preserving merge-base
 source files (T-CI-MYPY-PREPUSH-BASELINE-USES-BASE-CONFIG-2026-09-21). Changes to
 checker settings also widen file selection across tracked Python sources in `ai/`
 and `scripts/`. Do not evaluate baseline and head under differing checker settings,
-and never lower the pin.
+and never lower pin.
 
-The widened run must resolve `ai/src` through its canonical `vmaf_train.*`
-identity exactly once. `pyproject.toml` keeps `follow_imports = "skip"` on the
+widened run must resolve `ai/src` through its canonical `vmaf_train.*`
+identity exactly once. `pyproject.toml` keeps `follow_imports = "skip"` on
 legacy, non-runtime `ai.src.*` compatibility namespace; `ignore_errors` alone is
 too late because mypy rejects duplicate module discovery before diagnostics are
-filtered. The dedicated `ai/src` run remains responsible for checking those
+filtered. dedicated `ai/src` run remains responsible for checking those
 sources with `--explicit-package-bases`.
 
 ### `run_unittests.sh` is upstream-mirror

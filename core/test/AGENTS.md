@@ -30,7 +30,7 @@ char *run_tests(void)
 ```
 
 Each `test_*.c` compiles into own binary. `meson.build` registers them
-with the repository's Meson test runner. No fixtures, no shared state — each test owns setup
+with repository's Meson test runner. No fixtures, no shared state — each test owns setup
 and teardown.
 
 **Function size** (`readability-function-size`, 15-branch budget):
@@ -47,8 +47,8 @@ and teardown.
 - C++ TU -> several short `namespace { ... } // namespace` blocks, one per cohesive group. Same internal linkage, no suppression. Same shape as SYCL extractors and `core/tools/vmaf.cpp`.
 - long `MuTest` table -> several short tables + one `mu_run_table()` call each, in order. Order and first-failure behaviour unchanged.
 - split test body -> phase helper returning `mu_message_t`, never per-block partial sums. Assertion strings and expected values stay byte-identical.
-- HIP parity test -> `hip_parity_skip()` from [hip_parity_skip.h](hip_parity_skip.h) for the `-ENOSYS` scaffold teardown. One definition; twelve tests share it.
-- **do not split** a body whose `NOLINT` cites an external contract the fork does not own (ADR-1286). Two here: `ref_calc_psnrhvs()` in [test_psnr_hvs_simd.c](test_psnr_hvs_simd.c) (ADR-0138 bit-exactness) and `test_barten_csf()` in [test_barten_csf.c](test_barten_csf.c) (upstream's `mu_assert` sequence verbatim; upstream still appends cases, so reshaping it turns every later sync into a hand-merge). Both keep their cited suppression and stay over the cap.
+- HIP parity test -> `hip_parity_skip()` from [hip_parity_skip.h](hip_parity_skip.h) for `-ENOSYS` scaffold teardown. One definition; twelve tests share it.
+- **do not split** body whose `NOLINT` cites external contract fork does not own (ADR-1286). Two here: `ref_calc_psnrhvs()` in [test_psnr_hvs_simd.c](test_psnr_hvs_simd.c) (ADR-0138 bit-exactness) and `test_barten_csf()` in [test_barten_csf.c](test_barten_csf.c) (upstream's `mu_assert` sequence verbatim; upstream still appends cases, so reshaping it turns every later sync into hand-merge). Both keep their cited suppression and stay over cap.
 
 **Clean up before asserting:**
 
@@ -83,46 +83,45 @@ and teardown.
   Unchecked dereference is latent SIGSEGV under ASan
   `MALLOC_PERTURB_=198` (ADR-0971). **Rebase-sensitive**: this rule
   applies to every new test file.
-- **Framesync initializer failures recompile `framesync.c` into the test
+- **Framesync initializer failures recompile `framesync.c` into test
   executable.** `test_framesync_init_failure` lists `../src/framesync.c` among
-  its own sources and maps the four init/destroy entry points to test-owned
+  its own sources and maps four init/destroy entry points to test-owned
   wrapper symbols through `c_args`. Those `-D` renames reach every translation
-  unit in the target, so `test_framesync_init_failure.c` undefines them above
-  its first `#include`. Keep the test source an ordinary translation unit: do
-  not include executable `.c` files, add a production hook, or replace the
-  deterministic wrappers with a platform-specific linker interposer. The test
-  must cover each initialization stage, a null init-output pointer, the
+  unit in target, so `test_framesync_init_failure.c` undefines them above
+  its first `#include`. Keep test source ordinary translation unit: do
+  not include executable `.c` files, add production hook, or replace
+  deterministic wrappers with platform-specific linker interposer. test
+  must cover each initialization stage, null init-output pointer,
   documented null destroy no-op, unpublished context, and exact partial
   unwind.
-- **`test_sycl_init_unwind` is a device-free GNU-ld interposer.** Keep it
+- **`test_sycl_init_unwind` is device-free GNU-ld interposer.** Keep it
   Linux-only, statically linked, and disabled when `b_lto=true`: LLVM LTO
   resolves libvmaf's internal allocator/dictionary/graph calls before
-  `--wrap` can rewrite them. It must remain in the `fast` + `sycl` suites and
+  `--wrap` can rewrite them. It must remain in `fast` + `sycl` suites and
   cover all descriptors listed in
-  `docs/research/2101-bug048-sycl-init-unwind-restoration-2026-09-24.md`; adding a
+  `docs/research/2101-bug048-sycl-init-unwind-restoration-2026-09-24.md`; adding
   SYCL init that owns USM requires adding its failure case here.
 - **`test_framesync_init_failure` builds with LTO off on Darwin, and that is
   load-bearing.** **Rebase-sensitive**: keep
-  `override_options : framesync_interposer_lto_override` on the target. Under
-  `b_lto=true` (the project default) this executable's whole input is LLVM
-  bitcode, and Apple's linker rejects the result on all five macOS legs with
+  `override_options : framesync_interposer_lto_override` on target. Under
+  `b_lto=true` (project default) this executable's whole input is LLVM
+  bitcode, and Apple's linker rejects result on all five macOS legs with
   `ld: symbol(s) defined in LTO objects are referenced but missing in compiled
   objects`, naming `_mu_tests_run`, the four `_vmafx_test_pthread_*` wrappers,
   `_vmaf_framesync_init` and `_vmaf_framesync_destroy`. Two narrower fixes were
-  tried against that diagnostic and both failed byte-identically: removing the
+  tried against that diagnostic and both failed byte-identically: removing
   `link_whole`/`-force_load` (34b3ffa09) and removing `vmaf_cflags_common` so
-  the definitions keep default visibility (18e9edebd). Replaying the target's
-  own compile and link commands through clang/LLD shows the LTO resolution
-  hands libLTO exactly one externally visible symbol -- the entry point -- and
-  the generated object comes back with `main` as its only global; but the
-  pure-bitcode sibling targets that link a few steps earlier in the same macOS
-  run (`test_pdjson`, `test_thread_pool`,
-  `test_pdjson_stack_increment_zero`) collapse the same way and link fine, so
-  *why* Apple's linker singles this one out is not established. Do not spend a
-  fourth attempt steering the preserve list without a macOS machine to test on;
-  `b_lto=false` removes the precondition instead, the same way `test_output`
+  definitions keep default visibility (18e9edebd).
+  Replaying target compile and link commands through clang/LLD shows LTO resolution
+  hands libLTO one externally visible symbol (entry point); generated object
+  comes back with `main` as only global. Pure-bitcode sibling targets link earlier
+  in same macOS run (`test_pdjson`, `test_thread_pool`,
+  `test_pdjson_stack_increment_zero`); they collapse identically and link fine.
+  *why* Apple's linker singles this one out is not established. Do not spend
+  fourth attempt steering preserve list without macOS machine to test on;
+  `b_lto=false` removes precondition instead, same way `test_output`
   below already handles its own Apple-LTO problem. Also do not reintroduce
-  `framesync.c` as a `static_library` consumed with `link_whole`.
+  `framesync.c` as `static_library` consumed with `link_whole`.
 - **SIMD parity tests check what kernel leaves outside its output, not only
   what it writes inside.** Kernel storing past its region passes region-only
   comparison. Netflix/vmaf `03b5562c5` + `ea012e387` both that shape, unnoticed
@@ -143,16 +142,16 @@ and teardown.
   `test_cambi_stage_simd.c` exercise internal helper routines via
   `feature/cambi_internal.h` linked against `libvmaf` (formerly unity-including
   `cambi.c`, resolved per CodeQL cpp/include-non-header alerts 1218 and 1241).
-  Keep the tests for TVI threshold/difference extremes, an unreachable VLT
+  Keep tests for TVI threshold/difference extremes, unreachable VLT
   threshold, and duplicate plus descending quick-select inputs. They pin
-  termination bounds and partition ordering directly; an end-to-end score alone
-  cannot distinguish a hang from a numerically wrong search result.
+  termination bounds and partition ordering directly; end-to-end score alone
+  cannot distinguish hang from numerically wrong search result.
 - **Internal C/C++ header boundary smoke**: `test_flush_context_ordering.c` (C)
   and `test_luminance_tools.cpp` (C++) consume `cambi_internal.h`,
   `luminance_tools.h`, `model.h`, and `libvmaf_priv.h` directly and assert enum
-  widths and ABI layout across the language boundary without expanding the
+  widths and ABI layout across language boundary without expanding
   authoritative CPU tidy translation unit inventory. Keep these dual-use header
-  inclusions and static assertions when changing the CodeQL link seams; unity
+  inclusions and static assertions when changing CodeQL link seams; unity
   includes formerly hid this boundary.
 - **GPU tests must skip gracefully when no device present.** Any
   test calling `vmaf_cuda_state_init`, `vmaf_hip_state_init`, or
@@ -206,7 +205,7 @@ and teardown.
   [test_lpips.c](test_lpips.c) for `_putenv_s`-based shim for
   `setenv`/`unsetenv` — MinGW's mingw.org / MSYS2 headers do not
   expose those functions under `-std=c11 -pedantic`. CI MINGW build
-  will catch this but running the native test suite locally on Linux won't.
+  will catch this but running native test suite locally on Linux won't.
 - **Never modify Netflix golden assertions**: those are Python-side, not
   here — see [../../python/test/](../../python/test/) and
   [ADR-0024](../../docs/adr/0024-netflix-golden-preserved.md).
@@ -334,22 +333,22 @@ Rules for those files:
 
 ## Pelorus exact-source conformance fixture (ADR-1113, ADR-1276)
 
-`test_pelorus_interop.c` is not a fork-authored test implementation. From its
-first vendored `#include` onward, it is the exact Pelorus fixture body at
-`PELORUS_VENDOR_SHA`, with only the `pelorus/` to `libvmaf/pelorus/` include
+`test_pelorus_interop.c` is not fork-authored test implementation. From its
+first vendored `#include` onward, it is exact Pelorus fixture body at
+`PELORUS_VENDOR_SHA`, with only `pelorus/` to `libvmaf/pelorus/` include
 rewrite. Keep every test, cast, return-value expression, and formatting choice
 identical to that source.
 
 - Never add VMAFx-only `NOLINT` bands, `(void)` casts, formatting changes, or
-  warning repairs to this file. Fix a real defect in Pelorus, publish/review the
+  warning repairs to this file. Fix real defect in Pelorus, publish/review
   source commit, then re-vendor it.
-- Put VMAFx lint and format policy in `.pre-commit-config.yaml`, the Makefile,
-  and `scripts/ci/tidy-ratchet.py`. The exact-source fixture is excluded there.
-- After any re-pin, run `scripts/sync-pelorus-interop.sh` against a Git checkout
-  containing the exact object, then run `test_pelorus_interop` under normal,
-  ASan, and UBSan builds. The default guard renders the canonical VMAFx prefix
-  plus transformed Pelorus body and compares the complete file byte-for-byte;
-  it fails closed when the object is unavailable or the prefix is changed.
+- Put VMAFx lint and format policy in `.pre-commit-config.yaml`, Makefile,
+  and `scripts/ci/tidy-ratchet.py`. exact-source fixture is excluded there.
+- After any re-pin, run `scripts/sync-pelorus-interop.sh` against Git checkout
+  containing exact object, then run `test_pelorus_interop` under normal,
+  ASan, and UBSan builds. default guard renders canonical VMAFx prefix
+  plus transformed Pelorus body and compares complete file byte-for-byte;
+  it fails closed when object is unavailable or prefix is changed.
 
 ## Governing ADRs
 
@@ -386,7 +385,7 @@ identical to that source.
   inherits sanitizer coverage automatically. Do NOT add
   `suite: 'unit'` tag to any `test()` call without coordinating
   with ADR-0347. Workflow no longer relies on `--suite=unit` (which
-  previously matched zero tests because no `test()` carried the
+  previously matched zero tests because no `test()` carried
   tag); partial tagging would silently re-introduce gap. Under
   UBSan, build adds `-fno-sanitize=function` to suppress
   K&R-prototype harness UB across every `test_*.c`; new test files
@@ -403,16 +402,16 @@ carry `suite:` argument.** `fast` suite is documented pre-push gate
 contain every test that completes in under 2 seconds under normal
 CPU load.
 
-**Every test carrying the `gpu` suite tag MUST also set
-`is_parallel : false`.** GPU-suite tests share the physical accelerator and
-its finite queue/memory resources. Meson defines `is_parallel : false` as an
+**Every test carrying `gpu` suite tag MUST also set
+`is_parallel : false`.** GPU-suite tests share physical accelerator and
+its finite queue/memory resources. Meson defines `is_parallel : false` as
 exclusive test: it waits for all running tests before starting it and starts no
 other test until it completes. `check_gpu_test_serialization.py` enforces this
 contract from Meson's public `intro-tests.json` metadata for every configured
-backend. `test_gpu_serialization_contract.py` also scans the source registry so
-a dormant backend (notably Metal on Linux) cannot evade the configured-metadata
-check. Keep both guards registered outside the `gpu` suite so they can inspect
-the complete test set without making themselves accelerator tests.
+backend. `test_gpu_serialization_contract.py` also scans source registry so
+dormant backend (notably Metal on Linux) cannot evade configured-metadata
+check. Keep both guards registered outside `gpu` suite so they can inspect
+complete test set without making themselves accelerator tests.
 
 Tag assignments:
 
@@ -431,9 +430,9 @@ After every upstream sync or port-upstream-commit, run:
 grep "^test(" core/test/meson.build | grep -v "suite :"
 ```
 
-Any line returned is a violation — add the appropriate `suite:` before
+Any line returned is violation — add appropriate `suite:` before
 merging. Keep this check with every upstream sync because upstream does not
-carry the fork's suite classification contract. Then run both the
+carry fork's suite classification contract. Then run both
 source-registry and configured-metadata guards:
 
 ```bash
@@ -441,18 +440,18 @@ python3 scripts/ci/run_meson_test.py -- -C build --no-rebuild \
   test_gpu_serialization_contract check_gpu_test_serialization
 ```
 
-Together they catch new `gpu` registrations that omitted the exclusive
+Together they catch new `gpu` registrations that omitted exclusive
 scheduling flag, including dormant backend and combined-backend suite lists
 such as `['slow', 'gpu', 'sycl']`.
 
 ## Bootstrap score-name source contract (ADR-0480)
 
-`test_bootstrap_name_contract.py` is intentionally a source-level test. Public
-score tests cannot detect whether `libvmaf.c` and `predict.c` have copied the
+`test_bootstrap_name_contract.py` is intentionally source-level test. Public
+score tests cannot detect whether `libvmaf.c` and `predict.c` have copied
 same suffix literals away from `bootstrap_names.h`; both implementations can
-remain behaviorally identical until a later edit changes only one. Keep the
-test in the `fast` suite and require both consumers to include the header, use
-all four shared symbols, and contain none of the four literal definitions.
+remain behaviorally identical until later edit changes only one. Keep
+test in `fast` suite and require both consumers to include header, use
+all four shared symbols, and contain none of four literal definitions.
 
 ## Pixel-format edge coverage invariant (ADR-0912)
 
@@ -570,26 +569,26 @@ cases, group them into named driver functions (see
 
 `test_sycl_cuda_serial_upload_lifetime.c` is registered only when both
 `enable_cuda` and `enable_sycl` are true. That compile combination is
-load-bearing: CUDA's host-picture cleanup has an early return which must not
-bypass the SYCL upload wait. The test uses the public `vmaf_read_pictures()`
-path with `psnr_sycl` at both `n_threads=0` and `n_threads=1`; a private release
+load-bearing: CUDA's host-picture cleanup has early return which must not
+bypass SYCL upload wait. test uses public `vmaf_read_pictures()`
+path with `psnr_sycl` at both `n_threads=0` and `n_threads=1`; private release
 callback poisons each 4K distorted plane immediately when its final reference
-drops. Identical input must remain at the 8-bit 60 dB cap for all 48 frames,
-proving the upload finished before the callback on both ownership paths. It
-needs a SYCL device but no CUDA device and skips cleanly when SYCL
-initialization is unavailable. Keep it in the `slow`, `gpu`, and `sycl`
+drops. Identical input must remain at 8-bit 60 dB cap for all 48 frames,
+proving upload finished before callback on both ownership paths. It
+needs SYCL device but no CUDA device and skips cleanly when SYCL
+initialization is unavailable. Keep it in `slow`, `gpu`, and `sycl`
 suites.
 
 ## Output-file `EINTR` fault control (Research-2084)
 
-`test_output_open_eintr.c` is a Linux static-link control for
-`core/src/libvmaf.c::output_file_open()`. The project defines large-file
-support, so the production `open(2)` reference reaches the linker as
-`open64`; the test must wrap that actual symbol and inject `EINTR` exactly
-once for its target path. Its Meson target is restricted to a non-shared,
-non-LTO Linux build because whole-program optimization or a shared-library
-boundary defeats GNU ld `--wrap`. Preserve the assertions that the write
-succeeds and exactly two target opens occurred. A passing write with zero
+`test_output_open_eintr.c` is Linux static-link control for
+`core/src/libvmaf.c::output_file_open()`. project defines large-file
+support, so production `open(2)` reference reaches linker as
+`open64`; test must wrap that actual symbol and inject `EINTR` exactly
+once for its target path. Its Meson target is restricted to non-shared,
+non-LTO Linux build because whole-program optimization or shared-library
+boundary defeats GNU ld `--wrap`. Preserve assertions that write
+succeeds and exactly two target opens occurred. passing write with zero
 wrapped calls is not evidence. See
 [Research-2084](../../docs/research/2084-dev-mcp-resilience-restoration.md).
 
@@ -665,11 +664,11 @@ both documented in ADR-1206:
   scale=1 score fails loudly instead of silently comparing two
   metrics. SYCL (ADR-1370) + CUDA (ADR-1399) twins decimate on device:
   their `_large` variants assert parity at auto scale 2, no skip.
-- `test_sycl_motion_add_uv_parity` uses a scalar fixed-point oracle for
+- `test_sycl_motion_add_uv_parity` uses scalar fixed-point oracle for
   coefficients, both rounding stages, reflect-101 borders, integer SAD and
-  per-plane normalization (ADR-1326). Its error budget is only the derived
+  per-plane normalization (ADR-1326). Its error budget is only derived
   host-double `2*gamma_5` reconstruction bound, so both small and large
-  registrations are required. Do not restore `float_motion` as the numerical
+  registrations are required. Do not restore `float_motion` as numerical
   oracle: it uses different coefficients and float reduction order.
 
 HIP and Metal are not registered yet — unverifiable on current
@@ -679,42 +678,42 @@ workstation.
 
 `test_adm_small_border.c` and `test_adm_wide_rounding.c` build twice:
 `-DHAVE_CUDA=1` and `-DHAVE_HIP=1`. Feature list must hold only names
-the arm's twin provides. HIP `integer_adm` twin has no AIM pass, so
+arm's twin provides. HIP `integer_adm` twin has no AIM pass, so
 `VMAF_integer_feature_adm3_score` / `_aim_score` stay out of its
 `provided_features[]` (T-GPU-ADM-AIM-DEVICE-PASS-MISSING-SYCL-HIP-2026-09-05);
 asking for them returns `-EINVAL` from `vmaf_feature_score_at_index()`
 before any parity check runs. Guard such names with
-`#if !defined(HAVE_HIP)`. Print the failing name: a bare "failed" cost a
+`#if !defined(HAVE_HIP)`. Print failing name: bare "failed" cost
 session to diagnose. `test_gpu_adm_tiny_frames.c` scores aim / adm3 only in
-its SYCL arm (`NUM_KEYS` 7 under `HAVE_SYCL`, bit-exact per ADR-1362); the
-CUDA arm keeps five keys until someone runs it on a CUDA device with seven.
+its SYCL arm (`NUM_KEYS` 7 under `HAVE_SYCL`, bit-exact per ADR-1362);
+CUDA arm keeps five keys until someone runs it on CUDA device with seven.
 
-`should_fail : true` in `meson.build` needs a reason that is true today.
-Meson counts an unexpected pass as a failure, so a stale marker breaks
-the native test suite on every machine with the device. When the cited defect is
-fixed, drop the marker in the same PR (ADR-1211 fixed the staging fault
-the three HIP ADM markers cited; the markers outlived it by two weeks).
+`should_fail : true` in `meson.build` needs reason that is true today.
+Meson counts unexpected pass as failure, so stale marker breaks
+native test suite on every machine with device. When cited defect is
+fixed, drop marker in same PR (ADR-1211 fixed staging fault
+three HIP ADM markers cited; markers outlived it by two weeks).
 
 Parity fixtures must carry texture. Smooth ramps such as
-`(row * 7 + col * 5) & 0xFF` leave the ADM contrast-masking kernel almost
-nothing to accumulate: with the pre-ADR-1167 border defect planted back
-into `adm_cm.hip`, the ramp moved adm2 by 7.5e-6, under the 1e-4 gate;
-the lowbias32 texture in `luma_sample()` moves it by 4.0e-4. Before
-trusting a new parity test, plant the defect it targets and watch it
-fail. Rounding placement inside a row (per pixel, per warp, per row)
-does not reach any emitted ADM score: the CPU divides the accumulator by
+`(row * 7 + col * 5) & 0xFF` leave ADM contrast-masking kernel almost
+nothing to accumulate: with pre-ADR-1167 border defect planted back
+into `adm_cm.hip`, ramp moved adm2 by 7.5e-6, under 1e-4 gate;
+lowbias32 texture in `luma_sample()` moves it by 4.0e-4. Before
+trusting new parity test, plant defect it targets and watch it
+fail. Rounding placement inside row (per pixel, per warp, per row)
+does not reach any emitted ADM score: CPU divides accumulator by
 `2^(52 - shift_cub - shift_inner_accum)` and casts to `float`. No
 score-level tolerance detects it
-(T-ADM-CM-ROUNDING-PLACEMENT-UNOBSERVABLE-2026-09-19). Preserve the paired
-device-free guards: `test_adm_cm_row_rounding.c` exercises the private raw
-`int64_t` row-fold seam with a worked value that separates correct row
-rounding (`2`) from per-partition rounding (`4`), truncation (`0`) and a
+(T-ADM-CM-ROUNDING-PLACEMENT-UNOBSERVABLE-2026-09-19). Preserve paired
+device-free guards: `test_adm_cm_row_rounding.c` exercises private raw
+`int64_t` row-fold seam with worked value that separates correct row
+rounding (`2`) from per-partition rounding (`4`), truncation (`0`) and
   post-shift increment (`3`); `test_adm_cm_row_rounding_contract.py` binds that
-  seam after the complete reduction in the scalar CPU reference, all 72
-  AVX2/AVX-512 band-fold sites, and every CUDA, HIP, SYCL and Metal call shape,
-  then proves its own sensitivity with source mutations. The raw seam also
+  seam after complete reduction in scalar CPU reference, all 72
+  AVX2/AVX-512 band-fold sites, and every CUDA, HIP, SYCL and Metal call shape;
+  proves sensitivity with source mutations.
   guards ADR-0155's negative CUDA i4 rounding term against unsigned
-  reinterpretation. A new backend shape must be added to that contract in the
+  reinterpretation. new backend shape must be added to that contract in
   same change.
 
 ## Test target source identity contracts (ADR-1142, Research-2096)
@@ -722,50 +721,50 @@ rounding (`2`) from per-partition rounding (`4`), truncation (`0`) and a
 Do not add uncalled library implementation sources directly to test executables in
 `core/test/meson.build`. `test_picture*` must not compile `thread_pool.c`, and
 `test_predict` / `test_model*` must not compile redundant `pdjson.c` copies.
-`test_picture`, `test_picture_v2`, and `test_picture_pool_error_paths` link the
+`test_picture`, `test_picture_v2`, and `test_picture_pool_error_paths` link
 test-local static library `test_picture_impl` rather than compiling duplicate
-private copies of `picture.c`, `mem.cpp`, and `ref.cpp`. The error-path target
+private copies of `picture.c`, `mem.cpp`, and `ref.cpp`. error-path target
 still compiles `picture_pool.c` directly; preserve that ADR-0960 seam while
-keeping the shared picture implementation identity.
+keeping shared picture implementation identity.
 
-`test_predict.c` includes `predict_internal.h` for the pure mapping/equality
-helpers and links the production predictor; it must never text-include
-`predict.c`. A unity include creates a second set of static helpers whose calls
-can attach to CodeQL's coalesced production identity, orphaning the duplicate
+`test_predict.c` includes `predict_internal.h` for pure mapping/equality
+helpers and links production predictor; it must never text-include
+`predict.c`. unity include creates second set of static helpers whose calls
+can attach to CodeQL's coalesced production identity, orphaning duplicate
 graph. `test_predict_source_authority.py` locks that build boundary, while
-`test_predict_nonfinite_log_output.py` runs the linked binary and verifies the
+`test_predict_nonfinite_log_output.py` runs linked binary and verifies
 real production warning is emitted exactly once.
 
 All private-source test binaries use `predict_test_dependencies`, which links
-the one `predict_c_lib` object compiled in `core/src/meson.build`; no test source
-list may compile `../src/predict.c`. Keep the source-authority test's global
-Meson assertions. The former per-target pattern produced 52 redundant test
-objects plus the library object and left CodeQL with an orphan scan graph.
+one `predict_c_lib` object compiled in `core/src/meson.build`; no test source
+list may compile `../src/predict.c`. Keep source-authority test's global
+Meson assertions. former per-target pattern produced 52 redundant test
+objects plus library object and left CodeQL with orphan scan graph.
 
 `test_feature_collector` text-includes `libvmaf.c` for private collector state,
 but it must not compile `predict.c`. Keep `vmaf_cflags_common` and
-`predict_test_dependencies` on the target: the linked source-authority archive
-satisfies the included file's predictor references without creating another
+`predict_test_dependencies` on target: linked source-authority archive
+satisfies included file's predictor references without creating another
 implementation identity.
 
-When a test must compile an implementation source under a special configuration,
-its repeated definitions need unambiguous test-local identities. The pdjson
+When test must compile implementation source under special configuration,
+its repeated definitions need unambiguous test-local identities. pdjson
 default, zero-increment, and oversized-increment copies are separate static
-libraries. Their private helpers receive target-unique names while the public
+libraries. Their private helpers receive target-unique names while public
 `json_*` API stays unchanged; each executable separately renames `run_tests` so
-its test body retains a distinct root. The backpressure test renames the four
+its test body retains distinct root. backpressure test renames four
 `vmaf_thread_pool_*` entry points around its intentional `thread_pool.c`
-inclusion. Keep definitions and test calls under the same aliases; never export
-the aliases from production headers or replace them with scanner suppressions.
+inclusion. Keep definitions and test calls under same aliases; never export
+aliases from production headers or replace them with scanner suppressions.
 
-Configuration-only helpers must be emitted only in the configuration that uses
+Configuration-only helpers must be emitted only in configuration that uses
 them. In particular, `vector_unchanged` stays inside `FEX_VECTOR_ALLOC_TEST`; do
-not restore `[[maybe_unused]]` or add an unrelated unconditional test merely to
-manufacture analyzer reachability. The two specialized pdjson growth tests remain
+not restore `[[maybe_unused]]` or add unrelated unconditional test merely to
+manufacture analyzer reachability. two specialized pdjson growth tests remain
 separate binaries and retain their focused invalid-increment assertions.
 
-CodeQL closure is proved by replaying `UnusedStaticFunctions.ql` against a fresh
-full-build database and then confirmed by a hosted default-branch run. Runtime
+CodeQL closure is proved by replaying `UnusedStaticFunctions.ql` against fresh
+full-build database and then confirmed by hosted default-branch run. Runtime
 coverage alone cannot prove this repeated-compilation identity contract.
 
 ## Floating-point assertions and CodeQL contracts (ADR-1308)

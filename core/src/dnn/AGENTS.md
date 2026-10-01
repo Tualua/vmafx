@@ -136,11 +136,11 @@ Runtime directly.
   but lower-bounds per-context memory; never shrink it
   below 6 (canonical-6).
 - **Oversized sidecars are rejected before stdio reads.**
-  `vmaf_dnn_sidecar_load()` performs a `vmaf_path_info_utf8()` size check before
-  `vmaf_fopen_utf8()` / `fseek()` / `ftell()`. The model and jail paths likewise
+  `vmaf_dnn_sidecar_load()` performs `vmaf_path_info_utf8()` size check before
+  `vmaf_fopen_utf8()` / `fseek()` / `ftell()`. model and jail paths likewise
   use `vmaf_fullpath_utf8()` before UTF-8-aware metadata/open operations. Keep
-  those preflight operations on the same Windows UTF-8 contract (ADR-1182) and
-  keep the exact-name Win64 regression in `test_model_loader.c`. Keep the metadata-only guard:
+  those preflight operations on same Windows UTF-8 contract (ADR-1182) and
+  keep exact-name Win64 regression in `test_model_loader.c`. Keep metadata-only guard:
   oversized-sidecar regression expects `-EFBIG` without entering
   normal JSON read path.
 - **Pre-seeded "unknown" codec one-hot** in
@@ -290,7 +290,7 @@ folded to 1 at attach time. **Never** re-tighten gate to
 (`model/tiny/nr_metric_v1*.onnx`) plus any future trainer using
 PyTorch `torch.onnx.export(..., dynamic_axes=…)` default.
 
-A *fixed* batch > 1 is still rejected (no batched-inference
+*fixed* batch > 1 is still rejected (no batched-inference
 scheduler exists; per-frame loop feeds one sample per Run
 call). Symbolic H/W (rank-4 spatial dims) remain rejected because
 scratch buffer is sized once at attach time; diagnostic

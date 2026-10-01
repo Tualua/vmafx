@@ -58,20 +58,20 @@ tools/
   while picture pool waits for leaked unread slot.
 - **Option dictionaries belong to `CLISettings` until libvmaf takes
   them.** `cli_free()` releases every `feature_cfg[i].opts_dict` and
-  `model_config[i].feature_overload[j].opts_dict` still set, so a run that
-  stops early (unopenable input, bad geometry, a model or feature that does
-  not fit, an unknown extractor) leaks nothing. Each hand-off in
+  `model_config[i].feature_overload[j].opts_dict` still set.
+  Early abort (unopenable input, bad geometry, mismatching model/feature,
+  unknown extractor) leaks nothing.
   [vmaf.cpp](vmaf.cpp) — `vmaf_use_feature()`, `vmaf_model_feature_overload()`,
-  `vmaf_model_collection_feature_overload()` — clears the settings' pointer
-  with `std::exchange` first; a new call site must too, or the run
-  double-frees. `use_cli_feature()` restores the options only for an unknown
-  extractor name, the one `-EINVAL` on which libvmaf hands them back; it tells
-  that case apart with a second `vmaf_use_feature()` call without options,
-  which for a known name registers a default-options instance. That is sound
-  only while a registration failure ends the run (the context, instance
-  included, is closed right after); a change that lets the run continue past
-  a failed `--feature` must replace the probe.
-  Regression tests: `test_vmaf_option_dict_ownership` (run it in an ASan
+  `vmaf_model_collection_feature_overload()` — clears settings' pointer
+  with `std::exchange` first; new call site must too, or run
+  double-frees. `use_cli_feature()` restores options only for unknown
+  extractor name, one `-EINVAL` on which libvmaf hands them back; it tells
+  that case apart with second `vmaf_use_feature()` call without options,
+  which for known name registers default-options instance. That is sound
+  only while registration failure ends run (context, instance
+  included, is closed right after); change that lets run continue past
+  failed `--feature` must replace probe.
+  Regression tests: `test_vmaf_option_dict_ownership` (run it in ASan
   build) and `test_cli_parse` (`release_parsed()`).
 - **`vmaf_roi` sidecar contract** (T6-2b / ADR-0247) is
   **rebase-sensitive** — encoder drivers depend on exact byte
@@ -125,7 +125,7 @@ tools/
   and no variadic parameter-pack fallback. This prevents zero-argument pack
   expansions that trip CodeQL
   `cpp/unused-local-variable` and `cpp/unused-static-variable` (Alerts 1002/1003).
-  Do not collapse back into an unconstrained variadic pack without verifying
+  Do not collapse back into unconstrained variadic pack without verifying
   CodeQL analysis. Adversarial regression coverage is pinned by
   `core/test/test_cli_parse_long_only_args.c`.
 - **`y4m_convert_411_422jpeg` chroma-row write guards are
@@ -173,41 +173,41 @@ tools/
     `'H'`; `per_shot_parse_args` handles `'H'` for help and `'?'` for
     error path. Never change short-option value.
   - **Scan stops at `VMAF_PER_SHOT_MAX_FRAMES` or `--frames` ceiling.** `per_shot_scan_loop`
-    tracks frames in a `uint64_t` and `per_shot_record_frame` stores that
-    index. An explicit operator ceiling `-F, --frames <N>` (with aliases
+    tracks frames in `uint64_t` and `per_shot_record_frame` stores that
+    index. explicit operator ceiling `-F, --frames <N>` (with aliases
     `--frame_cnt` and `--max-frames`) bounds scans on FIFOs, streams, or
     synthetic inputs, exiting cleanly with code 0 on reaching N frames
-    ([ADR-1318](../../docs/adr/1318-pershot-frames-ceiling.md)). The default
+    ([ADR-1318](../../docs/adr/1318-pershot-frames-ceiling.md)). default
     is `0U` (unbounded), preserving full scans on finite files up to
     `VMAF_PER_SHOT_MAX_FRAMES` (`UINT32_MAX`), where exhaustion reports `-EFBIG`.
-    Never restore a bare `for (;;)`. At the built-in boundary, the reader probes
+    Never restore bare `for (;;)`. At built-in boundary, reader probes
     for one additional *complete* frame and checks that read before indexing it:
-    an input of exactly `UINT32_MAX` frames is accepted when EOF is reached,
+    input of exactly `UINT32_MAX` frames is accepted when EOF is reached,
     reporting `-EFBIG` only if input strictly exceeds `UINT32_MAX` complete
-    frames, resolving the off-by-one check from
+    frames, resolving off-by-one check from
     [ADR-1287](../../docs/adr/1287-cli-tool-unbounded-loop-ceilings.md).
   - **Raw-frame reads consume every luma and chroma byte** (rebase-sensitive).
-    `vmaf_per_shot_read_luma` treats EOF as clean only before the first luma
-    byte of a new frame. A short luma plane, short chroma planes, or `ferror`
-    fails closed. Never restore seek-based chroma skipping: ISO C permits a
-    regular file seek beyond EOF, so seek success does not prove that the raw
-    frame is complete and can create a phantom final frame.
+    `vmaf_per_shot_read_luma` treats EOF as clean only before first luma
+    byte of new frame. short luma plane, short chroma planes, or `ferror`
+    fails closed. Never restore seek-based chroma skipping: ISO C permits
+    regular file seek beyond EOF, so seek success does not prove that raw
+    frame is complete and can create phantom final frame.
 - `vmaf_vpl.c` — VPL decode -> SYCL pipeline (fork-local, not upstream).
-  - **`vpl_decode_frame` retries under `VPL_DECODE_MAX_ATTEMPTS`.** The
+  - **`vpl_decode_frame` retries under `VPL_DECODE_MAX_ATTEMPTS`.**
     ceiling is *derived*: `VPL_SYNC_TIMEOUT_MS` / `VPL_DECODE_RETRY_US`, i.e.
-    the 60 s timeout the same function already hands
-    `MFXVideoCORE_SyncOperation()` at the 1 ms back-off it already used.
-    Change one of the three macros and the other two must still describe the
-    same wall clock. Never restore bare `for (;;)`, and never widen the
-    ceiling without re-deriving it from a measured busy-loop distribution
+    60 s timeout same function already hands
+    `MFXVideoCORE_SyncOperation()` at 1 ms back-off it already used.
+    Change one of three macros and other two must still describe
+    same wall clock. Never restore bare `for (;;)`, and never widen
+    ceiling without re-deriving it from measured busy-loop distribution
     ([ADR-1287](../../docs/adr/1287-cli-tool-unbounded-loop-ceilings.md)).
   - **`VplFallbackState` flags are load-bearing, not defensive.**
     `vpl_fallback_release()` reads `have_ref_img` / `have_dis_img` /
     `have_ref_map` / `have_dis_map` / `have_ref_pic` / `have_dis_pic` to
-    release exactly what the acquisition stages managed to take, in the order
-    the retired `cleanup:` label used. Setting a flag without a matching
+    release exactly what acquisition stages managed to take, in order
+    retired `cleanup:` label used. Setting flag without matching
     release branch (or vice versa) leaks or double-frees; this is what
-    replaced the `clang-analyzer-deadcode.DeadStores` NOLINT that used to sit
+    replaced `clang-analyzer-deadcode.DeadStores` NOLINT that used to sit
     on `have_dis_pic`.
 - [ADR-0104](../../docs/adr/0104-picture-pool-always-on.md) — picture
   pool is always compiled in and sized for live-picture set; this
@@ -251,7 +251,7 @@ tools/
   **bench GPU-state lifetime invariant**:
   `BenchGpuState` owns CUDA / SYCL handles. `bench_feature()` and
   `run_feature_collect()` execute guarded stages, then call
-  `bench_cleanup_resources()` exactly once; `run_sycl_gpu_profile()` does the
+  `bench_cleanup_resources()` exactly once; `run_sycl_gpu_profile()` does
   same through `cleanup_sycl_profile()`. Keep context close before GPU-state
   free and do not add early returns after ownership begins.
 - [ADR-0520](../../docs/adr/0520-cli-no-reference-wiring.md) —
@@ -294,7 +294,7 @@ tools/
     every return after parsing: context, GPU handles, readers, files, CLI
     settings, then model arrays. Internal declarations live in short, reopened
     anonymous-namespace blocks so clang-tidy sees internal linkage while every
-    scanner-visible block remains within the 60-line HISS limit. Do not merge
+    scanner-visible block remains within 60-line HISS limit. Do not merge
     those blocks back into one file-wide namespace.
 
 - [ADR-1190](../../docs/adr/1190-cli-option-string-escape-grammar.md) —
@@ -386,18 +386,18 @@ parsing and owns all ordinary-return cleanup.
 
 ## Windows CLI arguments are strict UTF-8 (ADR-1182 follow-up)
 
-The Windows `vmaf` and `vmafx` targets enter through `wmain`, convert every
+Windows `vmaf` and `vmafx` targets enter through `wmain`, convert every
 UTF-16 token with `WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, ...)`,
-and only then call the parser shared with POSIX `main`. Keep the conversion
+and only then call parser shared with POSIX `main`. Keep conversion
 before `cli_parse()`: reference, distorted, output, and model paths must reach
-the existing UTF-8 path layer before any option handler can copy them. Invalid
+existing UTF-8 path layer before any option handler can copy them. Invalid
 UTF-16 must fail closed, not use replacement characters.
 
 GNU-style Windows linkers need `-municode` on both CLI targets so CRT startup
-selects `wmain`; MSVC-style linkers infer the entry point. Do not apply that
-flag to unrelated tools with narrow `main`. The Windows-only
-`test_vmaf_windows_utf8_argv` regression launches the built binary through
-`CreateProcessW` and checks the exact accented+CJK output path. POSIX entry and
+selects `wmain`; MSVC-style linkers infer entry point. Do not apply that
+flag to unrelated tools with narrow `main`. Windows-only
+`test_vmaf_windows_utf8_argv` regression launches built binary through
+`CreateProcessW` and checks exact accented+CJK output path. POSIX entry and
 argument bytes remain unchanged.
 
 ## `parse_unsigned` rejects negatives on purpose (ADR-1209)
@@ -416,9 +416,9 @@ value then disables GPU feature extractors, so run falls back to CPU.
 
 ## Read failures exit 102, short streams exit 0 (ADR-1262)
 
-`run_frame_loop()` returns `FrameLoopResult { frames, exit_code }`, not a bare
+`run_frame_loop()` returns `FrameLoopResult { frames, exit_code }`, not bare
 count. Returning only count is why `vmaf` used to exit 0 on every read
-failure and still write a report over truncated prefix.
+failure and still write report over truncated prefix.
 
 `classify_frame_fetch()` tests error **before** end of stream. Order is
 load-bearing: `fetch_picture()` gives `1` at EOF, `-1` on error, so
@@ -427,7 +427,7 @@ corrupt inputs as clean end of stream — silent, exit 0. Upstream still has tha
 order (Netflix/vmaf#1604, known, unfixed), so rebase conflict offers it as
 "theirs". Keep ours.
 
-A stream that ENDS earlier than partner is not an error: keeps `ended before`
+stream that ENDS earlier than partner is not error: keeps `ended before`
 warning, keeps report, exits 0. Scoring common prefix of shorter clip is
 supported use. Do not fold two cases together.
 
@@ -435,48 +435,48 @@ supported use. Do not fold two cases together.
 
 ## Frame read-ahead (ADR-1366)
 
-`run_frame_loop()` gives each input a `FrameReader`. With read-ahead on, a
+`run_frame_loop()` gives each input `FrameReader`. With read-ahead on,
 reader thread runs `fetch_picture()` (pool picture, file read, copy) up to
 `kReadaheadDepth` frames ahead; `score_frames()` pops one frame per reader per
-step on the main thread. Rebase-sensitive rules:
+step on main thread. Rebase-sensitive rules:
 
 - Reader threads call `fetch_picture()` and `vmaf_picture_unref()`, nothing
   else of libvmaf. `vmaf_read_pictures()`, `classify_frame_fetch()`,
-  `release_unpaired_pictures()` and the progress line stay on the main thread,
-  in frame order. Moving any of them onto a reader breaks index order and the
+  `release_unpaired_pictures()` and progress line stay on main thread,
+  in frame order. Moving any of them onto reader breaks index order and
   ADR-1262 exit semantics.
-- A reader reserves a ring slot (`wait_for_free_slot()`) BEFORE it takes a pool
+- reader reserves ring slot (`wait_for_free_slot()`) BEFORE it takes pool
   picture, so it never holds more than `kReadaheadDepth` pictures, and
   `preallocate_cli_pictures()` adds exactly `2 * kReadaheadDepth` when
   `state->readahead`. Fetching first and queueing later makes pool use
-  unbounded and lets the readers starve libvmaf's pictures.
+  unbounded and lets readers starve libvmaf's pictures.
 - Shutdown calls `request_stop()` on BOTH readers before `join()` on either.
-  `request_stop()` drains the ring back to the pool, which is what wakes a
+  `request_stop()` drains ring back to pool, which is what wakes
   reader blocked in `vmaf_fetch_preallocated_picture()`; joining one reader
-  before stopping the other can wait forever on a picture queued in the other.
-- Readers stop after `--frame_cnt` frames (`UINT_MAX` unset) and after the
+  before stopping other can wait forever on picture queued in other.
+- Readers stop after `--frame_cnt` frames (`UINT_MAX` unset) and after
   first frame that ends or fails their stream. `skip_initial_frames()` runs
-  inline before the readers start.
+  inline before readers start.
 - `inputs_read_independently()` keeps two handles on one object (same
-  `st_dev`/`st_ino` on POSIX; anything but two regular files on Windows) on the
-  inline path. `--no-reference` opens the distorted file twice and therefore
+  `st_dev`/`st_ino` on POSIX; anything but two regular files on Windows) on
+  inline path. `--no-reference` opens distorted file twice and therefore
   reads inline on POSIX. Never thread two readers over one pipe: each would
   get whichever frames it reached first.
-- Upstream Netflix `vmaf.c` still has the inline `for (;;)` fetch loop. A sync
+- Upstream Netflix `vmaf.c` still has inline `for (;;)` fetch loop. sync
   conflict in `run_frame_loop()` resolves to ours; port upstream per-frame read
   changes into `fetch_picture()`, which both paths call.
 
 `core/tools/test/test_vmaf_frame_readahead.sh` (fast suite) pins frame order,
-pairing, `--frame_cnt` (no reader reads past it), `--frame_skip_dist`, the
-inline path, an early end and a failed read.
+pairing, `--frame_cnt` (no reader reads past it), `--frame_skip_dist`,
+inline path, early end and failed read.
 
 ## GPU-tagged tool tests run exclusively
 
-Every test under `core/tools/test/` carrying the Meson `gpu` suite tag must
-also set `is_parallel : false`. These shell-driven CLI tests consume the same
-physical accelerator as the kernel tests under `core/test/`; leaving either
-`test_vmaf_cuda_gpumask` or a `test_vmaf_<backend>_threads` registration
-parallel defeats the shared-device scheduling contract. The global
-`check_gpu_test_serialization` test reads Meson introspection across the whole
-project, so keep these registrations visible to it and do not replace the
-suite tag with a local-only convention.
+Every test under `core/tools/test/` carrying Meson `gpu` suite tag must
+also set `is_parallel : false`. These shell-driven CLI tests consume same
+physical accelerator as kernel tests under `core/test/`; leaving either
+`test_vmaf_cuda_gpumask` or `test_vmaf_<backend>_threads` registration
+parallel defeats shared-device scheduling contract. global
+`check_gpu_test_serialization` test reads Meson introspection across whole
+project, so keep these registrations visible to it and do not replace
+suite tag with local-only convention.
