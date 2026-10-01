@@ -82,7 +82,7 @@ with matching change to other halves in **same PR**:
 | **Integer ADM p-norm callback ABI** (ADR-0645) | `adm_avx2.c` + `adm_avx512.c` + scalar `../integer_adm.c` + headers `adm_avx2.h` / `adm_avx512.h`. The `adm_cm` and `i4_adm_cm` signatures must carry `adm_p_norm` through every twin so `integer_adm:adm_p_norm=...` is not silently ignored by x86 SIMD dispatch. Default `3.0` expression shape remains the Netflix-compatible path. |
 | **SSIMULACRA 2 SIMD** (ADR-0161 / 0162 / 0163 / 0252) | `ssimulacra2_avx2.c` + `ssimulacra2_avx512.c` + `../arm64/ssimulacra2_neon.c` + `../arm64/ssimulacra2_sve2.c` + `ssimulacra2_host_avx2.c` + `../arm64/ssimulacra2_host_neon.c` + scalar `../ssimulacra2.c` + Vulkan host-path call site `../vulkan/ssimulacra2_vulkan.c` |
 | **float_moment SIMD** (ADR-0179 / ADR-0987) | `moment_avx2.c` + `moment_avx512.c` + `../arm64/moment_neon.c` + `../arm64/moment_sve2.c` + scalar `../float_moment.c`. Pure reduction kernels — no inter-pixel dependence, so bit-exactness contract is tolerance-bounded (1e-7 relative, not byte-exact); tested in `../../test/test_moment_simd.c`. The AVX-512 path (`HAVE_AVX512` gate, `compute_1st/2nd_moment_avx512`) widens the 8-lane AVX2 path to 16-lane ZMM. Do NOT change the sequential per-lane `double` accumulation order without updating the tolerance and the parity tests. |
-| **ADM decouple LUT prefetch** (ADR-0502) | `adm_avx512.c` (`adm_decouple_avx512`, lines 956–968). The 16-iteration software-prefetch block before the `vpgatherdd` cluster must stay at distance 2 iterations (j+32). If the arithmetic body between prefetch and gather shrinks below ~100 cycles, increase to 3 iterations (j+48); if it grows above ~500 cycles, decrease to 1 (j+16). The prefetch target is `_MM_HINT_T1` (L2) not `_MM_HINT_T0` (L1) — the immediately following band-buffer loads would evict L1 lines before the gather executes. **Do not convert to `_MM_HINT_T0`; do not inline into a `_mm512_prefetch_i32gather_ps` — the latter requires `<zmmintrin.h>` and is not portable across all AVX-512 toolchains.** |
+| **ADM decouple LUT prefetch** (ADR-0502) | `adm_avx512.c` (`decouple_prefetch_avx512`, called by `adm_decouple_avx512`). The 16-iteration software-prefetch block before the `vpgatherdd` cluster must stay at distance 2 iterations (j+32). If the arithmetic body between prefetch and gather shrinks below ~100 cycles, increase to 3 iterations (j+48); if it grows above ~500 cycles, decrease to 1 (j+16). The prefetch target is `_MM_HINT_T1` (L2) not `_MM_HINT_T0` (L1) — the immediately following band-buffer loads would evict L1 lines before the gather executes. **Do not convert to `_MM_HINT_T0`; do not inline into a `_mm512_prefetch_i32gather_ps` — the latter requires `<zmmintrin.h>` and is not portable across all AVX-512 toolchains.** |
 | **`vif_subsample_rd_8` noinline helpers** (ADR-0503) | `vif_avx512.c` (`vif_subsample_rd_8_vert_j` + `vif_subsample_rd_8_horiz_j`). These are `static __attribute__((noinline))` helpers carved from `vif_subsample_rd_8_avx512` to eliminate a ~30-ZMM live-set spill cluster. **Do NOT mark them `inline`, `always_inline`, or remove `noinline` — doing so re-merges the vertical and horizontal register live-sets back into the caller frame and restores the spill cluster.** Any change to the accumulation order inside these helpers breaks ADR-0138 / 0139 bit-exactness. |
 | **Motion v2 NEON / AVX2 divergence** (ADR-0145) | `motion_v2_avx2.c` (currently uses `_mm256_srlv_epi64` *logical*) is **knowingly out-of-spec** vs scalar; `../arm64/motion_v2_neon.c` matches scalar via arithmetic shift. Do NOT port the AVX2 logical pattern to NEON. The AVX2 audit is a separate batch. |
 | **Speed_chroma covariance-sum SIMD dispatch** (upstream 30f472b14, 2026-06-03) | `speed_avx2.c` + `speed_avx512.c` + scalar `compute_cov_kernel_scalar` in `../speed.c`. The three kernels share the `compute_cov_kernel_fn` typedef declared in `speed.c` and dispatched via `SpeedState::compute_cov_kernel` (set in `speed_init`). Any change to the kernel signature or the `SpeedState` struct must propagate to all three. Tolerance contract: 1e-9 relative (not byte-exact) due to FMA rounding; tested in `../../test/test_speed_simd.c`. **No NEON path yet** — the scalar kernel is always selected on non-x86 hosts. |
@@ -203,11 +203,25 @@ Skill scaffolds:
   `test_integer_adm_tiny_frames` sweeps w 17..32 vs scalar; UBSan lane
   flags the old form (T-ADM-AVX512-SMALL-WIDTH-SCALE0-2026-09-18).
 
-- **Integer ADM scale-0 CM centre tap wraps to int16, like scalar.**
-  Vector threshold macros: `srai(slli(tap, 16), 16)` after `>> 12`. Scalar
-  `adm_cm_thresh()` casts `(int16_t)`; |a| > ~15360 wraps. Drop the wrap ->
-  SIMD != scalar on full-range noise. Guard: `test_integer_adm_simd_noise`
-  (T-ADM-CM-SIMD-NOISE-NOT-BIT-EXACT-2026-09-18).
+- **Integer ADM scale-0 CM: int32 centre tap, exact excess (ADR-1402).**
+  `cm_thresh_band_*()`: tap stays int32 after `>> 12`, no
+  `srai(slli(tap, 16), 16)` (scalar `adm_cm_thresh()` has no `(int16_t)`
+  cast). `cm_excess_*()`: short form `max(|x| - (thr << s), 0)` exact only
+  for thr in [0, 2^(31 - s)); `cm_row_*()` ORs the row's thresholds and sums
+  the row again with the exact form (thr clamped to +/-2^(31 - s), signed
+  max for thr >= 0, unsigned min with INT32_MAX for thr < 0) when a
+  `CmFrameConsts.rare` bit is set. Decoded pictures never take pass two.
+  AVX2 cube shift = arithmetic via bias: `add_cub` carries 2^63, row total
+  minus `lanes * cub_bias`, every lane of every block counted (idle lanes
+  too). Tail = `cm_tail_block_*()`, overlapped, lane-masked. Upstream's
+  `threshold_overflow` vector form != scalar for thr < 0: do not port.
+  Guards: `test_integer_adm_simd` (16 planted defects fail it),
+  `test_integer_adm_simd_noise`, `test_integer_adm_cm_threshold`.
+- **Vector stores may alias anything.** `_mm*_storeu_si*` -> compiler reloads
+  pointers / tables read through `buf`, `ind_x`, `ind_y`, `dst` for every
+  block. Read them once per row or frame (`Dwt2Rows8`, `DecoupleBands`,
+  `CmFrameConsts`, `csf_row_*()` locals). Measured: AVX-512 `adm_dwt2_8`
+  +10% instructions without it.
 
 ## Governing ADRs
 
