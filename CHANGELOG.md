@@ -77,6 +77,9 @@
 - Rewrote agent-facing documentation into caveman internal register across 10 subtree AGENTS.md files: `ai/AGENTS.md`, `dev/AGENTS.md`, `cmd/vmafx-node/AGENTS.md`, `pkg/libvmaf/AGENTS.md`, `ai/sidecar/AGENTS.md`, `docker/AGENTS.md`, `bindings/rust/vmafx-sys/AGENTS.md`, `requirements/AGENTS.md`, `tools/vmaf-roi-score/AGENTS.md`, and `tools/rc1-tester/AGENTS.md`. All load-bearing tokens and invariants preserved under determinism and context gates.
 
 
+- Rewrote agent-facing documentation into caveman internal register across 6 subtree AGENTS.md files: `gen/go/AGENTS.md`, `docs/research/AGENTS.md`, `internal/app/scoringservice/AGENTS.md`, `.zed/AGENTS.md`, `pkg/model/AGENTS.md`, and `api/vmafx/v1/AGENTS.md`. All load-bearing tokens and invariants preserved under determinism and context gates.
+
+
 - **Core and GitHub AGENTS.md files use the internal register.**
   `core/AGENTS.md`, `core/test/AGENTS.md`, `.github/AGENTS.md`,
   `core/src/AGENTS.md`, `core/tools/AGENTS.md`, `core/src/dnn/AGENTS.md`,
