@@ -61,10 +61,12 @@ static int vmaf_tiny_ai_test_unsetenv(const char *name)
 #else
 static int vmaf_tiny_ai_test_setenv(const char *name, const char *value)
 {
+    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — single-thread test setup (ADR-0141 / ADR-0278). */
     return setenv(name, value, 1);
 }
 static int vmaf_tiny_ai_test_unsetenv(const char *name)
 {
+    /* NOLINTNEXTLINE(concurrency-mt-unsafe) — single-thread test setup (ADR-0141 / ADR-0278). */
     return unsetenv(name);
 }
 #endif

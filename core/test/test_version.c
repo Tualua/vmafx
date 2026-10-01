@@ -2,6 +2,8 @@
  *
  *  Copyright 2016-2026 Netflix, Inc.
  *
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
  *     You may obtain a copy of the License at
@@ -21,6 +23,12 @@
 
 #include "test.h"
 #include "libvmaf/libvmaf.h"
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr`. This
+ * test follows the cross-platform spelling of the surface it exercises.
+ * ADR-1138. */
 
 /* Verify vmaf_version() returns a non-empty, printable, whitespace-free
  * string. The value comes from `git describe --tags --long --always`, so its
@@ -57,3 +65,5 @@ char *run_tests(void)
     mu_run_test(test_version_printable);
     return NULL;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */
