@@ -6,6 +6,17 @@
  *  float_psnr feature kernel on the SYCL backend (T7-23 / batch 3
  *  part 3c — ADR-0192 / ADR-0195). SYCL twin of float_psnr_vulkan +
  *  float_psnr_cuda.
+ *
+ *  Bit-exactness contract (ADR-1450): the noise is the CPU's.
+ *  float_psnr.c converts both planes to float (a sample divided by
+ *  scaler = 2^(bpc - 8)), squares each difference in float and adds the
+ *  squares in double, row by row. Every term is a float and a multiple of
+ *  1 / scaler^2, so that sum is exact while it is below 2^53 of those
+ *  units: always up to 12 bits, and at 16 bits while the mean squared error
+ *  times the pixel count is below 2^37 on the 8-bit scale. The kernel forms
+ *  the same term as an integer in that unit (fpsnr_pixel_noise()) and the
+ *  work-groups and the host add integers, so the twin's sum is exact at
+ *  every bit depth and equal to the CPU's wherever the CPU's is exact.
  */
 
 #include <sycl/sycl.hpp>
@@ -50,8 +61,10 @@ struct FloatPsnrStateSycl {
     void *d_ref;
     void *d_dis;
 
-    float *d_partials;
-    float *h_partials;
+    /* Per work-group sums of the squared differences, in units of
+     * 1 / scaler^2. */
+    uint64_t *d_partials;
+    uint64_t *h_partials;
     unsigned wg_count_x;
     unsigned wg_count_y;
     unsigned wg_count;
@@ -71,7 +84,7 @@ static constexpr int FPSNR_WG_X = 16;
 static constexpr int FPSNR_WG_Y = 16;
 
 struct FpsnrOutput {
-    float *partials;
+    uint64_t *partials;
 };
 
 } // namespace
@@ -79,18 +92,19 @@ struct FpsnrOutput {
 namespace
 {
 
-static inline float fpsnr_inv_scaler(unsigned bpc)
+/* The scaler of picture_copy(): a sample is divided by 2^(bpc - 8). */
+static inline double fpsnr_scaler(unsigned bpc)
 {
     if (bpc == 10) {
-        return 0.25f;
+        return 4.0;
     }
     if (bpc == 12) {
-        return 0.0625f;
+        return 16.0;
     }
     if (bpc == 16) {
-        return 0.00390625f;
+        return 256.0;
     }
-    return 1.0f;
+    return 1.0;
 }
 
 } // namespace
@@ -98,20 +112,28 @@ static inline float fpsnr_inv_scaler(unsigned bpc)
 namespace
 {
 
-static inline float fpsnr_pixel_noise(const void *ref, const void *dis, size_t offset, unsigned bpc)
+/* The term of float_psnr.c for one sample, in units of 1 / scaler^2:
+ * `float diff = ref[j] - dis[j]; accum += (double)(diff * diff);`. The CPU's
+ * samples are the raw ones divided by a power of two, so their difference is
+ * exact and its float square has the significand of the float square of the
+ * raw difference: one fp32 product, rounded to nearest even. Its value is an
+ * integer below 2^32 (the square itself up to 12 bits, the square rounded to
+ * 24 bits at 16). */
+VMAF_SYCL_ALWAYS_INLINE uint64_t fpsnr_pixel_noise(const void *ref, const void *dis, size_t offset,
+                                                   unsigned bpc)
 {
-    float r;
-    float d;
+    int32_t r;
+    int32_t d;
     if (bpc <= 8) {
-        r = (float)static_cast<const uint8_t *>(ref)[offset];
-        d = (float)static_cast<const uint8_t *>(dis)[offset];
+        r = static_cast<const uint8_t *>(ref)[offset];
+        d = static_cast<const uint8_t *>(dis)[offset];
     } else {
-        const float inv_scaler = fpsnr_inv_scaler(bpc);
-        r = (float)static_cast<const uint16_t *>(ref)[offset] * inv_scaler;
-        d = (float)static_cast<const uint16_t *>(dis)[offset] * inv_scaler;
+        r = static_cast<const uint16_t *>(ref)[offset];
+        d = static_cast<const uint16_t *>(dis)[offset];
     }
-    const float diff = r - d;
-    return diff * diff;
+    const auto diff = (float)(r - d);
+    const float square = diff * diff;
+    return (uint64_t)square;
 }
 
 } // namespace
@@ -119,12 +141,14 @@ static inline float fpsnr_pixel_noise(const void *ref, const void *dis, size_t o
 namespace
 {
 
-static inline void fpsnr_store_workgroup_sum(sycl::nd_item<2> item,
-                                             const sycl::local_accessor<float, 1> &scratch,
-                                             float noise, float *partials, unsigned workgroups_x)
+/* One work-group's sum of its pixels' terms, as an integer: 256 terms below
+ * 2^32 need 40 bits, where an fp32 sum is exact only up to 24. */
+VMAF_SYCL_ALWAYS_INLINE void
+fpsnr_store_workgroup_sum(sycl::nd_item<2> item, const sycl::local_accessor<uint64_t, 1> &scratch,
+                          uint64_t noise, uint64_t *partials, unsigned workgroups_x)
 {
     sycl::sub_group const subgroup = item.get_sub_group();
-    const float subgroup_sum = sycl::reduce_over_group(subgroup, noise, sycl::plus<float>{});
+    const uint64_t subgroup_sum = sycl::reduce_over_group(subgroup, noise, sycl::plus<uint64_t>{});
     const uint32_t subgroup_id = subgroup.get_group_linear_id();
     const uint32_t subgroup_lane = subgroup.get_local_linear_id();
     const uint32_t subgroup_count = subgroup.get_group_linear_range();
@@ -134,7 +158,7 @@ static inline void fpsnr_store_workgroup_sum(sycl::nd_item<2> item,
     item.barrier(sycl::access::fence_space::local_space);
 
     if (item.get_local_linear_id() == 0) {
-        float total = 0.0f;
+        uint64_t total = 0u;
         for (uint32_t subgroup_index = 0; subgroup_index < subgroup_count; subgroup_index++) {
             total += scratch[subgroup_index];
         }
@@ -158,7 +182,7 @@ static sycl::event launch_float_psnr(sycl::queue &q, const void *ref, const void
         ((static_cast<size_t>(height) + FPSNR_WG_Y - 1) / FPSNR_WG_Y) * FPSNR_WG_Y;
     return q.submit([&](sycl::handler &cgh) {
         constexpr int MAX_SUBGROUPS = FPSNR_WG_X * FPSNR_WG_Y;
-        sycl::local_accessor<float, 1> const s_partials(sycl::range<1>(MAX_SUBGROUPS), cgh);
+        sycl::local_accessor<uint64_t, 1> const s_partials(sycl::range<1>(MAX_SUBGROUPS), cgh);
 
         cgh.parallel_for(
             sycl::nd_range<2>(sycl::range<2>(global_y, global_x),
@@ -166,7 +190,7 @@ static sycl::event launch_float_psnr(sycl::queue &q, const void *ref, const void
             [=](sycl::nd_item<2> item) VMAF_SYCL_REQD_SG_SIZE(32) {
                 const int gx = (int)item.get_global_id(1);
                 const int gy = (int)item.get_global_id(0);
-                float my_noise = 0.0f;
+                uint64_t my_noise = 0u;
                 if (std::cmp_less(gx, width) && std::cmp_less(gy, height)) {
                     my_noise = fpsnr_pixel_noise(ref, dis, (size_t)gy * width + (size_t)gx, bpc);
                 }
@@ -272,9 +296,9 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     s->wg_count_x = (unsigned)((w + FPSNR_WG_X - 1) / FPSNR_WG_X);
     s->wg_count_y = (unsigned)((h + FPSNR_WG_Y - 1) / FPSNR_WG_Y);
     s->wg_count = s->wg_count_x * s->wg_count_y;
-    const size_t pbytes = (size_t)s->wg_count * sizeof(float);
-    s->d_partials = static_cast<float *>(vmaf_sycl_malloc_device(state, pbytes));
-    s->h_partials = static_cast<float *>(vmaf_sycl_malloc_host(state, pbytes));
+    const size_t pbytes = (size_t)s->wg_count * sizeof(uint64_t);
+    s->d_partials = static_cast<uint64_t *>(vmaf_sycl_malloc_device(state, pbytes));
+    s->h_partials = static_cast<uint64_t *>(vmaf_sycl_malloc_host(state, pbytes));
 
     if (!s->h_ref || !s->h_dis || !s->d_ref || !s->d_dis || !s->d_partials || !s->h_partials) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "float_psnr_sycl: USM allocation failed\n");
@@ -320,7 +344,7 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
 
     launch_float_psnr(q, s->d_ref, s->d_dis, {.partials = s->d_partials}, s->width, s->height,
                       s->bpc, s->wg_count_x);
-    q.memcpy(s->h_partials, s->d_partials, (size_t)s->wg_count * sizeof(float));
+    q.memcpy(s->h_partials, s->d_partials, (size_t)s->wg_count * sizeof(uint64_t));
 
     s->pending_index = index;
     s->has_pending = true;
@@ -342,12 +366,17 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     }
     qptr->wait();
 
-    double total = 0.0;
+    /* The exact sum of the terms in units of 1 / scaler^2: below 2^56 for
+     * any frame (a term is below 2^32). The CPU's double sum of the same
+     * terms is exact below 2^53 units, where this conversion is exact too;
+     * dividing by scaler^2, a power of two, is exact. */
+    uint64_t total = 0u;
     for (unsigned i = 0; i < s->wg_count; i++) {
-        total += (double)s->h_partials[i];
+        total += s->h_partials[i];
     }
+    const double scaler = fpsnr_scaler(s->bpc);
     const double n_pix = (double)s->width * (double)s->height;
-    const double noise = total / n_pix;
+    const double noise = ((double)total / (scaler * scaler)) / n_pix;
     /* Match CPU float_psnr.c — a zero-noise pair reports psnr_max as the
      * infinity sentinel; the truncation at psnr_max applies only when
      * `uncapped` is false. See ADR-1193 / T-UPSTREAM-1109. */

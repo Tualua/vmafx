@@ -177,6 +177,13 @@ At 16 bits the equality holds up to a mean squared error of
 2^37 / (width x height) on the 8-bit scale (16570 at 3840x2160, a PSNR below
 6 dB); beyond that the CPU's own sum rounds.
 
+`float_psnr_sycl` does the same since
+[ADR-1450](../adr/1450-sycl-float-psnr-exact-block-sums.md): on an Arc A380,
+288 of 288 frames from 576x324 to 3840x2160 at 8 to 16 bits are identical at
+`--precision max` (269 before; up to 7.4e-8 dB off on full-range
+high-bit-depth content). Past the 16-bit limit above it stays within
+7e-13 dB of the CPU.
+
 ## Output
 
 **Metrics** — `psnr_y`, `psnr_cb`, `psnr_cr` (fixed); `float_psnr` (float).

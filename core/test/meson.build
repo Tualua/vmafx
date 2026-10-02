@@ -4794,6 +4794,21 @@ test('test_sycl_motion_add_uv_parity', test_sycl_motion_add_uv_parity,
 # ciede / ssim / ms_ssim / motion_v2). Each test mirrors the
 # round-1 / round-2 pattern: 256x144 synthetic YUV420P fixture,
 # places=4 (1e-4) ADR-0214 tolerance, skip-on-no-device.
+#
+# ADR-1450 — float_psnr_sycl returns the CPU's score bit for bit: the kernel
+# forms the CPU's float square of each difference as an integer and the
+# work-groups and the host add integers. One binary runs full-range noise at
+# 8, 10, 12 and 16 bits, `uncapped`, a bright 16-bit 1920x1080 pair and
+# identical frames with ==, and a 16-bit 2560x1440 frame whose sum is past
+# 2^53, where the CPU's own sum rounds, against the derived bound. The
+# `_large` variant below runs the noise cases at 960x540.
+# test_sycl_float_psnr_exact_contract is the device-free half.
+test('test_sycl_float_psnr_exact_contract',
+    import('python').find_installation(),
+    args : files('test_sycl_float_psnr_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
 test_sycl_float_psnr_parity = executable('test_sycl_float_psnr_parity',
     ['test.c', 'test_sycl_float_psnr_parity.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
@@ -4803,7 +4818,8 @@ test_sycl_float_psnr_parity = executable('test_sycl_float_psnr_parity',
 )
 test('test_sycl_float_psnr_parity', test_sycl_float_psnr_parity,
     suite : ['fast', 'gpu', 'sycl'],
-    is_parallel : false)
+    is_parallel : false,
+    timeout : 120)
 
 test_sycl_float_adm_parity = executable('test_sycl_float_adm_parity',
     ['test.c', 'test_sycl_float_adm_parity.c'],

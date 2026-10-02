@@ -566,6 +566,15 @@ linked AGENTS.md before resolving conflicts.
   `core/test/test_hip_float_moment_exact_contract.py` guards it without a
   device, `test_hip_float_moment_parity` on one (`==` while the sum is below
   2^53 units, a derived bound past it).
+- **`float_psnr_sycl` adds integers ([ADR-1450](../adr/1450-sycl-float-psnr-exact-block-sums.md))**:
+  `core/src/feature/sycl/float_psnr_sycl.cpp` forms the CPU's term
+  (`diff * diff` in `float`, as `float_psnr.c` does) as an integer in units of
+  1 / scaler^2 and reduces `uint64` values per sub-group, per work-group and on
+  the host; an fp32 group sum is exact only up to 24 bits. The host divides
+  the exact total by scaler^2 and the pixel count. A change to how
+  `float_psnr.c` forms or adds its terms changes the kernel in the same PR.
+  `core/test/test_sycl_float_psnr_exact_contract.py` guards it without a
+  device, `test_sycl_float_psnr_parity` (`==`) on one.
 - **`float_moment_sycl` adds the CPU's float squares ([ADR-1449](../adr/1449-sycl-float-moment-cpu-float-squares.md))**:
   the kernel of `core/src/feature/sycl/integer_moment_sycl.cpp` adds
   `moment_float_square()`, one fp32 product of the sample with itself

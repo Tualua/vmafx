@@ -57765,3 +57765,22 @@ must keep the fork's side of both:
 - `scripts/ci/exact_twins.d/float_moment.sycl` (new) declares the twin exact
   (ADR-1428).
 - No Netflix golden-data, public API or FFmpeg patch impact.
+
+## ADR-1450 — `float_psnr_sycl` adds its squared differences as integers (2026-10-02)
+
+`fix/sycl-float-psnr-exact-block-sums`, `T-SYCL-FLOAT-PSNR-FP32-BLOCK-SUMS-2026-10-02`.
+
+- `core/src/feature/sycl/float_psnr_sycl.cpp`: `fpsnr_pixel_noise()` returns
+  the fp32 square of the raw sample difference as `uint64`
+  (`fpsnr_inv_scaler()` is gone, `fpsnr_scaler()` is its host counterpart);
+  `fpsnr_store_workgroup_sum()`, the local accessor, `d_partials` /
+  `h_partials` and `FpsnrOutput::partials` are `uint64`; `collect_fex_sycl()`
+  adds integers and divides the total by scaler^2 and the pixel count. Take
+  kernel and host from the same side of a conflict. If upstream changes how
+  `float_psnr.c` forms or adds its term, change the kernel with it.
+- `core/test/test_sycl_float_psnr_parity.c` is one binary of equality cases
+  over the new `core/test/float_psnr_twin_parity.h`;
+  `core/test/test_sycl_float_psnr_exact_contract.py` (new) is device-free.
+- `scripts/ci/exact_twins.d/float_psnr.sycl` (new) declares the twin exact
+  (ADR-1428).
+- No Netflix golden-data, public API or FFmpeg patch impact.

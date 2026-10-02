@@ -826,6 +826,23 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   memory (2x on the B580, 5.6x on the UHD 770); do not retry either without
   measuring per stage.
 
+- **`float_psnr_sycl` = CPU `float_psnr`, bit for bit
+  ([ADR-1450](../../../../docs/adr/1450-sycl-float-psnr-exact-block-sums.md)).**
+  CPU: `diff * diff` in `float`, terms added in double (exact below 2^53
+  units of 1 / scaler^2). Kernel: `fpsnr_pixel_noise()` = fp32 square of
+  the RAW integer difference, as `uint64` (same significand as CPU's term:
+  power-of-two scaling); sub-group reduce, work-group total, read-back and
+  host sum all `uint64`; host: `((double)total / scaler^2) / n_pix`. NEVER
+  an fp32 or fp64 group sum (fp32 exact only to 24 bits: 2.4e-8 dB off on
+  12-bit noise, 7.4e-8 on bright 16-bit), never an integer square (CPU
+  rounds the square to 24 bits at 16 bit). Both helpers
+  `VMAF_SYCL_ALWAYS_INLINE` (ADR-1395). 16 bit: CPU's own sum rounds past
+  MSE x pixels = 2^37 (8-bit scale); twin then within 7e-13 dB. High-bit
+  Netflix fixtures = 8-bit shifted left, show nothing: use full-range noise.
+  Host `log10` = build's libm (`T-ICX-LIBIMF-HOST-MATH-2026-10-01`).
+  Guards: `test_sycl_float_psnr_parity` (+ `_large`),
+  `test_sycl_float_psnr_exact_contract.py`.
+
 - **`float_moment_sycl` = CPU `float_moment`, bit for bit
   ([ADR-1449](../../../../docs/adr/1449-sycl-float-moment-cpu-float-squares.md)).**
   CPU: `moment.c` squares each sample in `float`, adds floats into ONE
@@ -997,7 +1014,7 @@ ADR-0884 / ADR-0946 backlog must update in same PR.
 | `integer_ssim_sycl.cpp` (`float_ssim_sycl`) | `float_ssim.c` + `ssim.c` | `test_sycl_float_ssim_parity.c` (+ `_large`) | ADR-1370 |
 | `integer_ms_ssim_sycl.cpp` | `ms_ssim.c` | `test_sycl_ms_ssim_parity.c` (+ `_large`; bit-exact, 18 outputs x 3 frames) | ADR-0884 (round 2), ADR-1414 |
 | `integer_motion_v2_sycl.cpp` | `integer_motion_v2.c` | `test_sycl_motion_v2_parity.c` | ADR-0884 (round 2) |
-| `float_psnr_sycl.cpp` | `float_psnr.c` | `test_sycl_float_psnr_parity.c` | ADR-0946 (round 3) |
+| `float_psnr_sycl.cpp` | `float_psnr.c` | `test_sycl_float_psnr_parity.c` (+ `_large`; bit-exact, 8 to 16 bit, `uncapped`; bound past 2^53) | ADR-0946 (round 3), ADR-1450 |
 | `float_adm_sycl.cpp` | `float_adm.c` | `test_sycl_float_adm_parity.c` (bit-exact, every output, 8 to 16 bit), `test_sycl_float_adm_math.c` | ADR-0946 (round 3), ADR-1434 |
 | `float_vif_sycl.cpp` | `float_vif.c` | `test_sycl_float_vif_parity.c` (bit-exact, every output, 8 / 10 bit), `test_sycl_float_vif_math.c` | ADR-0946 (round 3), ADR-1422 |
 | `float_motion_sycl.cpp` | `float_motion.c` | `test_sycl_float_motion_parity.c` (bit-exact, every frame, 8 / 10 / 12 bit) | ADR-0946 (round 3), ADR-1411 |

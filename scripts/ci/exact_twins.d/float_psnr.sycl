@@ -1,0 +1,2 @@
+adr: ADR-1450
+evidence: Arc A380 (xe), --precision max: 288 of 288 frames (Netflix 576x324 at 8 to 16 bit and 4:2:2, 1080p checkerboards, BBB 4K 200 frames, full-range noise at 8 to 16 bit, bright 16-bit 1080p, BBB 4K widened to 16 bit) identical to --backend cpu; uncapped=true too.

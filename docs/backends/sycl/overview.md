@@ -1661,6 +1661,48 @@ ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/dev/speed_gpu_parity.py \
     --backend sycl --vmaf "$PWD/build/tools/vmaf" --feature float_moment
 ```
 
+## `float_psnr_sycl` matches the CPU `float_psnr` at every bit depth (2026-10-02)
+
+`float_psnr_sycl` returns the CPU extractor's score bit for bit
+([ADR-1450](../../adr/1450-sycl-float-psnr-exact-block-sums.md), after
+ADR-1440 for the HIP twin). The CPU squares each sample difference in `float`
+and adds the squares in `double`, which does not round. The kernel formed the
+same squares and added each 16x16 work-group in `float`: exact at 8 bits, and
+at 10, 12 and 16 bits only while a group's differences are small. It now
+converts each `float` square to an integer and the sub-groups, the
+work-groups and the host add `uint64` values.
+
+Found by the same sweep as the `float_moment` defect above; the repository's
+high-bit-depth clips are 8-bit content shifted left and show nothing.
+Measured on an Arc A380 at `--precision max` against `--backend cpu`:
+
+| Fixture | Before | Now |
+|---|---|---|
+| Netflix 576x324 at 8 to 16 bits and 4:2:2, both 1080p checkerboards, BBB 3840x2160, noise at 8 bits | 269 of 269 | 269 of 269 |
+| Full-range noise 576x324 at 10, 12 and 16 bits, 3 frames each | 0 of 9, 2.4e-8 dB | 9 of 9 |
+| Bright 16-bit 1920x1080 (samples 56000 to 64000), 2 frames | 0 of 2, 7.4e-8 dB | 2 of 2 |
+| BBB 3840x2160 widened to 16 bits, 8 frames | 0 of 8, 3.3e-8 dB | 8 of 8 |
+
+The same holds with `uncapped=true`. The reference in that table is the CPU
+extractor of the same build, which is what the parity gate compares. Against
+a GCC build 6 of the 288 frames differ by at most 1.4e-14 dB: the noise is
+equal and the host's `log10` is Intel's in one build and glibc's in the
+other.
+
+At 16 bits the CPU's own sum is exact up to a mean squared error of
+2^37 / (width x height) on the 8-bit scale (a PSNR below 6 dB at 3840x2160).
+Beyond it the CPU rounds as it adds the rows and the twin is within 7e-13 dB.
+
+A 3840x2160 frame takes 3.41 ms, 3.31 ms before (medians of 7 runs; the
+`psnr_sycl` control read 2.93 and 2.94 ms); a 576x324 frame 0.12 ms, as
+before. The read-back is 8 bytes per work-group where it was 4. The parity
+gate compares the twin with tolerance 0.
+
+```bash
+ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/dev/speed_gpu_parity.py \
+    --backend sycl --vmaf "$PWD/build/tools/vmaf" --feature float_psnr
+```
+
 ## Licensing of the SYCL kernels (ADR-1250)
 
 As with the other backends, a SYCL kernel implementing an upstream Netflix
