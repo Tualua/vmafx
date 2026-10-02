@@ -5513,6 +5513,19 @@ test('test_hip_adm_wide_rounding', test_hip_adm_wide_rounding,
 # defect was resolved by ADR-0964 / PR #465 (`core/src/feature/speed_internal.c`).
 # The gates are now shipped in round 5 (ADR-1004) below.
 
+# ADR-1445: ssimulacra2_hip returns the CPU's score bit for bit -- the terms
+# are the CPU's fp64 expressions and the sums the bits of the CPU's loops
+# (feature/ordered_sum.h), formed on the device from integer increments per
+# binade as on the CUDA twin (ADR-1433). test_hip_ssimulacra2_parity compares
+# with == (seven cases, 256x144 and 960x540); the contract below is the
+# device-free half, the shared arithmetic is test_ordered_sum's.
+test('test_hip_ssimulacra2_exact_contract',
+    import('python').find_installation(),
+    args : files('test_hip_ssimulacra2_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 test_hip_ssimulacra2_parity = executable('test_hip_ssimulacra2_parity',
     ['test.c', 'test_hip_ssimulacra2_parity.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],

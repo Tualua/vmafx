@@ -407,9 +407,11 @@ core/src/feature/hip/          # per-feature kernels
   (ADR-0345 Phase 3). Emits `cambi`.
 - **`ssimulacra2_hip`** — runs the whole frame on the device (ADR-1390, the
   HIP port of the SYCL chain of ADR-1363): one upload of the raw Y/U/V planes,
-  one 864-byte readback of per-scale sums. Within about 1e-12 of the CPU
-  extractor and equal to `ssimulacra2_sycl` for the same input; see
-  [ssimulacra2](../../metrics/ssimulacra2.md). Emits `ssimulacra2`.
+  one 864-byte readback of per-scale sums. Bit-identical to the CPU
+  extractor since ADR-1445 (the terms in double precision, the sums with the
+  result of the CPU's loops), at 2.8 to 2.9 times the frame time; see
+  [ssimulacra2](../../metrics/ssimulacra2.md#hip-device-resident-tiled-row-pass).
+  Emits `ssimulacra2`.
 - **`float_adm_hip`** — ADM float pipeline, ninth kernel-template consumer
   (ADR-0468). Mirrors `float_adm_cuda.c`. Emits `float_adm2`.
 - **`float_vif_hip`** — multi-scale VIF float pipeline; bit-identical to the

@@ -351,7 +351,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 754,
+  "total_warnings": 752,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -383,7 +383,6 @@
     "core/src/feature/hip/hip_hsaco_stubs.c": 1,
     "core/src/feature/hip/speed_chroma_hip.c": 1,
     "core/src/feature/hip/speed_temporal_hip.c": 1,
-    "core/src/feature/hip/ssimulacra2_hip.c": 2,
     "core/src/feature/integer_motion.c": 11,
     "core/src/feature/integer_motion.h": 4,
     "core/src/feature/integer_motion_v2.c": 4,
@@ -827,6 +826,21 @@
         }
       },
       "previous_baseline_sha256": "c749558e824aefea9cbf9af39a83a57caa6aad9983a87e5166bf6338b367ac59"
+    },
+    {
+      "sources": [
+        "core/src/feature/hip/ssimulacra2_hip.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/hip/ssimulacra2_hip.c": {
+          "warnings": [
+            2,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "b5fcad9573d9c9f42e2721a7af5f5d42f1d728c60d26b09f3e9b509d0e34fd41"
     }
   ]
 }

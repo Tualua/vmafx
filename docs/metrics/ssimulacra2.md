@@ -155,25 +155,45 @@ blurs): about 1.4 GB at 3840x2160. The sums add 3.8 MB at that size.
 the raw Y/U/V planes once into pinned staging in `submit()`, converts to
 linear RGB and XYB, executes IIR blurs with a tiled shared-memory row pass
 (`SS2H_ROW_TILE` rows per wavefront, single-wave blocks, two-slot ring, register
-prefetch), accumulates per-pixel SSIM and edge terms in exact fp32 pairs over an
-LDS reduction tree, and downsamples on the device. A single 864-byte readback
-of per-scale sums occurs in `collect()`. Name it, or pass
-`--backend hip --feature ssimulacra2` (ADR-1359):
+prefetch), evaluates the per-pixel SSIM and edge terms in double precision,
+adds them with the result of the CPU's loops, and downsamples on the device. A
+single 864-byte readback of per-scale sums occurs in `collect()`. Name it, or
+pass `--backend hip --feature ssimulacra2` (ADR-1359):
 
 ```shell
 vmaf -r ref.yuv -d dis.yuv -w 3840 -h 2160 -p 420 -b 8 \
     --backend hip --no_prediction --feature ssimulacra2_hip -o out.json --json
 ```
 
-Scores match CPU reference within 1e-9 at `--precision max`: max abs diff is
-`1.123e-12` on 576x324 and `5.826e-13` at 3840x2160. On AMD gfx1036, a 4K frame
-takes 234.30 ms, eliminating all mid-frame host roundtrips. Check and time with:
+The score is the CPU extractor's, bit for bit
+([ADR-1445](../adr/1445-hip-ssimulacra2-cpu-sum-order.md)). The twin evaluates
+the CPU's own double expressions for the SSIM and edge terms and adds them the
+way the CUDA twin does (above): whole-number steps per chunk of 1024 pixels in
+parallel, one pass over the chunks, and term by term where the running sum
+passes a power of two. Measured on an AMD gfx1036 (ROCm 7.2.4) at
+`--precision max`: 178 of 178 frames identical to `--backend cpu` (Netflix
+576x324 at 8, 10, 12 and 16 bits and as 10-bit 4:2:2, both 1080p checkerboard
+pairs, Sparks 480x270, full-range noise at four bit depths, a bright 16-bit
+1080p pair, 48 frames of BBB 3840x2160), and with every `yuv_matrix`. Before
+ADR-1445 the terms were pairs of floats added in a fixed tree and no frame was
+identical; the score was up to 7.6e-11 from the CPU's, and `ssimulacra2_hip`
+scores stored before differ from new ones by that much.
+
+The exact sums cost time. On the gfx1036 a 1920x1080 frame takes 167 ms (58 ms
+before ADR-1445) and a 3840x2160 frame 662 ms (234 ms before); the CPU
+extractor takes 124 ms for the latter on sixteen threads, so on an integrated
+GPU the CPU is the faster path for this metric. Most of the increase is the
+double-precision terms, evaluated twice per scale, and the integer steps
+(`T-HIP-SSIMULACRA2-EXACT-THROUGHPUT-2026-10-02`). Check and time with
+(`--vmaf` takes an absolute path):
 
 ```shell
 python3 scripts/dev/speed_gpu_parity.py --backend hip --feature ssimulacra2 \
-    --max-abs-diff 1e-9 --vmaf "$PWD/build/tools/vmaf" \
+    --vmaf "$PWD/build-hip/tools/vmaf" \
     --netflix-dir python/test/resource/yuv --bbb-dir testdata/bbb
 ```
+
+The default bound of that script is 0: every frame must be bit-identical.
 
 `ssimulacra2_hip` rejects 4:0:0 input at init.
 

@@ -367,6 +367,9 @@ if is_hipcc_enabled and is_hip_enabled
         'feature/hip/ssimulacra2_hip.h',
         'feature/ssimulacra2_math.h',
         'feature/ssimulacra2_eotf_lut.h',
+        # ADR-1445: the fp64 terms' split helper and the ordered sums.
+        'feature/ssimulacra2_score.h',
+        'feature/ordered_sum.h',
         'feature/hip/float_adm_hip.h',
         'feature/hip/integer_cambi_hip.h',
         'feature/hip/integer_cambi/cambi_hip_device.h',

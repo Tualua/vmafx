@@ -23,9 +23,7 @@
 /* Per channel: SSIM L1, SSIM L4, artifact L1, artifact L4, detail L1,
  * detail L4 (the four edge sums in edge_diff_map order). */
 #define SS2H_SUMS 6
-#define SS2H_PAIR 2 /* hi, lo */
-#define SS2H_LANE_FLOATS ((size_t)SS2H_SUMS * SS2H_PAIR)
-#define SS2H_TOTAL_FLOATS ((size_t)SS2H_NUM_SCALES * SS2H_CHANNELS * SS2H_LANE_FLOATS)
+#define SS2H_TOTALS_PER_SCALE ((size_t)SS2H_CHANNELS * SS2H_SUMS)
 #define SS2H_BLUR_BLOCK 64
 /* Row pass: one wavefront of SS2H_ROW_TILE lanes per SS2H_ROW_TILE rows, the
  * rows staged through LDS SS2H_ROW_TILE columns at a time. The walk reads its
@@ -36,12 +34,19 @@
 #define SS2H_PIX_BX 16
 #define SS2H_PIX_BY 8
 #define SS2H_ELEM_BLOCK 256
-/* The reduction tree is a function of the plane size only (ADR-1363): the
- * same group count, work-group width and per-lane stride as the SYCL twin, so
- * the two backends add the per-pixel terms in the same order. */
-#define SS2H_REDUCE_WG 256
-#define SS2H_MAX_GROUPS 256
-#define SS2H_PIXELS_PER_ITEM 16
+/* Sums (ADR-1433 on CUDA, ADR-1445 here): the CPU adds each of a channel's six
+ * terms pixel after pixel into one double, and the twin returns those bits
+ * (feature/ordered_sum.h). The plane is cut into chunks in raster order; a
+ * chunk is one work-group of 256 lanes, each lane taking 4 consecutive
+ * pixels. */
+#define SS2H_REDUCE_BLOCK 256
+#define SS2H_CHUNK_RUN 4
+#define SS2H_CHUNK_PIXELS (SS2H_REDUCE_BLOCK * SS2H_CHUNK_RUN)
+/* The two kernels that follow the chunks in order stage them through LDS,
+ * SS2H_BATCH chunks at a time (4 per lane), so that the one lane that walks
+ * them does not read device memory chunk by chunk. */
+#define SS2H_BATCH_RUN 4
+#define SS2H_BATCH (SS2H_REDUCE_BLOCK * SS2H_BATCH_RUN)
 
 /* YUV -> RGB constants, evaluated on the host with the float expressions of
  * ssimulacra2.c::picture_to_linear_rgb. */
@@ -99,7 +104,10 @@ struct Ss2hBlurArgs {
     struct Ss2hIir iir;
 };
 
-/* ssimulacra2_combine_partials: the per-pixel terms of one scale. */
+/* The four kernels of one scale's SSIM / edge-difference sums. Three compact
+ * planes per input buffer; `pixels` = width x height of the scale, `chunks`
+ * the number of SS2H_CHUNK_PIXELS-pixel chunks of one plane (the last may be
+ * partial). */
 struct Ss2hCombineArgs {
     const float *mu1;
     const float *mu2;
@@ -108,16 +116,13 @@ struct Ss2hCombineArgs {
     const float *s12;
     const float *img1;
     const float *img2;
-    float *partials; /* [channel][group][sum][pair] */
-    size_t plane;
-    unsigned groups;
-};
-
-/* ssimulacra2_combine_final: one scale's group partials -> its six sums. */
-struct Ss2hFinalArgs {
-    const float *partials;
-    float *totals; /* this scale's [channel][sum][pair] */
-    unsigned groups;
+    double *chunk_sums; /* [channel][chunk][sum]: each chunk's terms, added in a tree */
+    int16_t *plan;      /* [channel][sum][chunk]: vmaf_ordsum_plan() */
+    int64_t *units;     /* [channel][sum][chunk][2]: VmafOrdsumUnits even, odd */
+    double *totals;     /* [channel][sum] of this scale: the CPU's sums */
+    size_t pixels;
+    unsigned chunks;
+    unsigned pad_;
 };
 
 extern const unsigned char ssimulacra2_device_hsaco[];

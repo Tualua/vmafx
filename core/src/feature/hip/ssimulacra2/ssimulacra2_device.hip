@@ -11,21 +11,30 @@
  *    ssimulacra2_xyb             linear RGB -> XYB (MakePositiveXYB folded in)
  *    ssimulacra2_blur_rows/cols  3-pole recursive Gaussian, all three planes;
  *                                the row pass forms ref^2, dis^2, ref*dis
- *    ssimulacra2_combine_*       per-pixel SSIM / edge terms -> six sums per
- *                                channel over a fixed tree of fp32 pairs
+ *    ssimulacra2_chunk_sums      each chunk's six sums, in a tree (advice)
+ *    ssimulacra2_chunk_plan      the binade every chunk starts in, from those
+ *    ssimulacra2_chunk_units     each chunk's terms as integer increments of
+ *                                that binade, composed in pixel order
+ *    ssimulacra2_ordered_totals  one walk per sum over the chunks; a chunk
+ *                                whose plan does not hold at the exact sum is
+ *                                added term by term, in pixel order
  *    ssimulacra2_downsample      2x2 box downsample of the linear-RGB pyramid
  *
- *  Numerical contract: every stage but the combine is bit-identical to the CPU
- *  extractor. That needs contraction off (the pragma below; core/src/meson.build
- *  also passes -ffp-contract=off for this module), products that feed adds in
- *  named temporaries, single-rounded fmaf() in the YUV matrix (ADR-0891 /
- *  ADR-1205), and the shared cube root and sRGB EOTF of ssimulacra2_math.h with
- *  a correctly rounded division (__fdiv_rn; HIP fp32 `/` is correctly rounded
- *  by default, -fhip-fp32-correctly-rounded-divide-sqrt). The CPU evaluates the
- *  per-pixel combine terms in fp64 and adds them one after another; here each
- *  term is an exact fp32 pair (relative error about 2^-44) and the sums follow
- *  the SYCL twin's tree, so the result depends only on the plane size, not on
- *  the device or its wavefront width.
+ *  Numerical contract: every stage is bit-identical to the CPU extractor
+ *  (ADR-1445). That needs contraction off (the pragma below;
+ *  core/src/meson.build also passes -ffp-contract=off for this module),
+ *  products that feed adds in named temporaries, single-rounded fmaf() in the
+ *  YUV matrix (ADR-0891 / ADR-1205), and the shared cube root and sRGB EOTF of
+ *  ssimulacra2_math.h with a correctly rounded division (__fdiv_rn; HIP fp32
+ *  `/` is correctly rounded by default,
+ *  -fhip-fp32-correctly-rounded-divide-sqrt). The per-pixel terms that the CPU
+ *  evaluates in fp64 are evaluated in fp64 with the CPU's expressions (the
+ *  gfx1036's fp64 `+`, `-`, `*` and `/` return the host's bits: 16.8 million
+ *  pixels of the six terms, ADR-1445), and their sums are the CPU's too:
+ *  ssim_map() and edge_diff_map() add each term pixel after pixel into one
+ *  double, and feature/ordered_sum.h returns the bits of that loop from pieces
+ *  the device forms in parallel. The four kernels of the sums are the CUDA
+ *  twin's (ADR-1433).
  */
 
 #include <hip/hip_runtime.h>
@@ -35,8 +44,8 @@
 
 #include "hip/ssimulacra2_hip.h"
 
-/* Every add, subtract and multiply below rounds on its own: the pair
- * arithmetic is exact only then, and the bit-identical stages need it too. */
+/* Every add, subtract and multiply below rounds on its own, as in
+ * ssimulacra2.c. */
 #pragma clang fp contract(off)
 
 /* The shared cube root and EOTF are plain C inline functions; compile them for
@@ -45,84 +54,20 @@
 #define VMAF_SS2_FDIV(a, b) __fdiv_rn((a), (b))
 #pragma clang force_cuda_host_device begin
 #include "feature/ssimulacra2_math.h"
+#include "feature/ssimulacra2_score.h"
 #pragma clang force_cuda_host_device end
+
+/* The ordered-sum helpers run in device code as well; a double's bits come
+ * from the device intrinsics. */
+#define VMAF_ORDSUM_FUNC __device__ inline
+#define VMAF_ORDSUM_BITS(v) ((uint64_t)__double_as_longlong(v))
+#define VMAF_ORDSUM_FROM_BITS(bits) __longlong_as_double((long long)(bits))
+#include "feature/ordered_sum.h"
 
 namespace
 {
 
 constexpr float kSs2C2 = 0.0009f; /* ssimulacra2.c kC2 */
-
-/* ------------------------------------------------------------------ */
-/* Exact fp32 pairs (the SYCL twin's sycl_exact_fp.h, HIP spelling)    */
-/* ------------------------------------------------------------------ */
-
-struct Ff {
-    float hi;
-    float lo;
-};
-
-__device__ inline Ff two_sum(float a, float b)
-{
-    const float sum = a + b;
-    const float b_virtual = sum - a;
-    const float a_virtual = sum - b_virtual;
-    const float b_error = b - b_virtual;
-    const float a_error = a - a_virtual;
-    return Ff{sum, a_error + b_error};
-}
-
-__device__ inline Ff quick_two_sum(float a, float b)
-{
-    const float sum = a + b;
-    const float rebuilt = sum - a;
-    return Ff{sum, b - rebuilt};
-}
-
-__device__ inline Ff two_prod(float a, float b)
-{
-    const float product = a * b;
-    return Ff{product, fmaf(a, b, -product)};
-}
-
-__device__ inline Ff ff_add(Ff a, Ff b)
-{
-    const Ff high = two_sum(a.hi, b.hi);
-    const Ff low = two_sum(a.lo, b.lo);
-    const Ff first = quick_two_sum(high.hi, high.lo + low.hi);
-    return quick_two_sum(first.hi, low.lo + first.lo);
-}
-
-__device__ inline Ff ff_mul(Ff a, Ff b)
-{
-    const Ff product = two_prod(a.hi, b.hi);
-    const float cross1 = a.hi * b.lo;
-    const float cross2 = a.lo * b.hi;
-    const float cross = cross1 + cross2;
-    return quick_two_sum(product.hi, product.lo + cross);
-}
-
-__device__ inline Ff ff_neg(Ff a)
-{
-    return Ff{-a.hi, -a.lo};
-}
-
-/* a / b as a pair; both partial quotients correctly rounded. A non-finite
- * first quotient is returned as is so infinities and NaN reach the caller. */
-__device__ inline Ff ff_div(Ff a, Ff b)
-{
-    const float q1 = __fdiv_rn(a.hi, b.hi);
-    if (!isfinite(q1)) {
-        return Ff{q1, 0.0f};
-    }
-    const Ff scaled = ff_mul(b, Ff{q1, 0.0f});
-    const Ff residual = ff_add(a, ff_neg(scaled));
-    const float q2 = __fdiv_rn(residual.hi, b.hi);
-    return quick_two_sum(q1, q2);
-}
-
-constexpr Ff kFfZero = {0.0f, 0.0f};
-constexpr Ff kFfOne = {1.0f, 0.0f};
-constexpr Ff kFfMinusOne = {-1.0f, 0.0f};
 
 /* ------------------------------------------------------------------ */
 /* YUV -> linear RGB, XYB, downsample                                  */
@@ -291,107 +236,182 @@ __device__ inline void ss2h_iir_line(const Ss2hBlurArgs &a, size_t base, size_t 
 }
 
 /* ------------------------------------------------------------------ */
-/* SSIM and edge-difference terms, fixed-tree sums                     */
+/* SSIM and edge-difference terms, the CPU's sums                      */
 /* ------------------------------------------------------------------ */
 
-struct Ss2hSums {
-    Ff v[SS2H_SUMS];
-};
-
-/* ssimulacra2.c::ssim_map per pixel: the fp32 part verbatim, then
- * d = 1.0 - (double)num_m * (double)num_s / (double)denom_s in fp32 pairs
- * (the product of two floats is exact as a pair), clamped at zero. */
-__device__ inline Ff ss2h_ssim_term(float u1, float u2, float s11, float s22, float s12)
+__device__ inline double ss2h_quartic(double x)
 {
-    const float u11 = u1 * u1;
-    const float u22 = u2 * u2;
-    const float u12 = u1 * u2;
-    const float diff = u1 - u2;
+    x *= x;
+    return x * x;
+}
+
+/* The six terms of ssimulacra2.c::ssim_map and ::edge_diff_map for one pixel
+ * of one channel, in the order of the CPU's sums: d, d^4, artifact,
+ * artifact^4, detail, detail^4. Each is >= 0, or not finite. */
+__device__ inline void ss2h_terms(const Ss2hCombineArgs &a, size_t idx, double terms[SS2H_SUMS])
+{
+    const float mu1 = a.mu1[idx];
+    const float mu2 = a.mu2[idx];
+    const float mu11 = mu1 * mu1;
+    const float mu22 = mu2 * mu2;
+    const float mu12 = mu1 * mu2;
+    const float diff = mu1 - mu2;
     const float diff_sq = diff * diff;
     const float num_m = 1.0f - diff_sq;
-    const float cov = s12 - u12;
-    const float cov2 = 2.0f * cov;
-    const float num_s = cov2 + kSs2C2;
-    const float var1 = s11 - u11;
-    const float var2 = s22 - u22;
-    const float var_sum = var1 + var2;
-    const float denom_s = var_sum + kSs2C2;
-    const Ff ratio = ff_div(two_prod(num_m, num_s), Ff{denom_s, 0.0f});
-    const Ff d = ff_add(kFfOne, ff_neg(ratio));
-    return (d.hi < 0.0f) ? kFfZero : d; /* NaN is kept, as on the host */
+    const float cov = a.s12[idx] - mu12;
+    const float twice_cov = 2.0f * cov;
+    const float num_s = twice_cov + kSs2C2;
+    const float denom_s = (a.s11[idx] - mu11) + (a.s22[idx] - mu22) + kSs2C2;
+    double d = 1.0 - ((double)num_m * (double)num_s / (double)denom_s);
+    if (d < 0.0) {
+        d = 0.0;
+    }
+
+    const double ed1 = fabs((double)a.img1[idx] - (double)mu1);
+    const double ed2 = fabs((double)a.img2[idx] - (double)mu2);
+    const double d1 = (1.0 + ed2) / (1.0 + ed1) - 1.0;
+    double artifact;
+    double detail;
+    vmaf_ss2_split_edge_difference(d1, &artifact, &detail);
+
+    terms[0] = d;
+    terms[1] = ss2h_quartic(d);
+    terms[2] = artifact;
+    terms[3] = ss2h_quartic(artifact);
+    terms[4] = detail;
+    terms[5] = ss2h_quartic(detail);
 }
 
-/* |(double)a - (double)b| exactly. */
-__device__ inline Ff ss2h_abs_diff(float a, float b)
+/* Terms of the `j`-th pixel of `lane` in `chunk` of channel `c`; zeros past
+ * the end of the plane, which leave every sum as it is. */
+__device__ inline void ss2h_lane_terms(const Ss2hCombineArgs &a, unsigned c, unsigned chunk,
+                                       unsigned lane, unsigned j, double terms[SS2H_SUMS])
 {
-    const Ff diff = two_sum(a, -b);
-    return (diff.hi < 0.0f) ? ff_neg(diff) : diff;
-}
-
-/* ssimulacra2.c::edge_diff_map per pixel: (1 + ed2) / (1 + ed1) - 1 and
- * vmaf_ss2_split_edge_difference (a non-finite value goes to both sums). */
-__device__ inline void ss2h_edge_terms(float r1, float m1, float r2, float m2, Ff &artifact,
-                                       Ff &detail)
-{
-    const Ff num = ff_add(kFfOne, ss2h_abs_diff(r2, m2));
-    const Ff den = ff_add(kFfOne, ss2h_abs_diff(r1, m1));
-    const Ff dd = ff_add(ff_div(num, den), kFfMinusOne);
-    if (!isfinite(dd.hi)) {
-        artifact = dd;
-        detail = dd;
+    const size_t i = (size_t)chunk * SS2H_CHUNK_PIXELS + (size_t)lane * SS2H_CHUNK_RUN + j;
+    if (i < a.pixels) {
+        ss2h_terms(a, (size_t)c * a.pixels + i, terms);
         return;
     }
-    artifact = (dd.hi > 0.0f) ? dd : kFfZero;
-    detail = (dd.hi < 0.0f) ? ff_neg(dd) : kFfZero;
+    for (unsigned k = 0; k < SS2H_SUMS; k++) {
+        terms[k] = 0.0;
+    }
 }
 
-__device__ inline Ff ss2h_quartic(Ff x)
+/* Fixed-shape tree over the SS2H_REDUCE_BLOCK lanes of a work-group in LDS;
+ * lane 0 ends with the group's six sums in shared[0..5]. A shared-memory
+ * tree over every lane, not wavefront shuffles, so wave32 and wave64 devices
+ * add in the same order; the result only feeds the plan. */
+__device__ inline void ss2h_block_tree(double *shared, unsigned lane, const double sums[SS2H_SUMS])
 {
-    const Ff sq = ff_mul(x, x);
-    return ff_mul(sq, sq);
-}
-
-__device__ inline void ss2h_accumulate_pixel(Ss2hSums &acc, const Ss2hCombineArgs &a, size_t idx)
-{
-    const float u1 = a.mu1[idx];
-    const float u2 = a.mu2[idx];
-    const Ff d = ss2h_ssim_term(u1, u2, a.s11[idx], a.s22[idx], a.s12[idx]);
-    Ff artifact = kFfZero;
-    Ff detail = kFfZero;
-    ss2h_edge_terms(a.img1[idx], u1, a.img2[idx], u2, artifact, detail);
-    acc.v[0] = ff_add(acc.v[0], d);
-    acc.v[1] = ff_add(acc.v[1], ss2h_quartic(d));
-    acc.v[2] = ff_add(acc.v[2], artifact);
-    acc.v[3] = ff_add(acc.v[3], ss2h_quartic(artifact));
-    acc.v[4] = ff_add(acc.v[4], detail);
-    acc.v[5] = ff_add(acc.v[5], ss2h_quartic(detail));
-}
-
-/* Fixed-shape tree over one work-group's sums in LDS; lane 0 ends up with the
- * group total. A shared-memory tree over every lane, not wavefront shuffles,
- * so wave32 and wave64 devices add in the same order. */
-__device__ inline void ss2h_group_tree(float *lds, unsigned lane, const Ss2hSums &own)
-{
-    for (unsigned s = 0; s < SS2H_SUMS; s++) {
-        const size_t at = (size_t)lane * SS2H_LANE_FLOATS + (size_t)s * SS2H_PAIR;
-        lds[at] = own.v[s].hi;
-        lds[at + 1u] = own.v[s].lo;
+    for (unsigned k = 0; k < SS2H_SUMS; k++) {
+        shared[lane * SS2H_SUMS + k] = sums[k];
     }
     __syncthreads();
-    for (unsigned stride = SS2H_REDUCE_WG / 2u; stride > 0u; stride >>= 1u) {
-        if (lane < stride) {
-            float *mine = lds + (size_t)lane * SS2H_LANE_FLOATS;
-            const float *other = lds + (size_t)(lane + stride) * SS2H_LANE_FLOATS;
-            for (unsigned s = 0; s < SS2H_SUMS; s++) {
-                const size_t at = (size_t)s * SS2H_PAIR;
-                const Ff merged =
-                    ff_add(Ff{mine[at], mine[at + 1u]}, Ff{other[at], other[at + 1u]});
-                mine[at] = merged.hi;
-                mine[at + 1u] = merged.lo;
+    for (unsigned half = SS2H_REDUCE_BLOCK / 2u; half > 0u; half >>= 1) {
+        if (lane < half) {
+            for (unsigned k = 0; k < SS2H_SUMS; k++) {
+                shared[lane * SS2H_SUMS + k] += shared[(lane + half) * SS2H_SUMS + k];
             }
         }
         __syncthreads();
     }
+}
+
+/* Slot of (lane, sum) in the shared increments of a work-group: even, odd. */
+__device__ inline unsigned ss2h_units_slot(unsigned lane, unsigned k)
+{
+    return (lane * SS2H_SUMS + k) * 2u;
+}
+
+__device__ inline VmafOrdsumUnits ss2h_units_load(const long long *shared, unsigned lane,
+                                                  unsigned k)
+{
+    const unsigned slot = ss2h_units_slot(lane, k);
+    return vmaf_ordsum_units((int64_t)shared[slot], (int64_t)shared[slot + 1u]);
+}
+
+__device__ inline void ss2h_units_store(long long *shared, unsigned lane, unsigned k,
+                                        VmafOrdsumUnits units)
+{
+    const unsigned slot = ss2h_units_slot(lane, k);
+    shared[slot] = (long long)units.even;
+    shared[slot + 1u] = (long long)units.odd;
+}
+
+/* The lanes of a work-group composed in lane order: at each step every lane
+ * whose index is a multiple of 2 * step takes the lane `step` above it, which
+ * has finished the step before. Lane 0 ends with the chunk's increment. The
+ * composition is not commutative, so the pairing must be adjacent. */
+__device__ inline void ss2h_ordered_tree(long long *shared, unsigned lane)
+{
+    for (unsigned step = 1u; step < SS2H_REDUCE_BLOCK; step <<= 1) {
+        if ((lane & (2u * step - 1u)) == 0u) {
+            for (unsigned k = 0; k < SS2H_SUMS; k++) {
+                const VmafOrdsumUnits left = ss2h_units_load(shared, lane, k);
+                const VmafOrdsumUnits right = ss2h_units_load(shared, lane + step, k);
+                ss2h_units_store(shared, lane, k, vmaf_ordsum_then(left, right));
+            }
+        }
+        __syncthreads();
+    }
+}
+
+/* What the lanes of ssimulacra2_ordered_totals do next. */
+enum ss2h_walk_command : unsigned {
+    SS2H_WALK_LOAD = 0u,  /* stage batch `operand` of the plan and increments */
+    SS2H_WALK_TERMS = 1u, /* compute the terms of chunk `operand` */
+    SS2H_WALK_DONE = 2u,
+};
+
+/* A lane's share of one batch of chunk sums of one (channel, sum); zeros past
+ * the last chunk, which plan as "all zero" and leave the prefix alone. */
+__device__ inline void ss2h_stage_chunk_sums(const double *sums, unsigned chunks, unsigned batch,
+                                             unsigned lane, double *staged)
+{
+    for (unsigned j = 0; j < SS2H_BATCH_RUN; j++) {
+        const unsigned slot = lane * SS2H_BATCH_RUN + j;
+        const size_t chunk = (size_t)batch * SS2H_BATCH + slot;
+        staged[slot] = chunk < chunks ? sums[chunk * SS2H_SUMS] : 0.0;
+    }
+}
+
+/* A lane's share of one batch of the plan and increments of one (channel,
+ * sum). Slots past the last chunk are not read by the walk. */
+__device__ inline void ss2h_stage_batch(const int16_t *plan, const int64_t *units, unsigned chunks,
+                                        unsigned batch, unsigned lane, short *staged_plan,
+                                        long long *staged_units)
+{
+    for (unsigned j = 0; j < SS2H_BATCH_RUN; j++) {
+        const unsigned slot = lane * SS2H_BATCH_RUN + j;
+        const size_t chunk = (size_t)batch * SS2H_BATCH + slot;
+        if (chunk >= chunks) {
+            continue;
+        }
+        staged_plan[slot] = (short)plan[chunk];
+        staged_units[slot * 2u] = (long long)units[chunk * 2u];
+        staged_units[slot * 2u + 1u] = (long long)units[chunk * 2u + 1u];
+    }
+}
+
+/* Lane 0 of ssimulacra2_ordered_totals: adds the chunks of the staged batch
+ * from their increments, starting at `*chunk`, until one needs its terms or
+ * the batch ends. Returns what the lanes must do next and its operand. */
+__device__ inline unsigned ss2h_walk_batch(double *sum, unsigned *chunk, unsigned chunks,
+                                           unsigned staged_batch, const short *plan,
+                                           const long long *units, unsigned *operand)
+{
+    while (*chunk < chunks && *chunk / SS2H_BATCH == staged_batch) {
+        const unsigned slot = *chunk % SS2H_BATCH;
+        const VmafOrdsumUnits u =
+            vmaf_ordsum_units((int64_t)units[slot * 2u], (int64_t)units[slot * 2u + 1u]);
+        if (!vmaf_ordsum_add_chunk(sum, (int)plan[slot], u)) {
+            *operand = *chunk;
+            return SS2H_WALK_TERMS;
+        }
+        (*chunk)++;
+    }
+    *operand = *chunk / SS2H_BATCH;
+    return *chunk < chunks ? SS2H_WALK_LOAD : SS2H_WALK_DONE;
 }
 
 /* ------------------------------------------------------------------ */
@@ -587,50 +607,159 @@ __global__ __launch_bounds__(SS2H_BLUR_BLOCK) void ssimulacra2_blur_cols(Ss2hBlu
     ss2h_iir_line(args, base, (size_t)args.width, (int)args.height);
 }
 
-/* Stage 1 of the sums: grid (groups, 3); every work-group sums a fixed
- * strided subset of one channel and writes its six pairs to `partials`. */
-__global__ __launch_bounds__(SS2H_REDUCE_WG) void ssimulacra2_combine_partials(Ss2hCombineArgs args)
+/* Advice for the plan: the six sums of each chunk, added in a tree.
+ * blockIdx.y = channel, blockIdx.x = chunk, one work-group per chunk. */
+__global__ __launch_bounds__(SS2H_REDUCE_BLOCK) void ssimulacra2_chunk_sums(Ss2hCombineArgs a)
 {
-    __shared__ float lds[SS2H_REDUCE_WG * SS2H_LANE_FLOATS];
-    const unsigned group = blockIdx.x;
+    __shared__ double shared[SS2H_REDUCE_BLOCK * SS2H_SUMS];
     const unsigned c = blockIdx.y;
+    const unsigned chunk = blockIdx.x;
     const unsigned lane = threadIdx.x;
-    const size_t stride = (size_t)args.groups * SS2H_REDUCE_WG;
-    const size_t offset = (size_t)c * args.plane;
-    Ss2hSums acc = {};
-    for (size_t i = (size_t)group * SS2H_REDUCE_WG + lane; i < args.plane; i += stride) {
-        ss2h_accumulate_pixel(acc, args, offset + i);
+    double sums[SS2H_SUMS] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    for (unsigned j = 0; j < SS2H_CHUNK_RUN; j++) {
+        double terms[SS2H_SUMS];
+        ss2h_lane_terms(a, c, chunk, lane, j, terms);
+        for (unsigned k = 0; k < SS2H_SUMS; k++) {
+            sums[k] += terms[k];
+        }
     }
-    ss2h_group_tree(lds, lane, acc);
+    ss2h_block_tree(shared, lane, sums);
     if (lane == 0u) {
-        float *dst = args.partials + ((size_t)c * SS2H_MAX_GROUPS + group) * SS2H_LANE_FLOATS;
-        for (unsigned f = 0; f < SS2H_LANE_FLOATS; f++) {
-            dst[f] = lds[f];
+        double *out = a.chunk_sums + ((size_t)c * a.chunks + chunk) * SS2H_SUMS;
+        for (unsigned k = 0; k < SS2H_SUMS; k++) {
+            out[k] = shared[k];
         }
     }
 }
 
-/* Stage 2: one work-group per channel folds that channel's group partials,
- * each lane a fixed subset, then the LDS tree; lane 0 writes the six sums. */
-__global__ __launch_bounds__(SS2H_REDUCE_WG) void ssimulacra2_combine_final(Ss2hFinalArgs args)
+/* The plan of every chunk of one (channel, sum): blockIdx.y = channel,
+ * blockIdx.x = sum. The lanes stage a batch of chunk sums, lane 0 follows
+ * their prefix, the lanes store the batch's plan. */
+__global__ __launch_bounds__(SS2H_REDUCE_BLOCK) void ssimulacra2_chunk_plan(Ss2hCombineArgs a)
 {
-    __shared__ float lds[SS2H_REDUCE_WG * SS2H_LANE_FLOATS];
-    const unsigned c = blockIdx.x;
+    __shared__ double staged_sums[SS2H_BATCH];
+    __shared__ short staged_plan[SS2H_BATCH];
+    const unsigned c = blockIdx.y;
+    const unsigned k = blockIdx.x;
     const unsigned lane = threadIdx.x;
-    Ss2hSums acc = {};
-    for (unsigned g = lane; g < args.groups; g += SS2H_REDUCE_WG) {
-        const float *src = args.partials + ((size_t)c * SS2H_MAX_GROUPS + g) * SS2H_LANE_FLOATS;
-        for (unsigned s = 0; s < SS2H_SUMS; s++) {
-            const size_t at = (size_t)s * SS2H_PAIR;
-            acc.v[s] = ff_add(acc.v[s], Ff{src[at], src[at + 1u]});
+    const double *sums = a.chunk_sums + (size_t)c * a.chunks * SS2H_SUMS + k;
+    int16_t *plan = a.plan + ((size_t)c * SS2H_SUMS + k) * a.chunks;
+    const unsigned batches = (a.chunks + SS2H_BATCH - 1u) / SS2H_BATCH;
+    double prefix = 0.0;
+    for (unsigned batch = 0; batch < batches; batch++) {
+        ss2h_stage_chunk_sums(sums, a.chunks, batch, lane, staged_sums);
+        __syncthreads();
+        if (lane == 0u) {
+            for (unsigned i = 0; i < SS2H_BATCH; i++) {
+                staged_plan[i] = (short)vmaf_ordsum_plan(&prefix, staged_sums[i]);
+            }
+        }
+        __syncthreads();
+        for (unsigned j = 0; j < SS2H_BATCH_RUN; j++) {
+            const unsigned slot = lane * SS2H_BATCH_RUN + j;
+            const size_t chunk = (size_t)batch * SS2H_BATCH + slot;
+            if (chunk < a.chunks) {
+                plan[chunk] = (int16_t)staged_plan[slot];
+            }
         }
     }
-    ss2h_group_tree(lds, lane, acc);
-    if (lane == 0u) {
-        float *dst = args.totals + (size_t)c * SS2H_LANE_FLOATS;
-        for (unsigned f = 0; f < SS2H_LANE_FLOATS; f++) {
-            dst[f] = lds[f];
+}
+
+/* Each chunk's increment under its plan, composed in pixel order: a lane
+ * composes its run, then the lanes are composed in order.
+ * blockIdx.y = channel, blockIdx.x = chunk. */
+__global__ __launch_bounds__(SS2H_REDUCE_BLOCK) void ssimulacra2_chunk_units(Ss2hCombineArgs a)
+{
+    __shared__ long long shared[SS2H_REDUCE_BLOCK * SS2H_SUMS * 2];
+    const unsigned c = blockIdx.y;
+    const unsigned chunk = blockIdx.x;
+    const unsigned lane = threadIdx.x;
+    const size_t first = ((size_t)c * SS2H_SUMS) * a.chunks + chunk;
+    VmafOrdsumUnits units[SS2H_SUMS];
+    for (unsigned k = 0; k < SS2H_SUMS; k++) {
+        units[k] = vmaf_ordsum_units(0, 0);
+    }
+    for (unsigned j = 0; j < SS2H_CHUNK_RUN; j++) {
+        double terms[SS2H_SUMS];
+        ss2h_lane_terms(a, c, chunk, lane, j, terms);
+        for (unsigned k = 0; k < SS2H_SUMS; k++) {
+            const int plan = (int)a.plan[first + (size_t)k * a.chunks];
+            units[k] = vmaf_ordsum_then(units[k], vmaf_ordsum_planned_term(terms[k], plan));
         }
+    }
+    for (unsigned k = 0; k < SS2H_SUMS; k++) {
+        ss2h_units_store(shared, lane, k, units[k]);
+    }
+    __syncthreads();
+    ss2h_ordered_tree(shared, lane);
+    if (lane == 0u) {
+        for (unsigned k = 0; k < SS2H_SUMS; k++) {
+            int64_t *out = a.units + (first + (size_t)k * a.chunks) * 2u;
+            out[0] = (int64_t)shared[ss2h_units_slot(0u, k)];
+            out[1] = (int64_t)shared[ss2h_units_slot(0u, k) + 1u];
+        }
+    }
+}
+
+/* The CPU's sum of one term over one channel: blockIdx.y = channel,
+ * blockIdx.x = sum. Lane 0 walks the chunks, a staged batch at a time. When a
+ * chunk needs its terms, every lane computes its run of them into LDS and
+ * lane 0 adds them in pixel order, as the CPU's loop does. Every round stages
+ * a batch or consumes a chunk, which bounds the loop. */
+__global__ __launch_bounds__(SS2H_REDUCE_BLOCK) void ssimulacra2_ordered_totals(Ss2hCombineArgs a)
+{
+    __shared__ double terms_of_chunk[SS2H_CHUNK_PIXELS];
+    __shared__ long long staged_units[SS2H_BATCH * 2];
+    __shared__ short staged_plan[SS2H_BATCH];
+    __shared__ unsigned command;
+    __shared__ unsigned operand;
+    const unsigned c = blockIdx.y;
+    const unsigned k = blockIdx.x;
+    const unsigned lane = threadIdx.x;
+    const size_t first = ((size_t)c * SS2H_SUMS + k) * a.chunks;
+    const unsigned rounds = a.chunks + a.chunks / SS2H_BATCH + 2u;
+    double sum = 0.0;
+    unsigned chunk = 0u;
+    unsigned staged_batch = 0u;
+    if (lane == 0u) {
+        command = SS2H_WALK_LOAD;
+        operand = 0u;
+    }
+    for (unsigned round = 0; round < rounds; round++) {
+        __syncthreads();
+        const unsigned todo = command;
+        const unsigned what = operand;
+        if (todo == SS2H_WALK_DONE) {
+            break;
+        }
+        if (todo == SS2H_WALK_LOAD) {
+            ss2h_stage_batch(a.plan + first, a.units + first * 2u, a.chunks, what, lane,
+                             staged_plan, staged_units);
+        } else {
+            for (unsigned j = 0; j < SS2H_CHUNK_RUN; j++) {
+                double terms[SS2H_SUMS];
+                ss2h_lane_terms(a, c, what, lane, j, terms);
+                terms_of_chunk[lane * SS2H_CHUNK_RUN + j] = terms[k];
+            }
+        }
+        __syncthreads();
+        if (lane == 0u) {
+            if (todo == SS2H_WALK_TERMS) {
+                for (unsigned i = 0; i < SS2H_CHUNK_PIXELS; i++) {
+                    sum += terms_of_chunk[i];
+                }
+                chunk = what + 1u;
+            } else {
+                staged_batch = what;
+            }
+            unsigned next = 0u;
+            command = ss2h_walk_batch(&sum, &chunk, a.chunks, staged_batch, staged_plan,
+                                      staged_units, &next);
+            operand = next;
+        }
+    }
+    if (lane == 0u) {
+        a.totals[(size_t)c * SS2H_SUMS + k] = sum;
     }
 }
 

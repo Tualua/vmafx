@@ -1555,6 +1555,7 @@ nav:
         - "ADR-1442: float-adm-reference-divides": adr/1442-float-adm-reference-divides.md
         - "ADR-1443: sycl-ssim-cpu-arithmetic": adr/1443-sycl-ssim-cpu-arithmetic.md
         - "ADR-1444: hip-float-vif-cpu-arithmetic": adr/1444-hip-float-vif-cpu-arithmetic.md
+        - "ADR-1445: hip-ssimulacra2-cpu-sum-order": adr/1445-hip-ssimulacra2-cpu-sum-order.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

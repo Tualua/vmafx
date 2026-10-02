@@ -8018,7 +8018,6 @@
         "core/src/feature/cuda/ssimulacra2_cuda.c": 1,
         "core/src/feature/hip/ssimulacra2/ssimulacra2_device.hip": 1,
         "core/src/feature/hip/ssimulacra2_hip.c": 1,
-        "core/src/feature/hip/ssimulacra2_hip.h": 1,
         "core/src/feature/ssimulacra2_math.h": 1,
         "core/src/feature/sycl/integer_ms_ssim_sycl.cpp": 3,
         "core/src/feature/sycl/speed_sycl_pipeline.cpp": 1,
@@ -8896,10 +8895,14 @@
         "core/src/feature/cuda/ssimulacra2/ssimulacra2_device.cu": 2,
         "core/src/feature/cuda/ssimulacra2_cuda.c": 3,
         "core/src/feature/cuda/ssimulacra2_cuda.h": 1,
+        "core/src/feature/hip/ssimulacra2/ssimulacra2_device.hip": 1,
+        "core/src/feature/hip/ssimulacra2_hip.c": 1,
+        "core/src/feature/hip/ssimulacra2_hip.h": 1,
         "core/src/feature/ordered_sum.h": 1,
-        "core/test/meson.build": 2,
+        "core/test/meson.build": 3,
         "core/test/test_cuda_ssimulacra2_exact_contract.py": 3,
         "core/test/test_cuda_ssimulacra2_parity.c": 4,
+        "core/test/test_hip_ssimulacra2_exact_contract.py": 1,
         "core/test/test_ordered_sum.c": 1
       },
       "target": "1433-cuda-ssimulacra2-cpu-sum-order.md"
@@ -9040,6 +9043,19 @@
         "scripts/ci/exact_twins.d/float_vif.hip": 1
       },
       "target": "1444-hip-float-vif-cpu-arithmetic.md"
+    },
+    "1445": {
+      "sites": {
+        "core/src/feature/hip/ssimulacra2/ssimulacra2_device.hip": 2,
+        "core/src/feature/hip/ssimulacra2_hip.c": 2,
+        "core/src/feature/hip/ssimulacra2_hip.h": 1,
+        "core/src/meson.build": 1,
+        "core/test/meson.build": 1,
+        "core/test/test_hip_ssimulacra2_exact_contract.py": 6,
+        "core/test/test_hip_ssimulacra2_parity.c": 2,
+        "scripts/ci/exact_twins.d/ssimulacra2.hip": 1
+      },
+      "target": "1445-hip-ssimulacra2-cpu-sum-order.md"
     }
   },
   "retired": {

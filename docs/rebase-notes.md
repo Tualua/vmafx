@@ -57646,3 +57646,27 @@ must keep the fork's side of both:
 - Tests: `scripts/ci/tests/test_golden_gate_makefile_contract.py`
   (`test_test_netflix_golden_checks_pytest_presence`).
 - No public API, ABI, SIMD/GPU twin or Netflix golden-data impact.
+## ADR-1445 — `ssimulacra2_hip` evaluates fp64 terms and forms the CPU's sums (2026-10-02)
+
+`fix/hip-ssimulacra2-cpu-sum-order`, `T-HIP-SSIMULACRA2-NOT-CPU-BITS-2026-10-01`.
+
+- `core/src/feature/hip/ssimulacra2/ssimulacra2_device.hip`: the fp32 pair
+  arithmetic (`Ff`, `two_sum`, `ff_add`, `ff_div`, ...) and the kernels
+  `ssimulacra2_combine_partials` / `ssimulacra2_combine_final` are gone. In
+  their place: `ss2h_terms()` (the CPU's fp64 expressions) and the four
+  kernels `ssimulacra2_chunk_sums`, `_chunk_plan`, `_chunk_units`,
+  `_ordered_totals`, ported from `cuda/ssimulacra2/ssimulacra2_device.cu`
+  (ADR-1433). A change to one of the two files' sum kernels belongs in the
+  other as well.
+- `core/src/feature/hip/ssimulacra2_hip.h`: `struct Ss2hCombineArgs` has the
+  CUDA layout (`chunk_sums`, `plan`, `units`, `totals`, `pixels`, `chunks`);
+  `struct Ss2hFinalArgs` and the `SS2H_REDUCE_WG` / `SS2H_MAX_GROUPS` /
+  `SS2H_PAIR` constants are gone. Kernel and host must come from the same
+  side of a conflict.
+- `core/src/feature/hip/ssimulacra2_hip.c`: four device buffers for the sums
+  (`ss2h_alloc_sums()`), four launches per scale, a readback of 108 doubles.
+- A change to `ssim_map()` / `edge_diff_map()` in `ssimulacra2.c` changes
+  `ss2h_terms()` (and `ss2c_terms()`) in the same PR.
+- `scripts/ci/exact_twins.d/ssimulacra2.hip` (new) declares the twin exact
+  (ADR-1428).
+- No Netflix golden-data, public API or FFmpeg patch impact.

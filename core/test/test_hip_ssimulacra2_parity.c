@@ -6,23 +6,27 @@
  */
 
 /*
- * ssimulacra2 CPU vs. HIP parity (ADR-0958 round 4; the twin is
+ * ssimulacra2 CPU vs. HIP: the twin returns the CPU's score bit for bit
+ * (ADR-1445; first added as a tolerance test, ADR-0958 round 4; the twin is
  * device-resident since ADR-1390).
  *
  * `ssimulacra2_hip` runs the whole frame on the device: YUV -> linear RGB,
  * XYB, the recursive Gaussian blurs, the per-pixel SSIM / edge-difference
- * sums in exact fp32 pairs over a fixed tree, and the downsample, with one
- * readback per frame in collect(). Everything but the sums is bit-identical
- * to the CPU extractor; the sums differ from the CPU's sequential fp64 sums
- * by rounding only, so every per-frame score must stay within PARITY_TOL
- * (1e-9, the T-HIP-SSIMULACRA2-HOST-COMBINE-2026-09-29 contract; measured
- * about 1e-12) of `ssimulacra2` on the CPU.
+ * terms in fp64 and the downsample, with one readback per frame in
+ * collect(). The CPU adds each term pixel after pixel into one double; the
+ * twin returns the bits of those loops (feature/ordered_sum.h), so every
+ * per-frame score is compared with ==. Before ADR-1445 the twin evaluated
+ * the terms as fp32 pairs and added them in a fixed tree: it was within
+ * 1e-9 of the CPU and equal to it on no measured frame of real content.
  *
  * The cases cover what the device code branches on: the nearest-neighbour
  * chroma mapping of an odd 4:2:0 size (chroma is not exactly half the luma
  * size), 4:2:2 and 4:4:4, 10- and 12-bit samples, the full-range matrices,
- * and an 8x8 frame (one scale). Every frame has its own content: the twin
- * is submit/collect, so frame N is collected after frame N + 1 is submitted
+ * and an 8x8 frame (one scale); and what the sums branch on: identical
+ * pictures (every sum is zero) and a picture distorted in its lower third
+ * only (a sum that stays zero over most of the plane and then grows through
+ * many binades). Every frame has its own content: the twin is
+ * submit/collect, so frame N is collected after frame N + 1 is submitted
  * and a readback keyed to the wrong frame fails here.
  *
  * Also checked: the ADR-1324 / ADR-1359 context check (4:0:0 and sides
@@ -57,8 +61,14 @@
 #ifndef FIXTURE_H
 #define FIXTURE_H 144u
 #endif
-#define PARITY_TOL 1e-9
 #define PARITY_FRAMES 3u
+
+/* How the distorted picture differs from the reference. */
+enum {
+    DISTORT_ALL = 1u,        /* every pixel */
+    DISTORT_NONE = 0u,       /* identical pictures */
+    DISTORT_LOWER_THIRD = 2u /* rows from two thirds down */
+};
 
 typedef struct Ss2Case {
     const char *name;
@@ -67,14 +77,18 @@ typedef struct Ss2Case {
     unsigned w;
     unsigned h;
     const char *yuv_matrix; /* option value, or NULL for the default */
+    unsigned distortion;    /* DISTORT_* */
 } Ss2Case;
 
 static const Ss2Case cases[] = {
-    {"420 8-bit fixture", VMAF_PIX_FMT_YUV420P, 8u, FIXTURE_W, FIXTURE_H, NULL},
-    {"420 8-bit odd 131x77", VMAF_PIX_FMT_YUV420P, 8u, 131u, 77u, NULL},
-    {"422 10-bit bt601_full", VMAF_PIX_FMT_YUV422P, 10u, 96u, 64u, "3"},
-    {"444 12-bit bt709_full", VMAF_PIX_FMT_YUV444P, 12u, 64u, 40u, "2"},
-    {"420 8-bit 8x8 bt601_limited", VMAF_PIX_FMT_YUV420P, 8u, 8u, 8u, "1"},
+    {"420 8-bit fixture", VMAF_PIX_FMT_YUV420P, 8u, FIXTURE_W, FIXTURE_H, NULL, DISTORT_ALL},
+    {"420 8-bit odd 131x77", VMAF_PIX_FMT_YUV420P, 8u, 131u, 77u, NULL, DISTORT_ALL},
+    {"422 10-bit bt601_full", VMAF_PIX_FMT_YUV422P, 10u, 96u, 64u, "3", DISTORT_ALL},
+    {"444 12-bit bt709_full", VMAF_PIX_FMT_YUV444P, 12u, 64u, 40u, "2", DISTORT_ALL},
+    {"420 8-bit 8x8 bt601_limited", VMAF_PIX_FMT_YUV420P, 8u, 8u, 8u, "1", DISTORT_ALL},
+    {"identical pictures", VMAF_PIX_FMT_YUV420P, 8u, FIXTURE_W, FIXTURE_H, NULL, DISTORT_NONE},
+    {"lower third distorted", VMAF_PIX_FMT_YUV420P, 8u, FIXTURE_W, FIXTURE_H, NULL,
+     DISTORT_LOWER_THIRD},
 };
 #define N_CASES (sizeof(cases) / sizeof(cases[0]))
 
@@ -93,11 +107,15 @@ static unsigned sample_at(unsigned plane, unsigned row, unsigned col, unsigned f
     return v;
 }
 
-static void fill_plane(VmafPicture *pic, unsigned plane, unsigned frame, unsigned salt)
+/* `distortion` is DISTORT_NONE for the reference picture. */
+static void fill_plane(VmafPicture *pic, unsigned plane, unsigned frame, unsigned distortion)
 {
     const unsigned shift = pic->bpc - 8u;
-    for (unsigned row = 0u; row < pic->h[plane]; row++) {
+    const unsigned rows = pic->h[plane];
+    for (unsigned row = 0u; row < rows; row++) {
         uint8_t *line = (uint8_t *)pic->data[plane] + (size_t)row * pic->stride[plane];
+        const unsigned salt =
+            (distortion == DISTORT_LOWER_THIRD) ? (row >= rows - rows / 3u ? 1u : 0u) : distortion;
         for (unsigned col = 0u; col < pic->w[plane]; col++) {
             const unsigned v = sample_at(plane, row, col, frame, salt) << shift;
             if (pic->bpc > 8u) {
@@ -109,13 +127,13 @@ static void fill_plane(VmafPicture *pic, unsigned plane, unsigned frame, unsigne
     }
 }
 
-static int alloc_filled(VmafPicture *pic, const Ss2Case *c, unsigned frame, unsigned salt)
+static int alloc_filled(VmafPicture *pic, const Ss2Case *c, unsigned frame, unsigned distortion)
 {
     const int err = vmaf_picture_alloc(pic, c->pix_fmt, c->bpc, c->w, c->h);
     if (err)
         return err;
     for (unsigned plane = 0u; plane < 3u; plane++)
-        fill_plane(pic, plane, frame, salt);
+        fill_plane(pic, plane, frame, distortion);
     return 0;
 }
 
@@ -125,10 +143,10 @@ static int feed_frames(VmafContext *vmaf, const Ss2Case *c)
     for (unsigned f = 0u; f < PARITY_FRAMES && !err; f++) {
         VmafPicture ref;
         VmafPicture dist;
-        err = alloc_filled(&ref, c, f, 0u);
+        err = alloc_filled(&ref, c, f, DISTORT_NONE);
         if (err)
             break;
-        err = alloc_filled(&dist, c, f, 1u);
+        err = alloc_filled(&dist, c, f, c->distortion);
         if (err) {
             (void)vmaf_picture_unref(&ref);
             break;
@@ -190,22 +208,19 @@ static int run_hip(const Ss2Case *c, double scores[PARITY_FRAMES])
     return err ? err : close_err;
 }
 
-/* Worst |cpu - hip| of one case; every frame past the tolerance is logged. */
-static double case_delta(const Ss2Case *c, const double cpu[PARITY_FRAMES],
-                         const double hip[PARITY_FRAMES])
+/* Frames of one case whose HIP score is not the CPU's; each one is logged. */
+static unsigned case_mismatches(const Ss2Case *c, const double cpu[PARITY_FRAMES],
+                                const double hip[PARITY_FRAMES])
 {
-    double worst = 0.0;
+    unsigned mismatches = 0u;
     for (unsigned f = 0u; f < PARITY_FRAMES; f++) {
-        const double delta = fabs(cpu[f] - hip[f]);
-        if (!(delta <= PARITY_TOL)) {
-            (void)fprintf(stderr, "\n%s frame %u: cpu=%.17g hip=%.17g delta=%.3e", c->name, f,
-                          cpu[f], hip[f], delta);
-            worst = INFINITY;
-        } else if (delta > worst) {
-            worst = delta;
-        }
+        if (isfinite(cpu[f]) && cpu[f] == hip[f])
+            continue;
+        mismatches++;
+        (void)fprintf(stderr, "\n%s frame %u: cpu=%.17g hip=%.17g delta=%.3e", c->name, f, cpu[f],
+                      hip[f], fabs(cpu[f] - hip[f]));
     }
-    return worst;
+    return mismatches;
 }
 
 static char *test_ssimulacra2_hip_registered(void)
@@ -216,9 +231,9 @@ static char *test_ssimulacra2_hip_registered(void)
     return NULL;
 }
 
-static char *test_ssimulacra2_cpu_hip_parity(void)
+static char *test_ssimulacra2_cpu_hip_identical(void)
 {
-    double worst = 0.0;
+    unsigned mismatches = 0u;
     for (size_t i = 0u; i < N_CASES; i++) {
         double cpu[PARITY_FRAMES] = {0.0};
         double hip[PARITY_FRAMES] = {0.0};
@@ -230,12 +245,13 @@ static char *test_ssimulacra2_cpu_hip_parity(void)
             return NULL;
         }
         mu_assert("HIP ssimulacra2 run failed", err == 0);
-        const double delta = case_delta(&cases[i], cpu, hip);
-        worst = (delta > worst) ? delta : worst;
+        mismatches += case_mismatches(&cases[i], cpu, hip);
+        if (cases[i].distortion == DISTORT_NONE)
+            mu_assert("identical pictures must score 100", cpu[0] == 100.0);
     }
-    (void)fprintf(stderr, "[%zu cases x %u frames, max delta %.3e] ", N_CASES, PARITY_FRAMES,
-                  worst);
-    mu_assert("ssimulacra2 CPU vs. HIP delta exceeds 1e-9", worst <= PARITY_TOL);
+    (void)fprintf(stderr, "[%zu cases x %u frames, %u differ] ", N_CASES, PARITY_FRAMES,
+                  mismatches);
+    mu_assert("ssimulacra2_hip is not bit-identical to the CPU ssimulacra2", mismatches == 0u);
     return NULL;
 }
 
@@ -294,7 +310,7 @@ char *run_tests(void)
     mu_run_test(test_ssimulacra2_hip_registered);
     mu_run_test(test_ssimulacra2_hip_context_check);
     mu_run_test(test_ssimulacra2_hip_rejects_400);
-    mu_run_test(test_ssimulacra2_cpu_hip_parity);
+    mu_run_test(test_ssimulacra2_cpu_hip_identical);
     return NULL;
 }
 

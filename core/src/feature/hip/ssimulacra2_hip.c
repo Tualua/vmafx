@@ -18,20 +18,22 @@
  *       b. five separable 3-pole IIR blurs: a row pass staged through LDS
  *          (coalesced; it forms the products ref^2, dis^2 and ref*dis while
  *          it loads), then a lane-per-column pass;
- *       c. the per-pixel SSIM and edge-difference terms, reduced over each
- *          plane to six sums per channel in a fixed tree of exact fp32 pairs;
+ *       c. the per-pixel SSIM and edge-difference terms in fp64, and their
+ *          six sums per channel with the bits of the CPU's loops (four
+ *          kernels: chunk sums, plan, increments, walk);
  *       d. the 2x2 box downsample of the linear-RGB pyramid.
  *    4. One 864-byte readback of the per-scale sums. collect() waits once,
  *       forms the 108 norms in fp64 and pools the score as ssimulacra2.c
  *       does.
  *
- *  Numerical contract (see ssimulacra2/ssimulacra2_device.hip): stages 2, 3a,
- *  3b and 3d reproduce the CPU extractor bit for bit. The CPU evaluates the
- *  per-pixel terms of 3c in fp64 and sums millions of them one after another;
- *  no parallel reduction can replay that order, so the device evaluates each
- *  term as an fp32 pair and sums in the SYCL twin's tree. The score stays
- *  within about 1e-11 of the CPU and equals ssimulacra2_sycl's for the same
- *  input.
+ *  Numerical contract (see ssimulacra2/ssimulacra2_device.hip): every stage
+ *  reproduces the CPU extractor bit for bit, so the score is the CPU's
+ *  (ADR-1445). The CPU evaluates the per-pixel terms of 3c in fp64 and adds
+ *  millions of them one after another into one double; the device evaluates
+ *  the same fp64 expressions and feature/ordered_sum.h returns the bits of
+ *  that loop from chunk-wise integer increments formed in parallel, adding
+ *  the few chunks in which the running sum changes binade term by term (the
+ *  design of the CUDA twin, ADR-1433).
  *
  *  HIP specifics: `hipModuleLoadData` / `hipModuleGetFunction` /
  *  `hipModuleLaunchKernel` on one HSACO module, raw `hipMalloc` device
@@ -211,8 +213,10 @@ typedef struct Ssimu2StateHip {
     hipFunction_t func_blur_rows;
     hipFunction_t func_blur_rows_product;
     hipFunction_t func_blur_cols;
-    hipFunction_t func_combine_partials;
-    hipFunction_t func_combine_final;
+    hipFunction_t func_chunk_sums;
+    hipFunction_t func_chunk_plan;
+    hipFunction_t func_chunk_units;
+    hipFunction_t func_totals;
     hipFunction_t func_downsample;
     hipStream_t str;
 
@@ -230,12 +234,14 @@ typedef struct Ssimu2StateHip {
     float *d_s11;
     float *d_s22;
     float *d_s12;
-    float *d_partials; /* [channel][group][sum][pair] */
-    float *d_totals;   /* [scale][channel][sum][pair] */
+    double *d_chunk_sums; /* [channel][chunk][sum] */
+    int16_t *d_plan;      /* [channel][sum][chunk] */
+    int64_t *d_units;     /* [channel][sum][chunk][2] */
+    double *d_totals;     /* [scale][channel][sum] */
 
     /* Pinned host buffers (hipHostMalloc). */
     void *h_raw[SS2H_IMAGES][SS2H_CHANNELS];
-    float *h_totals;
+    double *h_totals;
 
     /* The frame submit() enqueued and collect() has not read yet. */
     bool has_pending;
@@ -439,18 +445,17 @@ static void ss2h_configure_scales(Ssimu2StateHip *s)
         s->num_scales++;
 }
 
-/* Work-groups per channel for one scale's reduction. A function of the plane
- * size only, so the summation tree is the same on every device and the same
- * as ssimulacra2_sycl's (ss2s_reduce_groups). */
-static unsigned ss2h_reduce_groups(size_t pixels)
+/* The readback: six sums per channel per scale. */
+static size_t ss2h_totals_bytes(void)
 {
-    const size_t per_group = (size_t)SS2H_REDUCE_WG * SS2H_PIXELS_PER_ITEM;
-    size_t groups = (pixels + per_group - 1u) / per_group;
-    if (groups < 1u)
-        groups = 1u;
-    if (groups > SS2H_MAX_GROUPS)
-        groups = SS2H_MAX_GROUPS;
-    return (unsigned)groups;
+    return (size_t)SS2H_NUM_SCALES * SS2H_TOTALS_PER_SCALE * sizeof(double);
+}
+
+/* Chunks of one plane of `pixels` pixels; the last may be partial. */
+static unsigned ss2h_chunks(size_t pixels)
+{
+    const size_t chunk_pixels = (size_t)SS2H_CHUNK_PIXELS;
+    return (unsigned)((pixels + chunk_pixels - 1u) / chunk_pixels);
 }
 
 /* ------------------------------------------------------------------ */
@@ -476,10 +481,13 @@ static void ss2h_free_device_buffers(Ssimu2StateHip *s)
         ss2h_free_device((void **)&s->d_lin[img][1]);
         ss2h_free_device((void **)&s->d_xyb[img]);
     }
-    float **const planes[] = {&s->d_scratch, &s->d_mu1, &s->d_mu2,      &s->d_s11,
-                              &s->d_s22,     &s->d_s12, &s->d_partials, &s->d_totals};
+    float **const planes[] = {&s->d_scratch, &s->d_mu1, &s->d_mu2, &s->d_s11, &s->d_s22, &s->d_s12};
     for (size_t i = 0; i < sizeof(planes) / sizeof(planes[0]); i++)
         ss2h_free_device((void **)planes[i]);
+    ss2h_free_device((void **)&s->d_chunk_sums);
+    ss2h_free_device((void **)&s->d_plan);
+    ss2h_free_device((void **)&s->d_units);
+    ss2h_free_device((void **)&s->d_totals);
 }
 
 static void ss2h_free_pinned(void **slot)
@@ -512,6 +520,21 @@ static int ss2h_alloc_one_device(Ssimu2StateHip *s, void **slot, size_t bytes)
     return 0;
 }
 
+/* The buffers of the ordered sums. Scale 0 has the most chunks; every
+ * (channel, sum, chunk) has a tree sum, a plan and an increment pair. */
+static int ss2h_alloc_sums(Ssimu2StateHip *s)
+{
+    const size_t slots = SS2H_TOTALS_PER_SCALE * (size_t)ss2h_chunks((size_t)s->width * s->height);
+    int err = ss2h_alloc_one_device(s, (void **)&s->d_chunk_sums, slots * sizeof(double));
+    if (!err)
+        err = ss2h_alloc_one_device(s, (void **)&s->d_plan, slots * sizeof(int16_t));
+    if (!err)
+        err = ss2h_alloc_one_device(s, (void **)&s->d_units, slots * 2u * sizeof(int64_t));
+    if (!err)
+        err = ss2h_alloc_one_device(s, (void **)&s->d_totals, ss2h_totals_bytes());
+    return err;
+}
+
 static int ss2h_alloc_device(Ssimu2StateHip *s)
 {
     /* The ping-pong pyramid's second buffer holds scale 1 and smaller. */
@@ -532,13 +555,7 @@ static int ss2h_alloc_device(Ssimu2StateHip *s)
     float **const planes[] = {&s->d_scratch, &s->d_mu1, &s->d_mu2, &s->d_s11, &s->d_s22, &s->d_s12};
     for (size_t i = 0; i < sizeof(planes) / sizeof(planes[0]) && !err; i++)
         err = ss2h_alloc_one_device(s, (void **)planes[i], full);
-    const size_t partial_bytes =
-        (size_t)SS2H_CHANNELS * SS2H_MAX_GROUPS * SS2H_LANE_FLOATS * sizeof(float);
-    if (!err)
-        err = ss2h_alloc_one_device(s, (void **)&s->d_partials, partial_bytes);
-    if (!err)
-        err = ss2h_alloc_one_device(s, (void **)&s->d_totals, SS2H_TOTAL_FLOATS * sizeof(float));
-    return err;
+    return err ? err : ss2h_alloc_sums(s);
 }
 
 /* hipHostMalloc into `*slot`; on failure every pinned buffer allocated so far
@@ -562,7 +579,7 @@ static int ss2h_alloc_pinned(Ssimu2StateHip *s)
             err = ss2h_alloc_one_pinned(s, &s->h_raw[img][p], s->row_bytes[p] * s->plane_h[p]);
     }
     if (!err)
-        err = ss2h_alloc_one_pinned(s, (void **)&s->h_totals, SS2H_TOTAL_FLOATS * sizeof(float));
+        err = ss2h_alloc_one_pinned(s, (void **)&s->h_totals, ss2h_totals_bytes());
     return err;
 }
 
@@ -613,7 +630,7 @@ typedef struct Ss2hKernelName {
     const char *name;
 } Ss2hKernelName;
 
-/* Loads the HSACO module and resolves the eight kernel handles. On failure it
+/* Loads the HSACO module and resolves the ten kernel handles. On failure it
  * returns through the unwind tier of the last successful acquisition. */
 static int ss2h_load_module(Ssimu2StateHip *s)
 {
@@ -626,8 +643,10 @@ static int ss2h_load_module(Ssimu2StateHip *s)
         {&s->func_blur_rows, "ssimulacra2_blur_rows"},
         {&s->func_blur_rows_product, "ssimulacra2_blur_rows_product"},
         {&s->func_blur_cols, "ssimulacra2_blur_cols"},
-        {&s->func_combine_partials, "ssimulacra2_combine_partials"},
-        {&s->func_combine_final, "ssimulacra2_combine_final"},
+        {&s->func_chunk_sums, "ssimulacra2_chunk_sums"},
+        {&s->func_chunk_plan, "ssimulacra2_chunk_plan"},
+        {&s->func_chunk_units, "ssimulacra2_chunk_units"},
+        {&s->func_totals, "ssimulacra2_ordered_totals"},
         {&s->func_downsample, "ssimulacra2_downsample"},
     };
     for (size_t i = 0; i < sizeof(kernels) / sizeof(kernels[0]); i++) {
@@ -692,7 +711,7 @@ static int ss2h_blur(const Ssimu2StateHip *s, const float *in, const float *in2,
                                 .width = s->scale_w[scale],
                                 .height = s->scale_h[scale],
                                 .iir = s->iir};
-    const hipFunction_t rows = (in2 != NULL) ? s->func_blur_rows_product : s->func_blur_rows;
+    hipFunction_t rows = (in2 != NULL) ? s->func_blur_rows_product : s->func_blur_rows;
     int err = ss2h_launch(s, rows, ss2h_blocks(args.height, SS2H_ROW_TILE), SS2H_CHANNELS,
                           SS2H_ROW_TILE, 1, &args);
     if (err)
@@ -723,29 +742,33 @@ static int ss2h_enqueue_blurs(const Ssimu2StateHip *s, int scale)
     return err;
 }
 
-/* The six sums per channel of one scale into d_totals. */
+/* The six sums per channel of one scale into d_totals, each the sum of the
+ * CPU's loop (ADR-1445): chunk sums, plan, increments, walk. */
 static int ss2h_enqueue_sums(const Ssimu2StateHip *s, int scale)
 {
-    const size_t plane = (size_t)s->scale_w[scale] * s->scale_h[scale];
-    struct Ss2hCombineArgs combine = {.mu1 = s->d_mu1,
-                                      .mu2 = s->d_mu2,
-                                      .s11 = s->d_s11,
-                                      .s22 = s->d_s22,
-                                      .s12 = s->d_s12,
-                                      .img1 = s->d_xyb[0],
-                                      .img2 = s->d_xyb[1],
-                                      .partials = s->d_partials,
-                                      .plane = plane,
-                                      .groups = ss2h_reduce_groups(plane)};
-    int err = ss2h_launch(s, s->func_combine_partials, combine.groups, SS2H_CHANNELS,
-                          SS2H_REDUCE_WG, 1, &combine);
-    if (err)
-        return err;
-    struct Ss2hFinalArgs final = {.partials = s->d_partials,
-                                  .totals = s->d_totals +
-                                            (size_t)scale * SS2H_CHANNELS * SS2H_LANE_FLOATS,
-                                  .groups = combine.groups};
-    return ss2h_launch(s, s->func_combine_final, SS2H_CHANNELS, 1, SS2H_REDUCE_WG, 1, &final);
+    const size_t pixels = (size_t)s->scale_w[scale] * s->scale_h[scale];
+    struct Ss2hCombineArgs a = {.mu1 = s->d_mu1,
+                                .mu2 = s->d_mu2,
+                                .s11 = s->d_s11,
+                                .s22 = s->d_s22,
+                                .s12 = s->d_s12,
+                                .img1 = s->d_xyb[0],
+                                .img2 = s->d_xyb[1],
+                                .chunk_sums = s->d_chunk_sums,
+                                .plan = s->d_plan,
+                                .units = s->d_units,
+                                .totals = s->d_totals + (size_t)scale * SS2H_TOTALS_PER_SCALE,
+                                .pixels = pixels,
+                                .chunks = ss2h_chunks(pixels)};
+    const unsigned lanes = SS2H_REDUCE_BLOCK;
+    int err = ss2h_launch(s, s->func_chunk_sums, a.chunks, SS2H_CHANNELS, lanes, 1, &a);
+    if (!err)
+        err = ss2h_launch(s, s->func_chunk_plan, SS2H_SUMS, SS2H_CHANNELS, lanes, 1, &a);
+    if (!err)
+        err = ss2h_launch(s, s->func_chunk_units, a.chunks, SS2H_CHANNELS, lanes, 1, &a);
+    if (!err)
+        err = ss2h_launch(s, s->func_totals, SS2H_SUMS, SS2H_CHANNELS, lanes, 1, &a);
+    return err;
 }
 
 static int ss2h_enqueue_scale(const Ssimu2StateHip *s, int scale)
@@ -795,8 +818,8 @@ static int ss2h_enqueue_frame(const Ssimu2StateHip *s)
         err = ss2h_enqueue_scale(s, scale);
     if (err)
         return err;
-    const hipError_t hip_rc = hipMemcpyAsync(
-        s->h_totals, s->d_totals, SS2H_TOTAL_FLOATS * sizeof(float), hipMemcpyDeviceToHost, s->str);
+    const hipError_t hip_rc = hipMemcpyAsync(s->h_totals, s->d_totals, ss2h_totals_bytes(),
+                                             hipMemcpyDeviceToHost, s->str);
     return ss2h_hip_rc(hip_rc);
 }
 
@@ -805,16 +828,12 @@ static int ss2h_enqueue_frame(const Ssimu2StateHip *s)
 /* ------------------------------------------------------------------ */
 
 /* The six sums of one scale -> the ssim_map / edge_diff_map plane averages. */
-static void ss2h_scale_norms(const float *totals, unsigned cw, unsigned ch, double avg_ssim[6],
+static void ss2h_scale_norms(const double *totals, unsigned cw, unsigned ch, double avg_ssim[6],
                              double avg_ed[12])
 {
     const double one_per_pixels = 1.0 / (double)((size_t)cw * (size_t)ch);
     for (unsigned c = 0; c < SS2H_CHANNELS; c++) {
-        double sum[SS2H_SUMS];
-        for (unsigned k = 0; k < SS2H_SUMS; k++) {
-            const float *pair = totals + (size_t)c * SS2H_LANE_FLOATS + (size_t)k * SS2H_PAIR;
-            sum[k] = (double)pair[0] + (double)pair[1];
-        }
+        const double *sum = totals + (size_t)c * SS2H_SUMS;
         avg_ssim[c * 2 + 0] = one_per_pixels * sum[0];
         avg_ssim[c * 2 + 1] = sqrt(sqrt(one_per_pixels * sum[1]));
         avg_ed[c * 4 + 0] = one_per_pixels * sum[2];
@@ -853,8 +872,8 @@ static double ss2h_frame_score(const Ssimu2StateHip *s)
     double avg_ssim[6][6] = {{0}};
     double avg_ed[6][12] = {{0}};
     for (int scale = 0; scale < s->num_scales; scale++) {
-        ss2h_scale_norms(s->h_totals + (size_t)scale * SS2H_CHANNELS * SS2H_LANE_FLOATS,
-                         s->scale_w[scale], s->scale_h[scale], avg_ssim[scale], avg_ed[scale]);
+        ss2h_scale_norms(s->h_totals + (size_t)scale * SS2H_TOTALS_PER_SCALE, s->scale_w[scale],
+                         s->scale_h[scale], avg_ssim[scale], avg_ed[scale]);
     }
     return ss2h_pool_score((const double (*)[6])avg_ssim, (const double (*)[12])avg_ed,
                            s->num_scales);

@@ -134,6 +134,17 @@ linked AGENTS.md before resolving conflicts.
   mid-frame. `core/test/test_sycl_kernel_source_contract.py` guards the
   layout; `scripts/dev/speed_gpu_parity.py --backend sycl` re-checks bit
   parity. See [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
+- **`ssimulacra2_hip` returns the CPU's score bit for bit ([ADR-1445](../adr/1445-hip-ssimulacra2-cpu-sum-order.md))**:
+  `ssimulacra2_device.hip` evaluates the six per-pixel terms with the CPU's
+  fp64 expressions (`ss2h_terms()`, no fp32 pairs) and forms their sums with
+  `core/src/feature/ordered_sum.h` in the four kernels of the CUDA twin
+  (ADR-1433): 1024-pixel chunks in raster order, lanes composed in lane order,
+  a checked walk, term-by-term fallback in pixel order. A change to
+  `ssim_map()` / `edge_diff_map()` in `ssimulacra2.c` changes `ss2h_terms()`
+  in the same PR. `core/test/test_hip_ssimulacra2_exact_contract.py` and
+  `core/test/test_ordered_sum.c` guard it without a device,
+  `test_hip_ssimulacra2_parity` (`==`) on one. See
+  [core/src/feature/hip/AGENTS.md](../../core/src/feature/hip/AGENTS.md).
 - **SYCL ssimulacra2 / float_ms_ssim single wait ([ADR-1363](../adr/1363-sycl-ssimulacra2-msssim-device-resident.md))**:
   `ssimulacra2_sycl.cpp` runs the whole frame on the device and reads one
   block of per-scale sums in `collect()`; its SSIM / edge sums are exact fp32
