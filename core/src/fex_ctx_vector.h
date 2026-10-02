@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-2-Clause-Patent */
 /**
  *
  *  Copyright 2016-2026 Netflix, Inc.
@@ -16,8 +17,8 @@
  *
  */
 
-#ifndef __VMAF_SRC_FEX_CTX_VECTOR_H__
-#define __VMAF_SRC_FEX_CTX_VECTOR_H__
+#ifndef VMAF_SRC_FEX_CTX_VECTOR_H_
+#define VMAF_SRC_FEX_CTX_VECTOR_H_
 
 /* Outside the extern "C" block: in C++ mode feature_extractor.h pulls in
  * <atomic>, whose templates cannot take C linkage. The header carries its
@@ -89,4 +90,4 @@ int feature_extractor_vector_destroy(RegisteredFeatureExtractors *rfe);
 }
 #endif
 
-#endif /* __VMAF_SRC_FEX_CTX_VECTOR_H__ */
+#endif /* VMAF_SRC_FEX_CTX_VECTOR_H_ */

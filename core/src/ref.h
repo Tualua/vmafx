@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-2-Clause-Patent */
 /**
  *
  *  Copyright 2016-2026 Netflix, Inc.
@@ -16,8 +17,8 @@
  *
  */
 
-#ifndef __VMAF_SRC_REF_H__
-#define __VMAF_SRC_REF_H__
+#ifndef VMAF_SRC_REF_H_
+#define VMAF_SRC_REF_H_
 
 /* In C++ mode, mixing GCC 14 system headers with Clang-18 causes a
  * typedef conflict: GCC 14's stdatomic.h wrapper includes <atomic>
@@ -101,4 +102,4 @@ int vmaf_ref_close(VmafRef *ref);
 }
 #endif
 
-#endif /* __VMAF_SRC_REF_H__ */
+#endif /* VMAF_SRC_REF_H_ */

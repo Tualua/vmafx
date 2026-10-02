@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-2-Clause-Patent */
 /**
  *
  *  Copyright 2016-2026 Netflix, Inc.
@@ -16,8 +17,8 @@
  *
  */
 
-#ifndef __VMAF_SRC_PROPAGATE_METADATA_H__
-#define __VMAF_SRC_PROPAGATE_METADATA_H__
+#ifndef VMAF_SRC_METADATA_HANDLER_H_
+#define VMAF_SRC_METADATA_HANDLER_H_
 
 #include "metadata.h"
 
@@ -46,4 +47,4 @@ int vmaf_metadata_destroy(VmafCallbackList *metadata);
 } /* extern "C" */
 #endif
 
-#endif /* __VMAF_SRC_PROPAGATE_METADATA_H__ */
+#endif /* VMAF_SRC_METADATA_HANDLER_H_ */

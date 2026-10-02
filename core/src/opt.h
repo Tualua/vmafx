@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-2-Clause-Patent */
 /**
  *
  *  Copyright 2016-2026 Netflix, Inc.
@@ -16,11 +17,11 @@
  *
  */
 
-#ifndef __VMAF_SRC_OPT_H__
-#define __VMAF_SRC_OPT_H__
+#ifndef VMAF_SRC_OPT_H_
+#define VMAF_SRC_OPT_H_
 
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -100,4 +101,4 @@ int vmaf_option_set(const VmafOption *opt, void *obj, const char *val);
 } /* extern "C" */
 #endif
 
-#endif /* __VMAF_SRC_OPT_H__ */
+#endif /* VMAF_SRC_OPT_H_ */

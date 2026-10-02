@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-2-Clause-Patent */
 /**
  *
  *  Copyright 2016-2026 Netflix, Inc.
@@ -16,8 +17,8 @@
  *
  */
 
-#ifndef __VMAF_SRC_DICT_INTERNAL_H__
-#define __VMAF_SRC_DICT_INTERNAL_H__
+#ifndef VMAF_SRC_DICT_INTERNAL_H_
+#define VMAF_SRC_DICT_INTERNAL_H_
 
 /*
  * dict_internal.h — internal helpers for dict.cpp, exposed only for
@@ -50,4 +51,4 @@
     return *end == '\0';
 }
 
-#endif /* __VMAF_SRC_DICT_INTERNAL_H__ */
+#endif /* VMAF_SRC_DICT_INTERNAL_H_ */

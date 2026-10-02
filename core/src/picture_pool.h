@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-2-Clause-Patent */
 /**
  *
  *  Copyright 2016-2025 Netflix, Inc.
@@ -16,8 +17,8 @@
  *
  */
 
-#ifndef __VMAF_SRC_PICTURE_POOL_H__
-#define __VMAF_SRC_PICTURE_POOL_H__
+#ifndef VMAF_SRC_PICTURE_POOL_H_
+#define VMAF_SRC_PICTURE_POOL_H_
 
 #include "picture.h"
 
@@ -84,4 +85,4 @@ int vmaf_picture_pool_fetch(VmafPicturePool *pool, VmafPicture *pic);
 }
 #endif
 
-#endif /* __VMAF_SRC_PICTURE_POOL_H__ */
+#endif /* VMAF_SRC_PICTURE_POOL_H_ */

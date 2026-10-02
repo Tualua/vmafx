@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
 /**
 
 Copyright (c) 2000-2019 Chih-Chung Chang and Chih-Jen Lin
@@ -33,8 +34,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 */
 
-#ifndef _LIBSVM_H
-#define _LIBSVM_H
+#ifndef LIBSVM_H_
+#define LIBSVM_H_
 
 #define LIBSVM_VERSION 324
 
@@ -136,4 +137,4 @@ void svm_set_print_string_function(void (*print_func)(const char *));
 }
 #endif
 
-#endif /* _LIBSVM_H */
+#endif /* LIBSVM_H_ */

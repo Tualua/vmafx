@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-2-Clause-Patent */
 /**
  *
  *  Copyright 2016-2026 Netflix, Inc.
@@ -16,8 +17,8 @@
  *
  */
 
-#ifndef VMAF_SRC_PICTURE_INCLUDED
-#define VMAF_SRC_PICTURE_INCLUDED
+#ifndef VMAF_SRC_PICTURE_H_
+#define VMAF_SRC_PICTURE_H_
 
 #ifdef HAVE_CUDA
 #ifdef DEVICE_CODE
@@ -90,4 +91,4 @@ int vmaf_picture_set_release_callback(VmafPicture *pic, void *cookie,
 }
 #endif
 
-#endif /* VMAF_SRC_PICTURE_INCLUDED */
+#endif /* VMAF_SRC_PICTURE_H_ */

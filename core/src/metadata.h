@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-2-Clause-Patent */
 /**
  *
  *  Copyright 2016-2026 Netflix, Inc.
@@ -16,8 +17,8 @@
  *
  */
 
-#ifndef __VMAF_SRC_METADATA_H__
-#define __VMAF_SRC_METADATA_H__
+#ifndef VMAF_SRC_METADATA_H_
+#define VMAF_SRC_METADATA_H_
 
 typedef struct VmafContext VmafContext;
 
@@ -65,4 +66,4 @@ typedef struct VmafMetadataConfiguration {
  */
 int vmaf_register_metadata_handler(VmafContext *vmaf, VmafMetadataConfiguration cfg);
 
-#endif /* __VMAF_SRC_METADATA_H__ */
+#endif /* VMAF_SRC_METADATA_H_ */

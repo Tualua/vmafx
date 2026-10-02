@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-2-Clause-Patent */
 /**
  *
  *  Copyright 2016-2023 Netflix, Inc.
@@ -16,8 +17,8 @@
  *
  */
 
-#ifndef VMAF_FRAME_SYNC_H_
-#define VMAF_FRAME_SYNC_H_
+#ifndef VMAF_SRC_FRAMESYNC_H_
+#define VMAF_SRC_FRAMESYNC_H_
 
 #include <pthread.h>
 /* In C++ translation units <stdatomic.h> conflicts with GCC 14 + Clang-18:
@@ -108,4 +109,4 @@ int vmaf_framesync_abort(VmafFrameSyncContext *fs_ctx);
  */
 int vmaf_framesync_destroy(VmafFrameSyncContext *fs_ctx);
 
-#endif /* VMAF_FRAME_SYNC_H_ */
+#endif /* VMAF_SRC_FRAMESYNC_H_ */
