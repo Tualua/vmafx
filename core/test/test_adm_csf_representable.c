@@ -185,11 +185,12 @@ static char *test_adm_default_config_still_scores(void)
 
 static char *test_adm_csf_mode_barten_default_scale_scores(void)
 {
-    /* barten_csf(0, 3.0, 1080, 100.0, 1.0) is 1.21049666, so the scale-0
-     * horizontal/vertical weight is 1.21049666 * 2^21 = 2538595 and the
-     * diagonal weight 1.21049666 * 2^23 = 10154382 -- 38x and 155x past the
-     * 65535 the uint16_t storage holds. Before ADR-1191 they wrapped to
-     * 48227 and 61838 and the extractor scored on. */
+    /* barten_csf(0, 3.0, 1080, 100.0, 1.0) is 1.21049654 (upstream's value,
+     * ADR-1489), so the scale-0 horizontal/vertical weight is
+     * 1.21049654 * 2^21 = 2538595 and the diagonal weight
+     * 1.21049654 * 2^23 = 10154381 -- 38x and 155x past the 65535 the
+     * uint16_t storage holds. Stored unnormalised they wrap to 48227 and
+     * 61837; before ADR-1191 the extractor scored on with such weights. */
     const AdmOpt opts[] = {{"adm_csf_mode", "1"}, {NULL, NULL}};
     double scores[3] = {NAN, NAN, NAN};
     char *msg = NULL;

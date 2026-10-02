@@ -2370,6 +2370,16 @@ test_barten_csf = executable('test_barten_csf',
     dependencies : [math_lib, pthread_dependency, sycl_dependency],
 )
 
+# The CSF weights of float ADM (Watson step and Barten CSF) are upstream's
+# float arithmetic, and the Barten header returns the same bits in a C and
+# in a C++ translation unit (ADR-1489).
+test_float_adm_csf_upstream = executable('test_float_adm_csf_upstream',
+    ['test.c', 'test_float_adm_csf_upstream.c', 'barten_csf_cxx.cpp'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [math_lib, pthread_dependency, sycl_dependency],
+)
+
 # Bit-exactness between the scalar-separable reference and the arch-
 # specific SIMD paths (x86 AVX2/AVX-512 and arm64 NEON). Links the
 # platform SIMD object libraries directly so the kernels can be called
@@ -7088,6 +7098,13 @@ test('test_framesync_init_failure', test_framesync_init_failure, suite : ['fast'
 test('test_propagate_metadata', test_propagate_metadata, suite : ['fast'])
 test('test_adm_csf', test_adm_csf, suite : ['fast'])
 test('test_barten_csf', test_barten_csf, suite : ['fast'])
+test('test_float_adm_csf_upstream', test_float_adm_csf_upstream, suite : ['fast'])
+test('test_float_adm_csf_upstream_contract',
+    import('python').find_installation(),
+    args : files('test_float_adm_csf_upstream_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
 if ms_ssim_decimate_test_archs.contains(host_machine.cpu_family())
 test('test_ms_ssim_decimate', test_ms_ssim_decimate, suite : ['fast', 'simd'])
 endif

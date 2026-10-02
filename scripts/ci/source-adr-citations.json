@@ -6283,6 +6283,7 @@
         "core/test/test_feature_isa_invariance.c": 1,
         "core/test/test_fex_pool_growth.c": 1,
         "core/test/test_float_adm_coverage.c": 1,
+        "core/test/test_float_adm_csf_upstream.c": 1,
         "core/test/test_float_adm_device_math.c": 1,
         "core/test/test_float_adm_dwt2_neon.c": 1,
         "core/test/test_float_adm_neon.c": 1,
@@ -9535,6 +9536,20 @@
         "core/test/test_sycl_psnr_hvs_parity.c": 1
       },
       "target": "1488-psnr-hvs-upstream-mask-product.md"
+    },
+    "1489": {
+      "sites": {
+        "core/src/feature/adm_tools.h": 2,
+        "core/src/feature/barten_csf_tools.h": 4,
+        "core/src/feature/metal/float_adm_metal.mm": 1,
+        "core/test/barten_csf_cxx.cpp": 1,
+        "core/test/barten_csf_cxx.h": 1,
+        "core/test/meson.build": 1,
+        "core/test/test_adm_csf_representable.c": 1,
+        "core/test/test_float_adm_csf_upstream.c": 3,
+        "core/test/test_float_adm_csf_upstream_contract.py": 2
+      },
+      "target": "1489-float-adm-barten-upstream-float.md"
     }
   },
   "retired": {

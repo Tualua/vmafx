@@ -1189,3 +1189,4 @@
 1476-ciede-upstream-expression
 1475-integer-adm-quant-step-upstream-float
 1488-psnr-hvs-upstream-mask-product
+1489-float-adm-barten-upstream-float

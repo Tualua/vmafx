@@ -91,6 +91,47 @@ frames of 24x24 and smaller).
   link-time optimisation.
 - Guards: `test_cpu` (`test_avx512_warm_up_keeps_xmm0`, AVX-512 host),
   `test_inline_asm_clobber_contract` (device-free).
+## Float ADM: `dwt_quant_step()` and the Barten CSF are upstream's float arithmetic again (ADR-1489, 2026-10-02)
+
+`fix/float-adm-barten-upstream-float`, stacked on the entry below. Scores
+move: every `float_adm` score and every model score that reads one
+(@MOVE_SHORT@), and integer `adm` with `adm_csf_mode=1`, onto Netflix
+master's arithmetic. What remains between the fork's `float_adm` and
+Netflix's on x86 is the division of ADR-1442.
+
+- `core/src/feature/adm_tools.h::dwt_quant_step()`: the three statements
+  `float r = ...`, `float temp = ...`, `float Q = ...` are upstream's
+  (`libvmaf/src/feature/adm_tools.h`). A sync takes upstream's side of them;
+  the fork adds only the comment and the
+  `codeql[cpp/integer-multiplication-cast-to-long]` line above `Q`. Do not
+  bring back `double` locals or a `(double)` on an operand of
+  `params->k * temp * temp`: #552 and #760 did.
+- `core/src/feature/barten_csf_tools.h`: the arithmetic is upstream's, the
+  text is not quite. Upstream writes `pow(p_0 * spatial_frequency, p_1)`,
+  `exp(- barten_mtf_params_b[i] * spatial_frequency)` and so on, and lets the
+  language promote the `float` argument. The fork writes that promotion out
+  (`pow((double)(p_0 * spatial_frequency), (double)p_1)`), because the SYCL
+  and Metal twins of integer ADM compile this header as C++, where the
+  implicit form calls the `float` math functions and returns other weights.
+  When a sync brings a hunk of upstream's here, take upstream's arithmetic
+  and keep the casts around each `float` result; never move a cast onto an
+  operand (`(double)p_0 * spatial_frequency` is the form #44 introduced).
+  `linear_interpolate()` is upstream's text unchanged. The 18 locals that
+  are never reassigned are `const` in the fork (clang-tidy's
+  `misc-const-correctness` on the C++ translation units; the sycl lane's
+  baseline entry for the header is gone): keep the qualifiers.
+- `core/src/feature/metal/float_adm_metal.mm::fadm_dwt_quant_step()` is a
+  copy of the step and changes with it;
+  `core/test/test_float_adm_csf_upstream_contract.py` reads it.
+- `core/test/test_float_adm_csf_upstream.c` holds the bits of a Netflix
+  `cea2b4d8` build for 40 steps and 168 Barten weights (asserted on glibc),
+  and compares the header compiled as C with the header compiled as C++
+  (`core/test/barten_csf_cxx.cpp`). If upstream changes the formula, the
+  model constants or a Barten parameter, regenerate both tables from an
+  upstream build in the same PR as the port.
+- `ADM_OPT_RECIP_DIVISION` stays undefined (ADR-1442); this entry does not
+  change that one.
+
 ## `dwt_quant_step()` of integer ADM is upstream's line again (ADR-1475, 2026-10-02)
 
 `fix/integer-adm-quant-step-upstream-float`. Scores move: every integer ADM
@@ -150,6 +191,8 @@ onto Netflix master's values.
   `test_psnr_hvs_twin_exact_sum_contract`; on a device
   `test_{cuda,hip,sycl}_psnr_hvs_parity{,_large}`,
   `test_{cuda,hip,sycl}_exact_twins`, `test_sycl_fp_arith_contract`.
+- Float ADM (`core/src/feature/adm_tools.h`) has its own copy of the
+  function; the entry above (ADR-1489) covers it.
 
 ## Agent pages name the staged CUDA VIF kernels and the HIP handle header (2026-10-02)
 

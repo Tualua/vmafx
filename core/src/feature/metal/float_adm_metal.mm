@@ -323,8 +323,10 @@ static float fadm_dwt_quant_step(int lambda, int theta, double view_dist, int di
     const float r = (float)(view_dist * (double)display_h * M_PI / 180.0);
     const float temp = (float)log10(pow(2.0, (double)(lambda + 1)) * (double)fadm_dwt_f0_Y *
                                     (double)fadm_dwt_g_Y[theta] / (double)r);
-    const float Q = (float)(2.0 * (double)fadm_dwt_a_Y *
-                            pow(10.0, (double)fadm_dwt_k_Y * (double)temp * (double)temp) /
+    /* The exponent is a float product, as in adm_tools.h::dwt_quant_step():
+     * only its result is promoted for pow() (ADR-1489). */
+    const float exponent = fadm_dwt_k_Y * temp * temp;
+    const float Q = (float)(2.0 * (double)fadm_dwt_a_Y * pow(10.0, (double)exponent) /
                             (double)fadm_dwt_basis_amp[lambda][theta]);
     return Q;
 }

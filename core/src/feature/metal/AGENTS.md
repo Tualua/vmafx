@@ -377,3 +377,13 @@ Metal float-ADM change as unverified until someone runs
   No `(double)` on product operand. CPU statement changes -> this copy, same
   PR. Device-free guard: `core/test/test_integer_adm_quant_step_contract.py`.
   Not run on device since edit (no Apple hardware on lanes).
+
+## `float_adm_metal.mm`: quantisation step (ADR-1489)
+
+- `fadm_dwt_quant_step()` = copy of CPU `dwt_quant_step()`
+  (`core/src/feature/adm_tools.h`, upstream statements): `float r`,
+  `float temp`, exponent `fadm_dwt_k_Y * temp * temp` in named `float`, then
+  `pow(10.0, (double)exponent)`. No `(double)` on product operand. CPU
+  statement changes -> this copy, same PR. Device-free guard:
+  `core/test/test_float_adm_csf_upstream_contract.py`. Not run on device
+  since edit (no Apple hardware on lanes).

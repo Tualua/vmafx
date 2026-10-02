@@ -36,4 +36,4 @@ invariant: dwt_quant_step() exponent = float product of k, temp, temp, as upstre
   Intel `libimf`, rounds rare arguments unlike glibc (1 of 240 measured
   frames, `integer_adm_scale1` 7.9e-8). No twin defect: `adm_sycl` == CPU of
   same build.
-- Float ADM: other copy in `adm_tools.h`, see `float-adm.md`.
+- Float ADM: other copy in `adm_tools.h`, see `adm-csf-weights-float.md`.

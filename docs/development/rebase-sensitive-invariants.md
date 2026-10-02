@@ -432,6 +432,22 @@ linked AGENTS.md before resolving conflicts.
   `core/test/test_metal_ms_ssim_options_contract.py`, and
   `core/test/test_nonfinite_collector_wiring.py` protect this against regression.
 
+- **Float ADM CSF weights are upstream's float arithmetic ([ADR-1489](../adr/1489-float-adm-barten-upstream-float.md))**:
+  `dwt_quant_step()` in `core/src/feature/adm_tools.h` keeps `r`, `temp` and
+  `Q` in `float` and raises 10 to the `float` product
+  `params->k * temp * temp`, as upstream's `adm_tools.h` does; a sync takes
+  upstream's side and keeps the suppression comment. `barten_csf_tools.h`
+  forms each product and quotient in `float`, as upstream does, and promotes
+  the result with an explicit cast, because the SYCL and Metal twins of
+  integer ADM compile the header as C++, where upstream's implicit promotion
+  calls the `float` math functions: keep the casts around the results, never
+  on an operand. `core/src/feature/metal/float_adm_metal.mm` holds a copy of
+  the step and changes with it. With these the only difference between the
+  fork's `float_adm` and Netflix's on x86 is the division (ADR-1442).
+  `core/test/test_float_adm_csf_upstream.c` (values, the bits of a Netflix
+  build, C against C++) and
+  `core/test/test_float_adm_csf_upstream_contract.py` (source shapes, the
+  Metal copy) guard it; the Netflix golden gate would not notice.
 - **Integer ADM quantisation step is upstream's ([ADR-1475](../adr/1475-integer-adm-quant-step-upstream-float.md))**:
   `dwt_quant_step()` in `core/src/feature/integer_adm_kernels.h` raises 10 to
   `params->k * temp * temp`, a `float` product, exactly as upstream's

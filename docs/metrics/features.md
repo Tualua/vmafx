@@ -495,6 +495,37 @@ What this means when you use it:
 - It is not slower. The extractor takes the same time or a little less at
   576x324, 1920x1080 and 3840x2160 with the scalar, AVX2 and AVX-512 paths.
 
+##### `float_adm` uses Netflix's contrast-sensitivity weights
+
+The weights `float_adm` applies to the wavelet bands (the Watson model by
+default, the Barten model with `adm_csf_mode=1`) are computed with Netflix's
+arithmetic
+([ADR-1489](../adr/1489-float-adm-barten-upstream-float.md)). Earlier
+releases of this fork kept a few intermediates of those formulas in `double`
+where Netflix keeps them in `float`, which changed every weight in its last
+digits.
+
+What this means when you use it:
+
+- The division described above is the only arithmetic difference between this
+  fork's `float_adm` and upstream Netflix's on x86. Measured against a
+  Netflix build that divides: every `float_adm` output with `debug=true` under
+  36 option sets, and the score of every model that reads `float_adm`, is
+  identical on 658 frames (Netflix 576x324 at 8, 10, 12 and 16 bits,
+  1920x1080 and 3840x2160 clips, 4:2:2, 4:4:4 and 4:0:0 input, small frames
+  down to 17x17), with the scalar, AVX2 and AVX-512 paths.
+- Against earlier releases of this fork, `float_adm` scores move in the
+  seventh decimal place: `adm2` by at most 1.1e-7, a per-scale score by at
+  most 2.7e-7. The `vmaf_float_v0.6.1`, `vmaf_float_v0.6.1neg`,
+  `vmaf_float_4k_v0.6.1` and `vmaf_v0.6.0` models move by up to 2.7e-5 on a
+  frame and 1.5e-5 on a clip's mean.
+- Fixed-point `adm` with `adm_csf_mode=1` reads the same Barten weights and
+  moves by at most 1.6e-7 (`integer_adm2`). In its default mode it does not
+  change, and neither do the default models (`vmaf_v0.6.1` and the other
+  fixed-point ones).
+- The GPU twins of `float_adm` and `adm` take the weights from the same
+  routines and return the CPU's scores as before.
+
 ##### `float_adm` uses AVX2 and AVX-512, with the same scores
 
 On x86 `float_adm` runs its wavelet and its contrast-sensitivity stage through
