@@ -302,7 +302,8 @@ VMAF_FF_INLINE float delta_e(Lab color_1, Lab color_2, const Constants &k, const
     const float h_prime_1 = h_prime(color_1.b, a_prime_1, k, tables);
     const float h_prime_2 = h_prime(color_2.b, a_prime_2, k, tables);
     const float delta_h = delta_h_prime(c1, c2, h_prime_1, h_prime_2, k);
-    const Ff chord = vmaf_ffm::sqrt(two_prod(c_prime_1, c_prime_2));
+    /* A float product, as the reference's (ADR-1476). */
+    const Ff chord = vmaf_ffm::sqrt(from_float(c_prime_1 * c_prime_2));
     const Ff half_sine = vmaf_ffm::sin_cos(from_float(delta_h * 0.5f), tables.sin_cos).sin;
     const float delta_upcase_h_prime = to_float(scale(ff_mul(chord, half_sine), 2.0f));
     const float h_bar = upcase_h_bar_prime(h_prime_1, h_prime_2, k);
@@ -314,8 +315,9 @@ VMAF_FF_INLINE float delta_e(Lab color_1, Lab color_2, const Constants &k, const
     const float hue = div_rn(delta_upcase_h_prime, 4.0f * s_sub_upcase_h);
 
     const Ff squares = ff_add(ff_add(sq(lightness), sq(chroma)), sq(hue));
-    const Ff cross = mul_f(two_prod(rotation, chroma), hue);
-    return to_float(vmaf_ffm::sqrt(ff_add(squares, cross)));
+    /* Two float products, rounded to float before the fp64 sum (ADR-1476). */
+    const float cross = rotation * chroma * hue;
+    return to_float(vmaf_ffm::sqrt(add_f(squares, cross)));
 }
 
 /* One pixel: the six samples as ciede.c hands them to get_lab_color(). */

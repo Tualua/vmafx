@@ -59,7 +59,10 @@ REFERENCE_LINES = (
     "float hue_angle = atan2(x, y);",
     "const float c1 = sqrt(square(color_1.a) + square(color_1.b));",
     "sin(degrees_to_radians(60.0 * exp(-(degrees * degrees))));",
-    "return sqrt(square(lightness) + square(chroma) + square(hue) + (double)r_sub_t * chroma * hue);",
+    # Upstream's two float products (Netflix/vmaf libvmaf/src/feature/ciede.c:224-225
+    # and :235-236; the squares are products since ADR-1467). ADR-1476.
+    "const float delta_upcase_h_prime = 2.0 * sqrt(c_prime_1 * c_prime_2) * sin(delta_h_prime / 2.0);",
+    "return sqrt(square(lightness) + square(chroma) + square(hue) + r_sub_t * chroma * hue);",
     "de00_sum += ciede2000(",
     "const double score = 45. - 20. * log10(de00_sum / (ref_pic->w[0] * ref_pic->h[0]));",
 )
@@ -97,8 +100,10 @@ MATH_PIECES = (
     ("h_prime", "vmaf_ffm::atan2(x, y, tables.atan)"),
     ("r_sub_t", "const float exponent = -(degrees * degrees);"),
     ("r_sub_t", "const float ratio = div_rn(c7, c7 + kPowf25To7);"),
-    ("delta_e", "const Ff cross = mul_f(two_prod(rotation, chroma), hue);"),
-    ("delta_e", "return to_float(vmaf_ffm::sqrt(ff_add(squares, cross)));"),
+    # The reference's float products (ADR-1476): rounded to float, then widened.
+    ("delta_e", "const Ff chord = vmaf_ffm::sqrt(from_float(c_prime_1 * c_prime_2));"),
+    ("delta_e", "const float cross = rotation * chroma * hue;"),
+    ("delta_e", "return to_float(vmaf_ffm::sqrt(add_f(squares, cross)));"),
 )
 FP32_LIBM = re.compile(r"sycl::(?:pow|cbrt|atan2|sin|cos|exp|log|sqrt)\(")
 # An fp32 math function or root-estimate primitive in the shared arithmetic,
@@ -324,6 +329,37 @@ class SyclCiedeExactContractTest(unittest.TestCase):
             "    const float exponent = (float)-((double)degrees * (double)degrees);",
         )
         self._detects(failures, "fp64 type outside")
+
+    def test_exact_chroma_product_is_detected(self) -> None:
+        # The form between PR #552 and ADR-1476: the product kept in fp64.
+        failures = self._edited(
+            MATH,
+            "    const Ff chord = vmaf_ffm::sqrt(from_float(c_prime_1 * c_prime_2));",
+            "    const Ff chord = vmaf_ffm::sqrt(two_prod(c_prime_1, c_prime_2));",
+        )
+        self._detects(failures, "delta_e()")
+
+    def test_exact_rotation_product_is_detected(self) -> None:
+        # The form between PR #552 and ADR-1476: the product kept in fp64.
+        failures = self._edited(
+            MATH,
+            "    const float cross = rotation * chroma * hue;",
+            "    const Ff cross = mul_f(two_prod(rotation, chroma), hue);",
+        )
+        self._detects(failures, "delta_e()")
+
+    def test_widened_reference_product_is_detected(self) -> None:
+        # PR #552's cast: not upstream's statement.
+        failures = self._edited(
+            CPU,
+            "square(hue) + r_sub_t * chroma * hue);",
+            "square(hue) + (double)r_sub_t * chroma * hue);",
+        )
+        self._detects(failures, CPU)
+        failures = self._edited(
+            CPU, "sqrt(c_prime_1 * c_prime_2)", "sqrt((double)c_prime_1 * c_prime_2)"
+        )
+        self._detects(failures, CPU)
 
     def test_changed_constant_is_detected(self) -> None:
         failures = self._edited(MATH, "make_pair(1.28033)", "make_pair(1.28034)")

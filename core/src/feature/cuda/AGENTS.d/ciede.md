@@ -13,7 +13,11 @@ invariant: ciede_cuda performs CPU arithmetic with libm apart.
   float; `ciede2000()` intermediates `const float` from fp64 expressions.
   Genuinely float: sums / differences of floats, the three final
   quotients, `get_r_sub_t()`'s `powf` ratio and `degrees * degrees`,
-  `degrees_to_radians()`'s float argument. Kernel is C++: a float argument
+  `degrees_to_radians()`'s float argument, and the two products upstream
+  forms in float (ADR-1476): `chroma_product = c_prime_1 * c_prime_2`
+  before the root and `rotation = r_sub_t * chroma * hue` before the final
+  sum. Never widen their operands: `(double)c_prime_1 * (double)c_prime_2`
+  was the fork's form after PR #552, not upstream's. Kernel is C++: a float argument
   picks the float overload of `sqrt` / `atan2` / `sin` / `cos` / `exp`, so
   EVERY promotion is spelled `(double)`. Squares = `ciede_sq()` (exact
   fp64 product = `ciede.c` `square()`, ADR-1467). No `cbrtf` / `atan2f` / `sinf` / `cosf`

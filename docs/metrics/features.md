@@ -1017,6 +1017,30 @@ done
 diff <(grep -v '"fps"' ciede-gcc.json) <(grep -v '"fps"' ciede-clang.json)
 ```
 
+**Agreement with Netflix's `ciede`.** `ciede2000()` forms two products of
+`float` values, `c_prime_1 * c_prime_2` under a square root and
+`r_sub_t * chroma * hue` in the final sum, in `float`, as Netflix's source
+does ([ADR-1476](../adr/1476-ciede-upstream-expression.md)). Between May and
+October 2026 this fork widened their first operand to `double`, which kept
+the products exact and moved the score away from Netflix's by up to 1.3e-9
+(1.0e-8 on frames of 24x24 and smaller). Measured against Netflix master
+(`9e48141b`, GCC 16.2.1, glibc 2.44) at `--precision max` on 327 frames from
+8x8 to 3840x2160: 153 are identical now (7 before). The others differ for
+three recorded reasons: the `float` square above, which upstream writes as
+`powf(x, 2)` (119 frames, at most 2.2e-11, with glibc 2.44; with glibc 2.43
+a GCC 15 and a clang 22 build of upstream return this fork's values on all
+96 frames of the Netflix pair and Big Buck Bunny at 1920x1080);
+4:2:2 input, where upstream reads the chroma planes with the two subsampling
+flags swapped (48 frames, up to 0.153); and odd frame sizes with subsampled
+chroma, where upstream rounds the chroma size down (7 frames, up to 0.198).
+The CUDA, SYCL and HIP twins form the same two `float` products: against a
+GCC build's `--backend cpu` on 153 frames (the Netflix 576x324 pair at 8 and
+10 bits and as 10-bit 4:2:2, both 1920x1080 checkerboard pairs, 48 frames of
+Big Buck Bunny at 3840x2160) `ciede_cuda` (RTX 4090) is identical on 109
+frames, `ciede_sycl` (Arc A380) on 107 and `ciede_hip` (gfx1036) on 108, and
+none differs by more than 2.1e-12. The twin figures in the paragraphs below
+were measured before this change.
+
 **The twins since ADR-1467.** The three twins below compute the squares as
 products, as the CPU now does. Measured at `--precision max` against a GCC
 build's `--backend cpu` on 180 frames (the Netflix 576x324 pair at 8, 10, 12

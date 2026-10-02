@@ -318,6 +318,8 @@ from = ["netflix-integer-adm"]  # mirrors dwt2_src_indices_filt(), static in int
 from = ["netflix-integer-vif"]  # mirrors log_generate(), static in integer_vif.c
 [ports."core/test/test_cambi_simd.c"]
 from = ["netflix-cambi"]  # verbatim from cambi.c::calculate_c_values_row
+[ports."core/test/test_ciede_upstream_products.c"]
+from = ["netflix-ciede"]  # replay(): ciede2000() of ciede.c statement by statement
 [ports."core/test/test_ciede_neon.c"]
 from = ["netflix-ciede-host"]  # verbatim copies of the ciede.c fallback loops
 [ports."core/test/test_ciede_simd_parity.c"]

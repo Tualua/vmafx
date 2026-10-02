@@ -6221,6 +6221,7 @@
         "core/test/test_ciede_device_math.c": 1,
         "core/test/test_ciede_neon.c": 1,
         "core/test/test_ciede_simd_parity.c": 1,
+        "core/test/test_ciede_upstream_products.c": 1,
         "core/test/test_cjson.c": 1,
         "core/test/test_cli_parse.c": 28,
         "core/test/test_cli_parse_long_only_args.c": 1,
@@ -9422,6 +9423,7 @@
         "core/test/meson.build": 1,
         "core/test/test_ciede_device_math.c": 1,
         "core/test/test_cuda_ciede_exact_contract.py": 1,
+        "core/test/test_sycl_ciede_exact_contract.py": 1,
         "scripts/ci/cross_backend_calibration.py": 1
       },
       "target": "1467-ciede-squares-as-products.md"
@@ -9493,6 +9495,18 @@
         "scripts/ci/upstream_parity_pin.py": 1
       },
       "target": "1474-relicense-helper-headers-and-ci-check.md"
+    },
+    "1476": {
+      "sites": {
+        "core/src/feature/ciede.c": 5,
+        "core/src/feature/ciede_ff_math.h": 2,
+        "core/src/feature/cuda/integer_ciede/ciede_device.h": 2,
+        "core/test/meson.build": 1,
+        "core/test/test_ciede_upstream_products.c": 4,
+        "core/test/test_cuda_ciede_exact_contract.py": 3,
+        "core/test/test_sycl_ciede_exact_contract.py": 4
+      },
+      "target": "1476-ciede-upstream-expression.md"
     }
   },
   "retired": {

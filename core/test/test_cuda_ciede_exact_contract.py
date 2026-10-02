@@ -69,7 +69,15 @@ FP64_PIECES = (
     "const float c1 = (float)sqrt(ciede_sq(color_1.a) + ciede_sq(color_1.b));",
     "const double c_bar_7 = pow((double)c_bar, 7.0);",
     "const float sixty = (float)(60.0 * exp((double)exponent));",
-    "(double)r_sub_t * (double)chroma * (double)hue);",
+)
+# The two products ciede.c forms in float, as upstream does (Netflix/vmaf
+# libvmaf/src/feature/ciede.c:224-225 and :235-236): each is rounded to float
+# before it enters the fp64 expression. ADR-1476.
+FLOAT_PRODUCT_PIECES = (
+    "const float chroma_product = c_prime_1 * c_prime_2;",
+    "(float)(2.0 * sqrt((double)chroma_product) * sin((double)delta_h_prime / 2.0));",
+    "const float rotation = r_sub_t * chroma * hue;",
+    "ciede_sq(hue) + (double)rotation);",
 )
 
 
@@ -93,6 +101,10 @@ def _arithmetic_failures(sources: dict[str, str]) -> list[str]:
     for piece in FP64_PIECES:
         if piece not in device:
             failures.append(f"{DEVICE}: not the reference's expression ({piece})")
+    flat = " ".join(device.split())
+    for piece in FLOAT_PRODUCT_PIECES:
+        if piece not in flat:
+            failures.append(f"{DEVICE}: not the reference's float product ({piece})")
     unpromoted = UNPROMOTED.search(device)
     if unpromoted:
         failures.append(
@@ -164,6 +176,24 @@ class CiedeCudaContract(unittest.TestCase):
         # Valid C, but the kernel's C++ would call sin(float).
         failures = _planted(DEVICE, "sin((double)delta_h_prime / 2.0)", "sin(delta_h_prime / 2.0f)")
         self.assertTrue(any("float overload" in item for item in failures))
+
+    def test_fp64_chroma_product_is_detected(self) -> None:
+        # The form between PR #552 and ADR-1476.
+        failures = _planted(
+            DEVICE,
+            "const float chroma_product = c_prime_1 * c_prime_2;",
+            "const double chroma_product = (double)c_prime_1 * (double)c_prime_2;",
+        )
+        self.assertTrue(any("float product" in item for item in failures))
+
+    def test_fp64_rotation_product_is_detected(self) -> None:
+        # The form between PR #552 and ADR-1476.
+        failures = _planted(
+            DEVICE,
+            "const float rotation = r_sub_t * chroma * hue;",
+            "const double rotation = (double)r_sub_t * (double)chroma * (double)hue;",
+        )
+        self.assertTrue(any("float product" in item for item in failures))
 
     def test_device_powf_is_detected(self) -> None:
         failures = _planted(DEVICE, DEVICE_POWF, "#define CIEDE_POWF(x, y) powf((x), (y))")

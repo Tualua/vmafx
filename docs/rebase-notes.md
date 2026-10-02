@@ -52,6 +52,29 @@ kernel bit for bit; 831 of 831 frames of the whole extractor at
 `--precision max` equal `--cpumask 1` on the three Netflix pairs and on
 synthetic frames from 17x17 to 641x359 at 8, 10, 12 and 16 bits and 1 to 8
 threads.
+## `ciede2000()`'s two products are upstream's `float` products again (ADR-1476, 2026-10-02)
+
+`fix/ciede-upstream-expression`. Scores move by up to 1.3e-9 (1.0e-8 on
+frames of 24x24 and smaller).
+
+- `core/src/feature/ciede.c`: `sqrt(c_prime_1 * c_prime_2)` and
+  `+ r_sub_t * chroma * hue` carry no cast, as in Netflix
+  `libvmaf/src/feature/ciede.c:224-225` and `:235-236`. These two expressions
+  are upstream's again: a sync takes upstream's side. The fork keeps a cited
+  `NOLINT` and a `codeql[...]` comment on them, and `square(x)` for
+  upstream's `pow(x, 2)` in the second one (ADR-1467).
+- Do not re-add `(double)` in front of either product to quiet CodeQL's
+  `cpp/integer-multiplication-cast-to-long`: that was PR #552, and it moved
+  265 of 327 measured frames away from upstream.
+- The twins mirror it: `cuda/integer_ciede/ciede_device.h` (`chroma_product`,
+  `rotation`), `ciede_ff_math.h` for SYCL and HIP (`c_prime_1 * c_prime_2`
+  into `from_float()`, `rotation * chroma * hue` into `add_f()`). A change to
+  either expression upstream changes all three files in the same PR.
+- Guards: `test_ciede_upstream_products` (the CUDA header forms the `float`
+  products), `test_ciede_device_math` (the header is the CPU extractor, bit
+  for bit), `test_sycl_ciede_exact_contract`,
+  `test_cuda_ciede_exact_contract`; on a device
+  `test_{cuda,sycl,hip}_ciede_parity`.
 
 ## Agent pages name the staged CUDA VIF kernels and the HIP handle header (2026-10-02)
 

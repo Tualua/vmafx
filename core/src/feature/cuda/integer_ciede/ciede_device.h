@@ -236,8 +236,10 @@ CIEDE_HD float ciede_delta_e(CiedeLab color_1, CiedeLab color_2)
     const float h_prime_1 = ciede_h_prime(color_1.b, a_prime_1);
     const float h_prime_2 = ciede_h_prime(color_2.b, a_prime_2);
     const float delta_h_prime = ciede_delta_h_prime(c1, c2, h_prime_1, h_prime_2);
-    const float delta_upcase_h_prime = (float)(2.0 * sqrt((double)c_prime_1 * (double)c_prime_2) *
-                                               sin((double)delta_h_prime / 2.0));
+    /* A float product, as the reference's (ADR-1476). */
+    const float chroma_product = c_prime_1 * c_prime_2;
+    const float delta_upcase_h_prime =
+        (float)(2.0 * sqrt((double)chroma_product) * sin((double)delta_h_prime / 2.0));
     const float upcase_h_bar_prime = ciede_upcase_h_bar_prime(h_prime_1, h_prime_2);
     const float upcase_t = ciede_upcase_t(upcase_h_bar_prime);
     const float s_sub_upcase_h = (float)(1.0 + 0.015 * (double)c_bar_prime * (double)upcase_t);
@@ -246,8 +248,9 @@ CIEDE_HD float ciede_delta_e(CiedeLab color_1, CiedeLab color_2)
     const float chroma = delta_c_prime / (ksub_c * s_sub_c);
     const float hue = delta_upcase_h_prime / (ksub_h * s_sub_upcase_h);
 
-    return (float)sqrt(ciede_sq(lightness) + ciede_sq(chroma) + ciede_sq(hue) +
-                       (double)r_sub_t * (double)chroma * (double)hue);
+    /* Two float products, rounded to float before the fp64 sum (ADR-1476). */
+    const float rotation = r_sub_t * chroma * hue;
+    return (float)sqrt(ciede_sq(lightness) + ciede_sq(chroma) + ciede_sq(hue) + (double)rotation);
 }
 
 /* One pixel: the six samples as ciede.c hands them to get_lab_color(). */

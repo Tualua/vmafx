@@ -39,7 +39,10 @@ invariant: integer_ciede_sycl.cpp stages Y/U/V at native size; statements on fp3
   `atan2`; 2^-44 or better), `float` of the reference = float, rounded
   from the pair at the reference's statement. `powf(x, 7)` = correctly
   rounded (glibc's is not); float square = product, as `ciede.c`
-  (ADR-1467). Constants: `make_constants(bpc)`
+  (ADR-1467). The reference's two float products (ADR-1476) are float
+  here: `sqrt(from_float(c_prime_1 * c_prime_2))` and
+  `add_f(squares, rotation * chroma * hue)`; `two_prod()` there = the exact
+  product = the fork's form after PR #552, not upstream's. Constants: `make_constants(bpc)`
   on the host from the reference's own expressions, by value into the
   kernel. Tables (`kAtanTable`, `kSinCosTable`): generated
   (`scripts/dev/gen_sycl_ff_math.py --write`), copied to device memory at

@@ -1402,6 +1402,20 @@ test_ciede = executable('test_ciede',
     dependencies: [pthread_dependency, gpu_all_deps],
 )
 
+# ADR-1476 — ciede2000() forms upstream's two float products
+# (Netflix/vmaf libvmaf/src/feature/ciede.c:224-225 and :235-236). Replays
+# ciede_delta_e() of cuda/integer_ciede/ciede_device.h with the header's own
+# helpers, with float products and with the widened ones the fork had after
+# PR #552, and requires the float form on every colour pair of a grid that
+# tells the two apart. test_ciede_device_math holds the header to ciede.c.
+test_ciede_upstream_products = executable('test_ciede_upstream_products',
+    ['test.c', 'test_ciede_upstream_products.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, gpu_all_deps, math_lib],
+)
+test('test_ciede_upstream_products', test_ciede_upstream_products, suite : ['fast'])
+
 # ADR-1426 — the arithmetic ciede_cuda's kernel runs
 # (src/feature/cuda/integer_ciede/ciede_device.h), compiled for the host and
 # replayed over whole frames against the CPU extractor, bit for bit. No CUDA

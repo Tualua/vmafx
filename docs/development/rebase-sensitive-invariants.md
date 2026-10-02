@@ -541,7 +541,10 @@ linked AGENTS.md before resolving conflicts.
   `get_lab_color()` and `ciede2000()` statement for statement: fp64 where the
   reference computes in double, float where it stores in float, every
   float-to-double promotion of a libm argument written out (the kernel is
-  C++). The kernel stores one float per pixel and
+  C++). The reference's two float products, `c_prime_1 * c_prime_2` and
+  `r_sub_t * chroma * hue`, are upstream's and are float products in every
+  twin ([ADR-1476](../adr/1476-ciede-upstream-expression.md)); a sync takes
+  upstream's side of them and no `(double)` goes in front of either. The kernel stores one float per pixel and
   `ciede_frame_sum()` (`core/src/feature/ciede_frame_sum.h`, one definition
   for the CUDA, SYCL and HIP hosts) adds the read-back plane in raster order. Do not
   introduce float math functions, a device reduction or another form of the
