@@ -58874,3 +58874,23 @@ Kept: the `+0` start of every sum (signed-zero parity with `adm_dwt2_s()`), mult
 - Netflix golden gate unchanged in outcome (271 passed, 12 skipped on x86-64
   and aarch64 with GCC and clang); no golden assertion, public API or FFmpeg
   patch impact. `ciede2000` of a GCC build moves by at most 2.0e-11.
+## `integer_ssim.c`: `calc_ssim()` takes its buffers from helpers (ADR-1142, 2026-10-02)
+
+`refactor/std-cpu-extractors`.
+
+- `core/src/feature/integer_ssim.c` (upstream path, Xiph.Org code):
+  `calc_ssim()` keeps its signature and its row loop. The two
+  `gaussian_filter_init()` calls and the two `malloc()`s moved into
+  `ssim_work_init()` (same order: vertical kernel, row pointers, row storage,
+  horizontal kernel; `-ENOMEM` with nothing left allocated) and the four
+  `free()`s into `ssim_work_free()`. An upstream change to the allocation part
+  lands in those helpers; the arithmetic (`ssim_accumulate_row*`,
+  `ssim_reduce_row_range`) is untouched. The `NOLINT(readability-function-size)`
+  that kept the function whole is gone: the HISS gate has no opt-out, and the
+  function is 37 lines.
+- `core/test/test_feature_collector.c`: the two `HAVE_CUDA` tests are split
+  into helpers (`close_retry_fixture`, `close_retry_first_close`,
+  `cuda_overwrite_and_release`). Same assertions, same calls in the same order,
+  except that the duplicate-owner test now asserts on the overwrite attempt
+  after the four releases have run.
+- No score, public C API, Netflix golden-data or FFmpeg patch impact.

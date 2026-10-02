@@ -353,7 +353,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 741,
+  "total_warnings": 700,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -374,7 +374,6 @@
     "core/src/feature/common/blur_array.c": 6,
     "core/src/feature/common/convolution_internal.h": 8,
     "core/src/feature/feature_characteristics.h": 3,
-    "core/src/feature/feature_collector.cpp": 16,
     "core/src/feature/feature_collector.h": 4,
     "core/src/feature/feature_name.h": 1,
     "core/src/feature/float_ms_ssim.c": 3,
@@ -390,7 +389,6 @@
     "core/src/feature/iqa/math_utils.h": 6,
     "core/src/feature/iqa/ssim_tools.c": 4,
     "core/src/feature/luminance_tools.h": 3,
-    "core/src/feature/moment.c": 2,
     "core/src/feature/moment_options.h": 1,
     "core/src/feature/motion.c": 2,
     "core/src/feature/motion_blend_tools.h": 1,
@@ -451,11 +449,9 @@
     "core/test/test_context.c": 14,
     "core/test/test_cpu.c": 2,
     "core/test/test_dict.cpp": 33,
-    "core/test/test_feature_collector.c": 12,
     "core/test/test_integer_cambi_sycl.c": 2,
     "core/test/test_locale_handling.c": 21,
     "core/test/test_log.c": 4,
-    "core/test/test_luminance_tools.cpp": 11,
     "core/test/test_pelorus_interop.c": 9,
     "core/test/test_pic_preallocation.c": 10,
     "core/test/test_predict.c": 13,
@@ -655,6 +651,44 @@
         "core/src/feature/x86/motion_avx512.c": {
           "warnings": [
             18,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "cb3a45ee27abd6ad8700f8871e8f3a6ddd01fb71930cf4f6d888dd22fab5075a"
+    },
+    {
+      "sources": [
+        "core/src/feature/feature_collector.cpp",
+        "core/src/feature/integer_ssim.c",
+        "core/src/feature/moment.c",
+        "core/test/test_feature_collector.c",
+        "core/test/test_framesync.c",
+        "core/test/test_luminance_tools.cpp"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/feature_collector.cpp": {
+          "warnings": [
+            16,
+            0
+          ]
+        },
+        "core/src/feature/moment.c": {
+          "warnings": [
+            2,
+            0
+          ]
+        },
+        "core/test/test_feature_collector.c": {
+          "warnings": [
+            12,
+            0
+          ]
+        },
+        "core/test/test_luminance_tools.cpp": {
+          "warnings": [
+            11,
             0
           ]
         }

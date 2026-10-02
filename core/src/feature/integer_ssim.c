@@ -1,5 +1,6 @@
 /*
 Copyright 2001-2012 Xiph.Org and contributors.
+SPDX-License-Identifier: BSD-2-Clause
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions
@@ -263,86 +264,89 @@ static void ssim_reduce_row_range(ssim_moments *const *lines, int line_mask, int
     }
 }
 
-/* Kept whole for upstream parity. This file is Xiph.Org code (see the
- * copyright header) and calc_ssim is a verbatim transliteration of its
- * scalar SSIM accumulate -- the same reason the ArrayBound suppressions
- * above cite upstream parity. Restructuring it would break the rebase story
- * this file exists to preserve. ADR-0141 §2 / ADR-0278. */
-// NOLINTNEXTLINE(readability-function-size)
+/* Working storage of one calc_ssim() call: both Gaussian kernels and the ring of
+ * moment rows the vertical pass reads. */
+typedef struct ssim_work {
+    unsigned *hkernel;
+    unsigned *vkernel;
+    ssim_moments *line_buf;
+    ssim_moments **lines;
+    int hkernel_sz;
+    int vkernel_sz;
+    int line_mask;
+} ssim_work;
+
+static void ssim_work_free(ssim_work *wk)
+{
+    free(wk->line_buf);
+    free((void *)wk->lines);
+    free(wk->vkernel);
+    free(wk->hkernel);
+}
+
+/* Allocates in the order the Xiph.Org original does (vertical kernel, row
+ * pointers, row storage, horizontal kernel). Returns 0, or -ENOMEM with nothing
+ * left allocated. */
+static int ssim_work_init(ssim_work *wk, int w)
+{
+    memset(wk, 0, sizeof(*wk));
+    wk->vkernel_sz = gaussian_filter_init(&wk->vkernel, 1.5, 5);
+    if (wk->vkernel_sz < 0)
+        return -ENOMEM;
+    const int line_sz = ssim_line_buffer_size(wk->vkernel_sz);
+    wk->line_mask = line_sz - 1;
+    wk->lines = (ssim_moments **)malloc((size_t)line_sz * sizeof(*wk->lines));
+    if (wk->lines) {
+        wk->line_buf = (ssim_moments *)malloc((size_t)line_sz * (size_t)w * sizeof(*wk->line_buf));
+    }
+    if (wk->line_buf) {
+        wk->hkernel_sz = gaussian_filter_init(&wk->hkernel, 1.5, 5);
+    }
+    if (!wk->line_buf || wk->hkernel_sz < 0) {
+        ssim_work_free(wk);
+        return -ENOMEM;
+    }
+    wk->lines[0] = wk->line_buf;
+    for (int y = 1; y < line_sz; y++)
+        wk->lines[y] = wk->lines[y - 1] + w;
+    return 0;
+}
+
 static double calc_ssim(const unsigned char *_src, int _systride, const unsigned char *_dst,
                         int _dystride, double _par, int depth, int _w, int _h,
                         ssim_accum_row_fn_8 accum8, ssim_accum_row_fn_16 accum16)
 {
     (void)_par;
-    ssim_moments *line_buf;
-    ssim_moments **lines;
-    double ssim;
-    double ssimw;
-    unsigned *hkernel;
-    int hkernel_sz;
-    int hkernel_offs;
-    unsigned *vkernel;
-    int vkernel_sz;
-    int vkernel_offs;
-    int line_sz;
-    int line_mask;
-    int y;
-    int samplemax;
-    samplemax = (1 << depth) - 1;
-    vkernel_sz = gaussian_filter_init(&vkernel, 1.5, 5);
-    if (vkernel_sz < 0)
+    ssim_work wk;
+    if (ssim_work_init(&wk, _w) < 0)
         return 0.0;
-    vkernel_offs = vkernel_sz >> 1;
-    line_sz = ssim_line_buffer_size(vkernel_sz);
-    line_mask = line_sz - 1;
-    lines = (ssim_moments **)malloc((size_t)line_sz * sizeof(*lines));
-    if (!lines) {
-        free(vkernel);
-        return 0.0;
-    }
-    line_buf = (ssim_moments *)malloc((size_t)line_sz * (size_t)_w * sizeof(*line_buf));
-    if (!line_buf) {
-        free((void *)lines);
-        free(vkernel);
-        return 0.0;
-    }
-    lines[0] = line_buf;
-    for (y = 1; y < line_sz; y++)
-        lines[y] = lines[y - 1] + _w;
-    hkernel_sz = gaussian_filter_init(&hkernel, 1.5, 5);
-    if (hkernel_sz < 0) {
-        free(line_buf);
-        free((void *)lines);
-        free(vkernel);
-        return 0.0;
-    }
-    hkernel_offs = hkernel_sz >> 1;
-    ssim = 0;
-    ssimw = 0;
-    for (y = 0; y < _h + vkernel_offs; y++) {
+    const int samplemax = (1 << depth) - 1;
+    const int vkernel_offs = wk.vkernel_sz >> 1;
+    const int hkernel_offs = wk.hkernel_sz >> 1;
+    double ssim = 0;
+    double ssimw = 0;
+    for (int y = 0; y < _h + vkernel_offs; y++) {
         if (y < _h) {
             /* Dispatch to SIMD or scalar horizontal pass. */
             if (depth > 8) {
-                accum16((const uint16_t *)_src, (const uint16_t *)_dst, _w, hkernel, hkernel_sz,
-                        hkernel_offs, (integer_ssim_moments_t *)lines[y & line_mask]);
+                accum16((const uint16_t *)_src, (const uint16_t *)_dst, _w, wk.hkernel,
+                        wk.hkernel_sz, hkernel_offs,
+                        (integer_ssim_moments_t *)wk.lines[y & wk.line_mask]);
             } else {
-                accum8(_src, _dst, _w, hkernel, hkernel_sz, hkernel_offs,
-                       (integer_ssim_moments_t *)lines[y & line_mask]);
+                accum8(_src, _dst, _w, wk.hkernel, wk.hkernel_sz, hkernel_offs,
+                       (integer_ssim_moments_t *)wk.lines[y & wk.line_mask]);
             }
             _src += _systride;
             _dst += _dystride;
         }
         if (y >= vkernel_offs) {
-            int k_min = vkernel_sz - y - 1 <= 0 ? 0 : vkernel_sz - y - 1;
-            int k_max = y + 1 - _h <= 0 ? vkernel_sz : vkernel_sz - (y + 1 - _h);
-            ssim_reduce_row_range(lines, line_mask, y, _w, vkernel_sz, vkernel, samplemax, k_min,
-                                  k_max, &ssim, &ssimw);
+            int k_min = wk.vkernel_sz - y - 1 <= 0 ? 0 : wk.vkernel_sz - y - 1;
+            int k_max = y + 1 - _h <= 0 ? wk.vkernel_sz : wk.vkernel_sz - (y + 1 - _h);
+            ssim_reduce_row_range(wk.lines, wk.line_mask, y, _w, wk.vkernel_sz, wk.vkernel,
+                                  samplemax, k_min, k_max, &ssim, &ssimw);
         }
     }
-    free(line_buf);
-    free((void *)lines);
-    free(vkernel);
-    free(hkernel);
+    ssim_work_free(&wk);
     return ssim / ssimw;
 }
 

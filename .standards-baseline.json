@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-02T15:44:00Z",
+  "generated_at": "2026-10-02T17:17:10Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "38e8ec0b0191ec23b81a98c535e56346e8497e8c",
-  "total_infractions": 232,
+  "commit_sha": "baa4abfeba3ca277a16f601ad92977f748f8d9c6",
+  "total_infractions": 231,
   "infractions": [
     {
       "rule_id": "HISS-04",
@@ -960,14 +960,6 @@
       "symbol": "ssimulacra2_picture_to_linear_rgb_sve2",
       "message": "Function 'ssimulacra2_picture_to_linear_rgb_sve2' (114 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "core/src/feature/arm64/ssimulacra2_sve2.c:676:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/integer_ssim.c",
-      "line_number": 275,
-      "symbol": "calc_ssim",
-      "message": "Function 'calc_ssim' (73 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/integer_ssim.c:275:HISS-04"
     },
     {
       "rule_id": "HISS-04",

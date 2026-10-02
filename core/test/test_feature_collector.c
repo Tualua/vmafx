@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright 2016-2026 Netflix, Inc.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -144,11 +145,14 @@ static int backend_picture_close_positive_once(VmafPicture *pic, void *cookie)
     return 0;
 }
 
-static char *test_vmaf_close_commit_retry_is_idempotent(void)
+/* A context whose close has work in every commit phase: a DNN buffer, a
+ * perceptual summary and a backend ring whose first free fails. */
+static char *close_retry_fixture(VmafContext **out)
 {
     VmafContext *vmaf = NULL;
     int err = vmaf_init(&vmaf, (VmafConfiguration){0});
     mu_assert("vmaf_init", err == 0 && vmaf != NULL);
+    *out = vmaf;
 
     vmaf->dnn.in_buf = malloc(sizeof(*vmaf->dnn.in_buf));
     vmaf->dnn.in_elements = 1;
@@ -164,9 +168,15 @@ static char *test_vmaf_close_commit_retry_is_idempotent(void)
     };
     err = vmaf_gpu_picture_pool_init(&vmaf->cuda.ring_buffer, cfg);
     mu_assert("backend ring fixture", err == 0 && vmaf->cuda.ring_buffer != NULL);
+    return NULL;
+}
 
+/* The first close fails in the backend child only: every other commit phase
+ * stays committed and is zeroed, and the failed owner stays reachable. */
+static char *close_retry_first_close(VmafContext *vmaf)
+{
     backend_close_calls = 0;
-    err = vmaf_close(vmaf);
+    int err = vmaf_close(vmaf);
     mu_assert("positive child error is normalized at the public boundary", err == -EIO);
     mu_assert("collector commit stays committed", vmaf->feature_collector == NULL);
     mu_assert("framesync commit stays committed", vmaf->framesync == NULL);
@@ -175,10 +185,41 @@ static char *test_vmaf_close_commit_retry_is_idempotent(void)
     mu_assert("perceptual commit is zeroed for retry",
               vmaf->perceptual.summaries == NULL && vmaf->perceptual.capacity == 0);
     mu_assert("failed backend owner remains reachable", vmaf->cuda.ring_buffer != NULL);
+    return NULL;
+}
 
-    err = vmaf_close(vmaf);
+static char *test_vmaf_close_commit_retry_is_idempotent(void)
+{
+    VmafContext *vmaf = NULL;
+    mu_assert_msg(close_retry_fixture(&vmaf));
+    mu_assert_msg(close_retry_first_close(vmaf));
+
+    int err = vmaf_close(vmaf);
     mu_assert("commit-phase retry succeeds", err == 0);
     mu_assert("failed backend child alone was retried", backend_close_calls == 2);
+    return NULL;
+}
+
+/* Second half of the duplicate-owner test: a live context refuses a second
+ * state, then every fixture is released. The releases run before their results
+ * are asserted, so a failed assertion leaves nothing allocated. */
+static char *cuda_overwrite_and_release(VmafContext *first, VmafContext *second,
+                                        VmafCudaState *state)
+{
+    VmafCudaState *other = calloc(1, sizeof(*other));
+    mu_assert("second CUDA state fixture allocation", other != NULL);
+    const int overwrite_err = vmaf_cuda_import_state(first, other);
+
+    memset(&first->cuda.state, 0, sizeof(first->cuda.state));
+    const int close_first = vmaf_close(first);
+    const int close_second = vmaf_close(second);
+    const int free_state = vmaf_cuda_state_free(state);
+    const int free_other = vmaf_cuda_state_free(other);
+    mu_assert("live context CUDA state cannot be overwritten", overwrite_err == -EBUSY);
+    mu_assert("first context cleanup", close_first == 0);
+    mu_assert("second context cleanup", close_second == 0);
+    mu_assert("imported wrapper cleanup", free_state == 0);
+    mu_assert("never-imported fixture cleanup", free_other == 0);
     return NULL;
 }
 
@@ -199,16 +240,7 @@ static char *test_cuda_state_import_rejects_duplicate_owners(void)
     err = vmaf_cuda_import_state(second, state);
     mu_assert("same CUDA state cannot be imported twice", err == -EBUSY);
 
-    VmafCudaState *other = calloc(1, sizeof(*other));
-    mu_assert("second CUDA state fixture allocation", other != NULL);
-    err = vmaf_cuda_import_state(first, other);
-    mu_assert("live context CUDA state cannot be overwritten", err == -EBUSY);
-
-    memset(&first->cuda.state, 0, sizeof(first->cuda.state));
-    mu_assert("first context cleanup", vmaf_close(first) == 0);
-    mu_assert("second context cleanup", vmaf_close(second) == 0);
-    mu_assert("imported wrapper cleanup", vmaf_cuda_state_free(state) == 0);
-    mu_assert("never-imported fixture cleanup", vmaf_cuda_state_free(other) == 0);
+    mu_assert_msg(cuda_overwrite_and_release(first, second, state));
     return NULL;
 }
 #endif
