@@ -58759,3 +58759,14 @@ Kept: the `+0` start of every sum (signed-zero parity with `adm_dwt2_s()`), mult
   target repeats `vmaf_strict_fp_args` (151 on an icx build) is a compile
   failure in the `sycl` tidy lane.
 - No source, score, public C API, Netflix golden-data or FFmpeg patch impact.
+## ADR-1454 — `core/src/feature/AGENTS.md` is a generated index over `AGENTS.d/` pages (2026-10-02)
+
+`docs/agents-index-feature`, `T-AGENTS-INDEX-MIGRATION-2026-10-02`.
+
+- No rebase impact from upstream: an upstream sync never touches an
+  `AGENTS.md` or an `AGENTS.d/`.
+- Fork branches that append to `core/src/feature/AGENTS.md` conflict once: take
+  `core/src/feature/AGENTS.md` from master, put the new rule into a new or matching
+  page under `core/src/feature/AGENTS.d/`, run `make docs-fragments-write`.
+- No coupled edits.
+- No Netflix golden-data, public API or FFmpeg patch impact.
