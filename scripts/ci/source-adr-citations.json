@@ -6060,6 +6060,7 @@
         "core/src/dnn/tiny_extractor_template.h": 1,
         "core/src/feature/brisque.c": 1,
         "core/src/feature/ciede.c": 1,
+        "core/src/feature/common/blur_array.c": 1,
         "core/src/feature/cuda/float_adm_cuda.c": 1,
         "core/src/feature/cuda/float_motion_cuda.c": 1,
         "core/src/feature/cuda/float_psnr_cuda.c": 1,

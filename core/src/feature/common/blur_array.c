@@ -27,6 +27,11 @@
 #include <string.h>
 #include "blur_array.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` and the
+ * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
+
 static void free_allocated_blur_bufs(BLUR_BUF_ARRAY *arr, int count)
 {
     /* Free the previously-allocated entries before returning.
@@ -34,9 +39,9 @@ static void free_allocated_blur_bufs(BLUR_BUF_ARRAY *arr, int count)
      * aligned_malloc pointer alive while the caller saw
      * actual_length=i and assumed the array was unusable. */
     for (int j = 0; j < count; j++) {
-        if (arr->blur_buf_array[j].blur_buf != nullptr) {
+        if (arr->blur_buf_array[j].blur_buf != NULL) {
             aligned_free(arr->blur_buf_array[j].blur_buf);
-            arr->blur_buf_array[j].blur_buf = nullptr;
+            arr->blur_buf_array[j].blur_buf = NULL;
         }
     }
 }
@@ -55,7 +60,7 @@ int init_blur_array(BLUR_BUF_ARRAY *arr, int array_length, size_t size, size_t a
         arr->blur_buf_array[i].frame_idx = -1;
         arr->blur_buf_array[i].blur_buf = aligned_malloc(size, alignement);
         arr->blur_buf_array[i].reference_count = 0;
-        if (arr->blur_buf_array[i].blur_buf == nullptr) {
+        if (arr->blur_buf_array[i].blur_buf == NULL) {
             free_allocated_blur_bufs(arr, i);
             arr->actual_length = 0;
             return 0;
@@ -65,7 +70,7 @@ int init_blur_array(BLUR_BUF_ARRAY *arr, int array_length, size_t size, size_t a
         arr->actual_length = i + 1;
     }
 
-    pthread_mutex_init(&arr->block, nullptr);
+    pthread_mutex_init(&arr->block, NULL);
 
     return 1;
 }
@@ -77,7 +82,7 @@ float *get_blur_buf(BLUR_BUF_ARRAY *arr, int search_frame_idx)
 {
     int array_length = arr->actual_length;
     BLUR_BUF_STRUCT *s = arr->blur_buf_array;
-    float *ret = nullptr;
+    float *ret = NULL;
 
     pthread_mutex_lock(&arr->block);
 
@@ -185,7 +190,7 @@ float *get_free_blur_buf_slot(BLUR_BUF_ARRAY *arr, int frame_idx)
 {
     int array_length = arr->actual_length;
     BLUR_BUF_STRUCT *s = arr->blur_buf_array;
-    float *ret = nullptr;
+    float *ret = NULL;
     pthread_mutex_lock(&arr->block);
 
     for (int i = 0; i < array_length; i++) {
@@ -259,3 +264,5 @@ int release_blur_buf_reference(BLUR_BUF_ARRAY *arr, int search_frame_idx)
 
     return ret;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

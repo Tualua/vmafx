@@ -2037,6 +2037,11 @@ make `core/src/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1
   [HIP backend](docs/backends/hip/overview.md#vif_hip-returns-the-cpus-scores-bit-for-bit-2026-10-01)).
 
 
+- **The Windows MSVC builds compile `blur_array.c` again.** A lint cleanup on
+  2026-10-02 had replaced `NULL` with the C23 keyword `nullptr` in that C file;
+  MSVC's C mode does not know the keyword.
+
+
 - **`vmaf` no longer hangs after an out-of-memory on the device.**
   `vmaf_read_pictures()` kept the pair of pictures it was given when it failed
   before it reached an extractor (a non-increasing index, pictures that
