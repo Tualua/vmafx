@@ -58264,3 +58264,14 @@ part).
   line only.
 - No Netflix golden-data, public API, CLI or FFmpeg patch impact. The CPU
   extractor is not touched.
+
+## ADR-1454 — `dev/AGENTS.md` is a generated index over `AGENTS.d/` pages (2026-10-02)
+
+`docs/agents-index-dev`, `T-AGENTS-INDEX-MIGRATION-2026-10-02`.
+
+- No rebase impact from upstream: an upstream sync never touches an
+  `AGENTS.md` or an `AGENTS.d/`.
+- Fork branches that append to `dev/AGENTS.md` conflict once: take
+  `AGENTS.md` from master, put the new rule into a new or matching
+  page under `dev/AGENTS.d/`, run `make docs-fragments-write`.
+- No Netflix golden-data, public API or FFmpeg patch impact.
