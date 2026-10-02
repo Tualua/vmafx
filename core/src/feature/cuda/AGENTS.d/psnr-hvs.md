@@ -20,7 +20,9 @@ invariant: PSNR-HVS participates in engine sync, honours enable_chroma, and matc
   ADR-1203) clamps `n_planes` to 1 when `false`; YUV400P always forces
   `n_planes = 1` (`configure_hvs_geometry`), as the CPU extractor does.
   Plane loops iterate `s->n_planes`, not `PSNR_HVS_NUM_PLANES`; the combined
-  score is luma only when `n_planes == 1`.
+  score is luma only when `n_planes == 1`. Loops that index a per-plane array
+  or the header's offsets take the count from `psnr_hvs_plane_count()`
+  (`n_planes` capped at `PSNR_HVS_NUM_PLANES`), so the bound is the array's.
 - **`integer_psnr_hvs/psnr_hvs_score.cu` reads raw device samples**
   (CUDA port of ADR-1369). Two threads per 8x8 block (even thread =
   reference, odd = distorted), raw 8- to 12-bit samples via the picture
@@ -53,3 +55,7 @@ invariant: PSNR-HVS participates in engine sync, honours enable_chroma, and matc
   the same PR. Readback = 256 bytes per block (65 MB per 3840x2160
   4:2:0 frame); tuning tracked as
   T-CUDA-PSNR-HVS-EXACT-SUM-THROUGHPUT-2026-10-01, must stay bit-exact.
+- **Module load = `psnr_hvs_load_module()`** (context pushed, module +
+  the four entry points `psnr_hvs`, `hvs_scan_reduce`, `hvs_scan_prefix`,
+  `hvs_compact` resolved, context popped on every path). A new kernel entry
+  point is resolved there, not in `init_fex_cuda()`.

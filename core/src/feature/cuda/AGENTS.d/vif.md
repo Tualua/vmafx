@@ -2,6 +2,7 @@
 paths:
   - core/src/feature/cuda/integer_vif_cuda.c
   - core/src/feature/cuda/integer_vif_cuda.h
+  - core/src/feature/cuda/integer_vif/filter1d.cu
 invariant: vif_cuda enforces 16-pixel minimum, reads CPU log2 table, and resets on picture stream.
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
@@ -26,9 +27,8 @@ invariant: vif_cuda enforces 16-pixel minimum, reads CPU log2 table, and resets 
   -> `vif_init_unwind()`.
 - Transfer = kernel, not `cuModuleGetGlobal()`: ffnvcodec loader binds
   legacy symbol, current-API context answers `CUDA_ERROR_INVALID_CONTEXT`.
-- Global, not kernel argument: `filter1d.cu` (upstream NVIDIA kernels, four
-  baselined HISS-04 function sizes) stays untouched; kernel arithmetic
-  unchanged.
+- Global, not kernel argument: `filter1d.cu` kernel signatures and
+  arithmetic unchanged.
 - Guards: `test_cuda_vif_log2_table` (device: table empty before upload,
   all 32768 entries == host after, wrong module refused),
   `test_cuda_vif_log2_contract.py` (eight planted regressions),
@@ -47,3 +47,14 @@ invariant: vif_cuda enforces 16-pixel minimum, reads CPU log2 table, and resets 
   DtoH on `s->str`. Reset on `s->str` raced scale 0 under GPU contention: late
   reset erased the first adds, vif scales wrong with >= 2 instances on one
   device (Netflix/vmaf#1305).
+
+- **`integer_vif/filter1d.cu` kernels = short bodies over `__forceinline__`
+  `vif_*` stages** (ADR-1142, HISS-04; the four baselined function-size rows
+  are gone). Horizontal 8-bit and 16-bit = one template `vif_hori_kernel`
+  (filter row and `__ldg()` as template arguments, rounding and shift as
+  arguments); `filter1d_8_horizontal_kernel` / `filter1d_16_horizontal_kernel`
+  only instantiate it. Upstream change
+  to a kernel body -> port it into the matching stage, never restore a long
+  body. Stages are integer-only; same operation sequence as before, so
+  verify on device: `test_cuda_exact_twins`, `test_cuda_vif_parity`, `vif`
+  gate cell (tolerance 0).

@@ -1,6 +1,20 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## Agent pages name the staged CUDA VIF kernels and the HIP handle header (2026-10-02)
+
+`docs/agents-notes-and-state-rows`. No rebase impact on code: agent pages and
+two `docs/state.md` rows only.
+
+- `core/src/feature/cuda/AGENTS.d/vif.md`: `integer_vif/filter1d.cu` is
+  assembled from `vif_*` stages since PR #1860. An upstream hunk in a kernel
+  body goes into the matching stage; the long bodies do not come back.
+- `core/src/hip/AGENTS.d/kernel-template.md`: `uintptr_t` handles convert
+  through `hip_handle.h` only.
+- `docs/state.md`: `T-GPU-FLOAT-SSIM-FRAME-SUM-ORDER-2026-10-02` is under
+  "Recently closed". A branch that still edits it under "Open bugs" takes
+  master's side for that row.
+
 ## The ADM headers lost upstream's `ADM_CM_THRESH_S_*` macros and `#pragma once` (ADR-1142, 2026-10-02)
 
 `refactor/adm-tools-standards`. No score impact: every object file of an x86 and an aarch64 build is byte-identical before and after.

@@ -71,3 +71,10 @@ band (200..900), assert CPU score is non-degenerate first.
   histogram canary, 12 banding fixtures, window cases),
   `test_hip_device_resident_contract.py` (planted regressions),
   `test_hip_cambi_parity` on device.
+- Arena binding: `cambi_hip_bind_params()` takes each block through
+  `cambi_hip_arena_at(base, offset)` (returns `void *`; every block starts on
+  `CAMBI_HIP_ARENA_ALIGN`, `cambi_hip_arena_take()`). No cast of
+  `base + offset` through `void *` at the call sites.
+- `integer_cambi/cambi_hip_device.h`: an offset added to a pointer is
+  widened to `size_t` before the multiply (`row + (size_t)y * width`); an
+  `int` product overflows above 2^31 samples.

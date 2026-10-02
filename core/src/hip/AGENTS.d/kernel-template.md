@@ -2,6 +2,7 @@
 paths:
   - core/src/hip/kernel_template.h
   - core/src/hip/kernel_template.c
+  - core/src/hip/hip_handle.h
 invariant: kernel_template.{h,c} mirrors CUDA kernel template field-for-field and helper-for-helper.
 ---
 # HIP Kernel Template Mirror and Lifecycle
@@ -30,3 +31,12 @@ invariant: kernel_template.{h,c} mirrors CUDA kernel template field-for-field an
   and `hip_hsaco_sources` meson pipeline are also being added by PR
   #612 (`float_psnr_hip`). When two PRs merge, keep one copy,
   discard duplicate. Bodies identical so either direction safe.
+
+- **`uintptr_t` handles convert only through `hip_handle.h`.**
+  `kernel_template.h` and `libvmaf_hip.h` carry `hipStream_t` /
+  `hipEvent_t` as `uintptr_t` (no `<hip/hip_runtime_api.h>` there,
+  ADR-0241). `kernel_template.c`, `common.c` and `picture_hip.c` get the
+  typed handle from `vmaf_hip_stream_of()` / `vmaf_hip_event_of()` and the
+  bits from `vmaf_hip_stream_bits()` (union `VmafHipHandle`), never by an
+  integer-to-pointer cast. Include it only from a TU that builds against
+  the HIP runtime.
