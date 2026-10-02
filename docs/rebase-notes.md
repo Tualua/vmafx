@@ -1385,6 +1385,46 @@ Dropped: the two `#ifdef ADM_OPT_DEBUG_DUMP` blocks. They called `write_image()`
   (`speed_temporal` on a checkerboard); aarch64 GCC builds by 1.2e-12 in the
   model score. No Netflix golden assertion, public API or FFmpeg patch
   changes.
+## SYCL zero-copy fails loudly and routes `feature=` names to SYCL twins (2026-10-02)
+
+`fix/sycl-zerocopy-features`, Stage 1 of the zero-copy feature-correctness work,
+[ADR-1595](adr/1595-sycl-zerocopy-fail-loud-twin-routing.md); row
+`T-SYCL-ZEROCOPY-DROPS-NON-SYCL-FEATURES-2026-10-02` in [state.md](state.md).
+
+- `core/src/libvmaf.c`: `vmaf_read_pictures_sycl` calls the pre-pass guard
+  `sycl_check_zero_copy_extractors` as its first statement, before
+  `vmaf_sycl_queue_wait`, `pic_cnt++` and `vmaf_sycl_advance_frame`; a guard
+  that returns after one of those leaves a half-advanced frame. Do not bring
+  back the warn-and-`continue` for extractors without
+  `VMAF_FEATURE_EXTRACTOR_SYCL`.
+- Every SYCL extractor that needs host pictures calls
+  `vmaf_sycl_require_host_pictures` first in `submit()` and returns `-ENOTSUP`;
+  none returns `-EINVAL` for a missing picture or reads `motion_add_uv` chroma
+  that was never imported. `core/test/test_sycl_zerocopy_guards.c` holds every
+  extractor to it.
+- `ffmpeg-patches/0005-libvmaf-add-libvmaf-sycl-filter.patch`: `use_feature()`
+  wraps `vmaf_use_feature` and routes the name through
+  `vmaf_feature_backend_twin` once `route_twins` is set, inside upstream's
+  `parse_features`. If a rebase conflicts there, switch to the
+  `parse_features_sycl` fallback instead of dropping the routing. A VA import
+  failure returns `AVERROR_EXTERNAL`; do not return it to a warning. The series
+  is checked with `scripts/ci/ffmpeg_patch_stack.py --check` and
+  `ffmpeg-patches/test/check-sycl-feature-routing.sh`.
+- `scripts/test/zerocopy-e2e.sh` and `scripts/test/zerocopy_e2e_compare.py` are
+  the acceptance gate for Stages 1 to 3. `PARITY_STAGE` moves a case from
+  "fails loudly" to "must match numerically"; move a row only in the PR that
+  makes it work. The e2e run is local / container only (the self-hosted runner
+  has no FFmpeg or oneVPL). Once the ADR-1441 branch lands
+  `scripts/test/run-all-tests.sh`, add a `[ZEROCOPY]` section there that calls
+  the runner; master has no such file yet.
+- The fixes the harness forced on the same branch have their own entries below:
+  `float_motion_sycl` emitting `motion3`, [ADR-1462](adr/1462-speed-cpu-correctly-rounded-log2.md)
+  (CPU SpEED `log2`) and [ADR-1596](adr/1596-sycl-va-import-immediate-cmdlist.md)
+  (immediate command list on the primary queue). Research digest:
+  [Research-1595](research/1595-sycl-zerocopy-feature-correctness.md).
+- `docs/state.md` carries the row `T-SYCL-ZEROCOPY-DROPS-NON-SYCL-FEATURES-2026-10-02`
+  on this branch; the ADR-1441 branch carries an older one with the same ID. If
+  that branch lands first, merge the two rows into one.
 
 ## The CLI read-ahead asserts its invariants (2026-10-02)
 
