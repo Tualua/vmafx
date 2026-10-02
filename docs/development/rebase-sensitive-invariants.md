@@ -586,6 +586,17 @@ linked AGENTS.md before resolving conflicts.
   `float_psnr.c` forms or adds its terms changes the kernel in the same PR.
   `core/test/test_sycl_float_psnr_exact_contract.py` guards it without a
   device, `test_sycl_float_psnr_parity` (`==`) on one.
+- **`float_moment_cuda` adds the CPU's float squares ([ADR-1453](../adr/1453-cuda-float-moment-cpu-float-squares.md))**:
+  the 16bpc kernel of `core/src/feature/cuda/integer_moment/moment_score.cu`
+  adds `moment_float_square()`, one `__fmul_rn()` product of the sample with
+  itself converted to an integer, where `moment.c::compute_2nd_moment()` forms
+  the square in `float`; an exact integer square is another number at 16 bits.
+  The host recovers the moment with the CPU's two divisions. A change to how
+  `moment.c` forms or adds its terms changes the kernel in the same PR.
+  `core/test/test_cuda_float_moment_exact_contract.py` guards it without a
+  device, `test_cuda_float_moment_parity` on one (`==` while the sum is below
+  2^53 units, a derived bound past it).
+
 - **`float_moment_sycl` adds the CPU's float squares ([ADR-1449](../adr/1449-sycl-float-moment-cpu-float-squares.md))**:
   the kernel of `core/src/feature/sycl/integer_moment_sycl.cpp` adds
   `moment_float_square()`, one fp32 product of the sample with itself

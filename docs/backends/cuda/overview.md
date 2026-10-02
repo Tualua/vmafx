@@ -963,6 +963,58 @@ python3 scripts/dev/speed_gpu_parity.py --backend cuda --feature float_ssim \
     --vmaf "$PWD/build/tools/vmaf"
 ```
 
+## `float_moment_cuda` matches the CPU `float_moment` at 16 bits (2026-10-02)
+
+`float_moment_cuda` returns the CPU extractor's four moments bit for bit
+([ADR-1453](../../adr/1453-cuda-float-moment-cpu-float-squares.md), after
+ADR-1447 for the HIP twin and ADR-1449 for the SYCL twin). The CPU forms each
+sample's square in `float` before adding it. Up to 12 bits that is the
+integer square; at 16 bits it is the square rounded to 24 bits. The kernel
+added exact integer squares, so its second moments were the CPU's up to 12
+bits and not at 16. The 16-bit kernel now adds the `float` square, an integer
+below 2^32, into the same `uint64` sums.
+
+The repository's 16-bit Netflix clip is 8-bit content shifted left, whose
+squares have few significant bits, so the usual fixtures never showed it.
+Measured on an RTX 4090 at `--precision max` against `--backend cpu`, frames
+whose second moments are identical and the largest difference:
+
+| Fixture | Before | Now |
+|---|---|---|
+| Netflix 576x324 at 8 to 16 bits and 4:2:2, both 1080p checkerboards, Sparks 10 bit, BBB 3840x2160, noise at 8, 10 and 12 bits | 173 of 173 | 173 of 173 |
+| Full-range noise 576x324, 16 bit, 3 frames | 0 of 3, 2.8e-5 | 3 of 3 |
+| Bright 16-bit 1920x1080 (samples 56000 to 64000), 2 frames | 0 of 2, 1.0e-4 | 2 of 2 |
+| BBB 1920x1080 widened to 16 bits, 40 frames | 0 of 40, 7.5e-5 | 40 of 40 |
+| BBB 3840x2160 widened to 16 bits, 32 frames | 0 of 32, 3.9e-5 | 32 of 32 |
+
+The sums are exact integers, and so is the CPU's running `double` sum while
+it is below 2^53 units of 2^-16. That covers every frame of up to 2 097 152
+pixels and every 8-, 10- and 12-bit frame. On a larger 16-bit frame whose
+sum of squares passes 2^53 the CPU rounds each further add, and the twin,
+which rounds once, is within a derived bound of it (2.7e-7 measured on a
+2560x1440 frame, bound 6.6e-6; `T-HIP-FLOAT-MOMENT-PAST-2-53-2026-10-02` in
+[`state.md`](../../state.md)). 17 of the 32 widened BBB 3840x2160 frames are
+in that range and identical.
+
+The frame time is unchanged. Per frame through the `vmaf` tool, steady state
+(the time of 40 or 32 frames less the time of 4, per added frame), medians of
+15 interleaved pairs of runs with a load average of 24 to 34 from other
+builds on the machine:
+
+| Input | Before | After | Paired difference |
+|---|---|---|---|
+| 1920x1080, 16 bit | 1.18 ms | 1.07 ms | -0.10 ms |
+| 3840x2160, 16 bit | 4.77 ms | 5.25 ms | +0.04 ms |
+| 3840x2160, 8 bit (kernel unchanged) | 2.01 ms | 1.96 ms | -0.03 ms |
+
+The parity gate compares the twin with tolerance 0.
+
+```shell
+python3 scripts/ci/cross_backend_parity_gate.py --vmaf-binary build/tools/vmaf \
+    --reference ref_16bit.yuv --distorted dis_16bit.yuv --width 1920 --height 1080 \
+    --bitdepth 16 --backends cpu cuda --features float_moment
+```
+
 ## Licensing of the CUDA kernels (ADR-1250)
 
 A CUDA kernel implementing an upstream Netflix metric carries that metric's

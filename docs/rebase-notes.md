@@ -57829,3 +57829,25 @@ must keep the fork's side of both:
   scaffold); it passed before.
 - No source of a twin changes; no score changes. No Netflix golden-data,
   public API or FFmpeg patch impact.
+## ADR-1453 — `float_moment_cuda` adds the CPU's float squares (2026-10-02)
+
+`fix/cuda-float-moment-cpu-float-squares`, `T-CUDA-FLOAT-MOMENT-16BIT-SQUARES-2026-10-02`.
+
+- `core/src/feature/cuda/integer_moment/moment_score.cu`: new
+  `moment_float_square()` and `sample_square<T>()`; `thread_sums()` adds
+  `sample_square<T>()` for the second sums instead of `r * r` / `d * d`. A
+  `uint16_t` sample contributes the fp32 square, a `uint8_t` sample the
+  integer square (the same number at 8 bits). If upstream changes how
+  `moment.c::compute_2nd_moment()` forms or adds its term, change the kernel
+  with it.
+- `core/src/feature/cuda/integer_moment_cuda.c`: `moment_cuda_scaler()` holds
+  the bit-depth scaler and the statement of the exact range and the bound
+  past 2^53; the arithmetic of `collect_fex_cuda()` is unchanged.
+- `core/test/test_cuda_float_moment_parity.c` is one binary of equality cases
+  over `core/test/float_moment_twin_parity.h`; the `_10bit` meson variant is
+  gone (the binary covers 8, 10, 12 and 16 bits) and the `_large` variant
+  stays registered through `cuda_parity_large_fixture_tests`.
+- `core/test/test_cuda_float_moment_exact_contract.py` (new) is device-free.
+- `scripts/ci/exact_twins.d/float_moment.cuda` (new) declares the twin exact
+  (ADR-1428).
+- No Netflix golden-data, public API or FFmpeg patch impact.

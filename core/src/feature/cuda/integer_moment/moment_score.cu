@@ -11,9 +11,9 @@
  *
  *  Algorithm (mirrors core/src/feature/float_moment.c::extract):
  *      for each pixel:
- *          ref1 += ref;        ref2 += ref * ref;
- *          dis1 += dis;        dis2 += dis * dis;
- *      host divides each accumulator by w*h.
+ *          ref1 += ref;        ref2 += (float)ref * (float)ref;
+ *          dis1 += dis;        dis2 += (float)dis * (float)dis;
+ *      host divides each accumulator by the bit-depth scaler and by w*h.
  *
  *  Reduction strategy (ADR-1392, as psnr_score.cu):
  *    1. Each thread sums the four contributions of MOMENT_COLS_PER_THREAD
@@ -27,8 +27,18 @@
  *       kernel on the four addresses (T-CUDA-MOMENT-PER-WARP-ATOMICS-
  *       2026-10-01).
  *
- *  Bit-exactness contract: the sums are integers, so their order cannot
- *  change them; the host arithmetic is unchanged.
+ *  Bit-exactness contract (ADR-1453): the four sums are the CPU's.
+ *  moment.c adds the samples, and their squares, into one double per
+ *  output. The first moments' terms are exact, so their integer sum is the
+ *  CPU's sum. For the second moments the CPU forms each square in float
+ *  (`const float term = pic_ * pic_`) and adds the floats: up to 12 bits a
+ *  square has at most 24 significant bits and the float is the integer
+ *  square, but at 16 bits it is the square rounded to 24 bits. The 16bpc
+ *  kernel therefore adds the float square (moment_float_square()), an
+ *  integer below 2^32, so the uint64 sum is exact, its order cannot change
+ *  it, and it equals the CPU's double sum while that sum is below 2^53
+ *  units, which holds for every frame of up to 2^21 pixels. Beyond it the
+ *  CPU's own running sum rounds at every add; see integer_moment_cuda.c.
  */
 
 #include "cuda_helper.cuh"
@@ -71,6 +81,33 @@ __device__ __forceinline__ void add_block_sums(MomentSums m, unsigned long long 
     }
 }
 
+/* The term of moment.c::compute_2nd_moment() for the raw sample `v` of a 10-,
+ * 12- or 16-bit plane, in units of 1 / scaler^2: picture_copy() divides the
+ * sample by the scaler (a power of two, exact) and the square is one fp32
+ * product, rounded to nearest even. Scaling by a power of two does not change
+ * which bits are rounded away, so the float square of the raw sample has the
+ * same significand. Its value is an integer below 2^32. */
+__device__ __forceinline__ unsigned long long moment_float_square(unsigned long long v)
+{
+    const float sample = (float)v;
+    const float square = __fmul_rn(sample, sample);
+    return (unsigned long long)square;
+}
+
+/* The square a T sample contributes. An 8-bit square has at most 16
+ * significant bits, so the CPU's float square is the integer square. */
+template <typename T> __device__ __forceinline__ unsigned long long sample_square(T v);
+
+template <> __device__ __forceinline__ unsigned long long sample_square<uint8_t>(uint8_t v)
+{
+    return (unsigned long long)v * (unsigned long long)v;
+}
+
+template <> __device__ __forceinline__ unsigned long long sample_square<uint16_t>(uint16_t v)
+{
+    return moment_float_square(v);
+}
+
 /* Row `y` of the luma plane of `pic` as T samples. */
 template <typename T>
 __device__ __forceinline__ const T *luma_row(const VmafPicture &pic, unsigned y)
@@ -95,12 +132,12 @@ __device__ __forceinline__ MomentSums thread_sums(const VmafPicture &ref, const 
     for (unsigned k = 0; k < MOMENT_COLS_PER_THREAD; k++) {
         const unsigned x = x0 + k * MOMENT_BLOCK_X;
         if (x < width) {
-            const unsigned long long r = __ldg(&ref_row[x]);
-            const unsigned long long d = __ldg(&dis_row[x]);
+            const T r = __ldg(&ref_row[x]);
+            const T d = __ldg(&dis_row[x]);
             m.v[0] += r;
             m.v[1] += d;
-            m.v[2] += r * r;
-            m.v[3] += d * d;
+            m.v[2] += sample_square<T>(r);
+            m.v[3] += sample_square<T>(d);
         }
     }
     return m;

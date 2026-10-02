@@ -186,6 +186,34 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     return vmaf_cuda_kernel_submit_post_record(&s->lc, fex->cu_state);
 }
 
+/* The scaler picture_copy() divides a sample by before moment.c accumulates
+ * it: 4 at 10 bpc, 16 at 12 bpc, 256 at 16 bpc (core/src/feature/
+ * picture_copy.cpp). The kernel accumulates the raw codeword, so collect()
+ * divides by it; without that a 10-bit input reported ref1st / dis1st 4x and
+ * ref2nd / dis2nd 16x too large (ADR-1212).
+ *
+ * ADR-1453: the device sums are exact integers of the CPU's own terms (the
+ * samples, and the float squares the CPU forms), in units of 1 / scaler and
+ * 1 / scaler^2. Every term is a multiple of the unit, so the CPU's running
+ * double sum is exact, and equal to the integer sum, while it is below 2^53
+ * units; dividing by a power of two and then by the pixel count are the
+ * CPU's two operations. A second-moment sum can reach 2^53 units only at 16
+ * bits on a frame of more than 2^21 pixels (each term is below 2^32). There
+ * the CPU rounds as it adds and the conversion in collect() rounds once, and
+ * the two differ by at most
+ *   (pixels - 2^21 + 1) / pixels * 2^(e - 69) + 2^-37,
+ * e the binade of the sum in units (53 or more): 2.3e-5 at 3840x2160 with
+ * every sample near the peak. test_cuda_float_moment_parity checks both
+ * ranges. */
+static double moment_cuda_scaler(unsigned bpc)
+{
+    if (bpc == 10u)
+        return 4.0;
+    if (bpc == 12u)
+        return 16.0;
+    return (bpc == 16u) ? 256.0 : 1.0;
+}
+
 static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
                             VmafFeatureCollector *feature_collector)
 {
@@ -196,20 +224,9 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
         return sync_err;
 
     const uint64_t *sums_host = s->rb.host_pinned;
-    /* ADR-1212: normalise by the bit-depth scaler exactly as the CPU reference
-     * does. `float_moment` runs `picture_copy()` first, which divides every
-     * sample by 4 (10 bpc), 16 (12 bpc) or 256 (16 bpc) before `moment.c`
-     * accumulates it — see core/src/feature/picture_copy.cpp. This kernel
-     * accumulates the RAW codeword, so without this step a 10-bit input
-     * reported ref1st/dis1st 4x and ref2nd/dis2nd 16x too large. The device
-     * sums are exact integers, so dividing here reproduces the CPU's
-     * sum(x / scaler) bit-for-bit at 10 and 12 bpc (every term is an exact
-     * multiple of 1/scaler and the running double sum stays exact); at 16 bpc
-     * the CPU rounds each float square, so agreement is to float precision. */
-    const double moment_scaler = (s->bpc == 10u) ? 4.0 :
-                                 (s->bpc == 12u) ? 16.0 :
-                                 (s->bpc == 16u) ? 256.0 :
-                                                   1.0;
+    /* The sums are in units of 1 / scaler and 1 / scaler^2: see
+     * moment_cuda_scaler(). */
+    const double moment_scaler = moment_cuda_scaler(s->bpc);
     const double moment_scaler_sq = moment_scaler * moment_scaler;
     const double n_pixels = (double)s->frame_w * (double)s->frame_h;
     const double ref1 = ((double)sums_host[0] / moment_scaler) / n_pixels;

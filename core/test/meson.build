@@ -360,6 +360,17 @@ test('test_cuda_float_adm_exact_contract',
     timeout : 30,
 )
 
+# ADR-1453 — float_moment_cuda's 16bpc kernel adds moment_float_square(), one
+# fp32 product of the sample with itself as an integer, which is the term
+# moment.c adds; the host recovers the moment with the CPU's two divisions.
+# Device-free; the device check is test_cuda_float_moment_parity.
+test('test_cuda_float_moment_exact_contract',
+    import('python').find_installation(),
+    args : files('test_cuda_float_moment_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-1434: float_adm_sycl returns the CPU's scores bit for bit -- the
 # decouple's quotient is the IEEE fp32 one (ADR-1442), the three
 # fp64 expressions of adm_tools.c are evaluated without an fp64 type, the
@@ -3381,30 +3392,25 @@ test('test_cuda_float_ms_ssim_parity', test_cuda_float_ms_ssim_parity,
     suite : ['fast', 'gpu'],
     is_parallel : false)
 
+# ADR-1453 — float_moment_cuda returns the CPU's four moments bit for bit
+# (first added as a places=4 test at 8 and 10 bpc, ADR-0947 / ADR-1212). One
+# binary runs noise at 8, 10, 12 and 16 bits and a bright 16-bit 1920x1080
+# frame with ==, and a bright 16-bit 2560x1440 frame, where the CPU's own sum
+# is past 2^53 and rounds, against the derived bound
+# (float_moment_twin_parity.h). The `_large` variant below runs the noise
+# cases at 960x540. The device-free half is
+# test_cuda_float_moment_exact_contract, registered for every build.
 test_cuda_float_moment_parity = executable('test_cuda_float_moment_parity',
     ['test.c', 'test_cuda_float_moment_parity.c'],
-    include_directories : [libvmaf_inc, test_inc],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_float_moment_parity', test_cuda_float_moment_parity,
     suite : ['fast', 'gpu'],
-    is_parallel : false)
-
-# ADR-1212 — the same TU at 10 bpc. Every parity fixture in this tree was 8-bit,
-# so a twin that accumulates the raw codeword instead of the bit-depth-normalised
-# sample the CPU uses could never be caught. This one was (4x / 16x too large).
-test_cuda_float_moment_parity_10bit = executable('test_cuda_float_moment_parity_10bit',
-    ['test.c', 'test_cuda_float_moment_parity.c'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
-    dependencies: [pthread_dependency, cuda_dependency, math_lib],
-    c_args: ['-DHAVE_CUDA=1', '-DFIXTURE_BPC=10u']
-)
-test('test_cuda_float_moment_parity_10bit', test_cuda_float_moment_parity_10bit,
-    suite : ['fast', 'gpu'],
-    is_parallel : false)
+    is_parallel : false,
+    timeout : 120)
 
 test_cuda_ssimulacra2_parity = executable('test_cuda_ssimulacra2_parity',
     ['test.c', 'test_cuda_ssimulacra2_parity.c'],

@@ -1252,7 +1252,6 @@
         "core/src/feature/vif_tools.c": 1,
         "core/test/meson.build": 11,
         "core/test/test_cuda_cambi_parity.c": 1,
-        "core/test/test_cuda_float_moment_parity.c": 1,
         "core/test/test_cuda_float_ms_ssim_parity.c": 1,
         "core/test/test_cuda_float_psnr_parity.c": 2,
         "core/test/test_cuda_motion3_parity.c": 2,
@@ -5200,7 +5199,7 @@
     },
     "0947": {
       "sites": {
-        "core/test/meson.build": 1,
+        "core/test/meson.build": 2,
         "core/test/test_cuda_float_moment_parity.c": 1,
         "core/test/test_cuda_float_ms_ssim_parity.c": 1,
         "core/test/test_cuda_float_psnr_parity.c": 1,
@@ -9144,6 +9143,16 @@
         "scripts/ci/test_cross_backend_parity_gate.py": 1
       },
       "target": "1452-hip-speed-chroma-log2f-bound.md"
+    },
+    "1453": {
+      "sites": {
+        "core/src/feature/cuda/integer_moment/moment_score.cu": 1,
+        "core/src/feature/cuda/integer_moment_cuda.c": 1,
+        "core/test/meson.build": 2,
+        "core/test/test_cuda_float_moment_exact_contract.py": 2,
+        "core/test/test_cuda_float_moment_parity.c": 1
+      },
+      "target": "1453-cuda-float-moment-cpu-float-squares.md"
     }
   },
   "retired": {

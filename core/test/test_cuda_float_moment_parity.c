@@ -6,257 +6,105 @@
  */
 
 /*
- * ADR-0947 — float_moment CPU vs. CUDA parity test (round 3).
+ * float_moment CPU vs. CUDA: the twin returns the CPU's four moments bit for
+ * bit (ADR-1453; first added as a places=4 parity test, ADR-0947, and at 10
+ * bits, ADR-1212).
  *
- * The float-path moment extractor is implemented independently in
- * core/src/feature/float_moment.c (CPU) and
- * core/src/feature/cuda/integer_moment_cuda.c (CUDA, registered as
- * `float_moment_cuda`).  Both emit the four
- * `float_moment_{ref,dis}{1st,2nd}` features.  Before this test no
- * cross-backend assertion gated drift; a kernel reduction change on
- * the CUDA side or a SIMD pivot on the CPU side could silently shift
- * the moments.
+ * float_moment is float_moment.c / moment.c on the CPU and
+ * cuda/integer_moment_cuda.c (registered as `float_moment_cuda`) on CUDA. The
+ * twin adds four uint64 sums on the device and the host divides them. Its
+ * second sums were the exact integer squares of the raw samples, which is the
+ * CPU's sum up to 12 bits and not at 16, where the CPU's float square is the
+ * integer square rounded to 24 bits: on full-range 16-bit noise the second
+ * moments were 2.8e-5 off, on a bright 16-bit 1920x1080 frame 1.0e-4. The
+ * 16bpc kernel adds the float squares now (moment_float_square()).
  *
- * Asserts agreement to within 1e-4 (places=4, ADR-0214) at frame
- * index 1 across 3 frames on a 256x144 YUV420P 8-bpc fixture.
- * Skips cleanly when no CUDA device is visible.
+ * The fixtures, the comparison and the cases are
+ * float_moment_twin_parity.h's. On the old twin the 8-, 10- and 12-bit cases
+ * pass and both 16-bit equality cases fail.
+ *
+ * Skip behaviour: exits 77 when there is no CUDA device.
  */
 
-#include <math.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
-
-#include "test.h"
-
-#include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_cuda.h"
-#include "libvmaf/picture.h"
+
+#include "float_moment_twin_parity.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this test mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+ * C23, where clang-tidy proposes `nullptr`, but the required MSVC C build does
+ * not provide that keyword. Preserve the portable C spelling. ADR-1138. */
 
-#ifndef FIXTURE_W
-#define FIXTURE_W 256u
-#endif
-#ifndef FIXTURE_H
-#define FIXTURE_H 144u
-#endif
-#ifndef FIXTURE_BPC
-#define FIXTURE_BPC 8u
-#endif
-#define NUM_FRAMES 3u
+static int twin_open(void **state)
+{
+    VmafCudaState *cu_state = NULL;
+    const VmafCudaConfiguration cuda_cfg = {0};
+    const int err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
+    *state = cu_state;
+    return err;
+}
 
-#define PARITY_TOL 1e-4
+static int twin_import(VmafContext *vmaf, void *state)
+{
+    return vmaf_cuda_import_state(vmaf, (VmafCudaState *)state);
+}
 
-static const char *const MOMENT_FEATURES[] = {
-    "float_moment_ref1st",
-    "float_moment_dis1st",
-    "float_moment_ref2nd",
-    "float_moment_dis2nd",
+static int twin_close(void *state)
+{
+    return vmaf_cuda_state_free((VmafCudaState *)state);
+}
+
+static const FloatMomentTwin twin = {
+    .extractor = "float_moment_cuda",
+    .backend = "CUDA",
+    .open = twin_open,
+    .import = twin_import,
+    .close = twin_close,
 };
-#define NUM_MOMENTS 4u
 
-/* ADR-1212: the fixture is bit-depth generic. Below 8 bpc it writes bytes as
- * before; above it writes uint16 samples with the 8-bit pattern in the high
- * bits and a second pattern in the low (bpc - 8) bits, so a twin that forgets
- * to divide by the bit-depth scaler — or that only looks at the high bits —
- * cannot match the CPU by accident. */
-static void put_luma(VmafPicture *pic, unsigned row, unsigned col, unsigned v8, unsigned low_seed)
+static char *test_float_moment_cuda_registered(void)
 {
-#if FIXTURE_BPC > 8u
-    uint16_t *y = (uint16_t *)((uint8_t *)pic->data[0] + (size_t)row * pic->stride[0]);
-    const unsigned low_mask = (1u << (FIXTURE_BPC - 8u)) - 1u;
-    y[col] = (uint16_t)(((v8 & 0xFFu) << (FIXTURE_BPC - 8u)) | (low_seed & low_mask));
-#else
-    uint8_t *y = (uint8_t *)pic->data[0] + (size_t)row * pic->stride[0];
-    (void)low_seed;
-    y[col] = (uint8_t)(v8 & 0xFFu);
-#endif
+    return float_moment_twin_registered(&twin);
 }
 
-static void fill_chroma_grey(VmafPicture *pic)
+static char *test_float_moment_8bit_exact(void)
 {
-    for (unsigned p = 1; p < 3; p++) {
-        for (unsigned row = 0; row < pic->h[p]; row++) {
-            uint8_t *rowp = (uint8_t *)pic->data[p] + (size_t)row * pic->stride[p];
-#if FIXTURE_BPC > 8u
-            uint16_t *r16 = (uint16_t *)rowp;
-            for (unsigned col = 0; col < pic->w[p]; col++)
-                r16[col] = (uint16_t)(1u << (FIXTURE_BPC - 1u));
-#else
-            memset(rowp, 128, pic->w[p]);
-#endif
-        }
-    }
+    return float_moment_twin_noise_exact(&twin, 8u);
 }
 
-static int fill_ref(VmafPicture *pic, unsigned frame_idx)
+static char *test_float_moment_10bit_exact(void)
 {
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
-    if (err)
-        return err;
-
-    for (unsigned row = 0; row < pic->h[0]; row++) {
-        for (unsigned col = 0; col < pic->w[0]; col++) {
-            put_luma(pic, row, col, (row + col + frame_idx * 11u) & 0xFFu, row * 7u + col);
-        }
-    }
-    fill_chroma_grey(pic);
-    return 0;
+    return float_moment_twin_noise_exact(&twin, 10u);
 }
 
-static int fill_dist(VmafPicture *pic, unsigned frame_idx)
+static char *test_float_moment_12bit_exact(void)
 {
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
-    if (err)
-        return err;
-
-    for (unsigned row = 0; row < pic->h[0]; row++) {
-        for (unsigned col = 0; col < pic->w[0]; col++) {
-            const unsigned base = (row + col + frame_idx * 11u) & 0xFFu;
-            const unsigned noise = ((row * 3u + col * 2u + frame_idx) % 17u);
-            put_luma(pic, row, col, (base + noise) & 0xFFu, row * 3u + col * 5u + frame_idx);
-        }
-    }
-    fill_chroma_grey(pic);
-    return 0;
+    return float_moment_twin_noise_exact(&twin, 12u);
 }
 
-static char *feed_moment_frames(VmafContext *vmaf)
+static char *test_float_moment_16bit_exact(void)
 {
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref;
-        VmafPicture dist;
-        int err = fill_ref(&ref, i);
-        mu_assert("fill_ref failed", !err);
-        err = fill_dist(&dist, i);
-        mu_assert("fill_dist failed", !err);
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("vmaf_read_pictures failed", !err);
-    }
-    int err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("vmaf_read_pictures(EOS) failed", !err);
-    return NULL;
+    return float_moment_twin_noise_exact(&twin, 16u);
 }
 
-static char *read_moment_scores(VmafContext *vmaf, double *out_scores)
+static char *test_float_moment_16bit_bright_exact(void)
 {
-    for (unsigned m = 0; m < NUM_MOMENTS; m++) {
-        int err = vmaf_feature_score_at_index(vmaf, MOMENT_FEATURES[m], &out_scores[m], 1u);
-        mu_assert("vmaf_feature_score_at_index failed", !err);
-    }
-    return NULL;
+    return float_moment_twin_bright_1080p_exact(&twin);
 }
 
-static char *run_cpu(double *out_scores)
+static char *test_float_moment_16bit_past_2_53_within_bound(void)
 {
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    int err = vmaf_init(&vmaf, cfg);
-    mu_assert("CPU: vmaf_init failed", !err);
-
-    err = vmaf_use_feature(vmaf, "float_moment", NULL);
-    mu_assert("CPU: vmaf_use_feature(float_moment) failed", !err);
-
-    mu_assert_msg(feed_moment_frames(vmaf));
-    mu_assert_msg(read_moment_scores(vmaf, out_scores));
-
-    err = vmaf_close(vmaf);
-    mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
-}
-
-static char *setup_cuda_moment_context(VmafContext **out_vmaf, VmafCudaState **out_cu_state)
-{
-    *out_vmaf = NULL;
-    *out_cu_state = NULL;
-
-    VmafCudaState *cu_state = NULL;
-    VmafCudaConfiguration cuda_cfg = {0};
-    int err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
-    if (err != 0 || cu_state == NULL) {
-        (void)fprintf(stderr, "[skip: no CUDA device] ");
-        return NULL;
-    }
-
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("CUDA: vmaf_init failed", !err);
-
-    err = vmaf_cuda_import_state(vmaf, cu_state);
-    mu_assert("CUDA: vmaf_cuda_import_state failed", !err);
-
-    err = vmaf_use_feature(vmaf, "float_moment_cuda", NULL);
-    mu_assert("CUDA: vmaf_use_feature(float_moment_cuda) failed", !err);
-
-    *out_vmaf = vmaf;
-    *out_cu_state = cu_state;
-    return NULL;
-}
-
-static char *run_cuda(double *out_scores, int *skipped)
-{
-    *skipped = 0;
-    for (unsigned m = 0; m < NUM_MOMENTS; m++)
-        out_scores[m] = NAN;
-
-    VmafContext *vmaf = NULL;
-    VmafCudaState *cu_state = NULL;
-    mu_assert_msg(setup_cuda_moment_context(&vmaf, &cu_state));
-    if (!vmaf) {
-        *skipped = 1;
-        return NULL;
-    }
-
-    mu_assert_msg(feed_moment_frames(vmaf));
-    mu_assert_msg(read_moment_scores(vmaf, out_scores));
-
-    int err = vmaf_close(vmaf);
-    mu_assert("CUDA: vmaf_close failed", !err);
-    err = vmaf_cuda_state_free(cu_state);
-    mu_assert("CUDA: vmaf_cuda_state_free failed", !err);
-    return NULL;
-}
-
-static char *test_float_moment_cpu_cuda_parity(void)
-{
-    double cpu_scores[NUM_MOMENTS] = {0};
-    double cuda_scores[NUM_MOMENTS] = {0};
-    int skipped = 0;
-
-    char *msg = run_cpu(cpu_scores);
-    if (msg)
-        return msg;
-    msg = run_cuda(cuda_scores, &skipped);
-    if (msg)
-        return msg;
-    if (skipped)
-        return NULL;
-
-    for (unsigned m = 0; m < NUM_MOMENTS; m++) {
-        mu_assert("CPU float_moment score is non-finite", isfinite(cpu_scores[m]));
-        mu_assert("CUDA float_moment score is non-finite", isfinite(cuda_scores[m]));
-
-        const double delta = fabs(cpu_scores[m] - cuda_scores[m]);
-        if (delta > PARITY_TOL) {
-            (void)fprintf(
-                stderr, "\nfloat_moment parity FAIL m=%u: cpu=%.8f cuda=%.8f delta=%.2e tol=%.2e\n",
-                m, cpu_scores[m], cuda_scores[m], delta, PARITY_TOL);
-        }
-        mu_assert("float_moment CPU vs. CUDA delta exceeds places=4 tolerance (1e-4)",
-                  delta <= PARITY_TOL);
-    }
-    return NULL;
+    return float_moment_twin_past_2_53_within_bound(&twin);
 }
 
 char *run_tests(void)
 {
-    mu_run_test(test_float_moment_cpu_cuda_parity);
+    mu_run_test(test_float_moment_cuda_registered);
+    mu_run_test(test_float_moment_8bit_exact);
+    mu_run_test(test_float_moment_10bit_exact);
+    mu_run_test(test_float_moment_12bit_exact);
+    mu_run_test(test_float_moment_16bit_exact);
+    mu_run_test(test_float_moment_16bit_bright_exact);
+    mu_run_test(test_float_moment_16bit_past_2_53_within_bound);
     return NULL;
 }
 
