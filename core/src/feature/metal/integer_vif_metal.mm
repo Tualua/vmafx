@@ -25,11 +25,11 @@
  *       VMAF_integer_feature_vif_scale{0..3}_score (+ optional debug
  *       aggregates), identical to integer_vif.c::write_scores.
  *
- *  log2 LUT: integer_vif.c generates a VIF_LOG2_TABLE_SIZE (32768) entry
- *  uint16 table host-side (log_generate). We regenerate the identical table
- *  in init() and upload it as a Shared device buffer that the compute kernels
- *  read through, so the GPU log2_32 / log2_64 accessors are bit-exact to the
- *  CPU's.
+ *  log2 LUT: integer_vif.c fills a VIF_LOG2_TABLE_SIZE (32768) entry uint16
+ *  table host-side with vif_log2_table_generate() (feature/vif_log2_table.h).
+ *  init() fills a Shared device buffer with the same call, which the compute
+ *  kernels read through, so the GPU log2_32 / log2_64 accessors are bit-exact
+ *  to the CPU's.
  *
  *  Multi-scale buffer strategy: like float_vif_metal, two ping-pong uint16
  *  buffers per side (ref/dis), sized to scale 1 (the largest decimated
@@ -60,6 +60,8 @@
  * Xcode 16.x emits "templates must have C++ linkage" when <atomic> is
  * dragged into an extern "C" scope — same workaround as the other .mm). */
 #include "feature_extractor.h"
+/* Plain C with <math.h> / <stdint.h> only, both included above. */
+#include "feature/vif_log2_table.h"
 
 extern "C" {
 #include "dict.h"
@@ -80,7 +82,6 @@ extern const unsigned char libvmaf_metallib_end[]   __asm("section$end$__TEXT$__
 #define IVIF_SCALES 4
 #define IVIF_BX     16
 #define IVIF_BY     16
-#define VIF_LOG2_TABLE_SIZE 32768u
 
 /* Host-side mirror of the int64 per-WG accumulator written by the kernel
  * (struct VifWgAccum in integer_vif.metal — same field order / 64-bit
@@ -238,16 +239,6 @@ static void release_buffers(IntegerVifStateMetal *s)
     }
 }
 
-/* Regenerate the VIF log2 LUT identically to integer_vif.c::log_generate:
- * entry i = round(log2f(VIF_LOG2_TABLE_OFFSET + i) * 2048), where
- * VIF_LOG2_TABLE_OFFSET = 0x8000. */
-static void fill_log2_table(uint16_t *t)
-{
-    for (unsigned i = 0; i < VIF_LOG2_TABLE_SIZE; ++i) {
-        t[i] = (uint16_t)lround(log2f((float)(0x8000u + i)) * 2048.0f);
-    }
-}
-
 static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
                           unsigned bpc, unsigned w, unsigned h)
 {
@@ -300,7 +291,8 @@ static int init_fex_metal(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fm
         id<MTLBuffer> lb = [device newBufferWithLength:VIF_LOG2_TABLE_SIZE * sizeof(uint16_t)
                                               options:MTLResourceStorageModeShared];
         if (lb == nil) { err = -ENOMEM; goto fail_bufs; }
-        fill_log2_table((uint16_t *)[lb contents]);
+        /* The CPU's table: integer_vif.c fills its state with the same call. */
+        vif_log2_table_generate((uint16_t *)[lb contents]);
         s->log2_buf = (__bridge_retained void *)lb;
 
         /* Ping-pong uint16 pyramid sized to scale 1 (largest decimated). */

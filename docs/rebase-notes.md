@@ -57685,3 +57685,23 @@ must keep the fork's side of both:
 - `scripts/ci/exact_twins.d/float_moment.hip` (new) declares the twin exact
   (ADR-1428).
 - No Netflix golden-data, public API or FFmpeg patch impact.
+
+## `vif_log2_table.h` — one definition of the VIF log2 table for every backend (2026-10-02)
+
+`refactor/vif-log2-table-one-definition`; follow-up of ADR-1435.
+
+- `core/src/feature/vif_log2_table.h` (new): `VIF_LOG2_TABLE_SIZE`,
+  `VIF_LOG2_TABLE_OFFSET` and `vif_log2_table_generate()`, moved out of
+  `core/src/feature/integer_vif.h` (upstream-mirror), which now includes it.
+  The header is plain C that is also valid C++ and Objective-C++ and includes
+  only `<math.h>` and `<stdint.h>`. If upstream Netflix changes
+  `log_generate()` or the table size, apply the change to this header.
+- `core/src/feature/sycl/integer_vif_sycl.cpp::vif_init_log2_lut()` and
+  `core/src/feature/metal/integer_vif_metal.mm` call the generator instead of
+  their own loops; the Metal file's copy of `VIF_LOG2_TABLE_SIZE` and its
+  `fill_log2_table()` are gone. A rebase that brings either loop back
+  reintroduces a second definition; `test_hip_vif_log2_table_contract.py`
+  rejects it.
+- `core/test/test_integer_vif_log2.c` builds its table with the generator.
+- No Netflix golden-data, public API or FFmpeg patch impact; no score
+  changes.

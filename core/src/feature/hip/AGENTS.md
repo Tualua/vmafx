@@ -1161,7 +1161,8 @@ Scores = `integer_vif.c`'s bits (gfx1036: 440 of 440 scores, six fixtures;
 `debug=true` sums too). Rebase-sensitive:
 
 - Every per-pixel logarithm = lookup in the CPU's table. Host builds it with
-  `vif_log2_table_generate()` (`integer_vif.h`, the table's one definition),
+  `vif_log2_table_generate()` (`../vif_log2_table.h` via `integer_vif.h`, the
+  table's one definition; SYCL and Metal hosts call it too),
   uploads to `log2_table_dev` in `vif_hip_tables_upload()`; horizontal kernels
   take it as argument, `log2_lookup()` masks with
   `VIF_HIP_LOG2_TABLE_SIZE - 1u` like `log2_32()` / `log2_64()`.

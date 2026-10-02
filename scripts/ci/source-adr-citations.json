@@ -3230,9 +3230,9 @@
     "0500": {
       "sites": {
         "core/src/feature/float_vif.c": 2,
-        "core/src/feature/integer_vif.h": 3,
         "core/src/feature/vif.c": 1,
         "core/src/feature/vif.h": 1,
+        "core/src/feature/vif_log2_table.h": 2,
         "core/src/feature/x86/vif_avx512.c": 1,
         "core/test/test_integer_vif_log2.c": 1,
         "scripts/ci/tests/test_check_adr_links.py": 1
@@ -8925,7 +8925,7 @@
       "sites": {
         "core/src/feature/hip/integer_vif/vif_statistics.hip": 2,
         "core/src/feature/hip/integer_vif_hip.c": 2,
-        "core/src/feature/integer_vif.h": 1,
+        "core/src/feature/vif_log2_table.h": 1,
         "core/test/meson.build": 2,
         "core/test/test_hip_vif_log2_table_contract.py": 1,
         "core/test/test_hip_vif_parity.c": 1,

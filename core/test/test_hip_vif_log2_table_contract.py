@@ -12,8 +12,11 @@ is one ulp from glibc's on about half of the arguments and moved 77 of the
 32768 entries by one: nearly every frame was up to 5.4e-7 from the CPU.
 
 The table has one definition, ``vif_log2_table_generate()`` in
-``integer_vif.h``. The CPU extractor fills its state with it, the HIP host
-uploads its values, and the kernels look them up.
+``vif_log2_table.h``, which ``integer_vif.h`` includes. The CPU extractor
+fills its state with it, the HIP host uploads its values, and the kernels
+look them up. The SYCL and Metal hosts build their device tables with the
+same call: they computed the same values with copies of the expression, and a
+copy can drift.
 
 Device-free: reads the sources only. ``test_hip_vif_parity`` compares the
 scores on a device.
@@ -29,7 +32,10 @@ ROOT = Path(__file__).resolve().parents[2]
 FEATURE_ROOT = ROOT / "core" / "src" / "feature"
 
 CPU = "integer_vif.c"
-CPU_HEADER = "integer_vif.h"
+CPU_HEADER = "vif_log2_table.h"
+VIF_HEADER = "integer_vif.h"
+SYCL_HOST = "sycl/integer_vif_sycl.cpp"
+METAL_HOST = "metal/integer_vif_metal.mm"
 HOST = "hip/integer_vif_hip.c"
 HOST_HEADER = "hip/integer_vif_hip.h"
 KERNEL = "hip/integer_vif/vif_statistics.hip"
@@ -54,7 +60,7 @@ def _code(source: str) -> str:
 
 
 def _sources() -> dict[str, str]:
-    names = (CPU, CPU_HEADER, HOST, HOST_HEADER, KERNEL)
+    names = (CPU, CPU_HEADER, VIF_HEADER, HOST, HOST_HEADER, KERNEL, SYCL_HOST, METAL_HOST)
     return {name: (FEATURE_ROOT / name).read_text(encoding="utf-8") for name in names}
 
 
@@ -85,6 +91,23 @@ def _cpu_failures(sources: dict[str, str]) -> list[str]:
         failures.append(f"{CPU}: init() must fill the table with vif_log2_table_generate()")
     if "log2f(" in cpu:
         failures.append(f"{CPU}: a second definition of the log2 table")
+    vif_header = _code(sources[VIF_HEADER])
+    if '#include "vif_log2_table.h"' not in vif_header or "log2f(" in vif_header:
+        failures.append(f"{VIF_HEADER}: the table is not the one of {CPU_HEADER}")
+    return failures
+
+
+def _other_twin_failures(sources: dict[str, str]) -> list[str]:
+    """The SYCL and Metal hosts fill their device tables with the CPU's generator."""
+    failures: list[str] = []
+    for name in (SYCL_HOST, METAL_HOST):
+        code = _code(sources[name])
+        if "vif_log2_table_generate(" not in code:
+            failures.append(f"{name}: the device table is not vif_log2_table_generate()'s")
+        if re.search(r"\blog2f?\s*\(", code):
+            failures.append(f"{name}: a second definition of the log2 table")
+        if "#define VIF_LOG2_TABLE_SIZE" in code:
+            failures.append(f"{name}: a second definition of the table size")
     return failures
 
 
@@ -122,7 +145,12 @@ def _host_failures(sources: dict[str, str]) -> list[str]:
 
 
 def _failures(sources: dict[str, str]) -> list[str]:
-    return _cpu_failures(sources) + _kernel_failures(sources) + _host_failures(sources)
+    return (
+        _cpu_failures(sources)
+        + _kernel_failures(sources)
+        + _host_failures(sources)
+        + _other_twin_failures(sources)
+    )
 
 
 class HipVifLog2TableContractTest(unittest.TestCase):
@@ -182,6 +210,31 @@ class HipVifLog2TableContractTest(unittest.TestCase):
         self.assertTrue(
             any(f"{CPU}: a second definition" in failure for failure in failures), failures
         )
+
+
+    def test_sycl_table_of_its_own_is_detected(self) -> None:
+        # The pre-reuse vif_init_log2_lut().
+        failures = self._edited(
+            SYCL_HOST,
+            "    vif_log2_table_generate(table);\n",
+            "    for (int j = 0; j < LOG2_LUT_SIZE; j++)\n"
+            "        table[j] = static_cast<uint16_t>(\n"
+            "            std::roundf(std::log2f((float)(j + 32768)) * 2048.0f));\n",
+        )
+        self.assertTrue(any(f"{SYCL_HOST}: the device table" in item for item in failures), failures)
+        self.assertTrue(any(f"{SYCL_HOST}: a second definition" in item for item in failures))
+
+    def test_metal_table_of_its_own_is_detected(self) -> None:
+        # The pre-reuse fill_log2_table().
+        failures = self._edited(
+            METAL_HOST,
+            "        vif_log2_table_generate((uint16_t *)[lb contents]);",
+            "        for (unsigned i = 0; i < VIF_LOG2_TABLE_SIZE; ++i)\n"
+            "            ((uint16_t *)[lb contents])[i] =\n"
+            "                (uint16_t)lround(log2f((float)(0x8000u + i)) * 2048.0f);",
+        )
+        self.assertTrue(any(f"{METAL_HOST}: the device table" in item for item in failures), failures)
+        self.assertTrue(any(f"{METAL_HOST}: a second definition" in item for item in failures))
 
 
 if __name__ == "__main__":

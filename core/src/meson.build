@@ -1507,6 +1507,7 @@ if is_cuda_enabled
         'feature/adm_cm_accumulator.h',
         'feature/integer_motion.h',
         'feature/integer_vif.h',
+        'feature/vif_log2_table.h',
         'feature/cuda/integer_adm_cuda.h',
         'feature/cuda/integer_adm/adm_decouple_inline.cuh',
         'feature/cuda/integer_adm/adm_dwt2_rows.h',

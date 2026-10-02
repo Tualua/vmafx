@@ -31,12 +31,10 @@
 
 #include "feature/integer_vif.h"
 
-/* Build the LUT exactly as `log_generate()` in integer_vif.c does. */
+/* The LUT integer_vif.c fills its state with. */
 static void build_log2_table(uint16_t *t)
 {
-    for (unsigned i = 0; i < VIF_LOG2_TABLE_SIZE; ++i) {
-        t[i] = (uint16_t)roundf(log2f((float)(VIF_LOG2_TABLE_OFFSET + i)) * 2048);
-    }
+    vif_log2_table_generate(t);
 }
 
 static char *test_log2_32_value_matches_closed_form(void)

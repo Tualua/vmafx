@@ -1443,12 +1443,15 @@ after port-upstream of any of these files.
   fork's `-std=c23` (contraction off) and no `-march` (no FMA) flags; if
   either changes, re-run 31-case `--precision max` matrix in
   [`docs/research/2026-09-02-c-rework-vif-motion-bit-exact.md`](../../../docs/research/2026-09-02-c-rework-vif-motion-bit-exact.md).
-- **`vif_log2_table_generate()` (`integer_vif.h`) uses `roundf`**, proven
+- **`vif_log2_table_generate()` (`vif_log2_table.h`, included by
+  `integer_vif.h`; plain C valid as C++ / Objective-C++) uses `roundf`**, proven
   bit-identical to upstream's `round` over all `VIF_LOG2_TABLE_SIZE` entries.
   same LUT feeds AVX-512 gather path (ADR-0500); do not switch rounding modes.
   One definition of the table (was `log_generate()` in `integer_vif.c`):
-  `vif_hip` uploads its values (ADR-1435). Upstream change to the table
-  expression -> change it there, nowhere else.
+  the `vif_hip`, `vif_sycl` and `vif_metal` hosts upload its values
+  (ADR-1435); no host keeps a copy of the expression or of
+  `VIF_LOG2_TABLE_SIZE` (`test_hip_vif_log2_table_contract.py`). Upstream
+  change to the table expression -> change it there, nowhere else.
 - **`write_scores` append order is output contract**: four scale scores,
   then `integer_vif` / `_num` / `_den`, then num / den per scale 0..3.
   `double` totals are explicit left-to-right sums — keep them out of loops.

@@ -57,6 +57,7 @@
 #include "feature_extractor.h"
 #include "feature_name.h"
 #include "feature/nonfinite_score.h"
+#include "feature/vif_log2_table.h"
 #include "gpu_dispatch_env.h"
 #include "sycl/common.h"
 #include "log.h"
@@ -1560,9 +1561,20 @@ static inline int vif_init_log2_lut(VmafSyclState *state, uint32_t *d_log2_lut)
     if (!lut_host)
         return -ENOMEM;
 
-    for (int j = 0; j < LOG2_LUT_SIZE; j++) {
-        lut_host[j] = static_cast<uint32_t>(std::roundf(std::log2f((float)(j + 32768)) * 2048.0f));
+    /* The CPU's table (integer_vif.c fills its state with the same call),
+     * widened to the kernels' uint32 entries. */
+    static_assert(LOG2_LUT_SIZE == static_cast<int>(VIF_LOG2_TABLE_SIZE),
+                  "the device table has the CPU table's size");
+    auto *table = static_cast<uint16_t *>(std::malloc(LOG2_LUT_SIZE * sizeof(uint16_t)));
+    if (!table) {
+        std::free(lut_host);
+        return -ENOMEM;
     }
+    vif_log2_table_generate(table);
+    for (int j = 0; j < LOG2_LUT_SIZE; j++) {
+        lut_host[j] = table[j];
+    }
+    std::free(table);
     const int cpy_err = vmaf_sycl_memcpy_h2d(state, d_log2_lut, lut_host, lut_size);
     std::free(lut_host);
     if (cpy_err) {
