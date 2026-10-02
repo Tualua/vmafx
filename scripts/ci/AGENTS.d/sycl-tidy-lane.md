@@ -79,3 +79,17 @@ hook; an unwired regression test protects no CI lane.
 | Script | Workflow lane(s) that invoke it | What couples them |
 | --- | --- | --- |
 | `test_sycl_tidy_workflow_contract.py` | `rule-enforcement.yml` — `Verify SYCL required clang-tidy contract`; `.pre-commit-config.yaml` — `test-sycl-tidy-workflow-contract` | Enforces that `Tidy SYCL` in `lint-and-format.yml` is a strict-must-report, non-advisory required gate (`# required-aggregator`, no `continue-on-error`, full `.h`/`.cpp`/`.hpp` SYCL source and test coverage in every event branch). Uses the shared aggregator harness to prove failure or absence blocks merge while success passes. |
+
+## The wrapper silences one driver note
+
+`clang-tidy-sycl.sh` passes `-Wno-overriding-option`. An icx build records
+`-fp-model=precise -ffp-contract=off` twice on every target that names
+`vmaf_strict_fp_args` next to the project-wide arguments (ADR-1461); after the
+wrapper's `-fp-model=` -> `-ffp-model=` rewrite, stock clang's driver prints
+`warning: overriding '-ffp-model=precise' option with '-ffp-contract=off'`
+without a source location. The ratchet fails closed on a warning it cannot
+place, so the unit becomes a compile failure and the lane exits 4
+(`T-SYCL-TIDY-OVERRIDING-OPTION-2026-10-02`). Do not drop the flag, and do not
+"fix" it by reordering the build's arguments: contraction-off last is the
+order ADR-1461 requires. `SyclWrapperDriverWarnings` in
+`tests/test_tidy_ratchet.py` holds it.

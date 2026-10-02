@@ -7,6 +7,8 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -577,6 +579,94 @@ class SyclLaneFlags(unittest.TestCase):
                 self.assertIn("$(CURDIR)/scripts/ci/clang-tidy-sycl.sh", line)
                 return
         self.fail("Makefile defines no TIDY_RATCHET_EXTRA_sycl lane")
+
+
+class SyclWrapperDriverWarnings(unittest.TestCase):
+    """The SYCL lane's wrapper must not let clang's driver print a warning the
+    ratchet cannot place (T-SYCL-TIDY-OVERRIDING-OPTION-2026-10-02)."""
+
+    WRAPPER = ROOT / "scripts" / "ci" / "clang-tidy-sycl.sh"
+    # What an icx build records for a target that names vmaf_strict_fp_args next
+    # to the project-wide arguments (ADR-1461): the pair, twice.
+    REPEATED = "-fp-model=precise -ffp-contract=off -fp-model=precise -ffp-contract=off"
+    DRIVER_WARNING = (
+        "warning: overriding '-ffp-model=precise' option with '-ffp-contract=off' "
+        "[clang-diagnostic-overriding-option]"
+    )
+
+    def _run_wrapper(self, tmp: Path, clang_tidy: str, compiler: str) -> tuple[int, str]:
+        """Run the wrapper on one C unit built by *compiler* with the repeated pair."""
+        (tmp / "icpx" / "include" / "sycl").mkdir(parents=True)
+        (tmp / "icpx" / "include" / "sycl" / "sycl.hpp").write_text("", encoding="utf-8")
+        source = tmp / "unit.c"
+        source.write_text(
+            "int unit(void);\nint unit(void)\n{\n    return 0;\n}\n", encoding="utf-8"
+        )
+        build = tmp / "build"
+        build.mkdir()
+        command = f"{compiler} {self.REPEATED} -std=c17 -c {source}"
+        entries = [{"directory": str(build), "file": str(source), "command": command}]
+        (build / "compile_commands.json").write_text(json.dumps(entries), encoding="utf-8")
+        env = dict(os.environ)
+        env.update(
+            {"CLANG_TIDY_BIN": clang_tidy, "ICPX_ROOT": str(tmp / "icpx"), "TMPDIR": str(tmp)}
+        )
+        proc = subprocess.run(  # noqa: S603 -- fixed argv, the repository's own wrapper
+            [
+                str(self.WRAPPER),
+                "-p",
+                str(build),
+                "--checks=-*,clang-diagnostic-*,misc-unused-parameters",
+                str(source),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+            timeout=300,
+        )
+        return proc.returncode, proc.stdout + "\n" + proc.stderr
+
+    def test_the_ratchet_fails_closed_on_the_driver_warning(self) -> None:
+        # Why the wrapper has to silence it: the warning has no source location,
+        # and a diagnostic the parser cannot place marks the unit unusable.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            diags, failed = ratchet.parse_diagnostics(self.DRIVER_WARNING + "\n", root, root)
+        self.assertEqual(diags, set())
+        self.assertTrue(failed)
+
+    def test_wrapper_passes_the_suppression_to_clang_tidy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fake = root / "fake-clang-tidy.sh"
+            fake.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n', encoding="utf-8")
+            fake.chmod(0o755)
+            _, output = self._run_wrapper(root, str(fake), "icx")
+        self.assertIn("-extra-arg-before=-Wno-overriding-option", output.splitlines())
+        # The other suppressions and the database translation stay in place.
+        self.assertIn("-extra-arg-before=-Wno-unknown-warning-option", output.splitlines())
+        self.assertTrue(any("clang-tidy-sycl-db." in line for line in output.splitlines()))
+
+    def test_repeated_strict_fp_pair_measures_clean_with_the_real_tool(self) -> None:
+        clang_tidy = next(
+            (
+                tool
+                for tool in (os.environ.get("CLANG_TIDY_BIN", ""), "clang-tidy", "clang-tidy-22")
+                if tool and shutil.which(tool)
+            ),
+            None,
+        )
+        if clang_tidy is None:
+            self.skipTest("clang-tidy is not installed")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            returncode, output = self._run_wrapper(root, clang_tidy, "clang")
+            diags, failed = ratchet.parse_diagnostics(output, root, root / "build")
+        self.assertEqual(returncode, 0, output)
+        self.assertNotIn("overriding", output)
+        self.assertFalse(failed, output)
+        self.assertEqual(diags, set())
 
 
 class Arm64LaneFlags(unittest.TestCase):

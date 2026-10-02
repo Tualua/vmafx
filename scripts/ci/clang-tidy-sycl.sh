@@ -93,6 +93,20 @@ esac
 # -extra-arg-before=-Wno-unknown-pragmas
 #                                     — same rationale for icpx pragmas
 #                                       (`#pragma clang fp ...` etc).
+# -extra-arg-before=-Wno-overriding-option
+#                                     — a target that names the strict FP
+#                                       arguments next to the project-wide ones
+#                                       (ADR-1461) compiles with `-fp-model=precise
+#                                       -ffp-contract=off` twice. icx accepts the
+#                                       repeat; stock clang's driver answers
+#                                       `warning: overriding '-ffp-model=precise'
+#                                       option with '-ffp-contract=off'`, a
+#                                       diagnostic without a source location. The
+#                                       ratchet fails closed on a warning it cannot
+#                                       place, so 151 translation units (the x86
+#                                       SIMD libraries) were compile failures and
+#                                       the lane exited 4. The flag order is right
+#                                       as built; only the driver note is silenced.
 # ---------------------------------------------------------------------
 # ---------------------------------------------------------------------
 # Translate icx-only driver flags that stock clang rejects outright.
@@ -126,4 +140,5 @@ exec "$CLANG_TIDY_BIN" \
   "-extra-arg-before=-isystem$SYCL_INCLUDE_BASE/sycl" \
   "-extra-arg-before=-Wno-unknown-warning-option" \
   "-extra-arg-before=-Wno-unknown-pragmas" \
+  "-extra-arg-before=-Wno-overriding-option" \
   "$@"

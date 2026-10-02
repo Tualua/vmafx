@@ -165,6 +165,20 @@ For the `clang-tidy` lane there's a parallel wrapper —
 `__SYCL_DEVICE_ONLY__=0` so SYCL TUs lint cleanly. See
 [ADR-0217](../adr/0217-sycl-toolchain-cleanup.md).
 
+The wrapper also adapts an icx compile database to stock clang: it rewrites
+`-fp-model=` to `-ffp-model=` in a copy of `compile_commands.json`, and it
+passes `-Wno-unknown-warning-option`, `-Wno-unknown-pragmas` and
+`-Wno-overriding-option`. The last one is needed because a target that names
+the strict floating-point arguments next to the project-wide ones compiles
+with `-fp-model=precise -ffp-contract=off` twice; clang's driver comments on
+the repeat with a warning that has no source location, and
+`scripts/ci/tidy-ratchet.py` counts a warning it cannot place as a failed
+translation unit. To check the wrapper after a toolchain change:
+
+```bash
+python3 -B -m unittest discover -s scripts/ci/tests -p 'test_tidy_ratchet.py'
+```
+
 ## Verify the SYCL build picks up the new compiler
 
 After installing a new oneAPI version:

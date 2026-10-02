@@ -9340,9 +9340,11 @@
         "core/src/metal/meson.build": 1,
         "core/test/meson.build": 4,
         "core/test/test_strict_fp_compiler_args.py": 4,
+        "scripts/ci/clang-tidy-sycl.sh": 1,
         "scripts/ci/golden-arm64-preflight.sh": 1,
         "scripts/ci/setup-golden-build.sh": 1,
-        "scripts/ci/tests/test_golden_gate_makefile_contract.py": 1
+        "scripts/ci/tests/test_golden_gate_makefile_contract.py": 1,
+        "scripts/ci/tests/test_tidy_ratchet.py": 1
       },
       "target": "1461-strict-fp-every-translation-unit.md"
     },

@@ -3028,6 +3028,18 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   command it cannot read, so the lane cannot go blind silently again.
 
 
+- **The SYCL clang-tidy lane measures the x86 SIMD and DNN sources again.**
+  Since the strict floating-point arguments became project-wide (ADR-1461),
+  151 translation units of an icx build carry them twice, and stock clang
+  answers the repeat with a driver warning that has no source location. The
+  ratchet treats such a warning as an unusable measurement, so
+  `make tidy-ratchet LANE=sycl` stopped with exit 4 and no baseline entry of
+  those files could be tightened. `scripts/ci/clang-tidy-sycl.sh` silences
+  that one driver note (`-Wno-overriding-option`); the compile commands and
+  every check stay as they were
+  (`T-SYCL-TIDY-OVERRIDING-OPTION-2026-10-02`).
+
+
 - **A SYCL error while de-tiling a VA surface no longer ends the process.**
   `vmaf_sycl_import_va_surface()` submitted its de-tile copy or kernel outside
   any `try`, so a synchronous `sycl::exception` (a kernel the device cannot

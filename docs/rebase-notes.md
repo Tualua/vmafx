@@ -58750,3 +58750,12 @@ The AVX-512 filter tables are file-level `dwt2_filter_lo` / `dwt2_filter_hi` (th
 Kept: the `+0` start of every sum (signed-zero parity with `adm_dwt2_s()`), multiply then add with no fused form, the `float accum` sequences of the tail and of the horizontal pass, the tail bounds. Each function carries the GCC `optimize("-ffp-contract=off")` attribute, as `adm_dwt2_s()` and its two pass helpers do; a new helper needs it too. In `float_adm_neon.c` only declarations and row-pointer casts changed (`(ptrdiff_t)i * stride`).
 
 `core/src/feature/adm_tools.c`: the comment above `adm_dwt2_vert_pass_s()` said the wavelet stays one function; it is three functions, and the comment now says so. The `NOLINTNEXTLINE(readability-function-size)` on `adm_dwt2_s()` suppressed nothing and is gone. No code changed in that file, nor in `x86/adm_avx2.c` / `x86/adm_avx512.c` (SPDX line only).
+## SYCL tidy wrapper: `-Wno-overriding-option` (2026-10-02)
+
+`fix/sycl-tidy-overriding-option`, `T-SYCL-TIDY-OVERRIDING-OPTION-2026-10-02`.
+
+- `scripts/ci/clang-tidy-sycl.sh` passes `-extra-arg-before=-Wno-overriding-option`.
+  Keep it when the wrapper is touched: without it every translation unit whose
+  target repeats `vmaf_strict_fp_args` (151 on an icx build) is a compile
+  failure in the `sycl` tidy lane.
+- No source, score, public C API, Netflix golden-data or FFmpeg patch impact.
