@@ -200,7 +200,13 @@ VMAF_EXPORT int vmaf_sycl_wait_compute(VmafContext *vmaf);
  * @param vmaf   The VMAF context.
  * @param index  Frame index (0-based, sequential).
  *
- * @return 0 on success, negative errno on failure.
+ * @return 0 on success, negative errno on failure. `-ENOTSUP` means the
+ *         zero-copy path cannot serve a registered extractor: it either has
+ *         no SYCL implementation (a CPU extractor needs host pictures) and the
+ *         call returns before the frame advances, or it is a SYCL extractor
+ *         that needs host pictures and refuses device-buffer-only input with
+ *         one error line naming it (ADR-1595). Register the extractor's
+ *         `_sycl` twin that reads the shared device buffers instead.
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per driver thread.
  */

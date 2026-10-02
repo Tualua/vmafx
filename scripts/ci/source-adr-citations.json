@@ -10350,6 +10350,7 @@
     },
     "1595": {
       "sites": {
+        "core/include/libvmaf/libvmaf_sycl.h": 1,
         "core/src/feature/sycl/integer_ssim_sycl.cpp": 1,
         "core/src/libvmaf.c": 1,
         "core/src/sycl/common.h": 1,
