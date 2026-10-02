@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-02T17:17:10Z",
+  "generated_at": "2026-10-02T17:32:39Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "baa4abfeba3ca277a16f601ad92977f748f8d9c6",
-  "total_infractions": 231,
+  "commit_sha": "58376c70f3bbaad0d4ccd710b7ffeed31a4e7d31",
+  "total_infractions": 229,
   "infractions": [
     {
       "rule_id": "HISS-04",
@@ -673,22 +673,6 @@
       "line_number": 339,
       "message": "process::abort ends the process from library code; return an error to fn main instead",
       "fingerprint": "bindings/rust/vmafx-sys/src/safe.rs:339:HISS-07"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "compat/python-vmaf/__init__.py",
-      "line_number": 204,
-      "symbol": "call_vmafexec_multi_features",
-      "message": "Function 'call_vmafexec_multi_features' (77 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "compat/python-vmaf/__init__.py:204:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "compat/python-vmaf/__init__.py",
-      "line_number": 303,
-      "symbol": "call_vmafexec",
-      "message": "Function 'call_vmafexec' (118 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "compat/python-vmaf/__init__.py:303:HISS-04"
     },
     {
       "rule_id": "HISS-04",

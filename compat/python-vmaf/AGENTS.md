@@ -106,6 +106,20 @@ python/vmaf/
   `noref_feature_extractor` preserve reduction accumulation order; `local_explainer` /
   `nn_train_test_model` keep RNG draw order. `result.scores_key_wildcard_match()`
   doctests redistributed across helpers; `doctest.testmod()` finds all 12.
+- **`__init__.py` command builders are assembled from pure helpers
+  (`T-PYTHON-CALL-VMAFEXEC-FORCE-ZERO-SECOND-MODEL-2026-10-02`).**
+  `ExternalProgramCaller.call_vmafexec()` and `call_vmafexec_multi_features()`
+  keep their signatures; the command text comes from
+  `_vmafexec_base_command`, `_vmafexec_feature_flags`, `_vmafexec_model_flags`
+  (which calls `_vmafexec_model_overloads` once per model),
+  `_vmafexec_run_flags`, `_multi_features_run_arguments` and
+  `_feature_argument`. Keep the helpers pure: upstream's loop overwrote
+  `motion_force_zero` with the string `"true"` and then failed its own
+  `isinstance(..., bool)` assertion on the second model. An upstream change to
+  a flag goes into the helper that emits it; the order of the parts is pinned
+  by `test_full_command_is_pinned` and
+  `test_full_multi_features_command_is_pinned` in
+  `python/test/python_harness_coverage_test.py`.
 - **Bounded frame loops replace `while True` (HISS-02).** PyPSNR loop in
   `core/feature_extractor.py` walks `min(ref.num_frms, dis.num_frms)` (`YuvReader` validated);
   no `try/except StopIteration`. `tools/scanf.py` bounds loop in header; `readiter()`

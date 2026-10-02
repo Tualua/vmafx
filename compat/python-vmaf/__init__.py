@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-2-Clause-Patent
 import logging
 import os
 import subprocess
@@ -163,6 +164,166 @@ class ExternalProgram(object):
     )
 
 
+def _multi_features_run_arguments(options):
+    """``--backend``, ``--cpumask`` and ``--threads`` of one multi-feature run, in that order."""
+    args = []
+
+    backend = None
+    if options is not None and "backend" in options:
+        backend = options["backend"]
+    if not backend:
+        backend = os.environ.get("VMAF_FORCE_BACKEND") or os.environ.get("VMAF_BACKEND")
+    if backend:
+        args += ["--backend", str(backend)]
+
+    if options is not None and "disable_avx" in options:
+        assert isinstance(options["disable_avx"], bool)
+        if options["disable_avx"] is True:
+            # 0xFFFFFFFF disables all CPU ISA extensions (all mask bits set).
+            # parse_unsigned() now rejects negative strings such as "-1"
+            # (ADR-1088); pass the unsigned equivalent instead.
+            args += ["--cpumask", "4294967295"]
+
+    if options is not None and "n_threads" in options:
+        assert isinstance(options["n_threads"], int) and options["n_threads"] >= 1
+        args += ["--threads", str(options["n_threads"])]
+
+    return args
+
+
+def _feature_argument(feature, options):
+    """The value of one ``--feature`` argument: ``name`` or ``name=key=value:key=value``."""
+    if options is None:
+        return feature
+    assert isinstance(options, dict)
+    if feature in options and options[feature] is not None and len(options[feature]) > 0:
+        assert isinstance(options[feature], dict)
+        options_lst = []
+        for k, v in options[feature].items():
+            if isinstance(v, bool):
+                v = str(v).lower()
+            options_lst.append(f"{k}={v}")
+        options_str = ":".join(options_lst)
+        return "=".join([feature, options_str])
+    return feature
+
+
+def _vmafexec_base_command(
+    exe, reference, distorted, width, height, pixel_format, bitdepth, output
+):
+    """The executable and the arguments every ``call_vmafexec`` run has."""
+    return (
+        "{exe} --reference {reference} --distorted {distorted} --width {width} --height {height} "
+        "--pixel_format {pixel_format} --bitdepth {bitdepth} --output {output}".format(
+            exe=exe,
+            reference=reference,
+            distorted=distorted,
+            width=width,
+            height=height,
+            pixel_format=pixel_format,
+            bitdepth=bitdepth,
+            output=output,
+        )
+    )
+
+
+def _vmafexec_feature_flags(float_psnr, psnr, float_ssim, ssim, float_ms_ssim, ms_ssim, float_moment):
+    """The ``--feature`` flags of ``call_vmafexec``, in the order the command has always had."""
+    flags = ""
+    if float_psnr:
+        flags += " --feature float_psnr"
+    if float_ssim:
+        flags += " --feature float_ssim"
+    if float_ms_ssim:
+        flags += " --feature float_ms_ssim"
+    if float_moment:
+        flags += " --feature float_moment"
+
+    if psnr:
+        flags += " --feature psnr"
+    if ssim:
+        # flags += ' --feature ssim'
+        assert False, "ssim (the daala integer ssim) is deprecated"
+    if ms_ssim:
+        flags += " --feature ms_ssim"
+    return flags
+
+
+def _vmafexec_model_overloads(
+    vif_enhn_gain_limit, adm_enhn_gain_limit, motion_force_zero, enc_width, enc_height, enc_bitdepth
+):
+    """The ``:feature.option=value`` suffix that follows a ``--model`` argument.
+
+    Pure: it is evaluated for every model, so each model gets the same suffix.
+    """
+    suffix = ""
+
+    # FIXME: hacky - since we do not know which feature is the one used in the model,
+    # we have to set the parameter for all three, at the expense of extra computation.
+
+    if vif_enhn_gain_limit is not None:
+        suffix += f":vif.vif_enhn_gain_limit={vif_enhn_gain_limit}:float_vif.vif_enhn_gain_limit={vif_enhn_gain_limit}"
+    if adm_enhn_gain_limit is not None:
+        suffix += f":adm.adm_enhn_gain_limit={adm_enhn_gain_limit}:float_adm.adm_enhn_gain_limit={adm_enhn_gain_limit}"
+    if motion_force_zero:
+        assert isinstance(motion_force_zero, bool)
+        force_zero = str(motion_force_zero).lower()
+        suffix += f":motion.motion_force_zero={force_zero}:float_motion.motion_force_zero={force_zero}"
+
+    # CAMBI encode-resolution / encode-bitdepth overrides. These
+    # flow through to the cambi feature so its feature-name key
+    # snapshots encbd/ench/encw (e.g. for VMAF v1.0.16 models).
+    # Matches Netflix upstream call_vmafexec.
+    if enc_width is not None:
+        suffix += f":cambi.enc_width={enc_width}"
+    if enc_height is not None:
+        suffix += f":cambi.enc_height={enc_height}"
+    if enc_bitdepth is not None:
+        suffix += f":cambi.enc_bitdepth={enc_bitdepth}"
+    return suffix
+
+
+def _vmafexec_model_flags(no_prediction, models, overload_args):
+    """``--no_prediction``, or one ``--model`` argument per model with its overload suffix.
+
+    The suffix is built once per model, after that model's argument, so its
+    assertions fire where they always did (not at all without a model).
+    """
+    if no_prediction:
+        return " --no_prediction"
+    assert models is not None
+    assert isinstance(models, list)
+    flags = ""
+    for model in models:
+        flags += " --model {}".format(model)
+        flags += _vmafexec_model_overloads(*overload_args)
+    return flags
+
+
+def _vmafexec_run_flags(subsample, n_threads, disable_avx, backend):
+    """``--subsample``, ``--threads``, ``--cpumask`` and ``--backend`` of ``call_vmafexec``."""
+    flags = ""
+
+    assert isinstance(subsample, int) and subsample >= 1
+    if subsample != 1:
+        flags += " --subsample {}".format(subsample)
+
+    assert isinstance(n_threads, int) and n_threads >= 1
+    if n_threads != 1:
+        flags += " --threads {}".format(n_threads)
+
+    if disable_avx:
+        # 0xFFFFFFFF disables all CPU ISA extensions (all mask bits set).
+        # parse_unsigned() rejects negative strings (ADR-1088).
+        flags += " --cpumask 4294967295"
+
+    if backend is None:
+        backend = os.environ.get("VMAF_FORCE_BACKEND") or os.environ.get("VMAF_BACKEND")
+    if backend:
+        flags += f" --backend {backend}"
+    return flags
+
+
 class ExternalProgramCaller(object):
     """
     Caller of ExternalProgram.
@@ -233,47 +394,10 @@ class ExternalProgramCaller(object):
             "--no_prediction",
         ]
 
-        backend = None
-        if options is not None and "backend" in options:
-            backend = options["backend"]
-        if not backend:
-            backend = os.environ.get("VMAF_FORCE_BACKEND") or os.environ.get("VMAF_BACKEND")
-        if backend:
-            cmd += ["--backend", str(backend)]
-
-        if options is not None and "disable_avx" in options:
-            assert isinstance(options["disable_avx"], bool)
-            if options["disable_avx"] is True:
-                # 0xFFFFFFFF disables all CPU ISA extensions (all mask bits set).
-                # parse_unsigned() now rejects negative strings such as "-1"
-                # (ADR-1088); pass the unsigned equivalent instead.
-                cmd += ["--cpumask", "4294967295"]
-
-        if options is not None and "n_threads" in options:
-            assert isinstance(options["n_threads"], int) and options["n_threads"] >= 1
-            cmd += ["--threads", str(options["n_threads"])]
+        cmd += _multi_features_run_arguments(options)
 
         for feature in features:
-            if options is None:
-                feature_str = feature
-            else:
-                assert isinstance(options, dict)
-                if (
-                    feature in options
-                    and options[feature] is not None
-                    and len(options[feature]) > 0
-                ):
-                    assert isinstance(options[feature], dict)
-                    options_lst = []
-                    for k, v in options[feature].items():
-                        if isinstance(v, bool):
-                            v = str(v).lower()
-                        options_lst.append(f"{k}={v}")
-                    options_str = ":".join(options_lst)
-                    feature_str = "=".join([feature, options_str])
-                else:
-                    feature_str = feature
-            cmd += ["--feature", feature_str]
+            cmd += ["--feature", _feature_argument(feature, options)]
 
         if logger:
             logger.info(" ".join(cmd))
@@ -334,85 +458,25 @@ class ExternalProgramCaller(object):
         if exe is None:
             exe = required(ExternalProgram.vmafexec)
 
-        vmafexec_cmd = (
-            "{exe} --reference {reference} --distorted {distorted} --width {width} --height {height} "
-            "--pixel_format {pixel_format} --bitdepth {bitdepth} --output {output}".format(
-                exe=exe,
-                reference=reference,
-                distorted=distorted,
-                width=width,
-                height=height,
-                pixel_format=pixel_format,
-                bitdepth=bitdepth,
-                output=output,
-            )
+        vmafexec_cmd = _vmafexec_base_command(
+            exe, reference, distorted, width, height, pixel_format, bitdepth, output
         )
-
-        if float_psnr:
-            vmafexec_cmd += " --feature float_psnr"
-        if float_ssim:
-            vmafexec_cmd += " --feature float_ssim"
-        if float_ms_ssim:
-            vmafexec_cmd += " --feature float_ms_ssim"
-        if float_moment:
-            vmafexec_cmd += " --feature float_moment"
-
-        if psnr:
-            vmafexec_cmd += " --feature psnr"
-        if ssim:
-            # vmafexec_cmd += ' --feature ssim'
-            assert False, "ssim (the daala integer ssim) is deprecated"
-        if ms_ssim:
-            vmafexec_cmd += " --feature ms_ssim"
-
-        if no_prediction:
-            vmafexec_cmd += " --no_prediction"
-        else:
-            assert models is not None
-            assert isinstance(models, list)
-            for model in models:
-                vmafexec_cmd += " --model {}".format(model)
-
-                # FIXME: hacky - since we do not know which feature is the one used in the model,
-                # we have to set the parameter for all three, at the expense of extra computation.
-
-                if vif_enhn_gain_limit is not None:
-                    vmafexec_cmd += f":vif.vif_enhn_gain_limit={vif_enhn_gain_limit}:float_vif.vif_enhn_gain_limit={vif_enhn_gain_limit}"
-                if adm_enhn_gain_limit is not None:
-                    vmafexec_cmd += f":adm.adm_enhn_gain_limit={adm_enhn_gain_limit}:float_adm.adm_enhn_gain_limit={adm_enhn_gain_limit}"
-                if motion_force_zero:
-                    assert isinstance(motion_force_zero, bool)
-                    motion_force_zero = str(motion_force_zero).lower()
-                    vmafexec_cmd += f":motion.motion_force_zero={motion_force_zero}:float_motion.motion_force_zero={motion_force_zero}"
-
-                # CAMBI encode-resolution / encode-bitdepth overrides. These
-                # flow through to the cambi feature so its feature-name key
-                # snapshots encbd/ench/encw (e.g. for VMAF v1.0.16 models).
-                # Matches Netflix upstream call_vmafexec.
-                if enc_width is not None:
-                    vmafexec_cmd += f":cambi.enc_width={enc_width}"
-                if enc_height is not None:
-                    vmafexec_cmd += f":cambi.enc_height={enc_height}"
-                if enc_bitdepth is not None:
-                    vmafexec_cmd += f":cambi.enc_bitdepth={enc_bitdepth}"
-
-        assert isinstance(subsample, int) and subsample >= 1
-        if subsample != 1:
-            vmafexec_cmd += " --subsample {}".format(subsample)
-
-        assert isinstance(n_threads, int) and n_threads >= 1
-        if n_threads != 1:
-            vmafexec_cmd += " --threads {}".format(n_threads)
-
-        if disable_avx:
-            # 0xFFFFFFFF disables all CPU ISA extensions (all mask bits set).
-            # parse_unsigned() rejects negative strings (ADR-1088).
-            vmafexec_cmd += " --cpumask 4294967295"
-
-        if backend is None:
-            backend = os.environ.get("VMAF_FORCE_BACKEND") or os.environ.get("VMAF_BACKEND")
-        if backend:
-            vmafexec_cmd += f" --backend {backend}"
+        vmafexec_cmd += _vmafexec_feature_flags(
+            float_psnr, psnr, float_ssim, ssim, float_ms_ssim, ms_ssim, float_moment
+        )
+        vmafexec_cmd += _vmafexec_model_flags(
+            no_prediction,
+            models,
+            (
+                vif_enhn_gain_limit,
+                adm_enhn_gain_limit,
+                motion_force_zero,
+                enc_width,
+                enc_height,
+                enc_bitdepth,
+            ),
+        )
+        vmafexec_cmd += _vmafexec_run_flags(subsample, n_threads, disable_avx, backend)
 
         if logger:
             logger.info(vmafexec_cmd)

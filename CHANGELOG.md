@@ -1292,6 +1292,15 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   [ADR-1250](docs/adr/1250-eupl-fork-relicense.md)).
 
 
+- **`compat/python-vmaf/__init__.py` meets the HISS standard and carries its
+  SPDX line.** `call_vmafexec()` (118 lines) and
+  `call_vmafexec_multi_features()` (77 lines) are assembled from pure helpers
+  that each emit one part of the command; the command text is unchanged and
+  now pinned by two tests. HISS baseline: two rows fewer
+  ([ADR-1142](docs/adr/1142-whole-codebase-standards.md),
+  [ADR-1250](docs/adr/1250-eupl-fork-relicense.md)).
+
+
 - Added missing SPDX-License-Identifier declarations across 387 clean source
   and header files in accordance with ADR-1250 and repository provenance,
   skipping 131 files with baselined debt, 5 vendored Pelorus mirror paths,
@@ -2481,6 +2490,16 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   flag masked and compares the four outputs bit for bit, on x86-64 and aarch64;
   with the old kernel it reports 50 differing scores. See
   [`psnr_hvs`](docs/metrics/psnr-hvs.md#cpu-instruction-sets).
+
+
+- **The Python harness accepts `motion_force_zero` with more than one model.**
+  `ExternalProgramCaller.call_vmafexec()` raised `AssertionError` for the
+  second model when `motion_force_zero=True`: the loop over the models
+  replaced the argument with the string `"true"` and then failed its own type
+  check (the same statement is in Netflix upstream). Every model now gets the
+  overload. A run with one model, including every golden test, produces the
+  same command as before
+  (`T-PYTHON-CALL-VMAFEXEC-FORCE-ZERO-SECOND-MODEL-2026-10-02`).
 
 
 - **`vmaf` no longer hangs after an out-of-memory on the device.**

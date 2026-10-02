@@ -58912,3 +58912,20 @@ Kept: the `+0` start of every sum (signed-zero parity with `adm_dwt2_s()`), mult
   translation units include both headers (ADR-0141, ADR-1470).
 - No CLI behaviour, score, public C API, Netflix golden-data or FFmpeg patch
   impact.
+## Python harness command builders are assembled from helpers (ADR-1142, 2026-10-02)
+
+`refactor/std-python-harness-init`, `T-PYTHON-CALL-VMAFEXEC-FORCE-ZERO-SECOND-MODEL-2026-10-02`.
+
+- `compat/python-vmaf/__init__.py` (Netflix `python/vmaf/__init__.py`):
+  `ExternalProgramCaller.call_vmafexec()` and `call_vmafexec_multi_features()`
+  keep their signatures and call module-level helpers
+  (`_vmafexec_base_command`, `_vmafexec_feature_flags`,
+  `_vmafexec_model_flags`, `_vmafexec_model_overloads`, `_vmafexec_run_flags`,
+  `_multi_features_run_arguments`, `_feature_argument`). An upstream sync that
+  touches either function will conflict: put the changed flag into the helper
+  that emits it and keep the order of the parts
+  (`python/test/python_harness_coverage_test.py` pins both command texts).
+- Deliberate difference from upstream: `_vmafexec_model_overloads()` does not
+  overwrite `motion_force_zero`, so the overload reaches every model. Do not
+  take upstream's in-loop assignment back.
+- No score, Netflix golden-data, public C API or FFmpeg patch impact.

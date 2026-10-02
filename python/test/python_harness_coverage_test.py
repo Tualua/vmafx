@@ -357,6 +357,108 @@ class ExternalProgramCallerVmafexecTest(unittest.TestCase):
         self.assertNotIn("cambi.enc_height", cmd)
         self.assertNotIn("cambi.enc_bitdepth", cmd)
 
+    def test_motion_force_zero_reaches_every_model(self):
+        # T-PYTHON-CALL-VMAFEXEC-FORCE-ZERO-SECOND-MODEL-2026-10-02: the builder
+        # used to overwrite its `motion_force_zero` argument with the string
+        # "true" while handling the first model, so the second model tripped
+        # the `isinstance(motion_force_zero, bool)` assertion.
+        kw = self._base_kwargs()
+        kw.update(
+            no_prediction=False,
+            models=["/m/a.json:name=a", "/m/b.json:name=b"],
+            motion_force_zero=True,
+        )
+        with mock.patch.dict(os.environ, clear=False):
+            os.environ.pop("VMAF_FORCE_BACKEND", None)
+            os.environ.pop("VMAF_BACKEND", None)
+            cmd = self._capture(**kw)
+        overload = ":motion.motion_force_zero=true:float_motion.motion_force_zero=true"
+        self.assertEqual(
+            cmd,
+            "/fake/vmaf --reference ref.yuv --distorted dis.yuv --width 320 --height 240 "
+            "--pixel_format 420 --bitdepth 8 --output out.xml"
+            f" --model /m/a.json:name=a{overload} --model /m/b.json:name=b{overload}",
+        )
+
+    def test_motion_force_zero_must_be_a_bool(self):
+        kw = self._base_kwargs()
+        kw.update(no_prediction=False, models=["/m/a.json"], motion_force_zero="true")
+        with self.assertRaises(AssertionError):
+            self._capture(**kw)
+        # Without a model there is nothing to overload, and nothing is checked.
+        kw.update(models=[])
+        self.assertNotIn("motion_force_zero", self._capture(**kw))
+
+    def test_full_command_is_pinned(self):
+        # Every optional part at once, in the order the command has always had:
+        # float features, integer features, models with their overloads,
+        # subsample, threads, cpumask, backend.
+        kw = self._base_kwargs()
+        kw.update(
+            float_psnr=True,
+            psnr=True,
+            float_ssim=True,
+            float_ms_ssim=True,
+            ms_ssim=True,
+            float_moment=True,
+            no_prediction=False,
+            models=["version=vmaf_v0.6.1"],
+            vif_enhn_gain_limit=1.0,
+            adm_enhn_gain_limit=1.5,
+            motion_force_zero=True,
+            enc_width=1920,
+            enc_height=1080,
+            enc_bitdepth=10,
+            subsample=5,
+            n_threads=4,
+            disable_avx=True,
+            backend="cpu",
+        )
+        self.assertEqual(
+            self._capture(**kw),
+            "/fake/vmaf --reference ref.yuv --distorted dis.yuv --width 320 --height 240 "
+            "--pixel_format 420 --bitdepth 8 --output out.xml"
+            " --feature float_psnr --feature float_ssim --feature float_ms_ssim"
+            " --feature float_moment --feature psnr --feature ms_ssim"
+            " --model version=vmaf_v0.6.1"
+            ":vif.vif_enhn_gain_limit=1.0:float_vif.vif_enhn_gain_limit=1.0"
+            ":adm.adm_enhn_gain_limit=1.5:float_adm.adm_enhn_gain_limit=1.5"
+            ":motion.motion_force_zero=true:float_motion.motion_force_zero=true"
+            ":cambi.enc_width=1920:cambi.enc_height=1080:cambi.enc_bitdepth=10"
+            " --subsample 5 --threads 4 --cpumask 4294967295 --backend cpu",
+        )
+
+    def test_full_multi_features_command_is_pinned(self):
+        captured = []
+        options = {
+            "backend": "cpu",
+            "disable_avx": True,
+            "n_threads": 2,
+            "vif": {"vif_enhn_gain_limit": 1.0, "debug": True},
+            "motion": {},
+            "adm": None,
+        }
+        with mock.patch("vmaf.run_process", side_effect=lambda cmd, **_: captured.append(cmd)):
+            with mock.patch("vmaf.required", side_effect=lambda p: "/fake/vmaf"):
+                ExternalProgramCaller.call_vmafexec_multi_features(
+                    ["vif", "motion", "adm", "psnr"],
+                    "yuv420p10le",
+                    "ref.yuv",
+                    "dis.yuv",
+                    320,
+                    240,
+                    "out.xml",
+                    options=options,
+                )
+        self.assertEqual(
+            captured[0],
+            "/fake/vmaf --reference ref.yuv --distorted dis.yuv --width 320 --height 240 "
+            "--pixel_format 420 --bitdepth 10 --output out.xml --xml --no_prediction "
+            "--backend cpu --cpumask 4294967295 --threads 2 "
+            "--feature vif=vif_enhn_gain_limit=1.0:debug=true --feature motion "
+            "--feature adm --feature psnr",
+        )
+
     def test_backend_parameter_emits_flag(self):
         kw = self._base_kwargs()
         kw["backend"] = "cuda"
