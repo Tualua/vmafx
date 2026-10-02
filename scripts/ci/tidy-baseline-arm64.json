@@ -292,7 +292,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 604,
+  "total_warnings": 569,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -305,7 +305,6 @@
     "core/src/dict.cpp": 15,
     "core/src/dict.h": 4,
     "core/src/dict_internal.h": 2,
-    "core/src/feature/adm.c": 31,
     "core/src/feature/adm_csf_tools.h": 2,
     "core/src/feature/adm_options.h": 1,
     "core/src/feature/adm_tools.h": 142,
@@ -324,7 +323,6 @@
     "core/src/feature/feature_characteristics.h": 3,
     "core/src/feature/feature_collector.h": 4,
     "core/src/feature/feature_name.h": 1,
-    "core/src/feature/float_adm.c": 4,
     "core/src/feature/float_ms_ssim.c": 2,
     "core/src/feature/float_ssim.c": 2,
     "core/src/feature/float_vif.c": 6,
@@ -457,6 +455,28 @@
         "core/src/hip/stubs.c": {
           "warnings": [
             2,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "393c98f3d4f1650935ca8dcfd406618185c2f7b446cef210306acaf24973df3f"
+    },
+    {
+      "sources": [
+        "core/src/feature/adm.c",
+        "core/src/feature/float_adm.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/adm.c": {
+          "warnings": [
+            31,
+            0
+          ]
+        },
+        "core/src/feature/float_adm.c": {
+          "warnings": [
+            4,
             0
           ]
         }

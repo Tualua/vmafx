@@ -23,6 +23,25 @@
   the C++-only checks a C header trips when a SYCL translation unit includes
   it (ADR-1138); `recip` in `div_lookup_populate()` is `const`. The positional
   initialisers of `dwt_7_9_YCbCr_threshold` stay positional.
+## `compute_adm()` is split into helpers; its debug-dump blocks are gone (ADR-1142, 2026-10-02)
+
+`refactor/adm-c-standards`. No score impact: every recorded `adm` / `float_adm` output is identical before and after on x86 (scalar, AVX2, AVX-512) and aarch64 (scalar, NEON); both golden gates 271 passed, 12 skipped.
+
+`core/src/feature/adm.c` no longer lines up with upstream's single 260-line `compute_adm()`. The function keeps its name and signature; port an upstream hunk into the helper that owns the statement:
+
+| Upstream statements in `compute_adm()` | Now in |
+| --- | --- |
+| `buf_stride`, `buf_sz_one`, the `SIZE_MAX` check, `data_buf`, the six `init_dwt_band*()` calls | `adm_alloc_bands()` |
+| `ind_size_y` / `ind_size_x`, `buf_y_orig` / `buf_x_orig`, the four index rows each | `adm_frame_alloc()` + `adm_alloc_indices()` |
+| the `fail:` label and the three `aligned_free()` | `adm_frame_free()`, called once at the end of `compute_adm()`; every `goto fail` is a `return` of the helper |
+| `adm_dwt2_lo` / `adm_dwt2` of both pictures | `adm_scale_dwt2()` |
+| `adm_decouple`, `adm_csf_den_scale`, `adm_csf`, `adm_cm`, `adm_csf`, `adm_cm` | `adm_scale_sums()`, same order, same arguments (the options travel in `AdmScaleOpts`) |
+| the `for (scale ...)` loop, `num` / `den` / `aim_num` / `aim_den`, `scores[]` | `adm_accumulate_scales()`; the four doubles are `sums[0..3]` |
+| `numden_limit`, `vmaf_adm_floor_pair_named()`, `vmaf_adm_finalize_scores_named()` | `compute_adm()` |
+
+Kept as upstream has them: the types of every temporary (`float` per-scale sums added into `double` frame sums), the order `aim_den` before `aim_num`, the halving of `w` and `h` after the wavelet, the stdout messages byte for byte.
+
+Dropped: the two `#ifdef ADM_OPT_DEBUG_DUMP` blocks. They called `write_image()` and `PRINTF()`, which nothing in the tree defines, so they could not compile; the macro stays commented out in `adm_options.h`. The `(float *)(void *)` casts in `init_dwt_band*()` are direct casts (`bugprone-casting-through-void`); `init_dwt_band_d()` keeps its signature because `compat/python-vmaf/core/adm_dwt2_cy.pyx` declares it.
 
 ## `docs/state.md` uses the RC3 to RC8 labels (ADR-1421, 2026-10-02)
 

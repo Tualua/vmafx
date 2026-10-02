@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-02T09:38:30Z",
+  "generated_at": "2026-10-02T14:07:21Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "dbfb1fdf569e91c10e3755938d4487f7ba015ccc",
-  "total_infractions": 260,
+  "commit_sha": "513d2a6fce68df8c1b64d7fc53c81e10a8df174b",
+  "total_infractions": 251,
   "infractions": [
     {
       "rule_id": "HISS-04",
@@ -856,70 +856,6 @@
       "symbol": "assert_equivalent_commands",
       "message": "Function 'assert_equivalent_commands' (68 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "compat/python-vmaf/tools/testutils.py:108:HISS-04"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/adm.c",
-      "line_number": 176,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/adm.c:176:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/adm.c",
-      "line_number": 182,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/adm.c:182:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/adm.c",
-      "line_number": 198,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/adm.c:198:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/adm.c",
-      "line_number": 214,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/adm.c:214:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/adm.c",
-      "line_number": 239,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/adm.c:239:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/adm.c",
-      "line_number": 242,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/adm.c:242:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/adm.c",
-      "line_number": 250,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/adm.c:250:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/feature/adm.c",
-      "line_number": 253,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/feature/adm.c:253:HISS-01"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/adm.c",
-      "line_number": 125,
-      "symbol": "compute_adm",
-      "message": "Function 'compute_adm' (260 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/adm.c:125:HISS-04"
     },
     {
       "rule_id": "HISS-04",

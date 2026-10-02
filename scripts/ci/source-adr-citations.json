@@ -2896,7 +2896,6 @@
     },
     "0418": {
       "sites": {
-        "core/src/feature/adm.c": 3,
         "core/src/feature/adm_tools.c": 2,
         "python/test/local_explainer_test.py": 14,
         "python/test/vmafexec_test.py": 1
@@ -6067,6 +6066,7 @@
         "core/src/dnn/op_allowlist.c": 1,
         "core/src/dnn/ort_backend.c": 1,
         "core/src/dnn/tiny_extractor_template.h": 1,
+        "core/src/feature/adm.c": 1,
         "core/src/feature/adm_options.h": 1,
         "core/src/feature/brisque.c": 1,
         "core/src/feature/ciede.c": 1,
