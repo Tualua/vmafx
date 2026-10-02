@@ -16,10 +16,12 @@
 # Usage:
 #   scripts/test/sycl-dev-container.sh exec bash scripts/test/zerocopy-e2e.sh \
 #     --stage N --out DIR [--clips src01,checkerboard] [--depths 8,10] \
-#     [--cases a,b,...] [--yuv /yuv] [--bench]
+#     [--cases a,b,...] [--yuv /yuv] [--bench] [--repeat N]
 #
 # Case files are written to DIR as <clip>_<depth>bit__<case>.<leg>.{json,rc,err};
-# DIR must not be shared between runs of different --depths. Exit status is the
+# DIR must not be shared between runs of different --depths. --repeat N runs the
+# zero-copy leg N times (extra runs as <leg> zc-r2..zc-rN); a parity case fails as
+# zc-nondeterministic when any run differs from host upload. Exit status is the
 # comparator's: 0 only when no case failed and every host leg is bit-exact.
 
 set -euo pipefail
@@ -33,6 +35,7 @@ DEPTHS="8,10"
 CASES=""
 YUV="/yuv"
 BENCH=0
+REPEAT=1
 CB_REPEAT="${CB_REPEAT:-20}"
 LEG_TIMEOUT="${LEG_TIMEOUT:-600}"
 QSV_INIT=(-init_hw_device vaapi=va0:/dev/dri/renderD128
@@ -41,7 +44,7 @@ QSV_INIT=(-init_hw_device vaapi=va0:/dev/dri/renderD128
 usage() {
   cat >&2 <<'EOF'
 usage: zerocopy-e2e.sh --stage {1,2,3} --out DIR [--clips list] [--depths list]
-                       [--cases list] [--yuv DIR] [--bench]
+                       [--cases list] [--yuv DIR] [--bench] [--repeat N]
 EOF
   exit 2
 }
@@ -76,15 +79,20 @@ while [ "$#" -gt 0 ]; do
       BENCH=1
       shift
       ;;
+    --repeat)
+      REPEAT="${2:?}"
+      shift 2
+      ;;
     *) usage ;;
   esac
 done
 case "$STAGE" in 1 | 2 | 3) ;; *) usage ;; esac
 [ -n "$OUT" ] || usage
+case "$REPEAT" in '' | *[!0-9]* | 0) usage ;; esac
 OUT="$(realpath -m "$OUT")"
 mkdir -p "$OUT/media"
 # Stale case files from an earlier run would be compared again.
-rm -f "$OUT"/*__*.cpu.* "$OUT"/*__*.host.* "$OUT"/*__*.zc.*
+rm -f "$OUT"/*__*.cpu.* "$OUT"/*__*.host.* "$OUT"/*__*.zc.* "$OUT"/*__*.zc-r*.*
 
 # clip -> "WxH ref.yuv dis.yuv repeat"
 clip_info() {
@@ -139,6 +147,17 @@ filter_option() {
   if [ "$1" = model ]; then printf 'model=%s' "$2"; else printf "model=:feature='%s'" "$2"; fi
 }
 
+# run_zc BASE DIS REF FILTER_OPT BENCHFLAG: one zero-copy run.
+run_zc() {
+  local base="$1" dis="$2" ref="$3" opt="$4" benchflag="$5"
+  # The decoders do not share a QSV device: one per input (docs/backends/sycl/overview.md).
+  run_leg "$base" "${QSV_INIT[@]}" \
+    -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qd -i "$dis" \
+    -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qr -i "$ref" \
+    ${benchflag:+"$benchflag"} \
+    -lavfi "[0:v][1:v]libvmaf_sycl=${opt}:log_fmt=json:log_path=${base}.json" -f null -
+}
+
 # run_case TAG CLIP_DIR ID KIND ARG BENCHFLAG
 run_case() {
   local tag="$1" dis="$2" ref="$3" id="$4" kind="$5" arg="$6" benchflag="$7"
@@ -149,12 +168,11 @@ run_case() {
     -lavfi "[0:v][1:v]libvmaf=${opt}:log_fmt=json:log_path=${base}.cpu.json" -f null -
   run_leg "$base.host" -i "$dis" -i "$ref" \
     -lavfi "[0:v][1:v]libvmaf_sycl=${opt}:log_fmt=json:log_path=${base}.host.json" -f null -
-  # The decoders do not share a QSV device: one per input (docs/backends/sycl/overview.md).
-  run_leg "$base.zc" "${QSV_INIT[@]}" \
-    -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qd -i "$dis" \
-    -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qr -i "$ref" \
-    ${benchflag:+"$benchflag"} \
-    -lavfi "[0:v][1:v]libvmaf_sycl=${opt}:log_fmt=json:log_path=${base}.zc.json" -f null -
+  run_zc "$base.zc" "$dis" "$ref" "$opt" "$benchflag"
+  local k
+  for ((k = 2; k <= REPEAT; k++)); do
+    run_zc "$base.zc-r$k" "$dis" "$ref" "$opt" ""
+  done
 }
 
 # print_bench CLIP DEPTH BASE: ZC-E2E BENCH line from the zero-copy leg's -benchmark output.

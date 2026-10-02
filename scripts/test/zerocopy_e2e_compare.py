@@ -266,6 +266,42 @@ def _parity_verdict(
     return Verdict("PASS", "", f"frames={len(zc)} metrics={len(_metric_keys(cpu))}")
 
 
+def _repeat_bases(d: Path, prefix: str) -> list[Path]:
+    """Extra zero-copy runs (``--repeat``) as ``<prefix>.zc-r<k>``, in run order."""
+
+    found = []
+    for rc_file in d.glob(f"{prefix}.zc-r*.rc"):
+        k = rc_file.name[len(prefix) + len(".zc-r") : -len(".rc")]
+        if k.isdigit():
+            found.append((int(k), d / f"{prefix}.zc-r{k}"))
+    return [base for _, base in sorted(found)]
+
+
+def _repeat_verdict(
+    d: Path, prefix: str, cpu: list[dict[str, Any]], host: list[dict[str, Any]]
+) -> Verdict | None:
+    """FAIL when any repeated zero-copy run differs from host upload, else None.
+
+    Zero-copy must be deterministic: every repeat is held to the same exact
+    parity as the first run (sycl-zerocopy-cambi-nondeterminism)."""
+
+    repeats = _repeat_bases(d, prefix)
+    bad = []
+    for base in repeats:
+        rc = _read_rc(base)
+        if rc is None:
+            return Verdict("FAIL", "missing-leg", f"{base.name} rc file absent")
+        v = _parity_verdict(rc, _read_err(base), base, cpu, host)
+        if v.kind == "FAIL":
+            bad.append(f"{base.name.rsplit('.', 1)[-1]}: {v.label} {v.detail}")
+    if bad:
+        runs = len(repeats) + 1
+        return Verdict(
+            "FAIL", "zc-nondeterministic", f"{len(bad)} of {runs} runs differ; " + "; ".join(bad)
+        )
+    return None
+
+
 def _reference_legs(
     d: Path, prefix: str
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]] | Verdict:
@@ -303,6 +339,8 @@ def evaluate_case(d: Path, prefix: str, case_id: str, stage: int) -> Verdict:
         verdict = _loud_fail_verdict(case, zc_rc, zc_err)
     else:
         verdict = _parity_verdict(zc_rc, zc_err, zc_base, cpu, host)
+        if verdict.kind != "FAIL":
+            verdict = _repeat_verdict(d, prefix, cpu, host) or verdict
     if verdict.kind == "FAIL":
         return verdict
     nonexact = _host_vs_cpu(case, cpu, host)

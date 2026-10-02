@@ -96,12 +96,23 @@ Run 8-bit and 10-bit as separate invocations with separate `--out` directories
 default if a run needs more than 90 minutes. Flags: `--stage {1,2,3}`
 (required), `--out DIR` (required), `--clips src01,checkerboard`, `--depths
 8,10`, `--cases id,id` (ids from `python3 scripts/test/zerocopy_e2e_compare.py
---list`), `--yuv DIR` (default `/yuv`), `--bench`. `--bench` adds `-benchmark`
-to the zero-copy leg of `model-vmaf_v0.6.1` on the checkerboard and prints
-`ZC-E2E BENCH <clip> <depth> frames=<n> rtime=<s> fps=<f>`, the throughput
-baseline later stages compare against. An encode failure prints `ENCODE FAILED`
-and exits 1. The case files stay in `--out` as
+--list`), `--yuv DIR` (default `/yuv`), `--bench`, `--repeat N`. `--bench`
+adds `-benchmark` to the zero-copy leg of `model-vmaf_v0.6.1` on the
+checkerboard and prints `ZC-E2E BENCH <clip> <depth> frames=<n> rtime=<s>
+fps=<f>`, the throughput baseline later stages compare against. An encode
+failure prints `ENCODE FAILED` and exits 1. The case files stay in `--out` as
 `<clip>_<depth>bit__<case>.<leg>.{json,rc,err}`.
+
+`--repeat N` (default 1) runs the zero-copy leg N times per case; the extra
+runs are kept as the legs `zc-r2` to `zc-rN`, and a case at its stage fails as
+`zc-nondeterministic` when any of the N runs differs from host upload. Use it
+for anything timing dependent: a zero-copy fault that shows up in only some
+runs passes a single run most of the time.
+
+```bash
+scripts/test/sycl-dev-container.sh exec bash scripts/test/zerocopy-e2e.sh --stage 1 \
+  --out /work/.cache/sycl-dev/e2e-rep8 --depths 8 --cases cambi,vif,model-vmaf_v0.6.1 --repeat 10
+```
 
 ### Stages
 
@@ -125,6 +136,7 @@ The exit status is 0 only for `fail=0 nonexact=0` and at least one pass.
 | `PASS loud-fail` | a later-stage case exited non-zero and its stderr names the CPU feature or its SYCL twin |
 | `FAIL silent-drop` | a successful zero-copy run lacks a metric the CPU run has |
 | `FAIL zc-vs-host` | zero-copy differs from host upload by any amount |
+| `FAIL zc-nondeterministic` | with `--repeat N`, at least one of the N zero-copy runs differs from host upload or failed; the detail names the runs (`zc-r<k>`) |
 | `FAIL zc-failed` | a case at its stage failed on zero-copy |
 | `FAIL unexpected-success` | a later-stage case succeeded on zero-copy |
 | `FAIL unnamed-failure` | a later-stage case failed without naming the feature |

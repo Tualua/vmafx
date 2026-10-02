@@ -202,3 +202,54 @@ def test_known_sycl_twin_omission_is_not_a_drop_but_other_metrics_are(
     assert rc == 0, out
     assert omitted in zc.SYCL_TWIN_OMITTED
     assert {omitted} == zc.SYCL_TWIN_OMITTED
+
+
+def test_repeated_zero_copy_runs_that_agree_pass(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _case(tmp_path, STAGE1_CASE, METRICS, METRICS, METRICS)
+    for k in (2, 3):
+        _leg(tmp_path, STAGE1_CASE, f"zc-r{k}", METRICS, 0, "")
+    rc, out = _run(tmp_path, 1, STAGE1_CASE, capsys)
+    assert rc == 0, out
+    assert f"ZC-E2E src01 8 {STAGE1_CASE} PASS" in out
+
+
+def test_one_divergent_repeat_is_nondeterministic(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    off = {"integer_vif_scale0": 0.5, "integer_vif_scale1": 0.25 + 1e-6}
+    _case(tmp_path, STAGE1_CASE, METRICS, METRICS, METRICS)
+    _leg(tmp_path, STAGE1_CASE, "zc-r2", METRICS, 0, "")
+    _leg(tmp_path, STAGE1_CASE, "zc-r3", off, 0, "")
+    rc, out = _run(tmp_path, 1, STAGE1_CASE, capsys)
+    assert rc == 1
+    assert "FAIL zc-nondeterministic 1 of 3 runs differ" in out
+    assert "zc-r3: zc-vs-host integer_vif_scale1" in out
+    assert "zc-r2:" not in out
+
+
+def test_failed_repeat_is_nondeterministic(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _case(tmp_path, STAGE1_CASE, METRICS, METRICS, METRICS)
+    _leg(tmp_path, STAGE1_CASE, "zc-r2", None, 1, "vmaf_read_pictures_sycl failed: -5\n")
+    rc, out = _run(tmp_path, 1, STAGE1_CASE, capsys)
+    assert rc == 1
+    assert "FAIL zc-nondeterministic" in out
+    assert "zc-r2: zc-failed rc=1" in out
+
+
+def test_repeats_order_numerically_and_dotted_ids_work(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    case = "model-vmaf_v0.6.1"
+    runs, divergent = 11, 10
+    _case(tmp_path, case, {"vmaf": 90.0}, {"vmaf": 90.0}, {"vmaf": 90.0})
+    for k in range(2, runs + 1):
+        _leg(tmp_path, case, f"zc-r{k}", {"vmaf": 91.0 if k == divergent else 90.0}, 0, "")
+    bases = zc._repeat_bases(tmp_path, f"{CLIP}__{case}")
+    assert [b.name.rsplit(".", 1)[-1] for b in bases] == [f"zc-r{k}" for k in range(2, runs + 1)]
+    rc, out = _run(tmp_path, 1, case, capsys)
+    assert rc == 1
+    assert "1 of 11 runs differ; zc-r10:" in out
