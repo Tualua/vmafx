@@ -4,7 +4,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import json
 import shlex
 import sys
@@ -97,6 +99,80 @@ class KernelEntries(unittest.TestCase):
         entries = self._run(existing)
         self.assertIn("host.c", [e["file"] for e in entries])
         self.assertNotIn("stale", [e["command"] for e in entries])
+
+
+# The layout a configured tree has: every kernel target lists the headers it
+# includes in `depend_files`, so meson puts them between the `|` and the
+# compiler. The first parser matched `<kernel> | <compiler>` only and found no
+# rule at all in such a tree: the cuda and hip lanes measured no kernel file,
+# and both committed baselines held none.
+NINJA_WITH_HEADER_DEPS = """\
+build src/adm_dwt2.fatbin: CUSTOM_COMMAND_DEP ../core/src/feature/cuda/adm_dwt2.cu | \
+../core/include/libvmaf/picture.h ../core/src/cuda/cuda_helper.cuh /usr/local/cuda/bin/nvcc
+ DEPFILE = src/adm_dwt2.fatbin.d
+ DEPFILE_UNQUOTED = src/adm_dwt2.fatbin.d
+ COMMAND = /usr/local/cuda/bin/nvcc --fatbin ../core/src/feature/cuda/adm_dwt2.cu \
+-o src/adm_dwt2.fatbin -I /r/core/src -DDEVICE_CODE --std c++20
+ description = Generating$ adm_dwt2.fatbin
+
+build src/psnr_score.hsaco: CUSTOM_COMMAND ../core/src/feature/hip/psnr_score.hip | \
+../core/src/hip/kernel_template.h /opt/rocm/bin/hipcc || src/order_only.stamp
+ COMMAND = /opt/rocm/bin/hipcc --genco -I /opt/rocm/include -I /r/core/src \
+../core/src/feature/hip/psnr_score.hip -o src/psnr_score.hsaco
+
+build src/psnr_score_hsaco.c: CUSTOM_COMMAND src/psnr_score.hsaco | /usr/bin/xxd
+ COMMAND = /usr/bin/xxd -i src/psnr_score.hsaco src/psnr_score_hsaco.c
+"""
+
+
+def _generate(ninja: str) -> tuple[int, list[dict[str, str]], str]:
+    """Run the generator over *ninja*; return its code, database and stderr."""
+    with tempfile.TemporaryDirectory() as tmp:
+        build = Path(tmp).resolve() / "build"
+        build.mkdir()
+        (build / "build.ninja").write_text(ninja, encoding="utf-8")
+        compdb = build / "compile_commands.json"
+        compdb.write_text("[]", encoding="utf-8")
+        printed = io.StringIO()
+        with contextlib.redirect_stderr(printed):
+            code = gen.main(["gen", str(build)])
+        entries: list[dict[str, str]] = json.loads(compdb.read_text(encoding="utf-8"))
+        return code, entries, printed.getvalue()
+
+
+class RuleLayouts(unittest.TestCase):
+    def test_header_dependencies_do_not_hide_the_kernel(self) -> None:
+        code, entries, printed = _generate(NINJA_WITH_HEADER_DEPS)
+        self.assertEqual(code, 0)
+        commands = {Path(e["file"]).name: shlex.split(e["command"]) for e in entries}
+        self.assertEqual(sorted(commands), ["adm_dwt2.cu", "psnr_score.hip"])
+        self.assertIn("2 CUDA/HIP kernel entries", printed)
+        # The compiler is read from the command, not from the dependency list,
+        # where a header now comes first.
+        self.assertIn("--cuda-path=/usr/local/cuda", commands["adm_dwt2.cu"])
+        self.assertIn("-std=c++20", commands["adm_dwt2.cu"])
+        self.assertIn("-I/opt/rocm/include", commands["psnr_score.hip"])
+
+    def test_a_build_without_kernels_adds_nothing(self) -> None:
+        ninja = "build src/a.o: c_COMPILER ../core/src/a.c\n ARGS = -I.\n"
+        code, entries, printed = _generate(ninja)
+        self.assertEqual(code, 0)
+        self.assertEqual(entries, [])
+        self.assertIn("0 CUDA/HIP kernel entries", printed)
+
+    def test_a_kernel_rule_without_a_command_fails(self) -> None:
+        ninja = "build src/k.fatbin: CUSTOM_COMMAND ../core/src/k.cu | /opt/cuda/bin/nvcc\n"
+        code, entries, printed = _generate(ninja)
+        self.assertEqual(code, 1)
+        self.assertEqual(entries, [])  # the database is left as it was
+        self.assertIn("k.cu: build statement has no COMMAND", printed)
+
+    def test_a_renamed_rule_fails_instead_of_dropping_the_kernels(self) -> None:
+        ninja = NINJA_WITH_HEADER_DEPS.replace("CUSTOM_COMMAND_DEP", "NVCC_COMPILER")
+        code, entries, printed = _generate(ninja)
+        self.assertEqual(code, 1)
+        self.assertEqual(entries, [])
+        self.assertIn("2 build statements compile a .cu / .hip file, 1 were parsed", printed)
 
 
 if __name__ == "__main__":

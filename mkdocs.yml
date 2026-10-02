@@ -330,6 +330,7 @@ nav:
       - Default model: development/default-model.md
       - Release: development/release.md
       - CI: development/ci.md
+      - Measuring the clang-tidy lanes: development/tidy-lanes.md
       - CI runners: development/ci-runners.md
       - Cross-backend gate: development/cross-backend-gate.md
       - RC3 home GPU retest: development/rc3-home-gpu-retest.md
@@ -1581,6 +1582,7 @@ nav:
         - "ADR-1468: sycl-sub-group-sizes-every-aot-target": adr/1468-sycl-sub-group-sizes-every-aot-target.md
         - "ADR-1469: psnr-hvs-simd-butterfly-two-stages": adr/1469-psnr-hvs-simd-butterfly-two-stages.md
         - "ADR-1470: c-cxx-shared-enum-one-definition": adr/1470-c-cxx-shared-enum-one-definition.md
+        - "ADR-1471: tidy-lanes-in-dev-container": adr/1471-tidy-lanes-in-dev-container.md
         - "ADR-1472: integer-adm-cm-weight-budget": adr/1472-integer-adm-cm-weight-budget.md
         - "ADR-1473: float-adm-x86-simd-exact-and-dispatched": adr/1473-float-adm-x86-simd-exact-and-dispatched.md
       - "By tag":

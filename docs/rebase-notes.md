@@ -58976,3 +58976,25 @@ No score, output, public C API, Netflix golden-data or FFmpeg patch impact. `flo
 - `scripts/ci/tests/test_spdx_tag_matches_notice.py` fails when a tag and the
   text next to it disagree.
 - No source, score, public C API, Netflix golden-data or FFmpeg patch impact.
+
+## The clang-tidy lanes are measured in the dev container (ADR-1471, 2026-10-02)
+
+`ci/tidy-lanes-dev-container`.
+
+- No rebase impact from upstream: `scripts/dev/tidy-lane.sh`,
+  `scripts/ci/clang-tidy-hip.sh`, `scripts/ci/gen-gpu-compile-commands.py`,
+  `build-aux/aarch64-linux-gnu-qemu-user.ini`, the `tidy-*` targets of the
+  `Makefile` and `scripts/ci/tidy-baseline-*.json` are fork-local.
+- After an upstream sync or any rebase that changes C, C++, CUDA, HIP or SYCL
+  sources, the five baselines are re-measured with
+  `make tidy-lane-write LANE=all` (dev container). A conflict in a baseline
+  JSON is never resolved by hand and never by a `make tidy-ratchet-write` on
+  the host: take either side, then re-measure.
+- A fork branch that tightened a baseline with a scoped write on a host
+  (`tidy-ratchet.py --only ... --write`) conflicts with the re-measured files.
+  Take master's baselines and repeat the tightening in the container:
+  `scripts/dev/tidy-lane.sh --write --only <file> <lane>`.
+- An upstream change that adds a dependency file to a kernel target or
+  renames a meson custom-command rule must keep
+  `scripts/ci/tests/test_gen_gpu_compile_commands.py` green: the generator
+  exits 1 when a `.cu` / `.hip` build statement exists that it cannot read.

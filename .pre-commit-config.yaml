@@ -398,6 +398,27 @@ repos:
         language: system
         files: '^(Makefile|scripts/ci/(tidy-ratchet\.py|tidy-baseline-arm64\.json|tests/test_tidy_ratchet\.py)|build-aux/aarch64-linux-gnu\.ini|\.pre-commit-config\.yaml)$'
         pass_filenames: false
+
+      - id: test-tidy-lane-container
+        # ADR-1471: the lanes are measured in the dev container. The lane
+        # configuration lives in the Makefile, the hosted job repeats the cpu
+        # line, and the entry point decides what goes into the container and
+        # what comes back; a drift in any of them gives numbers no other
+        # machine reproduces.
+        name: Tidy lanes in the dev container (ADR-1471)
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_tidy_lane_container.py
+        language: system
+        files: '^(Makefile|scripts/dev/tidy-lane\.sh|scripts/ci/(clang-tidy-(hip|sycl)\.sh|tests/test_tidy_lane_container\.py)|\.github/workflows/lint-and-format\.yml|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+
+      - id: test-gen-gpu-compile-commands
+        # A cuda or hip lane whose database lost its kernels still reports a
+        # clean measurement; the generator has to fail instead.
+        name: CUDA / HIP kernels reach the lint database (ADR-1471)
+        entry: python3 -m unittest discover -s scripts/ci/tests -p test_gen_gpu_compile_commands.py
+        language: system
+        files: '^(scripts/ci/(gen-gpu-compile-commands\.py|tests/test_gen_gpu_compile_commands\.py)|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
       - id: test-tidy-ratchet-sycl-compdb
         name: SYCL tidy lane augments its compilation database
         entry: python3 -m unittest discover -s scripts/ci/tests -p test_tidy_ratchet_sycl_compdb.py

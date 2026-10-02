@@ -140,6 +140,7 @@ cythonize-deps: $(VENV_PIP)
 # ============================================================================
 
 .PHONY: lint lint-c lint-py lint-sh lint-md lint-go lint-actions tidy-ratchet tidy-ratchet-write \
+	tidy-ratchet-build tidy-lane tidy-lane-write \
 	base-images-sync cuda-pin-sync python-deps-sync \
 	python-locks-check python-locks-write \
 	preflight \
@@ -223,32 +224,33 @@ lint-c: $(BUILD_DIR) $(MESON) $(NINJA)
 	    --jobs "$(LINT_JOBS)" $(LINT_CONFIGURED_ARGS)
 
 # ADR-1142 — whole-tree clang-tidy debt ratchet. LANE=cpu|cuda|sycl|hip|arm64
-# (default cpu). The build dir must be configured for the lane
-# (TIDY_RATCHET_BUILD_DIR, default $(BUILD_DIR)); the GPU lanes pass the
-# extra clang-tidy arguments the 2026-09-02 measurement used and the SYCL
-# lane goes through scripts/ci/clang-tidy-sycl.sh. `tidy-ratchet-write`
-# regenerates scripts/ci/tidy-baseline-$(LANE).json after a cleanup —
-# commit it in the same PR; never hand-edit a baseline.
+# (default cpu). `tidy-ratchet` measures a build dir that is configured for the
+# lane (TIDY_RATCHET_BUILD_DIR, default $(BUILD_DIR)) and compares it with
+# scripts/ci/tidy-baseline-$(LANE).json; `tidy-ratchet-write` rewrites that
+# baseline — commit it in the same PR; never hand-edit a baseline.
 #
-# Configure TIDY_RATCHET_BUILD_DIR with -Db_lto=false, e.g.
-#   meson setup /tmp/tidy-hip core -Db_lto=false -Denable_hip=true \
-#       -Denable_hipcc=false -Denable_cuda=false -Denable_sycl=false
-#   make tidy-ratchet LANE=hip TIDY_RATCHET_BUILD_DIR=/tmp/tidy-hip
-# The project default carries b_lto_threads=4 (ADR-1172), which meson renders
-# as GCC's -flto=4. clang-tidy parses these compile commands with clang, which
-# rejects it ("unsupported argument '4' to option '-flto='"), so every
-# translation unit is reported as a compile failure. The CPU CI lane already
-# configures its throwaway build with -Db_lto=false for this.
+# Where a lane is measured (ADR-1471): the five baselines are defined against
+# the Ubuntu 26.04 dev container, not against the machine you sit at. `make tidy-lane LANE=<lane>` copies this checkout into a
+# throwaway container of the dev image, configures the lane there with its real
+# toolchain (`tidy-ratchet-build` below) and runs this target inside it;
+# `make tidy-lane-write` brings the rewritten baseline back. A run on the host
+# is a quick look, not a measurement: its numbers are not the baseline's.
+#
+# `tidy-ratchet-build` configures and builds TIDY_RATCHET_BUILD_DIR from the
+# lane's own TIDY_RATCHET_COMPILERS_<lane> and TIDY_RATCHET_SETUP_<lane>. Every
+# lane sets -Db_lto=false: the project default carries b_lto_threads=4
+# (ADR-1172), which meson renders as GCC's -flto=4. clang-tidy parses these
+# compile commands with clang, which rejects it ("unsupported argument '4' to
+# option '-flto='"), so every translation unit is reported as a compile
+# failure.
 # The build dir may live inside or outside the repository: tidy-ratchet.py
 # skips everything under --build-dir (the generated *_hsaco.c / *.json.c
 # translation units and headers), so both measure the same checked-in sources.
-# Open: T-TIDY-RATCHET-GPU-LANES-UNREPRODUCIBLE-2026-09-22 in docs/state.md
-# tracks the residual per-file drift between this configuration and the numbers
-# the committed GPU baselines were recorded with.
 # The arm64 lane is the only cross lane: nothing on an x86 host compiles
 # core/src/feature/arm64/ or the ARCH_AARCH64 bodies in core/test/, so the
 # cpu lane's compile database has no entry for them and they were unmeasured
-# (ADR-1283). Configure its build dir with the in-tree cross file —
+# (ADR-1283). Its build dir is configured with the in-tree cross file, by
+# `tidy-ratchet-build LANE=arm64` in the container or by hand for a look —
 #
 #   meson setup build-arm64 core --cross-file build-aux/aarch64-linux-gnu.ini \
 #       -Denable_cuda=false -Denable_sycl=false -Db_lto=false
@@ -263,9 +265,43 @@ AARCH64_TARGET ?= aarch64-linux-gnu
 AARCH64_SYSROOT ?= /usr/aarch64-linux-gnu
 LANE ?= cpu
 TIDY_RATCHET_BUILD_DIR ?= $(BUILD_DIR)
+TIDY_RATCHET_JOBS ?= 8
+# clang-tidy for every lane; the sycl wrapper reads the same variable. The dev
+# container's PATH resolves plain `clang-tidy` to ROCm's LLVM, so the container
+# entry point sets this to /usr/bin/clang-tidy-22.
+CLANG_TIDY_BIN ?= clang-tidy
+export CLANG_TIDY_BIN
+
+# What each lane configures (ADR-1471): one definition, used by
+# `tidy-ratchet-build` in the container and repeated for cpu by the hosted
+# `Tidy Ratchet` job (scripts/ci/tests/test_tidy_lane_container.py keeps the two
+# the same). cpu is the hosted configuration: gcc-15, no GPU backend and no
+# ONNX Runtime (the hosted runner has none, the container does). The GPU lanes
+# turn their compiler on (nvcc, hipcc, icpx) so the device bodies are parsed,
+# not the -ENOSYS stubs, and enable ONNX Runtime so the DNN bodies are too. sycl
+# compiles SPIR-V only (no ahead-of-time targets): the device list changes
+# backend arguments that the lint database drops anyway. arm64 cross-compiles
+# with the distribution's aarch64 gcc; the second cross file names Ubuntu's
+# `qemu-aarch64` where the first names `qemu-aarch64-static`.
+TIDY_RATCHET_COMPILERS_cpu := CC=gcc-15 CXX=g++-15
+TIDY_RATCHET_COMPILERS_cuda := CC=gcc-15 CXX=g++-15
+TIDY_RATCHET_COMPILERS_hip := CC=gcc-15 CXX=g++-15
+TIDY_RATCHET_COMPILERS_sycl := CC=icx CXX=icpx
+TIDY_RATCHET_COMPILERS_arm64 :=
+TIDY_RATCHET_SETUP_cpu := -Denable_cuda=false -Denable_sycl=false \
+	-Denable_dnn=disabled -Db_lto=false
+TIDY_RATCHET_SETUP_cuda := -Denable_cuda=true -Denable_nvcc=true \
+	-Denable_sycl=false -Denable_hip=false -Denable_dnn=enabled -Db_lto=false
+TIDY_RATCHET_SETUP_hip := -Denable_hip=true -Denable_hipcc=true \
+	-Denable_cuda=false -Denable_sycl=false -Denable_dnn=enabled -Db_lto=false
+TIDY_RATCHET_SETUP_sycl := -Denable_sycl=true -Dsycl_icpx_aot_targets= \
+	-Denable_cuda=false -Denable_hip=false -Denable_dnn=enabled -Db_lto=false
+TIDY_RATCHET_SETUP_arm64 := --cross-file build-aux/aarch64-linux-gnu.ini \
+	--cross-file build-aux/aarch64-linux-gnu-qemu-user.ini \
+	-Denable_cuda=false -Denable_sycl=false -Denable_dnn=disabled -Db_lto=false
 TIDY_RATCHET_EXTRA_cpu :=
 TIDY_RATCHET_EXTRA_cuda := --extra-arg=--cuda-host-only --extra-arg=-nocudalib
-TIDY_RATCHET_EXTRA_hip := --extra-arg=-x --extra-arg=hip \
+TIDY_RATCHET_EXTRA_hip := --clang-tidy $(CURDIR)/scripts/ci/clang-tidy-hip.sh \
 	--extra-arg=-D__HIP_PLATFORM_AMD__=1 --extra-arg=-I/opt/rocm/include
 TIDY_RATCHET_EXTRA_sycl := --clang-tidy $(CURDIR)/scripts/ci/clang-tidy-sycl.sh
 TIDY_RATCHET_EXTRA_arm64 := --extra-arg=--target=$(AARCH64_TARGET) \
@@ -285,8 +321,24 @@ TIDY_RATCHET_COMPDB_sycl := $(PYTHON_INTERPRETER) scripts/ci/gen-sycl-compile-co
 	"$(TIDY_RATCHET_BUILD_DIR)"
 TIDY_RATCHET_COMPDB_arm64 :=
 
+# Configure and build a lane's build dir: compile_commands.json plus the
+# generated headers the translation units include.
+tidy-ratchet-build: $(MESON) $(NINJA)
+	$(TIDY_RATCHET_COMPILERS_$(LANE)) PATH="$(VIRTUAL_ENV_ABS):$$PATH" $(MESON_SETUP) \
+	    "$(TIDY_RATCHET_BUILD_DIR)" "$(LIBVMAF_DIR)" $(TIDY_RATCHET_SETUP_$(LANE))
+	PATH="$(VIRTUAL_ENV_ABS):$$PATH" "$(NINJA_EXEC)" -C "$(TIDY_RATCHET_BUILD_DIR)" \
+	    -j "$(TIDY_RATCHET_JOBS)"
+
+# Measure LANE (cpu, cuda, hip, sycl, arm64 or all) in a throwaway dev container;
+# TIDY_LANE_ARGS passes --image / --jobs / --out to scripts/dev/tidy-lane.sh.
+tidy-lane:
+	scripts/dev/tidy-lane.sh $(TIDY_LANE_ARGS) $(LANE)
+
+tidy-lane-write:
+	scripts/dev/tidy-lane.sh --write $(TIDY_LANE_ARGS) $(LANE)
+
 tidy-ratchet: $(NINJA)
-	$(call require-tool,clang-tidy,install clang-tools)
+	$(call require-tool,$(CLANG_TIDY_BIN),install clang-tools)
 	$(PYTHON_INTERPRETER) scripts/ci/write-compile-commands.py \
 	    --build-dir "$(TIDY_RATCHET_BUILD_DIR)" --ninja "$(NINJA)"
 	$(TIDY_RATCHET_COMPDB_$(LANE))
@@ -294,7 +346,7 @@ tidy-ratchet: $(NINJA)
 	    --build-dir $(TIDY_RATCHET_BUILD_DIR) $(TIDY_RATCHET_EXTRA_$(LANE)) $(TIDY_RATCHET_ARGS)
 
 tidy-ratchet-write: $(NINJA)
-	$(call require-tool,clang-tidy,install clang-tools)
+	$(call require-tool,$(CLANG_TIDY_BIN),install clang-tools)
 	$(PYTHON_INTERPRETER) scripts/ci/write-compile-commands.py \
 	    --build-dir "$(TIDY_RATCHET_BUILD_DIR)" --ninja "$(NINJA)"
 	$(TIDY_RATCHET_COMPDB_$(LANE))

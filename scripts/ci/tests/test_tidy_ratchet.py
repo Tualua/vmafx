@@ -4,7 +4,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import shutil
@@ -12,9 +14,11 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
 from typing import Any
+from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
@@ -32,6 +36,21 @@ def _load() -> ModuleType:
 
 
 ratchet = _load()
+
+
+def _captured(call: Callable[..., int], *args: Any) -> tuple[int, str]:
+    """Run a ratchet entry point and return ``(exit code, what it printed)``.
+
+    ``report()`` and ``main()`` print their verdict, and under GitHub Actions
+    they print it as ``::error::`` / ``::notice::`` workflow commands. A test
+    that lets those reach the job log files a real annotation for a fixture:
+    the hosted run of 2026-10-02 showed ``a.c: warnings 3 -> 5 (+2)`` as a
+    failure of the lane, and ``a.c`` is the fixture of ``Compare`` below.
+    """
+    printed = io.StringIO()
+    with contextlib.redirect_stdout(printed):
+        code = call(*args)
+    return code, printed.getvalue()
 
 
 class ExactPelorusMirror(unittest.TestCase):
@@ -244,10 +263,28 @@ class Compare(unittest.TestCase):
 
     def test_exit_codes(self) -> None:
         base = self._m({"a.c": 3})
-        self.assertEqual(ratchet.report(base, self._m({"a.c": 3}), False), 0)
-        self.assertEqual(ratchet.report(base, self._m({"a.c": 5}), False), 2)
-        self.assertEqual(ratchet.report(base, self._m({"a.c": 1}), False), 3)
-        self.assertEqual(ratchet.report(base, self._m({"a.c": 1}), True), 0)
+        code, printed = _captured(ratchet.report, base, self._m({"a.c": 3}), False)
+        self.assertEqual(code, 0)
+        self.assertIn("tidy-ratchet: baseline matches measurement", printed)
+        code, printed = _captured(ratchet.report, base, self._m({"a.c": 5}), False)
+        self.assertEqual(code, 2)
+        self.assertIn("a.c: warnings 3 -> 5 (+2)", printed)
+        code, printed = _captured(ratchet.report, base, self._m({"a.c": 1}), False)
+        self.assertEqual(code, 3)
+        self.assertIn("a.c: warnings 3 -> 1 (-2)", printed)
+        code, printed = _captured(ratchet.report, base, self._m({"a.c": 1}), True)
+        self.assertEqual(code, 0)
+        self.assertIn("a.c: warnings 3 -> 1 (-2)", printed)
+
+    def test_verdict_is_a_workflow_command_only_under_github_actions(self) -> None:
+        base, above = self._m({"a.c": 3}), self._m({"a.c": 5})
+        with mock.patch.object(ratchet, "GITHUB_ACTIONS", True):
+            _code, printed = _captured(ratchet.report, base, above, False)
+        self.assertIn("::error::a.c: warnings 3 -> 5 (+2)", printed)
+        with mock.patch.object(ratchet, "GITHUB_ACTIONS", False):
+            _code, printed = _captured(ratchet.report, base, above, False)
+        self.assertIn("error: a.c: warnings 3 -> 5 (+2)", printed)
+        self.assertNotIn("::", printed)
 
     def test_baseline_round_trip(self) -> None:
         m = self._m({"b.c": 1, "a.c": 2}, {"a.c": 1})
@@ -450,7 +487,9 @@ class BuildDirPlacement(unittest.TestCase):
             baseline.write_text(json.dumps(expected.to_json()), encoding="utf-8")
             argv = ["--build-dir", str(in_tree), "--repo-root", str(root)]
             argv += ["--baseline", str(baseline), "--clang-tidy", binary, "--jobs", "1"]
-            self.assertEqual(ratchet.main(argv), 0)
+            code, printed = _captured(ratchet.main, argv)
+            self.assertEqual(code, 0)
+            self.assertIn("tidy-ratchet[cpu]: 1 TUs, 1 warnings (baseline 1)", printed)
 
 
 def _fake_clang_tidy(directory: Path) -> Path:
@@ -532,7 +571,8 @@ class RunClangTidy(unittest.TestCase):
             report = root / "report.json"
             baseline = root / "scripts" / "ci" / "tidy-baseline-sycl.json"
             baseline.write_text(json.dumps(measured.to_json()), encoding="utf-8")
-            exit_code = ratchet.main(
+            exit_code, printed = _captured(
+                ratchet.main,
                 [
                     "--lane",
                     "sycl",
@@ -544,9 +584,10 @@ class RunClangTidy(unittest.TestCase):
                     "scripts/ci/fake-clang-tidy.sh",
                     "--report",
                     str(report),
-                ]
+                ],
             )
             self.assertEqual(exit_code, 0)
+            self.assertIn("tidy-ratchet[sycl]: 1 TUs, 0 warnings (baseline 0)", printed)
 
 
 class ResolveClangTidy(unittest.TestCase):
@@ -758,6 +799,36 @@ class SyclMotionAddUvParityTidyContract(unittest.TestCase):
     def test_motion3_checkerboard_also_measured_in_sycl_lane(self) -> None:
         """core/test/test_sycl_motion3_parity.c is in measured_sources."""
         self.assertIn("core/test/test_sycl_motion3_parity.c", self.data["measured_sources"])
+
+
+class SelfTestOutput(unittest.TestCase):
+    """The self-test prints nothing of the ratchet's into the job log.
+
+    The hosted ``Tidy Ratchet`` job runs this module as its first step. Every
+    line a case lets through lands in that job's log, and a ``::error::`` line
+    becomes an annotation on the run: a fixture path reported as a finding of
+    the lane it only tests.
+    """
+
+    def test_no_case_prints_under_github_actions(self) -> None:
+        cases = [
+            value
+            for value in globals().values()
+            if isinstance(value, type)
+            and issubclass(value, unittest.TestCase)
+            and value is not SelfTestOutput
+        ]
+        loader = unittest.TestLoader()
+        suite = unittest.TestSuite(loader.loadTestsFromTestCase(case) for case in cases)
+        printed = io.StringIO()
+        with (
+            mock.patch.object(ratchet, "GITHUB_ACTIONS", True),
+            contextlib.redirect_stdout(printed),
+        ):
+            result = unittest.TextTestRunner(stream=io.StringIO()).run(suite)
+        self.assertGreater(result.testsRun, 30)
+        self.assertTrue(result.wasSuccessful(), result.failures + result.errors)
+        self.assertEqual(printed.getvalue(), "")
 
 
 if __name__ == "__main__":

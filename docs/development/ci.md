@@ -264,13 +264,16 @@ instead of a touched-files rule:
   selector is `true`, otherwise a `Not impacted` notice satisfies the context.
   `.clang-tidy`, `scripts/ci/**` (the ratchet and its baselines) and the
   workflow file are CI-authority inputs that force `mode=full`, so a ratchet
-  or baseline edit always runs the lane. It uploads `tidy-ratchet-cpu` (the
-  measurement JSON): when the job fails with exit 3 after a cleanup, download
-  that artifact and commit it as `scripts/ci/tidy-baseline-cpu.json` — the
-  full `cpu` baseline comes from CI's own measurement (the hosted build
-  lacks optional dependencies, so its TU set differs from a workstation
-  build). The guarded scoped update below can subsequently tighten measured
-  translation units while retaining that full-report metadata. The compile
+  or baseline edit always runs the lane. The baseline is written in the dev
+  container with `make tidy-lane-write LANE=cpu`
+  ([ADR-1471](../adr/1471-tidy-lanes-in-dev-container.md),
+  [measuring the lanes](tidy-lanes.md)), which configures what this job
+  configures and reproduces its report byte for byte; a baseline written on
+  a workstation outside the container records that machine's C library and
+  compilers and fails here. The job uploads `tidy-ratchet-cpu` (the
+  measurement JSON with every diagnostic) so a difference can be read without
+  a rerun. The guarded scoped update below can tighten measured translation
+  units while retaining the full-report metadata. The compile
   database also lists the translation units meson generates into the build
   directory: the `xxd` model embeds `src/vmaf_v0.6.1.json.c`, … and
   `src/brisque_live.model.c`. They are build products, which
@@ -280,25 +283,28 @@ instead of a touched-files rule:
   measures the same checked-in files as the out-of-repo build the required job
   uses. The nightly workflow runs the same lane and fails on drift (it used to
   swallow the full scan with `|| true`).
-- **`cuda`, `sycl`, `hip` lanes** — re-measured on 2026-09-22 (clang-tidy
-  22.1.8; CUDA TUs analysed with `--cuda-host-only -nocudalib`, HIP with
-  `-x hip -D__HIP_PLATFORM_AMD__=1`, SYCL through
-  `scripts/ci/clang-tidy-sycl.sh`). Each lane wants its **own** build
-  directory, configured with **`-Db_lto=false`**:
+- **`cuda`, `sycl`, `hip` lanes** — measured in the dev container with the
+  device toolchains (`nvcc`, `hipcc`, `icpx`), so the device bodies and the
+  kernels are parsed and not the `-ENOSYS` stubs of a host without them:
+  `make tidy-lane LANE=cuda` (or `hip`, `sycl`, `all`) checks a lane and
+  `make tidy-lane-write` rewrites its baseline
+  ([ADR-1471](../adr/1471-tidy-lanes-in-dev-container.md)). The lane
+  configurations, the reason a host measurement differs and the nightly run
+  are in [measuring the lanes](tidy-lanes.md). Inside the container the lane
+  is two `make` targets, which also work on any machine that has the lane's
+  toolchain, as a look at the numbers rather than a measurement:
 
   ```bash
-  # one lane per build dir; -Db_lto=false is required
-  meson setup ~/.cache/vmafx-gpu-tidy/cuda core \
-      -Denable_cuda=true -Denable_sycl=false -Denable_hip=false -Db_lto=false
+  make tidy-ratchet-build LANE=cuda TIDY_RATCHET_BUILD_DIR=~/.cache/vmafx-gpu-tidy/cuda
   make tidy-ratchet LANE=cuda TIDY_RATCHET_BUILD_DIR=~/.cache/vmafx-gpu-tidy/cuda
   ```
 
-  `core/meson.build` sets `b_lto_threads=4`
+  Every lane configures with **`-Db_lto=false`**. `core/meson.build` sets
+  `b_lto_threads=4`
   ([ADR-1172](../adr/1172-bound-lto-link-parallelism.md)), which meson renders
   as GCC's `-flto=4`. clang-tidy parses these compile commands with clang,
   which rejects the argument outright, so *every* TU comes back as a compile
-  failure and the run exits 4. The `cpu` lane in `lint-and-format.yml` already
-  configures with `-Db_lto=false` for the same reason. The directory may be
+  failure and the run exits 4. The directory may be
   inside or outside the repository: generated sources under it (`*.json.c`,
   HIP `*_hsaco.c`) are skipped either way, and the committed baselines contain
   checked-in paths only. The ratchet now enforces what ADR-1290 stated as a
@@ -319,8 +325,15 @@ instead of a touched-files rule:
   generator: meson compiles `.cu` and `.hip` through custom targets too, so
   `scripts/ci/gen-gpu-compile-commands.py` runs in the same slot
   (`TIDY_RATCHET_COMPDB_cuda` / `_hip`, contract-tested by
-  `scripts/ci/tests/test_gen_gpu_compile_commands.py`). Without it those lanes
-  measure the host files only.
+  `scripts/ci/tests/test_gen_gpu_compile_commands.py`). It reads the kernel
+  file from the explicit inputs of each build statement and the compiler from
+  its command, and it exits 1 when a statement names a `.cu` / `.hip` file it
+  could not turn into an entry. The first version matched
+  `<kernel> | <compiler>` only; once the kernel targets listed their headers
+  as dependencies it found no rule at all, and both lanes measured the host
+  files alone until 2026-10-02. The `.hip` kernels are parsed by the ROCm
+  toolchain's own clang-tidy through `scripts/ci/clang-tidy-hip.sh`, because
+  ROCm 10's device headers use a builtin that stock LLVM 22 rejects.
 
   These lanes become PR-required contexts as soon as a hosted
   toolchain exists for the lane; until then a lane that cannot run is reported
@@ -332,8 +345,14 @@ instead of a touched-files rule:
   aarch64 host — the 20 sources under `core/src/feature/arm64/`,
   `core/src/arm/cpu.c`, and the 11 `core/test/test_*_neon.c` parity tests — so
   before this lane existed no compile database in the project held them and the
-  `cpu` lane's "whole tree" stopped at the architecture boundary. The lane
-  cross-compiles with the in-tree cross file:
+  `cpu` lane's "whole tree" stopped at the architecture boundary. Like the
+  other lanes it is measured in the dev container
+  (`make tidy-lane LANE=arm64`,
+  [ADR-1471](../adr/1471-tidy-lanes-in-dev-container.md)), which installs the
+  cross compiler and `qemu-user` and configures with the in-tree cross file
+  plus `build-aux/aarch64-linux-gnu-qemu-user.ini`. By hand, for a look at the
+  numbers on a machine with a cross toolchain, the lane cross-compiles with
+  the in-tree cross file:
 
   ```bash
   meson setup build-arm64 core --cross-file build-aux/aarch64-linux-gnu.ini \
@@ -361,9 +380,9 @@ instead of a touched-files rule:
   translation unit as a compile failure (exit 4). Both default to the cross
   package's own paths and are overridable on the `make` command line. Like the
   GPU lanes this one is measured and committed but is not a PR-required
-  context; promoting it re-records the baseline from the gating toolchain's own
-  measurement, because the counts depend on the C compiler's system headers
-  (ADR-1230).
+  context. Its baseline names the container's cross compiler
+  (`aarch64-linux-gnu-gcc (Ubuntu 15.2.0-16ubuntu1)`), because the counts
+  depend on the C compiler's system headers (ADR-1230).
 - The changed-files job `Tidy Changed` stays as fast
   feedback and keeps the `WarningsAsErrors` hard stop; ADR-0141's "a touched
   file ends the PR at zero" is unchanged. The ratchet adds the bound on

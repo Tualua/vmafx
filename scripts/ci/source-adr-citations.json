@@ -7281,7 +7281,8 @@
     "1243": {
       "sites": {
         "scripts/ci/tests/test_tidy_scoped_write.py": 1,
-        "scripts/ci/tidy-ratchet.py": 3
+        "scripts/ci/tidy-ratchet.py": 3,
+        "scripts/dev/tidy-lane.sh": 1
       },
       "target": "1243-tidy-scoped-baseline-tightening.md"
     },
@@ -9448,6 +9449,18 @@
         "core/tools/vidinput.h": 1
       },
       "target": "1470-c-cxx-shared-enum-one-definition.md"
+    },
+    "1471": {
+      "sites": {
+        ".github/workflows/lint-and-format.yml": 1,
+        ".pre-commit-config.yaml": 3,
+        "Makefile": 2,
+        "build-aux/aarch64-linux-gnu-qemu-user.ini": 1,
+        "scripts/ci/clang-tidy-hip.sh": 1,
+        "scripts/ci/tests/test_tidy_lane_container.py": 1,
+        "scripts/dev/tidy-lane.sh": 1
+      },
+      "target": "1471-tidy-lanes-in-dev-container.md"
     },
     "1472": {
       "sites": {

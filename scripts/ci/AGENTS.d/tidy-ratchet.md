@@ -4,8 +4,13 @@ paths:
   - scripts/ci/tidy-baseline-*.json
   - scripts/ci/tests/test_tidy_ratchet.py
   - scripts/ci/tests/test_tidy_scoped_write.py
+  - scripts/ci/tests/test_tidy_lane_container.py
+  - scripts/ci/tests/test_gen_gpu_compile_commands.py
+  - scripts/ci/gen-gpu-compile-commands.py
+  - scripts/ci/clang-tidy-hip.sh
+  - scripts/dev/tidy-lane.sh
   - .clang-tidy
-invariant: Baselines only via `--write` on the lane's own toolchain; counts only decrease; `HeaderFilterRegex` starts `(^|/)`.
+invariant: Baselines only via `make tidy-lane-write` (dev container); counts only decrease; `HeaderFilterRegex` starts `(^|/)`.
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # tidy-ratchet.py invariants (ADR-1142)
@@ -17,9 +22,9 @@ invariant: Baselines only via `--write` on the lane's own toolchain; counts only
   `ADR-NNNN` on previous, same or next line, or anywhere in
   `/* ... */` block comment holding marker; `NOLINTEND` never counts) =
   load-bearing: baselines measured with exactly these rules, so
-  changing either requires re-measuring every lane in same PR (`cpu`
-  full baseline = CI's own `tidy-ratchet-cpu` artifact; ADR-1243 permits
-  only guarded scoped tightening afterward).
+  changing either requires re-measuring every lane in same PR
+  (`make tidy-lane-write LANE=all`, ADR-1471; ADR-1243 permits only guarded
+  scoped tightening afterward).
 - `Tidy Ratchet` job starts unconditionally, gates its
   work on ADR-1140 planner's `c_core` selector; `.clang-tidy`, this
   directory (ratchet + baselines) and workflow = CI-authority inputs, so
@@ -27,20 +32,47 @@ invariant: Baselines only via `--write` on the lane's own toolchain; counts only
   `paths:` filter or custom early-skip probe to job.
 - `clang-diagnostic-error` in any TU = measurement failure (exit 4), never
   zero. Build (generated headers) before measuring.
-- **Measure on the lane's own toolchain, not the workstation's.** A full
-  `--write` records what the measuring host sees, so a host whose libc/compiler
-  differs from the lane bakes that host's diagnostics into the baseline. Seen
-  on 2026-09-22: on gcc-16/glibc the `assert()` expansion makes
-  `misc-static-assert` fire in `core/src/dict.cpp` (+1) and
-  `core/src/feature/feature_collector.cpp` (+3) — neither file had changed —
-  while the same tree on the lane's gcc-15 `Ubuntu 15.2.0-16ubuntu1` with
-  clang-tidy 22.1.8 showed zero increases. `cc_version` in the baseline names
-  the compiler to reproduce; the ratchet warns when the measuring compiler
-  differs, and that warning means "stop", not "commit anyway". Reproduce the
-  lane locally with the Ubuntu 26.04 dev image plus `clang-tidy-22` from
-  apt.llvm.org, configured exactly as the workflow does
-  (`CC=gcc-15 CXX=g++-15 meson setup build core -Denable_cuda=false
-  -Denable_sycl=false -Db_lto=false`).
+- **cpu / cuda / hip / sycl / arm64 measured in dev container only (ADR-1471).**
+  `make tidy-lane LANE=<lane|all>` checks, `make tidy-lane-write` rewrites
+  baseline (`scripts/dev/tidy-lane.sh`: checkout tar-streamed into throwaway
+  container of `vmaf-dev-mcp:local`, nothing mounted, baseline copied back).
+  Host run of `make tidy-ratchet` = look, never measurement: glibc 2.44
+  reports `misc-static-assert` for every C++ `assert()`, host without hipcc
+  lints `-ENOSYS` stubs, host ORT adds DNN TUs. Hosted run 37011276599
+  (master `513d2a6fc`) failed on host-written cpu baseline: 24 files below,
+  322 measured vs 376. Container report == hosted artifact byte for byte
+  (SHA-256 `ffb5ca1819a3`). `cc_version` mismatch warning means "stop".
+- `tidy-lane.sh` refuses check + scoped write (exit 5) when installed
+  clang-tidy != baseline `clang_tidy_version`; only full `--write` moves
+  baselines to new version. Host clang-tidy (23.1.1 on workstation since
+  2026-10-02) never used.
+- Scoped tightening also in container:
+  `scripts/dev/tidy-lane.sh --write --only <tu> <lane>`. Scoped write cannot
+  lower header counts and never extends `measured_sources`; header cleanup
+  or new TU -> full `make tidy-lane-write`.
+- Lane configuration = one definition: `TIDY_RATCHET_COMPILERS_<lane>` +
+  `TIDY_RATCHET_SETUP_<lane>` in `Makefile`, consumed by
+  `make tidy-ratchet-build`. cpu == hosted job's `meson setup` line
+  (`-Denable_dnn=disabled`: runner has no ORT, container has);
+  `tests/test_tidy_lane_container.py` compares both lines and clang-tidy
+  major (`CLANG_TIDY_MAJOR` in `tidy-lane.sh` vs `llvm.sh 22`). GPU lanes keep
+  device compiler on (`-Denable_nvcc=true`, `-Denable_hipcc=true`,
+  `-Denable_sycl=true`) and `-Denable_dnn=enabled`; never back to stubs.
+- `gen-gpu-compile-commands.py`: kernel = explicit input of build statement,
+  compiler = `COMMAND` argv[0]. Exit 1 when any statement names `.cu` / `.hip`
+  it could not parse (rule-name-blind count). Old `<kernel> | <compiler>`
+  match found 0 rules once targets listed header deps: cuda + hip baselines
+  held no kernel until 2026-10-02. Never loosen that count.
+- `.hip` kernels -> ROCm's clang-tidy via `clang-tidy-hip.sh`
+  (`HIP_CLANG_TIDY_BIN`, default `/opt/rocm/llvm/bin/clang-tidy`): ROCm 10
+  headers call `__builtin_amdgcn_is_invocable`, stock LLVM 22 stops with
+  "builtin functions must be directly called". Host TUs stay on
+  `CLANG_TIDY_BIN`; `--version` = that one. Missing ROCm tool -> `error:`
+  line, exit 127 (TU unusable, not clean).
+- Self-test prints nothing: `report()` / `main()` print `::error::` under
+  Actions; uncaptured, fixture `a.c` became annotation on hosted job. Use
+  `_captured()`; `SelfTestOutput` reruns module with `GITHUB_ACTIONS` on and
+  requires empty stdout.
 - **Build products never measured.** Everything under `--build-dir` = generated
   (xxd `src/*.json.c` + `src/brisque_live.model.c`, HIP `*_hsaco.c`,
   `config.h`); ADR-1142 exempts generated files. `load_compile_commands()`,
@@ -51,13 +83,15 @@ invariant: Baselines only via `--write` on the lane's own toolchain; counts only
   nightly in-tree `build/` saw `build/src/*.json.c: warnings 0 -> 2` x18 (run
   36308945712) against out-of-tree cpu baseline.
 - **arm64 lane = cross lane (ADR-1283).** Build dir configured with
-  `build-aux/aarch64-linux-gnu.ini`; nothing else in the tree compiles
-  `core/src/feature/arm64/` or the `ARCH_AARCH64` bodies of `core/test/`, so
+  `build-aux/aarch64-linux-gnu.ini` + `aarch64-linux-gnu-qemu-user.ini`
+  (Ubuntu 26.04: `qemu-aarch64` only, no `qemu-aarch64-static`; meson's
+  compiler check needs exe_wrapper; `tidy-lane.sh` installs `CROSS_PACKAGES`); nothing else in tree compiles
+  `core/src/feature/arm64/` or `ARCH_AARCH64` bodies of `core/test/`, so
   no other lane's compile database holds them. `TIDY_RATCHET_EXTRA_arm64`
   must keep `--extra-arg=--target=$(AARCH64_TARGET)` and
-  `--extra-arg=--sysroot=$(AARCH64_SYSROOT)`: drop the target and clang-tidy
+  `--extra-arg=--sysroot=$(AARCH64_SYSROOT)`: drop target and clang-tidy
   parses `<arm_neon.h>` / `<arm_sve.h>` as x86 and every NEON TU is exit 4;
-  drop the sysroot and libc resolves against the host. `exclude_untidyable()`
+  drop sysroot and libc resolves against host. `exclude_untidyable()`
   in `lint-and-format.yml` still excludes `^core/src/feature/arm64/` — that
   job's CPU-only `build/` genuinely has no command for those files; this lane
   is where they are measured.
@@ -77,14 +111,14 @@ invariant: Baselines only via `--write` on the lane's own toolchain; counts only
   never presented as successful whole-tree scan.
 - ADR-1113's Pelorus mirror and ADR-1276's manifest-owned boundary are outside
   native-lint ownership.
-  `pelorus-mirror-paths.txt` is the single exact-path exemption set consumed by
-  the sync guard, format hooks, changed-file tidy gate, and `tidy-ratchet.py`;
+  `pelorus-mirror-paths.txt` is single exact-path exemption set consumed by
+  sync guard, format hooks, changed-file tidy gate, and `tidy-ratchet.py`;
   do not restore prefix/directory classification. Keep one shared
-  `is_exact_pelorus_mirror()` predicate inside the ratchet for TU selection,
-  header diagnostics, and legacy-baseline normalization. A scoped baseline
-  write must preserve historical entries for this excluded scope; only a full
+  `is_exact_pelorus_mirror()` predicate inside ratchet for TU selection,
+  header diagnostics, and legacy-baseline normalization. Scoped baseline
+  write must preserve historical entries for this excluded scope; only full
   generated write may remove them. Fix mirror diagnostics in Pelorus and
-  re-pin; never edit the fixture or raise a baseline locally. Tests live in
+  re-pin; never edit fixture or raise baseline locally. Tests live in
   `test_pelorus_mirror.py`, `test_tidy_ratchet.py`, and
   `test_tidy_scoped_write.py`.
 
@@ -97,6 +131,7 @@ ratchet reports 0 header findings forever. That was the state before ADR-1265.
 Symptom of regression: `Tidy Ratchet` says every `*.h` went `N -> 0`, asks to
 tighten. Do not tighten; restore the `(^|/)`.
 
-CPU baseline = CI's `tidy-ratchet-cpu` artifact (clang-tidy 22, ubuntu-26.04),
-never a local run with another clang-tidy. GPU lanes: local `make
-tidy-ratchet-write LANE=<cuda|hip|sycl>`, advisory.
+CPU baseline = `make tidy-lane-write LANE=cpu` (dev container; equals CI's
+`tidy-ratchet-cpu` artifact), never a host run. GPU lanes:
+`make tidy-lane-write LANE=<cuda|hip|sycl>`; not required contexts, nightly on
+workstation ([measuring lanes](../../../docs/development/tidy-lanes.md)).

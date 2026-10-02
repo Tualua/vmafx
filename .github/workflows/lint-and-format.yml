@@ -402,6 +402,7 @@ jobs:
         run: |
           python3 -B -m unittest discover -s scripts/ci/tests -p 'test_tidy_ratchet.py'
           python3 -B -m unittest discover -s scripts/ci/tests -p 'test_gen_gpu_compile_commands.py'
+          python3 -B -m unittest discover -s scripts/ci/tests -p 'test_tidy_lane_container.py'
       - name: Plan CI impact (ADR-1140)
         id: impact
         env:
@@ -451,9 +452,16 @@ jobs:
           # Keep generated model/embed translation units outside the repository.
           # The ratchet measures checked-in sources; generated build products have
           # no stable source path or committed debt allowance.
+          # The cpu lane's configuration is defined once, in the Makefile
+          # (TIDY_RATCHET_COMPILERS_cpu / TIDY_RATCHET_SETUP_cpu, ADR-1471), and
+          # the baseline is written from it in the dev container.
+          # -Denable_dnn=disabled says what this runner does anyway (it has no
+          # ONNX Runtime), so the container, which has one, measures the same
+          # translation units. test_tidy_lane_container.py keeps the two lines
+          # identical.
           TIDY_BUILD_DIR="$RUNNER_TEMP/vmafx-tidy-cpu"
           CC=gcc-15 CXX=g++-15 meson setup "$TIDY_BUILD_DIR" core \
-            -Denable_cuda=false -Denable_sycl=false -Db_lto=false
+            -Denable_cuda=false -Denable_sycl=false -Denable_dnn=disabled -Db_lto=false
           meson compile -C "$TIDY_BUILD_DIR"
           python3 scripts/ci/write-compile-commands.py --build-dir "$TIDY_BUILD_DIR"
       - name: Ratchet — whole-tree clang-tidy vs committed baseline

@@ -28,13 +28,16 @@ import shlex
 import sys
 from pathlib import Path
 
-RULE_RE = re.compile(
-    # meson names the rule CUSTOM_COMMAND_DEP when the target has a depfile.
-    r"^build\s+\S+:\s+CUSTOM_COMMAND(?:_DEP)?\s+(?P<src>\S+\.(?:cu|hip))\s+\|\s*(?P<tool>\S+)\s*\n"
-    r"(?:[ \t]+\S[^\n]*\n)*?"
-    r"[ \t]+COMMAND\s*=\s*(?P<cmd>[^\n]+)",
+# One ninja build statement of a meson custom target, with its variable block.
+# meson names the rule CUSTOM_COMMAND_DEP when the target has a depfile.
+STATEMENT_RE = re.compile(
+    r"^build\s+[^:\n]+:\s+CUSTOM_COMMAND(?:_DEP)?\s+(?P<inputs>[^\n]*)\n"
+    r"(?P<body>(?:[ \t]+\S[^\n]*(?:\n|$))*)",
     re.MULTILINE,
 )
+ANY_STATEMENT_RE = re.compile(r"^build\s+[^:\n]+:\s+\S+\s+(?P<inputs>[^\n]*)$", re.MULTILINE)
+COMMAND_RE = re.compile(r"^[ \t]+COMMAND\s*=\s*(?P<cmd>[^\n]+)", re.MULTILINE)
+KERNEL_SUFFIXES = (".cu", ".hip")
 KEPT_WITH_VALUE = {"-I", "-D", "-isystem", "--std", "-std"}
 
 
@@ -63,19 +66,62 @@ def cuda_path(tool: str) -> str | None:
     return None
 
 
+def kernel_source(inputs: str) -> str | None:
+    """The kernel file among the explicit inputs of a build statement.
+
+    The explicit inputs end at the first ``|``: what follows are the implicit
+    dependencies (the compiler, and every header a target lists in
+    ``depend_files``) and the order-only ones.
+    """
+    for token in inputs.split("|", 1)[0].split():
+        if token.endswith(KERNEL_SUFFIXES):
+            return token
+    return None
+
+
+class UnparsedKernelRuleError(ValueError):
+    """A kernel build statement the generator cannot turn into an entry."""
+
+
 def kernel_entries(build_ninja: Path) -> list[dict[str, str]]:
+    """One clang++ entry per nvcc / hipcc build statement of *build_ninja*.
+
+    A statement that compiles a kernel file but carries no COMMAND raises:
+    a lane that silently drops its kernels still reports a clean measurement.
+    """
     build_dir = build_ninja.resolve().parent
     entries = []
-    for match in RULE_RE.finditer(build_ninja.read_text(encoding="utf-8")):
-        src = (build_dir / match.group("src")).resolve()
+    for statement in STATEMENT_RE.finditer(build_ninja.read_text(encoding="utf-8")):
+        source = kernel_source(statement.group("inputs"))
+        if source is None:
+            continue
+        command = COMMAND_RE.search(statement.group("body"))
+        if command is None:
+            raise UnparsedKernelRuleError(f"{source}: build statement has no COMMAND")
+        compiler = shlex.split(command.group("cmd"))
+        src = (build_dir / source).resolve()
         argv = ["clang++"]
-        root = cuda_path(match.group("tool"))
+        root = cuda_path(compiler[0])
         if src.suffix == ".cu" and root:
             argv.append(f"--cuda-path={root}")
-        argv += kept_flags(shlex.split(match.group("cmd")))
+        argv += kept_flags(compiler)
         argv += ["-c", str(src)]
         entries.append({"directory": str(build_dir), "command": shlex.join(argv), "file": str(src)})
     return entries
+
+
+def kernel_statements(build_ninja: Path) -> int:
+    """Build statements of any rule whose explicit inputs name a kernel file.
+
+    Counted without the rule name on purpose: when meson renames or reshapes
+    the custom-command rule, this still sees the kernels and `main` refuses a
+    database that lost them.
+    """
+    text = build_ninja.read_text(encoding="utf-8")
+    return sum(
+        kernel_source(match.group("inputs")) is not None
+        for match in ANY_STATEMENT_RE.finditer(text)
+    )
 
 
 def main(argv: list[str]) -> int:
@@ -90,7 +136,21 @@ def main(argv: list[str]) -> int:
             print(f"error: {path}: no such file", file=sys.stderr)
             return 1
 
-    added = kernel_entries(ninja_path)
+    try:
+        added = kernel_entries(ninja_path)
+    except UnparsedKernelRuleError as exc:
+        print(f"error: {ninja_path}: {exc}", file=sys.stderr)
+        return 1
+    expected = kernel_statements(ninja_path)
+    if len(added) != expected:
+        # The parser fell out of step with meson's rule layout. Fail rather
+        # than hand the lane a database without its kernels.
+        print(
+            f"error: {ninja_path}: {expected} build statements compile a .cu / .hip "
+            f"file, {len(added)} were parsed",
+            file=sys.stderr,
+        )
+        return 1
     replaced = {entry["file"] for entry in added}
     existing = json.loads(compdb_path.read_text(encoding="utf-8"))
     merged = [entry for entry in existing if entry.get("file") not in replaced] + added
