@@ -26,7 +26,7 @@ explicitly accepts its skip.
 
   | Feature | Tolerance | Contract source |
   |---|---:|---|
-  | `vif`, `motion`, `motion_debug`, `motion_v2`, `adm`, `psnr` (all three planes: `psnr_y`, `psnr_cb`, `psnr_cr`), `float_moment`, `cambi` | `5e-5` | ADR-0125 / ADR-0138 / ADR-0140 / ADR-0360; `motion_debug` is `motion` with `debug=true` and adds `integer_motion` ([ADR-1418](../adr/1418-motion-parity-gate-metric-alignment.md)) |
+  | `vif`, `motion`, `motion_debug`, `motion_v2`, `adm`, `psnr` (all three planes: `psnr_y`, `psnr_cb`, `psnr_cr`), `float_moment`, `cambi` | `5e-5` | ADR-0125 / ADR-0138 / ADR-0140 / ADR-0360; `motion_debug` is `motion` with `debug=true` and adds `integer_motion`; both cells compare `VMAF_integer_feature_motion_sad_score`, the per-frame score `motion2` / `motion3` are derived from, next to `integer_motion2` and `integer_motion3` ([ADR-1418](../adr/1418-motion-parity-gate-metric-alignment.md)) |
   | `ssim` (the fixed-point extractor; its twins are `integer_ssim_<backend>`) | `5e-5` | ADR-0564 (int64 moments, one double term per pixel) |
   | any feature, cell whose two sides are `cpu` or [listed exact twins](cross-backend-exact-twins.md) | `0` (bit-identical, compared at `--precision max`) | the ADR in the twin's fragment under `scripts/ci/exact_twins.d/`; the rows above and below stay for every other backend ([Exact twins](#exact-twins)) |
   | `float_ssim`, `float_ssim_lcs`, `float_ms_ssim`, `float_ms_ssim_lcs`, `float_psnr`, `float_motion`, `float_vif`, `float_adm` | `5e-5` | ADR-0188 / ADR-0192 / ADR-0215 / ADR-1382 |

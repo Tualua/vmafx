@@ -1020,6 +1020,52 @@ single wait, in `collect()`. On a 4K clip the host spends 0.6 ms per frame on
 it instead of 5.4 ms on the UHD 770 (0.55 instead of 0.89 ms on the B580),
 and the scores are unchanged.
 
+### `motion_sycl` emits the SAD score and honours `motion_force_zero` (2026-10-02)
+
+Two outputs of `--backend sycl --feature motion` differed from the CPU's in
+what they contain, not in a value:
+
+- **`VMAF_integer_feature_motion_sad_score` was missing.** The CPU `motion`
+  extractor writes the frame's SAD score on every frame (weighted by
+  `motion_fps_weight`, capped at `motion_max_val`, 0 on frame 0) and derives
+  `motion2` / `motion3` from it. `motion_sycl` computed the value and
+  published it only as the `debug` score `integer_motion`. It now writes the
+  SAD score on every frame.
+- **`motion_force_zero=true` was ignored.** The twin handled the option in a
+  function libvmaf never calls for a SYCL extractor, so the run returned the
+  measured `integer_motion2_force_0` / `integer_motion3_force_0` where the
+  CPU returns 0. It now returns 0 for every output on every frame and, like
+  the CPU, computes no SAD: no device memory and no kernels for this
+  extractor. The shipped model `model/other_models/vmaf_v0.6.1mfz.json` sets
+  the option: on `--backend sycl` it scored the Netflix 576x324 pair 76.668
+  where `--backend cpu` scores 72.321; both give 72.321 now.
+
+Measured on an Arc A380 (xe) at `--precision max` against a GCC build of the
+CPU extractor: every output of every frame identical on 116 frames (Netflix
+576x324 at 8, 10 and 16 bits and as 10-bit 4:2:2, a 1080p checkerboard,
+full-range noise at 8 and 16 bits, a bright 16-bit 1080p pair, 48 frames of
+BBB 3840x2160) under seven option sets: default, `debug`,
+`motion_force_zero` with and without `debug`, `motion_moving_average`,
+weight 1.5 with blend 0.5 / offset 2 / cap 4, and `debug` with weight 0.3
+and cap 0.5. The kernels are unchanged, so the frame time is too. To check a
+build:
+
+```bash
+for b in cpu sycl; do
+  vmaf -r src01_hrc00_576x324.yuv -d src01_hrc01_576x324.yuv -w 576 -h 324 -p 420 -b 8 \
+    --no_prediction --feature motion --backend "$b" --precision=max --json -q -o "motion_$b.json"
+done
+python3 -c "import json; a, b = (json.load(open(f'motion_{x}.json'))['frames'] for x in ('cpu', 'sycl')); print(all(p['metrics'] == q['metrics'] for p, q in zip(a, b)))"
+```
+
+It prints `True`; before, the SYCL frames had no
+`VMAF_integer_feature_motion_sad_score`. The parity gate's `motion` and
+`motion_debug` cells compare the SAD score since this change
+([cross-backend gate](../../development/cross-backend-gate.md)).
+`motion_metal` still lacks the output
+(`T-GPU-MOTION-SAD-SCORE-NOT-EMITTED-2026-10-02` in
+[`state.md`](../../state.md)).
+
 ## float_ssim decimation on the device (2026-09-29)
 
 CPU `float_ssim` shrinks both pictures before it computes SSIM, by a factor

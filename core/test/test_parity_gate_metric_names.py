@@ -74,10 +74,12 @@ class ParityGateMetricNamesTest(unittest.TestCase):
         for gate in GATES:
             metrics = feature_metrics(gate)
             with self.subTest(gate=gate.name):
-                self.assertEqual(metrics["motion"], ("integer_motion2", "integer_motion3"))
+                # The SAD score has no alias: vmaf writes the raw name.
+                sad = "VMAF_integer_feature_motion_sad_score"
+                self.assertEqual(metrics["motion"], (sad, "integer_motion2", "integer_motion3"))
                 self.assertEqual(
                     metrics["motion_debug"],
-                    ("integer_motion", "integer_motion2", "integer_motion3"),
+                    (sad, "integer_motion", "integer_motion2", "integer_motion3"),
                 )
 
 

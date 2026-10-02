@@ -89,11 +89,15 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
     # 3-frame window mode. The 5-frame window mode
     # (motion_five_frame_window=true) remains deferred — the GPU
     # extractors reject it with -ENOTSUP at init().
+    # The SAD score is what the CPU appends on every frame and derives
+    # motion2 / motion3 from; a twin that lacks it fails the cell (ADR-1418).
     "motion": (
+        "VMAF_integer_feature_motion_sad_score",
         "integer_motion2",
         "integer_motion3",
     ),
     "motion_debug": (
+        "VMAF_integer_feature_motion_sad_score",
         "integer_motion",
         "integer_motion2",
         "integer_motion3",

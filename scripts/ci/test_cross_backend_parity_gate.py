@@ -1378,7 +1378,11 @@ def test_generated_twin_table_is_current_and_follows_the_fragments(tmp_path: Pat
 
 
 def test_feature_metrics_motion_reads_default_emitted_keys() -> None:
-    assert FEATURE_METRICS["motion"] == ("integer_motion2", "integer_motion3")
+    assert FEATURE_METRICS["motion"] == (
+        "VMAF_integer_feature_motion_sad_score",
+        "integer_motion2",
+        "integer_motion3",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1398,8 +1402,15 @@ def test_motion_and_motion_debug_feature_names() -> None:
 
 
 def test_motion_feature_metrics_definitions() -> None:
-    assert FEATURE_METRICS["motion"] == ("integer_motion2", "integer_motion3")
+    # The CPU appends the SAD score on every frame, with and without debug
+    # (integer_motion.c::extract); both cells compare it.
+    assert FEATURE_METRICS["motion"] == (
+        "VMAF_integer_feature_motion_sad_score",
+        "integer_motion2",
+        "integer_motion3",
+    )
     assert FEATURE_METRICS["motion_debug"] == (
+        "VMAF_integer_feature_motion_sad_score",
         "integer_motion",
         "integer_motion2",
         "integer_motion3",
@@ -1416,6 +1427,9 @@ def test_missing_metrics_names_what_any_frame_lacks() -> None:
     # One frame without the metric is enough: a twin must emit it on every frame.
     assert missing_metrics([full, short], metrics) == ["integer_motion"]
     assert missing_metrics([{"frameNum": 0}], metrics) == list(metrics)
+
+
+_MOTION_SAD = "VMAF_integer_feature_motion_sad_score"
 
 
 def _run_motion_debug_cell(
@@ -1464,8 +1478,13 @@ def test_run_cell_reports_a_metric_one_backend_lacks_as_error(
         tmp_path,
         monkeypatch,
         {
-            "cpu": {"integer_motion2": 1.5, "integer_motion3": 2.5},
-            "sycl": {"integer_motion": 0.75, "integer_motion2": 1.5, "integer_motion3": 2.5},
+            "cpu": {_MOTION_SAD: 0.75, "integer_motion2": 1.5, "integer_motion3": 2.5},
+            "sycl": {
+                _MOTION_SAD: 0.75,
+                "integer_motion": 0.75,
+                "integer_motion2": 1.5,
+                "integer_motion3": 2.5,
+            },
         },
     )
     assert result.status == "ERROR"
@@ -1473,10 +1492,31 @@ def test_run_cell_reports_a_metric_one_backend_lacks_as_error(
     assert "backend_b sycl lacks []" in result.note
 
 
+def test_run_cell_reports_a_twin_without_the_sad_score_as_error(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """motion_sycl before T-GPU-MOTION-SAD-SCORE-NOT-EMITTED-2026-10-02."""
+
+    emitted = {"integer_motion": 0.75, "integer_motion2": 1.5, "integer_motion3": 2.5}
+    result = _run_motion_debug_cell(
+        tmp_path,
+        monkeypatch,
+        {"cpu": dict(emitted, **{_MOTION_SAD: 0.75}), "sycl": emitted},
+    )
+    assert result.status == "ERROR"
+    assert "backend_a cpu lacks []" in result.note
+    assert f"backend_b sycl lacks ['{_MOTION_SAD}']" in result.note
+
+
 def test_run_cell_compares_every_metric_when_both_backends_emit_them(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    emitted = {"integer_motion": 0.75, "integer_motion2": 1.5, "integer_motion3": 2.5}
+    emitted = {
+        _MOTION_SAD: 0.75,
+        "integer_motion": 0.75,
+        "integer_motion2": 1.5,
+        "integer_motion3": 2.5,
+    }
     result = _run_motion_debug_cell(
         tmp_path,
         monkeypatch,
@@ -1484,6 +1524,7 @@ def test_run_cell_compares_every_metric_when_both_backends_emit_them(
     )
     assert result.status == "FAIL"
     assert result.per_metric_mismatches == {
+        _MOTION_SAD: 0,
         "integer_motion": 1,
         "integer_motion2": 0,
         "integer_motion3": 0,

@@ -374,6 +374,15 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     if (err)
         return err;
 
+    s->feature_name_dict =
+        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+    if (!s->feature_name_dict)
+        return -ENOMEM;
+    // motion_force_zero publishes zeros and computes no SAD, as the CPU does:
+    // no planes, no kernels, no place in the combined graph.
+    if (s->motion_force_zero)
+        return 0;
+
     err = motion_alloc_luma(state, s, w, h, bpc);
     if (err) {
         close_fex_sycl(fex);
@@ -387,13 +396,6 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     if (err) {
         close_fex_sycl(fex);
         return err;
-    }
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        close_fex_sycl(fex);
-        return -ENOMEM;
     }
 
     // Store back-pointer for graph-mode checks in post_fn
@@ -410,28 +412,40 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     return 0;
 }
 
-static int extract_force_zero(VmafFeatureExtractor *fex, VmafPicture *ref, VmafPicture *ref_90,
-                              VmafPicture *dist, VmafPicture *dist_90, unsigned index,
-                              VmafFeatureCollector *feature_collector)
+/* The CPU's per-frame outputs (integer_motion.c::extract): the SAD score on
+ * every frame, and the same value as the motion score with debug=true.
+ * `sad_score` is the frame's SAD weighted by motion_fps_weight and capped at
+ * motion_max_val; 0 on the first frame and under motion_force_zero. */
+static int motion_append_sad_score(const MotionStateSycl *s, double sad_score, unsigned index,
+                                   VmafFeatureCollector *feature_collector)
 {
-    (void)ref;
-    (void)ref_90;
-    (void)dist;
-    (void)dist_90;
-    auto *s = static_cast<MotionStateSycl *>(fex->priv);
-
-    int err = 0;
-    if (s->frame_index > 0) {
+    int err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                      "VMAF_integer_feature_motion_sad_score",
+                                                      sad_score, index);
+    if (s->debug) {
         err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "VMAF_integer_feature_motion_score", 0.0,
-                                                       index);
+                                                       "VMAF_integer_feature_motion_score",
+                                                       sad_score, index);
     }
+    return err;
+}
+
+/* One frame under motion_force_zero. The CPU appends a SAD score of 0 on
+ * every frame (and repeats it as the motion score under debug), and its
+ * flush() derives motion2 = motion3 = 0 from those zeros for every frame
+ * (integer_motion.c). All of a frame's outputs are known here, so flush() has
+ * nothing to add. */
+static int motion_append_forced_zero(MotionStateSycl *s, unsigned index,
+                                     VmafFeatureCollector *feature_collector)
+{
+    int err = motion_append_sad_score(s, 0.0, index, feature_collector);
     err |= vmaf_feature_collector_append_with_dict(
         feature_collector, s->feature_name_dict, "VMAF_integer_feature_motion2_score", 0.0, index);
     err |= vmaf_feature_collector_append_with_dict(
         feature_collector, s->feature_name_dict, "VMAF_integer_feature_motion3_score", 0.0, index);
 
     s->frame_index++;
+    s->has_pending = false;
     return err;
 }
 
@@ -610,6 +624,12 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     (void)dist_pic_90;
 
     auto *s = static_cast<MotionStateSycl *>(fex->priv);
+    if (s->motion_force_zero) {
+        // Not in the combined graph (init): nothing to stage or enqueue.
+        s->pending_index = index;
+        s->has_pending = true;
+        return 0;
+    }
     motion_stage_chroma(s, ref_pic);
 
     // Combined graph submit (once per frame — the last extractor's call
@@ -646,11 +666,7 @@ static int motion_collect_first(const MotionStateSycl *s, unsigned index,
 {
     int err = vmaf_feature_collector_append_with_dict(
         feature_collector, s->feature_name_dict, "VMAF_integer_feature_motion2_score", 0.0, index);
-    if (s->debug) {
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "VMAF_integer_feature_motion_score", 0.0,
-                                                       index);
-    }
+    err |= motion_append_sad_score(s, 0.0, index, feature_collector);
     return err;
 }
 
@@ -662,11 +678,7 @@ static int motion_collect_second(MotionStateSycl *s, double motion_score, unsign
     int err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                       "VMAF_integer_feature_motion3_score",
                                                       motion3_score, index - 1);
-    if (s->debug) {
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "VMAF_integer_feature_motion_score",
-                                                       score_clipped, index);
-    }
+    err |= motion_append_sad_score(s, score_clipped, index, feature_collector);
     return err;
 }
 
@@ -683,12 +695,8 @@ static int motion_collect_later(MotionStateSycl *s, double motion_score, unsigne
     err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                    "VMAF_integer_feature_motion3_score",
                                                    motion3_score, index - 1);
-    if (s->debug) {
-        double const score_clipped = MIN(motion_score * s->motion_fps_weight, s->motion_max_val);
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "VMAF_integer_feature_motion_score",
-                                                       score_clipped, index);
-    }
+    double const score_clipped = MIN(motion_score * s->motion_fps_weight, s->motion_max_val);
+    err |= motion_append_sad_score(s, score_clipped, index, feature_collector);
     return err;
 }
 
@@ -697,6 +705,8 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
 {
     auto *s = static_cast<MotionStateSycl *>(fex->priv);
     VmafSyclState *state = fex->sycl_state;
+    if (s->motion_force_zero)
+        return motion_append_forced_zero(s, index, feature_collector);
 
     // Combined graph wait (idempotent per frame — first extractor wins). A
     // failed wait leaves the SAD stale: fail, never score it.
@@ -728,13 +738,8 @@ static int extract_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
                             VmafPicture *dist_pic_90, unsigned index,
                             VmafFeatureCollector *feature_collector)
 {
-    auto *s = static_cast<MotionStateSycl *>(fex->priv);
-
-    if (s->motion_force_zero) {
-        return extract_force_zero(fex, ref_pic, ref_pic_90, dist_pic, dist_pic_90, index,
-                                  feature_collector);
-    }
-
+    // submit / collect handle motion_force_zero: libvmaf drives a SYCL
+    // extractor through that pair, never through extract().
     int const err = submit_fex_sycl(fex, ref_pic, ref_pic_90, dist_pic, dist_pic_90, index);
     if (err)
         return err;
@@ -749,6 +754,9 @@ static int flush_fex_sycl(VmafFeatureExtractor *fex, VmafFeatureCollector *featu
     VmafSyclState *state = fex->sycl_state;
     if (state)
         vmaf_sycl_queue_wait(state);
+    // Every frame's motion2 / motion3 was appended with its SAD score.
+    if (s->motion_force_zero)
+        return 1;
 
     int ret = 0;
     // Write the final motion2 + motion3 scores (delayed-by-one pattern).
@@ -848,12 +856,18 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
 /* Feature extractor definition                                        */
 /* ------------------------------------------------------------------ */
 
-/* T3-15(c) / ADR-0219: motion3_score is now provided (3-frame mode
+/* The CPU `motion` set (integer_motion.c): the SAD score on every frame, the
+ * same value as `motion_score` with debug=true, and motion2 / motion3.
+ * T3-15(c) / ADR-0219: motion3_score is now provided (3-frame mode
  * only). The 5-frame window mode remains deferred — init() rejects
  * it with -ENOTSUP. */
-static const char *provided_features[] = {"VMAF_integer_feature_motion_score",
-                                          "VMAF_integer_feature_motion2_score",
-                                          "VMAF_integer_feature_motion3_score", nullptr};
+static const char *provided_features[] = {
+    "VMAF_integer_feature_motion_sad_score",
+    "VMAF_integer_feature_motion_score",
+    "VMAF_integer_feature_motion2_score",
+    "VMAF_integer_feature_motion3_score",
+    nullptr,
+};
 
 // NOLINTEND(misc-use-anonymous-namespace, misc-use-internal-linkage)
 

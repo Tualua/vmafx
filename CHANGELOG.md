@@ -2516,6 +2516,22 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   On the Linux `xe` driver on Intel Arc A380, scratch memory (private arrays and register spills) produces corrupted reads and writes. The 16-bit vertical filtering pipeline (`submit_sad<int64_t>`) spilled 768 B/thread at SIMD-32 due to the 128-register limit, causing `test_sycl_motion_tiny_frames` to fail on 16-bit frames. Implementing `MotionSadHbdKernel` derived from `VmafSyclKernelShape<32, 256>` (`sycl_compat.h`) requests the 256-entry register file, eliminating all spills and private memory (`spill_size: 0`, `private_size: 0`). On physical Arc A380 under `xe`, `test_sycl_motion_tiny_frames` passes (8, 10, and 16-bit across all 9 geometries, bit-exact vs scalar CPU), `test_sycl_motion3_parity`, `test_sycl_motion_add_uv_parity`, and `test_sycl_motion_v2_parity` pass, and 50 frames of 16-bit 4K BBB match the CPU reference bit-for-bit (`T-SYCL-MOTION-HBD-XE-SCRATCH-2026-10-01`).
 
 
+- **`motion_sycl` emits `VMAF_integer_feature_motion_sad_score` and honours
+  `motion_force_zero`, as the CPU `motion` extractor does.** The CPU writes
+  the frame's SAD score on every frame (weighted by `motion_fps_weight`,
+  capped at `motion_max_val`); the SYCL twin published it only as the debug
+  `integer_motion` score, so the result of `--backend sycl --feature motion`
+  lacked a key the CPU result has. With `motion_force_zero=true` the twin
+  returned the measured `motion2` / `motion3` under the `_force_0` names
+  where the CPU returns 0, so the shipped `vmaf_v0.6.1mfz` model scored
+  76.668 on `--backend sycl` where the CPU scores 72.321 (Netflix 576x324
+  pair). Both are fixed: on an Arc A380 every output of
+  116 frames is bit-identical to the CPU under seven option sets, and the
+  parity gate's `motion` and `motion_debug` cells now compare the SAD score.
+  The kernels and the frame time are unchanged
+  ([motion](docs/metrics/motion.md#output-features)).
+
+
 - **`motion_sycl` matches the CPU `motion` exactly.** The SYCL twin blurred
   each frame and differenced the blurred frames, while the CPU (since the
   upstream pipelined-motion port) blurs the frame difference and rounds after

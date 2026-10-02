@@ -4841,6 +4841,24 @@ test('test_sycl_exact_twins', test_sycl_exact_twins,
     is_parallel : false,
     timeout : 120)
 
+# motion_sycl emits the CPU `motion` extractor's whole output set: the SAD
+# score of every frame (VMAF_integer_feature_motion_sad_score) next to
+# motion2 / motion3 and the debug score. Eleven frames, every output of every
+# frame compared with == at 8 and 10 bits, also with debug, with
+# motion_force_zero (where no motion score may exist without debug) and with
+# a weight and a cap. Fails on a twin without the SAD score.
+test_sycl_motion_sad_score = executable('test_sycl_motion_sad_score',
+    ['test.c', 'test_sycl_motion_sad_score.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_motion_sad_score', test_sycl_motion_sad_score,
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false,
+    timeout : 60)
+
 # ADR-1395: SYCL kernels use no scratch memory (private arrays in memory,
 # register spills) on Intel GPUs, where the Linux xe driver returns wrong
 # values from them. Builds every registered kernel for the default GPU and

@@ -51,10 +51,14 @@ in `FEATURE_METRICS[feature]`; never a common subset. Metric absent
 from any frame of either run -> `missing_metrics()` names it, cell
 `ERROR` (gate fails), matrix continues; `cross_backend_vif_diff.py`
 prints `FAIL: missing metrics` and exits 1. `motion` = default runs
-(`integer_motion2`, `integer_motion3`); `motion_debug` = `debug=true`
-both sides, adds `integer_motion`. Twin emits a different default set
--> fix the twin's option default (`test_sycl_twin_option_parity.c`),
-never shrink the cell.
+(`VMAF_integer_feature_motion_sad_score`, `integer_motion2`,
+`integer_motion3`); `motion_debug` = `debug=true` both sides, adds
+`integer_motion`. SAD score = what CPU `extract()` appends every frame,
+source of motion2 / motion3; in both cells since
+`T-GPU-MOTION-SAD-SCORE-NOT-EMITTED-2026-10-02` (twin without it = cell
+ERROR). Same tuples in `cross_backend_vif_diff.py`: change both. Twin
+emits a different default set -> fix the twin's option default
+(`test_sycl_twin_option_parity.c`), never shrink the cell.
 
 **Every registered twin = gate cell (ADR-1460).** Twin registered in
 `core/src/feature/feature_extractor.cpp` for `cuda` / `sycl` / `hip` must be

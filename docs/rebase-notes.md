@@ -58205,3 +58205,33 @@ part).
   master's side of that file, put the added text into the page whose
   `Touching` row matches the files, then `make docs-fragments-write`.
 - No Netflix golden-data, public API or FFmpeg patch impact.
+## `motion_sycl` emits the SAD score and honours `motion_force_zero` (2026-10-02)
+
+`fix/sycl-motion-sad-score`, `T-GPU-MOTION-SAD-SCORE-NOT-EMITTED-2026-10-02`
+(SYCL part), `T-SYCL-MOTION-FORCE-ZERO-IGNORED-2026-10-02`.
+
+- `core/src/feature/sycl/integer_motion_sycl.cpp`: `provided_features` lists
+  `VMAF_integer_feature_motion_sad_score` first, as `integer_motion.c` does,
+  and `motion_append_sad_score()` appends it on every frame at the three
+  collect sites (the debug `motion_score` repeats it). `motion_force_zero`
+  moved out of `extract_fex_sycl()`, which libvmaf never calls for a SYCL
+  extractor, into `submit` / `collect` / `flush`; under the option `init`
+  allocates nothing on the device and does not register with the combined
+  graph. Keep that pairing on a conflict: a registered extractor has to call
+  `vmaf_sycl_graph_submit()` every frame, an unregistered one must not.
+  Scores of `model/other_models/vmaf_v0.6.1mfz.json` on `--backend sycl`
+  change to the CPU's (72.321 instead of 76.668 on the Netflix pair).
+- `scripts/ci/cross_backend_parity_gate.py` and
+  `scripts/ci/cross_backend_vif_diff.py`: the `motion` and `motion_debug`
+  tuples of `FEATURE_METRICS` start with
+  `VMAF_integer_feature_motion_sad_score`. A twin without the output is a
+  cell `ERROR` (ADR-1418). `motion_cuda` (#1809) and `motion_hip` emit it.
+- `core/test/test_sycl_motion_sad_score.c` (new) compares every output of
+  eleven frames with `==` at 8 and 10 bits under four option sets and
+  requires that the twin has no output the CPU lacks;
+  `core/test/test_sycl_exact_twins.c` compares the SAD score in its two
+  motion cases.
+- A new output or emit site in `integer_motion.c::extract` changes the SYCL
+  twin in the same PR.
+- No Netflix golden-data, public C API or FFmpeg patch impact: the output
+  name exists on the CPU already and the FFmpeg filter reads none of it.

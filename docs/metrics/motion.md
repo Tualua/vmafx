@@ -35,13 +35,22 @@ two-frame (or five-frame) temporal window.
 
 Frame 0 always emits `motion2_score = 0.0`.
 
-The CPU extractor, `motion_cuda` and `motion_hip` emit
-`VMAF_integer_feature_motion_sad_score`, with the same value on all three.
-`motion_cuda` does since 2026-10-02; before, a `--backend cuda` run lacked
-that key (`T-CUDA-MOTION-SAD-SCORE-NOT-EMITTED-2026-10-02`). `motion_sycl`
-and `motion_metal` do not emit it yet
-(`T-GPU-MOTION-SAD-SCORE-NOT-EMITTED-2026-10-02` in
-[`state.md`](../state.md)).
+The CPU extractor, `motion_cuda`, `motion_sycl` and `motion_hip` emit
+`VMAF_integer_feature_motion_sad_score`, with the same value on all four.
+`motion_cuda` and `motion_sycl` do since 2026-10-02; before, a
+`--backend cuda` or `--backend sycl` run lacked that key
+(`T-CUDA-MOTION-SAD-SCORE-NOT-EMITTED-2026-10-02`). `motion_metal` does not
+emit it yet (`T-GPU-MOTION-SAD-SCORE-NOT-EMITTED-2026-10-02` in
+[`state.md`](../state.md)). The parity gate compares the SAD score in its
+`motion` and `motion_debug` cells, so a twin without it fails the cell.
+
+`motion_force_zero` works on `motion_sycl` since the same date. The twin
+declared the option and ignored it: with `motion_force_zero=true` it returned
+the measured `motion2` / `motion3` under the `_force_0` names where the CPU
+returns 0 (`T-SYCL-MOTION-FORCE-ZERO-IGNORED-2026-10-02`). That reached a
+shipped model: `model/other_models/vmaf_v0.6.1mfz.json` sets the option, and
+on `--backend sycl` it scored the Netflix 576x324 pair 76.668 where the CPU
+scores 72.321. Both give 72.321 now.
 
 ### Output range
 

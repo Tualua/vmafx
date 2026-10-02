@@ -160,6 +160,28 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   documented in
   `docs/research/2101-bug048-sycl-init-unwind-restoration-2026-09-24.md`.
 
+- **`motion_sycl` output set = CPU `motion`, and `motion_force_zero`
+  lives in submit / collect** (`T-GPU-MOTION-SAD-SCORE-NOT-EMITTED-2026-10-02`,
+  `T-SYCL-MOTION-FORCE-ZERO-IGNORED-2026-10-02`).
+  `motion_append_sad_score()` appends
+  `VMAF_integer_feature_motion_sad_score` EVERY frame (0 at frame 0, else
+  `MIN(sad * motion_fps_weight, motion_max_val)`), the same value as
+  `motion_score` only with `debug`; `provided_features` lists the SAD score
+  first, as `integer_motion.c` does. libvmaf drives a SYCL extractor through
+  `submit` / `collect`, never `extract`: an option handled only in
+  `extract_fex_sycl()` is ignored (that was the force-zero bug). Under
+  `motion_force_zero`: init returns before any device allocation and before
+  `vmaf_sycl_graph_register()` (a registered extractor must call
+  `vmaf_sycl_graph_submit()` every frame, an unregistered one must not),
+  `submit` only marks the frame pending, `collect` =
+  `motion_append_forced_zero()` (SAD, motion2, motion3 = 0, + motion with
+  debug), `flush` returns 1 without appending. On rebase: a new CPU output
+  or emit site in `integer_motion.c::extract` -> same change here, same PR.
+  Guards: `test_sycl_motion_sad_score` (11 frames, 8 / 10 bit, default /
+  debug / force zero / weight + cap, `==` on every output, and no output the
+  CPU lacks), `test_sycl_exact_twins`, gate cells `motion` / `motion_debug`
+  (SAD score in `FEATURE_METRICS`).
+
 - **`integer_motion_sycl.cpp::motion3_postprocess_*` honours
   motion3 GPU contract** (ADR-0219). Applies CPU's host-side
   post-process to motion2 with no device-side state.
