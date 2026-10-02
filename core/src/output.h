@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-2-Clause-Patent */
 /**
  *
  *  Copyright 2016-2026 Netflix, Inc.
@@ -16,8 +17,8 @@
  *
  */
 
-#ifndef __VMAF_OUTPUT_H__
-#define __VMAF_OUTPUT_H__
+#ifndef VMAF_SRC_OUTPUT_H_
+#define VMAF_SRC_OUTPUT_H_
 
 #ifdef __cplusplus
 extern "C" {
@@ -41,4 +42,4 @@ int vmaf_write_output_sub(VmafFeatureCollector *fc, FILE *outfile, unsigned subs
 }
 #endif
 
-#endif /* __VMAF_OUTPUT_H__ */
+#endif /* VMAF_SRC_OUTPUT_H_ */

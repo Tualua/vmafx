@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-2-Clause */
 /*
  * Copyright © 2018, VideoLAN and dav1d authors
  * Copyright © 2018, Two Orioles, LLC
@@ -45,37 +46,39 @@ unsigned vmaf_get_cpu_flags_x86(void)
     CpuidRegisters r = {0};
     vmaf_cpu_cpuid(&r, 0, 0);
     const unsigned max_leaf = r.eax;
+    if (max_leaf < 1) {
+        return 0;
+    }
+
     unsigned flags = 0;
-
-    if (max_leaf >= 1) {
-        vmaf_cpu_cpuid(&r, 1, 0);
-        if (X(r.edx, 0x06008000)) /* CMOV/SSE/SSE2 */ {
-            flags |= VMAF_X86_CPU_FLAG_SSE2;
-            if (X(r.ecx, 0x00000201)) /* SSE3/SSSE3 */ {
-                flags |= VMAF_X86_CPU_FLAG_SSSE3;
-                if (X(r.ecx, 0x00080000)) /* SSE4.1 */
-                    flags |= VMAF_X86_CPU_FLAG_SSE41;
-            }
+    vmaf_cpu_cpuid(&r, 1, 0);
+    if (X(r.edx, 0x06008000)) /* CMOV/SSE/SSE2 */ {
+        flags |= VMAF_X86_CPU_FLAG_SSE2;
+        if (X(r.ecx, 0x00000201)) /* SSE3/SSSE3 */ {
+            flags |= VMAF_X86_CPU_FLAG_SSSE3;
+            if (X(r.ecx, 0x00080000)) /* SSE4.1 */
+                flags |= VMAF_X86_CPU_FLAG_SSE41;
         }
+    }
 
-        /* We only support >128-bit SIMD on x86-64. */
-        if (X(r.ecx, 0x18000000)) /* OSXSAVE/AVX */ {
-            const uint64_t xcr0 = vmaf_cpu_xgetbv(0);
-            if (X(xcr0, 0x00000006)) /* XMM/YMM */ {
-                if (max_leaf >= 7) {
-                    vmaf_cpu_cpuid(&r, 7, 0);
-                    if (X(r.ebx, 0x00000128)) /* BMI1/BMI2/AVX2 */ {
-                        flags |= VMAF_X86_CPU_FLAG_AVX2;
-                        if (X(xcr0, 0x000000e0)) /* ZMM/OPMASK */ {
-                            if (X(r.ebx, 0xd0030000))
-                                flags |= VMAF_X86_CPU_FLAG_AVX512;
-                            if (X(r.ebx, 0xd0230000) && X(r.ecx, 0x00005f42))
-                                flags |= VMAF_X86_CPU_FLAG_AVX512ICL;
-                        }
-                    }
-                }
-            }
-        }
+    /* We only support >128-bit SIMD on x86-64. */
+    if (!X(r.ecx, 0x18000000)) /* OSXSAVE/AVX */
+        return flags;
+
+    const uint64_t xcr0 = vmaf_cpu_xgetbv(0);
+    if (!X(xcr0, 0x00000006) || max_leaf < 7) /* XMM/YMM */
+        return flags;
+
+    vmaf_cpu_cpuid(&r, 7, 0);
+    if (!X(r.ebx, 0x00000128)) /* BMI1/BMI2/AVX2 */
+        return flags;
+
+    flags |= VMAF_X86_CPU_FLAG_AVX2;
+    if (X(xcr0, 0x000000e0)) /* ZMM/OPMASK */ {
+        if (X(r.ebx, 0xd0030000))
+            flags |= VMAF_X86_CPU_FLAG_AVX512;
+        if (X(r.ebx, 0xd0230000) && X(r.ecx, 0x00005f42))
+            flags |= VMAF_X86_CPU_FLAG_AVX512ICL;
     }
 
     return flags;

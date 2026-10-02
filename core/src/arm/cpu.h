@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-2-Clause-Patent */
 /**
  *
  *  Copyright 2016-2022 Netflix, Inc.
@@ -16,8 +17,8 @@
  *
  */
 
-#ifndef __VMAF_SRC_ARM_CPU_H__
-#define __VMAF_SRC_ARM_CPU_H__
+#ifndef VMAF_SRC_ARM_CPU_H_
+#define VMAF_SRC_ARM_CPU_H_
 
 enum CpuFlags {
     VMAF_ARM_CPU_FLAG_NEON = 1 << 0,
@@ -30,4 +31,4 @@ enum CpuFlags {
 
 unsigned vmaf_get_cpu_flags_arm(void);
 
-#endif /* __VMAF_SRC_ARM_CPU_H__ */
+#endif /* VMAF_SRC_ARM_CPU_H_ */

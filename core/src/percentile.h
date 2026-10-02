@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-2-Clause-Patent */
 /**
  *
  *  Copyright 2016-2026 Netflix, Inc.
@@ -17,8 +18,8 @@
  *
  */
 
-#ifndef __VMAF_PERCENTILE_H__
-#define __VMAF_PERCENTILE_H__
+#ifndef VMAF_SRC_PERCENTILE_H_
+#define VMAF_SRC_PERCENTILE_H_
 
 #include <math.h>
 
@@ -74,4 +75,4 @@ static inline double vmaf_percentile(const double *scores, unsigned n_scores, do
                               scores[idx_l] * (idx_r - p) + scores[idx_r] * (p - idx_l);
 }
 
-#endif /* __VMAF_PERCENTILE_H__ */
+#endif /* VMAF_SRC_PERCENTILE_H_ */

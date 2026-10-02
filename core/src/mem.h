@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-2-Clause-Patent */
 /**
  *
  *  Copyright 2016-2026 Netflix, Inc.
@@ -16,8 +17,8 @@
  *
  */
 
-#ifndef __VMAF_MEM_H__
-#define __VMAF_MEM_H__
+#ifndef VMAF_SRC_MEM_H_
+#define VMAF_SRC_MEM_H_
 
 #include <stddef.h>
 
@@ -54,4 +55,4 @@ void aligned_free(void *ptr);
 }
 #endif
 
-#endif /* __VMAF_MEM_H__ */
+#endif /* VMAF_SRC_MEM_H_ */

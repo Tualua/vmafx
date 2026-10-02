@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-2-Clause-Patent */
 /**
  *
  *  Copyright 2016-2026 Netflix, Inc.
@@ -16,8 +17,8 @@
  *
  */
 
-#ifndef __VMAF_THREAD_POOL_H__
-#define __VMAF_THREAD_POOL_H__
+#ifndef VMAF_SRC_THREAD_POOL_H_
+#define VMAF_SRC_THREAD_POOL_H_
 
 #include <pthread.h>
 
@@ -120,4 +121,4 @@ int vmaf_thread_pool_prepare_destroy(VmafThreadPool *pool);
  */
 int vmaf_thread_pool_destroy(VmafThreadPool *tpool);
 
-#endif /* __VMAF_THREAD_POOL_H__ */
+#endif /* VMAF_SRC_THREAD_POOL_H_ */

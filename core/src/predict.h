@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-2-Clause-Patent */
 /**
  *
  *  Copyright 2016-2026 Netflix, Inc.
@@ -16,8 +17,8 @@
  *
  */
 
-#ifndef __VMAF_PREDICT_H__
-#define __VMAF_PREDICT_H__
+#ifndef VMAF_SRC_PREDICT_H_
+#define VMAF_SRC_PREDICT_H_
 
 #include "feature/feature_collector.h"
 #include "model.h"
@@ -54,4 +55,4 @@ int vmaf_predict_score_at_index_model_collection(VmafModelCollection *model_coll
                                                  VmafFeatureCollector *feature_collector,
                                                  unsigned index, VmafModelCollectionScore *score);
 
-#endif /* __VMAF_PREDICT_H__ */
+#endif /* VMAF_SRC_PREDICT_H_ */
