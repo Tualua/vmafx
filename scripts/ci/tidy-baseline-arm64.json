@@ -292,7 +292,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 609,
+  "total_warnings": 606,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -351,7 +351,6 @@
     "core/src/feature/speed_internal.h": 3,
     "core/src/feature/ssim.c": 6,
     "core/src/feature/vif_options.h": 1,
-    "core/src/feature/vif_tools.c": 3,
     "core/src/feature/vif_tools.h": 1,
     "core/src/fex_ctx_vector.h": 2,
     "core/src/framesync.h": 1,
@@ -434,6 +433,21 @@
         }
       },
       "previous_baseline_sha256": "9dc11391c930c9982ab66a3b73767b6ab1f7fb4e261abe9c211dd3a5ccd19746"
+    },
+    {
+      "sources": [
+        "core/src/feature/vif_tools.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/vif_tools.c": {
+          "warnings": [
+            3,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "1c87a85e1eaeda7f669732135addf67c7ba1121f89d256322fd20c3a90377817"
     }
   ]
 }

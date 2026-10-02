@@ -144,15 +144,25 @@ void speed_internal_filter_and_downscale(const SpeedInternalDimensions *dim,
     const int filter_width_antialias = vif_get_filter_size(1, kernelscale);
     float filter_antialias[128];
     speed_get_antialias_filter(filter_antialias, SPEED_INTERNAL_NUM_SCALES, kernelscale);
+    const size_t downscaled_w = dim->scaled_width >> SPEED_INTERNAL_NUM_SCALES;
+    const size_t downscaled_h = dim->scaled_height >> SPEED_INTERNAL_NUM_SCALES;
+
+#if ARCH_X86
     vif_filter1d_s(filter_antialias, frame_buffer, curr_scale, tmpbuf, (int)dim->scaled_width,
                    (int)dim->scaled_height, (int)float_stride, (int)float_stride,
                    filter_width_antialias);
 
     vif_dec16_s(curr_scale, frame_buffer, (int)dim->scaled_width, (int)dim->scaled_height,
                 (int)float_stride, (int)float_stride);
-
-    const size_t downscaled_w = dim->scaled_width >> SPEED_INTERNAL_NUM_SCALES;
-    const size_t downscaled_h = dim->scaled_height >> SPEED_INTERNAL_NUM_SCALES;
+#else
+    vif_filter1d_dec16_s(filter_antialias, frame_buffer, curr_scale, tmpbuf, (int)dim->scaled_width,
+                         (int)dim->scaled_height, (int)float_stride, (int)float_stride,
+                         filter_width_antialias);
+    for (size_t i = 0; i < downscaled_h; i++) {
+        (void)memcpy(frame_buffer + i * stride_px, curr_scale + i * stride_px,
+                     downscaled_w * sizeof(float));
+    }
+#endif
 
     const int filter_width = vif_get_filter_size(SPEED_INTERNAL_NUM_SCALES, kernelscale);
     float filter[128];

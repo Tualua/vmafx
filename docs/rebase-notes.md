@@ -12,6 +12,58 @@
 - A local clang-tidy run on a glibc 2.44 host reports `misc-static-assert` on
   them (`T-TIDY-GLIBC-244-STATIC-ASSERT-FALSE-POSITIVE-2026-10-02`). Upstream
   Netflix/vmaf has no `FrameReader`; nothing to keep in step there.
+## Netflix/vmaf#1653 — SpEED fused anti-alias filter ported, NEON covariance kernel not ported (2026-10-02)
+
+`port/76ea5f03-speed-fused-filter`. Upstream master moved from `8e7a1ac4e` to
+`cea2b4d83` (PR 1653, three commits). The fork is at parity with `cea2b4d83`
+apart from the kernel named below.
+
+- **`76ea5f03` "speed: fuse scalar antialias filtering and decimation" —
+  ported.** `core/src/feature/vif_tools.c`: `vif_filter1d_dec16_s()` runs the
+  fork's `vif_filter1d_vertical_s()` at every 16th row and the new
+  `vif_filter1d_horizontal_dec16_s()` at every 16th column (upstream has one
+  function with the loops inline; the fork had already split
+  `vif_filter1d_s()` into those helpers). `core/src/feature/speed.c`
+  `filter_and_downscale()` and its mirror
+  `speed_internal_filter_and_downscale()` in `core/src/feature/speed_internal.c`
+  call it under `#else` of `#if ARCH_X86` and copy the decimated rows back;
+  x86 keeps `vif_filter1d_s()` + `vif_dec16_s()`. **On rebase**: keep the two
+  files in step, keep the x86 branch, and keep the decimated helper's taps,
+  mirror and accumulation order equal to `vif_filter1d_horizontal_s()`;
+  `core/test/test_speed_filter.c` (upstream's test, split into helpers for the
+  function-size limit, with more sizes and a whole-frame case) fails on any
+  bit of difference and has to be run on a non-x86 build
+  (`build-aux/aarch64-linux-gnu.ini`, `qemu-aarch64`).
+- **`cea2b4d8` "checkasm: cover fused SpEED filtering and decimation" — no
+  checkasm tree in the fork.** Its sizes (64x64, 255x63, 256x64), padded
+  strides and unaligned source are rows of `test_speed_filter.c`.
+- **`15297286` "arm64: add NEON SpEED covariance kernel" — upstream commit not
+  ported: SIMD not bit-exact.** `compute_cov_kernel_neon` adds the products
+  into eight partial sums with `vfmaq_f64`; `compute_cov_kernel_scalar` keeps
+  one running sum. Under `qemu-aarch64` 11.1.1 with GCC 16.1 the two differ in
+  the last bits on 4061 of 18480 sums (35 widths x 11 heights x 3 layouts x 2
+  mean choices x 8 input patterns), by up to 3.5e-12 relative; upstream's own
+  bound is 1e-10. A NEON kernel that keeps the running sum (lane products,
+  scalar adds in order) is bit-identical under GCC, but it is what GCC 16 and
+  clang 22 already emit for the scalar loop, so it gains nothing; under clang
+  the scalar loop's remainder is contracted to `fmadd` and its vector body is
+  not, so that kernel differs on 481 of 18480 sums there. **On rebase**: do
+  not take `libvmaf/src/feature/arm64/speed_neon.{c,h}` or the
+  `ARCH_AARCH64` dispatch in `speed_init()` unless the arm64 bit-exactness
+  rule gets an exception for this reduction
+  (`core/src/feature/arm64/AGENTS.md`). The commit's widened checkasm case for
+  the covariance kernels (15 sizes, 3 patterns, 3 layouts, bound
+  `1e-10 * (|ref| + 1)`) is ported for the kernels the fork dispatches:
+  `check_cov_matrix()` in `core/test/test_speed_simd.c`.
+- The CUDA, HIP and SYCL SpEED twins already evaluate the filter at the
+  decimated samples only, in the scalar arithmetic. Only the comments that
+  name the CPU call sequence changed (`cuda/speed/speed_score.cu`,
+  `hip/speed/speed_hip_device.h`, `sycl/speed_sycl_pipeline.cpp`), without
+  moving a line.
+- Upstream branch `speed-fused-avx2` moves x86 to the fused path as well. Port
+  it only with x86 before/after identity at `--precision max` on scalar, AVX2
+  and AVX-512 dispatch.
+- No Netflix golden-data, public API or FFmpeg patch impact.
 
 ## The CPU clang-tidy lane brought back to baseline (2026-10-02)
 

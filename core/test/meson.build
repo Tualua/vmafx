@@ -1598,6 +1598,31 @@ test_speed_lanczos4_weights = executable('test_speed_lanczos4_weights',
     ] + wave8_opt_only_objects
 )
 test('test_speed_lanczos4_weights', test_speed_lanczos4_weights, suite : ['fast'])
+
+# Netflix/vmaf 76ea5f03 (+ the checkasm sizes of cea2b4d8; the fork carries no
+# checkasm tree): vif_filter1d_dec16_s(), the fused anti-alias filter and
+# decimation SpEED runs on every target but x86, must leave the bits of
+# vif_filter1d_s() + vif_dec16_s(). Device-free; the aarch64 cross build runs
+# it under qemu, where the extractor takes the fused path. Same link recipe,
+# float gate and fp model as test_speed_lanczos4_weights.
+test_speed_filter = executable('test_speed_filter',
+    ['test.c', 'test_speed_filter.c', '../src/mem.cpp', '../src/picture.c',
+     '../src/ref.cpp', '../src/dict.cpp',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + vmaf_fp_model_args + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
+                    dnn_deps],
+    objects : [
+      common_cuda_objects,
+      platform_specific_cpu_objects,
+      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      log_cpp23_test_objects,
+      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+      libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+test('test_speed_filter', test_speed_filter, suite : ['fast'])
 endif
 # SpEED-QA extractor tests -- unconditional (speed_qa.c is not float-gated).
 # ADR-0253 real-impl: registration, vtable, flat/noise entropy, temporal positivity.

@@ -38,12 +38,12 @@ NEON dispatch is per-extractor. To force scalar fallback (debugging,
 A/B against the reference) mask out the NEON ISA bit at the CLI:
 
 ```bash
-vmaf --cpumask 0 ...        # disable every CPU SIMD ISA, scalar only
+vmaf --cpumask 3 ...        # mask out NEON (1) and SVE2 (2): scalar only
 ```
 
-`--cpumask` accepts a 64-bit hex value matching the bits returned by
-`vmaf_get_cpu_flags()`; passing `0` is the simplest "scalar only"
-override.
+`--cpumask` takes the ISA bits to mask out, as `vmaf_get_cpu_flags()`
+returns them (`core/src/arm/cpu.h`: NEON is 1, SVE2 is 2). `0`, the
+default, leaves every ISA enabled; `--cpumask 2` keeps NEON and drops SVE2.
 
 There is no per-feature NEON disable flag — extractors that have a
 NEON kernel will pick it whenever `--cpumask` allows it.
@@ -71,6 +71,7 @@ matches the `Backends` column in
 | `float_ms_ssim`| yes         | no          | 9-tap 9/7 wavelet decimate via `ms_ssim_decimate_neon`        |
 | `ssimulacra2`  | yes         | yes         | bit-identical to scalar (NEON and SVE2 produce byte-equal output); see [ADR-0161](../../adr/0161-ssimulacra2-simd-bitexact.md), [ADR-0162](../../adr/0162-ssimulacra2-iir-blur-simd.md), [ADR-0163](../../adr/0163-ssimulacra2-ptlr-simd.md), [ADR-0213](../../adr/0213-ssimulacra2-sve2.md) |
 | `cambi`        | yes         | no          | every stage except the mask row and mode filter, which the compilers already vectorise; see [CAMBI CPU SIMD paths](../../metrics/cambi.md#cpu-simd-paths) |
+| `speed_chroma` / `speed_temporal` | no | no | scalar C. The anti-alias filter is evaluated only at the samples the 16x decimation keeps (`vif_filter1d_dec16_s()`, Netflix/vmaf `76ea5f03`), with the bits of the filter-then-decimate path. Upstream's NEON covariance kernel (`15297286`) is not taken: its eight partial sums are not the scalar's running sum |
 
 ## Bit-exactness
 
@@ -122,7 +123,7 @@ must remain green — see [`docs/principles.md`](../../principles.md)
 
 - No per-feature override: every NEON kernel runs whenever
   `--cpumask` permits. To bisect a suspected NEON regression use
-  `--cpumask 0` to drop to scalar across all extractors at once,
+  `--cpumask 3` to drop to scalar across all extractors at once,
   then re-enable per-extractor by running individual `--feature`
   invocations.
 - Windows on ARM64 is NEON-only: SVE2 is neither built by MSVC nor

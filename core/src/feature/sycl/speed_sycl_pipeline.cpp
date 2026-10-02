@@ -594,7 +594,7 @@ void launch_scale(sycl::queue &q, const Source &src, const ScaleArgs &args, uint
 
 /* ------------------------------------------------------------------ */
 /* Anti-alias filter at the decimated sample points                    */
-/* vif_filter1d_s() (vertical then horizontal) + vif_dec16_s()          */
+/* x86: vif_filter1d_s() + vif_dec16_s(); else vif_filter1d_dec16_s()   */
 /* ------------------------------------------------------------------ */
 
 struct DecimateArgs {

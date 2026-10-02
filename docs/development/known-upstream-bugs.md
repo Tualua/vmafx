@@ -108,6 +108,21 @@ with typed casts. `integer_vif.c` compiles with GCC 16.2.1 and with Clang
 commits since the September port that the fork does not need, up to
 `8e7a1ac4e`; `docs/state.md` ("Confirmed not-affected") lists the first six.
 
+## Upstream head the fork is at parity with: `cea2b4d83` (2026-10-02)
+
+Upstream master moved from `8e7a1ac4e` to `cea2b4d83` with
+[Netflix/vmaf#1653](https://github.com/Netflix/vmaf/pull/1653), three commits
+on SpEED:
+
+| Upstream commit | What | On the fork |
+| --- | --- | --- |
+| `76ea5f03` | `speed`: the scalar anti-alias filter and the 16x decimation fused into `vif_filter1d_dec16_s()`, called on every target but x86 | **Ported.** Bit-identical to `vif_filter1d_s()` + `vif_dec16_s()` in `core/test/test_speed_filter.c` (GCC 16.1 and clang 22.1 for aarch64 under `qemu-aarch64`, GCC on x86); x86 reports are byte-identical before and after |
+| `cea2b4d8` | checkasm case for the fused filter | **No checkasm tree here.** Its sizes and layouts are rows of `test_speed_filter.c` |
+| `15297286` | `arm64`: NEON covariance kernel for SpEED | **Not ported: SIMD not bit-exact.** Eight partial sums with fused multiply-adds against the scalar kernel's one running sum: 4061 of 18480 sums differ in the last bits, by up to 3.5e-12 relative (upstream tests it to 1e-10). Not an upstream defect; the fork's arm64 kernels have to return the scalar's bits (`core/src/feature/arm64/AGENTS.md`). The commit's wider test matrix for the covariance kernels runs for AVX2 and AVX-512 in `core/test/test_speed_simd.c` |
+
+`docs/rebase-notes.md` has the mechanics and the measurements. Upstream branch
+`speed-fused-avx2` (not merged) moves x86 to the fused filter too.
+
 ## Reported upstream on 2026-09-19
 
 Six defects found on `86da14d0` while validating the pull requests above were

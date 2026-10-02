@@ -39,6 +39,13 @@
  * inside the 1e-9 gate.  Per ADR-0138/ADR-0139 the tolerance contract is
  * documented here, not tightened to memcmp.
  *
+ * Netflix/vmaf 15297286 widened upstream's checkasm case for these kernels:
+ * fifteen block sizes from 1x1 up, three input patterns, tight, padded and
+ * unaligned layouts, and a bound of 1e-10 * (|ref| + 1).  The fork carries no
+ * checkasm tree, so that matrix runs here (check_cov_matrix) for the kernels
+ * it dispatches.  The NEON kernel the same commit adds is not ported: its
+ * eight partial sums are not the scalar's running sum (docs/rebase-notes.md).
+ *
  * The same file also gates the SpEED dense matrix-product kernels
  * (speed_matmul_avx2 / speed_matmul_avx512) against speed_matmul_scalar.
  * Those carry a *stricter* contract than the covariance kernel above:
@@ -113,6 +120,82 @@ static double scalar_compute_cov(const float *data_x, const float *data_y, size_
     return result;
 }
 
+/* The checkasm matrix of Netflix/vmaf 15297286 (check_compute_cov_kernel). */
+#define COV_MAX_W 256
+#define COV_MAX_H 64
+#define COV_MAX_STRIDE (COV_MAX_W + 3)
+#define COV_BUF_LEN ((COV_MAX_STRIDE * COV_MAX_H) + 4)
+#define COV_PATTERNS 3u
+#define COV_LAYOUTS 3u
+#define COV_MEAN_X 127.5
+#define COV_MEAN_Y 130.25
+
+typedef double (*cov_kernel_fn)(const float *data_x, const float *data_y, size_t stride_px,
+                                size_t height, size_t width, double mean_x, double mean_y);
+
+typedef struct CovSize {
+    size_t w;
+    size_t h;
+} CovSize;
+
+static float cov_x[COV_BUF_LEN];
+static float cov_y[COV_BUF_LEN];
+
+/* pattern 0: random picture-range samples. 1: every sample equals its mean
+ * (the sum is exactly 0). 2: samples a small step either side of the mean. */
+static void cov_fill(unsigned pattern, uint32_t seed)
+{
+    if (pattern == 0) {
+        simd_test_fill_random_f32(cov_x, COV_BUF_LEN, 0.0f, 255.0f, seed);
+        simd_test_fill_random_f32(cov_y, COV_BUF_LEN, 0.0f, 255.0f, seed ^ 0xA5A5A5A5u);
+        return;
+    }
+    for (size_t i = 0; i < COV_BUF_LEN; i++) {
+        const float step_x = (i % 2u) ? 0.125f : -0.125f;
+        const float step_y = (i % 3u) ? 0.25f : -0.25f;
+        cov_x[i] = pattern == 1 ? 127.5f : 127.5f + step_x;
+        cov_y[i] = pattern == 1 ? 130.25f : 130.25f + step_y;
+    }
+}
+
+/* layout 0: stride == width. 1: three floats of padding per row. 2: padded
+ * and both planes off the buffers' alignment. Returns the mismatch count. */
+static int cov_mismatches(cov_kernel_fn kernel, CovSize size, unsigned pattern)
+{
+    int bad = 0;
+    for (unsigned layout = 0; layout < COV_LAYOUTS; layout++) {
+        const size_t stride = layout == 0 ? size.w : size.w + 3;
+        const float *x = cov_x + (layout == 2 ? 1 : 0);
+        const float *y = cov_y + (layout == 2 ? 3 : 0);
+        const double ref = scalar_compute_cov(x, y, stride, size.h, size.w, COV_MEAN_X, COV_MEAN_Y);
+        const double got = kernel(x, y, stride, size.h, size.w, COV_MEAN_X, COV_MEAN_Y);
+        if (!isfinite(got) || fabs(ref - got) > 1e-10 * (fabs(ref) + 1.0)) {
+            (void)fprintf(stderr, "%zux%zu, pattern %u, layout %u: expected %.17g, got %.17g\n",
+                          size.w, size.h, pattern, layout, ref, got);
+            bad++;
+        }
+    }
+    return bad;
+}
+
+static char *check_cov_matrix(cov_kernel_fn kernel)
+{
+    static const CovSize sizes[] = {
+        {1, 1},   {2, 3},  {3, 2},  {4, 4},    {5, 3},
+        {6, 2},   {7, 3},  {8, 2},  {9, 3},    {15, 7},
+        {16, 16}, {17, 5}, {37, 9}, {255, 63}, {COV_MAX_W, COV_MAX_H},
+    };
+    int bad = 0;
+
+    for (unsigned pattern = 0; pattern < COV_PATTERNS; pattern++) {
+        cov_fill(pattern, 0xc0ffee00u + pattern);
+        for (size_t i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++)
+            bad += cov_mismatches(kernel, sizes[i], pattern);
+    }
+    mu_assert("covariance kernel outside 1e-10 * (|ref| + 1) on the upstream matrix", bad == 0);
+    return NULL;
+}
+
 static char *check_avx2(uint32_t seed, int w, int h)
 {
     const int stride_px = (w + 7) & ~7; /* round up to 8-float boundary */
@@ -164,6 +247,10 @@ static char *test_avx2_tiny(void)
 {
     /* w=5 exercises 4-lane and scalar-tail paths. */
     return check_avx2(0xfeedface, 5, 3);
+}
+static char *test_avx2_upstream_matrix(void)
+{
+    return check_cov_matrix(compute_cov_kernel_avx2);
 }
 
 #if HAVE_AVX512
@@ -217,6 +304,10 @@ static char *test_avx512_tiny(void)
 {
     /* w=9 exercises 8-lane fallback and scalar tail paths. */
     return check_avx512(0xfeedface, 9, 3);
+}
+static char *test_avx512_upstream_matrix(void)
+{
+    return check_cov_matrix(compute_cov_kernel_avx512);
 }
 #endif /* HAVE_AVX512 */
 
@@ -328,13 +419,10 @@ char *run_tests(void)
      * here for the MSVC C lane, so each extra one is measured debt). */
     if (simd_test_have_avx2()) {
         static const MuTest avx2_tests[] = {
-            MU_TEST(test_avx2_seed_a),
-            MU_TEST(test_avx2_seed_b),
-            MU_TEST(test_avx2_aligned_w),
-            MU_TEST(test_avx2_tiny),
-            MU_TEST(test_matmul_avx2_speed_native),
-            MU_TEST(test_matmul_avx2_rect),
-            MU_TEST(test_matmul_avx2_tails),
+            MU_TEST(test_avx2_seed_a),          MU_TEST(test_avx2_seed_b),
+            MU_TEST(test_avx2_aligned_w),       MU_TEST(test_avx2_tiny),
+            MU_TEST(test_avx2_upstream_matrix), MU_TEST(test_matmul_avx2_speed_native),
+            MU_TEST(test_matmul_avx2_rect),     MU_TEST(test_matmul_avx2_tails),
             MU_TEST(test_matmul_avx2_narrow),
         };
         char *msg = mu_run_table(avx2_tests, MU_TABLE_LEN(avx2_tests));
@@ -344,13 +432,10 @@ char *run_tests(void)
 #if HAVE_AVX512
         if (simd_test_have_avx512()) {
             static const MuTest avx512_tests[] = {
-                MU_TEST(test_avx512_seed_a),
-                MU_TEST(test_avx512_seed_b),
-                MU_TEST(test_avx512_aligned_w),
-                MU_TEST(test_avx512_tiny),
-                MU_TEST(test_matmul_avx512_speed_native),
-                MU_TEST(test_matmul_avx512_rect),
-                MU_TEST(test_matmul_avx512_tails),
+                MU_TEST(test_avx512_seed_a),          MU_TEST(test_avx512_seed_b),
+                MU_TEST(test_avx512_aligned_w),       MU_TEST(test_avx512_tiny),
+                MU_TEST(test_avx512_upstream_matrix), MU_TEST(test_matmul_avx512_speed_native),
+                MU_TEST(test_matmul_avx512_rect),     MU_TEST(test_matmul_avx512_tails),
                 MU_TEST(test_matmul_avx512_narrow),
             };
             return mu_run_table(avx512_tests, MU_TABLE_LEN(avx512_tests));

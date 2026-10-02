@@ -73,6 +73,22 @@ feature/arm64/
   ADR-0159: local accumulator drifts Netflix golden by ~5.5e-5
   (`psnr_hvs_neon.c`).
 
+- **No NEON SpEED covariance kernel (Netflix/vmaf 15297286 not ported,
+  2026-10-02).** Upstream `compute_cov_kernel_neon` adds products into eight
+  partial sums (four `float64x2_t` accumulators) with `vfmaq_f64`;
+  `compute_cov_kernel_scalar` (`../speed.c`) keeps one running sum. Under
+  qemu, GCC 16.1: 4061 of 18480 sums differ in last bits, max relative
+  3.5e-12 (upstream checkasm bound: 1e-10). Ordered-sum NEON variant (lane
+  products, scalar adds in order): bit-exact under GCC, and same code GCC +
+  clang already emit for scalar loop (`fcvtl` / `fsub` / `fmul` on `.2d`, then
+  ordered `fadd`) -> nothing to gain. Under clang, scalar loop remainder
+  contracts to `fmadd`, vector body stays `fmul` + `fadd` -> no fixed
+  intrinsic sequence matches at every width (481 of 18480 sums differ).
+  On sync: never port kernel unless bit-exactness rule above gets ADR
+  exception for this reduction (x86 siblings `../x86/speed_avx2.c` /
+  `speed_avx512.c` run under such tolerance contract, see
+  `../x86/AGENTS.md`; open row `T-SPEED-COV-KERNEL-X86-NOT-BIT-EXACT-2026-10-02`).
+
 - **MSVC compiles this directory (ADR-1260, `Windows ARM64 MSVC` lane).**
   `cl.exe` ARM64: no GCC vector extensions on NEON types (`v[0]`, `a + b`,
   brace-initialised or compound-literal vectors), no `_x2`/`_x3`/`_x4`

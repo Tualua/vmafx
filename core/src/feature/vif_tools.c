@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright 2016-2020 Netflix, Inc.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -462,6 +463,48 @@ void vif_filter1d_s(const float *f, const float *src, float *dst, float *tmpbuf,
     for (int i = 0; i < h; ++i) {
         vif_filter1d_vertical_s(f, fwidth, src, src_px_stride, w, h, i, tmp);
         vif_filter1d_horizontal_s(f, fwidth, tmp, w, dst + (ptrdiff_t)i * dst_px_stride);
+    }
+}
+
+/* Horizontal pass at every 16th column of tmp[0..w) into one decimated dst
+ * row. Same taps, mirror and accumulation order as
+ * vif_filter1d_horizontal_s() at column j * 16. */
+static void vif_filter1d_horizontal_dec16_s(const float *f, int fwidth, const float *tmp, int w,
+                                            float *dst_row)
+{
+    for (int j = 0; j < w / 16; ++j) {
+        float accum = 0;
+
+        for (int fj = 0; fj < fwidth; ++fj) {
+            const float fcoeff = f[fj];
+            const int jj = vif_mirror_index(j * 16 - fwidth / 2 + fj, w);
+            const float imgcoeff = tmp[jj];
+
+            accum += fcoeff * imgcoeff;
+        }
+
+        dst_row[j] = accum;
+    }
+}
+
+/* Netflix/vmaf 76ea5f03: the scalar vif_filter1d_s() followed by
+ * vif_dec16_s(), computed at the retained samples only. The vertical pass
+ * runs for every 16th row, the horizontal pass for every 16th column of it,
+ * each with the two-step path's taps, mirror and accumulation order, so
+ * dst[i][j] holds the bits the scalar vif_filter1d_s() leaves at
+ * [i * 16][j * 16] (test_speed_filter). src and dst must not overlap; tmp
+ * holds at least w floats. SpEED calls this on every target but x86, where
+ * vif_filter1d_s() dispatches to the AVX2 convolution and the two calls stay,
+ * as upstream. */
+void vif_filter1d_dec16_s(const float *f, const float *src, float *dst, float *tmp, int w, int h,
+                          int src_stride, int dst_stride, int fwidth)
+{
+    const int src_px_stride = src_stride / sizeof(float);
+    const int dst_px_stride = dst_stride / sizeof(float);
+
+    for (int i = 0; i < h / 16; ++i) {
+        vif_filter1d_vertical_s(f, fwidth, src, src_px_stride, w, h, i * 16, tmp);
+        vif_filter1d_horizontal_dec16_s(f, fwidth, tmp, w, dst + (ptrdiff_t)i * dst_px_stride);
     }
 }
 

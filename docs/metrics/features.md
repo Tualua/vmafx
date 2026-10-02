@@ -1624,6 +1624,15 @@ including `speed_kernelscale`, `speed_prescale`,
 `core/src/feature/speed.c` for the per-option `help` strings and
 ranges; defaults match Netflix upstream.
 
+Each plane goes through a Gaussian anti-alias filter and is then decimated
+by 16 in both directions. On x86 the whole plane is filtered (AVX2) and one
+sample in 256 is kept. On every other target the filter is evaluated only at
+the kept samples (`vif_filter1d_dec16_s()` in `core/src/feature/vif_tools.c`,
+Netflix/vmaf [`76ea5f03`](https://github.com/Netflix/vmaf/commit/76ea5f03)),
+which returns the same bits as filtering the plane with the scalar filter and
+decimating it; `core/test/test_speed_filter.c` compares the two with `memcmp`.
+Scores do not change on any target.
+
 `speed_prescale` takes 0.1 to 4.0 (default 1.0) and resizes each plane by
 that factor before the SpEED filters run; values above 1 upsample. Before
 2026-09-30 the CPU `speed_temporal` overran its frame buffers for any

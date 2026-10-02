@@ -523,7 +523,7 @@ static __device__ float scale_sample(const Source &src, const SpeedGpuGeometry &
 
 /* ------------------------------------------------------------------ */
 /* Anti-alias filter at the decimated sample points                    */
-/* vif_filter1d_s() (vertical then horizontal) + vif_dec16_s()          */
+/* x86: vif_filter1d_s() + vif_dec16_s(); else vif_filter1d_dec16_s()   */
 /* ------------------------------------------------------------------ */
 
 template <class Source>

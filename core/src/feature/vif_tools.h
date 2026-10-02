@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright 2016-2020 Netflix, Inc.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -65,6 +66,12 @@ void vif_statistic_s(const float *mu1_sq, const float *mu2_sq, const float *xx_f
 
 void vif_filter1d_s(const float *f, const float *src, float *dst, float *tmpbuf, int w, int h,
                     int src_stride, int dst_stride, int fwidth);
+
+/* vif_filter1d_s() + vif_dec16_s() at the retained samples only (scalar
+ * arithmetic). dst receives h / 16 rows of w / 16 floats; src and dst must
+ * not overlap; tmp holds at least w floats. */
+void vif_filter1d_dec16_s(const float *f, const float *src, float *dst, float *tmp, int w, int h,
+                          int src_stride, int dst_stride, int fwidth);
 
 void vif_filter1d_sq_s(const float *f, const float *src, float *dst, float *tmpbuf, int w, int h,
                        int src_stride, int dst_stride, int fwidth);
