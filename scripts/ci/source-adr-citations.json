@@ -6366,6 +6366,7 @@
         "core/test/test_iqa_convolve.c": 1,
         "core/test/test_iqa_convolve_coverage.c": 2,
         "core/test/test_iqa_helpers.c": 1,
+        "core/test/test_iqa_ssim_sub_window.c": 1,
         "core/test/test_libvmaf_cuda_only_no_host.c": 1,
         "core/test/test_locale_handling.c": 1,
         "core/test/test_log.c": 1,

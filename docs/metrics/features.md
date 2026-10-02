@@ -1205,6 +1205,17 @@ smaller inputs with `-EINVAL` and a clear log message — see
 [ADR-0153](../adr/0153-float-ms-ssim-min-dim-netflix-1414.md). `ssim` /
 `float_ssim` have no such constraint.
 
+`float_ssim` scores windows of 11×11 samples, so a luma plane with fewer than
+11 samples in a direction (after the `scale` decimation) has no window. The
+score is then `0`, the sum of no terms over `(w − 10) · (h − 10)`, as in
+Netflix's libvmaf, on the scalar and on every SIMD path. When a direction has
+exactly 10 samples that divisor is 0, the mean is `0 / 0`, and the frame
+fails with a non-finite-score error
+([ADR-1302](../adr/1302-nonfinite-scores-fail-the-frame.md)). The GPU twins
+do not run such a plane: `--backend <gpu> --feature float_ssim` computes it
+on the CPU and says so, and `--feature float_ssim_cuda` (or `_sycl`, `_hip`)
+fails at init ([ADR-1324](../adr/1324-gpu-float-ssim-auto-scale-fallback.md)).
+
 **Options** (apply to `float_ssim` / `float_ms_ssim` only)
 
 | Option       | Type | Default | Range  | Effect                                                                |

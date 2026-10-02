@@ -144,7 +144,11 @@ void iqa_ssim_install_dispatch_once(pthread_once_t *guard, void (*installer)(voi
 static inline void iqa_convolve_dispatch(float *img, int w, int h, const struct iqa_kernel *k,
                                          float *workspace, float *result, int *rw, int *rh)
 {
-    if (g_iqa_convolve) {
+    /* The SIMD kernels are interior-only and need a plane at least as large
+     * as the window (they assert it in debug builds). A smaller plane has no
+     * window: the scalar reference then writes nothing and reports the
+     * non-positive extents, which is what the caller's loops need. */
+    if (g_iqa_convolve && w >= k->w && h >= k->h) {
         g_iqa_convolve(img, w, h, k->kernel_h, k->kernel_v, k->w, k->h, k->normalized, workspace,
                        result, rw, rh);
     } else {
@@ -303,6 +307,21 @@ static float ssim_accumulate_user_args_scalar(float *ref_sigma_sqd, float *cmp_s
     return mr->reduce(w, h, mr->context);
 }
 
+/* Number of windows the scalar loops visit in a w x h result plane.
+ *
+ * A plane smaller than the window leaves w or h non-positive after the
+ * convolution (w - k->w + 1). The scalar `for (y < h) for (x < w)` loops then
+ * visit nothing, but the product w * h is positive when both are negative
+ * (8x8 under the 11-tap Gaussian: -2 * -2 = 4). The SIMD kernels take one
+ * flat count, so they are handed this value, never w * h: with w * h they
+ * read window statistics no convolution wrote, and for a plane of 4x4 or
+ * less they read and wrote past the workspace (49 elements in a buffer of
+ * 16). T-FLOAT-SSIM-SUB-WINDOW-SIMD-COUNT-2026-10-02. */
+static int ssim_window_count(int w, int h)
+{
+    return (w > 0 && h > 0) ? w * h : 0;
+}
+
 struct ssim_workspace {
     float *ref_mu;
     float *cmp_mu;
@@ -361,7 +380,7 @@ static void ssim_compute_stats(float *ref, float *cmp, int *w, int *h, const str
 
     if (g_ssim_variance) {
         g_ssim_variance(ws->ref_sigma_sqd, ws->cmp_sigma_sqd, ws->sigma_both, ws->ref_mu,
-                        ws->cmp_mu, (*w) * (*h));
+                        ws->cmp_mu, ssim_window_count(*w, *h));
     } else {
         ssim_variance_scalar(ws->ref_sigma_sqd, ws->cmp_sigma_sqd, ws->sigma_both, ws->ref_mu,
                              ws->cmp_mu, *w, *h);
@@ -421,7 +440,7 @@ float iqa_ssim(float *ref, float *cmp, int w, int h, const struct iqa_kernel *k,
     float user_args_result = 0.0f;
     if (!args && g_ssim_accumulate) {
         g_ssim_accumulate(ws.ref_mu, ws.cmp_mu, ws.ref_sigma_sqd, ws.cmp_sigma_sqd, ws.sigma_both,
-                          w * h, C1, C2, C3, &ssim_sum, &l_sum, &c_sum, &s_sum);
+                          ssim_window_count(w, h), C1, C2, C3, &ssim_sum, &l_sum, &c_sum, &s_sum);
     } else if (!args) {
         ssim_accumulate_default_scalar(ws.ref_mu, ws.cmp_mu, ws.ref_sigma_sqd, ws.cmp_sigma_sqd,
                                        ws.sigma_both, w, h, C1, C2, C3, &ssim_sum, &l_sum, &c_sum,
@@ -435,6 +454,9 @@ float iqa_ssim(float *ref, float *cmp, int w, int h, const struct iqa_kernel *k,
     ssim_workspace_free(&ws);
 
     if (!args) {
+        /* The divisor stays the reference's w * h, also where no window was
+         * visited: a plane smaller than the window then reports 0 / (w * h),
+         * as Netflix's iqa_ssim() does (0 for 8x8). */
         *l_mean = (float)(l_sum / (double)(w * h)); /* zli-nflx */
         *c_mean = (float)(c_sum / (double)(w * h)); /* zli-nflx */
         *s_mean = (float)(s_sum / (double)(w * h)); /* zli-nflx */

@@ -2575,6 +2575,34 @@ test_ssim_x86_simd = executable('test_ssim_x86_simd',
 test('test_ssim_x86_simd', test_ssim_x86_simd, suite : ['fast', 'simd'])
 endif
 
+# T-FLOAT-SSIM-SUB-WINDOW-SIMD-COUNT-2026-10-02: iqa_ssim() on planes smaller
+# than, equal to and larger than its 11x11 window, every SIMD dispatch of the
+# host against the scalar path, bit for bit. The dispatch site handed the SIMD
+# kernels the product of the two window extents, which is positive when both
+# are negative: an 8x8 frame's float_ssim was read from uninitialised
+# workspace, and a 4x4 frame wrote past it. Builds on every architecture; a
+# host without a SIMD dispatch reports a skip.
+test_iqa_ssim_sub_window = executable('test_iqa_ssim_sub_window',
+    ['test.c', 'test_iqa_ssim_sub_window.c',
+     '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
+     '../src/dict.cpp',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
+                           include_directories('../src/feature/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                    predict_test_dependencies, dnn_deps],
+    objects : [
+      common_cuda_objects,
+      platform_specific_cpu_objects,
+      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      log_cpp23_test_objects,
+      libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects,
+)
+test('test_iqa_ssim_sub_window', test_iqa_ssim_sub_window, suite : ['fast', 'simd'])
+
 ciede_simd_parity_test_archs = ['x86_64', 'x86']
 if ciede_simd_parity_test_archs.contains(host_machine.cpu_family())
 test_ciede_simd_parity = executable('test_ciede_simd_parity',

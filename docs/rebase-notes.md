@@ -59068,3 +59068,20 @@ No score, output, public C API, Netflix golden-data or FFmpeg patch impact. `flo
 - `Licence Provenance` is in the aggregator's `required` and `strictMustReport`
   arrays and in `ADR_1474_STRICT_CONTEXTS` of
   `scripts/ci/tests/test_hiss_replay_contract.py`; rename all of them together.
+## `iqa_ssim()` counts windows for the SIMD kernels (2026-10-02)
+
+`fix/float-ssim-8x8-avx-garbage`, `T-FLOAT-SSIM-SUB-WINDOW-SIMD-COUNT-2026-10-02`.
+
+- `core/src/feature/iqa/ssim_tools.c`: the two calls into the SIMD dispatch
+  (`g_ssim_variance`, `g_ssim_accumulate`) pass `ssim_window_count(w, h)`,
+  which is 0 unless both extents are positive, and `iqa_convolve_dispatch()`
+  uses the SIMD convolve only for `w >= k->w && h >= k->h`. Both are
+  fork-local: upstream has no SIMD dispatch in this file and its scalar loops
+  need neither guard.
+- On an upstream sync of `ssim_tools.c` keep the guards and keep the divisor
+  of the four means as upstream writes it (`w * h`): a frame smaller than the
+  window scores `0 / (w * h)` in both trees, and
+  `core/test/test_iqa_ssim_sub_window.c` pins that value and the equality of
+  every dispatch with the scalar path.
+- No score of a frame of 11x11 or larger moves; no snapshot or golden value
+  is involved.

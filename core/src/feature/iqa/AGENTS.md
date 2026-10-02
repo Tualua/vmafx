@@ -116,6 +116,18 @@ accumulated several load-bearing modifications on top.
   `struct ssim_workspace`.
   Same on-rebase rule as convolve split.
 
+- **`iqa_ssim()` hands the SIMD kernels `ssim_window_count()`, never
+  `w * h`** (`T-FLOAT-SSIM-SUB-WINDOW-SIMD-COUNT-2026-10-02`). A plane
+  smaller than the window leaves both extents negative after the
+  convolution, and their product is positive (8x8: 4; 4x4: 49). The scalar
+  loops visit nothing there; the SIMD variance and accumulate kernels take
+  one flat count, read statistics no convolution wrote and, from 4x4 down,
+  ran past the workspace. `iqa_convolve_dispatch()` also keeps a plane
+  smaller than the window on the scalar `iqa_convolve()`: the SIMD
+  convolves require `w >= kw` and `h >= kh`. The divisor of the means stays
+  upstream's `w * h` (an 8x8 frame scores 0, as in Netflix's libvmaf). On a
+  sync, keep both guards; `core/test/test_iqa_ssim_sub_window.c` holds every
+  dispatch to the scalar bits below, at and above the window.
 - **`ssim_accumulate_lane.h` = single source of truth** for
   per-lane reduction. AVX2 / AVX-512 / NEON each pre-compute
   float-valued intermediates (`srsc`, `l_den`, `c_den`,
