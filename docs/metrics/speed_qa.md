@@ -187,6 +187,20 @@ Two earlier algorithm defects in the GPU kernels are corrected:
   kernels reused the reference basis for the distorted plane, biasing the
   chroma score high whenever the reference and distorted frames differed.
 
+### The parity gate compares both scores
+
+`speed_chroma` and `speed_temporal` are features of the cross-backend parity
+gate ([gate guide](../development/cross-backend-gate.md)). `speed_temporal`
+joined on 2026-10-02
+([ADR-1460](../adr/1460-gate-speed-temporal-and-uncovered-twins.md)); before,
+its three twins were covered by their own unit tests only. Measured at
+`--precision max`, `speed_temporal_cuda` (RTX 4090), `speed_temporal_hip`
+(gfx1036) and `speed_temporal_sycl` (Arc A380) return the same value as each
+other on every frame, and the CPU's value on every frame except where
+glibc's `log2f` is not correctly rounded: 2 of 104 frames of BBB 3840x2160,
+by one step of the fp32 score (4.8e-7). The gate allows `4e-5`, five such
+steps at a score below 128.
+
 ### Singular covariance matrices
 
 SpEED's 25x25 covariance matrix counts as regular only when **every** eigenvalue

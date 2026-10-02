@@ -56,6 +56,19 @@ both sides, adds `integer_motion`. Twin emits a different default set
 -> fix the twin's option default (`test_sycl_twin_option_parity.c`),
 never shrink the cell.
 
+**Every registered twin = gate cell (ADR-1460).** Twin registered in
+`core/src/feature/feature_extractor.cpp` for `cuda` / `sycl` / `hip` must be
+extractor of some `FEATURE_METRICS` key (via `FEATURE_ALIASES` +
+`BACKEND_EXTRACTOR_ALIASES`). New twin -> add feature to `FEATURE_METRICS`
+in BOTH `cross_backend_parity_gate.py` and `cross_backend_vif_diff.py`
+(same tables, held equal), metrics = everything CPU extractor emits by
+default (`psnr` = three planes), tolerance in `FEATURE_TOLERANCE`, row in
+`docs/development/cross-backend-gate.md`. Backend with registered twins but
+no gate backend (`metal`) = listed in `UNGATED_BACKENDS` with state row.
+Guard: `core/test/test_parity_gate_covers_registered_twins.py`.
+`speed_temporal` = libm twin on `cuda`, `hip`, `sycl` at `4e-5` (five
+float steps below 128; twins round `log2` correctly, CPU = host `log2f`).
+
 ## When adding a new lane
 
 1. New `--feature` value → add to `FEATURE_METRICS` in *both*

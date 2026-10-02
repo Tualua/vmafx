@@ -994,6 +994,47 @@ def test_speed_chroma_hip_cell_is_bounded_by_the_cpu_log2f() -> None:
     assert feature_extractor_name("speed_chroma", "hip") == "speed_chroma_hip"
 
 
+def test_speed_temporal_cells_are_bounded_by_the_cpu_log2f() -> None:
+    """ADR-1460: `speed_temporal` is a gate feature; its twins round log2 correctly."""
+
+    def cell(backend_a: str, backend_b: str) -> tuple[float, str]:
+        return resolve_cell_tolerance(
+            "speed_temporal",
+            fp16_features=[],
+            calibration=None,
+            gpu_id=None,
+            width=3840,
+            height=2160,
+            backends=(backend_a, backend_b),
+        )
+
+    assert FEATURE_METRICS["speed_temporal"] == ("speed_temporal",)
+    assert LIBM_TWINS["speed_temporal"] == {"cuda": 4e-5, "hip": 4e-5, "sycl": 4e-5}
+    for backend in ("cuda", "hip", "sycl"):
+        assert not is_exact_pair("speed_temporal", "cpu", backend)
+        assert cell("cpu", backend) == (4e-5, LIBM_TWIN_SOURCE)
+        assert cell(backend, "cpu") == (4e-5, LIBM_TWIN_SOURCE)
+        assert feature_extractor_name("speed_temporal", backend) == f"speed_temporal_{backend}"
+    # Two twins that both round log2 correctly share the bound.
+    assert cell("cuda", "hip") == (4e-5, LIBM_TWIN_SOURCE)
+    # Five float steps of a score below 128 (2^-17 each), ADR-1430's count in
+    # this score's coarsest step on the gate's fixtures.
+    assert _close(5 * 2.0**-17, 3.814697265625e-05)
+    assert LIBM_TWINS["speed_temporal"]["cuda"] > 5 * 2.0**-17
+    # The largest measured difference (BBB frames 100 and 102, one float step
+    # at a score below 8) is far inside it, and the bound stays below the
+    # places=4 default of a twin that is not listed.
+    largest_measured = 4.768e-7
+    assert largest_measured < LIBM_TWINS["speed_temporal"]["cuda"] / 50
+    assert LIBM_TWINS["speed_temporal"]["cuda"] < FEATURE_TOLERANCE["speed_temporal"]
+    assert feature_extractor_name("speed_temporal", "cpu") == "speed_temporal"
+
+
+def test_psnr_cell_compares_all_three_planes() -> None:
+    """ADR-1460: the matrix gate compared psnr_y only; the twins emit three planes."""
+    assert FEATURE_METRICS["psnr"] == ("psnr_y", "psnr_cb", "psnr_cr")
+
+
 def test_psnr_hvs_per_block_twin_keeps_area_scaled_tolerance() -> None:
     # ADR-1361 stays the contract of a twin outside EXACT_TWINS, and of a
     # caller that names no backends.

@@ -3769,7 +3769,8 @@
         "core/test/meson.build": 1,
         "core/test/test_hip_ssim_parity.c": 1,
         "core/test/test_sycl_ssim_exact_contract.py": 1,
-        "scripts/ci/cross_backend_parity_gate.py": 1
+        "scripts/ci/cross_backend_parity_gate.py": 1,
+        "scripts/ci/cross_backend_vif_diff.py": 1
       },
       "target": "0564-integer-ssim-gpu-real-kernels.md"
     },
@@ -8847,6 +8848,7 @@
         "core/test/test_cuda_ssim_exact_contract.py": 5,
         "core/test/test_cuda_ssim_parity.c": 3,
         "scripts/ci/cross_backend_parity_gate.py": 2,
+        "scripts/ci/cross_backend_vif_diff.py": 1,
         "scripts/ci/test_cross_backend_parity_gate.py": 1
       },
       "target": "1424-cuda-ssim-cpu-frame-sum.md"
@@ -8897,10 +8899,10 @@
         "core/test/speed_chroma_twin_parity.h": 2,
         "core/test/test_cuda_speed_chroma_parity.c": 1,
         "core/test/test_hip_speed_chroma_parity.c": 1,
-        "scripts/ci/cross_backend_calibration.py": 1,
+        "scripts/ci/cross_backend_calibration.py": 2,
         "scripts/ci/cross_backend_parity_gate.py": 2,
         "scripts/ci/cross_backend_vif_diff.py": 1,
-        "scripts/ci/test_cross_backend_parity_gate.py": 1
+        "scripts/ci/test_cross_backend_parity_gate.py": 2
       },
       "target": "1430-cuda-speed-chroma-log2f-bound.md"
     },
@@ -9243,6 +9245,17 @@
         "core/test/test_cuda_exact_twins.c": 1
       },
       "target": "1457-cuda-exact-twins-declared.md"
+    },
+    "1460": {
+      "sites": {
+        "core/test/meson.build": 1,
+        "core/test/test_parity_gate_covers_registered_twins.py": 2,
+        "scripts/ci/cross_backend_calibration.py": 3,
+        "scripts/ci/cross_backend_parity_gate.py": 3,
+        "scripts/ci/cross_backend_vif_diff.py": 1,
+        "scripts/ci/test_cross_backend_parity_gate.py": 2
+      },
+      "target": "1460-gate-speed-temporal-and-uncovered-twins.md"
     }
   },
   "retired": {

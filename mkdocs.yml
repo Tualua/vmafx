@@ -1568,6 +1568,7 @@ nav:
         - "ADR-1455: cuda-float-psnr-exact-block-sums": adr/1455-cuda-float-psnr-exact-block-sums.md
         - "ADR-1456: cuda-vif-device-log2-pinned": adr/1456-cuda-vif-device-log2-pinned.md
         - "ADR-1457: cuda-exact-twins-declared": adr/1457-cuda-exact-twins-declared.md
+        - "ADR-1460: gate-speed-temporal-and-uncovered-twins": adr/1460-gate-speed-temporal-and-uncovered-twins.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

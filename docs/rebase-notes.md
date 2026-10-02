@@ -58036,3 +58036,20 @@ part).
   gate features.
 - No Netflix golden-data, public API or FFmpeg patch impact; no score
   changes.
+## ADR-1460 — `speed_temporal` is a parity-gate feature; registry coverage test (2026-10-02)
+
+`test/gate-speed-temporal`, `T-GATE-SPEED-TEMPORAL-UNGATED-2026-10-02`.
+
+- `scripts/ci/cross_backend_parity_gate.py` and
+  `scripts/ci/cross_backend_vif_diff.py`: `speed_temporal` in
+  `FEATURE_METRICS` (and `FEATURE_TOLERANCE`); `psnr` lists `psnr_y`,
+  `psnr_cb` and `psnr_cr` in both; the single-feature gate gains `ssim` and
+  its three `integer_ssim_<backend>` aliases. The two scripts' tables are now
+  equal and a test keeps them so.
+- `scripts/ci/cross_backend_calibration.py`:
+  `LIBM_TWINS["speed_temporal"] = {"cuda": 4e-5, "hip": 4e-5, "sycl": 4e-5}`.
+- `core/test/test_parity_gate_covers_registered_twins.py` (new, in the fast
+  suite) reads `core/src/feature/feature_extractor.cpp`. A sync or a new
+  backend that registers a twin has to give it a gate feature, or the test
+  fails with the twin's name.
+- No library code, Netflix golden-data, public API or FFmpeg patch impact.

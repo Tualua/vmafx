@@ -41,6 +41,11 @@ feature/
 - **Registration is discoverable by both name and provided-feature-name**:
   `vmaf_get_feature_extractor_by_name()` and
   `vmaf_get_feature_extractor_by_feature_name()`. Both must resolve.
+  - **Registered GPU twin = parity-gate cell (ADR-1460).** New `_cuda` /
+    `_sycl` / `_hip` twin in `feature_extractor_list[]` -> gate feature in
+    `scripts/ci/cross_backend_parity_gate.py` + `cross_backend_vif_diff.py`
+    (`FEATURE_METRICS`, tolerance), same PR.
+    `core/test/test_parity_gate_covers_registered_twins.py` fails otherwise.
   - **GPU/Metal twins live in `feature_extractor.cpp`'s `#if HAVE_*`
     blocks, NOT in parallel file.** registry was `feature_extractor.c`
     until PR #875 introduced compiled `.cpp` twin; for window both

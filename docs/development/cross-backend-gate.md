@@ -26,7 +26,7 @@ explicitly accepts its skip.
 
   | Feature | Tolerance | Contract source |
   |---|---:|---|
-  | `vif`, `motion`, `motion_debug`, `motion_v2`, `adm`, `psnr`, `float_moment`, `cambi` | `5e-5` | ADR-0125 / ADR-0138 / ADR-0140 / ADR-0360; `motion_debug` is `motion` with `debug=true` and adds `integer_motion` ([ADR-1418](../adr/1418-motion-parity-gate-metric-alignment.md)) |
+  | `vif`, `motion`, `motion_debug`, `motion_v2`, `adm`, `psnr` (all three planes: `psnr_y`, `psnr_cb`, `psnr_cr`), `float_moment`, `cambi` | `5e-5` | ADR-0125 / ADR-0138 / ADR-0140 / ADR-0360; `motion_debug` is `motion` with `debug=true` and adds `integer_motion` ([ADR-1418](../adr/1418-motion-parity-gate-metric-alignment.md)) |
   | `ssim` (the fixed-point extractor; its twins are `integer_ssim_<backend>`) | `5e-5` | ADR-0564 (int64 moments, one double term per pixel) |
   | any feature, cell whose two sides are `cpu` or [listed exact twins](cross-backend-exact-twins.md) | `0` (bit-identical, compared at `--precision max`) | the ADR in the twin's fragment under `scripts/ci/exact_twins.d/`; the rows above and below stay for every other backend ([Exact twins](#exact-twins)) |
   | `float_ssim`, `float_ssim_lcs`, `float_ms_ssim`, `float_ms_ssim_lcs`, `float_psnr`, `float_motion`, `float_vif`, `float_adm` | `5e-5` | ADR-0188 / ADR-0192 / ADR-0215 / ADR-1382 |
@@ -34,6 +34,8 @@ explicitly accepts its skip.
   | `ciede` (every pair of CPU, CUDA, SYCL and HIP) | `1e-9`, compared at `--precision max` | ADR-1426, ADR-1436, ADR-1448 (the twins run the CPU's arithmetic and the CPU's sum; what differs is the math library and, on SYCL and HIP, the last bits of an fp32 pair, `LIBM_TWINS`); the `5e-3` row stays for the other twins |
   | `speed_chroma` (the three scores `speed_chroma_u`, `_v`, `_uv`) | `5e-5` | places=4 for a twin that is not listed below |
   | `speed_chroma` (every pair of CPU, CUDA and HIP) | `5e-6`, compared at `--precision max` | ADR-1430, ADR-1452 (the twins round `log2` correctly, the CPU calls the C library's `log2f`, `LIBM_TWINS`); sized for scores below 16 |
+  | `speed_temporal` (the one score `speed_temporal`) | `5e-5` | places=4 for a twin that is not listed below |
+  | `speed_temporal` (every pair of CPU, CUDA, HIP and SYCL) | `4e-5`, compared at `--precision max` | [ADR-1460](../adr/1460-gate-speed-temporal-and-uncovered-twins.md) (the twins round `log2` correctly, the CPU calls the C library's `log2f`, `LIBM_TWINS`); five float steps of a score below 128 |
   | `psnr_hvs` (a twin that is not listed as exact) | `5e-4` at 576x324 and below, `5e-4 × √(N / N₅₇₆ₓ₃₂₄)` above | ADR-0191 (DCT plus per-block float reduction); ADR-1361 (area scaling) |
   | `ssimulacra2` | `5e-3` | ADR-0192 (XYB cube root plus IIR blur) |
 
@@ -69,6 +71,26 @@ explicitly accepts its skip.
   ([ADR-1452](../adr/1452-hip-speed-chroma-log2f-bound.md)): measured on a
   gfx1036, 13 of 990 values differ from the glibc CPU, the same frames and
   outputs by the same amounts, and none with the preload.
+  `speed_temporal` is listed for CUDA, HIP and SYCL
+  ([ADR-1460](../adr/1460-gate-speed-temporal-and-uncovered-twins.md)): its
+  twins run the same device chain. Against a glibc 2.44 CPU all three differ
+  on the same 2 of 104 frames of BBB 3840x2160, by one float step (4.8e-7),
+  and on none of the other fixtures; with the preload, and against the CPU
+  of an icx build, on none at all. Its `4e-5` is the same count of five
+  steps in this score's coarser step: `speed_temporal` reaches 84 on the
+  gate's fixtures, where a step is 2^-17.
+
+- **Every registered twin is a gate cell.** A twin that is registered in
+  `core/src/feature/feature_extractor.cpp` and is no gate feature's extractor
+  is guarded by its own unit test only. `speed_temporal` was the one such
+  twin on CUDA, SYCL and HIP.
+  `core/test/test_parity_gate_covers_registered_twins.py` fails when a new
+  twin of a gated backend has no gate feature, and when the tables of this
+  gate and of `cross_backend_vif_diff.py` differ. To add a twin, add its
+  feature to `FEATURE_METRICS` in both scripts with the metrics the CPU
+  extractor emits by default, and a tolerance. The gate has no `metal`
+  backend, so the Metal twins are outside it
+  (`T-GATE-NO-METAL-BACKEND-2026-10-02` in [`state.md`](../state.md)).
 
 - **Backend pairs.** The script accepts `cpu`, `cuda`, `sycl`, and `hip`; its
   command line default is `cpu cuda`. `--hip-device` picks the HIP device by

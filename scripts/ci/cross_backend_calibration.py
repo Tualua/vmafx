@@ -138,7 +138,7 @@ def _parse_fragment_lines(path: Path) -> dict[str, str]:
 
 def _check_adrs(path: Path, value: str, adr_dir: Path) -> tuple[str, ...]:
     if not _ADR_LIST.match(value):
-        raise ExactTwinError(f"{path.name}: adr must be 'ADR-NNNN[, ADR-NNNN...]', got {value!r}")
+        raise ExactTwinError(f"{path.name}: adr must be 'ADR-1460[, ADR-1460...]', got {value!r}")
     adrs = tuple(item.strip() for item in value.split(","))
     for adr in adrs:
         if not list(adr_dir.glob(f"{adr[4:]}-*.md")):
@@ -263,6 +263,21 @@ def is_exact_pair(feature: str, backend_a: str, backend_b: str) -> bool:
 # the same frames and outputs, and none with a correctly rounded ``log2f``
 # preloaded. It is listed at the same bound.
 #
+# ADR-1460: ``speed_temporal`` is the second score of ``speed.c`` and takes
+# the same path: its three twins round ``log2`` correctly on the device and
+# the CPU calls the C library's ``log2f``. Measured at ``--precision max``,
+# CUDA (RTX 4090), HIP (gfx1036) and SYCL (Arc A380) against a glibc 2.44
+# CPU: identical on the typical and the stress fixtures and on 102 of 104
+# frames of BBB 3840x2160; the two others differ by one step of the fp32
+# score (4.8e-7 at scores of 6.6 and 6.8). With a correctly rounded ``log2f``
+# preloaded into the CPU run, and against an icx build's CPU (Intel's
+# ``log2f`` rounds correctly), all three return the CPU's bits on every
+# frame. The bound is ADR-1430's count, five float steps, in the coarsest
+# step of this score on the gate's fixtures: ``speed_temporal`` reaches 41 on
+# the Netflix pair, 69 on the 1080p checkerboard and 84 on full-range noise,
+# and below 128 a step is at most 2^-17, so five steps are 3.8e-5, written as
+# 4e-5. A fixture scoring above 128 needs the same count in its own step.
+#
 # ADR-1436: ``ciede_sycl`` runs the same statements on a device without an
 # fp64 type, with every fp64 value as an fp32 pair (about 48 bits) and every
 # math-library call as a pair function (about 2^-44). Its pixels can differ
@@ -287,6 +302,7 @@ def is_exact_pair(feature: str, backend_a: str, backend_b: str) -> bool:
 LIBM_TWINS: dict[str, dict[str, float]] = {
     "ciede": {"cuda": 1e-9, "sycl": 1e-9, "hip": 1e-9},
     "speed_chroma": {"cuda": 5e-6, "hip": 5e-6},
+    "speed_temporal": {"cuda": 4e-5, "hip": 4e-5, "sycl": 4e-5},
 }
 LIBM_TWIN_SOURCE = "libm:ADR-1426"
 

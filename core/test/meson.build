@@ -82,6 +82,17 @@ test('test_parity_gate_metric_names',
     timeout : 30,
 )
 
+# ADR-1460: every twin feature_extractor_list[] registers for a backend the
+# parity gate runs (cuda, sycl, hip) is the extractor of a gate feature, a
+# backend the gate cannot run is on record, and both gate scripts carry the
+# same tables. Device-free.
+test('test_parity_gate_covers_registered_twins',
+    import('python').find_installation(),
+    args : files('test_parity_gate_covers_registered_twins.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 test('test_cuda_parity_gate_default_run',
     import('python').find_installation(),
     args : files('test_cuda_parity_gate_default_run.py'),

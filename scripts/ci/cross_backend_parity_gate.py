@@ -109,7 +109,9 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
         "integer_adm_scale2",
         "integer_adm_scale3",
     ),
-    "psnr": ("psnr_y",),
+    # All three planes: CPU and every twin emit them by default, and a cell
+    # that lists one of three outputs leaves two unguarded (ADR-1460).
+    "psnr": ("psnr_y", "psnr_cb", "psnr_cr"),
     "float_moment": (
         "float_moment_ref1st",
         "float_moment_dis1st",
@@ -192,6 +194,10 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
         "speed_chroma_v",
         "speed_chroma_uv",
     ),
+    # ADR-1460: the one score of `speed_temporal` (speed.c), the last
+    # registered CUDA / SYCL / HIP twin that had no gate feature
+    # (scripts/ci/tests/test_gate_covers_registered_twins.py).
+    "speed_temporal": ("speed_temporal",),
 }
 
 # ---------------------------------------------------------------------------
@@ -257,6 +263,9 @@ FEATURE_TOLERANCE: dict[str, float] = {
     # places=4 for a twin that is not listed. The CPU <-> CUDA cell takes its
     # tolerance from LIBM_TWINS instead (ADR-1430).
     "speed_chroma": 5e-5,
+    # places=4 for a twin that is not listed. The CPU, CUDA, HIP and SYCL
+    # cells take their tolerance from LIBM_TWINS instead (ADR-1460).
+    "speed_temporal": 5e-5,
 }
 
 # Backend → extractor-name suffix and CLI device-selection flag.

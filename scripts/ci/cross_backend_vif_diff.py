@@ -113,6 +113,9 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
     # GPU twins use the backend suffix. Per-pixel transcendentals
     # (pow / sqrt / sin / atan2) — places=2 contract, NOT bit-exact.
     "ciede": ("ciede2000",),
+    # ADR-1424: the fixed-point `ssim` extractor (integer_ssim.c). Its twins
+    # are registered as `integer_ssim_<backend>`, see BACKEND_EXTRACTOR_ALIASES.
+    "ssim": ("ssim",),
     # GPU long-tail batch 2 part 1 (T7-23 / ADR-0188 / ADR-0189):
     # float_ssim. Active CPU extractor is `float_ssim`; GPU twins use
     # the backend suffix. Single emitted metric;
@@ -232,6 +235,8 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
         "speed_chroma_v",
         "speed_chroma_uv",
     ),
+    # ADR-1460: the one score of `speed_temporal` (speed.c).
+    "speed_temporal": ("speed_temporal",),
 }
 
 # Some `--feature` keys here are pseudo-names that map to a real
@@ -248,6 +253,11 @@ FEATURE_ALIASES: dict[str, tuple[str, str]] = {
 # Twins not named `<feature><suffix>`, keyed by the base extractor name.
 BACKEND_EXTRACTOR_ALIASES: dict[tuple[str, str], str] = {
     ("float_ms_ssim", "hip"): "integer_ms_ssim_hip",
+    # The CPU extractor is `ssim`; its twins carry the CPU file's name
+    # (integer_ssim.c), ADR-0564.
+    ("ssim", "cuda"): "integer_ssim_cuda",
+    ("ssim", "sycl"): "integer_ssim_sycl",
+    ("ssim", "hip"): "integer_ssim_hip",
 }
 
 # Per-backend extractor-name suffix and the device-selection flag the
