@@ -826,6 +826,24 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   memory (2x on the B580, 5.6x on the UHD 770); do not retry either without
   measuring per stage.
 
+- **`float_moment_sycl` = CPU `float_moment`, bit for bit
+  ([ADR-1449](../../../../docs/adr/1449-sycl-float-moment-cpu-float-squares.md)).**
+  CPU: `moment.c` squares each sample in `float`, adds floats into ONE
+  double per output. Kernel (`integer_moment_sycl.cpp`): four `int64`
+  sums; second sums add `moment_float_square()` = one fp32 product of the
+  raw sample, as integer below 2^32 (= CPU's term in units of 1 / scaler^2;
+  = integer square up to 12 bit, rounded to 24 bits at 16). Host: CPU's two
+  divisions. NEVER `r * r` in integers (1.0e-4 off at 16 bit), never an
+  fp64 square. Exact while sum < 2^53 units (every frame <= 2^21 pixels,
+  every 8/10/12-bit frame); past it CPU's sum rounds per add, twin within
+  derived bound (`T-HIP-FLOAT-MOMENT-PAST-2-53-2026-10-02`). Helper is
+  `VMAF_SYCL_ALWAYS_INLINE` (call in kernel = scratch frame, ADR-1395).
+  16-bit Netflix fixture = 8-bit shifted left, shows nothing: use full-range
+  content. Guards: `test_sycl_float_moment_parity` (+ `_large`),
+  `test_sycl_float_moment_exact_contract.py`. Reduction = four atomics per
+  pixel, 28.7 ms per 4K frame on A380:
+  `T-SYCL-FLOAT-MOMENT-PER-PIXEL-ATOMICS-2026-10-02`.
+
 - **`ssimulacra2_sycl` = CPU `ssimulacra2`, bit for bit
   ([ADR-1446](../../../../docs/adr/1446-sycl-ssimulacra2-cpu-bits.md)).**
   CPU: six fp64 terms per sample and channel, each added pixel after pixel
@@ -984,7 +1002,7 @@ ADR-0884 / ADR-0946 backlog must update in same PR.
 | `float_vif_sycl.cpp` | `float_vif.c` | `test_sycl_float_vif_parity.c` (bit-exact, every output, 8 / 10 bit), `test_sycl_float_vif_math.c` | ADR-0946 (round 3), ADR-1422 |
 | `float_motion_sycl.cpp` | `float_motion.c` | `test_sycl_float_motion_parity.c` (bit-exact, every frame, 8 / 10 / 12 bit) | ADR-0946 (round 3), ADR-1411 |
 | `integer_psnr_hvs_sycl.cpp` | `third_party/xiph/psnr_hvs.c` | `test_sycl_psnr_hvs_parity.c` | ADR-0946 (round 3) |
-| `integer_moment_sycl.cpp` (`float_moment_sycl`) | `float_moment.c` | `test_sycl_float_moment_parity.c` | ADR-0957 (round 4) |
+| `integer_moment_sycl.cpp` (`float_moment_sycl`) | `float_moment.c` | `test_sycl_float_moment_parity.c` (+ `_large`; bit-exact, 8 to 16 bit; bound past 2^53) | ADR-0957 (round 4), ADR-1449 |
 | `speed_chroma_sycl.cpp` + `speed_sycl_pipeline.cpp` | `speed.c` | `test_sycl_speed_chroma_parity.c`, `test_sycl_speed_singular_parity.c` | ADR-0957 (round 4), ADR-1358 |
 | `speed_temporal_sycl.cpp` + `speed_sycl_pipeline.cpp` | `speed.c` | `test_sycl_speed_temporal_parity.c`, `test_sycl_speed_singular_parity.c` | ADR-0957 (round 4), ADR-1358 |
 | `ssimulacra2_sycl.cpp` | `ssimulacra2.c` | `test_sycl_ssimulacra2_parity.c` (+ `_large`; bit-exact, 8 to 16 bit, 4:2:0 / 4:2:2 / 4:4:4), `test_sycl_ssimulacra2_math.c`, `test_sycl_ordered_sum.c` | ADR-0957 (round 4), ADR-1363, ADR-1446 |

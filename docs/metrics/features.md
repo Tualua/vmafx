@@ -1324,6 +1324,12 @@ On an RTX 4090 `float_moment_cuda` equals the CPU extractor on every frame at
 8, 10 and 12 bits (576x324, 1920x1080 and 3840x2160). At 16 bits the two
 second moments differ by up to about 7e-6: the CPU squares each sample in
 fp32, which rounds above 12 bits, and the kernel squares the integer.
+`float_moment_hip` (ADR-1447) and `float_moment_sycl`
+([ADR-1449](../adr/1449-sycl-float-moment-cpu-float-squares.md)) add the
+CPU's fp32 square instead and equal the CPU extractor at 16 bits too, on
+every frame of up to 2 097 152 pixels; on a larger 16-bit frame whose sum of
+squares passes 2^53 the CPU's own sum rounds as it goes and the twins stay
+within a derived bound (2.7e-7 measured at 2560x1440).
 
 **Limitations** — Stateless per-frame. Float pipeline (the picture
 plane is copied to float32 before the moments are computed); the

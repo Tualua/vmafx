@@ -19,6 +19,20 @@
  *  reductions into the four-slot device counter. Pattern:
  *  register with vmaf_sycl_graph_register and ride the combined
  *  graph submit/wait machinery (mirrors psnr_sycl).
+ *
+ *  Bit-exactness contract (ADR-1449): the four sums are the CPU's.
+ *  moment.c adds the samples, and their squares, into one double per
+ *  output. The first moments' terms are exact, so their integer sum is the
+ *  CPU's sum. For the second moments the CPU forms each square in float
+ *  (`const float term = pic_ * pic_`) and adds the floats: up to 12 bits a
+ *  square has at most 24 significant bits and the float is the integer
+ *  square, but at 16 bits it is the square rounded to 24 bits. The kernel
+ *  therefore adds the float square (moment_float_square()), an integer
+ *  below 2^32, so the int64 sum is exact and equals the CPU's double sum
+ *  while that sum is below 2^53 units of 1 / scaler^2, which holds for
+ *  every frame of up to 2^21 pixels and for every 8-, 10- and 12-bit
+ *  frame. Beyond it the CPU's own running sum rounds at every add; see
+ *  collect_fex_sycl().
  */
 
 #include <sycl/sycl.hpp>
@@ -34,6 +48,7 @@
 #include "log.h"
 #include "picture.h"
 #include "sycl/common.h"
+#include "sycl_compat.h"
 
 namespace
 {
@@ -58,6 +73,19 @@ struct MomentStateSycl {
     VmafDictionary *feature_name_dict;
 };
 
+/* The term of moment.c::compute_2nd_moment() for the raw sample `v`, in
+ * units of 1 / scaler^2: picture_copy() divides the sample by the scaler (a
+ * power of two, exact) and the square is one fp32 product, rounded to nearest
+ * even. Scaling by a power of two does not change which bits are rounded
+ * away, so the float square of the raw sample has the same significand. Its
+ * value is an integer below 2^32. Up to 12 bits it is the integer square. */
+VMAF_SYCL_ALWAYS_INLINE int64_t moment_float_square(uint32_t v)
+{
+    const auto sample = (float)v;
+    const float square = sample * sample;
+    return (int64_t)square;
+}
+
 /* Per-pixel moment kernel. Reads the shared ref/dis frame
  * buffers (uint8 packed at ≤8bpc, uint16 packed at ≥10bpc,
  * tightly packed at `width * bytes_per_pixel`). Atomic-adds
@@ -77,22 +105,22 @@ static void launch_moment(sycl::queue &q, void *shared_ref, void *shared_dis, in
             const size_t y = id[0];
             const size_t x = id[1];
             const size_t off = y * (size_t)e_w + x;
-            int64_t r;
-            int64_t d;
+            uint32_t r;
+            uint32_t d;
             if (e_bpc <= 8) {
-                r = (int64_t)static_cast<const uint8_t *>(ref_in)[off];
-                d = (int64_t)static_cast<const uint8_t *>(dis_in)[off];
+                r = static_cast<const uint8_t *>(ref_in)[off];
+                d = static_cast<const uint8_t *>(dis_in)[off];
             } else {
-                r = (int64_t)static_cast<const uint16_t *>(ref_in)[off];
-                d = (int64_t)static_cast<const uint16_t *>(dis_in)[off];
+                r = static_cast<const uint16_t *>(ref_in)[off];
+                d = static_cast<const uint16_t *>(dis_in)[off];
             }
             using atomic64 =
                 sycl::atomic_ref<int64_t, sycl::memory_order::relaxed, sycl::memory_scope::device,
                                  sycl::access::address_space::global_space>;
-            atomic64(e_sums[0]).fetch_add(r);
-            atomic64(e_sums[1]).fetch_add(d);
-            atomic64(e_sums[2]).fetch_add(r * r);
-            atomic64(e_sums[3]).fetch_add(d * d);
+            atomic64(e_sums[0]).fetch_add((int64_t)r);
+            atomic64(e_sums[1]).fetch_add((int64_t)d);
+            atomic64(e_sums[2]).fetch_add(moment_float_square(r));
+            atomic64(e_sums[3]).fetch_add(moment_float_square(d));
         });
     });
 }
@@ -230,9 +258,16 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
      * accumulates the RAW codeword, so without this step a 10-bit input
      * reported ref1st/dis1st 4x and ref2nd/dis2nd 16x too large. The device
      * sums are exact integers, so dividing here reproduces the CPU's
-     * sum(x / scaler) bit-for-bit at 10 and 12 bpc (every term is an exact
-     * multiple of 1/scaler and the running double sum stays exact); at 16 bpc
-     * the CPU rounds each float square, so agreement is to float precision. */
+     * sum(x / scaler) bit for bit: every term is an exact multiple of
+     * 1 / scaler (first moments) or 1 / scaler^2 (the float squares the
+     * kernel adds, ADR-1449), and the CPU's running double sum is exact while
+     * it is below 2^53 of those units. A term is below 2^32 units, so that
+     * covers every frame of up to 2^21 pixels and every 8-, 10- and 12-bit
+     * frame. On a larger 16-bit frame whose sum of squares passes 2^53 units
+     * the CPU rounds each further add and this exact sum, rounded once, can
+     * differ from it by at most
+     * (pixels - 2^21 + 1) / pixels * 2^(e - 69) + 2^-37, e the binade of the
+     * sum in units (T-HIP-FLOAT-MOMENT-PAST-2-53-2026-10-02). */
     const double moment_scaler = (s->bpc == 10u) ? 4.0 :
                                  (s->bpc == 12u) ? 16.0 :
                                  (s->bpc == 16u) ? 256.0 :

@@ -4893,13 +4893,25 @@ test('test_sycl_shared_frame_sticky_geometry', test_sycl_shared_frame_sticky_geo
     suite : ['fast', 'gpu', 'sycl'],
     is_parallel : false)
 
-# ADR-0957 — SYCL kernel coverage round 4. Four new CPU vs. SYCL
+# ADR-0957 — SYCL kernel coverage round 4. Four CPU vs. SYCL
 # parity gates closing the last uncovered SYCL extractors after
 # round 3 (#446: float family + PSNR-HVS): float_moment_sycl,
-# speed_chroma_sycl, speed_temporal_sycl, ssimulacra2_sycl. The
-# first three use places=4 (1e-4) ADR-0214 tolerance; ssimulacra2
-# uses 5e-3 to match the ADR-0214 `FEATURE_TOLERANCE` entry for
-# its multi-stage XYB + IIR + SSIM-combine pipeline.
+# speed_chroma_sycl, speed_temporal_sycl, ssimulacra2_sycl.
+#
+# ADR-1449 — float_moment_sycl returns the CPU's four moments bit for bit
+# (first added as a places=4 test at 8 and 10 bpc, ADR-0957 / ADR-1212). One
+# binary runs noise at 8, 10, 12 and 16 bits and a bright 16-bit 1920x1080
+# frame with ==, and a bright 16-bit 2560x1440 frame, where the CPU's own sum
+# is past 2^53 and rounds, against the derived bound. The `_large` variant
+# below runs the noise cases at 960x540. test_sycl_float_moment_exact_contract
+# is the device-free half: the kernel adds moment_float_square(), one fp32
+# product.
+test('test_sycl_float_moment_exact_contract',
+    import('python').find_installation(),
+    args : files('test_sycl_float_moment_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
 test_sycl_float_moment_parity = executable('test_sycl_float_moment_parity',
     ['test.c', 'test_sycl_float_moment_parity.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
@@ -4909,21 +4921,8 @@ test_sycl_float_moment_parity = executable('test_sycl_float_moment_parity',
 )
 test('test_sycl_float_moment_parity', test_sycl_float_moment_parity,
     suite : ['fast', 'gpu', 'sycl'],
-    is_parallel : false)
-
-# ADR-1212 — the same TU at 10 bpc. Every parity fixture in this tree was 8-bit,
-# so a twin that accumulates the raw codeword instead of the bit-depth-normalised
-# sample the CPU uses could never be caught. This one was (4x / 16x too large).
-test_sycl_float_moment_parity_10bit = executable('test_sycl_float_moment_parity_10bit',
-    ['test.c', 'test_sycl_float_moment_parity.c'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
-    dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1', '-DFIXTURE_BPC=10u']
-)
-test('test_sycl_float_moment_parity_10bit', test_sycl_float_moment_parity_10bit,
-    suite : ['fast', 'gpu'],
-    is_parallel : false)
+    is_parallel : false,
+    timeout : 120)
 
 # ADR-0884 — SYCL kernel coverage round 2.
 # Five additional CPU-vs-SYCL parity gates: adm, ciede, integer_ssim,

@@ -1,0 +1,2 @@
+adr: ADR-1449
+evidence: Arc A380 (xe), --precision max: four outputs of 288 of 288 frames (Netflix 576x324 at 8 to 16 bit and 4:2:2, 1080p checkerboards, BBB 4K 200 frames, noise at 8 to 16 bit, bright 16-bit 1080p, BBB 4K widened to 16 bit) identical to --backend cpu; exact while the sum of squares is below 2^53 units of 2^-16 (every frame up to 2097152 pixels, every 8/10/12-bit frame), within (pixels - 2^21 + 1) / pixels * 2^(e - 69) + 2^-37 past it.

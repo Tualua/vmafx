@@ -6,251 +6,107 @@
  */
 
 /*
- * SYCL kernel coverage round 4 — float moment CPU vs. SYCL parity test
- * (ADR-0957).
+ * float_moment CPU vs. SYCL: the twin returns the CPU's four moments bit for
+ * bit (ADR-1449; first added as a places=4 parity test, ADR-0957, and at 10
+ * bits, ADR-1212).
  *
- * The float-moment extractor is implemented by float_moment.c (CPU
- * scalar / SIMD) and by integer_moment_sycl.cpp's
- * vmaf_fex_float_moment_sycl (SYCL per-plane sum + sum-of-squares
- * reduction registered under the name "float_moment_sycl"). The
- * extractor provides four headline features:
- * "float_moment_ref1st", "float_moment_dis1st",
- * "float_moment_ref2nd", "float_moment_dis2nd".
+ * float_moment is float_moment.c / moment.c on the CPU and
+ * integer_moment_sycl.cpp::vmaf_fex_float_moment_sycl on SYCL. The twin adds
+ * four int64 sums on the device and the host divides them. Its second sums
+ * were the exact integer squares of the raw samples, which is the CPU's sum
+ * up to 12 bits and not at 16, where the CPU's float square is the integer
+ * square rounded to 24 bits: on full-range 16-bit noise the second moments
+ * were 2.7e-5 off, on a bright 16-bit 1920x1080 frame 1.0e-4. The kernel adds
+ * the float squares now (moment_float_square()).
  *
- * Round 3 (ADR-0946) skipped this kernel because it shares a TU with
- * `integer_moment_sycl` and was tagged as part of the round-4 backlog
- * along with `speed_chroma_sycl`, `speed_temporal_sycl`,
- * `ssimulacra2_sycl`.
+ * The fixtures, the comparison and the cases are
+ * float_moment_twin_parity.h's. On the old twin the 8-, 10- and 12-bit cases
+ * pass and both 16-bit equality cases fail.
  *
- * The first-moment reductions stress a single-precision accumulator
- * over the entire luma plane followed by a sub-group / atomic_ref
- * reduction; the second-moment reduction stresses the same kernel
- * but with a squared input that pushes the accumulator into a
- * larger dynamic range — a sub-group-mask or stride drift would
- * silently corrupt every float-moment column on Intel-Arc CHUG
- * re-extracts.
- *
- * Headline scores asserted: all four extractor outputs at frame
- * index 0.
- *
- * Skip behaviour: if vmaf_sycl_state_init() fails (no oneAPI runtime
- * or no device visible) the test emits "[skip: no SYCL device]" and
- * passes, mirroring test_sycl_motion3_parity.c.
+ * Skip behaviour: exits 77 when there is no SYCL device.
  */
 
-#include <math.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
-
-#include "test.h"
-
-#include "feature/feature_extractor.h"
-#include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_sycl.h"
-#include "libvmaf/picture.h"
+
+#include "float_moment_twin_parity.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
- * translation unit whose sources spell the null pointer constant `NULL` and
- * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
- * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
+ * C23, where clang-tidy proposes `nullptr`, but the required MSVC C build does
+ * not provide that keyword. Preserve the portable C spelling. ADR-1138. */
 
-/* 256x144 matches the round-2 / round-3 fixture footprint — enough
- * area for a stable reduction on Intel Arc, small enough to keep the
- * test under the fast-suite budget. */
-#ifndef FIXTURE_W
-#define FIXTURE_W 256u
-#endif
-#ifndef FIXTURE_H
-#define FIXTURE_H 144u
-#endif
-#ifndef FIXTURE_BPC
-#define FIXTURE_BPC 8u
-#endif
-#define PARITY_TOL 1e-4
-
-/* ADR-1212: the fixture is bit-depth generic. Below 8 bpc it writes bytes as
- * before; above it writes uint16 samples with the 8-bit pattern in the high
- * bits and a second pattern in the low (bpc - 8) bits, so a twin that forgets
- * to divide by the bit-depth scaler — or that only looks at the high bits —
- * cannot match the CPU by accident. */
-static void put_luma(VmafPicture *pic, unsigned row, unsigned col, unsigned v8, unsigned low_seed)
+static int twin_open(void **state)
 {
-#if FIXTURE_BPC > 8u
-    uint16_t *y = (uint16_t *)((uint8_t *)pic->data[0] + (size_t)row * pic->stride[0]);
-    const unsigned low_mask = (1u << (FIXTURE_BPC - 8u)) - 1u;
-    y[col] = (uint16_t)(((v8 & 0xFFu) << (FIXTURE_BPC - 8u)) | (low_seed & low_mask));
-#else
-    uint8_t *y = (uint8_t *)pic->data[0] + (size_t)row * pic->stride[0];
-    (void)low_seed;
-    y[col] = (uint8_t)(v8 & 0xFFu);
-#endif
+    VmafSyclState *sycl_state = NULL;
+    VmafSyclConfiguration sycl_cfg = {.device_index = -1};
+    const int err = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
+    *state = sycl_state;
+    return err;
 }
 
-static void fill_chroma_grey(VmafPicture *pic)
+static int twin_import(VmafContext *vmaf, void *state)
 {
-    for (unsigned p = 1; p < 3; p++) {
-        for (unsigned row = 0; row < pic->h[p]; row++) {
-            uint8_t *rowp = (uint8_t *)pic->data[p] + (size_t)row * pic->stride[p];
-#if FIXTURE_BPC > 8u
-            uint16_t *r16 = (uint16_t *)rowp;
-            for (unsigned col = 0; col < pic->w[p]; col++)
-                r16[col] = (uint16_t)(1u << (FIXTURE_BPC - 1u));
-#else
-            memset(rowp, 128, pic->w[p]);
-#endif
-        }
-    }
+    return vmaf_sycl_import_state(vmaf, (VmafSyclState *)state);
 }
 
-static int fill_pic(VmafPicture *pic, unsigned salt)
+static int twin_close(void *state)
 {
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
-    if (err)
-        return err;
-    for (unsigned row = 0; row < pic->h[0]; row++) {
-        for (unsigned col = 0; col < pic->w[0]; col++) {
-            /* XOR-based pattern with frame-dependent salt — gives a
-             * non-trivial distribution for both the 1st-moment (sum)
-             * and 2nd-moment (sum of squares) accumulators. */
-            put_luma(pic, row, col, ((row ^ col) + salt * 13u) & 0xFFu, row * 7u + col + salt);
-        }
-    }
-    fill_chroma_grey(pic);
+    VmafSyclState *sycl_state = (VmafSyclState *)state;
+    vmaf_sycl_state_free(&sycl_state);
     return 0;
 }
 
-static int feed_frame(VmafContext *vmaf)
-{
-    VmafPicture ref;
-    VmafPicture dist;
-    int err = fill_pic(&ref, 0u);
-    if (err)
-        return err;
-    err = fill_pic(&dist, 1u);
-    if (err) {
-        vmaf_picture_unref(&ref);
-        return err;
-    }
-    return vmaf_read_pictures(vmaf, &ref, &dist, 0u);
-}
-
-static char *fetch_scores(VmafContext *vmaf, double scores[4], const char *who)
-{
-    static const char *const names[4] = {
-        "float_moment_ref1st",
-        "float_moment_dis1st",
-        "float_moment_ref2nd",
-        "float_moment_dis2nd",
-    };
-    for (unsigned i = 0; i < 4u; i++) {
-        int err = vmaf_feature_score_at_index(vmaf, names[i], &scores[i], 0u);
-        if (err) {
-            (void)fprintf(stderr, "\n%s: missing score for %s (err=%d)\n", who, names[i], err);
-            mu_assert("float_moment headline score missing", !err);
-        }
-    }
-    return NULL;
-}
-
-static char *run_cpu(double scores[4])
-{
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    int err = vmaf_init(&vmaf, cfg);
-    mu_assert("CPU: vmaf_init failed", !err);
-    err = vmaf_use_feature(vmaf, "float_moment", NULL);
-    mu_assert("CPU: vmaf_use_feature(float_moment) failed", !err);
-    err = feed_frame(vmaf);
-    mu_assert("CPU: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
-    char *msg = fetch_scores(vmaf, scores, "CPU");
-    if (msg)
-        return msg;
-    err = vmaf_close(vmaf);
-    mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
-}
-
-static char *run_sycl(double scores[4], int *device_present)
-{
-    for (unsigned i = 0; i < 4u; i++)
-        scores[i] = NAN;
-    *device_present = 0;
-    VmafSyclState *sycl_state = NULL;
-    VmafSyclConfiguration sycl_cfg = {.device_index = -1};
-    int err = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
-    if (err != 0 || sycl_state == NULL) {
-        (void)fprintf(stderr, "[skip: no SYCL device] ");
-        return NULL;
-    }
-    *device_present = 1;
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("SYCL: vmaf_init failed", !err);
-    err = vmaf_sycl_import_state(vmaf, sycl_state);
-    mu_assert("SYCL: vmaf_sycl_import_state failed", !err);
-    err = vmaf_use_feature(vmaf, "float_moment_sycl", NULL);
-    mu_assert("SYCL: vmaf_use_feature(float_moment_sycl) failed", !err);
-    err = feed_frame(vmaf);
-    mu_assert("SYCL: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("SYCL: vmaf_read_pictures(EOS) failed", !err);
-    char *msg = fetch_scores(vmaf, scores, "SYCL");
-    if (msg)
-        return msg;
-    err = vmaf_close(vmaf);
-    mu_assert("SYCL: vmaf_close failed", !err);
-    vmaf_sycl_state_free(&sycl_state);
-    return NULL;
-}
+static const FloatMomentTwin twin = {
+    .extractor = "float_moment_sycl",
+    .backend = "SYCL",
+    .open = twin_open,
+    .import = twin_import,
+    .close = twin_close,
+};
 
 static char *test_float_moment_sycl_registered(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_moment_sycl");
-    mu_assert("float_moment_sycl extractor must be registered", fex != NULL);
-    mu_assert("float_moment_sycl name matches", !strcmp(fex->name, "float_moment_sycl"));
-    return NULL;
+    return float_moment_twin_registered(&twin);
 }
 
-static char *test_float_moment_cpu_sycl_parity(void)
+static char *test_float_moment_8bit_exact(void)
 {
-    double cpu_scores[4] = {0.0, 0.0, 0.0, 0.0};
-    double sycl_scores[4] = {NAN, NAN, NAN, NAN};
-    int device_present = 0;
-    char *msg = run_cpu(cpu_scores);
-    if (msg)
-        return msg;
-    msg = run_sycl(sycl_scores, &device_present);
-    if (msg)
-        return msg;
-    if (!device_present)
-        return NULL;
-    static const char *const names[4] = {
-        "float_moment_ref1st",
-        "float_moment_dis1st",
-        "float_moment_ref2nd",
-        "float_moment_dis2nd",
-    };
-    for (unsigned i = 0; i < 4u; i++) {
-        double delta = fabs(cpu_scores[i] - sycl_scores[i]);
-        if (delta > PARITY_TOL) {
-            (void)fprintf(stderr, "\n%s parity FAIL: cpu=%.8f sycl=%.8f delta=%.2e tol=%.2e\n",
-                          names[i], cpu_scores[i], sycl_scores[i], delta, PARITY_TOL);
-        }
-        mu_assert("float_moment CPU vs. SYCL delta exceeds places=4 tolerance (1e-4)",
-                  delta <= PARITY_TOL);
-    }
-    return NULL;
+    return float_moment_twin_noise_exact(&twin, 8u);
+}
+
+static char *test_float_moment_10bit_exact(void)
+{
+    return float_moment_twin_noise_exact(&twin, 10u);
+}
+
+static char *test_float_moment_12bit_exact(void)
+{
+    return float_moment_twin_noise_exact(&twin, 12u);
+}
+
+static char *test_float_moment_16bit_exact(void)
+{
+    return float_moment_twin_noise_exact(&twin, 16u);
+}
+
+static char *test_float_moment_16bit_bright_exact(void)
+{
+    return float_moment_twin_bright_1080p_exact(&twin);
+}
+
+static char *test_float_moment_16bit_past_2_53_within_bound(void)
+{
+    return float_moment_twin_past_2_53_within_bound(&twin);
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_float_moment_sycl_registered);
-    mu_run_test(test_float_moment_cpu_sycl_parity);
+    mu_run_test(test_float_moment_8bit_exact);
+    mu_run_test(test_float_moment_10bit_exact);
+    mu_run_test(test_float_moment_12bit_exact);
+    mu_run_test(test_float_moment_16bit_exact);
+    mu_run_test(test_float_moment_16bit_bright_exact);
+    mu_run_test(test_float_moment_16bit_past_2_53_within_bound);
     return NULL;
 }
 

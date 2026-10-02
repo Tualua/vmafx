@@ -1150,3 +1150,4 @@
 1445-hip-ssimulacra2-cpu-sum-order
 1447-hip-float-moment-cpu-float-squares
 1446-sycl-ssimulacra2-cpu-bits
+1449-sycl-float-moment-cpu-float-squares

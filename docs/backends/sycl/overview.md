@@ -1619,6 +1619,48 @@ ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/dev/speed_gpu_parity.py \
     --backend sycl --vmaf "$PWD/build/tools/vmaf" --feature ssimulacra2
 ```
 
+## `float_moment_sycl` matches the CPU `float_moment` at 16 bits (2026-10-02)
+
+`float_moment_sycl` returns the CPU extractor's four moments bit for bit
+([ADR-1449](../../adr/1449-sycl-float-moment-cpu-float-squares.md), after
+ADR-1447 for the HIP twin). The CPU forms each sample's square in `float`
+before adding it. Up to 12 bits that is the integer square; at 16 bits it is
+the square rounded to 24 bits. The kernel added exact integer squares, so its
+second moments were the CPU's up to 12 bits and not at 16. It now adds the
+`float` square, an integer below 2^32, into the same `int64` sums.
+
+A sweep of every SYCL twin on fixtures the parity gate does not use found it:
+the repository's 16-bit Netflix clip is 8-bit content shifted left, whose
+squares have few significant bits. Measured on an Arc A380 at
+`--precision max` against `--backend cpu`, frames whose second moments are
+identical and the largest difference:
+
+| Fixture | Before | Now |
+|---|---|---|
+| Netflix 576x324 at 8 to 16 bits and 4:2:2, both 1080p checkerboards, BBB 3840x2160, noise at 8, 10 and 12 bits | 275 of 275 | 275 of 275 |
+| Full-range noise 576x324, 16 bit, 3 frames | 0 of 3, 2.7e-5 | 3 of 3 |
+| Bright 16-bit 1920x1080 (samples 56000 to 64000), 2 frames | 0 of 2, 1.0e-4 | 2 of 2 |
+| BBB 3840x2160 widened to 16 bits, 8 frames | 0 of 8, 3.9e-5 | 8 of 8 |
+
+The sums are exact integers, and so is the CPU's running `double` sum while
+it is below 2^53 units of 2^-16. That covers every frame of up to 2 097 152
+pixels and every 8-, 10- and 12-bit frame. On a larger 16-bit frame whose
+sum of squares passes 2^53 the CPU rounds each further add, and the twin,
+which rounds once, is within a derived bound of it (2.7e-7 measured on a
+2560x1440 frame, bound 6.6e-6; `T-HIP-FLOAT-MOMENT-PAST-2-53-2026-10-02` in
+[`state.md`](../../state.md)).
+
+The frame time is unchanged: 28.7 ms per 3840x2160 frame and 0.6 ms per
+576x324 frame on the A380, before and after. Most of the 28.7 ms is the
+reduction, four atomic adds per pixel
+(`T-SYCL-FLOAT-MOMENT-PER-PIXEL-ATOMICS-2026-10-02`). The parity gate
+compares the twin with tolerance 0.
+
+```bash
+ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/dev/speed_gpu_parity.py \
+    --backend sycl --vmaf "$PWD/build/tools/vmaf" --feature float_moment
+```
+
 ## Licensing of the SYCL kernels (ADR-1250)
 
 As with the other backends, a SYCL kernel implementing an upstream Netflix

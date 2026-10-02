@@ -57746,3 +57746,22 @@ must keep the fork's side of both:
   (ADR-1428); `scripts/ci/gpu_ulp_calibration.yaml` loses the Arc A380's
   `ssimulacra2: 5.0e-2` rows, which an exact twin never reads.
 - No Netflix golden-data, public API or FFmpeg patch impact.
+
+## ADR-1449 — `float_moment_sycl` adds the CPU's float squares (2026-10-02)
+
+`fix/sycl-float-moment-cpu-float-squares`, `T-SYCL-FLOAT-MOMENT-16BIT-SQUARES-2026-10-02`.
+
+- `core/src/feature/sycl/integer_moment_sycl.cpp`: new
+  `moment_float_square()`; the kernel adds it for the second sums instead of
+  `r * r` / `d * d`, at every bit depth (it is the integer square up to 12
+  bits). The collect comment states the range of exactness and the bound past
+  2^53. If upstream changes how `moment.c::compute_2nd_moment()` forms or adds
+  its term, change the kernel with it.
+- `core/test/test_sycl_float_moment_parity.c` is one binary of equality
+  cases over the new `core/test/float_moment_twin_parity.h`; the `_10bit`
+  meson variant is gone (the binary covers 8, 10, 12 and 16 bits) and the
+  `_large` variant stays registered through `sycl_parity_large_fixture_tests`.
+- `core/test/test_sycl_float_moment_exact_contract.py` (new) is device-free.
+- `scripts/ci/exact_twins.d/float_moment.sycl` (new) declares the twin exact
+  (ADR-1428).
+- No Netflix golden-data, public API or FFmpeg patch impact.
