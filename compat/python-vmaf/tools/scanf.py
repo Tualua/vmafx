@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: BSD-2-Clause
 """scanf.py: scanf-style input for Python.
 
 Danny Yoo (dyoo@hkn.eecs.berkeley.edu)

@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright 2016-2026 Netflix, Inc.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent AND MIT
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -22,7 +23,6 @@
 /*
 The MIT License (MIT)
 Copyright (c) 2019 Joshua Holmer
-SPDX-License-Identifier: BSD-2-Clause-Patent
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in

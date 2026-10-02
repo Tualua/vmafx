@@ -176,6 +176,14 @@ every file says so in its `SPDX-License-Identifier` tag. See
   so does your change to it. Do not retag such a file, and leave its copyright
   notices alone.
 
+A tag describes the notices that are in the file, nothing more. A file whose only
+notice is someone else's licence text carries that licence's identifier
+(`BSD-2-Clause` for the two-condition text of the Daala and Xiph.Org files,
+`BSD-3-Clause` for the three-condition text of the IQA files); a file with Netflix's
+header and a quoted third-party notice names both (`BSD-2-Clause-Patent AND MIT` in
+`core/src/feature/ciede.c`). The `spdx-tag-matches-notice` pre-commit hook compares
+the two.
+
 If you are unsure which case you are in, read the tag already in the file; if it
 has none, ask in the pull request rather than guessing.
 `scripts/dev/relicense_fork_files.py --check` answers the same question

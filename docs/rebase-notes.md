@@ -58960,3 +58960,19 @@ No score, output, public C API, Netflix golden-data or FFmpeg patch impact. `flo
   (it would put a C comment into the `exact_twins.d/*.hip` fragments, a header
   into two praetor-managed files, and rewrite a template inside
   `scripts/sync-pelorus-interop.sh`).
+## SPDX lines follow the notice in the file (ADR-1250, 2026-10-02)
+
+`fix/spdx-tags-match-notices`, `T-SPDX-TAG-DISAGREES-WITH-NOTICE-2026-10-02`.
+
+- Eleven upstream-path or upstream-derived files had their tag corrected to the
+  licence of the notice they carry (`BSD-2-Clause` for the Daala, Xiph.Org,
+  dav1d, LIME and scanf texts; `AND BSD-3-Clause` / `AND MIT` /
+  `AND BSD-2-Clause` where Netflix's header sits next to a quoted notice).
+  Upstream has no SPDX lines, so a sync does not touch them; if a sync replaces
+  a header block wholesale, keep the fork's SPDX line.
+- `core/src/feature/ciede.c`: the SPDX line is in the file's own header, not in
+  the quoted MIT notice. Do not move it back.
+- `REUSE.toml`: `core/src/feature/third_party/xiph/**` is `BSD-2-Clause`.
+- `scripts/ci/tests/test_spdx_tag_matches_notice.py` fails when a tag and the
+  text next to it disagree.
+- No source, score, public C API, Netflix golden-data or FFmpeg patch impact.

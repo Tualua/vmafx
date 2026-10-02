@@ -505,6 +505,21 @@ repos:
         files: '^(scripts/ci/(check-copyright\.sh|tests/test_check_copyright\.py)|\.pre-commit-config\.yaml)$'
         pass_filenames: false
 
+      - id: spdx-tag-matches-notice
+        name: SPDX line names the licences whose text the file carries (ADR-1250)
+        entry: python3 -B scripts/ci/tests/test_spdx_tag_matches_notice.py
+        language: system
+        pass_filenames: false
+        # A tag describes notices that are already in the file. The scan reads
+        # the head of every tracked file with an SPDX line and fails when the
+        # file carries a BSD or MIT text, or the BSD+Patent grant, that the tag
+        # does not name, or when the tag names the fork's or Netflix's licence
+        # over a notice that is only someone else's
+        # (T-SPDX-TAG-DISAGREES-WITH-NOTICE-2026-10-02). Whole tree, under a
+        # second; it runs whenever a file that can carry a header, or the
+        # REUSE metadata, is staged.
+        types_or: [c, c++, cuda, python, toml, shell]
+
       - id: check-adr-links
         name: ADR links resolve (slug drift, T-DOCS-ADR-LINK-SLUG-DRIFT-2026-09-23)
         entry: python3 scripts/ci/check-adr-links.py

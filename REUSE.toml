@@ -292,7 +292,7 @@ SPDX-License-Identifier = "MIT"
 path = ["core/src/feature/third_party/xiph/**"]
 precedence = "closest"
 SPDX-FileCopyrightText = "2001-2012 Xiph.Org and contributors."
-SPDX-License-Identifier = "BSD-3-Clause"
+SPDX-License-Identifier = "BSD-2-Clause"
 
 [[annotations]]
 path = ["core/src/feature/iqa/**"]

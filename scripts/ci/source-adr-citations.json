@@ -7318,11 +7318,12 @@
     },
     "1250": {
       "sites": {
-        ".pre-commit-config.yaml": 1,
+        ".pre-commit-config.yaml": 2,
         "REUSE.toml": 3,
         "core/src/mcp/meson.build": 1,
         "scripts/ci/check-copyright.sh": 7,
         "scripts/ci/tests/test_check_copyright.py": 4,
+        "scripts/ci/tests/test_spdx_tag_matches_notice.py": 1,
         "scripts/dev/relicense_fork_files.py": 1,
         "scripts/dev/relicense_provenance.toml": 1,
         "scripts/dev/tests/test_relicense_fork_files.py": 1
