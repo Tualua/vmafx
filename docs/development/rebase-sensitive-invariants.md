@@ -589,6 +589,15 @@ linked AGENTS.md before resolving conflicts.
   `core/test/test_hip_float_moment_exact_contract.py` guards it without a
   device, `test_hip_float_moment_parity` on one (`==` while the sum is below
   2^53 units, a derived bound past it).
+- **CUDA twins declared exact as a group ([ADR-1457](../adr/1457-cuda-exact-twins-declared.md))**:
+  `scripts/ci/exact_twins.d/{motion,motion_debug,motion_v2,psnr,float_ssim,float_ssim_lcs,float_ms_ssim,float_ms_ssim_lcs,cambi}.cuda`
+  make the parity gate compare those cells with tolerance 0, and
+  `core/test/test_cuda_exact_twins.c` holds `motion_cuda`, `motion_v2_cuda`,
+  `psnr_cuda`, `float_ssim_cuda`, `float_ms_ssim_cuda` and `cambi_cuda` to
+  `==` on every output. A rebase that changes one of these twins or its CPU
+  extractor keeps them bit-identical; a twin that drifts is fixed, never
+  given a tolerance or taken off the list.
+
 - **SYCL twins declared exact as a group ([ADR-1451](../adr/1451-sycl-exact-twins-declared.md))**:
   `scripts/ci/exact_twins.d/{adm,motion,motion_debug,motion_v2,psnr,float_ssim,float_ssim_lcs,cambi}.sycl`
   make the parity gate compare those cells with tolerance 0, and

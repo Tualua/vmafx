@@ -58021,3 +58021,18 @@ part).
 - No Netflix golden-data, public API or FFmpeg patch impact. `ciede_sycl`
   measured bit-identical before and after on an Arc A380 (178 frames);
   `ciede_cuda` unchanged on an RTX 4090.
+## ADR-1457 — six CUDA twins declared exact as a group (2026-10-02)
+
+`test/cuda-exact-twins-declared`, `T-CUDA-EXACT-TWINS-UNDECLARED-2026-10-02`.
+
+- `scripts/ci/exact_twins.d/` gains `motion.cuda`, `motion_debug.cuda`,
+  `motion_v2.cuda`, `psnr.cuda`, `float_ssim.cuda`, `float_ssim_lcs.cuda`,
+  `float_ms_ssim.cuda`, `float_ms_ssim_lcs.cuda` and `cambi.cuda` (ADR-1428):
+  the gate compares those cells with tolerance 0. No twin's code changes.
+- `core/test/test_cuda_exact_twins.c` (new) asserts `==` on every output of
+  the six twins at 8 and 10 bits. A change to one of them, or to its CPU
+  extractor, has to keep it passing.
+- `docs/research/1457-cuda-twin-exactness-sweep.md` holds the sweep of all 21
+  gate features.
+- No Netflix golden-data, public API or FFmpeg patch impact; no score
+  changes.

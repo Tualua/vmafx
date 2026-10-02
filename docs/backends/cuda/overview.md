@@ -1066,6 +1066,49 @@ python3 scripts/ci/cross_backend_parity_gate.py --vmaf-binary build-cuda/tools/v
     --width 576 --height 324 --backends cpu cuda --features vif
 ```
 
+## Exact twins declared as a group (2026-10-02)
+
+Six more CUDA twins are held to the CPU extractor's bits by the parity gate
+([ADR-1457](../../adr/1457-cuda-exact-twins-declared.md)): `motion_cuda`
+(also with `debug=true`), `motion_v2_cuda`, `psnr_cuda`, `float_ssim_cuda`
+and `float_ms_ssim_cuda` (with and without `enable_lcs`) and `cambi_cuda`.
+Each reaches the CPU's value by construction, and a sweep on an RTX 4090
+measured every output identical at `--precision max`:
+
+| Fixtures | Frames | Result |
+|---|---|---|
+| Netflix 576x324 at 8 and 10 bits, both 1080p checkerboards, BBB 3840x2160 | 105 | identical |
+| Netflix 576x324 at 12 and 16 bits and as 10-bit 4:2:2, Sparks at 10 bits, full-range noise at 8 to 16 bits, a bright 16-bit 1080p pair | 73 | identical |
+| Noise at 40x40, 56x56 and 64x64, 8 and 10 bits | 18 | identical (`float_ms_ssim` and `cambi` refuse these sizes, as the CPU does) |
+| BBB 3840x2160, 200 frames | 200 | identical |
+| 18 option sets on five fixtures | 59 each | identical |
+
+The sweep covered all 21 gate features; the full table, with the three
+defects it found and their fixes, is in
+[Research-1457](../../research/1457-cuda-twin-exactness-sweep.md). With the
+twins made exact by their own changes, the gate compares every CUDA feature
+with tolerance 0 except `ciede` (within 1.4e-11, bound 1e-9) and
+`speed_chroma` (within 1.4e-6, bound 5e-6), which differ from the CPU by the
+math library only.
+
+Two things to know:
+
+- `float_ssim` and `float_ms_ssim` are exact up to one rounding: the twin
+  adds the CPU's per-window terms in another order before both round the mean
+  to single precision. None of about 9000 measured means differs; by estimate
+  a few in a million could.
+- A twin on this list that drifts is fixed. It does not get a tolerance.
+
+```shell
+build-cuda/test/test_cuda_exact_twins
+python3 scripts/ci/cross_backend_parity_gate.py --vmaf-binary build-cuda/tools/vmaf \
+    --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+    --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+    --width 576 --height 324 --backends cpu cuda \
+    --features motion motion_debug motion_v2 psnr float_ssim float_ssim_lcs \
+               float_ms_ssim float_ms_ssim_lcs cambi
+```
+
 ## Licensing of the CUDA kernels (ADR-1250)
 
 A CUDA kernel implementing an upstream Netflix metric carries that metric's

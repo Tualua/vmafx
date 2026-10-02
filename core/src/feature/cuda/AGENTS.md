@@ -805,6 +805,25 @@ CUDA feature TUs compile only when `meson setup -Denable_cuda=true`.
   (`cuda_cu_extra_flags`). Probe NOT in `filter1d.cu`: touching that file
   revokes four HISS-04 baseline entries of upstream kernels. `test_cuda_vif_log2_contract.py` guards all three.
 
+## Twins declared exact as a group (ADR-1457)
+
+- `scripts/ci/exact_twins.d/{motion,motion_debug,motion_v2,psnr,float_ssim,float_ssim_lcs,float_ms_ssim,float_ms_ssim_lcs,cambi}.cuda`
+  -> gate tolerance 0.
+- Basis per twin: integer sums on device + CPU's host arithmetic
+  (`motion_cuda` / `motion_v2_cuda` ADR-1372 + ADR-1373, `psnr_cuda`
+  ADR-1373); CPU's window arithmetic type for type + fp32 frame mean
+  (`float_ssim_cuda` ADR-1399, `float_ms_ssim_cuda` ADR-1403); integer
+  pipeline + exact top-K sum (`cambi_cuda` ADR-1379).
+- Rule: listed = by construction AND measured identical on full-range noise
+  at 8 / 10 / 12 / 16 bit + 40x40 to 64x64, never on measurement alone.
+  Listed twin drifting -> FIX twin, never tolerance, never delist.
+- `test_cuda_exact_twins` = `==` on every output, 640x480, 8 + 10 bit.
+- SSIM twins: frame sum order != CPU raster order; fp32 mean rounding absorbs
+  (few means per million by estimate, 0 of 9000 measured). Mean ever differs
+  -> add terms in raster order as `integer_ssim_cuda` (ADR-1424).
+- NOT listed: `ciede` (libm bound 1e-9), `speed_chroma` (libm bound 5e-6).
+  `vif` listed by ADR-1456 (device `log2f` proven per table entry).
+
 ## Stencil/convolution kernel invariant (ADR-0454)
 
 - **Stencil and convolution kernels with data reuse > 2 taps must stage

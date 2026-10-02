@@ -3334,6 +3334,22 @@ test('test_cuda_vif_log2_table', test_cuda_vif_log2_table,
     is_parallel : false,
     timeout : 60)
 
+# ADR-1457: the CUDA twins declared exact (motion, motion_v2, psnr, float_ssim,
+# float_ms_ssim, cambi) return the CPU extractor's bits: four frames of
+# 640x480 at 8 and at 10 bits, `==` on every output, the debug, L / C / S and
+# per-scale outputs included. Exits 77 when no CUDA device is visible.
+test_cuda_exact_twins = executable('test_cuda_exact_twins',
+    ['test.c', 'test_cuda_exact_twins.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_exact_twins', test_cuda_exact_twins,
+    suite : ['fast', 'gpu'],
+    is_parallel : false,
+    timeout : 120)
+
 # ADR-0956 — CUDA-only speed kernels. `speed_chroma_cuda` and
 # `speed_temporal_cuda` have no CPU twin emitting the same
 # `Speed_*_feature_*_score` family, so the gate is a smoke test:
