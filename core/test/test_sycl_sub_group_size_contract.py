@@ -64,7 +64,7 @@ def _sources() -> dict[str, str]:
     found: dict[str, str] = {}
     for pattern in SOURCE_GLOBS:
         for path in sorted(ROOT.glob(pattern)):
-            found[str(path.relative_to(ROOT))] = path.read_text(encoding="utf-8")
+            found[path.relative_to(ROOT).as_posix()] = path.read_text(encoding="utf-8")
     return found
 
 

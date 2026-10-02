@@ -116,7 +116,7 @@ def _sources() -> dict[str, str]:
     sources: dict[str, str] = {}
     for directory in SOURCE_DIRS:
         for path in sorted(directory.glob("*.c")):
-            sources[str(path.relative_to(ROOT))] = path.read_text(encoding="utf-8")
+            sources[path.relative_to(ROOT).as_posix()] = path.read_text(encoding="utf-8")
     return sources
 
 

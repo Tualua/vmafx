@@ -171,7 +171,7 @@ inline float one_plus_ratio_replayed(float numerator, SoftDouble denominator)
 inline bool needs_replay(float numerator, Ff sum, const Denominator &denominator)
 {
     return sycl::isfinite(sum.hi) && near_rounding_boundary(sum) && denominator.exact.mant != 0u &&
-           numerator >= std::numeric_limits<float>::min();
+           numerator >= (std::numeric_limits<float>::min)();
 }
 
 /* fl32(fl64(1.0 + fl64(numerator / denominator))); numerator is not

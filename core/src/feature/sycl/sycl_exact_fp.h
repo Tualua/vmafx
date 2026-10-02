@@ -247,7 +247,8 @@ inline uint64_t isqrt_floor50(uint64_t n)
  * a 24-bit k (the pairs nearest a midpoint). */
 inline float sqrt_prod_rn(float a, float b)
 {
-    const float top = std::numeric_limits<float>::max();
+    /* Parenthesised: <windows.h> defines max() as a macro unless NOMINMAX. */
+    const float top = (std::numeric_limits<float>::max)();
     if (!(a >= kNormalLow && a <= top && b >= kNormalLow && b <= top)) {
         return sqrt_rn(a * b);
     }

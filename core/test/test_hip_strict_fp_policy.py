@@ -44,7 +44,7 @@ def _sources() -> dict[str, str]:
     }
     for path in sorted(HIP_FEATURE.rglob("*")):
         if path.suffix in (".hip", ".h") and path.is_file():
-            sources[str(path.relative_to(HIP_FEATURE))] = path.read_text(encoding="utf-8")
+            sources[path.relative_to(HIP_FEATURE).as_posix()] = path.read_text(encoding="utf-8")
     return sources
 
 

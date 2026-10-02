@@ -104,6 +104,22 @@ changed_sources() {
   } | sort -u
 }
 
+# Same selection as changed_sources, for CUDA device code. changed_sources lists
+# C and C++ only, so the stage that checks `.cu` / `.cuh` constructs needs its
+# own list (it used to filter changed_sources and therefore never saw a file).
+changed_cuda() {
+  if [ "$MODE" = full ]; then
+    git ls-files '*.cu' '*.cuh'
+    return
+  fi
+  {
+    git diff --name-only --diff-filter=d "$BASE"...HEAD -- '*.cu' '*.cuh'
+    git diff --name-only --diff-filter=d -- '*.cu' '*.cuh'
+    git diff --name-only --diff-filter=d --cached -- '*.cu' '*.cuh'
+    git ls-files --others --exclude-standard -- '*.cu' '*.cuh'
+  } | sort -u
+}
+
 # Same selection as changed_sources, for Metal shaders. Kept separate because
 # every other stage compiles C/C++ and would choke on a .metal path.
 changed_metal() {
@@ -205,7 +221,7 @@ if want msvcism; then
   # only the Windows CUDA lane sees it (2026-09-20, adm_cm.cu, bug ledger L-84).
   # Device code uses positional aggregate initialization with the field name in
   # a trailing comment instead.
-  cu_designated=$(changed_sources | grep -E '\.(cu|cuh)$' | while read -r f; do
+  cu_designated=$(changed_cuda | while read -r f; do
     grep -nE '(\{|,)[[:space:]]*\.[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=|^[[:space:]]*\.[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=.*(,|\{)[[:space:]]*$' "$f" 2>/dev/null |
       grep -vE '^[0-9]+:[[:space:]]*(\*|/\*|//)' | sed "s|^|$f:|"
   done | head -5)
@@ -227,6 +243,46 @@ if want msvcism; then
   if [ -n "$c_nullptr" ]; then
     printf '     %s\n' 'nullptr in a C translation unit — MSVC C2065; ADR-1138 keeps C on NULL'
     printf '%s\n' "$c_nullptr" | sed 's/^/       /'
+    msvc_fail=1
+  fi
+
+  # <windows.h> defines min() and max() as function-like macros unless NOMINMAX
+  # is set, and the SYCL headers pull it in: `std::numeric_limits<T>::max()`
+  # then fails with "too few arguments provided to function-like macro
+  # invocation" on the Windows MSVC+SYCL lane only (2026-10-02,
+  # sycl_exact_fp.h). The parenthesised form `(std::numeric_limits<T>::max)()`
+  # compiles everywhere.
+  sycl_minmax=$(changed_sources | grep -E '^core/src/(feature/)?sycl/' | while read -r f; do
+    grep -nE 'numeric_limits<[^>]+>::(max|min)\(\)' "$f" 2>/dev/null |
+      grep -vE '\(std::numeric_limits<[^>]+>::(max|min)\)\(\)' |
+      grep -vE '^[0-9]+:[[:space:]]*(\*|/\*|//)' | sed "s|^|$f:|"
+  done | head -60)
+  if [ -n "$sycl_minmax" ]; then
+    printf '     %s\n' 'numeric_limits<T>::max() / min() in a SYCL source — <windows.h> macro clash; write (std::numeric_limits<T>::max)()'
+    printf '%s\n' "$sycl_minmax" | sed 's/^/       /'
+    msvc_fail=1
+  fi
+
+  # Meson runs the Python contract tests on Windows too. `str(path.relative_to(root))`
+  # yields backslashes there, so a dictionary keyed by it and read with a
+  # 'dir/file' literal raises KeyError on the Windows lanes only (2026-10-02,
+  # two tests). `path.relative_to(root).as_posix()` is the portable key.
+  if [ "$MODE" = full ]; then
+    py_tests=$(git ls-files 'core/test/*.py')
+  else
+    py_tests=$({
+      git diff --name-only --diff-filter=d "$BASE"...HEAD -- 'core/test/*.py'
+      git diff --name-only --diff-filter=d -- 'core/test/*.py'
+      git diff --name-only --diff-filter=d --cached -- 'core/test/*.py'
+      git ls-files --others --exclude-standard -- 'core/test/*.py'
+    } | sort -u)
+  fi
+  py_keys=$(printf '%s\n' "$py_tests" | grep -v '^$' | while read -r f; do
+    grep -nE '\[str\([A-Za-z_]+\.relative_to\([^]]*\)\)\][[:space:]]*=' "$f" 2>/dev/null | sed "s|^|$f:|"
+  done | head -60)
+  if [ -n "$py_keys" ]; then
+    printf '     %s\n' 'dictionary keyed by str(path.relative_to(...)) in a core/test Python test — backslashes on Windows; use .as_posix()'
+    printf '%s\n' "$py_keys" | sed 's/^/       /'
     msvc_fail=1
   fi
 

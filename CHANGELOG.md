@@ -2952,6 +2952,12 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   contract test rejects pthread calls the shim lacks.
 
 
+- **Windows MSVC+SYCL compiles the exact-arithmetic SYCL headers again, and two
+  contract tests pass on Windows.** A `max()` macro from `<windows.h>` broke
+  `std::numeric_limits<float>::max()` in a SYCL header, and two Python tests
+  looked up backslash path keys with forward-slash names.
+
+
 - **SYCL: the native Windows build runs its kernels.** A Windows MSVC build
   linked `vmaf.exe` and the tests with `link.exe`, which ignored `-fsycl` and
   never registered the SYCL device images, so every SYCL kernel submit failed
