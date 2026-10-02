@@ -90,15 +90,17 @@ static int write_luma_bpc(VmafSyclState *state, unsigned frame, unsigned bpc)
         return -ENOMEM;
     }
     int err = 0;
+    /* vmaf_sycl_upload_plane() only enqueues the copy: wait before the buffer
+     * is refilled or freed, or ref and dis may both read the last fill. */
     for (unsigned is_ref = 0; is_ref < 2u && !err; is_ref++) {
         fill_luma(buf, frame, is_ref, bpc);
         err = vmaf_sycl_upload_plane(state, buf, pitch, (int)is_ref, FRAME_W, FRAME_H, bpc);
+        if (!err) {
+            err = vmaf_sycl_wait_copy_queue(state);
+        }
     }
     free(buf);
-    if (err) {
-        return err;
-    }
-    return vmaf_sycl_wait_copy_queue(state);
+    return err;
 }
 
 static int write_luma(VmafSyclState *state, unsigned frame)

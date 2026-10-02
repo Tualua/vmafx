@@ -10359,6 +10359,13 @@
         "ffmpeg-patches/test/check-sycl-feature-routing.sh": 1
       },
       "target": "1595-sycl-zerocopy-fail-loud-twin-routing.md"
+    },
+    "1596": {
+      "sites": {
+        "core/src/sycl/common.cpp": 2,
+        "core/test/test_sycl_runtime_contract.py": 2
+      },
+      "target": "1596-sycl-va-import-immediate-cmdlist.md"
     }
   },
   "retired": {

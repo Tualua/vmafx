@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1248), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1249), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5003,3 +5003,7 @@ Every ADR, one heading each (1248), so the site search finds an ADR by its title
 ## ADR-1595: SYCL zero-copy input fails loudly and the FFmpeg filter routes `feature=` names to SYCL twins
 
 [1595-sycl-zerocopy-fail-loud-twin-routing](1595-sycl-zerocopy-fail-loud-twin-routing.md)
+
+## ADR-1596: The SYCL primary queue, which runs the VA-surface import, uses immediate command lists
+
+[1596-sycl-va-import-immediate-cmdlist](1596-sycl-va-import-immediate-cmdlist.md)

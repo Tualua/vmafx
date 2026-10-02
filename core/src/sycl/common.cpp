@@ -132,7 +132,7 @@ struct VmafSyclState {
     };
 
     // 8-byte members (queues, pointers, events, sizes, doubles, uint64_t, sub-structs)
-    sycl::queue queue;      // primary queue (legacy, misc ops)
+    sycl::queue queue;      // primary queue: VA import, misc ops; immediate cmdlists (ADR-1596)
     sycl::queue copy_queue; // separate queue for H2D/D2H DMA transfers
 
     void *shared_ref_buf[2] = {};
@@ -314,13 +314,39 @@ static bool sycl_profiling_enabled(const VmafSyclConfiguration &cfg)
     return env_prof != nullptr && env_prof[0] == '1';
 }
 
+/* Primary queue properties. The primary queue runs on Level Zero immediate
+ * command lists whatever UR_L0_USE_IMMEDIATE_COMMANDLISTS says (ADR-1596).
+ * Root cause (debug session sycl-zerocopy-cambi-nondeterminism): with batched
+ * command lists (UR_L0_USE_IMMEDIATE_COMMANDLISTS=0, the Arc A-series setting
+ * the bundling page recommends) an Arc A380 on compute-runtime 26.35 silently
+ * dropped the zero-copy VA import's copies from a random frame on once each
+ * frame's DMA-BUF import was mapped at the GPU address the previous frame's
+ * import had just freed; the shared slots froze, every extractor scored stale
+ * frames, and wait_and_throw() reported nothing. The mode of this queue -- the
+ * one the imports are made against and vmaf_sycl_queue_wait() syncs every frame
+ * -- is what matters: an immediate import-only queue next to a batched primary
+ * queue still failed, a batched import queue next to an immediate primary queue
+ * did not. Every other queue (copy, combined, per-extractor) keeps the process's
+ * mode. Keep this until a driver fix is re-tested with
+ * scripts/test/zerocopy-e2e.sh --repeat 10 under the batched setting. Without
+ * the DPC++ extension (another SYCL implementation) the property is left out;
+ * on a backend other than Level Zero it has no effect. */
 static sycl::property_list sycl_queue_props(bool profiling)
 {
+#ifdef SYCL_EXT_INTEL_QUEUE_IMMEDIATE_COMMAND_LIST
+    using immediate = sycl::ext::intel::property::queue::immediate_command_list;
+    if (profiling) {
+        return sycl::property_list{sycl::property::queue::in_order{},
+                                   sycl::property::queue::enable_profiling{}, immediate{}};
+    }
+    return sycl::property_list{sycl::property::queue::in_order{}, immediate{}};
+#else
     if (profiling) {
         return sycl::property_list{sycl::property::queue::in_order{},
                                    sycl::property::queue::enable_profiling{}};
     }
     return sycl::property_list{sycl::property::queue::in_order{}};
+#endif
 }
 
 extern "C" int vmaf_sycl_state_init(VmafSyclState **sycl_state, VmafSyclConfiguration cfg)
