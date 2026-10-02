@@ -1247,3 +1247,5 @@
 1593-hybrid-gcc-cpu-icpx-sycl
 1594-vmafx-sycl-ffmpeg-container
 1595-sycl-zerocopy-fail-loud-twin-routing
+1462-speed-cpu-correctly-rounded-log2
+1596-sycl-va-import-immediate-cmdlist
