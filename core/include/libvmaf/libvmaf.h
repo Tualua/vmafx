@@ -284,7 +284,10 @@ VMAF_EXPORT int vmaf_init(VmafContext **vmaf, VmafConfiguration cfg);
  *              including across nonzero close results retained for retry.
  *
  *
- * @return 0 on success, or < 0 (a negative errno code) on error.
+ * @return 0 on success, or < 0 (a negative errno code) on error; -EINVAL
+ *         when the model's motion feature reads frame n-2 (the `_hfr`
+ *         models) and a picture pool of fewer than 4 pictures was
+ *         preallocated (see `VmafPictureConfiguration`).
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
@@ -334,7 +337,11 @@ VMAF_EXPORT int vmaf_use_features_from_model_collection(VmafContext *vmaf,
  *                     `vmaf_feature_dictionary_set()`. If no special options
  *                     are required this parameter can be set to NULL.
  *
- * @return 0 on success, or < 0 (a negative errno code) on error.
+ * @return 0 on success, or < 0 (a negative errno code) on error; -EINVAL
+ *         (dictionary consumed) when the options make the extractor read
+ *         frame n-2 (`motion_five_frame_window=true`) and a picture pool of
+ *         fewer than 4 pictures was preallocated (see
+ *         `VmafPictureConfiguration`).
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */
@@ -562,6 +569,17 @@ VMAF_EXPORT int vmaf_feature_score_pooled(VmafContext *vmaf, const char *feature
  * one picture from the pool, so @p pic_cnt should be at least `n_threads * 2`
  * (one for ref, one for dis) to avoid stalls.
  *
+ * Five-frame motion window: while a registered feature extractor reads the
+ * reference picture of frame n-2 (`motion` or `motion_v2` with
+ * `motion_five_frame_window=true`, which the `vmaf_v1.0.16_hfr_*` models
+ * set), the context keeps the reference pictures of the two frames before
+ * the current one, and @p pic_cnt must be at least 4 (those two and the
+ * current pair). A smaller pool is refused with -EINVAL by whichever call
+ * comes second: `vmaf_preallocate_pictures`, or the registration
+ * (`vmaf_use_feature`, `vmaf_use_features_from_model`), which logs one error
+ * line naming @p pic_cnt and the minimum. Without such an extractor this
+ * rule does not apply and the pool works as it did before.
+ *
  * Safe to zero-initialise. @p pic_cnt == 0 disables preallocation; the caller
  * is then responsible for its own `vmaf_picture_alloc` / unref cycle.
  *
@@ -590,7 +608,9 @@ typedef struct VmafPictureConfiguration {
  * @param cfg  Picture configuration including dimensions and pool size.
  *
  *
- * @return 0 on success, or < 0 (a negative errno code) on error.
+ * @return 0 on success, or < 0 (a negative errno code) on error; -EINVAL
+ *         when @p cfg.pic_cnt is below 4 while a registered extractor reads
+ *         frame n-2 (see `VmafPictureConfiguration`).
  *
  * @note Thread safety: Not thread-safe. Use one VmafContext per thread.
  */

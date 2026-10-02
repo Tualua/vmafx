@@ -179,6 +179,7 @@ default `true`):
 | `vmaf_v1.0.16_1d5h_2160` | v1.0.16 4K model, 2160p at 1.5H. Used by the fork's 4K resolution ladder. |
 | `vmaf_v1.0.16_5d0h` | v1.0.16 phone model (1080p at 5H). |
 | `vmaf_v1.0.16_3d0h_2160` | v1.0.16 consumer 4K (2160p at 3H); operates on a [0, 110] range. |
+| `vmaf_v1.0.16_hfr_3d0h`, `vmaf_v1.0.16_hfr_1d5h_2160`, `vmaf_v1.0.16_hfr_5d0h`, `vmaf_v1.0.16_hfr_3d0h_2160` | The four v1.0.16 models for high-frame-rate content (about 50 / 60 fps), one per viewing condition above. Their motion feature uses the five-frame window with a moving average ([VMAF v1 models](../models/v1.md#high-frame-rate-hfr-content), [Motion](../metrics/motion.md#five-frame-window)). |
 | `vmaf_v0.6.1` | Previous default, and still upstream's. 1080p training set, classic release. |
 | `vmaf_v0.6.1neg` | Negative-gain (NEG) — non-enhancing; recommended for encoder A/B where one encoder may artificially sharpen. There is no NEG counterpart to any v1.0.16 model, so asking for NEG also selects the v0.6.1 generation. |
 | `vmaf_b_v0.6.3` | Banding-aware variant (used with CAMBI). |
@@ -216,7 +217,23 @@ the same escaping rules — see [Option-string grammar](#option-string-grammar):
 --feature psnr_hvs
 --feature brisque
 --feature brisque=model_path=/path/to/brisque_live.model
+--feature motion=motion_five_frame_window=true:motion_moving_average=true
 ```
+
+The last line is the motion feature of the high-frame-rate models on its own:
+each frame is compared with the frame two back instead of the previous one
+([Motion, five-frame window](../metrics/motion.md#five-frame-window)). Its
+scores are written under `integer_motion2_mffw_mma` and
+`integer_motion3_mffw_mma`.
+
+With that window the context keeps the reference pictures of the two frames
+before the current one, so its picture pool needs at least four pictures. The
+tool sizes its pool before it loads the models, so a run without `--threads`
+always preallocates four (the `picture pool: N pictures pre-allocated` line
+counts them, read-ahead pictures included), one more than it needs without the
+window; with `--threads` the count is unchanged. A C API caller that
+preallocates fewer than four pictures for an `_hfr` model gets `-EINVAL`
+instead of a stall ([C API](../api/index.md)).
 
 Repeated registrations share work only when their option-derived feature keys
 match. For example, `--feature motion` and

@@ -173,13 +173,16 @@ static const VmafOption options[] = {
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
     {
+        /* Default only (ADR-1316): the twin keeps two frames on the device.
+         * A model or --feature that sets it is computed by the CPU `motion`
+         * (ADR-1478); naming this twin with it fails in init(). */
         .name = "motion_five_frame_window",
         .alias = "mffw",
-        .help = "use five-frame temporal window (NOT YET SUPPORTED on CUDA — T3-15(c) deferred)",
+        .help = "use five-frame temporal window (not on CUDA: computed by the CPU extractor)",
         .offset = offsetof(MotionStateCuda, motion_five_frame_window),
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val.b = false,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM | VMAF_OPT_FLAG_DEFAULT_ONLY,
     },
     {
         .name = "motion_moving_average",
@@ -315,15 +318,16 @@ static int motion_init_unwind(VmafFeatureExtractor *fex, MotionStateCuda *s, int
  */
 static int motion_check_unsupported(const MotionStateCuda *s, unsigned w, unsigned h)
 {
-    /* Reject the 5-frame window mode explicitly. CPU mode keeps a
-     * 5-deep blur ring + computes a second SAD pair (i-2 ↔ i-4); the
-     * GPU ports today still use a 2-deep ring. Failing loud with
-     * -ENOTSUP keeps callers off a silent-wrong-answer code path.
-     * See ADR-0219. */
+    /* Reject the 5-frame window mode explicitly. The CPU takes the SAD of
+     * frame n against frame n-2 (ADR-1478); this twin keeps one earlier
+     * frame on the device. Failing loud with -ENOTSUP keeps callers off a
+     * silent-wrong-answer code path: only a direct `motion_cuda` selection
+     * gets here, a model or `--feature motion` is routed to the CPU by the
+     * option's VMAF_OPT_FLAG_DEFAULT_ONLY. See ADR-0219. */
     if (s->motion_five_frame_window) {
         vmaf_log(VMAF_LOG_LEVEL_WARNING,
-                 "motion_cuda: motion_five_frame_window=true is not yet supported on CUDA "
-                 "(T3-15(c) deferred). Use the CPU extractor `motion` instead.\n");
+                 "motion_cuda: motion_five_frame_window=true is not yet supported on CUDA. "
+                 "Use the CPU extractor `motion` instead.\n");
         return -ENOTSUP;
     }
 

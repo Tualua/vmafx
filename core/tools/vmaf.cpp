@@ -2197,6 +2197,14 @@ namespace
     /* ADR-1366: each reader thread holds up to kReadaheadDepth extra pictures. */
     state->readahead = inputs_read_independently(state->vid_ref.fin, state->vid_dist.fin);
     const unsigned readahead_pics = state->readahead ? 2 * kReadaheadDepth : 0;
+    /* The pool is sized before the models are loaded, so it must already
+     * suit an extractor that reads frame n-2 (the five-frame motion window of
+     * the _hfr models): the context then keeps the reference pictures of
+     * frames n-1 and n-2, and vmaf_use_feature() refuses a pool below four
+     * pictures (ADR-1478). A serial run therefore takes four pictures, one
+     * more than it needs without that window; a threaded run's count is
+     * Netflix's (a2b59b77) and the same as before. */
+    const unsigned scoring_pics = state->c.thread_cnt > 0 ? (state->c.thread_cnt + 1) * 2 + 1 : 4;
     state->pic_cfg = {
         .pic_params =
             {
@@ -2205,7 +2213,7 @@ namespace
                 .bpc = static_cast<unsigned>(state->common_bitdepth),
                 .pix_fmt = pix_fmt_map(info.pixel_fmt),
             },
-        .pic_cnt = 2 * (state->c.thread_cnt + 1) + 1 + readahead_pics,
+        .pic_cnt = scoring_pics + readahead_pics,
     };
     const int err = vmaf_preallocate_pictures(state->vmaf, state->pic_cfg);
     if (err) {

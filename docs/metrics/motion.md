@@ -20,9 +20,12 @@ Three extractor variants are registered:
 
 Registered name: `motion` (`VmafFeatureExtractor vmaf_fex_integer_motion`).
 
-Applies a separable 5-tap Gaussian filter to each reference luma frame, keeps a
-circular buffer of up to five blurred frames, and emits the minimum SAD across the
-two-frame (or five-frame) temporal window.
+Blurs the difference of two reference luma frames with a separable 5-tap
+Gaussian filter and sums the absolute values (the frame's SAD). `motion2` of a
+frame is the smaller of the SADs on both sides of it, so it looks one frame
+back and one frame ahead (the three-frame window) or, with
+`motion_five_frame_window`, three frames back and one ahead
+([Five-frame window](#five-frame-window)).
 
 ### Output features
 
@@ -68,7 +71,7 @@ temporal activity. No inherent upper bound — clamped to `motion_max_val` (defa
 | `motion_blend_factor`     | `mbf`    | double | `1.0`     | `0.0–1.0`     | Blend factor for `motion3_score`                                       |
 | `motion_blend_offset`     | `mbo`    | double | `40.0`    | `0.0–1000.0`  | Score offset at which blending begins for `motion3_score`              |
 | `motion_max_val`          | `mmxv`   | double | `10000.0` | `0.0–10000.0` | Upper clamp applied to emitted scores                                  |
-| `motion_five_frame_window`| `mffw`   | bool   | `false`   | —             | Use a five-frame SAD window instead of three-frame (CPU only)          |
+| `motion_five_frame_window`| `mffw`   | bool   | `false`   | —             | Take each SAD against the frame two back instead of the previous one ([Five-frame window](#five-frame-window)); computed on the CPU on every backend |
 | `motion_moving_average`   | `mma`    | bool   | `false`   | —             | Apply a two-frame moving average to `motion3_score`                    |
 
 ### Backend coverage
@@ -106,9 +109,61 @@ and its `motion2_score` was up to 2.0e-4 off on 17x17 frames and 1.3e-5 on the
 Netflix 576x324 pair; expect the same from the Metal twin, which has not been
 measured yet (its row in [`state.md`](../state.md)).
 
-All GPU backends emit `motion2_score` and `motion3_score` in 3-frame window mode.
-The 5-frame window (`motion_five_frame_window=true`) and `motion_moving_average`
-are CPU-only; GPU paths return `-ENOTSUP` at `init()` when these are set.
+All GPU backends emit `motion2_score` and `motion3_score` in 3-frame window
+mode, with `motion_moving_average` if it is set. The five-frame window is
+computed on the CPU: with `--backend cuda`, `sycl`, `hip` or `metal`, a model
+or a `--feature motion` that sets `motion_five_frame_window=true` runs the
+CPU `motion` extractor for that feature (the other features stay on the
+device) and the scores are the CPU's. A twin named directly with the option
+(`--feature motion_cuda=motion_five_frame_window=true`) returns `-ENOTSUP` at
+`init()` and the run fails; no twin scores with another window
+(`T-GPU-MOTION-FIVE-FRAME-WINDOW-2026-10-02` in [`state.md`](../state.md)).
+
+### Five-frame window
+
+`motion_five_frame_window=true` is the motion feature of the four
+`vmaf_v1.0.16_hfr_*` models ([VMAF v1 models](../models/v1.md)), which set it
+together with `motion_moving_average=true`. It is Netflix's option
+(`a2b59b77`, `a4a1492d`), ported with its arithmetic unchanged
+([ADR-1478](../adr/1478-motion-five-frame-window-port.md)); the scores equal
+upstream Netflix `9e48141b` bit for bit.
+
+With the option, for a sequence of `N` frames:
+
+| Score | Three-frame window (default) | Five-frame window |
+|---|---|---|
+| SAD of frame `n` | frames `n-1` and `n`; 0 for `n = 0` | frames `n-2` and `n`; 0 for `n < 2` |
+| `motion2` of frame `n` | `min(SAD[n], SAD[n+1])`; `SAD[n]` for the last frame; 0 for `n = 0` | `min(SAD[n-1], SAD[n+1])`; `SAD[3]` for `n = 2`; `SAD[n]` for the last frame; 0 for `n < 2` |
+| `motion3` of the frames without a SAD | the blended `SAD[1]` | the blended `SAD[2]` (frames 0 and 1) |
+
+So `motion2` of frame `n` reads the frames `n-3`, `n-1` and `n+1`, a span of
+five frames. `motion3` is derived from `motion2` as in the default mode
+(`motion_blend_factor`, `motion_blend_offset`, `motion_max_val`,
+`motion_moving_average`). A sequence of one or two frames has no SAD and
+every score is 0.
+
+For this the framework keeps the reference pictures of the two frames before
+the current one (`prev_ref`, `prev_prev_ref`), but only while an extractor
+with the option is registered; otherwise it keeps the frame before the
+current one alone, as without the port. Netflix keeps both in every run; the
+fork's narrower rule changes which pictures stay allocated, not a score
+([ADR-1478](../adr/1478-motion-five-frame-window-port.md)). A preallocated
+picture pool then needs at least four pictures, the current pair and those
+two. A smaller one is refused with `-EINVAL` when the extractor is registered
+or the pool is allocated, whichever comes second, instead of stalling on the
+third frame ([C API](../api/index.md)).
+
+```bash
+core/build/tools/vmaf \
+    --reference ref.yuv --distorted dist.yuv \
+    --width 1920 --height 1080 --pixel_format 420 --bitdepth 8 \
+    --no_prediction \
+    --feature 'motion=motion_five_frame_window=true:motion_moving_average=true' \
+    --output /dev/stdout
+```
+
+The scores are written under names that carry the option aliases:
+`integer_motion2_mffw_mma`, `integer_motion3_mffw_mma`.
 
 > **`motion_fps_weight` is applied exactly once.** The CPU reference scales the
 > SAD-derived score by `motion_fps_weight` in `extract()`, stores the weighted
@@ -180,7 +235,7 @@ end-of-stream flush.
 | `motion_blend_factor`| `mbf`     | double | `1.0`     | `0.0–1.0`     | Blend factor for motion3-style score      |
 | `motion_blend_offset`| `mbo`     | double | `40.0`    | `0.0–1000.0`  | Blend offset                              |
 | `motion_max_val`     | `mmxv`    | double | `10000.0` | `0.0–10000.0` | Upper clamp                               |
-| `motion_five_frame_window` | `mffw` | bool | `false` | —             | Five-frame SAD window                     |
+| `motion_five_frame_window` | `mffw` | bool | `false` | —             | SAD against the frame two back, as on `motion` ([Five-frame window](#five-frame-window)); computed on the CPU on every backend (the GPU twins do not declare the option) |
 | `motion_moving_average` | `mma` | bool   | `false`   | —             | Two-frame moving average                  |
 
 ### Backend coverage

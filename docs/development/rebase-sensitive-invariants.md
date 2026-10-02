@@ -420,6 +420,31 @@ linked AGENTS.md before resolving conflicts.
   Netflix's feature/motion several-options commit; PR #213 (open)
   ports `d3647c73` `feature/speed` extractors (`speed_chroma` +
   `speed_temporal`).
+- **`motion_five_frame_window` is Netflix's, on the fork's picture ownership ([ADR-1478](../adr/1478-motion-five-frame-window-port.md))**:
+  `extract()` and the window of `core/src/feature/integer_motion.c` are
+  upstream's statements (`a2b59b77`, `a4a1492d`); a sync takes upstream's side
+  for the arithmetic and puts a change to upstream's `flush()` into
+  `motion_flush_one()` / `vmaf_motion_window_flush()`
+  (`core/src/feature/motion_window.h`), which `integer_motion_v2.c` calls
+  too. That file is deleted upstream and kept here. In `core/src/libvmaf.c`
+  upstream struct-copies `prev_ref` and `prev_prev_ref` into the extractor
+  and zeroes them; the fork hands out counted references
+  (`fex_take_prev_refs()` / `fex_release_prev_ref()`, ADR-0778) and rotates
+  them in the PREV_REF swap of `feature_extractor.cpp`: keep the fork's side
+  of those hunks and take only which frames are kept. Upstream keeps frame
+  n-2 for every run; the fork keeps it only while a registered extractor's
+  `reads_prev_prev_ref()` answers true (the option is on), so a context
+  without one holds what it held before the port, and a preallocated pool
+  below four pictures is then refused with `-EINVAL` at registration or at
+  `vmaf_preallocate_pictures()`, never left to stall (a deliberate deviation
+  that moves no score). A sync must not bring back the unconditional window
+  or the unconditional `n_threads * 2 + 2` of `check_picture_pool()`. A sync
+  must not bring back a
+  `@unittest.skip` on the five-frame or `_hfr` tests under `python/test/`.
+  `core/test/test_motion_five_frame_window.c`,
+  `test_read_pictures_failure_ownership` and the Netflix golden gate guard
+  it. See [core/src/feature/AGENTS.md](../../core/src/feature/AGENTS.md) and
+  [core/src/AGENTS.md](../../core/src/AGENTS.md).
 - **Metal `float_ms_ssim` option parity ([ADR-1334](../adr/1334-metal-ms-ssim-option-parity.md))**:
   `float_ms_ssim_metal` exposes `enable_db`, `clip_db`, `enable_chroma`, and `enable_lcs`
   matching CPU/SYCL/HIP twins. It emits `float_ms_ssim`, `float_ms_ssim_cb`, and

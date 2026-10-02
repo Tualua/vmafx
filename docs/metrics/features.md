@@ -317,8 +317,10 @@ unchanged.
 `motion` (fixed-point). All GPU backends emit `motion`,
 `motion2`, **and** `motion3` (the latter as of T3-15(c) /
 [ADR-0219](../adr/0219-motion3-gpu-coverage.md)) in 3-frame window
-mode; the 5-frame window mode (`motion_five_frame_window=true`)
-returns `-ENOTSUP` at `init()` on GPU. The
+mode; the 5-frame window mode (`motion_five_frame_window=true`,
+[motion.md](motion.md#five-frame-window)) is computed by the CPU
+extractor on every backend; a GPU twin named directly with it returns
+`-ENOTSUP` at `init()`. The
 `motion_add_uv=true` path is currently CPU-only — see
 [backends/cuda/overview.md §Known gaps](../backends/cuda/overview.md#known-gaps)
 and [backends/sycl/overview.md §Known gaps](../backends/sycl/overview.md#known-gaps).

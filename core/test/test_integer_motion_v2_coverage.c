@@ -8,8 +8,8 @@
  *  registration-only path was the only thing exercised at 17.6 %
  *  baseline. This file drives:
  *
- *    1. init() rejects motion_five_frame_window=true (-ENOTSUP, ADR-0337
- *       line 288-293).
+ *    1. init() accepts motion_five_frame_window=true (ADR-1478) and the
+ *       frames below the window report a SAD of 0.
  *    2. extract() at index=0 short-circuits to score=0 (line 356-360).
  *    3. extract() with motion_force_zero=true (line 350-354).
  *    4. extract() across two frames to drive the scalar
@@ -91,11 +91,15 @@ static int alloc_random10(VmafPicture *pic, uint32_t seed)
 }
 
 /* ----------------------------------------------------------------- */
-/* init() rejection of motion_five_frame_window (-ENOTSUP)           */
+/* init() accepts motion_five_frame_window (Netflix a2b59b77)        */
 /* ----------------------------------------------------------------- */
 
-static char *test_motion_v2_rejects_five_frame_window(void)
+static char *test_motion_v2_accepts_five_frame_window(void)
 {
+    /* ADR-1478 ends the -ENOTSUP of ADR-0337: the option initialises, and
+     * the first two frames, which have no frame n-2, report a SAD of 0
+     * without reading a previous picture. The scores of longer sequences
+     * are held against the definition in test_motion_five_frame_window.c. */
     const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion_v2");
     mu_assert("motion_v2 extractor missing", fex != NULL);
 
@@ -108,10 +112,31 @@ static char *test_motion_v2_rejects_five_frame_window(void)
     mu_assert("context_create", err == 0);
 
     err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, MV2_W, MV2_H);
-    mu_assert("init with motion_five_frame_window must be -ENOTSUP", err == -ENOTSUP);
+    mu_assert("init with motion_five_frame_window must succeed", err == 0);
+
+    VmafFeatureCollector *fc = NULL;
+    err = vmaf_feature_collector_init(&fc);
+    mu_assert("collector_init", err == 0);
+
+    VmafPicture ref;
+    VmafPicture dist;
+    mu_assert("alloc ref", alloc_random8(&ref, 0x51u) == 0);
+    mu_assert("alloc dist", alloc_random8(&dist, 0x52u) == 0);
+    for (unsigned i = 0; i < 2u; ++i) {
+        err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, i, fc);
+        mu_assert("extract below the window", err == 0);
+        double sad = -1.;
+        err = vmaf_feature_collector_get_score(fc, "VMAF_integer_feature_motion_v2_sad_score_mffw",
+                                               &sad, i);
+        mu_assert("get sad", err == 0);
+        mu_assert("a frame without frame n-2 must report a SAD of 0", sad == 0.);
+    }
 
     (void)vmaf_feature_extractor_context_close(ctx);
     (void)vmaf_feature_extractor_context_destroy(ctx);
+    vmaf_feature_collector_destroy(fc);
+    (void)vmaf_picture_unref(&ref);
+    (void)vmaf_picture_unref(&dist);
     /* opts ownership transferred to ctx and freed by context_destroy. */
     return NULL;
 }
@@ -415,7 +440,7 @@ static char *test_motion_v2_10bit_extract(void)
 
 char *run_tests(void)
 {
-    mu_run_test(test_motion_v2_rejects_five_frame_window);
+    mu_run_test(test_motion_v2_accepts_five_frame_window);
     mu_run_test(test_motion_v2_index_zero_emits_zero);
     mu_run_test(test_motion_v2_force_zero);
     mu_run_test(test_motion_v2_three_frame_flow);

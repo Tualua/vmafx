@@ -63,7 +63,8 @@ Rules:
   guarantee, not speed: on gfx1036 one hardware queue serialises copy behind
   running kernels either way.
 - Reference picture looks safe, is not. `vmaf_read_pictures()` keeps it alive
-  one more frame through `prev_ref`; hence `motion_hip`, `motion_v2_hip`,
+  two more frames through `prev_ref` / `prev_prev_ref` (one before ADR-1478);
+  hence `motion_hip`, `motion_v2_hip`,
   `float_motion_hip` never misbehaved under CLI. libvmaf implementation
   detail, not contract: through extractor API their copy was still reading
   after `submit()` on 10 of 10 runs.

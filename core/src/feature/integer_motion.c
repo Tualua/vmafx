@@ -30,6 +30,7 @@
 #include "integer_motion.h"
 #include "log.h"
 #include "motion_blend_tools.h"
+#include "motion_window.h"
 
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
@@ -304,16 +305,6 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
     (void)pix_fmt;
     MotionState *s = fex->priv;
 
-    /* ADR-0337: motion_five_frame_window=true is rejected at init() with
-     * -ENOTSUP. The 5-frame mode requires a prev_prev_ref field on
-     * VmafFeatureExtractor + matching picture-pool sizing in
-     * vmaf_read_pictures (n_threads * 2 + 2) that upstream a2b59b77
-     * adds. The fork's read_pictures decomposition (ADR-0152) diverges
-     * from upstream's layout; the picture-pool refactor will land as
-     * its own PR. Until then, motion's 5-frame mode is unsupported,
-     * mirroring the motion_v2 + GPU motion3 -ENOTSUP precedent in ADR-0219.
-     * The 3-frame default mode is fully supported.
-     */
     /* The 5-tap separable Gaussian uses reflect-101 mirror padding; the
      * mirror() helper requires dim >= radius + 1 = 3 in each axis.
      * Reject smaller frames up front to prevent out-of-bounds reads.
@@ -325,14 +316,6 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
                  "refusing to avoid out-of-bounds mirror reads\n",
                  w, h, min_dim, min_dim);
         return -EINVAL;
-    }
-
-    if (s->motion_five_frame_window) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "motion: motion_five_frame_window=true is not supported; "
-                 "see ADR-0337. The prev_prev_ref field required for this mode "
-                 "is not yet plumbed into the framework.\n");
-        return -ENOTSUP;
     }
 
     s->w = w;
@@ -370,14 +353,13 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
      * pipeline entirely; the score is still appended below, exactly as when
      * the pipeline runs. */
     if (!s->motion_force_zero) {
-        /* motion_five_frame_window=true is rejected in init() (ADR-0337);
-         * by the time extract() runs, motion_five_frame_window is always false.
-         * The min_idx / prev_ref selection below retains the 5-frame branching
-         * skeleton so the flush() path compiles cleanly and the deferral is
-         * reversible once prev_prev_ref is plumbed into the framework. */
+        /* Netflix a2b59b77 / a4a1492d: with motion_five_frame_window the SAD
+         * of frame n is taken against frame n-2 (fex->prev_prev_ref), so the
+         * first two frames have none; otherwise against frame n-1. */
         const unsigned min_idx = s->motion_five_frame_window ? 2 : 1;
         if (index >= min_idx) {
-            const VmafPicture *prev = &fex->prev_ref;
+            const VmafPicture *prev =
+                s->motion_five_frame_window ? &fex->prev_prev_ref : &fex->prev_ref;
             if (!prev->ref)
                 return -EINVAL;
 
@@ -421,11 +403,17 @@ static int close_fex(VmafFeatureExtractor *fex)
  * same order, with the loop-carried `prev_processed` threaded through a pointer
  * so the moving-average recurrence is unchanged. No arithmetic was rewritten,
  * so every emitted score is bit-identical. Keeps flush() under the HISS-04 /
- * NASA Rule 4 function-size limit (ADR-0141). */
-static int motion_flush_one(VmafFeatureCollector *feature_collector, MotionState *s,
-                            const char *sad_name, unsigned i, unsigned min_idx, unsigned stride,
-                            double stamp_value, double *prev_processed)
+ * NASA Rule 4 function-size limit (ADR-0141). The options and the feature keys
+ * come through `window`, so the extractors that share the window (motion_v2
+ * and the GPU twins, motion_window.h) run these statements too. */
+static int motion_flush_one(VmafFeatureCollector *feature_collector,
+                            VmafDictionary *feature_name_dict, const VmafMotionWindow *window,
+                            const char *sad_name, unsigned i, double stamp_value,
+                            double *prev_processed)
 {
+    const unsigned stride = window->motion_five_frame_window ? 2 : 1;
+    const unsigned min_idx = window->motion_five_frame_window ? 2 : 1;
+
     double sad_i;
     vmaf_feature_collector_get_score(feature_collector, sad_name, &sad_i, i);
 
@@ -450,8 +438,8 @@ static int motion_flush_one(VmafFeatureCollector *feature_collector, MotionState
         }
     }
 
-    int append_err = vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "VMAF_integer_feature_motion2_score", motion2, i);
+    int append_err = vmaf_feature_collector_append_with_dict(feature_collector, feature_name_dict,
+                                                             window->motion2_feature, motion2, i);
     if (append_err)
         return append_err;
 
@@ -461,16 +449,56 @@ static int motion_flush_one(VmafFeatureCollector *feature_collector, MotionState
         *prev_processed = stamp_value;
     } else {
         double processed =
-            MIN(motion_blend(motion2, s->motion_blend_factor, s->motion_blend_offset),
-                s->motion_max_val);
-        motion3 = s->motion_moving_average ? (processed + *prev_processed) / 2.0 : processed;
+            MIN(motion_blend(motion2, window->motion_blend_factor, window->motion_blend_offset),
+                window->motion_max_val);
+        motion3 = window->motion_moving_average ? (processed + *prev_processed) / 2.0 : processed;
         *prev_processed = processed;
     }
 
-    append_err = vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "VMAF_integer_feature_motion3_score", motion3, i);
+    append_err = vmaf_feature_collector_append_with_dict(feature_collector, feature_name_dict,
+                                                         window->motion3_feature, motion3, i);
     if (append_err)
         return append_err;
+    return 0;
+}
+
+/* The body of flush() below the feature-name dictionary: upstream's
+ * statements, shared through motion_window.h (ADR-1478). */
+int vmaf_motion_window_flush(VmafFeatureCollector *feature_collector,
+                             VmafDictionary *feature_name_dict, const VmafMotionWindow *window)
+{
+    const VmafDictionaryEntry *sad_entry =
+        vmaf_dictionary_get(&feature_name_dict, window->sad_feature, 0);
+    if (!sad_entry)
+        return -EINVAL;
+    const char *sad_name = sad_entry->val;
+
+    unsigned n = 0;
+    double score;
+    while (!vmaf_feature_collector_get_score(feature_collector, sad_name, &score, n))
+        n++;
+    const unsigned min_idx = window->motion_five_frame_window ? 2 : 1;
+    if (!n)
+        return 0;
+
+    double stamp_value = 0.;
+    if (n > min_idx) {
+        double sad_at_min_idx;
+        if (!vmaf_feature_collector_get_score(feature_collector, sad_name, &sad_at_min_idx,
+                                              min_idx)) {
+            stamp_value = MIN(motion_blend(sad_at_min_idx, window->motion_blend_factor,
+                                           window->motion_blend_offset),
+                              window->motion_max_val);
+        }
+    }
+
+    double prev_processed = 0.;
+    for (unsigned i = 0; i < n; i++) {
+        const int loop_err = motion_flush_one(feature_collector, feature_name_dict, window,
+                                              sad_name, i, stamp_value, &prev_processed);
+        if (loop_err)
+            return loop_err;
+    }
     return 0;
 }
 
@@ -485,44 +513,30 @@ static int flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collec
             return -ENOMEM;
     }
 
-    const VmafDictionaryEntry *sad_entry =
-        vmaf_dictionary_get(&s->feature_name_dict, "VMAF_integer_feature_motion_sad_score", 0);
-    if (!sad_entry)
-        return -EINVAL;
-    const char *sad_name = sad_entry->val;
-
-    unsigned n = 0;
-    double score;
-    while (!vmaf_feature_collector_get_score(feature_collector, sad_name, &score, n))
-        n++;
-    const unsigned stride = s->motion_five_frame_window ? 2 : 1;
-    const unsigned min_idx = s->motion_five_frame_window ? 2 : 1;
-    if (!n) {
-        vmaf_dictionary_free(&s->feature_name_dict);
-        return 1;
-    }
-
-    double stamp_value = 0.;
-    if (n > min_idx) {
-        double sad_at_min_idx;
-        if (!vmaf_feature_collector_get_score(feature_collector, sad_name, &sad_at_min_idx,
-                                              min_idx)) {
-            stamp_value =
-                MIN(motion_blend(sad_at_min_idx, s->motion_blend_factor, s->motion_blend_offset),
-                    s->motion_max_val);
-        }
-    }
-
-    double prev_processed = 0.;
-    for (unsigned i = 0; i < n; i++) {
-        const int loop_err = motion_flush_one(feature_collector, s, sad_name, i, min_idx, stride,
-                                              stamp_value, &prev_processed);
-        if (loop_err)
-            return loop_err;
-    }
+    const VmafMotionWindow window = {
+        .sad_feature = "VMAF_integer_feature_motion_sad_score",
+        .motion2_feature = "VMAF_integer_feature_motion2_score",
+        .motion3_feature = "VMAF_integer_feature_motion3_score",
+        .motion_blend_factor = s->motion_blend_factor,
+        .motion_blend_offset = s->motion_blend_offset,
+        .motion_max_val = s->motion_max_val,
+        .motion_five_frame_window = s->motion_five_frame_window,
+        .motion_moving_average = s->motion_moving_average,
+    };
+    const int err = vmaf_motion_window_flush(feature_collector, s->feature_name_dict, &window);
+    if (err)
+        return err;
 
     vmaf_dictionary_free(&s->feature_name_dict);
     return 1;
+}
+
+/* ADR-1478: the reference picture of frame n-2 is read, and the context
+ * keeps it, only while the five-frame window is on. */
+static bool reads_prev_prev_ref(const VmafFeatureExtractor *fex)
+{
+    const MotionState *s = fex->priv;
+    return s && s->motion_five_frame_window;
 }
 
 static const char *provided_features[] = {
@@ -544,6 +558,7 @@ VmafFeatureExtractor vmaf_fex_integer_motion = {
     .priv_size = sizeof(MotionState),
     .provided_features = provided_features,
     .flags = VMAF_FEATURE_EXTRACTOR_PREV_REF,
+    .reads_prev_prev_ref = reads_prev_prev_ref,
 };
 
 /* NOLINTEND(modernize-use-nullptr) */

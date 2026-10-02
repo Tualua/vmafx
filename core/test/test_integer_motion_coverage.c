@@ -12,8 +12,8 @@
  *    2. extract() with debug=true & default 3-frame window across multiple
  *       frames (drives the second-SAD branch + previous-score accumulation,
  *       lines 510-577).
- *    3. flush() with motion_five_frame_window=true and index<2 — exercises
- *       the under-min-past-frames branch in flush (lines 441-455).
+ *    3. flush() with motion_five_frame_window=true and two frames — exercises
+ *       the under-min-past-frames branch in flush.
  *    4. motion_moving_average=true to flip the moving-average branch in
  *       flush (line 435-437).
  *
@@ -263,53 +263,54 @@ static char *test_motion_moving_average_branch(void)
 }
 
 /* ----------------------------------------------------------------- */
-/* Five-frame window (motion v1 supports it; flush branch with N<2). */
+/* Five-frame window: flush with fewer frames than the window needs. */
 /* ----------------------------------------------------------------- */
 
 static char *test_motion_five_frame_under_min(void)
 {
-    /* ADR-0337: motion_five_frame_window=true is rejected at init() with
-     * -ENOTSUP.  Verify that, then exercise the flush(n<=min_idx) short-
-     * circuit path (lines 403-415 of integer_motion.c) by running a
-     * default-mode extractor with a single frame and flushing immediately.
-     * Default mode: min_idx=1, so flush with n=1 hits the n<=min_idx arm. */
+    /* motion_five_frame_window=true (Netflix a2b59b77, ADR-1478): the SAD
+     * needs frame n-2, so min_idx is 2. Two frames leave flush() with
+     * n <= min_idx: no SAD exists, the stamp value stays 0 and every score
+     * of both frames is 0. The scores of longer sequences are held against
+     * the definition in test_motion_five_frame_window.c. */
     VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion");
     mu_assert("motion extractor missing", fex != NULL);
 
-    /* Part A: five_frame_window rejected at init */
-    {
-        VmafDictionary *opts = NULL;
-        int err = vmaf_dictionary_set(&opts, "motion_five_frame_window", "true", 0);
-        mu_assert("set motion_five_frame_window", err == 0);
+    VmafDictionary *opts = NULL;
+    int err = vmaf_dictionary_set(&opts, "motion_five_frame_window", "true", 0);
+    mu_assert("set motion_five_frame_window", err == 0);
 
-        VmafFeatureExtractorContext *ctx_rej = NULL;
-        err = vmaf_feature_extractor_context_create(&ctx_rej, fex, opts);
-        mu_assert("context_create (rej)", err == 0);
-        err = vmaf_feature_extractor_context_init(ctx_rej, VMAF_PIX_FMT_YUV420P, 8u, MOT_W, MOT_H);
-        mu_assert("init must return -ENOTSUP for five_frame_window", err == -ENOTSUP);
-        (void)vmaf_feature_extractor_context_close(ctx_rej);
-        (void)vmaf_feature_extractor_context_destroy(ctx_rej);
-    }
-
-    /* Part B: default mode, single frame → flush exercises n<=min_idx arm */
     VmafFeatureExtractorContext *ctx = NULL;
     VmafFeatureCollector *fc = NULL;
-    char *msg = motion_fixture_open(fex, &ctx, &fc, NULL);
+    char *msg = motion_fixture_open(fex, &ctx, &fc, opts);
     if (msg)
         return msg;
 
-    VmafPicture ref;
-    VmafPicture dist;
-    msg = alloc_motion_pairs(&ref, &dist, 1, 0x500u, 0, 0x600u, 0);
+    VmafPicture refs[2];
+    VmafPicture dists[2];
+    msg = alloc_motion_pairs(refs, dists, 2, 0x500u, 29u, 0x600u, 31u);
     if (msg)
         return msg;
 
-    int err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, 0, fc);
-    mu_assert("extract frame0", err == 0);
+    msg = motion_extract_with_prev_ref(ctx, fc, refs, dists, 2);
+    if (msg)
+        return msg;
     err = vmaf_feature_extractor_context_flush(ctx, fc);
-    mu_assert("flush single-frame default mode", err >= 0);
+    mu_assert("flush two-frame five-frame-window mode", err >= 0);
 
-    motion_fixture_close(ctx, fc, &ref, &dist, 1);
+    for (unsigned i = 0; i < 2u; ++i) {
+        double m2 = NAN;
+        double m3 = NAN;
+        err = vmaf_feature_collector_get_score(fc, "integer_motion2_mffw", &m2, i);
+        mu_assert("get motion2", err == 0);
+        err = vmaf_feature_collector_get_score(fc, "integer_motion3_mffw", &m3, i);
+        mu_assert("get motion3", err == 0);
+        mu_assert("motion2 below the window must be 0", m2 == 0.);
+        mu_assert("motion3 below the window must be 0", m3 == 0.);
+    }
+
+    motion_fixture_close(ctx, fc, refs, dists, 2);
+    /* opts ownership transferred to ctx and freed by context_destroy. */
     return NULL;
 }
 

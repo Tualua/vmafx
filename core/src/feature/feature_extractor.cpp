@@ -781,6 +781,13 @@ int fail_context_create(VmafFeatureExtractorContext **fex_ctx,
 
 } /* anonymous namespace */
 
+bool vmaf_feature_extractor_reads_prev_prev_ref(const VmafFeatureExtractor *fex)
+{
+    if (!fex || !(fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF) || !fex->reads_prev_prev_ref)
+        return false;
+    return fex->reads_prev_prev_ref(fex);
+}
+
 int vmaf_feature_extractor_context_create(VmafFeatureExtractorContext **fex_ctx,
                                           const VmafFeatureExtractor *fex,
                                           VmafDictionary *opts_dict)
@@ -911,6 +918,28 @@ int check_pic_buf_type(const VmafFeatureExtractor *fex, const VmafPicturePrivate
 
 } /* anonymous namespace */
 
+/* Mirror what libvmaf.c does for PREV_REF extractors after a successful
+ * extract(): advance the window so the next extract() call finds the previous
+ * frame in fex->prev_ref and, for an extractor that reads it (ADR-1478), the
+ * one before it in fex->prev_prev_ref.  The frame that leaves the window is
+ * released, a frame that moves down keeps its count, and the current frame
+ * takes a new count, so ref-counts stay balanced.  An extractor that does not
+ * read frame n-2 keeps only frame n-1, as before ADR-1478.
+ * vmaf_feature_extractor_context_destroy() releases whatever the window still
+ * holds. */
+static void advance_prev_ref_window(VmafFeatureExtractor *fex, VmafPicture *ref)
+{
+    if (vmaf_feature_extractor_reads_prev_prev_ref(fex)) {
+        if (fex->prev_prev_ref.ref)
+            vmaf_picture_unref(&fex->prev_prev_ref);
+        fex->prev_prev_ref = fex->prev_ref;
+        fex->prev_ref = VmafPicture{};
+    } else if (fex->prev_ref.ref) {
+        vmaf_picture_unref(&fex->prev_ref);
+    }
+    vmaf_picture_ref(&fex->prev_ref, ref);
+}
+
 int vmaf_feature_extractor_context_extract(VmafFeatureExtractorContext *fex_ctx, VmafPicture *ref,
                                            VmafPicture *ref_90, VmafPicture *dist,
                                            VmafPicture *dist_90, unsigned pic_index,
@@ -948,16 +977,8 @@ int vmaf_feature_extractor_context_extract(VmafFeatureExtractorContext *fex_ctx,
         vmaf_log(VMAF_LOG_LEVEL_WARNING, "problem with feature extractor \"%s\" at index %d\n",
                  fex_ctx->fex->name, pic_index);
     } else if (fex_ctx->fex->flags & VMAF_FEATURE_EXTRACTOR_PREV_REF) {
-        /* Mirror what libvmaf.c does for PREV_REF extractors: store the
-         * current ref picture as prev_ref so the next extract() call can
-         * access the previous frame via fex->prev_ref.  Called only on
-         * success so a failing frame does not clobber the valid prev_ref.
-         * The previous prev_ref (if any) is released before we take the new
-         * reference so ref-counts stay balanced.  vmaf_feature_extractor_context_destroy()
-         * calls vmaf_picture_unref() on the final prev_ref. */
-        if (fex_ctx->fex->prev_ref.ref)
-            vmaf_picture_unref(&fex_ctx->fex->prev_ref);
-        vmaf_picture_ref(&fex_ctx->fex->prev_ref, ref);
+        /* Only on success, so a failing frame does not clobber a valid window. */
+        advance_prev_ref_window(fex_ctx->fex, ref);
     }
 
 #ifdef HAVE_NVTX
@@ -1069,10 +1090,12 @@ int vmaf_feature_extractor_context_destroy(VmafFeatureExtractorContext *fex_ctx)
         if (fex_ctx->close_required ||
             (fex_ctx->fex->close && fex_ctx->is_initialized && !fex_ctx->is_closed))
             return -EBUSY;
-        /* Release any prev_ref picture reference taken by
-         * vmaf_feature_extractor_context_extract() for PREV_REF extractors. */
+        /* Release the picture references the PREV_REF window of
+         * vmaf_feature_extractor_context_extract() still holds. */
         if (fex_ctx->fex->prev_ref.ref)
             vmaf_picture_unref(&fex_ctx->fex->prev_ref);
+        if (fex_ctx->fex->prev_prev_ref.ref)
+            vmaf_picture_unref(&fex_ctx->fex->prev_prev_ref);
         /* free(NULL) is well-defined per C99 §7.20.3.2 / POSIX free(3);
      * the NULL guard is redundant. CodeQL cpp/guarded-free. */
         free(fex_ctx->fex->priv);

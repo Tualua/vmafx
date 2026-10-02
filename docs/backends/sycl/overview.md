@@ -731,8 +731,11 @@ the deviation:
   `integer_motion2` and `integer_motion3` scores, matching the CPU
   reference semantics and eliminating drift on high-motion content
   (such as 1080p checkerboard pairs).
-  `motion_five_frame_window=true` is rejected with `-ENOTSUP` at
-  `init()` (the 5-deep blur ring is still deferred). The
+  `motion_five_frame_window=true` is left to the CPU: a model or a
+  `--feature motion` that sets it is computed by the CPU `motion` extractor
+  ([Motion, five-frame window](../../metrics/motion.md#five-frame-window)),
+  and `motion_sycl` named directly with it returns `-ENOTSUP` at `init()`
+  (the twin keeps one earlier frame on the device). The
   `motion_add_uv=true` path is independent from motion3 and remains
   **not yet wired through to the SYCL backend** — UV-plane motion
   stays CPU-only. The SYCL `picture_copy()` callsites at

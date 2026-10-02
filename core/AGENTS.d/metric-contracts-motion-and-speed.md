@@ -68,8 +68,10 @@ invariant: MS-SSIM honors enable_lcs; float_motion surfaces extra options; SpEED
   No device-side state is added — motion3 is deterministic scalar
   function of motion2. Two invariants rebase story depends on:
   (1) `motion_five_frame_window=true` returns `-ENOTSUP` at `init()`
-  (5-deep blur ring + second SAD pair are still deferred — never
-  silently fall back to 3-frame path); (2) any Netflix
+  on a twin named directly (twins keep one earlier frame on device — never
+  silently fall back to 3-frame path); the option carries
+  `VMAF_OPT_FLAG_DEFAULT_ONLY`, so a model or `--feature motion` that sets
+  it runs the CPU extractor, which has the window since ADR-1478; (2) any Netflix
   upstream sync touching `motion_blend()` in
   [`motion_blend_tools.h`](../src/feature/motion_blend_tools.h),
   `motion_max_val` clip, or moving-average rule MUST mirror

@@ -2,7 +2,7 @@
 paths:
   - core/src/feature/integer_motion_v2.c
   - core/src/feature/motion_tools.h
-invariant: Motion v2 option-surface parity, five-frame-window rejection, and NEON shift semantics.
+invariant: Motion v2 option-surface parity, five-frame window on prev_prev_ref, and NEON shift semantics.
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Motion v2 Option Surface and NEON Shift Semantics
@@ -22,21 +22,21 @@ invariant: Motion v2 option-surface parity, five-frame-window rejection, and NEO
   help string, touch other; when upstream touches option
   table, port change to **both** extractors. ADR-0141 catches
   drift on next edit.
-- **`motion_v2` rejects `motion_five_frame_window=true`**
-  (fork-local, ADR-0337): `init()` returns `-ENOTSUP` and logs
-  pointer at ADR. 5-frame mode requires `prev_prev_ref`
-  field on `VmafFeatureExtractor` plus `n_threads * 2 + 2`
-  picture-pool sizing in `vmaf_read_pictures` (upstream `a2b59b77`)
-  that conflicts with fork's [ADR-0152](../../../../docs/adr/0152-vmaf-read-pictures-monotonic-index.md)
-  `read_pictures*` decomposition. picture-pool refactor is
-  deferred to its own PR. Mirrors [ADR-0219](../../../../docs/adr/0219-motion3-gpu-coverage.md)
-  §Decision's GPU motion3 `-ENOTSUP` precedent. On rebase: when
-  picture-pool refactor PR lands, flip `-ENOTSUP` guard to
-  `prev_prev_ref` lookup and reinstate `min_idx = 5? 2 : 1`
-  branching in `flush()` (currently collapsed to `min_idx = 1`
-  per ADR-0337's deferral). See
-  [rebase-notes ADR-0337](../../../../docs/rebase-notes.md) for
-  deferred-hunks ledger.
+- **`motion_v2` five-frame window = upstream `a2b59b77`** (ADR-1478, ends
+  ADR-0337 deferral): `motion_five_frame_window=true` -> `extract()` takes
+  SAD of frame n against `fex->prev_prev_ref` (n-2), frames 0 and 1 report 0,
+  `flush()` uses `min_idx = stride = 2` (`motion2_at()`: `min(SAD[n-1],
+  SAD[n+1])`, last frame its own SAD, frame 2 `SAD[3]`). Text = last upstream
+  `integer_motion_v2.c` (`a4a1492d^`; upstream deleted the file in `a4a1492d`,
+  fork keeps the extractor). Same arithmetic as `integer_motion.c`; change one
+  -> change both. Never bring back `-ENOTSUP` in `init()` or a constant
+  `min_idx = 1`. No frame n-2 at index >= 2 -> `-EINVAL`, never an empty
+  picture read. `reads_prev_prev_ref()` answers the option, as in
+  `integer_motion.c` (framework keeps n-2 only for a reader, ADR-1478). GPU twins of `motion_v2` do not declare the option: model
+  dispatch computes it on the CPU (ADR-1359), a twin named with it fails
+  "unknown option". Guards: `core/test/test_motion_five_frame_window.c`
+  (scores against the three-frame SAD of frame pairs (n-2, n), threads, pool
+  of four, twin verdicts), `test_integer_motion_v2_coverage`.
 - **`motion_v2` NEON shift semantics** (fork-local, ADR-0145):
   [`arm64/motion_v2_neon.c`](../arm64/motion_v2_neon.c) uses
   **arithmetic** right-shift throughout (`vshrq_n_s64(v, 16)` for

@@ -20,6 +20,11 @@ DEFAULT_ONLY_OPTIONS = (
     ("sycl/float_adm_sycl.cpp", "adm_csf_mode"),
     ("hip/float_adm_hip.c", "adm_csf_mode"),
     ("metal/float_adm_metal.mm", "adm_csf_mode"),
+    # ADR-1478: the CPU `motion` has the five-frame window; these twins keep
+    # two frames on the device and leave the option to the CPU.
+    ("cuda/integer_motion_cuda.c", "motion_five_frame_window"),
+    ("sycl/integer_motion_sycl.cpp", "motion_five_frame_window"),
+    ("hip/integer_motion_hip.c", "motion_five_frame_window"),
 )
 
 FULL_RANGE_OPTIONS = (("metal/integer_adm_metal.mm", "adm_csf_mode"),)

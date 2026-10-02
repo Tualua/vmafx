@@ -2,39 +2,62 @@
 paths:
   - core/src/libvmaf.c
   - core/src/feature/feature_extractor.cpp
-invariant: PREV_REF batch dispatch unrefs before memset; vmaf_read_pictures owns both pictures on return.
+invariant: PREV_REF window uses counted references, n-2 kept only for a reader; vmaf_read_pictures owns both pictures.
 ---
 <!-- markdownlint-disable MD013 -->
 # Picture ownership, batch dispatch, and SYCL upload synchronization
 
-## PREV_REF batch dispatch: unref before memset, zero f->prev_ref (ADR-1072)
+## PREV_REF window: earlier reference frames, counted references (ADR-1072, ADR-0778, ADR-1478)
 
-`threaded_extract_batch_func` in `libvmaf.c` feeds PREV_REF extractors by
-copying `f->prev_ref` into `fex->prev_ref` via bare struct copy (no
-`vmaf_picture_ref` — VmafRef* is shared, not reference-counted
-separately).  After `vmaf_feature_extractor_context_extract()`:
+Context keeps reference picture of frame n-1 (`vmaf->prev_ref`). Frame n-2
+(`vmaf->prev_prev_ref`; Netflix `a2b59b77`) only while
+`vmaf->keep_prev_prev_ref`: set by `admit_prev_prev_ref()` when a registered
+extractor's `reads_prev_prev_ref()` answers true (`motion` / `motion_v2` with
+`motion_five_frame_window=true`). Netflix keeps n-2 always; fork keeps it only
+for a reader, so without one a context holds exactly what it held before the
+port (deliberate deviation, ADR-1478; no score moves). With keep:
+`read_pictures_update_prev_ref()` unrefs n-2, moves n-1 down with its count,
+refs current frame; without: unref n-1, ref current frame.
+`vmaf_commit_remaining_owners()` releases both.
 
-- **SUCCESS**: PREV_REF SWAP in `feature_extractor.cpp` has decremented
-  old-frame VmafRef (via struct-copy alias) and bumped current
-  frame into `fex->prev_ref` with extra refcount.
-- **ERROR**: `fex->prev_ref` is unchanged (still struct-copy alias).
+Every PREV_REF dispatch path (`batch_extract_one()` on a worker,
+`read_pictures_dispatch_one()` serial, `read_pictures_cuda_submit_current()`)
+hands the extractor its **own counted references** through
+`fex_take_prev_refs()` (n-2 only to a reader) and releases them through
+`fex_release_prev_ref()`.
+Between the two, `vmaf_feature_extractor_context_extract()`:
 
-**In both cases**: call `vmaf_picture_unref(&fex->prev_ref)` before
-`memset(&fex->prev_ref, 0, ...)` to release that counted reference.  Then
-call `memset(&f->prev_ref, 0, ...)` to prevent `unref:` block at
-bottom of function from double-freeing now-consumed VmafRef.
+- **SUCCESS**: PREV_REF swap in `feature_extractor.cpp`: for a reader unrefs
+  `fex->prev_prev_ref`, moves `fex->prev_ref` into it (count kept); for any
+  other extractor unrefs `fex->prev_ref`; then refs the current frame into
+  `fex->prev_ref`.
+- **ERROR**: both fields unchanged.
 
-Bare `memset` without prior unref leaks one picture-pool slot per
-PREV_REF frame, exhausting pool and deadlocking
-`vmaf_picture_pool_fetch` in `pthread_cond_wait` after ~pool_size frames.
+Either way each field holds at most one count afterwards and
+`fex_release_prev_ref()` drops both. A bare `memset` or a struct copy in place
+of take / release leaks one picture-pool slot per frame or frees a picture an
+extractor still reads; pool then deadlocks in `vmaf_picture_pool_fetch()`.
+Worker batch: snapshots `f->prev_ref` / `f->prev_prev_ref` taken before the
+context's window advances, released once by `threaded_extract_batch_func()`
+after every extractor took and balanced its own counts.
 
-Serial path (`read_pictures_dispatch_one`) uses `vmaf_picture_ref` for
-copy (ADR-0778) and already calls `vmaf_picture_unref` before memset;
-these two paths must stay consistent.
+Pool rule (ADR-1478), fail closed, never a stall: with keep, a preallocated
+pool needs `pic_cnt >= VMAF_PICTURE_POOL_MIN_PREV_PREV_REF` (4); whichever of
+`vmaf_preallocate_pictures()` / registration (`vmaf_use_feature()`,
+`vmaf_use_features_from_model()`, ADR-1324 context fallback, test append
+helper) comes second returns -EINVAL with one log line naming `pic_cnt` and
+the minimum. Without keep: no minimum, as before. Default pool
+`n_threads * 2`, `+ 2` with keep (`check_picture_pool()`). CLI
+`thread_cnt > 0 ? (thread_cnt + 1) * 2 + 1 : 4` plus read-ahead
+(`core/tools/vmaf.cpp`): sized before models load, so serial takes 4. A pool
+of 3 with keep would hang on frame 2. Guards: `test_motion_five_frame_window`
+(`test_pool_of_four_pictures`, `test_pool_of_three_without_the_window`,
+`test_pool_below_four_is_refused`), `test_read_pictures_failure_ownership`,
+`test_thread_safety_batch`.
 
-**Rebase-sensitive**: any branch that re-opens or modifies
-`VMAF_FEATURE_EXTRACTOR_PREV_REF` block in `threaded_extract_batch_func`
-must preserve both unref-before-memset and zero-f->prev_ref.
+**Rebase-sensitive**: upstream `libvmaf.c` struct-copies both pictures into
+the extractor and zeroes them after `extract()`. Keep fork's counted
+references; take upstream's window semantics only.
 
 ## `vmaf_read_pictures()` owns both pictures on every return (ADR-1431)
 

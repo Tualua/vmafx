@@ -174,6 +174,20 @@ typedef struct VmafFeatureExtractor {
 
     VmafFrameSyncContext *framesync;
     VmafPicture prev_ref; ///< Previous reference picture, set by framework.
+    /** Reference picture from two frames ago (n-2), set by the framework for
+     *  a VMAF_FEATURE_EXTRACTOR_PREV_REF extractor whose reads_prev_prev_ref()
+     *  answers true; empty before frame 2 and for every other extractor
+     *  (Netflix a2b59b77, ADR-1478). */
+    VmafPicture prev_prev_ref;
+    /**
+     * Optional, for VMAF_FEATURE_EXTRACTOR_PREV_REF extractors: whether this
+     * instance, with the options it was given, reads `prev_prev_ref`. Called
+     * after the options are parsed into `priv`, before init(). The context
+     * keeps the reference picture of frame n-2, and a preallocated picture
+     * pool must then hold at least four pictures, only while a registered
+     * extractor answers true (ADR-1478). NULL means it does not.
+     */
+    bool (*reads_prev_prev_ref)(const struct VmafFeatureExtractor *fex);
 
     /**
      * Per-feature characteristics descriptor — drives the per-backend
@@ -269,6 +283,15 @@ bool vmaf_feature_extractor_supports_options(const VmafFeatureExtractor *fex,
 bool vmaf_feature_extractor_honours_options(const VmafFeatureExtractor *fex,
                                             const VmafDictionary *opts_dict,
                                             const char **unsupported_key);
+
+/**
+ * @brief Whether @p fex reads the reference picture of frame n-2.
+ *
+ * True only for a VMAF_FEATURE_EXTRACTOR_PREV_REF extractor whose
+ * reads_prev_prev_ref() answers true for the options in its `priv`
+ * (ADR-1478). False for NULL.
+ */
+bool vmaf_feature_extractor_reads_prev_prev_ref(const VmafFeatureExtractor *fex);
 
 enum VmafFeatureExtractorContextFlags {
     VMAF_FEATURE_EXTRACTOR_CONTEXT_DO_NOT_OVERWRITE = 1 << 0,

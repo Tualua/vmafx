@@ -251,7 +251,7 @@ typedef struct VmafConfiguration {
 | `vmaf_feature_score_pooled(ctx, name, method, *score, lo, hi)` | 0 / -errno | Pooled feature score. |
 | `vmaf_write_output(ctx, path, fmt)` | 0 / -errno | Write report with the default `%.6f` score format (Netflix-compatible per [ADR-0119](../adr/0119-cli-precision-default-revert.md)). |
 | `vmaf_write_output_with_format(ctx, path, fmt, "%.17g")` | 0 / -errno | Write report with a caller-controlled printf format. Pass `NULL` for the `%.6f` default. Pass `"%.17g"` for IEEE-754 round-trip lossless. Format must take exactly one `double`. |
-| `vmaf_preallocate_pictures(ctx, cfg)` | 0 / -errno | Allocate a reusable picture pool (CPU path; for GPU see [gpu.md](gpu.md)). |
+| `vmaf_preallocate_pictures(ctx, cfg)` | 0 / -errno | Allocate a reusable picture pool (CPU path; for GPU see [gpu.md](gpu.md)). `-EINVAL` below 4 pictures while an extractor that reads frame `n-2` is registered (see below). |
 | `vmaf_fetch_preallocated_picture(ctx, *pic)` | 0 / -errno | Pull a picture from the pool; return it via `vmaf_picture_unref()`. |
 | `vmaf_close(ctx)` | 0 / -errno | Free the context only on exact 0. Any nonzero result retains a teardown-only context that must be passed to `vmaf_close()` again. |
 
@@ -388,6 +388,23 @@ indices 3 to 5 return `-EAGAIN` after the flush.
   ([ADR-1431](../adr/1431-read-pictures-owns-pictures-on-every-return.md)).
   Only a call that has nothing to take returns with the pictures still yours:
   a `NULL` context, or one of the two pictures `NULL` (`-EINVAL`).
+- The context keeps the reference picture of the frame before the current one
+  until the next call. While a registered extractor reads frame `n-2`
+  (`motion` or `motion_v2` with `motion_five_frame_window=true`, which the
+  `vmaf_v1.0.16_hfr_*` models set), it keeps the reference pictures of the
+  two frames before the current one
+  ([ADR-1478](../adr/1478-motion-five-frame-window-port.md)). A pool for
+  `vmaf_preallocate_pictures()` then needs `pic_cnt >= 4`, those two and the
+  current pair. A smaller one is refused: whichever comes second,
+  `vmaf_preallocate_pictures()` or the registration (`vmaf_use_feature()`,
+  `vmaf_use_features_from_model()`), returns `-EINVAL` and logs one error line
+  naming `pic_cnt` and the minimum, so the fetch for the third frame never
+  waits for a picture that does not return. Without such an extractor nothing
+  changed: a pool of three still serves a serial run. With worker threads,
+  `2 * n_threads + 2` keeps every worker supplied while the window is on.
+  Callers that allocate each picture with `vmaf_picture_alloc()` are not
+  affected, beyond one more reference picture staying allocated while the
+  window is on.
 - Stride may differ from `w * bytes_per_sample`. Always use `stride[i]` when
   writing pixel data; do not assume packing.
 - `data[i]` alignment is implementation-defined (currently 64-byte aligned for

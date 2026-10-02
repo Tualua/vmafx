@@ -41,8 +41,10 @@
 #ifndef N_FRAMES
 #define N_FRAMES 8u
 #endif
-/* 2 * (threads + 1) + 1 with no worker threads: the CLI's pool size. */
-#define POOL_PICTURES 3u
+/* The CLI's pool size with no worker threads (core/tools/vmaf.cpp): four, so
+ * that an extractor reading frame n-2 also fits (ADR-1478). The extractors
+ * these fixtures drive need three. */
+#define POOL_PICTURES 4u
 
 /* Bit-depth generic sample writer: an 8-bit value in the high bits and a
  * second pattern in the low (bpc - 8) bits. */

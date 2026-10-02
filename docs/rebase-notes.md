@@ -193,6 +193,56 @@ onto Netflix master's values.
   `test_{cuda,hip,sycl}_exact_twins`, `test_sycl_fp_arith_contract`.
 - Float ADM (`core/src/feature/adm_tools.h`) has its own copy of the
   function; the entry above (ADR-1489) covers it.
+## `motion_five_frame_window` is upstream's again (ADR-1478, 2026-10-02)
+
+`port/upstream-motion-five-frame-window`. Ports Netflix `a2b59b77` (the
+option, `prev_prev_ref`, pool sizing) on top of the fork's port of `a4a1492d`.
+Scores with the option equal Netflix `9e48141b` bit for bit.
+
+- `core/src/feature/integer_motion.c`: `extract()` and the flush statements
+  are upstream's again; the `-ENOTSUP` guard of ADR-0994 is gone. A sync takes
+  upstream's side for the arithmetic. What stays the fork's: the helpers
+  `motion_select_pipeline()`, `motion_flush_one()`, and
+  `vmaf_motion_window_flush()`, which is the body of upstream's `flush()`
+  below the feature-name dictionary, exported through
+  `core/src/feature/motion_window.h`. An upstream change to `flush()` goes
+  into those two functions.
+- `core/src/feature/integer_motion_v2.c`: upstream deleted this file in
+  `a4a1492d`; the fork keeps the extractor. Its `extract()` is upstream's last
+  text (`a4a1492d^`), its flush calls `vmaf_motion_window_flush()`. A change
+  to the window is made once, in `integer_motion.c`.
+- `core/src/feature/feature_extractor.h`: `prev_prev_ref` next to `prev_ref`,
+  as upstream. `core/src/feature/feature_extractor.cpp`: the fork's PREV_REF
+  swap rotates the two fields (upstream has no swap).
+- `core/src/libvmaf.c`: `VmafContext::prev_prev_ref`, rotated in
+  `read_pictures_update_prev_ref()`, released in
+  `vmaf_commit_remaining_owners()`. Upstream copies the two pictures into the
+  extractor as structs and zeroes them after `extract()`; the fork hands out
+  counted references (`fex_take_prev_refs()` / `fex_release_prev_ref()`,
+  ADR-0778) at the three dispatch sites and in the worker job
+  (`batch_job_take_pictures()`). Keep the fork's side of every such hunk and
+  take only what upstream changes about which frames are kept.
+- Deliberate deviation (ADR-1478): upstream keeps frame n-2 in every run and
+  sizes `check_picture_pool()` as `n_threads * 2 + 2`. The fork keeps it only
+  while a registered extractor's `reads_prev_prev_ref()` answers true
+  (`VmafContext::keep_prev_prev_ref`, set by `admit_prev_prev_ref()`), adds
+  the `+ 2` only then, and refuses a preallocated pool below four pictures
+  next to such an extractor with `-EINVAL`. A sync keeps the fork's side of
+  `read_pictures_update_prev_ref()`, `check_picture_pool()`,
+  `vmaf_preallocate_pictures()` and the PREV_REF swap.
+- `core/tools/vmaf.cpp`: pool of `thread_cnt > 0 ? (thread_cnt + 1) * 2 + 1 : 4`
+  pictures (upstream's expression) plus the fork's read-ahead pictures; the
+  serial four is needed because the tool sizes the pool before the models
+  load.
+- `python/test/feature_extractor_test.py`,
+  `python/test/vmaf_v1_quality_runner_test.py`: the 13 `@unittest.skip`
+  lines the fork added for this option are gone; the files differ from
+  upstream by formatting only in those tests. A sync must not bring a skip
+  back.
+- GPU twins: `motion_five_frame_window` carries `VMAF_OPT_FLAG_DEFAULT_ONLY`
+  on `motion_cuda`, `motion_sycl` and `motion_hip` until the twin has the
+  window (`core/test/test_gpu_option_value_capability_contract.py` lists
+  them); the `-ENOTSUP` in their `init()` stays with the flag.
 
 ## Agent pages name the staged CUDA VIF kernels and the HIP handle header (2026-10-02)
 

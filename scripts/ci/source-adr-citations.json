@@ -649,8 +649,6 @@
     },
     "0152": {
       "sites": {
-        "core/src/feature/integer_motion.c": 1,
-        "core/src/feature/integer_motion_v2.c": 1,
         "core/src/libvmaf.c": 2,
         "core/test/meson.build": 1,
         "core/test/test_read_pictures_monotonic.c": 1
@@ -1346,8 +1344,6 @@
       "sites": {
         "core/src/feature/cuda/integer_motion_cuda.c": 5,
         "core/src/feature/hip/integer_motion_hip.c": 2,
-        "core/src/feature/integer_motion.c": 1,
-        "core/src/feature/integer_motion_v2.c": 1,
         "core/src/feature/sycl/integer_motion_sycl.cpp": 5,
         "core/test/meson.build": 2,
         "core/test/test_hip_motion3_parity.c": 1,
@@ -2491,14 +2487,9 @@
         "core/src/feature/cuda/integer_motion_v2_cuda.c": 3,
         "core/src/feature/feature_extractor.cpp": 1,
         "core/src/feature/hip/integer_motion_v2_hip.c": 3,
-        "core/src/feature/integer_motion.c": 3,
-        "core/src/feature/integer_motion_v2.c": 4,
         "core/src/feature/metal/integer_motion_v2_metal.mm": 3,
         "core/src/feature/sycl/integer_motion_v2_sycl.cpp": 1,
-        "core/test/test_integer_motion_coverage.c": 1,
-        "core/test/test_integer_motion_v2_coverage.c": 2,
-        "python/test/feature_extractor_test.py": 9,
-        "python/test/vmaf_v1_quality_runner_test.py": 4
+        "core/test/test_integer_motion_v2_coverage.c": 2
       },
       "target": "0337-motion-v2-public-api-options.md"
     },
@@ -4624,7 +4615,7 @@
     },
     "0778": {
       "sites": {
-        "core/src/libvmaf.c": 3,
+        "core/src/libvmaf.c": 4,
         "core/src/picture_pool.c": 2,
         "core/src/picture_pool.cpp": 2
       },
@@ -6407,6 +6398,7 @@
         "core/test/test_moment_simd.c": 1,
         "core/test/test_motion_avx512_parity.c": 1,
         "core/test/test_motion_convolution_oob.c": 1,
+        "core/test/test_motion_five_frame_window.c": 1,
         "core/test/test_motion_min_dim.c": 1,
         "core/test/test_motion_neon.c": 1,
         "core/test/test_motion_pipeline_neon.c": 1,
@@ -7662,6 +7654,9 @@
     },
     "1316": {
       "sites": {
+        "core/src/feature/cuda/integer_motion_cuda.c": 1,
+        "core/src/feature/hip/integer_motion_hip.c": 1,
+        "core/src/feature/sycl/integer_motion_sycl.cpp": 1,
         "core/src/libvmaf.c": 2,
         "core/src/opt.h": 1
       },
@@ -8015,6 +8010,7 @@
         "core/test/test_feature_backend_twin.c": 1,
         "core/test/test_feature_extractor.c": 1,
         "core/test/test_hip_ssimulacra2_parity.c": 2,
+        "core/test/test_motion_five_frame_window.c": 1,
         "core/test/test_sycl_ssimulacra2_parity.c": 1,
         "core/tools/cli_feature_backend.cpp": 1,
         "core/tools/cli_feature_backend.h": 1,
@@ -9518,6 +9514,27 @@
         "core/test/test_sycl_ciede_exact_contract.py": 4
       },
       "target": "1476-ciede-upstream-expression.md"
+    },
+    "1478": {
+      "sites": {
+        "core/src/feature/cuda/integer_motion_cuda.c": 2,
+        "core/src/feature/feature_extractor.cpp": 2,
+        "core/src/feature/feature_extractor.h": 3,
+        "core/src/feature/hip/integer_motion_hip.c": 1,
+        "core/src/feature/integer_motion.c": 2,
+        "core/src/feature/integer_motion_v2.c": 2,
+        "core/src/feature/motion_window.h": 1,
+        "core/src/feature/sycl/integer_motion_sycl.cpp": 1,
+        "core/src/libvmaf.c": 7,
+        "core/test/hip_pooled_fixture.h": 1,
+        "core/test/meson.build": 1,
+        "core/test/test_gpu_option_value_capability_contract.py": 1,
+        "core/test/test_integer_motion_coverage.c": 1,
+        "core/test/test_integer_motion_v2_coverage.c": 2,
+        "core/test/test_motion_five_frame_window.c": 1,
+        "core/tools/vmaf.cpp": 1
+      },
+      "target": "1478-motion-five-frame-window-port.md"
     },
     "1488": {
       "sites": {

@@ -155,10 +155,14 @@ static const VmafOption options[] = {
      .offset = offsetof(MotionStateHip, motion_max_val), .type = VMAF_OPT_TYPE_DOUBLE,
      .default_val.d = MOTION_HIP_DEFAULT_MAX_VAL, .min = 0.0, .max = 10000.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    /* Default only (ADR-1316): the twin keeps two frames on the device. A
+     * model or --feature that sets it is computed by the CPU `motion`
+     * (ADR-1478); naming this twin with it fails in init(). */
     {.name = "motion_five_frame_window", .alias = "mffw",
-     .help = "use five-frame temporal window (NOT YET SUPPORTED on HIP — deferred)",
+     .help = "use five-frame temporal window (not on HIP: computed by the CPU extractor)",
      .offset = offsetof(MotionStateHip, motion_five_frame_window), .type = VMAF_OPT_TYPE_BOOL,
-     .default_val.b = false, .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+     .default_val.b = false,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM | VMAF_OPT_FLAG_DEFAULT_ONLY},
     {.name = "motion_moving_average", .alias = "mma",
      .help = "use moving average for motion3 scores after first frame",
      .offset = offsetof(MotionStateHip, motion_moving_average), .type = VMAF_OPT_TYPE_BOOL,
@@ -345,8 +349,8 @@ static int msh_check_config(const MotionStateHip *s, unsigned w, unsigned h)
     /* Reject 5-frame window: same as CUDA twin (ADR-0219). */
     if (s->motion_five_frame_window) {
         vmaf_log(VMAF_LOG_LEVEL_WARNING,
-                 "motion_hip: motion_five_frame_window=true is not yet supported on HIP "
-                 "(T3-15(c) deferred). Use the CPU extractor `motion` instead.\n");
+                 "motion_hip: motion_five_frame_window=true is not yet supported on HIP. "
+                 "Use the CPU extractor `motion` instead.\n");
         return -ENOTSUP;
     }
 

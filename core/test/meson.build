@@ -4234,6 +4234,20 @@ test_read_pictures_failure_ownership = executable('test_read_pictures_failure_ow
 test('test_read_pictures_failure_ownership', test_read_pictures_failure_ownership,
     suite : ['fast'])
 
+# ADR-1478 / Netflix a2b59b77 — motion_five_frame_window on the CPU extractors
+# motion and motion_v2: the SAD against frame n-2 (prev_prev_ref), motion2 and
+# motion3 over the five-frame window, serial and on worker threads, and a
+# picture pool of four pictures.
+test_motion_five_frame_window = executable('test_motion_five_frame_window',
+    ['test.c', 'test_motion_five_frame_window.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : [vmaf_cflags_common, '-DJSON_MODEL_PATH="'+join_paths(meson.project_source_root(), '../model/')+'"'],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, thread_lib],
+)
+test('test_motion_five_frame_window', test_motion_five_frame_window,
+    suite : ['fast'])
+
 # Regression: validate_pic_params bpc check used && instead of || — ref/dist
 # bpc mismatch was silently accepted on frame 0 (Fable finding
 # libvmaf-bpc-validation-and-or).
