@@ -74,6 +74,18 @@ test('test_sycl_aot_image_check',
     timeout : 30,
 )
 
+# ADR-1468: a SYCL kernel may require only a sub-group size every target of
+# the default sycl_icpx_aot_targets list accepts (16 or 32; Xe2 has no 8).
+# Device-free and compiler-free: it reads the option's default, the check in
+# sycl_compat.h and every size the SYCL sources require. The compile itself is
+# test_sycl_aot_default_targets (suite sycl-aot), further down.
+test('test_sycl_sub_group_size_contract',
+    import('python').find_installation(),
+    args : files('test_sycl_sub_group_size_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-1364: the cross-backend gates read vmaf's JSON by the alias.c name.
 test('test_parity_gate_metric_names',
     import('python').find_installation(),
@@ -4489,6 +4501,25 @@ test_sycl_kernel_registration = executable('test_sycl_kernel_registration',
 )
 test('test_sycl_kernel_registration', test_sycl_kernel_registration,
     suite : ['fast', 'sycl'])
+
+# ADR-1468: every SYCL translation unit of this build compiles ahead of time
+# for every target of the default sycl_icpx_aot_targets list, whatever list
+# this build was configured with (a lane build compiles for one device or for
+# none, and so never saw a kernel that only an Xe2 target rejects). Needs
+# ocloc and no device; skips (77) without ocloc. It runs ocloc for 19 targets
+# per unit, minutes in all, so it is not in `fast`:
+#     meson test -C <build> --suite sycl-aot
+# VMAF_SYCL_AOT_JOBS sets its parallel compiles (default 4).
+if not is_sycl_acpp
+    test('test_sycl_aot_default_targets',
+        import('python').find_installation(),
+        args : [files('test_sycl_aot_default_targets.py'),
+                '--build-dir', meson.project_build_root()],
+        suite : ['slow', 'sycl-aot'],
+        is_parallel : false,
+        timeout : 3600,
+    )
+endif
 
 # ADR-1367: device fp32 arithmetic of the SYCL feature line. The probe TU is
 # compiled with the extractors' own arguments (sycl_toolchain_args +

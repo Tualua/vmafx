@@ -58328,3 +58328,28 @@ ADR-1403 unchanged.
   master's side of that file, put the added text into the page whose
   `Touching` row matches the files, then `make docs-fragments-write`.
 - No Netflix golden-data, public API or FFmpeg patch impact.
+## SYCL kernels require sub-group size 16 or 32 (ADR-1468, 2026-10-02)
+
+`fix/sycl-aot-xe2-subgroup-size`, `T-SYCL-AOT-XE2-SUB-GROUP-SIZE-8-2026-10-02`.
+
+- `core/src/feature/sycl/sycl_compat.h`: `VmafSyclSubGroupSize<N>`
+  static_asserts `N == 16 || N == 32`; `VMAF_SYCL_REQD_SG_SIZE(N)` and
+  `VmafSyclKernelShape<SG, GRF>` go through it. A rebase that brings a
+  kernel with size 8, or a raw sub-group attribute or property, fails to
+  compile or fails `core/test/test_sycl_sub_group_size_contract.py`: set the
+  kernel to 16 and re-measure it (scratch audit, parity test).
+- `float_motion_sycl.cpp`, `float_adm_sycl.cpp`, `float_vif_sycl.cpp`
+  (row kernels), `ssimulacra2_sycl.cpp` (`SS2S_WALK_SG`),
+  `core/test/test_sycl_float_adm_math_probe.cpp` and
+  `core/test/test_sycl_ordered_sum_probe.cpp`: 8 became 16; the probe's
+  work-group is 16 items so that the walk stays alone in its sub-group.
+- `core/test/sycl_aot_targets.py` (new): the default targets and the
+  measured sizes per family. A target added to `sycl_icpx_aot_targets` in
+  `core/meson_options.txt` needs an entry.
+- `core/test/test_sycl_sub_group_size_contract.py` (new, suite `fast`) and
+  `core/test/test_sycl_aot_default_targets.py` (new, suite `sycl-aot`,
+  registered in `core/test/meson.build` for icpx builds). The second reads
+  the SYCL compile commands from `build.ninja`; if the way
+  `core/src/meson.build` spells them changes (`-fsycl`, the `-device` list,
+  `-MD -MF`, `-o`), its `for_targets()` changes with it.
+- No score, public C API, Netflix golden-data or FFmpeg patch impact.

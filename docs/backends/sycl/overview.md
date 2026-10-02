@@ -411,6 +411,64 @@ compiler cache drops from 524 ms to 201 ms (UHD 770: 609 ms to 245 ms).
 Per-frame speed and scores are unchanged: with a warm cache the SPIR-V build
 starts as fast, and AOT and JIT scores are bit-identical.
 
+### Sub-group sizes and the AOT targets (ADR-1468)
+
+A kernel can require a sub-group size (how many work-items one hardware
+thread runs as SIMD lanes). Not every GPU generation offers every size, and a
+kernel that requires one a target lacks does not compile for it. Because all
+kernels of a source file are compiled together, that one kernel fails the
+file, and with the default target list the build:
+
+```text
+[lnl-m] error: in kernel '...': Kernel compiled with required subgroup size 8,
+which is unsupported on this platform
+```
+
+What the targets of the default list accept, measured with `ocloc`:
+
+| Targets | 8 | 16 | 32 |
+|---|---|---|---|
+| `tgllp`, `adl-*`, `rpl-*` (Xe-LP) | yes | yes | yes |
+| `dg2-*`, `acm-*` (Arc A-series) | yes | yes | yes |
+| `mtl-*`, `arl-*` (Xe-LPG) | yes | yes | yes |
+| `lnl-m`, `bmg-g21`, `bmg-g31` (Xe2: Lunar Lake, Arc B-series) | no | yes | yes |
+
+So a kernel of this backend requires 16 or 32, nothing else
+([ADR-1468](../../adr/1468-sycl-sub-group-sizes-every-aot-target.md)).
+`sycl_compat.h` enforces it at compile time: `VMAF_SYCL_REQD_SG_SIZE(8)` or
+`VmafSyclKernelShape<8, ...>` is a compile error in every configuration,
+including a build for a single device or with an empty target list.
+
+Six kernels required 8 until 2026-10-02 (the row sums of `float_motion_sycl`,
+`float_adm_sycl` and `float_vif_sycl`, the sum walk of `ssimulacra2_sycl`
+and two test probes), and the default build, which the dev container image
+uses, failed from the first of them on. They require 16 now. On an Arc A380
+their scores are unchanged bit for bit, none uses scratch memory, and a
+3840x2160 frame takes at most 2 % longer (`float_motion_sycl` 4.27 ms instead
+of 4.18). Whether they are scratch-free and exact at 16 on Xe2 and on
+integrated GPUs has not been measured
+(`T-SYCL-ROW-KERNELS-SG16-OTHER-DEVICES-2026-10-02` in
+[`state.md`](../../state.md)); a build with an empty target list had the same
+defect on an Xe2 device at run time, where the runtime compiler refuses the
+kernel.
+
+A build configured for one device does not compile for the others, so two
+tests stand in for the default build:
+
+```bash
+# No compiler, no device (suite fast): every size the sources require is one
+# every default target accepts.
+python3 core/test/test_sycl_sub_group_size_contract.py
+
+# Needs ocloc, no device (suite sycl-aot): compiles every SYCL source file of
+# this build for all 19 default targets, whatever list the build was
+# configured with. Minutes; VMAF_SYCL_AOT_JOBS sets the parallel compiles.
+meson test -C build --suite sycl-aot
+```
+
+Run the second one before pushing a change to a SYCL kernel from a build that
+is not configured with the default list.
+
 ### Adjusting the target list
 
 Override the default at configure time with `-Dsycl_icpx_aot_targets=`:
@@ -1234,8 +1292,10 @@ The row pass reads both blurred planes a second time. Through the `vmaf`
 tool on the A380 that costs 0.38 ms per 3840x2160 frame (3.85 to 4.23 ms,
 medians of 25 paired 200-frame runs; the untouched `float_psnr_sycl` read
 3.37 and 3.38) and 0.07 ms per 576x324 frame (0.15 to 0.22). The kernel
-requests a sub-group size of 8, the fastest of the exact shapes measured
-(the ADR lists them).
+requested a sub-group size of 8, the fastest of the exact shapes measured
+(the ADR lists them); it requires 16 since 2026-10-02, because Xe2 devices
+do not compile a kernel that requires 8
+([below](#sub-group-sizes-and-the-aot-targets-adr-1468)).
 
 The parity gate compares this twin with tolerance 0
 ([cross-backend gate](../../development/cross-backend-gate.md)). The twin

@@ -174,7 +174,7 @@ void run_scale_host(const VmafTestFadmScale &s, float *terms)
 }
 
 /* The three kernels in the extractor's launch shapes: 16x16 tiles for the
- * decouple, a plain range for the terms, sub-group size 8 for the rows. */
+ * decouple, a plain range for the terms, sub-group size 16 for the rows. */
 void launch_scale(sycl::queue &q, const VmafTestFadmScale &s, const ScaleBuffers &b)
 {
     const ScaleSizes n = sizes_of(s);
@@ -197,7 +197,7 @@ void launch_scale(sycl::queue &q, const VmafTestFadmScale &s, const ScaleBuffers
     const RowArgs rows = row_args(s, b);
     q.parallel_for(sycl::range<1>((size_t)kTermSlots * n.region_h),
                    [=](sycl::id<1> id)
-                       VMAF_SYCL_REQD_SG_SIZE(8) { vmaf_sycl_fadm::row_item(rows, id[0]); });
+                       VMAF_SYCL_REQD_SG_SIZE(16) { vmaf_sycl_fadm::row_item(rows, id[0]); });
     q.wait_and_throw();
 }
 

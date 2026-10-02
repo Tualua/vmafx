@@ -168,7 +168,7 @@ template <typename T> class DeviceBlock
 
 /* The walk in a kernel, shaped as the extractor's: one sum on the first lane
  * of a work-group of its own. */
-class WalkKernel : public VmafSyclKernelShape<8, 0>
+class WalkKernel : public VmafSyclKernelShape<16, 0>
 {
   public:
     WalkKernel(const SumWalk &walk, const uint64_t *terms, uint64_t *out)
@@ -176,7 +176,8 @@ class WalkKernel : public VmafSyclKernelShape<8, 0>
     {
     }
 
-    VMAF_SYCL_FUNCTOR_SG_SIZE(8) __attribute__((flatten)) void operator()(sycl::nd_item<1> it) const
+    VMAF_SYCL_FUNCTOR_SG_SIZE(16)
+    __attribute__((flatten)) void operator()(sycl::nd_item<1> it) const
     {
         if (it.get_local_id(0) != 0u) {
             return;
@@ -208,7 +209,7 @@ uint64_t walk_on_device(sycl::queue &q, const VmafTestOrdsumCase &c, const Stage
                           .run_units = run_units.get(),
                           .chunks = s.chunks,
                           .count = c.count};
-    q.parallel_for(sycl::nd_range<1>(8, 8), WalkKernel(walk, terms.get(), out.get()));
+    q.parallel_for(sycl::nd_range<1>(16, 16), WalkKernel(walk, terms.get(), out.get()));
     q.wait_and_throw();
     uint64_t sum = 0u;
     q.memcpy(&sum, out.get(), sizeof(sum));

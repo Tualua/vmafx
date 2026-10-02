@@ -1164,3 +1164,4 @@
 1458-hip-float-adm-cpu-arithmetic
 1462-cuda-vif-reads-host-log2-table
 1459-speed-cov-kernel-exact
+1468-sycl-sub-group-sizes-every-aot-target

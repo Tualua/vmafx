@@ -24,11 +24,30 @@ sycl/
 - **Intel-specific kernel attributes go through
   `core/src/feature/sycl/sycl_compat.h`** (ADR-0335).
   `VMAF_SYCL_REQD_SG_SIZE(N)` macro expands to
-  `[[intel::reqd_sub_group_size(N)]]` under icpx, no-op under
+  `[[sycl::reqd_sub_group_size(N)]]` under icpx, no-op under
   AdaptiveCpp. New kernel sites needing Intel-specific attribute -> add
   new macro to `sycl_compat.h`, do not hard-code attribute. **On
   rebase**: upstream cherry-pick bringing bare `[[intel::*]]` attribute
   on SYCL kernel lambda -> wrap in compat macro before merging.
+- **Required sub-group size = 16 or 32, never 8
+  ([ADR-1468](../../../docs/adr/1468-sycl-sub-group-sizes-every-aot-target.md)).**
+  Default build AOT-compiles every kernel for 19 targets
+  (`sycl_icpx_aot_targets`); Xe2 (`lnl-m`, `bmg-g21`, `bmg-g31`) accepts 16
+  and 32 only; one kernel requiring 8 fails its whole TU there ("Kernel
+  compiled with required subgroup size 8, which is unsupported on this
+  platform") = dev container image does not build (happened: #1703, one
+  day). Lane builds (`-Dsycl_icpx_aot_targets=` or one device) never
+  compile for Xe2 -> do not see it. Guards: `VmafSyclSubGroupSize<N>`
+  static_assert in `sycl_compat.h` (any configuration);
+  `core/test/test_sycl_sub_group_size_contract.py` (fast, device-free;
+  also rejects raw `reqd_sub_group_size(` / `sub_group_size<` outside
+  the header); `meson test --suite sycl-aot`
+  (`test_sycl_aot_default_targets.py`: every TU of the build for the full
+  default list, ocloc, no device). Run the suite before pushing a kernel
+  change from a JIT-only or single-target build. New target in the
+  default list -> measure its sizes
+  (`core/test/sycl_aot_targets.py::ocloc_accepts`) and add its family.
+  Narrow shape wanted (row kernels: one work-item per row) -> 16.
 - **Experimental flags enabled**: `-fsycl-unnamed-lambda`,
   `-fsycl-allow-func-ptr`, `-fsycl-device-code-split=per_kernel`. See
   [ADR-0027](../../../docs/adr/0027-non-conservative-image-pins.md).

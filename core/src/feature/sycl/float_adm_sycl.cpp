@@ -388,13 +388,14 @@ static sycl::event launch_terms(sycl::queue &q, const vmaf_sycl_fadm::TermArgs &
 }
 
 /* Stage 4 — one work-item per (slot, row) adds that row's terms left to right
- * in fp32, the reference's per-row accumulator. Sub-group size 8: the lanes
- * of a hardware thread are rows, and the pass is bound by reading the terms. */
+ * in fp32, the reference's per-row accumulator. Sub-group size 16: the lanes
+ * of a hardware thread are rows, the pass is bound by reading the terms, and
+ * 16 is the narrowest size every AOT target accepts (ADR-1468). */
 static sycl::event launch_row_sums(sycl::queue &q, const vmaf_sycl_fadm::RowArgs &args)
 {
     const size_t count = (size_t)vmaf_sycl_fadm::kTermSlots * args.region_h;
     return q.submit([&](sycl::handler &cgh) {
-        cgh.parallel_for(sycl::range<1>(count), [=](sycl::id<1> id) VMAF_SYCL_REQD_SG_SIZE(8) {
+        cgh.parallel_for(sycl::range<1>(count), [=](sycl::id<1> id) VMAF_SYCL_REQD_SG_SIZE(16) {
             vmaf_sycl_fadm::row_item(args, id[0]);
         });
     });

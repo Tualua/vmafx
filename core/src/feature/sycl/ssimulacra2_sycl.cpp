@@ -118,7 +118,9 @@ constexpr int SS2S_UNITS_SG = 16;
 constexpr int SS2S_UNITS_GRF = 0;
 constexpr int SS2S_SLOT_SG = 16;
 constexpr int SS2S_SLOT_GRF = 256;
-constexpr int SS2S_WALK_SG = 8;
+/* The walk runs on one lane; 16 is the narrowest sub-group every AOT target
+ * accepts (ADR-1468). */
+constexpr int SS2S_WALK_SG = 16;
 constexpr int SS2S_WALK_GRF = 0;
 constexpr double SS2S_SIGMA = 1.5;
 constexpr float SS2S_C2 = 0.0009f; /* ssimulacra2.c kC2 */

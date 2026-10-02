@@ -598,6 +598,17 @@ linked AGENTS.md before resolving conflicts.
   extractor keeps them bit-identical; a twin that drifts is fixed, never
   given a tolerance or taken off the list.
 
+- **SYCL kernels require sub-group size 16 or 32 ([ADR-1468](../adr/1468-sycl-sub-group-sizes-every-aot-target.md))**:
+  the default build compiles every kernel ahead of time for the 19 targets
+  of `sycl_icpx_aot_targets`, and the Xe2 targets do not compile a kernel
+  that requires 8. `core/src/feature/sycl/sycl_compat.h` rejects another
+  size at compile time (`VmafSyclSubGroupSize`); a rebase must not bring a
+  raw `[[sycl::reqd_sub_group_size(N)]]` or `sub_group_size<N>` into a
+  kernel, nor a size 8. `core/test/test_sycl_sub_group_size_contract.py`
+  (device-free) and `core/test/test_sycl_aot_default_targets.py` (suite
+  `sycl-aot`, compiles every SYCL translation unit for the full default
+  list) guard it; `core/test/sycl_aot_targets.py` holds the measured sizes
+  per target family and needs an entry for a target added to the list.
 - **SYCL twins declared exact as a group ([ADR-1451](../adr/1451-sycl-exact-twins-declared.md))**:
   `scripts/ci/exact_twins.d/{adm,motion,motion_debug,motion_v2,psnr,float_ssim,float_ssim_lcs,cambi}.sycl`
   make the parity gate compare those cells with tolerance 0, and

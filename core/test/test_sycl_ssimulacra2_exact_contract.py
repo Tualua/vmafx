@@ -96,7 +96,7 @@ SHAPES = (
     "constexpr int SS2S_UNITS_GRF = 0;",
     "constexpr int SS2S_SLOT_SG = 16;",
     "constexpr int SS2S_SLOT_GRF = 256;",
-    "constexpr int SS2S_WALK_SG = 8;",
+    "constexpr int SS2S_WALK_SG = 16;",
     "constexpr int SS2S_WALK_GRF = 0;",
 )
 SHAPED_KERNELS = (

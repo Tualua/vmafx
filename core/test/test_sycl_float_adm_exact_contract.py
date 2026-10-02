@@ -205,7 +205,7 @@ def _reduction_failures(math: str, twin: str) -> list[str]:
         failures.append("a group reduction adds in another order than the reference's rows")
     launch = _function_body(twin, "launch_row_sums")
     if (
-        "VMAF_SYCL_REQD_SG_SIZE(8)" not in launch
+        "VMAF_SYCL_REQD_SG_SIZE(16)" not in launch
         or "vmaf_sycl_fadm::row_item(args, id[0]);" not in launch
     ):
         failures.append(f"{TWIN}: the row kernel must run row_item() per (slot, row)")

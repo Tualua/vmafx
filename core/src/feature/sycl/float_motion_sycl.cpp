@@ -282,19 +282,21 @@ static sycl::event launch_float_motion(sycl::queue &q, const FmKernelArgs &args)
 
 /* One work-item per row; `row_sad` receives `height` sums.
  *
- * Sub-group size 8: the lanes of a hardware thread are rows, so each loop
+ * Sub-group size 16: the lanes of a hardware thread are rows, so each loop
  * step is two gathers, and the pass is bound by reading both blurred planes
  * again. Narrow sub-groups put more threads on that. Measured on an Arc A380
  * at 3840x2160 (ADR-1411), time of this kernel per frame: 0.70 ms at 8,
- * 0.82 at 16, 1.12 at the compiler's choice (32). Two other exact shapes
- * were no faster: a sub-group of 16 consecutive pixels per row summed lane
- * by lane with select_from_group() (1.10 ms), and one work-group per row
- * with 16-wide loads and a lane-uniform chain (0.80 ms). */
+ * 0.82 at 16, 1.12 at the compiler's choice (32). 8 is not available: Xe2
+ * targets of the default AOT list do not compile a kernel that requires it
+ * (ADR-1468), so 16 is the narrowest size every target takes. Two other
+ * exact shapes were no faster: a sub-group of 16 consecutive pixels per row
+ * summed lane by lane with select_from_group() (1.10 ms), and one work-group
+ * per row with 16-wide loads and a lane-uniform chain (0.80 ms). */
 static sycl::event launch_float_motion_row_sad(sycl::queue &q, const FmRowSadArgs &args)
 {
     return q.submit([&](sycl::handler &cgh) {
         cgh.parallel_for(sycl::range<1>(args.height),
-                         [=](sycl::id<1> row) VMAF_SYCL_REQD_SG_SIZE(8) {
+                         [=](sycl::id<1> row) VMAF_SYCL_REQD_SG_SIZE(16) {
                              args.row_sad[row[0]] = fm_row_sad(args, row[0]);
                          });
     });

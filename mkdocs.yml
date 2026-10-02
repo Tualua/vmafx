@@ -1572,6 +1572,7 @@ nav:
         - "ADR-1459: speed-cov-kernel-exact": adr/1459-speed-cov-kernel-exact.md
         - "ADR-1460: gate-speed-temporal-and-uncovered-twins": adr/1460-gate-speed-temporal-and-uncovered-twins.md
         - "ADR-1462: cuda-vif-reads-host-log2-table": adr/1462-cuda-vif-reads-host-log2-table.md
+        - "ADR-1468: sycl-sub-group-sizes-every-aot-target": adr/1468-sycl-sub-group-sizes-every-aot-target.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

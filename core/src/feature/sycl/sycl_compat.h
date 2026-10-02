@@ -29,11 +29,15 @@
  *  ## Macros
  *
  *    VMAF_SYCL_REQD_SG_SIZE(N)
- *      Expands to `[[intel::reqd_sub_group_size(N)]]` under icpx, and
+ *      Expands to `[[sycl::reqd_sub_group_size(N)]]` under icpx, and
  *      to nothing under AdaptiveCpp. Per the AdaptiveCpp documentation
  *      (https://adaptivecpp.github.io/AdaptiveCpp/), sub-group size is
  *      determined per backend at JIT time and a hard hint is rejected;
  *      omitting the attribute lets AdaptiveCpp pick the natural size.
+ *      N must be 16 or 32 (VmafSyclSubGroupSize, ADR-1468): the sizes
+ *      every target of the default AOT list accepts. A kernel that
+ *      requires 8 does not compile for Xe2 (lnl-m, bmg-g21, bmg-g31),
+ *      and one such kernel fails its whole translation unit.
  *
  *    VmafSyclKernelShape<SG, GRF>  (ADR-1395)
  *      Base class for a kernel functor that needs the large register
@@ -60,11 +64,33 @@
 #ifndef VMAF_SRC_FEATURE_SYCL_SYCL_COMPAT_H_
 #define VMAF_SRC_FEATURE_SYCL_SYCL_COMPAT_H_
 
+/* ADR-1468: the sub-group sizes a kernel may require. icpx compiles every
+ * kernel ahead of time for each target of sycl_icpx_aot_targets
+ * (core/meson_options.txt), and a target that does not support a required
+ * size fails the kernel, which fails the translation unit and the build:
+ *
+ *     [lnl-m] error: in kernel '...': Kernel compiled with required subgroup
+ *     size 8, which is unsupported on this platform
+ *
+ * Measured with ocloc 26.35 (`intel_reqd_sub_group_size` on a one-line
+ * kernel, per target): tgllp, adl-*, rpl-*, dg2-*, acm-*, mtl-* and arl-*
+ * accept 8, 16 and 32; lnl-m, bmg-g21 and bmg-g31 (Xe2) and ptl-h (Xe3)
+ * accept 16 and 32 only. 16 and 32 are the sizes every listed target takes.
+ * The check is in the type, so a build that compiles for one device or for
+ * none (a JIT-only build) rejects another size too.
+ * core/test/test_sycl_sub_group_size_contract.py repeats the measurement
+ * where ocloc is installed. */
+template <int N> struct VmafSyclSubGroupSize {
+    static_assert(N == 16 || N == 32, "a required sub-group size must be 16 or 32: Xe2 targets of "
+                                      "the default AOT list accept no other (ADR-1468)");
+    static constexpr int value = N;
+};
+
 #if defined(__INTEL_LLVM_COMPILER)
 /* icpx / DPC++ — use the SYCL 2020 standard attribute.
  * [[intel::reqd_sub_group_size(N)]] was deprecated in oneAPI 2026.0 in
  * favour of [[sycl::reqd_sub_group_size(N)]] (supported since 2023.0). */
-#define VMAF_SYCL_REQD_SG_SIZE(N) [[sycl::reqd_sub_group_size(N)]]
+#define VMAF_SYCL_REQD_SG_SIZE(N) [[sycl::reqd_sub_group_size(VmafSyclSubGroupSize<N>::value)]]
 #elif defined(SYCL_IMPLEMENTATION_ACPP) || defined(SYCL_IMPLEMENTATION_HIPSYCL)
 /* AdaptiveCpp — Intel sub-group-size attribute not supported; the
  * runtime picks the sub-group size per backend at JIT time. */
@@ -72,7 +98,7 @@
 #else
 /* Unknown SYCL implementation — use the SYCL 2020 standard attribute;
  * if the toolchain doesn't support it, add a branch above. */
-#define VMAF_SYCL_REQD_SG_SIZE(N) [[sycl::reqd_sub_group_size(N)]]
+#define VMAF_SYCL_REQD_SG_SIZE(N) [[sycl::reqd_sub_group_size(VmafSyclSubGroupSize<N>::value)]]
 #endif
 
 /* ADR-1395: kernel properties (sub-group size, register file size) come
@@ -104,15 +130,16 @@
 
 template <int SG_SIZE, int GRF_SIZE> struct VmafSyclKernelShape {
     static_assert(GRF_SIZE == 0 || GRF_SIZE == 256, "GRF_SIZE: 0 (device default) or 256");
+    static constexpr int sub_group_size = VmafSyclSubGroupSize<SG_SIZE>::value;
 #if VMAF_SYCL_KERNEL_PROPERTIES
     [[nodiscard]] auto get(sycl::ext::oneapi::experimental::properties_tag /*tag*/) const
     {
         namespace syclex = sycl::ext::oneapi::experimental;
         if constexpr (GRF_SIZE == 256) {
-            return syclex::properties{syclex::sub_group_size<SG_SIZE>,
+            return syclex::properties{syclex::sub_group_size<sub_group_size>,
                                       sycl::ext::intel::experimental::grf_size<256>};
         } else {
-            return syclex::properties{syclex::sub_group_size<SG_SIZE>};
+            return syclex::properties{syclex::sub_group_size<sub_group_size>};
         }
     }
 #endif

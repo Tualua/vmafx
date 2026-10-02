@@ -501,7 +501,7 @@ namespace
  * from the filter because the statistic's 64-bit integer path does not fit
  * the filter kernel's registers next to its tile: together they spilled to
  * scratch memory, which this twin must not use (ADR-1395). One work-item per
- * pixel, no local memory, sub-group size 8 with the large register file. */
+ * pixel, no local memory, sub-group size 16 with the default register file. */
 class FloatVifStatisticKernel : public VmafSyclKernelShape<16, 0>
 {
   public:
@@ -556,14 +556,15 @@ static inline void vif_row_sums(const VifRowSumArgs &args, size_t y)
     args.denominator_rows[y] = denominator_sum;
 }
 
-/* One work-item per row, sub-group size 8 (the lanes of a hardware thread
- * are rows; ADR-1411 measured 8 as the fastest for this shape). */
+/* One work-item per row, sub-group size 16 (the lanes of a hardware thread
+ * are rows; ADR-1411 measured narrow sub-groups as the fastest for this
+ * shape, and 16 is the narrowest every AOT target accepts, ADR-1468). */
 static sycl::event launch_vif_row_sums(sycl::queue &queue, const VifRowSumArgs &args)
 {
     return queue.submit([&](sycl::handler &handler) {
         handler.parallel_for(sycl::range<1>(args.height),
                              [=](sycl::id<1> row)
-                                 VMAF_SYCL_REQD_SG_SIZE(8) { vif_row_sums(args, row[0]); });
+                                 VMAF_SYCL_REQD_SG_SIZE(16) { vif_row_sums(args, row[0]); });
     });
 }
 

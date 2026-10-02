@@ -181,6 +181,16 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   debug / force zero / weight + cap, `==` on every output, and no output the
   CPU lacks), `test_sycl_exact_twins`, gate cells `motion` / `motion_debug`
   (SAD score in `FEATURE_METRICS`).
+- **Kernel sub-group size: 16 or 32 only (ADR-1468).** Xe2 AOT targets
+  reject 8; `sycl_compat.h` static_asserts it. The row kernels
+  (`launch_float_motion_row_sad`, `float_adm` `launch_row_sums`,
+  `launch_vif_row_sums`) and the `ssimulacra2` walk (`SS2S_WALK_SG`)
+  required 8 for speed and are at 16: same bits (each is one sequential
+  loop per work-item), scratch-free on A380, <= 2 % slower at 4K. Never
+  restore 8 "for the A380": the default build compiles for 19 targets.
+  Guards and the suite to run: [../../sycl/AGENTS.md](../../sycl/AGENTS.md).
+  Unverified at 16 on Xe2 / Xe-LP devices:
+  `T-SYCL-ROW-KERNELS-SG16-OTHER-DEVICES-2026-10-02`.
 
 - **`integer_motion_sycl.cpp::motion3_postprocess_*` honours
   motion3 GPU contract** (ADR-0219). Applies CPU's host-side
@@ -399,7 +409,7 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   ADR-1411).** `float_motion.c::compute_motion_simd()` = one fp32 running
   sum per row, one fp32 sum over rows, fp32 division. Twin:
   `launch_float_motion_row_sad()` = ONE work-item per row
-  (`sycl::range<1>(height)`, sub-group size 8), `fm_row_sad()` = plain
+  (`sycl::range<1>(height)`, sub-group size 16), `fm_row_sad()` = plain
   `for (j = 0; j < width; j++)` loop, readback `height` floats; host =
   `vmaf_float_motion_score_from_row_sads()` (`../float_motion_sad.h`). No
   group / sub-group / atomic reduction in the TU, no host sum in
@@ -431,7 +441,7 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   8.4e9 quotients (ties: reference rounds twice): do NOT drop replay.
   Struct selects (`cond ? a : b` on `SoftDouble`) = 512 B private memory:
   select fields. (4) sums: `vif_row_sums()` ONE work-item per row
-  (`sycl::range<1>(height)`, sub-group 8), plain left-to-right loop;
+  (`sycl::range<1>(height)`, sub-group 16), plain left-to-right loop;
   host `sum_vif_rows()` adds rows in fp32. No group / sub-group / atomic
   reduction in the TU. Per scale: filter kernel (stores `sigma1_sq`,
   `sigma2_sq`, `sigma12`) -> `FloatVifStatisticKernel` (one work-item per
@@ -948,7 +958,8 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
     make it about 32 integer steps + 16 terms. Wrong advice, no slot, wrong
     expected binade = slower, same bits.
   - Shapes (scratch-free on A380, ADR-1395): units SIMD-16 default register
-    file, slot kernel SIMD-16 + 256-entry file, walk SIMD-8. SIMD-32 spills;
+    file, slot kernel SIMD-16 + 256-entry file, walk SIMD-16 (8 until
+    ADR-1468: Xe2 does not compile it). SIMD-32 spills;
     chunk 1024 spills in the slot kernel without the large file (wrong
     values, runs that hang past 300 s).
   - Guards: `test_sycl_ssimulacra2_math` (terms vs reference lines, host +

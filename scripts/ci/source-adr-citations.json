@@ -7995,6 +7995,7 @@
         "core/src/meson.build": 8,
         "core/src/sycl/check_aot_image.py": 2,
         "core/test/meson.build": 1,
+        "core/test/test_sycl_aot_default_targets.py": 1,
         "core/test/test_sycl_aot_image_check.py": 1,
         "dev/Containerfile": 1,
         "dev/scripts/fetch-intel-neo.py": 1,
@@ -9310,6 +9311,20 @@
         "core/test/test_cuda_vif_log2_table.c": 1
       },
       "target": "1462-cuda-vif-reads-host-log2-table.md"
+    },
+    "1468": {
+      "sites": {
+        "core/src/feature/sycl/float_adm_sycl.cpp": 1,
+        "core/src/feature/sycl/float_motion_sycl.cpp": 1,
+        "core/src/feature/sycl/float_vif_sycl.cpp": 1,
+        "core/src/feature/sycl/ssimulacra2_sycl.cpp": 1,
+        "core/src/feature/sycl/sycl_compat.h": 3,
+        "core/test/meson.build": 2,
+        "core/test/sycl_aot_targets.py": 1,
+        "core/test/test_sycl_aot_default_targets.py": 1,
+        "core/test/test_sycl_sub_group_size_contract.py": 1
+      },
+      "target": "1468-sycl-sub-group-sizes-every-aot-target.md"
     }
   },
   "retired": {
