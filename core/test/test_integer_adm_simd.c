@@ -52,6 +52,10 @@
  *      1.5 and 100 and requires the same restored and additive samples. The
  *      scalar kernels truncate rst * gain toward zero; a vector kernel that
  *      rounds it differs at 1.2 and 1.5.
+ *      On aarch64 tests 1 and 5 run; test 5 runs against `adm_decouple_neon` (Netflix/vmaf
+ *      9e48141b), whose vector path serves integral limits and whose scalar
+ *      fallback serves fractional ones. Gains 1, 2, 3 and 7 are part of it:
+ *      a limited sample that is off by one passes at 1.2, 1.5 and 100 alone.
  *
  * Boilerplate provided by `simd_bitexact_test.h` (ADR-0245).
  */
@@ -85,6 +89,10 @@
 #if HAVE_AVX512
 #include "feature/x86/adm_avx512.h"
 #endif
+#endif
+
+#if ARCH_AARCH64
+#include "feature/arm64/adm_neon.h"
 #endif
 
 /* ---------------------------------------------------------------------
@@ -152,6 +160,12 @@ static char *test_adm_accum_precision(void)
     }
     return NULL;
 }
+
+#define DEC_SLACK 32
+#define DEC_PLANES 12
+
+typedef void (*adm_decouple_fn)(AdmBuffer *buf, int w, int h, int stride,
+                                double adm_enhn_gain_limit, int32_t *adm_div_lookup);
 
 #if ARCH_X86
 
@@ -768,12 +782,6 @@ static char *test_adm_cm_centre_tap_stays_int32(void)
  * decouple region intact.
  * ------------------------------------------------------------------- */
 
-#define DEC_SLACK 32
-#define DEC_PLANES 12
-
-typedef void (*adm_decouple_fn)(AdmBuffer *buf, int w, int h, int stride,
-                                double adm_enhn_gain_limit, int32_t *adm_div_lookup);
-
 /* planes[0..5] are the inputs (ref h/v/d, dis h/v/d), planes[6..11] the
  * outputs (decouple_r h/v/d, decouple_a h/v/d). */
 typedef struct DecoupleFixture {
@@ -940,6 +948,10 @@ static char *test_adm_decouple_guard_band(void)
     }
     return NULL;
 }
+
+#endif /* ARCH_X86 */
+
+#if ARCH_X86 || ARCH_AARCH64
 
 /* ---------------------------------------------------------------------
  * Test 5: the decouple kernels against the scalar kernels, for integer and
@@ -1132,6 +1144,11 @@ typedef struct GainKernels {
 
 static GainKernels gain_kernels(void)
 {
+#if ARCH_AARCH64
+    /* Only the scale-0 decouple has a NEON kernel (Netflix/vmaf 9e48141b). */
+    const GainKernels k = {{adm_decouple_neon, NULL}, {NULL, NULL}, {"NEON", NULL}, 1};
+    return k;
+#else
     GainKernels k = {{adm_decouple_avx2, NULL}, {adm_decouple_s123_avx2, NULL}, {"AVX2", NULL}, 1};
 #if HAVE_AVX512
     if (simd_test_have_avx512()) {
@@ -1142,6 +1159,7 @@ static GainKernels gain_kernels(void)
     }
 #endif
     return k;
+#endif
 }
 
 /* Runs every vector kernel on `simd` and counts the output samples that are
@@ -1154,8 +1172,15 @@ static size_t gain_mismatches(const GainKernels *k, const GainFixture *ref, Gain
     for (int n = 0; n < k->count; ++n) {
         size_t bad[2];
         k->s0[n](&simd->buf, simd->w, simd->h, simd->stride, gain, div_lookup);
-        k->s123[n](&simd->buf, simd->w, simd->h, simd->stride, gain, div_lookup);
+        if (k->s123[n]) {
+            k->s123[n](&simd->buf, simd->w, simd->h, simd->stride, gain, div_lookup);
+        }
         gain_outputs_differ(ref, simd, bad);
+        if (!k->s123[n]) {
+            /* No scale 1-3 kernel to hold to the scalar: its planes still hold
+             * the scalar output at the default limit. */
+            bad[1] = 0;
+        }
         if (bad[0] != 0 || bad[1] != 0) {
             (void)fprintf(stderr,
                           "  decouple %s, band %dx%d, gain limit %g: %zu scale-0 and %zu "
@@ -1195,7 +1220,7 @@ static char *gain_check(const GainKernels *k, int w, int h, double gain, size_t 
 
 static char *test_adm_decouple_matches_scalar_for_gains(void)
 {
-    static const double gains[] = {1.0, 1.2, 1.5, 100.0};
+    static const double gains[] = {1.0, 1.2, 1.5, 2.0, 3.0, 7.0, 100.0};
     static const int geometry[][2] = {{24, 12}, {37, 17}, {64, 24}, {80, 36}};
     const GainKernels k = gain_kernels();
 
@@ -1220,7 +1245,7 @@ static char *test_adm_decouple_matches_scalar_for_gains(void)
     return NULL;
 }
 
-#endif /* ARCH_X86 */
+#endif /* ARCH_X86 || ARCH_AARCH64 */
 
 char *run_tests(void)
 {
@@ -1237,6 +1262,9 @@ char *run_tests(void)
     mu_run_test(test_adm_cm_centre_tap_stays_int32);
     mu_run_test(test_adm_cm_matches_scalar_kernels);
     mu_run_test(test_adm_decouple_guard_band);
+    mu_run_test(test_adm_decouple_matches_scalar_for_gains);
+#elif ARCH_AARCH64
+    div_lookup_generator();
     mu_run_test(test_adm_decouple_matches_scalar_for_gains);
 #else
     (void)fprintf(stderr, "skipping SIMD smoke: non-x86 arch\n");

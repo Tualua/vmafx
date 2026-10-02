@@ -2453,8 +2453,11 @@ test_psnr_hvs_simd = executable('test_psnr_hvs_simd',
 )
 endif
 
+# test_integer_adm_simd also runs on aarch64: the NEON scale-zero decouple
+# (Netflix/vmaf 9e48141b) is held to the scalar kernels there.
 integer_adm_simd_test_archs = ['x86_64', 'x86']
-if integer_adm_simd_test_archs.contains(host_machine.cpu_family())
+integer_adm_decouple_test_archs = integer_adm_simd_test_archs + ['aarch64']
+if integer_adm_decouple_test_archs.contains(host_machine.cpu_family())
 test_integer_adm_simd = executable('test_integer_adm_simd',
     ['test.c', 'test_integer_adm_simd.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
@@ -2474,7 +2477,9 @@ test_integer_adm_simd = executable('test_integer_adm_simd',
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
 )
+endif
 
+if integer_adm_simd_test_archs.contains(host_machine.cpu_family())
 test_adm_dwt2_x86 = executable('test_adm_dwt2_x86',
     ['test.c', 'test_adm_dwt2_x86.c',
      '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
@@ -7065,8 +7070,11 @@ if psnr_hvs_simd_test_archs.contains(host_machine.cpu_family())
 test('test_psnr_hvs_simd', test_psnr_hvs_simd, suite : ['fast', 'simd'])
 endif
 
-if integer_adm_simd_test_archs.contains(host_machine.cpu_family())
+if integer_adm_decouple_test_archs.contains(host_machine.cpu_family())
 test('test_integer_adm_simd', test_integer_adm_simd, suite : ['fast', 'simd'])
+endif
+
+if integer_adm_simd_test_archs.contains(host_machine.cpu_family())
 test('test_adm_dwt2_x86', test_adm_dwt2_x86, suite : ['fast', 'simd'])
 test('test_float_adm_x86', test_float_adm_x86, suite : ['fast', 'simd'])
 endif

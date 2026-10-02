@@ -2,6 +2,7 @@
 paths:
   - core/src/feature/integer_adm.c
   - core/src/feature/integer_adm_kernels.h
+  - core/src/feature/arm64/adm_neon.c
 invariant: Integer ADM i4_adm_cm rounding overflow, row rounding, scale-0 masking, and gain limits.
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
@@ -91,3 +92,16 @@ invariant: Integer ADM i4_adm_cm rounding overflow, row rounding, scale-0 maskin
   (`T-METAL-ADM-GAIN-LIMIT-FLOAT32-2026-10-01`). Guards:
   `test_integer_adm_simd`, `test_adm_gain_limit` (host),
   `test_gpu_adm_tiny_frames` (limits 1.2, 1.5; bit-exact on SYCL).
+- **`adm_decouple_neon()` = the scalar decouple, any gain limit** (Netflix/vmaf
+  `9e48141b`, ported; ADR-1413 applies). Vector path only for an integral
+  limit, where `rst * gain` is the int32 product (|rst| <= 2^15, limit <= 100)
+  and equals the truncated double product; a fractional limit or a band
+  narrower than four columns runs `adm_decouple_cols()` in
+  `integer_adm_kernels.h`. Never give the vector path a fractional limit
+  without `vcvtq_s64_f64` (truncating) on the double product, never a rounding
+  conversion. Angle test = `adm_angle_flag_fp64()` in double; gain 1 skips it
+  (Q15 reconstruction already lies between 0 and `t`). A change to
+  `adm_decouple_band()` / `adm_decouple_cols()` changes the kernel in the
+  same PR. Guards: `test_integer_adm_simd` (aarch64: gains 1, 1.2, 1.5, 2, 3,
+  7, 100, -32768 and angle-boundary samples; fails on a `+1` in the limited
+  sample), `make test-netflix-golden-arm64`.

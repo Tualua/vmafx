@@ -14,6 +14,44 @@
 ## `test_pic_preallocation` has an explicit 180 s timeout (2026-10-02)
 
 `fix/ci-asan-pic-preallocation-timeout`. No rebase impact: a `timeout :` argument of one `test()` line in `core/test/meson.build`, no code and no scores.
+## Port of Netflix/vmaf `9e48141b`: NEON scale-zero ADM decouple (2026-10-02)
+
+`port/upstream-9e48141b-neon-adm-decouple`. Upstream PR
+[Netflix/vmaf#1656](https://github.com/Netflix/vmaf/pull/1656) (Dan Trapp):
+`adm_neon.c` gains `adm_decouple_neon()`, `integer_adm.c` binds it in
+`init()` on NEON. Ported, with these differences:
+
+- **The scalar fallback is the fork's kernel.** Upstream calls the
+  now-non-static `adm_decouple()`; here it is static, so
+  `adm_decouple_neon()` loops `adm_decouple_cols()` from
+  `integer_adm_kernels.h` for a fractional gain limit or a band narrower than
+  four columns. That kernel stores the double product `rst * gain` truncated
+  toward zero (ADR-1413), which the vector path never forms: it takes integral
+  limits only, where the product is the int32 one. A sync that brings a
+  fractional-limit vector path must truncate (`vcvtq_s64_f64`), not round.
+- **Border and angle test are the scalar's helpers.** `adm_border_filt()` and
+  `adm_cos_1deg_sq()` replace upstream's inline copies; the angle test is the
+  fp64 expression of `adm_angle_flag_fp64()` (ADR-1194).
+- **Split for HISS-04.** Upstream's loop body is `adm_neon_decouple4()`, its
+  dot products and angle test are helpers; the operation sequence is
+  unchanged.
+- **The dispatch line** is `s->adm_decouple = adm_decouple_neon;` in
+  `init_dispatch_simd()` (`integer_adm.c`) under `ARCH_AARCH64`. x86 object
+  files are byte-identical before and after (170 of 170).
+- **No checkasm.** Upstream's `check_adm.c` hunk becomes rows of
+  `core/test/test_integer_adm_simd.c`, which now builds on aarch64 and holds the
+  scale-0 kernel to `adm_decouple_cols()` at gain limits 1, 1.2, 1.5, 2, 3, 7
+  and 100 on bands that make the angle test pass and the limit bind. Without
+  gains 1, 2 and 3 a limited sample off by one passes (upstream's checkasm has
+  that gap); with them a `+1` on the limited sample fails at gain 2.
+
+Measured under `qemu-aarch64`: 1 202 040 cases of a standalone harness
+(dimensions 1 to 129, three stride kinds, guard pages, 106 gain limits, nine
+band patterns including -32768 and the angle boundary) equal the scalar
+kernel bit for bit; 831 of 831 frames of the whole extractor at
+`--precision max` equal `--cpumask 1` on the three Netflix pairs and on
+synthetic frames from 17x17 to 641x359 at 8, 10, 12 and 16 bits and 1 to 8
+threads.
 
 ## Agent pages name the staged CUDA VIF kernels and the HIP handle header (2026-10-02)
 

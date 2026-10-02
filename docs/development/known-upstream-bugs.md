@@ -113,7 +113,7 @@ commits since the September port that the fork does not need, up to
      Keep exactly one heading of this form; a port or sync moves its
      commit id. -->
 
-## Upstream head the fork is at parity with: `cea2b4d83` (2026-10-02)
+## Upstream head the fork is at parity with: `9e48141b` (2026-10-02)
 
 Upstream master moved from `8e7a1ac4e` to `cea2b4d83` with
 [Netflix/vmaf#1653](https://github.com/Netflix/vmaf/pull/1653), three commits
@@ -127,6 +127,13 @@ on SpEED:
 
 `docs/rebase-notes.md` has the mechanics and the measurements. Upstream branch
 `speed-fused-avx2` (not merged) moves x86 to the fused filter too.
+
+`9e48141b` ("adm: add NEON scale-zero decoupling",
+[Netflix/vmaf#1656](https://github.com/Netflix/vmaf/pull/1656)) followed on
+2026-10-02 and is **ported**: `adm_decouple_neon` returns the scalar kernel's
+bits at every enhancement gain limit (integral limits on the vector path,
+fractional limits on the scalar kernel, so ADR-1413's truncated product holds).
+The measurements are in `docs/rebase-notes.md`.
 
 ## Reported upstream on 2026-09-19
 

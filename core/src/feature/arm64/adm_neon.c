@@ -19,6 +19,7 @@
 
 #include "feature/arm64/adm_neon.h"
 #include "feature/integer_adm.h"
+#include "feature/integer_adm_kernels.h"
 
 #include <arm_neon.h>
 
@@ -234,5 +235,140 @@ void adm_dwt2_8_neon(const uint8_t *src, const adm_dwt_band_t *dst, AdmBuffer *b
         };
         adm_dwt2_8_neon_vpass_row(rows, w, tmplo, tmphi);
         adm_dwt2_8_neon_hpass_row(tmplo, tmphi, ind_x, dst, i * dst_stride, half_w);
+    }
+}
+
+/*
+ * Scale-zero decouple, four columns at a time (Netflix/vmaf 9e48141b, Dan
+ * Trapp). The scalar reference is adm_decouple_cols() in
+ * feature/integer_adm_kernels.h; this kernel returns its samples bit for bit.
+ *
+ * It takes the vector path for an integral enhancement gain limit only. The
+ * scalar kernel stores MIN(rst * gain, t) as the double product truncated
+ * toward zero (ADR-1413); for an integral gain that product is the int32
+ * product (rst is within 2^15 and the limit within 100), so the vector lanes
+ * form it in int32. A fractional limit takes the scalar kernel, which is the
+ * definition of the truncated product.
+ */
+
+/* Dot product of two (h, v) pairs, rounded to float as the scalar angle test
+ * rounds its int64 sums. The sums stay below 2^31, so the int64 -> double ->
+ * float conversion rounds once. */
+static inline float32x4_t adm_neon_dot_s16(int16x4_t ah, int16x4_t av, int16x4_t bh, int16x4_t bv)
+{
+    const int32x4_t h = vmull_s16(ah, bh);
+    const int32x4_t v = vmull_s16(av, bv);
+    const int64x2_t lo = vaddl_s32(vget_low_s32(h), vget_low_s32(v));
+    const int64x2_t hi = vaddl_s32(vget_high_s32(h), vget_high_s32(v));
+    return vcombine_f32(vcvt_f32_f64(vcvtq_f64_s64(lo)), vcvt_f32_f64(vcvtq_f64_s64(hi)));
+}
+
+/* The one-degree angle test of adm_angle_flag_fp64() on two lanes, in double:
+ * dot >= 0 and dot^2 >= (cos^2 * |o|^2) * |t|^2, the products in that order. */
+static inline uint32x2_t adm_neon_angle_f64(float32x2_t dot, float32x2_t omag, float32x2_t tmag,
+                                            double cos_sq)
+{
+    const float64x2_t d = vmulq_n_f64(vcvt_f64_f32(dot), 1.0 / 4096.0);
+    const float64x2_t o = vmulq_n_f64(vcvt_f64_f32(omag), 1.0 / 4096.0);
+    const float64x2_t t = vmulq_n_f64(vcvt_f64_f32(tmag), 1.0 / 4096.0);
+    const uint64x2_t non_negative = vcgeq_f64(d, vdupq_n_f64(0.0));
+    const uint64x2_t inside = vcgeq_f64(vmulq_f64(d, d), vmulq_f64(vmulq_n_f64(o, cos_sq), t));
+    return vmovn_u64(vandq_u64(non_negative, inside));
+}
+
+/* The angle flag of four columns: all lanes clear at gain 1, where the Q15
+ * reconstruction already lies between zero and the distorted sample. */
+static inline uint32x4_t adm_neon_angle4(const int16x4_t o[3], const int16x4_t t[3], double gain,
+                                         double cos_sq)
+{
+    if (gain == 1.0) {
+        return vdupq_n_u32(0);
+    }
+    const float32x4_t dot = adm_neon_dot_s16(o[0], o[1], t[0], t[1]);
+    const float32x4_t omag = adm_neon_dot_s16(o[0], o[1], o[0], o[1]);
+    const float32x4_t tmag = adm_neon_dot_s16(t[0], t[1], t[0], t[1]);
+    return vcombine_u32(
+        adm_neon_angle_f64(vget_low_f32(dot), vget_low_f32(omag), vget_low_f32(tmag), cos_sq),
+        adm_neon_angle_f64(vget_high_f32(dot), vget_high_f32(omag), vget_high_f32(tmag), cos_sq));
+}
+
+/* adm_decouple_band() on four columns of one band. `ref` is the reference
+ * band at the first column: its samples index the reciprocal table. */
+static inline int16x4_t adm_neon_decouple_band(const int16_t *ref, int16x4_t o, int16x4_t t,
+                                               uint32x4_t angle, int gain, const int32_t *lookup)
+{
+    const int32_t div[4] = {lookup[ref[0] + 32768], lookup[ref[1] + 32768], lookup[ref[2] + 32768],
+                            lookup[ref[3] + 32768]};
+    const int32x4_t recip = vld1q_s32(div);
+    const int32x4_t dis = vmovl_s16(t);
+    const int32x4_t orig = vmovl_s16(o);
+    const int32x4_t zero = vdupq_n_s32(0);
+    const int32x4_t ratio =
+        vcombine_s32(vrshrn_n_s64(vmull_s32(vget_low_s32(recip), vget_low_s32(dis)), 15),
+                     vrshrn_n_s64(vmull_s32(vget_high_s32(recip), vget_high_s32(dis)), 15));
+    const int32x4_t k = vbslq_s32(vceqq_s32(orig, zero), vdupq_n_s32(32768),
+                                  vmaxq_s32(zero, vminq_s32(ratio, vdupq_n_s32(32768))));
+    const int32x4_t rst = vrshrq_n_s32(vmulq_s32(k, orig), 15);
+    if (!vmaxvq_u32(angle)) {
+        return vmovn_s32(rst);
+    }
+    const int32x4_t scaled = vmulq_n_s32(rst, gain);
+    const uint32x4_t active = vandq_u32(angle, vcgtq_s32(k, zero));
+    const int32x4_t negative =
+        vbslq_s32(vandq_u32(active, vcltq_s32(orig, zero)), vmaxq_s32(scaled, dis), rst);
+    return vmovn_s32(
+        vbslq_s32(vandq_u32(active, vcgtq_s32(orig, zero)), vminq_s32(scaled, dis), negative));
+}
+
+/* Decouple the four columns starting at `off` and store both outputs. */
+static inline void adm_neon_decouple4(AdmBuffer *buf, int off, int gain, double cos_sq,
+                                      const int32_t *lookup)
+{
+    const int16_t *const ref[3] = {buf->ref_dwt2.band_h + off, buf->ref_dwt2.band_v + off,
+                                   buf->ref_dwt2.band_d + off};
+    const int16_t *const dis[3] = {buf->dis_dwt2.band_h + off, buf->dis_dwt2.band_v + off,
+                                   buf->dis_dwt2.band_d + off};
+    int16_t *const rst[3] = {buf->decouple_r.band_h + off, buf->decouple_r.band_v + off,
+                             buf->decouple_r.band_d + off};
+    int16_t *const add[3] = {buf->decouple_a.band_h + off, buf->decouple_a.band_v + off,
+                             buf->decouple_a.band_d + off};
+    int16x4_t o[3];
+    int16x4_t t[3];
+
+    for (int b = 0; b < 3; ++b) {
+        o[b] = vld1_s16(ref[b]);
+        t[b] = vld1_s16(dis[b]);
+    }
+    const uint32x4_t angle = adm_neon_angle4(o, t, (double)gain, cos_sq);
+    for (int b = 0; b < 3; ++b) {
+        const int16x4_t r = adm_neon_decouple_band(ref[b], o[b], t[b], angle, gain, lookup);
+        vst1_s16(rst[b], r);
+        vst1_s16(add[b], vsub_s16(t[b], r));
+    }
+}
+
+void adm_decouple_neon(AdmBuffer *buf, int w, int h, int stride, double adm_enhn_gain_limit,
+                       int32_t *adm_div_lookup)
+{
+    const float cos_1deg_sq = adm_cos_1deg_sq();
+    const AdmBorder b = adm_border_filt(w, h);
+    const int width = b.right - b.left;
+    const int gain = (int)adm_enhn_gain_limit;
+
+    if (width < 4 || adm_enhn_gain_limit != (double)gain) {
+        for (int i = b.top; i < b.bottom; ++i) {
+            adm_decouple_cols(buf, i, stride, b.left, b.right, adm_enhn_gain_limit, adm_div_lookup,
+                              cos_1deg_sq);
+        }
+        return;
+    }
+    for (int i = b.top; i < b.bottom; ++i) {
+        /* Every group of four starts inside the region; the last one is moved
+         * back to end on the last column, which recomputes up to three columns
+         * from unchanged inputs. */
+        for (int j = b.left; j < b.right; j += 4) {
+            const int j0 = (j > b.right - 4) ? b.right - 4 : j;
+            adm_neon_decouple4(buf, (i * stride) + j0, gain, (double)cos_1deg_sq, adm_div_lookup);
+        }
     }
 }

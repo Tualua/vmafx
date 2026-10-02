@@ -47,6 +47,12 @@ feature/arm64/
   bound: vector store runs past half-resolution row and, on last row, into next
   band of ADM slab. `test_adm_dwt2_neon` checks bit-exactness + guard band at
   production band stride.
+- **`adm_decouple_neon()` returns the scalar decouple's bits at every gain
+  limit** (Netflix/vmaf `9e48141b`). Integral limit: four columns per step,
+  int32 `rst * gain`; fractional limit or fewer than four columns:
+  `adm_decouple_cols()` (`integer_adm_kernels.h`), the ADR-1413 truncated
+  double product. The angle test is `adm_angle_flag_fp64()`'s double
+  expression. Details and guards: [`../AGENTS.d/adm-rounding.md`](../AGENTS.d/adm-rounding.md).
 - **`#pragma STDC FP_CONTRACT OFF` kept at TU level** even though aarch64 GCC
   ignores it with non-fatal `-Wunknown-pragmas`. Pragma is portable; aarch64 GCC
   does not contract `a + b * c` across statements at default optimisation

@@ -8775,6 +8775,7 @@
     },
     "1413": {
       "sites": {
+        "core/src/feature/arm64/adm_neon.c": 1,
         "core/src/feature/sycl/integer_adm_sycl.cpp": 1,
         "core/src/sycl/common.cpp": 1,
         "core/test/meson.build": 1,

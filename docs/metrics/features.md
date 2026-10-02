@@ -927,6 +927,11 @@ AVX-512 paths differed from scalar by up to 7e-4 on content with very large
 band coefficients, such as full-range noise; ordinary video, including the
 Netflix reference clips, was already identical.
 
+On aarch64 the NEON path covers the 8-bit DWT (frame widths divisible by 8)
+and the scale-zero decouple; the other stages run the scalar kernels. The
+decouple uses vectors for integral `adm_enhn_gain_limit` values and the scalar
+kernel for fractional ones, and returns the scalar's bits for both.
+
 **32-bit x86** — the fork is 64-bit only (ADR-1258). The ADM x86
 sources still extract 64-bit lanes through 32-bit-safe helpers
 (`extract_epi64()`, `extract_epi64_128()`), ported from upstream Netflix

@@ -986,6 +986,7 @@ static void init_dispatch_simd(AdmState *s, unsigned w)
         if (!(w % 8)) {
             s->dwt2_8 = adm_dwt2_8_neon;
         }
+        s->adm_decouple = adm_decouple_neon;
     }
 #else
     (void)s;
