@@ -5643,22 +5643,30 @@ test('test_hip_float_vif_parity', test_hip_float_vif_parity,
     suite : ['fast', 'gpu'],
     is_parallel : false,
     timeout : 120)
-# ADR-1212 — float_moment CPU vs. HIP parity, at 8 bpc and (via
-# -DFIXTURE_BPC=10u) at 10 bpc. The HIP twin had no cross-backend gate at all,
-# which is how it shipped accumulating the raw high-bit-depth codeword.
-foreach variant : [['', []], ['_10bit', ['-DFIXTURE_BPC=10u']]]
-    hip_moment_exe = executable('test_hip_float_moment_parity' + variant[0],
-        ['test.c', 'test_hip_float_moment_parity.c'],
-        include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-        link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
-        dependencies: [pthread_dependency, hip_deps, math_lib],
-        c_args: ['-DHAVE_HIP=1'] + variant[1]
-    )
-    test('test_hip_float_moment_parity' + variant[0], hip_moment_exe,
-        suite : ['fast', 'gpu'],
-        is_parallel : false,
-        timeout : 60)
-endforeach
+# ADR-1447 — float_moment_hip returns the CPU's four moments bit for bit
+# (first added as a places=4 test at 8 and 10 bpc, ADR-1212). One binary runs
+# noise at 8, 10, 12 and 16 bits and a bright 16-bit 1920x1080 frame with ==,
+# and a bright 16-bit 2048x1100 frame, where the CPU's own sum is past 2^53
+# and rounds, against the derived bound. A `_large` variant runs the noise
+# cases at 960x540. test_hip_float_moment_exact_contract is the device-free
+# half: the 16-bit kernel adds moment_float_square(), one fp32 product.
+test('test_hip_float_moment_exact_contract',
+    import('python').find_installation(),
+    args : files('test_hip_float_moment_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+test_hip_float_moment_parity = executable('test_hip_float_moment_parity',
+    ['test.c', 'test_hip_float_moment_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: ['-DHAVE_HIP=1']
+)
+test('test_hip_float_moment_parity', test_hip_float_moment_parity,
+    suite : ['fast', 'gpu'],
+    is_parallel : false,
+    timeout : 120)
 
 # ADR-0883 round-2 — HIP kernel parity gap-fill (5 extractors).
 # Closes the gaps left after PR #351 (psnr_hip + vif_hip) and the
@@ -6015,6 +6023,7 @@ hip_parity_large_fixture_tests = [
     'test_hip_cambi_parity',
     'test_hip_ciede_parity',
     'test_hip_float_adm_parity',
+    'test_hip_float_moment_parity',
     'test_hip_float_motion_parity',
     'test_hip_float_psnr_parity',
     'test_hip_float_ssim_parity',

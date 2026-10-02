@@ -355,7 +355,9 @@ core/src/feature/hip/          # per-feature kernels
   see [float_motion_hip options](#float_motion_hip-options) below.
 - **`float_moment_hip`** — four uint64 atomic accumulator kernel (ref1st,
   dis1st, ref2nd, dis2nd), warp-64 two-uint32-shuffle reduction. Host divides
-  by w×h. Emits four `float_moment_*` features.
+  by w×h. Emits four `float_moment_*` features, bit-identical to the CPU's
+  (see
+  [float_moment_hip returns the CPU's moments](#float_moment_hip-returns-the-cpus-moments-bit-for-bit-2026-10-02)).
 - **`float_ssim_hip`** — two-pass separable 11-tap Gaussian kernel. Pass 1
   (horiz): five intermediate float buffers over (W-10)×H. Pass 2 (vert + SSIM
   combine): per-block float partial sum over (W-10)×(H-10). Host accumulates in
@@ -949,6 +951,60 @@ python3 scripts/ci/cross_backend_parity_gate.py --vmaf-binary build-hip/tools/vm
     --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
     --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
     --width 576 --height 324 --backends cpu hip --features vif
+```
+
+### `float_moment_hip` returns the CPU's moments bit for bit (2026-10-02)
+
+`--backend hip --feature float_moment_hip` gives the same four
+`float_moment_*` values as `--backend cpu --feature float_moment`, to the
+last bit ([ADR-1447](../../adr/1447-hip-float-moment-cpu-float-squares.md)).
+The CPU forms each sample's square in `float` before adding it. Up to 12 bits
+per sample that is the exact square; at 16 bits it is the square rounded to
+24 bits. The twin added exact squares, so its second moments
+(`float_moment_ref2nd`, `float_moment_dis2nd`) were off at 16 bits. It now
+adds the same rounded square as the CPU.
+
+Measured on a gfx1036 at `--precision max`, frames whose second moments equal
+the CPU's:
+
+| Fixture | Frames | Before | Max abs diff before | After |
+|---|---|---|---|---|
+| Typical content at 8 and 10 bit (Netflix 576x324, 1080p checkerboards, Sparks, BBB 3840x2160) | 110 | 110 | 0 | 110 |
+| Netflix 576x324 at 12 and 16 bit and as 10-bit 4:2:2; noise at 8, 10, 12 bit | 63 | 63 | 0 | 63 |
+| Full-range noise 576x324, 16 bit | 3 | 0 | 2.8e-5 | 3 |
+| Bright 16 bit, 1920x1080 | 2 | 0 | 1.0e-4 | 2 |
+| BBB 1920x1080 as 16 bit | 40 | 0 | 7.5e-5 | 40 |
+| BBB 3840x2160 as 16 bit | 32 | 0 | 3.9e-5 | 32 |
+
+The first moments were identical before and are now. The repository's 16-bit
+Netflix fixture is 8-bit content shifted left, which is why it never showed
+the difference. If you stored 16-bit `float_moment_hip` second moments,
+re-run them.
+
+One range is not bit-identical. The CPU adds the squares into a `double`,
+which holds the sum exactly up to 2^53 in units of 2^-16. A frame of up to
+2 097 152 pixels (1920x1080 has 2 073 600) cannot reach that, and neither can
+any frame at 8, 10 or 12 bits. A larger 16-bit frame whose second moment
+times its pixel count reaches 2^37 does: from there the CPU's sum rounds as
+it goes, and the twin, which adds exactly, can differ from it by at most
+`(pixels - 2^21 + 1) / pixels * 2^(e - 69) + 2^-37` (`e` is 53 or 54 up to
+3840x2160; 2.3e-5 at 3840x2160 with every sample near the peak). Measured:
+2.7e-7 on a 2560x1440 frame with a tenth of its samples below 4096, 1.2e-7 on
+full-range 3840x2160 noise, 0 on the 17 frames of the 16-bit BBB 3840x2160
+fixture that are in that range (`T-HIP-FLOAT-MOMENT-PAST-2-53-2026-10-02`).
+
+The change costs nothing measurable: 1.94 and 2.02 ms per 16-bit 1920x1080
+frame before and after, 11.1 and 10.6 ms per 16-bit 3840x2160 frame (medians
+of 11 interleaved pairs; the samples overlap).
+
+```bash
+python3 scripts/ci/run_meson_test.py -- -C build-hip \
+    test_hip_float_moment_parity test_hip_float_moment_parity_large \
+    test_hip_float_moment_exact_contract
+python3 scripts/ci/cross_backend_parity_gate.py --vmaf-binary build-hip/tools/vmaf \
+    --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+    --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+    --width 576 --height 324 --backends cpu hip --features float_moment
 ```
 
 ### `float_vif_hip` returns the CPU's scores bit for bit (2026-10-02)

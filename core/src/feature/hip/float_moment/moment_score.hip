@@ -28,9 +28,18 @@
  *  - The sums array is `[ref1st, dis1st, ref2nd, dis2nd]` (same order
  *    as the CUDA twin so the host collect() code is identical).
  *
- *  Bit-exactness contract: int64 sum is exact on integer YUV inputs
- *  — places=4 cross-backend gate clears trivially (0/48 mismatches,
- *  matching the Vulkan twin).
+ *  Bit-exactness contract (ADR-1447): the four sums are the CPU's.
+ *  moment.c adds the samples, and their squares, into one double per
+ *  output. The first moments' terms are exact, so their integer sum is the
+ *  CPU's sum. For the second moments the CPU forms each square in float
+ *  (`const float term = pic_ * pic_`) and adds the floats: up to 12 bits a
+ *  square has at most 24 significant bits and the float is the integer
+ *  square, but at 16 bits it is the square rounded to 24 bits. The kernel
+ *  therefore adds the float square (moment_float_square()), an integer below
+ *  2^32, so the uint64 sum is exact and equals the CPU's double sum while
+ *  that sum is below 2^53 units, which holds for every frame of up to 2^21
+ *  pixels. Beyond it the CPU's own running sum rounds at every add; see
+ *  float_moment_hip.c.
  */
 
 #include <hip/hip_runtime.h>
@@ -58,6 +67,19 @@ __device__ __forceinline__ uint64_t moment_warp_reduce_u64(uint64_t v)
         hi = (uint32_t)(sum >> 32);
     }
     return ((uint64_t)hi << 32) | lo;
+}
+
+/* The term of moment.c::compute_2nd_moment() for the raw sample `v` of a 10-,
+ * 12- or 16-bit plane, in units of 1 / scaler^2: picture_copy() divides the
+ * sample by the scaler (a power of two, exact) and the square is one fp32
+ * product, rounded to nearest even. Scaling by a power of two does not change
+ * which bits are rounded away, so the float square of the raw sample has the
+ * same significand. Its value is an integer below 2^32. */
+__device__ __forceinline__ uint64_t moment_float_square(uint64_t v)
+{
+    const float sample = (float)v;
+    const float square = sample * sample;
+    return (uint64_t)square;
 }
 
 extern "C" {
@@ -105,9 +127,11 @@ __global__ void calculate_moment_hip_kernel_8bpc(const uint8_t *__restrict__ ref
 
 /**
  * 10/12/16-bpc kernel: ref/dis are byte-addressed; each pixel is
- * a native uint16_t. Values are accumulated raw; the HOST divides the
- * exact integer sums by the bit-depth scaler (4/16/256) and by w*h to
- * recover the moment the CPU reference computes (ADR-1212). Same layout as 8bpc.
+ * a native uint16_t. The samples are accumulated raw and the squares as the
+ * CPU's float squares (moment_float_square()); the HOST divides the exact
+ * integer sums by the bit-depth scaler (4/16/256, squared for the second
+ * moments) and by w*h to recover the moment the CPU reference computes
+ * (ADR-1212, ADR-1447). Same layout as 8bpc.
  */
 __global__ void calculate_moment_hip_kernel_16bpc(const uint8_t *__restrict__ ref,
                                                    const uint8_t *__restrict__ dis,
@@ -128,9 +152,9 @@ __global__ void calculate_moment_hip_kernel_16bpc(const uint8_t *__restrict__ re
         const uint64_t d = (uint64_t)reinterpret_cast<const uint16_t *>(
             dis + (ptrdiff_t)y * dis_stride)[x];
         r1 = r;
-        r2 = r * r;
+        r2 = moment_float_square(r);
         d1 = d;
-        d2 = d * d;
+        d2 = moment_float_square(d);
     }
 
     r1 = moment_warp_reduce_u64(r1);

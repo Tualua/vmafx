@@ -1148,3 +1148,4 @@
 1442-float-adm-reference-divides
 1434-sycl-float-adm-cpu-arithmetic
 1445-hip-ssimulacra2-cpu-sum-order
+1447-hip-float-moment-cpu-float-squares

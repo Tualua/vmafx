@@ -1266,7 +1266,6 @@
         "core/test/test_gpu_adm_tiny_frames.c": 1,
         "core/test/test_hip_adm_parity.c": 2,
         "core/test/test_hip_cambi_parity.c": 1,
-        "core/test/test_hip_float_moment_parity.c": 1,
         "core/test/test_hip_motion3_parity.c": 2,
         "core/test/test_hip_motion_v2_parity.c": 1,
         "core/test/test_hip_ms_ssim_parity.c": 1,
@@ -9056,6 +9055,17 @@
         "scripts/ci/exact_twins.d/ssimulacra2.hip": 1
       },
       "target": "1445-hip-ssimulacra2-cpu-sum-order.md"
+    },
+    "1447": {
+      "sites": {
+        "core/src/feature/hip/float_moment/moment_score.hip": 2,
+        "core/src/feature/hip/float_moment_hip.c": 1,
+        "core/test/meson.build": 1,
+        "core/test/test_hip_float_moment_exact_contract.py": 2,
+        "core/test/test_hip_float_moment_parity.c": 1,
+        "scripts/ci/exact_twins.d/float_moment.hip": 1
+      },
+      "target": "1447-hip-float-moment-cpu-float-squares.md"
     }
   },
   "retired": {

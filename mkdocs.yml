@@ -1556,6 +1556,7 @@ nav:
         - "ADR-1443: sycl-ssim-cpu-arithmetic": adr/1443-sycl-ssim-cpu-arithmetic.md
         - "ADR-1444: hip-float-vif-cpu-arithmetic": adr/1444-hip-float-vif-cpu-arithmetic.md
         - "ADR-1445: hip-ssimulacra2-cpu-sum-order": adr/1445-hip-ssimulacra2-cpu-sum-order.md
+        - "ADR-1447: hip-float-moment-cpu-float-squares": adr/1447-hip-float-moment-cpu-float-squares.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md
@@ -1770,6 +1771,7 @@ nav:
         - "fixtures": adr/by-tag/fixtures.md
         - "flaky": adr/by-tag/flaky.md
         - "float-adm": adr/by-tag/float-adm.md
+        - "float-moment": adr/by-tag/float-moment.md
         - "float-motion": adr/by-tag/float-motion.md
         - "float-ms-ssim": adr/by-tag/float-ms-ssim.md
         - "float-vif": adr/by-tag/float-vif.md

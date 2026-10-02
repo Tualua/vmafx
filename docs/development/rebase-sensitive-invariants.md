@@ -541,6 +541,16 @@ linked AGENTS.md before resolving conflicts.
   `test_cuda_float_vif_parity` on one; the parity gate compares the twin with
   tolerance 0 (`EXACT_TWINS`). See
   [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
+- **`float_moment_hip` adds the CPU's float squares ([ADR-1447](../adr/1447-hip-float-moment-cpu-float-squares.md))**:
+  the 16-bit kernel of `core/src/feature/hip/float_moment/moment_score.hip`
+  adds `moment_float_square()`, one fp32 product of the sample with itself
+  converted to an integer, where `moment.c::compute_2nd_moment()` forms the
+  square in `float`; an exact integer square is another number at 16 bits. The
+  host recovers the moment with the CPU's two divisions. A change to how
+  `moment.c` forms or adds its terms changes the kernel in the same PR.
+  `core/test/test_hip_float_moment_exact_contract.py` guards it without a
+  device, `test_hip_float_moment_parity` on one (`==` while the sum is below
+  2^53 units, a derived bound past it).
 - **`float_vif_hip` returns the CPU's scores bit for bit ([ADR-1444](../adr/1444-hip-float-vif-cpu-arithmetic.md))**:
   the twin compiles `core/src/feature/float_vif_gpu_common.h` with its default
   operators, which round once only because every HIP kernel is built with

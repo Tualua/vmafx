@@ -57668,5 +57668,20 @@ must keep the fork's side of both:
 - A change to `ssim_map()` / `edge_diff_map()` in `ssimulacra2.c` changes
   `ss2h_terms()` (and `ss2c_terms()`) in the same PR.
 - `scripts/ci/exact_twins.d/ssimulacra2.hip` (new) declares the twin exact
+## ADR-1447 — `float_moment_hip` adds the CPU's float squares (2026-10-02)
+
+`fix/hip-float-moment-cpu-squares`, `T-HIP-FLOAT-MOMENT-16BIT-SQUARES-2026-10-01`.
+
+- `core/src/feature/hip/float_moment/moment_score.hip`: new
+  `moment_float_square()`; the 10/12/16-bit kernel adds it for the second
+  sums instead of `r * r` / `d * d`. The 8-bit kernel is unchanged. If
+  upstream changes how `moment.c::compute_2nd_moment()` forms or adds its
+  term, change the kernel with it.
+- `core/src/feature/hip/float_moment_hip.c`: comment only (the range of
+  exactness and the bound past 2^53).
+- `core/test/test_hip_float_moment_parity.c` is one table-driven binary now;
+  the `_10bit` meson variant is gone and a `_large` variant is registered
+  through `hip_parity_large_fixture_tests`.
+- `scripts/ci/exact_twins.d/float_moment.hip` (new) declares the twin exact
   (ADR-1428).
 - No Netflix golden-data, public API or FFmpeg patch impact.
