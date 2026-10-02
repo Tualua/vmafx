@@ -1,6 +1,17 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## The Cython extension declares `init_dwt_band_d()` as `adm.c` defines it (2026-10-02)
+
+`fix/ci-cython-adm-dwt-band-cursor`. No score impact; `adm.c` is untouched.
+
+- `compat/python-vmaf/core/adm_dwt2_cy.pyx` text-includes `core/src/feature/adm.c`
+  and declares its static `init_dwt_band_d()`. Since #1859 the helper takes a
+  `double *` cursor and a length in samples; the `.pyx` follows. An upstream
+  sync or a rebase that changes the helper's signature changes the declaration
+  and the call in the same PR: `core/test/test_cython_adm_dwt_band_decl_contract.py`
+  fails otherwise, without building the extension.
+
 ## Agent pages name the staged CUDA VIF kernels and the HIP handle header (2026-10-02)
 
 `docs/agents-notes-and-state-rows`. No rebase impact on code: agent pages and

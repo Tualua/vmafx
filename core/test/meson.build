@@ -101,6 +101,17 @@ test('test_c_cxx_enum_definition_contract',
     timeout : 60,
 )
 
+# The Cython extension (adm_dwt2_cy.pyx) re-declares adm.c's static
+# init_dwt_band_d(); a stale declaration generated a call no C compiler accepts
+# and failed every hosted job that builds the wheel. Device-free and
+# compiler-free.
+test('test_cython_adm_dwt_band_decl_contract',
+    import('python').find_installation(),
+    args : files('test_cython_adm_dwt_band_decl_contract.py'),
+    suite : ['fast'],
+    timeout : 60,
+)
+
 # ADR-1468: a SYCL kernel may require only a sub-group size every target of
 # the default sycl_icpx_aot_targets list accepts (16 or 32; Xe2 has no 8).
 # Device-free and compiler-free: it reads the option's default, the check in

@@ -18,7 +18,7 @@ cdef extern from "../../../core/src/feature/adm_tools.c":
     void adm_dwt2_d(const double *src, const adm_dwt_band_t_d *dst, int **ind_y, int **ind_x, int w, int h, int src_stride, int dst_stride)
 
 cdef extern from "../../../core/src/feature/adm.c":
-    char *init_dwt_band_d(adm_dwt_band_t_d *band, char *data_top, size_t buf_sz_one)
+    double *init_dwt_band_d(adm_dwt_band_t_d *band, double *data_top, size_t band_len)
 
 # mem.c became mem.cpp when the C++23 twins were wired in (#1133). The
 # implementation can no longer be text-included into this C module, so
@@ -41,7 +41,7 @@ def adm_dwt2_cy(np.ndarray[np.float64_t, ndim=2, mode='c'] a):
     cdef int h_new, w_new
 
     cdef double *data_buf = NULL
-    cdef char *data_top
+    cdef double *data_top
 
     cdef char *ind_buf_y = NULL
     cdef char *ind_buf_x = NULL
@@ -67,8 +67,10 @@ def adm_dwt2_cy(np.ndarray[np.float64_t, ndim=2, mode='c'] a):
         aligned_free(buf_y_orig)
         aligned_free(buf_x_orig)
         raise MemoryError
-    data_top = <char *>data_buf
-    data_top = init_dwt_band_d(&aa_dwt2, data_top, buf_sz_one)
+    # init_dwt_band_d() steps its cursor in samples of the band's type (adm.c
+    # since #1859), not in bytes: hand it the plane length in doubles.
+    data_top = data_buf
+    data_top = init_dwt_band_d(&aa_dwt2, data_top, buf_sz_one // sizeof(double))
 
     buf_y_orig = <char *> aligned_malloc(ind_size_y * 4, MAX_ALIGN)
     if not buf_y_orig:
