@@ -68,6 +68,73 @@ twin 'psnr_sycl' instead`. The same command without `feature=name=psnr` prints
 a VMAF score. Each decoder input has its own QSV device (`qr`, `qd`), as
 [the SYCL overview](../backends/sycl/overview.md) requires.
 
+## End-to-end harness: `zerocopy-e2e.sh`
+
+`scripts/test/zerocopy-e2e.sh` is the acceptance gate for the zero-copy fixes.
+It QSV-encodes a ref/dis pair with `hevc_qsv -global_quality 22` (NV12 / Main
+for 8 bit, P010 / Main10 for 10 bit) from the Netflix `src01` 576x324 pair and
+the 1920x1080 checkerboard pair (repeated `CB_REPEAT`=20 times), then runs every
+case through three legs:
+
+| Leg | Pipeline | Role |
+| --- | --- | --- |
+| `cpu` | software decode, `libvmaf` | reference |
+| `host` | software decode, `libvmaf_sycl` (host upload, SYCL twins) | must equal `cpu` exactly |
+| `zc` | QSV decode with one QSV device per input, `libvmaf_sycl` | must equal `host` once its stage is reached |
+
+Feature cases switch the default model off (`model=`) so only the named feature
+is measured; the two model cases use `model=version=...`.
+
+```bash
+scripts/test/sycl-dev-container.sh libvmaf
+scripts/test/sycl-dev-container.sh ffmpeg
+scripts/test/sycl-dev-container.sh exec bash scripts/test/zerocopy-e2e.sh --stage 1 --out /work/.cache/sycl-dev/e2e-s1 --depths 8 --bench
+```
+
+Run 8-bit and 10-bit as separate invocations with separate `--out` directories
+(`--depths 8`, `--depths 10`); set `SYCL_DEV_TIMEOUT` above the launcher's
+default if a run needs more than 90 minutes. Flags: `--stage {1,2,3}`
+(required), `--out DIR` (required), `--clips src01,checkerboard`, `--depths
+8,10`, `--cases id,id` (ids from `python3 scripts/test/zerocopy_e2e_compare.py
+--list`), `--yuv DIR` (default `/yuv`), `--bench`. `--bench` adds `-benchmark`
+to the zero-copy leg of `model-vmaf_v0.6.1` on the checkerboard and prints
+`ZC-E2E BENCH <clip> <depth> frames=<n> rtime=<s> fps=<f>`, the throughput
+baseline later stages compare against. An encode failure prints `ENCODE FAILED`
+and exits 1. The case files stay in `--out` as
+`<clip>_<depth>bit__<case>.<leg>.{json,rc,err}`.
+
+### Stages
+
+`--stage N` states how far the zero-copy fixes have come; a case is held to
+numeric parity once `N` reaches its stage and must fail loudly before that.
+
+| Stage | Cases that must match numerically |
+| --- | --- |
+| 1 | `vif`, `adm`, `motion`, `motion_v2`, `cambi`, `float_moment`, `psnr_luma` and `psnr_hvs_luma` (`enable_chroma=false`), `model-vmaf_v0.6.1` |
+| 2 | adds `psnr`, `psnr_hvs` (chroma) |
+| 3 | adds `float_ssim`, `float_ms_ssim`, `float_psnr`, `float_adm`, `float_vif`, `float_motion`, `float_motion_uv`, `ssim`, `ciede`, `ssimulacra2`, `speed_chroma`, `speed_temporal`, `model-vmaf_float_v0.6.1` |
+
+`zerocopy_e2e_compare.py` (unit-tested by `test_zerocopy_e2e_compare.py`) turns
+the files into verdicts, one `ZC-E2E <clip> <depth> <case> <verdict>` line per
+case and a last line `ZC-E2E SUMMARY stage=<n> pass=<p> fail=<f> nonexact=<x>`.
+The exit status is 0 only for `fail=0 nonexact=0` and at least one pass.
+
+| Verdict | Meaning |
+| --- | --- |
+| `PASS` | zero-copy output has every CPU metric and equals host upload exactly |
+| `PASS loud-fail` | a later-stage case exited non-zero and its stderr names the CPU feature or its SYCL twin |
+| `FAIL silent-drop` | a successful zero-copy run lacks a metric the CPU run has |
+| `FAIL zc-vs-host` | zero-copy differs from host upload by any amount |
+| `FAIL zc-failed` | a case at its stage failed on zero-copy |
+| `FAIL unexpected-success` | a later-stage case succeeded on zero-copy |
+| `FAIL unnamed-failure` | a later-stage case failed without naming the feature |
+| `FAIL missing-leg`, `cpu-failed`, `host-failed` | a leg's files are absent or a reference leg failed |
+| `NONEXACT host-vs-cpu` | the SYCL twin on host upload differs from the CPU extractor; the tolerance the parity gate would allow is printed for information only and never applied |
+
+`VMAF_integer_feature_motion_sad_score` is the one CPU output exempt from the
+metric set: the SYCL `motion` twin does not write it on any input path, so it
+cannot be a zero-copy regression (`SYCL_TWIN_OMITTED` in the comparator).
+
 ## What runs where
 
 The zero-copy end-to-end runs are local / container only: the self-hosted

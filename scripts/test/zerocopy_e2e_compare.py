@@ -56,6 +56,14 @@ from scripts.ci.cross_backend_parity_gate import (
 
 LEGS = ("cpu", "host", "zc")
 
+# CPU outputs that no SYCL twin writes on any input path (host upload included), so
+# they cannot be a zero-copy regression. Measured on the A380 at 12-05: the SYCL
+# ``motion`` twin omits the debug SAD score that the CPU, CUDA and HIP ``motion``
+# write (docs/state.md T-GPU-MOTION-SAD-SCORE-NOT-EMITTED-2026-10-02); the parity
+# gate's FEATURE_METRICS["motion"] leaves it out as well. Every other CPU metric
+# must be present.
+SYCL_TWIN_OMITTED: frozenset[str] = frozenset({"VMAF_integer_feature_motion_sad_score"})
+
 
 @dataclass(frozen=True)
 class Case:
@@ -183,7 +191,7 @@ def _metric_keys(frames: list[dict[str, Any]]) -> tuple[str, ...]:
     keys: set[str] = set()
     for frame in frames:
         keys.update(frame.get("metrics", {}))
-    return tuple(sorted(keys))
+    return tuple(sorted(keys - SYCL_TWIN_OMITTED))
 
 
 def _worst(per_max: dict[str, float], per_mismatch: dict[str, int]) -> str:

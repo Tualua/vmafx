@@ -190,3 +190,15 @@ def test_dotted_case_id_keeps_every_leg_file_distinct(
     rc, out = _run(tmp_path, 1, case, capsys)
     assert rc == 1
     assert "FAIL zc-vs-host" in out
+
+
+def test_known_sycl_twin_omission_is_not_a_drop_but_other_metrics_are(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    omitted = "VMAF_integer_feature_motion_sad_score"
+    cpu = {**METRICS, omitted: 1.0}
+    _case(tmp_path, STAGE1_CASE, cpu, METRICS, METRICS)
+    rc, out = _run(tmp_path, 1, STAGE1_CASE, capsys)
+    assert rc == 0, out
+    assert omitted in zc.SYCL_TWIN_OMITTED
+    assert {omitted} == zc.SYCL_TWIN_OMITTED
