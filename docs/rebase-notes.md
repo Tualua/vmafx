@@ -58814,3 +58814,15 @@ Kept: the `+0` start of every sum (signed-zero parity with `adm_dwt2_s()`), mult
   conflicts here. Keep the typed cursor: a `(float *)` cast of a `char *`
   cursor fails the required `Cppcheck` check (`invalidPointerCast`), and the
   `(float *)(void *)` form fails clang-tidy (`bugprone-casting-through-void`).
+## Integer ADM weight limits follow from the contrast-masking cube (ADR-1472, 2026-10-02)
+
+`fix/integer-adm-aim-wrap`, `T-ADM-AIM-BARTEN-SCALE-TERM-WRAP-2026-10-01`.
+
+- `core/src/feature/adm_csf_fixed_point.h` (fork file, no upstream counterpart): `ADM_CSF_S123_LIMIT` (2^30) is gone. `adm_csf_fixed_limit(scale, band)` returns the limit of one weight, and `adm_csf_fixed_scale()` normalises against the three limits of a scale. The constants `ADM_DWT_BAND_MAX_SCALE0..3`, `ADM_CM_EXCESS_MAX_SQ29`, `ADM_CM_EXCESS_MAX_SQ30`, `ADM_I4_CM_EXCESS_SLACK` and `ADM_I4_CM_WEIGHT_SHIFT` describe upstream arithmetic in `integer_adm.c`:
+  - the wavelet taps `dwt2_db2_coeffs_lo` / `_hi` and the DWT shifts (`adm_dwt2_8` 8 and 16; `i4_dwt2_round()` 0 + 15, 16 + 16, 16 + 15) give the band bounds;
+  - `shift_sq` 29 / 30 of `ADM_CM_ACCUM_ROUND` / `I4_ADM_CM_ACCUM_ROUND` gives the excess budgets;
+  - `shift_dst` 28 of `i4_adm_cm()` gives the weight shift.
+  An upstream change to any of these changes the bounds. `core/test/test_integer_adm_cm_budget.c` derives them again from the taps and fails until the constants follow; it does not read the shifts from the code, so a changed shift needs `BAND_FORMAT` in the test and the constants updated together.
+- No kernel, SIMD file or device file changes. CUDA, HIP, SYCL and Metal call `adm_csf_fixed_scale()` and follow.
+- Scores: Watson97 (default) and the two blend modes are bit-identical, so no Netflix golden value moves. Integer `adm` with `adm_csf_mode=1` changes: by at most 7.7e-7 where it was right (Netflix pair), and from a failure or a wrong value to the right one where the square wrapped. A snapshot or test that pins a Barten-mode `integer_adm*` value at more than six decimals needs regenerating; none exists on master (`python/test/feature_extractor_test.py` pins `adm_csf_mode=1` with `adm_csf_scale=0.002893`, whose weights need no normalisation and are unchanged).
+- Upstream Netflix/vmaf has `adm_csf_mode` in `libvmaf/src/feature/integer_adm.c` with no weight normalisation; its Barten mode wraps in the weight conversion itself. A port of an upstream fix there must keep `adm_csf_fixed_point.h` as the single place that converts weights.

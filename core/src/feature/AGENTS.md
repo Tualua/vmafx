@@ -19,7 +19,7 @@ PSNR, SSIM, MS-SSIM, LPIPS, …). Parent: [../../AGENTS.md](../../AGENTS.md).
 | Touching | Read first | Invariant |
 | --- | --- | --- |
 | `adm_tools.c`, `adm_tools.h` | [adm-angle-flag](AGENTS.d/adm-angle-flag.md) | adm_angle_flag has exactly one definition across floating-point and integer paths. |
-| `adm_csf_fixed_point.h`, `integer_adm.c` | [adm-barten-weights](AGENTS.d/adm-barten-weights.md) | Integer ADM Barten weights use one power-of-two exponent per scale. |
+| `adm_csf_fixed_point.h`, `integer_adm.c` | [adm-barten-weights](AGENTS.d/adm-barten-weights.md) | One power-of-two exponent per scale; weight limits come from adm_csf_fixed_limit(), never from storage. |
 | `adm_tools.c`, `adm_tools.h` | [adm-contrast-masking](AGENTS.d/adm-contrast-masking.md) | ADM contrast-masking edge policy is asymmetric across CPU and GPU twins. |
 | `integer_adm.c`, `integer_adm.h` | [adm-dwt](AGENTS.d/adm-dwt.md) | Integer ADM DWT mirror table for tiny extents and 16-bit vertical int64 sums. |
 | `integer_adm.c`, `adm_tools.c` | [adm-kernels-restructure](AGENTS.d/adm-kernels-restructure.md) | Integer ADM kernels header separation, AIM clipping differences, and adm_min_val clamping. |

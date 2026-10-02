@@ -687,11 +687,13 @@
       "sites": {
         ".github/workflows/upstream-netflix-955-watcher.yml": 1,
         "core/src/feature/adm_cm_accumulator.h": 1,
+        "core/src/feature/adm_csf_fixed_point.h": 1,
         "core/src/feature/cuda/integer_adm/adm_cm.cu": 1,
         "core/src/feature/hip/integer_adm/adm_cm.hip": 1,
         "core/src/feature/integer_adm_kernels.h": 3,
         "core/src/feature/sycl/integer_adm_sycl.cpp": 1,
-        "core/test/test_adm_cm_row_rounding.c": 1
+        "core/test/test_adm_cm_row_rounding.c": 1,
+        "core/test/test_integer_adm_cm_budget.c": 1
       },
       "target": "0155-adm-i4-rounding-deferred-netflix-955.md"
     },
@@ -6345,6 +6347,7 @@
         "core/test/test_hip_vif_parity.c": 1,
         "core/test/test_hip_wavefront_reduce.c": 1,
         "core/test/test_integer_adm_aim_unclipped.c": 1,
+        "core/test/test_integer_adm_cm_budget.c": 1,
         "core/test/test_integer_adm_cm_threshold.c": 1,
         "core/test/test_integer_adm_dwt16_range.c": 1,
         "core/test/test_integer_adm_min_dim.c": 1,
@@ -7731,7 +7734,8 @@
         "core/src/feature/integer_adm.c": 2,
         "core/src/feature/sycl/integer_adm_sycl.cpp": 1,
         "core/test/meson.build": 1,
-        "core/test/test_adm_csf_representable.c": 1
+        "core/test/test_adm_csf_representable.c": 1,
+        "core/test/test_integer_adm_cm_budget.c": 1
       },
       "target": "1325-integer-adm-barten-fixed-point-normalization.md"
     },
@@ -9425,6 +9429,14 @@
         "core/test/test_c_cxx_enum_definition_contract.py": 2
       },
       "target": "1470-c-cxx-shared-enum-one-definition.md"
+    },
+    "1472": {
+      "sites": {
+        "core/src/feature/adm_csf_fixed_point.h": 3,
+        "core/test/meson.build": 1,
+        "core/test/test_integer_adm_cm_budget.c": 1
+      },
+      "target": "1472-integer-adm-cm-weight-budget.md"
     }
   },
   "retired": {

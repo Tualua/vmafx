@@ -1977,6 +1977,28 @@ test_adm_csf_representable = executable('test_adm_csf_representable',
     ] + wave8_opt_only_objects
 )
 
+# ADR-1472 (T-ADM-AIM-BARTEN-SCALE-TERM-WRAP-2026-10-01): the fixed-point CSF
+# weight limits follow from the contrast-masking cube and the largest wavelet
+# coefficient of a scale; frames that reach that coefficient must score.
+test_integer_adm_cm_budget = executable('test_integer_adm_cm_budget',
+    ['test.c', 'test_integer_adm_cm_budget.c', '../src/mem.cpp', '../src/picture.c',
+     '../src/ref.cpp', '../src/dict.cpp',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
+     dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
+                    dnn_deps],
+    objects : [
+        common_cuda_objects,
+        log_cpp23_test_objects,
+        platform_specific_cpu_objects,
+        libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+        libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+        libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects
+)
+
 # ADR-1397: host tail of calc_psnrhvs() for the GPU twins. One running float
 # over every term of a plane, in term order and across block boundaries;
 # device-free, built with the strict FP arguments the library uses for it.
@@ -6926,6 +6948,7 @@ test('test_integer_motion_v2_coverage', test_integer_motion_v2_coverage, suite :
 test('test_ssim_coverage', test_ssim_coverage, suite : ['fast'])
 test('test_adm_coverage', test_adm_coverage, suite : ['fast'])
 test('test_adm_csf_representable', test_adm_csf_representable, suite : ['fast'])
+test('test_integer_adm_cm_budget', test_integer_adm_cm_budget, suite : ['fast'])
 test('test_psnr_hvs_coverage', test_psnr_hvs_coverage, suite : ['fast'])
 test('test_psnr_hvs_score', test_psnr_hvs_score, suite : ['fast'])
 test('test_ssimulacra2_coverage', test_ssimulacra2_coverage, suite : ['fast'])

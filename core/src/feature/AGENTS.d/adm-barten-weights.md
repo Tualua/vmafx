@@ -2,7 +2,7 @@
 paths:
   - core/src/feature/adm_csf_fixed_point.h
   - core/src/feature/integer_adm.c
-invariant: Integer ADM Barten weights use one power-of-two exponent per scale.
+invariant: One power-of-two exponent per scale; weight limits come from adm_csf_fixed_limit(), never from storage.
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # Integer ADM Barten Weights Exponent Contract
@@ -15,9 +15,19 @@ when rebasing or changing any integer-ADM twin:
 
 - choose one non-negative power-of-two exponent `k` for all three bands of a
   DWT scale; independent band shifts change the metric;
-- keep normalized scale-0 weights strictly below 2^16 and scale-1..3 weights
-  strictly below 2^30, retaining two headroom bits for signed CSF/CM and cube
-  arithmetic;
+- keep each normalized weight strictly below `adm_csf_fixed_limit(scale, band)`
+  (ADR-1472): 46603.4 for scale-0 h / v, 2^16 for scale-0 d, 279958309,
+  539893111, 546406567 at scales 1..3. Limit = contrast-masking excess budget
+  (`(v * v + round) >> 29|30` must fit int32: 2^30 - 1 / 1518500249) divided
+  by largest wavelet coefficient of the scale (`ADM_DWT_BAND_MAX_SCALE0..3`,
+  half the absolute sum of the composite filter). Old limit 2^30 wrapped the
+  square in Barten mode: NaN numerator (10 px checkerboard), `integer_adm2`
+  0.587 for 0.784 without a message (1 px). Never raise a limit, never widen
+  or saturate the square in one implementation only;
+- changed DWT taps or shifts, `shift_sq`, `i4_shift_dst` -> band bounds
+  change: update the constants and `BAND_FORMAT` in
+  `core/test/test_integer_adm_cm_budget.c` together (the test derives the
+  bounds from the taps and fails until they agree);
 - restore `3k` in the host contrast-masking finalizer because the accumulated
   signal is cubed, while the denominator continues to use the original float
   CSF factors;
@@ -32,6 +42,8 @@ when rebasing or changing any integer-ADM twin:
   The CPU reference checks before computation; GPU twins check before
   normalization or device work.
 
+`test_integer_adm_cm_budget` holds the limits against the taps and scores
+adversarial frames against `float_adm`.
 `test_adm_csf_representable` pins finite, non-degenerate CPU mode-1 output;
 the CUDA, SYCL, HIP, and Metal parity fixtures pin their supported scores at
 places=4. Metal integer ADM implements modes 0..3 and therefore must not regain

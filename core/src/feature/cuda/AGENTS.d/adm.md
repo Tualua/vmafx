@@ -38,6 +38,20 @@ invariant: Integer ADM options, CPU bits, negative rounding terms, tiny frame sh
   Guards: `test_cuda_adm_parity` (`==`, 9 exact cases),
   `test_adm_cm_row_rounding`, `test_cuda_adm_exact_contract.py`,
   `test_adm_cm_row_rounding_contract.py`.
+- **CSF weight limits = `adm_csf_fixed_limit()` (ADR-1472), host side
+  only.** `adm_cm.cu` narrows `(v * v + round) >> 29|30` to int32 like the
+  CPU (`adm_cm_accum_round()` / `i4_adm_cm_accum_round()`). It cannot wrap
+  because `adm_csf_fixed_scale()` (`feature/adm_csf_fixed_point.h`) keeps
+  every weight under excess budget / largest wavelet coefficient of the
+  scale: 46603.4 (scale 0 h, v), 65536 (scale 0 d), 279958309, 539893111,
+  546406567 (scales 1-3). Old limit 2^30 wrapped in Barten mode: NaN
+  numerator (10 px checkerboard), `integer_adm2` 0.587 for 0.784 (1 px).
+  Never convert a weight on the device or in this file; never widen or
+  saturate the square in the kernel (CPU bits). Changed DWT taps / shifts,
+  `shift_sq`, `i4_shift_dst` -> constants in the header + `BAND_FORMAT` in
+  `core/test/test_integer_adm_cm_budget.c` follow. Same for HIP, SYCL,
+  Metal twins. Check: `--backend cuda` vs `cpu`, `adm=debug=true:adm_csf_mode=1`,
+  both 1080p checkerboards, all 18 outputs equal.
 - **`integer_adm_cuda.c` / `float_adm_cuda.c` expose three ADM
   tuning parameters** (`adm_csf_scale`, `adm_csf_diag_scale`,
   `noise_weight`) with same defaults as CPU path (PR #731).

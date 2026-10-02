@@ -11,8 +11,12 @@
  *      horizontal / vertical bands scaled by 2^21 and the diagonal band
  *      by 2^23;
  *    - scales 1..3 (32-bit pipeline): `uint32_t i_rfactor[3]`, all three
- *      bands scaled by 2^32. The later signed multiply/cube stages require
- *      two headroom bits, so their usable arithmetic budget is 2^30.
+ *      bands scaled by 2^32.
+ *
+ *  Storage is not the binding limit. The contrast-masking reduction squares
+ *  the weighted sample and narrows the square to int32, so a weight is in
+ *  budget only when the largest wavelet coefficient of its scale, weighted,
+ *  still has a square that fits (ADR-1472; the bounds are below).
  *
  *  Those budgets were sized for the Watson97 CSF, whose weights sit around
  *  1e-2. The fork-added `adm_csf_mode` option (integer_adm.h) also exposes
@@ -27,7 +31,7 @@
  *  for all three bands of one scale, preserving their relative CSF weights;
  *  the contrast-masking reduction restores the removed exponent after its
  *  cube.  Invalid negative / non-finite table results are still rejected.
- *  See ADR-1191, ADR-1325, and
+ *  See ADR-1191, ADR-1325, ADR-1472, and
  *  docs/state.md :: T-UPSTREAM-1494-ADM-CSF-MODE-IRFACTOR-OVERFLOW-2026-09-03.
  *
  *  The frame-size bound and the rounding constant of the pipeline's right
@@ -51,14 +55,76 @@
 #define ADM_CSF_SCALE0_D_EXP (23)
 #define ADM_CSF_S123_EXP (32)
 
-/* Exclusive upper bounds of the corresponding fixed-point arithmetic. A
- * converted weight equal to the bound is outside the budget, so comparisons
- * are strict. Scale 0 is storage-limited; scales 1..3 keep two bits below
- * uint32_t's ceiling because their signed CSF/CM arithmetic and cube
- * accumulation need that headroom. */
-#define ADM_CSF_SCALE0_LIMIT (65536.0)    /* 2^16, uint16_t i_rfactor */
-#define ADM_CSF_S123_LIMIT (1073741824.0) /* 2^30, signed headroom */
+/* Storage bound of the scale-0 weights: uint16_t i_rfactor. */
+#define ADM_CSF_SCALE0_LIMIT (65536.0)
 #define ADM_MIN_VIEWING_GEOMETRY (3240.0) /* 1080p at 3H */
+
+/*
+ * Arithmetic budget of the contrast-masking cube (ADR-1472).
+ *
+ * Per sample the reduction forms the excess `v` of the weighted coefficient
+ * over its masking threshold, then `v_sq = (int32_t)((v * v + round) >> s)`
+ * and `v_sq * v` (adm_cm_accum_round(), i4_adm_cm_accum_round(), and their
+ * SIMD and device twins). The square fits int32 only up to
+ *
+ *   s = 29 (scale 0, horizontal / vertical):   v <= 2^30 - 1
+ *   s = 30 (scale 0 diagonal, scales 1..3):    v <= 1518500249
+ *
+ * A larger excess wraps: the cube turns negative or small, the score is wrong,
+ * and a negative accumulator ends as NaN in the p-norm.
+ *
+ * The excess is at most the weighted coefficient, plus 28 at scales 1..3
+ * (the threshold there can be as low as -27, ADR-0155's rounding term, and
+ * the weighting rounds). The weighted coefficient is `band * weight` at
+ * scale 0 and `(band * weight) >> 28` at scales 1..3. So the weight budget
+ * of a scale is the excess budget divided by the largest coefficient the
+ * wavelet can produce there.
+ *
+ * That coefficient is bounded by the filter taps, whatever the picture: a
+ * detail band is a linear function of the centred pixel p / 2^bpc - 1/2,
+ * which lies in [-1/2, 1/2), so its magnitude is at most half the absolute
+ * sum of the composite filter, in the band's fixed-point format (2^14 at
+ * scale 0, 2^29, 2^27 and 2^26 at scales 1, 2 and 3):
+ *
+ *   scale 0:   22929.4      scale 2:   751508000
+ *   scale 1:   1448980000   scale 3:   742509000
+ *
+ * (the larger of the horizontal / vertical and the diagonal band; a frame
+ * built from the sign pattern of the composite filter reaches 99.6 % of each
+ * at 8 bits). The constants below round those up by about half a percent,
+ * which covers the pipeline's rounding and the decouple stage's reciprocal
+ * table. core/test/test_integer_adm_cm_budget.c derives the bounds again
+ * from the taps and holds them against these constants.
+ */
+#define ADM_CM_EXCESS_MAX_SQ29 (1073741823.0)
+#define ADM_CM_EXCESS_MAX_SQ30 (1518500249.0)
+#define ADM_I4_CM_EXCESS_SLACK (28.0)
+#define ADM_DWT_BAND_MAX_SCALE0 (23040.0)
+#define ADM_DWT_BAND_MAX_SCALE1 (1456000000.0)
+#define ADM_DWT_BAND_MAX_SCALE2 (755000000.0)
+#define ADM_DWT_BAND_MAX_SCALE3 (746000000.0)
+#define ADM_I4_CM_WEIGHT_SHIFT (268435456.0) /* 2^28, i4_shift_dst */
+
+/**
+ * Exclusive upper bound of the fixed-point CSF weight of `band` (0 and 1:
+ * horizontal and vertical, 2: diagonal) at `scale`. A converted weight equal
+ * to the bound is outside the budget, so comparisons are strict.
+ *
+ * Scale 0: the horizontal and vertical weights are bound by the cube; the
+ * diagonal weight by its uint16_t storage (65535 * 23040 is still below the
+ * s = 30 excess budget). Scales 1..3: bound by the cube; every bound is
+ * below 2^30, so the uint32_t storage and the signed products hold as well.
+ */
+static inline double adm_csf_fixed_limit(int scale, int band)
+{
+    if (scale == 0) {
+        return band == 2 ? ADM_CSF_SCALE0_LIMIT : ADM_CM_EXCESS_MAX_SQ29 / ADM_DWT_BAND_MAX_SCALE0;
+    }
+    const double band_max = scale == 1 ?
+                                ADM_DWT_BAND_MAX_SCALE1 :
+                                (scale == 2 ? ADM_DWT_BAND_MAX_SCALE2 : ADM_DWT_BAND_MAX_SCALE3);
+    return (ADM_CM_EXCESS_MAX_SQ30 - ADM_I4_CM_EXCESS_SLACK) * ADM_I4_CM_WEIGHT_SHIFT / band_max;
+}
 
 /**
  * Preserve the integer pipeline's minimum angular-frequency contract. The
@@ -160,18 +226,16 @@ static inline int adm_csf_fixed_scale(int scale, const float rfactor1[3], double
         return geometry_err;
     }
 
-    double limit;
-
     if (scale == 0) {
         adm_csf_scale0_fixed(rfactor1, adm_norm_view_dist, adm_ref_display_height, adm_csf_mode,
                              fixed);
-        limit = ADM_CSF_SCALE0_LIMIT;
     } else {
         for (int band = 0; band < 3; ++band) {
             fixed[band] = (double)rfactor1[band] * pow(2, ADM_CSF_S123_EXP);
         }
-        limit = ADM_CSF_S123_LIMIT;
     }
+    const double limit[3] = {adm_csf_fixed_limit(scale, 0), adm_csf_fixed_limit(scale, 1),
+                             adm_csf_fixed_limit(scale, 2)};
 
     for (int band = 0; band < 3; ++band) {
         if (!adm_csf_fixed_valid(fixed[band])) {
@@ -186,7 +250,7 @@ static inline int adm_csf_fixed_scale(int scale, const float rfactor1[3], double
     }
 
     *normalization_shift = 0u;
-    while (fixed[0] >= limit || fixed[1] >= limit || fixed[2] >= limit) {
+    while (fixed[0] >= limit[0] || fixed[1] >= limit[1] || fixed[2] >= limit[2]) {
         fixed[0] *= 0.5;
         fixed[1] *= 0.5;
         fixed[2] *= 0.5;

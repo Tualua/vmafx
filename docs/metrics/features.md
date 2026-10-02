@@ -828,9 +828,23 @@ finite weights computable instead.
 For each scale, `adm` chooses the smallest non-negative power-of-two exponent
 `k` that puts all three fixed-point bands inside their arithmetic budget:
 
-- scale 0 is kept strictly below 2^16;
-- scales 1–3 are kept strictly below 2^30, leaving two headroom bits for the
-  signed filtering and cube accumulation.
+- scale 0: the horizontal and vertical weights stay below 46603.4, the
+  diagonal weight below 2^16;
+- scales 1, 2 and 3: every weight stays below 279958309, 539893111 and
+  546406567.
+
+The limits are not storage limits. Contrast masking squares the weighted
+wavelet coefficient and keeps the square in 32 bits, so a weight is admitted
+only when the largest coefficient the wavelet can produce at that scale still
+has a square that fits. The largest coefficient follows from the filter taps
+and holds for every picture and bit depth
+([ADR-1472](../adr/1472-integer-adm-cm-weight-budget.md)). With the earlier
+limit of 2^30 a high-contrast picture could wrap that square in Barten mode:
+`adm=adm_csf_mode=1` failed every frame of the 10 px checkerboard with a NaN
+numerator and returned `integer_adm2` 0.587 instead of 0.784 on the 1 px
+checkerboard. Barten-mode scores that were already right move in the seventh
+decimal place (the weights lose one or two bits); Watson97 and both blend
+modes are unchanged.
 
 All three bands use the same `k`, so their horizontal, vertical, and diagonal
 CSF ratios do not change. Contrast masking cubes the normalized values; its
