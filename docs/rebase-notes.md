@@ -58826,3 +58826,25 @@ Kept: the `+0` start of every sum (signed-zero parity with `adm_dwt2_s()`), mult
 - No kernel, SIMD file or device file changes. CUDA, HIP, SYCL and Metal call `adm_csf_fixed_scale()` and follow.
 - Scores: Watson97 (default) and the two blend modes are bit-identical, so no Netflix golden value moves. Integer `adm` with `adm_csf_mode=1` changes: by at most 7.7e-7 where it was right (Netflix pair), and from a failure or a wrong value to the right one where the square wrapped. A snapshot or test that pins a Barten-mode `integer_adm*` value at more than six decimals needs regenerating; none exists on master (`python/test/feature_extractor_test.py` pins `adm_csf_mode=1` with `adm_csf_scale=0.002893`, whose weights need no normalisation and are unchanged).
 - Upstream Netflix/vmaf has `adm_csf_mode` in `libvmaf/src/feature/integer_adm.c` with no weight normalisation; its Barten mode wraps in the weight conversion itself. A port of an upstream fix there must keep `adm_csf_fixed_point.h` as the single place that converts weights.
+## Integer motion SIMD kernels split into stages (ADR-1142, 2026-10-02)
+
+`refactor/std-motion-simd`.
+
+- `core/src/feature/x86/motion_avx2.c` and `motion_avx512.c`: the two
+  pipelines per file keep their names and signatures and are row loops over
+  inlined stages (`y_conv_row_{8,16}_*` for the vertical pass of one row,
+  `x_conv_row_sad_*` for the horizontal pass, with one vector block and one
+  scalar edge helper each). An upstream change to a pipeline lands in the
+  stage that holds the statement; the arithmetic of every statement is
+  unchanged, including the logical `_mm256_srlv_epi64` of the AVX2 16-bit
+  path.
+- `motion_avx512.c`: `y_convolution_8_avx512`, `y_convolution_16_avx512` and
+  `x_convolution_16_avx512` (used by `core/test/test_motion_avx512_parity.c`
+  only) share `filter5_epu32_avx512()` and `filter5_scalar()`; the three
+  passes of `x_convolution_16_avx512` (left edge, interior, right edge) keep
+  their order.
+- `core/src/feature/arm64/motion_neon.c`: `x_convolution_16_neon` is three
+  passes over `x_conv_edge_cols_neon()` / `x_conv_row_interior_neon()`.
+- Each file includes its own header, so the exported functions are checked
+  against their declarations.
+- No score, public C API, Netflix golden-data or FFmpeg patch impact.

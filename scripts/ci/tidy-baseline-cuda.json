@@ -361,7 +361,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 662,
+  "total_warnings": 637,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -418,8 +418,6 @@
     "core/src/feature/ssim.c": 6,
     "core/src/feature/vif_options.h": 1,
     "core/src/feature/vif_tools.h": 1,
-    "core/src/feature/x86/motion_avx2.c": 7,
-    "core/src/feature/x86/motion_avx512.c": 18,
     "core/src/fex_ctx_vector.h": 2,
     "core/src/framesync.h": 1,
     "core/src/gpu_picture_pool.cpp": 1,
@@ -1212,6 +1210,28 @@
         }
       },
       "previous_baseline_sha256": "787e9ca6581bdbc0ebd48c8395f0fe1107a7765e7b08518d4087873ed1c17c3e"
+    },
+    {
+      "sources": [
+        "core/src/feature/x86/motion_avx2.c",
+        "core/src/feature/x86/motion_avx512.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/x86/motion_avx2.c": {
+          "warnings": [
+            7,
+            0
+          ]
+        },
+        "core/src/feature/x86/motion_avx512.c": {
+          "warnings": [
+            18,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "679d2d0d6731823d12296f4f1d4d24469c9956d42757ac1ec34f60a78470357e"
     }
   ]
 }

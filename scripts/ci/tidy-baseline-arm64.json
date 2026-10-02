@@ -292,7 +292,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 558,
+  "total_warnings": 556,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -310,7 +310,6 @@
     "core/src/feature/adm_tools.h": 142,
     "core/src/feature/alias.c": 1,
     "core/src/feature/arm64/convolve_neon.c": 2,
-    "core/src/feature/arm64/motion_neon.c": 2,
     "core/src/feature/arm64/ms_ssim_decimate_neon.h": 1,
     "core/src/feature/arm64/ssimulacra2_host_neon.c": 1,
     "core/src/feature/arm64/ssimulacra2_neon.c": 8,
@@ -503,6 +502,21 @@
         }
       },
       "previous_baseline_sha256": "9960184808318722d5376922f4bf137f69cc12ebf72667a17beb5f1b56564cb7"
+    },
+    {
+      "sources": [
+        "core/src/feature/arm64/motion_neon.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/arm64/motion_neon.c": {
+          "warnings": [
+            2,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "b74d753eba8bef4fa748dbb1013eefcd200ebf64a4f0185e8b167e03c6d021a2"
     }
   ]
 }
