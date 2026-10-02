@@ -1163,7 +1163,12 @@ report the CPU's `+inf` or `clip_db` ceiling on the device too
 ([ADR-1365](../adr/1365-sycl-twin-cpu-option-parity.md)). `float_ssim_sycl`
 decimates on the device at the automatic scale and every explicit one, with
 the CPU's reduced planes bit for bit, so 1080p and 4K `float_ssim` run on
-SYCL ([ADR-1370](../adr/1370-sycl-float-ssim-device-decimation.md)).
+SYCL ([ADR-1370](../adr/1370-sycl-float-ssim-device-decimation.md)). Its
+score is the CPU's bit for bit: the per-window terms are the CPU's doubles
+and the host adds them in the CPU's order
+([ADR-1463](../adr/1463-sycl-float-ssim-raster-sum.md)), which costs time
+only where the scale is 1
+([SYCL backend](../backends/sycl/overview.md#float_ssim_sycl-adds-its-frame-sums-in-the-cpus-order-2026-10-02)).
 `float_ssim_hip` does the same on AMD devices
 ([ADR-1405](../adr/1405-hip-float-ssim-device-decimation.md)). The Metal
 `float_ssim` twin computes scale 1 only and leaves larger

@@ -343,16 +343,52 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   `numerator == denominator ? 1 : n / d`. Mirrored operation sequence ->
   identical window gives exactly 1 -> `enable_db` = CPU's `+inf` /
   `clip_db` ceiling (ADR-1221), not finite dB of an fp32 residue.
-  `enable_lcs` = separate kernel `launch_vert_combine_lcs` (default path
-  keeps one reduction), `float_ssim_lcs()` = `iqa/ssim_tools.c` L/C/S in
-  fp32 (clamped variances, flat-window covariance clamp, C3 = C2 / 2),
-  partials `[l | c | s]`. Since ADR-1414 the per-pixel helpers
-  (`ssim_terms`, `add_*_tap`, `term_fixed`, `FixedSum`) live in
-  `sycl_ssim_terms.h`, shared with the MS-SSIM twin.
+  `enable_lcs` = separate kernel (`FloatSsimLcsKernel`; default path
+  `FloatSsimTermKernel`), terms = `iqa/ssim_tools.c` L/C/S (clamped
+  variances, flat-window covariance clamp, C3 = C2 / 2). Since ADR-1414 the
+  per-pixel helpers (`ssim_float_parts`, `add_*_tap`, ...) live in
+  `sycl_ssim_terms.h`, shared with the MS-SSIM twin; sums: ADR-1463 bullet
+  below.
   **On rebase**: do not fold products back into
   expressions (icpx contracts `a * b + c`, ADR-1358) or restore the
   left-to-right four-term variance sum; the identical-frame cases in
   `test_sycl_twin_option_parity` fail on either.
+
+- **`float_ssim_sycl` terms = CPU doubles, frame sums = CPU raster order
+  ([ADR-1463](../../../../docs/adr/1463-sycl-float-ssim-raster-sum.md)).**
+  CPU (`iqa/ssim_accumulate_lane.h`): `lv = (2.0 * rm * cm + C1) / l_den`,
+  `cv = (2.0 * srsc + C2) / c_den` in fp64, `sv` fp32 quotient; adds
+  `lv * cv * sv`, lv, cv, sv into ONE double each, raster order; mean =
+  `(float)(sum / windows)`. Twin: `ssim_float_parts()` (fp32 part) ->
+  `ssim_double_terms()` = the CPU's operations one for one on `SoftSigned`
+  (`sycl_soft_signed.h`): exact product of the two converted means, exact
+  doubling, ONE rounded sum, ONE rounded quotient each. NO reduction on
+  device: default kernel stores `ssim_product_bits()` = bits of
+  `(lv * cv) * sv` at `row * w_final + col` (8 B / window, host
+  `frame_sum_of_terms()`, shared with `integer_ssim_sycl`); `enable_lcs`
+  kernel stores lv bits at `terms[i]`, cv bits at `terms[windows + i]`, fp32
+  sv at `structure[i]` (20 B / window, host `ssim_frame_sums()` forms the
+  product and the four sums, `accumulate_window()` = the reference's
+  statements). Kernel shape `VmafSyclKernelShape<16, 256>`, window function
+  flattened, as the `ssim` twin's term kernel (there SIMD-32 and the default
+  register file measured as scratch, ADR-1443; this shape audited
+  scratch-free on the A380, other shapes not measured here).
+  Why not the old exact integer sum (`term_fixed` + `reduce_over_group` +
+  `FixedSum`): exact != the CPU's running double; mean off by one float step
+  on frames whose terms cancel (constructed 64x64 pair: CPU `0xb4e2b622`,
+  old twin `0xb4e2b621`). Never: a reduction in the float twin, pair terms
+  for a stored term, `lv * (cv * sv)`, a host sum in another order or in
+  parallel chunks. On rebase: a change to `ssim_accumulate_lane.h` or the
+  means of `iqa/ssim_tools.c` -> `sycl_ssim_terms.h`, same PR. Guards:
+  `test_sycl_float_ssim_exact_contract.py` (device-free, 15 planted
+  regressions), `test_sycl_float_ssim_parity` (+ `_large`: `==`; order
+  cases on device and through the host hook
+  `vmaf_sycl_float_ssim_host_means()`; fixture
+  `core/test/float_ssim_order_frame.h` is shared byte-identical with the
+  CUDA and HIP tests: never edit it), `test_sycl_kernel_scratch`. Cost at
+  `scale=1`: `T-SYCL-FLOAT-SSIM-RASTER-SUM-THROUGHPUT-2026-10-02`.
+  `float_ms_ssim_sycl` still uses `ssim_terms()` / `term_fixed()` /
+  `FixedSum` (same defect, own change).
 
 - **`integer_ssim_sycl` = CPU `ssim`, bit for bit (ADR-1443).** Supersedes
   the fp32 formula of the bullet above for the fixed-point twin
@@ -367,7 +403,8 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   `SoftSigned` (sign, 53-bit significand, exponent in integers,
   `sycl_soft_signed.h`; RN ties-to-even per operation). Stores the fp64
   BIT PATTERN per pixel (`uint64_t`), NO reduction on device. Host:
-  `integer_ssim_frame_sum()` adds the plane in index order. Three
+  `frame_sum_of_terms()` (shared with `float_ssim_sycl`) adds the plane in
+  index order. Three
   shortcuts, each exact: (a) window weight 2^16 (every window inside the
   frame) -> product with it = exponent + 16 (`times_weight()`), edge
   windows take the multiplication; (b) all six integer products below
@@ -624,6 +661,7 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   256, else uint8). Frame means go through `float_ssim_frame_mean()`,
   which rounds to fp32 like `iqa_ssim()`: removing it breaks `enable_db`
   on near-identical frames. One queue wait per frame, in `collect()`.
+  The sums those means divide: ADR-1463 bullet above.
   Guards: `test_sycl_float_ssim_parity` (+ `_large`, scales 1-10, 8 / 10 /
   12-bit, odd sizes, `enable_lcs`, gate verdicts),
   `test_gpu_float_ssim_auto_scale_contract`. On rebase: a change to
@@ -875,8 +913,10 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   `motion_v2`, `psnr`, `float_ssim`, `float_ssim_lcs`, `cambi`: `sycl`
   listed -> gate tolerance 0. Basis per twin: integer sums on device + CPU's
   host arithmetic (`adm_sycl` ADR-1362, `motion_sycl` / `motion_v2_sycl`
-  ADR-1371, `psnr_sycl` ADR-1365), CPU's window arithmetic type for type +
-  integer frame sums (`float_ssim_sycl`, ADR-1370 / ADR-1414), integer
+  ADR-1371, `psnr_sycl` ADR-1365), CPU's window terms as the CPU's doubles +
+  host sums in the CPU's raster order (`float_ssim_sycl`, ADR-1370 /
+  ADR-1463; until ADR-1463 integer frame sums, exact only up to the float
+  rounding of the mean), integer
   pipeline + exact top-K sum (`cambi_sycl`, ADR-1357). Rule: listed = by
   construction AND measured identical on full-range noise at 8 / 10 / 12 /
   16 bit, never on measurement alone. A listed twin that drifts is FIXED,
@@ -1072,7 +1112,7 @@ ADR-0884 / ADR-0946 backlog must update in same PR.
 | `integer_adm_sycl.cpp` | `integer_adm.c` | `test_sycl_adm_parity.c` | ADR-0884 (round 2) |
 | `integer_ciede_sycl.cpp` | `ciede.c` | `test_sycl_ciede_parity.c` (1e-8, 8 to 16 bit, 4:2:0 / 4:2:2 / 4:4:4), `test_sycl_ciede_math.c` | ADR-0884 (round 2), ADR-1436 |
 | `integer_ssim_sycl.cpp` | `integer_ssim.c` | `test_sycl_ssim_parity.c` (+ `_large`; bit-exact, 8 to 16 bit), `test_sycl_integer_ssim_math.c` | ADR-0884 (round 2), ADR-1443 |
-| `integer_ssim_sycl.cpp` (`float_ssim_sycl`) | `float_ssim.c` + `ssim.c` | `test_sycl_float_ssim_parity.c` (+ `_large`) | ADR-1370 |
+| `integer_ssim_sycl.cpp` (`float_ssim_sycl`) | `float_ssim.c` + `ssim.c` + `iqa/ssim_tools.c` + `iqa/ssim_accumulate_lane.h` | `test_sycl_float_ssim_parity.c` (+ `_large`), `test_sycl_float_ssim_exact_contract.py` | ADR-1370, ADR-1463 |
 | `integer_ms_ssim_sycl.cpp` | `ms_ssim.c` | `test_sycl_ms_ssim_parity.c` (+ `_large`; bit-exact, 18 outputs x 3 frames) | ADR-0884 (round 2), ADR-1414 |
 | `integer_motion_v2_sycl.cpp` | `integer_motion_v2.c` | `test_sycl_motion_v2_parity.c` | ADR-0884 (round 2) |
 | `float_psnr_sycl.cpp` | `float_psnr.c` | `test_sycl_float_psnr_parity.c` (+ `_large`; bit-exact, 8 to 16 bit, `uncapped`; bound past 2^53) | ADR-0946 (round 3), ADR-1450 |

@@ -404,10 +404,10 @@ SSIM_TERMS_PIECES = (
     "return ff_add(sum, Ff{.hi = product, .lo = 0.0f});",
     "const float l_den = l_den_sum + c1;",
     "const float c_den = c_den_sum + c2;",
-    "const Ff product = two_prod(m.reference_mean, m.comparison_mean);",
-    "const Ff c_num = two_sum(2.0f * srsc, c2);",
-    ".luminance = ff_div(l_num, Ff{.hi = l_den, .lo = 0.0f}),",
-    ".contrast = ff_div(c_num, Ff{.hi = c_den, .lo = 0.0f}),",
+    "const Ff product = two_prod(p.reference_mean, p.comparison_mean);",
+    "const Ff c_num = two_sum(2.0f * p.srsc, c2);",
+    ".luminance = ff_div(l_num, Ff{.hi = p.l_den, .lo = 0.0f}),",
+    ".contrast = ff_div(c_num, Ff{.hi = p.c_den, .lo = 0.0f}),",
     ".structure = div_rn(s_num, s_den)",
 )
 SSIM_TERMS_SHARED = ("ssim_terms(", "add_horizontal_tap(", "add_vertical_tap(", "term_fixed(")
@@ -709,8 +709,8 @@ class SyclKernelSourceContractTest(unittest.TestCase):
     def test_fp32_ssim_luminance_quotient_is_detected(self) -> None:
         sources = self._ms_ssim_edit(
             SSIM_TERMS_HEADER,
-            ".luminance = ff_div(l_num, Ff{.hi = l_den, .lo = 0.0f}),",
-            ".luminance = Ff{.hi = div_rn(l_num.hi, l_den), .lo = 0.0f},",
+            ".luminance = ff_div(l_num, Ff{.hi = p.l_den, .lo = 0.0f}),",
+            ".luminance = Ff{.hi = div_rn(l_num.hi, p.l_den), .lo = 0.0f},",
         )
         self._assert_ms_ssim_detected(sources, "not the CPU's operand types")
 

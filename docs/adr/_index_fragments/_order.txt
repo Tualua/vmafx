@@ -1166,3 +1166,4 @@
 1459-speed-cov-kernel-exact
 1468-sycl-sub-group-sizes-every-aot-target
 1461-strict-fp-every-translation-unit
+1463-sycl-float-ssim-raster-sum

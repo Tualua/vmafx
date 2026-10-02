@@ -348,6 +348,19 @@ test('test_sycl_ssim_exact_contract',
     timeout : 30,
 )
 
+# ADR-1463: float_ssim_sycl forms iqa/ssim_tools.c's per-window lv and cv as
+# the CPU's doubles in 64-bit integers, stores every window's term unreduced
+# and the host adds them in raster order (the CPU's order; a work-group sum
+# rounds elsewhere and moved the float mean on frames whose terms cancel).
+# Device-free; the score checks are test_sycl_float_ssim_parity (host and
+# device).
+test('test_sycl_float_ssim_exact_contract',
+    import('python').find_installation(),
+    args : files('test_sycl_float_ssim_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-1446: ssimulacra2_sycl returns the CPU's score bit for bit -- each of
 # the six per-sample terms is the reference's double, formed in 64-bit
 # integers, and each sum is the reference's loop over them (increments per
@@ -5264,9 +5277,11 @@ test('test_sycl_ms_ssim_parity', test_sycl_ms_ssim_parity,
     suite : ['fast', 'gpu', 'sycl'],
     is_parallel : false)
 
-# float_ssim SYCL parity — Research-0985. Tolerance is places=3 (5e-04) to
-# accommodate the CPU/GPU formula difference (L×C×S vs combined) and Arc A380
-# class fp32 accumulation drift. See Research-0985 §3.4.
+# float_ssim SYCL parity: every output == the CPU extractor's (ADR-1463; first
+# added with a 5e-4 tolerance, Research-0985). Runs the constructed pair of
+# float_ssim_order_frame.h and noise pairs on which a sum in another order
+# moves the float mean, on the device and, device-free, through the twin's
+# host hook.
 test_sycl_float_ssim_parity = executable('test_sycl_float_ssim_parity',
     ['test.c', 'test_sycl_float_ssim_parity.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],

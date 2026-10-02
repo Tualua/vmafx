@@ -1,2 +1,2 @@
-adr: ADR-1370, ADR-1414, ADR-1451
-evidence: Arc A380 (xe), --precision max: 333 of 333 frames (Netflix 576x324 at 8 to 16 bit and 4:2:2, 1080p checkerboards, full-range noise at 8 to 16 bit, bright 16-bit 1080p, BBB 4K widened to 16 bit, BBB 4K 200 frames) identical to --backend cpu on every gate output.
+adr: ADR-1370, ADR-1463, ADR-1451
+evidence: Arc A380 (xe), --precision max: the constructed 64x64 pair of core/test/float_ssim_order_frame.h scores the CPU's 0xb4e2b622 with enable_lcs and equals the CPU on the luminance, contrast and structure means (float_ssim 0xb4e2b621 before ADR-1463); 333 of 333 frames (Netflix 576x324 at 8 to 16 bit and 4:2:2, 1080p checkerboards, full-range noise at 8 to 16 bit, bright 16-bit 1080p, BBB 4K widened to 16 bit, BBB 4K 200 frames) identical to --backend cpu on every gate output. scale=1 and scale=2 on 138 frames too (BBB 4K 50 frames).

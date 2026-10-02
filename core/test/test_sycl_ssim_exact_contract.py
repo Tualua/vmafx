@@ -48,12 +48,14 @@ TERM_STORE = "a_.terms[id[0] * (size_t)a_.width + id[1]] ="
 KERNEL_SHAPE = "class IssimTermKernel : public VmafSyclKernelShape<ISSIM_TERM_SG, ISSIM_TERM_GRF>"
 SHAPE_VALUES = ("constexpr int ISSIM_TERM_SG = 16;", "constexpr int ISSIM_TERM_GRF = 256;")
 FLATTENED = "__attribute__((flatten, always_inline)) static inline uint64_t\ninteger_ssim_term("
+# frame_sum_of_terms() is shared with float_ssim_sycl (ADR-1463) and sits
+# above the fixed-point twin's section.
 HOST_SUM = (
-    "double ssim = 0.0;",
-    "for (size_t i = 0u; i < count; i++)",
-    "ssim += std::bit_cast<double>(terms[i]);",
+    "double sum = 0.0;",
+    "for (size_t i = 0U; i < count; i++)",
+    "sum += std::bit_cast<double>(terms[i]);",
 )
-HOST_CALL = "integer_ssim_frame_sum(s->h_terms, (size_t)s->width * s->height);"
+HOST_CALL = "frame_sum_of_terms(s->h_terms, (size_t)s->width * s->height);"
 READBACK = "(size_t)s->width * s->height * sizeof(uint64_t)"
 WEIGHT_SUM = "s->total_weight = line_weight(width) * line_weight(height);"
 
@@ -114,6 +116,22 @@ def _integer_section(twin: str) -> str:
     return _code(twin[twin.index(SECTION) :])
 
 
+def _function_body(code: str, name: str) -> str:
+    """Text of the first definition of `name` (brace-matched), or empty."""
+    match = re.search(rf"\b{name}\([^;{{]*\)\s*\{{", code)
+    if not match:
+        return ""
+    depth = 0
+    for index in range(match.end() - 1, len(code)):
+        if code[index] == "{":
+            depth += 1
+        elif code[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return code[match.start() : index + 1]
+    return ""
+
+
 def _kernel_failures(twin: str) -> list[str]:
     failures: list[str] = []
     code = _integer_section(twin)
@@ -133,8 +151,9 @@ def _kernel_failures(twin: str) -> list[str]:
 def _host_failures(twin: str) -> list[str]:
     failures: list[str] = []
     code = _integer_section(twin)
+    shared_sum = _function_body(_code(twin), "frame_sum_of_terms")
     for piece in HOST_SUM:
-        if piece not in code:
+        if piece not in shared_sum:
             failures.append(f"{TWIN}: the frame sum is not one double in raster order ({piece})")
     if HOST_CALL not in code:
         failures.append(f"{TWIN}: collect no longer adds the whole term plane")
@@ -237,14 +256,14 @@ class IntegerSsimSyclExactContract(unittest.TestCase):
         self._assert_detected(failures, "not flattened")
 
     def test_host_sum_of_a_part_is_detected(self) -> None:
-        failures = _replaced(TWIN, HOST_CALL, "integer_ssim_frame_sum(s->h_terms, s->width);")
+        failures = _replaced(TWIN, HOST_CALL, "frame_sum_of_terms(s->h_terms, s->width);")
         self._assert_detected(failures, "whole term plane")
 
     def test_reordered_host_sum_is_detected(self) -> None:
         failures = _replaced(
             TWIN,
-            "for (size_t i = 0u; i < count; i++) {\n        ssim +=",
-            "for (size_t i = count; i-- > 0u;) {\n        ssim +=",
+            "for (size_t i = 0U; i < count; i++) {\n        sum +=",
+            "for (size_t i = count; i-- > 0U;) {\n        sum +=",
         )
         self._assert_detected(failures, "raster order")
 

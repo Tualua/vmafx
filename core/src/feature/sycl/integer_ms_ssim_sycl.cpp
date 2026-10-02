@@ -909,7 +909,8 @@ static void free_ms_ssim_pyramid(MsSsimStateSycl *s)
     /* MS_SSIM_MAX_PLANES, not n_planes: close must free whatever init managed to
      * allocate, and an init that failed part-way through plane 2 still leaves
      * plane 0 and 1 live. free_ms_ssim_pointer null-checks, so the unused tail
-     * of a luma-only run costs nothing. */
+     * of a luma-only run costs nothing. The loop keeps its scalar bound
+     * (HISS-02, applied to the whole tree by ADR-1142). */
     // NOLINTNEXTLINE(modernize-loop-convert): HISS-02 wants the explicit bound; test_sycl_kernel_source_contract.py (test_ms_ssim_pyramid_plane_loop_regression_is_detected) rejects the range-for form.
     for (unsigned plane = 0; plane < MS_SSIM_MAX_PLANES; plane++) {
         MsSsimPlaneGeometry &geometry = s->geom[plane];

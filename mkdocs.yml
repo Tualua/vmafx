@@ -1573,6 +1573,7 @@ nav:
         - "ADR-1460: gate-speed-temporal-and-uncovered-twins": adr/1460-gate-speed-temporal-and-uncovered-twins.md
         - "ADR-1461: strict-fp-every-translation-unit": adr/1461-strict-fp-every-translation-unit.md
         - "ADR-1462: cuda-vif-reads-host-log2-table": adr/1462-cuda-vif-reads-host-log2-table.md
+        - "ADR-1463: sycl-float-ssim-raster-sum": adr/1463-sycl-float-ssim-raster-sum.md
         - "ADR-1468: sycl-sub-group-sizes-every-aot-target": adr/1468-sycl-sub-group-sizes-every-aot-target.md
       - "By tag":
         - Overview: adr/by-tag/index.md

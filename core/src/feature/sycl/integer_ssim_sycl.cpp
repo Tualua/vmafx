@@ -28,18 +28,24 @@
  *       ref² / cmp² / ref·cmp into 5 device float buffers.
  *       SLM-staged (SY-2, ADR-0458): 26-float tile per WG row
  *       eliminates redundant global-memory reads across neighbours.
- *    2. nd_range vertical 11-tap + per-pixel SSIM combine +
- *       per-WG float partial sums via sycl::reduce_over_group.
+ *    2. vertical 11-tap + the CPU's per-window terms, one work-item per
+ *       window and no reduction on the device (ADR-1463): the kernel
+ *       stores the fp64 bit pattern of `lv * cv * sv` at the window's
+ *       raster position.
  *
- *  Host accumulates partials in `double`, divides by
- *  (W'-10)·(H'-10) over the decimated W' x H' and emits `float_ssim`.
+ *  The host adds the plane of terms into one `double` in raster order, as
+ *  iqa/ssim_tools.c does, divides by (W'-10)·(H'-10) over the decimated
+ *  W' x H' and emits `float_ssim`. The sum is the CPU's because the terms
+ *  and the order are: a sum in another order rounds elsewhere, and on a
+ *  frame whose terms cancel that moved the fp32 mean by one step.
  *
  *  Options mirror CPU float_ssim.c. `enable_lcs` switches pass 2 to a
- *  variant that also reduces the per-pixel luminance / contrast /
- *  structure terms of iqa/ssim_tools.c (clamped variances, flat-region
- *  covariance clamp) into three more per-WG partials and emits
- *  `float_ssim_{l,c,s}`. `enable_db` / `clip_db` act on the host through
- *  the shared nonfinite_score.h SSIM helpers.
+ *  variant that stores the per-window luminance and contrast doubles and
+ *  the fp32 structure of iqa/ssim_tools.c (clamped variances, flat-region
+ *  covariance clamp); the host forms `lv * cv * sv` and the four sums of
+ *  ssim_accumulate_lane() and emits `float_ssim_{l,c,s}` as well.
+ *  `enable_db` / `clip_db` act on the host through the shared
+ *  nonfinite_score.h SSIM helpers.
  *
  *  `scale` resolves as in ssim.c::compute_ssim (0 = auto from the short
  *  side). The ADR-1324 context check refuses only a geometry the device
@@ -100,18 +106,19 @@ constexpr float G[SSIM_K] = {
     0.213006f, 0.109361f, 0.036001f, 0.007599f, 0.001028f,
 };
 
-using vmaf_sycl_exact::Ff;
+using vmaf_sycl_ssim::accumulate_window;
 using vmaf_sycl_ssim::add_horizontal_tap;
 using vmaf_sycl_ssim::add_vertical_tap;
-using vmaf_sycl_ssim::FixedSum;
 using vmaf_sycl_ssim::float_ssim_constants;
 using vmaf_sycl_ssim::MomentPairs;
 using vmaf_sycl_ssim::round_moments;
-using vmaf_sycl_ssim::ssim_term;
-using vmaf_sycl_ssim::ssim_terms;
+using vmaf_sycl_ssim::ssim_double_terms;
+using vmaf_sycl_ssim::ssim_float_parts;
+using vmaf_sycl_ssim::ssim_frame_sums;
+using vmaf_sycl_ssim::ssim_product_bits;
+using vmaf_sycl_ssim::SsimDoubleTerms;
+using vmaf_sycl_ssim::SsimFrameSums;
 using vmaf_sycl_ssim::SsimMoments;
-using vmaf_sycl_ssim::SsimTerms;
-using vmaf_sycl_ssim::term_fixed;
 
 } // namespace
 
@@ -145,9 +152,6 @@ struct SsimStateSycl {
     unsigned h_horiz;
     unsigned w_final;
     unsigned h_final;
-    unsigned wg_count_x;
-    unsigned wg_count_y;
-    unsigned wg_count;
 
     float c1;
     float c2;
@@ -160,7 +164,7 @@ struct SsimStateSycl {
     void *h_cmp_raw;
     void *d_ref_raw;
     void *d_cmp_raw;
-    /* Device USM decimated float ref / cmp + 5 intermediates + WG partials. */
+    /* Device USM decimated float ref / cmp + 5 intermediates. */
     float *d_ref;
     float *d_cmp;
     float *d_ref_mu;
@@ -168,14 +172,14 @@ struct SsimStateSycl {
     float *d_ref_sq;
     float *d_cmp_sq;
     float *d_refcmp;
-    /* Per-WG sums of the SSIM terms in units of 2^-52. */
-    std::int64_t *d_partials;
-    /* Host-pinned partials for D2H. */
-    std::int64_t *h_partials;
-    /* enable_lcs only: per-WG L / C / S sums, 3 x wg_count laid out
-     * [l | c | s]; NULL otherwise. */
-    std::int64_t *d_lcs_partials;
-    std::int64_t *h_lcs_partials;
+    /* fp64 bit patterns per window in raster order, and their pinned host
+     * copy: w_final * h_final SSIM terms, or under enable_lcs twice that,
+     * the luminance terms followed by the contrast terms. */
+    std::uint64_t *d_terms;
+    std::uint64_t *h_terms;
+    /* enable_lcs only: the fp32 structure term per window; NULL otherwise. */
+    float *d_structure;
+    float *h_structure;
 
     bool has_pending;
     unsigned pending_index;
@@ -216,15 +220,14 @@ struct FloatVertArgs {
     const float *reference_square;
     const float *comparison_square;
     const float *cross_product;
-    /* Per-work-group sums of the SSIM terms in units of 2^-52. */
-    std::int64_t *partials;
-    /* enable_lcs kernel only: 3 x group_count sums, [l | c | s]. */
-    std::int64_t *lcs_partials;
+    /* fp64 bit patterns per window, raster order: the SSIM term, or in the
+     * enable_lcs kernel L in [0, windows) and C in [windows, 2 * windows). */
+    std::uint64_t *terms;
+    /* enable_lcs kernel only: the fp32 S per window. */
+    float *structure;
     unsigned horizontal_width;
     unsigned final_width;
     unsigned final_height;
-    size_t group_columns;
-    size_t group_count;
     float c1;
     float c2;
 };
@@ -461,75 +464,75 @@ static inline SsimMoments vertical_moments(const FloatVertArgs &args, size_t x, 
 namespace
 {
 
-/* Exact work-group sum of one fixed-point term into `out`. Every work-item
- * of the group must call it (reduce_over_group). */
-static inline void store_fixed_group(sycl::nd_item<2> item, const FloatVertArgs &args,
-                                     std::int64_t *out, std::int64_t value)
+/* SIMD-16 with the 256-entry register file: the vertical moments and the
+ * two fp64 quotients in integers stay in registers (no scratch memory,
+ * ADR-1395). */
+constexpr int FSSIM_TERM_SG = 16;
+constexpr int FSSIM_TERM_GRF = 256;
+
+/* The CPU's lv, cv and sv of the window at (x, y). Flattened into the
+ * kernel: a call left in it takes scratch memory for its frame (ADR-1395). */
+__attribute__((flatten, always_inline)) static inline SsimDoubleTerms
+float_ssim_window_terms(const FloatVertArgs &args, size_t x, size_t y)
 {
-    const std::int64_t sum =
-        sycl::reduce_over_group(item.get_group(), value, sycl::plus<std::int64_t>{});
-    if (item.get_local_id(0) == 0 && item.get_local_id(1) == 0) {
-        out[item.get_group(0) * args.group_columns + item.get_group(1)] = sum;
+    return ssim_double_terms(ssim_float_parts(vertical_moments(args, x, y), args.c1, args.c2),
+                             args.c1, args.c2);
+}
+
+/* Pass 2: one work-item per window stores the fp64 bit pattern of that
+ * window's `lv * cv * sv` at its raster position. There is no reduction on
+ * the device: iqa_ssim() adds every term into one double, row after row, and
+ * those additions round (ADR-1463). */
+class FloatSsimTermKernel : public VmafSyclKernelShape<FSSIM_TERM_SG, FSSIM_TERM_GRF>
+{
+  public:
+    explicit FloatSsimTermKernel(const FloatVertArgs &args) : a_(args)
+    {
     }
-}
 
-} // namespace
+    VMAF_SYCL_FUNCTOR_SG_SIZE(FSSIM_TERM_SG) void operator()(sycl::id<2> id) const
+    {
+        a_.terms[id[0] * (size_t)a_.final_width + id[1]] =
+            ssim_product_bits(float_ssim_window_terms(a_, id[1], id[0]));
+    }
 
-namespace
+  private:
+    FloatVertArgs a_;
+};
+
+/* enable_lcs variant: lv and cv as fp64 bit patterns and the fp32 sv, each at
+ * the window's raster position; the host forms the product and the four
+ * sums. */
+class FloatSsimLcsKernel : public VmafSyclKernelShape<FSSIM_TERM_SG, FSSIM_TERM_GRF>
 {
+  public:
+    explicit FloatSsimLcsKernel(const FloatVertArgs &args) : a_(args)
+    {
+    }
 
-static sycl::nd_range<2> vert_combine_range(const FloatVertArgs &args)
-{
-    const size_t global_x = ((args.final_width + SSIM_WG_X - 1) / SSIM_WG_X) * SSIM_WG_X;
-    const size_t global_y = ((args.final_height + SSIM_WG_Y - 1) / SSIM_WG_Y) * SSIM_WG_Y;
-    return sycl::nd_range<2>{sycl::range<2>{global_y, global_x},
-                             sycl::range<2>{SSIM_WG_Y, SSIM_WG_X}};
-}
+    VMAF_SYCL_FUNCTOR_SG_SIZE(FSSIM_TERM_SG) void operator()(sycl::id<2> id) const
+    {
+        const size_t windows = (size_t)a_.final_width * a_.final_height;
+        const size_t index = id[0] * (size_t)a_.final_width + id[1];
+        const SsimDoubleTerms terms = float_ssim_window_terms(a_, id[1], id[0]);
+        a_.terms[index] = vmaf_sycl_soft::signed_bits(terms.luminance);
+        a_.terms[windows + index] = vmaf_sycl_soft::signed_bits(terms.contrast);
+        a_.structure[index] = terms.structure;
+    }
 
-/* Pass 2: vertical moments, the CPU's per-pixel SSIM term and its exact
- * work-group sum; out-of-frame work-items contribute zero. */
-static void launch_vert_combine(sycl::queue &queue, const FloatVertArgs &args)
-{
-    sycl::nd_range<2> const range = vert_combine_range(args);
-    queue.submit([=](sycl::handler &handler) {
-        handler.parallel_for(range, [=](sycl::nd_item<2> item) {
-            const size_t x = item.get_global_id(1);
-            const size_t y = item.get_global_id(0);
-            std::int64_t value = 0;
-            if (x < args.final_width && y < args.final_height) {
-                const SsimTerms terms = ssim_terms(vertical_moments(args, x, y), args.c1, args.c2);
-                value = term_fixed(ssim_term(terms));
-            }
-            store_fixed_group(item, args, args.partials, value);
-        });
-    });
-}
+  private:
+    FloatVertArgs a_;
+};
 
-/* enable_lcs variant: the same terms feed the SSIM sum and the L / C / S
- * sums, stored as [l | c | s] rows of group_count each. */
-static void launch_vert_combine_lcs(sycl::queue &queue, const FloatVertArgs &args)
+static void launch_window_terms(sycl::queue &queue, const FloatVertArgs &args, bool enable_lcs)
 {
-    sycl::nd_range<2> const range = vert_combine_range(args);
-    queue.submit([=](sycl::handler &handler) {
-        handler.parallel_for(range, [=](sycl::nd_item<2> item) {
-            const size_t x = item.get_global_id(1);
-            const size_t y = item.get_global_id(0);
-            std::int64_t value = 0;
-            std::int64_t luminance = 0;
-            std::int64_t contrast = 0;
-            std::int64_t structure = 0;
-            if (x < args.final_width && y < args.final_height) {
-                const SsimTerms terms = ssim_terms(vertical_moments(args, x, y), args.c1, args.c2);
-                value = term_fixed(ssim_term(terms));
-                luminance = term_fixed(terms.luminance);
-                contrast = term_fixed(terms.contrast);
-                structure = term_fixed(Ff{.hi = terms.structure, .lo = 0.0f});
-            }
-            store_fixed_group(item, args, args.partials, value);
-            store_fixed_group(item, args, args.lcs_partials, luminance);
-            store_fixed_group(item, args, args.lcs_partials + args.group_count, contrast);
-            store_fixed_group(item, args, args.lcs_partials + 2U * args.group_count, structure);
-        });
+    const sycl::range<2> windows{args.final_height, args.final_width};
+    queue.submit([&](sycl::handler &handler) {
+        if (enable_lcs) {
+            handler.parallel_for(windows, FloatSsimLcsKernel(args));
+        } else {
+            handler.parallel_for(windows, FloatSsimTermKernel(args));
+        }
     });
 }
 
@@ -661,9 +664,6 @@ static int configure_float_ssim(SsimStateSycl *s, unsigned bpc, unsigned width, 
     s->h_horiz = s->dec_height;
     s->w_final = s->dec_width - (SSIM_K - 1);
     s->h_final = s->dec_height - (SSIM_K - 1);
-    s->wg_count_x = (s->w_final + (unsigned)SSIM_WG_X - 1) / (unsigned)SSIM_WG_X;
-    s->wg_count_y = (s->h_final + (unsigned)SSIM_WG_Y - 1) / (unsigned)SSIM_WG_Y;
-    s->wg_count = s->wg_count_x * s->wg_count_y;
     float_ssim_constants(&s->c1, &s->c2);
     s->max_db = vmaf_ssim_max_db(s->clip_db, bpc, width, height);
     return 0;
@@ -694,7 +694,8 @@ static void allocate_float_ssim(SsimStateSycl *s)
     const size_t raw_bytes = (size_t)s->width * s->height * s->sample_bytes;
     const size_t input_bytes = (size_t)s->dec_width * s->dec_height * sizeof(float);
     const size_t horiz_bytes = (size_t)s->w_horiz * s->h_horiz * sizeof(float);
-    const size_t partials_bytes = (size_t)s->wg_count * sizeof(std::int64_t);
+    const size_t windows = (size_t)s->w_final * s->h_final;
+    const size_t terms_bytes = (s->enable_lcs ? 2U : 1U) * windows * sizeof(std::uint64_t);
     s->h_ref_raw = allocate_host<void>(s->sycl_state, raw_bytes);
     s->h_cmp_raw = allocate_host<void>(s->sycl_state, raw_bytes);
     s->d_ref_raw = allocate_device<void>(s->sycl_state, raw_bytes);
@@ -706,11 +707,11 @@ static void allocate_float_ssim(SsimStateSycl *s)
     s->d_ref_sq = allocate_device<float>(s->sycl_state, horiz_bytes);
     s->d_cmp_sq = allocate_device<float>(s->sycl_state, horiz_bytes);
     s->d_refcmp = allocate_device<float>(s->sycl_state, horiz_bytes);
-    s->d_partials = allocate_device<std::int64_t>(s->sycl_state, partials_bytes);
-    s->h_partials = allocate_host<std::int64_t>(s->sycl_state, partials_bytes);
+    s->d_terms = allocate_device<std::uint64_t>(s->sycl_state, terms_bytes);
+    s->h_terms = allocate_host<std::uint64_t>(s->sycl_state, terms_bytes);
     if (s->enable_lcs) {
-        s->d_lcs_partials = allocate_device<std::int64_t>(s->sycl_state, 3U * partials_bytes);
-        s->h_lcs_partials = allocate_host<std::int64_t>(s->sycl_state, 3U * partials_bytes);
+        s->d_structure = allocate_device<float>(s->sycl_state, windows * sizeof(float));
+        s->h_structure = allocate_host<float>(s->sycl_state, windows * sizeof(float));
     }
 }
 
@@ -751,10 +752,10 @@ namespace
 
 static bool float_ssim_allocations_complete(const SsimStateSycl *s)
 {
-    const bool lcs_complete = !s->enable_lcs || (s->d_lcs_partials && s->h_lcs_partials);
+    const bool lcs_complete = !s->enable_lcs || (s->d_structure && s->h_structure);
     return s->h_ref_raw && s->h_cmp_raw && s->d_ref_raw && s->d_cmp_raw && s->d_ref && s->d_cmp &&
-           s->d_ref_mu && s->d_cmp_mu && s->d_ref_sq && s->d_cmp_sq && s->d_refcmp &&
-           s->d_partials && s->h_partials && lcs_complete;
+           s->d_ref_mu && s->d_cmp_mu && s->d_ref_sq && s->d_cmp_sq && s->d_refcmp && s->d_terms &&
+           s->h_terms && lcs_complete;
 }
 
 } // namespace
@@ -799,8 +800,8 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 namespace
 {
 
-/* Pass 2 and the partials read-back; `enable_lcs` selects the L/C/S kernel
- * and reads its three extra partial rows back as well. */
+/* Pass 2 and the read-back of the per-window terms; `enable_lcs` selects the
+ * L/C/S kernel and reads its structure plane back as well. */
 static void enqueue_float_vertical(SsimStateSycl *s, sycl::queue &q)
 {
     const FloatVertArgs vert_args{.reference_mean = s->d_ref_mu,
@@ -808,23 +809,19 @@ static void enqueue_float_vertical(SsimStateSycl *s, sycl::queue &q)
                                   .reference_square = s->d_ref_sq,
                                   .comparison_square = s->d_cmp_sq,
                                   .cross_product = s->d_refcmp,
-                                  .partials = s->d_partials,
-                                  .lcs_partials = s->d_lcs_partials,
+                                  .terms = s->d_terms,
+                                  .structure = s->d_structure,
                                   .horizontal_width = s->w_horiz,
                                   .final_width = s->w_final,
                                   .final_height = s->h_final,
-                                  .group_columns = s->wg_count_x,
-                                  .group_count = s->wg_count,
                                   .c1 = s->c1,
                                   .c2 = s->c2};
-    const size_t partials_bytes = (size_t)s->wg_count * sizeof(std::int64_t);
+    const size_t windows = (size_t)s->w_final * s->h_final;
+    launch_window_terms(q, vert_args, s->enable_lcs);
     if (s->enable_lcs) {
-        launch_vert_combine_lcs(q, vert_args);
-        q.memcpy(s->h_lcs_partials, s->d_lcs_partials, 3U * partials_bytes);
-    } else {
-        launch_vert_combine(q, vert_args);
+        q.memcpy(s->h_structure, s->d_structure, windows * sizeof(float));
     }
-    q.memcpy(s->h_partials, s->d_partials, partials_bytes);
+    q.memcpy(s->h_terms, s->d_terms, (s->enable_lcs ? 2U : 1U) * windows * sizeof(std::uint64_t));
 }
 
 } // namespace
@@ -893,13 +890,16 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
 namespace
 {
 
-/* The exact sum of the per-WG fixed-point partials, as a double. */
-static double sum_partials(const std::int64_t *partials, unsigned count)
+/* iqa_ssim()'s frame sum of one kind of term: every window's double added
+ * into one double, row after row, each row left to right. The integer SSIM
+ * twin below adds its terms the same way (calc_ssim()). */
+static double frame_sum_of_terms(const std::uint64_t *terms, size_t count)
 {
-    FixedSum total;
-    for (unsigned i = 0; i < count; i++)
-        total.add(partials[i]);
-    return total.value();
+    double sum = 0.0;
+    for (size_t i = 0U; i < count; i++) {
+        sum += std::bit_cast<double>(terms[i]);
+    }
+    return sum;
 }
 
 /* iqa/ssim_tools.c::iqa_ssim returns every frame mean as fp32,
@@ -917,19 +917,20 @@ static int float_ssim_frame_mean(const char *feature, double sum, double n_pixel
     return err;
 }
 
-/* enable_lcs: the three per-WG L / C / S partial rows become the frame means
- * float_ssim_{l,c,s}, published with the score in CPU float_ssim.c order
- * after the shared SSIM validation (ADR-1302). */
-static int emit_float_ssim_lcs(const SsimStateSycl *s, double score, double n_pixels,
+/* enable_lcs: the four sums become the frame means float_ssim and
+ * float_ssim_{l,c,s}, published in CPU float_ssim.c order after the shared
+ * SSIM validation (ADR-1302). */
+static int emit_float_ssim_lcs(const SsimStateSycl *s, const SsimFrameSums &sums, double n_pixels,
                                unsigned index, VmafFeatureCollector *feature_collector)
 {
     static const char *const atom_names[3] = {"float_ssim_l", "float_ssim_c", "float_ssim_s"};
+    const double atom_sums[3] = {sums.luminance, sums.contrast, sums.structure};
     VmafNamedScore atoms[3];
-    int err = 0;
+    double score = 0.0;
+    int err = float_ssim_frame_mean("float_ssim", sums.ssim, n_pixels, index, &score);
     for (unsigned k = 0; k < 3U && !err; k++) {
-        const double sum = sum_partials(s->h_lcs_partials + (size_t)k * s->wg_count, s->wg_count);
         atoms[k].name = atom_names[k];
-        err = float_ssim_frame_mean(atom_names[k], sum, n_pixels, index, &atoms[k].value);
+        err = float_ssim_frame_mean(atom_names[k], atom_sums[k], n_pixels, index, &atoms[k].value);
     }
     if (err)
         return err;
@@ -947,20 +948,22 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
         return -EINVAL;
     qptr->wait();
 
-    /* Exact sum of the per-WG fixed-point partials -> mean SSIM over
-     * (W'-10)·(H'-10) decimated pixels, rounded to fp32 like the CPU. */
-    const double total = sum_partials(s->h_partials, s->wg_count);
+    /* The frame sums in iqa_ssim()'s order -> means over the (W'-10)·(H'-10)
+     * windows of the decimated plane, rounded to fp32 like the CPU. */
+    const size_t windows = (size_t)s->w_final * s->h_final;
     const double n_pixels = (double)s->w_final * (double)s->h_final;
+    if (s->enable_lcs) {
+        const SsimFrameSums sums =
+            ssim_frame_sums(s->h_terms, s->h_terms + windows, s->h_structure, windows);
+        return emit_float_ssim_lcs(s, sums, n_pixels, index, feature_collector);
+    }
     double score = 0.0;
-    const int err = float_ssim_frame_mean("float_ssim", total, n_pixels, index, &score);
+    const int err = float_ssim_frame_mean("float_ssim", frame_sum_of_terms(s->h_terms, windows),
+                                          n_pixels, index, &score);
     if (err)
         return err;
-    if (!s->enable_lcs) {
-        return vmaf_ssim_emit_score_named(feature_collector, s->feature_name_dict,
-                                          "float_ssim_sycl", "float_ssim", score, s->enable_db,
-                                          s->max_db, index);
-    }
-    return emit_float_ssim_lcs(s, score, n_pixels, index, feature_collector);
+    return vmaf_ssim_emit_score_named(feature_collector, s->feature_name_dict, "float_ssim_sycl",
+                                      "float_ssim", score, s->enable_db, s->max_db, index);
 }
 
 } // namespace
@@ -986,56 +989,65 @@ static void host_horizontal_pass(const float *reference, const float *comparison
     }
 }
 
-/* Host copy of pass 2 and the fixed-point sums of SSIM, L, C and S. */
+/* Host copy of pass 2: the kernels' per-window terms and the host's sums.
+ * `kernel_ssim` is the sum of the default kernel's terms (`lv * cv * sv`
+ * formed in integers on the device), `sums` what the enable_lcs path forms
+ * from lv, cv and sv on the host. */
 static void host_vertical_sums(const std::vector<SsimMoments> &rows, unsigned w_out, unsigned h_out,
-                               FixedSum totals[4])
+                               SsimFrameSums &sums, double &kernel_ssim)
 {
     float c1 = 0.0f;
     float c2 = 0.0f;
     float_ssim_constants(&c1, &c2);
     for (unsigned y = 0; y < h_out; ++y) {
         for (unsigned x = 0; x < w_out; ++x) {
-            MomentPairs sums{};
+            MomentPairs moments{};
             for (int tap = 0; tap < SSIM_K; ++tap)
-                add_vertical_tap(sums, rows[((size_t)y + (size_t)tap) * w_out + x], G[tap]);
-            const SsimTerms terms = ssim_terms(round_moments(sums), c1, c2);
-            totals[0].add(term_fixed(ssim_term(terms)));
-            totals[1].add(term_fixed(terms.luminance));
-            totals[2].add(term_fixed(terms.contrast));
-            totals[3].add(term_fixed(Ff{.hi = terms.structure, .lo = 0.0f}));
+                add_vertical_tap(moments, rows[((size_t)y + (size_t)tap) * w_out + x], G[tap]);
+            const SsimDoubleTerms terms =
+                ssim_double_terms(ssim_float_parts(round_moments(moments), c1, c2), c1, c2);
+            kernel_ssim += std::bit_cast<double>(ssim_product_bits(terms));
+            accumulate_window(sums,
+                              std::bit_cast<double>(vmaf_sycl_soft::signed_bits(terms.luminance)),
+                              std::bit_cast<double>(vmaf_sycl_soft::signed_bits(terms.contrast)),
+                              (double)terms.structure);
         }
     }
 }
 
 } // namespace
 
-/* Test hook (core/test/test_sycl_float_ssim_math.c): the float_ssim pipeline
+/* Test hook (core/test/test_sycl_float_ssim_parity.c): the float_ssim pipeline
  * after decimation, run on the host with the kernels' own arithmetic
- * (add_horizontal_tap, add_vertical_tap, ssim_terms, term_fixed). The group
- * sums on the device are exact integer sums, so the host result is the
- * device's for the same per-pixel values; the test compares it with
- * iqa_ssim() without a device. `means` receives the fp32-rounded frame means
- * of SSIM, L, C and S. Returns 0, -EINVAL for a plane smaller than the
- * 11 x 11 window, or -ENOMEM. */
+ * (add_horizontal_tap, add_vertical_tap, ssim_float_parts, ssim_double_terms,
+ * ssim_product_bits) and the host's own sums, so the result is the device's
+ * for the same per-window values; the test compares it with the CPU
+ * extractor without a device. `means` receives the fp32-rounded frame means:
+ * SSIM as the default kernel forms it, L, C, S, and SSIM as the enable_lcs
+ * path forms it. Returns 0, -EINVAL for a plane smaller than the 11 x 11
+ * window, or -ENOMEM. */
 extern "C" int vmaf_sycl_float_ssim_host_means(const float *reference, const float *comparison,
-                                               unsigned width, unsigned height, double means[4])
+                                               unsigned width, unsigned height, double means[5])
 {
     if (!reference || !comparison || !means || width < (unsigned)SSIM_K ||
         height < (unsigned)SSIM_K)
         return -EINVAL;
     const unsigned w_out = width - (unsigned)(SSIM_K - 1);
     const unsigned h_out = height - (unsigned)(SSIM_K - 1);
-    FixedSum totals[4];
+    SsimFrameSums sums = {};
+    double kernel_ssim = 0.0;
     try {
         std::vector<SsimMoments> rows((size_t)w_out * height);
         host_horizontal_pass(reference, comparison, width, height, rows);
-        host_vertical_sums(rows, w_out, h_out, totals);
+        host_vertical_sums(rows, w_out, h_out, sums, kernel_ssim);
     } catch (const std::bad_alloc &) {
         return -ENOMEM;
     }
     const double n_pixels = (double)w_out * (double)h_out;
-    for (unsigned k = 0; k < 4U; ++k)
-        means[k] = (double)(float)(totals[k].value() / n_pixels);
+    const double totals[5] = {kernel_ssim, sums.luminance, sums.contrast, sums.structure,
+                              sums.ssim};
+    for (unsigned k = 0; k < 5U; ++k)
+        means[k] = (double)(float)(totals[k] / n_pixels);
     return 0;
 }
 
@@ -1069,10 +1081,10 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
         release_buffer(s->sycl_state, s->d_ref_sq);
         release_buffer(s->sycl_state, s->d_cmp_sq);
         release_buffer(s->sycl_state, s->d_refcmp);
-        release_buffer(s->sycl_state, s->d_partials);
-        release_buffer(s->sycl_state, s->h_partials);
-        release_buffer(s->sycl_state, s->d_lcs_partials);
-        release_buffer(s->sycl_state, s->h_lcs_partials);
+        release_buffer(s->sycl_state, s->d_terms);
+        release_buffer(s->sycl_state, s->h_terms);
+        release_buffer(s->sycl_state, s->d_structure);
+        release_buffer(s->sycl_state, s->h_structure);
     }
     if (s->feature_name_dict) {
         vmaf_dictionary_free(&s->feature_name_dict);
@@ -1427,17 +1439,6 @@ static void launch_issim_terms(sycl::queue &queue, const IntegerVertArgs &args)
     });
 }
 
-/* calc_ssim()'s `ssim`: every term added into one double, row after row,
- * each row left to right. */
-static double integer_ssim_frame_sum(const uint64_t *terms, size_t count)
-{
-    double ssim = 0.0;
-    for (size_t i = 0u; i < count; i++) {
-        ssim += std::bit_cast<double>(terms[i]);
-    }
-    return ssim;
-}
-
 /* The sum of the window weights along a line of `extent` samples. */
 static int64_t line_weight(unsigned extent)
 {
@@ -1644,7 +1645,7 @@ static int collect_fex_issim_sycl(VmafFeatureExtractor *fex, unsigned index,
     qptr->wait();
 
     /* calc_ssim(): the frame sum in the reference's order, then `ssim / ssimw`. */
-    const double total_ssim = integer_ssim_frame_sum(s->h_terms, (size_t)s->width * s->height);
+    const double total_ssim = frame_sum_of_terms(s->h_terms, (size_t)s->width * s->height);
     return vmaf_ssim_emit_ratio_score_named(
         feature_collector, s->feature_name_dict, "integer_ssim_sycl", "ssim", total_ssim,
         (double)s->total_weight, s->enable_db, s->max_db, index);

@@ -58412,3 +58412,40 @@ ADR-1403 unchanged.
   master's side of that file, put the added text into the page whose
   `Touching` row matches the files, then `make docs-fragments-write`.
 - No Netflix golden-data, public API or FFmpeg patch impact.
+## `float_ssim_sycl` adds the CPU's terms in the CPU's order (ADR-1463, 2026-10-02)
+
+`fix/sycl-float-ssim-raster-sum`, the SYCL `float_ssim` part of
+`T-GPU-FLOAT-SSIM-FRAME-SUM-ORDER-2026-10-02`.
+
+- `core/src/feature/sycl/sycl_ssim_terms.h`: `ssim_float_parts()` is the
+  fp32 part that was inside `ssim_terms()` (which now calls it and is used
+  by `float_ms_ssim_sycl` alone); `ssim_double_terms()` and
+  `ssim_product_bits()` form the CPU's `lv`, `cv` and `(lv * cv) * sv` as
+  fp64 bit patterns on `sycl_soft_signed.h`; `ssim_frame_sums()` /
+  `accumulate_window()` are the host's sums. The header mirrors
+  `iqa/ssim_accumulate_lane.h` and the means of `iqa/ssim_tools.c`: an
+  upstream change to those lines changes the header in the same PR
+  (`core/test/test_sycl_float_ssim_exact_contract.py` fails until it does).
+- `core/src/feature/sycl/integer_ssim_sycl.cpp`: the float twin's pass 2 has
+  no reduction. `FloatSsimTermKernel` / `FloatSsimLcsKernel` store one term
+  (or `lv`, `cv`, `sv`) per window at its raster position; the work-group
+  partials (`d_partials`, `d_lcs_partials`, `store_fixed_group()`,
+  `launch_vert_combine*()`, `sum_partials()`) are gone. `collect` adds the
+  read-back planes in index order. `integer_ssim_frame_sum()` became
+  `frame_sum_of_terms()`, shared by both twins of the file. Keep kernels and
+  host sums from the same side of a conflict.
+- `vmaf_sycl_float_ssim_host_means()` takes `double means[5]` now (SSIM as
+  the default kernel forms it, L, C, S, SSIM as the `enable_lcs` path forms
+  it). It is a test hook, not public API.
+- `core/test/float_ssim_order_frame.h` (new) is the constructed pair, shared
+  byte for byte with the CUDA and HIP tests (sha256 `6dee502f6f583ea5...`).
+  Never edit it; a lane that lands the same file later takes either side.
+- `core/test/test_sycl_float_ssim_parity.c` compares with `==` and has the
+  order cases; `core/test/test_sycl_float_ssim_exact_contract.py` (new) is
+  device-free; `test_sycl_kernel_source_contract.py` and
+  `test_sycl_ssim_exact_contract.py` read the renamed pieces.
+- `scripts/ci/exact_twins.d/float_ssim.sycl` and `float_ssim_lcs.sycl` cite
+  ADR-1463 and name the constructed frame.
+- No Netflix golden-data, public C API or FFmpeg patch impact. Stored
+  `float_ssim_sycl` scores change only on frames whose mean lies next to a
+  `float` rounding boundary, by one `float` step.

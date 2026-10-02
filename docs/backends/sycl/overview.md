@@ -603,14 +603,15 @@ beyond it:
   (ADR-1436, [below](#ciede_sycl-follows-the-cpu-ciede-to-14e-11-2026-10-01)).
 - **Summation order.** A work-group reduction adds in a tree, not in the
   CPU's sequential order. The twins add integers where the terms allow it
-  (`float_psnr`, `float_moment`, `float_ssim`), and reproduce the CPU's
-  sequential `double` sum from integer increments where they do not
-  (`ssimulacra2`, ADR-1446).
+  (`float_psnr`, `float_moment`), reproduce the CPU's sequential `double`
+  sum from integer increments where they do not (`ssimulacra2`, ADR-1446),
+  or read the terms back and add them on the host in the CPU's order
+  (`ssim`, ADR-1443; `float_ssim`, ADR-1463).
 - **fp64 on the CPU.** SYCL kernels are fp32-only
   ([ADR-0220](../../adr/0220-sycl-fp64-fallback.md)); where the CPU evaluates
   an expression in fp64, the twin carries it as an exact pair of floats
-  (SpEED, `float_ssim`, `float_adm`) or computes the fp64 value in 64-bit
-  integers (`ssim`, `ssimulacra2`).
+  (SpEED, `float_ms_ssim`, `float_adm`) or computes the fp64 value in 64-bit
+  integers (`ssim`, `float_ssim`, `ssimulacra2`).
 - **Content the gate's fixtures do not have.** The repository's 10-, 12- and
   16-bit clips are 8-bit content shifted left. `float_moment_sycl` and
   `float_psnr_sycl` matched them and differed on full-range noise until
@@ -1252,6 +1253,9 @@ Three parity gaps between SYCL twins and the CPU reference were resolved:
   preserves ADR-1370 fp32 frame-mean rounding. `integer_ssim_sycl` groups terms
   as `((weight * a) * b) / denominator` without identical-window shortcuts.
   Both match CPU behavior on flat 64x64 identical frames (72.247199 dB).
+  (The pair terms and work-group sums of `float_ssim_sycl` were replaced by
+  the CPU's doubles and a host sum in the CPU's order on 2026-10-02,
+  ADR-1463.)
 - **PSNR temporal subsampling (`integer_psnr_sycl`).** The twin carries
   the `VMAF_FEATURE_EXTRACTOR_TEMPORAL` flag, ensuring `--subsample` scaling
   operates consistently with temporal extractors.
@@ -1852,9 +1856,13 @@ Two features are not listed:
   library of the build, so the equality depends on that library.
 - `ciede` is within 1.4e-11 of the CPU by its derived bound (ADR-1436).
 
-Two of the listed twins are exact within a stated range: `float_ssim` up to
-the `float` rounding of the frame mean (as `float_ms_ssim`, ADR-1414), and
-`cambi` while `cambi.c`'s own top-K sum is exact (ADR-1357).
+One of the listed twins is exact within a stated range: `cambi` while
+`cambi.c`'s own top-K sum is exact (ADR-1357). `float_ssim` was listed as
+exact up to the `float` rounding of the frame mean; a constructed frame
+showed that this is not exact, and since
+[ADR-1463](../../adr/1463-sycl-float-ssim-raster-sum.md) the twin adds the
+CPU's terms in the CPU's order
+([below](#float_ssim_sycl-adds-its-frame-sums-in-the-cpus-order-2026-10-02)).
 
 ```bash
 ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/ci/cross_backend_parity_gate.py \
@@ -1863,6 +1871,85 @@ ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/ci/cross_backend_parity_gate
     --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
     --width 576 --height 324 --backends cpu sycl
 ```
+
+## `float_ssim_sycl` adds its frame sums in the CPU's order (2026-10-02)
+
+`float_ssim_sycl` returned the CPU's `float_ssim` on every frame of real
+content measured and was declared an exact twin. It was not exact on every
+input: on a constructed 64x64 pair the CPU scores -4.222829943500983e-07 and
+the twin scored -4.222829659283889e-07, the next `float`
+([ADR-1463](../../adr/1463-sycl-float-ssim-raster-sum.md)).
+
+The CPU adds one term per window into a `double`, window after window, and
+that running sum rounds at every add. The twin added the terms as integers
+per work-group, which is another sum of the same windows: more accurate, and
+not the CPU's. The two differ around 1e-16 relative, and the result is
+rounded to `float`, so the difference shows only when the mean falls that
+close to a rounding boundary. That happens on pictures whose terms cancel,
+such as independent noise: 3 frames in 27 million at 64x64 in a search. None
+of the 333 frames of the sweep above differs.
+
+The twin now computes each window's luminance and contrast terms as the
+CPU's `double` values (in 64-bit integers, because a SYCL kernel has no
+`double`), stores the term of every window and lets the host add them in the
+CPU's order. With `enable_lcs` it stores the three terms and the host forms
+the four sums.
+
+Measured on an Arc A380 (xe) at `--precision max` against a GCC build of the
+CPU extractor: the constructed pair is identical, with and without
+`enable_lcs`; so are 2070 of 2070 values on 138 frames (the fixtures of the
+sweep above, BBB 3840x2160 with 50 frames) under six option sets: default,
+`enable_lcs`, `scale=1`, `enable_lcs` with `scale=1`, `scale=3`, and
+`enable_lcs` with `scale=2`.
+
+What it costs depends on the scale. `float_ssim` shrinks the picture first
+(to at most 480x270 for 1080p and 4K input unless `scale` says otherwise),
+and the number of terms is the number of pixels after that:
+
+| Input, options | Before | After |
+|---|---|---|
+| 1920x1080, automatic scale | 1.32 ms | 1.51 ms |
+| 1920x1080, `enable_lcs` | 1.34 ms | 1.60 ms |
+| 3840x2160, automatic scale | 3.93 ms | 4.11 ms |
+| 3840x2160, `enable_lcs` | 4.25 ms | 4.35 ms |
+| 576x324 (scale 1) | 0.56 ms | 0.86 ms |
+| 1920x1080, `scale=1` | 5.9 ms | 9.9 ms |
+| 1920x1080, `scale=1`, `enable_lcs` | 6.5 ms | 12.4 ms |
+| 3840x2160, `scale=1` | 23.3 ms | 39.1 ms |
+| 3840x2160, `scale=1`, `enable_lcs` | 25.5 ms | 48.6 ms |
+
+Per frame, medians of 7 interleaved runs of 50 frames (host load average 22
+to 26; a control with the same code in both builds read 2.93 and 2.92 ms).
+At 3840x2160 with `scale=1` the 16 ms are 7 ms of kernel arithmetic, 6 ms
+for reading 66 MB back and 3 ms of host additions; the row
+`T-SYCL-FLOAT-SSIM-RASTER-SUM-THROUGHPUT-2026-10-02` in
+[`state.md`](../../state.md) holds the split and the candidates. The twin
+also holds 8 bytes per window on the device and in pinned host memory (20
+with `enable_lcs`): 66 MB (165 MB) at 3840x2160 with `scale=1`, 1 MB (2.4 MB)
+at the automatic scale.
+
+To check a build, score the constructed pair. `core/test/float_ssim_order_frame.h`
+holds it as two C arrays; the Python lines below regenerate the same bytes:
+
+```bash
+python3 -c "
+import random
+n = 6144
+for name, seed in (('ref', 174), ('dis', 175)):
+    open(f'order_{name}_64x64.yuv', 'wb').write(random.Random(seed).randbytes(20000 * n)[14161 * n:14162 * n])"
+for b in cpu sycl; do
+  vmaf -r order_ref_64x64.yuv -d order_dis_64x64.yuv -w 64 -h 64 -p 420 -b 8 \
+    --no_prediction --feature float_ssim --backend "$b" --precision=max --json -q -o "order_$b.json"
+done
+python3 -c "import json; print([json.load(open(f'order_{b}.json'))['frames'][0]['metrics']['float_ssim'] for b in ('cpu', 'sycl')])"
+```
+
+It prints `[-4.222829943500983e-07, -4.222829943500983e-07]`; before, the
+second value was `-4.222829659283889e-07`.
+
+`float_ms_ssim_sycl` computes its per-scale means the old way and has the
+same defect (a 176x176 noise pair differs in `float_ms_ssim_l_scale0` by one
+`float` step); it follows in its own change.
 
 ## Licensing of the SYCL kernels (ADR-1250)
 

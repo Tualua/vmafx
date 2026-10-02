@@ -299,7 +299,8 @@ linked AGENTS.md before resolving conflicts.
   the decimate spells each tap `sycl::fma()` as `ms_ssim_decimate.c` fuses
   it; the window sums and the `l` / `c` / `s` terms come from
   `core/src/feature/sycl/sycl_ssim_terms.h`, shared with `float_ssim_sycl`
-  (the CPU's fp64 values as exact fp32 pairs); the frame sums are int64 fixed
+  (the CPU's fp64 values as exact fp32 pairs; `float_ssim_sycl` uses the
+  header's soft-fp64 terms since ADR-1463); the frame sums are int64 fixed
   point; the host rounds each per-scale mean to fp32 and combines as
   `ms_ssim.c` does. A change to `ms_ssim_decimate.c`, `iqa/convolve.c`,
   `iqa/ssim_tools.c` or `ms_ssim.c` changes the header or the twin in the
@@ -619,6 +620,20 @@ linked AGENTS.md before resolving conflicts.
   `sycl-aot`, compiles every SYCL translation unit for the full default
   list) guard it; `core/test/sycl_aot_targets.py` holds the measured sizes
   per target family and needs an entry for a target added to the list.
+- **SYCL `float_ssim` adds the CPU's terms in the CPU's order ([ADR-1463](../adr/1463-sycl-float-ssim-raster-sum.md))**:
+  `core/src/feature/sycl/sycl_ssim_terms.h::ssim_double_terms()` forms
+  `iqa/ssim_accumulate_lane.h`'s `lv` and `cv` as the CPU's doubles in 64-bit
+  integers; `float_ssim_sycl` stores every window's term unreduced and the
+  host adds them in raster order, as `iqa/ssim_tools.c::iqa_ssim()` does. No
+  reduction may return to the float twin and no host sum may change its
+  order: either moves the `float` mean by one step on frames whose terms
+  cancel. A change to `ssim_accumulate_lane.h` or to the means of
+  `ssim_tools.c` changes the header in the same PR.
+  `core/test/test_sycl_float_ssim_exact_contract.py` (device-free) and
+  `core/test/test_sycl_float_ssim_parity.c` (`==`, with the constructed pair
+  of `core/test/float_ssim_order_frame.h`, a file shared byte for byte with
+  the CUDA and HIP tests) guard it. See
+  [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
 - **SYCL twins declared exact as a group ([ADR-1451](../adr/1451-sycl-exact-twins-declared.md))**:
   `scripts/ci/exact_twins.d/{adm,motion,motion_debug,motion_v2,psnr,float_ssim,float_ssim_lcs,cambi}.sycl`
   make the parity gate compare those cells with tolerance 0, and
