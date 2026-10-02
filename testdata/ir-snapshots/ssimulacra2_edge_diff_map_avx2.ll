@@ -1,167 +1,202 @@
 define dso_local void @ssimulacra2_edge_diff_map_avx2(ptr noundef readonly captures(none) %0, ptr noundef readonly captures(none) %1, ptr noundef readonly captures(none) %2, ptr noundef readonly captures(none) %3, i32 noundef %4, i32 noundef %5, ptr noundef writeonly captures(none) %6) local_unnamed_addr {
   %8 = alloca [8 x float], align 32
   %9 = alloca [8 x float], align 32
-  %10 = zext i32 %4 to i64
-  %11 = zext i32 %5 to i64
-  %12 = mul nuw i64 %11, %10
-  %13 = uitofp i64 %12 to double
-  %14 = fdiv double 1.000000e+00, %13
-  %15 = icmp ult i64 %12, 8
-  br label %17
+  %10 = alloca [8 x float], align 32
+  %11 = alloca [8 x float], align 32
+  %12 = zext i32 %4 to i64
+  %13 = zext i32 %5 to i64
+  %14 = mul nuw i64 %13, %12
+  %15 = uitofp i64 %14 to double
+  %16 = fdiv double 1.000000e+00, %15
+  %17 = icmp ult i64 %14, 8
+  br label %19
 
-16:                                               ; preds = %126
+18:                                               ; preds = %147
   ret void
 
-17:                                               ; preds = %7, %126
-  %18 = phi i64 [ 0, %7 ], [ %144, %126 ]
-  %19 = mul i64 %12, %18
-  %20 = getelementptr inbounds nuw float, ptr %0, i64 %19
-  %21 = getelementptr inbounds nuw float, ptr %1, i64 %19
-  %22 = getelementptr inbounds nuw float, ptr %2, i64 %19
-  %23 = getelementptr inbounds nuw float, ptr %3, i64 %19
-  br i1 %15, label %24, label %31
+19:                                               ; preds = %7, %147
+  %20 = phi i64 [ 0, %7 ], [ %165, %147 ]
+  %21 = mul i64 %14, %20
+  %22 = getelementptr inbounds nuw float, ptr %0, i64 %21
+  %23 = getelementptr inbounds nuw float, ptr %1, i64 %21
+  %24 = getelementptr inbounds nuw float, ptr %2, i64 %21
+  %25 = getelementptr inbounds nuw float, ptr %3, i64 %21
+  br i1 %17, label %26, label %33
 
-24:                                               ; preds = %50, %17
-  %25 = phi i64 [ 0, %17 ], [ %32, %50 ]
-  %26 = phi double [ 0.000000e+00, %17 ], [ %81, %50 ]
-  %27 = phi double [ 0.000000e+00, %17 ], [ %78, %50 ]
-  %28 = phi double [ 0.000000e+00, %17 ], [ %77, %50 ]
-  %29 = phi double [ 0.000000e+00, %17 ], [ %74, %50 ]
-  %30 = icmp ult i64 %25, %12
-  br i1 %30, label %84, label %126
+26:                                               ; preds = %48, %19
+  %27 = phi double [ 0.000000e+00, %19 ], [ %89, %48 ]
+  %28 = phi double [ 0.000000e+00, %19 ], [ %92, %48 ]
+  %29 = phi double [ 0.000000e+00, %19 ], [ %93, %48 ]
+  %30 = phi double [ 0.000000e+00, %19 ], [ %96, %48 ]
+  %31 = phi i64 [ 0, %19 ], [ %34, %48 ]
+  %32 = icmp ult i64 %31, %14
+  br i1 %32, label %99, label %147
 
-31:                                               ; preds = %17, %50
-  %32 = phi i64 [ %51, %50 ], [ 8, %17 ]
-  %33 = phi double [ %74, %50 ], [ 0.000000e+00, %17 ]
-  %34 = phi double [ %77, %50 ], [ 0.000000e+00, %17 ]
-  %35 = phi double [ %78, %50 ], [ 0.000000e+00, %17 ]
-  %36 = phi double [ %81, %50 ], [ 0.000000e+00, %17 ]
-  %37 = phi i64 [ %32, %50 ], [ 0, %17 ]
-  %38 = getelementptr inbounds nuw float, ptr %20, i64 %37
-  %39 = load <8 x float>, ptr %38, align 1
-  %40 = getelementptr inbounds nuw float, ptr %22, i64 %37
+33:                                               ; preds = %19, %48
+  %34 = phi i64 [ %49, %48 ], [ 8, %19 ]
+  %35 = phi i64 [ %34, %48 ], [ 0, %19 ]
+  %36 = phi double [ %96, %48 ], [ 0.000000e+00, %19 ]
+  %37 = phi double [ %93, %48 ], [ 0.000000e+00, %19 ]
+  %38 = phi double [ %92, %48 ], [ 0.000000e+00, %19 ]
+  %39 = phi double [ %89, %48 ], [ 0.000000e+00, %19 ]
+  %40 = getelementptr inbounds nuw float, ptr %22, i64 %35
   %41 = load <8 x float>, ptr %40, align 1
-  %42 = getelementptr inbounds nuw float, ptr %21, i64 %37
+  %42 = getelementptr inbounds nuw float, ptr %24, i64 %35
   %43 = load <8 x float>, ptr %42, align 1
-  %44 = getelementptr inbounds nuw float, ptr %23, i64 %37
+  %44 = getelementptr inbounds nuw float, ptr %23, i64 %35
   %45 = load <8 x float>, ptr %44, align 1
-  %46 = fsub <8 x float> %39, %43
-  %47 = tail call <8 x float> @llvm.fabs.v8f32(<8 x float> %46)
-  %48 = fsub <8 x float> %41, %45
-  %49 = tail call <8 x float> @llvm.fabs.v8f32(<8 x float> %48)
+  %46 = getelementptr inbounds nuw float, ptr %25, i64 %35
+  %47 = load <8 x float>, ptr %46, align 1
   call void @llvm.lifetime.start.p0(ptr nonnull %8)
   call void @llvm.lifetime.start.p0(ptr nonnull %9)
-  store <8 x float> %47, ptr %8, align 32
-  store <8 x float> %49, ptr %9, align 32
-  br label %53
+  call void @llvm.lifetime.start.p0(ptr nonnull %10)
+  call void @llvm.lifetime.start.p0(ptr nonnull %11)
+  store <8 x float> %41, ptr %8, align 32
+  store <8 x float> %45, ptr %9, align 32
+  store <8 x float> %43, ptr %10, align 32
+  store <8 x float> %47, ptr %11, align 32
+  br label %51
 
-50:                                               ; preds = %53
+48:                                               ; preds = %86
+  call void @llvm.lifetime.end.p0(ptr nonnull %11)
+  call void @llvm.lifetime.end.p0(ptr nonnull %10)
   call void @llvm.lifetime.end.p0(ptr nonnull %9)
   call void @llvm.lifetime.end.p0(ptr nonnull %8)
-  %51 = add nuw i64 %32, 8
-  %52 = icmp ugt i64 %51, %12
-  br i1 %52, label %24, label %31, !llvm.loop !34
+  %49 = add nuw i64 %34, 8
+  %50 = icmp ugt i64 %49, %14
+  br i1 %50, label %26, label %33, !llvm.loop !34
 
-53:                                               ; preds = %31, %53
-  %54 = phi i64 [ 0, %31 ], [ %82, %53 ]
-  %55 = phi double [ %33, %31 ], [ %74, %53 ]
-  %56 = phi double [ %34, %31 ], [ %77, %53 ]
-  %57 = phi double [ %35, %31 ], [ %78, %53 ]
-  %58 = phi double [ %36, %31 ], [ %81, %53 ]
-  %59 = getelementptr inbounds nuw float, ptr %8, i64 %54
+51:                                               ; preds = %33, %86
+  %52 = phi i64 [ 0, %33 ], [ %97, %86 ]
+  %53 = phi double [ %36, %33 ], [ %96, %86 ]
+  %54 = phi double [ %37, %33 ], [ %93, %86 ]
+  %55 = phi double [ %38, %33 ], [ %92, %86 ]
+  %56 = phi double [ %39, %33 ], [ %89, %86 ]
+  %57 = getelementptr inbounds nuw float, ptr %8, i64 %52
+  %58 = load float, ptr %57, align 4
+  %59 = getelementptr inbounds nuw float, ptr %9, i64 %52
   %60 = load float, ptr %59, align 4
-  %61 = fpext float %60 to double
-  %62 = getelementptr inbounds nuw float, ptr %9, i64 %54
-  %63 = load float, ptr %62, align 4
-  %64 = fpext float %63 to double
-  %65 = fadd double %64, 1.000000e+00
-  %66 = fadd double %61, 1.000000e+00
-  %67 = fdiv double %65, %66
-  %68 = fadd double %67, -1.000000e+00
-  %69 = fcmp ogt double %68, 0.000000e+00
-  %70 = select i1 %69, double %68, double 0.000000e+00
-  %71 = fcmp olt double %68, 0.000000e+00
-  %72 = fneg double %68
-  %73 = select i1 %71, double %72, double 0.000000e+00
-  %74 = fadd double %55, %70
-  %75 = fmul double %70, %70
-  %76 = fmul double %75, %75
-  %77 = fadd double %56, %76
-  %78 = fadd double %57, %73
-  %79 = fmul double %73, %73
-  %80 = fmul double %79, %79
-  %81 = fadd double %58, %80
-  %82 = add nuw nsw i64 %54, 1
-  %83 = icmp eq i64 %82, 8
-  br i1 %83, label %50, label %53, !llvm.loop !35
+  %61 = getelementptr inbounds nuw float, ptr %10, i64 %52
+  %62 = load float, ptr %61, align 4
+  %63 = getelementptr inbounds nuw float, ptr %11, i64 %52
+  %64 = load float, ptr %63, align 4
+  %65 = insertelement <2 x float> poison, float %62, i64 0
+  %66 = insertelement <2 x float> %65, float %58, i64 1
+  %67 = fpext <2 x float> %66 to <2 x double>
+  %68 = insertelement <2 x float> poison, float %64, i64 0
+  %69 = insertelement <2 x float> %68, float %60, i64 1
+  %70 = fpext <2 x float> %69 to <2 x double>
+  %71 = fsub <2 x double> %67, %70
+  %72 = tail call <2 x double> @llvm.fabs.v2f64(<2 x double> %71)
+  %73 = fadd <2 x double> %72, splat (double 1.000000e+00)
+  %74 = shufflevector <2 x double> %73, <2 x double> poison, <2 x i32> <i32 1, i32 poison>
+  %75 = fdiv <2 x double> %73, %74
+  %76 = extractelement <2 x double> %75, i64 0
+  %77 = fadd double %76, -1.000000e+00
+  %78 = tail call double @llvm.fabs.f64(double %77)
+  %79 = fcmp ueq double %78, 0x7FF0000000000000
+  br i1 %79, label %86, label %80
 
-84:                                               ; preds = %24, %84
-  %85 = phi double [ %116, %84 ], [ %29, %24 ]
-  %86 = phi double [ %119, %84 ], [ %28, %24 ]
-  %87 = phi double [ %120, %84 ], [ %27, %24 ]
-  %88 = phi double [ %123, %84 ], [ %26, %24 ]
-  %89 = phi i64 [ %124, %84 ], [ %25, %24 ]
-  %90 = getelementptr inbounds nuw float, ptr %20, i64 %89
-  %91 = load float, ptr %90, align 4
-  %92 = getelementptr inbounds nuw float, ptr %21, i64 %89
-  %93 = load float, ptr %92, align 4
-  %94 = getelementptr inbounds nuw float, ptr %22, i64 %89
-  %95 = load float, ptr %94, align 4
-  %96 = getelementptr inbounds nuw float, ptr %23, i64 %89
-  %97 = load float, ptr %96, align 4
-  %98 = insertelement <2 x float> poison, float %95, i64 0
-  %99 = insertelement <2 x float> %98, float %91, i64 1
-  %100 = fpext <2 x float> %99 to <2 x double>
-  %101 = insertelement <2 x float> poison, float %97, i64 0
-  %102 = insertelement <2 x float> %101, float %93, i64 1
-  %103 = fpext <2 x float> %102 to <2 x double>
-  %104 = fsub <2 x double> %100, %103
-  %105 = tail call <2 x double> @llvm.fabs.v2f64(<2 x double> %104)
-  %106 = fadd <2 x double> %105, splat (double 1.000000e+00)
-  %107 = shufflevector <2 x double> %106, <2 x double> poison, <2 x i32> <i32 1, i32 poison>
-  %108 = fdiv <2 x double> %106, %107
-  %109 = extractelement <2 x double> %108, i64 0
-  %110 = fadd double %109, -1.000000e+00
-  %111 = fcmp ogt double %110, 0.000000e+00
-  %112 = select i1 %111, double %110, double 0.000000e+00
-  %113 = fcmp olt double %110, 0.000000e+00
-  %114 = fneg double %110
-  %115 = select i1 %113, double %114, double 0.000000e+00
-  %116 = fadd double %85, %112
-  %117 = fmul double %112, %112
-  %118 = fmul double %117, %117
-  %119 = fadd double %86, %118
-  %120 = fadd double %87, %115
-  %121 = fmul double %115, %115
-  %122 = fmul double %121, %121
-  %123 = fadd double %88, %122
-  %124 = add nuw i64 %89, 1
-  %125 = icmp eq i64 %124, %12
-  br i1 %125, label %126, label %84, !llvm.loop !36
+80:                                               ; preds = %51
+  %81 = fcmp ogt double %77, 0.000000e+00
+  %82 = select i1 %81, double %77, double 0.000000e+00
+  %83 = fcmp olt double %77, 0.000000e+00
+  %84 = fneg double %77
+  %85 = select i1 %83, double %84, double 0.000000e+00
+  br label %86
 
-126:                                              ; preds = %84, %24
-  %127 = phi double [ %26, %24 ], [ %123, %84 ]
-  %128 = phi double [ %27, %24 ], [ %120, %84 ]
-  %129 = phi double [ %28, %24 ], [ %119, %84 ]
-  %130 = phi double [ %29, %24 ], [ %116, %84 ]
-  %131 = fmul double %14, %130
-  %132 = shl nuw nsw i64 %18, 5
-  %133 = getelementptr inbounds nuw i8, ptr %6, i64 %132
-  store double %131, ptr %133, align 8
-  %134 = fmul double %14, %129
-  %135 = tail call double @sqrt(double noundef %134)
-  %136 = tail call double @sqrt(double noundef %135)
-  %137 = getelementptr inbounds nuw i8, ptr %133, i64 8
-  store double %136, ptr %137, align 8
-  %138 = fmul double %14, %128
-  %139 = getelementptr inbounds nuw i8, ptr %133, i64 16
-  store double %138, ptr %139, align 8
-  %140 = fmul double %14, %127
-  %141 = tail call double @sqrt(double noundef %140)
-  %142 = tail call double @sqrt(double noundef %141)
-  %143 = getelementptr inbounds nuw i8, ptr %133, i64 24
-  store double %142, ptr %143, align 8
-  %144 = add nuw nsw i64 %18, 1
-  %145 = icmp eq i64 %144, 3
-  br i1 %145, label %16, label %17, !llvm.loop !37
+86:                                               ; preds = %51, %80
+  %87 = phi double [ %82, %80 ], [ %77, %51 ]
+  %88 = phi double [ %85, %80 ], [ %77, %51 ]
+  %89 = fadd double %56, %87
+  %90 = fmul double %87, %87
+  %91 = fmul double %90, %90
+  %92 = fadd double %55, %91
+  %93 = fadd double %54, %88
+  %94 = fmul double %88, %88
+  %95 = fmul double %94, %94
+  %96 = fadd double %53, %95
+  %97 = add nuw nsw i64 %52, 1
+  %98 = icmp eq i64 %97, 8
+  br i1 %98, label %48, label %51, !llvm.loop !35
+
+99:                                               ; preds = %26, %134
+  %100 = phi i64 [ %145, %134 ], [ %31, %26 ]
+  %101 = phi double [ %144, %134 ], [ %30, %26 ]
+  %102 = phi double [ %141, %134 ], [ %29, %26 ]
+  %103 = phi double [ %140, %134 ], [ %28, %26 ]
+  %104 = phi double [ %137, %134 ], [ %27, %26 ]
+  %105 = getelementptr inbounds nuw float, ptr %22, i64 %100
+  %106 = load float, ptr %105, align 4
+  %107 = getelementptr inbounds nuw float, ptr %23, i64 %100
+  %108 = load float, ptr %107, align 4
+  %109 = getelementptr inbounds nuw float, ptr %24, i64 %100
+  %110 = load float, ptr %109, align 4
+  %111 = getelementptr inbounds nuw float, ptr %25, i64 %100
+  %112 = load float, ptr %111, align 4
+  %113 = insertelement <2 x float> poison, float %110, i64 0
+  %114 = insertelement <2 x float> %113, float %106, i64 1
+  %115 = fpext <2 x float> %114 to <2 x double>
+  %116 = insertelement <2 x float> poison, float %112, i64 0
+  %117 = insertelement <2 x float> %116, float %108, i64 1
+  %118 = fpext <2 x float> %117 to <2 x double>
+  %119 = fsub <2 x double> %115, %118
+  %120 = tail call <2 x double> @llvm.fabs.v2f64(<2 x double> %119)
+  %121 = fadd <2 x double> %120, splat (double 1.000000e+00)
+  %122 = shufflevector <2 x double> %121, <2 x double> poison, <2 x i32> <i32 1, i32 poison>
+  %123 = fdiv <2 x double> %121, %122
+  %124 = extractelement <2 x double> %123, i64 0
+  %125 = fadd double %124, -1.000000e+00
+  %126 = tail call double @llvm.fabs.f64(double %125)
+  %127 = fcmp ueq double %126, 0x7FF0000000000000
+  br i1 %127, label %134, label %128
+
+128:                                              ; preds = %99
+  %129 = fcmp ogt double %125, 0.000000e+00
+  %130 = select i1 %129, double %125, double 0.000000e+00
+  %131 = fcmp olt double %125, 0.000000e+00
+  %132 = fneg double %125
+  %133 = select i1 %131, double %132, double 0.000000e+00
+  br label %134
+
+134:                                              ; preds = %99, %128
+  %135 = phi double [ %130, %128 ], [ %125, %99 ]
+  %136 = phi double [ %133, %128 ], [ %125, %99 ]
+  %137 = fadd double %104, %135
+  %138 = fmul double %135, %135
+  %139 = fmul double %138, %138
+  %140 = fadd double %103, %139
+  %141 = fadd double %102, %136
+  %142 = fmul double %136, %136
+  %143 = fmul double %142, %142
+  %144 = fadd double %101, %143
+  %145 = add nuw i64 %100, 1
+  %146 = icmp eq i64 %145, %14
+  br i1 %146, label %147, label %99, !llvm.loop !36
+
+147:                                              ; preds = %134, %26
+  %148 = phi double [ %27, %26 ], [ %137, %134 ]
+  %149 = phi double [ %28, %26 ], [ %140, %134 ]
+  %150 = phi double [ %29, %26 ], [ %141, %134 ]
+  %151 = phi double [ %30, %26 ], [ %144, %134 ]
+  %152 = fmul double %16, %148
+  %153 = shl nuw nsw i64 %20, 5
+  %154 = getelementptr inbounds nuw i8, ptr %6, i64 %153
+  store double %152, ptr %154, align 8
+  %155 = fmul double %16, %149
+  %156 = tail call double @sqrt(double noundef %155)
+  %157 = tail call double @sqrt(double noundef %156)
+  %158 = getelementptr inbounds nuw i8, ptr %154, i64 8
+  store double %157, ptr %158, align 8
+  %159 = fmul double %16, %150
+  %160 = getelementptr inbounds nuw i8, ptr %154, i64 16
+  store double %159, ptr %160, align 8
+  %161 = fmul double %16, %151
+  %162 = tail call double @sqrt(double noundef %161)
+  %163 = tail call double @sqrt(double noundef %162)
+  %164 = getelementptr inbounds nuw i8, ptr %154, i64 24
+  store double %163, ptr %164, align 8
+  %165 = add nuw nsw i64 %20, 1
+  %166 = icmp eq i64 %165, 3
+  br i1 %166, label %18, label %19, !llvm.loop !37
 }

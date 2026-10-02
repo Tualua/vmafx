@@ -1,4 +1,4 @@
-define dso_local range(i32 -1, 1) i32 @ms_ssim_decimate_avx2(ptr noundef readonly captures(none) %0, i32 noundef %1, i32 noundef %2, ptr noundef writeonly captures(none) %3, ptr noundef writeonly captures(address_is_null) %4, ptr noundef writeonly captures(address_is_null) %5) local_unnamed_addr {
+define dso_local range(i32 -12, 1) i32 @ms_ssim_decimate_avx2(ptr noundef readonly captures(none) %0, i32 noundef %1, i32 noundef %2, ptr noundef writeonly captures(none) %3, ptr noundef writeonly captures(address_is_null) %4, ptr noundef writeonly captures(address_is_null) %5) local_unnamed_addr {
   %7 = sdiv i32 %1, 2
   %8 = and i32 %1, 1
   %9 = add nsw i32 %7, %8
@@ -310,6 +310,6 @@ define dso_local range(i32 -1, 1) i32 @ms_ssim_decimate_avx2(ptr noundef readonl
   br label %242
 
 242:                                              ; preds = %239, %241, %6
-  %243 = phi i32 [ -1, %6 ], [ 0, %241 ], [ 0, %239 ]
+  %243 = phi i32 [ -12, %6 ], [ 0, %241 ], [ 0, %239 ]
   ret i32 %243
 }
