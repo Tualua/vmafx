@@ -11,6 +11,9 @@
   sync or a rebase that changes the helper's signature changes the declaration
   and the call in the same PR: `core/test/test_cython_adm_dwt_band_decl_contract.py`
   fails otherwise, without building the extension.
+## `test_pic_preallocation` has an explicit 180 s timeout (2026-10-02)
+
+`fix/ci-asan-pic-preallocation-timeout`. No rebase impact: a `timeout :` argument of one `test()` line in `core/test/meson.build`, no code and no scores.
 
 ## Agent pages name the staged CUDA VIF kernels and the HIP handle header (2026-10-02)
 

@@ -4122,7 +4122,12 @@ test_pic_preallocation = executable('test_pic_preallocation',
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, thread_lib],
 )
-test('test_pic_preallocation', test_pic_preallocation, suite : ['fast'])
+# Runs the vmaf_v0.6.1 model on 1080p frames of the preallocated pools: about
+# 9 s of CPU in the ASan + UBSan debug build (46 % in the AVX-512 VIF kernel,
+# unoptimised). Above meson's default 30 s on a
+# hosted runner (Sanitizers ASan+UBSan, 2026-10-02; three runs). Measured cost:
+# docs/state.md T-CI-MASTER-FIRST-FULL-RUN-2026-10-02, item 8.
+test('test_pic_preallocation', test_pic_preallocation, suite : ['fast'], timeout : 180)
 
 # ADR-1072/ADR-1073 thread-safety regression tests for threaded_extract_batch_func.
 # Uses vmaf_picture_alloc (not vmaf_preallocate_pictures) and 64x64 frames so
