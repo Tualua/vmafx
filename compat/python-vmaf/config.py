@@ -1,10 +1,32 @@
 # SPDX-License-Identifier: BSD-2-Clause-Patent
 from __future__ import absolute_import
 
+import http.client
 import os
 import tempfile
+import time
 import urllib.error
 import urllib.request
+
+# Transient network failures (connection reset or timed out, short read) are
+# retried; HTTP errors such as 404 are not. The resource host
+# (github.com/Netflix/vmaf_resource) drops connections often enough that a
+# single attempt made whole golden-test runs fail on download errors alone.
+_DOWNLOAD_ATTEMPTS = 4
+_DOWNLOAD_BACKOFF_SECONDS = 2.0
+
+
+def _urlretrieve_with_retries(remote_path, tmp_path):
+    for attempt in range(1, _DOWNLOAD_ATTEMPTS + 1):
+        try:
+            urllib.request.urlretrieve(remote_path, tmp_path)
+            return
+        except urllib.error.HTTPError:
+            raise
+        except (urllib.error.URLError, http.client.HTTPException, OSError):
+            if attempt == _DOWNLOAD_ATTEMPTS:
+                raise
+            time.sleep(_DOWNLOAD_BACKOFF_SECONDS * 2 ** (attempt - 1))
 
 __copyright__ = "Copyright 2016-2020, Netflix, Inc."
 __license__ = "BSD+Patent"
@@ -60,7 +82,7 @@ def download_reactively(local_path, remote_path):
             )
             os.close(fd)
             try:
-                urllib.request.urlretrieve(remote_path, tmp_path)
+                _urlretrieve_with_retries(remote_path, tmp_path)
                 os.replace(tmp_path, local_path)
             except Exception:
                 try:
