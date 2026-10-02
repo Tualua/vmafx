@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright 2016-2026 Netflix, Inc.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -30,6 +31,14 @@
 #include <pthread.h>
 #endif
 
+/* NOLINTBEGIN(modernize-use-using,performance-enum-size,modernize-redundant-void-arg,modernize-use-designated-initializers):
+ * C header included by C and C++ translation units (integer_adm.c and its
+ * SIMD files, and the CUDA, HIP and SYCL twins); clang-tidy reads it under a
+ * C++ one. `using`, a fixed underlying enum type and an empty parameter list
+ * are C++ spellings C does not have across the required toolchains, and the
+ * positional initialisers of dwt_7_9_YCbCr_threshold are what nvcc and cl.exe
+ * accept in C++ mode (see the comment on that table). ADR-1138. */
+
 static int32_t div_lookup[65537];
 static const int32_t div_Q_factor = 1073741824; // 2^30
 
@@ -57,7 +66,7 @@ static pthread_once_t div_lookup_once = PTHREAD_ONCE_INIT;
 static void div_lookup_populate(void)
 {
     for (int i = 1; i <= 32768; ++i) {
-        int32_t recip = (int32_t)(div_Q_factor / i);
+        const int32_t recip = (int32_t)(div_Q_factor / i);
         div_lookup[32768 + i] = recip;
         div_lookup[32768 - i] = 0 - recip;
     }
@@ -269,4 +278,6 @@ static const float dwt_7_9_basis_function_amplitudes[6][4] = {
     {0.18004, 0.22727, 0.28688, 0.22727},     {0.091401, 0.11792, 0.15214, 0.11792},
     {0.045943, 0.059758, 0.077727, 0.059758}, {0.023013, 0.030018, 0.039156, 0.030018}};
 
-#endif /* _FEATURE_ADM_H_ */
+/* NOLINTEND(modernize-use-using,performance-enum-size,modernize-redundant-void-arg,modernize-use-designated-initializers) */
+
+#endif /* FEATURE_ADM_H_ */

@@ -1,6 +1,29 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## The ADM headers lost upstream's `ADM_CM_THRESH_S_*` macros and `#pragma once` (ADR-1142, 2026-10-02)
+
+`refactor/adm-tools-standards`. No score impact: every object file of an x86 and an aarch64 build is byte-identical before and after.
+
+- `core/src/feature/adm_tools.h`: upstream's nine `ADM_CM_THRESH_S_{0_0,
+  0_W_M_1, 0_J, H_M_1_0, H_M_1_W_M_1, H_M_1_J, I_J, I_0, I_W_M_1}` macros are
+  gone. Nothing expanded them since ADR-1141 moved the masking threshold into
+  the closed form `adm_tools.c::adm_cm_thresh3x3_s()` (integer twins:
+  `integer_adm_kernels.h::adm_cm_thresh()` / `i4_adm_cm_thresh()`). An upstream
+  hunk that touches the macros therefore conflicts, on purpose: port its
+  arithmetic into those functions, keeping the nine terms in the macros'
+  order, and do not re-add the macros (a re-added macro is dead text that
+  silently ignores the upstream change).
+- `adm_tools.h`, `adm_csf_tools.h`, `adm_options.h`: `#pragma once` is gone;
+  the `#ifndef` guards upstream also has are the only guard. Keep it so when a
+  sync brings the pragma back (`portability-avoid-pragma-once`).
+- `adm_csf_tools.h` keeps the `_USE_MATH_DEFINES` / `#ifndef M_PI` two-step the
+  Windows lanes need (ADR-1234); the define carries a cited suppression.
+- `integer_adm.h`: one `NOLINTBEGIN` / `NOLINTEND` pair around the body for
+  the C++-only checks a C header trips when a SYCL translation unit includes
+  it (ADR-1138); `recip` in `div_lookup_populate()` is `const`. The positional
+  initialisers of `dwt_7_9_YCbCr_threshold` stay positional.
+
 ## `docs/state.md` uses the RC3 to RC8 labels (ADR-1421, 2026-10-02)
 
 `rc3-ledger-relabel`, closes `T-STATE-LEDGER-RC-RELABEL-2026-10-01`. No rebase impact: ledger labels only.

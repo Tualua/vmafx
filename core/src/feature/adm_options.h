@@ -17,8 +17,6 @@
  *
  */
 
-#pragma once
-
 #ifndef ADM_OPTIONS_H_
 #define ADM_OPTIONS_H_
 
@@ -57,6 +55,7 @@
 #define DEFAULT_ADM_CSF_DIAG_SCALE (1.0)
 
 /* Contrast sensitivity function */
+/* NOLINTNEXTLINE(performance-enum-size): C header included by C and C++ translation units; C has no fixed underlying enum type across the required toolchains. ADR-1138. */
 enum ADM_CSF_MODE {
     ADM_CSF_MODE_WATSON97 = 0,
     ADM_CSF_MODE_BARTEN,

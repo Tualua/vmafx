@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright 2016-2023 Netflix, Inc.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -20,6 +21,10 @@
  * `M_PI_2`, etc. POSIX libcs export these unconditionally; MSVC gates
  * them on the macro. Must precede the <math.h> include below. */
 #ifndef _USE_MATH_DEFINES
+/* The name is not ours to choose: `_USE_MATH_DEFINES` is what MSVC's and
+ * MinGW's <math.h> look for, and the two-step with the M_PI fallback below is
+ * what the Windows lanes need. */
+/* NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp): platform feature-test macro (ADR-1234). */
 #define _USE_MATH_DEFINES
 #endif
 #include <math.h>
@@ -32,8 +37,6 @@
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
-
-#pragma once
 
 #ifndef ADM_CSF_TOOLS_H_
 #define ADM_CSF_TOOLS_H_

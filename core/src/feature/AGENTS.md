@@ -2012,7 +2012,11 @@ collapses to 0 — band dimensions `<= 14` — since only zero crop pulls
 first and last row and column into summation region.
 
 If upstream rewrites `ADM_CM_THRESH_S_*` macro family, re-derive twins
-from closed form above, not from macros.
+from closed form above, not from macros. `adm_tools.h` no longer carries
+those macros (nothing expanded them since ADR-1141; 141 lint findings in
+dead text): upstream hunk on them = conflict by design, port into
+`adm_cm_thresh3x3_s()` + `adm_cm_thresh()` / `i4_adm_cm_thresh()`, never
+re-add the macros.
 
 ## ssimulacra2's YCbCr -> linear-RGB conversion is FMA everywhere (ADR-0891, ADR-1205)
 
