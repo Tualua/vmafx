@@ -6353,6 +6353,7 @@
         "core/test/test_integer_adm_cm_threshold.c": 1,
         "core/test/test_integer_adm_dwt16_range.c": 1,
         "core/test/test_integer_adm_min_dim.c": 1,
+        "core/test/test_integer_adm_quant_step.c": 1,
         "core/test/test_integer_adm_simd.c": 1,
         "core/test/test_integer_adm_simd_noise.c": 1,
         "core/test/test_integer_adm_tiny_frames.c": 1,
@@ -9496,6 +9497,17 @@
         "scripts/ci/upstream_parity_pin.py": 1
       },
       "target": "1474-relicense-helper-headers-and-ci-check.md"
+    },
+    "1475": {
+      "sites": {
+        "core/src/feature/integer_adm_kernels.h": 1,
+        "core/src/feature/metal/integer_adm_metal.mm": 1,
+        "core/src/feature/sycl/integer_adm_sycl.cpp": 1,
+        "core/test/meson.build": 1,
+        "core/test/test_integer_adm_quant_step.c": 3,
+        "core/test/test_integer_adm_quant_step_contract.py": 2
+      },
+      "target": "1475-integer-adm-quant-step-upstream-float.md"
     },
     "1476": {
       "sites": {

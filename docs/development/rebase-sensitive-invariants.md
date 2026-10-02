@@ -417,6 +417,19 @@ linked AGENTS.md before resolving conflicts.
   `core/test/test_metal_ms_ssim_options_contract.py`, and
   `core/test/test_nonfinite_collector_wiring.py` protect this against regression.
 
+- **Integer ADM quantisation step is upstream's ([ADR-1475](../adr/1475-integer-adm-quant-step-upstream-float.md))**:
+  `dwt_quant_step()` in `core/src/feature/integer_adm_kernels.h` raises 10 to
+  `params->k * temp * temp`, a `float` product, exactly as upstream's
+  `integer_adm.c` does; with a `(double)` on an operand (the form #552
+  introduced) every integer ADM score and `vmaf_v0.6.1` leave Netflix's
+  values by up to 1.8e-5. A sync takes upstream's side of the statement and
+  keeps the suppression comment above it. The SYCL and Metal twins hold their
+  own copy (`sycl/integer_adm_sycl.cpp`, `metal/integer_adm_metal.mm`) and
+  change with it. `core/test/test_integer_adm_quant_step.c` (values, with
+  the bits of a Netflix build) and
+  `core/test/test_integer_adm_quant_step_contract.py` (the three copies)
+  guard it; the Netflix golden gate would not notice.
+
 - **Integer ADM scale-0 masking centre tap ([ADR-1402](../adr/1402-adm-cm-centre-tap-int32.md))**:
   the fork keeps the 1/15 centre tap of the masking threshold in int32 and
   clamps `|x| - thr * 2^shift` to [0, INT32_MAX] in int64, where upstream

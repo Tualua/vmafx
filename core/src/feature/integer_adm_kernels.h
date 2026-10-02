@@ -72,7 +72,13 @@ static inline float dwt_quant_step(const struct dwt_model_params *params, int la
 
     // Formula (9), page 1171
     float temp = log10(pow(2.0, lambda + 1) * params->f0 * params->g[theta] / r);
-    float Q = 2.0 * params->a * pow(10.0, params->k * (double)temp * temp) /
+    /* Upstream's expression (Netflix/vmaf libvmaf/src/feature/integer_adm.c,
+     * dwt_quant_step()): the exponent k * temp * temp is a float product, and
+     * only its result is promoted for pow(). Widening an operand changes
+     * every CSF weight in the last digits and with it every integer ADM
+     * score. */
+    // codeql[cpp/integer-multiplication-cast-to-long] — ADR-1475
+    float Q = 2.0 * params->a * pow(10.0, params->k * temp * temp) /
               dwt_7_9_basis_function_amplitudes[lambda][theta];
 
     return Q;

@@ -1587,6 +1587,7 @@ nav:
         - "ADR-1472: integer-adm-cm-weight-budget": adr/1472-integer-adm-cm-weight-budget.md
         - "ADR-1473: float-adm-x86-simd-exact-and-dispatched": adr/1473-float-adm-x86-simd-exact-and-dispatched.md
         - "ADR-1474: relicense-helper-headers-and-ci-check": adr/1474-relicense-helper-headers-and-ci-check.md
+        - "ADR-1475: integer-adm-quant-step-upstream-float": adr/1475-integer-adm-quant-step-upstream-float.md
         - "ADR-1476: ciede-upstream-expression": adr/1476-ciede-upstream-expression.md
         - "ADR-1479: ciede-422-chroma-subsampling-flags": adr/1479-ciede-422-chroma-subsampling-flags.md
         - "ADR-1480: speed-frame-buffers-prescale-above-one": adr/1480-speed-frame-buffers-prescale-above-one.md

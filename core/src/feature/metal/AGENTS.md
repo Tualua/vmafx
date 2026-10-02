@@ -368,3 +368,12 @@ Metal float-ADM change as unverified until someone runs
 - `test_metal_float_motion_contract.py` enforces struct fields, option
   registrations, close callback retention, debug gating, and dictionary-resolved
   flush idempotency at AST level. See [Research-2113](../../../../docs/research/2113-metal-float-motion-lifecycle-flush.md).
+
+## `integer_adm_metal.mm`: quantisation step (ADR-1475)
+
+- `iadm_dwt_quant_step()` = copy of CPU `dwt_quant_step()`
+  (`core/src/feature/integer_adm_kernels.h`, upstream statement). Exponent
+  `params->k * temp * temp` in named `float`, then `pow(10.0, (double)exponent)`.
+  No `(double)` on product operand. CPU statement changes -> this copy, same
+  PR. Device-free guard: `core/test/test_integer_adm_quant_step_contract.py`.
+  Not run on device since edit (no Apple hardware on lanes).

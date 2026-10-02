@@ -1187,3 +1187,4 @@
 1485-apsnr-zero-error-plane-reports-cap
 1486-float-motion-scale1-uses-callers-stride
 1476-ciede-upstream-expression
+1475-integer-adm-quant-step-upstream-float

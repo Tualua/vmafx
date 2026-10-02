@@ -343,8 +343,10 @@ static float iadm_dwt_quant_step(const IadmDwtModel *params, int lambda, int the
     const float r = (float)(view_dist * (double)display_h * M_PI / 180.0);
     const float temp = (float)log10(pow(2.0, (double)(lambda + 1)) * (double)params->f0 *
                                     (double)params->g[theta] / (double)r);
-    const float Q = (float)(2.0 * (double)params->a *
-                            pow(10.0, (double)params->k * (double)temp * temp) /
+    /* The CPU's expression (integer_adm_kernels.h, upstream's): the exponent
+     * k * temp * temp is a float product, promoted only for pow(). ADR-1475. */
+    const float exponent = params->k * temp * temp;
+    const float Q = (float)(2.0 * (double)params->a * pow(10.0, (double)exponent) /
                             (double)iadm_dwt_basis_amp[lambda][theta]);
     return Q;
 }

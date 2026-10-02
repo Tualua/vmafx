@@ -43,3 +43,10 @@ invariant: Integer ADM tiny frames and linkage; Scale 0 = CPU int16 semantics; s
 | Kernel TU | Parity test | ADR |
 |---|---|---|
 | `integer_adm_sycl.cpp` | `test_sycl_adm_parity.c` | [ADR-0884](../../../../../docs/adr/0884-sycl-kernel-coverage-round2.md) |
+
+- **`dwt_quant_step()` here = copy of CPU statement (ADR-1475).** Exponent
+  `params->k * temp * temp` in named `float`, then
+  `std::pow(10.0, (double)exponent)`. No `(double)` on product operand:
+  weights leave CPU values by 1..3 ulp, `adm.sycl` exact cell goes red. CPU
+  statement changes (`integer_adm_kernels.h`) -> this copy, same PR. Guard:
+  `core/test/test_integer_adm_quant_step_contract.py`.

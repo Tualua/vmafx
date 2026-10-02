@@ -91,6 +91,34 @@ frames of 24x24 and smaller).
   link-time optimisation.
 - Guards: `test_cpu` (`test_avx512_warm_up_keeps_xmm0`, AVX-512 host),
   `test_inline_asm_clobber_contract` (device-free).
+## `dwt_quant_step()` of integer ADM is upstream's line again (ADR-1475, 2026-10-02)
+
+`fix/integer-adm-quant-step-upstream-float`. Scores move: every integer ADM
+score and every model score that reads one (`vmaf_v0.6.1` by up to 1.83e-5),
+onto Netflix master's values.
+
+- `core/src/feature/integer_adm_kernels.h::dwt_quant_step()`: the statement
+  `float Q = 2.0 * params->a * pow(10.0, params->k * temp * temp) / ...` is
+  upstream's (`libvmaf/src/feature/integer_adm.c`). A sync takes upstream's
+  side of that statement; the fork adds only the comment and the
+  `codeql[cpp/integer-multiplication-cast-to-long]` line above it. Do not
+  re-add a `(double)` on an operand of the product: #552 did, and it moved
+  the CSF weights of scales 1 to 3 by 1 to 3 units in the last place.
+- The same statement lives in two twins that cannot include the C header:
+  `core/src/feature/sycl/integer_adm_sycl.cpp::dwt_quant_step()` and
+  `core/src/feature/metal/integer_adm_metal.mm::iadm_dwt_quant_step()`. Both
+  form the exponent in a named `float` and promote that. A change upstream
+  makes to the function goes into all three;
+  `core/test/test_integer_adm_quant_step_contract.py` reads them.
+- `core/test/test_integer_adm_quant_step.c` holds the step's bits from a build
+  of Netflix `cea2b4d8` for five viewing geometries (asserted on glibc). If
+  upstream changes the model constants or the formula, regenerate the table
+  from an upstream build in the same PR as the port.
+- `testdata/scores_cpu_{576,640,720,1080,4k}.json` were regenerated (38 to 59
+  of 720 values each, at most 2e-5). A branch that regenerates them from an
+  older base takes master's files and regenerates again.
+- Float ADM (`core/src/feature/adm_tools.h`) still has its own, wider copy of
+  the function; that is a separate change.
 
 ## Agent pages name the staged CUDA VIF kernels and the HIP handle header (2026-10-02)
 

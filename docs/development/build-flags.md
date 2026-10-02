@@ -150,6 +150,16 @@ most 4.8e-7 and 1.4e-6, and in `ciede` by at most 2.9e-11. At the default
 `%.6f` every one of these except the SpEED differences is below the last
 printed digit.
 
+Integer `adm` joined that list with
+[ADR-1475](../adr/1475-integer-adm-quant-step-upstream-float.md), which
+changed its CSF weights in the last digits (back to Netflix's values): on 240
+frames at five resolutions of Big Buck Bunny, one frame (1280x720, frame 26)
+now differs between an icx and a GCC build, by 7.9e-8 in `integer_adm_scale1`
+and 2.8e-6 in `vmaf`, because Intel's `powf` rounds that frame's argument
+differently from glibc's. With glibc's `libm` loaded the icx-built library
+returns the GCC build's values on all 48 frames of that clip. Before the
+change none of the 240 frames differed in integer `adm`.
+
 One of those differences did not come from the math library but from a call
 the compilers treated differently, and it is gone
 ([ADR-1467](../adr/1467-ciede-squares-as-products.md)). `ciede.c` squared a

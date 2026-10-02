@@ -2834,6 +2834,27 @@ test_integer_adm_cm_threshold = executable('test_integer_adm_cm_threshold',
 test('test_integer_adm_cm_threshold', test_integer_adm_cm_threshold,
     suite : ['fast'])
 
+# ADR-1475: the Watson quantisation step of integer ADM is upstream's
+# arithmetic (the exponent k * temp * temp is a float product). The C test
+# checks the CPU's values against that form and, on glibc, against the bits of
+# a Netflix/vmaf build; the source contract reads the CPU header and the SYCL
+# and Metal copies, with a planted regression per copy.
+test_integer_adm_quant_step = executable('test_integer_adm_quant_step',
+    ['test.c', 'test_integer_adm_quant_step.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [pthread_dependency, math_lib],
+)
+test('test_integer_adm_quant_step', test_integer_adm_quant_step,
+    suite : ['fast'])
+
+test('test_integer_adm_quant_step_contract',
+    import('python').find_installation(),
+    args : files('test_integer_adm_quant_step_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # T-ADM-CM-SIMD-NOISE-NOT-BIT-EXACT-2026-09-18: integer ADM SIMD dispatch
 # against scalar on full-range noise.
 test_integer_adm_simd_noise = executable('test_integer_adm_simd_noise',

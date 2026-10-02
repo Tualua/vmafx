@@ -337,7 +337,10 @@ inline float dwt_quant_step(const struct dwt_model_params *params, int lambda, i
     float const r = (float)(adm_norm_view_dist * adm_ref_display_height * M_PI / 180.0);
     float const temp =
         (float)std::log10(std::pow(2.0, lambda + 1) * params->f0 * params->g[theta] / r);
-    float const Q = (float)(2.0 * params->a * std::pow(10.0, params->k * (double)temp * temp) /
+    /* The CPU's expression (integer_adm_kernels.h, upstream's): the exponent
+     * k * temp * temp is a float product, promoted only for pow(). ADR-1475. */
+    float const exponent = params->k * temp * temp;
+    float const Q = (float)(2.0 * params->a * std::pow(10.0, (double)exponent) /
                             dwt_7_9_basis_function_amplitudes[lambda][theta]);
     return Q;
 }

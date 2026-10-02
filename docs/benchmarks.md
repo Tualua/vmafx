@@ -51,6 +51,17 @@ is the case; `MIN_USEFUL_SECONDS` encodes the threshold. The first row is the
 only one long enough to mean anything, and it needs a locally built fixture
 because the 4K pair is untracked.
 
+### 2026-10-02 — score delta closed (ADR-1475)
+
+The score deltas of the table above were one expression: the quantisation
+step of integer ADM formed its exponent in `double` where Netflix forms it in
+`float` ([ADR-1475](adr/1475-integer-adm-quant-step-upstream-float.md)). With
+Netflix's expression restored,
+`testdata/bench_upstream_ab.py --max-score-delta 0` passes against Netflix
+master `cea2b4d8` on all four fixtures, the 200-frame
+3840x2160 clip included (before: `4.0e-06` on the 1 px checkerboard pair and
+`1.0e-06` on the 4K clip). No timing was recorded in that run.
+
 **Reading the result honestly:** on the *inherited* path — the `vmaf_v0.6.1`
 model, whose four features are `integer_adm`, `integer_vif`, `integer_motion`
 and `integer_aim` — the fork is at parity with upstream. That is the right
