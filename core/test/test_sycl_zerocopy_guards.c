@@ -42,8 +42,8 @@
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
-#define FRAME_W 256u
-#define FRAME_H 144u
+#define FRAME_W 352u
+#define FRAME_H 192u
 #define N_FRAMES 3u
 #define VIF_SCORE "VMAF_integer_feature_vif_scale0_score"
 
@@ -65,28 +65,34 @@ static VmafSyclState *open_state(void)
     return state;
 }
 
+/* One frame of synthetic luma in the sample width the bit depth needs. */
+static void fill_luma(uint8_t *buf, unsigned frame, unsigned salt, unsigned bpc)
+{
+    const size_t bytes_per_px = bpc > 8u ? 2u : 1u;
+    for (unsigned row = 0; row < FRAME_H; row++) {
+        for (unsigned col = 0; col < FRAME_W; col++) {
+            const unsigned v = luma_sample(row, col, frame, salt, bpc);
+            const size_t at = ((size_t)row * FRAME_W + col) * bytes_per_px;
+            buf[at] = (uint8_t)(v & 0xFFu);
+            if (bytes_per_px == 2u) {
+                buf[at + 1u] = (uint8_t)(v >> 8);
+            }
+        }
+    }
+}
+
 /* Fill the upload slots with one frame of luma, as the VA import does. */
 static int write_luma_bpc(VmafSyclState *state, unsigned frame, unsigned bpc)
 {
-    const size_t bytes_per_px = bpc > 8u ? 2u : 1u;
-    uint8_t *buf = malloc((size_t)FRAME_W * FRAME_H * bytes_per_px);
+    const unsigned pitch = FRAME_W * (bpc > 8u ? 2u : 1u);
+    uint8_t *buf = malloc((size_t)pitch * FRAME_H);
     if (!buf) {
         return -ENOMEM;
     }
     int err = 0;
     for (unsigned is_ref = 0; is_ref < 2u && !err; is_ref++) {
-        for (unsigned row = 0; row < FRAME_H; row++) {
-            for (unsigned col = 0; col < FRAME_W; col++) {
-                const unsigned v = luma_sample(row, col, frame, is_ref, bpc);
-                const size_t at = ((size_t)row * FRAME_W + col) * bytes_per_px;
-                buf[at] = (uint8_t)(v & 0xFFu);
-                if (bytes_per_px == 2u) {
-                    buf[at + 1u] = (uint8_t)(v >> 8);
-                }
-            }
-        }
-        err = vmaf_sycl_upload_plane(state, buf, FRAME_W * (unsigned)bytes_per_px, (int)is_ref,
-                                     FRAME_W, FRAME_H, bpc);
+        fill_luma(buf, frame, is_ref, bpc);
+        err = vmaf_sycl_upload_plane(state, buf, pitch, (int)is_ref, FRAME_W, FRAME_H, bpc);
     }
     free(buf);
     if (err) {

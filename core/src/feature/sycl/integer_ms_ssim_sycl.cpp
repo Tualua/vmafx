@@ -684,6 +684,9 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
+    if (vmaf_sycl_require_host_pictures("float_ms_ssim_sycl", ref_pic, dist_pic)) {
+        return -ENOTSUP;
+    }
     auto *s = static_cast<MsSsimStateSycl *>(fex->priv);
     auto *qptr = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
     if (!qptr) {

@@ -834,16 +834,15 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
+    /* vmaf_read_pictures_sycl() passes no host pictures; this twin uploads its own luma and
+     * does not read the shared frame (ADR-1595). */
+    if (vmaf_sycl_require_host_pictures("float_ssim_sycl", ref_pic, dist_pic)) {
+        return -ENOTSUP;
+    }
     auto *s = static_cast<SsimStateSycl *>(fex->priv);
     auto *qptr = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
     if (!qptr)
         return -EINVAL;
-    if (!ref_pic || !dist_pic) {
-        /* vmaf_read_pictures_sycl() passes no host pictures; this twin
-         * uploads its own luma and does not read the shared frame. */
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "ssim_sycl: needs host pictures\n");
-        return -EINVAL;
-    }
     sycl::queue &q = *qptr;
 
     /* ADR-1370: raw luma up (one DMA per plane), then picture_copy()'s
@@ -1606,6 +1605,9 @@ static int submit_fex_issim_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
+    if (vmaf_sycl_require_host_pictures("integer_ssim_sycl", ref_pic, dist_pic)) {
+        return -ENOTSUP;
+    }
     auto *s = static_cast<IssimStateSycl *>(fex->priv);
     auto *qptr = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
     if (!qptr)

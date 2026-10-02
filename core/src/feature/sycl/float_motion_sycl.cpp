@@ -483,6 +483,9 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
         s->has_pending = true;
         return 0;
     }
+    if (vmaf_sycl_require_host_pictures("float_motion_sycl", ref_pic, ref_pic)) {
+        return -ENOTSUP;
+    }
     auto *qptr = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
     if (!qptr) {
         return -EINVAL;

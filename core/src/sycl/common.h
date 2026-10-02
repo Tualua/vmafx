@@ -2,6 +2,8 @@
  *
  *  Copyright 2026 Lusoris
  *
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
  *     You may obtain a copy of the License at
@@ -55,6 +57,24 @@ extern "C" {
  * @return Number of registered kernels, or -EIO if the runtime threw.
  */
 int vmaf_sycl_registered_kernel_count(void);
+
+/**
+ * Guard for a SYCL extractor submit that reads host pictures (ADR-1595).
+ *
+ * Zero-copy input (vmaf_read_pictures_sycl) hands the extractors NULL
+ * pictures; the data is already in the shared device slots. An extractor
+ * that copies or stages from a VmafPicture cannot run there, so it calls this
+ * first and returns its result instead of dereferencing NULL.
+ *
+ * @param extractor  Registered extractor name, used in the log line.
+ * @param ref        Reference picture the submit would read.
+ * @param dis        Distorted picture the submit would read.
+ *
+ * @return 0 when both pictures are non-NULL; otherwise logs one error naming
+ *         the extractor and returns -ENOTSUP.
+ */
+int vmaf_sycl_require_host_pictures(const char *extractor, const VmafPicture *ref,
+                                    const VmafPicture *dis);
 
 /* ---- Device-memory helpers (USM wrappers) ---- */
 

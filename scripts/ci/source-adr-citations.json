@@ -10350,9 +10350,11 @@
     },
     "1595": {
       "sites": {
+        "core/src/feature/sycl/integer_ssim_sycl.cpp": 1,
         "core/src/libvmaf.c": 1,
+        "core/src/sycl/common.h": 1,
         "core/test/meson.build": 1,
-        "core/test/test_sycl_zerocopy_guards.c": 1
+        "core/test/test_sycl_zerocopy_guards.c": 2
       },
       "target": "1595-sycl-zerocopy-fail-loud-twin-routing.md"
     }

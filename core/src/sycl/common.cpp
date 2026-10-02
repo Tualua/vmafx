@@ -2,6 +2,8 @@
  *
  *  Copyright 2026 Lusoris
  *
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
+ *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
  *     You may obtain a copy of the License at
@@ -204,6 +206,18 @@ extern "C" int vmaf_sycl_registered_kernel_count(void)
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "SYCL: kernel registry query failed: %s\n", e.what());
         return -EIO;
     }
+}
+
+extern "C" int vmaf_sycl_require_host_pictures(const char *extractor, const VmafPicture *ref,
+                                               const VmafPicture *dis)
+{
+    if (ref != nullptr && dis != nullptr) {
+        return 0;
+    }
+    vmaf_log(VMAF_LOG_LEVEL_ERROR,
+             "%s: needs host pictures, which zero-copy input does not provide (-ENOTSUP)\n",
+             extractor);
+    return -ENOTSUP;
 }
 
 /* ------------------------------------------------------------------ */

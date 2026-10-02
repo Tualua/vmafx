@@ -979,6 +979,9 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *reference,
 {
     (void)reference_rotated;
     (void)distorted_rotated;
+    if (vmaf_sycl_require_host_pictures("float_vif_sycl", reference, distorted)) {
+        return -ENOTSUP;
+    }
     auto &state = *static_cast<FloatVifStateSycl *>(fex->priv);
     auto *queue = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(state.sycl_state));
     if (queue == nullptr) {
