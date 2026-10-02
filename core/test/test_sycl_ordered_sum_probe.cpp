@@ -217,6 +217,20 @@ uint64_t walk_on_device(sycl::queue &q, const VmafTestOrdsumCase &c, const Stage
     return sum;
 }
 
+/* Immediate command lists, as the library's primary queue (ADR-1596): under
+ * UR_L0_USE_IMMEDIATE_COMMANDLISTS=0 the Level Zero driver silently drops
+ * work submitted against device memory mapped at an address that was just
+ * freed, and every case here allocates and frees its blocks. A batched queue
+ * made this test read the previous case's data on an Arc A380. */
+sycl::property_list probe_queue_props()
+{
+#ifdef SYCL_EXT_INTEL_QUEUE_IMMEDIATE_COMMAND_LIST
+    return sycl::property_list{sycl::ext::intel::property::queue::immediate_command_list{}};
+#else
+    return sycl::property_list{};
+#endif
+}
+
 int run_on_device(VmafTestOrdsumCase *c, const Staged &s)
 {
     std::optional<sycl::device> device;
@@ -226,7 +240,7 @@ int run_on_device(VmafTestOrdsumCase *c, const Staged &s)
         return -ENODEV;
     }
     try {
-        sycl::queue q(*device);
+        sycl::queue q(*device, probe_queue_props());
         c->sum = walk_on_device(q, *c, s);
     } catch (const std::exception &) {
         return -EIO;
