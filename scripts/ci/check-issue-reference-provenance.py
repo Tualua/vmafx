@@ -159,12 +159,12 @@ CONTRACTS = (
         ("lusoris/vmaf#310", "lusoris/vmaf#752"),
     ),
     ProvenanceContract(
-        "core/src/feature/cuda/AGENTS.md",
+        "core/src/feature/cuda/AGENTS.d/kernel-launch-params.md",
         "`cuLaunchKernel` `kernelParams[]` must point",
         ("lusoris/vmaf#857", "lusoris/vmaf#866"),
     ),
     ProvenanceContract(
-        "core/src/feature/cuda/AGENTS.md",
+        "core/src/feature/cuda/AGENTS.d/host-preprocessing-download.md",
         "Host-side preprocessing in CUDA feature extractor",
         ("lusoris/vmaf#857", "lusoris/vmaf#870"),
     ),

@@ -58686,3 +58686,16 @@ ADR-1403 unchanged.
 - No Netflix golden-data, public API or FFmpeg patch impact. x86-64 scores and
   the scalar path are unchanged; aarch64 NEON scores move by at most 5.7e-7 dB
   onto the scalar's.
+## ADR-1454 — `core/src/feature/cuda/AGENTS.md` is a generated index over `AGENTS.d/` pages (2026-10-02)
+
+`docs/agents-index-feature-cuda`, `T-AGENTS-INDEX-MIGRATION-2026-10-02`.
+
+- No rebase impact from upstream: an upstream sync never touches an
+  `AGENTS.md` or an `AGENTS.d/`.
+- Fork branches that append to `core/src/feature/cuda/AGENTS.md` conflict once: take
+  `core/src/feature/cuda/AGENTS.md` from master, put the new rule into a new or matching
+  page under `core/src/feature/cuda/AGENTS.d/`, run `make docs-fragments-write`.
+- Coupled edits: `scripts/ci/check-issue-reference-provenance.py` and
+  `scripts/ci/tests/test_issue_reference_provenance.py` update contracts for
+  `kernel-launch-params.md` and `host-preprocessing-download.md`.
+- No Netflix golden-data, public API or FFmpeg patch impact.
