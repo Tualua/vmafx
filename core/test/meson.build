@@ -4669,6 +4669,21 @@ if not is_sycl_acpp
         is_parallel : false)
 endif
 
+# ADR-1451: the SYCL twins declared exact as a group (adm, motion, motion_v2,
+# psnr, float_ssim, cambi) return the CPU extractor's bits: four frames at 8
+# and at 10 bits, `==` on every output. Exits 77 when no SYCL GPU is visible.
+test_sycl_exact_twins = executable('test_sycl_exact_twins',
+    ['test.c', 'test_sycl_exact_twins.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_exact_twins', test_sycl_exact_twins,
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false,
+    timeout : 120)
+
 # ADR-1395: SYCL kernels use no scratch memory (private arrays in memory,
 # register spills) on Intel GPUs, where the Linux xe driver returns wrong
 # values from them. Builds every registered kernel for the default GPU and

@@ -1560,6 +1560,7 @@ nav:
         - "ADR-1447: hip-float-moment-cpu-float-squares": adr/1447-hip-float-moment-cpu-float-squares.md
         - "ADR-1449: sycl-float-moment-cpu-float-squares": adr/1449-sycl-float-moment-cpu-float-squares.md
         - "ADR-1450: sycl-float-psnr-exact-block-sums": adr/1450-sycl-float-psnr-exact-block-sums.md
+        - "ADR-1451: sycl-exact-twins-declared": adr/1451-sycl-exact-twins-declared.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

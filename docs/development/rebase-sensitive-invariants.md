@@ -566,6 +566,14 @@ linked AGENTS.md before resolving conflicts.
   `core/test/test_hip_float_moment_exact_contract.py` guards it without a
   device, `test_hip_float_moment_parity` on one (`==` while the sum is below
   2^53 units, a derived bound past it).
+- **SYCL twins declared exact as a group ([ADR-1451](../adr/1451-sycl-exact-twins-declared.md))**:
+  `scripts/ci/exact_twins.d/{adm,motion,motion_debug,motion_v2,psnr,float_ssim,float_ssim_lcs,cambi}.sycl`
+  make the parity gate compare those cells with tolerance 0, and
+  `core/test/test_sycl_exact_twins.c` holds `adm_sycl`, `motion_sycl`,
+  `motion_v2_sycl`, `psnr_sycl`, `float_ssim_sycl` and `cambi_sycl` to `==`
+  on every output. A rebase that changes one of these twins or its CPU
+  extractor keeps them bit-identical; a twin that drifts is fixed, never
+  given a tolerance or taken off the list.
 - **`float_psnr_sycl` adds integers ([ADR-1450](../adr/1450-sycl-float-psnr-exact-block-sums.md))**:
   `core/src/feature/sycl/float_psnr_sycl.cpp` forms the CPU's term
   (`diff * diff` in `float`, as `float_psnr.c` does) as an integer in units of

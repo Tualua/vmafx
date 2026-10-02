@@ -57784,3 +57784,19 @@ must keep the fork's side of both:
 - `scripts/ci/exact_twins.d/float_psnr.sycl` (new) declares the twin exact
   (ADR-1428).
 - No Netflix golden-data, public API or FFmpeg patch impact.
+
+## ADR-1451 — six SYCL twins declared exact as a group (2026-10-02)
+
+`test/sycl-exact-twins-declared`, `T-SYCL-EXACT-TWINS-UNDECLARED-2026-10-02`.
+
+- `scripts/ci/exact_twins.d/` gains `adm.sycl`, `motion.sycl`,
+  `motion_debug.sycl`, `motion_v2.sycl`, `psnr.sycl`, `float_ssim.sycl`,
+  `float_ssim_lcs.sycl` and `cambi.sycl` (ADR-1428): the gate compares those
+  cells with tolerance 0. No twin's code changes.
+- `core/test/test_sycl_exact_twins.c` (new) asserts `==` on every output of
+  the six twins at 8 and 10 bits. A change to one of them, or to its CPU
+  extractor, has to keep it passing.
+- `scripts/ci/gpu_ulp_calibration.yaml`: notes only; the Arc A380's
+  `float_ssim: 5.0e-4` stays for cells whose other side is not exact.
+- No Netflix golden-data, public API or FFmpeg patch impact; no score
+  changes.

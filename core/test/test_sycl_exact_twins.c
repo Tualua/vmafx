@@ -1,0 +1,334 @@
+/**
+ *
+ *  Copyright 2026 Lusoris
+ *
+ * SPDX-License-Identifier: EUPL-1.2
+ */
+
+/*
+ * The SYCL twins that ADR-1451 declares exact return the CPU extractor's bits.
+ *
+ * `adm_sycl`, `motion_sycl`, `motion_v2_sycl`, `psnr_sycl`, `float_ssim_sycl`
+ * and `cambi_sycl` are listed as exact twins of their CPU extractors: the
+ * parity gate compares them with tolerance 0. Each reaches the CPU's value by
+ * construction. The motion and PSNR kernels accumulate integers and the host
+ * concludes with the CPU's own arithmetic (ADR-1371, ADR-1365); ADM
+ * accumulates integers and finalises in the CPU's float arithmetic
+ * (ADR-1362); the SSIM kernel runs the CPU's window arithmetic type for type
+ * with integer frame sums (ADR-1414's shared terms, ADR-1370); CAMBI is
+ * integer up to fp32 c-values that are cambi.c's and an exact top-K sum
+ * (ADR-1357).
+ *
+ * This test holds every one of them to that: four frames at 8 and at 10 bits,
+ * `==` on every output, the debug, AIM and L/C/S outputs included. The frames
+ * move, so the motion scores are not zero, and half of each frame is a ramp
+ * of single code levels, so CAMBI scores above zero. Their own parity tests
+ * keep a tolerance for coverage of options and sizes; a twin that drifts by a
+ * last bit fails here. The twins declared exact by their own ADRs (vif, ssim,
+ * float_adm, float_motion, float_ms_ssim, float_vif, float_moment,
+ * float_psnr, psnr_hvs, ssimulacra2) have `==` parity tests of their own.
+ *
+ * Skip behaviour: without a SYCL device a case reports the skip and the run
+ * exits 77.
+ */
+
+#include <errno.h>
+#include <math.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "test.h"
+
+#include "libvmaf/libvmaf.h"
+#include "libvmaf/libvmaf_sycl.h"
+#include "libvmaf/picture.h"
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` while the
+ * required Windows build compiles this TU with cl.exe, and this file mirrors
+ * the C spelling of the surface it exercises. ADR-1138. */
+
+/* Both dimensions clear CAMBI's minimum (216). */
+#define FIXTURE_W 640u
+#define FIXTURE_H 480u
+
+#define MAX_KEYS 8u
+/* Frames per run: motion needs three for its first blended score, and a
+ * fourth shows a steady state. */
+#define NUM_FRAMES 4u
+
+/* One exact twin with one option set. */
+typedef struct ExactCase {
+    const char *sycl;    /* SYCL extractor */
+    const char *cpu;     /* its CPU twin */
+    const char *opt_key; /* option both get, or NULL */
+    const char *opt_val;
+    bool nonzero;               /* the first key must not be 0 on every frame */
+    const char *keys[MAX_KEYS]; /* outputs compared, NULL-terminated */
+} ExactCase;
+
+static const ExactCase cases[] = {
+    {"motion_sycl",
+     "motion",
+     NULL,
+     NULL,
+     true,
+     {"VMAF_integer_feature_motion2_score", "VMAF_integer_feature_motion3_score"}},
+    {"motion_sycl",
+     "motion",
+     "debug",
+     "true",
+     true,
+     {"VMAF_integer_feature_motion_score", "VMAF_integer_feature_motion2_score",
+      "VMAF_integer_feature_motion3_score"}},
+    {"motion_v2_sycl",
+     "motion_v2",
+     NULL,
+     NULL,
+     true,
+     {"VMAF_integer_feature_motion_v2_sad_score", "VMAF_integer_feature_motion2_v2_score",
+      "VMAF_integer_feature_motion3_v2_score"}},
+    {"psnr_sycl", "psnr", NULL, NULL, true, {"psnr_y", "psnr_cb", "psnr_cr"}},
+    {"adm_sycl",
+     "adm",
+     NULL,
+     NULL,
+     true,
+     {"VMAF_integer_feature_adm2_score", "VMAF_integer_feature_aim_score",
+      "VMAF_integer_feature_adm3_score", "integer_adm_scale0", "integer_adm_scale1",
+      "integer_adm_scale2", "integer_adm_scale3"}},
+    {"float_ssim_sycl", "float_ssim", NULL, NULL, true, {"float_ssim"}},
+    {"float_ssim_sycl",
+     "float_ssim",
+     "enable_lcs",
+     "true",
+     true,
+     {"float_ssim", "float_ssim_l", "float_ssim_c", "float_ssim_s"}},
+    {"cambi_sycl", "cambi", NULL, NULL, true, {"Cambi_feature_cambi_score"}},
+};
+#define N_CASES (sizeof(cases) / sizeof(cases[0]))
+
+static size_t key_count(const ExactCase *c)
+{
+    size_t n = 0u;
+    while (n < MAX_KEYS && c->keys[n] != NULL) {
+        n++;
+    }
+    return n;
+}
+
+static void put_sample(VmafPicture *pic, unsigned plane, unsigned row, unsigned col, unsigned v)
+{
+    const unsigned peak = (1u << pic->bpc) - 1u;
+    uint8_t *line = (uint8_t *)pic->data[plane] + ((size_t)row * (size_t)pic->stride[plane]);
+    if (pic->bpc <= 8u) {
+        line[col] = (uint8_t)(v > peak ? peak : v);
+    } else {
+        ((uint16_t *)line)[col] = (uint16_t)(v > peak ? peak : v);
+    }
+}
+
+/* Luma of frame `frame`. Left half: a shallow ramp that shifts with the
+ * frame, one 10-bit code level every two columns (one 8-bit level every
+ * eight), which is banding for CAMBI at both depths. Right half: texture that
+ * moves down three rows a frame; the distorted frame adds a
+ * position-dependent error there and one 10-bit level on the ramp. */
+static unsigned luma(unsigned row, unsigned col, unsigned frame, bool distorted, unsigned bpc)
+{
+    if (col < FIXTURE_W / 2u) {
+        const unsigned ramp = 200u + ((col + frame) / 2u) + (distorted ? 1u : 0u);
+        return ramp >> (10u - bpc);
+    }
+    row += frame * 3u;
+    unsigned v = (((row * 3u) + (col * 2u)) & 0xFFu) ^ (((row >> 2) * (col >> 3)) & 0x1Fu);
+    if (distorted) {
+        v += 9u + (((row * 5u) + (col * 7u)) % 11u);
+    }
+    return v << (bpc - 8u);
+}
+
+static unsigned chroma(unsigned plane, unsigned row, unsigned col, bool distorted, unsigned gain)
+{
+    const unsigned v = 96u + (((row * 3u) + (col * 5u) + (plane * 17u)) & 0x3Fu);
+    return (v + (distorted ? ((row + col) % 5u) : 0u)) * gain;
+}
+
+static int fill_picture(VmafPicture *pic, unsigned bpc, unsigned frame, bool distorted)
+{
+    const int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, bpc, FIXTURE_W, FIXTURE_H);
+    if (err) {
+        return err;
+    }
+    const unsigned gain = 1u << (bpc - 8u);
+    for (unsigned row = 0; row < pic->h[0]; row++) {
+        for (unsigned col = 0; col < pic->w[0]; col++) {
+            put_sample(pic, 0u, row, col, luma(row, col, frame, distorted, bpc));
+        }
+    }
+    for (unsigned p = 1; p < 3; p++) {
+        for (unsigned row = 0; row < pic->h[p]; row++) {
+            for (unsigned col = 0; col < pic->w[p]; col++) {
+                put_sample(pic, p, row, col, chroma(p, row, col, distorted, gain));
+            }
+        }
+    }
+    return 0;
+}
+
+/* Frame `frame` of the fixture through `vmaf`, which takes both pictures. */
+static int feed_frame(VmafContext *vmaf, unsigned bpc, unsigned frame)
+{
+    VmafPicture ref;
+    VmafPicture dist;
+    int err = fill_picture(&ref, bpc, frame, false);
+    if (err) {
+        return err;
+    }
+    err = fill_picture(&dist, bpc, frame, true);
+    if (err) {
+        (void)vmaf_picture_unref(&ref);
+        return err;
+    }
+    return vmaf_read_pictures(vmaf, &ref, &dist, frame);
+}
+
+/* A context with the case's CPU extractor, or its twin on `sycl_state`. */
+static int case_context(VmafContext **vmaf, const ExactCase *c, VmafSyclState *sycl_state)
+{
+    const VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafFeatureDictionary *opts = NULL;
+    int err = vmaf_init(vmaf, cfg);
+    if (!err && sycl_state) {
+        err = vmaf_sycl_import_state(*vmaf, sycl_state);
+    }
+    if (!err && c->opt_key) {
+        err = vmaf_feature_dictionary_set(&opts, c->opt_key, c->opt_val);
+    }
+    if (!err) {
+        /* vmaf_use_feature() takes the dictionary over, on failure too. */
+        err = vmaf_use_feature(*vmaf, sycl_state ? c->sycl : c->cpu, opts);
+    }
+    return err;
+}
+
+/* NUM_FRAMES frames through one extractor, and every key of the case of every
+ * frame read into `out` (frame-major). Returns the first error. */
+static int case_scores(const ExactCase *c, VmafSyclState *sycl_state, unsigned bpc, double *out)
+{
+    const size_t count = key_count(c);
+    VmafContext *vmaf = NULL;
+    int err = case_context(&vmaf, c, sycl_state);
+    for (unsigned frame = 0; frame < NUM_FRAMES && !err; frame++) {
+        err = feed_frame(vmaf, bpc, frame);
+    }
+    if (!err) {
+        err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
+    }
+    for (size_t i = 0; i < count * NUM_FRAMES && !err; i++) {
+        err = vmaf_feature_score_at_index(vmaf, c->keys[i % count], &out[i], (unsigned)(i / count));
+        if (err) {
+            (void)fprintf(stderr, "\n%s: no score for %s at frame %u\n",
+                          sycl_state ? c->sycl : c->cpu, c->keys[i % count], (unsigned)(i / count));
+        }
+    }
+    const int closed = vmaf ? vmaf_close(vmaf) : 0;
+    return err ? err : closed;
+}
+
+/* The device, or NULL with the reason printed when there is none. */
+static VmafSyclState *sycl_device(void)
+{
+    VmafSyclState *sycl_state = NULL;
+    const VmafSyclConfiguration sycl_cfg = {.device_index = -1};
+    if (vmaf_sycl_state_init(&sycl_state, sycl_cfg) != 0 || sycl_state == NULL) {
+        (void)fprintf(stderr, "[skip: no SYCL device] ");
+        mu_skipped = 1;
+        return NULL;
+    }
+    return sycl_state;
+}
+
+/* The outputs whose SYCL value is not the CPU's, each one reported, plus one
+ * when the case's first key is 0 on every frame (a fixture that measures
+ * nothing). */
+static unsigned count_mismatches(const ExactCase *c, unsigned bpc, const double *cpu,
+                                 const double *gpu)
+{
+    const size_t count = key_count(c);
+    unsigned mismatches = 0u;
+    bool any_nonzero = false;
+    for (size_t i = 0; i < count * NUM_FRAMES; i++) {
+        any_nonzero = any_nonzero || ((i % count) == 0u && cpu[i] != 0.0);
+        if (isfinite(cpu[i]) && cpu[i] == gpu[i]) {
+            continue;
+        }
+        mismatches++;
+        (void)fprintf(stderr, "\n%s %u-bit frame %u %s: cpu=%.17g sycl=%.17g delta=%.3e\n", c->sycl,
+                      bpc, (unsigned)(i / count), c->keys[i % count], cpu[i], gpu[i],
+                      fabs(cpu[i] - gpu[i]));
+    }
+    if (c->nonzero && !any_nonzero) {
+        (void)fprintf(stderr, "\n%s %u-bit: %s is 0 on every frame\n", c->sycl, bpc, c->keys[0]);
+        mismatches++;
+    }
+    return mismatches;
+}
+
+/* Mismatches of one case at one bit depth; UINT32_MAX when a run failed. A
+ * skipped SYCL leg counts as 0. */
+static unsigned exact_mismatches(const ExactCase *c, unsigned bpc)
+{
+    double cpu[MAX_KEYS * NUM_FRAMES] = {0.0};
+    double gpu[MAX_KEYS * NUM_FRAMES] = {0.0};
+    VmafSyclState *sycl_state = sycl_device();
+    if (!sycl_state) {
+        return 0u;
+    }
+    const int gpu_err = case_scores(c, sycl_state, bpc, gpu);
+    vmaf_sycl_state_free(&sycl_state);
+    const int cpu_err = gpu_err ? 0 : case_scores(c, NULL, bpc, cpu);
+    if (gpu_err || cpu_err) {
+        (void)fprintf(stderr, "\n%s %u-bit: run failed (sycl %d, cpu %d)\n", c->sycl, bpc, gpu_err,
+                      cpu_err);
+        return UINT32_MAX;
+    }
+    return count_mismatches(c, bpc, cpu, gpu);
+}
+
+/* Every case at one bit depth; all of them run, so one failure does not hide
+ * the next twin's. */
+static unsigned mismatches_at(unsigned bpc)
+{
+    unsigned failed_cases = 0u;
+    for (size_t i = 0; i < N_CASES && !mu_skipped; i++) {
+        failed_cases += (exact_mismatches(&cases[i], bpc) != 0u) ? 1u : 0u;
+    }
+    return failed_cases;
+}
+
+static char *test_exact_twins_8bit(void)
+{
+    mu_assert("a SYCL twin declared exact is not bit-identical to its CPU extractor at 8 bits",
+              mismatches_at(8u) == 0u);
+    return NULL;
+}
+
+static char *test_exact_twins_10bit(void)
+{
+    mu_assert("a SYCL twin declared exact is not bit-identical to its CPU extractor at 10 bits",
+              mismatches_at(10u) == 0u);
+    return NULL;
+}
+
+char *run_tests(void)
+{
+    mu_run_test(test_exact_twins_8bit);
+    mu_run_test(test_exact_twins_10bit);
+    return NULL;
+}
+
+/* NOLINTEND(modernize-use-nullptr) */

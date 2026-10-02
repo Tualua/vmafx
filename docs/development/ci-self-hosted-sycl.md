@@ -75,7 +75,10 @@ reused across jobs on the same host — `down -v` wipes it.
   sycl --features float_ssim --gpu-id sycl:0x8086:0x56a5` against the
   [ADR-0234](../adr/0234-gpu-gen-ulp-calibration.md) table
   (`scripts/ci/gpu_ulp_calibration.yaml`, `sycl:0x8086:0x56a*`) and uploads
-  `sycl_parity.json` / `sycl_parity.md`.
+  `sycl_parity.json` / `sycl_parity.md`. Since
+  [ADR-1451](../adr/1451-sycl-exact-twins-declared.md) `float_ssim` is an
+  exact twin on SYCL: the gate compares this cell with tolerance 0 and does
+  not read the table's 5e-4 for it.
 - [`.github/workflows/required-aggregator.yml`](../../.github/workflows/required-aggregator.yml)
   lists `SYCL Parity (Arc A380)` as required.
 

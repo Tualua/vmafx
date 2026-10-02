@@ -498,11 +498,21 @@ See [ADR-0483](../../adr/0483-gpu-dispatch-parse-dedup.md) and the
 
 ## Numerical tolerance vs the CPU scalar path
 
-SYCL kernels target **close agreement** with the CPU fixed-point
-path, not bit-exact equality. Measured on an Intel
-Arc A380 (2026-09-27) with `vmaf_v0.6.1` on the Netflix `src01` pair, the
-pooled VMAF score differs from the CPU by 2.48e-5 and the largest per-frame
-difference is 5.92e-5.
+The SYCL twins return the CPU extractors' bits. Of the 21 features of the
+[cross-backend gate](../../development/cross-backend-gate.md), 19 are
+declared exact twins and compared with tolerance 0
+([list](../../development/cross-backend-exact-twins.md)); `ciede` is within
+1.4e-11 of the CPU (its math functions), and `speed_chroma` measures
+identical but depends on the build's math library
+([below](#exact-twins-declared-as-a-group-2026-10-02)). Measured on an Intel
+Arc A380 (2026-10-02) with the default model, the VMAF score of every frame
+equals `--backend cpu` on the Netflix `src01` pair (48 frames) and on 50
+frames of BBB 3840x2160. On 2026-09-27 the pooled score of the Netflix pair
+still differed by 2.48e-5.
+
+The equality holds between the twin and the CPU extractor of one build; a
+build with another compiler can differ in the last place through the host
+math library (`log10`, `pow`).
 
 ### What the SYCL compile line guarantees
 
@@ -525,24 +535,31 @@ and `/` and `sqrt` approximate (29% and 8% of random fp32 operands differ
 from the host), although earlier versions of this guide said the kernels ran
 in IEEE-754 strict mode.
 
-The line does not make scores bit-identical. What still differs from the CPU:
+The line alone does not make scores bit-identical. What a twin has to handle
+beyond it:
 
 - **Transcendental functions.** `sycl::log2`, `exp`, `pow`, `cbrt`, `sin`
   and `atan2` are not correctly rounded on the device and are not the host's
   libm. `float_vif_sycl` evaluates the CPU's `log2` polynomial instead
   (ADR-1422), and `ciede_sycl` its own functions on pairs of `float` values
   (ADR-1436, [below](#ciede_sycl-follows-the-cpu-ciede-to-14e-11-2026-10-01)).
-- **Summation order.** Work-group reductions add in a fixed tree, not in the
-  CPU's sequential order.
+- **Summation order.** A work-group reduction adds in a tree, not in the
+  CPU's sequential order. The twins add integers where the terms allow it
+  (`float_psnr`, `float_moment`, `float_ssim`), and reproduce the CPU's
+  sequential `double` sum from integer increments where they do not
+  (`ssimulacra2`, ADR-1446).
 - **fp64 on the CPU.** SYCL kernels are fp32-only
   ([ADR-0220](../../adr/0220-sycl-fp64-fallback.md)); where the CPU evaluates
-  an expression in fp64, the twin approximates it in fp32, in exact pairs
-  of floats where it must match (SpEED), or computes the fp64 value in
-  64-bit integers (`ssim`, `ssimulacra2`).
-- **Different formulas by design.** `float_ssim_sycl` uses the combined SSIM
-  form rather than the CPU's L x C x S product.
+  an expression in fp64, the twin carries it as an exact pair of floats
+  (SpEED, `float_ssim`, `float_adm`) or computes the fp64 value in 64-bit
+  integers (`ssim`, `ssimulacra2`).
+- **Content the gate's fixtures do not have.** The repository's 10-, 12- and
+  16-bit clips are 8-bit content shifted left. `float_moment_sycl` and
+  `float_psnr_sycl` matched them and differed on full-range noise until
+  ADR-1449 and ADR-1450.
 
-Measured with icpx 2026.1 on an Arc B580 and a UHD 770 (both give the same
+Before that work, measured with icpx 2026.1 on an Arc B580 and a UHD 770 on
+2026-09-29 (both give the same
 result except where noted in the ADR), maximum absolute difference against
 `--backend cpu --precision max`: bit-identical for `motion_v2`, `float_psnr`,
 `psnr`, `float_moment`, `speed_chroma` and `speed_temporal`; within 2.2e-15
@@ -1701,6 +1718,43 @@ gate compares the twin with tolerance 0.
 ```bash
 ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/dev/speed_gpu_parity.py \
     --backend sycl --vmaf "$PWD/build/tools/vmaf" --feature float_psnr
+```
+
+## Exact twins declared as a group (2026-10-02)
+
+`adm_sycl`, `motion_sycl`, `motion_v2_sycl`, `psnr_sycl`, `float_ssim_sycl`
+and `cambi_sycl` returned the CPU's bits already and were compared with a
+tolerance of 5e-5. They are declared exact twins now
+([ADR-1451](../../adr/1451-sycl-exact-twins-declared.md)): the parity gate
+compares `adm`, `motion`, `motion_debug`, `motion_v2`, `psnr`, `float_ssim`,
+`float_ssim_lcs` and `cambi` with tolerance 0, and `test_sycl_exact_twins`
+holds every output of the six twins to `==` on a device.
+
+A twin is listed when it reaches the CPU's value by construction and a sweep
+measured it identical. The sweep, on an Arc A380 at `--precision max`: the
+Netflix 576x324 pair at 8, 10, 12 and 16 bits and as 10-bit 4:2:2, both
+1920x1080 checkerboard pairs, full-range noise at four bit depths, a bright
+16-bit 1920x1080 pair, BBB 3840x2160 widened to 16 bits and 200 frames of BBB
+3840x2160. Every one of the 333 frames was identical for each of the eight
+features, and `float_ssim` at `scale=1` on 50 frames of BBB 3840x2160.
+
+Two features are not listed:
+
+- `speed_chroma` was identical on all 333 frames as well. Its `log2` is a
+  correctly rounded evaluation on the device, where the CPU calls the math
+  library of the build, so the equality depends on that library.
+- `ciede` is within 1.4e-11 of the CPU by its derived bound (ADR-1436).
+
+Two of the listed twins are exact within a stated range: `float_ssim` up to
+the `float` rounding of the frame mean (as `float_ms_ssim`, ADR-1414), and
+`cambi` while `cambi.c`'s own top-K sum is exact (ADR-1357).
+
+```bash
+ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/ci/cross_backend_parity_gate.py \
+    --vmaf-binary build/tools/vmaf \
+    --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+    --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+    --width 576 --height 324 --backends cpu sycl
 ```
 
 ## Licensing of the SYCL kernels (ADR-1250)

@@ -247,6 +247,10 @@ gpus:
       (max_abs_diff=2.68e-4 observed on Arc A380).
       RTX 4090 and lavapipe pass at places=4 (5e-5).
       See Research-0985 §3 and Research-0730 §6.1.
+      Since ADR-1451 float_ssim is an exact twin on SYCL: the cpu-sycl cell
+      is compared with tolerance 0 and does not read this row, which is left
+      for a cell whose other side is not exact. The combined formula was
+      replaced by the CPU's arithmetic in #1645.
       ssimulacra2 has no row here: the SYCL twin is exact since ADR-1446
       (0 on 266 frames on an Arc A380), and an exact twin is compared with
       tolerance 0 whatever this table says. The 5.0e-2 of ADR-0985 was
@@ -280,7 +284,9 @@ gpus:
     notes: >-
       Arc A380 (DG2-G10) SYCL. float_ssim tolerance 5e-4 (places=3) per
       ADR-0234 and Research-0985 §3: the Wang-2004 formula plus fp32
-      accumulation drifts on fp64-free hardware. ssimulacra2 has no row: the
+      accumulation drifts on fp64-free hardware. Since ADR-1451 the cpu-sycl
+      cell is exact and does not read this row (the twin has the CPU's
+      arithmetic since #1645). ssimulacra2 has no row: the
       twin is exact since ADR-1446 and is compared with tolerance 0.
     features:
       float_ssim: 5.0e-4

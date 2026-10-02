@@ -1152,3 +1152,4 @@
 1446-sycl-ssimulacra2-cpu-bits
 1449-sycl-float-moment-cpu-float-squares
 1450-sycl-float-psnr-exact-block-sums
+1451-sycl-exact-twins-declared

@@ -826,6 +826,23 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   memory (2x on the B580, 5.6x on the UHD 770); do not retry either without
   measuring per stage.
 
+- **Twins declared exact as a group
+  ([ADR-1451](../../../../docs/adr/1451-sycl-exact-twins-declared.md),
+  `scripts/ci/exact_twins.d/`).** `adm`, `motion`, `motion_debug`,
+  `motion_v2`, `psnr`, `float_ssim`, `float_ssim_lcs`, `cambi`: `sycl`
+  listed -> gate tolerance 0. Basis per twin: integer sums on device + CPU's
+  host arithmetic (`adm_sycl` ADR-1362, `motion_sycl` / `motion_v2_sycl`
+  ADR-1371, `psnr_sycl` ADR-1365), CPU's window arithmetic type for type +
+  integer frame sums (`float_ssim_sycl`, ADR-1370 / ADR-1414), integer
+  pipeline + exact top-K sum (`cambi_sycl`, ADR-1357). Rule: listed = by
+  construction AND measured identical on full-range noise at 8 / 10 / 12 /
+  16 bit, never on measurement alone. A listed twin that drifts is FIXED,
+  never given a tolerance. `test_sycl_exact_twins` = `==` on every output,
+  8 + 10 bit. NOT listed: `speed_chroma` (device `log2` correctly rounded,
+  CPU = build's libm; identical on 333 frames, library-dependent), `ciede`
+  (libm bound). With the 11 twins exact by their own ADRs: 19 of 21 gate
+  features. Default-model VMAF on A380 = CPU's on every frame measured.
+
 - **`float_psnr_sycl` = CPU `float_psnr`, bit for bit
   ([ADR-1450](../../../../docs/adr/1450-sycl-float-psnr-exact-block-sums.md)).**
   CPU: `diff * diff` in `float`, terms added in double (exact below 2^53
