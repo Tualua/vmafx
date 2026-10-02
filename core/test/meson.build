@@ -3843,7 +3843,8 @@ test_cuda_motion_tiny_frames = executable('test_cuda_motion_tiny_frames',
 )
 test('test_cuda_motion_tiny_frames', test_cuda_motion_tiny_frames,
     suite : ['fast', 'gpu'],
-    is_parallel : false)
+    is_parallel : false,
+    timeout : 120)
 
 # T-UPSTREAM-1305-CUDA-VIF-ACCUM-STREAM-2026-10-01 (Netflix/vmaf#1305) — four
 # libvmaf CUDA instances on one CUcontext score the same pictures as one

@@ -808,6 +808,29 @@ linked AGENTS.md before resolving conflicts.
   `scripts/dev/relicense_fork_files.py --check --upstream-ref <new id>`
   before pushing. See [the guide](licence-provenance-check.md).
 
+- **Deliberate deviations from Netflix's source, by ADR**: code inherited
+  from Netflix/vmaf evaluates as Netflix's source does unless an ADR says
+  otherwise. Eight fixes that predate that rule have their ADR since
+  2026-10-02, each with upstream's lines at Netflix `9e48141b`, the measured
+  size and the upstream pull request that would end it:
+  [ADR-1479](../adr/1479-ciede-422-chroma-subsampling-flags.md) (`ciede`
+  4:2:2 chroma flags),
+  [ADR-1480](../adr/1480-speed-frame-buffers-prescale-above-one.md)
+  (`speed_temporal` buffers at `speed_prescale` above 1),
+  [ADR-1481](../adr/1481-extractor-failure-fails-the-run.md) (a worker's
+  error fails the run),
+  [ADR-1482](../adr/1482-integer-adm-frames-17-to-32.md) (integer `adm` on
+  frames of 17 to 32 pixels),
+  [ADR-1483](../adr/1483-odd-size-chroma-planes-round-up.md) (odd-sized
+  chroma planes round up),
+  [ADR-1484](../adr/1484-float-ms-ssim-magnitude-before-pow.md)
+  (`float_ms_ssim` magnitude before `pow()`),
+  [ADR-1485](../adr/1485-apsnr-zero-error-plane-reports-cap.md) (`apsnr` of a
+  plane without error) and
+  [ADR-1486](../adr/1486-float-motion-scale1-uses-callers-stride.md)
+  (`float_motion` scale-1 stride). A sync keeps the fork's side of these
+  lines until the named upstream pull request is merged; the table is in
+  [rebase-notes](../rebase-notes.md) under "Eight deliberate deviations".
 - **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:
   [ADR-0922](../adr/0922-coverage-ratchet-aggressive.md). Absolute
   floors live in `scripts/ci/coverage-check.sh`

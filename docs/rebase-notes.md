@@ -59141,3 +59141,24 @@ No score, output, public C API, Netflix golden-data or FFmpeg patch impact. `flo
   every dispatch with the scalar path.
 - No score of a frame of 11x11 or larger moves; no snapshot or golden value
   is involved.
+
+## Eight deliberate deviations from Netflix's source have their ADR (ADR-1479 to ADR-1486, 2026-10-02)
+
+`docs/adr-deliberate-upstream-deviations`. Documentation only; no code moves.
+
+Each of these fork lines differs from Netflix `9e48141b` on purpose. On an
+upstream sync keep the fork's side until the named upstream pull request is
+merged, then take upstream's lines (the ADR says where the two forms differ
+without differing in value) and remove the deviation's entry from the
+upstream parity guard's allowlist.
+
+| ADR | Fork lines to keep | Upstream form | Ends with |
+| --- | --- | --- | --- |
+| [ADR-1479](adr/1479-ciede-422-chroma-subsampling-flags.md) | `core/src/feature/ciede.c`: `ss_hor` for the chroma column index, `ss_ver` for the row advance | flags swapped (`ciede.c:71`, `:73`, `:89`, `:91`) | Netflix/vmaf#1611 |
+| [ADR-1480](adr/1480-speed-frame-buffers-prescale-above-one.md) | `core/src/feature/speed.c`: `speed_temporal` buffers of `float_stride * alloc_height` | `float_stride * h` (`speed.c:1578`) | Netflix/vmaf#1627 |
+| [ADR-1481](adr/1481-extractor-failure-fails-the-run.md) | `core/src/thread_pool.c` (`last_error`), `core/src/libvmaf.c` (`threaded_extract_batch_func()` returns `f->err`) | `void` job function, `vmaf_thread_pool_wait()` returns 0 | no upstream pull request |
+| [ADR-1482](adr/1482-integer-adm-frames-17-to-32.md) | `core/src/feature/integer_adm.c::dwt2_src_indices_1d()`, `adm_half_shift()` in `adm_csf_fixed_point.h` and its callers in `x86/adm_avx2.c`, `x86/adm_avx512.c` | `dwt2_src_indices_filt()` (`integer_adm.c:708`), `pow(2, shift - 1)` | Netflix/vmaf#1599, #1600 |
+| [ADR-1483](adr/1483-odd-size-chroma-planes-round-up.md) | `vmaf_chroma_extent()` (`core/src/picture_geometry.h`) and every caller | `w >> ss_hor`, `h >> ss_ver` (`picture.c:74`, `:76`) | no upstream pull request |
+| [ADR-1484](adr/1484-float-ms-ssim-magnitude-before-pow.md) | `core/src/feature/ms_ssim.c`: `fabs()` on `l`, `c`, `s` before `pow()` | no `fabs()` (`ms_ssim.c:294`) | Netflix/vmaf#1665 (`fabs()` on `s` only; equal in value) |
+| [ADR-1485](adr/1485-apsnr-zero-error-plane-reports-cap.md) | `core/src/feature/integer_psnr.c::flush()`, `vmaf_psnr_aggregate()` in `psnr_score.h` | three planes, ceiling with the factor 2 (`integer_psnr.c:226`) | Netflix/vmaf#1666 (keeps the factor 2; equal in value) |
+| [ADR-1486](adr/1486-float-motion-scale1-uses-callers-stride.md) | `core/src/feature/motion.c`: `img1_stride`, `img2_stride` to the scale-1 scaler | stride recomputed from the width (`motion.c:70`) | Netflix/vmaf#1667 |

@@ -1178,3 +1178,11 @@
 1471-tidy-lanes-in-dev-container
 1474-relicense-helper-headers-and-ci-check
 1490-rc3-rc9-candidate-map-cpu-capability
+1479-ciede-422-chroma-subsampling-flags
+1480-speed-frame-buffers-prescale-above-one
+1481-extractor-failure-fails-the-run
+1482-integer-adm-frames-17-to-32
+1483-odd-size-chroma-planes-round-up
+1484-float-ms-ssim-magnitude-before-pow
+1485-apsnr-zero-error-plane-reports-cap
+1486-float-motion-scale1-uses-callers-stride
