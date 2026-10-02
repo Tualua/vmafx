@@ -58,19 +58,63 @@
 extern "C" int vmaf_sycl_upload_plane(VmafSyclState *state, const void *src, unsigned pitch,
                                       int is_ref, unsigned w, unsigned h, unsigned bpc);
 
+static int copy_to_staging(ID3D11Device *device, ID3D11DeviceContext *ctx, ID3D11Texture2D *src_tex,
+                           const D3D11_TEXTURE2D_DESC &src_desc, ID3D11Texture2D **out_staging)
+{
+    D3D11_TEXTURE2D_DESC staging_desc = src_desc;
+    staging_desc.Usage = D3D11_USAGE_STAGING;
+    staging_desc.BindFlags = 0;
+    staging_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    staging_desc.MiscFlags = 0;
+    staging_desc.ArraySize = 1;
+    staging_desc.MipLevels = 1;
+
+    HRESULT hr = device->CreateTexture2D(&staging_desc, NULL, out_staging);
+    if (FAILED(hr)) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "D3D11 import: CreateTexture2D(staging) failed: 0x%08lx\n",
+                 (unsigned long)hr);
+        return -EIO;
+    }
+    ctx->CopyResource((ID3D11Resource *)*out_staging, (ID3D11Resource *)src_tex);
+    return 0;
+}
+
+static int map_and_upload(VmafSyclState *state, ID3D11DeviceContext *ctx,
+                          ID3D11Resource *map_target, unsigned map_sub, int is_ref, unsigned w,
+                          unsigned h, unsigned bpc)
+{
+    D3D11_MAPPED_SUBRESOURCE mapped;
+    memset(&mapped, 0, sizeof(mapped));
+    HRESULT hr = ctx->Map(map_target, map_sub, D3D11_MAP_READ, 0, &mapped);
+    if (FAILED(hr)) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "D3D11 import: Map(staging) failed: 0x%08lx\n",
+                 (unsigned long)hr);
+        return -EIO;
+    }
+
+    int rc = 0;
+    if (!mapped.pData || mapped.RowPitch == 0) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "D3D11 import: Map returned empty descriptor\n");
+        rc = -EIO;
+    } else {
+        rc = vmaf_sycl_upload_plane(state, mapped.pData, mapped.RowPitch, is_ref, w, h, bpc);
+    }
+
+    ctx->Unmap(map_target, map_sub);
+    return rc;
+}
+
 extern "C" int vmaf_sycl_import_d3d11_surface(VmafSyclState *state, void *d3d11_device_ptr,
                                               void *d3d11_texture_ptr, unsigned subresource,
                                               int is_ref, unsigned w, unsigned h, unsigned bpc)
 {
     if (!state || !d3d11_device_ptr || !d3d11_texture_ptr)
         return -EINVAL;
-    if (w == 0 || h == 0)
-        return -EINVAL;
-    if (bpc != 8 && bpc != 10)
+    if (w == 0 || h == 0 || (bpc != 8 && bpc != 10))
         return -EINVAL;
 
-    ID3D11Device *device = (ID3D11Device *)d3d11_device_ptr;
-    ID3D11Texture2D *src_tex = (ID3D11Texture2D *)d3d11_texture_ptr;
+    auto *device = static_cast<ID3D11Device *>(d3d11_device_ptr);
+    auto *src_tex = static_cast<ID3D11Texture2D *>(d3d11_texture_ptr);
 
     D3D11_TEXTURE2D_DESC src_desc;
     memset(&src_desc, 0, sizeof(src_desc));
@@ -83,74 +127,38 @@ extern "C" int vmaf_sycl_import_d3d11_surface(VmafSyclState *state, void *d3d11_
         return -EINVAL;
     }
 
-    /* Fast path: the caller already handed us a staging texture that the
-     * CPU can Map directly. Skip the CopyResource round-trip. */
-    const bool src_is_staging = src_desc.Usage == D3D11_USAGE_STAGING &&
-                                (src_desc.CPUAccessFlags & D3D11_CPU_ACCESS_READ) != 0;
-
-    ID3D11Texture2D *staging_tex = NULL;
-    ID3D11DeviceContext *ctx = NULL;
-    int rc = 0;
-
+    ID3D11DeviceContext *ctx = nullptr;
     device->GetImmediateContext(&ctx);
     if (!ctx) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "D3D11 import: GetImmediateContext returned NULL\n");
         return -EIO;
     }
 
-    ID3D11Resource *map_target;
+    const bool src_is_staging = src_desc.Usage == D3D11_USAGE_STAGING &&
+                                (src_desc.CPUAccessFlags & D3D11_CPU_ACCESS_READ) != 0;
+
+    ID3D11Texture2D *staging_tex = nullptr;
+    ID3D11Resource *map_target = nullptr;
+    unsigned map_sub = 0;
+    int rc = 0;
+
     if (src_is_staging) {
         map_target = (ID3D11Resource *)src_tex;
+        map_sub = subresource;
     } else {
-        D3D11_TEXTURE2D_DESC staging_desc = src_desc;
-        staging_desc.Usage = D3D11_USAGE_STAGING;
-        staging_desc.BindFlags = 0;
-        staging_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-        staging_desc.MiscFlags = 0;
-        staging_desc.ArraySize = 1;
-        staging_desc.MipLevels = 1;
-
-        HRESULT hr = device->CreateTexture2D(&staging_desc, NULL, &staging_tex);
-        if (FAILED(hr)) {
-            vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                     "D3D11 import: CreateTexture2D(staging) failed: 0x%08lx\n", (unsigned long)hr);
-            rc = -EIO;
-            goto done;
+        rc = copy_to_staging(device, ctx, src_tex, src_desc, &staging_tex);
+        if (rc == 0) {
+            map_target = (ID3D11Resource *)staging_tex;
+            map_sub = 0;
         }
-        ctx->CopyResource((ID3D11Resource *)staging_tex, (ID3D11Resource *)src_tex);
-        map_target = (ID3D11Resource *)staging_tex;
     }
 
-    D3D11_MAPPED_SUBRESOURCE mapped;
-    memset(&mapped, 0, sizeof(mapped));
-    /* When we allocated our own staging texture it has ArraySize=1 and
-     * MipLevels=1 so subresource 0 is always the right slice. When the
-     * caller passed their own staging texture honour their subresource
-     * index. */
-    const unsigned map_sub = src_is_staging ? subresource : 0;
-    HRESULT hr = ctx->Map(map_target, map_sub, D3D11_MAP_READ, 0, &mapped);
-    if (FAILED(hr)) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "D3D11 import: Map(staging) failed: 0x%08lx\n",
-                 (unsigned long)hr);
-        rc = -EIO;
-        goto done;
-    }
+    if (rc == 0)
+        rc = map_and_upload(state, ctx, map_target, map_sub, is_ref, w, h, bpc);
 
-    if (!mapped.pData || mapped.RowPitch == 0) {
-        ctx->Unmap(map_target, map_sub);
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "D3D11 import: Map returned empty descriptor\n");
-        rc = -EIO;
-        goto done;
-    }
-
-    rc = vmaf_sycl_upload_plane(state, mapped.pData, mapped.RowPitch, is_ref, w, h, bpc);
-    ctx->Unmap(map_target, map_sub);
-
-done:
     if (staging_tex)
         staging_tex->Release();
-    if (ctx)
-        ctx->Release();
+    ctx->Release();
     return rc;
 }
 

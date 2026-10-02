@@ -58488,3 +58488,29 @@ ADR-1403 unchanged.
   `core/src/hip/AGENTS.md` from master, put the new rule into a new or matching
   page under `core/src/hip/AGENTS.d/`, run `make docs-fragments-write`.
 - No Netflix golden-data, public API or FFmpeg patch impact.
+
+## SYCL runtime lint cleanup: three invariants kept (2026-10-02)
+
+`refactor/std-sycl-a` (PR #1837), `T-SYCL-VA-IMPORT-DETILE-EXCEPTION-2026-10-02`.
+
+- `core/src/sycl/common.cpp`: `VmafSyclState` lost its constructor and is an
+  aggregate; `vmaf_sycl_state_init()` initialises `queue` and `copy_queue`
+  with designated initialisers in the new-expression. The two queues stay the
+  first two members. A rebase must not turn this into a default construction
+  followed by assignments (queues on the default device), nor bring the
+  constructor back (38 clang-tidy findings).
+- `core/src/sycl/picture_sycl.h`, `common.h`, `dmabuf_import.h`: one
+  definition per type for C and C++ (plain C form, cited NOLINT). Do not
+  re-introduce `#ifdef __cplusplus` pairs, and never a C++-only enum
+  underlying type.
+- `core/src/sycl/dmabuf_import.cpp`: `vmaf_sycl_import_va_surface()` and the
+  readback are split into helpers; the de-tile kernels live in
+  `detile_tile4()` / `detile_y_tiled()` with unchanged bodies and captures;
+  `dispatch_detile()` catches a throwing submit
+  (`detile_submit_failed()`). The Level Zero descriptors use designated
+  initialisers.
+- `core/src/sycl/d3d11_import.cpp`: the three `goto`s became helper functions
+  (Windows only; not compiled on the Linux lanes).
+- `core/test/test_sycl_runtime_contract.py` (new, suite `fast`) holds the
+  three invariants without a device.
+- No score, public C API, Netflix golden-data or FFmpeg patch impact.

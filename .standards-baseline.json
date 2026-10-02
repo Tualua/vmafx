@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-02T08:00:15Z",
+  "generated_at": "2026-10-02T09:38:30Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "2311f0d59ad8be5b674c90f8cff95007388f9101",
-  "total_infractions": 266,
+  "commit_sha": "dbfb1fdf569e91c10e3755938d4487f7ba015ccc",
+  "total_infractions": 260,
   "infractions": [
     {
       "rule_id": "HISS-04",
@@ -1319,51 +1319,6 @@
       "symbol": "pel_x265_csv_parse",
       "message": "Function 'pel_x265_csv_parse' (64 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "core/src/interop/pelorus_qp_report_csv.c:284:HISS-04"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/sycl/d3d11_import.cpp",
-      "line_number": 118,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/sycl/d3d11_import.cpp:118:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/sycl/d3d11_import.cpp",
-      "line_number": 136,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/sycl/d3d11_import.cpp:136:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "core/src/sycl/d3d11_import.cpp",
-      "line_number": 143,
-      "message": "Legacy non-DAG control flow jump (goto)",
-      "fingerprint": "core/src/sycl/d3d11_import.cpp:143:HISS-01"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/sycl/d3d11_import.cpp",
-      "line_number": 64,
-      "symbol": "vmaf_sycl_import_d3d11_surface",
-      "message": "Function 'vmaf_sycl_import_d3d11_surface' (92 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/sycl/d3d11_import.cpp:64:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/sycl/dmabuf_import.cpp",
-      "line_number": 236,
-      "symbol": "vmaf_sycl_import_va_surface_readback",
-      "message": "Function 'vmaf_sycl_import_va_surface_readback' (122 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/sycl/dmabuf_import.cpp:236:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/sycl/dmabuf_import.cpp",
-      "line_number": 366,
-      "symbol": "vmaf_sycl_import_va_surface",
-      "message": "Function 'vmaf_sycl_import_va_surface' (301 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/sycl/dmabuf_import.cpp:366:HISS-04"
     },
     {
       "rule_id": "HISS-04",

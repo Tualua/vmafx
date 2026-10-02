@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: EUPL-1.2
  */
 
-#ifndef __VMAF_SRC_SYCL_DMABUF_IMPORT_H__
-#define __VMAF_SRC_SYCL_DMABUF_IMPORT_H__
+#ifndef VMAF_SRC_SYCL_DMABUF_IMPORT_H_
+#define VMAF_SRC_SYCL_DMABUF_IMPORT_H_
 
 #include "config.h"
 
@@ -18,6 +18,7 @@
 extern "C" {
 #endif
 
+/* NOLINTNEXTLINE(modernize-use-using): one definition for C and C++; `using` is not C. ADR-0141. */
 typedef struct VmafSyclState VmafSyclState;
 
 /**
@@ -77,4 +78,4 @@ int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_display, unsigned
 
 #endif /* HAVE_SYCL */
 
-#endif /* __VMAF_SRC_SYCL_DMABUF_IMPORT_H__ */
+#endif /* VMAF_SRC_SYCL_DMABUF_IMPORT_H_ */

@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: EUPL-1.2
  */
 
-#ifndef __VMAF_SRC_SYCL_PICTURE_SYCL_H__
-#define __VMAF_SRC_SYCL_PICTURE_SYCL_H__
+#ifndef VMAF_SRC_SYCL_PICTURE_SYCL_H_
+#define VMAF_SRC_SYCL_PICTURE_SYCL_H_
 
 #include "common.h"
 #include "libvmaf/picture.h"
@@ -19,6 +19,14 @@ extern "C" {
  * Cookie attached to VmafPicture instances that own SYCL device memory.
  * Used by the pre-allocation and picture management APIs.
  */
+/* NOLINTBEGIN(modernize-use-using,performance-enum-size): this header is
+ * included by C and by C++ translation units (core/src/libvmaf.c passes
+ * `enum VmafSyclPoolMethod` to vmaf_sycl_picture_pool_init(), which
+ * picture_sycl.cpp defines), so every type here has ONE definition that both
+ * languages read the same way. A C++-only underlying type (`: uint8_t`) next
+ * to a plain C enum makes caller and callee disagree on the argument's size,
+ * and C cannot spell the fixed type on the required MSVC lane (ADR-1138);
+ * `using` is not C. ADR-0141. */
 enum VmafSyclPoolMethod {
     VMAF_SYCL_POOL_DEVICE = 0,
     VMAF_SYCL_POOL_HOST = 1,
@@ -31,6 +39,7 @@ typedef struct VmafSyclCookie {
     VmafSyclState *state;
     enum VmafSyclPoolMethod method;
 } VmafSyclCookie;
+/* NOLINTEND(modernize-use-using,performance-enum-size) */
 
 /**
  * Upload a single Y-plane from a host VmafPicture to a SYCL USM device
@@ -92,6 +101,7 @@ int vmaf_sycl_picture_free(VmafPicture *pic, void *cookie);
  * (DEVICE) or vmaf_sycl_malloc_host()-wrapped (HOST). Freed via the
  * matching cb on vmaf_sycl_picture_pool_close().
  */
+/* NOLINTNEXTLINE(modernize-use-using): one definition for C and C++; `using` is not C. ADR-0141. */
 typedef struct VmafSyclPicturePool VmafSyclPicturePool;
 
 /**
@@ -185,4 +195,4 @@ int vmaf_sycl_pinned_pool_attach_event(VmafPicture *pic, void *events, unsigned 
 }
 #endif
 
-#endif /* __VMAF_SRC_SYCL_PICTURE_SYCL_H__ */
+#endif /* VMAF_SRC_SYCL_PICTURE_SYCL_H_ */

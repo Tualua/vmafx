@@ -29,6 +29,34 @@ sycl/
   new macro to `sycl_compat.h`, do not hard-code attribute. **On
   rebase**: upstream cherry-pick bringing bare `[[intel::*]]` attribute
   on SYCL kernel lambda -> wrap in compat macro before merging.
+- **Runtime invariants a lint cleanup once broke (PR #1837 review).** Guard:
+  `core/test/test_sycl_runtime_contract.py` (device-free).
+  (1) `VmafSyclState` is an aggregate, initialised in
+  `vmaf_sycl_state_init()` as `new VmafSyclState{.queue = std::move(q),
+  .copy_queue = std::move(cq)}`; `queue` and `copy_queue` stay its first two
+  members. Never default-construct it and assign the queues: a
+  default-constructed `sycl::queue` selects the DEFAULT device and creates
+  a queue there (and a context, when that device is on another platform).
+  Measured: `--sycl_device 1` (OpenCL A380) then made 2 contexts + 5 queues
+  over two devices; correct = 1 context + 3 queues on the selected one
+  (`SYCL_UR_TRACE=2`, count `urContextCreate` / `urQueueCreate`). A
+  constructor is not the fix: it makes every member a
+  `misc-non-private-member-variables-in-classes` finding (that is why the
+  cleanup removed it).
+  (2) A type C and C++ both read has ONE definition: no
+  `#ifdef __cplusplus enum X : uint8_t` next to a plain C enum (caller and
+  callee disagree on the size across `extern "C"`: `libvmaf.c` passes
+  `enum VmafSyclPoolMethod` to `vmaf_sycl_picture_pool_init()`), no
+  `using` / `typedef` pairs. Plain C form + cited NOLINT
+  (`modernize-use-using`, `performance-enum-size`).
+  (3) `vmaf_sycl_import_va_surface()` is `extern "C"`: every submit under
+  it runs inside `dispatch_detile()`'s try; on a throw
+  `detile_submit_failed()` drains the queue, frees the import, returns
+  `-EIO`. The Level Zero descriptors of `vmaf_sycl_dmabuf_import()` are
+  initialised with designated initialisers (valid `stype` from the start,
+  unnamed fields zero); `= {}` + assignments trips
+  `bugprone-invalid-enum-default-initialization`, bare declarations leave a
+  future field uninitialised.
 - **Required sub-group size = 16 or 32, never 8
   ([ADR-1468](../../../docs/adr/1468-sycl-sub-group-sizes-every-aot-target.md)).**
   Default build AOT-compiles every kernel for 19 targets

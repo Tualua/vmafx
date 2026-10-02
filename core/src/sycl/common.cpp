@@ -14,6 +14,7 @@
  *     See the License for the specific language governing permissions and
  *     limitations under the License.
  *
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  */
 
 #include "config.h"
@@ -99,46 +100,50 @@ struct SyclPlaneState {
     std::vector<sycl::event> readers_done[2];
 };
 
+/* An aggregate: vmaf_sycl_state_init() initialises `queue` and `copy_queue`
+ * from the queues of the selected device in the new-expression itself
+ * (designated initialisers; the two members stay first, in this order).
+ * Never default-construct a state and assign the queues afterwards: a
+ * default-constructed sycl::queue selects the DEFAULT device and creates a
+ * queue there, and a context when that device is on another platform, so a
+ * device the caller did not select gets touched. Measured on a host with a
+ * Level Zero and an OpenCL view of an Arc A380: `--sycl_device 1` created two
+ * contexts and five queues over both devices that way, one context and three
+ * queues on the selected device with the queues passed in.
+ * core/test/test_sycl_runtime_contract.py holds the construction. */
 struct VmafSyclState {
-    sycl::queue queue;      // primary queue (legacy, misc ops)
-    sycl::queue copy_queue; // separate queue for H2D/D2H DMA transfers
-    bool has_fp64;          // device supports double precision (fp64)
-
-    // Double-buffered shared frame buffers: uploaded once per frame,
-    // read by all extractors.  Two sets allow overlapping frame N+1
-    // upload with frame N compute — no CPU-side wait between them.
-    void *shared_ref_buf[2] = {};
-    void *shared_dis_buf[2] = {};
-    int cur_upload = 0;            // index being uploaded (toggled each frame)
-    int cur_compute = 0;           // index being read by compute (previous upload)
-    sycl::event last_upload_event; // event from last copy_queue operation
-    bool has_uploaded = false;     // guard: true after first upload
-    size_t shared_buf_size = 0;
-    unsigned frame_w = 0;
-    unsigned frame_h = 0;
-    unsigned frame_bpc = 0;
-    SyclPlaneState planes; // opt-in chroma planes + slot fence, ADR-1369
-
-    // VA import path: async de-tile + deferred DMA-BUF free
-    // The de-tile kernel runs on the primary queue without q->wait().
-    // The imported DMA-BUF pointers must stay alive until the de-tile
-    // finishes reading from them, so we defer the free to the next frame
-    // (after wait_compute confirms the primary queue is idle).
-    sycl::event last_detile_event; // event from last de-tile kernel
-    bool has_imported = false;     // guard: true after first VA import
     static constexpr int MAX_PENDING_IMPORTS = 4;
-    void *pending_import_ptrs[MAX_PENDING_IMPORTS] = {};
-    int num_pending_imports = 0;
+    static constexpr int MAX_GRAPH_EXTRACTORS = 16;
 
-    // Profiling
-    bool profiling_enabled = false;
-    bool extractor_timing = false; // per-extractor q.wait() timing
-    bool import_debug = false;     // VMAF_SYCL_IMPORT_DEBUG — resolved once at init
-    std::mutex profiling_lock;
     struct ProfileEntry {
         uint64_t total_ns = 0;
         uint64_t count = 0;
     };
+
+    struct GraphExtractor {
+        VmafSyclGraphEnqueueFn enqueue_fn = nullptr;
+        VmafSyclGraphPreFn pre_fn = nullptr;
+        VmafSyclGraphPostFn post_fn = nullptr;
+        VmafSyclGraphConfigFn config_fn = nullptr;
+        void *priv = nullptr;
+        const char *name = "unknown";
+    };
+
+    // 8-byte members (queues, pointers, events, sizes, doubles, uint64_t, sub-structs)
+    sycl::queue queue;      // primary queue (legacy, misc ops)
+    sycl::queue copy_queue; // separate queue for H2D/D2H DMA transfers
+
+    void *shared_ref_buf[2] = {};
+    void *shared_dis_buf[2] = {};
+    sycl::event last_upload_event; // event from last copy_queue operation
+    size_t shared_buf_size = 0;
+
+    SyclPlaneState planes; // opt-in chroma planes + slot fence, ADR-1369
+
+    sycl::event last_detile_event; // event from last de-tile kernel
+    void *pending_import_ptrs[MAX_PENDING_IMPORTS] = {};
+
+    std::mutex profiling_lock;
     std::map<std::string, ProfileEntry> profiling_data;
 
     // Frame-level timing
@@ -152,31 +157,30 @@ struct VmafSyclState {
     // Combined command graph — merges all extractors into one replay
     sycl::queue *combined_queue = nullptr;
     exec_graph_t *combined_exec_graph[2] = {}; // one per double-buffer slot
-    bool combined_graphs_recorded = false;
-    uint64_t frame_counter = 0;               // incremented in shared_frame_upload
-    uint64_t submit_frame = UINT64_MAX;       // frame for which submits are counted
-    int submit_count = 0;                     // submits received for submit_frame
-    uint64_t graph_waited_frame = UINT64_MAX; // last frame waited
+    uint64_t frame_counter = 0;                // incremented in shared_frame_upload
+    uint64_t submit_frame = UINT64_MAX;        // frame for which submits are counted
+    uint64_t graph_waited_frame = UINT64_MAX;  // last frame waited
 
-    /* 16 slots cover vmaf_v0.6.1 (6 extractors) + debug/extended options
-     * that push the total to ~12.  The original limit of 8 was too low for
-     * real production runs with all features enabled. */
-    static constexpr int MAX_GRAPH_EXTRACTORS = 16;
-
-    struct GraphExtractor {
-        VmafSyclGraphEnqueueFn enqueue_fn = nullptr;
-        VmafSyclGraphPreFn pre_fn = nullptr;
-        VmafSyclGraphPostFn post_fn = nullptr;
-        VmafSyclGraphConfigFn config_fn = nullptr;
-        void *priv = nullptr;
-        const char *name = "unknown";
-    };
     GraphExtractor graph_extractors[MAX_GRAPH_EXTRACTORS];
+
+    // 4-byte members (ints and unsigned)
+    int cur_upload = 0;  // index being uploaded (toggled each frame)
+    int cur_compute = 0; // index being read by compute (previous upload)
+    unsigned frame_w = 0;
+    unsigned frame_h = 0;
+    unsigned frame_bpc = 0;
+    int num_pending_imports = 0;
+    int submit_count = 0; // submits received for submit_frame
     int num_graph_extractors = 0;
 
-    VmafSyclState(sycl::queue q, sycl::queue cq) : queue(std::move(q)), copy_queue(std::move(cq))
-    {
-    }
+    // 1-byte members (bools)
+    bool has_fp64 = false;     // device supports double precision (fp64)
+    bool has_uploaded = false; // guard: true after first upload
+    bool has_imported = false; // guard: true after first VA import
+    bool profiling_enabled = false;
+    bool extractor_timing = false; // per-extractor q.wait() timing
+    bool import_debug = false;     // VMAF_SYCL_IMPORT_DEBUG — resolved once at init
+    bool combined_graphs_recorded = false;
 };
 
 /* ------------------------------------------------------------------ */
@@ -336,7 +340,7 @@ extern "C" int vmaf_sycl_state_init(VmafSyclState **sycl_state, VmafSyclConfigur
         sycl::queue cq(q.get_context(), dev,
                        sycl::property_list{sycl::property::queue::in_order{}});
 
-        auto *s = new VmafSyclState(std::move(q), std::move(cq));
+        auto *s = new VmafSyclState{.queue = std::move(q), .copy_queue = std::move(cq)};
         s->profiling_enabled = profiling;
         // Per-extractor timing via q.wait() — no enable_profiling needed
         const char *env_timing = getenv("VMAF_SYCL_TIMING");
@@ -368,10 +372,14 @@ extern "C" void vmaf_sycl_state_free(VmafSyclState **sycl_state)
     try {
         s->copy_queue.wait_and_throw();
     } catch (...) {
+        /* Best-effort teardown: ignore cleanup exceptions */
+        (void)0;
     }
     try {
         s->queue.wait_and_throw();
     } catch (...) {
+        /* Best-effort teardown: ignore cleanup exceptions */
+        (void)0;
     }
 
     // Free any deferred DMA-BUF imports
@@ -388,6 +396,8 @@ extern "C" void vmaf_sycl_state_free(VmafSyclState **sycl_state)
         try {
             s->combined_queue->wait_and_throw();
         } catch (...) {
+            /* Best-effort teardown: ignore cleanup exceptions */
+            (void)0;
         }
         delete s->combined_queue;
         s->combined_queue = nullptr;
@@ -433,6 +443,8 @@ extern "C" void vmaf_sycl_destroy_queue(void *queue_ptr)
     try {
         q->wait_and_throw();
     } catch (...) {
+        /* Best-effort queue drain on destruction; ignore teardown exceptions. */
+        (void)0;
     }
     delete q;
 }
@@ -498,6 +510,8 @@ extern "C" void vmaf_sycl_free(VmafSyclState *state, void *ptr)
     try {
         sycl::free(ptr, state->queue);
     } catch (...) {
+        /* Ignore exceptions on memory free */
+        (void)0;
     }
 }
 
@@ -639,10 +653,10 @@ static int sycl_shared_frame_reinit_unwind(VmafSyclState *state)
     state->submit_count = 0;
     state->graph_waited_frame = UINT64_MAX;
 
-    for (int i = 0; i < 2; i++) {
-        if (state->combined_exec_graph[i]) {
-            delete state->combined_exec_graph[i];
-            state->combined_exec_graph[i] = nullptr;
+    for (auto *&graph : state->combined_exec_graph) {
+        if (graph) {
+            delete graph;
+            graph = nullptr;
         }
     }
     state->combined_graphs_recorded = false;
@@ -782,6 +796,25 @@ static void sycl_fence_slot_readers(VmafSyclState *state, int ui)
     }
 }
 
+static void update_picture_ready_event(VmafPicture *pic, const sycl::event &ev)
+{
+    auto *priv = static_cast<VmafPicturePrivate *>(pic->priv);
+    if (priv && priv->buf_type == VMAF_PICTURE_BUFFER_TYPE_SYCL_HOST_PINNED &&
+        priv->sycl.ready_event) {
+        *static_cast<sycl::event *>(priv->sycl.ready_event) = ev;
+    }
+}
+
+static void log_upload_timing(const VmafSyclState *state, double t0, double t1, double t2)
+{
+    if (state->extractor_timing && state->frame_counter <= 30) {
+        if (fprintf(stderr, "UPLOAD frame %3lu: ref=%.2fms dis=%.2fms total=%.2fms\n",
+                    (unsigned long)state->frame_counter, t1 - t0, t2 - t1, t2 - t0) < 0) {
+            // Ignore stderr write failures for debug timing output
+        }
+    }
+}
+
 extern "C" int vmaf_sycl_shared_frame_upload(VmafSyclState *state, VmafPicture *ref,
                                              VmafPicture *dis)
 {
@@ -815,16 +848,8 @@ extern "C" int vmaf_sycl_shared_frame_upload(VmafSyclState *state, VmafPicture *
         state->last_upload_event = last_ev;
         state->has_uploaded = true;
 
-        auto *ref_priv = static_cast<VmafPicturePrivate *>(ref->priv);
-        auto *dis_priv = static_cast<VmafPicturePrivate *>(dis->priv);
-        if (ref_priv && ref_priv->buf_type == VMAF_PICTURE_BUFFER_TYPE_SYCL_HOST_PINNED &&
-            ref_priv->sycl.ready_event) {
-            *static_cast<sycl::event *>(ref_priv->sycl.ready_event) = last_ev;
-        }
-        if (dis_priv && dis_priv->buf_type == VMAF_PICTURE_BUFFER_TYPE_SYCL_HOST_PINNED &&
-            dis_priv->sycl.ready_event) {
-            *static_cast<sycl::event *>(dis_priv->sycl.ready_event) = last_ev;
-        }
+        update_picture_ready_event(ref, last_ev);
+        update_picture_ready_event(dis, last_ev);
 
         // Swap: the buffer we just uploaded becomes compute, old compute
         // becomes the next upload target.
@@ -832,10 +857,7 @@ extern "C" int vmaf_sycl_shared_frame_upload(VmafSyclState *state, VmafPicture *
         state->cur_upload = 1 - ui;
         state->frame_counter++;
 
-        if (state->extractor_timing && state->frame_counter <= 30) {
-            fprintf(stderr, "UPLOAD frame %3lu: ref=%.2fms dis=%.2fms total=%.2fms\n",
-                    (unsigned long)state->frame_counter, t1 - t0, t2 - t1, t2 - t0);
-        }
+        log_upload_timing(state, t0, t1, t2);
 
     } catch (const sycl::exception &e) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "SYCL frame upload: %s\n", e.what());
@@ -1204,15 +1226,17 @@ extern "C" int vmaf_sycl_graph_unregister(VmafSyclState *state, void *priv)
         try {
             state->combined_queue->wait_and_throw();
         } catch (...) {
+            /* Best-effort queue drain before unregistering; ignore teardown exceptions. */
+            (void)0;
         }
     }
 
     /* Invalidate any recorded graphs — they captured the old extractor set.
      * record_combined_graphs() will re-record on the next graph_submit(). */
-    for (int i = 0; i < 2; i++) {
-        if (state->combined_exec_graph[i]) {
-            delete state->combined_exec_graph[i];
-            state->combined_exec_graph[i] = nullptr;
+    for (auto *&graph : state->combined_exec_graph) {
+        if (graph) {
+            delete graph;
+            graph = nullptr;
         }
     }
     state->combined_graphs_recorded = false;
@@ -1454,6 +1478,38 @@ extern "C" int vmaf_sycl_graph_submit(VmafSyclState *state)
     return 0;
 }
 
+static void log_graph_wait_timing(VmafSyclState *state, uint64_t frame, double t_before_wait,
+                                  double now)
+{
+    double const wait_ms = now - t_before_wait;                             // actual GPU wait
+    double const enqueue_ms = state->t_submit_done - state->t_submit_start; // enqueue time
+    double const between_ms =
+        t_before_wait - state->t_submit_done; // CPU between submit return and wait call
+
+    if (state->t_submit_start > 0) {
+        double const gpu_ms = now - state->t_submit_start;
+        state->sum_gpu_ms += gpu_ms;
+        // Per-frame timing for first 30 frames
+        if (state->extractor_timing && frame <= 30) {
+            double const cpu_ms_frame =
+                (state->t_last_wait_done > 0) ? state->t_submit_start - state->t_last_wait_done : 0;
+            if (fprintf(
+                    stderr,
+                    "FRAME %3lu: total=%.1f  enqueue=%.1f  between=%.1f  wait=%.1f  cpu=%.1f  %s\n",
+                    (unsigned long)frame, gpu_ms, enqueue_ms, between_ms, wait_ms, cpu_ms_frame,
+                    state->combined_graphs_recorded ? "graph" : "direct") < 0) {
+                // Ignore stderr write failures for debug timing output
+            }
+        }
+    }
+    if (state->t_last_wait_done > 0 && state->t_submit_start > 0) {
+        double const cpu_ms = state->t_submit_start - state->t_last_wait_done;
+        state->sum_cpu_ms += cpu_ms;
+        state->timing_frames++;
+    }
+    state->t_last_wait_done = now;
+}
+
 extern "C" int vmaf_sycl_graph_wait(VmafSyclState *state)
 {
     if (!state || !state->combined_queue)
@@ -1476,33 +1532,7 @@ extern "C" int vmaf_sycl_graph_wait(VmafSyclState *state)
         state->graph_waited_frame = frame;
         double const now = monotonic_ms();
 
-        double const wait_ms = now - t_before_wait;                             // actual GPU wait
-        double const enqueue_ms = state->t_submit_done - state->t_submit_start; // enqueue time
-        double const between_ms =
-            t_before_wait - state->t_submit_done; // CPU between submit return and wait call
-
-        if (state->t_submit_start > 0) {
-            double const gpu_ms = now - state->t_submit_start;
-            state->sum_gpu_ms += gpu_ms;
-            // Per-frame timing for first 30 frames
-            if (state->extractor_timing && frame <= 30) {
-                double const cpu_ms_frame = (state->t_last_wait_done > 0) ?
-                                                state->t_submit_start - state->t_last_wait_done :
-                                                0;
-                fprintf(
-                    stderr,
-                    "FRAME %3lu: total=%.1f  enqueue=%.1f  between=%.1f  wait=%.1f  cpu=%.1f  %s\n",
-                    (unsigned long)frame, gpu_ms, enqueue_ms, between_ms, wait_ms, cpu_ms_frame,
-                    state->combined_graphs_recorded ? "graph" : "direct");
-            }
-        }
-        if (state->t_last_wait_done > 0 && state->t_submit_start > 0) {
-            double const cpu_ms = state->t_submit_start - state->t_last_wait_done;
-            state->sum_cpu_ms += cpu_ms;
-            state->timing_frames++;
-        }
-        state->t_last_wait_done = now;
-
+        log_graph_wait_timing(state, frame, t_before_wait, now);
         return 0;
     } catch (const sycl::exception &e) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "SYCL graph wait: %s\n", e.what());
@@ -1634,11 +1664,16 @@ extern "C" void vmaf_sycl_print_timing(VmafSyclState *state)
     double const avg_gpu = state->sum_gpu_ms / state->timing_frames;
     double const avg_total = avg_cpu + avg_gpu;
     double const fps = avg_total > 0 ? 1000.0 / avg_total : 0;
-    fprintf(stderr,
-            "[vmaf-sycl] timing: %" PRIu64 " frames, avg cpu=%.2fms gpu=%.2fms "
-            "total=%.2fms (%.1f fps), gpu%%=%.0f%%\n",
-            state->timing_frames, avg_cpu, avg_gpu, avg_total, fps, 100.0 * avg_gpu / avg_total);
-    fflush(stderr);
+    if (fprintf(stderr,
+                "[vmaf-sycl] timing: %" PRIu64 " frames, avg cpu=%.2fms gpu=%.2fms "
+                "total=%.2fms (%.1f fps), gpu%%=%.0f%%\n",
+                state->timing_frames, avg_cpu, avg_gpu, avg_total, fps,
+                100.0 * avg_gpu / avg_total) < 0) {
+        // Ignore stderr write failures for summary timing output
+    }
+    if (fflush(stderr) != 0) {
+        // Ignore fflush error on stderr
+    }
 
     // Print per-kernel profiling if enabled
     if (state->profiling_enabled) {
@@ -1682,7 +1717,7 @@ extern "C" void vmaf_sycl_profiling_disable(VmafSyclState *state)
     if (!state)
         return;
     state->profiling_enabled = false;
-    std::lock_guard<std::mutex> const lock(state->profiling_lock);
+    std::scoped_lock const lock(state->profiling_lock);
     state->profiling_data.clear();
 }
 
@@ -1691,7 +1726,7 @@ extern "C" void vmaf_sycl_profiling_record(VmafSyclState *state, const char *ker
 {
     if (!state || !kernel_name || !state->profiling_enabled)
         return;
-    std::lock_guard<std::mutex> const lock(state->profiling_lock);
+    std::scoped_lock const lock(state->profiling_lock);
     auto &entry = state->profiling_data[kernel_name];
     entry.total_ns += delta_ns;
     entry.count++;
@@ -1709,7 +1744,7 @@ extern "C" void vmaf_sycl_profiling_print(VmafSyclState *state)
     if (!state)
         return;
     assert(state->profiling_enabled || state->profiling_data.empty());
-    std::lock_guard<std::mutex> const lock(state->profiling_lock);
+    std::scoped_lock const lock(state->profiling_lock);
 
     if (state->profiling_data.empty()) {
         printf("SYCL profiling: no data recorded\n");
@@ -1738,27 +1773,30 @@ extern "C" int vmaf_sycl_profiling_get_string(VmafSyclState *state, char **outpu
     assert(output != nullptr);
     *output = nullptr;
 
-    std::lock_guard<std::mutex> const lock(state->profiling_lock);
+    std::scoped_lock const lock(state->profiling_lock);
 
     std::string result;
     result += "SYCL kernel profiling results:\n";
 
     char line[256];
-    snprintf(line, sizeof(line), "%-30s %10s %12s %12s\n", "Kernel", "Calls", "Total (ms)",
-             "Avg (ms)");
-    result += line;
+    int len = snprintf(line, sizeof(line), "%-30s %10s %12s %12s\n", "Kernel", "Calls",
+                       "Total (ms)", "Avg (ms)");
+    if (len > 0)
+        result.append(line, (size_t)len < sizeof(line) ? (size_t)len : sizeof(line) - 1);
 
     uint64_t grand_total_ns = 0;
     for (auto &[name, entry] : state->profiling_data) {
         double const total_ms = entry.total_ns / 1e6;
         double const avg_ms = entry.count > 0 ? total_ms / entry.count : 0.0;
-        snprintf(line, sizeof(line), "%-30s %10lu %12.3f %12.3f\n", name.c_str(),
-                 (unsigned long)entry.count, total_ms, avg_ms);
-        result += line;
+        len = snprintf(line, sizeof(line), "%-30s %10lu %12.3f %12.3f\n", name.c_str(),
+                       (unsigned long)entry.count, total_ms, avg_ms);
+        if (len > 0)
+            result.append(line, (size_t)len < sizeof(line) ? (size_t)len : sizeof(line) - 1);
         grand_total_ns += entry.total_ns;
     }
-    snprintf(line, sizeof(line), "%-30s %10s %12.3f\n", "TOTAL", "", grand_total_ns / 1e6);
-    result += line;
+    len = snprintf(line, sizeof(line), "%-30s %10s %12.3f\n", "TOTAL", "", grand_total_ns / 1e6);
+    if (len > 0)
+        result.append(line, (size_t)len < sizeof(line) ? (size_t)len : sizeof(line) - 1);
 
     *output = strdup(result.c_str());
     return *output ? 0 : -ENOMEM;

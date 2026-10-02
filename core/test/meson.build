@@ -76,6 +76,18 @@ test('test_sycl_aot_image_check',
     timeout : 30,
 )
 
+# SYCL runtime (core/src/sycl/): the state is constructed from the queues of
+# the selected device (a default-constructed sycl::queue touches the default
+# device), a type C and C++ both read has one definition (no C++-only enum
+# underlying type), and the de-tile submits of the VA import run under a try.
+# Device-free.
+test('test_sycl_runtime_contract',
+    import('python').find_installation(),
+    args : files('test_sycl_runtime_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-1468: a SYCL kernel may require only a sub-group size every target of
 # the default sycl_icpx_aot_targets list accepts (16 or 32; Xe2 has no 8).
 # Device-free and compiler-free: it reads the option's default, the check in

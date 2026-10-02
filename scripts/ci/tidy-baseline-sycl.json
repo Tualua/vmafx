@@ -353,7 +353,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 908,
+  "total_warnings": 837,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -440,12 +440,12 @@
     "core/src/read_json_model.h": 1,
     "core/src/ref.h": 2,
     "core/src/svm.h": 3,
-    "core/src/sycl/common.cpp": 73,
+    "core/src/sycl/common.cpp": 14,
     "core/src/sycl/common.h": 5,
     "core/src/sycl/dispatch_strategy.h": 2,
-    "core/src/sycl/dmabuf_import.cpp": 13,
+    "core/src/sycl/dmabuf_import.cpp": 2,
     "core/src/sycl/dmabuf_import.h": 2,
-    "core/src/sycl/picture_sycl.cpp": 4,
+    "core/src/sycl/picture_sycl.cpp": 3,
     "core/src/sycl/picture_sycl.h": 4,
     "core/src/thread_locale.cpp": 9,
     "core/src/thread_locale.h": 2,
@@ -557,6 +557,35 @@
         }
       },
       "previous_baseline_sha256": "e0f7f4e402821a3c2ad871cd820f4e2c9c3d7a87ddb5cd89aac033ef20811744"
+    },
+    {
+      "sources": [
+        "core/src/sycl/common.cpp",
+        "core/src/sycl/dmabuf_import.cpp",
+        "core/src/sycl/picture_sycl.cpp"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/sycl/common.cpp": {
+          "warnings": [
+            73,
+            14
+          ]
+        },
+        "core/src/sycl/dmabuf_import.cpp": {
+          "warnings": [
+            13,
+            2
+          ]
+        },
+        "core/src/sycl/picture_sycl.cpp": {
+          "warnings": [
+            4,
+            3
+          ]
+        }
+      },
+      "previous_baseline_sha256": "b64184cd887eb1b2973adce5fafc433c71ec18fc5e56d893a2089b1caa7b4f69"
     }
   ]
 }

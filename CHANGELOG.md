@@ -1079,6 +1079,17 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   boundary unit test suite in `scripts/ci/tests/test_check_copyright.py`.
 
 
+- **Seven SYCL runtime files conform to clang-tidy and HISS standards (batch B6).**
+  The SYCL runtime source files and headers (`core/src/sycl/common.cpp`,
+  `core/src/sycl/d3d11_import.cpp`, `core/src/sycl/dmabuf_import.cpp`,
+  `core/src/sycl/common.h`, `core/src/sycl/dmabuf_import.h`,
+  `core/src/sycl/picture_sycl.h`, `core/src/sycl/picture_sycl.cpp`) were brought to zero non-host-FP clang-tidy
+  debt and full HISS compliance under [ADR-1142](docs/adr/1142-whole-codebase-standards.md).
+  Eliminated 6 HISS infractions (3 gotos, 3 oversized functions). Numerical
+  correctness is bit-identical on Intel Arc A380 at `--precision max` on the
+  Netflix 576x324 reference pair, and the SYCL scratch memory audit passes (zero scratch memory used).
+
+
 - `cambi_sycl`'s `launch_reset` kernel now uses an explicit 1D `nd_range` and a
   scalar select chain for its per-scale top-K rank initialization instead of an
   array captured by value and indexed at runtime in the kernel closure
@@ -2847,6 +2858,14 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   lint job therefore saw none of the kernels. The script reads both rule
   forms, and it now stops with an error when a SYCL source is compiled by a
   command it cannot read, so the lane cannot go blind silently again.
+
+
+- **A SYCL error while de-tiling a VA surface no longer ends the process.**
+  `vmaf_sycl_import_va_surface()` submitted its de-tile copy or kernel outside
+  any `try`, so a synchronous `sycl::exception` (a kernel the device cannot
+  build, an allocation the runtime cannot make) left an `extern "C"` function
+  and terminated the program. The submit is caught now: the import is
+  released and the call returns `-EIO`, as the readback path already did.
 
 
 - **`vif_sycl` rounds its per-scale sums where the CPU does, and emits the

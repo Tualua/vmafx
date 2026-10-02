@@ -177,10 +177,10 @@ extern "C" int vmaf_sycl_picture_free(VmafPicture *pic, void *cookie)
      * priv + ref on its side, so only the USM buffers remain to free here.
      * When invoked directly by the pool on close, we also own priv + ref
      * and must release both. */
-    for (unsigned i = 0; i < 3; i++) {
-        if (pic->data[i]) {
-            vmaf_sycl_free(c->state, pic->data[i]);
-            pic->data[i] = nullptr;
+    for (void *&ptr : pic->data) {
+        if (ptr) {
+            vmaf_sycl_free(c->state, ptr);
+            ptr = nullptr;
         }
     }
 
@@ -318,8 +318,8 @@ size_t pinned_plane_sizes(VmafPicture *pic, size_t *y_sz, size_t *uv_sz)
     const unsigned aligned_y = (pic->w[0] + DATA_ALIGN_PINNED - 1u) & ~(DATA_ALIGN_PINNED - 1u);
     const unsigned aligned_c = (pic->w[1] + DATA_ALIGN_PINNED - 1u) & ~(DATA_ALIGN_PINNED - 1u);
     const int hbd = pic->bpc > 8;
-    pic->stride[0] = static_cast<ptrdiff_t>(aligned_y << hbd);
-    pic->stride[1] = pic->stride[2] = static_cast<ptrdiff_t>(aligned_c << hbd);
+    pic->stride[0] = static_cast<ptrdiff_t>(aligned_y) << hbd;
+    pic->stride[1] = pic->stride[2] = static_cast<ptrdiff_t>(aligned_c) << hbd;
     *y_sz = static_cast<size_t>(pic->stride[0]) * pic->h[0];
     *uv_sz = static_cast<size_t>(pic->stride[1]) * pic->h[1];
     return *y_sz + 2 * *uv_sz;

@@ -14,10 +14,11 @@
  *     See the License for the specific language governing permissions and
  *     limitations under the License.
  *
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  */
 
-#ifndef __VMAF_SRC_SYCL_COMMON_H__
-#define __VMAF_SRC_SYCL_COMMON_H__
+#ifndef VMAF_SRC_SYCL_COMMON_H_
+#define VMAF_SRC_SYCL_COMMON_H_
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -473,11 +474,15 @@ int vmaf_sycl_checksum_y_slot(VmafSyclState *state, int is_ref, unsigned frame_i
  *   @param slot  Double-buffer slot index (0 or 1).
  *   May be NULL if no per-slot configuration is needed.
  */
+/* NOLINTBEGIN(modernize-use-using): one definition for C and C++. A `using`
+ * copy for C++ next to a `typedef` for C is two signatures to keep equal by
+ * hand, and `using` is not C. ADR-0141. */
 typedef void (*VmafSyclGraphEnqueueFn)(void *queue_ptr, void *priv, void *shared_ref,
                                        void *shared_dis);
 typedef void (*VmafSyclGraphPreFn)(void *queue_ptr, void *priv);
 typedef void (*VmafSyclGraphPostFn)(void *queue_ptr, void *priv);
 typedef void (*VmafSyclGraphConfigFn)(void *priv, int slot);
+/* NOLINTEND(modernize-use-using) */
 
 /**
  * Register an extractor's GPU work with the combined command graph.
@@ -647,4 +652,4 @@ bool vmaf_sycl_profiling_is_enabled(VmafSyclState *state);
 
 #endif /* HAVE_SYCL */
 
-#endif /* __VMAF_SRC_SYCL_COMMON_H__ */
+#endif /* VMAF_SRC_SYCL_COMMON_H_ */
