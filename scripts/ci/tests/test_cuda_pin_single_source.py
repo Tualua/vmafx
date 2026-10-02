@@ -491,9 +491,15 @@ class CudaPinGate(unittest.TestCase):
 
     def test_reintroduced_nvidia_cuda_image_is_unrecognised_and_fails(self) -> None:
         """An nvidia/cuda image reference is no longer a valid pin shape (ADR-1306)."""
+        node_file = self.repo / "docker/Dockerfile.node"
+        current = next(
+            line
+            for line in node_file.read_text(encoding="utf-8").splitlines()
+            if line.startswith("ARG CUDA_RUNTIME=")
+        )
         self.edit(
             "docker/Dockerfile.node",
-            'ARG CUDA_RUNTIME="ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78"',
+            current,
             'ARG CUDA_RUNTIME="nvidia/cuda:13.4.2-runtime-ubuntu26.04@sha256:1725dba28b39fd0c3c35665c98284b603bef7b30e8f7990a98d4c3cbb905016a"',
         )
         result = self.gate()
