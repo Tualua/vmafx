@@ -18,10 +18,11 @@
  *    Pass 1 — horizontal 11-tap separable Gaussian over ref / cmp /
  *             ref^2 / cmp^2 / ref*cmp into five intermediate float
  *             device buffers, grid sized over (W-10) x H.
- *    Pass 2 — vertical 11-tap + per-pixel SSIM combine + per-block
- *             float partial sum, grid sized over (W-10) x (H-10).
- *  Host accumulates partials in double, divides by (W-10)*(H-10) and
- *  emits `float_ssim`.
+ *    Pass 2 — vertical 11-tap + per-window SSIM term, one double per
+ *             window at its raster position, grid sized over
+ *             (W-10) x (H-10).
+ *  Host adds the terms in raster order into one double, divides by
+ *  (W-10)*(H-10) and emits `float_ssim`.
  *
  *  HIP adaptation from CUDA:
  *  - `hipModuleLoadData` / `hipModuleGetFunction` / `hipModuleLaunchKernel`
@@ -42,17 +43,22 @@
  *  the pre-runtime posture (registered, runtime not ready).
  *
  *  Options mirror CPU float_ssim.c (ADR-1382, the HIP port of ADR-1365).
- *  `enable_lcs` switches pass 2 to a variant that also reduces the per-pixel
+ *  `enable_lcs` switches pass 2 to a variant that also stores the per-window
  *  luminance / contrast / structure terms of iqa/ssim_tools.c (clamped
- *  variances, flat-region covariance clamp) into three per-block double
- *  partials and emits `float_ssim_{l,c,s}`. `enable_db` / `clip_db` act on
+ *  variances, flat-region covariance clamp), one plane of doubles each, and
+ *  emits `float_ssim_{l,c,s}`. `enable_db` / `clip_db` act on
  *  the host through the shared nonfinite_score.h SSIM helpers.
  *
- *  Pass 2 forms each pixel's SSIM term exactly as the CPU's
+ *  Pass 2 forms each window's SSIM term exactly as the CPU's
  *  ssim_accumulate_default_scalar() does (l * c * s in double from the
- *  CPU-typed factors) and sums one double per block; collect() adds the
- *  blocks in double, divides by the pixel count and rounds the mean to fp32,
- *  as iqa_ssim() returns it (fssim_hip_cpu_mean()). Identical frames then
+ *  CPU-typed factors) and stores it; collect() adds the terms in the CPU's
+ *  raster order into one double, divides by the window count and rounds the
+ *  mean to fp32, as iqa_ssim() returns it (fssim_hip_frame_sums(), as
+ *  ADR-1438 did for the fixed-point twin).
+ *  The CPU's sum is a chain of fp64 adds that round, so only the same chain
+ *  returns its double: per-block sums added on the host, which this twin
+ *  had, left one mean in 1.5e7 noise frames on the neighbouring float
+ *  (T-GPU-FLOAT-SSIM-FRAME-SUM-ORDER-2026-10-02). Identical frames then
  *  report what the CPU reports, 1 - 2^-24 (72.247 dB) where its fp32
  *  luminance denominator leaves that residue, instead of a forced 1.
  *
@@ -110,10 +116,10 @@
 
 typedef struct SsimStateHip {
     VmafHipKernelLifecycle lc;
-    VmafHipKernelReadback rb; /* device: per-block double SSIM partials;
-                               * host_pinned: readback slot */
-    /* enable_lcs only: per-block double L / C / S partials, laid out
-     * [l | c | s] with partials_capacity entries each; unallocated otherwise. */
+    VmafHipKernelReadback rb; /* device: one double SSIM term per window,
+                               * in raster order; host_pinned: readback slot */
+    /* enable_lcs only: the per-window L / C / S terms, laid out [l | c | s]
+     * with `windows` doubles each, in raster order; unallocated otherwise. */
     VmafHipKernelReadback rb_lcs;
     VmafHipContext *ctx;
 
@@ -158,8 +164,8 @@ typedef struct SsimStateHip {
     hipFunction_t func_vert;
     hipFunction_t func_vert_lcs;
 
-    unsigned partials_capacity;
-    unsigned partials_count;
+    /* w_final * h_final: the terms of one plane. */
+    size_t windows;
 
     /* The picture's luma size, and the resolved decimation scale. */
     unsigned in_width;
@@ -304,9 +310,7 @@ static void ssim_hip_init_dims(SsimStateHip *s, unsigned w, unsigned h, unsigned
     s->c1 = (K1 * L) * (K1 * L);
     s->c2 = (K2 * L) * (K2 * L);
 
-    const unsigned grid_x = (s->w_final + SSIM_HIP_BLOCK_X - 1u) / SSIM_HIP_BLOCK_X;
-    const unsigned grid_y = (s->h_final + SSIM_HIP_BLOCK_Y - 1u) / SSIM_HIP_BLOCK_Y;
-    s->partials_capacity = grid_x * grid_y;
+    s->windows = (size_t)s->w_final * s->h_final;
     /* The clip_db ceiling is the CPU's: from the picture size, not the
      * decimated one (float_ssim.c::init()). */
     s->max_db = vmaf_ssim_max_db(s->clip_db, bpc, w, h);
@@ -469,9 +473,9 @@ static int ssim_hip_launch_horiz(SsimStateHip *s, hipStream_t str)
                                                       str, args, NULL));
 }
 
-/* Pass 2 (vertical 11-tap + SSIM combine + per-block partial sum) on `str`,
- * after pass 1 on the same stream. `enable_lcs` selects the kernel that also
- * reduces the L / C / S terms into rb_lcs. Grid over w_final x h_final. */
+/* Pass 2 (vertical 11-tap + the per-window SSIM term) on `str`, after pass 1
+ * on the same stream. `enable_lcs` selects the kernel that also stores the
+ * L / C / S terms in rb_lcs. Grid over w_final x h_final. */
 static int ssim_hip_launch_vert(SsimStateHip *s, hipStream_t str)
 {
     const unsigned grid_x = (s->w_final + SSIM_HIP_BLOCK_X - 1u) / SSIM_HIP_BLOCK_X;
@@ -487,19 +491,10 @@ static int ssim_hip_launch_vert(SsimStateHip *s, hipStream_t str)
                                                           str, args, NULL));
     }
     void *args[] = {
-        (void *)&s->d_ref_mu,
-        (void *)&s->d_cmp_mu,
-        (void *)&s->d_ref_sq,
-        (void *)&s->d_cmp_sq,
-        (void *)&s->d_refcmp,
-        (void *)&s->rb.device,
-        (void *)&s->rb_lcs.device,
-        (void *)&s->w_horiz,
-        (void *)&s->w_final,
-        (void *)&s->h_final,
-        (void *)&s->partials_count,
-        (void *)&s->c1,
-        (void *)&s->c2,
+        (void *)&s->d_ref_mu,      (void *)&s->d_cmp_mu, (void *)&s->d_ref_sq,
+        (void *)&s->d_cmp_sq,      (void *)&s->d_refcmp, (void *)&s->rb.device,
+        (void *)&s->rb_lcs.device, (void *)&s->w_horiz,  (void *)&s->w_final,
+        (void *)&s->h_final,       (void *)&s->c1,       (void *)&s->c2,
     };
     return vmaf_hip_rc_to_errno(hipModuleLaunchKernel(s->func_vert_lcs, grid_x, grid_y, 1u,
                                                       SSIM_HIP_BLOCK_X, SSIM_HIP_BLOCK_Y, 1u, 0,
@@ -507,7 +502,7 @@ static int ssim_hip_launch_vert(SsimStateHip *s, hipStream_t str)
 }
 
 /*
- * Pass 2, then the DtoH read-back of its partials and the finished-event
+ * Pass 2, then the DtoH read-back of its terms and the finished-event
  * record. Both passes run on the same stream, so implicit ordering holds;
  * collect() is the one host wait.
  */
@@ -523,11 +518,11 @@ static int ssim_hip_launch_vert_readback(SsimStateHip *s, hipStream_t str)
     if (hip_rc != hipSuccess)
         return vmaf_hip_rc_to_errno(hip_rc);
 
-    const size_t copy_bytes = (size_t)s->partials_count * sizeof(double);
+    const size_t copy_bytes = s->windows * sizeof(double);
     hip_rc =
         hipMemcpyAsync(s->rb.host_pinned, s->rb.device, copy_bytes, hipMemcpyDeviceToHost, str);
     if (hip_rc == hipSuccess && s->enable_lcs) {
-        const size_t lcs_bytes = 3u * (size_t)s->partials_count * sizeof(double);
+        const size_t lcs_bytes = 3u * s->windows * sizeof(double);
         hip_rc = hipMemcpyAsync(s->rb_lcs.host_pinned, s->rb_lcs.device, lcs_bytes,
                                 hipMemcpyDeviceToHost, str);
     }
@@ -591,12 +586,10 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     if (err == 0)
         err = vmaf_hip_kernel_lifecycle_init(&s->lc, s->ctx);
     if (err == 0) {
-        err = vmaf_hip_kernel_readback_alloc(&s->rb, s->ctx,
-                                             (size_t)s->partials_capacity * sizeof(double));
+        err = vmaf_hip_kernel_readback_alloc(&s->rb, s->ctx, s->windows * sizeof(double));
     }
     if (err == 0 && s->enable_lcs) {
-        err = vmaf_hip_kernel_readback_alloc(&s->rb_lcs, s->ctx,
-                                             3u * (size_t)s->partials_capacity * sizeof(double));
+        err = vmaf_hip_kernel_readback_alloc(&s->rb_lcs, s->ctx, 3u * s->windows * sizeof(double));
     }
 #ifdef HAVE_HIPCC
     if (err == 0)
@@ -649,9 +642,6 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
 #else
     SsimStateHip *s = fex->priv;
     s->index = index;
-    const unsigned grid_x = (s->w_final + SSIM_HIP_BLOCK_X - 1u) / SSIM_HIP_BLOCK_X;
-    const unsigned grid_y = (s->h_final + SSIM_HIP_BLOCK_Y - 1u) / SSIM_HIP_BLOCK_Y;
-    s->partials_count = grid_x * grid_y;
 
     /* Get both luma planes on the device, then dispatch the decimation
      * (scale > 1), Pass 1 (horiz Gaussian) and Pass 2 (vert + SSIM combine)
@@ -674,15 +664,51 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
 }
 
 #ifdef HAVE_HIPCC
-/* The frame mean of one per-block partial row, as CPU iqa_ssim() returns its
- * means: the double sum over the pixel count, rounded to fp32
- * (`(float)(sum / (double)(w * h))`). Validates the ratio first (ADR-1302). */
-static int fssim_hip_cpu_mean(const double *partials, unsigned count, double n_pixels,
-                              const char *name, unsigned index, double *mean)
+/* The four sums of ssim_accumulate_default_scalar(): ssim_sum, l_sum, c_sum
+ * and s_sum, in that order. */
+#define FSSIM_HIP_SUMS 4u
+
+/* The frame sums of the per-window terms, as the reference forms them: each
+ * is one double that takes its plane's terms in raster order. That order is
+ * the result, not a detail: every add rounds, and a sum of the same terms in
+ * another order is another double (ADR-1438 for the fixed-point twin). Without
+ * `enable_lcs` only the SSIM sum exists and the other three stay 0. With it
+ * the four sums advance together through one pass, as in the reference's
+ * loop; each is still its own chain of adds, and the pass costs one chain's
+ * time instead of four. */
+static void fssim_hip_frame_sums(const SsimStateHip *s, double sums[FSSIM_HIP_SUMS])
 {
-    double sum = 0.0;
-    for (unsigned i = 0; i < count; i++)
-        sum += partials[i];
+    const double *ssim = (const double *)s->rb.host_pinned;
+    double ssim_sum = 0.0;
+    double l_sum = 0.0;
+    double c_sum = 0.0;
+    double s_sum = 0.0;
+    if (!s->enable_lcs) {
+        for (size_t i = 0u; i < s->windows; i++)
+            ssim_sum += ssim[i];
+    } else {
+        const double *l = (const double *)s->rb_lcs.host_pinned;
+        const double *c = l + s->windows;
+        const double *sv = c + s->windows;
+        for (size_t i = 0u; i < s->windows; i++) {
+            ssim_sum += ssim[i];
+            l_sum += l[i];
+            c_sum += c[i];
+            s_sum += sv[i];
+        }
+    }
+    sums[0] = ssim_sum;
+    sums[1] = l_sum;
+    sums[2] = c_sum;
+    sums[3] = s_sum;
+}
+
+/* A frame mean as CPU iqa_ssim() returns it: the sum over the window count,
+ * rounded to fp32 (`(float)(sum / (double)(w * h))`). Validates the ratio
+ * first (ADR-1302). */
+static int fssim_hip_cpu_mean(double sum, double n_pixels, const char *name, unsigned index,
+                              double *mean)
+{
     double ratio = 0.0;
     const int err =
         vmaf_feature_finite_ratio_named("float_ssim_hip", name, sum, n_pixels, index, &ratio);
@@ -691,20 +717,19 @@ static int fssim_hip_cpu_mean(const double *partials, unsigned count, double n_p
     return err;
 }
 
-/* enable_lcs: the three per-block L / C / S partial rows become the frame
- * means float_ssim_{l,c,s}, published with the score in CPU float_ssim.c
- * order after the shared SSIM validation (ADR-1302). */
-static int ssim_hip_emit_lcs(const SsimStateHip *s, double score, double n_pixels, unsigned index,
+/* enable_lcs: the L / C / S sums become the frame means float_ssim_{l,c,s},
+ * published with the score in CPU float_ssim.c order after the shared SSIM
+ * validation (ADR-1302). */
+static int ssim_hip_emit_lcs(const SsimStateHip *s, double score, const double sums[FSSIM_HIP_SUMS],
+                             double n_pixels, unsigned index,
                              VmafFeatureCollector *feature_collector)
 {
     static const char *const atom_names[3] = {"float_ssim_l", "float_ssim_c", "float_ssim_s"};
-    const double *lcs = (const double *)s->rb_lcs.host_pinned;
     VmafNamedScore atoms[3];
     int err = 0;
     for (unsigned k = 0; k < 3u && err == 0; k++) {
         atoms[k].name = atom_names[k];
-        err = fssim_hip_cpu_mean(lcs + ((size_t)k * s->partials_count), s->partials_count, n_pixels,
-                                 atom_names[k], index, &atoms[k].value);
+        err = fssim_hip_cpu_mean(sums[1u + k], n_pixels, atom_names[k], index, &atoms[k].value);
     }
     if (err != 0)
         return err;
@@ -732,19 +757,20 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
     if (err != 0)
         return err;
 
-    /* The CPU's frame score: the double sum of the per-pixel terms over the
-     * pixel count, rounded to fp32 (fssim_hip_cpu_mean()). */
+    /* The CPU's frame score: the double sum of the per-window terms, added in
+     * raster order, over the window count, rounded to fp32. */
     const double n_pixels = (double)s->w_final * (double)s->h_final;
+    double sums[FSSIM_HIP_SUMS];
+    fssim_hip_frame_sums(s, sums);
     double score = 0.0;
-    err = fssim_hip_cpu_mean((const double *)s->rb.host_pinned, s->partials_count, n_pixels,
-                             "float_ssim", index, &score);
+    err = fssim_hip_cpu_mean(sums[0], n_pixels, "float_ssim", index, &score);
     if (err != 0)
         return err;
     if (!s->enable_lcs) {
         return vmaf_ssim_emit_score_named(feature_collector, s->feature_name_dict, "float_ssim_hip",
                                           "float_ssim", score, s->enable_db, s->max_db, index);
     }
-    return ssim_hip_emit_lcs(s, score, n_pixels, index, feature_collector);
+    return ssim_hip_emit_lcs(s, score, sums, n_pixels, index, feature_collector);
 #endif /* HAVE_HIPCC */
 }
 

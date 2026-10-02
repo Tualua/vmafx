@@ -380,6 +380,33 @@ def _issim_raster_failures(src: dict[str, str]) -> list[str]:
     return failures
 
 
+def _float_ssim_raster_failures(src: dict[str, str]) -> list[str]:
+    """T-GPU-FLOAT-SSIM-FRAME-SUM-ORDER-2026-10-02: the host adds every window in raster order."""
+    failures: list[str] = []
+    kernel = _code(src[FSSIM_KERNEL])
+    for store in (
+        "terms[(size_t)y * w_final + x] = ssim_pixel(m, c1, c2, lcs);",
+        "terms[window] = ssim_pixel(m, c1, c2, lcs);",
+        "lcs_terms[(size_t)k * windows + window] = lcs[k];",
+    ):
+        if store not in kernel:
+            failures.append(f"{FSSIM_KERNEL}: pass 2 does not store a window's term ({store})")
+    if "__shared__" in kernel or "__shfl" in kernel:
+        failures.append(f"{FSSIM_KERNEL}: the per-window terms are reduced on the device")
+    host = src[FSSIM_HOST]
+    if "s->windows = (size_t)s->w_final * s->h_final;" not in host:
+        failures.append(f"{FSSIM_HOST}: the terms read back are not one per window")
+    sums = _squeeze(_function_body(host, "fssim_hip_frame_sums"))
+    ascending = "for (size_t i = 0u; i < s->windows; i++)"
+    if (
+        f"{ascending} ssim_sum += ssim[i];" not in sums
+        or f"{ascending} {{ ssim_sum += ssim[i]; l_sum += l[i]; c_sum += c[i]; s_sum += sv[i]; }}"
+        not in sums
+    ):
+        failures.append(f"{FSSIM_HOST}: the frame sums are no longer added in ascending order")
+    return failures
+
+
 def _option_failures(src: dict[str, str]) -> list[str]:
     failures: list[str] = []
     psnr = src[PSNR_HOST]
@@ -400,6 +427,7 @@ def _option_failures(src: dict[str, str]) -> list[str]:
         failures.append(f"{ISSIM_KERNEL}: an identical window is forced to its weight again")
     failures += _issim_raster_failures(src)
     failures += _float_ssim_arithmetic_failures(src)
+    failures += _float_ssim_raster_failures(src)
     if "calculate_ssim_hip_vert_combine_lcs" not in src[FSSIM_HOST]:
         failures.append(f"{FSSIM_HOST}: enable_lcs has no device kernel")
     if "return lcs[0] * lcs[1] * lcs[2];" not in src[FSSIM_KERNEL] or re.search(
@@ -743,6 +771,53 @@ class HipKernelSourceContractTest(unittest.TestCase):
             "    return num == den ? 1.0 : num * den;",
         )
         self.assert_detected(src, "not the CPU's l * c * s")
+
+    def test_float_ssim_block_sum_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            FSSIM_KERNEL,
+            "    terms[(size_t)y * w_final + x] = ssim_pixel(m, c1, c2, lcs);",
+            "    __shared__ double s_term[256];\n"
+            "    s_term[threadIdx.y * blockDim.x + threadIdx.x] = ssim_pixel(m, c1, c2, lcs);",
+        )
+        self.assert_detected(src, "does not store a window's term")
+        self.assert_detected(src, "reduced on the device")
+
+    def test_float_ssim_unordered_lcs_terms_are_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            FSSIM_KERNEL,
+            "lcs_terms[(size_t)k * windows + window] = lcs[k];",
+            "lcs_terms[(size_t)k * gridDim.x * gridDim.y + blockIdx.x] += lcs[k];",
+        )
+        self.assert_detected(src, "does not store a window's term")
+
+    def test_float_ssim_block_sized_readback_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            FSSIM_HOST,
+            "s->windows = (size_t)s->w_final * s->h_final;",
+            "s->windows = (size_t)grid_x * grid_y;",
+        )
+        self.assert_detected(src, "not one per window")
+
+    def test_float_ssim_descending_frame_sum_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            FSSIM_HOST,
+            "        for (size_t i = 0u; i < s->windows; i++)\n            ssim_sum += ssim[i];",
+            "        for (size_t i = s->windows; i-- > 0u;)\n            ssim_sum += ssim[i];",
+        )
+        self.assert_detected(src, "ascending order")
+
+    def test_float_ssim_descending_lcs_sums_are_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            FSSIM_HOST,
+            "        for (size_t i = 0u; i < s->windows; i++) {",
+            "        for (size_t i = s->windows; i-- > 0u;) {",
+        )
+        self.assert_detected(src, "ascending order")
 
     def test_double_float_ssim_mean_is_detected(self) -> None:
         src = _replace(_sources(), FSSIM_HOST, "*mean = (double)(float)ratio;", "*mean = ratio;")

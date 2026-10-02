@@ -1,2 +1,2 @@
-adr: ADR-1441
-evidence: gfx1036, --precision max: 178 of 178 frames (Netflix 576x324 at 8 to 16 bit and 4:2:2, 1080p checkerboards, Sparks 10 bit, BBB 4K 48 frames, full-range noise at 8 to 16 bit) identical to --backend cpu on every output; scale, enable_db and clip_db too.
+adr: ADR-1441, ADR-1438
+evidence: gfx1036, --precision max: 178 of 178 frames (Netflix 576x324 at 8 to 16 bit and 4:2:2, 1080p checkerboards, Sparks 10 bit, BBB 4K 48 frames, full-range noise at 8 to 16 bit) identical to --backend cpu on every output; scale, enable_db and clip_db too. The frame sums are added in the CPU's raster order: the constructed 64x64 pair of core/test/float_ssim_order_frame.h (T-GPU-FLOAT-SSIM-FRAME-SUM-ORDER-2026-10-02) returns the CPU's float bits 0xb4e2b622 (0xb4e2b621 before).

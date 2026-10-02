@@ -58235,3 +58235,32 @@ part).
   twin in the same PR.
 - No Netflix golden-data, public C API or FFmpeg patch impact: the output
   name exists on the CPU already and the FFmpeg filter reads none of it.
+## `float_ssim_hip` adds the frame sum in the CPU's raster order (2026-10-02)
+
+`fix/hip-float-ssim-cpu-frame-sum`, `T-GPU-FLOAT-SSIM-FRAME-SUM-ORDER-2026-10-02`
+(HIP part); construction of ADR-1438, window arithmetic of ADR-1441 unchanged.
+
+- `core/src/feature/hip/float_ssim/ssim_score.hip`: `SSIM_BLOCK_SIZE`,
+  `ssim_block_sum()` and `ssim_store_block_sum()` are gone.
+  `calculate_ssim_hip_vert_combine` stores one `double` per window in `terms`
+  at `y * w_final + x`; its argument list is the five pass-1 planes, `terms`,
+  `w_horiz`, `w_final`, `h_final`, `c1`, `c2`.
+  `calculate_ssim_hip_vert_combine_lcs` takes `terms` and `lcs_terms` (three
+  planes of `w_final * h_final` doubles, `[l | c | s]`) and no longer a
+  partial count. A rebase that restores a per-block or per-wave sum makes the
+  twin inexact again; `test_hip_kernel_source_contract.py` rejects it.
+- `core/src/feature/hip/float_ssim_hip.c`: `partials_capacity` and
+  `partials_count` are gone; `windows` sizes `rb` (`windows` doubles) and
+  `rb_lcs` (`3 * windows`). `fssim_hip_frame_sums()` adds the windows in
+  ascending order, one `double` chain per sum. Keep kernel and host from the
+  same side of a conflict.
+- `core/test/float_ssim_order_frame.h` (new) is the constructed 64x64 pair,
+  added byte-identically by the CUDA, HIP and SYCL changes of the same row
+  (sha256 `6dee502f6f583ea5...`). Take either side of an add/add conflict; do
+  not edit the file.
+- `core/test/test_hip_float_ssim_parity.c` gains
+  `test_float_ssim_frame_sum_order` and an `enable_lcs` case at `scale=1`.
+- `scripts/ci/exact_twins.d/float_ssim.hip` and `float_ssim_lcs.hip`: evidence
+  line only.
+- No Netflix golden-data, public API, CLI or FFmpeg patch impact. The CPU
+  extractor is not touched.

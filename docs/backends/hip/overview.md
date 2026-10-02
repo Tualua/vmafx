@@ -359,10 +359,11 @@ core/src/feature/hip/          # per-feature kernels
   [float_moment_hip returns the CPU's moments](#float_moment_hip-returns-the-cpus-moments-bit-for-bit-2026-10-02)).
 - **`float_ssim_hip`** — two-pass separable 11-tap Gaussian kernel. Pass 1
   (horiz): five intermediate float buffers over (W-10)×H. Pass 2 (vert + SSIM
-  combine): per-block float partial sum over (W-10)×(H-10). Host accumulates in
-  double. Emits `float_ssim`. Above scale 1 a decimation kernel runs first and
-  W×H is the decimated size; see
-  [float_ssim_hip at 1080p and 4K](#float_ssim_hip-at-1080p-and-4k).
+  combine): one `double` term per window over (W-10)×(H-10), stored at the
+  window's raster position. The host adds the terms in raster order, as
+  `iqa/ssim_tools.c` does, and rounds the mean to `float`. Emits `float_ssim`.
+  Above scale 1 a decimation kernel runs first and W×H is the decimated size;
+  see [float_ssim_hip at 1080p and 4K](#float_ssim_hip-at-1080p-and-4k).
 - **`ciede_hip`** — the six Y/U/V planes on the device, per-pixel YUV→Lab
   conversion and CIEDE2000 ΔE in the CPU's arithmetic, evaluated on pairs of
   `float` values (ADR-1448), one float per pixel read back, the host's sum in
@@ -1351,7 +1352,7 @@ fails at init.
 |---|---|---|
 | `psnr_hip` | `enable_mse`, `enable_apsnr`, `reduced_hbd_peak`, `min_sse` | Host, from the device SSE, through the CPU's `psnr_score.h`; `apsnr_*` in `flush()` |
 | `integer_ssim_hip` | `enable_db`, `clip_db` | Host, `vmaf_ssim_max_db()` and the shared SSIM emitter |
-| `float_ssim_hip` | `enable_lcs`, `enable_db`, `clip_db` | `enable_lcs` selects a pass-2 kernel that also reduces the per-pixel L, C and S |
+| `float_ssim_hip` | `enable_lcs`, `enable_db`, `clip_db` | `enable_lcs` selects a pass-2 kernel that also returns the L, C and S of every window |
 | `float_motion_hip` | `motion_max_val` (`mmxv`) | Host; every emitted score, the debug one included, goes through the CPU's `motion_clip()` |
 
 With `enable_db`, identical frames report what the CPU reports. For
@@ -1361,8 +1362,9 @@ and sometimes a finite value one or two ulps below a perfect score: 156.54 dB
 on an identical 1x1 frame of zeros, 159.55 dB on a flat 3x3 frame of 51
 ([ADR-1400](../../adr/1400-hip-integer-ssim-raster-sum-small-frames.md)).
 `float_ssim_hip` computes each pixel's term as the CPU does, `l * c * s` from
-the CPU's own luminance, contrast and structure types, and rounds the frame
-mean to fp32 like the CPU. On some identical frames the CPU's fp32 arithmetic
+the CPU's own luminance, contrast and structure types, adds the windows in
+the CPU's raster order and rounds the frame mean to fp32 like the CPU. On
+some identical frames the CPU's fp32 arithmetic
 leaves 1 - 2^-24, which is 72.247 dB, and the twin reports the same instead
 of a forced `+inf`.
 
@@ -1523,6 +1525,58 @@ runs:
 | 3840x2160, `scale=1` | 82.3 ms | 109.6 ms | +33 % |
 
 Stored `float_ssim_hip` scores change by up to 4.8e-7.
+
+#### The frame sum is added in the CPU's order (2026-10-02)
+
+One step was still the twin's own. `iqa/ssim_tools.c` adds the term of every
+window into one `double` in raster order and returns
+`(float)(sum / windows)`. The twin added 16x16 blocks on the device and the
+blocks on the host. The two `double` sums differ in their last bits, and the
+`float` rounding of the mean hides that except when the mean lies next to a
+rounding boundary. A search over noise frames found such a frame: one 64x64
+8-bit pair on which the CPU returns -4.222829943500983e-07 (float bits
+`0xb4e2b622`) and the twin returned -4.222829659283889e-07 (`0xb4e2b621`).
+
+The pass-2 kernel now stores the `double` term of every window and the host
+adds them in raster order, which is how `integer_ssim_hip` became exact
+([ADR-1438](../../adr/1438-hip-ssim-cpu-frame-sum.md)). With
+`enable_lcs=true` the same holds for the `l`, `c` and `s` sums. The twin
+returns `0xb4e2b622` on that pair; `core/test/float_ssim_order_frame.h` holds
+the pair and `test_hip_float_ssim_parity` compares the bits with the constant
+and with the same build's CPU extractor.
+
+Measured on a gfx1036 at `--precision max` on the 178 frames listed above:
+`float_ssim` 178 of 178 identical to `--backend cpu`, `enable_lcs=true` 712 of
+712, `scale=1` 178 of 178, `scale=1` with `enable_lcs=true` 712 of 712,
+`scale=3` 178 of 178, `enable_db` with `clip_db` 178 of 178. On 160 small
+noise frames (11x11 to 100x60 at 8 bits, 40x40 at 10 bits, 64x48 at 16 bits)
+all 800 values are identical.
+
+The readback grows from one `double` per 16x16 block to one per window, and
+the host adds every window. Steady state, medians of nine interleaved pairs
+of runs while other work loaded the host (load average 74 to 87):
+
+| Run | Before | After |
+|---|---|---|
+| 1920x1080, default scale (4) | 2.31 ms | 2.45 ms |
+| 1920x1080, `enable_lcs=true` | 2.36 ms | 2.58 ms |
+| 3840x2160, default scale (8) | 5.86 ms | 5.86 ms |
+| 3840x2160, `enable_lcs=true` | 5.98 ms | 6.40 ms |
+| 1920x1080, `scale=1` | 19.6 ms | 22.0 ms |
+| 1920x1080, `scale=1`, `enable_lcs=true` | 22.7 ms | 27.7 ms |
+| 3840x2160, `scale=1` | 96.2 ms | 96.4 ms |
+| 3840x2160, `scale=1`, `enable_lcs=true` | 101.0 ms | 119.5 ms |
+
+At the default scale the scored plane is at most 480x270 and the change is
+inside the spread between sets of runs (an earlier set gave 2.16 to 2.18 ms
+and 5.28 to 5.46 ms). An explicit `scale=1` scores the full plane and pays
+12 to 24 % at 1920x1080, depending on the set: 2.07 million windows are
+16.6 MB per sum to read back (about 1.7 ms) and one chain of 2.07 million
+host additions (about 2 ms). Memory at `scale=1`: 8 bytes per window for each
+sum on the device and in pinned host memory, 66 MB per sum at 3840x2160, four
+sums with `enable_lcs=true`. The open tuning row is
+`T-HIP-FLOAT-SSIM-EXACT-THROUGHPUT-2026-10-01` in
+[`docs/state.md`](../../state.md).
 
 ### Measured on a gfx1036 (2026-10-01)
 

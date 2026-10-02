@@ -1220,10 +1220,21 @@ Scores = `integer_vif.c`'s bits (gfx1036: 440 of 440 scores, six fixtures;
   +32 % at `scale=1`.
 - `float_ssim_hip`: no identical-window shortcut. CPU is 1 - 2^-24 on some
   identical frames (fp32 luminance denominator, 72.247 dB). `ssim_pixel()` =
-  `(l * c) * s` in double, one double partial per block; host
-  `fssim_hip_cpu_mean()` rounds mean to fp32 (absorbs the block order, same
-  caveat as `float_ms_ssim`). Do not bring back the combined Wang formula or
-  `num == den ? 1`.
+  `(l * c) * s` in double; host `fssim_hip_cpu_mean()` rounds mean to fp32.
+  Do not bring back the combined Wang formula or `num == den ? 1`.
+- `float_ssim_hip` frame sum = CPU raster order
+  (`T-GPU-FLOAT-SSIM-FRAME-SUM-ORDER-2026-10-02`, ADR-1438 construction).
+  Pass 2 stores one double per window at `y * w_final + x`, no `__shared__`,
+  no shuffle, no block sum on the device. Host `fssim_hip_frame_sums()` adds
+  `i = 0 .. windows - 1` into one double per sum = `iqa/ssim_tools.c`
+  `ssim_accumulate_default_scalar()`. Another order = another double -> mean
+  one float step off on some frame (was `0xb4e2b621` vs CPU `0xb4e2b622` on
+  the pair in `core/test/float_ssim_order_frame.h`). fp32 rounding of the mean
+  does NOT absorb the order. Fixture header shared by CUDA / HIP / SYCL:
+  byte-identical, never edit. Guards: `test_hip_float_ssim_parity` (device,
+  bits), `test_hip_kernel_source_contract.py` (device-free). Cost: readback
+  8 bytes per window per sum (16.6 MB at 1080p `scale=1`), +4 ms there;
+  default scale <= 480x270, in the noise.
 - `float_ssim_hip` scale > 1 (ADR-1405): `calculate_ssim_hip_decimate_{8,16}bpc`
   before pass 1 -> fp32 planes == CPU `iqa_decimate()` bit for bit. Window sum
   = `float_ssim/ssim_decimate.h` (`vmaf_hip_ssim_decimate_sample`): fp32
@@ -1238,8 +1249,9 @@ Scores = `integer_vif.c`'s bits (gfx1036: 440 of 440 scores, six fixtures;
 - `float_ssim_hip` `enable_lcs`: separate kernel
   `calculate_ssim_hip_vert_combine_lcs`, same `ssim_pixel()` (the header's
   CPU types: clamped fp32 variances, double L/C, fp32 S, flat-window
-  covariance clamp), double per-block partials in `rb_lcs`. Default kernel
-  stays LCS-free.
+  covariance clamp), three planes of per-window doubles `[l | c | s]` in
+  `rb_lcs`, each in raster order; host adds the four sums in one pass, each
+  its own chain. Default kernel stays LCS-free.
 - `float_motion_hip`: `motion_max_val` (`mmxv`); every emitted `motion` /
   `motion2`, debug and flush tail included, through `fm_hip_motion_clip()`.
 - `float_motion_hip` option table == CPU `float_motion.c` table, same order

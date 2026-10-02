@@ -26,8 +26,8 @@
  *       intermediates, then each pixel's SSIM term exactly as the CPU's
  *       iqa/ssim_tools.c ssim_accumulate_default_scalar() forms it:
  *       l * c * s in double from the CPU-typed luminance, contrast and
- *       structure terms (ssim_pixel()). One double per block in `partials`
- *       (shared-memory tree).
+ *       structure terms (ssim_pixel()). One double per window in `terms`,
+ *       at the window's raster position; nothing is reduced on the device.
  *
  *    The window sums of both passes and the l / c / s terms are the CPU's
  *    (ADR-1441): iqa_convolve() adds the eleven fp32 products of a window in
@@ -38,19 +38,20 @@
  *    every tap and left the score up to 4.8e-7 from the CPU's.
  *
  *    2b. calculate_ssim_hip_vert_combine_lcs (`enable_lcs`, ADR-1382): the
- *       same pass 2, plus the block sums of the per-pixel l, c and s.
+ *       same pass 2, plus each window's l, c and s, one plane each.
  *
- *  The host adds the block partials in double, divides by (W-10)*(H-10) and
- *  rounds the mean to fp32, as the CPU's iqa_ssim() returns it. There is no
+ *  The host adds each plane of terms in raster order into one double, divides
+ *  by (W-10)*(H-10) and rounds the mean to fp32, as the CPU's iqa_ssim() does
+ *  (the construction of ADR-1438 for the fixed-point twin). The CPU's sum is one sequential chain of fp64 adds that round,
+ *  so a sum in another order is another double: block sums added on the host,
+ *  which these kernels had, put one mean in 1.5e7 noise frames on the
+ *  neighbouring float (T-GPU-FLOAT-SSIM-FRAME-SUM-ORDER-2026-10-02). There is no
  *  identical-window shortcut: on identical frames the CPU's fp32 luminance
  *  denominator can leave the frame mean at 1 - 2^-24 (72.247 dB with
  *  `enable_db`), and this twin reproduces that arithmetic instead of forcing
  *  1 (ADR-1382, Research-1377).
  *
  *  HIP adaptation from CUDA:
- *  - Warp size varies: 64 on GCN/RDNA1 (wave64), 32 on RDNA2+ (wave32).
- *    Pass 2 reduces through a shared-memory tree over all SSIM_BLOCK_SIZE
- *    threads (ssim_block_sum()), so its order is the same on both.
  *  - VmafCudaBuffer / VmafPicture replaced by raw pointer parameters.
  */
 
@@ -63,7 +64,6 @@
 #define SSIM_BX 16
 #define SSIM_BY 8
 #define SSIM_K 11
-#define SSIM_BLOCK_SIZE (SSIM_BX * SSIM_BY)
 
 /* The window is iqa/ssim_tools.h's 11-tap Gaussian, whose taps and sums live
  * in ms_ssim_arith.h. */
@@ -97,32 +97,6 @@ __device__ __forceinline__ double ssim_pixel(const VmafHipMsWindow &m, float c1,
     lcs[1] = terms.c;
     lcs[2] = terms.s;
     return lcs[0] * lcs[1] * lcs[2];
-}
-
-/* Block sum of a double over all SSIM_BLOCK_SIZE threads through shared
- * memory, the same order on wave32 and wave64. Every thread must call it. */
-__device__ __forceinline__ double ssim_block_sum(double v, double *scratch, unsigned lid)
-{
-    scratch[lid] = v;
-    __syncthreads();
-    for (unsigned half = SSIM_BLOCK_SIZE / 2u; half > 0u; half >>= 1u) {
-        if (lid < half)
-            scratch[lid] += scratch[lid + half];
-        __syncthreads();
-    }
-    const double total = scratch[0];
-    __syncthreads();
-    return total;
-}
-
-/* Store the block sum of `v` at this block's slot of `out` (lane 0 only).
- * Every thread must call it: ssim_block_sum() synchronises the block. */
-__device__ __forceinline__ void ssim_store_block_sum(double v, double *__restrict__ out,
-                                                     double *scratch, unsigned lid)
-{
-    const double total = ssim_block_sum(v, scratch, lid);
-    if (lid == 0u)
-        out[blockIdx.y * gridDim.x + blockIdx.x] = total;
 }
 
 /* The five pass-1 output planes, each w_horiz x h_horiz floats. */
@@ -281,60 +255,51 @@ calculate_ssim_hip_horiz_f32(const uint8_t *__restrict__ ref, ptrdiff_t ref_stri
 }
 
 /**
- * Pass 2: vertical 11-tap Gaussian + the CPU's per-pixel SSIM term +
- * per-block double partial sum. Grid sized over (W-10) x (H-10) =
- * w_final x h_final. `partials` receives one double per block
- * (block_idx = blockIdx.y * gridDim.x + blockIdx.x).
+ * Pass 2: vertical 11-tap Gaussian + the CPU's per-window SSIM term. Grid
+ * sized over (W-10) x (H-10) = w_final x h_final. `terms` receives one double
+ * per window at its raster position (y * w_final + x): the value
+ * ssim_accumulate_default_scalar() adds into `ssim_sum` for that window. The
+ * host adds them in that order.
  */
 __global__ void calculate_ssim_hip_vert_combine(
     const float *__restrict__ h_ref_mu, const float *__restrict__ h_cmp_mu,
     const float *__restrict__ h_ref_sq, const float *__restrict__ h_cmp_sq,
-    const float *__restrict__ h_refcmp, double *__restrict__ partials, unsigned w_horiz,
+    const float *__restrict__ h_refcmp, double *__restrict__ terms, unsigned w_horiz,
     unsigned w_final, unsigned h_final, float c1, float c2)
 {
-    __shared__ double s_scratch[SSIM_BLOCK_SIZE];
     const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
-    const unsigned lid = threadIdx.y * blockDim.x + threadIdx.x;
-
-    double my_ssim = 0.0;
-    if (x < w_final && y < h_final) {
-        const VmafHipMsWindow m =
-            ssim_vertical_moments(h_ref_mu, h_cmp_mu, h_ref_sq, h_cmp_sq, h_refcmp, w_horiz, x, y);
-        double lcs[3];
-        my_ssim = ssim_pixel(m, c1, c2, lcs);
-    }
-    ssim_store_block_sum(my_ssim, partials, s_scratch, lid);
+    if (x >= w_final || y >= h_final)
+        return;
+    const VmafHipMsWindow m =
+        ssim_vertical_moments(h_ref_mu, h_cmp_mu, h_ref_sq, h_cmp_sq, h_refcmp, w_horiz, x, y);
+    double lcs[3];
+    terms[(size_t)y * w_final + x] = ssim_pixel(m, c1, c2, lcs);
 }
 
 /**
- * Pass 2 with `enable_lcs` (ADR-1382): the SSIM partial of the default
- * kernel, plus the block sums of the per-pixel L, C and S terms in
- * `lcs_partials`, laid out [l | c | s] with `block_count` doubles each.
- * Out-of-frame threads contribute zeros.
+ * Pass 2 with `enable_lcs` (ADR-1382): the SSIM term of the default kernel,
+ * plus the window's L, C and S in `lcs_terms`, three planes of
+ * w_final * h_final doubles laid out [l | c | s], each in raster order.
  */
 __global__ void calculate_ssim_hip_vert_combine_lcs(
     const float *__restrict__ h_ref_mu, const float *__restrict__ h_cmp_mu,
     const float *__restrict__ h_ref_sq, const float *__restrict__ h_cmp_sq,
-    const float *__restrict__ h_refcmp, double *__restrict__ partials,
-    double *__restrict__ lcs_partials, unsigned w_horiz, unsigned w_final, unsigned h_final,
-    unsigned block_count, float c1, float c2)
+    const float *__restrict__ h_refcmp, double *__restrict__ terms, double *__restrict__ lcs_terms,
+    unsigned w_horiz, unsigned w_final, unsigned h_final, float c1, float c2)
 {
-    __shared__ double s_scratch[SSIM_BLOCK_SIZE];
     const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
-    const unsigned lid = threadIdx.y * blockDim.x + threadIdx.x;
-
-    double my_ssim = 0.0;
-    double lcs[3] = {0.0, 0.0, 0.0};
-    if (x < w_final && y < h_final) {
-        const VmafHipMsWindow m =
-            ssim_vertical_moments(h_ref_mu, h_cmp_mu, h_ref_sq, h_cmp_sq, h_refcmp, w_horiz, x, y);
-        my_ssim = ssim_pixel(m, c1, c2, lcs);
-    }
-    ssim_store_block_sum(my_ssim, partials, s_scratch, lid);
+    if (x >= w_final || y >= h_final)
+        return;
+    const VmafHipMsWindow m =
+        ssim_vertical_moments(h_ref_mu, h_cmp_mu, h_ref_sq, h_cmp_sq, h_refcmp, w_horiz, x, y);
+    const size_t windows = (size_t)w_final * h_final;
+    const size_t window = (size_t)y * w_final + x;
+    double lcs[3];
+    terms[window] = ssim_pixel(m, c1, c2, lcs);
     for (unsigned k = 0u; k < 3u; k++)
-        ssim_store_block_sum(lcs[k], lcs_partials + ((size_t)k * block_count), s_scratch, lid);
+        lcs_terms[(size_t)k * windows + window] = lcs[k];
 }
 
 } /* extern "C" */

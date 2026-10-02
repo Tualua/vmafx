@@ -18,12 +18,22 @@
  * is therefore compared with ==. With the fp32 running sums the kernels had
  * before, the first case differs from the CPU in the seventh digit.
  *
+ * The frame sum is the CPU's as well: ssim_accumulate_default_scalar() adds
+ * the per-window terms into one double in raster order, every add rounds, and
+ * the twin reads the terms back and adds them in that order. A sum of the
+ * same terms in another order is another double, and on the constructed pair
+ * of float_ssim_order_frame.h its mean rounds to the neighbouring float
+ * (T-GPU-FLOAT-SSIM-FRAME-SUM-ORDER-2026-10-02): the twin returned 0xb4e2b621
+ * there while it added per block, the CPU returns 0xb4e2b622.
+ *
  * Coverage (every case scores the same frames on both sides, per frame):
  *   positive  the FIXTURE_W x FIXTURE_H auto case (256x144 = scale 1; the
  *             meson `_large` variant is 960x540 = auto scale 2), auto scale
  *             2 on an odd width (853x480), explicit scales 2, 3, 5 and 10,
- *             an odd scale on odd dimensions, 10- and 12-bit samples, and
- *             enable_lcs at scale 3 (float_ssim_l / _c / _s too);
+ *             an odd scale on odd dimensions, 10- and 12-bit samples,
+ *             enable_lcs at scale 3 and at scale 1 (float_ssim_l / _c / _s
+ *             too), and the constructed frame pair whose mean depends on the
+ *             order of the frame sum, by its bits;
  *   boundary  a plane decimated to exactly the 11x11 Gaussian (110x110 at
  *             scale 10), and 3840x2160 auto (scale 8) on the twin gate;
  *   negative  a plane decimated below 11x11 (100x100 at scale 10): the
@@ -41,6 +51,8 @@
 #include <string.h>
 
 #include "test.h"
+
+#include "float_ssim_order_frame.h"
 
 #include "feature/feature_extractor.h"
 #include "libvmaf/feature.h"
@@ -281,7 +293,8 @@ static const ParityCase parity_cases[] = {
     CASE(110u, 110u, 8u, "10", false), /* boundary: decimates to exactly 11x11 */
     CASE(400u, 224u, 10u, "3", false),
     CASE(400u, 224u, 12u, "2", false),
-    CASE(320u, 180u, 8u, "3", true), /* enable_lcs on a decimated plane */
+    CASE(320u, 180u, 8u, "3", true),           /* enable_lcs on a decimated plane */
+    CASE(FIXTURE_W, FIXTURE_H, 8u, "1", true), /* enable_lcs, every window of the picture */
 };
 
 static char *test_float_ssim_cpu_hip_parity(void)
@@ -294,6 +307,96 @@ static char *test_float_ssim_cpu_hip_parity(void)
         msg = compare_case(&parity_cases[i]);
     }
     return msg;
+}
+
+/* One picture of float_ssim_order_frame.h: planar Y, then U and V. */
+static int order_frame_picture(VmafPicture *pic, const unsigned char *bytes)
+{
+    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, 8u, FLOAT_SSIM_ORDER_FRAME_W,
+                                 FLOAT_SSIM_ORDER_FRAME_H);
+    if (err) {
+        return err;
+    }
+    for (unsigned p = 0; p < 3u; p++) {
+        for (unsigned row = 0; row < pic->h[p]; row++) {
+            memcpy((uint8_t *)pic->data[p] + (size_t)row * pic->stride[p], bytes, pic->w[p]);
+            bytes += pic->w[p];
+        }
+    }
+    return 0;
+}
+
+static int order_frame_feed(VmafContext *vmaf)
+{
+    VmafPicture ref;
+    VmafPicture dist;
+    int err = order_frame_picture(&ref, float_ssim_order_frame_ref);
+    if (err) {
+        return err;
+    }
+    err = order_frame_picture(&dist, float_ssim_order_frame_dis);
+    if (err) {
+        (void)vmaf_picture_unref(&ref);
+        return err;
+    }
+    err = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
+    return err ? err : vmaf_read_pictures(vmaf, NULL, NULL, 0);
+}
+
+/* The bits of the `float` behind `extractor`'s float_ssim of the constructed
+ * pair. The score is a float widened to double, so the narrowing is exact. */
+static char *order_frame_bits(bool on_device, const char *extractor, uint32_t *bits)
+{
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafContext *vmaf = NULL;
+    VmafHipState *hip = on_device ? open_device() : NULL;
+    mu_assert("HIP state init failed", hip || !on_device);
+    mu_assert("vmaf_init failed", !vmaf_init(&vmaf, cfg));
+    if (hip) {
+        mu_assert("vmaf_hip_import_state failed", !vmaf_hip_import_state(vmaf, hip));
+    }
+    double score = 0.0;
+    int err = vmaf_use_feature(vmaf, extractor, NULL);
+    if (!err) {
+        err = order_frame_feed(vmaf);
+    }
+    if (!err) {
+        err = vmaf_feature_score_at_index(vmaf, "float_ssim", &score, 0u);
+    }
+    mu_assert("vmaf_close failed", !vmaf_close(vmaf));
+    if (hip) {
+        vmaf_hip_state_free(&hip);
+    }
+    mu_assert("scoring the constructed frame pair failed", !err);
+    const float mean = (float)score;
+    memcpy(bits, &mean, sizeof(*bits));
+    return NULL;
+}
+
+/* T-GPU-FLOAT-SSIM-FRAME-SUM-ORDER-2026-10-02: the frame sum in the CPU's
+ * raster order. On this pair the mean of the same terms added per block is
+ * the neighbouring float (0xb4e2b621). The CPU's value is checked too: it is
+ * the fixture's premise. */
+static char *test_float_ssim_frame_sum_order(void)
+{
+    uint32_t cpu = 0u;
+    mu_assert_msg(order_frame_bits(false, "float_ssim", &cpu));
+    if (cpu != FLOAT_SSIM_ORDER_FRAME_CPU_BITS) {
+        (void)fprintf(stderr, "\ncpu float_ssim bits 0x%08x, the fixture expects 0x%08x\n", cpu,
+                      FLOAT_SSIM_ORDER_FRAME_CPU_BITS);
+    }
+    mu_assert("the CPU float_ssim of the constructed pair is not the fixture's value",
+              cpu == FLOAT_SSIM_ORDER_FRAME_CPU_BITS);
+    if (!twin_runs()) {
+        return NULL;
+    }
+    uint32_t hip = 0u;
+    mu_assert_msg(order_frame_bits(true, "float_ssim_hip", &hip));
+    if (hip != cpu) {
+        (void)fprintf(stderr, "\nfloat_ssim_hip bits 0x%08x, cpu 0x%08x\n", hip, cpu);
+    }
+    mu_assert("float_ssim_hip does not add the frame sum in the CPU's raster order", hip == cpu);
+    return NULL;
 }
 
 /* Gate verdict of the HIP twin for a CPU float_ssim request (ADR-1324). */
@@ -350,6 +453,7 @@ char *run_tests(void)
 {
     mu_run_test(test_float_ssim_hip_registered);
     mu_run_test(test_float_ssim_cpu_hip_parity);
+    mu_run_test(test_float_ssim_frame_sum_order);
     mu_run_test(test_float_ssim_hip_gate);
     return NULL;
 }
