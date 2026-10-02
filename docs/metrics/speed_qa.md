@@ -440,6 +440,15 @@ frames as 10-bit 4:2:2, Sparks, noise at four bit depths and a bright 16-bit
 1080p pair, all identical), and all 990 are identical with the preload. Its
 gate cell has the same `5e-6`.
 
+So does the SYCL twin's. On an Arc A380 every one of 918 values (306 frames:
+those fixtures, 16-bit BBB at 1080p and 4K and 104 frames of BBB 3840x2160)
+equals the CPU extractor of the same icx build and equals `speed_chroma_cuda`;
+against the CPU of a GCC build 15 of them differ, by 1.9e-6 at most, on the
+frames where the CUDA twin differs. A SYCL build is an icx build and its
+`log2f` is Intel's, which rounds correctly: `--backend cpu` and `--backend
+sycl` of one binary agree on these frames, and either differs from a GCC
+build's CPU scores in the last digits.
+
 The CPU build must not fuse multiply-adds either. icx does when FMA
 instructions are available, for example with `-march=native`, which is how the
 `vmaf-dev-mcp` image builds its own `/usr/local/bin/vmaf`: that binary's

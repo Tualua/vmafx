@@ -68,6 +68,10 @@ no gate backend (`metal`) = listed in `UNGATED_BACKENDS` with state row.
 Guard: `core/test/test_parity_gate_covers_registered_twins.py`.
 `speed_temporal` = libm twin on `cuda`, `hip`, `sycl` at `4e-5` (five
 float steps below 128; twins round `log2` correctly, CPU = host `log2f`).
+`speed_chroma` = libm twin on `cuda`, `hip`, `sycl` at `5e-6`. SYCL twin ==
+icx-build CPU on all measured (Intel `log2f` rounds correctly), != glibc CPU
+on 15 of 918: NEVER declare it exact from an icx run; equality = property of
+host libm, not of twin.
 
 ## When adding a new lane
 

@@ -58075,6 +58075,22 @@ part).
   gate features.
 - No Netflix golden-data, public API or FFmpeg patch impact; no score
   changes.
+## `speed_chroma` SYCL cell is a libm twin at `5e-6` (2026-10-02)
+
+`test/sycl-speed-chroma-libm-bound`, `T-SYCL-SPEED-CHROMA-GATE-DEFAULT-TOLERANCE-2026-10-02`.
+
+- `scripts/ci/cross_backend_calibration.py`:
+  `LIBM_TWINS["speed_chroma"]` gains `"sycl": 5e-6`. When this dictionary
+  conflicts in a rebase, keep every backend of both sides; the entry for a
+  backend is never dropped to resolve a conflict.
+- `scripts/ci/test_cross_backend_parity_gate.py`:
+  `test_speed_chroma_sycl_cell_is_bounded_by_the_cpu_log2f`; the CUDA and HIP
+  tests no longer use the SYCL cell as their example of an unlisted twin.
+- Do not replace the entry by an exact-twin fragment because an icx run shows
+  0: the twin equals an icx CPU and differs from a glibc CPU.
+- No library code, score, Netflix golden-data, public API or FFmpeg patch
+  impact.
+
 ## ADR-1460 — `speed_temporal` is a parity-gate feature; registry coverage test (2026-10-02)
 
 `test/gate-speed-temporal`, `T-GATE-SPEED-TEMPORAL-UNGATED-2026-10-02`.

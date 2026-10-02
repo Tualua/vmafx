@@ -33,7 +33,7 @@ explicitly accepts its skip.
   | `ciede` | `5e-3` | ADR-0187 (per-pixel pow/sqrt/sin/atan2) |
   | `ciede` (every pair of CPU, CUDA, SYCL and HIP) | `1e-9`, compared at `--precision max` | ADR-1426, ADR-1436, ADR-1448 (the twins run the CPU's arithmetic and the CPU's sum; what differs is the math library and, on SYCL and HIP, the last bits of an fp32 pair, `LIBM_TWINS`); the `5e-3` row stays for the other twins |
   | `speed_chroma` (the three scores `speed_chroma_u`, `_v`, `_uv`) | `5e-5` | places=4 for a twin that is not listed below |
-  | `speed_chroma` (every pair of CPU, CUDA and HIP) | `5e-6`, compared at `--precision max` | ADR-1430, ADR-1452 (the twins round `log2` correctly, the CPU calls the C library's `log2f`, `LIBM_TWINS`); sized for scores below 16 |
+  | `speed_chroma` (every pair of CPU, CUDA, HIP and SYCL) | `5e-6`, compared at `--precision max` | ADR-1430, ADR-1452, and ADR-1460 for the SYCL twin's chain (the twins round `log2` correctly, the CPU calls the C library's `log2f`, `LIBM_TWINS`); sized for scores below 16 |
   | `speed_temporal` (the one score `speed_temporal`) | `5e-5` | places=4 for a twin that is not listed below |
   | `speed_temporal` (every pair of CPU, CUDA, HIP and SYCL) | `4e-5`, compared at `--precision max` | [ADR-1460](../adr/1460-gate-speed-temporal-and-uncovered-twins.md) (the twins round `log2` correctly, the CPU calls the C library's `log2f`, `LIBM_TWINS`); five float steps of a score below 128 |
   | `psnr_hvs` (a twin that is not listed as exact) | `5e-4` at 576x324 and below, `5e-4 × √(N / N₅₇₆ₓ₃₂₄)` above | ADR-0191 (DCT plus per-block float reduction); ADR-1361 (area scaling) |
@@ -71,6 +71,15 @@ explicitly accepts its skip.
   ([ADR-1452](../adr/1452-hip-speed-chroma-log2f-bound.md)): measured on a
   gfx1036, 13 of 990 values differ from the glibc CPU, the same frames and
   outputs by the same amounts, and none with the preload.
+  `speed_chroma_sycl` is listed at the same bound. On an Arc A380 with an
+  icx build, all 918 measured values (306 frames: the fixtures above, 16-bit
+  BBB at 1080p and 4K, 104 frames of BBB 3840x2160) equal the CPU extractor
+  of that build, whose `log2f` is Intel's and rounds correctly, and equal
+  `speed_chroma_cuda`; against a GCC build's CPU 15 of them differ, by
+  1.9e-6 at most. The cell stays a bound because that equality belongs to
+  the math library the CPU extractor was linked with, not to the twin. An
+  AdaptiveCpp build of the twin is outside this bound
+  ([ADR-1358](../adr/1358-sycl-speed-device-resident-linalg.md)).
   `speed_temporal` is listed for CUDA, HIP and SYCL
   ([ADR-1460](../adr/1460-gate-speed-temporal-and-uncovered-twins.md)): its
   twins run the same device chain. Against a glibc 2.44 CPU all three differ

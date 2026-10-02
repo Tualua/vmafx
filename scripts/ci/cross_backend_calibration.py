@@ -263,6 +263,20 @@ def is_exact_pair(feature: str, backend_a: str, backend_b: str) -> bool:
 # the same frames and outputs, and none with a correctly rounded ``log2f``
 # preloaded. It is listed at the same bound.
 #
+# ``speed_chroma_sycl`` is the third twin of that chain (ADR-1358) and rounds
+# ``log2`` correctly too (``speed_log2_hard_cases.h``). Measured on an Arc
+# A380 with an icx build of master ``7febbd964`` at ``--precision max``, 918
+# values on 306 frames (the Netflix pair at 8 to 16 bits and as 10-bit 4:2:2,
+# both 1080p checkerboards, Sparks, noise at four bit depths, a bright 16-bit
+# 1080p pair, BBB 1080p and 4K at 16 bits and 104 frames of BBB 4K): all 918
+# equal the CPU extractor of the same build, whose ``log2f`` is Intel's and
+# rounds correctly, and all 918 equal ``speed_chroma_cuda``. Against a GCC
+# build's CPU (glibc 2.44) 15 of them differ, on the frames and outputs where
+# the CUDA twin differs, by one to five steps of the fp32 score and 1.9e-6 at
+# most. It is listed at the same bound, like its ``speed_temporal`` cell
+# (ADR-1460): the twin's equality with an icx CPU is a property of that
+# library, not of the twin.
+#
 # ADR-1460: ``speed_temporal`` is the second score of ``speed.c`` and takes
 # the same path: its three twins round ``log2`` correctly on the device and
 # the CPU calls the C library's ``log2f``. Measured at ``--precision max``,
@@ -301,7 +315,7 @@ def is_exact_pair(feature: str, backend_a: str, backend_b: str) -> bool:
 
 LIBM_TWINS: dict[str, dict[str, float]] = {
     "ciede": {"cuda": 1e-9, "sycl": 1e-9, "hip": 1e-9},
-    "speed_chroma": {"cuda": 5e-6, "hip": 5e-6},
+    "speed_chroma": {"cuda": 5e-6, "hip": 5e-6, "sycl": 5e-6},
     "speed_temporal": {"cuda": 4e-5, "hip": 4e-5, "sycl": 4e-5},
 }
 LIBM_TWIN_SOURCE = "libm:ADR-1426"
