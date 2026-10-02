@@ -1481,7 +1481,12 @@ after port-upstream of any of these files.
   the `vif_hip`, `vif_sycl` and `vif_metal` hosts upload its values
   (ADR-1435); no host keeps a copy of the expression or of
   `VIF_LOG2_TABLE_SIZE` (`test_hip_vif_log2_table_contract.py`). Upstream
-  change to the table expression -> change it there, nowhere else.
+  change to table expression -> change there, plus ONE mirror:
+  `vif_cuda` evaluates same expression on device
+  (`cuda/integer_vif/vif_statistics.cuh::log_generate()`, ADR-1456);
+  `test_cuda_vif_log2_table` compares all 32768 device values with this
+  table, `test_cuda_vif_log2_contract.py` pins both expressions. Twin rule:
+  read this table, or prove every entry.
 - **`write_scores` append order is output contract**: four scale scores,
   then `integer_vif` / `_num` / `_den`, then num / den per scale 0..3.
   `double` totals are explicit left-to-right sums — keep them out of loops.

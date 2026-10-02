@@ -382,6 +382,19 @@ test('test_cuda_float_psnr_exact_contract',
     timeout : 30,
 )
 
+# ADR-1456 — vif_cuda evaluates the CPU's log2 table expression on the device
+# and test_cuda_vif_log2_table compares every entry with the host table. This
+# is the device-free half: the statistic takes each logarithm from
+# log_generate(), log_generate() is the table's expression, and the probe
+# kernel (integer_vif/vif_log2_probe.cu) calls that function, built by the
+# fatbin rule that builds the statistic, over the whole table.
+test('test_cuda_vif_log2_contract',
+    import('python').find_installation(),
+    args : files('test_cuda_vif_log2_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-1434: float_adm_sycl returns the CPU's scores bit for bit -- the
 # decouple's quotient is the IEEE fp32 one (ADR-1442), the three
 # fp64 expressions of adm_tools.c are evaluated without an fp64 type, the
@@ -3303,6 +3316,23 @@ test_cuda_float_ssim_decimate = executable('test_cuda_float_ssim_decimate',
 test('test_cuda_float_ssim_decimate', test_cuda_float_ssim_decimate,
     suite : ['fast', 'gpu'],
     is_parallel : false)
+
+# ADR-1456 — the device half of the vif_cuda log2 pin: launches the probe
+# kernel (vif_log2_table_probe, module vif_log2_probe_ptx) and compares all 32768
+# entries with vif_log2_table_generate(). Fails on a host whose math library
+# fills the table differently from the device; the fix is then the host table
+# on the device (ADR-1435), not a tolerance. Skips without a CUDA device.
+test_cuda_vif_log2_table = executable('test_cuda_vif_log2_table',
+    ['test.c', 'test_cuda_vif_log2_table.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_vif_log2_table', test_cuda_vif_log2_table,
+    suite : ['fast', 'gpu'],
+    is_parallel : false,
+    timeout : 60)
 
 # ADR-0956 — CUDA-only speed kernels. `speed_chroma_cuda` and
 # `speed_temporal_cuda` have no CPU twin emitting the same

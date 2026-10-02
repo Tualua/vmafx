@@ -1219,6 +1219,10 @@ if is_cuda_enabled
         'adm_csf' : [feature_src_dir + 'cuda/integer_adm/adm_csf.cu'],
         'adm_csf_den' : [feature_src_dir + 'cuda/integer_adm/adm_csf_den.cu'],
         'filter1d' : [feature_src_dir + 'cuda/integer_vif/filter1d.cu'],
+        # ADR-1456: log_generate() of vif_statistics.cuh over the log2 table's
+        # whole domain, for test_cuda_vif_log2_table. Built by this rule so
+        # that it takes the flags filter1d takes; the extractor never loads it.
+        'vif_log2_probe' : [feature_src_dir + 'cuda/integer_vif/vif_log2_probe.cu'],
         # ADR-1372: the one motion SAD kernel, shared by motion_cuda and
         # motion_v2_cuda through integer_motion_sad_cuda.c.
         'motion_v2_score' : [feature_src_dir + 'cuda/integer_motion_v2/motion_v2_score.cu'],

@@ -787,6 +787,24 @@ CUDA feature TUs compile only when `meson setup -Denable_cuda=true`.
   `core/test/float_psnr_twin_parity.h`, shared with SYCL test),
   `test_cuda_float_psnr_exact_contract.py`.
 
+## `vif_cuda` logarithm = CPU log2 table, every entry (ADR-1456)
+
+- CPU `vif` reads `log2_table[]` (host libm, `vif_log2_table_generate()`);
+  `vif_cuda` evaluates same expression per pixel on device:
+  `vif_statistics.cuh::log_generate()` = `roundf(log2f(float(i)) * 2048.f)`.
+- Device `log2f` != glibc on 307 of 32768 arguments (1 ulp), 80 ties; 0
+  table entries differ (RTX 4090, CUDA 13.4, glibc 2.44).
+- Proof = `test_cuda_vif_log2_table`: launches `vif_log2_table_probe`
+  (`integer_vif/vif_log2_probe.cu`: own fatbin `vif_log2_probe_ptx`, same
+  build rule + flags as `filter1d.cu`, extractor never loads probe), compares
+  all 32768 with host table. Fails -> upload host table as `vif_hip`
+  (ADR-1435). NEVER tolerance, never edit `log_generate()` to fit.
+- Keep: every logarithm of statistic through `log_generate()`; `roundf`
+  (not `__float2int_rn`: 41 entries off, scores 4.2e-7 off); probe calls
+  `log_generate()` from `vif_statistics.cuh`, no per-kernel flags
+  (`cuda_cu_extra_flags`). Probe NOT in `filter1d.cu`: touching that file
+  revokes four HISS-04 baseline entries of upstream kernels. `test_cuda_vif_log2_contract.py` guards all three.
+
 ## Stencil/convolution kernel invariant (ADR-0454)
 
 - **Stencil and convolution kernels with data reuse > 2 taps must stage

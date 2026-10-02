@@ -57955,3 +57955,25 @@ must keep the fork's side of both:
 - No kernel change, no Netflix golden-data, public API or FFmpeg patch
   impact. The JSON / XML of a `--backend cuda --feature motion` run gains the
   key the CPU run has.
+
+## ADR-1456 — `vif_cuda`'s device logarithm is pinned to the CPU's table (2026-10-02)
+
+`fix/cuda-vif-cpu-log2-table`, `T-CUDA-VIF-DEVICE-LOG2-UNPROBED-2026-10-02`.
+
+- `core/src/feature/cuda/integer_vif/vif_log2_probe.cu` (new): the kernel
+  `vif_log2_table_probe`, its own entry in `cuda_cu_sources`
+  (`core/src/meson.build`), launched only by
+  `core/test/test_cuda_vif_log2_table.c`. `filter1d.cu` is untouched.
+- `core/src/feature/cuda/integer_vif/vif_statistics.cuh`: `log_generate()` is
+  unchanged in code (a dead commented-out range check is gone) and documented
+  as the mirror of `vif_log2_table_generate()`. If upstream changes either
+  expression, change the other and re-run the device test. Keep
+  `log_generate()` an inline function of this header: the probe includes it.
+- `core/src/feature/vif_log2_table.h`: comment only.
+- `core/test/test_cuda_vif_log2_table.c` (device) and
+  `core/test/test_cuda_vif_log2_contract.py` (device-free) are new;
+  `EXPECTED_CUDA_TARGET_COUNT` in
+  `core/test/test_device_target_header_dependencies.py` is 22.
+- `scripts/ci/exact_twins.d/vif.cuda` (new) declares the twin exact
+  (ADR-1428).
+- No scoring kernel, Netflix golden-data, public API or FFmpeg patch impact.

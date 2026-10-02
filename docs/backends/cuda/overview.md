@@ -1029,6 +1029,43 @@ python3 scripts/ci/cross_backend_parity_gate.py --vmaf-binary build/tools/vmaf \
     --bitdepth 16 --backends cpu cuda --features float_moment
 ```
 
+## `vif_cuda` returns the CPU's scores bit for bit (2026-10-02)
+
+The fixed-point `vif` is integer arithmetic except for its logarithms, which
+the CPU extractor reads from a table of 32768 values built with the host math
+library. `vif_cuda` computes the same expression on the device. On another
+GPU that went wrong: the HIP twin's device logarithm moved 77 of the 32768
+values and its scores were up to 5.4e-7 off (ADR-1435).
+
+For CUDA the two agree on every one of the 32768 values
+([ADR-1456](../../adr/1456-cuda-vif-device-log2-pinned.md)). The device's
+`log2f()` differs from glibc's by one unit in the last place for 307 of the
+arguments, and none of those moves a table value. `test_cuda_vif_log2_table`
+checks all 32768 on the device every time the fast suite runs, so `vif_cuda`
+is declared an exact twin and the parity gate compares it with tolerance 0.
+
+Measured on an RTX 4090 at `--precision max` against `--backend cpu`:
+
+| Fixture | Scores identical |
+|---|---|
+| Netflix 576x324 at 8 and 10 bits, both 1080p checkerboards, BBB 3840x2160 (200 frames) | 1028 of 1028 |
+| Netflix 576x324 at 12 and 16 bits and as 10-bit 4:2:2, Sparks at 10 bits, noise at 8 to 16 bits, a bright 16-bit 1080p pair | 292 of 292 |
+| Noise at 40x40, 56x56 and 64x64, 8 and 10 bits | 72 of 72 |
+| `debug=true`, `vif_enhn_gain_limit=1.0`, `vif_skip_scale0` on 59 frames | 1357 of 1357 |
+
+No scoring kernel changed, so stored scores and the frame time are the same.
+If the test fails on your machine (another host math library, another CUDA
+release), report it: the twin then needs to read the CPU's table, as the HIP
+twin does.
+
+```shell
+build-cuda/test/test_cuda_vif_log2_table
+python3 scripts/ci/cross_backend_parity_gate.py --vmaf-binary build-cuda/tools/vmaf \
+    --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+    --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+    --width 576 --height 324 --backends cpu cuda --features vif
+```
+
 ## Licensing of the CUDA kernels (ADR-1250)
 
 A CUDA kernel implementing an upstream Netflix metric carries that metric's

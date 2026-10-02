@@ -24,10 +24,13 @@
  * The log2 table of the fixed-point VIF extractor, and its one definition.
  *
  * Plain C that is also valid C++ and Objective-C++, with no include beyond
- * the C library: integer_vif.h includes it for the CPU extractor, and every
- * GPU twin's host (vif_hip, vif_sycl, vif_metal) includes it to upload the
- * CPU's values. A twin never computes the table on its device, whose log2f()
- * need not round as the host's does (ADR-1435).
+ * the C library: integer_vif.h includes it for the CPU extractor, and the
+ * hosts of vif_hip, vif_sycl and vif_metal include it to upload the CPU's
+ * values. A device's log2f() need not round as the host's does (ADR-1435:
+ * 77 entries differ on a gfx1036), so a twin either reads this table or
+ * proves every entry: vif_cuda evaluates the expression on the device, and
+ * test_cuda_vif_log2_table compares all VIF_LOG2_TABLE_SIZE entries with this
+ * table (ADR-1456).
  */
 
 #include <math.h>

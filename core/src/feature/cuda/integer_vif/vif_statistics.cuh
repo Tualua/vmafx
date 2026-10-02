@@ -53,10 +53,23 @@ __device__ __forceinline__ uint16_t get_best16_from64(uint64_t temp, int *x)
     return (uint16_t)temp;
 }
 
+/*
+ * Entry `i - VIF_LOG2_TABLE_OFFSET` of the CPU's log2 table, evaluated on the
+ * device: the expression of vif_log2_table_generate() (vif_log2_table.h) with
+ * the device math library's log2f() and roundf(). `i` is a normalised
+ * mantissa, 32768 to 65535.
+ *
+ * The device's log2f() is not the host's bit for bit (307 of the 32768
+ * arguments differ by one ulp from glibc 2.44 on CUDA 13.4), but no difference
+ * moves an entry: all 32768 are equal, the 80 ties at k + 0.5 included, which
+ * both sides round away from zero. test_cuda_vif_log2_table holds every entry
+ * to the host table through vif_log2_probe.cu, which includes this header
+ * (ADR-1456). If it ever fails
+ * (another host math library, another CUDA release), read the host table as
+ * vif_hip does (ADR-1435); do not adjust this expression.
+ */
 __device__ __forceinline__ uint16_t log_generate(int i)
 {
-    // if (i < 32767 || i >= 65536)
-    //     return 0;
     return (uint16_t)roundf(log2f(float(i)) * 2048.f);
 }
 

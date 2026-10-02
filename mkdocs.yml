@@ -1565,6 +1565,7 @@ nav:
         - "ADR-1453: cuda-float-moment-cpu-float-squares": adr/1453-cuda-float-moment-cpu-float-squares.md
         - "ADR-1454: agents-index-and-topic-pages": adr/1454-agents-index-and-topic-pages.md
         - "ADR-1455: cuda-float-psnr-exact-block-sums": adr/1455-cuda-float-psnr-exact-block-sums.md
+        - "ADR-1456: cuda-vif-device-log2-pinned": adr/1456-cuda-vif-device-log2-pinned.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

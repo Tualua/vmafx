@@ -192,6 +192,14 @@ Measured on a gfx1036, 440 of 440 scores from 480x270 to 3840x2160 are
 identical at `--precision max`; see
 [the HIP backend page](../backends/hip/overview.md#vif_hip-returns-the-cpus-scores-bit-for-bit-2026-10-01).
 
+`vif_cuda` returns the CPU's scores bit for bit as well
+([ADR-1456](../adr/1456-cuda-vif-device-log2-pinned.md)). It computes its
+logarithms on the device, and a test compares the device's value with the
+CPU's table for all 32768 entries, so the equality does not rest on the
+frames measured. On an RTX 4090, 1392 of 1392 scores on 348 frames from 40x40
+to 3840x2160 at 8 to 16 bits are identical at `--precision max`; see
+[the CUDA backend page](../backends/cuda/overview.md#vif_cuda-returns-the-cpus-scores-bit-for-bit-2026-10-02).
+
 ### `vif_sycl` returns the CPU's values
 
 `vif_sycl` gives the same number as `--backend cpu --feature vif` for every
