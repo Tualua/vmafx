@@ -15,7 +15,7 @@ the oneVPL runtime and the QSV build dependencies that
 ## Modes
 
 | Mode | What it does |
-|---|---|
+| ---- | ------------ |
 | `libvmaf` | Configures (first run) and builds libvmaf with SYCL (SPIR-V JIT, no AOT targets), installs it into the cache prefix and copies the public headers FFmpeg's `check_pkg_config libvmaf` probes. |
 | `ffmpeg` | Copies the image's FFmpeg checkout, resets it to `FFMPEG_TAG` from `build-config.env`, applies `ffmpeg-patches/series.txt` with `git am --3way` (stops with `PATCH FAILED: <name>` on a conflict), configures with QSV, VAAPI and `--enable-libvmaf-sycl`, builds and installs. Run `libvmaf` first. |
 | `test [args...]` | `meson test -C <cache>/build --print-errorlogs` with your arguments, for example `test --suite sycl`. |
@@ -27,7 +27,7 @@ runtime exits 127.
 ## Environment
 
 | Variable | Default | Meaning |
-|---|---|---|
+| -------- | ------- | ------- |
 | `SYCL_DEV_IMAGE` | `localhost/vmafx:build-ocloc` | Toolchain image. |
 | `SYCL_DEV_CC` | `icx` | C compiler for the libvmaf build (master's SYCL test executables need a compiler that links `-fsycl`). |
 | `SYCL_DEV_TIMEOUT` | `5400` | Wall-clock cap in seconds for one run (killed with SIGKILL). |

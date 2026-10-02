@@ -121,7 +121,7 @@ build_ffmpeg() {
 case "$MODE" in
   libvmaf) build_libvmaf ;;
   ffmpeg) build_ffmpeg ;;
-  test) meson test -C "$C/build" --print-errorlogs "$@" ;;
+  test) python3 /work/scripts/ci/run_meson_test.py -- -C "$C/build" --print-errorlogs "$@" ;;
   exec)
     export PATH="$C/ffmpeg-prefix/bin:$C/prefix/bin:$PATH"
     export LD_LIBRARY_PATH="$C/prefix/lib/x86_64-linux-gnu:$C/prefix/lib:${LD_LIBRARY_PATH:-}"
