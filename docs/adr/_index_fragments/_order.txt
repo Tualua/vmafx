@@ -1177,3 +1177,4 @@
 1473-float-adm-x86-simd-exact-and-dispatched
 1471-tidy-lanes-in-dev-container
 1474-relicense-helper-headers-and-ci-check
+1490-rc3-rc9-candidate-map-cpu-capability

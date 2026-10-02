@@ -59,16 +59,36 @@ def _redact_text(value: str) -> str:
     return re.sub(rf"{temp_prefix}[^/\s]+", "$REPORT_TMP", value)
 
 
-def _redact(value: Any) -> Any:
+_REDACT_NODE_LIMIT = 10_000_000
+
+
+def _redact_leaf(value: Any) -> Any:
     if isinstance(value, str):
         return _redact_text(value)
-    if isinstance(value, list):
-        return [_redact(item) for item in value]
-    if isinstance(value, dict):
-        return {str(key): _redact(item) for key, item in value.items()}
     if isinstance(value, float) and not math.isfinite(value):
         return None
     return value
+
+
+def _redact(value: Any) -> Any:
+    """Return a redacted copy of a JSON-like value with an explicit work stack."""
+    result: list[Any] = [None]
+    pending: list[tuple[Any, Any, Any]] = [(value, result, 0)]
+    for _ in range(_REDACT_NODE_LIMIT):
+        if not pending:
+            return result[0]
+        item, holder, slot = pending.pop()
+        if isinstance(item, list):
+            copy_list: list[Any] = [None] * len(item)
+            holder[slot] = copy_list
+            pending.extend((child, copy_list, index) for index, child in enumerate(item))
+        elif isinstance(item, dict):
+            copy_dict: dict[str, Any] = {str(key): None for key in item}
+            holder[slot] = copy_dict
+            pending.extend((child, copy_dict, str(key)) for key, child in item.items())
+        else:
+            holder[slot] = _redact_leaf(item)
+    raise ValueError("report is too large to redact")
 
 
 def _dumps_json(value: Any) -> str:
@@ -205,7 +225,7 @@ def _render_report(
             "within 5e-5: the ADR-0214 bound for listed feature metrics, conservatively adopted "
             "by ADR-1342 for overall VMAF too. Frame 3 exercises temporal motion. `backend_used` "
             "remains backend-state evidence, not proof that every individual feature ran on the "
-            "accelerator; this smoke does not replace the compiled backend suites or RC7 "
+            "accelerator; this smoke does not replace the compiled backend suites or RC8 "
             "benchmarking."
         ),
         "",

@@ -68,6 +68,21 @@ Kept as upstream has them: the types of every temporary (`float` per-scale sums 
 
 Dropped: the two `#ifdef ADM_OPT_DEBUG_DUMP` blocks. They called `write_image()` and `PRINTF()`, which nothing in the tree defines, so they could not compile; the macro stays commented out in `adm_options.h`. The `(float *)(void *)` casts in `init_dwt_band*()` are direct casts (`bugprone-casting-through-void`); `init_dwt_band_d()` keeps its signature because `compat/python-vmaf/core/adm_dwt2_cy.pyx` declares it.
 
+## RC7 CPU capability inserted, benchmarks are RC8, retrain is RC9 (ADR-1490, 2026-10-02)
+
+`docs/rc-map-rc7-cpu-capability`. No rebase impact on code: labels only.
+
+- A stale branch that opens a tuning row as RC7 relabels it RC8; a training row
+  labelled RC8 becomes RC9. The disposition labels of `docs/state.md` are now
+  `RC7 CPU capability source of truth`, `RC8 benchmarks, profiling and tuning`
+  and `RC9 training and model validation`; a rebase conflict in that table is
+  resolved by `scripts/dev/resolve-state-md-conflict.py` and the id goes under
+  the label its row text earns.
+- The `tools/rc1-tester` catalog phases are `RC1`, `RC8` and `RC9`. Root
+  `AGENTS.md` section 11 and its compiled projections carry the new map; never
+  resolve a conflict there by hand, take master's side and run
+  `praetorctl compile-context`.
+
 ## `docs/state.md` uses the RC3 to RC8 labels (ADR-1421, 2026-10-02)
 
 `rc3-ledger-relabel`, closes `T-STATE-LEDGER-RC-RELABEL-2026-10-01`. No rebase impact: ledger labels only.

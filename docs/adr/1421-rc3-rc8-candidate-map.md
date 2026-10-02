@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # ADR-1421: Map the first-release candidates RC3 to RC8
 
-- **Status**: Accepted
+- **Status**: Accepted (candidate numbering from RC7 on replaced by [ADR-1490](1490-rc3-rc9-candidate-map-cpu-capability.md))
 - **Date**: 2026-10-01
 - **Deciders**: lusoris
 - **Tags**: release, rc, process

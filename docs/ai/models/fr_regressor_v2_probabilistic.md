@@ -8,8 +8,8 @@ form _"give me the CRF where the **lower** bound of the 95 % interval is
 still ≥ 92"_ — driving the new `vmaf-tune --quality-confidence` flag
 (planned, see [ADR-0237](../../adr/0237-quality-aware-encode-automation.md)).
 
-> **Status — smoke placeholder through RC7; production flip deferred to
-> the one-shot RC8 retrain ([ADR-1105](../../adr/1105-ensemble-v2-prod-flip-deferred-oneshot-retrain.md),
+> **Status — smoke placeholder through RC8; production flip deferred to
+> the one-shot RC9 retrain ([ADR-1105](../../adr/1105-ensemble-v2-prod-flip-deferred-oneshot-retrain.md),
 > [ADR-1341](../../adr/1341-rc-correctness-benchmark-retrain-sequence.md),
 > [ADR-1421](../../adr/1421-rc3-rc8-candidate-map.md)).**
 > The five `fr_regressor_v2_ensemble_v1_seed{0..4}` rows in
@@ -23,7 +23,7 @@ still ≥ 92"_ — driving the new `vmaf-tune --quality-confidence` flag
 > smoke weights are placeholders, not a production fit. Re-establishing
 > production at `codec_vocab=6` requires re-running
 > `export_ensemble_v2_seeds.py`, which is part of the locked one-shot
-> RC8 retrain (the ensemble is in scope). Until then,
+> RC9 retrain (the ensemble is in scope). Until then,
 > `test_fr_regressor_v2_ensemble_seed_rows_are_production` is marked
 > `xfail(strict=True)`; it auto-fails the suite the moment the retrain
 > lands real weights (`smoke: false` + matching sidecar sha), forcing
@@ -42,8 +42,8 @@ still ≥ 92"_ — driving the new `vmaf-tune --quality-confidence` flag
 > [ADR-1105](../../adr/1105-ensemble-v2-prod-flip-deferred-oneshot-retrain.md)
 > (one-shot deferral), and
 > [ADR-1341](../../adr/1341-rc-correctness-benchmark-retrain-sequence.md)
-> (release-candidate sequence; the retrain is RC8 under
-> [ADR-1421](../../adr/1421-rc3-rc8-candidate-map.md)). The
+> (release-candidate sequence; the retrain is RC9 under
+> [ADR-1490](../../adr/1490-rc3-rc9-candidate-map-cpu-capability.md)). The
 > scaffold-era ADR-0393 entry point is preserved for history.
 
 ## What the output means

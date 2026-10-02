@@ -44,7 +44,9 @@ separates the first release into ordered evidence stages.
 [ADR-1421](../adr/1421-rc3-rc8-candidate-map.md) maps the stages to tags (it
 supersedes the candidate mapping of
 [ADR-1352](../adr/1352-rc-phase-shift-plus-one.md), which had added the
-stabilisation candidate after rc.1), so each phase number matches its tag:
+stabilisation candidate after rc.1), and
+[ADR-1490](../adr/1490-rc3-rc9-candidate-map-cpu-capability.md) inserts RC7 and
+moves the later candidates up by one, so each phase number matches its tag:
 
 | Candidate | Proves | Must not be used to claim |
 | --- | --- | --- |
@@ -54,16 +56,17 @@ stabilisation candidate after rc.1), so each phase number matches its tag:
 | `v1.0.0-rc.4` (RC4) | The whole `vmaf_v1.0.16_3d0h` path (cambi, speed_chroma, integer adm3, integer motion3, model prediction) runs in Rust, bit-identical to C, with the C ABI unchanged | Performance, or production-trained model quality |
 | `v1.0.0-rc.5` (RC5) | One implementation per behaviour across GPU twins and host code, with `libgpudispatch` extracted | Performance, or production-trained model quality |
 | `v1.0.0-rc.6` (RC6) | The checked-in GPU capability table matches the vendor toolchains (CI drift check), dispatch and kernel parameters read it, and every kernel passes the static audit for every target | Measured performance on any device |
-| `v1.0.0-rc.7` (RC7) | Benchmarks, profiles, and tuning results are comparable, reproducible, and still numerically correct on the tested hardware | Completion of the real retraining programme |
-| `v1.0.0-rc.8` (RC8) | The one-shot real retrain and its quality, provenance, registry, signing, and golden-data gates pass on the tuned tree | That no later repair candidate can be needed |
+| `v1.0.0-rc.7` (RC7) | The checked-in CPU capability table matches the compile flags and runtime gates (CI drift check), no SIMD kernel contains an instruction outside the feature set its gate guarantees (per-function disassembly audit, x86 and aarch64), and every dispatch level is bit-exact against scalar under emulation (Intel SDE CPU models, qemu for aarch64 NEON and SVE2 at more than one vector length) | Measured performance on any processor; reports from real Xeon or Apple Silicon machines are extra evidence, not a requirement |
+| `v1.0.0-rc.8` (RC8) | Benchmarks, profiles, and tuning results are comparable, reproducible, and still numerically correct on the tested hardware | Completion of the real retraining programme |
+| `v1.0.0-rc.9` (RC9) | The one-shot real retrain and its quality, provenance, registry, signing, and golden-data gates pass on the tuned tree | That no later repair candidate can be needed |
 
-Candidate tags are immutable. RC1 to RC8 name the planned candidate for each
+Candidate tags are immutable. RC1 to RC9 name the planned candidate for each
 responsibility; if a stage finds a correctness defect, land the fix and rerun
 the affected evidence before advancing. A later repair candidate may be cut
-without moving benchmark work into RC1 to RC6 or real training before RC7
+without moving benchmark work into RC1 to RC7 or real training before RC8
 evidence is accepted. Speed that RC3 gives up for exactness is recorded as a
-tuning row and recovered in RC7, never traded back for a tolerance. The final
-`v1.0.0` follows accepted RC8 evidence.
+tuning row and recovered in RC8, never traded back for a tolerance. The final
+`v1.0.0` follows accepted RC9 evidence.
 
 Every report and acceptance record identifies the exact commit, published
 artifact or image digest, fixtures, host and device, drivers/runtimes, tool

@@ -57,11 +57,12 @@ filtered process. Run a separate bundle for each ordinal you want to cover.
 | Phase | Tester activity |
 | :--- | :--- |
 | RC1 and RC2 | Build and correctness readiness, device/toolchain discovery, bounded four-frame backend checks, shareable reports. RC2 (`v1.0.0-rc.2`) is a stabilisation candidate with the same scope. |
-| RC7 | Performance benchmarking and tuning with tools such as `vmaf_bench` and `vmaf-tune`. |
-| RC8 | Real corpus generation and model training under `ai/` and `tools/ensemble-training-kit/`. |
+| RC7 | CPU capability table, per-function instruction audit and emulated bit-exactness matrix; the collector is unchanged, and a bundle from a Xeon or Apple Silicon machine is extra evidence. |
+| RC8 | Performance benchmarking and tuning with tools such as `vmaf_bench` and `vmaf-tune`. |
+| RC9 | Real corpus generation and model training under `ai/` and `tools/ensemble-training-kit/`. |
 
 `list-tools` also records current benchmark coverage gaps so an RC1 or RC2
-report does not imply that the deferred RC7 harnesses already cover every
+report does not imply that the deferred RC8 harnesses already cover every
 backend or host operating system.
 
 ## Exit status

@@ -30,7 +30,7 @@ commit being replayed) -- so it needs no conflict markers, and merges:
   Changed differently on both: a conflict.
 * **Disposition rows, by label.** A row of the table under
   "## First-release phase classification" whose first cell is a bold label
-  (``| **RC7 benchmarks, profiling and tuning** | `T-A`<br>`T-B` | prose |``) is a record keyed
+  (``| **RC8 benchmarks, profiling and tuning** | `T-A`<br>`T-B` | prose |``) is a record keyed
   by that label. When both sides changed it, its id list merges as a set --
   ours, plus the ids theirs added, minus the ids either side removed, in ours'
   order with theirs' additions after -- and every other cell three-way by
@@ -84,7 +84,7 @@ ID_PATTERN = r"T-[A-Z0-9._-]+|T[0-9]+-[0-9]+|Netflix(?:/vmaf)?#[0-9]+"
 ROW_RE = re.compile(rf"^\| \*{{0,2}}({ID_PATTERN})")
 TOMBSTONE_RE = re.compile(rf"({ID_PATTERN})\s+moved to [Rr]ecently [Cc]losed")
 # A disposition row names its phase in a bold first cell and lists its bug ids
-# in the second: `| **RC7 benchmarks, profiling and tuning** | `T-A`<br>`T-B` | prose |`.
+# in the second: `| **RC8 benchmarks, profiling and tuning** | `T-A`<br>`T-B` | prose |`.
 DISPOSITION_SECTION = "First-release phase classification"
 DISPOSITION_RE = re.compile(r"^\|\s*\*\*([^*|]+)\*\*\s*\|")
 TAKE_RE = re.compile(r"^(.+)=(ours|theirs)$")

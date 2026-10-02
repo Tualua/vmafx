@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-02T17:32:39Z",
+  "generated_at": "2026-10-02T21:19:43Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "58376c70f3bbaad0d4ccd710b7ffeed31a4e7d31",
-  "total_infractions": 229,
+  "commit_sha": "7a9af76747ab56f52dfab0bbf79cd433e1172538",
+  "total_infractions": 227,
   "infractions": [
     {
       "rule_id": "HISS-04",
@@ -1395,22 +1395,6 @@
       "symbol": "compare_runs",
       "message": "Function 'compare_runs' (62 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "scripts/perf/check-regression.py:58:HISS-04"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "tools/rc1-tester/src/vmaf_rc1_tester/bundle.py",
-      "line_number": 66,
-      "symbol": "_redact",
-      "message": "Direct recursion in _redact; the call graph must form an acyclic DAG",
-      "fingerprint": "tools/rc1-tester/src/vmaf_rc1_tester/bundle.py:66:HISS-01"
-    },
-    {
-      "rule_id": "HISS-01",
-      "file_path": "tools/rc1-tester/src/vmaf_rc1_tester/bundle.py",
-      "line_number": 68,
-      "symbol": "_redact",
-      "message": "Direct recursion in _redact; the call graph must form an acyclic DAG",
-      "fingerprint": "tools/rc1-tester/src/vmaf_rc1_tester/bundle.py:68:HISS-01"
     },
     {
       "rule_id": "HISS-04",

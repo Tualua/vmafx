@@ -1587,6 +1587,7 @@ nav:
         - "ADR-1472: integer-adm-cm-weight-budget": adr/1472-integer-adm-cm-weight-budget.md
         - "ADR-1473: float-adm-x86-simd-exact-and-dispatched": adr/1473-float-adm-x86-simd-exact-and-dispatched.md
         - "ADR-1474: relicense-helper-headers-and-ci-check": adr/1474-relicense-helper-headers-and-ci-check.md
+        - "ADR-1490: rc3-rc9-candidate-map-cpu-capability": adr/1490-rc3-rc9-candidate-map-cpu-capability.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

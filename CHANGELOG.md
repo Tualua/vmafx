@@ -1073,6 +1073,17 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   on identical chroma) (ADR-1361).
 
 
+- The first-release candidate map has a new RC7, the CPU capability source of
+  truth ([ADR-1490](docs/adr/1490-rc3-rc9-candidate-map-cpu-capability.md)): a
+  generated, checked-in table of the CPU features each SIMD kernel needs, a
+  per-function disassembly audit for x86 and aarch64, and every dispatch level
+  run bit-exact against scalar under Intel SDE and qemu. Benchmarks, profiling
+  and tuning move from RC7 to RC8 and the one-shot retrain from RC8 to RC9. The
+  release guide, roadmap, retrain runbook, tester guide, model card,
+  dependency-bot policy, the `docs/state.md` classification and the
+  `vmaf-rc1-report` tool inventory use the new numbering.
+
+
 - **The first-release candidate plan now has eight candidates.**
   `v1.0.0-rc.3` owns twin exactness (every GPU and SIMD twin returns the CPU
   extractor's scores bit for bit, or carries a measured tolerance), `rc.4` the

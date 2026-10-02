@@ -48,8 +48,8 @@ _Updated: 2026-09-01 (base entry)._
 | Disposition | Ledger rows | Release handling |
 | --- | --- | --- |
 | **RC2 stabilisation** | `T-FIX-A-2026-09-01`<br>`T-FIX-B-2026-09-01` | Fixes for the next candidate. |
-| **RC7 benchmarks** | `T-PERF-A-2026-09-01`<br>`T-PERF-B-2026-09-01` | RC7 owns these. |
-| **RC8 training** | `T-TRAIN-A-2026-09-01` | Training rows. |
+| **RC8 benchmarks** | `T-PERF-A-2026-09-01`<br>`T-PERF-B-2026-09-01` | RC8 owns these. |
+| **RC9 training** | `T-TRAIN-A-2026-09-01` | Training rows. |
 | **Explicitly deferred** | `T-DEFER-A-2026-09-01` | Deferred with a trigger. |
 
 ## Open bugs
@@ -384,8 +384,8 @@ class Dispositions(ResolverCase):
     """Disposition rows are records keyed by label; the id list merges as a set."""
 
     RC2 = "RC2 stabilisation"
-    PERF = "RC7 benchmarks"
-    TRAIN = "RC8 training"
+    PERF = "RC8 benchmarks"
+    TRAIN = "RC9 training"
     DEFER = "Explicitly deferred"
 
     def test_both_sides_add_different_ids_to_one_row(self) -> None:
@@ -411,7 +411,7 @@ class Dispositions(ResolverCase):
         repo = self.start([master], [branch])
         proc = repo.resolver()
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        self.assertEqual(proc.stdout.count("collapsed the duplicate 'RC7 benchmarks' row"), 2)
+        self.assertEqual(proc.stdout.count("collapsed the duplicate 'RC8 benchmarks' row"), 2)
         text = repo.text()
         self.assertEqual(listed(text, self.PERF), ["T-PERF-A", "T-PERF-B", "T-PERF-C", "T-PERF-D"])
         repo.git("add", STATE)
@@ -441,14 +441,14 @@ class Dispositions(ResolverCase):
         self.assertIn("T-PERF-A", listed(repo.text(), self.TRAIN))
 
     def test_prose_cell_edited_on_both_sides_needs_a_take(self) -> None:
-        master = edit(updated(BASE, "master"), ("RC7 owns these.", "RC7 owns these, says master."))
-        branch = edit(updated(BASE, "branch"), ("RC7 owns these.", "RC7 owns these, says branch."))
+        master = edit(updated(BASE, "master"), ("RC8 owns these.", "RC8 owns these, says master."))
+        branch = edit(updated(BASE, "branch"), ("RC8 owns these.", "RC8 owns these, says branch."))
         branch = relist(branch, self.PERF, ["T-PERF-A", "T-PERF-B", "T-PERF-D"])
         repo = self.start([master], [branch])
         proc = repo.resolver()
         self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
-        self.assertIn("RC7 benchmarks (disposition row)", proc.stderr)
-        text = self.assert_resolves(repo, "--take", "RC7 benchmarks=theirs")
+        self.assertIn("RC8 benchmarks (disposition row)", proc.stderr)
+        text = self.assert_resolves(repo, "--take", "RC8 benchmarks=theirs")
         self.assertIn("says branch", text)
         self.assertNotIn("says master", text)
         self.assertEqual(listed(text, self.PERF), ["T-PERF-A", "T-PERF-B", "T-PERF-D"])
