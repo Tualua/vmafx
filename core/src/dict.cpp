@@ -67,7 +67,10 @@ namespace
  */
 [[nodiscard]] std::expected<VmafDictionary *, int> dict_ensure_allocated(VmafDictionary **dict)
 {
-    if (*dict)
+    // Compared, not tested as a truth value: cppcheck 2.19 reads
+    // `if (*dict) return *dict;` as one condition repeated inside itself
+    // (identicalInnerCondition).
+    if (*dict != nullptr)
         return *dict;
 
     auto *d = static_cast<VmafDictionary *>(std::malloc(sizeof(VmafDictionary)));

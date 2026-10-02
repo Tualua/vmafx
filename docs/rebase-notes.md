@@ -58800,3 +58800,17 @@ Kept: the `+0` start of every sum (signed-zero parity with `adm_dwt2_s()`), mult
 - No Netflix golden-data, public C API or FFmpeg patch impact. Stored
   `float_ms_ssim_sycl` scores change only where a per-scale mean lies next to
   a `float` rounding boundary.
+
+## `adm.c`: the band planes are carved with a typed cursor (cppcheck, 2026-10-02)
+
+`fix/ci-cppcheck-exhaustive-findings`.
+
+- `core/src/feature/adm.c`: `init_dwt_band()`, `init_dwt_band_d()` and
+  `init_dwt_band_hvd()` take and return a `float *` (`double *` for the `_d`
+  variant) cursor and a step in samples, where upstream passes a `char *`
+  cursor and a step in bytes and casts each plane. `adm_alloc_bands()` passes
+  `buf_sz_one / sizeof(float)`. The addresses are upstream's.
+- An upstream change to these helpers or to the carving in `compute_adm()`
+  conflicts here. Keep the typed cursor: a `(float *)` cast of a `char *`
+  cursor fails the required `Cppcheck` check (`invalidPointerCast`), and the
+  `(float *)(void *)` form fails clang-tidy (`bugprone-casting-through-void`).

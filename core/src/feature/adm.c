@@ -81,45 +81,48 @@ static int adm_dwt2_dispatch(const float *src, const adm_dwt_band_t_s *dst, int 
 
 #define adm_dwt2 adm_dwt2_dispatch
 
-/* The band planes are carved out of one aligned buffer in steps of
- * buf_sz_one bytes, a multiple of MAX_ALIGN: every data_top below is aligned
- * for the sample type it is cast to. */
-static char *init_dwt_band(adm_dwt_band_t *band, char *data_top, size_t buf_sz_one)
+/* The band planes are carved out of one aligned buffer in steps of band_len
+ * samples: buf_sz_one bytes, a multiple of MAX_ALIGN and so of the sample
+ * size. The cursor has the sample type, so no plane is reached through a
+ * cast: cppcheck reports `(float *)` on a `char *` cursor as
+ * invalidPointerCast, and clang-tidy reports the `(void *)` hop that would
+ * quiet it as bugprone-casting-through-void. */
+static float *init_dwt_band(adm_dwt_band_t *band, float *data_top, size_t band_len)
 {
-    band->band_a = (float *)data_top;
-    data_top += buf_sz_one;
-    band->band_h = (float *)data_top;
-    data_top += buf_sz_one;
-    band->band_v = (float *)data_top;
-    data_top += buf_sz_one;
-    band->band_d = (float *)data_top;
-    data_top += buf_sz_one;
+    band->band_a = data_top;
+    data_top += band_len;
+    band->band_h = data_top;
+    data_top += band_len;
+    band->band_v = data_top;
+    data_top += band_len;
+    band->band_d = data_top;
+    data_top += band_len;
     return data_top;
 }
 
 UNUSED_FUNCTION
-static char *init_dwt_band_d(adm_dwt_band_t_d *band, char *data_top, size_t buf_sz_one)
+static double *init_dwt_band_d(adm_dwt_band_t_d *band, double *data_top, size_t band_len)
 {
-    band->band_a = (double *)data_top;
-    data_top += buf_sz_one;
-    band->band_h = (double *)data_top;
-    data_top += buf_sz_one;
-    band->band_v = (double *)data_top;
-    data_top += buf_sz_one;
-    band->band_d = (double *)data_top;
-    data_top += buf_sz_one;
+    band->band_a = data_top;
+    data_top += band_len;
+    band->band_h = data_top;
+    data_top += band_len;
+    band->band_v = data_top;
+    data_top += band_len;
+    band->band_d = data_top;
+    data_top += band_len;
     return data_top;
 }
 
-static char *init_dwt_band_hvd(adm_dwt_band_t *band, char *data_top, size_t buf_sz_one)
+static float *init_dwt_band_hvd(adm_dwt_band_t *band, float *data_top, size_t band_len)
 {
     band->band_a = NULL;
-    band->band_h = (float *)data_top;
-    data_top += buf_sz_one;
-    band->band_v = (float *)data_top;
-    data_top += buf_sz_one;
-    band->band_d = (float *)data_top;
-    data_top += buf_sz_one;
+    band->band_h = data_top;
+    data_top += band_len;
+    band->band_v = data_top;
+    data_top += band_len;
+    band->band_d = data_top;
+    data_top += band_len;
     return data_top;
 }
 
@@ -197,14 +200,15 @@ static int adm_alloc_bands(AdmFrameBufs *b, int w, int h)
         return 1;
     }
 
-    char *data_top = (char *)b->data_buf;
+    const size_t band_len = buf_sz_one / sizeof(float);
+    float *data_top = b->data_buf;
 
-    data_top = init_dwt_band(&b->ref_dwt2, data_top, buf_sz_one);
-    data_top = init_dwt_band(&b->dis_dwt2, data_top, buf_sz_one);
-    data_top = init_dwt_band_hvd(&b->decouple_r, data_top, buf_sz_one);
-    data_top = init_dwt_band_hvd(&b->decouple_a, data_top, buf_sz_one);
-    data_top = init_dwt_band_hvd(&b->csf_a, data_top, buf_sz_one);
-    (void)init_dwt_band_hvd(&b->csf_f, data_top, buf_sz_one);
+    data_top = init_dwt_band(&b->ref_dwt2, data_top, band_len);
+    data_top = init_dwt_band(&b->dis_dwt2, data_top, band_len);
+    data_top = init_dwt_band_hvd(&b->decouple_r, data_top, band_len);
+    data_top = init_dwt_band_hvd(&b->decouple_a, data_top, band_len);
+    data_top = init_dwt_band_hvd(&b->csf_a, data_top, band_len);
+    (void)init_dwt_band_hvd(&b->csf_f, data_top, band_len);
     return 0;
 }
 

@@ -221,11 +221,20 @@ static char *buffered_read_frame(const Clip *clip, video_input *vid, unsigned fr
     return NULL;
 }
 
-typedef char *(*ReadFrame)(const Clip *clip, video_input *vid, unsigned frame, int expect);
+/* One frame through the direct or the buffered reader. A plain call on
+ * purpose: through a pointer to a function type cppcheck 2.19 takes
+ * `reader(clip, &vid, ...)` for an initializer list that keeps `&vid`, and
+ * reports the message the callers return as a dangling pointer
+ * (returnDanglingLifetime). */
+static char *read_frame(bool direct, const Clip *clip, video_input *vid, unsigned frame, int expect)
+{
+    return direct ? direct_read_frame(clip, vid, frame, expect) :
+                    buffered_read_frame(clip, vid, frame, expect);
+}
 
 /* Every frame reads back, and the clip then ends: a reader that leaves bytes
  * in the stream fails one of the two. */
-static char *read_whole_clip(const Clip *clip, ReadFrame read_frame)
+static char *read_whole_clip(const Clip *clip, bool direct)
 {
     Buffer buf = {0};
     if (build_clip(clip, &buf)) {
@@ -239,10 +248,10 @@ static char *read_whole_clip(const Clip *clip, ReadFrame read_frame)
     }
     char *msg = NULL;
     for (unsigned n = 0; !msg && n < FRAME_CNT; n++) {
-        msg = read_frame(clip, &vid, n, 1);
+        msg = read_frame(direct, clip, &vid, n, 1);
     }
     if (!msg) {
-        msg = read_frame(clip, &vid, FRAME_CNT, 0);
+        msg = read_frame(direct, clip, &vid, FRAME_CNT, 0);
     }
     video_input_close(&vid);
     free(buf.bytes);
@@ -251,8 +260,8 @@ static char *read_whole_clip(const Clip *clip, ReadFrame read_frame)
 
 static char *check_clip(const Clip *clip)
 {
-    mu_assert_msg(read_whole_clip(clip, direct_read_frame));
-    mu_assert_msg(read_whole_clip(clip, buffered_read_frame));
+    mu_assert_msg(read_whole_clip(clip, true));
+    mu_assert_msg(read_whole_clip(clip, false));
     return NULL;
 }
 
@@ -302,13 +311,12 @@ static char *truncated_clip_fails(const Clip *clip, bool direct)
         free(buf.bytes);
         return "the reader refused the clip";
     }
-    const ReadFrame read_frame = direct ? direct_read_frame : buffered_read_frame;
     char *msg = NULL;
     for (unsigned n = 0; !msg && n + 1u < FRAME_CNT; n++) {
-        msg = read_frame(clip, &vid, n, 1);
+        msg = read_frame(direct, clip, &vid, n, 1);
     }
     if (!msg) {
-        msg = read_frame(clip, &vid, FRAME_CNT - 1u, -1);
+        msg = read_frame(direct, clip, &vid, FRAME_CNT - 1u, -1);
     }
     video_input_close(&vid);
     free(buf.bytes);
