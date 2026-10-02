@@ -88,6 +88,19 @@ test('test_sycl_runtime_contract',
     timeout : 30,
 )
 
+# ADR-1470: an enum that C and C++ translation units both see has one size.
+# No header a C translation unit includes may fix an enum's underlying type
+# narrower or wider than int (C on the required toolchains cannot spell it,
+# so the enum would be int-sized in C and another size in C++), and a C++
+# `unsigned int` spelling needs a UINT_MAX enumerator. Device-free and
+# compiler-free.
+test('test_c_cxx_enum_definition_contract',
+    import('python').find_installation(),
+    args : files('test_c_cxx_enum_definition_contract.py'),
+    suite : ['fast'],
+    timeout : 60,
+)
+
 # ADR-1468: a SYCL kernel may require only a sub-group size every target of
 # the default sycl_icpx_aot_targets list accepts (16 or 32; Xe2 has no 8).
 # Device-free and compiler-free: it reads the option's default, the check in

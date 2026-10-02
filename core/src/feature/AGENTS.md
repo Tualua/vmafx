@@ -85,6 +85,22 @@ feature/
 
 ## Rebase-sensitive invariants
 
+- **Shared C / C++ headers: one enum definition, never a C++-only narrow
+  underlying type
+  ([ADR-1470](../../../docs/adr/1470-c-cxx-shared-enum-one-definition.md)).**
+  `#ifdef __cplusplus enum X : unsigned char {` + plain C head = 1 byte in
+  C++ TUs (SYCL, Metal twins), 4 in C TUs -> wrong bytes the moment a value
+  crosses (by value over `extern "C"`, struct member, pointer). Was
+  `VmafVifNameSet` in `nonfinite_score.h` (never crossed: only user
+  `vmaf_vif_emit_scores()` is `static inline`); now plain `typedef enum` +
+  cited NOLINT (`performance-enum-size`, `modernize-use-using`). Allowed
+  dual head: `: unsigned int` WITH a `..._ABI_UINT_MAX = UINT_MAX`
+  enumerator (`model.h`, `luminance_tools.h`; size asserted in
+  `core/test/test_flush_context_ordering.c`). On rebase: a lint cleanup
+  that "fixes" `performance-enum-size` with a C++-only type -> revert to
+  the plain form. Guard: `core/test/test_c_cxx_enum_definition_contract.py`
+  (every header a `.c` under `core/` includes).
+
 - **`moment.c::compute_2nd_moment` reduction contract** (ADR-0179 / ADR-0987):
   `const float term = pic_ * pic_; cum += (double)term;` where float squaring
   is evaluated in single precision and explicitly cast to `double` before

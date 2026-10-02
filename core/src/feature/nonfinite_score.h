@@ -24,18 +24,20 @@ struct VmafNamedScore {
     double value;
 };
 
-#ifdef __cplusplus
-enum VmafVifNameSet : unsigned char {
-#else
+/* NOLINTBEGIN(modernize-use-using,performance-enum-size): one definition for C
+ * and C++ (ADR-1470). C extractors (integer_vif.c, float_vif.c, the CUDA and
+ * HIP twins) and C++ ones (the SYCL and Metal twins) include this header. A
+ * fixed underlying type spelled for C++ only (`: unsigned char`) gave the enum
+ * one byte there and four in C: harmless while vmaf_vif_emit_scores() is the
+ * only user and is inlined per translation unit, and a silent size mismatch
+ * the day the enum goes into a struct or an extern function. C cannot spell
+ * the fixed type on the required MSVC lane (ADR-1138), and `using` is not C,
+ * so both languages get the plain C form. */
 typedef enum VmafVifNameSet {
-#endif
     VMAF_VIF_FLOAT_NAMES,
     VMAF_VIF_INTEGER_NAMES,
-#ifdef __cplusplus
-};
-#else
 } VmafVifNameSet;
-#endif
+/* NOLINTEND(modernize-use-using,performance-enum-size) */
 
 #ifndef __cplusplus
 typedef struct VmafVifScoreSet VmafVifScoreSet;

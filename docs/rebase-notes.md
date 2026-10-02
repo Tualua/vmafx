@@ -58542,3 +58542,17 @@ ADR-1403 unchanged.
 - `core/test/test_sycl_runtime_contract.py` (new, suite `fast`) holds the
   three invariants without a device.
 - No score, public C API, Netflix golden-data or FFmpeg patch impact.
+## One enum definition for C and C++ (ADR-1470, 2026-10-02)
+
+`fix/c-cxx-enum-one-definition`, `T-ENUM-CXX-ONLY-UNDERLYING-TYPE-2026-10-02`.
+
+- `core/src/feature/nonfinite_score.h`: `VmafVifNameSet` is one plain
+  `typedef enum` for both languages (it was `: unsigned char` under
+  `__cplusplus`), inside a cited `NOLINTBEGIN(modernize-use-using,
+  performance-enum-size)` block. A rebase or a lint pass that re-adds a
+  C++-only underlying type fails
+  `core/test/test_c_cxx_enum_definition_contract.py`.
+- `core/src/model.h` and `core/src/feature/luminance_tools.h` are unchanged:
+  their `: unsigned int` C++ heads are size-compatible and pinned by the
+  `..._ABI_UINT_MAX = UINT_MAX` enumerators. Keep those enumerators.
+- No score, output, public C API, Netflix golden-data or FFmpeg patch impact.

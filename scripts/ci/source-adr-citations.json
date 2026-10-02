@@ -6135,6 +6135,7 @@
         "core/src/feature/iqa/ssim_tools.c": 1,
         "core/src/feature/ms_ssim.c": 1,
         "core/src/feature/niqe.c": 1,
+        "core/src/feature/nonfinite_score.h": 1,
         "core/src/feature/perceptual_weight.c": 1,
         "core/src/feature/psnr_hvs_score.c": 1,
         "core/src/feature/pu21.c": 1,
@@ -6205,6 +6206,7 @@
         "core/test/test_barten_csf.c": 1,
         "core/test/test_barten_csf_coverage.c": 1,
         "core/test/test_brisque.c": 1,
+        "core/test/test_c_cxx_enum_definition_contract.py": 1,
         "core/test/test_cambi_dispatch_invariance.c": 1,
         "core/test/test_cambi_simd.c": 1,
         "core/test/test_cambi_spatial_mask_simd.c": 1,
@@ -9386,6 +9388,14 @@
         "core/test/test_sycl_sub_group_size_contract.py": 1
       },
       "target": "1468-sycl-sub-group-sizes-every-aot-target.md"
+    },
+    "1470": {
+      "sites": {
+        "core/src/feature/nonfinite_score.h": 1,
+        "core/test/meson.build": 1,
+        "core/test/test_c_cxx_enum_definition_contract.py": 2
+      },
+      "target": "1470-c-cxx-shared-enum-one-definition.md"
     }
   },
   "retired": {

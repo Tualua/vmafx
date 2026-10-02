@@ -1577,6 +1577,7 @@ nav:
         - "ADR-1464: cuda-float-ssim-raster-order-sum": adr/1464-cuda-float-ssim-raster-order-sum.md
         - "ADR-1465: cuda-float-ms-ssim-raster-order-sum": adr/1465-cuda-float-ms-ssim-raster-order-sum.md
         - "ADR-1468: sycl-sub-group-sizes-every-aot-target": adr/1468-sycl-sub-group-sizes-every-aot-target.md
+        - "ADR-1470: c-cxx-shared-enum-one-definition": adr/1470-c-cxx-shared-enum-one-definition.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

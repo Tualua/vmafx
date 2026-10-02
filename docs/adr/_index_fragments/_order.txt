@@ -1169,3 +1169,4 @@
 1463-sycl-float-ssim-raster-sum
 1465-cuda-float-ms-ssim-raster-order-sum
 1464-cuda-float-ssim-raster-order-sum
+1470-c-cxx-shared-enum-one-definition

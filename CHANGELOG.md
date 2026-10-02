@@ -1271,6 +1271,15 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   give the same scores bit for bit.
 
 
+- **`VmafVifNameSet` has the same size in C and in C++.** The internal header
+  `core/src/feature/nonfinite_score.h` gave the enum a one-byte underlying
+  type for C++ and left it `int`-sized in C. No value crossed between the two
+  languages, so no score or output was affected; the enum has one definition
+  now, and a device-free test rejects a C++-only narrow underlying type in
+  any header a C source includes
+  ([ADR-1470](docs/adr/1470-c-cxx-shared-enum-one-definition.md)).
+
+
 - **`cambi` no longer reads and writes outside its buffers on wide, short
   frames, and scores tall, narrow frames the same on every path.** When the
   coarsest of CAMBI's five scales had no more rows than half the window,

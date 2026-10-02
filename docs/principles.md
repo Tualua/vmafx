@@ -123,6 +123,22 @@ Not enforced as PR-blocking; informational in review.
 - **CUDA (`.cu`):** follows C style; kernel names `kernel_*`; device helpers `device_*`.
 - **Shell:** shfmt + shellcheck; `#!/usr/bin/env bash`; `set -euo pipefail`.
 
+### 1.6 Headers shared by C and C++
+
+A type that both a C and a C++ translation unit read has one definition, in
+the C form. In particular an enum in such a header does not get a fixed
+underlying type for C++ only (`#ifdef __cplusplus` / `enum E : uint8_t`): C
+cannot spell it on the required MSVC lane, so the enum would be `int`-sized in
+C and narrower in C++, and a value passed by value, stored in a shared struct
+or read through a pointer would be read with the wrong size
+([ADR-1470](adr/1470-c-cxx-shared-enum-one-definition.md)). Suppress
+`performance-enum-size` and `modernize-use-using` on the definition with a
+citation instead. An enum whose size is part of an ABI may state
+`: unsigned int` for C++ when it carries a `UINT_MAX` enumerator that holds
+the C enum to the same four bytes (`core/src/model.h`).
+`core/test/test_c_cxx_enum_definition_contract.py` checks every header a `.c`
+file under `core/` includes.
+
 ## 2. Security
 
 See [SECURITY.md](../SECURITY.md) for reporting policy.
