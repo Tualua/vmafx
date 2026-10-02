@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright 2016-2026 Netflix, Inc.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -87,8 +88,9 @@ static float ms_ssim_reduce_fn(int w, int h, void *ctx)
 static void ms_ssim_free_buffers(float **buf, int scales)
 {
     int idx;
-    for (idx = 0; idx < scales; ++idx)
+    for (idx = 0; idx < scales; ++idx) {
         free(buf[idx]);
+    }
 }
 
 /* Allocates the scaled buffers. If error, all buffers are free'd */
@@ -206,7 +208,7 @@ static int ms_ssim_build_pyramids(float **ref_imgs, float **cmp_imgs, int w, int
     int cur_w = w;
     int cur_h = h;
     for (int idx = 1; idx < scales; ++idx) {
-        if (ms_ssim_decimate(ref_imgs[idx - 1], cur_w, cur_h, ref_imgs[idx], 0, 0) ||
+        if (ms_ssim_decimate(ref_imgs[idx - 1], cur_w, cur_h, ref_imgs[idx], nullptr, nullptr) ||
             ms_ssim_decimate(cmp_imgs[idx - 1], cur_w, cur_h, cmp_imgs[idx], &cur_w, &cur_h)) {
             (void)printf("error: decimation fails on ref_imgs or cmp_imgs.\n");
             (void)fflush(stdout);
@@ -237,7 +239,7 @@ static void ms_ssim_run_scale(float *ref_img, float *cmp_img, int cur_w, int cur
         iqa_ssim(ref_img, cmp_img, cur_w, cur_h, window, mr, &s_args, l, c, s);
     } else {
         /* MS-SSIM (Wang) — default parameters (args=NULL) per upstream. */
-        iqa_ssim(ref_img, cmp_img, cur_w, cur_h, window, NULL, NULL, l, c, s);
+        iqa_ssim(ref_img, cmp_img, cur_w, cur_h, window, nullptr, nullptr, l, c, s);
     }
 }
 
@@ -313,8 +315,9 @@ int compute_ms_ssim(const float *ref, const float *cmp, int w, int h, int ref_st
     }
     stride /= (int)sizeof(float); /* stride_ in pixels */
 
-    if (ms_ssim_check_scale_ok(w, h, scales, gauss))
+    if (ms_ssim_check_scale_ok(w, h, scales, gauss)) {
         return 1;
+    }
 
     struct iqa_kernel window;
     ms_ssim_init_window(&window, gauss);
@@ -323,10 +326,11 @@ int compute_ms_ssim(const float *ref, const float *cmp, int w, int h, int ref_st
     mr.map = ms_ssim_map_fn;
     mr.reduce = ms_ssim_reduce_fn;
 
-    float **ref_imgs = NULL;
-    float **cmp_imgs = NULL;
-    if (ms_ssim_alloc_pyramids(&ref_imgs, &cmp_imgs, w, h, scales))
+    float **ref_imgs = nullptr;
+    float **cmp_imgs = nullptr;
+    if (ms_ssim_alloc_pyramids(&ref_imgs, &cmp_imgs, w, h, scales)) {
         return 1;
+    }
 
     ms_ssim_seed_pyramid(ref, cmp, w, h, stride, ref_imgs[0], cmp_imgs[0]);
 

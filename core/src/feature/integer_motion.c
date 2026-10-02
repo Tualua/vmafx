@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright 2016-2026 Netflix, Inc.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -143,7 +144,7 @@ static const VmafOption options[] = {
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val.b = false,
     },
-    {0}};
+    {nullptr}};
 
 static inline int mirror(int idx, int size)
 {
@@ -256,24 +257,27 @@ static inline uint64_t motion_score_pipeline_16(const uint8_t *prev_u8, ptrdiff_
  * set by the caller, so the AArch64 branch reads the same value as before. */
 static void motion_select_pipeline(MotionState *s, unsigned bpc)
 {
-    if (bpc == 8)
+    if (bpc == 8) {
         s->pipeline = motion_score_pipeline_8;
-    else
+    } else {
         s->pipeline = motion_score_pipeline_16;
+    }
 
 #if ARCH_X86
     if (vmaf_get_cpu_flags() & VMAF_X86_CPU_FLAG_AVX2) {
-        if (bpc == 8)
+        if (bpc == 8) {
             s->pipeline = motion_score_pipeline_8_avx2;
-        else
+        } else {
             s->pipeline = motion_score_pipeline_16_avx2;
+        }
     }
 #if HAVE_AVX512
     if (vmaf_get_cpu_flags() & VMAF_X86_CPU_FLAG_AVX512) {
-        if (bpc == 8)
+        if (bpc == 8) {
             s->pipeline = motion_score_pipeline_8_avx512;
-        else
+        } else {
             s->pipeline = motion_score_pipeline_16_avx512;
+        }
     }
 #endif
 #endif
@@ -521,9 +525,10 @@ static const char *provided_features[] = {
     "VMAF_integer_feature_motion_score",
     "VMAF_integer_feature_motion2_score",
     "VMAF_integer_feature_motion3_score",
-    NULL,
+    nullptr,
 };
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as extern VmafFeatureExtractor vmaf_fex_integer_motion by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_integer_motion = {
     .name = "motion",
     .options = options,

@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright 2016-2025 Netflix, Inc.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -147,14 +148,16 @@ static const VmafOption options[] = {
         .default_val.b = false,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
-    {0}};
+    {.name = nullptr}};
 
 static inline int mirror(int idx, int size)
 {
-    if (idx < 0)
+    if (idx < 0) {
         return -idx;
-    if (idx >= size)
+    }
+    if (idx >= size) {
         return 2 * size - idx - 2;
+    }
     return idx;
 }
 
@@ -253,6 +256,46 @@ static inline uint64_t motion_score_pipeline_16(const uint8_t *prev_u8, ptrdiff_
     return sad;
 }
 
+static motion_pipeline_fn select_motion_pipeline(unsigned bpc)
+{
+    motion_pipeline_fn pipeline;
+    if (bpc == 8) {
+        pipeline = motion_score_pipeline_8;
+    } else {
+        pipeline = motion_score_pipeline_16;
+    }
+
+#if ARCH_X86
+    if (vmaf_get_cpu_flags() & VMAF_X86_CPU_FLAG_AVX2) {
+        if (bpc == 8) {
+            pipeline = motion_score_pipeline_8_avx2;
+        } else {
+            pipeline = motion_score_pipeline_16_avx2;
+        }
+    }
+#if HAVE_AVX512
+    if (vmaf_get_cpu_flags() & VMAF_X86_CPU_FLAG_AVX512) {
+        if (bpc == 8) {
+            pipeline = motion_score_pipeline_8_avx512;
+        } else {
+            pipeline = motion_score_pipeline_16_avx512;
+        }
+    }
+#endif
+#endif
+#if ARCH_AARCH64
+    if (vmaf_get_cpu_flags() & VMAF_ARM_CPU_FLAG_NEON) {
+        if (bpc == 8) {
+            pipeline = motion_score_pipeline_8_neon;
+        } else {
+            pipeline = motion_score_pipeline_16_neon;
+        }
+    }
+#endif
+
+    return pipeline;
+}
+
 static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc, unsigned w,
                 unsigned h)
 {
@@ -294,46 +337,16 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
+    if (!s->feature_name_dict) {
         return -ENOMEM;
+    }
 
     s->y_row = malloc(sizeof(*s->y_row) * w);
-    if (!s->y_row)
+    if (!s->y_row) {
         return -ENOMEM;
-
-    if (bpc == 8) {
-        s->pipeline = motion_score_pipeline_8;
-    } else {
-        s->pipeline = motion_score_pipeline_16;
     }
 
-#if ARCH_X86
-    if (vmaf_get_cpu_flags() & VMAF_X86_CPU_FLAG_AVX2) {
-        if (bpc == 8) {
-            s->pipeline = motion_score_pipeline_8_avx2;
-        } else {
-            s->pipeline = motion_score_pipeline_16_avx2;
-        }
-    }
-#if HAVE_AVX512
-    if (vmaf_get_cpu_flags() & VMAF_X86_CPU_FLAG_AVX512) {
-        if (bpc == 8) {
-            s->pipeline = motion_score_pipeline_8_avx512;
-        } else {
-            s->pipeline = motion_score_pipeline_16_avx512;
-        }
-    }
-#endif
-#endif
-#if ARCH_AARCH64
-    if (vmaf_get_cpu_flags() & VMAF_ARM_CPU_FLAG_NEON) {
-        if (bpc == 8)
-            s->pipeline = motion_score_pipeline_8_neon;
-        else
-            s->pipeline = motion_score_pipeline_16_neon;
-    }
-#endif
-
+    s->pipeline = select_motion_pipeline(bpc);
     return 0;
 }
 
@@ -359,8 +372,9 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
                                                        0., index);
     }
 
-    if (!fex->prev_ref.ref)
+    if (!fex->prev_ref.ref) {
         return -EINVAL;
+    }
 
     const unsigned w = s->w;
     const unsigned h = s->h;
@@ -384,67 +398,10 @@ static int close_fex(VmafFeatureExtractor *fex)
     return vmaf_dictionary_free(&s->feature_name_dict);
 }
 
-static int flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
+static void emit_motion_scores(VmafFeatureCollector *feature_collector, const MotionV2State *s,
+                               const char *sad_name, unsigned n_frames, unsigned min_idx,
+                               double stamp_value)
 {
-    MotionV2State *s = fex->priv;
-
-    /*
-     * In the threaded dispatch path flush() is invoked on the *registered*
-     * VmafFeatureExtractorContext rather than on any pool instance.  That
-     * context is never passed through vmaf_feature_extractor_context_init, so
-     * its is_initialized flag is false and vmaf_feature_extractor_context_close
-     * returns early without calling close_fex().  If we were to store the dict
-     * in s->feature_name_dict here it would never be freed.
-     *
-     * Track whether the dict existed before this call.  When it did not (the
-     * registered-context path) we own it locally and must free it before
-     * returning.  When it did (the serial or pool-instance path where extract()
-     * already ran) close_fex() will free it as normal.
-     */
-    const bool dict_locally_owned = (s->feature_name_dict == NULL);
-    if (dict_locally_owned) {
-        s->feature_name_dict =
-            vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-        if (!s->feature_name_dict)
-            return -ENOMEM;
-    }
-
-    VmafDictionaryEntry *e_sad =
-        vmaf_dictionary_get(&s->feature_name_dict, "VMAF_integer_feature_motion_v2_sad_score", 0);
-    const char *sad_name = e_sad ? e_sad->val : "VMAF_integer_feature_motion_v2_sad_score";
-
-    unsigned n_frames = 0;
-    double dummy;
-    while (!vmaf_feature_collector_get_score(feature_collector, sad_name, &dummy, n_frames))
-        n_frames++;
-
-    /* ADR-0337: 3-frame mode only (motion_five_frame_window rejected at init).
-     * stride and min_idx are constants here; the 5-frame branch upstream
-     * a2b59b77 / 4e469601 contains lands when the picture-pool refactor
-     * lands.
-     */
-    const unsigned min_idx = 1;
-    if (n_frames == 0) {
-        if (dict_locally_owned)
-            (void)vmaf_dictionary_free(&s->feature_name_dict);
-        return 1;
-    }
-
-    /* motion3 stamp value: the per-frame motion3 emission for indices
-     * 0..min_idx-1 takes the blended SAD at min_idx. Mirrors upstream
-     * 4e469601 lines 375-396.
-     */
-    double stamp_value = 0.;
-    if (n_frames > min_idx) {
-        double sad_at_min_idx;
-        if (!vmaf_feature_collector_get_score(feature_collector, sad_name, &sad_at_min_idx,
-                                              min_idx)) {
-            stamp_value =
-                MIN(motion_blend(sad_at_min_idx, s->motion_blend_factor, s->motion_blend_offset),
-                    s->motion_max_val);
-        }
-    }
-
     double prev_processed = 0.;
     for (unsigned i = 0; i < n_frames; i++) {
         double score_cur;
@@ -480,16 +437,89 @@ static int flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collec
                                                       "VMAF_integer_feature_motion3_v2_score",
                                                       motion3, i);
     }
+}
 
-    if (dict_locally_owned)
+/* motion3 stamp value: the per-frame motion3 emission for indices
+ * 0..min_idx-1 takes the blended SAD at min_idx. Mirrors upstream
+ * 4e469601 lines 375-396.
+ */
+static double compute_stamp_value(VmafFeatureCollector *feature_collector, const MotionV2State *s,
+                                  const char *sad_name, unsigned n_frames, unsigned min_idx)
+{
+    double stamp_value = 0.;
+    if (n_frames > min_idx) {
+        double sad_at_min_idx;
+        if (!vmaf_feature_collector_get_score(feature_collector, sad_name, &sad_at_min_idx,
+                                              min_idx)) {
+            stamp_value =
+                MIN(motion_blend(sad_at_min_idx, s->motion_blend_factor, s->motion_blend_offset),
+                    s->motion_max_val);
+        }
+    }
+    return stamp_value;
+}
+
+/*
+ * In the threaded dispatch path flush() is invoked on the *registered*
+ * VmafFeatureExtractorContext rather than on any pool instance.  That
+ * context is never passed through vmaf_feature_extractor_context_init, so
+ * its is_initialized flag is false and vmaf_feature_extractor_context_close
+ * returns early without calling close_fex().  If we were to store the dict
+ * in s->feature_name_dict here it would never be freed.
+ *
+ * Track whether the dict existed before this call.  When it did not (the
+ * registered-context path) we own it locally and must free it before
+ * returning.  When it did (the serial or pool-instance path where extract()
+ * already ran) close_fex() will free it as normal.
+ */
+static int flush(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
+{
+    MotionV2State *s = fex->priv;
+    const bool dict_locally_owned = (s->feature_name_dict == nullptr);
+    if (dict_locally_owned) {
+        s->feature_name_dict =
+            vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+        if (!s->feature_name_dict) {
+            return -ENOMEM;
+        }
+    }
+
+    VmafDictionaryEntry *e_sad =
+        vmaf_dictionary_get(&s->feature_name_dict, "VMAF_integer_feature_motion_v2_sad_score", 0);
+    const char *sad_name = e_sad ? e_sad->val : "VMAF_integer_feature_motion_v2_sad_score";
+
+    unsigned n_frames = 0;
+    double dummy;
+    while (!vmaf_feature_collector_get_score(feature_collector, sad_name, &dummy, n_frames)) {
+        n_frames++;
+    }
+
+    /* ADR-0337: 3-frame mode only (motion_five_frame_window rejected at init).
+     * stride and min_idx are constants here; the 5-frame branch upstream
+     * a2b59b77 / 4e469601 contains lands when the picture-pool refactor
+     * lands.
+     */
+    const unsigned min_idx = 1;
+    if (n_frames == 0) {
+        if (dict_locally_owned) {
+            (void)vmaf_dictionary_free(&s->feature_name_dict);
+        }
+        return 1;
+    }
+
+    double stamp_value = compute_stamp_value(feature_collector, s, sad_name, n_frames, min_idx);
+    emit_motion_scores(feature_collector, s, sad_name, n_frames, min_idx, stamp_value);
+
+    if (dict_locally_owned) {
         (void)vmaf_dictionary_free(&s->feature_name_dict);
+    }
 
     return 1;
 }
 
 static const char *provided_features[] = {"VMAF_integer_feature_motion_v2_sad_score",
                                           "VMAF_integer_feature_motion2_v2_score",
-                                          "VMAF_integer_feature_motion3_v2_score", NULL};
+                                          "VMAF_integer_feature_motion3_v2_score", nullptr};
 
 // NOLINTNEXTLINE(misc-use-internal-linkage): extern symbol referenced by feature_extractor.c registry — cross-TU rebase invariant (ADR-0278).
 VmafFeatureExtractor vmaf_fex_integer_motion_v2 = {

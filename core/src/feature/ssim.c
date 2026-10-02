@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright 2016-2026 Netflix, Inc.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -74,8 +75,9 @@ static int ssim_low_pass_alloc(struct iqa_kernel *low_pass, int scale)
     low_pass->bnd_opt = KBND_SYMMETRIC;
     const float inv = 1.0f / (float)scale;
     const float inv2 = 1.0f / (float)(scale * scale);
-    for (int i = 0; i < scale * scale; ++i)
+    for (int i = 0; i < scale * scale; ++i) {
         low_pass->kernel[i] = inv2;
+    }
     for (int i = 0; i < scale; ++i) {
         low_pass->kernel_h[i] = inv;
         low_pass->kernel_v[i] = inv;
@@ -93,10 +95,11 @@ static void ssim_low_pass_free(struct iqa_kernel *low_pass)
 static int ssim_decimate_pair(float *ref_f, float *cmp_f, int *w, int *h, int scale,
                               struct iqa_kernel *low_pass)
 {
-    if (ssim_low_pass_alloc(low_pass, scale) != 0)
+    if (ssim_low_pass_alloc(low_pass, scale) != 0) {
         return -1;
-    int err = iqa_decimate(ref_f, *w, *h, scale, low_pass, 0, 0, 0) ||
-              iqa_decimate(cmp_f, *w, *h, scale, low_pass, 0, w, h);
+    }
+    int err = iqa_decimate(ref_f, *w, *h, scale, low_pass, nullptr, nullptr, nullptr) ||
+              iqa_decimate(cmp_f, *w, *h, scale, low_pass, nullptr, w, h);
     ssim_low_pass_free(low_pass);
     return err ? -1 : 0;
 }
@@ -124,7 +127,7 @@ int compute_ssim(const float *ref, const float *cmp, int w, int h, int ref_strid
 
     /* args is hardcoded NULL (default Gaussian SSIM); the args branch
      * is preserved for upstream-parity readability. */
-    const struct iqa_ssim_args *args = 0;
+    const struct iqa_ssim_args *args = nullptr;
     const int gaussian = 1;
     int scale = (scale_override > 0) ? scale_override : _max(1, _round((float)_min(w, h) / 256.0f));
 
@@ -153,7 +156,7 @@ int compute_ssim(const float *ref, const float *cmp, int w, int h, int ref_strid
         }
     }
 
-    result = iqa_ssim(ref_f, cmp_f, w, h, &window, NULL, args, &l, &c, &s);
+    result = iqa_ssim(ref_f, cmp_f, w, h, &window, nullptr, args, &l, &c, &s);
 
     free(ref_f);
     free(cmp_f);

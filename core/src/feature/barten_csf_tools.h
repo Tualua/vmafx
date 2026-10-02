@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright 2016-2026 Netflix, Inc.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -19,8 +20,6 @@
 #include <math.h>
 #include "common/macros.h"
 #include <errno.h>
-
-#pragma once
 
 #ifndef BARTEN_CSF_TOOLS_H_
 #define BARTEN_CSF_TOOLS_H_
@@ -69,7 +68,8 @@ static float barten_rod_cone_sens(float luminance_level)
     float cvi_low_slope = barten_csf_sa[3];   // p8 in the paper
     /* Promote barten_csf_sa[0] to double; see linear_interpolate above. */
     return (double)barten_csf_sa[0] *
-           pow(pow(cvi_sens_drop / luminance_level, cvi_trans_slope) + 1, -cvi_low_slope);
+           pow(pow((double)(cvi_sens_drop / luminance_level), (double)cvi_trans_slope) + 1.0,
+               (double)-cvi_low_slope);
 }
 
 /*  MTF portion of Barten's CSF */
@@ -105,7 +105,8 @@ static FORCE_INLINE float barten_csf(int lambda, double adm_norm_view_dist,
     double clamped_lum =
         CLAMP(adm_csf_lum_level, barten_csf_param_anchors[0], barten_csf_param_anchors[5]);
 
-    int left_lum_index = 0, right_lum_index = 0;
+    int left_lum_index = 0;
+    int right_lum_index = 0;
     int i = 0;
     while (i < 5) {
         if (clamped_lum >= barten_csf_param_anchors[i] &&
@@ -120,9 +121,9 @@ static FORCE_INLINE float barten_csf(int lambda, double adm_norm_view_dist,
     float left_lum = barten_csf_param_anchors[left_lum_index];
     float right_lum = barten_csf_param_anchors[right_lum_index];
 
-    float left_position = log10(left_lum);
-    float right_position = log10(right_lum);
-    float sample_position = log10(clamped_lum);
+    float left_position = (float)log10((double)left_lum);
+    float right_position = (float)log10((double)right_lum);
+    float sample_position = (float)log10(clamped_lum);
 
     float p_0 =
         linear_interpolate(left_position, barten_csf_params[left_lum_index][1], right_position,
@@ -215,13 +216,12 @@ static FORCE_INLINE float barten_watson_blend_csf_mae(int scale, int theta,
                                                       double adm_norm_view_dist,
                                                       int adm_ref_display_height)
 {
-    if (adm_ref_display_height == 1080 && adm_norm_view_dist == 3.0) {
+    if ((adm_ref_display_height == 1080 && adm_norm_view_dist == 3.0) ||
+        (adm_ref_display_height == 2160 && adm_norm_view_dist == 1.5)) {
+        // 2160@1.5H has the same PPD as 1080@3H (1.5*2160 == 3.0*1080 == 56.55 ppd)
         return BLENDED_CSF_1080_3H_MAE[theta][scale];
     } else if (adm_ref_display_height == 1080 && adm_norm_view_dist == 5.0) {
         return BLENDED_CSF_1080_5H_MAE[theta][scale];
-    } else if (adm_ref_display_height == 2160 && adm_norm_view_dist == 1.5) {
-        // 2160@1.5H has the same PPD as 1080@3H (1.5*2160 == 3.0*1080 == 56.55 ppd)
-        return BLENDED_CSF_1080_3H_MAE[theta][scale];
     } else if (adm_ref_display_height == 2160 && adm_norm_view_dist == 3.0) {
         return BLENDED_CSF_2160_3H_MAE[theta][scale];
     } else if (adm_ref_display_height == 2160 && adm_norm_view_dist == 5.0) {
@@ -246,13 +246,12 @@ static FORCE_INLINE float barten_watson_blend_csf_mae(int scale, int theta,
 static FORCE_INLINE float barten_watson_blend_csf(int scale, int theta, double adm_norm_view_dist,
                                                   int adm_ref_display_height)
 {
-    if (adm_ref_display_height == 1080 && adm_norm_view_dist == 3.0) {
+    if ((adm_ref_display_height == 1080 && adm_norm_view_dist == 3.0) ||
+        (adm_ref_display_height == 2160 && adm_norm_view_dist == 1.5)) {
+        // 2160@1.5H has the same PPD as 1080@3H (1.5*2160 == 3.0*1080 == 56.55 ppd)
         return BLENDED_CSF_1080_3H[theta][scale];
     } else if (adm_ref_display_height == 1080 && adm_norm_view_dist == 5.0) {
         return BLENDED_CSF_1080_5H[theta][scale];
-    } else if (adm_ref_display_height == 2160 && adm_norm_view_dist == 1.5) {
-        // 2160@1.5H has the same PPD as 1080@3H (1.5*2160 == 3.0*1080 == 56.55 ppd)
-        return BLENDED_CSF_1080_3H[theta][scale];
     } else if (adm_ref_display_height == 2160 && adm_norm_view_dist == 3.0) {
         return BLENDED_CSF_2160_3H[theta][scale];
     } else if (adm_ref_display_height == 2160 && adm_norm_view_dist == 5.0) {

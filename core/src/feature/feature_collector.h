@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright 2016-2026 Netflix, Inc.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -49,6 +50,7 @@ extern "C" {
  *  arithmetic and the resulting allocation bounded.  See finding R2-5. */
 #define FEATURE_VECTOR_MAX_INDEX (1u << 28)
 
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units. ADR-1138. */
 typedef struct {
     char *name;
     struct {
@@ -89,6 +91,7 @@ typedef struct VmafFeatureCollector {
      * has already been destroyed (UB). */
     bool destroyed;
 } VmafFeatureCollector;
+/* NOLINTEND(modernize-use-using) */
 
 int vmaf_feature_collector_init(VmafFeatureCollector **const feature_collector);
 

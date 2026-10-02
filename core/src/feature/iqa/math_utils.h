@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2011, Tom Distler (http://tdistler.com)
+ * SPDX-License-Identifier: BSD-3-Clause
  * All rights reserved.
  *
  * The BSD License
@@ -31,11 +32,13 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _MATH_UTILS_H_
-#define _MATH_UTILS_H_
+#ifndef MATH_UTILS_INCLUDED
+#define MATH_UTILS_INCLUDED
 
 #include <math.h>
 #include "iqa_os.h"
+
+/* NOLINTBEGIN(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) (ADR-0148) */
 
 /**
  * Rounds a float to the nearest integer.
@@ -59,4 +62,6 @@ int _cmp_float(float a, float b, int digits);
  */
 int _matrix_cmp(const float *a, const float *b, int w, int h, int digits);
 
-#endif /*_MATH_UTILS_H_*/
+/* NOLINTEND(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp) */
+
+#endif /* MATH_UTILS_INCLUDED */

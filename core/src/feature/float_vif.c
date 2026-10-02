@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright 2016-2020 Netflix, Inc.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -184,23 +185,31 @@ static const VmafOption options[] = {
         .default_val.b = false,
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
-    {0}};
+    {
+        .name = nullptr,
+    },
+};
 
 /* Release everything alloc_buffers() may have taken. Safe on a partial
  * allocation: every pointer is NULL until its own aligned_malloc returns, so
  * this doubles as the unwind path and as close()'s worker. */
 static void free_buffers(VifState *s)
 {
-    if (s->ref)
+    if (s->ref) {
         aligned_free(s->ref);
-    if (s->dist)
+    }
+    if (s->dist) {
         aligned_free(s->dist);
-    if (s->ref_scaled)
+    }
+    if (s->ref_scaled) {
         aligned_free(s->ref_scaled);
-    if (s->dist_scaled)
+    }
+    if (s->dist_scaled) {
         aligned_free(s->dist_scaled);
-    if (s->vif_buf)
+    }
+    if (s->vif_buf) {
         aligned_free(s->vif_buf);
+    }
     vmaf_dictionary_free(&s->feature_name_dict);
 }
 
@@ -214,17 +223,21 @@ static void free_buffers(VifState *s)
 static int alloc_buffers(VmafFeatureExtractor *fex, VifState *s, unsigned h)
 {
     s->ref = aligned_malloc(s->float_stride * h, 32);
-    if (!s->ref)
+    if (!s->ref) {
         return -ENOMEM;
+    }
     s->dist = aligned_malloc(s->float_stride * h, 32);
-    if (!s->dist)
+    if (!s->dist) {
         return -ENOMEM;
+    }
     s->ref_scaled = aligned_malloc(s->scaled_float_stride * s->scaled_h, 32);
-    if (!s->ref_scaled)
+    if (!s->ref_scaled) {
         return -ENOMEM;
+    }
     s->dist_scaled = aligned_malloc(s->scaled_float_stride * s->scaled_h, 32);
-    if (!s->dist_scaled)
+    if (!s->dist_scaled) {
         return -ENOMEM;
+    }
 
     /*
      * Allocate VIF scratch buffer once.  compute_vif carves 10 equal-sized
@@ -235,8 +248,9 @@ static int alloc_buffers(VmafFeatureExtractor *fex, VifState *s, unsigned h)
      */
     const size_t vif_plane_sz = s->scaled_float_stride * s->scaled_h;
     s->vif_buf = aligned_malloc(vif_plane_sz * VIF_SCRATCH_BUF_CNT, MAX_ALIGN);
-    if (!s->vif_buf)
+    if (!s->vif_buf) {
         return -ENOMEM;
+    }
 
     /*
      * ADR-0500 Win #3: pre-compute Gaussian filters for all 4 scales so that
@@ -250,8 +264,9 @@ static int alloc_buffers(VmafFeatureExtractor *fex, VifState *s, unsigned h)
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict)
+    if (!s->feature_name_dict) {
         return -ENOMEM;
+    }
 
     return 0;
 }
@@ -294,8 +309,8 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigne
         return -EINVAL;
     }
 
-    s->scaled_w = (int)(w * s->vif_prescale + 0.5);
-    s->scaled_h = (int)(h * s->vif_prescale + 0.5);
+    s->scaled_w = (size_t)lround(w * s->vif_prescale);
+    s->scaled_h = (size_t)lround(h * s->vif_prescale);
 
     if (s->scaled_w < (size_t)vif_min_dim || s->scaled_h < (size_t)vif_min_dim) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR,
@@ -328,8 +343,9 @@ static int emit_vif_scores(VifState *s, VmafFeatureCollector *feature_collector,
         .skip_scale0 = s->vif_skip_scale0,
         .debug = s->debug,
     };
-    for (size_t i = 0u; i < 8u; ++i)
+    for (size_t i = 0u; i < 8u; ++i) {
         output.scale[i] = scores[i];
+    }
     return vmaf_vif_emit_scores(feature_collector, s->feature_name_dict, "float_vif", &output,
                                 VMAF_VIF_FLOAT_NAMES, index);
 }
@@ -359,15 +375,18 @@ static int extract(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture 
                       s->float_stride / sizeof(float), s->scaled_w, s->scaled_h,
                       s->scaled_float_stride / sizeof(float));
 
-    double score, score_num, score_den;
+    double score;
+    double score_num;
+    double score_den;
     double scores[8];
     err =
         compute_vif(s->ref_scaled, s->dist_scaled, s->scaled_w, s->scaled_h, s->scaled_float_stride,
                     s->scaled_float_stride, &score, &score_num, &score_den, scores,
                     s->vif_enhn_gain_limit, s->vif_kernelscale, s->vif_skip_scale0,
                     s->vif_sigma_nsq, (const float (*)[128])s->filter_cache, s->filter_width_cache);
-    if (err)
+    if (err) {
         return err;
+    }
 
     return emit_vif_scores(s, feature_collector, index, score, score_num, score_den, scores);
 }
@@ -396,8 +415,9 @@ static const char *provided_features[] = {"VMAF_feature_vif_scale0_score",
                                           "vif_den_scale2",
                                           "vif_num_scale3",
                                           "vif_den_scale3",
-                                          NULL};
+                                          nullptr};
 
+// NOLINTNEXTLINE(misc-use-internal-linkage) (ADR-0278)
 VmafFeatureExtractor vmaf_fex_float_vif = {
     .name = "float_vif",
     .init = init,

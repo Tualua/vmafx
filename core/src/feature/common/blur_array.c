@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright 2016-2026 Netflix, Inc.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -26,30 +27,36 @@
 #include <string.h>
 #include "blur_array.h"
 
+static void free_allocated_blur_bufs(BLUR_BUF_ARRAY *arr, int count)
+{
+    /* Free the previously-allocated entries before returning.
+     * Without this, every entry [0 .. i-1] kept its
+     * aligned_malloc pointer alive while the caller saw
+     * actual_length=i and assumed the array was unusable. */
+    for (int j = 0; j < count; j++) {
+        if (arr->blur_buf_array[j].blur_buf != nullptr) {
+            aligned_free(arr->blur_buf_array[j].blur_buf);
+            arr->blur_buf_array[j].blur_buf = nullptr;
+        }
+    }
+}
+
 /*
  * initializes an array of blurred buffers
  */
 int init_blur_array(BLUR_BUF_ARRAY *arr, int array_length, size_t size, size_t alignement)
 {
     // we can't go beyond the max number of threads
-    if (array_length > MAX_NUM_THREADS)
+    if (array_length > MAX_NUM_THREADS) {
         return 0;
+    }
 
     for (int i = 0; i < array_length; i++) {
         arr->blur_buf_array[i].frame_idx = -1;
         arr->blur_buf_array[i].blur_buf = aligned_malloc(size, alignement);
         arr->blur_buf_array[i].reference_count = 0;
-        if (arr->blur_buf_array[i].blur_buf == 0) {
-            /* Free the previously-allocated entries before returning.
-             * Without this, every entry [0 .. i-1] kept its
-             * aligned_malloc pointer alive while the caller saw
-             * actual_length=i and assumed the array was unusable. */
-            for (int j = 0; j < i; j++) {
-                if (arr->blur_buf_array[j].blur_buf) {
-                    aligned_free(arr->blur_buf_array[j].blur_buf);
-                    arr->blur_buf_array[j].blur_buf = 0;
-                }
-            }
+        if (arr->blur_buf_array[i].blur_buf == nullptr) {
+            free_allocated_blur_bufs(arr, i);
             arr->actual_length = 0;
             return 0;
         }
@@ -58,7 +65,7 @@ int init_blur_array(BLUR_BUF_ARRAY *arr, int array_length, size_t size, size_t a
         arr->actual_length = i + 1;
     }
 
-    pthread_mutex_init(&arr->block, NULL);
+    pthread_mutex_init(&arr->block, nullptr);
 
     return 1;
 }
@@ -70,7 +77,7 @@ float *get_blur_buf(BLUR_BUF_ARRAY *arr, int search_frame_idx)
 {
     int array_length = arr->actual_length;
     BLUR_BUF_STRUCT *s = arr->blur_buf_array;
-    float *ret = NULL;
+    float *ret = nullptr;
 
     pthread_mutex_lock(&arr->block);
 
@@ -178,7 +185,7 @@ float *get_free_blur_buf_slot(BLUR_BUF_ARRAY *arr, int frame_idx)
 {
     int array_length = arr->actual_length;
     BLUR_BUF_STRUCT *s = arr->blur_buf_array;
-    float *ret = NULL;
+    float *ret = nullptr;
     pthread_mutex_lock(&arr->block);
 
     for (int i = 0; i < array_length; i++) {

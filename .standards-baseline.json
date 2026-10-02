@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-02T06:30:39Z",
+  "generated_at": "2026-10-02T06:32:19Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "6e5896e0ba36dd97dab36ec390c13336f863679e",
-  "total_infractions": 270,
+  "commit_sha": "1dcb319ede9da4f1083be548243294f3101a9fd9",
+  "total_infractions": 268,
   "infractions": [
     {
       "rule_id": "HISS-04",
@@ -1080,22 +1080,6 @@
       "symbol": "filter1d_16_horizontal_kernel",
       "message": "Function 'filter1d_16_horizontal_kernel' (183 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "core/src/feature/cuda/integer_vif/filter1d.cu:621:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/integer_motion_v2.c",
-      "line_number": 258,
-      "symbol": "init",
-      "message": "Function 'init' (81 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/integer_motion_v2.c:258:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/integer_motion_v2.c",
-      "line_number": 388,
-      "symbol": "flush",
-      "message": "Function 'flush' (101 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/integer_motion_v2.c:388:HISS-04"
     },
     {
       "rule_id": "HISS-04",

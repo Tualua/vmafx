@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright 2016-2026 Netflix, Inc.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -15,8 +16,6 @@
  *     limitations under the License.
  *
  */
-
-#pragma once
 
 #ifndef CONVOLUTION_INTERNAL_H_
 #define CONVOLUTION_INTERNAL_H_
@@ -69,10 +68,11 @@ FORCE_INLINE float convolution_edge_s(bool horizontal, const float *filter, int 
         // Handle edges by mirroring (reflect-101).  The fold is iterative so
         // that planes smaller than radius + 1 stay in bounds; see
         // convolution_reflect101 above (Netflix/vmaf#1582).
-        if (horizontal)
+        if (horizontal) {
             j_tap = convolution_reflect101(j_tap, width);
-        else
+        } else {
             i_tap = convolution_reflect101(i_tap, height);
+        }
 
         /* Two roundings, never one. This helper computes the border pixels
          * of the SIMD convolutions in convolution_avx.c / convolution_avx512.c
@@ -115,10 +115,11 @@ FORCE_INLINE float convolution_edge_sq_s(bool horizontal, const float *filter, i
         // Handle edges by mirroring (reflect-101).  The fold is iterative so
         // that planes smaller than radius + 1 stay in bounds; see
         // convolution_reflect101 above (Netflix/vmaf#1582).
-        if (horizontal)
+        if (horizontal) {
             j_tap = convolution_reflect101(j_tap, width);
-        else
+        } else {
             i_tap = convolution_reflect101(i_tap, height);
+        }
         src_val = src[i_tap * stride + j_tap];
         /* Two roundings, never one — see convolution_edge_s above. */
         const float product = filter[k] * (src_val * src_val);
@@ -134,7 +135,8 @@ FORCE_INLINE float convolution_edge_xy_s(bool horizontal, const float *filter, i
     int radius = filter_width / 2;
 
     float accum = 0;
-    float src_val1, src_val2;
+    float src_val1;
+    float src_val2;
     for (int k = 0; k < filter_width; ++k) {
         int i_tap = horizontal ? i : i - radius + k;
         int j_tap = horizontal ? j - radius + k : j;
@@ -142,10 +144,11 @@ FORCE_INLINE float convolution_edge_xy_s(bool horizontal, const float *filter, i
         // Handle edges by mirroring (reflect-101).  The fold is iterative so
         // that planes smaller than radius + 1 stay in bounds; see
         // convolution_reflect101 above (Netflix/vmaf#1582).
-        if (horizontal)
+        if (horizontal) {
             j_tap = convolution_reflect101(j_tap, width);
-        else
+        } else {
             i_tap = convolution_reflect101(i_tap, height);
+        }
         src_val1 = src1[i_tap * stride1 + j_tap];
         src_val2 = src2[i_tap * stride2 + j_tap];
         /* Two roundings, never one — see convolution_edge_s above. */

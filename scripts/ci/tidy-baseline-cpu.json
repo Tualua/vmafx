@@ -314,7 +314,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 474,
+  "total_warnings": 404,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -331,36 +331,24 @@
     "core/src/feature/adm_options.h": 1,
     "core/src/feature/adm_tools.h": 142,
     "core/src/feature/alias.c": 1,
-    "core/src/feature/barten_csf_tools.h": 7,
-    "core/src/feature/common/blur_array.c": 6,
-    "core/src/feature/common/convolution_internal.h": 8,
     "core/src/feature/feature_characteristics.h": 3,
-    "core/src/feature/feature_collector.h": 4,
     "core/src/feature/feature_name.h": 1,
     "core/src/feature/float_ms_ssim.c": 2,
     "core/src/feature/float_ssim.c": 2,
-    "core/src/feature/float_vif.c": 6,
-    "core/src/feature/integer_motion.c": 9,
-    "core/src/feature/integer_motion.h": 4,
-    "core/src/feature/integer_motion_v2.c": 4,
     "core/src/feature/iqa/iqa.h": 1,
     "core/src/feature/iqa/iqa_options.h": 1,
     "core/src/feature/iqa/iqa_os.h": 1,
-    "core/src/feature/iqa/math_utils.h": 6,
-    "core/src/feature/iqa/ssim_tools.c": 4,
     "core/src/feature/moment_options.h": 1,
     "core/src/feature/motion.c": 2,
     "core/src/feature/motion_blend_tools.h": 1,
     "core/src/feature/motion_options.h": 1,
     "core/src/feature/motion_tools.h": 1,
-    "core/src/feature/ms_ssim.c": 6,
     "core/src/feature/niqe_model.h": 1,
     "core/src/feature/null.c": 1,
     "core/src/feature/picture_copy.cpp": 1,
     "core/src/feature/picture_copy.h": 1,
     "core/src/feature/psnr_options.h": 1,
     "core/src/feature/speed_internal.h": 3,
-    "core/src/feature/ssim.c": 6,
     "core/src/feature/vif_options.h": 1,
     "core/src/feature/vif_tools.h": 1,
     "core/src/feature/x86/float_adm_avx2.c": 7,
@@ -589,6 +577,111 @@
         }
       },
       "previous_baseline_sha256": "3a7c840e40463a24d59148c106b75c13401f22c4b15802412af37b400069f8ad"
+    },
+    {
+      "sources": [
+        "core/src/feature/integer_motion.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/integer_motion.c": {
+          "warnings": [
+            9,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "3e1add88bef16ef3f0799bad194551eb2ef95e686a52cec4cbdb18222268cb96"
+    },
+    {
+      "sources": [
+        "core/src/feature/common/blur_array.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/common/blur_array.c": {
+          "warnings": [
+            6,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "e1e9e4667b6d63c594e777f20973fc10853ecb029dfee2a13c3cd5512fa4f163"
+    },
+    {
+      "sources": [
+        "core/src/feature/float_vif.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/float_vif.c": {
+          "warnings": [
+            6,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "11a7a29ad15c5c19a5f92a1437453af532188be7834b2fe67f007782493fca70"
+    },
+    {
+      "sources": [
+        "core/src/feature/ms_ssim.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/ms_ssim.c": {
+          "warnings": [
+            6,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "e7b6dfe701a3d72fd32bb79ea9425c90e43461c3b38ee2a3fdd05cec959e6a39"
+    },
+    {
+      "sources": [
+        "core/src/feature/ssim.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/ssim.c": {
+          "warnings": [
+            6,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "4e1d25b4fc3cefb20a05c28db126168e60a8c45b593a3c9cc6b7cc3d38069019"
+    },
+    {
+      "sources": [
+        "core/src/feature/integer_motion_v2.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/integer_motion_v2.c": {
+          "warnings": [
+            4,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "b54f8d764d1e36c44959f88910ab6a7df88edb2abbb80cdc7fdccff8ca0fa6ad"
+    },
+    {
+      "sources": [
+        "core/src/feature/iqa/ssim_tools.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/iqa/ssim_tools.c": {
+          "warnings": [
+            4,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "25a092eaf3172ef7b5a77ddaaa8b6df9418923a5eff71c060859e55362e811bb"
     }
   ]
 }
