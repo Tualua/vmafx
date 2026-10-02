@@ -268,7 +268,10 @@ CPU on `auto` compares different quantities, not two backends.
 
 The SYCL device-buffer-only `vmaf_read_pictures_sycl()` path has no host
 pictures, so `float_ssim_sycl` cannot run there and fails its first frame with
-an error.
+`-ENOTSUP` (`float_ssim_sycl: needs host pictures, which zero-copy input does
+not provide`); the same holds for every SYCL extractor that reads chroma or
+host pictures, see the
+[SYCL overview](sycl/overview.md#psnr-psnr_hvs-and-motion_v2-share-the-uploaded-frame-adr-1369-2026-09-29).
 
 ## Related
 

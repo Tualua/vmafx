@@ -33,17 +33,35 @@ so the caller falls back to the D3D11 staging path. DMA-BUF is a Linux kernel
 interface (`ZE_EXTERNAL_MEMORY_TYPE_FLAG_DMA_BUF`); Level Zero on Windows uses
 NT handles instead.
 
-The zero-copy import delivers luma only and hands the extractors no host
-pictures:
+The zero-copy import (FFmpeg `libvmaf_sycl` with QSV surfaces, or any
+caller of `vmaf_read_pictures_sycl()`) imports luma only and hands the
+extractors no host pictures. Today these run on it and score from the
+imported luma: `adm_sycl`, `cambi_sycl`, `float_moment_sycl`, `motion_sycl`
+(without `motion_add_uv`), `motion_v2_sycl`, `vif_sycl`, and `psnr_sycl` /
+`psnr_hvs_sycl` with `enable_chroma=false`. Everything else is refused with
+`-ENOTSUP` (error number 95 on Linux) before the frame changes any state,
+never skipped and never scored from stale data. Two messages name the
+cause:
 
-- `motion_v2_sycl` and `psnr_hvs_sycl` with `enable_chroma=false` need only the
-  imported luma.
-- `psnr_sycl` and `psnr_hvs_sycl` with chroma fail the frame with
-  `psnr_sycl: frame N chroma not on the device (-22)` or
-  `psnr_hvs_sycl: frame N planes not on the device (-22)`.
+- A CPU extractor in the context:
+  `vmaf_read_pictures_sycl: feature extractor '<name>' runs on the CPU and
+  needs host pictures, which zero-copy input does not provide; register
+  its SYCL twin '<twin>' instead` (or `; it has no SYCL twin`).
+- A SYCL extractor that reads host pictures:
+  `<extractor>: needs host pictures, which zero-copy input does not provide (-ENOTSUP)`.
+  This covers `ciede_sycl`, `ssimulacra2_sycl`,
+  `speed_chroma_sycl`, `speed_temporal_sycl`, `float_psnr_sycl`,
+  `float_adm_sycl`, `float_vif_sycl`, `float_motion_sycl`,
+  `float_ms_ssim_sycl`, `integer_ssim_sycl`, `float_ssim_sycl`,
+  `psnr_sycl` and `psnr_hvs_sycl` with chroma, and `motion_sycl` with
+  `motion_add_uv=true`.
 
-This path was not run for the change that introduced the chroma errors (no
-VA-API decode under WSL2).
+`psnr` / `psnr_hvs` with chroma and `motion_add_uv` fail loudly until
+chroma import lands (Stage 2 of the zero-copy work); set
+`enable_chroma=false` to score luma only. Earlier builds returned `-EINVAL`
+(error number 22) or crashed on a missing picture. This
+path was not run through VA-API decode here (no VA-API decode under WSL2);
+`test_sycl_zerocopy_guards` covers every extractor on shared device planes.
 
 ## D3D11 staging-texture import (Windows)
 

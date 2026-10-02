@@ -246,8 +246,10 @@ sycl/
   collect never waits for (`n_subsample` skips). **On rebase**: new
   compute queue that reads shared slots must add its marker there; keep
   fence before ref upload; zero-copy import path imports luma
-  only, so chroma readers must fail (`-EINVAL`) on NULL pictures, never
-  read stale chroma. Guards: `test_sycl_shared_planes`,
+  only, so chroma readers must fail (`-ENOTSUP`, via
+  `vmaf_sycl_require_host_pictures`) on NULL pictures, never read stale
+  chroma. **On rebase**: `sycl_check_zero_copy_extractors` runs before any
+  state mutation in `vmaf_read_pictures_sycl`. Guards: `test_sycl_shared_planes`,
   `test_sycl_init_unwind` (wraps `vmaf_sycl_shared_chroma_init`).
 
 - **`dmabuf_import.cpp` normalizes P010/P012 luma MSB→LSB on every

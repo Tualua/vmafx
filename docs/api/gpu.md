@@ -306,6 +306,14 @@ for (unsigned i = 0; i < nframes; i++) {
 vmaf_flush_sycl(vmaf);
 ```
 
+This path hands the extractors luma only and no host pictures. An extractor
+that needs host pictures (a CPU extractor, or a SYCL one that reads chroma or
+runs a float pipeline) makes `vmaf_read_pictures_sycl()` return `-ENOTSUP`
+(error number 95 on Linux), with one log line naming the extractor, before the
+frame changes any state. It does not crash and does not return `-EINVAL`.
+Register luma-only SYCL extractors (for example `vif_sycl`, `adm_sycl`,
+`motion_v2_sycl`, or `psnr_sycl` with `enable_chroma=false`) for this loop.
+
 ### GPU-resident import paths
 
 ```c
