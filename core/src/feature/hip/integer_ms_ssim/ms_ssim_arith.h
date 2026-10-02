@@ -25,9 +25,10 @@
  *  None of it may be contracted or approximated: the HSACO builds with
  *  `hip_strict_fp_args` (ADR-1407: no FMA contraction, correctly rounded fp32
  *  division and square root), and the one fusion the reference has is spelled
- *  fmaf(). What the kernels add on top is the reduction of l / c / s over a
- *  scale, whose order differs from the CPU's raster order; the host rounds
- *  each per-scale mean to fp32 as iqa_ssim() does, which absorbs it.
+ *  fmaf(). The kernels add nothing on top: the sum of l / c / s over a scale
+ *  is formed on the host in the CPU's raster order, because another order is
+ *  another fp64 sum and its mean can round to the neighbouring float
+ *  (T-GPU-FLOAT-SSIM-FRAME-SUM-ORDER-2026-10-02).
  *
  *  Plain C as well as HIP C++: ms_ssim_score.hip and the device-free
  *  test_hip_ms_ssim_arith.c compile the same lines, and the test holds them
@@ -264,9 +265,9 @@ static inline void vmaf_hip_ms_ssim_constants(float *c1, float *c2, float *c3)
 }
 
 /* iqa_ssim()'s per-scale mean of l, c or s: the fp64 sum over the scale's
- * `samples` window positions, divided, and returned as a float. The rounding
- * to fp32 also absorbs the last-bit difference between the device's
- * block-wise sums and the reference's raster-order sum. */
+ * `samples` window positions, divided, and returned as a float. `sum` has to
+ * be the reference's raster-order sum: the rounding to fp32 does not hide a
+ * sum formed in another order on every input. */
 static inline double vmaf_hip_ms_ssim_scale_mean(double sum, double samples)
 {
     return (double)(float)(sum / samples);

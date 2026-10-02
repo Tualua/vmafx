@@ -58275,3 +58275,32 @@ part).
   `AGENTS.md` from master, put the new rule into a new or matching
   page under `dev/AGENTS.d/`, run `make docs-fragments-write`.
 - No Netflix golden-data, public API or FFmpeg patch impact.
+## `float_ms_ssim_hip` adds the per-scale sums in the CPU's raster order (2026-10-02)
+
+`fix/hip-float-ms-ssim-cpu-frame-sum`, `T-GPU-FLOAT-SSIM-FRAME-SUM-ORDER-2026-10-02`
+(HIP `float_ms_ssim` part); construction of ADR-1438, sample arithmetic of
+ADR-1403 unchanged.
+
+- `core/src/feature/hip/integer_ms_ssim/ms_ssim_score.hip`: `ms_ssim_vert_lcs`
+  has 12 arguments instead of 14: the three partial pointers are one
+  `double *terms` (three planes of `w_final * h_final` doubles, `[l | c | s]`,
+  raster order). The wave and block reduction, `BLOCK_*`, `MIN_WARP_SIZE` and
+  `WARPS_PER_BLOCK` are gone. A rebase that restores a sum on the device makes
+  the twin inexact again; `test_hip_kernel_source_contract.py` rejects it.
+- `core/src/feature/hip/integer_ms_ssim_hip.c`: `scale_block_count`,
+  `l_partials` / `c_partials` / `s_partials` and their `h_` copies are gone;
+  `scale_windows[i]`, `terms[i]` and `h_terms[i]` replace them
+  (`ms_ssim_terms_bytes()`), `ms_ssim_alloc_partials()` /
+  `ms_ssim_unwind_partials()` are `ms_ssim_alloc_terms()` /
+  `ms_ssim_unwind_terms()`, and the pinned planes are `hipHostMallocDefault`
+  instead of write-combined (the host reads them). `ms_ssim_hip_scale_sums()`
+  adds the windows in ascending order. Keep kernel and host from the same
+  side of a conflict.
+- `core/test/float_ms_ssim_order_frame.h` (new, 389 kB): the luma planes of
+  the constructed 176x176 pair. Data, not code: never edit it; a twin test of
+  another backend includes this file instead of adding a copy.
+- `core/test/test_hip_ms_ssim_parity.c` gains `test_ms_ssim_frame_sum_order`.
+- `scripts/ci/exact_twins.d/float_ms_ssim.hip` and `float_ms_ssim_lcs.hip`:
+  evidence line and ADR list.
+- No Netflix golden-data, public API, CLI or FFmpeg patch impact. The CPU
+  extractor is not touched.

@@ -533,6 +533,41 @@ def _ms_ssim_failures(src: dict[str, str]) -> list[str]:
     return failures
 
 
+# float_ms_ssim_hip stores the l / c / s of every window at its raster position.
+MS_TERM_STORES = (
+    "terms[window] = lcs.l;",
+    "terms[windows + window] = lcs.c;",
+    "terms[2u * windows + window] = lcs.s;",
+)
+
+
+def _ms_ssim_raster_failures(src: dict[str, str]) -> list[str]:
+    """T-GPU-FLOAT-SSIM-FRAME-SUM-ORDER-2026-10-02: the host adds every scale in raster order."""
+    failures: list[str] = []
+    kernel = _code(src[MS_KERNEL])
+    for store in MS_TERM_STORES:
+        if store not in kernel:
+            failures.append(f"{MS_KERNEL}: pass 2 does not store a window's term ({store})")
+    if "const size_t window = (size_t)y * w_final + x;" not in kernel:
+        failures.append(f"{MS_KERNEL}: the terms are not stored at the window's raster position")
+    if "__shared__" in kernel or "__shfl" in kernel:
+        failures.append(f"{MS_KERNEL}: the per-window terms are reduced on the device")
+    host = _code(src[MS_HOST])
+    if "s->scale_windows[i] = (size_t)s->scale_w_final[i] * s->scale_h_final[i];" not in host:
+        failures.append(f"{MS_HOST}: the terms read back are not one per window")
+    if "hipHostMallocWriteCombined" in host:
+        failures.append(f"{MS_HOST}: the host reads the terms from write-combined memory")
+    sums = _squeeze(_function_body(host, "ms_ssim_hip_scale_sums"))
+    if (
+        "for (size_t j = 0u; j < windows; j++) { l_sum += l[j]; c_sum += c[j]; s_sum += sv[j]; }"
+        not in sums
+    ):
+        failures.append(f"{MS_HOST}: the per-scale sums are no longer added in ascending order")
+    if "ms_ssim_hip_scale_sums(s, i, &total_l, &total_c, &total_s);" not in host:
+        failures.append(f"{MS_HOST}: collect() does not take the sums in the CPU's order")
+    return failures
+
+
 def _failures(src: dict[str, str]) -> list[str]:
     return (
         _motion_failures(src)
@@ -541,6 +576,7 @@ def _failures(src: dict[str, str]) -> list[str]:
         + _staging_failures(src)
         + _float_ssim_decimation_failures(src)
         + _ms_ssim_failures(src)
+        + _ms_ssim_raster_failures(src)
     )
 
 
@@ -1164,6 +1200,62 @@ class HipKernelSourceContractTest(unittest.TestCase):
             "const double msssim = pow(l_means[4], 0.1333) * pow(c_means[4], 0.1333);",
         )
         self.assert_detected(src, "Wang combine of its own")
+
+    def test_ms_ssim_block_sum_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            MS_KERNEL,
+            "    terms[window] = lcs.l;",
+            "    __shared__ double s_l_warp[4];\n"
+            "    s_l_warp[threadIdx.y] = lcs.l + __shfl_down(lcs.l, 1);",
+        )
+        self.assert_detected(src, "does not store a window's term")
+        self.assert_detected(src, "reduced on the device")
+
+    def test_ms_ssim_unordered_terms_are_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            MS_KERNEL,
+            "const size_t window = (size_t)y * w_final + x;",
+            "const size_t window = (size_t)x * h_final + y;",
+        )
+        self.assert_detected(src, "not stored at the window's raster position")
+
+    def test_ms_ssim_block_sized_readback_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            MS_HOST,
+            "s->scale_windows[i] = (size_t)s->scale_w_final[i] * s->scale_h_final[i];",
+            "s->scale_windows[i] = (size_t)s->scale_grid_x[i] * s->scale_grid_y[i];",
+        )
+        self.assert_detected(src, "not one per window")
+
+    def test_ms_ssim_write_combined_readback_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            MS_HOST,
+            "ms_ssim_terms_bytes(s, i), hipHostMallocDefault);",
+            "ms_ssim_terms_bytes(s, i), hipHostMallocWriteCombined);",
+        )
+        self.assert_detected(src, "write-combined memory")
+
+    def test_ms_ssim_descending_scale_sum_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            MS_HOST,
+            "    for (size_t j = 0u; j < windows; j++) {",
+            "    for (size_t j = windows; j-- > 0u;) {",
+        )
+        self.assert_detected(src, "ascending order")
+
+    def test_ms_ssim_block_order_collect_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            MS_HOST,
+            "        ms_ssim_hip_scale_sums(s, i, &total_l, &total_c, &total_s);",
+            "        ms_ssim_hip_block_sums(s, i, &total_l, &total_c, &total_s);",
+        )
+        self.assert_detected(src, "does not take the sums in the CPU's order")
 
 if __name__ == "__main__":
     unittest.main()

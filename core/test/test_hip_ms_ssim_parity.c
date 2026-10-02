@@ -25,6 +25,16 @@
  * value bit for bit. The tolerance tests above it stay as the coarse gate
  * for the dB options.
  *
+ * The per-scale sums are the CPU's as well: ssim_accumulate_default_scalar()
+ * adds the l, c and s terms of a scale into one double each in raster order,
+ * every add rounds, and the twin reads the terms back and adds them in that
+ * order. A sum of the same terms in another order is another double, and on
+ * the constructed pair of float_ms_ssim_order_frame.h one mean rounds to the
+ * neighbouring float (T-GPU-FLOAT-SSIM-FRAME-SUM-ORDER-2026-10-02): the twin
+ * returned 0x3f7c499f for float_ms_ssim_c_scale1 there while it added per
+ * wave and block, the CPU returns 0x3f7c49a0.
+ * test_ms_ssim_frame_sum_order holds the twin to the CPU's bits on that pair.
+ *
  * Skip behaviour: if vmaf_hip_state_init() fails (no HIP runtime or
  * no device visible) the test emits "[skip: no HIP device]" and passes.
  */
@@ -37,6 +47,8 @@
 #include <string.h>
 
 #include "test.h"
+
+#include "float_ms_ssim_order_frame.h"
 
 #include "feature/feature_extractor.h"
 #include "libvmaf/libvmaf.h"
@@ -402,12 +414,142 @@ static char *test_ms_ssim_matches_cpu_bit_for_bit(void)
     return NULL;
 }
 
+/* ------------------------------------------------------------------ */
+/* T-GPU-FLOAT-SSIM-FRAME-SUM-ORDER-2026-10-02 — the per-scale sums in   */
+/* the CPU's raster order.                                              */
+/* ------------------------------------------------------------------ */
+
+/* One picture of float_ms_ssim_order_frame.h: the stored luma plane, and
+ * chroma at 128 (float_ms_ssim scores luma only). */
+static int order_frame_picture(VmafPicture *pic, const unsigned char *luma)
+{
+    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, 8u, FLOAT_MS_SSIM_ORDER_W,
+                                 FLOAT_MS_SSIM_ORDER_H);
+    if (err) {
+        return err;
+    }
+    for (unsigned row = 0; row < pic->h[0]; row++) {
+        memcpy((uint8_t *)pic->data[0] + ((size_t)row * pic->stride[0]),
+               luma + ((size_t)row * pic->w[0]), pic->w[0]);
+    }
+    for (unsigned p = 1; p < 3u; p++) {
+        for (unsigned row = 0; row < pic->h[p]; row++) {
+            memset((uint8_t *)pic->data[p] + ((size_t)row * pic->stride[p]), 128, pic->w[p]);
+        }
+    }
+    return 0;
+}
+
+static int order_frame_feed(VmafContext *vmaf)
+{
+    VmafPicture ref;
+    VmafPicture dist;
+    int err = order_frame_picture(&ref, float_ms_ssim_order_ref_luma);
+    if (err) {
+        return err;
+    }
+    err = order_frame_picture(&dist, float_ms_ssim_order_dis_luma);
+    if (err) {
+        (void)vmaf_picture_unref(&ref);
+        return err;
+    }
+    err = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
+    return err ? err : vmaf_read_pictures(vmaf, NULL, NULL, 0);
+}
+
+/* The 16 outputs of the constructed pair from one extractor; `hip_state`
+ * NULL runs the CPU. */
+static int order_frame_scores(VmafHipState *hip_state, double out[MS_EXACT_KEYS])
+{
+    VmafFeatureDictionary *opts = NULL;
+    VmafContext *vmaf = NULL;
+    int err = vmaf_feature_dictionary_set(&opts, "enable_lcs", "true");
+    if (err) {
+        (void)vmaf_feature_dictionary_free(&opts);
+        return err;
+    }
+    err = ms_context_new(&vmaf, hip_state, opts);
+    if (!err) {
+        err = order_frame_feed(vmaf);
+    }
+    for (unsigned k = 0; !err && k < MS_EXACT_KEYS; k++) {
+        err = vmaf_feature_score_at_index(vmaf, ms_exact_keys[k], &out[k], 0u);
+    }
+    const int closed = vmaf ? vmaf_close(vmaf) : 0;
+    return err ? err : closed;
+}
+
+/* The bits of the `float` behind a per-scale mean. The mean is a float
+ * widened to double, so the narrowing is exact. */
+static uint32_t order_frame_float_bits(double mean)
+{
+    const float narrowed = (float)mean;
+    uint32_t bits = 0u;
+    memcpy(&bits, &narrowed, sizeof(bits));
+    return bits;
+}
+
+/* The outputs of the constructed pair that are not the CPU's, each reported. */
+static unsigned order_frame_mismatches(const double *cpu, const double *gpu)
+{
+    unsigned differing = 0u;
+    for (unsigned k = 0; k < MS_EXACT_KEYS; k++) {
+        if (ms_exact_bits(cpu[k]) == ms_exact_bits(gpu[k])) {
+            continue;
+        }
+        differing++;
+        (void)fprintf(stderr, "\n%s: cpu=%.17g (0x%08x) hip=%.17g (0x%08x)", ms_exact_keys[k],
+                      cpu[k], order_frame_float_bits(cpu[k]), gpu[k],
+                      order_frame_float_bits(gpu[k]));
+    }
+    return differing;
+}
+
+/* On this pair the mean of scale 1's contrast terms added per wave and block
+ * is the neighbouring float (0x3f7c499f). The CPU's value is checked first:
+ * it is the fixture's premise and needs no device. */
+static char *test_ms_ssim_frame_sum_order(void)
+{
+    double cpu[MS_EXACT_KEYS] = {0};
+    double gpu[MS_EXACT_KEYS] = {0};
+    mu_assert("CPU: float_ms_ssim on the constructed pair failed",
+              order_frame_scores(NULL, cpu) == 0);
+    uint32_t premise = 0u;
+    for (unsigned k = 0; k < MS_EXACT_KEYS; k++) {
+        if (!strcmp(ms_exact_keys[k], FLOAT_MS_SSIM_ORDER_KEY)) {
+            premise = order_frame_float_bits(cpu[k]);
+        }
+    }
+    if (premise != FLOAT_MS_SSIM_ORDER_CPU_BITS) {
+        (void)fprintf(stderr, "\ncpu %s bits 0x%08x, the fixture expects 0x%08x\n",
+                      FLOAT_MS_SSIM_ORDER_KEY, premise, FLOAT_MS_SSIM_ORDER_CPU_BITS);
+    }
+    mu_assert("the CPU float_ms_ssim of the constructed pair is not the fixture's value",
+              premise == FLOAT_MS_SSIM_ORDER_CPU_BITS);
+
+    VmafHipState *hip_state = ms_hip_state();
+    if (!hip_state) {
+        return NULL;
+    }
+    const int gpu_err = order_frame_scores(hip_state, gpu);
+    vmaf_hip_state_free(&hip_state);
+    if (gpu_err == -ENOSYS) {
+        (void)fprintf(stderr, "[skip: integer_ms_ssim_hip is a scaffold (-ENOSYS)] ");
+        return NULL;
+    }
+    mu_assert("HIP: integer_ms_ssim_hip on the constructed pair failed", gpu_err == 0);
+    mu_assert("float_ms_ssim_hip does not add the per-scale sums in the CPU's raster order",
+              order_frame_mismatches(cpu, gpu) == 0u);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_ms_ssim_hip_registered);
     mu_run_test(test_ms_ssim_cpu_hip_parity);
     mu_run_test(test_ms_ssim_clip_db_ceiling);
     mu_run_test(test_ms_ssim_matches_cpu_bit_for_bit);
+    mu_run_test(test_ms_ssim_frame_sum_order);
     return NULL;
 }
 

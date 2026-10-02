@@ -320,7 +320,7 @@ static void ms_block_sums(const MsHorizontal *hz, int bx, int by, const float *c
 }
 
 /* The l, c and s means of one level, as collect() forms them from the
- * per-block sums. */
+ * per-window terms. */
 static int ms_level_means(const MsLevel *lv, const float *consts, double *means)
 {
     MsHorizontal hz = {0};

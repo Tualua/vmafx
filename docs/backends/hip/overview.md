@@ -188,6 +188,9 @@ CUDA twin exact first):
   3840x2160 frame;
 - luminance and contrast divide an fp64 numerator by an fp32 denominator and
   structure is an fp32 quotient, as in `iqa/ssim_tools.c`;
+- the device returns the l, c and s terms of every window and the host adds
+  them in raster order into one `double` per sum, as `iqa/ssim_tools.c` does
+  (see [the per-scale sums](#the-per-scale-sums-are-added-in-the-cpus-order-2026-10-02));
 - the host rounds each per-scale mean to fp32 and combines the scales with
   `fabs()` on all three terms, as `ms_ssim.c` does.
 
@@ -201,11 +204,54 @@ from 30.3 to 36.9 ms per 1920x1080 frame and from 158 to 169 ms per 3840x2160
 frame (medians of seven interleaved runs under other load; a second set of
 nine gave 32.4 to 39.5 and 126 to 137).
 
-The one thing left that is not the CPU's is the order in which the device adds
-the l, c and s terms of a scale (per block, where the CPU adds in raster
-order). The sums are fp64 and each mean is rounded to fp32, so the orders
-would have to differ by about one part in 10^8 of a mean to show; they differ
-by about one part in 10^14.
+### The per-scale sums are added in the CPU's order (2026-10-02)
+
+Until 2026-10-02 one step was the twin's own: the device added the l, c and s
+terms of a scale per wave and per 16x8 block and the host added the blocks,
+where `iqa/ssim_tools.c` adds every window into one `double` per sum in raster
+order. Every add rounds, so the two sums differ in their last bits, and the
+`float` rounding of the mean hides that except when a mean lies next to a
+rounding boundary. A search for such a mean (independent uniform noise at
+176x176, the smallest frame `float_ms_ssim` takes; a host build that forms
+both sums) found one in 5.28 million frames: on that pair the CPU returns
+`float_ms_ssim_c_scale1` = 0.9854984283447266 (float bits `0x3f7c49a0`) and
+the twin returned 0.9854983687400818 (`0x3f7c499f`), which moved
+`float_ms_ssim` by 1.3e-9.
+
+The pass-2 kernel now stores the three terms of every window and the host
+adds each scale in raster order, the construction that made
+`integer_ssim_hip` exact
+([ADR-1438](../../adr/1438-hip-ssim-cpu-frame-sum.md)). The pair returns the
+CPU's bits on all 16 outputs; `core/test/float_ms_ssim_order_frame.h` holds
+its luma planes and `test_hip_ms_ssim_parity` compares every output with the
+same build's CPU extractor.
+
+Measured on a gfx1036 at `--precision max` against `--backend cpu`: on the
+178 frames of the HIP sweep (fourteen fixtures, 480x270 to 3840x2160, 8 to 16
+bits) `float_ms_ssim` is identical on 178 of 178 frames and all 2848 values
+of `enable_lcs=true` are; the same with `enable_db` and `clip_db`. On 120
+noise frames from 176x176 to 320x200 at 8, 10 and 16 bits all 2040 values are
+identical.
+
+The device now returns three `double` values per window instead of three per
+block, and the host adds every window. Steady state, medians of 32
+interleaved pairs of runs (two sets, with and without `enable_lcs`, which
+does the same device and host work), while other work loaded the host:
+
+| Frame | Before | After |
+|---|---|---|
+| 576x324 | 2.75 ms | 2.80 ms |
+| 1920x1080 | 37.3 ms | 42.7 ms |
+| 3840x2160 | 183.1 ms | 200.8 ms |
+
+Single sets of seven or nine pairs ranged from +5 % to +47 % at 3840x2160
+and from +9 % to +23 % at 1920x1080 (one set at 1080p alternated between 36
+and 70 ms): the host loop reads 65 MB per 1920x1080 frame and 262 MB per
+3840x2160 frame and competes with whatever else uses the host's memory. That
+is also the memory the twin now holds twice, on the device and pinned on the
+host: 24 bytes per window of every scale. The open tuning row is
+`T-HIP-FLOAT-MS-SSIM-EXACT-THROUGHPUT-2026-10-02` in
+[`docs/state.md`](../../state.md).
 
 `test_hip_ms_ssim_arith` replays the kernels' arithmetic on the host against
 the CPU extractor and needs no AMD device; `test_hip_ms_ssim_parity` compares
@@ -1292,10 +1338,11 @@ each twin took the CPU's arithmetic, from its own pull request (ms per
 `T-HIP-SSIMULACRA2-EXACT-THROUGHPUT-2026-10-02` and
 `T-HIP-CIEDE-EXACT-THROUGHPUT-2026-10-02`.
 
-`float_ms_ssim` is exact up to one rounding: the per-scale means are rounded
-to `float` on both sides, which absorbs the order in which the twin adds the
-windows unless a sum lies within its own rounding error of a rounding
-boundary. No mean differed on these frames.
+`float_ms_ssim` adds its windows on the host in the CPU's raster order since
+2026-10-02. Before that the twin added them per block, which the rounding of
+the per-scale means to `float` hid on every frame of this table and not on
+one constructed noise frame; see
+[the per-scale sums](#the-per-scale-sums-are-added-in-the-cpus-order-2026-10-02).
 
 ```bash
 python3 scripts/ci/run_meson_test.py -- -C build-hip test_hip_exact_twins

@@ -440,7 +440,7 @@ further by-value large-struct kernel parameter without an ADR.
   has (the ADR-0756 audit lists those kernels). Research-0759's statement that
   CUDA uses a pointer, and ADR-0759's "matches the CUDA pattern", are wrong.
 
-## ms_ssim_vert_lcs kernel and host partials must both be `double` (ADR-1071)
+## ms_ssim_vert_lcs kernel and host terms must both be `double` (ADR-1071)
 
 `ms_ssim_score.hip` kernel's `ms_ssim_vert_lcs` function and host
 extractor `integer_ms_ssim_hip.c` share pair of allocation /
@@ -451,12 +451,14 @@ producing numerical garbage.
 
 **Invariant:**
 
-1. Kernel (`ms_ssim_vert_lcs`) writes `double *l_partials`, `double *c_partials`,
-   `double *s_partials` — one `double` per HIP block.
-2. Host (`MsSsimStateHip`) allocates device and pinned-host partial arrays as
-   `sizeof(double)` per block slot (across all 5 MS-SSIM scales).
-3. DtoH copy: `hipMemcpyAsync(..., sizeof(double) * num_blocks, ...)`.
-4. Host accumulator: `double *h_{l,c,s}_partials[MS_SSIM_SCALES]`.
+1. Kernel (`ms_ssim_vert_lcs`) writes `double *terms` — three planes
+   `[l | c | s]`, one `double` per window, raster order (see frame-sum section
+   below; was one `double` per HIP block until 2026-10-02).
+2. Host (`MsSsimStateHip`) allocates device `terms[i]` and pinned-host
+   `h_terms[i]` as `3 * scale_windows[i] * sizeof(double)` per scale
+   (`ms_ssim_terms_bytes()`), all 5 MS-SSIM scales.
+3. DtoH copy: `hipMemcpyAsync(..., ms_ssim_terms_bytes(s, i), ...)`.
+4. Host accumulator: `double *h_terms[MS_SSIM_SCALES]`.
 5. `c1`, `c2`, `c3` = `double` in both kernel params and `MsSsimStateHip`.
 
 Established by ADR-1071 as direct port of CUDA ADR-0990 fix. Future
@@ -491,9 +493,8 @@ Rebase-sensitive:
   `MAX(0.0, x)`, fp64 numerator over fp32 denominator for l and c, s = fp32
   quotient. Constants fp32 (`vmaf_hip_ms_ssim_constants()`), passed to the
   kernel as doubles and narrowed back (item 5 above still holds).
-- Host: `vmaf_hip_ms_ssim_scale_mean()` rounds each mean to fp32 (also absorbs
-  the block-order fp64 sum), `vmaf_hip_ms_ssim_combine()` = `ms_ssim.c`
-  product with `fabs()` on l, c, s.
+- Host: `vmaf_hip_ms_ssim_scale_mean()` rounds each mean to fp32,
+  `vmaf_hip_ms_ssim_combine()` = `ms_ssim.c` product with `fabs()` on l, c, s.
 - CPU change to `ms_ssim_decimate.c`, `iqa/convolve.c`, `iqa/ssim_tools.c`
   (default accumulate) or `ms_ssim.c` (combine) -> same change in the header,
   same PR.
@@ -501,6 +502,33 @@ Rebase-sensitive:
   10 bit, odd size; two-sum exactness), `test_hip_ms_ssim_parity` +
   `_large` (device, `==`, 48 outputs), `test_hip_kernel_source_contract.py`
   (10 planted regressions).
+
+## float_ms_ssim_hip per-scale sums = CPU raster order (2026-10-02)
+
+`T-GPU-FLOAT-SSIM-FRAME-SUM-ORDER-2026-10-02`, HIP part; ADR-1438
+construction. Rebase-sensitive:
+
+- CPU `iqa/ssim_tools.c` `ssim_accumulate_default_scalar()`: `l`, `c`, `s` of
+  every window into one double per sum, raster order, mean rounded to fp32.
+  Another order = another double. fp32 rounding of the mean does NOT absorb
+  it: pair in `core/test/float_ms_ssim_order_frame.h` (176x176, found in 5.3e6
+  noise frames) gave `float_ms_ssim_c_scale1` `0x3f7c499f` with the old
+  per-wave / per-block sum, CPU `0x3f7c49a0`; score moved 1.3e-9.
+- Kernel: `terms[window]`, `terms[windows + window]`,
+  `terms[2 * windows + window]`, `window = y * w_final + x`. No `__shared__`,
+  no `__shfl_down`, no block sum.
+- Host: `ms_ssim_hip_scale_sums()` adds `j = 0 .. windows - 1`, three chains
+  in one pass. Do not reorder, vectorise across `j`, or split per row.
+- Pinned host planes = `hipHostMallocDefault`. Write-combined = uncached
+  reads, host loop reads every double.
+- Fixture header: bytes shared with other backends' twin tests, never edit;
+  luma only (chroma any value).
+- Guards: `test_hip_ms_ssim_parity` (`test_ms_ssim_frame_sum_order`, device,
+  16 outputs by bits + CPU premise without device),
+  `test_hip_kernel_source_contract.py` (6 planted regressions).
+- Cost: readback 24 bytes per window per scale (262 MB per 4K frame, on the
+  device and pinned). Tuning row
+  `T-HIP-FLOAT-MS-SSIM-EXACT-THROUGHPUT-2026-10-02`.
 
 ## Twins declared exact (ADR-1437, `scripts/ci/exact_twins.d/`)
 
@@ -514,10 +542,9 @@ full-range noise; options too. Already listed: `adm_hip`, `float_motion_hip`,
   psnr ADR-1382, cambi ADR-1378) or CPU arithmetic type for type (ms_ssim
   ADR-1403). A float reduction, a host copy of a CPU routine, or a device
   libm call in any of them breaks the listing: fix the twin, never loosen.
-- `integer_ms_ssim_hip`: per-scale fp64 sum in block order, mean rounded to
-  fp32. Rounding absorbs the order except within the sum's own rounding error
-  of an fp32 boundary (estimate: a few means per million). A mean that ever
-  differs -> add in raster order.
+- `integer_ms_ssim_hip`: per-scale fp64 sum in the CPU's raster order on the
+  host since 2026-10-02 (a mean differed on a constructed frame; section
+  above), mean rounded to fp32.
 - NOT exact, do not list: `float_moment_hip` (exact integer squares; CPU rounds
   each square to float, differs at 16 bits; `float_psnr_hip` became exact
   under ADR-1440 below). Both identical on every real clip measured.

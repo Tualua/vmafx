@@ -15,14 +15,15 @@
  *       the float-normalised level 0 (picture_copy output).
  *    2. ms_ssim_horiz — horizontal 11-tap separable Gaussian over
  *       ref / cmp / ref² / cmp² / ref·cmp.
- *    3. ms_ssim_vert_lcs — vertical 11-tap + per-pixel l/c/s +
- *       per-block double partial triples (l, c, s).
+ *    3. ms_ssim_vert_lcs — vertical 11-tap + the l / c / s terms of
+ *       every window, one double each, in raster order.
  *
  *  Host side normalises uint → float [0,255] via picture_copy, uploads
  *  to level 0, builds the pyramid, runs horiz + vert_lcs for all 5
- *  scales on a single stream, reads back per-scale partials, then
- *  adds them in double, rounds each per-scale mean to fp32 and applies
- *  the Wang weights in collect().
+ *  scales on a single stream, reads back the per-window terms of every
+ *  scale, then adds them in double in the reference's raster order,
+ *  rounds each per-scale mean to fp32 and applies the Wang weights in
+ *  collect().
  *
  *  The arithmetic is the CPU extractor's (ADR-1403): the kernels compute
  *  every sample through integer_ms_ssim/ms_ssim_arith.h, and collect()
@@ -37,8 +38,9 @@
  *  - Pictures arrive as CPU VmafPictures (VMAF_FEATURE_EXTRACTOR_HIP
  *    flag cleared, T7-10b posture). Luma planes are copied HtoD via
  *    `hipMemcpy2DAsync` on the private submit stream.
- *  - Per-scale pinned-host partials are allocated via
- *    `hipHostMalloc` (write-combined flag) for async DtoH.
+ *  - The per-scale pinned-host term planes are allocated via
+ *    `hipHostMalloc` (default flag: the host reads every double back, and
+ *    write-combined memory is not cached for reads) for async DtoH.
  *
  *  Min-dim guard: 11 << 4 = 176 (matches ADR-0153).
  *  enable_lcs (ADR-0243 pattern): when set, emits the 15 extra per-scale
@@ -129,7 +131,8 @@ typedef struct MsSsimStateHip {
     unsigned scale_h_final[MS_SSIM_SCALES];
     unsigned scale_grid_x[MS_SSIM_SCALES];
     unsigned scale_grid_y[MS_SSIM_SCALES];
-    unsigned scale_block_count[MS_SSIM_SCALES];
+    /* Windows of a scale: scale_w_final * scale_h_final. */
+    size_t scale_windows[MS_SSIM_SCALES];
 
     /* iqa_ssim()'s fp32 stabilisation constants, carried as doubles: the
      * kernel's argument list takes doubles (ADR-0990) and narrows them back
@@ -157,15 +160,12 @@ typedef struct MsSsimStateHip {
     void *d_cmp_sq;
     void *d_refcmp;
 
-    /* Per-scale device partials (hipMalloc, sizeof(double) per ADR-0990). */
-    void *l_partials[MS_SSIM_SCALES];
-    void *c_partials[MS_SSIM_SCALES];
-    void *s_partials[MS_SSIM_SCALES];
+    /* Per-scale device terms (hipMalloc): three planes of scale_windows
+     * doubles, [l | c | s], each in raster order. */
+    void *terms[MS_SSIM_SCALES];
 
-    /* Per-scale pinned host partials for async DtoH (hipHostMalloc, sizeof(double)). */
-    double *h_l_partials[MS_SSIM_SCALES];
-    double *h_c_partials[MS_SSIM_SCALES];
-    double *h_s_partials[MS_SSIM_SCALES];
+    /* The same planes in pinned host memory for the async DtoH (hipHostMalloc). */
+    double *h_terms[MS_SSIM_SCALES];
 
     /* HIP module + three kernel handles. */
     hipModule_t module;
@@ -254,7 +254,7 @@ static void ms_ssim_hip_init_dims(MsSsimStateHip *s, unsigned w, unsigned h, uns
         s->scale_h_final[i] = s->scale_h[i] - (MS_SSIM_K - 1u);
         s->scale_grid_x[i] = (s->scale_w_final[i] + MS_SSIM_BLOCK_X - 1u) / MS_SSIM_BLOCK_X;
         s->scale_grid_y[i] = (s->scale_h_final[i] + MS_SSIM_BLOCK_Y - 1u) / MS_SSIM_BLOCK_Y;
-        s->scale_block_count[i] = s->scale_grid_x[i] * s->scale_grid_y[i];
+        s->scale_windows[i] = (size_t)s->scale_w_final[i] * s->scale_h_final[i];
     }
 
     /* iqa_ssim(): the stabilisation constants are fp32. */
@@ -383,20 +383,12 @@ static int ms_ssim_unwind_refcmp(MsSsimStateHip *s, hipError_t rc)
     return ms_ssim_unwind_cmp_sq(s, rc);
 }
 
-static int ms_ssim_unwind_partials(MsSsimStateHip *s, hipError_t rc)
+static int ms_ssim_unwind_terms(MsSsimStateHip *s, hipError_t rc)
 {
     for (int i = MS_SSIM_SCALES - 1; i >= 0; i--) {
-        if (s->s_partials[i]) {
-            (void)hipFree(s->s_partials[i]);
-            s->s_partials[i] = NULL;
-        }
-        if (s->c_partials[i]) {
-            (void)hipFree(s->c_partials[i]);
-            s->c_partials[i] = NULL;
-        }
-        if (s->l_partials[i]) {
-            (void)hipFree(s->l_partials[i]);
-            s->l_partials[i] = NULL;
+        if (s->terms[i]) {
+            (void)hipFree(s->terms[i]);
+            s->terms[i] = NULL;
         }
     }
     (void)hipFree(s->d_refcmp);
@@ -407,20 +399,12 @@ static int ms_ssim_unwind_partials(MsSsimStateHip *s, hipError_t rc)
 static int ms_ssim_unwind_pinned(MsSsimStateHip *s, hipError_t rc)
 {
     for (int i = MS_SSIM_SCALES - 1; i >= 0; i--) {
-        if (s->h_s_partials[i]) {
-            (void)hipHostFree(s->h_s_partials[i]);
-            s->h_s_partials[i] = NULL;
-        }
-        if (s->h_c_partials[i]) {
-            (void)hipHostFree(s->h_c_partials[i]);
-            s->h_c_partials[i] = NULL;
-        }
-        if (s->h_l_partials[i]) {
-            (void)hipHostFree(s->h_l_partials[i]);
-            s->h_l_partials[i] = NULL;
+        if (s->h_terms[i]) {
+            (void)hipHostFree(s->h_terms[i]);
+            s->h_terms[i] = NULL;
         }
     }
-    return ms_ssim_unwind_partials(s, rc);
+    return ms_ssim_unwind_terms(s, rc);
 }
 
 /* Level-0 float staging (device) plus the pinned host upload buffers. */
@@ -482,55 +466,32 @@ static int ms_ssim_alloc_intermed(MsSsimStateHip *s, size_t horiz_max)
     return 0;
 }
 
-/* Per-scale device partials (sizeof(double) per ADR-0990). */
-static int ms_ssim_alloc_partials(MsSsimStateHip *s)
+/* Bytes of one scale's three term planes. */
+static size_t ms_ssim_terms_bytes(const MsSsimStateHip *s, int i)
+{
+    return 3u * s->scale_windows[i] * sizeof(double);
+}
+
+/* Per-scale device terms. */
+static int ms_ssim_alloc_terms(MsSsimStateHip *s)
 {
     for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        const size_t pb = (size_t)s->scale_block_count[i] * sizeof(double);
-        hipError_t hip_rc = hipMalloc(&s->l_partials[i], pb);
+        const hipError_t hip_rc = hipMalloc(&s->terms[i], ms_ssim_terms_bytes(s, i));
         if (hip_rc != hipSuccess)
-            return ms_ssim_unwind_partials(s, hip_rc);
-        hip_rc = hipMalloc(&s->c_partials[i], pb);
-        if (hip_rc != hipSuccess) {
-            (void)hipFree(s->l_partials[i]);
-            s->l_partials[i] = NULL;
-            return ms_ssim_unwind_partials(s, hip_rc);
-        }
-        hip_rc = hipMalloc(&s->s_partials[i], pb);
-        if (hip_rc != hipSuccess) {
-            (void)hipFree(s->c_partials[i]);
-            s->c_partials[i] = NULL;
-            (void)hipFree(s->l_partials[i]);
-            s->l_partials[i] = NULL;
-            return ms_ssim_unwind_partials(s, hip_rc);
-        }
+            return ms_ssim_unwind_terms(s, hip_rc);
     }
     return 0;
 }
 
-/* Pinned host partials for async DtoH (write-combined, sizeof(double)). */
+/* Pinned host terms for the async DtoH. Default pinned memory, not
+ * write-combined: collect() reads every double. */
 static int ms_ssim_alloc_pinned(MsSsimStateHip *s)
 {
     for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        const size_t pb = (size_t)s->scale_block_count[i] * sizeof(double);
-        hipError_t hip_rc =
-            hipHostMalloc((void **)&s->h_l_partials[i], pb, hipHostMallocWriteCombined);
+        const hipError_t hip_rc =
+            hipHostMalloc((void **)&s->h_terms[i], ms_ssim_terms_bytes(s, i), hipHostMallocDefault);
         if (hip_rc != hipSuccess)
             return ms_ssim_unwind_pinned(s, hip_rc);
-        hip_rc = hipHostMalloc((void **)&s->h_c_partials[i], pb, hipHostMallocWriteCombined);
-        if (hip_rc != hipSuccess) {
-            (void)hipHostFree(s->h_l_partials[i]);
-            s->h_l_partials[i] = NULL;
-            return ms_ssim_unwind_pinned(s, hip_rc);
-        }
-        hip_rc = hipHostMalloc((void **)&s->h_s_partials[i], pb, hipHostMallocWriteCombined);
-        if (hip_rc != hipSuccess) {
-            (void)hipHostFree(s->h_c_partials[i]);
-            s->h_c_partials[i] = NULL;
-            (void)hipHostFree(s->h_l_partials[i]);
-            s->h_l_partials[i] = NULL;
-            return ms_ssim_unwind_pinned(s, hip_rc);
-        }
     }
     return 0;
 }
@@ -551,41 +512,25 @@ static int ms_ssim_hip_bufs_alloc(MsSsimStateHip *s)
     err = ms_ssim_alloc_intermed(s, horiz_max);
     if (err != 0)
         return err;
-    err = ms_ssim_alloc_partials(s);
+    err = ms_ssim_alloc_terms(s);
     if (err != 0)
         return err;
     return ms_ssim_alloc_pinned(s);
 }
 
-/* Per-scale partial / pyramid buffers. Extracted from ms_ssim_hip_bufs_free()
+/* Per-scale term / pyramid buffers. Extracted from ms_ssim_hip_bufs_free()
  * to keep both halves inside the HISS-04 60-LOC bound; release order is
  * unchanged. */
 static void ms_ssim_free_per_scale(MsSsimStateHip *s)
 {
     for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        if (s->h_s_partials[i]) {
-            (void)hipHostFree(s->h_s_partials[i]);
-            s->h_s_partials[i] = NULL;
+        if (s->h_terms[i]) {
+            (void)hipHostFree(s->h_terms[i]);
+            s->h_terms[i] = NULL;
         }
-        if (s->h_c_partials[i]) {
-            (void)hipHostFree(s->h_c_partials[i]);
-            s->h_c_partials[i] = NULL;
-        }
-        if (s->h_l_partials[i]) {
-            (void)hipHostFree(s->h_l_partials[i]);
-            s->h_l_partials[i] = NULL;
-        }
-        if (s->s_partials[i]) {
-            (void)hipFree(s->s_partials[i]);
-            s->s_partials[i] = NULL;
-        }
-        if (s->c_partials[i]) {
-            (void)hipFree(s->c_partials[i]);
-            s->c_partials[i] = NULL;
-        }
-        if (s->l_partials[i]) {
-            (void)hipFree(s->l_partials[i]);
-            s->l_partials[i] = NULL;
+        if (s->terms[i]) {
+            (void)hipFree(s->terms[i]);
+            s->terms[i] = NULL;
         }
         if (s->pyramid_cmp[i]) {
             (void)hipFree(s->pyramid_cmp[i]);
@@ -715,9 +660,7 @@ static int ms_ssim_hip_launch_scale(MsSsimStateHip *s, hipStream_t str, int i)
         (void *)&s->d_ref_sq,
         (void *)&s->d_cmp_sq,
         (void *)&s->d_refcmp,
-        (void *)&s->l_partials[i],
-        (void *)&s->c_partials[i],
-        (void *)&s->s_partials[i],
+        (void *)&s->terms[i],
         &w_horiz,
         &w_final,
         &h_final,
@@ -730,14 +673,8 @@ static int ms_ssim_hip_launch_scale(MsSsimStateHip *s, hipStream_t str, int i)
     if (hip_rc != hipSuccess)
         return ms_ssim_hip_rc(hip_rc);
 
-    const size_t pb = (size_t)s->scale_block_count[i] * sizeof(double);
-    hip_rc = hipMemcpyAsync(s->h_l_partials[i], s->l_partials[i], pb, hipMemcpyDeviceToHost, str);
-    if (hip_rc != hipSuccess)
-        return ms_ssim_hip_rc(hip_rc);
-    hip_rc = hipMemcpyAsync(s->h_c_partials[i], s->c_partials[i], pb, hipMemcpyDeviceToHost, str);
-    if (hip_rc != hipSuccess)
-        return ms_ssim_hip_rc(hip_rc);
-    hip_rc = hipMemcpyAsync(s->h_s_partials[i], s->s_partials[i], pb, hipMemcpyDeviceToHost, str);
+    hip_rc = hipMemcpyAsync(s->h_terms[i], s->terms[i], ms_ssim_terms_bytes(s, i),
+                            hipMemcpyDeviceToHost, str);
     return ms_ssim_hip_rc(hip_rc);
 }
 
@@ -971,6 +908,35 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
 #endif /* HAVE_HIPCC */
 }
 
+#ifdef HAVE_HIPCC
+/* The l, c and s sums of scale `i`, as ssim_accumulate_default_scalar()
+ * forms them: each is one double that takes its plane's terms in raster
+ * order. That order is the result, not a detail: every add rounds, and a sum
+ * of the same terms in another order is another double, whose mean can round
+ * to the neighbouring float (ADR-1438 for the fixed-point SSIM twin). The
+ * three sums advance together through one pass, as in the reference's loop;
+ * each is still its own chain of adds. */
+static void ms_ssim_hip_scale_sums(const MsSsimStateHip *s, int i, double *total_l, double *total_c,
+                                   double *total_s)
+{
+    const size_t windows = s->scale_windows[i];
+    const double *l = s->h_terms[i];
+    const double *c = l + windows;
+    const double *sv = c + windows;
+    double l_sum = 0.0;
+    double c_sum = 0.0;
+    double s_sum = 0.0;
+    for (size_t j = 0u; j < windows; j++) {
+        l_sum += l[j];
+        c_sum += c[j];
+        s_sum += sv[j];
+    }
+    *total_l = l_sum;
+    *total_c = c_sum;
+    *total_s = s_sum;
+}
+#endif /* HAVE_HIPCC */
+
 static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
                            VmafFeatureCollector *feature_collector)
 {
@@ -986,8 +952,9 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
     if (err != 0)
         return err;
 
-    /* Add the per-block partials in double per scale, round each mean to
-     * fp32 and combine with the Wang weights, as the CPU extractor does. */
+    /* Add the terms of every scale in the reference's order, round each
+     * mean to fp32 and combine with the Wang weights, as the CPU extractor
+     * does. */
     double l_means[MS_SSIM_SCALES] = {0};
     double c_means[MS_SSIM_SCALES] = {0};
     double s_means[MS_SSIM_SCALES] = {0};
@@ -996,11 +963,7 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
         double total_l = 0.0;
         double total_c = 0.0;
         double total_s = 0.0;
-        for (unsigned j = 0; j < s->scale_block_count[i]; j++) {
-            total_l += s->h_l_partials[i][j];
-            total_c += s->h_c_partials[i][j];
-            total_s += s->h_s_partials[i][j];
-        }
+        ms_ssim_hip_scale_sums(s, i, &total_l, &total_c, &total_s);
         const double n_pix = (double)s->scale_w_final[i] * (double)s->scale_h_final[i];
         /* iqa_ssim() returns each mean as a float, and ms_ssim.c combines the
          * floats (ADR-1403). */
