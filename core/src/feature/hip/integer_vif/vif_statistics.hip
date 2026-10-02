@@ -234,8 +234,8 @@ __device__ __forceinline__ static void vif_statistic_one(
 
 /* Two-bounce mirror reflect — matches the CPU reference's PADDING_SQ_DATA
  * (integer_vif.h lines 95-118) and the CUDA twin's boundary load in
- * filter1d.cu (lines 121-128, "Two-bounce mirror: reflect at top then at
- * bottom").
+ * filter1d.cu (vif_mirror_index(): reflect at 0, then at n - 1, then
+ * clamp).
  *
  * The CPU pads the temporary buffer symmetrically before the horizontal
  * pass: index -1 reads pixel 1, index w reads pixel w-2.  Using clamp_i

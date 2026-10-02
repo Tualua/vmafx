@@ -4506,7 +4506,7 @@
     "0743": {
       "sites": {
         "core/src/feature/cuda/integer_ssim/ssim_score.cu": 1,
-        "core/src/feature/cuda/integer_vif/filter1d.cu": 6,
+        "core/src/feature/cuda/integer_vif/filter1d.cu": 5,
         "core/src/feature/cuda/integer_vif_cuda.c": 1
       },
       "target": "0743-cuda-vif-filter1d-ncu-driven-perf.md"

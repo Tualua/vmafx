@@ -58629,3 +58629,30 @@ ADR-1403 unchanged.
 - `core/src/feature/cuda/integer_psnr_hvs_cuda.c`: `init_fex_cuda()` calls the
   new `psnr_hvs_load_module()`; `reduce_hvs_planes()` loops over
   `psnr_hvs_plane_count()`. Fork-local file, no upstream counterpart.
+## `filter1d.cu`: the integer VIF kernels are assembled from stages (standards batch B5, 2026-10-02)
+
+`refactor/b5-cuda-vif-filter-kernels`, ADR-1142 (HISS-04).
+
+- `core/src/feature/cuda/integer_vif/filter1d.cu`: the four kernel bodies
+  (`filter1d_8_vertical_kernel`, `filter1d_8_horizontal_kernel`,
+  `filter1d_16_vertical_kernel`, `filter1d_16_horizontal_kernel`; 133 to 225
+  lines each upstream) are short functions that call `__forceinline__` stages:
+  `vif_mirror_index()`, `vif_vert_load_tiles()`, `vif_vert8_accumulate()` /
+  `vif_vert16_accumulate()`, `vif_vert16_round()`, `vif_vert_store()`, and for
+  the horizontal pass `vif_hori_load_tile()`, `vif_hori_center_tap()`,
+  `vif_hori_tap_pairs()`, `vif_hori_border()`, `vif_hori_statistics()`,
+  `vif_hori_flush_accums()`, `vif_hori_store_rd()`. The two horizontal kernels
+  are one template, `vif_hori_kernel<val_per_thread, fwidth, fwidth_rd,
+  filt_row, use_ldg>`: the 8-bit kernel is row 0 with a rounding of 2^15, a
+  shift of 16 and `__ldg()` loads; the 16-bit kernel is the scale's row with
+  its `add_shift_round_HP` / `shift_HP` and plain loads.
+- The `__global__` entry points, their names, their argument lists and
+  `__launch_bounds__(128, 10)` are unchanged, and so are `integer_vif_cuda.c`
+  and the shared-memory layout.
+- An upstream change to one of the four bodies no longer applies as a hunk:
+  port it into the stage that holds the statement (the arithmetic lines are
+  upstream's, with `accum_x[off]` spelled `o.x[off]` or `s.x[off]`), then run
+  `test_cuda_exact_twins` and the `vif` gate cell on a device. Do not restore
+  a long body: `praetorctl audit` records none for this file any more.
+- `core/src/feature/hip/integer_vif/vif_statistics.hip`: one comment names
+  `vif_mirror_index()` instead of line numbers of the CUDA file.

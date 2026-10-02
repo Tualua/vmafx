@@ -319,6 +319,16 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   [CUDA backend](docs/backends/cuda/overview.md#vif_cuda-returns-the-cpus-scores-bit-for-bit-2026-10-02)).
 
 
+- **The CUDA integer VIF filter kernels are assembled from short stages
+  (ADR-1142).** The four kernel bodies of
+  `core/src/feature/cuda/integer_vif/filter1d.cu` were 133 to 225 lines each,
+  the last functions of the GPU feature code above the 60-line limit. They
+  now call inlined stages (tile load, taps, rounding, write-back), and the
+  8-bit and 16-bit horizontal kernels are one template. The debt baseline
+  drops from 260 to 256 recorded infractions. No behaviour change: `vif` and
+  every other CUDA twin return the same values as before on an RTX 4090.
+
+
 - **`vif_cuda` reads the CPU's log2 table instead of computing logarithms on
   the device.** The fixed-point `vif` takes its logarithms from a table the
   host math library fills. The CUDA twin evaluated `log2f()` on the device,

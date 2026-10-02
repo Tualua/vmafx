@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-02T14:07:21Z",
+  "generated_at": "2026-10-02T14:39:37Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "513d2a6fce68df8c1b64d7fc53c81e10a8df174b",
-  "total_infractions": 251,
+  "commit_sha": "f8db609d241b13e4c86841250fe25e32b0be2a50",
+  "total_infractions": 247,
   "infractions": [
     {
       "rule_id": "HISS-04",
@@ -984,38 +984,6 @@
       "symbol": "ssimulacra2_picture_to_linear_rgb_sve2",
       "message": "Function 'ssimulacra2_picture_to_linear_rgb_sve2' (114 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "core/src/feature/arm64/ssimulacra2_sve2.c:676:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/cuda/integer_vif/filter1d.cu",
-      "line_number": 82,
-      "symbol": "filter1d_8_vertical_kernel",
-      "message": "Function 'filter1d_8_vertical_kernel' (137 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/cuda/integer_vif/filter1d.cu:82:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/cuda/integer_vif/filter1d.cu",
-      "line_number": 238,
-      "symbol": "filter1d_8_horizontal_kernel",
-      "message": "Function 'filter1d_8_horizontal_kernel' (225 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/cuda/integer_vif/filter1d.cu:238:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/cuda/integer_vif/filter1d.cu",
-      "line_number": 476,
-      "symbol": "filter1d_16_vertical_kernel",
-      "message": "Function 'filter1d_16_vertical_kernel' (133 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/cuda/integer_vif/filter1d.cu:476:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/cuda/integer_vif/filter1d.cu",
-      "line_number": 621,
-      "symbol": "filter1d_16_horizontal_kernel",
-      "message": "Function 'filter1d_16_horizontal_kernel' (183 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/cuda/integer_vif/filter1d.cu:621:HISS-04"
     },
     {
       "rule_id": "HISS-04",
