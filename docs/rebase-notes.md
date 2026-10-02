@@ -58318,6 +58318,13 @@ ADR-1403 unchanged.
 - No rebase impact from upstream: an upstream sync never touches an
   `AGENTS.md` or an `AGENTS.d/`.
 - Fork branches that append to `tools/vmaf-tune/AGENTS.md` conflict once: take
+## ADR-1454 — `core/test/AGENTS.md` is a generated index over `AGENTS.d/` pages (2026-10-02)
+
+`docs/agents-index-core-test`, `T-AGENTS-INDEX-MIGRATION-2026-10-02`.
+
+- No rebase impact from upstream: an upstream sync never touches an
+  `AGENTS.md` or an `AGENTS.d/`.
+- Fork branches that append to `core/test/AGENTS.md` conflict once: take
   master's side of that file, put the added text into the page whose
   `Touching` row matches the files, then `make docs-fragments-write`.
 - No Netflix golden-data, public API or FFmpeg patch impact.
