@@ -50,7 +50,19 @@
 #define ASYNC_SCORE "mock_async_score"
 #define POOLED_SCORE "mock_pooled_score"
 
-static pthread_t g_caller;
+/* Thread identity without the pthread identity calls: the Windows shim
+ * (`compat/win32/pthread.h`) maps pthread_t to a HANDLE and defines neither
+ * `pthread_self` nor `pthread_equal`, so the MSVC builds could not link this
+ * test. The address of a thread-local object is unique among live threads on
+ * every platform. */
+static _Thread_local unsigned char g_thread_marker;
+static const unsigned char *g_caller;
+
+static bool on_caller_thread(void)
+{
+    return &g_thread_marker == g_caller;
+}
+
 static atomic_uint g_submits;
 static atomic_uint g_collects;
 static atomic_uint g_async_off_caller;
@@ -59,7 +71,7 @@ static atomic_uint g_extracts_off_caller;
 
 static void note_async_thread(void)
 {
-    if (!pthread_equal(pthread_self(), g_caller))
+    if (!on_caller_thread())
         atomic_fetch_add(&g_async_off_caller, 1u);
 }
 
@@ -111,7 +123,7 @@ static int mock_extract(VmafFeatureExtractor *fex, VmafPicture *ref, VmafPicture
     (void)dist;
     (void)dist_90;
     atomic_fetch_add(&g_extracts, 1u);
-    if (!pthread_equal(pthread_self(), g_caller))
+    if (!on_caller_thread())
         atomic_fetch_add(&g_extracts_off_caller, 1u);
     return vmaf_feature_collector_append(fc, POOLED_SCORE, (double)index, index);
 }
@@ -149,7 +161,7 @@ static const VmafFeatureExtractor mock_pooled = {
 
 static void counters_reset(void)
 {
-    g_caller = pthread_self();
+    g_caller = &g_thread_marker;
     atomic_store(&g_submits, 0u);
     atomic_store(&g_collects, 0u);
     atomic_store(&g_async_off_caller, 0u);

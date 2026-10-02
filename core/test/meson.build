@@ -6682,6 +6682,15 @@ test('test_feature_collector_source_authority',
 )
 test('test_flush_context_ordering', test_flush_context_ordering, suite : ['fast'])
 test('test_async_extractor_thread_pool', test_async_extractor_thread_pool, suite : ['fast'])
+
+# The Windows thread shim defines a subset of pthread: a call outside it links
+# on every POSIX host and fails on MSVC only (LNK2001).
+test('test_win32_pthread_shim_contract',
+    import('python').find_installation(),
+    args : files('test_win32_pthread_shim_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
 test('test_output', test_output, suite : ['fast'])
 test('test_public_api_score', test_public_api_score, suite : ['fast'])
 test('test_thread_pool', test_thread_pool, suite : ['fast'])
