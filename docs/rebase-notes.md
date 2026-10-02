@@ -58353,3 +58353,13 @@ ADR-1403 unchanged.
   `core/src/meson.build` spells them changes (`-fsycl`, the `-device` list,
   `-MD -MF`, `-o`), its `for_targets()` changes with it.
 - No score, public C API, Netflix golden-data or FFmpeg patch impact.
+## ADR-1454 — `.github/AGENTS.md` is a generated index over `AGENTS.d/` pages (2026-10-02)
+
+`docs/agents-index-github`, `T-AGENTS-INDEX-MIGRATION-2026-10-02`.
+
+- No rebase impact from upstream: an upstream sync never touches an
+  `AGENTS.md` or an `AGENTS.d/`.
+- Fork branches that append to `.github/AGENTS.md` conflict once: take
+  `.github/AGENTS.md` from master, put the new rule into a new or matching
+  page under `.github/AGENTS.d/`, run `make docs-fragments-write`.
+- No Netflix golden-data, public API or FFmpeg patch impact.

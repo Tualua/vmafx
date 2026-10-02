@@ -441,6 +441,7 @@ class ResearchDigestIdTests(unittest.TestCase):
 
         expected_triggers = {
             ".github/AGENTS.md",
+            ".github/AGENTS.d/research-digest-baseline.md",
             ".github/workflows/rule-enforcement.yml",
             ".pre-commit-config.yaml",
             "changelog.d/_pre_fragment_legacy.md",
