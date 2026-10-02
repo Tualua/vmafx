@@ -109,6 +109,9 @@
 make `core/src/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454](../docs/adr/1454-agents-index-and-topic-pages.md)).
 
 
+make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454](../docs/adr/1454-agents-index-and-topic-pages.md)).
+
+
 - **A large subtree `AGENTS.md` is now a generated index over one page per
   topic.** `scripts/ci/AGENTS.md` (93,543 bytes) is the first: its text moved
   unchanged into 46 pages under `scripts/ci/AGENTS.d/`, and the file itself is

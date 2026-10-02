@@ -100,7 +100,9 @@ def test_collect_gpu_calibration_rejects_malformed_frames(
 def test_benchmark_harness_uses_current_portable_contract() -> None:
     script = REPO_ROOT / "testdata" / "bench_all.sh"
     source = script.read_text(encoding="utf-8")
-    backend_guidance = (REPO_ROOT / "core" / "AGENTS.md").read_text(encoding="utf-8")
+    backend_guidance = (
+        REPO_ROOT / "core" / "AGENTS.d" / "backend-engagement-and-benchmarking.md"
+    ).read_text(encoding="utf-8")
     benchmark_docs = (REPO_ROOT / "docs" / "benchmarks.md").read_text(encoding="utf-8")
     research = (
         REPO_ROOT / "docs" / "research" / "2118-bug048-script-environment-drift-2026-09-25.md"
