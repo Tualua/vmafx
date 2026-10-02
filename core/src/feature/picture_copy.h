@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright 2016-2020 Netflix, Inc.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -15,8 +16,8 @@
  *     limitations under the License.
  *
  */
-#ifndef __VMAF_PICTURE_COPY_H__
-#define __VMAF_PICTURE_COPY_H__
+#ifndef VMAF_PICTURE_COPY_H_
+#define VMAF_PICTURE_COPY_H_
 
 #include <stddef.h>
 
@@ -33,4 +34,4 @@ void picture_copy(float *dst, ptrdiff_t dst_stride, VmafPicture *src, int offset
 }
 #endif
 
-#endif /* __VMAF_PICTURE_COPY_H__ */
+#endif /* VMAF_PICTURE_COPY_H_ */

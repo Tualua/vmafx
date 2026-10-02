@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright 2016-2026 Netflix, Inc.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -89,7 +90,10 @@ static const VmafOption options[] = {
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val.b = false,
     },
-    {0}};
+    {
+        .name = nullptr,
+    },
+};
 
 /* Wire the SSIM + convolve SIMD dispatch tables for the host ISA.
  * Called from `init()` below via `iqa_ssim_install_dispatch_once`
@@ -316,7 +320,7 @@ static const char *provided_features[] = {
     "float_ms_ssim",
     "float_ms_ssim_cb",
     "float_ms_ssim_cr",
-    NULL,
+    nullptr,
 };
 
 // extern-registered in feature_extractor.c registry

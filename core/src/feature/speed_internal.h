@@ -125,6 +125,8 @@ static inline int speed_chroma_dimensions(unsigned w, unsigned h, enum VmafPixel
     }
 }
 
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation
+ * units; C cannot spell `using` in place of `typedef struct`. ADR-0141. */
 typedef struct SpeedInternalDimensions {
     size_t original_height;
     size_t original_width;
@@ -153,6 +155,7 @@ typedef struct SpeedInternalOptions {
     double speed_nn_floor;
     int speed_weight_var_mode;
 } SpeedInternalOptions;
+/* NOLINTEND(modernize-use-using) */
 
 /* ------------------------------------------------------------------ */
 /* CPU-side helpers exposed to GPU backends                            */
@@ -316,10 +319,13 @@ bool speed_internal_is_matrix_regular(const float *eigenvalues, size_t num_eleme
  * buries every other line of a long run. Counting the solves and saying so
  * once keeps the signal without the flood.
  */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation
+ * units; C cannot spell `using` in place of `typedef struct`. ADR-0141. */
 typedef struct {
     uint64_t singular; /**< solves whose covariance matrix was singular */
     uint64_t solves;   /**< solves attempted */
 } SpeedInternalSingularTally;
+/* NOLINTEND(modernize-use-using) */
 
 /**
  * Record one solve, and log the first singular one.

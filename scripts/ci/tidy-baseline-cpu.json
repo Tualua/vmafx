@@ -314,7 +314,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 404,
+  "total_warnings": 386,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -331,26 +331,15 @@
     "core/src/feature/adm_options.h": 1,
     "core/src/feature/adm_tools.h": 142,
     "core/src/feature/alias.c": 1,
-    "core/src/feature/feature_characteristics.h": 3,
     "core/src/feature/feature_name.h": 1,
-    "core/src/feature/float_ms_ssim.c": 2,
-    "core/src/feature/float_ssim.c": 2,
     "core/src/feature/iqa/iqa.h": 1,
     "core/src/feature/iqa/iqa_options.h": 1,
     "core/src/feature/iqa/iqa_os.h": 1,
     "core/src/feature/moment_options.h": 1,
-    "core/src/feature/motion.c": 2,
     "core/src/feature/motion_blend_tools.h": 1,
     "core/src/feature/motion_options.h": 1,
     "core/src/feature/motion_tools.h": 1,
     "core/src/feature/niqe_model.h": 1,
-    "core/src/feature/null.c": 1,
-    "core/src/feature/picture_copy.cpp": 1,
-    "core/src/feature/picture_copy.h": 1,
-    "core/src/feature/psnr_options.h": 1,
-    "core/src/feature/speed_internal.h": 3,
-    "core/src/feature/vif_options.h": 1,
-    "core/src/feature/vif_tools.h": 1,
     "core/src/feature/x86/float_adm_avx2.c": 7,
     "core/src/feature/x86/float_adm_avx512.c": 26,
     "core/src/feature/x86/motion_avx2.c": 7,
@@ -682,6 +671,51 @@
         }
       },
       "previous_baseline_sha256": "25a092eaf3172ef7b5a77ddaaa8b6df9418923a5eff71c060859e55362e811bb"
+    },
+    {
+      "sources": [
+        "core/src/feature/motion.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/motion.c": {
+          "warnings": [
+            2,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "45bd8acfd3a05ea2a8c750c42be48f584c8130b5da92c944f6d86c72a7f71eb4"
+    },
+    {
+      "sources": [
+        "core/src/feature/float_ssim.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/float_ssim.c": {
+          "warnings": [
+            2,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "c17636e2373a135d182b5dcf97aacb83aca4c58f6ca167cb04311031e81fec74"
+    },
+    {
+      "sources": [
+        "core/src/feature/float_ms_ssim.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/float_ms_ssim.c": {
+          "warnings": [
+            2,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "0c938809336496fadb008d7749f962057845b736bbffbc996f592ed03c40cf9c"
     }
   ]
 }

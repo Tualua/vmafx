@@ -17,8 +17,6 @@
  *
  */
 
-#pragma once
-
 #ifndef VIF_TOOLS_H_
 #define VIF_TOOLS_H_
 

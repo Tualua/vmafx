@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright 2016-2026 Netflix, Inc.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -88,7 +89,10 @@ static const VmafOption options[] = {
         .min = 0,
         .max = 10,
     },
-    {0}};
+    {
+        .name = nullptr,
+    },
+};
 
 /* Idempotent host-ISA SSIM + iqa_convolve dispatch installer. Selected
  * by `iqa_ssim_install_dispatch_once` under a pthread_once guard so
@@ -209,7 +213,7 @@ static int close(VmafFeatureExtractor *fex)
     return 0;
 }
 
-static const char *provided_features[] = {"float_ssim", NULL};
+static const char *provided_features[] = {"float_ssim", nullptr};
 
 // NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_ssim = {

@@ -20,6 +20,10 @@
 extern "C" {
 #endif
 
+/* NOLINTBEGIN(modernize-use-using,performance-enum-size): C header included by C
+ * and C++ translation units; C cannot spell `using` or fixed underlying enum types
+ * across required toolchains. ADR-0141. */
+
 /**
  * Backend-agnostic dispatch hint. Backends translate this to their
  * own primitive: CUDA graph capture / SYCL graph replay / Vulkan
@@ -69,6 +73,8 @@ typedef struct VmafFeatureCharacteristics {
     /// and BATCHED override.
     VmafFeatureDispatchHint dispatch_hint;
 } VmafFeatureCharacteristics;
+
+/* NOLINTEND(modernize-use-using,performance-enum-size) */
 
 #ifdef __cplusplus
 }

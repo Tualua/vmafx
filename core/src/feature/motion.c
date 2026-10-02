@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright 2016-2026 Netflix, Inc.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -25,6 +26,7 @@
 #include <stdbool.h>
 #include <math.h>
 
+#include "motion.h"
 #include "offset.h"
 #include "motion_options.h"
 #include "mem.h"
