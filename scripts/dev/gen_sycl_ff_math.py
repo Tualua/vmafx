@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""Generate the constants and tables of core/src/feature/sycl/sycl_ff_math.h.
+"""Generate the constants and tables of core/src/feature/ff_math.h.
 
 The header evaluates elementary functions on fp32 pairs (hi + lo). Its
 constants are fp32 pairs and triples of pi, ln 2 and reciprocal factorials,
@@ -9,6 +9,10 @@ and two tables: atan(j / 16) and sin / cos(k pi / 16). They are computed here
 in numpy's extended precision (64-bit significand on x86-64), which is 16 bits
 more than a pair holds, and written as hexadecimal fp32 literals between the
 header's BEGIN GENERATED / END GENERATED markers.
+
+The header is the fp32 pair math the SYCL and the HIP ciede twins share
+(ADR-1436, ADR-1448); core/src/feature/sycl/sycl_ff_math.h, which this script
+is named after, now only names the SYCL primitives it is built on.
 
 usage: gen_sycl_ff_math.py --write | --check
 """
@@ -21,7 +25,7 @@ from pathlib import Path
 
 import numpy as np
 
-HEADER = Path(__file__).resolve().parents[2] / "core/src/feature/sycl/sycl_ff_math.h"
+HEADER = Path(__file__).resolve().parents[2] / "core/src/feature/ff_math.h"
 BEGIN = "// BEGIN GENERATED\n"
 END = "// END GENERATED\n"
 

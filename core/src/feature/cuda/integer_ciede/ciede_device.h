@@ -260,15 +260,8 @@ CIEDE_HD float ciede_pixel(float ref_y, float ref_u, float ref_v, float dis_y, f
 }
 
 #if !defined(DEVICE_CODE)
-/* extract()'s `de00_sum`: every pixel's value added into one double, row
- * after row, each row left to right. */
-static inline double ciede_frame_sum(const float *terms, size_t count)
-{
-    double de00_sum = 0.0;
-    for (size_t i = 0u; i < count; i++)
-        de00_sum += (double)terms[i];
-    return de00_sum;
-}
+/* extract()'s `de00_sum`, shared with the SYCL and HIP twins' hosts. */
+#include "feature/ciede_frame_sum.h"
 #endif
 
 #endif /* VMAF_SRC_FEATURE_CUDA_INTEGER_CIEDE_CIEDE_DEVICE_H_ */

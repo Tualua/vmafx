@@ -76,7 +76,7 @@
 > | --- | --- | --- | --- |
 > | `integer_psnr_hip` | `psnr_hip` | Yes | ADR-0241 |
 > | `float_psnr_hip` | `float_psnr_hip` | Yes | ADR-0254 |
-> | `ciede_hip` | `ciede_hip` | Yes | ADR-0259 / PR #1016 |
+> | `ciede_hip` | `ciede_hip` | Yes | ADR-0259 / PR #1016 / ADR-1448 (the CPU's arithmetic) |
 > | `float_moment_hip` | `float_moment_hip` | Yes | ADR-0260 |
 > | `integer_motion_v2_hip` | `motion_v2_hip` | Yes | ADR-0267 |
 > | `float_motion_hip` | `float_motion_hip` | Yes | ADR-0373 |
@@ -320,8 +320,7 @@ core/src/feature/hip/          # per-feature kernels
   float_ssim_hip.c                # two-pass separable 11-tap Gaussian kernel
   float_vif_hip.c                 # multi-scale VIF float pipeline
   float_adm_hip.c                 # ADM float pipeline (ADR-0468)
-  ciede_hip.c                     # legacy alias for integer_ciede_hip
-  integer_ciede_hip.c             # YUV->Lab, CIEDE2000 dE, warp-64 shfl_down
+  ciede_hip.c                     # YUV->Lab, CIEDE2000 dE in fp32 pairs, one float per pixel
   integer_motion_v2_hip.c         # raw-pixel ping-pong, host motion2/motion3 fold
   integer_motion_hip.c            # raw-pixel ping-pong, host motion2/motion3 fold
   integer_motion_sad_hip.c        # diff-first SAD launcher both motion twins call
@@ -364,9 +363,12 @@ core/src/feature/hip/          # per-feature kernels
   double. Emits `float_ssim`. Above scale 1 a decimation kernel runs first and
   W×H is the decimated size; see
   [float_ssim_hip at 1080p and 4K](#float_ssim_hip-at-1080p-and-4k).
-- **`integer_ciede_hip`** — HtoD copies of all 6 YUV planes (ref + dis Y/U/V),
-  per-pixel YUV→Lab conversion, CIEDE2000 ΔE accumulation per block, host log10
-  transform. Emits `ciede2000`. Warp-64 `__shfl_down` without mask.
+- **`ciede_hip`** — the six Y/U/V planes on the device, per-pixel YUV→Lab
+  conversion and CIEDE2000 ΔE in the CPU's arithmetic, evaluated on pairs of
+  `float` values (ADR-1448), one float per pixel read back, the host's sum in
+  the CPU's order and log10 transform. Within 1.4e-11 of the CPU extractor.
+  See [ciede_hip](#ciede_hip-follows-the-cpus-arithmetic-2026-10-02). Emits
+  `ciede2000`.
 - **`integer_motion_v2_hip`** — temporal extractor. Raw-pixel ping-pong (`pix[2]`),
   separable 5-tap Gaussian diff filter with arithmetic right-shift (critical for
   bit-exactness vs CPU — see ADR-0138/0139 and PR #587 AVX2 srlv_epi64 regression),
@@ -1007,6 +1009,67 @@ python3 scripts/ci/cross_backend_parity_gate.py --vmaf-binary build-hip/tools/vm
     --width 576 --height 324 --backends cpu hip --features float_moment
 ```
 
+### `ciede_hip` follows the CPU's arithmetic (2026-10-02)
+
+`ciede.c` computes in double precision and stores in single, and adds every
+pixel's colour difference into one `double` in raster order. `ciede_hip`
+computed in single precision with another form of the formula and added per
+wave and per 16x16 block: it matched the CPU on no frame and was up to 1.1e-5
+from it. Since [ADR-1448](../../adr/1448-hip-ciede-cpu-arithmetic.md) the
+kernel runs the CPU's statements with every `double` as a pair of `float`
+values and every math function as a routine on such pairs. This is the
+arithmetic of the SYCL twin, from the same header
+(`core/src/feature/ciede_ff_math.h`). The kernel stores one `float` per
+pixel, and the host adds them in the CPU's order.
+
+The gfx1036 has `double`, and a first version ran the CUDA twin's
+double-precision statements. Its math functions made a 1920x1080 frame take
+318 ms instead of 18 ms, so that version was not merged.
+
+Measured on a gfx1036 (ROCm 7.2.4, glibc 2.44) at `--precision max` against
+`--backend cpu`:
+
+| Fixture | Frames | Identical before | Max abs diff before | Identical after | Max abs diff after |
+|---|---|---|---|---|---|
+| Netflix 576x324, 8 bit | 48 | 0 | 1.1e-5 | 47 | 6.9e-13 |
+| Checkerboard 1 px and 10 px, 1920x1080 | 6 | 0 | 8.6e-7 | 6 | 0 |
+| Netflix 576x324, 10, 12 and 16 bit | 9 | 0 | 9.4e-6 | 9 | 0 |
+| Netflix 576x324, 10-bit 4:2:2 | 48 | 0 | 1.1e-5 | 46 | 2.9e-12 |
+| Sparks 480x270, 10 bit | 5 | 0 | 1.1e-6 | 4 | 2.4e-12 |
+| BBB 3840x2160 | 48 | 0 | 1.4e-6 | 0 | 1.4e-11 |
+| Full-range noise 576x324 at 8, 10, 12, 16 bit | 12 | 0 | 2.3e-7 | 3 | 4.6e-12 |
+| Bright 16 bit, 1920x1080 | 2 | 0 | 1.6e-6 | 0 | 1.8e-12 |
+
+The twin is not bit-identical, for two measured reasons. Of 437 million
+pixels compared one by one with a host replay of the CPU's statements, 2 214
+differ. 2 206 of them differ by one `float` step because glibc's `powf` is not
+correctly rounded where the kernel's value is. The other 8, all in the first
+twelve BBB frames, differ by one to nine steps because a pair holds 48 bits
+where a `double` holds 53. The parity gate bounds the cell at `1e-9`
+([cross-backend gate](../../development/cross-backend-gate.md)).
+
+The pair arithmetic costs time (ms per frame, steady state, medians of three
+interleaved pairs of runs):
+
+| Frame | Before | After | |
+|---|---|---|---|
+| 1920x1080 | 18.6 | 49.6 | 2.7x |
+| 3840x2160 | 75.6 | 210.1 | 2.8x |
+
+At 1920x1080 the two L\*a\*b\* conversions take 21.9 ms and the colour
+difference 25.5 ms; uploading the planes, launching the kernel, reading one
+`float` per pixel back and the host's sum take 2.2 ms. At 3840x2160 the three
+are 86.8, 113.5 and 9.8 ms. The CPU extractor takes 136 ms per 3840x2160 frame
+on sixteen threads, so on this integrated GPU the twin is slower than the CPU
+at that size (`T-HIP-CIEDE-EXACT-THROUGHPUT-2026-10-02`). The twin also keeps
+one `float` per pixel on the device and on the host, 33 MB each at 3840x2160.
+
+```bash
+python3 scripts/ci/run_meson_test.py -- -C build-hip test_hip_ciede_parity test_hip_ciede_math
+python3 scripts/dev/speed_gpu_parity.py --backend hip --feature ciede \
+    --max-abs-diff 1e-9 --vmaf "$PWD/build-hip/tools/vmaf"
+```
+
 ### `float_vif_hip` returns the CPU's scores bit for bit (2026-10-02)
 
 `--backend hip --feature float_vif_hip` gives the same `vif_scale0..3` as
@@ -1135,7 +1198,7 @@ sweep per output and per fixture.
 | `float_moment` | `float_moment_hip` | 712 of 712 | 0 | 1.0e-4 | yes, while the CPU's own sum is exact ([ADR-1447](../../adr/1447-hip-float-moment-cpu-float-squares.md)) |
 | `speed_chroma` | `speed_chroma_hip` | 528 of 534 | 1.4e-6 | not measured | no (the C library's `log2f`) |
 | `float_adm` | `float_adm_hip` | 224 of 1246 | 1.3e-5 | 1.3e-5 | no |
-| `ciede` | `ciede_hip` | 0 of 178 | 1.1e-5 | 1.1e-5 | no |
+| `ciede` | `ciede_hip` | 115 of 178 | 1.4e-11 | 1.1e-5 | no (the C library's `powf`, and the last bits of a pair; [ADR-1448](../../adr/1448-hip-ciede-cpu-arithmetic.md)) |
 
 The parity gate compares an exact twin with tolerance 0
 ([cross-backend gate](../../development/cross-backend-gate.md),
@@ -1161,10 +1224,9 @@ their tolerance:
 - `float_adm_hip` has not been ported to the CPU's arithmetic
   (`T-HIP-FLOAT-ADM-NOT-CPU-ARITHMETIC-2026-10-01`); the CPU reference itself
   changed on 2026-10-02 (the decouple step divides).
-- `ciede_hip` is single precision with another form of the formula
-  (`T-GPU-CIEDE-CPU-ARITHMETIC-2026-10-01`). The CPU's arithmetic brings it to
-  1.4e-11 and costs 17 times the frame time on this device; that change is
-  not merged.
+- `ciede_hip` runs the CPU's arithmetic on pairs of `float` values since
+  ADR-1448 and is within 1.4e-11; the gate bounds its cell at `1e-9`
+  (see [ciede_hip](#ciede_hip-follows-the-cpus-arithmetic-2026-10-02)).
 
 The exact twins were not all free. Frame time on the gfx1036 before and after
 each twin became exact, from its own pull request (ms per 1920x1080 frame and

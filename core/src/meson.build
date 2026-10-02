@@ -345,6 +345,12 @@ if is_hipcc_enabled and is_hip_enabled
         'feature/hip/integer_psnr_hip.h',
         'feature/hip/float_moment_hip.h',
         'feature/hip/ciede_hip.h',
+        # ADR-1448: the fp32 pair arithmetic of ciede.c and its primitives,
+        # shared with the SYCL twin.
+        'feature/ff_pair.h',
+        'feature/ff_math.h',
+        'feature/ciede_ff_math.h',
+        'feature/hip/integer_ciede/ciede_hip_math.h',
         'feature/hip/float_ssim_hip.h',
         # ADR-1405: the float_ssim decimation, shared by the kernel and the
         # device-free test.
@@ -380,6 +386,11 @@ if is_hipcc_enabled and is_hip_enabled
         'feature/adm_angle_flag.h',
         'mem.h',
     )
+    # ADR-1448: the shared pair headers are C++20 (designated initialisers,
+    # <numbers>); hipcc's default is C++17.
+    hip_kernel_extra_args = {
+        'ciede_score' : ['-std=c++20'],
+    }
     foreach name, src : hip_kernel_sources
         # hipcc ignores -MD/-MF under --genco; the device frontend writes the
         # depfile when asked directly, so header edits rebuild the HSACO.
@@ -391,6 +402,7 @@ if is_hipcc_enabled and is_hip_enabled
             depend_files: hip_kernel_shared_headers,
             command: [hipcc_exe, '--genco'] + hip_offload_arch_flags +
                      hip_include_flags + hip_strict_fp_args +
+                     hip_kernel_extra_args.get(name, []) +
                      ['-I', meson.current_source_dir(),
                       '-I', meson.current_source_dir() + '/feature',
                       '-I', meson.current_source_dir() + '/feature/hip',
@@ -1524,6 +1536,10 @@ if is_cuda_enabled
         'feature/cuda/integer_moment_cuda.h',
         'feature/cuda/integer_ciede_cuda.h',
         'feature/cuda/integer_ciede/ciede_device.h',
+        # Frame sum of the CPU extractor, one definition for the CUDA, SYCL
+        # and HIP hosts. No parentheses or quotes in comments inside this list:
+        # test_device_target_header_dependencies reads it with a regex.
+        'feature/ciede_frame_sum.h',
         'feature/cuda/integer_ssim_cuda.h',
         'feature/cuda/ssim_cuda.h',
         'feature/cuda/integer_ms_ssim_cuda.h',

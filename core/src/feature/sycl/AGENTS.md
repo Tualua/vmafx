@@ -614,7 +614,16 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
 
 - **`integer_ciede_sycl.cpp` = `ciede.c`'s statements on fp32 pairs
   ([ADR-1436](../../../../docs/adr/1436-sycl-ciede-cpu-arithmetic.md),
-  after ADR-1426 for CUDA).** `sycl_ciede_math.h` mirrors
+  after ADR-1426 for CUDA).** Arithmetic = `../ciede_ff_math.h` + pair
+  functions `../ff_math.h`, shared with `ciede_hip` (ADR-1448):
+  backend-neutral, no `sycl::` in them. `sycl_ff_math.h` /
+  `sycl_ciede_math.h` = SYCL primitives only (`vmaf_ffm_base` =
+  `vmaf_sycl_exact`, `VMAF_FF_*` macros -> `sycl::fabs` / `rint` / `sqrt` /
+  `cbrt` / `pow(x, 0.2f)` / `ldexp`, `VMAF_FF_INLINE` =
+  `VMAF_SYCL_ALWAYS_INLINE`) + namespace aliases `vmaf_sycl_ffm` /
+  `vmaf_sycl_ciede`; no function definitions there. A change to a shared
+  header changes both twins: A380 AND gfx1036 parity before merge (move
+  measured bit-identical on 178 A380 frames). `ciede_ff_math.h` mirrors
   `../cuda/integer_ciede/ciede_device.h` function for function: fp64 of
   the reference = `Ff` pair (48 bits), fp64 libm call = pair function of
   `sycl_ff_math.h` (`sqrt`, `cbrt`, `pow_2_4`, `pow_7`, `exp`, `sin_cos`,
@@ -630,7 +639,8 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   functions `VMAF_SYCL_ALWAYS_INLINE`: without, some stay calls, the
   frames are scratch (3.4 KiB) and the A380 scores 27 dB off. Kernel
   stores one float per pixel at its raster position; host
-  `ciede_frame_sum()` = `extract()`'s double sum, score
+  `ciede_frame_sum()` (`../ciede_frame_sum.h`, shared with the CUDA and HIP
+  hosts) = `extract()`'s double sum, score
   `45. - 20. * log10(sum / (w * h))`. Never: device fp32 `pow` / `cbrt` /
   `atan2` / `sin` / `cos` / `exp` for a result, `7.787 t + 16 / 116`
   (that line alone was 1.12e-5), a device reduction. NOT exact: A380 vs

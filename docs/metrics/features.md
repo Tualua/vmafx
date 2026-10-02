@@ -944,6 +944,31 @@ per 3840x2160 frame on an Arc A380 (16.2 ms before) and 1.2 ms at 576x324
 thread. It also keeps one `float` per pixel on the device and on the
 host, 33 MB each at 3840x2160.
 
+**`ciede_hip` and the CPU.** The HIP twin runs the SYCL twin's statements,
+from the same source file, on an AMD device
+([ADR-1448](../adr/1448-hip-ciede-cpu-arithmetic.md)). An AMD device has
+`double`, but its double-precision math functions took 17 times the frame
+time on an integrated GPU, so the twin uses the pairs of `float` values
+instead. Measured on a gfx1036 (ROCm 7.2.4) at `--precision max` against
+`--backend cpu`: 115 of 178 frames identical and the rest within 1.4e-11
+(the Netflix 576x324 pair identical on 47 of 48 frames, its 10-, 12- and
+16-bit versions and both 1920x1080 checkerboard pairs on every frame,
+3840x2160 within 1.4e-11). Before ADR-1448 the twin was up to 1.1e-5 away,
+and stored `ciede_hip` outputs differ from new ones by that much. It is not
+bit-identical for the reasons the SYCL twin is not: the C library's `powf` is
+not correctly rounded, which moves at most 74 of the 8.3 million pixels of a
+3840x2160 frame to the neighbouring `float`, and a pair holds 48 bits where a
+`double` holds 53, which moved 8 of 437 million pixels. The pair arithmetic
+costs time: 49.6 ms per 1920x1080 frame on a gfx1036 (18.6 ms before) and
+210 ms per 3840x2160 frame (75.6 ms before), where the CPU extractor takes
+136 ms on sixteen threads (`T-HIP-CIEDE-EXACT-THROUGHPUT-2026-10-02`). Check
+it with:
+
+```shell
+python3 scripts/dev/speed_gpu_parity.py --backend hip --feature ciede \
+    --max-abs-diff 1e-9 --vmaf "$PWD/build-hip/tools/vmaf"
+```
+
 The HIP and Metal twins compute in `float` and agree with the CPU to about
 two decimal places of the gate (`5e-3`).
 

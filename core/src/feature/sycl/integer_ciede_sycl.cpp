@@ -41,6 +41,7 @@
 #include <cstring>
 
 #include "config.h"
+#include "feature/ciede_frame_sum.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
@@ -205,16 +206,6 @@ static void launch_ciede(sycl::queue &q, const CiedeKernelArgs &args)
     q.submit([&](sycl::handler &h) {
         h.parallel_for(sycl::range<2>{args.height, args.width}, CiedeKernel(args));
     });
-}
-
-/* extract()'s `de00_sum`: every pixel's value added into one double, row
- * after row, each row left to right. */
-static double ciede_frame_sum(const float *terms, size_t count)
-{
-    double de00_sum = 0.0;
-    for (size_t i = 0u; i < count; i++)
-        de00_sum += (double)terms[i];
-    return de00_sum;
 }
 
 /* Record frame geometry, chroma subsampling and per-plane sizes. */

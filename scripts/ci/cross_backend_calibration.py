@@ -272,10 +272,20 @@ def is_exact_pair(feature: str, backend_a: str, backend_b: str) -> bool:
 # ``powf`` is not correctly rounded, as on CUDA (18 to 64 pixels per 4K
 # frame). Measured on an Arc A380: 1.4e-11 at 3840x2160, 6.9e-13 at 576x324,
 # the CUDA twin's figures.
+#
+# ADR-1448: ``ciede_hip`` runs the SYCL twin's pair statements (the shared
+# ``feature/ciede_ff_math.h``) on an AMD device. Compared pixel by pixel on a
+# gfx1036 against a glibc 2.44 host replay of the fp64 statements, 2 214 of
+# 437 million pixels differ: 2 206 by one float step because glibc's ``powf``
+# is not correctly rounded (at most 74 per 4K frame), 8 by one to nine steps
+# because a pair does not decide a rounding the way fp64 does. Measured:
+# 1.4e-11 at 3840x2160, 6.9e-13 at 576x324, 4.6e-12 on full-range 576x324
+# noise. At 576x324 a nine-step pixel moves the score by 5e-11, so the bound
+# below holds there with room.
 # ---------------------------------------------------------------------------
 
 LIBM_TWINS: dict[str, dict[str, float]] = {
-    "ciede": {"cuda": 1e-9, "sycl": 1e-9},
+    "ciede": {"cuda": 1e-9, "sycl": 1e-9, "hip": 1e-9},
     "speed_chroma": {"cuda": 5e-6, "hip": 5e-6},
 }
 LIBM_TWIN_SOURCE = "libm:ADR-1426"

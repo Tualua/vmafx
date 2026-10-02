@@ -48,8 +48,10 @@ Converting an open PR that edits the old literal (one conflict, once):
 3. `make docs-fragments-write`; commit the regenerated table.
 Tests need no edit: they hold for any fragment set.
 
-**Math-library twins (ADR-1426, ADR-1436).** `LIBM_TWINS` in
-`cross_backend_calibration.py` (`ciede`: `cuda` = 1e-9, `sycl` = 1e-9) =
+**Math-library twins (ADR-1426, ADR-1436, ADR-1448).** `LIBM_TWINS` in
+`cross_backend_calibration.py` (`ciede`: `cuda` = 1e-9, `sycl` = 1e-9,
+`hip` = 1e-9; HIP = SYCL's pair statements, gfx1036: 2 214 of 437 M pixels
+off, 2 206 glibc `powf` (1 step), 8 pair rounding (1-9 steps)) =
 twins running the CPU's arithmetic + sum order, differing only in libm
 (glibc vs device `pow` / `atan2` / `sin` / `cos` / `exp` / `powf`) and, on
 SYCL (no fp64 type), in the last bits of an fp32 pair (1 pixel in 1.6

@@ -5,22 +5,27 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent AND MIT
  *
  *  ciede2000 feature extractor on the HIP backend — third consumer of
- *  `core/src/hip/kernel_template.h` (T7-10b follow-up / ADR-0259).
- *  Real kernel promotion: T7-10b batch-4 / ADR-0377.
+ *  `core/src/hip/kernel_template.h` (T7-10b follow-up / ADR-0259; the CPU's
+ *  arithmetic since ADR-1448).
  *
- *  This TU mirrors `core/src/feature/cuda/integer_ciede_cuda.c`
- *  call-graph-for-call-graph. When `HAVE_HIPCC` is defined the real HIP
- *  Module API path is active: `hipModuleLoadData` + `hipModuleGetFunction`
- *  + per-frame HtoD copies of all 6 YUV planes + `hipModuleLaunchKernel`.
- *  Without `HAVE_HIPCC` the scaffold posture is preserved.
+ *  Each frame: the six Y/U/V planes on the device (the context's shared
+ *  frame, ADR-1408), one kernel launch with a thread per pixel, one readback
+ *  of a float per pixel. The kernel evaluates ciede.c's get_lab_color() and
+ *  ciede2000() statement for statement with every fp64 value as an fp32 pair
+ *  (feature/ciede_ff_math.h, the arithmetic of the SYCL twin, ADR-1436) and
+ *  stores each value at its raster position. collect() adds the plane in
+ *  raster order into one double, as ciede.c's extract() does
+ *  (feature/ciede_frame_sum.h), and applies the reference's
+ *  `45. - 20. * log10(de00_sum / (w * h))`.
  *
- *  The ciede kernel writes one float per block (no atomic accumulator),
- *  so the template's memset pre-launch is intentionally bypassed here —
- *  same decision as the CUDA twin's inlined pre-launch wait (ADR-0259).
+ *  Numerical contract: the CPU's arithmetic and the CPU's sum. What differs
+ *  is the last bits of a pair, which decide a float rounding differently on
+ *  a few pixels in ten million, and glibc's powf, which is not correctly
+ *  rounded where the kernel's value is: within 1.4e-11 of the CPU on the
+ *  measured frames, not bit-identical.
  *
- *  Bit-exactness: float per-pixel arithmetic + host double log10, no SIMD
- *  or FMA. Per ADR-0138/0139, 1-2 ULP differences from CUDA in the partial
- *  accumulation step are permissible; the host log10 step is identical.
+ *  When `HAVE_HIPCC` is defined the kernels are built and run; without it
+ *  the extractor returns -ENOSYS.
  */
 
 #include <errno.h>
@@ -28,6 +33,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "ciede_frame_sum.h"
 #include "dict.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
@@ -54,14 +60,13 @@
 
 typedef struct CiedeStateHip {
     /* Lifecycle (private stream + submit/finished event pair) and the
-     * (device per-block float partials, pinned host readback slot)
-     * pair are managed by `hip/kernel_template.h` (T7-10b third
-     * consumer / ADR-0259). */
+     * (device per-pixel float terms, pinned host readback slot) pair are
+     * managed by `hip/kernel_template.h` (T7-10b third consumer / ADR-0259).
+     * One float per pixel, at its raster position (ADR-1448). */
     VmafHipKernelLifecycle lc;
     VmafHipKernelReadback rb;
     VmafHipContext *ctx;
-    unsigned partials_capacity;
-    unsigned partials_count;
+    size_t terms_capacity;
     unsigned index;
     unsigned frame_w;
     unsigned frame_h;
@@ -96,7 +101,43 @@ typedef struct CiedeStateHip {
 #define CIEDE_HIP_BX 16
 #define CIEDE_HIP_BY 16
 
+/* The bit depths the kernels hold ciede.c's constants for, in the order of
+ * `kCiedeConstants` in integer_ciede/ciede_score.hip. */
+#define CIEDE_HIP_DEPTH_8 0u
+#define CIEDE_HIP_DEPTH_10 1u
+#define CIEDE_HIP_DEPTH_12 2u
+#define CIEDE_HIP_DEPTH_16 3u
+#define CIEDE_HIP_DEPTH_NONE 4u
+
+/* The planes of one picture as the kernels take them, by value; the layout of
+ * `struct CiedeHipPlanes` in integer_ciede/ciede_score.hip. */
+typedef struct CiedeHipPlanes {
+    const uint8_t *y;
+    const uint8_t *u;
+    const uint8_t *v;
+    ptrdiff_t y_stride; /* bytes */
+    ptrdiff_t c_stride;
+} CiedeHipPlanes;
+
 static const VmafOption options[] = {{0}};
+
+/* The kernels' index of a bit depth; CIEDE_HIP_DEPTH_NONE for one a picture
+ * cannot have. */
+static unsigned ciede_hip_depth_index(unsigned bpc)
+{
+    switch (bpc) {
+    case 8u:
+        return CIEDE_HIP_DEPTH_8;
+    case 10u:
+        return CIEDE_HIP_DEPTH_10;
+    case 12u:
+        return CIEDE_HIP_DEPTH_12;
+    case 16u:
+        return CIEDE_HIP_DEPTH_16;
+    default:
+        return CIEDE_HIP_DEPTH_NONE;
+    }
+}
 
 #ifdef HAVE_HIPCC
 /* Translate a HIP error code to a negative errno. */
@@ -199,49 +240,29 @@ static int ciede_hip_upload(CiedeStateHip *s, VmafHipSharedFrame *frame, const V
     return 0;
 }
 
-/* Launch the appropriate bpc kernel. Extracted to keep submit under 60 lines. */
+/* Launch the kernel of the frame's bit depth: one thread per pixel, its value
+ * stored at its raster position. */
 static int ciede_hip_launch(CiedeStateHip *s, hipStream_t str)
 {
     const unsigned gx = (s->frame_w + CIEDE_HIP_BX - 1u) / CIEDE_HIP_BX;
     const unsigned gy = (s->frame_h + CIEDE_HIP_BY - 1u) / CIEDE_HIP_BY;
-    float *partials_dev = (float *)s->rb.device;
+    /* Strides are tightly packed in the staging buffers. */
+    const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
+    const ptrdiff_t luma_stride = (ptrdiff_t)(s->frame_w * bpp);
+    const ptrdiff_t chroma_stride = (ptrdiff_t)(s->chroma_w * bpp);
+    CiedeHipPlanes ref = {s->ref_y, s->ref_u, s->ref_v, luma_stride, chroma_stride};
+    CiedeHipPlanes dis = {s->dis_y, s->dis_u, s->dis_v, luma_stride, chroma_stride};
+    float *terms_dev = (float *)s->rb.device;
     unsigned w = s->frame_w;
     unsigned h = s->frame_h;
-    unsigned bpc = s->bpc;
+    unsigned depth = ciede_hip_depth_index(s->bpc);
     unsigned ss_hor = s->ss_hor;
     unsigned ss_ver = s->ss_ver;
 
-    /* Strides are tightly packed in the staging buffers. */
-    const size_t bpp = (bpc <= 8u) ? 1u : 2u;
-    ptrdiff_t luma_stride = (ptrdiff_t)(s->frame_w * bpp);
-    ptrdiff_t chroma_stride = (ptrdiff_t)(s->chroma_w * bpp);
-    uint8_t *ry = (uint8_t *)s->ref_y;
-    uint8_t *ru = (uint8_t *)s->ref_u;
-    uint8_t *rv = (uint8_t *)s->ref_v;
-    uint8_t *dy = (uint8_t *)s->dis_y;
-    uint8_t *du = (uint8_t *)s->dis_u;
-    uint8_t *dv = (uint8_t *)s->dis_v;
-
-    hipFunction_t func = (bpc == 8u) ? s->funcbpc8 : s->funcbpc16;
-    void *args[] = {(void *)&ry,
-                    (void *)&luma_stride,
-                    (void *)&ru,
-                    (void *)&chroma_stride,
-                    (void *)&rv,
-                    (void *)&chroma_stride,
-                    (void *)&dy,
-                    (void *)&luma_stride,
-                    (void *)&du,
-                    (void *)&chroma_stride,
-                    (void *)&dv,
-                    (void *)&chroma_stride,
-                    (void *)&partials_dev,
-                    (void *)&w,
-                    (void *)&h,
-                    (void *)&bpc,
-                    (void *)&ss_hor,
-                    (void *)&ss_ver};
-    hipError_t rc =
+    hipFunction_t func = (s->bpc == 8u) ? s->funcbpc8 : s->funcbpc16;
+    void *args[] = {(void *)&ref, (void *)&dis,   (void *)&terms_dev, (void *)&w,
+                    (void *)&h,   (void *)&depth, (void *)&ss_hor,    (void *)&ss_ver};
+    const hipError_t rc =
         hipModuleLaunchKernel(func, gx, gy, 1, CIEDE_HIP_BX, CIEDE_HIP_BY, 1, 0, str, args, NULL);
     return (rc == hipSuccess) ? 0 : ciede_hip_rc(rc);
 }
@@ -264,8 +285,8 @@ static int ciede_hip_do_submit(CiedeStateHip *s, VmafHipSharedFrame *frame, Vmaf
     if (rc != hipSuccess)
         return ciede_hip_rc(rc);
 
-    rc = hipMemcpyAsync(s->rb.host_pinned, s->rb.device, (size_t)s->partials_count * sizeof(float),
-                        hipMemcpyDeviceToHost, str);
+    const size_t term_bytes = (size_t)s->frame_w * s->frame_h * sizeof(float);
+    rc = hipMemcpyAsync(s->rb.host_pinned, s->rb.device, term_bytes, hipMemcpyDeviceToHost, str);
     if (rc != hipSuccess)
         return ciede_hip_rc(rc);
 
@@ -300,23 +321,20 @@ static int ciede_hip_release(CiedeStateHip *s)
 static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                         unsigned w, unsigned h)
 {
-    if (pix_fmt == VMAF_PIX_FMT_YUV400P)
+    if (pix_fmt == VMAF_PIX_FMT_YUV400P || ciede_hip_depth_index(bpc) == CIEDE_HIP_DEPTH_NONE)
         return -EINVAL;
     CiedeStateHip *s = fex->priv;
 
     s->bpc = bpc;
     s->ss_hor = (pix_fmt != VMAF_PIX_FMT_YUV444P) ? 1u : 0u;
     s->ss_ver = (pix_fmt == VMAF_PIX_FMT_YUV420P) ? 1u : 0u;
-    const unsigned grid_x = (w + (CIEDE_HIP_BX - 1u)) / CIEDE_HIP_BX;
-    const unsigned grid_y = (h + (CIEDE_HIP_BY - 1u)) / CIEDE_HIP_BY;
-    s->partials_capacity = grid_x * grid_y;
+    s->terms_capacity = (size_t)w * h;
 
     int err = vmaf_hip_context_new(&s->ctx, 0);
     if (err == 0)
         err = vmaf_hip_kernel_lifecycle_init(&s->lc, s->ctx);
     if (err == 0) {
-        err = vmaf_hip_kernel_readback_alloc(&s->rb, s->ctx,
-                                             (size_t)s->partials_capacity * sizeof(float));
+        err = vmaf_hip_kernel_readback_alloc(&s->rb, s->ctx, s->terms_capacity * sizeof(float));
     }
 #ifdef HAVE_HIPCC
     if (err == 0)
@@ -345,9 +363,8 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     s->index = index;
     s->frame_w = ref_pic->w[0];
     s->frame_h = ref_pic->h[0];
-    const unsigned grid_x = (s->frame_w + (CIEDE_HIP_BX - 1u)) / CIEDE_HIP_BX;
-    const unsigned grid_y = (s->frame_h + (CIEDE_HIP_BY - 1u)) / CIEDE_HIP_BY;
-    s->partials_count = grid_x * grid_y;
+    if ((size_t)s->frame_w * s->frame_h > s->terms_capacity)
+        return -EINVAL;
 
 #ifdef HAVE_HIPCC
     return ciede_hip_do_submit(s, fex->hip_frame, ref_pic, dist_pic);
@@ -368,17 +385,11 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
     }
 
 #ifdef HAVE_HIPCC
-    /* Per-block partials -> host accumulation in double. Same precision
-     * argument as ciede_vulkan (ADR-0187): per-block sums fit in float7
-     * precision; cross-block reduction across thousands of partials needs
-     * double to retain places=4. */
-    const float *partials_host = s->rb.host_pinned;
-    double total = 0.0;
-    for (unsigned i = 0; i < s->partials_count; i++)
-        total += (double)partials_host[i];
-    const double n_pixels = (double)s->frame_w * (double)s->frame_h;
-    const double mean_de = total / n_pixels;
-    const double score = 45.0 - 20.0 * log10(mean_de);
+    /* ciede.c's extract(): every pixel's value into one double in raster
+     * order, then `45. - 20. * log10(de00_sum / (w * h))`. */
+    const double de00_sum =
+        ciede_frame_sum((const float *)s->rb.host_pinned, (size_t)s->frame_w * s->frame_h);
+    const double score = 45. - 20. * log10(de00_sum / (s->frame_w * s->frame_h));
 
     return vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                    "ciede2000", score, index);

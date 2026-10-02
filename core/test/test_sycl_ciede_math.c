@@ -23,6 +23,12 @@
  *     formula, which the twin had before, differs on most pixels.
  *
  * The device half exits 77 without a GPU; the host half always runs.
+ *
+ * The arithmetic is shared with the HIP twin (feature/ff_math.h and
+ * feature/ciede_ff_math.h, ADR-1448). A HIP build compiles this file as
+ * test_hip_ciede_math against test_hip_ciede_math_probe.cpp, which evaluates
+ * the same functions on the HIP twin's primitives on the host, with
+ * VMAF_TEST_CIEDE_MATH_HOST_ONLY: there is no device half in that test.
  */
 
 #include <errno.h>
@@ -327,6 +333,7 @@ static char *test_pixels_host(void)
     return check_pixels(false, "host");
 }
 
+#if !defined(VMAF_TEST_CIEDE_MATH_HOST_ONLY)
 static char *test_pair_functions_device(void)
 {
     return check_pair_functions(true, "device");
@@ -336,17 +343,20 @@ static char *test_pixels_device(void)
 {
     return no_device ? NULL : check_pixels(true, "device");
 }
+#endif
 
 char *run_tests(void)
 {
     mu_run_test(test_pair_functions_host);
     mu_run_test(test_pixels_host);
+#if !defined(VMAF_TEST_CIEDE_MATH_HOST_ONLY)
     mu_run_test(test_pair_functions_device);
     mu_run_test(test_pixels_device);
     if (no_device) {
         (void)fprintf(stderr, "[skip: no SYCL GPU for the device half] ");
         mu_skipped = 1;
     }
+#endif
     return NULL;
 }
 

@@ -1375,10 +1375,11 @@ a sum per 16x16 block. It was up to 1.14e-5 from the CPU. Since
 [ADR-1436](../../adr/1436-sycl-ciede-cpu-arithmetic.md) the kernel runs the
 CPU's statements with every `double` as a pair of `float` values (about 48
 bits) and every math-library call as a function on such pairs
-(`core/src/feature/sycl/sycl_ciede_math.h`,
-`core/src/feature/sycl/sycl_ff_math.h`), rounds to `float` where the CPU
-does, and stores one `float` per pixel; the host adds them in the CPU's
-order.
+(`core/src/feature/ciede_ff_math.h` and `core/src/feature/ff_math.h`,
+shared with the HIP twin since ADR-1448; `sycl_ciede_math.h` and
+`sycl_ff_math.h` name the SYCL primitives they use), rounds to `float` where
+the CPU does, and stores one `float` per pixel; the host adds them in the
+CPU's order.
 
 Each piece of the old twin on its own, largest difference on the Netflix
 576x324 pair and on BBB 3840x2160

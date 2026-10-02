@@ -1158,3 +1158,4 @@
 1455-cuda-float-psnr-exact-block-sums
 1454-agents-index-and-topic-pages
 1456-cuda-vif-device-log2-pinned
+1448-hip-ciede-cpu-arithmetic

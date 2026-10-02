@@ -7,12 +7,15 @@
 statement for statement on a device that has no fp64 type (ADR-0220):
 
 * every fp64 value is an fp32 pair and every fp64 math-library call a pair
-  function (``sycl_ff_math.h``), rounded to float where the reference rounds
-  (``sycl_ciede_math.h``);
+  function (``feature/ff_math.h``), rounded to float where the reference
+  rounds (``feature/ciede_ff_math.h``). Both headers are shared with the HIP
+  twin (ADR-1448); ``sycl/sycl_ff_math.h`` and ``sycl/sycl_ciede_math.h`` name
+  the SYCL primitives they are built on and include them;
 * the kernel has no call left in it (a call frame is scratch memory,
   ADR-1395) and reads the two tables from device memory;
 * it stores one float per pixel, and the host adds them into one double in
-  the reference's raster order and applies the reference's score expression.
+  the reference's raster order (``feature/ciede_frame_sum.h``) and applies the
+  reference's score expression.
 
 Device-free: reads the sources only. ``test_sycl_ciede_math`` checks the
 arithmetic on the host and on a device, ``test_sycl_ciede_parity`` the scores
@@ -32,8 +35,13 @@ FEATURE_ROOT = ROOT / "core" / "src" / "feature"
 GENERATOR = ROOT / "scripts" / "dev" / "gen_sycl_ff_math.py"
 
 TWIN = "sycl/integer_ciede_sycl.cpp"
-MATH = "sycl/sycl_ciede_math.h"
-FF = "sycl/sycl_ff_math.h"
+# The arithmetic, shared with the HIP twin.
+MATH = "ciede_ff_math.h"
+FF = "ff_math.h"
+SUM = "ciede_frame_sum.h"
+# The SYCL primitives the shared headers are built on.
+SYCL_MATH = "sycl/sycl_ciede_math.h"
+SYCL_FF = "sycl/sycl_ff_math.h"
 CPU = "ciede.c"
 
 COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
@@ -83,16 +91,37 @@ MATH_PIECES = (
     ("rgb_to_xyz_map", "if (less(k.gamma_knee, c)) {"),
     (
         "rgb_to_xyz_map",
-        "vmaf_sycl_ffm::pow_2_4(ff_mul(ff_add(c, k.gamma_offset), k.gamma_gain))",
+        "vmaf_ffm::pow_2_4(ff_mul(ff_add(c, k.gamma_offset), k.gamma_gain))",
     ),
-    ("xyz_to_lab_map", "return to_float(vmaf_sycl_ffm::cbrt(c));"),
-    ("h_prime", "vmaf_sycl_ffm::atan2(x, y, tables.atan)"),
+    ("xyz_to_lab_map", "return to_float(vmaf_ffm::cbrt(c));"),
+    ("h_prime", "vmaf_ffm::atan2(x, y, tables.atan)"),
     ("r_sub_t", "const float exponent = -(degrees * degrees);"),
     ("r_sub_t", "const float ratio = div_rn(c7, c7 + kPowf25To7);"),
     ("delta_e", "const Ff cross = mul_f(two_prod(rotation, chroma), hue);"),
-    ("delta_e", "return to_float(vmaf_sycl_ffm::sqrt(ff_add(squares, cross)));"),
+    ("delta_e", "return to_float(vmaf_ffm::sqrt(ff_add(squares, cross)));"),
 )
 FP32_LIBM = re.compile(r"sycl::(?:pow|cbrt|atan2|sin|cos|exp|log|sqrt)\(")
+# An fp32 math function or root-estimate primitive in the shared arithmetic,
+# where the reference computes in fp64. ff_math.h is where the estimates are
+# corrected; ciede_ff_math.h must not use one directly.
+SHARED_FP32_LIBM = re.compile(
+    r"\bVMAF_FF_(?:SQRT|CBRT|ROOT5)\(|\b(?:powf|cbrtf|atan2f|sinf|cosf|expf|logf|sqrtf)\("
+)
+# What the SYCL wrappers hand the shared headers.
+SYCL_PRIMITIVES = (
+    (SYCL_FF, "namespace vmaf_ffm_base = vmaf_sycl_exact;"),
+    (SYCL_FF, "#define VMAF_FF_INLINE VMAF_SYCL_ALWAYS_INLINE"),
+    (SYCL_FF, "#define VMAF_FF_FABS(x) sycl::fabs(x)"),
+    (SYCL_FF, "#define VMAF_FF_RINT(x) sycl::rint(x)"),
+    (SYCL_FF, "#define VMAF_FF_SQRT(x) sycl::sqrt(x)"),
+    (SYCL_FF, "#define VMAF_FF_CBRT(x) sycl::cbrt(x)"),
+    (SYCL_FF, "#define VMAF_FF_ROOT5(x) sycl::pow(x, 0.2f)"),
+    (SYCL_FF, '#include "../ff_math.h"'),
+    (SYCL_FF, "namespace vmaf_sycl_ffm = vmaf_ffm;"),
+    (SYCL_MATH, "#define VMAF_FF_LDEXP(x, k) sycl::ldexp(x, k)"),
+    (SYCL_MATH, '#include "../ciede_ff_math.h"'),
+    (SYCL_MATH, "namespace vmaf_sycl_ciede = vmaf_ciede_ff;"),
+)
 
 
 def _code(source: str) -> str:
@@ -102,7 +131,8 @@ def _code(source: str) -> str:
 
 def _sources() -> dict[str, str]:
     return {
-        name: (FEATURE_ROOT / name).read_text(encoding="utf-8") for name in (TWIN, MATH, FF, CPU)
+        name: (FEATURE_ROOT / name).read_text(encoding="utf-8")
+        for name in (TWIN, MATH, FF, SUM, SYCL_MATH, SYCL_FF, CPU)
     }
 
 
@@ -147,8 +177,27 @@ def _math_failures(sources: dict[str, str]) -> list[str]:
         failures.append(f"{MATH}: fp64 type outside the host-only helpers (ADR-0220)")
     if FP64.search(_code(sources[FF])):
         failures.append(f"{FF}: fp64 type in kernel code (ADR-0220)")
-    if FP32_LIBM.search(device):
+    if FP32_LIBM.search(device) or SHARED_FP32_LIBM.search(device):
         failures.append(f"{MATH}: an fp32 math-library call where the reference computes in fp64")
+    for name in (MATH, FF):
+        if "sycl::" in _code(sources[name]) or "<sycl/" in sources[name]:
+            failures.append(f"{name}: the shared arithmetic names a SYCL function (ADR-1448)")
+    return failures
+
+
+def _wrapper_failures(sources: dict[str, str]) -> list[str]:
+    """The SYCL wrappers define the primitives and nothing of the arithmetic."""
+    failures = [
+        f"{name}: the SYCL primitive is not `{piece}`"
+        for name, piece in SYCL_PRIMITIVES
+        if piece not in sources[name]
+    ]
+    for name in (SYCL_MATH, SYCL_FF):
+        code = _code(sources[name])
+        if FP64.search(code):
+            failures.append(f"{name}: fp64 type in kernel code (ADR-0220)")
+        if re.search(r"\b(?:Ff|float|bool)\s+\w+\(", code):
+            failures.append(f"{name}: a function definition next to the shared arithmetic")
     return failures
 
 
@@ -192,9 +241,15 @@ def _twin_failures(sources: dict[str, str]) -> list[str]:
         )
     if re.search(r"reduce_over_group|sycl::reduction|sycl::plus", twin):
         failures.append(f"{TWIN}: a device reduction adds in another order than extract()")
-    total = _function_body(twin, "ciede_frame_sum")
+    total = _function_body(_code(sources[SUM]), "ciede_frame_sum")
     if "double de00_sum = 0.0;" not in total or "de00_sum += (double)terms[i];" not in total:
-        failures.append(f"{TWIN}: the host must add the pixels into one double, in raster order")
+        failures.append(f"{SUM}: the host must add the pixels into one double, in raster order")
+    if '#include "feature/ciede_frame_sum.h"' not in sources[TWIN] or re.search(
+        r"double ciede_frame_sum\(", twin
+    ):
+        failures.append(f"{TWIN}: the frame sum is not the shared ciede_frame_sum()")
+    if "ciede_frame_sum(s->h_terms, (size_t)s->width * s->height)" not in twin:
+        failures.append(f"{TWIN}: collect no longer adds the whole plane")
     if "45. - 20. * std::log10(de00_sum / (s->width * s->height))" not in twin:
         failures.append(f"{TWIN}: the score expression is not extract()'s")
     if "vmaf_sycl_ciede::pixel(" not in _function_body(twin, "ciede_pixel"):
@@ -208,6 +263,7 @@ def _failures(sources: dict[str, str]) -> list[str]:
     return (
         _reference_failures(sources)
         + _math_failures(sources)
+        + _wrapper_failures(sources)
         + _table_failures(sources)
         + _twin_failures(sources)
     )
@@ -247,8 +303,8 @@ class SyclCiedeExactContractTest(unittest.TestCase):
     def test_fp32_gamma_is_detected(self) -> None:
         failures = self._edited(
             MATH,
-            "        return vmaf_sycl_ffm::pow_2_4(ff_mul(ff_add(c, k.gamma_offset), k.gamma_gain));",
-            "        return from_float(sycl::pow(to_float(c), 2.4f));",
+            "        return vmaf_ffm::pow_2_4(ff_mul(ff_add(c, k.gamma_offset), k.gamma_gain));",
+            "        return from_float(powf(to_float(c), 2.4f));",
         )
         self._detects(failures, "rgb_to_xyz_map()")
         self._detects(failures, "fp32 math-library call")
@@ -256,8 +312,8 @@ class SyclCiedeExactContractTest(unittest.TestCase):
     def test_swapped_atan2_arguments_are_detected(self) -> None:
         failures = self._edited(
             MATH,
-            "vmaf_sycl_ffm::atan2(x, y, tables.atan)",
-            "vmaf_sycl_ffm::atan2(y, x, tables.atan)",
+            "vmaf_ffm::atan2(x, y, tables.atan)",
+            "vmaf_ffm::atan2(y, x, tables.atan)",
         )
         self._detects(failures, "h_prime()")
 
@@ -301,13 +357,44 @@ class SyclCiedeExactContractTest(unittest.TestCase):
 
     def test_simd32_kernel_shape_is_detected(self) -> None:
         failures = self._edited(
-            TWIN, "static constexpr int CIEDE_SYCL_SG = 16;", "static constexpr int CIEDE_SYCL_SG = 32;"
+            TWIN,
+            "static constexpr int CIEDE_SYCL_SG = 16;",
+            "static constexpr int CIEDE_SYCL_SG = 32;",
         )
         self._detects(failures, "kernel shape")
 
     def test_float_frame_sum_is_detected(self) -> None:
-        failures = self._edited(TWIN, "    double de00_sum = 0.0;", "    float de00_sum = 0.0f;")
+        failures = self._edited(SUM, "    double de00_sum = 0.0;", "    float de00_sum = 0.0f;")
         self._detects(failures, "one double, in raster order")
+
+    def test_frame_sum_of_its_own_is_detected(self) -> None:
+        failures = self._edited(
+            TWIN,
+            '#include "feature/ciede_frame_sum.h"\n',
+            "static double ciede_frame_sum(const float *terms, size_t count);\n",
+        )
+        self._detects(failures, "shared ciede_frame_sum()")
+
+    def test_sycl_function_in_the_shared_arithmetic_is_detected(self) -> None:
+        failures = self._edited(
+            FF,
+            "    const float k = VMAF_FF_RINT(x * kInvLn2);",
+            "    const float k = sycl::rint(x * kInvLn2);",
+        )
+        self._detects(failures, "names a SYCL function")
+
+    def test_changed_sycl_primitive_is_detected(self) -> None:
+        failures = self._edited(
+            SYCL_FF,
+            "#define VMAF_FF_ROOT5(x) sycl::pow(x, 0.2f)",
+            "#define VMAF_FF_ROOT5(x) sycl::exp(0.2f * sycl::log(x))",
+        )
+        self._detects(failures, "SYCL primitive is not")
+
+    def test_arithmetic_in_a_sycl_wrapper_is_detected(self) -> None:
+        sources = _sources()
+        sources[SYCL_MATH] += "\ninline float lab_map(float t) { return sycl::cbrt(t); }\n"
+        self._detects(_failures(sources), "function definition next to the shared arithmetic")
 
     def test_changed_reference_is_detected(self) -> None:
         failures = self._edited(CPU, "    return pow(x, 2.4);", "    return powf(x, 2.4f);")

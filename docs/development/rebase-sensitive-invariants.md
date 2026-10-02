@@ -512,7 +512,8 @@ linked AGENTS.md before resolving conflicts.
   reference computes in double, float where it stores in float, every
   float-to-double promotion of a libm argument written out (the kernel is
   C++). The kernel stores one float per pixel and
-  `ciede_frame_sum()` adds the read-back plane in raster order. Do not
+  `ciede_frame_sum()` (`core/src/feature/ciede_frame_sum.h`, one definition
+  for the CUDA, SYCL and HIP hosts) adds the read-back plane in raster order. Do not
   introduce float math functions, a device reduction or another form of the
   formula. A change to `get_lab_color()`, `ciede2000()`, `get_r_sub_t()` or
   the order of `extract()`'s sum in `ciede.c` changes that header in the same
@@ -524,11 +525,14 @@ linked AGENTS.md before resolving conflicts.
   [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
 
 - **`ciede_sycl` runs the CPU's arithmetic on fp32 pairs ([ADR-1436](../adr/1436-sycl-ciede-cpu-arithmetic.md))**:
-  `core/src/feature/sycl/sycl_ciede_math.h` is the same statements as the
+  `core/src/feature/ciede_ff_math.h` is the same statements as the
   CUDA twin's `ciede_device.h` for a device without an fp64 type: every fp64
   value is an fp32 pair, every math-library call a function of
-  `core/src/feature/sycl/sycl_ff_math.h`, every `float` of the reference a
-  float rounded from the pair at the reference's statement. The kernel stores
+  `core/src/feature/ff_math.h`, every `float` of the reference a
+  float rounded from the pair at the reference's statement. Both headers are
+  backend-neutral and shared with `ciede_hip` (ADR-1448);
+  `core/src/feature/sycl/sycl_ciede_math.h` and `sycl_ff_math.h` only name
+  the SYCL primitives they are built on. The kernel stores
   one float per pixel and `ciede_frame_sum()` adds the read-back plane in
   raster order. Do not introduce the device's fp32 math functions, a device
   reduction, another form of the formula, or a call the compiler does not
@@ -542,6 +546,20 @@ linked AGENTS.md before resolving conflicts.
   `core/test/test_sycl_ciede_exact_contract.py` guards it without a device,
   `test_sycl_ciede_math` and `test_sycl_ciede_parity` on one. See
   [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
+
+- **`ciede_hip` runs the same fp32-pair statements ([ADR-1448](../adr/1448-hip-ciede-cpu-arithmetic.md))**:
+  `core/src/feature/hip/integer_ciede/ciede_score.hip` includes
+  `core/src/feature/ciede_ff_math.h` through
+  `core/src/feature/hip/integer_ciede/ciede_hip_math.h`, which names the HIP
+  primitives (`core/src/feature/ff_pair.h` on plain fp32 operators under the
+  strict FP list, `fmaf()`, `sqrtf()`, `cbrtf()`, `expf(0.2f * logf(x))`).
+  The device has fp64, but its fp64 math functions cost 17 times the frame
+  time; do not bring them back. The kernel stores one float per pixel and the
+  host adds the plane with `ciede_frame_sum()`. A change to a shared header
+  changes the SYCL twin too: both are re-measured (A380 and gfx1036) in the
+  same PR. The gate bounds the cell at `1e-9` (`LIBM_TWINS`), not 0.
+  `core/test/test_hip_ciede_exact_contract.py` and `test_hip_ciede_math`
+  guard it without a device, `test_hip_ciede_parity` on one.
 
 - **`float_vif_cuda` returns the CPU's scores bit for bit ([ADR-1412](../adr/1412-cuda-float-vif-cpu-arithmetic.md))**:
   the host takes each scale's Gaussian from `vif_get_filter()`, as

@@ -11,6 +11,10 @@
  * feature/sycl/sycl_ff_math.h and the ciede2000 pixel of
  * feature/sycl/sycl_ciede_math.h, callable from C on the host and on the
  * default GPU (ADR-1436).
+ *
+ * test_hip_ciede_math_probe.cpp implements the host half of the same
+ * interface for the HIP twin, which runs the same arithmetic on other
+ * primitives (ADR-1448); it returns -ENODEV for the device half.
  */
 
 #ifndef LIBVMAF_TEST_SYCL_CIEDE_MATH_PROBE_H_

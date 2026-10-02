@@ -887,7 +887,7 @@ def _psnr_hvs_cell(backend_a: str, backend_b: str, width: int, height: int) -> t
 
 
 def test_ciede_cuda_cell_is_bounded_by_its_math_library_and_other_twins_are_not() -> None:
-    """ADR-1426: ciede_cuda runs the CPU's arithmetic; only the libm differs."""
+    """ADR-1426, ADR-1436, ADR-1448: three twins run the CPU's arithmetic."""
 
     def cell(backend_a: str, backend_b: str) -> tuple[float, str]:
         return resolve_cell_tolerance(
@@ -900,17 +900,18 @@ def test_ciede_cuda_cell_is_bounded_by_its_math_library_and_other_twins_are_not(
             backends=(backend_a, backend_b),
         )
 
-    assert LIBM_TWINS["ciede"] == {"cuda": 1e-9, "sycl": 1e-9}
-    assert not is_exact_pair("ciede", "cpu", "cuda")
-    assert not is_exact_pair("ciede", "cpu", "sycl")
-    assert libm_pair_tolerance("ciede", "cpu", "cuda") == LIBM_TWINS["ciede"]["cuda"]
-    assert libm_pair_tolerance("ciede", "cpu", "sycl") == LIBM_TWINS["ciede"]["sycl"]
-    assert libm_pair_tolerance("ciede", "cpu", "hip") is None
+    assert LIBM_TWINS["ciede"] == {"cuda": 1e-9, "sycl": 1e-9, "hip": 1e-9}
+    for backend in ("cuda", "sycl", "hip"):
+        assert not is_exact_pair("ciede", "cpu", backend)
+        assert libm_pair_tolerance("ciede", "cpu", backend) == LIBM_TWINS["ciede"][backend]
+    # A twin that is not listed keeps the feature's default.
+    assert libm_pair_tolerance("ciede", "cpu", "metal") is None
     assert libm_pair_tolerance("ciede", "cpu", "cpu") is None
     assert libm_pair_tolerance("vif", "cpu", "cuda") is None
-    for pair in (("cpu", "cuda"), ("cuda", "cpu"), ("cpu", "sycl"), ("cuda", "sycl")):
+    listed = (("cpu", "cuda"), ("cuda", "cpu"), ("cpu", "sycl"), ("cuda", "sycl"), ("cpu", "hip"))
+    for pair in (*listed, ("hip", "cpu"), ("cuda", "hip"), ("sycl", "hip")):
         assert cell(*pair) == (1e-9, LIBM_TWIN_SOURCE), pair
-    for pair in (("cpu", "hip"), ("cuda", "hip"), ("sycl", "hip")):
+    for pair in (("cpu", "metal"), ("cuda", "metal"), ("hip", "metal")):
         tolerance, source = cell(*pair)
         assert _close(tolerance, FEATURE_TOLERANCE["ciede"]), pair
         assert source == "default", pair

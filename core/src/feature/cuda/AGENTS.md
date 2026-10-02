@@ -1170,7 +1170,9 @@ with a new ADR and measurements, never by reviving ADR-0753 text.
   CUDA `powf` (4 ULP).
 - **No device reduction.** `extract()` = one double accumulator, raster
   order; kernel stores one float per pixel (`terms[y * width + x]`), host
-  `ciede_frame_sum()`. Old fp32 warp / block sums alone = 1.4e-9 at 4K.
+  `ciede_frame_sum()` (`../ciede_frame_sum.h`, one definition for the CUDA,
+  SYCL and HIP hosts; `ciede_device.h` includes it for host code). Old fp32
+  warp / block sums alone = 1.4e-9 at 4K.
 - Gate: `LIBM_TWINS["ciede"]["cuda"] = 1e-9`, NOT `EXACT_TWINS`. Open:
   `T-CUDA-CIEDE-LIBM-RESIDUAL-2026-10-01` (glibc `powf` port would remove
   38 of 39 px), `T-CUDA-CIEDE-EXACT-THROUGHPUT-2026-10-01` (32.7 ms per 4K

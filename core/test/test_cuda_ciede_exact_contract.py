@@ -12,7 +12,8 @@ twin has to copy where it does which:
 - the squares are fp64 products of floats, exact;
 - ``powf`` appears with a float result in two places and nowhere else;
 - the per-pixel value is a float and the frame sum one double that takes the
-  values in raster order.
+  values in raster order (``feature/ciede_frame_sum.h``, shared with the SYCL
+  and HIP twins' hosts).
 
 Device-free: reads the sources only. Every planted regression below is a
 construct the pre-ADR-1426 twin had, so the contract fails on the old design
@@ -34,13 +35,22 @@ CUDA_ROOT = ROOT / "core" / "src" / "feature" / "cuda"
 HOST = "integer_ciede_cuda.c"
 KERNEL = "integer_ciede/ciede_score.cu"
 DEVICE = "integer_ciede/ciede_device.h"
+# extract()'s frame sum, one definition for every twin's host.
+SUM = "../ciede_frame_sum.h"
+SUM_INCLUDE = '#include "feature/ciede_frame_sum.h"'
+# The 8-bit and the 16-bit kernel.
+KERNELS = 2
+# CIEDE_POWF: two definitions and get_r_sub_t()'s two calls.
+POWF_USES = 4
 
 COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
 # A float math function: the pre-ADR-1426 kernel was fp32 throughout.
 FLOAT_MATH = re.compile(r"\b(?:cbrtf|atan2f|sinf|cosf|expf|sqrtf|fabsf)\s*\(")
 DEVICE_REDUCTION = re.compile(r"__shfl_\w+\s*\(|\batomicAdd\s*\(|__shared__")
 # A math call whose first argument is not visibly a double.
-UNPROMOTED = re.compile(r"\b(atan2|sin|cos|exp|sqrt)\(\s*(?!\(double\)|[0-9(]|ciede_sq|c_bar_7|h\b|2\.0)")
+UNPROMOTED = re.compile(
+    r"\b(atan2|sin|cos|exp|sqrt)\(\s*(?!\(double\)|[0-9(]|ciede_sq|c_bar_7|h\b|2\.0)"
+)
 TERM_STORE = "reinterpret_cast<float *>(terms.data)[(size_t)y * width + x] ="
 HOST_SUM = (
     "double de00_sum = 0.0;",
@@ -69,7 +79,7 @@ def _code(source: str) -> str:
 
 def _sources() -> dict[str, str]:
     return {
-        name: (CUDA_ROOT / name).read_text(encoding="utf-8") for name in (HOST, KERNEL, DEVICE)
+        name: (CUDA_ROOT / name).read_text(encoding="utf-8") for name in (HOST, KERNEL, DEVICE, SUM)
     }
 
 
@@ -90,7 +100,7 @@ def _arithmetic_failures(sources: dict[str, str]) -> list[str]:
         )
     if DEVICE_POWF not in sources[DEVICE] or HOST_POWF not in sources[DEVICE]:
         failures.append(f"{DEVICE}: CIEDE_POWF is not glibc's powf on the host and its CR value")
-    if device.count("CIEDE_POWF(") != 4:
+    if device.count("CIEDE_POWF(") != POWF_USES:
         failures.append(f"{DEVICE}: powf is used outside get_r_sub_t()'s two calls")
     return failures
 
@@ -98,16 +108,19 @@ def _arithmetic_failures(sources: dict[str, str]) -> list[str]:
 def _sum_failures(sources: dict[str, str]) -> list[str]:
     failures: list[str] = []
     kernel = _code(sources[KERNEL])
-    if kernel.count(TERM_STORE) != 2:
+    if kernel.count(TERM_STORE) != KERNELS:
         failures.append(f"{KERNEL}: a kernel no longer stores each value at its raster position")
     if DEVICE_REDUCTION.search(kernel):
         failures.append(f"{KERNEL}: the per-pixel values are reduced on the device")
-    if kernel.count("ciede_pixel(") != 2:
+    if kernel.count("ciede_pixel(") != KERNELS:
         failures.append(f"{KERNEL}: a kernel no longer calls the shared ciede_pixel()")
-    device = _code(sources[DEVICE])
+    total = _code(sources[SUM])
     for piece in HOST_SUM:
-        if piece not in device:
-            failures.append(f"{DEVICE}: ciede_frame_sum() is not one double in raster order")
+        if piece not in total:
+            failures.append(f"{SUM}: ciede_frame_sum() is not one double in raster order")
+    device = sources[DEVICE]
+    if SUM_INCLUDE not in device or "double ciede_frame_sum(" in _code(device):
+        failures.append(f"{DEVICE}: the frame sum is not the shared ciede_frame_sum()")
     host = _code(sources[HOST])
     if HOST_CALL not in host:
         failures.append(f"{HOST}: collect no longer adds the whole plane")
@@ -148,9 +161,7 @@ class CiedeCudaContract(unittest.TestCase):
 
     def test_unpromoted_argument_is_detected(self) -> None:
         # Valid C, but the kernel's C++ would call sin(float).
-        failures = _planted(
-            DEVICE, "sin((double)delta_h_prime / 2.0)", "sin(delta_h_prime / 2.0f)"
-        )
+        failures = _planted(DEVICE, "sin((double)delta_h_prime / 2.0)", "sin(delta_h_prime / 2.0f)")
         self.assertTrue(any("float overload" in item for item in failures))
 
     def test_device_powf_is_detected(self) -> None:
@@ -178,9 +189,17 @@ class CiedeCudaContract(unittest.TestCase):
 
     def test_reordered_frame_sum_is_detected(self) -> None:
         failures = _planted(
-            DEVICE, "for (size_t i = 0u; i < count; i++)", "for (size_t i = count; i-- > 0u;)"
+            SUM, "for (size_t i = 0u; i < count; i++)", "for (size_t i = count; i-- > 0u;)"
         )
         self.assertTrue(any("raster order" in item for item in failures))
+
+    def test_frame_sum_of_its_own_is_detected(self) -> None:
+        failures = _planted(
+            DEVICE,
+            SUM_INCLUDE,
+            "static inline double ciede_frame_sum(const float *terms, size_t count);",
+        )
+        self.assertTrue(any("shared ciede_frame_sum()" in item for item in failures))
 
 
 if __name__ == "__main__":

@@ -31,7 +31,7 @@ explicitly accepts its skip.
   | any feature, cell whose two sides are `cpu` or [listed exact twins](cross-backend-exact-twins.md) | `0` (bit-identical, compared at `--precision max`) | the ADR in the twin's fragment under `scripts/ci/exact_twins.d/`; the rows above and below stay for every other backend ([Exact twins](#exact-twins)) |
   | `float_ssim`, `float_ssim_lcs`, `float_ms_ssim`, `float_ms_ssim_lcs`, `float_psnr`, `float_motion`, `float_vif`, `float_adm` | `5e-5` | ADR-0188 / ADR-0192 / ADR-0215 / ADR-1382 |
   | `ciede` | `5e-3` | ADR-0187 (per-pixel pow/sqrt/sin/atan2) |
-  | `ciede` (every pair of CPU, CUDA and SYCL) | `1e-9`, compared at `--precision max` | ADR-1426, ADR-1436 (the twins run the CPU's arithmetic and the CPU's sum; what differs is the math library and, on SYCL, the last bits of an fp32 pair, `LIBM_TWINS`); the `5e-3` row stays for the other twins |
+  | `ciede` (every pair of CPU, CUDA, SYCL and HIP) | `1e-9`, compared at `--precision max` | ADR-1426, ADR-1436, ADR-1448 (the twins run the CPU's arithmetic and the CPU's sum; what differs is the math library and, on SYCL and HIP, the last bits of an fp32 pair, `LIBM_TWINS`); the `5e-3` row stays for the other twins |
   | `speed_chroma` (the three scores `speed_chroma_u`, `_v`, `_uv`) | `5e-5` | places=4 for a twin that is not listed below |
   | `speed_chroma` (every pair of CPU, CUDA and HIP) | `5e-6`, compared at `--precision max` | ADR-1430, ADR-1452 (the twins round `log2` correctly, the CPU calls the C library's `log2f`, `LIBM_TWINS`); sized for scores below 16 |
   | `psnr_hvs` (a twin that is not listed as exact) | `5e-4` at 576x324 and below, `5e-4 × √(N / N₅₇₆ₓ₃₂₄)` above | ADR-0191 (DCT plus per-block float reduction); ADR-1361 (area scaling) |
@@ -52,7 +52,12 @@ explicitly accepts its skip.
   ([ADR-1436](../adr/1436-sycl-ciede-cpu-arithmetic.md)): a SYCL kernel has
   no fp64 type, so it runs the same statements on fp32 pairs, which decide
   all but about one pixel in a million the way fp64 does. Measured on an Arc
-  A380: the same 1.4e-11 and 6.9e-13.
+  A380: the same 1.4e-11 and 6.9e-13. `ciede_hip` runs the SYCL twin's pair
+  statements from the same header and is listed at `1e-9` as well
+  ([ADR-1448](../adr/1448-hip-ciede-cpu-arithmetic.md)). Measured on a
+  gfx1036: 1.4e-11 on 48 frames of BBB 3840x2160 and 6.9e-13 on the Netflix
+  pair; of 437 million pixels compared one by one, 2 206 differ through
+  glibc's `powf` and 8 through the last bits of a pair.
   `speed_chroma_cuda` is the next entry
   ([ADR-1430](../adr/1430-cuda-speed-chroma-log2f-bound.md)), with one
   function: the device rounds `log2` correctly and `speed.c` calls the C

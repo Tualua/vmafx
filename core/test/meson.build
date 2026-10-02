@@ -4573,10 +4573,11 @@ if not is_sycl_acpp
 endif
 
 # ADR-1436: the arithmetic ciede_sycl's kernel runs -- the fp32 pair functions
-# of src/feature/sycl/sycl_ff_math.h against the host's extended-precision
-# math library, and the ciede2000 pixel of src/feature/sycl/sycl_ciede_math.h
-# against the same statements in fp64 (cuda/integer_ciede/ciede_device.h
-# compiled for the host) -- on the host and in kernels on the default GPU. The
+# of src/feature/ff_math.h against the host's extended-precision math
+# library, and the ciede2000 pixel of src/feature/ciede_ff_math.h against the
+# same statements in fp64 (cuda/integer_ciede/ciede_device.h compiled for the
+# host), both through the SYCL primitives of src/feature/sycl/sycl_ff_math.h
+# and sycl_ciede_math.h -- on the host and in kernels on the default GPU. The
 # probe TU is compiled with the extractors' own arguments, like the probes
 # above. The fp64 statements are compiled by the test itself, so it needs the
 # strict FP flags and no library object.
@@ -4588,6 +4589,8 @@ if not is_sycl_acpp
                              '../src/feature/sycl/sycl_ff_math.h',
                              '../src/feature/sycl/sycl_ciede_math.h',
                              '../src/feature/sycl/sycl_compat.h',
+                             '../src/feature/ff_math.h',
+                             '../src/feature/ciede_ff_math.h',
                              'sycl_ciede_math_probe.h'),
         command : [icpx] + vmaf_cflags_common + ['-c'] + sycl_toolchain_args
                   + sycl_feature_tail_args + ['@INPUT@', '-o', '@OUTPUT@'],
@@ -5908,6 +5911,19 @@ test('test_hip_float_moment_parity', test_hip_float_moment_parity,
 # (1e-3) for filtered ones (ssim, ms_ssim).  HIP-gated: skips cleanly
 # when no AMD GPU is visible.
 
+# ADR-1448: ciede_hip runs ciede.c's arithmetic in fp32 pairs
+# (src/feature/ciede_ff_math.h, the header of the SYCL twin, on the
+# primitives of src/feature/hip/integer_ciede/ciede_hip_math.h) and adds the
+# per-pixel values in the CPU's order. The cases are ciede_twin_parity.h's
+# (four bit depths, odd sizes incl. the 577x325 of ADR-1213, 4:2:2, 4:4:4,
+# 1080p) at 1e-8; a `_large` variant runs at 960x540. Device-free halves:
+# test_hip_ciede_math (the arithmetic) and test_hip_ciede_exact_contract.
+test('test_hip_ciede_exact_contract',
+    import('python').find_installation(),
+    args : files('test_hip_ciede_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
 test_hip_ciede_parity = executable('test_hip_ciede_parity',
     ['test.c', 'test_hip_ciede_parity.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
@@ -5918,23 +5934,27 @@ test_hip_ciede_parity = executable('test_hip_ciede_parity',
 test('test_hip_ciede_parity', test_hip_ciede_parity,
     suite : ['fast', 'gpu'],
     is_parallel : false,
-    timeout : 60)
+    timeout : 180)
 
-# ADR-1213 — the same TU at an odd luma width. `ciede_hip` sized its chroma
-# staging with floor(w/2) where picture.c allocates ceil, so at 577 the last
-# chroma column was never uploaded and the kernel read past the staged row.
-# Every ciede parity fixture was even-sized, which is how that survived.
-test_hip_ciede_parity_oddw = executable('test_hip_ciede_parity_oddw',
-    ['test.c', 'test_hip_ciede_parity.c'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
-    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
-    dependencies: [pthread_dependency, hip_deps, math_lib],
-    c_args: ['-DHAVE_HIP=1', '-DFIXTURE_W=577u', '-DFIXTURE_H=325u']
+# ADR-1448 — the arithmetic ciede_hip's kernels run, on the host: the fp32
+# pair functions of src/feature/ff_math.h against the host's
+# extended-precision math library, and the ciede2000 pixel of
+# src/feature/ciede_ff_math.h against the same statements in fp64
+# (cuda/integer_ciede/ciede_device.h compiled for the host), both on the
+# HIP twin's primitives. It is test_sycl_ciede_math.c with the host half of
+# its probe for HIP; no device is needed, so it runs in the `fast` suite of
+# every HIP build. Both TUs are compiled without contraction, like the
+# kernels.
+test_hip_ciede_math = executable('test_hip_ciede_math',
+    ['test.c', 'test_sycl_ciede_math.c', 'test_hip_ciede_math_probe.cpp'],
+    include_directories : [test_inc, include_directories('../src/')],
+    dependencies : [math_lib],
+    c_args : vmaf_strict_fp_args + ['-DVMAF_TEST_CIEDE_MATH_HOST_ONLY=1'],
+    cpp_args : vmaf_strict_fp_args,
 )
-test('test_hip_ciede_parity_oddw', test_hip_ciede_parity_oddw,
-    suite : ['fast', 'gpu'],
-    is_parallel : false,
-    timeout : 60)
+test('test_hip_ciede_math', test_hip_ciede_math,
+    suite : ['fast'],
+    timeout : 120)
 
 # psnr_hvs CPU vs. HIP: bit-identical scores (ADR-1397, ADR-1401), the same
 # cases as test_cuda_psnr_hvs_parity through psnr_hvs_twin_parity.h

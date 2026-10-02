@@ -57977,3 +57977,47 @@ must keep the fork's side of both:
 - `scripts/ci/exact_twins.d/vif.cuda` (new) declares the twin exact
   (ADR-1428).
 - No scoring kernel, Netflix golden-data, public API or FFmpeg patch impact.
+
+## ADR-1448 — `ciede_hip` runs the SYCL twin's fp32-pair arithmetic from shared headers (2026-10-02)
+
+`fix/hip-ciede-cpu-arithmetic`, `T-GPU-CIEDE-CPU-ARITHMETIC-2026-10-01` (HIP
+part).
+
+- `core/src/feature/ff_math.h` and `core/src/feature/ciede_ff_math.h` (new):
+  the pair functions and the ciede2000 statements that were
+  `core/src/feature/sycl/sycl_ff_math.h` and `sycl_ciede_math.h`, unchanged
+  apart from `sycl::` functions becoming `VMAF_FF_*` macros, the namespaces
+  becoming `vmaf_ffm` / `vmaf_ciede_ff`, and `make_constants()` being
+  `constexpr`. The two SYCL headers keep their names, define the SYCL
+  primitives, include the shared headers and alias the old namespaces. A
+  rebase that brings a change to the old SYCL headers' arithmetic applies it
+  to the shared headers; the SYCL headers must not regain function
+  definitions (`test_sycl_ciede_exact_contract.py` rejects that).
+- `scripts/dev/gen_sycl_ff_math.py` writes the generated block of
+  `core/src/feature/ff_math.h`.
+- `core/src/feature/ff_pair.h` (new): the exact pair operations for a
+  backend with IEEE fp32 operators; `core/src/feature/hip/integer_ciede/ciede_hip_math.h`
+  (new): the HIP primitives.
+- `core/src/feature/ciede_frame_sum.h` (new): `ciede_frame_sum()`, moved out
+  of `cuda/integer_ciede/ciede_device.h` and `sycl/integer_ciede_sycl.cpp`,
+  which include it.
+- `core/src/feature/hip/integer_ciede/ciede_score.hip` and
+  `core/src/feature/hip/ciede_hip.c`: rewritten. The kernels take the planes
+  of each picture as one `CiedeHipPlanes` block by value, a `terms` pointer
+  and the index of the bit depth; the readback is one float per pixel. Keep
+  kernel and host from the same side of a conflict.
+- `core/src/meson.build`: `hip_kernel_extra_args` gives `ciede_score`
+  `-std=c++20`; the shared headers are in `hip_kernel_shared_headers`.
+- `scripts/ci/cross_backend_calibration.py`: `LIBM_TWINS["ciede"]` gains
+  `"hip": 1e-9`; `scripts/ci/test_cross_backend_parity_gate.py` follows. A
+  conflict with another lane's entry in that literal keeps both entries.
+- `core/test/test_hip_ciede_parity.c` wraps `ciede_twin_parity.h`; the
+  `_oddw` meson variant is gone (the shared cases include 577x325).
+  `test_hip_ciede_math` is `test_sycl_ciede_math.c` built with
+  `VMAF_TEST_CIEDE_MATH_HOST_ONLY` and `test_hip_ciede_math_probe.cpp`.
+- Mirror list, same PR when the CPU side changes: `get_lab_color()`,
+  `ciede2000()`, `get_r_sub_t()` and the order of `extract()`'s sum in
+  `ciede.c` change `ciede_ff_math.h` and the CUDA twin's `ciede_device.h`.
+- No Netflix golden-data, public API or FFmpeg patch impact. `ciede_sycl`
+  measured bit-identical before and after on an Arc A380 (178 frames);
+  `ciede_cuda` unchanged on an RTX 4090.

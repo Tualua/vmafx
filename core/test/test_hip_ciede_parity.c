@@ -6,184 +6,192 @@
  */
 
 /*
- * ADR-0883 round-2 — ciede2000 CPU vs. HIP parity test.
+ * ciede2000 CPU vs. HIP parity (first added as a places=4 test, ADR-0883; the
+ * CPU's arithmetic since ADR-1448).
  *
- * The CIEDE2000 colour-difference metric is computed by ciede.c (CPU
- * scalar) and by ciede_hip.c + integer_ciede/ciede_score.hip (HIP
- * kernel).  PR #351 closed the equivalent CUDA + SYCL gaps; this test
- * closes the AMD-GPU side so a regression in the CIE-Lab conversion
- * or the chroma-rotation kernel is caught at CI time rather than at
- * model-prediction time downstream.
+ * The CIEDE2000 colour difference is ciede.c on the CPU and ciede_hip.c on
+ * HIP. Since ADR-1448 the kernel evaluates the reference's statements with
+ * every fp64 value as an fp32 pair (feature/ciede_ff_math.h, the arithmetic
+ * of the SYCL twin) and the host adds the per-pixel values in the
+ * reference's raster order. What still differs: a pixel in a few hundred
+ * thousand rounds to the neighbouring float because glibc's powf() is not
+ * correctly rounded, and a few in a hundred million because a pair does not
+ * decide a rounding the way fp64 does. So this test asserts a tolerance of
+ * 1e-8 where it asserted 1e-4.
  *
- * Skip behaviour: if vmaf_hip_state_init() fails (no HIP runtime or
- * no device visible) the test emits "[skip: no HIP device]" and
- * passes — same pattern as test_hip_vif_parity.c.
+ * Before ADR-1448 the twin computed in fp32 with another form of the formula
+ * and added per wave and per 16x16 block; it was 2e-7 to 1e-5 from the CPU,
+ * so the cases below fail on it.
+ *
+ * The fixtures, the comparison and the cases are ciede_twin_parity.h's. They
+ * include what the build used to compile this file twice for: the odd
+ * 577x325 4:2:0 frame (ceil chroma width 289, ADR-1213).
+ *
+ * Skip behaviour: exits 77 when there is no HIP device, and when the kernels
+ * are not built (enable_hipcc=false: the extractor returns -ENOSYS).
  */
 
 #include <errno.h>
-#include <math.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
 
-#include "test.h"
-
-#include "feature/feature_extractor.h"
-#include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_hip.h"
-#include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): this is a
- * C23 translation unit, but the required MSVC C lane does not provide the C
- * nullptr spelling clang-tidy proposes. Keep the portable C API form under
- * ADR-1138. */
+#include "ciede_twin_parity.h"
 
-#ifndef FIXTURE_W
-#define FIXTURE_W 256u
-#endif
-#ifndef FIXTURE_H
-#define FIXTURE_H 144u
-#endif
-#define FIXTURE_BPC 8u
-#define PARITY_TOL 1e-4
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy proposes `nullptr`, but the required MSVC C build does
+ * not provide that keyword. Preserve the portable C spelling. ADR-1138. */
 
-static int fill_pic(VmafPicture *pic, unsigned salt)
+/* One small frame through the twin. Returns the first error of the run;
+ * -ENOSYS is the build without device kernels. */
+static int probe_run(VmafHipState *hip_state)
 {
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
-    if (err)
-        return err;
-    uint8_t *y = (uint8_t *)pic->data[0];
-    for (unsigned row = 0; row < pic->h[0]; row++) {
-        for (unsigned col = 0; col < pic->w[0]; col++) {
-            y[row * pic->stride[0] + col] = (uint8_t)((row * 5u + col + salt * 11u) & 0xFFu);
-        }
+    static const CiedeTwinCase probe = {"probe", 64u, 64u, 8u, VMAF_PIX_FMT_YUV420P};
+    const VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafContext *vmaf = NULL;
+    VmafPicture ref;
+    VmafPicture dist;
+    int err = vmaf_init(&vmaf, cfg);
+    if (!err)
+        err = vmaf_hip_import_state(vmaf, hip_state);
+    if (!err)
+        err = vmaf_use_feature(vmaf, "ciede_hip", NULL);
+    if (!err)
+        err = ciede_twin_fill_picture(&ref, &probe, false);
+    if (!err) {
+        err = ciede_twin_fill_picture(&dist, &probe, true);
+        if (err)
+            (void)vmaf_picture_unref(&ref);
     }
-    for (unsigned p = 1; p < 3; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
-        for (unsigned row = 0; row < pic->h[p]; row++) {
-            for (unsigned col = 0; col < pic->w[p]; col++) {
-                plane[row * pic->stride[p] + col] =
-                    (uint8_t)((row + col * (1u + p) + salt * 7u) & 0xFFu);
-            }
-        }
+    if (!err)
+        err = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
+    if (!err)
+        err = vmaf_read_pictures(vmaf, NULL, NULL, 0u);
+    const int closed = vmaf ? vmaf_close(vmaf) : 0;
+    return err ? err : closed;
+}
+
+/* A device state, or non-zero when the cases cannot run: no device, or a
+ * build whose extractor has no kernels. Any other failure of the probe is
+ * left for the case itself to report. */
+static int twin_open(void **state)
+{
+    VmafHipState *hip_state = NULL;
+    const VmafHipConfiguration hip_cfg = {.device_index = -1};
+    int err = vmaf_hip_state_init(&hip_state, hip_cfg);
+    if (err == 0 && hip_state != NULL && probe_run(hip_state) == -ENOSYS) {
+        vmaf_hip_state_free(&hip_state);
+        err = -ENOSYS;
     }
+    *state = hip_state;
+    return err;
+}
+
+static int twin_import(VmafContext *vmaf, void *state)
+{
+    return vmaf_hip_import_state(vmaf, (VmafHipState *)state);
+}
+
+static int twin_close(void *state)
+{
+    VmafHipState *hip_state = (VmafHipState *)state;
+    vmaf_hip_state_free(&hip_state);
     return 0;
 }
 
-static int feed_frame(VmafContext *vmaf)
-{
-    VmafPicture ref;
-    VmafPicture dist;
-    int err = fill_pic(&ref, 0u);
-    if (err)
-        return err;
-    err = fill_pic(&dist, 1u);
-    if (err) {
-        vmaf_picture_unref(&ref);
-        return err;
-    }
-    return vmaf_read_pictures(vmaf, &ref, &dist, 0u);
-}
-
-static char *run_cpu_ciede(double *score)
-{
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    int err = vmaf_init(&vmaf, cfg);
-    mu_assert("CPU: vmaf_init failed", !err);
-    err = vmaf_use_feature(vmaf, "ciede", NULL);
-    mu_assert("CPU: vmaf_use_feature(ciede) failed", !err);
-    err = feed_frame(vmaf);
-    mu_assert("CPU: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "ciede2000", score, 0u);
-    mu_assert("CPU: vmaf_feature_score_at_index(ciede2000) failed", !err);
-    err = vmaf_close(vmaf);
-    mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
-}
-
-static char *hip_ciede_pipeline(VmafContext *vmaf, VmafHipState **hip_state, double *score)
-{
-    int err = vmaf_use_feature(vmaf, "ciede_hip", NULL);
-    mu_assert("HIP: vmaf_use_feature(ciede_hip) failed", !err);
-    err = feed_frame(vmaf);
-    if (err == -ENOSYS) {
-        (void)fprintf(stderr, "[skip: HIP extractor is a scaffold (-ENOSYS)] ");
-        (void)vmaf_close(vmaf);
-        vmaf_hip_state_free(hip_state);
-        return NULL;
-    }
-    mu_assert("HIP: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("HIP: vmaf_read_pictures(EOS) failed", !err);
-    err = vmaf_feature_score_at_index(vmaf, "ciede2000", score, 0u);
-    mu_assert("HIP: vmaf_feature_score_at_index(ciede2000) failed", !err);
-    return NULL;
-}
-
-static char *run_hip_ciede(double *score)
-{
-    *score = NAN;
-    VmafHipState *hip_state = NULL;
-    VmafHipConfiguration hip_cfg = {.device_index = -1};
-    int err = vmaf_hip_state_init(&hip_state, hip_cfg);
-    if (err != 0 || hip_state == NULL) {
-        (void)fprintf(stderr, "[skip: no HIP device] ");
-        return NULL;
-    }
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("HIP: vmaf_init failed", !err);
-    err = vmaf_hip_import_state(vmaf, hip_state);
-    mu_assert("HIP: vmaf_hip_import_state failed", !err);
-
-    char *msg = hip_ciede_pipeline(vmaf, &hip_state, score);
-    if (msg || hip_state == NULL) {
-        return msg;
-    }
-    err = vmaf_close(vmaf);
-    mu_assert("HIP: vmaf_close failed", !err);
-    vmaf_hip_state_free(&hip_state);
-    return NULL;
-}
+static const CiedeTwin twin = {
+    .extractor = "ciede_hip",
+    .backend = "HIP",
+    .open = twin_open,
+    .import = twin_import,
+    .close = twin_close,
+};
 
 static char *test_ciede_hip_registered(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("ciede_hip");
-    mu_assert("ciede_hip extractor must be registered", fex != NULL);
-    mu_assert("ciede_hip name matches", !strcmp(fex->name, "ciede_hip"));
+    return ciede_twin_registered(&twin);
+}
+
+static char *test_ciede_8bit(void)
+{
+    return ciede_twin_bit_depth(&twin, 8u);
+}
+
+static char *test_ciede_10bit(void)
+{
+    return ciede_twin_bit_depth(&twin, 10u);
+}
+
+static char *test_ciede_12bit(void)
+{
+    return ciede_twin_bit_depth(&twin, 12u);
+}
+
+static char *test_ciede_16bit(void)
+{
+    return ciede_twin_bit_depth(&twin, 16u);
+}
+
+static char *test_ciede_odd_frame(void)
+{
+    return ciede_twin_odd_frame(&twin);
+}
+
+static char *test_ciede_odd_ceil_chroma(void)
+{
+    return ciede_twin_odd_ceil_chroma(&twin);
+}
+
+static char *test_ciede_422(void)
+{
+    return ciede_twin_422(&twin);
+}
+
+static char *test_ciede_422_10bit_odd(void)
+{
+    return ciede_twin_422_10bit_odd(&twin);
+}
+
+static char *test_ciede_444(void)
+{
+    return ciede_twin_444(&twin);
+}
+
+static char *test_ciede_1080p(void)
+{
+    return ciede_twin_1080p(&twin);
+}
+
+static char *run_bit_depth_cases(void)
+{
+    mu_run_test(test_ciede_8bit);
+    mu_run_test(test_ciede_10bit);
+    mu_run_test(test_ciede_12bit);
+    mu_run_test(test_ciede_16bit);
     return NULL;
 }
 
-static char *test_ciede_cpu_hip_parity(void)
+static char *run_layout_cases(void)
 {
-    double cpu = 0.0;
-    double gpu = NAN;
-    char *msg = run_cpu_ciede(&cpu);
-    if (msg)
-        return msg;
-    msg = run_hip_ciede(&gpu);
-    if (msg)
-        return msg;
-    if (isnan(gpu)) {
-        return NULL;
-    }
-    double delta = fabs(cpu - gpu);
-    if (delta > PARITY_TOL) {
-        (void)fprintf(stderr, "\nciede2000 parity FAIL: cpu=%.8f hip=%.8f delta=%.2e tol=%.2e\n",
-                      cpu, gpu, delta, PARITY_TOL);
-    }
-    mu_assert("ciede2000 CPU vs. HIP delta exceeds places=4 tolerance (1e-4)", delta <= PARITY_TOL);
+    mu_run_test(test_ciede_odd_frame);
+    mu_run_test(test_ciede_odd_ceil_chroma);
+    mu_run_test(test_ciede_422);
+    mu_run_test(test_ciede_422_10bit_odd);
+    return NULL;
+}
+
+static char *run_wide_cases(void)
+{
+    mu_run_test(test_ciede_444);
+    mu_run_test(test_ciede_1080p);
     return NULL;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_ciede_hip_registered);
-    mu_run_test(test_ciede_cpu_hip_parity);
+    mu_assert_msg(run_bit_depth_cases());
+    mu_assert_msg(run_layout_cases());
+    mu_assert_msg(run_wide_cases());
     return NULL;
 }
 
