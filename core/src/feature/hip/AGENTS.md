@@ -842,10 +842,12 @@ counts.
    `speed_chroma_uv` from surviving channel on host, from flags only.
 
 Guarded by `core/test/test_hip_speed_singular_parity.c`. Older
-`test_hip_speed_{chroma,temporal}_parity.c` fixtures are 768x432,
-whose chroma planes give 4x2 = 8 blocks for 25x25 covariance —
-singular on every frame — never exercise regular path. SpEED test
-needing regular frame must be at least 960x960.
+`test_hip_speed_temporal_parity.c` fixture is 768x432, whose chroma
+planes give 4x2 = 8 blocks for 25x25 covariance — singular on every
+frame — never exercises regular path. SpEED test needing regular frame
+must be at least 960x960 and textured: `test_hip_speed_chroma_parity`
+uses the 960x960 splatter fixture of `speed_chroma_twin_parity.h`
+(ADR-1452).
 
 ## CAMBI: use the shared TVI helper and the CPU's border rules (ADR-1219)
 
@@ -1366,6 +1368,13 @@ Scores = `integer_vif.c`'s bits (gfx1036: 440 of 440 scores, six fixtures;
   only behind `SPEED_HD_HOST_LIBM_LOG2 && !__HIP_DEVICE_COMPILE__` (test
   seam). glibc `log2f` misrounds ~0.4 %: vs glibc CPU a few chroma frames
   differ in last bits; compare with correctly rounded `log2f` preload.
+  Measured (ADR-1452, gfx1036, glibc 2.44): 13 of 990 `speed_chroma` values
+  off, 1.4e-6 max, 0 with preload. Gate cell =
+  `LIBM_TWINS["speed_chroma"]["hip"]` 5e-6 (scores < 16);
+  `test_hip_speed_chroma_parity` = three scores, every frame, relative 1e-6
+  (`core/test/speed_chroma_twin_parity.h`, shared with the CUDA test). New
+  difference there = twin regression until the preload run says otherwise.
+  Never port glibc's `log2f` to the device.
 - No fp64 in `speed/`. lanczos4 prescale weights = host table
   (`speed_hip_upload_lanczos()`, `speed_internal_gpu_lanczos_weights()`,
   CPU scaler's own routine), 9 taps per scaled column then per scaled row,

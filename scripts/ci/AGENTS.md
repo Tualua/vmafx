@@ -598,7 +598,9 @@ Listing a twin needs per-pixel attribution of the residual + ADR.
 1-5 fp32 steps (1.4e-6 max), 0 with CR `log2f` preloaded. Bound sized for
 scores < 16 (step <= 9.5e-7); bigger scores -> scale it, never loosen for
 another reason. Gate feature `speed_chroma` = `speed_chroma_u` / `_v` /
-`_uv`; other twins places=4.
+`_uv`; other twins places=4. `hip` = 5e-6 too (ADR-1452): gfx1036, 13 of
+990 values off (same frames / outputs / amounts as CUDA), 0 with CR `log2f`
+preloaded; `cuda` <-> `hip` cell resolves to the same bound.
 
 `float_ms_ssim` + `float_ms_ssim_lcs`: `sycl` listed (ADR-1414, Arc A380:
 every per-scale mean = CPU's). Exact cell = ONE binary on both sides ->

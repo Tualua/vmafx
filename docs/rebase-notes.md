@@ -57812,3 +57812,20 @@ must keep the fork's side of both:
   `float_ssim: 5.0e-4` stays for cells whose other side is not exact.
 - No Netflix golden-data, public API or FFmpeg patch impact; no score
   changes.
+
+## ADR-1452 — speed_chroma on HIP gets the CUDA cell's log2f bound (2026-10-02)
+
+`test/hip-speed-chroma-libm-bound`, ADR-1452.
+
+- `scripts/ci/cross_backend_calibration.py`: `LIBM_TWINS["speed_chroma"]`
+  lists `hip` at `5e-6` next to `cuda`. Keep both entries; a rebase that
+  drops one puts that cell back at the general `5e-5`.
+- `core/test/speed_chroma_twin_parity.h` (new): the 960x960 textured
+  fixture, the CPU run and the comparison of `test_cuda_speed_chroma_parity`
+  moved out of that test unchanged. `test_cuda_speed_chroma_parity.c` and
+  `test_hip_speed_chroma_parity.c` wrap it. A change to the fixture or the
+  bound is made in the header.
+- `test_hip_speed_chroma_parity` exits 77 when it skips (no device or a
+  scaffold); it passed before.
+- No source of a twin changes; no score changes. No Netflix golden-data,
+  public API or FFmpeg patch impact.

@@ -943,7 +943,7 @@ def test_speed_chroma_cuda_cell_is_bounded_by_the_cpu_log2f() -> None:
         "speed_chroma_v",
         "speed_chroma_uv",
     )
-    assert LIBM_TWINS["speed_chroma"] == {"cuda": 5e-6}
+    assert LIBM_TWINS["speed_chroma"] == {"cuda": 5e-6, "hip": 5e-6}
     assert not is_exact_pair("speed_chroma", "cpu", "cuda")
     assert cell("cpu", "cuda") == (5e-6, LIBM_TWIN_SOURCE)
     assert cell("cuda", "cpu") == (5e-6, LIBM_TWIN_SOURCE)
@@ -952,13 +952,45 @@ def test_speed_chroma_cuda_cell_is_bounded_by_the_cpu_log2f() -> None:
     largest_measured = 1.431e-6
     assert largest_measured < LIBM_TWINS["speed_chroma"]["cuda"]
     assert LIBM_TWINS["speed_chroma"]["cuda"] < FEATURE_TOLERANCE["speed_chroma"] / 5
-    for pair in (("cpu", "sycl"), ("cpu", "hip"), ("cuda", "sycl")):
+    for pair in (("cpu", "sycl"), ("cuda", "sycl")):
         tolerance, source = cell(*pair)
         assert _close(tolerance, FEATURE_TOLERANCE["speed_chroma"]), pair
         assert source == "default", pair
     # The extractor keeps the feature's name on every backend.
     assert feature_extractor_name("speed_chroma", "cpu") == "speed_chroma"
     assert feature_extractor_name("speed_chroma", "cuda") == "speed_chroma_cuda"
+
+
+def test_speed_chroma_hip_cell_is_bounded_by_the_cpu_log2f() -> None:
+    """ADR-1452: the HIP twin rounds log2 correctly too and gets CUDA's bound."""
+
+    def cell(backend_a: str, backend_b: str) -> tuple[float, str]:
+        return resolve_cell_tolerance(
+            "speed_chroma",
+            fp16_features=[],
+            calibration=None,
+            gpu_id=None,
+            width=3840,
+            height=2160,
+            backends=(backend_a, backend_b),
+        )
+
+    assert LIBM_TWINS["speed_chroma"] == {"cuda": 5e-6, "hip": 5e-6}
+    assert not is_exact_pair("speed_chroma", "cpu", "hip")
+    assert cell("cpu", "hip") == (5e-6, LIBM_TWIN_SOURCE)
+    assert cell("hip", "cpu") == (5e-6, LIBM_TWIN_SOURCE)
+    # Both twins round log2 correctly; their cell has the same bound.
+    assert cell("cuda", "hip") == (5e-6, LIBM_TWIN_SOURCE)
+    # The largest difference measured on a gfx1036 (BBB frame 21,
+    # speed_chroma_v) passes; the places=4 default hid 35 times more.
+    largest_measured = 1.431e-6
+    assert largest_measured < LIBM_TWINS["speed_chroma"]["hip"]
+    assert LIBM_TWINS["speed_chroma"]["hip"] < FEATURE_TOLERANCE["speed_chroma"] / 5
+    # A twin that is not listed keeps the default.
+    tolerance, source = cell("hip", "sycl")
+    assert _close(tolerance, FEATURE_TOLERANCE["speed_chroma"])
+    assert source == "default"
+    assert feature_extractor_name("speed_chroma", "hip") == "speed_chroma_hip"
 
 
 def test_psnr_hvs_per_block_twin_keeps_area_scaled_tolerance() -> None:

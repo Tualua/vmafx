@@ -6012,8 +6012,10 @@ test('test_hip_vif_parity', test_hip_vif_parity,
 # speed_internal.c via src/meson.build `speed_internal` entry) and follow
 # the round-1/2/3/4 template: synthetic fixture, CPU reference vs. HIP
 # score, skip cleanly on `[skip: no HIP device]` or
-# `[skip: HIP scaffold ENOSYS]`.  Tolerance: places=4 (1e-4) per ADR-0214
-# — SpEED's QR / eigensolver runs on CPU for both backends.
+# `[skip: HIP scaffold ENOSYS]`.  speed_temporal: places=4 (1e-4) per
+# ADR-0214.  speed_chroma: its three scores at every frame to one part in
+# a million on a fixture with a regular covariance (ADR-1452: what is left
+# is the CPU's log2f; speed_chroma_twin_parity.h, shared with CUDA).
 test_hip_speed_chroma_parity = executable('test_hip_speed_chroma_parity',
     ['test.c', 'test_hip_speed_chroma_parity.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],

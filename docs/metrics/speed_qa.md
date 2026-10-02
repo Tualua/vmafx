@@ -419,6 +419,13 @@ parity gate compares the CPU and CUDA `speed_chroma` scores at `5e-6`
 ([ADR-1430](../adr/1430-cuda-speed-chroma-log2f-bound.md)); that bound is
 sized for scores below 16, where one float step is at most 9.5e-7.
 
+The HIP twin has the same figures on a gfx1036
+([ADR-1452](../adr/1452-hip-speed-chroma-log2f-bound.md)): 13 of 990 values
+differ from the glibc CPU (the same frames and outputs, with 48 more Netflix
+frames as 10-bit 4:2:2, Sparks, noise at four bit depths and a bright 16-bit
+1080p pair, all identical), and all 990 are identical with the preload. Its
+gate cell has the same `5e-6`.
+
 The CPU build must not fuse multiply-adds either. icx does when FMA
 instructions are available, for example with `-march=native`, which is how the
 `vmaf-dev-mcp` image builds its own `/usr/local/bin/vmaf`: that binary's

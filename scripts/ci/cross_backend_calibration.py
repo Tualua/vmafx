@@ -257,6 +257,12 @@ def is_exact_pair(feature: str, backend_a: str, backend_b: str) -> bool:
 # 3.8e-6 away, two steps of 2^-19). It is not a statement about the twin's
 # arithmetic, which has no known difference left.
 #
+# ADR-1452: ``speed_chroma_hip`` rounds ``log2`` correctly as well
+# (``speed_hd_log2_rn()``, ADR-1384) and has the CUDA twin's figures on a
+# gfx1036: 13 of 990 values differ from a glibc 2.44 CPU, by 1.4e-6 at most,
+# the same frames and outputs, and none with a correctly rounded ``log2f``
+# preloaded. It is listed at the same bound.
+#
 # ADR-1436: ``ciede_sycl`` runs the same statements on a device without an
 # fp64 type, with every fp64 value as an fp32 pair (about 48 bits) and every
 # math-library call as a pair function (about 2^-44). Its pixels can differ
@@ -270,7 +276,7 @@ def is_exact_pair(feature: str, backend_a: str, backend_b: str) -> bool:
 
 LIBM_TWINS: dict[str, dict[str, float]] = {
     "ciede": {"cuda": 1e-9, "sycl": 1e-9},
-    "speed_chroma": {"cuda": 5e-6},
+    "speed_chroma": {"cuda": 5e-6, "hip": 5e-6},
 }
 LIBM_TWIN_SOURCE = "libm:ADR-1426"
 

@@ -190,7 +190,10 @@ linked AGENTS.md before resolving conflicts.
   (`5e-6`, sized for scores below 16), and
   `core/test/test_cuda_speed_chroma_parity.c` keeps its 960x960 textured
   fixture: a smaller or ramp fixture has a singular covariance and never
-  reaches the scoring path.
+  reaches the scoring path. The HIP twin is listed at the same bound
+  ([ADR-1452](../adr/1452-hip-speed-chroma-log2f-bound.md): 13 of 990 values
+  on a gfx1036); the fixture and the comparison of both tests are
+  `core/test/speed_chroma_twin_parity.h`.
 - **SYCL strict FP line on every feature TU ([ADR-1367](../adr/1367-sycl-strict-fp-every-feature-tu.md))**:
   `core/src/meson.build` defines `sycl_strict_fp_args` once, between the
   `BEGIN/END VMAF SYCL strict FP policy` markers: icpx gets

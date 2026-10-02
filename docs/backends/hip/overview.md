@@ -1155,8 +1155,9 @@ their tolerance:
   fixtures, also over all 200 BBB frames (600 values, 11 of which differ
   from the plain CPU run). These are the values and the cause of the CUDA
   twin ([ADR-1430](../../adr/1430-cuda-speed-chroma-log2f-bound.md)). The
-  gate still compares the HIP cell at its general `5e-5`
-  (`T-HIP-SPEED-CHROMA-GLIBC-LOG2F-2026-10-02`).
+  gate compares the HIP cell at `5e-6`, the CUDA cell's bound
+  ([ADR-1452](../../adr/1452-hip-speed-chroma-log2f-bound.md),
+  `T-HIP-SPEED-CHROMA-GLIBC-LOG2F-2026-10-02`).
 - `float_adm_hip` has not been ported to the CPU's arithmetic
   (`T-HIP-FLOAT-ADM-NOT-CPU-ARITHMETIC-2026-10-01`); the CPU reference itself
   changed on 2026-10-02 (the decouple step divides).

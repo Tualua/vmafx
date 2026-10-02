@@ -33,7 +33,7 @@ explicitly accepts its skip.
   | `ciede` | `5e-3` | ADR-0187 (per-pixel pow/sqrt/sin/atan2) |
   | `ciede` (every pair of CPU, CUDA and SYCL) | `1e-9`, compared at `--precision max` | ADR-1426, ADR-1436 (the twins run the CPU's arithmetic and the CPU's sum; what differs is the math library and, on SYCL, the last bits of an fp32 pair, `LIBM_TWINS`); the `5e-3` row stays for the other twins |
   | `speed_chroma` (the three scores `speed_chroma_u`, `_v`, `_uv`) | `5e-5` | places=4 for a twin that is not listed below |
-  | `speed_chroma` (CPU ↔ CUDA) | `5e-6`, compared at `--precision max` | ADR-1430 (the twin rounds `log2` correctly, the CPU calls the C library's `log2f`, `LIBM_TWINS`); sized for scores below 16 |
+  | `speed_chroma` (every pair of CPU, CUDA and HIP) | `5e-6`, compared at `--precision max` | ADR-1430, ADR-1452 (the twins round `log2` correctly, the CPU calls the C library's `log2f`, `LIBM_TWINS`); sized for scores below 16 |
   | `psnr_hvs` (a twin that is not listed as exact) | `5e-4` at 576x324 and below, `5e-4 × √(N / N₅₇₆ₓ₃₂₄)` above | ADR-0191 (DCT plus per-block float reduction); ADR-1361 (area scaling) |
   | `ssimulacra2` | `5e-3` | ADR-0192 (XYB cube root plus IIR blur) |
 
@@ -59,7 +59,11 @@ explicitly accepts its skip.
   library's `log2f`. With a correctly rounded `log2f` preloaded into the CPU
   run the twin is bit-identical (789 of 789 values); against glibc 2.44, 13
   of those values differ by one to five steps of the fp32 score, 1.4e-6 at
-  most. The `5e-6` is sized for scores below 16.
+  most. The `5e-6` is sized for scores below 16. `speed_chroma_hip` is
+  listed at the same bound
+  ([ADR-1452](../adr/1452-hip-speed-chroma-log2f-bound.md)): measured on a
+  gfx1036, 13 of 990 values differ from the glibc CPU, the same frames and
+  outputs by the same amounts, and none with the preload.
 
 - **Backend pairs.** The script accepts `cpu`, `cuda`, `sycl`, and `hip`; its
   command line default is `cpu cuda`. `--hip-device` picks the HIP device by

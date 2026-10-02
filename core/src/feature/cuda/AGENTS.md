@@ -1042,7 +1042,9 @@ with a new ADR and measurements, never by reviving ADR-0753 text.
   one libm; icx build = `libimf`, rounds correctly). Gate cell =
   `LIBM_TWINS["speed_chroma"]` 5e-6, scores < 16.
   `test_cuda_speed_chroma_parity`: 960x960 texture (regular covariance),
-  three scores, every frame, relative 1e-6. A new difference there or in
+  three scores, every frame, relative 1e-6; fixture + CPU run + comparison
+  live in `core/test/speed_chroma_twin_parity.h`, shared with the HIP test
+  (ADR-1452). A new difference there or in
   the gate = twin regression until the preload run says otherwise.
 - **`float_adm` options must reach KERNELS, not option
   table alone** (ADR-1220) — `adm_p_norm` (`apn`), `adm_bypass_cm` (`bcm`)
