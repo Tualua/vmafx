@@ -22,9 +22,20 @@
  * vanishes at scale 0, so a single-point check would catch it where
  * cross-backend ULP-by-ULP gates would not.
  *
- * Since ADR-1414 the twin is the CPU's arithmetic: the last test compares
+ * Since ADR-1414 the twin is the CPU's arithmetic: the first test compares
  * every output of three frames (the score, the 15 per-scale l / c / s means
  * and both chroma scores) with the CPU extractor bit for bit.
+ *
+ * Since ADR-1466 its per-scale sums are the CPU's too: iqa_ssim() adds one
+ * double per window in raster order, and the twin stores every window's
+ * terms and adds them on the host in that order. Before, it added the terms
+ * as integers per work-group, an exact sum where the CPU's running sum
+ * rounds. Two order cases, 176x176 each: a noise pair found by search on
+ * which that moved float_ms_ssim_l_scale0 by one float step (CPU 0x3f7d0db6,
+ * old twin 0x3f7d0db7; it fails on the old twin), and the pair of
+ * float_ms_ssim_order_frame.h, shared with the CUDA and HIP tests, on which
+ * a sum per block moves c_scale1 (the old SYCL twin's exact sum rounded to
+ * the CPU's float there; a pin).
  *
  * Skip behaviour: if vmaf_sycl_state_init() fails (no oneAPI runtime
  * or no device visible) the test emits "[skip: no SYCL device]" and
@@ -43,6 +54,9 @@
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_sycl.h"
 #include "libvmaf/picture.h"
+
+#include "float_ms_ssim_order_frame.h"
+#include "ssim_order_noise.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
@@ -337,12 +351,12 @@ static char *test_ms_ssim_clip_db_ceiling(void)
 /* The kernels reproduce ms_ssim_decimate.c (one fused multiply-add per */
 /* tap), iqa_convolve() (fp32 products summed in fp64, carried as exact */
 /* fp32 pairs) and ssim_accumulate_default_scalar() (fp32 denominators, */
-/* l and c as pairs, s as an fp32 quotient); the frame sums are exact   */
-/* int64 fixed point and the host rounds each per-scale mean to fp32    */
-/* and combines as ms_ssim.c does. Before that the twin ran fp32 window */
-/* sums, an fp32 l / c / s and unrounded means, and was 6.9e-8 to       */
-/* 3.0e-6 from the CPU on the Netflix pair, the checkerboards and BBB   */
-/* 4K.                                                                  */
+/* l and c as the CPU's doubles, s as an fp32 quotient); the host adds  */
+/* the windows in raster order (ADR-1466), rounds each per-scale mean   */
+/* to fp32 and combines as ms_ssim.c does. Before ADR-1414 the twin ran */
+/* fp32 window sums, an fp32 l / c / s and unrounded means, and was     */
+/* 6.9e-8 to 3.0e-6 from the CPU on the Netflix pair, the checkerboards */
+/* and BBB 4K.                                                          */
 /*                                                                     */
 /* The CPU side runs with every SIMD flag masked: the reference is the  */
 /* scalar arithmetic, and the SIMD paths' agreement with it has its own */
@@ -490,11 +504,175 @@ static char *test_ms_ssim_matches_cpu_bit_for_bit(void)
     return NULL;
 }
 
+/* ------------------------------------------------------------------ */
+/* ADR-1466: the per-scale sums are added in the CPU's raster order.     */
+/*                                                                     */
+/* Two 176x176 8-bit pairs, luma only (the smallest frame the pyramid   */
+/* takes, so chroma cannot be scored), on which a per-scale mean lies   */
+/* next to a float rounding boundary:                                   */
+/*   - the pair of float_ms_ssim_order_frame.h, shared with the CUDA    */
+/*     and HIP tests, on which a sum per block moves c_scale1. The old  */
+/*     SYCL twin's exact integer sum rounded to the CPU's float there,  */
+/*     so this case is a pin: it passed before ADR-1466 too;            */
+/*   - seeded noise (ssim_order_noise.h), found by a search for a mean  */
+/*     that iqa_ssim()'s sequential sum and an exact sum of the same    */
+/*     terms round differently: l_scale0 was one float step off on the  */
+/*     old twin (0x3f7d0db7). This case fails before ADR-1466.          */
+/* ------------------------------------------------------------------ */
+#define MS_ORDER_KEYS 16u /* the score and the 15 per-scale means */
+
+typedef struct MsOrderCase {
+    const char *what;
+    const unsigned char *ref; /* luma planes, or NULL for seeded noise */
+    const unsigned char *dis;
+    uint64_t seed;
+    const char *key;   /* the mean that lies next to the boundary */
+    uint32_t cpu_bits; /* the CPU's float for it */
+} MsOrderCase;
+
+static const MsOrderCase ms_order_frame = {
+    "constructed pair",      float_ms_ssim_order_ref_luma, float_ms_ssim_order_dis_luma, 0u,
+    FLOAT_MS_SSIM_ORDER_KEY, FLOAT_MS_SSIM_ORDER_CPU_BITS};
+static const MsOrderCase ms_order_noise = {"noise pair, seed 2437157", NULL,       NULL, 2437157u,
+                                           "float_ms_ssim_l_scale0",   0x3f7d0db6u};
+
+/* Luma sample `i` (raster order) of the case's reference (`which` 0) or
+ * distorted (1) picture. */
+static uint8_t ms_order_luma(const MsOrderCase *c, unsigned which, size_t i)
+{
+    const unsigned char *luma = which ? c->dis : c->ref;
+    return luma ? luma[i] : (uint8_t)ssim_order_noise_luma(c->seed, which, i);
+}
+
+/* The case's picture: its luma and mid-grey chroma (float_ms_ssim scores
+ * luma only here). */
+static int ms_order_fill(VmafPicture *pic, const MsOrderCase *c, unsigned which)
+{
+    const int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, 8u, FLOAT_MS_SSIM_ORDER_W,
+                                       FLOAT_MS_SSIM_ORDER_H);
+    if (err)
+        return err;
+    for (unsigned p = 1; p < 3u; p++) {
+        for (unsigned row = 0; row < pic->h[p]; row++) {
+            memset((uint8_t *)pic->data[p] + (size_t)row * pic->stride[p], 128, pic->w[p]);
+        }
+    }
+    for (unsigned row = 0; row < pic->h[0]; row++) {
+        uint8_t *line = (uint8_t *)pic->data[0] + (size_t)row * pic->stride[0];
+        for (unsigned col = 0; col < pic->w[0]; col++) {
+            line[col] = ms_order_luma(c, which, (size_t)row * pic->w[0] + col);
+        }
+    }
+    return 0;
+}
+
+static int ms_order_feed(VmafContext *vmaf, const MsOrderCase *c)
+{
+    VmafPicture ref;
+    VmafPicture dist;
+    int err = ms_order_fill(&ref, c, 0u);
+    if (err)
+        return err;
+    err = ms_order_fill(&dist, c, 1u);
+    if (err) {
+        (void)vmaf_picture_unref(&ref);
+        return err;
+    }
+    err = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
+    return err ? err : vmaf_read_pictures(vmaf, NULL, NULL, 0);
+}
+
+/* The pair's 16 luma outputs from one extractor; `sycl_state` NULL runs the
+ * CPU extractor. */
+static int ms_order_score(VmafSyclState *sycl_state, const MsOrderCase *c,
+                          double out[MS_ORDER_KEYS])
+{
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafContext *vmaf = NULL;
+    int err = vmaf_init(&vmaf, cfg);
+    if (err)
+        return err;
+    if (sycl_state)
+        err = vmaf_sycl_import_state(vmaf, sycl_state);
+    VmafFeatureDictionary *opts = NULL;
+    if (!err)
+        err = vmaf_feature_dictionary_set(&opts, "enable_lcs", "true");
+    if (!err) {
+        err = vmaf_use_feature(vmaf, sycl_state ? "float_ms_ssim_sycl" : "float_ms_ssim", opts);
+        opts = err ? opts : NULL; /* taken on success */
+    }
+    if (opts)
+        (void)vmaf_feature_dictionary_free(&opts);
+    if (!err)
+        err = ms_order_feed(vmaf, c);
+    for (unsigned k = 0; k < MS_ORDER_KEYS && !err; k++) {
+        err = vmaf_feature_score_at_index(vmaf, ms_exact_keys[k], &out[k], 0u);
+    }
+    const int closed = vmaf_close(vmaf);
+    return err ? err : closed;
+}
+
+static uint32_t ms_order_float_bits(double score)
+{
+    const float value = (float)score;
+    uint32_t bits = 0u;
+    memcpy(&bits, &value, sizeof(bits));
+    return bits;
+}
+
+/* The CPU's float of the case's key is the pinned one, and every output of
+ * the twin is the CPU extractor's bit for bit. */
+static char *ms_order_check(const MsOrderCase *c)
+{
+    VmafSyclState *sycl_state = NULL;
+    VmafSyclConfiguration sycl_cfg = {.device_index = -1};
+    if (vmaf_sycl_state_init(&sycl_state, sycl_cfg) != 0 || !sycl_state) {
+        (void)fprintf(stderr, "[skip: no SYCL device] ");
+        return NULL;
+    }
+    double cpu[MS_ORDER_KEYS] = {0.0};
+    double gpu[MS_ORDER_KEYS] = {0.0};
+    const int cpu_err = ms_order_score(NULL, c, cpu);
+    const int gpu_err = ms_order_score(sycl_state, c, gpu);
+    vmaf_sycl_state_free(&sycl_state);
+    mu_assert("CPU float_ms_ssim run of an order pair failed", !cpu_err);
+    mu_assert("SYCL float_ms_ssim run of an order pair failed", !gpu_err);
+
+    unsigned differing = 0u;
+    bool pinned = false;
+    for (unsigned k = 0; k < MS_ORDER_KEYS; k++) {
+        if (!strcmp(ms_exact_keys[k], c->key))
+            pinned = ms_order_float_bits(cpu[k]) == c->cpu_bits;
+        if (ms_exact_bits(cpu[k]) == ms_exact_bits(gpu[k]))
+            continue;
+        differing++;
+        (void)fprintf(stderr, "\n%s, %s: cpu=%.17g (0x%08x) sycl=%.17g (0x%08x)", c->what,
+                      ms_exact_keys[k], cpu[k], (unsigned)ms_order_float_bits(cpu[k]), gpu[k],
+                      (unsigned)ms_order_float_bits(gpu[k]));
+    }
+    mu_assert("the CPU no longer scores an order pair's pinned mean", pinned);
+    mu_assert("float_ms_ssim_sycl differs from the CPU extractor on an order pair (ADR-1466)",
+              differing == 0u);
+    return NULL;
+}
+
+static char *test_ms_ssim_order_frame(void)
+{
+    return ms_order_check(&ms_order_frame);
+}
+
+static char *test_ms_ssim_order_noise(void)
+{
+    return ms_order_check(&ms_order_noise);
+}
+
 char *run_tests(void)
 {
     /* First: its scalar CPU reference needs the process-wide SSIM dispatch
      * still uninstalled (see the comment above the test). */
     mu_run_test(test_ms_ssim_matches_cpu_bit_for_bit);
+    mu_run_test(test_ms_ssim_order_frame);
+    mu_run_test(test_ms_ssim_order_noise);
     mu_run_test(test_ms_ssim_sycl_registered);
     mu_run_test(test_ms_ssim_cpu_sycl_parity);
     mu_run_test(test_ms_ssim_cpu_sycl_parity_chroma);

@@ -606,12 +606,12 @@ beyond it:
   (`float_psnr`, `float_moment`), reproduce the CPU's sequential `double`
   sum from integer increments where they do not (`ssimulacra2`, ADR-1446),
   or read the terms back and add them on the host in the CPU's order
-  (`ssim`, ADR-1443; `float_ssim`, ADR-1463).
+  (`ssim`, ADR-1443; `float_ssim`, ADR-1463; `float_ms_ssim`, ADR-1466).
 - **fp64 on the CPU.** SYCL kernels are fp32-only
   ([ADR-0220](../../adr/0220-sycl-fp64-fallback.md)); where the CPU evaluates
   an expression in fp64, the twin carries it as an exact pair of floats
-  (SpEED, `float_ms_ssim`, `float_adm`) or computes the fp64 value in 64-bit
-  integers (`ssim`, `float_ssim`, `ssimulacra2`).
+  (SpEED, `float_adm`) or computes the fp64 value in 64-bit integers
+  (`ssim`, `float_ssim`, `float_ms_ssim`, `ssimulacra2`).
 - **Content the gate's fixtures do not have.** The repository's 10-, 12- and
   16-bit clips are 8-bit content shifted left. `float_moment_sycl` and
   `float_psnr_sycl` matched them and differed on full-range noise until
@@ -1335,7 +1335,10 @@ differed from the CPU, the same four the CUDA twin had
 The pair arithmetic is the one `float_ssim_sycl` already used; both twins
 take it from `core/src/feature/sycl/sycl_ssim_terms.h`. The per-pixel terms
 are summed in 64-bit fixed point, which is exact in any order. No kernel uses
-the fp64 type or scratch memory.
+the fp64 type or scratch memory. (An exact sum is not the CPU's running sum;
+since ADR-1466 the terms are the CPU's doubles and the host adds them in the
+CPU's order,
+[below](#float_ms_ssim_sycl-adds-its-per-scale-sums-in-the-cpus-order-2026-10-02).)
 
 Measured on an Arc A380 at `--precision max` against a GCC build of the CPU
 extractor: the score is identical on the Netflix 576x324 pair (48 frames;
@@ -1947,9 +1950,71 @@ python3 -c "import json; print([json.load(open(f'order_{b}.json'))['frames'][0][
 It prints `[-4.222829943500983e-07, -4.222829943500983e-07]`; before, the
 second value was `-4.222829659283889e-07`.
 
-`float_ms_ssim_sycl` computes its per-scale means the old way and has the
-same defect (a 176x176 noise pair differs in `float_ms_ssim_l_scale0` by one
-`float` step); it follows in its own change.
+`float_ms_ssim_sycl` computed its per-scale means the old way and had the
+same defect; it follows
+[below](#float_ms_ssim_sycl-adds-its-per-scale-sums-in-the-cpus-order-2026-10-02).
+
+## `float_ms_ssim_sycl` adds its per-scale sums in the CPU's order (2026-10-02)
+
+`float_ms_ssim` calls the same routine as `float_ssim` once per scale and
+uses its luminance, contrast and structure means, so the defect of the
+previous section applied to it: the twin added each scale's terms as
+integers per work-group, an exact sum where the CPU keeps a running `double`
+that rounds. On a 176x176 pair of noise the twin's `float_ms_ssim_l_scale0`
+was 0.9884905219078064 where the CPU's is 0.9884904623031616, the next
+`float` down.
+
+The twin now stores `l`, `c` and `s` of every window of every scale, `l` and
+`c` as the CPU's `double` values, and the host adds them in the CPU's order
+([ADR-1466](../../adr/1466-sycl-float-ms-ssim-raster-sum.md)). The pair
+arithmetic for `l` and `c` and the fixed-point sums are gone from
+`core/src/feature/sycl/sycl_ssim_terms.h`; both SSIM twins use the same
+functions.
+
+A second pair, found by the HIP lane and shared by the tests of all three
+backends (`core/test/float_ms_ssim_order_frame.h`), moves
+`float_ms_ssim_c_scale1` on the CUDA and HIP twins. The SYCL twin returned the
+CPU's value on it before this change and does after: its old sum was exact,
+and on that pair the exact sum rounds to the CPU's `float`.
+
+Measured on an Arc A380 (xe) at `--precision max` against a GCC build of the
+CPU extractor, on 138 frames (the fixtures of the previous section):
+`float_ms_ssim` 138 of 138, with `enable_lcs` 2208 of 2208 values. With
+`enable_chroma`, on the 69 frames whose chroma planes are large enough, 206
+of 207 values; the one that differs does so by 1.1e-16 through the host's
+`pow()`, which an icx build takes from Intel's math library, and the CPU
+extractor of the same binary differs from the GCC build on that value too.
+
+| Input, options | Before | After |
+|---|---|---|
+| 3840x2160 | 44.7 ms | 75.9 ms |
+| 3840x2160, `enable_lcs` | 44.9 ms | 76.0 ms |
+| 3840x2160, `enable_chroma` | 65.2 ms | 112.4 ms |
+| 1920x1080 | 11.5 ms | 18.2 ms |
+| 1920x1080, `enable_lcs` | 11.3 ms | 19.2 ms |
+| 576x324 | 1.16 ms | 1.92 ms |
+
+Per frame, medians of 7 interleaved runs of 25 frames, host load average 13
+to 15; a control with the same code in both builds read 2.95 and 2.92 ms.
+The CPU extractor takes 409 ms per 3840x2160 frame on one thread and 58.7 ms
+with 16 threads, so at that size the twin is now slower than a 16-thread CPU
+run; `--backend cpu` is the faster choice for 4K `float_ms_ssim` on this
+device until the tuning row is worked. Of the extra time at 3840x2160 about
+8 ms are kernel arithmetic, 21 ms the copy of 219 MB of terms to the host
+and 5 ms the host's additions; the row
+`T-SYCL-FLOAT-MS-SSIM-RASTER-SUM-THROUGHPUT-2026-10-02` in
+[`state.md`](../../state.md) holds the split and the candidates. The twin
+holds 20 bytes per window on the device and in pinned host memory: 219 MB at
+3840x2160 (327 MB with `enable_chroma`), 54 MB at 1920x1080.
+
+```bash
+ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/ci/cross_backend_parity_gate.py \
+    --vmaf-binary build/tools/vmaf --features float_ms_ssim float_ms_ssim_lcs \
+    --backends cpu sycl \
+    --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
+    --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
+    --width 576 --height 324
+```
 
 ## Licensing of the SYCL kernels (ADR-1250)
 

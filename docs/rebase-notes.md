@@ -58770,3 +58770,33 @@ Kept: the `+0` start of every sum (signed-zero parity with `adm_dwt2_s()`), mult
   page under `core/src/feature/AGENTS.d/`, run `make docs-fragments-write`.
 - No coupled edits.
 - No Netflix golden-data, public API or FFmpeg patch impact.
+## `float_ms_ssim_sycl` adds the CPU's terms in the CPU's order (ADR-1466, 2026-10-02)
+
+`fix/sycl-float-ms-ssim-raster-sum`, the SYCL `float_ms_ssim` part of
+`T-GPU-FLOAT-SSIM-FRAME-SUM-ORDER-2026-10-02`. Stacked on ADR-1463.
+
+- `core/src/feature/sycl/integer_ms_ssim_sycl.cpp`: the vertical pass is
+  `MsSsimLcsKernel`, one work-item per window, no reduction. `d_partials` /
+  `h_partials`, `store_lcs_group()`, the work-group counts and `LcsFixed` are
+  gone; `d_terms` / `h_terms` (two fp64 patterns per window) and
+  `d_structure` / `h_structure` (one `float`) hold every (plane, scale) at
+  `window_offset`. `sum_scale_lcs()` calls `ssim_lcs_sums()`. Keep kernel,
+  layout and host sums from the same side of a conflict.
+- `core/src/feature/sycl/sycl_ssim_terms.h`: `ssim_terms()`, `SsimTerms`,
+  `ssim_term()`, `term_fixed()`, `FixedSum` and the two fixed-point constants
+  are removed (no user left); `ssim_lcs_sums()` is new. A rebase that brings
+  a user of a removed name back converts it to `ssim_double_terms()` and a
+  host sum.
+- `core/test/float_ms_ssim_order_frame.h` (new) is the pair the HIP lane
+  found, shared byte for byte with the CUDA and HIP tests (sha256
+  `be2341f63ce74151...`). Never edit it; a lane that lands the same file
+  later takes either side. `core/test/ssim_order_noise.h` (new) is the
+  seeded noise both SYCL SSIM tests regenerate their search pairs from.
+- `core/test/test_sycl_ms_ssim_parity.c` has the two order cases;
+  `core/test/test_sycl_kernel_source_contract.py` pins the new kernel, layout
+  and sums.
+- `scripts/ci/exact_twins.d/float_ms_ssim.sycl` and `float_ms_ssim_lcs.sycl`
+  cite ADR-1466 and name the pairs.
+- No Netflix golden-data, public C API or FFmpeg patch impact. Stored
+  `float_ms_ssim_sycl` scores change only where a per-scale mean lies next to
+  a `float` rounding boundary.

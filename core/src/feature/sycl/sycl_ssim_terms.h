@@ -9,17 +9,17 @@
  *  iqa/ssim_tools.c's per-pixel luminance, contrast and structure terms,
  *  operation for operation and type for type. The CPU's fp64 values of the
  *  convolution are carried as exact fp32 pairs (sycl_exact_fp.h). Its fp64
- *  terms come in two forms: the doubles themselves, computed in 64-bit
- *  integers and added on the host in the CPU's raster order
- *  (ssim_double_terms(), ssim_frame_sums(); float_ssim_sycl, ADR-1463), and
- *  pairs added as int64 fixed point (ssim_terms(), term_fixed();
- *  float_ms_ssim_sycl, ADR-1414).
+ *  terms are the doubles themselves, computed in 64-bit integers
+ *  (ssim_double_terms()), stored per window and added on the host in the
+ *  CPU's raster order (ssim_frame_sums(), ssim_lcs_sums(); ADR-1463 for
+ *  float_ssim_sycl, ADR-1466 for float_ms_ssim_sycl).
  *
  *  Shared by float_ssim_sycl (integer_ssim_sycl.cpp) and float_ms_ssim_sycl
  *  (integer_ms_ssim_sycl.cpp): one implementation of the arithmetic, so a
- *  change to the CPU reference is mirrored once. Every function assumes its translation unit is compiled
- *  with contraction off, which every SYCL feature TU is (ADR-1367). This
- *  header holds no kernel and may be included by host code of those TUs.
+ *  change to the CPU reference is mirrored once. Every function assumes its
+ *  translation unit is compiled with contraction off, which every SYCL
+ *  feature TU is (ADR-1367). This header holds no kernel and may be included
+ *  by host code of those TUs.
  */
 
 #ifndef VMAF_FEATURE_SYCL_SYCL_SSIM_TERMS_H_
@@ -41,18 +41,7 @@ namespace vmaf_sycl_ssim
 using vmaf_sycl_exact::div_rn;
 using vmaf_sycl_exact::Ff;
 using vmaf_sycl_exact::ff_add;
-using vmaf_sycl_exact::ff_div;
-using vmaf_sycl_exact::ff_mul;
 using vmaf_sycl_exact::sqrt_rn;
-using vmaf_sycl_exact::two_prod;
-using vmaf_sycl_exact::two_sum;
-
-/* Frame reduction (Research-2133): every per-pixel term goes to int64 in
- * units of 2^-52 before the work-group sum. |term| <= 2 and a work-group has
- * 128 items, so a group sum stays below 2^60, and integer addition makes the
- * sum exact and independent of the reduction order. */
-inline constexpr float SSIM_TERM_FIXED_ONE = 0x1p52f;
-inline constexpr double SSIM_TERM_FIXED_INV = 0x1p-52;
 
 struct SsimMoments {
     float reference_mean;
@@ -69,14 +58,6 @@ struct MomentPairs {
     Ff reference_square;
     Ff comparison_square;
     Ff cross_product;
-};
-
-/* One pixel's luminance, contrast and structure terms in the CPU's types:
- * L and C are doubles on the CPU (pairs here), S is an fp32 quotient. */
-struct SsimTerms {
-    Ff luminance;
-    Ff contrast;
-    float structure;
 };
 
 /* One tap of iqa/convolve.c: the fp32 product `img * kernel`, added to the
@@ -172,22 +153,6 @@ inline SsimFloatParts ssim_float_parts(const SsimMoments &m, float c1, float c2)
             .structure = div_rn(s_num, s_den)};
 }
 
-/* L = (2.0 * mu_ref * mu_cmp + C1) / l_den and C = (2.0 * srsc + C2) / c_den,
- * which the CPU forms in double, as pairs (about 2^-44 from the double), with
- * the fp32 S. float_ms_ssim_sycl sums these (ADR-1414); float_ssim_sycl takes
- * the doubles themselves (ssim_double_terms() below). */
-inline SsimTerms ssim_terms(const SsimMoments &m, float c1, float c2)
-{
-    const SsimFloatParts p = ssim_float_parts(m, c1, c2);
-    const Ff product = two_prod(p.reference_mean, p.comparison_mean);
-    const Ff doubled = {.hi = 2.0f * product.hi, .lo = 2.0f * product.lo};
-    const Ff l_num = ff_add(doubled, Ff{.hi = c1, .lo = 0.0f});
-    const Ff c_num = two_sum(2.0f * p.srsc, c2);
-    return {.luminance = ff_div(l_num, Ff{.hi = p.l_den, .lo = 0.0f}),
-            .contrast = ff_div(c_num, Ff{.hi = p.c_den, .lo = 0.0f}),
-            .structure = p.structure};
-}
-
 /* One pixel's terms as the CPU's own values: `lv` and `cv` of
  * ssim_accumulate_lane() are doubles, held here as a significand and an
  * exponent in integers (sycl_soft_signed.h; a kernel has no fp64 type,
@@ -269,43 +234,20 @@ inline SsimFrameSums ssim_frame_sums(const std::uint64_t *luminance, const std::
     return sums;
 }
 
-/* The pixel's SSIM term, `lv * cv * sv` in double on the CPU, as a pair. */
-inline Ff ssim_term(const SsimTerms &t)
+/* iqa_ssim()'s lv, cv and sv sums without the product (host side), for a
+ * caller that uses the three means alone, as ms_ssim.c does per scale. Each
+ * sum is one double that takes the windows in raster order; `ssim` stays 0. */
+inline SsimFrameSums ssim_lcs_sums(const std::uint64_t *luminance, const std::uint64_t *contrast,
+                                   const float *structure, std::size_t count)
 {
-    return ff_mul(ff_mul(t.luminance, t.contrast), Ff{.hi = t.structure, .lo = 0.0f});
-}
-
-/* A pair in int64 units of 2^-52, rounded to nearest: hi * 2^52 is exact and
- * integral for |hi| >= 2^-28, lo adds its rounded share. */
-inline std::int64_t term_fixed(Ff value)
-{
-    const float hi = sycl::rint(value.hi * SSIM_TERM_FIXED_ONE);
-    const float lo = sycl::rint(value.lo * SSIM_TERM_FIXED_ONE);
-    return static_cast<std::int64_t>(hi) + static_cast<std::int64_t>(lo);
-}
-
-/* Exact sum of fixed-point terms of any count (host side): each is split
- * into multiples of 2^32 and a remainder, so neither half overflows, and the
- * halves join in one double rounding. */
-class FixedSum
-{
-  public:
-    void add(std::int64_t value)
-    {
-        const std::int64_t value_high = value / 0x100000000LL;
-        high += value_high;
-        low += value - value_high * 0x100000000LL;
+    SsimFrameSums sums = {};
+    for (std::size_t i = 0U; i < count; i++) {
+        sums.luminance += std::bit_cast<double>(luminance[i]);
+        sums.contrast += std::bit_cast<double>(contrast[i]);
+        sums.structure += (double)structure[i];
     }
-
-    [[nodiscard]] double value() const
-    {
-        return ((double)high * 0x1p32 + (double)low) * SSIM_TERM_FIXED_INV;
-    }
-
-  private:
-    std::int64_t high = 0;
-    std::int64_t low = 0;
-};
+    return sums;
+}
 
 /* ssim_init_args' C1 and C2 for L = 255, K1 = 0.01, K2 = 0.03, in fp32. */
 inline void float_ssim_constants(float *c1, float *c2)

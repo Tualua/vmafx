@@ -61,33 +61,46 @@ invariant: integer_ms_ssim_sycl.cpp = CPU arithmetic, type for type; honours ena
   1e-6 off. (2) Window sums: `add_horizontal_tap` / `add_vertical_tap` /
   `round_moments` from `sycl_ssim_terms.h` = `iqa_convolve()`'s fp32
   products summed in fp64, as fp32 pairs, one rounding per pass. (3)
-  `ssim_terms()`: fp32 variances + clamp, fp32 denominators, l and c as
-  pairs (CPU fp64 quotients), s = `div_rn` fp32 quotient, C3 = C2 / 2.0f.
-  (4) Sums: `term_fixed()` -> int64 units of 2^-52, `reduce_over_group`
-  exact, host `FixedSum`, mean `(double)(float)(sum / pixels)` (=
-  `iqa_ssim()` float return), `combine_ms_ssim()` with `fabs()` on l, c, s.
+  `ssim_float_parts()`: fp32 variances + clamp, fp32 denominators, s =
+  `div_rn` fp32 quotient, C3 = C2 / 2.0f; `ssim_double_terms()`: l and c =
+  the CPU's fp64 quotients in 64-bit integers (`sycl_soft_signed.h`).
+  (4) Sums ([ADR-1466](../../../../../docs/adr/1466-sycl-float-ms-ssim-raster-sum.md),
+  the method of ADR-1463): `MsSsimLcsKernel` = one work-item per window,
+  stores lv bits at `d_terms[offset + i]`, cv bits at
+  `d_terms[window_count + offset + i]`, fp32 sv at `d_structure[offset + i]`
+  (`window_offset[plane][scale]`, raster order, NO reduction; 20 B / window:
+  219 MB at 4K); `submit()` enqueues both copies, `collect()` waits once;
+  host `ssim_lcs_sums()` = three doubles in index order (no product: ms_ssim.c
+  does not use it), mean `(double)(float)(sum / pixels)` (= `iqa_ssim()`
+  float return), `combine_ms_ssim()` with `fabs()` on l, c, s. Kernel shape
+  `VmafSyclKernelShape<16, 256>`, window function flattened (ADR-1395).
   `sycl_ssim_terms.h` is shared with `float_ssim_sycl`
   (`integer_ssim_sycl.cpp`): ONE copy of the arithmetic, no private
-  `ssim_terms` / `add_*_tap` / `term_fixed` in either TU (contract test).
-  Header holds host-only `double` (`FixedSum::value`); never call it from a
-  kernel (ADR-0220). Exact in practice, not by construction: pairs ~2^-46
-  vs CPU fp64, exact sum vs CPU running fp64 sum; fp32 mean rounding absorbs
-  it. Arc A380: every per-scale mean identical on Netflix pair (48),
-  checkerboards (3 + 3), BBB 4K (50), chroma, 10 / 12 / 16 bit. Score vs a
-  GCC build: 1 of 254 frames 1.1e-16 off = host `pow()` of the icx build
-  (libimf), not the device. Same-binary CPU on AVX-512 host needs #1706.
-  Scratch-free (ADR-1395). `EXACT_TWINS`: `float_ms_ssim`,
-  `float_ms_ssim_lcs`: `sycl`. Guards: `test_sycl_ms_ssim_parity` (+
-  `_large`; `==` on 18 outputs x 3 frames, runs FIRST in the binary so its
-  scalar-CPU cpumask precedes the process-wide SSIM dispatch install),
-  `test_sycl_kernel_source_contract.py` (seven planted regressions).
+  `ssim_double_terms` / `ssim_float_parts` / `add_*_tap` / `ssim_lcs_sums`
+  in either TU (contract test). Host-side functions of the header use
+  `double`; never call them from a kernel (ADR-0220). Exact by construction
+  since ADR-1466. Before (ADR-1414): pair terms -> `term_fixed()` int64 ->
+  `reduce_over_group` -> host `FixedSum` = an exact sum, NOT the CPU's
+  running double; `float_ms_ssim_l_scale0` one float step off on the noise
+  pair seed 2437157 (176x176). Never bring a reduction, pair terms for a
+  stored term or another host order back. Score vs a GCC build: host
+  `pow()` of the icx build (libimf) can differ by 1.1e-16, not the device.
+  Same-binary CPU on AVX-512 host needs #1706. Scratch-free (ADR-1395).
+  `EXACT_TWINS`: `float_ms_ssim`, `float_ms_ssim_lcs`: `sycl`. Guards:
+  `test_sycl_ms_ssim_parity` (+ `_large`; `==` on 18 outputs x 3 frames,
+  runs FIRST in the binary so its scalar-CPU cpumask precedes the
+  process-wide SSIM dispatch install; order cases: the noise pair, which
+  fails on the old twin, and `core/test/float_ms_ssim_order_frame.h`, shared
+  byte-identical with the CUDA and HIP tests, never edit it; the old SYCL
+  twin passed that one), `test_sycl_kernel_source_contract.py`. Cost:
+  `T-SYCL-FLOAT-MS-SSIM-RASTER-SUM-THROUGHPUT-2026-10-02`.
 
 - [ADR-0243](../../../../../docs/adr/0243-enable-lcs-gpu.md) — MS-SSIM
   `enable_lcs` GPU contract.
 
 | SYCL TU | CPU TU | Parity test | ADR |
 |---|---|---|---|
-| `integer_ms_ssim_sycl.cpp` | `ms_ssim.c` | `test_sycl_ms_ssim_parity.c` (+ `_large`; bit-exact, 18 outputs x 3 frames) | ADR-0884 (round 2), ADR-1414 |
+| `integer_ms_ssim_sycl.cpp` | `ms_ssim.c` | `test_sycl_ms_ssim_parity.c` (+ `_large`; bit-exact, 18 outputs x 3 frames) | ADR-0884 (round 2), ADR-1414, ADR-1466 |
 
 | Kernel TU | Parity test | ADR |
 |---|---|---|

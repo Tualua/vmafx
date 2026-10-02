@@ -64,6 +64,7 @@
 #include "libvmaf/picture.h"
 
 #include "float_ssim_order_frame.h"
+#include "ssim_order_noise.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but this is a C
@@ -374,15 +375,6 @@ static const OrderCase order_noise[] = {
     {"noise 176x176, float_ssim", 176u, 176u, NULL, NULL, 138433u},
 };
 
-/* splitmix64's output function. */
-static uint64_t mix64(uint64_t x)
-{
-    x += 0x9E3779B97F4A7C15ull;
-    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ull;
-    x = (x ^ (x >> 27)) * 0x94D049BB133111EBull;
-    return x ^ (x >> 31);
-}
-
 /* Luma sample `i` (raster order) of the case's reference (`which` 0) or
  * distorted (1) picture. */
 static unsigned order_luma(const OrderCase *c, unsigned which, size_t i)
@@ -390,7 +382,7 @@ static unsigned order_luma(const OrderCase *c, unsigned which, size_t i)
     if (c->ref) {
         return which ? c->dis[i] : c->ref[i];
     }
-    return (unsigned)(mix64(mix64(c->seed * 2u + which) + i) >> 56);
+    return ssim_order_noise_luma(c->seed, which, i);
 }
 
 /* The case's picture: the header's Y, U and V bytes, or seeded luma with

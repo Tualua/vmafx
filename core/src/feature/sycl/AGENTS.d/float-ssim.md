@@ -41,8 +41,9 @@ invariant: float_ssim_sycl terms = CPU doubles, frame sums = CPU raster order; d
   `core/test/float_ssim_order_frame.h` is shared byte-identical with the
   CUDA and HIP tests: never edit it), `test_sycl_kernel_scratch`. Cost at
   `scale=1`: `T-SYCL-FLOAT-SSIM-RASTER-SUM-THROUGHPUT-2026-10-02`.
-  `float_ms_ssim_sycl` still uses `ssim_terms()` / `term_fixed()` /
-  `FixedSum` (same defect, own change).
+  `float_ms_ssim_sycl` takes the same terms and adds three sums per scale
+  ([ADR-1466](../../../../../docs/adr/1466-sycl-float-ms-ssim-raster-sum.md),
+  see [ms-ssim.md](ms-ssim.md)).
 - **`float_ssim_sycl` decimation is bit-exact with the CPU**
   ([ADR-1370](../../../../../docs/adr/1370-sycl-float-ssim-device-decimation.md)).
   `decimate_sample()` = `iqa_filter_pixel()` at `(x * scale, y * scale)`:

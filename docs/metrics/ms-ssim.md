@@ -165,11 +165,23 @@ Intel-compiler build. Against the CPU extractor of its own binary the twin is
 identical on every frame. With `enable_db` the same holds for `log10()`
 (3.6e-15 on 3 of 48 Netflix frames against a GCC build).
 
-The match is exact in practice, not by construction: the CPU adds each
-frame's terms into a running `double`, the twins add them in another order,
-and the rounding of each per-scale mean to `float` absorbs the difference
-unless the mean sits within about one part in four million of a rounding
-boundary.
+The match after that work was exact in practice, not by construction: the
+CPU adds each frame's terms into a running `double`, the twins added them in
+another order, and the rounding of each per-scale mean to `float` absorbs the
+difference unless the mean sits next to a rounding boundary. Such frames
+exist (`T-GPU-FLOAT-SSIM-FRAME-SUM-ORDER-2026-10-02`): on a 176x176 noise
+pair `float_ms_ssim_sycl` returned 0.9884905219078064 for
+`float_ms_ssim_l_scale0` where the CPU returns 0.9884904623031616, one
+`float` step. Since 2026-10-02 the SYCL twin stores every window's `l`, `c`
+and `s` of every scale, with `l` and `c` as the CPU's `double` values, and
+adds them on the host in the CPU's order
+([ADR-1466](../adr/1466-sycl-float-ms-ssim-raster-sum.md)); it is exact by
+construction and returns the CPU's value on that pair. Against a GCC build of
+the CPU extractor on an Arc A380: `float_ms_ssim` on 138 of 138 frames and
+2208 of 2208 `enable_lcs` values. That costs 75.9 ms per 3840x2160 frame
+against 44.7 before, 18.2 against 11.5 ms at 1920x1080 and 1.92 against 1.16
+ms at 576x324, and 219 MB of device and pinned host memory at 3840x2160
+([SYCL backend](../backends/sycl/overview.md#float_ms_ssim_sycl-adds-its-per-scale-sums-in-the-cpus-order-2026-10-02)).
 
 The SYCL twin pays for this in time: 42.6 ms per 3840x2160 frame on the A380
 against 31.4 before (0.84 to 1.20 ms at 576x324); the CPU extractor takes 117

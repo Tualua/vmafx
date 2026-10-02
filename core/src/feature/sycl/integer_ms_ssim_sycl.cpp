@@ -20,10 +20,10 @@
  *  product combine. Three SYCL kernels:
  *    - decimate (9-tap 9/7 biorthogonal LPF + 2× downsample)
  *    - horiz (11-tap separable Gaussian over 5 stats)
- *    - vert+lcs (vertical 11-tap + per-pixel l/c/s + per-WG
- *      partials × 3 via reduce_over_group)
- *  submit() enqueues every plane and scale plus one copy of all
- *  partials; collect() waits once and sums them (ADR-1363).
+ *    - vert+lcs (vertical 11-tap + per-window l/c/s, one work-item per
+ *      window, each term stored at its raster position; no reduction)
+ *  submit() enqueues every plane and scale plus one copy of the terms;
+ *  collect() waits once and adds them in raster order (ADR-1363, ADR-1466).
  *
  *  Numerical contract (ADR-1414, after ADR-1403 for the CUDA twin). Each
  *  kernel reproduces its CPU reference operation for operation and type for
@@ -34,14 +34,17 @@
  *      accumulated in fp64 and rounded to fp32 once per pass; carried here
  *      as exact fp32 pairs (sycl_ssim_terms.h, shared with float_ssim_sycl);
  *    - l / c / s: ssim_variance_scalar() and
- *      ssim_accumulate_default_scalar() (iqa/ssim_tools.c), with their mixed
- *      fp32 / fp64 operands as pairs;
- *    - frame sums: int64 fixed point, exact and independent of the group
- *      order; the host rounds each per-scale mean to fp32 as iqa_ssim() does
- *      and combines the scales as ms_ssim.c does.
- *  What is left differs from the CPU only below the last bit of an fp32
- *  per-scale mean: the CPU's fp64 quotients and running fp64 sums against
- *  pairs good to about 2^-46 and an exact sum.
+ *      ssim_accumulate_default_scalar() (iqa/ssim_tools.c); l and c are the
+ *      CPU's fp64 quotients, formed in 64-bit integers (ssim_double_terms(),
+ *      sycl_soft_signed.h), s its fp32 quotient;
+ *    - frame sums (ADR-1466): iqa_ssim() adds l, c and s into one double
+ *      each, window after window in raster order, and those adds round. The
+ *      kernel stores every window's terms and the host adds them in that
+ *      order (ssim_lcs_sums()), rounds each per-scale mean to fp32 as
+ *      iqa_ssim() does and combines the scales as ms_ssim.c does. Before
+ *      ADR-1466 the terms were fp32 pairs added as integers per work-group
+ *      (ADR-1414): an exact sum, which is not the CPU's running sum, and one
+ *      float step off on frames whose mean lies next to a rounding boundary.
  *
  *  fp64-free (Intel Arc A380 lacks native fp64 — same constraint
  *  as ssim_sycl).
@@ -64,7 +67,9 @@
 #include "picture.h"
 #include "../picture_copy.h"
 #include "sycl/common.h"
+#include "sycl_compat.h"
 #include "sycl_exact_fp.h"
+#include "sycl_soft_signed.h"
 #include "sycl_ssim_terms.h"
 
 namespace
@@ -80,8 +85,6 @@ static constexpr int MS_SSIM_GAUSSIAN_LEN = 11;
 static constexpr int MS_SSIM_K = 11;
 static constexpr int LPF_LEN = 9;
 static constexpr int LPF_HALF = 4;
-static constexpr size_t WG_X = 16;
-static constexpr size_t WG_Y = 8;
 
 static constexpr float G[MS_SSIM_K] = {
     0.001028f, 0.007599f, 0.036001f, 0.109361f, 0.213006f, 0.266012f,
@@ -114,9 +117,6 @@ struct MsSsimPlaneGeometry {
     unsigned scale_h_horiz[MS_SSIM_SCALES];
     unsigned scale_w_final[MS_SSIM_SCALES];
     unsigned scale_h_final[MS_SSIM_SCALES];
-    unsigned scale_wg_count_x[MS_SSIM_SCALES];
-    unsigned scale_wg_count_y[MS_SSIM_SCALES];
-    unsigned scale_wg_count[MS_SSIM_SCALES];
     float *h_ref;
     float *h_cmp;
     float *d_pyramid_ref[MS_SSIM_SCALES];
@@ -146,16 +146,19 @@ struct MsSsimStateSycl {
     float *d_h_ref_sq;
     float *d_h_cmp_sq;
     float *d_h_refcmp;
-    /* Per-group l/c/s partials of every (plane, scale), NOT reused: each
-     * (plane, scale) owns the span at partial_offset, laid out as
-     * [l x groups][c x groups][s x groups], in int64 units of 2^-52
-     * (sycl_ssim_terms.h). submit() enqueues every scale and one copy of the
-     * whole buffer; collect() waits once and sums them on the host (ADR-1363).
-     * The sums are integers, so their order does not matter. */
-    std::int64_t *d_partials;
-    std::int64_t *h_partials;
-    size_t partial_offset[MS_SSIM_MAX_PLANES][MS_SSIM_SCALES];
-    size_t partial_count;
+    /* Per-window l / c / s of every (plane, scale), NOT reused: each (plane,
+     * scale) owns the windows from window_offset on, in raster order. The
+     * terms buffer holds fp64 bit patterns, l of every window and then c of
+     * every window ([l x window_count][c x window_count]); the structure
+     * buffer holds the fp32 s. submit() enqueues every scale and one copy of
+     * each buffer; collect() waits once and adds on the host in raster order
+     * (ADR-1363, ADR-1466). */
+    std::uint64_t *d_terms;
+    std::uint64_t *h_terms;
+    float *d_structure;
+    float *h_structure;
+    size_t window_offset[MS_SSIM_MAX_PLANES][MS_SSIM_SCALES];
+    size_t window_count;
     bool has_pending;
     unsigned pending_index;
     VmafDictionary *feature_name_dict;
@@ -170,24 +173,17 @@ struct DecimateArgs {
     unsigned output_height;
 };
 
-/* One pixel's l / c / s in int64 units of 2^-52. */
-struct LcsFixed {
-    std::int64_t luminance;
-    std::int64_t contrast;
-    std::int64_t structure;
-};
-
-using vmaf_sycl_exact::Ff;
 using vmaf_sycl_ssim::add_horizontal_tap;
 using vmaf_sycl_ssim::add_vertical_tap;
-using vmaf_sycl_ssim::FixedSum;
 using vmaf_sycl_ssim::float_ssim_constants;
 using vmaf_sycl_ssim::MomentPairs;
 using vmaf_sycl_ssim::round_moments;
-using vmaf_sycl_ssim::ssim_terms;
+using vmaf_sycl_ssim::ssim_double_terms;
+using vmaf_sycl_ssim::ssim_float_parts;
+using vmaf_sycl_ssim::ssim_lcs_sums;
+using vmaf_sycl_ssim::SsimDoubleTerms;
+using vmaf_sycl_ssim::SsimFrameSums;
 using vmaf_sycl_ssim::SsimMoments;
-using vmaf_sycl_ssim::SsimTerms;
-using vmaf_sycl_ssim::term_fixed;
 
 } // namespace
 
@@ -327,13 +323,12 @@ struct VertArgs {
     const float *ref_sq;
     const float *cmp_sq;
     const float *refcmp;
-    std::int64_t *luminance;
-    std::int64_t *contrast;
-    std::int64_t *structure;
+    std::uint64_t *luminance; /* fp64 bit pattern of lv per window */
+    std::uint64_t *contrast;  /* fp64 bit pattern of cv per window */
+    float *structure;         /* fp32 sv per window */
     unsigned horizontal_width;
     unsigned final_width;
     unsigned final_height;
-    size_t group_columns;
     float c1;
     float c2;
 };
@@ -343,12 +338,20 @@ struct VertArgs {
 namespace
 {
 
+/* SIMD-16 with the 256-entry register file: the vertical moments and the two
+ * fp64 quotients in integers stay in registers (no scratch memory, ADR-1395),
+ * as in float_ssim_sycl's term kernels. */
+constexpr int MS_SSIM_TERM_SG = 16;
+constexpr int MS_SSIM_TERM_GRF = 256;
+
 /* iqa_convolve_vertical_pass() over the five horizontal results, then
- * ssim_variance_scalar() and ssim_accumulate_default_scalar() for the pixel
- * (ssim_terms(), sycl_ssim_terms.h): fp32 variances with the reference's
- * clamp, fp32 denominators, l and c as the pairs that stand for the
- * reference's fp64 quotients, s as an fp32 quotient. */
-static inline LcsFixed vertical_lcs_pixel(const VertArgs &args, size_t x, size_t y)
+ * ssim_variance_scalar() and ssim_accumulate_default_scalar() for the window
+ * (sycl_ssim_terms.h): fp32 variances with the reference's clamp, fp32
+ * denominators, l and c as the reference's fp64 quotients in 64-bit integers,
+ * s as an fp32 quotient. Flattened into the kernel: a call left in it takes
+ * scratch memory for its frame (ADR-1395). */
+__attribute__((flatten, always_inline)) static inline SsimDoubleTerms
+ms_ssim_window_terms(const VertArgs &args, size_t x, size_t y)
 {
     MomentPairs sums{};
     for (int tap = 0; tap < MS_SSIM_K; ++tap) {
@@ -360,56 +363,38 @@ static inline LcsFixed vertical_lcs_pixel(const VertArgs &args, size_t x, size_t
                                  .cross_product = args.refcmp[index]};
         add_vertical_tap(sums, row, G[tap]);
     }
-    const SsimTerms terms = ssim_terms(round_moments(sums), args.c1, args.c2);
-    return {.luminance = term_fixed(terms.luminance),
-            .contrast = term_fixed(terms.contrast),
-            .structure = term_fixed(Ff{.hi = terms.structure, .lo = 0.0f})};
+    return ssim_double_terms(ssim_float_parts(round_moments(sums), args.c1, args.c2), args.c1,
+                             args.c2);
 }
 
-} // namespace
-
-namespace
+/* One work-item per window stores that window's lv and cv as fp64 bit
+ * patterns and its fp32 sv at the window's raster position. There is no
+ * reduction on the device: iqa_ssim() adds each term into one double, row
+ * after row, and those additions round (ADR-1466). */
+class MsSsimLcsKernel : public VmafSyclKernelShape<MS_SSIM_TERM_SG, MS_SSIM_TERM_GRF>
 {
-
-/* Exact work-group sums of the three fixed-point terms. Every work-item of
- * the group must call it (reduce_over_group). */
-static inline void store_lcs_group(sycl::nd_item<2> item, const VertArgs &args, LcsFixed values)
-{
-    std::int64_t const luminance =
-        sycl::reduce_over_group(item.get_group(), values.luminance, sycl::plus<std::int64_t>{});
-    std::int64_t const contrast =
-        sycl::reduce_over_group(item.get_group(), values.contrast, sycl::plus<std::int64_t>{});
-    std::int64_t const structure =
-        sycl::reduce_over_group(item.get_group(), values.structure, sycl::plus<std::int64_t>{});
-    if (item.get_local_id(0) == 0 && item.get_local_id(1) == 0) {
-        const size_t index = item.get_group(0) * args.group_columns + item.get_group(1);
-        args.luminance[index] = luminance;
-        args.contrast[index] = contrast;
-        args.structure[index] = structure;
+  public:
+    explicit MsSsimLcsKernel(const VertArgs &args) : a_(args)
+    {
     }
-}
 
-} // namespace
+    VMAF_SYCL_FUNCTOR_SG_SIZE(MS_SSIM_TERM_SG) void operator()(sycl::id<2> id) const
+    {
+        const size_t index = id[0] * (size_t)a_.final_width + id[1];
+        const SsimDoubleTerms terms = ms_ssim_window_terms(a_, id[1], id[0]);
+        a_.luminance[index] = vmaf_sycl_soft::signed_bits(terms.luminance);
+        a_.contrast[index] = vmaf_sycl_soft::signed_bits(terms.contrast);
+        a_.structure[index] = terms.structure;
+    }
 
-namespace
-{
+  private:
+    VertArgs a_;
+};
 
 static void launch_vert_lcs(sycl::queue &q, const VertArgs &args)
 {
-    const size_t global_x = ((args.final_width + WG_X - 1) / WG_X) * WG_X;
-    const size_t global_y = ((args.final_height + WG_Y - 1) / WG_Y) * WG_Y;
-    sycl::nd_range<2> const ndr{sycl::range<2>{global_y, global_x}, sycl::range<2>{WG_Y, WG_X}};
-    q.submit([=](sycl::handler &h_) {
-        h_.parallel_for(ndr, [=](sycl::nd_item<2> it) {
-            const size_t x = it.get_global_id(1);
-            const size_t y = it.get_global_id(0);
-            LcsFixed values = {};
-            if (x < (size_t)args.final_width && y < (size_t)args.final_height) {
-                values = vertical_lcs_pixel(args, x, y);
-            }
-            store_lcs_group(it, args, values);
-        });
-    });
+    const sycl::range<2> windows{args.final_height, args.final_width};
+    q.submit([&](sycl::handler &handler) { handler.parallel_for(windows, MsSsimLcsKernel(args)); });
 }
 
 } // namespace
@@ -529,12 +514,6 @@ static void configure_ms_ssim_scales(MsSsimStateSycl *s)
             geometry.scale_h_horiz[scale] = geometry.scale_h[scale];
             geometry.scale_w_final[scale] = geometry.scale_w[scale] - (MS_SSIM_K - 1);
             geometry.scale_h_final[scale] = geometry.scale_h[scale] - (MS_SSIM_K - 1);
-            geometry.scale_wg_count_x[scale] =
-                (geometry.scale_w_final[scale] + (unsigned)WG_X - 1) / (unsigned)WG_X;
-            geometry.scale_wg_count_y[scale] =
-                (geometry.scale_h_final[scale] + (unsigned)WG_Y - 1) / (unsigned)WG_Y;
-            geometry.scale_wg_count[scale] =
-                geometry.scale_wg_count_x[scale] * geometry.scale_wg_count_y[scale];
         }
     }
     /* ssim_init_args' C1 and C2 for L = 255, K1 = 0.01, K2 = 0.03, in fp32;
@@ -546,6 +525,27 @@ static void configure_ms_ssim_scales(MsSsimStateSycl *s)
 
 namespace
 {
+
+/* The per-window term planes of every (plane, scale): 20 bytes per window on
+ * the device and pinned on the host (two fp64 patterns and one fp32). */
+static void allocate_ms_ssim_terms(MsSsimStateSycl *s)
+{
+    size_t window_count = 0;
+    for (unsigned plane = 0; plane < s->n_planes; plane++) {
+        const MsSsimPlaneGeometry &geometry = s->geom[plane];
+        for (int scale = 0; scale < MS_SSIM_SCALES; scale++) {
+            s->window_offset[plane][scale] = window_count;
+            window_count += (size_t)geometry.scale_w_final[scale] * geometry.scale_h_final[scale];
+        }
+    }
+    s->window_count = window_count;
+    const size_t terms_bytes = 2U * window_count * sizeof(std::uint64_t);
+    const size_t structure_bytes = window_count * sizeof(float);
+    s->d_terms = static_cast<std::uint64_t *>(vmaf_sycl_malloc_device(s->sycl_state, terms_bytes));
+    s->h_terms = static_cast<std::uint64_t *>(vmaf_sycl_malloc_host(s->sycl_state, terms_bytes));
+    s->d_structure = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, structure_bytes));
+    s->h_structure = static_cast<float *>(vmaf_sycl_malloc_host(s->sycl_state, structure_bytes));
+}
 
 static void allocate_ms_ssim_buffers(MsSsimStateSycl *s)
 {
@@ -572,19 +572,7 @@ static void allocate_ms_ssim_buffers(MsSsimStateSycl *s)
     s->d_h_ref_sq = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, horizontal_bytes));
     s->d_h_cmp_sq = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, horizontal_bytes));
     s->d_h_refcmp = static_cast<float *>(vmaf_sycl_malloc_device(s->sycl_state, horizontal_bytes));
-    size_t partial_count = 0;
-    for (unsigned plane = 0; plane < s->n_planes; plane++) {
-        for (int scale = 0; scale < MS_SSIM_SCALES; scale++) {
-            s->partial_offset[plane][scale] = partial_count;
-            partial_count += 3u * (size_t)s->geom[plane].scale_wg_count[scale];
-        }
-    }
-    s->partial_count = partial_count;
-    const size_t partial_bytes = partial_count * sizeof(std::int64_t);
-    s->d_partials =
-        static_cast<std::int64_t *>(vmaf_sycl_malloc_device(s->sycl_state, partial_bytes));
-    s->h_partials =
-        static_cast<std::int64_t *>(vmaf_sycl_malloc_host(s->sycl_state, partial_bytes));
+    allocate_ms_ssim_terms(s);
 }
 
 } // namespace
@@ -595,7 +583,7 @@ namespace
 static bool ms_ssim_allocations_complete(const MsSsimStateSycl *s)
 {
     if (!s->d_h_ref_mu || !s->d_h_cmp_mu || !s->d_h_ref_sq || !s->d_h_cmp_sq || !s->d_h_refcmp ||
-        !s->d_partials || !s->h_partials) {
+        !s->d_terms || !s->h_terms || !s->d_structure || !s->h_structure) {
         return false;
     }
     for (unsigned plane = 0; plane < s->n_planes; plane++) {
@@ -658,14 +646,14 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 namespace
 {
 
-/* Horizontal pass, then vertical pass + per-group l/c/s of one (plane, scale).
- * The shared horizontal workspace is safe to reuse across scales and planes
- * because the queue is in order; the partials go to the pair's own span. */
+/* Horizontal pass, then vertical pass + per-window l/c/s of one (plane,
+ * scale). The shared horizontal workspace is safe to reuse across scales and
+ * planes because the queue is in order; the terms go to the pair's own
+ * windows. */
 static void enqueue_scale_lcs(MsSsimStateSycl *s, sycl::queue &queue, unsigned plane, int scale)
 {
     const MsSsimPlaneGeometry &geometry = s->geom[plane];
-    const size_t groups = geometry.scale_wg_count[scale];
-    std::int64_t *span = s->d_partials + s->partial_offset[plane][scale];
+    const size_t offset = s->window_offset[plane][scale];
     launch_ms_ssim_horiz(queue, {.ref = geometry.d_pyramid_ref[scale],
                                  .cmp = geometry.d_pyramid_cmp[scale],
                                  .ref_mu = s->d_h_ref_mu,
@@ -681,13 +669,12 @@ static void enqueue_scale_lcs(MsSsimStateSycl *s, sycl::queue &queue, unsigned p
                             .ref_sq = s->d_h_ref_sq,
                             .cmp_sq = s->d_h_cmp_sq,
                             .refcmp = s->d_h_refcmp,
-                            .luminance = span,
-                            .contrast = span + groups,
-                            .structure = span + 2u * groups,
+                            .luminance = s->d_terms + offset,
+                            .contrast = s->d_terms + s->window_count + offset,
+                            .structure = s->d_structure + offset,
                             .horizontal_width = geometry.scale_w_horiz[scale],
                             .final_width = geometry.scale_w_final[scale],
                             .final_height = geometry.scale_h_final[scale],
-                            .group_columns = geometry.scale_wg_count_x[scale],
                             .c1 = s->c1,
                             .c2 = s->c2});
 }
@@ -708,7 +695,7 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
      * dispatch (libvmaf.c, dispatch_gpu_double_buffer) releases the picture
      * after submit returns, so collect has no VmafPicture to read from. The
      * whole frame -- pyramids and every scale's l/c/s pass -- is enqueued here
-     * without a wait; collect only waits for the one partials copy
+     * without a wait; collect only waits for the copies of the terms
      * (ADR-1363). */
     for (unsigned plane = 0; plane < s->n_planes; plane++) {
         const MsSsimPlaneGeometry &geometry = s->geom[plane];
@@ -739,8 +726,9 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
             enqueue_scale_lcs(s, q, plane, scale);
         }
     }
-    /* The only device-to-host copy of the frame; collect() waits on it. */
-    q.memcpy(s->h_partials, s->d_partials, s->partial_count * sizeof(std::int64_t));
+    /* The device-to-host copies of the frame; collect() waits on them. */
+    q.memcpy(s->h_terms, s->d_terms, 2U * s->window_count * sizeof(std::uint64_t));
+    q.memcpy(s->h_structure, s->d_structure, s->window_count * sizeof(float));
 
     s->pending_index = index;
     s->has_pending = true;
@@ -752,31 +740,24 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
 namespace
 {
 
-/* One (plane, scale)'s l / c / s means from the frame's single readback, as
- * iqa_ssim() returns them: the frame sum divided by the pixel count in fp64,
- * then rounded to fp32. The sum of the group partials is exact (FixedSum), so
- * it does not depend on the group order. */
+/* One (plane, scale)'s l / c / s means from the frame's readback, as
+ * iqa_ssim() returns them: each sum one double over the windows in raster
+ * order (ssim_lcs_sums(); the terms and the order are the CPU's, so the sums
+ * are), divided by the pixel count in fp64, then rounded to fp32. */
 static void sum_scale_lcs(const MsSsimStateSycl *s, unsigned plane, int scale, double &luminance,
                           double &contrast, double &structure)
 {
     const MsSsimPlaneGeometry &geometry = s->geom[plane];
-    const unsigned groups = geometry.scale_wg_count[scale];
-    const std::int64_t *l_partials = s->h_partials + s->partial_offset[plane][scale];
-    const std::int64_t *c_partials = l_partials + groups;
-    const std::int64_t *s_partials = c_partials + groups;
-    FixedSum total_l;
-    FixedSum total_c;
-    FixedSum total_s;
-    for (unsigned group = 0; group < groups; group++) {
-        total_l.add(l_partials[group]);
-        total_c.add(c_partials[group]);
-        total_s.add(s_partials[group]);
-    }
+    const size_t windows = (size_t)geometry.scale_w_final[scale] * geometry.scale_h_final[scale];
+    const size_t offset = s->window_offset[plane][scale];
+    const SsimFrameSums sums =
+        ssim_lcs_sums(s->h_terms + offset, s->h_terms + s->window_count + offset,
+                      s->h_structure + offset, windows);
     const double pixels =
         (double)geometry.scale_w_final[scale] * (double)geometry.scale_h_final[scale];
-    luminance = (double)(float)(total_l.value() / pixels);
-    contrast = (double)(float)(total_c.value() / pixels);
-    structure = (double)(float)(total_s.value() / pixels);
+    luminance = (double)(float)(sums.luminance / pixels);
+    contrast = (double)(float)(sums.contrast / pixels);
+    structure = (double)(float)(sums.structure / pixels);
 }
 
 } // namespace
@@ -844,8 +825,8 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     if (!qptr) {
         return -EINVAL;
     }
-    /* The one host wait per frame: h_partials is written by the last copy of
-     * the chain submit() enqueued. */
+    /* The one host wait per frame: h_terms and h_structure are written by
+     * the last copies of the chain submit() enqueued. */
     qptr->wait();
 
     /* Feature names per plane, matching float_ms_ssim.c's ms_ssim_feature_names
@@ -935,8 +916,10 @@ static void free_ms_ssim_workspace(MsSsimStateSycl *s)
     free_ms_ssim_pointer(s->sycl_state, s->d_h_ref_sq);
     free_ms_ssim_pointer(s->sycl_state, s->d_h_cmp_sq);
     free_ms_ssim_pointer(s->sycl_state, s->d_h_refcmp);
-    free_ms_ssim_pointer(s->sycl_state, s->d_partials);
-    free_ms_ssim_pointer(s->sycl_state, s->h_partials);
+    free_ms_ssim_pointer(s->sycl_state, s->d_terms);
+    free_ms_ssim_pointer(s->sycl_state, s->h_terms);
+    free_ms_ssim_pointer(s->sycl_state, s->d_structure);
+    free_ms_ssim_pointer(s->sycl_state, s->h_structure);
 }
 
 } // namespace

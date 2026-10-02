@@ -373,7 +373,9 @@ def _scratch_failures(sources: dict[str, str]) -> list[str]:
 
 # ADR-1414: float_ms_ssim_sycl follows the CPU reference operation for
 # operation. The per-pixel arithmetic lives in sycl_ssim_terms.h, shared with
-# float_ssim_sycl, so the two twins cannot drift apart.
+# float_ssim_sycl, so the two twins cannot drift apart. ADR-1466: l and c are
+# the CPU's doubles (soft fp64), every window's terms are stored unreduced
+# and the host adds them in iqa_ssim()'s raster order.
 SSIM_TERMS_HEADER = "sycl_ssim_terms.h"
 FLOAT_SSIM = "integer_ssim_sycl.cpp"
 MS_SSIM_DECIMATE_PIECES = (
@@ -383,34 +385,51 @@ MS_SSIM_DECIMATE_PIECES = (
 MS_SSIM_KERNEL_PIECES = (
     "add_horizontal_tap(sums, args.ref[index], args.cmp[index], G[tap]);",
     "add_vertical_tap(sums, row, G[tap]);",
-    "const SsimTerms terms = ssim_terms(round_moments(sums), args.c1, args.c2);",
-    ".luminance = term_fixed(terms.luminance),",
-    ".contrast = term_fixed(terms.contrast),",
-    ".structure = term_fixed(Ff{.hi = terms.structure, .lo = 0.0f})",
-    "sycl::reduce_over_group(item.get_group(), values.luminance, sycl::plus<std::int64_t>{});",
+    "return ssim_double_terms(ssim_float_parts(round_moments(sums), args.c1, args.c2), args.c1,",
+    "const size_t index = id[0] * (size_t)a_.final_width + id[1];",
+    "a_.luminance[index] = vmaf_sycl_soft::signed_bits(terms.luminance);",
+    "a_.contrast[index] = vmaf_sycl_soft::signed_bits(terms.contrast);",
+    "a_.structure[index] = terms.structure;",
+    "class MsSsimLcsKernel : public VmafSyclKernelShape<MS_SSIM_TERM_SG, MS_SSIM_TERM_GRF>",
+    "constexpr int MS_SSIM_TERM_SG = 16;",
+    "constexpr int MS_SSIM_TERM_GRF = 256;",
+    "__attribute__((flatten, always_inline)) static inline SsimDoubleTerms",
+    "ms_ssim_window_terms(const VertArgs &args, size_t x, size_t y)",
 )
+# The old twin's sums: pair terms in fixed point, reduced per work-group.
+MS_SSIM_OLD_SUMS = ("reduce_over_group", "term_fixed(", "FixedSum", "_partials")
 MS_SSIM_HOST_PIECES = (
-    "luminance = (double)(float)(total_l.value() / pixels);",
-    "contrast = (double)(float)(total_c.value() / pixels);",
-    "structure = (double)(float)(total_s.value() / pixels);",
+    "ssim_lcs_sums(s->h_terms + offset, s->h_terms + s->window_count + offset,",
+    "s->h_structure + offset, windows);",
+    "luminance = (double)(float)(sums.luminance / pixels);",
+    "contrast = (double)(float)(sums.contrast / pixels);",
+    "structure = (double)(float)(sums.structure / pixels);",
     "std::pow(std::fabs(luminance[scale]), (double)ALPHAS[scale])",
     "std::pow(std::fabs(contrast[scale]), (double)BETAS[scale])",
     "std::pow(std::fabs(structure[scale]), (double)GAMMAS[scale])",
 )
-# The CPU's operand types in the shared header: fp32 denominators, the l and c
-# numerators as pairs, s as one correctly rounded fp32 quotient.
+# The CPU's operand types in the shared header: fp32 denominators, l and c as
+# one fp64 quotient each by the converted fp32 denominator, s as one correctly
+# rounded fp32 quotient; and the host's three sums in index order.
 SSIM_TERMS_PIECES = (
     "const float product = sample * weight;",
     "return ff_add(sum, Ff{.hi = product, .lo = 0.0f});",
     "const float l_den = l_den_sum + c1;",
     "const float c_den = c_den_sum + c2;",
-    "const Ff product = two_prod(p.reference_mean, p.comparison_mean);",
-    "const Ff c_num = two_sum(2.0f * p.srsc, c2);",
-    ".luminance = ff_div(l_num, Ff{.hi = p.l_den, .lo = 0.0f}),",
-    ".contrast = ff_div(c_num, Ff{.hi = p.c_den, .lo = 0.0f}),",
+    ".luminance = signed_div(l_num, signed_from_float(p.l_den)),",
+    ".contrast = signed_div(c_num, signed_from_float(p.c_den)),",
     ".structure = div_rn(s_num, s_den)",
+    "sums.luminance += std::bit_cast<double>(luminance[i]);",
+    "sums.contrast += std::bit_cast<double>(contrast[i]);",
+    "sums.structure += (double)structure[i];",
 )
-SSIM_TERMS_SHARED = ("ssim_terms(", "add_horizontal_tap(", "add_vertical_tap(", "term_fixed(")
+SSIM_TERMS_SHARED = (
+    "ssim_double_terms(",
+    "ssim_float_parts(",
+    "add_horizontal_tap(",
+    "add_vertical_tap(",
+    "ssim_lcs_sums(",
+)
 
 
 def _ms_ssim_sources() -> dict[str, str]:
@@ -430,8 +449,9 @@ def _ms_ssim_failures(sources: dict[str, str]) -> list[str]:
     for piece in MS_SSIM_KERNEL_PIECES:
         if piece not in twin:
             failures.append(f"{MS_SSIM}: not the CPU's window or l / c / s arithmetic ({piece})")
-    if re.search(r"\bfloat\s*\*\s*[dh]_partials\b", twin):
-        failures.append(f"{MS_SSIM}: the l / c / s partials are fp32 sums again")
+    for name in MS_SSIM_OLD_SUMS:
+        if name in twin:
+            failures.append(f"{MS_SSIM}: the l / c / s sums are reduced on the device again ({name})")
     for piece in MS_SSIM_HOST_PIECES:
         if piece not in twin:
             failures.append(f"{MS_SSIM}: the host no longer combines as the CPU does ({piece})")
@@ -684,17 +704,57 @@ class SyclKernelSourceContractTest(unittest.TestCase):
         )
         self._assert_ms_ssim_detected(sources, "window or l / c / s arithmetic")
 
-    def test_fp32_ms_ssim_partials_are_detected(self) -> None:
-        sources = self._ms_ssim_edit(
-            MS_SSIM, "std::int64_t *d_partials;", "float *d_partials;"
+    def test_ms_ssim_group_reduction_is_detected(self) -> None:
+        # The pre-ADR-1466 store_lcs_group().
+        sources = _ms_ssim_sources()
+        sources[MS_SSIM] += (
+            "\nstatic std::int64_t r(sycl::nd_item<2> item, std::int64_t value)\n{\n"
+            "    return sycl::reduce_over_group(item.get_group(), value,"
+            " sycl::plus<std::int64_t>{});\n}\n"
         )
-        self._assert_ms_ssim_detected(sources, "fp32 sums again")
+        self._assert_ms_ssim_detected(sources, "reduced on the device again")
+
+    def test_ms_ssim_partials_are_detected(self) -> None:
+        sources = self._ms_ssim_edit(
+            MS_SSIM, "std::uint64_t *d_terms;", "std::int64_t *d_partials;"
+        )
+        self._assert_ms_ssim_detected(sources, "reduced on the device again")
+
+    def test_ms_ssim_unstored_contrast_is_detected(self) -> None:
+        sources = self._ms_ssim_edit(
+            MS_SSIM,
+            "a_.contrast[index] = vmaf_sycl_soft::signed_bits(terms.contrast);",
+            "",
+        )
+        self._assert_ms_ssim_detected(sources, "window or l / c / s arithmetic")
+
+    def test_ms_ssim_wider_sub_group_is_detected(self) -> None:
+        sources = self._ms_ssim_edit(
+            MS_SSIM, "constexpr int MS_SSIM_TERM_SG = 16;", "constexpr int MS_SSIM_TERM_SG = 32;"
+        )
+        self._assert_ms_ssim_detected(sources, "window or l / c / s arithmetic")
+
+    def test_ms_ssim_sum_of_another_span_is_detected(self) -> None:
+        sources = self._ms_ssim_edit(
+            MS_SSIM,
+            "ssim_lcs_sums(s->h_terms + offset, s->h_terms + s->window_count + offset,",
+            "ssim_lcs_sums(s->h_terms + offset, s->h_terms + windows + offset,",
+        )
+        self._assert_ms_ssim_detected(sources, "combines as the CPU does")
+
+    def test_reordered_ms_ssim_host_sum_is_detected(self) -> None:
+        sources = self._ms_ssim_edit(
+            SSIM_TERMS_HEADER,
+            "sums.contrast += std::bit_cast<double>(contrast[i]);",
+            "sums.contrast += std::bit_cast<double>(contrast[count - 1U - i]);",
+        )
+        self._assert_ms_ssim_detected(sources, "not the CPU's operand types")
 
     def test_unrounded_ms_ssim_mean_is_detected(self) -> None:
         sources = self._ms_ssim_edit(
             MS_SSIM,
-            "luminance = (double)(float)(total_l.value() / pixels);",
-            "luminance = total_l.value() / pixels;",
+            "luminance = (double)(float)(sums.luminance / pixels);",
+            "luminance = sums.luminance / pixels;",
         )
         self._assert_ms_ssim_detected(sources, "combines as the CPU does")
 
@@ -709,18 +769,18 @@ class SyclKernelSourceContractTest(unittest.TestCase):
     def test_fp32_ssim_luminance_quotient_is_detected(self) -> None:
         sources = self._ms_ssim_edit(
             SSIM_TERMS_HEADER,
-            ".luminance = ff_div(l_num, Ff{.hi = p.l_den, .lo = 0.0f}),",
-            ".luminance = Ff{.hi = div_rn(l_num.hi, p.l_den), .lo = 0.0f},",
+            ".luminance = signed_div(l_num, signed_from_float(p.l_den)),",
+            ".luminance = signed_from_float(div_rn(p.reference_mean, p.l_den)),",
         )
         self._assert_ms_ssim_detected(sources, "not the CPU's operand types")
 
     def test_private_ssim_terms_copy_is_detected(self) -> None:
         sources = _ms_ssim_sources()
         sources[MS_SSIM] += (
-            "\ninline SsimTerms ssim_terms(const SsimMoments &m, float c1, float c2)\n"
+            "\ninline SsimFloatParts ssim_float_parts(const SsimMoments &m, float c1, float c2)\n"
             "{\n    return {};\n}\n"
         )
-        self._assert_ms_ssim_detected(sources, "a private copy of ssim_terms()")
+        self._assert_ms_ssim_detected(sources, "a private copy of ssim_float_parts()")
 
     def test_live_sources_use_no_scratch_ratchet(self) -> None:
         self.assertEqual(_scratch_failures(_scratch_sources()), [])

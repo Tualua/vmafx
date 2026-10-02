@@ -311,13 +311,20 @@ linked AGENTS.md before resolving conflicts.
   the decimate spells each tap `sycl::fma()` as `ms_ssim_decimate.c` fuses
   it; the window sums and the `l` / `c` / `s` terms come from
   `core/src/feature/sycl/sycl_ssim_terms.h`, shared with `float_ssim_sycl`
-  (the CPU's fp64 values as exact fp32 pairs; `float_ssim_sycl` uses the
-  header's soft-fp64 terms since ADR-1463); the frame sums are int64 fixed
-  point; the host rounds each per-scale mean to fp32 and combines as
-  `ms_ssim.c` does. A change to `ms_ssim_decimate.c`, `iqa/convolve.c`,
-  `iqa/ssim_tools.c` or `ms_ssim.c` changes the header or the twin in the
-  same PR. `core/test/test_sycl_ms_ssim_parity.c` (`==` on 18 outputs of 3
-  frames) and `core/test/test_sycl_kernel_source_contract.py` guard it. See
+  (the window sums as exact fp32 pairs, `l` and `c` as the CPU's doubles in
+  64-bit integers); every window's `l`, `c` and `s` of every scale is stored
+  unreduced and the host adds them in `iqa_ssim()`'s raster order
+  ([ADR-1466](../adr/1466-sycl-float-ms-ssim-raster-sum.md); no reduction may
+  return to the twin); the host rounds each per-scale mean to fp32 and
+  combines as `ms_ssim.c` does. A change to `ms_ssim_decimate.c`,
+  `iqa/convolve.c`, `iqa/ssim_tools.c`, `iqa/ssim_accumulate_lane.h` or
+  `ms_ssim.c` changes the header or the twin in the same PR.
+  `core/test/test_sycl_ms_ssim_parity.c` (`==` on 18 outputs of 3 frames,
+  and two order pairs: seeded noise and
+  `core/test/float_ms_ssim_order_frame.h`, a file shared byte for byte with
+  the CUDA and HIP tests) and `core/test/test_sycl_kernel_source_contract.py`
+  guard it. See
+  [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
 - **`float_vif_sycl` returns the CPU's scores bit for bit ([ADR-1422](../adr/1422-sycl-float-vif-cpu-arithmetic.md))**:
   the same contract as the CUDA twin, without an fp64 type. The host takes
   each scale's Gaussian from `vif_get_filter()` and hands it to the kernels by
