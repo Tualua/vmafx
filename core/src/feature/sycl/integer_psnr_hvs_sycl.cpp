@@ -1060,16 +1060,17 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     int err = 0;
     if (s->n_active_planes > 1U) {
         /* The zero-copy import path hands no host pictures and imports luma only. */
-        err = (ref_pic && dist_pic) ?
-                  vmaf_sycl_shared_chroma_upload(s->sycl_state, ref_pic, dist_pic) :
-                  -EINVAL;
+        if (vmaf_sycl_require_host_pictures("psnr_hvs_sycl", ref_pic, dist_pic)) {
+            return -ENOTSUP;
+        }
+        err = vmaf_sycl_shared_chroma_upload(s->sycl_state, ref_pic, dist_pic);
     }
     if (!err) {
         err = vmaf_sycl_queue_after_upload(s->sycl_state, qptr);
     }
     if (err) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_sycl: frame %u planes not on the device (%d)\n",
-                 index, err);
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_hvs_sycl: frame %u plane upload failed (%d)\n", index,
+                 err);
         return err;
     }
     try {

@@ -229,6 +229,9 @@ int submit_chroma_sycl(VmafFeatureExtractor *fex, VmafPicture *reference, VmafPi
     (void)reference_90;
     (void)distorted_90;
     (void)index;
+    if (vmaf_sycl_require_host_pictures("speed_chroma_sycl", reference, distorted)) {
+        return -ENOTSUP;
+    }
     auto *s = static_cast<SpeedChromaSyclState *>(fex->priv);
     /* Staging order matches the channel pairs: (U ref, U dis), (V ref, V dis). */
     int err = speed_sycl::stage_plane(s->pipeline, 0u, reference, 1u);

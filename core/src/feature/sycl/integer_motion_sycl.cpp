@@ -691,7 +691,6 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
                            VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
-    (void)dist_pic;
     (void)dist_pic_90;
 
     auto *s = static_cast<MotionStateSycl *>(fex->priv);
@@ -700,6 +699,12 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
         s->pending_index = index;
         s->has_pending = true;
         return 0;
+    }
+    /* motion_add_uv reads chroma from the host picture; without one the chroma terms would be
+     * stale, so refuse rather than score wrong. */
+    if (s->motion_add_uv &&
+        vmaf_sycl_require_host_pictures("motion_sycl motion_add_uv", ref_pic, dist_pic)) {
+        return -ENOTSUP;
     }
     motion_stage_chroma(s, ref_pic);
 

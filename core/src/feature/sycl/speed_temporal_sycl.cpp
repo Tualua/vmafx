@@ -227,6 +227,9 @@ int submit_temporal_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPi
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
+    if (vmaf_sycl_require_host_pictures("speed_temporal_sycl", ref_pic, dist_pic)) {
+        return -ENOTSUP;
+    }
     auto *s = static_cast<SpeedTemporalSyclState *>(fex->priv);
     int err = speed_sycl::stage_plane(s->pipeline, 0u, ref_pic, 0u);
     err |= speed_sycl::stage_plane(s->pipeline, 1u, dist_pic, 0u);

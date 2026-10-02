@@ -503,12 +503,13 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
      * twin; the zero-copy import path hands no host pictures and
      * imports luma only. */
     if (s->n_planes > 1U) {
-        int const chroma_err = (ref_pic && dist_pic) ?
-                                   vmaf_sycl_shared_chroma_upload(state, ref_pic, dist_pic) :
-                                   -EINVAL;
+        if (vmaf_sycl_require_host_pictures("psnr_sycl", ref_pic, dist_pic)) {
+            return -ENOTSUP;
+        }
+        int const chroma_err = vmaf_sycl_shared_chroma_upload(state, ref_pic, dist_pic);
         if (chroma_err) {
-            vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_sycl: frame %u chroma not on the device (%d)\n",
-                     index, chroma_err);
+            vmaf_log(VMAF_LOG_LEVEL_ERROR, "psnr_sycl: frame %u chroma upload failed (%d)\n", index,
+                     chroma_err);
             return chroma_err;
         }
     }
