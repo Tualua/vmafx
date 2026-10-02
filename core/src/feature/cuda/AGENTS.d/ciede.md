@@ -12,16 +12,17 @@ invariant: ciede_cuda performs CPU arithmetic with libm apart.
   `get_lab_color()` fp64 to the cube root, `xyz_to_lab_map()` returns
   float; `ciede2000()` intermediates `const float` from fp64 expressions.
   Genuinely float: sums / differences of floats, the three final
-  quotients, `get_r_sub_t()`'s `powf` ratio and `powf(degrees, 2)`,
+  quotients, `get_r_sub_t()`'s `powf` ratio and `degrees * degrees`,
   `degrees_to_radians()`'s float argument. Kernel is C++: a float argument
   picks the float overload of `sqrt` / `atan2` / `sin` / `cos` / `exp`, so
-  EVERY promotion is spelled `(double)`. `pow(x, 2)` = `ciede_sq()` (exact
-  fp64 product; glibc returns it). No `cbrtf` / `atan2f` / `sinf` / `cosf`
+  EVERY promotion is spelled `(double)`. Squares = `ciede_sq()` (exact
+  fp64 product = `ciede.c` `square()`, ADR-1467). No `cbrtf` / `atan2f` / `sinf` / `cosf`
   / `expf` / `sqrtf`.
 - **`CIEDE_POWF`**: host = glibc `powf` (the CPU's call), device =
   `(float)pow((double)x, (double)y)` (correctly rounded). glibc `powf` is
-  NOT correctly rounded (0.07 % of `x^7`, 0.16 % of `x^2` arguments): 38 of
-  8.3M pixels per 4K frame differ by one float step. That + fp64 libm
+  NOT correctly rounded (0.07 % of `x^7` arguments; one use left since
+  ADR-1467, float square = product on both sides): pixels differ by one
+  float step. That + fp64 libm
   last-place differences (1 px) = whole residual, 1.4e-11. Do not swap in
   CUDA `powf` (4 ULP).
 - **No device reduction.** `extract()` = one double accumulator, raster

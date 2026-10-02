@@ -17,9 +17,10 @@
  * pixel and added in raster order gives the CPU extractor's score bit for
  * bit: 8-, 10-, 12- and 16-bit input, 4:2:0, 4:2:2 and 4:4:4, odd sizes.
  *
- * It also pins the three facts about the math library the header relies on:
- * pow(x, 2) of a float is its exact square, powf(25, 7) and pow(25, 7) are
- * the constants the header spells out.
+ * It also pins the two facts about the math library the header relies on:
+ * powf(25, 7) and pow(25, 7) are the constants the header spells out. The
+ * squares are products in ciede.c and in the header alike (ADR-1467), so no
+ * power function is involved in them.
  *
  * A float where the reference computes in double, a float overload of
  * atan2 / sin / cos / exp, or a sum in another order fails the replay, which
@@ -227,17 +228,7 @@ static char *test_math_library_facts(void)
     mu_assert("powf(25, 7) must be the float CIEDE_POWF_25_7",
               powf(base, seven) == CIEDE_POWF_25_7);
     mu_assert("pow(25, 7) must be 6103515625", pow(dbase, dseven) == CIEDE_POW_25_7);
-    mu_assert("CIEDE_PI must be M_PI", CIEDE_PI == 3.14159265358979323846);
-
-    unsigned state = 0x1426u;
-    volatile double two = 2.0;
-    for (int i = 0; i < 2000000; i++) {
-        state = state * 1664525u + 1013904223u;
-        const float x = ((float)(state >> 8) / 16777216.0f - 0.5f) * 400.0f;
-        volatile double xd = (double)x;
-        mu_assert("pow(x, 2) of a float must be its exact fp64 square",
-                  pow(xd, two) == ciede_sq(x));
-    }
+    mu_assert("CIEDE_PI must be the reference's pi", CIEDE_PI == 3.14159265358979323846);
     return NULL;
 }
 

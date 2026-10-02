@@ -231,6 +231,29 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   [agents index and topic pages](docs/development/agents-index.md)).
 
 
+- **`ciede2000` no longer depends on the compiler or on the C library's `powf`
+  for its squares; scores of GCC-built binaries move by up to 2e-11.**
+  `ciede.c` squared a `float` with `powf(x, 2)`. GCC calls the C library
+  there; clang and icx replace the call by a product, which is the correctly
+  rounded square, and glibc's `powf` returns the other neighbouring `float` on
+  about 0.12 % of the arguments. A GCC build and a clang build therefore
+  differed on 65 of 180 measured frames (the Netflix 576x324 pair at 8 to 16
+  bits and as 10-bit 4:2:2, Sparks, both 1920x1080 checkerboard pairs, Big
+  Buck Bunny at 1920x1080 and 3840x2160), by at most 2.0e-11. The source now
+  writes the product, and the 13 `pow(x, 2)` of the formula as products too
+  (their values do not change)
+  ([ADR-1467](docs/adr/1467-ciede-squares-as-products.md)). x86-64 and
+  aarch64 builds with GCC and with clang return the same `ciede2000` on all
+  180 frames. What you see: `ciede2000` from a GCC-built binary moves on those
+  65 frames by at most 2.0e-11, far below the default `%.6f`; a clang or icx
+  build does not move; MSVC and macOS builds compute the same expression as
+  every other build (not measured here). The CUDA, SYCL and HIP twins are
+  closer to the CPU: at most 5.2e-12 from a GCC build (2.0e-11 before), and
+  `ciede_cuda` itself moves by up to 1.1e-13 on 3 of 180 frames because it
+  now multiplies as well. `test_ciede_device_math` runs on every
+  architecture.
+
+
 - **Six more CUDA twins are held to the CPU's bits by the parity gate.**
   `motion_cuda` (also with `debug=true`), `motion_v2_cuda`, `psnr_cuda`,
   `float_ssim_cuda` and `float_ms_ssim_cuda` (with and without `enable_lcs`)
@@ -564,6 +587,25 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   options matches the CPU exactly, `apsnr_*` included, and the parity gate
   passes every HIP cell; see
   [the HIP backend guide](docs/backends/hip/overview.md#measured-on-a-gfx1036-2026-10-01).
+
+
+- **The predicted `vmaf` score of an icx-built binary moves by up to 7e-12 and
+  now matches a GCC build except where Intel's math library differs.** Since
+  the strict floating-point flags became a project-wide compiler argument
+  ([ADR-1461](docs/adr/1461-strict-fp-every-translation-unit.md), #1829), an
+  icx build compiles `svm.cpp`, `predict.c`, `model.c` and `libvmaf.c` with
+  `-fp-model=precise -ffp-contract=off`; before, they took `-O3` alone, which
+  under icx is its fast floating-point model. No extractor value changed. The
+  model score changed on every frame with a non-zero score (160 of 163
+  measured frames), by at most 7.05e-12, towards the GCC build: frames whose
+  features are identical in both builds but whose `vmaf` differs went from 153
+  of 163 to 15 of 163 (Netflix 576x324 frame 42: 83.13509129537665 before,
+  83.1350912953696 after, the GCC value). GCC builds did not move. What
+  still separates an icx build from a GCC build is Intel's math library
+  (`libimf`). The published container images are built with icx; scores
+  printed at the default `%.6f` are not affected by a change of this size.
+  See
+  [build flags](docs/development/build-flags.md#floating-point-contraction-is-off-everywhere).
 
 
 - **Restore `adm_sum_cube_s_p3`, `adm_csf_den_scale_s_p3`, and `adm_cm_s_p3` fast-path

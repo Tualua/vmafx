@@ -58848,3 +58848,29 @@ Kept: the `+0` start of every sum (signed-zero parity with `adm_dwt2_s()`), mult
 - Each file includes its own header, so the exported functions are checked
   against their declarations.
 - No score, public C API, Netflix golden-data or FFmpeg patch impact.
+## ADR-1467 — `ciede.c` writes its squares as products (2026-10-02)
+
+`fix/ciede-powf-explicit`, `T-CIEDE-CLANG-POWF-BUILTIN-2026-10-02`.
+
+- `core/src/feature/ciede.c` differs from upstream in `get_r_sub_t()`
+  (`exp(-(degrees * degrees))` where upstream has `powf(degrees, 2)`) and in
+  `ciede2000()` (`square(x)`, a `static double square(const float x)`, where
+  upstream has `pow(x, 2)`, 13 times). Keep the fork's side on an upstream
+  sync: `powf(degrees, 2)` makes a GCC build and a clang build disagree again
+  (65 of 180 measured frames, up to 2.0e-11), and `test_ciede_device_math`
+  fails under GCC.
+- A new square in an upstream change to `ciede2000()` is written as
+  `square(x)` if `x` is a `float` (the product is then exact in `double`); a
+  square of a `double` expression is a different case and needs measuring.
+- Mirrors of those statements, same PR when they change:
+  `feature/cuda/integer_ciede/ciede_device.h` (`ciede_r_sub_t()`,
+  `ciede_sq()`), `feature/ciede_ff_math.h` (`r_sub_t()`, `sq()`), and the
+  pinned lines in `core/test/test_sycl_ciede_exact_contract.py` and
+  `core/test/test_cuda_ciede_exact_contract.py`.
+- `ciede_device.h`: `ciede_r_sub_t()` computes `-(degrees * degrees)`;
+  `CIEDE_POWF` is left with one use, `powf(x, 7)`.
+- `core/test/meson.build`: `test_ciede_device_math` is registered on every
+  architecture.
+- Netflix golden gate unchanged in outcome (271 passed, 12 skipped on x86-64
+  and aarch64 with GCC and clang); no golden assertion, public API or FFmpeg
+  patch impact. `ciede2000` of a GCC build moves by at most 2.0e-11.

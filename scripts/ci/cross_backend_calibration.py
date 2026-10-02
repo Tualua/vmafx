@@ -311,6 +311,18 @@ def is_exact_pair(feature: str, backend_a: str, backend_b: str) -> bool:
 # 1.4e-11 at 3840x2160, 6.9e-13 at 576x324, 4.6e-12 on full-range 576x324
 # noise. At 576x324 a nine-step pixel moves the score by 5e-11, so the bound
 # below holds there with room.
+#
+# ADR-1467: ``ciede.c`` writes its squares as products, the form all three
+# twins compute (``ciede_device.h`` multiplies as well since then), so
+# ``powf(x, 2)`` is no longer part of the difference. Measured against a GCC
+# 16.2.1 build's CPU on 180 frames (the Netflix pair at 8 to 16 bits and as
+# 10-bit 4:2:2, Sparks, both 1080p checkerboards, BBB 1920x1080 and
+# 3840x2160): RTX 4090 127 frames identical and at most 5.2e-12, Arc A380 124
+# and 5.2e-12, gfx1036 127 and 5.2e-12 (113, 111 and 113 frames and 2.0e-11
+# before). What is left is glibc's ``powf(x, 7)``: with that call correctly
+# rounded on the CPU side the CUDA twin equals it on 180 of 180 frames. The
+# bound is unchanged: it is one straddling pixel on the smallest gated frame,
+# and the change removes pixels, not their size.
 # ---------------------------------------------------------------------------
 
 LIBM_TWINS: dict[str, dict[str, float]] = {

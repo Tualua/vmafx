@@ -9342,7 +9342,7 @@
         "build-aux/aarch64-linux-gnu-clang.ini": 1,
         "core/src/meson.build": 1,
         "core/src/metal/meson.build": 1,
-        "core/test/meson.build": 4,
+        "core/test/meson.build": 5,
         "core/test/test_strict_fp_compiler_args.py": 4,
         "scripts/ci/clang-tidy-sycl.sh": 1,
         "scripts/ci/golden-arm64-preflight.sh": 1,
@@ -9400,6 +9400,19 @@
         "core/test/test_sycl_ms_ssim_parity.c": 6
       },
       "target": "1466-sycl-float-ms-ssim-raster-sum.md"
+    },
+    "1467": {
+      "sites": {
+        "core/src/feature/ciede.c": 2,
+        "core/src/feature/ciede_ff_math.h": 1,
+        "core/src/feature/cuda/integer_ciede/ciede_device.h": 1,
+        "core/src/feature/hip/integer_ciede/ciede_score.hip": 1,
+        "core/test/meson.build": 1,
+        "core/test/test_ciede_device_math.c": 1,
+        "core/test/test_cuda_ciede_exact_contract.py": 1,
+        "scripts/ci/cross_backend_calibration.py": 1
+      },
+      "target": "1467-ciede-squares-as-products.md"
     },
     "1468": {
       "sites": {

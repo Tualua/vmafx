@@ -310,9 +310,13 @@ static float get_r_sub_t(const float c_bar_prime, const float upcase_h_bar_prime
  * gated against the Netflix golden values at that precision. Switching to
  * the float variants (atan2f / fabsf / sqrtf / sinf / expf) would change
  * the output, so the promotion is deliberate. ADR-0141 / ADR-0278. */
+    /* `degrees * degrees`, not powf(degrees, 2): the product is the correctly
+     * rounded square on every compiler and C library; powf() is that only where
+     * the library rounds correctly, and a compiler may replace the call by the
+     * product anyway. ADR-1467. */
     // NOLINTBEGIN(performance-type-promotion-in-math-fn)
     return -2.0 * sqrt(powf(c_bar_prime, 7) / (powf(c_bar_prime, 7) + powf(25., 7))) *
-           sin(degrees_to_radians(60.0 * exp(-(powf(degrees, 2)))));
+           sin(degrees_to_radians(60.0 * exp(-(degrees * degrees))));
     // NOLINTEND(performance-type-promotion-in-math-fn)
 }
 
@@ -328,22 +332,31 @@ typedef struct KSubArgs {
     const float h;
 } KSubArgs;
 
+/* The fp64 square of a float, where upstream writes pow(x, 2). A float has 24
+ * significant bits, so the square is exact in fp64 and equals what a correct
+ * pow() returns; written as the product it does not depend on the C library or
+ * on a compiler replacing the call. ADR-1467. */
+static double square(const float x)
+{
+    return (double)x * (double)x;
+}
+
 static float ciede2000(LABColor color_1, LABColor color_2, KSubArgs ksub)
 {
     const float delta_l_prime = color_2.l - color_1.l;
     const float l_bar = (color_1.l + color_2.l) / 2;
-    const float c1 = sqrt(pow(color_1.a, 2) + pow(color_1.b, 2));
-    const float c2 = sqrt(pow(color_2.a, 2) + pow(color_2.b, 2));
+    const float c1 = sqrt(square(color_1.a) + square(color_1.b));
+    const float c2 = sqrt(square(color_2.a) + square(color_2.b));
     const float c_bar = (c1 + c2) / 2;
     const float a_prime_1 =
         color_1.a + (color_1.a / 2) * (1 - sqrt(pow(c_bar, 7) / (pow(c_bar, 7) + pow(25, 7))));
     const float a_prime_2 =
         color_2.a + (color_2.a / 2) * (1 - sqrt(pow(c_bar, 7) / (pow(c_bar, 7) + pow(25, 7))));
-    const float c_prime_1 = sqrt(pow(a_prime_1, 2) + pow(color_1.b, 2));
-    const float c_prime_2 = sqrt(pow(a_prime_2, 2) + pow(color_2.b, 2));
+    const float c_prime_1 = sqrt(square(a_prime_1) + square(color_1.b));
+    const float c_prime_2 = sqrt(square(a_prime_2) + square(color_2.b));
     const float c_bar_prime = (c_prime_1 + c_prime_2) / 2;
     const float delta_c_prime = c_prime_2 - c_prime_1;
-    const float s_sub_l = 1. + ((0.015 * pow(l_bar - 50, 2)) / sqrt(20 + pow(l_bar - 50, 2)));
+    const float s_sub_l = 1. + ((0.015 * square(l_bar - 50)) / sqrt(20 + square(l_bar - 50)));
     const float s_sub_c = 1. + 0.045 * c_bar_prime;
     const float h_prime_1 = get_h_prime(color_1.b, a_prime_1);
     const float h_prime_2 = get_h_prime(color_2.b, a_prime_2);
@@ -358,7 +371,7 @@ static float ciede2000(LABColor color_1, LABColor color_2, KSubArgs ksub)
     const float chroma = delta_c_prime / (ksub.c * s_sub_c);
     const float hue = delta_upcase_h_prime / (ksub.h * s_sub_upcase_h);
 
-    return sqrt(pow(lightness, 2) + pow(chroma, 2) + pow(hue, 2) + (double)r_sub_t * chroma * hue);
+    return sqrt(square(lightness) + square(chroma) + square(hue) + (double)r_sub_t * chroma * hue);
 }
 
 static double pow_2_4(double x)

@@ -33,9 +33,9 @@
  *  not bit-identical to it. The CUDA twin, which has fp64, is closer by the
  *  first of the two causes only.
  *
- *  ciede.c's two float power calls, powf(x, 7) and powf(x, 2), are the
- *  correctly rounded values here, as on CUDA; glibc's are not on 0.07 % and
- *  0.16 % of the arguments.
+ *  ciede.c's float power call, powf(x, 7), is the correctly rounded value
+ *  here, as on CUDA; glibc's is not on 0.07 % of the arguments. Its float
+ *  square is a product there as here (ADR-1467).
  *
  *  Device code may use everything here except make_pair() and
  *  make_constants(), which use fp64: they are host code, or evaluated by the
@@ -107,13 +107,13 @@ struct Constants {
     Ff epsilon;      /* 216 / 24389 */
     Ff one_over_116; /* 1 / 116 */
     /* ciede2000() */
-    Ff pi;          /* M_PI */
-    Ff two_pi;      /* 2 * M_PI */
-    Ff pi_over_6;   /* M_PI / 6 */
-    Ff pi_over_30;  /* M_PI / 30 */
-    Ff seven_pi_20; /* 7 * M_PI / 20 */
-    Ff degrees;     /* 180 / M_PI */
-    Ff radians;     /* M_PI / 180 */
+    Ff pi;          /* pi */
+    Ff two_pi;      /* 2 * pi */
+    Ff pi_over_6;   /* pi / 6 */
+    Ff pi_over_30;  /* pi / 30 */
+    Ff seven_pi_20; /* 7 * pi / 20 */
+    Ff degrees;     /* 180 / pi */
+    Ff radians;     /* pi / 180 */
     Ff one_over_25; /* 1 / 25 */
     Ff weight_015;  /* 0.015 */
     Ff weight_045;  /* 0.045 */
@@ -205,7 +205,7 @@ VMAF_FF_INLINE float h_prime(float x, float y, const Constants &k, const Tables 
     return hue_angle;
 }
 
-/* True when |diff| as a double exceeds M_PI. */
+/* True when |diff| as a double exceeds pi. */
 VMAF_FF_INLINE bool beyond_pi(float diff, const Constants &k)
 {
     return less(k.pi, from_float(VMAF_FF_FABS(diff)));
@@ -347,7 +347,7 @@ VMAF_FF_INLINE constexpr Ff make_pair(double value)
  * expressions. */
 VMAF_FF_INLINE constexpr Constants make_constants(unsigned bpc)
 {
-    const double pi = std::numbers::pi; /* M_PI */
+    const double pi = std::numbers::pi; /* the constant ciede.c names */
     const double depth = (double)(1 << (bpc - 8u));
     Constants k = {};
     k.luma_offset = (float)(16. * depth);

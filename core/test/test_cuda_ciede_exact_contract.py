@@ -10,7 +10,8 @@ twin has to copy where it does which:
   argument; the kernel is C++, which would pick the float overload, so the
   promotion is written out;
 - the squares are fp64 products of floats, exact;
-- ``powf`` appears with a float result in two places and nowhere else;
+- ``powf`` appears with a float result in one place and nowhere else
+  (``powf(x, 7)``; the float square is a product, ADR-1467);
 - the per-pixel value is a float and the frame sum one double that takes the
   values in raster order (``feature/ciede_frame_sum.h``, shared with the SYCL
   and HIP twins' hosts).
@@ -40,8 +41,8 @@ SUM = "../ciede_frame_sum.h"
 SUM_INCLUDE = '#include "feature/ciede_frame_sum.h"'
 # The 8-bit and the 16-bit kernel.
 KERNELS = 2
-# CIEDE_POWF: two definitions and get_r_sub_t()'s two calls.
-POWF_USES = 4
+# CIEDE_POWF: two definitions and get_r_sub_t()'s one call, powf(x, 7).
+POWF_USES = 3
 
 COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
 # A float math function: the pre-ADR-1426 kernel was fp32 throughout.
@@ -101,7 +102,7 @@ def _arithmetic_failures(sources: dict[str, str]) -> list[str]:
     if DEVICE_POWF not in sources[DEVICE] or HOST_POWF not in sources[DEVICE]:
         failures.append(f"{DEVICE}: CIEDE_POWF is not glibc's powf on the host and its CR value")
     if device.count("CIEDE_POWF(") != POWF_USES:
-        failures.append(f"{DEVICE}: powf is used outside get_r_sub_t()'s two calls")
+        failures.append(f"{DEVICE}: powf is used outside get_r_sub_t()'s one call")
     return failures
 
 

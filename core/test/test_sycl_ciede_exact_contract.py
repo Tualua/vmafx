@@ -57,9 +57,9 @@ REFERENCE_LINES = (
     "return pow(c, 1.0 / 3.0);",
     "if (c > 10. / 255.) {",
     "float hue_angle = atan2(x, y);",
-    "const float c1 = sqrt(pow(color_1.a, 2) + pow(color_1.b, 2));",
-    "sin(degrees_to_radians(60.0 * exp(-(powf(degrees, 2)))));",
-    "return sqrt(pow(lightness, 2) + pow(chroma, 2) + pow(hue, 2) + (double)r_sub_t * chroma * hue);",
+    "const float c1 = sqrt(square(color_1.a) + square(color_1.b));",
+    "sin(degrees_to_radians(60.0 * exp(-(degrees * degrees))));",
+    "return sqrt(square(lightness) + square(chroma) + square(hue) + (double)r_sub_t * chroma * hue);",
     "de00_sum += ciede2000(",
     "const double score = 45. - 20. * log10(de00_sum / (ref_pic->w[0] * ref_pic->h[0]));",
 )

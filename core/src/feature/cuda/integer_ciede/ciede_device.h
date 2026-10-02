@@ -22,17 +22,17 @@
  *  device CUDA's implementations, and the two round differently on some
  *  arguments:
  *
- *   - pow(x, 2) is written as a product: for a float x the square is exact in
- *     fp64, and glibc's pow() returns it.
+ *   - A square is a product, as in ciede.c (ADR-1467): the fp64 square of a
+ *     float is exact, and the one float square (`degrees * degrees`) is the
+ *     correctly rounded value on both sides.
  *   - sqrt() is correctly rounded on both sides.
  *   - pow(x, 2.4), pow(x, 1 / 3), pow(x, 7), atan2(), sin(), cos() and exp()
  *     are fp64 on both sides and may differ in the last place. Their results
  *     are rounded to float a few operations later, so a difference survives
  *     only when it straddles a float rounding boundary.
- *   - powf(x, 7) and powf(x, 2) are float functions in ciede.c. glibc's powf
- *     is not correctly rounded (0.07 % and 0.16 % of the arguments ciede2000
- *     passes round the other way); CIEDE_POWF() is the correctly rounded
- *     value on the device.
+ *   - powf(x, 7) is a float function in ciede.c. glibc's powf is not
+ *     correctly rounded (0.07 % of the arguments ciede2000 passes round the
+ *     other way); CIEDE_POWF() is the correctly rounded value on the device.
  *
  *  A host TU that includes this header must be built without FP contraction;
  *  the fatbin is (ADR-1403).
@@ -204,7 +204,7 @@ CIEDE_HD float ciede_r_sub_t(const float c_bar_prime, const float upcase_h_bar_p
         (float)(((double)ciede_radians_to_degrees(upcase_h_bar_prime) - 275.0) * (1.0 / 25.0));
     const float c7 = CIEDE_POWF(c_bar_prime, 7.0f);
     const float ratio = c7 / (c7 + CIEDE_POWF_25_7);
-    const float exponent = -(CIEDE_POWF(degrees, 2.0f));
+    const float exponent = -(degrees * degrees);
     /* degrees_to_radians() takes a float: 60 * exp() is rounded on the way in. */
     const float sixty = (float)(60.0 * exp((double)exponent));
     return (float)(-2.0 * sqrt((double)ratio) * sin((double)ciede_degrees_to_radians(sixty)));

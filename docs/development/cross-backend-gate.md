@@ -60,6 +60,17 @@ explicitly accepts its skip.
   gfx1036: 1.4e-11 on 48 frames of BBB 3840x2160 and 6.9e-13 on the Netflix
   pair; of 437 million pixels compared one by one, 2 206 differ through
   glibc's `powf` and 8 through the last bits of a pair.
+  Those figures predate
+  [ADR-1467](../adr/1467-ciede-squares-as-products.md), which writes the
+  squares of `ciede.c` as products, the form the twins compute. Since then,
+  against a GCC build on 180 frames (Netflix 576x324 at 8 to 16 bits and as
+  10-bit 4:2:2, Sparks, both 1080p checkerboards, BBB 1920x1080 and
+  3840x2160): CUDA 127 frames identical and at most 5.2e-12, SYCL 124 and
+  5.2e-12, HIP 127 and 5.2e-12 (113, 111 and 113 frames and 2.0e-11 before);
+  the Netflix pair is identical on every frame. What is left is glibc's
+  `powf(x, 7)`. The bound stays `1e-9`: it is the size of one differing pixel
+  on the smallest gated frame, and there are fewer such pixels, not smaller
+  ones.
   `speed_chroma_cuda` is the next entry
   ([ADR-1430](../adr/1430-cuda-speed-chroma-log2f-bound.md)), with one
   function: the device rounds `log2` correctly and `speed.c` calls the C

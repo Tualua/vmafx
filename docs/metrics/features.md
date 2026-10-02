@@ -953,6 +953,45 @@ chroma — **does not accept 4:0:0**.
 
 **Backends** — AVX2, AVX-512, NEON, CUDA, SYCL, HIP, Metal.
 
+**Compilers and the CPU score.** A GCC build and a clang build return the
+same `ciede2000` on x86-64 and on aarch64
+([ADR-1467](../adr/1467-ciede-squares-as-products.md)). The formula squares
+a `float` in its rotation term and 13 values in `double`. Upstream writes
+those as `powf(x, 2)` and `pow(x, 2)`; GCC calls the C library for them and
+clang multiplies. For the `double` squares that makes no difference, but
+glibc's `powf(x, 2)` returns the other neighbouring `float` on about 0.12 % of
+the arguments, so the two builds used to differ on 65 of 180 measured frames,
+by at most 2.0e-11. This fork writes the products in the source, so the value
+no longer depends on the compiler or on the C library. Scores from a GCC
+build moved by up to 2.0e-11 with that change (on the Netflix 576x324 pair:
+frame 35, by 6.9e-13); scores from a clang or icx build did not. A GCC build
+also takes about a third less time in this extractor, since 14 library calls
+per pixel are gone (563 against 837 ms per 1920x1080 frame on one busy core
+of a Ryzen 9 9950X3D). An icx build
+links Intel's math library and still differs from a GCC build through the
+other functions of the formula, by at most 9.7e-12 on the same frames. Check
+two builds with:
+
+```bash
+for cc in gcc clang; do
+  build-$cc/tools/vmaf -r ref.yuv -d dis.yuv -w 1920 -h 1080 -p 420 -b 8 \
+      --no_prediction --feature ciede --precision max --json -o ciede-$cc.json
+done
+diff <(grep -v '"fps"' ciede-gcc.json) <(grep -v '"fps"' ciede-clang.json)
+```
+
+**The twins since ADR-1467.** The three twins below compute the squares as
+products, as the CPU now does. Measured at `--precision max` against a GCC
+build's `--backend cpu` on 180 frames (the Netflix 576x324 pair at 8, 10, 12
+and 16 bits and as 10-bit 4:2:2, Sparks, both 1920x1080 checkerboard pairs,
+BBB 1920x1080 and 3840x2160): `ciede_cuda` (RTX 4090) 127 frames identical
+and at most 5.2e-12, `ciede_sycl` (Arc A380) 124 and 5.2e-12, `ciede_hip`
+(gfx1036) 127 and 5.2e-12; before, 113, 111 and 113 frames and 2.0e-11. The
+Netflix pair at 8 bits is identical on all 48 frames for all three. What is
+left is the C library's `powf(x, 7)`, which the twins round correctly and
+glibc does not always, and on SYCL and HIP the precision of a pair. The
+figures in the three paragraphs below were measured before that change.
+
 **`ciede_cuda` and the CPU.** The CUDA twin evaluates the CPU's formula in
 the CPU's precision (double, with `float` stores where the CPU has them) and
 adds the per-pixel values in the CPU's order

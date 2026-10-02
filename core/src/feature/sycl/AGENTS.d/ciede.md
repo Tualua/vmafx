@@ -37,8 +37,9 @@ invariant: integer_ciede_sycl.cpp stages Y/U/V at native size; statements on fp3
   the reference = `Ff` pair (48 bits), fp64 libm call = pair function of
   `sycl_ff_math.h` (`sqrt`, `cbrt`, `pow_2_4`, `pow_7`, `exp`, `sin_cos`,
   `atan2`; 2^-44 or better), `float` of the reference = float, rounded
-  from the pair at the reference's statement. `powf(x, 7)` / `powf(x, 2)`
-  = correctly rounded (glibc's are not). Constants: `make_constants(bpc)`
+  from the pair at the reference's statement. `powf(x, 7)` = correctly
+  rounded (glibc's is not); float square = product, as `ciede.c`
+  (ADR-1467). Constants: `make_constants(bpc)`
   on the host from the reference's own expressions, by value into the
   kernel. Tables (`kAtanTable`, `kSinCosTable`): generated
   (`scripts/dev/gen_sycl_ff_math.py --write`), copied to device memory at

@@ -23,10 +23,11 @@
  *
  *  What the twin does not share with the CPU: a pair carries about 48 bits
  *  where the reference has 53, which decides the rounding of a float
- *  differently on a few pixels in ten million, and ciede.c's two float powers
- *  are the correctly rounded value here where glibc's powf() is not always
- *  (ADR-1448 has both counts). The arithmetic around them is exact: this
- *  file is built with the strict FP list of core/src/meson.build.
+ *  differently on a few pixels in ten million, and ciede.c's float power
+ *  powf(x, 7) is the correctly rounded value here where glibc's powf() is not
+ *  always (ADR-1448 has the count; the float square is a product on both
+ *  sides since ADR-1467). The arithmetic around it is exact: this file is
+ *  built with the strict FP list of core/src/meson.build.
  *
  *  ciede.c's constants are evaluated by the compiler (make_constants() is
  *  constexpr), one set per bit depth, and the two tables of ff_math.h are

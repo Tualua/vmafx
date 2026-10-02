@@ -1173,3 +1173,4 @@
 1469-psnr-hvs-simd-butterfly-two-stages
 1466-sycl-float-ms-ssim-raster-sum
 1472-integer-adm-cm-weight-budget
+1467-ciede-squares-as-products

@@ -126,6 +126,44 @@ never fuses `a * b + c` on its own, so a GCC build and a clang build, and an
 x86-64 build and an aarch64 build, round the same expressions the same way.
 Code that wants a fused multiply-add calls the intrinsic or `fma()`.
 
+An icx build (every SYCL build, and the published container images) takes
+the same argument, which for icx also selects the precise floating-point model
+in place of its default fast one. That changed one thing in an icx build: the
+SVM and model code (`svm.cpp`, `predict.c`, `model.c`, `libvmaf.c`) used to be
+compiled with `-O3` alone, and its predicted `vmaf` moved by up to 7.05e-12 on
+every frame with a non-zero score, in most cases onto the GCC build's value.
+Of 163 measured frames (the Netflix 576x324 pair at 8 and 10 bits and as
+10-bit 4:2:2, both 1080p checkerboard pairs, a 16-bit and a 3840x2160 Big Buck
+Bunny clip), the frames whose features are identical in an icx and a GCC build
+but whose `vmaf` differs went from 153 to 15. No extractor value moved, and a
+GCC build did not move.
+
+What still separates an icx build from a GCC build is the math library: icx
+links Intel's `libimf`, which rounds a few results differently from glibc's
+`libm`. An icx-built `libvmaf.so` run with glibc's `libm` preloaded returns
+the GCC build's values on the 107 frames it was run on, the model score
+included. Between the two builds as shipped, 333 frames of 14 fixtures at
+`--precision max` differ in
+`psnr`, `float_psnr`, `psnr_hvs` and `float_ms_ssim` by at most 1.4e-14, in
+`float_adm` by at most 1.6e-9, in `speed_temporal` and `speed_chroma` by at
+most 4.8e-7 and 1.4e-6, and in `ciede` by at most 2.9e-11. At the default
+`%.6f` every one of these except the SpEED differences is below the last
+printed digit.
+
+One of those differences did not come from the math library but from a call
+the compilers treated differently, and it is gone
+([ADR-1467](../adr/1467-ciede-squares-as-products.md)). `ciede.c` squared a
+`float` with `powf(x, 2)`: GCC called the C library, clang and icx multiplied.
+The source now writes the product, so every build computes the same
+expression for it, whichever compiler and C library it uses (GCC, clang, icx,
+MSVC, Apple's clang). What that changes for you: `ciede2000` from a GCC-built
+binary moves by up to 2.0e-11 on about a third of real frames (65 of 180
+measured), which needs `--precision max` to see; clang and icx builds do not
+move. GCC and clang builds now agree on all 180 measured frames on x86-64 and
+on aarch64. An icx build still differs from a GCC build in `ciede` through
+`libimf`, on fewer frames and by less: 130 of 180 identical and at most
+9.7e-12, where it was 112 and 1.4e-11.
+
 Do not undo it from the command line or in a target: `-Dc_args=-ffp-contract=fast`,
 `-ffast-math` or, with icx, a trailing `-fp-model=precise` change scores.
 `test_strict_fp_compiler_args` (in the `fast` suite) reads the compile

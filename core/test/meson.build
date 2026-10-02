@@ -1396,10 +1396,12 @@ test_ciede = executable('test_ciede',
 # replayed over whole frames against the CPU extractor, bit for bit. No CUDA
 # build is needed: the header is plain C on the host and the reference is
 # reached through the public API. The header's fp64 expressions round like
-# the device's only without FMA contraction (hence the flag), and ciede.c is
-# contraction-free by construction on x86-64 only (its baseline has no FMA),
-# so the test is registered there.
-if host_machine.cpu_family() == 'x86_64'
+# the device's only without FMA contraction (hence the flag). ciede.c is built
+# without contraction on every architecture since ADR-1461, so the test runs
+# everywhere; it was x86-64 only while ciede.c was contraction-free only where
+# the baseline has no FMA. Since ADR-1467 it also holds on every compiler: the
+# squares are products on both sides, where one side used to call powf(x, 2)
+# and a compiler was free to fold either call.
 test_ciede_device_math = executable('test_ciede_device_math',
     ['test.c', 'test_ciede_device_math.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
@@ -1408,7 +1410,6 @@ test_ciede_device_math = executable('test_ciede_device_math',
     c_args : vmaf_strict_fp_args,
 )
 test('test_ciede_device_math', test_ciede_device_math, suite : ['fast'])
-endif
 
 test_delta_e_itp = executable('test_delta_e_itp',
     ['test.c', 'test_delta_e_itp.c'],
