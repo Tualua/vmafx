@@ -46,6 +46,7 @@ PSNR, SSIM, MS-SSIM, LPIPS, …). Parent: [../../AGENTS.md](../../AGENTS.md).
 | `feature_extractor.h` | [fmaf-ban](AGENTS.d/fmaf-ban.md) | Scalar references never call libm fmaf to prevent contraction divergence across hosts. |
 | `feature_extractor.cpp`, `feature_collector.cpp` | [governing-adrs](AGENTS.d/governing-adrs.md) | Governing ADR index and compliance contracts for feature extractors. |
 | `feature_extractor.h`, `feature_name.cpp` | [gpu-option-tables](AGENTS.d/gpu-option-tables.md) | GPU-twin VmafOption tables mirror the CPU table entry-for-entry with full semantics. |
+| `cuda/speed/speed_cuda_params.h`, `hip/float_adm/float_adm_hip_math.h`, `hip/float_ssim/ssim_decimate.h`, `hip/integer_ciede/ciede_hip_math.h`, `metal/float_ms_ssim_option_semantics.h`, `sycl/sycl_ciede_math.h`, `sycl/sycl_integer_ssim_math.h`, `sycl/sycl_ssim_terms.h`, `sycl/sycl_ssimulacra2_math.h` | [helper-header-licences](AGENTS.d/helper-header-licences.md) | Helper header = EUPL-1.2 AND licences of exactly code reproduced, notices added; no reference code = EUPL-1.2. |
 | `iqa/convolve.c`, `iqa/ssim_tools.c` | [iqa](AGENTS.d/iqa.md) | IQA/VIF SIMD helper decomposition and reserved-identifier cleanup invariants. |
 | `/core/test/test_feature_isa_invariance.c` | [isa-invariance](AGENTS.d/isa-invariance.md) | Feature scores must not depend on host ISA; promotions and reductions must match scalar. |
 | `vif_tools.c`, `vif_tools.h` | [lanczos4](AGENTS.d/lanczos4.md) | lanczos4 prescale weights single implementation shared with GPU twins. |

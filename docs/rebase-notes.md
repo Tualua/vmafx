@@ -58998,3 +58998,25 @@ No score, output, public C API, Netflix golden-data or FFmpeg patch impact. `flo
   renames a meson custom-command rule must keep
   `scripts/ci/tests/test_gen_gpu_compile_commands.py` green: the generator
   exits 1 when a `.cu` / `.hip` build statement exists that it cannot read.
+## Helper headers carry `EUPL-1.2 AND` the reproduced code's licences (ADR-1474, 2026-10-02)
+
+`fix/relicense-tool-clean-check`, `T-RELICENSE-CHECK-PENDING-2026-10-02`.
+
+- no rebase impact on upstream files: the three headers
+  (`hip/float_ssim/ssim_decimate.h`, `metal/float_ms_ssim_option_semantics.h`,
+  `sycl/sycl_integer_ssim_math.h`) exist only in the fork; one notice block and
+  one tag line each.
+- `scripts/dev/relicense_provenance.toml` has five new `[ports]` entries
+  (`ssim_decimate.h`, `float_ms_ssim_option_semantics.h`,
+  `sycl_integer_ssim_math.h`, `sycl_ssim_terms.h`, `sycl_ssimulacra2_math.h`).
+  A port or sync that renames one of these files must move its entry, or the
+  family default returns and `--check` asks for notices the file does not owe.
+  The same holds for the four new `[not_ports]` entries
+  (`speed_cuda_params.h`, `float_adm_hip_math.h`, `ciede_hip_math.h`,
+  `sycl_ciede_math.h`): they hold no reference code and stay `EUPL-1.2`.
+- `scripts/dev/relicense_fork_files.py`: `EXCLUDED_PREFIXES` gained
+  `scripts/ci/exact_twins.d/`, `tools/figures/` and
+  `.config/agent/hooks/block_evasion.py`; prose grants are rewritten only when
+  they start in the first 60 lines (`header_prose_blocks()`).
+- `relicense_fork_files.py --check` exits 0 on this tree; `--write` is safe to
+  run again.

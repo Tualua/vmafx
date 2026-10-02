@@ -7896,6 +7896,7 @@
         "REUSE.toml": 1,
         "scripts/ci/check-local-data-contract.sh": 1,
         "scripts/ci/tests/test-check-local-data-contract.sh": 1,
+        "scripts/dev/relicense_fork_files.py": 1,
         "tools/vmaf-tune/tests/test_predictor_card_markdown.py": 1
       },
       "target": "1351-praetor-engine-pin-move.md"
@@ -8937,6 +8938,7 @@
         "Makefile": 1,
         "scripts/ci/cross_backend_calibration.py": 1,
         "scripts/ci/test_cross_backend_parity_gate.py": 1,
+        "scripts/dev/relicense_fork_files.py": 1,
         "scripts/docs/generate-exact-twins.py": 1
       },
       "target": "1428-exact-twins-fragments.md"

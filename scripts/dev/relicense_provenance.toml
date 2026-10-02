@@ -291,6 +291,20 @@ from = ["netflix-speed"]
 [ports."core/src/feature/ssimulacra2.c"]
 from = ["libjxl"]  # "scalar C port of the libjxl reference implementation"
 
+# GPU helper headers whose family names more origins than the code they hold.
+# A family is a default for a kernel file; each of these reproduces one named
+# part of the reference, read from its own header comment and its body.
+[ports."core/src/feature/hip/float_ssim/ssim_decimate.h"]
+from = ["netflix-float-ssim", "iqa"]  # iqa_decimate() with ssim.c's low-pass kernel; no integer_ssim.c code
+[ports."core/src/feature/metal/float_ms_ssim_option_semantics.h"]
+from = ["netflix-ms-ssim"]  # float_ms_ssim.c's plane, minimum-size and max_db rules; no IQA arithmetic
+[ports."core/src/feature/sycl/sycl_integer_ssim_math.h"]
+from = ["xiph-integer-ssim"]  # integer_ssim.c::ssim_reduce_row_range()'s per-pixel term only
+[ports."core/src/feature/sycl/sycl_ssim_terms.h"]
+from = ["netflix-float-ssim", "iqa"]  # iqa/convolve.c and iqa/ssim_tools.c float SSIM terms; no integer_ssim.c code
+[ports."core/src/feature/sycl/sycl_ssimulacra2_math.h"]
+from = ["libjxl"]  # ssimulacra2.c::ssim_map() / edge_diff_map(); the name does not start with "ssimulacra2"
+
 # Tests whose scalar oracle is a transcription of upstream code.
 [ports."core/src/feature/arm64/ssim_neon.c"]
 from = ["iqa"]  # "mirror the scalar reference in iqa/ssim_tools.c byte-for-byte"
@@ -344,6 +358,10 @@ from = ["netflix-speed"]  # mirrors compute_cov_kernel_scalar in speed.c
 "core/test/test_feature.cpp" = "upstream test renamed to .cpp, Netflix notice intact"
 "core/test/test_version.c" = "'verbatim' describes the version string in the output"
 "core/tools/vmaf_bench.c" = "upstream-mirror tool, Netflix notice intact"
+"core/src/feature/cuda/speed/speed_cuda_params.h" = "the fork's own kernel argument block and thread counts; no speed.c code"
+"core/src/feature/hip/float_adm/float_adm_hip_math.h" = "five macros and an include of float_adm_gpu_common.h, which carries the notice; no ADM arithmetic"
+"core/src/feature/hip/integer_ciede/ciede_hip_math.h" = "names the HIP primitives ciede_ff_math.h is built on; the ciede.c arithmetic and its notices are in that header"
+"core/src/feature/sycl/sycl_ciede_math.h" = "names the SYCL primitives ciede_ff_math.h is built on; the ciede.c arithmetic and its notices are in that header"
 "core/src/feature/compat_builtin.h" = "'upstream-verbatim' describes the call sites, not this shim"
 "core/src/feature/pu21.c" = "mirrors float_ssim.c's allocate-once discipline, not its code"
 "core/src/feature/pu21_ssim.h" = "mirrors float_ssim.c's buffer-ownership discipline, not its code"

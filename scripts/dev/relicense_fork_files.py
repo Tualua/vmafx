@@ -131,6 +131,15 @@ EXCLUDED_PREFIXES = (
     "core/test/data/",
     "python/test/resource/",
     "compat/python-vmaf/resource/",
+    # Exact-twin fragments (ADR-1428): `adr:` / `evidence:` data named
+    # <feature>.<backend>. A `.hip` fragment is not HIP source, and the fragment
+    # reader rejects any line that is not `key: value`, a comment header included.
+    "scripts/ci/exact_twins.d/",
+    # praetor's managed files: `praetorctl audit` compares them with praetor's
+    # own bytes, so they cannot take a header. REUSE.toml labels them and the
+    # check-copyright hook leaves them alone for the same reason (ADR-1351).
+    "tools/figures/",
+    ".config/agent/hooks/block_evasion.py",
 )
 EXCLUDED_SUFFIXES = (".md",)
 EXCLUDED_NAMES = frozenset({"LICENSE", "COPYING"})
@@ -405,6 +414,18 @@ def is_closer(line: str) -> bool:
     return line.strip() in CLOSERS
 
 
+def header_prose_blocks(lines: Sequence[str]) -> list[tuple[int, int]]:
+    """The prose grants of a file's own header: those that start in its first lines.
+
+    A grant further down is content, not the file's licence statement: a script
+    that writes or checks another file's header carries that header as a string
+    (scripts/sync-pelorus-interop.sh holds the header of the mirrored Pelorus
+    files, whose terms are decided in Pelorus). Rewriting it would change what
+    the script produces.
+    """
+    return [(start, end) for start, end in prose_blocks(lines) if start < HEADER_SCAN]
+
+
 def prose_blocks(lines: Sequence[str]) -> list[tuple[int, int]]:
     """Inclusive line spans of prose licence grants."""
     spans = []
@@ -582,7 +603,7 @@ def rewrite(text: str, path: str, year: Callable[[], str]) -> str:
     is only called when one is.
     """
     lines = text.splitlines(keepends=True)
-    spans = prose_blocks(lines)
+    spans = header_prose_blocks(lines)
     tagged = bool(declarations(text))
     for start, end in reversed(spans):
         prefix = normalised_prefix(lines[start])
@@ -627,7 +648,7 @@ def holder(notice: str) -> str:
 def tag_prose_grant(text: str) -> str:
     """Replace a kept file's BSD+Patent prose grant with the tag it means."""
     lines = text.splitlines(keepends=True)
-    spans = [(a, b) for a, b in prose_blocks(lines) if "BSD+Patent" in lines[a]]
+    spans = [(a, b) for a, b in header_prose_blocks(lines) if "BSD+Patent" in lines[a]]
     if not spans:
         return text
     start, end = spans[0]

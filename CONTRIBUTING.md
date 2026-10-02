@@ -175,6 +175,17 @@ every file says so in its `SPDX-License-Identifier` tag. See
   or one that carries libjxl, Xiph or IQA code** — it keeps its existing terms and
   so does your change to it. Do not retag such a file, and leave its copyright
   notices alone.
+- **A new helper header that replays reference arithmetic for a GPU or SIMD
+  twin** — `EUPL-1.2 AND` the licences of exactly the code it reproduces, with
+  that code's copyright notices above yours
+  ([ADR-1474](docs/adr/1474-relicense-helper-headers-and-ci-check.md)). Do not
+  pick the expression by hand: `scripts/dev/relicense_fork_files.py --write`
+  adds the notices and licences of the file's family, and a
+  `[ports."<path>"]` entry in `scripts/dev/relicense_provenance.toml` names the
+  origins when the family lists more than the header holds. A header that holds
+  none of the reference's code (an argument block, or macros and an include of
+  a shared header that carries the notices) stays `EUPL-1.2` and gets a
+  `[not_ports]` entry with the reason.
 
 A tag describes the notices that are in the file, nothing more. A file whose only
 notice is someone else's licence text carries that licence's identifier

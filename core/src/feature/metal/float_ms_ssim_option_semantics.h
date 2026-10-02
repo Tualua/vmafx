@@ -1,6 +1,7 @@
 /**
+ * Copyright 2016-2026 Netflix, Inc.
  * Copyright 2026 Lusoris
- * SPDX-License-Identifier: EUPL-1.2
+ * SPDX-License-Identifier: EUPL-1.2 AND BSD-2-Clause-Patent
  */
 
 #ifndef VMAF_FEATURE_METAL_FLOAT_MS_SSIM_OPTION_SEMANTICS_H

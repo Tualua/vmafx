@@ -141,6 +141,62 @@ class GrantRemoval(unittest.TestCase):
         self.assertNotIn("BSD+Patent", out)
 
 
+class GrantOutsideTheHeader(unittest.TestCase):
+    """A grant below the file's own header is content (T-RELICENSE-CHECK-PENDING-2026-10-02)."""
+
+    OWN_HEADER = "#!/usr/bin/env bash\n# Copyright 2026 Lusoris\n# " + TAG + " EUPL-1.2\n"
+    # A script that writes another file's header carries that header as text.
+    TEMPLATE = 'prefix = """' + GrantRemoval.LONG_GRANT + '"""\n'
+
+    def test_a_header_template_further_down_is_left_alone(self) -> None:
+        body = "".join(f"step_{i}() {{ :; }}\n" for i in range(REL.HEADER_SCAN))
+        text = self.OWN_HEADER + body + self.TEMPLATE
+        self.assertEqual(rewrite(text, "sync.sh"), text)
+
+    def test_a_grant_in_the_header_is_still_rewritten(self) -> None:
+        out = rewrite(GrantRemoval.LONG_GRANT + "int x;\n")
+        self.assertNotIn("BSD+Patent", out)
+        self.assertIn(f"{TAG} EUPL-1.2", out)
+
+    def test_the_boundary_is_the_header_scan(self) -> None:
+        lines = ["x\n"] * REL.HEADER_SCAN + [
+            'Licensed under the BSD+Patent License (the "License");\n'
+        ]
+        self.assertEqual(REL.header_prose_blocks(lines), [])
+        self.assertEqual(len(REL.prose_blocks(lines)), 1)
+        lines = ["x\n"] * (REL.HEADER_SCAN - 1) + lines[-1:]
+        self.assertEqual(len(REL.header_prose_blocks(lines)), 1)
+
+    def test_the_shipped_sync_script_is_not_rewritten(self) -> None:
+        path = ROOT / "sync-pelorus-interop.sh"
+        text = path.read_text(encoding="utf-8")
+        self.assertIn("BSD+Patent", text, "the mirrored header template is gone")
+        self.assertEqual(rewrite(text, "scripts/sync-pelorus-interop.sh"), text)
+
+
+class Candidates(unittest.TestCase):
+    def test_data_and_managed_files_are_not_candidates(self) -> None:
+        for path in (
+            "scripts/ci/exact_twins.d/adm.hip",
+            "scripts/ci/exact_twins.d/float_ssim.sycl",
+            "tools/figures/mkdocs_hook.py",
+            "tools/figures/dist/player.js",
+            ".config/agent/hooks/block_evasion.py",
+        ):
+            with self.subTest(path=path):
+                self.assertFalse(REL.is_candidate_path(path))
+
+    def test_their_neighbours_still_are(self) -> None:
+        for path in (
+            "scripts/ci/cross_backend_calibration.py",
+            "core/src/feature/hip/integer_adm_hip.c",
+            ".config/agent/hooks/other_hook.py",
+            "tools/vmaf-tune/src/vmaftune/cli.py",
+        ):
+            with self.subTest(path=path):
+                self.assertTrue(REL.is_candidate_path(path))
+
+
 class HeaderInsertion(unittest.TestCase):
     def test_tag_joins_an_existing_copyright_line(self) -> None:
         """A file with a notice but no tag gains a line, not a second header."""
@@ -234,6 +290,36 @@ class ProvenanceData(unittest.TestCase):
         for path, origin in cases.items():
             with self.subTest(path=path):
                 self.assertIn(origin, prov.port_sources(path) or ())
+
+    def test_a_helper_header_resolves_to_exactly_the_code_it_holds(self) -> None:
+        # A family is the default for a kernel; these headers hold one named part
+        # of the reference and must not be credited with the rest of the family.
+        prov = REL.load_provenance(ROOT / "dev/relicense_provenance.toml", ROOT.parent)
+        cases = {
+            "core/src/feature/hip/float_ssim/ssim_decimate.h": ["netflix-float-ssim", "iqa"],
+            "core/src/feature/metal/float_ms_ssim_option_semantics.h": ["netflix-ms-ssim"],
+            "core/src/feature/sycl/sycl_integer_ssim_math.h": ["xiph-integer-ssim"],
+            "core/src/feature/sycl/sycl_ssim_terms.h": ["netflix-float-ssim", "iqa"],
+            "core/src/feature/sycl/sycl_ssimulacra2_math.h": ["libjxl"],
+        }
+        for path, origins in cases.items():
+            with self.subTest(path=path):
+                self.assertEqual(list(prov.port_sources(path) or ()), origins)
+
+    def test_a_header_that_only_configures_a_shared_header_is_not_a_port(self) -> None:
+        # An argument block, or macros and an include: the reference's code and
+        # its notices are in the shared header, not in these files, although
+        # each sits in a kernel directory whose family names an origin.
+        prov = REL.load_provenance(ROOT / "dev/relicense_provenance.toml", ROOT.parent)
+        for path in (
+            "core/src/feature/cuda/speed/speed_cuda_params.h",
+            "core/src/feature/hip/float_adm/float_adm_hip_math.h",
+            "core/src/feature/hip/integer_ciede/ciede_hip_math.h",
+            "core/src/feature/sycl/sycl_ciede_math.h",
+        ):
+            with self.subTest(path=path):
+                self.assertIn(path, prov.not_ports)
+                self.assertIsNone(prov.port_sources(path))
 
     def test_fork_authored_code_resolves_to_no_origin(self) -> None:
         prov = REL.load_provenance(ROOT / "dev/relicense_provenance.toml", ROOT.parent)

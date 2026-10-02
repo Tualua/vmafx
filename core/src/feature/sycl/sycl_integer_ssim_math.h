@@ -1,6 +1,7 @@
 /**
+ *  Copyright 2001-2012 Xiph.Org and contributors.
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: EUPL-1.2
+ *  SPDX-License-Identifier: EUPL-1.2 AND BSD-2-Clause
  *
  *  The per-pixel term of the fixed-point SSIM extractor, as
  *  integer_ssim.c::ssim_reduce_row_range() computes it in fp64, for the SYCL

@@ -482,6 +482,18 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   [gate guide](docs/development/cross-backend-gate.md)).
 
 
+- **Three GPU helper headers credit the reference code they reproduce.** They
+  were created under `EUPL-1.2` and replay arithmetic of an upstream extractor
+  for a twin. Each now names `EUPL-1.2 AND` the licences of exactly that code
+  and carries its copyright notices above the fork's
+  ([ADR-1474](docs/adr/1474-relicense-helper-headers-and-ci-check.md)):
+  `metal/float_ms_ssim_option_semantics.h` adds `BSD-2-Clause-Patent`
+  (Netflix); `hip/float_ssim/ssim_decimate.h` adds
+  `BSD-2-Clause-Patent AND BSD-3-Clause` (Netflix, Tom Distler);
+  `sycl/sycl_integer_ssim_math.h` adds `BSD-2-Clause` (Xiph.Org). All paths
+  are under `core/src/feature/`. No code line changes.
+
+
 - **The cambi and psnr_hvs HIP host code and the cambi device header are
   clean under clang-tidy (ADR-1142).** The `hip` lint lane is configured
   without hipcc and therefore analyses the `-ENOSYS` stubs of the HIP host
@@ -2604,6 +2616,20 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   in place of the `.intoto.jsonl` files; verify with
   `gh attestation verify FILE --repo VMAFx/vmafx`, or offline with `--bundle`
   (ADR-1356). PyPI's PEP 740 attestations are unchanged.
+
+
+- **`scripts/dev/relicense_fork_files.py --check` exits 0.** The tool no longer
+  treats the exact-twin data fragments (`scripts/ci/exact_twins.d/`) or
+  praetor's byte-locked files as sources that need a header, and it rewrites a
+  licence grant only in a file's own header, so the mirrored-header template
+  inside `scripts/sync-pelorus-interop.sh` is left alone. Five helper headers
+  have `[ports]` entries in `scripts/dev/relicense_provenance.toml`, because
+  their family names origins they do not reproduce; `sycl_ssimulacra2_math.h`
+  resolves to libjxl instead of the SSIM lineages. Four headers that only
+  configure and include a shared header, or hold a kernel argument block, have
+  `[not_ports]` entries and stay `EUPL-1.2`
+  (`T-RELICENSE-CHECK-PENDING-2026-10-02`,
+  [ADR-1474](docs/adr/1474-relicense-helper-headers-and-ci-check.md)).
 
 
 - **Eleven licence tags now say what the file's own notice says.** The SPDX

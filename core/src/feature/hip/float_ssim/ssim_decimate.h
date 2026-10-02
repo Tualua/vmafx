@@ -1,7 +1,9 @@
 /**
  *
+ *  Copyright 2016-2026 Netflix, Inc.
+ *  Copyright (c) 2011, Tom Distler (http://tdistler.com)
  *  Copyright 2026 Lusoris
- *  SPDX-License-Identifier: EUPL-1.2
+ *  SPDX-License-Identifier: EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause
  *
  *  The decimation float_ssim_hip runs before its SSIM passes when the
  *  resolved scale is above 1 (ADR-1405): one output sample of
