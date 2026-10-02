@@ -617,19 +617,17 @@ linked AGENTS.md before resolving conflicts.
   `core/test/test_cuda_float_psnr_exact_contract.py` guards it without a
   device, `test_cuda_float_psnr_parity` (`==`) on one.
 
-- **`vif_cuda` evaluates the CPU's log2 table expression on the device ([ADR-1456](../adr/1456-cuda-vif-device-log2-pinned.md))**:
-  `core/src/feature/cuda/integer_vif/vif_statistics.cuh::log_generate()` is
-  `roundf(log2f(float(i)) * 2048.f)`, the expression of
-  `vif_log2_table_generate()` (`core/src/feature/vif_log2_table.h`), and every
-  logarithm of the statistic goes through it. `vif_log2_table_probe` in
-  `integer_vif/vif_log2_probe.cu` (its own fatbin, built by the rule that
-  builds `filter1d.cu`) exists for `core/test/test_cuda_vif_log2_table.c`,
-  which compares all 32768 device values with the host table; keep
-  `log_generate()` one inline function of `vif_statistics.cuh` when upstream
-  changes that header or `filter1d.cu`. A change to the
-  table's expression changes `log_generate()` in the same PR
-  (`core/test/test_cuda_vif_log2_contract.py`). If the device test fails, the
-  twin reads the host table as `vif_hip` does (ADR-1435).
+- **`vif_cuda` reads the CPU's log2 table ([ADR-1462](../adr/1462-cuda-vif-reads-host-log2-table.md))**:
+  `core/src/feature/cuda/integer_vif/vif_statistics.cuh` holds the table as
+  the module global `vif_cuda_log2_table`, `log2_lookup()` reads it with the
+  CPU's mask, and no vif kernel source evaluates a logarithm.
+  `integer_vif_cuda.c::init_fex_cuda()` fills it with
+  `vif_log2_table_generate()`'s values through
+  `vmaf_cuda_vif_upload_log2_table()` before any frame is submitted. When
+  upstream changes `vif_statistics.cuh` or `filter1d.cu`, keep the lookup and
+  do not bring `log_generate()` back; `filter1d.cu` itself is untouched by
+  the fork. `core/test/test_cuda_vif_log2_contract.py` guards it without a
+  device, `test_cuda_vif_log2_table` on one.
 
 - **`float_psnr_sycl` adds integers ([ADR-1450](../adr/1450-sycl-float-psnr-exact-block-sums.md))**:
   `core/src/feature/sycl/float_psnr_sycl.cpp` forms the CPU's term

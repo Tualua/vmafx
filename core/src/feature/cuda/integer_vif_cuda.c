@@ -20,6 +20,8 @@
 
 #include <errno.h>
 #include <math.h>
+#include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 
@@ -226,6 +228,54 @@ static int vif_get_filter1d_functions(VifStateCuda *s, CudaFunctions *cu_f)
     return 0;
 }
 
+#define VIF_LOG2_TRANSFER_BLOCK 256u
+
+int vmaf_cuda_vif_log2_table_transfer(VmafCudaState *cu_state, CUmodule module,
+                                      VmafCudaBuffer *staging, bool to_module)
+{
+    CudaFunctions *cu_f = cu_state->f;
+    CUfunction transfer = NULL;
+    unsigned direction = to_module ? 1u : 0u;
+    void *params[] = {(void *)staging, &direction};
+    const unsigned grid =
+        (VIF_LOG2_TABLE_SIZE + VIF_LOG2_TRANSFER_BLOCK - 1u) / VIF_LOG2_TRANSFER_BLOCK;
+
+    CHECK_CUDA_RETURN(cu_f, cuCtxPushCurrent(cu_state->ctx));
+    CUresult res = cu_f->cuModuleGetFunction(&transfer, module, "vif_cuda_log2_table_transfer");
+    if (res == CUDA_SUCCESS) {
+        res = cu_f->cuLaunchKernel(transfer, grid, 1, 1, VIF_LOG2_TRANSFER_BLOCK, 1, 1, 0,
+                                   cu_state->str, params, NULL);
+    }
+    if (res == CUDA_SUCCESS)
+        res = cu_f->cuStreamSynchronize(cu_state->str);
+    CHECK_CUDA_RETURN(cu_f, cuCtxPopCurrent(NULL));
+    return res == CUDA_SUCCESS ? 0 : vmaf_cuda_result_to_errno((int)res);
+}
+
+int vmaf_cuda_vif_upload_log2_table(VmafCudaState *cu_state, CUmodule module)
+{
+    const size_t table_bytes = VIF_LOG2_TABLE_SIZE * sizeof(uint16_t);
+    uint16_t *table = malloc(table_bytes);
+    if (!table)
+        return -ENOMEM;
+    vif_log2_table_generate(table);
+
+    VmafCudaBuffer *staging = NULL;
+    int err = vmaf_cuda_buffer_alloc(cu_state, &staging, table_bytes);
+    if (!err)
+        err = vmaf_cuda_buffer_upload_async(cu_state, staging, table, 0);
+    /* The transfer waits for the stream, so the copy from `table` and the
+     * kernel are both done before either buffer is released. */
+    if (!err)
+        err = vmaf_cuda_vif_log2_table_transfer(cu_state, module, staging, true);
+    const int sync_err = vmaf_cuda_sync(cu_state);
+    const int free_err = vmaf_cuda_buffer_free_owned(cu_state, &staging);
+    free(table);
+    if (err)
+        return err;
+    return sync_err ? sync_err : free_err;
+}
+
 /* vif_init_cuda_context - push the context, create stream, events and module,
  * resolve every kernel handle and pop the context again.
  *
@@ -390,6 +440,28 @@ static int check_context_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pi
     return (w < min_dim || h < min_dim) ? -ENOTSUP : 0;
 }
 
+/* vif_drop_vestigial_chroma_option - warn about and clear `enable_chroma`.
+ *
+ * VIF is luma-only by design across every backend (CPU, CUDA, HIP, SYCL,
+ * Vulkan, Metal) and across upstream Netflix/vmaf — the metric (Sheikh &
+ * Bovik, 2006) is defined on a single luminance channel.  `n_planes` is
+ * hardcoded to 1 to match the CPU twin (`libvmaf/src/feature/integer_vif.c`,
+ * which reads `data[0]` only and has no `enable_chroma` option).  The
+ * `enable_chroma` option is vestigial — retained so callers passing it on
+ * the CLI / in model JSONs do not see an option-not-recognised error — and
+ * warn-on-true here surfaces the no-op behaviour instead of silently
+ * producing luma-only output that contradicts the request. See ADR-0597.
+ */
+static void vif_drop_vestigial_chroma_option(VifStateCuda *s)
+{
+    if (!s->enable_chroma)
+        return;
+    vmaf_log(VMAF_LOG_LEVEL_WARNING, "integer_vif (CUDA): enable_chroma=true requested but VIF is "
+                                     "luma-only by design (matches CPU integer_vif and upstream "
+                                     "Netflix/vmaf); option is a no-op. See ADR-0597.\n");
+    s->enable_chroma = false;
+}
+
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -411,23 +483,13 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     if (cuda_err)
         return cuda_err;
 
-    /* VIF is luma-only by design across every backend (CPU, CUDA, HIP, SYCL,
-     * Vulkan, Metal) and across upstream Netflix/vmaf — the metric (Sheikh &
-     * Bovik, 2006) is defined on a single luminance channel.  `n_planes` is
-     * hardcoded to 1 to match the CPU twin (`libvmaf/src/feature/integer_vif.c`,
-     * which reads `data[0]` only and has no `enable_chroma` option).  The
-     * `enable_chroma` option above is vestigial — retained so callers passing
-     * it on the CLI / in model JSONs do not see an option-not-recognised
-     * error — and warn-on-true here surfaces the no-op behaviour instead of
-     * silently producing luma-only output that contradicts the request.
-     * See ADR-0597. */
-    if (s->enable_chroma) {
-        vmaf_log(VMAF_LOG_LEVEL_WARNING,
-                 "integer_vif (CUDA): enable_chroma=true requested but VIF is "
-                 "luma-only by design (matches CPU integer_vif and upstream "
-                 "Netflix/vmaf); option is a no-op. See ADR-0597.\n");
-        s->enable_chroma = false;
-    }
+    /* The statistic reads its logarithms from the module's table; no frame
+     * may be submitted before it holds the CPU's values (ADR-1462). */
+    const int table_err = vmaf_cuda_vif_upload_log2_table(fex->cu_state, s->filter1d_module);
+    if (table_err)
+        return vif_init_unwind(fex, s, table_err);
+
+    vif_drop_vestigial_chroma_option(s);
     (void)pix_fmt; /* YUV400P needs no special case — luma-only path handles it. */
     s->n_planes = 1;
 

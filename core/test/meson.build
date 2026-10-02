@@ -407,12 +407,11 @@ test('test_cuda_float_psnr_exact_contract',
     timeout : 30,
 )
 
-# ADR-1456 — vif_cuda evaluates the CPU's log2 table expression on the device
-# and test_cuda_vif_log2_table compares every entry with the host table. This
-# is the device-free half: the statistic takes each logarithm from
-# log_generate(), log_generate() is the table's expression, and the probe
-# kernel (integer_vif/vif_log2_probe.cu) calls that function, built by the
-# fatbin rule that builds the statistic, over the whole table.
+# ADR-1462 — vif_cuda reads the CPU's log2 table from a global of its kernel
+# module, uploaded at init, and evaluates no logarithm on the device. This is
+# the device-free half: the statistic takes each logarithm from the table,
+# no kernel source calls a math function, and init uploads
+# vif_log2_table_generate()'s values, size-checked, before it returns.
 test('test_cuda_vif_log2_contract',
     import('python').find_installation(),
     args : files('test_cuda_vif_log2_contract.py'),
@@ -3342,14 +3341,14 @@ test('test_cuda_float_ssim_decimate', test_cuda_float_ssim_decimate,
     suite : ['fast', 'gpu'],
     is_parallel : false)
 
-# ADR-1456 — the device half of the vif_cuda log2 pin: launches the probe
-# kernel (vif_log2_table_probe, module vif_log2_probe_ptx) and compares all 32768
-# entries with vif_log2_table_generate(). Fails on a host whose math library
-# fills the table differently from the device; the fix is then the host table
-# on the device (ADR-1435), not a tolerance. Skips without a CUDA device.
+# ADR-1462 — the device half: loads the vif module, runs the extractor's
+# table upload and compares all 32768 entries of the module's table with
+# vif_log2_table_generate(); the table is empty before the upload, and the
+# upload refuses a module without the table. Skips without a CUDA device.
 test_cuda_vif_log2_table = executable('test_cuda_vif_log2_table',
     ['test.c', 'test_cuda_vif_log2_table.c'],
-    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    include_directories : [libvmaf_inc, test_inc,
+        include_directories('../src/', '../src/feature/', '../src/cuda/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
     c_args: ['-DHAVE_CUDA=1']

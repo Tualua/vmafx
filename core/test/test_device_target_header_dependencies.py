@@ -25,7 +25,7 @@ CORE_SRC = ROOT / "core" / "src"
 MESON_BUILD = CORE_SRC / "meson.build"
 BUILD_DIR = Path(os.environ.get("VMAFX_DEVICE_DEP_BUILD_DIR", ROOT / "build")).resolve()
 
-EXPECTED_CUDA_TARGET_COUNT = 22
+EXPECTED_CUDA_TARGET_COUNT = 21
 EXPECTED_HIP_TARGET_COUNT = 20
 # The SYCL custom targets that compile a translation unit, by name prefix.
 SYCL_TU_TARGETS = ("sycl_common_", "sycl_feature_")

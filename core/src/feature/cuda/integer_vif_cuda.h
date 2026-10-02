@@ -21,6 +21,7 @@
 #ifndef FEATURE_VIF_CUDA_H_
 #define FEATURE_VIF_CUDA_H_
 
+#include <stdbool.h>
 #include <stdint.h>
 #include "integer_vif.h"
 #include "common.h"
@@ -86,5 +87,30 @@ typedef struct vif_accums {
 } vif_accums;
 
 extern const unsigned char filter1d_ptx[];
+
+#ifndef DEVICE_CODE
+/**
+ * Copy the log2 table of a loaded filter1d module to or from a device buffer
+ * of VIF_LOG2_TABLE_SIZE uint16 values, through the module's
+ * `vif_cuda_log2_table_transfer` kernel, and wait for it.
+ *
+ * @param to_module  true: staging -> module (what init does); false: module
+ *                   -> staging (a test reads back what the kernels see).
+ *
+ * @return 0 on success, or < 0 (a negative errno code) on error.
+ */
+int vmaf_cuda_vif_log2_table_transfer(VmafCudaState *cu_state, CUmodule module,
+                                      VmafCudaBuffer *staging, bool to_module);
+
+/**
+ * Fill the log2 table of a loaded filter1d module with the CPU extractor's
+ * values, vif_log2_table_generate() (ADR-1462). The statistic kernels read
+ * every logarithm from that table, so this runs once per module load, before
+ * the first frame.
+ *
+ * @return 0 on success, or < 0 (a negative errno code) on error.
+ */
+int vmaf_cuda_vif_upload_log2_table(VmafCudaState *cu_state, CUmodule module);
+#endif /* DEVICE_CODE */
 
 #endif /* _FEATURE_VIF_CUDA_H_ */

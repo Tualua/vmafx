@@ -87,7 +87,7 @@ chroma), as the CPU does; `psnr_hvs` refuses 16 bits on both sides.
 |---|---|---|
 | `adm`, `ssim`, `float_adm`, `float_motion`, `float_vif`, `psnr_hvs`, `ssimulacra2` | Identical on every fixture | Declared exact before this sweep; confirmed on the stress and small sets |
 | `motion`, `motion_debug`, `motion_v2`, `psnr`, `float_ssim`, `float_ssim_lcs`, `float_ms_ssim`, `float_ms_ssim_lcs`, `cambi` | Identical on every fixture, on 200 BBB frames and under their options | Declared exact by ADR-1457 |
-| `vif` | Identical on every fixture | Evaluates `log2f()` on the device; probed on every table entry and declared exact by ADR-1456 (#1810) |
+| `vif` | Identical on every fixture | Evaluated `log2f()` on the device at the time of the sweep; probed on every table entry and declared exact by ADR-1456 (#1810). It reads the CPU's table since [ADR-1462](../adr/1462-cuda-vif-reads-host-log2-table.md) |
 | `float_moment` | Second moments up to 1.0e-4 off on 16-bit content with real low bits | Fixed by [ADR-1453](../adr/1453-cuda-float-moment-cpu-float-squares.md): integer squares where the CPU adds float squares |
 | `float_psnr` | Up to 1.2e-7 dB off at 10, 12 and 16 bits on large differences; the only twin the small frames caught | Fixed by [ADR-1455](../adr/1455-cuda-float-psnr-exact-block-sums.md): fp32 block sums |
 | `motion`, `motion_debug` | The CPU emits `VMAF_integer_feature_motion_sad_score`; the twin did not | Fixed in #1809 (`T-CUDA-MOTION-SAD-SCORE-NOT-EMITTED-2026-10-02`); the gate lists `motion2` / `motion3` only and could not see it |
@@ -137,7 +137,9 @@ and SYCL twins are listed on the same terms (ADR-1437, ADR-1451).
   `float_psnr_cuda` and `float_moment_cuda`, as they had on HIP and SYCL.
 - Equal scores do not prove a device math call equals the host's on every
   argument. `vif_cuda`'s `log2f()` was therefore probed over its whole
-  domain (ADR-1456) instead of being declared from this table.
+  domain (ADR-1456) instead of being declared from this table, and the
+  twin was then switched to the CPU's table so that no device math call is
+  left to compare (ADR-1462).
 
 ## Open questions
 

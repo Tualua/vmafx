@@ -8975,8 +8975,9 @@
         "core/src/feature/hip/integer_vif/vif_statistics.hip": 2,
         "core/src/feature/hip/integer_vif_hip.c": 2,
         "core/src/feature/vif_log2_table.h": 1,
-        "core/test/meson.build": 3,
-        "core/test/test_cuda_vif_log2_table.c": 2,
+        "core/test/meson.build": 2,
+        "core/test/test_cuda_vif_log2_contract.py": 1,
+        "core/test/test_cuda_vif_log2_table.c": 1,
         "core/test/test_hip_vif_log2_table_contract.py": 1,
         "core/test/test_hip_vif_parity.c": 1,
         "scripts/ci/exact_twins.d/vif.hip": 1
@@ -9235,18 +9236,6 @@
       },
       "target": "1455-cuda-float-psnr-exact-block-sums.md"
     },
-    "1456": {
-      "sites": {
-        "core/src/feature/cuda/integer_vif/vif_log2_probe.cu": 1,
-        "core/src/feature/cuda/integer_vif/vif_statistics.cuh": 1,
-        "core/src/feature/vif_log2_table.h": 1,
-        "core/src/meson.build": 1,
-        "core/test/meson.build": 2,
-        "core/test/test_cuda_vif_log2_contract.py": 1,
-        "core/test/test_cuda_vif_log2_table.c": 1
-      },
-      "target": "1456-cuda-vif-device-log2-pinned.md"
-    },
     "1457": {
       "sites": {
         "core/test/meson.build": 1,
@@ -9284,6 +9273,18 @@
         "scripts/ci/test_cross_backend_parity_gate.py": 2
       },
       "target": "1460-gate-speed-temporal-and-uncovered-twins.md"
+    },
+    "1462": {
+      "sites": {
+        "core/src/feature/cuda/integer_vif/vif_statistics.cuh": 1,
+        "core/src/feature/cuda/integer_vif_cuda.c": 1,
+        "core/src/feature/cuda/integer_vif_cuda.h": 1,
+        "core/src/feature/vif_log2_table.h": 1,
+        "core/test/meson.build": 2,
+        "core/test/test_cuda_vif_log2_contract.py": 2,
+        "core/test/test_cuda_vif_log2_table.c": 1
+      },
+      "target": "1462-cuda-vif-reads-host-log2-table.md"
     }
   },
   "retired": {

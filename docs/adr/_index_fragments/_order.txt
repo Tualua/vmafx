@@ -1162,3 +1162,4 @@
 1457-cuda-exact-twins-declared
 1460-gate-speed-temporal-and-uncovered-twins
 1458-hip-float-adm-cpu-arithmetic
+1462-cuda-vif-reads-host-log2-table

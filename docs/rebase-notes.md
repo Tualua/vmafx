@@ -58111,3 +58111,31 @@ part).
   master's side of that file, put the added text into the page whose
   `Touching` row matches the files, then `make docs-fragments-write`.
 - No Netflix golden-data, public API or FFmpeg patch impact.
+## ADR-1462 — `vif_cuda` reads the CPU's log2 table (2026-10-02)
+
+`fix/cuda-vif-reads-host-log2-table`, `T-CUDA-VIF-DEVICE-LOG2-HOST-DEPENDENT-2026-10-02`. Supersedes the ADR-1456 entry above.
+
+- `core/src/feature/cuda/integer_vif/vif_statistics.cuh`: `log_generate()` is
+  gone. The module global `vif_cuda_log2_table`, `log2_lookup()` and the
+  kernel `vif_cuda_log2_table_transfer` replace it; the statistic's three
+  logarithm sites call `log2_lookup()`. When upstream changes this header,
+  keep the lookup: do not take a device `log2f()` back.
+- `core/src/feature/cuda/integer_vif/filter1d.cu` is untouched (it includes
+  the header); `vif_log2_probe.cu` and its `cuda_cu_sources` entry are
+  deleted, `EXPECTED_CUDA_TARGET_COUNT` is 21 again.
+- `core/src/feature/cuda/integer_vif_cuda.c` / `.h`:
+  `vmaf_cuda_vif_log2_table_transfer()` and
+  `vmaf_cuda_vif_upload_log2_table()`; `init_fex_cuda()` calls the upload
+  right after `vif_init_cuda_context()`.
+- `core/src/feature/vif_log2_table.h`: comment only (the rule is "no twin
+  computes the table on its device" again).
+- `core/test/test_cuda_vif_log2_table.c` tests the upload on a device;
+  `core/test/test_cuda_vif_log2_contract.py` is rewritten for the lookup.
+- `scripts/ci/silent-revert-allowlist.json` carries two ADR-1462 entries
+  for the removal of the probe fatbin: a `reverse-hunk` entry for
+  `core/src/meson.build` and a `rewind` entry for
+  `core/test/test_device_target_header_dependencies.py`. They are expiring
+  declarations: once this change is on `master` the findings are gone and the
+  entries can be removed. The `rewind` entry names blob ids, so a rebase
+  over a later change to that file makes it unused, not wrong.
+- No score, Netflix golden-data, public API or FFmpeg patch impact.

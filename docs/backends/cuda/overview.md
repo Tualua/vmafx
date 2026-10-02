@@ -1033,16 +1033,18 @@ python3 scripts/ci/cross_backend_parity_gate.py --vmaf-binary build/tools/vmaf \
 
 The fixed-point `vif` is integer arithmetic except for its logarithms, which
 the CPU extractor reads from a table of 32768 values built with the host math
-library. `vif_cuda` computes the same expression on the device. On another
-GPU that went wrong: the HIP twin's device logarithm moved 77 of the 32768
-values and its scores were up to 5.4e-7 off (ADR-1435).
+library. `vif_cuda` reads the same table
+([ADR-1462](../../adr/1462-cuda-vif-reads-host-log2-table.md)): the host
+builds it once when the extractor starts and copies it to the device, and the
+kernels look every logarithm up. They compute none themselves, so the twin
+returns the CPU's scores whatever math library the host has and whatever the
+CUDA release's device `log2f()` returns.
 
-For CUDA the two agree on every one of the 32768 values
-([ADR-1456](../../adr/1456-cuda-vif-device-log2-pinned.md)). The device's
-`log2f()` differs from glibc's by one unit in the last place for 307 of the
-arguments, and none of those moves a table value. `test_cuda_vif_log2_table`
-checks all 32768 on the device every time the fast suite runs, so `vif_cuda`
-is declared an exact twin and the parity gate compares it with tolerance 0.
+Until 2026-10-02 the kernels evaluated `log2f()` on the device. On an RTX
+4090 with CUDA 13.4 and glibc 2.44 that gave the CPU's table on all 32768
+values, although the device's `log2f()` differs from glibc's by one unit in
+the last place for 307 arguments; on an AMD GPU the same construction had
+moved 77 values (ADR-1435). No score changes on this host with the switch.
 
 Measured on an RTX 4090 at `--precision max` against `--backend cpu`:
 
@@ -1051,12 +1053,17 @@ Measured on an RTX 4090 at `--precision max` against `--backend cpu`:
 | Netflix 576x324 at 8 and 10 bits, both 1080p checkerboards, BBB 3840x2160 (200 frames) | 1028 of 1028 |
 | Netflix 576x324 at 12 and 16 bits and as 10-bit 4:2:2, Sparks at 10 bits, noise at 8 to 16 bits, a bright 16-bit 1080p pair | 292 of 292 |
 | Noise at 40x40, 56x56 and 64x64, 8 and 10 bits | 72 of 72 |
-| `debug=true`, `vif_enhn_gain_limit=1.0`, `vif_skip_scale0` on 59 frames | 1357 of 1357 |
+| `debug=true`, `vif_enhn_gain_limit=1.0`, `vif_skip_scale0` on 196 frames | 4508 of 4508 |
 
-No scoring kernel changed, so stored scores and the frame time are the same.
-If the test fails on your machine (another host math library, another CUDA
-release), report it: the twin then needs to read the CPU's table, as the HIP
-twin does.
+The frame time did not change measurably. Per frame through the `vmaf` tool,
+steady state (the time of 60 or 84 frames less the time of 4, per added
+frame), medians of 25 interleaved pairs of runs; the host's load average was
+70 to 90 from other builds, so the samples are wide:
+
+| Input | Before | After | Paired difference |
+|---|---|---|---|
+| 1920x1080, 8 bit | 0.68 ms | 0.61 ms | -0.09 ms |
+| 3840x2160, 8 bit | 2.30 ms | 2.30 ms | -0.09 ms |
 
 ```shell
 build-cuda/test/test_cuda_vif_log2_table

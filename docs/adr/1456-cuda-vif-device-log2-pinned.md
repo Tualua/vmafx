@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD013 MD041 MD060 -->
 # ADR-1456: `vif_cuda` keeps its device `log2f()`, proven equal to the CPU's log2 table on every entry, and is declared an exact twin
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-1462](1462-cuda-vif-reads-host-log2-table.md)
 - **Date**: 2026-10-02
 - **Deciders**: lusoris
 - **Tags**: `cuda`, `vif`, `gpu-parity`, `numerics`, `testing`, `ci`, `rc3`, `fork-local`

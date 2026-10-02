@@ -259,6 +259,25 @@
       "paths": [
         "core/src/feature/hip/integer_ssim_hip.h"
       ]
+    },
+    {
+      "adr": "ADR-1462",
+      "kind": "reverse-hunk",
+      "undoes": "6d2b9ffa618ade6817a6cb61cf0e074d82d50cac",
+      "evidence": "(?:ADR-1456: log_generate\\(\\) of vif_statistics\\.cuh over the log2 table's|whole domain, for test_cuda_vif_log2_table\\. Built by this rule so|that it takes the flags filter1d takes; the extractor never loads it\\.|'vif_log2_probe' : \\[feature_src_dir \\+ 'cuda/integer_vif/vif_log2_probe\\.cu'\\],)",
+      "reason": "ADR-1462 supersedes ADR-1456. 6d2b9ffa6 (#1810) built a fatbin, vif_log2_probe, whose only job was to evaluate vif_cuda's device log2f on every table argument for a test; the four lines are its cuda_cu_sources entry and the comment on it. ADR-1462 makes the twin read the table the host generates, so log_generate() no longer exists and the fatbin has nothing to evaluate. What 6d2b9ffa6 established is kept and made unconditional: test_cuda_vif_log2_table now compares the table the kernel reads with vif_log2_table_generate() on all 32768 entries, and test_cuda_vif_log2_contract.py fails if a device logarithm or the probe fatbin comes back.",
+      "paths": [
+        "core/src/meson.build"
+      ]
+    },
+    {
+      "adr": "ADR-1462",
+      "kind": "rewind",
+      "evidence": "^merged blob f2a2935f2 == blob at 8f7297060$",
+      "reason": "6d2b9ffa6 (#1810) raised EXPECTED_CUDA_TARGET_COUNT from 21 to 22 for the vif_log2_probe fatbin and changed nothing else in the file. ADR-1462 removes that fatbin, so the count is 21 again and the file is byte-identical to its blob before 6d2b9ffa6. The count is a statement about cuda_cu_sources, which the test checks against the build; no other assertion goes back.",
+      "paths": [
+        "core/test/test_device_target_header_dependencies.py"
+      ]
     }
   ]
 }

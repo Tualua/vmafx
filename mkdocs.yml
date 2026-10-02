@@ -1570,6 +1570,7 @@ nav:
         - "ADR-1457: cuda-exact-twins-declared": adr/1457-cuda-exact-twins-declared.md
         - "ADR-1458: hip-float-adm-cpu-arithmetic": adr/1458-hip-float-adm-cpu-arithmetic.md
         - "ADR-1460: gate-speed-temporal-and-uncovered-twins": adr/1460-gate-speed-temporal-and-uncovered-twins.md
+        - "ADR-1462: cuda-vif-reads-host-log2-table": adr/1462-cuda-vif-reads-host-log2-table.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

@@ -790,23 +790,27 @@ CUDA feature TUs compile only when `meson setup -Denable_cuda=true`.
   `core/test/float_psnr_twin_parity.h`, shared with SYCL test),
   `test_cuda_float_psnr_exact_contract.py`.
 
-## `vif_cuda` logarithm = CPU log2 table, every entry (ADR-1456)
+## `vif_cuda` reads the CPU's log2 table (ADR-1462)
 
-- CPU `vif` reads `log2_table[]` (host libm, `vif_log2_table_generate()`);
-  `vif_cuda` evaluates same expression per pixel on device:
-  `vif_statistics.cuh::log_generate()` = `roundf(log2f(float(i)) * 2048.f)`.
-- Device `log2f` != glibc on 307 of 32768 arguments (1 ulp), 80 ties; 0
-  table entries differ (RTX 4090, CUDA 13.4, glibc 2.44).
-- Proof = `test_cuda_vif_log2_table`: launches `vif_log2_table_probe`
-  (`integer_vif/vif_log2_probe.cu`: own fatbin `vif_log2_probe_ptx`, same
-  build rule + flags as `filter1d.cu`, extractor never loads probe), compares
-  all 32768 with host table. Fails -> upload host table as `vif_hip`
-  (ADR-1435). NEVER tolerance, never edit `log_generate()` to fit.
-- Keep: every logarithm of statistic through `log_generate()`; `roundf`
-  (not `__float2int_rn`: 41 entries off, scores 4.2e-7 off); probe calls
-  `log_generate()` from `vif_statistics.cuh`, no per-kernel flags
-  (`cuda_cu_extra_flags`). Probe NOT in `filter1d.cu`: touching that file
-  revokes four HISS-04 baseline entries of upstream kernels. `test_cuda_vif_log2_contract.py` guards all three.
+- CPU `vif` reads `log2_table[]` (host libm, `vif_log2_table_generate()`).
+  `vif_cuda` reads SAME values: module global `vif_cuda_log2_table`
+  (`integer_vif/vif_statistics.cuh`), `log2_lookup(v)` =
+  `table[v & (VIF_LOG2_TABLE_SIZE - 1)]`. NO `log2f` / `roundf` in any vif
+  kernel source: device `log2f` != host's (307 of 32768 arguments on CUDA
+  13.4 vs glibc 2.44; 77 table entries on gfx1036, ADR-1435).
+- Host: `init_fex_cuda()` -> `vmaf_cuda_vif_upload_log2_table()` right
+  after module load, before buffers; stages table in device buffer, kernel
+  `vif_cuda_log2_table_transfer` copies into global, waits on stream. Failure
+  -> `vif_init_unwind()`.
+- Transfer = kernel, not `cuModuleGetGlobal()`: ffnvcodec loader binds
+  legacy symbol, current-API context answers `CUDA_ERROR_INVALID_CONTEXT`.
+- Global, not kernel argument: `filter1d.cu` (upstream NVIDIA kernels, four
+  baselined HISS-04 function sizes) stays untouched; kernel arithmetic
+  unchanged.
+- Guards: `test_cuda_vif_log2_table` (device: table empty before upload,
+  all 32768 entries == host after, wrong module refused),
+  `test_cuda_vif_log2_contract.py` (eight planted regressions),
+  `test_cuda_vif_parity`.
 
 ## Twins declared exact as a group (ADR-1457)
 
@@ -825,7 +829,7 @@ CUDA feature TUs compile only when `meson setup -Denable_cuda=true`.
   (few means per million by estimate, 0 of 9000 measured). Mean ever differs
   -> add terms in raster order as `integer_ssim_cuda` (ADR-1424).
 - NOT listed: `ciede` (libm bound 1e-9), `speed_chroma` (libm bound 5e-6).
-  `vif` listed by ADR-1456 (device `log2f` proven per table entry).
+  `vif` listed by ADR-1462 (reads host log2 table, no device `log2f`).
 
 ## Stencil/convolution kernel invariant (ADR-0454)
 
