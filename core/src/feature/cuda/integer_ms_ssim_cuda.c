@@ -17,16 +17,17 @@
  *    2. ms_ssim_horiz — horizontal 11-tap separable Gaussian
  *       over 5 SSIM stats (operates on float input — pyramid
  *       levels are already float).
- *    3. ms_ssim_vert_lcs — vertical 11-tap + per-pixel l/c/s +
- *       per-block float partials × 3.
+ *    3. ms_ssim_vert_lcs — vertical 11-tap + per-window l/c/s,
+ *       each stored at the window's raster position.
  *
  *  picture_copy normalisation runs on the host (uint sample →
  *  float in [0, 255]), uploaded to the pyramid level 0 buffer.
  *  CUDA decimate kernels build levels 1-4. Per-scale SSIM
  *  compute reads levels and writes into shared intermediate +
- *  per-scale partials buffers; host accumulates partials in
- *  `double` per scale and applies the Wang weights for the final
- *  product combine.
+ *  per-scale term planes; the host adds each scale's l, c and s
+ *  terms in raster order, as iqa_ssim() does (ms_ssim_scale_sums(),
+ *  ADR-1465), and applies the Wang weights for the final product
+ *  combine.
  *
  *  Min-dim guard: 11 << 4 = 176 (matches ADR-0153).
  *
@@ -38,11 +39,11 @@
  *  output bit-identical to the pre-T7-35 binary.
  *
  *  Engine-scope fence batching (T-GPU-OPT-2 / ADR-0271): all 5
- *  scales' horiz + vert_lcs launches and DtoH partial readbacks
+ *  scales' horiz + vert_lcs launches and DtoH term readbacks
  *  are enqueued in submit() onto the lifecycle's private stream
  *  (s->lc.str). Same-stream ordering serialises kernels and
  *  copies in dependency order without per-scale syncs, and the
- *  partials buffers are now allocated per-scale to avoid the
+ *  term planes are allocated per-scale to avoid the
  *  cross-scale aliasing that previously forced a host-blocking
  *  cuStreamSynchronize after each scale. The final
  *  cuEventRecord(s->lc.finished, s->lc.str) opts the lifecycle
@@ -111,7 +112,8 @@ typedef struct MsSsimStateCuda {
     unsigned scale_h_final[MS_SSIM_SCALES];
     unsigned scale_grid_x[MS_SSIM_SCALES];
     unsigned scale_grid_y[MS_SSIM_SCALES];
-    unsigned scale_block_count[MS_SSIM_SCALES];
+    /* Windows of each scale, w_final * h_final: one l, c and s term each. */
+    size_t scale_window_count[MS_SSIM_SCALES];
 
     /* The reference's fp32 stabilisation constants (iqa_ssim()), carried as
      * doubles: the kernel's argument list takes doubles (ADR-0990) and
@@ -136,24 +138,20 @@ typedef struct MsSsimStateCuda {
     VmafCudaBuffer *h_cmp_sq;
     VmafCudaBuffer *h_refcmp;
 
-    /* Per-scale partials buffers (T-GPU-OPT-2 / ADR-0271).
-     * Previously a single buffer reused across scales; that aliasing
-     * forced a per-scale cuStreamSynchronize before the host could
-     * walk the partials. Allocating per scale lets all 5 scales'
-     * horiz + vert_lcs launches and DtoH copies queue back-to-back
-     * on s->lc.str so the readbacks coalesce with the engine's
-     * drain batch. */
-    VmafCudaBuffer *l_partials[MS_SSIM_SCALES];
-    VmafCudaBuffer *c_partials[MS_SSIM_SCALES];
-    VmafCudaBuffer *s_partials[MS_SSIM_SCALES];
-    /* Pinned host partials for DtoH (per scale; safe to read after
+    /* Per-scale term planes, one term per window in raster order
+     * (ADR-1465): l and c as doubles, s as the float it is. Allocated per
+     * scale (T-GPU-OPT-2 / ADR-0271) so that all 5 scales' horiz + vert_lcs
+     * launches and DtoH copies queue back-to-back on s->lc.str and the
+     * readbacks coalesce with the engine's drain batch. */
+    VmafCudaBuffer *l_terms[MS_SSIM_SCALES];
+    VmafCudaBuffer *c_terms[MS_SSIM_SCALES];
+    VmafCudaBuffer *s_terms[MS_SSIM_SCALES];
+    /* Pinned host copies for DtoH (per scale; safe to read after
      * the lifecycle's finished event has been waited on, either
-     * via the engine's drain_batch or the legacy per-stream sync).
-     * ADR-0990: double to match the double partials written by the
-     * ms_ssim_vert_lcs kernel. */
-    double *h_l_partials[MS_SSIM_SCALES];
-    double *h_c_partials[MS_SSIM_SCALES];
-    double *h_s_partials[MS_SSIM_SCALES];
+     * via the engine's drain_batch or the legacy per-stream sync). */
+    double *h_l_terms[MS_SSIM_SCALES];
+    double *h_c_terms[MS_SSIM_SCALES];
+    float *h_s_terms[MS_SSIM_SCALES];
 
     unsigned index;
     VmafDictionary *feature_name_dict;
@@ -245,7 +243,7 @@ static void ms_ssim_configure_scales(MsSsimStateCuda *s, unsigned w, unsigned h)
             (s->scale_w_final[i] + (unsigned)MS_SSIM_BLOCK_X - 1) / (unsigned)MS_SSIM_BLOCK_X;
         s->scale_grid_y[i] =
             (s->scale_h_final[i] + (unsigned)MS_SSIM_BLOCK_Y - 1) / (unsigned)MS_SSIM_BLOCK_Y;
-        s->scale_block_count[i] = s->scale_grid_x[i] * s->scale_grid_y[i];
+        s->scale_window_count[i] = (size_t)s->scale_w_final[i] * s->scale_h_final[i];
     }
 
     /* iqa_ssim(): the stabilisation constants are fp32. */
@@ -314,14 +312,14 @@ static int ms_ssim_alloc_device_buffers(VmafFeatureExtractor *fex, MsSsimStateCu
         return ret;
 
     for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        const size_t scale_bytes = (size_t)s->scale_block_count[i] * sizeof(double);
-        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->l_partials[i], scale_bytes);
+        const size_t windows = s->scale_window_count[i];
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->l_terms[i], windows * sizeof(double));
         if (ret)
             return ret;
-        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->c_partials[i], scale_bytes);
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->c_terms[i], windows * sizeof(double));
         if (ret)
             return ret;
-        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->s_partials[i], scale_bytes);
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->s_terms[i], windows * sizeof(float));
         if (ret)
             return ret;
     }
@@ -343,14 +341,17 @@ static int ms_ssim_alloc_host_buffers(VmafFeatureExtractor *fex, MsSsimStateCuda
     if (ret)
         return ret;
     for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        const size_t scale_bytes = (size_t)s->scale_block_count[i] * sizeof(double);
-        ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_l_partials[i], scale_bytes);
+        const size_t windows = s->scale_window_count[i];
+        ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_l_terms[i],
+                                          windows * sizeof(double));
         if (ret)
             return ret;
-        ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_c_partials[i], scale_bytes);
+        ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_c_terms[i],
+                                          windows * sizeof(double));
         if (ret)
             return ret;
-        ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_s_partials[i], scale_bytes);
+        ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_s_terms[i],
+                                          windows * sizeof(float));
         if (ret)
             return ret;
     }
@@ -394,15 +395,16 @@ static int ms_ssim_copy_plane_to_host(CudaFunctions *cu_f, const VmafPicture *pi
                                       const MsSsimStateCuda *s, CUstream stream, void *dst)
 {
     const unsigned bpc_bytes = (s->bpc <= 8 ? 1u : 2u);
-    CUDA_MEMCPY2D copy = {0};
-    copy.srcMemoryType = CU_MEMORYTYPE_DEVICE;
-    copy.srcDevice = (CUdeviceptr)pic->data[0];
-    copy.srcPitch = (size_t)pic->stride[0];
-    copy.dstMemoryType = CU_MEMORYTYPE_HOST;
-    copy.dstHost = dst;
-    copy.dstPitch = (size_t)s->width * bpc_bytes;
-    copy.WidthInBytes = (size_t)s->width * bpc_bytes;
-    copy.Height = s->height;
+    const CUDA_MEMCPY2D copy = {
+        .srcMemoryType = CU_MEMORYTYPE_DEVICE,
+        .srcDevice = (CUdeviceptr)pic->data[0],
+        .srcPitch = (size_t)pic->stride[0],
+        .dstMemoryType = CU_MEMORYTYPE_HOST,
+        .dstHost = dst,
+        .dstPitch = (size_t)s->width * bpc_bytes,
+        .WidthInBytes = (size_t)s->width * bpc_bytes,
+        .Height = s->height,
+    };
     CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&copy, stream));
     CHECK_CUDA_RETURN(cu_f, cuStreamSynchronize(stream));
     return 0;
@@ -438,7 +440,7 @@ static int ms_ssim_stage_inputs(VmafFeatureExtractor *fex, MsSsimStateCuda *s, V
                                 VmafPicture *dist_pic)
 {
     CudaFunctions *cu_f = fex->cu_state->f;
-    const CUstream stream = vmaf_cuda_picture_get_stream(ref_pic);
+    CUstream stream = vmaf_cuda_picture_get_stream(ref_pic);
     int err = ms_ssim_copy_plane_to_host(cu_f, ref_pic, s, stream, s->h_input_uint);
     if (err == 0) {
         ms_ssim_normalize_plane(s->h_ref, s, ref_pic, s->h_input_uint);
@@ -451,26 +453,37 @@ static int ms_ssim_stage_inputs(VmafFeatureExtractor *fex, MsSsimStateCuda *s, V
     return err;
 }
 
+/* One decimation launch: level `i` of `pyramid` into level `i + 1`. The
+ * parameter array follows ms_ssim_decimate's signature (ADR-1215);
+ * cuLaunchKernel copies the values before it returns. */
+static int ms_ssim_launch_decimate(MsSsimStateCuda *s, CudaFunctions *cu_f,
+                                   VmafCudaBuffer *const *pyramid, int i)
+{
+    const unsigned w_in = s->scale_w[i];
+    const unsigned h_in = s->scale_h[i];
+    const unsigned w_out = s->scale_w[i + 1];
+    const unsigned h_out = s->scale_h[i + 1];
+    const unsigned grid_x = (w_out + MS_SSIM_BLOCK_X - 1) / MS_SSIM_BLOCK_X;
+    const unsigned grid_y = (h_out + MS_SSIM_BLOCK_Y - 1) / MS_SSIM_BLOCK_Y;
+    void *params[] = {
+        (void *)pyramid[i], (void *)pyramid[i + 1], (void *)&w_in,
+        (void *)&h_in,      (void *)&w_out,         (void *)&h_out,
+    };
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_decimate, grid_x, grid_y, 1, MS_SSIM_BLOCK_X,
+                                           MS_SSIM_BLOCK_Y, 1, 0, s->lc.str, params, NULL));
+    return 0;
+}
+
+/* Levels 1 to 4 of both pyramids, reference before distorted per level, as
+ * before the split. */
 static int ms_ssim_submit_pyramid(MsSsimStateCuda *s, CudaFunctions *cu_f)
 {
     for (int i = 0; i < MS_SSIM_SCALES - 1; i++) {
-        const unsigned w_in = s->scale_w[i];
-        const unsigned h_in = s->scale_h[i];
-        const unsigned w_out = s->scale_w[i + 1];
-        const unsigned h_out = s->scale_h[i + 1];
-        const unsigned grid_x = (w_out + MS_SSIM_BLOCK_X - 1) / MS_SSIM_BLOCK_X;
-        const unsigned grid_y = (h_out + MS_SSIM_BLOCK_Y - 1) / MS_SSIM_BLOCK_Y;
-        for (int side = 0; side < 2; side++) {
-            VmafCudaBuffer *src = (side == 0) ? s->pyramid_ref[i] : s->pyramid_cmp[i];
-            VmafCudaBuffer *dst = (side == 0) ? s->pyramid_ref[i + 1] : s->pyramid_cmp[i + 1];
-            void *params[] = {
-                (void *)src,   (void *)dst,    (void *)&w_in,
-                (void *)&h_in, (void *)&w_out, (void *)&h_out,
-            };
-            CHECK_CUDA_RETURN(cu_f,
-                              cuLaunchKernel(s->func_decimate, grid_x, grid_y, 1, MS_SSIM_BLOCK_X,
-                                             MS_SSIM_BLOCK_Y, 1, 0, s->lc.str, params, NULL));
-        }
+        int err = ms_ssim_launch_decimate(s, cu_f, s->pyramid_ref, i);
+        if (!err)
+            err = ms_ssim_launch_decimate(s, cu_f, s->pyramid_cmp, i);
+        if (err)
+            return err;
     }
     return 0;
 }
@@ -496,26 +509,22 @@ static int ms_ssim_submit_scale(MsSsimStateCuda *s, CudaFunctions *cu_f, int i)
                                            MS_SSIM_BLOCK_Y, 1, 0, s->lc.str, horiz_params, NULL));
 
     void *vert_params[] = {
-        (void *)s->h_ref_mu,      (void *)s->h_cmp_mu,      (void *)s->h_ref_sq,
-        (void *)s->h_cmp_sq,      (void *)s->h_refcmp,      (void *)s->l_partials[i],
-        (void *)s->c_partials[i], (void *)s->s_partials[i], (void *)&w_horiz,
-        (void *)&w_final,         (void *)&h_final,         (void *)&s->c1,
-        (void *)&s->c2,           (void *)&s->c3,
+        (void *)s->h_ref_mu, (void *)s->h_cmp_mu,   (void *)s->h_ref_sq,   (void *)s->h_cmp_sq,
+        (void *)s->h_refcmp, (void *)s->l_terms[i], (void *)s->c_terms[i], (void *)s->s_terms[i],
+        (void *)&w_horiz,    (void *)&w_final,      (void *)&h_final,      (void *)&s->c1,
+        (void *)&s->c2,      (void *)&s->c3,
     };
     CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_vert_lcs, s->scale_grid_x[i], s->scale_grid_y[i],
                                            1, MS_SSIM_BLOCK_X, MS_SSIM_BLOCK_Y, 1, 0, s->lc.str,
                                            vert_params, NULL));
 
-    const size_t bytes = (size_t)s->scale_block_count[i] * sizeof(double);
-    CHECK_CUDA_RETURN(cu_f,
-                      cuMemcpyDtoHAsync(s->h_l_partials[i], (CUdeviceptr)s->l_partials[i]->data,
-                                        bytes, s->lc.str));
-    CHECK_CUDA_RETURN(cu_f,
-                      cuMemcpyDtoHAsync(s->h_c_partials[i], (CUdeviceptr)s->c_partials[i]->data,
-                                        bytes, s->lc.str));
-    CHECK_CUDA_RETURN(cu_f,
-                      cuMemcpyDtoHAsync(s->h_s_partials[i], (CUdeviceptr)s->s_partials[i]->data,
-                                        bytes, s->lc.str));
+    const size_t windows = s->scale_window_count[i];
+    CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(s->h_l_terms[i], (CUdeviceptr)s->l_terms[i]->data,
+                                              windows * sizeof(double), s->lc.str));
+    CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(s->h_c_terms[i], (CUdeviceptr)s->c_terms[i]->data,
+                                              windows * sizeof(double), s->lc.str));
+    CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(s->h_s_terms[i], (CUdeviceptr)s->s_terms[i]->data,
+                                              windows * sizeof(float), s->lc.str));
     return 0;
 }
 
@@ -560,6 +569,31 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     return 0;
 }
 
+/* ms_ssim_scale_sums - iqa_ssim()'s `l_sum`, `c_sum` and `s_sum` of one scale.
+ *
+ * The CPU adds every window's l, c and s into one double each, top to bottom
+ * and left to right (ssim_accumulate_default_scalar() and its SIMD forms,
+ * which keep the same single running sums). A double sum is its order: the
+ * three planes are in raster order and this loop is the only place the terms
+ * are added. The sums are independent of one another, so one pass adds each
+ * of them in index order; s widens to double as the CPU's `sv = sv_f` does.
+ */
+static void ms_ssim_scale_sums(const double *l_terms, const double *c_terms, const float *s_terms,
+                               size_t n_windows, double sums[3])
+{
+    double l = 0.0;
+    double c = 0.0;
+    double st = 0.0;
+    for (size_t j = 0u; j < n_windows; j++) {
+        l += l_terms[j];
+        c += c_terms[j];
+        st += (double)s_terms[j];
+    }
+    sums[0] = l;
+    sums[1] = c;
+    sums[2] = st;
+}
+
 static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
                             VmafFeatureCollector *feature_collector)
 {
@@ -580,20 +614,15 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
     for (int i = 0; i < MS_SSIM_SCALES; i++) {
         const unsigned w_final = s->scale_w_final[i];
         const unsigned h_final = s->scale_h_final[i];
-        double total_l = 0.0;
-        double total_c = 0.0;
-        double total_s = 0.0;
-        /* ADR-0990: h_*_partials are now double arrays; no cast needed. */
-        for (unsigned j = 0; j < s->scale_block_count[i]; j++) {
-            total_l += s->h_l_partials[i][j];
-            total_c += s->h_c_partials[i][j];
-            total_s += s->h_s_partials[i][j];
-        }
+        double sums[3] = {0.0, 0.0, 0.0};
+        ms_ssim_scale_sums(s->h_l_terms[i], s->h_c_terms[i], s->h_s_terms[i],
+                           s->scale_window_count[i], sums);
+        const double total_l = sums[0];
+        const double total_c = sums[1];
+        const double total_s = sums[2];
         const double n_pixels = (double)w_final * (double)h_final;
         /* iqa_ssim() returns each mean as a float, and ms_ssim.c combines the
-         * floats. Rounding here as it does also absorbs the last-bit
-         * difference between the device's block-wise fp64 sums and the
-         * reference's raster-order sum (ADR-1403). */
+         * floats. */
         l_means[i] = (double)(float)(total_l / n_pixels);
         c_means[i] = (double)(float)(total_c / n_pixels);
         s_means[i] = (double)(float)(total_s / n_pixels);
@@ -652,26 +681,26 @@ static int ms_ssim_free_intermediates(VmafCudaState *cu_state, MsSsimStateCuda *
     return rc;
 }
 
-static int ms_ssim_free_partials(VmafCudaState *cu_state, MsSsimStateCuda *s)
+static int ms_ssim_free_terms(VmafCudaState *cu_state, MsSsimStateCuda *s)
 {
     int rc = 0;
     for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        int e = ms_ssim_free_device_buffer(cu_state, &s->l_partials[i]);
+        int e = ms_ssim_free_device_buffer(cu_state, &s->l_terms[i]);
         if (e && !rc)
             rc = e;
-        e = ms_ssim_free_device_buffer(cu_state, &s->c_partials[i]);
+        e = ms_ssim_free_device_buffer(cu_state, &s->c_terms[i]);
         if (e && !rc)
             rc = e;
-        e = ms_ssim_free_device_buffer(cu_state, &s->s_partials[i]);
+        e = ms_ssim_free_device_buffer(cu_state, &s->s_terms[i]);
         if (e && !rc)
             rc = e;
-        e = ms_ssim_free_host_buffer(cu_state, (void **)&s->h_l_partials[i]);
+        e = ms_ssim_free_host_buffer(cu_state, (void **)&s->h_l_terms[i]);
         if (e && !rc)
             rc = e;
-        e = ms_ssim_free_host_buffer(cu_state, (void **)&s->h_c_partials[i]);
+        e = ms_ssim_free_host_buffer(cu_state, (void **)&s->h_c_terms[i]);
         if (e && !rc)
             rc = e;
-        e = ms_ssim_free_host_buffer(cu_state, (void **)&s->h_s_partials[i]);
+        e = ms_ssim_free_host_buffer(cu_state, (void **)&s->h_s_terms[i]);
         if (e && !rc)
             rc = e;
     }
@@ -700,7 +729,7 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
     e = ms_ssim_free_host_buffer(fex->cu_state, (void **)&s->h_cmp);
     if (e && !ret)
         ret = e;
-    e = ms_ssim_free_partials(fex->cu_state, s);
+    e = ms_ssim_free_terms(fex->cu_state, s);
     if (e && !ret)
         ret = e;
     e = vmaf_dictionary_free(&s->feature_name_dict);
@@ -714,6 +743,7 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
 
 static const char *provided_features[] = {"float_ms_ssim", NULL};
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as `extern VmafFeatureExtractor vmaf_fex_float_ms_ssim_cuda` by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_ms_ssim_cuda = {
     .name = "float_ms_ssim_cuda",
     .init = init_fex_cuda,

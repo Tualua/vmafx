@@ -361,7 +361,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 738,
+  "total_warnings": 734,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -389,7 +389,6 @@
     "core/src/feature/common/blur_array.c": 6,
     "core/src/feature/common/convolution_internal.h": 8,
     "core/src/feature/cuda/integer_cambi_cuda.c": 1,
-    "core/src/feature/cuda/integer_ms_ssim_cuda.c": 4,
     "core/src/feature/feature_characteristics.h": 3,
     "core/src/feature/feature_collector.cpp": 16,
     "core/src/feature/feature_collector.h": 4,
@@ -1128,6 +1127,21 @@
         }
       },
       "previous_baseline_sha256": "fe25b5e374b3143583d024210d24fac7aefcd30c4225fe3748493b3ca9371d43"
+    },
+    {
+      "sources": [
+        "core/src/feature/cuda/integer_ms_ssim_cuda.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/cuda/integer_ms_ssim_cuda.c": {
+          "warnings": [
+            4,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "18f51ecf859f8d86dfbd8b78ad7872b103cee813c1f61fcbde212907d4df4519"
     }
   ]
 }

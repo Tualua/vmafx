@@ -58121,6 +58121,34 @@ part).
   0: the twin equals an icx CPU and differs from a glibc CPU.
 - No library code, score, Netflix golden-data, public API or FFmpeg patch
   impact.
+## ADR-1465 — `float_ms_ssim_cuda` adds the terms of every scale in the CPU's raster order (2026-10-02)
+
+`fix/cuda-float-ms-ssim-raster-order-sum`, `T-CUDA-FLOAT-MS-SSIM-FRAME-SUM-ORDER-2026-10-02`.
+
+- `core/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu`:
+  `ms_ssim_vert_lcs` keeps its name and parameter list and stores terms
+  instead of reducing them: `l` and `c` as doubles, `s` as a float, at
+  `y * w_final + x`. The shuffle loop and the shared warp arrays are gone:
+  do not take them back from an older branch, per-block sums are the defect.
+- `core/src/feature/cuda/integer_ms_ssim_cuda.c`: the per-scale buffers are
+  term planes (`l_terms`, `c_terms`, `s_terms` and their pinned host copies,
+  `scale_window_count`) where they were block partials;
+  `ms_ssim_scale_sums()` is the only place terms are added.
+- When `iqa/ssim_tools.c::iqa_ssim()` or its accumulate functions change the
+  order or the number of their sums, change these two files in the same PR.
+- `core/test/float_ms_ssim_order_frame.h` is added byte-identically by the
+  HIP, CUDA and SYCL lanes. A rebase that sees it added twice keeps one copy
+  and never merges edits into it;
+  `test_cuda_float_ms_ssim_exact_contract.py` holds its sha256. The second
+  frame of `test_cuda_float_ms_ssim_order.c` is rebuilt from a formula in
+  that file.
+- `core/test/meson.build`: `test_cuda_float_ms_ssim_order` (device) and
+  `test_cuda_float_ms_ssim_exact_contract` (device-free), one block after
+  `test_cuda_float_ms_ssim_parity`.
+- `scripts/ci/exact_twins.d/float_ms_ssim.cuda`, `float_ms_ssim_lcs.cuda`:
+  `adr:` names ADR-1465 in place of ADR-1457.
+- No Netflix golden-data, public API or FFmpeg patch impact. Stored
+  `float_ms_ssim_cuda` scores can move in their last digits on rare frames.
 
 ## ADR-1460 — `speed_temporal` is a parity-gate feature; registry coverage test (2026-10-02)
 

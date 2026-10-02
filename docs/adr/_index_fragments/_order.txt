@@ -1167,3 +1167,4 @@
 1468-sycl-sub-group-sizes-every-aot-target
 1461-strict-fp-every-translation-unit
 1463-sycl-float-ssim-raster-sum
+1465-cuda-float-ms-ssim-raster-order-sum

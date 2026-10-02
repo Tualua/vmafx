@@ -1147,7 +1147,11 @@ backend was removed in ADR-0726.)
 bit-identical to it at `--precision max`, per-scale `enable_lcs` outputs
 included, on the Netflix pair, the 1080p checkerboard pairs and BBB
 3840x2160 on an RTX 4090
-([ADR-1403](../adr/1403-cuda-strict-fp-every-kernel.md)). The HIP twin
+([ADR-1403](../adr/1403-cuda-strict-fp-every-kernel.md)). It adds the
+per-window terms of every scale in the CPU's order on the host, so the
+per-scale means are the CPU's on every measured input, at about 2.1 ns per
+scored window
+([ADR-1465](../adr/1465-cuda-float-ms-ssim-raster-order-sum.md)). The HIP twin
 (`integer_ms_ssim_hip`) carries the same arithmetic and is bit-identical on
 the same fixtures and the 10-bit Netflix pair on a gfx1036
 ([HIP backend](../backends/hip/overview.md#integer_ms_ssim_hip)).

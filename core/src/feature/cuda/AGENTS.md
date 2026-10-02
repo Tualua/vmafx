@@ -170,11 +170,26 @@ HIP / Metal motion twins listed in Twin-update table below — same PR.
   fp32 denominators, fp32 quotient for `s`, root = `__fsqrt_rn()` (clang
   CUDA turns `sqrtf()` into `sqrt.approx`); (4) host constants fp32
   (`C1`, `C2`, `C3 = C2 / 2.0f`); (5) host rounds each per-scale mean to
-  fp32 before `pow()`, with `fabs()` on all three as `ms_ssim.c`. Sum order
-  of fp64 `l` / `c` / `s` partials differs from CPU raster order; fp32 mean
-  rounding absorbs it. Guards: `test_cuda_kernel_source_contract.py` (six
-  planted regressions), `test_cuda_float_ms_ssim_parity` (`==` on 16 outputs
-  x 3 frames; fails on pre-ADR-1403 code). SYCL / HIP / Metal twins still
+  fp32 before `pow()`, with `fabs()` on all three as `ms_ssim.c`. Guards:
+  `test_cuda_kernel_source_contract.py` (six planted regressions),
+  `test_cuda_float_ms_ssim_parity` (`==` on 16 outputs x 3 frames; fails on
+  pre-ADR-1403 code).
+  **Sums = CPU raster order, on host (ADR-1465).** `iqa_ssim()` = ONE double
+  per sum (`l_sum`, `c_sum`, `s_sum`), per scale, every window left to right,
+  top to bottom. `ms_ssim_vert_lcs` REDUCES NOTHING: stores `l`, `c`
+  (double) and `s` (float, it is one) at `y * w_final + x` of three planes
+  per scale; host `ms_ssim_scale_sums()` adds in index order, the ONLY place
+  terms are added. NEVER bring back `__shfl` / `__shared__ double` / block
+  partials: per-block sums = neighbouring float on
+  `core/test/float_ms_ssim_order_frame.h` (shared with HIP + SYCL tests:
+  `float_ms_ssim_c_scale1` CPU `0x3f7c49a0`, block sum `0x3f7c499f`) and on
+  the formula frame in `test_cuda_float_ms_ssim_order.c`
+  (`float_ms_ssim_l_scale0` CPU `0x3f7cd999`, block sum `0x3f7cd998`); 4 such
+  frames in 8.32e6 noise frames on CUDA.
+  Tests: `test_cuda_float_ms_ssim_order` (device),
+  `test_cuda_float_ms_ssim_exact_contract.py` (device-free). Cost: 20 B per
+  window read back, about 2.1 ns per window, 2.5x to 3.3x the frame time;
+  tuning = `T-CUDA-FLOAT-MS-SSIM-EXACT-THROUGHPUT-2026-10-02`. SYCL / HIP / Metal twins still
   old arithmetic: `T-GPU-FLOAT-MS-SSIM-CPU-ARITHMETIC-2026-10-01`.
 - **`integer_ms_ssim_cuda.c` honours `enable_lcs`, `enable_db`,
   `clip_db` GPU contracts** (ADR-0243, ADR-0460). Emits 15 extra

@@ -261,6 +261,18 @@ linked AGENTS.md before resolving conflicts.
   SIMD-32 kernels keep `VmafSyclKernelShape<32, 256>`. See
   [core/src/sycl/AGENTS.md](../../core/src/sycl/AGENTS.md) and
   [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
+- **`float_ms_ssim_cuda` per-scale sums are the CPU's, in the CPU's order ([ADR-1465](../adr/1465-cuda-float-ms-ssim-raster-order-sum.md))**:
+  `ms_ssim_vert_lcs` in `core/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu`
+  stores every window's `l`, `c` and `s` at its raster position and
+  `integer_ms_ssim_cuda.c::ms_ssim_scale_sums()` adds the three planes of a
+  scale in index order, as `iqa/ssim_tools.c::iqa_ssim()` adds them. A sync
+  must not bring back a device reduction of the terms: on the frame of
+  `core/test/float_ms_ssim_order_frame.h` per-block sums return the
+  neighbouring `float` for `float_ms_ssim_c_scale1`. That header is shared
+  with the HIP and SYCL twin tests and its bytes are fixed. Preserve the
+  kernel, the host loop,
+  `core/test/test_cuda_float_ms_ssim_order.c` and
+  `core/test/test_cuda_float_ms_ssim_exact_contract.py` together.
 - **CUDA device FP policy ([ADR-1403](../adr/1403-cuda-strict-fp-every-kernel.md))**:
   every CUDA fatbin takes `cuda_device_strict_fp_args` (`--fmad=false` under
   nvcc, `-ffp-contract=off` under clang CUDA), defined once between the

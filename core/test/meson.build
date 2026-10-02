@@ -3558,6 +3558,35 @@ test('test_cuda_float_ms_ssim_parity', test_cuda_float_ms_ssim_parity,
     suite : ['fast', 'gpu'],
     is_parallel : false)
 
+# T-CUDA-FLOAT-MS-SSIM-FRAME-SUM-ORDER-2026-10-02 — float_ms_ssim_cuda adds the
+# l, c and s terms of every scale in iqa_ssim()'s raster order (ADR-1465).
+# Scores the frame pair of float_ms_ssim_order_frame.h (shared with the HIP and
+# SYCL twin tests), on which per-block sums of the same terms round
+# float_ms_ssim_c_scale1 to the neighbouring float, and a second pair it
+# rebuilds from a formula (float_ms_ssim_l_scale0), and compares all sixteen
+# outputs with the CPU extractor's and the recorded CPU bits. GPU-gated: exits
+# 77 when no CUDA device is visible.
+test_cuda_float_ms_ssim_order = executable('test_cuda_float_ms_ssim_order',
+    ['test.c', 'test_cuda_float_ms_ssim_order.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_float_ms_ssim_order', test_cuda_float_ms_ssim_order,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
+
+# The same contract without a device: ms_ssim_vert_lcs stores every window's
+# terms at its raster position and the host adds each scale's three sums in
+# index order.
+test('test_cuda_float_ms_ssim_exact_contract',
+    import('python').find_installation(),
+    args : files('test_cuda_float_ms_ssim_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-1453 — float_moment_cuda returns the CPU's four moments bit for bit
 # (first added as a places=4 test at 8 and 10 bpc, ADR-0947 / ADR-1212). One
 # binary runs noise at 8, 10, 12 and 16 bits and a bright 16-bit 1920x1080

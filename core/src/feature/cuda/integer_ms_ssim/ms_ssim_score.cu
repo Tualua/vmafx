@@ -21,13 +21,15 @@
  *       decimate kernel are already float.
  *
  *    3. ms_ssim_vert_lcs — vertical 11-tap on intermediates +
- *       per-pixel l/c/s formulas + per-block float partials × 3
- *       (l, c, s). Mirrors ms_ssim.comp's vertical-with-lcs pass
- *       including the σ² ≥ 0 clamp before sqrt.
+ *       per-window l/c/s formulas, each term stored at the window's
+ *       raster position (l and c as doubles, s as the float it is).
+ *       Includes the σ² ≥ 0 clamp before sqrt.
  *
- *  Host accumulates partials in `double` per scale, applies the
- *  Wang weights for the final product combine. See
- *  integer_ms_ssim_cuda.c.
+ *  Nothing is reduced on the device. iqa_ssim() adds every window's l, c
+ *  and s into one double each, left to right and top to bottom, and a sum of
+ *  doubles is its order: the host reads the three planes of a scale back and
+ *  adds them in index order (integer_ms_ssim_cuda.c::ms_ssim_scale_sums(),
+ *  ADR-1465), then applies the Wang weights for the final product combine.
  *
  *  Numerical contract (ADR-1403). Each kernel reproduces its CPU reference
  *  operation for operation and type for type, and the fatbin builds with
@@ -40,13 +42,14 @@
  *    - l / c / s: ssim_variance_scalar() and
  *      ssim_accumulate_default_scalar() (iqa/ssim_tools.c), with their mixed
  *      fp32 / fp64 operands, and the square root as __fsqrt_rn().
- *  What is left differs from the CPU only below the last bit of an fp32
- *  per-scale mean: the order of the fp64 l / c / s sums (blocks here, raster
- *  order there) and the 48-bit window sums. The host rounds each mean to
- *  fp32 as iqa_ssim() does, which absorbs it. Measured on an RTX 4090: every
- *  frame of the Netflix 576x324 pair, both 1080p checkerboard pairs and BBB
- *  3840x2160 is bit-identical to the CPU extractor, built with nvcc and with
- *  clang's CUDA driver alike.
+ *    - frame sums: the terms are stored, not reduced, and the host adds
+ *      them in iqa_ssim()'s raster order (ADR-1465). A per-block sum of the
+ *      same terms rounded a per-scale mean to the neighbouring float on rare
+ *      frames (T-CUDA-FLOAT-MS-SSIM-FRAME-SUM-ORDER-2026-10-02).
+ *  What is left of ADR-1403's caveat is the 48-bit window sums. Measured on
+ *  an RTX 4090: every frame of the Netflix 576x324 pair, both 1080p
+ *  checkerboard pairs and BBB 3840x2160 is bit-identical to the CPU
+ *  extractor, built with nvcc and with clang's CUDA driver alike.
  */
 
 #include "cuda_helper.cuh"
@@ -279,23 +282,25 @@ __device__ static __forceinline__ MsLcs ms_lcs_terms(const MsStats &st, float C1
     return out;
 }
 
-/* Vertical pass + per-pixel l/c/s + per-block 3-output partial sums.
+/* Vertical pass + per-window l / c / s, stored at the window's raster index.
  *
  * ms_vertical_stats() and ms_lcs_terms() hold the reference's arithmetic.
- * The warp and block reductions run in double like the CPU's l / c / s sums;
- * their order is the one thing that differs from the reference. c1..c3
- * arrive as doubles holding the reference's fp32 constants exactly.
- * CUDA supports double __shfl_down_sync on sm_30+; all VMAF-supported
- * devices are sm_52+. */
+ * `l_terms` and `c_terms` hold w_final * h_final doubles, `s_terms` as many
+ * floats: s is an fp32 quotient the reference widens when it adds it, and the
+ * host widens it the same way. Nothing is reduced here; the host adds each
+ * plane in index order, which is iqa_ssim()'s. c1..c3 arrive as doubles
+ * holding the reference's fp32 constants exactly. */
 __global__ void ms_ssim_vert_lcs(VmafCudaBuffer h_ref_mu_buf, VmafCudaBuffer h_cmp_mu_buf,
                                  VmafCudaBuffer h_ref_sq_buf, VmafCudaBuffer h_cmp_sq_buf,
-                                 VmafCudaBuffer h_refcmp_buf, VmafCudaBuffer l_partials,
-                                 VmafCudaBuffer c_partials, VmafCudaBuffer s_partials,
-                                 unsigned w_horiz, unsigned w_final, unsigned h_final, double c1,
-                                 double c2, double c3)
+                                 VmafCudaBuffer h_refcmp_buf, VmafCudaBuffer l_terms,
+                                 VmafCudaBuffer c_terms, VmafCudaBuffer s_terms, unsigned w_horiz,
+                                 unsigned w_final, unsigned h_final, double c1, double c2,
+                                 double c3)
 {
     const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= w_final || y >= h_final)
+        return;
     const MsHorizPlanes planes = {
         reinterpret_cast<const float *>(h_ref_mu_buf.data),
         reinterpret_cast<const float *>(h_cmp_mu_buf.data),
@@ -303,48 +308,13 @@ __global__ void ms_ssim_vert_lcs(VmafCudaBuffer h_ref_mu_buf, VmafCudaBuffer h_c
         reinterpret_cast<const float *>(h_cmp_sq_buf.data),
         reinterpret_cast<const float *>(h_refcmp_buf.data),
     };
-
-    double my_l = 0.0, my_c = 0.0, my_s = 0.0;
-    if (x < w_final && y < h_final) {
-        const MsStats stats = ms_vertical_stats(planes, y * w_horiz + x, w_horiz);
-        const MsLcs terms = ms_lcs_terms(stats, (float)c1, (float)c2, (float)c3);
-        my_l = terms.l;
-        my_c = terms.c;
-        my_s = terms.s;
-    }
-
-    /* 3 parallel per-block tree reductions in shared memory.
-     * Shared arrays hold double so warp-reduction precision is preserved. */
-    __shared__ double s_l_warp[BLOCK_SIZE / 32];
-    __shared__ double s_c_warp[BLOCK_SIZE / 32];
-    __shared__ double s_s_warp[BLOCK_SIZE / 32];
-    double wl = my_l, wc = my_c, ws = my_s;
-    for (int off = 16; off > 0; off >>= 1) {
-        wl += __shfl_down_sync(0xffffffff, wl, (unsigned)off);
-        wc += __shfl_down_sync(0xffffffff, wc, (unsigned)off);
-        ws += __shfl_down_sync(0xffffffff, ws, (unsigned)off);
-    }
-    const int tid = threadIdx.y * blockDim.x + threadIdx.x;
-    const int lane = tid % 32;
-    const int warp_id = tid / 32;
-    if (lane == 0) {
-        s_l_warp[warp_id] = wl;
-        s_c_warp[warp_id] = wc;
-        s_s_warp[warp_id] = ws;
-    }
-    __syncthreads();
-    if (tid == 0) {
-        double bl = 0.0, bc = 0.0, bs = 0.0;
-        for (int i = 0; i < BLOCK_SIZE / 32; i++) {
-            bl += s_l_warp[i];
-            bc += s_c_warp[i];
-            bs += s_s_warp[i];
-        }
-        const unsigned block_idx = blockIdx.y * gridDim.x + blockIdx.x;
-        reinterpret_cast<double *>(l_partials.data)[block_idx] = bl;
-        reinterpret_cast<double *>(c_partials.data)[block_idx] = bc;
-        reinterpret_cast<double *>(s_partials.data)[block_idx] = bs;
-    }
+    const MsStats stats = ms_vertical_stats(planes, y * w_horiz + x, w_horiz);
+    const MsLcs terms = ms_lcs_terms(stats, (float)c1, (float)c2, (float)c3);
+    const size_t window = (size_t)y * w_final + x;
+    reinterpret_cast<double *>(l_terms.data)[window] = terms.l;
+    reinterpret_cast<double *>(c_terms.data)[window] = terms.c;
+    /* Exact: terms.s is the fp32 quotient, widened. */
+    reinterpret_cast<float *>(s_terms.data)[window] = (float)terms.s;
 }
 
 } /* extern "C" */

@@ -262,7 +262,11 @@ Netflix 576x324 pair, both 1080p checkerboard pairs and BBB 3840x2160:
 flag, its kernels now follow `ms_ssim_decimate.c`, `iqa_convolve()` and
 `ssim_accumulate_default_scalar()` operation for operation, and the host
 rounds each per-scale mean to fp32 as the CPU does. Its `enable_lcs`
-outputs, which were up to 1.3e-6 from the CPU, are identical too.
+outputs, which were up to 1.3e-6 from the CPU, are identical too. Since
+[ADR-1465](../../adr/1465-cuda-float-ms-ssim-raster-order-sum.md) the host
+also adds the per-window terms of every scale in the CPU's order, which is
+what makes that hold on every input; see
+"`float_ms_ssim` adds its sums in the CPU's order" below.
 
 `float_motion_cuda` is bit-identical since
 [ADR-1409](../../adr/1409-float-motion-twins-cpu-float-sum.md). The CPU
@@ -1071,6 +1075,47 @@ python3 scripts/ci/cross_backend_parity_gate.py --vmaf-binary build-cuda/tools/v
     --reference python/test/resource/yuv/src01_hrc00_576x324.yuv \
     --distorted python/test/resource/yuv/src01_hrc01_576x324.yuv \
     --width 576 --height 324 --backends cpu cuda --features vif
+```
+
+## `float_ms_ssim` adds its sums in the CPU's order (ADR-1465, 2026-10-02)
+
+CPU `float_ms_ssim` scores five scales. On each it adds the luminance,
+contrast and structure value of every window into three double-precision
+sums, left to right and top to bottom, and takes each mean as a `float`.
+`float_ms_ssim_cuda` computed the same values and added them in blocks. A
+sum of floating-point numbers depends on its order in its last bits, and on
+rare frames that rounds a mean to the next `float`: four of 8.3 million noise
+frames, one of them changing the score in its tenth digit
+(0.06886243290982871 on the CPU, 0.0688624330951202 on the twin).
+
+The twin now adds in the CPU's order
+([ADR-1465](../../adr/1465-cuda-float-ms-ssim-raster-order-sum.md)): the
+device stores the three values of every window of every scale, the host
+reads them back and adds them one after the other.
+
+What changes for you:
+
+- **Scores.** `float_ms_ssim` and the fifteen `enable_lcs` outputs equal
+  `--backend cpu` on every measured input, those frames included. On content
+  you have measured before nothing moves unless one of your frames is such a
+  rare case; then the last digits move to the CPU's.
+- **Time.** About 2.1 ns per scored window, on every frame:
+
+  | Input | Before | After |
+  |---|---:|---:|
+  | 576x324 | 0.33 ms | 0.81 ms |
+  | 1920x1080 | 2.70 ms | 8.80 ms |
+  | 3840x2160 | 10.92 ms | 33.71 ms |
+
+  Per frame through the `vmaf` tool on an RTX 4090, medians of 11
+  alternating pairs. `enable_lcs` costs nothing extra.
+- **Memory.** 20 bytes per window on the device and as pinned host memory:
+  54 MB at 1920x1080, 219 MB at 3840x2160.
+
+Check a build with the frame the fix was written for:
+
+```shell
+build/test/test_cuda_float_ms_ssim_order
 ```
 
 ## Exact twins declared as a group (2026-10-02)

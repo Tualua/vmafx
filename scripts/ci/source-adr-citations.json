@@ -1807,6 +1807,7 @@
         "core/src/feature/cuda/integer_moment_cuda.c": 1,
         "core/src/feature/cuda/integer_motion_cuda.c": 1,
         "core/src/feature/cuda/integer_motion_v2_cuda.c": 1,
+        "core/src/feature/cuda/integer_ms_ssim_cuda.c": 1,
         "core/src/feature/cuda/integer_psnr_cuda.c": 1,
         "core/src/feature/cuda/integer_psnr_hvs_cuda.c": 1,
         "core/src/feature/cuda/integer_ssim_cuda.c": 1,
@@ -5438,7 +5439,7 @@
     "0990": {
       "sites": {
         "core/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu": 1,
-        "core/src/feature/cuda/integer_ms_ssim_cuda.c": 3,
+        "core/src/feature/cuda/integer_ms_ssim_cuda.c": 1,
         "core/src/feature/hip/integer_ms_ssim_hip.c": 1
       },
       "target": "0990-cuda-ms-ssim-double-precision-lcs.md"
@@ -6228,6 +6229,7 @@
         "core/test/test_cuda_float_adm_parity.c": 1,
         "core/test/test_cuda_float_moment_parity.c": 1,
         "core/test/test_cuda_float_motion_parity.c": 1,
+        "core/test/test_cuda_float_ms_ssim_order.c": 1,
         "core/test/test_cuda_float_ms_ssim_parity.c": 1,
         "core/test/test_cuda_float_psnr_parity.c": 1,
         "core/test/test_cuda_float_ssim_decimate.c": 1,
@@ -7038,6 +7040,7 @@
         "core/src/feature/cuda/integer_cambi_cuda.h": 1,
         "core/src/feature/cuda/integer_motion_sad_cuda.c": 1,
         "core/src/feature/cuda/integer_motion_v2/motion_v2_score.cu": 1,
+        "core/src/feature/cuda/integer_ms_ssim_cuda.c": 1,
         "core/src/feature/cuda/integer_psnr/psnr_score.cu": 1,
         "core/src/feature/cuda/integer_ssim_cuda.c": 3,
         "core/src/feature/cuda/speed/speed_cuda_params.h": 1,
@@ -8581,8 +8584,8 @@
         "core/src/feature/cuda/float_vif/float_vif_device.h": 1,
         "core/src/feature/cuda/float_vif/float_vif_score.cu": 1,
         "core/src/feature/cuda/integer_ciede/ciede_device.h": 1,
-        "core/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu": 4,
-        "core/src/feature/cuda/integer_ms_ssim_cuda.c": 2,
+        "core/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu": 5,
+        "core/src/feature/cuda/integer_ms_ssim_cuda.c": 1,
         "core/src/feature/hip/integer_ms_ssim/ms_ssim_arith.h": 1,
         "core/src/feature/hip/integer_ms_ssim/ms_ssim_score.hip": 2,
         "core/src/feature/hip/integer_ms_ssim_hip.c": 3,
@@ -8592,6 +8595,7 @@
         "core/test/test_cuda_device_resident_contract.py": 1,
         "core/test/test_cuda_exact_twins.c": 1,
         "core/test/test_cuda_float_motion_parity.c": 1,
+        "core/test/test_cuda_float_ms_ssim_exact_contract.py": 1,
         "core/test/test_cuda_float_ms_ssim_parity.c": 2,
         "core/test/test_cuda_kernel_source_contract.py": 5,
         "core/test/test_hip_exact_twins.c": 1,
@@ -9344,6 +9348,15 @@
         "core/test/test_sycl_ssim_exact_contract.py": 1
       },
       "target": "1463-sycl-float-ssim-raster-sum.md"
+    },
+    "1465": {
+      "sites": {
+        "core/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu": 2,
+        "core/src/feature/cuda/integer_ms_ssim_cuda.c": 2,
+        "core/test/meson.build": 1,
+        "core/test/test_cuda_float_ms_ssim_exact_contract.py": 1
+      },
+      "target": "1465-cuda-float-ms-ssim-raster-order-sum.md"
     },
     "1468": {
       "sites": {
