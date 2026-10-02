@@ -353,7 +353,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 837,
+  "total_warnings": 835,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -417,7 +417,6 @@
     "core/src/framesync.h": 1,
     "core/src/gpu_picture_pool.cpp": 1,
     "core/src/gpu_picture_pool.h": 2,
-    "core/src/hip/stubs.c": 2,
     "core/src/interop/pelorus_deband_params.c": 1,
     "core/src/interop/pelorus_denoise_params.c": 1,
     "core/src/interop/pelorus_interop.c": 10,
@@ -586,6 +585,21 @@
         }
       },
       "previous_baseline_sha256": "b64184cd887eb1b2973adce5fafc433c71ec18fc5e56d893a2089b1caa7b4f69"
+    },
+    {
+      "sources": [
+        "core/src/hip/stubs.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/hip/stubs.c": {
+          "warnings": [
+            2,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "b53049b1b830a57262ad97462686f96ea83dbeabf1b0d85b63e75717406b8579"
     }
   ]
 }

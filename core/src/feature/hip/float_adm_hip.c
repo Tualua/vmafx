@@ -637,9 +637,9 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     (void)ref_pic_90;
     (void)dist_pic_90;
     (void)index;
-    FloatAdmStateHip *s = fex->priv;
 
 #ifdef HAVE_HIPCC
+    FloatAdmStateHip *s = fex->priv;
     const uintptr_t pic_stream_handle = 0;
 
     /* The packed luma planes on the device. Returns once both pictures are
@@ -657,6 +657,7 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
 
     return fadm_hip_launch(s, pic_stream_handle);
 #else
+    (void)fex;
     (void)dist_pic;
     (void)ref_pic;
     return -ENOSYS;

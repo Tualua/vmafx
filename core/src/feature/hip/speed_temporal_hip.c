@@ -231,11 +231,12 @@ static void st_tally_frame(SpeedTemporalHipState *s, const SpeedGpuFrameResult *
     for (uint32_t ch = 0u; ch < ST_CHANNELS; ch++) {
         speed_internal_tally_solve(&s->singular_tally, result->singular[ch] != 0,
                                    "speed_temporal_hip");
-        if (result->iteration_cap[ch] != 0)
+        if (result->iteration_cap[ch] != 0) {
             vmaf_log(VMAF_LOG_LEVEL_WARNING,
                      "speed_temporal_hip: eigenvalue QR iteration reached cap at frame %u, "
                      "possible non-convergence\n",
                      index);
+        }
     }
 }
 

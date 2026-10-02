@@ -21,6 +21,7 @@
 
 #include "../kernel_lifecycle_common.h"
 #include "common.h"
+#include "hip_handle.h"
 #include "kernel_template.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -163,8 +164,7 @@ int vmaf_hip_kernel_submit_pre_launch(VmafHipKernelLifecycle *lc, VmafHipContext
      * A zero `picture_stream` keeps the documented single-frame convention and
      * falls back to the private stream, which is safe because that consumer
      * launches its kernel there too. */
-    const hipStream_t zero_stream =
-        (picture_stream != 0) ? (hipStream_t)picture_stream : (hipStream_t)lc->str;
+    hipStream_t zero_stream = vmaf_hip_stream_of((picture_stream != 0) ? picture_stream : lc->str);
     hipError_t rc = hipMemsetAsync(rb->device, 0, rb->bytes, zero_stream);
     if (rc != hipSuccess) {
         return vmaf_hip_rc_to_errno(rc);
@@ -175,7 +175,8 @@ int vmaf_hip_kernel_submit_pre_launch(VmafHipKernelLifecycle *lc, VmafHipContext
      * CUDA twin honours the same convention so first-pass / single-
      * frame consumers can pass 0. */
     if (picture_stream != 0 && dist_ready_event != 0) {
-        rc = hipStreamWaitEvent((hipStream_t)picture_stream, (hipEvent_t)dist_ready_event, 0);
+        rc = hipStreamWaitEvent(vmaf_hip_stream_of(picture_stream),
+                                vmaf_hip_event_of(dist_ready_event), 0);
         if (rc != hipSuccess) {
             return vmaf_hip_rc_to_errno(rc);
         }
@@ -193,7 +194,7 @@ int vmaf_hip_kernel_collect_wait(VmafHipKernelLifecycle *lc, VmafHipContext *ctx
         /* Lifecycle was never initialised — nothing to wait on. */
         return 0;
     }
-    return vmaf_hip_rc_to_errno(hipStreamSynchronize((hipStream_t)lc->str));
+    return vmaf_hip_rc_to_errno(hipStreamSynchronize(vmaf_hip_stream_of(lc->str)));
 }
 
 int vmaf_hip_kernel_lifecycle_close(VmafHipKernelLifecycle *lc, VmafHipContext *ctx)
@@ -213,23 +214,23 @@ int vmaf_hip_kernel_lifecycle_close(VmafHipKernelLifecycle *lc, VmafHipContext *
      * failed `_lifecycle_init`). */
     int first_err = 0;
     if (lc->str != 0) {
-        hipError_t rc = hipStreamSynchronize((hipStream_t)lc->str);
+        hipError_t rc = hipStreamSynchronize(vmaf_hip_stream_of(lc->str));
         if (rc != hipSuccess && first_err == 0) {
             first_err = vmaf_hip_rc_to_errno(rc);
         }
-        rc = hipStreamDestroy((hipStream_t)lc->str);
+        rc = hipStreamDestroy(vmaf_hip_stream_of(lc->str));
         if (rc != hipSuccess && first_err == 0) {
             first_err = vmaf_hip_rc_to_errno(rc);
         }
     }
     if (lc->submit != 0) {
-        hipError_t rc = hipEventDestroy((hipEvent_t)lc->submit);
+        hipError_t rc = hipEventDestroy(vmaf_hip_event_of(lc->submit));
         if (rc != hipSuccess && first_err == 0) {
             first_err = vmaf_hip_rc_to_errno(rc);
         }
     }
     if (lc->finished != 0) {
-        hipError_t rc = hipEventDestroy((hipEvent_t)lc->finished);
+        hipError_t rc = hipEventDestroy(vmaf_hip_event_of(lc->finished));
         if (rc != hipSuccess && first_err == 0) {
             first_err = vmaf_hip_rc_to_errno(rc);
         }
@@ -284,7 +285,7 @@ int vmaf_hip_kernel_submit_post_record(VmafHipKernelLifecycle *lc, VmafHipContex
      * calls `hipStreamSynchronize(lc->str)` which waits for this
      * event to complete, ensuring the pinned host buffer is safe to
      * read. Mirrors the CUDA twin's `vmaf_cuda_kernel_submit_post_record`. */
-    hipError_t rc = hipEventRecord((hipEvent_t)lc->finished, (hipStream_t)lc->str);
+    hipError_t rc = hipEventRecord(vmaf_hip_event_of(lc->finished), vmaf_hip_stream_of(lc->str));
     return vmaf_hip_rc_to_errno(rc);
 }
 

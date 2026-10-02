@@ -21,8 +21,10 @@
 
 #include <stddef.h>
 
+/* `(name)[1]` declares the same array as `name[1]`: a declarator may be
+ * parenthesised, and the macro argument then cannot bind to anything else. */
 #define VMAF_HSACO_WEAK_STUB(name)                                                                 \
-    __attribute__((weak)) const unsigned char name[1] = {0};                                       \
+    __attribute__((weak)) const unsigned char(name)[1] = {0};                                      \
     __attribute__((weak)) const unsigned int name##_len = 0u;
 
 /* The integer ADM HIP kernels now build standalone (ADR-0539); the four

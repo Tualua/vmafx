@@ -351,7 +351,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 752,
+  "total_warnings": 733,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -380,9 +380,6 @@
     "core/src/feature/float_ms_ssim.c": 3,
     "core/src/feature/float_ssim.c": 2,
     "core/src/feature/float_vif.c": 8,
-    "core/src/feature/hip/hip_hsaco_stubs.c": 1,
-    "core/src/feature/hip/speed_chroma_hip.c": 1,
-    "core/src/feature/hip/speed_temporal_hip.c": 1,
     "core/src/feature/integer_motion.c": 11,
     "core/src/feature/integer_motion.h": 4,
     "core/src/feature/integer_motion_v2.c": 4,
@@ -417,8 +414,6 @@
     "core/src/framesync.h": 2,
     "core/src/gpu_picture_pool.cpp": 1,
     "core/src/gpu_picture_pool.h": 2,
-    "core/src/hip/common.c": 3,
-    "core/src/hip/kernel_template.c": 13,
     "core/src/interop/pelorus_deband_params.c": 1,
     "core/src/interop/pelorus_denoise_params.c": 1,
     "core/src/interop/pelorus_interop.c": 10,
@@ -841,6 +836,50 @@
         }
       },
       "previous_baseline_sha256": "b5fcad9573d9c9f42e2721a7af5f5d42f1d728c60d26b09f3e9b509d0e34fd41"
+    },
+    {
+      "sources": [
+        "core/src/feature/hip/float_adm_hip.c",
+        "core/src/feature/hip/hip_hsaco_stubs.c",
+        "core/src/feature/hip/speed_chroma_hip.c",
+        "core/src/feature/hip/speed_temporal_hip.c",
+        "core/src/hip/common.c",
+        "core/src/hip/kernel_template.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/hip/hip_hsaco_stubs.c": {
+          "warnings": [
+            1,
+            0
+          ]
+        },
+        "core/src/feature/hip/speed_chroma_hip.c": {
+          "warnings": [
+            1,
+            0
+          ]
+        },
+        "core/src/feature/hip/speed_temporal_hip.c": {
+          "warnings": [
+            1,
+            0
+          ]
+        },
+        "core/src/hip/common.c": {
+          "warnings": [
+            3,
+            0
+          ]
+        },
+        "core/src/hip/kernel_template.c": {
+          "warnings": [
+            13,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "3a2f4c6c1a6ee4e2fcfc16080f5cb230c687a0ebf3cba49c15fe999060de0efe"
     }
   ]
 }

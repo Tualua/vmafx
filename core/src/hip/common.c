@@ -30,6 +30,7 @@
 #include <hip/hip_runtime_api.h>
 
 #include "common.h"
+#include "hip_handle.h"
 #include "log.h"
 
 #include "libvmaf/libvmaf_hip.h"
@@ -75,7 +76,7 @@ void vmaf_hip_context_destroy(VmafHipContext *ctx)
         return;
     }
     if (ctx->stream != 0) {
-        (void)hipStreamDestroy((hipStream_t)ctx->stream);
+        (void)hipStreamDestroy(vmaf_hip_stream_of(ctx->stream));
         ctx->stream = 0;
     }
     free(ctx);
@@ -162,7 +163,7 @@ void vmaf_hip_state_free(VmafHipState **state)
     }
     VmafHipState *s = *state;
     if (s->ctx.stream != 0) {
-        (void)hipStreamDestroy((hipStream_t)s->ctx.stream);
+        (void)hipStreamDestroy(vmaf_hip_stream_of(s->ctx.stream));
         s->ctx.stream = 0;
     }
     free(s);

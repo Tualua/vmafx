@@ -252,11 +252,12 @@ static void sc_tally_frame(SpeedChromaHipState *s, const SpeedGpuFrameResult *re
     for (uint32_t ch = 0u; ch < SC_CHANNELS; ch++) {
         speed_internal_tally_solve(&s->singular_tally, result->singular[ch] != 0,
                                    "speed_chroma_hip");
-        if (result->iteration_cap[ch] != 0)
+        if (result->iteration_cap[ch] != 0) {
             vmaf_log(VMAF_LOG_LEVEL_WARNING,
                      "speed_chroma_hip: eigenvalue QR iteration reached cap at frame %u, "
                      "possible non-convergence\n",
                      index);
+        }
     }
 }
 
@@ -276,12 +277,14 @@ static int sc_emit_scores(const SpeedChromaHipState *s, VmafFeatureCollector *fe
     double clamped_uv = 0.0;
     int err = speed_internal_clamp_score(result->score[0], mxv, index, "speed_chroma_hip",
                                          "speed_chroma_u", &clamped_u);
-    if (!err)
+    if (!err) {
         err = speed_internal_clamp_score(result->score[1], mxv, index, "speed_chroma_hip",
                                          "speed_chroma_v", &clamped_v);
-    if (!err)
+    }
+    if (!err) {
         err = speed_internal_clamp_score(score_uv, mxv, index, "speed_chroma_hip",
                                          "speed_chroma_uv", &clamped_uv);
+    }
     if (err)
         return err;
     err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,

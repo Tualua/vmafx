@@ -31,6 +31,11 @@
 #include "libvmaf/libvmaf_hip.h"
 #include "log.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` and the
+ * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
+
 int vmaf_hip_available(void)
 {
     return 0;
@@ -69,5 +74,7 @@ int vmaf_hip_list_devices(void)
              "vmaf_hip: HIP support disabled; rebuild libvmaf with -Denable_hip=true\n");
     return -ENOSYS;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */
 
 #endif /* !HAVE_HIP */
