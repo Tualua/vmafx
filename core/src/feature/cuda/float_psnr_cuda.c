@@ -5,12 +5,20 @@
  *
  *  float_psnr feature kernel on the CUDA backend (T7-23 / batch 3
  *  part 3b — ADR-0192 / ADR-0195). CUDA twin of float_psnr_vulkan.
+ *
+ *  The kernel adds float_psnr.c's terms, the float squares of the sample
+ *  differences, per 16x16 block as an integer in units of 1 / scaler^2
+ *  (scaler = 2^(bpc - 8)): one uint64 per block. The host adds the blocks and
+ *  concludes as the CPU does (ADR-1455):
+ *        noise = sum / scaler^2 / (w * h)
+ *        score = 10 * log10(peak^2 / max(noise, 1e-10)), clamped.
  */
 
 #include <errno.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 
 #include "common.h"
@@ -34,7 +42,7 @@ typedef struct FloatPsnrStateCuda {
     /* Stream + event pair owned by `cuda/kernel_template.h` lifecycle
      * (ADR-0246). */
     VmafCudaKernelLifecycle lc;
-    /* Per-WG float partials: device + pinned host. Owned by the
+    /* Per-block uint64 partials: device + pinned host. Owned by the
      * template's readback bundle. */
     VmafCudaKernelReadback rb;
 
@@ -48,6 +56,7 @@ typedef struct FloatPsnrStateCuda {
     VmafCudaBuffer *ref_in;
     VmafCudaBuffer *dis_in;
     unsigned wg_count;
+    size_t partials_bytes; /* wg_count uint64 block sums */
 
     unsigned frame_w;
     unsigned frame_h;
@@ -146,6 +155,32 @@ static int float_psnr_peak_for_bpc(FloatPsnrStateCuda *s, unsigned bpc)
     return 0;
 }
 
+/* float_psnr_alloc_frame_buffers - the two staged luma planes, the per-block
+ * readback and the feature-name dictionary of one frame size. Returns the
+ * first error; init_fex_cuda unwinds.
+ */
+static int float_psnr_alloc_frame_buffers(VmafFeatureExtractor *fex, FloatPsnrStateCuda *s)
+{
+    const size_t bpp = (s->bpc <= 8u) ? 1u : 2u;
+    const size_t plane_bytes = (size_t)s->frame_w * s->frame_h * bpp;
+    const unsigned gx = (s->frame_w + FPSNR_BX - 1u) / FPSNR_BX;
+    const unsigned gy = (s->frame_h + FPSNR_BY - 1u) / FPSNR_BY;
+    s->wg_count = gx * gy;
+    s->partials_bytes = (size_t)s->wg_count * sizeof(uint64_t);
+
+    int ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_in, plane_bytes);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->dis_in, plane_bytes);
+    if (!ret)
+        ret = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state, s->partials_bytes);
+    if (ret)
+        return ret;
+
+    s->feature_name_dict =
+        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+    return s->feature_name_dict ? 0 : -ENOMEM;
+}
+
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -177,29 +212,9 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
                     fail);
     CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail);
 
-    const size_t bpp = (bpc <= 8u) ? 1u : 2u;
-    const size_t plane_bytes = (size_t)w * h * bpp;
-    const unsigned gx = (w + FPSNR_BX - 1u) / FPSNR_BX;
-    const unsigned gy = (h + FPSNR_BY - 1u) / FPSNR_BY;
-    s->wg_count = gx * gy;
-    const size_t pbytes = (size_t)s->wg_count * sizeof(float);
-
-    int ret = 0;
-    ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->ref_in, plane_bytes);
-    if (!ret)
-        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->dis_in, plane_bytes);
-    if (ret)
-        return float_psnr_init_unwind(fex, s, ret);
-    ret = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state, pbytes);
-    if (ret)
-        return float_psnr_init_unwind(fex, s, ret);
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        ret = -ENOMEM;
-        return float_psnr_init_unwind(fex, s, ret);
-    }
+    const int alloc_err = float_psnr_alloc_frame_buffers(fex, s);
+    if (alloc_err)
+        return float_psnr_init_unwind(fex, s, alloc_err);
     return 0;
 
 fail:
@@ -219,15 +234,16 @@ static int float_psnr_upload_plane(CudaFunctions *cu_f, CUstream stream, const V
                                    const VmafCudaBuffer *dst, ptrdiff_t plane_pitch,
                                    unsigned height)
 {
-    CUDA_MEMCPY2D cpy = {0};
-    cpy.srcMemoryType = CU_MEMORYTYPE_DEVICE;
-    cpy.srcDevice = (CUdeviceptr)pic->data[0];
-    cpy.srcPitch = pic->stride[0];
-    cpy.dstMemoryType = CU_MEMORYTYPE_DEVICE;
-    cpy.dstDevice = (CUdeviceptr)dst->data;
-    cpy.dstPitch = plane_pitch;
-    cpy.WidthInBytes = plane_pitch;
-    cpy.Height = height;
+    const CUDA_MEMCPY2D cpy = {
+        .srcMemoryType = CU_MEMORYTYPE_DEVICE,
+        .srcDevice = (CUdeviceptr)pic->data[0],
+        .srcPitch = pic->stride[0],
+        .dstMemoryType = CU_MEMORYTYPE_DEVICE,
+        .dstDevice = (CUdeviceptr)dst->data,
+        .dstPitch = plane_pitch,
+        .WidthInBytes = plane_pitch,
+        .Height = height,
+    };
     CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&cpy, stream));
     return 0;
 }
@@ -243,7 +259,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
 
     s->frame_w = ref_pic->w[0];
     s->frame_h = ref_pic->h[0];
-    const ptrdiff_t plane_pitch = (ptrdiff_t)(s->frame_w * (s->bpc <= 8u ? 1u : 2u));
+    const ptrdiff_t plane_pitch = (ptrdiff_t)s->frame_w * (s->bpc <= 8u ? 1 : 2);
 
     CUstream pic_stream = vmaf_cuda_picture_get_stream(ref_pic);
     CHECK_CUDA_RETURN(cu_f,
@@ -259,33 +275,47 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     if (up_err)
         return up_err;
 
-    CHECK_CUDA_RETURN(cu_f, cuMemsetD8Async(s->rb.device->data, 0,
-                                            (size_t)s->wg_count * sizeof(float), pic_stream));
+    CHECK_CUDA_RETURN(cu_f, cuMemsetD8Async(s->rb.device->data, 0, s->partials_bytes, pic_stream));
 
     const unsigned grid_x = (s->frame_w + FPSNR_BX - 1u) / FPSNR_BX;
     const unsigned grid_y = (s->frame_h + FPSNR_BY - 1u) / FPSNR_BY;
 
-    if (s->bpc == 8u) {
-        void *args[] = {
-            &s->ref_in->data,     &s->dis_in->data,    (void *)&plane_pitch, (void *)&plane_pitch,
-            (void *)s->rb.device, (void *)&s->frame_w, (void *)&s->frame_h,
-        };
-        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->funcbpc8, grid_x, grid_y, 1, FPSNR_BX, FPSNR_BY,
-                                               1, 0, pic_stream, args, NULL));
-    } else {
-        void *args[] = {
-            &s->ref_in->data,     &s->dis_in->data,    (void *)&plane_pitch, (void *)&plane_pitch,
-            (void *)s->rb.device, (void *)&s->frame_w, (void *)&s->frame_h,  (void *)&s->bpc,
-        };
-        CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->funcbpc16, grid_x, grid_y, 1, FPSNR_BX, FPSNR_BY,
-                                               1, 0, pic_stream, args, NULL));
-    }
+    /* Both kernels take the same seven arguments (ADR-1215). */
+    void *args[] = {
+        &s->ref_in->data,     &s->dis_in->data,    (void *)&plane_pitch, (void *)&plane_pitch,
+        (void *)s->rb.device, (void *)&s->frame_w, (void *)&s->frame_h,
+    };
+    CUfunction kernel = (s->bpc == 8u) ? s->funcbpc8 : s->funcbpc16;
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(kernel, grid_x, grid_y, 1, FPSNR_BX, FPSNR_BY, 1, 0,
+                                           pic_stream, args, NULL));
 
     CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->lc.submit, pic_stream));
     CHECK_CUDA_RETURN(cu_f, cuStreamWaitEvent(s->lc.str, s->lc.submit, CU_EVENT_WAIT_DEFAULT));
     CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(s->rb.host_pinned, (CUdeviceptr)s->rb.device->data,
-                                              (size_t)s->wg_count * sizeof(float), s->lc.str));
+                                              s->partials_bytes, s->lc.str));
     return vmaf_cuda_kernel_submit_post_record(&s->lc, fex->cu_state);
+}
+
+/* float_psnr_noise - the frame's mean squared difference, as float_psnr.c's.
+ *
+ * The block sums are exact integers of the CPU's own terms in units of
+ * 1 / scaler^2, so their uint64 sum is the exact sum of the terms, which is
+ * what the CPU's running double holds while it is below 2^53 units (ADR-1455).
+ * Dividing by scaler^2, a power of two, and by the pixel count are the CPU's
+ * operations. Past 2^53 units (16 bits only: a mean squared error of
+ * 2^37 / (w * h) on the 8-bit scale, a PSNR below 6 dB at 3840x2160) the CPU
+ * rounds as it adds its rows and the conversion below rounds once;
+ * test_cuda_float_psnr_parity holds the derived bound there.
+ */
+static double float_psnr_noise(const FloatPsnrStateCuda *s)
+{
+    const uint64_t *partials = s->rb.host_pinned;
+    uint64_t total = 0u;
+    for (unsigned i = 0; i < s->wg_count; i++)
+        total += partials[i];
+    const double scaler = (double)(1u << (s->bpc - 8u));
+    const double n_pix = (double)s->frame_w * (double)s->frame_h;
+    return ((double)total / (scaler * scaler)) / n_pix;
 }
 
 static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
@@ -297,12 +327,7 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
     if (sync_err)
         return sync_err;
 
-    const float *partials_host = s->rb.host_pinned;
-    double total = 0.0;
-    for (unsigned i = 0; i < s->wg_count; i++)
-        total += (double)partials_host[i];
-    const double n_pix = (double)s->frame_w * (double)s->frame_h;
-    const double noise = total / n_pix;
+    const double noise = float_psnr_noise(s);
     /* Match CPU float_psnr.c — a zero-noise pair reports psnr_max as the
      * infinity sentinel; the truncation at psnr_max applies only when
      * `uncapped` is false. See ADR-1193 / T-UPSTREAM-1109. */
@@ -351,6 +376,7 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
 
 static const char *provided_features[] = {"float_psnr", NULL};
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as `extern VmafFeatureExtractor vmaf_fex_float_psnr_cuda` by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_psnr_cuda = {
     .name = "float_psnr_cuda",
     .options = options,

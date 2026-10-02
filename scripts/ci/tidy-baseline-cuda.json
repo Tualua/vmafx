@@ -361,7 +361,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 743,
+  "total_warnings": 738,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -388,7 +388,6 @@
     "core/src/feature/cambi_internal.h": 3,
     "core/src/feature/common/blur_array.c": 6,
     "core/src/feature/common/convolution_internal.h": 8,
-    "core/src/feature/cuda/float_psnr_cuda.c": 5,
     "core/src/feature/cuda/integer_cambi_cuda.c": 1,
     "core/src/feature/cuda/integer_ms_ssim_cuda.c": 4,
     "core/src/feature/feature_characteristics.h": 3,
@@ -1114,6 +1113,21 @@
         }
       },
       "previous_baseline_sha256": "c9af66d3f9e28be30af9dc17baeec351e506a7fbe0af284fd58b9aaf6f2a7978"
+    },
+    {
+      "sources": [
+        "core/src/feature/cuda/float_psnr_cuda.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/cuda/float_psnr_cuda.c": {
+          "warnings": [
+            5,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "fe25b5e374b3143583d024210d24fac7aefcd30c4225fe3748493b3ca9371d43"
     }
   ]
 }

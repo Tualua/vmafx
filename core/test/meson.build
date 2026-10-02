@@ -371,6 +371,17 @@ test('test_cuda_float_moment_exact_contract',
     timeout : 30,
 )
 
+# ADR-1455 — float_psnr_cuda adds float_psnr.c's terms, the float squares of
+# the sample differences, as integers: uint64 per warp, per block and on the
+# host, which divides the exact total by scaler^2 and the pixel count.
+# Device-free; the device check is test_cuda_float_psnr_parity.
+test('test_cuda_float_psnr_exact_contract',
+    import('python').find_installation(),
+    args : files('test_cuda_float_psnr_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-1434: float_adm_sycl returns the CPU's scores bit for bit -- the
 # decouple's quotient is the IEEE fp32 one (ADR-1442), the three
 # fp64 expressions of adm_tools.c are evaluated without an fp64 type, the
@@ -3359,16 +3370,27 @@ test('test_cuda_speed_lanczos4_parity', test_cuda_speed_lanczos4_parity,
 # at places=4 / 1e-4 (ADR-0214 cross-backend gate) on a 256x144 YUV420P
 # fixture, 3 frames, score read at index 1.  GPU-gated: skips cleanly
 # when no CUDA device is visible (mirrors test_cuda_motion3_parity).
+#
+# ADR-1455 — float_psnr_cuda returns the CPU's score bit for bit: the kernel
+# forms the CPU's float square of each difference as an integer and the
+# blocks and the host add integers. One binary runs full-range noise at 8,
+# 10, 12 and 16 bits, `uncapped`, a bright 16-bit 1920x1080 pair and
+# identical frames with ==, and a 16-bit 2560x1440 frame whose sum is past
+# 2^53, where the CPU's own sum rounds, against the derived bound
+# (float_psnr_twin_parity.h). The `_large` variant below runs the noise cases
+# at 960x540. The device-free half is test_cuda_float_psnr_exact_contract,
+# registered for every build.
 test_cuda_float_psnr_parity = executable('test_cuda_float_psnr_parity',
     ['test.c', 'test_cuda_float_psnr_parity.c'],
-    include_directories : [libvmaf_inc, test_inc],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, cuda_dependency, math_lib],
     c_args: ['-DHAVE_CUDA=1']
 )
 test('test_cuda_float_psnr_parity', test_cuda_float_psnr_parity,
     suite : ['fast', 'gpu'],
-    is_parallel : false)
+    is_parallel : false,
+    timeout : 120)
 
 test_cuda_float_vif_parity = executable('test_cuda_float_vif_parity',
     ['test.c', 'test_cuda_float_vif_parity.c'],

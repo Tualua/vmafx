@@ -1563,6 +1563,7 @@ nav:
         - "ADR-1451: sycl-exact-twins-declared": adr/1451-sycl-exact-twins-declared.md
         - "ADR-1452: hip-speed-chroma-log2f-bound": adr/1452-hip-speed-chroma-log2f-bound.md
         - "ADR-1453: cuda-float-moment-cpu-float-squares": adr/1453-cuda-float-moment-cpu-float-squares.md
+        - "ADR-1455: cuda-float-psnr-exact-block-sums": adr/1455-cuda-float-psnr-exact-block-sums.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

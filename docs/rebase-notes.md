@@ -57849,5 +57849,24 @@ must keep the fork's side of both:
   stays registered through `cuda_parity_large_fixture_tests`.
 - `core/test/test_cuda_float_moment_exact_contract.py` (new) is device-free.
 - `scripts/ci/exact_twins.d/float_moment.cuda` (new) declares the twin exact
+## ADR-1455 — `float_psnr_cuda` adds its squared differences as integers (2026-10-02)
+
+`fix/cuda-float-psnr-exact-block-sums`, `T-CUDA-FLOAT-PSNR-FP32-BLOCK-SUMS-2026-10-02`.
+
+- `core/src/feature/cuda/float_psnr/float_psnr_score.cu`: `fpsnr_square()`
+  returns the fp32 square of the raw sample difference as
+  `unsigned long long`; `fpsnr_block_sum()` and the per-block partials are
+  64-bit integers; one templated `fpsnr_block<T>()` is the body of both
+  kernels, and the 16bpc kernel no longer takes `bpc`.
+- `core/src/feature/cuda/float_psnr_cuda.c`: the readback is one `uint64` per
+  block (`partials_bytes`), both kernels are launched with the same seven
+  arguments, and `float_psnr_noise()` adds integers and divides the total by
+  scaler^2 and the pixel count. Take kernel and host from the same side of a
+  conflict. If upstream changes how `float_psnr.c` forms or adds its term,
+  change the kernel with it.
+- `core/test/test_cuda_float_psnr_parity.c` is one binary of equality cases
+  over `core/test/float_psnr_twin_parity.h`;
+  `core/test/test_cuda_float_psnr_exact_contract.py` (new) is device-free.
+- `scripts/ci/exact_twins.d/float_psnr.cuda` (new) declares the twin exact
   (ADR-1428).
 - No Netflix golden-data, public API or FFmpeg patch impact.

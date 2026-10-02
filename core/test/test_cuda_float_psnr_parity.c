@@ -6,224 +6,126 @@
  */
 
 /*
- * ADR-0947 — float_psnr CPU vs. CUDA parity test (round 3).
+ * float_psnr CPU vs. CUDA: the twin returns the CPU's score bit for bit
+ * (ADR-1455; first added as a places=4 parity test, ADR-0947).
  *
- * The float-path PSNR extractor is implemented independently in
- * core/src/feature/float_psnr.c (CPU) and
- * core/src/feature/cuda/float_psnr_cuda.c (CUDA).  Both emit the
- * scalar `float_psnr` feature (luma, full-precision float reduction).
- * Before this test no cross-backend assertion gated drift between the
- * two; a SIMD pivot on the CPU side or a kernel-grid change on the
- * CUDA side could silently shift the score without surfacing in any
- * golden gate.
+ * float_psnr is float_psnr.c on the CPU and cuda/float_psnr_cuda.c on CUDA.
+ * The CPU squares each sample difference in float and adds the squares in
+ * double, which is exact; the twin added each 16x16 block in fp32, which is
+ * exact at 8 bits and rounds at 10, 12 and 16 bits once the differences in a
+ * block are large. On full-range noise it was up to 1.2e-7 dB off. The kernel
+ * adds the float squares as integers now, one uint64 per block.
  *
- * This test allocates a 256x144 YUV420P 8-bpc synthetic fixture with
- * deterministic ramp patterns that differ between ref and dist (so the
- * PSNR is non-trivial and finite), feeds 3 frames through each
- * backend, and asserts that the `float_psnr` score at frame index 1
- * matches to within 1e-4 (places=4, ADR-0214 cross-backend gate).
+ * The fixtures, the comparison and the cases are float_psnr_twin_parity.h's.
+ * On the old twin the 8-bit and identical-frame cases pass and the 10-, 12-
+ * and 16-bit cases fail.
  *
- * Skip behaviour: if vmaf_cuda_state_init() fails (no driver / no
- * device) the test emits "[skip: no CUDA device]" and passes.
- * Mirrors test_cuda_motion3_parity.c.
+ * Skip behaviour: exits 77 when there is no CUDA device.
  */
 
-#include <math.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
-
-#include "test.h"
-
-#include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_cuda.h"
-#include "libvmaf/picture.h"
+
+#include "float_psnr_twin_parity.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
- * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
- * documented /std:clatest C23 feature set does not include `nullptr` while the
- * required Windows build compiles this TU with cl.exe, and this test mirrors
- * the C spelling of the surface it exercises. ADR-1138. */
+ * C23, where clang-tidy proposes `nullptr`, but the required MSVC C build does
+ * not provide that keyword. Preserve the portable C spelling. ADR-1138. */
 
-#ifndef FIXTURE_W
-#define FIXTURE_W 256u
-#endif
-#ifndef FIXTURE_H
-#define FIXTURE_H 144u
-#endif
-#define FIXTURE_BPC 8u
-#define NUM_FRAMES 3u
-
-/* ADR-0214 cross-backend tolerance (places=4 → 1e-4). */
-#define PARITY_TOL 1e-4
-
-static int fill_ref(VmafPicture *pic, unsigned frame_idx)
+static int twin_open(void **state)
 {
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
-    if (err)
-        return err;
-
-    uint8_t *y = (uint8_t *)pic->data[0];
-    for (unsigned row = 0; row < pic->h[0]; row++) {
-        for (unsigned col = 0; col < pic->w[0]; col++) {
-            y[row * pic->stride[0] + col] = (uint8_t)((row + col + frame_idx * 5u) & 0xFFu);
-        }
-    }
-    for (unsigned p = 1; p < 3; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
-        for (unsigned row = 0; row < pic->h[p]; row++) {
-            memset(plane + row * pic->stride[p], 128, pic->w[p]);
-        }
-    }
-    return 0;
-}
-
-/* Distorted picture: ref + per-pixel deterministic offset so noise is
- * non-zero and the PSNR is finite (~30-40 dB region). */
-static int fill_dist(VmafPicture *pic, unsigned frame_idx)
-{
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
-    if (err)
-        return err;
-
-    uint8_t *y = (uint8_t *)pic->data[0];
-    for (unsigned row = 0; row < pic->h[0]; row++) {
-        for (unsigned col = 0; col < pic->w[0]; col++) {
-            const unsigned base = (row + col + frame_idx * 5u) & 0xFFu;
-            const unsigned noise = ((row * 3u + col * 2u + frame_idx) % 11u);
-            y[row * pic->stride[0] + col] = (uint8_t)((base + noise) & 0xFFu);
-        }
-    }
-    for (unsigned p = 1; p < 3; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
-        for (unsigned row = 0; row < pic->h[p]; row++) {
-            memset(plane + row * pic->stride[p], 128, pic->w[p]);
-        }
-    }
-    return 0;
-}
-
-static char *feed_psnr_frames(VmafContext *vmaf)
-{
-    for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        VmafPicture ref;
-        VmafPicture dist;
-        int err = fill_ref(&ref, i);
-        mu_assert("fill_ref failed", !err);
-        err = fill_dist(&dist, i);
-        mu_assert("fill_dist failed", !err);
-
-        err = vmaf_read_pictures(vmaf, &ref, &dist, i);
-        mu_assert("vmaf_read_pictures failed", !err);
-    }
-    int err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("vmaf_read_pictures(EOS) failed", !err);
-    return NULL;
-}
-
-static char *run_cpu(double *out_score)
-{
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    int err = vmaf_init(&vmaf, cfg);
-    mu_assert("CPU: vmaf_init failed", !err);
-
-    err = vmaf_use_feature(vmaf, "float_psnr", NULL);
-    mu_assert("CPU: vmaf_use_feature(float_psnr) failed", !err);
-
-    mu_assert_msg(feed_psnr_frames(vmaf));
-
-    err = vmaf_feature_score_at_index(vmaf, "float_psnr", out_score, 1u);
-    mu_assert("CPU: vmaf_feature_score_at_index(float_psnr, idx=1) failed", !err);
-
-    err = vmaf_close(vmaf);
-    mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
-}
-
-static char *setup_cuda_psnr_context(VmafContext **out_vmaf, VmafCudaState **out_cu_state)
-{
-    *out_vmaf = NULL;
-    *out_cu_state = NULL;
-
     VmafCudaState *cu_state = NULL;
-    VmafCudaConfiguration cuda_cfg = {0};
-    int err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
-    if (err != 0 || cu_state == NULL) {
-        (void)fprintf(stderr, "[skip: no CUDA device] ");
-        return NULL;
-    }
-
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("CUDA: vmaf_init failed", !err);
-
-    err = vmaf_cuda_import_state(vmaf, cu_state);
-    mu_assert("CUDA: vmaf_cuda_import_state failed", !err);
-
-    err = vmaf_use_feature(vmaf, "float_psnr_cuda", NULL);
-    mu_assert("CUDA: vmaf_use_feature(float_psnr_cuda) failed", !err);
-
-    *out_vmaf = vmaf;
-    *out_cu_state = cu_state;
-    return NULL;
+    const VmafCudaConfiguration cuda_cfg = {0};
+    const int err = vmaf_cuda_state_init(&cu_state, cuda_cfg);
+    *state = cu_state;
+    return err;
 }
 
-static char *run_cuda(double *out_score)
+static int twin_import(VmafContext *vmaf, void *state)
 {
-    *out_score = NAN;
-
-    VmafContext *vmaf = NULL;
-    VmafCudaState *cu_state = NULL;
-    mu_assert_msg(setup_cuda_psnr_context(&vmaf, &cu_state));
-    if (!vmaf)
-        return NULL;
-
-    mu_assert_msg(feed_psnr_frames(vmaf));
-
-    int err = vmaf_feature_score_at_index(vmaf, "float_psnr", out_score, 1u);
-    mu_assert("CUDA: vmaf_feature_score_at_index(float_psnr, idx=1) failed", !err);
-
-    err = vmaf_close(vmaf);
-    mu_assert("CUDA: vmaf_close failed", !err);
-    err = vmaf_cuda_state_free(cu_state);
-    mu_assert("CUDA: vmaf_cuda_state_free failed", !err);
-    return NULL;
+    return vmaf_cuda_import_state(vmaf, (VmafCudaState *)state);
 }
 
-static char *test_float_psnr_cpu_cuda_parity(void)
+static int twin_close(void *state)
 {
-    double cpu_score = 0.0;
-    double cuda_score = NAN;
+    return vmaf_cuda_state_free((VmafCudaState *)state);
+}
 
-    char *msg = run_cpu(&cpu_score);
-    if (msg)
-        return msg;
-    msg = run_cuda(&cuda_score);
-    if (msg)
-        return msg;
+static const FloatPsnrTwin twin = {
+    .extractor = "float_psnr_cuda",
+    .backend = "CUDA",
+    .open = twin_open,
+    .import = twin_import,
+    .close = twin_close,
+};
 
-    if (isnan(cuda_score))
-        return NULL; /* skip path */
+static char *test_float_psnr_cuda_registered(void)
+{
+    return float_psnr_twin_registered(&twin);
+}
 
-    /* Sanity: PSNR for our fixture should land in 30-50 dB region. */
-    mu_assert("CPU float_psnr score is non-finite", isfinite(cpu_score));
-    mu_assert("CUDA float_psnr score is non-finite", isfinite(cuda_score));
+static char *test_float_psnr_8bit_exact(void)
+{
+    return float_psnr_twin_noise_exact(&twin, 8u, NULL);
+}
 
-    double delta = fabs(cpu_score - cuda_score);
-    if (delta > PARITY_TOL) {
-        (void)fprintf(stderr, "\nfloat_psnr parity FAIL: cpu=%.8f cuda=%.8f delta=%.2e tol=%.2e\n",
-                      cpu_score, cuda_score, delta, PARITY_TOL);
-    }
-    mu_assert("float_psnr CPU vs. CUDA delta exceeds places=4 tolerance (1e-4)",
-              delta <= PARITY_TOL);
+static char *test_float_psnr_10bit_exact(void)
+{
+    return float_psnr_twin_noise_exact(&twin, 10u, NULL);
+}
+
+static char *test_float_psnr_12bit_exact(void)
+{
+    return float_psnr_twin_noise_exact(&twin, 12u, NULL);
+}
+
+static char *test_float_psnr_16bit_exact(void)
+{
+    return float_psnr_twin_noise_exact(&twin, 16u, NULL);
+}
+
+static char *test_float_psnr_10bit_uncapped_exact(void)
+{
+    return float_psnr_twin_noise_exact(&twin, 10u, "uncapped");
+}
+
+static char *test_float_psnr_16bit_bright_exact(void)
+{
+    return float_psnr_twin_bright_1080p_exact(&twin);
+}
+
+static char *test_float_psnr_identical_8bit(void)
+{
+    return float_psnr_twin_identical_exact(&twin, 8u, 60.0);
+}
+
+static char *test_float_psnr_identical_16bit(void)
+{
+    return float_psnr_twin_identical_exact(&twin, 16u, 108.0);
+}
+
+static char *test_float_psnr_16bit_past_2_53_within_bound(void)
+{
+    return float_psnr_twin_past_2_53_within_bound(&twin);
+}
+
+static char *run_noise_cases(void)
+{
+    mu_run_test(test_float_psnr_8bit_exact);
+    mu_run_test(test_float_psnr_10bit_exact);
+    mu_run_test(test_float_psnr_12bit_exact);
+    mu_run_test(test_float_psnr_16bit_exact);
+    mu_run_test(test_float_psnr_10bit_uncapped_exact);
     return NULL;
 }
 
 char *run_tests(void)
 {
-    mu_run_test(test_float_psnr_cpu_cuda_parity);
+    mu_run_test(test_float_psnr_cuda_registered);
+    mu_assert_msg(run_noise_cases());
+    mu_run_test(test_float_psnr_16bit_bright_exact);
+    mu_run_test(test_float_psnr_identical_8bit);
+    mu_run_test(test_float_psnr_identical_16bit);
+    mu_run_test(test_float_psnr_16bit_past_2_53_within_bound);
     return NULL;
 }
 

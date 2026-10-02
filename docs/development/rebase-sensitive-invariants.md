@@ -577,6 +577,17 @@ linked AGENTS.md before resolving conflicts.
   on every output. A rebase that changes one of these twins or its CPU
   extractor keeps them bit-identical; a twin that drifts is fixed, never
   given a tolerance or taken off the list.
+- **`float_psnr_cuda` adds integers ([ADR-1455](../adr/1455-cuda-float-psnr-exact-block-sums.md))**:
+  `core/src/feature/cuda/float_psnr/float_psnr_score.cu` forms the CPU's term
+  (`diff * diff` in `float`, as `float_psnr.c` does) with `__fmul_rn()` as an
+  integer in units of 1 / scaler^2 and reduces `uint64` values per warp and
+  per block; `float_psnr_cuda.c::float_psnr_noise()` adds the blocks in
+  `uint64` and divides the exact total by scaler^2 and the pixel count. An
+  fp32 block sum is exact only up to 24 bits. A change to how `float_psnr.c`
+  forms or adds its terms changes the kernel in the same PR.
+  `core/test/test_cuda_float_psnr_exact_contract.py` guards it without a
+  device, `test_cuda_float_psnr_parity` (`==`) on one.
+
 - **`float_psnr_sycl` adds integers ([ADR-1450](../adr/1450-sycl-float-psnr-exact-block-sums.md))**:
   `core/src/feature/sycl/float_psnr_sycl.cpp` forms the CPU's term
   (`diff * diff` in `float`, as `float_psnr.c` does) as an integer in units of

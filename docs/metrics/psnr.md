@@ -184,6 +184,31 @@ At 16 bits the equality holds up to a mean squared error of
 high-bit-depth content). Past the 16-bit limit above it stays within
 7e-13 dB of the CPU.
 
+So does `float_psnr_cuda` since
+[ADR-1455](../adr/1455-cuda-float-psnr-exact-block-sums.md). Measured on an
+RTX 4090 at `--precision max` against `--backend cpu`, frames identical and
+the largest difference:
+
+| Fixture | Before | Now |
+|---|---|---|
+| Netflix 576x324 at 8 to 16 bits and 4:2:2, both 1080p checkerboards, Sparks 10 bit, BBB 3840x2160, noise at 8 bits | 167 of 167 | 167 of 167 |
+| Full-range noise 576x324 at 10, 12 and 16 bits, 3 frames each | 0 of 9, 2.5e-8 dB | 9 of 9 |
+| Bright 16-bit 1920x1080 (samples 56000 to 64000), 2 frames | 0 of 2, 7.6e-8 dB | 2 of 2 |
+| BBB 1920x1080 widened to 16 bits, 40 frames | 1 of 40, 4.0e-8 dB | 40 of 40 |
+| BBB 3840x2160 widened to 16 bits, 32 frames | 0 of 32, 4.0e-8 dB | 32 of 32 |
+| Noise at 40x40, 56x56 and 64x64, 8 and 10 bits | 10 of 18, 1.2e-7 dB | 18 of 18 |
+
+The same holds with `uncapped=true`. The frame time is unchanged. Per frame
+through the `vmaf` tool, steady state (the time of 52, 40 or 32 frames less
+the time of 4, per added frame), medians of 15 interleaved pairs of runs at a
+load average of 7 to 10:
+
+| Input | Before | After | Paired difference |
+|---|---|---|---|
+| 3840x2160, 8 bit | 1.91 ms | 1.90 ms | -0.15 ms |
+| 1920x1080, 16 bit | 1.02 ms | 0.97 ms | +0.01 ms |
+| 3840x2160, 16 bit | 4.64 ms | 4.37 ms | -0.24 ms |
+
 ## Output
 
 **Metrics** — `psnr_y`, `psnr_cb`, `psnr_cr` (fixed); `float_psnr` (float).
