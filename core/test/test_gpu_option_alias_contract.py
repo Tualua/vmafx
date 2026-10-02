@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: BSD-2-Clause-Patent
+# SPDX-License-Identifier: EUPL-1.2
 """Keep GPU option aliases identical to their CPU reference extractors."""
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Clear
+# SPDX-License-Identifier: EUPL-1.2
 #
 # Isolated deterministic CPU build profile runner and compiler validator
 # for the Netflix golden-data gate (ADR-1317).

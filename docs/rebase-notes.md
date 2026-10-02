@@ -58949,3 +58949,14 @@ Rules a rebase must keep (the test `core/test/test_float_adm_x86.c` fails otherw
 Removed: `float_adm_csf_den_scale_avx2()` / `_avx512()` and `float_adm_sum_cube_avx2()` / `_avx512()` with their declarations, and the helpers only they used (`hadd_pd4()`, `hsum_ps_to_double()`). Do not bring them back from an older branch: they add the cubes in a lane tree in double, the scalar reference adds `float` values in column order, and `compute_adm()` never called a sum of cubes. ADR-0844 described their accumulation; ADR-1473 replaces it for these kernels.
 
 No score, output, public C API, Netflix golden-data or FFmpeg patch impact. `float_adm` is 13 to 24 % faster with AVX2 or AVX-512.
+## Ten fork-authored files retagged EUPL-1.2 (ADR-1250, 2026-10-02)
+
+`chore/relicense-pending-mechanical`, `T-RELICENSE-CHECK-PENDING-2026-10-02`.
+
+- no rebase impact: the ten files exist only in the fork (tests, the
+  `vmaf_close_retry` helper, the golden-build script); one tag line each.
+- `scripts/dev/relicense_fork_files.py --check` still reports 31 entries; do
+  not run `--write` over the tree until the state row's decisions are made
+  (it would put a C comment into the `exact_twins.d/*.hip` fragments, a header
+  into two praetor-managed files, and rewrite a template inside
+  `scripts/sync-pelorus-interop.sh`).

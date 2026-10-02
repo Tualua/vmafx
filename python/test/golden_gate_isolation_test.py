@@ -1,5 +1,5 @@
 # Copyright 2026 Lusoris
-# SPDX-License-Identifier: BSD-3-Clause-Clear
+# SPDX-License-Identifier: EUPL-1.2
 """Tests for Netflix golden gate build-directory and compiler isolation."""
 
 from __future__ import annotations
