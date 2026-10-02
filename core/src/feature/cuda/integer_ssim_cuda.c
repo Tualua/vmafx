@@ -12,13 +12,20 @@
  *  kernel reproduces ssim.c's box low-pass and iqa_decimate() into two fp32
  *  planes; then a horizontal 11-tap separable Gaussian over
  *  ref / cmp / ref² / cmp² / ref·cmp into 5 intermediate float
- *  buffers, then vertical 11-tap + per-pixel SSIM combine +
- *  per-block double partial sums. Host sums the partials, divides
- *  by (W'-10)·(H'-10) of the decimated plane, rounds the mean to fp32 and
- *  emits `float_ssim`. One result read-back per frame, no host pass.
+ *  buffers, then vertical 11-tap + per-window SSIM combine, each term
+ *  stored at its window's raster position. The host reads the term plane
+ *  back, adds it in index order (float_ssim_frame_sum()), divides by
+ *  (W'-10)·(H'-10) of the decimated plane, rounds the mean to fp32 and
+ *  emits `float_ssim`. One result read-back per frame.
  *
- *  Mirrors the psnr_cuda submit/collect scaffolding and the
- *  ciede_cuda per-block-partials precision pattern.
+ *  Frame sum: iqa/ssim_tools.c::iqa_ssim() adds every window's term into
+ *  one double per sum, left to right and top to bottom. A sum of doubles is
+ *  its order, so the device does not reduce the terms: a per-block sum of
+ *  the same terms rounded one frame's mean to the neighbouring float
+ *  (T-GPU-FLOAT-SSIM-FRAME-SUM-ORDER-2026-10-02; the form follows ADR-1424
+ *  for integer_ssim_cuda). core/test/float_ssim_order_frame.h is that frame.
+ *
+ *  Mirrors the psnr_cuda submit/collect scaffolding.
  *
  *  Scale: the CPU's rule, max(1, round(min(w, h) / 256)) unless `scale`
  *  names one. The ADR-1324 context check refuses only what the device
@@ -29,12 +36,13 @@
  *  Options: the CPU float_ssim.c table (ADR-1373, following ADR-1365 for
  *  SYCL). `enable_db` / `clip_db` act on the host through the
  *  nonfinite_score.h emitters the CPU extractor uses; `enable_lcs` selects
- *  the pass-2 kernel that also reduces the per-pixel L, C and S terms.
+ *  the pass-2 kernel that also stores each window's L, C and S terms.
  *
  *  Arithmetic: the kernel computes each pixel's l * c * s with the CPU's
  *  types and rounding points (double numerators over fp32 denominators,
- *  ssim_score.cu::ssim_terms()), the partials are doubles, and the frame
- *  means are rounded to fp32 as iqa_ssim() returns them. That is what makes
+ *  ssim_score.cu::ssim_terms()), the sums are the CPU's doubles in the CPU's
+ *  order, and the frame means are rounded to fp32 as iqa_ssim() returns them.
+ *  That is what makes
  *  `enable_db` agree with the CPU on identical frames: +inf where the CPU's
  *  mean rounds to 1, and the CPU's finite value where it does not (72.247 dB
  *  on identical flat frames).
@@ -79,18 +87,17 @@
  * (ssim_score.cu, Research-2130); past it the CPU's double sum is not exact
  * either. */
 #define SSIM_MAX_EXACT_SCALE 128
+/* Doubles per window in the term plane: the SSIM term alone, or SSIM, L, C
+ * and S under `enable_lcs` (ssim_score.cu::LCS_TERMS). */
+#define FLOAT_SSIM_LCS_SUMS 4u
 
 typedef struct SsimStateCuda {
     /* Stream + event pair owned by `cuda/kernel_template.h` lifecycle
      * (ADR-0246). */
     VmafCudaKernelLifecycle lc;
-    /* Per-block double partials: device + pinned host. Owned by the
-     * template's readback bundle. */
+    /* The term plane: n_sums doubles per window, in raster order, device +
+     * pinned host. Owned by the template's readback bundle. */
     VmafCudaKernelReadback rb;
-
-    /* `enable_lcs` only: per-block L, C and S partials, three rows of
-     * partials_capacity doubles, device + pinned host. */
-    VmafCudaKernelReadback rb_lcs;
 
     CUfunction func_decimate_8;
     CUfunction func_decimate_16;
@@ -130,8 +137,10 @@ typedef struct SsimStateCuda {
     VmafCudaBuffer *h_ref_sq;
     VmafCudaBuffer *h_cmp_sq;
     VmafCudaBuffer *h_refcmp;
-    unsigned partials_capacity;
-    unsigned partials_count;
+    /* Windows of the frame, w_final * h_final, and the sums iqa_ssim() forms
+     * over them: 1, or FLOAT_SSIM_LCS_SUMS under `enable_lcs`. */
+    size_t n_windows;
+    unsigned n_sums;
 
     unsigned width;
     unsigned height;
@@ -275,9 +284,6 @@ static int integer_ssim_init_unwind(VmafFeatureExtractor *fex, SsimStateCuda *s,
     e = vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
     if (e && !rc)
         rc = e;
-    e = vmaf_cuda_kernel_readback_free(&s->rb_lcs, fex->cu_state);
-    if (e && !rc)
-        rc = e;
     e = vmaf_dictionary_free(&s->feature_name_dict);
     if (e && !rc)
         rc = e;
@@ -330,10 +336,15 @@ static void float_ssim_configure(SsimStateCuda *s, unsigned w, unsigned h, unsig
     s->c1 = (K1 * L) * (K1 * L);
     s->c2 = (K2 * L) * (K2 * L);
     s->max_db = vmaf_ssim_max_db(s->clip_db, bpc, w, h);
+    s->n_windows = (size_t)s->w_final * s->h_final;
+    s->n_sums = s->enable_lcs ? FLOAT_SSIM_LCS_SUMS : 1u;
+}
 
-    const unsigned grid_x = (s->w_final + SSIM_BLOCK_X - 1) / SSIM_BLOCK_X;
-    const unsigned grid_y = (s->h_final + SSIM_BLOCK_Y - 1) / SSIM_BLOCK_Y;
-    s->partials_capacity = grid_x * grid_y;
+/* One double per window and sum: the plane the device writes and the host
+ * reads back. */
+static size_t float_ssim_term_plane_bytes(const SsimStateCuda *s)
+{
+    return s->n_windows * s->n_sums * sizeof(double);
 }
 
 /* float_ssim_alloc_planes - the two decimated planes (above scale 1 only) and
@@ -366,20 +377,14 @@ static int integer_ssim_setup_geometry(VmafFeatureExtractor *fex, SsimStateCuda 
                                        unsigned h, unsigned bpc)
 {
     float_ssim_configure(s, w, h, bpc);
-    const size_t partials_bytes = (size_t)s->partials_capacity * sizeof(double);
 
     int ret = float_ssim_alloc_planes(fex, s);
     if (ret)
         return integer_ssim_init_unwind(fex, s, ret);
 
-    ret = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state, partials_bytes);
+    ret = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state, float_ssim_term_plane_bytes(s));
     if (ret)
         return integer_ssim_init_unwind(fex, s, ret);
-    if (s->enable_lcs) {
-        ret = vmaf_cuda_kernel_readback_alloc(&s->rb_lcs, fex->cu_state, 3u * partials_bytes);
-        if (ret)
-            return integer_ssim_init_unwind(fex, s, ret);
-    }
 
     s->feature_name_dict =
         vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
@@ -476,10 +481,10 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
 /* integer_ssim_launch_vert - pass 2: vertical accumulation and SSIM combine.
  *
- * `enable_lcs` launches the L/C/S variant, whose extra lcs_partials argument
- * sits between partials and w_horiz; each parameter array follows its
- * kernel's signature exactly (ADR-1215). The grid and block geometry and the
- * stream are the same for both.
+ * `enable_lcs` launches the L/C/S variant. Both kernels take the same
+ * parameters, in their signature's order (ADR-1215); the term plane holds
+ * one double per window for the first and FLOAT_SSIM_LCS_SUMS for the
+ * second.
  */
 static int integer_ssim_launch_vert(SsimStateCuda *s, CudaFunctions *cu_f, CUstream stream,
                                     unsigned grid_x, unsigned grid_y)
@@ -488,27 +493,13 @@ static int integer_ssim_launch_vert(SsimStateCuda *s, CudaFunctions *cu_f, CUstr
      * (W'-10) × (H'-10). The horiz pass writes happen-before
      * the vert pass reads on the same stream — implicit
      * stream ordering, no extra event needed. */
-    void *params2[] = {
+    void *params[] = {
         (void *)s->h_ref_mu,
         (void *)s->h_cmp_mu,
         (void *)s->h_ref_sq,
         (void *)s->h_cmp_sq,
         (void *)s->h_refcmp,
         (void *)s->rb.device,
-        &s->w_horiz,
-        &s->w_final,
-        &s->h_final,
-        &s->c1,
-        &s->c2,
-    };
-    void *params_lcs[] = {
-        (void *)s->h_ref_mu,
-        (void *)s->h_cmp_mu,
-        (void *)s->h_ref_sq,
-        (void *)s->h_cmp_sq,
-        (void *)s->h_refcmp,
-        (void *)s->rb.device,
-        (void *)s->rb_lcs.device,
         &s->w_horiz,
         &s->w_final,
         &s->h_final,
@@ -516,7 +507,6 @@ static int integer_ssim_launch_vert(SsimStateCuda *s, CudaFunctions *cu_f, CUstr
         &s->c2,
     };
     CUfunction func = s->enable_lcs ? s->func_vert_lcs : s->func_vert;
-    void **params = s->enable_lcs ? params_lcs : params2;
     CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(func, grid_x, grid_y, 1, SSIM_BLOCK_X, SSIM_BLOCK_Y, 1,
                                            0, stream, params, NULL));
     return 0;
@@ -628,7 +618,6 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     CudaFunctions *cu_f = fex->cu_state->f;
 
     s->index = index;
-    s->partials_count = s->partials_capacity;
 
     /* The kernels read data[0]: float_ssim is luma only, like the CPU. */
 
@@ -643,26 +632,56 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     if (launch_err)
         return launch_err;
 
-    /* DtoH copy of the partials on our private stream. */
+    /* DtoH copy of the term plane on our private stream. */
     CHECK_CUDA_RETURN(cu_f, cuEventRecord(s->lc.submit, stream));
     CHECK_CUDA_RETURN(cu_f, cuStreamWaitEvent(s->lc.str, s->lc.submit, CU_EVENT_WAIT_DEFAULT));
-    CHECK_CUDA_RETURN(cu_f,
-                      cuMemcpyDtoHAsync(s->rb.host_pinned, (CUdeviceptr)s->rb.device->data,
-                                        (size_t)s->partials_count * sizeof(double), s->lc.str));
-    if (s->enable_lcs) {
-        CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(s->rb_lcs.host_pinned, s->rb_lcs.device->data,
-                                                  3u * (size_t)s->partials_count * sizeof(double),
-                                                  s->lc.str));
-    }
+    CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(s->rb.host_pinned, (CUdeviceptr)s->rb.device->data,
+                                              float_ssim_term_plane_bytes(s), s->lc.str));
     return vmaf_cuda_kernel_submit_post_record(&s->lc, fex->cu_state);
 }
 
-static double sum_partials(const double *partials, unsigned count)
+/* float_ssim_frame_sum - iqa_ssim()'s `ssim_sum` accumulator.
+ *
+ * The CPU adds every window's term into one double, top to bottom and left to
+ * right (ssim_accumulate_default_scalar() and its SIMD forms, which keep the
+ * same single running sum). A double sum is its order: `terms` holds one
+ * double per window in raster order, and this loop is the only place they are
+ * added.
+ */
+static double float_ssim_frame_sum(const double *terms, size_t n_windows)
 {
-    double total = 0.0;
-    for (unsigned i = 0; i < count; i++)
-        total += partials[i];
-    return total;
+    double ssim = 0.0;
+    for (size_t i = 0u; i < n_windows; i++)
+        ssim += terms[i];
+    return ssim;
+}
+
+/* float_ssim_frame_sums_lcs - iqa_ssim()'s four accumulators under
+ * `enable_lcs`: `ssim_sum`, `l_sum`, `c_sum` and `s_sum`, in sums[] in that
+ * order.
+ *
+ * `terms` holds FLOAT_SSIM_LCS_SUMS doubles per window in raster order. The
+ * CPU's four sums are independent of one another and each runs through the
+ * whole frame; one pass over the plane adds each of them in index order.
+ */
+static void float_ssim_frame_sums_lcs(const double *terms, size_t n_windows,
+                                      double sums[FLOAT_SSIM_LCS_SUMS])
+{
+    double ssim = 0.0;
+    double l = 0.0;
+    double c = 0.0;
+    double st = 0.0;
+    for (size_t i = 0u; i < n_windows; i++) {
+        const double *window = terms + (i * FLOAT_SSIM_LCS_SUMS);
+        ssim += window[0];
+        l += window[1];
+        c += window[2];
+        st += window[3];
+    }
+    sums[0] = ssim;
+    sums[1] = l;
+    sums[2] = c;
+    sums[3] = st;
 }
 
 /* iqa/ssim_tools.c::iqa_ssim returns every frame mean as fp32,
@@ -679,21 +698,19 @@ static int float_ssim_frame_mean(const char *feature, double sum, double n_pixel
     return err;
 }
 
-/* enable_lcs: the three per-block L / C / S partial rows become the frame
- * means float_ssim_{l,c,s}, published with the score in CPU float_ssim.c
- * order after the shared SSIM validation (ADR-1302). */
-static int emit_float_ssim_lcs(const SsimStateCuda *s, double score, double n_pixels,
-                               unsigned index, VmafFeatureCollector *feature_collector)
+/* enable_lcs: the L, C and S sums become the frame means float_ssim_{l,c,s},
+ * published with the score in CPU float_ssim.c order after the shared SSIM
+ * validation (ADR-1302). sums[] follows float_ssim_frame_sums_lcs(). */
+static int emit_float_ssim_lcs(const SsimStateCuda *s, const double sums[FLOAT_SSIM_LCS_SUMS],
+                               double score, double n_pixels, unsigned index,
+                               VmafFeatureCollector *feature_collector)
 {
     static const char *const atom_names[3] = {"float_ssim_l", "float_ssim_c", "float_ssim_s"};
-    const double *lcs_partials = s->rb_lcs.host_pinned;
     int err = 0;
     VmafNamedScore atoms[3];
     for (unsigned k = 0; k < 3u && !err; k++) {
-        const double sum =
-            sum_partials(lcs_partials + ((size_t)k * s->partials_count), s->partials_count);
         atoms[k].name = atom_names[k];
-        err = float_ssim_frame_mean(atom_names[k], sum, n_pixels, index, &atoms[k].value);
+        err = float_ssim_frame_mean(atom_names[k], sums[1u + k], n_pixels, index, &atoms[k].value);
     }
     if (err)
         return err;
@@ -711,12 +728,17 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
     if (sync_err)
         return sync_err;
 
-    /* Per-block double partials -> host double sum -> mean SSIM over
-     * (W'-10)·(H'-10) decimated pixels, rounded to fp32 like the CPU. */
-    const double total = sum_partials(s->rb.host_pinned, s->partials_count);
+    /* The windows' terms in raster order -> the CPU's double sums -> mean SSIM
+     * over (W'-10)·(H'-10) decimated pixels, rounded to fp32 like the CPU. */
+    double sums[FLOAT_SSIM_LCS_SUMS] = {0.0};
+    if (s->enable_lcs) {
+        float_ssim_frame_sums_lcs(s->rb.host_pinned, s->n_windows, sums);
+    } else {
+        sums[0] = float_ssim_frame_sum(s->rb.host_pinned, s->n_windows);
+    }
     const double n_pixels = (double)s->w_final * (double)s->h_final;
     double score = 0.0;
-    const int err = float_ssim_frame_mean("float_ssim", total, n_pixels, index, &score);
+    const int err = float_ssim_frame_mean("float_ssim", sums[0], n_pixels, index, &score);
     if (err)
         return err;
     if (!s->enable_lcs) {
@@ -724,7 +746,7 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
                                           "float_ssim_cuda", "float_ssim", score, s->enable_db,
                                           s->max_db, index);
     }
-    return emit_float_ssim_lcs(s, score, n_pixels, index, feature_collector);
+    return emit_float_ssim_lcs(s, sums, score, n_pixels, index, feature_collector);
 }
 
 static int close_fex_cuda(VmafFeatureExtractor *fex)

@@ -12,10 +12,10 @@
  * core/src/feature/cuda/integer_ssim_cuda.c) runs the CPU pipeline on the
  * device: ssim.c's box low-pass and iqa_decimate() above scale 1, the
  * separable 11-tap Gaussian with iqa_convolve()'s double sums, and the CPU's
- * per-pixel l * c * s. Every per-pixel value is the CPU's bit for bit; the
- * frame sum is reduced per block instead of row by row, which the fp32
- * rounding of the mean absorbs on every case here, so the cases assert
- * equality.
+ * per-pixel l * c * s. Every per-pixel value is the CPU's bit for bit, and the
+ * host adds them in the CPU's raster order (ADR-1464), so the cases assert
+ * equality. test_cuda_float_ssim_order.c holds the frame on which a per-block
+ * sum differed.
  *
  * Coverage (every case scores the same frames on both sides, per frame):
  *   positive  the FIXTURE_W x FIXTURE_H auto case (256x144 = scale 1; the

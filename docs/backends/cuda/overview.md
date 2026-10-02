@@ -872,7 +872,7 @@ naming the twin with the option failed with `unknown option`.
 |---|---|---|
 | `psnr_cuda` | `enable_mse`, `enable_apsnr`, `reduced_hbd_peak`, `min_sse` | host, on the device-reduced SSE, through `psnr_score.h` (bit-exact with the CPU) |
 | `integer_ssim_cuda` | `enable_db`, `clip_db` | host, on the device-reduced score (`vmaf_ssim_max_db()`) |
-| `float_ssim_cuda` | `enable_lcs`, `enable_db`, `clip_db` | `enable_lcs`: a second pass-2 kernel reduces L, C and S per block; dB on the host |
+| `float_ssim_cuda` | `enable_lcs`, `enable_db`, `clip_db` | `enable_lcs`: a second pass-2 kernel also stores each window's L, C and S, which the host adds; dB on the host |
 | `float_motion_cuda` | `motion_max_val` (`mmxv`), `motion_blend_factor` (`mbf`), `motion_blend_offset` (`mbo`) | host: every emitted score, the debug `motion` included, is weighted by `motion_fps_weight` and then capped; `motion3` is the CPU's blend of `motion2` (`motion_blend_clip()`) |
 
 The same change fixed how these twins score, not only which options they take:
@@ -955,10 +955,12 @@ What you can rely on:
   checkerboard pairs, a 1920x1080 pair and BBB 3840x2160 at 8 and 10 bits,
   with `enable_lcs`, `enable_db` and `clip_db` too. Before, the twin was 1
   to 3 units in the last fp32 place from the CPU on every frame. The frame
-  sum is still added per block, so a one-unit difference on a rare frame is
-  possible; none of the measured frames has one.
-- **No host pass.** The kernels read the uploaded picture; each frame is
-  three kernels (two at scale 1) and one result read-back.
+  sum is the CPU's as well since
+  [ADR-1464](../../adr/1464-cuda-float-ssim-raster-order-sum.md); the next
+  section describes it.
+- **No host pass over the picture.** The kernels read the uploaded picture;
+  each frame is three kernels (two at scale 1) and one result read-back, of
+  one `double` per scored window.
 
 Cost on an RTX 4090, BBB 3840x2160 8-bit (2026-10-01, load average 16 to 19):
 
@@ -973,6 +975,58 @@ Cost on an RTX 4090, BBB 3840x2160 8-bit (2026-10-01, load average 16 to 19):
 An explicit `scale=1` on a large picture is the one case that got slower:
 the double-precision sums then run over the full picture. The CPU extractor
 takes 43.8 ms per frame for the same request on 16 threads.
+
+## `float_ssim` adds its frame sums in the CPU's order (ADR-1464, 2026-10-02)
+
+CPU `float_ssim` adds the SSIM value of every window into one
+double-precision sum, left to right and top to bottom, and reports the mean
+as a `float`. `float_ssim_cuda` computed the same values and added them in
+blocks. A sum of floating-point numbers depends on its order in its last
+bits, and on rare frames that is enough to round the mean to the next
+`float`: a search over noise frames found two in 31 million. On one of them
+the CPU reports -4.222829943500983e-07 and the twin reported
+-4.222829659283889e-07.
+
+The twin now adds in the CPU's order
+([ADR-1464](../../adr/1464-cuda-float-ssim-raster-order-sum.md)): the device
+stores every window's value, the host reads them back and adds them one after
+the other. With `enable_lcs` the luminance, contrast and structure sums are
+formed the same way.
+
+What changes for you:
+
+- **Scores.** `float_ssim`, and `float_ssim_l`, `_c` and `_s`, equal
+  `--backend cpu` on every input, the frame above included. On content you
+  have measured before nothing moves, unless one of your frames is such a
+  rare case; then it moves by one `float` step to the CPU's value.
+- **Time, where the picture is scored at full size.** That is the automatic
+  scale for pictures with a short side below 384 pixels, and an explicit
+  `scale=1` on anything larger. The cost is about 1 ns per window (3.3 ns
+  with `enable_lcs`). At the automatic scale of 1080p and 4K input the scored
+  picture is 480x270 and nothing measurable changes.
+
+  | Input and request | Before | After |
+  |---|---:|---:|
+  | 576x324 | 0.14 ms | 0.33 ms |
+  | 576x324, `enable_lcs` | 0.15 ms | 0.75 ms |
+  | 1920x1080 | 1.12 ms | 1.22 ms |
+  | 3840x2160 | 3.53 ms | 3.69 ms |
+  | 1920x1080, `scale=1` | 0.88 ms | 3.10 ms |
+  | 3840x2160, `scale=1` | 3.91 ms | 12.55 ms |
+  | 3840x2160, `scale=1`, `enable_lcs` | 4.19 ms | 30.92 ms |
+
+  Per frame through the `vmaf` tool on an RTX 4090, medians of 11 to 15
+  alternating pairs at a host load average of 60 to 80; the 1080p and 4K rows
+  at the automatic scale differ by less than their spread.
+- **Memory at `scale=1`.** One `double` per window on the device and as
+  pinned host memory, four with `enable_lcs`: 66 MB (263 MB) for a 3840x2160
+  frame, 1 MB (4 MB) at the automatic scale.
+
+Check a build with the frame the fix was written for:
+
+```shell
+build/test/test_cuda_float_ssim_order
+```
 
 Reproduce the parity and the timing:
 

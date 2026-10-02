@@ -3368,6 +3368,33 @@ test('test_cuda_float_ssim_parity', test_cuda_float_ssim_parity,
     suite : ['fast', 'gpu'],
     is_parallel : false)
 
+# T-GPU-FLOAT-SSIM-FRAME-SUM-ORDER-2026-10-02 — float_ssim_cuda adds its
+# per-window terms in iqa_ssim()'s raster order. Scores the frame pair of
+# float_ssim_order_frame.h (shared with the HIP and SYCL twin tests), on which a
+# per-block sum of the same terms rounds the mean to the neighbouring float,
+# and compares the float's bits with the CPU extractor's and with the recorded
+# CPU bits. GPU-gated: exits 77 when no CUDA device is visible.
+test_cuda_float_ssim_order = executable('test_cuda_float_ssim_order',
+    ['test.c', 'test_cuda_float_ssim_order.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_float_ssim_order', test_cuda_float_ssim_order,
+    suite : ['fast', 'gpu'],
+    is_parallel : false)
+
+# The same contract without a device: the pass-2 kernels of ssim_score.cu store
+# every window's terms at its raster position, the host adds each sum in index
+# order, and the shared fixture header has the bytes the three lanes agreed on.
+test('test_cuda_float_ssim_exact_contract',
+    import('python').find_installation(),
+    args : files('test_cuda_float_ssim_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-1399 — the float_ssim_cuda decimation kernel against iqa_decimate():
 # launches calculate_ssim_decimate_{8,16}bpc directly and compares the
 # decimated planes byte for byte (scales 2-10, 16 and 128; 8 / 10 / 12 / 16

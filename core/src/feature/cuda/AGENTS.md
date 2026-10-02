@@ -672,8 +672,23 @@ CUDA feature TUs compile only when `meson setup -Denable_cuda=true`.
 - **`ssim_score.cu::ssim_terms()` = CPU `l * c * s`, operand for operand**
   (`iqa/ssim_tools.c::ssim_variance_scalar` + `iqa/ssim_accumulate_lane.h`):
   double numerators over fp32 denominators, fp32 `s`, double product, each
-  rounding an intrinsic (`__fmul_rn` / `__fadd_rn` / `__ddiv_rn` ...). Double
-  block partials; host rounds frame means to fp32 (`float_ssim_frame_mean`).
+  rounding an intrinsic (`__fmul_rn` / `__fadd_rn` / `__ddiv_rn` ...). Host
+  rounds frame means to fp32 (`float_ssim_frame_mean`).
+- **`float_ssim_cuda` frame sums = CPU raster order, on host** (ADR-1464,
+  form of ADR-1424). `iqa_ssim()` = ONE double per sum (`ssim_sum`, `l_sum`,
+  `c_sum`, `s_sum`), every window added left to right, top to bottom; double
+  sum = its order. Pass-2 kernels REDUCE NOTHING: `calculate_ssim_vert_combine`
+  stores `l * c * s` at `y * w_final + x`; `_lcs` stores 4 doubles per window
+  (ssim, l, c, s; `LCS_TERMS` == `FLOAT_SSIM_LCS_SUMS`). Host:
+  `float_ssim_frame_sum()` / `float_ssim_frame_sums_lcs()` add in index order,
+  the ONLY place terms are added. NEVER bring back `__shfl` / `__shared__
+  double` / block partials: per-block sum of same terms = neighbouring float
+  on `core/test/float_ssim_order_frame.h` (CPU `0xb4e2b622`, block sum
+  `0xb4e2b621`). Fixture header shared with HIP + SYCL tests, bytes fixed
+  (sha256 in `test_cuda_float_ssim_exact_contract.py`): never edit. Tests:
+  `test_cuda_float_ssim_order` (device), `test_cuda_float_ssim_exact_contract.py`
+  (device-free). Cost: 8 B (32 B with `enable_lcs`) per window read back, about
+  1 ns per window; tuning = `T-CUDA-FLOAT-SSIM-EXACT-THROUGHPUT-2026-10-02`.
   NEVER force identical windows to 1: CPU flat identical frames = 72.247 dB,
   not `+inf` (#1637 review). Both pass-2 kernels share `ssim_terms()`.
 - **`float_ssim_cuda` = CPU pipeline on device, every scale** (ADR-1399).
@@ -840,9 +855,13 @@ CUDA feature TUs compile only when `meson setup -Denable_cuda=true`.
   at 8 / 10 / 12 / 16 bit + 40x40 to 64x64, never on measurement alone.
   Listed twin drifting -> FIX twin, never tolerance, never delist.
 - `test_cuda_exact_twins` = `==` on every output, 640x480, 8 + 10 bit.
-- SSIM twins: frame sum order != CPU raster order; fp32 mean rounding absorbs
-  (few means per million by estimate, 0 of 9000 measured). Mean ever differs
-  -> add terms in raster order as `integer_ssim_cuda` (ADR-1424).
+- `float_ssim_cuda`: frame sums in CPU raster order since ADR-1464 (a mean
+  differed: `T-GPU-FLOAT-SSIM-FRAME-SUM-ORDER-2026-10-02`).
+  `float_ms_ssim_cuda`: per-block sums of l / c / s per scale differ from
+  the CPU the same way, 4 of 8.32e6 noise frames at 176x176, one float step
+  of an `l` or `c` mean. State of its sums = its own paragraph above
+  (ADR-1403 entry); fix = raster order as `float_ssim_cuda`, own PR
+  (`fix/cuda-float-ms-ssim-raster-order-sum`).
 - NOT listed: `ciede` (libm bound 1e-9), `speed_chroma` (libm bound 5e-6).
   `vif` listed by ADR-1462 (reads host log2 table, no device `log2f`).
 

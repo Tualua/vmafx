@@ -620,6 +620,18 @@ linked AGENTS.md before resolving conflicts.
   `==` on every output. A rebase that changes one of these twins or its CPU
   extractor keeps them bit-identical; a twin that drifts is fixed, never
   given a tolerance or taken off the list.
+- **`float_ssim_cuda` frame sums are the CPU's, in the CPU's order ([ADR-1464](../adr/1464-cuda-float-ssim-raster-order-sum.md))**:
+  the pass-2 kernels of `core/src/feature/cuda/integer_ssim/ssim_score.cu`
+  store every window's terms at its raster position and
+  `integer_ssim_cuda.c::float_ssim_frame_sum()` /
+  `float_ssim_frame_sums_lcs()` add them in index order, as
+  `iqa/ssim_tools.c::iqa_ssim()` adds them. A sync must not bring back a
+  device reduction of the terms: on the frame of
+  `core/test/float_ssim_order_frame.h` a per-block sum returns the
+  neighbouring `float`. That header is shared with the HIP and SYCL twin
+  tests and its bytes are fixed. Preserve the kernels, the two host loops,
+  `core/test/test_cuda_float_ssim_order.c` and
+  `core/test/test_cuda_float_ssim_exact_contract.py` together.
 
 - **SYCL kernels require sub-group size 16 or 32 ([ADR-1468](../adr/1468-sycl-sub-group-sizes-every-aot-target.md))**:
   the default build compiles every kernel ahead of time for the 19 targets

@@ -1185,7 +1185,10 @@ still accepts, and ignores, the `enable_chroma` the CPU `float_ssim` never
 had. `float_ssim_cuda` also decimates on the device at the automatic scale
 and every explicit one and convolves with the CPU's double sums, so 1080p and
 4K `float_ssim` run on CUDA and every measured frame equals the CPU's score
-([ADR-1399](../adr/1399-cuda-float-ssim-device-decimation.md)). The HIP
+([ADR-1399](../adr/1399-cuda-float-ssim-device-decimation.md)). It adds the
+per-window values in the CPU's order on the host, so the frame mean is the
+CPU's on every input, at about 1 ns per scored window
+([ADR-1464](../adr/1464-cuda-float-ssim-raster-order-sum.md)). The HIP
 twins `integer_ssim_hip` and `float_ssim_hip` implement
 `enable_db` / `clip_db` (and `float_ssim_hip` `enable_lcs`); `float_ssim_hip`
 scores each pixel with the CPU's own `l * c * s` arithmetic too, so its

@@ -58149,6 +58149,34 @@ part).
   `adr:` names ADR-1465 in place of ADR-1457.
 - No Netflix golden-data, public API or FFmpeg patch impact. Stored
   `float_ms_ssim_cuda` scores can move in their last digits on rare frames.
+## ADR-1464 — `float_ssim_cuda` adds its frame sums in the CPU's raster order (2026-10-02)
+
+`fix/cuda-float-ssim-raster-order-sum`, `T-CUDA-FLOAT-SSIM-FRAME-SUM-ORDER-2026-10-02`.
+
+- `core/src/feature/cuda/integer_ssim/ssim_score.cu`: the two pass-2 kernels
+  keep their names and store terms instead of reducing them.
+  `calculate_ssim_vert_combine` writes one double per window at
+  `y * w_final + x`; `calculate_ssim_vert_combine_lcs` writes `LCS_TERMS` (4)
+  per window. `block_sum()` and the shared warp array are gone: do not take
+  them back from an older branch, a per-block sum is the defect.
+- `core/src/feature/cuda/integer_ssim_cuda.c`: one read-back (`rb`) of
+  `n_windows * n_sums` doubles replaces the partials and `rb_lcs`;
+  `float_ssim_frame_sum()` and `float_ssim_frame_sums_lcs()` are the only
+  places terms are added. Both kernels take the same parameter list now.
+- When `iqa/ssim_tools.c::iqa_ssim()` or its accumulate functions change the
+  order or the number of their sums, change these two files in the same PR.
+- `core/test/float_ssim_order_frame.h` is added byte-identically by the CUDA,
+  HIP and SYCL lanes. A rebase that sees it added twice keeps one copy and
+  never merges edits into it; `test_cuda_float_ssim_exact_contract.py` holds
+  its sha256.
+- `core/test/meson.build`: `test_cuda_float_ssim_order` (device) and
+  `test_cuda_float_ssim_exact_contract` (device-free), one block after
+  `test_cuda_float_ssim_parity`.
+- `scripts/ci/exact_twins.d/float_ssim.cuda`, `float_ssim_lcs.cuda`: `adr:`
+  names ADR-1464 in place of ADR-1457, whose "exact up to one rounding" no
+  longer describes the twin.
+- No Netflix golden-data, public API or FFmpeg patch impact. Stored
+  `float_ssim_cuda` scores can move by one float step on rare frames.
 
 ## ADR-1460 — `speed_temporal` is a parity-gate feature; registry coverage test (2026-10-02)
 

@@ -25,18 +25,21 @@
  *       rounded to fp32 once, as iqa_convolve() does.
  *
  *    2. calculate_ssim_vert_combine — vertical 11-tap on the five
- *       intermediates (same double sum), then the CPU's per-pixel
+ *       intermediates (same double sum), then the CPU's per-window
  *       l * c * s with the CPU's types and rounding points
- *       (ssim_terms()), then a per-block double partial sum (tree reduce
- *       in shared memory). calculate_ssim_vert_combine_lcs is the
- *       `enable_lcs` variant: the same SSIM value plus the per-pixel
- *       luminance, contrast and structure terms, reduced per block next
- *       to it (ADR-1373).
+ *       (ssim_terms()), stored at the window's raster position.
+ *       calculate_ssim_vert_combine_lcs is the `enable_lcs` variant: the
+ *       same SSIM value followed by the window's luminance, contrast and
+ *       structure terms (ADR-1373).
  *
- *  The host sums the double partials, divides by (W'-10)·(H'-10) of the
- *  decimated plane and rounds the mean to fp32, as iqa_ssim() returns it.
- *  Every per-pixel value is the CPU's bit for bit; only the order of the
- *  frame sum differs.
+ *  Nothing is reduced on the device. iqa_ssim() adds every window's term
+ *  into one double per sum, left to right and top to bottom, and a sum of
+ *  doubles is its order: the host reads the terms back and adds them in
+ *  index order (integer_ssim_cuda.c::float_ssim_frame_sum(), following
+ *  ADR-1424), divides by (W'-10)·(H'-10) of the decimated plane and rounds
+ *  the mean to fp32, as iqa_ssim() returns it. A per-block sum of the same
+ *  terms rounded one frame's mean to the neighbouring float
+ *  (T-GPU-FLOAT-SSIM-FRAME-SUM-ORDER-2026-10-02).
  *
  *  NVCC contracts `a * b + c` by default (--fmad=true): every rounding
  *  that matters here is spelled with an intrinsic.
@@ -49,8 +52,10 @@
 #define BLOCK_X 16
 #define BLOCK_Y 8
 #define BLOCK_SIZE (BLOCK_X * BLOCK_Y)
-#define WARPS_PER_BLOCK (BLOCK_SIZE / 32)
 #define K 11
+/* Doubles per window in the `enable_lcs` term plane: SSIM, L, C, S. Mirrors
+ * FLOAT_SSIM_LCS_SUMS in integer_ssim_cuda.c. */
+#define LCS_TERMS 4u
 
 namespace
 {
@@ -387,35 +392,12 @@ __device__ inline SsimTerms ssim_terms(const SsimMoments &m, float c1, float c2)
     return t;
 }
 
-/* Sum `value` over the block into thread 0's return value: warp shuffle,
- * then the warp sums in warp order. Double throughout, as the CPU's
- * accumulators are. Every thread must call it; `scratch` is reusable once
- * it returns. */
-__device__ inline double block_sum(double value, double (&scratch)[WARPS_PER_BLOCK])
+/* The window this thread scores, or false for a thread past the plane. */
+__device__ inline bool window_position(unsigned w_final, unsigned h_final, unsigned &x, unsigned &y)
 {
-    for (int off = 16; off > 0; off >>= 1)
-        value += __shfl_down_sync(0xffffffff, value, off);
-    const int tid = threadIdx.y * blockDim.x + threadIdx.x;
-    if (tid % 32 == 0)
-        scratch[tid / 32] = value;
-    __syncthreads();
-    double total = 0.0;
-    if (tid == 0) {
-        for (int i = 0; i < WARPS_PER_BLOCK; i++)
-            total += scratch[i];
-    }
-    __syncthreads();
-    return total;
-}
-
-__device__ inline unsigned block_index()
-{
-    return blockIdx.y * gridDim.x + blockIdx.x;
-}
-
-__device__ inline bool is_block_leader()
-{
-    return threadIdx.x == 0 && threadIdx.y == 0;
+    x = blockIdx.x * blockDim.x + threadIdx.x;
+    y = blockIdx.y * blockDim.y + threadIdx.y;
+    return x < w_final && y < h_final;
 }
 
 } // namespace
@@ -486,65 +468,51 @@ __global__ void calculate_ssim_horiz_planes(VmafCudaBuffer ref_plane, VmafCudaBu
                     w_horiz, h_horiz);
 }
 
-/* Pass 2 — vertical + SSIM combine + per-block double partial sum.
- * __launch_bounds__(128) hints nvcc to budget registers for
- * 128-thread blocks; per ADR-0754 / ADR-0743 precedent. `partials` holds
- * gridDim.x * gridDim.y doubles. */
+/* Pass 2 — vertical + SSIM combine. Each thread stores its window's
+ * l * c * s at the window's raster index of `terms` (w_final * h_final
+ * doubles); the host adds them in that order, which is iqa_ssim()'s.
+ * __launch_bounds__(128) hints nvcc to budget registers for 128-thread
+ * blocks; per ADR-0754 / ADR-0743 precedent. */
 __launch_bounds__(BLOCK_SIZE) __global__
     void calculate_ssim_vert_combine(VmafCudaBuffer h_ref_mu_buf, VmafCudaBuffer h_cmp_mu_buf,
                                      VmafCudaBuffer h_ref_sq_buf, VmafCudaBuffer h_cmp_sq_buf,
-                                     VmafCudaBuffer h_refcmp_buf, VmafCudaBuffer partials,
+                                     VmafCudaBuffer h_refcmp_buf, VmafCudaBuffer terms_buf,
                                      unsigned w_horiz, unsigned w_final, unsigned h_final, float c1,
                                      float c2)
 {
-    const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
-    const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
+    unsigned x = 0u;
+    unsigned y = 0u;
+    if (!window_position(w_final, h_final, x, y))
+        return;
     const SsimVertInputs in =
         vert_inputs(h_ref_mu_buf, h_cmp_mu_buf, h_ref_sq_buf, h_cmp_sq_buf, h_refcmp_buf);
-
-    double my_ssim = 0.0;
-    if (x < w_final && y < h_final)
-        my_ssim = ssim_terms(vertical_moments(in, x, y, w_horiz), c1, c2).ssim;
-
-    __shared__ double s_warp_sums[WARPS_PER_BLOCK];
-    const double block_ssim = block_sum(my_ssim, s_warp_sums);
-    if (is_block_leader())
-        reinterpret_cast<double *>(partials.data)[block_index()] = block_ssim;
+    double *const terms = reinterpret_cast<double *>(terms_buf.data);
+    terms[(size_t)y * w_final + x] = ssim_terms(vertical_moments(in, x, y, w_horiz), c1, c2).ssim;
 }
 
-/* `enable_lcs` pass 2: the same SSIM value, plus its L, C and S terms, each
- * reduced per block. `lcs_partials` holds three rows of
- * gridDim.x * gridDim.y doubles: L, then C, then S. Out-of-frame threads
- * contribute zeros. */
+/* `enable_lcs` pass 2: `terms` holds LCS_TERMS doubles per window in raster
+ * order: the same SSIM value, then its L, C and S terms. iqa_ssim() keeps one
+ * accumulator per sum, so the host adds each of the four in index order. */
 __launch_bounds__(BLOCK_SIZE) __global__
     void calculate_ssim_vert_combine_lcs(VmafCudaBuffer h_ref_mu_buf, VmafCudaBuffer h_cmp_mu_buf,
                                          VmafCudaBuffer h_ref_sq_buf, VmafCudaBuffer h_cmp_sq_buf,
-                                         VmafCudaBuffer h_refcmp_buf, VmafCudaBuffer partials,
-                                         VmafCudaBuffer lcs_partials, unsigned w_horiz,
-                                         unsigned w_final, unsigned h_final, float c1, float c2)
+                                         VmafCudaBuffer h_refcmp_buf, VmafCudaBuffer terms_buf,
+                                         unsigned w_horiz, unsigned w_final, unsigned h_final,
+                                         float c1, float c2)
 {
-    const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
-    const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
+    unsigned x = 0u;
+    unsigned y = 0u;
+    if (!window_position(w_final, h_final, x, y))
+        return;
     const SsimVertInputs in =
         vert_inputs(h_ref_mu_buf, h_cmp_mu_buf, h_ref_sq_buf, h_cmp_sq_buf, h_refcmp_buf);
-
-    SsimTerms t = {0.0, 0.0, 0.0, 0.0};
-    if (x < w_final && y < h_final)
-        t = ssim_terms(vertical_moments(in, x, y, w_horiz), c1, c2);
-
-    __shared__ double s_warp_sums[WARPS_PER_BLOCK];
-    const double block_ssim = block_sum(t.ssim, s_warp_sums);
-    const double block_l = block_sum(t.l, s_warp_sums);
-    const double block_c = block_sum(t.c, s_warp_sums);
-    const double block_s = block_sum(t.s, s_warp_sums);
-    if (is_block_leader()) {
-        const unsigned n_blocks = gridDim.x * gridDim.y;
-        double *const lcs_out = reinterpret_cast<double *>(lcs_partials.data);
-        lcs_out[block_index()] = block_l;
-        lcs_out[n_blocks + block_index()] = block_c;
-        lcs_out[(2u * n_blocks) + block_index()] = block_s;
-        reinterpret_cast<double *>(partials.data)[block_index()] = block_ssim;
-    }
+    const SsimTerms t = ssim_terms(vertical_moments(in, x, y, w_horiz), c1, c2);
+    double *const window =
+        reinterpret_cast<double *>(terms_buf.data) + (((size_t)y * w_final + x) * LCS_TERMS);
+    window[0] = t.ssim;
+    window[1] = t.l;
+    window[2] = t.c;
+    window[3] = t.s;
 }
 
 } /* extern "C" */
