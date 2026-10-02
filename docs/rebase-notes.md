@@ -75,6 +75,22 @@ frames of 24x24 and smaller).
   for bit), `test_sycl_ciede_exact_contract`,
   `test_cuda_ciede_exact_contract`; on a device
   `test_{cuda,sycl,hip}_ciede_parity`.
+## The AVX-512 warm-up is `x86/avx512_warm_up.h`, with `xmm0` in its clobber list (2026-10-02)
+
+`fix/cpu-avx512-warmup-clobber`. No score impact.
+
+- `core/src/x86/avx512_warm_up.h`: fork-only header with
+  `static inline vmaf_x86_avx512_warm_up()`;
+  `core/src/cpu.cpp::vmaf_init_cpu()` (fork file, upstream has `cpu.c` without
+  a warm-up) calls it. Upstream has neither, so a sync does not touch them.
+- The clobber list is `"xmm0", "zmm0"`. `"zmm0"` alone is dropped by clang in
+  a function not compiled for AVX-512, and a link-time-optimised build then
+  zeroes a caller's value in `xmm0`
+  (`T-CPU-AVX512-WARMUP-CLOBBER-2026-10-02`). Do not shorten it and do not
+  move the statement back into `cpu.cpp`: `test_cpu` inlines it without
+  link-time optimisation.
+- Guards: `test_cpu` (`test_avx512_warm_up_keeps_xmm0`, AVX-512 host),
+  `test_inline_asm_clobber_contract` (device-free).
 
 ## Agent pages name the staged CUDA VIF kernels and the HIP handle header (2026-10-02)
 

@@ -6996,6 +6996,18 @@ test('test_fex_ctx_vector_public', test_fex_ctx_vector_public, suite : ['fast'])
 test('test_dict', test_dict, suite : ['fast'])
 test('test_opt', test_opt, suite : ['fast'])
 test('test_cpu', test_cpu, suite : ['fast'])
+
+# An inline-assembly statement that clobbers a ymm or zmm register names the
+# xmm register too: clang drops the wide register's clobber in a function not
+# compiled for it, and a link-time-optimised build then zeroes a caller's
+# value (vmaf_init_cpu()'s AVX-512 warm-up did). Reads the sources only;
+# test_cpu runs the warm-up on a host with AVX-512.
+test('test_inline_asm_clobber_contract',
+    import('python').find_installation(),
+    args : files('test_inline_asm_clobber_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
 test('test_gpu_dispatch_parse', test_gpu_dispatch_parse, suite : ['fast'])
 test('test_ref', test_ref, suite : ['fast'])
 test('test_feature', test_feature, suite : ['fast'])

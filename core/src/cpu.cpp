@@ -40,6 +40,12 @@
 #include "config.h"
 #include "cpu.h"
 
+#if ARCH_X86
+extern "C" {
+#include "x86/avx512_warm_up.h"
+}
+#endif
+
 namespace
 {
 
@@ -67,15 +73,8 @@ void vmaf_init_cpu(void)
     g_flags.store(vmaf_get_cpu_flags_x86(), std::memory_order_relaxed);
 #if HAVE_AVX512
     if (g_flags.load(std::memory_order_relaxed) & VMAF_X86_CPU_FLAG_AVX512) {
-        /* Warm up AVX-512 execution units. On Intel CPUs, the 512-bit
-         * units power down after idle and take 10-20µs to reactivate.
-         * Issuing a dummy instruction here avoids that latency penalty
-         * on the first frame of actual computation.
-         * GCC/clang inline asm only — MSVC dropped inline asm on x64.
-         * On MSVC the warmup is skipped (micro-opt, not correctness). */
-#if defined(__GNUC__) || defined(__clang__)
-        __asm__ volatile("vpxord %%zmm0, %%zmm0, %%zmm0" ::: "zmm0");
-#endif
+        /* The first frame should not wait for the 512-bit units. */
+        vmaf_x86_avx512_warm_up();
     }
 #endif
 #elif ARCH_AARCH64

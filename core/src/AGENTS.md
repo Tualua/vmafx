@@ -23,6 +23,7 @@ Parent scope: [`../AGENTS.md`](../AGENTS.md) (core) and
 | `picture.h`, `picture_pool.h` | [doxygen-header-invariants](AGENTS.d/doxygen-header-invariants.md) | Internal core/src headers carry Doxygen file briefs and parameter comments. |
 | `framesync.c`, `framesync.h` | [framesync-producer](AGENTS.d/framesync-producer.md) | Framesync buffer error paths invoke vmaf_framesync_abort to prevent consumer cond_wait hang. |
 | `picture.c`, `picture_pool.c`, `picture_pool.cpp`, `gpu_picture_pool.cpp` | [init-and-teardown](AGENTS.d/init-and-teardown.md) | Out-parameter init clears handles on failure; teardown owners replace partial cleanup ladders. |
+| `x86/avx512_warm_up.h`, `cpu.cpp`, `/core/test/test_cpu.c`, `/core/test/test_inline_asm_clobber_contract.py` | [inline-asm-clobbers](AGENTS.d/inline-asm-clobbers.md) | Inline asm that clobbers ymmN / zmmN also names xmmN; clang drops a wide clobber without the target feature. |
 | `log.c`, `log.h`, `log.cpp` | [logging-and-diagnostics](AGENTS.d/logging-and-diagnostics.md) | Fork diagnostics route through vmaf_log with BUG-048 format lock; log.c respects C23 va_start. |
 | `pdjson.c`, `pdjson.h`, `framesync.c` | [memory-and-concurrency-safety](AGENTS.d/memory-and-concurrency-safety.md) | pdjson enforces 512 container limit; pthread init, malloc, and size bounds checked without leak. |
 | `metadata_handler.cpp`, `metadata_handler.h` | [metadata-handler](AGENTS.d/metadata-handler.md) | C++20 metadata handler preserves extern "C" symbols and unique_ptr lifecycle. |
