@@ -10355,7 +10355,8 @@
         "core/src/libvmaf.c": 1,
         "core/src/sycl/common.h": 1,
         "core/test/meson.build": 1,
-        "core/test/test_sycl_zerocopy_guards.c": 2
+        "core/test/test_sycl_zerocopy_guards.c": 2,
+        "ffmpeg-patches/test/check-sycl-feature-routing.sh": 1
       },
       "target": "1595-sycl-zerocopy-fail-loud-twin-routing.md"
     }
