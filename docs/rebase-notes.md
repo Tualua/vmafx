@@ -58393,4 +58393,14 @@ ADR-1403 unchanged.
 - Fork branches that append to `.github/AGENTS.md` conflict once: take
   `.github/AGENTS.md` from master, put the new rule into a new or matching
   page under `.github/AGENTS.d/`, run `make docs-fragments-write`.
+
+## ADR-1454 — `core/src/feature/x86/AGENTS.md` is a generated index over `AGENTS.d/` pages (2026-10-02)
+
+`docs/agents-index-feature-x86`, `T-AGENTS-INDEX-MIGRATION-2026-10-02`.
+
+- No rebase impact from upstream: an upstream sync never touches an
+  `AGENTS.md` or an `AGENTS.d/`.
+- Fork branches that append to `core/src/feature/x86/AGENTS.md` conflict once: take
+  master's side of that file, put the added text into the page whose
+  `Touching` row matches the files, then `make docs-fragments-write`.
 - No Netflix golden-data, public API or FFmpeg patch impact.
