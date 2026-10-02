@@ -231,7 +231,7 @@ repos:
         name: Codex hooks resolve from the active repository worktree
         entry: python3 -B scripts/ci/tests/test_codex_hook_config.py
         language: system
-        files: '^(\.codex/hooks(\.json|/.*)|scripts/ci/(AGENTS\.md|tests/test_codex_hook_config\.py)|docs/development/agent-worktree-discipline\.md|\.pre-commit-config\.yaml)$'
+        files: '^(\.codex/hooks(\.json|/.*)|scripts/ci/(AGENTS\.md|AGENTS\.d/codex-hooks\.md|tests/test_codex_hook_config\.py)|docs/development/agent-worktree-discipline\.md|\.pre-commit-config\.yaml)$'
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
@@ -531,7 +531,7 @@ repos:
         entry: python3 -B scripts/ci/check-research-digest-ids.py
         language: system
         pass_filenames: false
-        files: '^(\.github/(AGENTS\.md|workflows/rule-enforcement\.yml)|\.pre-commit-config\.yaml|changelog\.d/_pre_fragment_legacy\.md|docs/(adr/(0212-hip-backend-scaffold|1335-research-digest-identity-ratchet)\.md|adr/_index_fragments/(0212-hip-backend-scaffold|1335-research-digest-identity-ratchet)\.md|backends/hip/overview\.md|research/.*\.md|usage/bd-rate\.md)|scripts/ci/(AGENTS\.md|check-research-digest-ids\.py|research-digest-id-baseline\.json|tests/test_research_digest_ids\.py))$'
+        files: '^(\.github/(AGENTS\.md|workflows/rule-enforcement\.yml)|\.pre-commit-config\.yaml|changelog\.d/_pre_fragment_legacy\.md|docs/(adr/(0212-hip-backend-scaffold|1335-research-digest-identity-ratchet)\.md|adr/_index_fragments/(0212-hip-backend-scaffold|1335-research-digest-identity-ratchet)\.md|backends/hip/overview\.md|research/.*\.md|usage/bd-rate\.md)|scripts/ci/(AGENTS\.md|AGENTS\.d/research-digest-ids\.md|check-research-digest-ids\.py|research-digest-id-baseline\.json|tests/test_research_digest_ids\.py))$'
         always_run: true
 
       - id: test-research-digest-ids
@@ -539,7 +539,7 @@ repos:
         entry: python3 -B scripts/ci/tests/test_research_digest_ids.py
         language: system
         pass_filenames: false
-        files: '^(\.github/(AGENTS\.md|workflows/rule-enforcement\.yml)|\.pre-commit-config\.yaml|changelog\.d/_pre_fragment_legacy\.md|docs/(adr/(0212-hip-backend-scaffold|1335-research-digest-identity-ratchet)\.md|adr/_index_fragments/(0212-hip-backend-scaffold|1335-research-digest-identity-ratchet)\.md|backends/hip/overview\.md|research/.*\.md|usage/bd-rate\.md)|scripts/ci/(AGENTS\.md|check-research-digest-ids\.py|research-digest-id-baseline\.json|tests/test_research_digest_ids\.py))$'
+        files: '^(\.github/(AGENTS\.md|workflows/rule-enforcement\.yml)|\.pre-commit-config\.yaml|changelog\.d/_pre_fragment_legacy\.md|docs/(adr/(0212-hip-backend-scaffold|1335-research-digest-identity-ratchet)\.md|adr/_index_fragments/(0212-hip-backend-scaffold|1335-research-digest-identity-ratchet)\.md|backends/hip/overview\.md|research/.*\.md|usage/bd-rate\.md)|scripts/ci/(AGENTS\.md|AGENTS\.d/research-digest-ids\.md|check-research-digest-ids\.py|research-digest-id-baseline\.json|tests/test_research_digest_ids\.py))$'
         always_run: true
 
       - id: check-source-adr-citations
@@ -857,9 +857,17 @@ repos:
         pass_filenames: false
 
       - id: check-generated-docs
-        name: Check generated ADR and changelog freshness
+        name: Check generated ADR, changelog and AGENTS index freshness
         entry: make docs-fragments-check
         language: system
         stages: [pre-commit]
-        files: '^(docs/adr/|changelog\.d/|scripts/docs/|scripts/release/concat-changelog-fragments\.sh$|scripts/ci/exact_twins\.d/|scripts/ci/cross_backend_calibration\.py$|docs/development/cross-backend-exact-twins\.md$|mkdocs\.yml$|CHANGELOG\.md$|Makefile$)'
+        files: '^(docs/adr/|changelog\.d/|scripts/docs/|scripts/release/concat-changelog-fragments\.sh$|scripts/ci/exact_twins\.d/|scripts/ci/cross_backend_calibration\.py$|docs/development/cross-backend-exact-twins\.md$|(.*/)?AGENTS\.d/|(.*/)?AGENTS\.md$|mkdocs\.yml$|CHANGELOG\.md$|Makefile$)'
         pass_filenames: false
+
+      - id: test-agents-index
+        name: AGENTS.d index generator and migration check keep their contract
+        entry: python3 -B scripts/docs/tests/test_agents_index.py
+        language: system
+        files: '^(scripts/docs/(agents_index|agents_migration_check|tests/test_agents_index)\.py|scripts/dev/project_modernization_audit\.py|\.pre-commit-config\.yaml)$'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]

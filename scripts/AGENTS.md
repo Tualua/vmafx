@@ -190,6 +190,27 @@ responsibilities; do not rewrite accepted ADRs to satisfy generated lint.
 `docs/check-adr-index.py` also verifies fragment/source coverage and mutable
 fragment ADR references before concatenation.
 
+### `docs/agents_index.py` owns every `AGENTS.md` next to an `AGENTS.d/` (ADR-1454)
+
+`<dir>/AGENTS.md` = rendered from `<dir>/AGENTS.d/_index.md` (title + rules for
+every file) and `<dir>/AGENTS.d/<slug>.md` pages (front matter `paths:` list +
+`invariant:`). Never hand-edit the index. New invariant = edit or add a page,
+then `make docs-fragments-write`; `make docs-fragments-check` (hook
+`check-generated-docs`) fails on a stale index and on one edited or appended
+to by hand: `stale_message()` quotes the foreign lines and names the
+`AGENTS.d/` they belong in. Keep that: appending to the index = how the old
+files grew. Budgets in the script: index 16000 bytes, page 12000,
+`invariant:` 120 characters, 24 globs; a glob matching no file fails. Raising
+a budget = new ADR superseding that part of ADR-1454.
+
+**On rebase**: conflict in a generated `AGENTS.md` -> master's side, then
+`make docs-fragments-write`. Conflict in a page -> resolve by hand like any
+source. `docs/agents_migration_check.py` = one-off proof for a migration PR
+(old file vs pages: units, headings, tokens); `agents_index.py` imports nothing
+from it, it imports `map_links` / `render` from the generator. Both tested in
+`docs/tests/test_agents_index.py` (hook `test-agents-index`). Guide:
+[agents index](../docs/development/agents-index.md).
+
 ### `gen_smoke_onnx.py` and `gen_*_onnx.py` are deterministic
 
 Fixture-generation scripts must produce byte-identical output

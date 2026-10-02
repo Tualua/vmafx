@@ -73,6 +73,7 @@ SKIP_PARTS: frozenset[str] = frozenset(
         ".pytest_cache",
         ".ruff_cache",
         ".venv",
+        "AGENTS.d",
         "__pycache__",
         "archive",
         "build",

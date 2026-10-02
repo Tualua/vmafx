@@ -42,6 +42,7 @@
         "scripts/ci/test_cross_backend_parity_gate.py": 10,
         "scripts/ci/tests/test_tidy_ratchet.py": 1,
         "scripts/docs/concat-adr-index.sh": 1,
+        "scripts/docs/tests/test_agents_index.py": 4,
         "scripts/docs/tests/test_generators.py": 1
       },
       "target": "0001-stash-benchmark-noise-file.md"
@@ -1419,6 +1420,7 @@
         "core/src/hip/kernel_template.h": 1,
         "scripts/ci/cross_backend_calibration.py": 1,
         "scripts/ci/deliverables-check.sh": 2,
+        "scripts/docs/agents_index.py": 1,
         "scripts/docs/generate-exact-twins.py": 1
       },
       "target": "0221-changelog-adr-fragment-pattern.md"
@@ -9154,6 +9156,14 @@
         "core/test/test_cuda_float_moment_parity.c": 1
       },
       "target": "1453-cuda-float-moment-cpu-float-squares.md"
+    },
+    "1454": {
+      "sites": {
+        "Makefile": 1,
+        "scripts/docs/agents_index.py": 2,
+        "scripts/docs/agents_migration_check.py": 1
+      },
+      "target": "1454-agents-index-and-topic-pages.md"
     },
     "1455": {
       "sites": {

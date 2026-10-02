@@ -172,8 +172,9 @@ lint-actions:
 	@actionlint
 
 # Fragment-tree drift check (ADR-0221). Verifies CHANGELOG.md and
-# docs/adr/README.md are in sync with fragments, ADR tags/nav match sources, and
-# the exact-twin table matches scripts/ci/exact_twins.d/ (ADR-1428).
+# docs/adr/README.md are in sync with fragments, ADR tags/nav match sources,
+# the exact-twin table matches scripts/ci/exact_twins.d/ (ADR-1428), and every
+# AGENTS.md next to an AGENTS.d/ matches its topic pages (ADR-1454).
 docs-fragments-check:
 	@echo "--- changelog.d/ vs CHANGELOG.md ---"
 	@bash scripts/release/concat-changelog-fragments.sh --check
@@ -183,6 +184,8 @@ docs-fragments-check:
 	@bash scripts/docs/generate-adr-nav.sh --check
 	@echo "--- scripts/ci/exact_twins.d/ vs docs/development/cross-backend-exact-twins.md ---"
 	@python3 scripts/docs/generate-exact-twins.py --check
+	@echo "--- */AGENTS.d/ vs */AGENTS.md ---"
+	@python3 scripts/docs/agents_index.py --check
 
 # Regenerate consolidated outputs from fragments (ADR-0221).
 docs-fragments-write:
@@ -191,6 +194,7 @@ docs-fragments-write:
 	@bash scripts/docs/generate-adr-by-tag.sh --write
 	@bash scripts/docs/generate-adr-nav.sh --write
 	@python3 scripts/docs/generate-exact-twins.py --write
+	@python3 scripts/docs/agents_index.py --write
 
 # Analyze only this Meson profile, retaining all configured command variants.
 # Backend-specific clang-tidy options can be supplied with repeated

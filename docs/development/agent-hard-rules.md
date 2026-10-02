@@ -62,7 +62,9 @@ line budget. Changing a rule here changes it for every agent.
    "no digest needed: trivial"); (b) decision matrix in the accompanying
    ADR's `## Alternatives considered` (or "no alternatives: only-one-way
    fix"); (c) `AGENTS.md` invariant note in the relevant package (or
-   "no rebase-sensitive invariants"); (d) reproducer / smoke-test command
+   "no rebase-sensitive invariants"; where the package has an `AGENTS.d/`,
+   the note is a page there, see [agents index](agents-index.md));
+   (d) reproducer / smoke-test command
    in the PR description; (e) CHANGELOG fragment file under
    `changelog.d/<section>/<topic>.md` — `CHANGELOG.md` itself is rendered
    by `scripts/release/concat-changelog-fragments.sh` per ADR-0221;

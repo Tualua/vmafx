@@ -57869,4 +57869,21 @@ must keep the fork's side of both:
   `core/test/test_cuda_float_psnr_exact_contract.py` (new) is device-free.
 - `scripts/ci/exact_twins.d/float_psnr.cuda` (new) declares the twin exact
   (ADR-1428).
+## ADR-1454 — `scripts/ci/AGENTS.md` is a generated index over `AGENTS.d/` pages (2026-10-02)
+
+`docs/agents-index-topic-pages`, opens `T-AGENTS-INDEX-MIGRATION-2026-10-02`.
+
+- No rebase impact from upstream: an upstream sync never touches an
+  `AGENTS.md` or an `AGENTS.d/`; Netflix/vmaf has neither.
+- Fork branches that append to `scripts/ci/AGENTS.md` conflict once. Take
+  master's side of `scripts/ci/AGENTS.md`, put the added text into the page
+  whose `Touching` row matches the files (or a new page under
+  `scripts/ci/AGENTS.d/`), then `make docs-fragments-write`.
+- `scripts/docs/agents_index.py` (new) renders every `AGENTS.md` next to an
+  `AGENTS.d/`; `make docs-fragments-check` and the `check-generated-docs`
+  hook run it. `scripts/docs/agents_migration_check.py` (new) is the one-off
+  proof for a migration pull request.
+- `.pre-commit-config.yaml`: the hooks triggered by `scripts/ci/AGENTS.md`
+  (`test-codex-hook-config`, `check-research-digest-ids`,
+  `test-research-digest-ids`) also name the page that now holds their text.
 - No Netflix golden-data, public API or FFmpeg patch impact.

@@ -5,7 +5,9 @@ Cross-package invariants that any upstream-sync or rebase agent must preserve.
 Referenced from the canonical [`AGENTS.md`](../../AGENTS.md) harness. Per-subtree
 detail lives in the `AGENTS.md` under each subtree; this page is the index. When a
 rebase touches a cited translation unit, read that subtree harness before resolving
-conflicts.
+conflicts. A subtree `AGENTS.md` with an `AGENTS.d/` next to it is a generated index:
+read the pages its table names for the paths you touch, and add an invariant as a
+page there ([agents index and topic pages](agents-index.md)).
 
 Cross-package invariants that any upstream-sync / rebase agent must
 preserve. Per-subtree details (the load-bearing reasons + load-bearing

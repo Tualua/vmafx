@@ -454,6 +454,7 @@ class ResearchDigestIdTests(unittest.TestCase):
             "docs/research/0433-ci-pipeline-audit-2026-05.md",
             "docs/usage/bd-rate.md",
             "scripts/ci/AGENTS.md",
+            "scripts/ci/AGENTS.d/research-digest-ids.md",
             "scripts/ci/check-research-digest-ids.py",
             "scripts/ci/research-digest-id-baseline.json",
             "scripts/ci/tests/test_research_digest_ids.py",
