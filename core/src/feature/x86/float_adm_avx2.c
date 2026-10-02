@@ -18,11 +18,28 @@
  *
  */
 
+#include <errno.h>
 #include <immintrin.h>
 #include <math.h>
 #include <stddef.h>
 #include "float_adm_avx2.h"
 #include "mem.h"
+
+/*
+ * AVX2 kernels of the float ADM pipeline: the wavelet (adm_dwt2_s()) and one
+ * band of the CSF stage (adm_csf_plane_s()). Both return the scalar
+ * function's bits for every input; core/test/test_float_adm_x86.c compares
+ * every output element. What that takes:
+ *
+ *  - a four-tap sum starts at +0 and adds one product per step, in tap order,
+ *    as `accum = 0; accum += c[0] * s0; ...` does. Starting at the first
+ *    product instead returns -0 where the scalar returns +0;
+ *  - multiply, then add. No fused multiply-add: the scalar function carries a
+ *    contraction guard (ADR-1057) and this translation unit is built with
+ *    the strict floating-point arguments (ADR-1415);
+ *  - the CSF's `flt` is a double product narrowed to float, because
+ *    FLOAT_ONE_BY_30 is a double constant in adm_tools.c.
+ */
 
 static const int FLOAT_ABS_MASK_I = 0x7FFFFFFF;
 
@@ -32,143 +49,153 @@ static const float dwt2_db2_coeffs_lo[4] = {0.482962913144690f, 0.83651630373746
 static const float dwt2_db2_coeffs_hi[4] = {-0.129409522550921f, -0.224143868041857f,
                                             0.836516303737469f, -0.482962913144690f};
 
-/*
- * Horizontally sum 4 doubles in a __m256d to a scalar double.
- * Uses _mm256_hadd_pd + lane extraction to avoid a store+loop.
- * Tree order: (v[0]+v[1]) + (v[2]+v[3]).
- */
-/* ADR-0139 bit-exactness: the horizontal double reduction stays inline; it
- * must not be outline-called (register allocation changes rounding order on
- * MSVC /fp:precise). */
-static inline double hadd_pd4(__m256d v)
-{
-    /* [v0+v1, v2+v3, v0+v1, v2+v3] */
-    __m256d h = _mm256_hadd_pd(v, v);
-    /* Extract upper lane (v2+v3) and add to lower (v0+v1). */
-    return _mm_cvtsd_f64(_mm256_castpd256_pd128(h)) + _mm_cvtsd_f64(_mm256_extractf128_pd(h, 1));
-}
-
-/* The broadcast taps of the vertical pass. */
+/* The broadcast taps of both passes. */
 typedef struct Dwt2TapsAvx2 {
     __m256 lo[4];
     __m256 hi[4];
 } Dwt2TapsAvx2;
+
+/* One row of the four output bands. */
+typedef struct Dwt2BandRow {
+    float *a;
+    float *v;
+    float *h;
+    float *d;
+} Dwt2BandRow;
+
+/* Four-tap sum of one sample, in adm_dwt2_s()'s order. */
+static inline float dwt2_tap4(const float c[4], float s0, float s1, float s2, float s3)
+{
+    float accum = 0.0f;
+    accum += c[0] * s0;
+    accum += c[1] * s1;
+    accum += c[2] * s2;
+    accum += c[3] * s3;
+    return accum;
+}
+
+/* The same sum for eight samples. */
+static inline __m256 dwt2_tap4_avx2(const __m256 c[4], __m256 s0, __m256 s1, __m256 s2, __m256 s3)
+{
+    __m256 accum = _mm256_setzero_ps();
+    accum = _mm256_add_ps(accum, _mm256_mul_ps(c[0], s0));
+    accum = _mm256_add_ps(accum, _mm256_mul_ps(c[1], s1));
+    accum = _mm256_add_ps(accum, _mm256_mul_ps(c[2], s2));
+    accum = _mm256_add_ps(accum, _mm256_mul_ps(c[3], s3));
+    return accum;
+}
 
 /* Vertical pass of one output row: the four source rows `row[0..3]` filtered
  * into tmplo and tmphi, `w` samples each. */
 static void dwt2_vertical_row_avx2(const Dwt2TapsAvx2 *taps, const float *const row[4], int w,
                                    float *tmplo, float *tmphi)
 {
-    const float *filter_lo = dwt2_db2_coeffs_lo;
-    const float *filter_hi = dwt2_db2_coeffs_hi;
-
-    /* Vertical pass: process 8 columns at a time with AVX2.
-     * F3: mul+add chains here match the scalar tail below; with
-     * -ffp-contract=off (enforced by the per-TU meson.build carve-out)
-     * neither path auto-fuses to FMA, keeping both paths bit-identical. */
     int j = 0;
     for (; j + 8 <= w; j += 8) {
-        __m256 s0 = _mm256_loadu_ps(row[0] + j);
-        __m256 s1 = _mm256_loadu_ps(row[1] + j);
-        __m256 s2 = _mm256_loadu_ps(row[2] + j);
-        __m256 s3 = _mm256_loadu_ps(row[3] + j);
+        const __m256 s0 = _mm256_loadu_ps(row[0] + j);
+        const __m256 s1 = _mm256_loadu_ps(row[1] + j);
+        const __m256 s2 = _mm256_loadu_ps(row[2] + j);
+        const __m256 s3 = _mm256_loadu_ps(row[3] + j);
 
-        /* Low-pass vertical. */
-        __m256 lo_acc = _mm256_mul_ps(s0, taps->lo[0]);
-        lo_acc = _mm256_add_ps(lo_acc, _mm256_mul_ps(s1, taps->lo[1]));
-        lo_acc = _mm256_add_ps(lo_acc, _mm256_mul_ps(s2, taps->lo[2]));
-        lo_acc = _mm256_add_ps(lo_acc, _mm256_mul_ps(s3, taps->lo[3]));
-        _mm256_storeu_ps(tmplo + j, lo_acc);
-
-        /* High-pass vertical. */
-        __m256 hi_acc = _mm256_mul_ps(s0, taps->hi[0]);
-        hi_acc = _mm256_add_ps(hi_acc, _mm256_mul_ps(s1, taps->hi[1]));
-        hi_acc = _mm256_add_ps(hi_acc, _mm256_mul_ps(s2, taps->hi[2]));
-        hi_acc = _mm256_add_ps(hi_acc, _mm256_mul_ps(s3, taps->hi[3]));
-        _mm256_storeu_ps(tmphi + j, hi_acc);
+        _mm256_storeu_ps(tmplo + j, dwt2_tap4_avx2(taps->lo, s0, s1, s2, s3));
+        _mm256_storeu_ps(tmphi + j, dwt2_tap4_avx2(taps->hi, s0, s1, s2, s3));
     }
 
-    /* Scalar tail for vertical pass. */
     for (; j < w; ++j) {
-        float s0 = row[0][j];
-        float s1 = row[1][j];
-        float s2 = row[2][j];
-        float s3 = row[3][j];
+        const float s0 = row[0][j];
+        const float s1 = row[1][j];
+        const float s2 = row[2][j];
+        const float s3 = row[3][j];
 
-        tmplo[j] = filter_lo[0] * s0 + filter_lo[1] * s1 + filter_lo[2] * s2 + filter_lo[3] * s3;
-        tmphi[j] = filter_hi[0] * s0 + filter_hi[1] * s1 + filter_hi[2] * s2 + filter_hi[3] * s3;
+        tmplo[j] = dwt2_tap4(dwt2_db2_coeffs_lo, s0, s1, s2, s3);
+        tmphi[j] = dwt2_tap4(dwt2_db2_coeffs_hi, s0, s1, s2, s3);
     }
 }
 
-/* Horizontal pass of one output row: scalar, since it uses indirect indexing
- * via ind_x. `a`, `v`, `h` and `d` are that row of the four bands. */
-static void dwt2_horizontal_row_avx2(const float *tmplo, const float *tmphi, int **ind_x,
-                                     int half_w, float *a, float *v, float *h, float *d)
+/* Horizontal pass, scalar, for output column j, through ind_x: the left
+ * boundary (j = 0, reflection) and the right end of a row. */
+static void dwt2_horizontal_scalar(const float *tmplo, const float *tmphi, int **ind_x, int j,
+                                   const Dwt2BandRow *out)
 {
-    const float *filter_lo = dwt2_db2_coeffs_lo;
-    const float *filter_hi = dwt2_db2_coeffs_hi;
+    const int j0 = ind_x[0][j];
+    const int j1 = ind_x[1][j];
+    const int j2 = ind_x[2][j];
+    const int j3 = ind_x[3][j];
 
-    for (int j = 0; j < half_w; ++j) {
-        int j0 = ind_x[0][j];
-        int j1 = ind_x[1][j];
-        int j2 = ind_x[2][j];
-        int j3 = ind_x[3][j];
+    out->a[j] = dwt2_tap4(dwt2_db2_coeffs_lo, tmplo[j0], tmplo[j1], tmplo[j2], tmplo[j3]);
+    out->v[j] = dwt2_tap4(dwt2_db2_coeffs_hi, tmplo[j0], tmplo[j1], tmplo[j2], tmplo[j3]);
+    out->h[j] = dwt2_tap4(dwt2_db2_coeffs_lo, tmphi[j0], tmphi[j1], tmphi[j2], tmphi[j3]);
+    out->d[j] = dwt2_tap4(dwt2_db2_coeffs_hi, tmphi[j0], tmphi[j1], tmphi[j2], tmphi[j3]);
+}
 
-        float sl0 = tmplo[j0];
-        float sl1 = tmplo[j1];
-        float sl2 = tmplo[j2];
-        float sl3 = tmplo[j3];
+/* Even (`odd` = 0) or odd elements of the sixteen floats at `p`. */
+static inline __m256 dwt2_every_other_avx2(const float *p, int odd)
+{
+    const __m256 lo = _mm256_loadu_ps(p);
+    const __m256 hi = _mm256_loadu_ps(p + 8);
+    /* Per 128-bit lane: two elements of lo, then two of hi. */
+    const __m256 mixed = odd ? _mm256_shuffle_ps(lo, hi, 0xDD) : _mm256_shuffle_ps(lo, hi, 0x88);
+    /* Lanes back in order: lo's four elements, then hi's. */
+    return _mm256_castpd_ps(_mm256_permute4x64_pd(_mm256_castps_pd(mixed), 0xD8));
+}
 
-        /* band_a: lo vertical, lo horizontal. */
-        a[j] = filter_lo[0] * sl0 + filter_lo[1] * sl1 + filter_lo[2] * sl2 + filter_lo[3] * sl3;
+/* Eight outputs of the low and of the high horizontal filter from one
+ * temporary row. `taps_at` points at tmp[2j]: the four taps of output j + k
+ * are tmp[2(j + k) - 1 .. 2(j + k) + 2], which is what ind_x holds for every
+ * column that needs no reflection. */
+static inline void dwt2_horizontal_8_avx2(const Dwt2TapsAvx2 *taps, const float *taps_at,
+                                          float *out_lo, float *out_hi)
+{
+    const __m256 tap0 = dwt2_every_other_avx2(taps_at - 1, 0);
+    const __m256 tap1 = dwt2_every_other_avx2(taps_at - 1, 1);
+    const __m256 tap2 = dwt2_every_other_avx2(taps_at + 1, 0);
+    const __m256 tap3 = dwt2_every_other_avx2(taps_at + 1, 1);
 
-        /* band_v: lo vertical, hi horizontal. */
-        v[j] = filter_hi[0] * sl0 + filter_hi[1] * sl1 + filter_hi[2] * sl2 + filter_hi[3] * sl3;
+    _mm256_storeu_ps(out_lo, dwt2_tap4_avx2(taps->lo, tap0, tap1, tap2, tap3));
+    _mm256_storeu_ps(out_hi, dwt2_tap4_avx2(taps->hi, tap0, tap1, tap2, tap3));
+}
 
-        float sh0 = tmphi[j0];
-        float sh1 = tmphi[j1];
-        float sh2 = tmphi[j2];
-        float sh3 = tmphi[j3];
+/* Horizontal pass of one output row: column 0 and the right end through
+ * ind_x, the columns between eight at a time. The vector loop stops while
+ * its last tap, tmp[2j + 16], is still inside the row. */
+static void dwt2_horizontal_row_avx2(const Dwt2TapsAvx2 *taps, const float *tmplo,
+                                     const float *tmphi, int **ind_x, int w, const Dwt2BandRow *out)
+{
+    const int half_w = (w + 1) / 2;
 
-        /* band_h: hi vertical, lo horizontal. */
-        h[j] = filter_lo[0] * sh0 + filter_lo[1] * sh1 + filter_lo[2] * sh2 + filter_lo[3] * sh3;
+    dwt2_horizontal_scalar(tmplo, tmphi, ind_x, 0, out);
 
-        /* band_d: hi vertical, hi horizontal. */
-        d[j] = filter_hi[0] * sh0 + filter_hi[1] * sh1 + filter_hi[2] * sh2 + filter_hi[3] * sh3;
+    int j = 1;
+    for (; j + 8 <= half_w && 2 * j + 16 < w; j += 8) {
+        const ptrdiff_t at = (ptrdiff_t)2 * j;
+        dwt2_horizontal_8_avx2(taps, tmplo + at, out->a + j, out->v + j);
+        dwt2_horizontal_8_avx2(taps, tmphi + at, out->h + j, out->d + j);
+    }
+
+    for (; j < half_w; ++j) {
+        dwt2_horizontal_scalar(tmplo, tmphi, ind_x, j, out);
     }
 }
 
-void float_adm_dwt2_avx2(const float *src, const adm_dwt_band_t_s *dst, int **ind_y, int **ind_x,
-                         int w, int h, int src_stride, int dst_stride)
+int float_adm_dwt2_avx2(const float *src, const adm_dwt_band_t_s *dst, int **ind_y, int **ind_x,
+                        int w, int h, int src_stride, int dst_stride)
 {
-    const float *filter_lo = dwt2_db2_coeffs_lo;
-    const float *filter_hi = dwt2_db2_coeffs_hi;
+    const int src_px_stride = src_stride / sizeof(float);
+    const int dst_px_stride = dst_stride / sizeof(float);
 
-    int src_px_stride = src_stride / sizeof(float);
-    int dst_px_stride = dst_stride / sizeof(float);
-
-    /* aligned_malloc may return NULL on OOM; the scalar reference
-     * (adm_tools.c::adm_dwt2_s) treats this as -ENOMEM and aborts the
-     * frame.  This function signature is `void` (matched against the
-     * AVX-512 / NEON siblings — wiring tracked in adm.c ADR-0873
-     * follow-up), so we mirror the AVX-512 sibling's behaviour:
-     * release whichever allocation succeeded and silently no-op the
-     * transform.  Without this guard the SIMD stores at the vertical
-     * pass NULL-deref and segfault. */
     float *tmplo = aligned_malloc(ALIGN_CEIL(sizeof(float) * w), MAX_ALIGN);
     float *tmphi = aligned_malloc(ALIGN_CEIL(sizeof(float) * w), MAX_ALIGN);
     if (!tmplo || !tmphi) {
         aligned_free(tmplo);
         aligned_free(tmphi);
-        return;
+        return -ENOMEM;
     }
 
-    /* Broadcast filter coefficients for vertical pass. */
     const Dwt2TapsAvx2 taps = {
-        .lo = {_mm256_set1_ps(filter_lo[0]), _mm256_set1_ps(filter_lo[1]),
-               _mm256_set1_ps(filter_lo[2]), _mm256_set1_ps(filter_lo[3])},
-        .hi = {_mm256_set1_ps(filter_hi[0]), _mm256_set1_ps(filter_hi[1]),
-               _mm256_set1_ps(filter_hi[2]), _mm256_set1_ps(filter_hi[3])},
+        .lo = {_mm256_set1_ps(dwt2_db2_coeffs_lo[0]), _mm256_set1_ps(dwt2_db2_coeffs_lo[1]),
+               _mm256_set1_ps(dwt2_db2_coeffs_lo[2]), _mm256_set1_ps(dwt2_db2_coeffs_lo[3])},
+        .hi = {_mm256_set1_ps(dwt2_db2_coeffs_hi[0]), _mm256_set1_ps(dwt2_db2_coeffs_hi[1]),
+               _mm256_set1_ps(dwt2_db2_coeffs_hi[2]), _mm256_set1_ps(dwt2_db2_coeffs_hi[3])},
     };
 
     for (int i = 0; i < (h + 1) / 2; ++i) {
@@ -178,156 +205,55 @@ void float_adm_dwt2_avx2(const float *src, const adm_dwt_band_t_s *dst, int **in
             src + (ptrdiff_t)ind_y[2][i] * src_px_stride,
             src + (ptrdiff_t)ind_y[3][i] * src_px_stride,
         };
-        const ptrdiff_t out = (ptrdiff_t)i * dst_px_stride;
+        const ptrdiff_t at = (ptrdiff_t)i * dst_px_stride;
+        const Dwt2BandRow out = {dst->band_a + at, dst->band_v + at, dst->band_h + at,
+                                 dst->band_d + at};
 
         dwt2_vertical_row_avx2(&taps, row, w, tmplo, tmphi);
-        dwt2_horizontal_row_avx2(tmplo, tmphi, ind_x, (w + 1) / 2, dst->band_a + out,
-                                 dst->band_v + out, dst->band_h + out, dst->band_d + out);
+        dwt2_horizontal_row_avx2(&taps, tmplo, tmphi, ind_x, w, &out);
     }
 
     aligned_free(tmplo);
     aligned_free(tmphi);
+    return 0;
+}
+
+/* `one_by_30 * |d|` for eight floats, as a double product narrowed to float. */
+static inline __m256 csf_filter_avx2(__m256d one_by_30, __m256 abs_d)
+{
+    const __m256d lo = _mm256_cvtps_pd(_mm256_castps256_ps128(abs_d));
+    const __m256d hi = _mm256_cvtps_pd(_mm256_extractf128_ps(abs_d, 1));
+    const __m128 flo = _mm256_cvtpd_ps(_mm256_mul_pd(one_by_30, lo));
+    const __m128 fhi = _mm256_cvtpd_ps(_mm256_mul_pd(one_by_30, hi));
+    return _mm256_insertf128_ps(_mm256_castps128_ps256(flo), fhi, 1);
 }
 
 void float_adm_csf_avx2(const float *src, float *dst, float *flt, int w, int h, int src_stride,
-                        int dst_stride, float factor, float one_by_30)
+                        int dst_stride, float factor, double one_by_30)
 {
-    int src_px_stride = src_stride / sizeof(float);
-    int dst_px_stride = dst_stride / sizeof(float);
+    const int src_px_stride = src_stride / sizeof(float);
+    const int dst_px_stride = dst_stride / sizeof(float);
 
-    __m256 abs_mask = _mm256_castsi256_ps(_mm256_set1_epi32(FLOAT_ABS_MASK_I));
-    __m256 vfactor = _mm256_set1_ps(factor);
-    __m256 vone_by_30 = _mm256_set1_ps(one_by_30);
+    const __m256 abs_mask = _mm256_castsi256_ps(_mm256_set1_epi32(FLOAT_ABS_MASK_I));
+    const __m256 vfactor = _mm256_set1_ps(factor);
+    const __m256d vone_by_30 = _mm256_set1_pd(one_by_30);
 
     for (int i = 0; i < h; ++i) {
-        int src_offset = i * src_px_stride;
-        int dst_offset = i * dst_px_stride;
+        const float *src_row = src + (ptrdiff_t)i * src_px_stride;
+        float *dst_row = dst + (ptrdiff_t)i * dst_px_stride;
+        float *flt_row = flt + (ptrdiff_t)i * dst_px_stride;
         int j = 0;
 
-        /* Process 16 floats per iteration (dual accumulators for throughput). */
-        for (; j + 16 <= w; j += 16) {
-            __m256 s0 = _mm256_loadu_ps(src + src_offset + j);
-            __m256 s1 = _mm256_loadu_ps(src + src_offset + j + 8);
-
-            __m256 d0 = _mm256_mul_ps(vfactor, s0);
-            __m256 d1 = _mm256_mul_ps(vfactor, s1);
-
-            _mm256_storeu_ps(dst + dst_offset + j, d0);
-            _mm256_storeu_ps(dst + dst_offset + j + 8, d1);
-
-            __m256 a0 = _mm256_and_ps(d0, abs_mask);
-            __m256 a1 = _mm256_and_ps(d1, abs_mask);
-
-            __m256 f0 = _mm256_mul_ps(vone_by_30, a0);
-            __m256 f1 = _mm256_mul_ps(vone_by_30, a1);
-
-            _mm256_storeu_ps(flt + dst_offset + j, f0);
-            _mm256_storeu_ps(flt + dst_offset + j + 8, f1);
-        }
-
-        /* Process 8 floats. */
         for (; j + 8 <= w; j += 8) {
-            __m256 s = _mm256_loadu_ps(src + src_offset + j);
-            __m256 d = _mm256_mul_ps(vfactor, s);
-            _mm256_storeu_ps(dst + dst_offset + j, d);
-
-            __m256 a = _mm256_and_ps(d, abs_mask);
-            __m256 f = _mm256_mul_ps(vone_by_30, a);
-            _mm256_storeu_ps(flt + dst_offset + j, f);
+            const __m256 d = _mm256_mul_ps(vfactor, _mm256_loadu_ps(src_row + j));
+            _mm256_storeu_ps(dst_row + j, d);
+            _mm256_storeu_ps(flt_row + j, csf_filter_avx2(vone_by_30, _mm256_and_ps(d, abs_mask)));
         }
 
-        /* Scalar tail. */
         for (; j < w; ++j) {
-            float dst_val = factor * src[src_offset + j];
-            dst[dst_offset + j] = dst_val;
-            flt[dst_offset + j] = one_by_30 * fabsf(dst_val);
+            const float dst_val = factor * src_row[j];
+            dst_row[j] = dst_val;
+            flt_row[j] = one_by_30 * fabsf(dst_val);
         }
     }
-}
-
-float float_adm_csf_den_scale_avx2(const float *src, int w, int h, int src_stride, int left,
-                                   int top, int right, int bottom, float factor)
-{
-    (void)w;
-    (void)h;
-    int src_px_stride = src_stride / sizeof(float);
-
-    __m256 abs_mask = _mm256_castsi256_ps(_mm256_set1_epi32(FLOAT_ABS_MASK_I));
-    __m256 vfactor = _mm256_set1_ps(factor);
-
-    double accum = 0;
-
-    for (int i = top; i < bottom; ++i) {
-        const float *row = src + (ptrdiff_t)i * src_px_stride;
-        double row_accum = 0.0;
-        int j = left;
-
-        for (; j + 8 <= right; j += 8) {
-            __m256 s = _mm256_loadu_ps(row + j);
-            __m256 v = _mm256_and_ps(_mm256_mul_ps(vfactor, s), abs_mask);
-            __m256 vsq = _mm256_mul_ps(v, v);
-            __m256 vcube = _mm256_mul_ps(vsq, v);
-
-            /*
-             * F2 fix: accumulate via double-precision widening instead of
-             * store-to-tmp + scalar loop.  Widen the low 4 and high 4 float
-             * lanes to double separately, sum each group with hadd_pd4, then
-             * add both halves.  This avoids an intermediate float-precision
-             * store and keeps the entire lane accumulation in double. The
-             * tree reduction order (lo-half sum + hi-half sum) is consistent
-             * across all SIMD paths (AVX2 and AVX-512 twins) — see ADR-0139.
-             */
-            __m256d lo = _mm256_cvtps_pd(_mm256_castps256_ps128(vcube));
-            __m256d hi = _mm256_cvtps_pd(_mm256_extractf128_ps(vcube, 1));
-            row_accum += hadd_pd4(lo) + hadd_pd4(hi);
-        }
-
-        for (; j < right; ++j) {
-            float val = fabsf(factor * row[j]);
-            row_accum += (double)(val * val * val);
-        }
-
-        accum += row_accum;
-    }
-
-    return (float)accum;
-}
-
-float float_adm_sum_cube_avx2(const float *x, int w, int h, int stride, int left, int top,
-                              int right, int bottom)
-{
-    (void)w;
-    (void)h;
-    int px_stride = stride / sizeof(float);
-
-    __m256 abs_mask = _mm256_castsi256_ps(_mm256_set1_epi32(FLOAT_ABS_MASK_I));
-
-    double accum = 0;
-
-    for (int i = top; i < bottom; ++i) {
-        const float *row = x + (ptrdiff_t)i * px_stride;
-        double row_accum = 0.0;
-        int j = left;
-
-        for (; j + 8 <= right; j += 8) {
-            __m256 v = _mm256_and_ps(_mm256_loadu_ps(row + j), abs_mask);
-            __m256 vsq = _mm256_mul_ps(v, v);
-            __m256 vcube = _mm256_mul_ps(vsq, v);
-
-            /* F2 fix: widen to double via _mm256_cvtps_pd, avoid store+loop.
-             * See float_adm_csf_den_scale_avx2 for rationale. */
-            __m256d lo = _mm256_cvtps_pd(_mm256_castps256_ps128(vcube));
-            __m256d hi = _mm256_cvtps_pd(_mm256_extractf128_ps(vcube, 1));
-            row_accum += hadd_pd4(lo) + hadd_pd4(hi);
-        }
-
-        for (; j < right; ++j) {
-            float val = fabsf(row[j]);
-            row_accum += (double)(val * val * val);
-        }
-
-        accum += row_accum;
-    }
-
-    return (float)accum;
 }

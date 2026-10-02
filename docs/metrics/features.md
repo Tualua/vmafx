@@ -495,6 +495,38 @@ What this means when you use it:
 - It is not slower. The extractor takes the same time or a little less at
   576x324, 1920x1080 and 3840x2160 with the scalar, AVX2 and AVX-512 paths.
 
+##### `float_adm` uses AVX2 and AVX-512, with the same scores
+
+On x86 `float_adm` runs its wavelet and its contrast-sensitivity stage through
+AVX2 or AVX-512 kernels when the processor has them
+([ADR-1473](../adr/1473-float-adm-x86-simd-exact-and-dispatched.md)); on
+64-bit ARM the wavelet runs through NEON. Every kernel returns the bits of the
+scalar code, so the instruction set does not change a score.
+
+What this means when you use it:
+
+- You do not select anything. `--cpumask` restricts the instruction sets as
+  for every other extractor: `--cpumask 63` forces the scalar code, `48`
+  allows up to AVX2, `0` (the default) allows everything.
+- Scores are the same on all three settings and the same as before the kernels
+  were enabled: every `float_adm` output with `debug=true` under 13 option
+  sets, and the `vmaf_float_v0.6.1` score, on the Netflix 576x324 pair at 8,
+  10, 12 and 16 bits, both 1920x1080 checkerboard pairs, 3840x2160 and 14
+  small frame sizes down to 17x17.
+- It is faster. One thread, whole run of `vmaf --feature float_adm`, on a
+  Ryzen 9 9950X3D:
+
+  | Frame | scalar | AVX2 | AVX-512 |
+  | --- | --- | --- | --- |
+  | 576x324 | 1.45 ms | 1.17 ms | 1.11 ms |
+  | 1920x1080 | 17.9 ms | 15.2 ms | 15.1 ms |
+  | 3840x2160 | 76.2 ms | 62.4 ms | 62.9 ms |
+
+- The rest of the extractor (the decouple, the denominator and the contrast
+  masking) is scalar on every processor. Those stages add `float` values in a
+  fixed order that the scores depend on.
+- A frame that contains NaN is refused on every setting, as before.
+
 ##### `float_adm` on CUDA returns the CPU's values
 
 `float_adm_cuda` gives the same number as `--backend cpu --feature float_adm`

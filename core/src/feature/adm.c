@@ -35,6 +35,12 @@
 #if ARCH_AARCH64
 #include "arm64/float_adm_neon.h"
 #endif
+#if ARCH_X86
+#include "x86/float_adm_avx2.h"
+#if HAVE_AVX512
+#include "x86/float_adm_avx512.h"
+#endif
+#endif
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
  * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
@@ -45,7 +51,6 @@ typedef adm_dwt_band_t_s adm_dwt_band_t;
 
 #define adm_dwt2_lo adm_dwt2_lo_s
 #define adm_decouple adm_decouple_s
-#define adm_csf adm_csf_s
 #define adm_cm_thresh adm_cm_thresh_s
 #define adm_cm adm_cm_s
 #define adm_sum_cube adm_sum_cube_s
@@ -53,31 +58,59 @@ typedef adm_dwt_band_t_s adm_dwt_band_t;
 
 #define adm_csf_den_scale adm_csf_den_scale_s
 
-/* ADR-1057: float_adm_dwt2_neon is now wired here via adm_dwt2_dispatch().
- * The NEON DWT2 kernel lives in its own TU (float_adm_dwt2_neon.c) compiled
- * with `-ffp-contract=off` plus pragma / GCC-attribute guards.  Its explicit
- * multiply/add sequence mirrors the function-scoped non-contracting scalar
- * DWT2 contract without changing unrelated arithmetic in adm_tools.c. */
+/* The wavelet and the CSF stage run through a SIMD kernel when the processor
+ * has one, chosen per call from vmaf_get_cpu_flags() as the fork's other
+ * float extractors choose theirs (so `--cpumask` selects the path). Every
+ * kernel returns the scalar function's bits: float_adm_dwt2_neon() (its own
+ * translation unit with contraction off, ADR-1057), float_adm_dwt2_avx2() /
+ * float_adm_dwt2_avx512() and float_adm_csf_avx2() / float_adm_csf_avx512()
+ * (strict floating-point arguments, ADR-1415). */
 #define dwt2_src_indices_filt dwt2_src_indices_filt_s
 
-/*
- * adm_dwt2_dispatch — thin wrapper that selects the NEON DWT2 implementation
- * on AArch64 when NEON is available, and falls back to the scalar path
- * otherwise.  The NEON variant has a `void` return (it silently no-ops on
- * OOM, matching the AVX2/AVX-512 siblings); we wrap it to match the `int`
- * return expected at the call site.
- */
 static int adm_dwt2_dispatch(const float *src, const adm_dwt_band_t_s *dst, int **ind_y,
                              int **ind_x, int w, int h, int src_stride, int dst_stride)
 {
 #if ARCH_AARCH64
+    /* The NEON kernel returns nothing: it leaves the bands untouched when its
+     * row buffers cannot be allocated. */
     if (vmaf_get_cpu_flags() & VMAF_ARM_CPU_FLAG_NEON) {
         float_adm_dwt2_neon(src, dst, ind_y, ind_x, w, h, src_stride, dst_stride);
         return 0;
     }
 #endif
+#if ARCH_X86
+    const unsigned flags = vmaf_get_cpu_flags();
+#if HAVE_AVX512
+    if (flags & VMAF_X86_CPU_FLAG_AVX512) {
+        return float_adm_dwt2_avx512(src, dst, ind_y, ind_x, w, h, src_stride, dst_stride);
+    }
+#endif
+    if (flags & VMAF_X86_CPU_FLAG_AVX2) {
+        return float_adm_dwt2_avx2(src, dst, ind_y, ind_x, w, h, src_stride, dst_stride);
+    }
+#endif
     return adm_dwt2_s(src, dst, ind_y, ind_x, w, h, src_stride, dst_stride);
 }
+
+/* The band kernel of the CSF stage for this processor. */
+static adm_csf_plane_fn adm_csf_plane_select(void)
+{
+#if ARCH_X86
+    const unsigned flags = vmaf_get_cpu_flags();
+#if HAVE_AVX512
+    if (flags & VMAF_X86_CPU_FLAG_AVX512) {
+        return float_adm_csf_avx512;
+    }
+#endif
+    if (flags & VMAF_X86_CPU_FLAG_AVX2) {
+        return float_adm_csf_avx2;
+    }
+#endif
+    return adm_csf_plane_s;
+}
+
+/* adm_csf_s()'s arguments, with the band kernel appended. */
+#define adm_csf(...) adm_csf_planes_s(__VA_ARGS__, adm_csf_plane_select())
 
 #define adm_dwt2 adm_dwt2_dispatch
 

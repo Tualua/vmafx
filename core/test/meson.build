@@ -2483,6 +2483,28 @@ test_adm_dwt2_x86 = executable('test_adm_dwt2_x86',
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects,
 )
+
+# ADR-1473: the x86 float ADM wavelet and CSF kernels return the scalar
+# functions' bits, and compute_adm() is the same on every dispatch level.
+test_float_adm_x86 = executable('test_float_adm_x86',
+    ['test.c', 'test_float_adm_x86.c',
+     '../src/mem.cpp', '../src/picture.c', '../src/ref.cpp',
+     '../src/dict.cpp',
+     '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/'),
+                           include_directories('../src/feature/'), dnn_inc],
+    c_args : vmaf_cflags_common + dnn_defines,
+    dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                    predict_test_dependencies, dnn_deps],
+    objects : [
+      common_cuda_objects,
+      platform_specific_cpu_objects,
+      libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+      libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+      log_cpp23_test_objects,
+      libsvm_static_lib.extract_all_objects(recursive: true),
+    ] + wave8_opt_only_objects,
+)
 endif
 
 
@@ -7002,6 +7024,7 @@ endif
 if integer_adm_simd_test_archs.contains(host_machine.cpu_family())
 test('test_integer_adm_simd', test_integer_adm_simd, suite : ['fast', 'simd'])
 test('test_adm_dwt2_x86', test_adm_dwt2_x86, suite : ['fast', 'simd'])
+test('test_float_adm_x86', test_float_adm_x86, suite : ['fast', 'simd'])
 endif
 
 if integer_ssim_simd_test_archs.contains(host_machine.cpu_family())

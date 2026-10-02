@@ -58929,3 +58929,23 @@ Kept: the `+0` start of every sum (signed-zero parity with `adm_dwt2_s()`), mult
   overwrite `motion_force_zero`, so the overload reaches every model. Do not
   take upstream's in-loop assignment back.
 - No score, Netflix golden-data, public C API or FFmpeg patch impact.
+## x86 float ADM: wavelet and CSF kernels are exact and dispatched; the reduction kernels are gone (ADR-1473, 2026-10-02)
+
+`feat/float-adm-x86-simd-exact`, `T-FLOAT-ADM-X86-KERNELS-NOT-EXACT-NOT-DISPATCHED-2026-10-02`. Maintainer decision (popup, 2026-10-02): make the kernels exact, test them and wire them.
+
+Which files are whose:
+
+- `core/src/feature/x86/float_adm_avx2.{c,h}`, `float_adm_avx512.{c,h}`: fork files under the Netflix header. Upstream Netflix/vmaf has no float ADM SIMD (`libvmaf/src/feature/x86/` holds `adm_avx2.c` / `adm_avx512.c` for the fixed-point extractor only). A sync never touches them.
+- `core/src/feature/adm_tools.c`, `adm_tools.h`, `adm.c`: upstream mirrors with fork changes. This change adds to them:
+  - `adm_tools.c`: `adm_csf_s()` is now a call of `adm_csf_planes_s(..., adm_csf_plane_s)`. Upstream's element loop is `adm_csf_plane_s()`, its three statements verbatim (`flt_ptr[dst_offset + j] = FLOAT_ONE_BY_30 * fabsf(dst_val);` is held by the GPU twins' contract tests); the weights and the border region are in `adm_csf_planes_s()`. Port an upstream hunk in `adm_csf_s()` into the function that owns the statement.
+  - `adm.c`: `adm_dwt2_dispatch()` has x86 branches next to the NEON one; `#define adm_csf adm_csf_s` became `#define adm_csf(...) adm_csf_planes_s(__VA_ARGS__, adm_csf_plane_select())`. An upstream change to the two `adm_csf(...)` calls in `compute_adm()` keeps working as long as the argument list is `adm_csf_s()`'s.
+
+Rules a rebase must keep (the test `core/test/test_float_adm_x86.c` fails otherwise):
+
+- every four-tap sum of the wavelet kernels starts at `+0` and adds one product per step in tap order (the scalar `accum = 0; accum += c[0] * s0; ...`), multiply then add, no fused form;
+- the CSF kernels compute `flt` as a double product narrowed to float;
+- the wavelet kernels return `int` (`-ENOMEM` on a failed allocation), as `adm_dwt2_s()` does.
+
+Removed: `float_adm_csf_den_scale_avx2()` / `_avx512()` and `float_adm_sum_cube_avx2()` / `_avx512()` with their declarations, and the helpers only they used (`hadd_pd4()`, `hsum_ps_to_double()`). Do not bring them back from an older branch: they add the cubes in a lane tree in double, the scalar reference adds `float` values in column order, and `compute_adm()` never called a sum of cubes. ADR-0844 described their accumulation; ADR-1473 replaces it for these kernels.
+
+No score, output, public C API, Netflix golden-data or FFmpeg patch impact. `float_adm` is 13 to 24 % faster with AVX2 or AVX-512.

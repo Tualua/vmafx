@@ -70,7 +70,7 @@ Complete invariants live in [../AGENTS.md
 | Touching | Read first | Invariant |
 | --- | --- | --- |
 | `cambi_avx2.c`, `cambi_avx512.c`, `/core/src/feature/cambi.c`, `/core/src/feature/cambi.h`, `/core/src/feature/cambi_c_values_frame.h` | [cambi](AGENTS.d/cambi.md) | Dispatch binds calculate_c_values_scan_avx2, not upstream calculate_c_values_avx2. |
-| `float_adm_avx2.c`, `float_adm_avx512.c`, `/core/src/feature/adm_tools.c` | [float-adm](AGENTS.d/float-adm.md) | Float ADM DWT2 helpers keep one statement per upstream statement; no expression is split or re-ordered. |
+| `float_adm_avx2.c`, `float_adm_avx512.c`, `/core/src/feature/adm_tools.c`, `/core/src/feature/adm.c` | [float-adm](AGENTS.d/float-adm.md) | Float ADM x86 kernels return the scalar bits; sums start at +0, multiply then add, CSF filter in double. |
 | `adm_avx2.c`, `adm_avx512.c`, `/core/src/feature/integer_adm.c`, `/core/src/feature/adm_csf_fixed_point.h` | [integer-adm](AGENTS.d/integer-adm.md) | Integer ADM tail bounds are measured from the loop start, not from column 0. |
 | `integer_ssim_avx2.c`, `integer_ssim_avx2.h`, `/core/src/feature/integer_ssim.c` | [integer-ssim](AGENTS.d/integer-ssim.md) | Layout of integer_ssim_moments_t in same order as ssim_moments is a cross-TU invariant. |
 | `convolve_avx2.c`, `convolve_avx512.c`, `/core/src/feature/iqa/convolve.c`, `/core/src/feature/common/convolution_avx.c` | [iqa-convolve](AGENTS.d/iqa-convolve.md) | Reserved-identifier hygiene: no leading-underscore names. |

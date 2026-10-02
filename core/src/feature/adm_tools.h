@@ -60,6 +60,27 @@ void adm_decouple_s(const adm_dwt_band_t_s *ref, const adm_dwt_band_t_s *dis,
                     int ref_stride, int dis_stride, int r_stride, int a_stride,
                     double border_factor, double adm_enhn_gain_limit);
 
+/* One band of the CSF stage over a `w` x `h` plane: `dst = factor * src` and
+ * `flt = one_by_30 * |dst|`, the second as a double product narrowed to
+ * float. adm_csf_plane_s() is the reference; a SIMD kernel with this
+ * signature returns its bits (x86/float_adm_avx2.h, x86/float_adm_avx512.h).
+ * `one_by_30` is adm_tools.c's FLOAT_ONE_BY_30, passed by adm_csf_planes_s(). */
+typedef void (*adm_csf_plane_fn)(const float *src, float *dst, float *flt, int w, int h,
+                                 int src_stride, int dst_stride, float factor, double one_by_30);
+
+void adm_csf_plane_s(const float *src_ptr, float *dst_ptr, float *flt_ptr, int w, int h,
+                     int src_stride, int dst_stride, float factor, double one_by_30);
+
+/* adm_csf_s() with the band kernel chosen by the caller. */
+void adm_csf_planes_s(const adm_dwt_band_t_s *src, const adm_dwt_band_t_s *dst,
+                      const adm_dwt_band_t_s *flt, int orig_h, int scale, int w, int h,
+                      int src_stride, int dst_stride, double border_factor,
+                      double adm_norm_view_dist, int adm_ref_display_height, int adm_csf_mode,
+                      double luminance_level, double adm_csf_scale, double adm_csf_diag_scale,
+                      double adm_f1s0, double adm_f1s1, double adm_f1s2, double adm_f1s3,
+                      double adm_f2s0, double adm_f2s1, double adm_f2s2, double adm_f2s3,
+                      adm_csf_plane_fn plane);
+
 void adm_csf_s(const adm_dwt_band_t_s *src, const adm_dwt_band_t_s *dst,
                const adm_dwt_band_t_s *flt, int orig_h, int scale, int w, int h, int src_stride,
                int dst_stride, double border_factor, double adm_norm_view_dist,

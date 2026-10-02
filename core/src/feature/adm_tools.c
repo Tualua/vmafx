@@ -392,13 +392,39 @@ void adm_decouple_s(const adm_dwt_band_t_s *ref, const adm_dwt_band_t_s *dis,
 /* Contrast sensitivity filtering                                            */
 /* ------------------------------------------------------------------------- */
 
-void adm_csf_s(const adm_dwt_band_t_s *src, const adm_dwt_band_t_s *dst,
-               const adm_dwt_band_t_s *flt, int orig_h, int scale, int w, int h, int src_stride,
-               int dst_stride, double border_factor, double adm_norm_view_dist,
-               int adm_ref_display_height, int adm_csf_mode, double luminance_level,
-               double adm_csf_scale, double adm_csf_diag_scale, double adm_f1s0, double adm_f1s1,
-               double adm_f1s2, double adm_f1s3, double adm_f2s0, double adm_f2s1, double adm_f2s2,
-               double adm_f2s3)
+/* One band of the CSF stage, element by element. The filtered value is a
+ * double product narrowed to float: FLOAT_ONE_BY_30 is a double literal.
+ * The statement is upstream's, and the GPU twins' contract tests hold it, so
+ * it multiplies by the constant itself; `one_by_30` carries that constant to
+ * the SIMD kernels of this signature, which do not see the macro. */
+void adm_csf_plane_s(const float *src_ptr, float *dst_ptr, float *flt_ptr, int w, int h,
+                     int src_stride, int dst_stride, float factor, double one_by_30)
+{
+    (void)one_by_30;
+
+    const int src_px_stride = src_stride / sizeof(float);
+    const int dst_px_stride = dst_stride / sizeof(float);
+
+    for (int i = 0; i < h; ++i) {
+        const ptrdiff_t src_offset = (ptrdiff_t)i * src_px_stride;
+        const ptrdiff_t dst_offset = (ptrdiff_t)i * dst_px_stride;
+
+        for (int j = 0; j < w; ++j) {
+            const float dst_val = factor * src_ptr[src_offset + j];
+            dst_ptr[dst_offset + j] = dst_val;
+            flt_ptr[dst_offset + j] = FLOAT_ONE_BY_30 * fabsf(dst_val);
+        }
+    }
+}
+
+void adm_csf_planes_s(const adm_dwt_band_t_s *src, const adm_dwt_band_t_s *dst,
+                      const adm_dwt_band_t_s *flt, int orig_h, int scale, int w, int h,
+                      int src_stride, int dst_stride, double border_factor,
+                      double adm_norm_view_dist, int adm_ref_display_height, int adm_csf_mode,
+                      double luminance_level, double adm_csf_scale, double adm_csf_diag_scale,
+                      double adm_f1s0, double adm_f1s1, double adm_f1s2, double adm_f1s3,
+                      double adm_f2s0, double adm_f2s1, double adm_f2s2, double adm_f2s3,
+                      adm_csf_plane_fn plane)
 {
     (void)orig_h;
 
@@ -416,23 +442,28 @@ void adm_csf_s(const adm_dwt_band_t_s *src, const adm_dwt_band_t_s *dst,
 
     /* The computation of the csf values is not required for the regions which lie outside the frame borders */
     const AdmBorderS b = adm_border_filt_s(w, h, border_factor);
+    const ptrdiff_t src_first = (ptrdiff_t)b.top * src_px_stride + b.left;
+    const ptrdiff_t dst_first = (ptrdiff_t)b.top * dst_px_stride + b.left;
 
     for (int theta = 0; theta < 3; ++theta) {
-        const float *src_ptr = src_angles[theta];
-        float *dst_ptr = dst_angles[theta];
-        float *flt_ptr = flt_angles[theta];
-
-        for (int i = b.top; i < b.bottom; ++i) {
-            const ptrdiff_t src_offset = (ptrdiff_t)i * src_px_stride;
-            const ptrdiff_t dst_offset = (ptrdiff_t)i * dst_px_stride;
-
-            for (int j = b.left; j < b.right; ++j) {
-                const float dst_val = rfactor[theta] * src_ptr[src_offset + j];
-                dst_ptr[dst_offset + j] = dst_val;
-                flt_ptr[dst_offset + j] = FLOAT_ONE_BY_30 * fabsf(dst_val);
-            }
-        }
+        plane(src_angles[theta] + src_first, dst_angles[theta] + dst_first,
+              flt_angles[theta] + dst_first, b.right - b.left, b.bottom - b.top, src_stride,
+              dst_stride, rfactor[theta], FLOAT_ONE_BY_30);
     }
+}
+
+void adm_csf_s(const adm_dwt_band_t_s *src, const adm_dwt_band_t_s *dst,
+               const adm_dwt_band_t_s *flt, int orig_h, int scale, int w, int h, int src_stride,
+               int dst_stride, double border_factor, double adm_norm_view_dist,
+               int adm_ref_display_height, int adm_csf_mode, double luminance_level,
+               double adm_csf_scale, double adm_csf_diag_scale, double adm_f1s0, double adm_f1s1,
+               double adm_f1s2, double adm_f1s3, double adm_f2s0, double adm_f2s1, double adm_f2s2,
+               double adm_f2s3)
+{
+    adm_csf_planes_s(src, dst, flt, orig_h, scale, w, h, src_stride, dst_stride, border_factor,
+                     adm_norm_view_dist, adm_ref_display_height, adm_csf_mode, luminance_level,
+                     adm_csf_scale, adm_csf_diag_scale, adm_f1s0, adm_f1s1, adm_f1s2, adm_f1s3,
+                     adm_f2s0, adm_f2s1, adm_f2s2, adm_f2s3, adm_csf_plane_s);
 }
 
 /* Combination of adm_csf_s and adm_sum_cube_s for csf_o based den_scale */

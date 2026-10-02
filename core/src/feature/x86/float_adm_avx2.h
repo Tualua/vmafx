@@ -23,16 +23,12 @@
 
 #include "feature/adm_tools.h"
 
-void float_adm_dwt2_avx2(const float *src, const adm_dwt_band_t_s *dst, int **ind_y, int **ind_x,
-                         int w, int h, int src_stride, int dst_stride);
+/* adm_dwt2_s() for AVX2: the same bits, the same return value. */
+int float_adm_dwt2_avx2(const float *src, const adm_dwt_band_t_s *dst, int **ind_y, int **ind_x,
+                        int w, int h, int src_stride, int dst_stride);
 
+/* adm_csf_plane_s() for AVX2 (an adm_csf_plane_fn): the same bits. */
 void float_adm_csf_avx2(const float *src, float *dst, float *flt, int w, int h, int src_stride,
-                        int dst_stride, float factor, float one_by_30);
-
-float float_adm_csf_den_scale_avx2(const float *src, int w, int h, int src_stride, int left,
-                                   int top, int right, int bottom, float factor);
-
-float float_adm_sum_cube_avx2(const float *x, int w, int h, int stride, int left, int top,
-                              int right, int bottom);
+                        int dst_stride, float factor, double one_by_30);
 
 #endif /* X86_AVX2_FLOAT_ADM_H_ */

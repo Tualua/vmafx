@@ -1582,6 +1582,7 @@ nav:
         - "ADR-1469: psnr-hvs-simd-butterfly-two-stages": adr/1469-psnr-hvs-simd-butterfly-two-stages.md
         - "ADR-1470: c-cxx-shared-enum-one-definition": adr/1470-c-cxx-shared-enum-one-definition.md
         - "ADR-1472: integer-adm-cm-weight-budget": adr/1472-integer-adm-cm-weight-budget.md
+        - "ADR-1473: float-adm-x86-simd-exact-and-dispatched": adr/1473-float-adm-x86-simd-exact-and-dispatched.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

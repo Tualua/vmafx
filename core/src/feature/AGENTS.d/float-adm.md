@@ -24,6 +24,17 @@ invariant: Float ADM GPU exports, strict division (no reciprocal estimate), min 
   type) same PR (`test_float_adm_device_math` /
   `test_sycl_float_adm_math` fail until they follow). HIP / Metal twins
   still old arithmetic: `T-GPU-FLOAT-ADM-CPU-ARITHMETIC-2026-10-01`.
+- **Float ADM SIMD = wavelet + CSF only, same bits as scalar** (ADR-1473).
+  `adm.c`: `adm_dwt2_dispatch()` (NEON, AVX2, AVX-512) and
+  `adm_csf_plane_select()` -> `adm_csf_planes_s(..., plane)`. `adm_csf_s()`
+  = `adm_csf_planes_s(..., adm_csf_plane_s)`; the element loop lives in
+  `adm_csf_plane_s()`, upstream's three statements verbatim. Decouple,
+  denominator reduction, contrast masking: scalar on every processor (fp32
+  accumulators in column order are the golden-gated reference). New kernel
+  -> byte-compare test against the `_s` function first, see
+  [`../x86/AGENTS.d/float-adm.md`](../x86/AGENTS.d/float-adm.md). Upstream
+  sync touching `adm_csf_s()`: port the hunk into `adm_csf_plane_s()` /
+  `adm_csf_planes_s()`.
 - **Float ADM DIVIDES; no reciprocal estimate, ever** (ADR-1442,
   fork-local, diverges from upstream). `adm_options.h`: NO
   `#define ADM_OPT_RECIP_DIVISION`. `adm_tools.c`: one
