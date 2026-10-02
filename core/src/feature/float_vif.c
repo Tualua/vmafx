@@ -35,6 +35,11 @@
 #include "vif_tools.h"
 #include "picture_copy.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` and the
+ * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
+
 /* Default minimum value allowed for the feature */
 #define DEFAULT_VIF_MIN_VAL (0.0)
 
@@ -186,7 +191,7 @@ static const VmafOption options[] = {
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
     {
-        .name = nullptr,
+        .name = NULL,
     },
 };
 
@@ -415,7 +420,7 @@ static const char *provided_features[] = {"VMAF_feature_vif_scale0_score",
                                           "vif_den_scale2",
                                           "vif_num_scale3",
                                           "vif_den_scale3",
-                                          nullptr};
+                                          NULL};
 
 // NOLINTNEXTLINE(misc-use-internal-linkage) (ADR-0278)
 VmafFeatureExtractor vmaf_fex_float_vif = {
@@ -427,3 +432,5 @@ VmafFeatureExtractor vmaf_fex_float_vif = {
     .priv_size = sizeof(VifState),
     .provided_features = provided_features,
 };
+
+/* NOLINTEND(modernize-use-nullptr) */

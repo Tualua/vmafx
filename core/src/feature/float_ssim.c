@@ -47,6 +47,11 @@
 #include "arm64/ssim_neon.h"
 #endif
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` and the
+ * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
+
 typedef struct SsimState {
     size_t float_stride;
     float *ref;
@@ -90,7 +95,7 @@ static const VmafOption options[] = {
         .max = 10,
     },
     {
-        .name = nullptr,
+        .name = NULL,
     },
 };
 
@@ -213,7 +218,7 @@ static int close(VmafFeatureExtractor *fex)
     return 0;
 }
 
-static const char *provided_features[] = {"float_ssim", nullptr};
+static const char *provided_features[] = {"float_ssim", NULL};
 
 // NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_ssim = {
@@ -225,3 +230,5 @@ VmafFeatureExtractor vmaf_fex_float_ssim = {
     .priv_size = sizeof(SsimState),
     .provided_features = provided_features,
 };
+
+/* NOLINTEND(modernize-use-nullptr) */

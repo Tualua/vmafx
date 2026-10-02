@@ -223,7 +223,7 @@ if want msvcism; then
   c_nullptr=$(changed_sources | grep -E '\.c$' | while read -r f; do
     grep -nE '\bnullptr\b' "$f" 2>/dev/null |
       grep -vE '^[0-9]+:[[:space:]]*(\*|/\*|//)' | sed "s|^|$f:|"
-  done | head -5)
+  done | head -60)
   if [ -n "$c_nullptr" ]; then
     printf '     %s\n' 'nullptr in a C translation unit — MSVC C2065; ADR-1138 keeps C on NULL'
     printf '%s\n' "$c_nullptr" | sed 's/^/       /'

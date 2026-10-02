@@ -32,6 +32,11 @@
 #include "iqa/ssim_tools.h"
 #include "ms_ssim_decimate.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` and the
+ * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
+
 /*
  * MS-SSIM 9-tap 9/7 biorthogonal wavelet LPF coefficients moved to
  * core/src/feature/ms_ssim_decimate.c (separable form). The 2-D
@@ -208,7 +213,7 @@ static int ms_ssim_build_pyramids(float **ref_imgs, float **cmp_imgs, int w, int
     int cur_w = w;
     int cur_h = h;
     for (int idx = 1; idx < scales; ++idx) {
-        if (ms_ssim_decimate(ref_imgs[idx - 1], cur_w, cur_h, ref_imgs[idx], nullptr, nullptr) ||
+        if (ms_ssim_decimate(ref_imgs[idx - 1], cur_w, cur_h, ref_imgs[idx], NULL, NULL) ||
             ms_ssim_decimate(cmp_imgs[idx - 1], cur_w, cur_h, cmp_imgs[idx], &cur_w, &cur_h)) {
             (void)printf("error: decimation fails on ref_imgs or cmp_imgs.\n");
             (void)fflush(stdout);
@@ -239,7 +244,7 @@ static void ms_ssim_run_scale(float *ref_img, float *cmp_img, int cur_w, int cur
         iqa_ssim(ref_img, cmp_img, cur_w, cur_h, window, mr, &s_args, l, c, s);
     } else {
         /* MS-SSIM (Wang) — default parameters (args=NULL) per upstream. */
-        iqa_ssim(ref_img, cmp_img, cur_w, cur_h, window, nullptr, nullptr, l, c, s);
+        iqa_ssim(ref_img, cmp_img, cur_w, cur_h, window, NULL, NULL, l, c, s);
     }
 }
 
@@ -326,8 +331,8 @@ int compute_ms_ssim(const float *ref, const float *cmp, int w, int h, int ref_st
     mr.map = ms_ssim_map_fn;
     mr.reduce = ms_ssim_reduce_fn;
 
-    float **ref_imgs = nullptr;
-    float **cmp_imgs = nullptr;
+    float **ref_imgs = NULL;
+    float **cmp_imgs = NULL;
     if (ms_ssim_alloc_pyramids(&ref_imgs, &cmp_imgs, w, h, scales)) {
         return 1;
     }
@@ -350,3 +355,5 @@ int compute_ms_ssim(const float *ref, const float *cmp, int w, int h, int ref_st
     *score = msssim;
     return 0;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

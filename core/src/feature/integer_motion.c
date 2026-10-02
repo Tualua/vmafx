@@ -47,6 +47,11 @@
 #include "arm64/motion_v2_neon.h"
 #endif
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` and the
+ * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
+
 typedef uint64_t (*motion_pipeline_fn)(const uint8_t *, ptrdiff_t, const uint8_t *, ptrdiff_t,
                                        int32_t *, unsigned, unsigned, unsigned bpc);
 
@@ -144,7 +149,7 @@ static const VmafOption options[] = {
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val.b = false,
     },
-    {nullptr}};
+    {NULL}};
 
 static inline int mirror(int idx, int size)
 {
@@ -525,7 +530,7 @@ static const char *provided_features[] = {
     "VMAF_integer_feature_motion_score",
     "VMAF_integer_feature_motion2_score",
     "VMAF_integer_feature_motion3_score",
-    nullptr,
+    NULL,
 };
 
 // NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as extern VmafFeatureExtractor vmaf_fex_integer_motion by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
@@ -540,3 +545,5 @@ VmafFeatureExtractor vmaf_fex_integer_motion = {
     .provided_features = provided_features,
     .flags = VMAF_FEATURE_EXTRACTOR_PREV_REF,
 };
+
+/* NOLINTEND(modernize-use-nullptr) */

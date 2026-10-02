@@ -2125,6 +2125,11 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   MSVC's C mode does not know the keyword.
 
 
+- **The Windows MSVC builds compile the SSIM, MS-SSIM, float VIF and motion
+  sources again.** Lint cleanups on 2026-10-02 had replaced `NULL` with the C23
+  keyword `nullptr` in seven C files; MSVC's C mode does not know the keyword.
+
+
 - **`vmaf` no longer hangs after an out-of-memory on the device.**
   `vmaf_read_pictures()` kept the pair of pictures it was given when it failed
   before it reached an extractor (a non-increasing index, pictures that

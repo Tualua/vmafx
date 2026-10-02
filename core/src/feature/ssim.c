@@ -30,6 +30,11 @@
 #include "iqa/decimate.h"
 #include "iqa/ssim_tools.h"
 
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr` and the
+ * required Windows builds compile this TU with cl.exe (C2065). ADR-1138. */
+
 static void ssim_init_window(struct iqa_kernel *window, int gaussian)
 {
     window->kernel = (float *)g_square_window;
@@ -98,8 +103,8 @@ static int ssim_decimate_pair(float *ref_f, float *cmp_f, int *w, int *h, int sc
     if (ssim_low_pass_alloc(low_pass, scale) != 0) {
         return -1;
     }
-    int err = iqa_decimate(ref_f, *w, *h, scale, low_pass, nullptr, nullptr, nullptr) ||
-              iqa_decimate(cmp_f, *w, *h, scale, low_pass, nullptr, w, h);
+    int err = iqa_decimate(ref_f, *w, *h, scale, low_pass, NULL, NULL, NULL) ||
+              iqa_decimate(cmp_f, *w, *h, scale, low_pass, NULL, w, h);
     ssim_low_pass_free(low_pass);
     return err ? -1 : 0;
 }
@@ -127,7 +132,7 @@ int compute_ssim(const float *ref, const float *cmp, int w, int h, int ref_strid
 
     /* args is hardcoded NULL (default Gaussian SSIM); the args branch
      * is preserved for upstream-parity readability. */
-    const struct iqa_ssim_args *args = nullptr;
+    const struct iqa_ssim_args *args = NULL;
     const int gaussian = 1;
     int scale = (scale_override > 0) ? scale_override : _max(1, _round((float)_min(w, h) / 256.0f));
 
@@ -156,7 +161,7 @@ int compute_ssim(const float *ref, const float *cmp, int w, int h, int ref_strid
         }
     }
 
-    result = iqa_ssim(ref_f, cmp_f, w, h, &window, nullptr, args, &l, &c, &s);
+    result = iqa_ssim(ref_f, cmp_f, w, h, &window, NULL, args, &l, &c, &s);
 
     free(ref_f);
     free(cmp_f);
@@ -168,3 +173,5 @@ int compute_ssim(const float *ref, const float *cmp, int w, int h, int ref_strid
 
     return 0;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */
