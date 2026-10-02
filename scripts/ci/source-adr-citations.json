@@ -473,7 +473,7 @@
         "core/src/dnn/model_loader.c": 1,
         "core/src/dnn/tiny_extractor_template.h": 1,
         "core/src/feature/adm_tools.c": 1,
-        "core/src/feature/arm64/psnr_hvs_neon.c": 5,
+        "core/src/feature/arm64/psnr_hvs_neon.c": 1,
         "core/src/feature/arm64/ssimulacra2_host_neon.c": 2,
         "core/src/feature/arm64/ssimulacra2_neon.c": 9,
         "core/src/feature/arm64/ssimulacra2_sve2.c": 10,
@@ -507,7 +507,6 @@
         "core/src/feature/third_party/xiph/psnr_hvs.c": 3,
         "core/src/feature/x86/adm_avx2.c": 2,
         "core/src/feature/x86/adm_avx512.c": 2,
-        "core/src/feature/x86/psnr_hvs_avx2.c": 2,
         "core/src/feature/x86/ssimulacra2_avx2.c": 10,
         "core/src/feature/x86/ssimulacra2_avx512.c": 8,
         "core/src/feature/x86/ssimulacra2_host_avx2.c": 3,
@@ -708,11 +707,12 @@
     },
     "0159": {
       "sites": {
-        "core/src/feature/arm64/psnr_hvs_neon.c": 7,
+        "core/src/feature/arm64/psnr_hvs_neon.c": 6,
         "core/src/feature/arm64/psnr_hvs_neon.h": 1,
         "core/src/feature/third_party/xiph/psnr_hvs.c": 1,
-        "core/src/feature/x86/psnr_hvs_avx2.c": 2,
+        "core/src/feature/x86/psnr_hvs_avx2.c": 1,
         "core/src/feature/x86/ssimulacra2_avx2.c": 1,
+        "core/test/test_psnr_hvs_dispatch_invariance.c": 1,
         "core/test/test_psnr_hvs_neon.c": 1
       },
       "target": "0159-psnr-hvs-avx2-bitexact.md"
@@ -720,6 +720,7 @@
     "0160": {
       "sites": {
         "core/src/feature/x86/ssimulacra2_avx2.c": 1,
+        "core/test/test_psnr_hvs_dispatch_invariance.c": 1,
         "core/test/test_psnr_hvs_neon.c": 1
       },
       "target": "0160-psnr-hvs-neon-bitexact.md"
@@ -1799,7 +1800,6 @@
     },
     "0278": {
       "sites": {
-        "core/src/feature/arm64/psnr_hvs_neon.c": 2,
         "core/src/feature/arm64/ssimulacra2_host_neon.c": 1,
         "core/src/feature/brisque.c": 1,
         "core/src/feature/ciede.c": 4,
@@ -1887,7 +1887,6 @@
         "core/src/feature/tad_rust.c": 1,
         "core/src/feature/third_party/xiph/psnr_hvs.c": 2,
         "core/src/feature/transnet_v2.c": 1,
-        "core/src/feature/x86/psnr_hvs_avx2.c": 1,
         "core/src/feature/x86/ssimulacra2_host_avx2.c": 2,
         "core/src/feature/x86/vif_avx512.c": 1,
         "core/src/gpu_dispatch_env.cpp": 1,
@@ -6426,6 +6425,7 @@
         "core/test/test_psnr.c": 1,
         "core/test/test_psnr_hvs_avx2.c": 1,
         "core/test/test_psnr_hvs_coverage.c": 1,
+        "core/test/test_psnr_hvs_dispatch_invariance.c": 1,
         "core/test/test_psnr_hvs_neon.c": 1,
         "core/test/test_psnr_hvs_score.c": 1,
         "core/test/test_psnr_hvs_simd.c": 1,
@@ -6981,7 +6981,8 @@
         "core/test/meson.build": 1,
         "core/test/test_cambi_dispatch_invariance.c": 1,
         "core/test/test_cambi_stage_simd.c": 1,
-        "core/test/test_feature_isa_invariance.c": 1
+        "core/test/test_feature_isa_invariance.c": 1,
+        "core/test/test_psnr_hvs_dispatch_invariance.c": 1
       },
       "target": "1207-feature-isa-invariance-gate.md"
     },
@@ -9396,6 +9397,13 @@
         "core/test/test_sycl_sub_group_size_contract.py": 1
       },
       "target": "1468-sycl-sub-group-sizes-every-aot-target.md"
+    },
+    "1469": {
+      "sites": {
+        "core/src/feature/arm64/psnr_hvs_neon.c": 1,
+        "core/src/feature/x86/psnr_hvs_avx2.c": 1
+      },
+      "target": "1469-psnr-hvs-simd-butterfly-two-stages.md"
     },
     "1470": {
       "sites": {

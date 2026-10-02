@@ -3,7 +3,7 @@ define dso_local void @od_bin_fdct8x8_avx2(ptr noundef writeonly captures(addres
   br i1 %5, label %6, label %7
 
 6:                                                ; preds = %4
-  tail call void @__assert_fail(ptr noundef nonnull @.str, ptr noundef nonnull @.str.1, i32 noundef 253, ptr noundef nonnull @__PRETTY_FUNCTION__.od_bin_fdct8x8_avx2)
+  tail call void @__assert_fail(ptr noundef nonnull @.str, ptr noundef nonnull @.str.1, i32 noundef 308, ptr noundef nonnull @__PRETTY_FUNCTION__.od_bin_fdct8x8_avx2)
   unreachable
 
 7:                                                ; preds = %4
@@ -11,7 +11,7 @@ define dso_local void @od_bin_fdct8x8_avx2(ptr noundef writeonly captures(addres
   br i1 %8, label %9, label %10
 
 9:                                                ; preds = %7
-  tail call void @__assert_fail(ptr noundef nonnull @.str.2, ptr noundef nonnull @.str.1, i32 noundef 254, ptr noundef nonnull @__PRETTY_FUNCTION__.od_bin_fdct8x8_avx2)
+  tail call void @__assert_fail(ptr noundef nonnull @.str.2, ptr noundef nonnull @.str.1, i32 noundef 309, ptr noundef nonnull @__PRETTY_FUNCTION__.od_bin_fdct8x8_avx2)
   unreachable
 
 10:                                               ; preds = %7
@@ -19,7 +19,7 @@ define dso_local void @od_bin_fdct8x8_avx2(ptr noundef writeonly captures(addres
   br i1 %11, label %13, label %12
 
 12:                                               ; preds = %10
-  tail call void @__assert_fail(ptr noundef nonnull @.str.3, ptr noundef nonnull @.str.1, i32 noundef 255, ptr noundef nonnull @__PRETTY_FUNCTION__.od_bin_fdct8x8_avx2)
+  tail call void @__assert_fail(ptr noundef nonnull @.str.3, ptr noundef nonnull @.str.1, i32 noundef 310, ptr noundef nonnull @__PRETTY_FUNCTION__.od_bin_fdct8x8_avx2)
   unreachable
 
 13:                                               ; preds = %10
@@ -27,7 +27,7 @@ define dso_local void @od_bin_fdct8x8_avx2(ptr noundef writeonly captures(addres
   br i1 %14, label %16, label %15
 
 15:                                               ; preds = %13
-  tail call void @__assert_fail(ptr noundef nonnull @.str.4, ptr noundef nonnull @.str.1, i32 noundef 256, ptr noundef nonnull @__PRETTY_FUNCTION__.od_bin_fdct8x8_avx2)
+  tail call void @__assert_fail(ptr noundef nonnull @.str.4, ptr noundef nonnull @.str.1, i32 noundef 311, ptr noundef nonnull @__PRETTY_FUNCTION__.od_bin_fdct8x8_avx2)
   unreachable
 
 16:                                               ; preds = %13
@@ -75,7 +75,7 @@ define dso_local void @od_bin_fdct8x8_avx2(ptr noundef writeonly captures(addres
   %58 = ashr <8 x i32> %57, splat (i32 1)
   %59 = sub <8 x i32> %30, %58
   %60 = add <8 x i32> %44, %58
-  %61 = add <8 x i32> %54, %48
+  %61 = add <8 x i32> %48, %54
   %62 = sub <8 x i32> %61, %45
   %63 = mul <8 x i32> %62, splat (i32 13573)
   %64 = add <8 x i32> %63, splat (i32 16384)

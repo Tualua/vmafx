@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-02T14:39:37Z",
+  "generated_at": "2026-10-02T14:59:23Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "f8db609d241b13e4c86841250fe25e32b0be2a50",
-  "total_infractions": 247,
+  "commit_sha": "da161388ce580e0016db396e8da54fa68a64953d",
+  "total_infractions": 245,
   "infractions": [
     {
       "rule_id": "HISS-04",
@@ -875,14 +875,6 @@
     },
     {
       "rule_id": "HISS-04",
-      "file_path": "core/src/feature/arm64/psnr_hvs_neon.c",
-      "line_number": 131,
-      "symbol": "od_bin_fdct8_simd",
-      "message": "Function 'od_bin_fdct8_simd' (82 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/arm64/psnr_hvs_neon.c:131:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
       "file_path": "core/src/feature/arm64/ssimulacra2_host_neon.c",
       "line_number": 69,
       "symbol": "ssimulacra2_host_linear_rgb_to_xyb_neon",
@@ -1088,14 +1080,6 @@
       "symbol": "x_convolution_16_avx512",
       "message": "Function 'x_convolution_16_avx512' (66 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "core/src/feature/x86/motion_avx512.c:586:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/x86/psnr_hvs_avx2.c",
-      "line_number": 126,
-      "symbol": "od_bin_fdct8_simd",
-      "message": "Function 'od_bin_fdct8_simd' (82 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/psnr_hvs_avx2.c:126:HISS-04"
     },
     {
       "rule_id": "HISS-04",
