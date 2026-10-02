@@ -46,6 +46,9 @@ struct SoftSigned {
 inline constexpr int32_t kZeroExp = -(int32_t{1} << 20);
 
 inline constexpr uint64_t kFractionMask = kDoubleTop - 1u;
+/* The bit pattern of a quiet NaN, for a caller that has to hand on "not a
+ * number": no operation here forms or accepts one. */
+inline constexpr uint64_t kQuietNanBits = 0x7FF8000000000000u;
 inline constexpr int32_t kExponentBias = 1023;
 inline constexpr uint32_t kExponentFieldMask = 0x7FFu;
 inline constexpr int32_t kMantissaBits = 52;
@@ -90,6 +93,20 @@ VMAF_SYCL_ALWAYS_INLINE SoftSigned signed_from_exact(uint64_t value)
     return signed_make(value << lift, -(int32_t)lift, false);
 }
 
+/* A finite fp32 value as the fp64 value it is: exact, subnormals included. */
+VMAF_SYCL_ALWAYS_INLINE SoftSigned signed_from_float(float x)
+{
+    const auto bits = sycl::bit_cast<uint32_t>(x);
+    const uint32_t field = (bits >> 23) & 0xFFu;
+    const uint64_t fraction = bits & 0x007FFFFFu;
+    /* A normal value is (2^23 + fraction) * 2^(field - 150), a subnormal one
+     * fraction * 2^-149. */
+    const uint64_t integer = field == 0u ? fraction : (fraction | uint64_t{0x00800000});
+    const int32_t scale = field == 0u ? -149 : (int32_t)field - 150;
+    const SoftSigned magnitude = signed_from_exact(integer);
+    return signed_make(magnitude.mant, magnitude.exp + scale, (bits >> 31) != 0u);
+}
+
 /* The value of an fp64 bit pattern: a normal value or zero. */
 VMAF_SYCL_ALWAYS_INLINE SoftSigned signed_from_bits(uint64_t bits)
 {
@@ -110,6 +127,12 @@ VMAF_SYCL_ALWAYS_INLINE uint64_t signed_bits(SoftSigned a)
 VMAF_SYCL_ALWAYS_INLINE SoftSigned signed_negate(SoftSigned a)
 {
     return signed_make(a.mant, a.exp, a.negative == 0u);
+}
+
+/* |a|. */
+VMAF_SYCL_ALWAYS_INLINE SoftSigned signed_abs(SoftSigned a)
+{
+    return signed_make(a.mant, a.exp, false);
 }
 
 /* 2 * a: exact. */

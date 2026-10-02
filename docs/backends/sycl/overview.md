@@ -536,8 +536,9 @@ The line does not make scores bit-identical. What still differs from the CPU:
   CPU's sequential order.
 - **fp64 on the CPU.** SYCL kernels are fp32-only
   ([ADR-0220](../../adr/0220-sycl-fp64-fallback.md)); where the CPU evaluates
-  an expression in fp64, the twin approximates it in fp32, or in exact pairs
-  of floats where it must match (SpEED, `ssimulacra2`).
+  an expression in fp64, the twin approximates it in fp32, in exact pairs
+  of floats where it must match (SpEED), or computes the fp64 value in
+  64-bit integers (`ssim`, `ssimulacra2`).
 - **Different formulas by design.** `float_ssim_sycl` uses the combined SSIM
   form rather than the CPU's L x C x S product.
 
@@ -545,7 +546,8 @@ Measured with icpx 2026.1 on an Arc B580 and a UHD 770 (both give the same
 result except where noted in the ADR), maximum absolute difference against
 `--backend cpu --precision max`: bit-identical for `motion_v2`, `float_psnr`,
 `psnr`, `float_moment`, `speed_chroma` and `speed_temporal`; within 2.2e-15
-for `cambi` and 6.7e-12 for `ssimulacra2`; the others between 1e-8 (`ssim`)
+for `cambi` and 6.7e-12 for `ssimulacra2` (bit-identical since ADR-1446);
+the others between 1e-8 (`ssim`)
 and 8.4e-4 dB (`psnr_hvs` at 3840x2160), each inside its
 [cross-backend gate](../../development/cross-backend-gate.md) tolerance.
 The exception is `float_ssim` forced to `scale=1` at 3840x2160, 8.8e-5 from
@@ -672,15 +674,18 @@ the deviation:
   Like every SYCL feature TU it builds with contraction off and correctly
   rounded division (ADR-1367), and divides through `div_rn()`, so everything
   up to the sums is
-  bit-identical to the CPU; the sums use pairs of floats in a fixed tree
-  (no fp64 on the device), which puts the score within about 1e-11 of
-  `--backend cpu`, identical on the B580 and the UHD 770. The Charalampidis
+  bit-identical to the CPU. Since
+  [ADR-1446](../../adr/1446-sycl-ssimulacra2-cpu-bits.md) the sums are too
+  ([below](#ssimulacra2_sycl-matches-the-cpu-ssimulacra2-exactly-2026-10-02));
+  before, pairs of floats in a fixed tree put the score within about 1e-11
+  of `--backend cpu`. The Charalampidis
   recursive blur is pure float32; pseudo-Kahan recurrence attempts are
   strictly forbidden as the 3-pole IIR filter has no running accumulator and
   diverges exponentially when perturbed. The places=1 (`5.0e-2`) Arc A380
-  calibration in `scripts/ci/gpu_ulp_calibration.yaml`
-  ([ADR-0985](../../adr/0985-sycl-parity-divergence-2026-06-03.md)) predates
-  the device-resident chain and has not been re-measured on an A380. See
+  calibration of
+  [ADR-0985](../../adr/0985-sycl-parity-divergence-2026-06-03.md) predated
+  the device-resident chain and is removed: on an A380 the twin now equals
+  the CPU on every measured frame. See
   [SSIMULACRA 2](../../metrics/ssimulacra2.md#sycl-device-resident-one-readback-per-frame).
 - **MS-SSIM waits once per frame (ADR-1363).** `float_ms_ssim_sycl`
   enqueues the pyramid and every scale's passes in `submit()`, each scale
@@ -1537,6 +1542,81 @@ per frame, four before. No kernel uses
 ```bash
 ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/dev/speed_gpu_parity.py \
     --backend sycl --vmaf "$PWD/build/tools/vmaf" --feature float_adm
+```
+
+## `ssimulacra2_sycl` matches the CPU `ssimulacra2` exactly (2026-10-02)
+
+`ssimulacra2_sycl` returns the CPU extractor's score bit for bit
+([ADR-1446](../../adr/1446-sycl-ssimulacra2-cpu-bits.md), after ADR-1433 for
+the CUDA twin and ADR-1445 for the HIP twin). Its fp32 planes were already
+the CPU's. Two things in the last stage were not:
+
+- `ssimulacra2.c` forms six terms per sample and channel in `double`. The
+  kernel formed each as a pair of `float` values, which is within about 2^-44
+  of the `double` and not equal to it
+  ([fp64-less contract](#fp64-less-device-contract-t7-17)). It now runs the
+  CPU's `double` operations, one for one, on a significand and an exponent
+  held in 64-bit integers (`core/src/feature/sycl/sycl_ssimulacra2_math.h` on
+  `core/src/feature/sycl/sycl_soft_signed.h`).
+- The CPU adds each term into one `double`, pixel after pixel. The kernel
+  added the pairs in a fixed tree. It now forms the CPU's sums from parallel
+  pieces as the CUDA twin does (`core/src/feature/ordered_sum.h`, used here
+  through bit patterns in `core/src/feature/sycl/sycl_ordered_sum.h`): per
+  chunk of 512 consecutive pixels the terms become whole-number steps of the
+  running sum, composed in pixel order, and one walk per sum adds the chunks,
+  term by term where the sum passes a power of two. The old pair sums remain
+  as advice for that walk's plan; a wrong plan costs time and cannot change
+  the result.
+
+Measured on an Arc A380 (xe driver, Level Zero, icpx 2026.0) at
+`--precision max` against `--backend cpu`, frames identical and the largest
+difference:
+
+| Fixture | Before | Now |
+|---|---|---|
+| Netflix 576x324, 48 frames | 0 of 48, 1.1e-12 | 48 of 48 |
+| Checkerboard 1920x1080, 1 px shift, 3 frames | 0 of 3, 2.6e-13 | 3 of 3 |
+| Checkerboard 1920x1080, 10 px shift, 3 frames | 0 of 3, 7.6e-11 | 3 of 3 |
+| BBB 3840x2160, 200 frames | 0 of 200, 7.2e-13 | 200 of 200 |
+| Netflix 576x324 at 10, 12 and 16 bits and 4:2:2 10-bit, 3 frames each | 0 of 3, 1.0e-12 | 3 of 3 |
+
+Also identical: `yuv_matrix` 1, 2 and 3 on the Netflix pair and the 10 px
+checkerboard. What each cause contributed, from the new twin with one piece
+put back (Netflix, 1 px checkerboard, 10 px checkerboard, BBB):
+
+| Piece put back | Largest difference |
+|---|---|
+| Each term the old pair of `float` values, added in the CPU's order | 1.1e-12, 2.0e-13, 2.7e-12, 1.0e-12 |
+| The exact terms, added per 512-pixel chunk and the chunk sums in order | 1.3e-13, 3.4e-13, 7.2e-11, 4.5e-13 |
+
+The reference was a GCC build of the CPU extractor; the CPU extractor of the
+icx build gives the same scores on these frames. The last step of the score
+is the host math library's `pow()`, Intel's in an icx build and glibc's in a
+GCC build; a difference there would be between the two CPU extractors, and
+none was seen.
+
+Through the `vmaf` tool on the A380 a 3840x2160 frame takes 194.7 ms, 84.1 ms
+before (medians of 7 runs of 20 frames; the `float_psnr` control read 3.26 and
+3.27 ms), and a 576x324 frame 13.5 ms, 5.3 before. The CPU extractor takes
+about 125 ms and 1.4 ms on sixteen threads, so on this card it is now the
+faster path at 3840x2160 as well. By builds with stages removed, 69.1 ms are
+the stages the twin had before (upload, conversion, XYB, blurs, downsample),
+12.8 the `float` advice sums, 7.9 the plan, 81.7 the terms in integer
+arithmetic and their steps, and 20.0 the walk; at 576x324 the walk is 5.5 of
+the 13.5 ms, because it runs on one lane per sum and one lane of this device
+is slow. The twin holds 18 MB more device memory at 3840x2160 and launches six
+kernels per scale where it launched two. No kernel uses [scratch
+memory](#scratch-memory-on-intel-gpus-adr-1395). Getting the time back is
+`T-SYCL-SSIMULACRA2-EXACT-THROUGHPUT-2026-10-02` in
+[`state.md`](../../state.md).
+
+The parity gate compares the twin with tolerance 0
+([cross-backend gate](../../development/cross-backend-gate.md)), and the Arc
+A380's 5e-2 calibration for this feature is gone.
+
+```bash
+ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/dev/speed_gpu_parity.py \
+    --backend sycl --vmaf "$PWD/build/tools/vmaf" --feature ssimulacra2
 ```
 
 ## Licensing of the SYCL kernels (ADR-1250)

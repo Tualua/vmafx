@@ -1,0 +1,2 @@
+adr: ADR-1446
+evidence: Arc A380 (xe), --precision max: 266 of 266 frames (Netflix 576x324 at 8 bit, 48 frames, at 10, 12 and 16 bit and as 10-bit 4:2:2, both 1080p checkerboards, BBB 3840x2160 200 frames) identical to --backend cpu; 153 of 153 with yuv_matrix 1, 2 and 3.

@@ -147,14 +147,29 @@ linked AGENTS.md before resolving conflicts.
   [core/src/feature/hip/AGENTS.md](../../core/src/feature/hip/AGENTS.md).
 - **SYCL ssimulacra2 / float_ms_ssim single wait ([ADR-1363](../adr/1363-sycl-ssimulacra2-msssim-device-resident.md))**:
   `ssimulacra2_sycl.cpp` runs the whole frame on the device and reads one
-  block of per-scale sums in `collect()`; its SSIM / edge sums are exact fp32
-  pairs over a fixed tree (within about 1e-11 of the CPU). The exact-fp
+  block of per-scale sums in `collect()`. The exact-fp
   helpers live in `core/src/feature/sycl/sycl_exact_fp.h` and need
   contraction off, which every SYCL feature TU has (ADR-1367).
   `integer_ms_ssim_sycl.cpp` enqueues every scale in `submit()` into its own
   partials span and waits once. `core/test/test_sycl_kernel_source_contract.py`
-  guards all of it; `scripts/dev/speed_gpu_parity.py --backend sycl --feature
-  ssimulacra2 --max-abs-diff 1e-9` re-checks parity.
+  guards all of it.
+- **`ssimulacra2_sycl` returns the CPU's score bit for bit ([ADR-1446](../adr/1446-sycl-ssimulacra2-cpu-bits.md))**:
+  a SYCL kernel has no fp64 type, so the six per-sample terms are the CPU's
+  doubles computed in 64-bit integers
+  (`core/src/feature/sycl/sycl_ssimulacra2_math.h`), and their sums come from
+  `core/src/feature/ordered_sum.h` through its `_bits` forms
+  (`core/src/feature/sycl/sycl_ordered_sum.h`): 512-pixel chunks in raster
+  order, lanes composed in lane order, a checked walk, term-by-term fallback
+  in pixel order. The fp32 pair sums are advice for the walk's plan and never
+  a result. `ordered_sum.h` is shared with the CUDA and HIP twins and keeps
+  every `double` inside `#ifndef VMAF_ORDSUM_NO_FP64`. A change to
+  `ssim_map()` / `edge_diff_map()` in `ssimulacra2.c` changes the math header
+  and `reference_terms()` of `core/test/test_sycl_ssimulacra2_math.c` in the
+  same PR. `core/test/test_sycl_ssimulacra2_exact_contract.py` guards it
+  without a device; `test_sycl_ssimulacra2_math`, `test_sycl_ordered_sum`,
+  `test_sycl_ssimulacra2_parity` (`==`) and
+  `scripts/dev/speed_gpu_parity.py --backend sycl --feature ssimulacra2` on
+  one. See [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
 - **CUDA CAMBI and SpEED device-resident ([ADR-1379](../adr/1379-cuda-cambi-device-resident-pipeline.md),
   [ADR-1380](../adr/1380-cuda-speed-device-resident-pipeline.md))**:
   `cambi_cuda`, `speed_chroma_cuda` and `speed_temporal_cuda` read back one

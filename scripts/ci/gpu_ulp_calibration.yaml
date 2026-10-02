@@ -247,11 +247,12 @@ gpus:
       (max_abs_diff=2.68e-4 observed on Arc A380).
       RTX 4090 and lavapipe pass at places=4 (5e-5).
       See Research-0985 §3 and Research-0730 §6.1.
-      ssimulacra2 tolerance calibrated at 5.0e-2 (places=1) per ADR-0985
-      (observed max_abs_diff=1.211e-02 on 48-frame src01, 0.0 on checkerboards).
+      ssimulacra2 has no row here: the SYCL twin is exact since ADR-1446
+      (0 on 266 frames on an Arc A380), and an exact twin is compared with
+      tolerance 0 whatever this table says. The 5.0e-2 of ADR-0985 was
+      measured on the twin before ADR-1363.
     features:
       float_ssim: 5.0e-4
-      ssimulacra2: 5.0e-2
 
   # ---------------------------------------------------------------
   # SYCL — Intel Compute Runtime on Arc. The driver_version is the
@@ -263,38 +264,26 @@ gpus:
   # Intel Arc Alchemist DG2/G10 — SYCL (Arc A380 and related).
   # vendorID 0x8086; device IDs 0x56a0–0x56a5 (DG2-G10 slice).
   #
-  # Status: calibrated (T-SYCL-ARC-SSIMULACRA2-PARITY-2026-06-03).
+  # Status: calibrated (float_ssim).
   #
-  # ssimulacra2 observed max_abs_diff = 1.211e-02 on Arc A380 (DG2-G10)
-  # vs CPU scalar on 48-frame src01 (0.0 on checkerboard pairs).
-  # Root cause: fp32 rounding accumulation in the 3-pole Charalampidis
-  # recursive Gaussian blur (``ssimulacra2_sycl.cpp::launch_blur``)
-  # across 6 pyramid scales. Arc A380 lacks native fp64 (ADR-0220).
-  # The IIR recurrence has no running accumulator (pseudo-Kahan summation
-  # from PR #865 was numerically divergent and reverted).
-  # RTX 4090 passes places=2 (5e-3).
-  #
-  # Calibrated at places=1 (5e-2) per ADR-0985 and Research-0985 §4.4
-  # Option C based on empirical measurements on Intel Arc A380 hardware.
+  # ssimulacra2 was calibrated here at places=1 (5e-2) per ADR-0985
+  # (T-SYCL-ARC-SSIMULACRA2-PARITY-2026-06-03: 1.211e-02 on the twin of
+  # that time). The twin has been device-resident since ADR-1363 and
+  # returns the CPU's score bit for bit since ADR-1446 (0 on 266 frames on
+  # an Arc A380); it is declared exact
+  # (scripts/ci/exact_twins.d/ssimulacra2.sycl), so the gate compares it
+  # with tolerance 0 and reads no row for it.
   # ---------------------------------------------------------------
   - id: "sycl:0x8086:0x56a*"
     label: "Intel Arc Alchemist DG2/G10 (SYCL, Arc A380 class)"
     status: calibrated
     notes: >-
-      Arc A380 (DG2-G10) SYCL calibrated per T-SYCL-ARC-SSIMULACRA2-PARITY-2026-06-03
-      and ADR-0985. ssimulacra2 measured max_abs_diff = 1.211e-02 on src01
-      fixture (0.0 on checkerboards). Tolerance calibrated at places=1 (5.0e-2)
-      due to fp64-free fp32 accumulation across 6 pyramid scales.
-      float_ssim tolerance 5e-4 (places=3) per ADR-0234 and Research-0985 §3:
-      the Wang-2004 formula plus fp32 accumulation drifts on fp64-free hardware.
-      NOTE on the rebase: this branch proposed ssimulacra2 = 5.0e-3, described in
-      its own comment as a placeholder pending Kahan-IIR. Master's 5.0e-2 is kept
-      because it is the measured value -- 1.211e-02 exceeds 5.0e-3, so adopting
-      the placeholder would fail the gate on real Arc hardware. The branch's new
-      float_ssim key is kept as-is; it adds a bound master did not have.
+      Arc A380 (DG2-G10) SYCL. float_ssim tolerance 5e-4 (places=3) per
+      ADR-0234 and Research-0985 §3: the Wang-2004 formula plus fp32
+      accumulation drifts on fp64-free hardware. ssimulacra2 has no row: the
+      twin is exact since ADR-1446 and is compared with tolerance 0.
     features:
       float_ssim: 5.0e-4
-      ssimulacra2: 5.0e-2
 
   - id: "sycl:0x8086:*"
     label: "Intel oneAPI SYCL (Arc, generic)"

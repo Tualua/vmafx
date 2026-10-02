@@ -1044,7 +1044,6 @@
         "core/src/feature/sycl/float_psnr_sycl.cpp": 1,
         "core/src/feature/sycl/float_vif_sycl.cpp": 1,
         "core/src/feature/sycl/integer_motion_v2_sycl.cpp": 1,
-        "core/test/test_sycl_ssimulacra2_parity.c": 1,
         "scripts/ci/cross_backend_parity_gate.py": 1,
         "scripts/ci/cross_backend_vif_diff.py": 7,
         "scripts/ci/gpu_ulp_calibration.yaml": 1
@@ -1152,8 +1151,7 @@
       "sites": {
         "core/src/feature/cuda/ssimulacra2_cuda.c": 1,
         "core/src/feature/ssimulacra2.c": 1,
-        "core/src/feature/sycl/ssimulacra2_sycl.cpp": 1,
-        "core/test/test_sycl_ssimulacra2_parity.c": 1
+        "core/src/feature/sycl/ssimulacra2_sycl.cpp": 1
       },
       "target": "0206-ssimulacra2-cuda-sycl.md"
     },
@@ -1250,7 +1248,6 @@
         "core/src/feature/metal/integer_vif_metal.mm": 1,
         "core/src/feature/metal/ssimulacra2_metal.mm": 1,
         "core/src/feature/speed_internal.h": 1,
-        "core/src/feature/sycl/ssimulacra2_sycl.cpp": 1,
         "core/src/feature/sycl/sycl_exact_fp.h": 1,
         "core/src/feature/vif_tools.c": 1,
         "core/test/meson.build": 13,
@@ -1298,7 +1295,6 @@
         "core/test/test_sycl_motion3_parity.c": 2,
         "core/test/test_sycl_ms_ssim_parity.c": 1,
         "core/test/test_sycl_speed_singular_parity.c": 1,
-        "core/test/test_sycl_ssimulacra2_parity.c": 4,
         "core/test/test_sycl_vif_min_dim.c": 1,
         "python/test/gpu_default_model_test.py": 1,
         "python/test/sycl_motion_parity_test.py": 1,
@@ -1364,6 +1360,7 @@
         "core/src/feature/adm_gain_limit.h": 1,
         "core/src/feature/feature_extractor.cpp": 2,
         "core/src/feature/hip/speed/speed_hip_device.h": 1,
+        "core/src/feature/ordered_sum.h": 1,
         "core/src/feature/psnr_score.h": 1,
         "core/src/feature/sycl/integer_adm_sycl.cpp": 1,
         "core/src/feature/sycl/integer_cambi_sycl.cpp": 1,
@@ -1380,9 +1377,11 @@
         "core/src/feature/sycl/sycl_float_vif_math.h": 1,
         "core/src/feature/sycl/sycl_integer_ssim_math.h": 1,
         "core/src/feature/sycl/sycl_integer_vif_math.h": 1,
+        "core/src/feature/sycl/sycl_ordered_sum.h": 1,
         "core/src/feature/sycl/sycl_soft_double.h": 1,
         "core/src/feature/sycl/sycl_soft_signed.h": 1,
         "core/src/feature/sycl/sycl_ssim_terms.h": 1,
+        "core/src/feature/sycl/sycl_ssimulacra2_math.h": 1,
         "core/src/sycl/common.cpp": 1,
         "core/test/meson.build": 1,
         "core/test/test_psnr_hvs_twin_exact_sum_contract.py": 1,
@@ -1404,10 +1403,14 @@
         "core/test/test_sycl_psnr_hvs_parity.c": 1,
         "core/test/test_sycl_ssim_exact_contract.py": 1,
         "core/test/test_sycl_ssim_parity.c": 1,
+        "core/test/test_sycl_ssimulacra2_exact_contract.py": 1,
+        "core/test/test_sycl_ssimulacra2_math.c": 1,
+        "core/test/test_sycl_ssimulacra2_math_probe.cpp": 1,
+        "core/test/test_sycl_ssimulacra2_parity.c": 1,
         "core/test/test_sycl_vif_exact_gain_contract.py": 3,
         "core/test/test_sycl_vif_parity.c": 1,
         "core/tools/vmaf_per_shot.c": 1,
-        "scripts/ci/gpu_ulp_calibration.yaml": 5
+        "scripts/ci/gpu_ulp_calibration.yaml": 4
       },
       "target": "0220-sycl-fp64-fallback.md"
     },
@@ -5193,8 +5196,7 @@
         "core/test/test_sycl_float_vif_parity.c": 1,
         "core/test/test_sycl_psnr_hvs_parity.c": 1,
         "core/test/test_sycl_speed_chroma_parity.c": 1,
-        "core/test/test_sycl_speed_temporal_parity.c": 1,
-        "core/test/test_sycl_ssimulacra2_parity.c": 1
+        "core/test/test_sycl_speed_temporal_parity.c": 1
       },
       "target": "0946-sycl-kernel-coverage-round3.md"
     },
@@ -5397,7 +5399,7 @@
     "0985": {
       "sites": {
         "core/src/feature/sycl/ssimulacra2_sycl.cpp": 1,
-        "scripts/ci/gpu_ulp_calibration.yaml": 3
+        "scripts/ci/gpu_ulp_calibration.yaml": 2
       },
       "target": "0985-sycl-parity-divergence-2026-06-03.md"
     },
@@ -6443,6 +6445,7 @@
         "core/test/test_sycl_motion_tiny_frames.c": 1,
         "core/test/test_sycl_motion_v2_parity.c": 1,
         "core/test/test_sycl_ms_ssim_parity.c": 1,
+        "core/test/test_sycl_ordered_sum.c": 1,
         "core/test/test_sycl_psnr_hvs_parity.c": 1,
         "core/test/test_sycl_psnr_parity.c": 1,
         "core/test/test_sycl_shared_planes.c": 1,
@@ -6450,6 +6453,7 @@
         "core/test/test_sycl_speed_singular_parity.c": 1,
         "core/test/test_sycl_speed_temporal_parity.c": 1,
         "core/test/test_sycl_ssim_parity.c": 1,
+        "core/test/test_sycl_ssimulacra2_math.c": 1,
         "core/test/test_sycl_ssimulacra2_parity.c": 1,
         "core/test/test_sycl_twin_option_parity.c": 1,
         "core/test/test_sycl_vif_min_dim.c": 1,
@@ -6932,7 +6936,8 @@
         "core/test/test_cuda_float_ssim_parity.c": 1,
         "core/test/test_hip_cambi_parity.c": 1,
         "core/test/test_hip_float_ssim_parity.c": 1,
-        "core/test/test_sycl_float_ssim_parity.c": 1
+        "core/test/test_sycl_float_ssim_parity.c": 1,
+        "core/test/test_sycl_ssimulacra2_parity.c": 1
       },
       "target": "1206-gpu-parity-large-fixture-variants.md"
     },
@@ -8024,7 +8029,8 @@
         "core/src/feature/sycl/sycl_exact_fp.h": 1,
         "core/test/test_strict_fp_compiler_args.py": 1,
         "core/test/test_sycl_kernel_source_contract.py": 2,
-        "core/test/test_sycl_ssimulacra2_parity.c": 3,
+        "core/test/test_sycl_ssimulacra2_parity.c": 1,
+        "scripts/ci/gpu_ulp_calibration.yaml": 2,
         "scripts/dev/speed_gpu_parity.py": 1
       },
       "target": "1363-sycl-ssimulacra2-msssim-device-resident.md"
@@ -8417,6 +8423,7 @@
         "core/src/feature/sycl/sycl_compat.h": 4,
         "core/src/feature/sycl/sycl_ff_math.h": 1,
         "core/src/feature/sycl/sycl_float_adm_math.h": 1,
+        "core/src/feature/sycl/sycl_ordered_sum.h": 1,
         "core/src/feature/sycl/sycl_soft_double.h": 2,
         "core/src/feature/sycl/sycl_soft_signed.h": 1,
         "core/src/sycl/common.cpp": 1,
@@ -8428,6 +8435,8 @@
         "core/test/test_sycl_kernel_scratch.c": 2,
         "core/test/test_sycl_kernel_source_contract.py": 2,
         "core/test/test_sycl_ssim_exact_contract.py": 1,
+        "core/test/test_sycl_ssimulacra2_exact_contract.py": 1,
+        "core/test/test_sycl_ssimulacra2_parity.c": 1,
         "core/test/test_sycl_vif_exact_gain_contract.py": 1
       },
       "target": "1395-sycl-kernels-no-scratch.md"
@@ -8898,11 +8907,15 @@
         "core/src/feature/hip/ssimulacra2_hip.c": 1,
         "core/src/feature/hip/ssimulacra2_hip.h": 1,
         "core/src/feature/ordered_sum.h": 1,
+        "core/src/feature/sycl/ssimulacra2_sycl.cpp": 1,
+        "core/src/feature/sycl/sycl_ordered_sum.h": 1,
         "core/test/meson.build": 3,
         "core/test/test_cuda_ssimulacra2_exact_contract.py": 3,
         "core/test/test_cuda_ssimulacra2_parity.c": 4,
         "core/test/test_hip_ssimulacra2_exact_contract.py": 1,
-        "core/test/test_ordered_sum.c": 1
+        "core/test/test_ordered_sum.c": 1,
+        "core/test/test_sycl_ssimulacra2_exact_contract.py": 1,
+        "core/test/test_sycl_ssimulacra2_math.c": 1
       },
       "target": "1433-cuda-ssimulacra2-cpu-sum-order.md"
     },
@@ -9055,6 +9068,22 @@
         "scripts/ci/exact_twins.d/ssimulacra2.hip": 1
       },
       "target": "1445-hip-ssimulacra2-cpu-sum-order.md"
+    },
+    "1446": {
+      "sites": {
+        "core/src/feature/sycl/ssimulacra2_sycl.cpp": 2,
+        "core/src/feature/sycl/sycl_ordered_sum.h": 1,
+        "core/src/feature/sycl/sycl_ssimulacra2_math.h": 1,
+        "core/test/meson.build": 3,
+        "core/test/test_sycl_ordered_sum.c": 1,
+        "core/test/test_sycl_ordered_sum_probe.cpp": 1,
+        "core/test/test_sycl_ssimulacra2_exact_contract.py": 4,
+        "core/test/test_sycl_ssimulacra2_math.c": 1,
+        "core/test/test_sycl_ssimulacra2_math_probe.cpp": 1,
+        "core/test/test_sycl_ssimulacra2_parity.c": 4,
+        "scripts/ci/gpu_ulp_calibration.yaml": 3
+      },
+      "target": "1446-sycl-ssimulacra2-cpu-bits.md"
     },
     "1447": {
       "sites": {

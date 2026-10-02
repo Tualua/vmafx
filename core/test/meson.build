@@ -323,6 +323,20 @@ test('test_sycl_ssim_exact_contract',
     timeout : 30,
 )
 
+# ADR-1446: ssimulacra2_sycl returns the CPU's score bit for bit -- each of
+# the six per-sample terms is the reference's double, formed in 64-bit
+# integers, and each sum is the reference's loop over them (increments per
+# chunk of consecutive pixels composed in pixel order, one walk per sum with
+# a term-by-term fallback); the fp32 pair sums are advice for the plan only.
+# Device-free; the arithmetic checks are test_sycl_ssimulacra2_math and
+# test_sycl_ordered_sum, the device check is test_sycl_ssimulacra2_parity.
+test('test_sycl_ssimulacra2_exact_contract',
+    import('python').find_installation(),
+    args : files('test_sycl_ssimulacra2_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # vif_sycl's host tail rounds each scale's sums to float and divides in
 # single precision, as integer_vif.c does, and its debug option defaults to
 # the CPU's false. Device-free; the device check is test_sycl_vif_parity.
@@ -4574,6 +4588,83 @@ if not is_sycl_acpp and host_machine.cpu_family() == 'x86_64'
         link_language : 'cpp',
     )
     test('test_sycl_float_adm_math', test_sycl_float_adm_math,
+        suite : ['fast', 'gpu', 'sycl'],
+        is_parallel : false)
+endif
+
+# ADR-1446: the ordered sum a SYCL twin forms without an fp64 type
+# (src/feature/sycl/sycl_ordered_sum.h on src/feature/ordered_sum.h) against
+# the loop `s += x[i]` it stands for, with honest and with wrong plans, on the
+# host and with the walk in a kernel on the default GPU. The loop is fp64
+# arithmetic the test compiles itself, so it needs the strict FP flags.
+if not is_sycl_acpp
+    sycl_ordered_sum_probe = custom_target('sycl_ordered_sum_probe',
+        output : 'sycl_ordered_sum_probe.o',
+        input : 'test_sycl_ordered_sum_probe.cpp',
+        depend_files : files('../src/feature/sycl/sycl_soft_double.h',
+                             '../src/feature/sycl/sycl_soft_signed.h',
+                             '../src/feature/sycl/sycl_compat.h',
+                             '../src/feature/sycl/sycl_ordered_sum.h',
+                             '../src/feature/ordered_sum.h',
+                             'sycl_ordered_sum_probe.h'),
+        command : [icpx] + vmaf_cflags_common + ['-c'] + sycl_toolchain_args
+                  + sycl_feature_tail_args + ['@INPUT@', '-o', '@OUTPUT@'],
+    )
+    sycl_ordered_sum_probe_objects = [sycl_ordered_sum_probe]
+    if sycl_msvc_device_link
+        sycl_ordered_sum_probe_objects += custom_target(
+            'sycl_ordered_sum_probe_device_link',
+            input : sycl_ordered_sum_probe,
+            output : 'sycl_ordered_sum_probe_device_link.obj',
+            command : [icpx] + sycl_device_link_args + sycl_strict_fp_args
+                      + ['@INPUT@', '-o', '@OUTPUT@'],
+        )
+    endif
+    test_sycl_ordered_sum = executable('test_sycl_ordered_sum',
+        ['test.c', 'test_sycl_ordered_sum.c'] + sycl_ordered_sum_probe_objects,
+        include_directories : [test_inc],
+        dependencies : [math_lib, sycl_dependency],
+        c_args : vmaf_strict_fp_args,
+        link_language : 'cpp',
+    )
+    test('test_sycl_ordered_sum', test_sycl_ordered_sum,
+        suite : ['fast', 'gpu', 'sycl'],
+        is_parallel : false)
+endif
+
+# ADR-1446: the six fp64 terms ssimulacra2_sycl's kernels form per sample in
+# 64-bit integers (src/feature/sycl/sycl_ssimulacra2_math.h) against the
+# lines of ssimulacra2.c::ssim_map() and ::edge_diff_map(), on the host and in
+# a kernel on the default GPU.
+if not is_sycl_acpp
+    sycl_ssimulacra2_math_probe = custom_target('sycl_ssimulacra2_math_probe',
+        output : 'sycl_ssimulacra2_math_probe.o',
+        input : 'test_sycl_ssimulacra2_math_probe.cpp',
+        depend_files : files('../src/feature/sycl/sycl_soft_double.h',
+                             '../src/feature/sycl/sycl_soft_signed.h',
+                             '../src/feature/sycl/sycl_compat.h',
+                             '../src/feature/sycl/sycl_ssimulacra2_math.h'),
+        command : [icpx] + vmaf_cflags_common + ['-c'] + sycl_toolchain_args
+                  + sycl_feature_tail_args + ['@INPUT@', '-o', '@OUTPUT@'],
+    )
+    sycl_ssimulacra2_math_probe_objects = [sycl_ssimulacra2_math_probe]
+    if sycl_msvc_device_link
+        sycl_ssimulacra2_math_probe_objects += custom_target(
+            'sycl_ssimulacra2_math_probe_device_link',
+            input : sycl_ssimulacra2_math_probe,
+            output : 'sycl_ssimulacra2_math_probe_device_link.obj',
+            command : [icpx] + sycl_device_link_args + sycl_strict_fp_args
+                      + ['@INPUT@', '-o', '@OUTPUT@'],
+        )
+    endif
+    test_sycl_ssimulacra2_math = executable('test_sycl_ssimulacra2_math',
+        ['test.c', 'test_sycl_ssimulacra2_math.c'] + sycl_ssimulacra2_math_probe_objects,
+        include_directories : [test_inc, include_directories('../src/')],
+        dependencies : [math_lib, sycl_dependency],
+        c_args : vmaf_strict_fp_args,
+        link_language : 'cpp',
+    )
+    test('test_sycl_ssimulacra2_math', test_sycl_ssimulacra2_math,
         suite : ['fast', 'gpu', 'sycl'],
         is_parallel : false)
 endif

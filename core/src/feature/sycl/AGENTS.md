@@ -798,10 +798,9 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   output shifts poles outside unit circle ($1 - d1 \approx -0.8422$),
   causing geometric pole blow-up to $10^{25}$ / NaN / saturation at 100.0.
   Recurrence must remain pure float32 matching CUDA twin
-  `core/src/feature/cuda/ssimulacra2/ssimulacra2_blur.cu`. Device-level
-  fp64-less divergence on Arc A380 calibrated via
-  `scripts/ci/gpu_ulp_calibration.yaml` at places=1 (`5.0e-2`), not compensated
-  via pseudo-Kahan recurrence.
+  `core/src/feature/cuda/ssimulacra2/ssimulacra2_blur.cu`. The places=1
+  (`5.0e-2`) Arc A380 calibration of that time is gone: twin exact since
+  ADR-1446.
 
 - **`ssimulacra2_sycl.cpp` is device-resident
   ([ADR-1363](../../../../docs/adr/1363-sycl-ssimulacra2-msssim-device-resident.md)).**
@@ -813,22 +812,67 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   `vmaf_ss2_cbrtf` division to `div_rn` before `ssimulacra2_math.h` is
   included; products feeding adds sit in named temporaries; YUV / XYB /
   blur / downsample are bit-identical to `ssimulacra2.c` and the parity sweep
-  proves it. The per-pixel fp64 terms of `ssim_map` / `edge_diff_map` are
-  exact fp32 pairs (`ff_div`, `ff_add`, `ff_mul` in `sycl_exact_fp.h`) summed
-  in a fixed tree whose shape depends only on the plane size
-  (`ss2s_reduce_groups`): deterministic and device-independent, within about
-  1e-11 of the CPU. `check_context_sycl` routes the inputs init rejects
+  proves it. The sums of the per-pixel fp64 terms of `ssim_map` /
+  `edge_diff_map` are the CPU's too (ADR-1446, next bullet).
+  `check_context_sycl` routes the inputs init rejects
   (4:0:0, a side below 8) to the CPU `ssimulacra2` (ADR-1324 / ADR-1359); keep
   it in step with `init_fex_sycl`. **On rebase**: do not reintroduce a host
   stage or a mid-frame wait (`test_sycl_kernel_source_contract.py` fails),
-  do not replace
-  the pair arithmetic with plain fp32 or `sycl::reduction`, and keep the
+  and keep the
   per-channel sum order (L1, L4, artifact, artifact^4, detail, detail^4) that
   `ss2s_scale_norms` reads. Two blur variants measured slower (ADR-1363): the
   products fused into the horizontal pass (2.3x on the UHD 770, which is bound
   by the per-lane loads of the row walk) and the rows staged through local
   memory (2x on the B580, 5.6x on the UHD 770); do not retry either without
   measuring per stage.
+
+- **`ssimulacra2_sycl` = CPU `ssimulacra2`, bit for bit
+  ([ADR-1446](../../../../docs/adr/1446-sycl-ssimulacra2-cpu-bits.md)).**
+  CPU: six fp64 terms per sample and channel, each added pixel after pixel
+  into ONE double. Twin, no fp64 type:
+  - Terms = `sycl_ssimulacra2_math.h` (`ssim_terms()`, `edge_terms()`): the
+    reference's fp64 operations one for one on `SoftSigned`
+    (`sycl_soft_signed.h`), from the fp32 values the reference converts
+    (`ss2s_ssim_inputs()` = fp32 part verbatim). Returns fp64 bit patterns.
+    Zero denominator: quotient = infinity of the product's sign, clamped
+    `d` = 0. Value the reference makes infinite or NaN -> NaN bits (sum keeps
+    it, frame guard rejects, as CPU). Zero has no sign.
+  - Sums = `sycl_ordered_sum.h` on `../ordered_sum.h` with
+    `VMAF_ORDSUM_NO_FP64` (`_bits` forms only). Chunk = `SS2S_CHUNK` (512)
+    consecutive pixels = one work-group, 256 lanes x 2 CONSECUTIVE pixels.
+    Per scale: `launch_chunk_sums` (fp32 pair terms, fp32 tree: ADVICE only;
+    fourth powers scaled by 2^88) -> `launch_chunk_plan`
+    (`plan_chunks()`, one work-item per sum) -> `Ss2SsimUnitsKernel` /
+    `Ss2EdgeUnitsKernel` (exact terms -> integer increments under the plan,
+    composed in pixel order by `ss2s_ordered_tree`, lane `i` takes lane
+    `i + stride`) -> `Ss2SlotKernel` (chunks planned "term by term": keep
+    the terms, compose runs of 16 under the two binades the chunk ends in)
+    -> `Ss2TotalsKernel` (`walk_sum()`, ONE lane per sum).
+  - Rules: (1) advice sums never reach a result: plan only; (2) plan =
+    advice: the walk adds a chunk or a run from its increment only when
+    `vmaf_ordsum_add_chunk_bits()` accepts it at the exact sum, never drop
+    that check; (3) composition (`vmaf_ordsum_then`) NOT commutative: earlier
+    pixels on the left, no halving tree, no strided lanes; (4) terms >= 0 or
+    NaN only; (5) change to the terms in `ssimulacra2.c` ->
+    `sycl_ssimulacra2_math.h` + `reference_terms()` of its test, same PR;
+    (6) `ordered_sum.h` is shared with CUDA and HIP: fp64 forms stay
+    wrappers of the `_bits` forms, no `double` outside
+    `#ifndef VMAF_ORDSUM_NO_FP64`.
+  - Why slots and runs: one A380 lane takes about 1 us per fp64 add in
+    integers; a crossing chunk walked term by term = 512 such steps. Runs
+    make it about 32 integer steps + 16 terms. Wrong advice, no slot, wrong
+    expected binade = slower, same bits.
+  - Shapes (scratch-free on A380, ADR-1395): units SIMD-16 default register
+    file, slot kernel SIMD-16 + 256-entry file, walk SIMD-8. SIMD-32 spills;
+    chunk 1024 spills in the slot kernel without the large file (wrong
+    values, runs that hang past 300 s).
+  - Guards: `test_sycl_ssimulacra2_math` (terms vs reference lines, host +
+    device), `test_sycl_ordered_sum` (sum vs loop, wrong plans, host +
+    device walk), `test_sycl_ssimulacra2_parity` + `_large` (`==`; 15 of 16
+    score cases differ on the old twin),
+    `test_sycl_ssimulacra2_exact_contract.py`, `test_sycl_kernel_scratch`.
+    Cost + tuning candidates:
+    `T-SYCL-SSIMULACRA2-EXACT-THROUGHPUT-2026-10-02`.
 
 - **`integer_ms_ssim_sycl.cpp` waits once per frame (ADR-1363).** Each
   (plane, scale) owns the span `partial_offset[plane][scale]` of
@@ -943,7 +987,7 @@ ADR-0884 / ADR-0946 backlog must update in same PR.
 | `integer_moment_sycl.cpp` (`float_moment_sycl`) | `float_moment.c` | `test_sycl_float_moment_parity.c` | ADR-0957 (round 4) |
 | `speed_chroma_sycl.cpp` + `speed_sycl_pipeline.cpp` | `speed.c` | `test_sycl_speed_chroma_parity.c`, `test_sycl_speed_singular_parity.c` | ADR-0957 (round 4), ADR-1358 |
 | `speed_temporal_sycl.cpp` + `speed_sycl_pipeline.cpp` | `speed.c` | `test_sycl_speed_temporal_parity.c`, `test_sycl_speed_singular_parity.c` | ADR-0957 (round 4), ADR-1358 |
-| `ssimulacra2_sycl.cpp` | `ssimulacra2.c` | `test_sycl_ssimulacra2_parity.c` (3 frames, submit/collect) | ADR-0957 (round 4), ADR-1363 |
+| `ssimulacra2_sycl.cpp` | `ssimulacra2.c` | `test_sycl_ssimulacra2_parity.c` (+ `_large`; bit-exact, 8 to 16 bit, 4:2:0 / 4:2:2 / 4:4:4), `test_sycl_ssimulacra2_math.c`, `test_sycl_ordered_sum.c` | ADR-0957 (round 4), ADR-1363, ADR-1446 |
 
 > **SpEED twins are wired and device-resident (ADR-0964, ADR-1358).**
 > Both extractors are in `sycl_feature_sources` with the shared

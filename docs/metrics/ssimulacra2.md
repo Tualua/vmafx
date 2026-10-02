@@ -84,22 +84,40 @@ vmaf -r ref.yuv -d dis.yuv -w 3840 -h 2160 -p 420 -b 8 \
     --backend sycl --no_prediction --feature ssimulacra2_sycl -o out.json --json
 ```
 
-Colour conversion, XYB, blurs and downsample match the CPU bit for bit. The CPU
-evaluates the per-pixel SSIM and edge terms in double precision and adds them
-one by one; the device has no double precision, so it evaluates them in pairs of
-floats (about 13 significant digits) and adds them in a fixed tree. The
-per-frame score is within about 1e-11 of `--backend cpu` (6.7e-12 at worst at
-3840x2160) and is the same on every device and every run. Before ADR-1363 the
-twin matched the CPU exactly but copied about 4 GB per 4K frame between device
-and host. On an Arc B580 a 3840x2160 frame now takes about 33 ms, against
-963 ms before and about 167 ms for the CPU extractor on 16 threads. Check and
-time it with:
+The score is the CPU extractor's, bit for bit
+([ADR-1446](../adr/1446-sycl-ssimulacra2-cpu-bits.md)). Colour conversion,
+XYB, blurs and downsample match the CPU. The CPU then evaluates six terms per
+pixel and channel in double precision and adds each into one double, pixel
+after pixel. A SYCL device has no double precision, so the twin computes each
+term's double in 64-bit integers (a sign, a 53-bit significand and an
+exponent), the CPU's operations one for one, and forms the sums the way the
+CUDA twin does (below): whole-number steps per chunk of 512 pixels in
+parallel, one pass over the chunks, and term by term where the running sum
+passes a power of two. Measured on an Arc A380 (xe driver) at
+`--precision max`: 266 of 266 frames identical to `--backend cpu` (Netflix
+576x324 at 8, 10, 12 and 16 bits and as 10-bit 4:2:2, both 1080p checkerboard
+pairs, 200 frames of BBB 3840x2160), and with every `yuv_matrix`. Before
+ADR-1446 the terms were pairs of floats added in a fixed tree and no frame
+was identical; the score was up to 7.6e-11 from the CPU's, and
+`ssimulacra2_sycl` scores stored before differ from new ones by that much.
+
+The exact sums cost time. On the A380 a 3840x2160 frame takes 195 ms (84 ms
+before ADR-1446) and a 576x324 frame 13.5 ms (5.3 ms before); the CPU
+extractor takes about 125 ms and 1.4 ms on sixteen threads, so on this card
+the CPU is the faster path for this metric at both sizes (before ADR-1446 the
+twin was faster at 3840x2160). Most of the increase is the integer arithmetic
+of the terms; the pass over the chunks runs on one lane per sum and is what
+small frames pay (`T-SYCL-SSIMULACRA2-EXACT-THROUGHPUT-2026-10-02`). Before
+ADR-1363 the twin copied about 4 GB per 4K frame between device and host.
+Check and time with (`--vmaf` takes an absolute path):
 
 ```shell
 ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/dev/speed_gpu_parity.py \
-    --backend sycl --feature ssimulacra2 --max-abs-diff 1e-9 \
+    --backend sycl --feature ssimulacra2 --vmaf "$PWD/build/tools/vmaf" \
     --netflix-dir python/test/resource/yuv --bbb-dir testdata/bbb
 ```
+
+The default bound of that script is 0: every frame must be bit-identical.
 
 `ssimulacra2_sycl` rejects 4:0:0 (luma-only) input at init.
 

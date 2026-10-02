@@ -53,6 +53,14 @@
  * The functions are `static inline` on the host. A caller that runs them in
  * device code defines VMAF_ORDSUM_FUNC, VMAF_ORDSUM_BITS and
  * VMAF_ORDSUM_FROM_BITS before including the header.
+ *
+ * Every function that takes or returns a `double` has a `_bits` form on the
+ * fp64 bit pattern, and is that form plus the conversion. The `_bits` forms
+ * use integers only, for a device without an fp64 type (a SYCL kernel,
+ * ADR-0220). Such a caller defines VMAF_ORDSUM_NO_FP64 before including the
+ * header and gets the `_bits` forms alone; vmaf_ordsum_plan(), whose prefix
+ * is an fp64 sum, has no such form, and that caller plans from its own
+ * approximation.
  */
 
 #include <stdint.h>
@@ -61,7 +69,7 @@
 #define VMAF_ORDSUM_FUNC static inline
 #endif
 
-#ifndef VMAF_ORDSUM_BITS
+#if !defined(VMAF_ORDSUM_BITS) && !defined(VMAF_ORDSUM_NO_FP64)
 #include <string.h>
 static inline uint64_t vmaf_ordsum_host_bits(double v)
 {
@@ -102,29 +110,54 @@ static inline double vmaf_ordsum_host_from_bits(uint64_t bits)
 
 /* What a run of terms adds to a running sum that is `m * u`: `even` when m is
  * even, `odd` when it is odd. The two differ only by the ties in the run. */
-typedef struct VmafOrdsumUnits {
+struct VmafOrdsumUnits {
     int64_t even;
     int64_t odd;
-} VmafOrdsumUnits;
+};
+#ifndef __cplusplus
+typedef struct VmafOrdsumUnits VmafOrdsumUnits;
+#endif
 
 /* Biased exponent field of a double: 0 for zero and subnormals, 2047 for
  * infinities and NaN. */
-VMAF_ORDSUM_FUNC unsigned vmaf_ordsum_exponent_field(double v)
+VMAF_ORDSUM_FUNC unsigned vmaf_ordsum_exponent_field_bits(uint64_t bits)
 {
-    return (unsigned)((VMAF_ORDSUM_BITS(v) >> 52) & VMAF_ORDSUM_EXP_MASK);
+    return (unsigned)((bits >> 52) & VMAF_ORDSUM_EXP_MASK);
+}
+
+/* 1 for a NaN. */
+VMAF_ORDSUM_FUNC int vmaf_ordsum_is_nan_bits(uint64_t bits)
+{
+    return vmaf_ordsum_exponent_field_bits(bits) == VMAF_ORDSUM_EXP_MASK &&
+           (bits & VMAF_ORDSUM_FRACTION_MASK) != 0u;
 }
 
 /* Binade of a positive normal double, VMAF_ORDSUM_PLAN_TERMS for every
- * other value and for a binade outside the planned range. */
-VMAF_ORDSUM_FUNC int vmaf_ordsum_binade(double v)
+ * other value and for a binade outside the planned range. Zero, a negative
+ * value and a NaN are not above zero; a subnormal, an infinity and a NaN lie
+ * outside the planned range. */
+VMAF_ORDSUM_FUNC int vmaf_ordsum_binade_bits(uint64_t bits)
 {
-    if (!(v > 0.0))
+    const unsigned field = vmaf_ordsum_exponent_field_bits(bits);
+    if ((bits >> 63) != 0u || field == 0u)
         return VMAF_ORDSUM_PLAN_TERMS;
-    const int e = (int)vmaf_ordsum_exponent_field(v) - VMAF_ORDSUM_EXP_BIAS;
+    const int e = (int)field - VMAF_ORDSUM_EXP_BIAS;
     if (e < VMAF_ORDSUM_MIN_EXP || e > VMAF_ORDSUM_MAX_EXP)
         return VMAF_ORDSUM_PLAN_TERMS;
     return e;
 }
+
+#ifndef VMAF_ORDSUM_NO_FP64
+VMAF_ORDSUM_FUNC unsigned vmaf_ordsum_exponent_field(double v)
+{
+    return vmaf_ordsum_exponent_field_bits(VMAF_ORDSUM_BITS(v));
+}
+
+VMAF_ORDSUM_FUNC int vmaf_ordsum_binade(double v)
+{
+    return vmaf_ordsum_binade_bits(VMAF_ORDSUM_BITS(v));
+}
+#endif
 
 VMAF_ORDSUM_FUNC int vmaf_ordsum_plan_is_binade(int plan)
 {
@@ -171,9 +204,8 @@ VMAF_ORDSUM_FUNC int vmaf_ordsum_term_is_unfit(uint64_t bits)
  * [2^52, 2^53), so x / u = m >> (e - ex). A term in a higher binade than the
  * sum, a negative, infinite or NaN term does not fit (the sum would leave the
  * binade, or is not a sum of this kind) and yields VMAF_ORDSUM_UNFIT. */
-VMAF_ORDSUM_FUNC VmafOrdsumUnits vmaf_ordsum_term(double x, int e)
+VMAF_ORDSUM_FUNC VmafOrdsumUnits vmaf_ordsum_term_bits(uint64_t bits, int e)
 {
-    const uint64_t bits = VMAF_ORDSUM_BITS(x);
     const unsigned field = (unsigned)((bits >> 52) & VMAF_ORDSUM_EXP_MASK);
     if (vmaf_ordsum_term_is_unfit(bits))
         return vmaf_ordsum_units(VMAF_ORDSUM_UNFIT, VMAF_ORDSUM_UNFIT);
@@ -191,16 +223,28 @@ VMAF_ORDSUM_FUNC VmafOrdsumUnits vmaf_ordsum_term(double x, int e)
 }
 
 /* Increment of one term under a chunk's plan. Under VMAF_ORDSUM_PLAN_ZERO a
- * term is either a zero or does not fit; under VMAF_ORDSUM_PLAN_TERMS nothing
- * is read and the result is zero. */
-VMAF_ORDSUM_FUNC VmafOrdsumUnits vmaf_ordsum_planned_term(double x, int plan)
+ * term is either a zero (of either sign) or does not fit; under
+ * VMAF_ORDSUM_PLAN_TERMS nothing is read and the result is zero. */
+VMAF_ORDSUM_FUNC VmafOrdsumUnits vmaf_ordsum_planned_term_bits(uint64_t bits, int plan)
 {
     if (vmaf_ordsum_plan_is_binade(plan))
-        return vmaf_ordsum_term(x, plan);
-    if (plan == VMAF_ORDSUM_PLAN_ZERO && x != 0.0)
+        return vmaf_ordsum_term_bits(bits, plan);
+    if (plan == VMAF_ORDSUM_PLAN_ZERO && (bits << 1) != 0u)
         return vmaf_ordsum_units(VMAF_ORDSUM_UNFIT, VMAF_ORDSUM_UNFIT);
     return vmaf_ordsum_units(0, 0);
 }
+
+#ifndef VMAF_ORDSUM_NO_FP64
+VMAF_ORDSUM_FUNC VmafOrdsumUnits vmaf_ordsum_term(double x, int e)
+{
+    return vmaf_ordsum_term_bits(VMAF_ORDSUM_BITS(x), e);
+}
+
+VMAF_ORDSUM_FUNC VmafOrdsumUnits vmaf_ordsum_planned_term(double x, int plan)
+{
+    return vmaf_ordsum_planned_term_bits(VMAF_ORDSUM_BITS(x), plan);
+}
+#endif
 
 VMAF_ORDSUM_FUNC int64_t vmaf_ordsum_cap(int64_t v)
 {
@@ -224,6 +268,7 @@ VMAF_ORDSUM_FUNC VmafOrdsumUnits vmaf_ordsum_then(VmafOrdsumUnits a, VmafOrdsumU
  * Once the prefix is infinite or NaN the exact sum no longer moves unless a
  * NaN term arrives, and a finite chunk gets the largest binade as its plan:
  * its increment then only says whether every term is finite. */
+#ifndef VMAF_ORDSUM_NO_FP64
 VMAF_ORDSUM_FUNC int vmaf_ordsum_plan(double *prefix, double chunk_sum)
 {
     const double before = *prefix;
@@ -239,44 +284,61 @@ VMAF_ORDSUM_FUNC int vmaf_ordsum_plan(double *prefix, double chunk_sum)
         return VMAF_ORDSUM_PLAN_TERMS;
     return e;
 }
+#endif
 
-/* `total * 2^(e-52)` for 2^52 <= total <= 2^53; 2^53 is the first value of
- * the next binade. */
-VMAF_ORDSUM_FUNC double vmaf_ordsum_from_units(int64_t total, int e)
+/* The bits of `total * 2^(e-52)` for 2^52 <= total <= 2^53; 2^53 is the first
+ * value of the next binade. */
+VMAF_ORDSUM_FUNC uint64_t vmaf_ordsum_from_units_bits(int64_t total, int e)
 {
     if (total == VMAF_ORDSUM_BINADE_END)
-        return VMAF_ORDSUM_FROM_BITS((uint64_t)(e + 1 + VMAF_ORDSUM_EXP_BIAS) << 52);
-    return VMAF_ORDSUM_FROM_BITS(((uint64_t)(e + VMAF_ORDSUM_EXP_BIAS) << 52) |
-                                 ((uint64_t)total & VMAF_ORDSUM_FRACTION_MASK));
+        return (uint64_t)(e + 1 + VMAF_ORDSUM_EXP_BIAS) << 52;
+    return ((uint64_t)(e + VMAF_ORDSUM_EXP_BIAS) << 52) |
+           ((uint64_t)total & VMAF_ORDSUM_FRACTION_MASK);
 }
 
-/* Adds one chunk to the exact running sum `*sum` from its plan and the
+/* Adds one chunk to the exact running sum `*sum_bits` from its plan and the
  * increment computed for that plan. Returns 1 when the chunk is added, 0
- * when the caller must add the chunk's terms to `*sum` one by one instead
- * (`*sum` is unchanged then).
+ * when the caller must add the chunk's terms to the sum one by one instead
+ * (`*sum_bits` is unchanged then).
  *
  * `units` must be the chunk's terms in order through
- * vmaf_ordsum_planned_term(term, plan) and vmaf_ordsum_then. */
-VMAF_ORDSUM_FUNC int vmaf_ordsum_add_chunk(double *sum, int plan, VmafOrdsumUnits units)
+ * vmaf_ordsum_planned_term_bits(term, plan) and vmaf_ordsum_then. */
+VMAF_ORDSUM_FUNC int vmaf_ordsum_add_chunk_bits(uint64_t *sum_bits, int plan, VmafOrdsumUnits units)
 {
-    const double s = *sum;
-    if (s != s) /* NaN absorbs every term */
+    const uint64_t s = *sum_bits;
+    if (vmaf_ordsum_is_nan_bits(s)) /* NaN absorbs every term */
         return 1;
     if (plan == VMAF_ORDSUM_PLAN_TERMS)
         return 0;
     if (plan == VMAF_ORDSUM_PLAN_ZERO)
         return units.even == 0;
-    if (vmaf_ordsum_exponent_field(s) == VMAF_ORDSUM_EXP_MASK) /* +inf stays unless a NaN follows */
+    if (vmaf_ordsum_exponent_field_bits(s) ==
+        VMAF_ORDSUM_EXP_MASK) /* +inf stays unless a NaN follows */
         return units.even < VMAF_ORDSUM_UNFIT;
-    if (vmaf_ordsum_binade(s) != plan)
+    if (vmaf_ordsum_binade_bits(s) != plan)
         return 0;
-    const int64_t m = (int64_t)((VMAF_ORDSUM_BITS(s) & VMAF_ORDSUM_FRACTION_MASK) |
-                                (uint64_t)VMAF_ORDSUM_HIDDEN_BIT);
+    const int64_t m = (int64_t)((s & VMAF_ORDSUM_FRACTION_MASK) | (uint64_t)VMAF_ORDSUM_HIDDEN_BIT);
     const int64_t total = m + ((m & 1) ? units.odd : units.even);
     if (total > VMAF_ORDSUM_BINADE_END)
         return 0;
-    *sum = vmaf_ordsum_from_units(total, plan);
+    *sum_bits = vmaf_ordsum_from_units_bits(total, plan);
     return 1;
 }
+
+#ifndef VMAF_ORDSUM_NO_FP64
+VMAF_ORDSUM_FUNC double vmaf_ordsum_from_units(int64_t total, int e)
+{
+    return VMAF_ORDSUM_FROM_BITS(vmaf_ordsum_from_units_bits(total, e));
+}
+
+VMAF_ORDSUM_FUNC int vmaf_ordsum_add_chunk(double *sum, int plan, VmafOrdsumUnits units)
+{
+    uint64_t bits = VMAF_ORDSUM_BITS(*sum);
+    const int added = vmaf_ordsum_add_chunk_bits(&bits, plan, units);
+    if (added)
+        *sum = VMAF_ORDSUM_FROM_BITS(bits);
+    return added;
+}
+#endif
 
 #endif /* FEATURE_ORDERED_SUM_H_ */

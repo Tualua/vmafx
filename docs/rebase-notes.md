@@ -57668,6 +57668,8 @@ must keep the fork's side of both:
 - A change to `ssim_map()` / `edge_diff_map()` in `ssimulacra2.c` changes
   `ss2h_terms()` (and `ss2c_terms()`) in the same PR.
 - `scripts/ci/exact_twins.d/ssimulacra2.hip` (new) declares the twin exact
+  (ADR-1428).
+
 ## ADR-1447 — `float_moment_hip` adds the CPU's float squares (2026-10-02)
 
 `fix/hip-float-moment-cpu-squares`, `T-HIP-FLOAT-MOMENT-16BIT-SQUARES-2026-10-01`.
@@ -57705,3 +57707,42 @@ must keep the fork's side of both:
 - `core/test/test_integer_vif_log2.c` builds its table with the generator.
 - No Netflix golden-data, public API or FFmpeg patch impact; no score
   changes.
+
+## ADR-1446 — `ssimulacra2_sycl` forms the CPU's fp64 terms in integers and the CPU's sums (2026-10-02)
+
+`fix/sycl-ssimulacra2-cpu-bits`, the SYCL part of `T-GPU-SSIMULACRA2-SUM-ORDER-2026-10-01`.
+
+- `core/src/feature/ordered_sum.h` (shared with the CUDA and HIP twins):
+  every function that took or returned a `double` has a `_bits` form on the
+  fp64 bit pattern, and the fp64 form is a wrapper around it. With
+  `VMAF_ORDSUM_NO_FP64` defined the header names no `double`. A change to an
+  fp64 form belongs in its `_bits` form; keep every `double` inside
+  `#ifndef VMAF_ORDSUM_NO_FP64`
+  (`core/test/test_sycl_ssimulacra2_exact_contract.py` checks it).
+- `core/src/feature/sycl/sycl_ssimulacra2_math.h` (new): the six per-sample
+  terms of `ssim_map()` / `edge_diff_map()` as fp64 bit patterns, computed in
+  64-bit integers. A change to those two functions in `ssimulacra2.c` changes
+  this header and `reference_terms()` in
+  `core/test/test_sycl_ssimulacra2_math.c` in the same PR (as it changes
+  `ss2c_terms()` and `ss2h_terms()`).
+- `core/src/feature/sycl/sycl_ordered_sum.h` (new): the plan from fp32
+  advice, kept terms and runs for chunks the walk adds term by term, and the
+  walk, on bit patterns.
+- `core/src/feature/sycl/sycl_soft_signed.h`: `signed_from_float()`,
+  `signed_abs()` and `kQuietNanBits` added; nothing else changed.
+- `core/src/feature/sycl/ssimulacra2_sycl.cpp`: stage 3c is rewritten. The
+  kernels `launch_combine_partials` / `launch_combine_final` and the buffer
+  `d_partials` are gone; in their place `launch_chunk_sums`,
+  `launch_chunk_plan`, `launch_chunk_units` (three kernels) and
+  `launch_ordered_totals`, and eight device buffers. The fp32 pair functions
+  (`ss2s_ssim_term()`, `ss2s_edge_terms()`) stay, as advice for the plan only.
+  The read-back is 108 `uint64_t`. Take the whole stage from one side of a
+  conflict.
+- `core/test/test_sycl_ssimulacra2_parity.c` is rewritten as equality cases;
+  new `test_sycl_ssimulacra2_math` and `test_sycl_ordered_sum` (each with a
+  SYCL probe TU built by a `custom_target`, like `test_sycl_integer_ssim_math`)
+  and `test_sycl_ssimulacra2_exact_contract.py`.
+- `scripts/ci/exact_twins.d/ssimulacra2.sycl` (new) declares the twin exact
+  (ADR-1428); `scripts/ci/gpu_ulp_calibration.yaml` loses the Arc A380's
+  `ssimulacra2: 5.0e-2` rows, which an exact twin never reads.
+- No Netflix golden-data, public API or FFmpeg patch impact.

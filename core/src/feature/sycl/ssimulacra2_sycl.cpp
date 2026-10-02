@@ -17,27 +17,35 @@
  *       b. the products ref^2, dis^2 and ref*dis, and five separable
  *          3-pole IIR blurs (a lane-per-row horizontal walk, a
  *          lane-per-column vertical walk).
- *       c. the per-pixel SSIM and edge-difference terms of `ssim_map` /
- *          `edge_diff_map`, reduced over each plane to six sums per channel
- *          in a fixed tree of exact fp32 pairs.
+ *       c. the six per-pixel SSIM and edge-difference terms of `ssim_map` /
+ *          `edge_diff_map` as the CPU's doubles, and each of their sums over
+ *          a plane with the bits of the CPU's loop (ADR-1446, below).
  *       d. 2x2 box downsample of the linear-RGB pyramid.
- *    4. One 864-byte readback of the per-scale sums. collect() waits once,
- *       forms the 108 norms in fp64 and pools the score exactly as
- *       ssimulacra2.c does.
+ *    4. One 864-byte readback of the per-scale sums, 108 fp64 bit patterns.
+ *       collect() waits once, forms the 108 norms in fp64 and pools the
+ *       score exactly as ssimulacra2.c does.
  *
- *  Numerical contract (ADR-1363): stages 2, 3a, 3b and 3d reproduce the CPU
- *  extractor bit for bit (contraction off for this TU, correctly rounded
- *  division, products in named temporaries). The CPU evaluates the per-pixel
- *  terms of 3c in fp64 and adds 8.3M of them one after another at 4K; the
- *  device has no fp64 (ADR-0220) and cannot replay that sequence of
- *  roundings in parallel, so it evaluates each term in fp32 pairs (relative
- *  error about 2^-44) and sums in a fixed tree (deterministic, identical on
- *  every device). The pooled score stays within 6.7e-12 of the CPU on the
- *  tested content, against the 5e-3 ADR-0214 tolerance.
+ *  Numerical contract (ADR-1363, ADR-1446): the score is the CPU extractor's
+ *  bit for bit. Stages 2, 3a, 3b and 3d reproduce its fp32 planes
+ *  (contraction off for this TU, correctly rounded division, products in
+ *  named temporaries). The CPU evaluates the terms of 3c in fp64 and adds
+ *  each into one double, pixel after pixel, 8.3M per sum at 4K. A kernel has
+ *  no fp64 type (ADR-0220), so:
+ *    - a term is formed by the reference's operations on an fp64 value held
+ *      in 64-bit integers (sycl_ssimulacra2_math.h) and kept as its bit
+ *      pattern;
+ *    - a sum is formed as feature/ordered_sum.h does it (ADR-1433): per chunk
+ *      of SS2S_CHUNK consecutive pixels the terms become integer increments
+ *      of the binade the running sum is in, composed in pixel order, and one
+ *      walk per sum adds the chunks, term by term where the sum leaves its
+ *      binade (sycl_ordered_sum.h);
+ *    - the old twin's fp32 pair terms, summed per chunk in an fp32 tree, are
+ *      advice for the plan of that walk and never a result.
  */
 
 #include <sycl/sycl.hpp>
 
+#include <bit>
 #include <cassert>
 #include <cerrno>
 #include <cmath>
@@ -52,7 +60,10 @@
 #include "log.h"
 #include "picture.h"
 #include "sycl/common.h"
+#include "sycl_compat.h"
 #include "sycl_exact_fp.h"
+#include "sycl_ordered_sum.h"
+#include "sycl_ssimulacra2_math.h"
 
 /* Device fp32 `/` is not correctly rounded; the cube root must match the
  * host's (ssimulacra2_math.h, ADR-1363). */
@@ -66,7 +77,6 @@ namespace
 using vmaf_sycl_exact::Ff;
 using vmaf_sycl_exact::ff_add;
 using vmaf_sycl_exact::ff_div;
-using vmaf_sycl_exact::ff_mul;
 using vmaf_sycl_exact::ff_neg;
 using vmaf_sycl_exact::two_prod;
 using vmaf_sycl_exact::two_sum;
@@ -77,17 +87,39 @@ constexpr unsigned SS2S_IMAGES = 2; /* reference, distorted */
 /* Per channel: SSIM L1, SSIM L4, artifact L1, artifact L4, detail L1,
  * detail L4 (the four edge sums of edge_diff_map in its order). */
 constexpr unsigned SS2S_SUMS = 6;
-constexpr unsigned SS2S_PAIR = 2;                            /* hi, lo */
-constexpr unsigned SS2S_LANE_FLOATS = SS2S_SUMS * SS2S_PAIR; /* one work-item's sums */
-constexpr size_t SS2S_TOTAL_FLOATS = (size_t)SS2S_NUM_SCALES * SS2S_CHANNELS * SS2S_LANE_FLOATS;
+constexpr unsigned SS2S_SSIM_SUMS = 2; /* the first two */
+constexpr unsigned SS2S_EDGE_SUMS = 4; /* the other four */
+/* One fp64 bit pattern per scale, channel and sum. */
+constexpr size_t SS2S_TOTALS = (size_t)SS2S_NUM_SCALES * SS2S_CHANNELS * SS2S_SUMS;
 constexpr unsigned SS2S_BLUR_BLOCK = 64;
 constexpr size_t SS2S_PIX_BX = 16;
 constexpr size_t SS2S_PIX_BY = 8;
 constexpr size_t SS2S_ELEM_BLOCK = 256;
-constexpr unsigned SS2S_REDUCE_WG = 256;
-constexpr unsigned SS2S_MAX_GROUPS = 256;
-constexpr unsigned SS2S_PIXELS_PER_ITEM = 16;
-constexpr size_t SS2S_LDS_FLOATS = (size_t)SS2S_REDUCE_WG * SS2S_LANE_FLOATS;
+/* Pixels per chunk of the ordered sums (sycl_ordered_sum.h): consecutive in
+ * raster order, one work-group, one work-item each. */
+constexpr unsigned SS2S_CHUNK = vmaf_sycl_ordsum::kChunk;
+/* Work-items per chunk, and the consecutive pixels each one takes. */
+constexpr unsigned SS2S_LANES = 256;
+constexpr unsigned SS2S_LANE_PIXELS = SS2S_CHUNK / SS2S_LANES;
+static_assert(SS2S_CHUNK % SS2S_LANES == 0u, "a chunk is a whole number of pixels per lane");
+constexpr unsigned SS2S_RUN = vmaf_sycl_ordsum::kRun;
+constexpr unsigned SS2S_RUNS = vmaf_sycl_ordsum::kRuns;
+constexpr unsigned SS2S_RUN_UNITS = vmaf_sycl_ordsum::kRunUnits;
+/* Work-items per run of a kept chunk. */
+constexpr unsigned SS2S_RUN_LANES = SS2S_RUN / SS2S_LANE_PIXELS;
+static_assert(SS2S_RUN % SS2S_LANE_PIXELS == 0u, "a run is a whole number of lanes");
+constexpr unsigned SS2S_TERM_SLOTS = vmaf_sycl_ordsum::kSlots;
+/* The advice sums of the fourth powers are sums of (x * 2^22)^4. */
+constexpr float SS2S_ADVICE_SCALE = 0x1p22f;
+constexpr int SS2S_ADVICE_FOURTH_LOG2 = 88;
+constexpr float SS2S_ADVICE_MAX = 0x1p100f;
+/* Shapes of the kernels that run the fp64 operations in integers. */
+constexpr int SS2S_UNITS_SG = 16;
+constexpr int SS2S_UNITS_GRF = 0;
+constexpr int SS2S_SLOT_SG = 16;
+constexpr int SS2S_SLOT_GRF = 256;
+constexpr int SS2S_WALK_SG = 8;
+constexpr int SS2S_WALK_GRF = 0;
 constexpr double SS2S_SIGMA = 1.5;
 constexpr float SS2S_C2 = 0.0009f; /* ssimulacra2.c kC2 */
 
@@ -149,9 +181,15 @@ struct Ssimu2StateSycl {
     float *d_s11;
     float *d_s22;
     float *d_s12;
-    float *d_partials; /* [channel][group][sum][pair] */
-    float *d_totals;   /* [scale][channel][sum][pair] */
-    float *h_totals;
+    float *d_chunk_sums;    /* [channel][chunk][sum], advice for the plan */
+    int16_t *d_plan;        /* [channel][sum][chunk] */
+    int64_t *d_units;       /* [channel][sum][chunk][even, odd] */
+    int32_t *d_slot_chunk;  /* [channel][sum][slot] */
+    int16_t *d_slot_binade; /* [channel][sum][slot] */
+    uint64_t *d_terms;      /* [channel][sum][slot][pixel], terms of the kept chunks */
+    int64_t *d_run_units;   /* [channel][sum][slot][run][2][even, odd] */
+    uint64_t *d_totals;     /* [scale][channel][sum], fp64 bit patterns */
+    uint64_t *h_totals;
 
     bool has_pending;
     unsigned pending_index;
@@ -403,17 +441,10 @@ void ss2s_configure_scales(Ssimu2StateSycl *s)
         s->num_scales++;
 }
 
-/* Work-groups per channel for one scale's reduction. A function of the
- * plane size only, so the summation tree is the same on every device. */
-unsigned ss2s_reduce_groups(size_t pixels)
+/* Chunks of SS2S_CHUNK consecutive pixels in one plane. */
+unsigned ss2s_chunks(size_t pixels)
 {
-    const size_t per_group = (size_t)SS2S_REDUCE_WG * SS2S_PIXELS_PER_ITEM;
-    size_t groups = (pixels + per_group - 1u) / per_group;
-    if (groups < 1u)
-        groups = 1u;
-    if (groups > SS2S_MAX_GROUPS)
-        groups = SS2S_MAX_GROUPS;
-    return (unsigned)groups;
+    return (unsigned)((pixels + SS2S_CHUNK - 1u) / SS2S_CHUNK);
 }
 
 } // namespace
@@ -714,7 +745,7 @@ void ss2s_blur(sycl::queue &q, const Ssimu2StateSycl *s, const float *in, float 
 } // namespace
 
 /* ------------------------------------------------------------------ */
-/* Device: SSIM and edge-difference sums                               */
+/* Device: SSIM and edge-difference sums in the CPU's order            */
 /* ------------------------------------------------------------------ */
 
 namespace
@@ -724,14 +755,23 @@ constexpr Ff kFfZero = {.hi = 0.0f, .lo = 0.0f};
 constexpr Ff kFfOne = {.hi = 1.0f, .lo = 0.0f};
 constexpr Ff kFfMinusOne = {.hi = -1.0f, .lo = 0.0f};
 
-struct Ss2Sums {
-    Ff v[SS2S_SUMS];
+/* One pixel's or one chunk's six sums as the plan needs them: fp32 values
+ * good to a few units in 2^-24, the L4 sums scaled by 2^88 (see
+ * ss2s_advice_fourth). They are advice (ordered_sum.h): the walk checks every
+ * plan at the exact sum, so an inaccurate one costs time and nothing else. */
+struct Ss2Advice {
+    float v[SS2S_SUMS];
 };
 
-/* ssimulacra2.c::ssim_map per pixel: the fp32 part verbatim, then
- * d = 1.0 - (double)num_m * (double)num_s / (double)denom_s in fp32 pairs
- * (the product of two floats is exact as a pair), clamped at zero. */
-inline Ff ss2s_ssim_term(float u1, float u2, float s11, float s22, float s12)
+/* What ssim_map() forms in fp32 before its fp64 expression. */
+struct Ss2SsimInputs {
+    float num_m;
+    float num_s;
+    float denom_s;
+};
+
+/* ssimulacra2.c::ssim_map per pixel: the fp32 part verbatim. */
+inline Ss2SsimInputs ss2s_ssim_inputs(float u1, float u2, float s11, float s22, float s12)
 {
     const float u11 = u1 * u1;
     const float u22 = u2 * u2;
@@ -746,7 +786,15 @@ inline Ff ss2s_ssim_term(float u1, float u2, float s11, float s22, float s12)
     const float var2 = s22 - u22;
     const float var_sum = var1 + var2;
     const float denom_s = var_sum + SS2S_C2;
-    const Ff ratio = ff_div(two_prod(num_m, num_s), Ff{.hi = denom_s, .lo = 0.0f});
+    return {.num_m = num_m, .num_s = num_s, .denom_s = denom_s};
+}
+
+/* d = 1.0 - (double)num_m * (double)num_s / (double)denom_s in fp32 pairs
+ * (the product of two floats is exact as a pair), clamped at zero. Good to
+ * about 2^-44: advice for the plan, not the term the sums take. */
+inline Ff ss2s_ssim_term(const Ss2SsimInputs &in)
+{
+    const Ff ratio = ff_div(two_prod(in.num_m, in.num_s), Ff{.hi = in.denom_s, .lo = 0.0f});
     const Ff d = ff_add(kFfOne, ff_neg(ratio));
     return (d.hi < 0.0f) ? kFfZero : d; /* NaN is kept, as on the host */
 }
@@ -759,7 +807,8 @@ inline Ff ss2s_abs_diff(float a, float b)
 }
 
 /* ssimulacra2.c::edge_diff_map per pixel: (1 + ed2) / (1 + ed1) - 1 and
- * vmaf_ss2_split_edge_difference (a non-finite value goes to both sums). */
+ * vmaf_ss2_split_edge_difference (a non-finite value goes to both sums), in
+ * fp32 pairs. */
 inline void ss2s_edge_terms(float r1, float m1, float r2, float m2, Ff &artifact, Ff &detail)
 {
     const Ff num = ff_add(kFfOne, ss2s_abs_diff(r2, m2));
@@ -774,10 +823,15 @@ inline void ss2s_edge_terms(float r1, float m1, float r2, float m2, Ff &artifact
     detail = (dd.hi < 0.0f) ? ff_neg(dd) : kFfZero;
 }
 
-inline Ff ss2s_quartic(Ff x)
+/* (x * 2^22)^4 in fp32, at most 2^100. The exact fourth power of a term
+ * lies between 2^-212 and about 2^48, beyond the fp32 range at both ends;
+ * scaled it lies in [2^-124, 2^100], and a frame's sum of it stays finite. */
+inline float ss2s_advice_fourth(float x)
 {
-    const Ff sq = ff_mul(x, x);
-    return ff_mul(sq, sq);
+    const float scaled = x * SS2S_ADVICE_SCALE;
+    const float square = scaled * scaled;
+    const float fourth = square * square;
+    return sycl::fmin(fourth, SS2S_ADVICE_MAX);
 }
 
 struct Ss2CombineArgs {
@@ -788,124 +842,408 @@ struct Ss2CombineArgs {
     const float *s12;
     const float *img1;
     const float *img2;
-    float *partials;
+    float *chunk_sums;    /* [channel][chunk][sum], advice */
+    int16_t *plan;        /* [channel][sum][chunk] */
+    int64_t *units;       /* [channel][sum][chunk][even, odd] */
+    int32_t *slot_chunk;  /* [channel][sum][slot]: the chunk kept there, or -1 */
+    int16_t *slot_binade; /* [channel][sum][slot]: the lower binade its runs are kept under */
+    uint64_t *terms;      /* [channel][sum][slot][pixel of the chunk], fp64 bit patterns */
+    int64_t *run_units;   /* [channel][sum][slot][run][binade, binade + 1][even, odd] */
+    uint64_t *totals;     /* this scale's [channel][sum], fp64 bit patterns */
     size_t plane;
-    unsigned groups;
+    unsigned chunks;
 };
 
-inline void ss2s_accumulate_pixel(Ss2Sums &acc, const Ss2CombineArgs &a, size_t idx)
+/* One pixel's six terms as advice. The terms themselves are evaluated in
+ * fp32 pairs, because d = 1 - ratio cancels; the sums take their high words. */
+inline Ss2Advice ss2s_advice_pixel(const Ss2CombineArgs &a, size_t idx)
 {
     const float u1 = a.mu1[idx];
     const float u2 = a.mu2[idx];
-    const Ff d = ss2s_ssim_term(u1, u2, a.s11[idx], a.s22[idx], a.s12[idx]);
+    const Ff d = ss2s_ssim_term(ss2s_ssim_inputs(u1, u2, a.s11[idx], a.s22[idx], a.s12[idx]));
     Ff artifact = kFfZero;
     Ff detail = kFfZero;
     ss2s_edge_terms(a.img1[idx], u1, a.img2[idx], u2, artifact, detail);
-    acc.v[0] = ff_add(acc.v[0], d);
-    acc.v[1] = ff_add(acc.v[1], ss2s_quartic(d));
-    acc.v[2] = ff_add(acc.v[2], artifact);
-    acc.v[3] = ff_add(acc.v[3], ss2s_quartic(artifact));
-    acc.v[4] = ff_add(acc.v[4], detail);
-    acc.v[5] = ff_add(acc.v[5], ss2s_quartic(detail));
+    return {.v = {d.hi, ss2s_advice_fourth(d.hi), artifact.hi, ss2s_advice_fourth(artifact.hi),
+                  detail.hi, ss2s_advice_fourth(detail.hi)}};
 }
 
 /* Fixed-shape tree over one work-group's sums in local memory; lane 0 ends
  * up with the group total. */
-template <int D>
-inline void ss2s_group_tree(sycl::nd_item<D> it, float *lds, unsigned lane, const Ss2Sums &own)
+inline void ss2s_group_tree(sycl::nd_item<2> it, float *lds, unsigned lane, const Ss2Advice &own)
 {
-    for (unsigned s = 0; s < SS2S_SUMS; s++) {
-        const size_t at = (size_t)lane * SS2S_LANE_FLOATS + (size_t)s * SS2S_PAIR;
-        lds[at] = own.v[s].hi;
-        lds[at + 1u] = own.v[s].lo;
-    }
+    for (unsigned s = 0; s < SS2S_SUMS; s++)
+        lds[(size_t)lane * SS2S_SUMS + s] = own.v[s];
     sycl::group_barrier(it.get_group());
-    for (unsigned stride = SS2S_REDUCE_WG / 2u; stride > 0u; stride >>= 1u) {
+    for (unsigned stride = SS2S_LANES / 2u; stride > 0u; stride >>= 1u) {
         if (lane < stride) {
-            float *mine = lds + (size_t)lane * SS2S_LANE_FLOATS;
-            const float *other = lds + (size_t)(lane + stride) * SS2S_LANE_FLOATS;
-            for (unsigned s = 0; s < SS2S_SUMS; s++) {
-                const size_t at = (size_t)s * SS2S_PAIR;
-                const Ff merged = ff_add({.hi = mine[at], .lo = mine[at + 1u]},
-                                         {.hi = other[at], .lo = other[at + 1u]});
-                mine[at] = merged.hi;
-                mine[at + 1u] = merged.lo;
-            }
+            float *mine = lds + (size_t)lane * SS2S_SUMS;
+            const float *other = lds + (size_t)(lane + stride) * SS2S_SUMS;
+            for (unsigned s = 0; s < SS2S_SUMS; s++)
+                mine[s] = mine[s] + other[s];
         }
         sycl::group_barrier(it.get_group());
     }
 }
 
-/* Stage 1: every work-group sums a fixed strided subset of one channel. */
-void launch_combine_partials(sycl::queue &q, const Ss2CombineArgs &args)
+/* Stage 1, advice for the plan: the six sums of every chunk of
+ * SS2S_CHUNK consecutive pixels, in fp32 and a tree. One work-group per
+ * chunk, SS2S_LANE_PIXELS pixels per work-item. */
+void launch_chunk_sums(sycl::queue &q, const Ss2CombineArgs &args)
 {
-    /* The partials buffer holds SS2S_MAX_GROUPS groups per channel. */
-    assert(args.groups >= 1u && args.groups <= SS2S_MAX_GROUPS);
+    assert(args.chunks >= 1u);
     assert(args.plane > 0u);
-    const sycl::nd_range<2> range(
-        sycl::range<2>(SS2S_CHANNELS, (size_t)args.groups * SS2S_REDUCE_WG),
-        sycl::range<2>(1, SS2S_REDUCE_WG));
+    const sycl::nd_range<2> range(sycl::range<2>(SS2S_CHANNELS, (size_t)args.chunks * SS2S_LANES),
+                                  sycl::range<2>(1, SS2S_LANES));
     q.submit([&](sycl::handler &h) {
-        const sycl::local_accessor<float, 1> lds(sycl::range<1>(SS2S_LDS_FLOATS), h);
+        const sycl::local_accessor<float, 1> lds(sycl::range<1>((size_t)SS2S_LANES * SS2S_SUMS), h);
         h.parallel_for(range, [=](sycl::nd_item<2> it) {
             const auto c = (unsigned)it.get_global_id(0);
-            const auto group = (unsigned)it.get_group(1);
+            const auto chunk = (unsigned)it.get_group(1);
             const auto lane = (unsigned)it.get_local_id(1);
-            const size_t stride = (size_t)args.groups * SS2S_REDUCE_WG;
-            const size_t offset = (size_t)c * args.plane;
-            Ss2Sums acc = {};
-            for (size_t i = (size_t)group * SS2S_REDUCE_WG + lane; i < args.plane; i += stride)
-                ss2s_accumulate_pixel(acc, args, offset + i);
+            const size_t first = (size_t)chunk * SS2S_CHUNK + (size_t)lane * SS2S_LANE_PIXELS;
+            Ss2Advice own = {};
+            for (size_t i = first; i < first + SS2S_LANE_PIXELS && i < args.plane; i++) {
+                const Ss2Advice pixel = ss2s_advice_pixel(args, (size_t)c * args.plane + i);
+                for (unsigned f = 0; f < SS2S_SUMS; f++)
+                    own.v[f] += pixel.v[f];
+            }
             float *local = lds.get_multi_ptr<sycl::access::decorated::no>().get();
-            ss2s_group_tree(it, local, lane, acc);
+            ss2s_group_tree(it, local, lane, own);
             if (lane == 0u) {
-                float *dst =
-                    args.partials + ((size_t)c * SS2S_MAX_GROUPS + group) * SS2S_LANE_FLOATS;
-                for (unsigned f = 0; f < SS2S_LANE_FLOATS; f++)
+                float *dst = args.chunk_sums + ((size_t)c * args.chunks + chunk) * SS2S_SUMS;
+                for (unsigned f = 0; f < SS2S_SUMS; f++)
                     dst[f] = local[f];
             }
         });
     });
 }
 
-struct Ss2FinalArgs {
-    const float *partials;
-    float *totals; /* this scale's [channel][sum][pair] */
-    unsigned groups;
-};
-
-/* Stage 2: one work-group per channel folds the group partials. */
-/* One channel's group: each lane folds a fixed subset of the group partials,
- * then the local tree; lane 0 writes the channel's six sums. */
-inline void ss2s_final_group(sycl::nd_item<1> it, const Ss2FinalArgs &args, float *local)
+/* Stage 2: the plan of every chunk of every (channel, sum), one work-item
+ * per sum walking its chunks (vmaf_sycl_ordsum::plan_chunks). The advice of
+ * an L4 sum is scaled, see ss2s_advice_fourth. */
+void launch_chunk_plan(sycl::queue &q, const Ss2CombineArgs &args)
 {
-    const auto c = (unsigned)it.get_group(0);
-    const auto lane = (unsigned)it.get_local_id(0);
-    Ss2Sums acc = {};
-    for (unsigned g = lane; g < args.groups; g += SS2S_REDUCE_WG) {
-        const float *src = args.partials + ((size_t)c * SS2S_MAX_GROUPS + g) * SS2S_LANE_FLOATS;
-        for (unsigned s = 0; s < SS2S_SUMS; s++) {
-            const size_t at = (size_t)s * SS2S_PAIR;
-            acc.v[s] = ff_add(acc.v[s], {.hi = src[at], .lo = src[at + 1u]});
+    q.parallel_for(sycl::range<1>((size_t)SS2S_CHANNELS * SS2S_SUMS), [=](sycl::id<1> id) {
+        const auto c = (unsigned)(id[0] / SS2S_SUMS);
+        const auto k = (unsigned)(id[0] % SS2S_SUMS);
+        const int scale_log2 = (k & 1u) != 0u ? SS2S_ADVICE_FOURTH_LOG2 : 0;
+        const float *sums = args.chunk_sums + (size_t)c * args.chunks * SS2S_SUMS + k;
+        vmaf_sycl_ordsum::plan_chunks(sums, SS2S_SUMS, args.chunks, scale_log2,
+                                      {.plan = args.plan + id[0] * args.chunks,
+                                       .slot_chunk = args.slot_chunk + id[0] * SS2S_TERM_SLOTS,
+                                       .slot_binade = args.slot_binade + id[0] * SS2S_TERM_SLOTS},
+                                      SS2S_TERM_SLOTS);
+    });
+}
+
+/* The CPU's fp64 term `k` of sample `idx` (channel offset included), as a
+ * bit pattern: sycl_ssimulacra2_math.h on the fp32 values the reference
+ * converts. */
+__attribute__((flatten, always_inline)) inline vmaf_sycl_ss2::TermPair
+ss2s_exact_ssim(const Ss2CombineArgs &a, size_t idx)
+{
+    const Ss2SsimInputs in =
+        ss2s_ssim_inputs(a.mu1[idx], a.mu2[idx], a.s11[idx], a.s22[idx], a.s12[idx]);
+    return vmaf_sycl_ss2::ssim_terms(in.num_m, in.num_s, in.denom_s);
+}
+
+__attribute__((flatten, always_inline)) inline vmaf_sycl_ss2::EdgeTerms
+ss2s_exact_edge(const Ss2CombineArgs &a, size_t idx)
+{
+    return vmaf_sycl_ss2::edge_terms(a.img1[idx], a.mu1[idx], a.img2[idx], a.mu2[idx]);
+}
+
+/* Increments in local memory, [lane][SUMS][even, odd], composed in pixel
+ * order into runs of RUN lanes: at each level a lane whose index is a
+ * multiple of twice the stride takes its own run followed by the run `stride`
+ * lanes on. vmaf_ordsum_then() is associative and not commutative, so the
+ * left operand is always the earlier pixels. The first lane of a run ends
+ * with the run. */
+template <unsigned SUMS, unsigned RUN>
+inline void ss2s_ordered_tree(sycl::nd_item<2> it, int64_t *lds, unsigned lane)
+{
+    for (unsigned stride = 1u; stride < RUN; stride <<= 1u) {
+        if ((lane & (2u * stride - 1u)) == 0u) {
+            int64_t *mine = lds + (size_t)lane * SUMS * 2u;
+            const int64_t *next = lds + (size_t)(lane + stride) * SUMS * 2u;
+            for (size_t s = 0; s < (size_t)SUMS * 2u; s += 2u) {
+                const VmafOrdsumUnits merged =
+                    vmaf_ordsum_then(vmaf_ordsum_units(mine[s], mine[s + 1u]),
+                                     vmaf_ordsum_units(next[s], next[s + 1u]));
+                mine[s] = merged.even;
+                mine[s + 1u] = merged.odd;
+            }
         }
-    }
-    ss2s_group_tree(it, local, lane, acc);
-    if (lane == 0u) {
-        float *dst = args.totals + (size_t)c * SS2S_LANE_FLOATS;
-        for (unsigned f = 0; f < SS2S_LANE_FLOATS; f++)
-            dst[f] = local[f];
+        sycl::group_barrier(it.get_group());
     }
 }
 
-void launch_combine_final(sycl::queue &q, const Ss2FinalArgs &args)
+/* Where one (channel, chunk) of a kernel of the unit stage lies. */
+struct Ss2ChunkItem {
+    unsigned c;
+    unsigned chunk;
+    unsigned lane;
+    size_t pixel; /* the lane's first pixel in the plane; may lie past its end */
+};
+
+inline Ss2ChunkItem ss2s_chunk_item(sycl::nd_item<2> it)
 {
-    assert(args.groups >= 1u && args.groups <= SS2S_MAX_GROUPS);
-    const sycl::nd_range<1> range((size_t)SS2S_CHANNELS * SS2S_REDUCE_WG, SS2S_REDUCE_WG);
+    const auto chunk = (unsigned)it.get_group(1);
+    const auto lane = (unsigned)it.get_local_id(1);
+    return {.c = (unsigned)it.get_global_id(0),
+            .chunk = chunk,
+            .lane = lane,
+            .pixel = (size_t)chunk * SS2S_CHUNK + (size_t)lane * SS2S_LANE_PIXELS};
+}
+
+/* Appends term `bits` to the lane's run in `slot` (local memory, [even,
+ * odd]): its increment under the plan of sum `k` of the item's chunk. */
+inline void ss2s_stage_units(const Ss2CombineArgs &a, const Ss2ChunkItem &at, unsigned k,
+                             uint64_t bits, int64_t *slot)
+{
+    const int16_t entry = a.plan[((size_t)at.c * SS2S_SUMS + k) * a.chunks + at.chunk];
+    const VmafOrdsumUnits units =
+        vmaf_ordsum_then(vmaf_ordsum_units(slot[0], slot[1]),
+                         vmaf_ordsum_planned_term_bits(bits, vmaf_sycl_ordsum::plan_of(entry)));
+    slot[0] = units.even;
+    slot[1] = units.odd;
+}
+
+/* A lane's slots before its first term: the increment of no term. */
+template <unsigned COUNT> inline void ss2s_clear_units(int64_t *slots)
+{
+    for (unsigned f = 0; f < COUNT; f++)
+        slots[f] = 0;
+}
+
+/* Lane 0: the chunk's increment of sum `k`, from the lane's slot. */
+inline void ss2s_store_units(const Ss2CombineArgs &a, const Ss2ChunkItem &at, unsigned k,
+                             const int64_t *slot)
+{
+    int64_t *out = a.units + (((size_t)at.c * SS2S_SUMS + k) * a.chunks + at.chunk) * 2u;
+    out[0] = slot[0];
+    out[1] = slot[1];
+}
+
+/* Stage 3a: every chunk's increments of the two SSIM sums under its plan. A
+ * lane appends its pixels in order; a pixel past the plane's end adds
+ * nothing. */
+class Ss2SsimUnitsKernel : public VmafSyclKernelShape<SS2S_UNITS_SG, SS2S_UNITS_GRF>
+{
+  public:
+    Ss2SsimUnitsKernel(const Ss2CombineArgs &args, const sycl::local_accessor<int64_t, 1> &lds)
+        : a_(args), lds_(lds)
+    {
+    }
+
+    VMAF_SYCL_FUNCTOR_SG_SIZE(SS2S_UNITS_SG) void operator()(sycl::nd_item<2> it) const
+    {
+        const Ss2ChunkItem at = ss2s_chunk_item(it);
+        int64_t *local = lds_.get_multi_ptr<sycl::access::decorated::no>().get();
+        int64_t *mine = local + (size_t)at.lane * SS2S_SSIM_SUMS * 2u;
+        ss2s_clear_units<SS2S_SSIM_SUMS * 2u>(mine);
+        for (size_t i = at.pixel; i < at.pixel + SS2S_LANE_PIXELS && i < a_.plane; i++) {
+            const vmaf_sycl_ss2::TermPair d = ss2s_exact_ssim(a_, (size_t)at.c * a_.plane + i);
+            ss2s_stage_units(a_, at, 0u, d.value, mine);
+            ss2s_stage_units(a_, at, 1u, d.fourth, mine + 2);
+        }
+        sycl::group_barrier(it.get_group());
+        ss2s_ordered_tree<SS2S_SSIM_SUMS, SS2S_LANES>(it, local, at.lane);
+        if (at.lane == 0u) {
+            ss2s_store_units(a_, at, 0u, mine);
+            ss2s_store_units(a_, at, 1u, mine + 2);
+        }
+    }
+
+  private:
+    Ss2CombineArgs a_;
+    sycl::local_accessor<int64_t, 1> lds_;
+};
+
+/* Stage 3b: the same for the four edge sums. */
+class Ss2EdgeUnitsKernel : public VmafSyclKernelShape<SS2S_UNITS_SG, SS2S_UNITS_GRF>
+{
+  public:
+    Ss2EdgeUnitsKernel(const Ss2CombineArgs &args, const sycl::local_accessor<int64_t, 1> &lds)
+        : a_(args), lds_(lds)
+    {
+    }
+
+    VMAF_SYCL_FUNCTOR_SG_SIZE(SS2S_UNITS_SG) void operator()(sycl::nd_item<2> it) const
+    {
+        const Ss2ChunkItem at = ss2s_chunk_item(it);
+        int64_t *local = lds_.get_multi_ptr<sycl::access::decorated::no>().get();
+        int64_t *mine = local + (size_t)at.lane * SS2S_EDGE_SUMS * 2u;
+        ss2s_clear_units<SS2S_EDGE_SUMS * 2u>(mine);
+        for (size_t i = at.pixel; i < at.pixel + SS2S_LANE_PIXELS && i < a_.plane; i++) {
+            const vmaf_sycl_ss2::EdgeTerms e = ss2s_exact_edge(a_, (size_t)at.c * a_.plane + i);
+            ss2s_stage_units(a_, at, 2u, e.artifact.value, mine);
+            ss2s_stage_units(a_, at, 3u, e.artifact.fourth, mine + 2);
+            ss2s_stage_units(a_, at, 4u, e.detail.value, mine + 4);
+            ss2s_stage_units(a_, at, 5u, e.detail.fourth, mine + 6);
+        }
+        sycl::group_barrier(it.get_group());
+        ss2s_ordered_tree<SS2S_EDGE_SUMS, SS2S_LANES>(it, local, at.lane);
+        if (at.lane == 0u) {
+            ss2s_store_units(a_, at, 2u, mine);
+            ss2s_store_units(a_, at, 3u, mine + 2);
+            ss2s_store_units(a_, at, 4u, mine + 4);
+            ss2s_store_units(a_, at, 5u, mine + 6);
+        }
+    }
+
+  private:
+    Ss2CombineArgs a_;
+    sycl::local_accessor<int64_t, 1> lds_;
+};
+
+/* The CPU's term of sum `k` (SSIM L1, L4, artifact L1, L4, detail L1, L4) of
+ * one sample. */
+__attribute__((flatten, always_inline)) inline uint64_t ss2s_term_bits(const Ss2CombineArgs &a,
+                                                                       unsigned k, size_t idx)
+{
+    if (k < SS2S_SSIM_SUMS) {
+        const vmaf_sycl_ss2::TermPair d = ss2s_exact_ssim(a, idx);
+        return k == 0u ? d.value : d.fourth;
+    }
+    const vmaf_sycl_ss2::EdgeTerms e = ss2s_exact_edge(a, idx);
+    const vmaf_sycl_ss2::TermPair &side = k < 4u ? e.artifact : e.detail;
+    return (k & 1u) == 0u ? side.value : side.fourth;
+}
+
+/* Term `j` of the chunk kept in `slot`, which is pixel `pixel` of the plane:
+ * its bit pattern into the kept terms, and its increments under the expected
+ * binade and the next one appended to the lane's run in `mine`. A pixel past
+ * the plane's end is a zero term. */
+__attribute__((flatten, always_inline)) inline void ss2s_keep_term(const Ss2CombineArgs &a,
+                                                                   unsigned which, size_t slot,
+                                                                   size_t pixel, size_t j,
+                                                                   int64_t *mine)
+{
+    uint64_t bits = 0u;
+    if (pixel < a.plane) {
+        const size_t channel = which / SS2S_SUMS;
+        bits = ss2s_term_bits(a, which % SS2S_SUMS, channel * a.plane + pixel);
+    }
+    a.terms[slot * SS2S_CHUNK + j] = bits;
+    vmaf_sycl_ordsum::stage_run(bits, (int)a.slot_binade[slot], mine);
+}
+
+/* Stage 3c: the chunks with a slot, one work-group each. The lanes keep the
+ * chunk's terms of the slot's sum, and compose their increments under the
+ * two binades the chunk is expected to end in (the one below its last and
+ * its last, vmaf_sycl_ordsum::expected_binade) into runs of SS2S_RUN pixels.
+ * A chunk that crosses one binade is then added by the walk as runs before
+ * the crossing, the terms of the run that crosses, and runs after it. A
+ * pixel past the plane's end is a zero term. */
+class Ss2SlotKernel : public VmafSyclKernelShape<SS2S_SLOT_SG, SS2S_SLOT_GRF>
+{
+  public:
+    Ss2SlotKernel(const Ss2CombineArgs &args, const sycl::local_accessor<int64_t, 1> &lds)
+        : a_(args), lds_(lds)
+    {
+    }
+
+    VMAF_SYCL_FUNCTOR_SG_SIZE(SS2S_SLOT_SG) void operator()(sycl::nd_item<2> it) const
+    {
+        const auto which = (unsigned)it.get_global_id(0);
+        const auto lane = (unsigned)it.get_local_id(1);
+        const size_t slot = (size_t)which * SS2S_TERM_SLOTS + it.get_group(1);
+        const int32_t chunk = a_.slot_chunk[slot];
+        if (chunk < 0)
+            return; /* the whole work-group: no barrier is reached */
+        int64_t *local = lds_.get_multi_ptr<sycl::access::decorated::no>().get();
+        int64_t *mine = local + (size_t)lane * SS2S_RUN_UNITS;
+        ss2s_clear_units<SS2S_RUN_UNITS>(mine);
+        const size_t first = (size_t)lane * SS2S_LANE_PIXELS;
+        for (size_t j = first; j < first + SS2S_LANE_PIXELS; j++)
+            ss2s_keep_term(a_, which, slot, (size_t)chunk * SS2S_CHUNK + j, j, mine);
+        sycl::group_barrier(it.get_group());
+        ss2s_ordered_tree<2u, SS2S_RUN_LANES>(it, local, lane);
+        if ((lane % SS2S_RUN_LANES) == 0u) {
+            int64_t *out =
+                a_.run_units + (slot * SS2S_RUNS + lane / SS2S_RUN_LANES) * SS2S_RUN_UNITS;
+            for (unsigned f = 0; f < SS2S_RUN_UNITS; f++)
+                out[f] = mine[f];
+        }
+    }
+
+  private:
+    Ss2CombineArgs a_;
+    sycl::local_accessor<int64_t, 1> lds_;
+};
+
+void launch_chunk_units(sycl::queue &q, const Ss2CombineArgs &args)
+{
+    assert(args.chunks >= 1u);
+    assert(args.plane > 0u);
+    const sycl::nd_range<2> range(sycl::range<2>(SS2S_CHANNELS, (size_t)args.chunks * SS2S_LANES),
+                                  sycl::range<2>(1, SS2S_LANES));
     q.submit([&](sycl::handler &h) {
-        const sycl::local_accessor<float, 1> lds(sycl::range<1>(SS2S_LDS_FLOATS), h);
-        h.parallel_for(range, [=](sycl::nd_item<1> it) {
-            ss2s_final_group(it, args, lds.get_multi_ptr<sycl::access::decorated::no>().get());
-        });
+        const sycl::local_accessor<int64_t, 1> lds(
+            sycl::range<1>((size_t)SS2S_LANES * SS2S_SSIM_SUMS * 2u), h);
+        h.parallel_for(range, Ss2SsimUnitsKernel(args, lds));
+    });
+    q.submit([&](sycl::handler &h) {
+        const sycl::local_accessor<int64_t, 1> lds(
+            sycl::range<1>((size_t)SS2S_LANES * SS2S_EDGE_SUMS * 2u), h);
+        h.parallel_for(range, Ss2EdgeUnitsKernel(args, lds));
+    });
+    const sycl::nd_range<2> slots(
+        sycl::range<2>((size_t)SS2S_CHANNELS * SS2S_SUMS, (size_t)SS2S_TERM_SLOTS * SS2S_LANES),
+        sycl::range<2>(1, SS2S_LANES));
+    q.submit([&](sycl::handler &h) {
+        const sycl::local_accessor<int64_t, 1> lds(
+            sycl::range<1>((size_t)SS2S_LANES * SS2S_RUN_UNITS), h);
+        h.parallel_for(slots, Ss2SlotKernel(args, lds));
+    });
+}
+
+/* Stage 4: one walk per (channel, sum) over its chunks
+ * (vmaf_sycl_ordsum::walk_sum), on the first lane of a work-group of its own
+ * so that no other walk shares its sub-group. A chunk is added from its
+ * increment when the plan holds at the exact sum, from its kept runs and
+ * terms when it has a slot, and from terms computed here otherwise. */
+class Ss2TotalsKernel : public VmafSyclKernelShape<SS2S_WALK_SG, SS2S_WALK_GRF>
+{
+  public:
+    explicit Ss2TotalsKernel(const Ss2CombineArgs &args) : a_(args)
+    {
+    }
+
+    VMAF_SYCL_FUNCTOR_SG_SIZE(SS2S_WALK_SG)
+    __attribute__((flatten)) void operator()(sycl::nd_item<1> it) const
+    {
+        if (it.get_local_id(0) != 0u)
+            return;
+        const auto which = (unsigned)it.get_group(0);
+        const unsigned k = which % SS2S_SUMS;
+        const size_t offset = (size_t)(which / SS2S_SUMS) * a_.plane;
+        const size_t slots = (size_t)which * SS2S_TERM_SLOTS;
+        const vmaf_sycl_ordsum::SumWalk walk = {.plan = a_.plan + (size_t)which * a_.chunks,
+                                                .units = a_.units + (size_t)which * a_.chunks * 2u,
+                                                .slot_binade = a_.slot_binade + slots,
+                                                .terms = a_.terms + slots * SS2S_CHUNK,
+                                                .run_units = a_.run_units +
+                                                             slots * SS2S_RUNS * SS2S_RUN_UNITS,
+                                                .chunks = a_.chunks,
+                                                .count = a_.plane};
+        const Ss2CombineArgs &a = a_;
+        const uint64_t sum = vmaf_sycl_ordsum::walk_sum(
+            walk, [&a, k, offset](size_t i) { return ss2s_term_bits(a, k, offset + i); });
+        a_.totals[which] = sum;
+    }
+
+  private:
+    Ss2CombineArgs a_;
+};
+
+void launch_ordered_totals(sycl::queue &q, const Ss2CombineArgs &args)
+{
+    const size_t sums = (size_t)SS2S_CHANNELS * SS2S_SUMS;
+    q.submit([&](sycl::handler &h) {
+        h.parallel_for(sycl::nd_range<1>(sums * SS2S_WALK_SG, SS2S_WALK_SG), Ss2TotalsKernel(args));
     });
 }
 
@@ -934,6 +1272,36 @@ void enqueue_linear_rgb(sycl::queue &q, const Ssimu2StateSycl *s)
         args.out = s->d_lin[img][0];
         launch_yuv_to_linear(q, args);
     }
+}
+
+/* Stage 3c of one scale: the six sums per channel of the terms of `ref` and
+ * `dis` (XYB) and their blurred planes, into this scale's totals. */
+void enqueue_sums(sycl::queue &q, const Ssimu2StateSycl *s, int scale, size_t plane)
+{
+    assert(scale >= 0 && scale < s->num_scales);
+    assert(plane == (size_t)s->scale_w[scale] * s->scale_h[scale]);
+    const Ss2CombineArgs combine = {.mu1 = s->d_mu1,
+                                    .mu2 = s->d_mu2,
+                                    .s11 = s->d_s11,
+                                    .s22 = s->d_s22,
+                                    .s12 = s->d_s12,
+                                    .img1 = s->d_xyb[0],
+                                    .img2 = s->d_xyb[1],
+                                    .chunk_sums = s->d_chunk_sums,
+                                    .plan = s->d_plan,
+                                    .units = s->d_units,
+                                    .slot_chunk = s->d_slot_chunk,
+                                    .slot_binade = s->d_slot_binade,
+                                    .terms = s->d_terms,
+                                    .run_units = s->d_run_units,
+                                    .totals =
+                                        s->d_totals + (size_t)scale * SS2S_CHANNELS * SS2S_SUMS,
+                                    .plane = plane,
+                                    .chunks = ss2s_chunks(plane)};
+    launch_chunk_sums(q, combine);
+    launch_chunk_plan(q, combine);
+    launch_chunk_units(q, combine);
+    launch_ordered_totals(q, combine);
 }
 
 void enqueue_scale(sycl::queue &q, const Ssimu2StateSycl *s, int scale)
@@ -966,21 +1334,7 @@ void enqueue_scale(sycl::queue &q, const Ssimu2StateSycl *s, int scale)
     ss2s_blur(q, s, ref, s->d_mu1, scale);
     ss2s_blur(q, s, dis, s->d_mu2, scale);
 
-    const Ss2CombineArgs combine = {.mu1 = s->d_mu1,
-                                    .mu2 = s->d_mu2,
-                                    .s11 = s->d_s11,
-                                    .s22 = s->d_s22,
-                                    .s12 = s->d_s12,
-                                    .img1 = ref,
-                                    .img2 = dis,
-                                    .partials = s->d_partials,
-                                    .plane = plane,
-                                    .groups = ss2s_reduce_groups(plane)};
-    launch_combine_partials(q, combine);
-    launch_combine_final(q,
-                         {.partials = s->d_partials,
-                          .totals = s->d_totals + (size_t)scale * SS2S_CHANNELS * SS2S_LANE_FLOATS,
-                          .groups = combine.groups});
+    enqueue_sums(q, s, scale, plane);
 
     if (scale + 1 < s->num_scales) {
         const Ss2PlanesArgs down = {.in = {s->d_lin[0][cur], s->d_lin[1][cur]},
@@ -1002,7 +1356,7 @@ void enqueue_frame(sycl::queue &q, const Ssimu2StateSycl *s)
     enqueue_linear_rgb(q, s);
     for (int scale = 0; scale < s->num_scales; scale++)
         enqueue_scale(q, s, scale);
-    q.memcpy(s->h_totals, s->d_totals, SS2S_TOTAL_FLOATS * sizeof(float));
+    q.memcpy(s->h_totals, s->d_totals, SS2S_TOTALS * sizeof(uint64_t));
 }
 
 } // namespace
@@ -1015,16 +1369,14 @@ namespace
 {
 
 /* The six sums of one scale -> ssim_map / edge_diff_map plane averages. */
-void ss2s_scale_norms(const float *totals, unsigned cw, unsigned ch, double avg_ssim[6],
+void ss2s_scale_norms(const uint64_t *totals, unsigned cw, unsigned ch, double avg_ssim[6],
                       double avg_ed[12])
 {
     const double one_per_pixels = 1.0 / (double)((size_t)cw * (size_t)ch);
     for (unsigned c = 0; c < SS2S_CHANNELS; c++) {
         double sum[SS2S_SUMS];
-        for (unsigned k = 0; k < SS2S_SUMS; k++) {
-            const float *pair = totals + (size_t)c * SS2S_LANE_FLOATS + (size_t)k * SS2S_PAIR;
-            sum[k] = (double)pair[0] + (double)pair[1];
-        }
+        for (unsigned k = 0; k < SS2S_SUMS; k++)
+            sum[k] = std::bit_cast<double>(totals[(size_t)c * SS2S_SUMS + k]);
         avg_ssim[c * 2 + 0] = one_per_pixels * sum[0];
         avg_ssim[c * 2 + 1] = std::sqrt(std::sqrt(one_per_pixels * sum[1]));
         avg_ed[c * 4 + 0] = one_per_pixels * sum[2];
@@ -1063,8 +1415,8 @@ double ss2s_frame_score(const Ssimu2StateSycl *s)
     double avg_ssim[6][6] = {{0}};
     double avg_ed[6][12] = {{0}};
     for (int scale = 0; scale < s->num_scales; scale++) {
-        ss2s_scale_norms(s->h_totals + (size_t)scale * SS2S_CHANNELS * SS2S_LANE_FLOATS,
-                         s->scale_w[scale], s->scale_h[scale], avg_ssim[scale], avg_ed[scale]);
+        ss2s_scale_norms(s->h_totals + (size_t)scale * SS2S_CHANNELS * SS2S_SUMS, s->scale_w[scale],
+                         s->scale_h[scale], avg_ssim[scale], avg_ed[scale]);
     }
     return ss2s_pool_score(avg_ssim, avg_ed, s->num_scales);
 }
@@ -1122,13 +1474,23 @@ bool ss2s_allocate(Ssimu2StateSycl *s)
         *slot = ss2s_device_alloc<float>(st, full);
         ok = ok && *slot;
     }
-    const size_t partial_bytes =
-        (size_t)SS2S_CHANNELS * SS2S_MAX_GROUPS * SS2S_LANE_FLOATS * sizeof(float);
-    s->d_partials = ss2s_device_alloc<float>(st, partial_bytes);
-    s->d_totals = ss2s_device_alloc<float>(st, SS2S_TOTAL_FLOATS * sizeof(float));
+    /* The ordered sums of the largest scale; the queue is in order, so the
+     * scales share them. */
+    const size_t chunks = ss2s_chunks((size_t)s->width * s->height);
+    const size_t sums = (size_t)SS2S_CHANNELS * SS2S_SUMS * chunks;
+    s->d_chunk_sums = ss2s_device_alloc<float>(st, sums * sizeof(float));
+    s->d_plan = ss2s_device_alloc<int16_t>(st, sums * sizeof(int16_t));
+    s->d_units = ss2s_device_alloc<int64_t>(st, sums * 2u * sizeof(int64_t));
+    const size_t slots = (size_t)SS2S_CHANNELS * SS2S_SUMS * SS2S_TERM_SLOTS;
+    s->d_slot_chunk = ss2s_device_alloc<int32_t>(st, slots * sizeof(int32_t));
+    s->d_slot_binade = ss2s_device_alloc<int16_t>(st, slots * sizeof(int16_t));
+    s->d_terms = ss2s_device_alloc<uint64_t>(st, slots * SS2S_CHUNK * sizeof(uint64_t));
+    s->d_run_units = ss2s_device_alloc<int64_t>(st, slots * SS2S_RUNS * 4u * sizeof(int64_t));
+    s->d_totals = ss2s_device_alloc<uint64_t>(st, SS2S_TOTALS * sizeof(uint64_t));
     s->h_totals =
-        static_cast<float *>(vmaf_sycl_malloc_host(st, SS2S_TOTAL_FLOATS * sizeof(float)));
-    return ok && s->d_partials && s->d_totals && s->h_totals;
+        static_cast<uint64_t *>(vmaf_sycl_malloc_host(st, SS2S_TOTALS * sizeof(uint64_t)));
+    return ok && s->d_chunk_sums && s->d_plan && s->d_units && s->d_slot_chunk &&
+           s->d_slot_binade && s->d_terms && s->d_run_units && s->d_totals && s->h_totals;
 }
 
 int close_fex_sycl(VmafFeatureExtractor *fex);
@@ -1279,13 +1641,27 @@ int close_fex_sycl(VmafFeatureExtractor *fex)
     float **const buffers[] = {&s->d_lin[0][0], &s->d_lin[0][1], &s->d_lin[1][0], &s->d_lin[1][1],
                                &s->d_xyb[0],    &s->d_xyb[1],    &s->d_product,   &s->d_scratch,
                                &s->d_mu1,       &s->d_mu2,       &s->d_s11,       &s->d_s22,
-                               &s->d_s12,       &s->d_partials,  &s->d_totals,    &s->h_totals};
+                               &s->d_s12,       &s->d_chunk_sums};
     for (float **slot : buffers) {
         if (*slot) {
             vmaf_sycl_free(st, *slot);
             *slot = nullptr;
         }
     }
+    void *const ordered[] = {s->d_plan,  s->d_units,     s->d_slot_chunk, s->d_slot_binade,
+                             s->d_terms, s->d_run_units, s->d_totals,     s->h_totals};
+    for (void *buffer : ordered) {
+        if (buffer)
+            vmaf_sycl_free(st, buffer);
+    }
+    s->d_plan = nullptr;
+    s->d_units = nullptr;
+    s->d_slot_chunk = nullptr;
+    s->d_slot_binade = nullptr;
+    s->d_terms = nullptr;
+    s->d_run_units = nullptr;
+    s->d_totals = nullptr;
+    s->h_totals = nullptr;
     return 0;
 }
 

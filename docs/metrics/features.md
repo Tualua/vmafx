@@ -1257,10 +1257,10 @@ and downsample stages match the CPU bit for bit (contraction off, the
 shared cube root with a correctly rounded division). The CUDA twin's
 score is the CPU's bit for bit: it evaluates the per-pixel terms in fp64
 and returns the sums of the CPU's loops
-([ADR-1433](../adr/1433-cuda-ssimulacra2-cpu-sum-order.md)). The SYCL
-twin evaluates them in exact fp32 pairs and adds them in a fixed tree, so
-its per-frame score is within about 1e-11 of the CPU and the same on
-every run. The HIP (and Metal)
+([ADR-1433](../adr/1433-cuda-ssimulacra2-cpu-sum-order.md)). So is the
+SYCL twin's, on a device without fp64: it forms each term's double in
+64-bit integers and returns the same sums
+([ADR-1446](../adr/1446-sycl-ssimulacra2-cpu-bits.md)). The HIP (and Metal)
 twins still run a hybrid host/GPU pipeline: the host does YUV →
 linear-RGB, XYB, the downsample and the fp64 combine, the GPU does the
 3-plane multiplies (`ssimulacra2_mul3`) and the blurs. GPU `cbrtf`
