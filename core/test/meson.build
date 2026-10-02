@@ -5876,6 +5876,20 @@ test('test_sycl_shared_planes', test_sycl_shared_planes,
     suite : ['fast', 'gpu', 'sycl'],
     is_parallel : false)
 
+# ADR-1595: zero-copy input has no host pictures; vmaf_read_pictures_sycl must
+# refuse a registered CPU extractor with -ENOTSUP before any state change, and a
+# luma-only SYCL twin must still score on directly written upload slots.
+test_sycl_zerocopy_guards = executable('test_sycl_zerocopy_guards',
+    ['test.c', 'test_sycl_zerocopy_guards.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_zerocopy_guards', test_sycl_zerocopy_guards,
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
+
 # Sticky geometry regression test (T-SYCL-SHARED-FRAME-STICKY-GEOMETRY-2026-09-29)
 test_sycl_shared_frame_sticky_geometry = executable('test_sycl_shared_frame_sticky_geometry',
     ['test.c', 'test_sycl_shared_frame_sticky_geometry.c'],

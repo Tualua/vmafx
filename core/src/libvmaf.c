@@ -4070,6 +4070,37 @@ int vmaf_read_pictures(VmafContext *vmaf, VmafPicture *ref, VmafPicture *dist, u
 }
 
 #ifdef HAVE_SYCL
+/*
+ * Zero-copy input (VA surface import) gives the extractors no host pictures, so a CPU
+ * extractor cannot run. Refuse it up front, before any state changes, instead of skipping it
+ * silently and returning a result with its features missing (ADR-1595).
+ */
+static int sycl_check_zero_copy_extractors(const VmafContext *vmaf)
+{
+    for (unsigned i = 0; i < vmaf->registered_feature_extractors.cnt; i++) {
+        const VmafFeatureExtractor *fex = vmaf->registered_feature_extractors.fex_ctx[i]->fex;
+        if (fex->flags & VMAF_FEATURE_EXTRACTOR_SYCL)
+            continue;
+        const VmafFeatureExtractor *twin =
+            vmaf_get_feature_extractor_twin(fex, VMAF_FEATURE_EXTRACTOR_SYCL);
+        if (twin) {
+            vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                     "vmaf_read_pictures_sycl: feature extractor '%s' runs on the CPU and needs "
+                     "host pictures, which zero-copy input does not provide; register its SYCL "
+                     "twin '%s' instead\n",
+                     fex->name, twin->name);
+        } else {
+            vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                     "vmaf_read_pictures_sycl: feature extractor '%s' runs on the CPU and needs "
+                     "host pictures, which zero-copy input does not provide; it has no SYCL "
+                     "twin\n",
+                     fex->name);
+        }
+        return -ENOTSUP;
+    }
+    return 0;
+}
+
 static int read_pictures_sycl_extractors(VmafContext *vmaf, unsigned index)
 {
     for (unsigned i = 0; i < vmaf->registered_feature_extractors.cnt; i++) {
@@ -4118,6 +4149,11 @@ int vmaf_read_pictures_sycl(VmafContext *vmaf, unsigned index)
         return -EINVAL;
     if (vmaf->flushed)
         return -EINVAL;
+
+    /* Must run before any state change below (queue wait, pic_cnt, slot advance). */
+    const int guard_err = sycl_check_zero_copy_extractors(vmaf);
+    if (guard_err)
+        return guard_err;
 
     // Ensure de-tile kernels on the primary queue have finished reading from
     // imported VA surface memory.  After this function returns, the caller
