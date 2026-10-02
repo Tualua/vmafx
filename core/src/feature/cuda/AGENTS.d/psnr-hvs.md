@@ -38,8 +38,12 @@ invariant: PSNR-HVS participates in engine sync, honours enable_chroma, and matc
   each one breaks bit-identity on its own (Research-1397 §3):
   - masking table = `(csf * 0.3885746225901003)^2` in `double`, stored
     `float` (`hvs_mask_value`, constexpr -> static data);
-  - threshold = `sqrt((double)energy * ratio) / 32`, one rounding to
-    `float` (`hvs_threshold`);
+  - threshold = upstream's statement (ADR-1488): `product = energy * ratio`
+    in `float` (plain operator, one rounding under `--fmad=false`), then
+    `(float)(sqrt((double)product) / 32.0)` (`hvs_threshold`). Not
+    `(double)energy * (double)ratio`: that exact product was the fork's CPU
+    between PR #552 and ADR-1488, one float step off upstream on about one
+    block in twenty;
   - `--fmad=false` on the fatbin (every fatbin has it, ADR-1403:
     `cuda_device_strict_fp_args` in `core/src/meson.build`);
   - coefficient error = integer `abs()` cast to `float`;

@@ -8,9 +8,10 @@
  *  below is built exactly like an extractor's: AOT images at compile time,
  *  the SPIR-V JIT image at the link. fp32 only (ADR-0220).
  *
- *  The fourth result is sqrt_prod_rn() of sycl_exact_fp.h (ADR-1401): the
- *  root of the exact product of two operands, which the host forms in its
- *  wide type and the device has to form without one.
+ *  The fourth result is psnr_hvs_sycl's masking-threshold root (ADR-1488):
+ *  sqrt_rn() of sycl_exact_fp.h applied to the fp32 product of two operands.
+ *  The host takes the root of that product in its wide type and rounds it
+ *  back, which a correctly rounded fp32 root equals.
  */
 
 #include <cerrno>
@@ -68,8 +69,8 @@ class DeviceBlock
 
 /* One multiply-add written as a single expression, one division and one square
  * root per element: the three operations icpx changes on the device when the
- * strict FP line is incomplete. Then the square root of the exact product of
- * the first two operands' magnitudes. */
+ * strict FP line is incomplete. Then sqrt_rn() of the fp32 product of the
+ * first two operands' magnitudes. */
 void run_kernel(sycl::queue &q, const ProbeBuffers &host)
 {
     const size_t n = host.n;
@@ -91,7 +92,7 @@ void run_kernel(sycl::queue &q, const ProbeBuffers &host)
         dmad[i] = da[i] * db[i] + dc[i];
         dquot[i] = da[i] / db[i];
         droot[i] = sycl::sqrt(sycl::fabs(da[i]));
-        dprod_root[i] = vmaf_sycl_exact::sqrt_prod_rn(sycl::fabs(da[i]), sycl::fabs(db[i]));
+        dprod_root[i] = vmaf_sycl_exact::sqrt_rn(sycl::fabs(da[i]) * sycl::fabs(db[i]));
     });
     q.wait_and_throw();
     q.memcpy(host.mad, dmad, bytes);

@@ -66,8 +66,8 @@ The CPU extractor binds one of three functions per plane: the scalar
 hosts with AVX2, and `calc_psnrhvs_neon()` on aarch64. All three return the
 same bits. The SIMD functions vectorise the integer DCT, which has no rounding,
 and keep every float operation in the scalar's order: the means and variances,
-the masking threshold `sqrt((double)mask * variance_ratio) / 32`, and the
-running `float` sum of the masked errors.
+the masking threshold `sqrt(mask * variance_ratio) / 32` with its `float`
+product, and the running `float` sum of the masked errors.
 
 `test_psnr_hvs_dispatch_invariance` holds the extractor to that through the
 public API: 165 picture pairs (blocks recorded from the Netflix pair, generated
@@ -85,15 +85,32 @@ done
 diff <(grep -v '"fps"' mask0.json) <(grep -v '"fps"' mask63.json)
 ```
 
-Until 2026-10-02 the NEON function multiplied the two `float` factors of the
-threshold as `float`, which rounds the product before the square root; the
-threshold was one `float` step off on about one block in twenty of real
-content. Most of those differences vanish in the running sum, so a frame
-differed only now and then: 29 of 708 scores on 14 of 177 frames of the
-measured content (the Netflix 576x324 pair at 8, 10 and 12 bits and as 10-bit
-4:2:2, Sparks, both 1920x1080 checkerboard pairs, Big Buck Bunny at 1920x1080
-and 3840x2160), by at most 5.7e-7 dB. An aarch64 build now returns the scalar
-and the x86-64 scores on all of them.
+The product of the two `float` factors of the threshold is a `float` product:
+it is rounded to `float` before the square root widens it. That is Netflix's
+statement, and all three functions write it
+([ADR-1488](../adr/1488-psnr-hvs-upstream-mask-product.md)). Between May and
+October 2026 the scalar and the AVX2 function of this fork widened the first
+factor to `double`, which keeps the product exact and puts the threshold one
+`float` step off on about one block in twenty of real content. Most of those
+differences vanish in the running sum, so a frame differed only now and then;
+the next section has the figures. (Until 2026-10-02 the NEON function still
+had the `float` product, so an aarch64 build differed from an x86-64 build by
+the same amount.)
+
+## Agreement with Netflix's `psnr_hvs`
+
+Measured against Netflix master (`9e48141b`, GCC 16.2.1, glibc 2.44) through
+the C API at `%.17g`, with every instruction-set flag masked and with the
+host's dispatch, on 319 frames from 8x8 to 3840x2160 at 8 to 12 bits in every
+chroma layout: `psnr_hvs`, `psnr_hvs_y`, `psnr_hvs_cb` and `psnr_hvs_cr` are
+identical on every frame. With the `double` product, 27 of the 319 frames
+differed in `psnr_hvs` (9, 9 and 10 in the three plane scores), by at most
+9.4e-7 dB. Scores of this fork move by that much on those frames; a value
+printed with the default `%.6f` changes in its last digit on some of them.
+
+What still differs from Netflix's extractor is behaviour, not arithmetic: this
+fork refuses input above 12 bits (Netflix's returns no score and no error),
+and it scores the luma plane of 4:0:0 input (Netflix's refuses the format).
 
 ## GPU twins
 
@@ -130,11 +147,11 @@ every output, at every frame size and depth
 The kernel stores the 64 terms of every block, computed in the CPU's
 arithmetic, and the host adds them in the CPU's order.
 
-| Twin | Masking threshold (`sqrt` of a `double` product on the CPU) | Measured on |
+| Twin | Masking threshold (`double` root of a `float` product on the CPU) | Measured on |
 |---|---|---|
-| `psnr_hvs_cuda` | `double` product and root | RTX 4090 |
-| `psnr_hvs_hip` | `double` product and root | gfx1036 (integrated) |
-| `psnr_hvs_sycl` | No fp64 in the kernel: integer square root of the exact product, rounded to `float` | Arc A380 |
+| `psnr_hvs_cuda` | `float` product, `double` root | RTX 4090 |
+| `psnr_hvs_hip` | `float` product, `double` root | gfx1036 (integrated) |
+| `psnr_hvs_sycl` | No fp64 in the kernel: `float` product and a correctly rounded `float` root, which is the `double` root rounded to `float` | Arc A380 |
 
 Each was measured against the CPU at `--precision max` on the Netflix 576x324
 pair (8, 10 and 12 bits, 4:2:0 and 4:2:2), the 1920x1080 checkerboard pairs

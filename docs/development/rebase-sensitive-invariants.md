@@ -91,8 +91,9 @@ linked AGENTS.md before resolving conflicts.
   [core/AGENTS.md](../../core/AGENTS.md).
 - **`psnr_hvs_cuda` returns the CPU's scores bit for bit ([ADR-1397](../adr/1397-psnr-hvs-twins-cpu-float-sum.md))**:
   `psnr_hvs_score.cu` stores the 64 terms `calc_psnrhvs()` sums per block, in
-  the CPU's arithmetic (double masking table and threshold, integer coefficient
-  difference, fatbin built with `--fmad=false`), and
+  the CPU's arithmetic (double masking table, the threshold's float product
+  and double root, integer coefficient difference, fatbin built with
+  `--fmad=false`), and
   `core/src/feature/psnr_hvs_score.c` adds them into one running `float` in the
   CPU's order. A change to `calc_psnrhvs()` or `extract()` in
   `third_party/xiph/psnr_hvs.c` changes the kernel and that file in the same
@@ -100,16 +101,30 @@ linked AGENTS.md before resolving conflicts.
   `test_psnr_hvs_score` guard it without a device, `test_cuda_psnr_hvs_parity`
   on one; the parity gate compares the twin with tolerance 0 (`EXACT_TWINS`).
   See [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
+- **The `psnr_hvs` masking threshold is upstream's statement ([ADR-1488](../adr/1488-psnr-hvs-upstream-mask-product.md))**:
+  `calc_psnrhvs()` writes `s_mask = sqrt(s_mask * s_gvar) / 32.f` (and the
+  same for `d_mask`), as Netflix `libvmaf/src/feature/third_party/xiph/psnr_hvs.c:316-317`
+  does: a float product, its root in double, the result stored as float. A
+  sync takes upstream's side of these two lines, and no `(double)` goes in
+  front of the product (PR #552 added one). `x86/psnr_hvs_avx2.c` and
+  `arm64/psnr_hvs_neon.c` write the same statement in `compute_masks()`; the
+  CUDA and HIP kernels form the float product and take the double root, the
+  SYCL kernel takes `sqrt_rn()` of the float product (the same value without
+  fp64). A change to the statement changes all six in the same PR.
+  `test_psnr_hvs_dispatch_invariance` (recorded blocks scored as Netflix
+  master scores them), `test_psnr_hvs_simd` and
+  `test_psnr_hvs_twin_exact_sum_contract.py` guard it.
 - **`psnr_hvs_sycl` and `psnr_hvs_hip` return the CPU's scores bit for bit ([ADR-1401](../adr/1401-psnr-hvs-sycl-hip-exact-twins.md))**:
   both store the 64 terms `calc_psnrhvs()` sums per block and call
   `core/src/feature/psnr_hvs_score.c`, as the CUDA twin does. The HIP kernel
-  (`psnr_hvs_score.hip`) takes the masking table and the threshold in
-  `double` and is built with `-ffp-contract=off
-  -fhip-fp32-correctly-rounded-divide-sqrt` (`hip_cu_extra_flags`). The SYCL
-  kernel has no fp64: its masking table is a compile-time constant and its
-  threshold comes from `sqrt_prod_rn()` in
-  `core/src/feature/sycl/sycl_exact_fp.h` (integer product and integer square
-  root); it must stay free of scratch memory. A change to `calc_psnrhvs()` or
+  (`psnr_hvs_score.hip`) takes the masking table in `double`, the threshold
+  as the float product's double root (ADR-1488), and is built with
+  `-ffp-contract=off -fhip-fp32-correctly-rounded-divide-sqrt`
+  (`hip_cu_extra_flags`). The SYCL kernel has no fp64: its masking table is a
+  compile-time constant and its threshold comes from `sqrt_rn()` in
+  `core/src/feature/sycl/sycl_exact_fp.h` applied to the float product (the
+  correctly rounded fp32 root, which is the double root rounded to float); it
+  must stay free of scratch memory. A change to `calc_psnrhvs()` or
   `extract()` in `third_party/xiph/psnr_hvs.c` changes both kernels in the
   same PR. `test_psnr_hvs_twin_exact_sum_contract.py` guards all three twins
   without a device; `test_sycl_psnr_hvs_parity`, `test_hip_psnr_hvs_parity`

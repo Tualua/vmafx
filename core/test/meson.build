@@ -4777,7 +4777,7 @@ if not is_sycl_acpp
     sycl_fp_arith_probe = custom_target('sycl_fp_arith_probe',
         output : 'sycl_fp_arith_probe.o',
         input : 'test_sycl_fp_arith_probe.cpp',
-        # ADR-1401: the probe also runs sqrt_prod_rn() of this header.
+        # ADR-1488: the probe also runs sqrt_rn() of this header.
         depend_files : files('../src/feature/sycl/sycl_exact_fp.h'),
         command : [icpx] + vmaf_cflags_common + ['-c'] + sycl_toolchain_args
                   + sycl_feature_tail_args + ['@INPUT@', '-o', '@OUTPUT@'],

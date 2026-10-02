@@ -86,7 +86,6 @@ source review.
 | `integer_*.cpp`, `float_*.cpp` | [queue-sync](AGENTS.d/queue-sync.md) | Per-step q.wait() in feature extractors forbidden — use in-order queues, barriers, or graph wait. |
 | `sycl_compat.h`, `integer_adm_sycl.cpp`, `integer_vif_sycl.cpp` | [scratch-memory](AGENTS.d/scratch-memory.md) | No scratch memory in kernels; zero private_mem_size and spill_memory_size on xe. |
 | `speed_*_sycl.cpp`, `speed_sycl_*`, `/core/test/test_sycl_speed_*` | [speed](AGENTS.d/speed.md) | SpEED pipeline arithmetic contract and singular-covariance contract; device-resident twins. |
-| `sycl_exact_fp.h`, `integer_psnr_hvs_sycl.cpp` | [sqrt-prod](AGENTS.d/sqrt-prod.md) | sycl_exact_fp.h::sqrt_prod_rn(a, b) = fp32-rounded root of product with bounded error. |
 | `ssimulacra2_sycl.cpp`, `sycl_ssimulacra2_math.h`, `/core/test/test_sycl_ssimulacra2_parity.c` | [ssimulacra2](AGENTS.d/ssimulacra2.md) | ssimulacra2_sycl = CPU ssimulacra2, bit for bit; device-resident; IIR recurrence has no running accumulator. |
 | `sycl_exact_fp.h`, `/core/src/meson.build` | [strict-fp](AGENTS.d/strict-fp.md) | Every TU is strict-clean; SYCL strict FP line load-bearing, one line for every TU. |
 | `sycl_compat.h`, `float_motion_sycl.cpp`, `float_adm_sycl.cpp` | [sub-group-size](AGENTS.d/sub-group-size.md) | Kernel sub-group size: 16 or 32 only (ADR-1468); Xe2 AOT targets reject 8. |

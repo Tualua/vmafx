@@ -34,9 +34,10 @@
  *    - the masking table is the CPU's, (csf * 0.3885746225901003)^2 taken
  *      in the host's wide type at compile time and stored as float
  *      (hvs_mask_value);
- *    - the masking threshold is the fp32 rounding of the square root of
- *      the exact energy * ratio product (sqrt_prod_rn in sycl_exact_fp.h),
- *      which is what the CPU's wide product and root give;
+ *    - the masking threshold is the correctly rounded fp32 square root
+ *      of the fp32 product energy * ratio (sqrt_rn in sycl_exact_fp.h),
+ *      which is what the CPU's float product and wide root give
+ *      (ADR-1488);
  *    - the coefficient error is the integer difference, converted once;
  *    - the TU is built with the SYCL strict FP line (ADR-1367): no
  *      contraction, correctly rounded `/`.
@@ -575,14 +576,18 @@ static inline float hvs_mask_energy(const HvsLocal &block, size_t base, int plan
     return energy;
 }
 
-/* calc_psnrhvs(): s_mask = sqrt((double)s_mask * s_gvar) / 32.f, stored as
- * float. sqrt_prod_rn() is that product and root without fp64. The division
- * by 32 only changes the exponent, as it does on the CPU, for every threshold
- * a block can have: a nonzero energy * ratio is above 2^-48, far from the
- * subnormal range. */
+/* calc_psnrhvs(): s_mask = sqrt(s_mask * s_gvar) / 32.f, stored as float
+ * (ADR-1488). The product is a float product there, so it is one here. The
+ * CPU takes the root of that float in the wide type and rounds it back; a
+ * correctly rounded fp32 root is the same value, because rounding a square
+ * root to 53 bits and then to 24 never differs from rounding it to 24 at
+ * once (53 >= 2 * 24 + 2). sqrt_rn() is that root. The division by 32 only
+ * changes the exponent, as it does on the CPU, for every threshold a block
+ * can have: a nonzero energy * ratio is above 2^-48, far from the subnormal
+ * range. */
 static inline float hvs_threshold(float energy, float ratio)
 {
-    return vmaf_sycl_exact::sqrt_prod_rn(energy, ratio) / 32.f;
+    return vmaf_sycl_exact::sqrt_rn(energy * ratio) / 32.f;
 }
 
 /* The 64 values calc_psnrhvs() adds to its running sum for one block, in its

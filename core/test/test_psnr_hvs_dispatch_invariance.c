@@ -11,10 +11,17 @@
  *  compare the integer DCT alone, and test_psnr_hvs_simd compares the AVX2
  *  function with a copy of the scalar one kept inside the test. None of them
  *  reaches the shipped scalar function, and none ran the NEON function past
- *  its DCT. That is how calc_psnrhvs_neon() kept a float product in the
- *  masking threshold where the scalar reference has a double product
+ *  its DCT. That is how calc_psnrhvs_neon() and the scalar reference came to
+ *  form the product of the masking threshold in different types
  *  (T-PSNR-HVS-NEON-NOT-SCALAR-BITS-2026-10-02): the DCT was exact, the mask
  *  was one float ulp off on about one block in twenty of real content.
+ *
+ *  The product is upstream's float product (ADR-1488; Netflix/vmaf
+ *  libvmaf/src/feature/third_party/xiph/psnr_hvs.c:316-317,
+ *  `s_mask = sqrt(s_mask * s_gvar) / 32.f`). The fork widened it to double
+ *  between PR #552 and ADR-1488, and the recorded blocks below are blocks the
+ *  two forms score differently, so the second test pins upstream's score for
+ *  each of them.
  *
  *  This test drives the extractor through the public API, as the CLI's
  *  --cpumask does, once with the host's instruction set and once with every
@@ -22,8 +29,8 @@
  *  to be the same bit patterns. It covers:
  *
  *    - blocks recorded from the Netflix pair src01_hrc00 / src01_hrc01
- *      (576x324, frames 18, 23, 33 and 0), one per plane, each of which the
- *      float product scored differently. One 8x8 picture holds one block per
+ *      (576x324, frames 18, 23, 33 and 0), one per plane, each of which a
+ *      double product scores differently. One 8x8 picture holds one block per
  *      plane, so no later block can absorb the difference;
  *    - generated texture with an error of a few codes at 8, 10 and 12 bits,
  *      which reaches the same rounding cases without recorded data;
@@ -66,9 +73,10 @@
 
 /* Ref and dist of one 8x8 block per plane, as 8-bit samples in raster order.
  * The values in the comments are calc_psnrhvs() on that block alone: the
- * scalar reference, and what the float product returned. */
+ * scalar reference with upstream's float product, and what a double product
+ * returns. */
 static const uint8_t FRAME_18[3][2][64] = {
-    /* plane 0, x=280 y=0: 0x1.b6b87ep-12, with the float product 0x1.b6b87ap-12 */
+    /* plane 0, x=280 y=0: 0x1.b6b87ap-12, with a double product 0x1.b6b87ep-12 */
     {{142, 118, 152, 176, 130, 139, 175, 175, 210, 160, 146, 144, 133, 131, 190, 221,
       186, 218, 199, 154, 161, 197, 220, 220, 211, 230, 206, 177, 163, 223, 208, 223,
       194, 159, 134, 165, 202, 191, 171, 210, 172, 89,  116, 196, 205, 157, 158, 203,
@@ -77,7 +85,7 @@ static const uint8_t FRAME_18[3][2][64] = {
       190, 221, 195, 152, 168, 199, 215, 218, 210, 227, 213, 181, 183, 208, 204, 211,
       203, 178, 151, 160, 190, 178, 172, 195, 170, 96,  124, 189, 204, 165, 175, 201,
       95,  63,  80,  133, 180, 176, 142, 136, 62,  73,  66,  75,  72,  80,  66,  66}},
-    /* plane 1, x=35 y=0: 0x1.fe13a8p-16, with the float product 0x1.fe13a2p-16 */
+    /* plane 1, x=35 y=0: 0x1.fe13a2p-16, with a double product 0x1.fe13a8p-16 */
     {{107, 94,  91,  92,  97,  99,  100, 98,  103, 97,  103, 105, 104, 102, 112, 112,
       102, 95,  97,  108, 108, 112, 109, 104, 99,  96,  97,  106, 110, 107, 108, 106,
       95,  101, 98,  98,  103, 111, 114, 107, 106, 108, 108, 102, 96,  96,  107, 108,
@@ -86,7 +94,7 @@ static const uint8_t FRAME_18[3][2][64] = {
       103, 98,  97,  102, 105, 107, 109, 107, 100, 97,  98,  104, 108, 109, 109, 107,
       100, 102, 102, 101, 103, 107, 110, 110, 104, 105, 108, 107, 98,  99,  107, 109,
       109, 109, 110, 110, 104, 105, 110, 107, 113, 113, 113, 111, 108, 110, 110, 113}},
-    /* plane 2, x=238 y=0: 0x1.bdb8ap-14, with the float product 0x1.bdb89ep-14 */
+    /* plane 2, x=238 y=0: 0x1.bdb89ep-14, with a double product 0x1.bdb8ap-14 */
     {{123, 125, 119, 116, 122, 123, 120, 119, 127, 128, 120, 118, 124, 121, 118, 120,
       120, 121, 116, 117, 122, 120, 120, 121, 116, 113, 115, 116, 118, 119, 121, 117,
       113, 112, 112, 114, 115, 120, 123, 122, 121, 123, 124, 118, 115, 118, 124, 119,
@@ -98,14 +106,14 @@ static const uint8_t FRAME_18[3][2][64] = {
 };
 
 static const uint8_t FRAME_23[3][2][64] = {
-    /* plane 0, x=182 y=0: 0x1.f51ab6p-13, with the float product 0x1.f51abep-13 */
+    /* plane 0, x=182 y=0: 0x1.f51abep-13, with a double product 0x1.f51ab6p-13 */
     {{80, 48, 65, 98, 81, 41, 35, 35, 58, 51, 62, 79, 73, 53, 56, 34,  46, 59, 53, 49, 59, 53,
       46, 43, 47, 49, 48, 40, 69, 82, 79, 61, 43, 47, 47, 44, 85, 105, 84, 61, 46, 43, 49, 48,
       59, 67, 50, 53, 44, 41, 44, 55, 47, 51, 40, 39, 42, 42, 61, 56,  45, 57, 45, 49},
      {70, 52, 66, 87, 81, 50, 41, 37, 50, 52, 62, 75, 71, 58, 50, 42, 49, 50, 52, 54, 60, 64,
       52, 52, 48, 48, 50, 50, 75, 85, 74, 65, 48, 47, 48, 48, 81, 92, 67, 59, 50, 47, 47, 48,
       60, 66, 51, 54, 42, 45, 47, 47, 48, 47, 42, 47, 41, 45, 47, 47, 47, 45, 41, 43}},
-    /* plane 1, x=210 y=0: 0x1.22ba44p-15, with the float product 0x1.22ba42p-15 */
+    /* plane 1, x=210 y=0: 0x1.22ba42p-15, with a double product 0x1.22ba44p-15 */
     {{105, 75,  85,  108, 111, 91,  65,  88,  119, 98,  102, 114, 114, 104, 99,  104,
       121, 107, 108, 117, 119, 116, 112, 114, 117, 109, 119, 123, 121, 116, 98,  111,
       111, 125, 126, 114, 118, 109, 97,  114, 135, 136, 125, 115, 119, 117, 112, 116,
@@ -114,7 +122,7 @@ static const uint8_t FRAME_23[3][2][64] = {
       124, 110, 112, 117, 118, 117, 114, 118, 121, 112, 115, 120, 122, 115, 105, 115,
       119, 124, 118, 114, 120, 109, 100, 113, 128, 131, 120, 109, 117, 115, 111, 114,
       132, 137, 126, 106, 112, 110, 113, 116, 125, 128, 124, 116, 118, 110, 110, 115}},
-    /* plane 2, x=112 y=0: 0x1.9f4b6p-15, with the float product 0x1.9f4b5ep-15 */
+    /* plane 2, x=112 y=0: 0x1.9f4b5ep-15, with a double product 0x1.9f4b6p-15 */
     {{120, 120, 121, 120, 120, 121, 121, 121, 120, 122, 120, 121, 122, 124, 121, 119,
       118, 124, 121, 121, 121, 126, 121, 120, 122, 122, 121, 120, 121, 123, 123, 122,
       121, 121, 122, 121, 122, 124, 124, 123, 122, 123, 122, 121, 121, 122, 122, 123,
@@ -126,14 +134,14 @@ static const uint8_t FRAME_23[3][2][64] = {
 };
 
 static const uint8_t FRAME_33[3][2][64] = {
-    /* plane 0, x=140 y=0: 0x1.b36398p-13, with the float product 0x1.b3639cp-13 */
+    /* plane 0, x=140 y=0: 0x1.b3639cp-13, with a double product 0x1.b36398p-13 */
     {{69, 66, 67, 61, 55, 53, 54, 52, 119, 67, 58, 81, 93, 50, 62, 57, 117, 65, 55, 58, 67, 50,
       57, 75, 74, 61, 58, 64, 62, 50, 48,  49, 71, 64, 65, 58, 47, 49, 47,  46, 60, 53, 52, 55,
       64, 63, 56, 48, 56, 48, 45, 56, 62,  53, 49, 51, 62, 66, 53, 77, 61,  58, 67, 62},
      {61, 71, 66, 60, 65, 57, 57, 54, 115, 83, 66, 86, 87, 56, 57, 56, 113, 78, 64, 62, 60, 56,
       55, 65, 75, 69, 60, 56, 55, 55, 53,  52, 76, 61, 57, 53, 54, 56, 53,  49, 68, 59, 52, 51,
       60, 60, 53, 47, 62, 55, 46, 45, 53,  55, 53, 49, 62, 59, 57, 62, 68,  63, 61, 58}},
-    /* plane 1, x=0 y=0: 0x1.f02896p-14, with the float product 0x1.f0289ap-14 */
+    /* plane 1, x=0 y=0: 0x1.f0289ap-14, with a double product 0x1.f02896p-14 */
     {{99,  86,  92,  96,  98,  87,  89, 90,  103, 97,  96,  103, 105, 87,  90,  93,
       112, 109, 109, 93,  102, 104, 95, 91,  108, 101, 108, 97,  101, 97,  92,  94,
       111, 107, 111, 103, 101, 92,  95, 104, 112, 111, 104, 97,  102, 89,  91,  110,
@@ -142,7 +150,7 @@ static const uint8_t FRAME_33[3][2][64] = {
       99,  106, 105, 98,  100, 98, 97,  95,  103, 107, 107, 101, 97,  98,  98,  96,
       105, 108, 108, 107, 101, 93, 101, 103, 105, 106, 105, 104, 101, 89,  96,  107,
       106, 107, 107, 100, 100, 98, 98,  104, 111, 112, 113, 103, 104, 107, 107, 106}},
-    /* plane 2, x=42 y=0: 0x1.79e7aap-15, with the float product 0x1.79e7aep-15 */
+    /* plane 2, x=42 y=0: 0x1.79e7aep-15, with a double product 0x1.79e7aap-15 */
     {{119, 114, 120, 119, 116, 118, 118, 120, 119, 117, 121, 122, 118, 119, 118, 118,
       119, 118, 118, 121, 118, 118, 118, 117, 119, 119, 120, 121, 120, 117, 118, 118,
       121, 120, 119, 121, 120, 118, 118, 118, 122, 117, 120, 123, 119, 118, 116, 117,
@@ -154,7 +162,7 @@ static const uint8_t FRAME_33[3][2][64] = {
 };
 
 static const uint8_t FRAME_0[3][2][64] = {
-    /* plane 0, x=49 y=0: 0x1.f63cap-12, with the float product 0x1.f63c9cp-12 */
+    /* plane 0, x=49 y=0: 0x1.f63c9cp-12, with a double product 0x1.f63cap-12 */
     {{148, 107, 71,  68,  67, 107, 83,  51, 168, 92, 76, 85, 77, 102, 72, 64,
       100, 100, 160, 153, 97, 103, 101, 70, 59,  66, 84, 83, 95, 124, 97, 62,
       57,  53,  54,  59,  61, 68,  54,  65, 62,  62, 90, 92, 60, 73,  56, 58,
@@ -163,7 +171,7 @@ static const uint8_t FRAME_0[3][2][64] = {
       94,  103, 158, 153, 109, 104, 107, 70, 60,  74, 85, 87, 97, 122, 94, 61,
       61,  58,  59,  57,  61,  67,  60,  62, 62,  67, 92, 89, 59, 65,  62, 64,
       97,  72,  83,  72,  54,  59,  80,  90, 125, 79, 69, 73, 58, 64,  63, 73}},
-    /* plane 1, x=7 y=7: 0x1.1b3354p-13, with the float product 0x1.1b3352p-13 */
+    /* plane 1, x=7 y=7: 0x1.1b3352p-13, with a double product 0x1.1b3354p-13 */
     {{110, 103, 104, 106, 112, 114, 113, 115, 108, 100, 107, 107, 106, 108, 107, 111,
       103, 103, 104, 98,  91,  95,  106, 109, 95,  101, 99,  109, 100, 106, 111, 106,
       92,  93,  97,  104, 106, 107, 111, 104, 104, 98,  96,  106, 101, 111, 106, 101,
@@ -172,7 +180,7 @@ static const uint8_t FRAME_0[3][2][64] = {
       104, 107, 104, 101, 97,  95,  106, 111, 99,  104, 103, 105, 102, 105, 109, 109,
       95,  98,  99,  103, 107, 111, 114, 111, 106, 102, 98,  103, 106, 112, 108, 106,
       101, 94,  99,  110, 109, 111, 101, 106, 100, 93,  97,  104, 110, 112, 110, 110}},
-    /* plane 2, x=28 y=0: 0x1.590d76p-14, with the float product 0x1.590d72p-14 */
+    /* plane 2, x=28 y=0: 0x1.590d72p-14, with a double product 0x1.590d76p-14 */
     {{119, 119, 115, 117, 119, 127, 119, 116, 116, 117, 122, 118, 118, 125, 121, 116,
       120, 118, 117, 116, 116, 117, 119, 122, 125, 122, 119, 120, 122, 124, 121, 123,
       132, 130, 127, 126, 119, 120, 120, 120, 135, 135, 124, 122, 117, 119, 119, 119,
@@ -184,6 +192,17 @@ static const uint8_t FRAME_0[3][2][64] = {
 };
 
 static const uint8_t (*const FRAME_BLOCKS[])[2][64] = {FRAME_18, FRAME_23, FRAME_33, FRAME_0};
+#define NUM_FRAME_BLOCKS (sizeof(FRAME_BLOCKS) / sizeof(FRAME_BLOCKS[0]))
+
+/* calc_psnrhvs() of each recorded block with upstream's float product, per
+ * frame and plane: the first value of the comments above, which Netflix
+ * master returns for these pictures. */
+static const float UPSTREAM_PLANE_SCORE[NUM_FRAME_BLOCKS][3] = {
+    {0x1.b6b87ap-12f, 0x1.fe13a2p-16f, 0x1.bdb89ep-14f},
+    {0x1.f51abep-13f, 0x1.22ba42p-15f, 0x1.9f4b5ep-15f},
+    {0x1.b3639cp-13f, 0x1.f0289ap-14f, 0x1.79e7aep-15f},
+    {0x1.f63c9cp-12f, 0x1.1b3352p-13f, 0x1.590d72p-14f},
+};
 
 enum Content {
     CONTENT_PATTERN,     /* fx.pattern, as psnr_hvs_twin_parity.h fills it */
@@ -377,9 +396,59 @@ static mu_message_t test_dispatch_invariance(void)
     return NULL;
 }
 
+/* The extractor's conversion of a plane score to dB. The operand is volatile
+ * so the logarithm is the math library's at run time, as the extractor's is. */
+static double score_db(double plane_score)
+{
+    volatile double operand = 1.0 * plane_score;
+    return 10 * (-1 * log10(operand));
+}
+
+/* The four scores upstream's statement gives a recorded block: each plane's
+ * dB value, and the combined one from the extractor's weights. */
+static void upstream_scores(unsigned frame, double expected[HVS_FEATURES])
+{
+    const double y = (double)UPSTREAM_PLANE_SCORE[frame][0];
+    const double cb = (double)UPSTREAM_PLANE_SCORE[frame][1];
+    const double cr = (double)UPSTREAM_PLANE_SCORE[frame][2];
+    expected[0] = score_db(y);
+    expected[1] = score_db(cb);
+    expected[2] = score_db(cr);
+    expected[3] = score_db((y) * .8 + .1 * (cb + cr));
+}
+
+/* The scalar reference forms upstream's float product in the masking
+ * threshold: on the recorded blocks it returns upstream's scores, which a
+ * double product misses on every plane. The first NUM_FRAME_BLOCKS cases are
+ * the recorded blocks, in FRAME_BLOCKS order. */
+static mu_message_t test_scalar_scores_are_upstreams(void)
+{
+    unsigned differing = 0u;
+    for (unsigned frame = 0; frame < NUM_FRAME_BLOCKS; frame++) {
+        double scalar[HVS_FEATURES] = {0.0, 0.0, 0.0, 0.0};
+        double expected[HVS_FEATURES] = {NAN, NAN, NAN, NAN};
+        mu_assert("the first cases must be the recorded blocks",
+                  CASES[frame].content == CONTENT_FRAME_BLOCK && CASES[frame].arg == frame);
+        mu_assert_msg(score(&CASES[frame], 0u, CPUMASK_SCALAR, scalar));
+        upstream_scores(frame, expected);
+        for (unsigned i = 0; i < HVS_FEATURES; i++) {
+            if (hvs_score_bits(scalar[i]) == hvs_score_bits(expected[i]))
+                continue;
+            differing++;
+            (void)fprintf(stderr, "\n%s, %s: scalar=%.17g upstream=%.17g delta=%.3e",
+                          CASES[frame].name, hvs_features[i], scalar[i], expected[i],
+                          fabs(scalar[i] - expected[i]));
+        }
+    }
+    mu_assert("psnr_hvs must return upstream's scores on the recorded blocks (ADR-1488)",
+              differing == 0u);
+    return NULL;
+}
+
 mu_message_t run_tests(void)
 {
     mu_run_test(test_dispatch_invariance);
+    mu_run_test(test_scalar_scores_are_upstreams);
     return NULL;
 }
 

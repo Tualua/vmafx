@@ -466,16 +466,15 @@ static void compute_masks(psnr_hvs_block *b, float mask[8][8])
             b->d_mask += b->dct_d[i * 8 + j] * b->dct_d[i * 8 + j] * mask[i][j];
         }
     }
-    /* ADR-0138 bit-exactness fix: scalar reference at third_party/xiph/psnr_hvs.c:351
-     * does `sqrt((double)s_mask * s_gvar) / 32.f` — the explicit cast makes the
-     * multiplication double-precision before sqrt.  Without the cast, `s_mask *
-     * s_gvar` is a float-precision multiply (both operands are float), and the
-     * result differs by ~3.77e-7 on the Cb channel at frame 0.
-     * Preserve the scalar's (double) cast to maintain byte-for-byte parity. */
-    // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) ADR-0138: matches scalar.
-    b->s_mask = (float)(sqrt((double)b->s_mask * b->s_gvar) / 32.0);
-    // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) ADR-0138: matches scalar.
-    b->d_mask = (float)(sqrt((double)b->d_mask * b->d_gvar) / 32.0);
+    /* The scalar reference (third_party/xiph/psnr_hvs.c) writes upstream's
+     * `sqrt(s_mask * s_gvar) / 32.f`: the product is a float product, rounded
+     * to float before sqrt() widens it (ADR-1488). A double product here is
+     * one float step off on about one block in twenty. `sqrt`, not `sqrtf`:
+     * the root is taken in double, as the reference's is. */
+    // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) ADR-1488: the scalar reference's promotion.
+    b->s_mask = (float)(sqrt(b->s_mask * b->s_gvar) / 32.0);
+    // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) ADR-1488: the scalar reference's promotion.
+    b->d_mask = (float)(sqrt(b->d_mask * b->d_gvar) / 32.0);
     if (b->d_mask > b->s_mask) {
         b->s_mask = b->d_mask;
     }

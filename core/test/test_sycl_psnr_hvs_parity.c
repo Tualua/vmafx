@@ -11,10 +11,10 @@
  *
  * CPU is in third_party/xiph/psnr_hvs.c (Xiph reference port); the SYCL path
  * is integer_psnr_hvs_sycl.cpp. Its kernel has no fp64 (ADR-0220): the
- * masking threshold the CPU takes as a double product and root comes from
- * sqrt_prod_rn() (feature/sycl/sycl_exact_fp.h), and a threshold that is one
- * fp32 step off moves a few frames of real content by 5e-7 dB, which these
- * exact comparisons catch.
+ * masking threshold the CPU takes as the double root of a float product
+ * comes from sqrt_rn() (feature/sycl/sycl_exact_fp.h) of the same product
+ * (ADR-1488), and a threshold that is one fp32 step off moves a few frames
+ * of real content by 5e-7 dB, which these exact comparisons catch.
  *
  * The fixtures, the comparison and the cases are psnr_hvs_twin_parity.h's,
  * shared with the CUDA and HIP twins: 8 to 12 bits, 4:0:0 / 4:2:0 / 4:2:2 /

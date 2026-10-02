@@ -15,10 +15,13 @@
  *  the probe in test_hip_fp_arith_probe.{hip,c}: one set of operands and one
  *  set of host references for both backends.
  *
- *  ADR-1401: sqrt_prod_rn() (feature/sycl/sycl_exact_fp.h) returns on the
- *  device, without fp64, what the host returns for the fp64 square root of an
- *  fp64 product of two fp32 operands, converted to fp32. psnr_hvs_sycl takes
- *  its masking threshold from it; the CPU extractor uses the fp64 expression.
+ *  ADR-1488: psnr_hvs_sycl takes its masking threshold from sqrt_rn()
+ *  (feature/sycl/sycl_exact_fp.h) of the fp32 product of the masking energy
+ *  and the variance ratio. The CPU extractor writes upstream's statement,
+ *  sqrt(s_mask * s_gvar) (Netflix/vmaf
+ *  libvmaf/src/feature/third_party/xiph/psnr_hvs.c:316-317): the fp32 product,
+ *  its root in fp64, rounded to fp32. The two are the same value for every
+ *  product, and the fourth result checks it on the device.
  */
 
 #include <errno.h>
@@ -125,9 +128,10 @@ static Mismatches count_mismatches(const Operands *op)
         const float mad = (float)((double)product + (double)op->c[i]);
         const float quot = (float)((double)op->a[i] / (double)op->b[i]);
         const float root = (float)sqrt((double)fabsf(op->a[i]));
-        /* calc_psnrhvs()'s threshold expression: both operands widened, the
-         * product exact, the root rounded to fp64 and then to fp32. */
-        const float prod_root = (float)sqrt((double)fabsf(op->a[i]) * (double)fabsf(op->b[i]));
+        /* calc_psnrhvs()'s threshold expression: the product rounded to
+         * fp32, its root rounded to fp64 and then to fp32. */
+        const float prod = fabsf(op->a[i]) * fabsf(op->b[i]);
+        const float prod_root = (float)sqrt((double)prod);
         m.mad += !same_float(mad, op->mad[i]);
         m.quot += !same_float(quot, op->quot[i]);
         m.root += !same_float(root, op->root[i]);
@@ -171,7 +175,7 @@ static char *run_and_check(Operands *op, const char *label)
     mu_assert("device probe failed", err == 0);
     const Mismatches m = count_mismatches(op);
 #if FP_ARITH_HAS_PROD_ROOT
-    (void)fprintf(stderr, "  %s: %zu operands, mismatches mad=%zu div=%zu sqrt=%zu sqrt_prod=%zu\n",
+    (void)fprintf(stderr, "  %s: %zu operands, mismatches mad=%zu div=%zu sqrt=%zu prod_root=%zu\n",
                   label, op->n, m.mad, m.quot, m.root, m.prod_root);
 #else
     (void)fprintf(stderr, "  %s: %zu operands, mismatches mad=%zu div=%zu sqrt=%zu\n", label, op->n,
@@ -181,7 +185,8 @@ static char *run_and_check(Operands *op, const char *label)
     mu_assert("device fp32 division is not correctly rounded", m.quot == 0);
     mu_assert("device fp32 sqrt is not correctly rounded", m.root == 0);
 #if FP_ARITH_HAS_PROD_ROOT
-    mu_assert("sqrt_prod_rn() differs from the host's fp64 product and root", m.prod_root == 0);
+    mu_assert("sqrt_rn() of the fp32 product differs from the host's fp32 product and fp64 root",
+              m.prod_root == 0);
 #endif
     return NULL;
 }
@@ -248,12 +253,13 @@ static char *test_boundary_operands(void)
     return msg;
 }
 
-/* Products nearest a rounding boundary of their root. For a 24-bit k,
- * sqrt(k * (k + 1)) is 1 / (8 k) below k + 1/2, the midpoint of two fp32
- * values: the hardest operands for sqrt_prod_rn(), which must still round
- * down. k * k has an exact root, k * (k + 2) one just below k + 1, and the
- * doubled operand moves the product to an odd binary exponent. A root taken
- * from the fp32-rounded product gets many of these wrong. */
+/* Products whose exact root lies nearest a rounding boundary. For a 24-bit
+ * k, sqrt(k * (k + 1)) is 1 / (8 k) below k + 1/2, the midpoint of two fp32
+ * values; k * k has an exact root, k * (k + 2) one just below k + 1, and the
+ * doubled operand moves the product to an odd binary exponent. On these the
+ * root of the fp32-rounded product, which the reference takes, and the root
+ * of the exact product, which the twin took before ADR-1488, differ most
+ * often, so a kernel that keeps the product exact fails here. */
 static char *test_midpoint_operands(void)
 {
     Operands op;

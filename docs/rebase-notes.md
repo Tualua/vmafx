@@ -119,6 +119,37 @@ onto Netflix master's values.
   older base takes master's files and regenerates again.
 - Float ADM (`core/src/feature/adm_tools.h`) still has its own, wider copy of
   the function; that is a separate change.
+## The `psnr_hvs` masking threshold is upstream's `float` product again (ADR-1488, 2026-10-02)
+
+`fix/psnr-hvs-upstream-expression`. Scores move by up to 9.4e-7 dB on 27 of
+319 measured frames.
+
+- `core/src/feature/third_party/xiph/psnr_hvs.c`:
+  `s_mask = sqrt(s_mask * s_gvar) / 32.f;` and the same for `d_mask`, as in
+  Netflix `libvmaf/src/feature/third_party/xiph/psnr_hvs.c:316-317`. These
+  two lines are upstream's again: a sync takes upstream's side. The fork
+  keeps a comment and a `codeql[...]` line above each.
+- Do not re-add `(double)` in front of the product to quiet CodeQL's
+  `cpp/integer-multiplication-cast-to-long`: that was PR #552.
+- The same statement, same bits, in five more places; a change to it changes
+  all of them in the same PR: `x86/psnr_hvs_avx2.c` and
+  `arm64/psnr_hvs_neon.c` (`compute_masks()`),
+  `cuda/integer_psnr_hvs/psnr_hvs_score.cu` and
+  `hip/integer_psnr_hvs/psnr_hvs_score.hip` (`hvs_threshold()`: `float`
+  product, `double` root), `sycl/integer_psnr_hvs_sycl.cpp`
+  (`hvs_threshold()`: `sqrt_rn()` of the `float` product).
+- `core/src/feature/sycl/sycl_exact_fp.h`: `sqrt_prod_rn()` and
+  `isqrt_floor50()` (fork-local, ADR-1401) are removed; nothing used them
+  after this change. The removal is declared in
+  `scripts/ci/silent-revert-allowlist.json` (two ADR-1488 entries); a branch
+  that still calls `sqrt_prod_rn()` takes `sqrt_rn(a * b)` of the float
+  product instead. `test_sycl_fp_arith_contract`'s fourth result is now
+  `sqrt_rn()` of the `float` product.
+- Guards: `test_psnr_hvs_dispatch_invariance` (recorded blocks scored as
+  Netflix master scores them; x86-64 and aarch64), `test_psnr_hvs_simd`,
+  `test_psnr_hvs_twin_exact_sum_contract`; on a device
+  `test_{cuda,hip,sycl}_psnr_hvs_parity{,_large}`,
+  `test_{cuda,hip,sycl}_exact_twins`, `test_sycl_fp_arith_contract`.
 
 ## Agent pages name the staged CUDA VIF kernels and the HIP handle header (2026-10-02)
 

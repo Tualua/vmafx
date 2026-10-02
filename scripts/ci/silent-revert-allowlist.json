@@ -278,6 +278,25 @@
       "paths": [
         "core/test/test_device_target_header_dependencies.py"
       ]
+    },
+    {
+      "adr": "ADR-1488",
+      "kind": "reverse-hunk",
+      "undoes": "90aa3f619b0de26b0eafb29fae471c405d36e643",
+      "evidence": "(?:\\b[ab]_bits\\b|\\bbiased\\b|\\btrial\\b|uint64_t|\\bsignificand|sqrt_rn\\(a \\* b\\)|fraction_mask|implicit_one|\\bexponent\\b|\\bshift\\b|kNormalLow|\\bproduct\\b|return root;|isqrt_floor50|sqrt_prod_rn|ADR-1397|\\bfp32\\b|\\bfp64\\b|sqrt\\(P\\)|24-bit|48-bit|sqrt unit|s \\* s is odd|midpoint s \\+ 1|No tie exists|^ \\* spacing\\.$|floor\\(sqrt\\(|k \\* \\(k \\+ 1\\)|400M random operand pairs|exact product|integers only)",
+      "reason": "90aa3f619 (#1689, ADR-1401) added isqrt_floor50() and sqrt_prod_rn() to sycl_exact_fp.h so that psnr_hvs_sycl could form the masking threshold from the exact energy * ratio product, which the fork's CPU then took in double. ADR-1488 (Accepted, 2026-10-02) puts upstream's statement back on the CPU, sqrt(s_mask * s_gvar) with a float product, and the SYCL kernel takes sqrt_rn() of that float product. psnr_hvs was the only caller of sqrt_prod_rn(), so the two functions and their comment block leave the header; every line of this finding is a line of that block. The rest of 90aa3f619 (the kernel storing every term, the host sum through psnr_hvs_score.c, the HIP twin) is untouched, and the twin stays exact: test_sycl_psnr_hvs_parity and test_sycl_fp_arith_contract on an Arc A380.",
+      "paths": [
+        "core/src/feature/sycl/sycl_exact_fp.h"
+      ]
+    },
+    {
+      "adr": "ADR-1488",
+      "kind": "rewind",
+      "evidence": "^merged blob 9ccc7f680 == blob at 33538463c$",
+      "reason": "With isqrt_floor50() and sqrt_prod_rn() removed (ADR-1488, see the reverse-hunk entry for this path), sycl_exact_fp.h is byte for byte the file it was at 33538463c, the commit before 90aa3f619 added the two functions. Since then only 90aa3f619 and 513d2a6fc (#1850, the parenthesised numeric_limits max inside sqrt_prod_rn()) wrote this file, and neither changed anything outside the removed block, so nothing else is rewound.",
+      "paths": [
+        "core/src/feature/sycl/sycl_exact_fp.h"
+      ]
     }
   ]
 }

@@ -9,14 +9,14 @@
 /*
  * Numerical-parity contract test for `calc_psnrhvs_avx2`.
  *
- * This test covers the ADR-0138 bit-exactness fix for Bug 2:
- *   compute_masks in psnr_hvs_avx2.c previously computed
+ * calc_psnrhvs_avx2 has to form the masking threshold as the scalar
+ * reference does. The reference writes upstream's statement (Netflix/vmaf
+ * libvmaf/src/feature/third_party/xiph/psnr_hvs.c:316-317, ADR-1488):
  *     s_mask = sqrt(s_mask * s_gvar) / 32.f
- *   (float * float, then sqrt), but the scalar reference (third_party/xiph/
- *   psnr_hvs.c:351) uses
- *     s_mask = sqrt((double)s_mask * s_gvar) / 32.f
- *   (explicit cast to double before multiply), causing ~3.77e-7 divergence
- *   on the Cb channel at frame 0.
+ *   a float product, rounded to float before sqrt() widens it. With the
+ *   product in another type on one side, as the two had it at ADR-0138 and
+ *   again between PR #552 and ADR-1488, the score differs by about 3.8e-7
+ *   on a frame of real content.
  *
  * The test calls `calc_psnrhvs_avx2` end-to-end on synthetic 8-bit and
  * 10-bit image patches and verifies the returned double is within 1e-12
@@ -57,7 +57,7 @@
  * third_party/xiph/psnr_hvs.c, stripped of OD_DCT_OVERFLOW_CHECK macros
  * (those are no-ops in production builds).  Kept intentionally verbose
  * so reviewers can diff it line-for-line against the upstream source.
- * The critical expression is the (double) cast in the sqrt lines.
+ * The critical expression is the float product in the sqrt lines.
  * -------------------------------------------------------------------- */
 
 typedef int32_t od_coeff_ref;
@@ -239,17 +239,19 @@ static float ref_calc_final_mask(const od_coeff_ref dct_s[64], const od_coeff_re
         }
     }
 
-    /* ADR-0138 key expression: (double) cast before multiply → double sqrt. */
-    // NOLINTNEXTLINE(performance-type-promotion-in-math-fn)
-    s_mask = (float)(sqrt((double)s_mask * s_gvar) / 32.0);
-    // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) — ADR-0138
-    d_mask = (float)(sqrt((double)d_mask * d_gvar) / 32.0);
+    /* Upstream's statement (Netflix/vmaf
+     * libvmaf/src/feature/third_party/xiph/psnr_hvs.c:316-317): the float
+     * product, then the double root. ADR-1488. */
+    // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) — ADR-1488: upstream's promotion
+    s_mask = (float)(sqrt(s_mask * s_gvar) / 32.0);
+    // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) — ADR-1488: upstream's promotion
+    d_mask = (float)(sqrt(d_mask * d_gvar) / 32.0);
     if (d_mask > s_mask)
         s_mask = d_mask;
     return s_mask;
 }
 
-/* ref_calc_psnrhvs: scalar reference, including the (double) cast fix. */
+/* ref_calc_psnrhvs: scalar reference, with upstream's float product. */
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunknown-pragmas"
@@ -345,8 +347,8 @@ static float csf_y[8][8] = {{2.03536207612f, 2.56512605416f, 1.26137218971f, 0.8
  * check_psnrhvs_avx2: compare calc_psnrhvs_avx2 output against the inline
  * scalar reference on a (w x h) 8-bit luma or chroma patch.
  * The relative tolerance is 1e-12 — both paths should agree to near
- * double-precision machine epsilon; divergence > 1e-10 signals the
- * un-fixed float-precision sqrt path.
+ * double-precision machine epsilon; divergence > 1e-10 signals a masking
+ * product formed in another type than the reference's.
  */
 static char *check_psnrhvs_avx2(uint32_t seed, int w, int h, float csf[8][8])
 {

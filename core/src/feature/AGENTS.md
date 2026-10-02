@@ -62,7 +62,7 @@ PSNR, SSIM, MS-SSIM, LPIPS, …). Parent: [../../AGENTS.md](../../AGENTS.md).
 | `feature_extractor.cpp`, `feature_collector.cpp`, `feature_name.cpp` | [orientation](AGENTS.d/orientation.md) | Scope, ground rules, discoverability, option tables, and feature extractor workflows. |
 | `feature_collector.cpp`, `feature_extractor.h` | [perceptual-side-data](AGENTS.d/perceptual-side-data.md) | Perceptual side-data weighting golden-isolation invariant and normalization contracts. |
 | `picture_copy.cpp`, `picture_copy.h` | [picture-copy](AGENTS.d/picture-copy.md) | picture_copy channel selection and high-bit-depth sample normalization contracts. |
-| `third_party/xiph/psnr_hvs.c`, `psnr_hvs_score.c` | [psnr-hvs](AGENTS.d/psnr-hvs.md) | PSNR-HVS host scoring tail, AVX2 DCT bit-exactness, and NEON DCT bit-exactness. |
+| `third_party/xiph/psnr_hvs.c`, `psnr_hvs_score.c` | [psnr-hvs](AGENTS.d/psnr-hvs.md) | Masking threshold = upstream float product (ADR-1488); host scoring tail and SIMD DCT stay bit-exact. |
 | `psnr.c`, `psnr.h`, `float_psnr.c` | [psnr](AGENTS.d/psnr.md) | PSNR bucket lint shape, cross-backend enable_chroma parity, and uncapped options. |
 | `common/convolution_internal.h`, `common/convolution.c` | [reflect-padding](AGENTS.d/reflect-padding.md) | Reflect-101 mirror padding loops, short circuits, and border clamping contracts. |
 | `feature_extractor.h`, `feature_collector.h` | [shared-headers](AGENTS.d/shared-headers.md) | Shared C/C++ headers must declare one enum definition, never a C++-only narrow enum. |

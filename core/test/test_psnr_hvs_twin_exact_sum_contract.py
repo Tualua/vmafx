@@ -13,10 +13,16 @@ on the new one. The device tests (``test_cuda_psnr_hvs_parity``,
 resulting scores; this contract keeps the design from eroding on hosts
 without the device.
 
-The CUDA and HIP kernels take the masking threshold as a double product and
-root, as the CPU does. The SYCL kernel has no fp64 (ADR-0220) and takes it
-from ``sqrt_prod_rn()`` in ``sycl_exact_fp.h``, an integer square root of the
-exact product, which the contract pins as well.
+The masking threshold is upstream's statement, ``sqrt(s_mask * s_gvar) / 32.f``
+(Netflix/vmaf ``libvmaf/src/feature/third_party/xiph/psnr_hvs.c:316-317``): a
+float product, its root taken in double, the result stored as float
+(ADR-1488). The scalar reference and its AVX2 and NEON forms write it; the
+CUDA and HIP kernels form the float product and take the double root; the
+SYCL kernel has no fp64 (ADR-0220) and takes ``sqrt_rn()`` of the float
+product, the correctly rounded fp32 root, which is the same value (rounding a
+square root to 53 bits and then to 24 equals rounding it to 24). The contract
+pins all of them, and fails on the double product the fork carried between
+PR #552 and ADR-1488.
 """
 
 from __future__ import annotations
@@ -32,6 +38,27 @@ MESON_BUILD = ROOT / "core" / "src" / "meson.build"
 
 HELPER = "psnr_hvs_score.c"
 EXACT_FP = "sycl/sycl_exact_fp.h"
+SCALAR = "third_party/xiph/psnr_hvs.c"
+AVX2 = "x86/psnr_hvs_avx2.c"
+NEON = "arm64/psnr_hvs_neon.c"
+# Upstream's two statements, as the scalar reference carries them, and the
+# same statements on the block structure of the SIMD forms. A `(double)` in
+# front of the first operand is what PR #552 added.
+CPU_THRESHOLDS = {
+    SCALAR: (
+        "s_mask = sqrt(s_mask * s_gvar) / 32.f;",
+        "d_mask = sqrt(d_mask * d_gvar) / 32.f;",
+    ),
+    AVX2: (
+        "b->s_mask = (float)(sqrt(b->s_mask * b->s_gvar) / 32.0);",
+        "b->d_mask = (float)(sqrt(b->d_mask * b->d_gvar) / 32.0);",
+    ),
+    NEON: (
+        "b->s_mask = (float)(sqrt(b->s_mask * b->s_gvar) / 32.0);",
+        "b->d_mask = (float)(sqrt(b->d_mask * b->d_gvar) / 32.0);",
+    ),
+}
+WIDE_PRODUCT = re.compile(r"sqrt\(\s*\(double\)\s*(?:b->)?[sd]_mask\s*\*")
 
 COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
 # The scaling constant of the CPU's masking table. With an `f` suffix the
@@ -62,7 +89,11 @@ class Twin:
     name: str
     host: str
     kernel: str
-    # The threshold expression and what a float-only kernel would write.
+    # The float product of the reference's statement, and the exact product
+    # the twin formed before ADR-1488.
+    product: str
+    wide_product: str
+    # The threshold expression and one with another root.
     threshold: str
     float_threshold: str
     float_root: str
@@ -81,8 +112,10 @@ CUDA = Twin(
     name="cuda",
     host="cuda/integer_psnr_hvs_cuda.c",
     kernel="cuda/integer_psnr_hvs/psnr_hvs_score.cu",
-    threshold="return (float)(sqrt((double)energy * (double)ratio) / 32.0);",
-    float_threshold="return sqrtf(energy * ratio) / 32.f;",
+    product="const float product = energy * ratio;",
+    wide_product="const double product = (double)energy * (double)ratio;",
+    threshold="return (float)(sqrt((double)product) / 32.0);",
+    float_threshold="return sqrtf(product) / 32.f;",
     float_root=r"\bsqrtf\s*\(",
     error="(float)abs(block[ref_base + index] - block[dist_base + index])",
     float_error="fabsf((float)block[ref_base + index] - (float)block[dist_base + index])",
@@ -96,8 +129,10 @@ HIP = Twin(
     name="hip",
     host="hip/integer_psnr_hvs_hip.c",
     kernel="hip/integer_psnr_hvs/psnr_hvs_score.hip",
-    threshold="return (float)(sqrt((double)energy * (double)ratio) / 32.0);",
-    float_threshold="return sqrtf(energy * ratio) / 32.f;",
+    product="const float product = energy * ratio;",
+    wide_product="const double product = (double)energy * (double)ratio;",
+    threshold="return (float)(sqrt((double)product) / 32.0);",
+    float_threshold="return sqrtf(product) / 32.f;",
     float_root=r"\bsqrtf\s*\(",
     error="(float)abs(ref[index] - dist[index])",
     float_error="fabsf((float)ref[index] - (float)dist[index])",
@@ -114,7 +149,10 @@ SYCL = Twin(
     name="sycl",
     host="sycl/integer_psnr_hvs_sycl.cpp",
     kernel="sycl/integer_psnr_hvs_sycl.cpp",
-    threshold="return vmaf_sycl_exact::sqrt_prod_rn(energy, ratio) / 32.f;",
+    # One statement: the product is the argument of the root.
+    product="vmaf_sycl_exact::sqrt_rn(energy * ratio)",
+    wide_product="vmaf_sycl_exact::sqrt_prod_rn(energy, ratio)",
+    threshold="return vmaf_sycl_exact::sqrt_rn(energy * ratio) / 32.f;",
     float_threshold="return sycl::sqrt(energy * ratio) / 32.f;",
     float_root=r"\bsycl::(?:native::)?sqrt\s*\(",
     error="(float)sycl::abs(block[ref_base + index] - block[dist_base + index])",
@@ -137,7 +175,7 @@ def _code(source: str) -> str:
 
 
 def _sources() -> dict[str, str]:
-    names = {HELPER, EXACT_FP}
+    names = {HELPER, EXACT_FP, SCALAR, AVX2, NEON}
     for twin in TWINS:
         names.update((twin.host, twin.kernel))
     sources = {name: (FEATURE_ROOT / name).read_text(encoding="utf-8") for name in names}
@@ -164,6 +202,19 @@ def _helper_failures(sources: dict[str, str]) -> list[str]:
     return failures
 
 
+def _reference_failures(sources: dict[str, str]) -> list[str]:
+    """The scalar reference and its SIMD forms write upstream's float product."""
+    failures: list[str] = []
+    for name, statements in CPU_THRESHOLDS.items():
+        code = " ".join(_code(sources[name]).split())
+        for statement in statements:
+            if statement not in code:
+                failures.append(f"{name}: masking threshold is not upstream's `{statement}`")
+        if WIDE_PRODUCT.search(code):
+            failures.append(f"{name}: the masking product is widened before it is formed")
+    return failures
+
+
 def _kernel_failures(twin: Twin, sources: dict[str, str]) -> list[str]:
     failures: list[str] = []
     code = _code(sources[twin.kernel])
@@ -173,6 +224,8 @@ def _kernel_failures(twin: Twin, sources: dict[str, str]) -> list[str]:
         failures.append(f"{twin.kernel}: masking table no longer taken from a double product")
     if re.search(twin.float_root, code):
         failures.append(f"{twin.kernel}: float square root in the masking threshold")
+    if twin.product not in code:
+        failures.append(f"{twin.kernel}: masking product no longer the CPU's float product")
     if twin.threshold not in code:
         failures.append(f"{twin.kernel}: masking threshold no longer the CPU's product and root")
     if twin.error not in code:
@@ -223,24 +276,26 @@ def _host_failures(twin: Twin, sources: dict[str, str]) -> list[str]:
 
 
 def _exact_root_failures(sources: dict[str, str]) -> list[str]:
-    """``sqrt_prod_rn()``: the fp64-free form of the CPU's double product and root."""
+    """``sqrt_rn()``: the correctly rounded fp32 root the SYCL threshold takes."""
     failures: list[str] = []
     code = _code(sources[EXACT_FP])
-    body = code[code.find("inline float sqrt_prod_rn(") :]
+    body = code[code.find("inline float sqrt_rn(") :]
     body = body[: body.find("\n}\n") + 3]
-    if "isqrt_floor50(product)" not in body:
-        failures.append(f"{EXACT_FP}: sqrt_prod_rn() no longer takes the integer root")
-    if re.search(r"\bsycl::(?:native::)?sqrt\s*\(", body):
-        failures.append(f"{EXACT_FP}: sqrt_prod_rn() rounds the product before the root")
-    if "floor_root + (floor_root & uint64_t{1})" not in body:
-        failures.append(f"{EXACT_FP}: sqrt_prod_rn() no longer rounds the root to nearest")
+    if "const float r = sycl::fma(-s, s, x);" not in body:
+        failures.append(f"{EXACT_FP}: sqrt_rn() no longer checks its root with an exact residual")
+    if "nearer_root(s, other, r) : nearer_root(other, s, r_other)" not in body:
+        failures.append(f"{EXACT_FP}: sqrt_rn() no longer picks the nearer of the two neighbours")
+    if "sqrt_prod_rn" in code:
+        failures.append(f"{EXACT_FP}: the root of an exact product is back (ADR-1488)")
     if re.search(r"\bdouble\b", sources[EXACT_FP]):
         failures.append(f"{EXACT_FP}: fp64 type in the device helpers")
     return failures
 
 
 def _contract_failures(sources: dict[str, str]) -> list[str]:
-    failures = _helper_failures(sources) + _exact_root_failures(sources)
+    failures = (
+        _helper_failures(sources) + _reference_failures(sources) + _exact_root_failures(sources)
+    )
     for twin in TWINS:
         failures += _kernel_failures(twin, sources) + _host_failures(twin, sources)
     return failures
@@ -281,9 +336,31 @@ class PsnrHvsTwinExactSumContract(unittest.TestCase):
                     any(f"{twin.kernel}: masking table no longer" in i for i in failures)
                 )
 
+    def test_widened_reference_product_is_detected(self) -> None:
+        # PR #552's cast, in the scalar reference and in its SIMD forms.
+        for name, statements in CPU_THRESHOLDS.items():
+            with self.subTest(source=name):
+                old = statements[0]
+                new = old.replace("sqrt(", "sqrt((double)", 1)
+                failures = _contract_failures(_planted(name, old, new))
+                self.assertTrue(any(f"{name}: masking threshold is not" in i for i in failures))
+                self.assertTrue(any(f"{name}: the masking product is widened" in i for i in failures))
+
+    def test_exact_twin_product_is_detected(self) -> None:
+        # The product the twins formed between ADR-1397 / ADR-1401 and
+        # ADR-1488: exact, as the fork's CPU then had it.
+        for twin in TWINS:
+            with self.subTest(twin=twin.name):
+                failures = _contract_failures(
+                    _planted(twin.kernel, twin.product, twin.wide_product)
+                )
+                self.assertTrue(
+                    any(f"{twin.kernel}: masking product no longer" in i for i in failures)
+                )
+
     def test_float_threshold_is_detected(self) -> None:
-        # The threshold of the twins that summed per block: a float product
-        # rounded before a float root.
+        # Another root than the reference's: a float library root on CUDA and
+        # HIP, the device's own root on SYCL.
         for twin in TWINS:
             with self.subTest(twin=twin.name):
                 failures = _contract_failures(
@@ -351,28 +428,23 @@ class PsnrHvsTwinExactSumContract(unittest.TestCase):
         )
         self.assertTrue(any("strict-FP psnr_hvs scalar library" in item for item in failures))
 
-    def test_rounded_product_root_is_detected(self) -> None:
-        # sqrt(fl(a * b)): the product rounded to fp32 before the root, which
-        # differs from the CPU's value for a third of all operand pairs.
+    def test_unchecked_root_is_detected(self) -> None:
+        # The refined estimate returned without the neighbour check: correctly
+        # rounded on most operands only.
         failures = _contract_failures(
             _planted(
                 EXACT_FP,
-                "const uint64_t floor_root = isqrt_floor50(product);",
-                "const uint64_t floor_root = (uint64_t)sycl::sqrt((float)product);",
+                "    return r > 0.0f ? nearer_root(s, other, r) : nearer_root(other, s, r_other);",
+                "    return s;",
             )
         )
-        self.assertTrue(any("no longer takes the integer root" in item for item in failures))
-        self.assertTrue(any("rounds the product before the root" in item for item in failures))
+        self.assertTrue(any("no longer picks the nearer" in item for item in failures))
 
-    def test_truncated_root_is_detected(self) -> None:
-        failures = _contract_failures(
-            _planted(
-                EXACT_FP,
-                "const uint64_t rounded = floor_root + (floor_root & uint64_t{1});",
-                "const uint64_t rounded = floor_root & ~uint64_t{1};",
-            )
-        )
-        self.assertTrue(any("no longer rounds the root to nearest" in item for item in failures))
+    def test_exact_product_root_helper_is_detected(self) -> None:
+        sources = _sources()
+        sources[EXACT_FP] += "\ninline float sqrt_prod_rn(float a, float b);\n"
+        failures = _contract_failures(sources)
+        self.assertTrue(any("root of an exact product is back" in item for item in failures))
 
 
 if __name__ == "__main__":

@@ -34,9 +34,12 @@ invariant: psnr_hvs_sycl = CPU scores bit for bit; integer_psnr_hvs_sycl.cpp DCT
   - masking table = `(csf * 0.3885746225901003)^2` in `double`, stored
     `float` (`hvs_mask_value` / `MASK_TABLES`, constexpr: host compiler
     evaluates it, kernel reads static data, stays fp64-free);
-  - threshold = `sqrt_prod_rn(energy, ratio) / 32.f`: fp32 rounding of the
-    root of the exact product = the CPU's double product and root. Float
-    product + `sycl::sqrt` = up to 4.4e-7 dB off on 3 of 48 frames;
+  - threshold = `sqrt_rn(energy * ratio) / 32.f` (ADR-1488): fp32 product,
+    correctly rounded fp32 root = the CPU's float product and double root
+    (rounding a root to 53 bits, then 24 = rounding to 24; checked on all
+    2 139 095 039 positive floats). Not the exact product (`sqrt_prod_rn()`,
+    removed: the fork's CPU between PR #552 and ADR-1488), not a bare
+    `sycl::sqrt` (not `sqrt_rn()`: correct only while the flag line holds);
   - coefficient error = integer `sycl::abs()` cast to `float`;
   - strict FP line (ADR-1367): no contraction, correctly rounded `/`
     (`threshold / mask`, variance ratio);
@@ -50,7 +53,7 @@ invariant: psnr_hvs_sycl = CPU scores bit for bit; integer_psnr_hvs_sycl.cpp DCT
   else 3; 4:0:0 must not reach the shared chroma planes. Guards:
   `test_sycl_psnr_hvs_parity{,_simd32,_large}` (device, `==` on all four
   outputs, 3840x2160 included), `test_sycl_fp_arith_contract`
-  (`sqrt_prod_rn` on the device vs the host's fp64 expression),
+  (`sqrt_rn` of the fp32 product on the device vs the host's statement),
   `test_psnr_hvs_twin_exact_sum_contract.py` (device-free). Gate cell =
   tolerance 0 (`EXACT_TWINS`). Upstream change to `calc_psnrhvs()`
   arithmetic or order -> mirror it here in the same PR. Readback = 256 bytes

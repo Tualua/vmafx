@@ -25,8 +25,9 @@
  *    - the masking table is the CPU's: (csf * 0.3885746225901003)^2 taken
  *      in double and stored as float (hvs_mask_value, evaluated at compile
  *      time);
- *    - the masking threshold takes a double product and a double square
- *      root before it is stored as float (hvs_threshold);
+ *    - the masking threshold takes the float product of the CPU's
+ *      statement and a double square root before it is stored as float
+ *      (hvs_threshold, ADR-1488);
  *    - the module is built with -ffp-contract=off and correctly rounded
  *      fp32 division (hip_cu_extra_flags in core/src/meson.build), because
  *      the CPU build never contracts a multiply and an add.
@@ -348,11 +349,14 @@ __device__ float hvs_mask_energy(const int *blk, int plane)
     return mc;
 }
 
-/* calc_psnrhvs(): s_mask = sqrt((double)s_mask * s_gvar) / 32.f, stored as
- * float. The product and the square root are double there, so they are here. */
+/* calc_psnrhvs(): s_mask = sqrt(s_mask * s_gvar) / 32.f, stored as float
+ * (ADR-1488). The product is a float product there, so it is one here (a
+ * plain operator rounds once under the strict FP list of this kernel); the
+ * square root is double there, so it is here. */
 __device__ float hvs_threshold(float energy, float ratio)
 {
-    return (float)(sqrt((double)energy * (double)ratio) / 32.0);
+    const float product = energy * ratio;
+    return (float)(sqrt((double)product) / 32.0);
 }
 
 /* The 64 values calc_psnrhvs() adds to its running sum for one block, in its

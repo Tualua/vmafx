@@ -2,11 +2,24 @@
 paths:
   - core/src/feature/third_party/xiph/psnr_hvs.c
   - core/src/feature/psnr_hvs_score.c
-invariant: PSNR-HVS host scoring tail, AVX2 DCT bit-exactness, and NEON DCT bit-exactness.
+invariant: Masking threshold = upstream float product (ADR-1488); host scoring tail and SIMD DCT stay bit-exact.
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # PSNR-HVS Host Scoring Tail and SIMD DCT Parity
 
+- **Masking threshold = upstream's statement** (ADR-1488):
+  `s_mask = sqrt(s_mask * s_gvar) / 32.f` in `calc_psnrhvs()`, Netflix
+  `libvmaf/src/feature/third_party/xiph/psnr_hvs.c:316-317`. Float product
+  (rounded to `float`), root in `double`, stored `float`. No `(double)` in
+  front of the product: PR #552 (CodeQL sweep) added one, 27 of 319 measured
+  frames left upstream by up to 9.4e-7 dB. The `codeql[...]` comment on each
+  line answers the alert. Same statement in `x86/psnr_hvs_avx2.c` and
+  `arm64/psnr_hvs_neon.c` (`compute_masks()`), same value in the CUDA, HIP
+  and SYCL kernels (`hvs_threshold()`). Change one -> all six, same PR.
+  Upstream sync: take upstream's side. Guards:
+  `test_psnr_hvs_dispatch_invariance` (recorded blocks scored as Netflix
+  master scores them), `test_psnr_hvs_simd`,
+  `test_psnr_hvs_twin_exact_sum_contract.py`.
 - **`psnr_hvs_score.c` = host tail of `calc_psnrhvs()` for GPU twins**
   (fork-local, ADR-1397). `vmaf_psnr_hvs_plane_score()` adds a plane's
   terms one by one into a single `float` (the CPU's `ret`), then

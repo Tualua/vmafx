@@ -1597,6 +1597,7 @@ nav:
         - "ADR-1484: float-ms-ssim-magnitude-before-pow": adr/1484-float-ms-ssim-magnitude-before-pow.md
         - "ADR-1485: apsnr-zero-error-plane-reports-cap": adr/1485-apsnr-zero-error-plane-reports-cap.md
         - "ADR-1486: float-motion-scale1-uses-callers-stride": adr/1486-float-motion-scale1-uses-callers-stride.md
+        - "ADR-1488: psnr-hvs-upstream-mask-product": adr/1488-psnr-hvs-upstream-mask-product.md
         - "ADR-1490: rc3-rc9-candidate-map-cpu-capability": adr/1490-rc3-rc9-candidate-map-cpu-capability.md
       - "By tag":
         - Overview: adr/by-tag/index.md

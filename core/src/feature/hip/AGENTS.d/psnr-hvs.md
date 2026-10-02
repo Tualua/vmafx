@@ -17,9 +17,12 @@ Load-bearing, each one breaks bit-identity on its own:
 
 - masking table = `(csf * 0.3885746225901003)^2` in `double`, stored `float`
   (`hvs_mask_value`, constexpr -> static data);
-- threshold = `sqrt((double)energy * ratio) / 32`, one rounding to `float`
-  (`hvs_threshold`); each work-item forms its own, the reference item takes
-  the larger after the barrier;
+- threshold = upstream's statement (ADR-1488): `product = energy * ratio` in
+  `float` (plain operator, one rounding under the strict FP list), then
+  `(float)(sqrt((double)product) / 32.0)` (`hvs_threshold`); each work-item
+  forms its own, the reference item takes the larger after the barrier. Not
+  `(double)energy * (double)ratio` (the fork's CPU between PR #552 and
+  ADR-1488);
 - `-ffp-contract=off` + `-fhip-fp32-correctly-rounded-divide-sqrt` on the
   HSACO (`hip_cu_extra_flags`);
 - coefficient error = integer `abs()` cast to `float`;

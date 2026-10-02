@@ -505,14 +505,17 @@ static void compute_masks(psnr_hvs_block *b, const float mask[8][8])
             b->d_mask += b->dct_d[i * 8 + j] * b->dct_d[i * 8 + j] * mask[i][j];
         }
     }
-    /* The scalar reference (third_party/xiph/psnr_hvs.c) writes
-     * `sqrt((double)s_mask * s_gvar) / 32.f`: the cast makes the product a
-     * double product. Without it `s_mask * s_gvar` is rounded to float before
-     * sqrt widens it, and the mask comes out one float ulp off on about one
-     * block in twenty (T-PSNR-HVS-NEON-NOT-SCALAR-BITS-2026-10-02). The AVX2
-     * twin carries the same cast. `sqrt`, not `sqrtf`: ADR-0141 / ADR-0159. */
-    b->s_mask = (float)(sqrt((double)b->s_mask * b->s_gvar) / 32.0);
-    b->d_mask = (float)(sqrt((double)b->d_mask * b->d_gvar) / 32.0);
+    /* The scalar reference (third_party/xiph/psnr_hvs.c) writes upstream's
+     * `sqrt(s_mask * s_gvar) / 32.f`: the product is a float product, rounded
+     * to float before sqrt() widens it (ADR-1488). A double product here is
+     * one float step off on about one block in twenty
+     * (T-PSNR-HVS-NEON-NOT-SCALAR-BITS-2026-10-02 was that difference the
+     * other way round). The AVX2 twin writes the same statement. `sqrt`, not
+     * `sqrtf`: ADR-0141 / ADR-0159. */
+    // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) ADR-1488: the scalar reference's promotion.
+    b->s_mask = (float)(sqrt(b->s_mask * b->s_gvar) / 32.0);
+    // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) ADR-1488: the scalar reference's promotion.
+    b->d_mask = (float)(sqrt(b->d_mask * b->d_gvar) / 32.0);
     if (b->d_mask > b->s_mask) {
         b->s_mask = b->d_mask;
     }
