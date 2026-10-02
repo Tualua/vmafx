@@ -58894,3 +58894,21 @@ Kept: the `+0` start of every sum (signed-zero parity with `adm_dwt2_s()`), mult
   except that the duplicate-owner test now asserts on the overwrite attempt
   after the four releases have run.
 - No score, public C API, Netflix golden-data or FFmpeg patch impact.
+## `CLISettings` is ordered by alignment (ADR-1142, 2026-10-02)
+
+`refactor/std-cli-tools`.
+
+- `core/tools/cli_parse.h` (upstream path): the members of `CLISettings` are
+  grouped as pointers, the model and feature tables, 4-byte values, flags. The
+  set of members, their names and their types are unchanged; nothing
+  initialises the structure by position (`CLISettings c = {};` in `vmaf.cpp`,
+  assignment by name in `cli_parse.cpp`). An upstream commit that adds a member
+  puts it into the group of its type, not at the place upstream has it.
+  `CLIModelConfig` and `CLIFeatureConfig` keep their order: `cli_parse.cpp`
+  uses designated initialisers on them, and C++ requires declaration order.
+- `core/tools/cli_parse.h`, `core/tools/vidinput.h`: the `typedef`s (and
+  `video_input_pixel_format`) stay plain C inside cited
+  `NOLINTBEGIN(modernize-use-using[,performance-enum-size])` blocks, because C
+  translation units include both headers (ADR-0141, ADR-1470).
+- No CLI behaviour, score, public C API, Netflix golden-data or FFmpeg patch
+  impact.

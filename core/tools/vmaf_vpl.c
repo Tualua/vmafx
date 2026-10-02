@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright 2016-2026 Netflix, Inc.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -59,6 +60,12 @@
 
 /* SYCL surface import: DMA-BUF/VA-API on Linux */
 #include "../src/sycl/dmabuf_import.h"
+
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy also proposes the `nullptr` keyword, but MSVC's
+ * documented /std:clatest C23 feature set does not include `nullptr`
+ * (C2065), so the fork's C sources spell the null pointer constant `NULL`
+ * whether or not a given tool builds on Windows today. ADR-1138. */
 
 #define VPL_PIPELINE_CLEANUP_FAILED INT_MIN
 
@@ -128,7 +135,7 @@ static void vpl_cleanup_gpu(VplDecoder *dec)
 {
     if (dec->va_display)
         vaTerminate(dec->va_display);
-    dec->va_display = nullptr;
+    dec->va_display = NULL;
     if (dec->drm_fd >= 0)
         (void)close(dec->drm_fd);
     dec->drm_fd = -1;
@@ -238,7 +245,7 @@ static int vpl_attach_input(VplDecoder *dec, const char *filename)
     dec->bs_buf = (uint8_t *)malloc(dec->bs_buf_size);
     if (!dec->bs_buf) {
         (void)fclose(dec->fp);
-        dec->fp = nullptr;
+        dec->fp = NULL;
         return -1;
     }
 
@@ -360,7 +367,7 @@ static int vpl_publish_surface(VplDecoder *dec, mfxSyncPoint sync, mfxFrameSurfa
     }
 
     /* Extract VA surface handle */
-    mfxHDL resource = nullptr;
+    mfxHDL resource = NULL;
     mfxResourceType res_type = MFX_RESOURCE_VA_SURFACE;
     mfxStatus gnh_sts = out_surf->FrameInterface->GetNativeHandle(out_surf, &resource, &res_type);
 
@@ -404,10 +411,10 @@ static int vpl_decode_frame(VplDecoder *dec, VASurfaceID *out_surface,
                             mfxFrameSurface1 **out_held_surf)
 {
     mfxStatus sts;
-    mfxSyncPoint sync = nullptr;
-    mfxFrameSurface1 *out_surf = nullptr;
+    mfxSyncPoint sync = NULL;
+    mfxFrameSurface1 *out_surf = NULL;
 
-    *out_held_surf = nullptr;
+    *out_held_surf = NULL;
 
     for (unsigned attempt = 0; attempt < VPL_DECODE_MAX_ATTEMPTS; attempt++) {
         /* Refill bitstream if needed */
@@ -416,8 +423,8 @@ static int vpl_decode_frame(VplDecoder *dec, VASurfaceID *out_surface,
         }
 
         int passing_null = (dec->bs.DataLength == 0 && dec->eof);
-        sts = MFXVideoDECODE_DecodeFrameAsync(dec->session, passing_null ? nullptr : &dec->bs,
-                                              nullptr, /* internal allocation */
+        sts = MFXVideoDECODE_DecodeFrameAsync(dec->session, passing_null ? NULL : &dec->bs,
+                                              NULL, /* internal allocation */
                                               &out_surf, &sync);
 
         if (sts == MFX_ERR_NONE && sync) {
@@ -672,8 +679,8 @@ static int vpl_host_upload_fallback(VADisplay va_display, VASurfaceID ref_surf,
                                     VASurfaceID dis_surf, int w, int h, int bpc, VmafContext *vmaf,
                                     unsigned frame_idx)
 {
-    assert(va_display != nullptr);
-    assert(vmaf != nullptr);
+    assert(va_display != NULL);
+    assert(vmaf != NULL);
     assert(w > 0 && h > 0);
     assert(bpc == 8 || bpc == 10);
 
@@ -708,7 +715,7 @@ typedef struct {
  * text is malformed, negative or above INT_MAX. */
 static int vpl_parse_int_option(const char *text, int *out)
 {
-    char *end = nullptr;
+    char *end = NULL;
     const long v = strtol(text, &end, 10);
     if (end == text || *end != '\0' || v < 0 || v > INT_MAX) {
         return -1;
@@ -831,7 +838,7 @@ static int vpl_pipeline_close(VplPipeline *pipe)
     }
     if (pipe->model) {
         vmaf_model_destroy(pipe->model);
-        pipe->model = nullptr;
+        pipe->model = NULL;
     }
     if (pipe->sycl_state)
         vmaf_sycl_state_free(&pipe->sycl_state);
@@ -847,7 +854,7 @@ static void vpl_register_features(VmafContext *vmaf)
 {
     const char *features[] = {"vif_sycl", "adm_sycl", "motion_sycl"};
     for (int i = 0; i < 3; i++) {
-        const int err = vmaf_use_feature(vmaf, features[i], nullptr);
+        const int err = vmaf_use_feature(vmaf, features[i], NULL);
         if (err) {
             (void)fprintf(stderr, "vmaf_use_feature(%s) failed: %d\n", features[i], err);
         }
@@ -882,7 +889,7 @@ static void vpl_load_model(VplPipeline *pipe, const char *model_name)
 static int vpl_pipeline_open(VplPipeline *pipe, const VplToolOptions *opt, int w, int h, int bpc)
 {
     /* ---- Set up SYCL state ---- */
-    VmafSyclState *sycl_state = nullptr;
+    VmafSyclState *sycl_state = NULL;
     VmafSyclConfiguration sycl_cfg = {.device_index = opt->device_idx, .enable_profiling = 0};
     int err = vmaf_sycl_state_init(&sycl_state, sycl_cfg);
     if (err) {
@@ -892,7 +899,7 @@ static int vpl_pipeline_open(VplPipeline *pipe, const VplToolOptions *opt, int w
     pipe->sycl_state = sycl_state;
 
     /* ---- Set up VMAF context ---- */
-    VmafContext *vmaf = nullptr;
+    VmafContext *vmaf = NULL;
     VmafConfiguration vmaf_cfg = {
         .log_level = VMAF_LOG_LEVEL_INFO,
         .n_threads = 1,
@@ -1115,7 +1122,7 @@ int main(int argc, char *argv[])
 
     printf("Resolution: %dx%d @ %d-bit\n", w, h, bpc);
 
-    VplPipeline pipe = {.sycl_state = nullptr};
+    VplPipeline pipe = {.sycl_state = NULL};
     const int open_err = vpl_pipeline_open(&pipe, &opt, w, h, bpc);
     if (open_err < 0) {
         if (open_err != VPL_PIPELINE_CLEANUP_FAILED) {
@@ -1146,3 +1153,5 @@ int main(int argc, char *argv[])
 
     return EXIT_SUCCESS;
 }
+
+/* NOLINTEND(modernize-use-nullptr) */

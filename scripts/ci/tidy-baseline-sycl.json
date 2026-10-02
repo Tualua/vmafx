@@ -353,7 +353,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 700,
+  "total_warnings": 677,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -465,9 +465,7 @@
     "core/test/test_version.c": 3,
     "core/test/tiny_ai_test_template.h": 2,
     "core/tools/cli_parse.h": 4,
-    "core/tools/vidinput.h": 12,
-    "core/tools/vmaf_bench.c": 2,
-    "core/tools/vmaf_vpl.c": 21
+    "core/tools/vidinput.h": 12
   },
   "nolint_uncited": {},
   "scoped_updates": [
@@ -689,6 +687,33 @@
         "core/test/test_luminance_tools.cpp": {
           "warnings": [
             11,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "cb3a45ee27abd6ad8700f8871e8f3a6ddd01fb71930cf4f6d888dd22fab5075a"
+    },
+    {
+      "sources": [
+        "core/test/test_cli_parse.c",
+        "core/tools/cli_parse.cpp",
+        "core/tools/vidinput.c",
+        "core/tools/vmaf_bench.c",
+        "core/tools/vmaf_vpl.c",
+        "core/tools/y4m_input.c",
+        "core/tools/yuv_input.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/tools/vmaf_bench.c": {
+          "warnings": [
+            2,
+            0
+          ]
+        },
+        "core/tools/vmaf_vpl.c": {
+          "warnings": [
+            21,
             0
           ]
         }

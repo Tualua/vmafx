@@ -1,5 +1,6 @@
 /*Daala video codec
 Copyright (c) 2002-2007 Daala project contributors.  All rights reserved.
+SPDX-License-Identifier: BSD-2-Clause
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are met:
@@ -48,6 +49,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
 extern "C" {
 #endif
 
+/* NOLINTBEGIN(modernize-use-using,performance-enum-size): one definition for C
+ * and C++. vidinput.c, y4m_input.c, yuv_input.c and their tests are C and
+ * vmaf.cpp is C++: `using` is not C, and an underlying type fixed for C++ only
+ * would give video_input_pixel_format, a member of video_input_info, a
+ * different size on each side of the language boundary. ADR-0141 / ADR-1470. */
 typedef struct video_input video_input;
 typedef struct video_input_vtbl video_input_vtbl;
 typedef struct video_input_info video_input_info;
@@ -138,6 +144,7 @@ struct video_input_info {
  * while both definitions are const -- a type mismatch on the same symbol. */
 extern const video_input_vtbl Y4M_INPUT_VTBL;
 extern const video_input_vtbl YUV_INPUT_VTBL;
+/* NOLINTEND(modernize-use-using,performance-enum-size) */
 
 #if defined(__cplusplus)
 } // extern "C"

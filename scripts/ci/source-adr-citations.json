@@ -603,7 +603,8 @@
         "core/test/test_y4m_411_oob.c": 1,
         "core/test/test_y4m_alloc_failure.c": 1,
         "core/test/tiny_ai_test_template.h": 2,
-        "core/tools/vidinput.h": 1,
+        "core/tools/cli_parse.h": 1,
+        "core/tools/vidinput.h": 2,
         "core/tools/vmaf_per_shot.c": 2,
         "core/tools/yuv_input.c": 3
       },
@@ -3424,7 +3425,7 @@
         "core/test/test_cli_parse.c": 2,
         "core/test/test_hip_smoke.c": 2,
         "core/tools/cli_parse.cpp": 2,
-        "core/tools/cli_parse.h": 1
+        "core/tools/cli_parse.h": 2
       },
       "target": "0519-hip-import-state-implementation.md"
     },
@@ -6518,6 +6519,7 @@
         "core/tools/vmaf_per_shot.c": 1,
         "core/tools/vmaf_roi.c": 2,
         "core/tools/vmaf_roi_input.h": 2,
+        "core/tools/vmaf_vpl.c": 1,
         "core/tools/y4m_input.c": 1,
         "core/tools/yuv_input.c": 1,
         "scripts/ci/tests/test_tidy_ratchet.py": 2,
@@ -9439,7 +9441,8 @@
       "sites": {
         "core/src/feature/nonfinite_score.h": 1,
         "core/test/meson.build": 1,
-        "core/test/test_c_cxx_enum_definition_contract.py": 2
+        "core/test/test_c_cxx_enum_definition_contract.py": 2,
+        "core/tools/vidinput.h": 1
       },
       "target": "1470-c-cxx-shared-enum-one-definition.md"
     },

@@ -1,6 +1,7 @@
 /**
  *
  *  Copyright 2016-2026 Netflix, Inc.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -34,6 +35,11 @@ extern "C" {
 
 #define CLI_SETTINGS_STATIC_ARRAY_LEN 32
 
+/* NOLINTBEGIN(modernize-use-using): one definition for C and C++. The CLI
+ * (cli_parse.cpp, vmaf.cpp) is C++ and the parser's tests and fuzz harness
+ * (test_cli_parse.c, test_cli_parse_long_only_args.c, fuzz_cli_parse.c) are C;
+ * `using` is not C, and a `using` copy next to a `typedef` would be two
+ * definitions to keep equal by hand. ADR-0141. */
 typedef struct {
     const char *name;
     VmafFeatureDictionary *opts_dict;
@@ -53,53 +59,78 @@ typedef struct {
     bool is_default;
 } CLIModelConfig;
 
+/* Members are ordered by alignment (pointers, the two tables, 4-byte values,
+ * flags), so the structure has no interior padding. Nothing initialises it by
+ * position: the CLI zero-initialises it and cli_parse() assigns by name. */
 typedef struct {
-    char *path_ref, *path_dist;
-    unsigned frame_skip_ref;
-    unsigned frame_skip_dist;
-    unsigned frame_cnt;
-    unsigned width, height;
-    enum VmafPixelFormat pix_fmt;
-    unsigned bitdepth;
-    bool use_yuv;
+    /* --- Pointers --- */
+    char *path_ref;
+    char *path_dist;
     char *output_path;
-    enum VmafOutputFormat output_fmt;
-    CLIModelConfig model_config[CLI_SETTINGS_STATIC_ARRAY_LEN];
-    unsigned model_cnt;
-    CLIFeatureConfig feature_cfg[CLI_SETTINGS_STATIC_ARRAY_LEN];
-    unsigned feature_cnt;
-    enum VmafLogLevel log_level;
-    unsigned subsample;
-    unsigned thread_cnt;
-    bool no_prediction;
-    bool quiet;
-    bool common_bitdepth;
-    unsigned cpumask;
-    unsigned gpumask;
-    bool use_gpumask; // true only when --gpumask was explicitly passed
-    bool no_cuda;
-    bool no_sycl;
-    int sycl_device; // -1 = not requested (default), 0+ = device index
-    bool no_hip;
-    int hip_device; // -1 = not requested (default), 0+ = device index
-    bool no_metal;
-    int metal_device; // -1 = not requested (default), 0+ = device index
     /* --backend exclusive selector: "auto" (default, all enabled
      * backends compete by registry order), "cpu", "cuda", "sycl",
      * "hip", "metal". Setting one disables the others via the
      * existing --no_X flags before they're consumed. */
     const char *backend;
     const char *precision_fmt; // resolved printf format, e.g. "%.6f"
-    int precision_n;           // -1 = unset (default %.6f), else user N
-    bool precision_max;        // --precision=max|full given (selects %.17g)
-    bool precision_legacy;     // --precision=legacy given (alias for the default)
     /* Phase 3k — tiny-AI surface (all unset by default). */
     const char *tiny_model_path; /* NULL = no tiny model */
     const char *tiny_device;     /* "auto"|"cpu"|"cuda"|"openvino"|
                                   * "coreml"|"coreml-ane"|"coreml-gpu"|
                                   * "coreml-cpu"|"openvino-npu"|
                                   * "openvino-cpu"|"openvino-gpu"|"rocm" */
-    int tiny_threads;            /* 0 = ORT default */
+    /* ADR-0519 — codec context for codec-aware tiny models
+     * (e.g. fr_regressor_v2). tiny_codec, tiny_preset and tiny_crf all
+     * default unset; when any is provided the CLI calls
+     * vmaf_dnn_set_codec_context after the model attaches. tiny_crf is -1
+     * when unset (passed through as "use 0/63 = 0.0" to the model only if
+     * the user explicitly set a codec). */
+    const char *tiny_codec;
+    const char *tiny_preset;
+    /* ADR-0550 — NCHW tiny-model auto-resize filter. NULL = unset
+     * (libvmaf default of bilinear applies). Accepted values:
+     * "bilinear" (default), "nearest", "bicubic", "disabled". */
+    const char *tiny_resize;
+
+    /* --- Models and features --- */
+    CLIModelConfig model_config[CLI_SETTINGS_STATIC_ARRAY_LEN];
+    CLIFeatureConfig feature_cfg[CLI_SETTINGS_STATIC_ARRAY_LEN];
+
+    /* --- 4-byte values --- */
+    unsigned frame_skip_ref;
+    unsigned frame_skip_dist;
+    unsigned frame_cnt;
+    unsigned width;
+    unsigned height;
+    enum VmafPixelFormat pix_fmt;
+    unsigned bitdepth;
+    enum VmafOutputFormat output_fmt;
+    unsigned model_cnt;
+    unsigned feature_cnt;
+    enum VmafLogLevel log_level;
+    unsigned subsample;
+    unsigned thread_cnt;
+    unsigned cpumask;
+    unsigned gpumask;
+    int sycl_device;  // -1 = not requested (default), 0+ = device index
+    int hip_device;   // -1 = not requested (default), 0+ = device index
+    int metal_device; // -1 = not requested (default), 0+ = device index
+    int precision_n;  // -1 = unset (default %.6f), else user N
+    int tiny_threads; /* 0 = ORT default */
+    int tiny_crf;     /* ADR-0519, see tiny_codec */
+
+    /* --- Flags --- */
+    bool use_yuv;
+    bool no_prediction;
+    bool quiet;
+    bool common_bitdepth;
+    bool use_gpumask; // true only when --gpumask was explicitly passed
+    bool no_cuda;
+    bool no_sycl;
+    bool no_hip;
+    bool no_metal;
+    bool precision_max;    // --precision=max|full given (selects %.17g)
+    bool precision_legacy; // --precision=legacy given (alias for the default)
     bool tiny_fp16;
     bool no_reference; /* skip reference; only meaningful with NR tiny model */
     /* T6-9 / ADR-0211 — Sigstore-bundle verification of tiny models. When
@@ -108,24 +139,12 @@ typedef struct {
      * missing bundle, cosign exec error, cosign exit non-zero). Off by
      * default for dev-friendliness; production deployments set it on. */
     bool tiny_model_verify;
-    /* ADR-0519 — codec context for codec-aware tiny models
-     * (e.g. fr_regressor_v2). All three default unset; when any is
-     * provided the CLI calls vmaf_dnn_set_codec_context after the
-     * model attaches. tiny_crf is -1 when unset (passed through as
-     * "use 0/63 = 0.0" to the model only if the user explicitly set
-     * a codec). */
-    const char *tiny_codec;
-    const char *tiny_preset;
-    int tiny_crf;
-    /* ADR-0550 — NCHW tiny-model auto-resize filter. NULL = unset
-     * (libvmaf default of bilinear applies). Accepted values:
-     * "bilinear" (default), "nearest", "bicubic", "disabled". */
-    const char *tiny_resize;
     /* ADR-0690: true when binary invoked as vmafx (argv[0] basename detection). */
     bool vmafx_mode;
     /* ADR-0696: true when --netflix-compat passed to restore legacy defaults. */
     bool netflix_compat;
 } CLISettings;
+/* NOLINTEND(modernize-use-using) */
 
 bool detect_vmafx_mode(const char *argv0);
 
