@@ -280,6 +280,8 @@ from = ["netflix-ms-ssim", "iqa"]
 from = ["iqa", "netflix-float-ssim"]  # "mirrors iqa_ssim() ... step-for-step", zli-nflx clamps
 [ports."core/src/feature/speed_gpu_common.h"]
 from = ["netflix-speed"]
+[ports."core/src/feature/speed_cov.h"]
+from = ["netflix-speed"]  # declares compute_cov_kernel_scalar of speed.c and its contract
 [ports."core/src/feature/speed_internal.c"]
 from = ["netflix-speed"]  # "a self-contained port of the static helpers in speed.c"
 [ports."core/src/feature/speed_internal.h"]

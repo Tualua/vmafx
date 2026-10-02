@@ -1221,6 +1221,31 @@ only, in scalar arithmetic; port needed comment edits only.
 AVX2 path. Port only with x86 before/after JSON identity at `--precision max`
 (scalar, AVX2, AVX-512 dispatch).
 
+### SpEED covariance sums: row kernels return scalar's bits (ADR-1459)
+
+[`speed_cov.h`](speed_cov.h) = contract. Reference: `compute_cov_kernel_scalar()`
+in [`speed.c`](speed.c): one running `double` sum, row-major, per element two
+subtractions, one multiply, one add, each rounded alone. Product sits in own
+statement + function-scoped no-contraction guard (GCC `optimize` attribute,
+clang `fp contract(off)` pragma). Keep both on upstream sync: upstream body
+`result += (val_x - mean_x) * (val_y - mean_y);` gets fused by clang on aarch64.
+
+`compute_covariance_matrix()` walks lower triangle row by row of y blocks
+(`compute_covariance_row()`); `speed_cov_row_fn` kernel returns up to
+`SPEED_COV_ROW_MAX` (= block size 5) sums per call. Kernels:
+`speed_cov_row_scalar` (count reference calls), `x86/speed_avx2.c`,
+`x86/speed_avx512.c`, `arm64/speed_neon.c`. Lane = one sum; no lane feeds
+another; no FMA. `test_speed_simd` (`memcmp`) on x86 and under qemu-aarch64.
+
+Upstream `compute_cov_kernel_avx2` / `_avx512` (30f472b14) and `_neon`
+(15297286) split one sum over lanes with FMA: not bit-exact, removed here.
+**On upstream sync**: never re-import; port upstream changes to
+`compute_covariance()` into `compute_covariance_row()` by hand.
+
+Kernel reads up to `width + SPEED_COV_ROW_MAX - 1` floats per row of `data_y`
+whatever `count`: SpEED's block grid always holds those floats. New caller -> same
+guarantee or scalar kernel.
+
 ### `speed_internal.c` is the shared CPU helper TU for the SpEED GPU twins (ADR-0964)
 
 `core/src/feature/speed_internal.{h,c}` is contract between

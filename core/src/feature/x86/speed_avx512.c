@@ -18,55 +18,40 @@
  *
  */
 
+#include <assert.h>
 #include <immintrin.h>
 #include <stddef.h>
 
+#include "feature/speed_cov.h"
 #include "speed_avx512.h"
 
-// AVX-512 8-wide-double accumulator with two parallel chains for FMA pipelining.
-// Loop processes 16 elements per iteration, then 8, then scalar tail.
-double compute_cov_kernel_avx512(const float *data_x, const float *data_y, size_t stride_px,
-                                 size_t height, size_t width, double mean_x, double mean_y)
+/* One x block against up to five y blocks at consecutive columns
+ * (speed_cov.h, ADR-1459). Lane k of a 512-bit register holds the running sum
+ * of y_k; each lane multiplies and then adds, as compute_cov_kernel_scalar()
+ * does for that pair: no FMA, and no lane ever feeds another. The masked load
+ * reads the five floats the contract guarantees and no more. */
+void speed_cov_row_avx512(const float *data_x, const float *data_y, size_t stride_px, size_t height,
+                          size_t width, double mean_x, const double *mean_y, size_t count,
+                          double *sums)
 {
-    __m512d acc0 = _mm512_setzero_pd();
-    __m512d acc1 = _mm512_setzero_pd();
+    assert(count >= 1 && count <= SPEED_COV_ROW_MAX);
+    const __mmask8 readable = (__mmask8)((1u << SPEED_COV_ROW_MAX) - 1u);
+    const __mmask8 wanted = (__mmask8)((1u << count) - 1u);
     const __m512d mx = _mm512_set1_pd(mean_x);
-    const __m512d my = _mm512_set1_pd(mean_y);
-    double scalar_tail = 0.0;
+    const __m512d my = _mm512_maskz_loadu_pd(wanted, mean_y);
+    __m512d acc = _mm512_setzero_pd();
 
     for (size_t i = 0; i < height; i++) {
         const float *row_x = data_x + i * stride_px;
         const float *row_y = data_y + i * stride_px;
-        size_t j = 0;
 
-        for (; j + 15 < width; j += 16) {
-            __m256 fx0 = _mm256_loadu_ps(row_x + j);
-            __m256 fx1 = _mm256_loadu_ps(row_x + j + 8);
-            __m256 fy0 = _mm256_loadu_ps(row_y + j);
-            __m256 fy1 = _mm256_loadu_ps(row_y + j + 8);
-            __m512d cx0 = _mm512_sub_pd(_mm512_cvtps_pd(fx0), mx);
-            __m512d cx1 = _mm512_sub_pd(_mm512_cvtps_pd(fx1), mx);
-            __m512d cy0 = _mm512_sub_pd(_mm512_cvtps_pd(fy0), my);
-            __m512d cy1 = _mm512_sub_pd(_mm512_cvtps_pd(fy1), my);
-            acc0 = _mm512_fmadd_pd(cx0, cy0, acc0);
-            acc1 = _mm512_fmadd_pd(cx1, cy1, acc1);
-        }
-
-        for (; j + 7 < width; j += 8) {
-            __m256 fx = _mm256_loadu_ps(row_x + j);
-            __m256 fy = _mm256_loadu_ps(row_y + j);
-            __m512d cx = _mm512_sub_pd(_mm512_cvtps_pd(fx), mx);
-            __m512d cy = _mm512_sub_pd(_mm512_cvtps_pd(fy), my);
-            acc0 = _mm512_fmadd_pd(cx, cy, acc0);
-        }
-
-        for (; j < width; j++) {
-            double val_x = row_x[j];
-            double val_y = row_y[j];
-            scalar_tail += (val_x - mean_x) * (val_y - mean_y);
+        for (size_t j = 0; j < width; j++) {
+            const __m512d dx = _mm512_sub_pd(_mm512_cvtps_pd(_mm256_broadcast_ss(row_x + j)), mx);
+            const __m256 fy = _mm256_maskz_loadu_ps(readable, row_y + j);
+            const __m512d dy = _mm512_sub_pd(_mm512_cvtps_pd(fy), my);
+            acc = _mm512_add_pd(acc, _mm512_mul_pd(dx, dy));
         }
     }
 
-    __m512d acc = _mm512_add_pd(acc0, acc1);
-    return _mm512_reduce_add_pd(acc) + scalar_tail;
+    _mm512_mask_storeu_pd(sums, wanted, acc);
 }

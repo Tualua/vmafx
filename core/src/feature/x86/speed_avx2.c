@@ -18,59 +18,49 @@
  *
  */
 
+#include <assert.h>
 #include <immintrin.h>
 #include <stddef.h>
 
+#include "feature/speed_cov.h"
 #include "speed_avx2.h"
 
-// AVX2 4-wide-double accumulator with two parallel chains to hide FMA latency.
-// Per-element math (mul + add) is fused via vfmadd231pd; the per-row sub is
-// kept separate to mirror scalar's two-rounding sub more closely.
-// Loop processes 8 elements per iteration when possible, then 4, then scalar.
-double compute_cov_kernel_avx2(const float *data_x, const float *data_y, size_t stride_px,
-                               size_t height, size_t width, double mean_x, double mean_y)
+/* One x block against up to five y blocks at consecutive columns
+ * (speed_cov.h, ADR-1459). Lanes 0..3 of a 256-bit register hold the running
+ * sums of y_0..y_3 and the low lane of a 128-bit register the sum of y_4.
+ * Each lane multiplies and then adds, as compute_cov_kernel_scalar() does for
+ * that pair: no FMA, and no lane ever feeds another. The lanes at and above
+ * `count` are computed from readable floats and dropped. */
+void speed_cov_row_avx2(const float *data_x, const float *data_y, size_t stride_px, size_t height,
+                        size_t width, double mean_x, const double *mean_y, size_t count,
+                        double *sums)
 {
-    __m256d acc0 = _mm256_setzero_pd();
-    __m256d acc1 = _mm256_setzero_pd();
+    assert(count >= 1 && count <= SPEED_COV_ROW_MAX);
+    double lanes[SPEED_COV_ROW_MAX] = {0.0};
+    for (size_t k = 0; k < count; k++)
+        lanes[k] = mean_y[k];
+
     const __m256d mx = _mm256_set1_pd(mean_x);
-    const __m256d my = _mm256_set1_pd(mean_y);
-    double scalar_tail = 0.0;
+    const __m256d my_lo = _mm256_loadu_pd(lanes);
+    const __m128d my_hi = _mm_set_sd(lanes[4]);
+    __m256d acc_lo = _mm256_setzero_pd();
+    __m128d acc_hi = _mm_setzero_pd();
 
     for (size_t i = 0; i < height; i++) {
         const float *row_x = data_x + i * stride_px;
         const float *row_y = data_y + i * stride_px;
-        size_t j = 0;
 
-        for (; j + 7 < width; j += 8) {
-            __m128 fx0 = _mm_loadu_ps(row_x + j);
-            __m128 fx1 = _mm_loadu_ps(row_x + j + 4);
-            __m128 fy0 = _mm_loadu_ps(row_y + j);
-            __m128 fy1 = _mm_loadu_ps(row_y + j + 4);
-            __m256d cx0 = _mm256_sub_pd(_mm256_cvtps_pd(fx0), mx);
-            __m256d cx1 = _mm256_sub_pd(_mm256_cvtps_pd(fx1), mx);
-            __m256d cy0 = _mm256_sub_pd(_mm256_cvtps_pd(fy0), my);
-            __m256d cy1 = _mm256_sub_pd(_mm256_cvtps_pd(fy1), my);
-            acc0 = _mm256_fmadd_pd(cx0, cy0, acc0);
-            acc1 = _mm256_fmadd_pd(cx1, cy1, acc1);
-        }
-
-        for (; j + 3 < width; j += 4) {
-            __m128 fx = _mm_loadu_ps(row_x + j);
-            __m128 fy = _mm_loadu_ps(row_y + j);
-            __m256d cx = _mm256_sub_pd(_mm256_cvtps_pd(fx), mx);
-            __m256d cy = _mm256_sub_pd(_mm256_cvtps_pd(fy), my);
-            acc0 = _mm256_fmadd_pd(cx, cy, acc0);
-        }
-
-        for (; j < width; j++) {
-            double val_x = row_x[j];
-            double val_y = row_y[j];
-            scalar_tail += (val_x - mean_x) * (val_y - mean_y);
+        for (size_t j = 0; j < width; j++) {
+            const __m256d dx = _mm256_sub_pd(_mm256_cvtps_pd(_mm_broadcast_ss(row_x + j)), mx);
+            const __m256d dy_lo = _mm256_sub_pd(_mm256_cvtps_pd(_mm_loadu_ps(row_y + j)), my_lo);
+            const __m128d dy_hi = _mm_sub_sd(_mm_cvtps_pd(_mm_load_ss(row_y + j + 4)), my_hi);
+            acc_lo = _mm256_add_pd(acc_lo, _mm256_mul_pd(dx, dy_lo));
+            acc_hi = _mm_add_sd(acc_hi, _mm_mul_sd(_mm256_castpd256_pd128(dx), dy_hi));
         }
     }
 
-    __m256d acc = _mm256_add_pd(acc0, acc1);
-    double tmp[4];
-    _mm256_storeu_pd(tmp, acc);
-    return tmp[0] + tmp[1] + tmp[2] + tmp[3] + scalar_tail;
+    _mm256_storeu_pd(lanes, acc_lo);
+    _mm_store_sd(lanes + 4, acc_hi);
+    for (size_t k = 0; k < count; k++)
+        sums[k] = lanes[k];
 }

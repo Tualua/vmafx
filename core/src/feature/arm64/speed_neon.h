@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright 2016-2020 Netflix, Inc.
+ *  Copyright 2016-2025 Netflix, Inc.
  *  Copyright 2026 Lusoris
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
@@ -18,14 +18,14 @@
  *
  */
 
-#ifndef X86_AVX2_SPEED_H_
-#define X86_AVX2_SPEED_H_
+#ifndef ARM64_SPEED_NEON_H_
+#define ARM64_SPEED_NEON_H_
 
 #include <stddef.h>
 
-/* speed_cov_row_fn for AVX2: see ../speed_cov.h for the contract. */
-void speed_cov_row_avx2(const float *data_x, const float *data_y, size_t stride_px, size_t height,
+/* speed_cov_row_fn for NEON: see ../speed_cov.h for the contract. */
+void speed_cov_row_neon(const float *data_x, const float *data_y, size_t stride_px, size_t height,
                         size_t width, double mean_x, const double *mean_y, size_t count,
                         double *sums);
 
-#endif /* X86_AVX2_SPEED_H_ */
+#endif /* ARM64_SPEED_NEON_H_ */

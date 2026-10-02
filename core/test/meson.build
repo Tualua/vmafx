@@ -2971,9 +2971,11 @@ endif
 
 # ADR-0865 / ADR-0720: test_ansnr_simd removed — ansnr feature was dropped.
 
-# Speed_chroma covariance-sum SIMD parity (AVX2 + AVX-512, upstream 30f472b14).
-# Gated on float_enabled (speed.c is float-only) and x86/x86_64 (no NEON path yet).
-speed_simd_test_archs = ['x86_64', 'x86']
+# SpEED covariance row kernels (AVX2, AVX-512, NEON) and matrix-product
+# kernels against their scalar references, bit for bit (ADR-1459).
+# Gated on float_enabled (speed.c is float-only); the aarch64 cross build runs
+# it under qemu.
+speed_simd_test_archs = ['x86_64', 'x86', 'aarch64', 'arm64']
 if float_enabled and speed_simd_test_archs.contains(host_machine.cpu_family())
 test_speed_simd = executable('test_speed_simd',
     ['test.c', 'test_speed_simd.c',

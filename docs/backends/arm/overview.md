@@ -71,7 +71,7 @@ matches the `Backends` column in
 | `float_ms_ssim`| yes         | no          | 9-tap 9/7 wavelet decimate via `ms_ssim_decimate_neon`        |
 | `ssimulacra2`  | yes         | yes         | bit-identical to scalar (NEON and SVE2 produce byte-equal output); see [ADR-0161](../../adr/0161-ssimulacra2-simd-bitexact.md), [ADR-0162](../../adr/0162-ssimulacra2-iir-blur-simd.md), [ADR-0163](../../adr/0163-ssimulacra2-ptlr-simd.md), [ADR-0213](../../adr/0213-ssimulacra2-sve2.md) |
 | `cambi`        | yes         | no          | every stage except the mask row and mode filter, which the compilers already vectorise; see [CAMBI CPU SIMD paths](../../metrics/cambi.md#cpu-simd-paths) |
-| `speed_chroma` / `speed_temporal` | no | no | scalar C. The anti-alias filter is evaluated only at the samples the 16x decimation keeps (`vif_filter1d_dec16_s()`, Netflix/vmaf `76ea5f03`), with the bits of the filter-then-decimate path. Upstream's NEON covariance kernel (`15297286`) is not taken: its eight partial sums are not the scalar's running sum |
+| `speed_chroma` / `speed_temporal` | yes | no | covariance row kernel (`speed_cov_row_neon`): one lane per covariance sum, bit-identical to scalar ([ADR-1459](../../adr/1459-speed-cov-kernel-exact.md)). The anti-alias filter stays scalar C and is evaluated only at the samples the 16x decimation keeps (`vif_filter1d_dec16_s()`, Netflix/vmaf `76ea5f03`). Upstream's NEON covariance kernel (`15297286`) is not the one used: it splits one sum over eight lanes and does not return the scalar's bits |
 
 ## Bit-exactness
 
@@ -91,6 +91,11 @@ features that ship a determinism contract:
 - `ms_ssim_decimate` — pinned by ADR-0125; per-lane `vfmaq_n_f32`
   with broadcast coefficients matches the scalar
   `fmaf` chain exactly.
+- `speed_chroma` / `speed_temporal` — pinned by ADR-1459; every covariance
+  sum of the NEON row kernel has the bits of `compute_cov_kernel_scalar()`
+  (`core/test/test_speed_simd.c`, run under `qemu-aarch64` with GCC and with
+  clang). Its speed on hardware is not measured: it has only run under
+  emulation.
 
 Other extractors are numerically equivalent to their scalar twins
 within `places=4` of the snapshot tolerance but do not carry an

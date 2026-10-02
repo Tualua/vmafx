@@ -1,6 +1,45 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## ADR-1459 — SpEED's covariance kernels are the fork's own and return the scalar kernel's bits (2026-10-02)
+
+`fix/speed-cov-kernel-exact`, closes `T-SPEED-COV-KERNEL-X86-NOT-BIT-EXACT-2026-10-02`.
+
+- **Upstream's covariance kernels are not in the tree.**
+  `compute_cov_kernel_avx2()` / `compute_cov_kernel_avx512()` (Netflix
+  `30f472b14`) are deleted and `compute_cov_kernel_neon()` (`15297286`) was
+  never taken: each splits one sum over vector lanes with fused multiply-adds
+  and does not return `compute_cov_kernel_scalar()`'s bits. **On upstream
+  sync**: do not re-import them or their dispatch in `speed_init()`. A change
+  upstream makes to those kernels has to be read for what it means for the
+  row kernels below.
+- `core/src/feature/x86/speed_avx2.{c,h}` and `speed_avx512.{c,h}` keep their
+  names and now hold `speed_cov_row_avx2()` / `speed_cov_row_avx512()`;
+  `core/src/feature/arm64/speed_neon.{c,h}` (new, in `arm64_fp_lib`) holds
+  `speed_cov_row_neon()`. Contract: `core/src/feature/speed_cov.h` (new). One
+  lane is one covariance sum, a multiply and then an add; do not introduce an
+  FMA or fold lanes into each other.
+- `core/src/feature/speed.c` differs from upstream in four places:
+  `compute_cov_kernel_scalar()` is not `static`, forms the product in its own
+  statement and carries the function-scoped no-contraction guard (ADR-1057
+  pattern: GCC `optimize` attribute, clang `fp contract(off)` pragma), which
+  has to survive a sync because every kernel is compared with this function;
+  `speed_cov_row_scalar()` is new; upstream's `compute_covariance()` is
+  replaced by `compute_covariance_row()`, and `compute_covariance_matrix()`
+  walks the lower triangle one row of `y` blocks at a time (same pairs, same
+  values, same `double` to `float` conversion); `SpeedState::cov_row` and
+  `speed_dispatch_cpu_kernel()` dispatch the row kernel, on aarch64 too. An
+  upstream change inside `compute_covariance()` is ported into
+  `compute_covariance_row()` by hand.
+- `core/test/test_speed_simd.c` compares every sum with the production
+  reference bit for bit and is built on aarch64 as well
+  (`speed_simd_test_archs` in `core/test/meson.build`); the 1e-9 tolerance,
+  the test's copy of the scalar kernel and the `check_cov_matrix()` case that
+  the Netflix/vmaf#1653 port added for upstream's kernels are gone (its sizes
+  are rows of the new matrix).
+- No Netflix golden-data, public API or FFmpeg patch impact. Scores are
+  unchanged on x86 and on an aarch64 GCC build.
+
 ## The CLI read-ahead asserts its invariants (2026-10-02)
 
 `fix/cli-restore-frame-reader-asserts`, closes `T-CLI-FRAME-READER-ASSERTS-REPLACED-2026-10-02`.

@@ -856,6 +856,9 @@ if is_asm_enabled
           feature_src_dir + 'arm64/motion_v2_neon.c',
           feature_src_dir + 'arm64/psnr_hvs_neon.c',
           feature_src_dir + 'arm64/moment_neon.c',
+          # ADR-1459: one lane per covariance sum, multiply then add; a fused
+          # form would leave compute_cov_kernel_scalar()'s bits.
+          feature_src_dir + 'arm64/speed_neon.c',
         ]
 
         arm64_fp_lib = static_library(

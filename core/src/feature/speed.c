@@ -47,6 +47,7 @@
 #include "opt.h"
 #include "picture.h"
 #include "picture_copy.h"
+#include "speed_cov.h"
 #include "speed_internal.h"
 #include "speed_matmul.h"
 #include "vif_tools.h"
@@ -60,9 +61,9 @@
 #include "x86/speed_matmul_avx512.h"
 #endif
 #endif
-
-typedef double (*compute_cov_kernel_fn)(const float *data_x, const float *data_y, size_t stride_px,
-                                        size_t height, size_t width, double mean_x, double mean_y);
+#if ARCH_AARCH64
+#include "arm64/speed_neon.h"
+#endif
 
 typedef struct SpeedDimensions {
     size_t original_height;
@@ -116,7 +117,7 @@ typedef struct SpeedState {
     SpeedResultBuffers dis_results;
     SpeedBuffers buffers;
     size_t float_stride;
-    compute_cov_kernel_fn compute_cov_kernel;
+    speed_cov_row_fn cov_row;
     speed_matmul_fn matmul;
     /* Singular covariance matrices are counted, not logged per solve: flat or
      * linearly-graded content makes every solve singular, and one line per
@@ -766,60 +767,100 @@ static float compute_mean(const SpeedDimensions *dim, const float *data, size_t 
 }
 
 // Scalar reference implementation of the covariance-sum kernel.
-// Returns the un-normalized sum; the /N division happens in compute_covariance.
-static double compute_cov_kernel_scalar(const float *data_x, const float *data_y, size_t stride_px,
-                                        size_t height, size_t width, double mean_x, double mean_y)
+// Returns the un-normalized sum; the /N division happens in
+// compute_covariance_row.
+//
+// Every row kernel has to return this function's bits (speed_cov.h,
+// ADR-1459), so the multiply and the add are kept apart on every compiler:
+// the product is its own statement, and the function is built without
+// contraction where a target has a fused multiply-add (clang contracts within
+// an expression by default, and on aarch64 it fused the remainder of this
+// loop while leaving its vector body unfused).
+#if defined(__GNUC__) && !defined(__clang__)
+__attribute__((optimize("-ffp-contract=off")))
+#endif
+double compute_cov_kernel_scalar(const float *data_x, const float *data_y, size_t stride_px,
+                                 size_t height, size_t width, double mean_x, double mean_y)
 {
+#if defined(__clang__)
+#pragma clang fp contract(off)
+#endif
     double result = 0;
     for (size_t i = 0; i < height; i++) {
         for (size_t j = 0; j < width; j++) {
             double val_x = data_x[i * stride_px + j];
             double val_y = data_y[i * stride_px + j];
-            result += (val_x - mean_x) * (val_y - mean_y);
+            const double product = (val_x - mean_x) * (val_y - mean_y);
+            result += product;
         }
     }
     return result;
 }
 
-// Computes the covariance between two arrays of the same given size
-// The arrays are stored as submatrices of the input data, starting at
-// (start_row_x, start_col_x) and (start_row_y, start_col_y)
-// and having dimensions (submatrix_height, submatrix_width)
-static float compute_covariance(const SpeedDimensions *dim, const float *data, const float *means,
-                                size_t stride_px, int start_row_x, int start_col_x, int start_row_y,
-                                int start_col_y, compute_cov_kernel_fn kernel)
+// Portable row kernel: the covariance sums of block x with `count` y blocks at
+// consecutive columns, one reference call per block.
+void speed_cov_row_scalar(const float *data_x, const float *data_y, size_t stride_px, size_t height,
+                          size_t width, double mean_x, const double *mean_y, size_t count,
+                          double *sums)
 {
-    double mean_x = means[start_row_x * dim->block_size + start_col_x];
-    double mean_y = means[start_row_y * dim->block_size + start_col_y];
-    const float *data_x = data + start_row_x * stride_px + start_col_x;
-    const float *data_y = data + start_row_y * stride_px + start_col_y;
-    double result = kernel(data_x, data_y, stride_px, dim->submatrix_height, dim->submatrix_width,
-                           mean_x, mean_y);
-    return result / (dim->submatrix_width * dim->submatrix_height);
+    for (size_t k = 0; k < count; k++) {
+        sums[k] = compute_cov_kernel_scalar(data_x, data_y + k, stride_px, height, width, mean_x,
+                                            mean_y[k]);
+    }
+}
+
+// Computes the covariances between block x_index and the `count` blocks of
+// row row_y of the block grid, y_index = row_y * block_size + [0, count), and
+// stores them on both sides of the diagonal. The blocks are submatrices of
+// the input data with dimensions (submatrix_height, submatrix_width); the y
+// blocks of one row start at consecutive columns, which is what a row kernel
+// vectorises over.
+static void compute_covariance_row(const SpeedDimensions *dim, const float *data, float *cov_mat,
+                                   const float *means, size_t stride_px, size_t x_index,
+                                   size_t row_y, size_t count, speed_cov_row_fn kernel)
+{
+    assert(count >= 1 && count <= SPEED_COV_ROW_MAX);
+    const size_t block_size = dim->block_size;
+    const size_t y_first = row_y * block_size;
+    const float *data_x = data + (x_index / block_size) * stride_px + (x_index % block_size);
+    const float *data_y = data + row_y * stride_px;
+    double mean_x = means[x_index];
+    double mean_y[SPEED_COV_ROW_MAX];
+    double sums[SPEED_COV_ROW_MAX];
+
+    for (size_t k = 0; k < count; k++)
+        mean_y[k] = means[y_first + k];
+
+    kernel(data_x, data_y, stride_px, dim->submatrix_height, dim->submatrix_width, mean_x, mean_y,
+           count, sums);
+
+    for (size_t k = 0; k < count; k++) {
+        float covariance = sums[k] / (dim->submatrix_width * dim->submatrix_height);
+        cov_mat[x_index * dim->elements_in_block + y_first + k] = covariance;
+        cov_mat[(y_first + k) * dim->elements_in_block + x_index] = covariance;
+    }
 }
 
 static void compute_covariance_matrix(const SpeedDimensions *dim, const float *data, float *cov_mat,
-                                      float *means, size_t stride_px, compute_cov_kernel_fn kernel)
+                                      float *means, size_t stride_px, speed_cov_row_fn kernel)
 {
     assert(dim->block_size > 0);
+    assert(dim->block_size <= SPEED_COV_ROW_MAX);
     for (size_t start_row = 0; start_row < dim->block_size; start_row++) {
         for (size_t start_col = 0; start_col < dim->block_size; start_col++) {
             means[start_row * dim->block_size + start_col] =
                 compute_mean(dim, data, stride_px, start_row, start_col);
         }
     }
-    size_t elements_in_block = dim->block_size * dim->block_size;
 
+    // The lower triangle, y_index <= x_index, one row of y blocks at a time:
+    // the rows above block x's own are complete, its own ends at x_index.
     for (size_t x_index = 0; x_index < dim->elements_in_block; x_index++) {
-        for (size_t y_index = 0; y_index <= x_index; y_index++) {
-            size_t start_row_x = x_index / dim->block_size;
-            size_t start_col_x = x_index % dim->block_size;
-            size_t start_row_y = y_index / dim->block_size;
-            size_t start_col_y = y_index % dim->block_size;
-            float covariance = compute_covariance(dim, data, means, stride_px, start_row_x,
-                                                  start_col_x, start_row_y, start_col_y, kernel);
-            cov_mat[x_index * elements_in_block + y_index] = covariance;
-            cov_mat[y_index * elements_in_block + x_index] = covariance;
+        const size_t row_x = x_index / dim->block_size;
+        for (size_t row_y = 0; row_y <= row_x; row_y++) {
+            const size_t count = row_y < row_x ? dim->block_size : (x_index % dim->block_size) + 1;
+            compute_covariance_row(dim, data, cov_mat, means, stride_px, x_index, row_y, count,
+                                   kernel);
         }
     }
 }
@@ -899,8 +940,7 @@ static bool solve_covariance_system(SpeedState *s, const float *data, const Spee
     // needed for the covariance.
     // Default to the scalar kernel if speed_init() wasn't called (e.g. unit
     // tests that construct SpeedState via struct literal).
-    compute_cov_kernel_fn kernel =
-        s->compute_cov_kernel ? s->compute_cov_kernel : compute_cov_kernel_scalar;
+    speed_cov_row_fn kernel = s->cov_row ? s->cov_row : speed_cov_row_scalar;
     /* Same struct-literal fallback as the covariance kernel above. */
     speed_matmul_fn matmul = s->matmul ? s->matmul : speed_matmul_scalar;
     compute_covariance_matrix(dim, data, s->buffers.cov_mat, s->buffers.eigenvalues, stride_px,
@@ -1192,20 +1232,24 @@ static int speed_alloc_buffers(SpeedState *s, const SpeedDimensions *dim, size_t
 
 static void speed_dispatch_cpu_kernel(SpeedState *s)
 {
-    s->compute_cov_kernel = compute_cov_kernel_scalar;
+    s->cov_row = speed_cov_row_scalar;
     s->matmul = speed_matmul_scalar;
 #if ARCH_X86
     unsigned flags = vmaf_get_cpu_flags();
     if (flags & VMAF_X86_CPU_FLAG_AVX2) {
-        s->compute_cov_kernel = compute_cov_kernel_avx2;
+        s->cov_row = speed_cov_row_avx2;
         s->matmul = speed_matmul_avx2;
     }
 #if HAVE_AVX512
     if (flags & VMAF_X86_CPU_FLAG_AVX512) {
-        s->compute_cov_kernel = compute_cov_kernel_avx512;
+        s->cov_row = speed_cov_row_avx512;
         s->matmul = speed_matmul_avx512;
     }
 #endif
+#endif
+#if ARCH_AARCH64
+    if (vmaf_get_cpu_flags() & VMAF_ARM_CPU_FLAG_NEON)
+        s->cov_row = speed_cov_row_neon;
 #endif
 }
 

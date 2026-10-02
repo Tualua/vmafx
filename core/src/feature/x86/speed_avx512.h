@@ -23,7 +23,9 @@
 
 #include <stddef.h>
 
-double compute_cov_kernel_avx512(const float *data_x, const float *data_y, size_t stride_px,
-                                 size_t height, size_t width, double mean_x, double mean_y);
+/* speed_cov_row_fn for AVX-512: see ../speed_cov.h for the contract. */
+void speed_cov_row_avx512(const float *data_x, const float *data_y, size_t stride_px, size_t height,
+                          size_t width, double mean_x, const double *mean_y, size_t count,
+                          double *sums);
 
 #endif /* X86_AVX512_SPEED_H_ */

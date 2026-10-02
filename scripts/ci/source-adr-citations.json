@@ -410,7 +410,6 @@
         "core/test/test_psnr_hvs_avx2.c": 2,
         "core/test/test_psnr_hvs_neon.c": 1,
         "core/test/test_psnr_hvs_simd.c": 4,
-        "core/test/test_speed_simd.c": 1,
         "core/test/test_vif_simd.c": 1,
         "scripts/ci/check-adr-links.py": 1,
         "scripts/ci/cross_backend_parity_gate.py": 2,
@@ -445,7 +444,6 @@
         "core/test/test_cambi_stage_simd.c": 1,
         "core/test/test_integer_cambi_sycl.c": 1,
         "core/test/test_motion_avx512_parity.c": 1,
-        "core/test/test_speed_simd.c": 1,
         "scripts/perf/ir-diff-config.yaml": 1
       },
       "target": "0139-ssim-simd-bitexact-double.md"
@@ -9262,6 +9260,19 @@
         "scripts/ci/exact_twins.d/float_adm.hip": 1
       },
       "target": "1458-hip-float-adm-cpu-arithmetic.md"
+    },
+    "1459": {
+      "sites": {
+        "core/src/feature/arm64/speed_neon.c": 1,
+        "core/src/feature/speed.c": 1,
+        "core/src/feature/speed_cov.h": 1,
+        "core/src/feature/x86/speed_avx2.c": 1,
+        "core/src/feature/x86/speed_avx512.c": 1,
+        "core/src/meson.build": 1,
+        "core/test/meson.build": 1,
+        "core/test/test_speed_simd.c": 1
+      },
+      "target": "1459-speed-cov-kernel-exact.md"
     },
     "1460": {
       "sites": {
