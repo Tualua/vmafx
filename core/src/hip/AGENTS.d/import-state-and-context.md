@@ -1,0 +1,42 @@
+---
+paths:
+  - core/src/libvmaf.c
+  - core/src/hip/common.c
+  - core/include/libvmaf/libvmaf_hip.h
+invariant: vmaf_hip_import_state lives in libvmaf.c and HIP state lifetime is caller-owned mirroring SYCL and Metal.
+---
+# HIP State Import and Context Lifetime
+
+## Rebase-sensitive invariants (import-state — ADR-0519)
+
+- **`vmaf_hip_import_state` lives in `core/src/libvmaf.c`, not in
+  `core/src/hip/common.c`** (fork-local, ADR-0519). Function needs
+  `VmafContext` field-level access; placing it next to CUDA / SYCL /
+  Metal `_import_state` twins keeps borrowed-state implementations in
+  one TU.
+  Do NOT re-introduce copy of function in `hip/common.c` —
+  duplicate-symbol link error is obvious failure mode, but more
+  insidious one is divergent behaviour between two definitions. On
+  rebase: if upstream port adds HIP-related function to
+  `libvmaf.c`, leave `vmaf_hip_import_state` block intact next to
+  its SYCL / Metal siblings.
+- **`VmafContext::hip` substruct is appended after `metal`**
+  (fork-local, ADR-0519). `hip` struct holds single
+  `VmafHipState *state` pointer gated by `#ifdef HAVE_HIP`.
+  Intentionally appended at end of GPU-backend substructs so
+  CPU-only / CUDA-only / etc. builds see no offset shifts. On
+  rebase: if upstream reorders file-private VmafContext definition,
+  keep HIP block at end. Keep its `#ifdef HAVE_HIP` guard exactly
+  aligned with public-header include block at top of file.
+- **HIP state lifetime mirrors SYCL / Metal, not CUDA**
+  (fork-local, ADR-0519). `vmaf_close` clears `vmaf->hip.state =
+  NULL` without freeing underlying state — caller owns state, frees
+  it via `vmaf_hip_state_free()` only after `vmaf_close()` returns exactly 0.
+  Every nonzero close retains context and borrowed state for retry. This
+  deliberately differs from CUDA twin's by-value copy semantics,
+  which historically grew ownership-transfer ambiguity newer
+  backends avoid. On rebase: if upstream changes CUDA twin's
+  ownership model, do NOT propagate change to HIP without ADR —
+  pointer-stash contract is load-bearing for caller-owned
+  `VmafHipState` lifetime documented in
+  `core/include/libvmaf/libvmaf_hip.h`.

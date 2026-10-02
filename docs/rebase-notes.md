@@ -58477,3 +58477,14 @@ ADR-1403 unchanged.
 - No Netflix golden-data, public C API or FFmpeg patch impact. Stored
   `float_ssim_sycl` scores change only on frames whose mean lies next to a
   `float` rounding boundary, by one `float` step.
+
+## ADR-1454 — `core/src/hip/AGENTS.md` is a generated index over `AGENTS.d/` pages (2026-10-02)
+
+`docs/agents-index-hip-runtime`, `T-AGENTS-INDEX-MIGRATION-2026-10-02`.
+
+- No rebase impact from upstream: an upstream sync never touches an
+  `AGENTS.md` or an `AGENTS.d/`.
+- Fork branches that append to `core/src/hip/AGENTS.md` conflict once: take
+  `core/src/hip/AGENTS.md` from master, put the new rule into a new or matching
+  page under `core/src/hip/AGENTS.d/`, run `make docs-fragments-write`.
+- No Netflix golden-data, public API or FFmpeg patch impact.
