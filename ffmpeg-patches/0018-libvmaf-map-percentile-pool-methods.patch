@@ -34,10 +34,10 @@ index 3534c87c9be9374db14189a28324cf95efc4b576..f3131824804ac8a1b21c864e9d0eca3a
  @item n_threads
  Set number of threads to be used when initializing libvmaf.
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index f6a0d4cb73ba62fa1936738bb1b82749ea45b6ac..17f2a4ef29d6b207efde8147f0749c7aea1cb88d 100644
+index bd77f147838a537680018599b6c6bba47f10ee57..16342211d20be85cb28003882f4b70250310a30a 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
-@@ -956,6 +956,7 @@ static enum VmafPoolingMethod pool_method_map(const char *pool_method)
+@@ -1027,6 +1027,7 @@ static enum VmafPoolingMethod pool_method_map(const char *pool_method)
              return VMAF_POOL_METHOD_MEAN;
          if (!strcmp(pool_method, "harmonic_mean"))
              return VMAF_POOL_METHOD_HARMONIC_MEAN;
@@ -45,7 +45,7 @@ index f6a0d4cb73ba62fa1936738bb1b82749ea45b6ac..17f2a4ef29d6b207efde8147f0749c7a
          if (!strcmp(pool_method, "median"))
              return VMAF_POOL_METHOD_MEDIAN;
          if (!strcmp(pool_method, "perc5"))
-@@ -964,6 +965,7 @@ static enum VmafPoolingMethod pool_method_map(const char *pool_method)
+@@ -1035,6 +1036,7 @@ static enum VmafPoolingMethod pool_method_map(const char *pool_method)
              return VMAF_POOL_METHOD_PERC10;
          if (!strcmp(pool_method, "perc20"))
              return VMAF_POOL_METHOD_PERC20;

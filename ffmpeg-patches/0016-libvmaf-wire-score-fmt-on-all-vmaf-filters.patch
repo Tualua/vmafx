@@ -28,10 +28,10 @@ Covers:
  1 file changed, 26 insertions(+), 4 deletions(-)
 
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 52a192f936cebd72491870dafd93ac0a9a65f5b9..95a944ae92ea3049ea8a8ce01784d8aaaa06b143 100644
+index f2fae507b6a8e7c86836fa3d890747b6629168be..ce29efb80dbf0bdd6afae8a87ca2260c6b92d5f1 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
-@@ -122,6 +122,13 @@ typedef struct LIBVMAFContext {
+@@ -123,6 +123,13 @@ typedef struct LIBVMAFContext {
  #if CONFIG_LIBVMAF_METAL
      VmafMetalState *metal_state;        /* owned by the libvmaf filter when metal_device >= -1 + !default-disabled */
  #endif
@@ -45,7 +45,7 @@ index 52a192f936cebd72491870dafd93ac0a9a65f5b9..95a944ae92ea3049ea8a8ce01784d8aa
      /* ADR-0576: VmafConfiguration.cpumask / gpumask exposed as AVOptions.
       * cpumask bits selectively disable SIMD ISAs (SSE2/NEON=1, SSE3=2,
       * SSE4.1=4, AVX2=8, AVX512=16, AVX512ICL=32).  gpumask bit 0 (value 1)
-@@ -162,6 +169,7 @@ static const AVOption libvmaf_options[] = {
+@@ -163,6 +170,7 @@ static const AVOption libvmaf_options[] = {
      {"metal_device", "Metal device index (-2 = disabled, -1 = system default, 0+ = MTLCopyAllDevices ordinal).", OFFSET(metal_device), AV_OPT_TYPE_INT, {.i64=-2}, -2, INT_MAX, FLAGS},
      {"cpumask",      "Bitmask to disable SIMD ISAs (1=SSE2/NEON 2=SSE3 4=SSE4.1 8=AVX2 16=AVX512 32=AVX512ICL; 0=all enabled).", OFFSET(cpumask), AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, FLAGS},
      {"gpumask",      "Bitmask to disable GPU dispatch (1=disable CUDA; 0=all enabled).", OFFSET(gpumask),  AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, FLAGS},
@@ -53,7 +53,7 @@ index 52a192f936cebd72491870dafd93ac0a9a65f5b9..95a944ae92ea3049ea8a8ce01784d8aa
      { NULL }
  };
  
-@@ -950,7 +958,9 @@ static av_cold void uninit(AVFilterContext *ctx)
+@@ -1021,7 +1029,9 @@ static av_cold void uninit(AVFilterContext *ctx)
  
      if (s->vmaf) {
          if (s->log_path && !err)
@@ -64,7 +64,7 @@ index 52a192f936cebd72491870dafd93ac0a9a65f5b9..95a944ae92ea3049ea8a8ce01784d8aa
      }
  
  clean_up:
-@@ -1256,6 +1266,8 @@ static const AVOption libvmaf_sycl_options[] = {
+@@ -1327,6 +1337,8 @@ static const AVOption libvmaf_sycl_options[] = {
                    OFFSET(cpumask), AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, SYCL_FLAGS},
      {"gpumask",   "Bitmask to disable GPU dispatch (1=disable CUDA; 0=all enabled).",
                    OFFSET(gpumask),  AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, SYCL_FLAGS},
@@ -73,7 +73,7 @@ index 52a192f936cebd72491870dafd93ac0a9a65f5b9..95a944ae92ea3049ea8a8ce01784d8aa
      { NULL }
  };
  #undef SYCL_FLAGS
-@@ -1424,7 +1436,9 @@ static av_cold void uninit_sycl(AVFilterContext *ctx)
+@@ -1495,7 +1507,9 @@ static av_cold void uninit_sycl(AVFilterContext *ctx)
  
      if (s->vmaf) {
          if (s->log_path && !err)
@@ -84,7 +84,7 @@ index 52a192f936cebd72491870dafd93ac0a9a65f5b9..95a944ae92ea3049ea8a8ce01784d8aa
      }
  
      if (s->sycl_profile && s->sycl_state) {
-@@ -1610,6 +1624,8 @@ static const AVOption libvmaf_vulkan_options[] = {
+@@ -1690,6 +1704,8 @@ static const AVOption libvmaf_vulkan_options[] = {
                    OFFSET(cpumask), AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, VK_FLAGS},
      {"gpumask",   "Bitmask to disable GPU dispatch (1=disable CUDA; 0=all enabled).",
                    OFFSET(gpumask),  AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, VK_FLAGS},
@@ -93,7 +93,7 @@ index 52a192f936cebd72491870dafd93ac0a9a65f5b9..95a944ae92ea3049ea8a8ce01784d8aa
      { NULL }
  };
  #undef VK_FLAGS
-@@ -1718,7 +1734,9 @@ static av_cold void uninit_vulkan(AVFilterContext *ctx)
+@@ -1798,7 +1814,9 @@ static av_cold void uninit_vulkan(AVFilterContext *ctx)
      }
  
      if (s->vmaf && s->log_path && !err)
@@ -104,7 +104,7 @@ index 52a192f936cebd72491870dafd93ac0a9a65f5b9..95a944ae92ea3049ea8a8ce01784d8aa
  
  clean_up:
      if (s->model) {
-@@ -1895,6 +1913,8 @@ static const AVOption libvmaf_metal_options[] = {
+@@ -1975,6 +1993,8 @@ static const AVOption libvmaf_metal_options[] = {
                    OFFSET(cpumask), AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, MTL_FLAGS},
      {"gpumask",   "Bitmask to disable GPU dispatch (1=disable CUDA; 0=all enabled).",
                    OFFSET(gpumask),  AV_OPT_TYPE_INT64, {.i64=0}, 0, INT64_MAX, MTL_FLAGS},
@@ -113,7 +113,7 @@ index 52a192f936cebd72491870dafd93ac0a9a65f5b9..95a944ae92ea3049ea8a8ce01784d8aa
      { NULL }
  };
  #undef MTL_FLAGS
-@@ -2013,7 +2033,9 @@ static av_cold void uninit_metal(AVFilterContext *ctx)
+@@ -2093,7 +2113,9 @@ static av_cold void uninit_metal(AVFilterContext *ctx)
      }
  
      if (s->vmaf && s->log_path && !err)

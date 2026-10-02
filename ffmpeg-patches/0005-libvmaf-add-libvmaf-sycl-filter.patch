@@ -37,8 +37,8 @@ baseline).
  configure                |   5 +
  libavfilter/Makefile     |   1 +
  libavfilter/allfilters.c |   1 +
- libavfilter/vf_libvmaf.c | 368 +++++++++++++++++++++++++++++++++++++++
- 4 files changed, 375 insertions(+)
+ libavfilter/vf_libvmaf.c | 450 ++++++++++++++++++++++++++++++++++++++-
+ 4 files changed, 456 insertions(+), 1 deletion(-)
 
 diff --git a/configure b/configure
 index f804911e5b4f4df75754af3e7672236a21dd3033..144b458cab359fc271d96402bb16ecc51d79e3b0 100755
@@ -102,7 +102,7 @@ index 71723329049141015ec849b51635004675df0ac6..ac7f3f4d849ceeaa5fadd773e1f4999b
  extern const FFFilter ff_vf_limiter;
  extern const FFFilter ff_vf_loop;
 diff --git a/libavfilter/vf_libvmaf.c b/libavfilter/vf_libvmaf.c
-index 3529b485ac6b427e3d0b9e3de2462708a6846bff..275e47243b96320116e5a290e6c54ffd7acd7307 100644
+index 3529b485ac6b427e3d0b9e3de2462708a6846bff..d5b46c07a2a278c33715b25747dc6f3e2ec4c9bc 100644
 --- a/libavfilter/vf_libvmaf.c
 +++ b/libavfilter/vf_libvmaf.c
 @@ -51,6 +51,11 @@
@@ -117,17 +117,104 @@ index 3529b485ac6b427e3d0b9e3de2462708a6846bff..275e47243b96320116e5a290e6c54ffd
  #if CONFIG_LIBVMAF_VULKAN
  #include <libvmaf/libvmaf_vulkan.h>
  #endif
-@@ -73,6 +78,9 @@ typedef struct LIBVMAFContext {
+@@ -73,6 +78,10 @@ typedef struct LIBVMAFContext {
      int   sycl_profile;
  #if CONFIG_LIBVMAF_SYCL
      VmafSyclState *sycl_state;
 +#endif
 +#if CONFIG_LIBVMAF_SYCL_FILTER
 +    void *va_display;
++    int   route_twins;
  #endif
      int   vulkan_device;
  #if CONFIG_LIBVMAF_VULKAN
-@@ -717,10 +725,20 @@ static enum VmafPoolingMethod pool_method_map(const char *pool_method)
+@@ -281,6 +290,76 @@ fail:
+     return NULL;
+ }
+ 
++#if CONFIG_LIBVMAF_SYCL_FILTER
++/*
++ * Resolve a feature= name to the SYCL twin of a CPU extractor
++ * (vmaf_feature_backend_twin) before registering it. A feature without a
++ * usable twin is a configuration error on zero-copy input (the frames have no
++ * host pictures, a CPU extractor cannot run) and a warning plus CPU fallback
++ * on host-upload input.
++ */
++static int use_feature_sycl(AVFilterContext *ctx, LIBVMAFContext *s,
++                            const char *name, VmafFeatureDictionary *opts)
++{
++    VmafPictureConfiguration pc = {
++        .pic_params = {
++            .w = ctx->inputs[0]->w,
++            .h = ctx->inputs[0]->h,
++            .bpc = s->bpc,
++            .pix_fmt = VMAF_PIX_FMT_YUV420P,
++        },
++    };
++    const char *twin = NULL, *bad_opt = NULL;
++    char reason[192];
++    int st = vmaf_feature_backend_twin(s->vmaf, name, opts, &pc, &twin, &bad_opt);
++
++    if (st == 0 && twin) {
++        av_log(ctx, AV_LOG_INFO, "libvmaf_sycl: feature '%s' -> %s\n", name, twin);
++        return vmaf_use_feature(s->vmaf, twin, opts);
++    }
++    if (st == -EINVAL) {
++        /* Already a twin name, or not a CPU extractor: libvmaf reports it. */
++        return vmaf_use_feature(s->vmaf, name, opts);
++    }
++
++    if (st == -ENOENT)
++        snprintf(reason, sizeof(reason), "no SYCL twin");
++    else if (st == -ENOTSUP && bad_opt)
++        snprintf(reason, sizeof(reason),
++                 "SYCL twin %s cannot honour option '%s'", twin ? twin : name, bad_opt);
++    else if (st == -ENOTSUP)
++        snprintf(reason, sizeof(reason),
++                 "SYCL twin %s cannot run %dx%d %u-bit pictures with these options",
++                 twin ? twin : name, ctx->inputs[0]->w, ctx->inputs[0]->h, s->bpc);
++    else if (st == -ENODEV)
++        snprintf(reason, sizeof(reason), "no SYCL device");
++    else
++        snprintf(reason, sizeof(reason), "twin lookup failed (error %d)", st);
++
++    if (s->va_display) {
++        av_log(ctx, AV_LOG_ERROR,
++               "libvmaf_sycl: feature '%s' cannot run on zero-copy input: %s\n",
++               name, reason);
++        vmaf_feature_dictionary_free(&opts);
++        return AVERROR(ENOTSUP);
++    }
++    av_log(ctx, AV_LOG_WARNING,
++           "libvmaf_sycl: warning: feature '%s': %s; computing it on the CPU\n",
++           name, reason);
++    return vmaf_use_feature(s->vmaf, name, opts);
++}
++#endif
++
++static int use_feature(AVFilterContext *ctx, LIBVMAFContext *s,
++                       const char *name, VmafFeatureDictionary *opts)
++{
++#if CONFIG_LIBVMAF_SYCL_FILTER
++    if (s->route_twins && name)
++        return use_feature_sycl(ctx, s, name, opts);
++#endif
++    return vmaf_use_feature(s->vmaf, name, opts);
++}
++
+ static int parse_features(AVFilterContext *ctx)
+ {
+     LIBVMAFContext *s = ctx->priv;
+@@ -319,7 +398,7 @@ static int parse_features(AVFilterContext *ctx)
+             }
+         }
+ 
+-        err = vmaf_use_feature(s->vmaf, feature_name, feature_opts_dict);
++        err = use_feature(ctx, s, feature_name, feature_opts_dict);
+         if (err) {
+             av_log(ctx, AV_LOG_ERROR,
+                    "problem during vmaf_use_feature: %s\n", feature_name);
+@@ -717,10 +796,20 @@ static enum VmafPoolingMethod pool_method_map(const char *pool_method)
      if (pool_method) {
          if (!strcmp(pool_method, "min"))
              return VMAF_POOL_METHOD_MIN;
@@ -148,7 +235,7 @@ index 3529b485ac6b427e3d0b9e3de2462708a6846bff..275e47243b96320116e5a290e6c54ffd
      }
  
      return VMAF_POOL_METHOD_MEAN;
-@@ -1015,3 +1033,353 @@ const FFFilter ff_vf_libvmaf_cuda = {
+@@ -1015,3 +1104,362 @@ const FFFilter ff_vf_libvmaf_cuda = {
      .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
  };
  #endif
@@ -224,20 +311,20 @@ index 3529b485ac6b427e3d0b9e3de2462708a6846bff..275e47243b96320116e5a290e6c54ffd
 +                                           ref_surface, 1,
 +                                           ref->width, ref->height, s->bpc);
 +        if (ret) {
-+            av_log(ctx, AV_LOG_WARNING,
-+                   "vmaf_sycl_import_va_surface (ref) failed: %d "
-+                   "(VA surface may have been freed by decoder) — skipping frame\n", ret);
-+            return ff_filter_frame(ctx->outputs[0], dist);
++            av_log(ctx, AV_LOG_ERROR,
++                   "vmaf_sycl_import_va_surface (ref) failed: %d; "
++                   "aborting because a skipped frame would change the pooled score\n", ret);
++            return AVERROR_EXTERNAL;
 +        }
 +
 +        ret = vmaf_sycl_import_va_surface(s->sycl_state, s->va_display,
 +                                           dist_surface, 0,
 +                                           dist->width, dist->height, s->bpc);
 +        if (ret) {
-+            av_log(ctx, AV_LOG_WARNING,
-+                   "vmaf_sycl_import_va_surface (dist) failed: %d "
-+                   "(VA surface may have been freed by decoder) — skipping frame\n", ret);
-+            return ff_filter_frame(ctx->outputs[0], dist);
++            av_log(ctx, AV_LOG_ERROR,
++                   "vmaf_sycl_import_va_surface (dist) failed: %d; "
++                   "aborting because a skipped frame would change the pooled score\n", ret);
++            return AVERROR_EXTERNAL;
 +        }
 +
 +        // Submit frame for SYCL VMAF compute (non-blocking)
@@ -407,6 +494,14 @@ index 3529b485ac6b427e3d0b9e3de2462708a6846bff..275e47243b96320116e5a290e6c54ffd
 +            s->va_display = display_handle;
 +        }
 +
++        if (frames_ctx->sw_format != AV_PIX_FMT_NV12 &&
++            frames_ctx->sw_format != AV_PIX_FMT_P010) {
++            av_log(ctx, AV_LOG_ERROR,
++                   "libvmaf_sycl: QSV zero-copy supports NV12 and P010 surfaces only, got %s\n",
++                   av_get_pix_fmt_name(frames_ctx->sw_format));
++            return AVERROR(ENOTSUP);
++        }
++
 +        desc = av_pix_fmt_desc_get(frames_ctx->sw_format);
 +        s->bpc = desc->comp[0].depth;
 +        av_log(ctx, AV_LOG_INFO,
@@ -471,6 +566,7 @@ index 3529b485ac6b427e3d0b9e3de2462708a6846bff..275e47243b96320116e5a290e6c54ffd
 +    if (err)
 +        return err;
 +
++    s->route_twins = 1;
 +    err = parse_features(ctx);
 +    if (err)
 +        return err;
