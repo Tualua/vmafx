@@ -181,43 +181,40 @@ static char *test_luma_only_twin_scores(void)
 }
 
 /* One row per SYCL extractor configuration. expect is 0 (scores on zero-copy input) or
- * -ENOTSUP (needs host pictures). pending_sweep_b marks a row whose extractor still reads
- * host pictures or stale chroma and is fixed by plan 12-03; it is reported as
- * [expected-fail until 12-03] and does not count as a failure. */
+ * -ENOTSUP (needs host pictures). */
 typedef struct {
     const char *name;
     const char *opt_key;
     const char *opt_val;
     unsigned bpc;
     int expect;
-    int pending_sweep_b;
     const char *score; /* checked at frame 1 when expect == 0 */
 } GuardRow;
 
 static const GuardRow guard_rows[] = {
-    {"adm_sycl", NULL, NULL, 8u, 0, 0, "VMAF_integer_feature_adm2_score"},
-    {"cambi_sycl", NULL, NULL, 8u, 0, 0, "Cambi_feature_cambi_score"},
-    {"float_moment_sycl", NULL, NULL, 8u, 0, 0, "float_moment_ref1st"},
-    {"motion_sycl", NULL, NULL, 8u, 0, 0, "VMAF_integer_feature_motion2_score"},
-    {"motion_v2_sycl", NULL, NULL, 8u, 0, 0, "VMAF_integer_feature_motion2_v2_score"},
-    {"vif_sycl", NULL, NULL, 8u, 0, 0, VIF_SCORE},
-    {"psnr_sycl", "enable_chroma", "false", 8u, 0, 0, "psnr_y"},
-    {"psnr_hvs_sycl", "enable_chroma", "false", 8u, 0, 0, "psnr_hvs_y"},
-    {"float_ms_ssim_sycl", NULL, NULL, 8u, -ENOTSUP, 0, NULL},
-    {"float_psnr_sycl", NULL, NULL, 8u, -ENOTSUP, 0, NULL},
-    {"float_psnr_sycl", NULL, NULL, 10u, -ENOTSUP, 0, NULL},
-    {"float_adm_sycl", NULL, NULL, 8u, -ENOTSUP, 0, NULL},
-    {"float_vif_sycl", NULL, NULL, 8u, -ENOTSUP, 0, NULL},
-    {"float_motion_sycl", NULL, NULL, 8u, -ENOTSUP, 0, NULL},
-    {"integer_ssim_sycl", NULL, NULL, 8u, -ENOTSUP, 0, NULL},
-    {"float_ssim_sycl", NULL, NULL, 8u, -ENOTSUP, 0, NULL},
-    {"ciede_sycl", NULL, NULL, 8u, -ENOTSUP, 1, NULL},
-    {"ssimulacra2_sycl", NULL, NULL, 8u, -ENOTSUP, 1, NULL},
-    {"speed_chroma_sycl", NULL, NULL, 8u, -ENOTSUP, 1, NULL},
-    {"speed_temporal_sycl", NULL, NULL, 8u, -ENOTSUP, 1, NULL},
-    {"psnr_sycl", NULL, NULL, 8u, -ENOTSUP, 1, NULL},
-    {"psnr_hvs_sycl", NULL, NULL, 8u, -ENOTSUP, 1, NULL},
-    {"motion_sycl", "motion_add_uv", "true", 8u, -ENOTSUP, 1, NULL},
+    {"adm_sycl", NULL, NULL, 8u, 0, "VMAF_integer_feature_adm2_score"},
+    {"cambi_sycl", NULL, NULL, 8u, 0, "Cambi_feature_cambi_score"},
+    {"float_moment_sycl", NULL, NULL, 8u, 0, "float_moment_ref1st"},
+    {"motion_sycl", NULL, NULL, 8u, 0, "VMAF_integer_feature_motion2_score"},
+    {"motion_v2_sycl", NULL, NULL, 8u, 0, "VMAF_integer_feature_motion2_v2_score"},
+    {"vif_sycl", NULL, NULL, 8u, 0, VIF_SCORE},
+    {"psnr_sycl", "enable_chroma", "false", 8u, 0, "psnr_y"},
+    {"psnr_hvs_sycl", "enable_chroma", "false", 8u, 0, "psnr_hvs_y"},
+    {"float_ms_ssim_sycl", NULL, NULL, 8u, -ENOTSUP, NULL},
+    {"float_psnr_sycl", NULL, NULL, 8u, -ENOTSUP, NULL},
+    {"float_psnr_sycl", NULL, NULL, 10u, -ENOTSUP, NULL},
+    {"float_adm_sycl", NULL, NULL, 8u, -ENOTSUP, NULL},
+    {"float_vif_sycl", NULL, NULL, 8u, -ENOTSUP, NULL},
+    {"float_motion_sycl", NULL, NULL, 8u, -ENOTSUP, NULL},
+    {"integer_ssim_sycl", NULL, NULL, 8u, -ENOTSUP, NULL},
+    {"float_ssim_sycl", NULL, NULL, 8u, -ENOTSUP, NULL},
+    {"ciede_sycl", NULL, NULL, 8u, -ENOTSUP, NULL},
+    {"ssimulacra2_sycl", NULL, NULL, 8u, -ENOTSUP, NULL},
+    {"speed_chroma_sycl", NULL, NULL, 8u, -ENOTSUP, NULL},
+    {"speed_temporal_sycl", NULL, NULL, 8u, -ENOTSUP, NULL},
+    {"psnr_sycl", NULL, NULL, 8u, -ENOTSUP, NULL},
+    {"psnr_hvs_sycl", NULL, NULL, 8u, -ENOTSUP, NULL},
+    {"motion_sycl", "motion_add_uv", "true", 8u, -ENOTSUP, NULL},
 };
 #define N_GUARD_ROWS ((unsigned)(sizeof(guard_rows) / sizeof(guard_rows[0])))
 
@@ -314,10 +311,9 @@ static char *test_guard_table(void)
     for (unsigned i = 0; i < N_GUARD_ROWS; i++) {
         const GuardRow *row = &guard_rows[i];
         const char *msg = guard_check_row(row);
-        (void)fprintf(stderr, "  guard %-20s bpc=%-2u %s%s%s\n", row->name, row->bpc,
-                      msg ? "FAIL: " : "ok", msg ? msg : "",
-                      msg && row->pending_sweep_b ? " [expected-fail until 12-03]" : "");
-        failed += (msg && !row->pending_sweep_b) ? 1u : 0u;
+        (void)fprintf(stderr, "  guard %-20s bpc=%-2u %s%s\n", row->name, row->bpc,
+                      msg ? "FAIL: " : "ok", msg ? msg : "");
+        failed += msg ? 1u : 0u;
     }
     mu_assert("a zero-copy guard row failed (see the log above)", failed == 0u);
     return NULL;
