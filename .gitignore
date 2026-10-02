@@ -24,6 +24,7 @@ __pycache__/
 build/
 build-golden/
 core/build-golden/
+core/build-golden-arm64-*/
 dist/
 # praetor commits its figure player bundle under tools/figures/dist/ (praetorctl
 # adopt, docs:seo-portal) and audit hashes it, so that one dist/ stays tracked.

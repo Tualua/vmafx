@@ -196,6 +196,16 @@ linked AGENTS.md before resolving conflicts.
   ([ADR-1452](../adr/1452-hip-speed-chroma-log2f-bound.md): 13 of 990 values
   on a gfx1036); the fixture and the comparison of both tests are
   `core/test/speed_chroma_twin_parity.h`.
+- **No C or C++ translation unit is built with FP contraction ([ADR-1461](../adr/1461-strict-fp-every-translation-unit.md))**:
+  `core/src/meson.build` declares `vmaf_strict_fp_args` as a project argument
+  for C and C++ directly after the `VMAF strict FP compiler-argument policy`
+  block, above the first build target. Keep both there on a rebase (Meson
+  refuses `add_project_arguments()` after a target), and never give a target
+  `vmaf_fp_model_args` alone or any flag that turns contraction back on.
+  `core/test/test_strict_fp_compiler_args.py` reads the compile database of
+  the build it runs in; `make test-netflix-golden-arm64` runs the golden gate
+  on an aarch64 cross build, where a clang build and a GCC build used to
+  differ. See [core/AGENTS.md](../../core/AGENTS.md).
 - **SYCL strict FP line on every feature TU ([ADR-1367](../adr/1367-sycl-strict-fp-every-feature-tu.md))**:
   `core/src/meson.build` defines `sycl_strict_fp_args` once, between the
   `BEGIN/END VMAF SYCL strict FP policy` markers: icpx gets

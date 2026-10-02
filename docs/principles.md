@@ -202,6 +202,13 @@ scores are hardcoded `assertAlmostEqual` assertions in `python/test/` (primarily
 They run in CI as a required status check on every PR. They are not run as a pre-commit
 hook because their runtime is longer than the acceptable pre-commit latency budget.
 
+`make test-netflix-golden` runs them against an isolated native build
+([ADR-1317](adr/1317-golden-gate-build-isolation.md)).
+`make test-netflix-golden-arm64` runs the same assertions against an aarch64
+cross build under qemu-user, with GCC or clang
+([ADR-1461](adr/1461-strict-fp-every-translation-unit.md),
+[ARM backend guide](backends/arm/overview.md#running-the-golden-gate-for-aarch64-on-an-x86-host)).
+
 Fork-added tests (SYCL, CUDA, SIMD snapshots, performance benchmarks) live in separate
 files and directories, and must not modify or override Netflix golden behavior.
 

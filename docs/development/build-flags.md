@@ -115,6 +115,24 @@ the emitted artifact, so they belong in the build-time surface.
 | `prefix` | `/usr/local` | Install prefix for `ninja install` |
 | `pkg_config_path` | (system) | Useful when linking against a non-system ONNX Runtime for `enable_dnn` |
 
+## Floating-point contraction is off everywhere
+
+`core/src/meson.build` passes the strict floating-point policy
+(`vmaf_strict_fp_args`: `-ffp-contract=off` for GCC and clang,
+`-fp-model=precise -ffp-contract=off` for icx, `/fp:precise` for MSVC) as a
+project argument to every C and C++ compile command
+([ADR-1461](../adr/1461-strict-fp-every-translation-unit.md)). The compiler
+never fuses `a * b + c` on its own, so a GCC build and a clang build, and an
+x86-64 build and an aarch64 build, round the same expressions the same way.
+Code that wants a fused multiply-add calls the intrinsic or `fma()`.
+
+Do not undo it from the command line or in a target: `-Dc_args=-ffp-contract=fast`,
+`-ffast-math` or, with icx, a trailing `-fp-model=precise` change scores.
+`test_strict_fp_compiler_args` (in the `fast` suite) reads the compile
+commands of the build it runs in and fails when a C or C++ command does not
+end its floating-point flags on the strict one. The device compilers (nvcc,
+hipcc, icpx for SYCL kernels) have their own lists with the same effect.
+
 ## Recommended configurations
 
 ```bash

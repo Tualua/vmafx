@@ -28,6 +28,67 @@ vmaf_cflags_common = cc.get_supported_arguments([
     '-DVMAF_BUILDING_LIBVMAF',
 ]
 
+# ADR-1461: no C or C++ translation unit is built with floating-point
+# contraction. The strict policy below is a project argument, so every target
+# the C and C++ compilers build takes it: the libraries, the tools and the
+# tests, whatever flag list a target names. (The device compilers have their
+# own lists: cuda_device_strict_fp_args, sycl_strict_fp_args, the HIP flags.)
+#
+# Why project-wide: clang's default is -ffp-contract=on and GCC's C++ default
+# is fast, so wherever the target has a fused multiply-add they fused
+# `a * b + c`, each in its own places. On aarch64 an ordinary clang build and
+# an ordinary GCC build returned different scores, and both differed from an
+# x86-64 build, whose baseline has no such instruction. The libraries below
+# that name vmaf_strict_fp_args were carved out one at a time as a test or a
+# lane failed; they keep the name, which costs nothing and says why a kernel
+# depends on it.
+#
+# A fused multiply-add the arithmetic wants is spelled in the source (an
+# intrinsic, fma() / fmaf()); the flag does not touch those.
+#
+# ORDER: a target's own arguments follow the project arguments, so a target
+# must not name anything that turns contraction back on. Under icx that
+# includes vmaf_fp_model_args alone: `-fp-model=precise` implies
+# -ffp-contract=on (measured, see the x86 SIMD note below). A target that
+# needs the model names vmaf_strict_fp_args.
+# core/test/test_strict_fp_compiler_args.py pins all of it.
+#
+# This must stay above the first build target: Meson refuses
+# add_project_arguments() after one is declared.
+# BEGIN VMAF strict FP compiler-argument policy
+# Keep the value-safety model separate from the no-contraction policy: the
+# ordinary x86 libraries need the former under Intel LLVM, while only the
+# bit-exact carve-outs need both. The Windows-compatible Intel driver accepts
+# MSVC-style options; it warns and ignores the Unix spellings.
+_strict_fp_compiler_id = cc.get_id()
+vmaf_fp_model_args = []
+vmaf_strict_fp_args = ['-ffp-contract=off']
+vmaf_cuda_host_strict_fp_args = ['-Xcompiler=-ffp-contract=off']
+if host_machine.system() == 'windows'
+    # nvcc's Windows host compiler is cl.exe even when another driver builds
+    # libvmaf, so forward the native MSVC spelling rather than a Unix option.
+    vmaf_cuda_host_strict_fp_args = ['-Xcompiler=/fp:precise']
+endif
+if _strict_fp_compiler_id == 'intel-llvm'
+    vmaf_fp_model_args = ['-fp-model=precise']
+    # ORDER IS LOAD-BEARING: precise first, contraction-off last.
+    vmaf_strict_fp_args = vmaf_fp_model_args + ['-ffp-contract=off']
+elif _strict_fp_compiler_id == 'intel-llvm-cl'
+    vmaf_fp_model_args = ['/fp:precise']
+    # Intel's Windows driver has no -ffp-contract option. /Qfma- is the
+    # documented separate-rounding equivalent for AVX2-or-newer targets.
+    vmaf_strict_fp_args = vmaf_fp_model_args + ['/Qfma-']
+elif _strict_fp_compiler_id == 'msvc'
+    # Since Visual Studio 2022, /fp:precise leaves contraction disabled unless
+    # /fp:contract is explicitly requested.
+    vmaf_strict_fp_args = ['/fp:precise']
+elif _strict_fp_compiler_id == 'clang-cl'
+    # clang-cl requires Clang-only options to cross its MSVC-compatible driver.
+    vmaf_strict_fp_args = ['/clang:-ffp-contract=off']
+endif
+# END VMAF strict FP compiler-argument policy
+add_project_arguments(vmaf_strict_fp_args, language : ['c', 'cpp'])
+
 
 cdata = configuration_data()
 cdata_asm = configuration_data()
@@ -783,39 +844,6 @@ libvmaf_cpu_static_lib = static_library(
 )
 
 platform_specific_cpu_objects = []
-
-# BEGIN VMAF strict FP compiler-argument policy
-# Keep the value-safety model separate from the no-contraction policy: the
-# ordinary x86 libraries need the former under Intel LLVM, while only the
-# bit-exact carve-outs need both. The Windows-compatible Intel driver accepts
-# MSVC-style options; it warns and ignores the Unix spellings.
-_strict_fp_compiler_id = cc.get_id()
-vmaf_fp_model_args = []
-vmaf_strict_fp_args = ['-ffp-contract=off']
-vmaf_cuda_host_strict_fp_args = ['-Xcompiler=-ffp-contract=off']
-if host_machine.system() == 'windows'
-    # nvcc's Windows host compiler is cl.exe even when another driver builds
-    # libvmaf, so forward the native MSVC spelling rather than a Unix option.
-    vmaf_cuda_host_strict_fp_args = ['-Xcompiler=/fp:precise']
-endif
-if _strict_fp_compiler_id == 'intel-llvm'
-    vmaf_fp_model_args = ['-fp-model=precise']
-    # ORDER IS LOAD-BEARING: precise first, contraction-off last.
-    vmaf_strict_fp_args = vmaf_fp_model_args + ['-ffp-contract=off']
-elif _strict_fp_compiler_id == 'intel-llvm-cl'
-    vmaf_fp_model_args = ['/fp:precise']
-    # Intel's Windows driver has no -ffp-contract option. /Qfma- is the
-    # documented separate-rounding equivalent for AVX2-or-newer targets.
-    vmaf_strict_fp_args = vmaf_fp_model_args + ['/Qfma-']
-elif _strict_fp_compiler_id == 'msvc'
-    # Since Visual Studio 2022, /fp:precise leaves contraction disabled unless
-    # /fp:contract is explicitly requested.
-    vmaf_strict_fp_args = ['/fp:precise']
-elif _strict_fp_compiler_id == 'clang-cl'
-    # clang-cl requires Clang-only options to cross its MSVC-compatible driver.
-    vmaf_strict_fp_args = ['/clang:-ffp-contract=off']
-endif
-# END VMAF strict FP compiler-argument policy
 
 if is_asm_enabled
     if host_machine.cpu_family().startswith('arm64') or host_machine.cpu_family().startswith('aarch64')
@@ -2401,7 +2429,7 @@ libvmaf_feature_static_lib = static_library(
     # without each having to list the generated TU separately.
     libvmaf_feature_sources + brisque_model_c_sources + hip_sources + hip_hsaco_sources + metal_sources,
     include_directories : [libvmaf_include, vmaf_include, cuda_dir],
-    c_args : vmaf_cflags_common + vmaf_fp_model_args,
+    c_args : vmaf_cflags_common,
     cpp_args : vmaf_cppflags_common,
     dependencies: [stdatomic_dependency, pthread_dependency, cuda_dependency, sycl_dependency, hip_deps, metal_deps],
     objects: [common_cuda_objects, common_sycl_objects, sycl_feature_objects,

@@ -61,6 +61,8 @@ endif
 test('test_strict_fp_compiler_args',
     import('python').find_installation(),
     args : files('test_strict_fp_compiler_args.py'),
+    # ADR-1461: the test also reads this build's compile_commands.json.
+    env : ['VMAF_STRICT_FP_BUILD_ROOT=' + meson.project_build_root()],
     suite : ['fast'],
     timeout : 90,
 )
@@ -1627,14 +1629,15 @@ test_speed_frame_buffers = executable('test_speed_frame_buffers',
 # (T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30): resampling with the table
 # in the scale kernel's operation order must equal vif_scale_frame_s() bit for
 # bit. Device-free, so it runs on every lane; same link recipe and float gate
-# as test_speed. vmaf_fp_model_args keeps Intel LLVM's default fast model from
-# reordering the replayed sums, as it does for the library.
+# as test_speed. The project-wide strict FP policy (ADR-1461) keeps Intel
+# LLVM's default fast model from reordering the replayed sums, as it does for
+# the library.
 test_speed_lanczos4_weights = executable('test_speed_lanczos4_weights',
     ['test.c', 'test_speed_lanczos4_weights.c', '../src/mem.cpp', '../src/picture.c',
      '../src/ref.cpp', '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
-    c_args : vmaf_cflags_common + vmaf_fp_model_args + dnn_defines,
+    c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
                     dnn_deps],
     objects : [
@@ -1659,7 +1662,7 @@ test_speed_filter = executable('test_speed_filter',
      '../src/ref.cpp', '../src/dict.cpp',
      '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp', dnn_sources],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
-    c_args : vmaf_cflags_common + vmaf_fp_model_args + dnn_defines,
+    c_args : vmaf_cflags_common + dnn_defines,
     dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib, predict_test_dependencies,
                     dnn_deps],
     objects : [
@@ -4550,9 +4553,9 @@ if not is_sycl_acpp
         ['test.c', 'test_sycl_fp_arith_contract.c'] + sycl_fp_arith_probe_objects,
         include_directories : [test_inc],
         dependencies : [math_lib, sycl_dependency],
-        # The host references are single fp64 operations rounded once; they only
-        # need icx's fast model (reciprocal division) turned off.
-        c_args : vmaf_fp_model_args,
+        # The host references are single fp64 operations rounded once; the
+        # project-wide strict policy (ADR-1461) already turns icx's fast model
+        # (reciprocal division) off.
         link_language : 'cpp',
     )
     test('test_sycl_fp_arith_contract', test_sycl_fp_arith_contract,
@@ -5693,10 +5696,10 @@ test_hip_fp_arith_contract = executable('test_hip_fp_arith_contract',
      hip_fp_arith_probe_hsaco_c],
     include_directories : [test_inc],
     dependencies : [math_lib, hip_deps],
-    # The host references are single fp64 operations rounded once; they only
-    # need icx's fast model (reciprocal division) turned off.
-    c_args : vmaf_fp_model_args + ['-DFP_ARITH_PROBE=vmaf_test_hip_fp_arith',
-                                   '-DFP_ARITH_DEVICE="HIP"'],
+    # The host references are single fp64 operations rounded once; the
+    # project-wide strict policy (ADR-1461) already turns icx's fast model
+    # (reciprocal division) off.
+    c_args : ['-DFP_ARITH_PROBE=vmaf_test_hip_fp_arith', '-DFP_ARITH_DEVICE="HIP"'],
 )
 test('test_hip_fp_arith_contract', test_hip_fp_arith_contract,
     suite : ['fast', 'gpu'],

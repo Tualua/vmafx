@@ -33,7 +33,10 @@ metal_objcpp_args = [
     '-fobjc-arc',
     '-fno-objc-arc-exceptions',
     '-fobjc-weak',
-]
+] + vmaf_strict_fp_args
+# vmaf_strict_fp_args (ADR-1461): the project-wide no-contraction argument
+# covers C and C++; the Obj-C++ host wrappers score on the host too, and on
+# Apple Silicon clang would fuse `a * b + c` there.
 
 # Separate static_library for the Obj-C++ TUs — `objcpp_args` is set
 # per-target, avoiding the `add_project_arguments` ordering trap.

@@ -1571,6 +1571,7 @@ nav:
         - "ADR-1458: hip-float-adm-cpu-arithmetic": adr/1458-hip-float-adm-cpu-arithmetic.md
         - "ADR-1459: speed-cov-kernel-exact": adr/1459-speed-cov-kernel-exact.md
         - "ADR-1460: gate-speed-temporal-and-uncovered-twins": adr/1460-gate-speed-temporal-and-uncovered-twins.md
+        - "ADR-1461: strict-fp-every-translation-unit": adr/1461-strict-fp-every-translation-unit.md
         - "ADR-1462: cuda-vif-reads-host-log2-table": adr/1462-cuda-vif-reads-host-log2-table.md
         - "ADR-1468: sycl-sub-group-sizes-every-aot-target": adr/1468-sycl-sub-group-sizes-every-aot-target.md
       - "By tag":
@@ -1669,6 +1670,7 @@ nav:
         - "ci": adr/by-tag/ci.md
         - "ciede": adr/by-tag/ciede.md
         - "clang-tidy": adr/by-tag/clang-tidy.md
+        - "clang": adr/by-tag/clang.md
         - "claude-hook": adr/by-tag/claude-hook.md
         - "claude-rule": adr/by-tag/claude-rule.md
         - "claude": adr/by-tag/claude.md
@@ -1810,6 +1812,7 @@ nav:
         - "fx": adr/by-tag/fx.md
         - "gate": adr/by-tag/gate.md
         - "gates": adr/by-tag/gates.md
+        - "gcc": adr/by-tag/gcc.md
         - "gcovr": adr/by-tag/gcovr.md
         - "git-hooks": adr/by-tag/git-hooks.md
         - "git": adr/by-tag/git.md

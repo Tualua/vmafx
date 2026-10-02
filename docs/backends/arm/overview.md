@@ -116,13 +116,72 @@ natively with the ARM64-hosted MSVC toolset on `windows-11-vs2026-arm` and
 runs the meson `fast` suite there
 ([ADR-1260](../../adr/1260-windows-arm64-cpu-lane.md)). It is advisory.
 MSVC gets `/fp:precise` where GCC and clang get `-ffp-contract=off`
-(`arm64_strict_fp_args` in `core/src/meson.build`); the SVE2 sister TUs are
+(`vmaf_strict_fp_args` in `core/src/meson.build`); the SVE2 sister TUs are
 not built by MSVC, which has no `<arm_sve.h>`, and the SVE2 runtime probe is
 Linux-only, so a Windows build dispatches NEON.
 
 `make test-netflix-golden` runs on aarch64 in the same matrix and
 must remain green — see [`docs/principles.md`](../../principles.md)
 § 8 (Netflix golden gate).
+
+## GCC and clang builds return the same scores
+
+A fused multiply-add is a baseline instruction on aarch64, and a compiler may
+use it for `a * b + c` on its own, which rounds once where the source rounds
+twice. clang does that by default and GCC does it for C++, each in different
+places, so until 2026-10-02 an aarch64 clang build and an aarch64 GCC build of
+this library returned different scores: on 680 of 3355 measured values
+(17 extractors and the default model on the Netflix 576x324 pair at 8 and 10
+bits, both 1080p checkerboard pairs and 4 frames of BBB 3840x2160), by up to
+6.2e-5 for `speed_chroma` and 3.5e-5 for a `float_vif` scale.
+
+Every C and C++ file of the library, the tools and the tests is now built
+without contraction ([ADR-1461](../../adr/1461-strict-fp-every-translation-unit.md)).
+The two builds agree on 3350 of the same 3355 values (five `ciede2000` values
+differ by up to 1.1e-12, as they do between the two compilers on x86-64), and
+the aarch64 GCC build agrees with an x86-64 GCC build on all but seven
+`psnr_hvs` values (an open defect of the NEON kernel,
+`T-PSNR-HVS-NEON-NOT-SCALAR-BITS-2026-10-02` in
+[`docs/state.md`](../../state.md)). A build made before that date differs
+from a current one by the amounts above; x86-64 builds did not change. Kernels
+that want a fused multiply-add ask for it in the source and still get it.
+
+## Running the golden gate for aarch64 on an x86 host
+
+```bash
+make test-netflix-golden-arm64                         # aarch64 GCC
+make test-netflix-golden-arm64 GOLDEN_ARM64_CC=clang   # aarch64 clang
+```
+
+The target cross-builds the `vmaf` tool with the golden gate's build profile
+into `core/build-golden-arm64-<compiler>` and runs the same Python assertions
+as `make test-netflix-golden` against it. The harness executes the aarch64
+binary like a native one: the kernel's `binfmt_misc` handler passes it to
+`qemu-aarch64`, which loads it against the aarch64 C library under
+`QEMU_LD_PREFIX` (default `/usr/aarch64-linux-gnu`).
+
+It needs a cross compiler (`aarch64-linux-gnu-gcc`, or clang with lld and the
+cross binutils), the aarch64 C library and a registered, enabled
+`qemu-aarch64` handler. On Arch Linux those are the packages
+`aarch64-linux-gnu-gcc`, `aarch64-linux-gnu-glibc`, `qemu-user-static` and
+`qemu-user-static-binfmt`; on Debian and Ubuntu `gcc-aarch64-linux-gnu`,
+`g++-aarch64-linux-gnu`, `libc6-arm64-cross`, `qemu-user-static` and
+`binfmt-support` (the Debian names were not checked on a Debian host). The
+target stops with one line per missing piece before it configures anything.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `GOLDEN_ARM64_CC` | `gcc` | `gcc` or `clang` |
+| `GOLDEN_ARM64_CROSS_FILE` | `build-aux/aarch64-linux-gnu.ini`, `-clang.ini` for clang | Meson cross file. The clang file names the Arch sysroot layout; another distribution needs its own copy |
+| `GOLDEN_ARM64_BUILD_DIR` | `core/build-golden-arm64-$(GOLDEN_ARM64_CC)` | Build directory, one per compiler |
+| `QEMU_LD_PREFIX` | `$(AARCH64_SYSROOT)` = `/usr/aarch64-linux-gnu` | Where qemu finds the aarch64 loader and C library |
+
+Emulation checks numbers, not speed. Emulated NEON takes the same code path
+and gives the same bits as hardware, but its timing says nothing about a real
+core, and the run takes about two hours on a busy 32-thread host where the
+native gate takes four minutes. On 2026-10-02 the gate's tests gave 271
+passed and 12 skipped against aarch64 GCC 16.1 and against aarch64 clang
+22.1.8 builds, the same counts as the x86-64 gate.
 
 ## Limitations
 

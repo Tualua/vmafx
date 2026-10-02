@@ -4,14 +4,20 @@
 """Lock strict floating-point flags to each compiler's argument syntax.
 
 Covers the host policy (C / SIMD / CUDA host), since ADR-1367 the SYCL device
-policy (the one flag line every SYCL feature TU and the SYCL link get), and
-since ADR-1403 the CUDA device policy: the one flag list every CUDA fatbin
-gets, with no per-kernel copy or exception.
+policy (the one flag line every SYCL feature TU and the SYCL link get), since
+ADR-1403 the CUDA device policy: the one flag list every CUDA fatbin gets,
+with no per-kernel copy or exception, and since ADR-1461 the project-wide
+floor: the host policy is a project argument, no target turns contraction back
+on after it, and the compile commands of the build this test runs in end on
+the strict flag for every C and C++ translation unit.
 """
 
 from __future__ import annotations
 
 import importlib.util
+import json
+import os
+import re
 import shutil
 import subprocess
 import sys
@@ -22,10 +28,14 @@ from pathlib import Path
 
 SOURCE_MESON = Path(__file__).resolve().parents[1] / "src" / "meson.build"
 TEST_MESON = Path(__file__).resolve().with_name("meson.build")
+TOOLS_MESON = Path(__file__).resolve().parents[1] / "tools" / "meson.build"
+METAL_MESON = Path(__file__).resolve().parents[1] / "src" / "metal" / "meson.build"
 POLICY_BEGIN = "# BEGIN VMAF strict FP compiler-argument policy"
 POLICY_END = "# END VMAF strict FP compiler-argument policy"
 SYCL_POLICY_BEGIN = "# BEGIN VMAF SYCL strict FP policy"
 SYCL_POLICY_END = "# END VMAF SYCL strict FP policy"
+# The policy block's last statement: _meson_code() strips the END marker.
+POLICY_END_CODE = "vmaf_strict_fp_args = ['/clang:-ffp-contract=off']"
 CUDA_POLICY_BEGIN = "# BEGIN VMAF CUDA device strict FP policy"
 CUDA_POLICY_END = "# END VMAF CUDA device strict FP policy"
 
@@ -126,6 +136,111 @@ STRICT_TARGETS = (
     "libvmaf_ssimulacra2_static_lib",
     "libvmaf_y_funque_plus_static_lib",
 )
+
+
+# ADR-1461: the host policy applied to every C and C++ translation unit.
+PROJECT_ARGUMENT = "add_project_arguments(vmaf_strict_fp_args, language : ['c', 'cpp'])"
+FIRST_TARGET = re.compile(r"\b(?:static_library|shared_library|both_libraries|library|executable)\(")
+# Anything in a target's own list that would decide contraction after the
+# project argument. vmaf_fp_model_args is on it because icx's
+# `-fp-model=precise` implies -ffp-contract=on.
+CONTRACTION_WORDS = (
+    "vmaf_fp_model_args",
+    "-ffp-contract=on",
+    "-ffp-contract=fast",
+    "-ffast-math",
+    "-Ofast",
+    "-fp-model=fast",
+    "/fp:fast",
+    "/fp:contract",
+    "/Qfma'",
+)
+# Every flag on a compile command that sets the contraction state, in order.
+FP_FLAG = re.compile(
+    r"(?<![\w/=.-])(/clang:-ffp-contract=\w+|-ffp-contract=\w+|-fp-model[= ]\w+"
+    r"|-ffast-math|-Ofast|/fp:\w+|/Qfma-?)(?![\w-])"
+)
+# What a strict command must end its FP flags with, per compiler id. MSVC's
+# /fp:precise is also its default, so a command without any FP flag would
+# still be strict there; it is required anyway, the policy is explicit.
+STRICT_LAST_FLAG = {
+    "gcc": "-ffp-contract=off",
+    "clang": "-ffp-contract=off",
+    "intel-llvm": "-ffp-contract=off",
+    "msvc": "/fp:precise",
+    "intel-llvm-cl": "/Qfma-",
+    "clang-cl": "/clang:-ffp-contract=off",
+}
+C_FAMILY_SUFFIXES = (".c", ".cc", ".cpp", ".cxx")
+# Set by the test() call in core/test/meson.build.
+BUILD_ROOT_ENV = "VMAF_STRICT_FP_BUILD_ROOT"
+
+
+def _project_floor_failures(source: str, tests: str, tools: str, metal: str) -> list[str]:
+    """ADR-1461: one project argument, above the first target, never undone."""
+    failures: list[str] = []
+    code = _meson_code(source)
+    if code.count(PROJECT_ARGUMENT) != 1:
+        return ["the strict policy is not the project argument for C and C++, exactly once"]
+    floor = code.index(PROJECT_ARGUMENT)
+    if floor < code.index(POLICY_END_CODE):
+        failures.append("the project argument precedes the policy that defines it")
+    first_target = FIRST_TARGET.search(code)
+    if first_target is None or first_target.start() < floor:
+        failures.append("a build target is declared above the project argument")
+    policy_end = code.index(POLICY_END_CODE)
+    after = {
+        "core/src/meson.build": code[policy_end:],
+        "core/test/meson.build": _meson_code(tests),
+        "core/tools/meson.build": _meson_code(tools),
+    }
+    for name, text in after.items():
+        for word in CONTRACTION_WORDS:
+            if word in text:
+                failures.append(f"{name} names {word} outside the policy block")
+    if "] + vmaf_strict_fp_args" not in _meson_code(metal):
+        failures.append("the Metal Obj-C++ arguments do not take vmaf_strict_fp_args")
+    return failures
+
+
+def _command_fp_failure(command: str, compiler_id: str) -> str:
+    """Why `command` is not a strict compile command, or the empty string."""
+    wanted = STRICT_LAST_FLAG[compiler_id]
+    flags = [match.group(1) for match in FP_FLAG.finditer(command)]
+    if wanted not in flags:
+        return f"{wanted} is missing"
+    if flags[-1] != wanted:
+        return f"{flags[-1]} follows {wanted}"
+    return ""
+
+
+def _build_fp_failures(build_root: Path, source_root: Path) -> list[str] | None:
+    """Check the compile database of a configured build; None when there is none."""
+    database = build_root / "compile_commands.json"
+    compilers = build_root / "meson-info" / "intro-compilers.json"
+    if not database.is_file() or not compilers.is_file():
+        return None
+    compiler_id = json.loads(compilers.read_text(encoding="utf-8"))["host"]["c"]["id"]
+    if compiler_id not in STRICT_LAST_FLAG:
+        return None
+    failures: list[str] = []
+    checked = 0
+    for entry in json.loads(database.read_text(encoding="utf-8")):
+        source = Path(entry["directory"], entry["file"]).resolve()
+        if source.suffix not in C_FAMILY_SUFFIXES or "subprojects" in source.parts:
+            continue
+        command = entry.get("command") or " ".join(entry.get("arguments", []))
+        checked += 1
+        why = _command_fp_failure(command, compiler_id)
+        if why:
+            try:
+                shown = source.relative_to(source_root)
+            except ValueError:
+                shown = source
+            failures.append(f"{shown}: {why}")
+    if checked == 0:
+        failures.append("the compile database holds no C or C++ translation unit")
+    return failures
 
 
 def _meson_command() -> list[str]:
@@ -273,6 +388,97 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
 
         tests = TEST_MESON.read_text(encoding="utf-8")
         self.assertIn("_simd_strict_fp_args = vmaf_strict_fp_args", tests)
+
+    def test_strict_policy_is_the_project_floor(self) -> None:
+        self.assertEqual(self._floor_failures(SOURCE_MESON.read_text(encoding="utf-8")), [])
+
+    def _floor_failures(self, source: str, tests: str | None = None) -> list[str]:
+        return _project_floor_failures(
+            source,
+            TEST_MESON.read_text(encoding="utf-8") if tests is None else tests,
+            TOOLS_MESON.read_text(encoding="utf-8"),
+            METAL_MESON.read_text(encoding="utf-8"),
+        )
+
+    def test_missing_or_misplaced_project_floor_is_detected(self) -> None:
+        source = SOURCE_MESON.read_text(encoding="utf-8")
+        removed = source.replace(PROJECT_ARGUMENT, "", 1)
+        self.assertTrue(any("exactly once" in item for item in self._floor_failures(removed)))
+        # Moved below the first library: Meson would refuse it at configure
+        # time, and before that this check does.
+        first = FIRST_TARGET.search(_meson_code(removed))
+        assert first is not None
+        anchor = _meson_code(removed)[first.start() : first.start() + 40]
+        position = removed.index(anchor) + len(anchor)
+        late = removed[:position] + "\n" + PROJECT_ARGUMENT + "\n" + removed[position:]
+        self.assertTrue(any("above the project argument" in item for item in self._floor_failures(late)))
+
+    def test_target_that_undoes_the_floor_is_detected(self) -> None:
+        source = SOURCE_MESON.read_text(encoding="utf-8")
+        tests = TEST_MESON.read_text(encoding="utf-8")
+        # The pre-ADR-1461 feature library: the model after the common flags.
+        planted = source.replace(
+            "    c_args : vmaf_cflags_common,\n    cpp_args : vmaf_cppflags_common,\n",
+            "    c_args : vmaf_cflags_common + vmaf_fp_model_args,\n"
+            "    cpp_args : vmaf_cppflags_common,\n",
+            1,
+        )
+        self.assertNotEqual(planted, source)
+        self.assertTrue(any("vmaf_fp_model_args" in item for item in self._floor_failures(planted)))
+        for word in ("'-ffp-contract=fast'", "'-ffast-math'", "'/fp:fast'"):
+            with self.subTest(word=word):
+                edited = tests + f"\nplanted_args = [{word}]\n"
+                failures = self._floor_failures(source, edited)
+                self.assertTrue(any("core/test/meson.build" in item for item in failures), failures)
+        # A comment naming the words is prose, not a flag.
+        self.assertEqual(self._floor_failures(source, tests + "\n# -ffast-math\n"), [])
+
+    def test_compile_command_fp_flags_are_read_in_order(self) -> None:
+        base = "cc -Isrc -std=c23 -O3 -D_GNU_SOURCE {} -o x.o -c x.c"
+        # positive: the flag alone, twice, and after an Intel model
+        for compiler_id, flags in (
+            ("gcc", "-ffp-contract=off"),
+            ("clang", "-ffp-contract=off -mavx2 -mfma -ffp-contract=off"),
+            ("intel-llvm", "-fp-model=precise -ffp-contract=off"),
+            ("msvc", "/fp:precise"),
+            ("intel-llvm-cl", "/fp:precise /Qfma-"),
+            ("clang-cl", "/clang:-ffp-contract=off"),
+        ):
+            with self.subTest(compiler_id=compiler_id, flags=flags):
+                self.assertEqual(_command_fp_failure(base.format(flags), compiler_id), "")
+        # negative: absent, undone by a later flag, and the icx order hazard
+        for compiler_id, flags, why in (
+            ("gcc", "", "is missing"),
+            ("clang", "-ffp-contract=off -ffp-contract=fast", "follows"),
+            ("clang", "-ffp-contract=off -ffast-math", "follows"),
+            ("intel-llvm", "-fp-model=precise -ffp-contract=off -fp-model=precise", "follows"),
+            ("intel-llvm-cl", "/Qfma- /fp:precise", "follows"),
+            ("clang-cl", "-ffp-contract=off", "is missing"),
+        ):
+            with self.subTest(compiler_id=compiler_id, flags=flags):
+                self.assertIn(why, _command_fp_failure(base.format(flags), compiler_id))
+        # boundary: a path or a define that only contains a flag's spelling
+        self.assertIn(
+            "is missing",
+            _command_fp_failure(base.format("-DNOTE=x-ffp-contract=off -Idir/-ffp-contract=off"), "gcc"),
+        )
+
+    def test_this_build_compiles_every_c_and_cpp_unit_without_contraction(self) -> None:
+        # core/test/meson.build hands the build directory to the test.
+        build_root = os.environ.get(BUILD_ROOT_ENV)
+        if not build_root:
+            self.skipTest(f"{BUILD_ROOT_ENV} is not set: no build directory to read")
+        failures = _build_fp_failures(Path(build_root), SOURCE_MESON.parents[1])
+        # Told where the build is, the test must find something to check.
+        self.assertIsNotNone(failures, f"no compile database for a known compiler in {build_root}")
+        assert failures is not None
+        self.assertEqual(failures[:20], [], f"{len(failures)} translation units")
+
+    def test_meson_hands_the_build_directory_to_this_test(self) -> None:
+        tests = _meson_code(TEST_MESON.read_text(encoding="utf-8"))
+        registration = tests[tests.index("test('test_strict_fp_compiler_args'") :]
+        registration = registration[: registration.index("\n)") + 2]
+        self.assertIn(f"'{BUILD_ROOT_ENV}=' + meson.project_build_root()", registration)
 
     @unittest.skipUnless(MESON_COMMAND, "Meson is not installed")
     def test_cuda_device_policy_executes_per_compiler(self) -> None:

@@ -39,6 +39,37 @@
   are rows of the new matrix).
 - No Netflix golden-data, public API or FFmpeg patch impact. Scores are
   unchanged on x86 and on an aarch64 GCC build.
+## ADR-1461 — the strict FP policy is a project argument; the golden gate runs for aarch64 (2026-10-02)
+
+`fix/aarch64-clang-fp-contract`, closes `T-AARCH64-CLANG-FP-CONTRACT-FEATURE-LIB-2026-10-02`.
+
+- `core/src/meson.build`: the `VMAF strict FP compiler-argument policy` block
+  moved from below `libvmaf_cpu_static_lib` to the top of the file, and
+  `add_project_arguments(vmaf_strict_fp_args, language : ['c', 'cpp'])`
+  follows it. **On rebase**: both stay above the first build target (Meson
+  rejects the call after one), and upstream build changes that add a target
+  need nothing: the argument reaches it. `libvmaf_feature_static_lib` takes
+  `vmaf_cflags_common` alone; do not restore `+ vmaf_fp_model_args` there or
+  on any target (under icx it follows the project argument and turns
+  contraction back on).
+- `core/src/metal/meson.build`: `metal_objcpp_args` ends with
+  `vmaf_strict_fp_args` (project arguments cover C and C++, not Obj-C++). Not
+  built on this host.
+- `core/test/meson.build`: four test executables drop `vmaf_fp_model_args`.
+- `core/test/test_strict_fp_compiler_args.py` checks the placement, scans
+  `core/src`, `core/test` and `core/tools` for a target-level flag that undoes
+  the policy, and under `meson test` reads the build's `compile_commands.json`.
+- `Makefile`: `test-netflix-golden-arm64` and `build-golden-arm64`
+  (`GOLDEN_ARM64_CC`, `GOLDEN_ARM64_CROSS_FILE`, `GOLDEN_ARM64_BUILD_DIR`,
+  `QEMU_LD_PREFIX`); both golden targets share `GOLDEN_PYTEST_ARGS`.
+  `scripts/ci/setup-golden-build.sh` takes `GOLDEN_CROSS_FILE`;
+  `scripts/ci/golden-arm64-preflight.sh` and
+  `build-aux/aarch64-linux-gnu-clang.ini` are new. Fork-only files.
+- Scores: x86-64 unchanged (same machine code with GCC). aarch64 clang builds
+  move by up to 6.2e-5 (`speed_chroma`), 3.5e-5 (`float_vif`), 2.3e-2
+  (`speed_temporal` on a checkerboard); aarch64 GCC builds by 1.2e-12 in the
+  model score. No Netflix golden assertion, public API or FFmpeg patch
+  changes.
 
 ## The CLI read-ahead asserts its invariants (2026-10-02)
 

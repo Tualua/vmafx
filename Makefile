@@ -47,10 +47,15 @@ LIBVMAF_DIR := core
 BUILD_DIR := $(LIBVMAF_DIR)/build
 DEBUG_DIR := $(LIBVMAF_DIR)/debug
 GOLDEN_BUILD_DIR ?= $(LIBVMAF_DIR)/build-golden
+# The aarch64 golden gate on an x86 host (ADR-1461): `gcc` or `clang`, each in
+# its own build directory, cross-built and run through qemu-user.
+GOLDEN_ARM64_CC ?= gcc
+GOLDEN_ARM64_CROSS_FILE ?= build-aux/aarch64-linux-gnu$(if $(filter clang,$(GOLDEN_ARM64_CC)),-clang).ini
+GOLDEN_ARM64_BUILD_DIR ?= $(LIBVMAF_DIR)/build-golden-arm64-$(GOLDEN_ARM64_CC)
 
 .PHONY: default all debug build install cythonize clean distclean cythonize-deps \
     go-build go-test go-fix go-fix-check go-ort-runner rust-build rust-test setup-envtest setup-envtest-env \
-    build-golden
+    build-golden build-golden-arm64
 
 default: build
 
@@ -64,6 +69,14 @@ $(DEBUG_DIR): $(MESON) $(NINJA)
 
 build-golden: $(MESON) $(NINJA)
 	PATH="$(VIRTUAL_ENV_ABS):$$PATH" bash scripts/ci/setup-golden-build.sh $(GOLDEN_BUILD_DIR) $(LIBVMAF_DIR) $(NINJA)
+
+# The same profile cross-built for aarch64; the preflight names what an x86
+# host lacks (cross compiler, sysroot, binfmt handler) before anything is
+# configured.
+build-golden-arm64: $(MESON) $(NINJA)
+	bash scripts/ci/golden-arm64-preflight.sh "$(GOLDEN_ARM64_CC)" "$(GOLDEN_ARM64_CROSS_FILE)" "$(QEMU_LD_PREFIX)"
+	PATH="$(VIRTUAL_ENV_ABS):$$PATH" GOLDEN_CROSS_FILE="$(GOLDEN_ARM64_CROSS_FILE)" \
+	    bash scripts/ci/setup-golden-build.sh $(GOLDEN_ARM64_BUILD_DIR) $(LIBVMAF_DIR) $(NINJA)
 
 cythonize: cythonize-deps
 	pushd python && "$(VENV_PYTHON)" setup.py build_ext --build-lib . && popd || exit 1
@@ -83,7 +96,7 @@ install: $(BUILD_DIR) $(NINJA)
 	PATH="$(VIRTUAL_ENV_ABS):$$PATH" $(NINJA) -vC $(BUILD_DIR) install
 
 clean:
-	rm -rf $(BUILD_DIR) $(DEBUG_DIR) $(GOLDEN_BUILD_DIR)
+	rm -rf $(BUILD_DIR) $(DEBUG_DIR) $(GOLDEN_BUILD_DIR) $(LIBVMAF_DIR)/build-golden-arm64-gcc $(LIBVMAF_DIR)/build-golden-arm64-clang
 	rm -f compat/python-vmaf/core/adm_dwt2_cy.c*
 
 distclean: clean
@@ -131,7 +144,7 @@ cythonize-deps: $(VENV_PIP)
 	python-locks-check python-locks-write \
 	preflight \
 	format format-check sec sbom \
-        test-netflix-golden test-sanitizers test-fast install-hooks hooks-install help \
+        test-netflix-golden test-netflix-golden-arm64 test-sanitizers test-fast install-hooks hooks-install help \
         coverage coverage-html coverage-check assertion-density pr-check ffmpeg-input-contract \
         silent-revert-check
 
@@ -420,18 +433,37 @@ sbom:
 # Netflix CPU golden-data gate (D24) — the 3 test pairs that MUST pass.
 # Runs the Python tests whose hardcoded CPU scores are the source of truth
 # for VMAF numerical correctness.
+GOLDEN_PYTEST_ARGS := \
+	python/test/quality_runner_test.py \
+	python/test/feature_extractor_test.py \
+	python/test/vmafexec_test.py \
+	python/test/vmafexec_feature_extractor_test.py \
+	python/test/result_test.py \
+	-v -m "not slow" --tb=short
 test-netflix-golden: build-golden
 	@echo "=== Netflix CPU golden-data gate (D24) ==="
 	@python3 -m pytest --version >/dev/null 2>&1 || { \
 	    echo "error: pytest not found — this gate cannot run without it."; \
 	    echo "       install: .venv/bin/pip install pytest (see docs/development/languages.md)"; exit 1; }
 	CUDA_VISIBLE_DEVICES="" VMAF_FORCE_BACKEND=cpu VMAF_BUILD_DIR="$(CURDIR)/$(GOLDEN_BUILD_DIR)" PYTHONPATH=$(CURDIR)/python python3 -m pytest \
-	    python/test/quality_runner_test.py \
-	    python/test/feature_extractor_test.py \
-	    python/test/vmafexec_test.py \
-	    python/test/vmafexec_feature_extractor_test.py \
-	    python/test/result_test.py \
-	    -v -m "not slow" --tb=short
+	    $(GOLDEN_PYTEST_ARGS)
+
+# The same assertions against an aarch64 build on an x86 host (ADR-1461).
+# The harness executes $(GOLDEN_ARM64_BUILD_DIR)/tools/vmaf like a native
+# program: the kernel's binfmt_misc handler runs it under qemu-aarch64, which
+# finds the aarch64 loader and C library under QEMU_LD_PREFIX. This checks
+# numbers, not speed: emulated NEON says nothing about time on hardware, and
+# the run takes about two hours where the native gate takes minutes.
+#   make test-netflix-golden-arm64                         # aarch64 GCC
+#   make test-netflix-golden-arm64 GOLDEN_ARM64_CC=clang   # aarch64 clang
+QEMU_LD_PREFIX ?= $(AARCH64_SYSROOT)
+test-netflix-golden-arm64: build-golden-arm64
+	@echo "=== Netflix CPU golden-data gate, aarch64 $(GOLDEN_ARM64_CC) under qemu-user ==="
+	@python3 -m pytest --version >/dev/null 2>&1 || { \
+	    echo "error: pytest not found — this gate cannot run without it."; \
+	    echo "       install: .venv/bin/pip install pytest (see docs/development/languages.md)"; exit 1; }
+	QEMU_LD_PREFIX="$(QEMU_LD_PREFIX)" CUDA_VISIBLE_DEVICES="" VMAF_FORCE_BACKEND=cpu VMAF_BUILD_DIR="$(CURDIR)/$(GOLDEN_ARM64_BUILD_DIR)" PYTHONPATH=$(CURDIR)/python python3 -m pytest \
+	    $(GOLDEN_PYTEST_ARGS)
 
 # Sanitizer build (ASan + UBSan) — used by CI and `/build-vmaf --sanitizers`.
 test-sanitizers:
@@ -671,6 +703,7 @@ help:
 	@echo "  make pr-check         — ADR-0108 deliverables gate (PR=<num> or BODY=<file>)"
 	@echo "  make silent-revert-check — ADR-1284: work this merge would remove from BASE"
 	@echo "  make test-netflix-golden — D24 gate: 3 Netflix CPU test pairs"
+	@echo "  make test-netflix-golden-arm64 — the same gate on an aarch64 cross build under qemu-user (GOLDEN_ARM64_CC=gcc|clang)"
 	@echo "  make test-sanitizers  — ASan + UBSan build + run"
 	@echo "  make test-fast        — meson --suite=fast (pre-push gate)"
 	@echo "  make coverage         — gcov/lcov line+branch coverage report"

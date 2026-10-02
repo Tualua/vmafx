@@ -8,6 +8,10 @@
 # Prevents floating-point drift caused by oneAPI ICX or non-deterministic
 # compiler optimization settings by enforcing an isolated build directory
 # with an explicitly supported compiler (gcc or clang).
+#
+# GOLDEN_CROSS_FILE=<meson cross file> configures the same profile as a cross
+# build (the aarch64 gate, ADR-1461); the compiler then comes from the cross
+# file and is validated the same way.
 
 set -euo pipefail
 
@@ -61,8 +65,30 @@ BUILD_DIR="${1:-core/build-golden}"
 SOURCE_DIR="${2:-core}"
 NINJA_BIN="${3:-ninja}"
 
+# One profile for the native and the cross gate.
+GOLDEN_MESON_OPTIONS=(
+  --buildtype release
+  -Denable_float=true
+  -Denable_cuda=false
+  -Denable_sycl=false
+  -Denable_hip=false
+  -Denable_dnn=disabled
+  -Denable_tests=false
+  -Denable_docs=false
+)
+
 if [[ -f "${BUILD_DIR}/build.ninja" ]]; then
   # Build directory exists; ensure it was configured with a supported compiler
+  validate_compiler_id "${BUILD_DIR}"
+elif [[ -n "${GOLDEN_CROSS_FILE:-}" ]]; then
+  if [[ ! -f "${GOLDEN_CROSS_FILE}" ]]; then
+    echo "error: cross file GOLDEN_CROSS_FILE='${GOLDEN_CROSS_FILE}' not found" >&2
+    exit 1
+  fi
+  mkdir -p "${BUILD_DIR}"
+  meson setup "${BUILD_DIR}" "${SOURCE_DIR}" --cross-file "${GOLDEN_CROSS_FILE}" \
+    "${GOLDEN_MESON_OPTIONS[@]}"
+
   validate_compiler_id "${BUILD_DIR}"
 else
   # Build directory does not exist or is incomplete; probe supported compiler
@@ -87,14 +113,7 @@ else
 
   mkdir -p "${BUILD_DIR}"
   CC="${CC_TO_USE}" CXX="${CXX_TO_USE}" meson setup "${BUILD_DIR}" "${SOURCE_DIR}" \
-    --buildtype release \
-    -Denable_float=true \
-    -Denable_cuda=false \
-    -Denable_sycl=false \
-    -Denable_hip=false \
-    -Denable_dnn=disabled \
-    -Denable_tests=false \
-    -Denable_docs=false
+    "${GOLDEN_MESON_OPTIONS[@]}"
 
   validate_compiler_id "${BUILD_DIR}"
 fi
