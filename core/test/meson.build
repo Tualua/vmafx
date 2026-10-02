@@ -397,6 +397,15 @@ test('test_float_adm_divides_contract',
     timeout : 30,
 )
 
+# The CLI read-ahead's invariants are assert()s, not early returns: a lint
+# cleanup once replaced all seven after a host-toolchain false positive.
+test('test_cli_frame_reader_asserts_contract',
+    import('python').find_installation(),
+    args : files('test_cli_frame_reader_asserts_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # A default scale=0 is only executable by the GPU float-SSIM twins while the
 # CPU auto-scale resolves to 1. Pin the model-only, first-frame fallback seam
 # and all four backend declarations without requiring an accelerator.

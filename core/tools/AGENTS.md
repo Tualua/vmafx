@@ -450,6 +450,14 @@ step on main thread. Rebase-sensitive rules:
   `preallocate_cli_pictures()` adds exactly `2 * kReadaheadDepth` when
   `state->readahead`. Fetching first and queueing later makes pool use
   unbounded and lets readers starve libvmaf's pictures.
+- `FrameReader` invariants = `assert()` (7: `release_fetched_picture`,
+  `start` x2, `wait_for_free_slot`, `publish`, `next`, `request_stop`). Never
+  swap for early return / folded condition: broken invariant then = silently
+  dropped frame or ended stream. `misc-static-assert` / `cert-dcl03-c` on them
+  = false positive of clang-tidy 22 on glibc 2.44 hosts
+  (`T-TIDY-GLIBC-244-STATIC-ASSERT-FALSE-POSITIVE-2026-10-02`); CI image
+  (glibc 2.39) reports none. Guard:
+  `core/test/test_cli_frame_reader_asserts_contract.py`.
 - Shutdown calls `request_stop()` on BOTH readers before `join()` on either.
   `request_stop()` drains ring back to pool, which is what wakes
   reader blocked in `vmaf_fetch_preallocated_picture()`; joining one reader

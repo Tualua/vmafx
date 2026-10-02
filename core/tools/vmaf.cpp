@@ -25,6 +25,7 @@
  * thread, a bounded number of frames ahead of the scoring loop. */
 
 #include <array>
+#include <cassert>
 #include <climits>
 #include <condition_variable>
 #include <cstdint>
@@ -1484,8 +1485,7 @@ struct FetchedFrame {
 
 void release_fetched_picture(VmafPicture *pic)
 {
-    if (!pic)
-        return;
+    assert(pic != nullptr);
     if (vmaf_picture_unref(pic))
         (void)fprintf(stderr, "\nproblem during vmaf_picture_unref (read-ahead)\n");
 }
@@ -1550,8 +1550,8 @@ namespace
 
 void FrameReader::start()
 {
-    if (threaded_ || thread_.joinable())
-        return;
+    assert(!threaded_);
+    assert(!thread_.joinable());
     try {
         thread_ = std::thread([this] { produce(); });
     } catch (const std::exception &) {
@@ -1581,8 +1581,7 @@ bool FrameReader::wait_for_free_slot()
 {
     std::unique_lock<std::mutex> lock(lock_);
     not_full_.wait(lock, [this] { return stop_ || count_ < kReadaheadDepth; });
-    if (count_ > kReadaheadDepth)
-        return false;
+    assert(count_ <= kReadaheadDepth);
     return !stop_;
 }
 
@@ -1598,7 +1597,8 @@ bool FrameReader::publish(const FetchedFrame &frame)
     bool published = false;
     {
         const std::scoped_lock<std::mutex> lock(lock_);
-        if (!stop_ && count_ < kReadaheadDepth) {
+        if (!stop_) {
+            assert(count_ < kReadaheadDepth);
             slots_[(head_ + count_) % kReadaheadDepth] = frame;
             count_++;
             published = true;
@@ -1629,8 +1629,7 @@ void FrameReader::finish()
  * or stopped) reports end of stream. */
 int FrameReader::next(VmafPicture *pic)
 {
-    if (!pic)
-        return -EINVAL;
+    assert(pic != nullptr);
     if (!threaded_)
         return fetch_picture(vmaf_, vid_, pic, depth_);
     FetchedFrame frame = {.pic = {}, .ret = 1};
@@ -1666,8 +1665,9 @@ void FrameReader::request_stop()
     unsigned n_drained = 0;
     {
         const std::scoped_lock<std::mutex> lock(lock_);
+        assert(count_ <= kReadaheadDepth);
         stop_ = true;
-        for (; count_ > 0 && n_drained < kReadaheadDepth; count_--) {
+        for (; count_ > 0; count_--) {
             drained[n_drained] = slots_[head_];
             n_drained++;
             head_ = (head_ + 1) % kReadaheadDepth;

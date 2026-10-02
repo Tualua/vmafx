@@ -1,6 +1,18 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## The CLI read-ahead asserts its invariants (2026-10-02)
+
+`fix/cli-restore-frame-reader-asserts`, closes `T-CLI-FRAME-READER-ASSERTS-REPLACED-2026-10-02`.
+
+- `core/tools/vmaf.cpp`: `release_fetched_picture()` and `FrameReader`
+  (`start`, `wait_for_free_slot`, `publish`, `next`, `request_stop`) hold seven
+  `assert()`s. A sync or a lint pass must not turn them into early returns;
+  `core/test/test_cli_frame_reader_asserts_contract.py` fails if one goes.
+- A local clang-tidy run on a glibc 2.44 host reports `misc-static-assert` on
+  them (`T-TIDY-GLIBC-244-STATIC-ASSERT-FALSE-POSITIVE-2026-10-02`). Upstream
+  Netflix/vmaf has no `FrameReader`; nothing to keep in step there.
+
 ## The CPU clang-tidy lane brought back to baseline (2026-10-02)
 
 `fix/cpu-tidy-regressions`, closes `T-TIDY-CPU-LANE-ABOVE-BASELINE-2026-10-02`.
