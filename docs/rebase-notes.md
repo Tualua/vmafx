@@ -1,6 +1,20 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## `docs/state.md` uses the RC3 to RC8 labels (ADR-1421, 2026-10-02)
+
+`rc3-ledger-relabel`, closes `T-STATE-LEDGER-RC-RELABEL-2026-10-01`. No rebase impact: ledger labels only.
+
+- A rebase conflict in the disposition table of `docs/state.md` is resolved by
+  `scripts/dev/resolve-state-md-conflict.py`, which keys each row by its bold
+  label. The labels are now `RC3 twin exactness`, `RC5 deduplication`,
+  `RC6 GPU capability source of truth`, `RC7 benchmarks, profiling and tuning`
+  and `RC8 training and model validation`. A branch written before this change
+  that lists an id under "RC3 performance and backend acceleration" or "RC4
+  training and model validation" conflicts there: put the id under the label its
+  row text earns (inexact scores RC3, duplication RC5, capability table RC6,
+  correct scores with throughput or host residuals RC7, training RC8).
+
 ## ADR-1459 — SpEED's covariance kernels are the fork's own and return the scalar kernel's bits (2026-10-02)
 
 `fix/speed-cov-kernel-exact`, closes `T-SPEED-COV-KERNEL-X86-NOT-BIT-EXACT-2026-10-02`.

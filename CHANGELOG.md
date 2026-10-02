@@ -895,6 +895,14 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   `final-oneapi2026` in new scripts (ADR-1368).
 
 
+- `docs/state.md` classifies every open row under the RC3 to RC8 candidate map
+  of ADR-1421 (twin exactness, deduplication, GPU capability table, benchmarks
+  and tuning, training), in place of the two ADR-1352 labels "RC3 performance
+  and backend acceleration" and "RC4 training and model validation". The
+  conflict-resolver guide in `docs/development/ci.md` and the home GPU retest
+  guide name the new labels.
+
+
 - `scripts/dev/resolve-state-md-conflict.py` now resolves a conflicted
   `docs/state.md` by a three-way merge of the merge base and both sides, keyed
   by bug id, instead of letting master's side win. A branch that closes, edits

@@ -465,7 +465,7 @@ index for a conflicted path (`git show :1:docs/state.md` is the merge base,
 | --- | --- | --- |
 | Bug row (first cell opens with an id: `**T-ID**`, `T-ID`, `**T7-16**`, `Netflix#NNN`, `**Netflix/vmaf#NNN**`) | bug id | Its state is its text plus its `##` section. Same on both sides: kept. Changed on one side only: that side wins, so an edit, a move to "Recently closed", or a deletion carries over. Changed differently on both: conflict. |
 | Move tombstone (`<!-- T-ID moved to Recently closed ... -->`) | bug id | Same as a bug row. |
-| Disposition row under "First-release phase classification" (first cell a bold label such as `**RC3 performance ...**`, second cell a `<br>` list of ids) | bold label | Both sides changed it: the id list merges as a set (ours, plus the ids theirs added, minus the ids either side removed; ours' order, theirs' additions after) and every other cell three-way by text. Rows repeating a label on one side are folded into one first, and the resolver says so. |
+| Disposition row under "First-release phase classification" (first cell a bold label such as `**RC7 benchmarks, profiling and tuning**`, second cell a `<br>` list of ids) | bold label | Both sides changed it: the id list merges as a set (ours, plus the ids theirs added, minus the ids either side removed; ours' order, theirs' additions after) and every other cell three-way by text. Rows repeating a label on one side are folded into one first, and the resolver says so. |
 | Anything else (headings, prose, `_Updated` lines) | line text | Line-level three-way. Lines both sides add at the same place are all kept, theirs after ours. A non-blank line both sides added is kept once, which is what a branch stacked on an already squash-merged PR needs. Lines either side deleted go, even where the two deletions overlap. |
 
 The row and tombstone shapes are the ones `check-state-md-rows.sh` recognises,
@@ -494,7 +494,7 @@ and theirs text, and exits 1. Decide which side is right and rerun with one
 ```bash
 python3 scripts/dev/resolve-state-md-conflict.py docs/state.md \
     --take T-FOO-2026-09-30=theirs \
-    --take 'RC3 performance and backend acceleration=ours' \
+    --take 'RC7 benchmarks, profiling and tuning=ours' \
     --take line:468=theirs
 ```
 
