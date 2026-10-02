@@ -18,6 +18,10 @@ things a twin has to copy to return its bits:
 - the CSF weights, the reduced region, the pooling of the band accumulators
   and the 1e-10 floor of the frame sums are the reference's.
 
+The arithmetic is ``feature/float_adm_gpu_common.h``, which ``float_adm_hip``
+runs as well (ADR-1458); ``cuda/float_adm/float_adm_device.h`` gives it the
+spelling of a CUDA device, the ``__fmul_rn()`` family.
+
 Device-free: reads the sources only. Every planted regression below is a
 construct the pre-ADR-1420 twin had, so the contract fails on the old design
 and passes on the new one. ``test_float_adm_device_math`` checks the
@@ -37,7 +41,10 @@ FEATURE_ROOT = ROOT / "core" / "src" / "feature"
 
 HOST = "cuda/float_adm_cuda.c"
 KERNEL = "cuda/float_adm/float_adm_score.cu"
-DEVICE = "cuda/float_adm/float_adm_device.h"
+# The arithmetic, shared with float_adm_hip.
+DEVICE = "float_adm_gpu_common.h"
+# Its spelling for CUDA device code.
+SPELLING = "cuda/float_adm/float_adm_device.h"
 CPU = "adm_tools.c"
 CPU_OPTIONS = "adm_options.h"
 
@@ -55,6 +62,21 @@ FP64_CENTRE = (
 ROW_ACCUMULATION = "inner = FADM_FADD(inner, terms[(size_t)x * stride]);"
 FRAME_ACCUMULATION = "accum = FADM_FADD(accum, rows[y]);"
 HOST_FLOOR = "const double numden_limit = 1e-10 * (w * h) / (1920.0 * 1080.0);"
+# Every rounding of the shared header as an explicit round-to-nearest
+# intrinsic on a CUDA device.
+CUDA_ROUNDING = (
+    "#define FADM_FMUL(a, b) __fmul_rn((a), (b))",
+    "#define FADM_FADD(a, b) __fadd_rn((a), (b))",
+    "#define FADM_FSUB(a, b) __fsub_rn((a), (b))",
+    "#define FADM_FDIV(a, b) __fdiv_rn((a), (b))",
+    "#define FADM_DMUL(a, b) __dmul_rn((a), (b))",
+    "#define FADM_DADD(a, b) __dadd_rn((a), (b))",
+)
+SHARED_INCLUDE = '#include "feature/float_adm_gpu_common.h"'
+# The gain is applied in the positive and in the negative branch.
+GAIN_BRANCHES = 2
+# adm_tools.c's reductions that conclude through adm_pool_bands_s().
+CPU_REDUCTIONS = 4
 
 
 def _code(source: str) -> str:
@@ -65,7 +87,7 @@ def _code(source: str) -> str:
 def _sources() -> dict[str, str]:
     return {
         name: (FEATURE_ROOT / name).read_text(encoding="utf-8")
-        for name in (HOST, KERNEL, DEVICE, CPU, CPU_OPTIONS)
+        for name in (HOST, KERNEL, DEVICE, SPELLING, CPU, CPU_OPTIONS)
     }
 
 
@@ -74,7 +96,7 @@ def _decouple_failures(sources: dict[str, str]) -> list[str]:
     device = _code(sources[DEVICE])
     if ANGLE_THRESHOLD not in device:
         failures.append(f"{DEVICE}: the angle threshold is not (cos^2 * |o|^2) * |t|^2")
-    if device.count(FP64_GAIN) != 2:
+    if device.count(FP64_GAIN) != GAIN_BRANCHES:
         failures.append(f"{DEVICE}: the enhancement gain is no longer applied in fp64")
     if "double adm_enhn_gain_limit;" not in device:
         failures.append(f"{DEVICE}: the kernel argument adm_enhn_gain_limit is not a double")
@@ -144,14 +166,29 @@ def _reference_failures(sources: dict[str, str]) -> list[str]:
     if HOST_FLOOR not in host:
         failures.append(f"{HOST}: the frame sums are not floored at the reference's 1e-10")
     cpu = _code(sources[CPU])
-    if cpu.count("return adm_pool_bands_s(") != 4:
+    if cpu.count("return adm_pool_bands_s(") != CPU_REDUCTIONS:
         failures.append(f"{CPU}: the four reductions no longer conclude through adm_pool_bands_s()")
+    return failures
+
+
+def _spelling_failures(sources: dict[str, str]) -> list[str]:
+    spelling = sources[SPELLING]
+    failures = [
+        f"{SPELLING}: a rounding is not an explicit intrinsic on the device ({line})"
+        for line in CUDA_ROUNDING
+        if line not in spelling
+    ]
+    if SHARED_INCLUDE not in spelling:
+        failures.append(f"{SPELLING}: the arithmetic is no longer the shared header's")
+    if re.search(r"\bFADM_HD\s+\w+\s+\w+\(", _code(spelling)):
+        failures.append(f"{SPELLING}: a copy of the arithmetic next to the shared header")
     return failures
 
 
 def _contract_failures(sources: dict[str, str]) -> list[str]:
     return (
-        _decouple_failures(sources)
+        _spelling_failures(sources)
+        + _decouple_failures(sources)
         + _threshold_failures(sources)
         + _reduction_failures(sources)
         + _reference_failures(sources)
@@ -169,6 +206,21 @@ def _planted(name: str, old: str, new: str) -> list[str]:
 class FloatAdmCudaExactContract(unittest.TestCase):
     def test_sources_satisfy_the_contract(self) -> None:
         self.assertEqual(_contract_failures(_sources()), [])
+
+    def test_plain_operator_on_the_cuda_device_is_detected(self) -> None:
+        failures = _planted(
+            SPELLING,
+            "#define FADM_FMUL(a, b) __fmul_rn((a), (b))",
+            "#define FADM_FMUL(a, b) ((a) * (b))",
+        )
+        self.assertTrue(any("explicit intrinsic" in item for item in failures))
+
+    def test_arithmetic_copied_into_the_cuda_header_is_detected(self) -> None:
+        sources = _sources()
+        sources[SPELLING] += "\nFADM_HD float fadm_divs(float n, float d) { return n / d; }\n"
+        self.assertTrue(
+            any("copy of the arithmetic" in item for item in _contract_failures(sources))
+        )
 
     def test_angle_threshold_association_is_detected(self) -> None:
         # The pre-ADR-1420 `FADM_COS_1DEG_SQ * (o_mag * t_mag)`.

@@ -6,11 +6,13 @@
  */
 
 /*
- * ADR-1420 — device-free replay of the float_adm CUDA kernels against the CPU
- * extractor's own routines.
+ * ADR-1420 — device-free replay of the float_adm CUDA and HIP kernels against
+ * the CPU extractor's own routines.
  *
- * cuda/float_adm/float_adm_device.h holds the arithmetic every thread of the
- * decouple, term and row-sum kernels runs. This test compiles the same header
+ * feature/float_adm_gpu_common.h, included here through the CUDA twin's
+ * cuda/float_adm/float_adm_device.h, holds the arithmetic every thread of the
+ * decouple, term and row-sum kernels of float_adm_cuda and float_adm_hip
+ * (ADR-1458) runs. This test compiles the same header
  * for the host and checks it against adm_tools.c, bit for bit:
  *
  *   - the reference's decouple against the IEEE quotient, on inputs where a

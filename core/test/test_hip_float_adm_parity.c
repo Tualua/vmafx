@@ -6,393 +6,250 @@
  */
 
 /*
- * ADR-0945 round-3 — float_adm CPU vs. HIP parity test.
+ * float_adm CPU vs. HIP parity (first added as a places=4 test, ADR-0945; bit
+ * for bit since ADR-1458).
  *
- * The float-pipeline ADM feature is computed by float_adm.c (CPU) and
- * by float_adm_hip.c + float_adm/adm_*.hip (HIP — 4-stage DWT + CSF +
- * CM pipeline).  The integer ADM HIP twin already has a parity gate
- * (test_hip_adm_parity, ADR-0539); this test pins the float variant
- * which feeds a different consumer set (model trainers that prefer the
- * unquantised features).
+ * float_adm_hip runs adm_tools.c's arithmetic operation for operation
+ * (feature/float_adm_gpu_common.h, the header of the CUDA twin), adds each
+ * row and then the rows in fp32 as the reference does, divides where the
+ * reference divides (ADR-1442) and concludes with the reference's own
+ * routines. So every output has the CPU's bits, the per-scale numerators and
+ * denominators of `debug=true` included, and the cases assert equality.
  *
- * Asserts the always-emitted `VMAF_feature_adm2_score` plus the four
- * per-scale ratio channels.  Skip behaviour: if vmaf_hip_state_init()
- * fails OR the HIP path returns -ENOSYS (scaffold posture under
- * enable_hipcc=false) the test emits a skip-tag and passes.
+ * Before ADR-1458 the twin associated the angle test's products differently,
+ * reduced each row in strided partial sums and a wave tree, added the rows in
+ * double, kept a copy of the CSF weights with fp32 intermediates, used fp32
+ * constants and an fp32 gain limit, and floored the frame sums at 1e-2: it
+ * matched the CPU on 224 of 1246 measured values and was up to 1.3e-5 from
+ * it. The cases below fail on it.
+ *
+ * The fixtures, the comparison and the cases are float_adm_twin_parity.h's,
+ * the ones the CUDA twin's options cover. adm_p_norm other than 1 or 3 is
+ * not exact (powf on both sides) and keeps that header's tolerance.
+ *
+ * Skip behaviour: exits 77 when there is no HIP device, and when the kernels
+ * are not built (enable_hipcc=false: the extractor returns -ENOSYS). The
+ * frame-size case needs no device and always runs.
  */
 
 #include <errno.h>
-#include <math.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
 
-#include "test.h"
-
-#include "hip_parity_skip.h"
-
-#include "feature/feature_extractor.h"
-#include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_hip.h"
-#include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): this is a
- * C23 translation unit, but the required MSVC C lane does not provide the C
- * nullptr spelling clang-tidy proposes. Keep the portable C API form under
- * ADR-1138. */
+#include "float_adm_twin_parity.h"
 
-/* Wide enough for the ADM DWT2 pyramid (each scale halves the
- * dimensions, so >= 32x32 keeps scale 3 from collapsing). */
-#ifndef FIXTURE_W
-#define FIXTURE_W 256u
-#endif
-#ifndef FIXTURE_H
-#define FIXTURE_H 144u
-#endif
-#define FIXTURE_BPC 8u
-#define PARITY_TOL 1e-4
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy proposes `nullptr`, but the required MSVC C build does
+ * not provide that keyword. Preserve the portable C spelling. ADR-1138. */
 
-static const char *const kAdmFeatures[] = {
-    "VMAF_feature_adm2_score",       "VMAF_feature_adm_scale0_score",
-    "VMAF_feature_adm_scale1_score", "VMAF_feature_adm_scale2_score",
-    "VMAF_feature_adm_scale3_score",
-};
-#define NUM_ADM_FEATURES (sizeof(kAdmFeatures) / sizeof(kAdmFeatures[0]))
-
-/* ADR-1220 — derived feature keys for the adm_p_norm variant.
- *
- * `adm_p_norm` is a VMAF_OPT_FLAG_FEATURE_PARAM, so setting it changes the key
- * the score is filed under (ADR-1183): the alias base plus `_apn_<%g value>`. */
-static const char *const kAdmFeaturesApn[] = {
-    "adm2_apn_2", "adm_scale0_apn_2", "adm_scale1_apn_2", "adm_scale2_apn_2", "adm_scale3_apn_2",
-};
-static const char *const kAdmFeaturesScf[NUM_ADM_FEATURES] = {
-    "adm2_scf_2", "adm_scale0_scf_2", "adm_scale1_scf_2", "adm_scale2_scf_2", "adm_scale3_scf_2",
-};
-static const char *const kAdmFeaturesBcm[NUM_ADM_FEATURES] = {
-    "adm2_bcm_1", "adm_scale0_bcm_1", "adm_scale1_bcm_1", "adm_scale2_bcm_1", "adm_scale3_bcm_1",
-};
-
-/* Build the option dictionary for a variant, or leave it NULL for defaults. */
-static int adm_opts_build(VmafFeatureDictionary **opts, const char *name, const char *val)
+/* One small frame through the twin. Returns the first error of the run;
+ * -ENOSYS is the build without device kernels. */
+static int probe_run(VmafHipState *hip_state)
 {
-    if (!name)
-        return 0;
-    return vmaf_feature_dictionary_set(opts, name, val);
-}
-
-static int fill_ref(VmafPicture *pic)
-{
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
-    if (err)
-        return err;
-    uint8_t *y = (uint8_t *)pic->data[0];
-    for (unsigned row = 0; row < pic->h[0]; row++) {
-        for (unsigned col = 0; col < pic->w[0]; col++) {
-            y[row * pic->stride[0] + col] = (uint8_t)((row * 3u + col) & 0xFFu);
-        }
-    }
-    for (unsigned p = 1; p < 3; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
-        for (unsigned row = 0; row < pic->h[p]; row++)
-            memset(plane + row * pic->stride[p], 128, pic->w[p]);
-    }
-    return 0;
-}
-
-static int fill_dis(VmafPicture *pic)
-{
-    int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, FIXTURE_BPC, FIXTURE_W, FIXTURE_H);
-    if (err)
-        return err;
-    uint8_t *y = (uint8_t *)pic->data[0];
-    for (unsigned row = 0; row < pic->h[0]; row++) {
-        for (unsigned col = 0; col < pic->w[0]; col++) {
-            int v = (int)((row * 3u + col) & 0xFFu);
-            v += (int)((row ^ col) & 0x07u) - 3;
-            if (v < 0)
-                v = 0;
-            if (v > 255)
-                v = 255;
-            y[row * pic->stride[0] + col] = (uint8_t)v;
-        }
-    }
-    for (unsigned p = 1; p < 3; p++) {
-        uint8_t *plane = (uint8_t *)pic->data[p];
-        for (unsigned row = 0; row < pic->h[p]; row++)
-            memset(plane + row * pic->stride[p], 128, pic->w[p]);
-    }
-    return 0;
-}
-
-static int feed_frame(VmafContext *vmaf)
-{
+    static const AdmTwinCase probe = {
+        .what = "probe", .w = 64u, .h = 64u, .bpc = 8u, .content = ADM_TWIN_TEXTURE};
+    const VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafContext *vmaf = NULL;
     VmafPicture ref;
     VmafPicture dist;
-    int err = fill_ref(&ref);
-    if (err)
-        return err;
-    err = fill_dis(&dist);
-    if (err) {
-        vmaf_picture_unref(&ref);
-        return err;
-    }
-    return vmaf_read_pictures(vmaf, &ref, &dist, 0u);
-}
-
-static char *collect_adm_scores(VmafContext *vmaf, const char *const *keys,
-                                double scores[NUM_ADM_FEATURES], const char *tag)
-{
-    for (size_t f = 0; f < NUM_ADM_FEATURES; f++) {
-        int err = vmaf_feature_score_at_index(vmaf, keys[f], &scores[f], 0u);
-        if (err) {
-            (void)fprintf(stderr, "%s: feature %s missing (err=%d)\n", tag, kAdmFeatures[f], err);
-        }
-        mu_assert("vmaf_feature_score_at_index failed", !err);
-    }
-    return NULL;
-}
-
-static char *run_cpu_float_adm(const char *opt_name, const char *opt_val, const char *const *keys,
-                               double scores[NUM_ADM_FEATURES])
-{
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
     int err = vmaf_init(&vmaf, cfg);
-    mu_assert("CPU: vmaf_init failed", !err);
-    VmafFeatureDictionary *opts = NULL;
-    err = adm_opts_build(&opts, opt_name, opt_val);
-    mu_assert("CPU: adm_opts_build failed", !err);
-    err = vmaf_use_feature(vmaf, "float_adm", opts);
-    if (err) {
-        (void)vmaf_feature_dictionary_free(&opts);
+    if (!err)
+        err = vmaf_hip_import_state(vmaf, hip_state);
+    if (!err)
+        err = vmaf_use_feature(vmaf, "float_adm_hip", NULL);
+    if (!err)
+        err = adm_twin_fill_picture(&ref, &probe, false);
+    if (!err) {
+        err = adm_twin_fill_picture(&dist, &probe, true);
+        if (err)
+            (void)vmaf_picture_unref(&ref);
     }
-    mu_assert("CPU: vmaf_use_feature(float_adm) failed", !err);
-    err = feed_frame(vmaf);
-    mu_assert("CPU: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    mu_assert("CPU: vmaf_read_pictures(EOS) failed", !err);
-    char *msg = collect_adm_scores(vmaf, keys, scores, "CPU");
-    if (msg) {
-        (void)vmaf_close(vmaf);
-        return msg;
-    }
-    err = vmaf_close(vmaf);
-    mu_assert("CPU: vmaf_close failed", !err);
-    return NULL;
+    if (!err)
+        err = vmaf_read_pictures(vmaf, &ref, &dist, 0u);
+    if (!err)
+        err = vmaf_read_pictures(vmaf, NULL, NULL, 0u);
+    const int closed = vmaf ? vmaf_close(vmaf) : 0;
+    return err ? err : closed;
 }
 
-static char *execute_hip_float_adm(VmafContext *vmaf, VmafHipState **hip_state,
-                                   const char *opt_name, const char *opt_val, int *skipped)
+/* A device state, or non-zero when the cases cannot run: no device, or a
+ * build whose extractor has no kernels. Any other failure of the probe is
+ * left for the case itself to report. */
+static int twin_open(void **state)
 {
-    VmafFeatureDictionary *opts = NULL;
-    int err = adm_opts_build(&opts, opt_name, opt_val);
-    mu_assert("HIP: adm_opts_build failed", !err);
-    err = vmaf_use_feature(vmaf, "float_adm_hip", opts);
-    if (err == -ENOSYS) {
-        return hip_parity_skip(vmaf, hip_state, skipped, "");
-    }
-    mu_assert("HIP: vmaf_use_feature(float_adm_hip) failed", !err);
-    err = feed_frame(vmaf);
-    if (err == -ENOSYS) {
-        return hip_parity_skip(vmaf, hip_state, skipped, " on feed");
-    }
-    mu_assert("HIP: feed_frame failed", !err);
-    err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    if (err == -ENOSYS) {
-        return hip_parity_skip(vmaf, hip_state, skipped, " on EOS");
-    }
-    mu_assert("HIP: vmaf_read_pictures(EOS) failed", !err);
-    return NULL;
-}
-
-static char *run_hip_float_adm(const char *opt_name, const char *opt_val, const char *const *keys,
-                               double scores[NUM_ADM_FEATURES], int *skipped)
-{
-    for (size_t f = 0; f < NUM_ADM_FEATURES; f++) {
-        scores[f] = NAN;
-    }
-    *skipped = 0;
-
     VmafHipState *hip_state = NULL;
-    VmafHipConfiguration hip_cfg = {.device_index = -1};
+    const VmafHipConfiguration hip_cfg = {.device_index = -1};
     int err = vmaf_hip_state_init(&hip_state, hip_cfg);
-    if (err != 0 || hip_state == NULL) {
-        (void)fprintf(stderr, "[skip: no HIP device] ");
-        *skipped = 1;
-        return NULL;
+    if (err == 0 && hip_state != NULL && probe_run(hip_state) == -ENOSYS) {
+        vmaf_hip_state_free(&hip_state);
+        err = -ENOSYS;
     }
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    err = vmaf_init(&vmaf, cfg);
-    mu_assert("HIP: vmaf_init failed", !err);
-    err = vmaf_hip_import_state(vmaf, hip_state);
-    mu_assert("HIP: vmaf_hip_import_state failed", !err);
-
-    char *msg = execute_hip_float_adm(vmaf, &hip_state, opt_name, opt_val, skipped);
-    if (msg || *skipped) {
-        return msg;
-    }
-
-    msg = collect_adm_scores(vmaf, keys, scores, "HIP");
-    err = vmaf_close(vmaf);
-    vmaf_hip_state_free(&hip_state);
-    if (msg) {
-        return msg;
-    }
-    mu_assert("HIP: vmaf_close failed", !err);
-    return NULL;
+    *state = hip_state;
+    return err;
 }
+
+static int twin_import(VmafContext *vmaf, void *state)
+{
+    return vmaf_hip_import_state(vmaf, (VmafHipState *)state);
+}
+
+static int twin_close(void *state)
+{
+    VmafHipState *hip_state = (VmafHipState *)state;
+    vmaf_hip_state_free(&hip_state);
+    return 0;
+}
+
+static const AdmTwin twin = {
+    .extractor = "float_adm_hip",
+    .backend = "HIP",
+    .open = twin_open,
+    .import = twin_import,
+    .close = twin_close,
+};
 
 static char *test_float_adm_hip_registered(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_adm_hip");
-    mu_assert("float_adm_hip extractor must be registered", fex != NULL);
-    mu_assert("float_adm_hip name matches", !strcmp(fex->name, "float_adm_hip"));
-    return NULL;
+    return adm_twin_registered(&twin);
 }
 
-static char *test_float_adm_cpu_hip_parity(void)
+static char *test_float_adm_default_exact(void)
 {
-    double cpu_scores[NUM_ADM_FEATURES] = {0};
-    double hip_scores[NUM_ADM_FEATURES] = {0};
-    int skipped = 0;
-
-    char *msg = run_cpu_float_adm(NULL, NULL, kAdmFeatures, cpu_scores);
-    if (msg)
-        return msg;
-    msg = run_hip_float_adm(NULL, NULL, kAdmFeatures, hip_scores, &skipped);
-    if (msg)
-        return msg;
-    if (skipped)
-        return NULL;
-    for (size_t f = 0; f < NUM_ADM_FEATURES; f++) {
-        if (isnan(hip_scores[f]))
-            return NULL;
-        double d = fabs(cpu_scores[f] - hip_scores[f]);
-        if (d > PARITY_TOL) {
-            (void)fprintf(stderr,
-                          "\nfloat_adm parity FAIL: %s cpu=%.8f hip=%.8f delta=%.2e tol=%.2e\n",
-                          kAdmFeatures[f], cpu_scores[f], hip_scores[f], d, PARITY_TOL);
-        }
-        mu_assert("float_adm CPU vs. HIP delta exceeds places=4 tolerance (1e-4)", d <= PARITY_TOL);
-    }
-    return NULL;
+    return adm_twin_default_exact(&twin);
 }
 
-/* ADR-1220 — adm_p_norm must reach the kernels. The twin declares it with the
- * CPU's name, alias, default and range, but its kernels hardcoded the cube sum
- * and its host pooling hardcoded the 1/3 root, so a non-default `apn` moved
- * only the AIM exponent and produced a hybrid quantity. The default-options
- * test above cannot see it, because p = 3 IS the hardcoded exponent. */
-static char *test_float_adm_p_norm_reaches_kernel(void)
+static char *test_float_adm_noise_exact(void)
 {
-    double cpu_scores[NUM_ADM_FEATURES] = {0};
-    double hip_scores[NUM_ADM_FEATURES] = {0};
-    int skipped = 0;
-
-    char *msg = run_cpu_float_adm("adm_p_norm", "2.0", kAdmFeaturesApn, cpu_scores);
-    if (msg)
-        return msg;
-    msg = run_hip_float_adm("adm_p_norm", "2.0", kAdmFeaturesApn, hip_scores, &skipped);
-    if (msg)
-        return msg;
-    if (skipped)
-        return NULL;
-    for (size_t f = 0; f < NUM_ADM_FEATURES; f++) {
-        if (isnan(hip_scores[f]))
-            return NULL;
-        const double d = fabs(cpu_scores[f] - hip_scores[f]);
-        if (d > PARITY_TOL) {
-            (void)fprintf(stderr,
-                          "\nfloat_adm apn=2.0 parity FAIL: %s cpu=%.8f hip=%.8f delta=%.2e "
-                          "tol=%.2e\n",
-                          kAdmFeaturesApn[f], cpu_scores[f], hip_scores[f], d, PARITY_TOL);
-        }
-        mu_assert("float_adm with a non-default adm_p_norm drifts from the CPU reference",
-                  d <= PARITY_TOL);
-    }
-    return NULL;
+    return adm_twin_noise_exact(&twin);
 }
 
-/* ADR-1214 — adm_csf_scale must be a no-op in the Watson-97 mode this twin
- * implements, exactly as it is on the CPU (`adm_tools.c::adm_csf_rfactor_s`
- * consults it only in Barten mode). The twins used to multiply it into every
- * CSF rfactor, and declared it under the alias `cs` where the CPU says `scf`,
- * so the same request produced a different feature key as well as a different
- * score. The fix landed as 64ea351be without this regression test.
- *
- * The key suffix follows ADR-1183: the alias base plus `_<alias>_<%g value>`,
- * so `adm_csf_scale=2.0` files the scores under `_scf_2`. */
+static char *test_float_adm_10bit_exact(void)
+{
+    return adm_twin_10bit_exact(&twin);
+}
+
+static char *test_float_adm_12bit_exact(void)
+{
+    return adm_twin_12bit_exact(&twin);
+}
+
+static char *test_float_adm_16bit_exact(void)
+{
+    return adm_twin_16bit_exact(&twin);
+}
+
+static char *test_float_adm_odd_frame_exact(void)
+{
+    return adm_twin_odd_frame_exact(&twin);
+}
+
+static char *test_float_adm_smallest_frame_exact(void)
+{
+    return adm_twin_smallest_frame_exact(&twin);
+}
+
+static char *test_float_adm_narrow_frame_exact(void)
+{
+    return adm_twin_narrow_frame_exact(&twin);
+}
+
+static char *test_float_adm_1080p_exact(void)
+{
+    return adm_twin_1080p_exact(&twin);
+}
+
+static char *test_float_adm_gain_limit_exact(void)
+{
+    return adm_twin_gain_limit_exact(&twin);
+}
+
+static char *test_float_adm_bypass_cm_exact(void)
+{
+    return adm_twin_bypass_cm_exact(&twin);
+}
+
+static char *test_float_adm_skip_aim_scale_exact(void)
+{
+    return adm_twin_skip_aim_scale_exact(&twin);
+}
+
+static char *test_float_adm_view_dist_exact(void)
+{
+    return adm_twin_view_dist_exact(&twin);
+}
+
 static char *test_float_adm_csf_scale_is_a_watson_mode_noop(void)
 {
-    double cpu_scores[NUM_ADM_FEATURES] = {0};
-    double hip_scores[NUM_ADM_FEATURES] = {0};
-    int skipped = 0;
+    return adm_twin_csf_scale_is_a_watson_mode_noop(&twin);
+}
 
-    char *msg = run_cpu_float_adm("adm_csf_scale", "2.0", kAdmFeaturesScf, cpu_scores);
-    if (msg)
-        return msg;
-    msg = run_hip_float_adm("adm_csf_scale", "2.0", kAdmFeaturesScf, hip_scores, &skipped);
-    if (msg)
-        return msg;
-    if (skipped)
-        return NULL;
-    for (size_t f = 0; f < NUM_ADM_FEATURES; f++) {
-        if (isnan(hip_scores[f]))
-            return NULL;
-        const double d = fabs(cpu_scores[f] - hip_scores[f]);
-        if (d > PARITY_TOL) {
-            (void)fprintf(stderr,
-                          "\nfloat_adm scf=2.0 parity FAIL: %s cpu=%.8f hip=%.8f delta=%.2e "
-                          "tol=%.2e\n",
-                          kAdmFeaturesScf[f], cpu_scores[f], hip_scores[f], d, PARITY_TOL);
-        }
-        mu_assert("float_adm applies adm_csf_scale in Watson mode where the CPU ignores it",
-                  d <= PARITY_TOL);
-    }
+static char *test_float_adm_p_norm_one_exact(void)
+{
+    return adm_twin_p_norm_one_exact(&twin);
+}
+
+static char *test_float_adm_p_norm_reaches_kernel(void)
+{
+    return adm_twin_p_norm_reaches_kernel(&twin);
+}
+
+static char *test_float_adm_small_sums_are_not_floored(void)
+{
+    return adm_twin_small_sums_are_not_floored(&twin);
+}
+
+/* The CPU float_adm refuses frames below 17x17; the twin accepted them. */
+static char *test_float_adm_hip_rejects_frames_below_17(void)
+{
+    return adm_twin_rejects_frames_below_17(&twin);
+}
+
+static char *run_exact_bit_depth_cases(void)
+{
+    mu_run_test(test_float_adm_default_exact);
+    mu_run_test(test_float_adm_noise_exact);
+    mu_run_test(test_float_adm_10bit_exact);
+    mu_run_test(test_float_adm_12bit_exact);
+    mu_run_test(test_float_adm_16bit_exact);
     return NULL;
 }
 
-/* ADR-1220 — adm_bypass_cm drops the contrast-masking threshold in both DLM and
- * AIM CM kernels. Verify that setting adm_bypass_cm=1 changes the score and
- * matches the CPU reference within tolerance. */
-static char *test_float_adm_bypass_cm_reaches_kernel(void)
+static char *run_exact_geometry_cases(void)
 {
-    double cpu_scores[NUM_ADM_FEATURES] = {0};
-    double hip_scores[NUM_ADM_FEATURES] = {0};
-    int skipped = 0;
+    mu_run_test(test_float_adm_odd_frame_exact);
+    mu_run_test(test_float_adm_smallest_frame_exact);
+    mu_run_test(test_float_adm_narrow_frame_exact);
+    mu_run_test(test_float_adm_1080p_exact);
+    return NULL;
+}
 
-    char *msg = run_cpu_float_adm("adm_bypass_cm", "1", kAdmFeaturesBcm, cpu_scores);
-    if (msg)
-        return msg;
-    msg = run_hip_float_adm("adm_bypass_cm", "1", kAdmFeaturesBcm, hip_scores, &skipped);
-    if (msg)
-        return msg;
-    if (skipped)
-        return NULL;
-    for (size_t f = 0; f < NUM_ADM_FEATURES; f++) {
-        if (isnan(hip_scores[f]))
-            return NULL;
-        const double d = fabs(cpu_scores[f] - hip_scores[f]);
-        if (d > PARITY_TOL) {
-            (void)fprintf(stderr,
-                          "\nfloat_adm bcm=1 parity FAIL: %s cpu=%.8f hip=%.8f delta=%.2e "
-                          "tol=%.2e\n",
-                          kAdmFeaturesBcm[f], cpu_scores[f], hip_scores[f], d, PARITY_TOL);
-        }
-        mu_assert("float_adm with adm_bypass_cm=1 drifts from the CPU reference", d <= PARITY_TOL);
-    }
+static char *run_exact_option_cases(void)
+{
+    mu_run_test(test_float_adm_gain_limit_exact);
+    mu_run_test(test_float_adm_bypass_cm_exact);
+    mu_run_test(test_float_adm_skip_aim_scale_exact);
+    mu_run_test(test_float_adm_view_dist_exact);
+    mu_run_test(test_float_adm_csf_scale_is_a_watson_mode_noop);
+    mu_run_test(test_float_adm_p_norm_one_exact);
+    return NULL;
+}
+
+static char *run_other_cases(void)
+{
+    mu_run_test(test_float_adm_p_norm_reaches_kernel);
+    mu_run_test(test_float_adm_small_sums_are_not_floored);
+    mu_run_test(test_float_adm_hip_rejects_frames_below_17);
     return NULL;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_float_adm_hip_registered);
-    mu_run_test(test_float_adm_cpu_hip_parity);
-    mu_run_test(test_float_adm_p_norm_reaches_kernel);
-    mu_run_test(test_float_adm_csf_scale_is_a_watson_mode_noop);
-    mu_run_test(test_float_adm_bypass_cm_reaches_kernel);
+    mu_assert_msg(run_exact_bit_depth_cases());
+    mu_assert_msg(run_exact_geometry_cases());
+    mu_assert_msg(run_exact_option_cases());
+    mu_assert_msg(run_other_cases());
     return NULL;
 }
+
 /* NOLINTEND(modernize-use-nullptr) */

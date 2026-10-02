@@ -762,7 +762,8 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
   after ADR-1420 for CUDA).** Per-work-item code =
   `sycl_float_adm_math.h` (`decouple_sample()`, `terms_sample()`,
   `row_item()`), function for function with
-  `../cuda/float_adm/float_adm_device.h`; the `.cpp` only launches.
+  `../float_adm_gpu_common.h` (the CUDA + HIP twins' arithmetic, ADR-1458;
+  was `../cuda/float_adm/float_adm_device.h`); the `.cpp` only launches.
   `divs()` = fp32 `n / d` = CPU `DIVS()` since ADR-1442 (reference
   divides on every host; no reciprocal, no probe, no table; device `/`
   correctly rounded under ADR-1367's flag line, checked per value by

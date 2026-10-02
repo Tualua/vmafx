@@ -371,6 +371,20 @@ test('test_cuda_float_adm_exact_contract',
     timeout : 30,
 )
 
+# ADR-1458 — float_adm_hip returns the CPU extractor's bits with the CUDA
+# twin's arithmetic (src/feature/float_adm_gpu_common.h): plain operators
+# under the strict FP list, no wave or block reduction, the reference's own
+# routines on the host, the frame-size check before any device resource.
+# Device-free; the arithmetic checks are test_float_adm_device_math (host) and
+# test_hip_float_adm_math (device), the score check is
+# test_hip_float_adm_parity.
+test('test_hip_float_adm_exact_contract',
+    import('python').find_installation(),
+    args : files('test_hip_float_adm_exact_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # ADR-1453 — float_moment_cuda's 16bpc kernel adds moment_float_square(), one
 # fp32 product of the sample with itself as an integer, which is the term
 # moment.c adds; the host recovers the moment with the CPU's two divisions.
@@ -4317,8 +4331,9 @@ test_float_adm_coverage = executable('test_float_adm_coverage',
 )
 test('test_float_adm_coverage', test_float_adm_coverage, suite : ['fast'])
 
-# ADR-1420 — the arithmetic float_adm_cuda's kernels run
-# (src/feature/cuda/float_adm/float_adm_device.h), compiled for the host and
+# ADR-1420 — the arithmetic float_adm_cuda's and float_adm_hip's kernels run
+# (src/feature/float_adm_gpu_common.h, through the CUDA spelling header
+# src/feature/cuda/float_adm/float_adm_device.h), compiled for the host and
 # compared bit for bit with adm_decouple_s(), adm_csf_s(),
 # adm_csf_den_scale_s() and adm_cm_s(), plus the decouple against the IEEE
 # quotient on inputs where a reciprocal estimate differs (ADR-1442).
@@ -5638,6 +5653,46 @@ test('test_hip_fp_arith_contract', test_hip_fp_arith_contract,
     is_parallel : false,
     timeout : 120)
 
+# ADR-1458: the arithmetic float_adm_hip's kernels run
+# (src/feature/float_adm_gpu_common.h in the spelling of
+# src/feature/hip/float_adm/float_adm_hip_math.h), value by value on a device
+# against the same statements on the host: a million samples through the
+# decouple with its division, the CSF, a masking sum and the terms, at the
+# default options, at a gain limit that is not an fp32 value and at
+# adm_p_norm = 1. The probe kernel is compiled by hipcc with the list every
+# feature kernel gets. test_float_adm_device_math holds the same header to
+# the CPU extractor without a device. Skips (77) without a device.
+hip_float_adm_math_probe_hsaco = custom_target('hip_float_adm_math_probe_hsaco',
+    input : 'test_hip_float_adm_math_probe.hip',
+    output : 'test_hip_float_adm_math_probe.hsaco',
+    depend_files : files('hip_float_adm_math_sample.h',
+                         '../src/feature/float_adm_gpu_common.h',
+                         '../src/feature/hip/float_adm/float_adm_hip_math.h'),
+    command : [hipcc_exe, '--genco'] + hip_offload_arch_flags + hip_include_flags
+              + hip_strict_fp_args
+              + ['-I', meson.current_source_dir(),
+                 '-I', join_paths(meson.current_source_dir(), '../src'),
+                 '@INPUT@', '-o', '@OUTPUT@'],
+)
+hip_float_adm_math_probe_hsaco_c = custom_target('hip_float_adm_math_probe_hsaco_c',
+    input : hip_float_adm_math_probe_hsaco,
+    output : 'test_hip_float_adm_math_probe_hsaco.c',
+    capture : true,
+    command : [xxd_hip, '-i', '-n', 'test_hip_float_adm_math_probe_hsaco', '@INPUT@'],
+)
+test_hip_float_adm_math = executable('test_hip_float_adm_math',
+    ['test.c', 'test_hip_float_adm_math.c', hip_float_adm_math_probe_hsaco_c],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [math_lib, hip_deps, pthread_dependency],
+    # The host side is the reference's arithmetic only without contraction.
+    c_args : vmaf_strict_fp_args + ['-DHAVE_HIP=1'],
+)
+test('test_hip_float_adm_math', test_hip_float_adm_math,
+    suite : ['fast', 'gpu'],
+    is_parallel : false,
+    timeout : 180)
+
 # T-HIP-INIT-UNWIND-REPORTS-SUCCESS-2026-09-22, second site -- the two SSIMULACRA2 HIP allocator failure branches.
 # Same device-free interposition as the ADM gate above; here the injection is
 # an allocator that fails on a chosen call index, so both ss2h_alloc_device()
@@ -5859,7 +5914,7 @@ test_hip_float_adm_parity = executable('test_hip_float_adm_parity',
 test('test_hip_float_adm_parity', test_hip_float_adm_parity,
     suite : ['fast', 'gpu'],
     is_parallel : false,
-    timeout : 60)
+    timeout : 180)
 
 test_hip_float_motion_parity = executable('test_hip_float_motion_parity',
     ['test.c', 'test_hip_float_motion_parity.c'],

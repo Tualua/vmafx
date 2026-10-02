@@ -12,15 +12,20 @@ on builds that do not use the instruction (MSVC, ARM), and a GPU twin could
 only match the CPU of its own host by probing the estimate.
 
 Since ADR-1442 the fork divides. The quotient is the correctly rounded fp32
-one in the CPU reference and in ``float_adm_cuda``, on every host and
-compiler. This contract fails when a reciprocal comes back by any of the
+one in the CPU reference, in ``float_adm_cuda`` and in ``float_adm_hip``
+(ADR-1458), on every host and compiler. The two twins share their arithmetic
+(``float_adm_gpu_common.h``): the CUDA kernels spell its division
+``__fdiv_rn()``, the HIP kernels keep the plain ``/``, which hipcc rounds
+correctly under ``-fhip-fp32-correctly-rounded-divide-sqrt``. This contract
+fails when a reciprocal comes back by any of the
 routes it once had or could take: the macro, an intrinsic in the scalar or
 SIMD sources, the probed table of the twin, or a compiler flag that rewrites
 a division.
 
 Device-free: reads the sources only. ``test_float_adm_device_math`` checks
-the value (inputs where estimate and quotient differ) and
-``test_cuda_float_adm_parity`` the device.
+the value (inputs where estimate and quotient differ),
+``test_cuda_float_adm_parity`` the CUDA device, and ``test_hip_float_adm_math``
+every quotient of a million samples on a HIP device against the host.
 """
 
 from __future__ import annotations
@@ -35,7 +40,10 @@ FEATURE_ROOT = CORE_SRC / "feature"
 
 OPTIONS = "adm_options.h"
 CPU = "adm_tools.c"
+# The twins' shared arithmetic and its spelling per backend.
+COMMON = "float_adm_gpu_common.h"
 DEVICE = "cuda/float_adm/float_adm_device.h"
+HIP_DEVICE = "hip/float_adm/float_adm_hip_math.h"
 KERNEL = "cuda/float_adm/float_adm_score.cu"
 HOST = "cuda/float_adm_cuda.c"
 BUILD = "meson.build"
@@ -57,12 +65,15 @@ RECIPROCAL = re.compile(
 DIVS = "#define DIVS(n, d) ((n) / (d))"
 MACRO_REFUSED = '#error "ADM_OPT_RECIP_DIVISION is not supported: float ADM divides (ADR-1442)"'
 DECOUPLE_QUOTIENT = "float k = DIVS(t, o + eps);"
-DEVICE_DIVS = (
+COMMON_DIVS = (
     "FADM_HD float fadm_divs(float n, float d) { return FADM_FDIV(n, d); }",
     "float k = fadm_divs(t, FADM_FADD(o, FADM_EPS));",
-    "#define FADM_FDIV(a, b) __fdiv_rn((a), (b))",
     "#define FADM_FDIV(a, b) ((float)((a) / (b)))",
 )
+CUDA_DIVS = "#define FADM_FDIV(a, b) __fdiv_rn((a), (b))"
+# What makes the plain `/` of a HIP kernel the correctly rounded quotient.
+HIP_DIVISION_FLAG = "-fhip-fp32-correctly-rounded-divide-sqrt"
+HIP_STRICT_FP = re.compile(r"^\s*hip_strict_fp_args = \[(.*?)\]", re.M)
 # Compiler options that let a division become a reciprocal multiply.
 FAST_DIVISION = re.compile(
     r"use_fast_math|-prec-div=false|-ffast-math|-Ofast|-freciprocal-math|-mrecip"
@@ -123,12 +134,22 @@ def _reciprocal_failures(sources: dict[str, str]) -> list[str]:
 
 
 def _twin_failures(sources: dict[str, str]) -> list[str]:
-    device = _flat(sources[DEVICE])
-    return [
-        f"{DEVICE}: the twin's division is not the correctly rounded quotient ({piece})"
-        for piece in DEVICE_DIVS
-        if piece not in device
+    common = _flat(sources[COMMON])
+    failures = [
+        f"{COMMON}: the twins' division is not the correctly rounded quotient ({piece})"
+        for piece in COMMON_DIVS
+        if piece not in common
     ]
+    if CUDA_DIVS not in _flat(sources[DEVICE]):
+        failures.append(f"{DEVICE}: the CUDA division is not the correctly rounded quotient")
+    # A HIP kernel divides with the shared header's plain `/`: no spelling of
+    # its own, and the flag that rounds it correctly in the kernels' list.
+    if re.search(r"\bFADM_FDIV\b|__fdiv_rn", _code(sources[HIP_DEVICE])):
+        failures.append(f"{HIP_DEVICE}: the HIP division is not the shared header's plain `/`")
+    strict = HIP_STRICT_FP.search(_code_meson(sources[BUILD]))
+    if strict is None or HIP_DIVISION_FLAG not in strict.group(1):
+        failures.append(f"{BUILD}: the HIP kernels' `/` is not the correctly rounded quotient")
+    return failures
 
 
 def _build_failures(sources: dict[str, str]) -> list[str]:
@@ -166,7 +187,16 @@ class FloatAdmDividesContract(unittest.TestCase):
 
     def test_every_backend_is_scanned(self) -> None:
         scanned = _float_adm_sources()
-        for name in (CPU, DEVICE, KERNEL, HOST, "x86/float_adm_avx512.c", "arm64/float_adm_neon.c"):
+        for name in (
+            CPU,
+            COMMON,
+            DEVICE,
+            HIP_DEVICE,
+            KERNEL,
+            HOST,
+            "x86/float_adm_avx512.c",
+            "arm64/float_adm_neon.c",
+        ):
             self.assertIn(name, scanned)
         for backend in ("sycl", "hip", "metal"):
             self.assertTrue(any(name.startswith(f"{backend}/") for name in scanned), backend)
@@ -210,7 +240,7 @@ class FloatAdmDividesContract(unittest.TestCase):
     def test_probed_table_in_the_twin_is_detected(self) -> None:
         # The ADR-1420 twin.
         failures = _planted(
-            DEVICE,
+            COMMON,
             "return FADM_FDIV(n, d);",
             "return FADM_FMUL(n, FADM_FROM_BITS(adm_reciprocal_model_bits(rcp_table, FADM_BITS(d))));",
         )
@@ -225,6 +255,22 @@ class FloatAdmDividesContract(unittest.TestCase):
             "#define FADM_FDIV(a, b) ((a) / (b))",
         )
         self.assertTrue(any("correctly rounded quotient" in item for item in failures))
+
+    def test_reciprocal_multiply_in_the_hip_spelling_is_detected(self) -> None:
+        sources = _sources()
+        sources[HIP_DEVICE] += "\n#define FADM_FDIV(a, b) ((a) * (1.0f / (b)))\n"
+        self.assertTrue(
+            any("shared header's plain" in item for item in _contract_failures(sources))
+        )
+
+    def test_hip_division_flag_dropped_is_detected(self) -> None:
+        # Without the flag hipcc's fp32 `/` is an approximate reciprocal multiply.
+        failures = _planted(
+            BUILD,
+            "hip_strict_fp_args = ['-ffp-contract=off', '-fhip-fp32-correctly-rounded-divide-sqrt']",
+            "hip_strict_fp_args = ['-ffp-contract=off']",
+        )
+        self.assertTrue(any("HIP kernels' `/`" in item for item in failures))
 
     def test_fast_math_flag_is_detected(self) -> None:
         sources = _sources()

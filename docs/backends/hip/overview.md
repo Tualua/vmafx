@@ -90,7 +90,7 @@
 > | `integer_adm_hip` | `integer_adm_hip` | Deferred | PR #1007 |
 > | `integer_ms_ssim_hip` | `ms_ssim_hip` | Yes | ADR-0285 / PR #1013 |
 > | `integer_ssim_hip` | `integer_ssim_hip` | Yes | PR #999 / ADR-0564 |
-> | `float_adm_hip` | `float_adm_hip` | Yes | ADR-0468 / PR #1024 |
+> | `float_adm_hip` | `float_adm_hip` | Yes | ADR-0468 / PR #1024 / ADR-1458 (the CPU's bits) |
 > | `speed_chroma_hip` | `speed_chroma_hip` | Yes | ADR-0567 / ADR-0852 / ADR-1384 (device-resident) |
 > | `speed_temporal_hip` | `speed_temporal_hip` | Yes | ADR-0567 / ADR-0852 / ADR-1384 (device-resident) |
 >
@@ -417,7 +417,9 @@ core/src/feature/hip/          # per-feature kernels
   [ssimulacra2](../../metrics/ssimulacra2.md#hip-device-resident-tiled-row-pass).
   Emits `ssimulacra2`.
 - **`float_adm_hip`** — ADM float pipeline, ninth kernel-template consumer
-  (ADR-0468). Mirrors `float_adm_cuda.c`. Emits `float_adm2`.
+  (ADR-0468); bit-identical to the CPU `float_adm` (see
+  [float_adm_hip returns the CPU's scores](#float_adm_hip-returns-the-cpus-scores-bit-for-bit-2026-10-02)).
+  Emits `adm2`, `adm_scale0..3`, `aim` and `adm3`.
 - **`float_vif_hip`** — multi-scale VIF float pipeline; bit-identical to the
   CPU `float_vif` (see
   [float_vif_hip returns the CPU's scores](#float_vif_hip-returns-the-cpus-scores-bit-for-bit-2026-10-02)).
@@ -1070,6 +1072,57 @@ python3 scripts/dev/speed_gpu_parity.py --backend hip --feature ciede \
     --max-abs-diff 1e-9 --vmaf "$PWD/build-hip/tools/vmaf"
 ```
 
+### `float_adm_hip` returns the CPU's scores bit for bit (2026-10-02)
+
+`float_adm_hip` computed the float ADM scores with eight small differences
+from the CPU extractor: another association in the angle test, rows added in
+partial sums per wave and in `double` on the host, its own copy of the CSF
+weights, single-precision constants and gain limit, another order in the
+masking threshold, another floor for the frame sums. It matched the CPU on
+224 of 1246 measured values and was up to 1.3e-5 from it. Since
+[ADR-1458](../../adr/1458-hip-float-adm-cpu-arithmetic.md) it runs the
+arithmetic of the CUDA twin, from the same header
+(`core/src/feature/float_adm_gpu_common.h`), and takes the weights, the
+reduced region and the pooling from the CPU's own routines. Every score is
+the CPU's, bit for bit.
+
+Measured on a gfx1036 (ROCm 7.2.4) at `--precision max` against
+`--backend cpu`, values identical over the seven scores of every frame (110
+frames of typical content, 68 that stress the arithmetic):
+
+| Run | Before | After |
+|---|---|---|
+| Default options | 224 of 1246 (largest difference 1.3e-5) | 1246 of 1246 |
+| `debug=true` (18 outputs per frame) | not measured | 3204 of 3204 |
+| `adm_enhn_gain_limit=1.2` | not measured | 1246 of 1246 |
+| `adm_bypass_cm=1` | not measured | 1246 of 1246 |
+| `adm_skip_aim_scale=1` | not available | 1246 of 1246 |
+| `adm_norm_view_dist=1.5` | not measured | 1246 of 1246 |
+| `adm_p_norm=1` | not measured | 1246 of 1246 |
+| `adm_p_norm=2` | not measured | 911 of 1246 (largest difference 1.5e-7) |
+
+What changed for a user:
+
+- Scores from before the change differ from new ones by up to 1.3e-5.
+- The twin takes `adm_skip_aim_scale` (alias `sasc`), which it rejected
+  before, with the CPU's meaning: that scale is left out of the `aim` score.
+- A frame smaller than 17x17 is refused at start with the CPU's error. The
+  twin scored such frames before, from bands of one sample.
+- `adm_p_norm` other than 1 or 3 is not identical: both sides raise every
+  term with `powf`, the CPU with the C library's and the twin with the
+  device's.
+- The twin uses 48 MB more device memory at 3840x2160.
+
+It costs no time (ms per frame, steady state, medians of nine interleaved
+pairs of runs on a loaded host): 13.4 before and 13.2 after at 1920x1080,
+80.8 and 68.4 at 3840x2160.
+
+```bash
+python3 scripts/ci/run_meson_test.py -- -C build-hip test_hip_float_adm_parity test_hip_float_adm_math
+python3 scripts/dev/speed_gpu_parity.py --backend hip --feature float_adm \
+    --vmaf "$PWD/build-hip/tools/vmaf"
+```
+
 ### `float_vif_hip` returns the CPU's scores bit for bit (2026-10-02)
 
 `--backend hip --feature float_vif_hip` gives the same `vif_scale0..3` as
@@ -1168,15 +1221,16 @@ twin's solve launch was already correct.
 
 A HIP twin is either an exact twin of its CPU extractor, with the same score
 to the last bit, or it is within a tolerance of it. This table is the state on
-`origin/master` a55b5fe07, measured on a gfx1036 (ROCm 7.2.4, glibc 2.44) at
-`--precision max` against `--backend cpu`: 110 frames of typical content
-(the Netflix 576x324 pair at 8 and 10 bits, both 1920x1080 checkerboard
-pairs, Sparks 480x270 at 10 bits, 48 frames of BBB 3840x2160) and 68 frames
-that stress the arithmetic (12 and 16 bits, 10-bit 4:2:2, full-range noise at
-four depths, a bright 16-bit 1080p pair). "Values identical" counts every
-output of every one of the 178 frames. On 2026-10-01 (`80c5a0332`) eight of
-these twins were exact; "Before" is the largest difference measured then,
-and [Research-1437](../../research/1437-hip-twin-exactness-sweep.md) has that
+`origin/master` 9f2f24213 with ADR-1458, measured on a gfx1036 (ROCm 7.2.4,
+glibc 2.44) at `--precision max` against `--backend cpu`: 110 frames of
+typical content (the Netflix 576x324 pair at 8 and 10 bits, both 1920x1080
+checkerboard pairs, Sparks 480x270 at 10 bits, 48 frames of BBB 3840x2160)
+and 68 frames that stress the arithmetic (12 and 16 bits, 10-bit 4:2:2,
+full-range noise at four depths, a bright 16-bit 1080p pair). "Values
+identical" counts every output of every one of the 178 frames. On 2026-10-01
+(`80c5a0332`) eight of these twins were exact; "Before" is the largest
+difference measured then, and
+[Research-1437](../../research/1437-hip-twin-exactness-sweep.md) has that
 sweep per output and per fixture.
 
 | CPU feature | HIP twin | Values identical | Largest difference | Before | Exact twin |
@@ -1196,48 +1250,46 @@ sweep per output and per fixture.
 | `float_vif` | `float_vif_hip` | 712 of 712 | 0 | 1.1e-4 | yes ([ADR-1444](../../adr/1444-hip-float-vif-cpu-arithmetic.md)) |
 | `ssimulacra2` | `ssimulacra2_hip` | 178 of 178 | 0 | 7.6e-11 | yes ([ADR-1445](../../adr/1445-hip-ssimulacra2-cpu-sum-order.md)) |
 | `float_moment` | `float_moment_hip` | 712 of 712 | 0 | 1.0e-4 | yes, while the CPU's own sum is exact ([ADR-1447](../../adr/1447-hip-float-moment-cpu-float-squares.md)) |
-| `speed_chroma` | `speed_chroma_hip` | 528 of 534 | 1.4e-6 | not measured | no (the C library's `log2f`) |
-| `float_adm` | `float_adm_hip` | 224 of 1246 | 1.3e-5 | 1.3e-5 | no |
-| `ciede` | `ciede_hip` | 115 of 178 | 1.4e-11 | 1.1e-5 | no (the C library's `powf`, and the last bits of a pair; [ADR-1448](../../adr/1448-hip-ciede-cpu-arithmetic.md)) |
+| `float_adm` (also `debug=true`) | `float_adm_hip` | 1246 of 1246 (3204 of 3204) | 0 | 1.3e-5 | yes ([ADR-1458](../../adr/1458-hip-float-adm-cpu-arithmetic.md)) |
+| `speed_chroma` | `speed_chroma_hip` | 528 of 534 | 1.4e-6 | not measured | no: the C library's `log2f`, bounded at `5e-6` ([ADR-1452](../../adr/1452-hip-speed-chroma-log2f-bound.md)) |
+| `ciede` | `ciede_hip` | 115 of 178 | 1.4e-11 | 1.1e-5 | no: the C library's `powf` and the last bits of a pair, bounded at `1e-9` ([ADR-1448](../../adr/1448-hip-ciede-cpu-arithmetic.md)) |
 
-The parity gate compares an exact twin with tolerance 0
+Sixteen twins are exact. The parity gate compares them with tolerance 0
 ([cross-backend gate](../../development/cross-backend-gate.md),
-[the list](../../development/cross-backend-exact-twins.md)); the others keep
-their tolerance:
+[the list](../../development/cross-backend-exact-twins.md)). One of them has
+a range: `float_moment_hip` is exact on every frame of up to 2 097 152 pixels
+and on every 8-, 10- and 12-bit frame. On a larger 16-bit frame whose sum of
+squares passes 2^53 the CPU's own sum rounds as it goes and the twin is
+within a derived bound of it
+(see [float_moment_hip](#float_moment_hip-returns-the-cpus-moments-bit-for-bit-2026-10-02)).
 
-- `float_moment_hip` is exact on every frame of up to 2 097 152 pixels and on
-  every 8-, 10- and 12-bit frame. On a larger 16-bit frame whose sum of
-  squares passes 2^53 the CPU's own sum rounds as it goes and the twin is
-  within a derived bound of it
-  (see [float_moment_hip](#float_moment_hip-returns-the-cpus-moments-bit-for-bit-2026-10-02)).
+The other two run the CPU's arithmetic as well and differ through a math
+library; the gate bounds each by what that adds:
+
 - `speed_chroma_hip`: 6 values differ, by at most 1.4e-6 (Netflix 8-bit
   frame 3, BBB frames 17 and 21). The cause is on the CPU side: `speed.c`
   calls glibc's `log2f`, which is not correctly rounded, and the device
   rounds `log2` correctly. The same CPU binary with a correctly rounded
-  `log2f` preloaded returns the twin's bits on every value of those two
-  fixtures, also over all 200 BBB frames (600 values, 11 of which differ
-  from the plain CPU run). These are the values and the cause of the CUDA
-  twin ([ADR-1430](../../adr/1430-cuda-speed-chroma-log2f-bound.md)). The
-  gate compares the HIP cell at `5e-6`, the CUDA cell's bound
-  ([ADR-1452](../../adr/1452-hip-speed-chroma-log2f-bound.md),
-  `T-HIP-SPEED-CHROMA-GLIBC-LOG2F-2026-10-02`).
-- `float_adm_hip` has not been ported to the CPU's arithmetic
-  (`T-HIP-FLOAT-ADM-NOT-CPU-ARITHMETIC-2026-10-01`); the CPU reference itself
-  changed on 2026-10-02 (the decouple step divides).
-- `ciede_hip` runs the CPU's arithmetic on pairs of `float` values since
-  ADR-1448 and is within 1.4e-11; the gate bounds its cell at `1e-9`
+  `log2f` preloaded returns the twin's bits on every value, also over all 200
+  BBB frames (`T-HIP-SPEED-CHROMA-GLIBC-LOG2F-2026-10-02`).
+- `ciede_hip`: glibc's `powf` is not correctly rounded, which moves at most
+  74 of the 8.3 million pixels of a 3840x2160 frame by one `float` step, and
+  the twin evaluates the CPU's double-precision statements on pairs of
+  `float` values, which moved 8 of 437 million pixels
   (see [ciede_hip](#ciede_hip-follows-the-cpus-arithmetic-2026-10-02)).
 
 The exact twins were not all free. Frame time on the gfx1036 before and after
-each twin became exact, from its own pull request (ms per 1920x1080 frame and
-per 3840x2160 frame): `vif` 44.4 to 42.7 and 188.2 to 163.4; `ssim` 28.2 to
-30.0 and 94.3 to 98.1; `float_psnr` 0.96 to 0.99 and 3.97 to 3.98;
-`float_ssim` 1.72 to 2.02 and 4.86 to 5.18 (17.7 to 23.4 and 82.3 to 109.6
-with `scale=1`); `float_vif` 20.7 to 26.0 and 86.0 to 147.1; `ssimulacra2`
-58.1 to 167.0 and 233.7 to 662.4; `float_moment` unchanged. The open tuning
-rows are `T-HIP-FLOAT-SSIM-EXACT-THROUGHPUT-2026-10-01`,
-`T-HIP-FLOAT-VIF-EXACT-THROUGHPUT-2026-10-02` and
-`T-HIP-SSIMULACRA2-EXACT-THROUGHPUT-2026-10-02`.
+each twin took the CPU's arithmetic, from its own pull request (ms per
+1920x1080 frame and per 3840x2160 frame): `vif` 44.4 to 42.7 and 188.2 to
+163.4; `ssim` 28.2 to 30.0 and 94.3 to 98.1; `float_psnr` 0.96 to 0.99 and
+3.97 to 3.98; `float_ssim` 1.72 to 2.02 and 4.86 to 5.18 (17.7 to 23.4 and
+82.3 to 109.6 with `scale=1`); `float_vif` 20.7 to 26.0 and 86.0 to 147.1;
+`ssimulacra2` 58.1 to 167.0 and 233.7 to 662.4; `float_moment` unchanged;
+`float_adm` 13.4 to 13.2 and 80.8 to 68.4; `ciede` 18.6 to 49.6 and 75.6 to
+210.1. The open tuning rows are `T-HIP-FLOAT-SSIM-EXACT-THROUGHPUT-2026-10-01`,
+`T-HIP-FLOAT-VIF-EXACT-THROUGHPUT-2026-10-02`,
+`T-HIP-SSIMULACRA2-EXACT-THROUGHPUT-2026-10-02` and
+`T-HIP-CIEDE-EXACT-THROUGHPUT-2026-10-02`.
 
 `float_ms_ssim` is exact up to one rounding: the per-scale means are rounded
 to `float` on both sides, which absorbs the order in which the twin adds the
@@ -1252,7 +1304,8 @@ python3 scripts/ci/cross_backend_parity_gate.py --vmaf-binary build-hip/tools/vm
     --width 576 --height 324 --backends cpu hip \
     --features vif motion motion_debug motion_v2 adm psnr float_moment ssim \
         float_ssim float_ssim_lcs float_ms_ssim float_ms_ssim_lcs float_psnr \
-        float_motion float_vif psnr_hvs ssimulacra2 cambi
+        float_motion float_vif float_adm psnr_hvs ssimulacra2 cambi ciede \
+        speed_chroma
 ```
 
 ## RC3 CPU parity: motion, tiny frames and CPU options (2026-09-30)

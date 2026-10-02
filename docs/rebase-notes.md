@@ -58053,3 +58053,39 @@ part).
   backend that registers a twin has to give it a gate feature, or the test
   fails with the twin's name.
 - No library code, Netflix golden-data, public API or FFmpeg patch impact.
+## ADR-1458 — `float_adm_hip` runs the CUDA twin's arithmetic from a shared header (2026-10-02)
+
+`fix/hip-float-adm-cpu-arithmetic`, `T-HIP-FLOAT-ADM-NOT-CPU-ARITHMETIC-2026-10-01`.
+
+- `core/src/feature/float_adm_gpu_common.h` (new): the arithmetic and the
+  argument blocks that were in
+  `core/src/feature/cuda/float_adm/float_adm_device.h`, unchanged, with the
+  rounding macros, `FADM_HD`, the bit casts and `FADM_POWF` overridable and
+  the blocks named `FloatAdmGpu*`. The CUDA header keeps the `DEVICE_CODE`
+  definitions, includes the new header and typedefs the `FloatAdmCuda*`
+  names. A rebase that brings a change to the old header's arithmetic applies
+  it to the new header; the CUDA header must not regain a copy
+  (`test_cuda_float_adm_exact_contract.py` rejects that).
+- `core/src/feature/hip/float_adm/float_adm_hip_math.h` (new): the HIP
+  spelling, plain operators. `core/src/feature/hip/float_adm/float_adm_score.hip`
+  and `core/src/feature/hip/float_adm_hip.c`: rewritten after
+  `float_adm_score.cu` / `float_adm_cuda.c` (five kernels, row sums, the
+  reference's routines). Keep kernel and host from the same side of a
+  conflict.
+- `float_adm_hip` gains the option `adm_skip_aim_scale` and refuses frames
+  below 17x17.
+- `scripts/ci/exact_twins.d/float_adm.hip` (new) declares the twin exact
+  (ADR-1428).
+- `core/test/test_hip_float_adm_parity.c` wraps `float_adm_twin_parity.h`;
+  `core/test/test_hip_float_adm_math.c` with its probe kernel
+  `test_hip_float_adm_math_probe.hip` and `hip_float_adm_math_sample.h` (new)
+  compare the device's arithmetic with the host's;
+  `core/test/test_hip_float_adm_exact_contract.py` (new) is device-free.
+  `test_float_adm_divides_contract.py` and
+  `test_cuda_float_adm_exact_contract.py` read the shared header.
+- Mirror list, same PR when the CPU side changes: `adm_decouple_s()`,
+  `adm_csf_s()`, `adm_cm_thresh3x3_s()`, `adm_csf_den_scale_s()` and
+  `adm_cm_s()` in `adm_tools.c` change `float_adm_gpu_common.h`
+  (`test_float_adm_device_math` fails until it follows).
+- No Netflix golden-data, public API or FFmpeg patch impact. `float_adm_cuda`
+  re-measured unchanged on an RTX 4090 after the split.

@@ -682,8 +682,24 @@ linked AGENTS.md before resolving conflicts.
   has no integer AIM above 1 and would not notice.
   `core/test/test_integer_adm_aim_unclipped.c` pins both sides.
 
+- **`float_adm_hip` returns the CPU's scores bit for bit ([ADR-1458](../adr/1458-hip-float-adm-cpu-arithmetic.md))**:
+  it compiles `core/src/feature/float_adm_gpu_common.h`, the arithmetic of
+  the CUDA twin (next entry), through
+  `core/src/feature/hip/float_adm/float_adm_hip_math.h`, which keeps the
+  shared header's plain operators: under the strict FP list of the HIP
+  kernels they are the reference's operations, the division included. Do not
+  respell them with the `__fmul_rn()` family, do not reduce per wave or
+  block, and keep the host on the reference's routines
+  (`adm_float_reference.h`) with `adm_frame_size_check()` first in `init`.
+  `core/test/test_hip_float_adm_exact_contract.py` guards it without a
+  device, `test_hip_float_adm_math` (device arithmetic against the host,
+  value by value) and `test_hip_float_adm_parity` on one. See
+  [core/src/feature/hip/AGENTS.md](../../core/src/feature/hip/AGENTS.md).
+
 - **`float_adm_cuda` returns the CPU's scores bit for bit ([ADR-1420](../adr/1420-cuda-float-adm-cpu-arithmetic.md))**:
-  `core/src/feature/cuda/float_adm/float_adm_device.h` is the decouple, the
+  `core/src/feature/float_adm_gpu_common.h` (shared with `float_adm_hip`;
+  `core/src/feature/cuda/float_adm/float_adm_device.h` gives it the CUDA
+  device spelling) is the decouple, the
   CSF, the masking threshold and the reduction terms of `adm_tools.c`
   operation for operation (the gain limit and the 1/30 and 1/15 constants in
   fp64, the angle threshold as `(cos^2 * |o|^2) * |t|^2`), and its division is

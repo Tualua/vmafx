@@ -1026,7 +1026,8 @@ feature/
   that matter: gain limit `double`, `FLOAT_ONE_BY_30` / `_15` double
   literals, threshold centre tap fifth, angle threshold
   `(cos^2 * |o|^2) * |t|^2`, fp32 row + frame accumulators. Change any
-  -> change `cuda/float_adm/float_adm_device.h` and
+  -> change `float_adm_gpu_common.h` (CUDA + HIP twins, ADR-1420 /
+  ADR-1458) and
   `sycl/sycl_float_adm_math.h` (ADR-1434, same functions without an fp64
   type) same PR (`test_float_adm_device_math` /
   `test_sycl_float_adm_math` fail until they follow). HIP / Metal twins

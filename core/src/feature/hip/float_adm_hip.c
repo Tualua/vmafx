@@ -4,31 +4,30 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  float_adm feature extractor on the HIP backend — ninth consumer
- *  of `core/src/hip/kernel_template.h` (T7-10b batch-2 / ADR-0468).
+ *  of `core/src/hip/kernel_template.h` (T7-10b batch-2 / ADR-0468; the CPU's
+ *  arithmetic since ADR-1458).
  *
- *  This TU mirrors `core/src/feature/cuda/float_adm_cuda.c`
- *  call-graph-for-call-graph. When `HAVE_HIPCC` is defined (i.e.,
- *  `enable_hipcc=true` at configure time), the `init`, `submit`, and
- *  `collect` functions use real HIP Module API calls following the
- *  canonical pattern established by PR #612 / ADR-0254.
+ *  This TU follows `core/src/feature/cuda/float_adm_cuda.c` (ADR-1420): five
+ *  kernel launches per scale (DWT vertical, DWT horizontal, decouple + CSF,
+ *  per-sample terms, per-row sums), one readback of nine fp32 row sums per
+ *  row of the reduced region per scale, and the reference's own routines for
+ *  everything the host concludes.
  *
- *  Without `HAVE_HIPCC` (CPU-only or HIP-scaffold builds), every
- *  lifecycle helper returns -ENOSYS (scaffold posture preserved).
+ *  Numerical contract: float_adm_hip returns the CPU extractor's values bit
+ *  for bit. The per-sample arithmetic is `feature/float_adm_gpu_common.h`,
+ *  the header the CUDA twin runs: the reference's operations in the
+ *  reference's types and order, with a division that is the IEEE fp32
+ *  quotient on both sides (ADR-1442). The kernels store every term and add
+ *  each row left to right in fp32; the host adds the rows top to bottom in
+ *  fp32 (`fadm_fold_rows()`) and pools with `adm_pool_bands_s()`. The CSF
+ *  weights, the reduced region and the angle threshold come from
+ *  `adm_tools.c` (`feature/adm_float_reference.h`), not from copies here.
+ *  `adm_p_norm` other than 3 raises each term with powf(), the device's on
+ *  one side and the C library's on the other: that option is close to the
+ *  CPU, not equal.
  *
- *  Algorithm: 16-launch (4 stages × 4 scales) DWT+CSF+CM pipeline.
- *  Same four pipeline stages as the CUDA twin, same `-1` mirror form,
- *  same fused stage 3 with cross-band CM threshold.
- *  Host reduction in double precision (places=4 contract).
- *
- *  Key HIP adaptation:
- *  - Module API: `hipModuleLoadData` / `hipModuleGetFunction` /
- *    `hipModuleLaunchKernel` replace CUDA driver-API equivalents.
- *  - Buffer alloc: `hipMalloc` / `hipMemsetAsync` / `hipMemcpyAsync`
- *    replace `vmaf_cuda_buffer_alloc` + `cuMemsetD8Async`.
- *  - Stream/event: `hipStream_t` / `hipEvent_t` from `lc`; same
- *    submit/finished event-fence pattern as every HIP consumer.
- *  - Warp size 64 on GCN/RDNA: shared-memory partial arrays sized
- *    at FADM_WARPS_PER_BLOCK = 4.
+ *  When `HAVE_HIPCC` is defined the kernels are built and run; without it
+ *  the lifecycle helpers return -ENOSYS (scaffold posture).
  */
 
 #include <errno.h>
@@ -37,8 +36,11 @@
 #include <string.h>
 
 #include "dict.h"
+#include "feature/adm_csf_fixed_point.h"
+#include "feature/adm_float_reference.h"
 #include "feature/adm_options.h"
 #include "feature/adm_score.h"
+#include "feature/float_adm_gpu_common.h"
 #include "feature/nonfinite_score.h"
 #include "feature_collector.h"
 #include "feature_extractor.h"
@@ -66,17 +68,9 @@ extern const unsigned char float_adm_score_hsaco[];
 extern const unsigned int float_adm_score_hsaco_len;
 #endif /* HAVE_HIPCC */
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
+#ifndef DEFAULT_ADM_MIN_VAL
+#define DEFAULT_ADM_MIN_VAL 0.0
 #endif
-
-#define FADM_NUM_SCALES 4
-#define FADM_NUM_BANDS 3
-#define FADM_BX 16
-#define FADM_BY 16
-#define FADM_BORDER_FACTOR 0.1
-/* ADR-0574: slots 0..5 = adm2 csf+cm per band; slots 6..8 = aim_cm per band. */
-#define FADM_ACCUM_SLOTS 9
 
 typedef struct FloatAdmStateHip {
     bool debug;
@@ -87,19 +81,23 @@ typedef struct FloatAdmStateHip {
     double adm_csf_scale;
     double adm_csf_diag_scale;
     double adm_noise_weight;
-    /* ADR-0574: AIM / ADM3 options. */
+    /* ADR-0574: AIM / ADM3 options, same defaults as float_adm.c. */
     int adm_bypass_cm;
     int adm_adm3_apply_hm;
     double adm_p_norm;
     double adm_dlm_weight;
     double adm_min_val;
+    int adm_skip_aim_scale; /* -1 = no skip */
 
     unsigned width;
     unsigned height;
     unsigned bpc;
     unsigned buf_stride;
 
-    float rfactor[12];
+    /* The reference's constants, from its own routines (ADR-1458). */
+    float rfactor[FADM_SCALES][FADM_BANDS];
+    AdmBorderS region[FADM_SCALES];
+    float cos_1deg_sq;
 
     VmafHipKernelLifecycle lc;
     VmafHipContext *ctx;
@@ -109,9 +107,8 @@ typedef struct FloatAdmStateHip {
     hipFunction_t func_dwt_vert;
     hipFunction_t func_dwt_hori;
     hipFunction_t func_decouple_csf;
-    hipFunction_t func_csf_cm;
-    hipFunction_t func_csf_r;
-    hipFunction_t func_aim_cm;
+    hipFunction_t func_terms;
+    hipFunction_t func_row_sums;
 
     /* This frame's raw luma planes on the device: the context's shared frame,
      * or `planes`' own buffers when there is none (ADR-1408). */
@@ -120,21 +117,26 @@ typedef struct FloatAdmStateHip {
     VmafHipPlaneSource planes;
     void *dwt_tmp_ref;
     void *dwt_tmp_dis;
-    void *ref_band[FADM_NUM_SCALES];
-    void *dis_band[FADM_NUM_SCALES];
+    void *ref_band[FADM_SCALES];
+    void *dis_band[FADM_SCALES];
+    /* CSF of decouple_a and of decouple_r, each with its |.| / 30 companion. */
     void *csf_a;
-    void *csf_f;
-    void *csf_a_aim;
-    void *csf_f_aim;
-    void *accum[FADM_NUM_SCALES];
-    float *accum_host[FADM_NUM_SCALES];
+    void *csf_fa;
+    void *csf_r;
+    void *csf_fr;
+    /* Per-sample terms of the scale in flight, then the per-row sums of all
+     * four scales (row_offset[] floats into `rows`). */
+    void *terms;
+    void *rows;
+    float *rows_host;
 #endif /* HAVE_HIPCC */
 
-    unsigned wg_count[FADM_NUM_SCALES];
-    unsigned scale_w[FADM_NUM_SCALES];
-    unsigned scale_h[FADM_NUM_SCALES];
-    unsigned scale_half_w[FADM_NUM_SCALES];
-    unsigned scale_half_h[FADM_NUM_SCALES];
+    size_t row_offset[FADM_SCALES];
+    size_t row_floats;
+    unsigned scale_w[FADM_SCALES];
+    unsigned scale_h[FADM_SCALES];
+    unsigned scale_half_w[FADM_SCALES];
+    unsigned scale_half_h[FADM_SCALES];
 
     VmafDictionary *feature_name_dict;
 } FloatAdmStateHip;
@@ -197,57 +199,54 @@ static const VmafOption options[] = {
      .offset = offsetof(FloatAdmStateHip, adm_min_val), .type = VMAF_OPT_TYPE_DOUBLE,
      .default_val.d = DEFAULT_ADM_MIN_VAL, .min = 0.0, .max = 1.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "adm_skip_aim_scale", .alias = "sasc",
+     .help = "skip AIM accumulation at this scale index (-1 = no skip)",
+     .offset = offsetof(FloatAdmStateHip, adm_skip_aim_scale), .type = VMAF_OPT_TYPE_INT,
+     .default_val.i = -1, .min = -1, .max = 3, .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {0}};
 // clang-format on
 
-/* DB2/CDF-9-7 wavelet noise model — identical to the CUDA twin. */
-static const float fadm_dwt_basis_amp[6][4] = {
-    {0.62171f, 0.67234f, 0.72709f, 0.67234f},     {0.34537f, 0.41317f, 0.49428f, 0.41317f},
-    {0.18004f, 0.22727f, 0.28688f, 0.22727f},     {0.091401f, 0.11792f, 0.15214f, 0.11792f},
-    {0.045943f, 0.059758f, 0.077727f, 0.059758f}, {0.023013f, 0.030018f, 0.039156f, 0.030018f},
-};
-static const float fadm_dwt_a_Y = 0.495f;
-static const float fadm_dwt_k_Y = 0.466f;
-static const float fadm_dwt_f0_Y = 0.401f;
-static const float fadm_dwt_g_Y[4] = {1.501f, 1.0f, 0.534f, 1.0f};
-
-static float fadm_dwt_quant_step(int lambda, int theta, double view_dist, int display_h)
-{
-    const float r = (float)(view_dist * (double)display_h * M_PI / 180.0);
-    const float temp = (float)log10(pow(2.0, (double)(lambda + 1)) * (double)fadm_dwt_f0_Y *
-                                    (double)fadm_dwt_g_Y[theta] / (double)r);
-    const float Q = (float)(2.0 * (double)fadm_dwt_a_Y *
-                            pow(10.0, (double)fadm_dwt_k_Y * (double)temp * (double)temp) /
-                            (double)fadm_dwt_basis_amp[lambda][theta]);
-    return Q;
-}
-
+/* Per-scale geometry, the reduced region of each scale and where each scale's
+ * row sums start in the readback. */
 static void compute_per_scale_dims(FloatAdmStateHip *s)
 {
     unsigned cw = s->width;
     unsigned ch = s->height;
-    for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
+    s->row_floats = 0u;
+    for (int scale = 0; scale < FADM_SCALES; scale++) {
         const unsigned hw = (cw + 1u) / 2u;
         const unsigned hh = (ch + 1u) / 2u;
         s->scale_w[scale] = cw;
         s->scale_h[scale] = ch;
         s->scale_half_w[scale] = hw;
         s->scale_half_h[scale] = hh;
+        s->region[scale] = adm_border_s((int)hw, (int)hh, ADM_BORDER_FACTOR);
+        s->row_offset[scale] = s->row_floats;
+        s->row_floats +=
+            (size_t)FADM_TERM_SLOTS * (size_t)(s->region[scale].bottom - s->region[scale].top);
         cw = hw;
         ch = hh;
     }
+    /* One stride for every scale, sized for scale 0. */
     s->buf_stride = (s->scale_half_w[0] + 3u) & ~3u;
 }
 
-/* Active range [*lo, *hi) of a half-resolution dimension once the ADM border
- * (FADM_BORDER_FACTOR of the dimension on each side) is removed. */
-static void fadm_active_range(int half, int *lo, int *hi)
+/* The constants the reference derives per frame, taken from its own routines
+ * so they cannot drift from it (ADR-1458, as ADR-1420 did for CUDA).
+ *
+ * The CSF weights come from adm_csf_rfactor_s() with the options float_adm.c
+ * passes: no per-scale override (this twin does not declare adm_f1sN /
+ * adm_f2sN) and the reference's luminance level. In the Watson-97 mode this
+ * twin supports the weights ignore adm_csf_scale / adm_csf_diag_scale, as on
+ * the CPU (ADR-1214). */
+static void fadm_hip_init_reference(FloatAdmStateHip *s)
 {
-    int border = (int)((double)half * FADM_BORDER_FACTOR - 0.5);
-    if (border < 0)
-        border = 0;
-    *lo = border;
-    *hi = half - border;
+    for (int scale = 0; scale < FADM_SCALES; scale++) {
+        adm_csf_rfactor_s(scale, s->adm_norm_view_dist, s->adm_ref_display_height, s->adm_csf_mode,
+                          DEFAULT_ADM_CSF_LUMINANCE_LEVEL, s->adm_csf_scale, s->adm_csf_diag_scale,
+                          -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, s->rfactor[scale]);
+    }
+    s->cos_1deg_sq = adm_decouple_cos_1deg_sq_s();
 }
 
 #ifdef HAVE_HIPCC
@@ -276,7 +275,7 @@ typedef struct FadmHipKernelSlot {
     const char *name;
 } FadmHipKernelSlot;
 
-/* Load the kernel blob and resolve the six kernels by name. On failure the
+/* Load the kernel blob and resolve the five kernels by name. On failure the
  * module is unloaded again and `s->module` is NULL. */
 static int fadm_hip_module_load(FloatAdmStateHip *s)
 {
@@ -288,9 +287,8 @@ static int fadm_hip_module_load(FloatAdmStateHip *s)
         {&s->func_dwt_vert, "float_adm_dwt_vert"},
         {&s->func_dwt_hori, "float_adm_dwt_hori"},
         {&s->func_decouple_csf, "float_adm_decouple_csf"},
-        {&s->func_csf_cm, "float_adm_csf_cm"},
-        {&s->func_csf_r, "float_adm_csf_r"},
-        {&s->func_aim_cm, "float_adm_aim_cm"},
+        {&s->func_terms, "float_adm_terms"},
+        {&s->func_row_sums, "float_adm_row_sums"},
     };
     const unsigned n_kernels = (unsigned)(sizeof(kernels) / sizeof(kernels[0]));
     for (unsigned i = 0; i < n_kernels && rc == hipSuccess; i++)
@@ -302,8 +300,8 @@ static int fadm_hip_module_load(FloatAdmStateHip *s)
     return fadm_hip_rc(rc);
 }
 
-/* What the six stages of one scale share. The fields are kernel arguments,
- * passed by address, so the struct is not const. */
+/* What the five stages of one scale share. The fields the DWT kernels take
+ * are passed by address, so the struct is not const. */
 typedef struct FadmScaleGeom {
     int scale;
     int cur_w;
@@ -311,17 +309,6 @@ typedef struct FadmScaleGeom {
     int half_w;
     int half_h;
     int buf_stride;
-    /* Active window of the CM stages, border removed. */
-    int left;
-    int top;
-    int right;
-    int bottom;
-    float rfh;
-    float rfv;
-    float rfd;
-    float gain_limit;
-    float pnorm;
-    int bypass_cm;
     float *ref_band;
     float *dis_band;
 } FadmScaleGeom;
@@ -334,16 +321,6 @@ static void fadm_hip_scale_geom(const FloatAdmStateHip *s, int scale, FadmScaleG
     g->half_w = (int)s->scale_half_w[scale];
     g->half_h = (int)s->scale_half_h[scale];
     g->buf_stride = (int)s->buf_stride;
-    fadm_active_range(g->half_h, &g->top, &g->bottom);
-    fadm_active_range(g->half_w, &g->left, &g->right);
-    g->rfh = s->rfactor[scale * 3 + 0];
-    g->rfv = s->rfactor[scale * 3 + 1];
-    g->rfd = s->rfactor[scale * 3 + 2];
-    g->gain_limit = (float)s->adm_enhn_gain_limit;
-    /* adm_p_norm is a VMAF_OPT_FLAG_FEATURE_PARAM the twin advertises; until
-     * ADR-1220 the kernels hardcoded p = 3 and it moved only the AIM exponent. */
-    g->pnorm = (float)s->adm_p_norm;
-    g->bypass_cm = s->adm_bypass_cm;
     g->ref_band = (float *)s->ref_band[scale];
     g->dis_band = (float *)s->dis_band[scale];
 }
@@ -402,48 +379,81 @@ static int fadm_launch_dwt_hori(FloatAdmStateHip *s, FadmScaleGeom *g, hipStream
                                              pstr, args, NULL));
 }
 
-/* Stages 2 and 2b — decouple + CSF into `csf_a` / `csf_f`. Stage 2 is
- * `func_decouple_csf`; stage 2b is `func_csf_r`, which works on decouple_r
- * and writes the AIM buffers (ADR-0574). Same argument list. */
-static int fadm_launch_csf(hipFunction_t func, FadmScaleGeom *g, void *csf_a, void *csf_f,
-                           hipStream_t pstr)
+/* The band block every kernel past the DWT takes. */
+static FloatAdmGpuBands fadm_hip_bands(const FloatAdmStateHip *s, const FadmScaleGeom *g)
 {
-    float *csf_a_d = (float *)csf_a;
-    float *csf_f_d = (float *)csf_f;
+    FloatAdmGpuBands b = {
+        .ref_band = (uint64_t)(uintptr_t)g->ref_band,
+        .dis_band = (uint64_t)(uintptr_t)g->dis_band,
+        .csf_a = (uint64_t)(uintptr_t)s->csf_a,
+        .csf_fa = (uint64_t)(uintptr_t)s->csf_fa,
+        .csf_r = (uint64_t)(uintptr_t)s->csf_r,
+        .csf_fr = (uint64_t)(uintptr_t)s->csf_fr,
+        .half_w = g->half_w,
+        .half_h = g->half_h,
+        .buf_stride = g->buf_stride,
+    };
+    memcpy(b.rfactor, s->rfactor[g->scale], sizeof(b.rfactor));
+    return b;
+}
+
+/* Stage 2 — decouple, then the CSF of both parts. */
+static int fadm_launch_decouple(FloatAdmStateHip *s, const FadmScaleGeom *g, hipStream_t pstr)
+{
+    FloatAdmGpuDecoupleArgs args = {
+        .bands = fadm_hip_bands(s, g),
+        .adm_enhn_gain_limit = s->adm_enhn_gain_limit,
+        .cos_1deg_sq = s->cos_1deg_sq,
+        .pad_ = 0u,
+    };
+    void *params[] = {(void *)&args};
     const unsigned gx = ((unsigned)g->half_w + FADM_BX - 1u) / FADM_BX;
     const unsigned gy = ((unsigned)g->half_h + FADM_BY - 1u) / FADM_BY;
-    void *args[] = {(void *)&g->ref_band,   (void *)&g->dis_band,  (void *)&csf_a_d,
-                    (void *)&csf_f_d,       (void *)&g->half_w,    (void *)&g->half_h,
-                    (void *)&g->buf_stride, (void *)&g->rfh,       (void *)&g->rfv,
-                    (void *)&g->rfd,        (void *)&g->gain_limit};
-    return fadm_hip_rc(
-        hipModuleLaunchKernel(func, gx, gy, 1u, FADM_BX, FADM_BY, 1u, 0u, pstr, args, NULL));
+    return fadm_hip_rc(hipModuleLaunchKernel(s->func_decouple_csf, gx, gy, 1u, FADM_BX, FADM_BY, 1u,
+                                             0u, pstr, params, NULL));
 }
 
-/* Stages 3 and 3b — contrast masking, 1D over 3 bands x active rows, into the
- * scale's accumulator. Stage 3 is `func_csf_cm` (CSF denominator + CM fused);
- * stage 3b is `func_aim_cm` on the AIM buffers (noise_weight = 0, ADR-0574).
- * Same argument list. */
-static int fadm_launch_cm(FloatAdmStateHip *s, hipFunction_t func, FadmScaleGeom *g, void *csf_a,
-                          void *csf_f, hipStream_t pstr)
+/* Stages 3 and 4 — the per-sample terms of the three reductions over the
+ * reduced region, then one sum per row and slot into this scale's span of
+ * `rows`. */
+static int fadm_launch_reductions(FloatAdmStateHip *s, const FadmScaleGeom *g, hipStream_t pstr)
 {
-    float *csf_a_d = (float *)csf_a;
-    float *csf_f_d = (float *)csf_f;
-    float *accum_d = (float *)s->accum[g->scale];
-    const int active_h = g->bottom - g->top;
-    const unsigned num_rows = (unsigned)(active_h > 0 ? active_h : 1);
-    const unsigned gx = 3u * num_rows;
-    void *args[] = {(void *)&g->ref_band,   (void *)&g->dis_band,   (void *)&csf_a_d,
-                    (void *)&csf_f_d,       (void *)&accum_d,       (void *)&g->half_w,
-                    (void *)&g->half_h,     (void *)&g->buf_stride, (void *)&g->left,
-                    (void *)&g->top,        (void *)&g->right,      (void *)&g->bottom,
-                    (void *)&g->rfh,        (void *)&g->rfv,        (void *)&g->rfd,
-                    (void *)&g->gain_limit, (void *)&g->pnorm,      (void *)&g->bypass_cm};
-    return fadm_hip_rc(
-        hipModuleLaunchKernel(func, gx, 1u, 1u, FADM_BX, FADM_BY, 1u, 0u, pstr, args, NULL));
+    const AdmBorderS *r = &s->region[g->scale];
+    const unsigned region_w = (unsigned)(r->right - r->left);
+    const unsigned region_h = (unsigned)(r->bottom - r->top);
+    FloatAdmGpuTermArgs term_args = {
+        .bands = fadm_hip_bands(s, g),
+        .terms = (uint64_t)(uintptr_t)s->terms,
+        .left = r->left,
+        .top = r->top,
+        .region_w = region_w,
+        .region_h = region_h,
+        .p_norm = (float)s->adm_p_norm,
+        .is_cube = (s->adm_p_norm == 3.0) ? 1u : 0u,
+        .bypass_cm = (s->adm_bypass_cm != 0) ? 1u : 0u,
+    };
+    void *term_params[] = {(void *)&term_args};
+    const unsigned gx = (region_w + FADM_BX - 1u) / FADM_BX;
+    const unsigned gy = (region_h + FADM_BY - 1u) / FADM_BY;
+    const int err = fadm_hip_rc(hipModuleLaunchKernel(s->func_terms, gx, gy, 1u, FADM_BX, FADM_BY,
+                                                      1u, 0u, pstr, term_params, NULL));
+    if (err != 0)
+        return err;
+
+    FloatAdmGpuRowArgs row_args = {
+        .terms = (uint64_t)(uintptr_t)s->terms,
+        .rows = (uint64_t)(uintptr_t)((float *)s->rows + s->row_offset[g->scale]),
+        .region_w = region_w,
+        .region_h = region_h,
+    };
+    void *row_params[] = {(void *)&row_args};
+    const unsigned sums = FADM_TERM_SLOTS * region_h;
+    const unsigned blocks = (sums + FADM_ROW_THREADS - 1u) / FADM_ROW_THREADS;
+    return fadm_hip_rc(hipModuleLaunchKernel(s->func_row_sums, blocks, 1u, 1u, FADM_ROW_THREADS, 1u,
+                                             1u, 0u, pstr, row_params, NULL));
 }
 
-/* The six stages of one scale, in the CUDA twin's order. */
+/* The five stages of one scale, in the CUDA twin's order. */
 static int fadm_hip_launch_scale(FloatAdmStateHip *s, int scale, hipStream_t pstr)
 {
     FadmScaleGeom g;
@@ -453,13 +463,9 @@ static int fadm_hip_launch_scale(FloatAdmStateHip *s, int scale, hipStream_t pst
     if (err == 0)
         err = fadm_launch_dwt_hori(s, &g, pstr);
     if (err == 0)
-        err = fadm_launch_csf(s->func_decouple_csf, &g, s->csf_a, s->csf_f, pstr);
+        err = fadm_launch_decouple(s, &g, pstr);
     if (err == 0)
-        err = fadm_launch_cm(s, s->func_csf_cm, &g, s->csf_a, s->csf_f, pstr);
-    if (err == 0)
-        err = fadm_launch_csf(s->func_csf_r, &g, s->csf_a_aim, s->csf_f_aim, pstr);
-    if (err == 0)
-        err = fadm_launch_cm(s, s->func_aim_cm, &g, s->csf_a_aim, s->csf_f_aim, pstr);
+        err = fadm_launch_reductions(s, &g, pstr);
     return err;
 }
 
@@ -469,30 +475,20 @@ static int fadm_hip_launch(FloatAdmStateHip *s, uintptr_t pic_stream_handle)
     hipStream_t str = vmaf_hip_stream_of(s->lc.str);
     hipEvent_t submit_ev = vmaf_hip_event_of(s->lc.submit);
 
-    /* Zero all accumulator buffers — stage 3 writes only 2 out of 6
-     * slots per WG; the others must be zero for the host reduction. */
-    hipError_t rc = hipSuccess;
-    for (int scale = 0; scale < FADM_NUM_SCALES && rc == hipSuccess; scale++) {
-        rc = hipMemsetAsync(s->accum[scale], 0,
-                            (size_t)s->wg_count[scale] * FADM_ACCUM_SLOTS * sizeof(float), pstr);
-    }
-    if (rc != hipSuccess)
-        return fadm_hip_rc(rc);
-
     int err = 0;
-    for (int scale = 0; scale < FADM_NUM_SCALES && err == 0; scale++)
+    for (int scale = 0; scale < FADM_SCALES && err == 0; scale++)
         err = fadm_hip_launch_scale(s, scale, pstr);
     if (err != 0)
         return err;
 
-    /* Event fence → secondary stream → D2H copy partials. */
-    rc = hipEventRecord(submit_ev, pstr);
+    /* Event fence → secondary stream → D2H copy of the row sums. Every row
+     * sum of every scale is written by its kernel, so nothing is cleared. */
+    hipError_t rc = hipEventRecord(submit_ev, pstr);
     if (rc == hipSuccess)
         rc = hipStreamWaitEvent(str, submit_ev, 0);
-    for (int scale = 0; scale < FADM_NUM_SCALES && rc == hipSuccess; scale++) {
-        const size_t n_bytes = (size_t)s->wg_count[scale] * FADM_ACCUM_SLOTS * sizeof(float);
-        rc = hipMemcpyAsync(s->accum_host[scale], s->accum[scale], n_bytes, hipMemcpyDeviceToHost,
-                            str);
+    if (rc == hipSuccess) {
+        rc = hipMemcpyAsync(s->rows_host, s->rows, s->row_floats * sizeof(float),
+                            hipMemcpyDeviceToHost, str);
     }
     if (rc != hipSuccess)
         return fadm_hip_rc(rc);
@@ -500,34 +496,37 @@ static int fadm_hip_launch(FloatAdmStateHip *s, uintptr_t pic_stream_handle)
     return vmaf_hip_kernel_submit_post_record(&s->lc, s->ctx);
 }
 
-/* Allocate every device buffer and the pinned accumulator readbacks. On
+/* Allocate every device buffer and the pinned readback of the row sums. On
  * failure the buffers already allocated stay set; fadm_hip_release() frees
- * them through fadm_hip_bufs_free(). */
+ * them through fadm_hip_bufs_free(). The CSF buffers and the term buffer are
+ * reused per scale and sized for scale 0, whose bands and reduced region are
+ * the largest. */
 static int fadm_hip_bufs_alloc(FloatAdmStateHip *s)
 {
     const size_t dwt_bytes = (size_t)s->width * 2u * s->scale_half_h[0] * sizeof(float);
     const size_t csf_bytes =
-        (size_t)FADM_NUM_BANDS * s->buf_stride * s->scale_half_h[0] * sizeof(float);
+        (size_t)FADM_BANDS * s->buf_stride * s->scale_half_h[0] * sizeof(float);
+    const AdmBorderS *r0 = &s->region[0];
+    const size_t term_bytes = (size_t)FADM_TERM_SLOTS * (size_t)(r0->right - r0->left) *
+                              (size_t)(r0->bottom - r0->top) * sizeof(float);
+    const size_t row_bytes = s->row_floats * sizeof(float);
 
-    void **flat[] = {&s->dwt_tmp_ref, &s->dwt_tmp_dis, &s->csf_a,
-                     &s->csf_f,       &s->csf_a_aim,   &s->csf_f_aim};
-    const size_t flat_bytes[] = {dwt_bytes, dwt_bytes, csf_bytes, csf_bytes, csf_bytes, csf_bytes};
+    void **flat[] = {&s->dwt_tmp_ref, &s->dwt_tmp_dis, &s->csf_a, &s->csf_fa,
+                     &s->csf_r,       &s->csf_fr,      &s->terms, &s->rows};
+    const size_t flat_bytes[] = {dwt_bytes, dwt_bytes, csf_bytes,  csf_bytes,
+                                 csf_bytes, csf_bytes, term_bytes, row_bytes};
     hipError_t rc = hipSuccess;
-    for (unsigned i = 0; i < 6u && rc == hipSuccess; i++)
+    for (unsigned i = 0; i < 8u && rc == hipSuccess; i++)
         rc = hipMalloc(flat[i], flat_bytes[i]);
+    if (rc == hipSuccess)
+        rc = hipHostMalloc((void **)&s->rows_host, row_bytes, hipHostMallocDefault);
 
-    for (int scale = 0; scale < FADM_NUM_SCALES && rc == hipSuccess; scale++) {
+    for (int scale = 0; scale < FADM_SCALES && rc == hipSuccess; scale++) {
         const size_t band_bytes =
             (size_t)4u * s->buf_stride * s->scale_half_h[scale] * sizeof(float);
-        const size_t accum_bytes = (size_t)s->wg_count[scale] * FADM_ACCUM_SLOTS * sizeof(float);
         rc = hipMalloc(&s->ref_band[scale], band_bytes);
         if (rc == hipSuccess)
             rc = hipMalloc(&s->dis_band[scale], band_bytes);
-        if (rc == hipSuccess)
-            rc = hipMalloc(&s->accum[scale], accum_bytes);
-        if (rc == hipSuccess) {
-            rc = hipHostMalloc((void **)&s->accum_host[scale], accum_bytes, hipHostMallocDefault);
-        }
     }
     return (rc == hipSuccess) ? 0 : -ENOMEM;
 }
@@ -537,20 +536,20 @@ static int fadm_hip_bufs_alloc(FloatAdmStateHip *s)
  * fails to unload; freeing the buffers is best-effort. */
 static int fadm_hip_bufs_free(FloatAdmStateHip *s)
 {
-    for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
-        if (s->accum_host[scale] != NULL)
-            (void)hipHostFree(s->accum_host[scale]);
-        s->accum_host[scale] = NULL;
-        void **per_scale[] = {&s->accum[scale], &s->dis_band[scale], &s->ref_band[scale]};
-        for (unsigned i = 0; i < 3u; i++) {
+    for (int scale = 0; scale < FADM_SCALES; scale++) {
+        void **per_scale[] = {&s->dis_band[scale], &s->ref_band[scale]};
+        for (unsigned i = 0; i < 2u; i++) {
             if (*per_scale[i] != NULL)
                 (void)hipFree(*per_scale[i]);
             *per_scale[i] = NULL;
         }
     }
-    void **flat[] = {&s->csf_f_aim, &s->csf_a_aim,   &s->csf_f,
-                     &s->csf_a,     &s->dwt_tmp_dis, &s->dwt_tmp_ref};
-    for (unsigned i = 0; i < 6u; i++) {
+    if (s->rows_host != NULL)
+        (void)hipHostFree(s->rows_host);
+    s->rows_host = NULL;
+    void **flat[] = {&s->rows,   &s->terms, &s->csf_fr,      &s->csf_r,
+                     &s->csf_fa, &s->csf_a, &s->dwt_tmp_dis, &s->dwt_tmp_ref};
+    for (unsigned i = 0; i < 8u; i++) {
         if (*flat[i] != NULL)
             (void)hipFree(*flat[i]);
         *flat[i] = NULL;
@@ -567,39 +566,6 @@ static int fadm_hip_bufs_free(FloatAdmStateHip *s)
     return rc;
 }
 #endif /* HAVE_HIPCC */
-
-/* rfactor = 1 / dwt_quant_step per scale and band (h, v, d). */
-static void fadm_hip_init_rfactor(FloatAdmStateHip *s)
-{
-    for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
-        const float f1 =
-            fadm_dwt_quant_step(scale, 1, s->adm_norm_view_dist, s->adm_ref_display_height);
-        const float f2 =
-            fadm_dwt_quant_step(scale, 2, s->adm_norm_view_dist, s->adm_ref_display_height);
-        /* ADR-1214: match the CPU reference exactly. In the Watson-97 mode this
-         * twin supports (adm_csf_mode == 0) `adm_tools.c::adm_csf_rfactor_s`
-         * sets rfactor = 1 / dwt_quant_step(...) and does NOT consult
-         * adm_csf_scale / adm_csf_diag_scale — those two options only enter the
-         * Barten branch (mode 1). Multiplying them in here made a non-default
-         * scale change the GPU score while the CPU ignored it, and the comment
-         * that used to sit here claimed the opposite of what adm_tools.c does. */
-        s->rfactor[scale * 3 + 0] = 1.0f / f1;
-        s->rfactor[scale * 3 + 1] = 1.0f / f1;
-        s->rfactor[scale * 3 + 2] = 1.0f / f2;
-    }
-}
-
-/* One work group per band and active row of each scale's CM stages. */
-static void fadm_hip_init_wg_counts(FloatAdmStateHip *s)
-{
-    for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
-        int top = 0;
-        int bottom = 0;
-        fadm_active_range((int)s->scale_half_h[scale], &top, &bottom);
-        const unsigned num_rows = (bottom > top) ? (unsigned)(bottom - top) : 1u;
-        s->wg_count[scale] = 3u * num_rows;
-    }
-}
 
 /* Tear down everything init() may have set up. Every step tolerates a handle
  * that was never created, so this serves both a failed init() and close().
@@ -629,6 +595,13 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     (void)pix_fmt;
     FloatAdmStateHip *s = fex->priv;
 
+    /* Same frame-size bound as the CPU float_adm, checked before any device
+     * resource is claimed: below 17 pixels the scale-3 bands have one
+     * sample. */
+    const int size_err = adm_frame_size_check("float_adm_hip", w, h);
+    if (size_err)
+        return size_err;
+
     if (s->adm_csf_mode != 0)
         return -EINVAL;
 
@@ -636,8 +609,7 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     s->height = h;
     s->bpc = bpc;
     compute_per_scale_dims(s);
-    fadm_hip_init_rfactor(s);
-    fadm_hip_init_wg_counts(s);
+    fadm_hip_init_reference(s);
 
     int err = vmaf_hip_context_new(&s->ctx, 0);
     if (err == 0)
@@ -692,83 +664,63 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
 }
 
 #ifdef HAVE_HIPCC
-/* Per-scale, per-band sums of the work-group partials. */
-typedef struct FadmTotals {
-    double cm[FADM_NUM_SCALES][FADM_NUM_BANDS];
-    double csf[FADM_NUM_SCALES][FADM_NUM_BANDS];
-    double aim_cm[FADM_NUM_SCALES][FADM_NUM_BANDS];
-} FadmTotals;
-
-/* Pooled numerators / denominators: `scores` is {num, den} per scale. */
+/* What the per-scale pooling loop produces: compute_adm()'s `scores`, `num`,
+ * `den`, `aim_num` and `aim_den`. `scores` is {num, den} per scale. */
 typedef struct FadmPooled {
-    double scores[2 * FADM_NUM_SCALES];
+    double scores[2 * FADM_SCALES];
     double score_num;
     double score_den;
     double aim_num;
     double aim_den;
 } FadmPooled;
 
-/* Per-scale double accumulation across WGs.
- * Slots 0..2: csf_den per band; 3..5: cm_num per band;
- * 6..8: aim_cm per band (ADR-0574). */
-static void fadm_hip_reduce(const FloatAdmStateHip *s, FadmTotals *t)
+/* compute_adm()'s scale loop past the kernels.
+ *
+ * The frame accumulators are the reference's: one fp32 value per band that
+ * the row sums are added to top to bottom. Each scale is then concluded by
+ * the reference's own adm_pool_bands_s(), with the noise weight for the
+ * denominator and the adm2 numerator and with none for the AIM numerator. */
+static void fadm_hip_pool_scales(const FloatAdmStateHip *s, FadmPooled *o)
 {
-    memset(t, 0, sizeof(*t));
-    for (int scale = 0; scale < FADM_NUM_SCALES; scale++) {
-        const float *slots = s->accum_host[scale];
-        const unsigned wg_count = s->wg_count[scale];
-        for (unsigned wg = 0u; wg < wg_count; wg++) {
-            const float *p = slots + (size_t)wg * FADM_ACCUM_SLOTS;
-            for (int b = 0; b < FADM_NUM_BANDS; b++) {
-                t->csf[scale][b] += (double)p[b];
-                t->cm[scale][b] += (double)p[3 + b];
-                t->aim_cm[scale][b] += (double)p[6 + b];
-            }
+    for (int scale = 0; scale < FADM_SCALES; scale++) {
+        const AdmBorderS *r = &s->region[scale];
+        const int region_w = r->right - r->left;
+        const int region_h = r->bottom - r->top;
+        const float *rows = s->rows_host + s->row_offset[scale];
+        float accum[FADM_TERM_SLOTS];
+        for (unsigned slot = 0u; slot < FADM_TERM_SLOTS; slot++) {
+            accum[slot] = fadm_fold_rows(rows + fadm_row_index(slot, 0u, (uint32_t)region_h),
+                                         (uint32_t)region_h);
         }
+
+        const float den_scale = adm_pool_bands_s(accum + FADM_SLOT_DEN, region_w, region_h,
+                                                 s->adm_noise_weight, s->adm_p_norm);
+        const float num_scale = adm_pool_bands_s(accum + FADM_SLOT_CM, region_w, region_h,
+                                                 s->adm_noise_weight, s->adm_p_norm);
+        const float aim_num_scale =
+            adm_pool_bands_s(accum + FADM_SLOT_AIM, region_w, region_h, 0.0, s->adm_p_norm);
+
+        o->score_num += num_scale;
+        o->score_den += den_scale;
+        if (s->adm_skip_aim_scale != scale) {
+            o->aim_den += den_scale;
+            o->aim_num += aim_num_scale;
+        }
+        o->scores[2 * scale + 0] = num_scale;
+        o->scores[2 * scale + 1] = den_scale;
     }
 }
 
-/* Pool one scale into `p`. The band sums are pooled in float, as
- * adm_tools.c pools them. */
-static void fadm_hip_pool_scale(const FloatAdmStateHip *s, const FadmTotals *t, int scale,
-                                FadmPooled *p)
-{
-    int left = 0;
-    int right = 0;
-    int top = 0;
-    int bottom = 0;
-    fadm_active_range((int)s->scale_half_w[scale], &left, &right);
-    fadm_active_range((int)s->scale_half_h[scale], &top, &bottom);
-    /* The pooling root and the noise constant are 1/adm_p_norm, not a
-     * hardcoded 1/3: adm_tools.c uses powf(accum, 1.0f / adm_p_norm) and
-     * get_noise_constant(..., adm_p_norm). ADR-1220. */
-    const float inv_p = 1.0f / (float)s->adm_p_norm;
-    const float area_cbrt =
-        powf((float)((bottom - top) * (right - left)) * (float)s->adm_noise_weight, inv_p);
-    float num_scale = 0.0f;
-    float den_scale = 0.0f;
-    /* ADR-0574: AIM accumulation — same CSF denominator as adm2 (den_scale). */
-    float aim_num_scale = 0.0f;
-    for (int b = 0; b < FADM_NUM_BANDS; b++) {
-        num_scale += powf((float)t->cm[scale][b], inv_p) + area_cbrt;
-        den_scale += powf((float)t->csf[scale][b], inv_p) + area_cbrt;
-        aim_num_scale += powf((float)t->aim_cm[scale][b], inv_p);
-    }
-    p->scores[2 * scale + 0] = num_scale;
-    p->scores[2 * scale + 1] = den_scale;
-    p->score_num += num_scale;
-    p->score_den += den_scale;
-    p->aim_den += den_scale;
-    p->aim_num += aim_num_scale;
-}
-
-/* adm2, the per-scale scores, AIM and ADM3 (ADR-0574) from the pooled sums. */
+/* adm2, the per-scale scores, AIM and ADM3 (ADR-0574) from the pooled sums,
+ * as compute_adm() and float_adm.c's extract() conclude. The numerator and
+ * denominator are floored at the reference's 1e-10; the debug features
+ * report the floored values. */
 static int fadm_hip_emit(FloatAdmStateHip *s, VmafFeatureCollector *fc, FadmPooled *p,
                          unsigned index)
 {
-    const int w = (int)s->scale_w[0];
-    const int h = (int)s->scale_h[0];
-    const double numden_limit = 1e-2 * (double)(w * h) / (1920.0 * 1080.0);
+    const int w = (int)s->width;
+    const int h = (int)s->height;
+    const double numden_limit = 1e-10 * (w * h) / (1920.0 * 1080.0);
     double score = 0.0;
     double score_aim = 0.0;
     int err = vmaf_adm_floor_pair_named("float_adm_hip", index, p->score_num, p->score_den,
@@ -784,13 +736,12 @@ static int fadm_hip_emit(FloatAdmStateHip *s, VmafFeatureCollector *fc, FadmPool
                                 s->adm_dlm_weight, s->adm_min_val, &score_adm3);
     if (err)
         return err;
-    double scale_scores[FADM_NUM_SCALES];
-    err = vmaf_adm_scale_ratios_named("float_adm_hip", index, p->scores, FADM_NUM_SCALES,
-                                      scale_scores);
+    double scale_scores[FADM_SCALES];
+    err = vmaf_adm_scale_ratios_named("float_adm_hip", index, p->scores, FADM_SCALES, scale_scores);
     if (err)
         return err;
 
-    static const char *const scale_names[FADM_NUM_SCALES] = {
+    static const char *const scale_names[FADM_SCALES] = {
         "VMAF_feature_adm_scale0_score", "VMAF_feature_adm_scale1_score",
         "VMAF_feature_adm_scale2_score", "VMAF_feature_adm_scale3_score"};
     VmafNamedScore values[18] = {
@@ -825,13 +776,8 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index, VmafFeatur
         return sync_err;
 
 #ifdef HAVE_HIPCC
-    FadmTotals totals;
-    fadm_hip_reduce(s, &totals);
-
     FadmPooled pooled = {0};
-    for (int scale = 0; scale < FADM_NUM_SCALES; scale++)
-        fadm_hip_pool_scale(s, &totals, scale, &pooled);
-
+    fadm_hip_pool_scales(s, &pooled);
     return fadm_hip_emit(s, fc, &pooled, index);
 #else
     (void)fc;
@@ -868,7 +814,7 @@ static const char *provided_features[] = {"VMAF_feature_adm2_score",
 /* Load-bearing: registered via `extern VmafFeatureExtractor vmaf_fex_float_adm_hip;`
  * in `core/src/feature/feature_extractor.cpp`'s `feature_extractor_list[]`.
  * Ninth HIP kernel-template consumer (ADR-0468). Same pattern as
- * every CUDA / SYCL / Vulkan / HIP feature extractor. */
+ * every CUDA / SYCL / HIP feature extractor. */
 // NOLINTNEXTLINE(misc-use-internal-linkage): ADR-0468 — registration symbol must have external linkage
 VmafFeatureExtractor vmaf_fex_float_adm_hip = {
     .name = "float_adm_hip",
@@ -882,7 +828,7 @@ VmafFeatureExtractor vmaf_fex_float_adm_hip = {
     .flags = VMAF_FEATURE_EXTRACTOR_HIP,
     .chars =
         {
-            .n_dispatches_per_frame = 24, /* 6 stages × 4 scales (ADR-0574) */
+            .n_dispatches_per_frame = 20, /* 5 stages × 4 scales (ADR-1458) */
             .is_reduction_only = false,
             .min_useful_frame_area = 1920U * 1080U,
             .dispatch_hint = VMAF_FEATURE_DISPATCH_AUTO,

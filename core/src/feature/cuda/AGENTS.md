@@ -371,7 +371,10 @@ HIP / Metal motion twins listed in Twin-update table below — same PR.
 
 - **`float_adm_cuda.c` / `float_adm/float_adm_score.cu` AIM/ADM3
   slot layout** (ADR-0574, relaid by ADR-1420). `FADM_TERM_SLOTS = 9`
-  lives in ONE place, `float_adm/float_adm_device.h`, included by host
+  lives in ONE place, `../float_adm_gpu_common.h` (shared with
+  `float_adm_hip` since ADR-1458; `float_adm/float_adm_device.h` = CUDA
+  spelling only: `__fmul_rn()` family, includes it, typedefs the
+  `FloatAdmCuda*` names), included by host
   and kernels: `FADM_SLOT_DEN` 0..2, `FADM_SLOT_CM` 3..5,
   `FADM_SLOT_AIM` 6..8 (h, v, d each). Term buffer =
   `fadm_term_index()` (slot, then column, then row); row-sum buffer =

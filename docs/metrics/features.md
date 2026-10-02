@@ -558,8 +558,35 @@ What this means when you use it:
 - Frames smaller than 17x17 are refused by both; see the next section.
 - The twin uses 48 MB more device memory at 3840x2160.
 
-The HIP and Metal `float_adm` twins agree with the CPU to four decimal
-places.
+##### `float_adm` on HIP returns the CPU's values
+
+`float_adm_hip` returns the CPU extractor's scores bit for bit since
+[ADR-1458](../adr/1458-hip-float-adm-cpu-arithmetic.md). It runs the CUDA
+twin's arithmetic from the same source file. Measured on a gfx1036
+(ROCm 7.2.4) at `--precision max` against `--backend cpu`: 1246 of 1246
+scores identical on 178 frames (576x324 at 8, 10, 12 and 16 bits and as
+10-bit 4:2:2, 1920x1080, 3840x2160, full-range noise), 3204 of 3204 outputs
+with `debug=true`, and every score again with `adm_enhn_gain_limit=1.2`,
+`adm_bypass_cm=1`, `adm_skip_aim_scale=1`, `adm_norm_view_dist=1.5` and
+`adm_p_norm=1`.
+
+What this means for you:
+
+- You can mix CPU and HIP `float_adm` results in one data set. Before
+  ADR-1458 the HIP twin was up to 1.3e-5 from the CPU; `float_adm_hip`
+  outputs stored before it differ from new ones by that much.
+- The twin takes `adm_skip_aim_scale`, which it rejected before. It does not
+  take `adm_skip_scale0` or the per-scale weight overrides `adm_f1s0` …
+  `adm_f2s3`; with one of those set, use the CPU extractor.
+- One option is not identical: with `adm_p_norm` other than 1 or 3 the twin
+  is within 1.5e-7 of the CPU, because the two sides raise each term with
+  different `powf` implementations.
+- Frames smaller than 17x17 are refused by both; see the next section.
+- The twin uses 48 MB more device memory at 3840x2160. A frame takes no
+  longer than before: 13 ms at 1920x1080 and 68 ms at 3840x2160 on a
+  gfx1036.
+
+The Metal `float_adm` twin agrees with the CPU to four decimal places.
 
 ##### Small frames
 
