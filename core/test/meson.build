@@ -3188,6 +3188,25 @@ test('test_cuda_motion3_parity', test_cuda_motion3_parity,
     suite : ['fast', 'gpu'],
     is_parallel : false)
 
+# motion_cuda emits the CPU `motion` extractor's whole output set: the SAD
+# score of every frame (VMAF_integer_feature_motion_sad_score) next to
+# motion2 / motion3 and the debug score. Eleven frames, so the twin's
+# eight-frame batch boundary and its flush tail both emit; every output of
+# every frame compared with == at 8 and 10 bits, also with debug, with
+# motion_force_zero and with a weight and a cap. Fails on a twin without the
+# SAD score.
+test_cuda_motion_sad_score = executable('test_cuda_motion_sad_score',
+    ['test.c', 'test_cuda_motion_sad_score.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_motion_sad_score', test_cuda_motion_sad_score,
+    suite : ['fast', 'gpu'],
+    is_parallel : false,
+    timeout : 60)
+
 # ADR-0597 — integer_vif CPU vs. CUDA parity gate.  Pins the luma-only
 # design contract as a regression assertion so DEEP_AUDIT 2026-05-18
 # finding 23 (false-positive "CUDA VIF skips chroma planes") cannot

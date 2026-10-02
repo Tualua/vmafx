@@ -57887,3 +57887,19 @@ must keep the fork's side of both:
   (`test-codex-hook-config`, `check-research-digest-ids`,
   `test-research-digest-ids`) also name the page that now holds their text.
 - No Netflix golden-data, public API or FFmpeg patch impact.
+## `motion_cuda` emits the CPU's SAD score (2026-10-02)
+
+`fix/cuda-motion-sad-score`, `T-CUDA-MOTION-SAD-SCORE-NOT-EMITTED-2026-10-02`.
+
+- `core/src/feature/cuda/integer_motion_cuda.c`: `provided_features` lists
+  `VMAF_integer_feature_motion_sad_score` first, as `integer_motion.c` does,
+  and `extract_force_zero()`, `motion_collect_first_frame()` and
+  `emit_batch_scores()` append it on every frame. The value is the one the
+  debug `motion_score` already carried. If upstream adds, renames or drops an
+  output of `integer_motion.c`, change the twin's list and its three append
+  sites with it.
+- `core/test/test_cuda_motion_sad_score.c` (new) compares every output of
+  eleven frames with `==` under four option sets.
+- No kernel change, no Netflix golden-data, public API or FFmpeg patch
+  impact. The JSON / XML of a `--backend cuda --feature motion` run gains the
+  key the CPU run has.

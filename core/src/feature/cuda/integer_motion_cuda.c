@@ -214,8 +214,14 @@ static int extract_force_zero(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     (void)dist_pic;
     (void)dist_pic_90;
 
-    int err = vmaf_feature_collector_append_with_dict(
-        feature_collector, s->feature_name_dict, "VMAF_integer_feature_motion2_score", 0., index);
+    /* The CPU appends its SAD score on every frame, forced to zero or not
+     * (integer_motion.c::extract). */
+    int err =
+        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                "VMAF_integer_feature_motion_sad_score", 0., index);
+
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "VMAF_integer_feature_motion2_score", 0., index);
 
     err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                    "VMAF_integer_feature_motion3_score", 0., index);
@@ -686,12 +692,15 @@ static int emit_batch_scores(MotionStateCuda *s, VmafFeatureCollector *fc, unsig
         const double prev_score =
             (i == batch_start) ? score_before_batch : s->score_ring[(i - 1) % MOTION_BATCH_DEPTH];
 
+        /* The CPU's SAD score: fps-weighted, then capped at motion_max_val,
+         * appended on every frame and repeated as the debug motion score
+         * (integer_motion.c::extract). */
+        const double sad_score = MIN(cur_score * s->motion_fps_weight, s->motion_max_val);
+        err |= vmaf_feature_collector_append_with_dict(
+            fc, s->feature_name_dict, "VMAF_integer_feature_motion_sad_score", sad_score, i);
         if (s->debug) {
-            /* The CPU's debug score is its SAD score: fps-weighted, then
-             * capped at motion_max_val (integer_motion.c::extract). */
             err |= vmaf_feature_collector_append_with_dict(
-                fc, s->feature_name_dict, "VMAF_integer_feature_motion_score",
-                MIN(cur_score * s->motion_fps_weight, s->motion_max_val), i);
+                fc, s->feature_name_dict, "VMAF_integer_feature_motion_score", sad_score, i);
         }
 
         if (i == 1) {
@@ -726,6 +735,8 @@ static int motion_collect_first_frame(MotionStateCuda *s, VmafFeatureCollector *
 {
     int err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                       "VMAF_integer_feature_motion2_score", 0., 0);
+    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                   "VMAF_integer_feature_motion_sad_score", 0., 0);
     if (s->debug) {
         err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
                                                        "VMAF_integer_feature_motion_score", 0., 0);
@@ -813,12 +824,17 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
     return ret;
 }
 
-/* T3-15(c) / ADR-0219: motion3_score is now provided (3-frame mode
- * only). The 5-frame window mode remains deferred — init() rejects
- * it with -ENOTSUP. */
-static const char *provided_features[] = {"VMAF_integer_feature_motion_score",
-                                          "VMAF_integer_feature_motion2_score",
-                                          "VMAF_integer_feature_motion3_score", NULL};
+/* The CPU `motion` set (integer_motion.c): the SAD score on every frame, the
+ * same value as `motion_score` with debug=true, and motion2 / motion3.
+ * T3-15(c) / ADR-0219: motion3_score is provided in 3-frame mode only; the
+ * 5-frame window mode remains deferred and init() rejects it with -ENOTSUP. */
+static const char *provided_features[] = {
+    "VMAF_integer_feature_motion_sad_score",
+    "VMAF_integer_feature_motion_score",
+    "VMAF_integer_feature_motion2_score",
+    "VMAF_integer_feature_motion3_score",
+    NULL,
+};
 
 // NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as `extern VmafFeatureExtractor vmaf_fex_integer_motion_cuda` by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_integer_motion_cuda = {

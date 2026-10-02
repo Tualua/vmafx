@@ -624,6 +624,14 @@ CUDA feature TUs compile only when `meson setup -Denable_cuda=true`.
   path.
 - **Motion debug score = CPU SAD score:** `MIN(sad * motion_fps_weight,
   motion_max_val)`, per `integer_motion.c::extract`.
+- **`motion_cuda` output set = CPU `motion` output set.**
+  `VMAF_integer_feature_motion_sad_score` appended EVERY frame (0 at frame
+  0, 0 under `motion_force_zero`, else `MIN(sad * motion_fps_weight,
+  motion_max_val)`), in `extract_force_zero()`,
+  `motion_collect_first_frame()`, `emit_batch_scores()`; debug
+  `motion_score` = same value. Upstream adding / renaming `motion` output
+  -> same change here, same PR. Guard: `test_cuda_motion_sad_score` (11
+  frames = batch boundary + flush tail, `==`, 4 option sets).
 - **Tile loads clamp padding indices** (`cuda_tile_index.h`): reflect once
   like CPU, then `vmaf_cuda_tile_index()` = identity for every consumed
   sample. Same rule as SYCL `sycl_tile_index.h`.

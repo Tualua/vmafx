@@ -842,6 +842,20 @@ done
 python3 -c "import json; a, b = (json.load(open(f'/tmp/motion_{x}.json'))['frames'] for x in ('cpu', 'cuda')); print(max(abs(p['metrics']['integer_motion2'] - q['metrics']['integer_motion2']) for p, q in zip(a, b)))"
 ```
 
+### `motion_cuda` emits the CPU's SAD score (2026-10-02)
+
+The CPU `motion` extractor writes `VMAF_integer_feature_motion_sad_score` on
+every frame: the frame's SAD, weighted by `motion_fps_weight` and capped at
+`motion_max_val`, 0 on the first frame and with `motion_force_zero`.
+`motion_cuda` computed that value and published it only as the debug
+`integer_motion` score, so the result of `--backend cuda --feature motion`
+lacked a key the CPU result has. It now writes the SAD score on every frame.
+On an RTX 4090 at `--precision max` it equals the CPU's on 348 of 348 frames
+(576x324 to 3840x2160, 8 to 16 bits, 40x40 to 64x64 noise), also with
+`debug`, `motion_force_zero`, `motion_moving_average` and weight, blend and
+cap options. `motion2` and `motion3` are unchanged, and so is the frame time:
+the kernel is the same.
+
 ### CPU options on the PSNR, SSIM and float-motion twins
 
 Four CUDA twins take their CPU extractor's full option table

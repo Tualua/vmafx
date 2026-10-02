@@ -31,8 +31,17 @@ two-frame (or five-frame) temporal window.
 | `VMAF_integer_feature_motion2_score`     | Motion2 score (shipped VMAF model input)        | Always            |
 | `VMAF_integer_feature_motion3_score`     | Perceptually blended motion score               | Always            |
 | `VMAF_integer_feature_motion_score`      | Raw (unfixed) motion score for back-compat      | `debug=true` only |
+| `VMAF_integer_feature_motion_sad_score`  | The frame's SAD score: weighted by `motion_fps_weight`, capped at `motion_max_val`; the value `motion2` and `motion3` are derived from | Always |
 
 Frame 0 always emits `motion2_score = 0.0`.
+
+The CPU extractor, `motion_cuda` and `motion_hip` emit
+`VMAF_integer_feature_motion_sad_score`, with the same value on all three.
+`motion_cuda` does since 2026-10-02; before, a `--backend cuda` run lacked
+that key (`T-CUDA-MOTION-SAD-SCORE-NOT-EMITTED-2026-10-02`). `motion_sycl`
+and `motion_metal` do not emit it yet
+(`T-GPU-MOTION-SAD-SCORE-NOT-EMITTED-2026-10-02` in
+[`state.md`](../state.md)).
 
 ### Output range
 
