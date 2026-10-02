@@ -713,7 +713,7 @@ static void launch_scan_reduce(sycl::queue &q, const uint32_t *block_counts, uin
 {
     const sycl::nd_range<1> ndr{sycl::range<1>{(size_t)num_chunks * 256u}, sycl::range<1>{256u}};
     q.submit([&](sycl::handler &h) {
-        sycl::local_accessor<uint32_t, 1> s_data(sycl::range<1>(256u), h);
+        sycl::local_accessor<uint32_t, 1> const s_data(sycl::range<1>(256u), h);
         h.parallel_for<PsnrHvsScanReduceKernel>(ndr, [=](sycl::nd_item<1> item) {
             const unsigned tid = (unsigned)item.get_local_id(0);
             const unsigned chunk = (unsigned)item.get_group(0);
@@ -769,7 +769,7 @@ static void launch_compact(sycl::queue &q, const PsnrHvsKernelArgs &args, const 
 {
     const sycl::nd_range<1> ndr{sycl::range<1>{(size_t)num_chunks * 256u}, sycl::range<1>{256u}};
     q.submit([&](sycl::handler &h) {
-        sycl::local_accessor<uint32_t, 1> s_data(sycl::range<1>(256u), h);
+        sycl::local_accessor<uint32_t, 1> const s_data(sycl::range<1>(256u), h);
         const PsnrHvsKernelArgs k_args = args;
         h.parallel_for<PsnrHvsCompactKernel>(ndr, [=](sycl::nd_item<1> item) {
             const unsigned tid = (unsigned)item.get_local_id(0);

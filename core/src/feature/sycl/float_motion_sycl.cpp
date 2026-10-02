@@ -661,7 +661,7 @@ namespace
  * a SAD (one frame) has motion3 = 0 at index 0. */
 static int flush_fex_sycl(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
 {
-    auto *s = static_cast<FloatMotionStateSycl *>(fex->priv);
+    auto const *s = static_cast<FloatMotionStateSycl *>(fex->priv);
     int ret = 0;
     if (s->motion_force_zero) {
         return 1;

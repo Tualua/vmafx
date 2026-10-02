@@ -258,7 +258,7 @@ static char *check_fixture(const Fixture *fx, const char *label)
 
 static char *test_float_motion_sycl_registered(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_motion_sycl");
+    VmafFeatureExtractor const *fex = vmaf_get_feature_extractor_by_name("float_motion_sycl");
     mu_assert("float_motion_sycl extractor must be registered", fex != NULL);
     mu_assert("float_motion_sycl name matches", !strcmp(fex->name, "float_motion_sycl"));
     return NULL;

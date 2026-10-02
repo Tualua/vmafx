@@ -277,7 +277,7 @@ static int sycl_resolve_device(const VmafSyclConfiguration &cfg, sycl::device &o
     auto platforms = sycl::platform::get_platforms();
     std::vector<sycl::device> gpus;
     for (auto &p : platforms) {
-        for (auto &d : p.get_devices(sycl::info::device_type::gpu))
+        for (const auto &d : p.get_devices(sycl::info::device_type::gpu))
             gpus.push_back(d);
     }
     if (static_cast<unsigned>(cfg.device_index) >= gpus.size()) {
