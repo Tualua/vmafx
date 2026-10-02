@@ -2,6 +2,7 @@
  *
  *  Copyright 2016-2023 Netflix, Inc.
  *  Copyright 2021 NVIDIA Corporation.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -17,8 +18,8 @@
  *
  */
 
-#ifndef __VMAF_SRC_CUDA_PICTURE_CUDA_H__
-#define __VMAF_SRC_CUDA_PICTURE_CUDA_H__
+#ifndef VMAF_SRC_CUDA_PICTURE_CUDA_H_
+#define VMAF_SRC_CUDA_PICTURE_CUDA_H_
 
 #include "common.h"
 #include "libvmaf/picture.h"
@@ -85,4 +86,4 @@ CUevent vmaf_cuda_picture_get_ready_event(VmafPicture *pic);
  */
 enum VmafPixelFormat vmaf_cuda_picture_get_pix_fmt(const VmafPicture *pic);
 
-#endif /* __VMAF_SRC_CUDA_PICTURE_CUDA_H__ */
+#endif /* VMAF_SRC_CUDA_PICTURE_CUDA_H_ */

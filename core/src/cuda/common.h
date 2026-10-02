@@ -2,6 +2,7 @@
  *
  *  Copyright 2016-2023 Netflix, Inc.
  *  Copyright 2021 NVIDIA Corporation.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -29,6 +30,10 @@
 #include <libvmaf/libvmaf_cuda.h>
 #include "cuda_helper.cuh"
 
+/* NOLINTBEGIN(modernize-use-using): clang-tidy has no compile command for a
+ * header and also analyses this one under a C++ translation unit, where it
+ * proposes `using` in place of `typedef`. Every CUDA host `.c` file includes
+ * this header, and C has no `using` (ADR-0141). */
 typedef struct VmafCudaBuffer {
     size_t size;
     CUdeviceptr data;
@@ -44,6 +49,7 @@ typedef struct VmafCudaState {
     int release_ctx;
     bool imported;
 } VmafCudaState;
+/* NOLINTEND(modernize-use-using) */
 
 #define VMAF_CUDA_THREADS_PER_WARP 32
 #define VMAF_CUDA_CACHE_LINE_SIZE 128

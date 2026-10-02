@@ -361,7 +361,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 732,
+  "total_warnings": 726,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -374,7 +374,6 @@
     "core/src/cuda/common.h": 3,
     "core/src/cuda/cuda_helper.cuh": 2,
     "core/src/cuda/kernel_template.h": 7,
-    "core/src/cuda/picture_cuda.c": 5,
     "core/src/cuda/picture_cuda.h": 1,
     "core/src/dict.cpp": 16,
     "core/src/dict.h": 4,
@@ -388,7 +387,6 @@
     "core/src/feature/cambi_internal.h": 3,
     "core/src/feature/common/blur_array.c": 6,
     "core/src/feature/common/convolution_internal.h": 8,
-    "core/src/feature/cuda/integer_cambi_cuda.c": 1,
     "core/src/feature/feature_characteristics.h": 3,
     "core/src/feature/feature_collector.cpp": 16,
     "core/src/feature/feature_collector.h": 4,
@@ -1151,6 +1149,29 @@
         "core/src/hip/stubs.c": {
           "warnings": [
             2,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "787e9ca6581bdbc0ebd48c8395f0fe1107a7765e7b08518d4087873ed1c17c3e"
+    },
+    {
+      "sources": [
+        "core/src/cuda/picture_cuda.c",
+        "core/src/feature/cuda/integer_cambi_cuda.c",
+        "core/src/feature/cuda/integer_psnr_hvs_cuda.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/cuda/picture_cuda.c": {
+          "warnings": [
+            5,
+            0
+          ]
+        },
+        "core/src/feature/cuda/integer_cambi_cuda.c": {
+          "warnings": [
+            1,
             0
           ]
         }

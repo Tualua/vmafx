@@ -58593,3 +58593,20 @@ ADR-1403 unchanged.
   their `: unsigned int` C++ heads are size-compatible and pinned by the
   `..._ABI_UINT_MAX = UINT_MAX` enumerators. Keep those enumerators.
 - No score, output, public C API, Netflix golden-data or FFmpeg patch impact.
+
+## CUDA include guards renamed (standards batch B5, 2026-10-02)
+
+`refactor/b5-cuda-host-standards`, ADR-1142.
+
+- `core/src/cuda/picture_cuda.h`: the guard `__VMAF_SRC_CUDA_PICTURE_CUDA_H__`
+  is `VMAF_SRC_CUDA_PICTURE_CUDA_H_`; `core/src/cuda/cuda_helper.cuh`:
+  `__CUDA_HELPER_H__` is `VMAF_SRC_CUDA_HELPER_CUH_`. Upstream Netflix/vmaf
+  keeps the reserved spellings in `libvmaf/src/cuda/`: a sync that touches the
+  first or last lines of either file conflicts there; keep the fork's guard.
+- `core/src/cuda/picture_cuda.c`: `vmaf_cuda_picture_download_async()` and
+  `vmaf_cuda_picture_upload_async()` initialise `CUDA_MEMCPY2D` with the two
+  memory types as designators instead of `{0}` and two assignments. Same
+  descriptor; keep the designators if upstream changes the neighbouring lines.
+- `core/src/feature/cuda/integer_psnr_hvs_cuda.c`: `init_fex_cuda()` calls the
+  new `psnr_hvs_load_module()`; `reduce_hvs_planes()` loops over
+  `psnr_hvs_plane_count()`. Fork-local file, no upstream counterpart.

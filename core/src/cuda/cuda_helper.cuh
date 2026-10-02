@@ -2,6 +2,7 @@
  *
  *  Copyright 2016-2023 Netflix, Inc.
  *  Copyright 2021 NVIDIA Corporation.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -17,8 +18,8 @@
  *
  */
 
-#ifndef __CUDA_HELPER_H__
-#define __CUDA_HELPER_H__
+#ifndef VMAF_SRC_CUDA_HELPER_CUH_
+#define VMAF_SRC_CUDA_HELPER_CUH_
 
 #ifdef DEVICE_CODE
 #include <cstdint>
@@ -68,6 +69,10 @@
  * CUresult) so host .c files that don't transitively include cuda.h can
  * still consume the mapping via a thin wrapper if ever needed.
  */
+/* NOLINTBEGIN(misc-use-anonymous-namespace): clang-tidy has no compile command
+ * for a header and also analyses this one under a C++ translation unit, where
+ * it proposes an anonymous namespace in place of `static`. Every CUDA host
+ * `.c` file includes this header, and C has no namespaces (ADR-0141). */
 static inline int vmaf_cuda_result_to_errno(int cu_err_code)
 {
     switch (cu_err_code) {
@@ -87,6 +92,7 @@ static inline int vmaf_cuda_result_to_errno(int cu_err_code)
         return -EIO;
     }
 }
+/* NOLINTEND(misc-use-anonymous-namespace) */
 
 #define CHECK_CUDA_GOTO(funcs, CALL, label)                                                        \
     do {                                                                                           \

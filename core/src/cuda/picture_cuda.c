@@ -2,6 +2,7 @@
  *
  *  Copyright 2016-2023 Netflix, Inc.
  *  Copyright 2021 NVIDIA Corporation.
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -42,9 +43,7 @@ int vmaf_cuda_picture_download_async(VmafPicture *cuda_pic, VmafPicture *pic, ui
     if (!pic)
         return -EINVAL;
 
-    CUDA_MEMCPY2D m = {0};
-    m.srcMemoryType = CU_MEMORYTYPE_DEVICE;
-    m.dstMemoryType = CU_MEMORYTYPE_HOST;
+    CUDA_MEMCPY2D m = {.srcMemoryType = CU_MEMORYTYPE_DEVICE, .dstMemoryType = CU_MEMORYTYPE_HOST};
 
     VmafPicturePrivate *cuda_priv = cuda_pic->priv;
     CudaFunctions *cu_f = cuda_priv->cuda.state->f;
@@ -69,9 +68,7 @@ int vmaf_cuda_picture_upload_async(VmafPicture *cuda_pic, VmafPicture *pic, uint
     if (!pic)
         return -EINVAL;
 
-    CUDA_MEMCPY2D m = {0};
-    m.srcMemoryType = CU_MEMORYTYPE_HOST;
-    m.dstMemoryType = CU_MEMORYTYPE_DEVICE;
+    CUDA_MEMCPY2D m = {.srcMemoryType = CU_MEMORYTYPE_HOST, .dstMemoryType = CU_MEMORYTYPE_DEVICE};
 
     VmafPicturePrivate *cuda_priv = cuda_pic->priv;
     CudaFunctions *cu_f = cuda_priv->cuda.state->f;
@@ -507,10 +504,11 @@ static int device_picture_plane_free(VmafCudaState *cu_state, void **data)
 
     int err = 0;
     const CUresult free_res = cu_f->cuMemFree((CUdeviceptr)*data);
-    if (free_res == CUDA_SUCCESS)
+    if (free_res == CUDA_SUCCESS) {
         *data = NULL;
-    else
+    } else {
         err = vmaf_cuda_result_to_errno((int)free_res);
+    }
 
     const CUresult pop_res = cu_f->cuCtxPopCurrent(NULL);
     if (pop_res != CUDA_SUCCESS) {

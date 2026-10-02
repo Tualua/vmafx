@@ -967,6 +967,7 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
 
 static const char *provided_features[] = {"Cambi_feature_cambi_score", NULL};
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as `extern VmafFeatureExtractor vmaf_fex_cambi_cuda` by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_cambi_cuda = {
     .name = "cambi_cuda",
     .init = init_fex_cuda,

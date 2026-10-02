@@ -239,11 +239,36 @@ static int psnr_hvs_init_unwind(VmafFeatureExtractor *fex, PsnrHvsStateCuda *s, 
     return rc;
 }
 
+/* Loads the kernel module and resolves its four entry points with the
+ * extractor's context current. Leaves the context popped on every path. */
+static int psnr_hvs_load_module(VmafFeatureExtractor *fex, PsnrHvsStateCuda *s)
+{
+    CudaFunctions *cu_f = fex->cu_state->f;
+    int ctx_pushed = 0;
+    int _cuda_err = 0;
+    CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
+    ctx_pushed = 1;
+    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, psnr_hvs_score_ptx), fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_psnr_hvs, s->module, "psnr_hvs"), fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_scan_reduce, s->module, "hvs_scan_reduce"),
+                    fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_scan_prefix, s->module, "hvs_scan_prefix"),
+                    fail);
+    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_compact, s->module, "hvs_compact"), fail);
+    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail);
+    return 0;
+
+fail:
+    if (ctx_pushed) {
+        (void)cu_f->cuCtxPopCurrent(NULL);
+    }
+    return _cuda_err;
+}
+
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
     PsnrHvsStateCuda *s = fex->priv;
-    CudaFunctions *cu_f = fex->cu_state->f;
 
     int err = validate_hvs_input(bpc, w, h);
     if (err)
@@ -262,18 +287,9 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     if (err)
         return psnr_hvs_init_unwind(fex, s, err);
 
-    int ctx_pushed = 0;
-    int _cuda_err = 0;
-    CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
-    ctx_pushed = 1;
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, psnr_hvs_score_ptx), fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_psnr_hvs, s->module, "psnr_hvs"), fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_scan_reduce, s->module, "hvs_scan_reduce"),
-                    fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_scan_prefix, s->module, "hvs_scan_prefix"),
-                    fail);
-    CHECK_CUDA_GOTO(cu_f, cuModuleGetFunction(&s->func_compact, s->module, "hvs_compact"), fail);
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail);
+    err = psnr_hvs_load_module(fex, s);
+    if (err)
+        return psnr_hvs_init_unwind(fex, s, err);
 
     err = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state, hvs_terms_bytes(s));
     if (err)
@@ -295,11 +311,6 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         return psnr_hvs_init_unwind(fex, s, -ENOMEM);
 
     return 0;
-
-fail:
-    if (ctx_pushed)
-        (void)cu_f->cuCtxPopCurrent(NULL);
-    return psnr_hvs_init_unwind(fex, s, _cuda_err);
 }
 
 static void fill_kernel_args(const PsnrHvsStateCuda *s, const VmafPicture *ref_pic,
@@ -336,6 +347,7 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     CUstream pic_stream = vmaf_cuda_picture_get_stream(ref_pic);
     CUevent dist_ready = vmaf_cuda_picture_get_ready_event(dist_pic);
 
+    // NOLINTNEXTLINE(performance-no-int-to-ptr): Driver API device address the kernels dereference (ADR-0747)
     char *base = (char *)s->scratch->data;
     float *raw_terms = (float *)(base + s->layout.raw_terms_offset);
     uint64_t *block_masks = (uint64_t *)(base + s->layout.block_masks_offset);
@@ -360,16 +372,22 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_psnr_hvs, grid_x, 1u, 1u, PSNR_HVS_WG, 1u, 1u, 0,
                                            pic_stream, hvs_p, NULL));
 
-    void *red_p[] = {&block_counts, &chunk_totals, &s->total_blocks};
+    void *red_p[] = {(void *)&block_counts, (void *)&chunk_totals, &s->total_blocks};
     CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_scan_reduce, s->layout.num_chunks, 1u, 1u, 256u,
                                            1u, 1u, 0, pic_stream, red_p, NULL));
 
-    void *pre_p[] = {&chunk_totals, &chunk_offsets, &d_header, &s->layout.num_chunks};
+    void *pre_p[] = {(void *)&chunk_totals, (void *)&chunk_offsets, (void *)&d_header,
+                     &s->layout.num_chunks};
     CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_scan_prefix, 1u, 1u, 1u, 512u, 1u, 1u, 0,
                                            pic_stream, pre_p, NULL));
 
-    void *cmp_p[] = {&args,          &raw_terms,    &block_masks, &block_counts,
-                     &chunk_offsets, &packed_terms, &d_header};
+    void *cmp_p[] = {&args,
+                     (void *)&raw_terms,
+                     (void *)&block_masks,
+                     (void *)&block_counts,
+                     (void *)&chunk_offsets,
+                     (void *)&packed_terms,
+                     (void *)&d_header};
     CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_compact, s->layout.num_chunks, 1u, 1u, 256u, 1u,
                                            1u, 0, pic_stream, cmp_p, NULL));
 
@@ -378,6 +396,14 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(s->host_header, (CUdeviceptr)d_header,
                                               sizeof(PsnrHvsHeader), s->lc.str));
     return vmaf_cuda_kernel_submit_post_record(&s->lc, fex->cu_state);
+}
+
+/* The planes scored: luma, or all three. Bounded by the size of every
+ * per-plane array, the header's offsets included. */
+static unsigned psnr_hvs_plane_count(const PsnrHvsStateCuda *s)
+{
+    const unsigned most = (unsigned)PSNR_HVS_NUM_PLANES;
+    return s->n_planes < most ? s->n_planes : most;
 }
 
 /* Each plane's score from its terms, added in the CPU's order (ADR-1397). */
@@ -392,10 +418,11 @@ static void reduce_hvs_planes(const PsnrHvsStateCuda *s, double scores[PSNR_HVS_
         return;
     }
     const float *compact_terms = (const float *)s->rb.host_pinned;
-    for (unsigned p = 0; p < s->n_planes; p++) {
+    const unsigned planes = psnr_hvs_plane_count(s);
+    for (unsigned p = 0; p < planes; p++) {
         const uint32_t start = s->host_header->plane_offsets[p];
-        const uint32_t end = (p + 1u < s->n_planes) ? s->host_header->plane_offsets[p + 1u] :
-                                                      s->host_header->total_terms;
+        const uint32_t end =
+            (p + 1u < planes) ? s->host_header->plane_offsets[p + 1u] : s->host_header->total_terms;
         const size_t n_compact = (size_t)(end - start);
         scores[p] = vmaf_psnr_hvs_plane_score_compacted(compact_terms + start, n_compact,
                                                         s->num_blocks[p], s->bpc);
