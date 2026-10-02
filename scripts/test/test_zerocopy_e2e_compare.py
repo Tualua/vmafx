@@ -35,9 +35,9 @@ def _frames(metrics: dict[str, Any], n: int = 3) -> dict[str, Any]:
 def _leg(d: Path, case: str, leg: str, metrics: dict[str, Any] | None, rc: int, err: str) -> None:
     base = d / f"{CLIP}__{case}.{leg}"
     if metrics is not None:
-        base.with_suffix(".json").write_text(json.dumps(_frames(metrics)))
-    base.with_suffix(".rc").write_text(f"{rc}\n")
-    base.with_suffix(".err").write_text(err)
+        base.with_name(base.name + ".json").write_text(json.dumps(_frames(metrics)))
+    base.with_name(base.name + ".rc").write_text(f"{rc}\n")
+    base.with_name(base.name + ".err").write_text(err)
 
 
 def _case(
@@ -180,3 +180,13 @@ def test_parity_stage_table_shape() -> None:
     assert zc.PARITY_STAGE["psnr"] == STAGE_2
     assert zc.PARITY_STAGE["psnr_luma"] == STAGE_1
     assert set(zc.CASES) == set(zc.PARITY_STAGE)
+
+
+def test_dotted_case_id_keeps_every_leg_file_distinct(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    case = "model-vmaf_v0.6.1"
+    _case(tmp_path, case, {"vmaf": 90.0}, {"vmaf": 90.0}, {"vmaf": 90.5})
+    rc, out = _run(tmp_path, 1, case, capsys)
+    assert rc == 1
+    assert "FAIL zc-vs-host" in out
