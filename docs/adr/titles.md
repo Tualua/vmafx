@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1247), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1248), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -4999,3 +4999,7 @@ Every ADR, one heading each (1247), so the site search finds an ADR by its title
 ## ADR-1594: `Containerfile.vmafx` — a self-contained SYCL + patched-ffmpeg image with a build-time golden gate
 
 [1594-vmafx-sycl-ffmpeg-container](1594-vmafx-sycl-ffmpeg-container.md)
+
+## ADR-1595: SYCL zero-copy input fails loudly and the FFmpeg filter routes `feature=` names to SYCL twins
+
+[1595-sycl-zerocopy-fail-loud-twin-routing](1595-sycl-zerocopy-fail-loud-twin-routing.md)

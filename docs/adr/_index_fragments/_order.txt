@@ -1246,7 +1246,4 @@
 1439-quality-runner-golden-upstream-sync
 1593-hybrid-gcc-cpu-icpx-sycl
 1594-vmafx-sycl-ffmpeg-container
-1561-hybrid-gcc-cpu-icpx-sycl
-1562-vmafx-sycl-ffmpeg-container
-1563-oneapi-libimf-needed-libm
 1595-sycl-zerocopy-fail-loud-twin-routing

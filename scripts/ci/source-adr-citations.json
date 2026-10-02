@@ -6574,6 +6574,7 @@
         "core/test/test_sycl_twin_option_parity.c": 1,
         "core/test/test_sycl_vif_min_dim.c": 1,
         "core/test/test_sycl_vif_parity.c": 1,
+        "core/test/test_sycl_zerocopy_guards.c": 1,
         "core/test/test_tad_rust.c": 1,
         "core/test/test_thread_pool.c": 1,
         "core/test/test_thread_pool_backpressure.c": 1,
@@ -10346,6 +10347,14 @@
         "scripts/test/run-all-tests.sh": 1
       },
       "target": "1594-vmafx-sycl-ffmpeg-container.md"
+    },
+    "1595": {
+      "sites": {
+        "core/src/libvmaf.c": 1,
+        "core/test/meson.build": 1,
+        "core/test/test_sycl_zerocopy_guards.c": 1
+      },
+      "target": "1595-sycl-zerocopy-fail-loud-twin-routing.md"
     }
   },
   "retired": {
