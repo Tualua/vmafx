@@ -307,6 +307,46 @@ It has no `sycl_device` option: the device comes from the QSV frame context.
 `sycl_device=N` belongs to the generic `libvmaf` filter. See
 [vmaf-vpl.md](vmaf-vpl.md) for the SYCL backend overview.
 
+#### How `feature=` names are resolved in `libvmaf_sycl`
+
+Every `feature=` name is looked up through `vmaf_feature_backend_twin()`, so
+`feature=name=vif|name=cambi` runs the SYCL extractors `vif_sycl` and
+`cambi_sycl` on both input paths. The filter logs the choice at info level:
+
+```text
+libvmaf_sycl: feature 'vif' -> vif_sycl
+```
+
+A feature without a usable SYCL twin (the twin cannot honour one of its
+options, cannot run this frame size or bit depth, there is no SYCL device, or
+the extractor simply has no twin, for example `niqe`) behaves differently on
+the two input paths:
+
+| Input | Behaviour | Message |
+| --- | --- | --- |
+| QSV zero-copy | The filter fails to configure and ffmpeg exits non-zero. Zero-copy frames never reach host memory, so a CPU extractor cannot run. | `libvmaf_sycl: feature 'niqe' cannot run on zero-copy input: no SYCL twin` |
+| Software (host upload) | The feature is computed on the CPU and the run continues. | `libvmaf_sycl: warning: feature 'niqe': no SYCL twin; computing it on the CPU` |
+
+The reason after the colon (or semicolon) is one of `no SYCL twin`,
+`SYCL twin <twin> cannot honour option '<option>'`,
+`SYCL twin <twin> cannot run <w>x<h> <bpc>-bit pictures with these options`,
+`no SYCL device` or `twin lookup failed (error <n>)`.
+
+A SYCL twin that exists but still needs host pictures (`psnr_sycl` and the
+other extractors listed in [the SYCL overview](../backends/sycl/zero-copy.md))
+makes a zero-copy run fail with `psnr_sycl: needs host pictures, which
+zero-copy input does not provide` until it gains a device-side input path.
+
+Two more zero-copy rules:
+
+- QSV zero-copy accepts NV12 and P010 surfaces only. Any other `sw_format`
+  fails at configuration with `libvmaf_sycl: QSV zero-copy supports NV12 and
+  P010 surfaces only, got <format>`.
+- A failed VA surface import aborts the run (`vmaf_sycl_import_va_surface
+  (ref|dist) failed: <n>; aborting because a skipped frame would change the
+  pooled score`). The filter no longer skips the frame, because a skipped
+  frame silently changes the pooled score.
+
 ### `libvmaf_cuda`
 
 `libvmaf_cuda` keeps CUDA hwaccel frames on the GPU end to end. It needs

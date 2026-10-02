@@ -116,6 +116,18 @@ ffmpeg \
 
 A single shared `qsv` device silently reintroduces the contamination.
 
+### Feature routing, supported surfaces and import failures (ADR-1595)
+
+On QSV zero-copy input the `libvmaf_sycl` filter resolves each `feature=` name
+to its SYCL twin and refuses to configure when none can run (a CPU extractor
+cannot read device-only frames); on software input it uses the twin when there
+is one and otherwise warns and computes the feature on the CPU. Zero-copy
+accepts NV12 and P010 surfaces only, and a failed VA import aborts the run
+instead of skipping a frame. The messages and examples are in
+[Using VMAF with FFmpeg](../../usage/ffmpeg.md#how-feature-names-are-resolved-in-libvmaf_sycl);
+the rationale is
+[ADR-1595](../../adr/1595-sycl-zerocopy-fail-loud-twin-routing.md).
+
 ### P010/P012 pixels are normalized in the import
 
 VA-API stores 10-bit (P010) / 12-bit (P012) samples **MSB-aligned**
