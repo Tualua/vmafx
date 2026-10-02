@@ -796,6 +796,18 @@ linked AGENTS.md before resolving conflicts.
   `float_adm` file of every backend and `core/src/meson.build`;
   `core/test/test_float_adm_device_math.c` checks the value on inputs where
   the estimate and the quotient differ.
+- **Recorded upstream head ([ADR-1474](../adr/1474-relicense-helper-headers-and-ci-check.md))**:
+  `docs/development/known-upstream-bugs.md` carries exactly one heading
+  ``## Upstream head the fork is at parity with: `<commit id>` (<date>)``.
+  `scripts/ci/upstream_parity_pin.py` reads it and the required check
+  `Licence Provenance` compares every file's licence header against that
+  Netflix/vmaf commit. An upstream port or sync moves the id in the same pull
+  request and keeps the heading's wording; a second heading of that form, or a
+  reworded one, fails the check. A port that brings a file whose path or name
+  now exists upstream changes that file's verdict: run
+  `scripts/dev/relicense_fork_files.py --check --upstream-ref <new id>`
+  before pushing. See [the guide](licence-provenance-check.md).
+
 - **Coverage Gate ratchet + per-PR delta gate (ADR-0922)**:
   [ADR-0922](../adr/0922-coverage-ratchet-aggressive.md). Absolute
   floors live in `scripts/ci/coverage-check.sh`

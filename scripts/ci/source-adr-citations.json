@@ -7319,7 +7319,9 @@
     },
     "1250": {
       "sites": {
-        ".pre-commit-config.yaml": 2,
+        ".github/workflows/lint-and-format.yml": 2,
+        ".github/workflows/required-aggregator.yml": 1,
+        ".pre-commit-config.yaml": 3,
         "REUSE.toml": 3,
         "core/src/mcp/meson.build": 1,
         "scripts/ci/check-copyright.sh": 7,
@@ -9478,6 +9480,17 @@
         "core/test/test_float_adm_x86.c": 1
       },
       "target": "1473-float-adm-x86-simd-exact-and-dispatched.md"
+    },
+    "1474": {
+      "sites": {
+        ".github/workflows/lint-and-format.yml": 2,
+        ".github/workflows/required-aggregator.yml": 2,
+        ".pre-commit-config.yaml": 2,
+        "scripts/ci/tests/test_hiss_replay_contract.py": 1,
+        "scripts/ci/tests/test_upstream_parity_pin.py": 1,
+        "scripts/ci/upstream_parity_pin.py": 1
+      },
+      "target": "1474-relicense-helper-headers-and-ci-check.md"
     }
   },
   "retired": {

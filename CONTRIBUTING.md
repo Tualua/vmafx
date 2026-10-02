@@ -198,7 +198,9 @@ the two.
 If you are unsure which case you are in, read the tag already in the file; if it
 has none, ask in the pull request rather than guessing.
 `scripts/dev/relicense_fork_files.py --check` answers the same question
-mechanically.
+mechanically, and the required check `Licence Provenance` runs it on every pull
+request; [the guide](docs/development/licence-provenance-check.md) says how to
+read a failure and how to run it locally.
 
 New files start with this header, and the copyright line names you or your
 employer, not the project:

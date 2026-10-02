@@ -94,6 +94,8 @@ jobs:
               'Sanitizers (undefined)',
               'Assertion Density',
               'Twin Drift',
+              // ADR-1474: licence headers against provenance (ADR-1250).
+              'Licence Provenance',
               'Tiny AI',
               'Ubuntu HIP',
               'SYCL Parity (Arc A380)',
@@ -299,6 +301,10 @@ jobs:
               'cargo-deny',
               'helm lint + template',
               'Doxygen Public API',
+              // ADR-1474 — no path filter and no conditional skip: the job
+              // reports on every eligible pull request and master push, so
+              // absence means the Lint workflow failed to register.
+              'Licence Provenance',
             ];
 
             // GitHub does not create a dependent job's check run until every

@@ -55,8 +55,8 @@ means re-pointing every badge.
 
 Branch protection targets a single context: `Required Checks Aggregator` in
 [`.github/workflows/required-aggregator.yml`](../../.github/workflows/required-aggregator.yml).
-The aggregator's `required` list holds 79 check names defined across 20
-workflows; each run evaluates 78 of them. It declares both Scorecard event
+The aggregator's `required` list holds 80 check names defined across 20
+workflows; each run evaluates 79 of them. It declares both Scorecard event
 gates, then removes the non-applicable one so only `Scorecard PR Gate` or
 `Scorecard Master Gate` is evaluated for a run.
 
@@ -110,6 +110,7 @@ job the PR renamed, every required check and every build lane.
 | `lint-and-format.yml` | `Python Lint (Ruff + Black + mypy)` | `Python Lint` | 11 | Yes |
 | `lint-and-format.yml` | unchanged | `Docs` | 4 | Yes |
 | `lint-and-format.yml` | `Twin Drift + Stale Source Refs (ADR-1135)` | `Twin Drift` | 10 | Yes |
+| `lint-and-format.yml` | new in ADR-1474 | `Licence Provenance` | 18 | Yes |
 | `lint-and-format.yml` | `ShellCheck + shfmt (All *.sh)` | `ShellCheck + shfmt` | 17 | Yes |
 | `lint-and-format.yml` | `Clang-Tidy SYCL (Changed Files, Advisory)` | `Tidy SYCL` | 9 | Yes |
 | `lint-and-format.yml` | `Check — No committed conflict markers` | `No Conflict Markers` | 19 | No |

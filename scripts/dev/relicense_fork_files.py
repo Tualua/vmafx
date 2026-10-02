@@ -855,6 +855,15 @@ def action_of(verdict: Verdict) -> str:
     return "attribute" if verdict.reason == "documented-port" else "repair"
 
 
+def require_full_history(repo: Path) -> None:
+    """Refuse a shallow checkout: the author veto reads every commit of a file."""
+    if git(repo, "rev-parse", "--is-shallow-repository").strip() != "false":
+        die(
+            "this checkout is shallow, so a file's outside authors cannot be read; "
+            "fetch the full history first (git fetch --unshallow)"
+        )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n", 1)[0])
     mode = parser.add_mutually_exclusive_group(required=True)
@@ -877,6 +886,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     repo = Path(git(args.repo, "rev-parse", "--show-toplevel").strip())
+    require_full_history(repo)
     git(repo, "rev-parse", "--verify", "--quiet", args.upstream_ref + "^{tree}")
     prov = load_provenance(args.provenance, repo)
     verdicts = classify(repo, args.upstream_ref, prov, args.jobs)

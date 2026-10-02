@@ -404,6 +404,7 @@ from = ["netflix-speed"]  # mirrors compute_cov_kernel_scalar in speed.c
 "pkg/model/default.go" = "'NOT derived from' a constant"
 "python/test/ssimulacra2_test.py" = "describes what the snapshot guards"
 "scripts/ci/check-state-md-rows.sh" = "'duplicate' describes state.md rows"
+"scripts/ci/upstream_parity_pin.py" = "'port' and 'sync' say when the recorded commit id moves; reads a heading, carries no upstream code"
 "scripts/docs/concat-adr-index.sh" = "'duplicate' describes ADR numbers"
 "tools/vmaf-roi-score/src/vmafroiscore/defaultmodel.py" = "mirrors a constant from the fork's public header"
 "tools/vmaf-tune/src/vmaftune/codec_adapters/svtav1.py" = "mirrors the fork's own adapter interface"

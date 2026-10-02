@@ -106,6 +106,10 @@ BUG_098_GATE_DEPENDENCIES = {
 
 ADR_1342_STRICT_CONTEXTS = {"RC1 Tester Report"}
 
+# ADR-1474 — the licence provenance job has no path filter and no conditional
+# skip, and reports on `pull_request` and on `push` to master.
+ADR_1474_STRICT_CONTEXTS = {"Licence Provenance"}
+
 # GitHub's activity types for a bare `pull_request:` trigger.
 PULL_REQUEST_DEFAULT_TYPES = frozenset({"opened", "synchronize", "reopened"})
 
@@ -254,7 +258,8 @@ class HissReplayContractTests(unittest.TestCase):
             STRICT_CONTEXTS
             | ADR_1297_STRICT_CONTEXTS
             | BUG_098_STRICT_CONTEXTS
-            | ADR_1342_STRICT_CONTEXTS,
+            | ADR_1342_STRICT_CONTEXTS
+            | ADR_1474_STRICT_CONTEXTS,
         )
         self.assertTrue(strict >= STRICT_CONTEXTS)
         self.assertTrue(strict <= required)

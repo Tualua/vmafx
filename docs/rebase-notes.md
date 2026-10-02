@@ -59034,3 +59034,26 @@ No score, output, public C API, Netflix golden-data or FFmpeg patch impact. `flo
   they start in the first 60 lines (`header_prose_blocks()`).
 - `relicense_fork_files.py --check` exits 0 on this tree; `--write` is safe to
   run again.
+
+## Required check `Licence Provenance` reads the recorded upstream head (ADR-1474, 2026-10-02)
+
+`ci/relicense-check-required`, closes `T-RELICENSE-CHECK-PENDING-2026-10-02`.
+
+- **An upstream port or sync moves one heading.**
+  `docs/development/known-upstream-bugs.md` has exactly one heading
+  ``## Upstream head the fork is at parity with: `<commit id>` (<date>)``;
+  `scripts/ci/upstream_parity_pin.py` reads it and the `licence-provenance` job
+  of `.github/workflows/lint-and-format.yml` runs
+  `relicense_fork_files.py --check --upstream-ref <that commit>`. Update the id
+  in the port's own pull request and keep the wording; do not add a second
+  heading of that form (retitle the older section instead).
+- Before pushing a port, run the check against the new head:
+  `python3 scripts/dev/relicense_fork_files.py --check --upstream-ref <new id>`.
+  A fork file whose path or name now exists upstream changes verdict
+  (`upstream-path`, `upstream-name`) and keeps its terms from then on.
+- The job fetches `https://github.com/Netflix/vmaf.git master` and needs
+  `fetch-depth: 0`; `relicense_fork_files.py` refuses a shallow checkout
+  (`require_full_history()`).
+- `Licence Provenance` is in the aggregator's `required` and `strictMustReport`
+  arrays and in `ADR_1474_STRICT_CONTEXTS` of
+  `scripts/ci/tests/test_hiss_replay_contract.py`; rename all of them together.

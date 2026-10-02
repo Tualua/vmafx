@@ -307,6 +307,23 @@ repos:
         files: '^(REUSE\.toml|scripts/ci/tests/test_reuse_compliance\.py|LICENSES/.*)$'
         pass_filenames: false
 
+      - id: test-relicense-fork-files
+        name: Licence provenance tool and reviewed provenance file (ADR-1250, ADR-1474)
+        # The whole-tree check needs every file's history and the upstream
+        # tree, so it is the required `Licence Provenance` CI job and not a
+        # hook. These are its unit tests and the provenance file's contract.
+        entry: python3 -B -m unittest scripts/dev/tests/test_relicense_fork_files.py
+        language: system
+        files: '^scripts/dev/(relicense_fork_files\.py|relicense_provenance\.toml|tests/test_relicense_fork_files\.py)$'
+        pass_filenames: false
+
+      - id: test-upstream-parity-pin
+        name: Recorded upstream head parses and the Licence Provenance job reads it (ADR-1474)
+        entry: python3 -B scripts/ci/tests/test_upstream_parity_pin.py
+        language: system
+        files: '^(docs/development/known-upstream-bugs\.md|scripts/ci/(upstream_parity_pin\.py|tests/test_upstream_parity_pin\.py)|\.github/workflows/(lint-and-format|required-aggregator)\.yml)$'
+        pass_filenames: false
+
       - id: check-base-image-single-source
         name: Container base images come from build-config.env
         entry: scripts/ci/check-base-image-single-source.sh

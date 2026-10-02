@@ -903,6 +903,64 @@ jobs:
       - name: Run twin-drift gate
         run: bash scripts/ci/twin-drift-check.sh
 
+  licence-provenance:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # ADR-1474 — every file's licence header against its provenance (ADR-1250).
+    # scripts/dev/relicense_fork_files.py --check fails when a fork-authored
+    # file arrives with another licence, when a file that reproduces upstream
+    # code lacks that code's notice, or when a reviewed provenance entry names
+    # a file that is gone. It was run by hand before, and master collected 41
+    # pending files in two weeks.
+    # The upstream tree it compares against is the Netflix/vmaf commit the
+    # repository records as the head it is at parity with (one heading in
+    # docs/development/known-upstream-bugs.md, read by
+    # scripts/ci/upstream_parity_pin.py), not upstream's moving master: a file
+    # Netflix adds must not turn this job red on an unrelated pull request.
+    # Full history on both sides: the author veto reads every commit of a
+    # candidate file, and the tool refuses a shallow checkout.
+    # No path filter and no conditional skip: the job reports on every
+    # eligible pull request and master push, so the aggregator lists it in
+    # strictMustReport as well. The job `name:` is a required check in
+    # required-aggregator.yml — rename both in the same commit.
+    # required-aggregator
+    name: Licence Provenance
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.14.8"
+      - name: Run the tool's and the pin reader's tests
+        run: |
+          python3 -B -m unittest \
+            scripts/dev/tests/test_relicense_fork_files.py \
+            scripts/ci/tests/test_upstream_parity_pin.py
+      - name: Fetch Netflix/vmaf with its full history
+        run: git fetch --no-tags --quiet https://github.com/Netflix/vmaf.git master
+      - name: Resolve the recorded upstream head
+        id: upstream
+        shell: bash
+        run: |
+          sha="$(python3 scripts/ci/upstream_parity_pin.py --within FETCH_HEAD)"
+          echo "sha=${sha}" >> "${GITHUB_OUTPUT}"
+      - name: Check licence headers against provenance
+        shell: bash
+        env:
+          UPSTREAM_SHA: ${{ steps.upstream.outputs.sha }}
+        run: |
+          status=0
+          python3 scripts/dev/relicense_fork_files.py --check --upstream-ref "${UPSTREAM_SHA}" || status=$?
+          if [[ "${status}" -eq 1 ]]; then
+            echo "::error::A licence header disagrees with the file's provenance (ADR-1250, ADR-1474). The lines above name each file and what it needs; docs/development/licence-provenance-check.md says how to fix each kind."
+          elif [[ "${status}" -ne 0 ]]; then
+            echo "::error::relicense_fork_files.py could not run (exit ${status}): a git, history or provenance-data error, printed above."
+          fi
+          exit "${status}"
+
   shellcheck:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     # T7-CI-DEDUP — body collapsed to a no-op proxy that depends on the

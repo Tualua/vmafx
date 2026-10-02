@@ -14,10 +14,13 @@ every run.
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location(
@@ -371,6 +374,35 @@ class DerivationDetector(unittest.TestCase):
     def test_a_line_comment_suppression_is_dropped_too(self) -> None:
         text = "x = 0; // NOLINT(bugprone-foo): mirrors integer_adm.c exactly\nint y;\n"
         self.assertEqual(REL.derivation_statements(text, self.UP), [])
+
+
+class FullHistory(unittest.TestCase):
+    """The author veto reads `git log --follow`; a shallow clone has no log."""
+
+    def test_a_complete_checkout_passes(self) -> None:
+        with mock.patch.object(REL, "git", return_value="false\n") as git:
+            REL.require_full_history(Path())
+        git.assert_called_once_with(Path(), "rev-parse", "--is-shallow-repository")
+
+    def test_a_shallow_checkout_is_refused(self) -> None:
+        stderr = io.StringIO()
+        with (
+            mock.patch.object(REL, "git", return_value="true\n"),
+            contextlib.redirect_stderr(stderr),
+        ):
+            with self.assertRaises(SystemExit) as stop:
+                REL.require_full_history(Path())
+        self.assertEqual(stop.exception.code, 2)
+        self.assertIn("shallow", stderr.getvalue())
+
+    def test_an_unreadable_answer_is_refused(self) -> None:
+        # Fail closed: anything but git's literal "false" is not a full history.
+        with (
+            mock.patch.object(REL, "git", return_value=""),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            with self.assertRaises(SystemExit):
+                REL.require_full_history(Path())
 
 
 if __name__ == "__main__":

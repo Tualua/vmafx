@@ -891,9 +891,10 @@ is enforced at the host, not just honored by convention.
   - **Static analysis (10):** CodeQL ×4 (CodeQL, CodeQL (C/C++),
     CodeQL (Python), CodeQL (Actions)), Pre-Commit, Python Lint, Semgrep,
     Tidy Changed, Tidy Ratchet, Cppcheck.
-  - **Supply chain / docs (6):** Dependency Review, Gitleaks, Docs,
+  - **Supply chain / docs (7):** Dependency Review, Gitleaks, Docs,
     ShellCheck + shfmt, Scorecard PR Gate (pull requests), Scorecard Master
-    Gate (master pushes).
+    Gate (master pushes), Licence Provenance
+    ([guide](licence-provenance-check.md)).
   - **Tests:** Netflix CPU Golden, Sanitizers ×3 (Sanitizers (address),
     Sanitizers (thread), Sanitizers (undefined)), Assertion Density, Twin Drift,
     Tiny AI, go vet + go test, `Coverage GPU`, and `SYCL Parity (Arc A380)`.
