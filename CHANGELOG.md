@@ -141,6 +141,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   [agents index and topic pages](docs/development/agents-index.md)).
 
 
+- **`tools/vmaf-tune/AGENTS.md` is now a generated index over one page per topic.**
+  Its text moved unchanged into 23 pages under `tools/vmaf-tune/AGENTS.d/`; the
+  index is 5 822 bytes where the file was 81 122 bytes
+  ([ADR-1454](docs/adr/1454-agents-index-and-topic-pages.md),
+  [agents index and topic pages](docs/development/agents-index.md)).
+
+
 - **Six more CUDA twins are held to the CPU's bits by the parity gate.**
   `motion_cuda` (also with `debug=true`), `motion_v2_cuda`, `psnr_cuda`,
   `float_ssim_cuda` and `float_ms_ssim_cuda` (with and without `enable_lcs`)

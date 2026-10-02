@@ -1,0 +1,73 @@
+---
+paths:
+  - tools/vmaf-tune/src/vmaftune/codec_adapters/*.py
+  - tools/vmaf-tune/tests/test_codec_adapter_*.py
+invariant: QSV shares _qsv_common; VideoToolbox shares _videotoolbox_common; AMF preset compression 7-into-3.
+---
+<!-- markdownlint-disable MD024 -->
+# Specific codec adapter implementations
+
+- **`_QSV_ENCODERS` and `BaseQsvAdapter.qsv_hw_init_args()` must
+  stay in sync (ADR-0601).** `compare._hw_init_args_for_encoder()`
+  injects QSV VA-API device-init chain (`-init_hw_device vaapi=va:…
+  -init_hw_device qsv=qsv_dev@va -filter_hw_device va`) only for
+  encoders listed in `_QSV_ENCODERS`. If new QSV adapter added, its
+  encoder string must be added to `_QSV_ENCODERS` in same commit —
+  omitting it silently skips init chain, produces
+  `-22 Invalid argument` at runtime. Static helper
+  `BaseQsvAdapter.qsv_hw_init_args(vaapi_device)` must produce same
+  flag sequence as `_hw_init_args_for_encoder` for QSV encoders.
+  `test_bbb_e2e_v14_bug_cluster.py::test_qsv_adapter_static_helper_returns_init_args`
+  asserts this invariant.
+- **`libvpx-vp9` two-pass is FFmpeg-generic, encoder-stats is not.**
+  Adapter may set `supports_two_pass = True` because FFmpeg's
+  libvpx wrapper honours `-pass` / `-passlogfile`, but
+  `supports_encoder_stats` stays `False`: VP9 first-pass stats are
+  binary libvpx packet stream, not x264/x265 text stats schema
+  consumed by `encoder_stats.py`.
+- **`PRESET_NAME_TO_INT` in `codec_adapters/svtav1.py` is closed and
+  order-stable** (ADR-0278). Mapping (`placebo`→`0`, `slowest`→`1`,
+  `slower`→`3`, `slow`→`5`, `medium`→`7`, `fast`→`9`, `faster`→`11`,
+  `veryfast`→`13`) is exercised by every corpus row that records
+  `encoder == "libsvtav1"`. Adding name is schema bump for any
+  fr_regressor_v2 corpus that pinned previous mapping; reordering
+  silently changes integer SVT-AV1 receives. Editing this table
+  requires same-PR doc + ADR update.
+- **AMF preset compression is fixed (ADR-0282).** 7-into-3 preset
+  table in `codec_adapters/_amf_common.py` (`_PRESET_TO_AMF`) is
+  cross-codec axis Phase B / C consumers depend on. Do not extend
+  `presets` beyond canonical 7 names without amending ADR-0282 —
+  registry uniformity that lets search loop ignore codec identity
+  rests on every codec accepting same preset vocabulary. AV1
+  (`av1_amf`) is RDNA3+ only; `ensure_amf_available` is runtime
+  gate.
+
+- **QSV adapters share `_qsv_common.py`.** Three encoders with
+  identical parameter shape (preset vocabulary, ICQ
+  `global_quality` window) is deliberate exception to "one file
+  per codec, nothing shared" Phase A convention. Per ADR-0281,
+  future codec families that share parameter shape (NVENC's three
+  encoders, AMF's three encoders, VideoToolbox's two H.264 + HEVC
+  encoders) follow same pattern: one `_<family>_common.py` private
+  module, thin dataclass adapters. Single-codec families stay
+  flat.
+- **Apple VideoToolbox adapters share `_videotoolbox_common.py`
+  (ADR-0283 + ADR-0283 *Status update 2026-05-09*).** Three
+  encoders (`h264_videotoolbox`, `hevc_videotoolbox`,
+  `prores_videotoolbox`) reuse nine-name preset → `-realtime`
+  boolean mapping. H.264 and HEVC share single `-q:v` 0..100
+  quality knob (higher = better; `invert_quality=False`). ProRes
+  uses `-profile:v` instead — it is fixed-rate intermediate codec,
+  so harness's `crf` slot carries integer tier id (0=`proxy` →
+  5=`xq`); adapter has its own validator
+  `validate_prores_videotoolbox()` and integer-id-to-FFmpeg-alias
+  helper `prores_profile_name()`. Per codec-adapter contract,
+  search loop never branches on adapter identity — it consumes
+  `quality_range` + `ffmpeg_codec_args(...)` uniformly. AV1
+  hardware encoding is intentionally absent — Apple Silicon has
+  no AV1 hardware encoder block as of 2026 and FFmpeg exposes no
+  `av1_videotoolbox`. Tests mock `subprocess.run`; suite runs on
+  Linux CI without macOS. End-to-end VT exercise left to
+  contributors with macOS + VideoToolbox available locally
+  (ProRes additionally requires M1 Pro / Max / Ultra or later —
+  Intel Macs with T2 do not have ProRes hardware block).
