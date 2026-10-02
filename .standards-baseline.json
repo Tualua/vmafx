@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-02T14:59:23Z",
+  "generated_at": "2026-10-02T15:07:43Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "da161388ce580e0016db396e8da54fa68a64953d",
-  "total_infractions": 245,
+  "commit_sha": "6c73edd809de513a4f25359913f8869927591283",
+  "total_infractions": 243,
   "infractions": [
     {
       "rule_id": "HISS-04",
@@ -992,22 +992,6 @@
       "symbol": "niqe_extract_aggd",
       "message": "Function 'niqe_extract_aggd' (84 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "core/src/feature/niqe_math.h:105:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/x86/float_adm_avx2.c",
-      "line_number": 51,
-      "symbol": "float_adm_dwt2_avx2",
-      "message": "Function 'float_adm_dwt2_avx2' (118 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/float_adm_avx2.c:51:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/x86/float_adm_avx512.c",
-      "line_number": 66,
-      "symbol": "float_adm_dwt2_avx512",
-      "message": "Function 'float_adm_dwt2_avx512' (196 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/x86/float_adm_avx512.c:66:HISS-04"
     },
     {
       "rule_id": "HISS-04",

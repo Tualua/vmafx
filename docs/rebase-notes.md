@@ -58717,3 +58717,20 @@ ADR-1403 unchanged.
   master's side of that file, put the added text into the page whose
   `Touching` row matches the files, then `make docs-fragments-write`.
 - No Netflix golden-data, public API or FFmpeg patch impact.
+## The x86 float ADM wavelet kernels are split into row helpers (ADR-1142, 2026-10-02)
+
+`refactor/float-adm-x86-standards`. No score impact: no dispatch table calls `float_adm_*_avx2` / `float_adm_*_avx512` (only their headers name them), and an old-against-new comparison of all eight exported functions is bit-identical on 71,840 inputs.
+
+`core/src/feature/x86/float_adm_avx2.c` and `float_adm_avx512.c` are fork files under the Netflix header (the float ADM SIMD port); upstream has no counterpart, so a sync does not touch them. A later rewrite or a re-wiring into `adm.c`'s dispatch meets this layout:
+
+| Statements of the former single function | Now in |
+| --- | --- |
+| broadcast of the eight filter taps | `Dwt2TapsAvx2` / `Dwt2TapsAvx512`, filled once in `float_adm_dwt2_avx2()` / `float_adm_dwt2_avx512()` |
+| vertical pass of a row (vector loop and scalar tail) | `dwt2_vertical_row_avx2()` / `dwt2_vertical_row_avx512()` |
+| horizontal pass of a row, AVX2 (scalar) | `dwt2_horizontal_row_avx2()` |
+| horizontal pass of a row, AVX-512 (`j = 0` scalar, 16-wide loop, scalar tail) | `dwt2_horizontal_row_avx512()` over `dwt2_horizontal_scalar()` and `dwt2_horizontal_16_avx512()` |
+| allocation of `tmplo` / `tmphi`, the guard-zone `memset` (AVX-512), the row loop | the entry point |
+
+Kept: every multiply and add in its place and order (`((c0*s0 + c1*s1) + c2*s2) + c3*s3`, no FMA intrinsic), the `float` temporaries, the tail bounds, the `aligned_malloc` sizes. Changed outside the wavelet: row pointers in `float_adm_csf_*`, `float_adm_csf_den_scale_*` and `float_adm_sum_cube_*` are formed with `(ptrdiff_t)i * stride` (same address for every valid `int` product; clang-tidy `bugprone-implicit-widening-of-multiplication-result`).
+
+The AVX-512 filter tables are file-level `dwt2_filter_lo` / `dwt2_filter_hi` (they were function-local). The invariant page is `core/src/feature/x86/AGENTS.d/float-adm.md`.
