@@ -411,7 +411,7 @@ static inline CAMBI_HD void cambi_hd_decimate_pixel(const CambiHipScale *sc, uin
 /* Horizontal pass: edge columns keep their value (mode3(a, a, b) == a). */
 static inline CAMBI_HD void cambi_hd_filter_h_pixel(const CambiHipScale *sc, uint32_t x, uint32_t y)
 {
-    const uint16_t *row = sc->image + y * sc->width;
+    const uint16_t *row = sc->image + (size_t)y * sc->width;
     const uint32_t left = x > 0u ? x - 1u : 0u;
     const uint32_t right = x + 1u < sc->width ? x + 1u : sc->width - 1u;
     sc->filtered_h[y * sc->width + x] = cambi_hd_mode3(row[left], row[x], row[right]);
@@ -445,7 +445,7 @@ static inline CAMBI_HD void cambi_hd_row_mask_bits(const uint16_t *q, uint32_t w
                                                    uint32_t height, uint32_t pad, uint32_t x,
                                                    uint32_t y, uint32_t *run, uint32_t *change)
 {
-    const uint16_t *row = q + y * width;
+    const uint16_t *row = q + (size_t)y * width;
     *run = (x > 0u && row[x] != row[x - 1u]) ? 1u : 0u;
     const uint16_t leaving =
         y > pad ? q[(y - pad - 1u) * width + x] : (uint16_t)CAMBI_HIP_Q_INVALID;
@@ -529,7 +529,7 @@ static inline CAMBI_HD void cambi_hd_hist_apply(uint16_t *col_hist, uint32_t wid
 {
     if (level == CAMBI_HIP_Q_INVALID)
         return;
-    uint16_t *cell = &col_hist[(uint32_t)level * width];
+    uint16_t *cell = &col_hist[(size_t)level * width];
     *cell = (uint16_t)((int)*cell + count);
 }
 
@@ -538,8 +538,8 @@ static inline CAMBI_HD void cambi_hd_hist_apply(uint16_t *col_hist, uint32_t wid
 static inline CAMBI_HD void cambi_hd_hist_row_runs(const CambiHdCvals *a, uint16_t *col_hist,
                                                    uint32_t y, uint32_t lo, uint32_t hi, int sign)
 {
-    const uint16_t *row = a->q + y * a->width;
-    const uint32_t *runs = a->runs + y * a->words;
+    const uint16_t *row = a->q + (size_t)y * a->width;
+    const uint32_t *runs = a->runs + (size_t)y * a->words;
     uint32_t start = lo;
     for (uint32_t w = (lo + 1u) >> 5u; lo < hi && w <= hi >> 5u; ++w) {
         uint32_t bits = cambi_hd_mask_word(runs, w, lo + 1u, hi);
@@ -558,7 +558,7 @@ static inline CAMBI_HD void cambi_hd_hist_row_runs(const CambiHdCvals *a, uint16
 static inline CAMBI_HD void cambi_hd_hist_slide(const CambiHdCvals *a, uint16_t *col_hist,
                                                 uint32_t y, uint32_t lo, uint32_t hi)
 {
-    if (!cambi_hd_mask_any(a->change + y * a->words, lo, hi))
+    if (!cambi_hd_mask_any(a->change + (size_t)y * a->words, lo, hi))
         return;
     if (y > a->pad)
         cambi_hd_hist_row_runs(a, col_hist, y - a->pad - 1u, lo, hi, -1);
@@ -574,14 +574,14 @@ static inline CAMBI_HD float cambi_hd_cvals_pixel(const CambiHdCvals *a, const u
     if (q0 == CAMBI_HIP_Q_INVALID)
         return 0.0f;
     const uint32_t value = (uint32_t)q0 + a->v_band_base + a->num_diffs;
-    const int p0 = col_hist[(uint32_t)q0 * a->width];
+    const int p0 = col_hist[(size_t)q0 * a->width];
     float c_value = 0.0f;
     for (uint32_t d = 0u; d < a->num_diffs; ++d) {
         if (value > a->tvi[d] || value + d + 1u <= a->vlt_luma)
             continue;
         const uint32_t up = (uint32_t)q0 + d + 1u;
-        const int p1 = up < a->levels ? col_hist[up * a->width] : 0;
-        const int p2 = q0 >= d + 1u ? col_hist[((uint32_t)q0 - d - 1u) * a->width] : 0;
+        const int p1 = up < a->levels ? col_hist[(size_t)up * a->width] : 0;
+        const int p2 = q0 >= d + 1u ? col_hist[(size_t)((uint32_t)q0 - d - 1u) * a->width] : 0;
         const int pm = p1 > p2 ? p1 : p2;
         const float val = (float)(a->weights[d] * p0 * pm) * a->lut[pm + p0];
         if (val > c_value)
@@ -595,7 +595,7 @@ static inline CAMBI_HD void cambi_hd_cvals_prime(const CambiHdCvals *a, uint16_t
                                                  uint32_t y0, uint32_t lo, uint32_t hi)
 {
     for (uint32_t level = 0u; level < a->levels; ++level)
-        col_hist[level * a->width] = 0u;
+        col_hist[(size_t)level * a->width] = 0u;
     const uint32_t first = y0 > a->pad ? y0 - a->pad : 0u;
     const uint32_t last = y0 + a->pad < a->height ? y0 + a->pad : a->height - 1u;
     for (uint32_t y = first; y <= last; ++y)
@@ -656,7 +656,7 @@ static inline CAMBI_HD int cambi_hd_cvals_begin(const CambiHdCvals *a, uint32_t 
     c->y1 = c->y0 + a->chunk_rows < a->height ? c->y0 + a->chunk_rows : a->height;
     c->lo = col > a->pad ? col - a->pad : 0u;
     c->hi = col + a->pad < a->width ? col + a->pad : a->width - 1u;
-    c->col_hist = a->hist + chunk * a->levels * a->width + col;
+    c->col_hist = a->hist + (size_t)chunk * a->levels * a->width + col;
     cambi_hd_cvals_prime(a, c->col_hist, c->y0, c->lo, c->hi);
     return 1;
 }

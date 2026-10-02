@@ -511,19 +511,21 @@ static int psnr_hvs_enqueue_scan_compact(PsnrHvsStateHip *s, hipStream_t str,
     uint32_t *chunk_offsets = (uint32_t *)(base + s->layout.chunk_offsets_offset);
     float *packed_terms = s->d_terms;
 
-    void *red_params[] = {&block_counts, &chunk_totals, &s->total_blocks};
+    void *red_params[] = {(void *)&block_counts, (void *)&chunk_totals, &s->total_blocks};
     hipError_t rc = hipModuleLaunchKernel(s->func_scan_reduce, s->layout.num_chunks, 1, 1, 256, 1,
                                           1, 0, str, red_params, NULL);
     if (rc != hipSuccess)
         return psnr_hvs_hip_rc(rc);
 
-    void *pre_params[] = {&chunk_totals, &chunk_offsets, &d_header, &s->layout.num_chunks};
+    void *pre_params[] = {(void *)&chunk_totals, (void *)&chunk_offsets, (void *)&d_header,
+                          &s->layout.num_chunks};
     rc = hipModuleLaunchKernel(s->func_scan_prefix, 1, 1, 1, 1, 1, 1, 0, str, pre_params, NULL);
     if (rc != hipSuccess)
         return psnr_hvs_hip_rc(rc);
 
-    void *cmp_params[] = {(void *)args,   &raw_terms,    &block_masks, &block_counts,
-                          &chunk_offsets, &packed_terms, &d_header};
+    void *cmp_params[] = {(void *)args,          (void *)&raw_terms,     (void *)&block_masks,
+                          (void *)&block_counts, (void *)&chunk_offsets, (void *)&packed_terms,
+                          (void *)&d_header};
     rc = hipModuleLaunchKernel(s->func_compact, s->layout.num_chunks, 1, 1, 256, 1, 1, 0, str,
                                cmp_params, NULL);
     if (rc != hipSuccess)

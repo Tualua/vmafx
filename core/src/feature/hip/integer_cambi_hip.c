@@ -583,27 +583,35 @@ static CambiHipArena cambi_hip_arena_layout(const CambiStateHip *s)
     return a;
 }
 
+/* The arena block at byte `offset` of device address `base`. Every block
+ * starts on a CAMBI_HIP_ARENA_ALIGN boundary (cambi_hip_arena_take()), which
+ * is the alignment of every element type a block is bound to. */
+static void *cambi_hip_arena_at(unsigned char *base, size_t offset)
+{
+    return base + offset;
+}
+
 /* Point params at the arena at device address `base`. */
 static void cambi_hip_bind_params(CambiStateHip *s, unsigned char *base, const CambiHipArena *a)
 {
     CambiHipParams *p = &s->params;
     p->src = base + a->src;
-    p->preproc = (uint16_t *)(void *)(base + a->preproc);
-    p->mask = (uint16_t *)(void *)(base + a->mask);
-    p->q = (uint16_t *)(void *)(base + a->q);
-    p->runs = (uint32_t *)(void *)(base + a->runs);
-    p->change = (uint32_t *)(void *)(base + a->change);
-    p->cvals = (float *)(void *)(base + a->cvals);
-    p->hist = (uint16_t *)(void *)(base + a->hist);
-    p->lut = (const float *)(const void *)(base + a->lut);
-    p->tvi = (const uint16_t *)(const void *)(base + a->tvi);
-    p->weights = (const int32_t *)(const void *)(base + a->weights);
-    p->ori_x = p->same_size ? NULL : (const uint32_t *)(const void *)(base + a->ori_x);
-    p->ori_y = p->same_size ? NULL : (const uint32_t *)(const void *)(base + a->ori_y);
-    p->frame = (CambiHipFrameState *)(void *)(base + a->frame);
-    cambi_hip_plan_bind_scales(p, p->preproc, (uint16_t *)(void *)(base + a->alt),
-                               (uint16_t *)(void *)(base + a->filtered_h), s->plan.speedup);
-    s->d_params = (CambiHipParams *)(void *)(base + a->params);
+    p->preproc = cambi_hip_arena_at(base, a->preproc);
+    p->mask = cambi_hip_arena_at(base, a->mask);
+    p->q = cambi_hip_arena_at(base, a->q);
+    p->runs = cambi_hip_arena_at(base, a->runs);
+    p->change = cambi_hip_arena_at(base, a->change);
+    p->cvals = cambi_hip_arena_at(base, a->cvals);
+    p->hist = cambi_hip_arena_at(base, a->hist);
+    p->lut = cambi_hip_arena_at(base, a->lut);
+    p->tvi = cambi_hip_arena_at(base, a->tvi);
+    p->weights = cambi_hip_arena_at(base, a->weights);
+    p->ori_x = p->same_size ? NULL : cambi_hip_arena_at(base, a->ori_x);
+    p->ori_y = p->same_size ? NULL : cambi_hip_arena_at(base, a->ori_y);
+    p->frame = cambi_hip_arena_at(base, a->frame);
+    cambi_hip_plan_bind_scales(p, p->preproc, cambi_hip_arena_at(base, a->alt),
+                               cambi_hip_arena_at(base, a->filtered_h), s->plan.speedup);
+    s->d_params = cambi_hip_arena_at(base, a->params);
     s->d_frame = p->frame;
     s->d_src = base + a->src;
 }
@@ -648,9 +656,10 @@ static hipError_t cambi_hip_upload_resize(const CambiStateHip *s)
         rc = hipMemcpy((void *)s->params.ori_x, ori_x, sizeof(uint32_t) * in->proc_width,
                        hipMemcpyHostToDevice);
     }
-    if (rc == hipSuccess)
+    if (rc == hipSuccess) {
         rc = hipMemcpy((void *)s->params.ori_y, ori_y, sizeof(uint32_t) * in->proc_height,
                        hipMemcpyHostToDevice);
+    }
     free(ori_x);
     free(ori_y);
     return rc;
@@ -665,9 +674,10 @@ static int cambi_hip_upload_tables(CambiStateHip *s)
     hipError_t rc = hipMemcpy((void *)p->lut, lut, sizeof(float) * lut_size, hipMemcpyHostToDevice);
     if (rc == hipSuccess)
         rc = hipMemcpy((void *)p->tvi, s->tvi, sizeof(s->tvi), hipMemcpyHostToDevice);
-    if (rc == hipSuccess)
+    if (rc == hipSuccess) {
         rc = hipMemcpy((void *)p->weights, vmaf_cambi_contrast_weights(NULL),
                        sizeof(int32_t) * s->plan.num_diffs, hipMemcpyHostToDevice);
+    }
     if (rc == hipSuccess && !p->same_size)
         rc = cambi_hip_upload_resize(s);
     if (rc == hipSuccess)
@@ -751,7 +761,7 @@ static int cambi_hip_setup_device(CambiStateHip *s)
 static int cambi_hip_launch(CambiStateHip *s, int kernel, unsigned gx, unsigned gy, unsigned bx,
                             unsigned by, int scale, int pass)
 {
-    void *args[] = {&s->d_params, &scale, &pass};
+    void *args[] = {(void *)&s->d_params, &scale, &pass};
     const hipError_t rc = hipModuleLaunchKernel(s->kernels[kernel], gx, gy, 1u, bx, by, 1u, 0u,
                                                 vmaf_hip_stream_of(s->lc.str), args, NULL);
     return vmaf_hip_rc_to_errno(rc);
@@ -775,9 +785,10 @@ static int cambi_hip_enqueue_pool(CambiStateHip *s, int scale)
     for (int pass = 1; pass < CAMBI_HIP_RADIX_PASSES && !err; ++pass) {
         err = cambi_hip_launch(s, CAMBI_K_RADIX_HIST, groups, 1u, CAMBI_HIP_POOL_BLOCK, 1u, scale,
                                pass);
-        if (!err)
+        if (!err) {
             err = cambi_hip_launch(s, CAMBI_K_RADIX_SCAN, 1u, 1u, CAMBI_HIP_POOL_BLOCK, 1u, scale,
                                    pass);
+        }
     }
     if (!err)
         err = cambi_hip_launch(s, CAMBI_K_TOPK_SUM, groups, 1u, CAMBI_HIP_POOL_BLOCK, 1u, scale, 0);
@@ -829,11 +840,12 @@ static int cambi_hip_enqueue_frame(CambiStateHip *s, const VmafPicture *dist)
                                       .plane = 0u,
                                       .row_bytes = row_bytes,
                                       .rows = in->src_height};
-    const hipStream_t stream = vmaf_hip_stream_of(s->lc.str);
+    hipStream_t stream = vmaf_hip_stream_of(s->lc.str);
     int err = vmaf_hip_picture_upload_staged(&plane, 1u, s->h_staging, s->src_bytes, s->lc.str);
-    if (!err)
+    if (!err) {
         err =
             vmaf_hip_rc_to_errno(hipMemsetAsync(s->d_frame, 0, sizeof(CambiHipFrameState), stream));
+    }
     if (!err && s->params.validate)
         err = cambi_hip_launch_image(s, CAMBI_K_VALIDATE, in->src_width, in->src_height, 0);
     if (!err)
@@ -842,10 +854,11 @@ static int cambi_hip_enqueue_frame(CambiStateHip *s, const VmafPicture *dist)
         err = cambi_hip_launch_image(s, CAMBI_K_MASK, in->proc_width, in->proc_height, 0);
     for (int scale = 0; scale < CAMBI_HIP_NUM_SCALES && !err; ++scale)
         err = cambi_hip_enqueue_scale(s, scale);
-    if (!err)
+    if (!err) {
         err = vmaf_hip_rc_to_errno(hipMemcpyAsync(s->h_results, &s->d_frame->results,
                                                   sizeof(CambiHipResults), hipMemcpyDeviceToHost,
                                                   stream));
+    }
     return err;
 }
 
@@ -927,9 +940,10 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
         return -EINVAL;
     }
     double scores[CAMBI_HIP_NUM_SCALES];
-    for (unsigned scale = 0u; scale < CAMBI_HIP_NUM_SCALES; ++scale)
+    for (unsigned scale = 0u; scale < CAMBI_HIP_NUM_SCALES; ++scale) {
         scores[scale] = vmaf_cambi_fixed_topk_mean(r->sum_hi[scale], r->sum_lo[scale],
                                                    s->params.scale[scale].topk);
+    }
     const uint16_t pixels = vmaf_cambi_get_pixels_in_window((uint16_t)s->plan.adjusted_window);
     double score = vmaf_cambi_weight_scores_per_scale(scores, pixels);
     if (score > s->cambi_max_val)
