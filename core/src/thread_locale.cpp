@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-2-Clause-Patent */
 /**
  *
  *  Copyright 2016-2020 Netflix, Inc.
@@ -42,6 +43,7 @@
 #include "config.h"
 
 #include <array>
+#include <clocale>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
@@ -50,31 +52,34 @@
 #include <xlocale.h>
 #endif
 
-#include <locale.h>
-
 /* Platform-specific locale state — now a C++ class so teardown is
  * encapsulated in the destructor rather than spread across a `#ifdef`
  * ladder in `vmaf_thread_locale_pop`. */
-struct VmafThreadLocaleState {
+class VmafThreadLocaleState
+{
+  public:
 #if defined(HAVE_USELOCALE)
-    locale_t c_locale{(locale_t)0};
-    locale_t old_locale{(locale_t)0};
+    explicit VmafThreadLocaleState(locale_t c_loc, locale_t old_loc) noexcept
+        : c_locale(c_loc), old_locale(old_loc)
+    {
+    }
 #elif defined(_WIN32)
-    int old_per_thread_mode{-1};
-    std::array<char, 256> old_locale{};
-#endif
-
+    explicit VmafThreadLocaleState(int old_mode, const char *old_loc) noexcept
+        : old_per_thread_mode(old_mode)
+    {
+        old_locale.fill('\0');
+        if (old_loc) {
+            strncpy(old_locale.data(), old_loc, old_locale.size() - 1U);
+        }
+    }
+#else
     VmafThreadLocaleState() = default;
-
-    /* Non-copyable, non-movable: the locale handles are not reference-
-     * counted and should not be aliased. */
-    VmafThreadLocaleState(const VmafThreadLocaleState &) = delete;
-    VmafThreadLocaleState &operator=(const VmafThreadLocaleState &) = delete;
+#endif
 
     ~VmafThreadLocaleState()
     {
 #if defined(HAVE_USELOCALE)
-        if (c_locale != (locale_t)0) {
+        if (c_locale != nullptr) {
             uselocale(old_locale);
             freelocale(c_locale);
         }
@@ -87,6 +92,22 @@ struct VmafThreadLocaleState {
         }
 #endif
     }
+
+    /* Non-copyable, non-movable: the locale handles are not reference-
+     * counted and should not be aliased. */
+    VmafThreadLocaleState(const VmafThreadLocaleState &) = delete;
+    VmafThreadLocaleState &operator=(const VmafThreadLocaleState &) = delete;
+    VmafThreadLocaleState(VmafThreadLocaleState &&) = delete;
+    VmafThreadLocaleState &operator=(VmafThreadLocaleState &&) = delete;
+
+  private:
+#if defined(HAVE_USELOCALE)
+    locale_t c_locale{nullptr};
+    locale_t old_locale{nullptr};
+#elif defined(_WIN32)
+    int old_per_thread_mode{-1};
+    std::array<char, 256> old_locale{};
+#endif
 };
 
 VmafThreadLocaleState *vmaf_thread_locale_push_c(void)
@@ -102,16 +123,16 @@ VmafThreadLocaleState *vmaf_thread_locale_push_c(void)
      * and override only numeric formatting, which is the writer requirement.
      * POSIX forbids passing LC_GLOBAL_LOCALE directly as the base locale. */
     locale_t base = duplocale(LC_GLOBAL_LOCALE);
-    if (base == (locale_t)0)
+    if (base == nullptr)
         return nullptr;
 
-    auto state = std::make_unique<VmafThreadLocaleState>();
-    state->c_locale = newlocale(LC_NUMERIC_MASK, "C", base);
-    if (state->c_locale == (locale_t)0) {
+    locale_t c_locale = newlocale(LC_NUMERIC_MASK, "C", base);
+    if (c_locale == nullptr) {
         freelocale(base);
         return nullptr;
     }
-    state->old_locale = uselocale(state->c_locale);
+    locale_t old_locale = uselocale(c_locale);
+    auto state = std::make_unique<VmafThreadLocaleState>(c_locale, old_locale);
     return state.release();
 
 #elif defined(_WIN32)
@@ -125,16 +146,9 @@ VmafThreadLocaleState *vmaf_thread_locale_push_c(void)
      * for the duration of the push/pop window, but without per-thread
      * isolation. We keep old_per_thread_mode at -1 so the destructor
      * skips the restore call (the guard is already in place below). */
-    auto state = std::make_unique<VmafThreadLocaleState>();
-    state->old_per_thread_mode = _configthreadlocale(_ENABLE_PER_THREAD_LOCALE);
-
+    const int old_mode = _configthreadlocale(_ENABLE_PER_THREAD_LOCALE);
     const char *old = setlocale(LC_ALL, nullptr);
-    if (old) {
-        /* std::array fill + strncpy: bounds-safe and null-terminates. */
-        state->old_locale.fill('\0');
-        strncpy(state->old_locale.data(), old, state->old_locale.size() - 1U);
-    }
-
+    auto state = std::make_unique<VmafThreadLocaleState>(old_mode, old);
     setlocale(LC_ALL, "C");
     return state.release();
 
@@ -150,6 +164,6 @@ void vmaf_thread_locale_pop(VmafThreadLocaleState *state)
      * and then frees the allocation — equivalent to the original
      * `if (!state) return; ... free(state)` pattern but leak-safe on
      * future early-return paths. */
-    std::unique_ptr<VmafThreadLocaleState> guard(state);
+    const std::unique_ptr<VmafThreadLocaleState> guard(state);
     (void)guard;
 }

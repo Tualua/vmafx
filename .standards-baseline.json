@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-02T07:27:00Z",
+  "generated_at": "2026-10-02T07:42:54Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "1dcb319ede9da4f1083be548243294f3101a9fd9",
-  "total_infractions": 268,
+  "commit_sha": "2311f0d59ad8be5b674c90f8cff95007388f9101",
+  "total_infractions": 266,
   "infractions": [
     {
       "rule_id": "HISS-04",
@@ -1319,20 +1319,6 @@
       "symbol": "pel_x265_csv_parse",
       "message": "Function 'pel_x265_csv_parse' (64 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "core/src/interop/pelorus_qp_report_csv.c:284:HISS-04"
-    },
-    {
-      "rule_id": "HISS-02",
-      "file_path": "core/src/pdjson.c",
-      "line_number": 497,
-      "message": "Legacy unbounded loop in native code",
-      "fingerprint": "core/src/pdjson.c:497:HISS-02"
-    },
-    {
-      "rule_id": "HISS-02",
-      "file_path": "core/src/pdjson.c",
-      "line_number": 807,
-      "message": "Legacy unbounded loop in native code",
-      "fingerprint": "core/src/pdjson.c:807:HISS-02"
     },
     {
       "rule_id": "HISS-01",

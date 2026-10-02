@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-2-Clause-Patent */
 /**
  *
  *  Copyright 2016-2025 Netflix, Inc.
@@ -29,16 +30,6 @@
 #include "ref.h"
 
 /**
- * Extended picture private data that includes pool information.
- * This allows the release callback to return pictures to the pool.
- */
-struct PooledPicturePriv {
-    VmafPicturePrivate base;
-    VmafPicturePool *pool;
-    unsigned pic_idx;
-};
-
-/**
  * CPU Picture Pool implementation.
  * Maintains a pool of reusable VmafPicture objects with pre-allocated data.
  * Uses a free list (stack) for O(1) allocation instead of O(n) linear scan.
@@ -54,19 +45,32 @@ struct VmafPicturePool {
     unsigned free_list_top; /* Index of top of stack (# of free pictures) */
 };
 
+namespace
+{
+
+/**
+ * Extended picture private data that includes pool information.
+ * This allows the release callback to return pictures to the pool.
+ */
+struct PooledPicturePriv {
+    VmafPicturePrivate base;
+    VmafPicturePool *pool;
+    unsigned pic_idx;
+};
+
 /**
  * Release callback invoked when vmaf_picture_unref() brings refcount to 0.
  * Instead of freeing the data, we return the picture to the pool and signal
  * any waiting threads.
  */
-static int pooled_picture_release(VmafPicture *pic, void *cookie)
+int pooled_picture_release(VmafPicture *pic, void *cookie)
 {
     (void)cookie;
 
     /* Extract pool info from priv before it gets freed */
-    PooledPicturePriv *priv = reinterpret_cast<PooledPicturePriv *>(pic->priv);
+    const auto *const priv = reinterpret_cast<const PooledPicturePriv *>(pic->priv);
     VmafPicturePool *pool = priv->pool;
-    unsigned idx = priv->pic_idx;
+    const unsigned idx = priv->pic_idx;
 
     /* DON'T free pic->data[0] - it belongs to the pool picture and will be reused */
 
@@ -79,7 +83,7 @@ static int pooled_picture_release(VmafPicture *pic, void *cookie)
     return 0;
 }
 
-static int pool_preallocate_pictures(VmafPicturePool *p, const VmafPicturePoolConfig &cfg)
+int pool_preallocate_pictures(VmafPicturePool *p, const VmafPicturePoolConfig &cfg)
 {
     /* ADR-0778 Fix-E: strip priv/ref only after the full allocation loop
      * succeeds.  The original code stripped immediately after each
@@ -89,9 +93,9 @@ static int pool_preallocate_pictures(VmafPicturePool *p, const VmafPicturePoolCo
      * pass; the error unwind uses vmaf_picture_unref on intact pictures
      * since the strip pass has not run yet. */
     for (unsigned i = 0; i < cfg.pic_cnt; i++) {
-        int err = cfg.alloc_picture_callback ?
-                      cfg.alloc_picture_callback(&p->pictures[i], cfg.cookie) :
-                      vmaf_picture_alloc(&p->pictures[i], cfg.pix_fmt, cfg.bpc, cfg.w, cfg.h);
+        const int err = cfg.alloc_picture_callback ?
+                            cfg.alloc_picture_callback(&p->pictures[i], cfg.cookie) :
+                            vmaf_picture_alloc(&p->pictures[i], cfg.pix_fmt, cfg.bpc, cfg.w, cfg.h);
         if (err) {
             /* Free any pictures we've already fully allocated (priv/ref still
              * intact on these since the strip pass has not run yet).
@@ -121,15 +125,12 @@ static int pool_preallocate_pictures(VmafPicturePool *p, const VmafPicturePoolCo
     return 0;
 }
 
-namespace
-{
-
 /* Construction stages in acquisition order.  pool_destruct_partial() releases
  * exactly the resources a stage owns, in the reverse of this order, and is a
  * one-for-one replacement of the former
  * free_cond -> free_mutex -> free_free_list -> free_pictures -> free_pool
  * goto ladder: stage N frees what label N used to free, in the same order. */
-enum {
+enum : uint8_t {
     POOL_STAGE_NONE = 0,
     POOL_STAGE_POOL = 1,
     POOL_STAGE_PICTURES = 2,

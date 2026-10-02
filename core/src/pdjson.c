@@ -5,6 +5,7 @@
 /* NOLINTBEGIN(modernize-use-nullptr) -- ADR-1138: preserve upstream C NULL
  * compatibility and the required Windows MSVC C build. */
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -494,7 +495,8 @@ static enum json_type read_string(json_stream *json)
 {
     if (init_string(json) != 0)
         return JSON_ERROR;
-    while (1) {
+    size_t bound = SIZE_MAX;
+    while (bound-- > 0) {
         int c = json->source.get(&json->source);
         if (c == EOF) {
             json_error(json, "%s", "unterminated string literal");
@@ -519,6 +521,7 @@ static enum json_type read_string(json_stream *json)
                 return JSON_ERROR;
         }
     }
+    json_error(json, "%s", "string length bound exceeded");
     return JSON_ERROR;
 }
 
@@ -804,7 +807,8 @@ enum json_type json_skip(json_stream *json)
 
 enum json_type json_skip_until(json_stream *json, enum json_type type)
 {
-    while (1) {
+    size_t bound = SIZE_MAX;
+    while (bound-- > 0) {
         enum json_type skip = json_skip(json);
 
         if (skip == JSON_ERROR || skip == JSON_DONE)

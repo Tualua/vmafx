@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
   Copyright (c) 2009-2017 Dave Gamble and cJSON contributors
 

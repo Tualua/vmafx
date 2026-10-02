@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-2-Clause-Patent */
 /**
  *
  *  Copyright 2016-2026 Netflix, Inc.
@@ -56,17 +57,18 @@
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+namespace
+{
+
 /*
  * dict_ensure_allocated — lazily initialise *dict if null.
  * Returns std::expected<VmafDictionary*, int>: the ready dict ptr on success,
  * a negative errno on failure.
  */
-[[nodiscard]] static std::expected<VmafDictionary *, int>
-dict_ensure_allocated(VmafDictionary **dict)
+[[nodiscard]] std::expected<VmafDictionary *, int> dict_ensure_allocated(VmafDictionary **dict)
 {
-    VmafDictionary *const existing = *dict;
-    if (existing)
-        return existing;
+    if (*dict)
+        return *dict;
 
     auto *d = static_cast<VmafDictionary *>(std::malloc(sizeof(VmafDictionary)));
     if (!d)
@@ -90,8 +92,7 @@ dict_ensure_allocated(VmafDictionary **dict)
  * normalised string as a unique_ptr<char[]>.  Returns nullopt (not numeric)
  * or an expected with the buffer.
  */
-[[nodiscard]] static std::expected<std::unique_ptr<char[]>, int>
-dict_normalize_numeric(std::string_view val)
+[[nodiscard]] std::expected<std::unique_ptr<char[]>, int> dict_normalize_numeric(const char *val)
 {
     char *end = nullptr;
     // strtod operates on NUL-terminated C strings; val is NUL-terminated
@@ -99,8 +100,8 @@ dict_normalize_numeric(std::string_view val)
     // Use strtod (not strtof) to preserve double precision; strtof rounds
     // to ~6-7 significant digits and loses precision on widening to double.
     // Fix for CRITICAL finding in adversarial review PR #78.
-    double dv = std::strtod(val.data(), &end);
-    if (dv == 0.0 && end == val.data())
+    const double dv = std::strtod(val, &end);
+    if (dv == 0.0 && end == val)
         return std::unexpected(0); // not numeric — sentinel 0 means "skip"
 
     const char *fmt = "%g";
@@ -117,7 +118,7 @@ dict_normalize_numeric(std::string_view val)
 /*
  * dict_grow_entries — double the entry array when full.
  */
-[[nodiscard]] static std::expected<void, int> dict_grow_entries(VmafDictionary *d)
+[[nodiscard]] std::expected<void, int> dict_grow_entries(VmafDictionary *d)
 {
     if (d->cnt < d->size)
         return {};
@@ -141,13 +142,13 @@ dict_normalize_numeric(std::string_view val)
  * (See the long comment in the original dict.c about the ASan
  * SAN-PREDICT-METADATA-LEAK pattern — that logic is preserved.)
  */
-[[nodiscard]] static std::expected<void, int> dict_overwrite_existing(VmafDictionaryEntry *existing,
-                                                                      std::string_view val)
+[[nodiscard]] std::expected<void, int> dict_overwrite_existing(VmafDictionaryEntry *existing,
+                                                               const char *val)
 {
-    if (existing->val && std::strcmp(existing->val, val.data()) == 0)
+    if (existing->val && std::strcmp(existing->val, val) == 0)
         return {};
 
-    const char *val_copy = ::strdup(val.data());
+    const char *val_copy = ::strdup(val);
     if (!val_copy)
         return std::unexpected(-ENOMEM);
     std::free(const_cast<char *>(existing->val));
@@ -160,16 +161,16 @@ dict_normalize_numeric(std::string_view val)
  * Zero-initialises the slot before writing (see original comment about
  * realloc not zeroing new bytes and partial-write windows).
  */
-[[nodiscard]] static std::expected<void, int>
-dict_append_new_entry(VmafDictionary *d, std::string_view key, std::string_view val)
+[[nodiscard]] std::expected<void, int> dict_append_new_entry(VmafDictionary *d, const char *key,
+                                                             const char *val)
 {
     if (auto r = dict_grow_entries(d); !r)
         return r;
 
-    auto *val_copy = ::strdup(val.data());
+    auto *val_copy = ::strdup(val);
     if (!val_copy)
         return std::unexpected(-ENOMEM);
-    auto *key_copy = ::strdup(key.data());
+    auto *key_copy = ::strdup(key);
     if (!key_copy) {
         std::free(val_copy);
         return std::unexpected(-ENOMEM);
@@ -181,6 +182,8 @@ dict_append_new_entry(VmafDictionary *d, std::string_view key, std::string_view 
     d->cnt++;
     return {};
 }
+
+} // namespace
 
 // ---------------------------------------------------------------------------
 // Internal isnumeric helper — defined in dict_internal.h (shared with tests)
@@ -204,7 +207,7 @@ VmafDictionaryEntry *vmaf_dictionary_get(VmafDictionary **dict, const char *key,
         return nullptr;
     (void)flags; // reserved for future use
 
-    VmafDictionary *d = *dict;
+    const VmafDictionary *d = *dict;
     const std::string_view k{key};
     for (unsigned i = 0; i < d->cnt; i++) {
         if (k == d->entry[i].key)
@@ -258,7 +261,7 @@ int vmaf_dictionary_copy(VmafDictionary **src, VmafDictionary **dst)
         return -EINVAL;
 
     int err = 0;
-    VmafDictionary *d = *src;
+    const VmafDictionary *d = *src;
     for (unsigned i = 0; i < d->cnt; i++)
         err |= vmaf_dictionary_set(dst, d->entry[i].key, d->entry[i].val, 0);
     return err;
@@ -297,7 +300,7 @@ VmafDictionary *vmaf_dictionary_merge(VmafDictionary **dict_a, VmafDictionary **
     }
 
     if (*dict_b) {
-        VmafDictionary *b = *dict_b;
+        const VmafDictionary *b = *dict_b;
         for (unsigned i = 0; i < b->cnt; i++) {
             if (vmaf_dictionary_set(&merged, b->entry[i].key, b->entry[i].val, flags) != 0) {
                 (void)vmaf_dictionary_free(&merged);

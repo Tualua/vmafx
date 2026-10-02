@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-2-Clause-Patent */
 /**
  *
  *  Copyright 2016-2023 Netflix, Inc.
@@ -17,10 +18,11 @@
  */
 
 #include <errno.h>
-#include <string.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <string.h>
+
 #include "framesync.h"
 
 /* POSIX guarantees that pthread_mutex_lock / pthread_cond_wait always see
