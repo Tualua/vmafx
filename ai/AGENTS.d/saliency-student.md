@@ -1,0 +1,15 @@
+---
+paths:
+  - ai/scripts/train_saliency_student*.py
+  - ai/scripts/eval_saliency_per_mb.py
+  - docs/ai/models/saliency_student*.md
+  - model/tiny/saliency_student*.onnx
+invariant: MobileSal tensor contracts bind by name; saliency_student_v1 production weights; v2 is clean resize ablation.
+---
+<!-- markdownlint-disable MD013 MD060 -->
+# Saliency student models
+
+- [ADR-0218](../../docs/adr/0218-mobilesal-saliency-extractor.md) — MobileSal saliency extractor (T6-2a) ships smoke-only synthetic ONNX placeholder under `model/tiny/mobilesal.onnx`; C extractor binds tensors by name (`input` → `saliency_map`) so real upstream MobileSal export drops in without C changes. Saliency-weighted FR features and `tools/vmaf-roi` CTU sidecar = T6-2b follow-up — do not bundle into T6-2a surface.
+- [ADR-0286](../../docs/adr/0286-saliency-student-fork-trained-on-duts.md) — `saliency_student_v1` = fork-trained tiny U-Net replacing `mobilesal_placeholder_v0` as production weights for `mobilesal` extractor. Tensor-name contract (`input`, `saliency_map`) and NCHW shapes unchanged from ADR-0218, so any future weights swap (multi-dataset student, distilled u2netp, …) drops in without C changes. v1's decoder uses `ConvTranspose` for stride-2 upsampling because `Resize` was not on allowlist at v1's training time; constraint lifted by [ADR-0258](../../docs/adr/0258-onnx-allowlist-resize.md). DUTS-TR images *not* committed in-tree; only trained `.onnx` + sidecar are. Trainer at [`scripts/train_saliency_student.py`](../scripts/train_saliency_student.py); reproducer in [`docs/ai/models/saliency_student_v1.md`](../../docs/ai/models/saliency_student_v1.md).
+- [ADR-0332](../../docs/adr/0332-saliency-student-v2-resize-decoder.md) — `saliency_student_v2` = Resize-decoder ablation on v1 recipe. Decoder upsampler swaps to `F.interpolate(scale=2, bilinear, align_corners=False)` + `nn.Conv2d(k=3)` (ONNX `Resize` mode=`linear`, `coordinate_transformation_mode=half_pixel` per ADR-0258); every other architectural decision held identical to v1 so ablation is single-variable. v2 ships as parallel artefact under `model/tiny/saliency_student_v2.onnx` — **v1 stays as production weights for `mobilesal` extractor** until follow-up PR validates v2 in real ROI encodes. v1 trainer (`train_saliency_student.py`) and v2 trainer (`train_saliency_student_v2.py`) MUST stay byte-identical outside `_ResizeConv` / `nn.ConvTranspose2d` swap and model-class name; any v1 recipe change diverging from v2 (or vice versa) destroys clean-ablation property. Future `saliency_student_v3` (multi-dataset / larger student per ADR-0286 backlog) = new ADR, not fork of v2.
+- [ADR-0396](../../docs/adr/0396-video-saliency-extension.md) — video-saliency follow-ups evaluated at encoder block granularity before model promotion. `ai/scripts/eval_saliency_per_mb.py` = measurement harness: pairs predicted/ground-truth masks by stem, reduces each mask to fixed block means, thresholds blocks, reports macro/micro IoU. Keep this script dependency-light (`numpy` only; `.npy` + PGM masks) so it stays usable in training sandboxes without image I/O stacks.
