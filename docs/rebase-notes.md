@@ -58734,3 +58734,19 @@ ADR-1403 unchanged.
 Kept: every multiply and add in its place and order (`((c0*s0 + c1*s1) + c2*s2) + c3*s3`, no FMA intrinsic), the `float` temporaries, the tail bounds, the `aligned_malloc` sizes. Changed outside the wavelet: row pointers in `float_adm_csf_*`, `float_adm_csf_den_scale_*` and `float_adm_sum_cube_*` are formed with `(ptrdiff_t)i * stride` (same address for every valid `int` product; clang-tidy `bugprone-implicit-widening-of-multiplication-result`).
 
 The AVX-512 filter tables are file-level `dwt2_filter_lo` / `dwt2_filter_hi` (they were function-local). The invariant page is `core/src/feature/x86/AGENTS.d/float-adm.md`.
+## The NEON float ADM wavelet kernel is split into row helpers (ADR-1142, 2026-10-02)
+
+`refactor/float-adm-neon-standards`. No score impact: every recorded `adm` / `float_adm` output is identical before and after on aarch64 (scalar and NEON dispatch, 1066 cases); the x86 build has no changed object; both golden gates 271 passed, 12 skipped.
+
+`core/src/feature/arm64/float_adm_dwt2_neon.c` and `float_adm_neon.c` are fork files under the Netflix header; upstream has no counterpart, so a sync does not touch them. They mirror `adm_dwt2_s()` and the other scalar references in `adm_tools.c`: an upstream change to those is ported into these helpers.
+
+| Statements of the former single `float_adm_dwt2_neon()` | Now in |
+| --- | --- |
+| the four `vaddq_f32(acc, vmulq_laneq_f32(sN, f, N))` steps from `+0`, once for the low-pass and once for the high-pass taps | `dwt2_vertical_4_neon()`, called with `flo`, then with `fhi` |
+| vertical pass of a row (4-wide loop, scalar tail) | `dwt2_vertical_row_neon()` |
+| horizontal pass of a row (scalar, through `ind_x`) | `dwt2_horizontal_row_neon()`; it writes `a[j]`, `v[j]`, `h[j]`, `d[j]` where the single function wrote `dst->band_X[i * dst_px_stride + j]` |
+| allocation of `tmplo` / `tmphi`, the two `vld1q_f32` of the taps, the row loop | `float_adm_dwt2_neon()` |
+
+Kept: the `+0` start of every sum (signed-zero parity with `adm_dwt2_s()`), multiply then add with no fused form, the `float accum` sequences of the tail and of the horizontal pass, the tail bounds. Each function carries the GCC `optimize("-ffp-contract=off")` attribute, as `adm_dwt2_s()` and its two pass helpers do; a new helper needs it too. In `float_adm_neon.c` only declarations and row-pointer casts changed (`(ptrdiff_t)i * stride`).
+
+`core/src/feature/adm_tools.c`: the comment above `adm_dwt2_vert_pass_s()` said the wavelet stays one function; it is three functions, and the comment now says so. The `NOLINTNEXTLINE(readability-function-size)` on `adm_dwt2_s()` suppressed nothing and is gone. No code changed in that file, nor in `x86/adm_avx2.c` / `x86/adm_avx512.c` (SPDX line only).

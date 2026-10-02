@@ -2,6 +2,7 @@
  *
  *  Copyright 2016-2026 Netflix, Inc.
  *  Copyright 2026 Lusoris
+ *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *     Licensed under the BSD+Patent License (the "License");
  *     you may not use this file except in compliance with the License.
@@ -19,6 +20,7 @@
 
 #include <math.h>
 #include <arm_neon.h>
+#include <stddef.h>
 #include "float_adm_neon.h"
 #include "mem.h"
 
@@ -39,13 +41,11 @@ void float_adm_csf_neon(const float *src, float *dst, float *flt, int w, int h, 
     float32x4_t v_factor = vdupq_n_f32(factor);
     float32x4_t v_one_by_30 = vdupq_n_f32(one_by_30);
 
-    int i, j;
-
-    for (i = 0; i < h; ++i) {
+    for (int i = 0; i < h; ++i) {
         int src_off = i * src_px_stride;
         int dst_off = i * dst_px_stride;
 
-        j = 0;
+        int j = 0;
         for (; j + 3 < w; j += 4) {
             float32x4_t s = vld1q_f32(src + src_off + j);
             float32x4_t dst_val = vmulq_f32(v_factor, s);
@@ -73,11 +73,10 @@ float float_adm_csf_den_scale_neon(const float *src, int w, int h, int src_strid
 
     float32x4_t v_factor = vdupq_n_f32(factor);
 
-    int i, j;
     double accum = 0.0;
 
-    for (i = top; i < bottom; ++i) {
-        const float *row = src + i * src_px_stride;
+    for (int i = top; i < bottom; ++i) {
+        const float *row = src + (ptrdiff_t)i * src_px_stride;
         /* ADR-0873 / ADR-0138: accumulate in double to match the AVX2
          * _mm256_cvtps_pd strategy and bound tree-reduction ULP error.
          * The accumulators are per-row: `adm_csf_den_scale_s` resets
@@ -89,7 +88,7 @@ float float_adm_csf_den_scale_neon(const float *src, int w, int h, int src_strid
         float64x2_t v_accum1 = vdupq_n_f64(0.0);
         double row_accum;
 
-        j = left;
+        int j = left;
         for (; j + 3 < right; j += 4) {
             float32x4_t s = vld1q_f32(row + j);
             float32x4_t val = vabsq_f32(vmulq_f32(v_factor, s));
@@ -128,10 +127,8 @@ float float_adm_sum_cube_neon(const float *x, int w, int h, int stride, int left
 
     double accum = 0.0;
 
-    int i, j;
-
-    for (i = top; i < bottom; ++i) {
-        const float *row = x + i * px_stride;
+    for (int i = top; i < bottom; ++i) {
+        const float *row = x + (ptrdiff_t)i * px_stride;
         /* ADR-0873 / ADR-0138: accumulate in double to match the AVX2
          * _mm256_cvtps_pd strategy and bound tree-reduction ULP error.
          * Per-row, mirroring `adm_sum_cube_s`'s `accum_inner` and the
@@ -140,7 +137,7 @@ float float_adm_sum_cube_neon(const float *x, int w, int h, int stride, int left
         float64x2_t v_accum1 = vdupq_n_f64(0.0);
         double row_accum;
 
-        j = left;
+        int j = left;
         for (; j + 3 < right; j += 4) {
             float32x4_t s = vld1q_f32(row + j);
             float32x4_t val = vabsq_f32(s);

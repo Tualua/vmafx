@@ -855,12 +855,13 @@ void dwt2_src_indices_filt_s(int **src_ind_y, int **src_ind_x, int w, int h)
  * function-scoped pragma and GCC attribute deliberately constrain only DWT2.
  * See ADR-1057's 2026-08-31 correction.
  *
- * The body stays a single function on purpose: splitting the vertical and
- * horizontal passes into helpers would require replicating the
- * `optimize("-ffp-contract=off")` attribute on each of them and relying on
- * GCC's cross-attribute inlining behaviour to keep the contraction contract
- * — an ARM-only effect that the x86 golden gate cannot observe. ADR-0141 §2
- * load-bearing invariant (ADR-1057 fp-contract bracket); see ADR-1141. */
+ * The vertical and the horizontal pass are helpers, and each of the three
+ * functions carries the guard itself: the GCC `optimize("-ffp-contract=off")`
+ * attribute on the definition and the Clang pragma inside the body.  A helper
+ * added here needs both too; the contraction it prevents is an ARM-only
+ * effect that the x86 golden gate cannot observe (the aarch64 one can).
+ * ADR-0141 §2 load-bearing invariant (ADR-1057 fp-contract bracket); see
+ * ADR-1141. */
 #if defined(__GNUC__) && !defined(__clang__)
 __attribute__((optimize("-ffp-contract=off")))
 #endif
@@ -954,7 +955,6 @@ static void adm_dwt2_horiz_pass_s(const adm_dwt_band_t_s *dst, int dst_px_stride
 #if defined(__GNUC__) && !defined(__clang__)
 __attribute__((optimize("-ffp-contract=off")))
 #endif
-// NOLINTNEXTLINE(readability-function-size) — ADR-1057 / ADR-1141
 int adm_dwt2_s(const float *src, const adm_dwt_band_t_s *dst, int **ind_y, int **ind_x, int w,
                int h, int src_stride, int dst_stride)
 {

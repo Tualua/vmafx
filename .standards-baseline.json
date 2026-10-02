@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-02T15:07:43Z",
+  "generated_at": "2026-10-02T15:28:40Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "6c73edd809de513a4f25359913f8869927591283",
-  "total_infractions": 243,
+  "commit_sha": "83ec44141a27650821b57de07ccee8e905b4a5e6",
+  "total_infractions": 242,
   "infractions": [
     {
       "rule_id": "HISS-04",
@@ -856,14 +856,6 @@
       "symbol": "assert_equivalent_commands",
       "message": "Function 'assert_equivalent_commands' (68 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
       "fingerprint": "compat/python-vmaf/tools/testutils.py:108:HISS-04"
-    },
-    {
-      "rule_id": "HISS-04",
-      "file_path": "core/src/feature/arm64/float_adm_dwt2_neon.c",
-      "line_number": 60,
-      "symbol": "__attribute__",
-      "message": "Function '__attribute__' (136 LOC) exceeds HISS-04 / NASA Rule 4 limit of 60 LOC",
-      "fingerprint": "core/src/feature/arm64/float_adm_dwt2_neon.c:60:HISS-04"
     },
     {
       "rule_id": "HISS-04",

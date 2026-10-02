@@ -5585,7 +5585,7 @@
     "1057": {
       "sites": {
         "core/src/feature/adm.c": 1,
-        "core/src/feature/adm_tools.c": 3,
+        "core/src/feature/adm_tools.c": 2,
         "core/src/feature/arm64/float_adm_dwt2_neon.c": 1,
         "core/src/feature/arm64/float_adm_neon.c": 1,
         "core/src/meson.build": 1,
@@ -6549,7 +6549,7 @@
     },
     "1141": {
       "sites": {
-        "core/src/feature/adm_tools.c": 3,
+        "core/src/feature/adm_tools.c": 2,
         "core/src/feature/adm_tools.h": 1,
         "core/src/feature/integer_adm.c": 5,
         "core/src/feature/x86/adm_avx2.c": 3,

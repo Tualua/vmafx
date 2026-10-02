@@ -62,6 +62,17 @@ feature/arm64/
   do not introduce `vfmaq`, `fmaf`, or other fused form. Guarded by bit-exact
   `test_float_adm_dwt2_neon` (including signed zero) under Clang and GCC
   AArch64/QEMU.
+- **`float_adm_dwt2_neon()` row helpers (ADR-1142, HISS-04).** Entry point
+  keeps name + signature (dispatched from `adm.c`). Per row:
+  `dwt2_vertical_row_neon()` (4-wide loop over `dwt2_vertical_4_neon()`,
+  called for `flo` then `fhi`; scalar tail) and `dwt2_horizontal_row_neon()`
+  (scalar, `ind_x`). Every function there carries the GCC
+  `optimize("-ffp-contract=off")` attribute: GCC's `vaddq_f32` / `vmulq_*` are
+  plain `+` / `*`, so a helper without it can fuse when built outside the
+  meson carve-out. New helper -> attribute, whole statements only, `accum`
+  sequence unchanged. Vertical vector sum sits in its own helper because
+  NEON intrinsic macros count as statements (`readability-function-size`,
+  129 > 120 when inline).
 - **Float-arithmetic NEON TUs belong in `arm64_v8_fp`** (not `arm64_v8`).
   Static lib `arm64_v8_fp` uses the compiler-native no-contraction arguments
   from `vmaf_strict_fp_args` (ADR-0873); `arm64_v8` is integer-only and carries

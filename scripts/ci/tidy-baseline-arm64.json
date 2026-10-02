@@ -292,7 +292,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 569,
+  "total_warnings": 558,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -310,8 +310,6 @@
     "core/src/feature/adm_tools.h": 142,
     "core/src/feature/alias.c": 1,
     "core/src/feature/arm64/convolve_neon.c": 2,
-    "core/src/feature/arm64/float_adm_dwt2_neon.c": 6,
-    "core/src/feature/arm64/float_adm_neon.c": 5,
     "core/src/feature/arm64/motion_neon.c": 2,
     "core/src/feature/arm64/ms_ssim_decimate_neon.h": 1,
     "core/src/feature/arm64/ssimulacra2_host_neon.c": 1,
@@ -482,6 +480,29 @@
         }
       },
       "previous_baseline_sha256": "393c98f3d4f1650935ca8dcfd406618185c2f7b446cef210306acaf24973df3f"
+    },
+    {
+      "sources": [
+        "core/src/feature/adm_tools.c",
+        "core/src/feature/arm64/float_adm_dwt2_neon.c",
+        "core/src/feature/arm64/float_adm_neon.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/arm64/float_adm_dwt2_neon.c": {
+          "warnings": [
+            6,
+            0
+          ]
+        },
+        "core/src/feature/arm64/float_adm_neon.c": {
+          "warnings": [
+            5,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "9960184808318722d5376922f4bf137f69cc12ebf72667a17beb5f1b56564cb7"
     }
   ]
 }
