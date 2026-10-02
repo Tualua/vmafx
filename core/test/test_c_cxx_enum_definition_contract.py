@@ -62,7 +62,7 @@ def _files(suffixes: tuple[str, ...]) -> list[Path]:
 def _sources() -> dict[str, str]:
     """Relative path -> text of every C source and every header under core/."""
     return {
-        str(path.relative_to(ROOT)): path.read_text(encoding="utf-8", errors="replace")
+        path.relative_to(ROOT).as_posix(): path.read_text(encoding="utf-8", errors="replace")
         for path in _files(C_SUFFIXES + HEADER_SUFFIXES)
     }
 

@@ -278,7 +278,7 @@ if want msvcism; then
     } | sort -u)
   fi
   py_keys=$(printf '%s\n' "$py_tests" | grep -v '^$' | while read -r f; do
-    grep -nE '\[str\([A-Za-z_]+\.relative_to\([^]]*\)\)\][[:space:]]*=' "$f" 2>/dev/null | sed "s|^|$f:|"
+    grep -nE '\[str\([A-Za-z_]+\.relative_to\([^]]*\)\)\][[:space:]]*=|^[[:space:]]*str\([A-Za-z_]+\.relative_to\([^)]*\)\):' "$f" 2>/dev/null | sed "s|^|$f:|"
   done | head -60)
   if [ -n "$py_keys" ]; then
     printf '     %s\n' 'dictionary keyed by str(path.relative_to(...)) in a core/test Python test — backslashes on Windows; use .as_posix()'

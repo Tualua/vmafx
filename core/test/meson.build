@@ -1713,7 +1713,9 @@ test_speed_filter = executable('test_speed_filter',
       libsvm_static_lib.extract_all_objects(recursive: true),
     ] + wave8_opt_only_objects
 )
-test('test_speed_filter', test_speed_filter, suite : ['fast'])
+# 1620 filter cases: 0.3 s in a release build, above meson's default 30 s under
+# UBSan on a hosted runner (Sanitizers (undefined), 2026-10-02).
+test('test_speed_filter', test_speed_filter, suite : ['fast'], timeout : 180)
 endif
 # SpEED-QA extractor tests -- unconditional (speed_qa.c is not float-gated).
 # ADR-0253 real-impl: registration, vtable, flat/noise entropy, temporal positivity.
