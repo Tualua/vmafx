@@ -418,6 +418,9 @@ sbom:
 # for VMAF numerical correctness.
 test-netflix-golden: build-golden
 	@echo "=== Netflix CPU golden-data gate (D24) ==="
+	@python3 -m pytest --version >/dev/null 2>&1 || { \
+	    echo "error: pytest not found — this gate cannot run without it."; \
+	    echo "       install: .venv/bin/pip install pytest (see docs/development/languages.md)"; exit 1; }
 	CUDA_VISIBLE_DEVICES="" VMAF_FORCE_BACKEND=cpu VMAF_BUILD_DIR="$(CURDIR)/$(GOLDEN_BUILD_DIR)" PYTHONPATH=$(CURDIR)/python python3 -m pytest \
 	    python/test/quality_runner_test.py \
 	    python/test/feature_extractor_test.py \

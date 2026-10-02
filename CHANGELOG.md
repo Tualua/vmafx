@@ -1424,6 +1424,14 @@
   its own `HEAD`: on a pull request, master plus the PR's commits.
 
 
+- **The `test-netflix-golden` target checks for pytest before execution.** When
+  invoked in a fresh worktree where `.venv` only contains build-time dependencies,
+  `make test-netflix-golden` previously stopped with `No module named pytest`.
+  The target now checks for `pytest` availability up front and fails with an
+  actionable error directing the developer to the documented install command in
+  `docs/development/languages.md`.
+
+
 - **`motion_force_zero` no longer crashes `motion_cuda` and
   `float_motion_cuda`.** With the option set, the twins' `init()` switches
   them from the asynchronous `submit()` / `collect()` pair to a synchronous

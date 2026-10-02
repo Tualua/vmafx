@@ -57635,3 +57635,14 @@ must keep the fork's side of both:
 - No public C API or FFmpeg patch impact. The SYCL, HIP and Metal twins are
   untouched (`T-GPU-FLOAT-ADM-CPU-ARITHMETIC-2026-10-01`); an in-flight twin
   that includes `adm_reciprocal_model.h` no longer builds and has to divide.
+
+## `test-netflix-golden` checks for pytest presence (2026-10-02)
+
+`fix/golden-gate-pytest-check`, closes `T-TEST-NETFLIX-GOLDEN-PYTEST-MISSING-HINT-2026-10-02`.
+
+- `Makefile`: `test-netflix-golden` probes `python3 -m pytest --version` before
+  invoking the test suite and fails with an actionable error directing the
+  developer to `.venv/bin/pip install pytest (see docs/development/languages.md)`.
+- Tests: `scripts/ci/tests/test_golden_gate_makefile_contract.py`
+  (`test_test_netflix_golden_checks_pytest_presence`).
+- No public API, ABI, SIMD/GPU twin or Netflix golden-data impact.

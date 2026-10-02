@@ -87,6 +87,24 @@ class GoldenGateMakefileContractTest(unittest.TestCase):
             f"clean target recipe must clean GOLDEN_BUILD_DIR, got: {recipe}",
         )
 
+    def test_test_netflix_golden_checks_pytest_presence(self) -> None:
+        """test-netflix-golden recipe must check pytest presence before execution."""
+        pattern = r"^test-netflix-golden\s*:.*?\n((?:\t.*\n)+)"
+        match = re.search(pattern, self.makefile_text, re.MULTILINE)
+        self.assertIsNotNone(match, "Could not extract test-netflix-golden recipe")
+        assert match is not None
+        recipe = match.group(1)
+        self.assertIn(
+            "pytest --version",
+            recipe,
+            "test-netflix-golden recipe must probe pytest presence before invoking test suite",
+        )
+        self.assertIn(
+            "docs/development/languages.md",
+            recipe,
+            "test-netflix-golden recipe must cite documented install instructions on missing pytest",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
