@@ -58698,4 +58698,13 @@ ADR-1403 unchanged.
 - Coupled edits: `scripts/ci/check-issue-reference-provenance.py` and
   `scripts/ci/tests/test_issue_reference_provenance.py` update contracts for
   `kernel-launch-params.md` and `host-preprocessing-download.md`.
+## ADR-1454 — `core/src/feature/hip/AGENTS.md` is a generated index over `AGENTS.d/` pages (2026-10-02)
+
+`docs/agents-index-feature-hip`, `T-AGENTS-INDEX-MIGRATION-2026-10-02`.
+
+- No rebase impact from upstream: an upstream sync never touches an
+  `AGENTS.md` or an `AGENTS.d/`.
+- Fork branches that append to `core/src/feature/hip/AGENTS.md` conflict once: take
+  `core/src/feature/hip/AGENTS.md` from master, put the new rule into a new or matching
+  page under `core/src/feature/hip/AGENTS.d/`, run `make docs-fragments-write`.
 - No Netflix golden-data, public API or FFmpeg patch impact.
