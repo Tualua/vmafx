@@ -5879,12 +5879,17 @@ test('test_sycl_shared_planes', test_sycl_shared_planes,
 # ADR-1595: zero-copy input has no host pictures; vmaf_read_pictures_sycl must
 # refuse a registered CPU extractor with -ENOTSUP before any state change, and a
 # luma-only SYCL twin must still score on directly written upload slots.
+# The extractor registry is not iterable from a test, so count the SYCL registrations here
+# and let the guard table assert it has a row for each distinct name.
+sycl_fex_names = run_command('sh', '-c',
+    'grep -h "^    \\.name = \\"[a-z0-9_]*_sycl\\"," "$1"/*.cpp | sort -u | wc -l',
+    'sh', meson.project_source_root() / 'src' / 'feature' / 'sycl', check : true).stdout().strip()
 test_sycl_zerocopy_guards = executable('test_sycl_zerocopy_guards',
     ['test.c', 'test_sycl_zerocopy_guards.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies: [pthread_dependency, sycl_dependency, math_lib],
-    c_args: ['-DHAVE_SYCL=1']
+    c_args: ['-DHAVE_SYCL=1', '-DEXPECTED_SYCL_EXTRACTORS=' + sycl_fex_names]
 )
 test('test_sycl_zerocopy_guards', test_sycl_zerocopy_guards,
     suite : ['fast', 'gpu', 'sycl'],
