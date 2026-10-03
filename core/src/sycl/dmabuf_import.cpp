@@ -90,7 +90,7 @@ extern "C" int vmaf_sycl_dmabuf_import(VmafSyclState *state, int fd, size_t size
     *ptr = nullptr;
 
     try {
-        const sycl::queue *q = (sycl::queue *)vmaf_sycl_get_queue_ptr(state);
+        const sycl::queue *q = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(state));
         if (!q)
             return -EINVAL;
 
@@ -143,7 +143,7 @@ extern "C" void vmaf_sycl_dmabuf_free(VmafSyclState *state, void *ptr)
         return;
 
     try {
-        const sycl::queue *q = (sycl::queue *)vmaf_sycl_get_queue_ptr(state);
+        const sycl::queue *q = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(state));
         if (!q)
             return;
 

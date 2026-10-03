@@ -28,6 +28,7 @@
 #include <sycl/ext/oneapi/experimental/graph.hpp>
 #include <level_zero/ze_api.h>
 
+#include <algorithm>
 #include <cassert>
 #include <cerrno>
 #include <chrono>
@@ -301,8 +302,8 @@ static int sycl_resolve_device(const VmafSyclConfiguration &cfg, sycl::device &o
     auto platforms = sycl::platform::get_platforms();
     std::vector<sycl::device> gpus;
     for (auto &p : platforms) {
-        for (const auto &d : p.get_devices(sycl::info::device_type::gpu))
-            gpus.push_back(d);
+        const auto devices = p.get_devices(sycl::info::device_type::gpu);
+        gpus.insert(gpus.end(), devices.begin(), devices.end());
     }
     if (static_cast<unsigned>(cfg.device_index) >= gpus.size()) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "SYCL: device_index %d out of range (%zu GPUs)\n",
@@ -843,12 +844,10 @@ static sycl::event sycl_enqueue_plane_upload(VmafSyclState *state, void *dst_buf
  * when an extractor skips frames (n_subsample) and nothing collected it. */
 static bool sycl_events_pending(const std::vector<sycl::event> &events)
 {
-    for (const sycl::event &e : events) {
-        if (e.get_info<sycl::info::event::command_execution_status>() !=
-            sycl::info::event_command_status::complete)
-            return true;
-    }
-    return false;
+    return std::ranges::any_of(events, [](const sycl::event &e) {
+        return e.get_info<sycl::info::event::command_execution_status>() !=
+               sycl::info::event_command_status::complete;
+    });
 }
 
 static void sycl_fence_slot_readers(VmafSyclState *state, int ui)

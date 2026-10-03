@@ -116,6 +116,8 @@ static char *test_eager_chroma_allocation(void)
     return msg;
 }
 
+static char *check_currency_promotion(VmafSyclState *state, const void *up_ref, const void *up_dis);
+
 static char *check_currency(VmafSyclState *state)
 {
     mu_assert("chroma is not current before any import", !vmaf_sycl_shared_chroma_current(state));
@@ -124,8 +126,8 @@ static char *check_currency(VmafSyclState *state)
     mu_assert("an advance without any mark leaves chroma stale",
               !vmaf_sycl_shared_chroma_current(state));
 
-    void *const up_ref = vmaf_sycl_get_shared_plane_upload(state, 1, 1u);
-    void *const up_dis = vmaf_sycl_get_shared_plane_upload(state, 0, 2u);
+    const void *const up_ref = vmaf_sycl_get_shared_plane_upload(state, 1, 1u);
+    const void *const up_dis = vmaf_sycl_get_shared_plane_upload(state, 0, 2u);
     mu_assert("upload slot differs from the compute slot",
               up_ref != vmaf_sycl_get_shared_plane(state, 1, 1u) &&
                   up_dis != vmaf_sycl_get_shared_plane(state, 0, 2u));
@@ -133,6 +135,12 @@ static char *check_currency(VmafSyclState *state)
               vmaf_sycl_get_shared_plane_upload(state, 1, 0u) ==
                   vmaf_sycl_get_shared_ref_upload(state));
 
+    return check_currency_promotion(state, up_ref, up_dis);
+}
+
+/* The mark, the advance that promotes it, and the advance that retires it. */
+static char *check_currency_promotion(VmafSyclState *state, const void *up_ref, const void *up_dis)
+{
     vmaf_sycl_shared_chroma_mark_imported(state);
     mu_assert("a mark alone does not make chroma current", !vmaf_sycl_shared_chroma_current(state));
     vmaf_sycl_advance_frame(state);
@@ -280,12 +288,8 @@ static char *read_scores(VmafContext *vmaf, double scores[N_FEATURES][PARITY_FRA
     return NULL;
 }
 
-static char *run_cpu(unsigned bpc, double scores[N_FEATURES][PARITY_FRAMES])
+static char *read_cpu_frames(VmafContext *vmaf, unsigned bpc)
 {
-    VmafContext *vmaf = NULL;
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    mu_assert("vmaf_init failed", !vmaf_init(&vmaf, cfg));
-    mu_assert_msg(use_features(vmaf, 0));
     for (unsigned frame = 0; frame < PARITY_FRAMES; frame++) {
         VmafPicture ref;
         VmafPicture dis;
@@ -293,6 +297,16 @@ static char *run_cpu(unsigned bpc, double scores[N_FEATURES][PARITY_FRAMES])
         mu_assert("dis alloc", !fill_pic(&dis, frame, 1u, bpc));
         mu_assert("cpu read failed", !vmaf_read_pictures(vmaf, &ref, &dis, frame));
     }
+    return NULL;
+}
+
+static char *run_cpu(unsigned bpc, double scores[N_FEATURES][PARITY_FRAMES])
+{
+    VmafContext *vmaf = NULL;
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    mu_assert("vmaf_init failed", !vmaf_init(&vmaf, cfg));
+    mu_assert_msg(use_features(vmaf, 0));
+    mu_assert_msg(read_cpu_frames(vmaf, bpc));
     mu_assert("cpu flush failed", !vmaf_read_pictures(vmaf, NULL, NULL, 0));
     mu_assert_msg(read_scores(vmaf, scores));
     mu_assert("vmaf_close failed", !vmaf_close(vmaf));
@@ -309,10 +323,11 @@ static char *run_zero_copy(unsigned bpc, double scores[N_FEATURES][PARITY_FRAMES
     if (!msg)
         msg = use_features(vmaf, 1);
     for (unsigned frame = 0; !msg && frame < PARITY_FRAMES; frame++) {
-        if (emulate_import(state, frame, bpc, 1))
+        if (emulate_import(state, frame, bpc, 1)) {
             msg = "emulated import failed";
-        else if (vmaf_read_pictures_sycl(vmaf, frame))
+        } else if (vmaf_read_pictures_sycl(vmaf, frame)) {
             msg = "vmaf_read_pictures_sycl failed on imported chroma";
+        }
     }
     if (!msg && vmaf_flush_sycl(vmaf))
         msg = "vmaf_flush_sycl failed";
@@ -443,10 +458,11 @@ static char *run_motion_host(unsigned bpc, int add_uv, MotionScores *out)
     for (unsigned frame = 0; !msg && frame < MOTION_FRAMES; frame++) {
         VmafPicture ref;
         VmafPicture dis;
-        if (fill_pic(&ref, frame, 0u, bpc) || fill_pic(&dis, frame, 1u, bpc))
+        if (fill_pic(&ref, frame, 0u, bpc) || fill_pic(&dis, frame, 1u, bpc)) {
             msg = "host leg: picture alloc failed";
-        else if (vmaf_read_pictures(vmaf, &ref, &dis, frame))
+        } else if (vmaf_read_pictures(vmaf, &ref, &dis, frame)) {
             msg = "host leg: vmaf_read_pictures failed";
+        }
     }
     if (!msg && vmaf_read_pictures(vmaf, NULL, NULL, 0))
         msg = "host leg: flush failed";
@@ -468,10 +484,11 @@ static char *run_motion_zero_copy(unsigned bpc, MotionScores *out)
     if (!msg)
         msg = use_motion(vmaf, 1);
     for (unsigned frame = 0; !msg && frame < MOTION_FRAMES; frame++) {
-        if (emulate_import(state, frame, bpc, 1))
+        if (emulate_import(state, frame, bpc, 1)) {
             msg = "emulated import failed";
-        else if (vmaf_read_pictures_sycl(vmaf, frame))
+        } else if (vmaf_read_pictures_sycl(vmaf, frame)) {
             msg = "vmaf_read_pictures_sycl failed on imported chroma (motion_add_uv)";
+        }
     }
     if (!msg && vmaf_flush_sycl(vmaf))
         msg = "vmaf_flush_sycl failed";
@@ -557,16 +574,28 @@ static char *test_motion_add_uv_unmarked_refused(void)
     return msg;
 }
 
-char *run_tests(void)
+static char *run_chroma_tests(void)
 {
     mu_run_test(test_eager_chroma_allocation);
     mu_run_test(test_chroma_currency_contract);
     mu_run_test(test_parity_8bit);
     mu_run_test(test_parity_10bit);
     mu_run_test(test_unmarked_chroma_refused);
+    return NULL;
+}
+
+static char *run_motion_tests(void)
+{
     mu_run_test(test_motion_add_uv_8bit);
     mu_run_test(test_motion_add_uv_10bit);
     mu_run_test(test_motion_add_uv_unmarked_refused);
+    return NULL;
+}
+
+char *run_tests(void)
+{
+    mu_run_test(run_chroma_tests);
+    mu_run_test(run_motion_tests);
     return NULL;
 }
 

@@ -54,7 +54,7 @@ typedef struct Geometry {
 
 static const Geometry g_geometries[] = {
     {576u, 324u, 0u, 0u},
-    {1920u, 1080u, 0u, 4096u * 3u},
+    {1920u, 1080u, 0u, (size_t)4096u * 3u},
     {67u, 37u, 0u, 0u},
     {250u, 138u, 1u, 4096u},
 };
@@ -135,10 +135,11 @@ static void plane_geometry(Plane *p, const Geometry *g)
     p->cw = (g->w + 1u) / 2u;
     p->ch = (g->h + 1u) / 2u;
     p->offset = g->offset;
-    if (p->layout == VMAF_SYCL_CHROMA_LINEAR)
+    if (p->layout == VMAF_SYCL_CHROMA_LINEAR) {
         p->pitch = row + (g->widen ? 64u : 0u);
-    else
+    } else {
         p->pitch = ((row + 127u) / 128u) * 128u + (g->widen ? 128u : 0u);
+    }
     p->object_size = p->offset + plane_extent(p);
 }
 
@@ -263,10 +264,11 @@ static const char *run_case(VmafSyclState *state, enum VmafSyclChromaLayout layo
         msg = "host allocation failed";
     } else {
         plane_fill(&p);
-        if (device_alloc(state, &p, &d))
+        if (device_alloc(state, &p, &d)) {
             msg = "device allocation or upload failed";
-        else
+        } else {
             msg = convert_and_compare(state, &p, &d, g->w == 67u);
+        }
     }
     if (msg) {
         (void)fprintf(stderr, "\nlayout=%d bpc=%u %ux%u widen=%u: ", (int)layout, bpc, g->w, g->h,
@@ -357,7 +359,7 @@ static char *test_validate_accepts_and_bounds(void)
     src = valid_src(VMAF_SYCL_CHROMA_LINEAR);
     src.cw = 400u;
     mu_assert("a row of pairs wider than the pitch",
-              vmaf_sycl_chroma_src_validate(&src, LINEAR_OBJECT * 4u) == -EINVAL);
+              vmaf_sycl_chroma_src_validate(&src, (size_t)LINEAR_OBJECT * 4u) == -EINVAL);
     return NULL;
 }
 
@@ -378,7 +380,7 @@ static char *test_validate_rejects_malformed(void)
         src = valid_src(VMAF_SYCL_CHROMA_LINEAR);
         src.bpc = bad_bpc[i];
         mu_assert("bit depth outside 8/10/12/16",
-                  vmaf_sycl_chroma_src_validate(&src, LINEAR_OBJECT * 4u) == -EINVAL);
+                  vmaf_sycl_chroma_src_validate(&src, (size_t)LINEAR_OBJECT * 4u) == -EINVAL);
     }
     src = valid_src(VMAF_SYCL_CHROMA_LINEAR);
     src.layout = (enum VmafSyclChromaLayout)99;
