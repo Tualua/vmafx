@@ -233,7 +233,7 @@ extern "C" int vmaf_sycl_require_host_pictures(const char *extractor, const Vmaf
     return -ENOTSUP;
 }
 
-extern "C" int vmaf_sycl_require_chroma(VmafSyclState *state, const char *extractor,
+extern "C" int vmaf_sycl_require_chroma(const VmafSyclState *state, const char *extractor,
                                         const VmafPicture *ref, const VmafPicture *dis)
 {
     if ((ref != nullptr && dis != nullptr) || vmaf_sycl_shared_chroma_current(state)) {
@@ -1182,7 +1182,7 @@ extern "C" void *vmaf_sycl_get_queue_ptr(VmafSyclState *state)
     return &state->queue;
 }
 
-extern "C" bool vmaf_sycl_has_fp64(VmafSyclState *state)
+extern "C" bool vmaf_sycl_has_fp64(const VmafSyclState *state)
 {
     if (!state)
         return false;
@@ -1217,7 +1217,7 @@ extern "C" void *vmaf_sycl_get_shared_dis_slot(VmafSyclState *state, int slot)
     return state->shared_dis_buf[slot];
 }
 
-extern "C" int vmaf_sycl_get_compute_slot(VmafSyclState *state)
+extern "C" int vmaf_sycl_get_compute_slot(const VmafSyclState *state)
 {
     if (!state)
         return 0;
@@ -1232,7 +1232,7 @@ extern "C" void *vmaf_sycl_get_shared_ref_upload(VmafSyclState *state)
     return state->shared_ref_buf[state->cur_upload];
 }
 
-extern "C" bool vmaf_sycl_import_debug_enabled(VmafSyclState *state)
+extern "C" bool vmaf_sycl_import_debug_enabled(const VmafSyclState *state)
 {
     return state && state->import_debug;
 }
@@ -1294,14 +1294,14 @@ extern "C" int vmaf_sycl_graph_register(VmafSyclState *state, VmafSyclGraphEnque
     return 0;
 }
 
-extern "C" void *vmaf_sycl_get_combined_queue(VmafSyclState *state)
+extern "C" void *vmaf_sycl_get_combined_queue(const VmafSyclState *state)
 {
     if (!state)
         return nullptr;
     return state->combined_queue;
 }
 
-extern "C" int vmaf_sycl_graph_unregister(VmafSyclState *state, void *priv)
+extern "C" int vmaf_sycl_graph_unregister(VmafSyclState *state, const void *priv)
 {
     if (!state || !priv)
         return -EINVAL;
@@ -1846,7 +1846,7 @@ extern "C" void vmaf_sycl_profiling_record(VmafSyclState *state, const char *ker
     entry.count++;
 }
 
-extern "C" bool vmaf_sycl_profiling_is_enabled(VmafSyclState *state)
+extern "C" bool vmaf_sycl_profiling_is_enabled(const VmafSyclState *state)
 {
     if (!state)
         return false;

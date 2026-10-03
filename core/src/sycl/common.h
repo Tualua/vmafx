@@ -93,8 +93,8 @@ int vmaf_sycl_require_host_pictures(const char *extractor, const VmafPicture *re
  *         frame; otherwise logs one error naming the extractor and returns
  *         -ENOTSUP.
  */
-int vmaf_sycl_require_chroma(VmafSyclState *state, const char *extractor, const VmafPicture *ref,
-                             const VmafPicture *dis);
+int vmaf_sycl_require_chroma(const VmafSyclState *state, const char *extractor,
+                             const VmafPicture *ref, const VmafPicture *dis);
 
 /* ---- Device-memory helpers (USM wrappers) ---- */
 
@@ -410,7 +410,7 @@ void *vmaf_sycl_get_queue_ptr(VmafSyclState *state);
  *
  * @return true if fp64 is supported, false otherwise.
  */
-bool vmaf_sycl_has_fp64(VmafSyclState *state);
+bool vmaf_sycl_has_fp64(const VmafSyclState *state);
 
 /**
  * Get the shared ref device buffer pointer.
@@ -457,7 +457,7 @@ void *vmaf_sycl_get_shared_dis_slot(VmafSyclState *state, int slot);
  *
  * @return Current compute slot index.
  */
-int vmaf_sycl_get_compute_slot(VmafSyclState *state);
+int vmaf_sycl_get_compute_slot(const VmafSyclState *state);
 
 /**
  * Get the shared ref device buffer pointer for the current upload slot.
@@ -483,7 +483,7 @@ void *vmaf_sycl_get_shared_ref_upload(VmafSyclState *state);
  *
  * @return true when VMAF_SYCL_IMPORT_DEBUG=1 was set at init, false otherwise.
  */
-bool vmaf_sycl_import_debug_enabled(VmafSyclState *state);
+bool vmaf_sycl_import_debug_enabled(const VmafSyclState *state);
 
 /**
  * Get the shared dis device buffer pointer for the current upload slot.
@@ -602,7 +602,7 @@ int vmaf_sycl_graph_register(VmafSyclState *state, VmafSyclGraphEnqueueFn enqueu
  *
  * @return 0 on success, -EINVAL if state is NULL or priv not found.
  */
-int vmaf_sycl_graph_unregister(VmafSyclState *state, void *priv);
+int vmaf_sycl_graph_unregister(VmafSyclState *state, const void *priv);
 
 /**
  * Get the combined compute queue for direct submission.
@@ -612,7 +612,7 @@ int vmaf_sycl_graph_unregister(VmafSyclState *state, void *priv);
  *
  * @return Opaque pointer to sycl::queue, or NULL.
  */
-void *vmaf_sycl_get_combined_queue(VmafSyclState *state);
+void *vmaf_sycl_get_combined_queue(const VmafSyclState *state);
 
 /**
  * Submit all registered extractors' GPU work for the current frame.
@@ -734,7 +734,7 @@ void vmaf_sycl_profiling_record(VmafSyclState *state, const char *kernel_name, u
  *
  * @return true if profiling is enabled.
  */
-bool vmaf_sycl_profiling_is_enabled(VmafSyclState *state);
+bool vmaf_sycl_profiling_is_enabled(const VmafSyclState *state);
 
 #ifdef __cplusplus
 }
