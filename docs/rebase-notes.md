@@ -59778,3 +59778,15 @@ upstream parity guard's allowlist.
   regenerate with the engine, never by hand. `.standards-baseline.json` is
   re-recorded once at the tip with the pinned engine (503), and the README
   figure follows it.
+
+## Tester workflows: version string and release identity
+
+- `.github/workflows/macos-tester-bundle.yml` and
+  `.github/workflows/docker-publish-tester.yml` use
+  `git describe --tags --match 'v*.*.*'` (no `--always`, no `--long`), and
+  `scripts/ci/check-vcs-version-not-bare-sha.sh` holds both to it. The macOS
+  workflow's `Create the tester prerelease` step alone speaks as the
+  release-bot identity (App, else `RELEASE_BOT_TOKEN`, else fails), after the
+  `Choose the release-bot identity` and `Mint the release-bot installation
+  token` steps. A rebase keeps all three and the job token on every other step.
+  No score, public API or FFmpeg patch impact.

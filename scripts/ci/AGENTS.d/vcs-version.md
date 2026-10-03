@@ -2,7 +2,10 @@
 paths:
   - scripts/ci/check-vcs-version-not-bare-sha.sh
   - core/include/meson.build
-invariant: `vcs_tag`: no `--always`, explicit `fallback:`, `--match 'v*.*.*'`; `build.yml` checkout keeps `fetch-depth: 0`.
+  - scripts/ci/tests/test-check-vcs-version-not-bare-sha.sh
+  - .github/workflows/macos-tester-bundle.yml
+  - .github/workflows/docker-publish-tester.yml
+invariant: `vcs_tag` and tester `git describe`: `--match 'v*.*.*'`, no `--always`; `fallback:`; `build.yml` `fetch-depth: 0`.
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # `check-vcs-version-not-bare-sha.sh` invariants
@@ -34,3 +37,13 @@ whether checkout could reach a tag.
 `.github/workflows/build.yml` must therefore keep `fetch-depth: 0` on its
 checkout: `git describe --long` needs both tag objects and commit
 distance to them; `actions/checkout` default of 1 supplies neither.
+
+The two tester publishing workflows (`macos-tester-bundle.yml`,
+`docker-publish-tester.yml`) take the version of the published file and image
+from `git describe` as well, and the gate holds each of their describes to
+`--match 'v*.*.*'` and no `--always`. Without `--match`, the
+`tester-<date>-<sha8>` prerelease tags (made on master commits) supply the
+version. They omit `--long` deliberately: a tagged commit then yields the bare
+tag (`v1.0.0-rc.2`, image `v1.0.0-rc.2-tester`), where `--long` would give
+`v1.0.0-rc.2-0-g<sha>`. `scripts/ci/tests/test-check-vcs-version-not-bare-sha.sh`
+plants each defect against fixture workflows.

@@ -189,6 +189,12 @@ its private key is downloadable only once, at creation — so requiring the App
 made the whole release pipeline block on a manual step. The fallback keeps the
 pipeline runnable; swap to the App when it exists and delete the PAT secret.
 
+The same identity, resolved the same way (App, else PAT, else a failing step that
+names the missing secrets), creates the tag and release of the macOS tester bundle
+in `macos-tester-bundle.yml`: the job token cannot create the tag of a commit that
+differs from master's tree in `.github/workflows/`. Only that one step uses it
+([tester maintainer notes](tester-image.md)).
+
 Whichever mode is active, the resolved token is masked with `::add-mask::`
 before it reaches any later step.
 

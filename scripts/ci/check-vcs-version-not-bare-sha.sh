@@ -22,6 +22,13 @@
 # That is roughly one commit in a thousand — (6/16)^7 — so the defect can sit in
 # tree for months and then fail an unrelated PR. It did: merge commit
 # abafdfcc3c8ef40c369b4bb776c14188729ceada abbreviates to "abafdfc".
+#
+# The two tester publishing workflows derive the version of the published file
+# and image from `git describe` too (docs/development/tester-image.md). They
+# must keep the same contract: `--match 'v*.*.*'` (the tester prereleases tag
+# master commits `tester-<date>-<sha8>`, and an unrestricted describe returns
+# one of those) and no `--always`. They omit `--long` on purpose: a tagged
+# commit yields the bare tag, as the documented `<tag>-tester` image requires.
 set -euo pipefail
 export LC_ALL=C
 
@@ -84,10 +91,35 @@ if ! printf '%s\n' "$code" | grep -q -- "--match"; then
   note "       Without --match, any tag in the repository can supply the version."
 fi
 
+# Tester publishing workflows: every `git describe` in them is held to the
+# same contract (comments stripped; a workflow with no describe at all means
+# the derivation moved, so the gate would otherwise pass vacuously).
+tester_workflows=(
+  .github/workflows/macos-tester-bundle.yml
+  .github/workflows/docker-publish-tester.yml
+)
+for wf in "${tester_workflows[@]}"; do
+  if [ ! -f "$wf" ]; then
+    bad "$wf not found; cannot verify its version-string contract."
+    continue
+  fi
+  describes=$(sed 's/^[[:space:]]*#.*$//' "$wf" | awk '/git describe/')
+  if [ -z "$describes" ]; then
+    bad "$wf has no git describe; the version derivation moved? Update this gate."
+    continue
+  fi
+  if printf '%s\n' "$describes" | grep -q -- "--always"; then
+    bad "$wf passes --always to git describe (a bare sha becomes the version)."
+  fi
+  if printf '%s\n' "$describes" | grep -v -q -- "--match 'v\*\.\*\.\*'"; then
+    bad "$wf has a git describe without --match 'v*.*.*'; a tester-<date>-<sha8> tag would supply the version."
+  fi
+done
+
 if [ "$fail" -ne 0 ]; then
   note ""
   note "See core/include/meson.build and core/test/test_output.c::test_vmaf_version."
   exit 1
 fi
 
-printf 'check-vcs-version-not-bare-sha: OK (%s keeps VMAF_VERSION a real version)\n' "$target"
+printf 'check-vcs-version-not-bare-sha: OK (%s keeps VMAF_VERSION a real version; %s tester workflows checked)\n' "$target" "${#tester_workflows[@]}"

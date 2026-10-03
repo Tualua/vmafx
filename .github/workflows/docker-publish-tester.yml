@@ -137,12 +137,18 @@ jobs:
             fi
             publish=true
           fi
+          # Only v*.*.* tags name a version (see macos-tester-bundle.yml); a
+          # tagged commit yields the bare tag, so its image is `<tag>-tester`.
+          if ! describe="$(git describe --tags --match 'v*.*.*' "$source_sha")"; then
+            echo "ERROR: no v*.*.* tag is reachable from $source_sha" >&2
+            exit 1
+          fi
           {
             echo "publish=$publish"
             echo "ref=$source_sha"
             echo "source_sha=$source_sha"
             echo "recipe_sha=$GITHUB_SHA"
-            echo "image_tag=$(git describe --tags --always "$source_sha")-tester"
+            echo "image_tag=${describe}-tester"
           } >> "$GITHUB_OUTPUT"
 
   refs-x86:

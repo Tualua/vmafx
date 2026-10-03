@@ -101,7 +101,14 @@ jobs:
               exit 1
             fi
           fi
-          describe="$(git describe --tags --always "$source_sha")"
+          # Only v*.*.* tags name a version: the tester prereleases tag master
+          # commits as tester-<date>-<sha8>, and an unrestricted describe would
+          # pick one of those. No --long (a tagged commit yields the bare tag)
+          # and no --always (no reachable tag fails instead of a bare sha).
+          if ! describe="$(git describe --tags --match 'v*.*.*' "$source_sha")"; then
+            echo "ERROR: no v*.*.* tag is reachable from $source_sha" >&2
+            exit 1
+          fi
           {
             echo "source_sha=$source_sha"
             echo "describe=$describe"
@@ -230,13 +237,58 @@ jobs:
           for f in bundle/*.tar.gz; do
             cosign sign-blob --yes --bundle "$f.bundle" "$f"
           done
+      # Creating the tag of a commit that is behind master (and so may differ
+      # in .github/workflows/) is refused for the job token, which cannot hold
+      # the `workflows` permission: HTTP 403 on POST /releases. Only this step
+      # speaks as the release-bot identity of release-please.yml (App when its
+      # secrets exist, else the PAT, else it fails); every other step keeps the
+      # job token. Maintainer notes: docs/development/tester-image.md.
+      - name: Choose the release-bot identity
+        id: creds
+        env:
+          RELEASE_BOT_APP_ID: ${{ secrets.RELEASE_BOT_APP_ID }}
+          RELEASE_BOT_PRIVATE_KEY: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          RELEASE_BOT_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$RELEASE_BOT_APP_ID" && -n "$RELEASE_BOT_PRIVATE_KEY" ]]; then
+            echo "mode=app" >> "$GITHUB_OUTPUT"
+          elif [[ -n "$RELEASE_BOT_TOKEN" ]]; then
+            echo "mode=pat" >> "$GITHUB_OUTPUT"
+          else
+            echo "ERROR: no release-bot identity: set RELEASE_BOT_APP_ID and" >&2
+            echo "RELEASE_BOT_PRIVATE_KEY (preferred) or RELEASE_BOT_TOKEN;" >&2
+            echo "see docs/development/release.md, 'Release-bot identity'." >&2
+            exit 1
+          fi
+      - name: Mint the release-bot installation token
+        if: steps.creds.outputs.mode == 'app'
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
       - name: Create the tester prerelease
         env:
-          GH_TOKEN: ${{ github.token }}
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          PAT: ${{ secrets.RELEASE_BOT_TOKEN }}
           RELEASE_TAG: ${{ needs.validate.outputs.release-tag }}
           SOURCE_SHA: ${{ needs.validate.outputs.source-sha }}
           DESCRIBE: ${{ needs.validate.outputs.describe }}
         run: |
+          set -euo pipefail
+          if [[ -n "$APP_TOKEN" ]]; then
+            GH_TOKEN="$APP_TOKEN"
+            identity="release-bot GitHub App installation token"
+          elif [[ -n "$PAT" ]]; then
+            GH_TOKEN="$PAT"
+            identity="RELEASE_BOT_TOKEN (personal access token)"
+          else
+            echo "ERROR: the identity step passed but no token reached this step" >&2
+            exit 1
+          fi
+          export GH_TOKEN
+          echo "creating $RELEASE_TAG as: $identity" | tee -a "$GITHUB_STEP_SUMMARY"
           {
             echo "Tester bundle for macOS on Apple silicon. **Not a product release.**"
             echo
