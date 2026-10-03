@@ -588,8 +588,8 @@ typedef struct LumaFeature {
     unsigned n_scores;
     const char *opt_key; /* optional extractor option, set on both legs */
     const char *opt_val;
-    int chroma;         /* reads Cb / Cr: the zero-copy leg marks chroma imported */
-    double cpu_tol;     /* host upload vs CPU bound; 0 = bit-identical */
+    int chroma;     /* reads Cb / Cr: the zero-copy leg marks chroma imported */
+    double cpu_tol; /* host upload vs CPU bound; 0 = bit-identical */
 } LumaFeature;
 
 static const LumaFeature g_luma_features[] = {
@@ -731,8 +731,8 @@ static char *compare_luma(const LumaFeature *lf, unsigned bpc, const char *what,
             if (!want->ok[f][frame])
                 continue;
             *defined += 1u;
-            const int same = tol > 0.0 ? fabs(want->v[f][frame] - got->v[f][frame]) <= tol
-                                       : same_bits(want->v[f][frame], got->v[f][frame]);
+            const int same = tol > 0.0 ? fabs(want->v[f][frame] - got->v[f][frame]) <= tol :
+                                         same_bits(want->v[f][frame], got->v[f][frame]);
             if (!same) {
                 (void)fprintf(stderr, "\n%s %s bpc=%u frame %u: want=%.17g got=%.17g\n", what,
                               lf->scores[f], bpc, frame, want->v[f][frame], got->v[f][frame]);

@@ -271,9 +271,8 @@ static int write_chroma_marked(VmafSyclState *state, unsigned frame, unsigned bp
             for (size_t i = 0; i < bytes; i++) {
                 buf[i] = (uint8_t)((i * (3u + plane) + frame * 11u + is_ref * 7u) & 0xFFu);
             }
-            err = vmaf_sycl_memcpy_h2d(state,
-                                       vmaf_sycl_get_shared_plane_upload(state, (int)is_ref, plane),
-                                       buf, bytes);
+            err = vmaf_sycl_memcpy_h2d(
+                state, vmaf_sycl_get_shared_plane_upload(state, (int)is_ref, plane), buf, bytes);
         }
     }
     free(buf);
