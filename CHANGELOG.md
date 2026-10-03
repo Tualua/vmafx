@@ -3127,6 +3127,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   absence and the declared review values. The live ruleset is unchanged.
 
 
+- The platform setup scripts (`scripts/setup/*.sh`, `scripts/setup/windows.ps1`)
+  end with a configure command that works: `meson setup build core ...` from
+  the repository root. They printed `meson setup build ...`, which Meson refuses
+  because the root has no `meson.build`. The Windows script also prints the
+  `/experimental:c11atomics` compiler flags every MSVC build needs.
+
+
 - **Eleven licence tags now say what the file's own notice says.** The SPDX
   backfill had given some files the identifier of their directory rather than
   of the notice in them. Files that carry only Daala's, Xiph.Org's, dav1d's,

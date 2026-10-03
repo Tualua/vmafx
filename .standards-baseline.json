@@ -1,10 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-03T18:21:35Z",
+  "generated_at": "2026-10-03T20:14:21Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "dedf7c0a966938f71a3fefd5d80bafeebcdfbba1",
-  "total_infractions": 503,
-  "increase_rationale": "Engine 0af07a733e65 scans shell (186 files) and applies the HISS-02/04/07/08 checks added since 6c772713a133; the 6c772713a133 engine records no growth on the same tree (227 within 227). None of the added entries comes from a code change.",
+  "commit_sha": "0bf79cdc90d4428046a23c9093ebf7cc29b38ce7",
+  "total_infractions": 502,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -3636,14 +3635,6 @@
       "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
       "anchor": "text:5840c09fdd3d",
       "fingerprint": "scripts/run_unittests.sh:HISS-07:text:5840c09fdd3d#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": "scripts/setup/fedora.sh",
-      "line_number": 51,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:496ad61c66b1",
-      "fingerprint": "scripts/setup/fedora.sh:HISS-07:text:496ad61c66b1#1"
     },
     {
       "rule_id": "HISS-07",

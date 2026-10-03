@@ -55,6 +55,15 @@ if build_machine.system() != 'windows'
     )
 endif
 
+# The configure command scripts/setup/* print at the end must name Meson's
+# core/ source directory; the repository root has no meson.build.
+test('test_setup_scripts_configure_hint',
+    import('python').find_installation(),
+    args : files('test_setup_scripts_configure_hint.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 # Execute the compiler-ID policy that selects strict floating-point flags in
 # src/meson.build. The fixture catches GCC-style flags leaking into MSVC-style
 # drivers without requiring a Windows SDK or Intel compiler on this host.

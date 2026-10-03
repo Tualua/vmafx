@@ -65,5 +65,7 @@ Write-Host ""
 Write-Host "=== done. next steps (from a 'x64 Native Tools Command Prompt for VS 2022' or PowerShell with vcvars loaded) ==="
 $cuda = if ($EnableCuda) { "true" } else { "false" }
 $sycl = if ($EnableSycl) { "true" } else { "false" }
-Write-Host "  meson setup build -Denable_cuda=$cuda -Denable_sycl=$sycl"
+Write-Host "  set CFLAGS=/experimental:c11atomics"
+Write-Host "  set CXXFLAGS=/experimental:c11atomics"
+Write-Host "  meson setup build core -Denable_cuda=$cuda -Denable_sycl=$sycl"
 Write-Host "  meson compile -C build"

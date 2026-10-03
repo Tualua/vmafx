@@ -40,4 +40,4 @@ fi
 
 echo ""
 echo "=== done. Alpine is CPU-only ==="
-echo "  meson setup build -Denable_cuda=false -Denable_sycl=false"
+echo "  meson setup build core -Denable_cuda=false -Denable_sycl=false"

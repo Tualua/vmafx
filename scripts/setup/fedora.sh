@@ -48,7 +48,10 @@ fi
 
 if [[ "$ENABLE_CUDA" == "true" ]]; then
   # RPM Fusion nonfree contains cuda for Fedora; on RHEL, use NVIDIA's repo.
-  $SUDO dnf config-manager --add-repo "https://developer.download.nvidia.com/compute/cuda/repos/fedora${VERSION_ID}/x86_64/cuda-fedora${VERSION_ID}.repo" || true
+  cuda_repo="https://developer.download.nvidia.com/compute/cuda/repos/fedora${VERSION_ID}/x86_64/cuda-fedora${VERSION_ID}.repo"
+  if ! $SUDO dnf config-manager --add-repo "$cuda_repo"; then
+    echo "Note: could not add $cuda_repo; installing cuda-toolkit from the repositories already configured." >&2
+  fi
   $SUDO dnf install -y cuda-toolkit
   echo "Note: export PATH=/usr/local/cuda/bin:\$PATH"
 fi
@@ -71,4 +74,4 @@ fi
 
 echo ""
 echo "=== done. next steps ==="
-echo "  meson setup build -Denable_cuda=$ENABLE_CUDA -Denable_sycl=$ENABLE_SYCL"
+echo "  meson setup build core -Denable_cuda=$ENABLE_CUDA -Denable_sycl=$ENABLE_SYCL"

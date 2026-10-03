@@ -51,4 +51,4 @@ fi
 echo ""
 echo "=== done. next steps ==="
 echo "  export PATH=$CLANG_BIN:\$PATH"
-echo "  meson setup build -Denable_cuda=false -Denable_sycl=$ENABLE_SYCL"
+echo "  meson setup build core -Denable_cuda=false -Denable_sycl=$ENABLE_SYCL"

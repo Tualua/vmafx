@@ -47,4 +47,4 @@ fi
 
 echo ""
 echo "=== done. next steps ==="
-echo "  meson setup build -Denable_cuda=$ENABLE_CUDA -Denable_sycl=$ENABLE_SYCL"
+echo "  meson setup build core -Denable_cuda=$ENABLE_CUDA -Denable_sycl=$ENABLE_SYCL"
