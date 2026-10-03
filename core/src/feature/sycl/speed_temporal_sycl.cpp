@@ -192,7 +192,6 @@ int create_temporal_pipeline(SpeedTemporalSyclState *s, unsigned bpc, unsigned w
     config.queue = vmaf_sycl_get_queue_ptr(s->sycl_state);
     config.channels = kTemporalChannels;
     config.raw_planes = kTemporalChannels * kTemporalSlots;
-    config.staged = kTemporalChannels;
     return speed_sycl::pipeline_create(&s->pipeline, config);
 }
 

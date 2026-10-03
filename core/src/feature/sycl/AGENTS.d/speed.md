@@ -20,6 +20,15 @@ invariant: SpEED pipeline arithmetic contract and singular-covariance contract; 
   temporary, and the fp64 comparisons of `speed.c` go through
   `below_eps()` / `below_eps_scaled()`. The file must not mention the
   fp64 type at all (`core/test/test_sycl_kernel_source_contract.py`).
+  Input since [ADR-1598](../../../../../docs/adr/1598-sycl-host-staging-to-shared-planes.md):
+  both extractors copy the shared planes (luma, or Cb / Cr behind
+  `vmaf_sycl_require_chroma`) device to device into the pipeline-owned raw
+  planes with `pipeline_upload_device()` on the pipeline queue (= the primary
+  queue, so the `sycl_fence_slot_readers` marker already covers the copy), after
+  `vmaf_sycl_queue_after_upload()`. There is no host staging. **Never** point
+  `raw` at a shared plane: the temporal ring (two slots) must keep the previous
+  frame while the next upload overwrites the shared slot. Test frames need at
+  least 80 samples per plane side (`SPEED_INTERNAL_MIN_DIMENSION`).
   Entropy + score = host tail (ADR-1477): device chain ends at
   `launch_solve()` (variances); `enqueue_frame()` copies the tail block
   (`SpeedGpuTailLayout`: status, eigenvalues, variances; one USM

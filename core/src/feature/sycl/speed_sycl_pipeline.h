@@ -31,8 +31,6 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "libvmaf/picture.h"
-
 #include "feature/speed_internal.h"
 
 namespace speed_sycl
@@ -73,19 +71,11 @@ struct PipelineConfig {
     Scoring scoring;
     uint32_t channels;   /* 2 (one score pair) or 4 (two pairs) */
     uint32_t raw_planes; /* device raw-plane slots */
-    uint32_t staged;     /* host staging planes uploaded per call */
 };
 
 /* Allocate every device and pinned-host buffer. Returns 0 or -ENOMEM/-EINVAL. */
 int pipeline_create(Pipeline **out, const PipelineConfig &config);
 void pipeline_destroy(Pipeline **pipeline);
-
-/* Pinned host staging plane `index` (< config.staged), packed src_w x src_h. */
-void *pipeline_staging(Pipeline *pipeline, uint32_t index);
-
-/* Enqueue one host-to-device copy of staging planes [0, count) into raw
- * planes [first, first + count). */
-int pipeline_upload(Pipeline *pipeline, uint32_t first, uint32_t count);
 
 /* Enqueue a device-to-device copy of one plane of `src_w` x `src_h` samples of
  * `bytes_per_sample` bytes (tight rows) into raw plane `index`, on the
@@ -113,13 +103,9 @@ int pipeline_wait(Pipeline *pipeline);
 /* Fill geometry, filters and scoring from the SpEED dimensions and options
  * through speed_internal_gpu_configure(), which validates kernelscale and
  * prescale method exactly as speed_init() does. The caller sets queue,
- * channels, raw_planes and staged. */
+ * channels and raw_planes. */
 int configure(const SpeedInternalDimensions &dim, const SpeedInternalOptions &opt, unsigned bpc,
               PipelineConfig &config);
-
-/* Copy plane `plane` of `pic` (src_w x src_h samples) into staging plane
- * `index`, packed. */
-int stage_plane(Pipeline *pipeline, uint32_t index, const VmafPicture *pic, unsigned plane);
 
 } // namespace speed_sycl
 
