@@ -8284,6 +8284,7 @@
         "core/src/feature/hip/integer_psnr_hvs/psnr_hvs_score.hip": 1,
         "core/src/feature/hip/integer_psnr_hvs_hip.c": 1,
         "core/src/feature/hip/integer_psnr_hvs_hip.h": 1,
+        "core/src/feature/sycl/float_motion_sycl.cpp": 1,
         "core/src/feature/sycl/integer_motion_v2_sycl.cpp": 1,
         "core/src/feature/sycl/integer_psnr_hvs_sycl.cpp": 1,
         "core/src/feature/sycl/integer_psnr_sycl.cpp": 3,
@@ -10379,6 +10380,7 @@
     },
     "1597": {
       "sites": {
+        "core/src/feature/sycl/float_motion_sycl.cpp": 1,
         "core/src/feature/sycl/integer_ciede_sycl.cpp": 2,
         "core/src/feature/sycl/integer_motion_sycl.cpp": 2,
         "core/src/feature/sycl/integer_ms_ssim_sycl.cpp": 1,
@@ -10403,7 +10405,7 @@
     "1598": {
       "sites": {
         "core/src/feature/sycl/float_adm_sycl.cpp": 2,
-        "core/src/feature/sycl/float_motion_sycl.cpp": 1,
+        "core/src/feature/sycl/float_motion_sycl.cpp": 2,
         "core/src/feature/sycl/float_psnr_sycl.cpp": 1,
         "core/src/feature/sycl/float_vif_sycl.cpp": 2,
         "core/src/feature/sycl/integer_ciede_sycl.cpp": 2,
@@ -10414,6 +10416,14 @@
         "core/test/test_sycl_zerocopy_parity.c": 2
       },
       "target": "1598-sycl-host-staging-to-shared-planes.md"
+    },
+    "1599": {
+      "sites": {
+        "core/src/feature/sycl/float_motion_sycl.cpp": 1,
+        "core/test/test_sycl_zerocopy_guards.c": 1,
+        "core/test/test_sycl_zerocopy_parity.c": 1
+      },
+      "target": "1599-sycl-float-motion-add-uv.md"
     }
   },
   "retired": {

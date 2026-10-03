@@ -17,6 +17,10 @@
  *  one-frame run, as float_motion.c emits it
  *  (T-GPU-FLOAT-MOTION3-MISSING-2026-09-30).
  *
+ *  `motion_add_uv` (ADR-1599) runs the same blur and row-SAD chain on Cb and Cr at
+ *  their own size, from the shared chroma planes, and adds the per-plane scores
+ *  in double as float_motion.c::motion_score_pair() does (Y, then U, then V).
+ *
  *  Numerical contract (ADR-1367, ADR-1409, ADR-1411). Both steps are the CPU's
  *  arithmetic, so the twin returns the CPU extractor's score bit for bit:
  *   - the blur is convolution_f32_c_s(): each tap one rounded fp32 multiply
@@ -54,6 +58,17 @@
 namespace
 {
 
+/* One picture plane the score reads: its size, the blur ping-pong and where its
+ * row sums sit in the shared row-SAD buffer. */
+struct FmPlane {
+    unsigned w;
+    unsigned h;
+    float *d_blur[2];
+    size_t row_off;
+};
+
+constexpr unsigned FM_MAX_PLANES = 3;
+
 struct FloatMotionStateSycl {
     bool debug;
     bool motion_force_zero;
@@ -61,6 +76,7 @@ struct FloatMotionStateSycl {
     double motion_blend_factor;
     double motion_blend_offset;
     double motion_max_val;
+    bool motion_add_uv;
 
     unsigned width;
     unsigned height;
@@ -68,11 +84,13 @@ struct FloatMotionStateSycl {
 
     VmafSyclState *sycl_state;
 
-    /* Ping-pong of float blurred refs. */
-    float *d_blur[2];
+    /* Y, and U and V with motion_add_uv; the blurred refs ping-pong per plane. */
+    FmPlane plane[FM_MAX_PLANES];
+    unsigned n_planes;
     int cur_blur;
 
-    /* float_sad_line() of every row: `height` fp32 sums. */
+    /* float_sad_line() of every row of every plane: `row_count` fp32 sums. */
+    size_t row_count;
     float *d_row_sad;
     float *h_row_sad;
 
@@ -354,6 +372,13 @@ static const VmafOption options_float_motion_sycl[] = {
      .min = 0.0,
      .max = 1000.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "motion_add_uv",
+     .help = "include U and V terms",
+     .alias = "mau",
+     .offset = offsetof(FloatMotionStateSycl, motion_add_uv),
+     .type = VMAF_OPT_TYPE_BOOL,
+     .default_val = {.b = false},
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "motion_max_val",
      .help = "maximum value allowed; larger values will be clipped to this value",
      .alias = "mmxv",
@@ -373,13 +398,20 @@ namespace
 static int allocate_motion_buffers(FloatMotionStateSycl *s)
 {
     VmafSyclState *state = s->sycl_state;
-    const size_t blur_bytes = (size_t)s->width * s->height * sizeof(float);
-    s->d_blur[0] = static_cast<float *>(vmaf_sycl_malloc_device(state, blur_bytes));
-    s->d_blur[1] = static_cast<float *>(vmaf_sycl_malloc_device(state, blur_bytes));
-    const size_t sad_bytes = (size_t)s->height * sizeof(float);
+    for (unsigned c = 0; c < s->n_planes; c++) {
+        FmPlane &p = s->plane[c];
+        const size_t blur_bytes = (size_t)p.w * p.h * sizeof(float);
+        p.d_blur[0] = static_cast<float *>(vmaf_sycl_malloc_device(state, blur_bytes));
+        p.d_blur[1] = static_cast<float *>(vmaf_sycl_malloc_device(state, blur_bytes));
+        if (!p.d_blur[0] || !p.d_blur[1]) {
+            vmaf_log(VMAF_LOG_LEVEL_ERROR, "float_motion_sycl: USM allocation failed\n");
+            return -ENOMEM;
+        }
+    }
+    const size_t sad_bytes = s->row_count * sizeof(float);
     s->d_row_sad = static_cast<float *>(vmaf_sycl_malloc_device(state, sad_bytes));
     s->h_row_sad = static_cast<float *>(vmaf_sycl_malloc_host(state, sad_bytes));
-    if (!s->d_blur[0] || !s->d_blur[1] || !s->d_row_sad || !s->h_row_sad) {
+    if (!s->d_row_sad || !s->h_row_sad) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "float_motion_sycl: USM allocation failed\n");
         return -ENOMEM;
     }
@@ -393,22 +425,96 @@ namespace
 
 static int close_fex_sycl(VmafFeatureExtractor *fex);
 
+/* Cb / Cr size at picture.c's ceiling geometry, (dim + ss) >> ss. */
+static int fm_chroma_size(enum VmafPixelFormat pix_fmt, unsigned w, unsigned h, unsigned *cw,
+                          unsigned *ch)
+{
+    switch (pix_fmt) {
+    case VMAF_PIX_FMT_YUV420P:
+        *cw = (w + 1u) >> 1u;
+        *ch = (h + 1u) >> 1u;
+        return 0;
+    case VMAF_PIX_FMT_YUV422P:
+        *cw = (w + 1u) >> 1u;
+        *ch = h;
+        return 0;
+    case VMAF_PIX_FMT_YUV444P:
+        *cw = w;
+        *ch = h;
+        return 0;
+    default:
+        return -EINVAL;
+    }
+}
+
+/* The 5-tap SYCL float_motion kernel uses reflect-101 mirror padding;
+ * dev_mirror_fm() returns 2*sup - idx - 2, which is negative when sup < 3.
+ * Refuse smaller planes up front to prevent out-of-bounds device reads (the
+ * CPU's motion_check_min_dim_all_planes() checks every plane it convolves).
+ * Minimum: filter_width/2 + 1 = 3. */
+static int fm_check_min_dim(unsigned w, unsigned h, const char *plane)
+{
+    if (h >= 3u && w >= 3u) {
+        return 0;
+    }
+    vmaf_log(VMAF_LOG_LEVEL_ERROR,
+             "float_motion_sycl: %s plane %ux%u is below the 5-tap filter minimum 3x3; "
+             "refusing to avoid out-of-bounds mirror reads on device\n",
+             plane, w, h);
+    return -EINVAL;
+}
+
+/* Geometry of every plane the options ask for, and where each plane's row sums
+ * sit in the row-SAD buffer. Touches no device object. */
+static int fm_plane_layout(FloatMotionStateSycl *s, enum VmafPixelFormat pix_fmt, unsigned w,
+                           unsigned h)
+{
+    s->n_planes = 1u;
+    s->plane[0] = {.w = w, .h = h, .d_blur = {nullptr, nullptr}, .row_off = 0u};
+    s->row_count = h;
+    int err = fm_check_min_dim(w, h, "luma");
+    if (err || !s->motion_add_uv) {
+        return err;
+    }
+    unsigned cw = 0;
+    unsigned ch = 0;
+    err = fm_chroma_size(pix_fmt, w, h, &cw, &ch);
+    if (err) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR,
+                 "float_motion_sycl: motion_add_uv needs a pixel format with chroma planes\n");
+        return err;
+    }
+    err = fm_check_min_dim(cw, ch, "chroma");
+    if (err) {
+        return err;
+    }
+    for (unsigned c = 1; c < FM_MAX_PLANES; c++) {
+        s->plane[c] = {.w = cw, .h = ch, .d_blur = {nullptr, nullptr}, .row_off = s->row_count};
+        s->row_count += ch;
+    }
+    s->n_planes = FM_MAX_PLANES;
+    return 0;
+}
+
+/* Luma and chroma come from the shared device planes; both calls are idempotent
+ * across the twins that share them (ADR-1598, ADR-1369). */
+static int fm_init_shared_planes(const FloatMotionStateSycl *s)
+{
+    int err = vmaf_sycl_shared_frame_init(s->sycl_state, s->width, s->height, s->bpc);
+    if (!err && s->n_planes > 1u) {
+        err = vmaf_sycl_shared_chroma_init(s->sycl_state, s->plane[1].w, s->plane[1].h);
+    }
+    return err;
+}
+
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
-    (void)pix_fmt;
     auto *s = static_cast<FloatMotionStateSycl *>(fex->priv);
 
-    /* The 5-tap SYCL float_motion kernel uses reflect-101 mirror padding;
-     * dev_mirror_fm() returns 2*sup - idx - 2, which is negative when sup < 3.
-     * Refuse smaller frames up front to prevent out-of-bounds device reads.
-     * Minimum: filter_width/2 + 1 = 3. */
-    if (h < 3u || w < 3u) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR,
-                 "float_motion_sycl: frame %ux%u is below the 5-tap filter minimum 3x3; "
-                 "refusing to avoid out-of-bounds mirror reads on device\n",
-                 w, h);
-        return -EINVAL;
+    const int layout_err = fm_plane_layout(s, pix_fmt, w, h);
+    if (layout_err) {
+        return layout_err;
     }
 
     s->width = w;
@@ -424,10 +530,13 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
         return -EINVAL;
     }
     s->sycl_state = fex->sycl_state;
-    const int alloc_err = allocate_motion_buffers(s);
-    if (alloc_err) {
+    int err = fm_init_shared_planes(s);
+    if (!err) {
+        err = allocate_motion_buffers(s);
+    }
+    if (err) {
         (void)close_fex_sycl(fex);
-        return alloc_err;
+        return err;
     }
 
     s->feature_name_dict =
@@ -444,12 +553,69 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 namespace
 {
 
+/* Makes this frame's planes current and orders the primary queue after their
+ * upload. Chroma is uploaded here from host pictures, or is valid only when a
+ * zero-copy import marked it for this frame (ADR-1597). */
+static int fm_ready_planes(FloatMotionStateSycl *s, VmafPicture *ref_pic, VmafPicture *dist_pic,
+                           unsigned index, sycl::queue *q)
+{
+    int err = 0;
+    if (s->n_planes > 1u) {
+        if (vmaf_sycl_require_chroma(s->sycl_state, "float_motion_sycl", ref_pic, dist_pic)) {
+            return -ENOTSUP;
+        }
+        if (ref_pic && dist_pic) {
+            err = vmaf_sycl_shared_chroma_upload(s->sycl_state, ref_pic, dist_pic);
+        }
+    }
+    if (!err) {
+        err = vmaf_sycl_queue_after_upload(s->sycl_state, q);
+    }
+    if (err) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "float_motion_sycl: frame %u plane upload failed (%d)\n",
+                 index, err);
+    }
+    return err;
+}
+
+/* Blur of every plane into its current slot, then each plane's row SADs against
+ * the previous slot; one device-to-host copy of all the row sums. */
+static int fm_enqueue_planes(FloatMotionStateSycl *s, sycl::queue &q)
+{
+    const unsigned cur_idx = (unsigned)s->cur_blur;
+    const unsigned prev_idx = 1u - cur_idx;
+    for (unsigned c = 0; c < s->n_planes; c++) {
+        const FmPlane &p = s->plane[c];
+        /* The reference plane of this frame; the blur is what carries over to the
+         * next frame, in d_blur, so the slot is read once and never kept. */
+        const void *ref = vmaf_sycl_get_shared_plane(s->sycl_state, 1, c);
+        if (!ref) {
+            return -EINVAL;
+        }
+        launch_float_motion(q, {.ref = ref,
+                                .cur_blur = p.d_blur[cur_idx],
+                                .width = p.w,
+                                .height = p.h,
+                                .bpc = s->bpc});
+        if (s->frame_index > 0) {
+            /* The first frame has no previous blur: no SAD, nothing to read. */
+            launch_float_motion_row_sad(q, {.cur_blur = p.d_blur[cur_idx],
+                                            .prev_blur = p.d_blur[prev_idx],
+                                            .row_sad = s->d_row_sad + p.row_off,
+                                            .width = p.w,
+                                            .height = p.h});
+        }
+    }
+    if (s->frame_index > 0) {
+        q.memcpy(s->h_row_sad, s->d_row_sad, s->row_count * sizeof(float));
+    }
+    return 0;
+}
+
 static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                            VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
-    (void)ref_pic;
     (void)ref_pic_90;
-    (void)dist_pic;
     (void)dist_pic_90;
     auto *s = static_cast<FloatMotionStateSycl *>(fex->priv);
     if (s->motion_force_zero) {
@@ -462,39 +628,15 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     if (!qptr) {
         return -EINVAL;
     }
-    sycl::queue &q = *qptr;
-
-    /* The reference luma of this frame is already in the shared planes (the
-     * host read path uploads it before any extractor submits, the zero-copy
-     * import writes it there), packed at width * bytes per sample. The blur
-     * is what carries over to the next frame, in d_blur, so the slot is read
-     * once and never kept (ADR-1598). */
-    const int upload_err = vmaf_sycl_queue_after_upload(s->sycl_state, qptr);
-    if (upload_err) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "float_motion_sycl: frame %u plane upload failed (%d)\n",
-                 index, upload_err);
-        return upload_err;
+    /* The frame's planes are already in the shared planes (the host read path
+     * uploads them before any extractor submits, the zero-copy import writes
+     * them there), packed at width * bytes per sample (ADR-1598). */
+    int err = fm_ready_planes(s, ref_pic, dist_pic, index, qptr);
+    if (!err) {
+        err = fm_enqueue_planes(s, *qptr);
     }
-    const void *ref = vmaf_sycl_get_shared_plane(s->sycl_state, 1, 0);
-    if (!ref) {
-        return -EINVAL;
-    }
-
-    const unsigned cur_idx = (unsigned)s->cur_blur;
-    const unsigned prev_idx = 1u - cur_idx;
-    launch_float_motion(q, {.ref = ref,
-                            .cur_blur = s->d_blur[cur_idx],
-                            .width = s->width,
-                            .height = s->height,
-                            .bpc = s->bpc});
-    if (s->frame_index > 0) {
-        /* The first frame has no previous blur: no SAD, nothing to read. */
-        launch_float_motion_row_sad(q, {.cur_blur = s->d_blur[cur_idx],
-                                        .prev_blur = s->d_blur[prev_idx],
-                                        .row_sad = s->d_row_sad,
-                                        .width = s->width,
-                                        .height = s->height});
-        q.memcpy(s->h_row_sad, s->d_row_sad, (size_t)s->height * sizeof(float));
+    if (err) {
+        return err;
     }
 
     s->pending_index = index;
@@ -600,6 +742,20 @@ static int motion_emit(const FloatMotionStateSycl *s, VmafFeatureCollector *feat
 namespace
 {
 
+/* compute_motion()'s per-plane scores added in double, Y then U then V, as
+ * motion_score_pair() adds them. */
+static double frame_sad_score(const FloatMotionStateSycl *s)
+{
+    double total = 0.0;
+    for (unsigned c = 0; c < s->n_planes; c++) {
+        const FmPlane &p = s->plane[c];
+        const double plane_score =
+            vmaf_float_motion_score_from_row_sads(s->h_row_sad + p.row_off, p.w, p.h);
+        total = c == 0 ? plane_score : total + plane_score;
+    }
+    return total;
+}
+
 static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
                             VmafFeatureCollector *feature_collector)
 {
@@ -622,8 +778,7 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
 
     /* compute_motion_simd()'s tail: the rows top to bottom into one float and
      * the float division (ADR-1409). */
-    const double motion_score =
-        vmaf_float_motion_score_from_row_sads(s->h_row_sad, s->width, s->height);
+    const double motion_score = frame_sad_score(s);
     const int err = motion_emit(s, feature_collector, index, motion_score);
 
     s->prev_motion_score = motion_score;
@@ -667,19 +822,31 @@ static int flush_fex_sycl(VmafFeatureExtractor *fex, VmafFeatureCollector *featu
 namespace
 {
 
+static void free_motion_buffers(FloatMotionStateSycl *s)
+{
+    if (!s->sycl_state) {
+        return;
+    }
+    for (FmPlane &p : s->plane) {
+        for (float *&blur : p.d_blur) {
+            if (blur) {
+                vmaf_sycl_free(s->sycl_state, blur);
+                blur = nullptr;
+            }
+        }
+    }
+    if (s->d_row_sad) {
+        vmaf_sycl_free(s->sycl_state, s->d_row_sad);
+    }
+    if (s->h_row_sad) {
+        vmaf_sycl_free(s->sycl_state, s->h_row_sad);
+    }
+}
+
 static int close_fex_sycl(VmafFeatureExtractor *fex)
 {
     auto *s = static_cast<FloatMotionStateSycl *>(fex->priv);
-    if (s->sycl_state) {
-        if (s->d_blur[0])
-            vmaf_sycl_free(s->sycl_state, s->d_blur[0]);
-        if (s->d_blur[1])
-            vmaf_sycl_free(s->sycl_state, s->d_blur[1]);
-        if (s->d_row_sad)
-            vmaf_sycl_free(s->sycl_state, s->d_row_sad);
-        if (s->h_row_sad)
-            vmaf_sycl_free(s->sycl_state, s->h_row_sad);
-    }
+    free_motion_buffers(s);
     if (s->feature_name_dict)
         vmaf_dictionary_free(&s->feature_name_dict);
     return 0;

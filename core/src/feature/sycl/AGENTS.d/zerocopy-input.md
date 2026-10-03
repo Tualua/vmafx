@@ -22,6 +22,16 @@ row per SYCL extractor configuration and counts the registrations, so a new
 rows still expecting `-ENOTSUP` are the six chroma readers without a chroma
 mark (below).
 
+`float_motion_sycl` takes `motion_add_uv` (ADR-1599): the option sits at the CPU
+table's position with alias `mau`, so the feature names match; Cb / Cr are read
+from the shared chroma planes behind `vmaf_sycl_require_chroma`, each plane
+runs the blur and the ADR-1411 row-SAD kernels (`FmPlane`), and
+`frame_sad_score()` adds the plane scores in `double`, Y then U then V. **On
+rebase**: keep that order and the one `h_row_sad` readback; no device reduction
+of the planes, no fp64, no scratch (`test_sycl_kernel_scratch`).
+`test_sycl_zerocopy_parity` (`motion_add_uv`, `==` on host upload and zero-copy)
+guards it.
+
 `float_ms_ssim_sycl` converts the shared planes with `plane_to_float()`
 (`integer_ms_ssim_sycl.cpp`), which is `picture_copy()`'s arithmetic
 (`float(sample) / scaler + offset`, scalers 4 / 16 / 256 for 10 / 12 / 16 bit,

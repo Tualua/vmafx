@@ -27,8 +27,9 @@ invariant: float_motion_sycl.cpp SAD = CPU order, bit for bit; emits through mot
   / `motion_blend_offset` (`mbo`) declared as CPU table (name, alias,
   default, range, flags); `test_twin_options_are_cpu_options` fails any twin
   option CPU lacks or declares differently. Not declared, so request falls
-  back to CPU (ADR-1183): `motion_add_scale1`, `motion_add_uv`,
-  `motion_filter_size` (HIP has them, ADR-1404). `motion_five_frame_window`
+  back to CPU (ADR-1183): `motion_add_scale1`, `motion_filter_size` (HIP
+  has them, ADR-1404). `motion_add_uv` is declared since ADR-1599 (see
+  [zerocopy-input](zerocopy-input.md)). `motion_five_frame_window`
   = integer `motion` / `motion_v2` option only; CPU `float_motion` has none.
   Gate `FEATURE_METRICS["float_motion"]` lists `motion3` (both
   `cross_backend_parity_gate.py` and `cross_backend_vif_diff.py`); twin

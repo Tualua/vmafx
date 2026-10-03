@@ -5888,6 +5888,7 @@ test_sycl_zerocopy_parity = executable('test_sycl_zerocopy_parity',
 )
 test('test_sycl_zerocopy_parity', test_sycl_zerocopy_parity,
     suite : ['fast', 'gpu', 'sycl'],
+    timeout : 180,
     is_parallel : false)
 
 # ADR-1597: the layout-addressed chroma de-interleave kernel of the zero-copy
