@@ -52,6 +52,7 @@
 
 #include <sycl/sycl.hpp>
 
+#include <cassert>
 #include <cerrno>
 #include <cstdint>
 #include <cstdlib>
@@ -706,6 +707,30 @@ static PsnrHvsScratchLayout hvs_compute_scratch_layout(unsigned total_blocks)
     return l;
 }
 
+using HvsScanLocal = sycl::local_accessor<uint32_t, 1>;
+
+/* Device helper shared by the scan-reduce and compact kernels: store @val in
+ * the work-item's slot of the 256-word work-group buffer, then run the
+ * Hillis-Steele inclusive scan over it. On return s_data[tid] holds the
+ * inclusive prefix sum of the work-group's values. Every work-item of the
+ * work-group must call it (it contains work-group barriers). */
+static inline void hvs_wg_inclusive_scan(const sycl::nd_item<1> &item, const HvsScanLocal &s_data,
+                                         unsigned tid, uint32_t val)
+{
+    s_data[tid] = val;
+    item.barrier(sycl::access::fence_space::local_space);
+
+    for (uint32_t offset = 1u; offset < 256u; offset *= 2u) {
+        uint32_t n = 0u;
+        if (tid >= offset) {
+            n = s_data[tid - offset];
+        }
+        item.barrier(sycl::access::fence_space::local_space);
+        s_data[tid] += n;
+        item.barrier(sycl::access::fence_space::local_space);
+    }
+}
+
 class PsnrHvsScanReduceKernel;
 
 static void launch_scan_reduce(sycl::queue &q, const uint32_t *block_counts, uint32_t *chunk_totals,
@@ -713,24 +738,13 @@ static void launch_scan_reduce(sycl::queue &q, const uint32_t *block_counts, uin
 {
     const sycl::nd_range<1> ndr{sycl::range<1>{(size_t)num_chunks * 256u}, sycl::range<1>{256u}};
     q.submit([&](sycl::handler &h) {
-        sycl::local_accessor<uint32_t, 1> const s_data(sycl::range<1>(256u), h);
+        HvsScanLocal const s_data(sycl::range<1>(256u), h);
         h.parallel_for<PsnrHvsScanReduceKernel>(ndr, [=](sycl::nd_item<1> item) {
             const unsigned tid = (unsigned)item.get_local_id(0);
             const unsigned chunk = (unsigned)item.get_group(0);
             const unsigned b = chunk * 256u + tid;
             const uint32_t val = (b < total_blocks) ? block_counts[b] : 0u;
-            s_data[tid] = val;
-            item.barrier(sycl::access::fence_space::local_space);
-
-            for (uint32_t offset = 1u; offset < 256u; offset *= 2u) {
-                uint32_t n = 0u;
-                if (tid >= offset) {
-                    n = s_data[tid - offset];
-                }
-                item.barrier(sycl::access::fence_space::local_space);
-                s_data[tid] += n;
-                item.barrier(sycl::access::fence_space::local_space);
-            }
+            hvs_wg_inclusive_scan(item, s_data, tid, val);
 
             if (tid == 255u) {
                 chunk_totals[chunk] = s_data[255u];
@@ -760,6 +774,38 @@ static void launch_scan_prefix(sycl::queue &q, const uint32_t *chunk_totals,
     });
 }
 
+/* Record @global_base as the packed-term start of every active plane whose
+ * first block is @b. */
+static inline void hvs_record_plane_offsets(const PsnrHvsKernelArgs &k_args, PsnrHvsHeader *header,
+                                            unsigned b, uint32_t global_base)
+{
+    if (0u < k_args.n_planes && b == k_args.plane[0].first_block) {
+        header->plane_offsets[0] = global_base;
+    }
+    if (1u < k_args.n_planes && b == k_args.plane[1].first_block) {
+        header->plane_offsets[1] = global_base;
+    }
+    if (2u < k_args.n_planes && b == k_args.plane[2].first_block) {
+        header->plane_offsets[2] = global_base;
+    }
+}
+
+/* Copy the terms of block @b selected by @mask, in bit order, to @dst. */
+static inline void hvs_pack_block_terms(const float *raw_terms, uint64_t mask, unsigned b,
+                                        float *dst)
+{
+    if (mask != 0ULL) {
+        // SAFETY: raw_terms holds HVS_TERMS floats per block; packed_terms capacity >= total_terms.
+        const float *src = raw_terms + ((size_t)b * HVS_TERMS);
+        uint32_t out_idx = 0u;
+        for (int bit = 0; bit < 64 && mask != 0ULL; bit++) {
+            const int idx = __builtin_ctzll(mask);
+            dst[out_idx++] = src[idx];
+            mask &= mask - 1ULL;
+        }
+    }
+}
+
 class PsnrHvsCompactKernel;
 
 static void launch_compact(sycl::queue &q, const PsnrHvsKernelArgs &args, const float *raw_terms,
@@ -769,52 +815,21 @@ static void launch_compact(sycl::queue &q, const PsnrHvsKernelArgs &args, const 
 {
     const sycl::nd_range<1> ndr{sycl::range<1>{(size_t)num_chunks * 256u}, sycl::range<1>{256u}};
     q.submit([&](sycl::handler &h) {
-        sycl::local_accessor<uint32_t, 1> const s_data(sycl::range<1>(256u), h);
+        HvsScanLocal const s_data(sycl::range<1>(256u), h);
         const PsnrHvsKernelArgs k_args = args;
         h.parallel_for<PsnrHvsCompactKernel>(ndr, [=](sycl::nd_item<1> item) {
             const unsigned tid = (unsigned)item.get_local_id(0);
             const unsigned chunk = (unsigned)item.get_group(0);
             const unsigned b = chunk * 256u + tid;
             const uint32_t count = (b < k_args.total_blocks) ? block_counts[b] : 0u;
-            s_data[tid] = count;
-            item.barrier(sycl::access::fence_space::local_space);
-
-            for (uint32_t offset = 1u; offset < 256u; offset *= 2u) {
-                uint32_t n = 0u;
-                if (tid >= offset) {
-                    n = s_data[tid - offset];
-                }
-                item.barrier(sycl::access::fence_space::local_space);
-                s_data[tid] += n;
-                item.barrier(sycl::access::fence_space::local_space);
-            }
+            hvs_wg_inclusive_scan(item, s_data, tid, count);
 
             const uint32_t intra_offset = s_data[tid] - count;
             const uint32_t global_base = chunk_offsets[chunk] + intra_offset;
 
             if (b < k_args.total_blocks) {
-                if (0u < k_args.n_planes && b == k_args.plane[0].first_block) {
-                    header->plane_offsets[0] = global_base;
-                }
-                if (1u < k_args.n_planes && b == k_args.plane[1].first_block) {
-                    header->plane_offsets[1] = global_base;
-                }
-                if (2u < k_args.n_planes && b == k_args.plane[2].first_block) {
-                    header->plane_offsets[2] = global_base;
-                }
-
-                uint64_t mask = block_masks[b];
-                if (mask != 0ULL) {
-                    // SAFETY: raw_terms holds HVS_TERMS floats per block; packed_terms capacity >= total_terms.
-                    const float *src = raw_terms + ((size_t)b * HVS_TERMS);
-                    float *dst = packed_terms + global_base;
-                    uint32_t out_idx = 0u;
-                    for (int bit = 0; bit < 64 && mask != 0ULL; bit++) {
-                        const int idx = __builtin_ctzll(mask);
-                        dst[out_idx++] = src[idx];
-                        mask &= mask - 1ULL;
-                    }
-                }
+                hvs_record_plane_offsets(k_args, header, b, global_base);
+                hvs_pack_block_terms(raw_terms, block_masks[b], b, packed_terms + global_base);
             }
         });
     });
@@ -1129,22 +1144,27 @@ static int wait_hvs_terms(sycl::queue &queue)
 /* Each plane's score from its terms, added in the CPU's order (ADR-1397). */
 static void reduce_hvs_planes(const PsnrHvsStateSycl *s, double scores[PSNR_HVS_NUM_PLANES])
 {
+    /* n_active_planes is 1 or 3 (init); the clamp states the per-plane array
+     * bound (first_block[], plane_offsets[], scores[]) where the indexing
+     * happens. */
+    constexpr unsigned max_planes = PSNR_HVS_NUM_PLANES;
+    assert(s->n_active_planes <= max_planes);
+    const unsigned n_planes = s->n_active_planes < max_planes ? s->n_active_planes : max_planes;
     if (!s->h_header) {
         // SAFETY: s->h_terms holds HVS_TERMS floats for each of the
         // s->total_blocks blocks, and s->first_block[p] + s->num_blocks[p] <=
         // s->total_blocks holds by construction (configure_hvs_blocks).
-        for (unsigned plane = 0; plane < s->n_active_planes; plane++) {
+        for (unsigned plane = 0; plane < n_planes; plane++) {
             const float *plane_terms = s->h_terms + ((size_t)s->first_block[plane] * HVS_TERMS);
             scores[plane] = vmaf_psnr_hvs_plane_score(plane_terms, s->num_blocks[plane], s->bpc);
         }
         return;
     }
     const float *compact_terms = s->h_terms;
-    for (unsigned plane = 0; plane < s->n_active_planes; plane++) {
+    for (unsigned plane = 0; plane < n_planes; plane++) {
         const uint32_t start = s->h_header->plane_offsets[plane];
-        const uint32_t end = (plane + 1u < s->n_active_planes) ?
-                                 s->h_header->plane_offsets[plane + 1u] :
-                                 s->h_header->total_terms;
+        const uint32_t end = (plane + 1u < n_planes) ? s->h_header->plane_offsets[plane + 1u] :
+                                                       s->h_header->total_terms;
         const size_t n_compact = (size_t)(end - start);
         scores[plane] = vmaf_psnr_hvs_plane_score_compacted(compact_terms + start, n_compact,
                                                             s->num_blocks[plane], s->bpc);
