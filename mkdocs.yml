@@ -1620,6 +1620,7 @@ nav:
         - "ADR-1503: tester-artifact-licensing": adr/1503-tester-artifact-licensing.md
         - "ADR-1504: decline-praetor-branch-ruleset": adr/1504-decline-praetor-branch-ruleset.md
         - "ADR-1505: intel-gpu-tester-image": adr/1505-intel-gpu-tester-image.md
+        - "ADR-1506: praetor-pin-move-markdownlint-braces": adr/1506-praetor-pin-move-markdownlint-braces.md
         - "ADR-1507: brisque-live-notice-terms": adr/1507-brisque-live-notice-terms.md
       - "By tag":
         - Overview: adr/by-tag/index.md

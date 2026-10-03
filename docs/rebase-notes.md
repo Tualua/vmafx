@@ -59731,3 +59731,14 @@ upstream parity guard's allowlist.
 - `.github/rulesets/main.json` is removed and `.standards.yaml` declines
   `branch-ruleset`; a praetor pin move or `sync` must not bring the template
   back (`test_repository_security.py` fails; ADR-1504). No rebase impact.
+
+## Praetor pin 0af07a733e65 (ADR-1506)
+
+- `PRAETOR_REF` is `0af07a733e6534269b435cea185da4d1df7aba0c`; the vendored
+  `tools/markdownlint/` lock has no `braces`. A rebase keeps the engine's
+  files (documentation gate, DevContainer bundle, compiled context,
+  `.standards.lock`) and the new `tools/apicompat/` and
+  `.github/workflows/praetor-api.yml`; on conflict take master's side and
+  regenerate with the engine, never by hand. `.standards-baseline.json` is
+  re-recorded once at the tip with the pinned engine (503), and the README
+  figure follows it.

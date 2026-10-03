@@ -828,6 +828,13 @@ permissions and the last workflow runs from GitHub, which takes about 40
 seconds here against 2 seconds offline, so the hooks pass `--offline` when the
 engine has the flag. CI and `make verify-all` keep the forge read.
 
+Moving to `0af07a733e65` (ADR-1506) dropped `markdownlint-cli2` and the
+`braces` chain from the gate's lock, and added praetor's `Go API Compatibility`
+workflow (`.github/workflows/praetor-api.yml`, `tools/apicompat/`), which
+audit now requires. The engine also reads shell, workflow and systemd files,
+so the baseline went from 227 to 503 with the old engine recording no growth
+on the same tree.
+
 #### What the text register checks
 
 The `register:` section of `.standards.yaml` declares who reads which text.

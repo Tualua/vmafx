@@ -1208,3 +1208,4 @@
 1503-tester-artifact-licensing
 1507-brisque-live-notice-terms
 1505-intel-gpu-tester-image
+1506-praetor-pin-move-markdownlint-braces
