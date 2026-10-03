@@ -5060,8 +5060,7 @@
         "core/test/meson.build": 1,
         "core/test/test_feature_isa_invariance.c": 1,
         "core/test/test_ssimulacra2_simd.c": 2,
-        "python/test/ssimulacra2_test.py": 2,
-        "scripts/test/run-all-tests.sh": 1
+        "python/test/ssimulacra2_test.py": 2
       },
       "target": "0891-simd-bit-exact-round2-fmaf-libvmaf-feature-icx.md"
     },
@@ -6066,7 +6065,6 @@
     "1134": {
       "sites": {
         ".github/workflows/go-ci.yml": 1,
-        "Containerfile.vmafx": 1,
         "Makefile": 2,
         "cmd/vmafx-ort-runner/main.go": 1,
         "cmd/vmafx-tune/cmd/saliencysession.go": 1,
@@ -6077,8 +6075,7 @@
         "pkg/fast/proxy.go": 1,
         "pkg/libvmaf/dnn.go": 1,
         "pkg/libvmaf/dnn_test.go": 1,
-        "pkg/observability/otel_instruments.go": 1,
-        "scripts/test/run-all-tests.sh": 1
+        "pkg/observability/otel_instruments.go": 1
       },
       "target": "1134-vmafx-ort-runner-in-tree.md"
     },
@@ -6086,10 +6083,8 @@
       "sites": {
         ".github/workflows/lint-and-format.yml": 1,
         ".pre-commit-config.yaml": 1,
-        "Containerfile.vmafx": 1,
         "scripts/ci/tests/test-twin-drift-check.sh": 1,
-        "scripts/ci/twin-drift-check.sh": 2,
-        "scripts/test/run-all-tests.sh": 2
+        "scripts/ci/twin-drift-check.sh": 2
       },
       "target": "1135-ci-twin-drift-gate.md"
     },
@@ -6633,20 +6628,17 @@
         ".github/workflows/security-scans.yml": 4,
         ".github/workflows/tests-and-quality-gates.yml": 15,
         ".pre-commit-config.yaml": 1,
-        "scripts/ci/plan-ci-impact.py": 1,
-        "scripts/test/run-all-tests.sh": 1
+        "scripts/ci/plan-ci-impact.py": 1
       },
       "target": "1140-ci-impact-planner.md"
     },
     "1141": {
       "sites": {
-        "Containerfile.vmafx": 2,
         "core/src/feature/adm_tools.c": 2,
         "core/src/feature/adm_tools.h": 1,
         "core/src/feature/integer_adm.c": 5,
         "core/src/feature/x86/adm_avx2.c": 3,
-        "core/src/feature/x86/adm_avx512.c": 3,
-        "scripts/test/run-all-tests.sh": 1
+        "core/src/feature/x86/adm_avx512.c": 3
       },
       "target": "1141-integer-adm-upstream-mirror-rework.md"
     },
@@ -6688,8 +6680,7 @@
         "scripts/ci/tests/test_semgrep_vendored_scope.py": 3,
         "scripts/ci/tests/test_tidy_ratchet.py": 1,
         "scripts/ci/tests/test_write_compile_commands.py": 1,
-        "scripts/ci/tidy-ratchet.py": 2,
-        "scripts/test/reference_report.py": 1
+        "scripts/ci/tidy-ratchet.py": 2
       },
       "target": "1142-whole-codebase-standards.md"
     },
@@ -6701,7 +6692,6 @@
     },
     "1145": {
       "sites": {
-        "Containerfile.vmafx": 1,
         "dev/Containerfile": 1,
         "dev/scripts/fetch-intel-neo.py": 2
       },
@@ -9231,6 +9221,12 @@
       },
       "target": "1438-hip-ssim-cpu-frame-sum.md"
     },
+    "1439": {
+      "sites": {
+        "scripts/test/reference_report.py": 1
+      },
+      "target": "1439-quality-runner-golden-upstream-sync.md"
+    },
     "1440": {
       "sites": {
         "core/src/feature/hip/float_psnr/float_psnr_score.hip": 1,
@@ -9496,6 +9492,7 @@
     },
     "1461": {
       "sites": {
+        "Containerfile.vmafx": 1,
         "Makefile": 2,
         "build-aux/aarch64-linux-gnu-clang.ini": 1,
         "core/src/feature/integer_vif_sv_sq.h": 1,
@@ -9581,6 +9578,7 @@
     },
     "1468": {
       "sites": {
+        "Containerfile.vmafx": 1,
         "core/src/feature/sycl/float_adm_sycl.cpp": 1,
         "core/src/feature/sycl/float_motion_sycl.cpp": 1,
         "core/src/feature/sycl/float_vif_sycl.cpp": 1,
@@ -9843,6 +9841,7 @@
     "1495": {
       "sites": {
         ".github/workflows/libvmaf-build-matrix.yml": 1,
+        "Containerfile.vmafx": 1,
         "core/src/meson.build": 2,
         "core/test/meson.build": 1,
         "core/test/test_icx_system_libm.py": 3,
@@ -10333,12 +10332,20 @@
     },
     "1593": {
       "sites": {
+        "Containerfile.vmafx": 2,
         "core/src/meson.build": 1,
         "core/test/meson.build": 1,
         "core/test/test_strict_fp_compiler_args.py": 6,
         "dev/Containerfile": 2
       },
       "target": "1593-hybrid-gcc-cpu-icpx-sycl.md"
+    },
+    "1594": {
+      "sites": {
+        "Containerfile.vmafx": 2,
+        "scripts/test/run-all-tests.sh": 1
+      },
+      "target": "1594-vmafx-sycl-ffmpeg-container.md"
     }
   },
   "retired": {

@@ -7,7 +7,7 @@
 #
 # Sections (all inside $IMAGE, on the real Arc A380 when present):
 #   [C]        meson C test suite — unit + SIMD bit-exactness (incl.
-#              test_float_motion_simd, ADR-1134) + SYCL parity on the GPU.
+#              test_float_motion_simd) + SYCL parity on the GPU.
 #   [GOLDEN]   Netflix CPU golden gate — the 5 golden files, STRICT (places=4).
 #              Also fails hard if the golden files differ from master.
 #   [MATERIAL] Broader clip/metric Python tests — every clip-based metric test
@@ -33,7 +33,7 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # The test matrix runs INSIDE the image and needs meson / python / the source
 # tree / the meson build dir — all of which live in Containerfile.vmafx's
-# `build` STAGE, not the lean `prod` stage (ADR-1141). So this harness builds
+# `build` STAGE, not the lean `prod` stage (ADR-1594). So this harness builds
 # and runs `--target build`, tagged `:build`, and leaves the deployment image
 # `vmafx-zerocopy-fix:latest` (the default `prod` target) alone. Operators
 # verify the lean prod image separately via its baked `vmaf-selftest`.
@@ -215,18 +215,16 @@ printf "\n  logs: %s/{build,c-suite,golden,material}.log\n" "$LOG_DIR"
 echo "  notes:"
 echo "   • excluded: model-training / BD-rate / CLI / Cython / tooling tests"
 echo "     (they hang or need corpora/network this reproducer image lacks)."
-# The avx512f-without-VBMI SIGILL was fixed by ADR-1135 (drop unused
-# -mavx512vbmi), so a current image builds 0 SIGILL. Only surface the
+# The avx512f-without-VBMI SIGILL was fixed by dropping the unused
+# -mavx512vbmi from the AVX-512 build flags, so a current image builds 0 SIGILL. Only surface the
 # explanatory note if this run actually hit one (e.g. a stale image) —
 # in that case rebuild with REBUILD=1.
 if [ "${sigill:-0}" -gt 0 ]; then
   echo "   • [C] 'env SIGILL': host lacks avx512vbmi but this (stale) image's"
   echo "     AVX-512 kernels use it and the runtime gates dispatch on avx512f"
-  echo "     only. Fixed in-tree by ADR-1135 — rebuild with REBUILD=1 to clear."
+  echo "     only. Fixed in-tree (unused -mavx512vbmi dropped) — rebuild with REBUILD=1."
 fi
-# The 2 ssimulacra2 min/max snapshot failures were fixed by ADR-1140
-# (complete the ADR-0891 FMA-contraction unification: scalar PTLR + the
-# cbrtf/EOTF header helpers icx auto-fused under -mfma). Only surface a
+# Only surface a
 # note if [MATERIAL] actually failed this run; the failing test lines are
 # already printed above.
 if [[ "${RESULT[MATERIAL]:-}" == *"("[1-9]*" failed"* ]]; then

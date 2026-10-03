@@ -146,15 +146,18 @@ ENV DPCPP_ROOT=${ONEAPI_ROOT}/compiler/latest
 ENV PATH=${DPCPP_ROOT}/bin:${DPCPP_ROOT}/bin/compiler:${PATH}
 ENV LD_LIBRARY_PATH=${DPCPP_ROOT}/lib:${ONEAPI_ROOT}/umf/latest/lib:${ONEAPI_ROOT}/tcm/latest/lib:${ONEAPI_ROOT}/tbb/latest/lib:${LD_LIBRARY_PATH}
 
-# Netflix golden-gate Python stack — from the repo's canonical
-# python/requirements.txt (the exact, CI-green pin set; ADR-1134 pinned
-# libsvm-official over the abandoned `libsvm` PyPI package). Copy ONLY the
-# manifest first so this layer stays cached across source edits.
-COPY python/requirements.txt /tmp/vmaf-requirements.txt
-RUN pip3 install --no-cache-dir --break-system-packages \
-        pytest -r /tmp/vmaf-requirements.txt \
-    || pip3 install --no-cache-dir \
-        pytest -r /tmp/vmaf-requirements.txt
+# Netflix golden-gate Python stack — the repo's hash lock for the test
+# environment (python/requirements-test-lock.txt: python/requirements.txt,
+# which pins libsvm-official over the abandoned `libsvm` PyPI package, plus
+# pytest; `make python-locks-write` regenerates it). --require-hashes as the
+# check-python-dependency-locks hook requires. Copy ONLY the lock first so
+# this layer stays cached across source edits.
+# The lock keeps its repo path: the hook accepts only the lock outputs and the
+# install aliases recorded in requirements/locks/manifest.json.
+WORKDIR /tmp/vmafx-pylock
+COPY python/requirements-test-lock.txt python/requirements-test-lock.txt
+RUN pip3 install --no-cache-dir --break-system-packages --require-hashes \
+        -r python/requirements-test-lock.txt
 
 # `xxd` — REQUIRED for the default built-in VMAF models. core/src/meson.build's
 # `built_in_models` embed does `find_program('xxd', required: false)` and
@@ -177,22 +180,27 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # golden gate, keeping the builds cached across test/harness edits.)
 COPY core/  /src/vmafx/core/
 COPY model/ /src/vmafx/model/
+# core/test/meson.build find_program()s this one repo-root script at configure
+# time; copying only it keeps unrelated scripts/ edits out of this layer's key.
+COPY scripts/ci/check-msvc-clz-shim.sh /src/vmafx/scripts/ci/check-msvc-clz-shim.sh
 WORKDIR /src/vmafx
 
 # ---- libvmaf (SYCL-only). CC_LD=lld is load-bearing — GNU ld fails on
 # liblog_cpp23.a (static archive without an index). DNN off (no onnxruntime
 # dependency; -Denable_dnn=disabled).
-# Hybrid toolchain (ADR-1145): CPU C code is built by GCC (bit-exact with the
-# Netflix/GCC reference, 7-11 % faster than icx), SYCL C++ by icpx.
-# b_lto=false because GCC LTO objects cannot go through the icpx/lld link;
-# -no-intel-lib=libimf links glibc libm instead of Intel's libimf, whose
-# pow/log10/cbrt differ from glibc in the last bits.
+# Hybrid toolchain (ADR-1593): CPU C code is built by GCC,
+# C++ and the SYCL kernels by icpx. b_lto=false because GCC LTO objects cannot
+# go through the icpx/lld link. glibc libm (not Intel's libimf) comes from
+# ADR-1495's link policy and icpx's strict FP model for C++ from the
+# ADR-1461 / ADR-1593 project arguments, so neither needs an option here.
+# AOT targets: the option's default list, Xe2 (lnl-m, bmg-g21, bmg-g31)
+# included: every kernel requires a sub-group size Xe2 accepts (ADR-1468,
+# #1842).
 RUN CC=gcc CXX=icpx CC_LD=lld CXX_LD=lld \
     meson setup build core \
         -Denable_cuda=false -Denable_sycl=true -Denable_dnn=disabled \
         --buildtype=release \
         -Db_lto=false \
-        -Dcpp_link_args=-no-intel-lib=libimf \
  && ninja -C build \
  && ninja -C build install && ldconfig
 
@@ -241,8 +249,8 @@ RUN PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkg
 # ---- CPU golden gate (build-time GATE — no /dev/dri here; NEVER run
 # test_sycl_* in this stage). Mirrors scripts/test/run-all-tests.sh
 # [GOLDEN]'s plumbing: a `--cpumask 16` vmaf shim (belt-and-suspenders
-# against AVX-512-VBMI SIGILL on hosts without it; ADR-1135 already fixed
-# the root cause in-tree) wired through VMAFEXEC_PATH. A non-zero exit here
+# against AVX-512-VBMI SIGILL on hosts without it; the root cause, an unused
+# -mavx512vbmi, is already gone from the AVX-512 build flags) wired through VMAFEXEC_PATH. A non-zero exit here
 # FAILS the build.
 #
 # Everything else (python/ test harness, compat/ packages, scripts/) lands
@@ -331,7 +339,7 @@ ENV UR_L0_USE_IMMEDIATE_COMMANDLISTS=0
 
 RUN ldconfig
 
-# ---- Golden self-check (ADR-1141) ------------------------------------------
+# ---- Golden self-check (ADR-1594) ------------------------------------------
 # A LEAN reference-pair verifier so operators can confirm the DEPLOYED binary
 # reproduces the Netflix golden scores on their own hardware, WITHOUT shipping
 # the ~10 GB build toolchain / pytest harness. The prod binary already passed
@@ -363,7 +371,7 @@ COPY --from=build \
      /opt/vmaf-selftest/yuv/
 RUN printf '%s\n' \
     '#!/bin/sh' \
-    '# Golden reference-pair self-check for the deployed vmaf binary (ADR-1141).' \
+    '# Golden reference-pair self-check for the deployed vmaf binary (ADR-1594).' \
     'export VMAF_BIN="${VMAF_BIN:-/usr/local/bin/vmaf}"' \
     'export YUV_DIR="${YUV_DIR:-/opt/vmaf-selftest/yuv}"' \
     '# No Arc device attached -> CPU-only golden table (skip cross-backend).' \
