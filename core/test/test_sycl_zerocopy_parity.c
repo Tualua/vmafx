@@ -19,7 +19,11 @@
  *    vmaf_sycl_advance_frame() promoted it, never stale;
  *  - psnr_sycl / psnr_hvs_sycl on emulated zero-copy equal the CPU extractors
  *    frame by frame, frame 0 included;
- *  - without a mark the chroma readers fail with -ENOTSUP.
+ *  - without a mark the chroma readers fail with -ENOTSUP;
+ *  - motion_sycl with motion_add_uv=true on emulated zero-copy equals the same
+ *    extractor on host-uploaded pictures, bit for bit, over 6 frames with
+ *    changing chroma (the CPU integer `motion` has no motion_add_uv option, so
+ *    the host-upload leg of the same twin is the reference; plan 12-08).
  *
  * Skip behaviour: without a SYCL device the test prints
  * "[skip: no SYCL device]" and passes, like test_sycl_shared_planes.c.
@@ -34,6 +38,7 @@
 
 #include "test.h"
 
+#include "libvmaf/feature.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_sycl.h"
 #include "libvmaf/picture.h"
@@ -382,6 +387,171 @@ static char *test_unmarked_chroma_refused(void)
     return msg;
 }
 
+/* ------------------------------------------------------------------ */
+/* motion_sycl motion_add_uv: zero-copy chroma vs host-uploaded chroma */
+/* ------------------------------------------------------------------ */
+
+#define MOTION_FRAMES 6u
+#define N_MOTION 2u
+
+static const char *const g_motion_scores[N_MOTION] = {"VMAF_integer_feature_motion2_score",
+                                                      "VMAF_integer_feature_motion3_score"};
+
+typedef struct MotionScores {
+    double v[N_MOTION][MOTION_FRAMES];
+    int ok[N_MOTION][MOTION_FRAMES];
+} MotionScores;
+
+static char *use_motion(VmafContext *vmaf, int add_uv)
+{
+    VmafFeatureDictionary *opts = NULL;
+    mu_assert("dictionary set failed",
+              !vmaf_feature_dictionary_set(&opts, "motion_add_uv", add_uv ? "true" : "false"));
+    mu_assert("vmaf_use_feature motion_sycl failed", !vmaf_use_feature(vmaf, "motion_sycl", opts));
+    return NULL;
+}
+
+static void read_motion(VmafContext *vmaf, MotionScores *out)
+{
+    for (unsigned f = 0; f < N_MOTION; f++) {
+        for (unsigned frame = 0; frame < MOTION_FRAMES; frame++) {
+            out->ok[f][frame] =
+                !vmaf_feature_score_at_index(vmaf, g_motion_scores[f], &out->v[f][frame], frame);
+            if (!out->ok[f][frame])
+                out->v[f][frame] = 0.0;
+        }
+    }
+}
+
+/* Host upload: pictures through vmaf_read_pictures(), chroma staged by the twin. */
+static char *run_motion_host(unsigned bpc, int add_uv, MotionScores *out)
+{
+    VmafSyclState *state = open_state();
+    if (!state)
+        return NULL;
+    VmafContext *vmaf = NULL;
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    char *msg = NULL;
+    if (vmaf_init(&vmaf, cfg) || vmaf_sycl_import_state(vmaf, state))
+        msg = "host leg: context setup failed";
+    if (!msg)
+        msg = use_motion(vmaf, add_uv);
+    for (unsigned frame = 0; !msg && frame < MOTION_FRAMES; frame++) {
+        VmafPicture ref;
+        VmafPicture dis;
+        if (fill_pic(&ref, frame, 0u, bpc) || fill_pic(&dis, frame, 1u, bpc))
+            msg = "host leg: picture alloc failed";
+        else if (vmaf_read_pictures(vmaf, &ref, &dis, frame))
+            msg = "host leg: vmaf_read_pictures failed";
+    }
+    if (!msg && vmaf_read_pictures(vmaf, NULL, NULL, 0))
+        msg = "host leg: flush failed";
+    if (!msg)
+        read_motion(vmaf, out);
+    if (vmaf)
+        (void)vmaf_close(vmaf);
+    vmaf_sycl_state_free(&state);
+    return msg;
+}
+
+static char *run_motion_zero_copy(unsigned bpc, MotionScores *out)
+{
+    VmafSyclState *state = open_state();
+    if (!state)
+        return NULL;
+    VmafContext *vmaf = NULL;
+    char *msg = open_context(state, bpc, &vmaf);
+    if (!msg)
+        msg = use_motion(vmaf, 1);
+    for (unsigned frame = 0; !msg && frame < MOTION_FRAMES; frame++) {
+        if (emulate_import(state, frame, bpc, 1))
+            msg = "emulated import failed";
+        else if (vmaf_read_pictures_sycl(vmaf, frame))
+            msg = "vmaf_read_pictures_sycl failed on imported chroma (motion_add_uv)";
+    }
+    if (!msg && vmaf_flush_sycl(vmaf))
+        msg = "vmaf_flush_sycl failed";
+    if (!msg)
+        read_motion(vmaf, out);
+    if (vmaf)
+        (void)vmaf_close(vmaf);
+    vmaf_sycl_state_free(&state);
+    return msg;
+}
+
+static char *compare_motion(unsigned bpc, const MotionScores *host, const MotionScores *zc,
+                            const MotionScores *luma_only)
+{
+    unsigned defined = 0u;
+    int chroma_matters = 0;
+    for (unsigned f = 0; f < N_MOTION; f++) {
+        for (unsigned frame = 0; frame < MOTION_FRAMES; frame++) {
+            mu_assert("zero-copy and host disagree on which scores exist",
+                      host->ok[f][frame] == zc->ok[f][frame]);
+            if (!host->ok[f][frame])
+                continue;
+            defined++;
+            if (fabs(host->v[f][frame] - zc->v[f][frame]) > 0.0) {
+                (void)fprintf(stderr, "\n%s bpc=%u frame %u: host=%.17g zero-copy=%.17g\n",
+                              g_motion_scores[f], bpc, frame, host->v[f][frame], zc->v[f][frame]);
+            }
+            mu_assert("zero-copy motion_add_uv differs from host upload",
+                      fabs(host->v[f][frame] - zc->v[f][frame]) <= 0.0);
+            if (fabs(host->v[f][frame] - luma_only->v[f][frame]) > 0.0)
+                chroma_matters = 1;
+        }
+    }
+    mu_assert("expected at least 5 motion scores per feature",
+              defined >= 2u * (MOTION_FRAMES - 1u));
+    mu_assert("chroma must change the score (otherwise the test proves nothing)", chroma_matters);
+    return NULL;
+}
+
+static char *check_motion_parity(unsigned bpc)
+{
+    static MotionScores host;
+    static MotionScores zc;
+    static MotionScores luma_only;
+    VmafSyclState *probe = open_state();
+    if (!probe)
+        return NULL;
+    vmaf_sycl_state_free(&probe);
+    mu_assert_msg(run_motion_host(bpc, 1, &host));
+    mu_assert_msg(run_motion_host(bpc, 0, &luma_only));
+    mu_assert_msg(run_motion_zero_copy(bpc, &zc));
+    return compare_motion(bpc, &host, &zc, &luma_only);
+}
+
+static char *test_motion_add_uv_8bit(void)
+{
+    return check_motion_parity(8u);
+}
+
+static char *test_motion_add_uv_10bit(void)
+{
+    return check_motion_parity(10u);
+}
+
+/* No mark: motion_add_uv must refuse instead of differencing stale chroma. */
+static char *test_motion_add_uv_unmarked_refused(void)
+{
+    VmafSyclState *state = open_state();
+    if (!state)
+        return NULL;
+    VmafContext *vmaf = NULL;
+    char *msg = open_context(state, 8u, &vmaf);
+    if (!msg)
+        msg = use_motion(vmaf, 1);
+    if (!msg && emulate_import(state, 0u, 8u, 0))
+        msg = "emulated import failed";
+    if (!msg && vmaf_read_pictures_sycl(vmaf, 0u) != -ENOTSUP)
+        msg = "motion_add_uv must refuse an import that did not mark chroma";
+    if (vmaf)
+        (void)vmaf_close(vmaf);
+    vmaf_sycl_state_free(&state);
+    return msg;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_eager_chroma_allocation);
@@ -389,6 +559,9 @@ char *run_tests(void)
     mu_run_test(test_parity_8bit);
     mu_run_test(test_parity_10bit);
     mu_run_test(test_unmarked_chroma_refused);
+    mu_run_test(test_motion_add_uv_8bit);
+    mu_run_test(test_motion_add_uv_10bit);
+    mu_run_test(test_motion_add_uv_unmarked_refused);
     return NULL;
 }
 
