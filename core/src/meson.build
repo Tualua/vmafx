@@ -445,6 +445,9 @@ if is_hipcc_enabled and is_hip_enabled
         'feature/hip/integer_cambi/cambi_hip_device.h',
         'feature/hip/speed/speed_hip_device.h',
         'feature/speed_gpu_common.h',
+        # ADR-1477: create_givens's fp64 statement in fp32, shared by the three
+        # twins and the device-free test.
+        'feature/speed_givens.h',
         'feature/hip/speed_chroma_hip.h',
         'feature/hip/speed_temporal_hip.h',
         'feature/adm_angle_flag.h',
@@ -1592,7 +1595,7 @@ if is_cuda_enabled
         'feature/cuda/speed_temporal_cuda.h',
         'feature/cuda/speed/speed_cuda_params.h',
         'feature/speed_gpu_common.h',
-        'feature/speed_log2_hard_cases.h',
+        'feature/speed_givens.h',
         'feature/adm_angle_flag.h',
         'mem.h',
         'metadata.h',
@@ -2261,9 +2264,10 @@ if is_sycl_enabled
         feature_src_dir + 'sycl/integer_cambi_sycl.cpp',
         # ADR-0964: speed_chroma_sycl + speed_temporal_sycl — GPU twins of
         # vmaf_fex_speed_chroma / vmaf_fex_speed_temporal. ADR-1358: both are
-        # device-resident; the whole per-frame chain (filtering, covariance,
-        # eigenvalues, QR, solve, score) lives in speed_sycl_pipeline.cpp and
-        # the init-time setup in speed_sycl_host.cpp.
+        # device-resident; the device chain (filtering, covariance,
+        # eigenvalues, QR, solve) lives in speed_sycl_pipeline.cpp and the
+        # init-time setup in speed_sycl_host.cpp. ADR-1477: the entropies and
+        # the score are formed on the host, by speed_internal.c.
         feature_src_dir + 'sycl/speed_chroma_sycl.cpp',
         feature_src_dir + 'sycl/speed_temporal_sycl.cpp',
         feature_src_dir + 'sycl/speed_sycl_pipeline.cpp',

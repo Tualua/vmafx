@@ -6,14 +6,15 @@
  */
 
 /*
- * speed_chroma CPU vs. CUDA parity test (ADR-0965; bound from ADR-1430).
+ * speed_chroma CPU vs. CUDA parity test (ADR-0965; equality since ADR-1477).
  *
  * Asserts that the three scores of the CPU extractor `speed_chroma` and of
- * the CUDA twin `speed_chroma_cuda` agree at every frame to one part in a
- * million. The fixture, the CPU run, the comparison and the reason it is a
- * bound and not an equality (the CPU's `log2f`) are in
+ * the CUDA twin `speed_chroma_cuda` are equal at every frame. The fixture,
+ * the CPU run, the comparison and the reason it is an equality (the twin
+ * evaluates Netflix's fp64 statements, the logarithms on the host) are in
  * speed_chroma_twin_parity.h, which the HIP test wraps too. The test allowed
- * 1e-4 on one score of one frame before the cause was measured.
+ * 1e-4 on one score of one frame, then one part in a million, while the
+ * fork's speed.c called `log2f`.
  *
  * Skip behaviour: if `vmaf_cuda_state_init()` fails (no CUDA driver or no
  * device visible) the test emits `[skip: no CUDA device]` and exits 77, meson's
@@ -110,8 +111,8 @@ static char *test_speed_chroma_cpu_cuda_parity(void)
     if (mu_skipped)
         return NULL;
 
-    mu_assert("speed_chroma_cuda is further from the CPU extractor than its log2f explains",
-              speed_chroma_twin_outside_bound(&cpu, &cuda, "cuda") == 0u);
+    mu_assert("speed_chroma_cuda does not return the CPU extractor's scores",
+              speed_chroma_twin_mismatches(&cpu, &cuda, "cuda") == 0u);
     return NULL;
 }
 

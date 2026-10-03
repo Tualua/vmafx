@@ -1,0 +1,2 @@
+adr: ADR-1477
+evidence: gfx1036, --precision max, GCC build, glibc 2.44: 256 of 256 values at the default options (the Netflix 576x324 pair at 8, 10, 12 and 16 bit, as 10-bit 4:2:2 and as 8- and 12-bit 4:4:4, both 1080p checkerboards, Sparks, noise at four bit depths, a bright 16-bit 1080p pair, a 1080p and a 10-bit 720p gradient, akiyo 352x288, BBB 1920x1080 and 3840x2160 and a 256x144 clip) and 342 of 342 over 6 option sets (speed_use_ref_diff, kernelscale, sigma_nn, nn_floor, two prescales) identical to --backend cpu of the same build.

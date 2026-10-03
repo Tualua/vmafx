@@ -1298,10 +1298,11 @@ sweep per output and per fixture.
 | `ssimulacra2` | `ssimulacra2_hip` | 178 of 178 | 0 | 7.6e-11 | yes ([ADR-1445](../../adr/1445-hip-ssimulacra2-cpu-sum-order.md)) |
 | `float_moment` | `float_moment_hip` | 712 of 712 | 0 | 1.0e-4 | yes, while the CPU's own sum is exact ([ADR-1447](../../adr/1447-hip-float-moment-cpu-float-squares.md)) |
 | `float_adm` (also `debug=true`) | `float_adm_hip` | 1246 of 1246 (3204 of 3204) | 0 | 1.3e-5 | yes ([ADR-1458](../../adr/1458-hip-float-adm-cpu-arithmetic.md)) |
-| `speed_chroma` | `speed_chroma_hip` | 528 of 534 | 1.4e-6 | not measured | no: the C library's `log2f`, bounded at `5e-6` ([ADR-1452](../../adr/1452-hip-speed-chroma-log2f-bound.md)) |
+| `speed_chroma` | `speed_chroma_hip` | 759 of 759 (a wider set of clips, 2026-10-02) | 0 | 1.4e-6 | yes ([ADR-1477](../../adr/1477-speed-upstream-double-math.md)) |
+| `speed_temporal` | `speed_temporal_hip` | 256 of 256 (the same set) | 0 | 4.8e-7 | yes (ADR-1477) |
 | `ciede` | `ciede_hip` | 115 of 178 | 1.4e-11 | 1.1e-5 | no: the C library's `powf` and the last bits of a pair, bounded at `1e-9` ([ADR-1448](../../adr/1448-hip-ciede-cpu-arithmetic.md)) |
 
-Sixteen twins are exact. The parity gate compares them with tolerance 0
+Eighteen twins are exact. The parity gate compares them with tolerance 0
 ([cross-backend gate](../../development/cross-backend-gate.md),
 [the list](../../development/cross-backend-exact-twins.md)). One of them has
 a range: `float_moment_hip` is exact on every frame of up to 2 097 152 pixels
@@ -1310,15 +1311,20 @@ squares passes 2^53 the CPU's own sum rounds as it goes and the twin is
 within a derived bound of it
 (see [float_moment_hip](#float_moment_hip-returns-the-cpus-moments-bit-for-bit-2026-10-02)).
 
-The other two run the CPU's arithmetic as well and differ through a math
-library; the gate bounds each by what that adds:
+The two SpEED twins became exact with
+[ADR-1477](../../adr/1477-speed-upstream-double-math.md): the device runs
+`speed.c` up to the per-block variances, and the host forms the entropies and
+the score with `speed.c`'s own `log2()` calls, so no math library separates
+the twin from the CPU. Before, the twin rounded `log2` on the device while
+`speed.c` called glibc's `log2f`, and 6 of 534 `speed_chroma` values differed
+by at most 1.4e-6. Their rows were measured on the Netflix 576x324 pair at
+four bit depths and in three chroma formats, both 1080p checkerboard pairs,
+Sparks, noise at four bit depths, a bright 16-bit pair, two gradients and BBB
+at 1920x1080 and 3840x2160.
 
-- `speed_chroma_hip`: 6 values differ, by at most 1.4e-6 (Netflix 8-bit
-  frame 3, BBB frames 17 and 21). The cause is on the CPU side: `speed.c`
-  calls glibc's `log2f`, which is not correctly rounded, and the device
-  rounds `log2` correctly. The same CPU binary with a correctly rounded
-  `log2f` preloaded returns the twin's bits on every value, also over all 200
-  BBB frames (`T-HIP-SPEED-CHROMA-GLIBC-LOG2F-2026-10-02`).
+The last one runs the CPU's arithmetic as well and differs through a math
+library; the gate bounds it by what that adds:
+
 - `ciede_hip`: glibc's `powf` is not correctly rounded, which moves at most
   74 of the 8.3 million pixels of a 3840x2160 frame by one `float` step, and
   the twin evaluates the CPU's double-precision statements on pairs of
@@ -1704,11 +1710,12 @@ What to expect from the scores:
   kernel file is compiled with `-ffp-contract=off` and
   `-fhip-fp32-correctly-rounded-divide-sqrt`, because HIP's `__fmul_rn()`,
   `__fadd_rn()` and `__fdiv_rn()` are the plain (contracting) operators and
-  `__fsqrt_rn()` is the approximate native square root. The scores equal the
-  CPU's bit for bit when the CPU's `log2f` is correctly rounded; with a glibc
-  (gcc) build a few `speed_chroma` frames differ in the last float bits. The
-  [SpEED page](../../metrics/speed_qa.md#hip-device-resident-cpu-fp32-arithmetic)
-  shows how to compare with a correctly rounded `log2f`.
+  `__fsqrt_rn()` is the approximate native square root. The device chain ends
+  at the per-block variances; the host forms the entropies and the score from
+  one block read back per frame, with `speed.c`'s own `log2()` calls
+  ([ADR-1477](../../adr/1477-speed-upstream-double-math.md)). The scores
+  equal the CPU's bit for bit on every build; see the
+  [SpEED page](../../metrics/speed_qa.md#where-a-twin-computes-what).
 
 Request the twins by name; `--feature cambi` or `--feature speed_chroma` runs
 the CPU extractor whatever `--backend` says:

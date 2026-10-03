@@ -1194,3 +1194,4 @@
 1487-upstream-parity-policy-and-guard
 1494-adm-refuses-frames-below-17
 1491-gpu-motion-five-frame-window
+1477-speed-upstream-double-math

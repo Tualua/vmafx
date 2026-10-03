@@ -16,11 +16,23 @@ invariant: SpEED pipeline arithmetic contract and singular-covariance contract; 
   (`sycl_strict_fp_args`, ADR-1367). In the
   pipeline, every division and square root goes through `div_rn()` /
   `sqrt_rn()` (shared with ssimulacra2 in `sycl_exact_fp.h`, ADR-1363),
-  every `log2f` through
-  `speed_log2()`, every product feeding an add sits in a named
+  every product feeding an add sits in a named
   temporary, and the fp64 comparisons of `speed.c` go through
   `below_eps()` / `below_eps_scaled()`. The file must not mention the
   fp64 type at all (`core/test/test_sycl_kernel_source_contract.py`).
+  Entropy + score = host tail (ADR-1477): device chain ends at
+  `launch_solve()` (variances); `enqueue_frame()` copies the tail block
+  (`SpeedGpuTailLayout`: status, eigenvalues, variances; one USM
+  allocation) and `pipeline_collect()` waits, then calls
+  `speed_internal_gpu_tail_scores()` (`speed_internal.c`) = `speed.c`'s own
+  fp64 `log2()` statements on the host's libm. No kernel evaluates a
+  logarithm; twin == CPU bit for bit on any libm (icx or GCC build). Gate
+  cells `speed_chroma.sycl`, `speed_temporal.sycl`
+  (`scripts/ci/exact_twins.d/`); parity tests assert `==`.
+  Givens rotation = `speed_givens_unit()` (`feature/speed_givens.h`, shared
+  with CUDA + HIP): upstream's `1.0 / sqrt(1 + t * t)` in fp32 from
+  `sqrt_rn` / `div_rn` / `sycl::fma`; proven on every input by
+  `test_speed_upstream_form`. Not `div_rn(1.0f, sqrt_rn(u))`.
   `lanczos4` prescale weights = host table, never a device sine: CPU
   rounds each weight once from fp64 `sin()`, `sycl::sinpi()` is ulps off
   and SpEED amplifies (5.8e-5 relative on an A380,
@@ -41,8 +53,8 @@ invariant: SpEED pipeline arithmetic contract and singular-covariance contract; 
   `speed_sycl_pipeline.cpp` writes the per-channel flag, and
   `block_statistics()` solves into a zero-initialised private solution
   that stays zero on a singular channel, so no device buffer is read
-  before it is written. `score_group()` applies the one-sided rule and
-  the flags reach the host in `FrameResult.singular`. ADR-1218.
+  before it is written. The host tail applies the one-sided rule and
+  copies the flags into `FrameResult.singular`. ADR-1218, ADR-1477.
 
 | SYCL TU | CPU TU | Parity test | ADR |
 |---|---|---|---|
@@ -52,5 +64,5 @@ invariant: SpEED pipeline arithmetic contract and singular-covariance contract; 
 > **SpEED twins are wired and device-resident (ADR-0964, ADR-1358).**
 > Both extractors are in `sycl_feature_sources` with the shared
 > `speed_sycl_pipeline.cpp` and `speed_sycl_host.cpp`. Their parity tests
-> are live gates; on real video the twins match the CPU bit for bit (see
+> are live gates; the twins match the CPU bit for bit (see
 > `docs/metrics/speed_qa.md`).

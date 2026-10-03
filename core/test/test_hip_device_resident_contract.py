@@ -13,6 +13,15 @@ combines only through the CPU's shared helpers, the device code is fp64-free
 and uses no HIP intrinsic that rounds or contracts differently from the CPU,
 and the SpEED kernel build keeps its exact-arithmetic flags. Every check has a
 planted-regression case that reintroduces the old shape and must be detected.
+
+SpEED since ADR-1477: the device chain ends at the variances, the one
+readback is the tail block (status words, eigenvalues, variances), and
+collect() forms the entropies and the score after its wait with
+speed_internal_gpu_tail_scores(), which holds Netflix's fp64 `log2()`
+statements (libvmaf/src/feature/speed.c, update_entropy() at 796-806 and
+get_speed_score() at 892-938 of 9e48141b). No device code evaluates a
+logarithm, and the Givens rotation's `1.0 / sqrt(1 + t * t)` (speed.c:418,
+:423) goes through feature/speed_givens.h.
 """
 
 from __future__ import annotations
@@ -187,10 +196,32 @@ def _speed_failures(src: dict[str, str]) -> list[str]:
     wanted = ("'-ffp-contract=off'", "'-fhip-fp32-correctly-rounded-divide-sqrt'")
     if not flags or any(flag not in flags.group(1) for flag in wanted):
         failures.append("meson.build: the speed_pipeline kernel lost its exact-arithmetic flags")
-    seam = r"#if defined\(SPEED_HD_HOST_LIBM_LOG2\) && !defined\(__HIP_DEVICE_COMPILE__\)"
-    if not re.search(seam, _code(src[SPEED_DEVICE])):
-        failures.append(f"{SPEED_DEVICE}: the host log2f test seam can reach device code")
+    failures += _speed_upstream_form_failures(src, pipeline)
     failures += _speed_lanczos_failures(src, pipeline)
+    return failures
+
+
+def _speed_upstream_form_failures(src: dict[str, str], pipeline: str) -> list[str]:
+    """ADR-1477: Netflix's fp64 statements, where each of them runs."""
+    failures: list[str] = []
+    device = _code(src[SPEED_DEVICE]) + _code(src[SPEED_KERNEL])
+    # update_entropy() and get_speed_score() call log2() on the host, in
+    # speed_internal_gpu_tail_scores(); a device logarithm is another function.
+    if re.search(r"\b(?:speed_hd_)?log(?:2|10|1p)?f?(?:_rn)?\s*\(", device):
+        failures.append(f"{SPEED_DEVICE}: device code evaluates a logarithm")
+    if "speed_hip_score" in device or "entropy" in device:
+        failures.append(f"{SPEED_DEVICE}: the entropy or the score is formed on the device")
+    if "speed_internal_gpu_tail_scores(" not in _body(pipeline, "speed_hip_pipeline_collect"):
+        failures.append(f"{SPEED_PIPELINE}: collect() does not run the host tail")
+    if "p->params.status, p->tail.bytes" not in _body(pipeline, "speed_hip_pipeline_submit"):
+        failures.append(f"{SPEED_PIPELINE}: the readback is not the tail block")
+    # create_givens(): `1.0 / sqrt(1 + t * t)` is an fp64 root and quotient.
+    givens = _body(src[SPEED_DEVICE], "speed_hd_create_givens")
+    if (
+        '#include "feature/speed_givens.h"' not in src[SPEED_DEVICE]
+        or "const float unit = speed_givens_unit(1.0f + tt);" not in givens
+    ):
+        failures.append(f"{SPEED_DEVICE}: create_givens() is not upstream's fp64 statement")
     return failures
 
 
@@ -490,15 +521,50 @@ class HipDeviceResidentContractTest(unittest.TestCase):
         )
         self.assert_detected(src, "inexact HIP math intrinsic")
 
-    def test_device_libm_log2_is_detected(self) -> None:
+    def test_device_log2_is_detected(self) -> None:
+        # The device's own log2 before ADR-1477: fp32 pairs rounded to float.
         src = _replace(
             _sources(),
             SPEED_DEVICE,
-            "#if defined(SPEED_HD_HOST_LIBM_LOG2) && !defined(__HIP_DEVICE_COMPILE__)",
-            "#if defined(SPEED_HD_HOST_LIBM_LOG2)",
+            "    p->var[(size_t)ch * blocks + block] = variance;",
+            "    p->var[(size_t)ch * blocks + block] = speed_hd_log2_rn(variance);",
         )
-        self.assert_detected(src, "log2f test seam")
+        self.assert_detected(src, "evaluates a logarithm")
 
+    def test_device_score_kernel_is_detected(self) -> None:
+        src = _sources()
+        src[SPEED_KERNEL] += (
+            "\n__global__ void speed_hip_score(const SpeedHipParams *p, uint32_t set)\n{\n}\n"
+        )
+        self.assert_detected(src, "formed on the device")
+
+    def test_dropped_host_tail_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            SPEED_PIPELINE,
+            "    return speed_internal_gpu_tail_scores(",
+            "    return speed_hip_local_scores(",
+        )
+        self.assert_detected(src, "host tail")
+
+    def test_readback_of_another_block_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            SPEED_PIPELINE,
+            "p->params.status, p->tail.bytes",
+            "p->params.cov, sizeof(float)",
+        )
+        self.assert_detected(src, "not the tail block")
+
+    def test_fp32_givens_is_detected(self) -> None:
+        # Port #213's form: `1.0f / sqrtf(1.0f + t * t)`.
+        src = _replace(
+            _sources(),
+            SPEED_DEVICE,
+            "    const float unit = speed_givens_unit(1.0f + tt);",
+            "    const float unit = 1.0f / sqrtf(1.0f + tt);",
+        )
+        self.assert_detected(src, "create_givens()")
     def test_fp64_in_speed_kernel_is_detected(self) -> None:
         src = _replace(
             _sources(),

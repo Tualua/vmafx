@@ -53,8 +53,8 @@ int speed_cuda_pipeline_close(SpeedCudaPipeline **pipeline);
 int speed_cuda_pipeline_stage(SpeedCudaPipeline *pipeline, uint32_t slot, VmafPicture *pic,
                               unsigned plane, CUstream stream);
 
-/* Enqueue the whole per-frame chain for `bindings` (`channels` entries) on
- * `stream`, then fence it and read the result back on the private stream.
+/* Enqueue the whole device chain for `bindings` (`channels` entries) on
+ * `stream`, then fence it and read its tail block back on the private stream.
  * Never waits. The caller holds the pipeline's CUDA context. */
 int speed_cuda_pipeline_submit(SpeedCudaPipeline *pipeline, const SpeedGpuChannelBinding *bindings,
                                CUstream stream);
@@ -63,8 +63,9 @@ int speed_cuda_pipeline_submit(SpeedCudaPipeline *pipeline, const SpeedGpuChanne
  * (speed_temporal's first frame). Never waits. */
 int speed_cuda_pipeline_fence(SpeedCudaPipeline *pipeline, CUstream stream);
 
-/* The frame's one wait: drain the private stream and copy the result read
- * back by speed_cuda_pipeline_submit(). */
+/* The frame's one wait: drain the private stream, then form the entropies and
+ * the score on the host from the block speed_cuda_pipeline_submit() read back
+ * (speed_internal_gpu_tail_scores(), ADR-1477). */
 int speed_cuda_pipeline_collect(SpeedCudaPipeline *pipeline, SpeedGpuFrameResult *out);
 
 /* The same wait without a result (after speed_cuda_pipeline_fence()). */

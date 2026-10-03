@@ -130,27 +130,14 @@ __global__ void speed_hip_linalg(const SpeedHipParams *p, uint32_t set)
     speed_hd_linalg_group(&lanes, p, blockIdx.x, slm);
 }
 
-/* Per (channel, block): Q^T b, back substitution, variance and entropy. */
+/* Per (channel, block): Q^T b, back substitution and the variance, the last
+ * device stage; the host tail forms the entropies and the score (ADR-1477). */
 __global__ void speed_hip_solve(const SpeedHipParams *p, uint32_t set)
 {
     (void)set;
     const uint32_t block = blockIdx.x * blockDim.x + threadIdx.x;
     if (block < p->geometry.blocks)
         speed_hd_block_statistics(p, blockIdx.y, block);
-}
-
-/* One work-group per score pair: the per-block contributions in parallel,
- * then lane 0's sequential sum in the reference order. */
-__global__ void speed_hip_score(const SpeedHipParams *p, uint32_t set)
-{
-    (void)set;
-    const uint32_t pair = blockIdx.x;
-    const uint32_t blocks = p->geometry.blocks;
-    for (uint32_t b = threadIdx.x; b < blocks; b += SPEED_HIP_GROUP)
-        p->contrib[(size_t)pair * blocks + b] = speed_hd_block_score(p, pair, b);
-    __syncthreads();
-    if (threadIdx.x == 0u)
-        speed_hd_score_finish(p, pair);
 }
 
 } /* extern "C" */

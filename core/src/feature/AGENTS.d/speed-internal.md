@@ -43,6 +43,17 @@ twins must have FIVE companion changes in same PR**:
    example). Must skip cleanly when relevant GPU device is
    not visible.
 
+**Host tail of the GPU twins (ADR-1477).** `speed_internal_gpu_tail_scores()`
+forms entropies + score from the block a pipeline reads back
+(`SpeedGpuTailLayout` in `speed_gpu_common.h`: status words, 25 eigenvalues,
+per-block variances, per channel). Statements = `speed.c`'s fp64 `log2()`
+ones, verbatim; called by CUDA / HIP / SYCL pipelines after their one wait.
+No kernel evaluates a logarithm. Edit `update_entropy()` / `get_speed_score()`
+/ `speed_extract_score()` in `speed.c` -> edit the tail in same PR. Never move
+entropy or score back to a device (device log2 != host log2: cells were
+`LIBM_TWINS` bounds until ADR-1477, exact since). Allocation-free; caller
+owns the `2 x blocks` scratch.
+
 If any of five is missing, symptom is silent:
 extractor name does not resolve in `vmaf_get_feature_extractor_by_name()`
 and GPU pipeline never runs, while CI stays green because no

@@ -461,12 +461,14 @@ static void create_givens(const float a, const float b, float *c, float *s)
         *s = 0;
     } else if (fabsf(b) > fabsf(a)) {
         float t = -a / b;
-        float s1 = 1.0f / sqrtf(1.0f + t * t);
+        // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) ADR-1477: upstream's double form.
+        float s1 = 1.0 / sqrt(1 + t * t);
         *s = s1;
         *c = s1 * t;
     } else {
         float t = -b / a;
-        float c1 = 1.0f / sqrtf(1.0f + t * t);
+        // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) ADR-1477: upstream's double form.
+        float c1 = 1.0 / sqrt(1 + t * t);
         *c = c1;
         *s = c1 * t;
     }
@@ -915,9 +917,10 @@ static void update_entropy(const SpeedDimensions *dim, float *entropy, const flo
 {
     for (size_t i = 0; i < dim->num_blocks_vertical; i++) {
         for (size_t j = 0; j < dim->num_blocks_horizontal; j++) {
+            // NOLINTBEGIN(performance-type-promotion-in-math-fn) ADR-1477: upstream's double form.
             entropy[i * dim->num_blocks_horizontal + j] +=
-                log2f(L * S[i * dim->num_blocks_horizontal + j] + sigma_nn) +
-                log2f(2.0f * (float)M_PI * (float)M_E);
+                log2(L * S[i * dim->num_blocks_horizontal + j] + sigma_nn) + log2(2 * M_PI * M_E);
+            // NOLINTEND(performance-type-promotion-in-math-fn)
         }
     }
 }
@@ -1012,9 +1015,14 @@ static float get_speed_score(const SpeedDimensions *dim, SpeedResultBuffers ref_
                              SpeedResultBuffers dis_results, float sigma_nn, float nn_floor,
                              int speed_weight_var_mode)
 {
+    /* Every log2() below is upstream's: a double logarithm of a float (or, in
+     * modes 3 to 6, double) argument, multiplied in double and rounded to
+     * float once on assignment (Netflix/vmaf libvmaf/src/feature/speed.c,
+     * get_speed_score(); ADR-1477). */
+    // NOLINTBEGIN(performance-type-promotion-in-math-fn) ADR-1477: upstream's double form.
     float score = 0;
-    float base_entropy = dim->elements_in_block * (log2f((1.0f + nn_floor) * sigma_nn) +
-                                                   log2f(2.0f * (float)M_PI * (float)M_E));
+    float base_entropy =
+        dim->elements_in_block * (log2((1 + nn_floor) * sigma_nn) + log2(2 * M_PI * M_E));
     for (size_t i = 0; i < dim->num_blocks; i++) {
         if ((ref_results.entropies[i] < base_entropy) &&
             (dis_results.entropies[i] < base_entropy)) {
@@ -1025,44 +1033,74 @@ static float get_speed_score(const SpeedDimensions *dim, SpeedResultBuffers ref_
             float spatial_ref = 0.0f;
             float spatial_dis = 0.0f;
             if (speed_weight_var_mode == 0) {
-                spatial_ref = ref_results.entropies[i] * log2f(1.0f + ref_results.variances[i]);
-                spatial_dis = dis_results.entropies[i] * log2f(1.0f + dis_results.variances[i]);
+                spatial_ref = ref_results.entropies[i] * log2(1 + ref_results.variances[i]);
+                spatial_dis = dis_results.entropies[i] * log2(1 + dis_results.variances[i]);
             } else if (speed_weight_var_mode == 1) {
-                spatial_ref = ref_results.entropies[i] * log2f(1.0f + ref_results.variances[i]);
-                spatial_dis = dis_results.entropies[i] * log2f(1.0f + ref_results.variances[i]);
+                spatial_ref = ref_results.entropies[i] * log2(1 + ref_results.variances[i]);
+                spatial_dis = dis_results.entropies[i] * log2(1 + ref_results.variances[i]);
             } else if (speed_weight_var_mode == 2) {
-                spatial_ref = ref_results.entropies[i] * log2f(1.0f + dis_results.variances[i]);
-                spatial_dis = dis_results.entropies[i] * log2f(1.0f + dis_results.variances[i]);
+                spatial_ref = ref_results.entropies[i] * log2(1 + dis_results.variances[i]);
+                spatial_dis = dis_results.entropies[i] * log2(1 + dis_results.variances[i]);
             } else if (speed_weight_var_mode == 3) {
-                spatial_ref =
-                    ref_results.entropies[i] *
-                    log2f(1.0f + (ref_results.variances[i] + dis_results.variances[i]) / 2.0f);
-                spatial_dis =
-                    dis_results.entropies[i] *
-                    log2f(1.0f + (ref_results.variances[i] + dis_results.variances[i]) / 2.0f);
+                spatial_ref = ref_results.entropies[i] *
+                              log2(1 + (ref_results.variances[i] + dis_results.variances[i]) / 2.0);
+                spatial_dis = dis_results.entropies[i] *
+                              log2(1 + (ref_results.variances[i] + dis_results.variances[i]) / 2.0);
             } else if (speed_weight_var_mode == 4) {
-                spatial_ref = ref_results.entropies[i] * log2f(1.0f + ref_results.variances[i]);
+                spatial_ref = ref_results.entropies[i] * log2(1 + ref_results.variances[i]);
+                spatial_dis = dis_results.entropies[i] *
+                              log2(1 + (ref_results.variances[i] + dis_results.variances[i]) / 2.0);
+            } else if (speed_weight_var_mode == 5) {
+                spatial_ref = ref_results.entropies[i] * log2(1 + ref_results.variances[i]);
                 spatial_dis =
                     dis_results.entropies[i] *
-                    log2f(1.0f + (ref_results.variances[i] + dis_results.variances[i]) / 2.0f);
-            } else if (speed_weight_var_mode == 5) {
-                spatial_ref = ref_results.entropies[i] * log2f(1.0f + ref_results.variances[i]);
-                spatial_dis =
-                    dis_results.entropies[i] * log2f(1.0f + (0.75f * ref_results.variances[i] +
-                                                             0.25f * dis_results.variances[i]));
+                    log2(1 + (0.75 * ref_results.variances[i] + 0.25 * dis_results.variances[i]));
             } else if (speed_weight_var_mode == 6) {
-                spatial_ref = ref_results.entropies[i] * log2f(1.0f + ref_results.variances[i]);
+                spatial_ref = ref_results.entropies[i] * log2(1 + ref_results.variances[i]);
                 spatial_dis =
-                    dis_results.entropies[i] * log2f(1.0f + (0.25f * ref_results.variances[i] +
-                                                             0.75f * dis_results.variances[i]));
+                    dis_results.entropies[i] *
+                    log2(1 + (0.25 * ref_results.variances[i] + 0.75 * dis_results.variances[i]));
             } else {
                 return -EINVAL;
             }
             score += fabsf(spatial_ref - spatial_dis);
         }
     }
+    // NOLINTEND(performance-type-promotion-in-math-fn)
 
     return score / dim->num_blocks;
+}
+
+/* The test entries of speed_internal.h (ADR-1477): the three functions
+ * above, unchanged, for core/test/test_speed_upstream_form.c. */
+void speed_internal_cpu_create_givens(float a, float b, float *c, float *s)
+{
+    create_givens(a, b, c, s);
+}
+
+void speed_internal_cpu_update_entropy(size_t rows, size_t cols, float *entropy, const float *S,
+                                       float L, float sigma_nn)
+{
+    SpeedDimensions dim;
+    memset(&dim, 0, sizeof(dim));
+    dim.num_blocks_vertical = rows;
+    dim.num_blocks_horizontal = cols;
+    dim.num_blocks = rows * cols;
+    update_entropy(&dim, entropy, S, L, sigma_nn);
+}
+
+float speed_internal_cpu_speed_score(size_t num_blocks, size_t elements_in_block,
+                                     SpeedInternalScoreSide ref, SpeedInternalScoreSide dis,
+                                     float sigma_nn, float nn_floor, int speed_weight_var_mode)
+{
+    SpeedDimensions dim;
+    memset(&dim, 0, sizeof(dim));
+    dim.num_blocks = num_blocks;
+    dim.elements_in_block = elements_in_block;
+    const SpeedResultBuffers ref_results = {ref.entropies, ref.variances};
+    const SpeedResultBuffers dis_results = {dis.entropies, dis.variances};
+    return get_speed_score(&dim, ref_results, dis_results, sigma_nn, nn_floor,
+                           speed_weight_var_mode);
 }
 
 static void subtract_image(float *im1, const float *im2, int w, int h, size_t stride)

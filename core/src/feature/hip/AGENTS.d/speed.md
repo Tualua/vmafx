@@ -17,10 +17,11 @@ counts.
    every block's solution at 0 and solves only when the channel's
    `status` slot says regular, so singular channel scores from zero
    solution, never from previous frame's memory.
-2. **Singularity travels out-of-band.** Per-channel `singular` flags
-   ride in `SpeedGpuFrameResult`; errors are return codes.
-   `speed_hd_score_finish()` applies `speed_extract_score()`'s rule
-   (score `0` when exactly one of ref/dis singular) on device;
+2. **Singularity travels out-of-band.** Per-channel `status` words ride in
+   the tail block; errors are return codes.
+   `speed_internal_gpu_tail_scores()` copies them into `SpeedGpuFrameResult`
+   and applies `speed_extract_score()`'s rule (score `0` when exactly one of
+   ref/dis singular) on the host (ADR-1477);
    `speed_chroma_hip.c::combine_chroma_uv()` imputes
    `speed_chroma_uv` from surviving channel on host, from flags only.
 
@@ -39,9 +40,11 @@ uses the 960x960 splatter fixture of `speed_chroma_twin_parity.h`
   submit, collect. No `hipModuleLaunchKernel`, no sync, no host SpEED stage
   (`picture_copy`, `speed_internal_filter_and_downscale`, eigen / QR helpers)
   in twin TUs or pipeline.
-- Per frame: `speed_hip_pipeline_upload()` (staged, no wait), eight kernels,
-  one `SpeedGpuFrameResult` copy. `speed_hip_pipeline_collect()` /
-  `_wait()` = only wait (`vmaf_hip_kernel_collect_wait`).
+- Per frame: `speed_hip_pipeline_upload()` (staged, no wait), seven kernels
+  (last = `speed_hip_solve`, variances), one copy of the tail block
+  (`SpeedGpuTailLayout`: status, eigenvalues, variances).
+  `speed_hip_pipeline_collect()` / `_wait()` = only wait
+  (`vmaf_hip_kernel_collect_wait`).
 - Init-time geometry, taps, scoring = `speed_internal_gpu_configure()`
   (`speed_internal.c`), shared with SYCL; types = `speed_gpu_common.h`.
   Parameter block = `speed_hip_params_fill()` / `speed_hip_taps_fill()` /
@@ -51,23 +54,25 @@ uses the 960x960 splatter fixture of `speed_chroma_twin_parity.h`
   kernel, ADR-1407) + plain `*` `+` `/` `sqrtf()`. Never `__fmul_rn` / `__fadd_rn` / `__fdiv_rn` / `__fsqrt_rn`:
   without `OCML_BASIC_ROUNDED_OPERATIONS` = plain (contracting) operators /
   native approximate sqrt. Explicit `fmaf()` only for exact two-product.
-- log2 = `speed_hd_log2_rn()` (fp32 pairs, one rounding). Host libm `log2f`
-  only behind `SPEED_HD_HOST_LIBM_LOG2 && !__HIP_DEVICE_COMPILE__` (test
-  seam). glibc `log2f` misrounds ~0.4 %: vs glibc CPU a few chroma frames
-  differ in last bits; compare with correctly rounded `log2f` preload.
-  Measured (ADR-1452, gfx1036, glibc 2.44): 13 of 990 `speed_chroma` values
-  off, 1.4e-6 max, 0 with preload. Gate cell =
-  `LIBM_TWINS["speed_chroma"]["hip"]` 5e-6 (scores < 16);
-  `test_hip_speed_chroma_parity` = three scores, every frame, relative 1e-6
-  (`core/test/speed_chroma_twin_parity.h`, shared with the CUDA test). New
-  difference there = twin regression until the preload run says otherwise.
-  Never port glibc's `log2f` to the device.
+- Entropy + score = host tail (ADR-1477, replaces ADR-1452's bound):
+  `speed_hip_pipeline_collect()` waits, then
+  `speed_internal_gpu_tail_scores()` (`speed_internal.c`) = `speed.c`'s own
+  fp64 `log2()` statements on the host's libm. No device logarithm, no
+  `speed_hip_score` kernel, no libm test seam. Twin == CPU bit for bit on any
+  libm. Gate cells `speed_chroma.hip`, `speed_temporal.hip`
+  (`scripts/ci/exact_twins.d/`); `test_hip_speed_*_parity` assert `==`
+  (`core/test/speed_chroma_twin_parity.h`, shared with the CUDA test).
+- Givens rotation = `speed_givens_unit()` (`feature/speed_givens.h`, shared
+  with CUDA + SYCL): upstream's `1.0 / sqrt(1 + t * t)` in fp32 from `sqrtf`,
+  `/`, `fmaf`. Not `1.0f / sqrtf(u)`. Proven on every input by
+  `test_speed_upstream_form`.
 - No fp64 in `speed/`. lanczos4 prescale weights = host table
   (`speed_hip_upload_lanczos()`, `speed_internal_gpu_lanczos_weights()`,
   CPU scaler's own routine), 9 taps per scaled column then per scaled row,
   read through `SpeedHipParams::lanczos`. No device sine: fp32 `sinpif`
   weights were 8.8e-3 relative off the CPU on smooth content
   (T-GPU-SPEED-LANCZOS4-PRESCALE-DRIFT-2026-09-30).
-- Guards: `test_hip_speed_device_math` (replay vs CPU extractor),
+- Guards: `test_hip_speed_device_math` (replay of the kernels + the host
+  tail vs CPU extractor, `==`, no device),
   `test_hip_device_resident_contract.py`, `test_hip_speed_*_parity` on
   device.

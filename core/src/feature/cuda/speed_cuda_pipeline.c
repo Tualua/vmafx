@@ -9,9 +9,12 @@
  *
  *  Every per-frame call here only enqueues work: device-to-device staging
  *  copies, the kernel chain, an event, and one device-to-host copy of the
- *  40-byte SpeedGpuFrameResult into pinned memory. The only host wait is
- *  speed_cuda_pipeline_collect() / _wait(), once per frame. No host code
- *  touches pixel, covariance or score data.
+ *  frame's tail block (status words, eigenvalues, variances:
+ *  SpeedGpuTailLayout) into pinned memory. The only host wait is
+ *  speed_cuda_pipeline_collect() / _wait(), once per frame. After it,
+ *  collect() forms the entropies and the score from that block with speed.c's
+ *  statements and the host's log2() (speed_internal_gpu_tail_scores(),
+ *  ADR-1477). No host code touches pixel or covariance data.
  */
 
 #include <errno.h>
@@ -51,14 +54,13 @@ typedef enum {
     SPEED_FN_COVARIANCE,
     SPEED_FN_LINALG,
     SPEED_FN_SOLVE,
-    SPEED_FN_SCORE,
     SPEED_FN_COUNT,
 } SpeedCudaKernel;
 
 static const char *const speed_kernel_names[SPEED_FN_COUNT] = {
     "speed_scale_kernel",  "speed_decimate_raw_kernel", "speed_decimate_scaled_kernel",
     "speed_centre_kernel", "speed_means_kernel",        "speed_covariance_kernel",
-    "speed_linalg_kernel", "speed_solve_kernel",        "speed_score_kernel",
+    "speed_linalg_kernel", "speed_solve_kernel",
 };
 
 /* Device buffers, one table so allocation and release walk the same list. */
@@ -72,14 +74,9 @@ typedef enum {
     SPEED_BUF_INDTERM,
     SPEED_BUF_MEANS,
     SPEED_BUF_COV,
-    SPEED_BUF_EIG,
     SPEED_BUF_QMAT,
     SPEED_BUF_RMAT,
-    SPEED_BUF_STATUS,
-    SPEED_BUF_VAR,
-    SPEED_BUF_ENT,
-    SPEED_BUF_CONTRIB,
-    SPEED_BUF_RESULT,
+    SPEED_BUF_TAIL, /* status, eigenvalues, variances: the frame's one readback */
     SPEED_BUF_COUNT,
 } SpeedCudaBufferId;
 
@@ -89,7 +86,9 @@ struct SpeedCudaPipeline {
     CUmodule module;
     CUfunction fn[SPEED_FN_COUNT];
     VmafCudaBuffer *buf[SPEED_BUF_COUNT];
-    SpeedGpuFrameResult *h_result; /* pinned */
+    void *h_tail;     /* pinned copy of SPEED_BUF_TAIL */
+    float *h_entropy; /* the host tail's scratch: 2 x blocks */
+    SpeedGpuTailLayout tail;
     SpeedGpuConfig config;
     uint32_t channels;
     uint32_t raw_planes;
@@ -154,21 +153,13 @@ static size_t speed_buffer_bytes(const SpeedCudaPipeline *p, SpeedCudaBufferId i
     case SPEED_BUF_INDTERM:
         return ch * SPEED_CUDA_N * g->blocks * f;
     case SPEED_BUF_MEANS:
-    case SPEED_BUF_EIG:
         return ch * SPEED_CUDA_N * f;
     case SPEED_BUF_COV:
     case SPEED_BUF_QMAT:
     case SPEED_BUF_RMAT:
         return ch * SPEED_CUDA_MATRIX * f;
-    case SPEED_BUF_STATUS:
-        return ch * 2u * sizeof(int32_t);
-    case SPEED_BUF_VAR:
-    case SPEED_BUF_ENT:
-        return ch * g->blocks * f;
-    case SPEED_BUF_CONTRIB:
-        return (ch / 2u) * g->blocks * f;
-    case SPEED_BUF_RESULT:
-        return sizeof(SpeedGpuFrameResult);
+    case SPEED_BUF_TAIL:
+        return p->tail.bytes;
     default:
         return 0u;
     }
@@ -194,10 +185,11 @@ int speed_cuda_pipeline_close(SpeedCudaPipeline **pipeline)
         return rc;
     for (int id = 0; id < SPEED_BUF_COUNT; id++)
         rc = speed_preserve(rc, vmaf_cuda_buffer_free_owned(p->cu_state, &p->buf[id]));
-    rc = speed_preserve(rc, vmaf_cuda_buffer_host_free_owned(p->cu_state, (void **)&p->h_result));
+    rc = speed_preserve(rc, vmaf_cuda_buffer_host_free_owned(p->cu_state, &p->h_tail));
     rc = speed_preserve(rc, vmaf_cuda_module_unload(p->cu_state, &p->module));
     if (rc)
         return rc; /* keep what could not be released for a retry */
+    free(p->h_entropy);
     free(p);
     *pipeline = NULL;
     return 0;
@@ -269,8 +261,10 @@ static int speed_allocate(SpeedCudaPipeline *p)
         if (err)
             return err;
     }
-    return vmaf_cuda_buffer_host_alloc(p->cu_state, (void **)&p->h_result,
-                                       sizeof(SpeedGpuFrameResult));
+    p->h_entropy = malloc((size_t)2u * p->config.geometry.blocks * sizeof(*p->h_entropy));
+    if (!p->h_entropy)
+        return -ENOMEM;
+    return vmaf_cuda_buffer_host_alloc(p->cu_state, &p->h_tail, p->tail.bytes);
 }
 
 static int speed_configure(SpeedCudaPipeline *p, const SpeedInternalOptions *opt, unsigned width,
@@ -288,6 +282,7 @@ static int speed_configure(SpeedCudaPipeline *p, const SpeedInternalOptions *opt
     const SpeedGpuGeometry *g = &p->config.geometry;
     p->plane_bytes = (size_t)g->src_w * g->src_h * g->bytes_per_sample;
     p->cov_threads = speed_covariance_threads(g->sub_w * g->sub_h);
+    p->tail = speed_gpu_tail_layout(p->channels, g->blocks);
     return 0;
 }
 
@@ -367,16 +362,12 @@ static void speed_frame_args(const SpeedCudaPipeline *p, const SpeedGpuChannelBi
     a->indterm = speed_dptr(p, SPEED_BUF_INDTERM);
     a->means = speed_dptr(p, SPEED_BUF_MEANS);
     a->cov = speed_dptr(p, SPEED_BUF_COV);
-    a->eig = speed_dptr(p, SPEED_BUF_EIG);
     a->qmat = speed_dptr(p, SPEED_BUF_QMAT);
     a->rmat = speed_dptr(p, SPEED_BUF_RMAT);
-    a->status = speed_dptr(p, SPEED_BUF_STATUS);
-    a->var = speed_dptr(p, SPEED_BUF_VAR);
-    a->ent = speed_dptr(p, SPEED_BUF_ENT);
-    a->contrib = speed_dptr(p, SPEED_BUF_CONTRIB);
-    a->result = speed_dptr(p, SPEED_BUF_RESULT);
+    a->status = speed_dptr(p, SPEED_BUF_TAIL) + p->tail.status;
+    a->eig = speed_dptr(p, SPEED_BUF_TAIL) + p->tail.eig;
+    a->var = speed_dptr(p, SPEED_BUF_TAIL) + p->tail.var;
     a->geometry = p->config.geometry;
-    a->scoring = p->config.scoring;
     for (uint32_t ch = 0; ch < p->channels; ch++)
         a->bindings.channel[ch] = bindings[ch];
     a->channels = p->channels;
@@ -438,16 +429,12 @@ static int speed_enqueue_statistics(const SpeedCudaPipeline *p, CUstream stream,
     return err;
 }
 
-/* Solve, variances, entropies, and the per-pair frame score. */
-static int speed_enqueue_scoring(const SpeedCudaPipeline *p, CUstream stream, SpeedCudaFrameArgs *a)
+/* Solve and variances: the last device stage. */
+static int speed_enqueue_solve(const SpeedCudaPipeline *p, CUstream stream, SpeedCudaFrameArgs *a)
 {
     const size_t ch = p->channels;
     const unsigned solve = speed_grid(ch * p->config.geometry.blocks, SPEED_CUDA_SOLVE_THREADS);
-    const int err = speed_launch(p, SPEED_FN_SOLVE, solve, SPEED_CUDA_SOLVE_THREADS, stream, a);
-    if (err)
-        return err;
-    return speed_launch(p, SPEED_FN_SCORE, (unsigned)(ch / 2u), SPEED_CUDA_SCORE_THREADS, stream,
-                        a);
+    return speed_launch(p, SPEED_FN_SOLVE, solve, SPEED_CUDA_SOLVE_THREADS, stream, a);
 }
 
 int speed_cuda_pipeline_fence(SpeedCudaPipeline *p, CUstream stream)
@@ -477,14 +464,14 @@ int speed_cuda_pipeline_submit(SpeedCudaPipeline *p, const SpeedGpuChannelBindin
     if (!err)
         err = speed_enqueue_statistics(p, stream, &args);
     if (!err)
-        err = speed_enqueue_scoring(p, stream, &args);
+        err = speed_enqueue_solve(p, stream, &args);
     if (err)
         return err;
     CudaFunctions *cu_f = p->cu_state->f;
     CHECK_CUDA_RETURN(cu_f, cuEventRecord(p->lc.submit, stream));
     CHECK_CUDA_RETURN(cu_f, cuStreamWaitEvent(p->lc.str, p->lc.submit, CU_EVENT_WAIT_DEFAULT));
-    CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(p->h_result, speed_dptr(p, SPEED_BUF_RESULT),
-                                              sizeof(SpeedGpuFrameResult), p->lc.str));
+    CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(p->h_tail, speed_dptr(p, SPEED_BUF_TAIL),
+                                              p->tail.bytes, p->lc.str));
     return vmaf_cuda_kernel_submit_post_record(&p->lc, p->cu_state);
 }
 
@@ -502,8 +489,9 @@ int speed_cuda_pipeline_collect(SpeedCudaPipeline *p, SpeedGpuFrameResult *out)
     const int err = speed_cuda_pipeline_wait(p);
     if (err)
         return err;
-    *out = *p->h_result;
-    return 0;
+    /* The host tail: entropies and score from the block just read back, with
+     * speed.c's statements and the host's log2() (ADR-1477). */
+    return speed_internal_gpu_tail_scores(&p->config, p->channels, p->h_tail, p->h_entropy, out);
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

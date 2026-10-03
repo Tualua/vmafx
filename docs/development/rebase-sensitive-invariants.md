@@ -142,9 +142,34 @@ linked AGENTS.md before resolving conflicts.
   Saliency-weighted VMAF, sidecar emit for `tools/vmaf-roi`.
 - **TransNet V2 shot-boundary extractor (T6-3a, PR #210)** —
   ~1M params; feeds `tools/vmaf-perShot` CRF predictor.
+- **SpEED evaluates Netflix's fp64 expressions ([ADR-1477](../adr/1477-speed-upstream-double-math.md))**:
+  three places of `core/src/feature/speed.c` are fp64 arithmetic rounded to
+  `float` once, as Netflix master has them: `1.0 / sqrt(1 + t * t)` in
+  `create_givens()`, the `log2()` sum of `update_entropy()` and the `log2()`
+  weights of `get_speed_score()`. A sync takes upstream's side on these
+  lines and never restores `sqrtf` / `log2f` / `0.75f` (the fork's port #213
+  had them: up to 6.6e-4 from Netflix). The GPU twins run `speed.c` on the
+  device up to the per-block variances, read one block back per frame
+  (`SpeedGpuTailLayout`, `core/src/feature/speed_gpu_common.h`) and form the
+  entropies and the score on the host with
+  `speed_internal_gpu_tail_scores()` (`core/src/feature/speed_internal.c`),
+  which holds those statements; the rotation's statement is
+  `speed_givens_unit()` (`core/src/feature/speed_givens.h`) in the kernels.
+  A change to `update_entropy()`, `get_speed_score()` or
+  `speed_extract_score()` changes the tail in the same PR, and a change to
+  `create_givens()` changes `si_create_givens()` and `speed_givens.h`. No
+  kernel may evaluate a logarithm or form a score, and the six gate cells
+  stay exact (`scripts/ci/exact_twins.d/speed_{chroma,temporal}.*`).
+  `core/test/test_speed_upstream_form.c` guards `speed.c`'s three
+  functions and the tail against upstream's statements evaluated with the
+  host's own `log2()` on every C library, the rotation on every input, and,
+  on glibc only, the CPU against Netflix's values, without a device (its
+  `_foreign_libm` variant runs the other libcs' path); the three source contract tests and
+  `test_{cuda,hip,sycl}_speed_*_parity` (`==`) guard the twins.
 - **SYCL SpEED device-resident pipeline ([ADR-1358](../adr/1358-sycl-speed-device-resident-linalg.md))**:
   every SpEED kernel lives in `core/src/feature/sycl/speed_sycl_pipeline.cpp`
-  and reproduces `speed.c` operation for operation; like every SYCL feature
+  and reproduces `speed.c` operation for operation, up to the variances
+  (the entropies and the score are the host's since ADR-1477); like every SYCL feature
   TU the SpEED TUs build with contraction off (`sycl_strict_fp_args`,
   ADR-1367), divide and take square
   roots through `div_rn()` / `sqrt_rn()`, and never wait on the queue
@@ -192,25 +217,22 @@ linked AGENTS.md before resolving conflicts.
   `cambi_cuda`, `speed_chroma_cuda` and `speed_temporal_cuda` read back one
   result block and wait once per frame, in `collect()`; a sync must not bring
   back the host c-values, host pooling, host SpEED linear algebra or a
-  mid-frame `cuStreamSynchronize`. The host constants come from `cambi.c`
+  mid-frame `cuStreamSynchronize`. SpEED's block is the tail of ADR-1477
+  (status words, eigenvalues, variances), from which the host forms the
+  entropies and the score after the wait. The host constants come from `cambi.c`
   (`vmaf_cambi_*` helpers in `cambi_internal.h`) and
   `speed_internal_gpu_configure()`, shared with the SYCL twins;
   `speed/speed_score.cu` keeps its `__f*_rn` intrinsics and `--fmad=false`
   (every CUDA fatbin's, ADR-1403).
   `core/test/test_cuda_device_resident_contract.py` guards the design. See
   [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md).
-- **CUDA `speed_chroma` gate cell ([ADR-1430](../adr/1430-cuda-speed-chroma-log2f-bound.md))**:
-  the twin's `log2` stays correctly rounded; the only difference from a
-  glibc CPU is that library's `log2f` (13 of 789 measured values, 1.4e-6 at
-  most, none with a correctly rounded `log2f` preloaded). The cell's bound is
-  `LIBM_TWINS["speed_chroma"]` in `scripts/ci/cross_backend_calibration.py`
-  (`5e-6`, sized for scores below 16), and
-  `core/test/test_cuda_speed_chroma_parity.c` keeps its 960x960 textured
-  fixture: a smaller or ramp fixture has a singular covariance and never
-  reaches the scoring path. The HIP twin is listed at the same bound
-  ([ADR-1452](../adr/1452-hip-speed-chroma-log2f-bound.md): 13 of 990 values
-  on a gfx1036); the fixture and the comparison of both tests are
-  `core/test/speed_chroma_twin_parity.h`.
+- **SpEED twin parity fixture ([ADR-1430](../adr/1430-cuda-speed-chroma-log2f-bound.md), [ADR-1452](../adr/1452-hip-speed-chroma-log2f-bound.md))**:
+  `core/test/test_cuda_speed_chroma_parity.c` and
+  `core/test/test_hip_speed_chroma_parity.c` keep the 960x960 textured
+  fixture of `core/test/speed_chroma_twin_parity.h`: a smaller or ramp
+  fixture has a singular covariance and never reaches the scoring path. The
+  comparison is `==` since ADR-1477; the `LIBM_TWINS` bounds those two ADRs
+  introduced (`5e-6`, and `4e-5` for `speed_temporal`, ADR-1460) are gone.
 - **No C or C++ translation unit is built with FP contraction ([ADR-1461](../adr/1461-strict-fp-every-translation-unit.md))**:
   `core/src/meson.build` declares `vmaf_strict_fp_args` as a project argument
   for C and C++ directly after the `VMAF strict FP compiler-argument policy`
@@ -236,8 +258,10 @@ linked AGENTS.md before resolving conflicts.
   `core/test/test_strict_fp_compiler_args.py` executes the policy and
   `test_sycl_fp_arith_contract` checks the device arithmetic.
 - **HIP CAMBI and SpEED device-resident pipelines ([ADR-1378](../adr/1378-hip-cambi-device-resident.md), [ADR-1384](../adr/1384-hip-speed-device-resident.md))**:
-  no host stage of `cambi.c` / `speed.c` and no mid-frame wait; one staged
-  upload, one readback, the wait in `collect()`. Per-work-item math lives in
+  no host stage of `cambi.c` / `speed.c` before the frame's wait and no
+  mid-frame wait; one staged upload, one readback, the wait in `collect()`.
+  SpEED's readback is the tail block of ADR-1477 and `collect()` forms the
+  entropies and the score from it on the host. Per-work-item math lives in
   `integer_cambi/cambi_hip_device.h` and `speed/speed_hip_device.h`, which the
   host replay tests compile; the SpEED kernel TU keeps `-ffp-contract=off
   -fhip-fp32-correctly-rounded-divide-sqrt`. The init-time helpers are

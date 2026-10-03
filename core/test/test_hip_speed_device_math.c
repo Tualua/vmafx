@@ -16,19 +16,19 @@
  * -ffp-contract=off, like the kernel build) and replays a frame's chain in
  * launch order with the kernels' decomposition: every output of the
  * prescale, decimation, centring, mean and solve kernels, each covariance
- * work-group lane by lane with the same pair-arithmetic tree, the 25x25
+ * work-group lane by lane with the same pair-arithmetic tree, and the 25x25
  * linear algebra as one work-group of one lane (every phase element is
  * written by exactly one lane from the previous phase, so the result does
- * not depend on the lane count), and the score work-group. The reference is
- * the registered CPU extractor (speed_chroma, speed_temporal) on the same
- * frames.
+ * not depend on the lane count). The device chain ends at the variances; the
+ * replay then hands the block the pipeline reads back (status words,
+ * eigenvalues, variances) to speed_internal_gpu_tail_scores(), the host tail
+ * the pipeline calls at collect time (ADR-1477). The reference is the
+ * registered CPU extractor (speed_chroma, speed_temporal) on the same frames.
  *
  * Asserted per frame: speed_chroma_u / _v / _uv and speed_temporal equal the
- * CPU's bit for bit when the replay uses the CPU's own log2f (the one
- * operation whose rounding depends on the host libm: glibc misrounds about
- * 0.4% of arguments, libimf almost none), and the device's log2,
- * speed_hd_log2_rn(), is correctly rounded over a sweep of the arguments SpEED
- * produces. Fixtures: the Netflix-derived 576x324 pair in testdata/
+ * CPU's bit for bit. No libm seam is involved: the only logarithms are the
+ * host tail's, which are speed.c's own log2() calls on the same C library.
+ * Fixtures: the Netflix-derived 576x324 pair in testdata/
  * (48 frames), a 10-bit synthetic frame (the 2-byte picture_copy() path),
  * prescale with nearest, bilinear, bicubic and lanczos4 (down and up), every
  * chroma weighting mode, speed_use_ref_diff, and a flat chroma plane (the
@@ -48,11 +48,6 @@
 #include <string.h>
 
 #include "test.h"
-
-/* Replay with the CPU extractor's own log2f, so every other operation is
- * compared bit for bit; speed_hd_log2_rn(), the device's log2, is checked
- * separately below (see speed_hip_device.h). */
-#define SPEED_HD_HOST_LIBM_LOG2 1
 
 #include "feature/feature_collector.h"
 #include "feature/feature_extractor.h"
@@ -82,9 +77,13 @@ typedef struct SpEmu {
     unsigned nonzero; /* frames with a non-zero replayed score */
     size_t plane_bytes;
     unsigned char *raw;
-    float *buffers[13];
+    float *buffers[9];
     float *lanczos; /* the host's lanczos4 table, as uploaded at init */
-    int32_t *status;
+    /* The block the pipeline reads back, and its host tail's inputs. */
+    SpeedGpuConfig shared;
+    SpeedGpuTailLayout layout;
+    void *tail;
+    float *entropies;
 } SpEmu;
 
 static float *sp_alloc_floats(SpEmu *e, unsigned slot, size_t count)
@@ -99,7 +98,11 @@ static int sp_alloc(SpEmu *e, const SpeedHipConfig *c)
     const size_t ch = c->channels;
     e->plane_bytes = speed_hip_plane_bytes(g);
     e->raw = calloc(e->plane_bytes * c->raw_planes, 1u);
-    e->status = calloc(ch * 2u, sizeof(int32_t));
+    e->shared = c->shared;
+    e->layout = speed_gpu_tail_layout(c->channels, g->blocks);
+    /* One block of 4-byte words, as the pinned readback is. */
+    e->tail = calloc(e->layout.bytes / sizeof(uint32_t), sizeof(uint32_t));
+    e->entropies = calloc((size_t)2u * g->blocks, sizeof(float));
     SpeedHipParams *p = &e->p;
     p->taps = sp_alloc_floats(e, 0u, (size_t)2u * SPEED_HIP_MAX_TAPS);
     p->scaled = sp_alloc_floats(e, 1u, ch * g->scaled_w * g->scaled_h);
@@ -108,14 +111,10 @@ static int sp_alloc(SpEmu *e, const SpeedHipConfig *c)
     p->indterm = sp_alloc_floats(e, 4u, ch * SPEED_HIP_N * g->blocks);
     p->means = sp_alloc_floats(e, 5u, ch * SPEED_HIP_N);
     p->cov = sp_alloc_floats(e, 6u, ch * SPEED_HIP_MATRIX);
-    p->eig = sp_alloc_floats(e, 7u, ch * SPEED_HIP_N);
-    p->qmat = sp_alloc_floats(e, 8u, ch * SPEED_HIP_MATRIX);
-    p->rmat = sp_alloc_floats(e, 9u, ch * SPEED_HIP_MATRIX);
-    p->var = sp_alloc_floats(e, 10u, ch * g->blocks);
-    p->ent = sp_alloc_floats(e, 11u, ch * g->blocks);
-    p->contrib = sp_alloc_floats(e, 12u, (ch / 2u) * g->blocks);
-    int ok = e->raw && e->status;
-    for (unsigned i = 0u; i < 13u; i++)
+    p->qmat = sp_alloc_floats(e, 7u, ch * SPEED_HIP_MATRIX);
+    p->rmat = sp_alloc_floats(e, 8u, ch * SPEED_HIP_MATRIX);
+    int ok = e->raw && e->tail && e->entropies;
+    for (unsigned i = 0u; i < 9u; i++)
         ok = ok && e->buffers[i];
     return ok ? 0 : -ENOMEM;
 }
@@ -123,9 +122,10 @@ static int sp_alloc(SpEmu *e, const SpeedHipConfig *c)
 static void sp_free(SpEmu *e)
 {
     free(e->raw);
-    free(e->status);
+    free(e->tail);
+    free(e->entropies);
     free(e->lanczos);
-    for (unsigned i = 0u; i < 13u; i++)
+    for (unsigned i = 0u; i < 9u; i++)
         free(e->buffers[i]);
 }
 
@@ -143,6 +143,15 @@ static int sp_create_lanczos(SpEmu *e, const SpeedGpuGeometry *g)
     return speed_internal_gpu_lanczos_weights(g, e->lanczos, count);
 }
 
+/* The part of the tail block at byte `offset` (speed_hip_at()). */
+static void *sp_tail_at(void *tail, uint32_t offset)
+{
+    // SAFETY: the offsets are speed_gpu_tail_layout()'s, inside the block
+    // sp_alloc() sized with the same layout; the block is calloc'd as 4-byte
+    // words and every offset is a multiple of four.
+    return (unsigned char *)tail + offset;
+}
+
 /* speed_hip_pipeline.c's parameter block, on host buffers: the scalars and
  * taps from the pipeline's own fill routines, the pointers into this arena. */
 static int sp_create(SpEmu *e, const SpeedHipConfig *c, const SpeedHipBindingSets *b)
@@ -155,8 +164,10 @@ static int sp_create(SpEmu *e, const SpeedHipConfig *c, const SpeedHipBindingSet
     speed_hip_params_fill(p, c, b);
     speed_hip_taps_fill(p->taps, &c->shared.filters);
     p->raw = e->raw;
-    p->status = e->status;
-    p->result = &e->result;
+    /* speed_hip_bind(): the three parts of the tail block. */
+    p->status = sp_tail_at(e->tail, e->layout.status);
+    p->eig = sp_tail_at(e->tail, e->layout.eig);
+    p->var = sp_tail_at(e->tail, e->layout.var);
     return sp_create_lanczos(e, &c->shared.geometry);
 }
 
@@ -247,26 +258,26 @@ static void sp_statistics(const SpEmu *e)
         speed_hd_linalg_group(&lanes, p, ch, slm);
 }
 
-static void sp_scoring(const SpEmu *e)
+/* The solve kernel, then speed_hip_pipeline_collect()'s host tail on the
+ * block the pipeline reads back. */
+static int sp_scoring(SpEmu *e)
 {
     const SpeedHipParams *p = &e->p;
     for (uint32_t ch = 0u; ch < p->channels; ch++) {
         for (uint32_t block = 0u; block < p->geometry.blocks; block++)
             speed_hd_block_statistics(p, ch, block);
     }
-    for (uint32_t pair = 0u; pair < p->channels / 2u; pair++) {
-        for (uint32_t b = 0u; b < p->geometry.blocks; b++)
-            p->contrib[(size_t)pair * p->geometry.blocks + b] = speed_hd_block_score(p, pair, b);
-        speed_hd_score_finish(p, pair);
-    }
+    return speed_internal_gpu_tail_scores(&e->shared, p->channels, e->tail, e->entropies,
+                                          &e->result);
 }
 
-static void sp_chain(SpEmu *e, uint32_t set)
+static int sp_chain(SpEmu *e, uint32_t set)
 {
     sp_pixels(e, set);
     sp_statistics(e);
-    sp_scoring(e);
+    const int err = sp_scoring(e);
     e->nonzero += e->result.score[0] != 0.0f || e->result.score[1] != 0.0f;
+    return err;
 }
 
 /* ------------------------------------------------------------------ */
@@ -544,8 +555,8 @@ static int sp_step(SpEmu *e, const SpCpu *cpu, const SpCase *c, unsigned frame, 
         sp_stage(e, 2u * set, ref, 0u);
         sp_stage(e, 2u * set + 1u, dis, 0u);
         if (frame > 0u) {
-            sp_chain(e, set);
-            fail = sp_expect(cpu, c, "speed_temporal", frame, sp_clamped(e->result.score[0]));
+            fail = sp_chain(e, set) != 0;
+            fail |= sp_expect(cpu, c, "speed_temporal", frame, sp_clamped(e->result.score[0]));
         }
         return fail;
     }
@@ -553,8 +564,8 @@ static int sp_step(SpEmu *e, const SpCpu *cpu, const SpCase *c, unsigned frame, 
     sp_stage(e, 1u, dis, 1u);
     sp_stage(e, 2u, ref, 2u);
     sp_stage(e, 3u, dis, 2u);
-    sp_chain(e, 0u);
-    return sp_compare_chroma(e, cpu, c, frame);
+    fail = sp_chain(e, 0u) != 0;
+    return fail | sp_compare_chroma(e, cpu, c, frame);
 }
 
 static int sp_frames(SpEmu *e, SpCpu *cpu, const SpCase *c, const SpSource *src)
@@ -698,34 +709,8 @@ static char *test_replay_matches_cpu_on_synthetic_frames(void)
     return NULL;
 }
 
-/* The device's log2 equals log2 rounded once to fp32 (the fp64 result
- * rounded to fp32 is the oracle, as in ADR-1358) on every 61st pattern from
- * 2^-6 to 2^24, which covers l * variance + sigma_nn and 1 + variance. */
-static char *test_device_log2_is_correctly_rounded(void)
-{
-    unsigned mismatches = 0u;
-    unsigned checked = 0u;
-    for (uint32_t bits = 0x3c800000u; bits <= 0x4b800000u; bits += 61u) {
-        float x = 0.0f;
-        memcpy(&x, &bits, sizeof(x));
-        const float oracle = (float)log2((double)x);
-        mismatches += speed_hd_log2_rn(x) != oracle;
-        checked++;
-    }
-    if (mismatches) {
-        (void)fprintf(stderr, "\nspeed_hd_log2_rn: %u of %u arguments misrounded\n", mismatches,
-                      checked);
-    }
-    mu_assert("device log2 is not correctly rounded", mismatches == 0u);
-    mu_assert("device log2: special values", speed_hd_log2_rn(1.0f) == 0.0f &&
-                                                 speed_hd_log2_rn(0.0f) == -HUGE_VALF &&
-                                                 speed_hd_log2_rn(0x1p-140f) == -140.0f);
-    return NULL;
-}
-
 char *run_tests(void)
 {
-    mu_run_test(test_device_log2_is_correctly_rounded);
     mu_run_test(test_replay_matches_cpu_on_the_testdata_pair);
     mu_run_test(test_replay_matches_cpu_on_synthetic_frames);
     return NULL;

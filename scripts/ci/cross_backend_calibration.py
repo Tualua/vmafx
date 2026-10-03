@@ -264,54 +264,16 @@ def is_exact_pair(feature: str, backend_a: str, backend_b: str) -> bool:
 # and four below the fp32 twins' ``FEATURE_TOLERANCE``. Such a cell runs at
 # ``--precision max`` like an exact one.
 #
-# ADR-1430: ``speed_chroma_cuda`` is the same case with one function. The
-# device rounds ``log2`` correctly (ADR-1380); ``speed.c`` calls the C
-# library's ``log2f``, and glibc's returns the neighbouring float for 0.015 %
-# to 0.97 % of the arguments of a binade. Run against a CPU whose ``log2f`` is
-# correctly rounded the twin returns the CPU's bits on every output (789 of
-# 789 on the fixtures); against glibc 13 of those 789 differ, by one to five
-# steps of the fp32 score (4.8e-7 to 1.4e-6 for scores of 3 to 11). The
-# bound is that count in the coarsest steps the fixtures have: the scores are
-# fp32 values below 16, where a step is at most 2^-20, and five steps are
-# 5 * 2^-20 = 4.77e-6, written as 5e-6. A fixture whose scores are larger
-# needs the same count in its own step (a synthetic frame scoring 22.5 is
-# 3.8e-6 away, two steps of 2^-19). It is not a statement about the twin's
-# arithmetic, which has no known difference left.
-#
-# ADR-1452: ``speed_chroma_hip`` rounds ``log2`` correctly as well
-# (``speed_hd_log2_rn()``, ADR-1384) and has the CUDA twin's figures on a
-# gfx1036: 13 of 990 values differ from a glibc 2.44 CPU, by 1.4e-6 at most,
-# the same frames and outputs, and none with a correctly rounded ``log2f``
-# preloaded. It is listed at the same bound.
-#
-# ``speed_chroma_sycl`` is the third twin of that chain (ADR-1358) and rounds
-# ``log2`` correctly too (``speed_log2_hard_cases.h``). Measured on an Arc
-# A380 with an icx build of master ``7febbd964`` at ``--precision max``, 918
-# values on 306 frames (the Netflix pair at 8 to 16 bits and as 10-bit 4:2:2,
-# both 1080p checkerboards, Sparks, noise at four bit depths, a bright 16-bit
-# 1080p pair, BBB 1080p and 4K at 16 bits and 104 frames of BBB 4K): all 918
-# equal the CPU extractor of the same build, whose ``log2f`` is Intel's and
-# rounds correctly, and all 918 equal ``speed_chroma_cuda``. Against a GCC
-# build's CPU (glibc 2.44) 15 of them differ, on the frames and outputs where
-# the CUDA twin differs, by one to five steps of the fp32 score and 1.9e-6 at
-# most. It is listed at the same bound, like its ``speed_temporal`` cell
-# (ADR-1460): the twin's equality with an icx CPU is a property of that
-# library, not of the twin.
-#
-# ADR-1460: ``speed_temporal`` is the second score of ``speed.c`` and takes
-# the same path: its three twins round ``log2`` correctly on the device and
-# the CPU calls the C library's ``log2f``. Measured at ``--precision max``,
-# CUDA (RTX 4090), HIP (gfx1036) and SYCL (Arc A380) against a glibc 2.44
-# CPU: identical on the typical and the stress fixtures and on 102 of 104
-# frames of BBB 3840x2160; the two others differ by one step of the fp32
-# score (4.8e-7 at scores of 6.6 and 6.8). With a correctly rounded ``log2f``
-# preloaded into the CPU run, and against an icx build's CPU (Intel's
-# ``log2f`` rounds correctly), all three return the CPU's bits on every
-# frame. The bound is ADR-1430's count, five float steps, in the coarsest
-# step of this score on the gate's fixtures: ``speed_temporal`` reaches 41 on
-# the Netflix pair, 69 on the 1080p checkerboard and 84 on full-range noise,
-# and below 128 a step is at most 2^-17, so five steps are 3.8e-5, written as
-# 4e-5. A fixture scoring above 128 needs the same count in its own step.
+# ADR-1477: ``speed_chroma`` and ``speed_temporal`` left this table. They
+# were in it (ADR-1430, ADR-1452, ADR-1460: ``5e-6`` and ``4e-5``) while the
+# fork's ``speed.c`` called ``log2f`` and each twin rounded ``log2`` on the
+# device: glibc's ``log2f`` is not correctly rounded, so a glibc CPU differed
+# from a twin by a few steps of the fp32 score. ``speed.c`` evaluates
+# Netflix's fp64 ``log2`` again, and the twins form the entropies and the
+# score on the host with those same statements and the same C library
+# (``speed_internal_gpu_tail_scores()``), so no math library separates the
+# two sides any more. Their cells are exact: the six fragments
+# ``exact_twins.d/speed_{chroma,temporal}.{cuda,hip,sycl}``.
 #
 # ADR-1436: ``ciede_sycl`` runs the same statements on a device without an
 # fp64 type, with every fp64 value as an fp32 pair (about 48 bits) and every
@@ -348,8 +310,6 @@ def is_exact_pair(feature: str, backend_a: str, backend_b: str) -> bool:
 
 LIBM_TWINS: dict[str, dict[str, float]] = {
     "ciede": {"cuda": 1e-9, "sycl": 1e-9, "hip": 1e-9},
-    "speed_chroma": {"cuda": 5e-6, "hip": 5e-6, "sycl": 5e-6},
-    "speed_temporal": {"cuda": 4e-5, "hip": 4e-5, "sycl": 4e-5},
 }
 LIBM_TWIN_SOURCE = "libm:ADR-1426"
 

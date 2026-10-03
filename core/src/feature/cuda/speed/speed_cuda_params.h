@@ -32,7 +32,6 @@ extern "C" {
 #define SPEED_CUDA_COV_MAX_THREADS 256u /* covariance block, power of two */
 #define SPEED_CUDA_LINALG_THREADS 64u   /* one block per channel */
 #define SPEED_CUDA_SOLVE_THREADS 128u   /* one thread per (channel, block) */
-#define SPEED_CUDA_SCORE_THREADS 256u   /* one block per score pair */
 
 /* Raw planes the kernels read: `minuend - subtrahend` per channel (see
  * SpeedGpuChannelBinding). */
@@ -51,16 +50,13 @@ typedef struct SpeedCudaFrameArgs {
     uint64_t indterm;     /* float channels x 25 x blocks */
     uint64_t means;       /* float channels x 25 */
     uint64_t cov;         /* float channels x 625 */
-    uint64_t eig;         /* float channels x 25 */
     uint64_t qmat;        /* float channels x 625, accumulated reflector product */
     uint64_t rmat;        /* float channels x 625 */
-    uint64_t status;      /* int32 channels x 2: singular, iteration cap */
-    uint64_t var;         /* float channels x blocks */
-    uint64_t ent;         /* float channels x blocks */
-    uint64_t contrib;     /* float pairs x blocks */
-    uint64_t result;      /* SpeedGpuFrameResult */
+    /* The three parts of the block the host reads back (SpeedGpuTailLayout). */
+    uint64_t status; /* int32 channels x 2: singular, iteration cap */
+    uint64_t eig;    /* float channels x 25 */
+    uint64_t var;    /* float channels x blocks */
     SpeedGpuGeometry geometry;
-    SpeedGpuScoring scoring;
     SpeedCudaBindings bindings;
     uint32_t channels;        /* 2 (one score pair) or 4 (two pairs) */
     uint32_t antialias_width; /* taps */

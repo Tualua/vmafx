@@ -5,9 +5,12 @@
  *
  *  Host side of the device-resident SpEED chain (ADR-1384): the parameter
  *  block the kernels read, and the per-frame enqueue of
- *  speed/speed_pipeline.hip. No SpEED stage runs on the host and nothing
- *  below waits on the device except the two collect-time entry points,
- *  speed_hip_pipeline_collect() and speed_hip_pipeline_wait().
+ *  speed/speed_pipeline.hip. Nothing below waits on the device except the two
+ *  collect-time entry points, speed_hip_pipeline_collect() and
+ *  speed_hip_pipeline_wait(). After its wait, collect() forms the entropies
+ *  and the score from the one block it read back, with speed.c's statements
+ *  and the host's log2() (speed_internal_gpu_tail_scores(), ADR-1477); every
+ *  earlier stage runs on the device.
  */
 
 #include "speed_hip_pipeline.h"
@@ -57,7 +60,6 @@ void speed_hip_params_fill(SpeedHipParams *q, const SpeedHipConfig *c,
 {
     const SpeedGpuGeometry *g = &c->shared.geometry;
     q->geometry = *g;
-    q->scoring = c->shared.scoring;
     memcpy(q->bindings, bindings->set, sizeof(q->bindings));
     q->plane_bytes = (uint32_t)speed_hip_plane_bytes(g);
     q->channels = c->channels;
@@ -189,13 +191,12 @@ enum SpeedHipKernel {
     SPEED_K_COVARIANCE,
     SPEED_K_LINALG,
     SPEED_K_SOLVE,
-    SPEED_K_SCORE,
     SPEED_K_COUNT
 };
 
 static const char *const speed_hip_kernel_names[SPEED_K_COUNT] = {
     "speed_hip_scale",      "speed_hip_decimate", "speed_hip_centre", "speed_hip_means",
-    "speed_hip_covariance", "speed_hip_linalg",   "speed_hip_solve",  "speed_hip_score",
+    "speed_hip_covariance", "speed_hip_linalg",   "speed_hip_solve",
 };
 
 #define SPEED_HIP_ARENA_ALIGN ((size_t)256u)
@@ -212,7 +213,9 @@ struct SpeedHipPipeline {
     SpeedHipParams params;
     void *h_staging; /* vmaf_hip_picture_upload_staged() source */
     size_t staging_bytes;
-    SpeedGpuFrameResult *h_result; /* pinned readback of the frame result */
+    SpeedGpuTailLayout tail;
+    void *h_tail;     /* pinned readback of the frame's tail block */
+    float *h_entropy; /* the host tail's scratch: 2 x blocks */
     size_t plane_bytes;
 };
 
@@ -235,14 +238,9 @@ typedef struct SpeedHipArena {
     size_t indterm;
     size_t means;
     size_t cov;
-    size_t eig;
     size_t qmat;
     size_t rmat;
-    size_t var;
-    size_t ent;
-    size_t contrib;
-    size_t status;
-    size_t result;
+    size_t tail; /* status, eigenvalues, variances: the frame's one readback */
     size_t total;
 } SpeedHipArena;
 
@@ -264,14 +262,9 @@ static SpeedHipArena speed_hip_arena_layout(const SpeedHipPipeline *p)
     a.indterm = speed_hip_take(&cursor, ch * SPEED_HIP_N * g->blocks * f);
     a.means = speed_hip_take(&cursor, ch * SPEED_HIP_N * f);
     a.cov = speed_hip_take(&cursor, ch * SPEED_HIP_MATRIX * f);
-    a.eig = speed_hip_take(&cursor, ch * SPEED_HIP_N * f);
     a.qmat = speed_hip_take(&cursor, ch * SPEED_HIP_MATRIX * f);
     a.rmat = speed_hip_take(&cursor, ch * SPEED_HIP_MATRIX * f);
-    a.var = speed_hip_take(&cursor, ch * g->blocks * f);
-    a.ent = speed_hip_take(&cursor, ch * g->blocks * f);
-    a.contrib = speed_hip_take(&cursor, (ch / 2u) * g->blocks * f);
-    a.status = speed_hip_take(&cursor, ch * 2u * sizeof(int32_t));
-    a.result = speed_hip_take(&cursor, sizeof(SpeedGpuFrameResult));
+    a.tail = speed_hip_take(&cursor, p->tail.bytes);
     a.total = cursor;
     return a;
 }
@@ -301,14 +294,11 @@ static void speed_hip_bind(SpeedHipPipeline *p, unsigned char *base, const Speed
     q->indterm = speed_hip_at(base, a->indterm);
     q->means = speed_hip_at(base, a->means);
     q->cov = speed_hip_at(base, a->cov);
-    q->eig = speed_hip_at(base, a->eig);
     q->qmat = speed_hip_at(base, a->qmat);
     q->rmat = speed_hip_at(base, a->rmat);
-    q->var = speed_hip_at(base, a->var);
-    q->ent = speed_hip_at(base, a->ent);
-    q->contrib = speed_hip_at(base, a->contrib);
-    q->status = speed_hip_at(base, a->status);
-    q->result = speed_hip_at(base, a->result);
+    q->status = speed_hip_at(base, a->tail + p->tail.status);
+    q->eig = speed_hip_at(base, a->tail + p->tail.eig);
+    q->var = speed_hip_at(base, a->tail + p->tail.var);
     p->d_params = speed_hip_at(base, a->params);
 }
 
@@ -364,11 +354,14 @@ static int speed_hip_allocate(SpeedHipPipeline *p, const SpeedHipBindingSets *bi
         p->h_staging = NULL;
         return err;
     }
-    rc = hipHostMalloc((void **)&p->h_result, sizeof(SpeedGpuFrameResult), hipHostMallocDefault);
+    rc = hipHostMalloc(&p->h_tail, p->tail.bytes, hipHostMallocDefault);
     if (rc != hipSuccess) {
-        p->h_result = NULL;
+        p->h_tail = NULL;
         return vmaf_hip_rc_to_errno(rc);
     }
+    p->h_entropy = malloc((size_t)2u * p->config.shared.geometry.blocks * sizeof(*p->h_entropy));
+    if (p->h_entropy == NULL)
+        return -ENOMEM;
     speed_hip_bind(p, (unsigned char *)p->d_arena, &a);
     speed_hip_params_fill(&p->params, &p->config, bindings);
     float taps[2u * SPEED_HIP_MAX_TAPS];
@@ -388,10 +381,12 @@ static void speed_hip_release(SpeedHipPipeline *p)
     (void)vmaf_hip_kernel_lifecycle_close(&p->lc, p->ctx);
     vmaf_hip_picture_staging_free(p->h_staging);
     p->h_staging = NULL;
-    if (p->h_result) {
-        (void)hipHostFree(p->h_result);
-        p->h_result = NULL;
+    if (p->h_tail) {
+        (void)hipHostFree(p->h_tail);
+        p->h_tail = NULL;
     }
+    free(p->h_entropy);
+    p->h_entropy = NULL;
     if (p->d_arena) {
         (void)hipFree(p->d_arena);
         p->d_arena = NULL;
@@ -416,6 +411,7 @@ int speed_hip_pipeline_create(SpeedHipPipeline **out, const SpeedHipConfig *conf
         return -ENOMEM;
     p->config = *config;
     p->plane_bytes = speed_hip_plane_bytes(&config->shared.geometry);
+    p->tail = speed_gpu_tail_layout(config->channels, config->shared.geometry.blocks);
     int err = vmaf_hip_context_new(&p->ctx, 0);
     if (!err)
         err = vmaf_hip_kernel_lifecycle_init(&p->lc, p->ctx);
@@ -484,7 +480,7 @@ static int speed_hip_launch_planes(SpeedHipPipeline *p, int kernel, unsigned w, 
                             set);
 }
 
-/* The device part of one frame, from the raw planes to the result block. */
+/* The device part of one frame, from the raw planes to the tail block. */
 static int speed_hip_enqueue_chain(SpeedHipPipeline *p, uint32_t set)
 {
     const SpeedGpuGeometry *g = &p->config.shared.geometry;
@@ -511,8 +507,6 @@ static int speed_hip_enqueue_chain(SpeedHipPipeline *p, uint32_t set)
         err = speed_hip_launch(p, SPEED_K_SOLVE, (g->blocks + items - 1u) / items, ch, 1u, items,
                                1u, set);
     }
-    if (!err)
-        err = speed_hip_launch(p, SPEED_K_SCORE, ch / 2u, 1u, 1u, SPEED_HIP_GROUP, 1u, set);
     return err;
 }
 
@@ -522,9 +516,10 @@ int speed_hip_pipeline_submit(SpeedHipPipeline *p, uint32_t set)
         return -EINVAL;
     int err = speed_hip_enqueue_chain(p, set);
     if (!err) {
-        err = vmaf_hip_rc_to_errno(
-            hipMemcpyAsync(p->h_result, p->params.result, sizeof(SpeedGpuFrameResult),
-                           hipMemcpyDeviceToHost, vmaf_hip_stream_of(p->lc.str)));
+        /* status is the first part of the tail block (SpeedGpuTailLayout). */
+        err = vmaf_hip_rc_to_errno(hipMemcpyAsync(p->h_tail, p->params.status, p->tail.bytes,
+                                                  hipMemcpyDeviceToHost,
+                                                  vmaf_hip_stream_of(p->lc.str)));
     }
     if (!err)
         err = vmaf_hip_kernel_submit_post_record(&p->lc, p->ctx);
@@ -543,9 +538,12 @@ int speed_hip_pipeline_collect(SpeedHipPipeline *p, SpeedGpuFrameResult *out)
     if (!out)
         return -EINVAL;
     const int err = speed_hip_pipeline_wait(p);
-    if (!err)
-        *out = *p->h_result;
-    return err;
+    if (err)
+        return err;
+    /* The host tail: entropies and score from the block just read back, with
+     * speed.c's statements and the host's log2() (ADR-1477). */
+    return speed_internal_gpu_tail_scores(&p->config.shared, p->config.channels, p->h_tail,
+                                          p->h_entropy, out);
 }
 
 #endif /* HAVE_HIPCC */

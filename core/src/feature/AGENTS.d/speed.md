@@ -2,7 +2,9 @@
 paths:
   - core/src/feature/speed.c
   - core/src/feature/speed_cov.h
-invariant: SpEED buffer allocation, chroma dimensions, anti-alias decimation, and covariance sums.
+  - core/src/feature/speed_givens.h
+  - core/test/test_speed_upstream_form.c
+invariant: SpEED buffer allocation, chroma dimensions, anti-alias decimation, covariance sums, Netflix's fp64 expressions.
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # SpEED Buffers, Chroma Geometry, and Decimation
@@ -22,6 +24,49 @@ invariant: SpEED buffer allocation, chroma dimensions, anti-alias decimation, an
   `cambi_internal.h` and `speed_internal.h` must not change without mirroring
   to all GPU/CPU twins (verified by `scripts/ci/twin-drift-check.sh`). Numerical
   bit-exactness is governed by ADR-1146.
+
+## SpEED math = Netflix's fp64 expressions (ADR-1477)
+
+Three places of [`speed.c`](../speed.c) are fp64 arithmetic rounded to `float`
+once, as Netflix master has them (`libvmaf/src/feature/speed.c`, `9e48141b`):
+
+- `create_givens()` (:418, :423): `float s1 = 1.0 / sqrt(1 + t * t);`
+- `update_entropy()` (:802): `log2(L * S[..] + sigma_nn) + log2(2 * M_PI * M_E)`
+- `get_speed_score()` (:897-:928): `log2(1 + variance)`, `(a + b) / 2.0`,
+  `0.75 * a + 0.25 * b`, product in fp64
+
+Port #213 had `sqrtf` / `log2f` / `0.75f` there: `speed_chroma` up to 2.3e-5,
+`speed_temporal` up to 6.6e-4, `vmaf_v1.0.16` up to 2.5e-5 from Netflix. Never
+bring fp32 forms back; `performance-type-promotion-in-math-fn` on these lines
+= NOLINT citing ADR-1477, not a rewrite. **On upstream sync**: upstream's side
+on these three. `sqrtf` of an fp32 norm and `/ 2.0f` (#1209) stay: same value.
+
+Mirrors that change in same PR:
+
+- `si_create_givens()` in [`speed_internal.c`](../speed_internal.c).
+- `speed_internal_gpu_tail_scores()` (`speed_internal.c`) = `update_entropy()`,
+  `est_params()` steps 8-9, `get_speed_score()` and `speed_extract_score()`'s
+  one-side-singular zero. GPU twins call it at collect time; same library,
+  same flags, same libm as `speed.c`.
+- [`speed_givens.h`](../speed_givens.h) `speed_givens_unit()` = rotation's
+  fp64 statement in fp32 for device kernels. Input domain = 2^23 + 1 floats of
+  [1, 2] (`|t| <= 1`); proven on every one. Change -> rerun
+  `test_speed_upstream_form`; a mismatch = wrong routine, never a tolerance
+  or exception table.
+
+Guard: `core/test/test_speed_upstream_form.c` (device-free). Every libc:
+`create_givens()`, `update_entropy()`, `get_speed_score()` (reached through
+the `speed_internal_cpu_*()` test entries after `get_speed_score()` in
+`speed.c`, declared in `speed_internal.h`; keep them on a sync) == Netflix's
+statements transcribed with file:line and evaluated with the host's own
+`sqrt()` / `log2()`; Givens exhaustive; host tail == same statements, modes
+0-6, singular rule, bad arguments. glibc only:
+CPU extractors == Netflix master's values on `testdata/*_576x324_48f.yuv` (11
+frames, 4 option sets; measured with glibc 2.44); other libcs print the check
+as skipped with the reason. Variant `test_speed_upstream_form_foreign_libm`
+(`-DVMAF_TEST_ASSUME_FOREIGN_LIBM`) runs the non-glibc path on every lane.
+Reference values come from a Netflix build; never regenerate them from the
+fork, never pin a host-libm value outside the glibc guard.
 
 ## `speed_chroma` / `speed_temporal` are float-build-only
 

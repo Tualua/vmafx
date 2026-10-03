@@ -6,20 +6,22 @@
  */
 
 /*
- * speed_chroma CPU vs. HIP parity test (ADR-1004 round 5; bound from
- * ADR-1430).
+ * speed_chroma CPU vs. HIP parity test (ADR-1004 round 5; equality since
+ * ADR-1477).
  *
  * Asserts that the three scores of the CPU extractor `speed_chroma` and of
- * the HIP twin `speed_chroma_hip` agree at every frame to one part in a
- * million. The twin runs speed.c's arithmetic and rounds log2 correctly
- * (`speed_hd_log2_rn()`, ADR-1384); speed.c calls the C library's `log2f`.
- * The fixture, the CPU run, the comparison and the reason it is a bound and
- * not an equality are in speed_chroma_twin_parity.h, which the CUDA test
- * wraps too.
+ * the HIP twin `speed_chroma_hip` are equal at every frame. The twin runs
+ * speed.c's arithmetic on the device up to the variances and forms the
+ * entropies and the score on the host with speed.c's own `log2()` statements
+ * (speed_internal_gpu_tail_scores()). The fixture, the CPU run, the
+ * comparison and the reason it is an equality are in
+ * speed_chroma_twin_parity.h, which the CUDA test wraps too.
  *
  * The test compared `speed_chroma_uv` of frame 0 within 1e-4 on a 768x432
- * fixture before: that fixture has 8 blocks for a 25x25 covariance, which is
- * singular on every frame, so the scoring path with its log2 never ran.
+ * fixture at first: that fixture has 8 blocks for a 25x25 covariance, which
+ * is singular on every frame, so the scoring path with its log2 never ran.
+ * It then allowed one part in a million while the fork's speed.c called
+ * `log2f`.
  *
  * Skip behaviour, both exit 77 (meson's "skipped" status):
  *   1. `vmaf_hip_state_init()` fails (no HIP/ROCm runtime or no device
@@ -126,8 +128,8 @@ static char *test_speed_chroma_cpu_hip_parity(void)
         return NULL;
     }
 
-    mu_assert("speed_chroma_hip is further from the CPU extractor than its log2f explains",
-              speed_chroma_twin_outside_bound(&cpu, &hip, "hip") == 0u);
+    mu_assert("speed_chroma_hip does not return the CPU extractor's scores",
+              speed_chroma_twin_mismatches(&cpu, &hip, "hip") == 0u);
     return NULL;
 }
 

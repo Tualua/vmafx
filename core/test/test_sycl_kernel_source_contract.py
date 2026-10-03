@@ -3,6 +3,15 @@
 # SPDX-License-Identifier: EUPL-1.2
 """Protect fp64-free SpEED kernels, device-resident twins and explicit SYCL output captures.
 
+SpEED since ADR-1477: the device chain ends at the variances, the frame's one
+readback is the tail block (status words, eigenvalues, variances), and
+pipeline_collect() forms the entropies and the score after its wait with
+speed_internal_gpu_tail_scores(), which holds Netflix's fp64 `log2()`
+statements (libvmaf/src/feature/speed.c, update_entropy() at 796-806 and
+get_speed_score() at 892-938 of 9e48141b). No kernel evaluates a logarithm,
+and the Givens rotation's `1.0 / sqrt(1 + t * t)` (speed.c:418, :423) goes
+through feature/speed_givens.h.
+
 Also pins the float motion SAD (ADR-1409, ADR-1411): the device adds the
 absolute differences of a row in one work-item, left to right, into one fp32
 accumulator, and the host adds the rows and divides in fp32 through
@@ -148,6 +157,31 @@ def _device_resident_failures(sources: dict[str, str]) -> list[str]:
     return failures
 
 
+def _speed_upstream_form_failures(source: str) -> list[str]:
+    """ADR-1477: Netflix's fp64 statements, where each of them runs."""
+    failures: list[str] = []
+    pipeline = re.sub(r"/\*.*?\*/|//[^\n]*", " ", source, flags=re.S)
+    # update_entropy() and get_speed_score() call log2() on the host, in
+    # speed_internal_gpu_tail_scores(); a device logarithm is another function.
+    if re.search(r"\b(?:sycl::|std::|speed_)?log(?:2|10|1p)?f?\s*\(", pipeline):
+        failures.append(f"{SPEED_PIPELINE}: a kernel evaluates a logarithm")
+    if "launch_score" in pipeline or "entropy_constant" in pipeline:
+        failures.append(f"{SPEED_PIPELINE}: the entropy or the score is formed on the device")
+    if "speed_internal_gpu_tail_scores(" not in _function_body(
+        source, "speed_sycl::pipeline_collect"
+    ):
+        failures.append(f"{SPEED_PIPELINE}: pipeline_collect() does not run the host tail")
+    if "q.memcpy(p.tail_host, p.tail_device, p.tail_layout.bytes);" not in pipeline:
+        failures.append(f"{SPEED_PIPELINE}: the readback is not the tail block")
+    # create_givens(): `1.0 / sqrt(1 + t * t)` is an fp64 root and quotient.
+    if (
+        '#include "feature/speed_givens.h"' not in source
+        or "const float unit = speed_givens_unit(1.0f + tt);" not in pipeline
+    ):
+        failures.append(f"{SPEED_PIPELINE}: create_givens() is not upstream's fp64 statement")
+    return failures
+
+
 def _speed_failures(sources: dict[str, str]) -> list[str]:
     failures: list[str] = []
     if re.search(r"\bdouble\b", sources[EXACT_FP_HEADER]):
@@ -158,10 +192,7 @@ def _speed_failures(sources: dict[str, str]) -> list[str]:
         for helper in SPEED_HOST_RESIDUAL:
             if helper.search(sources[name]):
                 failures.append(f"{name}: host residual {helper.pattern} reintroduced")
-    # ADR-1380 / Research-1379: the fp32-pair log2 misrounds 48 floats; the
-    # shared table in feature/speed_log2_hard_cases.h corrects them.
-    if "return speed_log2_hard_case(" not in _function_body(sources[SPEED_PIPELINE], "speed_log2"):
-        failures.append(f"{SPEED_PIPELINE}: speed_log2 no longer applies the log2 hard cases")
+    failures += _speed_upstream_form_failures(sources[SPEED_PIPELINE])
     # lanczos4 prescale: the CPU scaler evaluates each weight in fp64 with sin()
     # and rounds once; no fp32 device sine reproduces that, and SpEED amplifies
     # the last-bit differences. The host builds the weight table with the
@@ -491,15 +522,53 @@ class SyclKernelSourceContractTest(unittest.TestCase):
     def test_live_sources_keep_fp32_and_capture_contracts(self) -> None:
         self.assertEqual(_contract_failures(_sources()), [])
 
-    def test_dropped_log2_hard_cases_are_detected(self) -> None:
+    def test_speed_device_log2_is_detected(self) -> None:
+        # The kernels' own log2 before ADR-1477: fp32 pairs rounded to float.
         sources = _sources()
+        anchor = "    a.var[static_cast<size_t>(ch) * a.blocks + block] = variance;"
+        self.assertIn(anchor, sources[SPEED_PIPELINE])
         sources[SPEED_PIPELINE] = sources[SPEED_PIPELINE].replace(
-            "return speed_log2_hard_case(sycl::bit_cast<uint32_t>(x), rounded);",
-            "return rounded;",
-            1,
+            anchor, anchor.replace("= variance;", "= speed_log2(variance);"), 1
         )
         failures = _contract_failures(sources)
-        self.assertTrue(any("log2 hard cases" in item for item in failures))
+        self.assertTrue(any("evaluates a logarithm" in item for item in failures))
+
+    def test_speed_device_score_is_detected(self) -> None:
+        sources = _sources()
+        sources[SPEED_PIPELINE] += "\nvoid launch_score(sycl::queue &q)\n{\n}\n"
+        failures = _contract_failures(sources)
+        self.assertTrue(any("formed on the device" in item for item in failures))
+
+    def test_speed_dropped_host_tail_is_detected(self) -> None:
+        sources = _sources()
+        anchor = "return speed_internal_gpu_tail_scores("
+        self.assertIn(anchor, sources[SPEED_PIPELINE])
+        sources[SPEED_PIPELINE] = sources[SPEED_PIPELINE].replace(
+            anchor, "return local_scores(", 1
+        )
+        failures = _contract_failures(sources)
+        self.assertTrue(any("host tail" in item for item in failures))
+
+    def test_speed_readback_of_another_block_is_detected(self) -> None:
+        sources = _sources()
+        anchor = "q.memcpy(p.tail_host, p.tail_device, p.tail_layout.bytes);"
+        self.assertIn(anchor, sources[SPEED_PIPELINE])
+        sources[SPEED_PIPELINE] = sources[SPEED_PIPELINE].replace(
+            anchor, "q.memcpy(p.tail_host, p.cov, sizeof(float));", 1
+        )
+        failures = _contract_failures(sources)
+        self.assertTrue(any("not the tail block" in item for item in failures))
+
+    def test_speed_fp32_givens_is_detected(self) -> None:
+        # Port #213's form: `1.0f / sqrtf(1.0f + t * t)`.
+        sources = _sources()
+        anchor = "const float unit = speed_givens_unit(1.0f + tt);"
+        self.assertIn(anchor, sources[SPEED_PIPELINE])
+        sources[SPEED_PIPELINE] = sources[SPEED_PIPELINE].replace(
+            anchor, "const float unit = div_rn(1.0f, sqrt_rn(1.0f + tt));", 1
+        )
+        failures = _contract_failures(sources)
+        self.assertTrue(any("create_givens()" in item for item in failures))
 
     def test_device_sine_for_lanczos_weights_is_detected(self) -> None:
         sources = _sources()

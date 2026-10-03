@@ -69,7 +69,7 @@ PSNR, SSIM, MS-SSIM, LPIPS, …). Parent: [../../AGENTS.md](../../AGENTS.md).
 | `feature_extractor.h`, `feature_collector.h` | [shared-headers](AGENTS.d/shared-headers.md) | Shared C/C++ headers must declare one enum definition, never a C++-only narrow enum. |
 | `simd_dx.h` | [simd-dx](AGENTS.d/simd-dx.md) | SIMD DX framework macros and recurring vector kernel patterns across targets. |
 | `speed_internal.c`, `speed_internal.h` | [speed-internal](AGENTS.d/speed-internal.md) | speed_internal shared helper TU wiring, matrix multiplication dispatch, and CUDA dependencies. |
-| `speed.c`, `speed_cov.h` | [speed](AGENTS.d/speed.md) | SpEED buffer allocation, chroma dimensions, anti-alias decimation, and covariance sums. |
+| `speed.c`, `speed_cov.h`, `speed_givens.h`, `/core/test/test_speed_upstream_form.c` | [speed](AGENTS.d/speed.md) | SpEED buffer allocation, chroma dimensions, anti-alias decimation, covariance sums, Netflix's fp64 expressions. |
 | `feature_extractor.cpp` | [split-helpers](AGENTS.d/split-helpers.md) | Helper functions split to meet LOC bounds must preserve expressions without truncation. |
 | `ssim.c`, `ssim.h`, `float_ssim.c` | [ssim](AGENTS.d/ssim.md) | Integer SSIM samplemax² widening, fork-side registration, and pthread_once dispatch. |
 | `ssimulacra2.c`, `/core/test/test_ssimulacra2_simd.c` | [ssimulacra2](AGENTS.d/ssimulacra2.md) | SSIMULACRA 2 regression gates, linear RGB conversion, blur, and SIMD bit-exactness. |

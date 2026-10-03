@@ -6,15 +6,19 @@
  *  Device-resident SpEED chain shared by speed_chroma_cuda and
  *  speed_temporal_cuda (ADR-1380, the CUDA port of ADR-1358's SYCL pipeline).
  *
- *  Every per-frame stage of the CPU reference (speed.c) runs here, in order,
- *  on the extractor's stream: optional prescale, the anti-alias filter at the
- *  16x-decimated sample points (picture conversion and temporal difference
- *  folded into the sample read), local mean subtraction and the independent
- *  term, the 25 submatrix means, the 25x25 covariance matrix, Householder
- *  tridiagonalisation with the implicit-shift QR sweep, the regularity
- *  decision, the Householder QR factorisation, the Q^T B multiply with back
- *  substitution, the variances and entropies, and the frame score. The host
- *  reads one SpeedGpuFrameResult back per frame.
+ *  Every per-frame stage of the CPU reference (speed.c) up to the solved
+ *  linear system runs here, in order, on the extractor's stream: optional
+ *  prescale, the anti-alias filter at the 16x-decimated sample points
+ *  (picture conversion and temporal difference folded into the sample read),
+ *  local mean subtraction and the independent term, the 25 submatrix means,
+ *  the 25x25 covariance matrix, Householder tridiagonalisation with the
+ *  implicit-shift QR sweep, the regularity decision, the Householder QR
+ *  factorisation, the Q^T B multiply with back substitution, and the
+ *  variances. The host reads one block back per frame (the status words, the
+ *  eigenvalues and the variances, SpeedGpuTailLayout) and forms the entropies
+ *  and the score from it with speed.c's own statements and the host's log2()
+ *  (speed_internal_gpu_tail_scores(), ADR-1477). No kernel evaluates a
+ *  logarithm.
  *
  *  Numerical contract: every device routine is a line-for-line port of its CPU
  *  reference in speed.c / vif_tools.c / convolution_internal.h, and of the
@@ -32,8 +36,10 @@
  *  quotient, never a rounding the CPU performs.
  *
  *  The reference evaluates a few expressions in fp64 (the covariance sum, the
- *  EIGENVALUE_EPS comparisons, the prescale sample coordinates); they are
- *  reproduced with exact fp32 pairs, because no device kernel may use fp64.
+ *  EIGENVALUE_EPS comparisons, the prescale sample coordinates, the Givens
+ *  rotation's `1.0 / sqrt(1 + t * t)`); they are reproduced with exact fp32
+ *  pairs or, for the rotation, with feature/speed_givens.h, because no device
+ *  kernel may use fp64.
  *  This file must not mention the fp64 type at all:
  *  core/test/test_cuda_device_resident_contract.py enforces that.
  */
@@ -42,7 +48,6 @@
 #include <stdint.h>
 
 #include "feature/cuda/speed/speed_cuda_params.h"
-#include "feature/speed_log2_hard_cases.h"
 
 #define SPEED_KN 25u         /* elements_in_block */
 #define SPEED_KMATRIX 625u   /* 25 x 25 */
@@ -61,7 +66,6 @@ static constexpr float kPictureOffset = -128.0f; /* picture_copy() offset */
 static constexpr float kElementsF = 25.0f;       /* elements_in_block */
 static constexpr float kEpsHi = 0x1.0c6f7ap-20f; /* (float)EIGENVALUE_EPS */
 static constexpr float kEpsLo = 0x1.6bdb1ap-49f; /* EIGENVALUE_EPS - kEpsHi, exact */
-static constexpr float kSqrt2 = 0x1.6a09e6p+0f;  /* (float)sqrt(2) */
 
 /* ------------------------------------------------------------------ */
 /* Round-to-nearest fp32 arithmetic (never contracted)                 */
@@ -98,6 +102,16 @@ static __device__ __forceinline__ float exact_fma(float a, float b, float c)
 {
     return __fmaf_rn(a, b, c);
 }
+
+/* create_givens()'s fp64 statement on the primitives above (ADR-1477). */
+#define SPEED_GIVENS_FUNC static __device__ __forceinline__
+#define SPEED_GIVENS_SQRT(x) rn_sqrt(x)
+#define SPEED_GIVENS_DIV(a, b) rn_div((a), (b))
+#define SPEED_GIVENS_MUL(a, b) rn_mul((a), (b))
+#define SPEED_GIVENS_SUB(a, b) rn_sub((a), (b))
+#define SPEED_GIVENS_ADD(a, b) rn_add((a), (b))
+#define SPEED_GIVENS_FMA(a, b, c) exact_fma((a), (b), (c))
+#include "feature/speed_givens.h"
 
 /* ------------------------------------------------------------------ */
 /* Exact fp32 pair arithmetic                                          */
@@ -139,15 +153,6 @@ static __device__ __forceinline__ Ff ff_add(Ff a, Ff b)
     return quick_two_sum(first.hi, rn_add(low.lo, first.lo));
 }
 
-static __device__ __forceinline__ Ff ff_mul(Ff a, Ff b)
-{
-    const Ff product = two_prod(a.hi, b.hi);
-    const float cross1 = rn_mul(a.hi, b.lo);
-    const float cross2 = rn_mul(a.lo, b.hi);
-    const float cross = rn_add(cross1, cross2);
-    return quick_two_sum(product.hi, rn_add(product.lo, cross));
-}
-
 /* (hi + lo) / divisor, rounded once to fp32. */
 static __device__ __forceinline__ float ff_div_to_float(Ff value, float divisor)
 {
@@ -176,91 +181,6 @@ static __device__ __forceinline__ bool below_eps_scaled(float a, float s)
 static __device__ __forceinline__ bool below_eps(float x)
 {
     return x <= kEpsHi;
-}
-
-/* ------------------------------------------------------------------ */
-/* log2f() of the reference                                            */
-/* ------------------------------------------------------------------ */
-
-/* The libdevice log2f is not correctly rounded, so log2 is evaluated in fp32
- * pairs to about 2^-45 and rounded once, exactly as the SYCL port does:
- * ln(m) = 2 atanh(s), s = (m - 1)/(m + 1), m in [sqrt(1/2), sqrt(2)],
- * |s| <= 0.1716; the series stops at s^21. That rounds to nearest on every
- * positive finite float except 48 hard cases, which speed_log2_hard_case()
- * corrects from feature/speed_log2_hard_cases.h (exhaustive replay:
- * Research-1379). */
-__constant__ Ff kLog2e = {0x1.715476p+0f, 0x1.4ae0c0p-26f};
-__constant__ Ff kInverseOdd[10] = {
-    {0x1.555556p-2f, -0x1.555556p-27f}, /* 1/3 */
-    {0x1.99999ap-3f, -0x1.99999ap-29f}, /* 1/5 */
-    {0x1.24924ap-3f, -0x1.b6db6ep-28f}, /* 1/7 */
-    {0x1.c71c72p-4f, -0x1.c71c72p-31f}, /* 1/9 */
-    {0x1.745d18p-4f, -0x1.745d18p-29f}, /* 1/11 */
-    {0x1.3b13b2p-4f, -0x1.89d89ep-29f}, /* 1/13 */
-    {0x1.111112p-4f, -0x1.dddddep-29f}, /* 1/15 */
-    {0x1.e1e1e2p-5f, -0x1.e1e1e2p-33f}, /* 1/17 */
-    {0x1.af286cp-5f, -0x1.af286cp-32f}, /* 1/19 */
-    {0x1.861862p-5f, -0x1.e79e7ap-31f}, /* 1/21 */
-};
-
-static __device__ __forceinline__ Ff ln_mantissa(float m)
-{
-    const float num = rn_sub(m, 1.0f); /* exact */
-    const Ff den = two_sum(m, 1.0f);   /* exact */
-    const float s_hi = rn_div(num, den.hi);
-    const float residual = exact_fma(-s_hi, den.hi, num);
-    const float tail = rn_mul(s_hi, den.lo);
-    const float s_lo = rn_div(rn_sub(residual, tail), den.hi);
-    const Ff s = quick_two_sum(s_hi, s_lo);
-    const Ff u = ff_mul(s, s);
-    Ff poly = kInverseOdd[9];
-#pragma unroll
-    for (uint32_t k = 9u; k > 0u; k--)
-        poly = ff_add(ff_mul(poly, u), kInverseOdd[k - 1u]);
-    poly = ff_add(ff_mul(poly, u), Ff{1.0f, 0.0f});
-    const Ff half = ff_mul(s, poly);
-    return {rn_mul(2.0f, half.hi), rn_mul(2.0f, half.lo)};
-}
-
-__constant__ uint32_t kLog2HardInput[SPEED_LOG2_HARD_CASES] = SPEED_LOG2_HARD_INPUTS;
-__constant__ uint32_t kLog2HardOutput[SPEED_LOG2_HARD_CASES] = SPEED_LOG2_HARD_OUTPUTS;
-
-/* The correctly rounded log2 of `bits` when it is one of the 48 inputs the
- * pair evaluation misrounds, else `rounded`. */
-static __device__ __forceinline__ float speed_log2_hard_case(uint32_t bits, float rounded)
-{
-    const uint32_t fraction = bits & 0x007fffffu;
-    if (fraction != SPEED_LOG2_HARD_FRACTION_A && fraction != SPEED_LOG2_HARD_FRACTION_B)
-        return rounded;
-    for (uint32_t i = 0; i < SPEED_LOG2_HARD_CASES; i++) {
-        if (kLog2HardInput[i] == bits)
-            return __uint_as_float(kLog2HardOutput[i]);
-    }
-    return rounded;
-}
-
-static __device__ __forceinline__ float speed_log2(float x)
-{
-    if (!(x > 0.0f))
-        return x == 0.0f ? __int_as_float(static_cast<int>(0xff800000u)) :
-                           __int_as_float(0x7fc00000);
-    if (x == __int_as_float(0x7f800000))
-        return x;
-    uint32_t bits = __float_as_uint(x);
-    int32_t exponent = 0;
-    if (bits < 0x00800000u) { /* subnormal */
-        bits = __float_as_uint(rn_mul(x, 0x1p23f));
-        exponent = -23;
-    }
-    exponent += static_cast<int32_t>(bits >> 23u) - 127;
-    float m = __uint_as_float((bits & 0x007fffffu) | 0x3f800000u);
-    if (m > kSqrt2) {
-        m = rn_mul(m, 0.5f);
-        exponent += 1;
-    }
-    const Ff log2m = ff_mul(ln_mantissa(m), kLog2e);
-    const float rounded = ff_add(Ff{static_cast<float>(exponent), 0.0f}, log2m).hi;
-    return speed_log2_hard_case(__float_as_uint(x), rounded);
 }
 
 /* ------------------------------------------------------------------ */
@@ -860,8 +780,8 @@ static __device__ void create_givens(float a, float b, float &c, float &s)
     }
     const bool b_larger = fabsf(b) > fabsf(a);
     const float t = b_larger ? rn_div(-a, b) : rn_div(-b, a);
-    const float root = rn_sqrt(rn_add(1.0f, rn_mul(t, t)));
-    const float unit = rn_div(1.0f, root);
+    /* `1.0 / sqrt(1 + t * t)`: an fp64 root and quotient rounded to fp32. */
+    const float unit = speed_givens_unit(rn_add(1.0f, rn_mul(t, t)));
     const float other = rn_mul(unit, t);
     s = b_larger ? unit : other;
     c = b_larger ? other : unit;
@@ -1121,9 +1041,8 @@ static __device__ void linalg_store(const SpeedCudaFrameArgs &a, const Slm &m, u
 }
 
 /* ------------------------------------------------------------------ */
-/* Solve, variance and entropy per block: solve_linear_system() tail,  */
-/* compute_pointwise_product_and_division(), sum_columns(),            */
-/* update_entropy()                                                    */
+/* Solve and variance per block: solve_linear_system() tail,           */
+/* compute_pointwise_product_and_division(), sum_columns()             */
 /* ------------------------------------------------------------------ */
 
 static __device__ void solve_block(const float *__restrict__ b, uint32_t stride,
@@ -1144,48 +1063,6 @@ static __device__ void solve_block(const float *__restrict__ b, uint32_t stride,
             term = rn_sub(term, rn_mul(solution[k], r[i * kN + k]));
         solution[i] = rn_div(term, r[i * kN + i]);
     }
-}
-
-/* ------------------------------------------------------------------ */
-/* Frame score: get_speed_score() + speed_extract_score()              */
-/* ------------------------------------------------------------------ */
-
-static __device__ __forceinline__ float weighted_log(float variance)
-{
-    return speed_log2(rn_add(1.0f, variance));
-}
-
-static __device__ float spatial_dis_weight(float rv, float dv, int32_t mode)
-{
-    if (mode == 0 || mode == 2)
-        return weighted_log(dv);
-    if (mode == 1)
-        return weighted_log(rv);
-    if (mode == 5 || mode == 6) {
-        const float ref_share = mode == 5 ? 0.75f : 0.25f;
-        const float dis_share = mode == 5 ? 0.25f : 0.75f;
-        return weighted_log(rn_add(rn_mul(ref_share, rv), rn_mul(dis_share, dv)));
-    }
-    return weighted_log(rn_div(rn_add(rv, dv), 2.0f)); /* modes 3 and 4 */
-}
-
-static __device__ float spatial_ref_weight(float rv, float dv, int32_t mode)
-{
-    if (mode == 2)
-        return weighted_log(dv);
-    if (mode == 3)
-        return weighted_log(rn_div(rn_add(rv, dv), 2.0f));
-    return weighted_log(rv);
-}
-
-static __device__ float block_score(float re, float de, float rv, float dv,
-                                    const SpeedGpuScoring &s)
-{
-    if (re < s.base_entropy && de < s.base_entropy)
-        return 0.0f;
-    const float spatial_ref = rn_mul(re, spatial_ref_weight(rv, dv, s.weight_mode));
-    const float spatial_dis = rn_mul(de, spatial_dis_weight(rv, dv, s.weight_mode));
-    return fabsf(rn_sub(spatial_ref, spatial_dis));
 }
 
 /* ------------------------------------------------------------------ */
@@ -1374,8 +1251,10 @@ __global__ void __launch_bounds__(SPEED_CUDA_LINALG_THREADS)
     linalg_store(a, m, ch, regular);
 }
 
-/* Solve, variance and entropy of every (channel, block). A singular channel
- * keeps its zero solution, as solve_covariance_system() does. */
+/* Solve and variance of every (channel, block). A singular channel keeps its
+ * zero solution, as solve_covariance_system() does. The variances, the
+ * eigenvalues and the status words are the block the host reads back; its
+ * tail forms the entropies and the score (ADR-1477). */
 __global__ void __launch_bounds__(SPEED_CUDA_SOLVE_THREADS)
     speed_solve_kernel(const SpeedCudaFrameArgs a)
 {
@@ -1401,50 +1280,7 @@ __global__ void __launch_bounds__(SPEED_CUDA_SOLVE_THREADS)
         const float product = rn_mul(solution[e], b[static_cast<size_t>(e) * g.blocks]);
         variance = rn_add(variance, rn_div(product, kElementsF));
     }
-    const float *eig = reinterpret_cast<const float *>(a.eig) + static_cast<size_t>(ch) * kN;
-    float entropy = 0.0f;
-    for (uint32_t k = 0; k < kN; k++) {
-        const float l = eig[k] < 0.0f ? 0.0f : eig[k];
-        const float shifted = rn_add(rn_mul(l, variance), a.scoring.sigma_nn);
-        entropy = rn_add(entropy, rn_add(speed_log2(shifted), a.scoring.entropy_constant));
-    }
     reinterpret_cast<float *>(a.var)[idx] = variance;
-    reinterpret_cast<float *>(a.ent)[idx] = entropy;
-}
-
-/* The frame score of every (reference, distorted) pair, one block per pair,
- * and the FrameResult the host reads back. */
-__global__ void __launch_bounds__(SPEED_CUDA_SCORE_THREADS)
-    speed_score_kernel(const SpeedCudaFrameArgs a)
-{
-    const SpeedGpuGeometry &g = a.geometry;
-    const uint32_t pair = blockIdx.x;
-    const uint32_t lid = threadIdx.x;
-    const size_t ref = static_cast<size_t>(2u * pair) * g.blocks;
-    const size_t dis = ref + g.blocks;
-    const float *var = reinterpret_cast<const float *>(a.var);
-    const float *ent = reinterpret_cast<const float *>(a.ent);
-    float *contrib = reinterpret_cast<float *>(a.contrib) + static_cast<size_t>(pair) * g.blocks;
-    for (uint32_t b = lid; b < g.blocks; b += blockDim.x)
-        contrib[b] = block_score(ent[ref + b], ent[dis + b], var[ref + b], var[dis + b], a.scoring);
-    __syncthreads();
-    if (lid != 0u)
-        return;
-    float score = 0.0f;
-    for (uint32_t b = 0; b < g.blocks; b++)
-        score = rn_add(score, contrib[b]);
-    score = rn_div(score, static_cast<float>(g.blocks));
-    const int32_t *status = reinterpret_cast<const int32_t *>(a.status);
-    const size_t slots = static_cast<size_t>(pair) * 4u;
-    if ((status[slots] != 0) != (status[slots + 2u] != 0))
-        score = 0.0f; /* speed_extract_score(): exactly one side singular */
-    SpeedGpuFrameResult *result = reinterpret_cast<SpeedGpuFrameResult *>(a.result);
-    result->score[pair] = score;
-    for (uint32_t side = 0; side < 2u; side++) {
-        const uint32_t ch = 2u * pair + side;
-        result->singular[ch] = status[static_cast<size_t>(ch) * 2u];
-        result->iteration_cap[ch] = status[static_cast<size_t>(ch) * 2u + 1u];
-    }
 }
 
 } /* extern "C" */

@@ -12,16 +12,24 @@
  *  for a fused multiply-add, and the TU is compiled with contraction off, so
  *  each multiply and each add rounds exactly where the host rounds. The
  *  reference evaluates a few expressions in fp64 (the covariance sum, the
- *  EIGENVALUE_EPS comparisons, the prescale sample coordinates); those are
- *  reproduced with exact fp32 pairs rather than fp64, which the device
- *  contract forbids (ADR-0220). This file must not mention the fp64 type at
- *  all: core/test/test_sycl_kernel_source_contract.py enforces that.
+ *  EIGENVALUE_EPS comparisons, the prescale sample coordinates, the Givens
+ *  rotation's `1.0 / sqrt(1 + t * t)`); those are reproduced with exact fp32
+ *  pairs or, for the rotation, with feature/speed_givens.h, rather than fp64,
+ *  which the device contract forbids (ADR-0220). This file must not mention
+ *  the fp64 type at all: core/test/test_sycl_kernel_source_contract.py
+ *  enforces that.
+ *
+ *  The device chain ends at the variances. The host reads one block back per
+ *  frame (the status words, the eigenvalues and the variances,
+ *  SpeedGpuTailLayout) and forms the entropies and the score from it with
+ *  speed.c's own statements and the host's log2()
+ *  (speed_internal_gpu_tail_scores(), ADR-1477). No kernel evaluates a
+ *  logarithm.
  */
 
 #include "speed_sycl_pipeline.h"
 
 #include "feature/speed_internal.h"
-#include "feature/speed_log2_hard_cases.h"
 
 #include <sycl/sycl.hpp>
 
@@ -30,10 +38,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <limits>
 #include <memory>
 #include <new>
-#include <numbers>
 #include <utility>
 
 #include "log.h"
@@ -50,7 +56,6 @@ using speed_sycl::kMaxRawPlanes;
 using speed_sycl::kMaxTaps;
 using speed_sycl::Pipeline;
 using speed_sycl::PipelineConfig;
-using speed_sycl::Scoring;
 
 namespace
 {
@@ -74,7 +79,6 @@ using vmaf_sycl_exact::div_rn;
 using vmaf_sycl_exact::Ff;
 using vmaf_sycl_exact::ff_add;
 using vmaf_sycl_exact::ff_div_to_float;
-using vmaf_sycl_exact::ff_mul;
 using vmaf_sycl_exact::quick_two_sum;
 using vmaf_sycl_exact::sqrt_rn;
 using vmaf_sycl_exact::two_prod;
@@ -105,97 +109,6 @@ namespace
 inline bool below_eps(float x)
 {
     return x <= kEpsHi;
-}
-
-/* log2f() of the reference. The device builtin differs from the host libm in
- * about 9% of the arguments SpEED feeds it, so log2 is evaluated here in fp32
- * pairs to about 2^-45 and rounded once. That rounds to nearest on every
- * positive finite float except 48 hard cases, which speed_log2_hard_case()
- * corrects from feature/speed_log2_hard_cases.h (exhaustive replay:
- * Research-1379). ln(m) = 2 atanh(s), s = (m - 1)/(m + 1), m in
- * [sqrt(1/2), sqrt(2)], |s| <= 0.1716; the series stops at s^21. */
-constexpr float kSqrt2 = std::numbers::sqrt2_v<float>;
-constexpr Ff kLog2e = {.hi = std::numbers::log2e_v<float>, .lo = 0x1.4ae0c0p-26f};
-constexpr Ff kInverseOdd[10] = {
-    {.hi = 0x1.555556p-2f, .lo = -0x1.555556p-27f}, /* 1/3 */
-    {.hi = 0x1.99999ap-3f, .lo = -0x1.99999ap-29f}, /* 1/5 */
-    {.hi = 0x1.24924ap-3f, .lo = -0x1.b6db6ep-28f}, /* 1/7 */
-    {.hi = 0x1.c71c72p-4f, .lo = -0x1.c71c72p-31f}, /* 1/9 */
-    {.hi = 0x1.745d18p-4f, .lo = -0x1.745d18p-29f}, /* 1/11 */
-    {.hi = 0x1.3b13b2p-4f, .lo = -0x1.89d89ep-29f}, /* 1/13 */
-    {.hi = 0x1.111112p-4f, .lo = -0x1.dddddep-29f}, /* 1/15 */
-    {.hi = 0x1.e1e1e2p-5f, .lo = -0x1.e1e1e2p-33f}, /* 1/17 */
-    {.hi = 0x1.af286cp-5f, .lo = -0x1.af286cp-32f}, /* 1/19 */
-    {.hi = 0x1.861862p-5f, .lo = -0x1.e79e7ap-31f}, /* 1/21 */
-};
-
-inline Ff ln_mantissa(float m)
-{
-    const float num = m - 1.0f;      /* exact */
-    const Ff den = two_sum(m, 1.0f); /* exact */
-    const float s_hi = div_rn(num, den.hi);
-    const float residual = sycl::fma(-s_hi, den.hi, num);
-    const float tail = s_hi * den.lo;
-    const float s_lo = div_rn(residual - tail, den.hi);
-    const Ff s = quick_two_sum(s_hi, s_lo);
-    const Ff u = ff_mul(s, s);
-    Ff poly = kInverseOdd[9];
-    for (uint32_t k = 9u; k > 0u; k--) {
-        poly = ff_add(ff_mul(poly, u), kInverseOdd[k - 1u]);
-    }
-    poly = ff_add(ff_mul(poly, u), Ff{.hi = 1.0f, .lo = 0.0f});
-    const Ff half = ff_mul(s, poly);
-    return {.hi = 2.0f * half.hi, .lo = 2.0f * half.lo};
-}
-
-constexpr uint32_t kLog2HardInput[SPEED_LOG2_HARD_CASES] = SPEED_LOG2_HARD_INPUTS;
-constexpr uint32_t kLog2HardOutput[SPEED_LOG2_HARD_CASES] = SPEED_LOG2_HARD_OUTPUTS;
-
-/* The correctly rounded log2 of `bits` when it is one of the 48 inputs the
- * pair evaluation misrounds, else `rounded`. */
-inline float speed_log2_hard_case(uint32_t bits, float rounded)
-{
-    const uint32_t fraction = bits & 0x007fffffu;
-    if (fraction != SPEED_LOG2_HARD_FRACTION_A && fraction != SPEED_LOG2_HARD_FRACTION_B) {
-        return rounded;
-    }
-    for (uint32_t i = 0; i < SPEED_LOG2_HARD_CASES; i++) {
-        if (kLog2HardInput[i] == bits) {
-            return sycl::bit_cast<float>(kLog2HardOutput[i]);
-        }
-    }
-    return rounded;
-}
-
-} // namespace
-
-namespace
-{
-
-inline float speed_log2(float x)
-{
-    if (!(x > 0.0f)) {
-        return x == 0.0f ? -std::numeric_limits<float>::infinity() :
-                           std::numeric_limits<float>::quiet_NaN();
-    }
-    if (x == std::numeric_limits<float>::infinity()) {
-        return x;
-    }
-    auto bits = sycl::bit_cast<uint32_t>(x);
-    int32_t exponent = 0;
-    if (bits < 0x00800000u) { /* subnormal */
-        bits = sycl::bit_cast<uint32_t>(x * 0x1p23f);
-        exponent = -23;
-    }
-    exponent += static_cast<int32_t>(bits >> 23u) - 127;
-    float m = sycl::bit_cast<float>((bits & 0x007fffffu) | 0x3f800000u);
-    if (m > kSqrt2) {
-        m = m * 0.5f;
-        exponent += 1;
-    }
-    const Ff log2m = ff_mul(ln_mantissa(m), kLog2e);
-    const float rounded = ff_add(Ff{.hi = static_cast<float>(exponent), .lo = 0.0f}, log2m).hi;
-    return speed_log2_hard_case(sycl::bit_cast<uint32_t>(x), rounded);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1175,6 +1088,17 @@ inline float trailing_eigenvalue(const float *d, const float *sd, uint32_t n)
     return tb + step;
 }
 
+/* create_givens()'s fp64 statement on this file's correctly rounded fp32
+ * operations (ADR-1477). */
+#define SPEED_GIVENS_FUNC inline
+#define SPEED_GIVENS_SQRT(x) sqrt_rn(x)
+#define SPEED_GIVENS_DIV(a, b) div_rn((a), (b))
+#define SPEED_GIVENS_MUL(a, b) ((a) * (b))
+#define SPEED_GIVENS_SUB(a, b) ((a) - (b))
+#define SPEED_GIVENS_ADD(a, b) ((a) + (b))
+#define SPEED_GIVENS_FMA(a, b, c) sycl::fma((a), (b), (c))
+#include "feature/speed_givens.h"
+
 /* create_givens(), speed.c. */
 inline void create_givens(float a, float b, float &c, float &s)
 {
@@ -1186,8 +1110,8 @@ inline void create_givens(float a, float b, float &c, float &s)
     const bool b_larger = sycl::fabs(b) > sycl::fabs(a);
     const float t = b_larger ? div_rn(-a, b) : div_rn(-b, a);
     const float tt = t * t;
-    const float root = sqrt_rn(1.0f + tt);
-    const float unit = div_rn(1.0f, root);
+    /* `1.0 / sqrt(1 + t * t)`: an fp64 root and quotient rounded to fp32. */
+    const float unit = speed_givens_unit(1.0f + tt);
     const float other = unit * t;
     s = b_larger ? unit : other;
     c = b_larger ? other : unit;
@@ -1535,9 +1459,8 @@ void launch_linalg(sycl::queue &q, const LinalgArgs &args, uint32_t channels)
 }
 
 /* ------------------------------------------------------------------ */
-/* Solve, variance and entropy per block: solve_linear_system() tail,  */
-/* compute_pointwise_product_and_division(), sum_columns(),            */
-/* update_entropy()                                                    */
+/* Solve and variance per block: solve_linear_system() tail,           */
+/* compute_pointwise_product_and_division(), sum_columns()             */
 /* ------------------------------------------------------------------ */
 
 } // namespace
@@ -1549,13 +1472,9 @@ struct SolveArgs {
     const float *indterm;
     const float *qmat;
     const float *rmat;
-    const float *eig;
     const int32_t *status;
     float *var; /* channels x blocks */
-    float *ent;
     uint32_t blocks;
-    float sigma_nn;
-    float entropy_constant;
 };
 
 inline void solve_block(const float *b, uint32_t stride, const float *q, const float *r,
@@ -1604,17 +1523,7 @@ inline void block_statistics(const SolveArgs &a, uint32_t ch, uint32_t block)
         const float term = div_rn(product, kElementsF);
         variance = variance + term;
     }
-    float entropy = 0.0f;
-    for (uint32_t k = 0; k < kN; k++) {
-        const float eigenvalue = a.eig[ch * kN + k];
-        const float l = eigenvalue < 0.0f ? 0.0f : eigenvalue;
-        const float scaled = l * variance;
-        const float shifted = scaled + a.sigma_nn;
-        const float term = speed_log2(shifted) + a.entropy_constant;
-        entropy = entropy + term;
-    }
     a.var[static_cast<size_t>(ch) * a.blocks + block] = variance;
-    a.ent[static_cast<size_t>(ch) * a.blocks + block] = entropy;
 }
 
 void launch_solve(sycl::queue &q, const SolveArgs &args, uint32_t channels)
@@ -1623,117 +1532,6 @@ void launch_solve(sycl::queue &q, const SolveArgs &args, uint32_t channels)
         block_statistics(args, static_cast<uint32_t>(it.get_id(0)),
                          static_cast<uint32_t>(it.get_id(1)));
     });
-}
-
-/* ------------------------------------------------------------------ */
-/* Frame score: get_speed_score() + speed_extract_score()              */
-/* ------------------------------------------------------------------ */
-
-} // namespace
-
-namespace
-{
-
-struct ScoreArgs {
-    const float *var;
-    const float *ent;
-    const int32_t *status;
-    float *contrib; /* pairs x blocks */
-    FrameResult *result;
-    uint32_t blocks;
-    float base_entropy;
-    int32_t weight_mode;
-};
-
-inline float weighted_log(float variance)
-{
-    return speed_log2(1.0f + variance);
-}
-
-inline float spatial_dis_weight(float rv, float dv, int32_t mode)
-{
-    if (mode == 0 || mode == 2) {
-        return weighted_log(dv);
-    }
-    if (mode == 1) {
-        return weighted_log(rv);
-    }
-    if (mode == 5 || mode == 6) {
-        const float ref_share = mode == 5 ? 0.75f : 0.25f;
-        const float dis_share = mode == 5 ? 0.25f : 0.75f;
-        const float wr = ref_share * rv;
-        const float wd = dis_share * dv;
-        return weighted_log(wr + wd);
-    }
-    const float mean = div_rn(rv + dv, 2.0f); /* modes 3 and 4 */
-    return weighted_log(mean);
-}
-
-inline float spatial_ref_weight(float rv, float dv, int32_t mode)
-{
-    if (mode == 2) {
-        return weighted_log(dv);
-    }
-    if (mode == 3) {
-        const float mean = div_rn(rv + dv, 2.0f);
-        return weighted_log(mean);
-    }
-    return weighted_log(rv);
-}
-
-} // namespace
-
-namespace
-{
-
-inline float block_score(float re, float de, float rv, float dv, const ScoreArgs &a)
-{
-    if (re < a.base_entropy && de < a.base_entropy) {
-        return 0.0f;
-    }
-    const float spatial_ref = re * spatial_ref_weight(rv, dv, a.weight_mode);
-    const float spatial_dis = de * spatial_dis_weight(rv, dv, a.weight_mode);
-    return sycl::fabs(spatial_ref - spatial_dis);
-}
-
-inline void score_group(sycl::nd_item<1> it, const ScoreArgs &a)
-{
-    const auto pair = static_cast<uint32_t>(it.get_group(0));
-    const auto lid = static_cast<uint32_t>(it.get_local_id(0));
-    const size_t ref = static_cast<size_t>(2u * pair) * a.blocks;
-    const size_t dis = ref + a.blocks;
-    float *contrib = a.contrib + static_cast<size_t>(pair) * a.blocks;
-    for (uint32_t b = lid; b < a.blocks; b += kGroup) {
-        contrib[b] = block_score(a.ent[ref + b], a.ent[dis + b], a.var[ref + b], a.var[dis + b], a);
-    }
-    sycl::group_barrier(it.get_group(), sycl::memory_scope::work_group);
-    if (lid != 0u) {
-        return;
-    }
-    float score = 0.0f;
-    for (uint32_t b = 0; b < a.blocks; b++) {
-        score = score + contrib[b];
-    }
-    score = div_rn(score, static_cast<float>(a.blocks));
-    const size_t slots = static_cast<size_t>(pair) * 4u;
-    const int32_t sing_ref = a.status[slots];
-    const int32_t sing_dis = a.status[slots + 2u];
-    if ((sing_ref != 0) != (sing_dis != 0)) {
-        score = 0.0f;
-    }
-    a.result->score[pair] = score;
-    for (uint32_t side = 0; side < 2u; side++) {
-        const uint32_t ch = 2u * pair + side;
-        const size_t slot = static_cast<size_t>(ch) * 2u;
-        a.result->singular[ch] = a.status[slot];
-        a.result->iteration_cap[ch] = a.status[slot + 1u];
-    }
-}
-
-void launch_score(sycl::queue &q, const ScoreArgs &args, uint32_t pairs)
-{
-    q.parallel_for(sycl::nd_range<1>(static_cast<size_t>(pairs) * kGroup, kGroup),
-                   [=](sycl::nd_item<1> it) { score_group(it, args); });
 }
 
 } // namespace
@@ -1767,15 +1565,19 @@ struct speed_sycl::Pipeline {
     float *indterm;
     float *means;
     float *cov;
-    float *eig;
     float *qmat;
     float *rmat;
-    float *var;
-    float *ent;
-    float *contrib;
+    /* The block read back once per frame (SpeedGpuTailLayout): one device
+     * allocation, its three parts, its host copy, and the host tail's
+     * scratch (2 x blocks entropies). */
+    SpeedGpuTailLayout tail_layout;
+    uint32_t *tail_device;
+    uint32_t *tail_host;
     int32_t *status;
-    FrameResult *result_device;
-    FrameResult *result_host;
+    float *eig;
+    float *var;
+    std::unique_ptr<float[]> entropy;
+    SpeedGpuConfig shared; /* geometry, filters and scoring, for the host tail */
     /* Recorded per-frame chains, one per distinct channel binding (chroma
      * needs one, temporal two: the slots alternate). */
     uint32_t graph_count;
@@ -1818,15 +1620,25 @@ void allocate_linalg(Pipeline &p)
     const size_t blocks = p.config.geometry.blocks;
     p.means = device_alloc<float>(q, ch * kN);
     p.cov = device_alloc<float>(q, ch * kMatrix);
-    p.eig = device_alloc<float>(q, ch * kN);
     p.qmat = device_alloc<float>(q, ch * kMatrix);
     p.rmat = device_alloc<float>(q, ch * kMatrix);
-    p.var = device_alloc<float>(q, ch * blocks);
-    p.ent = device_alloc<float>(q, ch * blocks);
-    p.contrib = device_alloc<float>(q, (ch / 2u) * blocks);
-    p.status = device_alloc<int32_t>(q, ch * 2u);
-    p.result_device = device_alloc<FrameResult>(q, 1u);
-    p.result_host = sycl::malloc_host<FrameResult>(1u, q);
+    /* The tail block is 4-byte words throughout (int32 status, float
+     * eigenvalues and variances), so one allocation of words holds it and
+     * every part is aligned. */
+    p.tail_layout = speed_gpu_tail_layout(p.config.channels, p.config.geometry.blocks);
+    assert(p.tail_layout.bytes % sizeof(uint32_t) == 0u);
+    assert(p.tail_layout.eig % sizeof(uint32_t) == 0u &&
+           p.tail_layout.var % sizeof(uint32_t) == 0u);
+    const size_t words = p.tail_layout.bytes / sizeof(uint32_t);
+    p.tail_device = device_alloc<uint32_t>(q, words);
+    p.tail_host = sycl::malloc_host<uint32_t>(words, q);
+    p.entropy.reset(new (std::nothrow) float[size_t{2} * blocks]);
+    if (p.tail_device != nullptr) {
+        auto *base = reinterpret_cast<unsigned char *>(p.tail_device);
+        p.status = reinterpret_cast<int32_t *>(base + p.tail_layout.status);
+        p.eig = reinterpret_cast<float *>(base + p.tail_layout.eig);
+        p.var = reinterpret_cast<float *>(base + p.tail_layout.var);
+    }
 }
 
 } // namespace
@@ -1837,9 +1649,8 @@ namespace
 bool allocations_complete(const Pipeline &p)
 {
     const void *const required[] = {
-        p.staging, p.raw,     p.taps,          p.down,   p.centered,    p.indterm,
-        p.means,   p.cov,     p.eig,           p.qmat,   p.rmat,        p.var,
-        p.ent,     p.contrib, p.result_device, p.status, p.result_host,
+        p.staging, p.raw,  p.taps, p.down,        p.centered,  p.indterm,       p.means,
+        p.cov,     p.qmat, p.rmat, p.tail_device, p.tail_host, p.entropy.get(),
     };
     for (const void *pointer : required) {
         if (pointer == nullptr) {
@@ -1875,15 +1686,14 @@ void release_all(Pipeline &p)
     release(q, p.indterm);
     release(q, p.means);
     release(q, p.cov);
-    release(q, p.eig);
     release(q, p.qmat);
     release(q, p.rmat);
-    release(q, p.var);
-    release(q, p.ent);
-    release(q, p.contrib);
-    release(q, p.status);
-    release(q, p.result_device);
-    release(q, p.result_host);
+    release(q, p.tail_device);
+    release(q, p.tail_host);
+    p.status = nullptr;
+    p.eig = nullptr;
+    p.var = nullptr;
+    p.entropy.reset();
 #if defined(SYCL_EXT_ONEAPI_GRAPH)
     for (uint32_t i = 0; i < p.graph_count; i++) {
         delete p.graphs[i];
@@ -2073,38 +1883,24 @@ void enqueue_statistics(Pipeline &p)
 namespace
 {
 
-void enqueue_scoring(Pipeline &p)
+/* The last device stage: the variance of every (channel, block). */
+void enqueue_solve(Pipeline &p)
 {
     sycl::queue &q = *p.queue;
     const Geometry &g = p.config.geometry;
-    const Scoring &s = p.config.scoring;
     /* Channels come in (reference, distorted) pairs, one score per pair. */
     assert(p.config.channels % 2u == 0u && p.config.channels / 2u <= kMaxPairs);
     assert(g.blocks == g.blocks_h * (g.trunc_h / kBlock));
-    assert(s.weight_mode >= 0 && s.weight_mode <= 6);
     const SolveArgs solve{.indterm = p.indterm,
                           .qmat = p.qmat,
                           .rmat = p.rmat,
-                          .eig = p.eig,
                           .status = p.status,
                           .var = p.var,
-                          .ent = p.ent,
-                          .blocks = g.blocks,
-                          .sigma_nn = s.sigma_nn,
-                          .entropy_constant = s.entropy_constant};
+                          .blocks = g.blocks};
     launch_solve(q, solve, p.config.channels);
-    const ScoreArgs score{.var = p.var,
-                          .ent = p.ent,
-                          .status = p.status,
-                          .contrib = p.contrib,
-                          .result = p.result_device,
-                          .blocks = g.blocks,
-                          .base_entropy = s.base_entropy,
-                          .weight_mode = s.weight_mode};
-    launch_score(q, score, p.config.channels / 2u);
 }
 
-/* The device part of one frame, from the raw planes to FrameResult. */
+/* The device part of one frame, from the raw planes to the tail block. */
 void enqueue_chain(Pipeline &p, const ChannelBinding *bindings)
 {
     const RawPlanes planes = bind_planes(p, bindings);
@@ -2114,7 +1910,7 @@ void enqueue_chain(Pipeline &p, const ChannelBinding *bindings)
         enqueue_filter<uint8_t>(p, planes);
     }
     enqueue_statistics(p);
-    enqueue_scoring(p);
+    enqueue_solve(p);
 }
 
 bool same_bindings(const ChannelBinding *a, const ChannelBinding *b, uint32_t channels)
@@ -2144,7 +1940,7 @@ void stop_recording(syclex::command_graph<syclex::graph_state::modifiable> &grap
 }
 
 /* Record the chain for `bindings` once; later frames replay it as a single
- * submission instead of eight kernel launches. Returns the graph slot, or -1
+ * submission instead of one launch per kernel. Returns the graph slot, or -1
  * when the device or runtime cannot record, in which case the pipeline keeps
  * enqueueing the kernels directly. */
 int32_t recorded_chain(Pipeline &p, const ChannelBinding *bindings)
@@ -2204,7 +2000,7 @@ void enqueue_frame(Pipeline &p, const ChannelBinding *bindings)
 #else
     enqueue_chain(p, bindings);
 #endif
-    q.memcpy(p.result_host, p.result_device, sizeof(FrameResult));
+    q.memcpy(p.tail_host, p.tail_device, p.tail_layout.bytes);
 }
 
 } // namespace
@@ -2220,6 +2016,9 @@ int speed_sycl::pipeline_create(Pipeline **out, const PipelineConfig &config)
     }
     p->queue = static_cast<sycl::queue *>(config.queue);
     p->config = config;
+    p->shared.geometry = config.geometry;
+    p->shared.filters = config.filters;
+    p->shared.scoring = config.scoring;
     const Geometry &g = config.geometry;
     /* configure() sets 2 for the picture_copy() 16-bit path and 1 otherwise;
      * enqueue_chain() picks the sample type from exactly these two. */
@@ -2335,8 +2134,10 @@ int speed_sycl::pipeline_collect(Pipeline *pipeline, FrameResult *out)
     if (err) {
         return err;
     }
-    *out = *pipeline->result_host;
-    return 0;
+    /* The host tail: entropies and score from the block just read back, with
+     * speed.c's statements and the host's log2() (ADR-1477). */
+    return speed_internal_gpu_tail_scores(&pipeline->shared, pipeline->config.channels,
+                                          pipeline->tail_host, pipeline->entropy.get(), out);
 }
 
 int speed_sycl::stage_plane(Pipeline *pipeline, uint32_t index, const VmafPicture *pic,

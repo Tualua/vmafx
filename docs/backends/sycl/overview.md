@@ -556,12 +556,14 @@ See [ADR-0483](../../adr/0483-gpu-dispatch-parse-dedup.md) and the
 
 ## Numerical tolerance vs the CPU scalar path
 
-The SYCL twins return the CPU extractors' bits. Of the 21 features of the
-[cross-backend gate](../../development/cross-backend-gate.md), 19 are
+The SYCL twins return the CPU extractors' bits. Of the 22 features of the
+[cross-backend gate](../../development/cross-backend-gate.md), 21 are
 declared exact twins and compared with tolerance 0
 ([list](../../development/cross-backend-exact-twins.md)); `ciede` is within
-1.4e-11 of the CPU (its math functions), and `speed_chroma` measures
-identical but depends on the build's math library
+1.4e-11 of the CPU (its math functions). `speed_chroma` and `speed_temporal`
+joined the exact twins with
+[ADR-1477](../../adr/1477-speed-upstream-double-math.md): their logarithms
+are the host's, so they no longer depend on the build's math library
 ([below](#exact-twins-declared-as-a-group-2026-10-02)). Measured on an Intel
 Arc A380 (2026-10-02) with the default model, the VMAF score of every frame
 equals `--backend cpu` on the Netflix `src01` pair (48 frames) and on 50
@@ -808,9 +810,12 @@ the deviation:
 - **SpEED twins are device-resident and bit-identical to the CPU
   ([ADR-1358](../../adr/1358-sycl-speed-device-resident-linalg.md)).**
   `speed_chroma_sycl` and `speed_temporal_sycl` upload the raw planes once
-  per frame and run filtering, covariance, eigenvalues, QR solve and score on
+  per frame and run filtering, covariance, eigenvalues and the QR solve on
   the device, replayed as one recorded SYCL graph; the host reads one result
-  per frame. Their per-frame scores equal `--backend cpu` exactly. Timings and
+  block per frame (status words, eigenvalues, per-block variances) and forms
+  the entropies and the score from it with `speed.c`'s own `log2()` calls
+  ([ADR-1477](../../adr/1477-speed-upstream-double-math.md)). Their per-frame
+  scores equal `--backend cpu` exactly, on an icx and on a GCC CPU. Timings and
   the parity check are in [SpEED](../../metrics/speed_qa.md#sycl-device-resident-and-bit-identical-to-the-cpu).
   The pipeline rounds division and square root explicitly (`div_rn()` /
   `sqrt_rn()`) and keeps every product that feeds an add in a named
@@ -1859,9 +1864,13 @@ features, and `float_ssim` at `scale=1` on 50 frames of BBB 3840x2160.
 
 Two features are not listed:
 
-- `speed_chroma` was identical on all 333 frames as well. Its `log2` is a
+- `speed_chroma` was identical on all 333 frames as well. Its `log2` was a
   correctly rounded evaluation on the device, where the CPU calls the math
-  library of the build, so the equality depends on that library.
+  library of the build, so the equality depended on that library. Since
+  [ADR-1477](../../adr/1477-speed-upstream-double-math.md) the twin's
+  logarithms are the host's and `speed_chroma` and `speed_temporal` are
+  listed (`scripts/ci/exact_twins.d/speed_chroma.sycl`,
+  `speed_temporal.sycl`).
 - `ciede` is within 1.4e-11 of the CPU by its derived bound (ADR-1436).
 
 One of the listed twins is exact within a stated range: `cambi` while

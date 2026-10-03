@@ -1591,6 +1591,7 @@ nav:
         - "ADR-1474: relicense-helper-headers-and-ci-check": adr/1474-relicense-helper-headers-and-ci-check.md
         - "ADR-1475: integer-adm-quant-step-upstream-float": adr/1475-integer-adm-quant-step-upstream-float.md
         - "ADR-1476: ciede-upstream-expression": adr/1476-ciede-upstream-expression.md
+        - "ADR-1477: speed-upstream-double-math": adr/1477-speed-upstream-double-math.md
         - "ADR-1478: motion-five-frame-window-port": adr/1478-motion-five-frame-window-port.md
         - "ADR-1479: ciede-422-chroma-subsampling-flags": adr/1479-ciede-422-chroma-subsampling-flags.md
         - "ADR-1480: speed-frame-buffers-prescale-above-one": adr/1480-speed-frame-buffers-prescale-above-one.md
@@ -2195,6 +2196,7 @@ nav:
         - "upstream-blocked": adr/by-tag/upstream-blocked.md
         - "upstream-divergence": adr/by-tag/upstream-divergence.md
         - "upstream-mirror": adr/by-tag/upstream-mirror.md
+        - "upstream-parity": adr/by-tag/upstream-parity.md
         - "upstream-port": adr/by-tag/upstream-port.md
         - "upstream-sync": adr/by-tag/upstream-sync.md
         - "upstream": adr/by-tag/upstream.md

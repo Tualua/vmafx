@@ -2,10 +2,10 @@
 paths:
   - core/src/feature/cuda/speed_cuda_pipeline.c
   - core/src/feature/cuda/speed_cuda_pipeline.h
-invariant: SpEED singular covariance, global matching, CPU-exact fp32, and speed_log2 precision.
+invariant: SpEED singular covariance, global matching, CPU-exact fp32, host tail for entropy and score.
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
-# Device-resident SpEED covariance and log2 precision
+# Device-resident SpEED covariance and host tail
 
 - **GPU SpEED means/cov must match CPU GLOBAL covariance, and ref/dis
   must use SEPARATE eigenvalue bases** (PR #1029,
@@ -14,8 +14,8 @@ invariant: SpEED singular covariance, global matching, CPU-exact fp32, and speed
   (U ref, U dis, V ref, V dis; temporal: ref, dis) owns its `means[25]`
   (global mean per phase-shift element over the full submatrix, never
   per tile), its one covariance sweep divided by `N` once, and its own
-  `speed_linalg_kernel` block (eigenvalues + QR). `speed_solve_kernel`
-  reads the channel's own eigenvalues. Never share a basis between ref
+  `speed_linalg_kernel` block (eigenvalues + QR). The host tail reads the
+  channel's own eigenvalues. Never share a basis between ref
   and dis channels: ~2× chroma error (masked on temporal, `ref ≈ dis`).
   Any change to SpEED kernel math mirrors CPU (`speed.c`), CUDA, HIP and
   SYCL in same PR. See §"Device-resident CAMBI and SpEED" below.
@@ -43,17 +43,23 @@ invariant: SpEED singular covariance, global matching, CPU-exact fp32, and speed
   chroma planes give 4x2 = 8 blocks for 25x25 covariance — singular on
   every frame, so never reach regular path at all. Any new
   SpEED test needing regular frame must be at least 960x960.
-- **`speed_log2()` stays correctly rounded; CPU `log2f` = only
-  difference left** (ADR-1430). `speed_chroma_cuda` vs glibc CPU: 13 of
-  789 values off by 1-5 fp32 steps (1.4e-6 max); vs CPU with CR `log2f`
-  preloaded: 0. Never port glibc's `log2f` to the device (ties twin to
-  one libm; icx build = `libimf`, rounds correctly). Gate cell =
-  `LIBM_TWINS["speed_chroma"]` 5e-6, scores < 16.
-  `test_cuda_speed_chroma_parity`: 960x960 texture (regular covariance),
-  three scores, every frame, relative 1e-6; fixture + CPU run + comparison
-  live in `core/test/speed_chroma_twin_parity.h`, shared with the HIP test
-  (ADR-1452). A new difference there or in
-  the gate = twin regression until the preload run says otherwise.
+- **Entropy + score = host tail; no device logarithm** (ADR-1477, replaces
+  ADR-1430's bound). Device chain ends at `speed_solve_kernel` (variances).
+  One readback per frame = tail block `SPEED_BUF_TAIL` (status, eigenvalues,
+  variances; `SpeedGpuTailLayout`). `speed_cuda_pipeline_collect()` waits,
+  then `speed_internal_gpu_tail_scores()` (`speed_internal.c`) = `speed.c`'s
+  own fp64 `log2()` statements on the host's libm. Twin == CPU bit for bit
+  on any libm (glibc, libimf). Gate cells `speed_chroma.cuda`,
+  `speed_temporal.cuda` in `scripts/ci/exact_twins.d/`; parity tests `==`.
+  Never add `log2` / score kernel / second readback to the device: contract
+  test plants each. `test_cuda_speed_chroma_parity`: 960x960 texture (regular
+  covariance), three scores, every frame; fixture + CPU run + comparison in
+  `core/test/speed_chroma_twin_parity.h`, shared with the HIP test.
+- **Givens rotation = `speed_givens_unit()`** (`feature/speed_givens.h`,
+  shared with HIP + SYCL): upstream's `1.0 / sqrt(1 + t * t)` (fp64 root and
+  quotient, one rounding to fp32) from `rn_sqrt` / `rn_div` / `exact_fma`.
+  Not `rn_div(1.0f, rn_sqrt(u))`: differs on 2.9M of 8.4M inputs. Proven on
+  every input by `test_speed_upstream_form` (no device).
 
 - **SpEED = one pipeline** (`speed_cuda_pipeline.c`), only TU loading
   `speed_score.cu` / launching its kernels (module owner in
@@ -65,15 +71,8 @@ invariant: SpEED singular covariance, global matching, CPU-exact fp32, and speed
   `__fadd_rn` / `__fsub_rn` / `__fmul_rn` / `__fdiv_rn` / `__fsqrt_rn`
   (never contracted, correctly rounded) + TU built `--fmad=false`
   (every fatbin, ADR-1403). No fp64 type in file, no `sqrtf` / `log2f` /
-  `__fdividef` (libdevice `log2f` not correctly rounded -> `speed_log2()`
-  fp32 pairs). `EIGENVALUE_EPS` compared as `0x1.0c6f7ap-20f` +
+  `__fdividef`. `EIGENVALUE_EPS` compared as `0x1.0c6f7ap-20f` +
   `0x1.6bdb1ap-49f`. Only `exact_fma()` = error-free transforms.
-- **`speed_log2()` hard cases.** Pair series misrounds exactly 48 floats
-  (mantissas 0x1.aa932c, 0x1.ff800c); `feature/speed_log2_hard_cases.h`
-  holds correct outputs, read by CUDA (`__constant__`) and SYCL
-  (`constexpr`) twins. Series change -> table stale: rerun exhaustive
-  replay (Research-1379 finding 7, 0 misrounds on RTX 4090 + Arc A380)
-  before merge; contract test recomputes entries in quad precision.
 - **`lanczos4` prescale weights = host table, never a device sine.** CPU
   rounds each weight once from fp64 `sin()`; fp32 `sinpif()` is ulps off and
   SpEED amplifies (8.8e-3 relative on a smooth field,

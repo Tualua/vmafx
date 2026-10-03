@@ -75,8 +75,10 @@
 #define FIXTURE_H 960u
 #define FIXTURE_BPC 8u
 
-/* Tolerance from the ADR-0214 cross-backend gate (places=4 -> 1e-4). */
-#define PARITY_TOL 1e-4
+/* No tolerance (ADR-1477): the twin forms its entropies and its score on the
+ * host with speed.c's own statements (speed_internal_gpu_tail_scores()), the
+ * singular rule of speed_extract_score() included, so its score is the CPU's.
+ * The test allowed 1e-4 before. */
 
 #define CHROMA_FRAMES 2u
 #define TEMPORAL_FRAMES 3u
@@ -255,13 +257,11 @@ static char *assert_parity(const char *cpu_fex, const char *gpu_fex, int mode, c
     mu_assert("CPU SpEED score is non-finite", isfinite(cpu));
     mu_assert("GPU SpEED score is non-finite", isfinite(gpu));
 
-    const double delta = fabs(cpu - gpu);
-    if (delta > PARITY_TOL) {
-        (void)fprintf(stderr,
-                      "\nSpEED %s singular parity FAIL: cpu=%.8f gpu=%.8f delta=%.2e tol=%.2e\n",
-                      label, cpu, gpu, delta, PARITY_TOL);
+    if (cpu != gpu) {
+        (void)fprintf(stderr, "\nSpEED %s singular parity FAIL: cpu=%.17g gpu=%.17g delta=%.2e\n",
+                      label, cpu, gpu, fabs(cpu - gpu));
     }
-    mu_assert("SpEED singular-covariance score drifts from the CPU reference", delta <= PARITY_TOL);
+    mu_assert("SpEED singular-covariance score is not the CPU reference's", cpu == gpu);
     return NULL;
 }
 

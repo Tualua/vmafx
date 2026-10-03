@@ -9,8 +9,17 @@
  * speed_temporal CPU vs. CUDA parity test (ADR-0965).
  *
  * Asserts that `Speed_temporal_feature_speed_temporal_score` from the CPU
- * extractor `speed_temporal` and the CUDA twin `speed_temporal_cuda` match
- * to within the cross-backend tolerance (places=4, per ADR-0214).
+ * extractor `speed_temporal` and the CUDA twin `speed_temporal_cuda` are
+ * equal.
+ *
+ * Since ADR-1477 the comparison is an equality: speed.c evaluates Netflix's
+ * fp64 statements (libvmaf/src/feature/speed.c of Netflix/vmaf 9e48141b:
+ * `1.0 / sqrt(1 + t * t)` at 418 and 423, the `log2()` of update_entropy()
+ * at 802 and of get_speed_score() at 897 to 928), and the twin reproduces
+ * each of them, the rotation on the device (feature/speed_givens.h) and the
+ * logarithms on the host with the CPU extractor's own C library
+ * (speed_internal_gpu_tail_scores()).
+ * The test allowed 1e-4 (places=4, ADR-0214) before.
  *
  * Skip behaviour: if `vmaf_cuda_state_init()` fails (no CUDA driver or no
  * device visible) the test emits `[skip: no CUDA device]` and exits 77, meson's
@@ -46,9 +55,6 @@
 #endif
 #define FIXTURE_BPC 8u
 #define NUM_FRAMES 3u
-
-/* Tolerance from ADR-0214 cross-backend gate (places=4 -> 1e-4). */
-#define PARITY_TOL 1e-4
 
 static int fill_fixture(VmafPicture *pic, unsigned frame_idx, int distort)
 {
@@ -168,13 +174,12 @@ static char *test_speed_temporal_cpu_cuda_parity(void)
     if (isnan(cuda_score))
         return NULL;
 
-    const double delta = fabs(cpu_score - cuda_score);
-    if (delta > PARITY_TOL) {
-        (void)fprintf(stderr,
-                      "\nspeed_temporal parity FAIL: cpu=%.8f cuda=%.8f delta=%.2e tol=%.2e\n",
-                      cpu_score, cuda_score, delta, PARITY_TOL);
+    if (cpu_score != cuda_score) {
+        (void)fprintf(stderr, "\nspeed_temporal parity FAIL: cpu=%.17g cuda=%.17g delta=%.2e\n",
+                      cpu_score, cuda_score, fabs(cpu_score - cuda_score));
     }
-    mu_assert("speed_temporal CPU vs CUDA delta exceeds places=4 tolerance", delta <= PARITY_TOL);
+    mu_assert("speed_temporal_cuda does not return the CPU extractor's score",
+              cpu_score == cuda_score);
     return NULL;
 }
 

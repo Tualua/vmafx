@@ -23,8 +23,15 @@
  *  substitute: without OCML_BASIC_ROUNDED_OPERATIONS it is the native
  *  approximate square root, and __fmul_rn() / __fadd_rn() are the plain
  *  operators, which contract. The fp64 expressions of the reference are
- *  reproduced with exact fp32 pairs; nothing here uses fp64 (ADR-0220 spirit,
- *  core/test/test_hip_kernel_source_contract.py).
+ *  reproduced with exact fp32 pairs, and the Givens rotation's
+ *  `1.0 / sqrt(1 + t * t)` with feature/speed_givens.h; nothing here uses
+ *  fp64 (ADR-0220 spirit, core/test/test_hip_kernel_source_contract.py).
+ *
+ *  The chain ends at the variances. The entropies and the score are formed on
+ *  the host from the block the pipeline reads back (the status words, the
+ *  eigenvalues and the variances, SpeedGpuTailLayout), with speed.c's
+ *  statements and the host's log2() (speed_internal_gpu_tail_scores(),
+ *  ADR-1477). No kernel evaluates a logarithm.
  *
  *  Group-cooperative routines take a SpeedHdLanes (this work-item's index and
  *  the group size) and synchronise with SPEED_HD_SYNC(); every element a
@@ -39,7 +46,6 @@
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>
 
 /* The per-run contract every device-resident SpEED twin shares (geometry,
  * scoring constants, channel bindings, the per-frame result), filled at init
@@ -109,16 +115,13 @@ typedef struct SpeedHipParams {
     float *indterm;  /* channels x 25 x blocks */
     float *means;    /* channels x 25 */
     float *cov;      /* channels x 625 */
-    float *eig;      /* channels x 25 */
     float *qmat;     /* channels x 625, accumulated reflector product */
     float *rmat;     /* channels x 625 */
-    float *var;      /* channels x blocks */
-    float *ent;      /* channels x blocks */
-    float *contrib;  /* pairs x blocks */
+    /* The three parts of the block the host reads back (SpeedGpuTailLayout). */
     int32_t *status; /* channels x 2: singular, iteration cap */
-    SpeedGpuFrameResult *result;
+    float *eig;      /* channels x 25 */
+    float *var;      /* channels x blocks */
     SpeedGpuGeometry geometry;
-    SpeedGpuScoring scoring;
     SpeedGpuChannelBinding bindings[SPEED_HIP_BINDING_SETS][SPEED_HIP_MAX_CHANNELS];
     uint32_t plane_bytes;
     uint32_t channels; /* 2 (one score pair) or 4 (two pairs) */
@@ -131,35 +134,12 @@ typedef struct SpeedHipParams {
 /* The host C compiler and hipcc must agree on every offset. */
 SPEED_HIP_STATIC_ASSERT(SPEED_HIP_N == SPEED_GPU_ELEMENTS, "SPEED_HIP_N is elements_in_block");
 SPEED_HIP_STATIC_ASSERT(sizeof(SpeedGpuGeometry) == 64u, "SpeedGpuGeometry layout");
-SPEED_HIP_STATIC_ASSERT(sizeof(SpeedGpuFrameResult) == 40u, "SpeedGpuFrameResult layout");
-SPEED_HIP_STATIC_ASSERT(sizeof(SpeedHipParams) == 17u * 8u + 64u + 16u + 64u + 24u,
+SPEED_HIP_STATIC_ASSERT(sizeof(SpeedHipParams) == 14u * 8u + 64u + 64u + 24u,
                         "SpeedHipParams layout");
 
 /* ------------------------------------------------------------------ */
-/* Bit casts, fused multiply-add and the exact fp32 pair arithmetic.   */
+/* Fused multiply-add and the exact fp32 pair arithmetic.              */
 /* ------------------------------------------------------------------ */
-
-static inline SPEED_HD uint32_t speed_hd_bits(float value)
-{
-#if defined(__HIP_DEVICE_COMPILE__)
-    return __float_as_uint(value);
-#else
-    uint32_t bits = 0u;
-    memcpy(&bits, &value, sizeof(bits));
-    return bits;
-#endif
-}
-
-static inline SPEED_HD float speed_hd_float(uint32_t bits)
-{
-#if defined(__HIP_DEVICE_COMPILE__)
-    return __uint_as_float(bits);
-#else
-    float value = 0.0f;
-    memcpy(&value, &bits, sizeof(value));
-    return value;
-#endif
-}
 
 /* An explicit fused multiply-add: one rounding by definition, independent of
  * -ffp-contract. */
@@ -212,15 +192,6 @@ static inline SPEED_HD SpeedHdFf speed_hd_ff_add(SpeedHdFf a, SpeedHdFf b)
     return speed_hd_quick_two_sum(first.hi, low.lo + first.lo);
 }
 
-static inline SPEED_HD SpeedHdFf speed_hd_ff_mul(SpeedHdFf a, SpeedHdFf b)
-{
-    const SpeedHdFf product = speed_hd_two_prod(a.hi, b.hi);
-    const float cross1 = a.hi * b.lo;
-    const float cross2 = a.lo * b.hi;
-    const float cross = cross1 + cross2;
-    return speed_hd_quick_two_sum(product.hi, product.lo + cross);
-}
-
 /* (hi + lo) / divisor, rounded once to fp32. */
 static inline SPEED_HD float speed_hd_ff_div_to_float(SpeedHdFf value, float divisor)
 {
@@ -251,82 +222,16 @@ static inline SPEED_HD int speed_hd_below_eps(float x)
     return x <= SPEED_HIP_EPS_HI;
 }
 
-/* ------------------------------------------------------------------ */
-/* log2f() of the reference, correctly rounded via fp32 pairs.         */
-/* ------------------------------------------------------------------ */
-
-/* 1/3, 1/5, ..., 1/21 as exact fp32 pairs. */
-static inline SPEED_HD SpeedHdFf speed_hd_inverse_odd(uint32_t k)
-{
-    static const float hi[10] = {0x1.555556p-2f, 0x1.99999ap-3f, 0x1.24924ap-3f, 0x1.c71c72p-4f,
-                                 0x1.745d18p-4f, 0x1.3b13b2p-4f, 0x1.111112p-4f, 0x1.e1e1e2p-5f,
-                                 0x1.af286cp-5f, 0x1.861862p-5f};
-    static const float lo[10] = {
-        -0x1.555556p-27f, -0x1.99999ap-29f, -0x1.b6db6ep-28f, -0x1.c71c72p-31f, -0x1.745d18p-29f,
-        -0x1.89d89ep-29f, -0x1.dddddep-29f, -0x1.e1e1e2p-33f, -0x1.af286cp-32f, -0x1.e79e7ap-31f};
-    return speed_hd_ff(hi[k], lo[k]);
-}
-
-/* ln(m) = 2 atanh(s), s = (m - 1)/(m + 1), m in [sqrt(1/2), sqrt(2)],
- * |s| <= 0.1716; the series stops at s^21. */
-static inline SPEED_HD SpeedHdFf speed_hd_ln_mantissa(float m)
-{
-    const float num = m - 1.0f;                      /* exact */
-    const SpeedHdFf den = speed_hd_two_sum(m, 1.0f); /* exact */
-    const float s_hi = num / den.hi;
-    const float residual = speed_hd_fma(-s_hi, den.hi, num);
-    const float tail = s_hi * den.lo;
-    const float s_lo = (residual - tail) / den.hi;
-    const SpeedHdFf s = speed_hd_quick_two_sum(s_hi, s_lo);
-    const SpeedHdFf u = speed_hd_ff_mul(s, s);
-    SpeedHdFf poly = speed_hd_inverse_odd(9u);
-    for (uint32_t k = 9u; k > 0u; k--)
-        poly = speed_hd_ff_add(speed_hd_ff_mul(poly, u), speed_hd_inverse_odd(k - 1u));
-    poly = speed_hd_ff_add(speed_hd_ff_mul(poly, u), speed_hd_ff(1.0f, 0.0f));
-    const SpeedHdFf half = speed_hd_ff_mul(s, poly);
-    return speed_hd_ff(2.0f * half.hi, 2.0f * half.lo);
-}
-
-/* log2 correctly rounded to fp32: evaluated in fp32 pairs to about 2^-45 and
- * rounded once. The device builtin is not correctly rounded (ADR-1358). */
-static inline SPEED_HD float speed_hd_log2_rn(float x)
-{
-    if (!(x > 0.0f))
-        return x == 0.0f ? -HUGE_VALF : NAN;
-    if (x == HUGE_VALF)
-        return x;
-    uint32_t bits = speed_hd_bits(x);
-    int32_t exponent = 0;
-    if (bits < 0x00800000u) { /* subnormal */
-        bits = speed_hd_bits(x * 0x1p23f);
-        exponent = -23;
-    }
-    exponent += (int32_t)(bits >> 23u) - 127;
-    float m = speed_hd_float((bits & 0x007fffffu) | 0x3f800000u);
-    if (m > 0x1.6a09e6p+0f) { /* sqrt(2) */
-        m = m * 0.5f;
-        exponent += 1;
-    }
-    const SpeedHdFf log2e = speed_hd_ff(0x1.715476p+0f, 0x1.4ae0c0p-26f);
-    const SpeedHdFf log2m = speed_hd_ff_mul(speed_hd_ln_mantissa(m), log2e);
-    return speed_hd_ff_add(speed_hd_ff((float)exponent, 0.0f), log2m).hi;
-}
-
-/* log2f() of the reference. The CPU extractor calls its libm's log2f, which
- * is correctly rounded (or nearly: libimf, the icx build's libm) or not
- * (glibc misrounds about 0.4% of arguments in [1, 8)); the device always
- * rounds correctly. SPEED_HD_HOST_LIBM_LOG2 is a host-only test seam: the
- * unit test defines it to replay the chain with the CPU's own log2f, which
- * isolates every other operation for a bit-exact comparison, and checks
- * speed_hd_log2_rn() separately. It cannot reach device code. */
-static inline SPEED_HD float speed_hd_log2(float x)
-{
-#if defined(SPEED_HD_HOST_LIBM_LOG2) && !defined(__HIP_DEVICE_COMPILE__)
-    return log2f(x);
-#else
-    return speed_hd_log2_rn(x);
-#endif
-}
+/* create_givens()'s fp64 statement, on this header's correctly rounded fp32
+ * operations (ADR-1477). */
+#define SPEED_GIVENS_FUNC static inline SPEED_HD
+#define SPEED_GIVENS_SQRT(x) sqrtf(x)
+#define SPEED_GIVENS_DIV(a, b) ((a) / (b))
+#define SPEED_GIVENS_MUL(a, b) ((a) * (b))
+#define SPEED_GIVENS_SUB(a, b) ((a) - (b))
+#define SPEED_GIVENS_ADD(a, b) ((a) + (b))
+#define SPEED_GIVENS_FMA(a, b, c) speed_hd_fma((a), (b), (c))
+#include "feature/speed_givens.h"
 
 /* ------------------------------------------------------------------ */
 /* Picture sources.                                                    */
@@ -948,8 +853,8 @@ static inline SPEED_HD void speed_hd_create_givens(float a, float b, float *c, f
     const int b_larger = fabsf(b) > fabsf(a);
     const float t = b_larger ? -a / b : -b / a;
     const float tt = t * t;
-    const float root = sqrtf(1.0f + tt);
-    const float unit = 1.0f / root;
+    /* `1.0 / sqrt(1 + t * t)`: an fp64 root and quotient rounded to fp32. */
+    const float unit = speed_givens_unit(1.0f + tt);
     const float other = unit * t;
     *s = b_larger ? unit : other;
     *c = b_larger ? other : unit;
@@ -1266,9 +1171,8 @@ static inline SPEED_HD void speed_hd_linalg_group(const SpeedHdLanes *g, const S
 }
 
 /* ------------------------------------------------------------------ */
-/* Solve, variance and entropy per block: solve_linear_system() tail,  */
-/* compute_pointwise_product_and_division(), sum_columns(),            */
-/* update_entropy().                                                   */
+/* Solve and variance per block: solve_linear_system() tail,           */
+/* compute_pointwise_product_and_division(), sum_columns().            */
 /* ------------------------------------------------------------------ */
 
 static inline SPEED_HD void speed_hd_solve_block(const float *b, uint32_t stride, const float *q,
@@ -1294,21 +1198,6 @@ static inline SPEED_HD void speed_hd_solve_block(const float *b, uint32_t stride
     }
 }
 
-static inline SPEED_HD float speed_hd_block_entropy(const SpeedHipParams *p, uint32_t ch,
-                                                    float variance)
-{
-    float entropy = 0.0f;
-    for (uint32_t k = 0u; k < SPEED_HIP_N; k++) {
-        const float eigenvalue = p->eig[ch * SPEED_HIP_N + k];
-        const float l = eigenvalue < 0.0f ? 0.0f : eigenvalue;
-        const float scaled = l * variance;
-        const float shifted = scaled + p->scoring.sigma_nn;
-        const float term = speed_hd_log2(shifted) + p->scoring.entropy_constant;
-        entropy = entropy + term;
-    }
-    return entropy;
-}
-
 static inline SPEED_HD void speed_hd_block_statistics(const SpeedHipParams *p, uint32_t ch,
                                                       uint32_t block)
 {
@@ -1329,87 +1218,6 @@ static inline SPEED_HD void speed_hd_block_statistics(const SpeedHipParams *p, u
         variance = variance + term;
     }
     p->var[(size_t)ch * blocks + block] = variance;
-    p->ent[(size_t)ch * blocks + block] = speed_hd_block_entropy(p, ch, variance);
-}
-
-/* ------------------------------------------------------------------ */
-/* Frame score: get_speed_score() + speed_extract_score().             */
-/* ------------------------------------------------------------------ */
-
-static inline SPEED_HD float speed_hd_weighted_log(float variance)
-{
-    return speed_hd_log2(1.0f + variance);
-}
-
-static inline SPEED_HD float speed_hd_spatial_dis_weight(float rv, float dv, int32_t mode)
-{
-    if (mode == 0 || mode == 2)
-        return speed_hd_weighted_log(dv);
-    if (mode == 1)
-        return speed_hd_weighted_log(rv);
-    if (mode == 5 || mode == 6) {
-        const float ref_share = mode == 5 ? 0.75f : 0.25f;
-        const float dis_share = mode == 5 ? 0.25f : 0.75f;
-        const float wr = ref_share * rv;
-        const float wd = dis_share * dv;
-        return speed_hd_weighted_log(wr + wd);
-    }
-    const float mean = (rv + dv) / 2.0f; /* modes 3 and 4 */
-    return speed_hd_weighted_log(mean);
-}
-
-static inline SPEED_HD float speed_hd_spatial_ref_weight(float rv, float dv, int32_t mode)
-{
-    if (mode == 2)
-        return speed_hd_weighted_log(dv);
-    if (mode == 3) {
-        const float mean = (rv + dv) / 2.0f;
-        return speed_hd_weighted_log(mean);
-    }
-    return speed_hd_weighted_log(rv);
-}
-
-static inline SPEED_HD float speed_hd_block_score(const SpeedHipParams *p, uint32_t pair,
-                                                  uint32_t block)
-{
-    const uint32_t blocks = p->geometry.blocks;
-    const size_t ref = (size_t)(2u * pair) * blocks + block;
-    const size_t dis = ref + blocks;
-    const float re = p->ent[ref];
-    const float de = p->ent[dis];
-    const float rv = p->var[ref];
-    const float dv = p->var[dis];
-    if (re < p->scoring.base_entropy && de < p->scoring.base_entropy)
-        return 0.0f;
-    const int32_t mode = p->scoring.weight_mode;
-    const float spatial_ref = re * speed_hd_spatial_ref_weight(rv, dv, mode);
-    const float spatial_dis = de * speed_hd_spatial_dis_weight(rv, dv, mode);
-    return fabsf(spatial_ref - spatial_dis);
-}
-
-/* Lane 0 of the score work-group: the sequential sum of the per-block
- * contributions, the mean, the singular rule of speed_extract_score() and
- * the flags. */
-static inline SPEED_HD void speed_hd_score_finish(const SpeedHipParams *p, uint32_t pair)
-{
-    const uint32_t blocks = p->geometry.blocks;
-    const float *contrib = p->contrib + (size_t)pair * blocks;
-    float score = 0.0f;
-    for (uint32_t b = 0u; b < blocks; b++)
-        score = score + contrib[b];
-    score = score / (float)blocks;
-    const size_t slots = (size_t)pair * 4u;
-    const int32_t sing_ref = p->status[slots];
-    const int32_t sing_dis = p->status[slots + 2u];
-    if ((sing_ref != 0) != (sing_dis != 0))
-        score = 0.0f;
-    p->result->score[pair] = score;
-    for (uint32_t side = 0u; side < 2u; side++) {
-        const uint32_t ch = 2u * pair + side;
-        const size_t slot = (size_t)ch * 2u;
-        p->result->singular[ch] = p->status[slot];
-        p->result->iteration_cap[ch] = p->status[slot + 1u];
-    }
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

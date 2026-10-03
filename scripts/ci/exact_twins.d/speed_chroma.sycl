@@ -1,0 +1,2 @@
+adr: ADR-1477
+evidence: Arc A380 (xe), --precision max, icx build, libimf: 759 of 759 values at the default options (the Netflix 576x324 pair at 8, 10, 12 and 16 bit, as 10-bit 4:2:2 and as 8- and 12-bit 4:4:4, both 1080p checkerboards, Sparks, noise at four bit depths, a bright 16-bit 1080p pair, a 1080p and a 10-bit 720p gradient, akiyo 352x288, BBB 1920x1080 and 3840x2160) and 2052 of 2052 over 12 option sets (the vmaf_v1.0.16 options, every weighting mode, kernelscale, sigma_nn, nn_floor, four prescales) identical to --backend cpu of the same build.

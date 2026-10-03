@@ -27,6 +27,14 @@
  * "Speed_chroma_feature_speed_chroma_v_score",
  * "Speed_chroma_feature_speed_chroma_uv_score".
  *
+ * The comparison is an equality since ADR-1477: speed.c evaluates Netflix's
+ * fp64 statements (libvmaf/src/feature/speed.c of Netflix/vmaf 9e48141b:
+ * `1.0 / sqrt(1 + t * t)` at 418 and 423, the `log2()` of update_entropy()
+ * at 802 and of get_speed_score() at 897 to 928), and the twin reproduces
+ * each of them, the rotation on the device (feature/speed_givens.h) and the
+ * logarithms on the host with the CPU extractor's own C library
+ * (speed_internal_gpu_tail_scores()). It allowed 1e-4 before.
+ *
  * A stride, kernel-radius, or weight-table drift in the SYCL
  * Gaussian pyramid would silently shift every chroma-SpEED column
  * on Intel-Arc CHUG re-extracts.
@@ -69,7 +77,6 @@
 #define FIXTURE_H 320u
 #endif
 #define FIXTURE_BPC 8u
-#define PARITY_TOL 1e-4
 
 static int fill_pic(VmafPicture *pic, unsigned salt)
 {
@@ -227,13 +234,12 @@ static char *test_speed_chroma_cpu_sycl_parity(void)
         "Speed_chroma_feature_speed_chroma_uv_score",
     };
     for (unsigned i = 0; i < 3u; i++) {
-        double delta = fabs(cpu_scores[i] - sycl_scores[i]);
-        if (delta > PARITY_TOL) {
-            (void)fprintf(stderr, "\n%s parity FAIL: cpu=%.8f sycl=%.8f delta=%.2e tol=%.2e\n",
-                          names[i], cpu_scores[i], sycl_scores[i], delta, PARITY_TOL);
+        if (cpu_scores[i] != sycl_scores[i]) {
+            (void)fprintf(stderr, "\n%s parity FAIL: cpu=%.17g sycl=%.17g delta=%.2e\n", names[i],
+                          cpu_scores[i], sycl_scores[i], fabs(cpu_scores[i] - sycl_scores[i]));
         }
-        mu_assert("speed_chroma CPU vs. SYCL delta exceeds places=4 tolerance (1e-4)",
-                  delta <= PARITY_TOL);
+        mu_assert("speed_chroma_sycl does not return the CPU extractor's score",
+                  cpu_scores[i] == sycl_scores[i]);
     }
     return NULL;
 }

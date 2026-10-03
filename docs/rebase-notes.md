@@ -59432,3 +59432,42 @@ upstream parity guard's allowlist.
   upstream must be `inf`. A dev image rebuilt with another compiler or C
   library is a new environment: run `make upstream-parity-full` in it before
   trusting a bound.
+## SpEED's three fp64 expressions are upstream's again; GPU twins score on the host (ADR-1477, 2026-10-02)
+
+`fix/speed-upstream-double-math`, `T-SPEED-UPSTREAM-DOUBLE-MATH-2026-10-02`.
+
+- `core/src/feature/speed.c`: `create_givens()` (`1.0 / sqrt(1 + t * t)`),
+  `update_entropy()` (`log2(...) + log2(2 * M_PI * M_E)`) and
+  `get_speed_score()` (`log2(1 + ...)`, `/ 2.0`, `0.75 * ...`) are upstream's
+  lines again (Netflix `9e48141b`, `libvmaf/src/feature/speed.c` 418, 423,
+  802, 897 to 928). **A sync takes upstream's side there.** The fork adds
+  only `NOLINT(performance-type-promotion-in-math-fn)` comments citing
+  ADR-1477; never resolve that lint by writing `sqrtf` / `log2f`.
+  `si_create_givens()` in `speed_internal.c` mirrors the first. After
+  `get_speed_score()` the fork adds three test entries,
+  `speed_internal_cpu_create_givens()`, `speed_internal_cpu_update_entropy()`
+  and `speed_internal_cpu_speed_score()` (declared in `speed_internal.h`),
+  which call the three functions unchanged for
+  `core/test/test_speed_upstream_form.c`; keep them when taking upstream's
+  side.
+- `speed_internal.c` gained `speed_internal_gpu_tail_scores()`: upstream's
+  `update_entropy()`, `est_params()` steps 8 and 9, `get_speed_score()` and
+  the one-side-singular rule of `speed_extract_score()`, for the GPU twins.
+  An upstream change to one of those functions is ported into the tail in
+  the same PR. `speed_internal_entropy_constant()` /
+  `speed_internal_base_entropy()` and `speed_constants.h` are gone.
+- `speed_gpu_common.h`: `SpeedGpuScoring` is `{sigma_nn, nn_floor,
+  weight_mode}` (host only); `SpeedGpuTailLayout` describes the block a twin
+  reads back. `SpeedCudaFrameArgs` and `SpeedHipParams` lost `ent`,
+  `contrib`, `result` and `scoring`.
+- New `core/src/feature/speed_givens.h` (`speed_givens_unit()`), included by
+  `cuda/speed/speed_score.cu`, `hip/speed/speed_hip_device.h` and
+  `sycl/speed_sycl_pipeline.cpp`; listed in `cuda_kernel_shared_headers` and
+  the HIP kernel header list of `core/src/meson.build`.
+- Removed: `speed_log2_hard_cases.h`, each twin's `speed_log2()` /
+  `speed_hd_log2_rn()`, `speed_score_kernel`, `speed_hip_score`,
+  `launch_score()`.
+- Gate: `scripts/ci/exact_twins.d/speed_{chroma,temporal}.{cuda,hip,sycl}`
+  added, `LIBM_TWINS` lost both features. On a conflict in
+  `docs/development/cross-backend-exact-twins.md` take master's side and run
+  `make docs-fragments-write`.

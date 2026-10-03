@@ -250,7 +250,7 @@ Netflix 576x324 pair, both 1080p checkerboard pairs and BBB 3840x2160:
 | Twin | Agreement with the CPU |
 |---|---|
 | `vif`, `motion`, `motion_v2`, `psnr`, `psnr_hvs`, `float_psnr`, `float_moment`, `float_motion`, `float_ssim`, `cambi`, `speed_temporal`, `float_ms_ssim` | bit-identical on every frame |
-| `speed_chroma` | bit-identical except where glibc misrounds `log2f`: 13 of 789 outputs, 1.4e-6 at most, and none with a correctly rounded `log2f` preloaded ([ADR-1430](../../adr/1430-cuda-speed-chroma-log2f-bound.md), 200 BBB frames) |
+| `speed_chroma` | bit-identical on every frame since [ADR-1477](../../adr/1477-speed-upstream-double-math.md): the entropies and the score are formed on the host with `speed.c`'s own `log2()` calls (13 of 789 outputs differed from a glibc CPU by up to 1.4e-6 before, when the twin rounded `log2` on the device and the CPU called `log2f`) |
 | `ssimulacra2` | bit-identical on every frame since [ADR-1433](../../adr/1433-cuda-ssimulacra2-cpu-sum-order.md) (7.3e-11 before: the terms were added in a tree) |
 | `ssim` | bit-identical on every frame since [ADR-1424](../../adr/1424-cuda-ssim-cpu-frame-sum.md) (1.1e-11 before: the terms were added per block) |
 | `adm` | bit-identical on every frame since [ADR-1416](../../adr/1416-cuda-adm-cpu-row-rounding.md) (2.1e-7 before: the host computed its own CSF weights) |
@@ -726,13 +726,15 @@ Scores:
   `double` top-K sum is exact; otherwise the device holds the exact value and
   the CPU its rounding (at most 3.0e-13 on a heavily banded 4K clip). It now
   also rejects an adjusted window above 65 x 65, as `cambi.c` does.
-- `speed_chroma_cuda` and `speed_temporal_cuda` equal the CPU extractor to the
-  last bit when that extractor rounds `log2f` correctly and does not fuse
-  multiply-adds, as an icx build without `-march=native` does; a gcc build on
-  glibc differs in the last bits on a few frames. That holds for every
-  `speed_prescale_method`: the `lanczos4` weights are read from a table the
-  host builds with the CPU scaler's own routine. Details:
-  [SpEED](../../metrics/speed_qa.md#the-cpu-reference-and-log2f).
+- `speed_chroma_cuda` and `speed_temporal_cuda` equal the CPU extractor of
+  the same build to the last bit, on a GCC build and on an icx build. The
+  device runs `speed.c` up to the per-block variances; the host forms the
+  entropies and the score from one block read back per frame, with `speed.c`'s
+  own `log2()` calls ([ADR-1477](../../adr/1477-speed-upstream-double-math.md)).
+  That holds for every `speed_prescale_method`: the `lanczos4` weights are
+  read from a table the host builds with the CPU scaler's own routine. The
+  CPU build must not fuse multiply-adds (no `-march=native` with icx).
+  Details: [SpEED](../../metrics/speed_qa.md#where-a-twin-computes-what).
 
 Measured on an RTX 4090 against an icx build of the CPU extractors: every
 per-frame `cambi`, `speed_chroma_u/v/uv` and `speed_temporal` value at

@@ -6,20 +6,28 @@
 Device-free: reads the sources only. Every planted regression below is a
 construct the pre-ADR-1379 / pre-ADR-1380 host-residual code actually had, so
 the contract fails on the old design and passes on the new one.
+
+SpEED since ADR-1477: the device chain ends at the variances, the frame's one
+readback is the tail block (status words, eigenvalues, variances), and the
+entropies and the score are formed after the frame's one wait by
+speed_internal_gpu_tail_scores(), which holds Netflix's fp64 `log2()`
+statements (libvmaf/src/feature/speed.c, update_entropy() at 796-806 and
+get_speed_score() at 892-938 of 9e48141b). No kernel evaluates a logarithm,
+and the Givens rotation's `1.0 / sqrt(1 + t * t)` (speed.c:418, :423) goes
+through feature/speed_givens.h. The planted regressions for these are the
+fp32 forms the kernels had before: a device log2, a device score kernel and
+`1.0f / sqrtf()`.
 """
 
 from __future__ import annotations
 
 import re
-import struct
 import unittest
-from decimal import Decimal, getcontext
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 CUDA_ROOT = ROOT / "core" / "src" / "feature" / "cuda"
 MESON_BUILD = ROOT / "core" / "src" / "meson.build"
-LOG2_HARD_CASES = ROOT / "core" / "src" / "feature" / "speed_log2_hard_cases.h"
 
 CAMBI_HOST = "integer_cambi_cuda.c"
 CAMBI_KERNELS = "integer_cambi/cambi_score.cu"
@@ -63,9 +71,13 @@ HOST_WAIT = re.compile(
 )
 COLLECT_WAIT = re.compile(r"\bvmaf_cuda_kernel_collect_wait\s*\(")
 # The frame's one device-to-host copy; its size argument names the result
-# block, so neither a plane nor per-block data can come back to be combined
-# on the host.
+# block, so no plane, covariance or second per-block buffer can come back.
 READBACK = re.compile(r"\bcuMemcpyDtoH(?:Async)?\s*\(([^;]*);")
+# SpEED's readback (ADR-1477): the tail block, whole.
+SPEED_TAIL_COPY = "speed_dptr(p, SPEED_BUF_TAIL)"
+SPEED_TAIL_SIZE = "p->tail.bytes"
+# Device logarithms, by any spelling.
+DEVICE_LOG = re.compile(r"\b(?:__)?(?:speed_)?log(?:2|10|1p)?f?\s*\(")
 GLOBAL_KERNEL = re.compile(
     r"__global__\s+void\s+(?:__launch_bounds__\([^)]*\)\s+)?(\w+)\s*\(([^)]*)\)"
 )
@@ -121,15 +133,18 @@ def _waits_outside(source: str, file: str, allowed_fn: str) -> list[str]:
     return failures
 
 
-def _readback_failures(source: str, file: str, result_type: str | None) -> list[str]:
+def _readback_failures(
+    source: str, file: str, result_type: str | None, size: str | None = None
+) -> list[str]:
     """`result_type`: the one block the file may copy back per frame, or None
-    when the file must not copy anything back."""
+    when the file must not copy anything back. `size`: the copy's size
+    argument, `sizeof(result_type)` unless given."""
     copies = READBACK.findall(_code(source))
     if result_type is None:
         return [f"{file}: device-to-host copy outside the pipeline"] if copies else []
     if len(copies) != 1:
         return [f"{file}: {len(copies)} device-to-host copies per frame, expected one"]
-    if f"sizeof({result_type})" not in copies[0]:
+    if (size or f"sizeof({result_type})") not in copies[0] or (size and result_type not in copies[0]):
         return [f"{file}: the readback is not the {result_type} block"]
     return []
 
@@ -180,7 +195,7 @@ def _speed_failures(sources: dict[str, str]) -> list[str]:
         failures += _waits_outside(sources[name], name, "speed_cuda_pipeline_wait")
         pipeline = name == "speed_cuda_pipeline.c"
         failures += _readback_failures(
-            sources[name], name, "SpeedGpuFrameResult" if pipeline else None
+            sources[name], name, SPEED_TAIL_COPY if pipeline else None, SPEED_TAIL_SIZE
         )
         if re.search(r"\bcuLaunchKernel\s*\(", code) and not pipeline:
             failures.append(f"{name}: kernel launched outside speed_cuda_pipeline.c")
@@ -206,8 +221,7 @@ def _speed_failures(sources: dict[str, str]) -> list[str]:
         failures.append(f"{SPEED_KERNELS}: a device sine evaluates a prescale weight")
     if "speed_internal_gpu_lanczos_weights(" not in _code(sources["speed_cuda_pipeline.c"]):
         failures.append("speed_cuda_pipeline.c: the lanczos4 weight table is not built on the host")
-    if "return speed_log2_hard_case(" not in kernels:
-        failures.append(f"{SPEED_KERNELS}: speed_log2 no longer applies the log2 hard cases")
+    failures += _speed_upstream_form_failures(sources)
     if "0x1.0c6f7ap-20f" not in kernels or "0x1.6bdb1ap-49f" not in kernels:
         failures.append(f"{SPEED_KERNELS}: EIGENVALUE_EPS no longer compared exactly")
     failures += _single_struct_kernels(kernels, SPEED_KERNELS, "SpeedCudaFrameArgs")
@@ -219,63 +233,77 @@ def _speed_failures(sources: dict[str, str]) -> list[str]:
     return failures
 
 
+def _speed_upstream_form_failures(sources: dict[str, str]) -> list[str]:
+    """ADR-1477: Netflix's fp64 statements, where each of them runs."""
+    failures: list[str] = []
+    kernels = _code(sources[SPEED_KERNELS])
+    # update_entropy() and get_speed_score() call log2() on the host, in
+    # speed_internal_gpu_tail_scores(); a device logarithm is another function.
+    if DEVICE_LOG.search(kernels):
+        failures.append(f"{SPEED_KERNELS}: a kernel evaluates a logarithm")
+    if "speed_score_kernel" in kernels or "entropy" in kernels:
+        failures.append(f"{SPEED_KERNELS}: the entropy or the score is formed on the device")
+    pipeline = _code(sources["speed_cuda_pipeline.c"])
+    tail = re.search(r"\bspeed_internal_gpu_tail_scores\s*\(", pipeline)
+    if not tail or _enclosing_function(pipeline, tail.start()) != "speed_cuda_pipeline_collect":
+        failures.append("speed_cuda_pipeline.c: collect() does not run the host tail")
+    # create_givens(): `1.0 / sqrt(1 + t * t)` is an fp64 root and quotient.
+    if '#include "feature/speed_givens.h"' not in sources[SPEED_KERNELS] or not re.search(
+        r"const float unit = speed_givens_unit\(rn_add\(1\.0f, rn_mul\(t, t\)\)\);", kernels
+    ):
+        failures.append(f"{SPEED_KERNELS}: create_givens() is not upstream's fp64 statement")
+    return failures
+
+
 def _contract_failures(sources: dict[str, str]) -> list[str]:
     return _cambi_failures(sources) + _speed_failures(sources)
-
-
-def _hard_case_table(text: str) -> list[tuple[int, int]]:
-    def values(name: str) -> list[int]:
-        match = re.search(rf"#define {name}\b(.*?)\}}", text, re.S)
-        return [int(token, 16) for token in re.findall(r"0x([0-9a-f]{8})u", match.group(1))]
-
-    return list(zip(values("SPEED_LOG2_HARD_INPUTS"), values("SPEED_LOG2_HARD_OUTPUTS")))
-
-
-def _f32(bits: int) -> float:
-    return struct.unpack("<f", struct.pack("<I", bits))[0]
-
-
-def _is_nearest_log2(x_bits: int, y_bits: int) -> bool:
-    """Whether float32 `y` is the float nearest log2(x), decided in 60 digits."""
-    getcontext().prec = 60
-    exact = Decimal(_f32(x_bits)).ln() / Decimal(2).ln()
-    error = abs(Decimal(_f32(y_bits)) - exact)
-    neighbours = (y_bits - 1, y_bits + 1)
-    return all(error < abs(Decimal(_f32(other)) - exact) for other in neighbours)
-
-
-def _hard_case_failures(text: str) -> list[str]:
-    table = _hard_case_table(text)
-    failures = [] if len(table) == 48 else [f"log2 hard cases: {len(table)} entries, expected 48"]
-    inputs = [x for x, _ in table]
-    if inputs != sorted(set(inputs)):
-        failures.append("log2 hard cases: inputs not strictly ascending")
-    for x_bits, y_bits in table:
-        if x_bits & 0x7FFFFF not in (0x554996, 0x7FC006):
-            failures.append(f"log2 hard cases: 0x{x_bits:08x} outside the two known mantissas")
-        if not _is_nearest_log2(x_bits, y_bits):
-            failures.append(f"log2 hard cases: 0x{y_bits:08x} is not log2(0x{x_bits:08x}) rounded")
-    return failures
 
 
 class CudaKernelSourceContractTest(unittest.TestCase):
     def test_live_sources_keep_the_device_resident_contract(self) -> None:
         self.assertEqual(_contract_failures(_sources()), [])
 
-    def test_log2_hard_cases_are_correctly_rounded(self) -> None:
-        self.assertEqual(_hard_case_failures(LOG2_HARD_CASES.read_text(encoding="utf-8")), [])
-
-    def test_wrong_log2_hard_case_is_detected(self) -> None:
-        # The device value of the first entry, one ulp off the correct one.
-        text = LOG2_HARD_CASES.read_text(encoding="utf-8").replace("0xc1fa1b55u", "0xc1fa1b54u", 1)
-        self.assertTrue(any("is not log2" in item for item in _hard_case_failures(text)))
-
-    def test_dropped_log2_hard_cases_are_detected(self) -> None:
+    def test_speed_device_log2_is_detected(self) -> None:
+        # The kernels' own log2 before ADR-1477: fp32 pairs rounded to float.
         sources = _sources()
         sources[SPEED_KERNELS] = sources[SPEED_KERNELS].replace(
-            "return speed_log2_hard_case(__float_as_uint(x), rounded);", "return rounded;", 1
+            "    reinterpret_cast<float *>(a.var)[idx] = variance;",
+            "    reinterpret_cast<float *>(a.var)[idx] = speed_log2(variance);",
+            1,
         )
-        self.assertTrue(any("log2 hard cases" in item for item in _contract_failures(sources)))
+        self.assertTrue(any("evaluates a logarithm" in item for item in _contract_failures(sources)))
+
+    def test_speed_device_score_kernel_is_detected(self) -> None:
+        sources = _sources()
+        sources[SPEED_KERNELS] += (
+            "\n__global__ void speed_score_kernel(const SpeedCudaFrameArgs a)\n{\n}\n"
+        )
+        failures = _contract_failures(sources)
+        self.assertTrue(any("formed on the device" in item for item in failures))
+
+    def test_speed_dropped_host_tail_is_detected(self) -> None:
+        sources = _sources()
+        sources["speed_cuda_pipeline.c"] = sources["speed_cuda_pipeline.c"].replace(
+            "return speed_internal_gpu_tail_scores(", "return speed_local_scores(", 1
+        )
+        self.assertTrue(any("host tail" in item for item in _contract_failures(sources)))
+
+    def test_speed_fp32_givens_is_detected(self) -> None:
+        # Port #213's form: `1.0f / sqrtf(1.0f + t * t)`.
+        sources = _sources()
+        sources[SPEED_KERNELS] = sources[SPEED_KERNELS].replace(
+            "const float unit = speed_givens_unit(rn_add(1.0f, rn_mul(t, t)));",
+            "const float unit = rn_div(1.0f, rn_sqrt(rn_add(1.0f, rn_mul(t, t))));",
+            1,
+        )
+        self.assertTrue(any("create_givens()" in item for item in _contract_failures(sources)))
+
+    def test_speed_readback_of_another_block_is_detected(self) -> None:
+        sources = _sources()
+        sources["speed_cuda_pipeline.c"] = sources["speed_cuda_pipeline.c"].replace(
+            SPEED_TAIL_COPY + ",", "speed_dptr(p, SPEED_BUF_COV),", 1
+        )
+        self.assertTrue(any("is not the" in item for item in _contract_failures(sources)))
 
     def test_cambi_host_c_values_residual_is_detected(self) -> None:
         # The pre-ADR-1379 cambi_submit_scale() ran the c-values on the host.

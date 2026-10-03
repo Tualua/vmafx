@@ -46,7 +46,7 @@ in [`../../cuda/AGENTS.md`](../../cuda/AGENTS.md).
 | `integer_psnr_hvs_cuda.c`, `integer_psnr_hvs_cuda.h` | [psnr-hvs](AGENTS.d/psnr-hvs.md) | PSNR-HVS participates in engine sync, honours enable_chroma, and matches CPU scores bit for bit. |
 | `integer_psnr_cuda.c`, `integer_psnr_cuda.h` | [psnr](AGENTS.d/psnr.md) | Integer PSNR honours enable_chroma parity and zeroes accumulators on picture streams. |
 | `integer_adm_cuda.c`, `integer_psnr_cuda.c` | [reductions](AGENTS.d/reductions.md) | CUDA reduce kernels use warp-reduce plus block-atomic additions. |
-| `speed_cuda_pipeline.c`, `speed_cuda_pipeline.h` | [speed](AGENTS.d/speed.md) | SpEED singular covariance, global matching, CPU-exact fp32, and speed_log2 precision. |
+| `speed_cuda_pipeline.c`, `speed_cuda_pipeline.h` | [speed](AGENTS.d/speed.md) | SpEED singular covariance, global matching, CPU-exact fp32, host tail for entropy and score. |
 | `ssim_cuda.c`, `integer_ssim_cuda.c` | [ssim](AGENTS.d/ssim.md) | Integer SSIM CPU bits, distinct ssim vs integer_ssim features, and fmad-false flags. |
 | `ssimulacra2_cuda.c`, `ssimulacra2_cuda.h` | [ssimulacra2](AGENTS.d/ssimulacra2.md) | ssimulacra2_cuda is device-resident and computes bit-exact CPU scores. |
 | `integer_psnr_cuda.c`, `integer_ciede_cuda.c` | [twin-update-rules](AGENTS.d/twin-update-rules.md) | Cross-backend twin parity table and synchronised update requirements. |

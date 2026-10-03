@@ -20,7 +20,7 @@
  *  lower-contrast distorted side, 3 frames; 1920x1080 for the downscale and
  *  640x360 for the upscale, so the CPU scaler stays cheap.
  *    positive  prescale 0.5 and 2.0, both twins: every output of every frame
- *              is within LZ_TOLERANCE of the CPU;
+ *              equals the CPU's;
  *    boundary  prescale 1.0 with lanczos4 named: nothing is resampled and no
  *              weight table exists; the twin still matches.
  *  The negative cases of the table (bad arguments, no table for the other
@@ -32,11 +32,12 @@
  *  5.8e-5 for speed_chroma at 2.0 and exact at 0.5 (its sinpi() happens to
  *  give the reference's weights at the half-sample offsets a 0.5 prescale
  *  uses). With the host table every
- *  output of every frame is bit-identical on both devices (glibc 2.44).
- *  LZ_TOLERANCE is 1e-6 relative rather than zero because the twins' one
- *  host-dependent operation is the CPU's log2f(), which glibc misrounds for
- *  about 0.4% of arguments (ADR-1380): a different libm may move a score by
- *  an ulp, 1.2e-7 relative at most.
+ *  output of every frame is bit-identical on both devices.
+ *  The comparison is an equality since ADR-1477. It was 1e-6 relative while
+ *  the fork's speed.c called log2f() and the twins rounded log2 on the
+ *  device; the twins now form the entropies and the score on the host with
+ *  speed.c's own log2() statements (speed_internal_gpu_tail_scores()), so no
+ *  operation is left that depends on which C library the host has.
  *
  *  Skips (exit 77) when the backend has no device, and on a HIP build without
  *  device kernels (-Denable_hipcc=false), whose twins are scaffolds.
@@ -54,6 +55,9 @@
 
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/picture.h"
+
+/* NOLINTBEGIN(modernize-use-nullptr) -- ADR-1138: retain NULL for Windows C
+ * support and upstream-compatible C test conventions. */
 
 /* The backend under test: its state type, the three calls that bind a state
  * to a context, and the suffix of its twins' names. */
@@ -132,9 +136,6 @@ static int lz_device_close(LzDevice *device)
 #define LZ_SCAFFOLD_ERRNO 0
 #endif
 
-/* NOLINTBEGIN(modernize-use-nullptr) -- ADR-1138: retain NULL for Windows C
- * support and upstream-compatible C test conventions. */
-
 /* Downscaling halves a 1920x1080 frame, upscaling doubles a 640x360 one, so
  * both leave the chroma planes with enough 5x5 blocks to score. */
 #define LZ_DOWN_W 1920u
@@ -143,7 +144,6 @@ static int lz_device_close(LzDevice *device)
 #define LZ_UP_H 360u
 #define LZ_FRAMES 3u
 #define LZ_MAX_KEYS 3u
-#define LZ_TOLERANCE 1e-6
 
 typedef struct LzRun {
     const char *cpu;      /* CPU extractor */
@@ -323,12 +323,12 @@ static char *lz_check(const LzRun *run)
     mu_assert("the fixture scores nothing", cpu.v[1][0] > 0.0);
 
     const double worst = lz_worst(run, &cpu, &gpu);
-    if (!(worst <= LZ_TOLERANCE)) {
-        (void)fprintf(stderr, "\n%s prescale %s lanczos4: worst relative difference %.3e > %.1e\n",
-                      run->twin, run->prescale, worst, LZ_TOLERANCE);
+    if (!(worst == 0.0)) {
+        (void)fprintf(stderr, "\n%s prescale %s lanczos4: worst relative difference %.3e\n",
+                      run->twin, run->prescale, worst);
     }
     mu_assert("lanczos4 prescale: the " LZ_BACKEND " twin differs from the CPU extractor",
-              worst <= LZ_TOLERANCE);
+              worst == 0.0);
     return NULL;
 }
 

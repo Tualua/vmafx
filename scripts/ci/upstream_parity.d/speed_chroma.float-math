@@ -1,6 +1,0 @@
-kind: pending-revert
-runs: F.speed_chroma.*, M.*
-metrics: Speed_chroma*, speed_chroma*
-bound: 3.9e-05
-branch: fix/speed-upstream-double-math
-evidence: log2f, 1.0f / sqrtf and 0.75f where upstream computes in double (port #213). Full matrix in the dev image (43ef1e32cb32: GCC 15.2.0, glibc 2.43) on 2026-10-03, 9b6ecd5ae against Netflix 9e48141b: 9948 values beyond the deliberate bounds, largest 3.81e-05 (nflx10, speed_chroma_u_snn_0.19, frame 0: upstream 6.1480202674865723, fork 6.147982120513916)

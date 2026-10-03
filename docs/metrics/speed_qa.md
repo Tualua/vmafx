@@ -103,6 +103,45 @@ covariance matrices (more accurate but more expensive than `speed_qa`'s
 simpler local-variance estimator). `speed_qa` is a lightweight alternative
 that does not require float compilation.
 
+## Netflix's scores (speed_chroma / speed_temporal) { #the-scores-are-netflixs }
+
+`speed_chroma` and `speed_temporal` return the values Netflix/vmaf returns
+for the same frames. Read through the C API at `%.17g` against a build of
+Netflix/vmaf `cea2b4d8` (its SpEED sources are those of master, `9e48141b`),
+on 21 clips for `speed_chroma` and 24 for
+`speed_temporal`, from 160x90 to 3840x2160, 8 to 16 bits, 4:2:0, 4:2:2 and
+4:4:4: every `speed_chroma_u`, `_v` and `_uv` value (261 frames each) and
+every `speed_temporal` value (320 frames) is identical, with the scalar
+kernels, the default dispatch and AVX2, and so are the scores of the four
+`vmaf_v1.0.16` models (204 frames each, scalar and default dispatch). GCC and
+clang builds for x86-64 and aarch64 return the same bits, and so does an icx
+build.
+
+The fork differs from Netflix where it decided to:
+
+| Option or input | Netflix | This fork |
+| --- | --- | --- |
+| `speed_max_val` on `speed_temporal` | ignores the option | clamps, as on `speed_chroma` ([ADR-1301](../adr/1301-speed-nonfinite-score-fails-frame.md)) |
+| `speed_prescale` above 1 on `speed_temporal` | reads past its frame buffers | sizes them for the scaled frame ([ADR-1480](../adr/1480-speed-frame-buffers-prescale-above-one.md)) |
+| a plane too small for SpEED (below 80x80) | crashes | refuses the frame (`-EINVAL`, [ADR-1481](../adr/1481-extractor-failure-fails-the-run.md)) |
+| a 4:0:0 input to `speed_chroma` | no output | refuses the frame ([ADR-1481](../adr/1481-extractor-failure-fails-the-run.md)) |
+
+Until 2026-10-02 the fork's port had three fp32 forms where Netflix computes
+in fp64 (`1.0f / sqrtf()` in the Givens rotation, `log2f()` in the entropy
+and in the score). Scores from before that differ from Netflix's and from
+today's by up to 2.3e-5 (`speed_chroma`), 6.6e-4 (`speed_temporal`) and
+2.5e-5 (`vmaf_v1.0.16`); see
+[ADR-1477](../adr/1477-speed-upstream-double-math.md). To check a build
+against Netflix's values without one, run `test_speed_upstream_form`
+(`meson test -C build test_speed_upstream_form`, in a build configured with
+`-Denable_float=true`). On every C library it holds `speed.c`'s rotation,
+entropy and score statements to Netflix's, evaluated in the test with the
+same C library's `sqrt()` and `log2()`. On glibc it also compares 11 frames
+of `testdata/ref_576x324_48f.yuv` in four option sets with the values a
+Netflix build returns; those values come from glibc's `log2()`, so with
+another C library (Windows, macOS, musl) the test prints that comparison as
+skipped and gives the reason.
+
 ## Non-finite scores fail the frame (speed_chroma / speed_temporal)
 
 A SpEED score that is not finite is **not published**. The extractor logs a
@@ -167,14 +206,10 @@ unaffected either way.
 ## GPU backend parity (speed_chroma / speed_temporal)
 
 `speed_chroma` and `speed_temporal` carry CUDA, HIP, and SYCL implementations
-that are selected at runtime when the corresponding backend is active. The GPU
-paths reproduce the CPU reference algorithm. The SYCL and CUDA twins run the
-whole chain on the device and reproduce the CPU's fp32 arithmetic, so their
-scores equal the CPU's to the last bit (see
-[below](#sycl-device-resident-and-bit-identical-to-the-cpu) and
-[the CPU's `log2f`](#the-cpu-reference-and-log2f) for the one condition); the
-HIP twins agree within the fork's cross-backend tolerance (≤ 1e-4 relative),
-checked by `core/test/test_{cuda,sycl,hip}_speed_{chroma,temporal}_parity`.
+that are selected at runtime when the corresponding backend is active. All
+three return the CPU extractor's scores bit for bit, on every C library
+([how](#where-a-twin-computes-what)), checked with `==` by
+`core/test/test_{cuda,sycl,hip}_speed_{chroma,temporal}_parity`.
 
 Two earlier algorithm defects in the GPU kernels are corrected:
 
@@ -193,13 +228,50 @@ Two earlier algorithm defects in the GPU kernels are corrected:
 gate ([gate guide](../development/cross-backend-gate.md)). `speed_temporal`
 joined on 2026-10-02
 ([ADR-1460](../adr/1460-gate-speed-temporal-and-uncovered-twins.md)); before,
-its three twins were covered by their own unit tests only. Measured at
-`--precision max`, `speed_temporal_cuda` (RTX 4090), `speed_temporal_hip`
-(gfx1036) and `speed_temporal_sycl` (Arc A380) return the same value as each
-other on every frame, and the CPU's value on every frame except where
-glibc's `log2f` is not correctly rounded: 2 of 104 frames of BBB 3840x2160,
-by one step of the fp32 score (4.8e-7). The gate allows `4e-5`, five such
-steps at a score below 128.
+its three twins were covered by their own unit tests only. All six cells
+(two features, three backends) are exact: the gate compares them at
+`--precision max` with tolerance `0`
+([ADR-1477](../adr/1477-speed-upstream-double-math.md)). They were bounds of
+`5e-6` and `4e-5` while the CPU called `log2f` and the twins rounded `log2`
+on the device.
+
+### Where a twin computes what
+
+A twin runs every stage of `speed.c` up to the solved linear system on the
+device: picture conversion (and the frame difference of `speed_temporal`),
+the optional prescale, the anti-alias filter at the decimated sample points,
+local mean subtraction, the 25x25 covariance, its eigenvalues, the regularity
+decision and the QR solve, which gives one variance per 5x5 block. It reads
+one block back per frame: per channel two status words, the 25 eigenvalues
+and the variances. The host then forms the entropies and the score with
+`speed.c`'s own statements (`speed_internal_gpu_tail_scores()` in
+`core/src/feature/speed_internal.c`).
+
+That last step is on the host because it is where `speed.c` calls the C
+library: `log2()` 25 times per block and channel, and once more per block
+for the score. No device has the host's `log2` (glibc's and Intel's differ
+from each other, and neither is what a device computes), so a twin that
+evaluated it itself could only be close. On the host the twin makes the
+calls the CPU extractor makes, in the same library. The cost is 38 to 380
+microseconds per frame on a Ryzen 9 9950X3D (1920x1080 `speed_chroma` to
+3840x2160 `speed_temporal`).
+
+One fp64 statement stays on the device, the Givens rotation's
+`1.0 / sqrt(1 + t * t)`. The kernels have no fp64 type; they compute it from
+fp32 operations (`core/src/feature/speed_givens.h`), and
+`test_speed_upstream_form` compares that routine with the fp64 statement on
+every input it can receive, all 8,388,609 floats of [1, 2].
+
+Measured at `--precision max` against `--backend cpu` of the same build, on
+an RTX 4090 and a gfx1036 (GCC build, glibc 2.44) and on an Arc A380 (icx
+build, Intel's math library): 759 of 759 `speed_chroma` values and 256 of
+256 `speed_temporal` values at the default options, on the Netflix 576x324
+pair at four bit depths and in three chroma formats, both 1080p checkerboard
+pairs, Sparks, noise at four bit depths, a bright 16-bit pair, two gradients
+and BBB at 1920x1080 and 3840x2160; and 2052 of 2052 and 342 of 342 over 18
+option sets (the `vmaf_v1.0.16` options, every weighting mode, kernelscale,
+`speed_sigma_nn`, `speed_nn_floor`, prescale down and up with four methods,
+`speed_use_ref_diff`).
 
 ### Singular covariance matrices
 
@@ -246,17 +318,21 @@ Since [ADR-1358](../adr/1358-sycl-speed-device-resident-linalg.md),
 the device: picture conversion (and, for `speed_temporal`, the frame
 difference), the optional prescale, the anti-alias filter at the decimated
 sample points, local mean subtraction, the 25x25 covariance, its eigenvalues,
-the regularity decision, the QR solve and the score. Each frame costs one upload
-of the raw planes and one read of the result; the host no longer filters,
-factorises or waits in between. The chain is recorded once as a SYCL graph and
-replayed per frame where the device supports graphs.
+the regularity decision and the QR solve. Each frame costs one upload
+of the raw planes and one read of the result block; the host no longer
+filters, factorises or waits in between, and forms the entropies and the
+score after its one wait ([above](#where-a-twin-computes-what)). The chain is
+recorded once as a SYCL graph and replayed per frame where the device
+supports graphs.
 
 Every stage reproduces the CPU extractor's arithmetic in fp32, so the SYCL
 scores are not merely within tolerance: on the Netflix 576x324 pair (48 frames)
 and 50 frames of BBB 3840x2160, every per-frame `speed_chroma_u`,
 `speed_chroma_v`, `speed_chroma_uv` and `speed_temporal` value is identical to
-`--backend cpu` at `--precision max`, on an Arc B580 and on a UHD 770. Before
-this change 1 to 9 frames per run matched and the largest difference was
+`--backend cpu` at `--precision max`, on an Arc B580 and on a UHD 770
+(2026-09-29, an icx build; an Arc A380 since ADR-1477,
+[above](#where-a-twin-computes-what)).
+Before ADR-1358 1 to 9 frames per run matched and the largest difference was
 4.2e-5. One option path is not exact: builds with AdaptiveCpp lack the
 correctly rounded division fallback and keep the ADR-0214 tolerance.
 
@@ -273,8 +349,7 @@ now evaluates them once per run with the CPU scaler's own routine
 from device memory. On an Arc A380 nearest, bilinear, bicubic and lanczos4
 at prescale 0.5 and 2.0 give the CPU's value on every frame of a 1920x1080
 gradient with noise, the Netflix pair, both 1080p checkerboard pairs, a
-10-bit 720p gradient and BBB 3840x2160 (the CPU run with the [correctly
-rounded `log2f`](#the-cpu-reference-and-log2f)); the scale kernels use no
+10-bit 720p gradient and BBB 3840x2160; the scale kernels use no
 scratch memory there ([ADR-1395](../adr/1395-sycl-kernels-no-scratch.md)).
 The HIP twins read the same table; see
 [HIP](#hip-device-resident-cpu-fp32-arithmetic).
@@ -316,8 +391,8 @@ Since [ADR-1380](../adr/1380-cuda-speed-device-resident-pipeline.md),
 `speed_chroma_cuda` and `speed_temporal_cuda` run the SYCL chain above on CUDA,
 in one pipeline both extractors share. They take their planes from the picture
 the CUDA engine already uploaded, with device-to-device copies (`speed_temporal`
-keeps the previous frame's luma on the device), and read back one 40-byte
-result per frame; `collect()` is the only wait. Every rounding the CPU performs
+keeps the previous frame's luma on the device), and read back one result
+block per frame; `collect()` is the only wait. Every rounding the CPU performs
 is spelled with a round-to-nearest intrinsic (`__fadd_rn`, `__fmul_rn`,
 `__fdiv_rn`, `__fsqrt_rn`, ...), which nvcc never fuses, and the kernels are
 also built with `--fmad=false`.
@@ -326,13 +401,11 @@ also built with `--fmad=false`.
 vmaf -r ref.yuv -d dis.yuv -w 3840 -h 2160 -p 420 -b 8 --no_prediction   --backend cuda --feature speed_chroma_cuda -o out.json --json
 ```
 
-On an RTX 4090, against an icx build of the CPU extractor at `--precision
-max`, every per-frame `speed_chroma_u`, `speed_chroma_v`, `speed_chroma_uv`
-and `speed_temporal` value is identical to `--backend cpu` on the Netflix
-576x324 pair (48 frames) and BBB 3840x2160 (50 frames), and so are nearest,
-bilinear, bicubic and `lanczos4` prescale (at 0.5 and 2.0; `lanczos4` was
-checked against a gcc build with the [correctly rounded
-`log2f`](#the-cpu-reference-and-log2f) preloaded). The `lanczos4` weights
+On an RTX 4090 at `--precision max`, every per-frame `speed_chroma_u`,
+`speed_chroma_v`, `speed_chroma_uv` and `speed_temporal` value is identical
+to `--backend cpu` of the same GCC build
+([above](#where-a-twin-computes-what)), and so are nearest, bilinear, bicubic
+and `lanczos4` prescale (at 0.5 and 2.0). The `lanczos4` weights
 depend only on the output column and row, so the host evaluates them once per
 run with the CPU scaler's own routine (`vif_scale_lanczos4_axis_weights()` in
 `vif_tools.c`, fp64 `sin`) and the scale kernel reads the table; a device
@@ -363,8 +436,8 @@ uploading the pictures, not the SpEED kernels, sets their speed.
 Since [ADR-1384](../adr/1384-hip-speed-device-resident.md), `speed_chroma_hip`
 and `speed_temporal_hip` run the same chain as the SYCL twins: one staged upload
 of the raw planes (the host copies them into pinned memory and returns without
-waiting), eight kernels and one read of the result; `collect()` is the only
-wait. The geometry, filter taps and scoring constants come from
+waiting), seven kernels and one read of the result block; `collect()` is the
+only wait. The geometry, filter taps and scoring options come from
 `speed_internal_gpu_configure()`, the routine the SYCL twins use too.
 
 HIP needs its exact arithmetic spelled out per build, not per operation: the
@@ -374,23 +447,6 @@ the code uses plain `/` and `sqrtf()`. HIP's `__fmul_rn()`, `__fadd_rn()` and
 `__fdiv_rn()` are the plain operators, and `__fsqrt_rn()` is the approximate
 native square root, unless the device library is built with
 `OCML_BASIC_ROUNDED_OPERATIONS`, so they would not round correctly.
-
-What "bit-identical" depends on: the device computes log2 correctly rounded,
-while the CPU extractor calls the C library's `log2f`. The Intel compiler's
-libimf rounds it correctly; glibc misrounds about 0.4 % of arguments. Against a
-glibc (gcc) build, a few `speed_chroma` frames therefore differ in the last
-float bits (6 of 48 on the Netflix pair, at most 4.8e-7) while `speed_temporal`
-stays identical. To compare everything else bit for bit on a glibc build, give
-the whole run a correctly rounded `log2f`:
-
-```sh
-printf '#include <math.h>\nfloat log2f(float x) { return (float)log2((double)x); }\n' \
-  > /tmp/crlog2f.c
-cc -O2 -fPIC -shared /tmp/crlog2f.c -o /tmp/crlog2f.so -lm
-LD_PRELOAD=/tmp/crlog2f.so python3 scripts/dev/speed_gpu_parity.py --backend hip \
-  --vmaf build-hip/tools/vmaf --netflix-dir python/test/resource/yuv \
-  --bbb-dir testdata/bbb --no-timing
-```
 
 `speed_prescale_method=lanczos4` is exact on HIP as well. The twins used to
 evaluate the lanczos4 weights on the device in fp32 (`sinpif`), where the CPU
@@ -402,54 +458,36 @@ at `speed_prescale` 0.5 and 2.0, `speed_chroma` and `speed_temporal`, on the
 Netflix 576x324 pair (48 frames, and 3 frames at 10 bits), both 1080p
 checkerboard pairs and BBB 3840x2160 (6 frames): before, 228 of 504
 frame values were identical and the worst was 0.238 away (`speed_temporal` at
-2.0 on a checkerboard pair); after, all 504 are identical with the [correctly
-rounded `log2f`](#the-cpu-reference-and-log2f), and with glibc's own `log2f`
-9 values differ by at most 1.9e-6, the same residual the bicubic prescale
-shows. `speed_chroma_hip` with lanczos4 at 0.5 went from 21.8 to 16.0 ms per
-3840x2160 frame. `test_hip_speed_device_math` replays the kernels with the
-table against the CPU extractor without a device, and
-`test_hip_speed_lanczos4_parity` runs the twins on one.
+2.0 on a checkerboard pair); after, all 504 are identical. `speed_chroma_hip`
+with lanczos4 at 0.5 went from 21.8 to 16.0 ms per 3840x2160 frame.
+`test_hip_speed_device_math` replays the kernels with the table against the
+CPU extractor without a device, and `test_hip_speed_lanczos4_parity` runs the
+twins on one.
 
-### The CPU reference and `log2f`
+### The CPU reference and the host's `log2` { #the-cpu-reference-and-log2f }
 
-The CPU extractor calls `log2f` from the platform's C library about 25 times
-per block, and the device twins compute a correctly rounded `log2` instead.
-glibc's `log2f` rounds 0.14 % of the floats in [1, 1024) the other way (glibc
-2.43), Intel's libimf 0.00013 %. So "identical to the CPU" holds against a CPU
-build whose `log2f` rounds the arguments it meets correctly, such as a
-`CC=icx CXX=icpx meson setup` build. Against a gcc or clang build on glibc, a
-few frames differ in the last bits, well inside the ADR-0214 tolerance: with
-glibc 2.43, 6 of 48 `speed_chroma_u` frames on the Netflix pair, by at most
-4.8e-7; with glibc 2.44, zero to two frames per `speed_chroma` output on the
-Netflix pair and on BBB 4K, by at most 1.4e-6. The CPU extractor itself then
-differs by the same amount between its gcc and icx builds.
+The CPU extractor calls `log2` from the platform's C library about 25 times
+per block and rounds each sum to `float`. C libraries do not agree on the
+last bit of an fp64 `log2`, but the rounding to `float` absorbs it: GCC and
+clang builds on glibc for x86-64 and aarch64 return the same `speed_chroma`
+and `speed_temporal` scores on every clip compared with Netflix, and an icx
+build with Intel's library the same 3409 values as a GCC build on the clips
+and option sets of the twin comparison.
 
-For the CUDA twin the outputs are listed one by one in
-[Research-1430](../research/1430-cuda-speed-chroma-log2f-bound.md): 13 of 789
-values on the Netflix pair at four bit depths, both 1080p checkerboard pairs
-and 200 BBB 4K frames, each one to five steps of the fp32 score, and all 789
-identical once the CPU run has a correctly rounded `log2f` preloaded. The
-parity gate compares the CPU and CUDA `speed_chroma` scores at `5e-6`
-([ADR-1430](../adr/1430-cuda-speed-chroma-log2f-bound.md)); that bound is
-sized for scores below 16, where one float step is at most 9.5e-7.
+A twin does not depend on that agreement: its logarithms are the host's
+([above](#where-a-twin-computes-what)), so `--backend cpu` and a GPU backend
+of one binary return the same bits whatever the library is.
 
-The HIP twin has the same figures on a gfx1036
-([ADR-1452](../adr/1452-hip-speed-chroma-log2f-bound.md)): 13 of 990 values
-differ from the glibc CPU (the same frames and outputs, with 48 more Netflix
-frames as 10-bit 4:2:2, Sparks, noise at four bit depths and a bright 16-bit
-1080p pair, all identical), and all 990 are identical with the preload. Its
-gate cell has the same `5e-6`.
+Until [ADR-1477](../adr/1477-speed-upstream-double-math.md) the CPU called
+`log2f`, which glibc rounds the wrong way for 0.14 % of the floats in
+[1, 1024), and the twins rounded `log2` correctly on the device. A twin then
+matched an icx build's CPU and differed from a GCC build's on a few outputs,
+by one to five steps of the fp32 score: 13 of 789 `speed_chroma` values on an
+RTX 4090 ([Research-1430](../research/1430-cuda-speed-chroma-log2f-bound.md)),
+13 of 990 on a gfx1036, 15 of 918 on an Arc A380, 2 of 104 `speed_temporal`
+frames. Scores stored from a GPU run before 2026-10-02 carry those forms.
 
-So does the SYCL twin's. On an Arc A380 every one of 918 values (306 frames:
-those fixtures, 16-bit BBB at 1080p and 4K and 104 frames of BBB 3840x2160)
-equals the CPU extractor of the same icx build and equals `speed_chroma_cuda`;
-against the CPU of a GCC build 15 of them differ, by 1.9e-6 at most, on the
-frames where the CUDA twin differs. A SYCL build is an icx build and its
-`log2f` is Intel's, which rounds correctly: `--backend cpu` and `--backend
-sycl` of one binary agree on these frames, and either differs from a GCC
-build's CPU scores in the last digits.
-
-The CPU build must not fuse multiply-adds either. icx does when FMA
+The CPU build must not fuse multiply-adds. icx does when FMA
 instructions are available, for example with `-march=native`, which is how the
 `vmaf-dev-mcp` image builds its own `/usr/local/bin/vmaf`: that binary's
 SpEED scores are up to 7.9e-4 from a default build at 1080p. Compare the GPU
@@ -473,9 +511,7 @@ python3 scripts/dev/speed_gpu_parity.py --backend cuda \
 repetitions and the CPU thread count. `--vmaf` takes an absolute path, a path
 relative to the working directory (the default is `build/tools/vmaf`), or a
 bare name to look up on `PATH`. The CPU side runs from the same `vmaf`
-binary, so build it with icx (as the dev image does) for an exact comparison;
-with a gcc build expect the few [`log2f`](#the-cpu-reference-and-log2f) frames
-to differ and the script to exit 1.
+binary; a GCC build and an icx build both compare exactly.
 
 ## "Covariance matrix singular" in the log
 

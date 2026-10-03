@@ -364,7 +364,7 @@ void speed_internal_report_singular(const SpeedInternalSingularTally *tally, con
  * which is non-negative only in exact arithmetic; an ill-conditioned solve in
  * fp32 can return it slightly negative. With eigenvalues of a
  * pixel-magnitude covariance running to 1e3-1e4, a `var` of -1e-5 already
- * drives the argument negative, and `log2f` of a negative argument is NaN.
+ * drives the argument negative, and `log2` of a negative argument is NaN.
  *
  * The response follows the convention `brisque.c` and `y_funque_plus.c`
  * already use for the same situation: warn, naming the frame and the value,
@@ -429,6 +429,67 @@ size_t speed_internal_gpu_lanczos_count(const SpeedGpuGeometry *g);
  *         `count` that is not the table's size.
  */
 int speed_internal_gpu_lanczos_weights(const SpeedGpuGeometry *g, float *weights, size_t count);
+
+/* ------------------------------------------------------------------ */
+/* Device-resident pipelines: the host tail of a frame (ADR-1477)      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Form the frame result of a device-resident SpEED pipeline from the block it
+ * read back: the entropies of every channel (update_entropy() over the 25
+ * eigenvalues) and the score of every (reference, distorted) pair
+ * (get_speed_score(), and speed_extract_score()'s zero when exactly one side
+ * was singular). The statements are speed.c's and call the host's log2(), so
+ * the result is the CPU extractor's bit for bit on any C library.
+ *
+ * Runs once per frame, after the pipeline's one wait. Allocates nothing.
+ *
+ * @param config     From speed_internal_gpu_configure().
+ * @param channels   2 (one score pair) or 4 (two pairs); channel 2p is the
+ *                   reference and 2p + 1 the distorted side of pair p.
+ * @param tail       The block read back, laid out by
+ *                   speed_gpu_tail_layout(channels, config->geometry.blocks).
+ * @param entropies  Scratch, 2 x config->geometry.blocks floats.
+ * @param out        The frame result.
+ * @return 0, or -EINVAL for a NULL argument, a channel count other than 2 or
+ *         4, a weight mode outside 0..6 or a geometry without blocks.
+ */
+int speed_internal_gpu_tail_scores(const SpeedGpuConfig *config, uint32_t channels,
+                                   const void *tail, float *entropies, SpeedGpuFrameResult *out);
+
+/* ------------------------------------------------------------------ */
+/* The CPU extractor's Netflix statements, for tests (ADR-1477)        */
+/* ------------------------------------------------------------------ */
+
+/* speed.c keeps create_givens(), update_entropy() and get_speed_score()
+ * static. These three entries, defined in speed.c, call them unchanged so
+ * core/test/test_speed_upstream_form.c can hold each to Netflix's statement
+ * without including speed.c. Nothing else calls them. */
+
+/** One side of get_speed_score(): the per-block entropies and variances. */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation
+ * units; C cannot spell `using` in place of `typedef struct`. ADR-0141. */
+typedef struct SpeedInternalScoreSide {
+    float *entropies;
+    float *variances;
+} SpeedInternalScoreSide;
+/* NOLINTEND(modernize-use-using) */
+
+/** speed.c's create_givens(a, b, c, s). */
+void speed_internal_cpu_create_givens(float a, float b, float *c, float *s);
+
+/** speed.c's update_entropy() over a grid of `rows` x `cols` blocks. */
+void speed_internal_cpu_update_entropy(size_t rows, size_t cols, float *entropy, const float *S,
+                                       float L, float sigma_nn);
+
+/**
+ * speed.c's get_speed_score() over `num_blocks` blocks of `elements_in_block`
+ * elements. Like Netflix's, it returns -EINVAL as a float for a weighting
+ * mode outside 0..6 once a block is above the entropy floor.
+ */
+float speed_internal_cpu_speed_score(size_t num_blocks, size_t elements_in_block,
+                                     SpeedInternalScoreSide ref, SpeedInternalScoreSide dis,
+                                     float sigma_nn, float nn_floor, int speed_weight_var_mode);
 
 #ifdef __cplusplus
 } /* extern "C" */

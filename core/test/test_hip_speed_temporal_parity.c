@@ -28,11 +28,15 @@
  * Fixture geometry: 768x432 YUV420P 8 bpc, 3 frames.  Matches the CUDA
  * test_cuda_speed_temporal_parity.c fixture.
  *
- * Tolerance: places=4 (1e-4) per ADR-0214 cross-backend gate.
- * SpEED's QR / eigensolver runs on CPU for both backends; only the pixel
- * statistics (mean, covariance, backward-substitution) run on GPU.
- * The GPU paths use the same float arithmetic as the CPU scalar, so
- * places=4 is the appropriate budget.
+ * Tolerance: none.
+ * Since ADR-1477 the comparison is an equality: speed.c evaluates Netflix's
+ * fp64 statements (libvmaf/src/feature/speed.c of Netflix/vmaf 9e48141b:
+ * `1.0 / sqrt(1 + t * t)` at 418 and 423, the `log2()` of update_entropy()
+ * at 802 and of get_speed_score() at 897 to 928), and the twin reproduces
+ * each of them, the rotation on the device (feature/speed_givens.h) and the
+ * logarithms on the host with the CPU extractor's own C library
+ * (speed_internal_gpu_tail_scores()).
+ * The test allowed 1e-4 (places=4, ADR-0214) before.
  *
  * Skip behaviour:
  *   1. `vmaf_hip_state_init()` fails (no HIP/ROCm runtime or no device
@@ -73,9 +77,6 @@
 #endif
 #define FIXTURE_BPC 8u
 #define NUM_FRAMES 3u
-
-/* ADR-0214 places=4 tolerance. */
-#define PARITY_TOL 1e-4
 
 static int fill_fixture(VmafPicture *pic, unsigned frame_idx, int distort)
 {
@@ -204,14 +205,12 @@ static char *test_speed_temporal_cpu_hip_parity(void)
         return NULL;
     }
 
-    const double delta = fabs(cpu_score - hip_score);
-    if (delta > PARITY_TOL) {
-        (void)fprintf(stderr,
-                      "\nspeed_temporal parity FAIL: cpu=%.8f hip=%.8f delta=%.2e tol=%.2e\n",
-                      cpu_score, hip_score, delta, PARITY_TOL);
+    if (cpu_score != hip_score) {
+        (void)fprintf(stderr, "\nspeed_temporal parity FAIL: cpu=%.17g hip=%.17g delta=%.2e\n",
+                      cpu_score, hip_score, fabs(cpu_score - hip_score));
     }
-    mu_assert("speed_temporal CPU vs. HIP delta exceeds places=4 tolerance (1e-4)",
-              delta <= PARITY_TOL);
+    mu_assert("speed_temporal_hip does not return the CPU extractor's score",
+              cpu_score == hip_score);
     return NULL;
 }
 

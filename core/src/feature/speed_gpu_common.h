@@ -4,9 +4,10 @@
  *  SPDX-License-Identifier: BSD-2-Clause-Patent
  *
  *  Host/device contract of the device-resident SpEED pipelines (ADR-1358,
- *  ADR-1380, ADR-1384): the per-run constants a GPU twin needs to run every per-frame
- *  stage of speed.c on the device, and the one result block it reads back
- *  per frame.
+ *  ADR-1380, ADR-1384, ADR-1477): the per-run constants a GPU twin needs to
+ *  run speed.c's stages up to the solved linear system on the device, the one
+ *  block it reads back per frame (SpeedGpuTailLayout), and the frame result
+ *  the host tail forms from it (speed_internal_gpu_tail_scores()).
  *
  *  Plain C with fixed-width fields only, so the same layout is shared by the
  *  C host code, the SYCL pipeline (speed_sycl_pipeline.h aliases these types),
@@ -82,13 +83,13 @@ typedef struct SpeedGpuFilters {
     uint32_t lowpass_width;
 } SpeedGpuFilters;
 
-/* Scoring constants. The two log2f() constants are evaluated once on the host
- * with the libm the CPU extractor uses. */
+/* Scoring options, narrowed to float as speed.c narrows them at its calls of
+ * est_params() and get_speed_score(). Host only: the entropies and the score
+ * are formed by speed_internal_gpu_tail_scores(), not by a kernel (ADR-1477). */
 typedef struct SpeedGpuScoring {
     float sigma_nn;
-    float entropy_constant; /* log2f(2 * pi * e) */
-    float base_entropy;     /* get_speed_score() entropy floor */
-    int32_t weight_mode;    /* speed_weight_var_mode, 0..6 */
+    float nn_floor;
+    int32_t weight_mode; /* speed_weight_var_mode, 0..6 */
 } SpeedGpuScoring;
 
 /* Raw planes one channel reads: `minuend - subtrahend` (the temporal
@@ -100,7 +101,33 @@ typedef struct SpeedGpuChannelBinding {
     int32_t subtrahend;
 } SpeedGpuChannelBinding;
 
-/* The per-frame device result, read back once at collect time. */
+/* The block a pipeline reads back once per frame, at collect time (ADR-1477):
+ * what est_params() of speed.c has when it reaches its entropy loop. Byte
+ * offsets into one device allocation and its host copy:
+ *   status  int32, channels x 2: covariance could not be inverted, eigenvalue
+ *           QR iteration hit its cap;
+ *   eig     float, channels x SPEED_GPU_ELEMENTS: the eigenvalues;
+ *   var     float, channels x blocks: the variance of every block (the first
+ *           row of linear_system_sol after sum_columns()). */
+typedef struct SpeedGpuTailLayout {
+    uint32_t status;
+    uint32_t eig;
+    uint32_t var;
+    uint32_t bytes;
+} SpeedGpuTailLayout;
+
+static inline SpeedGpuTailLayout speed_gpu_tail_layout(uint32_t channels, uint32_t blocks)
+{
+    SpeedGpuTailLayout layout;
+    layout.status = 0u;
+    layout.eig = channels * 2u * (uint32_t)sizeof(int32_t);
+    layout.var = layout.eig + channels * SPEED_GPU_ELEMENTS * (uint32_t)sizeof(float);
+    layout.bytes = layout.var + channels * blocks * (uint32_t)sizeof(float);
+    return layout;
+}
+
+/* The per-frame result an extractor publishes from: the host tail's scores
+ * and the device's status words. */
 typedef struct SpeedGpuFrameResult {
     float score[SPEED_GPU_MAX_PAIRS];
     int32_t singular[SPEED_GPU_MAX_CHANNELS];      /* covariance could not be inverted */

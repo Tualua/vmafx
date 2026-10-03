@@ -27,7 +27,6 @@
  */
 
 #include "feature/speed_internal.h"
-#include "feature/speed_constants.h"
 
 #include <assert.h>
 #include <errno.h>
@@ -390,12 +389,14 @@ static void si_create_givens(float a, float b, float *c, float *s)
         *s = 0.0f;
     } else if (fabsf(b) > fabsf(a)) {
         const float t = -a / b;
-        const float s1 = 1.0f / sqrtf(1.0f + t * t);
+        // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) ADR-1477: upstream's double form.
+        const float s1 = 1.0 / sqrt(1 + t * t);
         *s = s1;
         *c = s1 * t;
     } else {
         const float t = -b / a;
-        const float c1 = 1.0f / sqrtf(1.0f + t * t);
+        // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) ADR-1477: upstream's double form.
+        const float c1 = 1.0 / sqrt(1 + t * t);
         *c = c1;
         *s = c1 * t;
     }
@@ -786,20 +787,6 @@ bool speed_internal_is_matrix_regular(const float *eigenvalues, size_t num_eleme
     return true;
 }
 
-/* Same expressions as update_entropy() and get_speed_score() in speed.c, built
- * with the same flags (libvmaf_feature_static_lib), so a compile-time fold or
- * a libm call yields the same fp32 value the CPU extractor uses. */
-float speed_internal_entropy_constant(void)
-{
-    return log2f(2.0f * (float)M_PI * (float)M_E);
-}
-
-float speed_internal_base_entropy(size_t elements_in_block, float sigma_nn, float nn_floor)
-{
-    return elements_in_block *
-           (log2f((1.0f + nn_floor) * sigma_nn) + log2f(2.0f * (float)M_PI * (float)M_E));
-}
-
 int speed_internal_clamp_score(double score, double max_val, unsigned index, const char *who,
                                const char *feature, double *out)
 {
@@ -881,13 +868,12 @@ static void si_gpu_fill_filters(const SpeedInternalOptions *opt, SpeedGpuFilters
     vif_get_filter(f->lowpass, SPEED_INTERNAL_NUM_SCALES, kernelscale);
 }
 
+/* The float narrowing speed.c performs when it passes opt->speed_sigma_nn and
+ * opt->speed_nn_floor to est_params() and get_speed_score(). */
 static void si_gpu_fill_scoring(const SpeedInternalOptions *opt, SpeedGpuScoring *s)
 {
-    const float sigma_nn = (float)opt->speed_sigma_nn;
-    const float nn_floor = (float)opt->speed_nn_floor;
-    s->sigma_nn = sigma_nn;
-    s->entropy_constant = speed_internal_entropy_constant();
-    s->base_entropy = speed_internal_base_entropy((size_t)SPEED_GPU_ELEMENTS, sigma_nn, nn_floor);
+    s->sigma_nn = (float)opt->speed_sigma_nn;
+    s->nn_floor = (float)opt->speed_nn_floor;
     s->weight_mode = opt->speed_weight_var_mode;
 }
 
@@ -930,5 +916,177 @@ int speed_internal_gpu_lanczos_weights(const SpeedGpuGeometry *g, float *weights
     vif_scale_lanczos4_axis_weights((int)g->src_w, (int)g->scaled_w, weights);
     vif_scale_lanczos4_axis_weights((int)g->src_h, (int)g->scaled_h,
                                     weights + (size_t)SPEED_GPU_LANCZOS_TAPS * g->scaled_w);
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Device-resident pipelines: the host tail of a frame (ADR-1477)      */
+/* ------------------------------------------------------------------ */
+
+/* The statements below are speed.c's, which are Netflix's
+ * (libvmaf/src/feature/speed.c: update_entropy(), est_params() steps 8 and 9,
+ * get_speed_score(), speed_extract_score()): a double log2() of a float or
+ * double argument, sums and products in double, one rounding to float per
+ * assignment. They are compiled into the same library with the same flags as
+ * speed.c and call the same C library, so a twin that hands its eigenvalues
+ * and variances to this tail gets the entropies and the score the CPU
+ * extractor forms from the same numbers, whatever log2() the host has. No
+ * kernel evaluates a logarithm. */
+
+/* elements_in_block, in the type speed.c holds it in. */
+#define SI_GPU_ELEMENTS ((size_t)SPEED_GPU_ELEMENTS)
+
+/* update_entropy(), speed.c. */
+static void si_gpu_update_entropy(float *entropy, const float *S, size_t num_blocks, float L,
+                                  float sigma_nn)
+{
+    for (size_t i = 0; i < num_blocks; i++) {
+        // NOLINTNEXTLINE(performance-type-promotion-in-math-fn) ADR-1477: upstream's double form.
+        entropy[i] += log2(L * S[i] + sigma_nn) + log2(2 * M_PI * M_E);
+    }
+}
+
+/* est_params() steps 8 and 9, speed.c. */
+static void si_gpu_entropies(const float *eigenvalues, const float *variances, size_t num_blocks,
+                             float sigma_nn, float *entropies)
+{
+    memset(entropies, 0, num_blocks * sizeof(float));
+    for (size_t k = 0; k < SI_GPU_ELEMENTS; k++) {
+        float L = eigenvalues[k] < 0 ? 0 : eigenvalues[k];
+        si_gpu_update_entropy(entropies, variances, num_blocks, L, sigma_nn);
+    }
+}
+
+/* One side of a score pair, as get_speed_score() reads it. */
+typedef struct SiGpuSide {
+    const float *entropies;
+    const float *variances;
+} SiGpuSide;
+
+/* The two products of get_speed_score() for block `i`, per
+ * speed_weight_var_mode. The mode is one of 0..6: speed_internal_gpu_configure()
+ * rejects every other value. */
+static void si_gpu_spatial(SiGpuSide ref_results, SiGpuSide dis_results, size_t i,
+                           int speed_weight_var_mode, float *spatial_ref, float *spatial_dis)
+{
+    // NOLINTBEGIN(performance-type-promotion-in-math-fn) ADR-1477: upstream's double form.
+    switch (speed_weight_var_mode) {
+    case 0:
+        *spatial_ref = ref_results.entropies[i] * log2(1 + ref_results.variances[i]);
+        *spatial_dis = dis_results.entropies[i] * log2(1 + dis_results.variances[i]);
+        break;
+    case 1:
+        *spatial_ref = ref_results.entropies[i] * log2(1 + ref_results.variances[i]);
+        *spatial_dis = dis_results.entropies[i] * log2(1 + ref_results.variances[i]);
+        break;
+    case 2:
+        *spatial_ref = ref_results.entropies[i] * log2(1 + dis_results.variances[i]);
+        *spatial_dis = dis_results.entropies[i] * log2(1 + dis_results.variances[i]);
+        break;
+    case 3:
+        *spatial_ref = ref_results.entropies[i] *
+                       log2(1 + (ref_results.variances[i] + dis_results.variances[i]) / 2.0);
+        *spatial_dis = dis_results.entropies[i] *
+                       log2(1 + (ref_results.variances[i] + dis_results.variances[i]) / 2.0);
+        break;
+    case 4:
+        *spatial_ref = ref_results.entropies[i] * log2(1 + ref_results.variances[i]);
+        *spatial_dis = dis_results.entropies[i] *
+                       log2(1 + (ref_results.variances[i] + dis_results.variances[i]) / 2.0);
+        break;
+    case 5:
+        *spatial_ref = ref_results.entropies[i] * log2(1 + ref_results.variances[i]);
+        *spatial_dis =
+            dis_results.entropies[i] *
+            log2(1 + (0.75 * ref_results.variances[i] + 0.25 * dis_results.variances[i]));
+        break;
+    default: /* 6 */
+        *spatial_ref = ref_results.entropies[i] * log2(1 + ref_results.variances[i]);
+        *spatial_dis =
+            dis_results.entropies[i] *
+            log2(1 + (0.25 * ref_results.variances[i] + 0.75 * dis_results.variances[i]));
+        break;
+    }
+    // NOLINTEND(performance-type-promotion-in-math-fn)
+}
+
+/* get_speed_score(), speed.c. */
+static float si_gpu_speed_score(size_t num_blocks, SiGpuSide ref_results, SiGpuSide dis_results,
+                                const SpeedGpuScoring *scoring)
+{
+    const float sigma_nn = scoring->sigma_nn;
+    const float nn_floor = scoring->nn_floor;
+    const size_t elements_in_block = SI_GPU_ELEMENTS;
+    float score = 0;
+    // NOLINTBEGIN(performance-type-promotion-in-math-fn) ADR-1477: upstream's double form.
+    float base_entropy =
+        elements_in_block * (log2((1 + nn_floor) * sigma_nn) + log2(2 * M_PI * M_E));
+    // NOLINTEND(performance-type-promotion-in-math-fn)
+    for (size_t i = 0; i < num_blocks; i++) {
+        if ((ref_results.entropies[i] < base_entropy) &&
+            (dis_results.entropies[i] < base_entropy)) {
+            // If both entropies are below the base_entropy,
+            // there is no visible difference
+            score += 0;
+        } else {
+            float spatial_ref = 0.0f;
+            float spatial_dis = 0.0f;
+            si_gpu_spatial(ref_results, dis_results, i, scoring->weight_mode, &spatial_ref,
+                           &spatial_dis);
+            score += fabsf(spatial_ref - spatial_dis);
+        }
+    }
+
+    return score / num_blocks;
+}
+
+/* The part of a tail block that starts at byte `offset`. */
+static const void *si_gpu_tail_at(const void *tail, uint32_t offset)
+{
+    // SAFETY: every offset comes from speed_gpu_tail_layout() and lies inside
+    // the block the caller sized with the same layout. The block is one
+    // aligned allocation of 4-byte words (pinned or USM host memory) and every
+    // offset is a multiple of four, so each part is aligned for its type.
+    return (const unsigned char *)tail + offset;
+}
+
+int speed_internal_gpu_tail_scores(const SpeedGpuConfig *config, uint32_t channels,
+                                   const void *tail, float *entropies, SpeedGpuFrameResult *out)
+{
+    if (!config || !tail || !entropies || !out)
+        return -EINVAL;
+    const bool lanes = channels == 2u || channels == SPEED_GPU_MAX_CHANNELS;
+    const bool mode = config->scoring.weight_mode >= 0 && config->scoring.weight_mode <= 6;
+    const size_t num_blocks = config->geometry.blocks;
+    if (!lanes || !mode || num_blocks == 0u)
+        return -EINVAL;
+
+    const SpeedGpuTailLayout layout = speed_gpu_tail_layout(channels, config->geometry.blocks);
+    const int32_t *status = si_gpu_tail_at(tail, layout.status);
+    const float *eig = si_gpu_tail_at(tail, layout.eig);
+    const float *var = si_gpu_tail_at(tail, layout.var);
+
+    memset(out, 0, sizeof(*out));
+    for (uint32_t pair = 0; pair < channels / 2u; pair++) {
+        const uint32_t ref = 2u * pair;
+        const uint32_t dis = ref + 1u;
+        out->singular[ref] = status[(size_t)ref * 2u];
+        out->iteration_cap[ref] = status[(size_t)ref * 2u + 1u];
+        out->singular[dis] = status[(size_t)dis * 2u];
+        out->iteration_cap[dis] = status[(size_t)dis * 2u + 1u];
+        /* speed_extract_score(): exactly one side singular scores 0. */
+        if ((out->singular[ref] != 0) != (out->singular[dis] != 0)) {
+            out->score[pair] = 0.0f;
+            continue;
+        }
+        const SiGpuSide ref_results = {entropies, var + (size_t)ref * num_blocks};
+        const SiGpuSide dis_results = {entropies + num_blocks, var + (size_t)dis * num_blocks};
+        si_gpu_entropies(eig + (size_t)ref * SI_GPU_ELEMENTS, ref_results.variances, num_blocks,
+                         config->scoring.sigma_nn, entropies);
+        si_gpu_entropies(eig + (size_t)dis * SI_GPU_ELEMENTS, dis_results.variances, num_blocks,
+                         config->scoring.sigma_nn, entropies + num_blocks);
+        out->score[pair] =
+            si_gpu_speed_score(num_blocks, ref_results, dis_results, &config->scoring);
+    }
     return 0;
 }

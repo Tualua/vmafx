@@ -1741,6 +1741,43 @@ test_speed_filter = executable('test_speed_filter',
 # 1620 filter cases: 0.3 s in a release build, above meson's default 30 s under
 # UBSan on a hosted runner (Sanitizers (undefined), 2026-10-02).
 test('test_speed_filter', test_speed_filter, suite : ['fast'], timeout : 180)
+
+# ADR-1477: SpEED evaluates Netflix's statements. speed.c's create_givens(),
+# update_entropy() and get_speed_score() (through the test entries of
+# speed_internal.h) against Netflix's statements evaluated with the host's own
+# sqrt() and log2(), the fp32-only Givens routine of the GPU twins on every
+# input it can receive (2^23 + 1 floats), the twins' host tail against the
+# same statements, and, on glibc only, the CPU extractors against the values
+# Netflix master returns on the tracked 576x324 pair. The _foreign_libm
+# variant defines VMAF_TEST_ASSUME_FOREIGN_LIBM and runs the path every C
+# library other than glibc takes (Netflix's values reported as skipped), so
+# both paths run on every lane. Device-free; same link recipe and float gate
+# as test_speed_filter. 8.4 million Givens inputs with a software fmaf() where
+# the build targets a CPU without FMA: a second in a release build, more under
+# a sanitizer or qemu.
+foreach upstream_form : [['test_speed_upstream_form', []],
+                         ['test_speed_upstream_form_foreign_libm', ['-DVMAF_TEST_ASSUME_FOREIGN_LIBM']]]
+    upstream_form_exe = executable(upstream_form[0],
+        ['test.c', 'test_speed_upstream_form.c', '../src/mem.cpp', '../src/picture.c',
+         '../src/ref.cpp', '../src/dict.cpp',
+         '../src/metadata_handler.cpp', '../src/thread_locale.cpp', '../src/gpu_picture_pool.cpp',
+         dnn_sources],
+        include_directories : [libvmaf_inc, test_inc, include_directories('../src/'), dnn_inc],
+        c_args : vmaf_cflags_common + dnn_defines + upstream_form[1] +
+                 ['-DSPEED_TESTDATA_DIR="' + join_paths(meson.project_source_root(), '../testdata') + '"'],
+        dependencies : [math_lib, stdatomic_dependency, pthread_dependency, thread_lib,
+                        predict_test_dependencies, dnn_deps],
+        objects : [
+          common_cuda_objects,
+          platform_specific_cpu_objects,
+          libvmaf_feature_static_lib.extract_all_objects(recursive: true),
+          log_cpp23_test_objects,
+          libvmaf_cpu_static_lib.extract_all_objects(recursive: true),
+          libsvm_static_lib.extract_all_objects(recursive: true),
+        ] + wave8_opt_only_objects
+    )
+    test(upstream_form[0], upstream_form_exe, suite : ['fast'], timeout : 300)
+endforeach
 endif
 # SpEED-QA extractor tests -- unconditional (speed_qa.c is not float-gated).
 # ADR-0253 real-impl: registration, vtable, flat/noise entropy, temporal positivity.

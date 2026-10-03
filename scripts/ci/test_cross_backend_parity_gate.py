@@ -925,12 +925,17 @@ def test_ciede_cuda_cell_is_bounded_by_its_math_library_and_other_twins_are_not(
     ) == (DEFAULT_FP16_TOLERANCE, "fp16")
 
 
-def test_speed_chroma_cuda_cell_is_bounded_by_the_cpu_log2f() -> None:
-    """ADR-1430: the device rounds log2 correctly, glibc's log2f does not."""
+def test_speed_cells_are_exact_since_the_twins_use_the_host_log2() -> None:
+    """ADR-1477: speed.c is Netflix's fp64 form and the twins' logarithms are the host's.
 
-    def cell(backend_a: str, backend_b: str) -> tuple[float, str]:
+    Until then the fork's speed.c called `log2f`, each twin rounded log2 on
+    the device, and the six cells were `LIBM_TWINS` bounds (ADR-1430, ADR-1452,
+    ADR-1460: 5e-6 for speed_chroma, 4e-5 for speed_temporal).
+    """
+
+    def cell(feature: str, backend_a: str, backend_b: str) -> tuple[float, str]:
         return resolve_cell_tolerance(
-            "speed_chroma",
+            feature,
             fp16_features=[],
             calibration=None,
             gpu_id=None,
@@ -944,113 +949,31 @@ def test_speed_chroma_cuda_cell_is_bounded_by_the_cpu_log2f() -> None:
         "speed_chroma_v",
         "speed_chroma_uv",
     )
-    assert LIBM_TWINS["speed_chroma"] == {"cuda": 5e-6, "hip": 5e-6, "sycl": 5e-6}
-    assert not is_exact_pair("speed_chroma", "cpu", "cuda")
-    assert cell("cpu", "cuda") == (5e-6, LIBM_TWIN_SOURCE)
-    assert cell("cuda", "cpu") == (5e-6, LIBM_TWIN_SOURCE)
-    # The largest measured difference (BBB frame 21, speed_chroma_v) passes;
-    # the places=4 default it replaces would have hidden ten times more.
-    largest_measured = 1.431e-6
-    assert largest_measured < LIBM_TWINS["speed_chroma"]["cuda"]
-    assert LIBM_TWINS["speed_chroma"]["cuda"] < FEATURE_TOLERANCE["speed_chroma"] / 5
-    # The extractor keeps the feature's name on every backend.
-    assert feature_extractor_name("speed_chroma", "cpu") == "speed_chroma"
-    assert feature_extractor_name("speed_chroma", "cuda") == "speed_chroma_cuda"
-
-
-def test_speed_chroma_hip_cell_is_bounded_by_the_cpu_log2f() -> None:
-    """ADR-1452: the HIP twin rounds log2 correctly too and gets CUDA's bound."""
-
-    def cell(backend_a: str, backend_b: str) -> tuple[float, str]:
-        return resolve_cell_tolerance(
-            "speed_chroma",
-            fp16_features=[],
-            calibration=None,
-            gpu_id=None,
-            width=3840,
-            height=2160,
-            backends=(backend_a, backend_b),
-        )
-
-    assert LIBM_TWINS["speed_chroma"] == {"cuda": 5e-6, "hip": 5e-6, "sycl": 5e-6}
-    assert not is_exact_pair("speed_chroma", "cpu", "hip")
-    assert cell("cpu", "hip") == (5e-6, LIBM_TWIN_SOURCE)
-    assert cell("hip", "cpu") == (5e-6, LIBM_TWIN_SOURCE)
-    # Both twins round log2 correctly; their cell has the same bound.
-    assert cell("cuda", "hip") == (5e-6, LIBM_TWIN_SOURCE)
-    # The largest difference measured on a gfx1036 (BBB frame 21,
-    # speed_chroma_v) passes; the places=4 default hid 35 times more.
-    largest_measured = 1.431e-6
-    assert largest_measured < LIBM_TWINS["speed_chroma"]["hip"]
-    assert LIBM_TWINS["speed_chroma"]["hip"] < FEATURE_TOLERANCE["speed_chroma"] / 5
-    assert feature_extractor_name("speed_chroma", "hip") == "speed_chroma_hip"
-
-
-def test_speed_chroma_sycl_cell_is_bounded_by_the_cpu_log2f() -> None:
-    """The SYCL twin rounds log2 correctly as well; its cells left the places=4 default."""
-
-    def cell(backend_a: str, backend_b: str) -> tuple[float, str]:
-        return resolve_cell_tolerance(
-            "speed_chroma",
-            fp16_features=[],
-            calibration=None,
-            gpu_id=None,
-            width=3840,
-            height=2160,
-            backends=(backend_a, backend_b),
-        )
-
-    assert LIBM_TWINS["speed_chroma"]["sycl"] == LIBM_TWINS["speed_chroma"]["cuda"]
-    # Equal to the CPU of its own icx build on every measured value, but not
-    # by construction: a glibc CPU differs. The cell is a bound, not exact.
-    assert not is_exact_pair("speed_chroma", "cpu", "sycl")
-    for pair in (("cpu", "sycl"), ("sycl", "cpu"), ("cuda", "sycl"), ("hip", "sycl")):
-        assert cell(*pair) == (5e-6, LIBM_TWIN_SOURCE), pair
-    # The largest difference measured on an Arc A380 against a glibc 2.44 CPU
-    # (16-bit BBB 1080p frame 13, speed_chroma_u) passes; the places=4 default
-    # this cell had allowed 26 times more.
-    largest_measured = 1.907e-6
-    assert largest_measured < LIBM_TWINS["speed_chroma"]["sycl"]
-    assert LIBM_TWINS["speed_chroma"]["sycl"] < FEATURE_TOLERANCE["speed_chroma"] / 5
-    # Every gate backend with a speed_chroma twin is listed now.
-    assert set(LIBM_TWINS["speed_chroma"]) == {"cuda", "hip", "sycl"}
-    assert feature_extractor_name("speed_chroma", "sycl") == "speed_chroma_sycl"
-
-
-def test_speed_temporal_cells_are_bounded_by_the_cpu_log2f() -> None:
-    """ADR-1460: `speed_temporal` is a gate feature; its twins round log2 correctly."""
-
-    def cell(backend_a: str, backend_b: str) -> tuple[float, str]:
-        return resolve_cell_tolerance(
-            "speed_temporal",
-            fp16_features=[],
-            calibration=None,
-            gpu_id=None,
-            width=3840,
-            height=2160,
-            backends=(backend_a, backend_b),
-        )
-
     assert FEATURE_METRICS["speed_temporal"] == ("speed_temporal",)
-    assert LIBM_TWINS["speed_temporal"] == {"cuda": 4e-5, "hip": 4e-5, "sycl": 4e-5}
-    for backend in ("cuda", "hip", "sycl"):
-        assert not is_exact_pair("speed_temporal", "cpu", backend)
-        assert cell("cpu", backend) == (4e-5, LIBM_TWIN_SOURCE)
-        assert cell(backend, "cpu") == (4e-5, LIBM_TWIN_SOURCE)
-        assert feature_extractor_name("speed_temporal", backend) == f"speed_temporal_{backend}"
-    # Two twins that both round log2 correctly share the bound.
-    assert cell("cuda", "hip") == (4e-5, LIBM_TWIN_SOURCE)
-    # Five float steps of a score below 128 (2^-17 each), ADR-1430's count in
-    # this score's coarsest step on the gate's fixtures.
-    assert _close(5 * 2.0**-17, 3.814697265625e-05)
-    assert LIBM_TWINS["speed_temporal"]["cuda"] > 5 * 2.0**-17
-    # The largest measured difference (BBB frames 100 and 102, one float step
-    # at a score below 8) is far inside it, and the bound stays below the
-    # places=4 default of a twin that is not listed.
-    largest_measured = 4.768e-7
-    assert largest_measured < LIBM_TWINS["speed_temporal"]["cuda"] / 50
-    assert LIBM_TWINS["speed_temporal"]["cuda"] < FEATURE_TOLERANCE["speed_temporal"]
-    assert feature_extractor_name("speed_temporal", "cpu") == "speed_temporal"
+    for feature in ("speed_chroma", "speed_temporal"):
+        # No bound is left: a libm entry would loosen an exact cell.
+        assert feature not in LIBM_TWINS
+        assert EXACT_TWINS[feature] == frozenset({"cuda", "hip", "sycl"})
+        for backend in ("cuda", "hip", "sycl"):
+            assert is_exact_pair(feature, "cpu", backend)
+            assert cell(feature, "cpu", backend) == (0.0, EXACT_TWIN_SOURCE)
+            assert cell(feature, backend, "cpu") == (0.0, EXACT_TWIN_SOURCE)
+            assert libm_pair_tolerance(feature, "cpu", backend) is None
+            assert feature_extractor_name(feature, backend) == f"{feature}_{backend}"
+        # Two exact twins are exact against each other.
+        assert cell(feature, "cuda", "hip") == (0.0, EXACT_TWIN_SOURCE)
+        assert cell(feature, "hip", "sycl") == (0.0, EXACT_TWIN_SOURCE)
+        assert feature_extractor_name(feature, "cpu") == feature
+    # The differences the old bounds admitted fail an exact cell: the largest
+    # a glibc CPU had from a twin on speed_chroma (BBB frame 21, 1.431e-6) and
+    # one float step of a speed_temporal score below 8 (BBB frames 100, 102).
+    for feature, measured in (("speed_chroma", 1.431e-6), ("speed_temporal", 4.768e-7)):
+        metrics = FEATURE_METRICS[feature]
+        tolerance, _ = cell(feature, "cpu", "cuda")
+        reference = [_make_frame(dict.fromkeys(metrics, 6.5))]
+        drifted = [_make_frame(dict.fromkeys(metrics, 6.5 + measured))]
+        _, mismatches = diff_frames(reference, drifted, metrics, tolerance)
+        assert all(count == 1 for count in mismatches.values()), (feature, measured)
 
 
 def test_psnr_cell_compares_all_three_planes() -> None:

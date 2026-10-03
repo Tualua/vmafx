@@ -1807,6 +1807,13 @@ Both extractors only register when `libvmaf` is built with
 `-Denable_float=true` (i.e. `VMAF_FLOAT_FEATURES=1`); the standard
 fixed-point build does not include them.
 
+Their scores are Netflix's: every value compared with a build of Netflix
+master is identical, and the CUDA, HIP and SYCL twins return the CPU's
+scores bit for bit
+([ADR-1477](../adr/1477-speed-upstream-double-math.md); the comparison, the
+options where the fork differs on purpose and what changed on 2026-10-02 are
+on the [SpEED page](speed_qa.md#the-scores-are-netflixs)).
+
 #### `speed_chroma`
 
 Per-channel chroma fidelity scores. Lifts each of Y / U / V from the

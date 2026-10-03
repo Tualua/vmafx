@@ -3,9 +3,10 @@
 # SPDX-License-Identifier: EUPL-1.2
 """Frame-by-frame parity and timing of a GPU twin against the CPU extractor.
 
-ADR-1358 makes the SYCL SpEED twins bit-identical to the CPU extractor; the CUDA
-and HIP twins are to follow. For each fixture (the Netflix 576x324 pair, 48
-frames, and BBB 3840x2160, 50 frames) and each feature (``speed_chroma`` /
+The CUDA, HIP and SYCL SpEED twins return the CPU extractor's bits: since
+ADR-1477 they form the entropies and the score on the host with speed.c's own
+log2() calls, so that holds on any C library. For each fixture (the Netflix
+576x324 pair, 48 frames, and BBB 3840x2160, 50 frames) and each feature (``speed_chroma`` /
 ``speed_temporal`` unless ``--feature`` names others, e.g. ``ssimulacra2`` or
 ``float_ms_ssim``, ADR-1363) this runs the CPU extractor and the
 ``<feature>_<backend>`` twin at ``--precision max``, reports the bit-identical

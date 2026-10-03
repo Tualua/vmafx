@@ -7,22 +7,26 @@
 
 /*
  * speed_chroma CPU vs. GPU twin: the fixture, the CPU run and the comparison
- * a twin's parity test wraps (ADR-1430).
+ * a twin's parity test wraps (ADR-1430, ADR-1477).
  *
- * A twin that runs speed.c's arithmetic and rounds log2 correctly differs
- * from the CPU extractor only through the C library's `log2f`, which speed.c
- * calls. With a correctly rounded `log2f` preloaded the two return the same
- * bits, on this fixture too. glibc's is the neighbouring float for 0.015 % to
- * 0.97 % of the arguments of a binade, which moves some scores by a few steps
- * of the fp32 result: at most five steps and 3.9e-7 of the score on the video
- * fixtures, two steps (3.8e-6 at a score of 22.5, 1.7e-7 of it) on this one
- * with glibc 2.44. So the comparison is a bound and not an equality. It is
- * relative because the scores are floats: the cross-backend gate's absolute
- * 5e-6 (`LIBM_TWINS`) is for its fixtures, whose scores stay below 16.
+ * The comparison is an equality. speed.c evaluates Netflix's fp64 statements
+ * (libvmaf/src/feature/speed.c of Netflix/vmaf 9e48141b: `1.0 / sqrt(1 + t *
+ * t)` at 418 and 423, the `log2()` of update_entropy() at 802 and of
+ * get_speed_score() at 897 to 928), and a twin reproduces each of them: the
+ * rotation on the device through feature/speed_givens.h, the logarithms on
+ * the host, in speed_internal_gpu_tail_scores(), with the C library the CPU
+ * extractor calls. Nothing is left that differs between the two sides, on
+ * any C library.
+ *
+ * Until ADR-1477 the fork's speed.c called `log2f` and a twin rounded log2
+ * correctly on the device, so glibc's `log2f` (the neighbouring float for
+ * 0.015 % to 0.97 % of the arguments of a binade) moved some scores by a few
+ * steps of the fp32 result and this comparison was a bound of one part in a
+ * million.
  *
  * A test opens its backend's device state and context, registers the twin,
  * then calls speed_chroma_twin_feed(), speed_chroma_twin_read() and
- * speed_chroma_twin_outside_bound().
+ * speed_chroma_twin_mismatches().
  */
 
 #ifndef LIBVMAF_TEST_SPEED_CHROMA_TWIN_PARITY_H_
@@ -46,7 +50,7 @@
  * per 5x5 block of the 16x downscaled plane; 960x960 gives chroma 480x480 ->
  * 30x30 -> 36 blocks, enough for a regular covariance on a textured frame.
  * A 768x432 fixture gives 8 blocks, a covariance that is singular on every
- * frame, so the scoring path with its log2f calls never runs (see
+ * frame, so the scoring path with its log2 calls never runs (see
  * test_cuda_speed_singular_parity.c and test_hip_speed_singular_parity.c). */
 #ifndef FIXTURE_W
 #define FIXTURE_W 960u
@@ -56,9 +60,6 @@
 #endif
 #define SPEED_CHROMA_TWIN_BPC 8u
 #define SPEED_CHROMA_TWIN_FRAMES 2u
-
-/* |cpu - twin| <= SPEED_CHROMA_TWIN_REL * |cpu| (ADR-1430). */
-#define SPEED_CHROMA_TWIN_REL 1e-6
 
 #define SPEED_CHROMA_TWIN_SCORES 3u
 
@@ -168,26 +169,24 @@ static inline mu_message_t speed_chroma_twin_run_cpu(SpeedChromaTwinScores *out_
     return NULL;
 }
 
-/* Scores further apart than SPEED_CHROMA_TWIN_REL of the CPU's, over every
- * score and frame. A NaN on either side counts. */
-static inline unsigned speed_chroma_twin_outside_bound(const SpeedChromaTwinScores *cpu,
-                                                       const SpeedChromaTwinScores *twin,
-                                                       const char *backend)
+/* Scores of the twin that are not the CPU's, over every score and frame
+ * (ADR-1477). A NaN on either side counts. */
+static inline unsigned speed_chroma_twin_mismatches(const SpeedChromaTwinScores *cpu,
+                                                    const SpeedChromaTwinScores *twin,
+                                                    const char *backend)
 {
-    unsigned outside = 0;
+    unsigned mismatches = 0;
     for (unsigned k = 0; k < SPEED_CHROMA_TWIN_SCORES; k++) {
         for (unsigned i = 0; i < SPEED_CHROMA_TWIN_FRAMES; i++) {
-            const double delta = fabs(cpu->v[k][i] - twin->v[k][i]);
-            const double bound = SPEED_CHROMA_TWIN_REL * fabs(cpu->v[k][i]);
-            if (delta <= bound)
+            if (cpu->v[k][i] == twin->v[k][i])
                 continue;
-            (void)fprintf(stderr, "\n%s frame %u: cpu=%.9g %s=%.9g delta=%.3e bound=%.3e\n",
-                          speed_chroma_twin_keys[k], i, cpu->v[k][i], backend, twin->v[k][i], delta,
-                          bound);
-            outside++;
+            (void)fprintf(stderr, "\n%s frame %u: cpu=%.17g %s=%.17g delta=%.3e\n",
+                          speed_chroma_twin_keys[k], i, cpu->v[k][i], backend, twin->v[k][i],
+                          fabs(cpu->v[k][i] - twin->v[k][i]));
+            mismatches++;
         }
     }
-    return outside;
+    return mismatches;
 }
 
 /* NOLINTEND(modernize-use-nullptr) */

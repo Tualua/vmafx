@@ -29,6 +29,14 @@
  * Headline score asserted at frame index 1:
  * "Speed_temporal_feature_speed_temporal_score".
  *
+ * The comparison is an equality since ADR-1477: speed.c evaluates Netflix's
+ * fp64 statements (libvmaf/src/feature/speed.c of Netflix/vmaf 9e48141b:
+ * `1.0 / sqrt(1 + t * t)` at 418 and 423, the `log2()` of update_entropy()
+ * at 802 and of get_speed_score() at 897 to 928), and the twin reproduces
+ * each of them, the rotation on the device (feature/speed_givens.h) and the
+ * logarithms on the host with the CPU extractor's own C library
+ * (speed_internal_gpu_tail_scores()). It allowed 1e-4 before.
+ *
  * A ping-pong indexing, Gaussian-radius, or weight-table drift in
  * the SYCL kernel would silently shift every temporal-SpEED column
  * on Intel-Arc CHUG re-extracts.
@@ -66,7 +74,6 @@
 #endif
 #define FIXTURE_BPC 8u
 #define NUM_FRAMES 2u
-#define PARITY_TOL 1e-4
 
 static int fill_pic(VmafPicture *pic, unsigned frame_idx)
 {
@@ -202,14 +209,12 @@ static char *test_speed_temporal_cpu_sycl_parity(void)
         return msg;
     if (!device_present)
         return NULL;
-    double delta = fabs(cpu_score - sycl_score);
-    if (delta > PARITY_TOL) {
-        (void)fprintf(stderr,
-                      "\nspeed_temporal parity FAIL: cpu=%.8f sycl=%.8f delta=%.2e tol=%.2e\n",
-                      cpu_score, sycl_score, delta, PARITY_TOL);
+    if (cpu_score != sycl_score) {
+        (void)fprintf(stderr, "\nspeed_temporal parity FAIL: cpu=%.17g sycl=%.17g delta=%.2e\n",
+                      cpu_score, sycl_score, fabs(cpu_score - sycl_score));
     }
-    mu_assert("speed_temporal CPU vs. SYCL delta exceeds places=4 tolerance (1e-4)",
-              delta <= PARITY_TOL);
+    mu_assert("speed_temporal_sycl does not return the CPU extractor's score",
+              cpu_score == sycl_score);
     return NULL;
 }
 
