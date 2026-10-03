@@ -529,6 +529,7 @@
         "core/src/read_json_model.cpp": 1,
         "core/src/ref.cpp": 2,
         "core/src/svm.cpp": 2,
+        "core/src/sycl/chroma_import.h": 1,
         "core/src/sycl/common.cpp": 1,
         "core/src/sycl/common.h": 1,
         "core/src/sycl/dmabuf_import.h": 1,

@@ -10,6 +10,17 @@
 #ifndef VMAF_SRC_SYCL_CHROMA_IMPORT_H
 #define VMAF_SRC_SYCL_CHROMA_IMPORT_H
 
+/* NOLINTBEGIN(modernize-use-using, performance-enum-size):
+ * internal header shared by the SYCL C++ sources and the C unit test
+ * core/test/test_sycl_chroma_import.c. clang-tidy reads it as C++ and
+ * proposes `using` and a `std::uint8_t` enum base type; both are wrong here.
+ * This header has to compile as C, where `using` and `std::` do not exist and
+ * the c17 fallback of the build's C standard list has no fixed enum base
+ * type; the enum is a field of VmafSyclChromaSrc, so its size must be the
+ * same in the C and the C++ translation units. CLAUDE.md rule 12 reserves
+ * suppressions for exactly this: a rule that cannot be followed without
+ * breaking a load-bearing invariant (ADR-0141). */
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -117,5 +128,7 @@ void vmaf_sycl_chroma_event_free(void *event);
 #endif
 
 #endif /* HAVE_SYCL */
+
+/* NOLINTEND(modernize-use-using, performance-enum-size) */
 
 #endif /* VMAF_SRC_SYCL_CHROMA_IMPORT_H */
