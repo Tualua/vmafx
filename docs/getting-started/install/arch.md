@@ -1,80 +1,74 @@
 # Installing on Arch Linux
 
+Run the setup script from the repository root, then build. The script also
+covers Manjaro, CachyOS and EndeavourOS
+([`scripts/setup/arch.sh`](https://github.com/VMAFx/vmafx/blob/master/scripts/setup/arch.sh)).
+
+## Setup script
+
 ```bash
-bash scripts/setup/arch.sh                     # CPU-only
-ENABLE_CUDA=1 bash scripts/setup/arch.sh       # + CUDA toolkit from extra
-ENABLE_SYCL=1 bash scripts/setup/arch.sh       # + intel-oneapi-basekit (AUR)
-INSTALL_LINTERS=1 bash scripts/setup/arch.sh   # + clang-tidy/cppcheck/iwyu
+bash scripts/setup/arch.sh                       # CPU build dependencies and linters
+ENABLE_CUDA=true bash scripts/setup/arch.sh      # + cuda and cuda-tools from extra
+ENABLE_SYCL=true bash scripts/setup/arch.sh      # prints the oneAPI install steps
+INSTALL_LINTERS=false bash scripts/setup/arch.sh # skip shellcheck, shfmt and the Python linters
 ```
+
+The switches take the value `true`; any other value, `1` included, leaves the
+option off. `INSTALL_LINTERS` is on unless you set it to `false`.
+`ENABLE_SYCL=true` installs nothing: it prints the commands of the SYCL section
+below.
 
 ## Manual install
 
 ```bash
 sudo pacman -S --needed \
-    base-devel meson ninja pkgconf nasm \
-    python python-pip \
-    clang cppcheck doxygen
+    base-devel clang cppcheck \
+    meson ninja nasm pkgconf \
+    python python-pip python-virtualenv \
+    doxygen
 ```
 
 ### CUDA (optional)
 
 ```bash
 sudo pacman -S --needed cuda cuda-tools
+export PATH=/opt/cuda/bin:$PATH
 ```
 
-### SYCL (optional, AUR)
+`extra/cuda` follows the current CUDA release; the project builds and tests
+with CUDA 13.4. See the [CUDA backend guide](../../backends/cuda/overview.md).
+
+### SYCL / oneAPI (optional)
+
+The oneAPI compiler is in the official `extra` repository:
 
 ```bash
-yay -S intel-oneapi-basekit
+sudo pacman -S --needed intel-oneapi-dpcpp-cpp
 source /opt/intel/oneapi/setvars.sh
 ```
 
-### Intel QSV (optional, for `h264_qsv` / `hevc_qsv` / `av1_qsv`)
+`intel-oneapi-toolkit` installs the whole toolkit instead. See the
+[SYCL backend guide](../../backends/sycl/overview.md).
 
-The fork's three QSV codec adapters in
-[`tools/vmaf-tune/`](../../usage/vmaf-tune-codec-adapters.md) require an
-FFmpeg built with the Intel oneVPL dispatcher (`libvpl`) — Intel
-[archived Media SDK / `libmfx` in May 2023](https://github.com/Intel-Media-SDK/MediaSDK)
-and oneVPL is the supported successor.
+### Intel QSV (optional, for vmaf-tune)
 
 ```bash
 sudo pacman -S --needed libvpl vpl-gpu-rt
-# vpl-gpu-rt is the runtime for Tiger Lake and newer iGPUs / Arc;
-# legacy iGPUs (Skylake … Comet Lake) need `intel-media-sdk` instead.
 ```
 
-Verified 2026-05-08 against
-[`extra/libvpl 2.16.0-2`](https://archlinux.org/packages/extra/x86_64/libvpl/)
-and
-[`extra/vpl-gpu-rt 26.1.5-1`](https://archlinux.org/packages/extra/x86_64/vpl-gpu-rt/).
-
-The FFmpeg in `extra` is built with `--enable-libvpl` from FFmpeg
-[n6.0 onward](https://github.com/FFmpeg/FFmpeg/blob/master/Changelog);
-no extra build step is needed if you use the distro FFmpeg. If you
-build FFmpeg yourself, see
-[Hardware capability matrix](#intel-quick-sync-hardware-capability-matrix)
-below for codec / generation gating.
-
-#### Intel Quick Sync hardware capability matrix
-
-Verified 2026-05-08 against
-[Wikipedia: Intel Quick Sync Video — Hardware decoding and encoding](https://en.wikipedia.org/wiki/Intel_Quick_Sync_Video#Hardware_decoding_and_encoding).
-
-| CPU / GPU generation                          | H.264 enc/dec | HEVC 8-bit enc/dec | HEVC 10-bit enc/dec | AV1 decode | AV1 encode |
-|-----------------------------------------------|---------------|--------------------|---------------------|------------|------------|
-| Skylake / Kaby Lake / Coffee Lake (Gen 9)     | yes           | yes                | decode only         | no         | no         |
-| Ice Lake (Gen 11)                             | yes           | yes                | yes                 | no         | no         |
-| Tiger Lake / Alder Lake / Raptor Lake (Xe LP) | yes           | yes                | yes                 | yes        | no         |
-| Arc Alchemist (Xe HPG, A-series, 2022)        | yes           | yes                | yes                 | yes        | yes        |
-| Arc Battlemage (Xe2, B-series)                | yes           | yes                | yes                 | yes        | yes        |
-
-`av1_qsv` therefore requires Arc Alchemist or newer; `hevc_qsv` 10-bit
-requires Ice Lake or newer.
+`vpl-gpu-rt` is the runtime for Tiger Lake and newer GPUs, Arc included; older
+GPUs (Skylake to Comet Lake) need `intel-media-sdk` instead. `extra/ffmpeg` is
+built with oneVPL. [Intel QSV](intel-qsv.md) has the hardware matrix and the
+FFmpeg requirements.
 
 ## Build
 
+From the repository root:
+
 ```bash
-cd core
-meson setup ../build -Denable_cuda=true -Denable_sycl=true
-ninja -C ../build
+meson setup build core -Denable_cuda=true -Denable_sycl=true
+ninja -C build
 ```
+
+Leave out the `-Denable_*` options you did not install SDKs for. The binary is
+`build/tools/vmaf`.

@@ -1,44 +1,53 @@
-<!-- markdownlint-disable MD013 -->
 # Installing on macOS
 
+Run the setup script from the repository root, then build. On Apple silicon the
+build includes the Metal GPU backend automatically
+([`scripts/setup/macos.sh`](https://github.com/VMAFx/vmafx/blob/master/scripts/setup/macos.sh)).
+
+## Setup script
+
 ```bash
-bash scripts/setup/macos.sh                     # CPU-only, Intel or Apple silicon
-INSTALL_LINTERS=1 bash scripts/setup/macos.sh   # + Homebrew LLVM (clang-tidy/clang-format)
+bash scripts/setup/macos.sh                       # build dependencies and linters, Intel or Apple silicon
+INSTALL_LINTERS=false bash scripts/setup/macos.sh # skip shellcheck, shfmt and the Python linters
 ```
+
+The script needs [Homebrew](https://brew.sh). It installs Homebrew's `llvm`,
+because Apple's `clang` ships without `clang-tidy` and `clang-format`, and
+prints the `PATH` line to add.
 
 ## Caveats
 
-- **CUDA** is unsupported on macOS by NVIDIA. Use Linux or Windows for CUDA work.
-- **SYCL via Intel oneAPI** is unsupported on Apple Silicon; the setup script blocks it.
-- **Intel QSV** is unsupported on macOS. Intel's oneVPL / Media SDK
-  drivers ship for Linux and Windows only — the QSV codec adapters
-  (`h264_qsv`, `hevc_qsv`, `av1_qsv`) in
-  [`tools/vmaf-tune/`](../../usage/vmaf-tune-codec-adapters.md) will
-  fail the FFmpeg-encoder probe on macOS regardless of host CPU
-  vendor. Use `h264_videotoolbox` / `hevc_videotoolbox` for
-  hardware-accelerated encode on macOS instead. Verified 2026-05-08:
-  Intel does not list macOS as a supported OS on the
-  [oneVPL / VPL GPU runtime project page](https://github.com/intel/vpl-gpu-rt).
-- On Apple Silicon, Apple's built-in `clang` lacks `clang-tidy`/`clang-format`.
-  The setup script installs `llvm` from Homebrew and exports its bin dir into `PATH`.
+- **Metal** is the GPU backend on macOS. It needs Apple silicon (M1 or later);
+  on an Intel Mac it reports `-ENODEV` at run time. See the
+  [Metal backend guide](../../backends/metal/index.md).
+- **CUDA** is not available: NVIDIA does not support macOS.
+- **SYCL** is not supported on Apple silicon, and the setup script refuses
+  `ENABLE_SYCL=true` there. On an Intel Mac the script only prints where to
+  download oneAPI.
+- **Intel QSV** is not available: Intel ships oneVPL for Linux and Windows only
+  ([vpl-gpu-rt](https://github.com/intel/vpl-gpu-rt), checked 2026-05-08). The
+  `vmaf-tune` QSV adapters (`h264_qsv`, `hevc_qsv`, `av1_qsv`) fail FFmpeg's
+  encoder probe on macOS; use `h264_videotoolbox` or `hevc_videotoolbox`.
 
 ## Manual install
 
 ```bash
-brew install meson ninja pkg-config nasm doxygen
-brew install --with-toolchain llvm     # clang-tidy, clang-format, clangd
-```
-
-Then append to your shell RC:
-
-```bash
-export PATH="$(brew --prefix llvm)/bin:$PATH"
+brew install meson ninja nasm pkg-config llvm cppcheck doxygen
+export PATH="$(brew --prefix llvm)/bin:$PATH"   # add this line to your shell profile
 ```
 
 ## Build
 
+From the repository root:
+
 ```bash
-cd core
-meson setup ../build
-ninja -C ../build
+meson setup build core
+ninja -C build
 ```
+
+`enable_metal` defaults to `auto`, which builds the Metal backend when the
+Metal frameworks are present. The binary is `build/tools/vmaf`; select Metal at
+run time with `--backend metal`.
+
+To test VMAFx on a Mac without building it, use the
+[native macOS tester bundle](../../usage/tester-image.md).

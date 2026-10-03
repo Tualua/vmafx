@@ -1,37 +1,62 @@
 <!-- markdownlint-disable MD013 -->
 # Installing on Ubuntu (22.04 / 24.04 / 26.04)
 
-The [`scripts/setup/ubuntu.sh`](https://github.com/VMAFx/vmafx/blob/master/scripts/setup/ubuntu.sh) helper does
-everything below in one step:
+Run the setup script from the repository root, then build. The script also
+works on Debian 12 and Linux Mint 21
+([`scripts/setup/ubuntu.sh`](https://github.com/VMAFx/vmafx/blob/master/scripts/setup/ubuntu.sh)).
+
+## Setup script
 
 ```bash
-bash scripts/setup/ubuntu.sh               # CPU-only
-ENABLE_CUDA=1 bash scripts/setup/ubuntu.sh # + CUDA toolkit
-ENABLE_SYCL=1 bash scripts/setup/ubuntu.sh # + Intel oneAPI
-INSTALL_LINTERS=1 bash scripts/setup/ubuntu.sh # + clang-tidy/cppcheck/iwyu
+bash scripts/setup/ubuntu.sh                       # CPU build dependencies and linters
+ENABLE_CUDA=true bash scripts/setup/ubuntu.sh      # + Ubuntu's CUDA toolkit packages
+ENABLE_SYCL=true bash scripts/setup/ubuntu.sh      # + Intel oneAPI DPC++ compiler
+INSTALL_LINTERS=false bash scripts/setup/ubuntu.sh # skip shellcheck, shfmt and the Python linters
 ```
+
+The switches take the value `true`; any other value, `1` included, leaves the
+option off. `INSTALL_LINTERS` is on unless you set it to `false`.
+
+The script installs Meson and Ninja from PyPI with pinned hashes
+(`requirements/locks/build.txt`), because Ubuntu 24.04's `meson` 1.3.2 is older
+than the 1.4.0 that `core/meson.build` requires.
 
 ## Manual install
 
-```bash
-sudo apt-get update
-sudo apt-get install -y \
-    build-essential meson ninja-build pkg-config nasm \
-    python3-venv python3-pip \
-    clang clang-format clang-tidy cppcheck doxygen
-```
+1. Install the compilers and tools:
+
+    ```bash
+    sudo apt-get update
+    sudo apt-get install -y \
+        build-essential clang clang-format clang-tidy cppcheck \
+        ninja-build nasm pkg-config xxd doxygen \
+        python3 python3-pip python3-venv
+    ```
+
+2. Install Meson 1.4.0 or later and Ninja from the hash-pinned lock:
+
+    ```bash
+    python3 -m pip install --user --require-hashes -r requirements/locks/build.txt
+    ```
 
 ### CUDA (optional)
 
-Requires an NVIDIA GPU. Use the official NVIDIA repo — Ubuntu's `nvidia-cuda-toolkit` is often outdated:
+Requires an NVIDIA GPU. Ubuntu's `nvidia-cuda-toolkit` is usually behind; the
+project builds and tests with CUDA 13.4 (`CUDA_VERSION` in
+[`build-config.env`](https://github.com/VMAFx/vmafx/blob/master/build-config.env)).
+Install it from NVIDIA's repository, using `ubuntu2404` or `ubuntu2604` in the
+URL to match your release:
 
 ```bash
 wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
 sudo dpkg -i cuda-keyring_1.1-1_all.deb
 sudo apt-get update
-sudo apt-get install -y cuda-toolkit-12-6
+sudo apt-get install -y cuda-toolkit-13-4
 echo 'export PATH=/usr/local/cuda/bin:$PATH' >> ~/.bashrc
 ```
+
+The [CUDA backend guide](../../backends/cuda/overview.md) lists the supported
+GPUs and the build options.
 
 ### SYCL / Intel oneAPI (optional)
 
@@ -41,69 +66,49 @@ wget -qO- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUC
 echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
     | sudo tee /etc/apt/sources.list.d/oneAPI.list
 sudo apt-get update
-sudo apt-get install -y intel-basekit
+sudo apt-get install -y intel-oneapi-compiler-dpcpp-cpp intel-oneapi-runtime-libs \
+    libva-dev libva-drm2 level-zero-dev
 source /opt/intel/oneapi/setvars.sh
 ```
 
-### Intel QSV (optional, for `h264_qsv` / `hevc_qsv` / `av1_qsv`)
+These are the packages the setup script installs. The full `intel-basekit`
+meta-package works as well. See the
+[SYCL backend guide](../../backends/sycl/overview.md).
 
-The fork's three QSV codec adapters in
-[`tools/vmaf-tune/`](../../usage/vmaf-tune-codec-adapters.md) require an
-FFmpeg built with the Intel oneVPL dispatcher (`libvpl`) — Intel
-[archived Media SDK / `libmfx` in May 2023](https://github.com/Intel-Media-SDK/MediaSDK)
-and oneVPL is the supported successor.
+### Intel QSV (optional, for `vmaf-tune`)
+
+The `h264_qsv`, `hevc_qsv` and `av1_qsv` codec adapters of `vmaf-tune` need the
+oneVPL dispatcher:
 
 ```bash
 sudo apt-get install -y libvpl2 libvpl-dev
-# 24.04 noble / 26.04 plucky  -> libvpl2 / libvpl-dev 2023.3.0 (universe).
-# 22.04 jammy  -> libvpl2 / libvpl-dev 2022.1.0 (universe).
-# For pre-Tiger-Lake iGPUs also: `intel-media-va-driver` /
-# `intel-media-va-driver-non-free`.
 ```
 
-Verified 2026-05-08 against
-[Ubuntu noble libvpl-dev 2023.3.0-1build1](https://packages.ubuntu.com/noble/libvpl-dev)
-and the package search for
-[libvpl across all suites](https://packages.ubuntu.com/search?keywords=libvpl&searchon=names).
-
-Ubuntu's `ffmpeg` is built with `--enable-libvpl` from FFmpeg n6.0
-onward (the
-[`Changelog`](https://github.com/FFmpeg/FFmpeg/blob/master/Changelog)
-records "oneVPL support for QSV" under FFmpeg 6.0). 22.04 jammy ships
-FFmpeg 4.4, which uses the legacy `--enable-libmfx` path — for QSV
-work on jammy, install FFmpeg from a backports PPA or build from
-source against `libvpl-dev`.
-
-#### Intel Quick Sync hardware capability matrix
-
-Verified 2026-05-08 against
-[Wikipedia: Intel Quick Sync Video — Hardware decoding and encoding](https://en.wikipedia.org/wiki/Intel_Quick_Sync_Video#Hardware_decoding_and_encoding).
-
-| CPU / GPU generation                          | H.264 enc/dec | HEVC 8-bit enc/dec | HEVC 10-bit enc/dec | AV1 decode | AV1 encode |
-|-----------------------------------------------|---------------|--------------------|---------------------|------------|------------|
-| Skylake / Kaby Lake / Coffee Lake (Gen 9)     | yes           | yes                | decode only         | no         | no         |
-| Ice Lake (Gen 11)                             | yes           | yes                | yes                 | no         | no         |
-| Tiger Lake / Alder Lake / Raptor Lake (Xe LP) | yes           | yes                | yes                 | yes        | no         |
-| Arc Alchemist (Xe HPG, A-series, 2022)        | yes           | yes                | yes                 | yes        | yes        |
-| Arc Battlemage (Xe2, B-series)                | yes           | yes                | yes                 | yes        | yes        |
-
-`av1_qsv` therefore requires Arc Alchemist or newer; `hevc_qsv` 10-bit
-requires Ice Lake or newer.
+24.04 and 26.04 ship `libvpl` 2023.3.0 in `universe`, 22.04 ships 2022.1.0.
+22.04's FFmpeg 4.4 predates oneVPL support, so QSV work on 22.04 needs a newer
+FFmpeg. [Intel QSV](intel-qsv.md) has the hardware matrix and the FFmpeg
+requirements.
 
 ## Build
 
+From the repository root:
+
 ```bash
-cd core
-meson setup ../build \
-    -Denable_cuda=true \
-    -Denable_sycl=true
-ninja -C ../build
+meson setup build core -Denable_cuda=true -Denable_sycl=true
+ninja -C build
 ```
 
-Binary lands at `build/tools/vmaf`.
+Leave out the `-Denable_*` options you did not install SDKs for. The binary is
+`build/tools/vmaf`.
 
 ## Run the Netflix golden tests
 
 ```bash
 make test-netflix-golden
 ```
+
+The target builds its own GCC or clang configuration in `core/build-golden`
+and checks the three Netflix reference pairs
+([ADR-1317](../../adr/1317-golden-gate-build-isolation.md)). It needs `pytest`,
+and the test clips that `scripts/test/fetch-test-yuvs.sh` downloads
+([test fixtures](../../development/test-fixtures.md)).

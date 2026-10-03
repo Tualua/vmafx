@@ -1,32 +1,44 @@
 # Installing on Alpine Linux (3.20+)
 
-Alpine uses **musl libc**, which the CUDA and Intel oneAPI toolchains do
-not officially support. The Alpine setup therefore builds a **CPU-only**
-VMAF; `ENABLE_CUDA=1` and `ENABLE_SYCL=1` are silently ignored.
+Alpine builds a CPU-only VMAFx: Alpine uses musl libc, which the CUDA and Intel
+oneAPI toolchains do not support. Run the setup script from the repository
+root, then build
+([`scripts/setup/alpine.sh`](https://github.com/VMAFx/vmafx/blob/master/scripts/setup/alpine.sh)).
+
+## Setup script
 
 ```bash
-bash scripts/setup/alpine.sh
+bash scripts/setup/alpine.sh                       # CPU build dependencies and linters
+INSTALL_LINTERS=false bash scripts/setup/alpine.sh # skip shellcheck, shfmt and the Python linters
 ```
+
+`ENABLE_CUDA=true` or `ENABLE_SYCL=true` stops the script with an error and
+points to the Ubuntu, Fedora or Arch setup.
 
 ## Manual install
 
 ```bash
 apk add --no-cache \
-    build-base meson ninja pkgconf nasm \
-    python3 py3-pip \
-    clang cppcheck doxygen
+    build-base clang clang-extra-tools cppcheck \
+    meson ninja nasm pkgconf \
+    python3 py3-pip py3-virtualenv \
+    doxygen
 ```
 
 ## Build
 
+From the repository root:
+
 ```bash
-cd core
-meson setup ../build
-ninja -C ../build
+meson setup build core -Denable_cuda=false -Denable_sycl=false
+ninja -C build
 ```
 
-## Why Alpine?
+The binary is `build/tools/vmaf`.
 
-The Alpine build is a **portability gate**: if libvmaf compiles and passes
-its tests under musl, we have some confidence that the codebase is free
-of glibc-specific assumptions. The CI runs this via a nightly job.
+## Why Alpine
+
+A musl build is a portability check: if libvmaf compiles and passes its tests
+under musl, the code does not depend on glibc-specific behaviour. No CI job
+runs it; run it by hand in an `alpine` container when a change touches
+platform code.
