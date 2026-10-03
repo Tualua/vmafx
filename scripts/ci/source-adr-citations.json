@@ -10391,6 +10391,15 @@
         "core/test/test_sycl_zerocopy_parity.c": 1
       },
       "target": "1597-sycl-zerocopy-planar-chroma-import.md"
+    },
+    "1598": {
+      "sites": {
+        "core/src/feature/sycl/float_motion_sycl.cpp": 1,
+        "core/src/feature/sycl/float_psnr_sycl.cpp": 1,
+        "core/src/feature/sycl/float_vif_sycl.cpp": 2,
+        "core/test/test_sycl_zerocopy_parity.c": 1
+      },
+      "target": "1598-sycl-host-staging-to-shared-planes.md"
     }
   },
   "retired": {

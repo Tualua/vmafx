@@ -97,12 +97,11 @@ struct FloatVifStateSycl {
 
     VmafSyclState *sycl_state;
 
-    /* Pinned host raw uploads. */
-    void *h_ref_raw;
-    void *h_dis_raw;
-    /* Device raw + ping-pong float buffers. */
-    void *d_ref_raw;
-    void *d_dis_raw;
+    /* The raw luma planes: not owned, the shared planes of the frame being
+     * submitted (ADR-1598), rebound by every submit. */
+    const void *d_ref_raw;
+    const void *d_dis_raw;
+    /* Ping-pong float buffers. */
     float *d_ref_buf[2];
     float *d_dis_buf[2];
 
@@ -658,24 +657,6 @@ static sycl::event launch_decimate(sycl::queue &queue, const VifDecimateArgs &ar
 namespace
 {
 
-template <typename T> static void copy_y_plane(VmafPicture *pic, void *dst, unsigned w, unsigned h)
-{
-    const T *src = static_cast<const T *>(pic->data[0]);
-    T *out = static_cast<T *>(dst);
-    const ptrdiff_t src_stride_t = pic->stride[0] / static_cast<ptrdiff_t>(sizeof(T));
-    for (unsigned i = 0; i < h; i++) {
-        for (unsigned j = 0; j < w; j++)
-            out[j] = src[j];
-        src += src_stride_t;
-        out += w;
-    }
-}
-
-} // namespace
-
-namespace
-{
-
 static const VmafOption options_float_vif_sycl[] = {
     {.name = "debug",
      .help = "debug mode",
@@ -786,12 +767,6 @@ namespace
 
 static bool allocate_vif_planes(FloatVifStateSycl &state)
 {
-    const size_t bytes_per_pixel = state.bpc <= 8 ? 1u : 2u;
-    const size_t raw_bytes = (size_t)state.width * state.height * bytes_per_pixel;
-    state.h_ref_raw = vmaf_sycl_malloc_host(state.sycl_state, raw_bytes);
-    state.h_dis_raw = vmaf_sycl_malloc_host(state.sycl_state, raw_bytes);
-    state.d_ref_raw = vmaf_sycl_malloc_device(state.sycl_state, raw_bytes);
-    state.d_dis_raw = vmaf_sycl_malloc_device(state.sycl_state, raw_bytes);
     const size_t float_bytes = (size_t)state.scale_w[1] * state.scale_h[1] * sizeof(float);
     for (int buffer = 0; buffer < 2; ++buffer) {
         state.d_ref_buf[buffer] =
@@ -799,10 +774,8 @@ static bool allocate_vif_planes(FloatVifStateSycl &state)
         state.d_dis_buf[buffer] =
             static_cast<float *>(vmaf_sycl_malloc_device(state.sycl_state, float_bytes));
     }
-    return state.h_ref_raw != nullptr && state.h_dis_raw != nullptr && state.d_ref_raw != nullptr &&
-           state.d_dis_raw != nullptr && state.d_ref_buf[0] != nullptr &&
-           state.d_dis_buf[0] != nullptr && state.d_ref_buf[1] != nullptr &&
-           state.d_dis_buf[1] != nullptr;
+    return state.d_ref_buf[0] != nullptr && state.d_dis_buf[0] != nullptr &&
+           state.d_ref_buf[1] != nullptr && state.d_dis_buf[1] != nullptr;
 }
 
 } // namespace
@@ -873,21 +846,21 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 namespace
 {
 
-static unsigned upload_vif_pictures(FloatVifStateSycl &state, sycl::queue &queue,
-                                    VmafPicture *reference, VmafPicture *distorted)
+/* The luma of this frame is already in the shared planes (the host read path
+ * uploads it before any extractor submits, the zero-copy import writes it
+ * there), packed at width * bytes per sample. Wait for it on the device and
+ * point the raw planes at it. Nothing is kept across frames: every scale's
+ * float planes are this frame's own (ADR-1598). */
+static int bind_vif_planes(FloatVifStateSycl &state, sycl::queue &queue)
 {
-    const size_t bytes_per_pixel = state.bpc <= 8 ? 1u : 2u;
-    if (state.bpc <= 8) {
-        copy_y_plane<uint8_t>(reference, state.h_ref_raw, state.width, state.height);
-        copy_y_plane<uint8_t>(distorted, state.h_dis_raw, state.width, state.height);
-    } else {
-        copy_y_plane<uint16_t>(reference, state.h_ref_raw, state.width, state.height);
-        copy_y_plane<uint16_t>(distorted, state.h_dis_raw, state.width, state.height);
+    const int upload_err = vmaf_sycl_queue_after_upload(state.sycl_state, &queue);
+    if (upload_err) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "float_vif_sycl: plane upload failed (%d)\n", upload_err);
+        return upload_err;
     }
-    const size_t raw_bytes = (size_t)state.width * state.height * bytes_per_pixel;
-    queue.memcpy(state.d_ref_raw, state.h_ref_raw, raw_bytes);
-    queue.memcpy(state.d_dis_raw, state.h_dis_raw, raw_bytes);
-    return (unsigned)((size_t)state.width * bytes_per_pixel);
+    state.d_ref_raw = vmaf_sycl_get_shared_plane(state.sycl_state, 1, 0);
+    state.d_dis_raw = vmaf_sycl_get_shared_plane(state.sycl_state, 0, 0);
+    return (state.d_ref_raw != nullptr && state.d_dis_raw != nullptr) ? 0 : -EINVAL;
 }
 
 } // namespace
@@ -977,17 +950,20 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *reference,
                            VmafPicture *reference_rotated, VmafPicture *distorted,
                            VmafPicture *distorted_rotated, unsigned index)
 {
+    (void)reference;
     (void)reference_rotated;
+    (void)distorted;
     (void)distorted_rotated;
-    if (vmaf_sycl_require_host_pictures("float_vif_sycl", reference, distorted)) {
-        return -ENOTSUP;
-    }
     auto &state = *static_cast<FloatVifStateSycl *>(fex->priv);
     auto *queue = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(state.sycl_state));
     if (queue == nullptr) {
         return -EINVAL;
     }
-    const unsigned raw_stride = upload_vif_pictures(state, *queue, reference, distorted);
+    const int bind_err = bind_vif_planes(state, *queue);
+    if (bind_err) {
+        return bind_err;
+    }
+    const unsigned raw_stride = state.width * (state.bpc <= 8 ? 1u : 2u);
     const vmaf_sycl_fvif::StatisticParams statistic =
         vmaf_sycl_fvif::make_statistic_params(state.vif_sigma_nsq, state.vif_enhn_gain_limit);
     launch_vif_statistic<0>(state, *queue, raw_stride, nullptr, nullptr, statistic);
@@ -1075,14 +1051,6 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
 {
     auto *s = static_cast<FloatVifStateSycl *>(fex->priv);
     if (s->sycl_state) {
-        if (s->h_ref_raw)
-            vmaf_sycl_free(s->sycl_state, s->h_ref_raw);
-        if (s->h_dis_raw)
-            vmaf_sycl_free(s->sycl_state, s->h_dis_raw);
-        if (s->d_ref_raw)
-            vmaf_sycl_free(s->sycl_state, s->d_ref_raw);
-        if (s->d_dis_raw)
-            vmaf_sycl_free(s->sycl_state, s->d_dis_raw);
         for (int i = 0; i < 2; i++) {
             if (s->d_ref_buf[i])
                 vmaf_sycl_free(s->sycl_state, s->d_ref_buf[i]);

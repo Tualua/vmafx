@@ -65,12 +65,8 @@ struct FloatMotionStateSycl {
     unsigned width;
     unsigned height;
     unsigned bpc;
-    size_t plane_bytes;
 
     VmafSyclState *sycl_state;
-
-    void *h_ref;
-    void *d_ref;
 
     /* Ping-pong of float blurred refs. */
     float *d_blur[2];
@@ -315,24 +311,6 @@ static sycl::event launch_float_motion_row_sad(sycl::queue &q, const FmRowSadArg
 namespace
 {
 
-template <typename T> static void copy_y_plane(VmafPicture *pic, void *dst, unsigned w, unsigned h)
-{
-    const T *src = static_cast<const T *>(pic->data[0]);
-    T *out = static_cast<T *>(dst);
-    const ptrdiff_t src_stride_t = pic->stride[0] / static_cast<ptrdiff_t>(sizeof(T));
-    for (unsigned i = 0; i < h; i++) {
-        for (unsigned j = 0; j < w; j++)
-            out[j] = src[j];
-        src += src_stride_t;
-        out += w;
-    }
-}
-
-} // namespace
-
-namespace
-{
-
 static const VmafOption options_float_motion_sycl[] = {
     {.name = "debug",
      .help = "debug mode: enable additional output",
@@ -395,17 +373,13 @@ namespace
 static int allocate_motion_buffers(FloatMotionStateSycl *s)
 {
     VmafSyclState *state = s->sycl_state;
-    s->plane_bytes = (size_t)s->width * s->height * (s->bpc <= 8 ? 1u : 2u);
-    s->h_ref = vmaf_sycl_malloc_host(state, s->plane_bytes);
-    s->d_ref = vmaf_sycl_malloc_device(state, s->plane_bytes);
     const size_t blur_bytes = (size_t)s->width * s->height * sizeof(float);
     s->d_blur[0] = static_cast<float *>(vmaf_sycl_malloc_device(state, blur_bytes));
     s->d_blur[1] = static_cast<float *>(vmaf_sycl_malloc_device(state, blur_bytes));
     const size_t sad_bytes = (size_t)s->height * sizeof(float);
     s->d_row_sad = static_cast<float *>(vmaf_sycl_malloc_device(state, sad_bytes));
     s->h_row_sad = static_cast<float *>(vmaf_sycl_malloc_host(state, sad_bytes));
-    if (!s->h_ref || !s->d_ref || !s->d_blur[0] || !s->d_blur[1] || !s->d_row_sad ||
-        !s->h_row_sad) {
+    if (!s->d_blur[0] || !s->d_blur[1] || !s->d_row_sad || !s->h_row_sad) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "float_motion_sycl: USM allocation failed\n");
         return -ENOMEM;
     }
@@ -473,6 +447,7 @@ namespace
 static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                            VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
+    (void)ref_pic;
     (void)ref_pic_90;
     (void)dist_pic;
     (void)dist_pic_90;
@@ -483,25 +458,31 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
         s->has_pending = true;
         return 0;
     }
-    if (vmaf_sycl_require_host_pictures("float_motion_sycl", ref_pic, ref_pic)) {
-        return -ENOTSUP;
-    }
     auto *qptr = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
     if (!qptr) {
         return -EINVAL;
     }
     sycl::queue &q = *qptr;
 
-    if (s->bpc <= 8) {
-        copy_y_plane<uint8_t>(ref_pic, s->h_ref, s->width, s->height);
-    } else {
-        copy_y_plane<uint16_t>(ref_pic, s->h_ref, s->width, s->height);
+    /* The reference luma of this frame is already in the shared planes (the
+     * host read path uploads it before any extractor submits, the zero-copy
+     * import writes it there), packed at width * bytes per sample. The blur
+     * is what carries over to the next frame, in d_blur, so the slot is read
+     * once and never kept (ADR-1598). */
+    const int upload_err = vmaf_sycl_queue_after_upload(s->sycl_state, qptr);
+    if (upload_err) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "float_motion_sycl: frame %u plane upload failed (%d)\n",
+                 index, upload_err);
+        return upload_err;
     }
-    q.memcpy(s->d_ref, s->h_ref, s->plane_bytes);
+    const void *ref = vmaf_sycl_get_shared_plane(s->sycl_state, 1, 0);
+    if (!ref) {
+        return -EINVAL;
+    }
 
     const unsigned cur_idx = (unsigned)s->cur_blur;
     const unsigned prev_idx = 1u - cur_idx;
-    launch_float_motion(q, {.ref = s->d_ref,
+    launch_float_motion(q, {.ref = ref,
                             .cur_blur = s->d_blur[cur_idx],
                             .width = s->width,
                             .height = s->height,
@@ -690,10 +671,6 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
 {
     auto *s = static_cast<FloatMotionStateSycl *>(fex->priv);
     if (s->sycl_state) {
-        if (s->h_ref)
-            vmaf_sycl_free(s->sycl_state, s->h_ref);
-        if (s->d_ref)
-            vmaf_sycl_free(s->sycl_state, s->d_ref);
         if (s->d_blur[0])
             vmaf_sycl_free(s->sycl_state, s->d_blur[0]);
         if (s->d_blur[1])
