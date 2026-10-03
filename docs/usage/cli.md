@@ -904,6 +904,19 @@ goldens preserved as a required CI gate. The CLI path is pinned to
   [ADR-0024](../adr/0024-netflix-golden-preserved.md),
   [ADR-0100](../adr/0100-project-wide-doc-substance-rule.md).
 
+## Former section names
+
+Older pages and records link to these headings; each points to the section
+that now holds its content.
+
+### Tiny-AI flags (fork-added)
+
+Now under [Tiny-AI flags](#tiny-ai-flags).
+
+### Codec-context flags (fork-added)
+
+Now under [Codec-context flags](#codec-context-flags).
+
 ## History
 
 Behaviour that older builds had, kept so old logs and scripts can be

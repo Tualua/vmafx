@@ -314,6 +314,19 @@ tools.
 | `VMAF_TEST_DATA` | path | _(repo-relative)_ | Test-data root override for Python-harness tests. |
 | `VMAF_SYCL_AOT_JOBS` | integer | `4` | Parallel compiles of the `sycl-aot` meson test suite. |
 
+## Former section names
+
+Older pages and records link to these headings; each points to the section
+that now holds its content.
+
+### CUDA dispatch knob
+
+Now under [CUDA dispatch](#cuda-dispatch).
+
+### SYCL dispatch knob
+
+Now under [SYCL dispatch](#sycl-dispatch).
+
 ## History
 
 - **ADR-1119 migration.** The Go services moved to the golusoris `fx`

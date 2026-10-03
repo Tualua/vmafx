@@ -2500,6 +2500,14 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   of [ADR-1317](docs/adr/1317-golden-gate-build-isolation.md).
 
 
+- Restored the section links that older pages and ADRs use into the CLI,
+  `vmaf_bench`, environment-variable and Getting started pages after their
+  rewrite (#1934, #1938): each former section name is a short heading that
+  points to the section now holding its content, and Getting started keeps its
+  "Build from source (any platform)" heading. `mkdocs build --strict` passes
+  on master again.
+
+
 - **`float_adm` and the models that read it use Netflix's CSF weights again;
   `vmaf_float_v0.6.1` moves by up to 2.2e-5 per frame.** Two inherited
   routines compute the contrast-sensitivity weights of float ADM: the Watson

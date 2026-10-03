@@ -12,7 +12,7 @@ binary, or from a source build. Pick one below, then
 | --- | --- | --- | --- |
 | Container image | the `vmaf` CLI and `libvmaf`, CPU or one GPU backend per image | any Docker host; GPU images on x86-64 | [Container image](#container-image) |
 | Release download | the `vmaf` CLI and `libvmaf.so.3`, CPU only | Linux x86-64 with glibc 2.41 or later | [Release download](#release-download) |
-| Source build | every backend your hardware and SDKs support, the tests, the tools | Linux, macOS, Windows | [Build from source](#build-from-source) |
+| Source build | every backend your hardware and SDKs support, the tests, the tools | Linux, macOS, Windows | [Build from source](#build-from-source-any-platform) |
 
 Each release is listed on the
 [releases page](https://github.com/VMAFx/vmafx/releases). Until `v1.0.0`, the
@@ -71,7 +71,7 @@ The binary is built with AVX-512 enabled and without the ONNX runtime, so the
 `--tiny-*` options are not available in it
 ([`build-native-release-artifacts.sh`](https://github.com/VMAFx/vmafx/blob/master/scripts/release/build-native-release-artifacts.sh)).
 
-## Build from source
+## Build from source (any platform)
 
 A source build gives you the GPU backends, the tests and the companion tools.
 

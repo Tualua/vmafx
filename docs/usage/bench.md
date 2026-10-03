@@ -174,3 +174,12 @@ An extractor setup, frame submission or final flush failure is reported as a
   runtime rules.
 - `/cross-backend-diff` skill — wraps `vmaf_bench --validate` with PR-ready
   formatting.
+
+## Former section names
+
+Older pages and records link to these headings; each points to the section
+that now holds its content.
+
+### Performance benchmark (default)
+
+Now under [Performance benchmark (default mode)](#performance-benchmark-default-mode).
