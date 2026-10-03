@@ -33,6 +33,7 @@ extern "C" {
 /* What one extractor's flush needs: the provided-feature keys it writes (the
  * collector names are looked up in its feature-name dictionary, so option
  * suffixes are applied) and the options that shape the window. */
+/* NOLINTBEGIN(modernize-use-using): C header included by C and C++ translation units. ADR-1138. */
 typedef struct VmafMotionWindow {
     const char *sad_feature;     /* per-frame SAD score, read */
     const char *motion2_feature; /* written for every frame */
@@ -43,6 +44,7 @@ typedef struct VmafMotionWindow {
     bool motion_five_frame_window;
     bool motion_moving_average;
 } VmafMotionWindow;
+/* NOLINTEND(modernize-use-using) */
 
 /*
  * Append motion2 and motion3 for every frame that has a SAD score.

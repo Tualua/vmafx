@@ -6131,6 +6131,7 @@
         "core/src/feature/integer_ssim.c": 1,
         "core/src/feature/integer_vif.c": 1,
         "core/src/feature/iqa/ssim_tools.c": 1,
+        "core/src/feature/motion_window.h": 1,
         "core/src/feature/ms_ssim.c": 1,
         "core/src/feature/niqe.c": 1,
         "core/src/feature/nonfinite_score.h": 1,
