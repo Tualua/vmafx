@@ -39,6 +39,7 @@
 #include <stdint.h>
 
 #include "config.h"
+#include "float_bits.h"
 #include "test.h"
 /* clang-format off — `test.h` has no header guard, must precede the
  * harness include to avoid a `mu_report` redefinition. */
@@ -128,7 +129,8 @@ static char *check_frame(const MomentKernel *k, const MomentFrame *f, const char
     err |= k->first(f->buf, f->w, f->h, stride_bytes, &s_simd);
     err |= compute_2nd_moment(f->buf, f->w, f->h, stride_bytes, &t_scalar);
     err |= k->second(f->buf, f->w, f->h, stride_bytes, &t_simd);
-    if (err || s_simd != s_scalar || t_simd != t_scalar) {
+    if (err || !vmaf_test_identical_f64(s_simd, s_scalar) ||
+        !vmaf_test_identical_f64(t_simd, t_scalar)) {
         (void)fprintf(stderr,
                       "\n%s %s %dx%d: 1st %.17g vs scalar %.17g, 2nd %.17g vs scalar %.17g\n",
                       k->name, what, f->w, f->h, s_simd, s_scalar, t_simd, t_scalar);

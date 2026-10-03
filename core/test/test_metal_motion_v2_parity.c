@@ -38,6 +38,7 @@
  * 77 when no Metal device is visible.
  */
 
+#include "float_bits.h"
 #include "metal_twin.h"
 
 #include <errno.h>
@@ -298,7 +299,7 @@ static unsigned count_mismatches(const Scenario *sc, const Fixture *fx, Scores c
     unsigned bad = 0u;
     for (unsigned i = 0; i < sc->frames; i++) {
         for (unsigned k = 0; k < key_count(sc); k++) {
-            if (isfinite(cpu[i][k]) && cpu[i][k] == twin[i][k]) {
+            if (isfinite(cpu[i][k]) && vmaf_test_identical_f64(cpu[i][k], twin[i][k])) {
                 continue;
             }
             bad++;

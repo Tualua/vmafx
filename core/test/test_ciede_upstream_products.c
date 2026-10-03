@@ -36,6 +36,7 @@
 #include <stdio.h>
 
 #include "test.h"
+#include "float_bits.h"
 
 #include "feature/cuda/integer_ciede/ciede_device.h"
 
@@ -139,9 +140,9 @@ static Tally tally_grid(unsigned count)
         const float widened = replay(color_1, color_2, true);
         const float header = ciede_delta_e(color_1, color_2);
         tally.pairs++;
-        if (header != upstream)
+        if (!vmaf_test_identical_f32(header, upstream))
             tally.not_upstream++;
-        if (widened != upstream)
+        if (!vmaf_test_identical_f32(widened, upstream))
             tally.told_apart++;
     }
     return tally;

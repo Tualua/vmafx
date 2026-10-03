@@ -57,6 +57,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "float_bits.h"
 #include "test.h"
 
 #include "dict.h"
@@ -69,19 +70,17 @@
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. ADR-1138. */
 
-/* Test 4 holds where Netflix's values were measured: glibc. */
+/* Test 4 holds where Netflix's values were measured: glibc. Elsewhere this
+ * is the reason it is skipped. */
 #if defined(__GLIBC__) && !defined(VMAF_TEST_ASSUME_FOREIGN_LIBM)
-#define UF_NETFLIX_VALUES_APPLY 1
-#else
-#define UF_NETFLIX_VALUES_APPLY 0
-#if defined(VMAF_TEST_ASSUME_FOREIGN_LIBM)
+#define UF_NETFLIX_VALUES_SKIP_REASON NULL
+#elif defined(VMAF_TEST_ASSUME_FOREIGN_LIBM)
 #define UF_NETFLIX_VALUES_SKIP_REASON                                                              \
     "VMAF_TEST_ASSUME_FOREIGN_LIBM is defined: built as for a C library other than glibc, "        \
     "whose log2() Netflix's values were not measured with"
 #else
 #define UF_NETFLIX_VALUES_SKIP_REASON                                                              \
     "this C library is not glibc; Netflix's values were measured with glibc 2.44's log2()"
-#endif
 #endif
 
 #ifndef M_PI
@@ -247,7 +246,7 @@ static unsigned uf_mismatches(const UfCase *c, const double scores[UF_FRAMES])
 {
     unsigned mismatches = 0u;
     for (unsigned i = 0u; i < UF_FRAMES; i++) {
-        if (scores[i] != c->expected[i]) {
+        if (!vmaf_test_identical_f64(scores[i], c->expected[i])) {
             (void)fprintf(stderr, "\n%s frame %u: %.17g, Netflix master %.17g\n", c->feature, i,
                           scores[i], c->expected[i]);
             mismatches++;
@@ -296,13 +295,6 @@ static float uf_float(uint32_t bits)
     float value = 0.0f;
     memcpy(&value, &bits, sizeof(value));
     return value;
-}
-
-static uint32_t uf_bits(float value)
-{
-    uint32_t bits = 0u;
-    memcpy(&bits, &value, sizeof(bits));
-    return bits;
 }
 
 // NOLINTBEGIN(performance-type-promotion-in-math-fn) ADR-1477: upstream's double form.
@@ -393,7 +385,7 @@ static float uf_upstream_speed_score(SpeedDimensions dim, SpeedResultBuffers ref
 {
     float score = 0;
     float base_entropy =
-        dim.elements_in_block * (log2((1 + nn_floor) * sigma_nn) + log2(2 * M_PI * M_E));
+        dim.elements_in_block * (log2((double)((1 + nn_floor) * sigma_nn)) + log2(2 * M_PI * M_E));
     for (size_t i = 0; i < dim.num_blocks; i++) {
         if ((ref_results.entropies[i] < base_entropy) &&
             (dis_results.entropies[i] < base_entropy)) {
@@ -486,8 +478,10 @@ static char *test_cpu_create_givens_is_upstreams(void)
         speed_internal_cpu_create_givens(a, b, &fork[0], &fork[1]);
         uf_upstream_create_givens(a, b, &up[0], &up[1]);
         uf_port213_create_givens(a, b, &port[0], &port[1]);
-        mismatches += uf_bits(fork[0]) != uf_bits(up[0]) || uf_bits(fork[1]) != uf_bits(up[1]);
-        port_differs += uf_bits(port[0]) != uf_bits(up[0]) || uf_bits(port[1]) != uf_bits(up[1]);
+        mismatches += vmaf_test_bits_f32(fork[0]) != vmaf_test_bits_f32(up[0]) ||
+                      vmaf_test_bits_f32(fork[1]) != vmaf_test_bits_f32(up[1]);
+        port_differs += vmaf_test_bits_f32(port[0]) != vmaf_test_bits_f32(up[0]) ||
+                        vmaf_test_bits_f32(port[1]) != vmaf_test_bits_f32(up[1]);
     }
     mu_assert("speed.c's create_givens() is not upstream's", mismatches == 0u);
     mu_assert("the operands cannot tell upstream's rotation from port #213's", port_differs != 0u);
@@ -524,7 +518,7 @@ static char *test_cpu_update_entropy_is_upstreams(void)
             uf_upstream_update_entropy(dim, upstream, var, L, sigma_nn);
         }
         for (size_t i = 0u; i < 35u; i++)
-            mismatches += uf_bits(fork[i]) != uf_bits(upstream[i]);
+            mismatches += vmaf_test_bits_f32(fork[i]) != vmaf_test_bits_f32(upstream[i]);
     }
     mu_assert("speed.c's update_entropy() is not upstream's", mismatches == 0u);
     return NULL;
@@ -568,7 +562,7 @@ static char *test_cpu_speed_score_is_upstreams(void)
                                                fork_dis, uf_scoring[o][0], uf_scoring[o][1], mode);
             const float up =
                 uf_upstream_speed_score(dim, ref, dis, uf_scoring[o][0], uf_scoring[o][1], mode);
-            mismatches += uf_bits(fork) != uf_bits(up);
+            mismatches += vmaf_test_bits_f32(fork) != vmaf_test_bits_f32(up);
             nonzero += up > 0.0f;
         }
     }
@@ -590,8 +584,8 @@ static char *test_givens_unit_is_upstreams_on_every_input(void)
     for (uint32_t bits = 0x3f800000u; bits <= 0x40000000u; bits++) {
         const float u = uf_float(bits);
         const float upstream = uf_upstream_givens_unit(u);
-        mismatches += uf_bits(speed_givens_unit(u)) != uf_bits(upstream);
-        fp32_form_differs += uf_bits(1.0f / sqrtf(u)) != uf_bits(upstream);
+        mismatches += vmaf_test_bits_f32(speed_givens_unit(u)) != vmaf_test_bits_f32(upstream);
+        fp32_form_differs += vmaf_test_bits_f32(1.0f / sqrtf(u)) != vmaf_test_bits_f32(upstream);
     }
     mu_assert("speed_givens_unit() is not upstream's 1.0 / sqrt(1 + t * t)", mismatches == 0u);
     /* 2,907,055 inputs when measured: the form port #213 had is another
@@ -695,7 +689,8 @@ static char *test_host_tail_is_upstreams_entropy_and_score(void)
                           0);
             for (uint32_t pair = 0u; pair < 2u; pair++) {
                 const float upstream = uf_upstream_pair_score(&tail, pair, &config.scoring);
-                mismatches += uf_bits(result.score[pair]) != uf_bits(upstream);
+                mismatches +=
+                    vmaf_test_bits_f32(result.score[pair]) != vmaf_test_bits_f32(upstream);
                 nonzero += upstream > 0.0f;
             }
         }
@@ -718,7 +713,7 @@ static char *test_host_tail_fixture_separates_the_two_forms(void)
         const float L = tail.eig[1] < 0 ? 0 : tail.eig[1];
         uf_upstream_update_entropy(uf_dims(1u, 1u), &fp64_form, &tail.var[i], L, 0.29f);
         fp32_form += log2f(L * tail.var[i] + 0.29f) + log2f(2.0f * (float)M_PI * (float)M_E);
-        differs += uf_bits(fp64_form) != uf_bits(fp32_form);
+        differs += vmaf_test_bits_f32(fp64_form) != vmaf_test_bits_f32(fp32_form);
     }
     mu_assert("the fixture cannot tell upstream's log2() from log2f()", differs != 0u);
     return NULL;
@@ -741,10 +736,10 @@ static char *test_host_tail_applies_the_singular_rule(void)
     tail.status[6] = 1;
     mu_assert("the host tail failed",
               speed_internal_gpu_tail_scores(&config, 4u, tail.words, entropies, &result) == 0);
-    mu_assert("exactly one singular side must score 0", uf_bits(result.score[0]) == 0u);
+    mu_assert("exactly one singular side must score 0", vmaf_test_bits_f32(result.score[0]) == 0u);
     mu_assert("two singular sides score as upstream does",
-              uf_bits(result.score[1]) ==
-                  uf_bits(uf_upstream_pair_score(&tail, 1u, &config.scoring)));
+              vmaf_test_bits_f32(result.score[1]) ==
+                  vmaf_test_bits_f32(uf_upstream_pair_score(&tail, 1u, &config.scoring)));
     mu_assert("status words must be passed through",
               result.singular[0] == 1 && result.singular[1] == 0 && result.singular[2] == 1 &&
                   result.singular[3] == 1 && result.iteration_cap[1] == 1 &&
@@ -765,14 +760,14 @@ static char *test_host_tail_scores_flat_and_single_blocks(void)
     const SpeedGpuConfig floor = uf_config(0.19f, 0.1f, 5, UF_BLOCKS);
     mu_assert("the host tail failed",
               speed_internal_gpu_tail_scores(&floor, 2u, tail.words, entropies, &result) == 0);
-    mu_assert("flat blocks must score 0", uf_bits(result.score[0]) == 0u);
+    mu_assert("flat blocks must score 0", vmaf_test_bits_f32(result.score[0]) == 0u);
 
     const SpeedGpuConfig single = uf_config(0.29f, 0.0f, 3, 1u);
     uint32_t words[2u * 2u + 2u * UF_ELEMENTS + 2u];
     memset(words, 0, sizeof(words));
     mu_assert("the host tail failed on a single block",
               speed_internal_gpu_tail_scores(&single, 2u, words, entropies, &result) == 0);
-    mu_assert("a single flat block scores 0", uf_bits(result.score[0]) == 0u);
+    mu_assert("a single flat block scores 0", vmaf_test_bits_f32(result.score[0]) == 0u);
     return NULL;
 }
 
@@ -834,19 +829,22 @@ static char *run_host_tail_tests(void)
 }
 
 /* Test 4 where Netflix's values apply; elsewhere a visible skip with the
- * reason, never a silent pass. */
+ * reason, never a silent pass. The test is compiled on every C library. The
+ * body is the same in every build, the reason aside: an `#if` here gave the
+ * two meson variants two different functions of one name, and CodeQL then
+ * reported one of them unreachable (cpp/unused-static-function). */
+static const char *const uf_netflix_values_skip_reason = UF_NETFLIX_VALUES_SKIP_REASON;
+
 static char *run_netflix_value_tests(void)
 {
-#if UF_NETFLIX_VALUES_APPLY
-    mu_run_test(test_cpu_extractors_return_netflix_masters_values);
-#else
-    /* Compiled on every C library, run on glibc only. */
-    char *(*const pinned)(void) = test_cpu_extractors_return_netflix_masters_values;
-    (void)pinned;
+    const char *const skip_reason = uf_netflix_values_skip_reason;
+    if (skip_reason == NULL) {
+        mu_run_test(test_cpu_extractors_return_netflix_masters_values);
+        return NULL;
+    }
     (void)fprintf(
         stderr, "test_cpu_extractors_return_netflix_masters_values: \033[33mskipped\033[0m (%s)\n",
-        UF_NETFLIX_VALUES_SKIP_REASON);
-#endif
+        skip_reason);
     return NULL;
 }
 

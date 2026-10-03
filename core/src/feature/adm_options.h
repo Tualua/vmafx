@@ -26,8 +26,8 @@
 /* Whether to use a trigonometry-free method for comparing angles. */
 #define ADM_OPT_AVOID_ATAN
 
-/* Whether to save intermediate results to files. */
-/* #define ADM_OPT_DEBUG_DUMP */
+/* Upstream comments out an ADM_OPT_DEBUG_DUMP switch here (dump intermediate
+ * results to files); the fork dropped the blocks it guarded, nothing reads it. */
 
 /* Upstream defines ADM_OPT_RECIP_DIVISION here: division by multiplying with a
  * reciprocal refined from the processor's RCPSS estimate. That estimate is

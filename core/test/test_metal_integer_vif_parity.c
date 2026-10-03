@@ -45,6 +45,7 @@
  * run exits 77. The registration case needs no device.
  */
 
+#include "float_bits.h"
 #include "metal_twin.h"
 
 #include <errno.h>
@@ -243,7 +244,7 @@ static unsigned exact_mismatches(const VifCase *c)
     }
     unsigned mismatches = 0u;
     for (size_t i = 0; i < c->n_keys * NUM_FRAMES; i++) {
-        if (isfinite(cpu[i]) && cpu[i] == gpu[i]) {
+        if (isfinite(cpu[i]) && vmaf_test_identical_f64(cpu[i], gpu[i])) {
             continue;
         }
         mismatches++;
@@ -608,7 +609,7 @@ static char *check_boundary_case(void *state, Geometry g)
     const bool on_cpu = g.w < expected_min_dim() || g.h < expected_min_dim();
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
         for (unsigned k = 0; k < NUM_SCALES; k++) {
-            if (cpu[i][k] == gpu[i][k]) {
+            if (vmaf_test_identical_f64(cpu[i][k], gpu[i][k])) {
                 continue;
             }
             (void)fprintf(stderr, "\n  %ux%u frame %u scale %u: cpu=%.17g model=%.17g\n", g.w, g.h,

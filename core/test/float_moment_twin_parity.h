@@ -59,6 +59,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "float_bits.h"
 
 #include "feature/feature_extractor.h"
 #include "libvmaf/libvmaf.h"
@@ -316,7 +317,7 @@ static inline unsigned float_moment_twin_compare(const FloatMomentTwin *twin,
         const unsigned m = i % FLOAT_MOMENT_TWIN_OUTPUTS;
         const double a = cpu->v[frame][m];
         const double b = gpu->v[frame][m];
-        if (isfinite(a) && a == b) {
+        if (isfinite(a) && vmaf_test_identical_f64(a, b)) {
             continue;
         }
         mismatches++;
@@ -417,7 +418,8 @@ static inline bool float_moment_twin_reaches(const FloatMomentTwinCase *c,
     const uint64_t expected = c->target != 0u ? c->target + c->ones : exact;
     const bool past = c->target != 0u || exact > ((uint64_t)1 << 53);
     const double exact_moment = ((double)exact / 65536.0) / pixels;
-    const bool differs = exact_moment != cpu->v[0][FLOAT_MOMENT_TWIN_FIRST_SECOND];
+    const bool differs =
+        !vmaf_test_identical_f64(exact_moment, cpu->v[0][FLOAT_MOMENT_TWIN_FIRST_SECOND]);
     if (exact == expected && past && differs == c->rounds) {
         return true;
     }

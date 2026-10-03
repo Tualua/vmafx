@@ -37,6 +37,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "float_bits.h"
 #include "libvmaf/libvmaf.h"
 #include "libvmaf/picture.h"
 
@@ -266,7 +267,7 @@ static inline unsigned mft_count_mismatches(const MftCase *c, const MftBackend *
     bool any_nonzero = false;
     for (size_t i = 0; i < count * frames; i++) {
         any_nonzero = any_nonzero || ((i % count) == 0u && cpu[i] != 0.0);
-        if (isfinite(cpu[i]) && cpu[i] == gpu[i]) {
+        if (isfinite(cpu[i]) && vmaf_test_identical_f64(cpu[i], gpu[i])) {
             continue;
         }
         mismatches++;

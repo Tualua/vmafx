@@ -8,6 +8,7 @@
  */
 
 #include <errno.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
 
@@ -17,6 +18,14 @@
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. ADR-1138. */
 
+static const VmafPictureConfiguration pic_1080p = {
+    .pic_params = {.w = 1920, .h = 1080, .bpc = 8, .pix_fmt = VMAF_PIX_FMT_YUV420P},
+    .pic_cnt = 3,
+};
+
+/* What the fake lookup was asked. It keeps whether the geometry was the
+ * caller's own `pic_1080p`, not the pointer, so no address a caller passes
+ * outlives the call: the CLI passes one into its stack-held run state. */
 static struct {
     int status;
     const char *twin;
@@ -24,7 +33,7 @@ static struct {
     unsigned calls;
     const char *seen_name;
     const VmafFeatureDictionary *seen_opts;
-    const VmafPictureConfiguration *seen_pic_cfg;
+    bool saw_pic_1080p;
 } twin_fake;
 
 static void script_twin(int status, const char *twin, const char *option)
@@ -44,7 +53,7 @@ int vmaf_feature_backend_twin(VmafContext *vmaf, const char *feature_name,
     twin_fake.calls++;
     twin_fake.seen_name = feature_name;
     twin_fake.seen_opts = opts_dict;
-    twin_fake.seen_pic_cfg = pic_cfg;
+    twin_fake.saw_pic_1080p = pic_cfg == &pic_1080p;
     /* Same contract as the real function: no result pointer, no lookup. */
     if (!twin_name)
         return -EINVAL;
@@ -95,11 +104,6 @@ int vmaf_registered_feature_extractor(VmafContext *vmaf, unsigned index, const c
     return 0;
 }
 
-static const VmafPictureConfiguration pic_1080p = {
-    .pic_params = {.w = 1920, .h = 1080, .bpc = 8, .pix_fmt = VMAF_PIX_FMT_YUV420P},
-    .pic_cnt = 3,
-};
-
 static struct CliFeatureChoice choose(const char *backend, const char *feature, char *warn,
                                       size_t sz)
 {
@@ -117,7 +121,7 @@ static char *test_twin_is_chosen_without_warning(void)
     mu_assert("warning printed for a chosen twin", warn[0] == '\0');
     mu_assert("lookup not asked exactly once", twin_fake.calls == 1U);
     mu_assert("lookup got a different name", !strcmp(twin_fake.seen_name, "ciede"));
-    mu_assert("lookup got a different geometry", twin_fake.seen_pic_cfg == &pic_1080p);
+    mu_assert("lookup got a different geometry", twin_fake.saw_pic_1080p);
     return NULL;
 }
 

@@ -48,6 +48,7 @@
 #include <stdlib.h>
 
 #include "test.h"
+#include "float_bits.h"
 #include "mu_table.h"
 
 #include "dict.h"
@@ -215,7 +216,7 @@ static char *expect_same_scores(const FbCase *a, const FbCase *b, const char *fe
     mu_assert("extraction failed", extract_err == 0);
     for (unsigned i = 0; i < FB_FRAMES; i++) {
         mu_assert("same scaled size, different score: the resample was skipped",
-                  score_a[i] == score_b[i]);
+                  vmaf_test_expect_identical_f64("frame score", score_a[i], score_b[i]));
     }
     return NULL;
 }

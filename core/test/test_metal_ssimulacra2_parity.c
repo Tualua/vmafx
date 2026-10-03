@@ -32,6 +32,7 @@
  * and the run exits 77. The registration case needs no device.
  */
 
+#include "float_bits.h"
 #include "metal_twin.h"
 
 #include <errno.h>
@@ -203,7 +204,7 @@ static unsigned exact_mismatches(const SsCase *c, double cpu[NUM_FRAMES])
     }
     unsigned mismatches = 0u;
     for (unsigned i = 0; i < NUM_FRAMES; i++) {
-        if (isfinite(cpu[i]) && cpu[i] == gpu[i]) {
+        if (isfinite(cpu[i]) && vmaf_test_identical_f64(cpu[i], gpu[i])) {
             continue;
         }
         mismatches++;
@@ -253,7 +254,8 @@ static char *test_ssimulacra2_exact(void)
     double cpu[NUM_FRAMES] = {0.0};
     mu_assert("ssimulacra2_metal differs from the CPU extractor", exact_mismatches(&c, cpu) == 0u);
     mu_assert("ssimulacra2 fixture frames must score differently",
-              mu_skipped || (cpu[0] != cpu[1] && cpu[1] != cpu[2]));
+              mu_skipped || (!vmaf_test_identical_f64(cpu[0], cpu[1]) &&
+                             !vmaf_test_identical_f64(cpu[1], cpu[2])));
     return NULL;
 }
 

@@ -39,6 +39,7 @@
  * rejects them with -EINVAL too, so the self-test runs it as well.
  */
 
+#include "float_bits.h"
 #include "metal_twin.h"
 
 #include <errno.h>
@@ -301,7 +302,7 @@ static unsigned exact_mismatches(const AdmCase *c)
     }
     unsigned mismatches = 0u;
     for (size_t k = 0; k < c->n_keys; k++) {
-        if (isfinite(cpu[k]) && cpu[k] == gpu[k]) {
+        if (isfinite(cpu[k]) && vmaf_test_identical_f64(cpu[k], gpu[k])) {
             continue;
         }
         mismatches++;

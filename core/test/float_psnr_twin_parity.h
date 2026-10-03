@@ -56,6 +56,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "float_bits.h"
 
 #include "feature/feature_extractor.h"
 #include "libvmaf/libvmaf.h"
@@ -305,7 +306,7 @@ static inline unsigned float_psnr_twin_mismatches(const FloatPsnrTwin *twin,
     }
     unsigned mismatches = 0u;
     for (unsigned frame = 0; frame < FLOAT_PSNR_TWIN_FRAMES; frame++) {
-        if (isfinite(cpu[frame]) && cpu[frame] == gpu[frame]) {
+        if (isfinite(cpu[frame]) && vmaf_test_identical_f64(cpu[frame], gpu[frame])) {
             continue;
         }
         mismatches++;
@@ -359,7 +360,8 @@ static inline mu_message_t float_psnr_twin_identical_exact(const FloatPsnrTwin *
     double first = 0.0;
     mu_assert("the float_psnr twin differs from the CPU on identical frames",
               float_psnr_twin_mismatches(twin, &c, &first) == 0u);
-    mu_assert("identical frames must score psnr_max", mu_skipped || first == psnr_max);
+    mu_assert("identical frames must score psnr_max",
+              mu_skipped || vmaf_test_expect_identical_f64("frame 0", first, psnr_max));
     return NULL;
 }
 
@@ -423,7 +425,7 @@ static inline bool float_psnr_twin_reaches(const FloatPsnrTwinCase *c)
         return false;
     }
     const bool range = c->target != 0u ? exact == c->target + c->ones : exact > ((uint64_t)1 << 53);
-    const bool rounds = cpu != (double)exact;
+    const bool rounds = !vmaf_test_identical_f64(cpu, (double)exact);
     if (range && rounds == c->rounds) {
         return true;
     }

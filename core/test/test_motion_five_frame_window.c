@@ -42,6 +42,7 @@
 
 #include "mu_table.h"
 #include "test.h"
+#include "float_bits.h"
 
 #include "dict.h"
 #include "feature/feature_collector.h"
@@ -374,9 +375,12 @@ static char *test_short_sequences(void)
         FfwScores got;
         mu_assert("the three-frame sequence failed", ffw_score(&three, in_order, 3u, &got) == 0);
         mu_assert("frame 2 has no SAD", got.sad[2] > 0.);
-        mu_assert("motion2 of the last frame is not its SAD", got.motion2[2] == got.sad[2]);
-        mu_assert("motion3 of frame 0 is not the SAD of frame 2", got.motion3[0] == got.sad[2]);
-        mu_assert("motion3 of frame 1 is not the SAD of frame 2", got.motion3[1] == got.sad[2]);
+        mu_assert("motion2 of the last frame is not its SAD",
+                  vmaf_test_expect_identical_f64("motion2[2]", got.motion2[2], got.sad[2]));
+        mu_assert("motion3 of frame 0 is not the SAD of frame 2",
+                  vmaf_test_expect_identical_f64("motion3[0]", got.motion3[0], got.sad[2]));
+        mu_assert("motion3 of frame 1 is not the SAD of frame 2",
+                  vmaf_test_expect_identical_f64("motion3[1]", got.motion3[1], got.sad[2]));
     }
     return NULL;
 }

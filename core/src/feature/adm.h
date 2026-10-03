@@ -17,6 +17,9 @@
  *
  */
 
+#ifndef ADM_H_
+#define ADM_H_
+
 #include <stdbool.h>
 
 int compute_adm(const float *ref, const float *dis, int w, int h, int ref_stride, int dis_stride,
@@ -28,3 +31,5 @@ int compute_adm(const float *ref, const float *dis, int w, int h, int ref_stride
                 double adm_f1s1, double adm_f1s2, double adm_f1s3, double adm_f2s0, double adm_f2s1,
                 double adm_f2s2, double adm_f2s3, int adm_skip_aim_scale, bool adm_skip_scale0,
                 unsigned index);
+
+#endif /* ADM_H_ */

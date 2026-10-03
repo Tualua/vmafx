@@ -30,6 +30,7 @@
 #include <stdlib.h>
 
 #include "test.h"
+#include "float_bits.h"
 
 #include "feature/float_psnr_rows.h"
 #include "float_psnr_twin_parity.h"
@@ -111,11 +112,12 @@ static unsigned case_mismatches(const FloatPsnrTwinCase *c)
     const double once = score_of((double)total, c);
     free(seg);
     unsigned bad = 0u;
-    if (rows != cpu) {
+    if (!vmaf_test_identical_f64(rows, cpu)) {
         bad++;
         (void)fprintf(stderr, "\n%s: rows %.17g, CPU %.17g", c->name, rows, cpu);
     }
-    if ((once != cpu) != c->rounds) {
+    const bool once_differs = !vmaf_test_identical_f64(once, cpu);
+    if (once_differs != c->rounds) {
         bad++;
         (void)fprintf(stderr, "\n%s: the frame total rounded once %s the CPU's score", c->name,
                       c->rounds ? "equals" : "differs from");

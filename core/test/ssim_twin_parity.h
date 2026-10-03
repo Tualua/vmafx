@@ -36,6 +36,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "float_bits.h"
 
 #include "feature/feature_extractor.h"
 #include "libvmaf/libvmaf.h"
@@ -204,11 +205,12 @@ static inline mu_message_t ssim_twin_check(const SsimTwin *twin, const SsimTwinC
         return msg;
     mu_assert("closing the device state failed", close_err == 0);
     mu_assert("CPU ssim is NaN", !isnan(cpu));
-    if (cpu != gpu) {
+    const bool identical = vmaf_test_identical_f64(cpu, gpu);
+    if (!identical) {
         (void)fprintf(stderr, "\n%s %ux%u %u-bit: cpu=%.17g %s=%.17g delta=%.3e\n", c->what, c->w,
                       c->h, c->bpc, cpu, twin->backend, gpu, fabs(cpu - gpu));
     }
-    mu_assert("the ssim twin differs from the CPU extractor", cpu == gpu);
+    mu_assert("the ssim twin differs from the CPU extractor", identical);
     return NULL;
 }
 

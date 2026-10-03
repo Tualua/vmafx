@@ -22,6 +22,7 @@
 #include <stddef.h>
 
 #include "test.h"
+#include "float_bits.h"
 
 #include "feature/psnr_hvs_score.h"
 
@@ -58,10 +59,11 @@ static char *test_sum_is_one_running_float(void)
     terms[0] = BIG;
     /* 2^24, then 63 additions of 1 that each round back to 2^24. */
     const double score = vmaf_psnr_hvs_plane_score(terms, 1u, 8u);
-    mu_assert("a running float sum absorbs every 1 after 2^24",
-              score == plane_score_of(BIG, TERMS, PEAK_SQ_8));
+    mu_assert(
+        "a running float sum absorbs every 1 after 2^24",
+        vmaf_test_expect_identical_f64("score", score, plane_score_of(BIG, TERMS, PEAK_SQ_8)));
     mu_assert("a double accumulator would keep the 63 ones",
-              score != plane_score_of(BIG + 63.0f, TERMS, PEAK_SQ_8));
+              !vmaf_test_identical_f64(score, plane_score_of(BIG + 63.0f, TERMS, PEAK_SQ_8)));
     return NULL;
 }
 
@@ -74,7 +76,8 @@ static char *test_sum_follows_term_order(void)
      * rounds to the even one, 2^24 + 64. */
     const double score = vmaf_psnr_hvs_plane_score(terms, 1u, 8u);
     mu_assert("the same terms in the opposite order give a different sum",
-              score == plane_score_of(BIG + 64.0f, TERMS, PEAK_SQ_8));
+              vmaf_test_expect_identical_f64("score", score,
+                                             plane_score_of(BIG + 64.0f, TERMS, PEAK_SQ_8)));
     return NULL;
 }
 
@@ -87,10 +90,11 @@ static char *test_sum_runs_across_blocks(void)
     /* Summing the second block on its own first gives 64, and 2^24 + 64 is
      * exact; the CPU's single running sum stays at 2^24. */
     const double score = vmaf_psnr_hvs_plane_score(terms, 2u, 8u);
-    mu_assert("the running sum carries across block boundaries",
-              score == plane_score_of(BIG, TWO_BLOCKS, PEAK_SQ_8));
+    mu_assert(
+        "the running sum carries across block boundaries",
+        vmaf_test_expect_identical_f64("score", score, plane_score_of(BIG, TWO_BLOCKS, PEAK_SQ_8)));
     mu_assert("per-block subtotals would give 2^24 + 64",
-              score != plane_score_of(BIG + 64.0f, TWO_BLOCKS, PEAK_SQ_8));
+              !vmaf_test_identical_f64(score, plane_score_of(BIG + 64.0f, TWO_BLOCKS, PEAK_SQ_8)));
     return NULL;
 }
 
@@ -105,9 +109,11 @@ static char *test_normalisation_per_depth(void)
     mu_assert("10-bit: divide by 1023^2", vmaf_psnr_hvs_plane_score(terms, 1u, 10u) == 1.0);
     terms[0] = PEAK_SQ_12;
     mu_assert("12-bit: divide by 4095^2",
-              vmaf_psnr_hvs_plane_score(terms, 1u, 12u) == plane_score_of(1.0f, TERMS, 1.0f));
+              vmaf_test_expect_identical_f64("12-bit", vmaf_psnr_hvs_plane_score(terms, 1u, 12u),
+                                             plane_score_of(1.0f, TERMS, 1.0f)));
     mu_assert("1-bit input is the lower bound of the depth range",
-              vmaf_psnr_hvs_plane_score(terms, 1u, 1u) == plane_score_of(PEAK_SQ_12, TERMS, 1.0f));
+              vmaf_test_expect_identical_f64("1-bit", vmaf_psnr_hvs_plane_score(terms, 1u, 1u),
+                                             plane_score_of(PEAK_SQ_12, TERMS, 1.0f)));
     return NULL;
 }
 
@@ -159,7 +165,8 @@ static char *test_compacted_plane_all_zeros(void)
     mu_assert("compacted all-zeros is 0.0", compacted == 0.0);
     mu_assert("signbit is positive zero for uncompacted", !signbit(uncompacted));
     mu_assert("signbit is positive zero for compacted", !signbit(compacted));
-    mu_assert("bit-identical all-zeros score", uncompacted == compacted);
+    mu_assert("bit-identical all-zeros score",
+              vmaf_test_expect_identical_f64("compacted", compacted, uncompacted));
     mu_assert("identical planes score +inf dB", isinf(vmaf_psnr_hvs_score_db(compacted)));
     return NULL;
 }
@@ -179,7 +186,7 @@ static char *test_compacted_plane_starts_with_zeros(void)
     const double uncompacted = vmaf_psnr_hvs_plane_score(terms, 1u, 8u);
     const double compacted = vmaf_psnr_hvs_plane_score_compacted(compact, n_compact, 1u, 8u);
     mu_assert("plane starting with 50 zeros yields bit-identical score when compacted",
-              compacted == uncompacted);
+              vmaf_test_expect_identical_f64("compacted", compacted, uncompacted));
     return NULL;
 }
 
@@ -199,11 +206,12 @@ static char *test_compacted_block_all_zeros(void)
 
     const double uncompacted = vmaf_psnr_hvs_plane_score(terms, 3u, 8u);
     const double compacted = vmaf_psnr_hvs_plane_score_compacted(compact, n_compact, 3u, 8u);
-    mu_assert("block with all zeros dropped yields bit-identical score", compacted == uncompacted);
+    mu_assert("block with all zeros dropped yields bit-identical score",
+              vmaf_test_expect_identical_f64("compacted", compacted, uncompacted));
 
     const double bad_norm = vmaf_psnr_hvs_plane_score_compacted(compact, n_compact, 2u, 8u);
     mu_assert("dropping zero block from block count would change normalization",
-              bad_norm != uncompacted);
+              !vmaf_test_identical_f64(bad_norm, uncompacted));
     return NULL;
 }
 

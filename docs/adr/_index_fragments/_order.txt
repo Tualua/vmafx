@@ -1203,3 +1203,4 @@
 1499-float-psnr-twins-cpu-row-order
 1501-sycl-float-adm-terms-large-grf-xe2
 1500-arm-float-moment-scalar-order
+1502-float-bit-identity-test-helper

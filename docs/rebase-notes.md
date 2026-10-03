@@ -1,6 +1,31 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## Open CodeQL alerts fixed in code: header guards, SpEED products, bit-identity tests (ADR-1502, 2026-10-03)
+
+`fix/codeql-open-alerts`. No score moves; every library and tool object file
+is byte-identical before and after (GCC 16.2.1 and clang 23.1.1, x86-64 and
+aarch64, `-Db_lto=false`).
+
+- `core/src/feature/adm.h` and `motion.h` have include guards (`ADM_H_`,
+  `MOTION_H_`); `adm_tools.h` and `adm_csf_tools.h` open their existing guard
+  before the includes and the `M_PI` fallback instead of after them. Upstream
+  has no guard in the first two and the late one in the others; a sync keeps
+  the fork's placement (CodeQL `cpp/missing-header-guard`).
+- `adm_options.h` names upstream's commented-out `ADM_OPT_DEBUG_DUMP` switch in
+  prose; a sync does not bring the `/* #define ... */` line back. The
+  replacement keeps the header's line count, so the dismissed alert on the
+  enum below it (85) keeps its line.
+- `speed.c::get_speed_score()` and `speed_internal.c::si_gpu_speed_score()`
+  write `log2((double)((1 + nn_floor) * sigma_nn))`: the conversion of the
+  float product's result, as upstream's implicit promotion does (ADR-1477).
+  Never cast an operand.
+- `core/test/test_speed_upstream_form.c` (Netflix statements, fork-held):
+  `run_netflix_value_tests()` has one body in both meson variants; the glibc /
+  foreign-libm difference is the file-scope `uf_netflix_values_skip_reason`.
+  The bit helper `uf_bits()` is `vmaf_test_bits_f32()` from
+  `core/test/float_bits.h`.
+
 ## The `float_psnr` twins add each row's exact sum in the CPU's order (ADR-1499, 2026-10-03)
 
 `fix/float-psnr-exact-past-2-53`. Fork-only device and host code; `float_psnr.c`
@@ -475,7 +500,7 @@ two `docs/state.md` rows only.
 
 Kept as upstream has them: the types of every temporary (`float` per-scale sums added into `double` frame sums), the order `aim_den` before `aim_num`, the halving of `w` and `h` after the wavelet, the stdout messages byte for byte.
 
-Dropped: the two `#ifdef ADM_OPT_DEBUG_DUMP` blocks. They called `write_image()` and `PRINTF()`, which nothing in the tree defines, so they could not compile; the macro stays commented out in `adm_options.h`. The `(float *)(void *)` casts in `init_dwt_band*()` are direct casts (`bugprone-casting-through-void`); `init_dwt_band_d()` keeps its signature because `compat/python-vmaf/core/adm_dwt2_cy.pyx` declares it.
+Dropped: the two `#ifdef ADM_OPT_DEBUG_DUMP` blocks. They called `write_image()` and `PRINTF()`, which nothing in the tree defines, so they could not compile; `adm_options.h` names the macro in a prose comment only (it was a commented-out `#define` until the CodeQL sweep of 2026-10-03). The `(float *)(void *)` casts in `init_dwt_band*()` are direct casts (`bugprone-casting-through-void`); `init_dwt_band_d()` keeps its signature because `compat/python-vmaf/core/adm_dwt2_cy.pyx` declares it.
 
 ## RC7 CPU capability inserted, benchmarks are RC8, retrain is RC9 (ADR-1490, 2026-10-02)
 

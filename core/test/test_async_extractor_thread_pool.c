@@ -30,6 +30,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "float_bits.h"
 
 #include "feature/feature_collector.h"
 #include "feature/feature_extractor.h"
@@ -222,7 +223,7 @@ static unsigned frames_as_expected(VmafContext *vmaf, const char *feature, unsig
         const int err = vmaf_feature_score_at_index(vmaf, feature, &score, i);
         const double want = async ? async_score(i) : (double)i;
         const bool present = (i % step) == 0u;
-        if (present ? (err == 0 && score == want) : (err != 0))
+        if (present ? (err == 0 && vmaf_test_identical_f64(score, want)) : (err != 0))
             ok++;
     }
     return ok;

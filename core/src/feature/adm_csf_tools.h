@@ -17,6 +17,9 @@
  *
  */
 
+#ifndef ADM_CSF_TOOLS_H_
+#define ADM_CSF_TOOLS_H_
+
 /* Define _USE_MATH_DEFINES before <math.h> so MSVC exposes `M_PI`,
  * `M_PI_2`, etc. POSIX libcs export these unconditionally; MSVC gates
  * them on the macro. Must precede the <math.h> include below. */
@@ -37,9 +40,6 @@
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
-
-#ifndef ADM_CSF_TOOLS_H_
-#define ADM_CSF_TOOLS_H_
 
 /*
  * CSF used in the DLM paper:

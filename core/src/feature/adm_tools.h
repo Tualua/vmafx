@@ -17,6 +17,9 @@
  *
  */
 
+#ifndef ADM_TOOLS_H_
+#define ADM_TOOLS_H_
+
 #include <math.h>
 #include "common/macros.h"
 #include "barten_csf_tools.h"
@@ -25,9 +28,6 @@
 #ifndef M_PI
 #define M_PI 3.14159265358979323846264338327
 #endif
-
-#ifndef ADM_TOOLS_H_
-#define ADM_TOOLS_H_
 
 /* Upstream defines nine ADM_CM_THRESH_S_{0_0, 0_W_M_1, 0_J, H_M_1_0, H_M_1_W_M_1,
  * H_M_1_J, I_J, I_0, I_W_M_1} macros here, one per corner, edge and interior

@@ -2197,6 +2197,15 @@ test_ordered_sum = executable('test_ordered_sum',
 )
 test('test_ordered_sum', test_ordered_sum, suite : ['fast'])
 
+# float_bits.h: the bit-identity helper of the exact-twin and replay tests.
+test_float_bits = executable('test_float_bits',
+    ['test.c', 'test_float_bits.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common,
+    dependencies : [math_lib],
+)
+test('test_float_bits', test_float_bits, suite : ['fast'])
+
 # ADR-1497 — feature/float_moment_sum.h, the float_moment twins' form of the
 # CPU's second-moment sum past 2^53 units, run on the host the way the kernels
 # lay it out and compared bit for bit with picture_copy() +

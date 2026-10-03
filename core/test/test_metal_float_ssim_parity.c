@@ -36,6 +36,7 @@
  * for the twin and every case compares it with itself (metal_twin.h).
  */
 
+#include "float_bits.h"
 #include "metal_twin.h"
 
 #include <math.h>
@@ -216,12 +217,10 @@ static char *run_scores(bool twin, const SsimCase *c, double out[MAX_FRAMES][N_K
     return NULL;
 }
 
+/* The bits of the score rounded to float, the type the CPU computes it in. */
 static uint32_t float_bits(double score)
 {
-    const float value = (float)score;
-    uint32_t bits = 0u;
-    memcpy(&bits, &value, sizeof(bits));
-    return bits;
+    return vmaf_test_bits_f32((float)score);
 }
 
 /* The outputs of the twin that are not the CPU's, each reported. */
@@ -231,7 +230,7 @@ static unsigned count_differences(const SsimCase *c, double cpu[MAX_FRAMES][N_KE
     unsigned differing = 0u;
     for (unsigned i = 0; i < c->frames; i++) {
         for (unsigned k = 0; k < (c->lcs ? N_KEYS : 1u); k++) {
-            if (isfinite(cpu[i][k]) && cpu[i][k] == gpu[i][k]) {
+            if (isfinite(cpu[i][k]) && vmaf_test_identical_f64(cpu[i][k], gpu[i][k])) {
                 continue;
             }
             differing++;
@@ -247,12 +246,13 @@ static unsigned count_differences(const SsimCase *c, double cpu[MAX_FRAMES][N_KE
 
 static char *check_expectation(const SsimCase *c, double cpu[MAX_FRAMES][N_KEYS])
 {
-    if (c->expect_cpu != 0.0 && cpu[0][0] != c->expect_cpu) {
+    const bool recorded = c->expect_cpu == 0.0 || vmaf_test_identical_f64(cpu[0][0], c->expect_cpu);
+    if (!recorded) {
         (void)fprintf(stderr, "\n%s: the CPU scores %.17g, expected %.17g\n", c->label, cpu[0][0],
                       c->expect_cpu);
     }
     mu_assert("the CPU's float_ssim is no longer the value the fixture was recorded with",
-              c->expect_cpu == 0.0 || cpu[0][0] == c->expect_cpu);
+              recorded);
     if (c->expect_bits != 0u && float_bits(cpu[0][0]) != c->expect_bits) {
         (void)fprintf(stderr, "\n%s: the CPU scores 0x%08x, expected 0x%08x\n", c->label,
                       (unsigned)float_bits(cpu[0][0]), (unsigned)c->expect_bits);

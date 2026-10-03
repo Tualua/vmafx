@@ -1018,10 +1018,8 @@ static float si_gpu_speed_score(size_t num_blocks, SiGpuSide ref_results, SiGpuS
     const float nn_floor = scoring->nn_floor;
     const size_t elements_in_block = SI_GPU_ELEMENTS;
     float score = 0;
-    // NOLINTBEGIN(performance-type-promotion-in-math-fn) ADR-1477: upstream's double form.
     float base_entropy =
-        elements_in_block * (log2((1 + nn_floor) * sigma_nn) + log2(2 * M_PI * M_E));
-    // NOLINTEND(performance-type-promotion-in-math-fn)
+        elements_in_block * (log2((double)((1 + nn_floor) * sigma_nn)) + log2(2 * M_PI * M_E));
     for (size_t i = 0; i < num_blocks; i++) {
         if ((ref_results.entropies[i] < base_entropy) &&
             (dis_results.entropies[i] < base_entropy)) {

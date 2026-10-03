@@ -37,6 +37,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "float_bits.h"
 
 #include "feature/cuda/integer_ciede/ciede_device.h"
 #include "libvmaf/libvmaf.h"
@@ -170,11 +171,12 @@ static char *check_case(const Case *c)
     char *msg = cpu_score(&ref, &dis, &cpu);
     if (msg)
         return msg;
-    if (cpu != replay) {
+    const bool identical = vmaf_test_identical_f64(cpu, replay);
+    if (!identical) {
         (void)fprintf(stderr, "\n%ux%u %u-bit fmt %d: cpu=%.17g replay=%.17g delta=%.3e\n", c->w,
                       c->h, c->bpc, (int)c->pix_fmt, cpu, replay, fabs(cpu - replay));
     }
-    mu_assert("the header's replay must equal the CPU extractor's ciede2000", cpu == replay);
+    mu_assert("the header's replay must equal the CPU extractor's ciede2000", identical);
     return NULL;
 }
 

@@ -35,6 +35,7 @@
  * and the run exits 77. The registration case needs no device.
  */
 
+#include "float_bits.h"
 #include "metal_twin.h"
 
 #include <errno.h>
@@ -225,7 +226,7 @@ static unsigned exact_mismatches(const CambiCase *c, double *cpu_first)
     }
     unsigned mismatches = 0u;
     for (unsigned frame = 0u; frame < NUM_FRAMES; frame++) {
-        if (isfinite(cpu[frame]) && cpu[frame] == gpu[frame]) {
+        if (isfinite(cpu[frame]) && vmaf_test_identical_f64(cpu[frame], gpu[frame])) {
             continue;
         }
         mismatches++;

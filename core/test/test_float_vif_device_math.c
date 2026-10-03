@@ -39,6 +39,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "float_bits.h"
 
 #include "feature/cuda/cuda_tile_index.h"
 #include "feature/cuda/float_vif/float_vif_device.h"
@@ -146,7 +147,7 @@ static char *test_log2_special_values(void)
 {
     mu_assert("fvif_log2(1) must be exactly 0", fvif_log2(1.0f) == 0.0f);
     mu_assert("fvif_log2(2) must be exactly 1", fvif_log2(2.0f) == 1.0f);
-    mu_assert("fvif_log2(0) must be -inf", fvif_log2(0.0f) == -INFINITY);
+    mu_assert("fvif_log2(0) must be -inf", vmaf_test_identical_f32(fvif_log2(0.0f), -INFINITY));
     const float negative = fvif_log2(-1.0f);
     mu_assert("fvif_log2(negative) must be NaN", negative != negative);
     return NULL;
@@ -227,8 +228,10 @@ static char *check_reduction(int w, int h, double nsq, double egl)
     device_reduce(mom, sigma_max_inv(nsq), (float)egl, nsq, terms, rows, &num, &den);
     for (int i = 0; i < 5; i++)
         aligned_free(mom[i].data);
-    mu_assert("row-ordered numerator sum differs from vif_statistic_s()", num == (double)cpu_num);
-    mu_assert("row-ordered denominator sum differs from vif_statistic_s()", den == (double)cpu_den);
+    mu_assert("row-ordered numerator sum differs from vif_statistic_s()",
+              vmaf_test_expect_identical_f64("numerator", num, (double)cpu_num));
+    mu_assert("row-ordered denominator sum differs from vif_statistic_s()",
+              vmaf_test_expect_identical_f64("denominator", den, (double)cpu_den));
     return NULL;
 }
 
@@ -365,12 +368,14 @@ static char *check_scale(const FloatVifCudaTaps *taps, const Plane *ref, const P
     double num = 0.0;
     double den = 0.0;
     mu_assert("scale allocation failed", !device_scale(taps, ref, dis, nsq, egl, &num, &den));
-    if (num != cpu[0] || den != cpu[1]) {
+    const bool num_identical = vmaf_test_identical_f64(num, cpu[0]);
+    const bool den_identical = vmaf_test_identical_f64(den, cpu[1]);
+    if (!num_identical || !den_identical) {
         (void)fprintf(stderr, "\n%dx%d: num %.17g vs cpu %.17g, den %.17g vs cpu %.17g\n", ref->w,
                       ref->h, num, cpu[0], den, cpu[1]);
     }
-    mu_assert("device pipeline numerator differs from compute_vif()", num == cpu[0]);
-    mu_assert("device pipeline denominator differs from compute_vif()", den == cpu[1]);
+    mu_assert("device pipeline numerator differs from compute_vif()", num_identical);
+    mu_assert("device pipeline denominator differs from compute_vif()", den_identical);
     return NULL;
 }
 

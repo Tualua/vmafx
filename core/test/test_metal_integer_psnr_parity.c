@@ -35,6 +35,7 @@
  * for the twin and every case compares it with itself (metal_twin.h).
  */
 
+#include "float_bits.h"
 #include "metal_twin.h"
 
 #include <errno.h>
@@ -252,7 +253,7 @@ static mu_message_t expect_exact(const Pair *pair, const char *name, unsigned fr
                   !vmaf_feature_score_at_index(pair->cpu, name, &cpu, i));
         mu_assert("feature missing on the Metal twin",
                   !vmaf_feature_score_at_index(pair->gpu, name, &gpu, i));
-        if (!isfinite(cpu) || cpu != gpu) {
+        if (!isfinite(cpu) || !vmaf_test_identical_f64(cpu, gpu)) {
             (void)fprintf(stderr, "\n%s[%u]: cpu=%.17g %s=%.17g\n", name, i, cpu,
                           METAL_TWIN_BACKEND, gpu);
             return "the Metal twin differs from the CPU extractor";
@@ -270,8 +271,10 @@ static mu_message_t expect_all(const Pair *pair, const char *name, unsigned fram
                   !vmaf_feature_score_at_index(pair->cpu, name, &cpu, i));
         mu_assert("feature missing on the Metal twin",
                   !vmaf_feature_score_at_index(pair->gpu, name, &gpu, i));
-        mu_assert("the CPU value differs from the expected boundary value", cpu == value);
-        mu_assert("the Metal value differs from the CPU's boundary value", gpu == value);
+        mu_assert("the CPU value differs from the expected boundary value",
+                  vmaf_test_expect_identical_f64(name, cpu, value));
+        mu_assert("the Metal value differs from the CPU's boundary value",
+                  vmaf_test_expect_identical_f64(name, gpu, value));
     }
     return NULL;
 }
@@ -313,7 +316,7 @@ static mu_message_t expect_aggregate(const Pair *pair, const char *name)
     double gpu = NAN;
     mu_assert("the CPU aggregate is missing", !read_aggregate(pair->cpu, name, &cpu));
     mu_assert("the Metal aggregate is missing", !read_aggregate(pair->gpu, name, &gpu));
-    if (cpu != gpu) {
+    if (!vmaf_test_identical_f64(cpu, gpu)) {
         (void)fprintf(stderr, "\n%s: cpu=%.17g %s=%.17g\n", name, cpu, METAL_TWIN_BACKEND, gpu);
         return "the Metal aggregate differs from the CPU's";
     }

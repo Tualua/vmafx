@@ -19,6 +19,7 @@
  */
 
 #include "test.h"
+#include "float_bits.h"
 
 #include "cpu.h"
 
@@ -75,7 +76,8 @@ static char *test_avx512_warm_up_keeps_xmm0(void)
     vmaf_x86_avx512_warm_up();
     const double after = scaled + offset;
 
-    mu_assert("the AVX-512 warm-up changed a value its caller holds in xmm0", after == expected);
+    mu_assert("the AVX-512 warm-up changed a value its caller holds in xmm0",
+              vmaf_test_expect_identical_f64("after the warm-up", after, expected));
 #endif
     return NULL;
 }

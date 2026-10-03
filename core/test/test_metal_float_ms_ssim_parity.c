@@ -38,6 +38,7 @@
  * test_metal_ms_ssim_option_semantics.c is a separate test.
  */
 
+#include "float_bits.h"
 #include "metal_twin.h"
 
 #include <math.h>
@@ -263,12 +264,10 @@ static char *run_scores(bool twin, const MsCase *c, double out[MAX_FRAMES][N_KEY
     return NULL;
 }
 
+/* The bits of the score rounded to float, the type the CPU computes it in. */
 static uint32_t float_bits(double score)
 {
-    const float value = (float)score;
-    uint32_t bits = 0u;
-    memcpy(&bits, &value, sizeof(bits));
-    return bits;
+    return vmaf_test_bits_f32((float)score);
 }
 
 /* The outputs of the twin that are not the CPU's, each reported. */
@@ -280,7 +279,8 @@ static unsigned count_differences(const MsCase *c, double cpu[MAX_FRAMES][N_KEYS
         for (unsigned k = 0; k < N_KEYS; k++) {
             char name[NAME_BYTES];
             key_name(k, name);
-            if (!key_active(c, k) || (isfinite(cpu[i][k]) && cpu[i][k] == gpu[i][k])) {
+            if (!key_active(c, k) ||
+                (isfinite(cpu[i][k]) && vmaf_test_identical_f64(cpu[i][k], gpu[i][k]))) {
                 continue;
             }
             differing++;
@@ -305,12 +305,13 @@ static char *check_expectation(const MsCase *c, double cpu[MAX_FRAMES][N_KEYS])
             return "a fixture no longer has its recorded bits on the CPU float_ms_ssim";
         }
     }
-    if (c->expect_cpu != 0.0 && cpu[0][0] != c->expect_cpu) {
+    const bool recorded = c->expect_cpu == 0.0 || vmaf_test_identical_f64(cpu[0][0], c->expect_cpu);
+    if (!recorded) {
         (void)fprintf(stderr, "\n%s: the CPU scores %.17g, expected %.17g\n", c->label, cpu[0][0],
                       c->expect_cpu);
     }
     mu_assert("the CPU's float_ms_ssim is no longer the value the fixture was recorded with",
-              c->expect_cpu == 0.0 || cpu[0][0] == c->expect_cpu);
+              recorded);
     return NULL;
 }
 

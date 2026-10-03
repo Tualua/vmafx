@@ -1022,7 +1022,7 @@ static float get_speed_score(const SpeedDimensions *dim, SpeedResultBuffers ref_
     // NOLINTBEGIN(performance-type-promotion-in-math-fn) ADR-1477: upstream's double form.
     float score = 0;
     float base_entropy =
-        dim->elements_in_block * (log2((1 + nn_floor) * sigma_nn) + log2(2 * M_PI * M_E));
+        dim->elements_in_block * (log2((double)((1 + nn_floor) * sigma_nn)) + log2(2 * M_PI * M_E));
     for (size_t i = 0; i < dim->num_blocks; i++) {
         if ((ref_results.entropies[i] < base_entropy) &&
             (dis_results.entropies[i] < base_entropy)) {

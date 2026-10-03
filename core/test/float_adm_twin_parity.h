@@ -49,6 +49,7 @@
 #include <string.h>
 
 #include "test.h"
+#include "float_bits.h"
 
 #include "feature/feature_extractor.h"
 #include "libvmaf/libvmaf.h"
@@ -271,7 +272,9 @@ static inline mu_message_t adm_twin_check(const AdmTwin *twin, const AdmTwinCase
     unsigned mismatches = 0u;
     for (size_t k = 0; k < c->count; k++) {
         mu_assert("CPU float_adm output is non-finite", isfinite(cpu[k]));
-        if (cpu[k] == gpu[k] || fabs(cpu[k] - gpu[k]) <= tol)
+        const bool within =
+            tol == 0.0 ? vmaf_test_identical_f64(cpu[k], gpu[k]) : fabs(cpu[k] - gpu[k]) <= tol;
+        if (within)
             continue;
         mismatches++;
         (void)fprintf(stderr, "\n%s %ux%u %u-bit %s: cpu=%.17g %s=%.17g delta=%.3e\n", c->what,
