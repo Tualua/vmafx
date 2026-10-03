@@ -14,7 +14,12 @@ This module reads those files and decides, per case:
 
 * ``host`` must equal ``cpu`` exactly (D-04); otherwise ``NONEXACT host-vs-cpu``.
   The tolerance ``resolve_cell_tolerance()`` would grant is printed for
-  information only and never applied.
+  information only and never applied. A case may declare a bound explicitly
+  (``Case.cpu_bound``): only ``ciede`` does, with the parity gate's LIBM_TWINS
+  cell (1e-9; a libm residual, ADR-1436). The PASS line then names the measured
+  difference and the bound. Zero-copy against host upload is always exact.
+  The harness runs every leg with ``score_fmt=%.17g`` so these are full-double
+  comparisons, not six-decimal ones.
 * A case whose stage (``PARITY_STAGE``) is at or below ``--stage`` must succeed
   on ``zc`` with every CPU metric present (``FAIL silent-drop`` otherwise) and
   equal to ``host`` (``FAIL zc-vs-host`` otherwise).
@@ -26,10 +31,12 @@ This module reads those files and decides, per case:
 
 An absent metric in a successful zero-copy output is never a pass (T-12-07).
 
-Cases dropped from the plan's matrix: ``motion`` with ``motion_add_uv=true``.
-The CPU ``motion`` extractor has no such option (only ``float_motion`` does), so
-the CPU leg cannot run it. ``float_motion_uv`` covers the option on the float
-extractor instead, at stage 3 where ``float_motion`` is migrated.
+Host-upload reference cases (``Case.reference == "host"``): ``motion_uv`` is
+``motion`` with ``motion_add_uv=true``. The CPU ``motion`` extractor has no such
+option (only ``float_motion`` does), so there is no CPU leg; the harness runs the
+host and zero-copy legs only and zero-copy must equal host upload exactly (and on
+every ``--repeat`` run). No host-vs-cpu verdict exists for such a case.
+``float_motion_uv`` covers the option against the CPU on the float extractor.
 
 Usage::
 
@@ -47,6 +54,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from scripts.ci.cross_backend_calibration import libm_pair_tolerance
 from scripts.ci.cross_backend_parity_gate import (
     diff_frames,
     load_frames,
@@ -74,17 +82,33 @@ class Case:
     as docs/usage/ffmpeg.md shows); ``names`` are the strings a loud failure may
     use to name the case (CPU feature name or SYCL twin name); ``tolerance_key``
     is the feature handed to ``resolve_cell_tolerance`` for the info line.
+    ``reference`` is ``cpu`` (the CPU leg is the reference and host must equal it)
+    or ``host`` (no CPU leg: host upload is the only reference). ``cpu_bound`` is
+    the declared absolute bound of host against CPU; 0.0 means exact.
     """
 
     kind: str
     arg: str
     names: tuple[str, ...]
     tolerance_key: str
+    reference: str = "cpu"
+    cpu_bound: float = 0.0
 
 
-def _feature(name: str, opts: str = "", *aliases: str) -> Case:
+def _feature(
+    name: str, opts: str = "", *aliases: str, reference: str = "cpu", cpu_bound: float = 0.0
+) -> Case:
     arg = f"name={name}" + (f"\\:{opts}" if opts else "")
-    return Case("feature", arg, (name, f"{name}_sycl", *aliases), name)
+    return Case("feature", arg, (name, f"{name}_sycl", *aliases), name, reference, cpu_bound)
+
+
+def _libm_bound(feature: str) -> float:
+    """The parity gate's bound for a CPU-vs-SYCL cell that differs only in libm."""
+
+    bound = libm_pair_tolerance(feature, "cpu", "sycl")
+    if bound is None:
+        raise SystemExit(f"{feature}: no LIBM_TWINS bound for sycl")
+    return bound
 
 
 CASES: dict[str, Case] = {
@@ -101,6 +125,9 @@ CASES: dict[str, Case] = {
     # Stage 2: chroma import.
     "psnr": _feature("psnr"),
     "psnr_hvs": _feature("psnr_hvs"),
+    # Integer motion with motion_add_uv: the CPU extractor lacks the option, so the
+    # reference is host upload of motion_sycl.
+    "motion_uv": _feature("motion", "motion_add_uv=true", reference="host"),
     # Stage 3: host-staging extractors migrated to the shared planes.
     "float_ssim": _feature("float_ssim"),
     "float_ms_ssim": _feature("float_ms_ssim"),
@@ -110,7 +137,12 @@ CASES: dict[str, Case] = {
     "float_motion": _feature("float_motion"),
     "float_motion_uv": _feature("float_motion", "motion_add_uv=true"),
     "ssim": _feature("ssim", "", "integer_ssim"),
-    "ciede": _feature("ciede"),
+    # ciede_sycl is the CPU's arithmetic on fp32 pairs, so it differs from the CPU
+    # extractor only where glibc's powf / fp64 functions round differently
+    # (ADR-1436, T-CUDA-CIEDE-LIBM-RESIDUAL-2026-10-01): measured 1.1e-11 on one
+    # src01 8-bit frame. The bound is the gate's LIBM_TWINS cell, shared, not a
+    # second number. Zero-copy against host upload stays exact.
+    "ciede": _feature("ciede", cpu_bound=_libm_bound("ciede")),
     "ssimulacra2": _feature("ssimulacra2"),
     "speed_chroma": _feature("speed_chroma"),
     "speed_temporal": _feature("speed_temporal"),
@@ -135,6 +167,7 @@ PARITY_STAGE: dict[str, int] = {
     "model-vmaf_v0.6.1": 1,
     "psnr": 2,
     "psnr_hvs": 2,
+    "motion_uv": 2,
     "float_ssim": 3,
     "float_ms_ssim": 3,
     "float_psnr": 3,
@@ -215,8 +248,28 @@ def _compare_exact(
     return None
 
 
+def _compare_bounded(
+    a: list[dict[str, Any]], b: list[dict[str, Any]], keys: tuple[str, ...], bound: float
+) -> str | None:
+    """None when ``a`` and ``b`` agree within ``bound`` (absolute) on ``keys``."""
+
+    if bound == 0.0:
+        return _compare_exact(a, b, keys)
+    if len(a) != len(b):
+        return f"frame count {len(a)} vs {len(b)}"
+    gone = missing_metrics(b, keys)
+    if gone:
+        return "missing " + ",".join(gone)
+    per_max, per_mismatch = diff_frames(a, b, keys, bound)
+    if any(per_mismatch.values()):
+        return _worst(per_max, per_mismatch) + f" exceeds declared bound {bound:g}"
+    return None
+
+
 def _host_vs_cpu(case: Case, cpu: list[dict[str, Any]], host: list[dict[str, Any]]) -> str | None:
-    problem = _compare_exact(cpu, host, _metric_keys(cpu))
+    if case.reference == "host":
+        return None
+    problem = _compare_bounded(cpu, host, _metric_keys(cpu), case.cpu_bound)
     if problem is None:
         return None
     tol, source = resolve_cell_tolerance(
@@ -226,7 +279,21 @@ def _host_vs_cpu(case: Case, cpu: list[dict[str, Any]], host: list[dict[str, Any
         gpu_id=None,
         backends=("cpu", "sycl"),
     )
-    return f"{problem} tolerance(info)={tol:g} ({source}); applied 0"
+    return f"{problem} tolerance(info)={tol:g} ({source}); applied {case.cpu_bound:g}"
+
+
+def _with_bound_note(
+    case: Case, cpu: list[dict[str, Any]], host: list[dict[str, Any]], verdict: Verdict
+) -> Verdict:
+    """Name the declared CPU bound and the measured difference on a bounded PASS."""
+
+    if case.cpu_bound == 0.0 or verdict.kind != "PASS" or case.reference == "host":
+        return verdict
+    keys = _metric_keys(cpu)
+    per_max, _ = diff_frames(cpu, host, keys, case.cpu_bound)
+    worst = max(per_max.values(), default=0.0)
+    note = f"host-vs-cpu max={worst:.3e} within declared bound {case.cpu_bound:g}"
+    return Verdict("PASS", verdict.label, f"{verdict.detail} {note}".strip())
 
 
 def _names_failure(case: Case, err: str) -> bool:
@@ -303,12 +370,14 @@ def _repeat_verdict(
 
 
 def _reference_legs(
-    d: Path, prefix: str
+    d: Path, prefix: str, case: Case
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]] | Verdict:
-    """Frames of the CPU and host legs, or the verdict explaining why not."""
+    """Frames of the CPU and host legs, or the verdict explaining why not.
+
+    A host-reference case has no CPU leg: host upload stands in for both."""
 
     out: list[list[dict[str, Any]]] = []
-    for leg in ("cpu", "host"):
+    for leg in ("host",) if case.reference == "host" else ("cpu", "host"):
         base = d / f"{prefix}.{leg}"
         rc = _read_rc(base)
         if rc is None:
@@ -319,14 +388,14 @@ def _reference_legs(
         if frames is None:
             return Verdict("FAIL", "missing-leg", f"{leg} output JSON unreadable")
         out.append(frames)
-    return out[0], out[1]
+    return out[0], out[-1]
 
 
 def evaluate_case(d: Path, prefix: str, case_id: str, stage: int) -> Verdict:
     """Verdict for one case. ``prefix`` is ``<clip>_<depth>bit__<case>``."""
 
     case = CASES[case_id]
-    refs = _reference_legs(d, prefix)
+    refs = _reference_legs(d, prefix, case)
     if isinstance(refs, Verdict):
         return refs
     cpu, host = refs
@@ -346,17 +415,18 @@ def evaluate_case(d: Path, prefix: str, case_id: str, stage: int) -> Verdict:
     nonexact = _host_vs_cpu(case, cpu, host)
     if nonexact is not None:
         return Verdict("NONEXACT", "host-vs-cpu", nonexact)
-    return verdict
+    return _with_bound_note(case, cpu, host, verdict)
 
 
 def _discover(d: Path) -> list[tuple[str, str]]:
     """``(clip, depth)`` pairs that have at least one case file in ``d``."""
 
     found: set[tuple[str, str]] = set()
-    for rc_file in d.glob("*__*.cpu.rc"):
-        head = rc_file.name.split("__", 1)[0]
-        clip, _, depth = head.rpartition("_")
-        found.add((clip, depth.removesuffix("bit")))
+    for leg in ("cpu", "host"):
+        for rc_file in d.glob(f"*__*.{leg}.rc"):
+            head = rc_file.name.split("__", 1)[0]
+            clip, _, depth = head.rpartition("_")
+            found.add((clip, depth.removesuffix("bit")))
     return sorted(found)
 
 
@@ -397,7 +467,7 @@ def _run(args: argparse.Namespace) -> int:
 def _list_cases(raw: str | None) -> int:
     for case_id in _parse_cases(raw):
         case = CASES[case_id]
-        print(f"{case_id}\t{case.kind}\t{case.arg}\t{PARITY_STAGE[case_id]}")
+        print(f"{case_id}\t{case.kind}\t{case.arg}\t{PARITY_STAGE[case_id]}\t{case.reference}")
     return 0
 
 
@@ -406,7 +476,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--stage", type=int, choices=(1, 2, 3))
     ap.add_argument("--dir")
     ap.add_argument("--cases", help="comma-separated case ids (default: all)")
-    ap.add_argument("--list", action="store_true", help="print id, kind, filter arg, stage")
+    ap.add_argument(
+        "--list", action="store_true", help="print id, kind, filter arg, stage, reference leg"
+    )
     args = ap.parse_args(argv)
     if args.list:
         return _list_cases(args.cases)

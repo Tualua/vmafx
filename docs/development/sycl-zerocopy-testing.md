@@ -79,8 +79,22 @@ case through three legs:
 | Leg | Pipeline | Role |
 | --- | --- | --- |
 | `cpu` | software decode, `libvmaf` | reference |
-| `host` | software decode, `libvmaf_sycl` (host upload, SYCL twins) | must equal `cpu` exactly |
+| `host` | software decode, `libvmaf_sycl` (host upload, SYCL twins) | must equal `cpu` exactly (`ciede` within its declared bound, below) |
 | `zc` | QSV decode with one QSV device per input, `libvmaf_sycl` | must equal `host` once its stage is reached |
+
+Every leg writes its scores with the filter option `score_fmt=%.17g` (patch
+0016; override with `SCORE_FMT`), so the comparator sees full doubles. At the
+default `%.6f` a difference below 5e-7 is invisible and "exact" would only mean
+"equal to six decimals".
+
+One case has no `cpu` leg: `motion_uv`, integer `motion` with
+`motion_add_uv=true`. The CPU integer `motion` extractor has no such option (only
+`float_motion` does, covered by `float_motion_uv`), so the comparator declares it
+`reference=host`: the harness runs the `host` and `zc` legs only, and `zc` (every
+`--repeat` run included) must equal host upload of `motion_sycl` exactly. That is a
+weaker statement than "equals the CPU" and the verdict list says so: no
+`host-vs-cpu` line exists for it. `--list` prints the reference leg as its last
+column.
 
 Feature cases switch the default model off (`model=`) so only the named feature
 is measured; the two model cases use `model=version=...`.
@@ -122,7 +136,7 @@ numeric parity once `N` reaches its stage and must fail loudly before that.
 | Stage | Cases that must match numerically |
 | --- | --- |
 | 1 | `vif`, `adm`, `motion`, `motion_v2`, `cambi`, `float_moment`, `psnr_luma` and `psnr_hvs_luma` (`enable_chroma=false`), `model-vmaf_v0.6.1` |
-| 2 | adds `psnr`, `psnr_hvs` (chroma) |
+| 2 | adds `psnr`, `psnr_hvs` (chroma), `motion_uv` (host-upload reference) |
 | 3 | adds `float_ssim`, `float_ms_ssim`, `float_psnr`, `float_adm`, `float_vif`, `float_motion`, `float_motion_uv`, `ssim`, `ciede`, `ssimulacra2`, `speed_chroma`, `speed_temporal`, `model-vmaf_float_v0.6.1` |
 
 `zerocopy_e2e_compare.py` (unit-tested by `test_zerocopy_e2e_compare.py`) turns
@@ -132,7 +146,7 @@ The exit status is 0 only for `fail=0 nonexact=0` and at least one pass.
 
 | Verdict | Meaning |
 | --- | --- |
-| `PASS` | zero-copy output has every CPU metric and equals host upload exactly |
+| `PASS` | zero-copy output has every CPU metric and equals host upload exactly; for `ciede` the line also gives the measured host-vs-CPU difference and the declared bound |
 | `PASS loud-fail` | a later-stage case exited non-zero and its stderr names the CPU feature or its SYCL twin |
 | `FAIL silent-drop` | a successful zero-copy run lacks a metric the CPU run has |
 | `FAIL zc-vs-host` | zero-copy differs from host upload by any amount |
@@ -141,7 +155,16 @@ The exit status is 0 only for `fail=0 nonexact=0` and at least one pass.
 | `FAIL unexpected-success` | a later-stage case succeeded on zero-copy |
 | `FAIL unnamed-failure` | a later-stage case failed without naming the feature |
 | `FAIL missing-leg`, `cpu-failed`, `host-failed` | a leg's files are absent or a reference leg failed |
-| `NONEXACT host-vs-cpu` | the SYCL twin on host upload differs from the CPU extractor; the tolerance the parity gate would allow is printed for information only and never applied |
+| `NONEXACT host-vs-cpu` | the SYCL twin on host upload differs from the CPU extractor (at full precision); the tolerance the parity gate would allow is printed for information only and never applied |
+
+The only declared bound is `ciede`: `ciede_sycl` runs the CPU's arithmetic on
+fp32 pairs and differs from the CPU extractor where glibc's `powf` and fp64
+functions round differently ([ADR-1436](../adr/1436-sycl-ciede-cpu-arithmetic.md),
+`T-CUDA-CIEDE-LIBM-RESIDUAL-2026-10-01`). The comparator takes the bound from
+`LIBM_TWINS["ciede"]` in `scripts/ci/cross_backend_calibration.py` (`1e-9`)
+instead of repeating it. Measured at full precision: 1.112e-11 on one src01
+8-bit frame, 0 on every other frame and clip. Zero-copy against host upload
+stays exact for `ciede` too.
 
 `VMAF_integer_feature_motion_sad_score` is the one CPU output exempt from the
 metric set: the SYCL `motion` twin does not write it on any input path, so it
@@ -153,3 +176,17 @@ The zero-copy end-to-end runs are local / container only: the self-hosted
 Arc A380 CI runner has no FFmpeg or oneVPL. CI carries the device unit tests
 instead (`--suite sycl`, for example `test_sycl_zerocopy_guards`), which
 emulate the VA import by writing the shared upload slots directly.
+
+Two contracts need no device and run on every pull request and in pre-commit:
+
+```bash
+make sycl-zerocopy-contract
+```
+
+It runs `ffmpeg-patches/test/check-sycl-feature-routing.sh` (the text of patch
+0005: twin routing, NV12 / P010 only, no warn-and-skip on import failure) and
+`scripts/test/test_zerocopy_e2e_compare.py` (every verdict of the comparator,
+including `reference=host` cases and the declared `ciede` bound; needs `pytest`,
+see `requirements/locks/pytest-timeout.txt`). CI step: `FFmpeg Patch Stack`,
+`.github/workflows/ffmpeg-patch-stack.yml`; hook: `sycl-zerocopy-contract` in
+`.pre-commit-config.yaml`.

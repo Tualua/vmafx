@@ -9192,7 +9192,8 @@
         "core/test/test_sycl_zerocopy_parity.c": 1,
         "scripts/ci/cross_backend_calibration.py": 1,
         "scripts/ci/test_cross_backend_parity_gate.py": 1,
-        "scripts/dev/gen_sycl_ff_math.py": 2
+        "scripts/dev/gen_sycl_ff_math.py": 2,
+        "scripts/test/zerocopy_e2e_compare.py": 2
       },
       "target": "1436-sycl-ciede-cpu-arithmetic.md"
     },

@@ -13,6 +13,13 @@
 #   host  software decode -> libvmaf_sycl         (host upload, SYCL twins)
 #   zc    QSV decode      -> libvmaf_sycl         (zero-copy)
 #
+# A case the CPU extractor cannot run (motion_uv: integer motion with
+# motion_add_uv) is declared reference=host by the comparator: no cpu leg is run
+# and zero-copy is compared with host upload only.
+#
+# Every leg writes its scores with score_fmt=%.17g (SCORE_FMT, patch 0016), so the
+# comparator sees full doubles rather than six decimals.
+#
 # Usage:
 #   scripts/test/sycl-dev-container.sh exec bash scripts/test/zerocopy-e2e.sh \
 #     --stage N --out DIR [--clips src01,checkerboard] [--depths 8,10] \
@@ -38,6 +45,7 @@ BENCH=0
 REPEAT=1
 CB_REPEAT="${CB_REPEAT:-20}"
 LEG_TIMEOUT="${LEG_TIMEOUT:-600}"
+SCORE_FMT="${SCORE_FMT:-%.17g}"
 QSV_INIT=(-init_hw_device vaapi=va0:/dev/dri/renderD128
   -init_hw_device qsv=qr@va0 -init_hw_device qsv=qd@va0)
 
@@ -155,19 +163,21 @@ run_zc() {
     -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qd -i "$dis" \
     -hwaccel qsv -hwaccel_output_format qsv -hwaccel_device qr -i "$ref" \
     ${benchflag:+"$benchflag"} \
-    -lavfi "[0:v][1:v]libvmaf_sycl=${opt}:log_fmt=json:log_path=${base}.json" -f null -
+    -lavfi "[0:v][1:v]libvmaf_sycl=${opt}:score_fmt=${SCORE_FMT}:log_fmt=json:log_path=${base}.json" -f null -
 }
 
-# run_case TAG CLIP_DIR ID KIND ARG BENCHFLAG
+# run_case TAG DIS REF ID KIND ARG BENCHFLAG REFERENCE
 run_case() {
-  local tag="$1" dis="$2" ref="$3" id="$4" kind="$5" arg="$6" benchflag="$7"
+  local tag="$1" dis="$2" ref="$3" id="$4" kind="$5" arg="$6" benchflag="$7" reference="$8"
   local opt base
   opt="$(filter_option "$kind" "$arg")"
   base="$OUT/${tag}__${id}"
-  run_leg "$base.cpu" -i "$dis" -i "$ref" \
-    -lavfi "[0:v][1:v]libvmaf=${opt}:log_fmt=json:log_path=${base}.cpu.json" -f null -
+  if [ "$reference" = cpu ]; then
+    run_leg "$base.cpu" -i "$dis" -i "$ref" \
+      -lavfi "[0:v][1:v]libvmaf=${opt}:score_fmt=${SCORE_FMT}:log_fmt=json:log_path=${base}.cpu.json" -f null -
+  fi
   run_leg "$base.host" -i "$dis" -i "$ref" \
-    -lavfi "[0:v][1:v]libvmaf_sycl=${opt}:log_fmt=json:log_path=${base}.host.json" -f null -
+    -lavfi "[0:v][1:v]libvmaf_sycl=${opt}:score_fmt=${SCORE_FMT}:log_fmt=json:log_path=${base}.host.json" -f null -
   run_zc "$base.zc" "$dis" "$ref" "$opt" "$benchflag"
   local k
   for ((k = 2; k <= REPEAT; k++)); do
@@ -192,7 +202,8 @@ print(f"ZC-E2E BENCH {clip} {depth} frames={frames} rtime={rtime} fps={int(frame
 PY
 }
 
-# Case table: id <TAB> kind <TAB> filter argument <TAB> stage (single source: the comparator).
+# Case table: id <TAB> kind <TAB> filter argument <TAB> stage <TAB> reference leg
+# (single source: the comparator).
 LIST_ARGS=(--list)
 [ -z "$CASES" ] || LIST_ARGS+=(--cases "$CASES")
 mapfile -t CASE_ROWS < <(python3 "$COMPARE" "${LIST_ARGS[@]}")
@@ -210,14 +221,14 @@ for clip in "${CLIP_LIST[@]}"; do
     encode "$OUT/media/${clip}_ref.yuv" "$size" "$depth" "$OUT/media/${tag}_ref.mp4"
     encode "$OUT/media/${clip}_dis.yuv" "$size" "$depth" "$OUT/media/${tag}_dis.mp4"
     for row in "${CASE_ROWS[@]}"; do
-      IFS=$'\t' read -r id kind arg _stage <<<"$row"
+      IFS=$'\t' read -r id kind arg _stage reference <<<"$row"
       benchflag=""
       if [ "$BENCH" = 1 ] && [ "$id" = "model-vmaf_v0.6.1" ] && [ "$clip" = checkerboard ]; then
         benchflag="-benchmark"
       fi
       echo "ZC-E2E RUN $tag $id"
       run_case "$tag" "$OUT/media/${tag}_dis.mp4" "$OUT/media/${tag}_ref.mp4" \
-        "$id" "$kind" "$arg" "$benchflag"
+        "$id" "$kind" "$arg" "$benchflag" "$reference"
       if [ -n "$benchflag" ]; then print_bench "$clip" "$depth" "$OUT/${tag}__${id}"; fi
     done
   done

@@ -1,8 +1,8 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # Research-1595: SYCL zero-copy feature correctness
 
-- **Status**: Active (Stages 1 and 2 done; stage 3 open)
-- **Workstream**: [ADR-1595](../adr/1595-sycl-zerocopy-fail-loud-twin-routing.md), [ADR-1462](../adr/1462-speed-cpu-correctly-rounded-log2.md), [ADR-1596](../adr/1596-sycl-va-import-immediate-cmdlist.md), phase 12
+- **Status**: Active (Stages 1 to 3 done)
+- **Workstream**: [ADR-1595](../adr/1595-sycl-zerocopy-fail-loud-twin-routing.md), [ADR-1596](../adr/1596-sycl-va-import-immediate-cmdlist.md), [ADR-1597](../adr/1597-sycl-zerocopy-planar-chroma-import.md), [ADR-1598](../adr/1598-sycl-host-staging-to-shared-planes.md), [ADR-1599](../adr/1599-sycl-float-motion-add-uv.md), phase 12
 - **Last updated**: 2026-10-03
 
 ## Question
@@ -64,8 +64,13 @@ predicted, all fixed on the same branch:
 
 - The host-upload twins were not the CPU's in two places: `float_motion_sycl`
   emitted no `motion3`, and the CPU SpEED extractors used libm `log2f`, so the
-  twins differed from FFmpeg's `libvmaf` by up to 6e-6 (ADR-1462 makes the CPU
-  round `log2` correctly).
+  twins differed from FFmpeg's `libvmaf` by up to 6e-6. The branch first fixed
+  both itself (a correctly rounded CPU `log2`); master then fixed both
+  independently (`motion3` in #1914, SpEED in
+  [ADR-1477](../adr/1477-speed-upstream-double-math.md), which forms the SpEED
+  entropies and score on the host with `speed.c`'s statements, so the twins
+  equal the CPU of the same process). The branch's versions were dropped when
+  it was rebased onto master.
 - `cambi` on zero-copy changed from run to run (2 of 5 runs differed from host
   upload, by up to 2.3). The driver dropped each frame's import once the DMA-BUF
   was mapped at the address the previous import had just freed, under batched
@@ -120,15 +125,16 @@ shift applied once in that kernel. Same harness, clips and depths as Stage 1.
 `psnr` (3 metrics) and `psnr_hvs` (4 metrics) are bit-exact against the CPU and
 against host upload on both clips. Logs: `12-09-e2e-stage2-{8,10}bit.log`.
 
-- **`motion_add_uv`** has no case in the harness: the CPU integer `motion` has no
-  such option (only `float_motion` does, covered by `float_motion_uv` at stage 3),
-  so the three-leg comparison cannot be built. It was verified differently, and
-  that is a weaker statement than "equals the CPU": real QSV zero-copy against
-  host upload of the same `motion_sycl` twin (itself held to the ADR-1326
-  fixed-point oracle) gave 0 mismatches in `integer_motion2_mau` and
-  `integer_motion3_mau` over src01 and checkerboard at 8 and 10 bit, 5
-  zero-copy repeats each (12-08 evidence, ad-hoc script not committed), plus
-  `test_sycl_zerocopy_parity` on emulated zero-copy, which also asserts that
+- **`motion_add_uv`** has no CPU leg: the CPU integer `motion` has no such option
+  (only `float_motion` does, covered by `float_motion_uv` at stage 3), so a
+  three-leg comparison cannot be built. It is the harness case `motion_uv`
+  (decision D-11) with a declared host-upload reference: real QSV zero-copy
+  against host upload of the same `motion_sycl` twin (itself held to the ADR-1326
+  fixed-point oracle), a weaker statement than "equals the CPU". Run with
+  `--repeat 5` at 8 and 10 bit on both clips: 0 mismatches in
+  `integer_motion2_mau` and `integer_motion3_mau` at full precision, 5 repeats
+  each (the 12-08 ad-hoc script that first showed this is now the harness case),
+  plus `test_sycl_zerocopy_parity` on emulated zero-copy, which also asserts that
   chroma changes the score.
 - **Layouts.** Only the Tile4 modifier (`0x0100000000000009`, layer 1 `GR88` /
   `GR1616`, `num_layers=2 num_objects=1`) was seen on the A380. LINEAR and
@@ -219,6 +225,27 @@ all three legs):
   touches the integer `vif` / `adm` / `motion` path that model uses. In-run `--bench`
   figures of the final run: 76.05 fps (8-bit), 76.24 fps (10-bit); the stage-2 run gave
   80.32 and 76.92, in a different session (the figure moves 5 % between sessions).
+
+## Full-precision proof (`score_fmt=%.17g`, decision D-11)
+
+The harness's verdicts were first computed from logs written at the filter's default
+`%.6f`, so "exact" meant equal to six decimals. Every leg now runs with
+`score_fmt=%.17g` (patch 0016, the same option on `libvmaf` and `libvmaf_sycl`) and
+the comparator compares the full doubles. Arc A380, `--stage 3 --bench --repeat 5`,
+both clips, 25 cases each (the 24 of the stage-3 run plus `motion_uv`), so 50 verdicts per depth:
+
+| Depth | Result | Notes |
+| --- | --- | --- |
+| 8-bit NV12 | `pass=50 fail=0 nonexact=0` | `ciede` on src01: host vs CPU 1.112e-11 on one frame, inside the declared 1e-9 bound |
+| 10-bit P010 | `pass=50 fail=0 nonexact=0` | every case identical to the CPU, `ciede` included |
+
+Zero-copy equals host upload exactly on every case, clip and depth, on all five runs
+(no `zc-nondeterministic`); every other host-vs-CPU comparison is bit-exact. The one
+number that was invisible at `%.6f` is the `ciede` residual, the libm difference
+already recorded for the CUDA, SYCL and HIP twins
+(`T-CUDA-CIEDE-LIBM-RESIDUAL-2026-10-01`, ADR-1436); it is declared in the comparator
+as the parity gate's own `LIBM_TWINS` cell rather than as a new tolerance. In-run
+`--bench` figures: 79.58 fps (8-bit), 72.64 fps (10-bit).
 
 ## Open items
 

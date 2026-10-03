@@ -9,6 +9,7 @@ three legs (CPU libvmaf, libvmaf_sycl host upload, libvmaf_sycl zero-copy).
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import sys
 from pathlib import Path
@@ -253,3 +254,103 @@ def test_repeats_order_numerically_and_dotted_ids_work(
     rc, out = _run(tmp_path, 1, case, capsys)
     assert rc == 1
     assert "1 of 11 runs differ; zc-r10:" in out
+
+
+def test_full_double_difference_is_nonexact(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A last-bits difference only visible at ``score_fmt=%.17g`` is not exact."""
+
+    host = {"integer_vif_scale0": 0.5 + 1e-15, "integer_vif_scale1": 0.25}
+    _case(tmp_path, STAGE1_CASE, METRICS, host, host)
+    rc, out = _run(tmp_path, 1, STAGE1_CASE, capsys)
+    assert rc == 1
+    assert "NONEXACT host-vs-cpu" in out
+
+
+def test_declared_cpu_bound_is_applied_and_named(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bounded = dataclasses.replace(zc.CASES[STAGE1_CASE], cpu_bound=1e-9)
+    monkeypatch.setitem(zc.CASES, STAGE1_CASE, bounded)
+    near = {"integer_vif_scale0": 0.5 + 1e-12, "integer_vif_scale1": 0.25}
+    _case(tmp_path, STAGE1_CASE, METRICS, near, near)
+    rc, out = _run(tmp_path, 1, STAGE1_CASE, capsys)
+    assert rc == 0
+    far = {"integer_vif_scale0": 0.5 + 1e-6, "integer_vif_scale1": 0.25}
+    _case(tmp_path, STAGE1_CASE, METRICS, far, far)
+    rc, out = _run(tmp_path, 1, STAGE1_CASE, capsys)
+    assert rc == 1
+    assert "exceeds declared bound 1e-09" in out
+    assert "applied 1e-09" in out
+
+
+HOST_REF_CASE = "motion_uv"
+MOTION_UV = {"VMAF_integer_feature_motion2_score": 1.5, "VMAF_integer_feature_motion_uv_score": 0.5}
+
+
+def _host_ref_case(d: Path, zc_metrics: dict[str, Any] | None, zc_rc: int = 0) -> None:
+    """Host-reference case: no CPU leg is written at all."""
+
+    _leg(d, HOST_REF_CASE, "host", MOTION_UV, 0, "")
+    _leg(d, HOST_REF_CASE, "zc", zc_metrics, zc_rc, "")
+
+
+def test_host_reference_case_needs_no_cpu_leg(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert zc.CASES[HOST_REF_CASE].reference == "host"
+    _host_ref_case(tmp_path, MOTION_UV)
+    rc, out = _run(tmp_path, 2, HOST_REF_CASE, capsys)
+    assert rc == 0, out
+    assert f"{HOST_REF_CASE} PASS" in out
+    assert "host-vs-cpu" not in out
+
+
+def test_host_reference_case_fails_when_zero_copy_differs(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _host_ref_case(tmp_path, {**MOTION_UV, "VMAF_integer_feature_motion_uv_score": 0.5 + 1e-15})
+    rc, out = _run(tmp_path, 2, HOST_REF_CASE, capsys)
+    assert rc == 1
+    assert "FAIL zc-vs-host" in out
+
+
+def test_host_reference_case_repeats_are_held_to_host(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _host_ref_case(tmp_path, MOTION_UV)
+    drift = {**MOTION_UV, "VMAF_integer_feature_motion2_score": 9.0}
+    _leg(tmp_path, HOST_REF_CASE, "zc-r2", drift, 0, "")
+    rc, out = _run(tmp_path, 2, HOST_REF_CASE, capsys)
+    assert rc == 1
+    assert "zc-nondeterministic" in out
+
+
+def test_ciede_declares_the_gate_libm_bound_and_everything_else_is_exact() -> None:
+    bounded = {k: c.cpu_bound for k, c in zc.CASES.items() if c.cpu_bound}
+    assert bounded == {"ciede": 1e-9}
+
+
+def test_bounded_pass_names_measurement_and_bound(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    cpu = {"ciede2000": 33.10755745833333}
+    host = {"ciede2000": 33.10755745833333 + 1.1e-11}
+    _case(tmp_path, "ciede", cpu, host, host)
+    rc, out = _run(tmp_path, 3, "ciede", capsys)
+    assert rc == 0, out
+    assert "PASS" in out
+    assert "within declared bound 1e-09" in out
+    assert "zc-vs-host" not in out
+
+
+def test_bounded_case_still_requires_zero_copy_equal_to_host(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    cpu = {"ciede2000": 33.1}
+    host = {"ciede2000": 33.1 + 1.1e-11}
+    _case(tmp_path, "ciede", cpu, host, {"ciede2000": 33.1 + 2.2e-11})
+    rc, out = _run(tmp_path, 3, "ciede", capsys)
+    assert rc == 1
+    assert "FAIL zc-vs-host" in out
