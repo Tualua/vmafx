@@ -7,8 +7,9 @@
  *  since ADR-1363. SYCL twin of ssimulacra2_cuda / ssimulacra2_hip.
  *
  *  Per frame, one in-order chain with no host round trip:
- *    1. submit(): the six raw Y/U/V planes are packed into pinned staging and
- *       uploaded. That upload is the only host-to-device traffic.
+ *    1. submit(): the six raw Y/U/V planes are read from the shared device
+ *       planes (ADR-1598); with host pictures the chroma is uploaded once per
+ *       frame for all twins, with zero-copy input the import wrote it.
  *    2. YUV -> linear RGB (`vmaf_ss2_srgb_eotf` LUT, single-rounded FMAs in
  *       the ADR-0891 / ADR-1205 order).
  *    3. Per scale (up to 6, stops when a side drops below 8):
@@ -162,16 +163,16 @@ struct Ssimu2StateSycl {
     int num_scales;
     unsigned plane_w[SS2S_CHANNELS];
     unsigned plane_h[SS2S_CHANNELS];
-    size_t row_bytes[SS2S_CHANNELS];
 
     Ss2Iir iir;
     Ss2YuvCoefficients yuv;
 
     VmafSyclState *sycl_state;
 
-    /* Raw planes: pinned staging and device copies, [image][plane]. */
-    void *h_raw[SS2S_IMAGES][SS2S_CHANNELS];
-    void *d_raw[SS2S_IMAGES][SS2S_CHANNELS];
+    /* Raw planes, [image][plane]: the shared device planes (ADR-1598), non-owning
+     * and rebound each submit. Only the linear-RGB kernel reads them and nothing
+     * writes them in place, so no D2D copy is needed. */
+    const void *d_raw[SS2S_IMAGES][SS2S_CHANNELS];
     /* Linear-RGB pyramid, ping-pong per image: [image][0] holds scales 0, 2,
      * 4 (full size), [image][1] scales 1, 3, 5 (quarter size). */
     float *d_lin[SS2S_IMAGES][2];
@@ -417,13 +418,11 @@ int ss2s_configure_planes(Ssimu2StateSycl *s, enum VmafPixelFormat pix_fmt)
     }
     const unsigned ss_hor = (pix_fmt != VMAF_PIX_FMT_YUV444P) ? 1u : 0u;
     const unsigned ss_ver = (pix_fmt == VMAF_PIX_FMT_YUV420P) ? 1u : 0u;
-    const size_t bytes_per_sample = (s->bpc > 8u) ? 2u : 1u;
     for (unsigned p = 0; p < SS2S_CHANNELS; p++) {
         const unsigned sh = (p == 0u) ? 0u : ss_hor;
         const unsigned sv = (p == 0u) ? 0u : ss_ver;
         s->plane_w[p] = (s->width + sh) >> sh;
         s->plane_h[p] = (s->height + sv) >> sv;
-        s->row_bytes[p] = (size_t)s->plane_w[p] * bytes_per_sample;
     }
     return 0;
 }
@@ -1351,10 +1350,6 @@ void enqueue_scale(sycl::queue &q, const Ssimu2StateSycl *s, int scale)
 
 void enqueue_frame(sycl::queue &q, const Ssimu2StateSycl *s)
 {
-    for (unsigned img = 0; img < SS2S_IMAGES; img++) {
-        for (unsigned p = 0; p < SS2S_CHANNELS; p++)
-            q.memcpy(s->d_raw[img][p], s->h_raw[img][p], s->row_bytes[p] * s->plane_h[p]);
-    }
     enqueue_linear_rgb(q, s);
     for (int scale = 0; scale < s->num_scales; scale++)
         enqueue_scale(q, s, scale);
@@ -1459,12 +1454,6 @@ bool ss2s_allocate(Ssimu2StateSycl *s)
     const size_t half = SS2S_CHANNELS * (size_t)s->scale_w[1] * s->scale_h[1] * sizeof(float);
     bool ok = true;
     for (unsigned img = 0; img < SS2S_IMAGES; img++) {
-        for (unsigned p = 0; p < SS2S_CHANNELS; p++) {
-            const size_t bytes = s->row_bytes[p] * s->plane_h[p];
-            s->h_raw[img][p] = vmaf_sycl_malloc_host(st, bytes);
-            s->d_raw[img][p] = vmaf_sycl_malloc_device(st, bytes);
-            ok = ok && s->h_raw[img][p] && s->d_raw[img][p];
-        }
         s->d_lin[img][0] = ss2s_device_alloc<float>(st, full);
         s->d_lin[img][1] = ss2s_device_alloc<float>(st, half);
         s->d_xyb[img] = ss2s_device_alloc<float>(st, full);
@@ -1518,6 +1507,16 @@ int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsig
     ss2s_setup_gaussian(&s->iir, SS2S_SIGMA);
     s->yuv = ss2s_yuv_coefficients(s->yuv_matrix, bpc);
     s->sycl_state = fex->sycl_state;
+    /* Luma and chroma come from the shared device planes; both calls are
+     * idempotent across the twins that share them (ADR-1598). */
+    int shared_err = vmaf_sycl_shared_frame_init(s->sycl_state, w, h, bpc);
+    if (!shared_err)
+        shared_err = vmaf_sycl_shared_chroma_init(s->sycl_state, s->plane_w[1], s->plane_h[1]);
+    if (shared_err) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "ssimulacra2_sycl: shared planes unavailable (%d)\n",
+                 shared_err);
+        return shared_err;
+    }
     if (!ss2s_allocate(s)) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "ssimulacra2_sycl: USM allocation failed\n");
         (void)close_fex_sycl(fex);
@@ -1539,51 +1538,36 @@ int check_context_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, 
     return (chroma && w >= 8u && h >= 8u) ? 0 : -ENOTSUP;
 }
 
-bool ss2s_picture_matches(const Ssimu2StateSycl *s, const VmafPicture *pic)
-{
-    if (!pic || pic->bpc != s->bpc)
-        return false;
-    for (unsigned p = 0; p < SS2S_CHANNELS; p++) {
-        if (!pic->data[p] || pic->w[p] != s->plane_w[p] || pic->h[p] != s->plane_h[p])
-            return false;
-    }
-    return true;
-}
-
-/* Pack one plane's rows into pinned staging (the picture is released when
- * submit returns, so the upload cannot read it directly). */
-void ss2s_stage_plane(const VmafPicture *pic, unsigned p, void *dst, size_t row_bytes,
-                      unsigned rows)
-{
-    const auto *src = static_cast<const uint8_t *>(pic->data[p]);
-    auto *out = static_cast<uint8_t *>(dst);
-    const auto stride = static_cast<size_t>(pic->stride[p]);
-    if (stride == row_bytes) {
-        std::memcpy(out, src, row_bytes * rows);
-        return;
-    }
-    for (unsigned i = 0; i < rows; i++)
-        std::memcpy(out + (size_t)i * row_bytes, src + (size_t)i * stride, row_bytes);
-}
-
 int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                     VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
-    if (vmaf_sycl_require_host_pictures("ssimulacra2_sycl", ref_pic, dist_pic)) {
-        return -ENOTSUP;
-    }
     auto *s = static_cast<Ssimu2StateSycl *>(fex->priv);
     auto *qptr = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
     if (!qptr)
         return -EINVAL;
-    if (!ss2s_picture_matches(s, ref_pic) || !ss2s_picture_matches(s, dist_pic))
-        return -EINVAL;
-    const VmafPicture *const pics[SS2S_IMAGES] = {ref_pic, dist_pic};
+    /* Zero-copy input hands no host pictures; its chroma is in the shared
+     * planes only when the import marked it for this frame (ADR-1597). */
+    if (vmaf_sycl_require_chroma(s->sycl_state, "ssimulacra2_sycl", ref_pic, dist_pic))
+        return -ENOTSUP;
+    int plane_err = 0;
+    if (ref_pic && dist_pic)
+        plane_err = vmaf_sycl_shared_chroma_upload(s->sycl_state, ref_pic, dist_pic);
+    if (!plane_err)
+        plane_err = vmaf_sycl_queue_after_upload(s->sycl_state, qptr);
+    if (plane_err) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "ssimulacra2_sycl: frame %u plane upload failed (%d)\n",
+                 index, plane_err);
+        return plane_err;
+    }
     for (unsigned img = 0; img < SS2S_IMAGES; img++) {
-        for (unsigned p = 0; p < SS2S_CHANNELS; p++)
-            ss2s_stage_plane(pics[img], p, s->h_raw[img][p], s->row_bytes[p], s->plane_h[p]);
+        for (unsigned p = 0; p < SS2S_CHANNELS; p++) {
+            /* img 0 is the reference, img 1 the distorted. */
+            s->d_raw[img][p] = vmaf_sycl_get_shared_plane(s->sycl_state, img == 0u ? 1 : 0, p);
+            if (!s->d_raw[img][p])
+                return -EINVAL;
+        }
     }
     try {
         enqueue_frame(*qptr, s);
@@ -1637,12 +1621,6 @@ int close_fex_sycl(VmafFeatureExtractor *fex)
     if (!s || !s->sycl_state)
         return 0;
     VmafSyclState *st = s->sycl_state;
-    for (unsigned img = 0; img < SS2S_IMAGES; img++) {
-        for (unsigned p = 0; p < SS2S_CHANNELS; p++) {
-            ss2s_free(st, s->h_raw[img][p]);
-            ss2s_free(st, s->d_raw[img][p]);
-        }
-    }
     float **const buffers[] = {&s->d_lin[0][0], &s->d_lin[0][1], &s->d_lin[1][0], &s->d_lin[1][1],
                                &s->d_xyb[0],    &s->d_xyb[1],    &s->d_product,   &s->d_scratch,
                                &s->d_mu1,       &s->d_mu2,       &s->d_s11,       &s->d_s22,
