@@ -31,7 +31,7 @@ Parent: [../AGENTS.md](../AGENTS.md). HIP backend runtime lives at
 | `float_moment_hip.c`, `float_moment_hip.h`, `float_moment/moment_score.hip` | [float-moment](AGENTS.d/float-moment.md) | float_moment_hip matches CPU bits on every frame, past 2^53 units too. |
 | `float_motion_hip.c`, `float_motion_hip.h`, `float_motion/float_motion_score.hip` | [float-motion](AGENTS.d/float-motion.md) | float_motion force-zero ownership and flush idempotency must follow BUG048 specifications. |
 | `integer_ms_ssim_hip.c`, `integer_ms_ssim/ms_ssim_arith.h` | [float-ms-ssim](AGENTS.d/float-ms-ssim.md) | float_ms_ssim_hip matches CPU arithmetic bit for bit with raster-order per-scale sums. |
-| `float_psnr_hip.c`, `float_psnr_hip.h`, `float_psnr/float_psnr_score.hip` | [float-psnr](AGENTS.d/float-psnr.md) | float_psnr_hip reproduces CPU reference bits identically. |
+| `float_psnr_hip.c`, `float_psnr_hip.h`, `float_psnr/float_psnr_score.hip` | [float-psnr](AGENTS.d/float-psnr.md) | float_psnr_hip reproduces CPU reference bits identically, past 2^53 units too. |
 | `float_vif_hip.c`, `float_vif_hip.h`, `float_vif/float_vif_score.hip` | [float-vif](AGENTS.d/float-vif.md) | float_vif options must be kernel arguments and match CPU reference bits. |
 | `integer_adm_hip.c`, `integer_cambi_hip.c` | [frame-order-lifecycle](AGENTS.d/frame-order-lifecycle.md) | Maintain strict frame lifecycle order of upload, clear, and kernel execution. |
 | `/core/src/meson.build`, `/core/meson.build` | [hip-platform-amd](AGENTS.d/hip-platform-amd.md) | HIP_PLATFORM_AMD macro definition originates solely from the build system. |

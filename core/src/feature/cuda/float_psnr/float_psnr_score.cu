@@ -8,33 +8,32 @@
  *  float_psnr_vulkan.
  *
  *  Per-pixel `(ref - dis)^2` as float_psnr.c forms it, added per warp and
- *  per 16x16 block as an integer; the host adds the block sums and applies
- *  the CPU formula.
+ *  per block as an integer, one block per FPSNR_BX pixels of one row; the
+ *  host forms each row's exact sum from its blocks and adds the rows as the
+ *  CPU does (feature/float_psnr_rows.h).
  *
  *  The sums are integers so that they are exact (ADR-1455). float_psnr.c
  *  adds `(double)(diff * diff)` per row and the rows in double: every term is
- *  a float, the running sum is exact, and its value is the exact sum of the
- *  terms. With `scaler` = 2^(bpc - 8), `diff` is the sample difference over
- *  `scaler`, and its float square is the float square of the sample
- *  difference over `scaler`^2. So the kernel squares the sample difference in
- *  float, as the CPU does, and adds that value as an integer:
+ *  a float, a row's running sum is exact, and its value is the exact sum of
+ *  the row's terms. With `scaler` = 2^(bpc - 8), `diff` is the sample
+ *  difference over `scaler`, and its float square is the float square of the
+ *  sample difference over `scaler`^2. So the kernel squares the sample
+ *  difference in float, as the CPU does, and adds that value as an integer:
  *    - up to 12 bits the square is below 2^24 and exact in float;
  *    - at 16 bits the square is rounded to 24 bits by the float multiply, as
  *      on the CPU, and is below 2^32.
  *  A block's 256 terms are below 2^40, so one uint64 per block holds their
- *  sum. The host adds the blocks in uint64 and divides by `scaler`^2, a power
- *  of two. Both sides then hold the exact sum of the same terms. A fp32 block
- *  sum, which this kernel had, is exact only at 8 bits: at 10, 12 and 16 bits
- *  it rounded once the block's rms difference reached 256 code values, which
- *  put the score up to 1.2e-7 dB from the CPU's.
+ *  sum. The CPU's adds of the rows round once its sum passes 2^53 units; the
+ *  host adds the rows' exact sums in the same order, so it rounds where the
+ *  CPU rounds (ADR-1499). Blocks of 16x16 pixels, which this kernel had, mix
+ *  rows: their total was exact but rounded once past 2^53.
  */
 
 #include "cuda_helper.cuh"
 #include "common.h"
+#include "cuda/float_psnr_cuda.h"
 
-#define FPSNR_BX 16
-#define FPSNR_BY 16
-#define FPSNR_WARPS (FPSNR_BX * FPSNR_BY / 32)
+#define FPSNR_WARPS (FPSNR_BX * FPSNR_BY / 32u)
 
 namespace
 {

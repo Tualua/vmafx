@@ -16,9 +16,10 @@
  * exact at 8 bits and rounds at 10, 12 and 16 bits once the differences in a
  * group are large: full-range noise and a bright 16-bit 1080p frame show it.
  * The fixtures, the comparison and the cases are float_psnr_twin_parity.h's,
- * all at `==` except the one past 2^53 units, where the CPU's own double sum
- * rounds and the twin is held to the derived bound. The macOS tester bundle
- * runs this test and reports each case (ADR-1496).
+ * all at `==`, the frames past 2^53 units included: there the CPU's adds of
+ * its rows round, and a twin returns them by adding each row's exact sum in
+ * order (feature/float_psnr_rows.h, ADR-1499). The macOS tester bundle runs
+ * this test and reports each case (ADR-1496).
  *
  * Skip behaviour: exits 77 when there is no Metal device.
  */
@@ -84,9 +85,9 @@ static char *test_float_psnr_identical_16bit(void)
     return float_psnr_twin_identical_exact(&twin, 16u, 108.0);
 }
 
-static char *test_float_psnr_16bit_past_2_53_within_bound(void)
+static char *test_float_psnr_16bit_past_2_53_exact(void)
 {
-    return float_psnr_twin_past_2_53_within_bound(&twin);
+    return float_psnr_twin_past_2_53_exact(&twin);
 }
 
 char *run_tests(void)
@@ -100,7 +101,7 @@ char *run_tests(void)
     metal_run_case(test_float_psnr_16bit_bright_exact);
     metal_run_case(test_float_psnr_identical_8bit);
     metal_run_case(test_float_psnr_identical_16bit);
-    metal_run_case(test_float_psnr_16bit_past_2_53_within_bound);
+    metal_run_case(test_float_psnr_16bit_past_2_53_exact);
     return metal_first_failure;
 }
 

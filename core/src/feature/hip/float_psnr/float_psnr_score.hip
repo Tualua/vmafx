@@ -8,8 +8,10 @@
  *  `core/src/feature/cuda/float_psnr/float_psnr_score.cu`.
  *
  *  Per-pixel `(ref - dis)^2` as float_psnr.c forms it, added per wave and
- *  per 16x16 block as an integer; the host adds the block sums in double and
- *  applies the CPU log10 formula.
+ *  per block as an integer, one block per FPSNR_BX pixels of one row; the
+ *  host forms each row's exact sum from its blocks, adds the rows in order as
+ *  the CPU does (feature/float_psnr_rows.h, ADR-1499) and applies the CPU
+ *  log10 formula.
  *
  *  The sums are integers so that they are exact (ADR-1440). float_psnr.c
  *  adds `(double)(diff * diff)` per row and the rows in double: every term is
@@ -23,8 +25,10 @@
  *    - at 16 bits the square is rounded to 24 bits by the float multiply, as
  *      on the CPU, and is below 2^32; its low and high 16 bits are added
  *      separately, each sum below 2^24.
- *  The host puts the two halves together and divides by `scaler`^2, a power
- *  of two. Both sides then hold the exact sum of the same terms. A fp32 block
+ *  Thread 0 puts the two halves together into one uint64 per block. The
+ *  host adds a row's blocks exactly, the rows into a double in the CPU's
+ *  order, and divides by `scaler`^2, a power of two: the CPU's sum, rounded
+ *  where the CPU rounds past 2^53 units (ADR-1499). A fp32 block
  *  sum, which this kernel had, is exact only at 8 bits: at 10, 12 and 16 bits
  *  it rounded once the block's rms difference reached 256 code values, which
  *  put the score up to 7.6e-8 dB from the CPU's. fp64 sums are exact too and
@@ -47,8 +51,10 @@
 #include <hip/hip_runtime.h>
 #include <stdint.h>
 
-#define FPSNR_BX 16
-#define FPSNR_BY 16
+/* One block per FPSNR_BX pixels of one row (float_psnr_hip.c uses the same
+ * numbers), so that each block sum is a segment of a single row. */
+#define FPSNR_BX 256
+#define FPSNR_BY 1
 
 /* Array sized for the minimum AMD warp size (wave32 = RDNA2+, 32 lanes) so
  * it is large enough on wave32 hardware: BX*BY/32 = 8 slots needed.
@@ -104,11 +110,9 @@ extern "C" {
  * at partials[2 * block]; partials[2 * block + 1], the high half, is 0.
  */
 __global__ void float_psnr_kernel_8bpc(const uint8_t *__restrict__ ref,
-                                       const uint8_t *__restrict__ dis,
-                                       ptrdiff_t ref_stride,
+                                       const uint8_t *__restrict__ dis, ptrdiff_t ref_stride,
                                        ptrdiff_t dis_stride,
-                                       uint32_t *__restrict__ partials,
-                                       unsigned width,
+                                       unsigned long long *__restrict__ partials, unsigned width,
                                        unsigned height)
 {
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -116,16 +120,15 @@ __global__ void float_psnr_kernel_8bpc(const uint8_t *__restrict__ ref,
 
     uint32_t my_noise = 0u;
     if (x < (int)width && y < (int)height) {
-        my_noise = fpsnr_square(ref[(ptrdiff_t)y * ref_stride + x],
-                                dis[(ptrdiff_t)y * dis_stride + x]);
+        my_noise =
+            fpsnr_square(ref[(ptrdiff_t)y * ref_stride + x], dis[(ptrdiff_t)y * dis_stride + x]);
     }
 
     __shared__ uint32_t s_warps[FPSNR_WARPS_PER_BLOCK];
     const uint32_t total = fpsnr_block_sum(s_warps, my_noise);
     if (threadIdx.x == 0u && threadIdx.y == 0u) {
         const unsigned block_idx = blockIdx.y * gridDim.x + blockIdx.x;
-        partials[2u * block_idx] = total;
-        partials[2u * block_idx + 1u] = 0u;
+        partials[block_idx] = (unsigned long long)total;
     }
 }
 
@@ -138,13 +141,10 @@ __global__ void float_psnr_kernel_8bpc(const uint8_t *__restrict__ ref,
  * partials[2 * block + 1].
  */
 __global__ void float_psnr_kernel_16bpc(const uint8_t *__restrict__ ref,
-                                        const uint8_t *__restrict__ dis,
-                                        ptrdiff_t ref_stride,
+                                        const uint8_t *__restrict__ dis, ptrdiff_t ref_stride,
                                         ptrdiff_t dis_stride,
-                                        uint32_t *__restrict__ partials,
-                                        unsigned width,
-                                        unsigned height,
-                                        unsigned bpc)
+                                        unsigned long long *__restrict__ partials, unsigned width,
+                                        unsigned height, unsigned bpc)
 {
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -155,10 +155,8 @@ __global__ void float_psnr_kernel_16bpc(const uint8_t *__restrict__ ref,
     if (x < (int)width && y < (int)height) {
         /* ref/dis are byte-addressed; cast the row pointer to uint16_t*
          * for each pixel access (matches the CUDA twin's pattern). */
-        const uint16_t rv =
-            reinterpret_cast<const uint16_t *>(ref + (ptrdiff_t)y * ref_stride)[x];
-        const uint16_t dv =
-            reinterpret_cast<const uint16_t *>(dis + (ptrdiff_t)y * dis_stride)[x];
+        const uint16_t rv = reinterpret_cast<const uint16_t *>(ref + (ptrdiff_t)y * ref_stride)[x];
+        const uint16_t dv = reinterpret_cast<const uint16_t *>(dis + (ptrdiff_t)y * dis_stride)[x];
         const uint32_t square = fpsnr_square(rv, dv);
         my_lo = split ? (square & 0xFFFFu) : square;
         my_hi = split ? (square >> 16) : 0u;
@@ -176,8 +174,7 @@ __global__ void float_psnr_kernel_16bpc(const uint8_t *__restrict__ ref,
     }
     if (threadIdx.x == 0u && threadIdx.y == 0u) {
         const unsigned block_idx = blockIdx.y * gridDim.x + blockIdx.x;
-        partials[2u * block_idx] = total_lo;
-        partials[2u * block_idx + 1u] = total_hi;
+        partials[block_idx] = (unsigned long long)total_lo + ((unsigned long long)total_hi << 16);
     }
 }
 

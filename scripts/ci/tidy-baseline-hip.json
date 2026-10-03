@@ -434,7 +434,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 504,
+  "total_warnings": 503,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -454,7 +454,7 @@
     "core/src/feature/hip/float_moment/moment_score.hip": 11,
     "core/src/feature/hip/float_motion/float_motion_rows.h": 1,
     "core/src/feature/hip/float_motion/float_motion_score.hip": 4,
-    "core/src/feature/hip/float_psnr/float_psnr_score.hip": 8,
+    "core/src/feature/hip/float_psnr/float_psnr_score.hip": 7,
     "core/src/feature/hip/float_ssim/ssim_decimate.h": 1,
     "core/src/feature/hip/float_ssim/ssim_score.hip": 4,
     "core/src/feature/hip/float_vif/float_vif_score.hip": 21,
@@ -498,5 +498,22 @@
     "core/test/test_hip_float_adm_math_probe.hip": 2,
     "core/test/test_sycl_fp_arith_contract.c": 1
   },
-  "nolint_uncited": {}
+  "nolint_uncited": {},
+  "scoped_updates": [
+    {
+      "sources": [
+        "core/src/feature/hip/float_psnr/float_psnr_score.hip"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/src/feature/hip/float_psnr/float_psnr_score.hip": {
+          "warnings": [
+            8,
+            7
+          ]
+        }
+      },
+      "previous_baseline_sha256": "6b303f1bac3988622a7abda634533c7acb1b11018c255f9b3ab39b1bf0693a4e"
+    }
+  ]
 }

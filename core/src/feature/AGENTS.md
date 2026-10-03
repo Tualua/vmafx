@@ -45,6 +45,7 @@ PSNR, SSIM, MS-SSIM, LPIPS, …). Parent: [../../AGENTS.md](../../AGENTS.md).
 | `feature_name.cpp`, `brisque_math.h` | [float-equality](AGENTS.d/float-equality.md) | Explicit floating-point comparison contracts replace direct equality tests. |
 | `float_moment_sum.h`, `float_moment_sum_gpu.h` | [float-moment-sum](AGENTS.d/float-moment-sum.md) | float_moment twins form the CPU's rounded 2nd-moment sum past 2^53 units; integers only, checked walk. |
 | `moment.c`, `moment.h` | [float-moment](AGENTS.d/float-moment.md) | compute_2nd_moment reduction order and floating-point accumulation contracts. |
+| `float_psnr_rows.h` | [float-psnr-rows](AGENTS.d/float-psnr-rows.md) | float_psnr twins add each row's exact sum into a double in the CPU's row order. |
 | `float_vif.c`, `vif_tools.h` | [float-vif](AGENTS.d/float-vif.md) | float_vif lint decomposition, run-time Gaussian filter construction, and minimum dimension checks. |
 | `feature_extractor.h` | [fmaf-ban](AGENTS.d/fmaf-ban.md) | Scalar references never call libm fmaf to prevent contraction divergence across hosts. |
 | `feature_extractor.cpp`, `feature_collector.cpp` | [governing-adrs](AGENTS.d/governing-adrs.md) | Governing ADR index and compliance contracts for feature extractors. |

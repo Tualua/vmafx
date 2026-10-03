@@ -2218,6 +2218,20 @@ test('test_float_moment_sum_contract',
     timeout : 30,
 )
 
+# ADR-1499 — feature/float_psnr_rows.h, the float_psnr twins' form of the
+# CPU's sum of its rows past 2^53 units, fed with host-made segment sums and
+# compared bit for bit with the CPU float_psnr extractor on the cases of
+# float_psnr_twin_parity.h and a 7680x4320 frame. The device checks are
+# test_{cuda,sycl,hip}_float_psnr_parity.
+test_float_psnr_rows = executable('test_float_psnr_rows',
+    ['test.c', 'test_float_psnr_rows.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common + vmaf_strict_fp_args,
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [math_lib, pthread_dependency, gpu_all_deps],
+)
+test('test_float_psnr_rows', test_float_psnr_rows, suite : ['fast'], timeout : 120)
+
 test_adm_nonfinite_score = executable('test_adm_nonfinite_score',
     ['test.c', 'test_adm_nonfinite_score.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],

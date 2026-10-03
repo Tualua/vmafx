@@ -1,6 +1,25 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## The `float_psnr` twins add each row's exact sum in the CPU's order (ADR-1499, 2026-10-03)
+
+`fix/float-psnr-exact-past-2-53`. Fork-only device and host code; `float_psnr.c`
+and its SIMD rows are untouched.
+
+- The CUDA, HIP and SYCL kernels reduce 256 x 1 blocks / work-groups (were
+  16 x 16), so each partial sum is a segment of one row; the HIP kernel writes
+  one `uint64` per block (was two `uint32` halves). The CUDA geometry moved into
+  `cuda/float_psnr_cuda.h` (`FPSNR_BX` / `FPSNR_BY`), shared by kernel and host.
+- New host helper `core/src/feature/float_psnr_rows.h`
+  (`vmaf_float_psnr_row_noise()`), the only place the hosts sum partials.
+- If upstream changes `float_psnr.c`'s row loop or `noise_line()`, the helper,
+  `test_float_psnr_rows` and the three twins change in the same PR.
+- `core/test/test_hip_float_psnr_parity.c` uses `core/test/float_psnr_twin_parity.h`
+  now; the cases past 2^53 compare with `==`. The header no longer has a
+  bound helper: `core/test/test_metal_float_psnr_parity.c` calls
+  `float_psnr_twin_past_2_53_exact()` (case
+  `test_float_psnr_16bit_past_2_53_exact`), as the CUDA, SYCL and HIP tests do.
+
 ## icx and icpx builds link glibc's libm, not Intel's libimf (ADR-1495, 2026-10-03)
 
 `fix/icx-system-libm`. Fork-only build policy; no upstream file is touched and

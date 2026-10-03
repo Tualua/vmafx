@@ -12,9 +12,11 @@ at 10, 12 and 16 bits once the differences in a block are large (up to 1.2e-7
 dB on full-range content).
 
 The kernel now squares the raw sample difference in ``float`` (the CPU's
-term times ``scaler``^2), converts it to an integer, and the warps, the
-blocks and the host add ``uint64`` values. The host divides the exact total
-by ``scaler``^2 and by the pixel count.
+term times ``scaler``^2), converts it to an integer, and the warps and the
+blocks add ``uint64`` values. Each block is a segment of one row, and the
+host adds each row's blocks exactly and the rows into a double in the CPU's
+order (``feature/float_psnr_rows.h``, ADR-1499), then divides by
+``scaler``^2 and by the pixel count.
 
 Device-free: reads the sources only. ``test_cuda_float_psnr_parity`` compares
 the scores on a device.
@@ -31,6 +33,7 @@ FEATURE = ROOT / "core" / "src" / "feature"
 
 KERNEL = "cuda/float_psnr/float_psnr_score.cu"
 HOST = "cuda/float_psnr_cuda.c"
+GEOMETRY = "cuda/float_psnr_cuda.h"
 REFERENCE = "float_psnr.c"
 
 COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
@@ -55,11 +58,10 @@ BLOCK = (
     "reinterpret_cast<unsigned long long *>(partials.data)[block_idx] = total;",
 )
 HOST_SUM = (
-    "const uint64_t *partials = s->rb.host_pinned;",
-    "uint64_t total = 0u;",
-    "total += partials[i];",
+    "const unsigned per_row = (s->frame_w + FPSNR_BX - 1u) / FPSNR_BX;",
+    "const double total = vmaf_float_psnr_row_noise(s->rb.host_pinned, s->frame_h, per_row);",
     "const double scaler = (double)(1u << (s->bpc - 8u));",
-    "return ((double)total / (scaler * scaler)) / n_pix;",
+    "return (total / (scaler * scaler)) / n_pix;",
 )
 READBACK = "s->partials_bytes = (size_t)s->wg_count * sizeof(uint64_t);"
 # The CPU's term and its sum, which the kernel and the host mirror.
@@ -77,7 +79,8 @@ def _flat(source: str) -> str:
 
 def _sources() -> dict[str, str]:
     return {
-        name: (FEATURE / name).read_text(encoding="utf-8") for name in (KERNEL, HOST, REFERENCE)
+        name: (FEATURE / name).read_text(encoding="utf-8")
+        for name in (KERNEL, HOST, REFERENCE, GEOMETRY)
     }
 
 
@@ -119,9 +122,9 @@ def _host_failures(host: str) -> list[str]:
     failures: list[str] = []
     noise = _function_body(code, "static double float_psnr_noise(const FloatPsnrStateCuda *s)")
     if any(piece not in noise for piece in HOST_SUM):
-        failures.append(f"{HOST}: the host does not add the integer sums and divide the exact total")
-    if re.search(r"\bdouble total\b", noise):
-        failures.append(f"{HOST}: the host adds the block sums in floating point")
+        failures.append(
+            f"{HOST}: the host does not add the rows' exact sums as the CPU does (ADR-1499)"
+        )
     if READBACK not in code:
         failures.append(f"{HOST}: the readback is not one uint64 per block")
     return failures
@@ -136,9 +139,18 @@ def _reference_failures(reference: str) -> list[str]:
     ]
 
 
+def _geometry_failures(geometry: str, kernel: str) -> list[str]:
+    code = _flat(geometry)
+    rows = re.search(r"#define FPSNR_BX 256u\b", code) and re.search(r"#define FPSNR_BY 1u\b", code)
+    if rows and '#include "cuda/float_psnr_cuda.h"' in kernel:
+        return []
+    return [f"{GEOMETRY}: a block is not a segment of one row (ADR-1499)"]
+
+
 def _contract_failures(sources: dict[str, str]) -> list[str]:
     return (
-        _kernel_failures(sources[KERNEL])
+        _geometry_failures(sources[GEOMETRY], sources[KERNEL])
+        + _kernel_failures(sources[KERNEL])
         + _host_failures(sources[HOST])
         + _reference_failures(sources[REFERENCE])
     )
@@ -171,9 +183,14 @@ class FloatPsnrCudaExactContract(unittest.TestCase):
         )
         self._assert_detected(failures, "added in floating point")
 
-    def test_float_host_sum_is_detected(self) -> None:
-        failures = self._edited(HOST, "    uint64_t total = 0u;", "    double total = 0.0;")
-        self._assert_detected(failures, "host adds the block sums in floating point")
+    def test_frame_total_instead_of_rows_is_detected(self) -> None:
+        # The pre-ADR-1499 host: every block added into one exact total.
+        failures = self._edited(
+            HOST,
+            "vmaf_float_psnr_row_noise(s->rb.host_pinned, s->frame_h, per_row);",
+            "vmaf_float_psnr_row_noise(s->rb.host_pinned, 1u, s->wg_count);",
+        )
+        self._assert_detected(failures, "rows' exact sums")
 
     def test_scaled_difference_is_detected(self) -> None:
         # The square of a scaled difference is the same value; the pin is
@@ -199,10 +216,15 @@ class FloatPsnrCudaExactContract(unittest.TestCase):
     def test_host_division_in_another_order_is_detected(self) -> None:
         failures = self._edited(
             HOST,
-            "    return ((double)total / (scaler * scaler)) / n_pix;",
-            "    return (double)total / (scaler * scaler * n_pix);",
+            "    return (total / (scaler * scaler)) / n_pix;",
+            "    return total / (scaler * scaler * n_pix);",
         )
-        self._assert_detected(failures, "divide the exact total")
+        self._assert_detected(failures, "rows' exact sums")
+
+    def test_square_blocks_are_detected(self) -> None:
+        # The pre-ADR-1499 geometry: 16x16 blocks mix rows.
+        failures = self._edited(GEOMETRY, "#define FPSNR_BY 1u", "#define FPSNR_BY 16u")
+        self._assert_detected(failures, "segment of one row")
 
     def test_changed_reference_term_is_detected(self) -> None:
         failures = self._edited(

@@ -13,8 +13,10 @@ large (up to 7.6e-8 dB on full-range noise).
 The kernel now squares the sample difference in ``float`` (the CPU's term
 times ``scaler``^2), converts it to ``uint32`` and reduces integers: one sum
 per block up to 12 bits, the low and the high 16 bits of each square
-separately at 16 bits. The host puts the halves together and divides by
-``scaler``^2.
+separately at 16 bits, put together into one uint64 per block. A block is a
+segment of one row, and the host adds each row's blocks exactly and the rows
+into a double in the CPU's order (``feature/float_psnr_rows.h``, ADR-1499),
+then divides by ``scaler``^2.
 
 Device-free: reads the sources only. ``test_hip_float_psnr_parity`` compares
 the scores on a device.
@@ -90,20 +92,32 @@ def _kernel_failures(sources: dict[str, str]) -> list[str]:
 
 def _host_failures(sources: dict[str, str]) -> list[str]:
     host = _code(sources[HOST])
+    kernel = _code(sources[KERNEL])
     failures: list[str] = []
     collect = _function_body(host, "collect_fex_hip")
-    if "const uint32_t *partials = (const uint32_t *)s->rb.host_pinned;" not in collect:
-        failures.append(f"{HOST}: collect() does not read integer block sums")
-    if (
-        "total += (double)partials[FPSNR_PARTIALS_PER_BLOCK * i] + "
-        "(65536.0 * (double)partials[(FPSNR_PARTIALS_PER_BLOCK * i) + 1u]);" not in collect
-    ):
-        failures.append(f"{HOST}: collect() does not put the two halves of a block sum together")
+    rows = (
+        "const unsigned per_row = (s->frame_w + FPSNR_BX - 1u) / FPSNR_BX; "
+        "const double total = vmaf_float_psnr_row_noise((const uint64_t *)s->rb.host_pinned, "
+        "s->frame_h, per_row);"
+    )
+    if rows not in collect:
+        failures.append(f"{HOST}: collect() does not add the rows' exact sums as the CPU does")
     if "const double noise = (total / (scaler * scaler)) / n_pix;" not in collect:
         failures.append(f"{HOST}: the sum is not divided by the scaler squared")
     size = _function_body(host, "float_psnr_hip_partials_bytes")
-    if "s->wg_count * FPSNR_PARTIALS_PER_BLOCK * sizeof(uint32_t)" not in size:
-        failures.append(f"{HOST}: the read-back is not two uint32 per block")
+    if "s->wg_count * sizeof(uint64_t)" not in size:
+        failures.append(f"{HOST}: the read-back is not one uint64 per block")
+    halves = "partials[block_idx] = (unsigned long long)total_lo + ((unsigned long long)total_hi << 16);"
+    if halves not in _function_body(kernel, "float_psnr_kernel_16bpc"):
+        failures.append(f"{KERNEL}: a block's two halves are not put together into one uint64")
+    geometry = (
+        re.search(r"#define FPSNR_BX 256u\b", host),
+        re.search(r"#define FPSNR_BY 1u\b", host),
+        re.search(r"#define FPSNR_BX 256\b", kernel),
+        re.search(r"#define FPSNR_BY 1\b", kernel),
+    )
+    if not all(geometry):
+        failures.append(f"{HOST}: a block is not a segment of one row (ADR-1499)")
     return failures
 
 
@@ -143,12 +157,16 @@ class HipFloatPsnrExactContractTest(unittest.TestCase):
 
     def test_dropped_high_half_is_detected(self) -> None:
         failures = self._edited(
-            HOST,
-            "        total += (double)partials[FPSNR_PARTIALS_PER_BLOCK * i] +\n"
-            "                 (65536.0 * (double)partials[(FPSNR_PARTIALS_PER_BLOCK * i) + 1u]);",
-            "        total += (double)partials[FPSNR_PARTIALS_PER_BLOCK * i];",
+            KERNEL,
+            "(unsigned long long)total_lo + ((unsigned long long)total_hi << 16);",
+            "(unsigned long long)total_lo;",
         )
         self.assertTrue(any("two halves" in failure for failure in failures), failures)
+
+    def test_square_blocks_are_detected(self) -> None:
+        # The pre-ADR-1499 geometry: 16x16 blocks mix rows.
+        failures = self._edited(KERNEL, "#define FPSNR_BY 1\n", "#define FPSNR_BY 16\n")
+        self.assertTrue(any("segment of one row" in failure for failure in failures), failures)
 
     def test_missing_scaler_is_detected(self) -> None:
         failures = self._edited(

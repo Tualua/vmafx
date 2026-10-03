@@ -7,7 +7,8 @@
 
 /*
  * float_psnr CPU vs. SYCL: the twin returns the CPU's score bit for bit
- * (ADR-1450; first added as a places=4 parity test, ADR-0946).
+ * (ADR-1450, past 2^53 units ADR-1499; first added as a places=4 parity
+ * test, ADR-0946).
  *
  * float_psnr is float_psnr.c on the CPU and
  * float_psnr_sycl.cpp::vmaf_fex_float_psnr_sycl on SYCL. The CPU forms each
@@ -16,13 +17,20 @@
  * at 10, 12 and 16 bits only while a group's sum fits 24 bits in units of
  * 1 / scaler^2. On independent full-range noise it was 1.1e-8 dB off at 10
  * bits, 2.4e-8 at 12 and 7.4e-9 at 16, and 7.4e-8 on a bright 16-bit
- * 1920x1080 pair. The kernel forms the same terms as integers now and the
- * work-groups and the host add integers.
+ * 1920x1080 pair. The kernel forms the same terms as integers now, each
+ * work-group adds a segment of one row, and the host adds each row's exact
+ * sum in the CPU's row order.
  *
  * The fixtures, the comparison and the cases are float_psnr_twin_parity.h's.
  *
  * Skip behaviour: exits 77 when there is no SYCL device.
  */
+
+#ifdef FIXTURE_W
+/* The `_large` variant re-runs the noise cases at 960x540. The cases past
+ * 2^53 have their own sizes and run in the default binary only. */
+#define FLOAT_PSNR_TWIN_LARGE_VARIANT 1
+#endif
 
 #include "libvmaf/libvmaf_sycl.h"
 
@@ -106,10 +114,12 @@ static char *test_float_psnr_identical_16bit(void)
     return float_psnr_twin_identical_exact(&twin, 16u, 108.0);
 }
 
-static char *test_float_psnr_16bit_past_2_53_within_bound(void)
+#ifndef FLOAT_PSNR_TWIN_LARGE_VARIANT
+static char *test_float_psnr_16bit_past_2_53_exact(void)
 {
-    return float_psnr_twin_past_2_53_within_bound(&twin);
+    return float_psnr_twin_past_2_53_exact(&twin);
 }
+#endif
 
 static char *run_noise_cases(void)
 {
@@ -128,7 +138,9 @@ char *run_tests(void)
     mu_run_test(test_float_psnr_16bit_bright_exact);
     mu_run_test(test_float_psnr_identical_8bit);
     mu_run_test(test_float_psnr_identical_16bit);
-    mu_run_test(test_float_psnr_16bit_past_2_53_within_bound);
+#ifndef FLOAT_PSNR_TWIN_LARGE_VARIANT
+    mu_run_test(test_float_psnr_16bit_past_2_53_exact);
+#endif
     return NULL;
 }
 

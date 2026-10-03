@@ -25,11 +25,18 @@
  * bit depth, so every group's sum of squares is far above 2^24 units. Two
  * frames per case, compared with ==.
  *
- * The last case is the range in which the CPU's own sum is no longer exact:
- * a 16-bit frame whose mean squared error times the pixel count reaches 2^37
- * on the 8-bit scale (a PSNR below 6 dB at 3840x2160). There the CPU rounds
- * each further add of a row's sum, and a twin that holds the exact sum and
- * rounds once is within float_psnr_twin_bound() of it.
+ * The cases past 2^53 are the range in which the CPU's own sum is no longer
+ * exact: a 16-bit frame whose sum of squares passes 2^53 units (a mean
+ * squared error above 2^37 / (w * h) on the 8-bit scale, a PSNR below 6 dB
+ * at 3840x2160). Every row's sum stays exact there, and the CPU's adds of the
+ * rows round; the twins add the rows' exact sums in the CPU's order
+ * (feature/float_psnr_rows.h, ADR-1499). The cases are a 3840x2160 frame of
+ * independent noise in the upper and the lower half of the range, and frames
+ * whose exact sum of squares is 2^53 - 1, 2^53, and 2^53 followed by three
+ * rows whose sum is 1 each, adds that the CPU drops (a tie at 2^53 goes to
+ * the even value). Each compares with ==, and checks on the host that the
+ * frame reaches its range and, where the CPU rounds, that the CPU's sum is
+ * not the exact one, so a twin that returns the exact sum fails.
  *
  * A test includes this header once, after defining FIXTURE_W / FIXTURE_H if
  * it wants another size for the noise cases, and provides a FloatPsnrTwin.
@@ -91,6 +98,13 @@ typedef struct FloatPsnrTwinCase {
     unsigned dis_hi;
     bool same;
     const char *option; /* a boolean option set to true, or NULL */
+    /* With a target: the distorted luma is 0 and the reference's float
+     * squares add up to exactly `target` units of 1 / scaler^2 in raster
+     * order, then each of the next `ones` rows holds one sample of 1
+     * (float_psnr_twin_fill_sum()). */
+    uint64_t target;
+    unsigned ones;
+    bool rounds; /* the CPU's sum of the rows rounds on the frame */
 } FloatPsnrTwinCase;
 
 /* lowbias32 hash of the position, the frame and the picture: stateless, so
@@ -117,7 +131,59 @@ static inline void float_psnr_twin_put(VmafPicture *pic, unsigned plane, unsigne
     }
 }
 
-/* Noise in [lo, hi] on luma, mid-grey on chroma (float_psnr is luma only);
+/* The CPU's term for a 16-bit sample difference, in units of 1 / scaler^2:
+ * the float square float_psnr.c forms (one fp32 product), an integer below
+ * 2^32. */
+static inline uint32_t float_psnr_twin_float_square(int diff)
+{
+    const float d = (float)diff;
+    const float square = d * d;
+    return (uint32_t)square;
+}
+
+/* The largest 16-bit sample whose float square is at most `rest`. */
+static inline unsigned float_psnr_twin_largest_fitting(uint64_t rest)
+{
+    unsigned lo = 0u;
+    unsigned hi = 65535u;
+    for (unsigned i = 0; i < 17u && lo < hi; i++) {
+        const unsigned mid = (lo + hi + 1u) / 2u;
+        if ((uint64_t)float_psnr_twin_float_square((int)mid) <= rest) {
+            lo = mid;
+        } else {
+            hi = mid - 1u;
+        }
+    }
+    return lo;
+}
+
+/* Reference luma of a case with a target: in raster order the largest
+ * samples whose float squares still fit what is left of `target` until it is
+ * reached exactly, then one sample of 1 at the start of each of the next
+ * `ones` rows, zeros elsewhere. The distorted luma is 0, so a sample is its
+ * difference. */
+static inline void float_psnr_twin_fill_sum(VmafPicture *pic, const FloatPsnrTwinCase *c)
+{
+    uint64_t rest = c->target;
+    unsigned ones = c->ones;
+    for (unsigned row = 0; row < pic->h[0]; row++) {
+        const bool spent = rest == 0u;
+        for (unsigned col = 0; col < pic->w[0]; col++) {
+            unsigned v = 0u;
+            if (rest > 0u) {
+                v = float_psnr_twin_largest_fitting(rest);
+                rest -= float_psnr_twin_float_square((int)v);
+            } else if (spent && col == 0u && ones > 0u) {
+                v = 1u;
+                ones--;
+            }
+            float_psnr_twin_put(pic, 0u, row, col, v);
+        }
+    }
+}
+
+/* Noise in [lo, hi] on luma (or the target fill on the reference, zeros on
+ * the distorted picture), mid-grey on chroma (float_psnr is luma only);
  * `salt` separates the frames and the two pictures of a frame. */
 static inline int float_psnr_twin_fill(VmafPicture *pic, const FloatPsnrTwinCase *c, unsigned lo,
                                        unsigned hi, unsigned salt)
@@ -126,8 +192,11 @@ static inline int float_psnr_twin_fill(VmafPicture *pic, const FloatPsnrTwinCase
     if (err) {
         return err;
     }
+    if (c->target != 0u && salt % 16u == 1u) {
+        float_psnr_twin_fill_sum(pic, c);
+    }
     const unsigned span = hi - lo + 1u;
-    for (unsigned row = 0; row < pic->h[0]; row++) {
+    for (unsigned row = 0; row < pic->h[0] && (c->target == 0u || salt % 16u != 1u); row++) {
         for (unsigned col = 0; col < pic->w[0]; col++) {
             float_psnr_twin_put(pic, 0u, row, col,
                                 lo + (float_psnr_twin_hash(row, col, salt) % span));
@@ -207,6 +276,12 @@ static inline int float_psnr_twin_run(const FloatPsnrTwin *twin, const FloatPsnr
     }
     const int gpu_err = float_psnr_twin_scores(twin, state, c, gpu);
     const int close_err = twin->close(state);
+    if (gpu_err == -ENOSYS) {
+        /* A build without the device kernels (HIP with enable_hipcc=false). */
+        (void)fprintf(stderr, "[skip: %s kernels not built] ", twin->backend);
+        mu_skipped = 1;
+        return 1;
+    }
     const int cpu_err = gpu_err ? 0 : float_psnr_twin_scores(twin, NULL, c, cpu);
     if (gpu_err || cpu_err || close_err) {
         (void)fprintf(stderr, "\n%s: run failed (%s %d, cpu %d, close %d)\n", c->name,
@@ -257,8 +332,8 @@ static inline mu_message_t float_psnr_twin_noise_exact(const FloatPsnrTwin *twin
                                                        const char *option)
 {
     const unsigned peak = (1u << bpc) - 1u;
-    const FloatPsnrTwinCase c = {"noise", FIXTURE_W, FIXTURE_H, bpc,   0u,
-                                 peak,    0u,        peak,      false, option};
+    const FloatPsnrTwinCase c = {"noise", FIXTURE_W, FIXTURE_H, bpc, 0u, peak, 0u,
+                                 peak,    false,     option,    0u,  0u, false};
     mu_assert("the float_psnr twin is not bit-identical to the CPU on noise",
               float_psnr_twin_mismatches(twin, &c, NULL) == 0u);
     return NULL;
@@ -267,8 +342,8 @@ static inline mu_message_t float_psnr_twin_noise_exact(const FloatPsnrTwin *twin
 /* A bright 16-bit 1920x1080 pair: large samples, moderate differences. */
 static inline mu_message_t float_psnr_twin_bright_1080p_exact(const FloatPsnrTwin *twin)
 {
-    const FloatPsnrTwinCase c = {"16-bit bright", 1920u,  1080u,  16u,   56000u,
-                                 64000u,          56000u, 64000u, false, NULL};
+    const FloatPsnrTwinCase c = {"16-bit bright", 1920u, 1080u, 16u, 56000u, 64000u, 56000u,
+                                 64000u,          false, NULL,  0u,  0u,     false};
     mu_assert("the float_psnr twin is not bit-identical to the CPU on a bright 16-bit frame",
               float_psnr_twin_mismatches(twin, &c, NULL) == 0u);
     return NULL;
@@ -279,8 +354,8 @@ static inline mu_message_t float_psnr_twin_identical_exact(const FloatPsnrTwin *
                                                            double psnr_max)
 {
     const unsigned peak = (1u << bpc) - 1u;
-    const FloatPsnrTwinCase c = {"identical", FIXTURE_W, FIXTURE_H, bpc,  0u,
-                                 peak,        0u,        peak,      true, NULL};
+    const FloatPsnrTwinCase c = {"identical", FIXTURE_W, FIXTURE_H, bpc, 0u, peak, 0u,
+                                 peak,        true,      NULL,      0u,  0u, false};
     double first = 0.0;
     mu_assert("the float_psnr twin differs from the CPU on identical frames",
               float_psnr_twin_mismatches(twin, &c, &first) == 0u);
@@ -288,54 +363,88 @@ static inline mu_message_t float_psnr_twin_identical_exact(const FloatPsnrTwin *
     return NULL;
 }
 
-/* Largest distance between the CPU's score and the twin's on a frame of
- * `rows` rows whose sum of squares has passed 2^53 units.
- *
- * A row's sum is exact (at most 2^13 terms below 2^32 units). The CPU adds
- * the rows into one double; past 2^53 each add rounds by at most half a unit
- * in the last place of the sum, a relative 2^-53. The twin rounds the exact
- * sum once, by at most the same. So the two noises differ by a relative
- * (rows + 1) * 2^-53 at most, and a score of 10 * log10(peak^2 / noise) by
- * 10 / ln(10) times that, plus the roundings of the division and of log10 on
- * both sides, which four units in the last place of the score cover. */
-static inline double float_psnr_twin_bound(unsigned rows, double score)
+/* The 16-bit cases past 2^53 units and at the boundary (see the top of the
+ * file). */
+static const FloatPsnrTwinCase FLOAT_PSNR_TWIN_PAST_CASES[] = {
+    {"16-bit 3840x2160 halves past 2^53", 3840u, 2160u, 16u, 32768u, 65535u, 0u, 32767u, false,
+     NULL, 0u, 0u, true},
+    {"16-bit sum 2^53 - 1", 2048u, 1040u, 16u, 0u, 0u, 0u, 0u, false, NULL,
+     ((uint64_t)1 << 53) - 1u, 0u, false},
+    {"16-bit sum 2^53", 2048u, 1040u, 16u, 0u, 0u, 0u, 0u, false, NULL, (uint64_t)1 << 53, 0u,
+     false},
+    {"16-bit sum 2^53 and three rows of 1", 2048u, 1040u, 16u, 0u, 0u, 0u, 0u, false, NULL,
+     (uint64_t)1 << 53, 3u, true},
+};
+#define FLOAT_PSNR_TWIN_PAST_CASE_COUNT                                                            \
+    (sizeof(FLOAT_PSNR_TWIN_PAST_CASES) / sizeof(FLOAT_PSNR_TWIN_PAST_CASES[0]))
+
+/* Exact sum, and float_psnr.c's sum (the rows' exact sums added into a
+ * double, row after row), of frame 0 of the case, in units of 1 / scaler^2.
+ * Returns non-zero when a picture cannot be made. */
+static inline int float_psnr_twin_sums(const FloatPsnrTwinCase *c, uint64_t *exact, double *cpu)
 {
-    const double relative = ((double)rows + 1.0) * 0x1p-53;
-    return (10.0 / log(10.0)) * relative + 4.0 * DBL_EPSILON * fabs(score);
+    VmafPicture ref;
+    VmafPicture dis;
+    const bool target = c->target != 0u;
+    if (float_psnr_twin_fill(&ref, c, c->ref_lo, c->ref_hi, 1u)) {
+        return -1;
+    }
+    if (float_psnr_twin_fill(&dis, c, target ? 0u : c->dis_lo, target ? 0u : c->dis_hi, 8u)) {
+        (void)vmaf_picture_unref(&ref);
+        return -1;
+    }
+    *exact = 0u;
+    *cpu = 0.0;
+    for (unsigned row = 0; row < ref.h[0]; row++) {
+        const uint16_t *r =
+            (const uint16_t *)((const uint8_t *)ref.data[0] + (size_t)row * ref.stride[0]);
+        const uint16_t *d =
+            (const uint16_t *)((const uint8_t *)dis.data[0] + (size_t)row * dis.stride[0]);
+        uint64_t row_sum = 0u;
+        for (unsigned col = 0; col < ref.w[0]; col++) {
+            row_sum += float_psnr_twin_float_square((int)r[col] - (int)d[col]);
+        }
+        *exact += row_sum;
+        *cpu += (double)row_sum;
+    }
+    (void)vmaf_picture_unref(&ref);
+    (void)vmaf_picture_unref(&dis);
+    return 0;
 }
 
-/* A 16-bit 2560x1440 frame, the reference near the peak and the distorted
- * frame near zero: the sum of squares is past 2^53 units. The twin is within
- * the bound, and the frame really is in that range. */
-static inline mu_message_t float_psnr_twin_past_2_53_within_bound(const FloatPsnrTwin *twin)
+/* The case reaches its range: its target exactly (or a sum past 2^53 units),
+ * and, where the case says the CPU rounds, a CPU sum that is not the exact
+ * one (a twin returning the exact sum would fail). */
+static inline bool float_psnr_twin_reaches(const FloatPsnrTwinCase *c)
 {
-    const FloatPsnrTwinCase c = {
-        "16-bit past 2^53", 2560u, 1440u, 16u, 60000u, 65535u, 0u, 5000u, false, NULL};
-    double cpu[FLOAT_PSNR_TWIN_FRAMES] = {0.0};
-    double gpu[FLOAT_PSNR_TWIN_FRAMES] = {0.0};
-    const int run = float_psnr_twin_run(twin, &c, cpu, gpu);
-    mu_assert("the runs past 2^53 failed", run >= 0);
-    if (run > 0) {
-        return NULL;
+    uint64_t exact = 0u;
+    double cpu = 0.0;
+    if (float_psnr_twin_sums(c, &exact, &cpu)) {
+        return false;
     }
-    const double peak = 255.99609375; /* float_psnr.c at 16 bits */
-    double largest = 0.0;
-    for (unsigned frame = 0; frame < FLOAT_PSNR_TWIN_FRAMES; frame++) {
-        const double noise = peak * peak / pow(10.0, cpu[frame] / 10.0);
-        const double units = noise * (double)c.w * (double)c.h * 65536.0;
-        const double bound = float_psnr_twin_bound(c.h, cpu[frame]);
-        const double delta = fabs(cpu[frame] - gpu[frame]);
-        if (!(units >= 0x1p53) || !(delta <= bound)) {
-            (void)fprintf(
-                stderr, "\n%s frame %u: cpu=%.17g %s=%.17g delta=%.3e bound=%.3e units=2^%.3f\n",
-                c.name, frame, cpu[frame], twin->backend, gpu[frame], delta, bound, log2(units));
-        }
-        mu_assert("the frame is not past 2^53 units: the case no longer reaches that range",
-                  units >= 0x1p53);
-        mu_assert("the float_psnr twin is outside the derived bound past 2^53", delta <= bound);
-        largest = delta > largest ? delta : largest;
+    const bool range = c->target != 0u ? exact == c->target + c->ones : exact > ((uint64_t)1 << 53);
+    const bool rounds = cpu != (double)exact;
+    if (range && rounds == c->rounds) {
+        return true;
     }
-    (void)fprintf(stderr, "[past 2^53: largest distance %.3e] ", largest);
+    (void)fprintf(stderr, "\n%s: exact sum %llu (2^%.4f), CPU sum %.17g\n", c->name,
+                  (unsigned long long)exact, log2((double)exact), cpu);
+    return false;
+}
+
+/* 16-bit frames past 2^53 units and at the boundary: every frame equal to the
+ * CPU's, and every case in its range. */
+static inline mu_message_t float_psnr_twin_past_2_53_exact(const FloatPsnrTwin *twin)
+{
+    unsigned mismatches = 0u;
+    for (size_t k = 0; k < FLOAT_PSNR_TWIN_PAST_CASE_COUNT; k++) {
+        const FloatPsnrTwinCase *c = &FLOAT_PSNR_TWIN_PAST_CASES[k];
+        mu_assert("a case past 2^53 does not reach its range", float_psnr_twin_reaches(c));
+        const unsigned m = float_psnr_twin_mismatches(twin, c, NULL);
+        mu_assert("the runs past 2^53 failed", m != UINT32_MAX);
+        mismatches += m;
+    }
+    mu_assert("the float_psnr twin is not bit-identical to the CPU past 2^53", mismatches == 0u);
     return NULL;
 }
 

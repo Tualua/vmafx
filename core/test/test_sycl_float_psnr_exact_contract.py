@@ -50,8 +50,8 @@ READBACK = (
     "q.memcpy(s->h_partials, s->d_partials, (size_t)s->wg_count * sizeof(uint64_t));"
 )
 HOST_SUM = (
-    "total += s->h_partials[i];",
-    "const double noise = ((double)total / (scaler * scaler)) / n_pix;",
+    "const double total = vmaf_float_psnr_row_noise(s->h_partials, s->height, s->wg_count_x);",
+    "const double noise = (total / (scaler * scaler)) / n_pix;",
 )
 # The CPU's term and its sum, which the kernel and the host mirror.
 REFERENCE_LINES = (
@@ -113,11 +113,12 @@ def _host_failures(twin: str) -> list[str]:
     failures: list[str] = []
     collect = _function_body(code, "collect_fex_sycl")
     if any(piece not in collect for piece in HOST_SUM):
-        failures.append("the host does not add the integer sums and divide the exact total")
-    if re.search(r"\bdouble total\b", collect):
-        failures.append("the host adds the work-group sums in floating point")
+        failures.append("the host does not add the rows' exact sums as the CPU does (ADR-1499)")
     if READBACK not in code:
         failures.append("the read-back is not one uint64 per work-group")
+    rows = re.search(r"FPSNR_WG_X = 256;", code) and re.search(r"FPSNR_WG_Y = 1;", code)
+    if not rows:
+        failures.append("a work-group is not a segment of one row (ADR-1499)")
     return failures
 
 
@@ -164,13 +165,14 @@ class FloatPsnrSyclExactContract(unittest.TestCase):
         failures = self._edited("twin", "        uint64_t total = 0u;", "        float total = 0.0f;")
         self._assert_detected(failures, "added in floating point")
 
-    def test_float_host_sum_is_detected(self) -> None:
+    def test_frame_total_instead_of_rows_is_detected(self) -> None:
+        # The pre-ADR-1499 host: every work-group added into one exact total.
         failures = self._edited(
             "twin",
-            "    uint64_t total = 0u;\n    for (unsigned i = 0; i < s->wg_count; i++) {",
-            "    double total = 0.0;\n    for (unsigned i = 0; i < s->wg_count; i++) {",
+            "vmaf_float_psnr_row_noise(s->h_partials, s->height, s->wg_count_x);",
+            "vmaf_float_psnr_row_noise(s->h_partials, 1u, s->wg_count);",
         )
-        self._assert_detected(failures, "host adds the work-group sums in floating point")
+        self._assert_detected(failures, "rows' exact sums")
 
     def test_scaled_difference_is_detected(self) -> None:
         # The square of a scaled difference is the same value; the pin is
@@ -205,10 +207,10 @@ class FloatPsnrSyclExactContract(unittest.TestCase):
     def test_host_division_in_another_order_is_detected(self) -> None:
         failures = self._edited(
             "twin",
-            "    const double noise = ((double)total / (scaler * scaler)) / n_pix;",
-            "    const double noise = (double)total / (scaler * scaler * n_pix);",
+            "    const double noise = (total / (scaler * scaler)) / n_pix;",
+            "    const double noise = total / (scaler * scaler * n_pix);",
         )
-        self._assert_detected(failures, "divide the exact total")
+        self._assert_detected(failures, "rows' exact sums")
 
     def test_narrow_readback_is_detected(self) -> None:
         failures = self._edited(
@@ -217,6 +219,13 @@ class FloatPsnrSyclExactContract(unittest.TestCase):
             "s->d_partials, (size_t)s->wg_count * sizeof(float));",
         )
         self._assert_detected(failures, "one uint64 per work-group")
+
+    def test_square_groups_are_detected(self) -> None:
+        # The pre-ADR-1499 geometry: 16x16 work-groups mix rows.
+        failures = self._edited(
+            "twin", "static constexpr int FPSNR_WG_Y = 1;", "static constexpr int FPSNR_WG_Y = 16;"
+        )
+        self._assert_detected(failures, "segment of one row")
 
     def test_changed_reference_is_detected(self) -> None:
         failures = self._edited(

@@ -1,2 +1,2 @@
-adr: ADR-1440
-evidence: gfx1036, --precision max: 178 of 178 frames (Netflix 576x324 at 8 to 16 bit and 4:2:2, 1080p checkerboards, Sparks 10 bit, BBB 4K 48 frames, full-range noise at 8 to 16 bit, bright 16 bit 1080p) identical to --backend cpu; uncapped=true too.
+adr: ADR-1440, ADR-1499
+evidence: gfx1036, --precision max: 178 of 178 frames (Netflix 576x324 at 8 to 16 bit and 4:2:2, 1080p checkerboards, Sparks 10 bit, BBB 4K 48 frames, full-range noise at 8 to 16 bit, bright 16 bit 1080p) identical to --backend cpu; uncapped=true too; past 2^53 units of 2^-16 the CPU's sum of its rows (ADR-1499): 8 of 8 frames of 16-bit 4K half-range noise, 16 of 16 of 16-bit 4K full-range noise, 96 of 96 of BBB 4K widened to 16 bit three ways identical.

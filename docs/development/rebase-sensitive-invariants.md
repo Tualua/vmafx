@@ -815,6 +815,12 @@ linked AGENTS.md before resolving conflicts.
   forms or adds its terms changes the kernel in the same PR.
   `core/test/test_cuda_float_psnr_exact_contract.py` guards it without a
   device, `test_cuda_float_psnr_parity` (`==`) on one.
+  Each block / work-group lies in ONE row (256 x 1), and the host adds each
+  row's exact sum into a double in row order with
+  `core/src/feature/float_psnr_rows.h` ([ADR-1499](../adr/1499-float-psnr-twins-cpu-row-order.md)),
+  as `float_psnr.c` adds its rows, so the twin rounds where the CPU rounds
+  past 2^53 units; a sync must not bring back 16x16 blocks or a frame total
+  rounded once. The HIP twin (ADR-1440) follows the same layout and helper.
 
 - **`vif_cuda` reads the CPU's log2 table ([ADR-1462](../adr/1462-cuda-vif-reads-host-log2-table.md))**:
   `core/src/feature/cuda/integer_vif/vif_statistics.cuh` holds the table as
@@ -837,6 +843,12 @@ linked AGENTS.md before resolving conflicts.
   `float_psnr.c` forms or adds its terms changes the kernel in the same PR.
   `core/test/test_sycl_float_psnr_exact_contract.py` guards it without a
   device, `test_sycl_float_psnr_parity` (`==`) on one.
+  Each block / work-group lies in ONE row (256 x 1), and the host adds each
+  row's exact sum into a double in row order with
+  `core/src/feature/float_psnr_rows.h` ([ADR-1499](../adr/1499-float-psnr-twins-cpu-row-order.md)),
+  as `float_psnr.c` adds its rows, so the twin rounds where the CPU rounds
+  past 2^53 units; a sync must not bring back 16x16 blocks or a frame total
+  rounded once. The HIP twin (ADR-1440) follows the same layout and helper.
 - **`float_moment_cuda` adds the CPU's float squares ([ADR-1453](../adr/1453-cuda-float-moment-cpu-float-squares.md))**:
   the 16bpc kernel of `core/src/feature/cuda/integer_moment/moment_score.cu`
   adds `moment_float_square()`, one `__fmul_rn()` product of the sample with

@@ -20,20 +20,19 @@
  *
  *  Algorithm:
  *    - Per-pixel float (ref - dis)^2, as float_psnr.c forms it, added per
- *      16x16 block as an integer in units of 1 / scaler^2
- *      (scaler = 2^(bpc - 8)): two uint32 per block, the low and the high
- *      half of the sum.
- *    - Host adds the block sums in double:
+ *      block of FPSNR_BX pixels of one row as an integer in units of
+ *      1 / scaler^2 (scaler = 2^(bpc - 8)): one uint64 per block.
+ *    - Host forms each row's exact sum and adds the rows into a double in
+ *      the CPU's order (feature/float_psnr_rows.h, ADR-1499):
  *        noise = sum / scaler^2 / (w * h)
  *        score = 10 * log10(peak^2 / max(noise, 1e-10)), clamped.
  *
- *  The score is the CPU extractor's bit for bit (ADR-1440): the device's
- *  integer sums and the host's sum of them are exact, as the CPU's row sums
- *  of float terms are, so both sides hold the exact sum of the same terms.
- *  That holds while the frame sum stays below 2^53 units: always up to 12
- *  bits, and at 16 bits up to a mean squared error of 2^37 / (w * h) on the
- *  8-bit scale (16570 at 3840x2160, a PSNR below 6 dB), beyond which the
- *  CPU's own running sum rounds in sequence.
+ *  The score is the CPU extractor's bit for bit (ADR-1440, ADR-1499): the
+ *  device's integer sums and the host's row sums of them are exact, as the
+ *  CPU's row sums of float terms are, and the rows are added into a double
+ *  in the CPU's order, so the adds that round past 2^53 units (16 bits only,
+ *  a mean squared error above 2^37 / (w * h) on the 8-bit scale) round as
+ *  the CPU's do.
  */
 
 #include <errno.h>
@@ -56,6 +55,7 @@
 #include "../../hip/kernel_template.h"
 #include "../../hip/picture_hip.h"
 #include "../../hip/shared_frame.h"
+#include "../float_psnr_rows.h"
 #include "float_psnr_hip.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -92,11 +92,10 @@ static int hip_err(hipError_t rc)
 /* Private state                                                       */
 /* ------------------------------------------------------------------ */
 
-#define FPSNR_BX 16
-#define FPSNR_BY 16
-/* uint32 values the kernel writes per block: the low and the high half of
- * the block's sum (float_psnr_score.hip). */
-#define FPSNR_PARTIALS_PER_BLOCK 2u
+/* One block per FPSNR_BX pixels of one row, one uint64 sum per block
+ * (float_psnr_score.hip, ADR-1499). */
+#define FPSNR_BX 256u
+#define FPSNR_BY 1u
 
 typedef struct FloatPsnrStateHip {
     VmafHipKernelLifecycle lc;
@@ -172,7 +171,7 @@ static int float_psnr_hip_resolve_peak_clamp(FloatPsnrStateHip *s, unsigned bpc)
 /* Size of the block-sum buffer on the device and on the host. */
 static size_t float_psnr_hip_partials_bytes(const FloatPsnrStateHip *s)
 {
-    return (size_t)s->wg_count * FPSNR_PARTIALS_PER_BLOCK * sizeof(uint32_t);
+    return (size_t)s->wg_count * sizeof(uint64_t);
 }
 
 #ifdef HAVE_HIPCC
@@ -388,14 +387,13 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
     if (err != 0)
         return err;
 
-    /* Exact: every block sum is an integer below 2^40 and so is their sum
-     * below 2^53 (ADR-1440). The unit is 1 / scaler^2. */
-    const uint32_t *partials = (const uint32_t *)s->rb.host_pinned;
-    double total = 0.0;
-    for (size_t i = 0; i < s->wg_count; i++) {
-        total += (double)partials[FPSNR_PARTIALS_PER_BLOCK * i] +
-                 (65536.0 * (double)partials[(FPSNR_PARTIALS_PER_BLOCK * i) + 1u]);
-    }
+    /* Every block sum is the exact integer sum of a segment of one row, in
+     * units of 1 / scaler^2 (ADR-1440); the CPU's sum is those rows' exact
+     * sums added row after row into a double, past 2^53 units too
+     * (ADR-1499). */
+    const unsigned per_row = (s->frame_w + FPSNR_BX - 1u) / FPSNR_BX;
+    const double total =
+        vmaf_float_psnr_row_noise((const uint64_t *)s->rb.host_pinned, s->frame_h, per_row);
     const double scaler = (double)(1u << (s->bpc - 8u));
 
     const double n_pix = (double)s->frame_w * (double)s->frame_h;

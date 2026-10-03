@@ -173,16 +173,15 @@ sum is. Measured on a gfx1036, 178 of 178 frames from 480x270 to 3840x2160
 are identical at `--precision max`. Before 2026-10-01 the twin added in
 single precision, which matched the CPU on real clips and was up to 7.6e-8 dB
 off on high-bit-depth input whose differences are large (full-range noise).
-At 16 bits the equality holds up to a mean squared error of
+At 16 bits the CPU's own sum rounds once the mean squared error passes
 2^37 / (width x height) on the 8-bit scale (16570 at 3840x2160, a PSNR below
-6 dB); beyond that the CPU's own sum rounds.
+6 dB); the twins return its bits there too (see below).
 
 `float_psnr_sycl` does the same since
 [ADR-1450](../adr/1450-sycl-float-psnr-exact-block-sums.md): on an Arc A380,
 288 of 288 frames from 576x324 to 3840x2160 at 8 to 16 bits are identical at
 `--precision max` (269 before; up to 7.4e-8 dB off on full-range
-high-bit-depth content). Past the 16-bit limit above it stays within
-7e-13 dB of the CPU.
+high-bit-depth content).
 
 So does `float_psnr_cuda` since
 [ADR-1455](../adr/1455-cuda-float-psnr-exact-block-sums.md). Measured on an
@@ -208,6 +207,29 @@ load average of 7 to 10:
 | 3840x2160, 8 bit | 1.91 ms | 1.90 ms | -0.15 ms |
 | 1920x1080, 16 bit | 1.02 ms | 0.97 ms | +0.01 ms |
 | 3840x2160, 16 bit | 4.64 ms | 4.37 ms | -0.24 ms |
+
+#### Past 2^53 units (2026-10-03)
+
+The CPU adds each row's squared differences, which is exact, and the rows
+into one `double`, which rounds once the sum passes 2^53 units of
+1 / scaler^2: a 16-bit frame whose mean squared error times its pixel count
+passes 2^37 on the 8-bit scale. Since
+[ADR-1499](../adr/1499-float-psnr-twins-cpu-row-order.md) the CUDA, SYCL and
+HIP twins return the CPU's bits there too: each block or work-group of the
+kernel is a segment of one row, and the host adds each row's exact sum into a
+`double` in the CPU's order (`core/src/feature/float_psnr_rows.h`). Before,
+they added every block of the frame into one exact total and rounded it once.
+Measured at `--precision max` against `--backend cpu`, frames identical, on
+an RTX 4090, an Arc A380 and a gfx1036 alike:
+
+| Fixture | Before | Now |
+|---|---|---|
+| 16-bit 3840x2160 noise, reference in the upper half of the range and distorted frame in the lower half, 8 frames | 0 of 8 (CUDA, 6.2e-15 dB; HIP, 3.3e-13 dB), 1 of 8 (SYCL) | 8 of 8 |
+| 16-bit 3840x2160 noise, 16 frames; BBB 3840x2160 widened to 16 bits three ways, 32 frames each | identical | identical |
+
+The frame time is unchanged (4.12 and 4.12 ms per 16-bit 3840x2160 frame on
+the RTX 4090, 7.16 and 7.06 ms on the A380, 10.9 and 9.3 ms on the gfx1036,
+before and after, pictures preloaded, medians of 5 interleaved runs).
 
 ## Output
 

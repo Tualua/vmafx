@@ -6266,6 +6266,7 @@
         "core/test/test_float_ms_ssim_coverage.c": 1,
         "core/test/test_float_ms_ssim_min_dim.c": 1,
         "core/test/test_float_psnr_coverage.c": 1,
+        "core/test/test_float_psnr_rows.c": 1,
         "core/test/test_float_ssim_coverage.c": 1,
         "core/test/test_float_vif_coverage.c": 1,
         "core/test/test_float_vif_device_math.c": 1,
@@ -9105,7 +9106,7 @@
         "core/test/float_psnr_twin_parity.h": 1,
         "core/test/meson.build": 2,
         "core/test/test_hip_float_psnr_exact_contract.py": 1,
-        "core/test/test_hip_float_psnr_parity.c": 1,
+        "core/test/test_hip_float_psnr_parity.c": 3,
         "core/test/test_metal_float_psnr_parity.c": 1,
         "scripts/ci/exact_twins.d/float_psnr.hip": 1
       },
@@ -9764,6 +9765,29 @@
         "scripts/ci/exact_twins.d/float_moment.hip": 2
       },
       "target": "1497-float-moment-twins-cpu-sum-past-2-53.md"
+    },
+    "1499": {
+      "sites": {
+        "core/src/feature/cuda/float_psnr/float_psnr_score.cu": 1,
+        "core/src/feature/cuda/float_psnr_cuda.c": 2,
+        "core/src/feature/cuda/float_psnr_cuda.h": 1,
+        "core/src/feature/float_psnr_rows.h": 1,
+        "core/src/feature/hip/float_psnr/float_psnr_score.hip": 2,
+        "core/src/feature/hip/float_psnr_hip.c": 4,
+        "core/src/feature/sycl/float_psnr_sycl.cpp": 3,
+        "core/test/float_psnr_twin_parity.h": 1,
+        "core/test/meson.build": 1,
+        "core/test/test_cuda_float_psnr_exact_contract.py": 5,
+        "core/test/test_cuda_float_psnr_parity.c": 1,
+        "core/test/test_float_psnr_rows.c": 1,
+        "core/test/test_hip_float_psnr_exact_contract.py": 3,
+        "core/test/test_hip_float_psnr_parity.c": 2,
+        "core/test/test_metal_float_psnr_parity.c": 1,
+        "core/test/test_sycl_float_psnr_exact_contract.py": 4,
+        "core/test/test_sycl_float_psnr_parity.c": 1,
+        "scripts/ci/exact_twins.d/float_psnr.hip": 2
+      },
+      "target": "1499-float-psnr-twins-cpu-row-order.md"
     }
   },
   "retired": {

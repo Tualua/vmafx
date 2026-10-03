@@ -7,234 +7,140 @@
 
 /*
  * float_psnr CPU vs. HIP: the twin returns the CPU's score bit for bit
- * (ADR-1440; first added as a places=4 parity test, ADR-0945).
+ * (ADR-1440, past 2^53 units ADR-1499; first added as a places=4 parity
+ * test, ADR-0945).
  *
  * float_psnr.c forms each squared difference in float and adds the terms in
- * double, row by row. Every term is a float, so that sum is exact, and a twin
- * returns the same score exactly when its own sum is exact. `float_psnr_hip`
- * added each 16x16 block in fp32. At 8 bits a block of integer squares below
- * 2^16 fits 24 bits and the sum was exact; at 10, 12 and 16 bits the terms
- * are multiples of 1/16, 1/256 and 1/65536, and the block sum rounded as soon
- * as the block's rms difference reached 256 code values. The block sums are
- * integers now, in units of the smallest term.
+ * double, row by row. `float_psnr_hip` added each 16x16 block in fp32, which
+ * rounded at 10, 12 and 16 bits once a block's rms difference reached 256
+ * code values (ADR-1440: integer block sums), and then added the blocks of
+ * the whole frame, which past 2^53 units is not the CPU's sum of its rows
+ * (ADR-1499: one block per row segment, the rows' exact sums added in the
+ * CPU's order).
  *
- * Natural content does not reach that: its differences are small. The
- * fixture here is noise, independent for the reference and the distorted
- * frame and over the full range of the bit depth, so every block's sum of
- * squares is far above 2^24 units. Each case scores two frames at one bit
- * depth and compares with ==. On the fp32 twin the 8-bit case passes and the
- * 10-bit case fails (6e-9 dB at 256x144 and at 960x540); on 576x324 noise it
- * was 2.5e-8 dB off at 12 bits and 1.8e-8 at 16.
+ * The fixtures, the comparison and the cases are float_psnr_twin_parity.h's,
+ * shared with the CUDA and SYCL tests. On the twin of ADR-1440 every case
+ * passes except the cases past 2^53 that the CPU rounds.
  *
  * Skip behaviour: without a HIP device, or on a build without the device
  * kernels (-ENOSYS), a case reports the skip and the run exits 77.
  */
 
-#include <errno.h>
-#include <math.h>
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
+#ifdef FIXTURE_W
+/* The `_large` variant re-runs the noise cases at 960x540. The cases past
+ * 2^53 have their own sizes and run in the default binary only. */
+#define FLOAT_PSNR_TWIN_LARGE_VARIANT 1
+#endif
 
-#include "test.h"
-
-#include "feature/feature_extractor.h"
-#include "libvmaf/libvmaf.h"
 #include "libvmaf/libvmaf_hip.h"
-#include "libvmaf/picture.h"
 
-/* NOLINTBEGIN(modernize-use-nullptr): this is a
- * C23 translation unit, but the required MSVC C lane does not provide the C
- * nullptr spelling clang-tidy proposes. Keep the portable C API form under
- * ADR-1138. */
+#include "float_psnr_twin_parity.h"
 
-#ifndef FIXTURE_W
-#define FIXTURE_W 256u
-#endif
-#ifndef FIXTURE_H
-#define FIXTURE_H 144u
-#endif
+/* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
+ * C23, where clang-tidy proposes `nullptr`, but the required MSVC C build does
+ * not provide that keyword. Preserve the portable C spelling. ADR-1138. */
 
-#define NUM_FRAMES 2u
-
-/* lowbias32 hash of the position, the frame and the picture: stateless, so
- * both runs see the same pictures. */
-static uint32_t sample_hash(unsigned row, unsigned col, unsigned salt)
-{
-    uint32_t x = ((uint32_t)row << 16) ^ (uint32_t)col ^ (salt * 0x9E3779B9u);
-    x ^= x >> 16;
-    x *= 0x7FEB352Du;
-    x ^= x >> 15;
-    x *= 0x846CA68Bu;
-    x ^= x >> 16;
-    return x;
-}
-
-static void put_sample(VmafPicture *pic, unsigned plane, unsigned row, unsigned col, unsigned v)
-{
-    uint8_t *line = (uint8_t *)pic->data[plane] + ((size_t)row * (size_t)pic->stride[plane]);
-    if (pic->bpc <= 8u) {
-        line[col] = (uint8_t)v;
-    } else {
-        ((uint16_t *)line)[col] = (uint16_t)v;
-    }
-}
-
-/* Full-range noise on every plane; `salt` separates the frames and the two
- * pictures of a frame. */
-static int fill_picture(VmafPicture *pic, unsigned bpc, unsigned salt)
-{
-    const int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, bpc, FIXTURE_W, FIXTURE_H);
-    if (err) {
-        return err;
-    }
-    for (unsigned p = 0; p < 3u; p++) {
-        for (unsigned row = 0; row < pic->h[p]; row++) {
-            for (unsigned col = 0; col < pic->w[p]; col++) {
-                put_sample(pic, p, row, col, sample_hash(row, col, salt + p) >> (32u - bpc));
-            }
-        }
-    }
-    return 0;
-}
-
-/* Frame `frame` of the fixture through `vmaf`, which takes both pictures. */
-static int feed_frame(VmafContext *vmaf, unsigned bpc, unsigned frame)
-{
-    VmafPicture ref;
-    VmafPicture dist;
-    int err = fill_picture(&ref, bpc, (frame * 16u) + 1u);
-    if (err) {
-        return err;
-    }
-    err = fill_picture(&dist, bpc, (frame * 16u) + 8u);
-    if (err) {
-        (void)vmaf_picture_unref(&ref);
-        return err;
-    }
-    return vmaf_read_pictures(vmaf, &ref, &dist, frame);
-}
-
-/* NUM_FRAMES frames through the CPU `float_psnr` (`hip_state` NULL) or the
- * twin, and the score of every frame read into `out`. Returns the first
- * error; -ENOSYS is the scaffold build. */
-static int float_psnr_scores(VmafHipState *hip_state, unsigned bpc, double *out)
-{
-    const VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
-    VmafContext *vmaf = NULL;
-    int err = vmaf_init(&vmaf, cfg);
-    if (!err && hip_state) {
-        err = vmaf_hip_import_state(vmaf, hip_state);
-    }
-    if (!err) {
-        err = vmaf_use_feature(vmaf, hip_state ? "float_psnr_hip" : "float_psnr", NULL);
-    }
-    for (unsigned frame = 0; frame < NUM_FRAMES && !err; frame++) {
-        err = feed_frame(vmaf, bpc, frame);
-    }
-    if (!err) {
-        err = vmaf_read_pictures(vmaf, NULL, NULL, 0);
-    }
-    for (unsigned frame = 0; frame < NUM_FRAMES && !err; frame++) {
-        err = vmaf_feature_score_at_index(vmaf, "float_psnr", &out[frame], frame);
-    }
-    const int closed = vmaf ? vmaf_close(vmaf) : 0;
-    return err ? err : closed;
-}
-
-/* The device, or NULL with the reason printed when there is none. */
-static VmafHipState *hip_device(void)
+static int twin_open(void **state)
 {
     VmafHipState *hip_state = NULL;
     const VmafHipConfiguration hip_cfg = {.device_index = -1};
-    if (vmaf_hip_state_init(&hip_state, hip_cfg) != 0 || hip_state == NULL) {
-        (void)fprintf(stderr, "[skip: no HIP device] ");
-        mu_skipped = 1;
-        return NULL;
-    }
-    return hip_state;
+    const int err = vmaf_hip_state_init(&hip_state, hip_cfg);
+    *state = hip_state;
+    return err;
 }
 
-/* Frames at `bpc` bits whose HIP score is not the CPU's, each one reported;
- * UINT32_MAX when a run failed. A skipped HIP leg counts as 0. */
-static unsigned exact_mismatches(unsigned bpc)
+static int twin_import(VmafContext *vmaf, void *state)
 {
-    double cpu[NUM_FRAMES] = {0.0};
-    double gpu[NUM_FRAMES] = {0.0};
-    VmafHipState *hip_state = hip_device();
-    if (!hip_state) {
-        return 0u;
-    }
-    const int gpu_err = float_psnr_scores(hip_state, bpc, gpu);
-    vmaf_hip_state_free(&hip_state);
-    if (gpu_err == -ENOSYS) {
-        (void)fprintf(stderr, "[skip: HIP kernels not built (enable_hipcc=false)] ");
-        mu_skipped = 1;
-        return 0u;
-    }
-    const int cpu_err = gpu_err ? 0 : float_psnr_scores(NULL, bpc, cpu);
-    if (gpu_err || cpu_err) {
-        (void)fprintf(stderr, "\n%u-bit: run failed (hip %d, cpu %d)\n", bpc, gpu_err, cpu_err);
-        return UINT32_MAX;
-    }
-    unsigned mismatches = 0u;
-    for (unsigned frame = 0; frame < NUM_FRAMES; frame++) {
-        if (isfinite(cpu[frame]) && cpu[frame] == gpu[frame]) {
-            continue;
-        }
-        mismatches++;
-        (void)fprintf(stderr, "\n%ux%u %u-bit frame %u: cpu=%.17g hip=%.17g delta=%.3e\n",
-                      FIXTURE_W, FIXTURE_H, bpc, frame, cpu[frame], gpu[frame],
-                      fabs(cpu[frame] - gpu[frame]));
-    }
-    return mismatches;
+    return vmaf_hip_import_state(vmaf, (VmafHipState *)state);
 }
+
+static int twin_close(void *state)
+{
+    VmafHipState *hip_state = (VmafHipState *)state;
+    vmaf_hip_state_free(&hip_state);
+    return 0;
+}
+
+static const FloatPsnrTwin twin = {
+    .extractor = "float_psnr_hip",
+    .backend = "HIP",
+    .open = twin_open,
+    .import = twin_import,
+    .close = twin_close,
+};
 
 static char *test_float_psnr_hip_registered(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_psnr_hip");
-    mu_assert("float_psnr_hip extractor must be registered", fex != NULL);
-    mu_assert("float_psnr_hip name matches", !strcmp(fex->name, "float_psnr_hip"));
-    return NULL;
+    return float_psnr_twin_registered(&twin);
 }
 
 static char *test_float_psnr_8bit_exact(void)
 {
-    mu_assert("float_psnr_hip is not bit-identical to the CPU at 8 bits",
-              exact_mismatches(8u) == 0u);
-    return NULL;
+    return float_psnr_twin_noise_exact(&twin, 8u, NULL);
 }
 
 static char *test_float_psnr_10bit_exact(void)
 {
-    mu_assert("float_psnr_hip is not bit-identical to the CPU at 10 bits",
-              exact_mismatches(10u) == 0u);
-    return NULL;
+    return float_psnr_twin_noise_exact(&twin, 10u, NULL);
 }
 
 static char *test_float_psnr_12bit_exact(void)
 {
-    mu_assert("float_psnr_hip is not bit-identical to the CPU at 12 bits",
-              exact_mismatches(12u) == 0u);
-    return NULL;
+    return float_psnr_twin_noise_exact(&twin, 12u, NULL);
 }
 
 static char *test_float_psnr_16bit_exact(void)
 {
-    mu_assert("float_psnr_hip is not bit-identical to the CPU at 16 bits",
-              exact_mismatches(16u) == 0u);
+    return float_psnr_twin_noise_exact(&twin, 16u, NULL);
+}
+
+static char *test_float_psnr_10bit_uncapped_exact(void)
+{
+    return float_psnr_twin_noise_exact(&twin, 10u, "uncapped");
+}
+
+static char *test_float_psnr_16bit_bright_exact(void)
+{
+    return float_psnr_twin_bright_1080p_exact(&twin);
+}
+
+static char *test_float_psnr_identical_8bit(void)
+{
+    return float_psnr_twin_identical_exact(&twin, 8u, 60.0);
+}
+
+static char *test_float_psnr_identical_16bit(void)
+{
+    return float_psnr_twin_identical_exact(&twin, 16u, 108.0);
+}
+
+#ifndef FLOAT_PSNR_TWIN_LARGE_VARIANT
+static char *test_float_psnr_16bit_past_2_53_exact(void)
+{
+    return float_psnr_twin_past_2_53_exact(&twin);
+}
+#endif
+
+static char *run_noise_cases(void)
+{
+    mu_run_test(test_float_psnr_8bit_exact);
+    mu_run_test(test_float_psnr_10bit_exact);
+    mu_run_test(test_float_psnr_12bit_exact);
+    mu_run_test(test_float_psnr_16bit_exact);
+    mu_run_test(test_float_psnr_10bit_uncapped_exact);
     return NULL;
 }
 
 char *run_tests(void)
 {
     mu_run_test(test_float_psnr_hip_registered);
-    mu_run_test(test_float_psnr_8bit_exact);
-    mu_run_test(test_float_psnr_10bit_exact);
-    mu_run_test(test_float_psnr_12bit_exact);
-    mu_run_test(test_float_psnr_16bit_exact);
+    mu_assert_msg(run_noise_cases());
+    mu_run_test(test_float_psnr_16bit_bright_exact);
+    mu_run_test(test_float_psnr_identical_8bit);
+    mu_run_test(test_float_psnr_identical_16bit);
+#ifndef FLOAT_PSNR_TWIN_LARGE_VARIANT
+    mu_run_test(test_float_psnr_16bit_past_2_53_exact);
+#endif
     return NULL;
 }
 

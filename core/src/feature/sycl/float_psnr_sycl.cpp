@@ -14,9 +14,12 @@
  *  1 / scaler^2, so that sum is exact while it is below 2^53 of those
  *  units: always up to 12 bits, and at 16 bits while the mean squared error
  *  times the pixel count is below 2^37 on the 8-bit scale. The kernel forms
- *  the same term as an integer in that unit (fpsnr_pixel_noise()) and the
- *  work-groups and the host add integers, so the twin's sum is exact at
- *  every bit depth and equal to the CPU's wherever the CPU's is exact.
+ *  the same term as an integer in that unit (fpsnr_pixel_noise()), one
+ *  work-group per FPSNR_WG_X pixels of one row adds its terms as an integer,
+ *  and the host forms each row's exact sum and adds the rows into a double
+ *  in the CPU's order (feature/float_psnr_rows.h, ADR-1499), so the twin's
+ *  sum is the CPU's at every bit depth, past 2^53 units included, where the
+ *  CPU's adds of the rows round.
  */
 
 #include <sycl/sycl.hpp>
@@ -37,6 +40,7 @@
 #include "log.h"
 #include "picture.h"
 #include "sycl/common.h"
+#include "../float_psnr_rows.h"
 
 namespace
 {
@@ -80,8 +84,10 @@ struct FloatPsnrStateSycl {
 namespace
 {
 
-static constexpr int FPSNR_WG_X = 16;
-static constexpr int FPSNR_WG_Y = 16;
+/* One work-group per FPSNR_WG_X pixels of one row, so that each group sum
+ * is a segment of a single row (ADR-1499). */
+static constexpr int FPSNR_WG_X = 256;
+static constexpr int FPSNR_WG_Y = 1;
 
 struct FpsnrOutput {
     uint64_t *partials;
@@ -366,17 +372,13 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     }
     qptr->wait();
 
-    /* The exact sum of the terms in units of 1 / scaler^2: below 2^56 for
-     * any frame (a term is below 2^32). The CPU's double sum of the same
-     * terms is exact below 2^53 units, where this conversion is exact too;
-     * dividing by scaler^2, a power of two, is exact. */
-    uint64_t total = 0u;
-    for (unsigned i = 0; i < s->wg_count; i++) {
-        total += s->h_partials[i];
-    }
+    /* The CPU's sum in units of 1 / scaler^2: each row's exact sum from its
+     * groups, the rows added into a double in order (ADR-1499); dividing by
+     * scaler^2, a power of two, is exact. */
+    const double total = vmaf_float_psnr_row_noise(s->h_partials, s->height, s->wg_count_x);
     const double scaler = fpsnr_scaler(s->bpc);
     const double n_pix = (double)s->width * (double)s->height;
-    const double noise = ((double)total / (scaler * scaler)) / n_pix;
+    const double noise = (total / (scaler * scaler)) / n_pix;
     /* Match CPU float_psnr.c — a zero-noise pair reports psnr_max as the
      * infinity sentinel; the truncation at psnr_max applies only when
      * `uncapped` is false. See ADR-1193 / T-UPSTREAM-1109. */

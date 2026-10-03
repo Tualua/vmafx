@@ -7,9 +7,10 @@
  *  part 3b — ADR-0192 / ADR-0195). CUDA twin of float_psnr_vulkan.
  *
  *  The kernel adds float_psnr.c's terms, the float squares of the sample
- *  differences, per 16x16 block as an integer in units of 1 / scaler^2
- *  (scaler = 2^(bpc - 8)): one uint64 per block. The host adds the blocks and
- *  concludes as the CPU does (ADR-1455):
+ *  differences, per block of FPSNR_BX pixels of one row as an integer in
+ *  units of 1 / scaler^2 (scaler = 2^(bpc - 8)): one uint64 per block. The
+ *  host forms each row's exact sum from its blocks, adds the rows in order
+ *  as the CPU does (ADR-1455, ADR-1499) and concludes:
  *        noise = sum / scaler^2 / (w * h)
  *        score = 10 * log10(peak^2 / max(noise, 1e-10)), clamped.
  */
@@ -28,6 +29,7 @@
 
 #include "cuda/float_psnr_cuda.h"
 #include "cuda/kernel_template.h"
+#include "feature/float_psnr_rows.h"
 #include "cuda_helper.cuh"
 #include "picture.h"
 #include "picture_cuda.h"
@@ -94,9 +96,6 @@ static const VmafOption options[2] = {
         .default_val.b = false,
     },
 };
-
-#define FPSNR_BX 16
-#define FPSNR_BY 16
 
 /* ------------------------------------------------------------------ */
 /* float_psnr_init_unwind - the single teardown path for init_fex_cuda.
@@ -299,23 +298,19 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
 /* float_psnr_noise - the frame's mean squared difference, as float_psnr.c's.
  *
  * The block sums are exact integers of the CPU's own terms in units of
- * 1 / scaler^2, so their uint64 sum is the exact sum of the terms, which is
- * what the CPU's running double holds while it is below 2^53 units (ADR-1455).
+ * 1 / scaler^2, each block a segment of one row (ADR-1455). The CPU's rows
+ * are those rows' exact sums, added row after row into a double, which
+ * vmaf_float_psnr_row_noise() repeats, past 2^53 units included (ADR-1499).
  * Dividing by scaler^2, a power of two, and by the pixel count are the CPU's
- * operations. Past 2^53 units (16 bits only: a mean squared error of
- * 2^37 / (w * h) on the 8-bit scale, a PSNR below 6 dB at 3840x2160) the CPU
- * rounds as it adds its rows and the conversion below rounds once;
- * test_cuda_float_psnr_parity holds the derived bound there.
+ * operations.
  */
 static double float_psnr_noise(const FloatPsnrStateCuda *s)
 {
-    const uint64_t *partials = s->rb.host_pinned;
-    uint64_t total = 0u;
-    for (unsigned i = 0; i < s->wg_count; i++)
-        total += partials[i];
+    const unsigned per_row = (s->frame_w + FPSNR_BX - 1u) / FPSNR_BX;
+    const double total = vmaf_float_psnr_row_noise(s->rb.host_pinned, s->frame_h, per_row);
     const double scaler = (double)(1u << (s->bpc - 8u));
     const double n_pix = (double)s->frame_w * (double)s->frame_h;
-    return ((double)total / (scaler * scaler)) / n_pix;
+    return (total / (scaler * scaler)) / n_pix;
 }
 
 static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
