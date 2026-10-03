@@ -1,7 +1,8 @@
 <!-- markdownlint-disable MD036 MD060 -->
 # ADR-0937: mkdocs ADR nav — per-hundred bucket layout + auto by-tag indexes
 
-- **Status**: Accepted
+- **Status**: Accepted; its sidebar enumeration of ADR and tag pages is
+  superseded by [ADR-1510](1510-adr-nav-collapse-behind-index.md)
 - **Date**: 2026-05-31
 - **Deciders**: Lusoris
 - **Tags**: docs, mkdocs, adr, navigation, automation, fork-local

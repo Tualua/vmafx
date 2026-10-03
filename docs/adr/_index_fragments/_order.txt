@@ -1210,3 +1210,5 @@
 1505-intel-gpu-tester-image
 1506-praetor-pin-move-markdownlint-braces
 1509-nvidia-gpu-tester-image
+1508-docs-site-toolchain-and-charts
+1510-adr-nav-collapse-behind-index
