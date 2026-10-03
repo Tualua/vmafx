@@ -278,6 +278,7 @@ def minimal_report(**overrides) -> dict:
         "metal_gate": {"status": "no_device"},
         "unit_tests": suite,
         "golden_gate": suite,
+        "gpu": {"status": "not_applicable"},
     }
     report.update(overrides)
     return report
@@ -378,15 +379,20 @@ def test_main_fails_closed_when_binary_differs_from_build(tmp_path, capsys) -> N
 
 
 def test_suggested_file_name_slug_and_boundary() -> None:
-    def name(model: str) -> str:
+    def name(model: str, backend: str | None = None) -> str:
         host = {"cpu_model": model}
         return hw_report.suggested_file_name(
-            {"host": host, "generated_utc": "2026-10-03T10:00:00Z"}
-        )
+            {"host": host, "generated_utc": "2026-10-03T10:00:00Z",
+             "image": {"gpu_backend": backend}}
+        )  # fmt: skip
 
     assert name("Apple M4 (Max)") == "docs/hardware-reports/2026-10-03-apple-m4-max.json"
     assert name("!!!") == "docs/hardware-reports/2026-10-03-cpu.json"
     assert name("x" * 200).endswith("-" + "x" * 60 + ".json")
+    # A GPU image's report gets its own name, still within the gate's 61 characters.
+    gpu = name("12th Gen Intel(R) Core(TM) i7-12700K", "sycl")
+    assert gpu == "docs/hardware-reports/2026-10-03-12th-gen-intel-r-core-tm-i7-12700k-sycl.json"
+    assert name("x" * 200, "sycl").endswith("-" + "x" * 55 + "-sycl.json")
 
 
 def test_golden_environment_offline_and_venv_packages(tmp_path: Path) -> None:

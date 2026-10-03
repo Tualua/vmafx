@@ -1,0 +1,57 @@
+{
+ "comment": "The Intel SYCL runtime files the Intel GPU tester image ships, copied unmodified from the oneAPI installation of its build stage (prepare_build.py intel-runtime), and the licence texts that go with them. Files of the compiler must be listed in its credist.txt (the Redistributables of the Intel End User License Agreement for Developer Tools); UMF (Apache-2.0 WITH LLVM-exception) and hwloc from TCM (BSD-3-Clause, under Intel's licence for the binary) carry their own texts. Paths are relative to the oneAPI root.",
+ "credist": "compiler/latest/share/doc/compiler/credist.txt",
+ "components": [
+  {
+   "id": "intel-oneapi-dpcpp-runtime",
+   "dir": "compiler/latest/lib",
+   "credist": true,
+   "names": [
+    "libsycl.so.9",
+    "libsycl.so.9.0.0",
+    "libur_loader.so.0",
+    "libur_loader.so.0.12.0",
+    "libur_adapter_level_zero.so.0",
+    "libur_adapter_level_zero.so.0.12.0",
+    "libur_adapter_level_zero_v2.so.0",
+    "libur_adapter_level_zero_v2.so.0.12.0",
+    "libsvml.so",
+    "libimf.so",
+    "libintlc.so.5",
+    "libirng.so",
+    "libirc.so"
+   ],
+   "licences": [
+    "compiler/latest/share/doc/compiler/licensing/c/LICENSE",
+    "compiler/latest/share/doc/compiler/licensing/c/third-party-programs.txt",
+    "compiler/latest/share/doc/compiler/credist.txt"
+   ]
+  },
+  {
+   "id": "intel-oneapi-umf",
+   "dir": "umf/latest/lib",
+   "credist": false,
+   "names": [
+    "libumf.so.1",
+    "libumf.so.1.1.0"
+   ],
+   "licences": [
+    "umf/latest/share/doc/umf/LICENSE.TXT",
+    "umf/latest/share/doc/umf/licensing/third-party-programs.txt"
+   ]
+  },
+  {
+   "id": "intel-oneapi-tcm-hwloc",
+   "dir": "tcm/latest/lib",
+   "credist": false,
+   "names": [
+    "libhwloc.so.15",
+    "libhwloc.so.15.10.2"
+   ],
+   "licences": [
+    "tcm/latest/share/doc/tcm/licensing/license.txt",
+    "tcm/latest/share/doc/tcm/licensing/third-party-programs.txt"
+   ]
+  }
+ ]
+}

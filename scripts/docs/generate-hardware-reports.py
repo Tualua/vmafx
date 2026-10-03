@@ -16,6 +16,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 DIRECTORY = ROOT / "docs" / "hardware-reports"
@@ -37,10 +38,20 @@ verdict `fail` is welcome: it is a finding.
 
 """
 TABLE = """\
-| Date | CPU | Arch | Dispatch flags | Verdict | Source commit | Report |
-| --- | --- | --- | --- | --- | --- | --- |
+| Date | CPU | Arch | Dispatch flags | GPU | Verdict | Source commit | Report |
+| --- | --- | --- | --- | --- | --- | --- | --- |
 """
 EMPTY = "No reports have been submitted yet.\n"
+
+
+def _gpus(report: dict[str, Any]) -> str:
+    """The GPUs a schema-3 report measured, with their family; `-` for none."""
+    gpu = report.get("gpu") or {}
+    names = [
+        f"{d['facts'].get('name', '?')} ({d['facts'].get('family', '?')})"
+        for d in gpu.get("devices", [])
+    ]
+    return ", ".join(names).replace("|", "/") or "-"
 
 
 def _row(path: Path) -> str:
@@ -51,6 +62,7 @@ def _row(path: Path) -> str:
         host["cpu_model"].replace("|", "/"),
         host["machine"],
         ", ".join(host["dispatch_flags"]) or "none",
+        _gpus(report),
         report["verdict"],
         f"`{report['image']['source_commit'][:12]}`",
         f"[{path.name}]({path.name})",

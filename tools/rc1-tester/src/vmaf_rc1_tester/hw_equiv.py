@@ -87,15 +87,17 @@ def run_fixture_meta(
     timeout_seconds: float,
     runner: Runner = run_bounded,
     backend: str = "cpu",
+    environment: Mapping[str, str] | None = None,
 ) -> tuple[Scores, dict[str, Any]]:
-    """Run vmaf on one fixture; returns its scores and the JSON's backend facts."""
+    """Run vmaf on one fixture; returns its scores and the JSON's backend facts
+    (and, under `log`, the run's stderr lines that name a device)."""
     with tempfile.TemporaryDirectory(prefix="vmaf-tester-") as work:
         out_json = str(Path(work) / "out.json")
-        result = runner(
-            build_argv(vmaf, fixture, out_json, cpumask, backend),
-            timeout_seconds=timeout_seconds,
-            max_output_bytes=1_048_576,
-        )
+        kwargs: dict[str, Any] = {"timeout_seconds": timeout_seconds,
+                                  "max_output_bytes": 1_048_576}  # fmt: skip
+        if environment is not None:
+            kwargs["environment"] = dict(environment)
+        result = runner(build_argv(vmaf, fixture, out_json, cpumask, backend), **kwargs)
         if result.returncode != 0:
             tail = result.stderr.strip().splitlines()[-1:] or ["no output"]
             raise FixtureRunError(f"vmaf exited {result.returncode}: {tail[0]}", result.returncode)
@@ -107,7 +109,9 @@ def run_fixture_meta(
     meta = {
         "backend_used": document.get("backend_used"),
         "feature_backends": document.get("feature_backends", []),
-    }
+        "device_lines": [line for line in (result.stderr or "").splitlines()
+                         if "using device" in line][:4],
+    }  # fmt: skip
     return parse_scores(text), meta
 
 

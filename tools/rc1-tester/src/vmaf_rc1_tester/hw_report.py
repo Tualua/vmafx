@@ -25,16 +25,22 @@ from . import __version__
 from .hw_equiv import run_dispatch_equivalence
 from .hw_facts import collect_host_facts, read_build_info
 from .hw_gate import run_metal_gate
+from .hw_gpu import Budget, GpuBackend, gpu_not_exercised, run_gpu_section
+from .hw_gpu import summary_lines as gpu_summary_lines
 from .hw_metal import run_metal_equivalence_raw
 from .hw_reference import generate_reference, run_reference_equivalence
 from .hw_rows import evaluate_rows, load_row_map
 from .hw_suites import run_golden_gate, run_unit_tests, summary_line
+from .hw_sycl import SYCL
 from .safe_process import run_bounded
 
-# 2: the Metal gate and the state-row map (ADR-1496).
-SCHEMA_VERSION = "2"
+# 2: the Metal gate and the state-row map (ADR-1496). 3: the backend-neutral GPU
+# section (hw_gpu.py; the Intel GPU image's SYCL measurements).
+SCHEMA_VERSION = "3"
 DEFAULT_ROOT = "/opt/vmafx"
-CHECKS = ("dispatch", "reference", "metal", "gate", "unit", "golden")
+CHECKS = ("dispatch", "reference", "metal", "gate", "unit", "golden", "gpu")
+# The GPU backends an image can carry, by the name in image/build-info.json.
+GPU_BACKENDS: dict[str, GpuBackend] = {"sycl": SYCL}
 FIXTURE_TIMEOUT_SECONDS = 3600.0
 GATE_TIMEOUT_SECONDS = 3 * 3600.0
 UNIT_TIMEOUT_SECONDS = 900.0
@@ -94,6 +100,7 @@ def image_block(root: Path, digest: str | None) -> dict[str, Any]:
             "libc", "base_image", "tag")  # fmt: skip
     block: dict[str, Any] = {"kind": info.get("kind", "container-image")}
     block.update({key: info.get(key, "unknown") for key in keys})
+    block["gpu_backend"] = info.get("gpu_backend")
     block.update(
         {
             "digest": digest,
@@ -123,9 +130,7 @@ def not_exercised(
             items.append(("Metal parity gate", "this host exposes no usable Metal device"))
     else:
         items.append(("Metal", "needs macOS; this is a Linux container with no Metal device"))
-        items.append(
-            ("CUDA, SYCL and HIP twins", "the image holds no GPU SDK and a CPU-only build")
-        )
+        items.append(other_gpu_backends(report.get("image", {}).get("gpu_backend")))
     if "golden" not in not_applicable:
         items.append(
             ("slow-marked Python tests", "the golden gate runs -m 'not slow', as make does")
@@ -140,10 +145,21 @@ def not_exercised(
         if "avx512" not in flags:
             items.append(("AVX-512 kernels", "this CPU does not report AVX-512"))
     items += [
-        (f"{name} check", reason) for name, reason in not_applicable.items() if name != "metal"
+        (f"{name} check", reason)
+        for name, reason in not_applicable.items()
+        if name not in ("metal", "gpu")
     ]
+    items += gpu_not_exercised(report.get("gpu", {"status": "not_applicable"}))
     items += [(name, "skipped by a maintainer option") for name in skipped]
     return [{"item": item, "reason": reason} for item, reason in items]
+
+
+def other_gpu_backends(backend: str | None) -> tuple[str, str]:
+    """The GPU backends a Linux image does not exercise, and why."""
+    if not backend:
+        return ("CUDA, SYCL and HIP twins", "the image holds no GPU SDK and a CPU-only build")
+    others = [name for name in ("CUDA", "SYCL", "HIP") if name.lower() != backend]
+    return (" and ".join(others) + " twins", f"this image is the {backend.upper()} build")
 
 
 PASSING = {
@@ -153,6 +169,7 @@ PASSING = {
     "metal_gate": ("pass", "no_device", "not_applicable"),
     "unit_tests": ("pass",),
     "golden_gate": ("pass", "not_applicable"),
+    "gpu": ("pass", "no_device", "not_applicable"),
 }
 CHECK_KEYS = {
     "dispatch": "dispatch_equivalence",
@@ -161,6 +178,7 @@ CHECK_KEYS = {
     "gate": "metal_gate",
     "unit": "unit_tests",
     "golden": "golden_gate",
+    "gpu": "gpu",
 }
 
 
@@ -258,15 +276,37 @@ def applicability(root: Path, host: Mapping[str, Any]) -> dict[str, str]:
     found = {str(k): str(v) for k, v in info.get("not_applicable", {}).items()}
     if host["platform"] != "darwin":
         found["metal"] = "Metal exists only on macOS"
+    if info.get("gpu_backend") not in GPU_BACKENDS:
+        found["gpu"] = "this package carries no build of a GPU backend the GPU section runs"
     return found
+
+
+def _gpu_section(
+    args: argparse.Namespace,
+    root: Path,
+    cpu_scores: Mapping[str, Any],
+    skipped: Sequence[str],
+    not_applicable: Mapping[str, str],
+) -> dict[str, Any]:
+    """The GPU section of the image's GPU backend (hw_gpu.py)."""
+    if "gpu" in not_applicable:
+        return {"status": "not_applicable", "reason": not_applicable["gpu"]}
+    if "gpu" in skipped:
+        return {"status": "not_run"}
+    info = read_build_info(str(root / "image" / "build-info.json"))
+    budget = Budget(fixture=args.fixture_timeout, gate=GATE_TIMEOUT_SECONDS,
+                    tests=UNIT_TIMEOUT_SECONDS)  # fmt: skip
+    return run_gpu_section(
+        root, GPU_BACKENDS[info["gpu_backend"]], load_fixtures(root), cpu_scores, budget
+    )
 
 
 def build_report(args: argparse.Namespace) -> dict[str, Any]:
     """Run the selected checks and assemble the report."""
     root = Path(args.image_root)
     skipped = [name for name in CHECKS if name in args.skip]
-    if "dispatch" in skipped:  # reference and Metal compare the dispatch run's scores
-        skipped += [name for name in ("reference", "metal") if name not in skipped]
+    if "dispatch" in skipped:  # reference, Metal and GPU compare the dispatch run's scores
+        skipped += [name for name in ("reference", "metal", "gpu") if name not in skipped]
     if "metal" in skipped and "gate" not in skipped:  # the gate runs where Metal ran
         skipped.append("gate")
     host = collect_host_facts()
@@ -290,6 +330,7 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
         row_map, report["unit_tests"].get("cases", {}), raw_scores["cpu"], raw_scores["metal"],
         report["metal_gate"],
     )  # fmt: skip
+    report["gpu"] = _gpu_section(args, root, raw_scores["cpu"], skipped, not_applicable)
     report["not_exercised"] = not_exercised(report, skipped, not_applicable)
     report["verdict"], report["failed_checks"] = verdict_of(report, skipped)
     report["note"] = args.note
@@ -308,9 +349,13 @@ def _rows_line(rows: Mapping[str, Any]) -> str:
 
 
 def suggested_file_name(report: Mapping[str, Any]) -> str:
-    """`docs/hardware-reports/<date>-<cpu-slug>.json` for this report."""
-    slug = re.sub(r"[^a-z0-9]+", "-", report["host"]["cpu_model"].lower()).strip("-")[:60]
-    return f"docs/hardware-reports/{report['generated_utc'][:10]}-{slug.strip('-') or 'cpu'}.json"
+    """`docs/hardware-reports/<date>-<cpu-slug>[-<gpu backend>].json` for this report:
+    a GPU image's report on the same day as the CPU image's gets its own name."""
+    backend = report["image"].get("gpu_backend")
+    suffix = f"-{backend}" if backend else ""
+    slug = re.sub(r"[^a-z0-9]+", "-", report["host"]["cpu_model"].lower()).strip("-")
+    slug = slug[: 60 - len(suffix)].strip("-") or "cpu"
+    return f"docs/hardware-reports/{report['generated_utc'][:10]}-{slug}{suffix}.json"
 
 
 def summarize(report: Mapping[str, Any]) -> str:
@@ -326,6 +371,7 @@ def summarize(report: Mapping[str, Any]) -> str:
         _rows_line(report["metal_rows"]),
         summary_line("unit tests", report["unit_tests"]),
         summary_line("golden gate", report["golden_gate"]),
+        *gpu_summary_lines(report["gpu"]),
     ]
     if report["failed_checks"]:
         lines.append("failed: " + ", ".join(report["failed_checks"]))

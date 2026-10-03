@@ -1,6 +1,9 @@
 # Copyright 2026 Lusoris
 # SPDX-License-Identifier: EUPL-1.2
-"""The cross-backend parity gate's Metal cells, on a Mac (the macOS tester bundle).
+"""The cross-backend parity gate's cells of one GPU backend, on the tester's device.
+
+First written for the macOS tester bundle's Metal cells; the Intel GPU image runs
+the same code for its SYCL cells (`run_gate`, hw_gpu.py).
 
 `scripts/ci/cross_backend_parity_gate.py` has a `metal` backend since ADR-1496,
 and an Apple device exists only on the tester's machine, so the bundle carries
@@ -46,15 +49,16 @@ def gate_argv(
     features: Sequence[str],
     workdir: Path,
     json_out: Path,
+    backend: str = "metal",
 ) -> list[str]:
-    """One gate run: every listed feature, CPU against Metal, Metal held exact."""
+    """One gate run: every listed feature, CPU against the backend, held exact."""
     return [
         sys.executable, "-I", "-B", str(script),
         "--vmaf-binary", vmaf, "--reference", str(fixture["ref"]),
         "--distorted", str(fixture["dis"]), "--width", str(fixture["width"]),
         "--height", str(fixture["height"]), "--pixel-format", str(fixture["pixel_format"]),
-        "--bitdepth", str(fixture["bitdepth"]), "--backends", "cpu", "metal",
-        "--hold-exact", "metal", "--features", *features,
+        "--bitdepth", str(fixture["bitdepth"]), "--backends", "cpu", backend,
+        "--hold-exact", backend, "--features", *features,
         "--workdir", str(workdir), "--json-out", str(json_out),
     ]  # fmt: skip
 
@@ -83,17 +87,21 @@ def run_gate_fixture(
     *,
     timeout_seconds: float,
     runner: Runner = run_bounded,
+    backend: str = "metal",
+    environment: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """The gate on one fixture; `error` when it left no JSON summary."""
     features, left_out = gate_features(config, str(fixture["id"]))
     entry: dict[str, Any] = {"fixture": str(fixture["id"]), "left_out": left_out}
     with tempfile.TemporaryDirectory(prefix="vmaf-gate-") as work:
         json_out = Path(work) / "gate.json"
-        argv = gate_argv(root / GATE_SCRIPT, vmaf, fixture, features, Path(work), json_out)
+        argv = gate_argv(root / GATE_SCRIPT, vmaf, fixture, features, Path(work), json_out, backend)
+        kwargs: dict[str, Any] = {"timeout_seconds": timeout_seconds,
+                                  "max_output_bytes": GATE_OUTPUT_BYTES}  # fmt: skip
+        if environment is not None:
+            kwargs["environment"] = dict(environment)
         try:
-            result = runner(
-                argv, timeout_seconds=timeout_seconds, max_output_bytes=GATE_OUTPUT_BYTES
-            )
+            result = runner(argv, **kwargs)
             payload = json.loads(json_out.read_text(encoding="utf-8"))
         except (TimeoutError, RuntimeError, ValueError, OSError) as error:
             entry["error"] = str(error)[:MAX_NOTE]
@@ -113,6 +121,28 @@ def status_of_gate(entries: Sequence[Mapping[str, Any]]) -> str:
     return "fail" if bad else "pass"
 
 
+def run_gate(
+    root: Path,
+    vmaf: str,
+    fixtures: Sequence[Mapping[str, Any]],
+    config: Mapping[str, Any] | None,
+    *,
+    backend: str,
+    timeout_seconds: float,
+    runner: Runner = run_bounded,
+    environment: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """The gate's cells of `backend` on every fixture, held exact."""
+    if config is None or not (root / GATE_SCRIPT).is_file():
+        return {"status": "error", "reason": "the parity gate is not part of this package"}
+    entries = [
+        run_gate_fixture(root, vmaf, fixture, config, timeout_seconds=timeout_seconds,
+                         runner=runner, backend=backend, environment=environment)
+        for fixture in fixtures
+    ]  # fmt: skip
+    return {"status": status_of_gate(entries), "fixtures": entries}
+
+
 def run_metal_gate(
     root: Path,
     vmaf: str,
@@ -126,11 +156,5 @@ def run_metal_gate(
     """The gate on every fixture; `no_device` when the Metal equivalence found none."""
     if metal_status in ("no_device", "not_applicable", "not_run"):
         return {"status": metal_status}
-    if config is None or not (root / GATE_SCRIPT).is_file():
-        return {"status": "error", "reason": "the parity gate is not part of this bundle"}
-    entries = [
-        run_gate_fixture(root, vmaf, fixture, config, timeout_seconds=timeout_seconds,
-                         runner=runner)
-        for fixture in fixtures
-    ]  # fmt: skip
-    return {"status": status_of_gate(entries), "fixtures": entries}
+    return run_gate(root, vmaf, fixtures, config, backend="metal",
+                    timeout_seconds=timeout_seconds, runner=runner)  # fmt: skip

@@ -1,0 +1,8 @@
+# Meson tests the SYCL tester image runs on the tester's Intel GPU (hw_gpu.py,
+# section gpu.device_tests). One test name or `suite:<name>` per line.
+# Every test of suite `gpu` (the SYCL device tests of a SYCL build, the scratch
+# audit test_sycl_kernel_scratch among them) and of suite `sycl`. Python tests
+# of these suites read the source tree; they are listed in the manifest as left
+# out and run in CI. The image build fails when fewer than ten tests are found.
+suite:gpu
+suite:sycl

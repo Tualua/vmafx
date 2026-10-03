@@ -45,6 +45,31 @@ comment and no SPDX tag. An upstream sync that touches them keeps the MIT tag.
   `NOTICE-brisque` as `LicenseRef-LIVE-BRISQUE` (text in `LICENSES/`), and the
   HACL\* notice the tester packages ship as MIT.
 
+## The Intel GPU tester image and report schema 3 (ADR-1505, 2026-10-03)
+
+`feat/tester-kit-sycl`. Fork-only tester tooling; no libvmaf source changes.
+
+- `docker/Dockerfile.tester` gains the stages `sycl-build`, `sycl-licences`,
+  `sycl-runtime`, `sycl-refs-gen` and `final-sycl`, inserted before `final` so
+  that `final` stays the default target. The `sycl-build` stage builds in
+  `/opt/vmafx/src`: `test_sycl_kernel_scratch` bakes its ratchet path
+  (`core/test/../src/sycl/scratch_ratchet.txt`) from the source directory, and the
+  runtime stage provides the file at that path. A change to that test's
+  `VMAF_SYCL_SCRATCH_RATCHET` define changes the image (the build greps the path).
+- The report is schema 3 (`gpu` section, `hw_gpu.py`, `hw_sycl.py`,
+  `hw_l0probe.py`); `hw_gate.run_gate()`, `hw_suites.run_unit_tests()` (args,
+  environment, scratch directories, per-test results) and `prepare_build.py`
+  (`suite:` lines, `twins`, `intel-runtime`) are generalised, Metal keeps its
+  wrappers. A Meson test of the `gpu` or `sycl` suite added upstream of a sync is
+  picked up by the image automatically; a Python test is listed as left out.
+- `tools/rc1-tester/image/sycl-rows.json` names the SG16 row's tests; renaming one
+  of them fails `tools/rc1-tester/tests/test_sycl_rows_contract.py`.
+- The licence record (`tools/rc1-tester/image/licensing.json`, ADR-1503) gains the
+  artifact `sycl-image`, a component kind `dpkg-foreign` (vendor packages without a
+  Debian copyright file or Debian source) and pinned `fetched_texts`;
+  `licensing.py` honours both in `check_dpkg()`, `debian_specs()` and
+  `fetch_texts()`. The Dockerfile's `sycl-licence-check` and `sycl-source-export`
+  stages mirror the CPU image's.
 ## The `float_psnr` twins add each row's exact sum in the CPU's order (ADR-1499, 2026-10-03)
 
 `fix/float-psnr-exact-past-2-53`. Fork-only device and host code; `float_psnr.c`

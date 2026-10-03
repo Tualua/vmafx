@@ -1207,3 +1207,4 @@
 1504-decline-praetor-branch-ruleset
 1503-tester-artifact-licensing
 1507-brisque-live-notice-terms
+1505-intel-gpu-tester-image

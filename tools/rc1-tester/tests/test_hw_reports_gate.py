@@ -152,8 +152,10 @@ def test_index_lists_reports_and_is_empty_without(tmp_path: Path) -> None:
     assert "No reports" in index.render(tmp_path)
     write(tmp_path, GOOD_NAME, good_report())
     text = index.render(tmp_path)
-    assert "| 2026-10-03 | implementer 0x61, part 0x32 | aarch64 | neon | pass |" in text
+    assert "| 2026-10-03 | implementer 0x61, part 0x32 | aarch64 | neon | - | pass |" in text
     assert f"[{GOOD_NAME}]({GOOD_NAME})" in text
+    write(tmp_path, GOOD_NAME, good_gpu_report())
+    assert "| neon | Intel(R) UHD Graphics 770 (xe-lp) | pass |" in index.render(tmp_path)
 
 
 def v2_report(**sections) -> dict:
@@ -200,3 +202,96 @@ def test_failing_metal_gate_cannot_pass(tmp_path: Path) -> None:
     report = v2_report(metal_gate={"status": "fail", "fixtures": []})
     write(tmp_path, GOOD_NAME, report)
     assert run(tmp_path) == 1
+
+
+# ---- schema 3: the GPU section --------------------------------------------------------------
+
+
+def gpu_device(status: str = "pass") -> dict:
+    return {
+        "index": 0, "selector": {"ONEAPI_DEVICE_SELECTOR": "level_zero:0"},
+        "facts": {"name": "Intel(R) UHD Graphics 770", "family": "xe-lp", "ip_version": "12.2.0",
+                  "sub_group_sizes": [8, 16, 32], "integrated": True},
+        "device_lines": ["libvmaf INFO SYCL: using device: Intel(R) UHD Graphics 770"],
+        "status": status,
+        "twins": {"status": "identical", "fixtures": [], "features": [
+            {"feature": "psnr", "bound": "0", "source": "exact:ADR-1397", "status": "identical",
+             "values": 3, "differing_values": 0, "max_abs_diff": "0"}]},
+        "gate": {"status": "pass", "fixtures": []},
+        "device_tests": {**SUITE, "results": {"test_a": "pass", "test_b": "pass"}},
+        "audits": {"test_sycl_kernel_scratch": {"status": "pass", "row_result": "pass",
+                                                "kernels_audited": 127, "kernels_in_scratch": 0}},
+        "rows": {"status": "pass", "counts": {"pass": 1, "fail": 0, "not_measured": 0,
+                                               "not_applicable": 2},
+                 "rows": [{"id": "T-SYCL-ROW-KERNELS-SG16-OTHER-DEVICES-2026-10-02", "part": "Xe-LP",
+                           "verdict": "pass", "evidence": [
+                               {"kind": "test", "test": "test_a", "result": "pass"},
+                               {"kind": "audit", "test": "test_sycl_kernel_scratch", "result": "pass"}]}]},
+    }  # fmt: skip
+
+
+def good_gpu_report() -> dict:
+    report = good_report()
+    report["schema_version"] = "3"
+    report["image"]["gpu_backend"] = "sycl"
+    report["image"]["image_arch"] = "x86_64"
+    report["metal_gate"] = {"status": "not_applicable"}
+    report["metal_rows"] = {"status": "not_applicable", "rows": []}
+    report["gpu"] = {"status": "pass", "backend": "sycl", "access": {"path": "drm"},
+                     "runtime": {"libze1": "1.34.0"}, "devices": [gpu_device()]}  # fmt: skip
+    report["report_sha256"] = report_digest(report)
+    return report
+
+
+def rehash(report: dict) -> dict:
+    report["report_sha256"] = report_digest(report)
+    return report
+
+
+def test_schema_3_gpu_report_is_accepted_and_older_ones_stay_valid(tmp_path: Path) -> None:
+    write(tmp_path, GOOD_NAME, good_gpu_report())
+    assert run(tmp_path) == 0
+    write(tmp_path, GOOD_NAME, good_report())  # schema 1
+    assert run(tmp_path) == 0
+    no_device = good_gpu_report()
+    no_device["gpu"] = {"status": "no_device", "backend": "sycl", "access": {"path": "none"},
+                        "reason": "no GPU device node is visible", "devices": []}  # fmt: skip
+    write(tmp_path, GOOD_NAME, rehash(no_device))
+    assert run(tmp_path) == 0  # nothing measured is not a failure
+
+
+def test_schema_3_requires_the_gpu_section(tmp_path: Path) -> None:
+    report = good_gpu_report()
+    del report["gpu"]
+    write(tmp_path, GOOD_NAME, rehash(report))
+    assert run(tmp_path) == 1
+
+
+def test_identifying_device_facts_are_refused(tmp_path: Path) -> None:
+    report = good_gpu_report()
+    report["gpu"]["devices"][0]["facts"]["uuid"] = "86800be2-0000-0000-0100-000000000000"
+    write(tmp_path, GOOD_NAME, rehash(report))
+    assert run(tmp_path) == 1
+
+
+def test_gpu_statuses_must_follow_from_the_measurements(tmp_path: Path) -> None:
+    lying_device = good_gpu_report()
+    lying_device["gpu"]["devices"][0]["audits"]["test_sycl_kernel_scratch"]["status"] = "fail"
+    write(tmp_path, GOOD_NAME, rehash(lying_device))
+    assert run(tmp_path) == 1  # device says pass, its audit failed
+    lying_section = good_gpu_report()
+    lying_section["gpu"]["devices"][0]["status"] = "fail"
+    lying_section["gpu"]["devices"][0]["twins"]["status"] = "differing"
+    write(tmp_path, GOOD_NAME, rehash(lying_section))
+    assert run(tmp_path) == 1  # section says pass, a device failed
+    honest = good_gpu_report()
+    honest["gpu"]["status"] = "fail"
+    honest["gpu"]["devices"][0]["status"] = "fail"
+    honest["gpu"]["devices"][0]["twins"]["status"] = "differing"
+    honest["verdict"], honest["failed_checks"] = "fail", ["gpu"]
+    write(tmp_path, GOOD_NAME, rehash(honest))
+    assert run(tmp_path) == 0
+    lying_verdict = good_gpu_report()
+    lying_verdict["gpu"] = honest["gpu"]
+    write(tmp_path, GOOD_NAME, rehash(lying_verdict))
+    assert run(tmp_path) == 1  # verdict pass with a failing GPU section

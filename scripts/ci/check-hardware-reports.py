@@ -27,11 +27,15 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools" / "rc1-tester" / "src"))
 
 from vmaf_rc1_tester.hw_facts import ALLOWED_CPUINFO_KEYS  # noqa: E402
+from vmaf_rc1_tester.hw_gpu import device_status, section_status  # noqa: E402
 from vmaf_rc1_tester.hw_report import report_digest  # noqa: E402
 
 SCHEMA_NAME = "report.schema.json"
 NAME_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})-[a-z0-9][a-z0-9-]{1,60}\.json$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
+# Keys that would carry an identifier of the tester's machine (schema 3, gpu facts).
+IDENTIFYING_KEY = re.compile(r"uuid|serial|host|pci_address|bdf|mac_address", re.IGNORECASE)
+GPU_FINE = ("pass", "no_device", "not_applicable")
 
 
 def policy_errors(name: str | None, report: dict[str, Any]) -> list[str]:
@@ -52,7 +56,29 @@ def policy_errors(name: str | None, report: dict[str, Any]) -> list[str]:
     unknown = set(report["host"]["cpuinfo"]) - ALLOWED_CPUINFO_KEYS
     if unknown:
         errors.append(f"host.cpuinfo holds keys outside the allow-list: {sorted(unknown)}")
+    errors += gpu_errors(report.get("gpu"))
     errors += verdict_errors(report)
+    return errors
+
+
+def gpu_errors(section: dict[str, Any] | None) -> list[str]:
+    """Schema 3: device facts without identifiers, statuses that follow from the
+    measurements (hw_gpu.py computes both the same way)."""
+    if not section or section["status"] in ("not_applicable", "not_run"):
+        return []
+    errors = []
+    for device in section.get("devices", []):
+        named = [key for key in device["facts"] if IDENTIFYING_KEY.search(key)]
+        if named:
+            errors.append(f"gpu device {device['index']} facts hold identifying keys: {named}")
+        if device_status(device) != device["status"]:
+            errors.append(f"gpu device {device['index']} status does not follow from its parts")
+    devices = section.get("devices", [])
+    if (
+        section["status"] in ("pass", "fail", "no_device")
+        and section_status(devices) != section["status"]
+    ):
+        errors.append("gpu status does not follow from its devices")
     return errors
 
 
@@ -70,6 +96,8 @@ def verdict_errors(report: dict[str, Any]) -> list[str]:
         in ("pass", "no_device", "not_applicable")
         and report["unit_tests"]["status"] == "pass"
         and report["golden_gate"]["status"] in ("pass", "not_applicable")
+        # Schema 3: the GPU section of a GPU image.
+        and report.get("gpu", {"status": "not_applicable"})["status"] in GPU_FINE
         and report["image"]["files_match_build"]
     )
     if verdict == "pass" and not all_good:

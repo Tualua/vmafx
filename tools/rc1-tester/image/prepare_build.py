@@ -3,19 +3,33 @@
 # SPDX-License-Identifier: EUPL-1.2
 """Build-time helper of docker/Dockerfile.tester (never runs on the tester's machine).
 
-select <build_dir> <unit-tests.txt>   print the build targets of the listed unit tests
-stage  <build_dir> <unit-tests.txt> <image_root>
-                                      copy the test executables, write unit-tests.json
+select <build_dir> <tests.txt>        print the build targets of the listed tests
+stage  <build_dir> <tests.txt> <image_root> [manifest]
+                                      copy the test executables, write image/<manifest>
+                                      (default unit-tests.json)
 info   <image_root>                   write image/build-info.json
 fixtures <fixtures.sha256> <fixtures.json>
                                       print the manifest lines the report fixtures need
 gate   <repo_root> <image_root>       copy the parity gate into <image_root>/tester/gate
-                                      (macOS bundle, ADR-1496)
+                                      (macOS bundle, ADR-1496; SYCL image)
+twins  <image_root> <backend>         write image/gpu-twins.json from the staged gate:
+                                      per gate feature its metrics and the bound the
+                                      gate holds the backend's twin to
+intel-runtime <runtime.json> <oneapi_root> <image_root>
+                                      copy the listed Intel runtime files, unmodified,
+                                      to <image_root>/lib/intel and their licence texts
+                                      to <image_root>/licenses/intel (Intel GPU image)
+
+A list names one test of the Meson build per line, or `suite:<name>` for every
+test of that suite. A test runs from the image when it is an executable of the
+build or a shell script; a Python test reads the source tree and is listed as
+left out.
 """
 
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 import os
 import platform
@@ -24,6 +38,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 MIN_TESTS = 10
 # The parity gate and what it imports or reads (ADR-1496): it runs under the
@@ -48,21 +63,83 @@ def listed_names(path: Path) -> list[str]:
     return [line.strip() for line in lines if line.strip() and not line.startswith("#")]
 
 
-def native_tests(build_dir: Path, names: list[str]) -> list[dict]:
-    """Meson tests from the list that are executables of this build."""
+def introspect_tests(build_dir: Path) -> list[dict]:
+    """`meson introspect --tests` of a build directory."""
     out = subprocess.run(
         ["meson", "introspect", "--tests", str(build_dir)],
         check=True, capture_output=True, text=True, timeout=120,
     ).stdout  # fmt: skip
-    wanted = set(names)
-    found = []
-    for test in json.loads(out):
-        command = Path(test["cmd"][0])
-        if test["name"] in wanted and command.is_relative_to(build_dir):
-            found.append({"name": test["name"], "path": command})
+    return json.loads(out)
+
+
+def wanted(test: dict, names: set[str], suites: set[str]) -> bool:
+    """Whether a list names the test, by its name or by one of its suites."""
+    own = {str(suite).rsplit(":", 1)[-1] for suite in test.get("suite", [])}
+    return test["name"] in names or bool(own & suites)
+
+
+def classify(test: dict, build_dir: Path) -> tuple[str, str]:
+    """(`exe`, `script` or `left_out`, the reason it is left out)."""
+    command = Path(test["cmd"][0])
+    if command.name.startswith("python"):
+        return "left_out", "Python test of the source tree; device-free, runs in CI"
+    if command.is_relative_to(build_dir):
+        return "exe", ""
+    if command.suffix == ".sh":
+        return "script", ""
+    return "left_out", f"runs {command.name}, which the image does not carry"
+
+
+def portable_env(env: dict, build_dir: Path, source_root: Path) -> dict[str, str]:
+    """The test's environment with build-tree paths turned into placeholders the
+    report resolves: {root} the image root, {work} the test's scratch directory."""
+    out = {}
+    for key, value in sorted((env or {}).items()):
+        if key == "MESON_SOURCE_ROOT":  # the image keeps the fixtures at {root}/python
+            out[key] = "{root}"
+            continue
+        value = str(value).replace(str(build_dir / "src"), "{root}/build/src")
+        value = value.replace(str(build_dir), "{work}").replace(str(source_root), "{root}")
+        out[str(key)] = value
+    return out
+
+
+def describe(test: dict, kind: str, build_dir: Path, source_root: Path) -> dict:
+    """One manifest entry before staging."""
+    return {
+        "name": test["name"],
+        "kind": kind,
+        "path": Path(test["cmd"][0]),
+        "args": [str(arg) for arg in test["cmd"][1:]],
+        "env": portable_env(test.get("env") or {}, build_dir, source_root),
+        "scratch": bool(test.get("workdir")),
+        "timeout": int(test.get("timeout") or 30),
+    }
+
+
+def select_tests(build_dir: Path, entries: list[str]) -> tuple[list[dict], list[dict]]:
+    """(tests the image can run, tests left out with the reason), both by name."""
+    names = {entry for entry in entries if not entry.startswith("suite:")}
+    suites = {entry.removeprefix("suite:") for entry in entries if entry.startswith("suite:")}
+    source_root = build_dir.parent
+    found: list[dict] = []
+    left_out: list[dict] = []
+    for test in introspect_tests(build_dir):
+        if not wanted(test, names, suites):
+            continue
+        kind, reason = classify(test, build_dir)
+        if kind == "left_out":
+            left_out.append({"name": test["name"], "reason": reason})
+        else:
+            found.append(describe(test, kind, build_dir, source_root))
     if len(found) < MIN_TESTS:
         raise BuildError(f"only {len(found)} of the listed tests exist in this build")
-    return sorted(found, key=lambda item: item["name"])
+    return sorted(found, key=lambda t: t["name"]), sorted(left_out, key=lambda t: t["name"])
+
+
+def native_tests(build_dir: Path, names: list[str]) -> list[dict]:
+    """Meson tests from the list that are executables of this build."""
+    return [test for test in select_tests(build_dir, names)[0] if test["kind"] == "exe"]
 
 
 def sha256(path: Path) -> str:
@@ -74,17 +151,35 @@ def first_line(argv: list[str]) -> str:
     return (result.stdout or result.stderr).strip().splitlines()[0]
 
 
-def stage(build_dir: Path, names: list[str], image_root: Path) -> None:
+def manifest_entry(item: dict, target: Path) -> dict:
+    """The manifest form of a staged test (hw_suites.run_unit_tests reads it)."""
+    entry: dict = {"name": item["name"], "cmd": str(target)}
+    for key in ("args", "env"):
+        if item[key]:
+            entry[key] = item[key]
+    if item["scratch"]:
+        entry["scratch"] = True
+    if item["timeout"] != 30:
+        entry["timeout"] = item["timeout"]
+    return entry
+
+
+def stage(
+    build_dir: Path, names: list[str], image_root: Path, manifest: str = "unit-tests.json"
+) -> None:
     tests_dir = image_root / "tests"
     tests_dir.mkdir(parents=True, exist_ok=True)
-    manifest = []
-    for item in native_tests(build_dir, names):
-        target = tests_dir / item["name"]
-        shutil.copy2(item["path"], target)
-        manifest.append({"name": item["name"], "cmd": str(target)})
-    out = image_root / "image" / "unit-tests.json"
+    found, left_out = select_tests(build_dir, names)
+    entries = []
+    for item in found:
+        target = tests_dir / item["path"].name  # two tests may share one executable
+        if not target.exists():
+            shutil.copy2(item["path"], target)
+        entries.append(manifest_entry(item, target))
+    out = image_root / "image" / manifest
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps({"tests": manifest}, indent=1) + "\n", encoding="utf-8")
+    document = {"tests": entries, "left_out": left_out}
+    out.write_text(json.dumps(document, indent=1) + "\n", encoding="utf-8")
 
 
 def libc_description() -> str:
@@ -103,13 +198,14 @@ def info(image_root: Path) -> None:
         "tag": os.environ.get("VMAFX_IMAGE_TAG", "unknown"),
         "base_image": os.environ.get("VMAFX_BASE_IMAGE", "unknown"),
         "image_arch": platform.machine().lower(),
-        "compiler": first_line(["gcc", "--version"]),
+        "compiler": first_line([os.environ.get("VMAFX_CC", "gcc"), "--version"]),
         "libc": libc_description(),
         "meson": first_line(["meson", "--version"]),
         "vmaf_sha256": sha256(image_root / "build" / "tools" / "vmaf"),
         "libvmaf_sha256": sha256(libs[0]) if libs else None,  # None: libvmaf is static
         "kind": os.environ.get("VMAFX_ARTIFACT_KIND", "container-image"),
         "not_applicable": json.loads(os.environ.get("VMAFX_NOT_APPLICABLE", "{}")),
+        "gpu_backend": os.environ.get("VMAFX_GPU_BACKEND") or None,
     }
     out = image_root / "image" / "build-info.json"
     out.write_text(json.dumps(data, indent=1) + "\n", encoding="utf-8")
@@ -151,20 +247,115 @@ def report_fixture_lines(manifest: Path, fixtures: Path) -> list[str]:
     return chosen
 
 
+def gate_module(image_root: Path) -> Any:
+    """The staged parity gate, imported from <image_root>/tester/gate."""
+    gate_root = str(image_root / "tester" / "gate")
+    sys.path.insert(0, gate_root)
+    try:
+        return importlib.import_module("scripts.ci.cross_backend_parity_gate")
+    finally:
+        sys.path.remove(gate_root)
+
+
+def twin_bounds(image_root: Path, backend: str) -> dict:
+    """Per gate feature: its metrics, the backend's extractor and options, and the
+    bound the gate holds the twin to at --precision max (0 for an exact twin, the
+    LIBM_TWINS bound, or the declared tolerance) with the gate's name for its source."""
+    gate = gate_module(image_root)
+    features = {}
+    for feature in sorted(gate.FEATURE_METRICS):
+        tolerance, source = gate.resolve_cell_tolerance(
+            feature, fp16_features=(), calibration=None, gpu_id=None, backends=("cpu", backend)
+        )
+        extractor, _, options = gate.feature_extractor_name(feature, backend).partition("=")
+        features[feature] = {
+            "metrics": list(gate.FEATURE_METRICS[feature]),
+            "extractor": extractor,
+            "options": options,
+            "bound": f"{float(tolerance):.17g}",
+            "source": str(source),
+        }
+    return {"backend": backend, "features": features}
+
+
+def write_twins(image_root: Path, backend: str) -> None:
+    out = image_root / "image" / "gpu-twins.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    document = twin_bounds(image_root, backend)
+    out.write_text(json.dumps(document, indent=1) + "\n", encoding="utf-8")
+
+
+def credist_names(path: Path) -> set[str]:
+    """File names the compiler's credist.txt lists under <installdir>/lib."""
+    names = set()
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.startswith("<installdir>/lib/"):
+            names.add(line.removeprefix("<installdir>/lib/").strip())
+    return names
+
+
+def copy_unmodified(source: Path, target: Path) -> None:
+    """A byte-for-byte copy; a symbolic link stays a link."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if source.is_symlink():
+        target.symlink_to(os.readlink(source))
+    else:
+        shutil.copy2(source, target)
+
+
+def component_files(oneapi: Path, component: dict, redistributable: set[str]) -> list[Path]:
+    """The files of one component; refuses a compiler file credist.txt does not list."""
+    files: list[Path] = []
+    for pattern in component["names"]:
+        matches = sorted((oneapi / component["dir"]).glob(pattern))
+        if not matches:
+            raise BuildError(f"{component['id']}: nothing matches {component['dir']}/{pattern}")
+        files += matches
+    if component["credist"]:
+        unlisted = [path.name for path in files if path.name not in redistributable]
+        if unlisted:
+            raise BuildError(f"{component['id']}: not in credist.txt: {unlisted}")
+    return files
+
+
+def stage_intel_runtime(spec_path: Path, oneapi: Path, image_root: Path) -> None:
+    """Copy the runtime files and licence texts named in sycl-runtime.json."""
+    spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    redistributable = credist_names(oneapi / spec["credist"])
+    for component in spec["components"]:
+        for path in component_files(oneapi, component, redistributable):
+            copy_unmodified(path, image_root / "lib" / "intel" / path.name)
+        texts = image_root / "licenses" / "intel" / component["id"]
+        texts.mkdir(parents=True, exist_ok=True)
+        for text in component["licences"]:
+            source = oneapi / text
+            if not source.is_file():
+                raise BuildError(f"{component['id']}: licence text {text} is missing")
+            shutil.copy2(source, texts / source.name)
+
+
+def print_targets(build_dir: Path, names: list[str]) -> None:
+    """Build targets of the listed tests that are executables of the build."""
+    targets = {str(t["path"].relative_to(build_dir)) for t in native_tests(build_dir, names)}
+    print("\n".join(sorted(targets)))
+
+
 def run(argv: list[str]) -> int:
     command = argv[1] if len(argv) > 1 else ""
     if command == "select" and len(argv) == 4:
-        build_dir = Path(argv[2]).resolve()
-        for item in native_tests(build_dir, listed_names(Path(argv[3]))):
-            print(item["path"].relative_to(build_dir))
-    elif command == "stage" and len(argv) == 5:
-        stage(Path(argv[2]).resolve(), listed_names(Path(argv[3])), Path(argv[4]))
+        print_targets(Path(argv[2]).resolve(), listed_names(Path(argv[3])))
+    elif command == "stage" and len(argv) in (5, 6):
+        stage(Path(argv[2]).resolve(), listed_names(Path(argv[3])), Path(argv[4]), *argv[5:])
     elif command == "fixtures" and len(argv) == 4:
         print("\n".join(report_fixture_lines(Path(argv[2]), Path(argv[3]))))
     elif command == "info" and len(argv) == 3:
         info(Path(argv[2]))
     elif command == "gate" and len(argv) == 4:
         stage_gate(Path(argv[2]).resolve(), Path(argv[3]))
+    elif command == "twins" and len(argv) == 4:
+        write_twins(Path(argv[2]), argv[3])
+    elif command == "intel-runtime" and len(argv) == 5:
+        stage_intel_runtime(Path(argv[2]), Path(argv[3]), Path(argv[4]))
     else:
         print(__doc__, file=sys.stderr)
         return 64

@@ -11,7 +11,7 @@ import site
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -71,39 +71,108 @@ def _record_cases(counts: dict[str, Any], name: str, output: str) -> None:
         counts.setdefault("case_messages", {})[name] = messages
 
 
+def test_environment(
+    test: Mapping[str, Any], root: Path, work: Path, extra: Mapping[str, str] | None
+) -> dict[str, str] | None:
+    """The process environment of one test: the report's own, the device selection
+    (`extra`) and the test's Meson environment with the manifest's placeholders
+    ({root} the image root, {work} the test's scratch directory) resolved.
+    None keeps the report's environment unchanged (the CPU unit tests)."""
+    own = test.get("env") or {}
+    if not own and not extra:
+        return None
+    env = dict(os.environ)
+    env.update(extra or {})
+    for key, value in own.items():
+        value = str(value).replace("{root}", str(root)).replace("{work}", str(work))
+        if key.endswith("PATH") and env.get(key):  # Meson prepends search paths
+            value = value + os.pathsep + env[key]
+        env[str(key)] = value
+    return env
+
+
+def run_one_test(
+    test: Mapping[str, Any],
+    root: Path,
+    *,
+    timeout_seconds: float,
+    runner: Runner,
+    environment: Mapping[str, str] | None,
+) -> tuple[int, str]:
+    """(exit code, stderr and stdout) of one manifest entry; -1 when it could not run.
+
+    Every test runs in a fresh directory (the image is read-only and some tests
+    write next to themselves). With `scratch` it also holds `tools` -> the image's
+    build/tools, which is how the Meson shell tests find `./tools/vmaf`."""
+    limit = timeout_seconds
+    if "timeout" in test:  # Meson's per-test limit with its usual headroom
+        limit = min(timeout_seconds, 4.0 * float(test["timeout"]))
+    with tempfile.TemporaryDirectory(prefix="vmaf-test-") as work_dir:
+        work = Path(work_dir)
+        if test.get("scratch"):
+            (work / "tools").symlink_to(root / "build" / "tools")
+        kwargs: dict[str, Any] = {"timeout_seconds": limit, "max_output_bytes": 1_048_576}
+        env = test_environment(test, root, work, environment)
+        if env is not None:
+            kwargs["environment"] = env
+        kwargs["cwd"] = str(work)
+        argv = [str(test["cmd"]), *[str(arg) for arg in test.get("args", [])]]
+        try:
+            result = runner(argv, **kwargs)
+        except (TimeoutError, RuntimeError, ValueError, OSError):
+            return -1, ""
+    return result.returncode, (result.stderr or "") + "\n" + (result.stdout or "")
+
+
+def _count(counts: dict[str, Any], name: str, code: int) -> None:
+    results = counts.setdefault("results", {})
+    if code == 0:
+        counts["passed"] += 1
+        results[name] = "pass"
+    elif code == MESON_SKIP:
+        counts["skipped"] += 1
+        counts.setdefault("skipped_tests", []).append(name)
+        results[name] = "skip"
+    else:
+        counts["failed"] += 1
+        counts["failures"].append(name)
+        results[name] = "fail"
+
+
 def run_unit_tests(
-    manifest: Path, *, timeout_seconds: float, runner: Runner = run_bounded
+    manifest: Path,
+    *,
+    timeout_seconds: float,
+    runner: Runner = run_bounded,
+    environment: Mapping[str, str] | None = None,
+    observe: Callable[[str, str], None] | None = None,
 ) -> dict[str, Any]:
     """Run each executable of the baked manifest; exit 77 counts as skipped.
 
     The verdict lines of tests that print one per case (`@case`) are kept under
     `cases`, so the report can say which state rows a run measured (ADR-1496).
-    """
+    `environment` adds variables to every test (the GPU section's device
+    selection); `observe(name, output)` sees each test's output (the audits).
+    Tests the manifest lists as left out are carried as `left_out`."""
     try:
-        tests = json.loads(manifest.read_text(encoding="utf-8"))["tests"]
+        document = json.loads(manifest.read_text(encoding="utf-8"))
+        tests = document["tests"]
     except (OSError, ValueError, KeyError) as error:
         return _empty(f"unit test manifest unreadable: {error}")
+    root = manifest.resolve().parents[1]
     counts = _empty()
-    counts["status"] = "pass"
     counts["total"] = len(tests)
     for test in tests:
-        output = ""
-        try:
-            result = runner(
-                [str(test["cmd"])], timeout_seconds=timeout_seconds, max_output_bytes=1_048_576
-            )
-            code = result.returncode
-            output = (result.stderr or "") + "\n" + (result.stdout or "")
-        except (TimeoutError, RuntimeError, ValueError):
-            code = -1
-        _record_cases(counts, str(test["name"]), output)
-        if code == 0:
-            counts["passed"] += 1
-        elif code == MESON_SKIP:
-            counts["skipped"] += 1
-        else:
-            counts["failed"] += 1
-            counts["failures"].append(str(test["name"]))
+        name = str(test["name"])
+        code, output = run_one_test(
+            test, root, timeout_seconds=timeout_seconds, runner=runner, environment=environment
+        )
+        _record_cases(counts, name, output)
+        if observe is not None:
+            observe(name, output)
+        _count(counts, name, code)
+    if document.get("left_out"):
+        counts["left_out"] = [dict(item) for item in document["left_out"]]
     return _finish(counts)
 
 

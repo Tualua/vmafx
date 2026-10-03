@@ -8145,6 +8145,7 @@
         "dev/scripts/fetch-intel-neo.py": 1,
         "docker/Dockerfile.node": 1,
         "docker/Dockerfile.production-gpu": 7,
+        "docker/Dockerfile.tester": 1,
         "scripts/ci/check-base-image-single-source.sh": 3,
         "scripts/ci/install-intel-ocloc.sh": 2,
         "scripts/ci/install-intel-oneapi.sh": 2,
@@ -8483,7 +8484,8 @@
         "core/test/test_sycl_ssim_exact_contract.py": 1,
         "core/test/test_sycl_ssimulacra2_exact_contract.py": 1,
         "core/test/test_sycl_ssimulacra2_parity.c": 1,
-        "core/test/test_sycl_vif_exact_gain_contract.py": 1
+        "core/test/test_sycl_vif_exact_gain_contract.py": 1,
+        "tools/rc1-tester/src/vmaf_rc1_tester/hw_sycl.py": 1
       },
       "target": "1395-sycl-kernels-no-scratch.md"
     },
@@ -8515,7 +8517,9 @@
         "scripts/ci/cross_backend_calibration.py": 4,
         "scripts/ci/cross_backend_parity_gate.py": 3,
         "scripts/ci/cross_backend_vif_diff.py": 2,
-        "scripts/ci/test_cross_backend_parity_gate.py": 2
+        "scripts/ci/test_cross_backend_parity_gate.py": 2,
+        "tools/rc1-tester/tests/test_hw_gpu.py": 2,
+        "tools/rc1-tester/tests/test_hw_reports_gate.py": 1
       },
       "target": "1397-psnr-hvs-twins-cpu-float-sum.md"
     },
@@ -8919,7 +8923,8 @@
         "scripts/ci/cross_backend_calibration.py": 2,
         "scripts/ci/cross_backend_parity_gate.py": 3,
         "scripts/ci/cross_backend_vif_diff.py": 1,
-        "scripts/ci/test_cross_backend_parity_gate.py": 2
+        "scripts/ci/test_cross_backend_parity_gate.py": 2,
+        "tools/rc1-tester/tests/test_hw_gpu.py": 1
       },
       "target": "1426-cuda-ciede-cpu-arithmetic.md"
     },
@@ -9809,10 +9814,10 @@
     },
     "1503": {
       "sites": {
-        ".github/workflows/docker-publish-tester.yml": 5,
+        ".github/workflows/docker-publish-tester.yml": 6,
         ".github/workflows/macos-tester-bundle.yml": 5,
         "REUSE.toml": 2,
-        "docker/Dockerfile.tester": 5,
+        "docker/Dockerfile.tester": 9,
         "scripts/ci/build-macos-tester-bundle.sh": 5,
         "tools/rc1-tester/image/licensing.py": 4,
         "tools/rc1-tester/tests/test_licensing.py": 1

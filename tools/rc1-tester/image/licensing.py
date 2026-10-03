@@ -481,11 +481,29 @@ def assign(files: list[str], ctx: Context) -> tuple[dict[str, list[str]], list[s
 # ------------------------------------------------------------------------ checks
 
 
+def foreign_packages(record: dict) -> set[str]:
+    """Packages a `dpkg-foreign` component records: installed by dpkg from a vendor's
+    release rather than the distribution (the Intel GPU stack of the SYCL image). The
+    component carries their licence texts and names their source."""
+    return {
+        name
+        for component in record["components"]
+        if component["kind"] == "dpkg-foreign"
+        for name in component["packages"]
+    }
+
+
 def check_dpkg(ctx: Context) -> list[str]:
     problems = []
+    foreign = foreign_packages(ctx.record)
+    installed = {fields["Package"] for fields in ctx.packages}
     for fields in ctx.packages:
+        if fields["Package"] in foreign:
+            continue
         if not copyright_file(ctx.root, fields["Package"]).is_file():
             problems.append(f"package {fields['Package']} has no /usr/share/doc/*/copyright")
+    problems += [f"recorded vendor package {name} is not installed"
+                 for name in sorted(foreign - installed)]  # fmt: skip
     return problems
 
 
@@ -822,8 +840,10 @@ def check_notices(record: dict, ctx: Context, scan: dict, manifest: dict,
 
 def debian_specs(ctx: Context, record: dict) -> set[str]:
     specs: set[str] = set()
+    foreign = foreign_packages(record)
     for fields in ctx.packages:
-        specs.update(package_sources(fields))
+        if fields["Package"] not in foreign:  # its component names the vendor's source
+            specs.update(package_sources(fields))
     for component in record["components"]:
         spec_file = component.get("debian_source_file")
         if spec_file:
@@ -916,6 +936,22 @@ def fetch_sources(args: argparse.Namespace, manifest: dict) -> list[str]:
     return index
 
 
+def recorded_fetches(record: dict, manifest: dict) -> dict[str, dict]:
+    """name -> {url, sha256} of every `fetched` text of the record other than CPython's,
+    from the manifest's `fetched_texts` (a text pinned by URL and SHA-256)."""
+    registry = manifest.get("fetched_texts", {})
+    found: dict[str, dict] = {}
+    for component in record["components"]:
+        for entry in component_texts(component):
+            name = entry.get("fetched")
+            if name is None or name == "cpython-license.rst":
+                continue
+            if name not in registry:
+                raise LicensingError(f"fetched text {name} has no entry in fetched_texts")
+            found[name] = registry[name]
+    return found
+
+
 def fetch_texts(args: argparse.Namespace, manifest: dict) -> None:
     record = artifact_record(manifest, args.artifact)
     out = Path(args.out)
@@ -925,6 +961,8 @@ def fetch_texts(args: argparse.Namespace, manifest: dict) -> None:
         raise LicensingError(f"no cpython_license_rst entry for Python {args.python_version}")
     if entry:
         download(entry["url"], out / "cpython-license.rst", entry["sha256"])
+    for name, spec in recorded_fetches(record, manifest).items():
+        download(spec["url"], out / name, spec["sha256"])
 
 
 # ------------------------------------------------------------------------- CLI

@@ -4,16 +4,18 @@
 What the tester packages are, how they are built and published, what to do by hand,
 and how reports reach the tree. The tester-facing steps are in
 [the tester guide](../usage/tester-image.md); the decisions are
-[ADR-1492](../adr/1492-tester-image-arm64-report.md) and
-[ADR-1493](../adr/1493-macos-tester-bundle.md).
+[ADR-1492](../adr/1492-tester-image-arm64-report.md),
+[ADR-1493](../adr/1493-macos-tester-bundle.md) and, for the Intel GPU image,
+[ADR-1505](../adr/1505-intel-gpu-tester-image.md).
 
 ## Pieces
 
 | Piece | Where |
 | :--- | :--- |
 | Container image | [`docker/Dockerfile.tester`](https://github.com/VMAFx/vmafx/blob/master/docker/Dockerfile.tester), build inputs in `tools/rc1-tester/image/` |
+| Intel GPU image | target `final-sycl` of the same Dockerfile; `image/sycl-tests.txt` (device tests), `sycl-rows.json` (state rows), `sycl-runtime.json` (the Intel runtime files it ships); its licence record is the `sycl-image` artifact of `licensing.json` |
 | macOS bundle | `scripts/ci/build-macos-tester-bundle.sh`, `tools/rc1-tester/image/macos/` |
-| Report program | `tools/rc1-tester/src/vmaf_rc1_tester/hw_*.py`, launcher `tools/rc1-tester/vmaf-tester-report` |
+| Report program | `tools/rc1-tester/src/vmaf_rc1_tester/hw_*.py`, launcher `tools/rc1-tester/vmaf-tester-report`; the GPU section is `hw_gpu.py`, its SYCL backend `hw_sycl.py` and `hw_l0probe.py` |
 | Report schema and gate | `docs/hardware-reports/report.schema.json`, `scripts/ci/check-hardware-reports.py` (in `make docs-fragments-check`) |
 | Index page | `scripts/docs/generate-hardware-reports.py --write` (in `make docs-fragments-write`) |
 | Workflows | `.github/workflows/docker-publish-tester.yml`, `.github/workflows/macos-tester-bundle.yml` |
@@ -44,6 +46,17 @@ Nothing publishes on merge except a build-and-test run of the image on pushes to
    `tester-publish` environment gate (master only, maintainer approval) applies, then the bundle is attested, signed and
    attached to a new prerelease `tester-<date>-<sha8>` (not a product release; no other
    workflow starts, because the release is created with `GITHUB_TOKEN`).
+
+3. **Intel GPU image**: the same workflow also builds `final-sycl` (job `build-sycl`,
+   linux/amd64 only) and runs the documented command without a GPU (the report must say
+   `gpu.status` `no_device` with the missing option, every CPU check passing); the
+   dispatch publishes `ghcr.io/vmafx/vmafx:<describe>-tester-sycl` in job `publish-sycl`: signed, with
+   provenance and an attested SPDX SBOM (syft), with its source image
+   `<describe>-tester-sycl-source` (target `sycl-source-export`). Like the CPU image, its
+   build cannot finish without the licence check (stage `sycl-licence-check`, artifact
+   `sycl-image`, see [Licensing](#licensing)). The hosted runner has no Intel GPU: every device
+   measurement happens on the tester's machine. Before giving the tag to a tester,
+   run it on the project's Arc A380 (see [Local checks](#local-checks)).
 
 Give the tester `<TESTER-TAG>` and `<VERSION>` (the `git describe` string) from the run summary.
 
@@ -79,12 +92,43 @@ the kits for other hardware follow the same rules. What the two packages do:
   its digest with `actions/attest`) and of the unpacked bundle (attested on the archive,
   published as the `.spdx.json` asset).
 
+The Intel GPU image is the artifact `sycl-image`. Two kinds of record exist for it: the
+Intel SYCL runtime files are `fixed` components whose texts are the compiler's `LICENSE`,
+`third-party-programs.txt` and `credist.txt` (and UMF's and TCM's), copied next to the files
+by `prepare_build.py intel-runtime`, with the terms the Intel licence asks a distributor to
+pass on as notes; the Intel GPU stack (compute runtime, IGC, gmmlib, Level Zero loader)
+comes from the pinned GitHub releases as Debian packages, so the component of kind
+`dpkg-foreign` names those packages: they need no `/usr/share/doc/<package>/copyright`
+(IGC and the loader ship none; their texts are `fetched_texts`, pinned by URL and SHA-256)
+and no Debian source package, and the component names their source instead.
+
 When the check fails after a lock, base-image or interpreter bump, record what changed in
 `licensing.json`: a new grafted library needs its licence and, when copyleft, the source
 package its build ID comes from in `source_archives` (URL and SHA-256); a new interpreter
 version needs its `Doc/license.rst` in `cpython_license_rst`; a new licence in compiled
 code needs its text in `LICENSES/` and in `spdx_texts`; a new kind of file needs a
 component. Never strip or patch a vendor binary to make room.
+
+## The GPU section, and how a backend plugs in
+
+Schema 3 adds one `gpu` section that every GPU package fills the same way
+(`hw_gpu.py`): per device the twins against the CPU of the same image (per fixture and
+per parity-gate feature, judged at the gate's bound for that twin from
+`image/gpu-twins.json`, which the build writes from the staged gate), the gate's cells
+of the backend held exact, the device tests of `image/gpu-tests.json`, the backend's
+audits, and the state rows of the backend's row map for that device's family. A new
+backend (CUDA, HIP) adds a module like `hw_sycl.py` that builds a `GpuBackend`: a
+`discover` function returning how the container reaches the device (`access`, with a
+`path`), the runtime versions and the devices (each with an `index` and allow-listed
+`facts`, among them a `family` the row map can name, never a UUID or bus address), a
+`device_env` that pins a run to one device (the CUDA kit: `CUDA_VISIBLE_DEVICES`), the
+parsers of any audit test's output, and the name of its row map; it registers it in
+`GPU_BACKENDS` of `hw_report.py`, and its image sets `VMAFX_GPU_BACKEND` and stages the
+twin bounds (`prepare_build.py twins`), the device tests (`prepare_build.py stage ...
+gpu-tests.json`, a list of tests or `suite:` lines) and the gate. The schema, the CI
+gate and the verdict need no change; `tools/rc1-tester/tests/test_hw_gpu.py` shows the
+contract with a fake backend. The Metal sections of the macOS bundle predate this and
+keep their schema-2 form.
 
 ## What the hosted macOS runner cannot show
 
@@ -119,6 +163,8 @@ tracked files other than a commit trailer the person asked for.
 | Licence record | `tools/rc1-tester/image/licensing.json` | change with the package contents; the build fails until it matches |
 | Report validation | `requirements/locks/jsonschema.txt` | universal lock for Python 3.12 and later (`--universal --python-version 3.12`): the hosted runners differ (3.12 on `ubuntu-latest`, 3.14 elsewhere) and `referencing` needs `typing-extensions` below 3.13 |
 | Unit tests | `tools/rc1-tester/image/unit-tests.txt`, `unit-tests-macos.txt` | a name absent from a build is skipped; fewer than ten found fails the build |
+| Intel GPU runtime | `INTEL_NEO_VERSION`, `LEVEL_ZERO_VERSION`, `ONEAPI_*` in `build-config.env`; `tools/rc1-tester/image/sycl-runtime.json`; `fetched_texts` and the `intel-gpu-stack` component of `licensing.json` | a moved compute runtime or loader version fails the build until the licence text of the new version is recorded in `fetched_texts` (URL and SHA-256) and named by the component; a runtime file must stay in the compiler's `credist.txt` |
+| Intel GPU state rows | `tools/rc1-tester/image/sycl-rows.json` | `tools/rc1-tester/tests/test_sycl_rows_contract.py` holds it to `docs/state.md`, the `gpu` suite and the gate |
 
 The Debian archive packages of the build stage are not version-pinned, as in the release
 build (ADR-1346); the base image digest is.
@@ -141,6 +187,18 @@ shellcheck tools/rc1-tester/image/macos/run.sh scripts/ci/check-macos-bundle-lin
 docker build -f docker/Dockerfile.tester -t vmafx-tester:dev .
 docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
   --tmpfs /tmp vmafx-tester:dev > report.json
+```
+
+The Intel GPU image, on the project's Arc A380 (the device lock keeps other lanes off
+the card; a run takes about 90 seconds):
+
+```sh
+docker build -f docker/Dockerfile.tester --target final-sycl --build-arg VMAF_BUILD_JOBS=8 \
+  -t vmafx-tester:sycl-dev .
+flock ~/.cache/vmafx-locks/sycl-a380.lock timeout 300 \
+  docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+  --tmpfs /tmp --device /dev/dri $(stat -c '--group-add %g' /dev/dri/renderD* | sort -u) \
+  vmafx-tester:sycl-dev > report.json
 ```
 
 An image built this way has `built_by_workflow: false` and the CI report gate refuses it,

@@ -1,0 +1,109 @@
+{
+ "comment": "State rows of docs/state.md the Intel GPU tester image measures, and on which device families (hw_gpu.py, hw_rows.py). A row applies to a device when its GPU IP version falls in one of the listed families (hw_l0probe.py, from `ocloc ids`). tests: device test executables that must pass; audits: the scratch audit (test_sycl_kernel_scratch) must find no kernel in scratch memory, ratchet or not; gate: cells of the parity gate's SYCL run on every fixture. tools/rc1-tester/tests/test_sycl_rows_contract.py keeps this file, the tests, the gate and docs/state.md in step.",
+ "backend": "sycl",
+ "rows": [
+  {
+   "id": "T-SYCL-ROW-KERNELS-SG16-OTHER-DEVICES-2026-10-02",
+   "part": "Xe-LP / Xe-LPG integrated GPUs (UHD 7xx, Iris Xe, Arc graphics of Meteor Lake and Arrow Lake): open",
+   "families": [
+    "xe-lp",
+    "xe-lpg"
+   ],
+   "closes_when": "on an Xe-LP or Xe-LPG device the scratch audit finds no kernel in scratch memory, the six parity and math tests of the row pass and the parity gate reports 0 for float_motion, float_adm, float_vif and ssimulacra2",
+   "tests": [
+    "test_sycl_kernel_scratch",
+    "test_sycl_float_motion_parity",
+    "test_sycl_float_adm_parity",
+    "test_sycl_float_vif_parity",
+    "test_sycl_ssimulacra2_parity",
+    "test_sycl_ordered_sum",
+    "test_sycl_float_adm_math"
+   ],
+   "gate": [
+    {
+     "feature": "float_motion"
+    },
+    {
+     "feature": "float_adm"
+    },
+    {
+     "feature": "float_vif"
+    },
+    {
+     "feature": "ssimulacra2"
+    }
+   ],
+   "audits": [
+    "test_sycl_kernel_scratch"
+   ]
+  },
+  {
+   "id": "T-SYCL-ROW-KERNELS-SG16-OTHER-DEVICES-2026-10-02",
+   "part": "Xe2 (Arc B-series, Lunar Lake): measured on an Arc B580 and an Arc Pro B60 on 2026-10-03 (ADR-1501); a run repeats it",
+   "families": [
+    "xe2"
+   ],
+   "closes_when": "the same measurements on an Xe2 device",
+   "tests": [
+    "test_sycl_kernel_scratch",
+    "test_sycl_float_motion_parity",
+    "test_sycl_float_adm_parity",
+    "test_sycl_float_vif_parity",
+    "test_sycl_ssimulacra2_parity",
+    "test_sycl_ordered_sum",
+    "test_sycl_float_adm_math"
+   ],
+   "gate": [
+    {
+     "feature": "float_motion"
+    },
+    {
+     "feature": "float_adm"
+    },
+    {
+     "feature": "float_vif"
+    },
+    {
+     "feature": "ssimulacra2"
+    }
+   ],
+   "audits": [
+    "test_sycl_kernel_scratch"
+   ]
+  },
+  {
+   "id": "T-SYCL-ROW-KERNELS-SG16-OTHER-DEVICES-2026-10-02",
+   "part": "Xe-HPG (Arc A-series): measured on an Arc A380 before the row opened (ADR-1468); a run repeats it",
+   "families": [
+    "xe-hpg"
+   ],
+   "closes_when": "the same measurements on an Xe-HPG device",
+   "tests": [
+    "test_sycl_kernel_scratch",
+    "test_sycl_float_motion_parity",
+    "test_sycl_float_adm_parity",
+    "test_sycl_float_vif_parity",
+    "test_sycl_ssimulacra2_parity",
+    "test_sycl_ordered_sum",
+    "test_sycl_float_adm_math"
+   ],
+   "gate": [
+    {
+     "feature": "float_motion"
+    },
+    {
+     "feature": "float_adm"
+    },
+    {
+     "feature": "float_vif"
+    },
+    {
+     "feature": "ssimulacra2"
+    }
+   ],
+   "audits": [
+    "test_sycl_kernel_scratch"
+   ]
+  }
+ ]
+}

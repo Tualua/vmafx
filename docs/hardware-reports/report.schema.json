@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/VMAFx/vmafx/docs/hardware-reports/report.schema.json",
-  "title": "VMAFx tester image report, schema version 1",
+  "title": "VMAFx tester report, schema versions 1 to 3",
   "description": "Written by vmaf-tester-report (tools/rc1-tester/src/vmaf_rc1_tester/hw_report.py). Checked by scripts/ci/check-hardware-reports.py.",
   "type": "object",
   "additionalProperties": false,
@@ -26,9 +26,10 @@
     "schema_version": {
       "enum": [
         "1",
-        "2"
+        "2",
+        "3"
       ],
-      "description": "2 adds metal_gate, metal_rows and per-case unit verdicts (ADR-1496); 1 reports stay valid."
+      "description": "2 adds metal_gate, metal_rows and per-case unit verdicts (ADR-1496); 3 adds the backend-neutral gpu section and per-test results (the Intel GPU image); older reports stay valid."
     },
     "tool": {
       "type": "object",
@@ -134,6 +135,13 @@
         },
         "recipe_commit": {
           "type": "string"
+        },
+        "gpu_backend": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The GPU backend the package's build carries (sycl), null for a CPU build."
         }
       }
     },
@@ -320,12 +328,20 @@
       "pattern": "^[0-9a-f]{64}$"
     },
     "metal_gate": {
+      "$ref": "#/$defs/gateSection",
+      "description": "The parity gate's Metal cells, CPU against Metal held exact, on every fixture (macOS bundle, ADR-1496)."
+    },
+    "metal_rows": {
+      "$ref": "#/$defs/rowsSection",
+      "description": "Per Metal state row of docs/state.md, the measurements of this run that close it (ADR-1496)."
+    },
+    "gpu": {
       "type": "object",
-      "description": "The parity gate's Metal cells, CPU against Metal held exact, on every fixture (macOS bundle, ADR-1496).",
       "required": [
         "status"
       ],
       "additionalProperties": false,
+      "description": "One GPU backend measured on every device it finds (hw_gpu.py): twins against the CPU, the parity gate, device tests, audits, state rows.",
       "properties": {
         "status": {
           "enum": [
@@ -340,58 +356,31 @@
         "reason": {
           "type": "string"
         },
-        "fixtures": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/gateFixture"
-          }
-        }
-      }
-    },
-    "metal_rows": {
-      "type": "object",
-      "description": "Per Metal state row of docs/state.md, the measurements of this run that close it (ADR-1496).",
-      "required": [
-        "status",
-        "rows"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "status": {
-          "enum": [
-            "pass",
-            "fail",
-            "not_measured",
-            "not_applicable"
-          ]
+        "backend": {
+          "type": "string"
         },
-        "counts": {
+        "access": {
           "type": "object",
-          "additionalProperties": false,
+          "description": "How the container reaches the GPU; path names the route a run took (sycl: drm, wsl or none).",
           "required": [
-            "pass",
-            "fail",
-            "not_measured"
+            "path"
           ],
           "properties": {
-            "pass": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "fail": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "not_measured": {
-              "type": "integer",
-              "minimum": 0
+            "path": {
+              "type": "string"
             }
           }
         },
-        "rows": {
+        "runtime": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "devices": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/rowVerdict"
+            "$ref": "#/$defs/gpuDevice"
           }
         }
       }
@@ -473,6 +462,12 @@
           }
         },
         "extractors_on_cpu": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "extractors_on_device": {
           "type": "array",
           "items": {
             "type": "string"
@@ -617,6 +612,43 @@
               "maxLength": 300
             }
           }
+        },
+        "results": {
+          "type": "object",
+          "description": "Verdict of every test executable that ran.",
+          "additionalProperties": {
+            "enum": [
+              "pass",
+              "fail",
+              "skip"
+            ]
+          }
+        },
+        "skipped_tests": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "left_out": {
+          "type": "array",
+          "description": "Tests of the listed suites the package cannot run, with the reason.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "reason"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            }
+          }
         }
       },
       "additionalProperties": false
@@ -725,7 +757,8 @@
           "enum": [
             "pass",
             "fail",
-            "not_measured"
+            "not_measured",
+            "not_applicable"
           ]
         },
         "device_free": {
@@ -745,7 +778,9 @@
                 "enum": [
                   "case",
                   "metric",
-                  "gate"
+                  "gate",
+                  "test",
+                  "audit"
                 ]
               },
               "result": {
@@ -788,6 +823,302 @@
               }
             }
           }
+        },
+        "part": {
+          "type": "string"
+        }
+      }
+    },
+    "gateSection": {
+      "type": "object",
+      "required": [
+        "status"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "error",
+            "no_device",
+            "not_applicable",
+            "not_run"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "fixtures": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/gateFixture"
+          }
+        }
+      }
+    },
+    "rowsSection": {
+      "type": "object",
+      "required": [
+        "status",
+        "rows"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "not_measured",
+            "not_applicable"
+          ]
+        },
+        "counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pass",
+            "fail",
+            "not_measured"
+          ],
+          "properties": {
+            "pass": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "fail": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "not_measured": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "not_applicable": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/rowVerdict"
+          }
+        }
+      }
+    },
+    "twinFeature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "feature",
+        "bound",
+        "source",
+        "status",
+        "values",
+        "differing_values"
+      ],
+      "properties": {
+        "feature": {
+          "type": "string"
+        },
+        "bound": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "identical",
+            "within_bound",
+            "differing",
+            "not_on_device",
+            "not_in_run",
+            "gate_only"
+          ]
+        },
+        "values": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "differing_values": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_abs_diff": {
+          "type": "string"
+        },
+        "first": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "fixture",
+            "metric",
+            "frame",
+            "cpu",
+            "device"
+          ],
+          "properties": {
+            "fixture": {
+              "type": "string"
+            },
+            "metric": {
+              "type": "string"
+            },
+            "frame": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "cpu": {
+              "type": "string"
+            },
+            "device": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "twinsSection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "fixtures",
+        "features"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "identical",
+            "within_bound",
+            "differing",
+            "error"
+          ]
+        },
+        "fixtures": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/cell"
+          }
+        },
+        "features": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/twinFeature"
+          }
+        }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "required": [
+        "status"
+      ],
+      "description": "What a backend's audit test found; the backend adds its counts (the SYCL scratch audit: kernels_audited, kernels_in_scratch, ratchet_entries, failing_kernels, scratch_probe).",
+      "properties": {
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "skip",
+            "error",
+            "not_run"
+          ]
+        },
+        "row_result": {
+          "enum": [
+            "pass",
+            "fail",
+            "skip",
+            "not_run"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {
+        "type": [
+          "integer",
+          "string",
+          "boolean",
+          "array",
+          "object"
+        ]
+      }
+    },
+    "gpuDevice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "index",
+        "selector",
+        "facts",
+        "status",
+        "twins",
+        "gate",
+        "device_tests",
+        "audits",
+        "rows"
+      ],
+      "properties": {
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "selector": {
+          "type": "object",
+          "description": "Environment that pinned every run to this device.",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "facts": {
+          "type": "object",
+          "description": "The device as its runtime reports it; no UUID, serial number or PCI address.",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "integer",
+              "boolean",
+              "array",
+              "null"
+            ]
+          }
+        },
+        "device_lines": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "error"
+          ]
+        },
+        "twins": {
+          "$ref": "#/$defs/twinsSection"
+        },
+        "gate": {
+          "$ref": "#/$defs/gateSection"
+        },
+        "device_tests": {
+          "$ref": "#/$defs/suite"
+        },
+        "audits": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/audit"
+          }
+        },
+        "rows": {
+          "$ref": "#/$defs/rowsSection"
         }
       }
     }
@@ -805,6 +1136,22 @@
         "required": [
           "metal_gate",
           "metal_rows"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "schema_version": {
+            "const": "3"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "metal_gate",
+          "metal_rows",
+          "gpu"
         ]
       }
     }

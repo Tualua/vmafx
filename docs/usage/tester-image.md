@@ -1,24 +1,26 @@
 <!-- markdownlint-disable MD013 MD024 MD046 -->
-# Test VMAFx on your Mac without building anything
+# Test VMAFx on your hardware without building anything
 
 This page is for someone who has a machine the project does not own (an Apple
-M-series Mac, an Ampere or Graviton box, an unusual x86 CPU) and wants to check the
-fork on it. You build nothing, install no toolchain and need no repository checkout.
-You run one prepared package, it prints one JSON report, and you can send that report
-to the project and be credited for it.
+M-series Mac, an Intel GPU, an Ampere or Graviton box, an unusual x86 CPU) and wants
+to check the fork on it. You build nothing, install no toolchain and need no
+repository checkout. You run one prepared package, it prints one JSON report, and you
+can send that report to the project and be credited for it.
 
-There are two packages. On a Mac, run the **native bundle** first: it also exercises
+There are three packages. On a Mac, run the **native bundle** first: it also exercises
 the Metal backend, which no container can reach. The **container image** tests the
-Linux arm64 code paths and works on any machine with Docker.
+CPU code paths and works on any machine with Docker. The **Intel GPU image** tests the
+SYCL backend on an Intel GPU (integrated UHD or Iris Xe graphics, Arc, Data Center),
+on Linux or on Windows with WSL2.
 
-| | Native macOS bundle | Container image |
-| :--- | :--- | :--- |
-| Runs on | macOS on Apple silicon | any Docker host (Linux arm64 or amd64, Docker Desktop) |
-| Exercises | NEON default dispatch against scalar, **every Metal twin against the CPU**, SIMD unit tests | NEON (or AVX2 / AVX-512) default dispatch against scalar and against baked references, SIMD unit tests, the Netflix golden gate |
-| Does not exercise | SVE2 (Apple cores do not expose it), CUDA, SYCL, HIP, the Python golden gate | Metal, SVE2 on a core without it, GPU twins |
-| You need | a terminal | Docker |
+| | Native macOS bundle | Container image | Intel GPU image |
+| :--- | :--- | :--- | :--- |
+| Runs on | macOS on Apple silicon | any Docker host (Linux arm64 or amd64, Docker Desktop) | Linux x86-64 with an Intel GPU, or Windows 11 with WSL2 |
+| Exercises | NEON default dispatch against scalar, **every Metal twin against the CPU**, SIMD unit tests | NEON (or AVX2 / AVX-512) default dispatch against scalar and against baked references, SIMD unit tests, the Netflix golden gate | AVX2 / AVX-512 default dispatch against scalar, **every SYCL twin against the CPU on every Intel GPU**, the parity gate, the SYCL device tests and the scratch-memory audit |
+| Does not exercise | SVE2 (Apple cores do not expose it), CUDA, SYCL, HIP, the Python golden gate | Metal, SVE2 on a core without it, GPU twins | Metal, CUDA, HIP, the Python golden gate |
+| You need | a terminal | Docker | Docker and access to the GPU's device node |
 
-Both print what they did and did not exercise inside the report (`not_exercised`).
+Each prints what it did and did not exercise inside the report (`not_exercised`).
 
 ## A. Native macOS bundle (Apple silicon)
 
@@ -163,14 +165,138 @@ from a tagged commit, signed keyless with cosign and attested like the other VMA
 images. It is about 1.05 GB on disk and about 270 MB to download; it holds a CPU-only build,
 no compiler, and runs as a numeric non-root user.
 
+## C. Intel GPU image (Linux, or Windows with WSL2)
+
+You need Docker and an Intel GPU: integrated graphics of an Intel Core processor of
+the 11th generation or later (UHD Graphics 7xx, Iris Xe, the Arc graphics of Core Ultra),
+an Arc A- or B-series card, or a Data Center GPU. The image holds a SYCL build of
+VMAFx compiled ahead of time for all of these, with a portable form for anything newer,
+and the Intel GPU runtime it needs. The GPU kernel driver stays your system's own: on
+Linux the `i915` or `xe` driver, on Windows the Intel graphics driver.
+
+What the run does on every Intel GPU it finds (at most four), one after the other:
+
+- runs every CPU feature extractor on the four test fixtures with `--backend sycl` at
+  full precision and compares each value with the CPU's, per fixture and per feature;
+- runs the project's parity gate, `scripts/ci/cross_backend_parity_gate.py`, for every
+  SYCL twin on every fixture, compared exactly (ciede at its `1e-9` math-library bound);
+- runs the SYCL device tests of the build (69 tests), among them the scratch
+  audit `test_sycl_kernel_scratch`, which checks that no kernel on your GPU uses
+  scratch memory;
+- says which open state rows of the project's bug ledger your GPU's measurements close
+  (see [Intel GPU state rows](#intel-gpu-state-rows)).
+
+It also runs the CPU checks of the container image above, except the Python golden gate.
+On a desktop with one GPU it takes a few minutes (90 seconds with an Arc A380).
+
+`<VERSION>` is the version the maintainers give you, as for the other packages. The
+signature check (`cosign verify ...`) of [B](#b-container-image) works the same way for
+`ghcr.io/vmafx/vmafx:<VERSION>-tester-sycl`.
+
+### On Linux
+
+```sh
+docker pull ghcr.io/vmafx/vmafx:<VERSION>-tester-sycl
+
+docker run --rm --network none --read-only --cap-drop ALL \
+  --security-opt no-new-privileges --tmpfs /tmp \
+  --device /dev/dri $(stat -c '--group-add %g' /dev/dri/renderD* | sort -u) \
+  ghcr.io/vmafx/vmafx:<VERSION>-tester-sycl > report.json
+```
+
+`--device /dev/dri` gives the container the GPU's device nodes. The container runs as
+an unprivileged user (uid 10001), and a render node such as `/dev/dri/renderD128`
+usually belongs to the group `render` (on older systems `video`). The `$(stat ...)`
+part prints one `--group-add <group id>` per group that owns a render node, so the
+container's user may open them; it changes nothing on your system. With rootless
+Podman, use `--group-add keep-groups` in its place (the project has not tested
+Podman).
+
+### On Windows with WSL2
+
+You need Windows 11, WSL2 (`wsl --update` brings the WSL kernel up to date) and the
+current Intel graphics driver for Windows: the
+[Intel Arc and Iris Xe driver](https://www.intel.com/content/www/us/en/download/785597/intel-arc-graphics-windows.html)
+for Arc GPUs and Core Ultra graphics, the
+[11th to 14th generation processor graphics driver](https://www.intel.com/content/www/us/en/download/864990/intel-11th-14th-gen-processor-graphics-windows.html)
+for UHD Graphics 7xx and Iris Xe of those generations. That is the setup Intel's
+compute runtime documents for WSL2 ([WSL.md](https://github.com/intel/compute-runtime/blob/master/documentation/WSL.md)).
+Docker can be Docker Desktop with its WSL integration turned on for your Linux
+distribution, or Docker Engine installed inside WSL.
+
+Run this in the WSL Linux shell (for example Ubuntu), not in PowerShell:
+
+```sh
+ls -l /dev/dxg /usr/lib/wsl/lib/libdxcore.so    # both must exist
+
+docker pull ghcr.io/vmafx/vmafx:<VERSION>-tester-sycl
+
+docker run --rm --network none --read-only --cap-drop ALL \
+  --security-opt no-new-privileges --tmpfs /tmp \
+  --device /dev/dxg -v /usr/lib/wsl:/usr/lib/wsl:ro \
+  ghcr.io/vmafx/vmafx:<VERSION>-tester-sycl > report.json
+```
+
+Under WSL2 the GPU is `/dev/dxg`, and the user-mode half of your Windows driver is in
+`/usr/lib/wsl`, which the container reads but cannot change (`:ro`). The project has
+run the compute runtime this image carries under Docker Desktop's WSL2 backend on an
+Arc B580 and a UHD 770, but not this image with exactly this command yet: if the report
+says `gpu: no_device` or names a problem, send it anyway. The report's `gpu.access`
+field records how the container reached the GPU (`wsl`, `drm` or `none`) and why not.
+
+### What to check before you send it
+
+The terminal summary ends with one line per GPU, for example:
+
+```text
+gpu (sycl): pass, path drm
+  device 0 Intel(R) UHD Graphics 770 (xe-lp 12.2.0): pass; twins identical, gate pass, tests pass (69 passed, 0 failed, 0 skipped), test_sycl_kernel_scratch pass; state rows 1 passing, 0 failing, 0 not measured
+```
+
+`gpu (sycl): no_device` with a reason means the container could not reach your GPU;
+the reason names the `docker run` option that is missing. Nothing on the GPU was
+measured then, which is not a failure, but such a report is only useful to fix the
+command. A `fail` on a GPU is a finding: send it.
+
+### Intel GPU state rows
+
+The image carries `image/sycl-rows.json` (in the repository
+`tools/rc1-tester/image/sycl-rows.json`): per open SYCL row of
+[`docs/state.md`](../state.md) and GPU family, the device tests, audits and gate cells
+that close it. The report reads each GPU's family from its IP version (`xe-lp` for UHD
+and Iris Xe graphics of the 11th to 14th generation, `xe-lpg` for Core Ultra graphics,
+`xe-hpg` for Arc A-series, `xe2` for Arc B-series and Lunar Lake) and gives each row a
+verdict for that GPU: `pass`, `fail`, `not_measured`, or `not_applicable` for a row of
+another family. The row this image was made for,
+`T-SYCL-ROW-KERNELS-SG16-OTHER-DEVICES-2026-10-02`, needs a UHD 770 or another Xe-LP or
+Xe-LPG GPU.
+
+### What is in the Intel GPU image
+
+About 0.95 GB to download and 1.6 GB on disk. Its notices are
+`/opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt`, with the licence texts next to it; read
+them with
+`docker run --rm --entrypoint cat ghcr.io/vmafx/vmafx:<VERSION>-tester-sycl /opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt`
+and see [Licences of what you download](#licences-of-what-you-download).
+
+| Path | What | Licence |
+| :--- | :--- | :--- |
+| `/opt/vmafx/build`, `/opt/vmafx/tests`, `/opt/vmafx/tester` | VMAFx: the `vmaf` tool and library (SYCL build), about a hundred test programs, the report program and the parity gate | EUPL-1.2 and BSD-2-Clause-Patent (Netflix), per file |
+| `/opt/vmafx/python/test/resource` | Netflix test videos, each checked against a pinned SHA-256 | BSD-2-Clause-Patent |
+| `/opt/vmafx/lib/intel` | Intel's SYCL runtime (`libsycl`, the Unified Runtime loader and its Level Zero adapters, the compiler's math libraries), UMF and hwloc, copied unmodified | Intel End User License Agreement for Developer Tools (these files are its Redistributables: you may not reverse engineer them; see the notices), Apache-2.0 WITH LLVM-exception (UMF), BSD-3-Clause (hwloc) |
+| Debian packages | Intel's compute runtime for Level Zero, the Intel Graphics Compiler, gmmlib, the Level Zero loader (all from the pinned [compute-runtime release](https://github.com/intel/compute-runtime/releases/tag/26.35.39758.10)), Python 3.13 and the Debian 13 base | MIT (Intel GPU stack), each package's own (`/usr/share/doc/<package>/copyright`) |
+
+The image holds no compiler, no development package and no GPU kernel driver, and it
+cannot reach the network when run with the commands above.
+
 ## Licences of what you download
 
-Both packages carry the licence of everything in them, and their publishing
-workflows refuse to build a package with a file whose licence is not recorded
+Every package carries the licence of everything in it, and its publishing
+workflow refuses to build a package with a file whose licence is not recorded
 ([ADR-1503](../adr/1503-tester-artifact-licensing.md)).
 
 - **Where**: `licenses/THIRD_PARTY_NOTICES.txt` in the macOS bundle,
-  `/opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt` in the container. The file lists
+  `/opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt` in the two container images. The file lists
   every component, its licence and copyright notices, and the licence texts are in
   `texts/` next to it. Debian packages in the container keep their own terms in
   `/usr/share/doc/<package>/copyright`; Python packages keep theirs in their
@@ -198,12 +324,24 @@ workflows refuse to build a package with a file whose licence is not recorded
   indexed by `/sources/SOURCES.txt`. To get it:
   `docker create --name vmafx-src ghcr.io/vmafx/vmafx:<VERSION>-tester-source true`,
   `docker cp vmafx-src:/sources ./vmafx-tester-sources`, `docker rm vmafx-src`.
+- **Intel GPU image only**: Intel's SYCL runtime files are Redistributables of the
+  Intel End User License Agreement for Developer Tools; its text, the compiler's
+  `third-party-programs.txt` and its list of Redistributables (`credist.txt`) are in
+  `/opt/vmafx/licenses/intel/`, and the notices state the terms that agreement passes
+  on to you (executable code only, no reverse engineering, its limitation of
+  liability). UMF is under Apache-2.0 WITH LLVM-exception, hwloc under BSD-3-Clause.
+  The Intel GPU stack is MIT (the Intel Graphics Compiler with LLVM parts under
+  Apache-2.0 WITH LLVM-exception); the notices name its release and source. The
+  image's interpreter is Debian's Python 3.13, under the PSF licence in its package's
+  copyright file. The source of its Debian packages is
+  `ghcr.io/vmafx/vmafx:<VERSION>-tester-sycl-source`, fetched the same way.
 - **SBOM**: each package has an SPDX software bill of materials attested by the
   publishing workflow: the `.spdx.json` release asset for the macOS bundle, and an
   attestation on each platform image of the container
   (`gh attestation verify oci://ghcr.io/vmafx/vmafx@<platform digest> -R VMAFx/vmafx
   --predicate-type https://spdx.dev/Document/v2.3`, with the platform digest from
-  `docker buildx imagetools inspect ghcr.io/vmafx/vmafx:<VERSION>-tester`).
+  `docker buildx imagetools inspect ghcr.io/vmafx/vmafx:<VERSION>-tester`), and an
+  attestation on the Intel GPU image's digest.
 
 ## What the report contains
 
@@ -231,6 +369,16 @@ One JSON document (schema: [`docs/hardware-reports/report.schema.json`](../hardw
   bound), with the option sets the gate has cells for (`enable_lcs`, `debug`, the
   five-frame motion window). A feature a Metal twin cannot run on a fixture is
   listed under `left_out` with the reason.
+- **GPU section** (Intel GPU image, `gpu`): how the container reached the GPU
+  (`access.path`: `drm` for a Linux render node, `wsl` for WSL2's `/dev/dxg`, `none`
+  with the reason), the versions of the GPU runtime in the image, and per GPU its
+  name, PCI device ID, IP version and family, execution units and sub-group sizes; the
+  SYCL twins against the CPU per fixture and per feature (identical values, values
+  within the gate's bound for that twin, or the first differing value with both
+  numbers); the parity gate's cells; every device test's verdict and the ones left
+  out with the reason; the scratch audit (kernels audited, kernels in scratch memory,
+  whether your GPU returns wrong values from scratch memory); and the state rows the
+  GPU's measurements close.
 - **Unit tests** and, in the container, the **Netflix golden gate**: passed, failed,
   skipped, names of failures. For the Metal parity tests the report also keeps the
   verdict of every test case (`unit_tests.cases`) and the message of a failing one.
@@ -243,7 +391,7 @@ One JSON document (schema: [`docs/hardware-reports/report.schema.json`](../hardw
   version.
 
 It does not contain: a host name, user name, home directory, serial number, UUID, MAC
-address, IP address or any network identifier. The CPU model and hardware model
+address, IP address, PCI bus address or any network identifier. The CPU model and hardware model
 identifier are the only things that identify your machine's kind. Read `report.json`
 before you send it; it is plain text.
 
@@ -303,4 +451,7 @@ Reports from outside the project's own hosts are listed on the
   the container on other machines.
 - macOS says the developer cannot be verified — see [Gatekeeper](#gatekeeper).
 - The report ends `verdict: fail` — that is a result, send it.
+- The Intel GPU image says `gpu (sycl): no_device` — the container could not open your
+  GPU; the reason names the missing `docker run` option (see
+  [C](#c-intel-gpu-image-linux-or-windows-with-wsl2)).
 - Anything that stops before a report is printed — send the terminal output in an issue.

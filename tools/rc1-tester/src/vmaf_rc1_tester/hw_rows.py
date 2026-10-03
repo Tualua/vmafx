@@ -147,3 +147,53 @@ def evaluate_rows(
         "fail" if counts["fail"] else ("pass" if counts["pass"] == len(rows) else "not_measured")
     )
     return {"status": status, "counts": counts, "rows": rows}
+
+
+# ---- GPU section rows (hw_gpu.py) ----------------------------------------------------
+#
+# A row of a GPU backend's map (image/sycl-rows.json) applies to a device whose
+# family it lists and names the device tests that must pass (`tests`), the audits
+# whose strict result must pass (`audits`, the audit parser's `row_result`) and
+# gate cells (`gate`). On a device of another family the row is `not_applicable`.
+
+ROW_VERDICTS = ("pass", "fail", "not_measured", "not_applicable")
+
+
+def test_evidence(name: str, results: Mapping[str, str]) -> dict[str, Any]:
+    return {"kind": "test", "test": name, "result": results.get(name, "not_run")}
+
+
+def audit_evidence(name: str, audits: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
+    result = audits.get(name, {}).get("row_result", "not_run")
+    return {"kind": "audit", "test": name, "result": result}
+
+
+def evaluate_gpu_row(row: Mapping[str, Any], device: Mapping[str, Any]) -> dict[str, Any]:
+    """One row of a GPU row map against one device's measurements."""
+    head = {"id": row["id"], "part": row.get("part", "")}
+    if device["facts"].get("family") not in row.get("families", ()):
+        return {**head, "verdict": "not_applicable", "evidence": []}
+    results = device["device_tests"].get("results", {})
+    evidence = [test_evidence(name, results) for name in row.get("tests", [])]
+    evidence += [audit_evidence(name, device["audits"]) for name in row.get("audits", [])]
+    for spec in row.get("gate", []):
+        evidence += gate_evidence(spec, device["gate"])
+    return {**head, "verdict": verdict_of(evidence), "evidence": evidence}
+
+
+def evaluate_device_rows(
+    row_map: Mapping[str, Any] | None, device: Mapping[str, Any]
+) -> dict[str, Any]:
+    """The `rows` part of one device of the GPU section."""
+    if row_map is None:
+        return {"status": "not_applicable", "rows": []}
+    rows = [evaluate_gpu_row(row, device) for row in row_map["rows"]]
+    counts = {v: sum(1 for r in rows if r["verdict"] == v) for v in ROW_VERDICTS}
+    applicable = len(rows) - counts["not_applicable"]
+    if counts["fail"]:
+        status = "fail"
+    elif applicable == 0:
+        status = "not_applicable"
+    else:
+        status = "pass" if counts["pass"] == applicable else "not_measured"
+    return {"status": status, "counts": counts, "rows": rows}

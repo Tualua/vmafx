@@ -7,6 +7,10 @@
 # and one command that prints a JSON report:
 #   docker run --rm --network none --read-only --cap-drop ALL \
 #     --security-opt no-new-privileges --tmpfs /tmp <image> > report.json
+# Target `final-sycl` is the Intel GPU variant (linux/amd64): the SYCL build with
+# the default AOT list plus SPIR-V, its device tests and the parity gate, on the
+# oneAPI SYCL runtime and the pinned Intel compute runtime; it runs with the GPU's
+# device nodes (docs/usage/tester-image.md, "Intel GPU").
 # The report script is tools/rc1-tester/src/vmaf_rc1_tester/hw_report.py. The
 # final stage holds no compiler and no package-manager state; it runs as a
 # numeric non-root user and needs no network.
@@ -23,6 +27,8 @@
 # Base images come from build-config.env (single source, ADR-1129).
 ARG RELEASE_BUILDER_BASE="debian:13-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a"
 ARG RELEASE_PYTHON_BASE="python:3.14-slim@sha256:0741d101873c12ab927e6f8653feb8862b9bd58771177acb1b885b95141f91b4"
+ARG ONEAPI_BUILDER="debian:13-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a"
+ARG ONEAPI_RUNTIME="debian:13-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a"
 
 # ---------------------------------------------------------------------------
 # fixtures: Netflix test videos, fetched at a pinned commit and SHA-256 checked
@@ -171,6 +177,242 @@ FROM scratch AS refs-export
 COPY --from=refs-gen /opt/vmafx/reference/x86_64-scalar.json /
 
 FROM scratch AS xref
+
+# ===========================================================================
+# Intel GPU variant: ghcr.io/vmafx/vmafx:<describe>-tester-sycl (linux/amd64).
+#   docker build -f docker/Dockerfile.tester --target final-sycl .
+# The stages above are shared; `final` at the end stays the default target.
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# sycl-build: the oneAPI release builder of docker/Dockerfile.production-gpu
+# (ADR-1368): icpx from Intel's apt repository, ocloc and the Level Zero loader
+# from the pinned compute-runtime release, all at build-config.env's versions.
+# The compilers stay in this stage. The source sits at /opt/vmafx/src because
+# test_sycl_kernel_scratch reads its ratchet list from a path the build bakes in.
+# ---------------------------------------------------------------------------
+FROM ${ONEAPI_BUILDER} AS sycl-build
+ARG DEBIAN_FRONTEND=noninteractive
+ARG VMAF_BUILD_JOBS=4
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates curl gcc g++ gpg meson nasm ninja-build pkg-config python3 xxd zstd \
+    && rm -rf /var/lib/apt/lists/*
+COPY build-config.env /tmp/vmafx/build-config.env
+COPY scripts/ci/install-intel-oneapi.sh scripts/ci/install-intel-ocloc.sh /tmp/vmafx/scripts/ci/
+COPY dev/scripts/fetch-intel-neo.py /tmp/vmafx/dev/scripts/fetch-intel-neo.py
+# hadolint ignore=DL3008
+RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN,required=false \
+    bash /tmp/vmafx/scripts/ci/install-intel-oneapi.sh --mode=builder /tmp/vmafx \
+    && bash /tmp/vmafx/scripts/ci/install-intel-ocloc.sh --components build /tmp/vmafx \
+    && rm -rf /tmp/vmafx /var/lib/apt/lists/*
+ENV ONEAPI_ROOT=/opt/intel/oneapi
+ENV PATH="${ONEAPI_ROOT}/compiler/latest/bin:${PATH}"
+WORKDIR /opt/vmafx/src
+COPY core core
+COPY model model
+COPY REUSE.toml REUSE.toml
+COPY scripts/__init__.py scripts/__init__.py
+COPY scripts/lib scripts/lib
+COPY scripts/ci/check-msvc-clz-shim.sh scripts/ci/cross_backend_parity_gate.py \
+     scripts/ci/cross_backend_calibration.py scripts/ci/
+COPY scripts/ci/exact_twins.d scripts/ci/exact_twins.d
+COPY docs/adr docs/adr
+COPY tools/rc1-tester/image tools/rc1-tester/image
+# The default sycl_icpx_aot_targets list (19 Intel targets) plus portable SPIR-V.
+# hadolint ignore=SC2046
+RUN CC=icx CXX=icpx meson setup build core --buildtype=release --strip -Db_lto=false \
+        -Denable_float=true -Denable_cuda=false -Denable_sycl=true -Denable_hip=false \
+        -Denable_dnn=disabled -Denable_docs=false -Denable_tests=true \
+    && nice -n 10 ninja -C build -j"${VMAF_BUILD_JOBS}" tools/vmaf \
+        $(python3 tools/rc1-tester/image/prepare_build.py select build \
+            tools/rc1-tester/image/unit-tests.txt) \
+        $(python3 tools/rc1-tester/image/prepare_build.py select build \
+            tools/rc1-tester/image/sycl-tests.txt) \
+    && mkdir /licence-inputs \
+    && python3 tools/rc1-tester/image/licensing.py scan-build --build build \
+        --repo /opt/vmafx/src --out /licence-inputs/vmafx-sources.json
+RUN mkdir -p /opt/vmafx/build/tools /opt/vmafx/build/src /opt/vmafx/model \
+    && cp build/tools/vmaf /opt/vmafx/build/tools/ \
+    && find build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d \
+        -exec cp -a {} /opt/vmafx/build/src/ \; \
+    && python3 tools/rc1-tester/image/prepare_build.py stage build \
+        tools/rc1-tester/image/unit-tests.txt /opt/vmafx \
+    && python3 tools/rc1-tester/image/prepare_build.py stage build \
+        tools/rc1-tester/image/sycl-tests.txt /opt/vmafx gpu-tests.json \
+    && python3 tools/rc1-tester/image/prepare_build.py gate /opt/vmafx/src /opt/vmafx \
+    && python3 tools/rc1-tester/image/prepare_build.py twins /opt/vmafx sycl \
+    && python3 tools/rc1-tester/image/prepare_build.py intel-runtime \
+        tools/rc1-tester/image/sycl-runtime.json /opt/intel/oneapi /opt/vmafx \
+    && grep -aq /opt/vmafx/src/core/test/../src/sycl/scratch_ratchet.txt \
+        /opt/vmafx/tests/test_sycl_kernel_scratch \
+    && cp -r model/. /opt/vmafx/model/ \
+    && rm -r /opt/vmafx/model/tiny \
+    && find /opt/vmafx/model -maxdepth 1 -name '*.onnx*' -delete
+ARG VMAFX_SOURCE_COMMIT=unknown
+ARG VMAFX_SOURCE_REF=unknown
+ARG VMAFX_RECIPE_COMMIT=unknown
+ARG VMAFX_BUILT_BY_WORKFLOW=false
+ARG VMAFX_IMAGE_TAG=unknown
+ARG ONEAPI_BUILDER
+ENV VMAFX_SOURCE_COMMIT=${VMAFX_SOURCE_COMMIT} VMAFX_SOURCE_REF=${VMAFX_SOURCE_REF} \
+    VMAFX_RECIPE_COMMIT=${VMAFX_RECIPE_COMMIT} \
+    VMAFX_BUILT_BY_WORKFLOW=${VMAFX_BUILT_BY_WORKFLOW} VMAFX_IMAGE_TAG=${VMAFX_IMAGE_TAG} \
+    VMAFX_BASE_IMAGE=${ONEAPI_BUILDER} VMAFX_CC=icx VMAFX_GPU_BACKEND=sycl \
+    VMAFX_NOT_APPLICABLE='{"golden": "the SYCL image carries no Python test stack; the CPU tester image runs the Netflix golden gate"}'
+RUN python3 tools/rc1-tester/image/prepare_build.py info /opt/vmafx
+
+# ---------------------------------------------------------------------------
+# sycl-licence-texts: recorded licence texts that are not in the repository
+# (the Level Zero loader's and IGC's, which their packages do not install),
+# pinned by URL and SHA-256 in licensing.json (fetched_texts)
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_PYTHON_BASE} AS sycl-licence-texts
+RUN --mount=type=bind,source=tools/rc1-tester/image,target=/licensing \
+    python3 /licensing/licensing.py fetch-texts --artifact sycl-image --python-version none \
+        --out /texts
+
+# ---------------------------------------------------------------------------
+# sycl-runtime: Debian 13, the Intel SYCL runtime files of sycl-runtime.json
+# (copied unmodified in sycl-build, credist.txt checked) and the Intel GPU
+# user-mode stack of the pinned compute-runtime release: the Level Zero GPU
+# driver, IGC, gmmlib and the Level Zero loader, which drive Xe-LP, Xe-HPG,
+# Xe-HPC and Xe2. The installer's offline compiler and OpenCL parts are purged
+# again: SPIR-V reaches the GPU through Level Zero and IGC alone (measured on
+# an Arc A380), and the image ships what the report needs (ADR-1503).
+# ---------------------------------------------------------------------------
+FROM ${ONEAPI_RUNTIME} AS sycl-runtime
+ARG DEBIAN_FRONTEND=noninteractive
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+COPY build-config.env /tmp/vmafx/build-config.env
+COPY scripts/ci/install-intel-ocloc.sh /tmp/vmafx/scripts/ci/install-intel-ocloc.sh
+COPY dev/scripts/fetch-intel-neo.py /tmp/vmafx/dev/scripts/fetch-intel-neo.py
+# The installer runs in /tmp/vmafx (its `ocloc query` writes a file into the
+# working directory); the byte code Debian's Python compiles at install time is
+# a cache the report never writes again (PYTHONDONTWRITEBYTECODE).
+# hadolint ignore=DL3003,DL3008
+RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN,required=false \
+    apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates python3 \
+    && cd /tmp/vmafx \
+    && bash scripts/ci/install-intel-ocloc.sh --components runtime /tmp/vmafx \
+    && dpkg --purge intel-ocloc intel-opencl-icd intel-igc-opencl-2 ocl-icd-libopencl1 \
+    && apt-get purge -y --auto-remove ca-certificates \
+    && apt-get clean \
+    && find /usr/lib/python3* /usr/share/python3 -name __pycache__ -prune -exec rm -r {} + \
+    && cd / \
+    && rm -rf /tmp/vmafx /var/lib/apt/lists/*
+# Under WSL2 the GPU arrives as /dev/dxg with the host driver's libraries in
+# /usr/lib/wsl/lib (a bind mount); the path is empty on a Linux host.
+ENV LD_LIBRARY_PATH=/opt/vmafx/build/src:/opt/vmafx/lib/intel:/usr/lib/wsl/lib \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    HOME=/tmp
+COPY --from=sycl-build /opt/vmafx/lib /opt/vmafx/lib
+COPY --from=sycl-build /opt/vmafx/licenses /opt/vmafx/licenses
+COPY --from=sycl-build /opt/vmafx/build /opt/vmafx/build
+COPY --from=sycl-build /opt/vmafx/tests /opt/vmafx/tests
+COPY --from=sycl-build /opt/vmafx/image /opt/vmafx/image
+COPY --from=sycl-build /opt/vmafx/model /opt/vmafx/model
+COPY --from=sycl-build /opt/vmafx/tester/gate /opt/vmafx/tester/gate
+COPY --from=sycl-build /opt/vmafx/src/core/src/sycl/scratch_ratchet.txt \
+     /opt/vmafx/src/core/src/sycl/scratch_ratchet.txt
+COPY --from=fixtures /out /opt/vmafx/python/test/resource
+COPY tools/rc1-tester/src /opt/vmafx/tester/src
+COPY tools/rc1-tester/vmaf-tester-report /opt/vmafx/tester/vmaf-tester-report
+COPY tools/rc1-tester/image/fixtures.json tools/rc1-tester/image/sycl-rows.json /opt/vmafx/image/
+# The notices and licence texts (ADR-1503), as for the CPU image; the repository
+# inputs are bind mounts, so nothing but /opt/vmafx/licenses stays in the image.
+ARG VMAFX_SOURCE_COMMIT=unknown
+ARG VMAFX_IMAGE_TAG=unknown
+RUN --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
+    --mount=type=bind,source=REUSE.toml,target=/repo/REUSE.toml \
+    --mount=type=bind,source=LICENSE,target=/repo/LICENSE \
+    --mount=type=bind,source=LICENSES,target=/repo/LICENSES \
+    --mount=type=bind,source=model/other_models/NOTICE-brisque,target=/repo/model/other_models/NOTICE-brisque \
+    --mount=type=bind,from=sycl-build,source=/licence-inputs,target=/licence-inputs \
+    --mount=type=bind,from=sycl-licence-texts,source=/texts,target=/texts \
+    python3 /repo/tools/rc1-tester/image/licensing.py notices --artifact sycl-image --root / \
+        --repo /repo --build-scan /licence-inputs/vmafx-sources.json --texts /texts \
+        --source-commit "${VMAFX_SOURCE_COMMIT}" --tag "${VMAFX_IMAGE_TAG}"
+# The licence texts fetched above are those of the installed versions; the
+# Unified Runtime adapters and every binary resolve their libraries in the
+# image; the scratch audit's baked ratchet path resolves through core/test/..
+RUN test -f "/opt/vmafx/licenses/texts/level-zero-$(dpkg-query -W -f='${Version}' libze1)-LICENSE.txt" \
+    && test -f "/opt/vmafx/licenses/texts/igc-$(dpkg-query -W -f='${Version}' intel-igc-core-2)-LICENSE.md" \
+    && mkdir -p /opt/vmafx/src/core/test \
+    && for binary in /opt/vmafx/lib/intel/libur_adapter_*.so.0 /opt/vmafx/build/tools/vmaf /opt/vmafx/tests/*; do \
+        if [ "$(head -c 4 "${binary}" | tail -c 3)" = ELF ] && ldd "${binary}" | grep 'not found'; then \
+            echo "unresolved dependency in ${binary}" >&2; exit 1; \
+        fi; \
+    done \
+    && /opt/vmafx/build/tools/vmaf --version
+
+# ---------------------------------------------------------------------------
+# sycl-refs-gen: CPU scores of this image's own binary, produced at build time
+# ---------------------------------------------------------------------------
+FROM sycl-runtime AS sycl-refs-gen
+RUN python3 /opt/vmafx/tester/vmaf-tester-report generate-reference /opt/vmafx/reference
+
+# ---------------------------------------------------------------------------
+# sycl-assembled: the image's content before the licence check
+# ---------------------------------------------------------------------------
+FROM sycl-runtime AS sycl-assembled
+COPY --from=sycl-refs-gen /opt/vmafx/reference /opt/vmafx/reference
+
+# ---------------------------------------------------------------------------
+# sycl-licence-check: every file of the assembled image has a recorded licence
+# (ADR-1503 rule 3); final-sycl copies its receipt, so it cannot be built
+# without passing this
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_PYTHON_BASE} AS sycl-licence-check
+RUN --mount=type=bind,from=sycl-assembled,target=/rootfs \
+    --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
+    --mount=type=bind,source=REUSE.toml,target=/repo/REUSE.toml \
+    --mount=type=bind,source=LICENSE,target=/repo/LICENSE \
+    --mount=type=bind,source=LICENSES,target=/repo/LICENSES \
+    --mount=type=bind,source=model/other_models/NOTICE-brisque,target=/repo/model/other_models/NOTICE-brisque \
+    --mount=type=bind,from=sycl-build,source=/licence-inputs,target=/licence-inputs \
+    mkdir /out \
+    && python3 /repo/tools/rc1-tester/image/licensing.py check --artifact sycl-image \
+        --root /rootfs --repo /repo --build-scan /licence-inputs/vmafx-sources.json \
+        --python-version none --receipt /out/licence-check.json
+
+# ---------------------------------------------------------------------------
+# sycl-source-export: the corresponding source of the Intel GPU image's
+# copyleft parts, published as ghcr.io/vmafx/vmafx:<tag>-sycl-source
+# (ADR-1503 rule 5)
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_PYTHON_BASE} AS sycl-source-fetch
+# Only /sources leaves this stage, so its package lists need no cleanup.
+# hadolint ignore=DL3009
+RUN --mount=type=bind,from=sycl-assembled,target=/rootfs \
+    --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
+    sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
+    && python3 /repo/tools/rc1-tester/image/licensing.py sources --artifact sycl-image \
+        --root /rootfs --repo /repo --out /sources.list \
+    && python3 /repo/tools/rc1-tester/image/licensing.py fetch-sources --list /sources.list \
+        --out /sources
+
+FROM scratch AS sycl-source-export
+COPY --from=sycl-source-fetch /sources /sources
+
+# ---------------------------------------------------------------------------
+# final-sycl
+# ---------------------------------------------------------------------------
+FROM sycl-assembled AS final-sycl
+ARG VMAFX_SOURCE_COMMIT=unknown
+LABEL org.opencontainers.image.title="vmafx-tester-sycl" \
+      org.opencontainers.image.description="VMAFx Intel GPU tester image: SYCL build, SYCL device tests, parity gate, one JSON report. Licences: /opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt" \
+      org.opencontainers.image.source="https://github.com/VMAFx/vmafx" \
+      org.opencontainers.image.vendor="Lusoris" \
+      org.opencontainers.image.revision="${VMAFX_SOURCE_COMMIT}"
+COPY --from=sycl-licence-check /out/licence-check.json /opt/vmafx/licence-check.json
+USER 10001:10001
+ENTRYPOINT ["/usr/bin/python3", "/opt/vmafx/tester/vmaf-tester-report"]
 
 # ---------------------------------------------------------------------------
 # assembled: the image's content before the licence check

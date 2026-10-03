@@ -435,9 +435,13 @@ def test_the_record_names_texts_and_archives_that_exist() -> None:
 def test_every_artifact_records_its_interpreter_and_core_components() -> None:
     data = lic.load_manifest()
     for kind, record in data["artifacts"].items():
-        assert record["python"]["version"] in data["cpython_license_rst"], kind
         kinds = {c["kind"] for c in record["components"]}
-        assert {"build", "repo", "python-dist", "notices"} <= kinds, kind
+        assert {"build", "repo", "notices"} <= kinds, kind
+        if "python" in record:  # a python.org interpreter with its packages
+            assert record["python"]["version"] in data["cpython_license_rst"], kind
+            assert "python-dist" in kinds, kind
+        else:  # a distribution's interpreter, recorded by its package
+            assert "dpkg" in kinds, kind
 
 
 def test_the_record_allows_every_licence_the_repo_files_declare() -> None:
@@ -459,6 +463,20 @@ def test_the_image_cannot_be_built_without_the_licence_check() -> None:
     assert "FROM scratch AS source-export" in text
 
 
+def test_the_sycl_image_cannot_be_built_without_its_licence_check() -> None:
+    text = (REPO / "docker/Dockerfile.tester").read_text()
+    final = text.split("FROM sycl-assembled AS final-sycl", 1)[1].split("\nFROM ", 1)[0]
+    assert "COPY --from=sycl-licence-check /out/licence-check.json" in final
+    assert "licensing.py check --artifact sycl-image" in text
+    assert "licensing.py notices --artifact sycl-image" in text
+    assert "FROM scratch AS sycl-source-export" in text
+    workflow = (REPO / ".github/workflows/docker-publish-tester.yml").read_text()
+    assert (
+        "target: sycl-source-export" in workflow
+        and "sbom-path: sbom-tester-sycl.spdx.json" in workflow
+    )
+
+
 def test_the_bundle_script_checks_before_it_packs() -> None:
     text = (REPO / "scripts/ci/build-macos-tester-bundle.sh").read_text()
     assert text.index("licensing check --artifact macos") < text.index('step "pack"')
@@ -474,3 +492,76 @@ def test_the_bundle_script_checks_before_it_packs() -> None:
 ])  # fmt: skip
 def test_both_workflows_attest_an_sbom(workflow: str, needle: str) -> None:
     assert needle in (REPO / ".github/workflows" / workflow).read_text()
+
+
+# ------------------------------------------------- vendor packages, fetched texts
+
+
+def foreign_record() -> dict:
+    data = record()
+    data["components"].insert(4, {
+        "id": "vendor", "kind": "dpkg-foreign", "name": "vendor GPU stack", "packages": ["libvendor1"],
+        "licence": "MIT", "source": "https://example.invalid/vendor",
+        "texts": [{"fetched": "vendor-LICENSE.txt", "name": "vendor-LICENSE.txt", "label": "vendor"}],
+    })  # fmt: skip
+    return data
+
+
+def add_vendor_package(root: Path) -> None:
+    status = root / "var/lib/dpkg/status"
+    status.write_text(status.read_text() + "Package: libvendor1\nStatus: install ok installed\n"
+                      "Version: 26.35-0\n\n")  # fmt: skip
+    write(root / "var/lib/dpkg/info/libvendor1.list", "/.\n/usr\n/usr/lib/libvendor.so.1\n")
+    write(root / "usr/lib/libvendor.so.1", "vendor")
+
+
+def vendor_manifest() -> dict:
+    data = manifest()
+    data["artifacts"]["kit"] = foreign_record()
+    data["fetched_texts"] = {"vendor-LICENSE.txt": {"url": "https://example.invalid/LICENSE",
+                                                    "sha256": "0" * 64, "why": "test"}}  # fmt: skip
+    return data
+
+
+def test_a_recorded_vendor_package_needs_no_copyright_file_and_no_debian_source(
+    tmp_path: Path,
+) -> None:
+    args = setup_tree(tmp_path)
+    add_vendor_package(Path(args.root))
+    write(Path(args.texts) / "vendor-LICENSE.txt", "MIT text\n")
+    data = vendor_manifest()
+    assert notices_then_check(args, data) == []
+    notices = (Path(args.root) / "licenses/THIRD_PARTY_NOTICES.txt").read_text()
+    assert "[component vendor]" in notices and "libvendor1 26.35-0" in notices
+    assert not any("libvendor1" in line for line in lic.source_list(args, data))
+
+
+def test_an_unrecorded_vendor_package_still_needs_its_copyright_file(tmp_path: Path) -> None:
+    args = setup_tree(tmp_path)
+    add_vendor_package(Path(args.root))
+    problems = notices_then_check(args)  # the record has no dpkg-foreign component
+    assert "package libvendor1 has no /usr/share/doc/*/copyright" in problems
+    assert "debian libvendor1=26.35-0" in lic.source_list(args, manifest())
+
+
+def test_a_recorded_vendor_package_that_is_not_installed_fails(tmp_path: Path) -> None:
+    args = setup_tree(tmp_path)
+    write(Path(args.texts) / "vendor-LICENSE.txt", "MIT text\n")
+    assert "recorded vendor package libvendor1 is not installed" in notices_then_check(
+        args, vendor_manifest()
+    )
+
+
+def test_fetch_texts_downloads_the_recorded_texts_with_their_hash(
+    tmp_path: Path, monkeypatch
+) -> None:
+    calls = []
+    monkeypatch.setattr(lic, "download", lambda url, dest, sha: calls.append((url, dest.name, sha)))
+    args = argparse.Namespace(artifact="kit", python_version="none", out=str(tmp_path / "t"))
+    data = vendor_manifest()
+    del data["artifacts"]["kit"]["python"]
+    lic.fetch_texts(args, data)
+    assert calls == [("https://example.invalid/LICENSE", "vendor-LICENSE.txt", "0" * 64)]
+    del data["fetched_texts"]
+    with pytest.raises(lic.LicensingError, match="no entry in fetched_texts"):
+        lic.fetch_texts(args, data)
