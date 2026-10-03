@@ -656,6 +656,19 @@ static const LumaFeature g_luma_features[] = {
      0.0,
      161u,
      161u},
+    /* speed_chroma reads the 81 x 81 Cb / Cr planes of the 161 x 161 frame (marked
+     * imported on the zero-copy leg). */
+    {"speed_chroma_sycl",
+     "speed_chroma",
+     {"Speed_chroma_feature_speed_chroma_u_score", "Speed_chroma_feature_speed_chroma_v_score",
+      "Speed_chroma_feature_speed_chroma_uv_score"},
+     3u,
+     NULL,
+     NULL,
+     1,
+     0.0,
+     161u,
+     161u},
 };
 #define N_LUMA_FEATURES ((unsigned)(sizeof(g_luma_features) / sizeof(g_luma_features[0])))
 
