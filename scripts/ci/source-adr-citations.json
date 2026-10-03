@@ -8910,7 +8910,8 @@
         "core/test/test_metal_float_ms_ssim_parity.c": 1,
         "core/test/test_sycl_exact_twins.c": 1,
         "core/test/test_sycl_kernel_source_contract.py": 2,
-        "core/test/test_sycl_ms_ssim_parity.c": 3
+        "core/test/test_sycl_ms_ssim_parity.c": 3,
+        "core/test/test_sycl_zerocopy_parity.c": 1
       },
       "target": "1414-sycl-float-ms-ssim-cpu-arithmetic.md"
     },
@@ -10363,7 +10364,6 @@
       "sites": {
         "core/include/libvmaf/libvmaf_sycl.h": 1,
         "core/src/libvmaf.c": 1,
-        "core/src/sycl/common.h": 1,
         "core/test/meson.build": 1,
         "core/test/test_sycl_zerocopy_guards.c": 2,
         "ffmpeg-patches/test/check-sycl-feature-routing.sh": 1
@@ -10381,6 +10381,7 @@
       "sites": {
         "core/src/feature/sycl/integer_ciede_sycl.cpp": 2,
         "core/src/feature/sycl/integer_motion_sycl.cpp": 2,
+        "core/src/feature/sycl/integer_ms_ssim_sycl.cpp": 1,
         "core/src/feature/sycl/integer_psnr_hvs_sycl.cpp": 1,
         "core/src/feature/sycl/integer_psnr_sycl.cpp": 1,
         "core/src/feature/sycl/speed_chroma_sycl.cpp": 1,
@@ -10394,7 +10395,8 @@
         "core/src/sycl/dmabuf_import.h": 1,
         "core/test/meson.build": 2,
         "core/test/test_sycl_chroma_import.c": 1,
-        "core/test/test_sycl_zerocopy_parity.c": 3
+        "core/test/test_sycl_zerocopy_guards.c": 1,
+        "core/test/test_sycl_zerocopy_parity.c": 4
       },
       "target": "1597-sycl-zerocopy-planar-chroma-import.md"
     },
@@ -10405,9 +10407,11 @@
         "core/src/feature/sycl/float_psnr_sycl.cpp": 1,
         "core/src/feature/sycl/float_vif_sycl.cpp": 2,
         "core/src/feature/sycl/integer_ciede_sycl.cpp": 2,
+        "core/src/feature/sycl/integer_ms_ssim_sycl.cpp": 3,
         "core/src/feature/sycl/integer_ssim_sycl.cpp": 4,
         "core/src/feature/sycl/ssimulacra2_sycl.cpp": 3,
-        "core/test/test_sycl_zerocopy_parity.c": 1
+        "core/test/test_sycl_zerocopy_guards.c": 1,
+        "core/test/test_sycl_zerocopy_parity.c": 2
       },
       "target": "1598-sycl-host-staging-to-shared-planes.md"
     }

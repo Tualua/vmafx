@@ -221,18 +221,6 @@ extern "C" int vmaf_sycl_registered_kernel_count(void)
     }
 }
 
-extern "C" int vmaf_sycl_require_host_pictures(const char *extractor, const VmafPicture *ref,
-                                               const VmafPicture *dis)
-{
-    if (ref != nullptr && dis != nullptr) {
-        return 0;
-    }
-    vmaf_log(VMAF_LOG_LEVEL_ERROR,
-             "%s: needs host pictures, which zero-copy input does not provide (-ENOTSUP)\n",
-             extractor);
-    return -ENOTSUP;
-}
-
 extern "C" int vmaf_sycl_require_chroma(const VmafSyclState *state, const char *extractor,
                                         const VmafPicture *ref, const VmafPicture *dis)
 {

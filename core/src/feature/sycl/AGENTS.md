@@ -91,4 +91,4 @@ source review.
 | `sycl_exact_fp.h`, `/core/src/meson.build` | [strict-fp](AGENTS.d/strict-fp.md) | Every TU is strict-clean; SYCL strict FP line load-bearing, one line for every TU. |
 | `sycl_compat.h`, `float_motion_sycl.cpp`, `float_adm_sycl.cpp` | [sub-group-size](AGENTS.d/sub-group-size.md) | Kernel sub-group size: 16 or 32 only (ADR-1468); Xe2 AOT targets reject 8. |
 | `sycl_tile_index.h`, `integer_vif_sycl.cpp` | [tile-index](AGENTS.d/tile-index.md) | Tile loaders clamp after reflecting (sycl_tile_index.h) around borders. |
-| `*_sycl.cpp`, `/core/src/libvmaf.c`, `/core/test/test_sycl_zerocopy_guards.c` | [zerocopy-host-picture-guard](AGENTS.d/zerocopy-host-picture-guard.md) | A SYCL submit that reads host pictures calls vmaf_sycl_require_host_pictures first; one guard row per SYCL extractor. |
+| `*_sycl.cpp`, `/core/src/libvmaf.c`, `/core/test/test_sycl_zerocopy_guards.c`, `/core/test/test_sycl_zerocopy_parity.c` | [zerocopy-input](AGENTS.d/zerocopy-input.md) | SYCL submits read the shared planes, never host pictures; chroma readers gate on require_chroma. |

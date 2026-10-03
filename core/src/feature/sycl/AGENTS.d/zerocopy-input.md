@@ -1,0 +1,36 @@
+---
+paths:
+  - core/src/feature/sycl/*_sycl.cpp
+  - core/src/libvmaf.c
+  - core/test/test_sycl_zerocopy_guards.c
+  - core/test/test_sycl_zerocopy_parity.c
+invariant: SYCL submits read the shared planes, never host pictures; chroma readers gate on require_chroma.
+---
+<!-- markdownlint-disable MD013 MD060 -->
+# Zero-copy input: no extractor reads host pictures (ADR-1595, ADR-1598)
+
+`vmaf_read_pictures_sycl` passes NULL `ref_pic` / `dist_pic` to every SYCL
+extractor: the data is already in the shared device slots. Since ADR-1598 no
+SYCL `submit` reads a host picture for luma: each takes the shared planes
+(`vmaf_sycl_get_shared_plane`) after `vmaf_sycl_queue_after_upload`, on the
+host-picture path and the zero-copy path alike, so both feed the kernels the
+same bytes. The `vmaf_sycl_require_host_pictures` guard of ADR-1595 was
+removed with its last caller (`float_ms_ssim_sycl`); never dereference
+`ref_pic` / `dist_pic` in a luma path. `test_sycl_zerocopy_guards` has one
+row per SYCL extractor configuration and counts the registrations, so a new
+`_sycl` extractor without a row fails that test, and it asserts that the only
+rows still expecting `-ENOTSUP` are the six chroma readers without a chroma
+mark (below).
+
+`float_ms_ssim_sycl` converts the shared planes with `plane_to_float()`
+(`integer_ms_ssim_sycl.cpp`), which is `picture_copy()`'s arithmetic
+(`float(sample) / scaler + offset`, scalers 4 / 16 / 256 for 10 / 12 / 16 bit,
+none at 8 bit). It lives in this strict-FP feature TU, never in
+`sycl_sources`, and stays free of fp64 and private arrays. With
+`enable_chroma` it reads Cb / Cr behind `vmaf_sycl_require_chroma`.
+
+`psnr_sycl` and `psnr_hvs_sycl` read chroma, so their chroma branch calls
+`vmaf_sycl_require_chroma` instead (ADR-1597): host pictures upload as
+before; NULL pictures pass only when the zero-copy import marked the chroma
+for this frame, else `-ENOTSUP`. **On rebase**: keep it ahead of any read of
+`vmaf_sycl_get_shared_plane(.., 1|2)`; `test_sycl_zerocopy_parity` pins it.
