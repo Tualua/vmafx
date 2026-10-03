@@ -45,6 +45,30 @@ class RepositorySecurityTests(unittest.TestCase):
             errors, _ = CHECK.inspect(self.policy)
         return cast(list[str], errors)
 
+    def test_no_stricter_ruleset_template_is_declared(self) -> None:
+        """Only the policy file declares the ruleset; praetor's stricter template is declined."""
+        standards = (ROOT / ".standards.yaml").read_text()
+        self.assertRegex(
+            standards, r"(?m)^adoption:\n  decline:\n(?:    - .+\n)*    - branch-ruleset$"
+        )
+        self.assertFalse((ROOT / ".github/rulesets/main.json").exists())
+
+    def test_declared_review_requirements_are_the_live_ones(self) -> None:
+        """One approval, no code-owner review, no required signatures (ADR-1252)."""
+        rules = self.policy["ruleset"]["rules"]
+        review = next(r for r in rules if r["type"] == "pull_request")["parameters"]
+        self.assertEqual(review["required_approving_review_count"], 1)
+        self.assertIs(review["require_code_owner_review"], False)
+        self.assertNotIn("required_signatures", {r["type"] for r in rules})
+
+    def test_a_declared_value_stricter_than_live_is_detected(self) -> None:
+        self.rule["rules"] = copy.deepcopy(self.policy["ruleset"]["rules"])
+        review = next(r for r in self.rule["rules"] if r["type"] == "pull_request")
+        review["parameters"]["required_approving_review_count"] = 2
+        review["parameters"]["require_code_owner_review"] = True
+        errors = CHECK.differences(self.policy["ruleset"], self.rule)
+        self.assertEqual(len(errors), 2)
+
     def test_matching_policy_allows_unrelated_ruleset_and_metadata(self) -> None:
         self.rule["rules"].reverse()
         self.assertEqual(self.inspect(), [])

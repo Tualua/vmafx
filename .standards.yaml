@@ -8,6 +8,9 @@ repository:
   description: ""
   homepage: ""
   topics: []
+adoption:
+  decline:
+    - branch-ruleset
 profiles:
   - native-gpu-systems
 facets:

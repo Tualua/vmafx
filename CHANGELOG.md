@@ -3059,6 +3059,15 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   [ADR-1474](docs/adr/1474-relicense-helper-headers-and-ci-check.md)).
 
 
+- The repository no longer carries `.github/rulesets/main.json`, praetor's
+  template that declared two approvals, code-owner review and signed commits
+  while the live ruleset on `master` enforces one approval and neither of the
+  others. `.standards.yaml` declines the template (`adoption.decline:
+  [branch-ruleset]`) and `repository-security-policy.json` stays the single
+  declaration, compared with the live ruleset. A new test pins the decline, the
+  absence and the declared review values. The live ruleset is unchanged.
+
+
 - **Eleven licence tags now say what the file's own notice says.** The SPDX
   backfill had given some files the identifier of their directory rather than
   of the notice in them. Files that carry only Daala's, Xiph.Org's, dav1d's,

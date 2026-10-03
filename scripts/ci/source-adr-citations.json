@@ -7316,7 +7316,7 @@
     "1252": {
       "sites": {
         "scripts/dev/check_repository_security.py": 1,
-        "scripts/dev/tests/test_repository_security.py": 1
+        "scripts/dev/tests/test_repository_security.py": 2
       },
       "target": "1252-solo-maintainer-declared-bypass.md"
     },

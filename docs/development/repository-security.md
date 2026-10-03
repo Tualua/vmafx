@@ -25,6 +25,21 @@ still a required status check. No role tier, bot, or second account holds bypass
 and the drift checker fails on any actor that is not the declared one. Remove the
 bypass as soon as a second maintainer can review.
 
+## One declaration of the ruleset
+
+The [policy file](../../.github/repository-security-policy.json) is the only
+declaration of the ruleset, and the drift checker compares it with the live one:
+one approving review, no code-owner review, last-push approval, the `Required
+Checks Aggregator` check, no required signatures and the single declared bypass
+actor. praetor's own ruleset template (`.github/rulesets/main.json`) asks for
+two approvals, code-owner review and signed commits, and cannot express the live
+values, so `.standards.yaml` declines it (`adoption.decline: [branch-ruleset]`)
+and the file is absent. A repository must not look stricter than it is
+([ADR-1252](../adr/1252-solo-maintainer-declared-bypass.md),
+[ADR-1504](../adr/1504-decline-praetor-branch-ruleset.md)).
+`scripts/dev/tests/test_repository_security.py` fails when the template returns,
+the decline goes, or a declared review value differs from the live one.
+
 These settings supplement the local lint/test and hosted gate requirements in
 [AGENTS.md](../../AGENTS.md). They do not resume the merge train or establish that
 a release is ready. Scorecard's historical review results change only as new

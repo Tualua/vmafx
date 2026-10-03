@@ -59681,3 +59681,9 @@ upstream parity guard's allowlist.
 - `core/test/test_sycl_sub_group_size_contract.py` and
   `core/test/test_sycl_float_adm_exact_contract.py` guard it.
 - No score, public C API, Netflix golden-data or FFmpeg patch impact.
+
+## Declared ruleset matches the live one
+
+- `.github/rulesets/main.json` is removed and `.standards.yaml` declines
+  `branch-ruleset`; a praetor pin move or `sync` must not bring the template
+  back (`test_repository_security.py` fails; ADR-1504). No rebase impact.
