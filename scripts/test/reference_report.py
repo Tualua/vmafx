@@ -20,7 +20,7 @@ actual CPU (and SYCL) values, the delta, the tolerance, and the verdict.
 ║ without the EXPRESS consent of the product owner. See the NETFLIX_VMAF     ║
 ║ table below; every entry cites its quality_runner_test.py line + places.   ║
 ║                                                                            ║
-║ src01 provenance (ADR-1142): the reference is Netflix's CURRENT value      ║
+║ src01 provenance (ADR-1439): the reference is Netflix's CURRENT value      ║
 ║ 76.66783025 @ places=4, not the older 76.66890519623612 @ places=2. The    ║
 ║ latter predates Netflix commit a44e5e611 ("bugfix for edge mirroring" in   ║
 ║ integer_motion), which corrected motion2 3.8953519 -> 3.8943597 and        ║
