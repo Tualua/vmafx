@@ -276,39 +276,58 @@ static char *fill_picture(VmafPicture *pic, uint32_t seed)
     return NULL;
 }
 
+/* One frame of the extractor run: two random 8x8 pictures in, +0 out. */
+static char *extract_8x8_frame(VmafFeatureExtractorContext *ctx, VmafFeatureCollector *fc,
+                               unsigned index)
+{
+    VmafPicture ref;
+    VmafPicture dist;
+    mu_assert_msg(fill_picture(&ref, 0x51u + index));
+    mu_assert_msg(fill_picture(&dist, 0xa7u + index));
+    int err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, index, fc);
+    const int ref_unref = vmaf_picture_unref(&ref);
+    const int dist_unref = vmaf_picture_unref(&dist);
+    mu_assert("extract ok", err == 0);
+    mu_assert("picture unref", ref_unref == 0 && dist_unref == 0);
+    double score = NAN;
+    err = vmaf_feature_collector_get_score(fc, "float_ssim", &score, index);
+    mu_assert("get float_ssim", err == 0);
+    mu_assert("float_ssim of an 8x8 frame is 0", score == 0.0 && !signbit(score));
+    return NULL;
+}
+
+/* An initialised `float_ssim` context for 8x8 8-bit 4:0:0 frames. */
+static char *open_float_ssim_8x8(VmafFeatureExtractorContext **ctx)
+{
+    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_ssim");
+    mu_assert("float_ssim extractor present", fex != NULL);
+    int err = vmaf_feature_extractor_context_create(ctx, fex, NULL);
+    mu_assert("context_create", err == 0);
+    err = vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV400P, 8u, 8u, 8u);
+    mu_assert("context_init", err == 0);
+    return NULL;
+}
+
 /* The extractor itself, with the dispatch its init installs for this host:
  * `float_ssim` of an 8x8 frame is 0, on every frame of a run. */
 static char *test_float_ssim_extractor_8x8_is_zero(void)
 {
-    VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("float_ssim");
-    mu_assert("float_ssim extractor present", fex != NULL);
     VmafFeatureExtractorContext *ctx = NULL;
-    int err = vmaf_feature_extractor_context_create(&ctx, fex, NULL);
-    mu_assert("context_create", err == 0);
-    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV400P, 8u, 8u, 8u);
-    mu_assert("context_init", err == 0);
+    mu_assert_msg(open_float_ssim_8x8(&ctx));
     VmafFeatureCollector *fc = NULL;
-    err = vmaf_feature_collector_init(&fc);
+    const int err = vmaf_feature_collector_init(&fc);
     mu_assert("collector_init", err == 0);
 
-    for (unsigned index = 0; index < 4u; index++) {
-        VmafPicture ref;
-        VmafPicture dist;
-        mu_assert_msg(fill_picture(&ref, 0x51u + index));
-        mu_assert_msg(fill_picture(&dist, 0xa7u + index));
-        err = vmaf_feature_extractor_context_extract(ctx, &ref, NULL, &dist, NULL, index, fc);
-        mu_assert("extract ok", err == 0);
-        double score = NAN;
-        err = vmaf_feature_collector_get_score(fc, "float_ssim", &score, index);
-        mu_assert("get float_ssim", err == 0);
-        mu_assert("float_ssim of an 8x8 frame is 0", score == 0.0 && !signbit(score));
-        vmaf_picture_unref(&ref);
-        vmaf_picture_unref(&dist);
+    char *failure = NULL;
+    for (unsigned index = 0; index < 4u && failure == NULL; index++) {
+        failure = extract_8x8_frame(ctx, fc, index);
     }
 
-    (void)vmaf_feature_extractor_context_close(ctx);
-    (void)vmaf_feature_extractor_context_destroy(ctx);
+    const int closed = vmaf_feature_extractor_context_close(ctx);
+    const int destroyed = vmaf_feature_extractor_context_destroy(ctx);
     vmaf_feature_collector_destroy(fc);
+    mu_assert_msg(failure);
+    mu_assert("context close and destroy", closed == 0 && destroyed == 0);
     return NULL;
 }
 
