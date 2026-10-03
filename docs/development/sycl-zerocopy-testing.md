@@ -91,8 +91,8 @@ One case has no `cpu` leg: `motion_uv`, integer `motion` with
 `motion_add_uv=true`. The CPU integer `motion` extractor has no such option (only
 `float_motion` does, covered by `float_motion_uv`), so the comparator declares it
 `reference=host`: the harness runs the `host` and `zc` legs only, and `zc` (every
-`--repeat` run included) must equal host upload of `motion_sycl` exactly. That is a
-weaker statement than "equals the CPU" and the verdict list says so: no
+`--repeat` run included) must equal host upload of `motion_sycl` exactly. That is
+a weaker statement than "equals the CPU" and the verdict list says so: no
 `host-vs-cpu` line exists for it. `--list` prints the reference leg as its last
 column.
 
