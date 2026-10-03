@@ -868,6 +868,14 @@ repos:
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
+      - id: sycl-zerocopy-contract
+        name: libvmaf_sycl zero-copy routing and e2e comparator contracts
+        entry: make sycl-zerocopy-contract
+        language: system
+        files: '^(ffmpeg-patches/(0005-[^/]*\.patch|test/check-sycl-feature-routing\.sh)|scripts/test/(zerocopy[-_]e2e[^/]*|test_zerocopy_e2e_compare\.py)|scripts/ci/cross_backend_parity_gate\.py|Makefile$|\.github/workflows/ffmpeg-patch-stack\.yml$|\.pre-commit-config\.yaml$)'
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
+
       - id: ffmpeg-patches-apply-check
         name: FFmpeg patch stack on the configured release
         entry: python3 scripts/ci/ffmpeg_patch_stack.py --refresh --output-dir .workingdir/cache/ffmpeg-patch-stack/hooks
