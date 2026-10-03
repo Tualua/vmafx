@@ -222,8 +222,9 @@ static int uf_scores(const UfCase *c, double scores[UF_FRAMES])
         err = vmaf_feature_collector_init(&fc);
     for (unsigned i = 0u; i < UF_FRAMES && !err; i++)
         err = uf_extract(ctx, fc, ref_file, dis_file, i);
-    char *name =
-        err ? NULL : vmaf_feature_name_from_options(c->feature, ctx->fex->options, ctx->fex->priv);
+    char *name = (err || !ctx) ?
+                     NULL :
+                     vmaf_feature_name_from_options(c->feature, ctx->fex->options, ctx->fex->priv);
     if (!err && !name)
         err = -ENOMEM;
     for (unsigned i = 0u; i < UF_FRAMES && !err; i++)
