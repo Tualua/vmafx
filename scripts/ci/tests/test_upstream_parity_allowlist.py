@@ -181,6 +181,43 @@ def value(
 RUN = ("scalar", "nflx8", "F.ciede.default")
 
 
+class GeneratedPage(FragmentDirectory):
+    """The page `scripts/docs/generate-upstream-parity-allowlist.py` renders."""
+
+    PENDING_HEADING = "## Pending: differences that are to disappear"
+    PENDING = (
+        "kind: pending-revert\nmetrics: ciede2000\nbound: 0.2\n"
+        "branch: fix/example\nevidence: measured\n"
+    )
+
+    def render(self) -> str:
+        import importlib.util  # noqa: PLC0415
+
+        path = ROOT / "scripts" / "docs" / "generate-upstream-parity-allowlist.py"
+        spec = importlib.util.spec_from_file_location("allowlist_page", path)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        page = module.render(self.fragments, self.adrs)
+        assert isinstance(page, str)
+        return page
+
+    def test_the_pending_section_stays_when_nothing_is_pending(self) -> None:
+        # docs/state.md and the guide link to the section's anchor.
+        self.write("ciede.example", VALUE)
+        page = self.render()
+        self.assertIn(self.PENDING_HEADING, page)
+        self.assertIn("None: every fragment above is a deliberate deviation", page)
+
+    def test_a_pending_fragment_is_listed_under_the_section(self) -> None:
+        self.write("ciede.example", VALUE)
+        self.write("ciede.pending", self.PENDING)
+        page = self.render()
+        self.assertIn(self.PENDING_HEADING, page)
+        self.assertNotIn("None: every fragment above", page)
+        self.assertIn("`ciede.pending`", page.split(self.PENDING_HEADING, 1)[1])
+
+
 class Attribution(FragmentDirectory):
     def test_a_difference_within_the_bound_is_covered(self) -> None:
         fragment = self.parse("ciede.a", VALUE)

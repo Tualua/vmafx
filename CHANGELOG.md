@@ -797,6 +797,14 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   [build flags](docs/development/build-flags.md#floating-point-contraction-is-off-everywhere).
 
 
+- The generated upstream parity allowlist page
+  (`docs/development/upstream-parity-allowlist.md`) keeps its "Pending"
+  section with "None" when no difference is pending, so links to it stay
+  valid. `docs/development/upstream-parity.md` carries the guard's result on
+  master after every revert and port landed, measured in the rebuilt dev
+  image.
+
+
 - **Restore `adm_sum_cube_s_p3`, `adm_csf_den_scale_s_p3`, and `adm_cm_s_p3` fast-path
   functions in `adm_tools.c` (ADR-0463 / BUG-048 B3).**
   The specialized `adm_p_norm == 3.0` fast-paths eliminate all per-pixel `powf()`

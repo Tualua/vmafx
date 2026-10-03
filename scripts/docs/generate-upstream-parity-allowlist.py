@@ -70,6 +70,14 @@ then matches nothing, the guard fails as stale, and the fragment is removed.
 """
 
 
+PENDING_NONE = """\
+
+## Pending: differences that are to disappear
+
+None: every fragment above is a deliberate deviation with an ADR.
+"""
+
+
 def _cell(text: str) -> str:
     return text.replace("|", "\\|")
 
@@ -141,6 +149,10 @@ def render(fragments_dir: Path = FRAGMENTS_DIR, adr_dir: Path = ADR_DIR) -> str:
     text = HEADER + DELIBERATE + "".join(_row(fragment, adr_dir) for fragment in deliberate)
     if pending:
         text += PENDING + "".join(_row(fragment, adr_dir) for fragment in pending)
+    else:
+        # Keep the section and its anchor when nothing is pending: the
+        # ledger and the guide link to it.
+        text += PENDING_NONE
     return text
 
 

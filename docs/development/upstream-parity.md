@@ -260,21 +260,24 @@ its verdict there is marked advisory; run in the dev image it is the guard's.
 
 ## Result on master
 
-Measured on 2026-10-03 in the dev image (`sha256:43ef1e32cb32`, GCC 15.2.0,
-glibc 2.43) on `ryzen-4090-arc` (Ryzen 9 9950X3D): master `623b11ce2`
-against Netflix `9e48141b`, with the two fragments of the five-frame motion
-port removed. The allowlist holds 40 fragments: 37 deliberate deviations and
-3 pending differences.
+Full matrix: measured on 2026-10-03 in the rebuilt dev image
+(`sha256:14db4c43070a`, GCC 15.2.0, glibc 2.43) on `ryzen-4090-arc` (Ryzen 9
+9950X3D): master `f65dc6969` against Netflix `9e48141b`, after every revert
+and port landed. The allowlist holds 37 fragments, all deliberate deviations;
+none is pending. Every bound measured in the previous image
+(`sha256:43ef1e32cb32`) held unchanged in this one. Probe set: master
+`623b11ce2` in the previous image, before the SpEED revert and the
+five-frame motion port landed.
 
 | | Probe set | Full matrix |
 | --- | --- | --- |
 | Runs per tree | 1,848 | 5,349 |
 | Runs both trees complete / both fail / end differently | 1,734 / 18 / 96 | 4,962 / 93 / 294 |
 | Values compared | 254,922 | 911,802 |
-| Identical | 221,936 | 803,151 |
-| Pooled values that follow a per-frame difference | 6,590 | 22,489 |
-| Differences covered by a deliberate fragment | 19,958 | 70,826 |
-| Differences covered by a pending fragment | 6,550 | 15,666 |
+| Identical | 221,936 | 820,800 |
+| Pooled values that follow a per-frame difference | 6,590 | 20,512 |
+| Differences covered by a deliberate fragment | 19,958 | 70,820 |
+| Differences covered by a pending fragment | 6,550 | 0 |
 | Not covered / above the bound / stale fragments | 0 / 0 / 0 | 0 / 0 / 0 |
 | Heap check: upstream outputs that change / this tree's | not run | 1,675 in 45 runs / 0 |
 | Verdict | PASS | PASS |
