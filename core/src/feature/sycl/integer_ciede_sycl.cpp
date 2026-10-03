@@ -272,34 +272,39 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     return 0;
 }
 
+/* Make this frame's Y / Cb / Cr current in the shared planes and order the queue
+ * after their upload. Zero-copy input hands no host pictures; its chroma is in
+ * the shared planes only when the import marked it for this frame (ADR-1597). */
+static int ciede_ready_planes(const CiedeStateSycl *s, sycl::queue &q, VmafPicture *ref_pic,
+                              VmafPicture *dist_pic, unsigned index)
+{
+    if (vmaf_sycl_require_chroma(s->sycl_state, "ciede_sycl", ref_pic, dist_pic))
+        return -ENOTSUP;
+    int err = 0;
+    if (ref_pic && dist_pic)
+        err = vmaf_sycl_shared_chroma_upload(s->sycl_state, ref_pic, dist_pic);
+    if (!err)
+        err = vmaf_sycl_queue_after_upload(s->sycl_state, &q);
+    if (err) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "ciede_sycl: frame %u plane upload failed (%d)\n", index,
+                 err);
+    }
+    return err;
+}
+
 static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
                            VmafPicture *dist_pic, VmafPicture *dist_pic_90, unsigned index)
 {
     (void)ref_pic_90;
     (void)dist_pic_90;
-    /* Zero-copy input hands no host pictures; its chroma is in the shared
-     * planes only when the import marked it for this frame (ADR-1597). */
     auto *s = static_cast<CiedeStateSycl *>(fex->priv);
     auto *qptr = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(s->sycl_state));
     if (!qptr)
         return -EINVAL;
-    if (vmaf_sycl_require_chroma(s->sycl_state, "ciede_sycl", ref_pic, dist_pic))
-        return -ENOTSUP;
-    if (ref_pic && dist_pic) {
-        const int chroma_err = vmaf_sycl_shared_chroma_upload(s->sycl_state, ref_pic, dist_pic);
-        if (chroma_err) {
-            vmaf_log(VMAF_LOG_LEVEL_ERROR, "ciede_sycl: frame %u chroma upload failed (%d)\n",
-                     index, chroma_err);
-            return chroma_err;
-        }
-    }
-    const int upload_err = vmaf_sycl_queue_after_upload(s->sycl_state, qptr);
-    if (upload_err) {
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "ciede_sycl: frame %u plane upload failed (%d)\n", index,
-                 upload_err);
-        return upload_err;
-    }
     sycl::queue &q = *qptr;
+    const int ready_err = ciede_ready_planes(s, q, ref_pic, dist_pic, index);
+    if (ready_err)
+        return ready_err;
 
     if (!s->tables_uploaded) {
         /* The tables do not change. The queue is in order, so the copies
