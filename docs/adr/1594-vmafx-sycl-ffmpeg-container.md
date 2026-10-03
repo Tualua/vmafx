@@ -28,7 +28,9 @@ Intel GPU host needed a smaller image that builds from public inputs only.
    and pins as the oneAPI release image), plus VA-API / oneVPL runtime.
 2. **`build`** — `runtime` + `intel-basekit` (icpx, lld) + GCC + meson /
    ninja + FFmpeg build dependencies + the Python golden-test stack. It builds
-   libvmaf (SYCL only, AOT via the pinned ocloc, toolchain per
+   libvmaf (SYCL only, AOT via the pinned ocloc for the option's default
+   target list, Xe2 included since
+   [ADR-1468](1468-sycl-sub-group-sizes-every-aot-target.md), toolchain per
    [ADR-1593](1593-hybrid-gcc-cpu-icpx-sycl.md)), then FFmpeg at `FFMPEG_TAG`
    (the tag `ffmpeg-patches/series.txt` is written against, checked out with
    `scripts/ci/checkout-annotated-tag.sh`) with every patch applied, then runs
@@ -53,7 +55,15 @@ Netflix reference table (CPU and SYCL vs the Netflix values).
 ## Consequences
 
 - **Positive**: one command builds a tested SYCL + FFmpeg image on any Intel
-  GPU host. VERIFY-PLACEHOLDER
+  GPU host. Verified on the NAS (Xeon D-2143IT, Arc A380): the build-time
+  golden gate passes (271 passed, 12 skipped); the 980 MB prod image scores
+  the three Netflix pairs within `places=4` on CPU and SYCL, SYCL equals CPU
+  bit for bit on `integer_adm2`, `integer_adm3`, `integer_vif_scale0`,
+  `integer_motion2` and VMAF (src01), the `libvmaf`, `libvmaf_sycl` and
+  `libvmaf_tune` FFmpeg filters are present, and libvmaf's math binds to glibc
+  `libm` (research digest). That run built AOT without the Xe2 targets,
+  which master could not compile then (`T-SYCL-XE2-SUBGROUP8-AOT-2026-10-02`,
+  closed: fixed on master by #1842 before this branch merged).
 - **Negative**: the first build installs oneAPI and builds FFmpeg (cached
   afterwards).
 - **Neutral / follow-ups**: keep `FFMPEG_TAG` equal to the tag in
@@ -75,5 +85,9 @@ Netflix reference table (CPU and SYCL vs the Netflix values).
 
 - 2026-10-01 popup: port `Containerfile.vmafx` and the test harness onto the
   new branch from master.
+- Research digest: [`docs/research/1594-vmafx-sycl-ffmpeg-container.md`](../research/1594-vmafx-sycl-ffmpeg-container.md).
 - [ADR-1593](1593-hybrid-gcc-cpu-icpx-sycl.md), [ADR-1368](1368-oneapi-release-image-debian13.md),
   [ADR-1360](1360-sycl-aot-compile-time-device-codegen.md), [ADR-0541](0541-dev-container-sycl-hip-runtime-fix.md).
+- Originally drafted as ADR-1441; renumbered to 1503 on the rebase onto
+  master `b01ffe42d`, where 1441 had been taken, and to 1562 on the
+  rebase onto master `2889f963a`, where 1503 had been taken.

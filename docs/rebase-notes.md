@@ -796,6 +796,13 @@ rebased onto master `b01ffe42d`, where it was first ADR-1439..1441).
 - `Containerfile.vmafx`: `FFMPEG_TAG` must equal the tag
   `ffmpeg-patches/series.txt` is written against; the Intel GPU stack comes
   from `build-config.env` through `scripts/ci/install-intel-ocloc.sh`.
+  It does not override `-Dsycl_icpx_aot_targets`: the default list, Xe2
+  included, compiles since #1842 (ADR-1468); do not bring back the Xe2
+  exclusion the branch carried before the rebase. It copies `scripts/ci/check-msvc-clz-shim.sh` before
+  `meson setup` because `core/test/meson.build` needs it at configure time.
+- `compat/python-vmaf/config.py`: `_urlretrieve_with_retries` retries
+  transient resource-download errors; an upstream sync of the download code
+  keeps it (`python/test/config_download_retry_test.py`).
 - `python/test/quality_runner_test.py`: every assertion shared with Netflix
   `upstream/master` carries upstream's value and `places` (ADR-1439). An
   upstream sync that changes one of them takes upstream's new value; do not
