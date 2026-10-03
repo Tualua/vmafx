@@ -220,7 +220,7 @@ all three legs):
 - Stage-1 and Stage-2 runs now report `unexpected-success` for the cases that moved to
   stage 3 or earlier: that is the harness doing its job, not a regression.
 - Throughput, `vmaf_v0.6.1` on checkerboard 1080p 8-bit, same session, stage-2 library
-  (db1adbc1a) against this build, four alternating runs each: 73.7 fps (62.8, 75.1,
+  (dd00f1b59) against this build, four alternating runs each: 73.7 fps (62.8, 75.1,
   78.3, 78.6) against 77.8 fps (78.7, 78.3, 79.7, 74.6), no regression. No stage-3 change
   touches the integer `vif` / `adm` / `motion` path that model uses. In-run `--bench`
   figures of the final run: 76.05 fps (8-bit), 76.24 fps (10-bit); the stage-2 run gave
@@ -246,6 +246,41 @@ already recorded for the CUDA, SYCL and HIP twins
 (`T-CUDA-CIEDE-LIBM-RESIDUAL-2026-10-01`, ADR-1436); it is declared in the comparator
 as the parity gate's own `LIBM_TWINS` cell rather than as a new tolerance. In-run
 `--bench` figures: 79.58 fps (8-bit), 72.64 fps (10-bit).
+
+## Re-validation after the rebase onto master (2026-10-03)
+
+The branch was rebased from `397997897` onto `VMAFx/master` `b01ffe42d` (104
+master commits, among them the SYCL raster-order sums of `float_ssim` and
+`float_ms_ssim`, strict FP in every translation unit, the Xe2 sub-group sizes
+and master's own `motion3` and SpEED fixes). The branch's ADRs moved to
+ADR-1595 to ADR-1599 and this digest from Research-1461. Three branch commits
+were dropped because master fixed the same thing first: `float_motion_sycl`'s
+`motion3` (#1914), the correctly rounded CPU SpEED `log2` with its ADR
+(master's [ADR-1477](../adr/1477-speed-upstream-double-math.md) forms the
+SpEED entropies and score on the host with `speed.c`'s statements, so the twin
+equals the CPU of the same process), and the `VmafSyclState` aggregate
+refactor. The shared-plane reads were merged onto master's exact arithmetic:
+`float_ssim` and `float_ms_ssim` read the shared planes and then add their terms
+in master's raster order; the VA chroma import sits on master's split of
+`dmabuf_import.cpp` (exception-guarded de-tile, deferred free).
+
+Arc A380, `scripts/test/sycl-dev-container.sh` (JIT build from scratch,
+`UR_L0_USE_IMMEDIATE_COMMANDLISTS=0`):
+
+| Check | Result |
+| --- | --- |
+| `meson test --suite sycl` | 70 of 70 |
+| `meson test --suite fast` | 351 OK, 1 skipped, 1 failure: `test_icx_system_libm` (recorded as `T-SYCL-LD-BIND-NOW-LIBIMF-IFUNC-2026-10-03` on `feat/vmafx-container-hybrid-toolchain`), which fails the same way on a master build in the same container |
+| `zerocopy-e2e.sh --stage 3 --bench --repeat 5`, 8-bit NV12 | `pass=50 fail=0 nonexact=0`, 79.89 fps |
+| same, 10-bit P010 | `pass=50 fail=0 nonexact=0`, 73.17 fps |
+| Netflix golden gate (GCC 15.2 golden profile, ADR-1317) | 280 passed, 3 skipped, assertions untouched |
+
+Every case is identical between zero-copy and host upload on all five runs,
+SpEED included. Host upload equals the CPU on every case except `ciede`, inside
+the declared 1e-9 cell: 1.111e-11 on src01 at 8 bit as before, and now 2.835e-12
+on src01 at 10 bit (identical before the rebase). Master's builds link glibc's
+`libm` in icx builds ([ADR-1495](../adr/1495-icx-system-libm.md)), so the CPU
+`ciede` leg's `powf` changed library; the twin's arithmetic is master's.
 
 ## Open items
 
