@@ -1243,3 +1243,6 @@
 1562-vmaf-tune-lowest-passing-bitrate-pick
 1561-integer-vif-sv-sq-defined
 1567-job-cancel-reaches-node
+1439-quality-runner-golden-upstream-sync
+1593-hybrid-gcc-cpu-icpx-sycl
+1594-vmafx-sycl-ffmpeg-container

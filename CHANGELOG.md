@@ -320,6 +320,17 @@
   `docs/development/upstream-parity.md`.
 
 
+- **`Containerfile.vmafx`: a SYCL + FFmpeg test image with a build-time
+  golden gate.** It builds libvmaf (SYCL), FFmpeg at the tag
+  `ffmpeg-patches/series.txt` targets with every patch (including the
+  `libvmaf_sycl` filter), and runs the Netflix CPU golden tests while it
+  builds; a failing golden test fails the build. The Intel GPU stack comes
+  from `build-config.env`. `scripts/test/run-all-tests.sh` runs the GPU suites
+  against the built image and `scripts/test/reference_report.py` prints CPU
+  and SYCL scores next to the Netflix reference values
+  ([ADR-1594](docs/adr/1594-vmafx-sycl-ffmpeg-container.md)).
+
+
 - **A Windows CUDA tester zip measures every CUDA twin on a tester's Windows PC**
   (ADR-1516, `T-CUDA-WINDOWS-BUILD-NEVER-RUN-ON-A-GPU-2026-10-04`).
   `vmafx-tester-windows-x64-cuda-<version>.zip` is the Windows tester zip with
@@ -1494,6 +1505,17 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   576x324 and 5.826e-13 on 4K BBB. Rejects 4:0:0 input at init. See
   [SSIMULACRA 2](docs/metrics/ssimulacra2.md) and
   [ADR-1390](docs/adr/1390-hip-ssimulacra2-device-resident.md).
+
+
+- **The dev and SYCL + FFmpeg containers build the CPU code with GCC.**
+  `dev/Containerfile` and `Containerfile.vmafx` configure libvmaf with
+  `CC=gcc CXX=icpx` and `-Db_lto=false`; the SYCL kernels and the other C++
+  code stay with icpx. When the C++ compiler is icpx and the C compiler is
+  not, every C++ translation unit now gets icpx's strict floating-point
+  options (`-fp-model=precise -ffp-contract=off`), as in an all-icx build, and
+  with SYCL enabled the test executables link as C++. CPU scores are those of
+  a GCC build
+  ([ADR-1593](docs/adr/1593-hybrid-gcc-cpu-icpx-sycl.md)).
 
 
 - **SpEED filters only the samples it keeps on non-x86 targets (port of
@@ -3746,6 +3768,15 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   `BSD-2-Clause-Patent`, which had failed on `master` since #1954
   ([ADR-1560](docs/adr/1560-python-package-licence-union.md),
   [licensing](docs/licensing.md#python-packages)).
+
+
+- **`quality_runner_test.py` asserts Netflix's current golden values again.**
+  33 test methods (115 assertions) still held values from before two upstream
+  test updates (`a44e5e611` integer-motion edge mirroring, `142c06714` float
+  VIF on-the-fly kernel) and had been loosened down to `places=1` so they kept
+  passing. Every assertion shared with Netflix `upstream/master` now carries
+  upstream's exact value and `places`; the full suite passes on GCC and icx
+  builds ([ADR-1439](docs/adr/1439-quality-runner-golden-upstream-sync.md)).
 
 
 - **The two PTQ stub scripts are removed.** `ai/scripts/gen_calibration.py` and

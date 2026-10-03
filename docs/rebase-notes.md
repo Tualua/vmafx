@@ -773,6 +773,37 @@ comment and no SPDX tag. An upstream sync that touches them keeps the MIT tag.
   `licensing.py` honours both in `check_dpkg()`, `debian_specs()` and
   `fetch_texts()`. The Dockerfile's `sycl-licence-check` and `sycl-source-export`
   stages mirror the CPU image's.
+## Containers build CPU C with GCC; `Containerfile.vmafx`; goldens synced to upstream (2026-10-01)
+
+`feat/vmafx-container-hybrid-toolchain` (ADR-1439, ADR-1593, ADR-1594;
+rebased onto master `b01ffe42d`, where it was first ADR-1439..1441).
+
+- `core/test/meson.build`: `test_link_kwargs` is defined after the
+  `enable_tests` guard and passed as `kwargs : test_link_kwargs` to every
+  `executable()` that does not already set `link_language`. **On rebase**: a
+  new test executable takes the same line; without it a `CC=gcc CXX=icpx`
+  build fails to link it (`gcc: error: unrecognized command-line option
+  '-fsycl'`).
+- `core/src/meson.build`: the `BEGIN/END VMAF C++ strict FP policy for mixed
+  toolchains` block after ADR-1461's project argument gives the C++ units
+  `-fp-model=precise -ffp-contract=off` when the C++ compiler is Intel LLVM
+  and the C compiler is not. Keep it above the first target; never put
+  `-fp-model=precise` on a single target instead (ADR-1461).
+- `dev/Containerfile`, `Containerfile.vmafx`: `CC=gcc CXX=icpx`,
+  `-Db_lto=false`. Do not turn LTO back on (GCC LTO objects cannot go through
+  the icpx link). No `-no-intel-lib=libimf` option: ADR-1495's link policy
+  already passes it on every icpx link.
+- `Containerfile.vmafx`: `FFMPEG_TAG` must equal the tag
+  `ffmpeg-patches/series.txt` is written against; the Intel GPU stack comes
+  from `build-config.env` through `scripts/ci/install-intel-ocloc.sh`.
+- `python/test/quality_runner_test.py`: every assertion shared with Netflix
+  `upstream/master` carries upstream's value and `places` (ADR-1439). An
+  upstream sync that changes one of them takes upstream's new value; do not
+  loosen `places` to make a stale value pass.
+- `scripts/test/run-all-tests.sh` runs Meson tests through
+  `scripts/ci/run_meson_test.py` and is listed in the runner inventory of
+  `core/test/test_meson_secret_env_sanitization.py`.
+
 ## The `float_psnr` twins add each row's exact sum in the CPU's order (ADR-1499, 2026-10-03)
 
 `fix/float-psnr-exact-past-2-53`. Fork-only device and host code; `float_psnr.c`

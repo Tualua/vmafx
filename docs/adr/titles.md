@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1244), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1247), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -4584,6 +4584,10 @@ Every ADR, one heading each (1244), so the site search finds an ADR by its title
 
 [1438-hip-ssim-cpu-frame-sum](1438-hip-ssim-cpu-frame-sum.md)
 
+## ADR-1439: Sync `quality_runner_test.py` golden assertions to current Netflix upstream
+
+[1439-quality-runner-golden-upstream-sync](1439-quality-runner-golden-upstream-sync.md)
+
 ## ADR-1440: `float_psnr_hip` adds its squared differences as integers and returns the CPU's score bit for bit
 
 [1440-hip-float-psnr-exact-block-sums](1440-hip-float-psnr-exact-block-sums.md)
@@ -4987,3 +4991,11 @@ Every ADR, one heading each (1244), so the site search finds an ADR by its title
 ## ADR-1590: Every build stores its GPU device code compressed at the toolchain's strongest setting, and the build refuses raw device code
 
 [1590-device-code-compression](1590-device-code-compression.md)
+
+## ADR-1593: The dev and SYCL+ffmpeg containers build CPU C code with GCC and SYCL with icpx
+
+[1593-hybrid-gcc-cpu-icpx-sycl](1593-hybrid-gcc-cpu-icpx-sycl.md)
+
+## ADR-1594: `Containerfile.vmafx` — a self-contained SYCL + patched-ffmpeg image with a build-time golden gate
+
+[1594-vmafx-sycl-ffmpeg-container](1594-vmafx-sycl-ffmpeg-container.md)

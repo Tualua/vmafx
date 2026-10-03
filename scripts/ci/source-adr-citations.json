@@ -1261,6 +1261,7 @@
         "scripts/ci/cross_backend_parity_gate.py": 2,
         "scripts/ci/gpu_ulp_calibration.yaml": 2,
         "scripts/ci/test_cross_backend_parity_gate.py": 1,
+        "scripts/test/reference_report.py": 5,
         "tools/rc1-tester/src/vmaf_rc1_tester/bundle.py": 1,
         "tools/rc1-tester/src/vmaf_rc1_tester/validate.py": 2,
         "tools/rc1-tester/tests/test_bundle.py": 1
@@ -3622,6 +3623,7 @@
     },
     "0541": {
       "sites": {
+        "Containerfile.vmafx": 1,
         "dev/Containerfile": 10,
         "dev/docker-compose.runner.yml": 1,
         "dev/docker-compose.yml": 6,
@@ -4170,6 +4172,7 @@
     "0700": {
       "sites": {
         ".github/workflows/go-ci.yml": 1,
+        "Containerfile.vmafx": 1,
         "Makefile": 1,
         "ai/tests/test_e2e_frame_to_score.py": 1,
         "cmd/vmafx-mcp/impl.go": 1,
@@ -5057,7 +5060,8 @@
         "core/test/meson.build": 1,
         "core/test/test_feature_isa_invariance.c": 1,
         "core/test/test_ssimulacra2_simd.c": 2,
-        "python/test/ssimulacra2_test.py": 2
+        "python/test/ssimulacra2_test.py": 2,
+        "scripts/test/run-all-tests.sh": 1
       },
       "target": "0891-simd-bit-exact-round2-fmaf-libvmaf-feature-icx.md"
     },
@@ -6062,6 +6066,7 @@
     "1134": {
       "sites": {
         ".github/workflows/go-ci.yml": 1,
+        "Containerfile.vmafx": 1,
         "Makefile": 2,
         "cmd/vmafx-ort-runner/main.go": 1,
         "cmd/vmafx-tune/cmd/saliencysession.go": 1,
@@ -6072,7 +6077,8 @@
         "pkg/fast/proxy.go": 1,
         "pkg/libvmaf/dnn.go": 1,
         "pkg/libvmaf/dnn_test.go": 1,
-        "pkg/observability/otel_instruments.go": 1
+        "pkg/observability/otel_instruments.go": 1,
+        "scripts/test/run-all-tests.sh": 1
       },
       "target": "1134-vmafx-ort-runner-in-tree.md"
     },
@@ -6080,8 +6086,10 @@
       "sites": {
         ".github/workflows/lint-and-format.yml": 1,
         ".pre-commit-config.yaml": 1,
+        "Containerfile.vmafx": 1,
         "scripts/ci/tests/test-twin-drift-check.sh": 1,
-        "scripts/ci/twin-drift-check.sh": 2
+        "scripts/ci/twin-drift-check.sh": 2,
+        "scripts/test/run-all-tests.sh": 2
       },
       "target": "1135-ci-twin-drift-gate.md"
     },
@@ -6625,17 +6633,20 @@
         ".github/workflows/security-scans.yml": 4,
         ".github/workflows/tests-and-quality-gates.yml": 15,
         ".pre-commit-config.yaml": 1,
-        "scripts/ci/plan-ci-impact.py": 1
+        "scripts/ci/plan-ci-impact.py": 1,
+        "scripts/test/run-all-tests.sh": 1
       },
       "target": "1140-ci-impact-planner.md"
     },
     "1141": {
       "sites": {
+        "Containerfile.vmafx": 2,
         "core/src/feature/adm_tools.c": 2,
         "core/src/feature/adm_tools.h": 1,
         "core/src/feature/integer_adm.c": 5,
         "core/src/feature/x86/adm_avx2.c": 3,
-        "core/src/feature/x86/adm_avx512.c": 3
+        "core/src/feature/x86/adm_avx512.c": 3,
+        "scripts/test/run-all-tests.sh": 1
       },
       "target": "1141-integer-adm-upstream-mirror-rework.md"
     },
@@ -6677,7 +6688,8 @@
         "scripts/ci/tests/test_semgrep_vendored_scope.py": 3,
         "scripts/ci/tests/test_tidy_ratchet.py": 1,
         "scripts/ci/tests/test_write_compile_commands.py": 1,
-        "scripts/ci/tidy-ratchet.py": 2
+        "scripts/ci/tidy-ratchet.py": 2,
+        "scripts/test/reference_report.py": 1
       },
       "target": "1142-whole-codebase-standards.md"
     },
@@ -6689,6 +6701,7 @@
     },
     "1145": {
       "sites": {
+        "Containerfile.vmafx": 1,
         "dev/Containerfile": 1,
         "dev/scripts/fetch-intel-neo.py": 2
       },
@@ -8120,6 +8133,7 @@
         ".github/workflows/lint-and-format.yml": 1,
         ".github/workflows/sycl-parity.yml": 1,
         ".github/workflows/tests-and-quality-gates.yml": 1,
+        "Containerfile.vmafx": 1,
         "core/meson_options.txt": 1,
         "core/src/check_device_compression.py": 1,
         "core/src/meson.build": 8,
@@ -8252,6 +8266,7 @@
     "1368": {
       "sites": {
         ".github/workflows/docker-publish-production.yml": 2,
+        "Containerfile.vmafx": 1,
         "dev/scripts/fetch-intel-neo.py": 1,
         "docker/Dockerfile.node": 1,
         "docker/Dockerfile.production-gpu": 6,
@@ -9488,7 +9503,8 @@
         "core/src/meson.build": 1,
         "core/src/metal/meson.build": 1,
         "core/test/meson.build": 5,
-        "core/test/test_strict_fp_compiler_args.py": 4,
+        "core/test/test_strict_fp_compiler_args.py": 5,
+        "dev/Containerfile": 1,
         "scripts/ci/clang-tidy-sycl.sh": 1,
         "scripts/ci/golden-arm64-preflight.sh": 1,
         "scripts/ci/setup-golden-build.sh": 1,
@@ -9831,7 +9847,8 @@
         "core/test/meson.build": 1,
         "core/test/test_icx_system_libm.py": 3,
         "core/test/test_meson_secret_env_sanitization.py": 1,
-        "core/test/test_strict_fp_compiler_args.py": 2
+        "core/test/test_strict_fp_compiler_args.py": 2,
+        "dev/Containerfile": 1
       },
       "target": "1495-icx-system-libm.md"
     },
@@ -10313,6 +10330,15 @@
         "scripts/ci/tests/test_sycl_aot_command.py": 1
       },
       "target": "1590-device-code-compression.md"
+    },
+    "1593": {
+      "sites": {
+        "core/src/meson.build": 1,
+        "core/test/meson.build": 1,
+        "core/test/test_strict_fp_compiler_args.py": 6,
+        "dev/Containerfile": 2
+      },
+      "target": "1593-hybrid-gcc-cpu-icpx-sycl.md"
     }
   },
   "retired": {

@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # Research digest titles
 
-Every research digest, one heading each (786), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
+Every research digest, one heading each (788), so the site search finds a digest by its title; digest bodies are not in the search index ([ADR-1512](../adr/1512-docs-search-user-pages-only.md)).
 
 ## Research-0001: Cache shape for `bisect-model-quality` nightly
 
@@ -2116,6 +2116,10 @@ Every research digest, one heading each (786), so the site search finds a digest
 
 [1437-hip-twin-exactness-sweep](1437-hip-twin-exactness-sweep.md)
 
+## Research-1439: `quality_runner_test.py` vs Netflix upstream
+
+[1439-quality-runner-golden-upstream-sync](1439-quality-runner-golden-upstream-sync.md)
+
 ## Research-1442: What changes when float ADM divides instead of using the processor's reciprocal estimate
 
 [1442-float-adm-reference-divides](1442-float-adm-reference-divides.md)
@@ -2155,6 +2159,10 @@ Every research digest, one heading each (786), so the site search finds a digest
 ## Research-1590: GPU device code compression
 
 [1590-device-code-compression](1590-device-code-compression.md)
+
+## Research-1593: GCC (C) + icpx (C++ / SYCL) container toolchain
+
+[1593-hybrid-gcc-cpu-icpx-sycl](1593-hybrid-gcc-cpu-icpx-sycl.md)
 
 ## SYCL QSV Zero-Copy — Two-Bug Investigation (Phase 3 fix digest)
 
