@@ -203,6 +203,8 @@ docs-fragments-check:
 	@python3 scripts/docs/generate-upstream-parity-allowlist.py --check
 	@echo "--- */AGENTS.d/ vs */AGENTS.md ---"
 	@python3 scripts/docs/agents_index.py --check
+	@echo "--- docs/hardware-reports/ (tester reports: schema + integrity) ---"
+	@python3 scripts/ci/check-hardware-reports.py
 
 # Regenerate consolidated outputs from fragments (ADR-0221).
 docs-fragments-write:
@@ -213,6 +215,7 @@ docs-fragments-write:
 	@python3 scripts/docs/generate-exact-twins.py --write
 	@python3 scripts/docs/generate-upstream-parity-allowlist.py --write
 	@python3 scripts/docs/agents_index.py --write
+	@python3 scripts/docs/generate-hardware-reports.py --write
 
 # Analyze only this Meson profile, retaining all configured command variants.
 # Backend-specific clang-tidy options can be supplied with repeated

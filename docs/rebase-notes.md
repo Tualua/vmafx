@@ -287,6 +287,15 @@ Scores with the option equal Netflix `9e48141b` bit for bit.
   on `motion_cuda`, `motion_sycl` and `motion_hip` until the twin has the
   window (`core/test/test_gpu_option_value_capability_contract.py` lists
   them); the `-ENOTSUP` in their `init()` stays with the flag.
+## Tester image and macOS bundle are fork-only additions (ADR-1492, ADR-1493, 2026-10-03)
+
+`feat/tester-image-arm64`. No upstream (Netflix/vmaf) file changes. Fork-only paths:
+`docker/Dockerfile.tester`, `tools/rc1-tester/` (`hw_*.py`, `image/`, `vmaf-tester-report`),
+`scripts/ci/{check-hardware-reports.py,check-macos-bundle-links.sh,build-macos-tester-bundle.sh}`,
+`scripts/docs/generate-hardware-reports.py`, `docs/hardware-reports/`, two workflows and an
+issue form. `tools/rc1-tester/src/vmaf_rc1_tester/safe_process.py` gained an optional `cwd`
+argument. `Makefile` `docs-fragments-check` / `-write` each gained one hardware-reports line:
+keep them on a conflict. `docs/state.md` gained `T-TESTER-APPLE-SILICON-EVIDENCE-2026-10-03`.
 
 ## Agent pages name the staged CUDA VIF kernels and the HIP handle header (2026-10-02)
 

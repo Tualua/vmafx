@@ -1,0 +1,47 @@
+name: Hardware report
+description: Send the JSON report of the tester image or the macOS tester bundle.
+title: "[hardware report] "
+labels: ["hardware-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for running the tester (see `docs/usage/tester-image.md`). Attach the
+        `report.json` it printed. It holds no host name, user name or serial number;
+        read it before you attach it. A report with verdict `fail` is welcome.
+
+  - type: textarea
+    id: report
+    attributes:
+      label: report.json
+      description: Drag the file into this box, or paste its content.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: package
+    attributes:
+      label: Which package did you run?
+      options:
+        - macOS bundle (native)
+        - Container image
+    validations:
+      required: true
+
+  - type: input
+    id: machine
+    attributes:
+      label: Machine
+      description: For example "MacBook Air, Apple M4, macOS 15.1" or "Docker Desktop 4.40 on the same Mac".
+    validations:
+      required: false
+
+  - type: input
+    id: credit
+    attributes:
+      label: Credit (optional)
+      description: >-
+        Name and e-mail address for a `Co-authored-by:` line when a maintainer
+        commits the report for you. Leave empty to stay unnamed.
+    validations:
+      required: false

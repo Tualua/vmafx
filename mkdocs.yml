@@ -1606,6 +1606,8 @@ nav:
         - "ADR-1489: float-adm-barten-upstream-float": adr/1489-float-adm-barten-upstream-float.md
         - "ADR-1490: rc3-rc9-candidate-map-cpu-capability": adr/1490-rc3-rc9-candidate-map-cpu-capability.md
         - "ADR-1491: gpu-motion-five-frame-window": adr/1491-gpu-motion-five-frame-window.md
+        - "ADR-1492: tester-image-arm64-report": adr/1492-tester-image-arm64-report.md
+        - "ADR-1493: macos-tester-bundle": adr/1493-macos-tester-bundle.md
         - "ADR-1494: adm-refuses-frames-below-17": adr/1494-adm-refuses-frames-below-17.md
       - "By tag":
         - Overview: adr/by-tag/index.md
@@ -2074,6 +2076,7 @@ nav:
         - "rc": adr/by-tag/rc.md
         - "rc1": adr/by-tag/rc1.md
         - "rc3": adr/by-tag/rc3.md
+        - "rc7": adr/by-tag/rc7.md
         - "rclone": adr/by-tag/rclone.md
         - "readme": adr/by-tag/readme.md
         - "rebase-hygiene": adr/by-tag/rebase-hygiene.md

@@ -1,0 +1,147 @@
+# SPDX-License-Identifier: EUPL-1.2
+# Copyright 2026 Lusoris
+#
+# docker/Dockerfile.tester -- the VMAFx tester image (ADR-1492)
+#
+# One CPU-only build of the fork, its SIMD unit tests, the Netflix golden pairs
+# and one command that prints a JSON report:
+#   docker run --rm --network none --read-only --cap-drop ALL \
+#     --security-opt no-new-privileges --tmpfs /tmp <image> > report.json
+# The report script is tools/rc1-tester/src/vmaf_rc1_tester/hw_report.py. The
+# final stage holds no compiler and no package-manager state; it runs as a
+# numeric non-root user and needs no network.
+#
+# Built only by .github/workflows/docker-publish-tester.yml.
+# See docs/usage/tester-image.md and docs/development/tester-image.md.
+
+# Base images come from build-config.env (single source, ADR-1129).
+ARG RELEASE_BUILDER_BASE="debian:13-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a"
+ARG RELEASE_PYTHON_BASE="python:3.14-slim@sha256:0741d101873c12ab927e6f8653feb8862b9bd58771177acb1b885b95141f91b4"
+
+# ---------------------------------------------------------------------------
+# fixtures: Netflix test videos, fetched at a pinned commit and SHA-256 checked
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_BUILDER_BASE} AS fixtures
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+ARG VMAF_RESOURCE_COMMIT=c0ab6adbd7e41bb354f14686ed08500530622bc3
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+COPY tools/rc1-tester/image/fixtures.sha256 /fixtures.sha256
+WORKDIR /out
+RUN awk '{print $2}' /fixtures.sha256 | xargs -P4 -I{} curl -fsSL --retry 3 --create-dirs \
+        -o {} "https://raw.githubusercontent.com/Netflix/vmaf_resource/${VMAF_RESOURCE_COMMIT}/python/test/resource/{}" \
+    && sha256sum --check --strict /fixtures.sha256 \
+    && chmod -R a+rX /out
+
+# ---------------------------------------------------------------------------
+# python-venv: the hash-locked Python test stack of the golden gate
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_PYTHON_BASE} AS python-venv
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gcc g++ libc6-dev \
+    && rm -rf /var/lib/apt/lists/*
+COPY python/requirements-test-lock.txt python/requirements-test-lock.txt
+RUN python -m venv /venv \
+    && /venv/bin/pip install --no-cache-dir --require-hashes -r python/requirements-test-lock.txt \
+    && /venv/bin/pip uninstall --yes pip h5py pywavelets coverage pytest-cov cython \
+    && find /venv -type d -name tests -prune -exec rm -r {} + \
+    && find /venv -type d -name sample_data -prune -exec rm -r {} + \
+    && find /venv -name '*.so*' -type f -exec strip --strip-unneeded {} + \
+    && mkdir /extra-libs \
+    && cp -a /usr/lib/*-linux-gnu/libgomp.so.1* /extra-libs/
+
+# ---------------------------------------------------------------------------
+# vmaf-build: golden build profile (scripts/ci/setup-golden-build.sh) with the
+# listed unit tests; GCC, no LTO (GCC 14.2 ICEs on the LTO test links)
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_BUILDER_BASE} AS vmaf-build
+ARG VMAF_BUILD_JOBS=4
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        gcc g++ meson ninja-build nasm pkg-config xxd python3 \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+# Only what the configure step reads: the source, the models and one script a test registers.
+COPY core core
+COPY model model
+COPY scripts/ci/check-msvc-clz-shim.sh scripts/ci/check-msvc-clz-shim.sh
+COPY tools/rc1-tester/image tools/rc1-tester/image
+# hadolint ignore=SC2046
+RUN meson setup /build core --buildtype=release --strip -Db_lto=false \
+        -Denable_float=true -Denable_cuda=false -Denable_sycl=false -Denable_hip=false \
+        -Denable_dnn=disabled -Denable_docs=false -Denable_tests=true \
+    && ninja -C /build -j"${VMAF_BUILD_JOBS}" tools/vmaf \
+        $(python3 tools/rc1-tester/image/prepare_build.py select /build \
+            tools/rc1-tester/image/unit-tests.txt)
+RUN mkdir -p /opt/vmafx/build/tools /opt/vmafx/build/src \
+    && cp /build/tools/vmaf /opt/vmafx/build/tools/ \
+    && cp -a /build/src/libvmaf.so* /opt/vmafx/build/src/ \
+    && python3 tools/rc1-tester/image/prepare_build.py stage /build \
+        tools/rc1-tester/image/unit-tests.txt /opt/vmafx \
+    && mkdir -p /opt/vmafx/model \
+    && cp -r model/. /opt/vmafx/model/ \
+    && rm -r /opt/vmafx/model/tiny \
+    && find /opt/vmafx/model -maxdepth 1 -name '*.onnx*' -delete
+ARG VMAFX_SOURCE_COMMIT=unknown
+ARG VMAFX_SOURCE_REF=unknown
+ARG VMAFX_RECIPE_COMMIT=unknown
+ARG VMAFX_BUILT_BY_WORKFLOW=false
+ARG VMAFX_IMAGE_TAG=unknown
+ARG RELEASE_BUILDER_BASE
+ENV VMAFX_SOURCE_COMMIT=${VMAFX_SOURCE_COMMIT} VMAFX_SOURCE_REF=${VMAFX_SOURCE_REF} \
+    VMAFX_RECIPE_COMMIT=${VMAFX_RECIPE_COMMIT} \
+    VMAFX_BUILT_BY_WORKFLOW=${VMAFX_BUILT_BY_WORKFLOW} VMAFX_IMAGE_TAG=${VMAFX_IMAGE_TAG} \
+    VMAFX_BASE_IMAGE=${RELEASE_BUILDER_BASE}
+RUN python3 tools/rc1-tester/image/prepare_build.py info /opt/vmafx
+
+# ---------------------------------------------------------------------------
+# runtime: everything the report reads, without references
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_PYTHON_BASE} AS runtime
+ENV LD_LIBRARY_PATH=/opt/vmafx/build/src:/opt/vmafx/lib \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    HOME=/tmp
+COPY --from=vmaf-build /opt/vmafx /opt/vmafx
+COPY --from=python-venv /venv /opt/venv
+COPY --from=python-venv /extra-libs /opt/vmafx/lib
+COPY --from=fixtures /out /opt/vmafx/python/test/resource
+COPY python /opt/vmafx/python
+COPY compat /opt/vmafx/compat
+COPY tools/rc1-tester/src /opt/vmafx/tester/src
+COPY tools/rc1-tester/vmaf-tester-report /opt/vmafx/tester/vmaf-tester-report
+COPY tools/rc1-tester/image/fixtures.json /opt/vmafx/image/fixtures.json
+
+# ---------------------------------------------------------------------------
+# refs-gen: scores of this image's own binary, produced at build time
+# ---------------------------------------------------------------------------
+FROM runtime AS refs-gen
+RUN /opt/venv/bin/python /opt/vmafx/tester/vmaf-tester-report generate-reference /opt/vmafx/reference
+
+# `docker buildx build --target refs-export --output type=local,dest=DIR` on amd64
+# exports the x86_64 scalar scores; the arm64 build takes them as the build
+# context named xref (informational cross-architecture comparison).
+FROM scratch AS refs-export
+COPY --from=refs-gen /opt/vmafx/reference/x86_64-scalar.json /
+
+FROM scratch AS xref
+
+# ---------------------------------------------------------------------------
+# final
+# ---------------------------------------------------------------------------
+FROM runtime AS final
+ARG VMAFX_SOURCE_COMMIT=unknown
+LABEL org.opencontainers.image.title="vmafx-tester" \
+      org.opencontainers.image.description="VMAFx tester image: CPU build, SIMD unit tests, Netflix golden gate, one JSON report" \
+      org.opencontainers.image.source="https://github.com/VMAFx/vmafx" \
+      org.opencontainers.image.licenses="BSD-2-Clause-Patent AND EUPL-1.2" \
+      org.opencontainers.image.vendor="Lusoris" \
+      org.opencontainers.image.revision="${VMAFX_SOURCE_COMMIT}"
+COPY --from=refs-gen /opt/vmafx/reference /opt/vmafx/reference
+COPY --from=xref / /opt/vmafx/reference/
+USER 10001:10001
+ENTRYPOINT ["/opt/venv/bin/python", "/opt/vmafx/tester/vmaf-tester-report"]

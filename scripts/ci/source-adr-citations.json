@@ -1423,6 +1423,7 @@
         "scripts/ci/deliverables-check.sh": 2,
         "scripts/docs/agents_index.py": 1,
         "scripts/docs/generate-exact-twins.py": 1,
+        "scripts/docs/generate-hardware-reports.py": 1,
         "scripts/docs/generate-upstream-parity-allowlist.py": 1
       },
       "target": "0221-changelog-adr-fragment-pattern.md"
@@ -5753,6 +5754,8 @@
         ".github/workflows/dev-container-build.yml": 3,
         ".github/workflows/dev-container-publish.yml": 1,
         ".github/workflows/docker-image.yml": 1,
+        ".github/workflows/docker-publish-tester.yml": 1,
+        ".github/workflows/macos-tester-bundle.yml": 1,
         ".github/workflows/rule-enforcement.yml": 2,
         ".github/workflows/supply-chain.yml": 4,
         "dev/Containerfile": 3,
@@ -5987,7 +5990,8 @@
         "docker/Dockerfile.node": 1,
         "docker/Dockerfile.operator": 1,
         "docker/Dockerfile.production": 1,
-        "docker/Dockerfile.production-gpu": 1
+        "docker/Dockerfile.production-gpu": 1,
+        "docker/Dockerfile.tester": 1
       },
       "target": "1129-release-container-runtime-alignment.md"
     },
@@ -7866,6 +7870,8 @@
       "sites": {
         ".github/workflows/docker-publish-operator-node.yml": 4,
         ".github/workflows/docker-publish-production.yml": 6,
+        ".github/workflows/docker-publish-tester.yml": 1,
+        ".github/workflows/macos-tester-bundle.yml": 1,
         "scripts/release/tests/test-docker-publish-source-binding.sh": 1,
         "scripts/release/tests/test-publication-environment-binding.sh": 2
       },
@@ -9651,6 +9657,20 @@
         "scripts/ci/test_cross_backend_parity_gate.py": 1
       },
       "target": "1491-gpu-motion-five-frame-window.md"
+    },
+    "1492": {
+      "sites": {
+        ".github/workflows/docker-publish-tester.yml": 1,
+        "docker/Dockerfile.tester": 1
+      },
+      "target": "1492-tester-image-arm64-report.md"
+    },
+    "1493": {
+      "sites": {
+        ".github/workflows/macos-tester-bundle.yml": 2,
+        "scripts/ci/build-macos-tester-bundle.sh": 1
+      },
+      "target": "1493-macos-tester-bundle.md"
     }
   },
   "retired": {

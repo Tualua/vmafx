@@ -22,6 +22,11 @@ follow this guide unchanged and use the RC2 tag wherever it says RC1.
 The RC1 collector never starts a benchmark sweep, encoder search, corpus job, or
 training run.
 
+> **No build needed.** To test the fork on a machine without building anything
+> (an Apple M-series Mac, an arm64 server), use the prepared
+> [tester image and macOS bundle](tester-image.md): one command, one JSON report,
+> and a path to be credited for it. This guide is the build-from-source route.
+
 ## 1. Obtain the RC1 source
 
 Download the source archive for the RC1 release from the

@@ -312,6 +312,17 @@ bash scripts/ci/tests/test-check-container-build.sh
 
 ---
 
+## Exceptions
+
+- **Tester image** (`ghcr.io/vmafx/vmafx:<tag>-tester`): built from its own Dockerfile
+  (`docker/Dockerfile.tester`), like the production images, by
+  `docker-publish-tester.yml` ([ADR-1492](../adr/1492-tester-image-arm64-report.md)).
+- **macOS tester bundle**: macOS cannot be built in the Linux container, so the bundle is
+  built on the hosted macOS arm64 runner from a published tag, attested and signed,
+  and published only as a `tester-*` prerelease asset, never as a release binary
+  ([ADR-1493](../adr/1493-macos-tester-bundle.md)). See
+  [the maintainer notes](tester-image.md).
+
 ## Related documents
 
 - [ADR-1354](../adr/1354-native-bundle-release-track.md) — native release build on the Debian 13 release track (`release-build` stage), amending ADR-1346

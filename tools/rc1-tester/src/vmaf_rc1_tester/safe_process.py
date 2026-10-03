@@ -213,12 +213,14 @@ async def _run_async(
     environment: dict[str, str],
     timeout_seconds: float,
     max_output_bytes: int,
+    cwd: str | None = None,
 ) -> CommandResult:
     process_options: dict[str, object] = {
         "stdin": asyncio.subprocess.DEVNULL,
         "stdout": asyncio.subprocess.PIPE,
         "stderr": asyncio.subprocess.PIPE,
         "env": environment,
+        "cwd": cwd,
     }
     if os.name == "posix":
         process_options["start_new_session"] = True
@@ -244,6 +246,7 @@ def run_bounded(
     environment: Mapping[str, str] | None = None,
     timeout_seconds: float,
     max_output_bytes: int,
+    cwd: str | None = None,
 ) -> CommandResult:
     """Run one direct argv command with process-group and output bounds."""
     if timeout_seconds <= 0 or max_output_bytes <= 0:
@@ -256,4 +259,6 @@ def run_bounded(
         raise RuntimeError("run_bounded cannot block an active event loop")
     command = _validated_argv(argv)
     selected_environment = _validated_environment(environment)
-    return asyncio.run(_run_async(command, selected_environment, timeout_seconds, max_output_bytes))
+    return asyncio.run(
+        _run_async(command, selected_environment, timeout_seconds, max_output_bytes, cwd)
+    )
