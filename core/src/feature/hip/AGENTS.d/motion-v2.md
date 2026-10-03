@@ -8,15 +8,11 @@ invariant: motion3_v2 cross-twin invariants and score consistency must be preser
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # motion3_v2 cross-twin invariant (ADR-1108)
 
-- `integer_motion_v2_hip` emits `motion3_v2_score` host-side in its
-  flush, mirroring CPU `integer_motion_v2.c::flush` and CUDA twin
-  byte-for-byte: per-frame `motion_blend(motion2, blend_factor,
-  blend_offset)` then `MIN(_, motion_max_val)` clip, a `stamp_value`
-  seed for `i < min_idx (= 1)`, and optional 2-tap
-  `motion_moving_average`, via shared `motion_blend_tools.h` helper.
-  Any change to CPU flush blend/clip/seed/average logic must be
-  mirrored into all four GPU twins (cuda/sycl/hip/metal) in same PR
-  to keep `places=4` `test_hip_motion_v2_parity` gate green.
-  (`test_hip_motion_v2_parity` added in PR #913 but unregistered in
-  `core/test/meson.build` until wired in
-  `fix/hip-motion-v2-parity-test-wiring`.)
+- `integer_motion_v2_hip` emits `motion2_v2` / `motion3_v2` host-side in
+  its flush through the CPU's own `vmaf_motion_window_flush()`
+  (`core/src/feature/motion_window.h`, ADR-1478, ADR-1491): blend,
+  `motion_max_val` clip, `stamp_value` seed for `i < min_idx`, optional
+  moving average, three-frame or five-frame window. Twin holds no copy of
+  that arithmetic (CUDA / SYCL twins same; Metal still carries its copy and
+  must be kept in step by hand). Guards: `test_hip_motion_v2_parity`,
+  `test_hip_motion_five_frame_window`, `test_hip_exact_twins`.

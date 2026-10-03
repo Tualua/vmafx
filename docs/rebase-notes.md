@@ -193,6 +193,29 @@ onto Netflix master's values.
   `test_{cuda,hip,sycl}_exact_twins`, `test_sycl_fp_arith_contract`.
 - Float ADM (`core/src/feature/adm_tools.h`) has its own copy of the
   function; the entry above (ADR-1489) covers it.
+## The motion twins compute `motion_five_frame_window` (ADR-1491, 2026-10-02)
+
+`port/motion-five-frame-window-gpu-twins`, stacked on the CPU port
+(ADR-1478). Fork-only code; no upstream file changes.
+
+- `core/src/feature/cuda/integer_motion_cuda.c`, `integer_motion_v2_cuda.c`:
+  `raw[3]` / `pix[3]` with `ring` (2 or 3); `prev_done` is the previous
+  frame's event from frame 1 on. `motion_cuda` with the option emits the SAD
+  score only from `collect()` and calls `motion_flush_window()` in `flush()`.
+  `motion_v2_cuda` flushes through `vmaf_motion_window_flush()` always.
+- `core/src/feature/hip/integer_motion_hip.c`, `integer_motion_v2_hip.c`:
+  `prev_luma[2]` with `depth` (1 or 2); the same host split.
+- `core/src/feature/sycl/integer_motion_sycl.cpp`: with the option
+  `d_raw_y[0]` / `d_raw_y[1]` hold frames `n-2` / `n-1`; the kernel is
+  enqueued on every frame (the combined graph is recorded once), the planes
+  advance in `motion_post_graph()`. `integer_motion_v2_sycl.cpp`: `d_pix[3]`
+  with `ring`, flush through the shared function.
+- A rebase that brings back a twin's own copy of the motion2 / motion3
+  arithmetic, a `VMAF_OPT_FLAG_DEFAULT_ONLY` on the option of these six
+  twins, or `-ENOTSUP` for it, undoes this; `test_<backend>_motion_five_frame_window`,
+  `core/test/test_gpu_option_value_capability_contract.py` and the gate cells
+  `motion_mffw` / `motion_v2_mffw` fail.
+
 ## `motion_five_frame_window` is upstream's again (ADR-1478, 2026-10-02)
 
 `port/upstream-motion-five-frame-window`. Ports Netflix `a2b59b77` (the

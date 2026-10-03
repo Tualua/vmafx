@@ -85,10 +85,9 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
         "integer_vif_scale2",
         "integer_vif_scale3",
     ),
-    # T3-15(c) / ADR-0219: GPU motion now emits motion3_score in
-    # 3-frame window mode. The 5-frame window mode
-    # (motion_five_frame_window=true) remains deferred — the GPU
-    # extractors reject it with -ENOTSUP at init().
+    # T3-15(c) / ADR-0219: the GPU motion twins emit motion3_score. The
+    # five-frame window (motion_five_frame_window=true) has cells of its
+    # own, `motion_mffw` and `motion_v2_mffw` below (ADR-1491).
     # The SAD score is what the CPU appends on every frame and derives
     # motion2 / motion3 from; a twin that lacks it fails the cell (ADR-1418).
     "motion": (
@@ -105,6 +104,20 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
     "motion_v2": (
         "VMAF_integer_feature_motion_v2_sad_score",
         "VMAF_integer_feature_motion2_v2_score",
+    ),
+    # ADR-1491: `motion` and `motion_v2` with the five-frame window and the
+    # moving average, the option set of the vmaf_v1.0.16_hfr_* models. The
+    # SAD is taken against frame n-2 on the device; motion2 and motion3 come
+    # from the CPU's window function on both sides.
+    "motion_mffw": (
+        "VMAF_integer_feature_motion_sad_score_mffw_mma",
+        "integer_motion2_mffw_mma",
+        "integer_motion3_mffw_mma",
+    ),
+    "motion_v2_mffw": (
+        "VMAF_integer_feature_motion_v2_sad_score_mffw_mma",
+        "VMAF_integer_feature_motion2_v2_score_mffw_mma",
+        "VMAF_integer_feature_motion3_v2_score_mffw_mma",
     ),
     "adm": (
         "integer_adm2",
@@ -228,6 +241,10 @@ FEATURE_TOLERANCE: dict[str, float] = {
     "motion": 5e-5,
     "motion_debug": 5e-5,
     "motion_v2": 5e-5,
+    # The CUDA, SYCL and HIP cells are exact instead (exact_twins.d,
+    # ADR-1491) and never read these values.
+    "motion_mffw": 5e-5,
+    "motion_v2_mffw": 5e-5,
     "psnr": 5e-5,
     "float_moment": 5e-5,
     # int64 moments, one double term per pixel; a twin that reduces per block
@@ -356,6 +373,10 @@ FEATURE_ALIASES: dict[str, tuple[str, str]] = {
     # ADR-1382: the float_ssim L / C / S outputs.
     "float_ssim_lcs": ("float_ssim", "enable_lcs=true"),
     "motion_debug": ("motion", "debug=true"),
+    # ADR-1491: the five-frame window, with the moving average the HFR
+    # models pair it with.
+    "motion_mffw": ("motion", "motion_five_frame_window=true:motion_moving_average=true"),
+    "motion_v2_mffw": ("motion_v2", "motion_five_frame_window=true:motion_moving_average=true"),
 }
 
 # Extractors whose backend twin is not `<feature><suffix>`, keyed by the

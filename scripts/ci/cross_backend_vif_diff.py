@@ -62,10 +62,9 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
         "integer_vif_scale2",
         "integer_vif_scale3",
     ),
-    # T3-15(c) / ADR-0219: GPU motion now emits motion3_score in
-    # 3-frame window mode. The 5-frame window mode
-    # (motion_five_frame_window=true) remains deferred — the GPU
-    # extractors reject it with -ENOTSUP at init().
+    # T3-15(c) / ADR-0219: the GPU motion twins emit motion3_score. The
+    # five-frame window (motion_five_frame_window=true) has cells of its
+    # own, `motion_mffw` and `motion_v2_mffw` below (ADR-1491).
     # The SAD score is what the CPU appends on every frame and derives
     # motion2 / motion3 from; a twin that lacks it fails the cell (ADR-1418).
     "motion": (
@@ -89,6 +88,18 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
     "motion_v2": (
         "VMAF_integer_feature_motion_v2_sad_score",
         "VMAF_integer_feature_motion2_v2_score",
+    ),
+    # ADR-1491: `motion` and `motion_v2` with the five-frame window and the
+    # moving average, the option set of the vmaf_v1.0.16_hfr_* models.
+    "motion_mffw": (
+        "VMAF_integer_feature_motion_sad_score_mffw_mma",
+        "integer_motion2_mffw_mma",
+        "integer_motion3_mffw_mma",
+    ),
+    "motion_v2_mffw": (
+        "VMAF_integer_feature_motion_v2_sad_score_mffw_mma",
+        "VMAF_integer_feature_motion2_v2_score_mffw_mma",
+        "VMAF_integer_feature_motion3_v2_score_mffw_mma",
     ),
     "adm": (
         "integer_adm2",
@@ -252,6 +263,8 @@ FEATURE_ALIASES: dict[str, tuple[str, str]] = {
     "float_ms_ssim_lcs": ("float_ms_ssim", "enable_lcs=true"),
     "float_ssim_lcs": ("float_ssim", "enable_lcs=true"),
     "motion_debug": ("motion", "debug=true"),
+    "motion_mffw": ("motion", "motion_five_frame_window=true:motion_moving_average=true"),
+    "motion_v2_mffw": ("motion_v2", "motion_five_frame_window=true:motion_moving_average=true"),
 }
 
 # Twins not named `<feature><suffix>`, keyed by the base extractor name.

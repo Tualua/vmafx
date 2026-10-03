@@ -13,27 +13,22 @@ invariant: Motion v2 CPU mirror contract and score emission parity.
   kernels must keep that same high-edge literal. Old `-1`
   formula = stale prose from ADR-0193 bring-up, creates
   measurable CPU/GPU drift.
-- **`integer_motion_v2_cuda.c::flush_fex_cuda` emits `motion3_v2_score`,
-  mirrors CPU `integer_motion_v2.c::flush()` formula
-  byte-for-byte** (ADR-1108). CUDA twin computes
-  `motion3_v2_score` host-side over kernel's SAD scores, using
-  same per-frame `motion_blend(motion2, motion_blend_factor,
-  motion_blend_offset)` + `MIN(…, motion_max_val)` clip + `stamp_value`
-  seeding for `i < min_idx` (`min_idx = 1`) + optional 2-tap
-  `motion_moving_average`. Four options
-  (`motion_blend_factor`/`motion_blend_offset`/`motion_max_val`/
-  `motion_moving_average`) mirror CPU `VmafOption[]` table exactly.
-  Any change to CPU `motion_v2` flush blend/clip/seed/average logic
-  must mirror here in same PR to keep `places=4` parity
-  gate (`test_cuda_motion_v2_parity`) green. `motion2_v2_score`
-  emitted via `append_with_dict` (not bare `append`), so sfr/hfr
-  co-schedule names match CPU path. SYCL/HIP/Metal twins still emit
-  only `sad` + `motion2_v2`; closing that gap = follow-up that must
-  reuse this same host-side formula. Unlike v1 `motion_cuda` flush,
-  this = batch loop over collected SAD scores (no per-frame streaming
-  post-process / `frame_index` override).
+- **`integer_motion_v2_cuda.c::flush_fex_cuda` = CPU's window function**
+  (ADR-1108, ADR-1491). `motion2_v2` / `motion3_v2` of every frame come from
+  `vmaf_motion_window_flush()` (`core/src/feature/motion_window.h`, defined
+  in `integer_motion.c`) over the stored SAD scores: blend, `motion_max_val`
+  clip, `stamp_value` for `i < min_idx`, optional moving average, three-frame
+  or five-frame window. Twin holds no copy of that arithmetic; do not add one
+  back (SYCL / HIP twins same; Metal still carries its copy). Options
+  (`motion_blend_factor` / `motion_blend_offset` / `motion_max_val` /
+  `motion_five_frame_window` / `motion_moving_average`) mirror CPU
+  `VmafOption[]` rows exactly. Unlike v1 `motion_cuda` three-frame path, no
+  per-frame streaming post-process.
 
 - **`motion_v2_cuda` publishes CPU SAD score** `MIN(sad * mfw, mmxv)` in
-  collect; flush derives `motion2_v2` / `motion3_v2` from stored values,
-  NO re-weighting, one-frame input -> 0 / 0 (`n_frames == 0` early out
-  only). Mirrors `integer_motion_v2.c::extract` / `flush`.
+  collect; flush hands stored values to `vmaf_motion_window_flush()`:
+  no re-weighting, one-frame input and every end case decided there, as for
+  CPU. `test_cuda_kernel_source_contract.py` pins it device-free: weighted,
+  capped SAD in collect; the call in `flush_fex_cuda`; no
+  `vmaf_feature_collector_get_score` in the TU; `motion_cuda` calls the same
+  function in `motion_flush_window()`.

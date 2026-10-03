@@ -1,0 +1,2 @@
+adr: ADR-1491
+evidence: RTX 4090, --precision max: 104 of 104 frames (Netflix 576x324 at 8 and 10 bit, 1080p checkerboard, BBB 4K 50 frames) identical to --backend cpu on every gate output, and the gate cell 0 on the Netflix pair (48 frames) and BBB 4K (200 frames); test_cuda_motion_five_frame_window (== on every output, 11 / 1 / 2 / 3 frames, 8 and 10 bit).

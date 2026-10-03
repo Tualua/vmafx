@@ -56,7 +56,13 @@ prints `FAIL: missing metrics` and exits 1. `motion` = default runs
 `integer_motion`. SAD score = what CPU `extract()` appends every frame,
 source of motion2 / motion3; in both cells since
 `T-GPU-MOTION-SAD-SCORE-NOT-EMITTED-2026-10-02` (twin without it = cell
-ERROR). Same tuples in `cross_backend_vif_diff.py`: change both. Twin
+ERROR). `motion_mffw` / `motion_v2_mffw` = `motion` / `motion_v2` with
+`motion_five_frame_window=true:motion_moving_average=true` (HFR models'
+option set, ADR-1491): SAD + motion2 + motion3 under `_mffw_mma` names,
+exact on `cuda`, `sycl`, `hip`. A twin that loses the window either errors
+(`-ENOTSUP` / unknown option) -> cell ERROR, or scores three-frame -> cell
+FAIL; never drop the cells. Same tuples in `cross_backend_vif_diff.py`:
+change both. Twin
 emits a different default set -> fix the twin's option default
 (`test_sycl_twin_option_parity.c`), never shrink the cell.
 

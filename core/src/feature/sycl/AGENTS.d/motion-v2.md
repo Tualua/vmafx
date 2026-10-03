@@ -2,25 +2,25 @@
 paths:
   - core/src/feature/sycl/integer_motion_v2_sycl.cpp
   - core/test/test_sycl_motion_v2_parity.c
-invariant: integer_motion_v2_sycl.cpp reads the shared frame and emits motion3_v2_score host-side in collect and flush.
+invariant: integer_motion_v2_sycl.cpp reads the shared frame; flush derives motion2_v2 / motion3_v2 via the CPU window function.
 ---
 <!-- markdownlint-disable MD013 MD060 -->
 # motion3_v2 cross-twin invariant (ADR-1108)
 
-- `integer_motion_v2_sycl` emits `motion3_v2_score` host-side in
-  flush, mirroring CPU `integer_motion_v2.c::flush` and CUDA twin
-  byte-for-byte: per-frame `motion_blend(motion2, blend_factor,
-  blend_offset)` then `MIN(_, motion_max_val)` clip, a `stamp_value` seed
-  for `i < min_idx (= 1)`, and optional 2-tap `motion_moving_average`,
-  via shared `motion_blend_tools.h` helper. Any change to CPU
-  flush blend/clip/seed/average logic must mirror into all four GPU
-  twins (cuda/sycl/hip/metal) in same PR to keep `places=4`
-  `test_sycl_motion_v2_parity` gate green.
+- `integer_motion_v2_sycl` emits `motion2_v2` / `motion3_v2` host-side in
+  flush through the CPU's own `vmaf_motion_window_flush()`
+  (`core/src/feature/motion_window.h`, ADR-1478, ADR-1491): blend,
+  `motion_max_val` clip, `stamp_value` seed for `i < min_idx`, optional
+  moving average, three-frame or five-frame window. Twin holds no copy of
+  that arithmetic (CUDA / HIP twins same; Metal still carries its copy and
+  must be kept in step by hand). Guards: `test_sycl_motion_v2_parity`,
+  `test_sycl_motion_five_frame_window`, `test_sycl_exact_twins`.
 
 - **`integer_motion_v2_sycl.cpp` reads the shared frame** (ADR-1369). `cur`
   = `vmaf_sycl_get_shared_plane(state, 1, 0)` behind
   `vmaf_sycl_queue_after_upload()`; the ADR-1371 pipeline's `cur_copy` keeps it
-  in `d_pix[index % 2]` as the next frame's `prev` (`enqueue_copy` on frame 0).
+  in `d_pix[index % ring]` as a later frame's `prev` (`enqueue_copy` on the
+  frames without one; `ring` 2, or 3 with `motion_five_frame_window`).
   No host copy, no private upload; the kernel stays in
   `integer_motion_pipeline_sycl.cpp`.
 

@@ -1418,6 +1418,31 @@ def test_motion_feature_metrics_definitions() -> None:
     assert FEATURE_TOLERANCE["motion_debug"] == FEATURE_TOLERANCE["motion"]
 
 
+def test_five_frame_window_cells() -> None:
+    # ADR-1491: the five-frame window with the moving average, the option
+    # set of the vmaf_v1.0.16_hfr_* models, on `motion` and `motion_v2`.
+    options = "motion_five_frame_window=true:motion_moving_average=true"
+    assert feature_extractor_name("motion_mffw", "cpu") == f"motion={options}"
+    assert feature_extractor_name("motion_mffw", "cuda") == f"motion_cuda={options}"
+    assert feature_extractor_name("motion_v2_mffw", "sycl") == f"motion_v2_sycl={options}"
+    assert feature_extractor_name("motion_v2_mffw", "hip") == f"motion_v2_hip={options}"
+    # The names carry the option aliases in option-name order.
+    assert FEATURE_METRICS["motion_mffw"] == (
+        "VMAF_integer_feature_motion_sad_score_mffw_mma",
+        "integer_motion2_mffw_mma",
+        "integer_motion3_mffw_mma",
+    )
+    assert FEATURE_METRICS["motion_v2_mffw"] == (
+        "VMAF_integer_feature_motion_v2_sad_score_mffw_mma",
+        "VMAF_integer_feature_motion2_v2_score_mffw_mma",
+        "VMAF_integer_feature_motion3_v2_score_mffw_mma",
+    )
+    for feature in ("motion_mffw", "motion_v2_mffw"):
+        assert FEATURE_TOLERANCE[feature] == FEATURE_TOLERANCE["motion"]
+        for backend in ("cuda", "sycl", "hip"):
+            assert is_exact_pair(feature, "cpu", backend), (feature, backend)
+
+
 def test_missing_metrics_names_what_any_frame_lacks() -> None:
     metrics = ("integer_motion", "integer_motion2", "integer_motion3")
     full = _make_frame({"integer_motion": 0.5, "integer_motion2": 1.0, "integer_motion3": 2.0})

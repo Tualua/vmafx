@@ -20,10 +20,9 @@ HIP / Metal motion twins listed in Twin-update table below — same PR.
 - **`integer_motion_cuda.c::motion3_postprocess_*` honours
   motion3 GPU contract** (ADR-0219). Applies CPU's host-side
   post-process to motion2 with no device-side state. Two
-  invariants flow: (1) `motion_five_frame_window=true` returns
-  `-ENOTSUP` at `init()`, and the option keeps `VMAF_OPT_FLAG_DEFAULT_ONLY`
-  until the twin has the window, so model dispatch runs CPU `motion`
-  (ADR-1478; `test_gpu_option_value_capability_contract.py`); (2) any change to `motion_blend()` /
+  invariants flow: (1) `motion_five_frame_window=true` is computed by
+  the twin, through the CPU's window function at flush
+  ([motion-five-frame-window](motion-five-frame-window.md), ADR-1491); (2) any change to `motion_blend()` /
   `motion_max_val` / moving-average must mirror across three
   GPU motion twins in same PR. See [../../AGENTS.md §"motion3_score
   GPU contract"](../../../AGENTS.md).

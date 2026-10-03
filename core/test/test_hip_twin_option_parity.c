@@ -389,6 +389,12 @@ static const OptionCase OPTION_CASES[] = {
     {"motion_hip", "motion", "debug", "true"},
     {"motion_v2_hip", "motion_v2", "motion_fps_weight", "2"},
     {"motion_v2_hip", "motion_v2", "motion_max_val", "2.5"},
+    /* ADR-1491: the twins compute the five-frame window; the option is the
+     * CPU's declaration and the gate keeps it on the twin. */
+    {"motion_hip", "motion", "motion_five_frame_window", "true"},
+    {"motion_hip", "motion", "mffw", "true"},
+    {"motion_v2_hip", "motion_v2", "motion_five_frame_window", "true"},
+    {"motion_v2_hip", "motion_v2", "mffw", "true"},
 };
 
 static const VmafOption *lookup_option(const VmafFeatureExtractor *fex, const char *key)

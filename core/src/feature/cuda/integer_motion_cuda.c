@@ -32,6 +32,7 @@
 #include "log.h"
 #include "mem.h"
 #include "motion_blend_tools.h"
+#include "motion_window.h"
 #include "picture.h"
 #include "picture_cuda.h"
 #include "cuda_helper.cuh"
@@ -64,11 +65,15 @@ typedef struct MotionStateCuda {
      * readback: device-side ordering, no host wait. */
     CUevent event;
     CUstream str;
-    /* Ping-pong of packed raw luma planes: raw[index % 2] receives this
-     * frame, raw[(index + 1) % 2] holds the previous one. The SAD kernel
-     * differences the two raw frames before it blurs, as the CPU does
-     * (ADR-1372), so no blurred frame is kept across submits. */
-    VmafCudaBuffer *raw[2];
+    /* Ring of packed raw luma planes, `ring` of them in use:
+     * raw[index % ring] receives this frame, raw[(index + 1) % ring] holds
+     * the frame the SAD is taken against: the previous one with a ring of
+     * two, the one two back with a ring of three
+     * (motion_five_frame_window, ADR-1491). The SAD kernel differences the
+     * two raw frames before it blurs, as the CPU does (ADR-1372), so no
+     * blurred frame is kept across submits. */
+    VmafCudaBuffer *raw[3];
+    unsigned ring;
     /* Per-slot device SAD accumulators (one per batch frame slot,
      * ADR-0845). Each submit zeroes its slot and the kernel atomic-adds
      * into it; collect batch-drains all MOTION_BATCH_DEPTH slots in one
@@ -95,7 +100,7 @@ typedef struct MotionStateCuda {
     double prev_motion3_blended;
     bool debug;
     bool motion_force_zero;
-    bool motion_five_frame_window; /* rejected with -ENOTSUP — see init() */
+    bool motion_five_frame_window; /* SAD against frame n-2, window in flush() */
     bool motion_moving_average;
     bool motion_add_uv; /* rejected with -ENOTSUP — see init(); ADR-0989 */
     double motion_blend_factor;
@@ -173,16 +178,13 @@ static const VmafOption options[] = {
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
     {
-        /* Default only (ADR-1316): the twin keeps two frames on the device.
-         * A model or --feature that sets it is computed by the CPU `motion`
-         * (ADR-1478); naming this twin with it fails in init(). */
         .name = "motion_five_frame_window",
         .alias = "mffw",
-        .help = "use five-frame temporal window (not on CUDA: computed by the CPU extractor)",
+        .help = "use five-frame temporal window",
         .offset = offsetof(MotionStateCuda, motion_five_frame_window),
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val.b = false,
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM | VMAF_OPT_FLAG_DEFAULT_ONLY,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
     {
         .name = "motion_moving_average",
@@ -287,6 +289,7 @@ static int motion_release_buffers(VmafFeatureExtractor *fex, MotionStateCuda *s,
 {
     motion_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->raw[0]));
     motion_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->raw[1]));
+    motion_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->raw[2]));
     for (int b = 0; b < MOTION_BATCH_DEPTH; b++)
         motion_preserve_error(&rc, vmaf_cuda_buffer_free_owned(fex->cu_state, &s->sad[b]));
     motion_preserve_error(&rc,
@@ -311,26 +314,13 @@ static int motion_init_unwind(VmafFeatureExtractor *fex, MotionStateCuda *s, int
     return rc;
 }
 
-/* motion_check_unsupported - the three up-front refusals.
+/* motion_check_unsupported - the two up-front refusals.
  *
  * HISS-04: lifted verbatim out of init_fex_cuda; the checks run in the same
  * order and keep their log text and errno.
  */
 static int motion_check_unsupported(const MotionStateCuda *s, unsigned w, unsigned h)
 {
-    /* Reject the 5-frame window mode explicitly. The CPU takes the SAD of
-     * frame n against frame n-2 (ADR-1478); this twin keeps one earlier
-     * frame on the device. Failing loud with -ENOTSUP keeps callers off a
-     * silent-wrong-answer code path: only a direct `motion_cuda` selection
-     * gets here, a model or `--feature motion` is routed to the CPU by the
-     * option's VMAF_OPT_FLAG_DEFAULT_ONLY. See ADR-0219. */
-    if (s->motion_five_frame_window) {
-        vmaf_log(VMAF_LOG_LEVEL_WARNING,
-                 "motion_cuda: motion_five_frame_window=true is not yet supported on CUDA. "
-                 "Use the CPU extractor `motion` instead.\n");
-        return -ENOTSUP;
-    }
-
     /* motion_add_uv kernel port deferred — ADR-0989. SYCL is the lead
      * backend; CUDA / Vulkan / HIP / Metal will follow. */
     if (s->motion_add_uv) {
@@ -381,8 +371,8 @@ fail:
     return motion_init_unwind(fex, s, _cuda_err);
 }
 
-/* motion_alloc_buffers - the raw luma pair, the SAD slots and the pinned
- * host readback, plus the per-frame score state they go with.
+/* motion_alloc_buffers - the ring of raw luma planes, the SAD slots and the
+ * pinned host readback, plus the per-frame score state they go with.
  *
  * HISS-04: lifted verbatim out of init_fex_cuda; the allocations run in the
  * same order and each failure still unwinds through motion_init_unwind().
@@ -401,12 +391,11 @@ static int motion_alloc_buffers(VmafFeatureExtractor *fex, MotionStateCuda *s, u
 
     s->bpc = bpc;
     const size_t plane_bytes = vmaf_cuda_motion_sad_plane_bytes(w, h, bpc);
-    ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->raw[0], plane_bytes);
-    if (ret)
-        return motion_init_unwind(fex, s, ret);
-    ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->raw[1], plane_bytes);
-    if (ret)
-        return motion_init_unwind(fex, s, ret);
+    for (unsigned i = 0; i < s->ring; i++) {
+        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->raw[i], plane_bytes);
+        if (ret)
+            return motion_init_unwind(fex, s, ret);
+    }
     /* Allocate MOTION_BATCH_DEPTH device SAD slots (ADR-0845).
      * Each slot is 8 bytes; slots are zeroed per-frame in submit(). */
     for (int b = 0; b < MOTION_BATCH_DEPTH; b++) {
@@ -433,6 +422,9 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     int err = motion_check_unsupported(s, w, h);
     if (err)
         return err;
+    /* The frame the SAD is taken against is ring - 1 frames back: the
+     * CPU's min_idx (integer_motion.c::extract). */
+    s->ring = s->motion_five_frame_window ? 3u : 2u;
 
     /* Build the feature-name dict early so the force-zero path (below)
      * and the GPU path both get a valid dict.  extract_force_zero() calls
@@ -544,12 +536,16 @@ static int motion_flush_pending_tail(MotionStateCuda *s, CudaFunctions *cu_f,
 
     /* There are frames in the partial tail batch that were NOT
      * synced/emitted by a boundary collect(). Drain them now.
-     * flush_start clamps to 1 to skip frame 0, which never
-     * produces a SAD (there is no previous frame at index 0). */
-    const unsigned flush_start = ((unsigned)pending_start < 1u) ? 1u : (unsigned)pending_start;
+     * flush_start clamps to the first frame that has a SAD: frame 1, or
+     * frame 2 with the five-frame window (the frames before it have no
+     * earlier frame to difference against, and their slots were never
+     * written). */
+    const unsigned min_idx = s->ring - 1u;
+    const unsigned flush_start =
+        ((unsigned)pending_start < min_idx) ? min_idx : (unsigned)pending_start;
 
-    /* flush_start > s->index means only frame 0 was pending: nothing to
-     * flush, so fall straight through to the trailing emit below. */
+    /* flush_start > s->index means only frames without a SAD were pending:
+     * nothing to flush, so fall straight through to the emit below. */
     if (flush_start > s->index)
         return 0;
 
@@ -592,6 +588,32 @@ static int motion_flush_trailing(MotionStateCuda *s, VmafFeatureCollector *featu
     return (ret < 0) ? ret : !ret;
 }
 
+/* motion_flush_window - motion2 and motion3 of every frame with the
+ * five-frame window.
+ *
+ * The three-frame twin emits motion2 / motion3 as the frames come in
+ * (emit_batch_scores(), motion_flush_trailing()). With the five-frame window
+ * collect() stores the SAD scores only and this derives both from them at
+ * the end, with the CPU extractor's own function
+ * (integer_motion.c::vmaf_motion_window_flush(), ADR-1478), so the scores
+ * are the CPU's whenever the SADs are (ADR-1491).
+ */
+static int motion_flush_window(MotionStateCuda *s, VmafFeatureCollector *feature_collector)
+{
+    const VmafMotionWindow window = {
+        .sad_feature = "VMAF_integer_feature_motion_sad_score",
+        .motion2_feature = "VMAF_integer_feature_motion2_score",
+        .motion3_feature = "VMAF_integer_feature_motion3_score",
+        .motion_blend_factor = s->motion_blend_factor,
+        .motion_blend_offset = s->motion_blend_offset,
+        .motion_max_val = s->motion_max_val,
+        .motion_five_frame_window = true,
+        .motion_moving_average = s->motion_moving_average,
+    };
+    const int err = vmaf_motion_window_flush(feature_collector, s->feature_name_dict, &window);
+    return err ? err : 1;
+}
+
 static int flush_fex_cuda(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
 {
     MotionStateCuda *s = fex->priv;
@@ -609,13 +631,15 @@ static int flush_fex_cuda(VmafFeatureExtractor *fex, VmafFeatureCollector *featu
      * nothing pending and only handles the final motion2/motion3
      * emission (the same as the legacy path). */
 
-    if (s->index == 0)
+    if (s->index == 0 && !s->motion_five_frame_window)
         return motion_flush_single_frame(s, feature_collector);
 
     const int tail_err = motion_flush_pending_tail(s, cu_f, feature_collector);
     if (tail_err)
         return tail_err;
 
+    if (s->motion_five_frame_window)
+        return motion_flush_window(s, feature_collector);
     return motion_flush_trailing(s, feature_collector);
 }
 
@@ -635,17 +659,20 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
 
     CUstream pic_stream = vmaf_cuda_picture_get_stream(ref_pic);
 
-    /* raw[index % 2] receives this frame's luma; frame 0 only stages it,
-     * every later frame also sums |blur(prev - cur)| into its own SAD slot,
-     * zeroed on pic_stream ahead of the kernel (ADR-0358, ADR-0845). The
-     * previous frame's `event` orders both ping-pong slots on the device. */
-    const bool has_prev = index > 0u;
+    /* raw[index % ring] receives this frame's luma; a frame without a frame
+     * ring - 1 back only stages it, every later frame also sums
+     * |blur(prev - cur)| into its own SAD slot, zeroed on pic_stream ahead
+     * of the kernel (ADR-0358, ADR-0845). The previous frame's `event`
+     * orders the ring slots on the device: it is waited for from frame 1
+     * on, also by a frame without a SAD, so the chain of events reaches
+     * back to the copy of the frame two back. */
+    const bool has_prev = index >= s->ring - 1u;
     const MotionSadFrame frame = {
         .pic = ref_pic,
-        .cur = s->raw[index % 2u]->data,
-        .prev = has_prev ? s->raw[(index + 1u) % 2u]->data : 0,
+        .cur = s->raw[index % s->ring]->data,
+        .prev = has_prev ? s->raw[(index + 1u) % s->ring]->data : 0,
         .sad = s->sad[index % MOTION_BATCH_DEPTH]->data,
-        .prev_done = has_prev ? s->event : NULL,
+        .prev_done = (index > 0u) ? s->event : NULL,
         .width = s->frame_w,
         .height = s->frame_h,
         .bpc = s->bpc,
@@ -707,6 +734,11 @@ static int emit_batch_scores(MotionStateCuda *s, VmafFeatureCollector *fc, unsig
                 fc, s->feature_name_dict, "VMAF_integer_feature_motion_score", sad_score, i);
         }
 
+        /* Five-frame window: flush() derives motion2 / motion3 of every
+         * frame from the SAD scores (motion_flush_window()). */
+        if (s->motion_five_frame_window)
+            continue;
+
         if (i == 1) {
             /* index 1: back-fill motion3 for index 0 using score[1].
              * No min(prev,cur) yet — mirrors CPU integer_motion.c. */
@@ -731,19 +763,30 @@ static int emit_batch_scores(MotionStateCuda *s, VmafFeatureCollector *fc, unsig
     return err;
 }
 
-/* motion_collect_first_frame - frame 0 emits zeros; no SAD exists yet.
+/* motion_collect_no_sad - a frame without an earlier frame to difference
+ * against emits zeros: frame 0, and frame 1 too with the five-frame window
+ * (the CPU's `index < min_idx`, integer_motion.c::extract).
  *
- * HISS-04: lifted verbatim out of collect_fex_cuda.
+ * HISS-04: lifted out of collect_fex_cuda. The three-frame twin writes
+ * motion2 of frame 0 here; with the five-frame window flush() writes motion2
+ * of every frame (motion_flush_window()).
  */
-static int motion_collect_first_frame(MotionStateCuda *s, VmafFeatureCollector *feature_collector)
+static int motion_collect_no_sad(MotionStateCuda *s, VmafFeatureCollector *feature_collector,
+                                 unsigned index)
 {
-    int err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                      "VMAF_integer_feature_motion2_score", 0., 0);
-    err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                   "VMAF_integer_feature_motion_sad_score", 0., 0);
+    int err = 0;
+    if (!s->motion_five_frame_window) {
+        err = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                      "VMAF_integer_feature_motion2_score", 0.,
+                                                      index);
+    }
+    err |=
+        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                "VMAF_integer_feature_motion_sad_score", 0., index);
     if (s->debug) {
-        err |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                       "VMAF_integer_feature_motion_score", 0., 0);
+        err |=
+            vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                    "VMAF_integer_feature_motion_score", 0., index);
     }
     s->frame_index++;
     return err;
@@ -758,11 +801,14 @@ static int motion_collect_batch(MotionStateCuda *s, CudaFunctions *cu_f,
                                 VmafFeatureCollector *feature_collector, unsigned index)
 {
     /* Determine which frame indices this batch covers.
-     * The batch runs from (index - MOTION_BATCH_DEPTH + 1) to index,
-     * but frame 0 never contributes a SAD value, so batch_start >= 1. */
+     * The batch runs from (index - MOTION_BATCH_DEPTH + 1) to index, but
+     * the frames below min_idx (frame 0; frames 0 and 1 with the five-frame
+     * window) never contribute a SAD value, so batch_start >= min_idx. */
+    const unsigned min_idx = s->ring - 1u;
     const unsigned batch_end = index;
-    const unsigned batch_start_raw =
-        (index >= (unsigned)MOTION_BATCH_DEPTH) ? (index - MOTION_BATCH_DEPTH + 1) : 1u;
+    const unsigned batch_first =
+        (index >= (unsigned)MOTION_BATCH_DEPTH) ? (index - MOTION_BATCH_DEPTH + 1) : 0u;
+    const unsigned batch_start_raw = (batch_first < min_idx) ? min_idx : batch_first;
 
     const int read_err = motion_readback_slots(s, cu_f, batch_start_raw, batch_end);
     if (read_err)
@@ -791,9 +837,10 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
     MotionStateCuda *s = fex->priv;
     CudaFunctions *cu_f = fex->cu_state->f;
 
-    /* Frame 0: emit zeros and return — no SAD computed for the first frame. */
-    if (index == 0)
-        return motion_collect_first_frame(s, feature_collector);
+    /* No SAD is computed for the first frame, nor for the second with the
+     * five-frame window: emit zeros and return. */
+    if (index < s->ring - 1u)
+        return motion_collect_no_sad(s, feature_collector, index);
 
     /* For frames 1 .. MOTION_BATCH_DEPTH-2 (non-boundary, non-first):
      * record the SAD score in the ring and defer sync + emit to the
@@ -829,9 +876,8 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
 }
 
 /* The CPU `motion` set (integer_motion.c): the SAD score on every frame, the
- * same value as `motion_score` with debug=true, and motion2 / motion3.
- * T3-15(c) / ADR-0219: motion3_score is provided in 3-frame mode only; the
- * 5-frame window mode remains deferred and init() rejects it with -ENOTSUP. */
+ * same value as `motion_score` with debug=true, and motion2 / motion3, with
+ * the three-frame window and with motion_five_frame_window (ADR-1491). */
 static const char *provided_features[] = {
     "VMAF_integer_feature_motion_sad_score",
     "VMAF_integer_feature_motion_score",

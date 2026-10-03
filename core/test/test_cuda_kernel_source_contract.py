@@ -17,8 +17,10 @@ case that edits the live source the way the old code read and must fail:
   chroma accumulators of psnr_cuda are zeroed on the kernels' picture
   stream, and psnr_cuda is TEMPORAL like the CPU psnr;
 - motion_v2: the published SAD score is the CPU's weighted, capped value and
-  flush derives motion2_v2 / motion3_v2 from it without re-weighting, also
-  for a one-frame input;
+  flush derives motion2_v2 / motion3_v2 from it with the CPU's own function,
+  vmaf_motion_window_flush() (ADR-1478, ADR-1491): the twin reads no stored
+  score back and holds no window of its own; motion_cuda calls the same
+  function for the five-frame window;
 - float SSIM: each pixel is the CPU's l * c * s with double numerators over
   fp32 denominators (no forced exact 1), and the frame mean is rounded to
   fp32; `enable_chroma` stays declared as an ignored option (HISS-14);
@@ -79,6 +81,7 @@ INTEGER_SSIM_KERNEL = "integer_ssim/integer_ssim_score.cu"
 PSNR_KERNEL = "integer_psnr/psnr_score.cu"
 MOMENT_KERNEL = "integer_moment/moment_score.cu"
 MOTION_V2_SAD_SCORE = "MIN(sad_score * s->motion_fps_weight, s->motion_max_val)"
+MOTION_WINDOW_CALL = "vmaf_motion_window_flush(feature_collector, s->feature_name_dict, &window)"
 FLOAT_SSIM_MEAN = "*mean = (double)(float)*mean;"
 MS_SSIM_KERNEL = "integer_ms_ssim/ms_ssim_score.cu"
 MS_SSIM_HOST = "integer_ms_ssim_cuda.c"
@@ -235,6 +238,7 @@ def _option_failures(sources: dict[str, str]) -> list[str]:
         )
     failures.extend(_psnr_stream_failures(psnr))
     failures.extend(_motion_v2_option_failures(sources["integer_motion_v2_cuda.c"]))
+    failures.extend(_motion_five_frame_failures(sources["integer_motion_cuda.c"]))
     motion = sources[FLOAT_MOTION_HOST]
     if motion.count("motion_clip(s, ") != 3:
         failures.append(
@@ -277,14 +281,29 @@ def _motion_v2_option_failures(source: str) -> list[str]:
         failures.append(
             "integer_motion_v2_cuda.c: the SAD score is not fps-weighted and capped like the CPU"
         )
-    emit = _code(_function_body(source, "motion_v2_emit_frame"))
-    if "motion_fps_weight" in emit:
-        failures.append("integer_motion_v2_cuda.c: flush re-weights the stored SAD scores")
-    if "if (n_frames == 0)" not in _function_body(source, "flush_fex_cuda"):
+    # integer_motion.c::vmaf_motion_window_flush() is the one derivation of
+    # motion2 / motion3 from the stored SADs (ADR-1478); the twin calls it for
+    # both windows (ADR-1491) and so has no end case or weighting of its own.
+    code = _code(source)
+    if MOTION_WINDOW_CALL not in _code(_function_body(source, "flush_fex_cuda")):
         failures.append(
-            "integer_motion_v2_cuda.c: a one-frame input emits no motion2_v2 / motion3_v2"
+            "integer_motion_v2_cuda.c: flush does not derive motion2_v2 / motion3_v2 "
+            "with the CPU's window function"
+        )
+    if "vmaf_feature_collector_get_score" in code:
+        failures.append(
+            "integer_motion_v2_cuda.c: the twin reads stored scores back, a window of its own"
         )
     return failures
+
+
+def _motion_five_frame_failures(source: str) -> list[str]:
+    """motion_cuda derives the five-frame window with the CPU's function (ADR-1491)."""
+    if MOTION_WINDOW_CALL in _code(_function_body(source, "motion_flush_window")):
+        return []
+    return [
+        "integer_motion_cuda.c: the five-frame window is not derived with the CPU's window function"
+    ]
 
 
 def _ssim_failures(sources: dict[str, str]) -> list[str]:
@@ -743,18 +762,32 @@ class CudaKernelSourceContractTest(unittest.TestCase):
         sources = self._edit("integer_motion_v2_cuda.c", MOTION_V2_SAD_SCORE, "sad_score")
         self._assert_detected(sources, "fps-weighted and capped")
 
-    def test_motion_v2_reweighting_is_detected(self) -> None:
+    def test_motion_v2_own_flush_is_detected(self) -> None:
         sources = self._edit(
             "integer_motion_v2_cuda.c",
-            "    vmaf_feature_collector_get_score(feature_collector, sad_name, &score_cur, i);\n",
-            "    vmaf_feature_collector_get_score(feature_collector, sad_name, &score_cur, i);\n"
-            "    score_cur *= s->motion_fps_weight;\n",
+            MOTION_WINDOW_CALL,
+            "motion_v2_flush_scores(s, feature_collector, &window)",
         )
-        self._assert_detected(sources, "re-weights")
+        self._assert_detected(sources, "the CPU's window function")
 
-    def test_motion_v2_one_frame_drop_is_detected(self) -> None:
-        sources = self._edit("integer_motion_v2_cuda.c", "if (n_frames == 0)", "if (n_frames < 2)")
-        self._assert_detected(sources, "one-frame input")
+    def test_motion_v2_reading_scores_back_is_detected(self) -> None:
+        sources = self._edit(
+            "integer_motion_v2_cuda.c",
+            "    const int err = " + MOTION_WINDOW_CALL + ";\n",
+            "    double score_cur = 0.0;\n"
+            "    (void)vmaf_feature_collector_get_score(feature_collector, window.sad_feature,\n"
+            "                                           &score_cur, 0u);\n"
+            "    const int err = " + MOTION_WINDOW_CALL + ";\n",
+        )
+        self._assert_detected(sources, "a window of its own")
+
+    def test_motion_own_five_frame_window_is_detected(self) -> None:
+        sources = self._edit(
+            "integer_motion_cuda.c",
+            MOTION_WINDOW_CALL,
+            "motion_flush_five_frame_scores(s, feature_collector, &window)",
+        )
+        self._assert_detected(sources, "five-frame window is not derived")
 
     def test_unclamped_adm_rows_are_detected(self) -> None:
         sources = self._edit(

@@ -1343,9 +1343,9 @@
     },
     "0219": {
       "sites": {
-        "core/src/feature/cuda/integer_motion_cuda.c": 5,
-        "core/src/feature/hip/integer_motion_hip.c": 2,
-        "core/src/feature/sycl/integer_motion_sycl.cpp": 5,
+        "core/src/feature/cuda/integer_motion_cuda.c": 3,
+        "core/src/feature/hip/integer_motion_hip.c": 1,
+        "core/src/feature/sycl/integer_motion_sycl.cpp": 4,
         "core/test/meson.build": 2,
         "core/test/test_hip_motion3_parity.c": 1,
         "core/test/test_sycl_motion3_parity.c": 1,
@@ -2486,11 +2486,10 @@
     },
     "0337": {
       "sites": {
-        "core/src/feature/cuda/integer_motion_v2_cuda.c": 3,
+        "core/src/feature/cuda/integer_motion_v2_cuda.c": 1,
         "core/src/feature/feature_extractor.cpp": 1,
-        "core/src/feature/hip/integer_motion_v2_hip.c": 3,
+        "core/src/feature/hip/integer_motion_v2_hip.c": 1,
         "core/src/feature/metal/integer_motion_v2_metal.mm": 3,
-        "core/src/feature/sycl/integer_motion_v2_sycl.cpp": 1,
         "core/test/test_integer_motion_v2_coverage.c": 2
       },
       "target": "0337-motion-v2-public-api-options.md"
@@ -4823,6 +4822,7 @@
     "0845": {
       "sites": {
         "core/src/feature/cuda/integer_motion_cuda.c": 8,
+        "core/test/motion_five_frame_twin_parity.h": 1,
         "core/test/test_cuda_motion_sad_score.c": 1,
         "core/test/test_cuda_motion_tiny_frames.c": 1
       },
@@ -5781,7 +5781,7 @@
     "1108": {
       "sites": {
         "core/src/feature/cuda/integer_motion_v2_cuda.c": 3,
-        "core/src/feature/hip/integer_motion_v2_hip.c": 4,
+        "core/src/feature/hip/integer_motion_v2_hip.c": 3,
         "core/src/feature/metal/integer_motion_v2_metal.mm": 4,
         "core/src/feature/sycl/integer_motion_v2_sycl.cpp": 3,
         "core/test/test_cuda_motion_v2_parity.c": 3,
@@ -6185,6 +6185,7 @@
         "core/test/float_psnr_twin_parity.h": 1,
         "core/test/float_vif_twin_parity.h": 1,
         "core/test/hip_parity_skip.h": 1,
+        "core/test/motion_five_frame_twin_parity.h": 1,
         "core/test/mu_table.h": 1,
         "core/test/psnr_hvs_twin_parity.h": 1,
         "core/test/speed_chroma_twin_parity.h": 1,
@@ -6243,6 +6244,7 @@
         "core/test/test_cuda_float_ssim_parity.c": 1,
         "core/test/test_cuda_float_vif_parity.c": 1,
         "core/test/test_cuda_motion3_parity.c": 1,
+        "core/test/test_cuda_motion_five_frame_window.c": 1,
         "core/test/test_cuda_motion_sad_score.c": 1,
         "core/test/test_cuda_motion_tiny_frames.c": 1,
         "core/test/test_cuda_motion_v2_parity.c": 1,
@@ -6320,6 +6322,7 @@
         "core/test/test_hip_float_vif_parity.c": 1,
         "core/test/test_hip_fp_arith_probe.c": 1,
         "core/test/test_hip_motion3_parity.c": 1,
+        "core/test/test_hip_motion_five_frame_window.c": 1,
         "core/test/test_hip_motion_parity.c": 1,
         "core/test/test_hip_motion_tiny_frames.c": 1,
         "core/test/test_hip_motion_v2_parity.c": 1,
@@ -6474,6 +6477,7 @@
         "core/test/test_sycl_integer_vif_math.c": 1,
         "core/test/test_sycl_motion3_parity.c": 1,
         "core/test/test_sycl_motion_add_uv_parity.c": 1,
+        "core/test/test_sycl_motion_five_frame_window.c": 1,
         "core/test/test_sycl_motion_sad_score.c": 1,
         "core/test/test_sycl_motion_tiny_frames.c": 1,
         "core/test/test_sycl_motion_v2_parity.c": 1,
@@ -7655,9 +7659,6 @@
     },
     "1316": {
       "sites": {
-        "core/src/feature/cuda/integer_motion_cuda.c": 1,
-        "core/src/feature/hip/integer_motion_hip.c": 1,
-        "core/src/feature/sycl/integer_motion_sycl.cpp": 1,
         "core/src/libvmaf.c": 2,
         "core/src/opt.h": 1
       },
@@ -8237,7 +8238,6 @@
     "1373": {
       "sites": {
         "core/src/feature/cuda/float_motion_cuda.c": 1,
-        "core/src/feature/cuda/integer_motion_v2_cuda.c": 1,
         "core/src/feature/cuda/integer_psnr_cuda.c": 2,
         "core/src/feature/cuda/integer_ssim/integer_ssim_score.cu": 1,
         "core/src/feature/cuda/integer_ssim/ssim_score.cu": 2,
@@ -9518,21 +9518,27 @@
     },
     "1478": {
       "sites": {
-        "core/src/feature/cuda/integer_motion_cuda.c": 2,
+        "core/src/feature/cuda/integer_motion_cuda.c": 1,
+        "core/src/feature/cuda/integer_motion_v2_cuda.c": 2,
         "core/src/feature/feature_extractor.cpp": 2,
         "core/src/feature/feature_extractor.h": 3,
         "core/src/feature/hip/integer_motion_hip.c": 1,
+        "core/src/feature/hip/integer_motion_v2_hip.c": 2,
         "core/src/feature/integer_motion.c": 2,
         "core/src/feature/integer_motion_v2.c": 2,
         "core/src/feature/motion_window.h": 1,
-        "core/src/feature/sycl/integer_motion_sycl.cpp": 1,
+        "core/src/feature/sycl/integer_motion_sycl.cpp": 2,
+        "core/src/feature/sycl/integer_motion_v2_sycl.cpp": 2,
         "core/src/libvmaf.c": 7,
         "core/test/hip_pooled_fixture.h": 1,
         "core/test/meson.build": 1,
-        "core/test/test_gpu_option_value_capability_contract.py": 1,
+        "core/test/motion_five_frame_twin_parity.h": 1,
+        "core/test/test_cuda_kernel_source_contract.py": 2,
+        "core/test/test_hip_kernel_source_contract.py": 2,
         "core/test/test_integer_motion_coverage.c": 1,
         "core/test/test_integer_motion_v2_coverage.c": 2,
         "core/test/test_motion_five_frame_window.c": 1,
+        "core/test/test_sycl_kernel_source_contract.py": 1,
         "core/tools/vmaf.cpp": 1
       },
       "target": "1478-motion-five-frame-window-port.md"
@@ -9587,6 +9593,35 @@
         "core/test/test_float_adm_csf_upstream_contract.py": 2
       },
       "target": "1489-float-adm-barten-upstream-float.md"
+    },
+    "1491": {
+      "sites": {
+        "core/src/feature/cuda/integer_motion_cuda.c": 3,
+        "core/src/feature/cuda/integer_motion_v2_cuda.c": 1,
+        "core/src/feature/hip/integer_motion_hip.c": 2,
+        "core/src/feature/hip/integer_motion_v2_hip.c": 2,
+        "core/src/feature/sycl/integer_motion_sycl.cpp": 3,
+        "core/src/feature/sycl/integer_motion_v2_sycl.cpp": 1,
+        "core/test/meson.build": 3,
+        "core/test/motion_five_frame_twin_parity.h": 1,
+        "core/test/test_cuda_kernel_source_contract.py": 3,
+        "core/test/test_cuda_motion_five_frame_window.c": 2,
+        "core/test/test_cuda_twin_option_parity.c": 1,
+        "core/test/test_gpu_option_value_capability_contract.py": 1,
+        "core/test/test_hip_kernel_source_contract.py": 3,
+        "core/test/test_hip_motion_five_frame_window.c": 2,
+        "core/test/test_hip_twin_option_parity.c": 1,
+        "core/test/test_motion_five_frame_window.c": 1,
+        "core/test/test_sycl_kernel_source_contract.py": 1,
+        "core/test/test_sycl_motion_five_frame_window.c": 2,
+        "core/test/test_sycl_twin_option_parity.c": 1,
+        "scripts/ci/cross_backend_parity_gate.py": 4,
+        "scripts/ci/cross_backend_vif_diff.py": 2,
+        "scripts/ci/exact_twins.d/motion_mffw.hip": 1,
+        "scripts/ci/exact_twins.d/motion_v2_mffw.hip": 1,
+        "scripts/ci/test_cross_backend_parity_gate.py": 1
+      },
+      "target": "1491-gpu-motion-five-frame-window.md"
     }
   },
   "retired": {

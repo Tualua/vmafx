@@ -426,11 +426,11 @@ selectively dispatched between GPU and CPU based on option support ([ADR-1183](.
   `motion2_score`; the full options surface
   (`motion_blend_factor`, `motion_blend_offset`, `motion_fps_weight`,
   `motion_max_val`, `motion_moving_average`) is exposed.
-  `motion_five_frame_window=true` is left to the CPU: a model or a
-  `--feature motion` that sets it is computed by the CPU `motion` extractor
-  ([Motion, five-frame window](../../metrics/motion.md#five-frame-window)),
-  and `motion_cuda` named directly with it returns `-ENOTSUP` at `init()`
-  (the twin keeps one earlier frame on the device). The
+  `motion_five_frame_window=true` runs on the device too, on `motion_cuda`
+  and `motion_v2_cuda`, with the CPU's bits
+  ([Motion, five-frame window](../../metrics/motion.md#five-frame-window),
+  [ADR-1491](../../adr/1491-gpu-motion-five-frame-window.md)): one more raw
+  luma plane is kept while the option is set. The
   `motion_add_uv=true` path is independent from motion3 and
   remains **not yet wired through to the CUDA backend**. The CUDA
   `picture_copy()` callsite at

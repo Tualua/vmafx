@@ -379,6 +379,12 @@ static const OptionCase OPTION_CASES[] = {
     {"float_motion_cuda", "float_motion", "mbf", "0.5"},
     {"float_motion_cuda", "float_motion", "motion_blend_offset", "2"},
     {"float_motion_cuda", "float_motion", "mbo", "2"},
+    /* ADR-1491: the twins compute the five-frame window; the option is the
+     * CPU's declaration and the gate keeps it on the twin. */
+    {"motion_cuda", "motion", "motion_five_frame_window", "true"},
+    {"motion_cuda", "motion", "mffw", "true"},
+    {"motion_v2_cuda", "motion_v2", "motion_five_frame_window", "true"},
+    {"motion_v2_cuda", "motion_v2", "mffw", "true"},
 };
 
 /* Every twin and its CPU extractor: each option the twin declares must be a

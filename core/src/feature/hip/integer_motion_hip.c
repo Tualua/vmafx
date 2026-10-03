@@ -66,6 +66,7 @@
 #include "libvmaf/picture.h"
 #include "log.h"
 #include "motion_blend_tools.h"
+#include "motion_window.h"
 
 #include "../../hip/common.h"
 #include "../../hip/kernel_template.h"
@@ -99,16 +100,20 @@ typedef struct MotionStateHip {
 
 #ifdef HAVE_HIPCC
     VmafHipMotionSad sad_kernel;
-    /* The previous frame's raw ref Y plane on device (uint8 or uint16,
-     * w*h), packed; each frame's SAD reads it and a device copy behind the
-     * SAD replaces it with the frame's own. */
-    void *prev_luma;
+    /* Raw ref Y planes of earlier frames on device (uint8 or uint16, w*h),
+     * packed, `depth` of them in use. Frame n's SAD reads
+     * prev_luma[n % depth] and a device copy behind the SAD replaces it with
+     * the frame's own, so the plane holds the frame `depth` back: the
+     * previous frame with one plane, the frame two back with two
+     * (motion_five_frame_window, ADR-1491). */
+    void *prev_luma[2];
     /* The frame's ref Y plane: the context's shared frame, or `planes`' own
      * buffer when there is none (ADR-1408). */
     VmafHipPlaneSource planes;
 #endif /* HAVE_HIPCC */
 
     size_t plane_bytes; /* bytes for one Y plane (bpc-aware) */
+    unsigned depth;     /* frames between a frame and the one its SAD reads: 1 or 2 */
     unsigned index;
     unsigned frame_w;
     unsigned frame_h;
@@ -155,14 +160,10 @@ static const VmafOption options[] = {
      .offset = offsetof(MotionStateHip, motion_max_val), .type = VMAF_OPT_TYPE_DOUBLE,
      .default_val.d = MOTION_HIP_DEFAULT_MAX_VAL, .min = 0.0, .max = 10000.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
-    /* Default only (ADR-1316): the twin keeps two frames on the device. A
-     * model or --feature that sets it is computed by the CPU `motion`
-     * (ADR-1478); naming this twin with it fails in init(). */
     {.name = "motion_five_frame_window", .alias = "mffw",
-     .help = "use five-frame temporal window (not on HIP: computed by the CPU extractor)",
+     .help = "use five-frame temporal window",
      .offset = offsetof(MotionStateHip, motion_five_frame_window), .type = VMAF_OPT_TYPE_BOOL,
-     .default_val.b = false,
-     .flags = VMAF_OPT_FLAG_FEATURE_PARAM | VMAF_OPT_FLAG_DEFAULT_ONLY},
+     .default_val.b = false, .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "motion_moving_average", .alias = "mma",
      .help = "use moving average for motion3 scores after first frame",
      .offset = offsetof(MotionStateHip, motion_moving_average), .type = VMAF_OPT_TYPE_BOOL,
@@ -281,24 +282,30 @@ static int collect_force_zero(VmafFeatureExtractor *fex, unsigned index,
 
 #ifdef HAVE_HIPCC
 
-/* Allocate the plane that keeps the previous frame's luma. On failure the
+/* Allocate the planes that keep the luma of earlier frames. On failure the
  * caller's msh_release() frees whatever is set. */
 static int msh_bufs_alloc(MotionStateHip *s)
 {
-    return (hipMalloc(&s->prev_luma, s->plane_bytes) == hipSuccess) ? 0 : -ENOMEM;
+    for (unsigned i = 0; i < s->depth; i++) {
+        if (hipMalloc(&s->prev_luma[i], s->plane_bytes) != hipSuccess)
+            return -ENOMEM;
+    }
+    return 0;
 }
 
-/* Free the buffer, let go of the frame's planes and unload the module. Safe
+/* Free the buffers, let go of the frame's planes and unload the module. Safe
  * with NULL; the caller has drained the stream, so no copy or kernel still
  * uses them. */
 static void msh_bufs_free(MotionStateHip *s)
 {
     vmaf_hip_plane_source_close(&s->planes);
-    if (s->prev_luma != NULL) {
+    for (unsigned i = 0; i < 2u; i++) {
+        if (s->prev_luma[i] == NULL)
+            continue;
         /* Best-effort teardown. */
-        const hipError_t rc = hipFree(s->prev_luma);
+        const hipError_t rc = hipFree(s->prev_luma[i]);
         (void)rc;
-        s->prev_luma = NULL;
+        s->prev_luma[i] = NULL;
     }
     vmaf_hip_motion_sad_unload(&s->sad_kernel);
 }
@@ -307,9 +314,9 @@ static void msh_bufs_free(MotionStateHip *s)
  * (ADR-1408): uploaded by whichever twin asks first, with the wait that
  * keeps the picture from being recycled under the copy
  * (T-HIP-PAGEABLE-UPLOAD-RACE-2026-09-18), and reused by the others. The
- * SAD against the previous frame (from frame 1 on), the copy that keeps this
- * frame's luma and the DtoH copy are enqueued on the private stream;
- * collect() waits for them. */
+ * SAD against the frame `depth` back (from frame `depth` on), the copy that
+ * keeps this frame's luma and the DtoH copy are enqueued on the private
+ * stream; collect() waits for them. */
 static int msh_launch(MotionStateHip *s, VmafHipSharedFrame *shared, VmafPicture *ref_pic,
                       unsigned index)
 {
@@ -318,9 +325,10 @@ static int msh_launch(MotionStateHip *s, VmafHipSharedFrame *shared, VmafPicture
                                                  NULL);
     if (err != 0)
         return err;
+    const bool have_prev = index >= s->depth;
     const VmafHipMotionSadFrame frame = {.cur = cur,
-                                         .keep = s->prev_luma,
-                                         .have_prev = (index > 0u),
+                                         .keep = s->prev_luma[index % s->depth],
+                                         .have_prev = have_prev,
                                          .sad = (uint64_t *)s->rb.device,
                                          .width = s->frame_w,
                                          .height = s->frame_h,
@@ -331,8 +339,8 @@ static int msh_launch(MotionStateHip *s, VmafHipSharedFrame *shared, VmafPicture
 
     hipStream_t str = vmaf_hip_stream_of(s->lc.str);
     hipError_t rc = hipEventRecord(vmaf_hip_event_of(s->lc.submit), str);
-    /* Frame 0 has no previous frame and no SAD to read back. */
-    if (rc == hipSuccess && index > 0u) {
+    /* A frame without a frame `depth` back has no SAD to read back. */
+    if (rc == hipSuccess && have_prev) {
         rc = hipMemcpyAsync(s->rb.host_pinned, s->rb.device, sizeof(uint64_t),
                             hipMemcpyDeviceToHost, str);
     }
@@ -346,14 +354,6 @@ static int msh_launch(MotionStateHip *s, VmafHipSharedFrame *shared, VmafPicture
 /* Reject the options and frame sizes this twin does not support. */
 static int msh_check_config(const MotionStateHip *s, unsigned w, unsigned h)
 {
-    /* Reject 5-frame window: same as CUDA twin (ADR-0219). */
-    if (s->motion_five_frame_window) {
-        vmaf_log(VMAF_LOG_LEVEL_WARNING,
-                 "motion_hip: motion_five_frame_window=true is not yet supported on HIP. "
-                 "Use the CPU extractor `motion` instead.\n");
-        return -ENOTSUP;
-    }
-
     /* motion_add_uv kernel port deferred — ADR-0989. SYCL is the lead
      * backend; HIP will follow in a subsequent PR. */
     if (s->motion_add_uv) {
@@ -440,6 +440,9 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
     s->frame_h = h;
     s->bpc = bpc;
     s->plane_bytes = (size_t)w * h * (bpc <= 8u ? 1u : 2u);
+    /* The CPU's min_idx (integer_motion.c::extract): the SAD of frame n is
+     * taken against frame n - depth. */
+    s->depth = s->motion_five_frame_window ? 2u : 1u;
     s->score = 0.0;
     s->frame_index = 0;
     s->prev_motion3_blended = 0.0;
@@ -518,22 +521,50 @@ static int msh_emit_prev_frame(MotionStateHip *s, VmafFeatureCollector *feature_
     return e;
 }
 
-/* Frame 0: no previous frame, so motion2 and the debug score are 0. */
-static int msh_emit_first_frame(MotionStateHip *s, VmafFeatureCollector *feature_collector)
+/* A frame without an earlier frame to difference against (frame 0; frame 1
+ * too with the five-frame window): the SAD score and the debug score are 0.
+ * The three-frame twin writes motion2 of frame 0 here; with the five-frame
+ * window flush() writes motion2 of every frame. */
+static int msh_emit_no_sad(MotionStateHip *s, VmafFeatureCollector *feature_collector,
+                           unsigned index)
 {
     /* ADR-0530: route writes through s->feature_name_dict so the collector
      * keys match what `vmaf_predict_score_at_index` looks up (encoded
      * option-aware key, not the literal). */
-    int e = vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                    "VMAF_integer_feature_motion_sad_score", 0., 0);
-    e |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                 "VMAF_integer_feature_motion2_score", 0., 0);
-    if (s->debug) {
+    int e =
+        vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                "VMAF_integer_feature_motion_sad_score", 0., index);
+    if (!s->motion_five_frame_window) {
         e |= vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
-                                                     "VMAF_integer_feature_motion_score", 0., 0);
+                                                     "VMAF_integer_feature_motion2_score", 0.,
+                                                     index);
+    }
+    if (s->debug) {
+        e |=
+            vmaf_feature_collector_append_with_dict(feature_collector, s->feature_name_dict,
+                                                    "VMAF_integer_feature_motion_score", 0., index);
     }
     s->frame_index++;
     return e;
+}
+
+/* motion2 and motion3 of every frame with the five-frame window, derived
+ * from the stored SAD scores by the CPU extractor's own function
+ * (integer_motion.c::vmaf_motion_window_flush(), ADR-1478): the scores are
+ * the CPU's whenever the SADs are (ADR-1491). */
+static int msh_flush_window(MotionStateHip *s, VmafFeatureCollector *feature_collector)
+{
+    const VmafMotionWindow window = {
+        .sad_feature = "VMAF_integer_feature_motion_sad_score",
+        .motion2_feature = "VMAF_integer_feature_motion2_score",
+        .motion3_feature = "VMAF_integer_feature_motion3_score",
+        .motion_blend_factor = s->motion_blend_factor,
+        .motion_blend_offset = s->motion_blend_offset,
+        .motion_max_val = s->motion_max_val,
+        .motion_five_frame_window = true,
+        .motion_moving_average = s->motion_moving_average,
+    };
+    return vmaf_motion_window_flush(feature_collector, s->feature_name_dict, &window);
 }
 #endif /* HAVE_HIPCC */
 
@@ -553,8 +584,8 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
     (void)index;
     return -ENOSYS;
 #else
-    if (index == 0u)
-        return msh_emit_first_frame(s, feature_collector);
+    if (index < s->depth)
+        return msh_emit_no_sad(s, feature_collector, index);
 
     double score_prev = s->score;
     const uint64_t *sad_host = (const uint64_t *)s->rb.host_pinned;
@@ -572,7 +603,10 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
                                                      "VMAF_integer_feature_motion_score",
                                                      motion_clip_hip(s, s->score), index);
     }
-    e |= msh_emit_prev_frame(s, feature_collector, index, score_prev);
+    /* The three-frame twin emits motion2 / motion3 of frame index - 1 now;
+     * with the five-frame window flush() derives them for every frame. */
+    if (!s->motion_five_frame_window)
+        e |= msh_emit_prev_frame(s, feature_collector, index, score_prev);
     return e;
 #endif /* HAVE_HIPCC */
 }
@@ -615,7 +649,8 @@ static int flush_fex_hip(VmafFeatureExtractor *fex, VmafFeatureCollector *featur
         return err;
     if (s->frame_index == 0u)
         return 1;
-    err = msh_flush_tail(s, feature_collector);
+    err = s->motion_five_frame_window ? msh_flush_window(s, feature_collector) :
+                                        msh_flush_tail(s, feature_collector);
     return (err < 0) ? err : 1;
 #endif /* HAVE_HIPCC */
 }

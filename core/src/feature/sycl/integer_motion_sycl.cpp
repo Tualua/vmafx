@@ -35,6 +35,13 @@
  * against; with motion_add_uv the uploaded chroma ping-pongs already hold both
  * frames.
  *
+ * With motion_five_frame_window (ADR-1491) the SAD is taken against the frame
+ * two back, as on the CPU (integer_motion.c, Netflix a2b59b77): d_raw_y[0]
+ * holds frame n-2 and d_raw_y[1] frame n-1, advanced by two device copies
+ * after each frame's kernel. collect() then stores the SAD scores only, and
+ * flush() derives motion2 / motion3 of every frame from them with the CPU's
+ * own function, vmaf_motion_window_flush() (motion_window.h, ADR-1478).
+ *
  * Pattern: init -> submit (non-blocking) -> collect (wait + scores)
  * TEMPORAL flag: frames must be processed in sequential order.
  */
@@ -53,6 +60,7 @@
 #include "feature_extractor.h"
 #include "feature_name.h"
 #include "motion_blend_tools.h"
+#include "motion_window.h"
 #include "picture_geometry.h"
 #include "sycl/common.h"
 #include "log.h"
@@ -85,7 +93,7 @@ struct MotionStateSycl {
 
     bool debug;
     bool motion_force_zero;
-    bool motion_five_frame_window; // rejected with -ENOTSUP — see init()
+    bool motion_five_frame_window; // SAD against frame n-2, window in flush()
     bool motion_moving_average;
     bool motion_add_uv; // include U + V plane SAD — ADR-0989
     double motion_blend_factor;
@@ -106,6 +114,9 @@ struct MotionStateSycl {
     // Raw Y-plane ping-pong (device): the kernel copies the current frame
     // from the shared frame buffer into d_raw_y[cur_slot]; the next frame
     // differences against it as d_raw_y[1 - cur_slot].
+    // With motion_five_frame_window the two planes have fixed roles instead:
+    // d_raw_y[0] holds frame n-2 (what the kernel differences against) and
+    // d_raw_y[1] frame n-1; motion_post_graph() advances both.
     void *d_raw_y[2];
     int cur_slot; // ping-pong slot of the current frame
 
@@ -203,16 +214,13 @@ static const VmafOption options[] = {
         .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
     {
-        // Default only (ADR-1316): the twin keeps two frames on the device.
-        // A model or --feature that sets it is computed by the CPU `motion`
-        // (ADR-1478); naming this twin with it fails in init().
         .name = "motion_five_frame_window",
-        .help = "use five-frame temporal window (not on SYCL: computed by the CPU extractor)",
+        .help = "use five-frame temporal window",
         .alias = "mffw",
         .offset = offsetof(MotionStateSycl, motion_five_frame_window),
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val = {.b = false},
-        .flags = VMAF_OPT_FLAG_FEATURE_PARAM | VMAF_OPT_FLAG_DEFAULT_ONLY,
+        .flags = VMAF_OPT_FLAG_FEATURE_PARAM,
     },
     {
         .name = "motion_moving_average",
@@ -247,10 +255,12 @@ static int close_fex_sycl(VmafFeatureExtractor *fex); /* forward decl for init e
 
 static int motion_validate_init(const MotionStateSycl *s, unsigned w, unsigned h)
 {
-    if (s->motion_five_frame_window) {
+    // motion_add_uv is this twin's own option: the CPU `motion` has none, so
+    // the five-frame window with chroma has no reference to equal.
+    if (s->motion_five_frame_window && s->motion_add_uv) {
         vmaf_log(VMAF_LOG_LEVEL_WARNING,
-                 "motion_sycl: motion_five_frame_window=true is not yet supported on SYCL. "
-                 "Use the CPU extractor `motion` instead.\n");
+                 "motion_sycl: motion_five_frame_window=true with motion_add_uv=true is not "
+                 "supported (the CPU extractor `motion` has no chroma mode to match).\n");
         return -ENOTSUP;
     }
     if (h < 3u || w < 3u) {
@@ -286,6 +296,23 @@ static int motion_alloc_luma(VmafSyclState *state, MotionStateSycl *s, unsigned 
     if (!s->d_raw_y[0] || !s->d_raw_y[1] || !s->d_sad_accum || !s->h_sad_accum) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "motion_sycl: device memory allocation failed\n");
         return -ENOMEM;
+    }
+    if (!s->motion_five_frame_window)
+        return 0;
+
+    // Five-frame window: the kernel runs on every frame, also on the first
+    // two, whose SAD nobody reads (enqueue_motion_work()). Give it defined
+    // planes to read until frames 0 and 1 have been copied in.
+    auto *q = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(state));
+    if (!q)
+        return -EINVAL;
+    try {
+        q->memset(s->d_raw_y[0], 0, buf_size);
+        q->memset(s->d_raw_y[1], 0, buf_size);
+        q->wait();
+    } catch (const sycl::exception &e) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "motion_sycl: clearing the frame planes: %s\n", e.what());
+        return -EIO;
     }
     return 0;
 }
@@ -493,7 +520,9 @@ static void motion_pre_graph(void *queue_ptr, void *priv)
         q.memcpy(s->d_ref_u[s->cur_slot], s->h_stage_u, bytes);
         q.memcpy(s->d_ref_v[s->cur_slot], s->h_stage_v, bytes);
     }
-    if (s->frame_index > 0) {
+    // Five-frame window: the kernel adds into the accumulator on every frame
+    // (enqueue_motion_work()), so it is cleared on every frame.
+    if (s->frame_index > 0 || s->motion_five_frame_window) {
         q.memset(s->d_sad_accum, 0, sizeof(int64_t));
         if (s->motion_add_uv) {
             q.memset(s->d_sad_u, 0, sizeof(int64_t));
@@ -515,12 +544,35 @@ static void enqueue_motion_plane(sycl::queue &q, const motion_sycl_pipeline::Sad
     }
 }
 
+// Five-frame window: sum(|blur(frame n-2 - frame n)|), with frame n-2 in
+// d_raw_y[0]. Enqueued on every frame, also the first two, whose result
+// collect() does not read: the combined graph is recorded once and replayed
+// (common.cpp), so what a frame enqueues cannot depend on its index. The
+// kernel keeps no copy; the copies that advance the two planes are plain
+// queue commands behind the replay (motion_post_graph()), which need not
+// agree with the graph's two slots.
+static void enqueue_motion_window(sycl::queue &q, const MotionStateSycl *s, void *shared_ref)
+{
+    motion_sycl_pipeline::enqueue_sad(q, {.prev = s->d_raw_y[0],
+                                          .cur = shared_ref,
+                                          .cur_copy = nullptr,
+                                          .sad = s->d_sad_accum,
+                                          .width = s->width,
+                                          .height = s->height,
+                                          .bpc = s->bpc});
+}
+
 // Graph-recorded: compute kernels only (Y plane + optional UV planes)
 static void enqueue_motion_work(void *queue_ptr, void *priv, void *shared_ref, void *shared_dis)
 {
     (void)shared_dis; // Motion only uses ref
     sycl::queue &q = *static_cast<sycl::queue *>(queue_ptr);
     auto *s = static_cast<MotionStateSycl *>(priv);
+
+    if (s->motion_five_frame_window) {
+        enqueue_motion_window(q, s, shared_ref);
+        return;
+    }
 
     bool const has_prev = (s->frame_index > 0);
     int const cur = s->cur_slot;
@@ -572,6 +624,22 @@ static void motion_post_graph(void *queue_ptr, void *priv)
 {
     sycl::queue &q = *static_cast<sycl::queue *>(queue_ptr);
     auto *s = static_cast<MotionStateSycl *>(priv);
+    if (s->motion_five_frame_window) {
+        // The SAD of a frame that has a frame n-2, then the two planes move
+        // on: frame n-1 becomes frame n-2 and this frame becomes frame n-1.
+        // The queue is in order and the replay is fenced by a barrier, so
+        // the kernel has read d_raw_y[0] before the first copy overwrites it.
+        if (s->frame_index >= 2) {
+            q.memcpy(s->h_sad_accum, s->d_sad_accum, sizeof(int64_t));
+        }
+        size_t const bytes = (size_t)s->width * s->height * ((s->bpc <= 8) ? 1U : 2U);
+        const void *cur = vmaf_sycl_get_shared_plane(s->sycl_state, 1, 0);
+        q.memcpy(s->d_raw_y[0], s->d_raw_y[1], bytes);
+        if (cur) {
+            q.memcpy(s->d_raw_y[1], cur, bytes);
+        }
+        return;
+    }
     if (s->frame_index > 0) {
         q.memcpy(s->h_sad_accum, s->d_sad_accum, sizeof(int64_t));
         if (s->motion_add_uv) {
@@ -650,7 +718,10 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
 static double motion_score_from_sad(const MotionStateSycl *s)
 {
     double motion_score = 0.0;
-    if (s->frame_index > 0) {
+    // The CPU's min_idx (integer_motion.c::extract): the first frame, and the
+    // second with the five-frame window, have no frame to difference against.
+    unsigned const min_idx = s->motion_five_frame_window ? 2U : 1U;
+    if (s->frame_index >= min_idx) {
         int64_t const sad_y = *s->h_sad_accum;
         motion_score = (double)sad_y / 256.0 / ((double)s->width * s->height);
         if (s->motion_add_uv) {
@@ -719,7 +790,13 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
 
     double const motion_score = motion_score_from_sad(s);
     int err;
-    if (s->frame_index == 0) {
+    if (s->motion_five_frame_window) {
+        // The SAD score only (0 for frames 0 and 1); flush() derives motion2
+        // and motion3 of every frame from the stored scores.
+        err =
+            motion_append_sad_score(s, MIN(motion_score * s->motion_fps_weight, s->motion_max_val),
+                                    index, feature_collector);
+    } else if (s->frame_index == 0) {
         err = motion_collect_first(s, index, feature_collector);
     } else if (s->frame_index == 1) {
         err = motion_collect_second(s, motion_score, index, feature_collector);
@@ -749,6 +826,26 @@ static int extract_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic,
     return collect_fex_sycl(fex, index, feature_collector);
 }
 
+/* motion2 and motion3 of every frame with the five-frame window, derived
+ * from the stored SAD scores by the CPU extractor's own function
+ * (integer_motion.c::vmaf_motion_window_flush(), ADR-1478): the scores are
+ * the CPU's whenever the SADs are (ADR-1491). */
+static int motion_flush_window(MotionStateSycl *s, VmafFeatureCollector *feature_collector)
+{
+    const VmafMotionWindow window = {
+        .sad_feature = "VMAF_integer_feature_motion_sad_score",
+        .motion2_feature = "VMAF_integer_feature_motion2_score",
+        .motion3_feature = "VMAF_integer_feature_motion3_score",
+        .motion_blend_factor = s->motion_blend_factor,
+        .motion_blend_offset = s->motion_blend_offset,
+        .motion_max_val = s->motion_max_val,
+        .motion_five_frame_window = true,
+        .motion_moving_average = s->motion_moving_average,
+    };
+    int const err = vmaf_motion_window_flush(feature_collector, s->feature_name_dict, &window);
+    return err ? err : 1;
+}
+
 static int flush_fex_sycl(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
 {
     if (!fex)
@@ -760,6 +857,8 @@ static int flush_fex_sycl(VmafFeatureExtractor *fex, VmafFeatureCollector *featu
     // Every frame's motion2 / motion3 was appended with its SAD score.
     if (s->motion_force_zero)
         return 1;
+    if (s->motion_five_frame_window)
+        return motion_flush_window(s, feature_collector);
 
     int ret = 0;
     // Write the final motion2 + motion3 scores (delayed-by-one pattern).
@@ -860,10 +959,8 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
 /* ------------------------------------------------------------------ */
 
 /* The CPU `motion` set (integer_motion.c): the SAD score on every frame, the
- * same value as `motion_score` with debug=true, and motion2 / motion3.
- * T3-15(c) / ADR-0219: motion3_score is now provided (3-frame mode
- * only). The 5-frame window mode remains deferred — init() rejects
- * it with -ENOTSUP. */
+ * same value as `motion_score` with debug=true, and motion2 / motion3, with
+ * the three-frame window and with motion_five_frame_window (ADR-1491). */
 static const char *provided_features[] = {
     "VMAF_integer_feature_motion_sad_score",
     "VMAF_integer_feature_motion_score",

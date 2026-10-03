@@ -71,7 +71,7 @@ temporal activity. No inherent upper bound — clamped to `motion_max_val` (defa
 | `motion_blend_factor`     | `mbf`    | double | `1.0`     | `0.0–1.0`     | Blend factor for `motion3_score`                                       |
 | `motion_blend_offset`     | `mbo`    | double | `40.0`    | `0.0–1000.0`  | Score offset at which blending begins for `motion3_score`              |
 | `motion_max_val`          | `mmxv`   | double | `10000.0` | `0.0–10000.0` | Upper clamp applied to emitted scores                                  |
-| `motion_five_frame_window`| `mffw`   | bool   | `false`   | —             | Take each SAD against the frame two back instead of the previous one ([Five-frame window](#five-frame-window)); computed on the CPU on every backend |
+| `motion_five_frame_window`| `mffw`   | bool   | `false`   | —             | Take each SAD against the frame two back instead of the previous one ([Five-frame window](#five-frame-window)); also on `motion_cuda`, `motion_sycl` and `motion_hip` |
 | `motion_moving_average`   | `mma`    | bool   | `false`   | —             | Apply a two-frame moving average to `motion3_score`                    |
 
 ### Backend coverage
@@ -110,14 +110,18 @@ Netflix 576x324 pair; expect the same from the Metal twin, which has not been
 measured yet (its row in [`state.md`](../state.md)).
 
 All GPU backends emit `motion2_score` and `motion3_score` in 3-frame window
-mode, with `motion_moving_average` if it is set. The five-frame window is
-computed on the CPU: with `--backend cuda`, `sycl`, `hip` or `metal`, a model
-or a `--feature motion` that sets `motion_five_frame_window=true` runs the
-CPU `motion` extractor for that feature (the other features stay on the
-device) and the scores are the CPU's. A twin named directly with the option
-(`--feature motion_cuda=motion_five_frame_window=true`) returns `-ENOTSUP` at
-`init()` and the run fails; no twin scores with another window
-(`T-GPU-MOTION-FIVE-FRAME-WINDOW-2026-10-02` in [`state.md`](../state.md)).
+mode, with `motion_moving_average` if it is set. `motion_cuda`, `motion_sycl`
+and `motion_hip` compute the five-frame window too
+([ADR-1491](../adr/1491-gpu-motion-five-frame-window.md)): they keep the frame
+two back on the device, take the SAD against it with the kernel of the
+three-frame window, and derive `motion2` / `motion3` with the CPU's own
+function when the last frame is in. Their outputs equal the CPU's bit for
+bit (measured on an RTX 4090, an Arc A380 and a gfx1036), and the parity gate
+compares the cell `motion_mffw` with tolerance 0. With the option, a twin
+publishes `motion2` and `motion3` at the end of the run, as the CPU does, not
+frame by frame. `motion_metal` does not declare the option: on `--backend
+metal` the CPU extractor computes the motion feature of a model or
+`--feature motion` that sets it (not measured, no device).
 
 ### Five-frame window
 
@@ -235,7 +239,7 @@ end-of-stream flush.
 | `motion_blend_factor`| `mbf`     | double | `1.0`     | `0.0–1.0`     | Blend factor for motion3-style score      |
 | `motion_blend_offset`| `mbo`     | double | `40.0`    | `0.0–1000.0`  | Blend offset                              |
 | `motion_max_val`     | `mmxv`    | double | `10000.0` | `0.0–10000.0` | Upper clamp                               |
-| `motion_five_frame_window` | `mffw` | bool | `false` | —             | SAD against the frame two back, as on `motion` ([Five-frame window](#five-frame-window)); computed on the CPU on every backend (the GPU twins do not declare the option) |
+| `motion_five_frame_window` | `mffw` | bool | `false` | —             | SAD against the frame two back, as on `motion` ([Five-frame window](#five-frame-window)); also on `motion_v2_cuda`, `motion_v2_sycl` and `motion_v2_hip` (ADR-1491), on the CPU for `--backend metal` |
 | `motion_moving_average` | `mma` | bool   | `false`   | —             | Two-frame moving average                  |
 
 ### Backend coverage

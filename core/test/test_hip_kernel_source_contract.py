@@ -14,8 +14,11 @@ instead of copies of the math. ADR-1403 makes float_ms_ssim_hip the CPU's
 arithmetic: the kernels and the extractor compute through
 integer_ms_ssim/ms_ssim_arith.h (fused decimate taps, window sums as an exact
 fp32 pair, the CPU's fp32 denominators and quotient, fp32 per-scale means)
-and keep no arithmetic of their own. Every check has a planted-regression
-case that reintroduces the old code and must be detected.
+and keep no arithmetic of their own. ADR-1491: the motion twins derive
+motion2 / motion3 of the five-frame window, and motion_v2_hip of both
+windows, with the CPU's vmaf_motion_window_flush(); neither holds a window
+of its own. Every check has a planted-regression case that reintroduces the
+old code and must be detected.
 """
 
 from __future__ import annotations
@@ -30,6 +33,8 @@ HIP_RUNTIME = ROOT / "core" / "src" / "hip"
 
 MOTION_KERNEL = "integer_motion_v2/motion_v2_score.hip"
 MOTION_SAD = "integer_motion_sad_hip.c"
+# The one derivation of motion2 / motion3 from the stored SADs (ADR-1478, ADR-1491).
+MOTION_WINDOW_CALL = "vmaf_motion_window_flush(feature_collector, s->feature_name_dict, &window)"
 MOTION_TUS = ("integer_motion_hip.c", "integer_motion_v2_hip.c")
 MOTION_LAUNCH_FNS = {
     "integer_motion_hip.c": "msh_launch",
@@ -259,6 +264,11 @@ def _motion_hip_failures(motion: str) -> list[str]:
         failures.append("integer_motion_hip.c: the CPU's motion_sad_score is not emitted")
     if not re.search(r'\.name = "debug"[^}]*\.default_val\.b = false', motion):
         failures.append("integer_motion_hip.c: `debug` no longer defaults to false like the CPU")
+    if MOTION_WINDOW_CALL not in _code(_function_body(motion, "msh_flush_window")):
+        failures.append(
+            "integer_motion_hip.c: the five-frame window is not derived with the CPU's "
+            "window function"
+        )
     return failures
 
 
@@ -266,10 +276,18 @@ def _motion_v2_failures(motion_v2: str) -> list[str]:
     failures: list[str] = []
     if "MIN(sad_score * s->motion_fps_weight, s->motion_max_val)" not in motion_v2:
         failures.append("integer_motion_v2_hip.c: the stored SAD is not weighted and capped")
-    if "motion_fps_weight" in _function_body(motion_v2, "mv2_hip_motion2"):
-        failures.append("integer_motion_v2_hip.c: motion2_v2 weights the stored SAD again")
-    if "if (n_frames == 0u)" not in _function_body(motion_v2, "flush_fex_hip"):
-        failures.append("integer_motion_v2_hip.c: a one-frame run skips motion2_v2 / motion3_v2")
+    # integer_motion.c::vmaf_motion_window_flush() is the one derivation of
+    # motion2 / motion3 from the stored SADs (ADR-1478); the twin calls it for
+    # both windows (ADR-1491) and so has no end case or weighting of its own.
+    if MOTION_WINDOW_CALL not in _code(_function_body(motion_v2, "flush_fex_hip")):
+        failures.append(
+            "integer_motion_v2_hip.c: flush does not derive motion2_v2 / motion3_v2 "
+            "with the CPU's window function"
+        )
+    if "vmaf_feature_collector_get_score" in _code(motion_v2):
+        failures.append(
+            "integer_motion_v2_hip.c: the twin reads stored scores back, a window of its own"
+        )
     return failures
 
 
@@ -623,8 +641,8 @@ class HipKernelSourceContractTest(unittest.TestCase):
         src = _replace(
             _sources(),
             "integer_motion_hip.c",
-            "    void *prev_luma;",
-            "    void *prev_luma;\n    void *blur[2];",
+            "    void *prev_luma[2];",
+            "    void *prev_luma[2];\n    void *blur[2];",
         )
         self.assert_detected(src, "blurred-frame ping-pong")
 
@@ -917,11 +935,35 @@ class HipKernelSourceContractTest(unittest.TestCase):
         )
         self.assert_detected(src, "not weighted and capped")
 
-    def test_one_frame_motion_v2_skip_is_detected(self) -> None:
+    def test_motion_v2_own_flush_is_detected(self) -> None:
         src = _replace(
-            _sources(), "integer_motion_v2_hip.c", "if (n_frames == 0u)", "if (n_frames < 2u)"
+            _sources(),
+            "integer_motion_v2_hip.c",
+            MOTION_WINDOW_CALL,
+            "mv2_hip_flush_scores(s, feature_collector, &window)",
         )
-        self.assert_detected(src, "one-frame run")
+        self.assert_detected(src, "the CPU's window function")
+
+    def test_motion_v2_reading_scores_back_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            "integer_motion_v2_hip.c",
+            "    const int err = " + MOTION_WINDOW_CALL + ";\n",
+            "    double score_cur = 0.0;\n"
+            "    (void)vmaf_feature_collector_get_score(feature_collector, window.sad_feature,\n"
+            "                                           &score_cur, 0u);\n"
+            "    const int err = " + MOTION_WINDOW_CALL + ";\n",
+        )
+        self.assert_detected(src, "a window of its own")
+
+    def test_motion_own_five_frame_window_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            "integer_motion_hip.c",
+            MOTION_WINDOW_CALL,
+            "msh_flush_five_frame_scores(s, feature_collector, &window)",
+        )
+        self.assert_detected(src, "five-frame window is not derived")
 
     def test_non_temporal_psnr_is_detected(self) -> None:
         src = _replace(

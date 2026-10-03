@@ -40,9 +40,9 @@ HIP / Metal motion twins listed in Twin-update table above — same PR.
 - **`integer_motion_sycl.cpp::motion3_postprocess_*` honours
   motion3 GPU contract** (ADR-0219). Applies CPU's host-side
   post-process to motion2 with no device-side state.
-  `motion_five_frame_window=true` returns `-ENOTSUP` at `init()` with
-  `WARNING` log; option keeps `VMAF_OPT_FLAG_DEFAULT_ONLY` until the twin has
-  the window, so model dispatch runs CPU `motion` (ADR-1478). See [../../AGENTS.md §"motion3_score GPU contract"](../../../AGENTS.md).
+  `motion_five_frame_window=true` is computed by the twin, through the
+  CPU's window function at flush
+  ([motion-five-frame-window](motion-five-frame-window.md), ADR-1491). See [../../AGENTS.md §"motion3_score GPU contract"](../../../AGENTS.md).
 - **`motion_fps_weight` cross-backend parity** — see canonical
   invariant note in [`../cuda/AGENTS.md`](../../cuda/AGENTS.md).
   `integer_motion_v2_sycl.cpp` and `float_motion_sycl.cpp` both carry

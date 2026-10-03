@@ -26,8 +26,8 @@
  *   negative  with the window on, a preallocated pool below four pictures is
  *             refused with -EINVAL at registration, whichever comes first;
  *             an extractor asked for frame 2 with no frame n-2 fails; a GPU
- *             twin that has no five-frame window hands the option to the
- *             CPU extractor instead of scoring with another window
+ *             twin that has no five-frame window (Metal) hands the option to
+ *             the CPU extractor instead of scoring with another window
  */
 
 #include <errno.h>
@@ -583,20 +583,25 @@ static int ffw_twin_verdict(const char *name, const char *value)
     return verdict;
 }
 
-/* The GPU twins of `motion` and `motion_v2` keep one earlier frame on the
- * device. With the option set, a model or `--feature motion` must be computed
- * by the CPU extractor: the verdict is -ENOTSUP, either because the twin
- * marks the option VMAF_OPT_FLAG_DEFAULT_ONLY or because it does not declare
- * it. A build without the backend has no such extractor and nothing to
- * check. */
-static char *test_twins_leave_the_option_to_the_cpu(void)
+/* The CUDA, SYCL and HIP twins of `motion` and `motion_v2` compute the
+ * window (ADR-1491): model dispatch keeps the twin, verdict 0. The Metal
+ * twins do not declare the option, so a model or `--feature motion` that
+ * sets it is computed by the CPU extractor: verdict -ENOTSUP. A build
+ * without the backend has no such extractor and nothing to check. */
+static char *test_twins_honour_the_option_or_leave_it_to_the_cpu(void)
 {
-    static const char *const twins[] = {
-        "motion_cuda",    "motion_sycl",    "motion_hip",    "integer_motion_metal",
-        "motion_v2_cuda", "motion_v2_sycl", "motion_v2_hip", "motion_v2_metal",
+    static const char *const with_window[] = {
+        "motion_cuda",    "motion_sycl",    "motion_hip",
+        "motion_v2_cuda", "motion_v2_sycl", "motion_v2_hip",
     };
-    for (size_t i = 0; i < sizeof(twins) / sizeof(twins[0]); i++) {
-        const int verdict = ffw_twin_verdict(twins[i], "true");
+    for (size_t i = 0; i < sizeof(with_window) / sizeof(with_window[0]); i++) {
+        const int verdict = ffw_twin_verdict(with_window[i], "true");
+        mu_assert("a twin with the five-frame window handed the option to the CPU",
+                  verdict == -ENOENT || verdict == 0);
+    }
+    static const char *const without_window[] = {"integer_motion_metal", "motion_v2_metal"};
+    for (size_t i = 0; i < sizeof(without_window) / sizeof(without_window[0]); i++) {
+        const int verdict = ffw_twin_verdict(without_window[i], "true");
         mu_assert("a twin without the five-frame window kept the option",
                   verdict == -ENOENT || verdict == -ENOTSUP);
     }
@@ -620,7 +625,7 @@ char *run_tests(void)
         MU_TEST(test_pool_of_three_without_the_window),
         MU_TEST(test_pool_below_four_is_refused),
         MU_TEST(test_missing_window_is_rejected),
-        MU_TEST(test_twins_leave_the_option_to_the_cpu),
+        MU_TEST(test_twins_honour_the_option_or_leave_it_to_the_cpu),
     };
     return mu_run_table(tests, MU_TABLE_LEN(tests));
 }

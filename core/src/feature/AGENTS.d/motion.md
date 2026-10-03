@@ -33,10 +33,13 @@ invariant: Motion plane structures, upstream options, mirror implementations, an
   (fork deviation from upstream's unconditional window, no score moves; see
   `core/src/AGENTS.d/picture-ownership-and-dispatch.md`). Do not drop the
   hook or make it answer true unconditionally. GPU twins:
-  option marked `VMAF_OPT_FLAG_DEFAULT_ONLY` (`motion_cuda`, `motion_sycl`,
-  `motion_hip`) or absent (`integer_motion_metal`) -> model / `--feature
-  motion` dispatch runs this extractor instead; twin named directly returns
-  `-ENOTSUP`. Guards: `core/test/test_motion_five_frame_window.c`,
+  `motion_cuda`, `motion_sycl`, `motion_hip` compute the window (frame n-2
+  on device, `vmaf_motion_window_flush()` at flush, ADR-1491); a change to
+  `vmaf_motion_window_flush()` / `motion_flush_one()` reaches them through
+  the call, a change to `extract()`'s min_idx / prev selection changes their
+  `ring` / `depth` in same PR. `integer_motion_metal` does not declare the
+  option -> model / `--feature motion` dispatch runs this extractor.
+  Guards: `core/test/test_motion_five_frame_window.c`,
   `test_integer_motion_coverage`, golden
   `test_run_vmaf_integer_fextractor_motion_five_frame_window*` (9) +
   `vmaf_v1_quality_runner_test.py` hfr (4).

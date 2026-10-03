@@ -220,6 +220,11 @@ MOTION_DIFF_FIRST = re.compile(
     r"read_sample\(args\.prev[^;]*?\)\s*-\s*read_sample\(args\.cur", re.S
 )
 MOTION_SUBMIT_FNS = ("submit_fex_sycl", "motion_stage_chroma", "motion_stage_plane")
+# ADR-1478 / ADR-1491: one derivation of motion2 / motion3 from the stored
+# SADs, integer_motion.c::vmaf_motion_window_flush(). motion_v2_sycl calls it
+# for both windows and reads no stored score back; motion_sycl calls it for
+# the five-frame window.
+MOTION_WINDOW_CALL = "vmaf_motion_window_flush(feature_collector, s->feature_name_dict, &window)"
 
 
 def _motion_sources() -> dict[str, str]:
@@ -251,6 +256,19 @@ def _motion_failures(sources: dict[str, str]) -> list[str]:
             failures.append(
                 f"integer_motion_sycl.cpp: {fn}() waits on or uploads through the primary queue"
             )
+    failures.extend(_motion_window_failures(sources))
+    return failures
+
+
+def _motion_window_failures(sources: dict[str, str]) -> list[str]:
+    failures: list[str] = []
+    for name in MOTION_TUS:
+        if MOTION_WINDOW_CALL not in _code(sources[name]):
+            failures.append(f"{name}: the window is not derived with the CPU's window function")
+    if "vmaf_feature_collector_get_score" in _code(sources["integer_motion_v2_sycl.cpp"]):
+        failures.append(
+            "integer_motion_v2_sycl.cpp: the twin reads stored scores back, a window of its own"
+        )
     return failures
 
 
@@ -613,6 +631,26 @@ class SyclKernelSourceContractTest(unittest.TestCase):
             1,
         )
         self.assertTrue(any("primary queue" in item for item in _motion_failures(sources)))
+
+    def test_motion_own_window_is_detected(self) -> None:
+        for name in MOTION_TUS:
+            sources = _motion_sources()
+            self.assertIn(MOTION_WINDOW_CALL, sources[name])
+            sources[name] = sources[name].replace(
+                MOTION_WINDOW_CALL, "motion_flush_scores(s, feature_collector, &window)", 1
+            )
+            self.assertTrue(
+                any("the CPU's window function" in item for item in _motion_failures(sources)),
+                name,
+            )
+
+    def test_motion_v2_reading_scores_back_is_detected(self) -> None:
+        sources = _motion_sources()
+        sources["integer_motion_v2_sycl.cpp"] += (
+            "\nstatic int own_window(VmafFeatureCollector *fc, double *score)\n"
+            "{\n    return vmaf_feature_collector_get_score(fc, \"sad\", score, 0u);\n}\n"
+        )
+        self.assertTrue(any("a window of its own" in item for item in _motion_failures(sources)))
 
     def test_motion_fp64_is_detected(self) -> None:
         sources = _motion_sources()

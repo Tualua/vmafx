@@ -32,9 +32,11 @@ invariant: Motion v2 option-surface parity, five-frame window on prev_prev_ref, 
   -> change both. Never bring back `-ENOTSUP` in `init()` or a constant
   `min_idx = 1`. No frame n-2 at index >= 2 -> `-EINVAL`, never an empty
   picture read. `reads_prev_prev_ref()` answers the option, as in
-  `integer_motion.c` (framework keeps n-2 only for a reader, ADR-1478). GPU twins of `motion_v2` do not declare the option: model
-  dispatch computes it on the CPU (ADR-1359), a twin named with it fails
-  "unknown option". Guards: `core/test/test_motion_five_frame_window.c`
+  `integer_motion.c` (framework keeps n-2 only for a reader, ADR-1478).
+  `motion_v2_cuda` / `_sycl` / `_hip` compute the window and flush through
+  the same function (ADR-1491); `motion_v2_metal` does not declare the
+  option: model dispatch computes it on the CPU (ADR-1359).
+  Guards: `core/test/test_motion_five_frame_window.c`
   (scores against the three-frame SAD of frame pairs (n-2, n), threads, pool
   of four, twin verdicts), `test_integer_motion_v2_coverage`.
 - **`motion_v2` NEON shift semantics** (fork-local, ADR-0145):

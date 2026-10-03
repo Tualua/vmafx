@@ -3476,6 +3476,22 @@ test('test_cuda_motion_sad_score', test_cuda_motion_sad_score,
     is_parallel : false,
     timeout : 60)
 
+# ADR-1491: motion_cuda and motion_v2_cuda compute motion_five_frame_window
+# with the CPU's bits. Every output of every frame, `==`, for 11, 1, 2 and 3
+# frames at 8 and 10 bits, the option alone and with the other motion options
+# (motion_five_frame_twin_parity.h). Fails on a twin without the window.
+test_cuda_motion_five_frame_window = executable('test_cuda_motion_five_frame_window',
+    ['test.c', 'test_cuda_motion_five_frame_window.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, cuda_dependency, math_lib],
+    c_args: ['-DHAVE_CUDA=1']
+)
+test('test_cuda_motion_five_frame_window', test_cuda_motion_five_frame_window,
+    suite : ['fast', 'gpu'],
+    is_parallel : false,
+    timeout : 120)
+
 # ADR-0597 — integer_vif CPU vs. CUDA parity gate.  Pins the luma-only
 # design contract as a regression assertion so DEEP_AUDIT 2026-05-18
 # finding 23 (false-positive "CUDA VIF skips chroma planes") cannot
@@ -5159,6 +5175,22 @@ test('test_sycl_motion_sad_score', test_sycl_motion_sad_score,
     is_parallel : false,
     timeout : 60)
 
+# ADR-1491: motion_sycl and motion_v2_sycl compute motion_five_frame_window
+# with the CPU's bits. Every output of every frame, `==`, for 11, 1, 2 and 3
+# frames at 8 and 10 bits, the option alone and with the other motion options
+# (motion_five_frame_twin_parity.h). Fails on a twin without the window.
+test_sycl_motion_five_frame_window = executable('test_sycl_motion_five_frame_window',
+    ['test.c', 'test_sycl_motion_five_frame_window.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_motion_five_frame_window', test_sycl_motion_five_frame_window,
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false,
+    timeout : 120)
+
 # ADR-1395: SYCL kernels use no scratch memory (private arrays in memory,
 # register spills) on Intel GPUs, where the Linux xe driver returns wrong
 # values from them. Builds every registered kernel for the default GPU and
@@ -6385,6 +6417,22 @@ test('test_hip_motion_parity', test_hip_motion_parity,
     suite : ['fast', 'gpu'],
     is_parallel : false,
     timeout : 60)
+
+# ADR-1491: motion_hip and motion_v2_hip compute motion_five_frame_window
+# with the CPU's bits. Every output of every frame, `==`, for 11, 1, 2 and 3
+# frames at 8 and 10 bits, the option alone and with the other motion options
+# (motion_five_frame_twin_parity.h). Fails on a twin without the window.
+test_hip_motion_five_frame_window = executable('test_hip_motion_five_frame_window',
+    ['test.c', 'test_hip_motion_five_frame_window.c'],
+    include_directories : [libvmaf_inc, test_inc],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, hip_deps, math_lib],
+    c_args: ['-DHAVE_HIP=1']
+)
+test('test_hip_motion_five_frame_window', test_hip_motion_five_frame_window,
+    suite : ['fast', 'gpu'],
+    is_parallel : false,
+    timeout : 120)
 
 # ADR-0564 — integer_ssim CPU vs. HIP parity, places=4 on every frame of an
 # 8-frame pooled clip. The kernel is the CPU's 9-tap int64 algorithm, so the

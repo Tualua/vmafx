@@ -731,11 +731,13 @@ the deviation:
   `integer_motion2` and `integer_motion3` scores, matching the CPU
   reference semantics and eliminating drift on high-motion content
   (such as 1080p checkerboard pairs).
-  `motion_five_frame_window=true` is left to the CPU: a model or a
-  `--feature motion` that sets it is computed by the CPU `motion` extractor
-  ([Motion, five-frame window](../../metrics/motion.md#five-frame-window)),
-  and `motion_sycl` named directly with it returns `-ENOTSUP` at `init()`
-  (the twin keeps one earlier frame on the device). The
+  `motion_five_frame_window=true` runs on the device too, on `motion_sycl`
+  and `motion_v2_sycl`, with the CPU's bits
+  ([Motion, five-frame window](../../metrics/motion.md#five-frame-window),
+  [ADR-1491](../../adr/1491-gpu-motion-five-frame-window.md)); `motion_sycl`
+  copies one more luma plane per frame for it, and refuses the option
+  together with `motion_add_uv` (`-ENOTSUP`: the CPU has no chroma mode to
+  match). The
   `motion_add_uv=true` path is independent from motion3 and remains
   **not yet wired through to the SYCL backend** — UV-plane motion
   stays CPU-only. The SYCL `picture_copy()` callsites at

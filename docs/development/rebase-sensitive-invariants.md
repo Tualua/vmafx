@@ -928,6 +928,27 @@ linked AGENTS.md before resolving conflicts.
   `windows-latest` (redirect to `windows-2025-vs2026` takes effect
   2026-06-15).
 
+- **The CUDA, SYCL and HIP motion twins compute `motion_five_frame_window` ([ADR-1491](../adr/1491-gpu-motion-five-frame-window.md))**:
+  with the option each twin of `motion` and `motion_v2` takes its SAD against
+  the frame two back (CUDA and `motion_v2_sycl`: a ring of three raw planes;
+  HIP: two kept planes; `motion_sycl`: two planes with fixed roles, advanced
+  by two device copies behind the graph replay, with the kernel enqueued on
+  every frame) and derives `motion2` / `motion3` with the CPU's
+  `vmaf_motion_window_flush()` (`core/src/feature/motion_window.h`). The
+  `motion_v2` twins hold no copy of the CPU flush. A sync or a cleanup must
+  not bring back a twin's own window arithmetic, a
+  `VMAF_OPT_FLAG_DEFAULT_ONLY` or `-ENOTSUP` for the option on these six
+  twins, or move `motion_sycl`'s plane copies into the recorded graph. A
+  change to `min_idx` or to the frame `extract()` differences against in
+  `integer_motion.c` / `integer_motion_v2.c` changes the twins' `ring` /
+  `depth` in the same PR. `test_{cuda,sycl,hip}_motion_five_frame_window`
+  (`==`, fixture `core/test/motion_five_frame_twin_parity.h`) and the exact
+  gate cells `motion_mffw` / `motion_v2_mffw` guard it on a device;
+  `core/test/test_gpu_option_value_capability_contract.py` and
+  `core/test/test_{cuda,sycl,hip}_kernel_source_contract.py` (the twins call
+  the function and read no stored score back) without one. The Metal twins do
+  not declare the option; the CPU extractor computes it there.
+
 - **CPU extractors declare the features they write ([ADR-1359](../adr/1359-cli-feature-backend-twin.md))**:
   the twin lookup pairs a CPU extractor with a device twin through
   `provided_features`. `core/src/feature/float_moment.c` is an upstream-mirror

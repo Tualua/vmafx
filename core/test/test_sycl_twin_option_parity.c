@@ -350,6 +350,12 @@ static const OptionCase OPTION_CASES[] = {
     /* ADR-1418: `debug` defaults to false on the twin as on the CPU, so a
      * default run emits the same score set on both. */
     {"motion_sycl", "motion", "debug", "true"},
+    /* ADR-1491: the twins compute the five-frame window; the option is the
+     * CPU's declaration and the gate keeps it on the twin. */
+    {"motion_sycl", "motion", "motion_five_frame_window", "true"},
+    {"motion_sycl", "motion", "mffw", "true"},
+    {"motion_v2_sycl", "motion_v2", "motion_five_frame_window", "true"},
+    {"motion_v2_sycl", "motion_v2", "mffw", "true"},
 };
 
 static const VmafOption *lookup_option(const VmafFeatureExtractor *fex, const char *key)

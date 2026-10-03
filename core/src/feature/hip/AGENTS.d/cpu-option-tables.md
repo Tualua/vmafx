@@ -110,9 +110,11 @@ invariant: Mirror CPU option tables faithfully across psnr, ssim, float_ssim, an
   - Guards: `test_hip_float_motion_rows` (device-free vs `compute_motion()`),
     `test_hip_float_motion_parity` + `_large` (`==`, default and scale1 + uv),
     `test_hip_kernel_source_contract.py` (6 planted regressions).
-- `motion_v2_hip` stores SAD as CPU: `MIN(score * mfw, mmxv)`; `motion2_v2`
-  folds stored value, never re-weights; one-frame run emits motion2_v2 /
-  motion3_v2 = 0 (only `n_frames == 0` returns early).
+- `motion_v2_hip` stores SAD as CPU: `MIN(score * mfw, mmxv)`; `motion2_v2` /
+  `motion3_v2` come from the CPU's `vmaf_motion_window_flush()` over stored
+  values (ADR-1491): no re-weighting, one-frame run and end cases decided
+  there. `test_hip_kernel_source_contract.py` pins the call and that the TU
+  reads no stored score back.
 - `motion_hip`: `debug` default false (CPU, CUDA); emits
   `VMAF_integer_feature_motion_sad_score` every frame, 0 at index 0 and under
   force_zero.

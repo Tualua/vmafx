@@ -1424,6 +1424,18 @@ frame under `--subsample`, so the `apsnr_*` totals cover the clip; and
 With `motion_force_zero=true`, `motion_hip` and `float_motion_hip` write the
 CPU's zero scores; before this change both crashed on the first frame.
 
+**`motion_hip` and `motion_v2_hip` compute `motion_five_frame_window`**
+([ADR-1491](../../adr/1491-gpu-motion-five-frame-window.md), 2026-10-02). With
+the option each twin keeps two earlier luma planes instead of one, so frame
+`n`'s SAD reads frame `n-2`, and derives `motion2` / `motion3` with the CPU's
+window function at the end of the run
+([Motion, five-frame window](../../metrics/motion.md#five-frame-window)). On a
+gfx1036 every output equals the CPU's: `test_hip_motion_five_frame_window`
+(six option sets, 11, 1, 2 and 3 frames, 8 and 10 bits), and 1352 of 1352
+motion values on the Netflix 576x324 pair at 8 and 10 bits, a 1080p
+checkerboard pair and 50 frames of BBB 3840x2160, an `_hfr` model among the
+four option sets.
+
 ### float_motion_hip options
 
 `float_motion_hip` emits `motion3` and takes the whole CPU `float_motion`
