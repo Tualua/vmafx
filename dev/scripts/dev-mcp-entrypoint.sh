@@ -83,7 +83,19 @@ unset _vk_real_icds _vk_dir _vk_json
 # bug-cluster repro scripts assume ``/tmp`` exists with 1777
 # permissions. Materialise it idempotently here so the entrypoint
 # never fails on "No such file or directory: /tmp/vmaf-mcp.log".
-mkdir -p /tmp && chmod 1777 /tmp
+# The entrypoint runs as the unprivileged `vmaf` user and the image's /tmp
+# is root's, already 1777: change the mode only when it is wrong and the
+# directory is ours. uutils coreutils 0.10 (Ubuntu 26.04 base since #1799)
+# issues chmod() even for an unchanged mode, so an unconditional
+# `chmod 1777 /tmp` fails with EPERM and `set -e` ends the container.
+[ -d /tmp ] || mkdir -p /tmp
+if [ "$(stat -c %a /tmp)" != 1777 ]; then
+  if [ -O /tmp ]; then
+    chmod 1777 /tmp
+  else
+    echo "[dev-mcp-entrypoint] /tmp is mode $(stat -c %a /tmp) and not owned by $(id -un); continuing" >&2
+  fi
+fi
 
 # ADR-0546: create the vmaf-tune workdir under /probes (the large
 # bind-mount). /probes itself is created by the docker-compose bind

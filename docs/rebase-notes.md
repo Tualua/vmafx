@@ -1,6 +1,12 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## The dev container entrypoint no longer chmods a root-owned /tmp (2026-10-03)
+
+`fix/dev-entrypoint-tmp-chmod`. No rebase impact on the library: `dev/scripts/dev-mcp-entrypoint.sh` only.
+
+- The unconditional `mkdir -p /tmp && chmod 1777 /tmp` (ADR-0498 follow-up) is now a guarded block that changes the mode only when it is not 1777 and the directory belongs to the entrypoint's user. Keep the guard if the line is touched again; see `dev/AGENTS.d/entrypoint-unprivileged.md`.
+
 ## Explicit conversion of upstream's float products (CodeQL, 2026-10-03)
 
 `fix/codeql-float-product-explicit-conversion`. No score moves; `objdump -d`
