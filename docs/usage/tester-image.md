@@ -73,6 +73,7 @@ workflow run that built it.
 | `tests/` | unit test executables, including the Metal parity tests | about 40 MB |
 | `python/test/resource/` | Netflix test videos, each checked against a pinned SHA-256 | about 57 MB |
 | `reference/`, `image/` | scores recorded by the build, manifests | under 1 MB |
+| `licenses/` | `THIRD_PARTY_NOTICES.txt` and the licence texts of everything above (see [Licences of what you download](#licences-of-what-you-download)) | under 1 MB |
 
 ### Remove it afterwards
 
@@ -95,6 +96,10 @@ cosign verify-blob --bundle vmafx-tester-macos-arm64-<VERSION>.tar.gz.bundle \
   --certificate-identity-regexp '^https://github.com/VMAFx/vmafx/\.github/workflows/macos-tester-bundle\.yml@refs/heads/master$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   vmafx-tester-macos-arm64-<VERSION>.tar.gz
+
+# The SPDX software bill of materials (the .spdx.json asset) is attested on the archive:
+gh attestation verify vmafx-tester-macos-arm64-<VERSION>.tar.gz -R VMAFx/vmafx \
+  --predicate-type https://spdx.dev/Document/v2.3
 ```
 
 To read what you are about to run: `run.sh` is in the bundle,
@@ -149,11 +154,54 @@ name.
 To read what runs: the Containerfile is
 [`docker/Dockerfile.tester`](https://github.com/VMAFx/vmafx/blob/master/docker/Dockerfile.tester)
 and the report program is `tools/rc1-tester/src/vmaf_rc1_tester/hw_report.py` and its
-`hw_*.py` neighbours. The image is built only by
+`hw_*.py` neighbours. The licences of everything in the image are in
+`/opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt` inside it (`docker run --rm --entrypoint cat
+ghcr.io/vmafx/vmafx:<VERSION>-tester /opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt`); see
+[Licences of what you download](#licences-of-what-you-download). The image is built only by
 [`docker-publish-tester.yml`](https://github.com/VMAFx/vmafx/blob/master/.github/workflows/docker-publish-tester.yml)
 from a tagged commit, signed keyless with cosign and attested like the other VMAFx
 images. It is about 1.05 GB on disk and about 270 MB to download; it holds a CPU-only build,
 no compiler, and runs as a numeric non-root user.
+
+## Licences of what you download
+
+Both packages carry the licence of everything in them, and their publishing
+workflows refuse to build a package with a file whose licence is not recorded
+([ADR-1503](../adr/1503-tester-artifact-licensing.md)).
+
+- **Where**: `licenses/THIRD_PARTY_NOTICES.txt` in the macOS bundle,
+  `/opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt` in the container. The file lists
+  every component, its licence and copyright notices, and the licence texts are in
+  `texts/` next to it. Debian packages in the container keep their own terms in
+  `/usr/share/doc/<package>/copyright`; Python packages keep theirs in their
+  `*.dist-info` directories.
+- **VMAFx itself** (`vmaf`, libvmaf, the tests, the report program): the fork's own
+  code is under EUPL-1.2 and the code it carries from others keeps its terms:
+  BSD-2-Clause-Patent (Netflix's VMAF), BSD-3-Clause (IQA, libsvm, the JPEG XL
+  project's SSIMULACRA 2), BSD-2-Clause (Xiph, Daala, dav1d), ISC (x264's assembly
+  macros, x86 only), MIT (CIEDE2000, mkdirp) and the Unlicense (pdjson); the
+  container's Python harness adds files under BSD-3-Clause-Clear. The
+  built-in BRISQUE model is the LIVE laboratory's release, whose notice is in
+  `texts/LicenseRef-LIVE-BRISQUE.txt`. The notices name the exact source commit;
+  the source is the repository at that commit.
+- **The test videos** come from `Netflix/vmaf_resource` under BSD-2-Clause-Patent.
+- **The interpreter** is CPython under the PSF licence; the notices add the
+  licences of the libraries linked into it (OpenSSL under Apache-2.0, libffi,
+  expat, mpdecimal, bzip2, HACL\* and others).
+- **Container only**: the Debian base system includes GPL and LGPL programs and
+  libraries, and the numpy and scipy wheels include LGPL `libquadmath`. Their
+  corresponding source is published next to the image as
+  `ghcr.io/vmafx/vmafx:<VERSION>-tester-source`: Debian source packages at the
+  installed versions and the source RPMs of the wheels' GCC runtime libraries,
+  indexed by `/sources/SOURCES.txt`. To get it:
+  `docker create --name vmafx-src ghcr.io/vmafx/vmafx:<VERSION>-tester-source true`,
+  `docker cp vmafx-src:/sources ./vmafx-tester-sources`, `docker rm vmafx-src`.
+- **SBOM**: each package has an SPDX software bill of materials attested by the
+  publishing workflow: the `.spdx.json` release asset for the macOS bundle, and an
+  attestation on each platform image of the container
+  (`gh attestation verify oci://ghcr.io/vmafx/vmafx@<platform digest> -R VMAFx/vmafx
+  --predicate-type https://spdx.dev/Document/v2.3`, with the platform digest from
+  `docker buildx imagetools inspect ghcr.io/vmafx/vmafx:<VERSION>-tester`).
 
 ## What the report contains
 

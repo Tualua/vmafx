@@ -25,6 +25,25 @@ aarch64, `-Db_lto=false`).
   foreign-libm difference is the file-scope `uf_netflix_values_skip_reason`.
   The bit helper `uf_bits()` is `vmaf_test_bits_f32()` from
   `core/test/float_bits.h`.
+## Tester packages carry their licences, an SBOM and their source (ADR-1503, 2026-10-03)
+
+`fix/tester-artifact-licensing`. Fork-added files only, except two licence
+tags: `core/src/feature/mkdirp.h` and `mkdirp.cpp` now say `MIT`, the terms of
+Stephen Mathieson's code that Netflix/vmaf carries with an "MIT licensed"
+comment and no SPDX tag. An upstream sync that touches them keeps the MIT tag.
+
+- `tools/rc1-tester/image/licensing.json` records every component of the tester
+  image and the macOS bundle; `licensing.py check` fails their builds on any file
+  it does not claim. A change to `docker/Dockerfile.tester`, the bundle script,
+  the Python lock or a base image that adds files changes the record in the
+  same PR (ADR-1503).
+- `docker/Dockerfile.tester`: `final` copies the receipt of the `licence-check`
+  stage; `strip` skips `*.libs/` (vendor libraries ship unmodified, the check
+  compares them with the wheel `RECORD`); `source-export` is published as
+  `<tag>-source`.
+- `REUSE.toml` records `model/other_models/brisque_live.model` and
+  `NOTICE-brisque` as `LicenseRef-LIVE-BRISQUE` (text in `LICENSES/`), and the
+  HACL\* notice the tester packages ship as MIT.
 
 ## The `float_psnr` twins add each row's exact sum in the CPU's order (ADR-1499, 2026-10-03)
 

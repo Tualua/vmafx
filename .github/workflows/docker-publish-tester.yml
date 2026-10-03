@@ -10,7 +10,12 @@
 # Produces (only on dispatch):
 #   ghcr.io/vmafx/vmafx:<git describe of the source commit>-tester
 #   (linux/amd64 + linux/arm64; `v1.0.0-rc.2-tester` for the tagged commit itself)
-# a tag of the existing, public package: a new package would start private.
+#   ghcr.io/vmafx/vmafx:<...>-tester-source: the corresponding source of the
+#   image's copyleft parts (Dockerfile target source-export, ADR-1503)
+# tags of the existing, public package: a new package would start private.
+# Both are signed and carry build provenance; each platform image of the tester
+# carries an attested SPDX SBOM (Syft). The image build itself fails when a file
+# has no recorded licence (tools/rc1-tester/image/licensing.json).
 #
 # Each architecture builds on its own native runner; the arm64 build takes the
 # x86_64 scalar scores from the amd64 build as its cross-architecture reference.
@@ -25,6 +30,8 @@ on:
       - docker/Dockerfile.tester
       - tools/rc1-tester/**
       - python/requirements-test-lock.txt
+      - REUSE.toml
+      - LICENSES/**
       - docs/hardware-reports/report.schema.json
       - .github/workflows/docker-publish-tester.yml
   workflow_dispatch:
@@ -143,7 +150,8 @@ jobs:
         run: |
           git fetch --no-tags --depth=1 origin "$RECIPE_SHA"
           git checkout FETCH_HEAD -- docker/Dockerfile.tester tools/rc1-tester \
-            scripts/ci docs/hardware-reports python/requirements-test-lock.txt
+            scripts/ci docs/hardware-reports python/requirements-test-lock.txt \
+            REUSE.toml LICENSES LICENSE model/other_models/NOTICE-brisque
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
       - name: Export the x86_64 scalar scores
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
@@ -196,7 +204,8 @@ jobs:
         run: |
           git fetch --no-tags --depth=1 origin "$RECIPE_SHA"
           git checkout FETCH_HEAD -- docker/Dockerfile.tester tools/rc1-tester \
-            scripts/ci docs/hardware-reports python/requirements-test-lock.txt
+            scripts/ci docs/hardware-reports python/requirements-test-lock.txt \
+            REUSE.toml LICENSES LICENSE model/other_models/NOTICE-brisque
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
           name: tester-xref
@@ -291,6 +300,72 @@ jobs:
           path: ${{ runner.temp }}/digests/*
           if-no-files-found: error
           retention-days: 1
+      # ADR-1503: an SPDX SBOM of exactly what was pushed, attested in the publish job.
+      - name: Install syft
+        id: syft
+        if: needs.validate.outputs.publish == 'true'
+        uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c  # v0.24.3
+        with:
+          syft-version: v1.51.1
+      - name: SPDX SBOM of the pushed platform image
+        if: needs.validate.outputs.publish == 'true'
+        env:
+          SYFT: ${{ steps.syft.outputs.cmd }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+          IMAGE_TAG: ${{ needs.validate.outputs.image-tag }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/sbom"
+          "$SYFT" scan "registry:${REGISTRY}/${IMAGE_NAME}@${DIGEST}" \
+            --platform "linux/${ARCH}" \
+            --source-name "${REGISTRY}/${IMAGE_NAME}" --source-version "${IMAGE_TAG}" \
+            -o "spdx-json=${RUNNER_TEMP}/sbom/sbom.spdx.json"
+          jq -e '.spdxVersion and ((.packages | length) > 100)' \
+            "${RUNNER_TEMP}/sbom/sbom.spdx.json" > /dev/null
+          echo "${DIGEST}" > "${RUNNER_TEMP}/sbom/digest"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: needs.validate.outputs.publish == 'true'
+        with:
+          name: tester-sbom-${{ matrix.arch }}
+          path: ${{ runner.temp }}/sbom/*
+          if-no-files-found: error
+          retention-days: 90
+      # ADR-1503 rule 5: the corresponding source of the copyleft parts, published
+      # next to the image as <tag>-source.
+      - name: Push the source image by digest
+        id: push-source
+        if: needs.validate.outputs.publish == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        with:
+          context: .
+          file: docker/Dockerfile.tester
+          target: source-export
+          platforms: ${{ matrix.platform }}
+          build-contexts: |
+            xref=${{ runner.temp }}/xref
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=tester-${{ matrix.arch }}
+          build-args: |
+            VMAF_BUILD_JOBS=4
+            VMAFX_SOURCE_COMMIT=${{ needs.validate.outputs.source-sha }}
+            VMAFX_SOURCE_REF=${{ needs.validate.outputs.ref }}
+            VMAFX_RECIPE_COMMIT=${{ needs.validate.outputs.recipe-sha }}
+            VMAFX_BUILT_BY_WORKFLOW=true
+            VMAFX_IMAGE_TAG=${{ needs.validate.outputs.image-tag }}
+      - name: Record the source digest
+        if: needs.validate.outputs.publish == 'true'
+        env:
+          DIGEST: ${{ steps.push-source.outputs.digest }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/source-digests"
+          touch "${RUNNER_TEMP}/source-digests/${DIGEST#sha256:}"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: needs.validate.outputs.publish == 'true'
+        with:
+          name: tester-source-digest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/source-digests/*
+          if-no-files-found: error
+          retention-days: 1
 
   publish:
     name: Publish tester image
@@ -367,3 +442,68 @@ jobs:
             echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.index.outputs.digest }}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+      # ADR-1503: the SPDX SBOM of each platform image, attested on its digest.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          pattern: tester-sbom-*
+          path: ${{ runner.temp }}/sbom
+      - name: Read the platform digests the SBOMs describe
+        id: sbom
+        working-directory: ${{ runner.temp }}/sbom
+        run: |
+          for arch in amd64 arm64; do
+            digest="$(cat "tester-sbom-${arch}/digest")"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "bad digest for ${arch}" >&2; exit 1; }
+            echo "${arch}=${digest}" >> "$GITHUB_OUTPUT"
+          done
+      - name: Attest the amd64 SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6  # v4.2.2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.sbom.outputs.amd64 }}
+          sbom-path: ${{ runner.temp }}/sbom/tester-sbom-amd64/sbom.spdx.json
+          push-to-registry: true
+      - name: Attest the arm64 SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6  # v4.2.2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.sbom.outputs.arm64 }}
+          sbom-path: ${{ runner.temp }}/sbom/tester-sbom-arm64/sbom.spdx.json
+          push-to-registry: true
+      # ADR-1503 rule 5: the source image, published at the same place.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          pattern: tester-source-digest-*
+          path: ${{ runner.temp }}/source-digests
+          merge-multiple: true
+      - name: Merge the source images into one index
+        id: source-index
+        working-directory: ${{ runner.temp }}/source-digests
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          IMAGE_TAG: ${{ needs.validate.outputs.image-tag }}
+        run: |
+          mapfile -t digests < <(find . -maxdepth 1 -type f -printf '%f\n' | sort)
+          if [[ "${#digests[@]}" -ne 2 ]]; then
+            echo "expected 2 source digests, got ${#digests[@]}" >&2
+            exit 1
+          fi
+          sources=()
+          for digest in "${digests[@]}"; do
+            sources+=("${IMAGE}@sha256:${digest}")
+          done
+          docker buildx imagetools create --tag "${IMAGE}:${IMAGE_TAG}-source" "${sources[@]}"
+          index="$(docker buildx imagetools inspect "${IMAGE}:${IMAGE_TAG}-source" \
+            --format '{{json .Manifest}}' | jq -r .digest)"
+          echo "digest=${index}" >> "$GITHUB_OUTPUT"
+          echo "source image: ${IMAGE}:${IMAGE_TAG}-source (${index})" >> "$GITHUB_STEP_SUMMARY"
+      - name: Sign the source image
+        run: |
+          cosign sign --yes \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.source-index.outputs.digest }}"
+      - name: Attest the source image's provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.source-index.outputs.digest }}
+          push-to-registry: true

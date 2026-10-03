@@ -11,6 +11,8 @@
 # releases start no other workflow, and release-please only follows `v*` tags.
 #
 # ADR-1493: macOS tester bundle (an exception to ADR-1102, see the ADR for its bounds).
+# ADR-1503: the bundle carries licenses/ and fails to build when a file has no
+# recorded licence; an SPDX SBOM is attested and published next to it.
 
 name: Publish macOS Tester Bundle
 
@@ -40,6 +42,10 @@ env:
   # the SHA-256 is the one in that release's SHA256SUMS.
   PBS_URL: https://github.com/astral-sh/python-build-standalone/releases/download/20261001/cpython-3.13.16%2B20261001-aarch64-apple-darwin-install_only_stripped.tar.gz
   PBS_SHA256: d00669acb53c1b014f1fcf5eaea740d8e45c3aff4b1e0244dc0f8697fb211a82
+  # The same release's full archive, read only for its licence texts (python/licenses,
+  # PYTHON.json): the install_only archive holds none (ADR-1503). SHA-256 from SHA256SUMS.
+  PBS_FULL_URL: https://github.com/astral-sh/python-build-standalone/releases/download/20261001/cpython-3.13.16%2B20261001-aarch64-apple-darwin-pgo%2Blto-full.tar.zst
+  PBS_FULL_SHA256: 7d58416593597f4ef0226c24cfe53cd09b65d04b5606c1ab8005f5ae1a25ef75
   # Netflix/vmaf_resource commit the fixtures are fetched from.
   VMAF_RESOURCE_COMMIT: c0ab6adbd7e41bb354f14686ed08500530622bc3
   TAG: ${{ github.event.inputs.tag }}
@@ -124,7 +130,7 @@ jobs:
         env:
           HOMEBREW_NO_AUTO_UPDATE: "1"
           HOMEBREW_NO_INSTALL_CLEANUP: "1"
-        run: brew install -q meson ninja nasm pkg-config
+        run: brew install -q meson ninja nasm pkg-config zstd
       - name: Build the bundle
         env:
           VMAFX_SOURCE_COMMIT: ${{ needs.validate.outputs.source-sha }}
@@ -132,6 +138,24 @@ jobs:
           VMAFX_RECIPE_COMMIT: ${{ github.sha }}
           VMAFX_IMAGE_TAG: ${{ needs.validate.outputs.describe }}
         run: bash scripts/ci/build-macos-tester-bundle.sh "$RUNNER_TEMP/out"
+      - name: Install syft
+        id: syft
+        uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c  # v0.24.3
+        with:
+          syft-version: v1.51.1
+      - name: SPDX SBOM of the bundle (ADR-1503)
+        env:
+          SYFT: ${{ steps.syft.outputs.cmd }}
+          DESCRIBE: ${{ needs.validate.outputs.describe }}
+          # Every file with its SHA-256: Syft recognises few packages in a Mach-O tree.
+          SYFT_FILE_METADATA_SELECTION: all
+        run: |
+          name="vmafx-tester-macos-arm64-${DESCRIBE}"
+          "$SYFT" scan "dir:${RUNNER_TEMP}/out/${name}" \
+            --source-name vmafx-tester-macos-arm64 --source-version "${DESCRIBE}" \
+            -o "spdx-json=${RUNNER_TEMP}/out/${name}.spdx.json"
+          jq -e '.spdxVersion and ((.packages | length) > 0)' \
+            "${RUNNER_TEMP}/out/${name}.spdx.json" > /dev/null
       - name: Validate the bundle's report against the schema
         run: |
           python3 -m venv "$RUNNER_TEMP/venv"
@@ -157,6 +181,7 @@ jobs:
           path: |
             ${{ runner.temp }}/out/*.tar.gz
             ${{ runner.temp }}/out/*.tar.gz.sha256
+            ${{ runner.temp }}/out/*.spdx.json
             ${{ runner.temp }}/out/report.json
             ${{ runner.temp }}/out/bundle-files.txt
           if-no-files-found: error
@@ -182,6 +207,21 @@ jobs:
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
         with:
           subject-path: bundle/*.tar.gz
+      - name: Find the SBOM
+        id: sbom
+        run: |
+          shopt -s nullglob
+          sboms=(bundle/*.spdx.json)
+          if [[ "${#sboms[@]}" -ne 1 ]]; then
+            echo "expected one SBOM, found ${#sboms[@]}" >&2
+            exit 1
+          fi
+          echo "path=${sboms[0]}" >> "$GITHUB_OUTPUT"
+      - name: Attest the SBOM (ADR-1503)
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6  # v4.2.2
+        with:
+          subject-path: bundle/*.tar.gz
+          sbom-path: ${{ steps.sbom.outputs.path }}
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
         with:
           cosign-release: "v3.1.3"
@@ -203,6 +243,10 @@ jobs:
             echo "Built from \`$DESCRIBE\` ($SOURCE_SHA) by the hosted macOS arm64 runner,"
             echo "workflow run $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID."
             echo "Steps for testers: docs/usage/tester-image.md in the repository."
+            echo
+            echo "Licences: \`licenses/THIRD_PARTY_NOTICES.txt\` inside the archive lists every"
+            echo "component with its licence and carries the licence texts (ADR-1503)."
+            echo "The SPDX SBOM is the \`.spdx.json\` asset, attested with the archive."
           } > notes.md
           gh release create "$RELEASE_TAG" bundle/* \
             --repo "$GITHUB_REPOSITORY" \

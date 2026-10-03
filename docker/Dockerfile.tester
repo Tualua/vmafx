@@ -11,6 +11,12 @@
 # final stage holds no compiler and no package-manager state; it runs as a
 # numeric non-root user and needs no network.
 #
+# Licensing (ADR-1503): /opt/vmafx/licenses/ carries THIRD_PARTY_NOTICES.txt and
+# every licence text; the final stage depends on the licence-check stage, which
+# fails the build when a file has no recorded licence
+# (tools/rc1-tester/image/licensing.json). `--target source-export` builds the
+# corresponding source of the copyleft parts, published as <tag>-source.
+#
 # Built only by .github/workflows/docker-publish-tester.yml.
 # See docs/usage/tester-image.md and docs/development/tester-image.md.
 
@@ -43,15 +49,22 @@ FROM ${RELEASE_PYTHON_BASE} AS python-venv
 RUN apt-get update \
     && apt-get install -y --no-install-recommends gcc g++ libc6-dev \
     && rm -rf /var/lib/apt/lists/*
+WORKDIR /
 COPY python/requirements-test-lock.txt python/requirements-test-lock.txt
 RUN python -m venv /venv \
     && /venv/bin/pip install --no-cache-dir --require-hashes -r python/requirements-test-lock.txt \
     && /venv/bin/pip uninstall --yes pip h5py pywavelets coverage pytest-cov cython \
     && find /venv -type d -name tests -prune -exec rm -r {} + \
     && find /venv -type d -name sample_data -prune -exec rm -r {} + \
-    && find /venv -name '*.so*' -type f -exec strip --strip-unneeded {} + \
-    && mkdir /extra-libs \
-    && cp -a /usr/lib/*-linux-gnu/libgomp.so.1* /extra-libs/
+    && find /venv -name '*.so*' -type f -not -path '*.libs/*' -exec strip --strip-unneeded {} + \
+    && mkdir -p /extra-libs/lib /extra-libs/doc/libgomp1 \
+    && cp -a /usr/lib/*-linux-gnu/libgomp.so.1* /extra-libs/lib/ \
+    && cp /usr/share/doc/libgomp1/copyright /extra-libs/doc/libgomp1/copyright \
+    && dpkg-query -W -f='${source:Package}=${source:Version}\n' libgomp1 \
+        > /extra-libs/doc/libgomp1/SOURCE
+# The libraries auditwheel grafted into the wheels (`*.libs/`) are vendor
+# binaries and stay unmodified (ADR-1503): the licence check compares them with
+# their wheel RECORD, and an LGPL library keeps its corresponding source.
 
 # ---------------------------------------------------------------------------
 # vmaf-build: golden build profile (scripts/ci/setup-golden-build.sh) with the
@@ -68,6 +81,7 @@ WORKDIR /src
 # Only what the configure step reads: the source, the models and one script a test registers.
 COPY core core
 COPY model model
+COPY REUSE.toml REUSE.toml
 COPY scripts/ci/check-msvc-clz-shim.sh scripts/ci/check-msvc-clz-shim.sh
 COPY tools/rc1-tester/image tools/rc1-tester/image
 # hadolint ignore=SC2046
@@ -76,7 +90,10 @@ RUN meson setup /build core --buildtype=release --strip -Db_lto=false \
         -Denable_dnn=disabled -Denable_docs=false -Denable_tests=true \
     && ninja -C /build -j"${VMAF_BUILD_JOBS}" tools/vmaf \
         $(python3 tools/rc1-tester/image/prepare_build.py select /build \
-            tools/rc1-tester/image/unit-tests.txt)
+            tools/rc1-tester/image/unit-tests.txt) \
+    && mkdir /licence-inputs \
+    && python3 tools/rc1-tester/image/licensing.py scan-build --build /build --repo /src \
+        --out /licence-inputs/vmafx-sources.json
 RUN mkdir -p /opt/vmafx/build/tools /opt/vmafx/build/src \
     && cp /build/tools/vmaf /opt/vmafx/build/tools/ \
     && cp -a /build/src/libvmaf.so* /opt/vmafx/build/src/ \
@@ -99,6 +116,16 @@ ENV VMAFX_SOURCE_COMMIT=${VMAFX_SOURCE_COMMIT} VMAFX_SOURCE_REF=${VMAFX_SOURCE_R
 RUN python3 tools/rc1-tester/image/prepare_build.py info /opt/vmafx
 
 # ---------------------------------------------------------------------------
+# licence-texts: recorded licence texts that are not in the repository
+# (CPython's Doc/license.rst of the runtime's version, SHA-256 checked)
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_PYTHON_BASE} AS licence-texts
+RUN --mount=type=bind,source=tools/rc1-tester/image,target=/licensing \
+    python3 /licensing/licensing.py fetch-texts --artifact image \
+        --python-version "$(python3 -c 'import platform; print(platform.python_version())')" \
+        --out /texts
+
+# ---------------------------------------------------------------------------
 # runtime: everything the report reads, without references
 # ---------------------------------------------------------------------------
 FROM ${RELEASE_PYTHON_BASE} AS runtime
@@ -108,13 +135,28 @@ ENV LD_LIBRARY_PATH=/opt/vmafx/build/src:/opt/vmafx/lib \
     HOME=/tmp
 COPY --from=vmaf-build /opt/vmafx /opt/vmafx
 COPY --from=python-venv /venv /opt/venv
-COPY --from=python-venv /extra-libs /opt/vmafx/lib
+COPY --from=python-venv /extra-libs/lib /opt/vmafx/lib
+COPY --from=python-venv /extra-libs/doc/libgomp1 /usr/share/doc/libgomp1
 COPY --from=fixtures /out /opt/vmafx/python/test/resource
 COPY python /opt/vmafx/python
 COPY compat /opt/vmafx/compat
 COPY tools/rc1-tester/src /opt/vmafx/tester/src
 COPY tools/rc1-tester/vmaf-tester-report /opt/vmafx/tester/vmaf-tester-report
 COPY tools/rc1-tester/image/fixtures.json /opt/vmafx/image/fixtures.json
+# The notices and licence texts (ADR-1503). The repository inputs are bind
+# mounts, so nothing but /opt/vmafx/licenses stays in the image.
+ARG VMAFX_SOURCE_COMMIT=unknown
+ARG VMAFX_IMAGE_TAG=unknown
+RUN --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
+    --mount=type=bind,source=REUSE.toml,target=/repo/REUSE.toml \
+    --mount=type=bind,source=LICENSE,target=/repo/LICENSE \
+    --mount=type=bind,source=LICENSES,target=/repo/LICENSES \
+    --mount=type=bind,source=model/other_models/NOTICE-brisque,target=/repo/model/other_models/NOTICE-brisque \
+    --mount=type=bind,from=vmaf-build,source=/licence-inputs,target=/licence-inputs \
+    --mount=type=bind,from=licence-texts,source=/texts,target=/texts \
+    python3 /repo/tools/rc1-tester/image/licensing.py notices --artifact image --root / \
+        --repo /repo --build-scan /licence-inputs/vmafx-sources.json --texts /texts \
+        --source-commit "${VMAFX_SOURCE_COMMIT}" --tag "${VMAFX_IMAGE_TAG}"
 
 # ---------------------------------------------------------------------------
 # refs-gen: scores of this image's own binary, produced at build time
@@ -131,17 +173,61 @@ COPY --from=refs-gen /opt/vmafx/reference/x86_64-scalar.json /
 FROM scratch AS xref
 
 # ---------------------------------------------------------------------------
-# final
+# assembled: the image's content before the licence check
 # ---------------------------------------------------------------------------
-FROM runtime AS final
-ARG VMAFX_SOURCE_COMMIT=unknown
-LABEL org.opencontainers.image.title="vmafx-tester" \
-      org.opencontainers.image.description="VMAFx tester image: CPU build, SIMD unit tests, Netflix golden gate, one JSON report" \
-      org.opencontainers.image.source="https://github.com/VMAFx/vmafx" \
-      org.opencontainers.image.licenses="BSD-2-Clause-Patent AND EUPL-1.2" \
-      org.opencontainers.image.vendor="Lusoris" \
-      org.opencontainers.image.revision="${VMAFX_SOURCE_COMMIT}"
+FROM runtime AS assembled
 COPY --from=refs-gen /opt/vmafx/reference /opt/vmafx/reference
 COPY --from=xref / /opt/vmafx/reference/
+
+# ---------------------------------------------------------------------------
+# licence-check: every file of the assembled image has a recorded licence
+# (ADR-1503 rule 3); the final stage copies its receipt, so it cannot be built
+# without passing this
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_PYTHON_BASE} AS licence-check
+RUN --mount=type=bind,from=assembled,target=/rootfs \
+    --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
+    --mount=type=bind,source=REUSE.toml,target=/repo/REUSE.toml \
+    --mount=type=bind,source=LICENSE,target=/repo/LICENSE \
+    --mount=type=bind,source=LICENSES,target=/repo/LICENSES \
+    --mount=type=bind,source=model/other_models/NOTICE-brisque,target=/repo/model/other_models/NOTICE-brisque \
+    --mount=type=bind,from=vmaf-build,source=/licence-inputs,target=/licence-inputs \
+    mkdir /out \
+    && python3 /repo/tools/rc1-tester/image/licensing.py check --artifact image --root /rootfs \
+        --repo /repo --build-scan /licence-inputs/vmafx-sources.json \
+        --python-version "$(python3 -c 'import platform; print(platform.python_version())')" \
+        --receipt /out/licence-check.json
+
+# ---------------------------------------------------------------------------
+# source-export: the corresponding source of the image's copyleft parts,
+# published as ghcr.io/vmafx/vmafx:<tag>-source (ADR-1503 rule 5)
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_PYTHON_BASE} AS source-fetch
+# Only /sources leaves this stage, so its package lists need no cleanup.
+# hadolint ignore=DL3009
+RUN --mount=type=bind,from=assembled,target=/rootfs \
+    --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
+    sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
+    && python3 /repo/tools/rc1-tester/image/licensing.py sources --artifact image --root /rootfs \
+        --repo /repo --out /sources.list \
+    && python3 /repo/tools/rc1-tester/image/licensing.py fetch-sources --list /sources.list \
+        --out /sources
+
+FROM scratch AS source-export
+COPY --from=source-fetch /sources /sources
+
+# ---------------------------------------------------------------------------
+# final
+# ---------------------------------------------------------------------------
+FROM assembled AS final
+ARG VMAFX_SOURCE_COMMIT=unknown
+LABEL org.opencontainers.image.title="vmafx-tester" \
+      org.opencontainers.image.description="VMAFx tester image: CPU build, SIMD unit tests, Netflix golden gate, one JSON report. Licences: /opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt" \
+      org.opencontainers.image.source="https://github.com/VMAFx/vmafx" \
+      org.opencontainers.image.licenses="EUPL-1.2 AND BSD-2-Clause-Patent AND BSD-3-Clause AND BSD-3-Clause-Clear AND BSD-2-Clause AND ISC AND MIT AND Unlicense AND LicenseRef-LIVE-BRISQUE" \
+      org.opencontainers.image.vendor="Lusoris" \
+      org.opencontainers.image.revision="${VMAFX_SOURCE_COMMIT}"
+COPY --from=licence-check /out/licence-check.json /opt/vmafx/licence-check.json
 USER 10001:10001
 ENTRYPOINT ["/opt/venv/bin/python", "/opt/vmafx/tester/vmaf-tester-report"]

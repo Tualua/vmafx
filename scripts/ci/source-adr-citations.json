@@ -5809,6 +5809,7 @@
     "1115": {
       "sites": {
         ".pre-commit-config.yaml": 1,
+        "REUSE.toml": 1,
         "core/src/feature/brisque.c": 2,
         "core/src/feature/brisque_math.h": 2,
         "core/src/feature/brisque_model.h": 2,
@@ -9805,6 +9806,18 @@
         "core/test/test_sycl_sub_group_size_contract.py": 2
       },
       "target": "1501-sycl-float-adm-terms-large-grf-xe2.md"
+    },
+    "1503": {
+      "sites": {
+        ".github/workflows/docker-publish-tester.yml": 5,
+        ".github/workflows/macos-tester-bundle.yml": 5,
+        "REUSE.toml": 2,
+        "docker/Dockerfile.tester": 5,
+        "scripts/ci/build-macos-tester-bundle.sh": 5,
+        "tools/rc1-tester/image/licensing.py": 4,
+        "tools/rc1-tester/tests/test_licensing.py": 1
+      },
+      "target": "1503-tester-artifact-licensing.md"
     }
   },
   "retired": {

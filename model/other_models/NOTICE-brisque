@@ -49,3 +49,10 @@ redistribution exception, mirroring the precedent that model/ already ships
 Netflix-trained .pkl/.json artifacts under their own (non-fork) terms.
 
 This NOTICE must accompany any redistribution of brisque_live.model.
+
+Original copyright notice
+-------------------------
+The BRISQUE release notice, which must appear in all copies, is reproduced
+verbatim in LICENSES/LicenseRef-LIVE-BRISQUE.txt (REUSE.toml records the model
+under that identifier). Tester artifacts that embed or ship the model carry it
+in their licences directory (ADR-1503).

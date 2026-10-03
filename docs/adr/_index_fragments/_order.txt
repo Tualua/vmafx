@@ -1205,3 +1205,4 @@
 1500-arm-float-moment-scalar-order
 1502-float-bit-identity-test-helper
 1504-decline-praetor-branch-ruleset
+1503-tester-artifact-licensing

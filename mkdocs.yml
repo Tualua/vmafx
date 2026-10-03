@@ -1617,6 +1617,7 @@ nav:
         - "ADR-1500: arm-float-moment-scalar-order": adr/1500-arm-float-moment-scalar-order.md
         - "ADR-1501: sycl-float-adm-terms-large-grf-xe2": adr/1501-sycl-float-adm-terms-large-grf-xe2.md
         - "ADR-1502: float-bit-identity-test-helper": adr/1502-float-bit-identity-test-helper.md
+        - "ADR-1503: tester-artifact-licensing": adr/1503-tester-artifact-licensing.md
         - "ADR-1504: decline-praetor-branch-ruleset": adr/1504-decline-praetor-branch-ruleset.md
       - "By tag":
         - Overview: adr/by-tag/index.md

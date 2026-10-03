@@ -17,6 +17,7 @@ and how reports reach the tree. The tester-facing steps are in
 | Report schema and gate | `docs/hardware-reports/report.schema.json`, `scripts/ci/check-hardware-reports.py` (in `make docs-fragments-check`) |
 | Index page | `scripts/docs/generate-hardware-reports.py --write` (in `make docs-fragments-write`) |
 | Workflows | `.github/workflows/docker-publish-tester.yml`, `.github/workflows/macos-tester-bundle.yml` |
+| Licence record, notices and gate | `tools/rc1-tester/image/licensing.json`, `tools/rc1-tester/image/licensing.py` ([ADR-1503](../adr/1503-tester-artifact-licensing.md)) |
 
 One implementation serves both packages: the macOS bundle ships the same Python report
 code, under a bundled interpreter, and the same schema and gate validate both reports
@@ -45,6 +46,45 @@ Nothing publishes on merge except a build-and-test run of the image on pushes to
    workflow starts, because the release is created with `GITHUB_TOKEN`).
 
 Give the tester `<TESTER-TAG>` and `<VERSION>` (the `git describe` string) from the run summary.
+
+## Licensing
+
+Every published tester package follows [ADR-1503](../adr/1503-tester-artifact-licensing.md);
+the kits for other hardware follow the same rules. What the two packages do:
+
+- **Notices inside.** `licensing.py notices` writes `THIRD_PARTY_NOTICES.txt` and the
+  licence texts into `/opt/vmafx/licenses/` (container, a `RUN` in the `runtime` stage with
+  the repository inputs bind-mounted) and `licenses/` (bundle, before the report run). The
+  VMAFx section is computed, not listed: `licensing.py scan-build` reads `ninja -t deps`
+  of the build and the SPDX header (or `REUSE.toml` entry) of every repository file the
+  build compiled, and writes `vmafx-compiled-sources.json`, which ships next to the notices.
+- **The gate.** `licensing.py check` walks the finished tree and fails on any file that no
+  component of `licensing.json` claims, a Debian package without its copyright file, a
+  dist-info without a licence file, a library grafted into a wheel that is unrecorded,
+  modified (compared with the wheel's `RECORD`) or copyleft without a recorded source
+  archive, a compiled or repository file whose licence the component does not allow, an
+  interpreter version without its recorded `Doc/license.rst`, or notices that do not list
+  every component, package and dist-info. In the container it is the `licence-check`
+  stage, which the `final` stage depends on through its receipt
+  (`/opt/vmafx/licence-check.json`); in the bundle it runs right before `pack`.
+- **Source.** The container's copyleft parts have their source in
+  `ghcr.io/vmafx/vmafx:<tag>-tester-source`, the Dockerfile's `source-export` target, built
+  and pushed per architecture by the publishing run and merged into one signed index:
+  `licensing.py sources` lists the Debian source packages of every installed package at its
+  version (with `Built-Using` and `Static-Built-Using`) and the recorded source RPMs of the
+  grafted GCC runtime libraries (matched by ELF build ID); `fetch-sources` downloads them
+  (`apt-get source`, falling back to snapshot.debian.org) and writes `SOURCES.txt`. The
+  bundle has no copyleft object code.
+- **SBOM.** Syft v1.51.1 writes an SPDX JSON SBOM of each pushed platform image (attested on
+  its digest with `actions/attest`) and of the unpacked bundle (attested on the archive,
+  published as the `.spdx.json` asset).
+
+When the check fails after a lock, base-image or interpreter bump, record what changed in
+`licensing.json`: a new grafted library needs its licence and, when copyleft, the source
+package its build ID comes from in `source_archives` (URL and SHA-256); a new interpreter
+version needs its `Doc/license.rst` in `cpython_license_rst`; a new licence in compiled
+code needs its text in `LICENSES/` and in `spdx_texts`; a new kind of file needs a
+component. Never strip or patch a vendor binary to make room.
 
 ## What the hosted macOS runner cannot show
 
@@ -75,7 +115,8 @@ tracked files other than a commit trailer the person asked for.
 | Base images | `build-config.env` (`RELEASE_BUILDER_BASE`, `RELEASE_PYTHON_BASE`), mirrored in `docker/Dockerfile.tester` | `scripts/ci/check-base-image-single-source.sh --write` |
 | Python test stack | `python/requirements-test-lock.txt` | `make python-locks-write` |
 | Fixtures | `tools/rc1-tester/image/fixtures.sha256`, `VMAF_RESOURCE_COMMIT` | change both together; the build checks every SHA-256 |
-| macOS interpreter | `PBS_URL`, `PBS_SHA256` in `macos-tester-bundle.yml` | take the hash from the release's `SHA256SUMS` |
+| macOS interpreter | `PBS_URL`, `PBS_SHA256`, `PBS_FULL_URL`, `PBS_FULL_SHA256` in `macos-tester-bundle.yml` | the `install_only_stripped` archive and the `pgo+lto-full` archive of the same release (its licence texts); take both hashes from the release's `SHA256SUMS` |
+| Licence record | `tools/rc1-tester/image/licensing.json` | change with the package contents; the build fails until it matches |
 | Report validation | `requirements/locks/jsonschema.txt` | universal lock for Python 3.12 and later (`--universal --python-version 3.12`): the hosted runners differ (3.12 on `ubuntu-latest`, 3.14 elsewhere) and `referencing` needs `typing-extensions` below 3.13 |
 | Unit tests | `tools/rc1-tester/image/unit-tests.txt`, `unit-tests-macos.txt` | a name absent from a build is skipped; fewer than ten found fails the build |
 
@@ -103,6 +144,7 @@ docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-
 ```
 
 An image built this way has `built_by_workflow: false` and the CI report gate refuses it,
-as intended. The x86_64 cross-architecture reference comes from the amd64 build
+as intended. The local build runs the licence check as well; to see the source companion,
+build `--target source-export --output type=local,dest=<dir>` (about 670 MB of downloads). The x86_64 cross-architecture reference comes from the amd64 build
 (`--target refs-export`); without it the `cross_arch_x86_scalar` section reads `missing`
 and is informational.

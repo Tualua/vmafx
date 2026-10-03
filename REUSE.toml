@@ -330,6 +330,24 @@ precedence = "closest"
 SPDX-FileCopyrightText = "2020 Matias Tassano, Julie Delon, Thomas Veit"
 SPDX-License-Identifier = "MIT"
 
+# The BRISQUE model is the LIVE laboratory's trained release (ADR-1115); its
+# notice must appear in all copies, which the tester artifacts carry
+# (ADR-1503). It is not Netflix's work, so the model/** default above is wrong
+# for these two files.
+[[annotations]]
+path = ["model/other_models/brisque_live.model", "model/other_models/NOTICE-brisque"]
+precedence = "override"
+SPDX-FileCopyrightText = "2011 The University of Texas at Austin"
+SPDX-License-Identifier = "LicenseRef-LIVE-BRISQUE"
+
+# Licence text of third-party code linked into the interpreter of the tester
+# artifacts, reproduced for their notices (ADR-1503).
+[[annotations]]
+path = ["tools/rc1-tester/image/licenses/hacl-star.txt"]
+precedence = "override"
+SPDX-FileCopyrightText = ["2016-2022 INRIA, CMU and Microsoft Corporation", "2022-2023 HACL* Contributors"]
+SPDX-License-Identifier = "MIT"
+
 [[annotations]]
 path = [
     "docs/ai/models/u2netp_mirror_card.md",

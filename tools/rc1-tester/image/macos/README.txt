@@ -13,6 +13,8 @@ What is in here
   python/test/resource/  Netflix test videos (checked against pinned SHA-256 values)
   reference/             scores recorded by this build on the hosted runner
   image/                 manifests: fixtures, unit tests, build information
+  licenses/              THIRD_PARTY_NOTICES.txt: the licence of everything in here,
+                         and the licence texts
 
 The report reads these files and runs vmaf and the tests from tests/. It needs no
 network; run.sh denies network access to the run with sandbox-exec when macOS offers it.

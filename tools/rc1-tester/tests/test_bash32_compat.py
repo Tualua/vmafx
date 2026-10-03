@@ -137,7 +137,7 @@ def test_build_script_runs_to_the_end_under_bash32(tmp_path: Path) -> None:
     """The whole build script under bash 3.2 with stub tools: it must reach `pack`."""
     stubs = tmp_path / "stubs"
     stubs.mkdir()
-    for name in ("meson", "codesign", "shasum", "brew"):
+    for name in ("meson", "codesign", "shasum", "brew", "zstd"):
         stub(stubs / name, "exit 0\n")
     stub(
         stubs / "ninja",
@@ -151,7 +151,9 @@ def test_build_script_runs_to_the_end_under_bash32(tmp_path: Path) -> None:
     stub(stubs / "stat", 'echo "1 $*"\n')
     stub(
         stubs / "tar",
-        'case "$1" in -xzf) mkdir -p "$4/python/bin" "$4/python/include" "$4/python/share" "$4/python/lib/python3.13/lib-dynload"; printf "#!/bin/sh\\nexit 0\\n" > "$4/python/bin/python3"; chmod +x "$4/python/bin/python3";; --uid) : > "$6";; *) : ;; esac\n',
+        'case "$1" in -xzf) mkdir -p "$4/python/bin" "$4/python/include" "$4/python/share" "$4/python/lib/python3.13/lib-dynload"; printf "#!/bin/sh\\nexit 0\\n" > "$4/python/bin/python3"; chmod +x "$4/python/bin/python3";; '
+        '-xf) mkdir -p "$4/python/licenses"; : > "$4/python/licenses/LICENSE.cpython.txt"; : > "$4/python/PYTHON.json";; '
+        '--uid) : > "$6";; *) : ;; esac\n',
     )
     stub(stubs / "otool", 'echo "$2:"; printf "\\t/usr/lib/libSystem.B.dylib (c)\\n"\n')
     stub(stubs / "file", "echo text\n")
@@ -165,7 +167,7 @@ def test_build_script_runs_to_the_end_under_bash32(tmp_path: Path) -> None:
     shutil.copytree(_ROOT / "scripts" / "ci", repo_copy / "scripts" / "ci")
     shutil.copytree(_ROOT / "tools" / "rc1-tester", repo_copy / "tools" / "rc1-tester",
                     ignore=shutil.ignore_patterns("tests", "__pycache__"))  # fmt: skip
-    env = ("PBS_URL=x PBS_SHA256=y VMAF_RESOURCE_COMMIT=z VMAFX_SOURCE_COMMIT=a "
+    env = ("PBS_URL=x PBS_SHA256=y PBS_FULL_URL=u PBS_FULL_SHA256=v VMAF_RESOURCE_COMMIT=z VMAFX_SOURCE_COMMIT=a "
            "VMAFX_SOURCE_REF=b VMAFX_RECIPE_COMMIT=c VMAFX_IMAGE_TAG=t")  # fmt: skip
     cmd = (f"cp -R /w/repo-copy /tmp/repo-copy && cd /tmp/repo-copy && "
            f"{env} PATH=/w/stubs:$PATH bash scripts/ci/build-macos-tester-bundle.sh /w/out; echo status=$?")  # fmt: skip
@@ -177,3 +179,5 @@ def test_build_script_runs_to_the_end_under_bash32(tmp_path: Path) -> None:
     # may be left where the workflow publishes every *.tar.gz.
     assert not (tmp_path / "out" / "pbs.tar.gz").exists()
     assert not (tmp_path / "out" / "pbs").exists()
+    assert not (tmp_path / "out" / "pbs-full.tar.zst").exists()
+    assert not (tmp_path / "out" / "python").exists()

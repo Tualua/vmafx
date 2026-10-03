@@ -9,6 +9,9 @@
 #
 # Environment (all required):
 #   PBS_URL, PBS_SHA256     python-build-standalone archive and its SHA-256
+#   PBS_FULL_URL, PBS_FULL_SHA256
+#                           the same release's `full` archive, read only for its
+#                           licence texts (python/licenses, PYTHON.json; ADR-1503)
 #   VMAF_RESOURCE_COMMIT    Netflix/vmaf_resource commit the fixtures come from
 #   VMAFX_SOURCE_COMMIT, VMAFX_SOURCE_REF, VMAFX_RECIPE_COMMIT, VMAFX_IMAGE_TAG
 #
@@ -17,11 +20,13 @@
 #
 # Result in <output-dir>: vmafx-tester-macos-arm64-<tag>.tar.gz, its .sha256,
 # report.json (the bundle's own report run on this runner) and bundle-files.txt.
+# The bundle carries licenses/ (THIRD_PARTY_NOTICES.txt and every licence text)
+# and fails before packing when a file has no recorded licence (ADR-1503).
 set -euo pipefail
 
 out=${1:?usage: build-macos-tester-bundle.sh <output-dir>}
-for name in PBS_URL PBS_SHA256 VMAF_RESOURCE_COMMIT VMAFX_SOURCE_COMMIT VMAFX_SOURCE_REF \
-  VMAFX_RECIPE_COMMIT VMAFX_IMAGE_TAG; do
+for name in PBS_URL PBS_SHA256 PBS_FULL_URL PBS_FULL_SHA256 VMAF_RESOURCE_COMMIT \
+  VMAFX_SOURCE_COMMIT VMAFX_SOURCE_REF VMAFX_RECIPE_COMMIT VMAFX_IMAGE_TAG; do
   : "${!name:?$name is required}"
 done
 
@@ -35,6 +40,7 @@ bundle="$out/$name"
 build="$repo/build-tester-macos"
 image_dir="tools/rc1-tester/image"
 resource="$bundle/python/test/resource"
+texts="$out/licence-texts"
 
 export MACOSX_DEPLOYMENT_TARGET=14.0
 export VMAFX_ARTIFACT_KIND=macos-bundle
@@ -104,6 +110,22 @@ find "$stdlib/lib-dynload" -name '_tkinter*' -delete
 find "$bundle/runtime" -name '*.pyc' -delete
 find "$bundle/runtime" -name __pycache__ -type d -prune -exec rm -r {} + 2>/dev/null || true
 rm -f "$bundle"/runtime/bin/idle3* "$bundle"/runtime/bin/pydoc3* "$bundle"/runtime/bin/pip*
+# The licensing tool needs Python 3.11 or later: run it with the bundled interpreter.
+py="$bundle/runtime/bin/python3"
+licensing() { "$py" -I -B "$image_dir/licensing.py" "$@"; }
+
+step "licence texts (python-build-standalone full archive, CPython Doc/license.rst)"
+# The install_only archive holds no licence texts; the full archive of the same
+# release has them for every library linked into the interpreter (ADR-1503).
+mkdir -p "$texts/python-build-standalone"
+curl -fsSL --retry 3 -o "$out/pbs-full.tar.zst" "$PBS_FULL_URL"
+echo "$PBS_FULL_SHA256  $out/pbs-full.tar.zst" | shasum -a 256 -c -
+zstd -dc "$out/pbs-full.tar.zst" | tar -xf - -C "$out" python/licenses python/PYTHON.json
+mv "$out"/python/licenses/* "$out/python/PYTHON.json" "$texts/python-build-standalone/"
+rm -r "${out:?}/python" "${out:?}/pbs-full.tar.zst"
+py_version=$("$py" -I -c 'import platform; print(platform.python_version())')
+licensing fetch-texts --artifact macos --python-version "$py_version" --out "$texts"
+licensing scan-build --build "$build" --repo "$repo" --out "$out/vmafx-sources.json"
 
 step "ad-hoc code signature (no developer ID, no notarization)"
 while IFS= read -r file; do
@@ -115,6 +137,11 @@ step "bundle metadata and references"
 python3 "$image_dir/prepare_build.py" info "$bundle"
 "$bundle/runtime/bin/python3" -I -B "$bundle/tester/vmaf-tester-report" \
   --image-root "$bundle" generate-reference "$bundle/reference"
+
+step "licence notices (ADR-1503)"
+licensing notices --artifact macos --root "$bundle" --repo "$repo" \
+  --build-scan "$out/vmafx-sources.json" --texts "$texts" \
+  --source-commit "$VMAFX_SOURCE_COMMIT" --tag "$tag"
 
 step "every Mach-O links system libraries or the bundle only"
 bash scripts/ci/check-macos-bundle-links.sh "$bundle"
@@ -131,6 +158,11 @@ case "$report_status" in 0 | 1) ;; *)
   exit 1
   ;;
 esac
+
+step "every file of the bundle has a recorded licence (ADR-1503)"
+licensing check --artifact macos --root "$bundle" --repo "$repo" \
+  --build-scan "$out/vmafx-sources.json" --python-version "$py_version" \
+  --receipt "$bundle/licence-check.json"
 
 step "pack"
 (cd "$bundle" && find . -type f | sort | xargs -I{} stat -f '%z %N' {}) >"$out/bundle-files.txt"
