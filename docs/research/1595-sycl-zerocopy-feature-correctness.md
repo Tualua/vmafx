@@ -1,9 +1,9 @@
 <!-- markdownlint-disable MD013 MD060 -->
 # Research-1595: SYCL zero-copy feature correctness
 
-- **Status**: Active (Stage 1 done; stages 2 and 3 open)
+- **Status**: Active (Stages 1 and 2 done; stage 3 open)
 - **Workstream**: [ADR-1595](../adr/1595-sycl-zerocopy-fail-loud-twin-routing.md), [ADR-1462](../adr/1462-speed-cpu-correctly-rounded-log2.md), [ADR-1596](../adr/1596-sycl-va-import-immediate-cmdlist.md), phase 12
-- **Last updated**: 2026-10-02
+- **Last updated**: 2026-10-03
 
 ## Question
 
@@ -105,14 +105,89 @@ All four report `num_layers=2 num_objects=1`, `obj=0` for both layers,
 
 No shape contradicts the planned kernel inputs; the design is unchanged.
 
+## Stage-2 results (Arc A380, `scripts/test/zerocopy-e2e.sh --stage 2 --bench --repeat 5`)
+
+The VA import now writes the UV layer into the shared Cb and Cr planes on
+every frame (ADR-1597): a layout-addressed de-interleave kernel on the DMA-BUF
+path, the same kernel after a staged copy on the readback path, with the P010
+shift applied once in that kernel. Same harness, clips and depths as Stage 1.
+
+| Depth | Summary | Stage-3 cases | Zero-copy repeat stability |
+| --- | --- | --- | --- |
+| 8-bit NV12 | `pass=48 fail=0 nonexact=0` | 26 of 26 `PASS loud-fail` | 5 runs per case equal host upload, no `zc-nondeterministic` |
+| 10-bit P010 | `pass=48 fail=0 nonexact=0` | 26 of 26 `PASS loud-fail` | 5 runs per case equal host upload, no `zc-nondeterministic` |
+
+`psnr` (3 metrics) and `psnr_hvs` (4 metrics) are bit-exact against the CPU and
+against host upload on both clips. Logs: `12-09-e2e-stage2-{8,10}bit.log`.
+
+- **`motion_add_uv`** has no case in the harness: the CPU integer `motion` has no
+  such option (only `float_motion` does, covered by `float_motion_uv` at stage 3),
+  so the three-leg comparison cannot be built. It was verified differently, and
+  that is a weaker statement than "equals the CPU": real QSV zero-copy against
+  host upload of the same `motion_sycl` twin (itself held to the ADR-1326
+  fixed-point oracle) gave 0 mismatches in `integer_motion2_mau` and
+  `integer_motion3_mau` over src01 and checkerboard at 8 and 10 bit, 5
+  zero-copy repeats each (12-08 evidence, ad-hoc script not committed), plus
+  `test_sycl_zerocopy_parity` on emulated zero-copy, which also asserts that
+  chroma changes the score.
+- **Layouts.** Only the Tile4 modifier (`0x0100000000000009`, layer 1 `GR88` /
+  `GR1616`, `num_layers=2 num_objects=1`) was seen on the A380. LINEAR and
+  Y-tiled chroma are covered by the host-synthesised vectors in
+  `test_sycl_chroma_import`, not by hardware.
+- **Stage-1 regression.** `--stage 1` on the same build reports `pass=44 fail=4
+  nonexact=0` per depth. The four failures are `psnr` and `psnr_hvs` on both clips
+  returning `unexpected-success` ("zero-copy succeeded before its stage"): the
+  comparator's stage gate working as designed now that those cases work. Every
+  other case is unchanged and bit-exact. Logs: `12-09-e2e-stage1-regress-*.log`.
+- **D3D11** import stays luma only (RESEARCH Q6, out of scope); its chroma readers
+  fail with `needs chroma planes, which this zero-copy import did not provide`.
+
+## D-01 cost (A380)
+
+D-01 imports chroma unconditionally and allocates the chroma planes whenever the
+frame buffers are, so a luma-only run (the default model) pays for them.
+
+Memory, from `vmaf_sycl_shared_chroma_init` (8 device planes, 4 pinned host
+staging planes, each `ceil(w/2) x ceil(h/2)` samples of 1 byte at 8 bit and 2 at
+10 bit):
+
+| Frame | Device, 8-bit | Pinned, 8-bit | Device, 10-bit | Pinned, 10-bit |
+| --- | --- | --- | --- | --- |
+| 1920x1080 | 4.1 MB | 2.1 MB | 8.3 MB | 4.1 MB |
+| 3840x2160 | 16.6 MB | 8.3 MB | 33.2 MB | 16.6 MB |
+
+The device figure is half the size of the shared luma buffers (four buffers of
+`w x h` samples). These are computed from the allocation sizes, not read from
+the driver.
+
+Throughput, zero-copy `model-vmaf_v0.6.1` on the checkerboard (60 frames, same
+`--bench` run position as the baseline):
+
+| Depth | 12-05 baseline (Stage 1) | Stage-1 re-run on this build | Stage-2 run | Stage-2 vs baseline |
+| --- | --- | --- | --- | --- |
+| 8-bit | 78.84 fps | 78.53 fps | 80.32 fps | +1.9 % |
+| 10-bit | 80.00 fps | 76.53 fps | 76.92 fps | -3.9 % |
+
+Reading it: the flag threshold is a 10 % slowdown on checkerboard 1080p, and it did
+not fire. 8 bit is within noise. 10 bit is about 4 % lower in both re-runs on this
+build; the superseded first 12-05 10-bit run (earlier code) gave 77.42 fps, so the
+baseline itself spreads by 3 %, and a 60-frame run is 0.75 s long.
+The figure depends strongly on where in a run it is taken: a stand-alone
+single-case run of the same command measured 58.7 to 61.9 fps (6 runs,
+`12-09-bench-noise.log`), about 25 % lower than inside the full run, so only the
+in-run comparison above is meaningful. The 10-bit chroma import moves twice the
+bytes of the 8-bit one, which would fit a small real cost; this run cannot separate
+it from noise, and a pre-D-01 build in the same run position would be needed to
+say. No off-switch was added (D-01). 4K was not measured: the only 4K P010 source at
+hand is a single frame (`blue_sky_1frame_3840x2160_10b.yuv`), too short to time.
+
 ## Open items
 
-- **Stage 2**: import the Cb/Cr planes of the VA surface (same DMA-BUF object at
-  a non-zero offset, same modifier, same pitch as luma) so `psnr`, `psnr_hvs`,
-  `ciede`, `speed_*` and `ssimulacra2` run on zero-copy input.
+- **Stage 2** (done, above): chroma import for `psnr`, `psnr_hvs`, `motion_add_uv`.
+  `ciede`, `speed_*` and `ssimulacra2` read host pictures and move with stage 3.
 - **Stage 3**: move the float, SSIM, MS-SSIM and SpEED extractors from host
   staging to the shared planes. `float_ms_ssim_sycl` needs one new device kernel
   (plane to float).
-- The D3D11 import has no chroma either; readers fail loudly there too.
+- The D3D11 import has no chroma (out of scope); readers fail loudly there too.
 - `test_sycl_ordered_sum` fails on the A380 independently of this work
   (`T-SYCL-ORDERED-SUM-A380-GARBAGE-2026-10-02`).
