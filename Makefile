@@ -189,8 +189,9 @@ lint-actions:
 # Fragment-tree drift check (ADR-0221). Verifies CHANGELOG.md and
 # docs/adr/README.md are in sync with fragments, ADR tags/nav match sources,
 # the exact-twin table matches scripts/ci/exact_twins.d/ (ADR-1428), and every
-# AGENTS.md next to an AGENTS.d/ matches its topic pages (ADR-1454), and
-# every vendored docs asset matches the hashes in its vendor.json (ADR-1508).
+# AGENTS.md next to an AGENTS.d/ matches its topic pages (ADR-1454), the
+# documentation charts match their specs, data and renders, and every vendored
+# docs asset matches the hashes in its vendor.json (ADR-1508).
 docs-fragments-check:
 	@echo "--- changelog.d/ vs CHANGELOG.md ---"
 	@bash scripts/release/concat-changelog-fragments.sh --check
@@ -206,6 +207,8 @@ docs-fragments-check:
 	@python3 scripts/docs/agents_index.py --check
 	@echo "--- docs/hardware-reports/ (tester reports: schema + integrity) ---"
 	@python3 scripts/ci/check-hardware-reports.py
+	@echo "--- docs/charts/ vs their renders and data (ADR-1508) ---"
+	@python3 scripts/docs/generate-charts.py --check
 	@echo "--- docs/**/vendor.json (vendored fonts and scripts vs their hashes) ---"
 	@python3 scripts/docs/check_vendored_assets.py
 
@@ -219,6 +222,7 @@ docs-fragments-write:
 	@python3 scripts/docs/generate-upstream-parity-allowlist.py --write
 	@python3 scripts/docs/agents_index.py --write
 	@python3 scripts/docs/generate-hardware-reports.py --write
+	@python3 scripts/docs/generate-charts.py --write
 
 # Analyze only this Meson profile, retaining all configured command variants.
 # Backend-specific clang-tidy options can be supplied with repeated

@@ -1,0 +1,19 @@
+{
+  "name": "Vega, Vega-Lite and vega-embed (vl-convert bundle)",
+  "version": "Vega 6.2.0, Vega-Lite 6.4.1, vega-embed 7.0.2, vega-themes 3.0.0",
+  "source": "vl_convert.javascript_bundle() of vl-convert-python 1.9.0.post1 (vl_convert_python-1.9.0.post1-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl, hash-pinned in docs/requirements-lock.txt), written by scripts/docs/generate-charts.py",
+  "source_sha256": "3c1558fa0055e88c465bd3d71760cde9fa2c94a95f776a0ef9178252fd820b1f",
+  "license": "BSD-3-Clause AND ISC AND MIT AND Unlicense AND 0BSD",
+  "license_file": "THIRD-PARTY-LICENSES.txt",
+  "fetched": "2026-10-03",
+  "files": {
+    "vega-bundle.js": {
+      "from": "vl_convert.javascript_bundle(vl_version='6.4') with the banner of scripts/docs/generate-charts.py",
+      "sha256": "ea0ea991795f979a852b1d6635a2532a873955c924f63e8c6a8faf78201f3bd2"
+    },
+    "THIRD-PARTY-LICENSES.txt": {
+      "from": "npm licence files of the bundled releases and their dependency tree",
+      "sha256": "9013089e6075ba348afbd3180e9cd592b45e5b83dbf49b5c16f1575565140b20"
+    }
+  }
+}

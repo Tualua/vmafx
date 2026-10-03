@@ -31,6 +31,15 @@ linked AGENTS.md before resolving conflicts.
   `make docs-fragments-check`). The landing page keeps its `vx-*` wrappers when
   its text changes. See [Documentation site design](docs-site-design.md).
 
+- **Documentation charts ([ADR-1508](../adr/1508-docs-site-toolchain-and-charts.md))**:
+  `scripts/docs/generate-charts.py` writes each chart's data, both SVG renders,
+  the page block between its `CHART` sentinels and the vendored Vega bundle;
+  `make docs-fragments-check` compares them with a fresh build and the docs CI
+  jobs re-render with `--require-render`. Regenerate after a change to
+  `scripts/ci/exact_twins.d/`, `LIBM_TWINS`, `scripts/ci/upstream_parity.d/`
+  or the 576x324 snapshots; keep the sentinels when a page is rewritten. See
+  [Documentation site design](docs-site-design.md#charts).
+
 - **Meson test secret environment sanitization ([ADR-1333](../adr/1333-meson-test-secret-env-sanitization.md))**:
   `scripts/ci/run_meson_test.py` deletes sensitive GitHub credential keys before Meson starts
   and records its raw parent environment in `testlog.txt`. Every supported Make, workflow,

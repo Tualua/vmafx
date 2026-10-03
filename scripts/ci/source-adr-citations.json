@@ -9844,8 +9844,10 @@
     },
     "1508": {
       "sites": {
-        "Makefile": 1,
-        "REUSE.toml": 1,
+        ".github/workflows/lint-and-format.yml": 1,
+        "Makefile": 2,
+        "REUSE.toml": 2,
+        "scripts/docs/generate-charts.py": 1,
         "scripts/docs/vendor_fonts.py": 1
       },
       "target": "1508-docs-site-toolchain-and-charts.md"

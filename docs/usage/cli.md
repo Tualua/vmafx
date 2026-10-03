@@ -21,7 +21,7 @@ Related pages: [bench.md](bench.md) for the `vmaf_bench` micro-benchmark,
 ## Quick start
 
 Build the binary as described in the
-[source-build guide](../getting-started/index.md#build-from-source);
+[source-build guide](../getting-started/index.md#build-from-source-any-platform);
 with `meson setup build core` it lands at `build/tools/vmaf`.
 
 ```shell

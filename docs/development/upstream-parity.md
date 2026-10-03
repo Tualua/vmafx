@@ -171,6 +171,40 @@ One file per difference under `scripts/ci/upstream_parity.d/`, named
 `<extractor>.<topic>` (`model.<topic>` for predicted scores). The generated
 table is [allowed differences from Netflix/vmaf](upstream-parity-allowlist.md).
 
+<!-- >>> CHART upstream-parity-allowlist: generated, do not edit -->
+<!-- markdownlint-capture -->
+<!-- markdownlint-disable MD013 MD033 -->
+<figure class="vx-chart" markdown>
+
+![37 allowlist entries over 12 extractors (25 value, 10 error, 2 name); the most are for adm 9, float_adm 5, float_ms_ssim 4.](../assets/charts/upstream-parity-allowlist.light.svg#only-light){ .vx-chart__static width="602" height="386" }
+![37 allowlist entries over 12 extractors (25 value, 10 error, 2 name); the most are for adm 9, float_adm 5, float_ms_ssim 4.](../assets/charts/upstream-parity-allowlist.dark.svg#only-dark){ .vx-chart__static width="602" height="386" }
+
+<figcaption markdown>Source: the fragments in `scripts/ci/upstream_parity.d/`, one per recorded difference.</figcaption>
+
+</figure>
+
+<details class="vx-chart__table" markdown>
+<summary>Data table</summary>
+
+| Extractor | `value` | `error` | `name` | Total |
+| --- | ---: | ---: | ---: | ---: |
+| `adm` | 7 | 2 | 0 | 9 |
+| `float_adm` | 4 | 1 | 0 | 5 |
+| `float_ms_ssim` | 4 | 0 | 0 | 4 |
+| `ciede` | 2 | 1 | 0 | 3 |
+| `psnr` | 2 | 0 | 1 | 3 |
+| `psnr_hvs` | 1 | 1 | 1 | 3 |
+| `speed_temporal` | 2 | 1 | 0 | 3 |
+| `model` | 2 | 0 | 0 | 2 |
+| `speed_chroma` | 0 | 2 | 0 | 2 |
+| `cambi` | 0 | 1 | 0 | 1 |
+| `float_motion` | 1 | 0 | 0 | 1 |
+| `float_vif` | 0 | 1 | 0 | 1 |
+
+</details>
+<!-- markdownlint-restore -->
+<!-- <<< CHART upstream-parity-allowlist -->
+
 | Key | Meaning |
 | --- | --- |
 | `kind` | `value`, `error`, `name`, `pending-revert` or `pending-port` |

@@ -97,6 +97,9 @@ jobs:
       - name: Check generated documentation freshness
         if: steps.impact.outputs.docs == 'true'
         run: make docs-fragments-check
+      - name: Check documentation charts against a fresh render
+        if: steps.impact.outputs.docs == 'true'
+        run: python3 scripts/docs/generate-charts.py --check --require-render
       - name: Build site
         if: steps.impact.outputs.docs == 'true'
         run: mkdocs build --strict

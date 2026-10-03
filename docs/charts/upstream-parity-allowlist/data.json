@@ -1,0 +1,261 @@
+[
+ {
+  "feature": "adm",
+  "feature_order": 0,
+  "fragment": "adm.barten-csf-range",
+  "kind": "value",
+  "kind_order": 0
+ },
+ {
+  "feature": "adm",
+  "feature_order": 0,
+  "fragment": "adm.gain-limit-truncation",
+  "kind": "value",
+  "kind_order": 0
+ },
+ {
+  "feature": "adm",
+  "feature_order": 0,
+  "fragment": "adm.gain-limit-truncation-sums",
+  "kind": "value",
+  "kind_order": 0
+ },
+ {
+  "feature": "adm",
+  "feature_order": 0,
+  "fragment": "adm.noise-centre-tap",
+  "kind": "value",
+  "kind_order": 0
+ },
+ {
+  "feature": "adm",
+  "feature_order": 0,
+  "fragment": "adm.noise-centre-tap-sums",
+  "kind": "value",
+  "kind_order": 0
+ },
+ {
+  "feature": "adm",
+  "feature_order": 0,
+  "fragment": "adm.tiny-frames",
+  "kind": "value",
+  "kind_order": 0
+ },
+ {
+  "feature": "adm",
+  "feature_order": 0,
+  "fragment": "adm.tiny-frames-sums",
+  "kind": "value",
+  "kind_order": 0
+ },
+ {
+  "feature": "adm",
+  "feature_order": 0,
+  "fragment": "adm.frames-of-16-or-less",
+  "kind": "error",
+  "kind_order": 1
+ },
+ {
+  "feature": "adm",
+  "feature_order": 0,
+  "fragment": "adm.view-distance-rejected",
+  "kind": "error",
+  "kind_order": 1
+ },
+ {
+  "feature": "float_adm",
+  "feature_order": 1,
+  "fragment": "float_adm.divide",
+  "kind": "value",
+  "kind_order": 0
+ },
+ {
+  "feature": "float_adm",
+  "feature_order": 1,
+  "fragment": "float_adm.divide-barten",
+  "kind": "value",
+  "kind_order": 0
+ },
+ {
+  "feature": "float_adm",
+  "feature_order": 1,
+  "fragment": "float_adm.divide-barten-sums",
+  "kind": "value",
+  "kind_order": 0
+ },
+ {
+  "feature": "float_adm",
+  "feature_order": 1,
+  "fragment": "float_adm.divide-sums",
+  "kind": "value",
+  "kind_order": 0
+ },
+ {
+  "feature": "float_adm",
+  "feature_order": 1,
+  "fragment": "float_adm.frames-of-16-or-less",
+  "kind": "error",
+  "kind_order": 1
+ },
+ {
+  "feature": "float_ms_ssim",
+  "feature_order": 2,
+  "fragment": "float_ms_ssim.anti-correlated-nan",
+  "kind": "value",
+  "kind_order": 0
+ },
+ {
+  "feature": "float_ms_ssim",
+  "feature_order": 2,
+  "fragment": "float_ms_ssim.separable-decimate",
+  "kind": "value",
+  "kind_order": 0
+ },
+ {
+  "feature": "float_ms_ssim",
+  "feature_order": 2,
+  "fragment": "float_ms_ssim.separable-decimate-db",
+  "kind": "value",
+  "kind_order": 0
+ },
+ {
+  "feature": "float_ms_ssim",
+  "feature_order": 2,
+  "fragment": "float_ms_ssim.separable-decimate-lcs",
+  "kind": "value",
+  "kind_order": 0
+ },
+ {
+  "feature": "ciede",
+  "feature_order": 3,
+  "fragment": "ciede.chroma-422",
+  "kind": "value",
+  "kind_order": 0
+ },
+ {
+  "feature": "ciede",
+  "feature_order": 3,
+  "fragment": "ciede.odd-size-chroma",
+  "kind": "value",
+  "kind_order": 0
+ },
+ {
+  "feature": "ciede",
+  "feature_order": 3,
+  "fragment": "ciede.gray-refused",
+  "kind": "error",
+  "kind_order": 1
+ },
+ {
+  "feature": "psnr",
+  "feature_order": 4,
+  "fragment": "psnr.apsnr-zero-error-plane",
+  "kind": "value",
+  "kind_order": 0
+ },
+ {
+  "feature": "psnr",
+  "feature_order": 4,
+  "fragment": "psnr.odd-size-chroma",
+  "kind": "value",
+  "kind_order": 0
+ },
+ {
+  "feature": "psnr",
+  "feature_order": 4,
+  "fragment": "psnr.apsnr-disabled-chroma",
+  "kind": "name",
+  "kind_order": 2
+ },
+ {
+  "feature": "psnr_hvs",
+  "feature_order": 5,
+  "fragment": "psnr_hvs.pooled-harmonic-mean-guard",
+  "kind": "value",
+  "kind_order": 0
+ },
+ {
+  "feature": "psnr_hvs",
+  "feature_order": 5,
+  "fragment": "psnr_hvs.sixteen-bit-refused",
+  "kind": "error",
+  "kind_order": 1
+ },
+ {
+  "feature": "psnr_hvs",
+  "feature_order": 5,
+  "fragment": "psnr_hvs.luma-on-gray",
+  "kind": "name",
+  "kind_order": 2
+ },
+ {
+  "feature": "speed_temporal",
+  "feature_order": 6,
+  "fragment": "speed_temporal.max-val-applied",
+  "kind": "value",
+  "kind_order": 0
+ },
+ {
+  "feature": "speed_temporal",
+  "feature_order": 6,
+  "fragment": "speed_temporal.prescale-above-one",
+  "kind": "value",
+  "kind_order": 0
+ },
+ {
+  "feature": "speed_temporal",
+  "feature_order": 6,
+  "fragment": "speed_temporal.frames-too-small",
+  "kind": "error",
+  "kind_order": 1
+ },
+ {
+  "feature": "model",
+  "feature_order": 7,
+  "fragment": "model.float-adm-divide",
+  "kind": "value",
+  "kind_order": 0
+ },
+ {
+  "feature": "model",
+  "feature_order": 7,
+  "fragment": "model.noise-integer-adm",
+  "kind": "value",
+  "kind_order": 0
+ },
+ {
+  "feature": "speed_chroma",
+  "feature_order": 8,
+  "fragment": "speed_chroma.frames-too-small",
+  "kind": "error",
+  "kind_order": 1
+ },
+ {
+  "feature": "speed_chroma",
+  "feature_order": 8,
+  "fragment": "speed_chroma.gray-refused",
+  "kind": "error",
+  "kind_order": 1
+ },
+ {
+  "feature": "cambi",
+  "feature_order": 9,
+  "fragment": "cambi.frames-too-small",
+  "kind": "error",
+  "kind_order": 1
+ },
+ {
+  "feature": "float_motion",
+  "feature_order": 10,
+  "fragment": "float_motion.scale1-stride",
+  "kind": "value",
+  "kind_order": 0
+ },
+ {
+  "feature": "float_vif",
+  "feature_order": 11,
+  "fragment": "float_vif.frames-below-16",
+  "kind": "error",
+  "kind_order": 1
+ }
+]

@@ -844,6 +844,11 @@ jobs:
         run: |
           pip install --require-hashes -r requirements/locks/package-build.txt
           pip install --no-build-isolation --require-hashes -r docs/requirements-lock.txt
+      - name: Check documentation charts against a fresh render
+        # make docs-fragments-check above runs without vl-convert-python and
+        # compares the chart SVGs with their recorded hashes; this step
+        # renders them again with the hash-locked renderer (ADR-1508).
+        run: python3 scripts/docs/generate-charts.py --check --require-render
       - name: Build docs (strict — fail on any warning)
         run: mkdocs build --strict
 

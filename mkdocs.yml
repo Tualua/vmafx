@@ -139,6 +139,11 @@ validation:
 extra_css:
   - stylesheets/vmafx.css
 
+# Mounts the interactive charts; loads the Vega bundle only on a page with a
+# chart (ADR-1508, scripts/docs/generate-charts.py).
+extra_javascript:
+  - javascripts/charts.js
+
 extra:
   social:
     - icon: fontawesome/brands/github

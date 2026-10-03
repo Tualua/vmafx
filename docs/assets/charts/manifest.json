@@ -1,0 +1,21 @@
+{
+  "bundle_sha256": "ea0ea991795f979a852b1d6635a2532a873955c924f63e8c6a8faf78201f3bd2",
+  "charts": {
+    "per-frame-vmaf": {
+      "dark_svg_sha256": "0da3aab4d0f62ce1abb88ff8fe05319d46b90a5a336444966f81af2ce2326c81",
+      "inputs_sha256": "b9c6ab9c839fcb53e9ecb5ece9f1e09fd2193cf6d48dce763e986f67e8756ff7",
+      "light_svg_sha256": "3a51562e109a5f2fcd318dff02e72e5288d388591a84a997540e293c97976e2f"
+    },
+    "twin-exactness": {
+      "dark_svg_sha256": "c2e3256900d53f6ce9e811d8f67510289cd6f9d37bb782986a76869fc3ccb450",
+      "inputs_sha256": "9f197e274286303299045511ad0bffc756fc830c3e62bbd1771ea9366e7c35f2",
+      "light_svg_sha256": "319de9cf91df7f4326ed7eeb8741aabae2c69f1480d73f6d2c2e946d12a86a70"
+    },
+    "upstream-parity-allowlist": {
+      "dark_svg_sha256": "8d000aa5fa28920515d01e082080f0c99f779631dfb1f610e98e518c40f8d706",
+      "inputs_sha256": "b3d26de749394307ada85be0fd9fae15d2e4cec9bc0a745d6b7ada90f1b0c6a9",
+      "light_svg_sha256": "d885b6ca3f1deab04155836bbc8e7662d51a5a64e5ba28b27c7d1a78bca45099"
+    }
+  },
+  "renderer": "vl-convert 1.9.0; Vega 6.2.0; Vega-Lite 6.4; vega-embed 7.0.2"
+}

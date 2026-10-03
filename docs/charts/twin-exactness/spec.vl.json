@@ -1,0 +1,122 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "title": {
+    "text": "GPU twins against the CPU extractor",
+    "anchor": "start"
+  },
+  "data": {
+    "name": "table"
+  },
+  "width": {
+    "step": 76
+  },
+  "height": {
+    "step": 20
+  },
+  "encoding": {
+    "x": {
+      "field": "backend",
+      "type": "nominal",
+      "sort": {
+        "field": "backend_order"
+      },
+      "axis": {
+        "orient": "top",
+        "title": null,
+        "labelAngle": 0,
+        "domain": false,
+        "ticks": false,
+        "labelPadding": 6
+      }
+    },
+    "y": {
+      "field": "feature",
+      "type": "nominal",
+      "sort": {
+        "field": "feature_order"
+      },
+      "axis": {
+        "title": null,
+        "domain": false,
+        "ticks": false,
+        "labelPadding": 6
+      }
+    },
+    "tooltip": [
+      {
+        "field": "feature",
+        "title": "Feature"
+      },
+      {
+        "field": "backend",
+        "title": "Backend"
+      },
+      {
+        "field": "status",
+        "title": "Status"
+      },
+      {
+        "field": "detail",
+        "title": "Detail"
+      }
+    ]
+  },
+  "layer": [
+    {
+      "mark": {
+        "type": "rect",
+        "cornerRadius": 4,
+        "stroke": "@vx/surface",
+        "strokeWidth": 2
+      },
+      "encoding": {
+        "color": {
+          "field": "status",
+          "type": "ordinal",
+          "scale": {
+            "domain": [
+              "exact",
+              "libm bound",
+              "not declared"
+            ],
+            "range": [
+              "@vx/strong",
+              "@vx/medium",
+              "@vx/empty"
+            ]
+          },
+          "legend": {
+            "orient": "bottom",
+            "title": null,
+            "direction": "horizontal",
+            "symbolType": "square"
+          }
+        }
+      }
+    },
+    {
+      "mark": {
+        "type": "text",
+        "fontSize": 11
+      },
+      "encoding": {
+        "text": {
+          "field": "label"
+        },
+        "color": {
+          "condition": [
+            {
+              "test": "datum.status === 'exact'",
+              "value": "@vx/on-strong"
+            },
+            {
+              "test": "datum.status === 'libm bound'",
+              "value": "@vx/on-medium"
+            }
+          ],
+          "value": "@vx/on-empty"
+        }
+      }
+    }
+  ]
+}

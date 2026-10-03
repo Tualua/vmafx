@@ -992,6 +992,54 @@ body {
   font-size: var(--vx-text-small);
 }
 
+/* --------------------------------------------------------------- charts */
+
+/* A chart (scripts/docs/generate-charts.py): two static SVGs, one per scheme,
+ * that docs/javascripts/charts.js replaces with the interactive view. */
+.md-typeset figure.vx-chart {
+  align-items: stretch;
+  display: block;
+  margin: 1.6em 0;
+  max-width: 100%;
+  text-align: left;
+  width: 100%;
+}
+
+.md-typeset figure.vx-chart img.vx-chart__static {
+  display: block;
+  height: auto;
+  max-width: 100%;
+}
+
+.md-typeset figure.vx-chart--live img.vx-chart__static {
+  display: none;
+}
+
+.md-typeset .vx-chart__live {
+  max-width: 100%;
+  overflow-x: auto;
+  width: 100%;
+}
+
+.md-typeset figure.vx-chart figcaption {
+  color: var(--vx-fg-2);
+  font-size: var(--vx-text-small);
+  font-style: normal;
+  margin: var(--vx-space-3) 0 0;
+  max-width: var(--vx-measure);
+  text-align: left;
+}
+
+.md-typeset details.vx-chart__table {
+  --vx-adm: var(--vx-slate);
+
+  max-width: none;
+}
+
+#vg-tooltip-element {
+  font-family: var(--md-text-font-family);
+}
+
 /* -------------------------------------------------------- accessibility */
 
 :focus-visible {

@@ -1,0 +1,902 @@
+[
+ {
+  "feature": "adm",
+  "feature_order": 0,
+  "backend": "CUDA",
+  "backend_order": 0,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "adm",
+  "feature_order": 0,
+  "backend": "SYCL",
+  "backend_order": 1,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "adm",
+  "feature_order": 0,
+  "backend": "HIP",
+  "backend_order": 2,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "adm",
+  "feature_order": 0,
+  "backend": "Metal",
+  "backend_order": 3,
+  "status": "not declared",
+  "label": "\u2013",
+  "detail": "no fragment in scripts/ci/exact_twins.d/"
+ },
+ {
+  "feature": "cambi",
+  "feature_order": 1,
+  "backend": "CUDA",
+  "backend_order": 0,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "cambi",
+  "feature_order": 1,
+  "backend": "SYCL",
+  "backend_order": 1,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "cambi",
+  "feature_order": 1,
+  "backend": "HIP",
+  "backend_order": 2,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "cambi",
+  "feature_order": 1,
+  "backend": "Metal",
+  "backend_order": 3,
+  "status": "not declared",
+  "label": "\u2013",
+  "detail": "no fragment in scripts/ci/exact_twins.d/"
+ },
+ {
+  "feature": "ciede",
+  "feature_order": 2,
+  "backend": "CUDA",
+  "backend_order": 0,
+  "status": "libm bound",
+  "label": "\u2264 1e-09",
+  "detail": "bound 1e-09, LIBM_TWINS"
+ },
+ {
+  "feature": "ciede",
+  "feature_order": 2,
+  "backend": "SYCL",
+  "backend_order": 1,
+  "status": "libm bound",
+  "label": "\u2264 1e-09",
+  "detail": "bound 1e-09, LIBM_TWINS"
+ },
+ {
+  "feature": "ciede",
+  "feature_order": 2,
+  "backend": "HIP",
+  "backend_order": 2,
+  "status": "libm bound",
+  "label": "\u2264 1e-09",
+  "detail": "bound 1e-09, LIBM_TWINS"
+ },
+ {
+  "feature": "ciede",
+  "feature_order": 2,
+  "backend": "Metal",
+  "backend_order": 3,
+  "status": "not declared",
+  "label": "\u2013",
+  "detail": "no fragment in scripts/ci/exact_twins.d/"
+ },
+ {
+  "feature": "float_adm",
+  "feature_order": 3,
+  "backend": "CUDA",
+  "backend_order": 0,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "float_adm",
+  "feature_order": 3,
+  "backend": "SYCL",
+  "backend_order": 1,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "float_adm",
+  "feature_order": 3,
+  "backend": "HIP",
+  "backend_order": 2,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "float_adm",
+  "feature_order": 3,
+  "backend": "Metal",
+  "backend_order": 3,
+  "status": "not declared",
+  "label": "\u2013",
+  "detail": "no fragment in scripts/ci/exact_twins.d/"
+ },
+ {
+  "feature": "float_moment",
+  "feature_order": 4,
+  "backend": "CUDA",
+  "backend_order": 0,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "float_moment",
+  "feature_order": 4,
+  "backend": "SYCL",
+  "backend_order": 1,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "float_moment",
+  "feature_order": 4,
+  "backend": "HIP",
+  "backend_order": 2,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "float_moment",
+  "feature_order": 4,
+  "backend": "Metal",
+  "backend_order": 3,
+  "status": "not declared",
+  "label": "\u2013",
+  "detail": "no fragment in scripts/ci/exact_twins.d/"
+ },
+ {
+  "feature": "float_motion",
+  "feature_order": 5,
+  "backend": "CUDA",
+  "backend_order": 0,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "float_motion",
+  "feature_order": 5,
+  "backend": "SYCL",
+  "backend_order": 1,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "float_motion",
+  "feature_order": 5,
+  "backend": "HIP",
+  "backend_order": 2,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "float_motion",
+  "feature_order": 5,
+  "backend": "Metal",
+  "backend_order": 3,
+  "status": "not declared",
+  "label": "\u2013",
+  "detail": "no fragment in scripts/ci/exact_twins.d/"
+ },
+ {
+  "feature": "float_ms_ssim",
+  "feature_order": 6,
+  "backend": "CUDA",
+  "backend_order": 0,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "float_ms_ssim",
+  "feature_order": 6,
+  "backend": "SYCL",
+  "backend_order": 1,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "float_ms_ssim",
+  "feature_order": 6,
+  "backend": "HIP",
+  "backend_order": 2,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "float_ms_ssim",
+  "feature_order": 6,
+  "backend": "Metal",
+  "backend_order": 3,
+  "status": "not declared",
+  "label": "\u2013",
+  "detail": "no fragment in scripts/ci/exact_twins.d/"
+ },
+ {
+  "feature": "float_ms_ssim_chroma",
+  "feature_order": 7,
+  "backend": "CUDA",
+  "backend_order": 0,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "float_ms_ssim_chroma",
+  "feature_order": 7,
+  "backend": "SYCL",
+  "backend_order": 1,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "float_ms_ssim_chroma",
+  "feature_order": 7,
+  "backend": "HIP",
+  "backend_order": 2,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "float_ms_ssim_chroma",
+  "feature_order": 7,
+  "backend": "Metal",
+  "backend_order": 3,
+  "status": "not declared",
+  "label": "\u2013",
+  "detail": "no fragment in scripts/ci/exact_twins.d/"
+ },
+ {
+  "feature": "float_ms_ssim_lcs",
+  "feature_order": 8,
+  "backend": "CUDA",
+  "backend_order": 0,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "float_ms_ssim_lcs",
+  "feature_order": 8,
+  "backend": "SYCL",
+  "backend_order": 1,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "float_ms_ssim_lcs",
+  "feature_order": 8,
+  "backend": "HIP",
+  "backend_order": 2,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "float_ms_ssim_lcs",
+  "feature_order": 8,
+  "backend": "Metal",
+  "backend_order": 3,
+  "status": "not declared",
+  "label": "\u2013",
+  "detail": "no fragment in scripts/ci/exact_twins.d/"
+ },
+ {
+  "feature": "float_psnr",
+  "feature_order": 9,
+  "backend": "CUDA",
+  "backend_order": 0,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "float_psnr",
+  "feature_order": 9,
+  "backend": "SYCL",
+  "backend_order": 1,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "float_psnr",
+  "feature_order": 9,
+  "backend": "HIP",
+  "backend_order": 2,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "float_psnr",
+  "feature_order": 9,
+  "backend": "Metal",
+  "backend_order": 3,
+  "status": "not declared",
+  "label": "\u2013",
+  "detail": "no fragment in scripts/ci/exact_twins.d/"
+ },
+ {
+  "feature": "float_ssim",
+  "feature_order": 10,
+  "backend": "CUDA",
+  "backend_order": 0,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "float_ssim",
+  "feature_order": 10,
+  "backend": "SYCL",
+  "backend_order": 1,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "float_ssim",
+  "feature_order": 10,
+  "backend": "HIP",
+  "backend_order": 2,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "float_ssim",
+  "feature_order": 10,
+  "backend": "Metal",
+  "backend_order": 3,
+  "status": "not declared",
+  "label": "\u2013",
+  "detail": "no fragment in scripts/ci/exact_twins.d/"
+ },
+ {
+  "feature": "float_ssim_lcs",
+  "feature_order": 11,
+  "backend": "CUDA",
+  "backend_order": 0,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "float_ssim_lcs",
+  "feature_order": 11,
+  "backend": "SYCL",
+  "backend_order": 1,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "float_ssim_lcs",
+  "feature_order": 11,
+  "backend": "HIP",
+  "backend_order": 2,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "float_ssim_lcs",
+  "feature_order": 11,
+  "backend": "Metal",
+  "backend_order": 3,
+  "status": "not declared",
+  "label": "\u2013",
+  "detail": "no fragment in scripts/ci/exact_twins.d/"
+ },
+ {
+  "feature": "float_vif",
+  "feature_order": 12,
+  "backend": "CUDA",
+  "backend_order": 0,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "float_vif",
+  "feature_order": 12,
+  "backend": "SYCL",
+  "backend_order": 1,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "float_vif",
+  "feature_order": 12,
+  "backend": "HIP",
+  "backend_order": 2,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "float_vif",
+  "feature_order": 12,
+  "backend": "Metal",
+  "backend_order": 3,
+  "status": "not declared",
+  "label": "\u2013",
+  "detail": "no fragment in scripts/ci/exact_twins.d/"
+ },
+ {
+  "feature": "motion",
+  "feature_order": 13,
+  "backend": "CUDA",
+  "backend_order": 0,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "motion",
+  "feature_order": 13,
+  "backend": "SYCL",
+  "backend_order": 1,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "motion",
+  "feature_order": 13,
+  "backend": "HIP",
+  "backend_order": 2,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "motion",
+  "feature_order": 13,
+  "backend": "Metal",
+  "backend_order": 3,
+  "status": "not declared",
+  "label": "\u2013",
+  "detail": "no fragment in scripts/ci/exact_twins.d/"
+ },
+ {
+  "feature": "motion_debug",
+  "feature_order": 14,
+  "backend": "CUDA",
+  "backend_order": 0,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "motion_debug",
+  "feature_order": 14,
+  "backend": "SYCL",
+  "backend_order": 1,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "motion_debug",
+  "feature_order": 14,
+  "backend": "HIP",
+  "backend_order": 2,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "motion_debug",
+  "feature_order": 14,
+  "backend": "Metal",
+  "backend_order": 3,
+  "status": "not declared",
+  "label": "\u2013",
+  "detail": "no fragment in scripts/ci/exact_twins.d/"
+ },
+ {
+  "feature": "motion_mffw",
+  "feature_order": 15,
+  "backend": "CUDA",
+  "backend_order": 0,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "motion_mffw",
+  "feature_order": 15,
+  "backend": "SYCL",
+  "backend_order": 1,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "motion_mffw",
+  "feature_order": 15,
+  "backend": "HIP",
+  "backend_order": 2,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "motion_mffw",
+  "feature_order": 15,
+  "backend": "Metal",
+  "backend_order": 3,
+  "status": "not declared",
+  "label": "\u2013",
+  "detail": "no fragment in scripts/ci/exact_twins.d/"
+ },
+ {
+  "feature": "motion_v2",
+  "feature_order": 16,
+  "backend": "CUDA",
+  "backend_order": 0,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "motion_v2",
+  "feature_order": 16,
+  "backend": "SYCL",
+  "backend_order": 1,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "motion_v2",
+  "feature_order": 16,
+  "backend": "HIP",
+  "backend_order": 2,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "motion_v2",
+  "feature_order": 16,
+  "backend": "Metal",
+  "backend_order": 3,
+  "status": "not declared",
+  "label": "\u2013",
+  "detail": "no fragment in scripts/ci/exact_twins.d/"
+ },
+ {
+  "feature": "motion_v2_mffw",
+  "feature_order": 17,
+  "backend": "CUDA",
+  "backend_order": 0,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "motion_v2_mffw",
+  "feature_order": 17,
+  "backend": "SYCL",
+  "backend_order": 1,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "motion_v2_mffw",
+  "feature_order": 17,
+  "backend": "HIP",
+  "backend_order": 2,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "motion_v2_mffw",
+  "feature_order": 17,
+  "backend": "Metal",
+  "backend_order": 3,
+  "status": "not declared",
+  "label": "\u2013",
+  "detail": "no fragment in scripts/ci/exact_twins.d/"
+ },
+ {
+  "feature": "psnr",
+  "feature_order": 18,
+  "backend": "CUDA",
+  "backend_order": 0,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "psnr",
+  "feature_order": 18,
+  "backend": "SYCL",
+  "backend_order": 1,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "psnr",
+  "feature_order": 18,
+  "backend": "HIP",
+  "backend_order": 2,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "psnr",
+  "feature_order": 18,
+  "backend": "Metal",
+  "backend_order": 3,
+  "status": "not declared",
+  "label": "\u2013",
+  "detail": "no fragment in scripts/ci/exact_twins.d/"
+ },
+ {
+  "feature": "psnr_hvs",
+  "feature_order": 19,
+  "backend": "CUDA",
+  "backend_order": 0,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "psnr_hvs",
+  "feature_order": 19,
+  "backend": "SYCL",
+  "backend_order": 1,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "psnr_hvs",
+  "feature_order": 19,
+  "backend": "HIP",
+  "backend_order": 2,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "psnr_hvs",
+  "feature_order": 19,
+  "backend": "Metal",
+  "backend_order": 3,
+  "status": "not declared",
+  "label": "\u2013",
+  "detail": "no fragment in scripts/ci/exact_twins.d/"
+ },
+ {
+  "feature": "speed_chroma",
+  "feature_order": 20,
+  "backend": "CUDA",
+  "backend_order": 0,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "speed_chroma",
+  "feature_order": 20,
+  "backend": "SYCL",
+  "backend_order": 1,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "speed_chroma",
+  "feature_order": 20,
+  "backend": "HIP",
+  "backend_order": 2,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "speed_chroma",
+  "feature_order": 20,
+  "backend": "Metal",
+  "backend_order": 3,
+  "status": "not declared",
+  "label": "\u2013",
+  "detail": "no fragment in scripts/ci/exact_twins.d/"
+ },
+ {
+  "feature": "speed_temporal",
+  "feature_order": 21,
+  "backend": "CUDA",
+  "backend_order": 0,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "speed_temporal",
+  "feature_order": 21,
+  "backend": "SYCL",
+  "backend_order": 1,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "speed_temporal",
+  "feature_order": 21,
+  "backend": "HIP",
+  "backend_order": 2,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "speed_temporal",
+  "feature_order": 21,
+  "backend": "Metal",
+  "backend_order": 3,
+  "status": "not declared",
+  "label": "\u2013",
+  "detail": "no fragment in scripts/ci/exact_twins.d/"
+ },
+ {
+  "feature": "ssim",
+  "feature_order": 22,
+  "backend": "CUDA",
+  "backend_order": 0,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "ssim",
+  "feature_order": 22,
+  "backend": "SYCL",
+  "backend_order": 1,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "ssim",
+  "feature_order": 22,
+  "backend": "HIP",
+  "backend_order": 2,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "ssim",
+  "feature_order": 22,
+  "backend": "Metal",
+  "backend_order": 3,
+  "status": "not declared",
+  "label": "\u2013",
+  "detail": "no fragment in scripts/ci/exact_twins.d/"
+ },
+ {
+  "feature": "ssimulacra2",
+  "feature_order": 23,
+  "backend": "CUDA",
+  "backend_order": 0,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "ssimulacra2",
+  "feature_order": 23,
+  "backend": "SYCL",
+  "backend_order": 1,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "ssimulacra2",
+  "feature_order": 23,
+  "backend": "HIP",
+  "backend_order": 2,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "ssimulacra2",
+  "feature_order": 23,
+  "backend": "Metal",
+  "backend_order": 3,
+  "status": "not declared",
+  "label": "\u2013",
+  "detail": "no fragment in scripts/ci/exact_twins.d/"
+ },
+ {
+  "feature": "vif",
+  "feature_order": 24,
+  "backend": "CUDA",
+  "backend_order": 0,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "vif",
+  "feature_order": 24,
+  "backend": "SYCL",
+  "backend_order": 1,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "vif",
+  "feature_order": 24,
+  "backend": "HIP",
+  "backend_order": 2,
+  "status": "exact",
+  "label": "=",
+  "detail": "tolerance 0 (scripts/ci/exact_twins.d/)"
+ },
+ {
+  "feature": "vif",
+  "feature_order": 24,
+  "backend": "Metal",
+  "backend_order": 3,
+  "status": "not declared",
+  "label": "\u2013",
+  "detail": "no fragment in scripts/ci/exact_twins.d/"
+ }
+]

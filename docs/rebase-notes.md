@@ -16,6 +16,26 @@
   and its test (until now only `make lint-sh` ran them).
 - `.standards-baseline.json` and the README count: 495 to 479, re-recorded
   with `praetorctl baseline --record`; on conflict re-record at the tip.
+## Documentation charts from repository data (ADR-1508, 2026-10-04)
+
+`docs/site-charts`. Documentation, its generator and two CI steps; no source,
+score or build change.
+
+- `scripts/docs/generate-charts.py` owns `docs/charts/<slug>/data.json`,
+  `docs/assets/charts/`, `docs/javascripts/vendor/vega/vega-bundle.js` (and its
+  hash in that directory's `vendor.json`) and the blocks between
+  `<!-- >>> CHART <slug>` and `<!-- <<< CHART <slug> -->` on `docs/index.md`,
+  `docs/backends/index.md`, `docs/development/upstream-parity.md` and
+  `docs/development/netflix-benchmark-baselines.md`. On a conflict in any of
+  them take either side and run `make docs-fragments-write`; never hand-edit a
+  render or a block. Keep the sentinel lines when a page's text is rewritten.
+- A change to `scripts/ci/exact_twins.d/`, `LIBM_TWINS`,
+  `scripts/ci/upstream_parity.d/` or `testdata/scores_*_576.json` changes a
+  chart: regenerate in the same change, or `make docs-fragments-check` fails.
+- The renders depend on vl-convert-python's version
+  (`docs/requirements-lock.txt`); a bump re-renders every chart and the
+  bundle, and `THIRD-PARTY-LICENSES.txt` is collected again for the new Vega
+  releases.
 
 ## `lint-and-format.yml` swallows no exit status (2026-10-03)
 

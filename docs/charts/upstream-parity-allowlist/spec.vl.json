@@ -1,0 +1,127 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "title": {
+    "text": "Recorded differences from Netflix/vmaf, by extractor",
+    "anchor": "start"
+  },
+  "data": {
+    "name": "table"
+  },
+  "width": 480,
+  "height": {
+    "step": 22
+  },
+  "encoding": {
+    "y": {
+      "field": "feature",
+      "type": "nominal",
+      "sort": {
+        "field": "feature_order",
+        "op": "min"
+      },
+      "axis": {
+        "title": null,
+        "domain": false,
+        "ticks": false,
+        "labelPadding": 6
+      }
+    }
+  },
+  "layer": [
+    {
+      "mark": {
+        "type": "bar",
+        "height": {
+          "band": 0.7
+        },
+        "stroke": "@vx/surface",
+        "strokeWidth": 2
+      },
+      "encoding": {
+        "x": {
+          "aggregate": "count",
+          "type": "quantitative",
+          "title": "Allowlist entries",
+          "axis": {
+            "tickMinStep": 1,
+            "format": "d",
+            "grid": false
+          }
+        },
+        "color": {
+          "field": "kind",
+          "type": "nominal",
+          "scale": {
+            "domain": [
+              "value",
+              "error",
+              "name"
+            ],
+            "range": [
+              "@vx/cat-1",
+              "@vx/cat-2",
+              "@vx/cat-3"
+            ]
+          },
+          "legend": {
+            "orient": "bottom",
+            "title": "Kind",
+            "direction": "horizontal"
+          }
+        },
+        "order": {
+          "field": "kind_order"
+        },
+        "tooltip": [
+          {
+            "field": "feature",
+            "title": "Extractor"
+          },
+          {
+            "field": "kind",
+            "title": "Kind"
+          },
+          {
+            "aggregate": "count",
+            "type": "quantitative",
+            "title": "Entries"
+          }
+        ]
+      }
+    },
+    {
+      "transform": [
+        {
+          "aggregate": [
+            {
+              "op": "count",
+              "as": "total"
+            }
+          ],
+          "groupby": [
+            "feature",
+            "feature_order"
+          ]
+        }
+      ],
+      "mark": {
+        "type": "text",
+        "align": "left",
+        "dx": 6,
+        "fontSize": 11,
+        "color": "@vx/ink-2"
+      },
+      "encoding": {
+        "x": {
+          "field": "total",
+          "type": "quantitative"
+        },
+        "text": {
+          "field": "total",
+          "type": "quantitative",
+          "format": "d"
+        }
+      }
+    }
+  ]
+}

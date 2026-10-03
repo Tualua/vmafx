@@ -1,0 +1,39 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "title": {"text": "Per-frame VMAF, Netflix 576x324 pair, CPU snapshot", "anchor": "start"},
+  "data": {"name": "table"},
+  "width": 560,
+  "height": 220,
+  "encoding": {
+    "x": {"field": "frame", "type": "quantitative", "title": "Frame", "axis": {"tickMinStep": 1, "format": "d", "grid": false}, "scale": {"nice": false}}
+  },
+  "layer": [
+    {
+      "mark": {"type": "line", "strokeWidth": 2, "color": "@vx/cat-1", "interpolate": "linear"},
+      "encoding": {
+        "y": {"field": "cpu", "type": "quantitative", "title": "VMAF", "scale": {"zero": false}, "axis": {"grid": true}}
+      }
+    },
+    {
+      "params": [{"name": "hover", "select": {"type": "point", "fields": ["frame"], "nearest": true, "on": "pointerover", "clear": "pointerout"}}],
+      "mark": {"type": "rule", "color": "@vx/ink-3", "strokeWidth": 1},
+      "encoding": {
+        "opacity": {"condition": {"param": "hover", "empty": false, "value": 1}, "value": 0},
+        "tooltip": [
+          {"field": "frame", "type": "quantitative", "title": "Frame"},
+          {"field": "cpu", "type": "quantitative", "title": "CPU", "format": ".6f"},
+          {"field": "sycl_a380", "type": "quantitative", "title": "SYCL, Arc A380", "format": ".6f"},
+          {"field": "sycl_b580", "type": "quantitative", "title": "SYCL, Arc B580", "format": ".6f"},
+          {"field": "sycl_uhd770", "type": "quantitative", "title": "SYCL, UHD Graphics 770", "format": ".6f"}
+        ]
+      }
+    },
+    {
+      "mark": {"type": "point", "filled": true, "size": 64, "color": "@vx/cat-1", "stroke": "@vx/surface", "strokeWidth": 2},
+      "encoding": {
+        "y": {"field": "cpu", "type": "quantitative"},
+        "opacity": {"condition": {"param": "hover", "empty": false, "value": 1}, "value": 0}
+      }
+    }
+  ]
+}

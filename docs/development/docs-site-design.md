@@ -35,6 +35,7 @@ runs `mkdocs build --strict`
 | Stylesheet | `docs/stylesheets/vmafx.css` | colour and font custom properties for both schemes, typography, the prose measure, tables, code, admonitions, tabs, buttons, cards, the landing page |
 | Site configuration | `mkdocs.yml` | `extra_css` lists the stylesheet; both palettes set `primary: custom` and `accent: custom`; `font: false` stops Material from loading Google Fonts |
 | Fonts | `docs/assets/fonts/inter/`, `docs/assets/fonts/jetbrains-mono/` | the font files, the upstream licence and a `vendor.json` per family |
+| Charts | `docs/charts/`, `scripts/docs/generate-charts.py`, `docs/javascripts/charts.js` | the Vega-Lite specs, their generator and the script that makes them interactive (see [Charts](#charts)) |
 | Landing page | `docs/index.md` | the page text inside the `vx-*` wrappers described below |
 
 The stylesheet's sections follow the order of the list above. Every colour is a
@@ -83,6 +84,72 @@ changes:
 
 The front matter `hide: [navigation, toc]` gives the landing page the whole
 width.
+
+## Charts
+
+A chart is a Vega-Lite spec beside its data, rendered at docs-generation time
+([ADR-1508](../adr/1508-docs-site-toolchain-and-charts.md)). Readers see a
+static SVG and a data table; with JavaScript the chart turns interactive and
+shows exact values on hover. The data comes from repository files, never from
+numbers copied into a page.
+
+| Chart | Data | Pages |
+| --- | --- | --- |
+| `twin-exactness`: each GPU twin against the CPU extractor | `scripts/ci/exact_twins.d/`, `LIBM_TWINS` in `scripts/ci/cross_backend_calibration.py` | the landing page, [Backends](../backends/index.md) |
+| `upstream-parity-allowlist`: recorded differences from Netflix/vmaf by extractor | `scripts/ci/upstream_parity.d/` | [Upstream parity guard](upstream-parity.md) |
+| `per-frame-vmaf`: per-frame VMAF of the 576x324 snapshots | `testdata/scores_cpu_576.json`, `testdata/scores_sycl_*_576.json` | [Netflix benchmark baselines](netflix-benchmark-baselines.md) |
+
+### How a chart is built
+
+`scripts/docs/generate-charts.py` reads each chart's hand-written spec,
+`docs/charts/<slug>/spec.vl.json`, builds its rows from the sources above and
+writes:
+
+| Output | What it is |
+| --- | --- |
+| `docs/charts/<slug>/data.json` | the rows |
+| `docs/assets/charts/<slug>.light.svg`, `.dark.svg` | static renders by vl-convert-python, pinned in `docs/requirements-lock.txt` |
+| the block between `<!-- >>> CHART <slug>` and `<!-- <<< CHART <slug> -->` on each page | the two images (`#only-light`, `#only-dark`), the caption and the data table |
+| `docs/assets/charts/theme.json` | the light and dark Vega configs for the interactive chart |
+| `docs/assets/charts/manifest.json` | the hash of every render and of the inputs it came from |
+| `docs/javascripts/vendor/vega/vega-bundle.js` | vl-convert's bundle of Vega 6.2.0, Vega-Lite 6.4.1 and vega-embed 7.0.2, with `THIRD-PARTY-LICENSES.txt` and `vendor.json` |
+
+`make docs-fragments-write` runs it; `make docs-fragments-check` fails when an
+output differs. With vl-convert-python installed (the docs lock), the check
+renders every SVG and the bundle again and compares them byte for byte.
+Without it, the check says so and compares them with the manifest, which also
+catches a spec or data edit that was not rendered. The two docs CI jobs run
+`python3 scripts/docs/generate-charts.py --check --require-render`, which
+refuses to run without the renderer. The static renders measure their text
+with Liberation Sans, which vl-convert carries, so they are the same on every
+machine; a clean Debian container produces the same bytes.
+
+`docs/javascripts/charts.js` runs on every page and does nothing unless the
+page holds a chart. Then it loads the bundle, mounts vega-embed in place of the
+image with the site font and the current scheme's colours, and renders again
+when the reader toggles the scheme. Material's instant navigation runs it
+again on every page change.
+
+### Add a chart
+
+1. Write `docs/charts/<slug>/spec.vl.json` with `"data": {"name": "table"}`.
+   Colours are tokens (`"@vx/cat-1"`, `"@vx/ink-2"`, ...) from `TOKENS` in
+   the generator, so one spec serves both schemes.
+2. Add a `Chart` entry to `CHARTS` in `scripts/docs/generate-charts.py` with a
+   function that builds the rows from repository files, one that writes the
+   data table, one that writes the text alternative from the rows, and the
+   pages that show it.
+3. Put the two sentinel lines on each page, then run
+   `make docs-fragments-write`.
+
+Charts follow the house chart method: pick the form first, one axis, thin
+marks, a legend for two or more series with direct labels where they fit, and
+colours checked with the palette validator against both surfaces (the
+categorical steps and the twin chart's two ordinal steps pass). Vega-Lite has
+no pattern fills, so a categorical chart keeps to three or four series. The
+interactive chart has no keyboard focus on marks; the data table below each
+chart carries the same values. Throughput and benchmark charts wait for RC7
+evidence (`AGENTS.md` §11).
 
 ## Fonts
 
