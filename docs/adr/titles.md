@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1250), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1251), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5011,3 +5011,7 @@ Every ADR, one heading each (1250), so the site search finds an ADR by its title
 ## ADR-1597: SYCL zero-copy imports the VA surface's Cb/Cr into the shared planar chroma planes with one layout-addressed kernel
 
 [1597-sycl-zerocopy-planar-chroma-import](1597-sycl-zerocopy-planar-chroma-import.md)
+
+## ADR-1598: SYCL extractors that stage luma from host pictures read the shared device planes on both paths
+
+[1598-sycl-host-staging-to-shared-planes](1598-sycl-host-staging-to-shared-planes.md)

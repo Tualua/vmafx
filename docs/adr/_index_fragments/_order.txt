@@ -1249,3 +1249,4 @@
 1595-sycl-zerocopy-fail-loud-twin-routing
 1596-sycl-va-import-immediate-cmdlist
 1597-sycl-zerocopy-planar-chroma-import
+1598-sycl-host-staging-to-shared-planes
