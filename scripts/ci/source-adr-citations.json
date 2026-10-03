@@ -5806,7 +5806,8 @@
     },
     "1099": {
       "sites": {
-        "core/test/meson.build": 1
+        "core/test/meson.build": 1,
+        "core/test/test_sycl_zerocopy_parity.c": 1
       },
       "target": "1099-sycl-fsycl-link-propagation.md"
     },
@@ -10374,6 +10375,7 @@
     },
     "1597": {
       "sites": {
+        "core/src/feature/sycl/integer_motion_sycl.cpp": 2,
         "core/src/feature/sycl/integer_psnr_hvs_sycl.cpp": 1,
         "core/src/feature/sycl/integer_psnr_sycl.cpp": 1,
         "core/src/libvmaf.c": 1,

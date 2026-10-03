@@ -145,6 +145,10 @@ struct MotionStateSycl {
     unsigned pending_index;
     bool has_pending;
 
+    // Zero-copy frame (no host pictures): the chroma comes from the shared
+    // planes by D2D copy in motion_pre_graph (ADR-1597), not from staging.
+    bool chroma_from_shared;
+
     // Back-pointer for graph-mode checks
     VmafSyclState *sycl_state;
 };
@@ -517,8 +521,16 @@ static void motion_pre_graph(void *queue_ptr, void *priv)
     auto *s = static_cast<MotionStateSycl *>(priv);
     if (s->motion_add_uv) {
         size_t const bytes = (size_t)s->chroma_w * s->chroma_h * ((s->bpc <= 8) ? 1U : 2U);
-        q.memcpy(s->d_ref_u[s->cur_slot], s->h_stage_u, bytes);
-        q.memcpy(s->d_ref_v[s->cur_slot], s->h_stage_v, bytes);
+        /* Zero-copy: copy, never alias. The ping-pong keeps this frame for the
+         * next one to difference against, while the shared slot is overwritten
+         * by the import two frames on. The combined queue already waits for the
+         * import (vmaf_sycl_graph_submit applies the input barriers first). */
+        void const *const src_u =
+            s->chroma_from_shared ? vmaf_sycl_get_shared_plane(s->sycl_state, 1, 1U) : s->h_stage_u;
+        void const *const src_v =
+            s->chroma_from_shared ? vmaf_sycl_get_shared_plane(s->sycl_state, 1, 2U) : s->h_stage_v;
+        q.memcpy(s->d_ref_u[s->cur_slot], src_u, bytes);
+        q.memcpy(s->d_ref_v[s->cur_slot], src_v, bytes);
     }
     // Five-frame window: the kernel adds into the accumulator on every frame
     // (enqueue_motion_work()), so it is cleared on every frame.
@@ -700,12 +712,14 @@ static int submit_fex_sycl(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
         s->has_pending = true;
         return 0;
     }
-    /* motion_add_uv reads chroma from the host picture; without one the chroma terms would be
-     * stale, so refuse rather than score wrong. */
+    /* motion_add_uv reads chroma from the host picture or, on zero-copy, from
+     * the shared planes the import marked for this frame; anything else would
+     * score stale chroma, so refuse (ADR-1597). */
     if (s->motion_add_uv &&
-        vmaf_sycl_require_host_pictures("motion_sycl motion_add_uv", ref_pic, dist_pic)) {
+        vmaf_sycl_require_chroma(fex->sycl_state, "motion_sycl motion_add_uv", ref_pic, dist_pic)) {
         return -ENOTSUP;
     }
+    s->chroma_from_shared = s->motion_add_uv && ref_pic == nullptr;
     motion_stage_chroma(s, ref_pic);
 
     // Combined graph submit (once per frame — the last extractor's call
