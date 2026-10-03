@@ -10,7 +10,7 @@ hide:
 <!-- markdownlint-disable MD013 MD024 MD025 MD038 -->
 # ADR titles
 
-Every ADR, one heading each (1249), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
+Every ADR, one heading each (1250), so the site search finds an ADR by its title; ADR bodies are not in the search index ([ADR-1512](1512-docs-search-user-pages-only.md)).
 
 ## ADR-0001: Treat uncommitted benchmark result JSON as noise
 
@@ -5007,3 +5007,7 @@ Every ADR, one heading each (1249), so the site search finds an ADR by its title
 ## ADR-1596: The SYCL primary queue, which runs the VA-surface import, uses immediate command lists
 
 [1596-sycl-va-import-immediate-cmdlist](1596-sycl-va-import-immediate-cmdlist.md)
+
+## ADR-1597: SYCL zero-copy imports the VA surface's Cb/Cr into the shared planar chroma planes with one layout-addressed kernel
+
+[1597-sycl-zerocopy-planar-chroma-import](1597-sycl-zerocopy-planar-chroma-import.md)

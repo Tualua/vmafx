@@ -1,0 +1,1 @@
+| [ADR-1597](1597-sycl-zerocopy-planar-chroma-import.md) | SYCL zero-copy imports the VA surface's Cb/Cr into the shared planar chroma planes with one layout-addressed, VA-free kernel; shared chroma planes are allocated eagerly (D-01) so frame 0 has chroma; Linux VA paths only | Accepted | sycl, zero-copy, dmabuf, chroma, correctness, fork-local |

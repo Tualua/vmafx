@@ -74,6 +74,37 @@ predicted, all fixed on the same branch:
   motion twin; it is exempt in the comparator and tracked in `docs/state.md`
   (`T-GPU-MOTION-SAD-SCORE-NOT-EMITTED-2026-10-02`).
 
+## Chroma descriptor probe (A380)
+
+`VMAF_SYCL_IMPORT_DEBUG=1` now dumps every exported layer and object. Four
+probes on the Arc A380 (i915, iHD), `hevc_qsv` clips, two frames each, QSV
+zero-copy `libvmaf_sycl` ([ADR-1597](../adr/1597-sycl-zerocopy-planar-chroma-import.md)).
+All four report `num_layers=2 num_objects=1`, `obj=0` for both layers,
+`num_planes=1` per layer, modifier `0x0100000000000009` (Tile4).
+
+| Shape | layer[0] (Y) drm_format, pitch | layer[1] (UV) drm_format, offset, pitch | object size |
+| --- | --- | --- | --- |
+| NV12 576x324 | `R8` 0x20203852, 640 | `GR88` 0x38385247, 225280, 640 | 348160 |
+| NV12 1920x1080 | `R8`, 1920 | `GR88`, 2088960, 1920 | 3133440 |
+| P010 576x324 | `R16` 0x20363152, 1152 | `GR1616` 0x32335247, 405504, 1152 | 626688 |
+| P010 1920x1080 | `R16`, 3968 | `GR1616`, 4317184, 3968 | 6475776 |
+
+- **A1** (chroma is the same object at a non-zero offset with the same
+  modifier): holds. The UV offset is the luma pitch times the luma height
+  rounded up to 32 rows (352 and 1088 rows), a multiple of 4096.
+- **A2** (`layers[1].pitch == layers[0].pitch`, `drm_format` is `GR88` for
+  NV12 and `GR1616` for P010): holds in all four probes.
+- The object size equals `offset + ceil(ch/32) * (pitch/128) * 4096` in every
+  probe (for example 4317184 + 17 x 31 x 4096 = 6475776), which is the
+  whole-tile extent the validator checks.
+- The pitch exceeds the row bytes for 576 wide NV12 (640 vs 576) and 1920 wide
+  P010 (3968 vs 3840), so the kernel and its test must honour `pitch` and a
+  partial last tile column.
+- Only Tile4 was observed on this device; LINEAR and Y-tiled stay covered by the
+  host-synthesised vectors, not by hardware.
+
+No shape contradicts the planned kernel inputs; the design is unchanged.
+
 ## Open items
 
 - **Stage 2**: import the Cb/Cr planes of the VA surface (same DMA-BUF object at

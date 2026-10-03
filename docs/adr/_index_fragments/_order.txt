@@ -1248,3 +1248,4 @@
 1594-vmafx-sycl-ffmpeg-container
 1595-sycl-zerocopy-fail-loud-twin-routing
 1596-sycl-va-import-immediate-cmdlist
+1597-sycl-zerocopy-planar-chroma-import
