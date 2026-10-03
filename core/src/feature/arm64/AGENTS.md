@@ -15,7 +15,7 @@ feature `*_dispatch.c` via `vmaf_get_cpu_flags_arm()`
 feature/arm64/
   <feature>_neon.{c,h}      # NEON path (aarch64 baseline; always available on ARCH_AARCH64)
   ssimulacra2_sve2.{c,h}    # SVE2 path (ADR-0213) — runtime-gated via HWCAP2_SVE2
-  moment_sve2.{c,h}         # SVE2 path for float_moment (ADR-0584) — VLA f32→f64 reduction
+  moment_sve2.{c,h}         # SVE2 path for float_moment (ADR-0584) — VLA, lanes added in raster order (ADR-1500)
   ms_ssim_decimate_neon.*   # 9-tap LPF SIMD (one of four byte-identical TUs — see parent AGENTS.md)
 ```
 
@@ -131,6 +131,7 @@ to other halves in **same PR**:
 | **SSIMULACRA 2 SIMD** (ADR-0161 / 0162 / 0163 / 0213 / 0252) | `ssimulacra2_neon.c` + `ssimulacra2_sve2.c` + `../x86/ssimulacra2_avx2.c` + `../x86/ssimulacra2_avx512.c` + `ssimulacra2_host_neon.c` + `../x86/ssimulacra2_host_avx2.c` + scalar `../ssimulacra2.c` + Vulkan host-path `../vulkan/ssimulacra2_vulkan.c` |
 | **CAMBI stage kernels** (ADR-1256, Research-2065) | `cambi_neon.c` + `../x86/cambi_avx2.c` (upstream mirror) + `../x86/cambi_avx512.c` + scalar `../cambi.c`; NEON / AVX-512 c-values drivers share walk `../cambi_c_values_frame.h`. Dispatched on NEON: anti-dither, derivative, decimate, dp row, c-values. Kept scalar: mask row, mode filter. Tests: `test_cambi_stage_simd.c`, `test_cambi_dispatch_invariance.c`, `test_cambi_simd.c` (run under `qemu-aarch64` without aarch64 host). |
 | **CAMBI spatial-mask rows** (ADR-1256) | `cambi_neon.c` (`compute_dp_row_neon`, `compute_mask_row_neon`) + `../x86/cambi_avx2.c` + `../x86/cambi_avx512.c` twins + scalar reference in `../cambi.c`. Only the dp row is dispatched on aarch64: GCC and Clang auto-vectorize the scalar mask row into the same `cmhi` / `uzp1` sequence, so `compute_mask_row_neon` stays built, parity-tested and undispatched — re-check the compiled scalar before wiring it. The dp row keeps a single add on the loop-carried chain; keep that shape. Tested in `../../test/test_cambi_spatial_mask_simd.c` (run under `qemu-aarch64` when no aarch64 host is available). |
+| **float_moment SIMD** ([ADR-1500](../../../../docs/adr/1500-arm-float-moment-scalar-order.md)) | `moment_neon.c` + `moment_sve2.c` + `../x86/moment_avx2.c` + `../x86/moment_avx512.c` + scalar `../moment.c`. Every kernel squares in `float` (second moment) and adds each value into one `double` in raster order, one after the other: the scalar's bits on every input and SVE vector length. No lane accumulators, no per-row vector sums, no `svaddv` / `vaddvq_f64` reduction: past 2^53 units the sum rounds on every add and any other grouping is another number. Gate: `test_moment_simd` (`==`) under `qemu-aarch64` with `sve=off`, `sve128`, `sve256`, `sve512` and `sve2048` after touching any of them. |
 | **Motion v2 NEON** (ADR-0145) | `motion_v2_neon.c` uses **arithmetic** right-shift (`vshrq_n_s64(v, 16)` / `vshlq_s64(v, -(int64_t)bpc)`); matches scalar. Sister `../x86/motion_v2_avx2.c` uses `_mm256_srlv_epi64` (logical) — knowingly out-of-spec until the AVX2 audit. **Do NOT port the AVX2 logical pattern here.** 4-lane stride + scalar tails on both sides of the row are load-bearing for the x_conv edge-mirror contract. |
 
 Complete invariants in [../AGENTS.md
@@ -159,25 +160,25 @@ Different VLA strategies:
 
 - `ssimulacra2_sve2.c` — locked to fixed 4-lane predicate
   (`svwhilelt_b32(0, 4)`) for ADR-0161 byte-identity.
-- `moment_sve2.c` — fully VLA: steps by `svcntw()` (full f32 register) per
-  iteration, widening **both** lane halves to f64. Wider registers give
-  throughput benefit at Neoverse V2 / Cortex-X4 widths.
+- `moment_sve2.c` — fully VLA: loads `svcntw()` samples under
+  `svwhilelt_b32(j, w)`, stores the active lanes (at most 64, the 2048-bit
+  maximum) and adds them into the running `double` in lane order
+  ([ADR-1500](../../../../docs/adr/1500-arm-float-moment-scalar-order.md)).
+  The active lanes of a `whilelt` predicate are the first ones, so the adds
+  are the scalar's at every vector length. **On rebase: do not bring back
+  vector widening and `svaddv_f64` per row** (vector-length-dependent
+  grouping, not the scalar's sum past 2^53 units).
 
-**CRITICAL — SVE `FCVT .s→.d` lane mapping (`moment_sve2.c`).** SVE
-`svcvt_f64_f32` (FCVT) does **not** compact lower contiguous f32 lanes into
-f64 lanes. Destination f64 element `i` reads source f32 element `2*i`
-(even-indexed lane in low half of 64-bit container, per ARM A64 reference).
-Odd (top-half) f32 lanes read only by SVE2 `svcvtlt_f64_f32` (FCVTLT),
-mapping f64 element `i` to f32 element `2*i+1`. Earlier `moment_sve2.c`
-stepped by `svcntd()` and used only `svcvt_f64_f32_x` (assumed contiguous
-lower-lane widening): on SVE register >64 bits, silently summed even f32
-lanes x2 and dropped odd lanes (qemu relative error ~45% at 128-bit VL;
-caught by `test_moment_simd.c` SVE2 under emulation, never by x86 CI).
-Correct VLA pattern processes full `svcntw()` register, widens even lanes via
-`svcvt_f64_f32_x` + odd lanes via `svcvtlt_f64_f32_x`, accumulates with
-merging adds (`svadd_f64_m`, not `_x`, so partial-tail iteration cannot feed
-undefined inactive lanes into reduction). **On rebase: do not revert to
-single-FCVT `svcntd()` step.** FCVTLT requires FEAT_SVE2 (TU build gate).
+Background for any future SVE kernel that widens f32 to f64 in a vector:
+`svcvt_f64_f32` (FCVT) reads source f32 element `2*i` into f64 element `i`,
+not the lower contiguous lanes; the odd lanes need SVE2 `svcvtlt_f64_f32`
+(FCVTLT). An earlier `moment_sve2.c` widened with FCVT alone and summed the
+even lanes twice on registers wider than 64 bits.
+
+The SVE2 test cases of a `test_*_simd.c` probe `vmaf_get_cpu_flags_arm()`.
+`vmaf_get_cpu_flags()` reads 0 until `vmaf_init_cpu()` has run, so a test
+that asks it without calling `vmaf_init_cpu()` skips its cases on every
+processor (`test_moment_simd` and `test_iqa_convolve` did until ADR-1500).
 
 `ssimulacra2_sve2.c` is **not** free perf knob:
 

@@ -316,7 +316,7 @@
     "core/tools/yuv_input.c"
   ],
   "compile_failures": [],
-  "total_warnings": 115,
+  "total_warnings": 114,
   "total_nolint_uncited": 0,
   "warnings": {
     "core/include/libvmaf/dnn.h": 8,
@@ -351,10 +351,26 @@
     "core/test/test_float_adm_dwt2_neon.c": 4,
     "core/test/test_float_adm_neon.c": 7,
     "core/test/test_float_motion_neon.c": 3,
-    "core/test/test_moment_simd.c": 1,
     "core/test/test_motion_neon.c": 2,
     "core/test/test_psnr_neon.c": 6,
     "core/test/test_ssim_neon.c": 1
   },
-  "nolint_uncited": {}
+  "nolint_uncited": {},
+  "scoped_updates": [
+    {
+      "sources": [
+        "core/test/test_moment_simd.c"
+      ],
+      "clang_tidy_version": "22.1.8",
+      "changes": {
+        "core/test/test_moment_simd.c": {
+          "warnings": [
+            1,
+            0
+          ]
+        }
+      },
+      "previous_baseline_sha256": "42b6e0c96ea8847a4d6de9ba456fa0069d9bd8e0cbe1a4023ad2a8da8770d833"
+    }
+  ]
 }

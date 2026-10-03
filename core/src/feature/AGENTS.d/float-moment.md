@@ -2,25 +2,29 @@
 paths:
   - core/src/feature/moment.c
   - core/src/feature/moment.h
-invariant: compute_2nd_moment reduction order and floating-point accumulation contracts.
+  - core/src/feature/arm64/moment_neon.c
+  - core/src/feature/arm64/moment_sve2.c
+invariant: compute_2nd_moment adds float squares into one double in raster order; every SIMD kernel returns its bits.
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # moment.c compute_2nd_moment Reduction Contract
 
-- **`moment.c::compute_2nd_moment` reduction contract** (ADR-0179 / ADR-0987):
+- **`moment.c::compute_2nd_moment` reduction contract** (ADR-0179 / ADR-0987,
+  [ADR-1500](../../../../docs/adr/1500-arm-float-moment-scalar-order.md)):
   `const float term = pic_ * pic_; cum += (double)term;` where float squaring
   is evaluated in single precision and explicitly cast to `double` before
-  accumulation into `cum`. Unlike `convolve.c`
-  ([ADR-0138](../../../../docs/adr/0138-iqa-convolve-avx2-bitexact-double.md),
-  bit-exact), `moment.c` is governed by
-  [ADR-0179](../../../../docs/adr/0179-float-moment-simd.md) (AVX2/NEON) and
-  [ADR-0987](../../../../docs/adr/0987-avx512-float-moment.md) (AVX-512) under a
-  **tolerance-bounded non-byte-exact reduction contract**
-  (`MOMENT_REL_TOL = 1e-7`), verified by `test_moment_simd`. Decoupling the
+  accumulation into `cum`, one sample after the other in raster order. Every
+  SIMD kernel (`x86/moment_avx2.c`, `x86/moment_avx512.c`,
+  `arm64/moment_neon.c`, `arm64/moment_sve2.c`) adds its lanes into one
+  `double` in that order and returns these bits on every input; past 2^53
+  units the sum rounds on every add, so any other grouping is another number.
+  `test_moment_simd` asserts `==` for every kernel the build has (the 1e-7
+  tolerance of ADR-0179 / ADR-0987 is superseded). Decoupling the
   float product into intermediate `term` and explicit `(double)` cast
   removes the CodeQL `cpp/integer-multiplication-cast-to-long` source pattern
   behind historically dismissed Alert 707 (
   [Research-2031](../../../../docs/research/2031-codeql-float-widening-multiplication.md))
   by eliminating compiler-generated widening conversions. **On rebase:** do not
-  pre-widen operands (`(double)pic_ * pic_`) or revert to direct implicit
-  widening (`cum += pic_ * pic_`).
+  pre-widen operands (`(double)pic_ * pic_`), revert to direct implicit
+  widening (`cum += pic_ * pic_`) or reorder the adds; a change to this loop
+  changes every SIMD kernel in the same PR.

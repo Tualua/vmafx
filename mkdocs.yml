@@ -1614,6 +1614,7 @@ nav:
         - "ADR-1497: float-moment-twins-cpu-sum-past-2-53": adr/1497-float-moment-twins-cpu-sum-past-2-53.md
         - "ADR-1499: float-psnr-twins-cpu-row-order": adr/1499-float-psnr-twins-cpu-row-order.md
       - "1500-1599 — Misc":
+        - "ADR-1500: arm-float-moment-scalar-order": adr/1500-arm-float-moment-scalar-order.md
         - "ADR-1501: sycl-float-adm-terms-large-grf-xe2": adr/1501-sycl-float-adm-terms-large-grf-xe2.md
       - "By tag":
         - Overview: adr/by-tag/index.md

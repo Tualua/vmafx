@@ -60,7 +60,7 @@ matches the `Backends` column in
 | `adm`          | yes         | no          | matches AVX2 path bit-for-bit                                 |
 | `motion`       | yes         | no          | fixed-point legacy `motion`                                   |
 | `motion_v2`    | yes         | no          | pipelined fused-blur variant                                  |
-| `float_moment` | yes         | yes         | 1st/2nd moment reduction; SVE2 VLA f32→f64 path (ADR-0584)   |
+| `float_moment` | yes         | yes         | the scalar function's bits on every input and SVE vector length; values added in raster order — see [ADR-1500](../../adr/1500-arm-float-moment-scalar-order.md) |
 | `float_motion` | yes         | no          | float-pipeline twin                                           |
 | `float_adm`    | yes         | no          | float-pipeline twin                                           |
 | `float_psnr`   | yes         | no          | per-plane float PSNR                                          |
@@ -93,6 +93,16 @@ features that ship a determinism contract:
   lanes simply stay false in the predicate. Validated under
   `qemu-aarch64-static -cpu max` via the cross-file
   [`build-aux/aarch64-linux-gnu-sve2.ini`](../../../build-aux/aarch64-linux-gnu-sve2.ini).
+- `float_moment` — pinned by
+  [ADR-1500](../../adr/1500-arm-float-moment-scalar-order.md). The NEON and
+  SVE2 kernels add each sample, or its float square, into one `double` in
+  raster order, as the scalar loop and the x86 kernels do, so a 16-bit frame
+  whose sum of squares passes 2^53 units gets the scalar's bits.
+  `core/test/test_moment_simd.c` asserts `==`; run it under `qemu-aarch64`
+  with `-cpu max,sve=off` and with `sve128=on`, `sve256=on`, `sve512=on` and
+  `sve2048=on,sve-default-vector-length=256` to cover NEON and each vector
+  length. Until 2026-10-03 the kernels added in lanes and differed from the
+  scalar function on such frames.
 - `ms_ssim_decimate` — pinned by ADR-0125; per-lane `vfmaq_n_f32`
   with broadcast coefficients matches the scalar
   `fmaf` chain exactly.

@@ -751,6 +751,17 @@ linked AGENTS.md before resolving conflicts.
   `core/test/test_hip_float_moment_exact_contract.py` guards it without a
   device, `test_hip_float_moment_parity` on one (`==`, past 2^53 units too,
   ADR-1497 below).
+- **The NEON and SVE2 `float_moment` kernels add in the scalar's order ([ADR-1500](../adr/1500-arm-float-moment-scalar-order.md))**:
+  `core/src/feature/arm64/moment_neon.c` and `moment_sve2.c` store each
+  vector of samples (squared in `float` for the second moment) and add the
+  lanes into one `double` one after the other, as `moment.c` and
+  `x86/moment_avx2.c` do; the SVE2 kernel adds the first `svcntp_b32` active
+  lanes of a `svwhilelt_b32` predicate and does not depend on the vector
+  length. A sync must not bring back lane accumulators, per-row vector sums or
+  a vector reduction (`vaddvq_f64`, `svaddv_f64`): past 2^53 units the sum
+  rounds on every add. `core/test/test_moment_simd.c` (`==`) guards it; run
+  it under `qemu-aarch64` with `sve=off`, `sve128`, `sve256`, `sve512` and
+  `sve2048` after touching any of the four kernels.
 - **CUDA twins declared exact as a group ([ADR-1457](../adr/1457-cuda-exact-twins-declared.md))**:
   `scripts/ci/exact_twins.d/{motion,motion_debug,motion_v2,psnr,float_ssim,float_ssim_lcs,float_ms_ssim,float_ms_ssim_lcs,cambi}.cuda`
   make the parity gate compare those cells with tolerance 0, and

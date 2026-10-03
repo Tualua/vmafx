@@ -51,7 +51,7 @@
 #endif
 #endif
 #if ARCH_AARCH64
-#include "cpu.h"
+#include "arm/cpu.h"
 #include "feature/arm64/convolve_neon.h"
 #endif
 #include "test.h"
@@ -477,7 +477,10 @@ static int detect_simd_support(void)
     }
     return 1;
 #elif ARCH_AARCH64
-    const unsigned cpu_flags = vmaf_get_cpu_flags();
+    /* The processor's own flags: vmaf_get_cpu_flags() reads 0 until
+     * vmaf_init_cpu() has run, which this test never calls, and skipped the
+     * NEON cases on every processor until ADR-1500. */
+    const unsigned cpu_flags = vmaf_get_cpu_flags_arm();
     g_has_neon = (cpu_flags & VMAF_ARM_CPU_FLAG_NEON) ? 1 : 0;
     if (!g_has_neon) {
         (void)fprintf(stderr, "skipping: aarch64 CPU lacks NEON\n");

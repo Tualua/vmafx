@@ -1552,10 +1552,21 @@ The CPU squares each sample in fp32, which rounds above 12 bits.
 ([ADR-1453](../adr/1453-cuda-float-moment-cpu-float-squares.md)),
 `float_moment_hip` (ADR-1447) and `float_moment_sycl`
 ([ADR-1449](../adr/1449-sycl-float-moment-cpu-float-squares.md)) add that
-fp32 square as an integer and equal the CPU extractor at 8, 10, 12 and 16
-bits, on every frame of up to 2 097 152 pixels; on a larger 16-bit frame
-whose sum of squares passes 2^53 the CPU's own sum rounds as it goes and the
-twins stay within a derived bound (2.7e-7 measured at 2560x1440).
+fp32 square as an integer. On a 16-bit frame of more than 2 097 152 pixels
+the sum of squares can pass 2^53 units, and from there the CPU's own `double`
+rounds as it adds; since
+[ADR-1497](../adr/1497-float-moment-twins-cpu-sum-past-2-53.md) the twins form
+that rounded sum on the device and equal the CPU extractor at 8, 10, 12 and
+16 bits on every frame.
+
+The CPU kernels return the same bits whichever instruction set runs: the
+AVX2, AVX-512, NEON and SVE2 kernels square in vectors and add the values
+into one `double` one after the other, in the scalar loop's order, so the
+second moment of a 16-bit 4K frame is the same on x86 and aarch64 and on
+every SVE vector length. Before
+[ADR-1500](../adr/1500-arm-float-moment-scalar-order.md) (2026-10-03) the
+NEON and SVE2 kernels added in lanes and could return a different last digit
+on such frames (`test_moment_simd` has the cases).
 
 **Limitations** — Stateless per-frame. Float pipeline (the picture
 plane is copied to float32 before the moments are computed); the

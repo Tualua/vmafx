@@ -19,6 +19,24 @@ and its SIMD rows are untouched.
   bound helper: `core/test/test_metal_float_psnr_parity.c` calls
   `float_psnr_twin_past_2_53_exact()` (case
   `test_float_psnr_16bit_past_2_53_exact`), as the CUDA, SYCL and HIP tests do.
+## The NEON and SVE2 `float_moment` kernels add in the scalar's order (ADR-1500, 2026-10-03)
+
+`fix/arm-moment-scalar-order`. Fork-added files only (`moment_neon.c`,
+`moment_sve2.c`, the two tests); Netflix/vmaf has no aarch64 moment kernel
+and `moment.c` / `float_moment.c` are untouched. x86 object code is
+unchanged.
+
+- `core/src/feature/arm64/moment_neon.c` and `moment_sve2.c` store each
+  vector and add the lanes into one `double` in raster order (`moment_add4()`,
+  `moment_add_active()`), as `x86/moment_avx2.c` does. A sync that changes
+  `moment.c::compute_1st_moment()` / `compute_2nd_moment()` changes all four
+  SIMD kernels in the same PR; none may go back to lane accumulators or a
+  vector reduction.
+- `core/test/test_moment_simd.c` is rewritten around one kernel table and
+  asserts `==` (the 1e-7 `MOMENT_REL_TOL` is gone); its SVE2 case and the NEON
+  cases of `core/test/test_iqa_convolve.c` probe `vmaf_get_cpu_flags_arm()`
+  (`arm/cpu.h`). Do not switch them back to `vmaf_get_cpu_flags()` without a
+  `vmaf_init_cpu()` call: the cases then skip on every processor.
 
 ## icx and icpx builds link glibc's libm, not Intel's libimf (ADR-1495, 2026-10-03)
 

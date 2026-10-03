@@ -1202,3 +1202,4 @@
 1496-metal-gate-in-tester-bundle
 1499-float-psnr-twins-cpu-row-order
 1501-sycl-float-adm-terms-large-grf-xe2
+1500-arm-float-moment-scalar-order

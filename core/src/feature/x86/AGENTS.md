@@ -74,7 +74,7 @@ Complete invariants live in [../AGENTS.md
 | `adm_avx2.c`, `adm_avx512.c`, `/core/src/feature/integer_adm.c`, `/core/src/feature/adm_csf_fixed_point.h` | [integer-adm](AGENTS.d/integer-adm.md) | Integer ADM tail bounds are measured from the loop start, not from column 0. |
 | `integer_ssim_avx2.c`, `integer_ssim_avx2.h`, `/core/src/feature/integer_ssim.c` | [integer-ssim](AGENTS.d/integer-ssim.md) | Layout of integer_ssim_moments_t in same order as ssim_moments is a cross-TU invariant. |
 | `convolve_avx2.c`, `convolve_avx512.c`, `/core/src/feature/iqa/convolve.c`, `/core/src/feature/common/convolution_avx.c` | [iqa-convolve](AGENTS.d/iqa-convolve.md) | Reserved-identifier hygiene: no leading-underscore names. |
-| `moment_avx2.c`, `moment_avx512.c`, `/core/src/feature/float_moment.c` | [moment](AGENTS.d/moment.md) | Do not change the sequential per-lane double accumulation order without updating parity tests. |
+| `moment_avx2.c`, `moment_avx512.c`, `/core/src/feature/float_moment.c` | [moment](AGENTS.d/moment.md) | Every lane is added into one double in raster order; the scalar bits on every input (ADR-1500). |
 | `motion_avx2.c`, `motion_avx512.c`, `float_motion_avx2.c`, `float_motion_avx512.c` | [motion](AGENTS.d/motion.md) | motion_v2_avx2.c using logical shift is knowingly out-of-spec vs scalar; do not port to NEON. |
 | `ms_ssim_decimate_avx2.c`, `ms_ssim_decimate_avx512.c`, `/core/src/feature/ms_ssim_decimate.c` | [ms-ssim](AGENTS.d/ms-ssim.md) | The 9-tap filter table appears verbatim in all four; diff all four when any one moves. |
 | `/core/src/meson.build`, `/core/src/feature/feature_extractor.cpp` | [orientation](AGENTS.d/orientation.md) | Cross-feature plumbing lives in parent directory; feature/x86 contains kernel TUs. |
