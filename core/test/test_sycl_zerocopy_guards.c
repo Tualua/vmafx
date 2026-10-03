@@ -213,7 +213,7 @@ static const GuardRow guard_rows[] = {
     {"ssimulacra2_sycl", NULL, NULL, 8u, -ENOTSUP, NULL, 0},
     {"ssimulacra2_sycl", NULL, NULL, 8u, 0, "ssimulacra2", 1},
     {"speed_chroma_sycl", NULL, NULL, 8u, -ENOTSUP, NULL, 0},
-    {"speed_temporal_sycl", NULL, NULL, 8u, -ENOTSUP, NULL, 0},
+    {"speed_temporal_sycl", NULL, NULL, 8u, 0, "Speed_temporal_feature_speed_temporal_score", 0},
     {"psnr_sycl", NULL, NULL, 8u, -ENOTSUP, NULL, 0},
     {"psnr_hvs_sycl", NULL, NULL, 8u, -ENOTSUP, NULL, 0},
     {"motion_sycl", "motion_add_uv", "true", 8u, -ENOTSUP, NULL, 0},

@@ -629,6 +629,17 @@ static const LumaFeature g_luma_features[] = {
      * bit-exact with it (ADR-1446). */
     {"ciede_sycl", "ciede", {"ciede2000"}, 1u, NULL, NULL, 1, 1e-9},
     {"ssimulacra2_sycl", "ssimulacra2", {"ssimulacra2"}, 1u, NULL, NULL, 1, 0.0},
+    /* SpEED twins (ADR-1358, ADR-1462): bit-exact with the CPU on host upload, and the
+     * D2D pipeline upload makes zero-copy equal host upload. speed_temporal keeps two
+     * raw luma slots, so the 5 frames wrap its ring twice. */
+    {"speed_temporal_sycl",
+     "speed_temporal",
+     {"Speed_temporal_feature_speed_temporal_score"},
+     1u,
+     NULL,
+     NULL,
+     0,
+     0.0},
 };
 #define N_LUMA_FEATURES ((unsigned)(sizeof(g_luma_features) / sizeof(g_luma_features[0])))
 
