@@ -134,7 +134,9 @@ Staged stage(const VmafTestOrdsumCase &c)
     return s;
 }
 
-/* Device allocation released on every exit, exceptions included. */
+/* Device allocation released on every exit, exceptions included. The copy
+ * from `host` is only enqueued: the caller keeps `host` alive until it waits
+ * on the queue. */
 template <typename T> class DeviceBlock
 {
   public:
@@ -199,8 +201,14 @@ uint64_t walk_on_device(sycl::queue &q, const VmafTestOrdsumCase &c, const Stage
     const DeviceBlock<int16_t> slot_binade(q, s.slot_binade);
     const DeviceBlock<uint64_t> kept(q, s.terms);
     const DeviceBlock<int64_t> run_units(q, s.run_units);
-    const DeviceBlock<uint64_t> terms(q, std::vector<uint64_t>(c.terms, c.terms + c.count));
-    const DeviceBlock<uint64_t> out(q, std::vector<uint64_t>(1u));
+    /* DeviceBlock only enqueues the copy from `host`, so every source lives
+     * until the wait below; a temporary here is freed before a deferred
+     * (batched command list) copy runs, and the kernel then reads freed
+     * heap memory. */
+    const std::vector<uint64_t> host_terms(c.terms, c.terms + c.count);
+    const std::vector<uint64_t> host_out(1u);
+    const DeviceBlock<uint64_t> terms(q, host_terms);
+    const DeviceBlock<uint64_t> out(q, host_out);
     q.wait_and_throw();
     const SumWalk walk = {.plan = plan.get(),
                           .units = units.get(),
@@ -217,20 +225,6 @@ uint64_t walk_on_device(sycl::queue &q, const VmafTestOrdsumCase &c, const Stage
     return sum;
 }
 
-/* Immediate command lists, as the library's primary queue (ADR-1596): under
- * UR_L0_USE_IMMEDIATE_COMMANDLISTS=0 the Level Zero driver silently drops
- * work submitted against device memory mapped at an address that was just
- * freed, and every case here allocates and frees its blocks. A batched queue
- * made this test read the previous case's data on an Arc A380. */
-sycl::property_list probe_queue_props()
-{
-#ifdef SYCL_EXT_INTEL_QUEUE_IMMEDIATE_COMMAND_LIST
-    return sycl::property_list{sycl::ext::intel::property::queue::immediate_command_list{}};
-#else
-    return sycl::property_list{};
-#endif
-}
-
 int run_on_device(VmafTestOrdsumCase *c, const Staged &s)
 {
     std::optional<sycl::device> device;
@@ -240,7 +234,7 @@ int run_on_device(VmafTestOrdsumCase *c, const Staged &s)
         return -ENODEV;
     }
     try {
-        sycl::queue q(*device, probe_queue_props());
+        sycl::queue q(*device);
         c->sum = walk_on_device(q, *c, s);
     } catch (const std::exception &) {
         return -EIO;
