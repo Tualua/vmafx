@@ -10394,6 +10394,7 @@
     },
     "1598": {
       "sites": {
+        "core/src/feature/sycl/float_adm_sycl.cpp": 2,
         "core/src/feature/sycl/float_motion_sycl.cpp": 1,
         "core/src/feature/sycl/float_psnr_sycl.cpp": 1,
         "core/src/feature/sycl/float_vif_sycl.cpp": 2,
