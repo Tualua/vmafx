@@ -1053,7 +1053,8 @@ vmaf ... --backend sycl --feature float_motion_sycl=motion_max_val=4
 
 The JSON `feature_backends` receipt lists `psnr_sycl`, `float_ssim_sycl` and
 `float_motion_sycl` for these runs. `--feature float_motion` on SYCL reports
-`motion` and `motion2`; `motion3` needs `--backend cpu`.
+`motion`, `motion2` and `motion3`; before 2026-10-03 it reported no `motion3`
+([below](#float_motion_sycl-emits-motion3-2026-10-03)).
 
 The CUDA, HIP and Metal twins still lack these options; see
 `T-BUG048-GPU-OPTION-PARITY-REMAINDER-2026-09-26` in
@@ -1327,7 +1328,7 @@ do not compile a kernel that requires 8
 
 The parity gate compares this twin with tolerance 0
 ([cross-backend gate](../../development/cross-backend-gate.md)). The twin
-still provides no `motion3`; that score comes from the CPU extractor.
+provides `motion3` since 2026-10-03 ([next section](#float_motion_sycl-emits-motion3-2026-10-03)).
 
 ```bash
 ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/ci/cross_backend_parity_gate.py \
@@ -1339,6 +1340,48 @@ ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/ci/cross_backend_parity_gate
 
 The cell reports `exact:ADR-1397` and a largest difference of 0; it does so
 on all four fixtures above.
+
+## `float_motion_sycl` emits `motion3` (2026-10-03)
+
+`float_motion_sycl` provided `motion` and `motion2` only. A
+`--backend sycl --feature float_motion` run ran the twin and wrote no
+`motion3` without a warning, and a request with `motion_blend_factor` or
+`motion_blend_offset` ran on the CPU, because the twin did not declare them
+(`T-GPU-FLOAT-MOTION3-MISSING-2026-09-30` in [`state.md`](../../state.md)).
+The twin now provides `VMAF_feature_motion3_score` and takes both options
+(aliases `mbf` / `mbo`), as the CUDA and HIP twins do. `motion3` is computed
+on the host from the SADs the twin already returns bit for bit (ADR-1411),
+with the CPU's `motion_blend_clip()`: the score is weighted by
+`motion_fps_weight`, blended, then capped at `motion_max_val`. Frame 0 takes
+the first SAD, the last frame comes from `flush()`, a one-frame input gets
+`motion3` = 0, and `motion_force_zero` publishes 0 for it. No kernel changed.
+
+Measured on the Arc A380 at `--precision max` against `--backend cpu`, all
+outputs and pooled values identical:
+
+| Fixture | Option sets | Frames identical |
+|---|---|---|
+| Netflix 576x324 | defaults, blend, `mfw=2:mmxv=4`, all four score options, `motion_force_zero` | 48 of 48, each of the three scores |
+| Netflix 576x324, `--frame_cnt 1` | the same five | 1 of 1 (`motion3` = 0) |
+| Checkerboard 1920x1080, 1 px and 10 px shift | the same five | 3 of 3 |
+| BBB 3840x2160 | defaults, blend | 200 of 200 |
+
+"Blend" is `motion_blend_factor=0.5:motion_blend_offset=2`, "all four" adds
+`motion_fps_weight=2:motion_max_val=5` to `motion_blend_factor=0.25:motion_blend_offset=3`.
+The parity gate's `float_motion` cell now compares `motion3` too; a twin that
+lacks it fails the cell (`missing metrics`), which the twin before this change
+does. `test_sycl_twin_option_parity` carries the `motion3`, blend,
+weight-and-cap, `motion_force_zero` and one-frame cases, and also the cases
+of the 2026-09-30 follow-ups above (flat identical frames, a single-pixel
+frame, `apsnr` with `--subsample 2`, `motion_v2` weight, cap and one frame),
+which it did not have before.
+
+```bash
+vmaf --reference ref.yuv --distorted dist.yuv --width 576 --height 324 \
+    --pixel_format 420 --bitdepth 8 --backend sycl --no_prediction \
+    --feature float_motion=motion_blend_factor=0.5:motion_blend_offset=2 \
+    --precision max --json --output /dev/stdout
+```
 
 ## `float_ms_ssim_sycl` computes the CPU's arithmetic (2026-10-01)
 

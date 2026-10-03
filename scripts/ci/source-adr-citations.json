@@ -8744,6 +8744,7 @@
         "core/src/feature/sycl/float_vif_sycl.cpp": 1,
         "core/test/test_sycl_float_motion_parity.c": 2,
         "core/test/test_sycl_kernel_source_contract.py": 2,
+        "core/test/test_sycl_twin_option_parity.c": 2,
         "scripts/ci/cross_backend_parity_gate.py": 1
       },
       "target": "1411-sycl-float-motion-cpu-float-sum.md"

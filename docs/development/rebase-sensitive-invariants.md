@@ -354,12 +354,20 @@ linked AGENTS.md before resolving conflicts.
   the same contract as the CUDA twin above. `fm_row_sad()` in
   `core/src/feature/sycl/float_motion_sycl.cpp` is one plain left-to-right
   loop per work-item, launched over `sycl::range<1>(height)` at sub-group
-  size 8, and `collect()` finishes through
+  size 16 (ADR-1468), and `collect()` finishes through
   `core/src/feature/float_motion_sad.h`. No group, sub-group or atomic
   reduction may return to the TU, and the blur needs the SYCL strict FP line
   (ADR-1367). `core/test/test_sycl_float_motion_parity.c` (`==`) and
   `core/test/test_sycl_kernel_source_contract.py` guard it; the row kernel
   must stay free of scratch memory (`test_sycl_kernel_scratch`, ADR-1395).
+  Since 2026-10-03 the twin also emits `motion3` on the host with the CPU's
+  `motion_blend_clip()` and declares `motion_blend_factor` /
+  `motion_blend_offset` as the CPU table does
+  (`T-GPU-FLOAT-MOTION3-MISSING-2026-09-30`). A change to how
+  `float_motion.c` emits `motion3` (index 0 from the first SAD, the flush
+  tail, 0 for one frame) changes `collect_fex_sycl()` / `flush_fex_sycl()` in
+  the same PR; `test_sycl_twin_option_parity` compares every output with
+  `==`, and the gate's `float_motion` cell lists `motion3`.
 - **`float_ms_ssim_sycl` is the CPU's arithmetic ([ADR-1414](../adr/1414-sycl-float-ms-ssim-cpu-arithmetic.md))**:
   the decimate spells each tap `sycl::fma()` as `ms_ssim_decimate.c` fuses
   it; the window sums and the `l` / `c` / `s` terms come from

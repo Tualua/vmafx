@@ -15,6 +15,24 @@ no score of a GCC or clang build moves.
   library by name. `core/test/test_icx_system_libm.py` (new, suite `fast`) and
   two cases in `core/test/test_strict_fp_compiler_args.py` guard it; the SYCL
   lanes of `libvmaf-build-matrix.yml` run the new test as a step.
+## `float_motion_sycl` emits `motion3` (2026-10-03)
+
+`fix/sycl-float-motion3-and-option-tests`. Fork-only files; no upstream file
+touched. No score of an existing output moves.
+
+- `core/src/feature/sycl/float_motion_sycl.cpp` provides
+  `VMAF_feature_motion3_score` and declares `motion_blend_factor` /
+  `motion_blend_offset` (host code only, no kernel). Its `collect()` /
+  `flush()` mirror CPU `float_motion.c::extract()` / `flush()`; an upstream
+  sync that changes how the CPU emits `motion3` changes this file in the same
+  PR, as for `float_motion_cuda.c` and `float_motion_hip.c`.
+- `FEATURE_METRICS["float_motion"]` in `scripts/ci/cross_backend_parity_gate.py`
+  and `scripts/ci/cross_backend_vif_diff.py` lists `motion3`; keep both lists
+  equal. A twin that drops `motion3` fails the cell.
+- `core/test/test_sycl_twin_option_parity.c` gains the `motion3` cases and the
+  #1645 regression cases (flat identical frames, single pixel, `apsnr` with
+  `--subsample 2`, `motion_v2` weight / cap / one frame), plus
+  `test_twin_options_are_cpu_options`.
 
 ## The parity allowlist page always has a Pending section (2026-10-03)
 

@@ -14,16 +14,35 @@
  *   float_ssim_sycl    enable_lcs, enable_db, clip_db
  *   float_motion_sycl  motion_max_val (and motion_force_zero, which it
  *                      declared but did not honour, and motion_fps_weight
- *                      on the debug `motion` score)
+ *                      on the debug `motion` score), and motion3 with
+ *                      motion_blend_factor and motion_blend_offset, which
+ *                      the twin did not emit
+ *                      (T-GPU-FLOAT-MOTION3-MISSING-2026-09-30)
+ *
+ * and the CPU-parity defects #1645 fixed
+ * (T-GPU-TWIN-PARITY-GAPS-OUTSIDE-CUDA-2026-09-30, SYCL part):
+ *
+ *   float_ssim_sycl /  identical windows scored as the CPU scores them, not
+ *   integer_ssim_sycl  forced to exactly 1 (flat frames, a single pixel)
+ *   psnr_sycl          VMAF_FEATURE_EXTRACTOR_TEMPORAL like the CPU, so
+ *                      --subsample keeps every frame in the apsnr_* totals
+ *   motion_v2_sycl     the stored SAD carries motion_fps_weight and the
+ *                      motion_max_val cap like the CPU's, and a one-frame
+ *                      run emits motion2_v2 / motion3_v2 = 0
  *
  * Positive: each option set on both sides gives the CPU score, per frame --
  * bit-exact for PSNR (integer SSE, same host arithmetic via psnr_score.h),
- * within the twin's existing parity tolerance otherwise. Negative: an
- * option left at its default adds no output, and an unknown key or an
- * out-of-range value is refused by both sides. Boundary: identical frames
- * (SSE == 0, perfect SSIM) report the same sentinel / +inf / clip_db ceiling
- * as the CPU; motion_max_val = 0 zeroes every score; odd 4:2:0 and 10-bit
- * 4:2:2 geometry.
+ * integer motion and float motion (ADR-1411), within the twin's existing
+ * parity tolerance otherwise. Negative: an option left at its default adds
+ * no output, an unknown key or an out-of-range value is refused by both
+ * sides, and no twin declares an option its CPU extractor lacks. Boundary:
+ * identical frames (SSE == 0, perfect SSIM) report the same sentinel / +inf /
+ * clip_db ceiling as the CPU; identical flat frames report the CPU's finite
+ * 72.247 dB float_ssim (the CPU's l term is not exactly 1 there) and +inf
+ * ssim, and a single-pixel frame the CPU's integer SSIM value; `--subsample
+ * 2` still sums every frame into apsnr_*; motion_max_val = 0 zeroes every
+ * score; odd 4:2:0 and 10-bit 4:2:2 geometry; a one-frame input gets the
+ * CPU's motion3 = 0 and motion2_v2 / motion3_v2 = 0.
  *
  * The option-table checks need no device. The parity checks exit 77 (skip)
  * when no SYCL device is visible.
@@ -68,13 +87,25 @@ typedef struct Fixture {
     unsigned h;
     unsigned frames;
     bool identical;
+    /* Every sample is mid-range (128 << (bpc - 8)). */
+    bool flat;
 } Fixture;
 
 /* Odd 4:2:0 (ceil chroma), odd-width 10-bit 4:2:2, and an identical pair. */
-static const Fixture FX_ODD8 = {VMAF_PIX_FMT_YUV420P, 8u, 161u, 91u, 4u, false};
-static const Fixture FX_ODD10 = {VMAF_PIX_FMT_YUV422P, 10u, 129u, 67u, 4u, false};
-static const Fixture FX_SAME8 = {VMAF_PIX_FMT_YUV420P, 8u, 161u, 91u, 3u, true};
-static const Fixture FX_MOTION = {VMAF_PIX_FMT_YUV420P, 8u, 161u, 91u, 6u, false};
+static const Fixture FX_ODD8 = {VMAF_PIX_FMT_YUV420P, 8u, 161u, 91u, 4u, false, false};
+static const Fixture FX_ODD10 = {VMAF_PIX_FMT_YUV422P, 10u, 129u, 67u, 4u, false, false};
+static const Fixture FX_SAME8 = {VMAF_PIX_FMT_YUV420P, 8u, 161u, 91u, 3u, true, false};
+static const Fixture FX_MOTION = {VMAF_PIX_FMT_YUV420P, 8u, 161u, 91u, 6u, false, false};
+/* One frame: the CPU float_motion flush emits motion3 = 0 at index 0, and the
+ * CPU motion_v2 emits motion2_v2 / motion3_v2 = 0. */
+static const Fixture FX_ONE = {VMAF_PIX_FMT_YUV420P, 8u, 161u, 91u, 1u, false, false};
+/* Identical flat frames: the CPU float_ssim reports 72.247199 dB, not +inf
+ * (review of #1637: 64x64 flat 128 at 8 bits and 512 at 10 bits). */
+static const Fixture FX_FLAT8 = {VMAF_PIX_FMT_YUV420P, 8u, 64u, 64u, 2u, true, true};
+static const Fixture FX_FLAT10 = {VMAF_PIX_FMT_YUV420P, 10u, 64u, 64u, 2u, true, true};
+/* One pixel: the frame score is that pixel's term, so it must be the CPU's
+ * integer SSIM term bit for bit (at 10 bits it is not exactly 1). */
+static const Fixture FX_DOT10 = {VMAF_PIX_FMT_YUV444P, 10u, 1u, 1u, 2u, true, false};
 
 typedef struct Pair {
     VmafContext *cpu;
@@ -109,11 +140,11 @@ static unsigned distort(unsigned value, unsigned x, unsigned y, unsigned frame, 
     return (unsigned)(shifted < 0 ? 0 : (shifted > max ? max : shifted));
 }
 
-static void fill_plane(VmafPicture *pic, unsigned plane, unsigned frame, bool distorted)
+static void fill_plane(VmafPicture *pic, unsigned plane, unsigned frame, bool distorted, bool flat)
 {
     for (unsigned y = 0; y < pic->h[plane]; y++) {
         for (unsigned x = 0; x < pic->w[plane]; x++) {
-            unsigned v = sample_at(x, y, frame, plane, pic->bpc);
+            unsigned v = flat ? (128u << (pic->bpc - 8u)) : sample_at(x, y, frame, plane, pic->bpc);
             if (distorted)
                 v = distort(v, x, y, frame, pic->bpc);
             if (pic->bpc == 8u) {
@@ -134,7 +165,7 @@ static int make_picture(const Fixture *fx, unsigned frame, bool distorted, VmafP
     if (err)
         return err;
     for (unsigned p = 0; p < 3u; p++)
-        fill_plane(pic, p, frame, distorted);
+        fill_plane(pic, p, frame, distorted, fx->flat);
     return 0;
 }
 
@@ -190,30 +221,32 @@ static void pair_close(Pair *pair)
 
 /* Returns true when a SYCL device is available and the twin context is
  * ready; false means "skip" (no device). */
-static bool open_gpu(Pair *pair)
+static bool open_gpu(Pair *pair, unsigned n_subsample)
 {
     VmafSyclConfiguration sycl_cfg = {.device_index = -1};
     if (vmaf_sycl_state_init(&pair->sycl, sycl_cfg) != 0 || !pair->sycl)
         return false;
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .n_subsample = n_subsample};
     if (vmaf_init(&pair->gpu, cfg))
         return false;
     return vmaf_sycl_import_state(pair->gpu, pair->sycl) == 0;
 }
 
-/* Run `cpu_name` and `twin` with the same options over `fx`. Sets
- * mu_skipped and returns NULL with *ran == false when no device exists. */
-static mu_message_t pair_run(Pair *pair, const Fixture *fx, const char *cpu_name, const char *twin,
-                             const char *const *opts, bool *ran)
+/* Run `cpu_name` and `twin` with the same options over `fx`, both contexts
+ * with `n_subsample`. Sets mu_skipped and returns NULL with *ran == false
+ * when no device exists. */
+static mu_message_t pair_run_subsampled(Pair *pair, const Fixture *fx, const char *cpu_name,
+                                        const char *twin, const char *const *opts,
+                                        unsigned n_subsample, bool *ran)
 {
     *ran = false;
     memset(pair, 0, sizeof(*pair));
-    if (!open_gpu(pair)) {
+    if (!open_gpu(pair, n_subsample)) {
         pair_close(pair);
         mu_skipped = 1;
         return NULL;
     }
-    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE, .n_subsample = n_subsample};
     mu_assert("CPU vmaf_init failed", !vmaf_init(&pair->cpu, cfg));
     mu_assert("CPU extractor rejected the options", !use_feature(pair->cpu, cpu_name, opts));
     mu_assert("SYCL twin rejected the options", !use_feature(pair->gpu, twin, opts));
@@ -221,6 +254,12 @@ static mu_message_t pair_run(Pair *pair, const Fixture *fx, const char *cpu_name
     mu_assert("SYCL run failed", !feed(pair->gpu, fx));
     *ran = true;
     return NULL;
+}
+
+static mu_message_t pair_run(Pair *pair, const Fixture *fx, const char *cpu_name, const char *twin,
+                             const char *const *opts, bool *ran)
+{
+    return pair_run_subsampled(pair, fx, cpu_name, twin, opts, 1u, ran);
 }
 
 /* ------------------------------------------------------------------ */
@@ -347,6 +386,12 @@ static const OptionCase OPTION_CASES[] = {
     {"float_ssim_sycl", "float_ssim", "clip_db", "true"},
     {"float_motion_sycl", "float_motion", "motion_max_val", "2.5"},
     {"float_motion_sycl", "float_motion", "mmxv", "2.5"},
+    {"float_motion_sycl", "float_motion", "motion_blend_factor", "0.5"},
+    {"float_motion_sycl", "float_motion", "mbf", "0.5"},
+    {"float_motion_sycl", "float_motion", "motion_blend_offset", "2"},
+    {"float_motion_sycl", "float_motion", "mbo", "2"},
+    {"motion_v2_sycl", "motion_v2", "motion_fps_weight", "2"},
+    {"motion_v2_sycl", "motion_v2", "motion_max_val", "2.5"},
     /* ADR-1418: `debug` defaults to false on the twin as on the CPU, so a
      * default run emits the same score set on both. */
     {"motion_sycl", "motion", "debug", "true"},
@@ -415,6 +460,33 @@ static char *test_twin_option_tables_match_cpu(void)
     return NULL;
 }
 
+/* Every twin and its CPU extractor: each option the twin declares must be a
+ * CPU option with the same declaration, so no twin-only key can reach a
+ * model. */
+static const char *const TWIN_PAIRS[][2] = {
+    {"psnr_sycl", "psnr"},
+    {"integer_ssim_sycl", "ssim"},
+    {"float_ssim_sycl", "float_ssim"},
+    {"float_motion_sycl", "float_motion"},
+};
+
+static char *test_twin_options_are_cpu_options(void)
+{
+    for (size_t i = 0; i < sizeof(TWIN_PAIRS) / sizeof(TWIN_PAIRS[0]); i++) {
+        const VmafFeatureExtractor *twin = vmaf_get_feature_extractor_by_name(TWIN_PAIRS[i][0]);
+        const VmafFeatureExtractor *cpu = vmaf_get_feature_extractor_by_name(TWIN_PAIRS[i][1]);
+        mu_assert("extractor not registered", twin && cpu && twin->options);
+        for (unsigned k = 0; twin->options[k].name; k++) {
+            const VmafOption *cpu_opt = lookup_option(cpu, twin->options[k].name);
+            if (!cpu_opt || !same_option(&twin->options[k], cpu_opt)) {
+                (void)fprintf(stderr, "\n  %s.%s\n", TWIN_PAIRS[i][0], twin->options[k].name);
+                return "a SYCL twin declares an option its CPU extractor lacks";
+            }
+        }
+    }
+    return NULL;
+}
+
 static char *test_twin_rejects_unknown_option(void)
 {
     const char *const twins[] = {"psnr_sycl", "integer_ssim_sycl", "float_ssim_sycl",
@@ -478,6 +550,24 @@ static char *test_psnr_min_sse_identical_frames(void)
     return msg;
 }
 
+/* `--subsample 2` on a TEMPORAL extractor still feeds every frame: the CPU
+ * psnr sums all four frames into apsnr_*, and so must psnr_sycl (review of
+ * #1637; without the flag the twin summed every second frame, fixed by
+ * #1645). */
+static char *test_psnr_apsnr_with_subsample(void)
+{
+    static const char *const opts[] = {"enable_apsnr", "true", NULL};
+    static const char *const aggregates[] = {"apsnr_y", "apsnr_cb", "apsnr_cr"};
+    Pair pair;
+    bool ran = false;
+    mu_assert_msg(pair_run_subsampled(&pair, &FX_ODD8, "psnr", "psnr_sycl", opts, 2u, &ran));
+    mu_message_t msg = NULL;
+    for (size_t i = 0; ran && !msg && i < sizeof(aggregates) / sizeof(aggregates[0]); i++)
+        msg = expect_aggregate(&pair, aggregates[i]);
+    pair_close(&pair);
+    return msg;
+}
+
 static char *test_psnr_defaults_add_no_outputs(void)
 {
     Pair pair;
@@ -530,23 +620,71 @@ static char *test_float_ssim_db_options(void)
 
 /* enable_db without clip_db: a perfect score is +inf on both sides
  * (ADR-1221), not the finite dB of an fp32 rounding residue. */
-static mu_message_t ssim_unclipped_perfect(const char *cpu_name, const char *twin,
-                                           const char *feature)
+static mu_message_t ssim_unclipped_perfect(const Fixture *fx, const char *cpu_name,
+                                           const char *twin, const char *feature)
 {
     static const char *const opts[] = {"enable_db", "true", NULL};
     Pair pair;
     bool ran = false;
-    mu_assert_msg(pair_run(&pair, &FX_SAME8, cpu_name, twin, opts, &ran));
-    mu_message_t msg = ran ? expect_all(&pair, feature, FX_SAME8.frames, INFINITY) : NULL;
+    mu_assert_msg(pair_run(&pair, fx, cpu_name, twin, opts, &ran));
+    mu_message_t msg = ran ? expect_all(&pair, feature, fx->frames, INFINITY) : NULL;
     pair_close(&pair);
     return msg;
 }
 
 static char *test_ssim_db_identical_frames_unclipped(void)
 {
-    mu_assert_msg(ssim_unclipped_perfect("ssim", "integer_ssim_sycl", "ssim"));
-    mu_assert_msg(ssim_unclipped_perfect("float_ssim", "float_ssim_sycl", "float_ssim"));
+    mu_assert_msg(ssim_unclipped_perfect(&FX_SAME8, "ssim", "integer_ssim_sycl", "ssim"));
+    mu_assert_msg(ssim_unclipped_perfect(&FX_SAME8, "float_ssim", "float_ssim_sycl", "float_ssim"));
+    /* Flat identical frames: the integer SSIM terms are exactly their
+     * weights, so `ssim` is +inf on both sides. */
+    mu_assert_msg(ssim_unclipped_perfect(&FX_FLAT8, "ssim", "integer_ssim_sycl", "ssim"));
     return NULL;
+}
+
+/* Identical flat frames, enable_db without clip_db: the CPU's per-pixel l
+ * term is 1 - 4.3e-8 (double numerator over an fp32 denominator), its fp32
+ * frame mean 0.99999994, so it reports 72.247199 dB. The twin must report the
+ * same finite value, not the +inf a forced exact 1 gives (fixed by #1645). */
+static mu_message_t float_ssim_flat_case(const Fixture *fx, const char *const *opts)
+{
+    Pair pair;
+    bool ran = false;
+    mu_assert_msg(pair_run(&pair, fx, "float_ssim", "float_ssim_sycl", opts, &ran));
+    mu_message_t msg = ran ? expect_close(&pair, "float_ssim", fx->frames, TOL_EXACT, true) : NULL;
+    if (ran && !msg) {
+        double gpu = NAN;
+        mu_assert("float_ssim missing on the SYCL twin",
+                  !vmaf_feature_score_at_index(pair.gpu, "float_ssim", &gpu, 0u));
+        mu_assert("flat identical frames must score a finite dB value", isfinite(gpu));
+    }
+    pair_close(&pair);
+    return msg;
+}
+
+static char *test_float_ssim_flat_identical_frames(void)
+{
+    static const char *const db[] = {"enable_db", "true", "scale", "1", NULL};
+    static const char *const clipped[] = {"enable_db", "true", "clip_db", "true",
+                                          "scale",     "1",    NULL};
+    mu_assert_msg(float_ssim_flat_case(&FX_FLAT8, db));
+    mu_assert_msg(float_ssim_flat_case(&FX_FLAT10, db));
+    mu_assert_msg(float_ssim_flat_case(&FX_FLAT8, clipped));
+    return NULL;
+}
+
+/* A single-pixel frame is scored by that pixel's term alone, so the twin
+ * must equal the CPU bit for bit, dB form included (156.5 dB at 10 bits,
+ * where the CPU's term is not exactly its weight; fixed by #1645). */
+static char *test_integer_ssim_single_pixel(void)
+{
+    static const char *const opts[] = {"enable_db", "true", NULL};
+    Pair pair;
+    bool ran = false;
+    mu_assert_msg(pair_run(&pair, &FX_DOT10, "ssim", "integer_ssim_sycl", opts, &ran));
+    mu_message_t msg = ran ? expect_close(&pair, "ssim", FX_DOT10.frames, TOL_EXACT, true) : NULL;
+    pair_close(&pair);
+    return msg;
 }
 
 static mu_message_t float_ssim_lcs_case(const Fixture *fx)
@@ -595,19 +733,20 @@ static mu_message_t motion_case(const char *key, const char *value, const char *
     return msg;
 }
 
-/* Midpoint of the CPU default motion2 range, so the cap clips some frames
- * and leaves others. Returns a negative value on failure. */
-static double motion_midpoint(void)
+/* Midpoint of the CPU default motion2 range of `cpu` (feature `motion2`),
+ * so the cap clips some frames and leaves others. Returns a negative value
+ * on failure. */
+static double motion_midpoint(const char *cpu, const char *motion2)
 {
     VmafContext *vmaf = NULL;
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     double lo = INFINITY;
     double hi = 0.0;
-    if (vmaf_init(&vmaf, cfg) || use_feature(vmaf, "float_motion", NULL) || feed(vmaf, &FX_MOTION))
+    if (vmaf_init(&vmaf, cfg) || use_feature(vmaf, cpu, NULL) || feed(vmaf, &FX_MOTION))
         return -1.0;
     for (unsigned i = 1; i < FX_MOTION.frames; i++) {
         double score = 0.0;
-        if (vmaf_feature_score_at_index(vmaf, "VMAF_feature_motion2_score", &score, i))
+        if (vmaf_feature_score_at_index(vmaf, motion2, &score, i))
             return -1.0;
         lo = score < lo ? score : lo;
         hi = score > hi ? score : hi;
@@ -618,7 +757,7 @@ static double motion_midpoint(void)
 
 static char *test_float_motion_max_val(void)
 {
-    const double cap = motion_midpoint();
+    const double cap = motion_midpoint("float_motion", "VMAF_feature_motion2_score");
     mu_assert("fixture motion does not span a clip point", cap > 0.0);
     char value[NAME_LEN];
     char motion2[NAME_LEN];
@@ -645,9 +784,122 @@ static char *test_float_motion_force_zero(void)
     Pair pair;
     bool ran = false;
     mu_assert_msg(pair_run(&pair, &FX_MOTION, "float_motion", "float_motion_sycl", opts, &ran));
-    mu_message_t msg = ran ? expect_all(&pair, "motion2_force_0", FX_MOTION.frames, 0.0) : NULL;
-    if (ran && !msg)
-        msg = expect_all(&pair, "motion_force_0", FX_MOTION.frames, 0.0);
+    mu_message_t msg = NULL;
+    static const char *const names[] = {"motion2_force_0", "motion3_force_0", "motion_force_0"};
+    for (size_t i = 0; ran && !msg && i < sizeof(names) / sizeof(names[0]); i++)
+        msg = expect_all(&pair, names[i], FX_MOTION.frames, 0.0);
+    pair_close(&pair);
+    return msg;
+}
+
+/* The three float_motion scores over `fx` with `opts`, named with `suffix`
+ * (the option suffix of the feature names, "" for the defaults). The twin
+ * returns the CPU's SAD bit for bit (ADR-1411) and derives every score with
+ * the CPU's host arithmetic, so the comparison is exact. */
+static mu_message_t motion_opts_case(const Fixture *fx, const char *const *opts, const char *suffix)
+{
+    static const char *const bases[] = {"motion2", "motion3", "motion"};
+    Pair pair;
+    bool ran = false;
+    mu_assert_msg(pair_run(&pair, fx, "float_motion", "float_motion_sycl", opts, &ran));
+    mu_message_t msg = NULL;
+    for (size_t i = 0; ran && !msg && i < sizeof(bases) / sizeof(bases[0]); i++) {
+        char name[2u * NAME_LEN];
+        if (suffix[0]) {
+            (void)snprintf(name, sizeof(name), "%s_%s", bases[i], suffix);
+        } else {
+            (void)snprintf(name, sizeof(name), "VMAF_feature_%s_score", bases[i]);
+        }
+        msg = expect_close(&pair, name, fx->frames, TOL_EXACT, false);
+    }
+    pair_close(&pair);
+    return msg;
+}
+
+/* Largest per-frame difference between CPU float_motion `motion3` at the
+ * defaults and `with_opts` under `opts`: how far the options move it on
+ * FX_MOTION. Negative on failure. A parity case proves nothing about an
+ * option that leaves the fixture's scores where they were. */
+static double cpu_motion3_effect(const char *const *opts, const char *with_opts)
+{
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    VmafContext *base = NULL;
+    VmafContext *moved = NULL;
+    double effect = -1.0;
+    if (!vmaf_init(&base, cfg) && !vmaf_init(&moved, cfg) &&
+        !use_feature(base, "float_motion", NULL) && !use_feature(moved, "float_motion", opts) &&
+        !feed(base, &FX_MOTION) && !feed(moved, &FX_MOTION)) {
+        effect = 0.0;
+        for (unsigned i = 0; effect >= 0.0 && i < FX_MOTION.frames; i++) {
+            double a = 0.0;
+            double b = 0.0;
+            if (vmaf_feature_score_at_index(base, "VMAF_feature_motion3_score", &a, i) ||
+                vmaf_feature_score_at_index(moved, with_opts, &b, i)) {
+                effect = -1.0;
+            } else if (fabs(a - b) > effect) {
+                effect = fabs(a - b);
+            }
+        }
+    }
+    if (base)
+        (void)vmaf_close(base);
+    if (moved)
+        (void)vmaf_close(moved);
+    return effect;
+}
+
+/* motion3 at the default options, which the twin did not emit at all, on
+ * 8-bit 4:2:0 and 10-bit 4:2:2, and with the blend options: an offset at the
+ * midpoint of the fixture's motion so the blend moves some frames and leaves
+ * others. */
+static char *test_float_motion_motion3(void)
+{
+    mu_assert_msg(motion_opts_case(&FX_MOTION, NULL, ""));
+    mu_assert_msg(motion_opts_case(&FX_ODD10, NULL, ""));
+    const double mid = motion_midpoint("float_motion", "VMAF_feature_motion2_score");
+    mu_assert("fixture motion does not span a blend point", mid > 0.0);
+    char offset[NAME_LEN];
+    char suffix[NAME_LEN];
+    char motion3[2u * NAME_LEN];
+    (void)snprintf(offset, sizeof(offset), "%.17g", mid);
+    (void)snprintf(suffix, sizeof(suffix), "mbf_0.5_mbo_%g", mid);
+    (void)snprintf(motion3, sizeof(motion3), "motion3_%s", suffix);
+    const char *const opts[] = {"motion_blend_factor", "0.5", "motion_blend_offset", offset, NULL};
+    mu_assert("the blend leaves the fixture's motion3 where it was",
+              cpu_motion3_effect(opts, motion3) > 100.0 * TOL_MOTION);
+    return motion_opts_case(&FX_MOTION, opts, suffix);
+}
+
+/* Every score option at once, and the fps weight with a cap that clips:
+ * motion3 is weighted, blended and capped in that order. */
+static char *test_float_motion_motion3_with_weight_and_cap(void)
+{
+    static const char *const all[] = {"motion_fps_weight",
+                                      "2",
+                                      "motion_blend_factor",
+                                      "0.25",
+                                      "motion_blend_offset",
+                                      "3",
+                                      "motion_max_val",
+                                      "5",
+                                      NULL};
+    static const char *const weight_cap[] = {"motion_fps_weight", "2", "motion_max_val", "4", NULL};
+    mu_assert_msg(motion_opts_case(&FX_MOTION, all, "mbf_0.25_mbo_3_mfw_2_mmxv_5"));
+    return motion_opts_case(&FX_MOTION, weight_cap, "mfw_2_mmxv_4");
+}
+
+/* Boundary: one frame. The CPU publishes motion2 = motion = 0 from its
+ * extract and motion3 = 0 from its flush. */
+static char *test_float_motion_one_frame(void)
+{
+    static const char *const names[] = {"VMAF_feature_motion2_score", "VMAF_feature_motion3_score",
+                                        "VMAF_feature_motion_score"};
+    Pair pair;
+    bool ran = false;
+    mu_assert_msg(pair_run(&pair, &FX_ONE, "float_motion", "float_motion_sycl", NULL, &ran));
+    mu_message_t msg = NULL;
+    for (size_t i = 0; ran && !msg && i < sizeof(names) / sizeof(names[0]); i++)
+        msg = expect_all(&pair, names[i], FX_ONE.frames, 0.0);
     pair_close(&pair);
     return msg;
 }
@@ -660,7 +912,7 @@ static char *test_float_motion_max_val_out_of_range(void)
     VmafContext *cpu = NULL;
     Pair pair;
     memset(&pair, 0, sizeof(pair));
-    if (!open_gpu(&pair)) {
+    if (!open_gpu(&pair, 1u)) {
         pair_close(&pair);
         mu_skipped = 1;
         return NULL;
@@ -675,12 +927,90 @@ static char *test_float_motion_max_val_out_of_range(void)
     return NULL;
 }
 
+/* ------------------------------------------------------------------ */
+/* motion_v2_sycl                                                      */
+/* ------------------------------------------------------------------ */
+
+/* Run motion_v2 / motion_v2_sycl with `opts` over FX_MOTION and compare
+ * `names` exactly (integer SAD, same host arithmetic). */
+static mu_message_t motion_v2_case(const char *const *opts, const char *const *names,
+                                   size_t n_names)
+{
+    Pair pair;
+    bool ran = false;
+    mu_assert_msg(pair_run(&pair, &FX_MOTION, "motion_v2", "motion_v2_sycl", opts, &ran));
+    mu_message_t msg = NULL;
+    for (size_t i = 0; ran && !msg && i < n_names; i++)
+        msg = expect_close(&pair, names[i], FX_MOTION.frames, TOL_EXACT, false);
+    pair_close(&pair);
+    return msg;
+}
+
+/* motion_v2_sycl stores the SAD as the CPU does: weighted, then capped, and
+ * motion2_v2 / motion3_v2 fold the stored value (the twin used to weight at
+ * fold time and never cap; fixed by #1645). */
+static char *test_motion_v2_weight_and_cap(void)
+{
+    static const char *const mfw_opts[] = {"motion_fps_weight", "2", NULL};
+    static const char *const mfw_names[] = {"VMAF_integer_feature_motion_v2_sad_score_mfw_2",
+                                            "VMAF_integer_feature_motion2_v2_score_mfw_2",
+                                            "VMAF_integer_feature_motion3_v2_score_mfw_2"};
+    mu_assert_msg(motion_v2_case(mfw_opts, mfw_names, 3u));
+
+    const double cap = motion_midpoint("motion_v2", "VMAF_integer_feature_motion2_v2_score");
+    mu_assert("fixture motion does not span a clip point", cap > 0.0);
+    char value[NAME_LEN];
+    char sad[2u * NAME_LEN];
+    char motion2[2u * NAME_LEN];
+    char motion3[2u * NAME_LEN];
+    (void)snprintf(value, sizeof(value), "%.17g", cap);
+    (void)snprintf(sad, sizeof(sad), "VMAF_integer_feature_motion_v2_sad_score_mmxv_%g", cap);
+    (void)snprintf(motion2, sizeof(motion2), "VMAF_integer_feature_motion2_v2_score_mmxv_%g", cap);
+    (void)snprintf(motion3, sizeof(motion3), "VMAF_integer_feature_motion3_v2_score_mmxv_%g", cap);
+    const char *const opts[] = {"motion_max_val", value, NULL};
+    const char *const names[] = {sad, motion2, motion3};
+    mu_assert_msg(motion_v2_case(opts, names, 3u));
+
+    static const char *const both[] = {"motion_fps_weight", "2", "motion_max_val", "4", NULL};
+    static const char *const both_names[] = {
+        "VMAF_integer_feature_motion_v2_sad_score_mfw_2_mmxv_4",
+        "VMAF_integer_feature_motion2_v2_score_mfw_2_mmxv_4",
+        "VMAF_integer_feature_motion3_v2_score_mfw_2_mmxv_4"};
+    return motion_v2_case(both, both_names, 3u);
+}
+
+/* One frame: the CPU emits motion2_v2 / motion3_v2 = 0 at index 0, with and
+ * without the options; the twin emitted nothing for `n_frames < 2`. */
+static char *test_motion_v2_one_frame(void)
+{
+    static const char *const names[] = {"VMAF_integer_feature_motion2_v2_score",
+                                        "VMAF_integer_feature_motion3_v2_score"};
+    static const char *const opts[] = {"motion_fps_weight", "2", "motion_max_val", "4", NULL};
+    static const char *const opt_names[] = {"VMAF_integer_feature_motion2_v2_score_mfw_2_mmxv_4",
+                                            "VMAF_integer_feature_motion3_v2_score_mfw_2_mmxv_4"};
+    Pair pair;
+    bool ran = false;
+    mu_assert_msg(pair_run(&pair, &FX_ONE, "motion_v2", "motion_v2_sycl", NULL, &ran));
+    mu_message_t msg = NULL;
+    for (size_t i = 0; ran && !msg && i < sizeof(names) / sizeof(names[0]); i++)
+        msg = expect_all(&pair, names[i], FX_ONE.frames, 0.0);
+    pair_close(&pair);
+    mu_assert_msg(msg);
+    mu_assert_msg(pair_run(&pair, &FX_ONE, "motion_v2", "motion_v2_sycl", opts, &ran));
+    for (size_t i = 0; ran && !msg && i < sizeof(opt_names) / sizeof(opt_names[0]); i++)
+        msg = expect_all(&pair, opt_names[i], FX_ONE.frames, 0.0);
+    pair_close(&pair);
+    return msg;
+}
+
 static char *run_table_and_psnr_tests(void)
 {
     mu_run_test(test_twin_option_tables_match_cpu);
+    mu_run_test(test_twin_options_are_cpu_options);
     mu_run_test(test_twin_rejects_unknown_option);
     mu_run_test(test_psnr_options_bit_exact);
     mu_run_test(test_psnr_min_sse_identical_frames);
+    mu_run_test(test_psnr_apsnr_with_subsample);
     mu_run_test(test_psnr_defaults_add_no_outputs);
     return NULL;
 }
@@ -690,6 +1020,8 @@ static char *run_ssim_tests(void)
     mu_run_test(test_integer_ssim_db_options);
     mu_run_test(test_float_ssim_db_options);
     mu_run_test(test_ssim_db_identical_frames_unclipped);
+    mu_run_test(test_float_ssim_flat_identical_frames);
+    mu_run_test(test_integer_ssim_single_pixel);
     mu_run_test(test_float_ssim_lcs);
     return NULL;
 }
@@ -703,11 +1035,23 @@ static char *run_motion_tests(void)
     return NULL;
 }
 
+/* motion3 (T-GPU-FLOAT-MOTION3-MISSING-2026-09-30) and motion_v2 (#1645). */
+static char *run_motion3_and_v2_tests(void)
+{
+    mu_run_test(test_float_motion_motion3);
+    mu_run_test(test_float_motion_motion3_with_weight_and_cap);
+    mu_run_test(test_float_motion_one_frame);
+    mu_run_test(test_motion_v2_weight_and_cap);
+    mu_run_test(test_motion_v2_one_frame);
+    return NULL;
+}
+
 char *run_tests(void)
 {
     mu_assert_msg(run_table_and_psnr_tests());
     mu_assert_msg(run_ssim_tests());
     mu_assert_msg(run_motion_tests());
+    mu_assert_msg(run_motion3_and_v2_tests());
     return NULL;
 }
 

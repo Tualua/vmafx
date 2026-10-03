@@ -180,9 +180,13 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
         "float_ms_ssim_s_scale4",
     ),
     "float_psnr": ("float_psnr",),
+    # `motion3` too: every twin the gate runs (CUDA, SYCL, HIP) emits the CPU's
+    # motion3; a twin that lacks it fails the cell
+    # (T-GPU-FLOAT-MOTION3-MISSING-2026-09-30).
     "float_motion": (
         "motion",
         "motion2",
+        "motion3",
     ),
     "float_vif": (
         "vif_scale0",

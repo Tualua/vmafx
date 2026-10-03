@@ -198,9 +198,12 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
     # float_motion. CPU emits short keys "motion" + "motion2" for the
     # float extractor (no `integer_` prefix; see float_motion.c).
     # places=4 contract — empirical floor 3e-6 (8-bit) / 1e-6 (10-bit).
+    # `motion3` (the blended motion2) is emitted by the CPU and the CUDA,
+    # SYCL and HIP twins (T-GPU-FLOAT-MOTION3-MISSING-2026-09-30).
     "float_motion": (
         "motion",
         "motion2",
+        "motion3",
     ),
     # GPU long-tail batch 3 part 5 (T7-23 / ADR-0192 / ADR-0197):
     # float_vif. 4-scale pyramid with 17/9/5/3-tap separable

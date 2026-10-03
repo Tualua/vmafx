@@ -371,8 +371,8 @@ row adds the row on the device, the host adds the rows, and `motion` and
 Netflix pair, both 1080p checkerboard pairs, 200 frames of BBB 3840x2160, and
 the Netflix pair at 10, 12 and 16 bits). It had the same differences as the
 CUDA twin before. The second pass over the blurred planes costs 0.38 ms per
-3840x2160 frame on that GPU (3.85 to 4.23 ms). The SYCL twin provides no
-`motion3`; that score still comes from the CPU extractor.
+3840x2160 frame on that GPU (3.85 to 4.23 ms). The SYCL twin emits `motion3`
+too since 2026-10-03 (next paragraph).
 
 `float_motion_cuda` emits all three scores, as the CPU does: its `motion3`
 is the CPU's blend of `motion2` (`motion_fps_weight`, then the
@@ -382,10 +382,21 @@ frame from the flush, and it takes both blend options (aliases `mbf` /
 `mbo`). `float_motion_hip` does the same and takes the whole CPU option
 table ([ADR-1404](../adr/1404-hip-float-motion-motion3-and-options.md));
 on a gfx1036 its `motion3` is within 2.8e-6 of the CPU on the Netflix
-576x324 pair and 5.7e-6 on a 3840x2160 clip, like its `motion2`. The SYCL
-and Metal twins emit `motion` and `motion2` only, so a
-run on one of them (`--backend sycl --feature float_motion`, say) writes no
-`motion3` (`T-GPU-FLOAT-MOTION3-MISSING-2026-09-30` in
+576x324 pair and 5.7e-6 on a 3840x2160 clip, like its `motion2`.
+`float_motion_sycl` emits `motion3` since 2026-10-03 and takes both blend
+options. Its `motion3` is the CPU's bit for bit, because its SAD already is
+(ADR-1411) and the blend is the CPU's host arithmetic. Measured on an Arc
+A380 at `--precision max` against `--backend cpu`, every `motion`, `motion2`
+and `motion3` value is identical on the Netflix 576x324 pair (48 frames),
+both 1920x1080 checkerboard pairs and 200 frames of BBB 3840x2160. That
+holds at the default options and with
+`motion_blend_factor=0.5:motion_blend_offset=2`, and on the small fixtures
+also with `motion_fps_weight=2:motion_max_val=4`, with all four score
+options together, with `motion_force_zero` and for a one-frame input
+(`motion3` = 0). Before, a `--backend sycl --feature float_motion` run wrote
+no `motion3` and gave no warning, and a request with a blend option ran on
+the CPU. The Metal twin still emits `motion` and `motion2` only, so a run on
+it writes no `motion3` (`T-GPU-FLOAT-MOTION3-MISSING-2026-09-30` in
 [`state.md`](../state.md)). The twins take `debug`, `motion_force_zero` and
 `motion_fps_weight`. With `motion_force_zero`, `float_motion_cuda` and
 `motion_cuda` publish zeros from the first frame; before 2026-09-30 both
@@ -404,11 +415,20 @@ emit (the debug `motion` too) by `motion_fps_weight` before capping it at
 `motion` score is emitted without the fps weight.
 
 ```bash
-# On float_motion_sycl with a motion cap (keys become motion2_mmxv_4 / motion_mmxv_4)
+# On float_motion_sycl with a motion cap
+# (keys become motion_mmxv_4 / motion2_mmxv_4 / motion3_mmxv_4)
 vmaf --reference ref.yuv --distorted dist.yuv \
     --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
     --backend sycl --no_prediction \
     --feature float_motion=motion_max_val=4 --output /dev/stdout
+
+# On float_motion_sycl with the motion3 blend
+# (keys become motion_mbf_0.5_mbo_2 / motion2_mbf_0.5_mbo_2 / motion3_mbf_0.5_mbo_2)
+vmaf --reference ref.yuv --distorted dist.yuv \
+    --width 576 --height 324 --pixel_format 420 --bitdepth 8 \
+    --backend sycl --no_prediction \
+    --feature float_motion=motion_blend_factor=0.5:motion_blend_offset=2 \
+    --output /dev/stdout
 ```
 
 ### How to run

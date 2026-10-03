@@ -11,6 +11,11 @@
  *  `motion` / `motion2` value is motion_clip()ped, i.e. scaled by
  *  `motion_fps_weight` and capped at `motion_max_val`, and
  *  `motion_force_zero` publishes zeros without touching the device.
+ *  `motion3` is the CPU's too: the motion2 value motion_blend_clip()ped (fps
+ *  weight, the `motion_blend_factor` / `motion_blend_offset` blend, the cap),
+ *  frame 0 from the first SAD, the last frame from flush(), and 0 for a
+ *  one-frame run, as float_motion.c emits it
+ *  (T-GPU-FLOAT-MOTION3-MISSING-2026-09-30).
  *
  *  Numerical contract (ADR-1367, ADR-1409, ADR-1411). Both steps are the CPU's
  *  arithmetic, so the twin returns the CPU extractor's score bit for bit:
@@ -42,6 +47,7 @@
 #include "feature/float_motion_sad.h"
 #include "feature_name.h"
 #include "log.h"
+#include "motion_blend_tools.h"
 #include "picture.h"
 #include "sycl/common.h"
 
@@ -52,6 +58,8 @@ struct FloatMotionStateSycl {
     bool debug;
     bool motion_force_zero;
     double motion_fps_weight;
+    double motion_blend_factor;
+    double motion_blend_offset;
     double motion_max_val;
 
     unsigned width;
@@ -347,6 +355,27 @@ static const VmafOption options_float_motion_sycl[] = {
      .min = 0.0,
      .max = 5.0,
      .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    /* The motion3 blend, declared as in the CPU table (name, alias, default,
+     * range, flags); a non-default value names the features
+     * (motion3_mbf_0.5_mbo_2). */
+    {.name = "motion_blend_factor",
+     .help = "blend motion score given an offset",
+     .alias = "mbf",
+     .offset = offsetof(FloatMotionStateSycl, motion_blend_factor),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val = {.d = 1.0},
+     .min = 0.0,
+     .max = 1.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
+    {.name = "motion_blend_offset",
+     .help = "blend motion score starting from this offset",
+     .alias = "mbo",
+     .offset = offsetof(FloatMotionStateSycl, motion_blend_offset),
+     .type = VMAF_OPT_TYPE_DOUBLE,
+     .default_val = {.d = 40.0},
+     .min = 0.0,
+     .max = 1000.0,
+     .flags = VMAF_OPT_FLAG_FEATURE_PARAM},
     {.name = "motion_max_val",
      .help = "maximum value allowed; larger values will be clipped to this value",
      .alias = "mmxv",
@@ -501,6 +530,15 @@ static double motion_clip(const FloatMotionStateSycl *s, double score)
     return weighted < s->motion_max_val ? weighted : s->motion_max_val;
 }
 
+/* CPU float_motion.c::motion_blend_clip (motion3): fps weight, the blend,
+ * then the motion_max_val cap. */
+static double motion_blend_clip(const FloatMotionStateSycl *s, double score)
+{
+    const double blended =
+        motion_blend(score * s->motion_fps_weight, s->motion_blend_factor, s->motion_blend_offset);
+    return blended < s->motion_max_val ? blended : s->motion_max_val;
+}
+
 static int motion_append(const FloatMotionStateSycl *s, VmafFeatureCollector *feature_collector,
                          const char *name, double score, unsigned index)
 {
@@ -508,14 +546,67 @@ static int motion_append(const FloatMotionStateSycl *s, VmafFeatureCollector *fe
                                                    score, index);
 }
 
-/* CPU float_motion.c::motion_append_forced_zero for the features this twin
- * provides (motion3 stays on the CPU extractor). */
+/* CPU float_motion.c::motion_append_forced_zero. */
 static int motion_append_forced_zero(const FloatMotionStateSycl *s,
                                      VmafFeatureCollector *feature_collector, unsigned index)
 {
     int err = motion_append(s, feature_collector, "VMAF_feature_motion2_score", 0.0, index);
+    if (!err) {
+        err = motion_append(s, feature_collector, "VMAF_feature_motion3_score", 0.0, index);
+    }
     if (s->debug && !err) {
         err = motion_append(s, feature_collector, "VMAF_feature_motion_score", 0.0, index);
+    }
+    return err;
+}
+
+} // namespace
+
+namespace
+{
+
+/* CPU float_motion.c::extract() at index 0: no previous frame, so motion2 and
+ * the debug score are 0; motion3 of frame 0 waits for the second frame's SAD
+ * or, for a one-frame run, for flush(). */
+static int motion_emit_first(const FloatMotionStateSycl *s, VmafFeatureCollector *feature_collector,
+                             unsigned index)
+{
+    int err = motion_append(s, feature_collector, "VMAF_feature_motion2_score", 0.0, index);
+    if (s->debug && !err) {
+        err = motion_append(s, feature_collector, "VMAF_feature_motion_score", 0.0, index);
+    }
+    return err;
+}
+
+/* The scores frame `index`'s SAD completes, as CPU float_motion.c::extract()
+ * emits them: the debug score at `index`; at the second frame motion3 of
+ * frame 0 from this first SAD alone (its motion2 is the 0 emitted before);
+ * afterwards motion2 / motion3 of the previous frame from the smaller of its
+ * two SADs, motion_clip()ped / motion_blend_clip()ped. */
+static int motion_emit(const FloatMotionStateSycl *s, VmafFeatureCollector *feature_collector,
+                       unsigned index, double motion_score)
+{
+    int err = 0;
+    if (s->debug) {
+        err = motion_append(s, feature_collector, "VMAF_feature_motion_score",
+                            motion_clip(s, motion_score), index);
+    }
+    if (s->frame_index == 1) {
+        if (!err) {
+            err = motion_append(s, feature_collector, "VMAF_feature_motion3_score",
+                                motion_blend_clip(s, motion_score), index - 1);
+        }
+        return err;
+    }
+    const double motion2 =
+        motion_score < s->prev_motion_score ? motion_score : s->prev_motion_score;
+    if (!err) {
+        err = motion_append(s, feature_collector, "VMAF_feature_motion2_score",
+                            motion_clip(s, motion2), index - 1);
+    }
+    if (!err) {
+        err = motion_append(s, feature_collector, "VMAF_feature_motion3_score",
+                            motion_blend_clip(s, motion2), index - 1);
     }
     return err;
 }
@@ -538,13 +629,8 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
     }
     qptr->wait();
 
-    int err = 0;
-
     if (s->frame_index == 0) {
-        err = motion_append(s, feature_collector, "VMAF_feature_motion2_score", 0.0, index);
-        if (s->debug && !err) {
-            err = motion_append(s, feature_collector, "VMAF_feature_motion_score", 0.0, index);
-        }
+        const int err = motion_emit_first(s, feature_collector, index);
         s->cur_blur = 1 - s->cur_blur;
         s->frame_index++;
         return err;
@@ -554,19 +640,7 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
      * the float division (ADR-1409). */
     const double motion_score =
         vmaf_float_motion_score_from_row_sads(s->h_row_sad, s->width, s->height);
-
-    if (s->frame_index > 1) {
-        /* motion2 of the previous frame: the smaller of its two SADs, then
-         * motion_clip() — CPU float_motion.c::extract order. */
-        const double motion2 =
-            motion_score < s->prev_motion_score ? motion_score : s->prev_motion_score;
-        err = motion_append(s, feature_collector, "VMAF_feature_motion2_score",
-                            motion_clip(s, motion2), index - 1);
-    }
-    if (s->debug && !err) {
-        err = motion_append(s, feature_collector, "VMAF_feature_motion_score",
-                            motion_clip(s, motion_score), index);
-    }
+    const int err = motion_emit(s, feature_collector, index, motion_score);
 
     s->prev_motion_score = motion_score;
     s->cur_blur = 1 - s->cur_blur;
@@ -579,6 +653,9 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
 namespace
 {
 
+/* CPU float_motion.c::flush: the tail motion2 / motion3 are motion_clip() /
+ * motion_blend_clip() of the last SAD at the last frame index; a run without
+ * a SAD (one frame) has motion3 = 0 at index 0. */
 static int flush_fex_sycl(VmafFeatureExtractor *fex, VmafFeatureCollector *feature_collector)
 {
     auto *s = static_cast<FloatMotionStateSycl *>(fex->priv);
@@ -588,10 +665,15 @@ static int flush_fex_sycl(VmafFeatureExtractor *fex, VmafFeatureCollector *featu
     }
 
     if (s->frame_index > 1) {
-        /* Tail motion2: the last SAD alone, motion_clip()ped like the
-         * CPU float_motion.c::flush. */
+        const unsigned last = s->frame_index - 1;
         ret = motion_append(s, feature_collector, "VMAF_feature_motion2_score",
-                            motion_clip(s, s->prev_motion_score), s->frame_index - 1);
+                            motion_clip(s, s->prev_motion_score), last);
+        if (!ret) {
+            ret = motion_append(s, feature_collector, "VMAF_feature_motion3_score",
+                                motion_blend_clip(s, s->prev_motion_score), last);
+        }
+    } else {
+        ret = motion_append(s, feature_collector, "VMAF_feature_motion3_score", 0.0, 0);
     }
     return (ret < 0) ? ret : !ret;
 }
@@ -624,7 +706,8 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
 }
 
 static const char *provided_features_float_motion_sycl[] = {"VMAF_feature_motion_score",
-                                                            "VMAF_feature_motion2_score", nullptr};
+                                                            "VMAF_feature_motion2_score",
+                                                            "VMAF_feature_motion3_score", nullptr};
 
 } // namespace
 
