@@ -38,11 +38,20 @@ req_body = re.sub(r"(?m)^\s*//.*$", "", req_match.group(1))
 agg_names = set(re.findall(r"'([^']+)'", req_body))
 
 wf_names = set()
+# `# required-aggregator-job: <name>` marks a name that some workflow job must report,
+# for a job in a file that cannot carry the plain marker (a vendored, byte-locked
+# workflow). A rename of that job leaves the name without a reporter and fails below.
+job_marked = set()
 for p in sorted((repo_root / ".github" / "workflows").glob("*.yml")):
     if p.name == "required-aggregator.yml":
         continue
     lines = p.read_text(encoding="utf-8").splitlines()
     for i, line in enumerate(lines):
+        mj = re.match(r"^\s*#\s*required-aggregator-job:\s*(.+)$", line)
+        if mj:
+            wf_names.add(mj.group(1).strip())
+            job_marked.add(mj.group(1).strip())
+            continue
         m = re.match(r"^\s*#\s*required-aggregator:\s*(.+)$", line)
         if m:
             wf_names.add(m.group(1).strip())
@@ -104,6 +113,12 @@ if shared:
     msg = ["Required check names reported by more than one job (the aggregator keeps only the newest run per name):"]
     for n in sorted(shared):
         msg.append(f"  - '{n}': {', '.join(shared[n])}")
+    sys.exit("\n".join(msg))
+
+orphans = sorted(n for n in job_marked if n not in reporters)
+if orphans:
+    msg = ["Names marked required-aggregator-job that no workflow job reports:"]
+    msg.extend(f"  - '{n}'" for n in orphans)
     sys.exit("\n".join(msg))
 
 print(f"OK: all {len(agg_names)} required checks in required-aggregator.yml match workflow definitions, each reported by one job.")

@@ -246,6 +246,14 @@ jobs:
               // security-scans.yml, because neither is produced by a job.
               'Semgrep OSS',
               'gitleaks',
+              // ADR-1506 — praetor's exported-API comparison for every Go
+              // module. The workflow has no path filter, so a pull request
+              // that changes no Go file still reports; the tool itself
+              // finds no change and passes. Deliberately NOT in
+              // strictMustReport: the locked workflow does not run on
+              // ready_for_review, so a draft that becomes ready keeps the
+              // result of its last push and is not re-run.
+              'Go API Compatibility',
             ];
 
             // ADR-1274 — these governance jobs have no path or event filter,

@@ -30,6 +30,10 @@ env:
   # Exact engine used to record the baseline and replay HISS evidence.
   PRAETOR_REF: 0af07a733e6534269b435cea185da4d1df7aba0c
 
+# ADR-1506 — `Go API Compatibility` is the job of praetor-api.yml, a file
+# praetor locks byte for byte, so its required-aggregator marker lives here.
+# required-aggregator-job: Go API Compatibility
+
 jobs:
   standards:
     # required-aggregator: Standards & Invariant Verification Gate

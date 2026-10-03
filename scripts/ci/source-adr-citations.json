@@ -9824,6 +9824,14 @@
       },
       "target": "1503-tester-artifact-licensing.md"
     },
+    "1506": {
+      "sites": {
+        ".github/workflows/required-aggregator.yml": 1,
+        ".github/workflows/standards-gate.yml": 1,
+        "scripts/ci/tests/test_go_api_compat_required.py": 1
+      },
+      "target": "1506-praetor-pin-move-markdownlint-braces.md"
+    },
     "1507": {
       "sites": {
         "REUSE.toml": 1,

@@ -111,6 +111,7 @@ job the PR renamed, every required check and every build lane.
 | `lint-and-format.yml` | unchanged | `Docs` | 4 | Yes |
 | `lint-and-format.yml` | `Twin Drift + Stale Source Refs (ADR-1135)` | `Twin Drift` | 10 | Yes |
 | `lint-and-format.yml` | new in ADR-1474 | `Licence Provenance` | 18 | Yes |
+| `praetor-api.yml` | new in ADR-1506 (praetor's name) | `Go API Compatibility` | 21 | Yes |
 | `lint-and-format.yml` | `ShellCheck + shfmt (All *.sh)` | `ShellCheck + shfmt` | 17 | Yes |
 | `lint-and-format.yml` | `Clang-Tidy SYCL (Changed Files, Advisory)` | `Tidy SYCL` | 9 | Yes |
 | `lint-and-format.yml` | `Check — No committed conflict markers` | `No Conflict Markers` | 19 | No |

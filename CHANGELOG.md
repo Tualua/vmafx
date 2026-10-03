@@ -690,6 +690,13 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   [gate guide](docs/development/cross-backend-gate.md)).
 
 
+- The Required Checks Aggregator now requires praetor's `Go API Compatibility`
+  check (`required` list). `scripts/ci/check-aggregator-names.sh` gained the
+  `# required-aggregator-job: <name>` marker, which fails when no workflow job
+  reports the name, so a rename of a job in a byte-locked workflow can no
+  longer pass the name check.
+
+
 - **The CUDA, SYCL and HIP motion twins compute `motion_five_frame_window`.**
   `motion_cuda`, `motion_sycl`, `motion_hip` and the three `motion_v2` twins
   keep the frame two back on the device and derive `motion2` / `motion3` with

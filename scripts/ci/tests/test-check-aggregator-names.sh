@@ -91,4 +91,23 @@ jobs:
 YML
 expect "a marked name missing from the required list fails" 1 "$tmp/unmarked"
 
+fixture "$tmp/jobmarked" <<'YML'
+# required-aggregator-job: Beta Lint
+name: Other
+jobs:
+  extra:
+    name: Gamma Extra
+YML
+expect "a job-marked name that a job reports passes" 0 "$tmp/jobmarked"
+
+fixture "$tmp/jobrenamed" <<'YML'
+# required-aggregator-job: Zeta Locked
+name: Other
+jobs:
+  locked:
+    name: Zeta Locked Renamed
+YML
+sed -i "s/'Beta Lint',/'Beta Lint',\n              'Zeta Locked',/" "$tmp/jobrenamed/.github/workflows/required-aggregator.yml"
+expect "a job-marked required name whose job was renamed fails" 1 "$tmp/jobrenamed"
+
 echo "all check-aggregator-names tests passed"

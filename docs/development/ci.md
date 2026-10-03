@@ -23,6 +23,7 @@ The main `pull_request`-triggered workflows include:
 | [`rule-enforcement.yml`](../../.github/workflows/rule-enforcement.yml) | ADR-0100 / 0106 / 0108 / 0165 process gates. |
 | [`standards-gate.yml`](../../.github/workflows/standards-gate.yml) | Required HISS/context verification and the fail-closed duplicate-implementation scan. |
 | [`praetor-docs.yml`](../../.github/workflows/praetor-docs.yml) | Praetor's Documentation Governance gate for the `docs:seo-portal` facet; praetor-managed, not required. |
+| [`praetor-api.yml`](../../.github/workflows/praetor-api.yml) | Praetor's `Go API Compatibility` gate (`go-apidiff` over every Go module; no path filter). Praetor-managed; required through the aggregator (ADR-1506), its marker sits in `standards-gate.yml`. |
 | [`tests-and-quality-gates.yml`](../../.github/workflows/tests-and-quality-gates.yml) | Netflix golden, sanitizers, tiny-AI, MCP, coverage, assertion-density. |
 | [`sanitizers.yml`](../../.github/workflows/sanitizers.yml) | Combined ASan+UBSan on PRs, TSan on master pushes, nightly fuzzing; not required (the required sanitizers are in `tests-and-quality-gates.yml`). |
 | [`sycl-parity.yml`](../../.github/workflows/sycl-parity.yml) | SYCL parity tests on self-hosted Intel Arc A380 runner (ADR-1177; see [runbook](ci-self-hosted-sycl.md)). |
@@ -828,12 +829,19 @@ permissions and the last workflow runs from GitHub, which takes about 40
 seconds here against 2 seconds offline, so the hooks pass `--offline` when the
 engine has the flag. CI and `make verify-all` keep the forge read.
 
-Moving to `0af07a733e65` (ADR-1506) dropped `markdownlint-cli2` and the
-`braces` chain from the gate's lock, and added praetor's `Go API Compatibility`
-workflow (`.github/workflows/praetor-api.yml`, `tools/apicompat/`), which
-audit now requires. The engine also reads shell, workflow and systemd files,
-so the baseline went from 227 to 503 with the old engine recording no growth
-on the same tree.
+Moving to `0af07a733e65` (ADR-1506) dropped `markdownlint-cli2` and the `braces`
+chain from the gate's lock, and added praetor's `Go API Compatibility` workflow
+(`.github/workflows/praetor-api.yml`, `tools/apicompat/`), which audit now
+requires. The Required Checks Aggregator lists it in `required` (maintainer
+decision, 2026-10-03). The workflow has no path filter, so a pull request
+without a Go change still reports and the comparison passes; it is not in
+`strictMustReport`, because praetor's locked file does not run on
+`ready_for_review`. Audit locks the workflow byte for byte, so its `#
+required-aggregator-job: Go API Compatibility` marker sits in
+`standards-gate.yml`; `scripts/ci/check-aggregator-names.sh` fails when no job
+reports a name marked that way, which a rename of the job would cause. The
+engine also reads shell, workflow and systemd files, so the baseline went from
+227 to 503 with the old engine recording no growth on the same tree.
 
 #### What the text register checks
 
