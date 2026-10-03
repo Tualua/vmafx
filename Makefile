@@ -417,7 +417,7 @@ ffmpeg-input-contract:
 # itself needs an Intel GPU and runs only in the SYCL container
 # (docs/development/sycl-zerocopy-testing.md); these two run anywhere.
 sycl-zerocopy-contract:
-	$(call require-tool,pytest,python3 -m pip install --require-hashes -r requirements/locks/pytest-timeout.txt)
+	$(call require-tool,pytest,install the hash-locked pytest of requirements/locks/pytest-timeout.txt into a venv)
 	bash ffmpeg-patches/test/check-sycl-feature-routing.sh
 	pytest -p no:cacheprovider -q scripts/test/test_zerocopy_e2e_compare.py
 
