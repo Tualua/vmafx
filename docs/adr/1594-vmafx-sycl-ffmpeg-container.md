@@ -63,7 +63,9 @@ Netflix reference table (CPU and SYCL vs the Netflix values).
   `libvmaf_tune` FFmpeg filters are present, and libvmaf's math binds to glibc
   `libm` (research digest). That run built AOT without the Xe2 targets,
   which master could not compile then (`T-SYCL-XE2-SUBGROUP8-AOT-2026-10-02`,
-  closed: fixed on master by #1842 before this branch merged).
+  closed: fixed on master by #1842 before this branch merged). With
+  `libmfx-gen1.2` QSV works in the image, and `libvmaf_sycl` zero-copy (QSV
+  decode) scores 8-bit and 10-bit HEVC bit for bit like the CPU path, no NaN.
 - **Negative**: the first build installs oneAPI and builds FFmpeg (cached
   afterwards).
 - **Neutral / follow-ups**: keep `FFMPEG_TAG` equal to the tag in

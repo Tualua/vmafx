@@ -17,6 +17,28 @@ Host: NAS with a Xeon D-2143IT and an Intel Arc A380, rootless podman.
 | `reference_report.py` relied on the CLI default model, which is not `vmaf_v0.6.1` on master | pins `--model version=vmaf_v0.6.1` |
 | `run-all-tests.sh` ran `meson test` directly; `test_meson_secret_env_sanitization` forbids that (ADR-1333) | runs `scripts/ci/run_meson_test.py`, listed in the test's runner inventory |
 
+| QSV in the image failed: `Error creating a MFX session: -9` for every `*_qsv` decoder / encoder (only the oneVPL dispatcher `libvpl2` was installed) | install the oneVPL GPU runtime `libmfx-gen1.2` in the runtime stage |
+
+## Zero-copy check (QSV decode → `libvmaf_sycl`)
+
+Test pairs encoded in the image with `hevc_qsv` (8-bit NV12 and 10-bit P010,
+`global_quality 22`), then scored four ways on the same decoded frames: `vmaf`
+CLI on CPU, `libvmaf` filter on CPU, `vmaf` CLI on SYCL, and `libvmaf_sycl`
+with `-hwaccel qsv -hwaccel_output_format qsv` (VA surface → DMA-BUF → Level
+Zero, no CPU readback), `vmaf_v0.6.1`, Arc A380:
+
+| Clip | CPU VMAF | zero-copy vs CPU | NaN frames |
+|---|---|---|---|
+| src01 576x324, 8-bit | 75.953252 | bit-exact (all model features) | 0 |
+| src01 576x324, 10-bit P010 | 76.058344 | bit-exact | 0 |
+| checkerboard 1920x1080 x20, 8-bit | 39.844822 | bit-exact | 0 |
+| checkerboard 1920x1080 x20, 10-bit P010 | 39.806130 | bit-exact | 0 |
+
+Additional features requested with `feature=name=psnr|name=cambi` are
+computed by the host-upload `libvmaf_sycl` path but silently missing from the
+zero-copy path (only the model's SYCL extractors run there); tracked
+separately as `T-SYCL-ZEROCOPY-DROPS-NON-SYCL-FEATURES-2026-10-02`.
+
 ## Verification
 
 | Check | Result |

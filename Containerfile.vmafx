@@ -76,13 +76,17 @@ ENV DEBIAN_FRONTEND=noninteractive
 # (ADR-0541). One pin for the AOT compiler and the driver: libvmaf's SYCL
 # images are compiled ahead of time by this ocloc (ADR-1360) and run on this
 # driver.
+# VA-API (iHD driver) and oneVPL: libvpl2 is only the dispatcher; libmfx-gen1.2
+# is the Intel GPU runtime it loads. Without it every QSV decoder/encoder
+# fails with "Error creating a MFX session: -9", which breaks the
+# libvmaf_sycl zero-copy path this image exists to test.
 # hadolint ignore=DL3008,DL3009
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl gnupg python3 \
         libgomp1 zlib1g \
-        libva2 libva-drm2 intel-media-va-driver-non-free libvpl2 \
+        libva2 libva-drm2 intel-media-va-driver-non-free libvpl2 libmfx-gen1.2 \
         libdav1d7
 COPY build-config.env /tmp/vmafx/build-config.env
 COPY scripts/ci/install-intel-ocloc.sh /tmp/vmafx/scripts/ci/install-intel-ocloc.sh
