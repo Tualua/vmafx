@@ -44,13 +44,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <unistd.h>
-#endif
-
+#include "feature/feature_collector.h"
 #include "feature/feature_extractor.h"
+#include "libvmaf_priv.h"
 #include "libvmaf/feature.h"
 #include "libvmaf/picture.h"
 
@@ -58,8 +54,6 @@
  * C23, where clang-tidy proposes `nullptr`, but the required MSVC C build does
  * not provide that keyword. Preserve the portable C spelling. ADR-1138. */
 
-#define NAME_LEN 64u
-#define PATH_LEN 512u
 #define N_PLANE_KEYS 3u
 
 typedef struct Fixture {
@@ -296,74 +290,29 @@ static mu_message_t expect_absent(const Pair *pair, const char *name)
     return NULL;
 }
 
-/* Aggregates have no public getter: read them back from the JSON output at
- * round-trip precision. Returns 0 and sets *value, or an errno value. */
-static int read_aggregate(VmafContext *vmaf, const char *path, const char *name, double *value)
+/* Aggregates have no public getter: read the value the extractor stored in the
+ * context's feature collector (vmaf_feature_collector_get(), the test accessor
+ * of libvmaf_priv.h), the double the JSON writer would print. Reading it back
+ * from a JSON file in the temporary directory crashed the self-test on the
+ * hosted macOS runner (release build with LTO; not reproducible on Linux under
+ * ASan and UBSan), needed a writable temporary directory on the tester's Mac
+ * and pulled windows.h into the MSVC build. Returns 0 and sets *value, or a
+ * negative errno value. */
+static int read_aggregate(VmafContext *vmaf, const char *name, double *value)
 {
-    if (vmaf_write_output_with_format(vmaf, path, VMAF_OUTPUT_FORMAT_JSON, "%.17g")) {
-        return -EIO;
+    VmafFeatureCollector *collector = vmaf_feature_collector_get(vmaf);
+    if (!collector) {
+        return -EINVAL;
     }
-    FILE *fh = fopen(path, "rb");
-    if (!fh) {
-        return -EIO;
-    }
-    static char buf[1u << 16];
-    const size_t n = fread(buf, 1u, sizeof(buf) - 1u, fh);
-    (void)fclose(fh);
-    (void)remove(path);
-    buf[n] = '\0';
-    char key[NAME_LEN + 8u];
-    (void)snprintf(key, sizeof(key), "\"%s\": ", name);
-    const char *section = strstr(buf, "\"aggregate_metrics\"");
-    const char *at = section ? strstr(section, key) : NULL;
-    if (!at) {
-        return -ENOENT;
-    }
-    char *end = NULL;
-    *value = strtod(at + strlen(key), &end);
-    return end == at + strlen(key) ? -ENOENT : 0;
-}
-
-/* A new file in the temporary directory, so the tester's working directory
- * may be read-only (core/test/AGENTS.d/temp-files-and-output.md: mkstemp in
- * /tmp, GetTempPathA on Windows, as test_public_api_score.c does). Returns 0
- * or -1. */
-static int temp_path(char *path, size_t size, const char *side)
-{
-#ifdef _WIN32
-    char dir[MAX_PATH];
-    const DWORD len = GetTempPathA((DWORD)sizeof(dir), dir);
-    if (len == 0 || len >= sizeof(dir)) {
-        return -1;
-    }
-    const int n = snprintf(path, size, "%smetal_psnr_parity_%lu_%s.json", dir,
-                           (unsigned long)GetCurrentProcessId(), side);
-    return (n > 0 && (size_t)n < size) ? 0 : -1;
-#else
-    const int n = snprintf(path, size, "/tmp/metal_psnr_parity_%s_XXXXXX", side);
-    if (n <= 0 || (size_t)n >= size) {
-        return -1;
-    }
-    const int fd = mkstemp(path);
-    if (fd < 0) {
-        return -1;
-    }
-    return close(fd) == 0 ? 0 : -1;
-#endif
+    return vmaf_feature_collector_get_aggregate(collector, name, value);
 }
 
 static mu_message_t expect_aggregate(const Pair *pair, const char *name)
 {
     double cpu = NAN;
     double gpu = NAN;
-    char cpu_path[PATH_LEN];
-    char gpu_path[PATH_LEN];
-    mu_assert("no temporary file for the CPU aggregate",
-              temp_path(cpu_path, sizeof(cpu_path), "cpu") == 0);
-    mu_assert("no temporary file for the Metal aggregate",
-              temp_path(gpu_path, sizeof(gpu_path), "metal") == 0);
-    mu_assert("the CPU aggregate is missing", !read_aggregate(pair->cpu, cpu_path, name, &cpu));
-    mu_assert("the Metal aggregate is missing", !read_aggregate(pair->gpu, gpu_path, name, &gpu));
+    mu_assert("the CPU aggregate is missing", !read_aggregate(pair->cpu, name, &cpu));
+    mu_assert("the Metal aggregate is missing", !read_aggregate(pair->gpu, name, &gpu));
     if (cpu != gpu) {
         (void)fprintf(stderr, "\n%s: cpu=%.17g %s=%.17g\n", name, cpu, METAL_TWIN_BACKEND, gpu);
         return "the Metal aggregate differs from the CPU's";

@@ -357,7 +357,7 @@ static const Fixture FX_TWIN10 = {FIXTURE_TEXTURE, 10u, 640u, 480u};
 
 /* Eleven frames: more than one readback batch of a batched twin plus a tail
  * for flush(). */
-static const Scenario SC_DEFAULT = {{NULL}, 11u, true, V2_KEYS("")};
+static const Scenario SC_DEFAULTS = {{NULL}, 11u, true, V2_KEYS("")};
 static const Scenario SC_WEIGHT_CAP = {
     {"motion_fps_weight", "2", "motion_max_val", "4", NULL}, 11u, true, V2_KEYS("_mfw_2_mmxv_4")};
 static const Scenario SC_WEIGHT = {
@@ -463,7 +463,7 @@ static char *test_motion_v2_metal_registered(void)
 
 static char *test_motion_v2_default_exact(void)
 {
-    return check_8_and_10(&SC_DEFAULT);
+    return check_8_and_10(&SC_DEFAULTS);
 }
 
 static char *test_motion_v2_exact_twin(void)

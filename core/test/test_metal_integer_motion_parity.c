@@ -357,7 +357,7 @@ static const Fixture FX_TWIN10 = {FIXTURE_TEXTURE, 10u, 640u, 480u};
 
 /* Eleven frames: more than one readback batch of a batched twin plus a tail
  * for flush(). */
-static const Scenario SC_DEFAULT = {
+static const Scenario SC_DEFAULTS = {
     {NULL},
     11u,
     true,
@@ -503,7 +503,7 @@ static char *test_integer_motion_metal_registered(void)
 
 static char *test_integer_motion_default_exact(void)
 {
-    return check_8_and_10(&SC_DEFAULT);
+    return check_8_and_10(&SC_DEFAULTS);
 }
 
 static char *test_integer_motion_debug_exact(void)

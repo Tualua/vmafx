@@ -2209,7 +2209,9 @@ test_float_moment_sum = executable('test_float_moment_sum',
     link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
     dependencies : [math_lib, pthread_dependency, gpu_all_deps],
 )
-test('test_float_moment_sum', test_float_moment_sum, suite : ['fast'], timeout : 120)
+# 35 s on a workstation under the sanitizer job's debug ASan + UBSan build;
+# the hosted runner of that job passed 120 s twice (#1918, #1922).
+test('test_float_moment_sum', test_float_moment_sum, suite : ['fast'], timeout : 600)
 # The device-free half: every twin's kernels and host wired to the header.
 test('test_float_moment_sum_contract',
     import('python').find_installation(),
