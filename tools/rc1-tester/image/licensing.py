@@ -218,8 +218,26 @@ def generated_source(rule: dict, rel: str, build: Path, repo: Path) -> str:
     return candidates[0].relative_to(repo).as_posix()
 
 
+def compiled_source(rule: dict, rel: str, repo: Path) -> str:
+    """The repository source a generated build input was compiled from: the GPU
+    kernel object a GPU build embeds (bin2c of an nvcc fatbin), named after its
+    source. Exactly one repository file may match."""
+    name = Path(rel).name.removesuffix(rule["suffix"])
+    pattern = rule["compiled_from"].format(name=name)
+    candidates = sorted(p for p in repo.glob(pattern) if p.is_file())
+    if len(candidates) != 1:
+        raise LicensingError(
+            f"generated {rel}: {pattern} identifies {len(candidates)} files, not 1"
+        )
+    return candidates[0].relative_to(repo).as_posix()
+
+
 def generated_entry(rule: dict, rel: str, dirs: tuple[Path, Path], annotations: list[dict]) -> dict:
     build, repo = dirs
+    if "compiled_from" in rule:
+        source = compiled_source(rule, rel, repo)
+        expression, copyrights = file_licence(repo / source, source, annotations)
+        return {"path": rel, "from": source, "licence": expression, "copyright": copyrights}
     if "repo" in rule:
         source = generated_source(rule, rel, build, repo)
         expression, copyrights = file_licence(repo / source, source, annotations)

@@ -19,6 +19,9 @@ intel-runtime <runtime.json> <oneapi_root> <image_root>
                                       copy the listed Intel runtime files, unmodified,
                                       to <image_root>/lib/intel and their licence texts
                                       to <image_root>/licenses/intel (Intel GPU image)
+cuda-targets <build_dir> <image_root> write image/cuda-targets.json: the CUDA version
+                                      and the cubin and PTX targets of the build's
+                                      gencode list, from its Meson log (NVIDIA GPU image)
 
 A list names one test of the Meson build per line, or `suite:<name>` for every
 test of that suite. A test runs from the image when it is an executable of the
@@ -334,6 +337,40 @@ def stage_intel_runtime(spec_path: Path, oneapi: Path, image_root: Path) -> None
             shutil.copy2(source, texts / source.name)
 
 
+CUDA_VERSION_LINE = re.compile(r"Message: Found CUDA version = (\S+)")
+GENCODE_LINE = re.compile(r"Message: CUDA gencode = (.*)")
+GENCODE_CODE = re.compile(r"code=((?:sm|compute)_\d+)")
+
+
+def cuda_targets(meson_log: str) -> dict:
+    """The CUDA version and the cubin and PTX targets the build compiled its kernels
+    for, as core/src/meson.build reports them in the Meson log."""
+    version = CUDA_VERSION_LINE.search(meson_log)
+    gencode = GENCODE_LINE.search(meson_log)
+    if version is None or gencode is None:
+        raise BuildError("the Meson log names no CUDA version or gencode list")
+    codes = GENCODE_CODE.findall(gencode.group(1))
+    targets = {
+        "cuda_version": version.group(1),
+        "cubins": sorted({c for c in codes if c.startswith("sm_")}, key=_arch_key),
+        "ptx": sorted({c for c in codes if c.startswith("compute_")}, key=_arch_key),
+    }
+    if not targets["cubins"]:
+        raise BuildError("the CUDA gencode list names no cubin")
+    return targets
+
+
+def _arch_key(code: str) -> int:
+    return int(code.rsplit("_", 1)[1])
+
+
+def write_cuda_targets(build_dir: Path, image_root: Path) -> None:
+    log = (build_dir / "meson-logs" / "meson-log.txt").read_text(encoding="utf-8", errors="replace")
+    out = image_root / "image" / "cuda-targets.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(cuda_targets(log), indent=1) + "\n", encoding="utf-8")
+
+
 def print_targets(build_dir: Path, names: list[str]) -> None:
     """Build targets of the listed tests that are executables of the build."""
     targets = {str(t["path"].relative_to(build_dir)) for t in native_tests(build_dir, names)}
@@ -356,6 +393,8 @@ def run(argv: list[str]) -> int:
         write_twins(Path(argv[2]), argv[3])
     elif command == "intel-runtime" and len(argv) == 5:
         stage_intel_runtime(Path(argv[2]), Path(argv[3]), Path(argv[4]))
+    elif command == "cuda-targets" and len(argv) == 4:
+        write_cuda_targets(Path(argv[2]), Path(argv[3]))
     else:
         print(__doc__, file=sys.stderr)
         return 64

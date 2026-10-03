@@ -361,6 +361,35 @@ def test_generated_source_is_identified_by_its_bytes(tmp_path: Path) -> None:
         lic.generated_source(rule, "src/m.json.c", build, repo)
 
 
+FATBIN_RULE = {"pattern": "src/*.fatbin.c", "suffix": ".fatbin.c",
+               "compiled_from": "core/src/feature/cuda/**/{name}.cu"}  # fmt: skip
+
+
+def test_a_kernel_object_takes_the_licence_of_the_source_it_was_compiled_from(
+    tmp_path: Path, monkeypatch
+) -> None:
+    build, repo = fake_build(tmp_path, monkeypatch, generated="src/psnr_score.fatbin.c")
+    write(repo / "core/src/feature/cuda/integer_psnr/psnr_score.cu",
+          f"/* Copyright 2016 Netflix, Inc.\n * {TAG} MIT */\n")  # fmt: skip
+    data = manifest()
+    data["generated_build_files"].append(FATBIN_RULE)
+    entry = next(f for f in lic.scan_build(build, repo, data)["files"]
+                 if f["path"] == "src/psnr_score.fatbin.c")  # fmt: skip
+    assert entry == {"path": "src/psnr_score.fatbin.c",
+                     "from": "core/src/feature/cuda/integer_psnr/psnr_score.cu",
+                     "licence": "MIT", "copyright": ["Copyright 2016 Netflix, Inc."]}  # fmt: skip
+
+
+def test_a_kernel_object_without_exactly_one_source_is_refused(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    with pytest.raises(lic.LicensingError, match="identifies 0 files, not 1"):
+        lic.compiled_source(FATBIN_RULE, "src/psnr_score.fatbin.c", repo)
+    write(repo / "core/src/feature/cuda/a/psnr_score.cu", "x")
+    write(repo / "core/src/feature/cuda/b/psnr_score.cu", "y")
+    with pytest.raises(lic.LicensingError, match="identifies 2 files, not 1"):
+        lic.compiled_source(FATBIN_RULE, "src/psnr_score.fatbin.c", repo)
+
+
 # ----------------------------------------------------------------- sources
 
 
@@ -463,6 +492,17 @@ def test_the_image_cannot_be_built_without_the_licence_check() -> None:
     assert "FROM scratch AS source-export" in text
 
 
+def assert_gpu_kit_published(kit: str) -> None:
+    """The GPU kit is a leg of both matrix jobs, which build its source image and
+    attest its SBOM."""
+    workflow = (REPO / ".github/workflows/docker-publish-tester.yml").read_text()
+    build = workflow.split("  build-gpu:\n", 1)[1].split("\n  publish-gpu:\n", 1)
+    assert f"- kit: {kit}\n" in build[0] and f"- kit: {kit}\n" in build[1]
+    assert "target: ${{ matrix.kit }}-source-export" in build[0]
+    assert "sbom-path: sbom-tester-${{ matrix.kit }}.spdx.json" in build[1]
+    assert "environment: tester-publish" in build[1]
+
+
 def test_the_sycl_image_cannot_be_built_without_its_licence_check() -> None:
     text = (REPO / "docker/Dockerfile.tester").read_text()
     final = text.split("FROM sycl-assembled AS final-sycl", 1)[1].split("\nFROM ", 1)[0]
@@ -470,11 +510,27 @@ def test_the_sycl_image_cannot_be_built_without_its_licence_check() -> None:
     assert "licensing.py check --artifact sycl-image" in text
     assert "licensing.py notices --artifact sycl-image" in text
     assert "FROM scratch AS sycl-source-export" in text
-    workflow = (REPO / ".github/workflows/docker-publish-tester.yml").read_text()
-    assert (
-        "target: sycl-source-export" in workflow
-        and "sbom-path: sbom-tester-sycl.spdx.json" in workflow
-    )
+    assert_gpu_kit_published("sycl")
+
+
+def test_the_cuda_image_cannot_be_built_without_its_licence_check() -> None:
+    text = (REPO / "docker/Dockerfile.tester").read_text()
+    final = text.split("FROM cuda-assembled AS final-cuda", 1)[1].split("\nFROM ", 1)[0]
+    assert "COPY --from=cuda-licence-check /out/licence-check.json" in final
+    assert "licensing.py check --artifact cuda-image" in text
+    assert "licensing.py notices --artifact cuda-image" in text
+    assert "FROM scratch AS cuda-source-export" in text
+    runtime = text.split("AS cuda-runtime", 1)[1].split("\nFROM ", 1)[0]
+    assert "NVIDIA files in the image" in runtime  # the image ships no NVIDIA library
+    assert_gpu_kit_published("cuda")
+
+
+def test_the_cuda_record_carries_the_nvidia_terms() -> None:
+    record = lic.load_manifest()["artifacts"]["cuda-image"]
+    nvidia = next(c for c in record["components"] if c["id"] == "nvidia-cuda-device-code")
+    assert "paths" not in nvidia  # no NVIDIA file ships; the code is inside VMAFx binaries
+    assert nvidia["texts"][0]["artifact"] == "opt/vmafx/licenses/nvidia/CUDA-EULA.txt"
+    assert any("EUPL-1.2 covers only the VMAFx files" in note for note in nvidia["notes"])
 
 
 def test_the_bundle_script_checks_before_it_packs() -> None:

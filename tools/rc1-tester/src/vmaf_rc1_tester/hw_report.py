@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
+from .hw_cuda import CUDA
 from .hw_equiv import run_dispatch_equivalence
 from .hw_facts import collect_host_facts, read_build_info
 from .hw_gate import run_metal_gate
@@ -35,12 +36,12 @@ from .hw_sycl import SYCL
 from .safe_process import run_bounded
 
 # 2: the Metal gate and the state-row map (ADR-1496). 3: the backend-neutral GPU
-# section (hw_gpu.py; the Intel GPU image's SYCL measurements).
+# section (hw_gpu.py; the SYCL and CUDA images' measurements).
 SCHEMA_VERSION = "3"
 DEFAULT_ROOT = "/opt/vmafx"
 CHECKS = ("dispatch", "reference", "metal", "gate", "unit", "golden", "gpu")
 # The GPU backends an image can carry, by the name in image/build-info.json.
-GPU_BACKENDS: dict[str, GpuBackend] = {"sycl": SYCL}
+GPU_BACKENDS: dict[str, GpuBackend] = {"sycl": SYCL, "cuda": CUDA}
 FIXTURE_TIMEOUT_SECONDS = 3600.0
 GATE_TIMEOUT_SECONDS = 3 * 3600.0
 UNIT_TIMEOUT_SECONDS = 900.0

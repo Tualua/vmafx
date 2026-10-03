@@ -1,6 +1,30 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## The NVIDIA GPU tester image (ADR-1509, 2026-10-03)
+
+`feat/tester-kit-cuda`. Fork-only tester tooling; no libvmaf source changes.
+
+- `docker/Dockerfile.tester` gains the `cuda-*` stages and target `final-cuda`
+  between the SYCL stages and the CPU image's `assembled`; `final` stays the last
+  stage and the default target. The `cuda-runtime` stage fails on any file named
+  like an NVIDIA library and the `cuda-build` stage on a `NEEDED` entry naming
+  one: the image ships no NVIDIA file. A sync that makes `libvmaf` link
+  `libcudart` (or any NVIDIA library) breaks the build until ADR-1509 is revisited.
+- The image's CUDA targets come from the `CUDA gencode = [...]` and `Found CUDA
+  version = ...` lines `core/src/meson.build` prints (`prepare_build.py
+  cuda-targets`); renaming those messages fails the image build.
+- `docker-publish-tester.yml`: the Intel jobs `build-sycl` / `publish-sycl` are now
+  the matrix jobs `build-gpu` / `publish-gpu` (kits `sycl`, `cuda`); digests pass
+  through the artifact `tester-<kit>-digests`.
+- `licensing.json`: artifact `cuda-image`, and a `generated_build_files` rule of the
+  new form `compiled_from` for `src/*.fatbin.c` (the licence of the `.cu` source a
+  kernel object was compiled from). A CUDA kernel added upstream needs a unique
+  file name under `core/src/feature/cuda/`, or the scan refuses it.
+- `tools/rc1-tester/tests/test_sycl_rows_contract.py` is now
+  `test_gpu_rows_contract.py` and covers `cuda-rows.json` too: every CUDA row holds
+  every parity-gate feature, so a feature added upstream changes the row map.
+
 ## Open CodeQL alerts fixed in code: header guards, SpEED products, bit-identity tests (ADR-1502, 2026-10-03)
 
 `fix/codeql-open-alerts`. No score moves; every library and tool object file
@@ -63,7 +87,7 @@ comment and no SPDX tag. An upstream sync that touches them keeps the MIT tag.
   wrappers. A Meson test of the `gpu` or `sycl` suite added upstream of a sync is
   picked up by the image automatically; a Python test is listed as left out.
 - `tools/rc1-tester/image/sycl-rows.json` names the SG16 row's tests; renaming one
-  of them fails `tools/rc1-tester/tests/test_sycl_rows_contract.py`.
+  of them fails `tools/rc1-tester/tests/test_gpu_rows_contract.py`.
 - The licence record (`tools/rc1-tester/image/licensing.json`, ADR-1503) gains the
   artifact `sycl-image`, a component kind `dpkg-foreign` (vendor packages without a
   Debian copyright file or Debian source) and pinned `fetched_texts`;

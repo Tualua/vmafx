@@ -34,6 +34,12 @@
    "why": "xxd -i of the BRISQUE model (ADR-1115)"
   },
   {
+   "pattern": "src/*.fatbin.c",
+   "suffix": ".fatbin.c",
+   "compiled_from": "core/src/feature/cuda/**/{name}.cu",
+   "why": "bin2c of the nvcc fatbin of a CUDA kernel (core/src/meson.build cuda_cu_sources); its device code also holds NVIDIA's CUDA header code and libdevice functions (component nvidia-cuda-device-code of the CUDA image)"
+  },
+  {
    "pattern": "src/config.h",
    "licence": "NONE",
    "why": "configuration defines written by the Meson configure step"
@@ -910,6 +916,258 @@
        "fetched": "level-zero-1.34.0-LICENSE.txt",
        "name": "level-zero-1.34.0-LICENSE.txt",
        "label": "oneAPI Level Zero loader 1.34.0 LICENSE"
+      }
+     ]
+    },
+    {
+     "id": "debian-packages",
+     "kind": "dpkg",
+     "name": "Debian packages of the base image and the Python 3.13 interpreter"
+    },
+    {
+     "id": "system-state",
+     "kind": "state",
+     "name": "Configuration and state written by the Debian base image's build and its package scripts (no licensable content of its own; the scripts are covered by their packages' copyright files)",
+     "paths": [
+      "var/lib/dpkg/**",
+      "var/lib/apt/**",
+      "var/lib/pam/**",
+      "var/lib/systemd/**",
+      "var/lib/shells.state",
+      "var/cache/**",
+      "var/log/**",
+      "var/spool/**",
+      "etc/ld.so.cache",
+      "etc/alternatives/*",
+      "etc/apt/apt.conf.d/docker-*",
+      "etc/apt/sources.list.d/debian.sources",
+      "etc/dpkg/dpkg.cfg.d/docker*",
+      "etc/dpkg/origins/default",
+      "etc/systemd/system/**",
+      "etc/pam.d/common-*",
+      "etc/security/opasswd",
+      "etc/passwd",
+      "etc/passwd-",
+      "etc/group",
+      "etc/group-",
+      "etc/shadow",
+      "etc/shadow-",
+      "etc/gshadow",
+      "etc/gshadow-",
+      "etc/subuid",
+      "etc/subgid",
+      "etc/shells",
+      "etc/profile",
+      "etc/inputrc",
+      "etc/environment",
+      "etc/fstab",
+      "etc/localtime",
+      "etc/motd",
+      "etc/networks",
+      "etc/nsswitch.conf",
+      "etc/ca-certificates.conf",
+      "etc/ssl/certs/**",
+      "etc/hostname",
+      "etc/hosts",
+      "etc/resolv.conf",
+      "etc/mtab",
+      "etc/machine-id",
+      "etc/.pwd.lock",
+      "usr/share/info/dir",
+      "usr/bin/awk",
+      "usr/bin/nawk",
+      "usr/bin/pager",
+      "usr/bin/which",
+      "usr/sbin/rmt",
+      "usr/sbin/policy-rc.d",
+      "usr/local/man",
+      "root/.bashrc",
+      "root/.profile",
+      "root/.python_history",
+      "root/.wget-hsts",
+      "dev/**",
+      ".dockerenv",
+      "etc/python3/debian_config",
+      "var/lib/python/**"
+     ]
+    },
+    {
+     "id": "notices",
+     "kind": "notices",
+     "name": "This licence directory",
+     "paths": [
+      "opt/vmafx/licenses/**"
+     ]
+    }
+   ]
+  },
+  "cuda-image": {
+   "title": "the VMAFx NVIDIA GPU tester image",
+   "licence_root": "opt/vmafx/licenses",
+   "source_offer": "the image ghcr.io/vmafx/vmafx:{tag}-source in the same registry package, published with this image (Debian source packages of every installed Debian package at the installed version); SOURCES.txt inside it is the index. The image holds no NVIDIA library and no other copyleft object code.",
+   "components": [
+    {
+     "id": "vmafx-binaries",
+     "kind": "build",
+     "name": "VMAFx: vmaf, libvmaf (CUDA build) and the unit and CUDA device test executables",
+     "paths": [
+      "opt/vmafx/build/**",
+      "opt/vmafx/tests/**"
+     ],
+     "licences": [
+      "EUPL-1.2",
+      "BSD-2-Clause-Patent",
+      "BSD-3-Clause",
+      "BSD-2-Clause",
+      "ISC",
+      "MIT",
+      "Unlicense",
+      "LicenseRef-LIVE-BRISQUE"
+     ],
+     "source": "https://github.com/VMAFx/vmafx at the source commit above",
+     "notes": [
+      "The licences and copyright lines below are those of every repository file the build compiled (vmafx-compiled-sources.json next to this file lists them file by file).",
+      "The CUDA kernels are fatbins inside libvmaf and the test executables (cubins for sm_80, sm_86, sm_89, sm_90, sm_100 and sm_120, PTX for compute_80 and compute_120); their device code also holds NVIDIA's code, see [component nvidia-cuda-device-code]."
+     ]
+    },
+    {
+     "id": "netflix-test-videos",
+     "kind": "fixed",
+     "name": "Netflix test videos (Netflix/vmaf_resource)",
+     "manifest": {
+      "file": "tools/rc1-tester/image/fixtures.sha256",
+      "prefix": "opt/vmafx/python/test/resource/"
+     },
+     "licence": "BSD-2-Clause-Patent",
+     "copyright": [
+      "Copyright (c) 2020 Netflix, Inc."
+     ],
+     "source": "https://github.com/Netflix/vmaf_resource/tree/c0ab6adbd7e41bb354f14686ed08500530622bc3/python/test/resource",
+     "texts": [
+      {
+       "repo": "LICENSE",
+       "name": "netflix-vmaf_resource-LICENSE.txt",
+       "label": "LICENSE of Netflix/vmaf_resource, identical to this repository's LICENSE"
+      }
+     ]
+    },
+    {
+     "id": "brisque-live-model",
+     "kind": "fixed",
+     "name": "BRISQUE LIVE model (also built into libvmaf)",
+     "paths": [
+      "opt/vmafx/model/other_models/brisque_live.model",
+      "opt/vmafx/model/other_models/NOTICE-brisque"
+     ],
+     "licence": "LicenseRef-LIVE-BRISQUE",
+     "copyright": [
+      "Copyright (c) 2011 The University of Texas at Austin"
+     ],
+     "source": "https://github.com/gregfreeman/image_quality_toolbox/tree/5491aa55b9006242e7317dd5a82f3af9d5c92510/%2Bbrisque",
+     "texts": [
+      {
+       "repo": "model/other_models/NOTICE-brisque",
+       "name": "NOTICE-brisque.txt",
+       "label": "provenance and citation"
+      }
+     ],
+     "notes": [
+      "Terms (LICENSES/LicenseRef-LIVE-BRISQUE.txt, ADR-1507): permission \"to use, copy, modify, and distribute this code (the source files) and its documentation for any purpose, provided that the copyright notice in its entirety appear in all copies of this code, and the original source of this code, Laboratory for Image and Video Engineering (LIVE, http://live.ece.utexas.edu) and Center for Perceptual Systems (CPS, http://www.cps.utexas.edu) at the University of Texas at Austin (UT Austin, http://www.utexas.edu), is acknowledged in any publication that reports research using this code\"; the notice names the two works to cite. Its full text is texts/LicenseRef-LIVE-BRISQUE.txt."
+     ]
+    },
+    {
+     "id": "vmafx-files",
+     "kind": "repo",
+     "name": "VMAFx report program, parity gate, models and row map (source files from the repository)",
+     "map": [
+      {
+       "artifact": "opt/vmafx/model/",
+       "repo": "model/"
+      },
+      {
+       "artifact": "opt/vmafx/tester/src/",
+       "repo": "tools/rc1-tester/src/"
+      },
+      {
+       "artifact": "opt/vmafx/tester/vmaf-tester-report",
+       "repo": "tools/rc1-tester/vmaf-tester-report"
+      },
+      {
+       "artifact": "opt/vmafx/tester/gate/",
+       "repo": ""
+      },
+      {
+       "artifact": "opt/vmafx/image/fixtures.json",
+       "repo": "tools/rc1-tester/image/fixtures.json"
+      },
+      {
+       "artifact": "opt/vmafx/image/cuda-rows.json",
+       "repo": "tools/rc1-tester/image/cuda-rows.json"
+      }
+     ],
+     "licences": [
+      "EUPL-1.2",
+      "BSD-2-Clause-Patent",
+      "BSD-3-Clause",
+      "BSD-2-Clause",
+      "MIT",
+      "LicenseRef-LIVE-BRISQUE"
+     ],
+     "source": "https://github.com/VMAFx/vmafx at the source commit above"
+    },
+    {
+     "id": "build-records",
+     "kind": "fixed",
+     "name": "Scores, build information, test manifests and the licence check receipt written by this image's build",
+     "paths": [
+      "opt/vmafx/reference/**",
+      "opt/vmafx/image/build-info.json",
+      "opt/vmafx/image/unit-tests.json",
+      "opt/vmafx/image/gpu-tests.json",
+      "opt/vmafx/image/gpu-twins.json",
+      "opt/vmafx/image/cuda-targets.json",
+      "opt/vmafx/licence-check.json"
+     ],
+     "licence": "EUPL-1.2",
+     "copyright": [
+      "Copyright 2026 Lusoris"
+     ]
+    },
+    {
+     "id": "nvidia-cuda-device-code",
+     "kind": "fixed",
+     "name": "NVIDIA CUDA Toolkit 13.4 code compiled into the CUDA kernels: CUDA header code and the libdevice math library (libdevice.10.bc) that nvcc links into the device code",
+     "licence": "LicenseRef-NVIDIA-CUDA-EULA (distributable portions listed in Attachment A, incorporated in object code into this application)",
+     "copyright": [
+      "Copyright (c) NVIDIA Corporation"
+     ],
+     "source": "binary only; compiled in by nvcc 13.4.92 (CUDA_APT_NVCC_VERSION of build-config.env) from NVIDIA's debian13 repository",
+     "texts": [
+      {
+       "artifact": "opt/vmafx/licenses/nvidia/CUDA-EULA.txt",
+       "label": "NVIDIA CUDA Toolkit End User License Agreement v13.4 (last updated January 26, 2026), the copyright file of the package that installs libdevice.10.bc"
+      }
+     ],
+     "notes": [
+      "Part of the object code in this image is NVIDIA's: the device code of the CUDA kernels in libvmaf and in the test executables contains code from the CUDA Toolkit's headers and from its libdevice library, which Attachment A of the CUDA Toolkit EULA lists as distributable (NVIDIA Common Device Math Functions Library, CUDA Floating Point Type Headers, CUDA Headers for Runtime Compilation), incorporated in object code into this application (EULA 1.1.1(c)).",
+      "These NVIDIA portions are accessed only by the VMAFx programs in this image (EULA 1.1.2). You may not reverse engineer, decompile or disassemble them or remove NVIDIA's notices (EULA 1.2); NVIDIA provides them as is (1.4), with the limitation of liability of 1.5.",
+      "The image ships no NVIDIA library. The NVIDIA driver (libcuda.so.1 and the PTX JIT compiler) comes from your host, mounted by the NVIDIA Container Toolkit or by WSL2, under the driver's own licence.",
+      "EUPL-1.2 covers only the VMAFx files of this image, never NVIDIA's components. VMAFx is not sponsored or endorsed by NVIDIA; NVIDIA's names identify the components only."
+     ]
+    },
+    {
+     "id": "nv-codec-headers",
+     "kind": "fixed",
+     "name": "nv-codec-headers (FFmpeg): the CUDA driver loader libvmaf compiles in (include/ffnvcodec/dynlink_loader.h, dynlink_cuda.h)",
+     "licence": "MIT",
+     "copyright": [
+      "Copyright (c) 2016 (as the headers state it)"
+     ],
+     "source": "https://code.ffmpeg.org/FFmpeg/nv-codec-headers at commit 876af32a202d0de83bd1d36fe74ee0f7fcf86b0d (NV_CODEC_HEADERS_COMMIT of docker/Dockerfile.tester, the minimum core/src/meson.build requires)",
+     "texts": [
+      {
+       "artifact": "opt/vmafx/licenses/nv-codec-headers/NOTICE.txt",
+       "label": "the copyright and permission notices of the two headers, copied from them at build time"
       }
      ]
     },

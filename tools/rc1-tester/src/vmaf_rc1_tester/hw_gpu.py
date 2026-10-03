@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: EUPL-1.2
 """The report's GPU section: one GPU backend measured on the tester's devices.
 
-Backend-neutral. A backend (hw_sycl.py for Intel GPUs) supplies a `GpuBackend`:
-how to find its devices and how the image reaches them, the environment that pins
-a run to one device, and parsers for test outputs it audits. Per device the
-section then holds:
+Backend-neutral. A backend (hw_sycl.py for Intel GPUs, hw_cuda.py for NVIDIA GPUs)
+supplies a `GpuBackend`: how to find its devices and how the image reaches them,
+the environment that pins a run to one device, and parsers for test outputs it
+audits. Per device the section then holds:
 
 - `twins`: every CPU extractor of the dispatch check run with `--backend <name>` at
   `--precision max` against the CPU scores of the same image, per fixture (counts,
@@ -362,6 +362,15 @@ def gpu_not_exercised(section: Mapping[str, Any]) -> list[tuple[str, str]]:
     return items
 
 
+VERSION_FACTS = ("ip_version", "compute_capability", "gfx_target")
+
+
+def device_version(facts: Mapping[str, Any]) -> str:
+    """The backend's own version of a device: Intel GPU IP version, CUDA compute
+    capability or AMD gfx target, whichever the backend reports."""
+    return next((str(facts[key]) for key in VERSION_FACTS if key in facts), "?")
+
+
 def summary_lines(section: Mapping[str, Any]) -> list[str]:
     """Human lines for stderr: the section's status and one line per device."""
     name = f" ({section['backend']})" if section.get("backend") else ""
@@ -377,7 +386,7 @@ def summary_lines(section: Mapping[str, Any]) -> list[str]:
         counts = device["rows"].get("counts", {})
         lines.append(
             f"  device {device['index']} {facts.get('name', '?')} ({facts.get('family', '?')} "
-            f"{facts.get('ip_version', '?')}): {device['status']}; twins "
+            f"{device_version(facts)}): {device['status']}; twins "
             f"{device['twins']['status']}, gate {device['gate']['status']}, tests "
             f"{tests['status']} ({tests['passed']} passed, {tests['failed']} failed, "
             f"{tests['skipped']} skipped), {audits or 'no audit'}; state rows "

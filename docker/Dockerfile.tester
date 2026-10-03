@@ -414,6 +414,241 @@ COPY --from=sycl-licence-check /out/licence-check.json /opt/vmafx/licence-check.
 USER 10001:10001
 ENTRYPOINT ["/usr/bin/python3", "/opt/vmafx/tester/vmaf-tester-report"]
 
+# ===========================================================================
+# NVIDIA GPU variant: ghcr.io/vmafx/vmafx:<describe>-tester-cuda (linux/amd64).
+#   docker build -f docker/Dockerfile.tester --target final-cuda .
+# The image ships no NVIDIA file: libvmaf loads the host driver's libcuda.so.1
+# at run time (nv-codec-headers' loader), which the NVIDIA Container Toolkit
+# mounts with --gpus all; the kernels are fatbins inside libvmaf.
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# cuda-build: Debian 13, nvcc and cudart from NVIDIA's debian13 repository at
+# build-config.env's exact versions (scripts/ci/install-cuda-toolkit.sh), the
+# nv-codec-headers commit core/src/meson.build requires. The default gencode
+# list of core/src/meson.build: cubins for sm_80, sm_86, sm_89, sm_90, sm_100
+# and sm_120, PTX for compute_80 and compute_120. The compilers stay here.
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_BUILDER_BASE} AS cuda-build
+ARG DEBIAN_FRONTEND=noninteractive
+ARG VMAF_BUILD_JOBS=4
+ARG NV_CODEC_HEADERS_COMMIT=876af32a202d0de83bd1d36fe74ee0f7fcf86b0d
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates curl gcc g++ git make meson nasm ninja-build pkg-config python3 xxd \
+    && rm -rf /var/lib/apt/lists/*
+COPY build-config.env scripts/ci/install-cuda-toolkit.sh /tmp/vmafx/
+RUN bash /tmp/vmafx/install-cuda-toolkit.sh --mode=builder /tmp/vmafx \
+    && rm -rf /tmp/vmafx /var/lib/apt/lists/*
+ENV PATH="/usr/local/cuda/bin:${PATH}"
+# The headers' own notices travel with the image: libvmaf compiles their loader in.
+RUN git init -q /tmp/nv-codec-headers \
+    && git -C /tmp/nv-codec-headers fetch -q --depth=1 \
+        https://code.ffmpeg.org/FFmpeg/nv-codec-headers.git "${NV_CODEC_HEADERS_COMMIT}" \
+    && git -C /tmp/nv-codec-headers checkout -q --detach FETCH_HEAD \
+    && test "$(git -C /tmp/nv-codec-headers rev-parse HEAD)" = "${NV_CODEC_HEADERS_COMMIT}" \
+    && make -C /tmp/nv-codec-headers install PREFIX=/usr/local \
+    && mkdir -p /opt/vmafx/licenses/nv-codec-headers \
+    && for header in dynlink_cuda.h dynlink_loader.h; do \
+        { echo "include/ffnvcodec/${header} of nv-codec-headers ${NV_CODEC_HEADERS_COMMIT}:"; \
+          sed -n '1,/\*\//p' "/tmp/nv-codec-headers/include/ffnvcodec/${header}"; echo; } \
+          >> /opt/vmafx/licenses/nv-codec-headers/NOTICE.txt; \
+    done \
+    && grep -q 'Permission is hereby granted' /opt/vmafx/licenses/nv-codec-headers/NOTICE.txt \
+    && rm -rf /tmp/nv-codec-headers
+WORKDIR /opt/vmafx/src
+COPY core core
+COPY model model
+COPY REUSE.toml REUSE.toml
+COPY scripts/__init__.py scripts/__init__.py
+COPY scripts/lib scripts/lib
+COPY scripts/ci/check-msvc-clz-shim.sh scripts/ci/cross_backend_parity_gate.py \
+     scripts/ci/cross_backend_calibration.py scripts/ci/
+COPY scripts/ci/exact_twins.d scripts/ci/exact_twins.d
+COPY docs/adr docs/adr
+COPY tools/rc1-tester/image tools/rc1-tester/image
+# hadolint ignore=SC2046
+RUN meson setup build core --buildtype=release --strip -Db_lto=false \
+        -Denable_float=true -Denable_cuda=true -Denable_nvcc=true -Dnvcc_threads=1 \
+        -Denable_sycl=false -Denable_hip=false \
+        -Denable_dnn=disabled -Denable_docs=false -Denable_tests=true \
+    && nice -n 10 ninja -C build -j"${VMAF_BUILD_JOBS}" tools/vmaf \
+        $(python3 tools/rc1-tester/image/prepare_build.py select build \
+            tools/rc1-tester/image/unit-tests.txt) \
+        $(python3 tools/rc1-tester/image/prepare_build.py select build \
+            tools/rc1-tester/image/cuda-tests.txt) \
+    && mkdir /licence-inputs \
+    && python3 tools/rc1-tester/image/licensing.py scan-build --build build \
+        --repo /opt/vmafx/src --out /licence-inputs/vmafx-sources.json
+# The NVIDIA parts of the kernels are CUDA headers and the libdevice library
+# nvcc links into the fatbins (CUDA EULA 1.1.1(c), Attachment A); the EULA
+# text is the copyright file of the package that installs libdevice.10.bc.
+RUN mkdir -p /opt/vmafx/build/tools /opt/vmafx/build/src /opt/vmafx/model \
+        /opt/vmafx/licenses/nvidia \
+    && cp build/tools/vmaf /opt/vmafx/build/tools/ \
+    && find build/src -maxdepth 1 -name 'libvmaf.so*' -not -type d \
+        -exec cp -a {} /opt/vmafx/build/src/ \; \
+    && python3 tools/rc1-tester/image/prepare_build.py stage build \
+        tools/rc1-tester/image/unit-tests.txt /opt/vmafx \
+    && python3 tools/rc1-tester/image/prepare_build.py stage build \
+        tools/rc1-tester/image/cuda-tests.txt /opt/vmafx gpu-tests.json \
+    && python3 tools/rc1-tester/image/prepare_build.py gate /opt/vmafx/src /opt/vmafx \
+    && python3 tools/rc1-tester/image/prepare_build.py twins /opt/vmafx cuda \
+    && python3 tools/rc1-tester/image/prepare_build.py cuda-targets build /opt/vmafx \
+    && for binary in /opt/vmafx/build/tools/vmaf /opt/vmafx/build/src/libvmaf.so.* /opt/vmafx/tests/*; do \
+        if [ "$(head -c 4 "${binary}" | tail -c 3)" = ELF ] \
+            && readelf -d "${binary}" | grep -E 'NEEDED.*lib(cuda|nv)'; then \
+            echo "${binary} links an NVIDIA library" >&2; exit 1; \
+        fi; \
+    done \
+    && libdevice_package="$(dpkg -S 'libdevice.10.bc' | head -n 1 | cut -d: -f1)" \
+    && cp "/usr/share/doc/${libdevice_package}/copyright" /opt/vmafx/licenses/nvidia/CUDA-EULA.txt \
+    && grep -q 'Last updated: January 26, 2026' /opt/vmafx/licenses/nvidia/CUDA-EULA.txt \
+    && grep -q 'libdevice.10.bc' /opt/vmafx/licenses/nvidia/CUDA-EULA.txt \
+    && cp -r model/. /opt/vmafx/model/ \
+    && rm -r /opt/vmafx/model/tiny \
+    && find /opt/vmafx/model -maxdepth 1 -name '*.onnx*' -delete
+ARG VMAFX_SOURCE_COMMIT=unknown
+ARG VMAFX_SOURCE_REF=unknown
+ARG VMAFX_RECIPE_COMMIT=unknown
+ARG VMAFX_BUILT_BY_WORKFLOW=false
+ARG VMAFX_IMAGE_TAG=unknown
+ARG RELEASE_BUILDER_BASE
+ENV VMAFX_SOURCE_COMMIT=${VMAFX_SOURCE_COMMIT} VMAFX_SOURCE_REF=${VMAFX_SOURCE_REF} \
+    VMAFX_RECIPE_COMMIT=${VMAFX_RECIPE_COMMIT} \
+    VMAFX_BUILT_BY_WORKFLOW=${VMAFX_BUILT_BY_WORKFLOW} VMAFX_IMAGE_TAG=${VMAFX_IMAGE_TAG} \
+    VMAFX_BASE_IMAGE=${RELEASE_BUILDER_BASE} VMAFX_GPU_BACKEND=cuda \
+    VMAFX_NOT_APPLICABLE='{"golden": "the CUDA image carries no Python test stack; the CPU tester image runs the Netflix golden gate"}'
+RUN python3 tools/rc1-tester/image/prepare_build.py info /opt/vmafx
+
+# ---------------------------------------------------------------------------
+# cuda-licence-texts: recorded licence texts that are not in the repository
+# (none at present; the stage keeps the notices step the same for every image)
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_PYTHON_BASE} AS cuda-licence-texts
+RUN --mount=type=bind,source=tools/rc1-tester/image,target=/licensing \
+    python3 /licensing/licensing.py fetch-texts --artifact cuda-image --python-version none \
+        --out /texts
+
+# ---------------------------------------------------------------------------
+# cuda-runtime: Debian 13 with its Python 3 and the VMAFx files. No NVIDIA
+# library: the toolkit mounts the host driver's libcuda.so.1 (Linux), Docker
+# Desktop mounts /usr/lib/wsl/lib (WSL2); the build fails below if an NVIDIA
+# library or a NEEDED entry naming one appears.
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_BUILDER_BASE} AS cuda-runtime
+ARG DEBIAN_FRONTEND=noninteractive
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 \
+    && apt-get clean \
+    && find /usr/lib/python3* /usr/share/python3 -name __pycache__ -prune -exec rm -r {} + \
+    && rm -rf /var/lib/apt/lists/*
+# NVIDIA_DRIVER_CAPABILITIES asks the NVIDIA Container Toolkit for the compute
+# libraries (libcuda, the PTX JIT compiler) of the host driver.
+ENV LD_LIBRARY_PATH=/opt/vmafx/build/src:/usr/lib/wsl/lib \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    HOME=/tmp
+COPY --from=cuda-build /opt/vmafx/licenses /opt/vmafx/licenses
+COPY --from=cuda-build /opt/vmafx/build /opt/vmafx/build
+COPY --from=cuda-build /opt/vmafx/tests /opt/vmafx/tests
+COPY --from=cuda-build /opt/vmafx/image /opt/vmafx/image
+COPY --from=cuda-build /opt/vmafx/model /opt/vmafx/model
+COPY --from=cuda-build /opt/vmafx/tester/gate /opt/vmafx/tester/gate
+COPY --from=fixtures /out /opt/vmafx/python/test/resource
+COPY tools/rc1-tester/src /opt/vmafx/tester/src
+COPY tools/rc1-tester/vmaf-tester-report /opt/vmafx/tester/vmaf-tester-report
+COPY tools/rc1-tester/image/fixtures.json tools/rc1-tester/image/cuda-rows.json /opt/vmafx/image/
+ARG VMAFX_SOURCE_COMMIT=unknown
+ARG VMAFX_IMAGE_TAG=unknown
+RUN --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
+    --mount=type=bind,source=REUSE.toml,target=/repo/REUSE.toml \
+    --mount=type=bind,source=LICENSE,target=/repo/LICENSE \
+    --mount=type=bind,source=LICENSES,target=/repo/LICENSES \
+    --mount=type=bind,source=model/other_models/NOTICE-brisque,target=/repo/model/other_models/NOTICE-brisque \
+    --mount=type=bind,from=cuda-build,source=/licence-inputs,target=/licence-inputs \
+    --mount=type=bind,from=cuda-licence-texts,source=/texts,target=/texts \
+    python3 /repo/tools/rc1-tester/image/licensing.py notices --artifact cuda-image --root / \
+        --repo /repo --build-scan /licence-inputs/vmafx-sources.json --texts /texts \
+        --source-commit "${VMAFX_SOURCE_COMMIT}" --tag "${VMAFX_IMAGE_TAG}"
+RUN nvidia="$(find / -xdev \( -name 'libcuda*' -o -name 'libcudart*' -o -name 'libnvidia-*' \
+            -o -name 'libnvrtc*' -o -name 'libnvJitLink*' -o -name 'libdevice*' \) -print)" \
+    && if [ -n "${nvidia}" ]; then echo "NVIDIA files in the image: ${nvidia}" >&2; exit 1; fi \
+    && for binary in /opt/vmafx/build/tools/vmaf /opt/vmafx/build/src/libvmaf.so.* /opt/vmafx/tests/*; do \
+        if [ "$(head -c 4 "${binary}" | tail -c 3)" = ELF ] && ldd "${binary}" | grep 'not found'; then \
+            echo "unresolved dependency in ${binary}" >&2; exit 1; \
+        fi; \
+    done \
+    && /opt/vmafx/build/tools/vmaf --version
+
+# ---------------------------------------------------------------------------
+# cuda-refs-gen: CPU scores of this image's own binary, produced at build time
+# ---------------------------------------------------------------------------
+FROM cuda-runtime AS cuda-refs-gen
+RUN python3 /opt/vmafx/tester/vmaf-tester-report generate-reference /opt/vmafx/reference
+
+# ---------------------------------------------------------------------------
+# cuda-assembled: the image's content before the licence check
+# ---------------------------------------------------------------------------
+FROM cuda-runtime AS cuda-assembled
+COPY --from=cuda-refs-gen /opt/vmafx/reference /opt/vmafx/reference
+
+# ---------------------------------------------------------------------------
+# cuda-licence-check: every file of the assembled image has a recorded licence
+# (ADR-1503 rule 3); final-cuda copies its receipt
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_PYTHON_BASE} AS cuda-licence-check
+RUN --mount=type=bind,from=cuda-assembled,target=/rootfs \
+    --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
+    --mount=type=bind,source=REUSE.toml,target=/repo/REUSE.toml \
+    --mount=type=bind,source=LICENSE,target=/repo/LICENSE \
+    --mount=type=bind,source=LICENSES,target=/repo/LICENSES \
+    --mount=type=bind,source=model/other_models/NOTICE-brisque,target=/repo/model/other_models/NOTICE-brisque \
+    --mount=type=bind,from=cuda-build,source=/licence-inputs,target=/licence-inputs \
+    mkdir /out \
+    && python3 /repo/tools/rc1-tester/image/licensing.py check --artifact cuda-image \
+        --root /rootfs --repo /repo --build-scan /licence-inputs/vmafx-sources.json \
+        --python-version none --receipt /out/licence-check.json
+
+# ---------------------------------------------------------------------------
+# cuda-source-export: the corresponding source of the NVIDIA GPU image's
+# copyleft parts (its Debian packages), published as
+# ghcr.io/vmafx/vmafx:<tag>-cuda-source (ADR-1503 rule 5)
+# ---------------------------------------------------------------------------
+FROM ${RELEASE_PYTHON_BASE} AS cuda-source-fetch
+# Only /sources leaves this stage, so its package lists need no cleanup.
+# hadolint ignore=DL3009
+RUN --mount=type=bind,from=cuda-assembled,target=/rootfs \
+    --mount=type=bind,source=tools/rc1-tester/image,target=/repo/tools/rc1-tester/image \
+    sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
+    && python3 /repo/tools/rc1-tester/image/licensing.py sources --artifact cuda-image \
+        --root /rootfs --repo /repo --out /sources.list \
+    && python3 /repo/tools/rc1-tester/image/licensing.py fetch-sources --list /sources.list \
+        --out /sources
+
+FROM scratch AS cuda-source-export
+COPY --from=cuda-source-fetch /sources /sources
+
+# ---------------------------------------------------------------------------
+# final-cuda
+# ---------------------------------------------------------------------------
+FROM cuda-assembled AS final-cuda
+ARG VMAFX_SOURCE_COMMIT=unknown
+LABEL org.opencontainers.image.title="vmafx-tester-cuda" \
+      org.opencontainers.image.description="VMAFx NVIDIA GPU tester image: CUDA build, CUDA device tests, parity gate, one JSON report. Licences: /opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt" \
+      org.opencontainers.image.source="https://github.com/VMAFx/vmafx" \
+      org.opencontainers.image.vendor="Lusoris" \
+      org.opencontainers.image.revision="${VMAFX_SOURCE_COMMIT}"
+COPY --from=cuda-licence-check /out/licence-check.json /opt/vmafx/licence-check.json
+USER 10001:10001
+ENTRYPOINT ["/usr/bin/python3", "/opt/vmafx/tester/vmaf-tester-report"]
+
 # ---------------------------------------------------------------------------
 # assembled: the image's content before the licence check
 # ---------------------------------------------------------------------------

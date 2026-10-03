@@ -1,5 +1,5 @@
 {
- "comment": "State rows of docs/state.md the Intel GPU tester image measures, and on which device families (hw_gpu.py, hw_rows.py). A row applies to a device when its GPU IP version falls in one of the listed families (hw_l0probe.py, from `ocloc ids`). tests: device test executables that must pass; audits: the scratch audit (test_sycl_kernel_scratch) must find no kernel in scratch memory, ratchet or not; gate: cells of the parity gate's SYCL run on every fixture. tools/rc1-tester/tests/test_sycl_rows_contract.py keeps this file, the tests, the gate and docs/state.md in step.",
+ "comment": "State rows of docs/state.md the Intel GPU tester image measures, and on which device families (hw_gpu.py, hw_rows.py). A row applies to a device when its GPU IP version falls in one of the listed families (hw_l0probe.py, from `ocloc ids`). tests: device test executables that must pass; audits: the scratch audit (test_sycl_kernel_scratch) must find no kernel in scratch memory, ratchet or not; gate: cells of the parity gate's SYCL run on every fixture. tools/rc1-tester/tests/test_gpu_rows_contract.py keeps this file, the tests, the gate and docs/state.md in step.",
  "backend": "sycl",
  "rows": [
   {

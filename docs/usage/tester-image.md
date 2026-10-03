@@ -7,18 +7,20 @@ to check the fork on it. You build nothing, install no toolchain and need no
 repository checkout. You run one prepared package, it prints one JSON report, and you
 can send that report to the project and be credited for it.
 
-There are three packages. On a Mac, run the **native bundle** first: it also exercises
+There are four packages. On a Mac, run the **native bundle** first: it also exercises
 the Metal backend, which no container can reach. The **container image** tests the
 CPU code paths and works on any machine with Docker. The **Intel GPU image** tests the
 SYCL backend on an Intel GPU (integrated UHD or Iris Xe graphics, Arc, Data Center),
-on Linux or on Windows with WSL2.
+on Linux or on Windows with WSL2. The **NVIDIA GPU image** tests the CUDA backend on
+an NVIDIA GPU (GeForce RTX 30 series or newer, RTX professional cards, A100, H100,
+B200).
 
-| | Native macOS bundle | Container image | Intel GPU image |
-| :--- | :--- | :--- | :--- |
-| Runs on | macOS on Apple silicon | any Docker host (Linux arm64 or amd64, Docker Desktop) | Linux x86-64 with an Intel GPU, or Windows 11 with WSL2 |
-| Exercises | NEON default dispatch against scalar, **every Metal twin against the CPU**, SIMD unit tests | NEON (or AVX2 / AVX-512) default dispatch against scalar and against baked references, SIMD unit tests, the Netflix golden gate | AVX2 / AVX-512 default dispatch against scalar, **every SYCL twin against the CPU on every Intel GPU**, the parity gate, the SYCL device tests and the scratch-memory audit |
-| Does not exercise | SVE2 (Apple cores do not expose it), CUDA, SYCL, HIP, the Python golden gate | Metal, SVE2 on a core without it, GPU twins | Metal, CUDA, HIP, the Python golden gate |
-| You need | a terminal | Docker | Docker and access to the GPU's device node |
+| | Native macOS bundle | Container image | Intel GPU image | NVIDIA GPU image |
+| :--- | :--- | :--- | :--- | :--- |
+| Runs on | macOS on Apple silicon | any Docker host (Linux arm64 or amd64, Docker Desktop) | Linux x86-64 with an Intel GPU, or Windows 11 with WSL2 | Linux x86-64 with an NVIDIA GPU, or Windows with WSL2 (not yet proven) |
+| Exercises | NEON default dispatch against scalar, **every Metal twin against the CPU**, SIMD unit tests | NEON (or AVX2 / AVX-512) default dispatch against scalar and against baked references, SIMD unit tests, the Netflix golden gate | AVX2 / AVX-512 default dispatch against scalar, **every SYCL twin against the CPU on every Intel GPU**, the parity gate, the SYCL device tests and the scratch-memory audit | AVX2 / AVX-512 default dispatch against scalar, **every CUDA twin against the CPU on every NVIDIA GPU**, the parity gate, the CUDA device tests |
+| Does not exercise | SVE2 (Apple cores do not expose it), CUDA, SYCL, HIP, the Python golden gate | Metal, SVE2 on a core without it, GPU twins | Metal, CUDA, HIP, the Python golden gate | Metal, SYCL, HIP, the Python golden gate |
+| You need | a terminal | Docker | Docker and access to the GPU's device node | Docker, the NVIDIA driver and the NVIDIA Container Toolkit |
 
 Each prints what it did and did not exercise inside the report (`not_exercised`).
 
@@ -289,6 +291,124 @@ and see [Licences of what you download](#licences-of-what-you-download).
 The image holds no compiler, no development package and no GPU kernel driver, and it
 cannot reach the network when run with the commands above.
 
+## D. NVIDIA GPU image (Linux, or Windows with WSL2)
+
+You need Docker and an NVIDIA GPU of compute capability 8.0 or newer, in an x86-64
+machine. The image holds a CUDA build of VMAFx and runs it on your own NVIDIA driver;
+it carries no NVIDIA library.
+
+| Your GPU | Examples | Code the run uses |
+| :--- | :--- | :--- |
+| Ampere | GeForce RTX 30 series, RTX A2000 to A6000, A100, A10, A30 | the build's `sm_80` or `sm_86` code |
+| Ada | GeForce RTX 40 series, RTX 2000 to 6000 Ada, L4, L40 | the build's `sm_89` code |
+| Hopper | H100, H200 | the build's `sm_90` code |
+| Blackwell | GeForce RTX 50 series, RTX PRO Blackwell, B200, B300 | the build's `sm_100` or `sm_120` code |
+| Turing and older | GeForce RTX 20 / GTX 16 series, T4 | not supported (the build starts at 8.0); the report says so |
+
+A newer GPU the build has no code for runs the build's PTX, which your driver compiles
+when the run starts; the report names which code each GPU ran. The image is for x86-64
+only: Arm machines (Grace Hopper, DGX Spark, Jetson) cannot run it.
+
+What the run does on every NVIDIA GPU it finds (at most four), one after the other:
+
+- runs every CPU feature extractor on the four test fixtures with `--backend cuda` at
+  full precision and compares each value with the CPU's, per fixture and per feature;
+- runs the project's parity gate for every CUDA twin on every fixture, compared exactly
+  (ciede at its `1e-9` math-library bound);
+- runs the CUDA device tests of the build (66 tests);
+- says which open state rows your GPU's measurements close (see
+  [NVIDIA GPU state rows](#nvidia-gpu-state-rows)).
+
+It also runs the CPU checks of the container image, except the Python golden gate. On a
+desktop with one GPU it takes about two and a half minutes.
+
+### What you install first
+
+1. The NVIDIA driver, version 580 or newer (the first driver of CUDA 13). A GPU that
+   runs the build's PTX (see the table) needs 615 or newer.
+2. The
+   [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html),
+   set up for Docker (`sudo nvidia-ctk runtime configure --runtime=docker`, then
+   restart Docker). It lends your driver's libraries to the container at run time.
+
+`<VERSION>` is the version the maintainers give you, as for the other packages. The
+signature check (`cosign verify ...`) of [B](#b-container-image) works the same way for
+`ghcr.io/vmafx/vmafx:<VERSION>-tester-cuda`.
+
+### On Linux
+
+```sh
+docker pull ghcr.io/vmafx/vmafx:<VERSION>-tester-cuda
+
+docker run --rm --network none --read-only --cap-drop ALL \
+  --security-opt no-new-privileges --tmpfs /tmp --gpus all \
+  ghcr.io/vmafx/vmafx:<VERSION>-tester-cuda > report.json
+```
+
+`--gpus all` asks the NVIDIA Container Toolkit for every GPU and for your driver's
+compute libraries. If your toolkit is set up for CDI (`nvidia-ctk cdi generate`), the
+same run works with `--device nvidia.com/gpu=all` in place of `--gpus all`; both were
+measured. The container runs as an unprivileged user (uid 10001) and needs no group:
+the NVIDIA driver opens its device nodes to every user by default.
+
+### On Windows with WSL2 (not yet proven)
+
+You need Windows 11 (or Windows 10 21H2 or later), the current
+[NVIDIA Windows driver](https://www.nvidia.com/Download/index.aspx) (it supports WSL2
+by itself; do not install a Linux NVIDIA driver inside WSL), and Docker Desktop with
+the WSL2 backend turned on, as
+[Docker's GPU support page](https://docs.docker.com/desktop/features/gpu/) and
+NVIDIA's [CUDA on WSL guide](https://docs.nvidia.com/cuda/wsl-user-guide/index.html)
+describe. Then run, in PowerShell or in the WSL Linux shell:
+
+```sh
+docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp --gpus all ghcr.io/vmafx/vmafx:<VERSION>-tester-cuda > report.json
+```
+
+Docker Desktop passes the GPU as `/dev/dxg` and lends the user-mode half of your
+Windows driver (`/usr/lib/wsl/lib/libcuda.so.1`) to the container. The project has not
+run this image under WSL2: if the report says `gpu: no_device` or names a problem, send
+it anyway. Its `gpu.access.path` field says how the container reached the GPU
+(`wsl`, `nvidia` or `none`).
+
+### What to check before you send it
+
+The terminal summary ends with one line per GPU, for example:
+
+```text
+gpu (cuda): pass, path nvidia
+  device 0 NVIDIA GeForce RTX 4090 (ada 8.9): pass; twins identical, gate pass, tests pass (66 passed, 0 failed, 0 skipped), no audit; state rows 1 passing, 0 failing, 0 not measured
+```
+
+`gpu (cuda): no_device` with a reason means the container could not reach your GPU;
+the reason names what is missing. A `fail` on a GPU is a finding: send it.
+
+### NVIDIA GPU state rows
+
+The image carries `image/cuda-rows.json` (in the repository
+`tools/rc1-tester/image/cuda-rows.json`). Every CUDA twin is proven exact on one GPU
+of the project, an RTX 4090 (Ada); the row
+`T-CUDA-TWINS-OTHER-ARCHITECTURES-2026-10-03` of [`docs/state.md`](../state.md) stays
+open for Ampere, Hopper and Blackwell until a report from such a GPU arrives. The
+report reads each GPU's family from its compute capability and gives the row a verdict
+for that GPU: `pass`, `fail`, `not_measured`, or `not_applicable` for a part of
+another family.
+
+### What is in the NVIDIA GPU image
+
+About 0.5 GB to download and 1.5 GB on disk. Read its notices with
+`docker run --rm --entrypoint cat ghcr.io/vmafx/vmafx:<VERSION>-tester-cuda /opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt`
+and see [Licences of what you download](#licences-of-what-you-download).
+
+| Path | What | Licence |
+| :--- | :--- | :--- |
+| `/opt/vmafx/build`, `/opt/vmafx/tests`, `/opt/vmafx/tester` | VMAFx: the `vmaf` tool and library (CUDA build, with its GPU kernels inside), about a hundred test programs, the report program and the parity gate | EUPL-1.2 and BSD-2-Clause-Patent (Netflix), per file; the kernels also hold NVIDIA code under the CUDA Toolkit EULA, and the CUDA driver loader is MIT (`nv-codec-headers`) |
+| `/opt/vmafx/python/test/resource` | Netflix test videos, each checked against a pinned SHA-256 | BSD-2-Clause-Patent |
+| Debian packages | Python 3.13 and the Debian 13 base | each package's own (`/usr/share/doc/<package>/copyright`) |
+
+The image holds no NVIDIA library, no compiler, no development package and no GPU
+driver, and it cannot reach the network when run with the commands above.
+
 ## Licences of what you download
 
 Every package carries the licence of everything in it, and its publishing
@@ -296,7 +416,7 @@ workflow refuses to build a package with a file whose licence is not recorded
 ([ADR-1503](../adr/1503-tester-artifact-licensing.md)).
 
 - **Where**: `licenses/THIRD_PARTY_NOTICES.txt` in the macOS bundle,
-  `/opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt` in the two container images. The file lists
+  `/opt/vmafx/licenses/THIRD_PARTY_NOTICES.txt` in the container images. The file lists
   every component, its licence and copyright notices, and the licence texts are in
   `texts/` next to it. Debian packages in the container keep their own terms in
   `/usr/share/doc/<package>/copyright`; Python packages keep theirs in their
@@ -335,13 +455,27 @@ workflow refuses to build a package with a file whose licence is not recorded
   image's interpreter is Debian's Python 3.13, under the PSF licence in its package's
   copyright file. The source of its Debian packages is
   `ghcr.io/vmafx/vmafx:<VERSION>-tester-sycl-source`, fetched the same way.
+- **NVIDIA GPU image only**: the image holds no NVIDIA file. The driver library the
+  run uses (`libcuda.so.1`) comes from your own NVIDIA driver, which the NVIDIA
+  Container Toolkit (or WSL2) lends to the container, under the driver's licence.
+  Part of the VMAFx program code is NVIDIA's: the GPU kernels inside `libvmaf` and the
+  test programs contain code from the CUDA Toolkit's headers and its `libdevice` maths
+  library, which the
+  [CUDA Toolkit End User License Agreement](https://docs.nvidia.com/cuda/eula/index.html)
+  (v13.4, Attachment A) allows a program to carry. Its text is
+  `/opt/vmafx/licenses/nvidia/CUDA-EULA.txt`, and the notices state the terms it
+  passes on to you (no reverse engineering of those parts; NVIDIA gives them as is).
+  EUPL-1.2 covers only the VMAFx files, never NVIDIA's. The CUDA driver loader that
+  `libvmaf` compiles in comes from FFmpeg's `nv-codec-headers` (MIT), whose notices are
+  in `/opt/vmafx/licenses/nv-codec-headers/`. The source of the image's Debian
+  packages is `ghcr.io/vmafx/vmafx:<VERSION>-tester-cuda-source`.
 - **SBOM**: each package has an SPDX software bill of materials attested by the
   publishing workflow: the `.spdx.json` release asset for the macOS bundle, and an
   attestation on each platform image of the container
   (`gh attestation verify oci://ghcr.io/vmafx/vmafx@<platform digest> -R VMAFx/vmafx
   --predicate-type https://spdx.dev/Document/v2.3`, with the platform digest from
   `docker buildx imagetools inspect ghcr.io/vmafx/vmafx:<VERSION>-tester`), and an
-  attestation on the Intel GPU image's digest.
+  attestation on the digest of each GPU image.
 
 ## What the report contains
 
@@ -369,16 +503,19 @@ One JSON document (schema: [`docs/hardware-reports/report.schema.json`](../hardw
   bound), with the option sets the gate has cells for (`enable_lcs`, `debug`, the
   five-frame motion window). A feature a Metal twin cannot run on a fixture is
   listed under `left_out` with the reason.
-- **GPU section** (Intel GPU image, `gpu`): how the container reached the GPU
-  (`access.path`: `drm` for a Linux render node, `wsl` for WSL2's `/dev/dxg`, `none`
-  with the reason), the versions of the GPU runtime in the image, and per GPU its
-  name, PCI device ID, IP version and family, execution units and sub-group sizes; the
-  SYCL twins against the CPU per fixture and per feature (identical values, values
+- **GPU section** (GPU images, `gpu`): how the container reached the GPU
+  (`access.path`: `drm` for a Linux render node or `nvidia` for the NVIDIA device
+  nodes, `wsl` for WSL2's `/dev/dxg`, `none` with the reason), the versions of the GPU
+  runtime in the image (the NVIDIA image: the CUDA version of your driver and of the
+  build), and per GPU its name and family with, for Intel, the PCI device ID, IP
+  version, execution units and sub-group sizes, for NVIDIA the compute capability,
+  multiprocessor count, memory size and the kernel code it ran (a cubin of the build
+  or PTX your driver compiled); the twins against the CPU per fixture and per feature (identical values, values
   within the gate's bound for that twin, or the first differing value with both
   numbers); the parity gate's cells; every device test's verdict and the ones left
-  out with the reason; the scratch audit (kernels audited, kernels in scratch memory,
-  whether your GPU returns wrong values from scratch memory); and the state rows the
-  GPU's measurements close.
+  out with the reason; on Intel GPUs the scratch audit (kernels audited, kernels in
+  scratch memory, whether your GPU returns wrong values from scratch memory); and the
+  state rows the GPU's measurements close.
 - **Unit tests** and, in the container, the **Netflix golden gate**: passed, failed,
   skipped, names of failures. For the Metal parity tests the report also keeps the
   verdict of every test case (`unit_tests.cases`) and the message of a failing one.
@@ -454,4 +591,9 @@ Reports from outside the project's own hosts are listed on the
 - The Intel GPU image says `gpu (sycl): no_device` — the container could not open your
   GPU; the reason names the missing `docker run` option (see
   [C](#c-intel-gpu-image-linux-or-windows-with-wsl2)).
+- The NVIDIA GPU image says `gpu (cuda): no_device` — the container could not reach
+  your GPU or its driver; the reason says which (no device node: `--gpus all` is
+  missing or the NVIDIA Container Toolkit is not set up; no `libcuda.so.1`: the toolkit
+  did not lend the driver; a GPU below compute capability 8.0) (see
+  [D](#d-nvidia-gpu-image-linux-or-windows-with-wsl2)).
 - Anything that stops before a report is printed — send the terminal output in an issue.

@@ -5,8 +5,9 @@ What the tester packages are, how they are built and published, what to do by ha
 and how reports reach the tree. The tester-facing steps are in
 [the tester guide](../usage/tester-image.md); the decisions are
 [ADR-1492](../adr/1492-tester-image-arm64-report.md),
-[ADR-1493](../adr/1493-macos-tester-bundle.md) and, for the Intel GPU image,
-[ADR-1505](../adr/1505-intel-gpu-tester-image.md).
+[ADR-1493](../adr/1493-macos-tester-bundle.md) and, for the GPU images,
+[ADR-1505](../adr/1505-intel-gpu-tester-image.md) (Intel) and
+[ADR-1509](../adr/1509-nvidia-gpu-tester-image.md) (NVIDIA).
 
 ## Pieces
 
@@ -14,8 +15,9 @@ and how reports reach the tree. The tester-facing steps are in
 | :--- | :--- |
 | Container image | [`docker/Dockerfile.tester`](https://github.com/VMAFx/vmafx/blob/master/docker/Dockerfile.tester), build inputs in `tools/rc1-tester/image/` |
 | Intel GPU image | target `final-sycl` of the same Dockerfile; `image/sycl-tests.txt` (device tests), `sycl-rows.json` (state rows), `sycl-runtime.json` (the Intel runtime files it ships); its licence record is the `sycl-image` artifact of `licensing.json` |
+| NVIDIA GPU image | target `final-cuda` of the same Dockerfile; `image/cuda-tests.txt` (device tests), `cuda-rows.json` (state rows); `image/cuda-targets.json` is written by the build from its gencode list; its licence record is the `cuda-image` artifact of `licensing.json` |
 | macOS bundle | `scripts/ci/build-macos-tester-bundle.sh`, `tools/rc1-tester/image/macos/` |
-| Report program | `tools/rc1-tester/src/vmaf_rc1_tester/hw_*.py`, launcher `tools/rc1-tester/vmaf-tester-report`; the GPU section is `hw_gpu.py`, its SYCL backend `hw_sycl.py` and `hw_l0probe.py` |
+| Report program | `tools/rc1-tester/src/vmaf_rc1_tester/hw_*.py`, launcher `tools/rc1-tester/vmaf-tester-report`; the GPU section is `hw_gpu.py`, its SYCL backend `hw_sycl.py` and `hw_l0probe.py`, its CUDA backend `hw_cuda.py` and `hw_cudaprobe.py` |
 | Report schema and gate | `docs/hardware-reports/report.schema.json`, `scripts/ci/check-hardware-reports.py` (in `make docs-fragments-check`) |
 | Index page | `scripts/docs/generate-hardware-reports.py --write` (in `make docs-fragments-write`) |
 | Workflows | `.github/workflows/docker-publish-tester.yml`, `.github/workflows/macos-tester-bundle.yml` |
@@ -47,16 +49,18 @@ Nothing publishes on merge except a build-and-test run of the image on pushes to
    attached to a new prerelease `tester-<date>-<sha8>` (not a product release; no other
    workflow starts, because the release is created with `GITHUB_TOKEN`).
 
-3. **Intel GPU image**: the same workflow also builds `final-sycl` (job `build-sycl`,
-   linux/amd64 only) and runs the documented command without a GPU (the report must say
-   `gpu.status` `no_device` with the missing option, every CPU check passing); the
-   dispatch publishes `ghcr.io/vmafx/vmafx:<describe>-tester-sycl` in job `publish-sycl`: signed, with
-   provenance and an attested SPDX SBOM (syft), with its source image
-   `<describe>-tester-sycl-source` (target `sycl-source-export`). Like the CPU image, its
-   build cannot finish without the licence check (stage `sycl-licence-check`, artifact
-   `sycl-image`, see [Licensing](#licensing)). The hosted runner has no Intel GPU: every device
-   measurement happens on the tester's machine. Before giving the tag to a tester,
-   run it on the project's Arc A380 (see [Local checks](#local-checks)).
+3. **GPU images**: the same workflow also builds `final-sycl` and `final-cuda` (job
+   `build-gpu`, one matrix leg per kit, linux/amd64 only) and runs the documented command
+   without a GPU (the report must say `gpu.status` `no_device` with the missing option,
+   `--device /dev/dri` or `--gpus all`, every CPU check passing); the dispatch
+   publishes `ghcr.io/vmafx/vmafx:<describe>-tester-sycl` and `-tester-cuda` in job
+   `publish-gpu`: signed, with provenance and an attested SPDX SBOM (syft), each with its
+   source image `<describe>-tester-<kit>-source` (target `<kit>-source-export`). Like the
+   CPU image, each build cannot finish without its licence check (stage
+   `<kit>-licence-check`, artifacts `sycl-image` and `cuda-image`, see
+   [Licensing](#licensing)). The hosted runner has no GPU: every device measurement
+   happens on the tester's machine. Before giving a tag to a tester, run it on the
+   project's Arc A380 or RTX 4090 (see [Local checks](#local-checks)).
 
 Give the tester `<TESTER-TAG>` and `<VERSION>` (the `git describe` string) from the run summary.
 
@@ -102,6 +106,20 @@ comes from the pinned GitHub releases as Debian packages, so the component of ki
 (IGC and the loader ship none; their texts are `fetched_texts`, pinned by URL and SHA-256)
 and no Debian source package, and the component names their source instead.
 
+The NVIDIA GPU image is the artifact `cuda-image` and ships no NVIDIA file: `libvmaf`
+loads the host driver's `libcuda.so.1` at run time (the NVIDIA Container Toolkit lends
+it), and the `cuda-runtime` stage fails when a file named like an NVIDIA library appears;
+the build stage fails when a binary's `NEEDED` names one. The NVIDIA content is inside the
+VMAFx binaries: the kernels' device code holds CUDA header code and the `libdevice`
+library nvcc links in, which Attachment A of the CUDA Toolkit EULA lists as
+distributable. Its component `nvidia-cuda-device-code` has no paths; its text is the EULA,
+copied in the build stage from the copyright file of the package that installs
+`libdevice.10.bc` (the build checks the text's date), and its notes pass on the EULA's
+terms. The component `nv-codec-headers` carries the MIT notices of the CUDA loader headers,
+copied from them at build time. The scan records each kernel object
+(`src/<kernel>.fatbin.c`, the `bin2c` output) with the licence of the `.cu` source it was
+compiled from (`generated_build_files` rule with `compiled_from`).
+
 When the check fails after a lock, base-image or interpreter bump, record what changed in
 `licensing.json`: a new grafted library needs its licence and, when copyleft, the source
 package its build ID comes from in `source_archives` (URL and SHA-256); a new interpreter
@@ -121,7 +139,8 @@ backend (CUDA, HIP) adds a module like `hw_sycl.py` that builds a `GpuBackend`: 
 `discover` function returning how the container reaches the device (`access`, with a
 `path`), the runtime versions and the devices (each with an `index` and allow-listed
 `facts`, among them a `family` the row map can name, never a UUID or bus address), a
-`device_env` that pins a run to one device (the CUDA kit: `CUDA_VISIBLE_DEVICES`), the
+`device_env` that pins a run to one device (`hw_cuda.py`: `CUDA_VISIBLE_DEVICES` under
+`CUDA_DEVICE_ORDER=PCI_BUS_ID`, the order its probe lists the devices in), the
 parsers of any audit test's output, and the name of its row map; it registers it in
 `GPU_BACKENDS` of `hw_report.py`, and its image sets `VMAFX_GPU_BACKEND` and stages the
 twin bounds (`prepare_build.py twins`), the device tests (`prepare_build.py stage ...
@@ -164,7 +183,9 @@ tracked files other than a commit trailer the person asked for.
 | Report validation | `requirements/locks/jsonschema.txt` | universal lock for Python 3.12 and later (`--universal --python-version 3.12`): the hosted runners differ (3.12 on `ubuntu-latest`, 3.14 elsewhere) and `referencing` needs `typing-extensions` below 3.13 |
 | Unit tests | `tools/rc1-tester/image/unit-tests.txt`, `unit-tests-macos.txt` | a name absent from a build is skipped; fewer than ten found fails the build |
 | Intel GPU runtime | `INTEL_NEO_VERSION`, `LEVEL_ZERO_VERSION`, `ONEAPI_*` in `build-config.env`; `tools/rc1-tester/image/sycl-runtime.json`; `fetched_texts` and the `intel-gpu-stack` component of `licensing.json` | a moved compute runtime or loader version fails the build until the licence text of the new version is recorded in `fetched_texts` (URL and SHA-256) and named by the component; a runtime file must stay in the compiler's `credist.txt` |
-| Intel GPU state rows | `tools/rc1-tester/image/sycl-rows.json` | `tools/rc1-tester/tests/test_sycl_rows_contract.py` holds it to `docs/state.md`, the `gpu` suite and the gate |
+| Intel GPU state rows | `tools/rc1-tester/image/sycl-rows.json` | `tools/rc1-tester/tests/test_gpu_rows_contract.py` holds it to `docs/state.md`, the `gpu` suite and the gate |
+| CUDA toolkit | `CUDA_VERSION` and the `CUDA_APT_*` versions in `build-config.env` (NVIDIA's `debian13` repository, `scripts/ci/install-cuda-toolkit.sh`); `NV_CODEC_HEADERS_COMMIT` in `docker/Dockerfile.tester` | a new CUDA version brings a new EULA: the build checks the EULA's "Last updated" date, so update that check, the `nvidia-cuda-device-code` component and ADR-1509's citation together after reading the new Attachment A |
+| NVIDIA GPU state rows | `tools/rc1-tester/image/cuda-rows.json` | the same contract test; every CUDA family has a row, and each row holds every gate feature |
 
 The Debian archive packages of the build stage are not version-pinned, as in the release
 build (ADR-1346); the base image digest is.
@@ -200,6 +221,19 @@ flock ~/.cache/vmafx-locks/sycl-a380.lock timeout 300 \
   --tmpfs /tmp --device /dev/dri $(stat -c '--group-add %g' /dev/dri/renderD* | sort -u) \
   vmafx-tester:sycl-dev > report.json
 ```
+
+The NVIDIA GPU image, on the project's RTX 4090 (about two and a half minutes):
+
+```sh
+docker build -f docker/Dockerfile.tester --target final-cuda --build-arg VMAF_BUILD_JOBS=6 \
+  -t vmafx-tester:cuda-dev .
+flock ~/.cache/vmafx-locks/cuda-4090.lock timeout 300 \
+  docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+  --tmpfs /tmp --gpus all vmafx-tester:cuda-dev > report.json
+```
+
+`timeout` stops the `docker` client, not the container: give the run a `--name` and
+remove it after the timeout (`docker rm -f <name>`) inside the same locked command.
 
 An image built this way has `built_by_workflow: false` and the CI report gate refuses it,
 as intended. The local build runs the licence check as well; to see the source companion,

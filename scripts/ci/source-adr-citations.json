@@ -7131,7 +7131,9 @@
         "core/src/meson.build": 2,
         "core/test/meson.build": 1,
         "core/test/test_cuda_arch_floor.c": 2,
-        "scripts/ci/gpu_ulp_calibration.yaml": 1
+        "scripts/ci/gpu_ulp_calibration.yaml": 1,
+        "tools/rc1-tester/src/vmaf_rc1_tester/hw_cuda.py": 2,
+        "tools/rc1-tester/src/vmaf_rc1_tester/hw_cudaprobe.py": 1
       },
       "target": "1223-cuda-ampere-architecture-floor.md"
     },
@@ -9317,7 +9319,8 @@
     "1457": {
       "sites": {
         "core/test/meson.build": 1,
-        "core/test/test_cuda_exact_twins.c": 1
+        "core/test/test_cuda_exact_twins.c": 1,
+        "tools/rc1-tester/tests/test_hw_cuda.py": 1
       },
       "target": "1457-cuda-exact-twins-declared.md"
     },
@@ -9814,10 +9817,10 @@
     },
     "1503": {
       "sites": {
-        ".github/workflows/docker-publish-tester.yml": 6,
+        ".github/workflows/docker-publish-tester.yml": 7,
         ".github/workflows/macos-tester-bundle.yml": 5,
         "REUSE.toml": 2,
-        "docker/Dockerfile.tester": 9,
+        "docker/Dockerfile.tester": 11,
         "scripts/ci/build-macos-tester-bundle.sh": 5,
         "tools/rc1-tester/image/licensing.py": 4,
         "tools/rc1-tester/tests/test_licensing.py": 1

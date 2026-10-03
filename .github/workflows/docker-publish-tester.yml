@@ -12,9 +12,10 @@
 #   (linux/amd64 + linux/arm64; `v1.0.0-rc.2-tester` for the tagged commit itself)
 #   ghcr.io/vmafx/vmafx:<...>-tester-source: the corresponding source of the
 #   image's copyleft parts (Dockerfile target source-export, ADR-1503)
-#   ghcr.io/vmafx/vmafx:<git describe of the source commit>-tester-sycl
-#   (linux/amd64: the Intel GPU kit, target final-sycl of the same Dockerfile,
-#   with its source image <...>-tester-sycl-source)
+#   ghcr.io/vmafx/vmafx:<git describe of the source commit>-tester-sycl and
+#   -tester-cuda (linux/amd64: the Intel and NVIDIA GPU kits, targets final-sycl
+#   and final-cuda of the same Dockerfile, jobs build-gpu and publish-gpu, each
+#   with its source image <...>-tester-<kit>-source)
 # tags of the existing, public package: a new package would start private.
 # All are signed and carry build provenance; each platform image of the tester
 # carries an attested SPDX SBOM (Syft). The image build itself fails when a file
@@ -22,10 +23,10 @@
 #
 # Each architecture builds on its own native runner; the arm64 build takes the
 # x86_64 scalar scores from the amd64 build as its cross-architecture reference.
-# The hosted runner has no Intel GPU: the SYCL image's run there must report
-# `gpu.status` no_device with the reason; the device measurements happen on the
-# tester's machine. Its build fails, like the tester's, on a file without a
-# recorded licence (stage sycl-licence-check).
+# The hosted runner has no GPU: a GPU image's run there must report
+# `gpu.status` no_device with the missing docker run option; the device
+# measurements happen on the tester's machine. Its build fails, like the
+# tester's, on a file without a recorded licence (stage <kit>-licence-check).
 # ADR-1492: tester image. ADR-1102: published artifacts are built in a container.
 
 name: Publish Tester Image
@@ -37,6 +38,8 @@ on:
       - docker/Dockerfile.tester
       - tools/rc1-tester/**
       - scripts/ci/install-intel-ocloc.sh
+      - scripts/ci/install-cuda-toolkit.sh
+      - build-config.env
       - dev/scripts/fetch-intel-neo.py
       - python/requirements-test-lock.txt
       - REUSE.toml
@@ -517,19 +520,28 @@ jobs:
           subject-digest: ${{ steps.source-index.outputs.digest }}
           push-to-registry: true
 
-  build-sycl:
-    name: Build and test the Intel GPU image (amd64)
+  build-gpu:
+    name: Build and test the ${{ matrix.vendor }} GPU image (amd64)
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # `reason` is the docker run option the no-GPU run's report must name.
+          - kit: sycl
+            vendor: Intel
+            reason: "--device /dev/dri"
+          - kit: cuda
+            vendor: NVIDIA
+            reason: "--gpus all"
     permissions:
       contents: read
       packages: write
     env:
-      LOCAL_IMAGE: vmafx-tester-sycl:ci
-    outputs:
-      digest: ${{ steps.push.outputs.digest }}
-      source-digest: ${{ steps.push-source.outputs.digest }}
+      LOCAL_IMAGE: vmafx-tester-${{ matrix.kit }}:ci
+      KIT: ${{ matrix.kit }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -543,7 +555,7 @@ jobs:
           git fetch --no-tags --depth=1 origin "$RECIPE_SHA"
           git checkout FETCH_HEAD -- docker/Dockerfile.tester tools/rc1-tester \
             scripts/ci docs/hardware-reports python/requirements-test-lock.txt
-      # The oneAPI compiler stage needs more disk than a hosted runner leaves free.
+      # The GPU SDK build stages need more disk than a hosted runner leaves free.
       - name: Free runner disk
         run: |
           df -h /
@@ -555,24 +567,26 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile.tester
-          target: final-sycl
+          target: final-${{ matrix.kit }}
           platforms: linux/amd64
           load: true
           tags: ${{ env.LOCAL_IMAGE }}
           secrets: |
             github_token=${{ secrets.GITHUB_TOKEN }}
-          cache-from: type=gha,scope=tester-sycl
-          cache-to: type=gha,scope=tester-sycl,mode=max
+          cache-from: type=gha,scope=tester-${{ matrix.kit }}
+          cache-to: type=gha,scope=tester-${{ matrix.kit }},mode=max
           build-args: |
             VMAF_BUILD_JOBS=4
             VMAFX_SOURCE_COMMIT=${{ needs.validate.outputs.source-sha }}
             VMAFX_SOURCE_REF=${{ needs.validate.outputs.ref }}
             VMAFX_RECIPE_COMMIT=${{ needs.validate.outputs.recipe-sha }}
             VMAFX_BUILT_BY_WORKFLOW=true
-            VMAFX_IMAGE_TAG=${{ needs.validate.outputs.image-tag }}-sycl
+            VMAFX_IMAGE_TAG=${{ needs.validate.outputs.image-tag }}-${{ matrix.kit }}
       - name: Image size
         run: docker image inspect "$LOCAL_IMAGE" --format 'size {{.Size}} bytes' | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Run the documented command (no GPU on the runner)
+        env:
+          REASON: ${{ matrix.reason }}
         run: |
           set +e
           docker run --rm --network none --read-only --cap-drop ALL \
@@ -583,8 +597,9 @@ jobs:
           cat report.stderr
           echo "report exit status: $status"
           # Every CPU check passes and the GPU section says why it measured nothing.
-          jq -e '.verdict == "pass" and .gpu.status == "no_device" and .gpu.access.path == "none"
-                 and (.gpu.reason | test("--device /dev/dri"))' report.json
+          jq -e --arg kit "$KIT" --arg reason "$REASON" \
+            '.verdict == "pass" and .gpu.backend == $kit and .gpu.status == "no_device"
+             and .gpu.access.path == "none" and (.gpu.reason | contains($reason))' report.json
           exit "$status"
       - name: Validate the report against the schema
         if: always()
@@ -595,7 +610,7 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         if: always()
         with:
-          name: tester-sycl-report
+          name: tester-${{ matrix.kit }}-report
           path: |
             report.json
             report.stderr
@@ -614,19 +629,21 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile.tester
-          target: final-sycl
+          target: final-${{ matrix.kit }}
           platforms: linux/amd64
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           secrets: |
             github_token=${{ secrets.GITHUB_TOKEN }}
-          cache-from: type=gha,scope=tester-sycl
+          cache-from: type=gha,scope=tester-${{ matrix.kit }}
           build-args: |
             VMAF_BUILD_JOBS=4
             VMAFX_SOURCE_COMMIT=${{ needs.validate.outputs.source-sha }}
             VMAFX_SOURCE_REF=${{ needs.validate.outputs.ref }}
             VMAFX_RECIPE_COMMIT=${{ needs.validate.outputs.recipe-sha }}
             VMAFX_BUILT_BY_WORKFLOW=true
-            VMAFX_IMAGE_TAG=${{ needs.validate.outputs.image-tag }}-sycl
+            VMAFX_IMAGE_TAG=${{ needs.validate.outputs.image-tag }}-${{ matrix.kit }}
+      # ADR-1503 rule 5: the corresponding source of the copyleft parts
+      # (Dockerfile targets sycl-source-export and cuda-source-export).
       - name: Push the source image by digest
         id: push-source
         if: needs.validate.outputs.publish == 'true'
@@ -634,33 +651,74 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile.tester
-          target: sycl-source-export
+          target: ${{ matrix.kit }}-source-export
           platforms: linux/amd64
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           secrets: |
             github_token=${{ secrets.GITHUB_TOKEN }}
-          cache-from: type=gha,scope=tester-sycl
+          cache-from: type=gha,scope=tester-${{ matrix.kit }}
           build-args: |
             VMAF_BUILD_JOBS=4
             VMAFX_SOURCE_COMMIT=${{ needs.validate.outputs.source-sha }}
             VMAFX_SOURCE_REF=${{ needs.validate.outputs.ref }}
             VMAFX_RECIPE_COMMIT=${{ needs.validate.outputs.recipe-sha }}
             VMAFX_BUILT_BY_WORKFLOW=true
-            VMAFX_IMAGE_TAG=${{ needs.validate.outputs.image-tag }}-sycl
+            VMAFX_IMAGE_TAG=${{ needs.validate.outputs.image-tag }}-${{ matrix.kit }}
+      # A matrix job has no per-leg outputs: the publish job reads both digests
+      # from this artifact.
+      - name: Record the pushed digests
+        if: needs.validate.outputs.publish == 'true'
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+          SOURCE_DIGEST: ${{ steps.push-source.outputs.digest }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/gpu-digests"
+          echo "$DIGEST" > "${RUNNER_TEMP}/gpu-digests/image"
+          echo "$SOURCE_DIGEST" > "${RUNNER_TEMP}/gpu-digests/source"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: needs.validate.outputs.publish == 'true'
+        with:
+          name: tester-${{ matrix.kit }}-digests
+          path: ${{ runner.temp }}/gpu-digests/*
+          if-no-files-found: error
+          retention-days: 1
 
-  publish-sycl:
-    name: Publish the Intel GPU image
-    needs: [validate, build-sycl]
+  publish-gpu:
+    name: Publish the ${{ matrix.vendor }} GPU image
+    needs: [validate, build-gpu]
     if: needs.validate.outputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: tester-publish
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - kit: sycl
+            vendor: Intel
+          - kit: cuda
+            vendor: NVIDIA
     permissions:
       contents: read
       packages: write
       id-token: write
       attestations: write
+    env:
+      IMAGE_TAG: ${{ needs.validate.outputs.image-tag }}-${{ matrix.kit }}
     steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: tester-${{ matrix.kit }}-digests
+          path: ${{ runner.temp }}/gpu-digests
+      - name: Read the pushed digests
+        id: digests
+        working-directory: ${{ runner.temp }}/gpu-digests
+        run: |
+          for name in image source; do
+            digest="$(cat "$name")"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "bad ${name} digest" >&2; exit 1; }
+            echo "${name}=${digest}" >> "$GITHUB_OUTPUT"
+          done
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0
@@ -671,8 +729,7 @@ jobs:
       - name: Tag the pushed digest
         env:
           IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          IMAGE_TAG: ${{ needs.validate.outputs.image-tag }}-sycl
-          DIGEST: ${{ needs.build-sycl.outputs.digest }}
+          DIGEST: ${{ steps.digests.outputs.image }}
         run: |
           docker buildx imagetools create --tag "${IMAGE}:${IMAGE_TAG}" "${IMAGE}@${DIGEST}"
           docker buildx imagetools inspect "${IMAGE}:${IMAGE_TAG}"
@@ -682,46 +739,44 @@ jobs:
       - name: Sign image (keyless OIDC via Sigstore)
         env:
           IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          DIGEST: ${{ needs.build-sycl.outputs.digest }}
+          DIGEST: ${{ steps.digests.outputs.image }}
         run: cosign sign --yes "${IMAGE}@${DIGEST}"
       - name: Attest build provenance (GitHub native)
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          subject-digest: ${{ needs.build-sycl.outputs.digest }}
+          subject-digest: ${{ steps.digests.outputs.image }}
           push-to-registry: true
       # The tester licensing rules: an SPDX SBOM of the published image, attested
-      # on its digest.
+      # on its digest (sbom-tester-sycl.spdx.json, sbom-tester-cuda.spdx.json).
       - name: SBOM (SPDX JSON)
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c  # v0.24.3
         with:
           syft-version: v1.51.1
-          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-sycl.outputs.digest }}
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.digests.outputs.image }}
           format: spdx-json
-          output-file: sbom-tester-sycl.spdx.json
+          output-file: sbom-tester-${{ matrix.kit }}.spdx.json
           upload-artifact: false
           upload-release-assets: false
       - name: Attest the SBOM
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6  # v4.2.2
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          subject-digest: ${{ needs.build-sycl.outputs.digest }}
-          sbom-path: sbom-tester-sycl.spdx.json
+          subject-digest: ${{ steps.digests.outputs.image }}
+          sbom-path: sbom-tester-${{ matrix.kit }}.spdx.json
           push-to-registry: true
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: sbom-tester-sycl
-          path: sbom-tester-sycl.spdx.json
+          name: sbom-tester-${{ matrix.kit }}
+          path: sbom-tester-${{ matrix.kit }}.spdx.json
           retention-days: 90
       # ADR-1503 rule 5: the corresponding source of the image's copyleft parts,
       # published at the same place as the image.
       - name: Tag, sign and attest the source image
         env:
           IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          IMAGE_TAG: ${{ needs.validate.outputs.image-tag }}-sycl
-          DIGEST: ${{ needs.build-sycl.outputs.source-digest }}
+          DIGEST: ${{ steps.digests.outputs.source }}
         run: |
-          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "bad source digest" >&2; exit 1; }
           docker buildx imagetools create --tag "${IMAGE}:${IMAGE_TAG}-source" "${IMAGE}@${DIGEST}"
           cosign sign --yes "${IMAGE}@${DIGEST}"
           echo "source image: ${IMAGE}:${IMAGE_TAG}-source (${DIGEST})" >> "$GITHUB_STEP_SUMMARY"
@@ -729,20 +784,20 @@ jobs:
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          subject-digest: ${{ needs.build-sycl.outputs.source-digest }}
+          subject-digest: ${{ steps.digests.outputs.source }}
           push-to-registry: true
       - name: Verify what was just signed
         env:
           IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          DIGEST: ${{ needs.build-sycl.outputs.digest }}
-          IMAGE_TAG: ${{ needs.validate.outputs.image-tag }}-sycl
+          DIGEST: ${{ steps.digests.outputs.image }}
+          VENDOR: ${{ matrix.vendor }}
         run: |
           cosign verify \
             --certificate-identity-regexp '^https://github.com/VMAFx/vmafx/\.github/workflows/docker-publish-tester\.yml@refs/(heads/master|tags/v.*)$' \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             "${IMAGE}@${DIGEST}"
           {
-            echo "### Intel GPU tester image"
+            echo "### ${VENDOR} GPU tester image"
             echo
             echo '```'
             echo "${IMAGE}:${IMAGE_TAG}"

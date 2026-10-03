@@ -1622,6 +1622,7 @@ nav:
         - "ADR-1505: intel-gpu-tester-image": adr/1505-intel-gpu-tester-image.md
         - "ADR-1506: praetor-pin-move-markdownlint-braces": adr/1506-praetor-pin-move-markdownlint-braces.md
         - "ADR-1507: brisque-live-notice-terms": adr/1507-brisque-live-notice-terms.md
+        - "ADR-1509: nvidia-gpu-tester-image": adr/1509-nvidia-gpu-tester-image.md
       - "By tag":
         - Overview: adr/by-tag/index.md
         - "aarch64": adr/by-tag/aarch64.md

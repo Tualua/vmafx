@@ -1,0 +1,7 @@
+# Meson tests the CUDA tester image runs on the tester's NVIDIA GPU (hw_gpu.py,
+# section gpu.device_tests). One test name or `suite:<name>` per line.
+# Every test of suite `gpu` of a CUDA build: the CUDA device tests (twin parity,
+# exact-twin contracts, tiny-frame guards, the picture and runtime tests). Python
+# tests of the suite read the source tree; they are listed in the manifest as
+# left out and run in CI. The image build fails when fewer than ten tests are found.
+suite:gpu

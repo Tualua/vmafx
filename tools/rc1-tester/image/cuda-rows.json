@@ -1,0 +1,406 @@
+{
+ "comment": "State rows of docs/state.md the NVIDIA GPU tester image measures, and on which device families (hw_gpu.py, hw_rows.py). A row applies to a device when its compute capability falls in one of the listed families (hw_cudaprobe.py). tests: device test executables that must pass; gate: cells of the parity gate's CUDA run on every fixture (every gate feature). tools/rc1-tester/tests/test_gpu_rows_contract.py keeps this file, the tests, the gate and docs/state.md in step.",
+ "backend": "cuda",
+ "rows": [
+  {
+   "id": "T-CUDA-TWINS-OTHER-ARCHITECTURES-2026-10-03",
+   "part": "Ampere (compute capability 8.0 to 8.7: A100, RTX 30xx, RTX A-series; cubins sm_80 and sm_86): open",
+   "families": [
+    "ampere"
+   ],
+   "closes_when": "on a device of the family the twelve tests and the exact-twin test of the row pass and the parity gate holds every CUDA cell at 0 (ciede within its 1e-9 math-library bound) on the four fixtures",
+   "tests": [
+    "test_cuda_exact_twins",
+    "test_cuda_adm_parity",
+    "test_cuda_float_adm_parity",
+    "test_cuda_float_vif_parity",
+    "test_cuda_vif_log2_table",
+    "test_cuda_ssimulacra2_parity",
+    "test_cuda_ciede_parity",
+    "test_cuda_psnr_hvs_parity",
+    "test_cuda_float_ssim_order",
+    "test_cuda_float_ms_ssim_order",
+    "test_cuda_float_motion_parity",
+    "test_cuda_float_moment_parity",
+    "test_cuda_float_psnr_parity"
+   ],
+   "gate": [
+    {
+     "feature": "adm"
+    },
+    {
+     "feature": "cambi"
+    },
+    {
+     "feature": "ciede"
+    },
+    {
+     "feature": "float_adm"
+    },
+    {
+     "feature": "float_moment"
+    },
+    {
+     "feature": "float_motion"
+    },
+    {
+     "feature": "float_ms_ssim"
+    },
+    {
+     "feature": "float_ms_ssim_chroma"
+    },
+    {
+     "feature": "float_ms_ssim_lcs"
+    },
+    {
+     "feature": "float_psnr"
+    },
+    {
+     "feature": "float_ssim"
+    },
+    {
+     "feature": "float_ssim_lcs"
+    },
+    {
+     "feature": "float_vif"
+    },
+    {
+     "feature": "motion"
+    },
+    {
+     "feature": "motion_debug"
+    },
+    {
+     "feature": "motion_mffw"
+    },
+    {
+     "feature": "motion_v2"
+    },
+    {
+     "feature": "motion_v2_mffw"
+    },
+    {
+     "feature": "psnr"
+    },
+    {
+     "feature": "psnr_hvs"
+    },
+    {
+     "feature": "speed_chroma"
+    },
+    {
+     "feature": "speed_temporal"
+    },
+    {
+     "feature": "ssim"
+    },
+    {
+     "feature": "ssimulacra2"
+    },
+    {
+     "feature": "vif"
+    }
+   ]
+  },
+  {
+   "id": "T-CUDA-TWINS-OTHER-ARCHITECTURES-2026-10-03",
+   "part": "Hopper (9.0: H100, H200; cubin sm_90): open",
+   "families": [
+    "hopper"
+   ],
+   "closes_when": "on a device of the family the twelve tests and the exact-twin test of the row pass and the parity gate holds every CUDA cell at 0 (ciede within its 1e-9 math-library bound) on the four fixtures",
+   "tests": [
+    "test_cuda_exact_twins",
+    "test_cuda_adm_parity",
+    "test_cuda_float_adm_parity",
+    "test_cuda_float_vif_parity",
+    "test_cuda_vif_log2_table",
+    "test_cuda_ssimulacra2_parity",
+    "test_cuda_ciede_parity",
+    "test_cuda_psnr_hvs_parity",
+    "test_cuda_float_ssim_order",
+    "test_cuda_float_ms_ssim_order",
+    "test_cuda_float_motion_parity",
+    "test_cuda_float_moment_parity",
+    "test_cuda_float_psnr_parity"
+   ],
+   "gate": [
+    {
+     "feature": "adm"
+    },
+    {
+     "feature": "cambi"
+    },
+    {
+     "feature": "ciede"
+    },
+    {
+     "feature": "float_adm"
+    },
+    {
+     "feature": "float_moment"
+    },
+    {
+     "feature": "float_motion"
+    },
+    {
+     "feature": "float_ms_ssim"
+    },
+    {
+     "feature": "float_ms_ssim_chroma"
+    },
+    {
+     "feature": "float_ms_ssim_lcs"
+    },
+    {
+     "feature": "float_psnr"
+    },
+    {
+     "feature": "float_ssim"
+    },
+    {
+     "feature": "float_ssim_lcs"
+    },
+    {
+     "feature": "float_vif"
+    },
+    {
+     "feature": "motion"
+    },
+    {
+     "feature": "motion_debug"
+    },
+    {
+     "feature": "motion_mffw"
+    },
+    {
+     "feature": "motion_v2"
+    },
+    {
+     "feature": "motion_v2_mffw"
+    },
+    {
+     "feature": "psnr"
+    },
+    {
+     "feature": "psnr_hvs"
+    },
+    {
+     "feature": "speed_chroma"
+    },
+    {
+     "feature": "speed_temporal"
+    },
+    {
+     "feature": "ssim"
+    },
+    {
+     "feature": "ssimulacra2"
+    },
+    {
+     "feature": "vif"
+    }
+   ]
+  },
+  {
+   "id": "T-CUDA-TWINS-OTHER-ARCHITECTURES-2026-10-03",
+   "part": "Blackwell (10.x, 11.0 and 12.x: B200, RTX 50xx, Jetson Thor, DGX Spark; cubins sm_100 and sm_120, PTX compute_80 for 11.0): open",
+   "families": [
+    "blackwell"
+   ],
+   "closes_when": "on a device of the family the twelve tests and the exact-twin test of the row pass and the parity gate holds every CUDA cell at 0 (ciede within its 1e-9 math-library bound) on the four fixtures",
+   "tests": [
+    "test_cuda_exact_twins",
+    "test_cuda_adm_parity",
+    "test_cuda_float_adm_parity",
+    "test_cuda_float_vif_parity",
+    "test_cuda_vif_log2_table",
+    "test_cuda_ssimulacra2_parity",
+    "test_cuda_ciede_parity",
+    "test_cuda_psnr_hvs_parity",
+    "test_cuda_float_ssim_order",
+    "test_cuda_float_ms_ssim_order",
+    "test_cuda_float_motion_parity",
+    "test_cuda_float_moment_parity",
+    "test_cuda_float_psnr_parity"
+   ],
+   "gate": [
+    {
+     "feature": "adm"
+    },
+    {
+     "feature": "cambi"
+    },
+    {
+     "feature": "ciede"
+    },
+    {
+     "feature": "float_adm"
+    },
+    {
+     "feature": "float_moment"
+    },
+    {
+     "feature": "float_motion"
+    },
+    {
+     "feature": "float_ms_ssim"
+    },
+    {
+     "feature": "float_ms_ssim_chroma"
+    },
+    {
+     "feature": "float_ms_ssim_lcs"
+    },
+    {
+     "feature": "float_psnr"
+    },
+    {
+     "feature": "float_ssim"
+    },
+    {
+     "feature": "float_ssim_lcs"
+    },
+    {
+     "feature": "float_vif"
+    },
+    {
+     "feature": "motion"
+    },
+    {
+     "feature": "motion_debug"
+    },
+    {
+     "feature": "motion_mffw"
+    },
+    {
+     "feature": "motion_v2"
+    },
+    {
+     "feature": "motion_v2_mffw"
+    },
+    {
+     "feature": "psnr"
+    },
+    {
+     "feature": "psnr_hvs"
+    },
+    {
+     "feature": "speed_chroma"
+    },
+    {
+     "feature": "speed_temporal"
+    },
+    {
+     "feature": "ssim"
+    },
+    {
+     "feature": "ssimulacra2"
+    },
+    {
+     "feature": "vif"
+    }
+   ]
+  },
+  {
+   "id": "T-CUDA-TWINS-OTHER-ARCHITECTURES-2026-10-03",
+   "part": "Ada (8.9: RTX 40xx): measured on an RTX 4090 on 2026-10-03; a run repeats it",
+   "families": [
+    "ada"
+   ],
+   "closes_when": "on a device of the family the twelve tests and the exact-twin test of the row pass and the parity gate holds every CUDA cell at 0 (ciede within its 1e-9 math-library bound) on the four fixtures",
+   "tests": [
+    "test_cuda_exact_twins",
+    "test_cuda_adm_parity",
+    "test_cuda_float_adm_parity",
+    "test_cuda_float_vif_parity",
+    "test_cuda_vif_log2_table",
+    "test_cuda_ssimulacra2_parity",
+    "test_cuda_ciede_parity",
+    "test_cuda_psnr_hvs_parity",
+    "test_cuda_float_ssim_order",
+    "test_cuda_float_ms_ssim_order",
+    "test_cuda_float_motion_parity",
+    "test_cuda_float_moment_parity",
+    "test_cuda_float_psnr_parity"
+   ],
+   "gate": [
+    {
+     "feature": "adm"
+    },
+    {
+     "feature": "cambi"
+    },
+    {
+     "feature": "ciede"
+    },
+    {
+     "feature": "float_adm"
+    },
+    {
+     "feature": "float_moment"
+    },
+    {
+     "feature": "float_motion"
+    },
+    {
+     "feature": "float_ms_ssim"
+    },
+    {
+     "feature": "float_ms_ssim_chroma"
+    },
+    {
+     "feature": "float_ms_ssim_lcs"
+    },
+    {
+     "feature": "float_psnr"
+    },
+    {
+     "feature": "float_ssim"
+    },
+    {
+     "feature": "float_ssim_lcs"
+    },
+    {
+     "feature": "float_vif"
+    },
+    {
+     "feature": "motion"
+    },
+    {
+     "feature": "motion_debug"
+    },
+    {
+     "feature": "motion_mffw"
+    },
+    {
+     "feature": "motion_v2"
+    },
+    {
+     "feature": "motion_v2_mffw"
+    },
+    {
+     "feature": "psnr"
+    },
+    {
+     "feature": "psnr_hvs"
+    },
+    {
+     "feature": "speed_chroma"
+    },
+    {
+     "feature": "speed_temporal"
+    },
+    {
+     "feature": "ssim"
+    },
+    {
+     "feature": "ssimulacra2"
+    },
+    {
+     "feature": "vif"
+    }
+   ]
+  }
+ ]
+}
