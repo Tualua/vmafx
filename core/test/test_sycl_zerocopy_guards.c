@@ -180,7 +180,7 @@ static char *test_luma_only_twin_scores(void)
 }
 
 /* One row per SYCL extractor configuration. expect is 0 (scores on zero-copy input) or
- * -ENOTSUP (needs host pictures). */
+ * -ENOTSUP (a chroma reader without an imported chroma, ADR-1597). */
 typedef struct {
     const char *name;
     const char *opt_key;
@@ -200,7 +200,7 @@ static const GuardRow guard_rows[] = {
     {"vif_sycl", NULL, NULL, 8u, 0, VIF_SCORE, 0},
     {"psnr_sycl", "enable_chroma", "false", 8u, 0, "psnr_y", 0},
     {"psnr_hvs_sycl", "enable_chroma", "false", 8u, 0, "psnr_hvs_y", 0},
-    {"float_ms_ssim_sycl", NULL, NULL, 8u, -ENOTSUP, NULL, 0},
+    {"float_ms_ssim_sycl", NULL, NULL, 8u, 0, "float_ms_ssim", 0},
     {"float_psnr_sycl", NULL, NULL, 8u, 0, "float_psnr", 0},
     {"float_psnr_sycl", NULL, NULL, 10u, 0, "float_psnr", 0},
     {"float_adm_sycl", NULL, NULL, 8u, 0, "VMAF_feature_adm2_score", 0},
@@ -216,9 +216,16 @@ static const GuardRow guard_rows[] = {
     {"speed_chroma_sycl", NULL, NULL, 8u, 0, "Speed_chroma_feature_speed_chroma_u_score", 1},
     {"speed_temporal_sycl", NULL, NULL, 8u, 0, "Speed_temporal_feature_speed_temporal_score", 0},
     {"psnr_sycl", NULL, NULL, 8u, -ENOTSUP, NULL, 0},
+    {"psnr_sycl", NULL, NULL, 8u, 0, "psnr_cb", 1},
     {"psnr_hvs_sycl", NULL, NULL, 8u, -ENOTSUP, NULL, 0},
+    {"psnr_hvs_sycl", NULL, NULL, 8u, 0, "psnr_hvs_cb", 1},
     {"motion_sycl", "motion_add_uv", "true", 8u, -ENOTSUP, NULL, 0},
+    {"motion_sycl", "motion_add_uv", "true", 8u, 0, "integer_motion2_mau", 1},
 };
+
+/* Chroma readers without a chroma mark: the only rows that may still refuse zero-copy input
+ * (ciede, ssimulacra2, speed_chroma, psnr, psnr_hvs, motion_add_uv). */
+#define N_CHROMA_REFUSALS 6u
 #define N_GUARD_ROWS ((unsigned)(sizeof(guard_rows) / sizeof(guard_rows[0])))
 
 #ifndef EXPECTED_SYCL_EXTRACTORS
@@ -333,6 +340,22 @@ static const char *guard_check_row(const GuardRow *row)
     return msg;
 }
 
+/* After ADR-1598 an extractor refuses zero-copy input only for want of an imported chroma. */
+static char *test_only_unmarked_chroma_readers_refuse(void)
+{
+    unsigned refusals = 0;
+    for (unsigned i = 0; i < N_GUARD_ROWS; i++) {
+        if (guard_rows[i].expect == -ENOTSUP) {
+            mu_assert("a refusing guard row must be an unmarked chroma reader",
+                      guard_rows[i].chroma == 0);
+            refusals++;
+        }
+    }
+    mu_assert("exactly the six unmarked chroma readers refuse zero-copy input",
+              refusals == N_CHROMA_REFUSALS);
+    return NULL;
+}
+
 static char *test_guard_table(void)
 {
     VmafSyclState *probe = open_state();
@@ -357,6 +380,7 @@ char *run_tests(void)
     mu_run_test(test_cpu_extractor_rejected_before_state_change);
     mu_run_test(test_luma_only_twin_scores);
     mu_run_test(test_table_covers_every_sycl_extractor);
+    mu_run_test(test_only_unmarked_chroma_readers_refuse);
     mu_run_test(test_guard_table);
     return NULL;
 }

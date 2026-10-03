@@ -5923,6 +5923,7 @@ test_sycl_zerocopy_guards = executable('test_sycl_zerocopy_guards',
 )
 test('test_sycl_zerocopy_guards', test_sycl_zerocopy_guards,
     suite : ['fast', 'gpu', 'sycl'],
+    timeout : 180,
     is_parallel : false)
 
 # Sticky geometry regression test (T-SYCL-SHARED-FRAME-STICKY-GEOMETRY-2026-09-29)

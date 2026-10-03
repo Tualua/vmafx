@@ -638,6 +638,32 @@ static const LumaFeature g_luma_features[] = {
     /* scale=2 runs the float_ssim twin device decimation (33x18 samples from 67x37). */
     {"float_ssim_sycl", "float_ssim", {"float_ssim"}, 1u, "scale", "2", 0, 0.0, 0u, 0u},
     {"integer_ssim_sycl", "ssim", {"ssim"}, 1u, NULL, NULL, 0, 0.0, 0u, 0u},
+    /* float_ms_ssim_sycl (ADR-1414, ADR-1598): the device converts the shared planes with
+     * picture_copy's arithmetic, so host upload == CPU and zero-copy == host upload. The
+     * pyramid needs >= 176 samples per plane side; odd sizes exercise the decimation edges. */
+    {"float_ms_ssim_sycl", "float_ms_ssim", {"float_ms_ssim"}, 1u, NULL, NULL, 0, 0.0, 191u, 177u},
+    {"float_ms_ssim_sycl",
+     "float_ms_ssim",
+     {"float_ms_ssim", "float_ms_ssim_l_scale0", "float_ms_ssim_c_scale2",
+      "float_ms_ssim_s_scale4"},
+     4u,
+     "enable_lcs",
+     "true",
+     0,
+     0.0,
+     191u,
+     177u},
+    /* enable_chroma reads Cb / Cr (ADR-1597): 353 x 353 gives 177 x 177 chroma planes. */
+    {"float_ms_ssim_sycl",
+     "float_ms_ssim",
+     {"float_ms_ssim", "float_ms_ssim_cb", "float_ms_ssim_cr"},
+     3u,
+     "enable_chroma",
+     "true",
+     1,
+     0.0,
+     353u,
+     353u},
     /* Chroma readers (ADR-1597): zero-copy must equal host upload bit for bit. ciede_sycl
      * is within the documented ADR-1436 bound of the CPU (host powf), ssimulacra2_sycl is
      * bit-exact with it (ADR-1446). */
