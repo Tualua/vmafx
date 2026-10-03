@@ -619,8 +619,9 @@ beyond it:
   (ADR-1436, [below](#ciede_sycl-follows-the-cpu-ciede-to-14e-11-2026-10-01)).
 - **Summation order.** A work-group reduction adds in a tree, not in the
   CPU's sequential order. The twins add integers where the terms allow it
-  (`float_psnr`, `float_moment`), reproduce the CPU's sequential `double`
-  sum from integer increments where they do not (`ssimulacra2`, ADR-1446),
+  (`float_psnr`, `float_moment` up to 2^53 units), reproduce the CPU's
+  sequential `double` sum from integer increments where they do not
+  (`ssimulacra2`, ADR-1446; `float_moment` past 2^53 units, ADR-1497),
   or read the terms back and add them on the host in the CPU's order
   (`ssim`, ADR-1443; `float_ssim`, ADR-1463; `float_ms_ssim`, ADR-1466).
 - **fp64 on the CPU.** SYCL kernels are fp32-only
@@ -1845,8 +1846,8 @@ it is below 2^53 units of 2^-16. That covers every frame of up to 2 097 152
 pixels and every 8-, 10- and 12-bit frame. On a larger 16-bit frame whose
 sum of squares passes 2^53 the CPU rounds each further add, and the twin,
 which rounds once, is within a derived bound of it (2.7e-7 measured on a
-2560x1440 frame, bound 6.6e-6; `T-HIP-FLOAT-MOMENT-PAST-2-53-2026-10-02` in
-[`state.md`](../../state.md)).
+2560x1440 frame, bound 6.6e-6). Since 2026-10-03 that range is bit-identical
+too ([below](#float_moment_sycl-matches-the-cpu-float_moment-past-253-units-too-2026-10-03)).
 
 The frame time is unchanged: 28.7 ms per 3840x2160 frame and 0.6 ms per
 576x324 frame on the A380, before and after. Most of the 28.7 ms is the
@@ -1857,6 +1858,54 @@ compares the twin with tolerance 0.
 ```bash
 ONEAPI_DEVICE_SELECTOR=level_zero:0 python3 scripts/dev/speed_gpu_parity.py \
     --backend sycl --vmaf "$PWD/build/tools/vmaf" --feature float_moment
+```
+
+## `float_moment_sycl` matches the CPU `float_moment` past 2^53 units too (2026-10-03)
+
+`float_moment_sycl` now returns the CPU extractor's four moments bit for bit
+on every frame
+([ADR-1497](../../adr/1497-float-moment-twins-cpu-sum-past-2-53.md)).
+The CPU adds the float squares into one `double` in raster order. Below 2^53
+units of 2^-16 that sum is exact and equal to the twin's integer sum, which
+covers every frame of up to 2 097 152 pixels and every 8-, 10- and 12-bit
+frame. On a larger 16-bit frame whose sum passes 2^53 the CPU rounds as it
+adds, and the twin used to round the exact sum once. It now forms the CPU's
+rounded sum: on such a frame four more kernels add each row exactly while the
+sum is at or below 2^53, then from integer increments of the sum's last
+place, composed in pixel order and checked against the exact running sum,
+and term by term where a row crosses into the next binade
+(`core/src/feature/float_moment_sum.h`). Frames that cannot pass 2^53 run no
+new work.
+
+Measured on an Arc A380 at `--precision max` against `--backend cpu`, frames
+whose four outputs are identical and the largest difference:
+
+| Fixture | Before | Now |
+|---|---|---|
+| Full-range 16-bit noise 3840x2160, nine tenths near the peak, 16 frames | 0 of 16, 2.7e-7 | 16 of 16 |
+| The same at 7680x4320, 4 frames | 0 of 4, 5.1e-7 | 4 of 4 |
+| BBB 3840x2160 widened to 16 bits (shifted left by 8, times 257, full range with a dithered low byte), 32 frames each, 17 of them past 2^53 | 32 of 32 | 32 of 32 |
+
+BBB was identical before as well: its widened samples have no bits below the
+sum's last place until 2^55, which a 3840x2160 frame cannot reach. The parity
+gate's `float_moment` cell reads 0 at tolerance 0 on the 16-bit 3840x2160
+noise (it failed there before).
+
+Time per 16-bit 3840x2160 frame through libvmaf, pictures preloaded, medians
+of 5 interleaved runs at a load average of 4 to 5, before and after:
+
+| Input | Before | After |
+|---|---|---|
+| Noise, every frame past 2^53 | 31.84 ms | 34.62 ms |
+| BBB full range, 17 of 32 frames past 2^53 | 32.05 ms | 33.02 ms |
+
+The four kernels use integers only and no scratch memory
+(`test_sycl_kernel_scratch`), and compile for every ahead-of-time target.
+
+```shell
+python3 scripts/ci/cross_backend_parity_gate.py --vmaf-binary build/tools/vmaf \
+    --reference ref_16bit_3840x2160.yuv --distorted dis_16bit_3840x2160.yuv \
+    --width 3840 --height 2160 --bitdepth 16 --backends cpu sycl --features float_moment
 ```
 
 ## `float_psnr_sycl` matches the CPU `float_psnr` at every bit depth (2026-10-02)

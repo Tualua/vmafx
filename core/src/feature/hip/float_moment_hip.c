@@ -49,6 +49,7 @@
 #include "../../hip/kernel_template.h"
 #include "../../hip/picture_hip.h"
 #include "../../hip/shared_frame.h"
+#include "../float_moment_sum.h"
 #include "float_moment_hip.h"
 
 /* NOLINTBEGIN(modernize-use-nullptr): C translation unit. The fork builds C as
@@ -104,6 +105,18 @@ typedef struct MomentStateHip {
     hipModule_t module;
     hipFunction_t funcbpc8;
     hipFunction_t funcbpc16;
+    /* The CPU's second-moment sums past 2^53 units (ADR-1497): the four
+     * kernels of float_moment_sum_gpu.h and their per-row device buffers,
+     * allocated only for a frame whose sums can get there
+     * (vmaf_moment_sum_may_round()). */
+    hipFunction_t func_row_totals;
+    hipFunction_t func_row_plans;
+    hipFunction_t func_row_units;
+    hipFunction_t func_ordered_totals;
+    void *row_totals;
+    void *row_plans;
+    void *row_units;
+    unsigned sum_rows; /* rows the buffers hold: the frame init() was given */
     /* This frame's luma planes on the device, ref + dis: the context's shared
      * frame, or `planes`' own buffers when there is none (ADR-1408). */
     void *ref_in;
@@ -124,22 +137,97 @@ static const VmafOption options[] = {{0}};
 /* ------------------------------------------------------------------ */
 
 #ifdef HAVE_HIPCC
-/* Load the HSACO fat binary and resolve both kernel function handles. On
+/* Load the HSACO fat binary and resolve the six kernel function handles. On
  * failure the module is unloaded again and `s->module` is NULL. */
 static int moment_hip_module_load(MomentStateHip *s)
 {
+    static const char *const names[] = {
+        "calculate_moment_hip_kernel_8bpc",
+        "calculate_moment_hip_kernel_16bpc",
+        "moment_row_totals",
+        "moment_row_plans",
+        "moment_row_units",
+        "moment_ordered_totals",
+    };
+    hipFunction_t *const fns[] = {
+        &s->funcbpc8,       &s->funcbpc16,      &s->func_row_totals,
+        &s->func_row_plans, &s->func_row_units, &s->func_ordered_totals,
+    };
     hipError_t hip_rc = hipModuleLoadData(&s->module, moment_score_hsaco);
     if (hip_rc != hipSuccess)
         return moment_hip_rc(hip_rc);
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]) && hip_rc == hipSuccess; i++)
+        hip_rc = hipModuleGetFunction(fns[i], s->module, names[i]);
+    if (hip_rc == hipSuccess)
+        return 0;
+    const int unload_err = moment_hip_rc(hipModuleUnload(s->module));
+    s->module = NULL;
+    const int err = moment_hip_rc(hip_rc);
+    return err ? err : unload_err;
+}
 
-    hip_rc = hipModuleGetFunction(&s->funcbpc8, s->module, "calculate_moment_hip_kernel_8bpc");
-    if (hip_rc == hipSuccess) {
-        hip_rc =
-            hipModuleGetFunction(&s->funcbpc16, s->module, "calculate_moment_hip_kernel_16bpc");
-    }
-    if (hip_rc != hipSuccess) {
-        (void)hipModuleUnload(s->module);
-        s->module = NULL;
+/* The per-row device buffers of the CPU's second-moment sums, for a frame of
+ * `h` rows whose sums can pass 2^53 units; none otherwise. */
+static int moment_hip_sum_alloc(MomentStateHip *s, unsigned w, unsigned h, unsigned bpc)
+{
+    if (!vmaf_moment_sum_may_round(w, h, bpc))
+        return 0;
+    const size_t rows = (size_t)VMAF_MOMENT_SUM_PLANES * h;
+    s->sum_rows = h;
+    hipError_t hip_rc = hipMalloc(&s->row_totals, rows * sizeof(uint64_t));
+    if (hip_rc == hipSuccess)
+        hip_rc = hipMalloc(&s->row_plans, rows * sizeof(int));
+    if (hip_rc == hipSuccess)
+        hip_rc = hipMalloc(&s->row_units, rows * 2u * sizeof(int64_t));
+    return moment_hip_rc(hip_rc);
+}
+
+/* Frees one device buffer of moment_hip_sum_alloc(); returns its error. */
+static int moment_hip_sum_free_one(void **buf)
+{
+    if (*buf == NULL)
+        return 0;
+    const int err = moment_hip_rc(hipFree(*buf));
+    *buf = NULL;
+    return err;
+}
+
+/* The four kernels that replace the second-moment sums with the CPU's past
+ * 2^53 units, on `str` after the frame kernel. Each returns at once while a
+ * plane's exact sum is at most 2^53. */
+static int moment_hip_launch_sum(MomentStateHip *s, size_t row_bytes, hipStream_t str)
+{
+    if (s->frame_h > s->sum_rows)
+        return -EINVAL;
+    VmafMomentSumArgs a = {
+        .luma = {(const uint8_t *)s->ref_in, (const uint8_t *)s->dis_in},
+        .stride = {row_bytes, row_bytes},
+        .width = s->frame_w,
+        .height = s->frame_h,
+        .row_totals = (uint64_t *)s->row_totals,
+        .plans = (int *)s->row_plans,
+        .row_units = (int64_t *)s->row_units,
+        .sums = (uint64_t *)s->rb.device,
+    };
+    void *args[] = {&a};
+    const unsigned lanes = VMAF_MOMENT_SUM_LANES;
+    const unsigned planes = VMAF_MOMENT_SUM_PLANES;
+    /* Kernel, grid x, grid y, work-group size: float_moment_sum_gpu.h. */
+    const struct {
+        hipFunction_t fn;
+        unsigned gx;
+        unsigned gy;
+        unsigned bx;
+    } launches[] = {
+        {s->func_row_totals, s->frame_h, planes, lanes},
+        {s->func_row_plans, planes, 1u, VMAF_MOMENT_SUM_BATCH},
+        {s->func_row_units, s->frame_h, planes, lanes},
+        {s->func_ordered_totals, planes, 1u, lanes},
+    };
+    hipError_t hip_rc = hipSuccess;
+    for (size_t i = 0; i < sizeof(launches) / sizeof(launches[0]) && hip_rc == hipSuccess; i++) {
+        hip_rc = hipModuleLaunchKernel(launches[i].fn, launches[i].gx, launches[i].gy, 1u,
+                                       launches[i].bx, 1u, 1u, 0, str, args, NULL);
     }
     return moment_hip_rc(hip_rc);
 }
@@ -184,6 +272,8 @@ static int moment_hip_launch(MomentStateHip *s, VmafPicture *ref_pic, VmafPictur
         err = moment_hip_rc(hipMemsetAsync(s->rb.device, 0, sums_bytes, str));
     if (err == 0)
         err = moment_hip_launch_kernel(s, row_w, str);
+    if (err == 0 && s->row_totals != NULL)
+        err = moment_hip_launch_sum(s, (size_t)row_w, str);
     if (err != 0)
         return err;
 
@@ -207,7 +297,11 @@ static int moment_hip_module_free(MomentStateHip *s)
     vmaf_hip_plane_source_close(&s->planes);
     s->ref_in = NULL;
     s->dis_in = NULL;
-    int rc = 0;
+    int rc = moment_hip_sum_free_one(&s->row_totals);
+    const int plans_err = moment_hip_sum_free_one(&s->row_plans);
+    rc = rc ? rc : plans_err;
+    const int units_err = moment_hip_sum_free_one(&s->row_units);
+    rc = rc ? rc : units_err;
     if (s->module != NULL) {
         const int e = moment_hip_rc(hipModuleUnload(s->module));
         s->module = NULL;
@@ -268,6 +362,8 @@ static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
 #ifdef HAVE_HIPCC
     if (err == 0)
         err = moment_hip_module_load(s);
+    if (err == 0)
+        err = moment_hip_sum_alloc(s, w, h, bpc);
 #else
     if (err == 0)
         err = -ENOSYS;
@@ -327,16 +423,14 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
  * ADR-1447: the device sums are exact integers of the CPU's own terms (the
  * samples, and the float squares the CPU forms), in units of 1 / scaler and
  * 1 / scaler^2. Every term is a multiple of the unit, so the CPU's running
- * double sum is exact, and equal to the integer sum, while it is below 2^53
- * units; dividing by a power of two and then by the pixel count are the
- * CPU's two operations. A second-moment sum can reach 2^53 units only at 16
- * bits on a frame of more than 2^21 pixels (each term is below 2^32). There
- * the CPU rounds as it adds and the conversion in collect() rounds once, and
- * the two differ by at most
- *   (pixels - 2^21 + 1) / pixels * 2^(e - 69) + 2^-37,
- * e the binade of the sum in units (53 or more): 2.3e-5 at 3840x2160 with
- * every sample near the peak. test_hip_float_moment_parity checks both
- * ranges. */
+ * double sum is exact, and equal to the integer sum, while it is at most
+ * 2^53 units; dividing by a power of two and then by the pixel count are the
+ * CPU's two operations. A second-moment sum can pass 2^53 units only on a
+ * 16-bit frame of more than 2^21 pixels (each term is below 2^32). There the
+ * CPU rounds as it adds, and moment_hip_launch_sum() has replaced the two
+ * second-moment sums with the CPU's rounded ones (ADR-1497), each a double
+ * the conversion below holds exactly. test_hip_float_moment_parity checks
+ * both ranges with ==. */
 static double moment_hip_scaler(unsigned bpc)
 {
     if (bpc == 10u)

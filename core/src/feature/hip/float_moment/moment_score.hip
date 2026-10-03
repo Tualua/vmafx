@@ -38,8 +38,16 @@
  *  therefore adds the float square (moment_float_square()), an integer below
  *  2^32, so the uint64 sum is exact and equals the CPU's double sum while
  *  that sum is below 2^53 units, which holds for every frame of up to 2^21
- *  pixels. Beyond it the CPU's own running sum rounds at every add; see
- *  float_moment_hip.c.
+ *  pixels.
+ *
+ *  Past 2^53 units (ADR-1497) the CPU's own running sum rounds as it adds.
+ *  On a frame that can get there four more kernels, shared with the CUDA
+ *  twin (feature/float_moment_sum_gpu.h), replace the two second-moment
+ *  sums with the CPU's: each row's exact sum, a plan per row, each planned
+ *  row's increments composed in pixel order, and one walk per plane that adds
+ *  a row from its increments or as its runs, and a run that crosses a binade
+ *  term by term. They return at once while a plane's exact sum is at most
+ *  2^53 units.
  */
 
 #include <hip/hip_runtime.h>
@@ -61,8 +69,8 @@ __device__ __forceinline__ uint64_t moment_warp_reduce_u64(uint64_t v)
         const uint32_t tlo = __shfl_down(lo, off);
         const uint32_t thi = __shfl_down(hi, off);
         const uint64_t other = ((uint64_t)thi << 32) | tlo;
-        const uint64_t self  = ((uint64_t)hi  << 32) | lo;
-        const uint64_t sum   = self + other;
+        const uint64_t self = ((uint64_t)hi << 32) | lo;
+        const uint64_t sum = self + other;
         lo = (uint32_t)sum;
         hi = (uint32_t)(sum >> 32);
     }
@@ -82,6 +90,14 @@ __device__ __forceinline__ uint64_t moment_float_square(uint64_t v)
     return (uint64_t)square;
 }
 
+/* The CPU's second-moment sums past 2^53 units run in device code
+ * (ADR-1497): integers only, and a sample's term is moment_float_square(). */
+#define VMAF_ORDSUM_FUNC static __device__ __forceinline__
+#define VMAF_ORDSUM_NO_FP64
+#define VMAF_MOMENT_SQUARE(v) moment_float_square(v)
+#include "float_moment_sum.h"
+#include "float_moment_sum_gpu.h"
+
 extern "C" {
 
 /**
@@ -90,12 +106,10 @@ extern "C" {
  * [ref1st, dis1st, ref2nd, dis2nd] into `sums[0..3]` via atomicAdd.
  */
 __global__ void calculate_moment_hip_kernel_8bpc(const uint8_t *__restrict__ ref,
-                                                  const uint8_t *__restrict__ dis,
-                                                  ptrdiff_t ref_stride,
-                                                  ptrdiff_t dis_stride,
-                                                  unsigned long long *__restrict__ sums,
-                                                  unsigned width,
-                                                  unsigned height)
+                                                 const uint8_t *__restrict__ dis,
+                                                 ptrdiff_t ref_stride, ptrdiff_t dis_stride,
+                                                 unsigned long long *__restrict__ sums,
+                                                 unsigned width, unsigned height)
 {
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -134,12 +148,10 @@ __global__ void calculate_moment_hip_kernel_8bpc(const uint8_t *__restrict__ ref
  * (ADR-1212, ADR-1447). Same layout as 8bpc.
  */
 __global__ void calculate_moment_hip_kernel_16bpc(const uint8_t *__restrict__ ref,
-                                                   const uint8_t *__restrict__ dis,
-                                                   ptrdiff_t ref_stride,
-                                                   ptrdiff_t dis_stride,
-                                                   unsigned long long *__restrict__ sums,
-                                                   unsigned width,
-                                                   unsigned height)
+                                                  const uint8_t *__restrict__ dis,
+                                                  ptrdiff_t ref_stride, ptrdiff_t dis_stride,
+                                                  unsigned long long *__restrict__ sums,
+                                                  unsigned width, unsigned height)
 {
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -147,10 +159,10 @@ __global__ void calculate_moment_hip_kernel_16bpc(const uint8_t *__restrict__ re
 
     uint64_t r1 = 0, r2 = 0, d1 = 0, d2 = 0;
     if (x < (int)width && y < (int)height) {
-        const uint64_t r = (uint64_t)reinterpret_cast<const uint16_t *>(
-            ref + (ptrdiff_t)y * ref_stride)[x];
-        const uint64_t d = (uint64_t)reinterpret_cast<const uint16_t *>(
-            dis + (ptrdiff_t)y * dis_stride)[x];
+        const uint64_t r =
+            (uint64_t)reinterpret_cast<const uint16_t *>(ref + (ptrdiff_t)y * ref_stride)[x];
+        const uint64_t d =
+            (uint64_t)reinterpret_cast<const uint16_t *>(dis + (ptrdiff_t)y * dis_stride)[x];
         r1 = r;
         r2 = moment_float_square(r);
         d1 = d;
@@ -169,6 +181,30 @@ __global__ void calculate_moment_hip_kernel_16bpc(const uint8_t *__restrict__ re
         atomicAdd(&sums[2], (unsigned long long)r2);
         atomicAdd(&sums[3], (unsigned long long)d2);
     }
+}
+
+/* The four kernels of the CPU's second-moment sums past 2^53 units
+ * (feature/float_moment_sum_gpu.h, ADR-1497). */
+__global__ void __launch_bounds__(VMAF_MOMENT_SUM_LANES)
+    moment_row_totals(const VmafMomentSumArgs a)
+{
+    moment_row_totals_body(a);
+}
+
+__global__ void __launch_bounds__(VMAF_MOMENT_SUM_BATCH) moment_row_plans(const VmafMomentSumArgs a)
+{
+    moment_row_plans_body(a);
+}
+
+__global__ void __launch_bounds__(VMAF_MOMENT_SUM_LANES) moment_row_units(const VmafMomentSumArgs a)
+{
+    moment_row_units_body(a);
+}
+
+__global__ void __launch_bounds__(VMAF_MOMENT_SUM_LANES)
+    moment_ordered_totals(const VmafMomentSumArgs a)
+{
+    moment_ordered_totals_body(a);
 }
 
 } /* extern "C" */

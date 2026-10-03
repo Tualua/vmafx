@@ -37,8 +37,24 @@
  *  kernel therefore adds the float square (moment_float_square()), an
  *  integer below 2^32, so the uint64 sum is exact, its order cannot change
  *  it, and it equals the CPU's double sum while that sum is below 2^53
- *  units, which holds for every frame of up to 2^21 pixels. Beyond it the
- *  CPU's own running sum rounds at every add; see integer_moment_cuda.c.
+ *  units, which holds for every frame of up to 2^21 pixels.
+ *
+ *  Past 2^53 units (ADR-1497) the CPU's own running sum rounds as it adds.
+ *  On a frame that can get there (vmaf_moment_sum_may_round()) four more
+ *  kernels replace the two second-moment sums with the CPU's, from rows,
+ *  with feature/float_moment_sum.h:
+ *
+ *    moment_row_totals      each row's exact sum of float squares;
+ *    moment_row_plans       a plan per row from the prefix of those sums;
+ *    moment_row_units       each planned row's increments, composed in pixel
+ *                           order over 256 runs and an ordered tree;
+ *    moment_ordered_totals  one walk per plane over the rows. A row whose
+ *                           plan does not hold at the CPU's sum is added as
+ *                           its 256 runs, and a run that crosses a binade
+ *                           term by term, in pixel order.
+ *
+ *  Each of them returns at once when the exact sum is at most 2^53 units:
+ *  then it is the CPU's sum.
  */
 
 #include "cuda_helper.cuh"
@@ -145,6 +161,14 @@ __device__ __forceinline__ MomentSums thread_sums(const VmafPicture &ref, const 
 
 } // namespace
 
+/* The CPU's second-moment sums past 2^53 units run in device code
+ * (ADR-1497): integers only, and a sample's term is moment_float_square(). */
+#define VMAF_ORDSUM_FUNC static __device__ __forceinline__
+#define VMAF_ORDSUM_NO_FP64
+#define VMAF_MOMENT_SQUARE(v) moment_float_square(v)
+#include "feature/float_moment_sum.h"
+#include "feature/float_moment_sum_gpu.h"
+
 extern "C" {
 
 __global__ void calculate_moment_kernel_8bpc(const VmafPicture ref, const VmafPicture dis,
@@ -159,6 +183,30 @@ __global__ void calculate_moment_kernel_16bpc(const VmafPicture ref, const VmafP
 {
     add_block_sums(thread_sums<uint16_t>(ref, dis, width, height),
                    reinterpret_cast<unsigned long long *>(sums.data));
+}
+
+/* The four kernels of the CPU's second-moment sums past 2^53 units
+ * (feature/float_moment_sum_gpu.h, ADR-1497). */
+__global__ void __launch_bounds__(VMAF_MOMENT_SUM_LANES)
+    moment_row_totals(const VmafMomentSumArgs a)
+{
+    moment_row_totals_body(a);
+}
+
+__global__ void __launch_bounds__(VMAF_MOMENT_SUM_BATCH) moment_row_plans(const VmafMomentSumArgs a)
+{
+    moment_row_plans_body(a);
+}
+
+__global__ void __launch_bounds__(VMAF_MOMENT_SUM_LANES) moment_row_units(const VmafMomentSumArgs a)
+{
+    moment_row_units_body(a);
+}
+
+__global__ void __launch_bounds__(VMAF_MOMENT_SUM_LANES)
+    moment_ordered_totals(const VmafMomentSumArgs a)
+{
+    moment_ordered_totals_body(a);
 }
 
 } /* extern "C" */

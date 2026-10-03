@@ -28,6 +28,7 @@
 #include "feature_name.h"
 #include "cuda/integer_moment_cuda.h"
 #include "cuda/kernel_template.h"
+#include "feature/float_moment_sum.h"
 #include "mem.h"
 #include "picture.h"
 #include "picture_cuda.h"
@@ -49,6 +50,16 @@ typedef struct MomentStateCuda {
 
     CUfunction funcbpc8;
     CUfunction funcbpc16;
+    /* The CPU's second-moment sums past 2^53 units (ADR-1497): the four
+     * kernels of moment_score.cu and their per-row buffers, allocated only
+     * for a frame whose sums can get there (vmaf_moment_sum_may_round()). */
+    CUfunction func_row_totals;
+    CUfunction func_row_plans;
+    CUfunction func_row_units;
+    CUfunction func_ordered_totals;
+    VmafCudaBuffer *row_totals;
+    VmafCudaBuffer *row_plans;
+    VmafCudaBuffer *row_units;
     /* PTX module backing the moment kernels — owned here so
      * `close_fex_cuda` can unload it. Skipping the unload leaks
      * ~200-500 KB of GPU-resident PTX backing store per vmaf_close(). */
@@ -79,6 +90,76 @@ static int moment_cuda_dispatch(const VmafPicture *ref, const VmafPicture *dis,
     return 0;
 }
 
+/* A device buffer's address as the typed pointer a kernel argument holds.
+ * The Driver API hands out `CUdeviceptr` integers (ADR-0747); the pointer is
+ * never dereferenced on the host. */
+static void *moment_cuda_dptr(const VmafCudaBuffer *buf)
+{
+    // NOLINTNEXTLINE(performance-no-int-to-ptr): Driver API device address (ADR-0747)
+    return (void *)(uintptr_t)buf->data;
+}
+
+/* The four kernels that replace the second-moment sums with the CPU's past
+ * 2^53 units (moment_score.cu, ADR-1497), on the frame kernel's stream after
+ * it. Each returns at once while a plane's exact sum is at most 2^53. */
+static int moment_cuda_dispatch_sum(MomentStateCuda *s, const VmafPicture *ref,
+                                    const VmafPicture *dis, CudaFunctions *cu_f, CUstream stream)
+{
+    VmafMomentSumArgs args = {
+        .luma = {(const uint8_t *)ref->data[0], (const uint8_t *)dis->data[0]},
+        .stride = {(size_t)ref->stride[0], (size_t)dis->stride[0]},
+        .width = s->frame_w,
+        .height = s->frame_h,
+        .row_totals = moment_cuda_dptr(s->row_totals),
+        .plans = moment_cuda_dptr(s->row_plans),
+        .row_units = moment_cuda_dptr(s->row_units),
+        .sums = moment_cuda_dptr(s->rb.device),
+    };
+    /* The buffers hold the rows of the frame init() was given. */
+    if ((size_t)VMAF_MOMENT_SUM_PLANES * s->frame_h * sizeof(uint64_t) > s->row_totals->size)
+        return -EINVAL;
+    void *params[] = {&args};
+    const unsigned lanes = VMAF_MOMENT_SUM_LANES;
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_row_totals, s->frame_h, VMAF_MOMENT_SUM_PLANES,
+                                           1, lanes, 1, 1, 0, stream, params, NULL));
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_row_plans, VMAF_MOMENT_SUM_PLANES, 1, 1,
+                                           VMAF_MOMENT_SUM_BATCH, 1, 1, 0, stream, params, NULL));
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_row_units, s->frame_h, VMAF_MOMENT_SUM_PLANES, 1,
+                                           lanes, 1, 1, 0, stream, params, NULL));
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_ordered_totals, VMAF_MOMENT_SUM_PLANES, 1, 1,
+                                           lanes, 1, 1, 0, stream, params, NULL));
+    return 0;
+}
+
+/* The per-row buffers of the CPU's second-moment sums, for a frame of
+ * `h` rows whose sums can pass 2^53 units; none otherwise. */
+static int moment_cuda_sum_alloc(MomentStateCuda *s, VmafCudaState *cu_state, unsigned w,
+                                 unsigned h, unsigned bpc)
+{
+    if (!vmaf_moment_sum_may_round(w, h, bpc))
+        return 0;
+    const size_t rows = (size_t)VMAF_MOMENT_SUM_PLANES * h;
+    int err = vmaf_cuda_buffer_alloc(cu_state, &s->row_totals, rows * sizeof(uint64_t));
+    if (!err)
+        err = vmaf_cuda_buffer_alloc(cu_state, &s->row_plans, rows * sizeof(int));
+    if (!err)
+        err = vmaf_cuda_buffer_alloc(cu_state, &s->row_units, rows * 2u * sizeof(int64_t));
+    return err;
+}
+
+/* Frees the per-row buffers; returns the first error. */
+static int moment_cuda_sum_free(MomentStateCuda *s, VmafCudaState *cu_state)
+{
+    int rc = vmaf_cuda_buffer_free_owned(cu_state, &s->row_totals);
+    const int plans_rc = vmaf_cuda_buffer_free_owned(cu_state, &s->row_plans);
+    if (!rc)
+        rc = plans_rc;
+    const int units_rc = vmaf_cuda_buffer_free_owned(cu_state, &s->row_units);
+    if (!rc)
+        rc = units_rc;
+    return rc;
+}
+
 /* ------------------------------------------------------------------ */
 /* moment_init_unwind - the single teardown path for init_fex_cuda.
  *
@@ -95,6 +176,9 @@ static int moment_init_unwind(VmafFeatureExtractor *fex, MomentStateCuda *s, int
     const int rb_rc = vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
     if (!rc)
         rc = rb_rc;
+    const int sum_rc = moment_cuda_sum_free(s, fex->cu_state);
+    if (!rc)
+        rc = sum_rc;
     const int dict_rc = vmaf_dictionary_free(&s->feature_name_dict);
     if (!rc)
         rc = dict_rc;
@@ -104,51 +188,62 @@ static int moment_init_unwind(VmafFeatureExtractor *fex, MomentStateCuda *s, int
     return rc;
 }
 
+/* Loads the module and resolves its six kernels. */
+static int moment_cuda_load_module(MomentStateCuda *s, CudaFunctions *cu_f)
+{
+    static const char *const names[] = {
+        "calculate_moment_kernel_8bpc",
+        "calculate_moment_kernel_16bpc",
+        "moment_row_totals",
+        "moment_row_plans",
+        "moment_row_units",
+        "moment_ordered_totals",
+    };
+    CUfunction *const fns[] = {
+        &s->funcbpc8,       &s->funcbpc16,      &s->func_row_totals,
+        &s->func_row_plans, &s->func_row_units, &s->func_ordered_totals,
+    };
+    CHECK_CUDA_RETURN(cu_f, cuModuleLoadData(&s->module, moment_score_ptx));
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        CHECK_CUDA_RETURN(cu_f, cuModuleGetFunction(fns[i], s->module, names[i]));
+    }
+    return 0;
+}
+
+/* The module and its kernels, with the device context current. Returns the
+ * first error. */
+static int moment_cuda_load(MomentStateCuda *s, VmafCudaState *cu_state)
+{
+    CudaFunctions *cu_f = cu_state->f;
+    CHECK_CUDA_RETURN(cu_f, cuCtxPushCurrent(cu_state->ctx));
+    const int err = moment_cuda_load_module(s, cu_f);
+    CHECK_CUDA_RETURN(cu_f, cuCtxPopCurrent(NULL));
+    return err;
+}
+
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
     (void)pix_fmt;
-    (void)w;
-    (void)h;
     MomentStateCuda *s = fex->priv;
-    CudaFunctions *cu_f = fex->cu_state->f;
+    s->bpc = bpc;
+    s->frame_w = w;
+    s->frame_h = h;
 
     int err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
-    if (err)
-        return moment_init_unwind(fex, s, err);
-
-    int _cuda_err = 0;
-    int ctx_pushed = 0;
-    CHECK_CUDA_GOTO(cu_f, cuCtxPushCurrent(fex->cu_state->ctx), fail);
-    ctx_pushed = 1;
-
-    CHECK_CUDA_GOTO(cu_f, cuModuleLoadData(&s->module, moment_score_ptx), fail);
-    CHECK_CUDA_GOTO(
-        cu_f, cuModuleGetFunction(&s->funcbpc8, s->module, "calculate_moment_kernel_8bpc"), fail);
-    CHECK_CUDA_GOTO(
-        cu_f, cuModuleGetFunction(&s->funcbpc16, s->module, "calculate_moment_kernel_16bpc"), fail);
-
-    CHECK_CUDA_GOTO(cu_f, cuCtxPopCurrent(NULL), fail);
-
-    s->bpc = bpc;
-
-    err = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state, 4u * sizeof(uint64_t));
-    if (err)
-        return moment_init_unwind(fex, s, err);
-
-    s->feature_name_dict =
-        vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
-    if (!s->feature_name_dict) {
-        err = -ENOMEM;
-        return moment_init_unwind(fex, s, err);
+    if (!err)
+        err = moment_cuda_load(s, fex->cu_state);
+    if (!err)
+        err = vmaf_cuda_kernel_readback_alloc(&s->rb, fex->cu_state, 4u * sizeof(uint64_t));
+    if (!err)
+        err = moment_cuda_sum_alloc(s, fex->cu_state, w, h, bpc);
+    if (!err) {
+        s->feature_name_dict =
+            vmaf_feature_name_dict_from_provided_features(fex->provided_features, fex->options, s);
+        if (!s->feature_name_dict)
+            err = -ENOMEM;
     }
-
-    return 0;
-
-fail:
-    if (ctx_pushed)
-        (void)cu_f->cuCtxPopCurrent(NULL);
-    return moment_init_unwind(fex, s, _cuda_err);
+    return err ? moment_init_unwind(fex, s, err) : 0;
 }
 
 static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
@@ -175,6 +270,10 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     err = moment_cuda_dispatch(ref_pic, dist_pic, s->rb.device, ref_pic->w[0], ref_pic->h[0],
                                s->bpc, s->funcbpc8, s->funcbpc16, cu_f,
                                vmaf_cuda_picture_get_stream(ref_pic));
+    if (!err && s->row_totals) {
+        err = moment_cuda_dispatch_sum(s, ref_pic, dist_pic, cu_f,
+                                       vmaf_cuda_picture_get_stream(ref_pic));
+    }
     if (err)
         return err;
 
@@ -195,16 +294,14 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
  * ADR-1453: the device sums are exact integers of the CPU's own terms (the
  * samples, and the float squares the CPU forms), in units of 1 / scaler and
  * 1 / scaler^2. Every term is a multiple of the unit, so the CPU's running
- * double sum is exact, and equal to the integer sum, while it is below 2^53
- * units; dividing by a power of two and then by the pixel count are the
- * CPU's two operations. A second-moment sum can reach 2^53 units only at 16
- * bits on a frame of more than 2^21 pixels (each term is below 2^32). There
- * the CPU rounds as it adds and the conversion in collect() rounds once, and
- * the two differ by at most
- *   (pixels - 2^21 + 1) / pixels * 2^(e - 69) + 2^-37,
- * e the binade of the sum in units (53 or more): 2.3e-5 at 3840x2160 with
- * every sample near the peak. test_cuda_float_moment_parity checks both
- * ranges. */
+ * double sum is exact, and equal to the integer sum, while it is at most
+ * 2^53 units; dividing by a power of two and then by the pixel count are the
+ * CPU's two operations. A second-moment sum can pass 2^53 units only on a
+ * 16-bit frame of more than 2^21 pixels (each term is below 2^32). There the
+ * CPU rounds as it adds, and moment_cuda_dispatch_sum() has replaced the two
+ * second-moment sums with the CPU's rounded ones (ADR-1497), each a double
+ * the conversion below holds exactly. test_cuda_float_moment_parity checks
+ * both ranges with ==. */
 static double moment_cuda_scaler(unsigned bpc)
 {
     if (bpc == 10u)
@@ -261,6 +358,9 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
     const int rb_rc = vmaf_cuda_kernel_readback_free(&s->rb, fex->cu_state);
     if (!rc)
         rc = rb_rc;
+    const int sum_rc = moment_cuda_sum_free(s, fex->cu_state);
+    if (!rc)
+        rc = sum_rc;
     const int dict_rc = vmaf_dictionary_free(&s->feature_name_dict);
     if (!rc)
         rc = dict_rc;

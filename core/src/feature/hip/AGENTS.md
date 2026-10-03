@@ -28,7 +28,7 @@ Parent: [../AGENTS.md](../AGENTS.md). HIP backend runtime lives at
 | `ciede_hip.c`, `integer_adm_hip.c` | [deleted-orphan-tus](AGENTS.d/deleted-orphan-tus.md) | Do not re-add deleted orphan or dead translation units without consulting ADR-0546. |
 | `/scripts/ci/exact_twins.d/adm.hip`, `/scripts/ci/twin-drift-check.sh` | [exact-twins](AGENTS.d/exact-twins.md) | All declared exact twin extractors in HIP must maintain bit-identical output with CPU. |
 | `float_adm_hip.c`, `float_adm_hip.h`, `float_adm/float_adm_score.hip` | [float-adm](AGENTS.d/float-adm.md) | float_adm options must reach kernels and compute bit-exact CPU results. |
-| `float_moment_hip.c`, `float_moment_hip.h`, `float_moment/moment_score.hip` | [float-moment](AGENTS.d/float-moment.md) | float_moment_hip matches CPU bits below 2^53. |
+| `float_moment_hip.c`, `float_moment_hip.h`, `float_moment/moment_score.hip` | [float-moment](AGENTS.d/float-moment.md) | float_moment_hip matches CPU bits on every frame, past 2^53 units too. |
 | `float_motion_hip.c`, `float_motion_hip.h`, `float_motion/float_motion_score.hip` | [float-motion](AGENTS.d/float-motion.md) | float_motion force-zero ownership and flush idempotency must follow BUG048 specifications. |
 | `integer_ms_ssim_hip.c`, `integer_ms_ssim/ms_ssim_arith.h` | [float-ms-ssim](AGENTS.d/float-ms-ssim.md) | float_ms_ssim_hip matches CPU arithmetic bit for bit with raster-order per-scale sums. |
 | `float_psnr_hip.c`, `float_psnr_hip.h`, `float_psnr/float_psnr_score.hip` | [float-psnr](AGENTS.d/float-psnr.md) | float_psnr_hip reproduces CPU reference bits identically. |

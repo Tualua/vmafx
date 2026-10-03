@@ -33,6 +33,31 @@ touched. No score of an existing output moves.
   #1645 regression cases (flat identical frames, single pixel, `apsnr` with
   `--subsample 2`, `motion_v2` weight / cap / one frame), plus
   `test_twin_options_are_cpu_options`.
+## The `float_moment` twins form the CPU's second-moment sum past 2^53 units (ADR-1497, 2026-10-03)
+
+`fix/float-moment-exact-past-2-53`. Fork-only device and host code; no CPU
+extractor, no upstream-mirror line changes (`moment.c`, `float_moment.c` and
+`picture_copy.cpp` untouched).
+
+- New shared headers `core/src/feature/float_moment_sum.h` (integer
+  arithmetic and every lane's step) and `core/src/feature/float_moment_sum_gpu.h`
+  (the bodies of the four CUDA / HIP kernels; `cuda/integer_moment/moment_score.cu`
+  and `hip/float_moment/moment_score.hip` define the `extern "C" __global__`
+  kernels around them).
+  Both are in the CUDA and HIP `depend_files` lists of `core/src/meson.build`.
+- `cuda/integer_moment_cuda.c`, `hip/float_moment_hip.c` and
+  `sycl/integer_moment_sycl.cpp` allocate per-row buffers when
+  `vmaf_moment_sum_may_round()` holds and launch the four kernels after the
+  frame kernel; `collect()` is unchanged. `init_fex_cuda()` no longer uses
+  `CHECK_CUDA_GOTO` / a `fail:` label: the module and its six kernels load in
+  `moment_cuda_load()`.
+- If upstream ever changes `compute_2nd_moment()` (order, term), the header,
+  `test_float_moment_sum` and the three twins change in the same PR. Keep the
+  four kernels; never go back to rounding the exact sum once.
+- `core/test/float_moment_twin_parity.h`: the cases past 2^53 compare with
+  `==` (file-scope `FLOAT_MOMENT_TWIN_PAST_CASES`, shared with
+  `test_float_moment_sum`); the dark samples reach 8191. The HIP parity test
+  now uses the shared header like the CUDA and SYCL tests.
 
 ## The parity allowlist page always has a Pending section (2026-10-03)
 

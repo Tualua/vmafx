@@ -43,6 +43,7 @@ PSNR, SSIM, MS-SSIM, LPIPS, …). Parent: [../../AGENTS.md](../../AGENTS.md).
 | `feature_extractor.cpp`, `feature_extractor.h` | [feature-registration](AGENTS.d/feature-registration.md) | feature_extractor_list[] is exactly-once and all extractors register in feature_extractor.cpp. |
 | `float_adm.c`, `adm_tools.h` | [float-adm](AGENTS.d/float-adm.md) | Float ADM GPU exports, strict division (no reciprocal estimate), min dim 17x17, and signature stability. |
 | `feature_name.cpp`, `brisque_math.h` | [float-equality](AGENTS.d/float-equality.md) | Explicit floating-point comparison contracts replace direct equality tests. |
+| `float_moment_sum.h`, `float_moment_sum_gpu.h` | [float-moment-sum](AGENTS.d/float-moment-sum.md) | float_moment twins form the CPU's rounded 2nd-moment sum past 2^53 units; integers only, checked walk. |
 | `moment.c`, `moment.h` | [float-moment](AGENTS.d/float-moment.md) | compute_2nd_moment reduction order and floating-point accumulation contracts. |
 | `float_vif.c`, `vif_tools.h` | [float-vif](AGENTS.d/float-vif.md) | float_vif lint decomposition, run-time Gaussian filter construction, and minimum dimension checks. |
 | `feature_extractor.h` | [fmaf-ban](AGENTS.d/fmaf-ban.md) | Scalar references never call libm fmaf to prevent contraction divergence across hosts. |

@@ -26,6 +26,12 @@
  * Skip behaviour: exits 77 when there is no CUDA device.
  */
 
+#ifdef FIXTURE_W
+/* The `_large` variant re-runs the noise cases at 960x540. The cases past
+ * 2^53 have their own sizes and run in the default binary only. */
+#define FLOAT_MOMENT_TWIN_LARGE_VARIANT 1
+#endif
+
 #include "libvmaf/libvmaf_cuda.h"
 
 #include "float_moment_twin_parity.h"
@@ -91,10 +97,12 @@ static char *test_float_moment_16bit_bright_exact(void)
     return float_moment_twin_bright_1080p_exact(&twin);
 }
 
-static char *test_float_moment_16bit_past_2_53_within_bound(void)
+#ifndef FLOAT_MOMENT_TWIN_LARGE_VARIANT
+static char *test_float_moment_16bit_past_2_53_exact(void)
 {
-    return float_moment_twin_past_2_53_within_bound(&twin);
+    return float_moment_twin_past_2_53_exact(&twin);
 }
+#endif
 
 char *run_tests(void)
 {
@@ -104,7 +112,9 @@ char *run_tests(void)
     mu_run_test(test_float_moment_12bit_exact);
     mu_run_test(test_float_moment_16bit_exact);
     mu_run_test(test_float_moment_16bit_bright_exact);
-    mu_run_test(test_float_moment_16bit_past_2_53_within_bound);
+#ifndef FLOAT_MOMENT_TWIN_LARGE_VARIANT
+    mu_run_test(test_float_moment_16bit_past_2_53_exact);
+#endif
     return NULL;
 }
 

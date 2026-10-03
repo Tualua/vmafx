@@ -467,6 +467,9 @@ if is_hipcc_enabled and is_hip_enabled
         # ADR-1445: the fp64 terms' split helper and the ordered sums.
         'feature/ssimulacra2_score.h',
         'feature/ordered_sum.h',
+        # ADR-1497: the CPU's second-moment sum past 2^53 units.
+        'feature/float_moment_sum.h',
+        'feature/float_moment_sum_gpu.h',
         'feature/hip/float_adm_hip.h',
         # ADR-1458: the float_adm arithmetic, shared with the CUDA twin.
         'feature/float_adm_gpu_common.h',
@@ -1617,6 +1620,8 @@ if is_cuda_enabled
         'feature/ssimulacra2_math.h',
         'feature/ssimulacra2_score.h',
         'feature/ordered_sum.h',
+        'feature/float_moment_sum.h',
+        'feature/float_moment_sum_gpu.h',
         'feature/cuda/float_adm_cuda.h',
         'feature/cuda/float_adm/float_adm_device.h',
         'feature/float_adm_gpu_common.h',

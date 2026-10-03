@@ -31,8 +31,18 @@
  *  below 2^32, so the int64 sum is exact and equals the CPU's double sum
  *  while that sum is below 2^53 units of 1 / scaler^2, which holds for
  *  every frame of up to 2^21 pixels and for every 8-, 10- and 12-bit
- *  frame. Beyond it the CPU's own running sum rounds at every add; see
- *  collect_fex_sycl().
+ *  frame.
+ *
+ *  Past 2^53 units (ADR-1497) the CPU's own running sum rounds as it adds.
+ *  On a frame that can get there (vmaf_moment_sum_may_round()) four more
+ *  kernels replace the two second-moment sums with the CPU's, with the lane
+ *  steps of feature/float_moment_sum.h, as the CUDA and HIP twins do
+ *  (feature/float_moment_sum_gpu.h): each row's exact sum, a plan per row,
+ *  each planned row's increments composed in pixel order, and one walk per
+ *  plane that adds a row from its increments or as its runs, and a run that
+ *  crosses a binade term by term. Integers only (no fp64, ADR-0220), and no
+ *  scratch memory (ADR-1395). They return at once while a plane's exact sum
+ *  is at most 2^53 units.
  */
 
 #include <sycl/sycl.hpp>
@@ -66,6 +76,12 @@ struct MomentStateSycl {
     int64_t *d_sums;
     int64_t *h_sums;
 
+    /* Per-row device arrays of the CPU's second-moment sums past 2^53 units
+     * (ADR-1497), allocated only for a frame whose sums can get there. */
+    uint64_t *d_row_totals;
+    int *d_row_plans;
+    int64_t *d_row_units;
+
     /* Submit/collect plumbing. */
     bool has_pending;
     unsigned pending_index;
@@ -85,6 +101,19 @@ VMAF_SYCL_ALWAYS_INLINE int64_t moment_float_square(uint32_t v)
     const float square = sample * sample;
     return (int64_t)square;
 }
+
+} /* anonymous namespace */
+
+/* The CPU's second-moment sums past 2^53 units (ADR-1497): integers only,
+ * every function inlined (a call is a scratch-memory frame, ADR-1395), and a
+ * sample's term is moment_float_square(). */
+#define VMAF_ORDSUM_FUNC static VMAF_SYCL_ALWAYS_INLINE
+#define VMAF_ORDSUM_NO_FP64
+#define VMAF_MOMENT_SQUARE(v) moment_float_square(v)
+#include "../float_moment_sum.h"
+
+namespace
+{
 
 /* Per-pixel moment kernel. Reads the shared ref/dis frame
  * buffers (uint8 packed at ≤8bpc, uint16 packed at ≥10bpc,
@@ -125,6 +154,255 @@ static void launch_moment(sycl::queue &q, void *shared_ref, void *shared_dis, in
     });
 }
 
+/* The plane's exact sum is at most 2^53 units: it is the CPU's sum. */
+VMAF_SYCL_ALWAYS_INLINE bool moment_sum_is_exact(const VmafMomentSumArgs &a, unsigned plane)
+{
+    return a.sums[2u + plane] <= VMAF_MOMENT_SUM_EXACT_END;
+}
+
+/* Row `row` of plane `plane`; the planes are picked by value, not by index,
+ * so the argument block stays out of private memory. */
+VMAF_SYCL_ALWAYS_INLINE const uint16_t *moment_sum_row(const VmafMomentSumArgs &a, unsigned plane,
+                                                       unsigned row)
+{
+    const uint8_t *luma = plane == 0u ? a.luma[0] : a.luma[1];
+    const size_t stride = plane == 0u ? a.stride[0] : a.stride[1];
+    return vmaf_moment_sum_line(luma, stride, row);
+}
+
+template <typename T> VMAF_SYCL_ALWAYS_INLINE T *moment_local(const sycl::local_accessor<T, 1> &acc)
+{
+    return acc.template get_multi_ptr<sycl::access::decorated::no>().get();
+}
+
+/* Each row's exact sum: group (plane, row). */
+static void launch_row_totals(sycl::queue &q, const VmafMomentSumArgs &a)
+{
+    const size_t lanes = VMAF_MOMENT_SUM_LANES;
+    const sycl::nd_range<2> range{{VMAF_MOMENT_SUM_PLANES, (size_t)a.height * lanes}, {1, lanes}};
+    q.submit([&](sycl::handler &h) {
+        h.parallel_for(range, [=](sycl::nd_item<2> item) {
+            const auto plane = (unsigned)item.get_group(0);
+            const auto row = (unsigned)item.get_group(1);
+            const auto lane = (unsigned)item.get_local_id(1);
+            if (moment_sum_is_exact(a, plane))
+                return;
+            const uint64_t mine =
+                vmaf_moment_sum_lane_total(moment_sum_row(a, plane, row), a.width, lane);
+            const uint64_t total = sycl::reduce_over_group(item.get_group(), mine, sycl::plus<>());
+            if (lane == 0u)
+                a.row_totals[(size_t)plane * a.height + row] = total;
+        });
+    });
+}
+
+/* The plan of every row of one plane, group (plane): the lanes stage a batch
+ * of row sums, lane 0 follows their prefix, the lanes store the plans. */
+static void launch_row_plans(sycl::queue &q, const VmafMomentSumArgs &a)
+{
+    const size_t batch = VMAF_MOMENT_SUM_BATCH;
+    q.submit([&](sycl::handler &h) {
+        const sycl::local_accessor<uint64_t, 1> staged_totals(sycl::range<1>(batch), h);
+        const sycl::local_accessor<int, 1> staged_plans(sycl::range<1>(batch), h);
+        h.parallel_for(
+            sycl::nd_range<1>{VMAF_MOMENT_SUM_PLANES * batch, batch}, [=](sycl::nd_item<1> item) {
+                const auto plane = (unsigned)item.get_group(0);
+                const auto lane = (unsigned)item.get_local_id(0);
+                if (moment_sum_is_exact(a, plane))
+                    return;
+                uint64_t *totals = moment_local(staged_totals);
+                int *plans = moment_local(staged_plans);
+                const size_t base = (size_t)plane * a.height;
+                uint64_t prefix = 0u;
+                for (unsigned first = 0; first < a.height; first += VMAF_MOMENT_SUM_BATCH) {
+                    const unsigned left = a.height - first;
+                    const unsigned count =
+                        left < VMAF_MOMENT_SUM_BATCH ? left : VMAF_MOMENT_SUM_BATCH;
+                    if (lane < count)
+                        totals[lane] = a.row_totals[base + first + lane];
+                    sycl::group_barrier(item.get_group());
+                    if (lane == 0u)
+                        vmaf_moment_sum_plan_batch(&prefix, totals, plans, count);
+                    sycl::group_barrier(item.get_group());
+                    if (lane < count)
+                        a.plans[base + first + lane] = plans[lane];
+                    sycl::group_barrier(item.get_group());
+                }
+            });
+    });
+}
+
+/* One work-item of launch_row_units(): group (plane, row). A row without a
+ * binade plan gets zeros, which the walk never uses. */
+VMAF_SYCL_ALWAYS_INLINE void moment_row_units_item(const VmafMomentSumArgs &a, int64_t *units,
+                                                   sycl::nd_item<2> item)
+{
+    const auto plane = (unsigned)item.get_group(0);
+    const auto row = (unsigned)item.get_group(1);
+    const auto lane = (unsigned)item.get_local_id(1);
+    if (moment_sum_is_exact(a, plane))
+        return;
+    const size_t at = (size_t)plane * a.height + row;
+    const int plan = a.plans[at];
+    if (!vmaf_moment_sum_plan_is_binade(plan)) {
+        if (lane == 0u) {
+            a.row_units[(size_t)2u * at] = 0;
+            a.row_units[((size_t)2u * at) + 1u] = 0;
+        }
+        return;
+    }
+    vmaf_moment_sum_lane_units(moment_sum_row(a, plane, row), a.width, plan, lane, units);
+    sycl::group_barrier(item.get_group());
+    for (unsigned step = 1u; step < VMAF_MOMENT_SUM_LANES; step <<= 1u) {
+        vmaf_moment_sum_tree_step(units, lane, step);
+        sycl::group_barrier(item.get_group());
+    }
+    if (lane == 0u) {
+        a.row_units[(size_t)2u * at] = units[0];
+        a.row_units[((size_t)2u * at) + 1u] = units[1];
+    }
+}
+
+/* Each planned row's increments under its plan: a lane composes its run,
+ * then the lanes are composed in order. */
+static void launch_row_units(sycl::queue &q, const VmafMomentSumArgs &a)
+{
+    const size_t lanes = VMAF_MOMENT_SUM_LANES;
+    const sycl::nd_range<2> range{{VMAF_MOMENT_SUM_PLANES, (size_t)a.height * lanes}, {1, lanes}};
+    q.submit([&](sycl::handler &h) {
+        const sycl::local_accessor<int64_t, 1> lds(sycl::range<1>(2u * lanes), h);
+        h.parallel_for(range, [=](sycl::nd_item<2> item) {
+            moment_row_units_item(a, moment_local(lds), item);
+        });
+    });
+}
+
+/* Local memory of the walk: the staged batch, the runs of a row, and what
+ * lane 0 tells the group (command, operand) and the sum a row starts at. */
+struct MomentWalkLocal {
+    sycl::local_accessor<int, 1> plans;
+    sycl::local_accessor<uint64_t, 1> totals;
+    sycl::local_accessor<int64_t, 1> units;
+    sycl::local_accessor<uint64_t, 1> run_totals;
+    sycl::local_accessor<int64_t, 1> run_low;
+    sycl::local_accessor<int64_t, 1> run_high;
+    sycl::local_accessor<unsigned, 1> control;
+    sycl::local_accessor<uint64_t, 1> walked;
+};
+
+/* Every lane's step of one round of the walk. */
+VMAF_SYCL_ALWAYS_INLINE void moment_walk_lanes(const VmafMomentSumArgs &a, const MomentWalkLocal &l,
+                                               unsigned plane, unsigned lane, unsigned todo,
+                                               unsigned what)
+{
+    const size_t base = (size_t)plane * a.height;
+    if (todo == VMAF_MOMENT_WALK_LOAD) {
+        vmaf_moment_sum_walk_stage(a.plans + base, a.row_totals + base, a.row_units + (2u * base),
+                                   a.height, what * VMAF_MOMENT_SUM_BATCH, lane,
+                                   moment_local(l.plans), moment_local(l.totals),
+                                   moment_local(l.units));
+        return;
+    }
+    vmaf_moment_sum_walk_run(moment_sum_row(a, plane, what), a.width, l.walked[0], lane,
+                             moment_local(l.run_totals), moment_local(l.run_low),
+                             moment_local(l.run_high));
+}
+
+/* Lane 0's step of one round of the walk: the runs of a row, then the staged
+ * rows until one needs its runs; it tells the group what comes next. */
+VMAF_SYCL_ALWAYS_INLINE void moment_walk_lane0(const VmafMomentSumArgs &a, const MomentWalkLocal &l,
+                                               unsigned plane, unsigned todo, unsigned what,
+                                               uint64_t *sum, unsigned *row, unsigned *first)
+{
+    if (todo == VMAF_MOMENT_WALK_RUNS) {
+        *sum = vmaf_moment_sum_walk_row_runs(moment_sum_row(a, plane, what), a.width, *sum,
+                                             moment_local(l.run_totals), moment_local(l.run_low),
+                                             moment_local(l.run_high));
+        *row = what + 1u;
+    } else {
+        *first = what * VMAF_MOMENT_SUM_BATCH;
+    }
+    unsigned next = 0u;
+    l.control[0] = vmaf_moment_sum_walk_next(a.height, *first, sum, row, moment_local(l.plans),
+                                             moment_local(l.totals), moment_local(l.units), &next);
+    l.control[1] = next;
+    l.walked[0] = *sum;
+}
+
+/* The CPU's second-moment sum of one plane, group (plane). Lane 0 walks the
+ * rows, a staged batch at a time; when a row must be added as runs, every
+ * lane computes one into local memory and lane 0 adds them in order. Every
+ * round stages a batch or consumes a row, which bounds the loop. */
+static void launch_ordered_totals(sycl::queue &q, const VmafMomentSumArgs &a)
+{
+    const size_t lanes = VMAF_MOMENT_SUM_LANES;
+    const size_t batch = VMAF_MOMENT_SUM_BATCH;
+    q.submit([&](sycl::handler &h) {
+        const MomentWalkLocal l{
+            .plans = sycl::local_accessor<int, 1>(sycl::range<1>(batch), h),
+            .totals = sycl::local_accessor<uint64_t, 1>(sycl::range<1>(batch), h),
+            .units = sycl::local_accessor<int64_t, 1>(sycl::range<1>(2u * batch), h),
+            .run_totals = sycl::local_accessor<uint64_t, 1>(sycl::range<1>(lanes), h),
+            .run_low = sycl::local_accessor<int64_t, 1>(sycl::range<1>(2u * lanes), h),
+            .run_high = sycl::local_accessor<int64_t, 1>(sycl::range<1>(2u * lanes), h),
+            .control = sycl::local_accessor<unsigned, 1>(sycl::range<1>(2u), h),
+            .walked = sycl::local_accessor<uint64_t, 1>(sycl::range<1>(1u), h),
+        };
+        h.parallel_for(sycl::nd_range<1>{VMAF_MOMENT_SUM_PLANES * lanes, lanes},
+                       [=](sycl::nd_item<1> item) {
+                           const auto plane = (unsigned)item.get_group(0);
+                           const auto lane = (unsigned)item.get_local_id(0);
+                           if (moment_sum_is_exact(a, plane))
+                               return;
+                           if (lane == 0u) {
+                               l.control[0] = VMAF_MOMENT_WALK_LOAD;
+                               l.control[1] = 0u;
+                               l.walked[0] = 0u;
+                           }
+                           uint64_t sum = 0u;
+                           unsigned row = 0u;
+                           unsigned first = 0u;
+                           const unsigned rounds = a.height + a.height / VMAF_MOMENT_SUM_BATCH + 2u;
+                           for (unsigned round = 0; round < rounds; round++) {
+                               sycl::group_barrier(item.get_group());
+                               const unsigned todo = l.control[0];
+                               const unsigned what = l.control[1];
+                               if (todo == VMAF_MOMENT_WALK_DONE)
+                                   break;
+                               moment_walk_lanes(a, l, plane, lane, todo, what);
+                               sycl::group_barrier(item.get_group());
+                               if (lane == 0u)
+                                   moment_walk_lane0(a, l, plane, todo, what, &sum, &row, &first);
+                           }
+                           if (lane == 0u)
+                               a.sums[2u + plane] = sum;
+                       });
+    });
+}
+
+/* The four kernels that replace the second-moment sums with the CPU's past
+ * 2^53 units, after the frame kernel on the in-order queue. */
+static void launch_moment_sum(sycl::queue &q, const MomentStateSycl *s, void *shared_ref,
+                              void *shared_dis)
+{
+    const size_t row_bytes = (size_t)s->width * sizeof(uint16_t);
+    const VmafMomentSumArgs a = {
+        .luma = {static_cast<const uint8_t *>(shared_ref),
+                 static_cast<const uint8_t *>(shared_dis)},
+        .stride = {row_bytes, row_bytes},
+        .width = s->width,
+        .height = s->height,
+        .row_totals = s->d_row_totals,
+        .plans = s->d_row_plans,
+        .row_units = s->d_row_units,
+        .sums = reinterpret_cast<uint64_t *>(s->d_sums),
+    };
+    launch_row_totals(q, a);
+    launch_row_plans(q, a);
+    launch_row_units(q, a);
+    launch_ordered_totals(q, a);
+}
+
 /* Pre-graph: zero all four accumulators. */
 static void moment_pre_graph(void *queue_ptr, void *priv)
 {
@@ -138,6 +416,8 @@ static void enqueue_moment_work(void *queue_ptr, void *priv, void *shared_ref, v
     sycl::queue &q = *static_cast<sycl::queue *>(queue_ptr);
     auto *s = static_cast<MomentStateSycl *>(priv);
     launch_moment(q, shared_ref, shared_dis, s->d_sums, s->width, s->height, s->bpc);
+    if (s->d_row_totals)
+        launch_moment_sum(q, s, shared_ref, shared_dis);
 }
 
 static void moment_post_graph(void *queue_ptr, void *priv)
@@ -171,6 +451,22 @@ static const VmafOption options_moment_sycl[] = {{.name = nullptr}};
 
 static int close_fex_sycl(VmafFeatureExtractor *fex);
 
+/* The per-row device arrays of the CPU's second-moment sums for a frame
+ * whose sums can pass 2^53 units; none otherwise. False when an allocation
+ * failed. */
+static bool moment_sum_alloc(MomentStateSycl *s, VmafSyclState *state)
+{
+    if (!vmaf_moment_sum_may_round(s->width, s->height, s->bpc))
+        return true;
+    const size_t rows = (size_t)VMAF_MOMENT_SUM_PLANES * s->height;
+    s->d_row_totals =
+        static_cast<uint64_t *>(vmaf_sycl_malloc_device(state, rows * sizeof(uint64_t)));
+    s->d_row_plans = static_cast<int *>(vmaf_sycl_malloc_device(state, rows * sizeof(int)));
+    s->d_row_units =
+        static_cast<int64_t *>(vmaf_sycl_malloc_device(state, rows * 2u * sizeof(int64_t)));
+    return s->d_row_totals && s->d_row_plans && s->d_row_units;
+}
+
 static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
@@ -195,7 +491,8 @@ static int init_fex_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
 
     s->d_sums = static_cast<int64_t *>(vmaf_sycl_malloc_device(state, 4u * sizeof(int64_t)));
     s->h_sums = static_cast<int64_t *>(vmaf_sycl_malloc_host(state, 4u * sizeof(int64_t)));
-    if (!s->d_sums || !s->h_sums) {
+    const bool rows_ok = moment_sum_alloc(s, state);
+    if (!s->d_sums || !s->h_sums || !rows_ok) {
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "float_moment_sycl: device memory allocation failed\n");
         (void)close_fex_sycl(fex);
         return -ENOMEM;
@@ -261,13 +558,12 @@ static int collect_fex_sycl(VmafFeatureExtractor *fex, unsigned index,
      * sum(x / scaler) bit for bit: every term is an exact multiple of
      * 1 / scaler (first moments) or 1 / scaler^2 (the float squares the
      * kernel adds, ADR-1449), and the CPU's running double sum is exact while
-     * it is below 2^53 of those units. A term is below 2^32 units, so that
+     * it is at most 2^53 of those units. A term is below 2^32 units, so that
      * covers every frame of up to 2^21 pixels and every 8-, 10- and 12-bit
      * frame. On a larger 16-bit frame whose sum of squares passes 2^53 units
-     * the CPU rounds each further add and this exact sum, rounded once, can
-     * differ from it by at most
-     * (pixels - 2^21 + 1) / pixels * 2^(e - 69) + 2^-37, e the binade of the
-     * sum in units (T-HIP-FLOAT-MOMENT-PAST-2-53-2026-10-02). */
+     * the CPU rounds each further add, and launch_moment_sum() has replaced
+     * the two second-moment sums with the CPU's rounded ones (ADR-1497), each
+     * a double the conversion below holds exactly. */
     const double moment_scaler = (s->bpc == 10u) ? 4.0 :
                                  (s->bpc == 12u) ? 16.0 :
                                  (s->bpc == 16u) ? 256.0 :
@@ -311,6 +607,12 @@ static int close_fex_sycl(VmafFeatureExtractor *fex)
             vmaf_sycl_free(s->sycl_state, s->d_sums);
         if (s->h_sums)
             vmaf_sycl_free(s->sycl_state, s->h_sums);
+        if (s->d_row_totals)
+            vmaf_sycl_free(s->sycl_state, s->d_row_totals);
+        if (s->d_row_plans)
+            vmaf_sycl_free(s->sycl_state, s->d_row_plans);
+        if (s->d_row_units)
+            vmaf_sycl_free(s->sycl_state, s->d_row_units);
     }
     if (s->feature_name_dict)
         vmaf_dictionary_free(&s->feature_name_dict);

@@ -749,8 +749,8 @@ linked AGENTS.md before resolving conflicts.
   host recovers the moment with the CPU's two divisions. A change to how
   `moment.c` forms or adds its terms changes the kernel in the same PR.
   `core/test/test_hip_float_moment_exact_contract.py` guards it without a
-  device, `test_hip_float_moment_parity` on one (`==` while the sum is below
-  2^53 units, a derived bound past it).
+  device, `test_hip_float_moment_parity` on one (`==`, past 2^53 units too,
+  ADR-1497 below).
 - **CUDA twins declared exact as a group ([ADR-1457](../adr/1457-cuda-exact-twins-declared.md))**:
   `scripts/ci/exact_twins.d/{motion,motion_debug,motion_v2,psnr,float_ssim,float_ssim_lcs,float_ms_ssim,float_ms_ssim_lcs,cambi}.cuda`
   make the parity gate compare those cells with tolerance 0, and
@@ -845,8 +845,8 @@ linked AGENTS.md before resolving conflicts.
   The host recovers the moment with the CPU's two divisions. A change to how
   `moment.c` forms or adds its terms changes the kernel in the same PR.
   `core/test/test_cuda_float_moment_exact_contract.py` guards it without a
-  device, `test_cuda_float_moment_parity` on one (`==` while the sum is below
-  2^53 units, a derived bound past it).
+  device, `test_cuda_float_moment_parity` on one (`==`, past 2^53 units too,
+  ADR-1497 below).
 
 - **`float_moment_sycl` adds the CPU's float squares ([ADR-1449](../adr/1449-sycl-float-moment-cpu-float-squares.md))**:
   the kernel of `core/src/feature/sycl/integer_moment_sycl.cpp` adds
@@ -856,8 +856,26 @@ linked AGENTS.md before resolving conflicts.
   host recovers the moment with the CPU's two divisions. A change to how
   `moment.c` forms or adds its terms changes the kernel in the same PR.
   `core/test/test_sycl_float_moment_exact_contract.py` guards it without a
-  device, `test_sycl_float_moment_parity` on one (`==` while the sum is below
-  2^53 units, a derived bound past it).
+  device, `test_sycl_float_moment_parity` on one (`==`, past 2^53 units too,
+  ADR-1497 below).
+- **The `float_moment` twins form the CPU's rounded second-moment sum past 2^53 units ([ADR-1497](../adr/1497-float-moment-twins-cpu-sum-past-2-53.md))**:
+  on a frame whose sum of float squares can pass 2^53 units
+  (`vmaf_moment_sum_may_round()`), the CUDA, SYCL and HIP hosts run four more
+  kernels after the frame kernel (row totals, row plans, row units, ordered
+  totals) that replace accumulators 2 and 3 with the CPU's sequentially
+  rounded sums. The arithmetic and every lane's steps are
+  `core/src/feature/float_moment_sum.h` (integers only); the CUDA and HIP
+  kernels are `core/src/feature/float_moment_sum_gpu.h`, compiled into
+  `moment_score.cu` / `moment_score.hip`; the SYCL kernels are in
+  `integer_moment_sycl.cpp` and pick planes by value. A sync must not drop the
+  four kernels, add a row from its increments without
+  `vmaf_moment_sum_add_run()`'s check, reorder the tree, or bring back the
+  exact sum rounded once. A change to `compute_2nd_moment()`'s order or term
+  changes the header and `test_float_moment_sum` in the same PR.
+  `test_float_moment_sum` (host, the kernels' steps against
+  `picture_copy()` + `compute_2nd_moment()` up to 7680x4320) and
+  `test_float_moment_sum_contract.py` guard it without a device,
+  `test_{cuda,sycl,hip}_float_moment_parity` on one.
 - **`float_vif_hip` returns the CPU's scores bit for bit ([ADR-1444](../adr/1444-hip-float-vif-cpu-arithmetic.md))**:
   the twin compiles `core/src/feature/float_vif_gpu_common.h` with its default
   operators, which round once only because every HIP kernel is built with

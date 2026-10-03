@@ -2177,6 +2177,27 @@ test_ordered_sum = executable('test_ordered_sum',
 )
 test('test_ordered_sum', test_ordered_sum, suite : ['fast'])
 
+# ADR-1497 — feature/float_moment_sum.h, the float_moment twins' form of the
+# CPU's second-moment sum past 2^53 units, run on the host the way the kernels
+# lay it out and compared bit for bit with picture_copy() +
+# compute_2nd_moment() on frames up to 7680x4320, with wrong plans too. The
+# device checks are test_{cuda,sycl,hip}_float_moment_parity.
+test_float_moment_sum = executable('test_float_moment_sum',
+    ['test.c', 'test_float_moment_sum.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    c_args : vmaf_cflags_common + vmaf_strict_fp_args,
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies : [math_lib, pthread_dependency, gpu_all_deps],
+)
+test('test_float_moment_sum', test_float_moment_sum, suite : ['fast'], timeout : 120)
+# The device-free half: every twin's kernels and host wired to the header.
+test('test_float_moment_sum_contract',
+    import('python').find_installation(),
+    args : files('test_float_moment_sum_contract.py'),
+    suite : ['fast'],
+    timeout : 30,
+)
+
 test_adm_nonfinite_score = executable('test_adm_nonfinite_score',
     ['test.c', 'test_adm_nonfinite_score.c'],
     include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],

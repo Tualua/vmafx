@@ -48,6 +48,8 @@ EXPECTED_BUFFER_OWNERS = {
     "float_vif_cuda.c",
     "integer_adm_cuda.c",
     "integer_cambi_cuda.c",
+    # ADR-1497: the per-row buffers of the CPU's second-moment sums.
+    "integer_moment_cuda.c",
     "integer_motion_cuda.c",
     "integer_motion_v2_cuda.c",
     "integer_ms_ssim_cuda.c",

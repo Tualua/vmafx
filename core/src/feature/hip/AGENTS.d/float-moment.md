@@ -3,10 +3,10 @@ paths:
   - core/src/feature/hip/float_moment_hip.c
   - core/src/feature/hip/float_moment_hip.h
   - core/src/feature/hip/float_moment/moment_score.hip
-invariant: float_moment_hip matches CPU bits below 2^53.
+invariant: float_moment_hip matches CPU bits on every frame, past 2^53 units too.
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
-# float_moment_hip = CPU bits below 2^53 (ADR-1447)
+# float_moment_hip = CPU bits (ADR-1447, ADR-1497)
 
 - Exact twin `float_moment` (`scripts/ci/exact_twins.d/float_moment.hip`);
   gfx1036: 250 of 250 frames, four outputs each.
@@ -17,12 +17,17 @@ invariant: float_moment_hip matches CPU bits below 2^53.
 - 8 bpc kernel: integer square = float square (16 bits), unchanged.
 - Sum = exact uint64 in units of 1 / scaler^2. Host: `(double)sum /
   scaler^2 / pixels`, CPU's two divisions, this order.
-- CPU sum exact < 2^53 units: every frame <= 2^21 pixels, every 8 / 10 / 12
-  bit frame. Past it (16 bit, moment * pixels >= 2^37) CPU rounds per add;
-  twin within `(pixels - 2^21 + 1) / pixels * 2^(e - 69) + 2^-37`. Measured
-  2.7e-7 (2560x1440, tenth of samples < 4096). Exact there = `ordered_sum.h`
-  port, `T-HIP-FLOAT-MOMENT-PAST-2-53-2026-10-02`.
-- CUDA / SYCL / Metal twins still add integer squares:
+- CPU sum exact <= 2^53 units: every frame <= 2^21 pixels, every 8 / 10 / 12
+  bit frame. Past it (16 bit, moment * pixels >= 2^37) CPU rounds per add:
+  on a frame that can get there (`vmaf_moment_sum_may_round()`)
+  `moment_hip_launch_sum()` runs the four kernels of
+  `feature/float_moment_sum_gpu.h` (compiled into `moment_score.hip`) after
+  the frame kernel, on the shared planes; they write the CPU's sums into
+  accumulators 2 and 3 (ADR-1497). Row buffers: raw `hipMalloc`, freed with
+  the module. Cost on gfx1036: +7.2 ms per 16-bit 4K frame past 2^53,
+  `T-GPU-FLOAT-MOMENT-EXACT-SUM-COST-2026-10-03`.
+- Metal twin still adds integer squares:
   `T-GPU-FLOAT-MOMENT-16BIT-SQUARES-2026-10-02`.
-- Guards: `test_hip_float_moment_parity` (+ `_large`),
-  `test_hip_float_moment_exact_contract.py`.
+- Guards: `test_hip_float_moment_parity` (+ `_large`; cases of
+  `core/test/float_moment_twin_parity.h`, `==` past 2^53),
+  `test_hip_float_moment_exact_contract.py`, `test_float_moment_sum_contract.py`.

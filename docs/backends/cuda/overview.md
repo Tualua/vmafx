@@ -1069,9 +1069,9 @@ it is below 2^53 units of 2^-16. That covers every frame of up to 2 097 152
 pixels and every 8-, 10- and 12-bit frame. On a larger 16-bit frame whose
 sum of squares passes 2^53 the CPU rounds each further add, and the twin,
 which rounds once, is within a derived bound of it (2.7e-7 measured on a
-2560x1440 frame, bound 6.6e-6; `T-HIP-FLOAT-MOMENT-PAST-2-53-2026-10-02` in
-[`state.md`](../../state.md)). 17 of the 32 widened BBB 3840x2160 frames are
-in that range and identical.
+2560x1440 frame, bound 6.6e-6). 17 of the 32 widened BBB 3840x2160 frames are
+in that range and identical. Since 2026-10-03 that range is bit-identical too
+([below](#float_moment_cuda-matches-the-cpu-float_moment-past-253-units-too-2026-10-03)).
 
 The frame time is unchanged. Per frame through the `vmaf` tool, steady state
 (the time of 40 or 32 frames less the time of 4, per added frame), medians of
@@ -1090,6 +1090,51 @@ The parity gate compares the twin with tolerance 0.
 python3 scripts/ci/cross_backend_parity_gate.py --vmaf-binary build/tools/vmaf \
     --reference ref_16bit.yuv --distorted dis_16bit.yuv --width 1920 --height 1080 \
     --bitdepth 16 --backends cpu cuda --features float_moment
+```
+
+## `float_moment_cuda` matches the CPU `float_moment` past 2^53 units too (2026-10-03)
+
+`float_moment_cuda` now returns the CPU extractor's four moments bit for bit
+on every frame
+([ADR-1497](../../adr/1497-float-moment-twins-cpu-sum-past-2-53.md)).
+The CPU adds the float squares into one `double` in raster order. Below 2^53
+units of 2^-16 that sum is exact and equal to the twin's integer sum, which
+covers every frame of up to 2 097 152 pixels and every 8-, 10- and 12-bit
+frame. On a larger 16-bit frame whose sum passes 2^53 the CPU rounds as it
+adds, and the twin used to round the exact sum once. It now forms the CPU's
+rounded sum: on such a frame four more kernels add each row exactly while the
+sum is at or below 2^53, then from integer increments of the sum's last
+place, composed in pixel order and checked against the exact running sum,
+and term by term where a row crosses into the next binade
+(`core/src/feature/float_moment_sum.h`). Frames that cannot pass 2^53 run no
+new work.
+
+Measured on an RTX 4090 at `--precision max` against `--backend cpu`, frames
+whose four outputs are identical and the largest difference:
+
+| Fixture | Before | Now |
+|---|---|---|
+| Full-range 16-bit noise 3840x2160, nine tenths near the peak, 16 frames | 0 of 16, 2.7e-7 | 16 of 16 |
+| The same at 7680x4320, 4 frames | 0 of 4, 5.1e-7 | 4 of 4 |
+| BBB 3840x2160 widened to 16 bits (shifted left by 8, times 257, full range with a dithered low byte), 32 frames each, 17 of them past 2^53 | 32 of 32 | 32 of 32 |
+
+BBB was identical before as well: its widened samples have no bits below the
+sum's last place until 2^55, which a 3840x2160 frame cannot reach. The parity
+gate's `float_moment` cell reads 0 at tolerance 0 on the 16-bit 3840x2160
+noise (it failed there before).
+
+Time per 16-bit 3840x2160 frame through libvmaf, pictures preloaded, medians
+of 5 interleaved runs at a load average of 4 to 5, before and after:
+
+| Input | Before | After |
+|---|---|---|
+| Noise, every frame past 2^53 | 5.28 ms | 5.31 ms |
+| BBB full range, 17 of 32 frames past 2^53 | 5.31 ms | 5.29 ms |
+
+```shell
+python3 scripts/ci/cross_backend_parity_gate.py --vmaf-binary build/tools/vmaf \
+    --reference ref_16bit_3840x2160.yuv --distorted dis_16bit_3840x2160.yuv \
+    --width 3840 --height 2160 --bitdepth 16 --backends cpu cuda --features float_moment
 ```
 
 ## `vif_cuda` returns the CPU's scores bit for bit (2026-10-02)

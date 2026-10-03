@@ -22,17 +22,25 @@
  * depth, independent for the reference and the distorted picture. Two frames
  * per case, every output compared with ==.
  *
- * The last case is the range in which the CPU's own sum is no longer exact.
- * Every term is a multiple of 2^-16 below 2^16, so the CPU's running double
- * sum is exact while it is below 2^53 units; it can reach that only on a
- * 16-bit frame of more than 2^21 pixels. From there the CPU rounds every add
- * of a term that is not a multiple of the sum's last place (the squares of
- * samples below 4096), and a twin that holds the exact sum and rounds once
- * may differ from it by at most the bound float_moment_twin_sum_bound()
- * derives. The case is a 2560x1440 frame, nine tenths of it near the peak
- * and one tenth below 4096 (sum about 1.5 * 2^53). It asserts the bound,
- * that the frame really is past 2^53, and that the CPU's sum did round
- * there, so the case cannot pass by not reaching the range.
+ * The cases past 2^53 are the range in which the CPU's own sum is no longer
+ * exact. Every term is a multiple of 2^-16 below 2^16, so the CPU's running
+ * double sum is exact while it is below 2^53 units; it can reach that only on
+ * a 16-bit frame of more than 2^21 pixels. From there the CPU rounds every add
+ * of a term that is not a multiple of the sum's last place, and a twin must
+ * round where it rounds: the twins form the CPU's sum with
+ * feature/float_moment_sum.h (ADR-1497). The cases are a 2560x1440 frame nine
+ * tenths of it near the peak and one tenth below 8192 (sum about 1.5 * 2^53),
+ * a 4096x2560 frame of the same kind that crosses 2^53, 2^54 and 2^55, and
+ * three frames whose exact sum of squares is 2^53 - 1, 2^53, and 2^53
+ * followed by three terms of 1 that the CPU's sum drops (a tie at 2^53 goes
+ * to the even value). The dark samples give terms that tie in the last place
+ * at 2^53 (odd squares) and at 2^55 (squares of twice an odd number below
+ * 2048, 4 more than a multiple of 8; no float square ties at 2^54), and past
+ * 2^55 increments of both parities, so a sum that starts a row at an odd
+ * multiple of its last place meets ties as well. Each case compares
+ * every output with ==, and checks on the host that the frame reaches the
+ * range it is meant for and, where the CPU rounds, that the exact sum is
+ * another number, so a twin that returns the exact sum fails.
  *
  * A test includes this header once, after defining FIXTURE_W / FIXTURE_H if
  * it wants another size for the noise cases, and provides a
@@ -71,7 +79,7 @@ enum {
     FLOAT_MOMENT_TWIN_FRAMES = 2,
     FLOAT_MOMENT_TWIN_OUTPUTS = 4,
     FLOAT_MOMENT_TWIN_FIRST_SECOND = 2,
-    FLOAT_MOMENT_TWIN_DARK_PEAK = 4095,
+    FLOAT_MOMENT_TWIN_DARK_PEAK = 8191,
 };
 
 static const char *const FLOAT_MOMENT_TWIN_FEATURES[FLOAT_MOMENT_TWIN_OUTPUTS] = {
@@ -92,7 +100,11 @@ typedef struct FloatMomentTwin {
 } FloatMomentTwin;
 
 /* A frame of noise: luma samples uniform in [lo, hi], and `dark_percent` of
- * them uniform in [1, FLOAT_MOMENT_TWIN_DARK_PEAK] instead. */
+ * them uniform in [1, FLOAT_MOMENT_TWIN_DARK_PEAK] instead. A case with a
+ * `target` is a frame whose float squares add up to exactly `target` units of
+ * 1 / scaler^2, followed by `ones` samples of 1 (float_moment_twin_fill_sum()).
+ * `rounds` says that the CPU's sum of squares rounds on the frame, so that it
+ * differs from the exact sum. */
 typedef struct FloatMomentTwinCase {
     const char *name;
     unsigned w;
@@ -101,6 +113,9 @@ typedef struct FloatMomentTwinCase {
     unsigned lo;
     unsigned hi;
     unsigned dark_percent;
+    uint64_t target;
+    unsigned ones;
+    bool rounds;
 } FloatMomentTwinCase;
 
 typedef struct FloatMomentTwinScores {
@@ -131,8 +146,56 @@ static inline void float_moment_twin_put(VmafPicture *pic, unsigned plane, unsig
     }
 }
 
-/* Noise in the case's range on luma, mid-grey on chroma (the moments are luma
- * only); `salt` separates the frames and the two pictures of a frame. */
+/* The CPU's term for a raw sample `v`, in units of 1 / scaler^2: the float
+ * square moment.c forms (one fp32 product), an integer below 2^32. */
+static inline uint32_t float_moment_twin_float_square(unsigned v)
+{
+    const float sample = (float)v;
+    const float square = sample * sample;
+    return (uint32_t)square;
+}
+
+/* The largest 16-bit sample whose float square is at most `rest`. */
+static inline unsigned float_moment_twin_largest_fitting(uint64_t rest)
+{
+    unsigned lo = 0u;
+    unsigned hi = 65535u;
+    for (unsigned i = 0; i < 17u && lo < hi; i++) {
+        const unsigned mid = (lo + hi + 1u) / 2u;
+        if ((uint64_t)float_moment_twin_float_square(mid) <= rest) {
+            lo = mid;
+        } else {
+            hi = mid - 1u;
+        }
+    }
+    return lo;
+}
+
+/* Luma of a case with a target: in raster order, the largest samples whose
+ * float squares still fit what is left of `target` until it is reached
+ * exactly, then `ones` samples of 1, then zeros. */
+static inline void float_moment_twin_fill_sum(VmafPicture *pic, const FloatMomentTwinCase *c)
+{
+    uint64_t rest = c->target;
+    unsigned ones = c->ones;
+    for (unsigned row = 0; row < pic->h[0]; row++) {
+        for (unsigned col = 0; col < pic->w[0]; col++) {
+            unsigned v = 0u;
+            if (rest > 0u) {
+                v = float_moment_twin_largest_fitting(rest);
+                rest -= float_moment_twin_float_square(v);
+            } else if (ones > 0u) {
+                v = 1u;
+                ones--;
+            }
+            float_moment_twin_put(pic, 0u, row, col, v);
+        }
+    }
+}
+
+/* Noise in the case's range on luma (or the target fill), mid-grey on chroma
+ * (the moments are luma only); `salt` separates the frames and the two
+ * pictures of a frame. */
 static inline int float_moment_twin_fill(VmafPicture *pic, const FloatMomentTwinCase *c,
                                          unsigned salt)
 {
@@ -140,8 +203,11 @@ static inline int float_moment_twin_fill(VmafPicture *pic, const FloatMomentTwin
     if (err) {
         return err;
     }
+    if (c->target != 0u) {
+        float_moment_twin_fill_sum(pic, c);
+    }
     const unsigned span = c->hi - c->lo + 1u;
-    for (unsigned row = 0; row < pic->h[0]; row++) {
+    for (unsigned row = 0; row < pic->h[0] && c->target == 0u; row++) {
         for (unsigned col = 0; col < pic->w[0]; col++) {
             const uint32_t hash = float_moment_twin_hash(row, col, salt);
             const bool dark =
@@ -223,6 +289,12 @@ static inline int float_moment_twin_run(const FloatMomentTwin *twin, const Float
     }
     const int gpu_err = float_moment_twin_scores(twin, state, c, gpu);
     const int close_err = twin->close(state);
+    if (gpu_err == -ENOSYS) {
+        /* A build without the device kernels (HIP with enable_hipcc=false). */
+        (void)fprintf(stderr, "[skip: %s kernels not built] ", twin->backend);
+        mu_skipped = 1;
+        return 1;
+    }
     const int cpu_err = gpu_err ? 0 : float_moment_twin_scores(twin, NULL, c, cpu);
     if (gpu_err || cpu_err || close_err) {
         (void)fprintf(stderr, "\n%s: run failed (%s %d, cpu %d, close %d)\n", c->name,
@@ -232,23 +304,18 @@ static inline int float_moment_twin_run(const FloatMomentTwin *twin, const Float
     return 0;
 }
 
-/* Outputs of the case that are not the CPU's, each one reported; UINT32_MAX
- * when a run failed. A skipped leg counts as 0. */
-static inline unsigned float_moment_twin_mismatches(const FloatMomentTwin *twin,
-                                                    const FloatMomentTwinCase *c)
+/* Outputs of `gpu` that are not the CPU's, each one reported. */
+static inline unsigned float_moment_twin_compare(const FloatMomentTwin *twin,
+                                                 const FloatMomentTwinCase *c,
+                                                 const FloatMomentTwinScores *cpu,
+                                                 const FloatMomentTwinScores *gpu)
 {
-    static FloatMomentTwinScores cpu;
-    static FloatMomentTwinScores gpu;
-    const int run = float_moment_twin_run(twin, c, &cpu, &gpu);
-    if (run != 0) {
-        return run > 0 ? 0u : UINT32_MAX;
-    }
     unsigned mismatches = 0u;
     for (unsigned i = 0; i < FLOAT_MOMENT_TWIN_FRAMES * FLOAT_MOMENT_TWIN_OUTPUTS; i++) {
         const unsigned frame = i / FLOAT_MOMENT_TWIN_OUTPUTS;
         const unsigned m = i % FLOAT_MOMENT_TWIN_OUTPUTS;
-        const double a = cpu.v[frame][m];
-        const double b = gpu.v[frame][m];
+        const double a = cpu->v[frame][m];
+        const double b = gpu->v[frame][m];
         if (isfinite(a) && a == b) {
             continue;
         }
@@ -262,27 +329,18 @@ static inline unsigned float_moment_twin_mismatches(const FloatMomentTwin *twin,
     return mismatches;
 }
 
-/* Largest distance between the CPU's second moment and the twin's on a 16-bit
- * frame of `pixels` pixels whose moment is `moment`, once the sum of the
- * float squares has reached 2^53 units of 2^-16.
- *
- * A term is below 2^32 units, so at least 2^21 adds are exact before the sum
- * can reach 2^53; each later add of the CPU rounds by at most half a unit in
- * the last place of the sum, 2^(e - 53) units for a sum in binade e. The twin
- * rounds the exact sum once, by at most the same amount. In moment units
- * (2^-16 per unit, divided by the pixel count) that is
- * (pixels - 2^21 + 1) / pixels * 2^(e - 69), plus 2^-37 for the two final
- * divisions, each within half a unit in the last place of a value below
- * 2^16. */
-static inline double float_moment_twin_sum_bound(double pixels, double moment)
+/* Outputs of the case that are not the CPU's, each one reported; UINT32_MAX
+ * when a run failed. A skipped leg counts as 0. */
+static inline unsigned float_moment_twin_mismatches(const FloatMomentTwin *twin,
+                                                    const FloatMomentTwinCase *c)
 {
-    const double units = moment * pixels * 65536.0;
-    int binade = 53;
-    while (ldexp(1.0, binade + 1) <= units * (1.0 + 0x1p-40)) {
-        binade++;
+    static FloatMomentTwinScores cpu;
+    static FloatMomentTwinScores gpu;
+    const int run = float_moment_twin_run(twin, c, &cpu, &gpu);
+    if (run != 0) {
+        return run > 0 ? 0u : UINT32_MAX;
     }
-    const double rounding_adds = pixels - 0x1p21 + 1.0;
-    return rounding_adds / pixels * ldexp(1.0, binade - 69) + 0x1p-37;
+    return float_moment_twin_compare(twin, c, &cpu, &gpu);
 }
 
 static inline mu_message_t float_moment_twin_registered(const FloatMomentTwin *twin)
@@ -296,7 +354,8 @@ static inline mu_message_t float_moment_twin_registered(const FloatMomentTwin *t
 /* Full-range noise at `bpc` bits, every output equal to the CPU's. */
 static inline mu_message_t float_moment_twin_noise_exact(const FloatMomentTwin *twin, unsigned bpc)
 {
-    const FloatMomentTwinCase c = {"noise", FIXTURE_W, FIXTURE_H, bpc, 0u, (1u << bpc) - 1u, 0u};
+    const FloatMomentTwinCase c = {"noise",          FIXTURE_W, FIXTURE_H, bpc, 0u,
+                                   (1u << bpc) - 1u, 0u,        0u,        0u,  false};
     mu_assert("the float_moment twin is not bit-identical to the CPU on noise",
               float_moment_twin_mismatches(twin, &c) == 0u);
     return NULL;
@@ -307,61 +366,85 @@ static inline mu_message_t float_moment_twin_noise_exact(const FloatMomentTwin *
 static inline mu_message_t float_moment_twin_bright_1080p_exact(const FloatMomentTwin *twin)
 {
     const FloatMomentTwinCase c = {
-        "16-bit bright 1920x1080", 1920u, 1080u, 16u, 56000u, 65535u, 10u};
+        "16-bit bright 1920x1080", 1920u, 1080u, 16u, 56000u, 65535u, 10u, 0u, 0u, false};
     mu_assert(
         "the float_moment twin is not bit-identical to the CPU on a bright 16-bit 1080p frame",
         float_moment_twin_mismatches(twin, &c) == 0u);
     return NULL;
 }
 
-/* One second moment past 2^53 against the CPU's: inside the derived bound, and
- * the frame past 2^53 units. Returns the distance, or a negative value when
- * either does not hold (reported). */
-static inline double float_moment_twin_past_distance(const FloatMomentTwinCase *c,
-                                                     const char *feature, double cpu, double gpu)
+/* The 16-bit cases past 2^53 units and at the boundary (see the top of the
+ * file), shared with test_float_moment_sum. */
+static const FloatMomentTwinCase FLOAT_MOMENT_TWIN_PAST_CASES[] = {
+    {"16-bit 2560x1440 past 2^53", 2560u, 1440u, 16u, 64000u, 65535u, 10u, 0u, 0u, true},
+    {"16-bit 4096x2560 past 2^55", 4096u, 2560u, 16u, 65000u, 65535u, 10u, 0u, 0u, true},
+    {"16-bit sum 2^53 - 1", 2048u, 1032u, 16u, 0u, 0u, 0u, ((uint64_t)1 << 53) - 1u, 0u, false},
+    {"16-bit sum 2^53", 2048u, 1032u, 16u, 0u, 0u, 0u, (uint64_t)1 << 53, 0u, false},
+    {"16-bit sum 2^53 and three ties", 2048u, 1032u, 16u, 0u, 0u, 0u, (uint64_t)1 << 53, 3u, true},
+};
+#define FLOAT_MOMENT_TWIN_PAST_CASE_COUNT                                                          \
+    (sizeof(FLOAT_MOMENT_TWIN_PAST_CASES) / sizeof(FLOAT_MOMENT_TWIN_PAST_CASES[0]))
+
+/* The exact integer sum of the float squares of the luma of frame `frame` of
+ * the case's reference picture, in units of 1 / scaler^2, or 0 when the
+ * picture cannot be made. */
+static inline uint64_t float_moment_twin_exact_sum(const FloatMomentTwinCase *c, unsigned frame)
 {
-    const double pixels = (double)c->w * (double)c->h;
-    const double bound = float_moment_twin_sum_bound(pixels, cpu);
-    const double delta = fabs(cpu - gpu);
-    if (cpu * pixels >= 0x1p37 && delta <= bound) {
-        return delta;
+    VmafPicture pic;
+    if (float_moment_twin_fill(&pic, c, (frame * 16u) + 1u)) {
+        return 0u;
     }
-    (void)fprintf(stderr, "\n%s %s: cpu=%.17g twin=%.17g delta=%.3e bound=%.3e units=2^%.3f\n",
-                  c->name, feature, cpu, gpu, delta, bound, log2(cpu * pixels * 65536.0));
-    return -1.0;
+    uint64_t sum = 0u;
+    for (unsigned row = 0; row < pic.h[0]; row++) {
+        const uint16_t *line =
+            (const uint16_t *)((const uint8_t *)pic.data[0] + ((size_t)row * pic.stride[0]));
+        for (unsigned col = 0; col < pic.w[0]; col++) {
+            sum += float_moment_twin_float_square(line[col]);
+        }
+    }
+    (void)vmaf_picture_unref(&pic);
+    return sum;
 }
 
-/* Past 2^53: the first moments stay exact, the second moments are within the
- * derived bound of the CPU's sequentially rounded sum, and that sum did
- * round. */
-static inline mu_message_t float_moment_twin_past_2_53_within_bound(const FloatMomentTwin *twin)
+/* The case reaches its range: a sum past 2^53 units (or its target), and,
+ * where the case says the CPU rounds, a CPU second moment that is not the one
+ * of the exact sum (a twin returning the exact sum would fail). */
+static inline bool float_moment_twin_reaches(const FloatMomentTwinCase *c,
+                                             const FloatMomentTwinScores *cpu)
 {
-    const FloatMomentTwinCase c = {
-        "16-bit 2560x1440 past 2^53", 2560u, 1440u, 16u, 64000u, 65535u, 10u};
+    const double pixels = (double)c->w * (double)c->h;
+    const uint64_t exact = float_moment_twin_exact_sum(c, 0u);
+    const uint64_t expected = c->target != 0u ? c->target + c->ones : exact;
+    const bool past = c->target != 0u || exact > ((uint64_t)1 << 53);
+    const double exact_moment = ((double)exact / 65536.0) / pixels;
+    const bool differs = exact_moment != cpu->v[0][FLOAT_MOMENT_TWIN_FIRST_SECOND];
+    if (exact == expected && past && differs == c->rounds) {
+        return true;
+    }
+    (void)fprintf(stderr, "\n%s: exact sum %llu (2^%.4f), CPU %.17g, exact moment %.17g\n", c->name,
+                  (unsigned long long)exact, log2((double)exact),
+                  cpu->v[0][FLOAT_MOMENT_TWIN_FIRST_SECOND], exact_moment);
+    return false;
+}
+
+/* 16-bit frames past 2^53 units and at the boundary (see the top of the
+ * file): every output equal to the CPU's, and every case in its range. */
+static inline mu_message_t float_moment_twin_past_2_53_exact(const FloatMomentTwin *twin)
+{
     static FloatMomentTwinScores cpu;
     static FloatMomentTwinScores gpu;
-    const int run = float_moment_twin_run(twin, &c, &cpu, &gpu);
-    mu_assert("the runs past 2^53 failed", run >= 0);
-    if (run > 0) {
-        return NULL;
-    }
-    double largest = 0.0;
-    for (unsigned i = 0; i < FLOAT_MOMENT_TWIN_FRAMES * FLOAT_MOMENT_TWIN_OUTPUTS; i++) {
-        const unsigned m = i % FLOAT_MOMENT_TWIN_OUTPUTS;
-        const double a = cpu.v[i / FLOAT_MOMENT_TWIN_OUTPUTS][m];
-        const double b = gpu.v[i / FLOAT_MOMENT_TWIN_OUTPUTS][m];
-        if (m < FLOAT_MOMENT_TWIN_FIRST_SECOND) {
-            mu_assert("a first moment past 2^53 is not the CPU's", isfinite(a) && a == b);
-            continue;
+    unsigned mismatches = 0u;
+    for (size_t k = 0; k < FLOAT_MOMENT_TWIN_PAST_CASE_COUNT; k++) {
+        const FloatMomentTwinCase *c = &FLOAT_MOMENT_TWIN_PAST_CASES[k];
+        const int run = float_moment_twin_run(twin, c, &cpu, &gpu);
+        mu_assert("the runs past 2^53 failed", run >= 0);
+        if (run > 0) {
+            return NULL;
         }
-        const double delta =
-            float_moment_twin_past_distance(&c, FLOAT_MOMENT_TWIN_FEATURES[m], a, b);
-        mu_assert("a second moment past 2^53 is outside the derived bound", delta >= 0.0);
-        largest = delta > largest ? delta : largest;
+        mu_assert("a case past 2^53 does not reach its range", float_moment_twin_reaches(c, &cpu));
+        mismatches += float_moment_twin_compare(twin, c, &cpu, &gpu);
     }
-    (void)fprintf(stderr, "[past 2^53: largest distance %.3e] ", largest);
-    mu_assert("the CPU's sum did not round past 2^53: the case no longer reaches that range",
-              largest > 0.0);
+    mu_assert("the float_moment twin is not bit-identical to the CPU past 2^53", mismatches == 0u);
     return NULL;
 }
 
