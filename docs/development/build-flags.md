@@ -138,30 +138,8 @@ Bunny clip), the frames whose features are identical in an icx and a GCC build
 but whose `vmaf` differs went from 153 to 15. No extractor value moved, and a
 GCC build did not move.
 
-What still separates an icx build from a GCC build is the math library: icx
-links Intel's `libimf`, which rounds a few results differently from glibc's
-`libm`. An icx-built `libvmaf.so` run with glibc's `libm` preloaded returns
-the GCC build's values on the 107 frames it was run on, the model score
-included. Between the two builds as shipped, 333 frames of 14 fixtures at
-`--precision max` differ in
-`psnr`, `float_psnr`, `psnr_hvs` and `float_ms_ssim` by at most 1.4e-14, in
-`float_adm` by at most 1.6e-9, in `speed_temporal` and `speed_chroma` by at
-most 4.8e-7 and 1.4e-6, and in `ciede` by at most 2.9e-11. At the default
-`%.6f` every one of these except the SpEED differences is below the last
-printed digit.
-
-Integer `adm` joined that list with
-[ADR-1475](../adr/1475-integer-adm-quant-step-upstream-float.md), which
-changed its CSF weights in the last digits (back to Netflix's values): on 240
-frames at five resolutions of Big Buck Bunny, one frame (1280x720, frame 26)
-now differs between an icx and a GCC build, by 7.9e-8 in `integer_adm_scale1`
-and 2.8e-6 in `vmaf`, because Intel's `powf` rounds that frame's argument
-differently from glibc's. With glibc's `libm` loaded the icx-built library
-returns the GCC build's values on all 48 frames of that clip. Before the
-change none of the 240 frames differed in integer `adm`.
-
-One of those differences did not come from the math library but from a call
-the compilers treated differently, and it is gone
+One difference between compilers came neither from contraction nor from the
+math library but from a call the compilers treated differently, and it is gone
 ([ADR-1467](../adr/1467-ciede-squares-as-products.md)). `ciede.c` squared a
 `float` with `powf(x, 2)`: GCC called the C library, clang and icx multiplied.
 The source now writes the product, so every build computes the same
@@ -170,9 +148,10 @@ MSVC, Apple's clang). What that changes for you: `ciede2000` from a GCC-built
 binary moves by up to 2.0e-11 on about a third of real frames (65 of 180
 measured), which needs `--precision max` to see; clang and icx builds do not
 move. GCC and clang builds now agree on all 180 measured frames on x86-64 and
-on aarch64. An icx build still differs from a GCC build in `ciede` through
-`libimf`, on fewer frames and by less: 130 of 180 identical and at most
-9.7e-12, where it was 112 and 1.4e-11.
+on aarch64. An icx build then still differed from a GCC build in `ciede`
+through Intel's math library (130 of 180 identical, at most 9.7e-12); since
+[ADR-1495](../adr/1495-icx-system-libm.md) it does not
+([below](#icx-builds-use-glibcs-math-library)).
 
 Do not undo it from the command line or in a target: `-Dc_args=-ffp-contract=fast`,
 `-ffast-math` or, with icx, a trailing `-fp-model=precise` change scores.
@@ -180,6 +159,48 @@ Do not undo it from the command line or in a target: `-Dc_args=-ffp-contract=fas
 commands of the build it runs in and fails when a C or C++ command does not
 end its floating-point flags on the strict one. The device compilers (nvcc,
 hipcc, icpx for SYCL kernels) have their own lists with the same effect.
+
+## icx builds use glibc's math library
+
+An icx build and a GCC build return the same CPU scores: the math functions
+(`log10`, `pow`, `powf`, `log2f`, `exp`, `log` and the others libvmaf calls)
+come from glibc's `libm` in both
+([ADR-1495](../adr/1495-icx-system-libm.md)). The Intel driver links its own
+math library, `libimf`, into every link it runs, and an icx-built `vmaf`
+carried a static copy of it that the library's calls bound to. So
+`core/src/meson.build` passes `-no-intel-lib=libimf` to every C and C++ link
+whose compiler is icx or icpx; nothing is needed on the command line. Putting
+`-lm` first does not do it: the driver turns a `-lm` it is given into
+`-limf -lm`.
+
+Before that change, on the Netflix 576x324 pair, both 1080p checkerboards,
+48 frames of Big Buck Bunny at 1280x720 and 200 at 3840x2160, 268 of 13288
+values at `--precision max` differed between an icx 2026.0 build and a GCC
+build: `psnr` and `psnr_hvs` outputs by up to 1.4e-14, `ciede2000` by up to
+6.3e-12 (191 of the 200 4K frames), `integer_adm_scale1` by 7.9e-8 (1280x720
+frame 26), `float_adm` with `adm_f1s3=2.25:adm_f2s0=0.3` by 7.5e-8, the
+default model's `vmaf` by up to 1.3e-7. Now all 13288 are identical; at the
+default `%.6f` the old differences were below the last printed digit except
+for a few `vmaf` values. Libraries and binaries built with icx before
+ADR-1495 still call Intel's functions, but only in a program that links
+`libimf` first: the icx-built `vmaf` did, while a GCC-built `ffmpeg` loading
+the same library bound it to glibc. The change cost no time: on a 1920x1080
+clip with four threads, `ciede` went from 95.6 to 54.3 ms per frame in an icx
+build and the other extractors and the default model stayed within 2 % (or
+within the noise of a busy host for the model).
+
+To check a build: `meson test -C build test_icx_system_libm` (in the `fast`
+suite) reads `libvmaf.so` and `vmaf` and fails if they take a math function
+from `libimf`; on a GCC or clang build it skips. Or by hand:
+
+```bash
+readelf -d build/src/libvmaf.so.3 | grep NEEDED       # libm.so.6, no libimf.so
+readelf -W --dyn-syms build/src/libvmaf.so.3 | grep ' pow@'   # pow@GLIBC_2.29
+LD_BIND_NOW=1 LD_DEBUG=bindings build/tools/vmaf --version 2>&1 | grep "symbol \`pow'"
+```
+
+The last line must name `libm.so.6` as the target. Windows builds with
+`icx-cl` are not covered yet.
 
 ## Recommended configurations
 

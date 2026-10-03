@@ -107,6 +107,8 @@ EXPECTED_RUNNER_PATHS = {
     Path(".github/workflows/libvmaf-build-matrix.yml"): (
         "scripts/ci/run_meson_test.py",
         "scripts/ci/run_meson_test.py",
+        # ADR-1495: the SYCL legs run test_icx_system_libm.
+        "scripts/ci/run_meson_test.py",
         "scripts/ci/run_meson_test.py",
         r"scripts\ci\run_meson_test.py",
         r"scripts\ci\run_meson_test.py",

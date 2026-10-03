@@ -610,9 +610,11 @@ What this means when you use it:
   (see the table above). With each of them it returns the CPU's values.
 - "The CPU" is the CPU extractor of the same build. The final roots are the
   math library's `powf`: a libvmaf built with GCC and one built with the
-  Intel compiler can differ in the last digit of `aim` and `adm3` on a few
-  frames (1.6e-9 on 2 of 200 frames measured), CPU extractor against CPU
-  extractor. The processor does not matter; see
+  Intel compiler used to differ in the last digit of `aim` and `adm3` on a
+  few frames (1.6e-9 on 2 of 200 frames measured, 7.5e-8 with a CSF weight
+  override), CPU extractor against CPU extractor. Since
+  [ADR-1495](../adr/1495-icx-system-libm.md) an Intel compiler build calls
+  glibc's `powf` and the two builds agree. The processor does not matter; see
   [`float_adm` does not depend on the processor](#float_adm-does-not-depend-on-the-processor).
 - One option is not identical: with `adm_p_norm` other than 1 or 3 the twin
   is within 1.8e-7 of the CPU, because the two sides raise each term with
@@ -1038,10 +1040,11 @@ build moved by up to 2.0e-11 with that change (on the Netflix 576x324 pair:
 frame 35, by 6.9e-13); scores from a clang or icx build did not. A GCC build
 also takes about a third less time in this extractor, since 14 library calls
 per pixel are gone (563 against 837 ms per 1920x1080 frame on one busy core
-of a Ryzen 9 9950X3D). An icx build
-links Intel's math library and still differs from a GCC build through the
-other functions of the formula, by at most 9.7e-12 on the same frames. Check
-two builds with:
+of a Ryzen 9 9950X3D). An icx build then still linked Intel's math library
+and differed from a GCC build through the other functions of the formula, by
+at most 9.7e-12 on the same frames; since
+[ADR-1495](../adr/1495-icx-system-libm.md) it links glibc's and returns the
+GCC build's values. Check two builds with:
 
 ```bash
 for cc in gcc clang; do

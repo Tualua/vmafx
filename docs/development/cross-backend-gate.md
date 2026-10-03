@@ -171,11 +171,14 @@ a twin, also run it on full-range noise at 8, 10, 12 and 16 bits:
 differ there.
 
 The equality holds between runs of one `vmaf` binary, which is how the gate
-runs a cell. The dB value goes through the host's `log10`: a binary built
-with oneAPI `icx` uses Intel's `libimf`, a gcc build uses glibc, and the
-two round differently by one unit in the last place on a few frames (3 of
-the 48 Netflix frames), for the CPU extractor and the twins alike. Do not
-compare a twin from one build with the CPU extractor of another.
+runs a cell. The dB value goes through the host's `log10`. A binary built
+with oneAPI `icx` before [ADR-1495](../adr/1495-icx-system-libm.md) used
+Intel's `libimf` and a gcc build glibc, and the two rounded differently by
+one unit in the last place on a few frames (3 of the 48 Netflix frames), for
+the CPU extractor and the twins alike. An icx build now links glibc's `libm`
+(`test_icx_system_libm` checks it), so a SYCL build's twins also equal a gcc
+build's CPU extractor; a binary built with another C library can still
+differ from either.
 
 An exact cell runs one binary on both sides, so it also needs the CPU
 extractor of that binary to be the reference arithmetic; for an icx build on

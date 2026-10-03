@@ -700,6 +700,17 @@ jobs:
           path: python/test/resource
           key: vmaf-fixtures-resource-v1-${{ hashFiles('python/test/*_test.py', 'python/test/resource/test_*.py') }}
 
+      # ADR-1495: an icx / icpx build links glibc's libm, not Intel's libimf,
+      # so its CPU scores equal a GCC build's. The SYCL legs are the icx
+      # builds of this matrix; the test reads their libvmaf.so and vmaf.
+      # Sudo because the install step left the build tree owned by root.
+      - name: Check the host math library (icx)
+        if: ${{ (matrix.sycl) && steps.impact.outputs.c_core == 'true' }}
+        run: >-
+          sudo "$(command -v python3)" scripts/ci/run_meson_test.py
+          --meson-executable "$(command -v meson)" -- -C core/build
+          --no-rebuild --print-errorlogs test_icx_system_libm
+
       # GPU builds: run tests that don't need hardware
       - name: Run CPU-only tests (GPU build)
         if: ${{ (matrix.sycl || matrix.cuda) && steps.impact.outputs.c_core == 'true' }}

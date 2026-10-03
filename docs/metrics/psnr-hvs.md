@@ -174,9 +174,11 @@ PY
 ```
 
 Run both sides with the same `vmaf` binary. The dB value goes through the
-host's `log10`, and a binary built with oneAPI `icx` (Intel's `libimf`) and
-one built with gcc (glibc) differ by one unit in the last place on a few
-frames, on the CPU extractor and on the twins alike.
+host's `log10`. A binary built with oneAPI `icx` before
+[ADR-1495](../adr/1495-icx-system-libm.md) called Intel's `libimf` and
+differed from a gcc build (glibc) by one unit in the last place on a few
+frames, on the CPU extractor and on the twins alike; an icx build now calls
+glibc's `log10` too.
 
 The exact sum has a cost. A twin reads 256 bytes per block back to the host
 (65 MB for a 3840x2160 4:2:0 frame, 259 MB at 7680x4320, held on the device

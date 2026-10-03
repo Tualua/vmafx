@@ -89,6 +89,36 @@ endif
 # END VMAF strict FP compiler-argument policy
 add_project_arguments(vmaf_strict_fp_args, language : ['c', 'cpp'])
 
+# ADR-1495: the host math functions (log10, pow, powf, log2f, exp, log and
+# the others libvmaf calls) come from the C library's libm in every build, so
+# an icx build returns a GCC build's scores. The Intel driver links its own
+# math library, libimf, into every link it runs: it appends `-limf -lm` to
+# the line and turns a `-lm` it is given into `-limf -lm`, so `-lm` first
+# changes nothing. An executable takes libimf statically (the driver's
+# -static-intel default) and exports the functions a linked libvmaf.so needs,
+# which then bind to Intel's copies whatever the library was linked against.
+# Hence the option on every C and C++ link, tools and tests included.
+# `-no-intel-lib=libimf` is the driver's documented switch ("Disables linking
+# to the Intel(R) oneAPI DPC++/C++ Compiler Math library", icx 2026.0 and
+# 2026.1); it applies to host links only, so SYCL device code keeps the
+# device math libraries. libsvml, libirc and libintlc stay linked: under
+# vmaf_strict_fp_args (-fp-model=precise) the vectoriser emits no SVML math
+# call. core/test/test_icx_system_libm.py checks the linked binaries.
+# Windows icx-cl links another set of libraries and is not covered (ADR-1495).
+# Above the first build target for the same reason as the policy above.
+# BEGIN VMAF host math library link policy
+vmaf_c_host_libm_link_args = []
+vmaf_cpp_host_libm_link_args = []
+if cc.get_id() == 'intel-llvm'
+    vmaf_c_host_libm_link_args = ['-no-intel-lib=libimf']
+endif
+if cxx.get_id() == 'intel-llvm'
+    vmaf_cpp_host_libm_link_args = ['-no-intel-lib=libimf']
+endif
+# END VMAF host math library link policy
+add_project_link_arguments(vmaf_c_host_libm_link_args, language : 'c')
+add_project_link_arguments(vmaf_cpp_host_libm_link_args, language : 'cpp')
+
 
 cdata = configuration_data()
 cdata_asm = configuration_data()

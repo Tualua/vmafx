@@ -1,6 +1,21 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## icx and icpx builds link glibc's libm, not Intel's libimf (ADR-1495, 2026-10-03)
+
+`fix/icx-system-libm`. Fork-only build policy; no upstream file is touched and
+no score of a GCC or clang build moves.
+
+- `core/src/meson.build` gains the `BEGIN / END VMAF host math library link
+  policy` block directly after the strict FP policy and two
+  `add_project_link_arguments()` lines (C and C++) above the first build
+  target; an `intel-llvm` compiler gets `-no-intel-lib=libimf`. A rebase that
+  reorders the top of the file keeps both above the first target (Meson
+  refuses project link arguments after one) and never re-adds Intel's math
+  library by name. `core/test/test_icx_system_libm.py` (new, suite `fast`) and
+  two cases in `core/test/test_strict_fp_compiler_args.py` guard it; the SYCL
+  lanes of `libvmaf-build-matrix.yml` run the new test as a step.
+
 ## The parity allowlist page always has a Pending section (2026-10-03)
 
 `docs/close-parity-pending-row`. No rebase impact: a docs generator and ledger rows. `scripts/docs/generate-upstream-parity-allowlist.py` emits the "Pending" heading with "None" when no fragment is pending; keep that branch, `docs/state.md` links to the anchor.

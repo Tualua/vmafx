@@ -67,6 +67,30 @@ test('test_strict_fp_compiler_args',
     timeout : 90,
 )
 
+# ADR-1495: an icx / icpx build links glibc's libm, not Intel's libimf, so its
+# CPU scores are a GCC build's. Reads this build's libvmaf.so and vmaf and runs
+# vmaf --version under the dynamic loader's binding trace; the binary checks
+# skip, with the reason, when neither compiler is Intel LLVM.
+icx_libm_env = ['VMAF_ICX_LIBM_BUILD_ROOT=' + meson.project_build_root()]
+icx_libm_depends = []
+if get_option('default_library') != 'static'
+    icx_libm_shared = get_option('default_library') == 'both' ? libvmaf.get_shared_lib() : libvmaf
+    icx_libm_env += ['VMAF_ICX_LIBM_LIBRARY=' + icx_libm_shared.full_path()]
+    icx_libm_depends += [icx_libm_shared]
+endif
+if get_option('enable_tools')
+    icx_libm_env += ['VMAF_ICX_LIBM_CLI=' + vmaf.full_path()]
+    icx_libm_depends += [vmaf]
+endif
+test('test_icx_system_libm',
+    import('python').find_installation(),
+    args : files('test_icx_system_libm.py'),
+    env : icx_libm_env,
+    depends : icx_libm_depends,
+    suite : ['fast'],
+    timeout : 90,
+)
+
 # ADR-1360: the build-time SYCL AOT image check, driven by synthetic ELF
 # fixtures so it runs on every host, oneAPI or not.
 test('test_sycl_aot_image_check',

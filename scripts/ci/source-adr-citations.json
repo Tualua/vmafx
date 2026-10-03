@@ -9672,6 +9672,17 @@
         "scripts/ci/build-macos-tester-bundle.sh": 1
       },
       "target": "1493-macos-tester-bundle.md"
+    },
+    "1495": {
+      "sites": {
+        ".github/workflows/libvmaf-build-matrix.yml": 1,
+        "core/src/meson.build": 2,
+        "core/test/meson.build": 1,
+        "core/test/test_icx_system_libm.py": 3,
+        "core/test/test_meson_secret_env_sanitization.py": 1,
+        "core/test/test_strict_fp_compiler_args.py": 2
+      },
+      "target": "1495-icx-system-libm.md"
     }
   },
   "retired": {

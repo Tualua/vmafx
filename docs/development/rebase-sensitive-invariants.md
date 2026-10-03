@@ -243,6 +243,20 @@ linked AGENTS.md before resolving conflicts.
   the build it runs in; `make test-netflix-golden-arm64` runs the golden gate
   on an aarch64 cross build, where a clang build and a GCC build used to
   differ. See [core/AGENTS.md](../../core/AGENTS.md).
+- **icx and icpx builds link glibc's libm, not Intel's libimf ([ADR-1495](../adr/1495-icx-system-libm.md))**:
+  `core/src/meson.build` declares the `VMAF host math library link policy`
+  block directly after the strict FP policy and passes its lists with
+  `add_project_link_arguments()` for C and C++, above the first build target:
+  an `intel-llvm` compiler gets `-no-intel-lib=libimf`, every other compiler
+  nothing. The Intel driver otherwise links `libimf` into every link (it turns
+  a given `-lm` into `-limf -lm`), and an icx-built `vmaf` exported libimf's
+  copies of the math functions `libvmaf.so` imports, so the CPU scores of an
+  icx build differed from a GCC build's. Keep the block and both lines on a
+  rebase, and never link Intel's math library back by name or substitute
+  `-shared-intel`. `core/test/test_icx_system_libm.py` reads the build's own
+  `libvmaf.so` and `vmaf` (skips on non-icx builds) and
+  `core/test/test_strict_fp_compiler_args.py` executes the block per compiler
+  pair. See [core/AGENTS.md](../../core/AGENTS.md).
 - **SYCL strict FP line on every feature TU ([ADR-1367](../adr/1367-sycl-strict-fp-every-feature-tu.md))**:
   `core/src/meson.build` defines `sycl_strict_fp_args` once, between the
   `BEGIN/END VMAF SYCL strict FP policy` markers: icpx gets

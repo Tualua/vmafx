@@ -202,6 +202,24 @@ Verify the SYCL kernels still link:
 ls -la core/build-sycl-lint/src/libvmaf.so.3.0.0
 ```
 
+Verify the host math functions still come from glibc
+([ADR-1495](../adr/1495-icx-system-libm.md)). The build passes
+`-no-intel-lib=libimf` to every icx / icpx link, so that `log10`, `pow`,
+`powf` and the other math calls of the CPU extractors resolve to glibc's
+`libm` and an icx build returns a GCC build's CPU scores. A new driver that
+renamed or dropped the option, or linked Intel's math library another way,
+would bring Intel's `libimf` back; this test fails then:
+
+```bash
+meson test -C core/build-sycl-lint test_icx_system_libm --print-errorlogs
+```
+
+It reads `libvmaf.so` and `vmaf` with `readelf` and runs `vmaf --version`
+under `LD_DEBUG=bindings`. The option is documented in `icx --help` ("Restrict
+linking of Intel specific libraries. Valid arguments are libirc, libimf,
+libirng, libsvml") and in the installed man page
+(`share/man/man1/icx.1`); check both on a bump.
+
 ## Post-bump audit checklist
 
 After a major-version oneAPI bump (e.g. 2025.0 → 2025.3), walk through

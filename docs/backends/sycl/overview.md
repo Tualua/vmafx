@@ -19,6 +19,17 @@ useful for shipping the binary to hosts that don't have oneAPI installed —
 is described in [bundling.md](bundling.md). For a native Windows build with
 MSVC and oneAPI, see [SYCL on Windows](windows.md).
 
+A SYCL build is an icx / icpx build for its host code as well. Its CPU
+extractors take their math functions (`log10`, `pow`, `powf`, ...) from
+glibc's `libm`, not from Intel's `libimf`: the build passes
+`-no-intel-lib=libimf` to every link
+([ADR-1495](../../adr/1495-icx-system-libm.md),
+[build flags](../../development/build-flags.md#icx-builds-use-glibcs-math-library)).
+So the CPU half of a SYCL build returns a GCC build's scores, and a SYCL
+twin that equals its own build's CPU extractor equals a GCC build's too. The
+option applies to the host link only; the kernels and their device math
+libraries do not change.
+
 Meson options:
 
 - `-Denable_sycl=true` — compile the SYCL backend + kernels.
@@ -570,9 +581,12 @@ equals `--backend cpu` on the Netflix `src01` pair (48 frames) and on 50
 frames of BBB 3840x2160. On 2026-09-27 the pooled score of the Netflix pair
 still differed by 2.48e-5.
 
-The equality holds between the twin and the CPU extractor of one build; a
-build with another compiler can differ in the last place through the host
-math library (`log10`, `pow`).
+The equality holds between the twin and the CPU extractor of one build, and,
+since [ADR-1495](../../adr/1495-icx-system-libm.md), between the twin and a
+GCC build's CPU extractor: a SYCL build links glibc's math library like the
+GCC build (see [Build](#build)). Before it, the CPU extractors of a SYCL build
+called Intel's `log10` and `pow` and could differ from a GCC build in the last
+place.
 
 ### What the SYCL compile line guarantees
 

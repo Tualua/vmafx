@@ -38,6 +38,25 @@ SYCL_POLICY_END = "# END VMAF SYCL strict FP policy"
 POLICY_END_CODE = "vmaf_strict_fp_args = ['/clang:-ffp-contract=off']"
 CUDA_POLICY_BEGIN = "# BEGIN VMAF CUDA device strict FP policy"
 CUDA_POLICY_END = "# END VMAF CUDA device strict FP policy"
+LIBM_POLICY_BEGIN = "# BEGIN VMAF host math library link policy"
+LIBM_POLICY_END = "# END VMAF host math library link policy"
+LIBM_LINK_ARGUMENTS = (
+    "add_project_link_arguments(vmaf_c_host_libm_link_args, language : 'c')",
+    "add_project_link_arguments(vmaf_cpp_host_libm_link_args, language : 'cpp')",
+)
+# ADR-1495: (C compiler id, C++ compiler id) -> (C link args, C++ link args).
+# Each language's own compiler decides: Meson applies project link arguments
+# by the language a target links with. Windows icx-cl is not covered.
+NO_IMF = ["-no-intel-lib=libimf"]
+LIBM_MATRIX: dict[tuple[str, str], tuple[list[str], list[str]]] = {
+    ("intel-llvm", "intel-llvm"): (NO_IMF, NO_IMF),
+    ("gcc", "intel-llvm"): ([], NO_IMF),
+    ("intel-llvm", "gcc"): (NO_IMF, []),
+    ("gcc", "gcc"): ([], []),
+    ("clang", "clang"): ([], []),
+    ("intel-llvm-cl", "intel-llvm-cl"): ([], []),
+    ("msvc", "msvc"): ([], []),
+}
 
 # ADR-1403: device compiler -> (enable_nvcc, host strict args, the list every
 # fatbin takes). nvcc: its host pass on the C library's model, then no FMA
@@ -140,7 +159,9 @@ STRICT_TARGETS = (
 
 # ADR-1461: the host policy applied to every C and C++ translation unit.
 PROJECT_ARGUMENT = "add_project_arguments(vmaf_strict_fp_args, language : ['c', 'cpp'])"
-FIRST_TARGET = re.compile(r"\b(?:static_library|shared_library|both_libraries|library|executable)\(")
+FIRST_TARGET = re.compile(
+    r"\b(?:static_library|shared_library|both_libraries|library|executable)\("
+)
 # Anything in a target's own list that would decide contraction after the
 # project argument. vmaf_fp_model_args is on it because icx's
 # `-fp-model=precise` implies -ffp-contract=on.
@@ -360,8 +381,7 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
             cuda_host_args,
         ) in COMPILER_MATRIX.items():
             with self.subTest(compiler_id=compiler_id):
-                fixture = textwrap.dedent(
-                    f"""\
+                fixture = textwrap.dedent(f"""\
                     project('strict-fp-args-{compiler_id}', 'c')
                     strict_fp_fixture_compiler_id = '{compiler_id}'
                     strict_fp_fixture_system = '{system}'
@@ -374,8 +394,7 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
                            'wrong strict FP arguments for {compiler_id}')
                     assert(vmaf_cuda_host_strict_fp_args == {_meson_list(cuda_host_args)},
                            'wrong CUDA host FP arguments for {compiler_id}')
-                    """
-                )
+                    """)
                 _meson_setup(self, compiler_id, fixture)
 
     def test_all_strict_consumers_use_shared_policy(self) -> None:
@@ -411,7 +430,9 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
         anchor = _meson_code(removed)[first.start() : first.start() + 40]
         position = removed.index(anchor) + len(anchor)
         late = removed[:position] + "\n" + PROJECT_ARGUMENT + "\n" + removed[position:]
-        self.assertTrue(any("above the project argument" in item for item in self._floor_failures(late)))
+        self.assertTrue(
+            any("above the project argument" in item for item in self._floor_failures(late))
+        )
 
     def test_target_that_undoes_the_floor_is_detected(self) -> None:
         source = SOURCE_MESON.read_text(encoding="utf-8")
@@ -460,7 +481,9 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
         # boundary: a path or a define that only contains a flag's spelling
         self.assertIn(
             "is missing",
-            _command_fp_failure(base.format("-DNOTE=x-ffp-contract=off -Idir/-ffp-contract=off"), "gcc"),
+            _command_fp_failure(
+                base.format("-DNOTE=x-ffp-contract=off -Idir/-ffp-contract=off"), "gcc"
+            ),
         )
 
     def test_this_build_compiles_every_c_and_cpp_unit_without_contraction(self) -> None:
@@ -479,6 +502,49 @@ class StrictFpCompilerArgsTest(unittest.TestCase):
         registration = tests[tests.index("test('test_strict_fp_compiler_args'") :]
         registration = registration[: registration.index("\n)") + 2]
         self.assertIn(f"'{BUILD_ROOT_ENV}=' + meson.project_build_root()", registration)
+
+    @unittest.skipUnless(MESON_COMMAND, "Meson is not installed")
+    def test_host_libm_link_policy_executes_per_compiler_pair(self) -> None:
+        policy = _marked_block(LIBM_POLICY_BEGIN, LIBM_POLICY_END, "host math library link")
+        policy = policy.replace("cc.get_id()", "libm_fixture_c_id").replace(
+            "cxx.get_id()", "libm_fixture_cpp_id"
+        )
+        for (c_id, cpp_id), (c_args, cpp_args) in LIBM_MATRIX.items():
+            with self.subTest(c_id=c_id, cpp_id=cpp_id):
+                fixture = "\n".join(
+                    (
+                        f"project('host-libm-{c_id}-{cpp_id}', 'c')",
+                        f"libm_fixture_c_id = '{c_id}'",
+                        f"libm_fixture_cpp_id = '{cpp_id}'",
+                        policy,
+                        f"assert(vmaf_c_host_libm_link_args == {_meson_list(c_args)},",
+                        f"       'wrong C host libm link arguments for {c_id}')",
+                        f"assert(vmaf_cpp_host_libm_link_args == {_meson_list(cpp_args)},",
+                        f"       'wrong C++ host libm link arguments for {cpp_id}')",
+                        "",
+                    )
+                )
+                _meson_setup(self, f"{c_id}/{cpp_id}", fixture)
+
+    def test_host_libm_link_policy_reaches_every_link(self) -> None:
+        # ADR-1495: project link arguments, once each, after the policy and
+        # above the first target (Meson refuses them after one).
+        code = _meson_code(SOURCE_MESON.read_text(encoding="utf-8"))
+        first_target = FIRST_TARGET.search(code)
+        assert first_target is not None
+        policy_end = code.index("vmaf_cpp_host_libm_link_args = ['-no-intel-lib=libimf']")
+        for line in LIBM_LINK_ARGUMENTS:
+            with self.subTest(line=line):
+                self.assertEqual(code.count(line), 1)
+                self.assertLess(policy_end, code.index(line))
+                self.assertLess(code.index(line), first_target.start())
+        # No target or test links Intel's math library back in by name.
+        tests = _meson_code(TEST_MESON.read_text(encoding="utf-8"))
+        tools = _meson_code(TOOLS_MESON.read_text(encoding="utf-8"))
+        for name, text in (("src", code), ("test", tests), ("tools", tools)):
+            with self.subTest(file=f"core/{name}/meson.build"):
+                self.assertNotIn("-limf", text)
+                self.assertNotIn("find_library('imf'", text)
 
     @unittest.skipUnless(MESON_COMMAND, "Meson is not installed")
     def test_cuda_device_policy_executes_per_compiler(self) -> None:
