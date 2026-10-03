@@ -19,15 +19,22 @@ pre-commit:
       glob: "*.go"
       run: go vet ./...
     framework-hooks:
+      # Hook environments are installed with the commit's git variables
+      # unset: in a linked worktree git exports an absolute GIT_INDEX_FILE, and
+      # npm's `git+file://` install of a node hook (pre-commit
+      # languages/node.py) then writes the hook repository's tree into that
+      # index. `run` keeps the commit's environment because it needs the index.
       # ADR-1249: lefthook owns .git/hooks and delegates to the pre-commit
       # framework so this repository's existing hooks (clang-format, ruff,
       # markdownlint, the ADR, state.md and aggregator gates, semgrep, the
       # ADR-0332 worktree-drift guard) keep running unchanged. Superseding note
       # for ADR-0924. Fails closed like the ADR-1241 dispatcher it replaces.
       run: |
-        if [ -x .venv/bin/pre-commit ]; then .venv/bin/pre-commit run; \
-        elif command -v pre-commit >/dev/null 2>&1; then pre-commit run; \
-        else echo "VMAFx hooks: pre-commit is missing; activate the environment used by make install-hooks." >&2; exit 1; fi
+        if [ -x .venv/bin/pre-commit ]; then fw=.venv/bin/pre-commit; \
+        elif command -v pre-commit >/dev/null 2>&1; then fw=pre-commit; \
+        else echo "VMAFx hooks: pre-commit is missing; activate the environment used by make install-hooks." >&2; exit 1; fi; \
+        env -u GIT_INDEX_FILE -u GIT_DIR -u GIT_WORK_TREE -u GIT_OBJECT_DIRECTORY "$fw" install-hooks || exit 1; \
+        "$fw" run
     context-check:
       run: if command -v praetorctl >/dev/null 2>&1; then praetorctl compile-context --verify; elif [ -d ./cmd/standardsctl ]; then go run ./cmd/standardsctl compile-context --verify; else echo HISS-21 governance hook cannot run because praetorctl is not installed >&2; exit 1; fi
     hiss-audit:
@@ -64,6 +71,7 @@ pre-push:
         if [ -x .venv/bin/pre-commit ]; then fw=.venv/bin/pre-commit; \
         elif command -v pre-commit >/dev/null 2>&1; then fw=pre-commit; \
         else echo "VMAFx hooks: pre-commit is missing; activate the environment used by make install-hooks." >&2; exit 1; fi; \
+        env -u GIT_INDEX_FILE -u GIT_DIR -u GIT_WORK_TREE -u GIT_OBJECT_DIRECTORY "$fw" install-hooks || exit 1; \
         "$fw" hook-impl --config=.pre-commit-config.yaml --hook-type=pre-push \
           --hook-dir "$(git rev-parse --git-path hooks)" -- {1} {2}
     security:

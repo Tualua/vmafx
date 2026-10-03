@@ -41,6 +41,25 @@ and runs strict validation.
 Missing `pre-commit` itself blocks framework hook dispatch with a clear
 message; activate the environment used for installation.
 
+### Hook environments install outside the commit's git environment
+
+In a linked worktree, Git exports an absolute `GIT_INDEX_FILE` to hooks.
+When the framework (re)installs a `language: node` hook environment, it runs
+`npm install -g git+file://<hook repository>` with that variable set, and
+npm's checkout writes the hook repository's tree into the worktree's index.
+The commit then fails or records the wrong tree. The pre-commit project does
+not plan a fix ([pre-commit/pre-commit#3609](https://github.com/pre-commit/pre-commit/issues/3609)).
+
+The `framework-hooks` entries of `lefthook.yml` (`pre-commit` and `pre-push`)
+therefore run `pre-commit install-hooks` with `GIT_INDEX_FILE`, `GIT_DIR`,
+`GIT_WORK_TREE` and `GIT_OBJECT_DIRECTORY` unset before `run` / `hook-impl`,
+which keeps the commit's own environment because it needs the index. A failed
+install blocks the commit or push. With a warm cache the extra call takes
+well under a second. `python3 scripts/githooks/tests/test_install_hooks_env.py`
+reproduces the defect in a throwaway linked worktree with a node hook, and
+`make` runs it with the other hook tests; it skips, naming the missing tool,
+when `npm` or `pre-commit` is absent.
+
 ## Post-commit private-state synchronization
 
 The post-commit state hook resolves both the active worktree and Git's common

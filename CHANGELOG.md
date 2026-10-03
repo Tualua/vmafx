@@ -2980,6 +2980,9 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   [HIP backend](docs/backends/hip/overview.md#vif_hip-returns-the-cpus-scores-bit-for-bit-2026-10-01)).
 
 
+- Local hooks: a commit in a linked worktree no longer risks rewriting that worktree's index when the pre-commit framework installs a node hook environment. `lefthook.yml` now runs `pre-commit install-hooks` with the commit's git variables unset before `pre-commit run` and `hook-impl`.
+
+
 - **An Intel-compiler build returns a GCC build's CPU scores.** A build with
   `icx` / `icpx` (every SYCL build, the dev image's `vmaf`) linked Intel's math
   library `libimf`: the driver turns a `-lm` into `-limf -lm`, and the

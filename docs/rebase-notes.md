@@ -1,6 +1,18 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## Hook environments install outside the commit's git environment (2026-10-03)
+
+`fix/hooks-install-envs-outside-commit-env`. Hooks and tests only; no libvmaf change.
+
+- `lefthook.yml`: both `framework-hooks` entries run `pre-commit install-hooks`
+  under `env -u GIT_INDEX_FILE -u GIT_DIR -u GIT_WORK_TREE -u GIT_OBJECT_DIRECTORY`
+  before `pre-commit run` / `pre-commit hook-impl`. A sync or a lefthook
+  rewrite keeps that line and its place before the run: without it a node hook
+  install in a linked worktree rewrites the worktree's index.
+- `scripts/githooks/tests/test_install_hooks_env.py` reads the block from
+  `lefthook.yml`, so it fails when the line goes.
+
 ## The NVIDIA GPU tester image (ADR-1509, 2026-10-03)
 
 `feat/tester-kit-cuda`. Fork-only tester tooling; no libvmaf source changes.
