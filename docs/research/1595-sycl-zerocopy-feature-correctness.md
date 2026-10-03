@@ -181,13 +181,51 @@ it from noise, and a pre-D-01 build in the same run position would be needed to
 say. No off-switch was added (D-01). 4K was not measured: the only 4K P010 source at
 hand is a single frame (`blue_sky_1frame_3840x2160_10b.yuv`), too short to time.
 
+## Stage-3 results (Arc A380, `scripts/test/zerocopy-e2e.sh --stage 3 --bench --repeat 5`)
+
+Every extractor that staged host pictures now reads the shared planes
+([ADR-1598](../adr/1598-sycl-host-staging-to-shared-planes.md)), `float_ms_ssim_sycl`
+converts them on the device with `plane_to_float()`, and `float_motion_sycl` takes
+`motion_add_uv` ([ADR-1599](../adr/1599-sycl-float-motion-add-uv.md)). Full set, both
+clips (src01 576x324 48 frames, checkerboard 1080p 60 frames), five zero-copy runs each:
+
+| Depth | Cases | Result |
+| --- | --- | --- |
+| 8-bit NV12 | 48 | `pass=48 fail=0 nonexact=0`, no `loud-fail`, no `zc-nondeterministic` |
+| 10-bit P010 | 48 | `pass=48 fail=0 nonexact=0`, no `loud-fail`, no `zc-nondeterministic` |
+
+Pooled model scores, CPU / host upload / zero-copy (identical to the printed digits in
+all three legs):
+
+| Clip | Depth | `vmaf_v0.6.1` | `vmaf_float_v0.6.1` |
+| --- | --- | --- | --- |
+| src01 | 8 | 75.953252 | 75.950949 |
+| checkerboard | 8 | 39.844822 | 39.846317 |
+| src01 | 10 | 76.058344 | 76.057651 |
+| checkerboard | 10 | 39.806130 | 39.806468 |
+
+- `float_ms_ssim`: `test_sycl_zerocopy_parity` rows (luma, `enable_lcs`,
+  `enable_chroma`; 8 and 10 bit) are `==` between CPU, host upload and zero-copy, and
+  the e2e case passes on both clips.
+- `float_motion_uv` (`float_motion` with `motion_add_uv=true`) could not run on zero-copy
+  until `float_motion_sycl` declared the option: the twin refused it, and zero-copy has no
+  CPU fallback. It now equals the CPU on host upload and host upload on zero-copy
+  (parity test `==`, e2e pass on both clips and depths). Decision D-10.
+- Stage-1 and Stage-2 runs now report `unexpected-success` for the cases that moved to
+  stage 3 or earlier: that is the harness doing its job, not a regression.
+- Throughput, `vmaf_v0.6.1` on checkerboard 1080p 8-bit, same session, stage-2 library
+  (db1adbc1a) against this build, four alternating runs each: 73.7 fps (62.8, 75.1,
+  78.3, 78.6) against 77.8 fps (78.7, 78.3, 79.7, 74.6), no regression. No stage-3 change
+  touches the integer `vif` / `adm` / `motion` path that model uses. In-run `--bench`
+  figures of the final run: 76.05 fps (8-bit), 76.24 fps (10-bit); the stage-2 run gave
+  80.32 and 76.92, in a different session (the figure moves 5 % between sessions).
+
 ## Open items
 
 - **Stage 2** (done, above): chroma import for `psnr`, `psnr_hvs`, `motion_add_uv`.
   `ciede`, `speed_*` and `ssimulacra2` read host pictures and move with stage 3.
-- **Stage 3**: move the float, SSIM, MS-SSIM and SpEED extractors from host
-  staging to the shared planes. `float_ms_ssim_sycl` needs one new device kernel
-  (plane to float).
+- **Stage 3** (done, above): the float, SSIM, MS-SSIM, ciede, ssimulacra2 and SpEED
+  extractors read the shared planes; `float_motion_sycl` gained `motion_add_uv`.
 - The D3D11 import has no chroma (out of scope); readers fail loudly there too.
 - `test_sycl_ordered_sum` fails on the A380 independently of this work
   (`T-SYCL-ORDERED-SUM-A380-GARBAGE-2026-10-02`).
