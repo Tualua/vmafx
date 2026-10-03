@@ -136,12 +136,11 @@ int finish(sycl::event ev, void **out_event)
         ev.wait_and_throw();
         return 0;
     }
-    sycl::event *const heap = new (std::nothrow) sycl::event(ev);
-    if (!heap) {
+    *out_event = new (std::nothrow) sycl::event(ev);
+    if (!*out_event) {
         ev.wait_and_throw();
         return -ENOMEM;
     }
-    *out_event = heap;
     return 0;
 }
 
@@ -152,14 +151,15 @@ extern "C" int vmaf_sycl_chroma_layout_from_modifier(uint64_t modifier,
 {
     if (!out)
         return -EINVAL;
-    if (modifier == kModLinear)
+    if (modifier == kModLinear) {
         *out = VMAF_SYCL_CHROMA_LINEAR;
-    else if (modifier == I915_FORMAT_MOD_4_TILED)
+    } else if (modifier == I915_FORMAT_MOD_4_TILED) {
         *out = VMAF_SYCL_CHROMA_TILE4;
-    else if (modifier == I915_FORMAT_MOD_Y_TILED)
+    } else if (modifier == I915_FORMAT_MOD_Y_TILED) {
         *out = VMAF_SYCL_CHROMA_YTILED;
-    else
+    } else {
         return -ENOTSUP;
+    }
     return 0;
 }
 
@@ -194,15 +194,15 @@ extern "C" int vmaf_sycl_chroma_import_launch(VmafSyclState *state, const VmafSy
     sycl::queue *const q = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(state));
     if (!q)
         return -EINVAL;
-    const ChromaKernelArgs args = {static_cast<const uint8_t *>(src->base),
-                                   static_cast<uint8_t *>(dst_cb),
-                                   static_cast<uint8_t *>(dst_cr),
-                                   src->offset,
-                                   src->pitch,
-                                   src->cw,
-                                   (src->bpc + 7u) / 8u,
-                                   src->bpc > 8u ? 16u - src->bpc : 0u,
-                                   (unsigned)src->layout};
+    const ChromaKernelArgs args = {.src = static_cast<const uint8_t *>(src->base),
+                                   .cb = static_cast<uint8_t *>(dst_cb),
+                                   .cr = static_cast<uint8_t *>(dst_cr),
+                                   .offset = src->offset,
+                                   .pitch = src->pitch,
+                                   .cw = src->cw,
+                                   .bps = (src->bpc + 7u) / 8u,
+                                   .shift = src->bpc > 8u ? 16u - src->bpc : 0u,
+                                   .layout = (unsigned)src->layout};
     try {
         const sycl::event ev =
             q->parallel_for(sycl::range<2>(src->ch, src->cw), [=](sycl::id<2> id) {
