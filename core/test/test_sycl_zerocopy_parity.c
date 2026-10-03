@@ -588,6 +588,8 @@ typedef struct LumaFeature {
     unsigned n_scores;
     const char *opt_key; /* optional extractor option, set on both legs */
     const char *opt_val;
+    int chroma;         /* reads Cb / Cr: the zero-copy leg marks chroma imported */
+    double cpu_tol;     /* host upload vs CPU bound; 0 = bit-identical */
 } LumaFeature;
 
 static const LumaFeature g_luma_features[] = {
@@ -616,6 +618,11 @@ static const LumaFeature g_luma_features[] = {
     /* scale=2 runs the float_ssim twin device decimation (33x18 samples from 67x37). */
     {"float_ssim_sycl", "float_ssim", {"float_ssim"}, 1u, "scale", "2"},
     {"integer_ssim_sycl", "ssim", {"ssim"}, 1u, NULL, NULL},
+    /* Chroma readers (ADR-1597): zero-copy must equal host upload bit for bit. ciede_sycl
+     * is within the documented ADR-1436 bound of the CPU (host powf), ssimulacra2_sycl is
+     * bit-exact with it (ADR-1446). */
+    {"ciede_sycl", "ciede", {"ciede2000"}, 1u, NULL, NULL, 1, 1e-9},
+    {"ssimulacra2_sycl", "ssimulacra2", {"ssimulacra2"}, 1u, NULL, NULL, 1, 0.0},
 };
 #define N_LUMA_FEATURES ((unsigned)(sizeof(g_luma_features) / sizeof(g_luma_features[0])))
 
@@ -691,10 +698,10 @@ static char *run_luma_zero_copy(const LumaFeature *lf, unsigned bpc, LumaScores 
     if (!msg && use_luma_feature(vmaf, lf->twin, lf))
         msg = "vmaf_use_feature failed";
     for (unsigned frame = 0; !msg && frame < LUMA_FRAMES; frame++) {
-        if (emulate_import(state, frame, bpc, 0)) {
+        if (emulate_import(state, frame, bpc, lf->chroma)) {
             msg = "emulated import failed";
         } else if (vmaf_read_pictures_sycl(vmaf, frame)) {
-            msg = "a luma-only SYCL twin must score on zero-copy input";
+            msg = "a SYCL twin must score on zero-copy input with the planes it reads";
         }
     }
     if (!msg && vmaf_flush_sycl(vmaf))
@@ -714,7 +721,8 @@ static int same_bits(double a, double b)
 
 /* Every score the two runs hold must be present in both and identical bits. */
 static char *compare_luma(const LumaFeature *lf, unsigned bpc, const char *what,
-                          const LumaScores *want, const LumaScores *got, unsigned *defined)
+                          const LumaScores *want, const LumaScores *got, double tol,
+                          unsigned *defined)
 {
     for (unsigned f = 0; f < lf->n_scores; f++) {
         for (unsigned frame = 0; frame < LUMA_FRAMES; frame++) {
@@ -723,11 +731,13 @@ static char *compare_luma(const LumaFeature *lf, unsigned bpc, const char *what,
             if (!want->ok[f][frame])
                 continue;
             *defined += 1u;
-            if (!same_bits(want->v[f][frame], got->v[f][frame])) {
+            const int same = tol > 0.0 ? fabs(want->v[f][frame] - got->v[f][frame]) <= tol
+                                       : same_bits(want->v[f][frame], got->v[f][frame]);
+            if (!same) {
                 (void)fprintf(stderr, "\n%s %s bpc=%u frame %u: want=%.17g got=%.17g\n", what,
                               lf->scores[f], bpc, frame, want->v[f][frame], got->v[f][frame]);
             }
-            mu_assert("scores differ between runs", same_bits(want->v[f][frame], got->v[f][frame]));
+            mu_assert("scores differ between runs", same);
         }
     }
     return NULL;
@@ -746,8 +756,8 @@ static char *check_luma_twin(const LumaFeature *lf, unsigned bpc)
     mu_assert_msg(run_luma_host(lf, bpc, 1, &host));
     mu_assert_msg(run_luma_zero_copy(lf, bpc, &zc));
     unsigned defined = 0u;
-    mu_assert_msg(compare_luma(lf, bpc, "host upload vs CPU", &cpu, &host, &defined));
-    mu_assert_msg(compare_luma(lf, bpc, "zero-copy vs host upload", &host, &zc, &defined));
+    mu_assert_msg(compare_luma(lf, bpc, "host upload vs CPU", &cpu, &host, lf->cpu_tol, &defined));
+    mu_assert_msg(compare_luma(lf, bpc, "zero-copy vs host upload", &host, &zc, 0.0, &defined));
     (void)fprintf(stderr, "[%s bpc=%u: %u scores compared] ", lf->twin, bpc, defined);
     mu_assert("too few scores were produced", defined >= 2u * lf->n_scores * (LUMA_FRAMES - 2u));
     return NULL;
@@ -764,6 +774,32 @@ static char *test_luma_twins_10bit(void)
 {
     for (unsigned i = 0; i < N_LUMA_FEATURES; i++)
         mu_assert_msg(check_luma_twin(&g_luma_features[i], 10u));
+    return NULL;
+}
+
+/* A chroma-reading twin refuses an import that did not mark chroma (ADR-1597). */
+static char *test_chroma_twins_unmarked_refused(void)
+{
+    for (unsigned i = 0; i < N_LUMA_FEATURES; i++) {
+        const LumaFeature *lf = &g_luma_features[i];
+        if (!lf->chroma)
+            continue;
+        VmafSyclState *state = open_state();
+        if (!state)
+            return NULL;
+        VmafContext *vmaf = NULL;
+        char *msg = open_context(state, 8u, &vmaf);
+        if (!msg && use_luma_feature(vmaf, lf->twin, lf))
+            msg = "vmaf_use_feature failed";
+        if (!msg && emulate_import(state, 0u, 8u, 0))
+            msg = "emulated import failed";
+        if (!msg && vmaf_read_pictures_sycl(vmaf, 0u) != -ENOTSUP)
+            msg = "a chroma-reading twin must refuse an import that did not mark chroma";
+        if (vmaf)
+            (void)vmaf_close(vmaf);
+        vmaf_sycl_state_free(&state);
+        mu_assert_msg(msg);
+    }
     return NULL;
 }
 
@@ -789,6 +825,7 @@ static char *run_luma_tests(void)
 {
     mu_run_test(test_luma_twins_8bit);
     mu_run_test(test_luma_twins_10bit);
+    mu_run_test(test_chroma_twins_unmarked_refused);
     return NULL;
 }
 

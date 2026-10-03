@@ -188,6 +188,7 @@ typedef struct {
     unsigned bpc;
     int expect;
     const char *score; /* checked at frame 1 when expect == 0 */
+    int chroma;        /* write Cb / Cr into the upload slots and mark them imported */
 } GuardRow;
 
 static const GuardRow guard_rows[] = {
@@ -207,8 +208,10 @@ static const GuardRow guard_rows[] = {
     {"float_motion_sycl", NULL, NULL, 8u, 0, "VMAF_feature_motion2_score"},
     {"integer_ssim_sycl", NULL, NULL, 8u, 0, "ssim"},
     {"float_ssim_sycl", NULL, NULL, 8u, 0, "float_ssim"},
-    {"ciede_sycl", NULL, NULL, 8u, -ENOTSUP, NULL},
-    {"ssimulacra2_sycl", NULL, NULL, 8u, -ENOTSUP, NULL},
+    {"ciede_sycl", NULL, NULL, 8u, -ENOTSUP, NULL, 0},
+    {"ciede_sycl", NULL, NULL, 8u, 0, "ciede2000", 1},
+    {"ssimulacra2_sycl", NULL, NULL, 8u, -ENOTSUP, NULL, 0},
+    {"ssimulacra2_sycl", NULL, NULL, 8u, 0, "ssimulacra2", 1},
     {"speed_chroma_sycl", NULL, NULL, 8u, -ENOTSUP, NULL},
     {"speed_temporal_sycl", NULL, NULL, 8u, -ENOTSUP, NULL},
     {"psnr_sycl", NULL, NULL, 8u, -ENOTSUP, NULL},
@@ -252,12 +255,43 @@ static int guard_use_feature(VmafContext *vmaf, const GuardRow *row)
     return vmaf_use_feature(vmaf, row->name, opts);
 }
 
+/* Cb / Cr of one frame into the upload slots, then the mark, as the VA import does. */
+static int write_chroma_marked(VmafSyclState *state, unsigned frame, unsigned bpc)
+{
+    const unsigned cw = (FRAME_W + 1u) / 2u;
+    const unsigned ch = (FRAME_H + 1u) / 2u;
+    const size_t bytes = (size_t)cw * ch * (bpc > 8u ? 2u : 1u);
+    uint8_t *buf = malloc(bytes);
+    if (!buf) {
+        return -ENOMEM;
+    }
+    int err = 0;
+    for (unsigned is_ref = 0; is_ref < 2u && !err; is_ref++) {
+        for (unsigned plane = 1u; plane < 3u && !err; plane++) {
+            for (size_t i = 0; i < bytes; i++) {
+                buf[i] = (uint8_t)((i * (3u + plane) + frame * 11u + is_ref * 7u) & 0xFFu);
+            }
+            err = vmaf_sycl_memcpy_h2d(state,
+                                       vmaf_sycl_get_shared_plane_upload(state, (int)is_ref, plane),
+                                       buf, bytes);
+        }
+    }
+    free(buf);
+    if (!err) {
+        vmaf_sycl_shared_chroma_mark_imported(state);
+    }
+    return err;
+}
+
 /* Drive three zero-copy frames plus a flush; return the first non-zero status. */
 static int guard_run_frames(VmafContext *vmaf, VmafSyclState *state, const GuardRow *row)
 {
     int err = 0;
     for (unsigned frame = 0; !err && frame < N_FRAMES; frame++) {
         err = write_luma_bpc(state, frame, row->bpc);
+        if (!err && row->chroma) {
+            err = write_chroma_marked(state, frame, row->bpc);
+        }
         if (!err) {
             err = vmaf_read_pictures_sycl(vmaf, frame);
         }
@@ -310,8 +344,8 @@ static char *test_guard_table(void)
     for (unsigned i = 0; i < N_GUARD_ROWS; i++) {
         const GuardRow *row = &guard_rows[i];
         const char *msg = guard_check_row(row);
-        (void)fprintf(stderr, "  guard %-20s bpc=%-2u %s%s\n", row->name, row->bpc,
-                      msg ? "FAIL: " : "ok", msg ? msg : "");
+        (void)fprintf(stderr, "  guard %-20s bpc=%-2u%s %s%s\n", row->name, row->bpc,
+                      row->chroma ? " chroma" : "", msg ? "FAIL: " : "ok", msg ? msg : "");
         failed += msg ? 1u : 0u;
     }
     mu_assert("a zero-copy guard row failed (see the log above)", failed == 0u);
