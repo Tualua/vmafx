@@ -258,8 +258,9 @@ It fails when a kernel uses scratch memory: the ratchet list that used to
 exempt the known ones is empty and stays empty
 (`test_sycl_kernel_source_contract.py` rejects a new entry without a device).
 It skips without a GPU, so CI, which has none, does not run it. On an Arc A380
-and on an Arc B580 (Xe2, xe driver) it audits 127 kernels and finds none. The
-B580 returns correct values from the two probes, so it logs no warning; until
+and on an Arc B580 and an Arc Pro B60 (Xe2, xe driver) it audits 127 kernels
+and finds none. Both Xe2 cards return correct values from the two probes, so
+they log no warning; until
 2026-10-03 the term kernel of `float_adm_sycl` used 128 bytes of scratch
 memory there ([ADR-1501](../../adr/1501-sycl-float-adm-terms-large-grf-xe2.md)).
 
