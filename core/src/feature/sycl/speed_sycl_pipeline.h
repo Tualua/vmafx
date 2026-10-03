@@ -87,6 +87,17 @@ void *pipeline_staging(Pipeline *pipeline, uint32_t index);
  * planes [first, first + count). */
 int pipeline_upload(Pipeline *pipeline, uint32_t first, uint32_t count);
 
+/* Enqueue a device-to-device copy of one plane of `src_w` x `src_h` samples of
+ * `bytes_per_sample` bytes (tight rows) into raw plane `index`, on the
+ * pipeline queue. The raw planes stay pipeline-owned, so a temporal ring keeps
+ * its previous frames when the shared source is overwritten by the next
+ * upload. `src_w` may exceed the pipeline plane width (the copy is then
+ * pitched and keeps the first src_h rows of the pipeline height); a source
+ * smaller than the plane, or a different sample size, is -EINVAL. The caller
+ * orders the queue after the shared upload (vmaf_sycl_queue_after_upload). */
+int pipeline_upload_device(Pipeline *pipeline, uint32_t index, const void *src_device,
+                           uint32_t src_w, uint32_t src_h, uint32_t bytes_per_sample);
+
 /* Enqueue the whole device chain and the readback of its tail block. No host
  * wait; `bindings` holds config.channels entries. */
 int pipeline_submit(Pipeline *pipeline, const ChannelBinding *bindings);

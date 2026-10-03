@@ -2090,6 +2090,33 @@ int speed_sycl::pipeline_upload(Pipeline *pipeline, uint32_t first, uint32_t cou
     return 0;
 }
 
+int speed_sycl::pipeline_upload_device(Pipeline *pipeline, uint32_t index, const void *src_device,
+                                       uint32_t src_w, uint32_t src_h, uint32_t bytes_per_sample)
+{
+    if (!pipeline || !src_device || index >= pipeline->config.raw_planes) {
+        return -EINVAL;
+    }
+    const Geometry &g = pipeline->config.geometry;
+    if (bytes_per_sample != g.bytes_per_sample || src_w < g.src_w || src_h < g.src_h) {
+        return -EINVAL;
+    }
+    unsigned char *dst = pipeline->raw + static_cast<size_t>(index) * pipeline->plane_bytes;
+    const size_t row_bytes = static_cast<size_t>(g.src_w) * g.bytes_per_sample;
+    try {
+        if (src_w == g.src_w) {
+            pipeline->queue->memcpy(dst, src_device, pipeline->plane_bytes);
+        } else {
+            pipeline->queue->ext_oneapi_memcpy2d(dst, row_bytes, src_device,
+                                                 static_cast<size_t>(src_w) * bytes_per_sample,
+                                                 row_bytes, g.src_h);
+        }
+    } catch (const sycl::exception &e) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "speed_sycl: device upload failed: %s\n", e.what());
+        return -EIO;
+    }
+    return 0;
+}
+
 int speed_sycl::pipeline_submit(Pipeline *pipeline, const ChannelBinding *bindings)
 {
     if (!pipeline || !bindings) {

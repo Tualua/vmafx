@@ -50,9 +50,15 @@
  * MSVC's documented /std:clatest C23 feature set does not include `nullptr`
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
-/* Odd luma size: 4:2:0 chroma is 34 x 19. */
-#define FRAME_W 67u
-#define FRAME_H 37u
+/* Odd luma size: 4:2:0 chroma is 34 x 19. The SpEED twins need at least 80 samples per
+ * plane side (SPEED_INTERNAL_MIN_DIMENSION), so their rows run on a larger odd frame
+ * (LumaFeature.w / .h); every helper reads the current size from these variables. */
+#define DEFAULT_FRAME_W 67u
+#define DEFAULT_FRAME_H 37u
+static unsigned g_frame_w = DEFAULT_FRAME_W;
+static unsigned g_frame_h = DEFAULT_FRAME_H;
+#define FRAME_W g_frame_w
+#define FRAME_H g_frame_h
 #define CHROMA_W ((FRAME_W + 1u) / 2u)
 #define CHROMA_H ((FRAME_H + 1u) / 2u)
 #define PARITY_FRAMES 5u
@@ -590,10 +596,12 @@ typedef struct LumaFeature {
     const char *opt_val;
     int chroma;     /* reads Cb / Cr: the zero-copy leg marks chroma imported */
     double cpu_tol; /* host upload vs CPU bound; 0 = bit-identical */
+    unsigned w;     /* frame size; 0 = the default 67 x 37 */
+    unsigned h;
 } LumaFeature;
 
 static const LumaFeature g_luma_features[] = {
-    {"float_psnr_sycl", "float_psnr", {"float_psnr"}, 1u, NULL, NULL, 0, 0.0},
+    {"float_psnr_sycl", "float_psnr", {"float_psnr"}, 1u, NULL, NULL, 0, 0.0, 0u, 0u},
     {"float_motion_sycl",
      "float_motion",
      {"VMAF_feature_motion2_score", "VMAF_feature_motion3_score"},
@@ -601,7 +609,9 @@ static const LumaFeature g_luma_features[] = {
      NULL,
      NULL,
      0,
-     0.0},
+     0.0,
+     0u,
+     0u},
     {"float_vif_sycl",
      "float_vif",
      {"VMAF_feature_vif_scale0_score", "VMAF_feature_vif_scale1_score",
@@ -610,7 +620,9 @@ static const LumaFeature g_luma_features[] = {
      NULL,
      NULL,
      0,
-     0.0},
+     0.0,
+     0u,
+     0u},
     {"float_adm_sycl",
      "float_adm",
      {"VMAF_feature_adm2_score", "VMAF_feature_adm_scale0_score", "VMAF_feature_adm_scale1_score",
@@ -619,16 +631,18 @@ static const LumaFeature g_luma_features[] = {
      NULL,
      NULL,
      0,
-     0.0},
-    {"float_ssim_sycl", "float_ssim", {"float_ssim"}, 1u, NULL, NULL, 0, 0.0},
+     0.0,
+     0u,
+     0u},
+    {"float_ssim_sycl", "float_ssim", {"float_ssim"}, 1u, NULL, NULL, 0, 0.0, 0u, 0u},
     /* scale=2 runs the float_ssim twin device decimation (33x18 samples from 67x37). */
-    {"float_ssim_sycl", "float_ssim", {"float_ssim"}, 1u, "scale", "2", 0, 0.0},
-    {"integer_ssim_sycl", "ssim", {"ssim"}, 1u, NULL, NULL, 0, 0.0},
+    {"float_ssim_sycl", "float_ssim", {"float_ssim"}, 1u, "scale", "2", 0, 0.0, 0u, 0u},
+    {"integer_ssim_sycl", "ssim", {"ssim"}, 1u, NULL, NULL, 0, 0.0, 0u, 0u},
     /* Chroma readers (ADR-1597): zero-copy must equal host upload bit for bit. ciede_sycl
      * is within the documented ADR-1436 bound of the CPU (host powf), ssimulacra2_sycl is
      * bit-exact with it (ADR-1446). */
-    {"ciede_sycl", "ciede", {"ciede2000"}, 1u, NULL, NULL, 1, 1e-9},
-    {"ssimulacra2_sycl", "ssimulacra2", {"ssimulacra2"}, 1u, NULL, NULL, 1, 0.0},
+    {"ciede_sycl", "ciede", {"ciede2000"}, 1u, NULL, NULL, 1, 1e-9, 0u, 0u},
+    {"ssimulacra2_sycl", "ssimulacra2", {"ssimulacra2"}, 1u, NULL, NULL, 1, 0.0, 0u, 0u},
     /* SpEED twins (ADR-1358, ADR-1462): bit-exact with the CPU on host upload, and the
      * D2D pipeline upload makes zero-copy equal host upload. speed_temporal keeps two
      * raw luma slots, so the 5 frames wrap its ring twice. */
@@ -639,7 +653,9 @@ static const LumaFeature g_luma_features[] = {
      NULL,
      NULL,
      0,
-     0.0},
+     0.0,
+     161u,
+     161u},
 };
 #define N_LUMA_FEATURES ((unsigned)(sizeof(g_luma_features) / sizeof(g_luma_features[0])))
 
@@ -760,8 +776,15 @@ static char *compare_luma(const LumaFeature *lf, unsigned bpc, const char *what,
     return NULL;
 }
 
+static void use_frame_size(const LumaFeature *lf)
+{
+    g_frame_w = lf->w ? lf->w : DEFAULT_FRAME_W;
+    g_frame_h = lf->h ? lf->h : DEFAULT_FRAME_H;
+}
+
 static char *check_luma_twin(const LumaFeature *lf, unsigned bpc)
 {
+    use_frame_size(lf);
     static LumaScores cpu;
     static LumaScores host;
     static LumaScores zc;
@@ -801,6 +824,7 @@ static char *test_chroma_twins_unmarked_refused(void)
         const LumaFeature *lf = &g_luma_features[i];
         if (!lf->chroma)
             continue;
+        use_frame_size(lf);
         VmafSyclState *state = open_state();
         if (!state)
             return NULL;
