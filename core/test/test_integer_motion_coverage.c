@@ -266,6 +266,23 @@ static char *test_motion_moving_average_branch(void)
 /* Five-frame window: flush with fewer frames than the window needs. */
 /* ----------------------------------------------------------------- */
 
+/* Both frames of a two-frame five-frame-window run report motion2 and
+ * motion3 of 0. */
+static char *check_scores_below_window(VmafFeatureCollector *fc)
+{
+    for (unsigned i = 0; i < 2u; ++i) {
+        double m2 = NAN;
+        double m3 = NAN;
+        int err = vmaf_feature_collector_get_score(fc, "integer_motion2_mffw", &m2, i);
+        mu_assert("get motion2", err == 0);
+        err = vmaf_feature_collector_get_score(fc, "integer_motion3_mffw", &m3, i);
+        mu_assert("get motion3", err == 0);
+        mu_assert("motion2 below the window must be 0", m2 == 0.);
+        mu_assert("motion3 below the window must be 0", m3 == 0.);
+    }
+    return NULL;
+}
+
 static char *test_motion_five_frame_under_min(void)
 {
     /* motion_five_frame_window=true (Netflix a2b59b77, ADR-1478): the SAD
@@ -297,17 +314,7 @@ static char *test_motion_five_frame_under_min(void)
         return msg;
     err = vmaf_feature_extractor_context_flush(ctx, fc);
     mu_assert("flush two-frame five-frame-window mode", err >= 0);
-
-    for (unsigned i = 0; i < 2u; ++i) {
-        double m2 = NAN;
-        double m3 = NAN;
-        err = vmaf_feature_collector_get_score(fc, "integer_motion2_mffw", &m2, i);
-        mu_assert("get motion2", err == 0);
-        err = vmaf_feature_collector_get_score(fc, "integer_motion3_mffw", &m3, i);
-        mu_assert("get motion3", err == 0);
-        mu_assert("motion2 below the window must be 0", m2 == 0.);
-        mu_assert("motion3 below the window must be 0", m3 == 0.);
-    }
+    mu_assert_msg(check_scores_below_window(fc));
 
     motion_fixture_close(ctx, fc, refs, dists, 2);
     /* opts ownership transferred to ctx and freed by context_destroy. */

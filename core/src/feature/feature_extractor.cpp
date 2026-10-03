@@ -916,8 +916,6 @@ int check_pic_buf_type(const VmafFeatureExtractor *fex, const VmafPicturePrivate
     return 0;
 }
 
-} /* anonymous namespace */
-
 /* Mirror what libvmaf.c does for PREV_REF extractors after a successful
  * extract(): advance the window so the next extract() call finds the previous
  * frame in fex->prev_ref and, for an extractor that reads it (ADR-1478), the
@@ -927,7 +925,7 @@ int check_pic_buf_type(const VmafFeatureExtractor *fex, const VmafPicturePrivate
  * read frame n-2 keeps only frame n-1, as before ADR-1478.
  * vmaf_feature_extractor_context_destroy() releases whatever the window still
  * holds. */
-static void advance_prev_ref_window(VmafFeatureExtractor *fex, VmafPicture *ref)
+void advance_prev_ref_window(VmafFeatureExtractor *fex, VmafPicture *ref)
 {
     if (vmaf_feature_extractor_reads_prev_prev_ref(fex)) {
         if (fex->prev_prev_ref.ref)
@@ -939,6 +937,8 @@ static void advance_prev_ref_window(VmafFeatureExtractor *fex, VmafPicture *ref)
     }
     vmaf_picture_ref(&fex->prev_ref, ref);
 }
+
+} /* anonymous namespace */
 
 int vmaf_feature_extractor_context_extract(VmafFeatureExtractorContext *fex_ctx, VmafPicture *ref,
                                            VmafPicture *ref_90, VmafPicture *dist,

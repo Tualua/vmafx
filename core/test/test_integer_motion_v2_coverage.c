@@ -94,12 +94,9 @@ static int alloc_random10(VmafPicture *pic, uint32_t seed)
 /* init() accepts motion_five_frame_window (Netflix a2b59b77)        */
 /* ----------------------------------------------------------------- */
 
-static char *test_motion_v2_accepts_five_frame_window(void)
+static char *init_motion_v2_five_frame_window(VmafFeatureExtractorContext **ctx,
+                                              VmafFeatureCollector **fc)
 {
-    /* ADR-1478 ends the -ENOTSUP of ADR-0337: the option initialises, and
-     * the first two frames, which have no frame n-2, report a SAD of 0
-     * without reading a previous picture. The scores of longer sequences
-     * are held against the definition in test_motion_five_frame_window.c. */
     const VmafFeatureExtractor *fex = vmaf_get_feature_extractor_by_name("motion_v2");
     mu_assert("motion_v2 extractor missing", fex != NULL);
 
@@ -107,16 +104,27 @@ static char *test_motion_v2_accepts_five_frame_window(void)
     int err = vmaf_dictionary_set(&opts, "motion_five_frame_window", "true", 0);
     mu_assert("set motion_five_frame_window", err == 0);
 
-    VmafFeatureExtractorContext *ctx = NULL;
-    err = vmaf_feature_extractor_context_create(&ctx, fex, opts);
+    err = vmaf_feature_extractor_context_create(ctx, fex, opts);
     mu_assert("context_create", err == 0);
 
-    err = vmaf_feature_extractor_context_init(ctx, VMAF_PIX_FMT_YUV420P, 8u, MV2_W, MV2_H);
+    err = vmaf_feature_extractor_context_init(*ctx, VMAF_PIX_FMT_YUV420P, 8u, MV2_W, MV2_H);
     mu_assert("init with motion_five_frame_window must succeed", err == 0);
 
-    VmafFeatureCollector *fc = NULL;
-    err = vmaf_feature_collector_init(&fc);
+    err = vmaf_feature_collector_init(fc);
     mu_assert("collector_init", err == 0);
+    return NULL;
+}
+
+static char *test_motion_v2_accepts_five_frame_window(void)
+{
+    /* ADR-1478 ends the -ENOTSUP of ADR-0337: the option initialises, and
+     * the first two frames, which have no frame n-2, report a SAD of 0
+     * without reading a previous picture. The scores of longer sequences
+     * are held against the definition in test_motion_five_frame_window.c. */
+    VmafFeatureExtractorContext *ctx = NULL;
+    VmafFeatureCollector *fc = NULL;
+    mu_assert_msg(init_motion_v2_five_frame_window(&ctx, &fc));
+    int err;
 
     VmafPicture ref;
     VmafPicture dist;
