@@ -65,6 +65,9 @@ python3 "$image_dir/prepare_build.py" stage "$build" "$image_dir/unit-tests-maco
 cp -R tools/rc1-tester/src "$bundle/tester/src"
 cp tools/rc1-tester/vmaf-tester-report "$bundle/tester/"
 cp "$image_dir/fixtures.json" "$bundle/image/fixtures.json"
+# ADR-1496: the state rows the report measures, and the parity gate it runs.
+cp "$image_dir/metal-rows.json" "$bundle/image/metal-rows.json"
+python3 "$image_dir/prepare_build.py" gate "$repo" "$bundle"
 cp "$image_dir/macos/run.sh" "$bundle/run.sh"
 cp "$image_dir/macos/README.txt" "$bundle/README.txt"
 find "$bundle/tester" -name __pycache__ -type d -prune -exec rm -r {} +
@@ -84,6 +87,9 @@ echo "$PBS_SHA256  $out/pbs.tar.gz" | shasum -a 256 -c -
 mkdir "$out/pbs"
 tar -xzf "$out/pbs.tar.gz" -C "$out/pbs"
 mv "$out/pbs/python" "$bundle/runtime"
+# The interpreter archive is an input, not a product: the workflow publishes
+# every $out/*.tar.gz, and tester-20261003-c12763f3 carried (and signed) it.
+rm -r "${out:?}/pbs" "${out:?}/pbs.tar.gz"
 # The report needs the standard library only: drop headers, docs, tests, GUI, pip.
 for dir in include share; do rm -r "${bundle:?}/runtime/$dir"; done
 stdlib=$(echo "$bundle"/runtime/lib/python3.*)
