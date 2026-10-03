@@ -10380,8 +10380,9 @@
         "core/src/sycl/chroma_import.cpp": 1,
         "core/src/sycl/chroma_import.h": 3,
         "core/src/sycl/common.cpp": 2,
-        "core/src/sycl/common.h": 3,
-        "core/src/sycl/dmabuf_import.cpp": 1,
+        "core/src/sycl/common.h": 4,
+        "core/src/sycl/dmabuf_import.cpp": 2,
+        "core/src/sycl/dmabuf_import.h": 1,
         "core/test/meson.build": 2,
         "core/test/test_sycl_chroma_import.c": 1,
         "core/test/test_sycl_zerocopy_parity.c": 1

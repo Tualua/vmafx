@@ -56,8 +56,12 @@ void vmaf_sycl_dmabuf_free(VmafSyclState *state, void *ptr);
  * Fallback path: if the export or DMA-BUF import fails, uses
  * vaGetImage + vaMapBuffer + H2D memcpy (GPU→CPU→GPU).
  *
- * The VA surface must be in NV12 or P010 format. Only the Y plane is
- * imported (luma). The UV plane is ignored (VMAF only uses luma).
+ * The VA surface must be in NV12 or P010 format. Luma and the 4:2:0 UV
+ * plane (`layers[1]`) are imported: luma into the shared luma buffer, UV
+ * de-interleaved into the shared planar Cb / Cr planes of the upload slot
+ * (ADR-1597). A frame's chroma becomes current once both the ref and the dis
+ * surface were imported (vmaf_sycl_shared_chroma_mark_imported()). A
+ * descriptor without a usable second layer fails with -EINVAL.
  *
  * @param state       The SYCL state (shared frame buffers must be initialised).
  * @param va_display  The VA display handle (VADisplay).

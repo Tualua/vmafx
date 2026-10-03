@@ -75,6 +75,7 @@
 #endif
 
 #include "dmabuf_import.h"
+#include "chroma_import.h"
 #include "common.h"
 #include "log.h"
 
@@ -297,6 +298,98 @@ int copy_and_normalize_readback(sycl::queue *q, void *target_buf, const uint8_t 
     }
 }
 
+/* ------------------------------------------------------------------ */
+/* Chroma (layers[1]) import helpers, ADR-1597                         */
+/* ------------------------------------------------------------------ */
+
+/* Where the interleaved UV plane of a PRIME2 descriptor sits. */
+struct VaChromaPlan {
+    VmafSyclChromaSrc src; /* base is filled in once the object is imported */
+    uint32_t obj;          /* index of the object holding the plane */
+    size_t obj_size;       /* that object's size in bytes */
+};
+
+/* Resolve layers[1] of `desc`. -EINVAL: no second layer or an object index
+ * past num_objects (T-12-11); -ENOTSUP: modifier without a known chroma
+ * layout (the caller takes the readback path). The extent against the
+ * object's size is checked by the launch (vmaf_sycl_chroma_src_validate). */
+int va_chroma_plan(const VADRMPRIMESurfaceDescriptor &desc, unsigned w, unsigned h, unsigned bpc,
+                   VaChromaPlan *plan)
+{
+    if (desc.num_layers < 2 || desc.layers[1].object_index[0] >= desc.num_objects)
+        return -EINVAL;
+    uint32_t const obj = desc.layers[1].object_index[0];
+    enum VmafSyclChromaLayout layout;
+    int const lerr =
+        vmaf_sycl_chroma_layout_from_modifier(desc.objects[obj].drm_format_modifier, &layout);
+    if (lerr)
+        return lerr;
+    plan->obj = obj;
+    plan->obj_size = desc.objects[obj].size;
+    plan->src = VmafSyclChromaSrc{};
+    plan->src.layout = layout;
+    plan->src.offset = desc.layers[1].offset[0];
+    plan->src.pitch = desc.layers[1].pitch[0];
+    plan->src.cw = (w + 1) / 2;
+    plan->src.ch = (h + 1) / 2;
+    plan->src.bpc = bpc;
+    return 0;
+}
+
+/* De-interleave `src` into the upload slot's Cb / Cr planes of this side.
+ * Submitted behind the luma de-tile on the in-order primary queue; the event
+ * replaces the luma one in set_detile_event, so it covers both. `wait` makes
+ * the call return after the kernel finished (readback temporary). No P010
+ * normalisation here: the kernel shifts once. */
+int va_chroma_launch(VmafSyclState *state, const VmafSyclChromaSrc &src, size_t object_size,
+                     int is_ref, bool wait)
+{
+    void *const dst_cb = vmaf_sycl_get_shared_plane_upload(state, is_ref, 1);
+    void *const dst_cr = vmaf_sycl_get_shared_plane_upload(state, is_ref, 2);
+    if (!dst_cb || !dst_cr) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "Shared chroma planes not initialised\n");
+        return -EINVAL;
+    }
+    if (wait)
+        return vmaf_sycl_chroma_import_launch(state, &src, object_size, dst_cb, dst_cr, nullptr);
+    void *ev = nullptr;
+    int const err = vmaf_sycl_chroma_import_launch(state, &src, object_size, dst_cb, dst_cr, &ev);
+    if (err)
+        return err;
+    vmaf_sycl_set_detile_event(state, ev);
+    vmaf_sycl_chroma_event_free(ev);
+    return 0;
+}
+
+/* Readback: copy the VAImage's interleaved UV plane to a temporary device
+ * buffer and de-interleave it as a LINEAR plane (synchronously). */
+int va_readback_chroma(VmafSyclState *state, const VAImage &img, const void *img_data, int is_ref,
+                       unsigned w, unsigned h, unsigned bpc)
+{
+    if (img.num_planes < 2)
+        return -ENOTSUP;
+    VmafSyclChromaSrc src = {};
+    src.layout = VMAF_SYCL_CHROMA_LINEAR;
+    src.pitch = img.pitches[1];
+    src.cw = (w + 1) / 2;
+    src.ch = (h + 1) / 2;
+    src.bpc = bpc;
+    size_t const row_bytes = static_cast<size_t>(src.cw) * 2U * ((bpc + 7U) / 8U);
+    size_t const bytes = static_cast<size_t>(src.ch - 1) * src.pitch + row_bytes;
+    if (src.pitch < row_bytes || static_cast<size_t>(img.offsets[1]) + bytes > img.data_size)
+        return -EINVAL;
+    void *const dev = vmaf_sycl_malloc_device(state, bytes);
+    if (!dev)
+        return -ENOMEM;
+    src.base = dev;
+    int err = vmaf_sycl_memcpy_h2d(state, dev,
+                                   static_cast<const uint8_t *>(img_data) + img.offsets[1], bytes);
+    if (!err)
+        err = va_chroma_launch(state, src, bytes, is_ref, true);
+    vmaf_sycl_free(state, dev);
+    return err;
+}
+
 int vmaf_sycl_import_va_surface_readback(VmafSyclState *state, void *va_display_handle,
                                          unsigned int va_surface_id, int is_ref, unsigned w,
                                          unsigned h, unsigned bpc)
@@ -347,10 +440,19 @@ int vmaf_sycl_import_va_surface_readback(VmafSyclState *state, void *va_display_
 
     auto *q = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(state));
     rc = copy_and_normalize_readback(q, target_buf, y_plane, y_pitch, y_row_bytes, w, h, bpc);
+    int const cerr = rc ? 0 : va_readback_chroma(state, va_img, img_data, is_ref, w, h, bpc);
 
     vaUnmapBuffer(va_dpy, va_img.buf);
     vaDestroyImage(va_dpy, va_img.image_id);
-    return rc;
+    if (rc)
+        return rc;
+    if (cerr) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "vmaf_sycl readback: chroma import failed (%d)\n", cerr);
+        return cerr;
+    }
+    if (vmaf_sycl_shared_chroma_note_side(state, is_ref))
+        vmaf_sycl_shared_chroma_mark_imported(state);
+    return 0;
 }
 
 sycl::event detile_linear(sycl::queue *q, void *target_buf, const void *imported_ptr,
@@ -520,7 +622,8 @@ int export_va_drm_prime(VADisplay va_dpy, VASurfaceID va_surf, VADRMPRIMESurface
                  vaErrorStr(va_st));
         return -EAGAIN;
     }
-    if (desc->num_layers < 1 || desc->num_objects < 1) {
+    if (desc->num_layers < 1 || desc->num_objects < 1 ||
+        desc->layers[0].object_index[0] >= desc->num_objects) {
         for (uint32_t i = 0; i < desc->num_objects; i++)
             (void)close(desc->objects[i].fd);
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "DRM PRIME descriptor has no layers\n");
@@ -530,14 +633,26 @@ int export_va_drm_prime(VADisplay va_dpy, VASurfaceID va_surf, VADRMPRIMESurface
 }
 
 /* No cross-engine DMA-BUF sync here: real fix is separate QSV sessions (ADR-1121). */
+/* Imports the luma object and, when the UV plane lives in another object,
+ * that one too (`*chroma_ptr`, else nullptr). On failure nothing stays
+ * imported. Every exported fd is closed either way. */
 int import_dma_buf_and_close_fds(VmafSyclState *state, const VADRMPRIMESurfaceDescriptor &desc,
-                                 void **imported_ptr)
+                                 const VaChromaPlan &cplan, void **imported_ptr, void **chroma_ptr)
 {
     uint32_t const y_obj_idx = desc.layers[0].object_index[0];
     int const y_fd = desc.objects[y_obj_idx].fd;
     uint32_t const y_size = desc.objects[y_obj_idx].size;
 
-    int const err = vmaf_sycl_dmabuf_import(state, y_fd, y_size, imported_ptr);
+    *chroma_ptr = nullptr;
+    int err = vmaf_sycl_dmabuf_import(state, y_fd, y_size, imported_ptr);
+    if (!err && cplan.obj != y_obj_idx) {
+        err =
+            vmaf_sycl_dmabuf_import(state, desc.objects[cplan.obj].fd, cplan.obj_size, chroma_ptr);
+        if (err) {
+            vmaf_sycl_dmabuf_free(state, *imported_ptr);
+            *imported_ptr = nullptr;
+        }
+    }
     for (uint32_t i = 0; i < desc.num_objects; i++)
         (void)close(desc.objects[i].fd);
     return err;
@@ -546,7 +661,8 @@ int import_dma_buf_and_close_fds(VmafSyclState *state, const VADRMPRIMESurfaceDe
 /* A de-tile submit that threw: drain what was enqueued before it (those
  * copies still read the import), release the import and report -EIO, as the
  * readback path does. Nothing may throw out of here either. */
-int detile_submit_failed(VmafSyclState *state, sycl::queue *q, void *imported_ptr, const char *what)
+int detile_submit_failed(VmafSyclState *state, sycl::queue *q, void *imported_ptr, void *chroma_ptr,
+                         const char *what)
 {
     vmaf_log(VMAF_LOG_LEVEL_ERROR, "vmaf_sycl de-tile submit failed: %s\n", what);
     try {
@@ -556,17 +672,19 @@ int detile_submit_failed(VmafSyclState *state, sycl::queue *q, void *imported_pt
         (void)0;
     }
     vmaf_sycl_dmabuf_free(state, imported_ptr);
+    vmaf_sycl_dmabuf_free(state, chroma_ptr);
     return -EIO;
 }
 
 int dispatch_detile(VmafSyclState *state, sycl::queue *q, void *target_buf, void *imported_ptr,
-                    uint64_t modifier, uint32_t y_offset, uint32_t y_pitch, size_t row_bytes,
-                    unsigned w, unsigned h, unsigned bpc, int is_ref, void *va_display_handle,
-                    unsigned int va_surface_id)
+                    void *chroma_ptr, uint64_t modifier, uint32_t y_offset, uint32_t y_pitch,
+                    size_t row_bytes, unsigned w, unsigned h, unsigned bpc, int is_ref,
+                    void *va_display_handle, unsigned int va_surface_id)
 {
     const bool linear = modifier == DRM_FORMAT_MOD_LINEAR || modifier == 0;
     if (!linear && modifier != I915_FORMAT_MOD_4_TILED && modifier != I915_FORMAT_MOD_Y_TILED) {
         vmaf_sycl_dmabuf_free(state, imported_ptr);
+        vmaf_sycl_dmabuf_free(state, chroma_ptr);
         vmaf_log(VMAF_LOG_LEVEL_WARNING,
                  "Unknown DRM modifier 0x%" PRIx64 " — using readback path\n", modifier);
         return vmaf_sycl_import_va_surface_readback(state, va_display_handle, va_surface_id, is_ref,
@@ -593,14 +711,142 @@ int dispatch_detile(VmafSyclState *state, sycl::queue *q, void *target_buf, void
             ev = detile_y_tiled(q, target_buf, imported_ptr, y_offset, y_pitch, row_bytes, h, bpc);
         }
     } catch (const sycl::exception &e) {
-        return detile_submit_failed(state, q, imported_ptr, e.what());
+        return detile_submit_failed(state, q, imported_ptr, chroma_ptr, e.what());
     } catch (const std::exception &e) {
-        return detile_submit_failed(state, q, imported_ptr, e.what());
+        return detile_submit_failed(state, q, imported_ptr, chroma_ptr, e.what());
     }
 
     vmaf_sycl_set_detile_event(state, &ev);
     vmaf_sycl_defer_import_free(state, imported_ptr);
+    if (chroma_ptr)
+        vmaf_sycl_defer_import_free(state, chroma_ptr);
     return 0;
+}
+
+/* UV after luma on the same in-order queue (the chroma event then covers the
+ * luma one). Both objects stay alive until the next queue wait. */
+int launch_va_chroma(VmafSyclState *state, VaChromaPlan *cplan, void *imported_ptr,
+                     void *chroma_ptr, int is_ref)
+{
+    cplan->src.base = chroma_ptr ? chroma_ptr : imported_ptr;
+    int const cerr = va_chroma_launch(state, cplan->src, cplan->obj_size, is_ref, false);
+    if (cerr) {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "[%s] chroma import failed (%d)\n", is_ref ? "ref" : "dis",
+                 cerr);
+        return cerr;
+    }
+    if (vmaf_sycl_shared_chroma_note_side(state, is_ref))
+        vmaf_sycl_shared_chroma_mark_imported(state);
+    return 0;
+}
+
+/* The arguments of one vmaf_sycl_import_va_surface() call. */
+struct VaSurfaceArgs {
+    VmafSyclState *state;
+    void *va_display_handle;
+    unsigned int va_surface_id;
+    int is_ref;
+    unsigned w;
+    unsigned h;
+    unsigned bpc;
+};
+
+int va_readback(const VaSurfaceArgs &a)
+{
+    return vmaf_sycl_import_va_surface_readback(a.state, a.va_display_handle, a.va_surface_id,
+                                                a.is_ref, a.w, a.h, a.bpc);
+}
+
+/* Descriptor dump for every exported layer and object (ADR-1597 chroma-import
+ * probe). Same cached VMAF_SYCL_IMPORT_DEBUG switch as the per-import line;
+ * logging only. */
+void log_va_descriptor(const VaSurfaceArgs &a, const VADRMPRIMESurfaceDescriptor &desc)
+{
+    if (!vmaf_sycl_import_debug_enabled(a.state))
+        return;
+    vmaf_log(VMAF_LOG_LEVEL_INFO, "VMAF_SYCL_IMPORT_DEBUG [%s] num_layers=%u num_objects=%u\n",
+             a.is_ref ? "ref" : "dis", desc.num_layers, desc.num_objects);
+    for (uint32_t i = 0; i < desc.num_layers && i < 4; i++) {
+        vmaf_log(VMAF_LOG_LEVEL_INFO,
+                 "VMAF_SYCL_IMPORT_DEBUG layer[%u] drm_format=0x%08x num_planes=%u obj=%u "
+                 "offset=%u pitch=%u\n",
+                 i, desc.layers[i].drm_format, desc.layers[i].num_planes,
+                 desc.layers[i].object_index[0], desc.layers[i].offset[0], desc.layers[i].pitch[0]);
+    }
+    for (uint32_t i = 0; i < desc.num_objects && i < 4; i++) {
+        vmaf_log(VMAF_LOG_LEVEL_INFO,
+                 "VMAF_SYCL_IMPORT_DEBUG obj[%u] size=%u modifier=0x%016" PRIx64 "\n", i,
+                 desc.objects[i].size, static_cast<uint64_t>(desc.objects[i].drm_format_modifier));
+    }
+}
+
+/* Chroma (layers[1]) plan, resolved before any import so every failure is one
+ * close-all-fds exit (T-12-11, T-12-12). -ENOTSUP: take the readback path. */
+int plan_va_chroma(const VaSurfaceArgs &a, const VADRMPRIMESurfaceDescriptor &desc,
+                   VaChromaPlan *cplan)
+{
+    int const cplan_err = va_chroma_plan(desc, a.w, a.h, a.bpc, cplan);
+    if (!cplan_err)
+        return 0;
+    for (uint32_t i = 0; i < desc.num_objects; i++)
+        (void)close(desc.objects[i].fd);
+    if (cplan_err == -ENOTSUP) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "No chroma layout for the UV object's DRM modifier — using readback path\n");
+    } else {
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "DRM PRIME descriptor has no usable UV layer (%d)\n",
+                 cplan_err);
+    }
+    return cplan_err;
+}
+
+/* Imports the exported objects, de-tiles luma into the upload slot and
+ * de-interleaves UV behind it. Every exported fd is closed here. */
+int import_exported_surface(const VaSurfaceArgs &a, const VADRMPRIMESurfaceDescriptor &desc,
+                            VaChromaPlan *cplan)
+{
+    uint64_t const modifier = desc.objects[desc.layers[0].object_index[0]].drm_format_modifier;
+    uint32_t const y_offset = desc.layers[0].offset[0];
+    uint32_t const y_pitch = desc.layers[0].pitch[0];
+    unsigned const bpp = (a.bpc + 7) / 8;
+
+    void *imported_ptr = nullptr;
+    void *chroma_ptr = nullptr; /* only when the UV plane is in another object */
+    int const err = import_dma_buf_and_close_fds(a.state, desc, *cplan, &imported_ptr, &chroma_ptr);
+    if (err) {
+        vmaf_log(VMAF_LOG_LEVEL_INFO, "DMA-BUF import failed (%d) — using readback path\n", err);
+        return va_readback(a);
+    }
+
+    void *target_buf = a.is_ref ? vmaf_sycl_get_shared_ref_upload(a.state) :
+                                  vmaf_sycl_get_shared_dis_upload(a.state);
+    if (!target_buf) {
+        vmaf_sycl_dmabuf_free(a.state, imported_ptr);
+        vmaf_sycl_dmabuf_free(a.state, chroma_ptr);
+        vmaf_log(VMAF_LOG_LEVEL_ERROR, "Shared frame buffer not initialised\n");
+        return -EINVAL;
+    }
+
+    if (vmaf_sycl_import_debug_enabled(a.state)) {
+        vmaf_log(VMAF_LOG_LEVEL_INFO,
+                 "VMAF_SYCL_IMPORT_DEBUG [%s] va_surf=%u imported_ptr=%p target_buf=%p\n",
+                 a.is_ref ? "ref" : "dis", a.va_surface_id, imported_ptr, target_buf);
+    }
+
+    auto *q = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(a.state));
+    size_t const row_bytes = static_cast<size_t>(a.w) * bpp;
+    log_zero_copy_once(modifier, a.w, a.h, bpp, y_pitch);
+
+    const bool linear = modifier == DRM_FORMAT_MOD_LINEAR || modifier == 0;
+    const bool known =
+        linear || modifier == I915_FORMAT_MOD_4_TILED || modifier == I915_FORMAT_MOD_Y_TILED;
+    int const derr = dispatch_detile(a.state, q, target_buf, imported_ptr, chroma_ptr, modifier,
+                                     y_offset, y_pitch, row_bytes, a.w, a.h, a.bpc, a.is_ref,
+                                     a.va_display_handle, a.va_surface_id);
+    /* An unknown modifier took the readback path, which imports chroma itself. */
+    if (derr || !known)
+        return derr;
+    return launch_va_chroma(a.state, cplan, imported_ptr, chroma_ptr, a.is_ref);
 }
 
 } // namespace
@@ -612,6 +858,13 @@ extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_displa
     if (!state || !va_display_handle)
         return -EINVAL;
 
+    const VaSurfaceArgs args = {.state = state,
+                                .va_display_handle = va_display_handle,
+                                .va_surface_id = va_surface_id,
+                                .is_ref = is_ref,
+                                .w = w,
+                                .h = h,
+                                .bpc = bpc};
     auto va_dpy = static_cast<VADisplay>(va_display_handle);
     auto const va_surf = static_cast<VASurfaceID>(va_surface_id);
 
@@ -623,68 +876,19 @@ extern "C" int vmaf_sycl_import_va_surface(VmafSyclState *state, void *va_displa
     /* Export the VA surface as DRM PRIME2 (DMA-BUF fd + layout info) */
     VADRMPRIMESurfaceDescriptor desc = {};
     int const exp_rc = export_va_drm_prime(va_dpy, va_surf, &desc);
-    if (exp_rc == -EAGAIN) {
-        return vmaf_sycl_import_va_surface_readback(state, va_display_handle, va_surface_id, is_ref,
-                                                    w, h, bpc);
-    }
+    if (exp_rc == -EAGAIN)
+        return va_readback(args);
     if (exp_rc != 0)
         return exp_rc;
+    log_va_descriptor(args, desc);
 
-    /* Descriptor dump for every exported layer and object (ADR-1597 chroma-import
-     * probe). Same cached VMAF_SYCL_IMPORT_DEBUG switch as the per-import line
-     * below; logging only. */
-    if (vmaf_sycl_import_debug_enabled(state)) {
-        vmaf_log(VMAF_LOG_LEVEL_INFO, "VMAF_SYCL_IMPORT_DEBUG [%s] num_layers=%u num_objects=%u\n",
-                 is_ref ? "ref" : "dis", desc.num_layers, desc.num_objects);
-        for (uint32_t i = 0; i < desc.num_layers && i < 4; i++) {
-            vmaf_log(VMAF_LOG_LEVEL_INFO,
-                     "VMAF_SYCL_IMPORT_DEBUG layer[%u] drm_format=0x%08x num_planes=%u obj=%u "
-                     "offset=%u pitch=%u\n",
-                     i, desc.layers[i].drm_format, desc.layers[i].num_planes,
-                     desc.layers[i].object_index[0], desc.layers[i].offset[0],
-                     desc.layers[i].pitch[0]);
-        }
-        for (uint32_t i = 0; i < desc.num_objects && i < 4; i++) {
-            vmaf_log(VMAF_LOG_LEVEL_INFO,
-                     "VMAF_SYCL_IMPORT_DEBUG obj[%u] size=%u modifier=0x%016" PRIx64 "\n", i,
-                     desc.objects[i].size, (uint64_t)desc.objects[i].drm_format_modifier);
-        }
-    }
-
-    /* Extract Y plane metadata from the first layer */
-    uint64_t const modifier = desc.objects[desc.layers[0].object_index[0]].drm_format_modifier;
-    uint32_t const y_offset = desc.layers[0].offset[0];
-    uint32_t const y_pitch = desc.layers[0].pitch[0];
-    unsigned const bpp = (bpc + 7) / 8;
-
-    void *imported_ptr = nullptr;
-    int const err = import_dma_buf_and_close_fds(state, desc, &imported_ptr);
-    if (err) {
-        vmaf_log(VMAF_LOG_LEVEL_INFO, "DMA-BUF import failed (%d) — using readback path\n", err);
-        return vmaf_sycl_import_va_surface_readback(state, va_display_handle, va_surface_id, is_ref,
-                                                    w, h, bpc);
-    }
-
-    void *target_buf =
-        is_ref ? vmaf_sycl_get_shared_ref_upload(state) : vmaf_sycl_get_shared_dis_upload(state);
-    if (!target_buf) {
-        vmaf_sycl_dmabuf_free(state, imported_ptr);
-        vmaf_log(VMAF_LOG_LEVEL_ERROR, "Shared frame buffer not initialised\n");
-        return -EINVAL;
-    }
-
-    if (vmaf_sycl_import_debug_enabled(state)) {
-        vmaf_log(VMAF_LOG_LEVEL_INFO,
-                 "VMAF_SYCL_IMPORT_DEBUG [%s] va_surf=%u imported_ptr=%p target_buf=%p\n",
-                 is_ref ? "ref" : "dis", va_surface_id, imported_ptr, target_buf);
-    }
-
-    auto *q = static_cast<sycl::queue *>(vmaf_sycl_get_queue_ptr(state));
-    size_t const row_bytes = static_cast<size_t>(w) * bpp;
-    log_zero_copy_once(modifier, w, h, bpp, y_pitch);
-
-    return dispatch_detile(state, q, target_buf, imported_ptr, modifier, y_offset, y_pitch,
-                           row_bytes, w, h, bpc, is_ref, va_display_handle, va_surface_id);
+    VaChromaPlan cplan = {};
+    int const cplan_err = plan_va_chroma(args, desc, &cplan);
+    if (cplan_err == -ENOTSUP)
+        return va_readback(args);
+    if (cplan_err)
+        return cplan_err;
+    return import_exported_surface(args, desc, &cplan);
 }
 
 #else /* !HAVE_SYCL_DMABUF */

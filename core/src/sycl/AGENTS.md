@@ -267,10 +267,13 @@ sycl/
   stale chroma. Currency: `vmaf_sycl_init_frame_buffers` allocates the
   chroma planes eagerly for `(w+1)/2 x (h+1)/2` (D-01); the VA import
   writes `vmaf_sycl_get_shared_plane_upload` and calls
-  `vmaf_sycl_shared_chroma_mark_imported`; only `vmaf_sycl_advance_frame`
-  promotes the mark to `planes.frame` (after `frame_counter++`, never
-  between the two load-bearing lines). **On rebase**: never set
-  `planes.frame` elsewhere. **On rebase**:
+  `vmaf_sycl_shared_chroma_mark_imported` once both sides noted
+  (`vmaf_sycl_shared_chroma_note_side`, cleared in advance_frame) after
+  luma then chroma (`vmaf_sycl_chroma_import_launch`, `layers[1]`, DMA-BUF
+  and readback paths; D2D never aliases motion's ping-pong); only
+  `vmaf_sycl_advance_frame` promotes the mark to `planes.frame` (after
+  `frame_counter++`, never between the two load-bearing lines).
+  **On rebase**: never set `planes.frame` elsewhere. **On rebase**:
   `sycl_check_zero_copy_extractors` runs before any state mutation in
   `vmaf_read_pictures_sycl`. Guards: `test_sycl_shared_planes`,
   `test_sycl_zerocopy_parity`, `test_sycl_init_unwind` (wraps

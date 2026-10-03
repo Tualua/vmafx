@@ -108,6 +108,9 @@ struct SyclPlaneState {
     /* A zero-copy import wrote the upload slot's chroma (ADR-1597).
      * vmaf_sycl_advance_frame() turns it into `frame`; nothing else may. */
     bool chroma_import_pending = false;
+    /* Which sides of the upload slot's chroma were imported this frame. */
+    bool chroma_ref_imported = false;
+    bool chroma_dis_imported = false;
 };
 
 /* An aggregate: vmaf_sycl_state_init() initialises `queue` and `copy_queue`
@@ -696,6 +699,8 @@ static void sycl_shared_chroma_release(VmafSyclState *state)
     chroma.h = 0;
     chroma.frame = UINT64_MAX;
     chroma.chroma_import_pending = false;
+    chroma.chroma_ref_imported = false;
+    chroma.chroma_dis_imported = false;
 }
 
 static int sycl_shared_frame_reinit_unwind(VmafSyclState *state)
@@ -1151,6 +1156,14 @@ extern "C" void vmaf_sycl_shared_chroma_mark_imported(VmafSyclState *state)
 {
     if (state)
         state->planes.chroma_import_pending = true;
+}
+
+extern "C" bool vmaf_sycl_shared_chroma_note_side(VmafSyclState *state, int is_ref)
+{
+    if (!state)
+        return false;
+    (is_ref ? state->planes.chroma_ref_imported : state->planes.chroma_dis_imported) = true;
+    return state->planes.chroma_ref_imported && state->planes.chroma_dis_imported;
 }
 
 extern "C" bool vmaf_sycl_shared_chroma_current(const VmafSyclState *state)
@@ -1674,6 +1687,8 @@ extern "C" void vmaf_sycl_advance_frame(VmafSyclState *state)
         state->planes.frame = state->frame_counter;
         state->planes.chroma_import_pending = false;
     }
+    state->planes.chroma_ref_imported = false;
+    state->planes.chroma_dis_imported = false;
 }
 
 /* ------------------------------------------------------------------ */

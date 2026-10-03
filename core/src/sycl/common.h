@@ -353,6 +353,20 @@ void *vmaf_sycl_get_shared_plane_upload(VmafSyclState *state, int is_ref, unsign
 void vmaf_sycl_shared_chroma_mark_imported(VmafSyclState *state);
 
 /**
+ * Note that one side (ref or dis) of the upload slot's Cb / Cr planes was
+ * written for the frame about to be advanced. The VA import runs once per
+ * side, so a frame's chroma is complete only when both were noted; the notes
+ * are cleared by vmaf_sycl_advance_frame() (ADR-1597).
+ *
+ * @param state   The SYCL state.
+ * @param is_ref  Non-zero for the reference side, zero for the distorted.
+ *
+ * @return true when both sides are now noted for this frame: the caller then
+ *         calls vmaf_sycl_shared_chroma_mark_imported().
+ */
+bool vmaf_sycl_shared_chroma_note_side(VmafSyclState *state, int is_ref);
+
+/**
  * Whether the compute slot's Cb / Cr planes hold the current frame's chroma:
  * they are allocated and an upload or import of this frame produced them.
  *
