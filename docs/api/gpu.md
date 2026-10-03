@@ -336,7 +336,7 @@ int  vmaf_sycl_import_d3d11_surface(VmafSyclState *state, void *d3d11_device,
 | --- | --- | --- |
 | `vmaf_sycl_dmabuf_import` | Primitive: turns a DMA-BUF fd into a SYCL device pointer through Level Zero external memory. | Caller keeps the fd. Free the pointer with `vmaf_sycl_dmabuf_free` (`NULL` is a no-op). |
 | `vmaf_sycl_import_va_surface` | Convenience wrapper over dmabuf for a VA-API decode feed. Preferred on Linux. | Falls back to `vaGetImage` plus a host-to-device copy when the DRM-PRIME export fails (older Mesa, proprietary drivers). `bpc` is 8 or 10. |
-| `vmaf_sycl_upload_plane` | Platform-agnostic escape hatch: copies a Y plane from host memory with a row pitch. | Use when nothing better works, or as a benchmark baseline. |
+| `vmaf_sycl_upload_plane` | Platform-agnostic escape hatch: copies a Y plane from host memory with a row pitch. | Use when nothing better works, or as a benchmark baseline. Synchronous: it returns after the copy has completed, so the caller may free, unmap or refill `src` as soon as it returns, and the plane is in place before the next `vmaf_read_pictures_sycl()`. |
 | `vmaf_sycl_import_d3d11_surface` | Windows: copies the decoded texture into a staging texture, maps it and uploads the plane through `vmaf_sycl_upload_plane`. | Implemented in `core/src/sycl/d3d11_import.cpp`. `-EINVAL` for NULL arguments, zero size, `bpc` other than 8 or 10, or a texture smaller than `w` by `h`; `-EIO` when the map fails. |
 
 Every import takes `is_ref` (non-zero: reference buffer, otherwise
