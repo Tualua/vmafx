@@ -2,10 +2,15 @@
 
 Trained EPSILON_SVR model backing the fork's BRISQUE no-reference
 image-quality extractor (feature name `brisque`,
-[`core/src/feature/brisque.c`](../core/src/feature/brisque.c)). Redistributed
-under a documented research-use attribution exception — see
-[ADR-1115](../docs/adr/1115-brisque-nr-metric.md) and
-[`other_models/NOTICE-brisque`](other_models/NOTICE-brisque).
+[`core/src/feature/brisque.c`](../core/src/feature/brisque.c)). Used and
+redistributed under the BRISQUE release notice of The University of Texas at
+Austin, reproduced verbatim in
+[`LICENSES/LicenseRef-LIVE-BRISQUE.txt`](../LICENSES/LicenseRef-LIVE-BRISQUE.txt):
+use, copying, modification and distribution "for any purpose, provided that the
+copyright notice in its entirety appear in all copies", and acknowledgement and
+citation in any publication that reports research using it
+([ADR-1507](../docs/adr/1507-brisque-live-notice-terms.md),
+[`other_models/NOTICE-brisque`](other_models/NOTICE-brisque)).
 
 ## What it is
 
@@ -26,7 +31,8 @@ under a documented research-use attribution exception — see
 - **Source**: `C++/allmodel` from
   <https://github.com/krshrimali/No-Reference-Image-Quality-Assessment-using-BRISQUE-Model>,
   a verbatim mirror of the original LIVE-lab model also shipped by the MATLAB
-  pipeline `gregfreeman/image_quality_toolbox` (`+brisque/allmodel`) that trained it.
+  pipeline `gregfreeman/image_quality_toolbox` (`+brisque/allmodel`) that
+  trained it.
 - **Format**: native libsvm text. Embedded into the libvmaf binary at build
   time by an `xxd -i` Meson `custom_target` (the same path libvmaf's JSON
   models take), exposing the `src_brisque_live_model[]` / `_len` symbols
@@ -62,11 +68,19 @@ the reference code never reads — substituting it would corrupt every score
 - **Single-frame, no-reference.** Scores the distorted picture's luma plane only;
   reference / 90°-rotated inputs are ignored (CAMBI/NIQE NR posture).
 
-## Citation (required)
+## Acknowledgement and citation
 
-> A. Mittal, A. K. Moorthy and A. C. Bovik, "No-Reference Image Quality
-> Assessment in the Spatial Domain," IEEE TIP 21(12):4695-4708, 2012.
-> doi:10.1109/TIP.2012.2214050
+The release notice asks that any publication that reports research using the
+model acknowledge LIVE and CPS at UT Austin and cite the two works it names:
+
+> 1) A. Mittal, A. K. Moorthy and A. C. Bovik, "BRISQUE Software Release",
+> URL: <http://live.ece.utexas.edu/research/quality/BRISQUE_release.zip>, 2011
+>
+> 2) A. Mittal, A. K. Moorthy and A. C. Bovik, "No Reference Image Quality
+> Assessment in the Spatial Domain"
+
+The second was published in IEEE TIP 21(12):4695-4708, 2012,
+doi:10.1109/TIP.2012.2214050.
 
 See [`docs/metrics/brisque.md`](../docs/metrics/brisque.md) for the full
 algorithm description and the end-to-end score snapshot.

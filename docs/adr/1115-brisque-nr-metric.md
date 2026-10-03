@@ -2,7 +2,7 @@
 
 # ADR-1115: BRISQUE no-reference CPU feature extractor (bundled LIVE model)
 
-- **Status**: Accepted
+- **Status**: Accepted; its statement of the bundled model's licence terms is superseded by [ADR-1507](1507-brisque-live-notice-terms.md)
 - **Date**: 2026-06-14
 - **Deciders**: Lusoris
 - **Tags**: metrics, feature-extractor, no-reference, cpu, model, license, fork-local

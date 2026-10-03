@@ -6,17 +6,30 @@ used by the fork's BRISQUE no-reference image-quality extractor
 (core/src/feature/brisque.c, feature name "brisque"). The model and its
 companion feature range-normalization arrays originate from the LIVE laboratory
 at The University of Texas at Austin and the BRISQUE authors' reference
-implementations. The fork redistributes the model under a documented
-research-use attribution exception (see docs/adr/1115-brisque-nr-metric.md).
+implementations. The fork uses and redistributes the model under the BRISQUE
+release notice of The University of Texas at Austin, reproduced verbatim in
+LICENSES/LicenseRef-LIVE-BRISQUE.txt (docs/adr/1507-brisque-live-notice-terms.md).
 
-Required citation
------------------
-Any use of this model must cite the originating publication:
+Acknowledgement and citation
+----------------------------
+The release notice asks that "the original source of this code, Laboratory for
+Image and Video Engineering (LIVE, http://live.ece.utexas.edu) and Center for
+Perceptual Systems (CPS, http://www.cps.utexas.edu) at the University of Texas at
+Austin (UT Austin, http://www.utexas.edu), is acknowledged in any publication that
+reports research using this code", and that "The research is to be cited in the
+bibliography as:
 
-  A. Mittal, A. K. Moorthy and A. C. Bovik, "No-Reference Image Quality
-  Assessment in the Spatial Domain," IEEE Transactions on Image Processing,
-  vol. 21, no. 12, pp. 4695-4708, Dec. 2012. doi:10.1109/TIP.2012.2214050.
-  https://live.ece.utexas.edu/publications/2012/TIP%20BRISQUE.pdf
+  1) A. Mittal, A. K. Moorthy and A. C. Bovik, "BRISQUE Software Release",
+  URL: http://live.ece.utexas.edu/research/quality/BRISQUE_release.zip, 2011
+
+  2) A. Mittal, A. K. Moorthy and A. C. Bovik, "No Reference Image Quality
+  Assessment in the Spatial Domain" submitted"
+
+The second work was published as: A. Mittal, A. K. Moorthy and A. C. Bovik,
+"No-Reference Image Quality Assessment in the Spatial Domain," IEEE Transactions
+on Image Processing, vol. 21, no. 12, pp. 4695-4708, Dec. 2012.
+doi:10.1109/TIP.2012.2214050.
+https://live.ece.utexas.edu/publications/2012/TIP%20BRISQUE.pdf
 
 Provenance
 ----------
@@ -40,15 +53,20 @@ Provenance
 
 License / terms
 ---------------
-The BRISQUE model weights were released by the LIVE lab for research and
-educational use, conditioned on citing the TIP 2012 paper above. This is NOT a
-standard OSI license. The redistribution wrapper code (the reference C++) is
-MIT-licensed (Copyright (c) 2018 Kushashwa Ravi Shrimali), but the trained
-weights carry the LIVE research-use terms. The fork accepts this as a documented
-redistribution exception, mirroring the precedent that model/ already ships
-Netflix-trained .pkl/.json artifacts under their own (non-fork) terms.
+The model is part of the BRISQUE release of The University of Texas at Austin
+(Copyright (c) 2011 The University of Texas at Austin), whose notice grants
+permission "to use, copy, modify, and distribute this code (the source files) and
+its documentation for any purpose, provided that the copyright notice in its
+entirety appear in all copies of this code", with the acknowledgement and
+citation above for publications that report research using it. The notice also
+disclaims warranty and liability; read it whole in
+LICENSES/LicenseRef-LIVE-BRISQUE.txt. It is not an OSI-approved licence, and it
+places no restriction to research or education on the use. The mirror the file
+was taken from (the reference C++ by Kushashwa Ravi Shrimali) is MIT-licensed;
+that grant covers his code, not the LIVE model.
 
-This NOTICE must accompany any redistribution of brisque_live.model.
+The release notice must appear, in its entirety, in every copy of
+brisque_live.model and of a binary that embeds it; keep this NOTICE with it too.
 
 Original copyright notice
 -------------------------

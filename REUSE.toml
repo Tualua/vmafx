@@ -330,10 +330,12 @@ precedence = "closest"
 SPDX-FileCopyrightText = "2020 Matias Tassano, Julie Delon, Thomas Veit"
 SPDX-License-Identifier = "MIT"
 
-# The BRISQUE model is the LIVE laboratory's trained release (ADR-1115); its
-# notice must appear in all copies, which the tester artifacts carry
-# (ADR-1503). It is not Netflix's work, so the model/** default above is wrong
-# for these two files.
+# The BRISQUE model is the LIVE laboratory's trained release (ADR-1115), used
+# under that release's notice as written (ADR-1507): any purpose, the notice in
+# its entirety in all copies (the tester artifacts carry it, ADR-1503), and
+# acknowledgement and citation in publications that report research using it.
+# It is not Netflix's work, so the model/** default above is wrong for these
+# two files.
 [[annotations]]
 path = ["model/other_models/brisque_live.model", "model/other_models/NOTICE-brisque"]
 precedence = "override"

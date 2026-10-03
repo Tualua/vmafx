@@ -181,8 +181,10 @@ workflows refuse to build a package with a file whose licence is not recorded
   project's SSIMULACRA 2), BSD-2-Clause (Xiph, Daala, dav1d), ISC (x264's assembly
   macros, x86 only), MIT (CIEDE2000, mkdirp) and the Unlicense (pdjson); the
   container's Python harness adds files under BSD-3-Clause-Clear. The
-  built-in BRISQUE model is the LIVE laboratory's release, whose notice is in
-  `texts/LicenseRef-LIVE-BRISQUE.txt`. The notices name the exact source commit;
+  built-in BRISQUE model is the LIVE laboratory's release, under its notice in
+  `texts/LicenseRef-LIVE-BRISQUE.txt`: use "for any purpose, provided that the
+  copyright notice in its entirety appear in all copies", with an
+  acknowledgement and citation in publications that report research using it. The notices name the exact source commit;
   the source is the repository at that commit.
 - **The test videos** come from `Netflix/vmaf_resource` under BSD-2-Clause-Patent.
 - **The interpreter** is CPython under the PSF licence; the notices add the

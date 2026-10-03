@@ -157,6 +157,20 @@ score-destroying, not a 1e-4 nudge). See ADR-1115.
   output rather than a places=4 cross-assert.
 - Minimum frame size: width and height each ≥ 7 (the 7×7 window must fit).
 
+## Licence of the bundled model
+
+The LIVE model is part of the BRISQUE release of The University of Texas at Austin
+and is used and redistributed under that release's notice, reproduced verbatim in
+[`LICENSES/LicenseRef-LIVE-BRISQUE.txt`](../../LICENSES/LicenseRef-LIVE-BRISQUE.txt)
+([ADR-1507](../adr/1507-brisque-live-notice-terms.md)). It permits use, copying,
+modification and distribution "for any purpose, provided that the copyright notice
+in its entirety appear in all copies of this code", and asks that the original
+source (LIVE and CPS at UT Austin) be "acknowledged in any publication that reports
+research using this code", with the two citations the
+[model card](../../model/brisque_live_card.md#acknowledgement-and-citation) lists.
+A binary of libvmaf built with the model embedded is such a copy: keep the notice
+with it, as the VMAFx tester packages do.
+
 ## Updating the model and regenerating the score snapshot
 
 There is no header to regenerate: the model is embedded straight from the
@@ -197,10 +211,10 @@ core/build-cpu/tools/vmaf \
 
 ## See also
 
-- [ADR-1115](../adr/1115-brisque-nr-metric.md) — design + the model
-  redistribution exception.
+- [ADR-1115](../adr/1115-brisque-nr-metric.md) — design;
+  [ADR-1507](../adr/1507-brisque-live-notice-terms.md) — the model's terms.
 - [docs/research/1101-brisque-nr-metric.md](../research/1101-brisque-nr-metric.md)
   — research digest (constants, oracle, instability analysis).
-- [model/brisque_live_card.md](../../model/brisque_live_card.md) — model card +
-  required citation.
+- [model/brisque_live_card.md](../../model/brisque_live_card.md) — model card,
+  acknowledgement and citation.
 - [NIQE](niqe.md) — the sibling no-reference, opinion-unaware metric.

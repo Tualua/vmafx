@@ -31,8 +31,10 @@
  * (svm_load_model) otherwise.
  *
  * model file sha256: see model/brisque_live_card.md / model/other_models/NOTICE-brisque.
- * Redistributed under a documented research-use attribution exception — see
- * ADR-1115 and docs/metrics/brisque.md.
+ * Used and redistributed under the BRISQUE release notice of The University
+ * of Texas at Austin (LICENSES/LicenseRef-LIVE-BRISQUE.txt, ADR-1507): any
+ * purpose, the notice kept in every copy, acknowledgement and citation in
+ * publications that report research using it.
  */
 
 #include "config.h"

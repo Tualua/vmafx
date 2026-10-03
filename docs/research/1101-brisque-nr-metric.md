@@ -98,4 +98,6 @@ near-flat content.
 - Snapshot the compressed-fixture score; gate correctness via unit oracles +
   the natural-image cross-check.
 - Bundle the model under a documented research-use exception (the maintainer's
-  call; see ADR-1115 alternatives).
+  call; see ADR-1115 alternatives). Correction, 2026-10-03: the BRISQUE release
+  notice permits use for any purpose under its conditions; the fork follows it
+  as written ([ADR-1507](../adr/1507-brisque-live-notice-terms.md)).

@@ -252,6 +252,9 @@
        "name": "NOTICE-brisque.txt",
        "label": "provenance and citation"
       }
+     ],
+     "notes": [
+      "Terms (LICENSES/LicenseRef-LIVE-BRISQUE.txt, ADR-1507): permission \"to use, copy, modify, and distribute this code (the source files) and its documentation for any purpose, provided that the copyright notice in its entirety appear in all copies of this code, and the original source of this code, Laboratory for Image and Video Engineering (LIVE, http://live.ece.utexas.edu) and Center for Perceptual Systems (CPS, http://www.cps.utexas.edu) at the University of Texas at Austin (UT Austin, http://www.utexas.edu), is acknowledged in any publication that reports research using this code\"; the notice names the two works to cite. Its full text is texts/LicenseRef-LIVE-BRISQUE.txt."
      ]
     },
     {
@@ -536,6 +539,9 @@
        "name": "NOTICE-brisque.txt",
        "label": "provenance and citation"
       }
+     ],
+     "notes": [
+      "Terms (LICENSES/LicenseRef-LIVE-BRISQUE.txt, ADR-1507): permission \"to use, copy, modify, and distribute this code (the source files) and its documentation for any purpose, provided that the copyright notice in its entirety appear in all copies of this code, and the original source of this code, Laboratory for Image and Video Engineering (LIVE, http://live.ece.utexas.edu) and Center for Perceptual Systems (CPS, http://www.cps.utexas.edu) at the University of Texas at Austin (UT Austin, http://www.utexas.edu), is acknowledged in any publication that reports research using this code\"; the notice names the two works to cite. Its full text is texts/LicenseRef-LIVE-BRISQUE.txt."
      ]
     },
     {
