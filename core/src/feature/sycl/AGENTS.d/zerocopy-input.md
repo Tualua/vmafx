@@ -19,7 +19,7 @@ removed with its last caller (`float_ms_ssim_sycl`); never dereference
 `ref_pic` / `dist_pic` in a luma path. `test_sycl_zerocopy_guards` has one
 row per SYCL extractor configuration and counts the registrations, so a new
 `_sycl` extractor without a row fails that test, and it asserts that the only
-rows still expecting `-ENOTSUP` are the six chroma readers without a chroma
+rows still expecting `-ENOTSUP` are the seven chroma readers without a chroma
 mark (below).
 
 `float_motion_sycl` takes `motion_add_uv` (ADR-1599): the option sits at the CPU

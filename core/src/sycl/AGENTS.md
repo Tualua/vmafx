@@ -237,6 +237,19 @@ sycl/
   `UR_L0_USE_IMMEDIATE_COMMANDLISTS=0` with the property removed (must show
   `PASS`, 0 of 10 runs differing, 8 and 10 bit).
 
+- **`vmaf_sycl_upload_plane()` is synchronous; the SYCL switches are read once;
+  `VmafSyclState` is an aggregate (Phase 12).** `upload_plane` waits on the copy
+  queue before it returns, so a caller may free, unmap or refill `src` at once
+  (`vmaf_sycl_import_d3d11_surface` unmaps right after it) and the plane is in
+  place before the next `vmaf_read_pictures_sycl`. Do not make it asynchronous
+  again without an ordering the extractors can see. `VMAF_SYCL_PROFILE`,
+  `_TIMING`, `_IMPORT_DEBUG` and `_CHECKSUM` go through
+  `vmaf_gpu_dispatch_env_get` (16-slot snapshot, read once per process); a new
+  switch uses that helper, never `getenv` in a hot path. `VmafSyclState` is built
+  with designated initialisers in `common.cpp`, members ordered by size: a new
+  member needs its place in that order and in the initialiser. Guards:
+  `test_sycl_zerocopy_guards`, `test_sycl_init_unwind`.
+
 ## Rebase-sensitive invariants per kernel
 
 - **Shared planes: one upload per plane per frame for every twin

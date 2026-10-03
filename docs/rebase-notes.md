@@ -811,6 +811,208 @@ rebased onto master `b01ffe42d`, where it was first ADR-1439..1441).
   `scripts/ci/run_meson_test.py` and is listed in the runner inventory of
   `core/test/test_meson_secret_env_sanitization.py`.
 
+## The images add `libm.so.6` to oneAPI's `libimf.so` dependencies (ADR-1563, 2026-10-04)
+
+`feat/vmafx-container-hybrid-toolchain`. Fork-only container and test
+change; no upstream file is touched and no score moves.
+
+- `scripts/ci/patch-oneapi-libimf.sh` (new) is the one implementation; it
+  runs in `Containerfile.vmafx` (`build` stage, after `intel-basekit`) and
+  `dev/Containerfile` (`gpu-sdks`, after the oneAPI environment). A rebase
+  that moves or replaces a oneAPI install keeps the step after it, with its
+  pinned patchelf (Ubuntu 26.04 `0.18.0-1.4build1`). The `prod` stage runs
+  `LD_BIND_NOW=1 vmaf --version` as a build gate; keep it.
+- `docker/Dockerfile.production-gpu` is not patched: since ADR-1517 its
+  `-oneapi2026` image copies Intel's runtime files unmodified
+  (`tools/rc1-tester/image/sycl-runtime.json`). Patching `libimf.so` there
+  needs a licensing decision.
+- `core/test/test_icx_system_libm.py::_loader_trace()` runs the loader check
+  against a patched private copy when the `libimf.so` the CLI loads lacks
+  `libm.so.6`, and skips without patchelf. Never substitute
+  `LD_PRELOAD=libimf.so`: it rebinds libvmaf's math to libimf (ADR-1495).
+- On a oneAPI bump, re-check `readelf -d` of the new `libimf.so`; once it
+  lists `libm.so.6` the step is a no-op and can go with a superseding ADR.
+## SYCL zero-copy Stage 3: every extractor reads the shared planes, and the fixes the harness forced (2026-10-03)
+
+`fix/sycl-zerocopy-features`, Stage 3 of the zero-copy feature-correctness work,
+[ADR-1598](adr/1598-sycl-host-staging-to-shared-planes.md); closes
+`T-SYCL-ZEROCOPY-DROPS-NON-SYCL-FEATURES-2026-10-02` in [state.md](state.md)
+together with the Stage 1 and 2 entries and the `motion_add_uv` entry
+below. Research digest: [Research-1595](research/1595-sycl-zerocopy-feature-correctness.md).
+
+- **No SYCL `submit` reads a host picture for luma.** `float_psnr`, `float_adm`,
+  `float_vif`, `float_motion`, `integer_ssim` / `float_ssim`, `float_ms_ssim`,
+  `ciede`, `ssimulacra2`, `speed_chroma` and `speed_temporal` take
+  `vmaf_sycl_get_shared_plane()` after `vmaf_sycl_queue_after_upload()`, on the
+  host-upload and zero-copy paths alike. **On rebase**: if upstream adds a
+  `ref_pic->data[0]` read to one of these extractors' CPU twins, the SYCL port
+  reads the shared plane, never the picture. `vmaf_sycl_require_host_pictures`
+  (Stage 1) no longer exists; `test_sycl_zerocopy_guards` has one row per
+  `_sycl` registration and counts them, so a new extractor without a row fails.
+- **Owned buffers are D2D copies, never aliases.** `speed_temporal` copies the
+  shared planes into its pipeline ring (`pipeline_upload_device`);
+  `speed_chroma` binds them in place (`pipeline_bind_device`, no cross-frame
+  state). Never alias a ring or ping-pong slot to a shared plane, the next
+  upload overwrites it.
+- **`float_ms_ssim_sycl` `plane_to_float()` stays in its strict-FP feature TU**
+  (`integer_ms_ssim_sycl.cpp`), never in `sycl_sources`; it is `picture_copy()`'s
+  arithmetic (scalers 4 / 16 / 256, none at 8 bit), no fp64, no private array.
+- **SpEED and `float_motion` `motion3` parity come from master.** The branch's
+  own fixes for both were dropped in the rebase onto master: master's
+  [ADR-1477](adr/1477-speed-upstream-double-math.md) forms the SpEED entropies
+  and score on the host with `speed.c`'s statements, so the SYCL twins equal the
+  CPU extractor of the same process (FFmpeg or CLI) whatever the C library, and
+  master's `float_motion_sycl` emits `motion3` (#1914). The zero-copy work only
+  changes where those twins read their input.
+- **The primary queue runs on immediate command lists**
+  ([ADR-1596](adr/1596-sycl-va-import-immediate-cmdlist.md)): `sycl_queue_props()`
+  in `core/src/sycl/common.cpp` adds `immediate_command_list` to the queue the VA
+  import runs on. Without it an Arc A380 drops the per-frame import from a random
+  frame on under `UR_L0_USE_IMMEDIATE_COMMANDLISTS=0`, silently. Keep the
+  property and keep the import on that queue; the removal test is in
+  `core/src/sycl/AGENTS.md`.
+- **`vmaf_sycl_upload_plane()` is synchronous**: it waits on the
+  copy queue before returning, so `vmaf_sycl_import_d3d11_surface()` may unmap
+  right after it. Do not make it asynchronous again without an ordering the
+  extractors can see (`T-SYCL-D3D11-UNMAP-BEFORE-UPLOAD-2026-10-02`).
+  `test_sycl_ordered_sum_probe.cpp` keeps its host sources alive until the wait;
+  the earlier "driver drops the copy" reading of that failure was wrong. The same
+  freed-source bug is what makes the probe fail under `MALLOC_PERTURB_`.
+- **The environment snapshot** (Stage 2 entry below): the four SYCL diagnostic
+  switches go through `vmaf_gpu_dispatch_env_get`. Keep new switches on that
+  helper. (`VmafSyclState` is master's plain aggregate; the branch's own
+  aggregate refactor was dropped in the rebase as redundant.)
+- **Cited suppressions.** The `NOLINTBEGIN(modernize-use-using ...)` blocks in
+  `core/src/sycl/chroma_import.h` and `common.h` keep `typedef` and enum bases
+  valid C and the public ABI; the `modernize-use-nullptr` blocks sit in C test
+  TUs (`test_sycl_chroma_import.c`, `test_sycl_zerocopy_{guards,parity}.c`),
+  which the fork builds as C. Each says why inline; do not strip one in a lint
+  pass.
+- **Windows D3D11 import stays luma only** (out of scope). Not built or run
+  here; `d3d11_import.cpp` was changed by reading only.
+- **Acceptance**: `scripts/test/zerocopy-e2e.sh --stage 3` (container, Arc A380,
+  QSV): `pass=48 fail=0 nonexact=0` at 8-bit NV12 and 10-bit P010. A
+  `PARITY_STAGE` row moves only in the PR that makes the case work.
+
+## `float_motion_sycl` implements `motion_add_uv` (2026-10-03)
+
+`fix/sycl-zerocopy-features`, [ADR-1599](adr/1599-sycl-float-motion-add-uv.md)
+(D-10 of Phase 12).
+
+- `core/src/feature/sycl/float_motion_sycl.cpp` declares `motion_add_uv` (`mau`)
+  between `motion_blend_offset` and `motion_max_val`, the CPU table's order, so the
+  aliased feature names (`motion2_mau`) equal the CPU's. Keep that position and
+  alias in a sync that touches the CPU option table.
+- Cb / Cr go through the luma blur and ADR-1411 row kernels per plane
+  (`FmPlane`), and `frame_sad_score()` adds the plane scores in `double`, Y, U,
+  V, as `float_motion.c::motion_score_pair()` does. A change to that function's
+  order or to `compute_motion()`'s rounding changes the twin in the same PR.
+- `core/test/test_sycl_zerocopy_parity.c` (`motion_add_uv` row, `==` on 8 and 10
+  bit) and `core/test/test_sycl_zerocopy_guards.c` (seven unmarked chroma readers
+  refuse zero-copy) hold it. The `test_sycl_zerocopy_{parity,guards}` meson
+  timeouts are 180 s.
+- `float_ms_ssim_sycl` (same plan) converts the shared planes on the device with
+  `plane_to_float()` (see the Stage 3 entry above).
+
+## SYCL zero-copy fails loudly and routes `feature=` names to SYCL twins (2026-10-02)
+
+`fix/sycl-zerocopy-features`, Stage 1 of the zero-copy feature-correctness work,
+[ADR-1595](adr/1595-sycl-zerocopy-fail-loud-twin-routing.md); row
+`T-SYCL-ZEROCOPY-DROPS-NON-SYCL-FEATURES-2026-10-02` in [state.md](state.md).
+
+- `core/src/libvmaf.c`: `vmaf_read_pictures_sycl` calls the pre-pass guard
+  `sycl_check_zero_copy_extractors` as its first statement, before
+  `vmaf_sycl_queue_wait`, `pic_cnt++` and `vmaf_sycl_advance_frame`; a guard
+  that returns after one of those leaves a half-advanced frame. Do not bring
+  back the warn-and-`continue` for extractors without
+  `VMAF_FEATURE_EXTRACTOR_SYCL`.
+- Stage 1 only (the helper `vmaf_sycl_require_host_pictures` was removed in
+  Stage 3, when its last caller moved to the shared planes): every SYCL
+  extractor that needed host pictures called it first in `submit()` and
+  returned `-ENOTSUP`;
+  none returns `-EINVAL` for a missing picture or reads `motion_add_uv` chroma
+  that was never imported. `core/test/test_sycl_zerocopy_guards.c` holds every
+  extractor to it.
+- `ffmpeg-patches/0005-libvmaf-add-libvmaf-sycl-filter.patch`: `use_feature()`
+  wraps `vmaf_use_feature` and routes the name through
+  `vmaf_feature_backend_twin` once `route_twins` is set, inside upstream's
+  `parse_features`. If a rebase conflicts there, switch to the
+  `parse_features_sycl` fallback instead of dropping the routing. A VA import
+  failure returns `AVERROR_EXTERNAL`; do not return it to a warning. The series
+  is checked with `scripts/ci/ffmpeg_patch_stack.py --check` and
+  `ffmpeg-patches/test/check-sycl-feature-routing.sh`.
+- `scripts/test/zerocopy-e2e.sh` and `scripts/test/zerocopy_e2e_compare.py` are
+  the acceptance gate for Stages 1 to 3. `PARITY_STAGE` moves a case from
+  "fails loudly" to "must match numerically"; move a row only in the PR that
+  makes it work. The e2e run is local / container only (the self-hosted runner
+  has no FFmpeg or oneVPL). Once the ADR-1441 branch lands
+  `scripts/test/run-all-tests.sh`, add a `[ZEROCOPY]` section there that calls
+  the runner; master has no such file yet.
+- The fixes the harness forced on the same branch
+  ([ADR-1596](adr/1596-sycl-va-import-immediate-cmdlist.md)) are in the Stage 3
+  entry at the top. Research digest:
+  [Research-1595](research/1595-sycl-zerocopy-feature-correctness.md).
+- `docs/state.md` carries the row `T-SYCL-ZEROCOPY-DROPS-NON-SYCL-FEATURES-2026-10-02`
+  on this branch; the ADR-1441 branch carries an older one with the same ID. If
+  that branch lands first, merge the two rows into one.
+
+## SYCL zero-copy imports 4:2:0 chroma (2026-10-03)
+
+`fix/sycl-zerocopy-features`, Stage 2 of the zero-copy feature-correctness work,
+[ADR-1597](adr/1597-sycl-zerocopy-planar-chroma-import.md); same state.md row as
+Stage 1. Research digest: [Research-1595](research/1595-sycl-zerocopy-feature-correctness.md).
+
+- `core/src/sycl/chroma_import.{cpp,h}` (new): layout-addressed de-interleave
+  kernel from the VA surface's UV layer into the shared Cb and Cr planes (LINEAR,
+  Y-tiled, Tile4). The P010/P012 shift on chroma happens here exactly once; never
+  run `launch_p010_normalize` over chroma. `chroma_import.h` is C-callable, which
+  is why it keeps C-style enums and `typedef`s.
+- `core/src/sycl/dmabuf_import.cpp`: `vmaf_sycl_import_va_surface` resolves and
+  validates `layers[1]` before any import (a bad descriptor closes every fd and
+  returns `-EINVAL`; an unknown chroma modifier takes the readback path). The VA
+  path never calls `vmaf_sycl_shared_chroma_upload`.
+- Chroma currency: both import paths call `vmaf_sycl_shared_chroma_note_side`
+  per side and `vmaf_sycl_shared_chroma_mark_imported` once both are noted; only
+  `vmaf_sycl_advance_frame` promotes the mark to `planes.frame`, after
+  `frame_counter++`. Never set `planes.frame` elsewhere. `vmaf_sycl_init_frame_buffers`
+  allocates the chroma planes eagerly (D-01); `psnr_sycl` / `psnr_hvs_sycl` /
+  `motion_sycl` call `vmaf_sycl_require_chroma`, which passes for host pictures,
+  passes for NULL pictures only when the chroma is current, and otherwise returns
+  `-ENOTSUP`.
+- `core/src/feature/sycl/integer_motion_sycl.cpp`: with `motion_add_uv` on
+  zero-copy, `motion_pre_graph` copies the shared Cb/Cr planes device-to-device
+  into `d_ref_u/v[cur_slot]`. Do not alias the ping-pong onto the shared planes.
+- D3D11 import stays luma only (out of scope); its chroma readers fail with
+  `needs chroma planes, which this zero-copy import did not provide`.
+- Between the stages the same branch moved the `psnr_hvs_sycl` Hillis-Steele
+  scan into the shared `hvs_wg_inclusive_scan()` and clamped
+  `reduce_hvs_planes()` to `PSNR_HVS_NUM_PLANES`; keep the barriers and
+  submission order if upstream changes either kernel. It also reads
+  `VMAF_SYCL_PROFILE`, `_TIMING`,
+  `_IMPORT_DEBUG` and `_CHECKSUM` through `vmaf_gpu_dispatch_env_get` (snapshot
+  table of 16 slots), once per process; keep new SYCL switches on that helper.
+- Guards: `test_sycl_zerocopy_parity`, `test_sycl_zerocopy_guards`,
+  `test_sycl_shared_planes`, `test_sycl_chroma_import`, and
+  `scripts/test/zerocopy-e2e.sh --stage 2`.
+
+## ADR-1596 — SYCL primary queue on immediate command lists (2026-10-02)
+
+`fix/sycl-zerocopy-features`, [ADR-1596](adr/1596-sycl-va-import-immediate-cmdlist.md);
+row `T-SYCL-ZEROCOPY-IMPORT-DROPPED-2026-10-02` in [state.md](state.md).
+
+- `core/src/sycl/common.cpp::sycl_queue_props()` adds
+  `sycl::ext::intel::property::queue::immediate_command_list` (under
+  `SYCL_EXT_INTEL_QUEUE_IMMEDIATE_COMMAND_LIST`) to the primary queue in both
+  the profiling and the plain form. The VA import in `dmabuf_import.cpp` must
+  stay on that queue (`vmaf_sycl_get_queue_ptr()`): a separate immediate
+  import-only queue next to a batched primary queue still drops the import.
+- A rebase that restructures queue creation (another adapter, a queue pool, a
+  merge with the copy or combined queue) keeps the property on the queue the
+  imports are made against and `vmaf_sycl_queue_wait()` waits on, and re-runs
+  `scripts/test/zerocopy-e2e.sh --stage 1 --repeat 10 --cases cambi,vif,model-vmaf_v0.6.1`
+  at 8 and 10 bit under `UR_L0_USE_IMMEDIATE_COMMANDLISTS=0` (0 differing runs).
+- No Netflix golden-data, public API or FFmpeg patch impact.
+
 ## The `float_psnr` twins add each row's exact sum in the CPU's order (ADR-1499, 2026-10-03)
 
 `fix/float-psnr-exact-past-2-53`. Fork-only device and host code; `float_psnr.c`
@@ -1385,108 +1587,6 @@ Dropped: the two `#ifdef ADM_OPT_DEBUG_DUMP` blocks. They called `write_image()`
   (`speed_temporal` on a checkerboard); aarch64 GCC builds by 1.2e-12 in the
   model score. No Netflix golden assertion, public API or FFmpeg patch
   changes.
-## `float_motion_sycl` implements `motion_add_uv` (2026-10-03)
-
-`fix/sycl-zerocopy-features`, [ADR-1599](adr/1599-sycl-float-motion-add-uv.md)
-(D-10 of Phase 12).
-
-- `core/src/feature/sycl/float_motion_sycl.cpp` declares `motion_add_uv` (`mau`)
-  between `motion_blend_offset` and `motion_max_val`, the CPU table's order, so the
-  aliased feature names (`motion2_mau`) equal the CPU's. Keep that position and
-  alias in a sync that touches the CPU option table.
-- Cb / Cr go through the luma blur and ADR-1411 row kernels per plane
-  (`FmPlane`), and `frame_sad_score()` adds the plane scores in `double`, Y, U,
-  V, as `float_motion.c::motion_score_pair()` does. A change to that function's
-  order or to `compute_motion()`'s rounding changes the twin in the same PR.
-- `core/test/test_sycl_zerocopy_parity.c` (`motion_add_uv` row, `==` on 8 and 10
-  bit) and `core/test/test_sycl_zerocopy_guards.c` (seven unmarked chroma readers
-  refuse zero-copy) hold it. The `test_sycl_zerocopy_{parity,guards}` meson
-  timeouts are 180 s.
-- `float_ms_ssim_sycl` (same plan) converts the shared planes on the device with
-  `plane_to_float()`; `vmaf_sycl_require_host_pictures` no longer exists.
-
-## SYCL zero-copy fails loudly and routes `feature=` names to SYCL twins (2026-10-02)
-
-`fix/sycl-zerocopy-features`, Stage 1 of the zero-copy feature-correctness work,
-[ADR-1595](adr/1595-sycl-zerocopy-fail-loud-twin-routing.md); row
-`T-SYCL-ZEROCOPY-DROPS-NON-SYCL-FEATURES-2026-10-02` in [state.md](state.md).
-
-- `core/src/libvmaf.c`: `vmaf_read_pictures_sycl` calls the pre-pass guard
-  `sycl_check_zero_copy_extractors` as its first statement, before
-  `vmaf_sycl_queue_wait`, `pic_cnt++` and `vmaf_sycl_advance_frame`; a guard
-  that returns after one of those leaves a half-advanced frame. Do not bring
-  back the warn-and-`continue` for extractors without
-  `VMAF_FEATURE_EXTRACTOR_SYCL`.
-- Every SYCL extractor that needs host pictures calls
-  `vmaf_sycl_require_host_pictures` first in `submit()` and returns `-ENOTSUP`;
-  none returns `-EINVAL` for a missing picture or reads `motion_add_uv` chroma
-  that was never imported. `core/test/test_sycl_zerocopy_guards.c` holds every
-  extractor to it.
-- `ffmpeg-patches/0005-libvmaf-add-libvmaf-sycl-filter.patch`: `use_feature()`
-  wraps `vmaf_use_feature` and routes the name through
-  `vmaf_feature_backend_twin` once `route_twins` is set, inside upstream's
-  `parse_features`. If a rebase conflicts there, switch to the
-  `parse_features_sycl` fallback instead of dropping the routing. A VA import
-  failure returns `AVERROR_EXTERNAL`; do not return it to a warning. The series
-  is checked with `scripts/ci/ffmpeg_patch_stack.py --check` and
-  `ffmpeg-patches/test/check-sycl-feature-routing.sh`.
-- `scripts/test/zerocopy-e2e.sh` and `scripts/test/zerocopy_e2e_compare.py` are
-  the acceptance gate for Stages 1 to 3. `PARITY_STAGE` moves a case from
-  "fails loudly" to "must match numerically"; move a row only in the PR that
-  makes it work. The e2e run is local / container only (the self-hosted runner
-  has no FFmpeg or oneVPL). Once the ADR-1441 branch lands
-  `scripts/test/run-all-tests.sh`, add a `[ZEROCOPY]` section there that calls
-  the runner; master has no such file yet.
-- The fixes the harness forced on the same branch have their own entries below:
-  `float_motion_sycl` emitting `motion3`, [ADR-1462](adr/1462-speed-cpu-correctly-rounded-log2.md)
-  (CPU SpEED `log2`) and [ADR-1596](adr/1596-sycl-va-import-immediate-cmdlist.md)
-  (immediate command list on the primary queue). Research digest:
-  [Research-1595](research/1595-sycl-zerocopy-feature-correctness.md).
-- `docs/state.md` carries the row `T-SYCL-ZEROCOPY-DROPS-NON-SYCL-FEATURES-2026-10-02`
-  on this branch; the ADR-1441 branch carries an older one with the same ID. If
-  that branch lands first, merge the two rows into one.
-
-## SYCL zero-copy imports 4:2:0 chroma (2026-10-03)
-
-`fix/sycl-zerocopy-features`, Stage 2 of the zero-copy feature-correctness work,
-[ADR-1597](adr/1597-sycl-zerocopy-planar-chroma-import.md); same state.md row as
-Stage 1. Research digest: [Research-1595](research/1595-sycl-zerocopy-feature-correctness.md).
-
-- `core/src/sycl/chroma_import.{cpp,h}` (new): layout-addressed de-interleave
-  kernel from the VA surface's UV layer into the shared Cb and Cr planes (LINEAR,
-  Y-tiled, Tile4). The P010/P012 shift on chroma happens here exactly once; never
-  run `launch_p010_normalize` over chroma. `chroma_import.h` is C-callable, which
-  is why it keeps C-style enums and `typedef`s.
-- `core/src/sycl/dmabuf_import.cpp`: `vmaf_sycl_import_va_surface` resolves and
-  validates `layers[1]` before any import (a bad descriptor closes every fd and
-  returns `-EINVAL`; an unknown chroma modifier takes the readback path). The VA
-  path never calls `vmaf_sycl_shared_chroma_upload`.
-- Chroma currency: both import paths call `vmaf_sycl_shared_chroma_note_side`
-  per side and `vmaf_sycl_shared_chroma_mark_imported` once both are noted; only
-  `vmaf_sycl_advance_frame` promotes the mark to `planes.frame`, after
-  `frame_counter++`. Never set `planes.frame` elsewhere. `vmaf_sycl_init_frame_buffers`
-  allocates the chroma planes eagerly (D-01); `psnr_sycl` / `psnr_hvs_sycl` /
-  `motion_sycl` call `vmaf_sycl_require_chroma`, which passes for host pictures,
-  passes for NULL pictures only when the chroma is current, and otherwise returns
-  `-ENOTSUP`.
-- `core/src/feature/sycl/integer_motion_sycl.cpp`: with `motion_add_uv` on
-  zero-copy, `motion_pre_graph` copies the shared Cb/Cr planes device-to-device
-  into `d_ref_u/v[cur_slot]`. Do not alias the ping-pong onto the shared planes.
-- D3D11 import stays luma only (out of scope); its chroma readers fail with
-  `needs chroma planes, which this zero-copy import did not provide`.
-- Between the stages the same branch also made `VmafSyclState` a plain aggregate
-  (`f2a331b03`): it is built with designated initialisers in `common.cpp`, members
-  ordered by size, so a new member needs a place in that order and in the
-  initialiser. `442f58b99` moved the `psnr_hvs_sycl` Hillis-Steele scan into the
-  shared `hvs_wg_inclusive_scan()` and clamps `reduce_hvs_planes()` to
-  `PSNR_HVS_NUM_PLANES`; keep the barriers and submission order if upstream changes
-  either kernel. `2782fa1f8` reads `VMAF_SYCL_PROFILE`, `_TIMING`,
-  `_IMPORT_DEBUG` and `_CHECKSUM` through `vmaf_gpu_dispatch_env_get` (snapshot
-  table of 16 slots), once per process; keep new SYCL switches on that helper.
-- Guards: `test_sycl_zerocopy_parity`, `test_sycl_zerocopy_guards`,
-  `test_sycl_shared_planes`, `test_sycl_chroma_import`, and
-  `scripts/test/zerocopy-e2e.sh --stage 2`.
-
 ## The CLI read-ahead asserts its invariants (2026-10-02)
 
 `fix/cli-restore-frame-reader-asserts`, closes `T-CLI-FRAME-READER-ASSERTS-REPLACED-2026-10-02`.

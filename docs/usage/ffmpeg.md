@@ -332,10 +332,10 @@ The reason after the colon (or semicolon) is one of `no SYCL twin`,
 `SYCL twin <twin> cannot run <w>x<h> <bpc>-bit pictures with these options`,
 `no SYCL device` or `twin lookup failed (error <n>)`.
 
-A SYCL twin that exists but still needs host pictures (`psnr_sycl` and the
-other extractors listed in [the SYCL overview](../backends/sycl/zero-copy.md))
-makes a zero-copy run fail with `psnr_sycl: needs host pictures, which
-zero-copy input does not provide` until it gains a device-side input path.
+Every SYCL twin reads the library's shared device planes, so each runs on QSV
+zero-copy input and scores the same as on host-uploaded frames; `vmaf_v0.6.1`
+and `vmaf_float_v0.6.1` both work there. Only a CPU extractor without a usable
+twin fails, as the table shows.
 
 Two more zero-copy rules:
 

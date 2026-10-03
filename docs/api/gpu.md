@@ -306,20 +306,22 @@ for (unsigned i = 0; i < nframes; i++) {
 vmaf_flush_sycl(vmaf);
 ```
 
-This path hands the extractors no host pictures. `vmaf_sycl_get_frame_buffers()`
-returns the two luma buffers only; the VA-API import (`vmaf_sycl_import_va_surface`)
-also fills the library's own Cb/Cr planes for 4:2:0 NV12 and P010 surfaces, so
-`psnr_sycl` and `psnr_hvs_sycl` with chroma and `motion_sycl` with
-`motion_add_uv=true` run in this loop. A caller that writes only the luma
-buffers (the D3D11 import, or its own decoder interop) provides no chroma: those
+This path hands the extractors no host pictures. Every SYCL extractor reads
+the library's shared device planes instead, so all of them run in this loop.
+`vmaf_sycl_get_frame_buffers()` returns the two luma buffers only; the VA-API
+import (`vmaf_sycl_import_va_surface`) also fills the library's own Cb/Cr planes
+for 4:2:0 NV12 and P010 surfaces, so `psnr_sycl` and `psnr_hvs_sycl` with chroma,
+`ciede_sycl`, `ssimulacra2_sycl`, `speed_chroma_sycl` and the motion twins with
+`motion_add_uv=true` run here too. A caller that writes only the luma buffers
+(the D3D11 import, or its own decoder interop) provides no chroma: those
 extractors make `vmaf_read_pictures_sycl()` return `-ENOTSUP` with
 `<extractor>: needs chroma planes, which this zero-copy import did not provide`.
-An extractor that needs host pictures (a CPU extractor, or a SYCL one that runs
-a float pipeline) also returns `-ENOTSUP` (error number 95 on Linux), with one
-log line naming the extractor, before the frame changes any state. It does not
-crash and does not return `-EINVAL`. Register luma-only SYCL extractors (for
-example `vif_sycl`, `adm_sycl`, `motion_v2_sycl`, or `psnr_sycl` with
-`enable_chroma=false`) for a luma-only caller.
+A CPU extractor in the context (it needs host pictures) also returns `-ENOTSUP`
+(error number 95 on Linux), with one log line naming the extractor, before the
+frame changes any state. It does not crash and does not return `-EINVAL`.
+Register luma-only SYCL extractors (for example `vif_sycl`, `adm_sycl`,
+`motion_v2_sycl`, or `psnr_sycl` with `enable_chroma=false`) for a luma-only
+caller.
 
 ### GPU-resident import paths
 

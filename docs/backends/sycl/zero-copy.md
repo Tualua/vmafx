@@ -37,34 +37,38 @@ The zero-copy import (FFmpeg `libvmaf_sycl` with QSV surfaces, or any
 caller of `vmaf_read_pictures_sycl()`) imports luma and, for 4:2:0 NV12 and
 P010 surfaces, the Cb and Cr planes on every frame
 ([ADR-1597](../../adr/1597-sycl-zerocopy-planar-chroma-import.md)), and hands
-the extractors no host pictures. These run on it and score from the imported
-planes: `adm_sycl`, `cambi_sycl`, `float_moment_sycl`, `motion_sycl` (also with
-`motion_add_uv=true`), `motion_v2_sycl`, `vif_sycl`, `psnr_sycl` and
-`psnr_hvs_sycl` (luma and chroma). On an Arc A380 `psnr` and `psnr_hvs`
-chroma equal the CPU bit for bit at 8 and 10 bit, and `motion_add_uv` equals
-the host-upload run of the same twin (the integer CPU `motion` has no
-`motion_add_uv` option, so there is no CPU reference for it). Everything else
-is refused with `-ENOTSUP` (error number 95 on Linux) before the frame changes
-any state, never skipped and never scored from stale data. Three messages name
-the cause:
+the extractors no host pictures. Every SYCL extractor runs on it and scores
+from the imported planes
+([ADR-1598](../../adr/1598-sycl-host-staging-to-shared-planes.md),
+[ADR-1599](../../adr/1599-sycl-float-motion-add-uv.md)): `adm_sycl`,
+`cambi_sycl`, `float_moment_sycl`, `motion_sycl` and `float_motion_sycl`
+(also with `motion_add_uv=true`), `motion_v2_sycl`, `vif_sycl`, `psnr_sycl`
+and `psnr_hvs_sycl` (luma and chroma), `float_psnr_sycl`, `float_adm_sycl`,
+`float_vif_sycl`, `integer_ssim_sycl`, `float_ssim_sycl`,
+`float_ms_ssim_sycl`, `ciede_sycl`, `ssimulacra2_sycl`, `speed_chroma_sycl`
+and `speed_temporal_sycl`. Both `vmaf_v0.6.1` and `vmaf_float_v0.6.1` score
+on it. On an Arc A380 the full FFmpeg harness (`pass=48 fail=0 nonexact=0`,
+8-bit NV12 and 10-bit P010) finds every value equal to the CPU's, or, for
+`motion_add_uv` (the integer CPU `motion` has no such option), equal to the
+host-upload run of the same twin. Two cases are still refused with
+`-ENOTSUP` (error number 95 on Linux), before the frame changes any state
+and never as a skip or a score from stale data: a CPU extractor (it needs a
+host picture and zero-copy has none), and a chroma reader on an import that
+carried no chroma. Two messages name the cause:
 
 - A CPU extractor in the context:
   `vmaf_read_pictures_sycl: feature extractor '<name>' runs on the CPU and
   needs host pictures, which zero-copy input does not provide; register
   its SYCL twin '<twin>' instead` (or `; it has no SYCL twin`).
-- A SYCL extractor that reads host pictures:
-  `<extractor>: needs host pictures, which zero-copy input does not provide (-ENOTSUP)`.
-  This covers `ciede_sycl`, `ssimulacra2_sycl`,
-  `speed_chroma_sycl`, `speed_temporal_sycl`, `float_psnr_sycl`,
-  `float_adm_sycl`, `float_vif_sycl`, `float_motion_sycl`,
-  `float_ms_ssim_sycl`, `integer_ssim_sycl` and `float_ssim_sycl`; they move
-  to the shared planes in a later stage of the zero-copy work.
 - A chroma reader on an import that carried no chroma, prefixed with the
   extractor's name:
   `needs chroma planes, which this zero-copy import did not provide`.
-  The D3D11 import (Windows) is luma only, so `psnr` / `psnr_hvs` with chroma
-  and `motion_add_uv` fail with this message there; set `enable_chroma=false`
-  to score luma only. Chroma import for D3D11 is out of scope.
+  The D3D11 import (Windows) is luma only, so `psnr` / `psnr_hvs` with
+  chroma, `motion_add_uv` on either motion twin, `float_ms_ssim` with
+  `enable_chroma=true`, and `ciede`, `ssimulacra2` and `speed_chroma` (which
+  always read chroma) fail with this message there; set `enable_chroma=false`
+  where the option exists to score luma only. Chroma import for D3D11 is out
+  of scope.
 
 The chroma planes are allocated whenever the frame buffers are, not only when
 a chroma reader is registered, so a luma-only zero-copy run pays for them:
