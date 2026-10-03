@@ -3486,12 +3486,14 @@
     "0530": {
       "sites": {
         "core/include/libvmaf/libvmaf.h": 1,
+        "core/src/feature/cuda/integer_ms_ssim_cuda.c": 1,
         "core/src/feature/feature_extractor.cpp": 5,
         "core/src/feature/hip/float_moment_hip.c": 1,
         "core/src/feature/hip/float_psnr_hip.c": 1,
         "core/src/feature/hip/float_ssim_hip.c": 1,
         "core/src/feature/hip/integer_adm_hip.c": 3,
         "core/src/feature/hip/integer_motion_hip.c": 4,
+        "core/src/feature/hip/integer_ms_ssim_hip.c": 1,
         "core/src/feature/hip/integer_vif_hip.c": 1,
         "core/src/feature/sycl/integer_ms_ssim_sycl.cpp": 1,
         "core/src/hip/shared_frame.h": 1,
@@ -8629,6 +8631,7 @@
         "core/test/test_psnr_hvs_twin_exact_sum_contract.py": 1,
         "core/test/test_strict_fp_compiler_args.py": 3,
         "scripts/ci/exact_twins.d/float_ms_ssim.hip": 1,
+        "scripts/ci/exact_twins.d/float_ms_ssim_chroma.hip": 1,
         "scripts/ci/exact_twins.d/float_ms_ssim_lcs.hip": 1
       },
       "target": "1403-cuda-strict-fp-every-kernel.md"
@@ -9061,6 +9064,7 @@
         "core/test/test_hip_exact_twins.c": 1,
         "scripts/ci/exact_twins.d/cambi.hip": 1,
         "scripts/ci/exact_twins.d/float_ms_ssim.hip": 1,
+        "scripts/ci/exact_twins.d/float_ms_ssim_chroma.hip": 1,
         "scripts/ci/exact_twins.d/float_ms_ssim_lcs.hip": 1,
         "scripts/ci/exact_twins.d/motion.hip": 1,
         "scripts/ci/exact_twins.d/motion_debug.hip": 1,
@@ -9082,6 +9086,7 @@
         "core/test/test_hip_ssim_parity.c": 1,
         "core/test/test_hip_ssim_tiny_frames.c": 4,
         "scripts/ci/exact_twins.d/float_ms_ssim.hip": 1,
+        "scripts/ci/exact_twins.d/float_ms_ssim_chroma.hip": 1,
         "scripts/ci/exact_twins.d/float_ms_ssim_lcs.hip": 1,
         "scripts/ci/exact_twins.d/float_ssim.hip": 1,
         "scripts/ci/exact_twins.d/float_ssim_lcs.hip": 1,

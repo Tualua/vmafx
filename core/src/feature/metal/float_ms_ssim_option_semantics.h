@@ -13,7 +13,10 @@
 #include "libvmaf/picture.h"
 
 /* ADR-1334: device-free option semantics shared by the Metal host implementation
- * and its Linux/Windows regression test. Keep Metal framework types out of this file. */
+ * and its Linux/Windows regression test. The CUDA and HIP twins
+ * (integer_ms_ssim_cuda.c, integer_ms_ssim_hip.c) take their enable_chroma
+ * plane count and plane sizes from here too. Keep Metal framework types out of
+ * this file. */
 static inline unsigned vmaf_metal_ms_ssim_active_planes(bool enable_chroma,
                                                         enum VmafPixelFormat pix_fmt)
 {

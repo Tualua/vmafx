@@ -217,10 +217,11 @@ class MetalMsSsimOptionsContractTest(unittest.TestCase):
                 self.assertIn(f'"{opt_name}"', option_initializer(self.cuda_src, opt_name))
                 self.assertIn(f'"{opt_name}"', option_initializer(self.hip_src, opt_name))
 
-        # enable_chroma is exposed by CPU, SYCL, HIP, and Metal
+        # enable_chroma is exposed (and computed) by the CPU and every twin
         self.assertIn('"enable_chroma"', option_initializer(self.metal_src, "enable_chroma"))
         self.assertIn('"enable_chroma"', option_initializer(self.cpu_src, "enable_chroma"))
         self.assertIn('"enable_chroma"', option_initializer(self.sycl_src, "enable_chroma"))
+        self.assertIn('"enable_chroma"', option_initializer(self.cuda_src, "enable_chroma"))
         self.assertIn('"enable_chroma"', option_initializer(self.hip_src, "enable_chroma"))
 
     def test_provided_features_includes_chroma_channels(self) -> None:

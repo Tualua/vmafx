@@ -31,13 +31,22 @@
  *  float_ms_ssim.c's scores bit for bit. test_hip_ms_ssim_arith replays
  *  those lines against the CPU extractor without a device.
  *
+ *  enable_chroma: float_ms_ssim.c runs the whole pipeline once per plane and
+ *  emits float_ms_ssim_cb / float_ms_ssim_cr. So does this twin: every plane
+ *  has its own geometry, pyramid and term planes (MsSsimPlaneHip), the
+ *  kernels and the host sums are the luma path's, and each chroma plane must
+ *  clear the same 176-pixel minimum (a 4:2:0 input needs 351x351 luma).
+ *  YUV400P scores luma only, as the CPU clears the option there. Until
+ *  2026-10-03 the option was accepted and ignored: a run that set it lost
+ *  float_ms_ssim_cb and float_ms_ssim_cr without a warning.
+ *
  *  HIP adaptation from the CUDA twin:
  *  - Raw float* device pointers (hipMalloc) instead of VmafCudaBuffer.
  *  - `hipModuleLoadData` / `hipModuleGetFunction` /
  *    `hipModuleLaunchKernel` replace the CUDA equivalents.
- *  - Pictures arrive as CPU VmafPictures (VMAF_FEATURE_EXTRACTOR_HIP
- *    flag cleared, T7-10b posture). Luma planes are copied HtoD via
- *    `hipMemcpy2DAsync` on the private submit stream.
+ *  - Pictures arrive as CPU VmafPictures (T7-10b posture): each plane is
+ *    normalised on the host into the twin's own pinned buffer and uploaded
+ *    to pyramid level 0 with `hipMemcpyAsync` on the private submit stream.
  *  - The per-scale pinned-host term planes are allocated via
  *    `hipHostMalloc` (default flag: the host reads every double back, and
  *    write-combined memory is not cached for reads) for async DtoH.
@@ -59,6 +68,7 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "feature/metal/float_ms_ssim_option_semantics.h"
 #include "feature/nonfinite_score.h"
 #include "libvmaf/picture.h"
 #include "log.h"
@@ -83,6 +93,7 @@
 /* ------------------------------------------------------------------ */
 
 #define MS_SSIM_SCALES VMAF_HIP_MS_SSIM_SCALES
+#define MS_SSIM_MAX_PLANES 3
 #define MS_SSIM_K 11
 #define MS_SSIM_BLOCK_X 16u
 #define MS_SSIM_BLOCK_Y 8u
@@ -115,13 +126,12 @@ static int ms_ssim_hip_rc(hipError_t rc)
 /* Private state                                                       */
 /* ------------------------------------------------------------------ */
 
-typedef struct MsSsimStateHip {
-    VmafHipKernelLifecycle lc;
-    VmafHipContext *ctx;
-
+/* Everything that varies per plane. A chroma plane of a subsampled format is
+ * smaller than luma and every kernel takes these dimensions as row pitches,
+ * so a chroma pass never reads a luma size. */
+typedef struct MsSsimPlaneHip {
     unsigned width;
     unsigned height;
-    unsigned bpc;
 
     unsigned scale_w[MS_SSIM_SCALES];
     unsigned scale_h[MS_SSIM_SCALES];
@@ -134,31 +144,15 @@ typedef struct MsSsimStateHip {
     /* Windows of a scale: scale_w_final * scale_h_final. */
     size_t scale_windows[MS_SSIM_SCALES];
 
-    /* iqa_ssim()'s fp32 stabilisation constants, carried as doubles: the
-     * kernel's argument list takes doubles (ADR-0990) and narrows them back
-     * without loss (ADR-1403). */
-    double c1;
-    double c2;
-    double c3;
-
     /* Pyramid: 5 levels × ref + cmp, all float (hipMalloc). */
     void *pyramid_ref[MS_SSIM_SCALES];
     void *pyramid_cmp[MS_SSIM_SCALES];
 
-    /* Staging: normalised float planes for level 0 (hipMalloc). */
-    void *d_ref0;
-    void *d_cmp0;
-
-    /* Pinned host float buffers for picture_copy → H2D upload (hipHostMalloc). */
+    /* Pinned host float level 0 for picture_copy → H2D upload
+     * (hipHostMalloc), one pair per plane so the next plane's staging
+     * cannot overwrite a pending upload. */
     float *h_ref;
     float *h_cmp;
-
-    /* SSIM intermediates sized for scale 0 (hipMalloc). */
-    void *d_ref_mu;
-    void *d_cmp_mu;
-    void *d_ref_sq;
-    void *d_cmp_sq;
-    void *d_refcmp;
 
     /* Per-scale device terms (hipMalloc): three planes of scale_windows
      * doubles, [l | c | s], each in raster order. */
@@ -166,6 +160,41 @@ typedef struct MsSsimStateHip {
 
     /* The same planes in pinned host memory for the async DtoH (hipHostMalloc). */
     double *h_terms[MS_SSIM_SCALES];
+} MsSsimPlaneHip;
+
+/* l, c and s means of every scale of one plane, and the plane's score. */
+typedef struct MsSsimPlaneScores {
+    double l[MS_SSIM_SCALES];
+    double c[MS_SSIM_SCALES];
+    double s[MS_SSIM_SCALES];
+    double score;
+} MsSsimPlaneScores;
+
+typedef struct MsSsimStateHip {
+    VmafHipKernelLifecycle lc;
+    VmafHipContext *ctx;
+
+    /* Luma geometry; planes[p] holds each scored plane's own. */
+    unsigned width;
+    unsigned height;
+    unsigned bpc;
+    unsigned n_planes;
+    MsSsimPlaneHip planes[MS_SSIM_MAX_PLANES];
+
+    /* iqa_ssim()'s fp32 stabilisation constants, carried as doubles: the
+     * kernel's argument list takes doubles (ADR-0990) and narrows them back
+     * without loss (ADR-1403). */
+    double c1;
+    double c2;
+    double c3;
+
+    /* SSIM intermediates sized for luma scale 0, the largest of any plane
+     * and scale, reused per plane and scale on the one stream (hipMalloc). */
+    void *d_ref_mu;
+    void *d_cmp_mu;
+    void *d_ref_sq;
+    void *d_cmp_sq;
+    void *d_refcmp;
 
     /* HIP module + three kernel handles. */
     hipModule_t module;
@@ -180,8 +209,7 @@ typedef struct MsSsimStateHip {
     bool enable_db;     /* return dB-domain score: -10*log10(1 - ms_ssim) */
     bool clip_db;       /* cap the dB output at the geometry-derived max_db */
     double max_db;      /* ADR-1221: dB ceiling, INFINITY when !clip_db */
-    bool enable_chroma; /* accepted but clamps n_planes to 1; luma-only. */
-    unsigned n_planes;
+    bool enable_chroma; /* score Cb and Cr too, as float_ms_ssim.c does */
 } MsSsimStateHip;
 
 static const VmafOption options[] = {
@@ -201,21 +229,26 @@ static const VmafOption options[] = {
     },
     {
         .name = "clip_db",
-        .help = "clip linear ms_ssim to [0, 1] before dB conversion",
+        .help = "cap dB-domain MS-SSIM at the geometry-derived ceiling",
         .offset = offsetof(MsSsimStateHip, clip_db),
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val.b = false,
     },
     {
         .name = "enable_chroma",
-        .help = "enable MS-SSIM calculation for chroma channels (Cb and Cr); "
-                "currently MS-SSIM is luma-only, so this flag is accepted but "
-                "always clamps n_planes to 1 until a chroma extension lands",
+        .help = "enable calculation for chroma channels (Cb and Cr)",
         .offset = offsetof(MsSsimStateHip, enable_chroma),
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val.b = false,
     },
     {0},
+};
+
+/* float_ms_ssim.c's feature name of each plane. */
+static const char *const ms_ssim_plane_names[MS_SSIM_MAX_PLANES] = {
+    "float_ms_ssim",
+    "float_ms_ssim_cb",
+    "float_ms_ssim_cr",
 };
 
 /* ------------------------------------------------------------------ */
@@ -235,26 +268,60 @@ static int ms_ssim_hip_validate(unsigned w, unsigned h)
     return 0;
 }
 
-static void ms_ssim_hip_init_dims(MsSsimStateHip *s, unsigned w, unsigned h, unsigned bpc)
+/* float_ms_ssim.c's check_chroma_min_dim(): with enable_chroma every scored
+ * plane walks the 5-level pyramid, so the subsampled planes must clear the
+ * same minimum as luma. */
+static int ms_ssim_hip_validate_chroma(enum VmafPixelFormat pix_fmt, unsigned w, unsigned h)
+{
+    const unsigned min_dim = (unsigned)MS_SSIM_K << (MS_SSIM_SCALES - 1);
+    unsigned chroma_w = 0u;
+    unsigned chroma_h = 0u;
+    vmaf_metal_ms_ssim_plane_dimensions(pix_fmt, 1u, w, h, &chroma_w, &chroma_h);
+    if (chroma_w >= min_dim && chroma_h >= min_dim)
+        return 0;
+
+    unsigned luma_w = 0u;
+    unsigned luma_h = 0u;
+    vmaf_metal_ms_ssim_min_luma_dimensions(pix_fmt, min_dim, &luma_w, &luma_h);
+    vmaf_log(VMAF_LOG_LEVEL_ERROR,
+             "ms_ssim_hip: enable_chroma needs every plane to clear the pyramid minimum, "
+             "but %ux%u luma gives %ux%u chroma and the %d-level %d-tap pyramid "
+             "requires at least %ux%u. Use at least %ux%u luma for this pixel "
+             "format, or leave enable_chroma off to score luma only.\n",
+             w, h, chroma_w, chroma_h, MS_SSIM_SCALES, MS_SSIM_K, min_dim, min_dim, luma_w, luma_h);
+    return -EINVAL;
+}
+
+static void ms_ssim_hip_init_plane_dims(MsSsimPlaneHip *pl)
+{
+    pl->scale_w[0] = pl->width;
+    pl->scale_h[0] = pl->height;
+    for (int i = 1; i < MS_SSIM_SCALES; i++) {
+        pl->scale_w[i] = (pl->scale_w[i - 1] / 2) + (pl->scale_w[i - 1] & 1u);
+        pl->scale_h[i] = (pl->scale_h[i - 1] / 2) + (pl->scale_h[i - 1] & 1u);
+    }
+    for (int i = 0; i < MS_SSIM_SCALES; i++) {
+        pl->scale_w_horiz[i] = pl->scale_w[i] - (MS_SSIM_K - 1u);
+        pl->scale_h_horiz[i] = pl->scale_h[i];
+        pl->scale_w_final[i] = pl->scale_w[i] - (MS_SSIM_K - 1u);
+        pl->scale_h_final[i] = pl->scale_h[i] - (MS_SSIM_K - 1u);
+        pl->scale_grid_x[i] = (pl->scale_w_final[i] + MS_SSIM_BLOCK_X - 1u) / MS_SSIM_BLOCK_X;
+        pl->scale_grid_y[i] = (pl->scale_h_final[i] + MS_SSIM_BLOCK_Y - 1u) / MS_SSIM_BLOCK_Y;
+        pl->scale_windows[i] = (size_t)pl->scale_w_final[i] * pl->scale_h_final[i];
+    }
+}
+
+static void ms_ssim_hip_init_dims(MsSsimStateHip *s, enum VmafPixelFormat pix_fmt, unsigned w,
+                                  unsigned h, unsigned bpc)
 {
     s->width = w;
     s->height = h;
     s->bpc = bpc;
 
-    s->scale_w[0] = w;
-    s->scale_h[0] = h;
-    for (int i = 1; i < MS_SSIM_SCALES; i++) {
-        s->scale_w[i] = (s->scale_w[i - 1] / 2) + (s->scale_w[i - 1] & 1u);
-        s->scale_h[i] = (s->scale_h[i - 1] / 2) + (s->scale_h[i - 1] & 1u);
-    }
-    for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        s->scale_w_horiz[i] = s->scale_w[i] - (MS_SSIM_K - 1u);
-        s->scale_h_horiz[i] = s->scale_h[i];
-        s->scale_w_final[i] = s->scale_w[i] - (MS_SSIM_K - 1u);
-        s->scale_h_final[i] = s->scale_h[i] - (MS_SSIM_K - 1u);
-        s->scale_grid_x[i] = (s->scale_w_final[i] + MS_SSIM_BLOCK_X - 1u) / MS_SSIM_BLOCK_X;
-        s->scale_grid_y[i] = (s->scale_h_final[i] + MS_SSIM_BLOCK_Y - 1u) / MS_SSIM_BLOCK_Y;
-        s->scale_windows[i] = (size_t)s->scale_w_final[i] * s->scale_h_final[i];
+    for (unsigned p = 0u; p < s->n_planes; p++) {
+        MsSsimPlaneHip *pl = &s->planes[p];
+        vmaf_metal_ms_ssim_plane_dimensions(pix_fmt, p, w, h, &pl->width, &pl->height);
+        ms_ssim_hip_init_plane_dims(pl);
     }
 
     /* iqa_ssim(): the stabilisation constants are fp32. */
@@ -301,316 +368,135 @@ static int ms_ssim_hip_module_load(MsSsimStateHip *s)
     return 0;
 }
 
-/* ------------------------------------------------------------------ */
-/* bufs_alloc failure unwind — one helper per former label.            */
-/*                                                                    */
-/* The former ladder let each label fall through into the next-earlier */
-/* one. Each helper below reproduces exactly its own label body and    */
-/* then tail-calls the label it used to fall into, so the release set  */
-/* and release ORDER are unchanged for every entry point (HISS-01).    */
-/* ------------------------------------------------------------------ */
-
-static int ms_ssim_unwind_cmp0(MsSsimStateHip *s, hipError_t rc)
-{
-    (void)hipFree(s->d_ref0);
-    s->d_ref0 = NULL;
-    return ms_ssim_hip_rc(rc);
-}
-
-static int ms_ssim_unwind_h_ref(MsSsimStateHip *s, hipError_t rc)
-{
-    (void)hipFree(s->d_cmp0);
-    s->d_cmp0 = NULL;
-    return ms_ssim_unwind_cmp0(s, rc);
-}
-
-static int ms_ssim_unwind_h_cmp(MsSsimStateHip *s, hipError_t rc)
-{
-    if (s->h_ref) {
-        (void)hipHostFree(s->h_ref);
-        s->h_ref = NULL;
-    }
-    return ms_ssim_unwind_h_ref(s, rc);
-}
-
-/* Former `fail_intermed:` was empty and fell straight into `fail_pyramid:`,
- * so both entry points share this helper. */
-static int ms_ssim_unwind_pyramid(MsSsimStateHip *s, hipError_t rc)
-{
-    for (int i = MS_SSIM_SCALES - 1; i >= 0; i--) {
-        if (s->pyramid_cmp[i]) {
-            (void)hipFree(s->pyramid_cmp[i]);
-            s->pyramid_cmp[i] = NULL;
-        }
-        if (s->pyramid_ref[i]) {
-            (void)hipFree(s->pyramid_ref[i]);
-            s->pyramid_ref[i] = NULL;
-        }
-    }
-    /* Falls through to free h_cmp, h_ref, d_cmp0, d_ref0. */
-    if (s->h_cmp) {
-        (void)hipHostFree(s->h_cmp);
-        s->h_cmp = NULL;
-    }
-    return ms_ssim_unwind_h_cmp(s, rc);
-}
-
-static int ms_ssim_unwind_cmp_mu(MsSsimStateHip *s, hipError_t rc)
-{
-    (void)hipFree(s->d_ref_mu);
-    s->d_ref_mu = NULL;
-    return ms_ssim_unwind_pyramid(s, rc);
-}
-
-static int ms_ssim_unwind_ref_sq(MsSsimStateHip *s, hipError_t rc)
-{
-    (void)hipFree(s->d_cmp_mu);
-    s->d_cmp_mu = NULL;
-    return ms_ssim_unwind_cmp_mu(s, rc);
-}
-
-static int ms_ssim_unwind_cmp_sq(MsSsimStateHip *s, hipError_t rc)
-{
-    (void)hipFree(s->d_ref_sq);
-    s->d_ref_sq = NULL;
-    return ms_ssim_unwind_ref_sq(s, rc);
-}
-
-static int ms_ssim_unwind_refcmp(MsSsimStateHip *s, hipError_t rc)
-{
-    (void)hipFree(s->d_cmp_sq);
-    s->d_cmp_sq = NULL;
-    return ms_ssim_unwind_cmp_sq(s, rc);
-}
-
-static int ms_ssim_unwind_terms(MsSsimStateHip *s, hipError_t rc)
-{
-    for (int i = MS_SSIM_SCALES - 1; i >= 0; i--) {
-        if (s->terms[i]) {
-            (void)hipFree(s->terms[i]);
-            s->terms[i] = NULL;
-        }
-    }
-    (void)hipFree(s->d_refcmp);
-    s->d_refcmp = NULL;
-    return ms_ssim_unwind_refcmp(s, rc);
-}
-
-static int ms_ssim_unwind_pinned(MsSsimStateHip *s, hipError_t rc)
-{
-    for (int i = MS_SSIM_SCALES - 1; i >= 0; i--) {
-        if (s->h_terms[i]) {
-            (void)hipHostFree(s->h_terms[i]);
-            s->h_terms[i] = NULL;
-        }
-    }
-    return ms_ssim_unwind_terms(s, rc);
-}
-
-/* Level-0 float staging (device) plus the pinned host upload buffers. */
-static int ms_ssim_alloc_base(MsSsimStateHip *s, size_t level0_bytes)
-{
-    hipError_t hip_rc = hipMalloc(&s->d_ref0, level0_bytes);
-    if (hip_rc != hipSuccess)
-        return ms_ssim_hip_rc(hip_rc);
-    hip_rc = hipMalloc(&s->d_cmp0, level0_bytes);
-    if (hip_rc != hipSuccess)
-        return ms_ssim_unwind_cmp0(s, hip_rc);
-
-    /* Pinned host float buffers for picture_copy -> H2D upload. */
-    hip_rc = hipHostMalloc((void **)&s->h_ref, level0_bytes, hipHostMallocDefault);
-    if (hip_rc != hipSuccess)
-        return ms_ssim_unwind_h_ref(s, hip_rc);
-    hip_rc = hipHostMalloc((void **)&s->h_cmp, level0_bytes, hipHostMallocDefault);
-    if (hip_rc != hipSuccess)
-        return ms_ssim_unwind_h_cmp(s, hip_rc);
-    return 0;
-}
-
-/* Pyramid levels 0..4 for ref and cmp. */
-static int ms_ssim_alloc_pyramid(MsSsimStateHip *s)
-{
-    for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        const size_t lvl = (size_t)s->scale_w[i] * s->scale_h[i] * sizeof(float);
-        hipError_t hip_rc = hipMalloc(&s->pyramid_ref[i], lvl);
-        if (hip_rc != hipSuccess)
-            return ms_ssim_unwind_pyramid(s, hip_rc);
-        hip_rc = hipMalloc(&s->pyramid_cmp[i], lvl);
-        if (hip_rc != hipSuccess) {
-            (void)hipFree(s->pyramid_ref[i]);
-            s->pyramid_ref[i] = NULL;
-            return ms_ssim_unwind_pyramid(s, hip_rc);
-        }
-    }
-    return 0;
-}
-
-/* SSIM intermediate float buffers (sized for scale 0, reused per scale). */
-static int ms_ssim_alloc_intermed(MsSsimStateHip *s, size_t horiz_max)
-{
-    hipError_t hip_rc = hipMalloc(&s->d_ref_mu, horiz_max);
-    if (hip_rc != hipSuccess)
-        return ms_ssim_unwind_pyramid(s, hip_rc);
-    hip_rc = hipMalloc(&s->d_cmp_mu, horiz_max);
-    if (hip_rc != hipSuccess)
-        return ms_ssim_unwind_cmp_mu(s, hip_rc);
-    hip_rc = hipMalloc(&s->d_ref_sq, horiz_max);
-    if (hip_rc != hipSuccess)
-        return ms_ssim_unwind_ref_sq(s, hip_rc);
-    hip_rc = hipMalloc(&s->d_cmp_sq, horiz_max);
-    if (hip_rc != hipSuccess)
-        return ms_ssim_unwind_cmp_sq(s, hip_rc);
-    hip_rc = hipMalloc(&s->d_refcmp, horiz_max);
-    if (hip_rc != hipSuccess)
-        return ms_ssim_unwind_refcmp(s, hip_rc);
-    return 0;
-}
-
 /* Bytes of one scale's three term planes. */
-static size_t ms_ssim_terms_bytes(const MsSsimStateHip *s, int i)
+static size_t ms_ssim_terms_bytes(const MsSsimPlaneHip *pl, int i)
 {
-    return 3u * s->scale_windows[i] * sizeof(double);
+    return 3u * pl->scale_windows[i] * sizeof(double);
 }
 
-/* Per-scale device terms. */
-static int ms_ssim_alloc_terms(MsSsimStateHip *s)
+/* hipFree / hipHostFree of one pointer, NULL-safe, leaving it NULL. */
+static void ms_ssim_free_device(void **p)
 {
-    for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        const hipError_t hip_rc = hipMalloc(&s->terms[i], ms_ssim_terms_bytes(s, i));
-        if (hip_rc != hipSuccess)
-            return ms_ssim_unwind_terms(s, hip_rc);
+    if (*p) {
+        (void)hipFree(*p);
+        *p = NULL;
     }
-    return 0;
 }
 
-/* Pinned host terms for the async DtoH. Default pinned memory, not
- * write-combined: collect() reads every double. */
-static int ms_ssim_alloc_pinned(MsSsimStateHip *s)
+static void ms_ssim_free_pinned(void **p)
+{
+    if (*p) {
+        (void)hipHostFree(*p);
+        *p = NULL;
+    }
+}
+
+/* Scale `i` of one plane: both pyramid levels and the term planes. */
+static hipError_t ms_ssim_alloc_plane_scale(MsSsimPlaneHip *pl, int i)
+{
+    const size_t lvl = (size_t)pl->scale_w[i] * pl->scale_h[i] * sizeof(float);
+    hipError_t hip_rc = hipMalloc(&pl->pyramid_ref[i], lvl);
+    if (hip_rc == hipSuccess)
+        hip_rc = hipMalloc(&pl->pyramid_cmp[i], lvl);
+    if (hip_rc == hipSuccess)
+        hip_rc = hipMalloc(&pl->terms[i], ms_ssim_terms_bytes(pl, i));
+    if (hip_rc != hipSuccess)
+        return hip_rc;
+    /* Default pinned memory, not write-combined: collect() reads every
+     * double. */
+    void **h_terms = (void **)&pl->h_terms[i];
+    return hipHostMalloc(h_terms, ms_ssim_terms_bytes(pl, i), hipHostMallocDefault);
+}
+
+/* One plane's pinned level 0 and every scale. A failure leaves the rest NULL
+ * for ms_ssim_hip_bufs_free(). */
+static int ms_ssim_alloc_plane(MsSsimPlaneHip *pl)
+{
+    const size_t level0_bytes = (size_t)pl->width * pl->height * sizeof(float);
+    hipError_t hip_rc = hipHostMalloc((void **)&pl->h_ref, level0_bytes, hipHostMallocDefault);
+    if (hip_rc == hipSuccess)
+        hip_rc = hipHostMalloc((void **)&pl->h_cmp, level0_bytes, hipHostMallocDefault);
+    for (int i = 0; i < MS_SSIM_SCALES && hip_rc == hipSuccess; i++)
+        hip_rc = ms_ssim_alloc_plane_scale(pl, i);
+    return ms_ssim_hip_rc(hip_rc);
+}
+
+/* SSIM intermediate float buffers (sized for luma scale 0, reused per plane
+ * and scale). */
+static int ms_ssim_alloc_intermed(MsSsimStateHip *s)
+{
+    const MsSsimPlaneHip *luma = &s->planes[0];
+    const size_t horiz_max =
+        (size_t)luma->scale_w_horiz[0] * luma->scale_h_horiz[0] * sizeof(float);
+    hipError_t hip_rc = hipMalloc(&s->d_ref_mu, horiz_max);
+    if (hip_rc == hipSuccess)
+        hip_rc = hipMalloc(&s->d_cmp_mu, horiz_max);
+    if (hip_rc == hipSuccess)
+        hip_rc = hipMalloc(&s->d_ref_sq, horiz_max);
+    if (hip_rc == hipSuccess)
+        hip_rc = hipMalloc(&s->d_cmp_sq, horiz_max);
+    if (hip_rc == hipSuccess)
+        hip_rc = hipMalloc(&s->d_refcmp, horiz_max);
+    return ms_ssim_hip_rc(hip_rc);
+}
+
+/* One plane's buffers. Safe with NULL pointers. */
+static void ms_ssim_free_plane(MsSsimPlaneHip *pl)
 {
     for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        const hipError_t hip_rc =
-            hipHostMalloc((void **)&s->h_terms[i], ms_ssim_terms_bytes(s, i), hipHostMallocDefault);
-        if (hip_rc != hipSuccess)
-            return ms_ssim_unwind_pinned(s, hip_rc);
+        ms_ssim_free_pinned((void **)&pl->h_terms[i]);
+        ms_ssim_free_device(&pl->terms[i]);
+        ms_ssim_free_device(&pl->pyramid_cmp[i]);
+        ms_ssim_free_device(&pl->pyramid_ref[i]);
     }
-    return 0;
+    ms_ssim_free_pinned((void **)&pl->h_cmp);
+    ms_ssim_free_pinned((void **)&pl->h_ref);
+}
+
+/* Free all device and pinned-host buffers. Safe with NULL pointers; walks
+ * every plane slot, so an allocation that failed part-way is released too. */
+static void ms_ssim_hip_bufs_free(MsSsimStateHip *s)
+{
+    for (unsigned p = 0u; p < MS_SSIM_MAX_PLANES; p++)
+        ms_ssim_free_plane(&s->planes[p]);
+    ms_ssim_free_device(&s->d_refcmp);
+    ms_ssim_free_device(&s->d_cmp_sq);
+    ms_ssim_free_device(&s->d_ref_sq);
+    ms_ssim_free_device(&s->d_cmp_mu);
+    ms_ssim_free_device(&s->d_ref_mu);
 }
 
 /* Allocate all device buffers. Returns 0 or negative errno.
  * On failure, already-allocated buffers are freed and NULL-ed. */
 static int ms_ssim_hip_bufs_alloc(MsSsimStateHip *s)
 {
-    const size_t level0_bytes = (size_t)s->scale_w[0] * s->scale_h[0] * sizeof(float);
-    const size_t horiz_max = (size_t)s->scale_w_horiz[0] * s->scale_h_horiz[0] * sizeof(float);
-
-    int err = ms_ssim_alloc_base(s, level0_bytes);
+    int err = ms_ssim_alloc_intermed(s);
+    for (unsigned p = 0u; p < s->n_planes && err == 0; p++)
+        err = ms_ssim_alloc_plane(&s->planes[p]);
     if (err != 0)
-        return err;
-    err = ms_ssim_alloc_pyramid(s);
-    if (err != 0)
-        return err;
-    err = ms_ssim_alloc_intermed(s, horiz_max);
-    if (err != 0)
-        return err;
-    err = ms_ssim_alloc_terms(s);
-    if (err != 0)
-        return err;
-    return ms_ssim_alloc_pinned(s);
+        ms_ssim_hip_bufs_free(s);
+    return err;
 }
 
-/* Per-scale term / pyramid buffers. Extracted from ms_ssim_hip_bufs_free()
- * to keep both halves inside the HISS-04 60-LOC bound; release order is
- * unchanged. */
-static void ms_ssim_free_per_scale(MsSsimStateHip *s)
-{
-    for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        if (s->h_terms[i]) {
-            (void)hipHostFree(s->h_terms[i]);
-            s->h_terms[i] = NULL;
-        }
-        if (s->terms[i]) {
-            (void)hipFree(s->terms[i]);
-            s->terms[i] = NULL;
-        }
-        if (s->pyramid_cmp[i]) {
-            (void)hipFree(s->pyramid_cmp[i]);
-            s->pyramid_cmp[i] = NULL;
-        }
-        if (s->pyramid_ref[i]) {
-            (void)hipFree(s->pyramid_ref[i]);
-            s->pyramid_ref[i] = NULL;
-        }
-    }
-}
-
-/* The scale-independent staging buffers, released after the per-scale ones. */
-static void ms_ssim_free_shared(MsSsimStateHip *s)
-{
-    if (s->d_refcmp) {
-        (void)hipFree(s->d_refcmp);
-        s->d_refcmp = NULL;
-    }
-    if (s->d_cmp_sq) {
-        (void)hipFree(s->d_cmp_sq);
-        s->d_cmp_sq = NULL;
-    }
-    if (s->d_ref_sq) {
-        (void)hipFree(s->d_ref_sq);
-        s->d_ref_sq = NULL;
-    }
-    if (s->d_cmp_mu) {
-        (void)hipFree(s->d_cmp_mu);
-        s->d_cmp_mu = NULL;
-    }
-    if (s->d_ref_mu) {
-        (void)hipFree(s->d_ref_mu);
-        s->d_ref_mu = NULL;
-    }
-    if (s->h_cmp) {
-        (void)hipHostFree(s->h_cmp);
-        s->h_cmp = NULL;
-    }
-    if (s->h_ref) {
-        (void)hipHostFree(s->h_ref);
-        s->h_ref = NULL;
-    }
-    if (s->d_cmp0) {
-        (void)hipFree(s->d_cmp0);
-        s->d_cmp0 = NULL;
-    }
-    if (s->d_ref0) {
-        (void)hipFree(s->d_ref0);
-        s->d_ref0 = NULL;
-    }
-}
-
-/* Free all device and pinned-host buffers. Safe with NULL pointers. */
-static void ms_ssim_hip_bufs_free(MsSsimStateHip *s)
-{
-    ms_ssim_free_per_scale(s);
-    ms_ssim_free_shared(s);
-}
-
-/* Normalise a uint VmafPicture luma plane into a pinned float host buffer,
- * then upload asynchronously to the device.
+/* Normalise plane `plane` of a CPU VmafPicture into the plane's pinned float
+ * buffer, as float_ms_ssim.c's picture_copy() of that plane does, then upload
+ * it asynchronously to pyramid level 0.
  *
- * Mirrors the CUDA path in integer_ms_ssim_cuda.c: picture_copy() converts
- * uint samples → float [0, 255], then hipMemcpyAsync uploads the contiguous
- * float buffer.  Commit 681ab99451 originally called hipMemcpy2DAsync with
- * dpitch = width * bpc_bytes directly into the float device buffer — that
- * wrote only width*height raw uint bytes into a width*height*sizeof(float)
- * allocation and left the remaining 3/4 uninitialized, producing garbage in
- * the decimate + horiz kernels. */
-static int ms_ssim_hip_upload_plane(MsSsimStateHip *s, hipStream_t str, const VmafPicture *pic,
-                                    float *h_staging, void *d_dst)
+ * Commit 681ab99451 originally called hipMemcpy2DAsync with dpitch = width *
+ * bpc_bytes directly into the float device buffer — that wrote only
+ * width*height raw uint bytes into a width*height*sizeof(float) allocation
+ * and left the remaining 3/4 uninitialized, producing garbage in the
+ * decimate + horiz kernels. */
+static int ms_ssim_hip_upload_plane(const MsSsimStateHip *s, hipStream_t str,
+                                    const VmafPicture *pic, unsigned plane, float *h_staging,
+                                    void *d_dst)
 {
-    /* picture_copy: uint → float [0, 255] into the pinned host staging buffer.
-     * Stride is width * sizeof(float) (contiguous, no padding). */
-    picture_copy(h_staging, (ptrdiff_t)((size_t)s->width * sizeof(float)), (VmafPicture *)pic, 0,
-                 s->bpc, 0);
+    const MsSsimPlaneHip *pl = &s->planes[plane];
+    /* Stride is width * sizeof(float) (contiguous, no padding). */
+    picture_copy(h_staging, (ptrdiff_t)((size_t)pl->width * sizeof(float)), (VmafPicture *)pic, 0,
+                 s->bpc, (int)plane);
 
-    /* Async H2D upload of the normalised float plane. */
-    const size_t float_bytes = (size_t)s->width * s->height * sizeof(float);
+    const size_t float_bytes = (size_t)pl->width * pl->height * sizeof(float);
     hipError_t hip_rc = hipMemcpyAsync(d_dst, h_staging, float_bytes, hipMemcpyHostToDevice, str);
     return ms_ssim_hip_rc(hip_rc);
 }
@@ -626,20 +512,20 @@ static int ms_ssim_hip_launch_decimate(MsSsimStateHip *s, hipStream_t str, void 
                                                 MS_SSIM_BLOCK_Y, 1u, 0, str, args, NULL));
 }
 
-/* Launch horiz + vert_lcs + DtoH for one scale on str. */
-static int ms_ssim_hip_launch_scale(MsSsimStateHip *s, hipStream_t str, int i)
+/* Launch horiz + vert_lcs + DtoH for one scale of one plane on str. */
+static int ms_ssim_hip_launch_scale(MsSsimStateHip *s, MsSsimPlaneHip *pl, hipStream_t str, int i)
 {
-    unsigned width = s->scale_w[i];
-    unsigned w_horiz = s->scale_w_horiz[i];
-    unsigned h_horiz = s->scale_h_horiz[i];
-    unsigned w_final = s->scale_w_final[i];
-    unsigned h_final = s->scale_h_final[i];
+    unsigned width = pl->scale_w[i];
+    unsigned w_horiz = pl->scale_w_horiz[i];
+    unsigned h_horiz = pl->scale_h_horiz[i];
+    unsigned w_final = pl->scale_w_final[i];
+    unsigned h_final = pl->scale_h_final[i];
     const unsigned hgx = (w_horiz + MS_SSIM_BLOCK_X - 1u) / MS_SSIM_BLOCK_X;
     const unsigned hgy = (h_horiz + MS_SSIM_BLOCK_Y - 1u) / MS_SSIM_BLOCK_Y;
 
     void *horiz_args[] = {
-        (void *)&s->pyramid_ref[i],
-        (void *)&s->pyramid_cmp[i],
+        (void *)&pl->pyramid_ref[i],
+        (void *)&pl->pyramid_cmp[i],
         (void *)&s->d_ref_mu,
         (void *)&s->d_cmp_mu,
         (void *)&s->d_ref_sq,
@@ -660,7 +546,7 @@ static int ms_ssim_hip_launch_scale(MsSsimStateHip *s, hipStream_t str, int i)
         (void *)&s->d_ref_sq,
         (void *)&s->d_cmp_sq,
         (void *)&s->d_refcmp,
-        (void *)&s->terms[i],
+        (void *)&pl->terms[i],
         &w_horiz,
         &w_final,
         &h_final,
@@ -668,12 +554,12 @@ static int ms_ssim_hip_launch_scale(MsSsimStateHip *s, hipStream_t str, int i)
         &s->c2,
         &s->c3,
     };
-    hip_rc = hipModuleLaunchKernel(s->func_vert_lcs, s->scale_grid_x[i], s->scale_grid_y[i], 1u,
+    hip_rc = hipModuleLaunchKernel(s->func_vert_lcs, pl->scale_grid_x[i], pl->scale_grid_y[i], 1u,
                                    MS_SSIM_BLOCK_X, MS_SSIM_BLOCK_Y, 1u, 0, str, vert_args, NULL);
     if (hip_rc != hipSuccess)
         return ms_ssim_hip_rc(hip_rc);
 
-    hip_rc = hipMemcpyAsync(s->h_terms[i], s->terms[i], ms_ssim_terms_bytes(s, i),
+    hip_rc = hipMemcpyAsync(pl->h_terms[i], pl->terms[i], ms_ssim_terms_bytes(pl, i),
                             hipMemcpyDeviceToHost, str);
     return ms_ssim_hip_rc(hip_rc);
 }
@@ -725,7 +611,8 @@ static void ms_ssim_hip_set_max_db(MsSsimStateHip *s, unsigned bpc, unsigned w, 
      * and `convert_to_db()` returns `MIN(-10*log10(1 - score), max_db)`, with
      * `score >= 1.0` short-circuiting to `max_db`. The twin used to clamp the
      * linear score into [0, 1] and then convert with no ceiling, which returns
-     * +Inf for an identical reference/distorted pair. */
+     * +Inf for an identical reference/distorted pair. Chroma planes use the
+     * same luma-derived ceiling, as float_ms_ssim.c does. */
     {
         const unsigned peak = (1u << bpc) - 1u;
         if (s->clip_db) {
@@ -737,21 +624,28 @@ static void ms_ssim_hip_set_max_db(MsSsimStateHip *s, unsigned bpc, unsigned w, 
     }
 }
 
+/* The luma and, with enable_chroma, the chroma pyramid minimum. YUV400P has
+ * no chroma planes: float_ms_ssim.c clears the option there. */
+static int ms_ssim_hip_configure_planes(MsSsimStateHip *s, enum VmafPixelFormat pix_fmt, unsigned w,
+                                        unsigned h)
+{
+    s->n_planes = vmaf_metal_ms_ssim_active_planes(s->enable_chroma, pix_fmt);
+    int err = ms_ssim_hip_validate(w, h);
+    if (err == 0 && s->n_planes > 1u)
+        err = ms_ssim_hip_validate_chroma(pix_fmt, w, h);
+    return err;
+}
+
 static int init_fex_hip(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                         unsigned w, unsigned h)
 {
-    (void)pix_fmt;
     MsSsimStateHip *s = fex->priv;
 
-    /* Luma only, whatever `enable_chroma` and the pixel format say: the
-     * MS-SSIM chroma extension is not implemented on this backend. */
-    s->n_planes = 1u;
-
-    int err = ms_ssim_hip_validate(w, h);
+    int err = ms_ssim_hip_configure_planes(s, pix_fmt, w, h);
     if (err != 0)
         return err;
 
-    ms_ssim_hip_init_dims(s, w, h, bpc);
+    ms_ssim_hip_init_dims(s, pix_fmt, w, h, bpc);
 
     ms_ssim_hip_set_max_db(s, bpc, w, h);
 
@@ -824,36 +718,40 @@ static int close_fex_hip(VmafFeatureExtractor *fex)
 /* ------------------------------------------------------------------ */
 
 #ifdef HAVE_HIPCC
-/* Copies the normalised level-0 planes into the pyramid and builds levels
- * 1..4 with the decimate kernel. Pure enqueue; no host arithmetic, so the
- * split cannot perturb any score (HISS-04 split of submit_fex_hip). */
-static int ms_ssim_hip_build_pyramid(MsSsimStateHip *s, hipStream_t str)
+/* Builds levels 1..4 of one plane's pyramids with the decimate kernel. Pure
+ * enqueue; no host arithmetic, so the split cannot perturb any score
+ * (HISS-04 split of submit_fex_hip). */
+static int ms_ssim_hip_build_pyramid(MsSsimStateHip *s, const MsSsimPlaneHip *pl, hipStream_t str)
 {
-    int err = 0;
-    /* Copy the normalised float level-0 planes into the pyramid. */
-    const size_t l0_bytes = (size_t)s->scale_w[0] * s->scale_h[0] * sizeof(float);
-    hipError_t hip_rc =
-        hipMemcpyAsync(s->pyramid_ref[0], s->d_ref0, l0_bytes, hipMemcpyDeviceToDevice, str);
-    if (hip_rc != hipSuccess)
-        return ms_ssim_hip_rc(hip_rc);
-    hip_rc = hipMemcpyAsync(s->pyramid_cmp[0], s->d_cmp0, l0_bytes, hipMemcpyDeviceToDevice, str);
-    if (hip_rc != hipSuccess)
-        return ms_ssim_hip_rc(hip_rc);
-
-    /* Build pyramid levels 1..4 via the decimate kernel. */
     for (int i = 0; i < MS_SSIM_SCALES - 1; i++) {
-        err = ms_ssim_hip_launch_decimate(s, str, s->pyramid_ref[i], s->pyramid_ref[i + 1],
-                                          s->scale_w[i], s->scale_h[i], s->scale_w[i + 1],
-                                          s->scale_h[i + 1]);
+        int err = ms_ssim_hip_launch_decimate(s, str, pl->pyramid_ref[i], pl->pyramid_ref[i + 1],
+                                              pl->scale_w[i], pl->scale_h[i], pl->scale_w[i + 1],
+                                              pl->scale_h[i + 1]);
         if (err != 0)
             return err;
-        err = ms_ssim_hip_launch_decimate(s, str, s->pyramid_cmp[i], s->pyramid_cmp[i + 1],
-                                          s->scale_w[i], s->scale_h[i], s->scale_w[i + 1],
-                                          s->scale_h[i + 1]);
+        err = ms_ssim_hip_launch_decimate(s, str, pl->pyramid_cmp[i], pl->pyramid_cmp[i + 1],
+                                          pl->scale_w[i], pl->scale_h[i], pl->scale_w[i + 1],
+                                          pl->scale_h[i + 1]);
         if (err != 0)
             return err;
     }
     return 0;
+}
+
+/* One plane's whole frame on str: both level-0 uploads, the pyramid and
+ * every scale's horiz + vert_lcs + DtoH. */
+static int ms_ssim_hip_submit_plane(MsSsimStateHip *s, hipStream_t str, const VmafPicture *ref_pic,
+                                    const VmafPicture *dist_pic, unsigned plane)
+{
+    MsSsimPlaneHip *pl = &s->planes[plane];
+    int err = ms_ssim_hip_upload_plane(s, str, ref_pic, plane, pl->h_ref, pl->pyramid_ref[0]);
+    if (err == 0)
+        err = ms_ssim_hip_upload_plane(s, str, dist_pic, plane, pl->h_cmp, pl->pyramid_cmp[0]);
+    if (err == 0)
+        err = ms_ssim_hip_build_pyramid(s, pl, str);
+    for (int i = 0; i < MS_SSIM_SCALES && err == 0; i++)
+        err = ms_ssim_hip_launch_scale(s, pl, str, i);
+    return err;
 }
 
 #endif /* HAVE_HIPCC */
@@ -875,26 +773,11 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
     s->index = index;
     hipStream_t str = vmaf_hip_stream_of(s->lc.str);
 
-    /* Normalise + upload both luma planes to float device buffers.
-     * picture_copy() converts uint → float [0,255] into the pinned
-     * host staging buffers (h_ref / h_cmp), then hipMemcpyAsync
-     * uploads them to d_ref0 / d_cmp0.  Pictures arrive as CPU
-     * VmafPictures (VMAF_FEATURE_EXTRACTOR_HIP flag cleared, T7-10b
-     * posture). */
-    int err = ms_ssim_hip_upload_plane(s, str, ref_pic, s->h_ref, s->d_ref0);
-    if (err != 0)
-        return err;
-    err = ms_ssim_hip_upload_plane(s, str, dist_pic, s->h_cmp, s->d_cmp0);
-    if (err != 0)
-        return err;
-
-    err = ms_ssim_hip_build_pyramid(s, str);
-    if (err != 0)
-        return err;
-
-    /* Per-scale horiz + vert_lcs + DtoH. All enqueued on the same stream. */
-    for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        err = ms_ssim_hip_launch_scale(s, str, i);
+    /* Every scored plane, all enqueued on the same stream. Pictures arrive
+     * as CPU VmafPictures (T7-10b posture); picture_copy() runs on the host
+     * before each upload. */
+    for (unsigned p = 0u; p < s->n_planes; p++) {
+        const int err = ms_ssim_hip_submit_plane(s, str, ref_pic, dist_pic, p);
         if (err != 0)
             return err;
     }
@@ -916,11 +799,11 @@ static int submit_fex_hip(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafP
  * to the neighbouring float (ADR-1438 for the fixed-point SSIM twin). The
  * three sums advance together through one pass, as in the reference's loop;
  * each is still its own chain of adds. */
-static void ms_ssim_hip_scale_sums(const MsSsimStateHip *s, int i, double *total_l, double *total_c,
-                                   double *total_s)
+static void ms_ssim_hip_scale_sums(const MsSsimPlaneHip *pl, int i, double *total_l,
+                                   double *total_c, double *total_s)
 {
-    const size_t windows = s->scale_windows[i];
-    const double *l = s->h_terms[i];
+    const size_t windows = pl->scale_windows[i];
+    const double *l = pl->h_terms[i];
     const double *c = l + windows;
     const double *sv = c + windows;
     double l_sum = 0.0;
@@ -934,6 +817,76 @@ static void ms_ssim_hip_scale_sums(const MsSsimStateHip *s, int i, double *total
     *total_l = l_sum;
     *total_c = c_sum;
     *total_s = s_sum;
+}
+
+/* Add the terms of every scale of one plane in the reference's order, round
+ * each mean to fp32 and combine with the Wang weights, as the CPU extractor
+ * does. */
+static void ms_ssim_hip_plane_scores(const MsSsimPlaneHip *pl, MsSsimPlaneScores *out)
+{
+    double *l_means = out->l;
+    double *c_means = out->c;
+    double *s_means = out->s;
+    for (int i = 0; i < MS_SSIM_SCALES; i++) {
+        double total_l = 0.0;
+        double total_c = 0.0;
+        double total_s = 0.0;
+        ms_ssim_hip_scale_sums(pl, i, &total_l, &total_c, &total_s);
+        const double n_pix = (double)pl->scale_w_final[i] * (double)pl->scale_h_final[i];
+        /* iqa_ssim() returns each mean as a float, and ms_ssim.c combines the
+         * floats (ADR-1403). */
+        l_means[i] = vmaf_hip_ms_ssim_scale_mean(total_l, n_pix);
+        c_means[i] = vmaf_hip_ms_ssim_scale_mean(total_c, n_pix);
+        s_means[i] = vmaf_hip_ms_ssim_scale_mean(total_s, n_pix);
+    }
+
+    const double msssim = vmaf_hip_ms_ssim_combine(l_means, c_means, s_means);
+    out->score = msssim;
+}
+
+/* float_ms_ssim.c's validate_plane_scores(): a non-finite score or mean of
+ * any plane fails the frame before anything is emitted. */
+static int ms_ssim_hip_validate_plane(const MsSsimPlaneScores *sc, unsigned plane, unsigned index)
+{
+    if (!isfinite(sc->score)) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "float_ms_ssim_hip: non-finite score at frame %u (feature=%s value=%g)\n", index,
+                 ms_ssim_plane_names[plane], sc->score);
+        return -EINVAL;
+    }
+    for (int i = 0; i < MS_SSIM_SCALES; i++) {
+        if (isfinite(sc->l[i]) && isfinite(sc->c[i]) && isfinite(sc->s[i]))
+            continue;
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "float_ms_ssim_hip: non-finite atom at frame %u "
+                 "(feature=%s scale=%d l=%g c=%g s=%g)\n",
+                 index, ms_ssim_plane_names[plane], i, sc->l[i], sc->c[i], sc->s[i]);
+        return -EINVAL;
+    }
+    return 0;
+}
+
+/* Luma with its optional per-scale means, then each chroma score, after
+ * every plane's score has been prepared as float_ms_ssim.c prepares it. */
+static int ms_ssim_hip_emit_planes(const MsSsimStateHip *s, VmafFeatureCollector *feature_collector,
+                                   const MsSsimPlaneScores *sc, unsigned index)
+{
+    for (unsigned p = 0u; p < s->n_planes; p++) {
+        double prepared_score = 0.0;
+        const int err = vmaf_ssim_prepare_score_named(
+            ms_ssim_plane_names[p], sc[p].score, s->enable_db, s->max_db, index, &prepared_score);
+        if (err != 0)
+            return err;
+    }
+    int err = vmaf_ms_ssim_emit_scores(
+        feature_collector, s->feature_name_dict, "float_ms_ssim_hip", "float_ms_ssim", sc[0].score,
+        s->enable_db, s->max_db, sc[0].l, sc[0].c, sc[0].s, MS_SSIM_SCALES, s->enable_lcs, index);
+    for (unsigned p = 1u; p < s->n_planes && err == 0; p++) {
+        err = vmaf_ssim_emit_score_named(feature_collector, s->feature_name_dict,
+                                         "float_ms_ssim_hip", ms_ssim_plane_names[p], sc[p].score,
+                                         s->enable_db, s->max_db, index);
+    }
+    return err;
 }
 #endif /* HAVE_HIPCC */
 
@@ -952,30 +905,15 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
     if (err != 0)
         return err;
 
-    /* Add the terms of every scale in the reference's order, round each
-     * mean to fp32 and combine with the Wang weights, as the CPU extractor
-     * does. */
-    double l_means[MS_SSIM_SCALES] = {0};
-    double c_means[MS_SSIM_SCALES] = {0};
-    double s_means[MS_SSIM_SCALES] = {0};
-
-    for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        double total_l = 0.0;
-        double total_c = 0.0;
-        double total_s = 0.0;
-        ms_ssim_hip_scale_sums(s, i, &total_l, &total_c, &total_s);
-        const double n_pix = (double)s->scale_w_final[i] * (double)s->scale_h_final[i];
-        /* iqa_ssim() returns each mean as a float, and ms_ssim.c combines the
-         * floats (ADR-1403). */
-        l_means[i] = vmaf_hip_ms_ssim_scale_mean(total_l, n_pix);
-        c_means[i] = vmaf_hip_ms_ssim_scale_mean(total_c, n_pix);
-        s_means[i] = vmaf_hip_ms_ssim_scale_mean(total_s, n_pix);
+    MsSsimPlaneScores scores[MS_SSIM_MAX_PLANES];
+    memset(scores, 0, sizeof(scores));
+    for (unsigned p = 0u; p < s->n_planes; p++) {
+        ms_ssim_hip_plane_scores(&s->planes[p], &scores[p]);
+        err = ms_ssim_hip_validate_plane(&scores[p], p, index);
+        if (err != 0)
+            return err;
     }
-
-    const double msssim = vmaf_hip_ms_ssim_combine(l_means, c_means, s_means);
-    return vmaf_ms_ssim_emit_scores(feature_collector, s->feature_name_dict, "float_ms_ssim_hip",
-                                    "float_ms_ssim", msssim, s->enable_db, s->max_db, l_means,
-                                    c_means, s_means, MS_SSIM_SCALES, s->enable_lcs, index);
+    return ms_ssim_hip_emit_planes(s, feature_collector, scores, index);
 #endif /* HAVE_HIPCC */
 }
 
@@ -983,7 +921,10 @@ static int collect_fex_hip(VmafFeatureExtractor *fex, unsigned index,
 /* Registration                                                        */
 /* ------------------------------------------------------------------ */
 
-static const char *provided_features[] = {"float_ms_ssim", NULL};
+/* All three plane features, as float_ms_ssim.c provides them: without _cb /
+ * _cr here the ADR-0530 name fallback would route them to the CPU extractor. */
+static const char *provided_features[] = {"float_ms_ssim", "float_ms_ssim_cb", "float_ms_ssim_cr",
+                                          NULL};
 
 /* Load-bearing: the feature extractor is registered via
  * `extern VmafFeatureExtractor vmaf_fex_integer_ms_ssim_hip;` in

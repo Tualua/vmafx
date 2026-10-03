@@ -50,6 +50,8 @@ from scripts.ci.cross_backend_parity_gate import (
     CellResult,
     build_command,
     build_matrix,
+    chroma_plane_size,
+    chroma_skip_note,
     diff_frames,
     emit_json,
     emit_md,
@@ -261,6 +263,66 @@ def test_feature_extractor_name_hip_ms_ssim_uses_its_registered_name() -> None:
     assert (
         feature_extractor_name("float_ms_ssim_lcs", "hip") == "integer_ms_ssim_hip=enable_lcs=true"
     )
+
+
+def test_float_ms_ssim_chroma_cell_runs_the_option_on_every_backend() -> None:
+    # T-MS-SSIM-GPU-CHROMA-OPTION-DRIFT-2026-09-06: every twin scores chroma.
+    assert (
+        feature_extractor_name("float_ms_ssim_chroma", "cpu") == "float_ms_ssim=enable_chroma=true"
+    )
+    assert (
+        feature_extractor_name("float_ms_ssim_chroma", "cuda")
+        == "float_ms_ssim_cuda=enable_chroma=true"
+    )
+    assert (
+        feature_extractor_name("float_ms_ssim_chroma", "hip")
+        == "integer_ms_ssim_hip=enable_chroma=true"
+    )
+    assert FEATURE_METRICS["float_ms_ssim_chroma"] == (
+        "float_ms_ssim",
+        "float_ms_ssim_cb",
+        "float_ms_ssim_cr",
+    )
+    assert FEATURE_TOLERANCE["float_ms_ssim_chroma"] == DEFAULT_FP32_TOLERANCE
+
+
+def test_chroma_plane_size_is_ceil_subsampled() -> None:
+    assert chroma_plane_size(576, 324, "420") == (288, 162)
+    assert chroma_plane_size(351, 351, "420") == (176, 176)
+    assert chroma_plane_size(351, 176, "422") == (176, 176)
+    assert chroma_plane_size(176, 176, "444") == (176, 176)
+
+
+def test_chroma_cell_skips_a_fixture_whose_chroma_is_too_small() -> None:
+    # The CPU extractor refuses enable_chroma below 176 pixels of chroma.
+    assert "288x162" in chroma_skip_note("float_ms_ssim_chroma", 576, 324, "420")
+    assert "175x175" in chroma_skip_note("float_ms_ssim_chroma", 350, 350, "420")
+    assert chroma_skip_note("float_ms_ssim_chroma", 351, 351, "420") == ""
+    assert chroma_skip_note("float_ms_ssim_chroma", 576, 324, "422") == ""
+    assert chroma_skip_note("float_ms_ssim_chroma", 576, 324, "444") == ""
+    assert chroma_skip_note("float_ms_ssim", 576, 324, "420") == ""
+
+
+def test_run_cell_skips_the_chroma_cell_without_running(tmp_path: Path, monkeypatch: Any) -> None:
+    def fail_run_one(*_args: Any, **_kwargs: Any) -> tuple[int, str]:
+        raise AssertionError("a skipped cell must not run vmaf")
+
+    monkeypatch.setattr("scripts.ci.cross_backend_parity_gate.run_one", fail_run_one)
+    result = run_cell(
+        Cell(feature="float_ms_ssim_chroma", backend_a="cpu", backend_b="cuda"),
+        binary=tmp_path / "vmaf",
+        ref=tmp_path / "ref.yuv",
+        dist=tmp_path / "dist.yuv",
+        width=576,
+        height=324,
+        pix_fmt="420",
+        bitdepth=8,
+        workdir=tmp_path,
+        devices={},
+        tolerance=0.0,
+    )
+    assert result.status == "SKIP"
+    assert "288x162" in result.note
 
 
 def test_every_hip_cell_names_a_registered_hip_extractor() -> None:

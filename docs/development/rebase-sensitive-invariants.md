@@ -314,6 +314,20 @@ linked AGENTS.md before resolving conflicts.
   SIMD-32 kernels keep `VmafSyclKernelShape<32, 256>`. See
   [core/src/sycl/AGENTS.md](../../core/src/sycl/AGENTS.md) and
   [core/src/feature/sycl/AGENTS.md](../../core/src/feature/sycl/AGENTS.md).
+- **`float_ms_ssim_cuda` and `integer_ms_ssim_hip` score every plane `enable_chroma` asks for (`T-MS-SSIM-GPU-CHROMA-OPTION-DRIFT-2026-09-06`)**:
+  both keep geometry, pyramid and term buffers per plane and run the luma
+  pipeline once per scored plane, as `float_ms_ssim.c` does; both declare the
+  CPU's four options and provide `float_ms_ssim_cb` / `float_ms_ssim_cr`.
+  Plane count and plane size come from
+  `core/src/feature/metal/float_ms_ssim_option_semantics.h`. A sync must not
+  bring back a fixed `n_planes = 1u`, a luma-only `provided_features` or a
+  chroma path with its own arithmetic, and the HIP option stays (HISS-14).
+  `test_cuda_float_ms_ssim_parity` and `test_hip_ms_ssim_parity` (`==`) on a
+  device, `test_cuda_float_ms_ssim_exact_contract.py` and
+  `test_hip_kernel_source_contract.py` without one; gate cell
+  `float_ms_ssim_chroma`. See
+  [core/src/feature/cuda/AGENTS.md](../../core/src/feature/cuda/AGENTS.md) and
+  [core/src/feature/hip/AGENTS.md](../../core/src/feature/hip/AGENTS.md).
 - **`float_ms_ssim_cuda` per-scale sums are the CPU's, in the CPU's order ([ADR-1465](../adr/1465-cuda-float-ms-ssim-raster-order-sum.md))**:
   `ms_ssim_vert_lcs` in `core/src/feature/cuda/integer_ms_ssim/ms_ssim_score.cu`
   stores every window's `l`, `c` and `s` at its raster position and

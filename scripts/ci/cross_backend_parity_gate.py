@@ -179,6 +179,16 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
         "float_ms_ssim_s_scale3",
         "float_ms_ssim_s_scale4",
     ),
+    # T-MS-SSIM-GPU-CHROMA-OPTION-DRIFT-2026-09-06: `float_ms_ssim` with
+    # `enable_chroma=true` scores each plane through the same pyramid and
+    # adds `float_ms_ssim_cb` / `float_ms_ssim_cr`. Every chroma plane must be
+    # at least 176 pixels on a side, so the gate skips this cell, with the
+    # reason, on a fixture with smaller chroma (FEATURE_MIN_CHROMA_DIM).
+    "float_ms_ssim_chroma": (
+        "float_ms_ssim",
+        "float_ms_ssim_cb",
+        "float_ms_ssim_cr",
+    ),
     "float_psnr": ("float_psnr",),
     # `motion3` too: every twin the gate runs (CUDA, SYCL, HIP) emits the CPU's
     # motion3; a twin that lacks it fails the cell
@@ -263,6 +273,8 @@ FEATURE_TOLERANCE: dict[str, float] = {
     # T7-35 / ADR-0215: LCS triples are the same float reductions
     # that feed the Wang combine — same conditioning, same places=4.
     "float_ms_ssim_lcs": 5e-5,
+    # The chroma planes run the luma pipeline: same contract.
+    "float_ms_ssim_chroma": 5e-5,
     "float_psnr": 5e-5,
     # The CPU, CUDA, SYCL and HIP cells are exact instead (EXACT_TWINS,
     # ADR-1409, ADR-1411, ADR-1419) and never read this value.
@@ -374,6 +386,7 @@ def build_matrix(features: Iterable[str], backends: Iterable[str]) -> list[Cell]
 # extra L/C/S metrics.
 FEATURE_ALIASES: dict[str, tuple[str, str]] = {
     "float_ms_ssim_lcs": ("float_ms_ssim", "enable_lcs=true"),
+    "float_ms_ssim_chroma": ("float_ms_ssim", "enable_chroma=true"),
     # ADR-1382: the float_ssim L / C / S outputs.
     "float_ssim_lcs": ("float_ssim", "enable_lcs=true"),
     "motion_debug": ("motion", "debug=true"),
@@ -394,6 +407,35 @@ BACKEND_EXTRACTOR_ALIASES: dict[tuple[str, str], str] = {
     ("ssim", "sycl"): "integer_ssim_sycl",
     ("ssim", "hip"): "integer_ssim_hip",
 }
+
+
+# Cells that score the chroma planes, and the smallest chroma plane side they
+# accept: float_ms_ssim's 5-level, 11-tap pyramid (11 << 4) applies to every
+# plane enable_chroma scores. On a fixture with smaller chroma (the 576x324
+# 4:2:0 pair has 288x162) the CPU extractor refuses the request at init, so
+# the cell is reported SKIP with the reason instead of being run.
+FEATURE_MIN_CHROMA_DIM: dict[str, int] = {"float_ms_ssim_chroma": 176}
+
+
+def chroma_plane_size(width: int, height: int, pix_fmt: str) -> tuple[int, int]:
+    """The chroma plane of a `pix_fmt` frame, ceil-subsampled as vmaf_picture_alloc() does."""
+    ss_hor = 0 if pix_fmt == "444" else 1
+    ss_ver = 1 if pix_fmt == "420" else 0
+    return (width + ss_hor) >> ss_hor, (height + ss_ver) >> ss_ver
+
+
+def chroma_skip_note(feature: str, width: int, height: int, pix_fmt: str) -> str:
+    """Why `feature` cannot run on this fixture's chroma, or "" when it can."""
+    minimum = FEATURE_MIN_CHROMA_DIM.get(feature)
+    if minimum is None:
+        return ""
+    chroma_w, chroma_h = chroma_plane_size(width, height, pix_fmt)
+    if chroma_w >= minimum and chroma_h >= minimum:
+        return ""
+    return (
+        f"chroma {chroma_w}x{chroma_h} below the {minimum}-pixel minimum of "
+        f"{feature}; run it on a pair whose chroma planes clear it"
+    )
 
 
 def feature_extractor_name(feature: str, backend: str) -> str:
@@ -724,40 +766,26 @@ def run_cell(
 ) -> CellResult:
     """Execute one cell of the parity matrix and diff it."""
     metrics = FEATURE_METRICS[cell.feature]
+    skip_note = chroma_skip_note(cell.feature, width, height, pix_fmt)
+    if skip_note:
+        skipped = _cell_error(cell, tolerance, tolerance_source, skip_note, metrics=metrics)
+        return dataclasses.replace(skipped, status="SKIP")
     full_precision = tolerance_source in (EXACT_TWIN_SOURCE, LIBM_TWIN_SOURCE)
     precision = EXACT_TWIN_PRECISION if full_precision else None
     out_a = workdir / f"{cell.feature}_{cell.backend_a}.json"
     out_b = workdir / f"{cell.feature}_{cell.backend_b}.json"
 
     ctx = (binary, ref, dist, width, height, pix_fmt, bitdepth)
-    res_a = _run_cell_side(
-        cell,
-        "backend_a",
-        cell.backend_a,
-        out_a,
-        ctx,
-        devices,
-        precision,
-        tolerance,
-        tolerance_source,
-        metrics,
-    )
-    if res_a is not None:
-        return res_a
-    res_b = _run_cell_side(
-        cell,
-        "backend_b",
-        cell.backend_b,
-        out_b,
-        ctx,
-        devices,
-        precision,
-        tolerance,
-        tolerance_source,
-        metrics,
-    )
-    if res_b is not None:
-        return res_b
+    # backend_a first, then backend_b; the first side that fails is the result.
+    for label, backend, out in (
+        ("backend_a", cell.backend_a, out_a),
+        ("backend_b", cell.backend_b, out_b),
+    ):
+        failed = _run_cell_side(
+            cell, label, backend, out, ctx, devices, precision, tolerance, tolerance_source, metrics
+        )
+        if failed is not None:
+            return failed
 
     return _diff_cell_outputs(
         cell,

@@ -59528,3 +59528,30 @@ upstream parity guard's allowlist.
   added, `LIBM_TWINS` lost both features. On a conflict in
   `docs/development/cross-backend-exact-twins.md` take master's side and run
   `make docs-fragments-write`.
+
+## `float_ms_ssim_cuda` and `integer_ms_ssim_hip` score the chroma planes (2026-10-03)
+
+`fix/ms-ssim-chroma-cuda-hip`, `T-MS-SSIM-GPU-CHROMA-OPTION-DRIFT-2026-09-06`.
+
+- `core/src/feature/cuda/integer_ms_ssim_cuda.c` and
+  `core/src/feature/hip/integer_ms_ssim_hip.c` keep their geometry, pyramid
+  and term buffers per plane (`MsSsimPlaneCuda`, `MsSsimPlaneHip`) and run the
+  luma pipeline once per scored plane, as `float_ms_ssim.c` does. Both declare
+  the CPU's four options (`enable_chroma` is new on CUDA; on HIP it was
+  accepted and ignored) and provide `float_ms_ssim_cb` / `float_ms_ssim_cr`.
+  Both are fork files with no upstream counterpart; an upstream change to
+  `float_ms_ssim.c`'s plane loop or its chroma minimum changes both twins in
+  the same PR.
+- Both include `core/src/feature/metal/float_ms_ssim_option_semantics.h` for
+  the active plane count and the ceil-subsampled plane size; keep its helper
+  names, which the Metal twin and its device-free test also call.
+- The HIP twin no longer stages level 0 in `d_ref0` / `d_cmp0`: each plane
+  uploads straight into pyramid level 0. A rebase onto an older layout keeps
+  the direct upload.
+- Gate: new cell `float_ms_ssim_chroma` (`float_ms_ssim` with
+  `enable_chroma=true`) in both gate scripts, `exact_twins.d` fragments for
+  CUDA, HIP and SYCL, and `FEATURE_MIN_CHROMA_DIM`, which reports the cell
+  SKIP on a fixture whose chroma is below 176 pixels (the 576x324 4:2:0
+  pair). On a conflict in `docs/development/cross-backend-exact-twins.md`
+  take master's side and run `make docs-fragments-write`.
+- No CPU extractor, snapshot or golden value moves.

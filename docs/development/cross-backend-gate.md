@@ -29,7 +29,7 @@ explicitly accepts its skip.
   | `vif`, `motion`, `motion_debug`, `motion_mffw`, `motion_v2`, `motion_v2_mffw`, `adm`, `psnr` (all three planes: `psnr_y`, `psnr_cb`, `psnr_cr`), `float_moment`, `cambi` | `5e-5` | ADR-0125 / ADR-0138 / ADR-0140 / ADR-0360; `motion_debug` is `motion` with `debug=true` and adds `integer_motion`; both cells compare `VMAF_integer_feature_motion_sad_score`, the per-frame score `motion2` / `motion3` are derived from, next to `integer_motion2` and `integer_motion3` ([ADR-1418](../adr/1418-motion-parity-gate-metric-alignment.md)); `motion_mffw` and `motion_v2_mffw` are `motion` and `motion_v2` with `motion_five_frame_window=true:motion_moving_average=true`, the option set of the `vmaf_v1.0.16_hfr_*` models, and compare the SAD score, `motion2` and `motion3` under their option-suffixed names ([ADR-1491](../adr/1491-gpu-motion-five-frame-window.md)) |
   | `ssim` (the fixed-point extractor; its twins are `integer_ssim_<backend>`) | `5e-5` | ADR-0564 (int64 moments, one double term per pixel) |
   | any feature, cell whose two sides are `cpu` or [listed exact twins](cross-backend-exact-twins.md) | `0` (bit-identical, compared at `--precision max`) | the ADR in the twin's fragment under `scripts/ci/exact_twins.d/`; the rows above and below stay for every other backend ([Exact twins](#exact-twins)) |
-  | `float_ssim`, `float_ssim_lcs`, `float_ms_ssim`, `float_ms_ssim_lcs`, `float_psnr`, `float_motion` (`motion`, `motion2` and `motion3`), `float_vif`, `float_adm` | `5e-5` | ADR-0188 / ADR-0192 / ADR-0215 / ADR-1382; `float_motion` compares `motion3` since 2026-10-03, when the SYCL twin started to emit it as the CUDA and HIP twins do (`T-GPU-FLOAT-MOTION3-MISSING-2026-09-30`) |
+  | `float_ssim`, `float_ssim_lcs`, `float_ms_ssim`, `float_ms_ssim_lcs`, `float_ms_ssim_chroma`, `float_psnr`, `float_motion` (`motion`, `motion2` and `motion3`), `float_vif`, `float_adm` | `5e-5` | ADR-0188 / ADR-0192 / ADR-0215 / ADR-1382; `float_motion` compares `motion3` since 2026-10-03, when the SYCL twin started to emit it as the CUDA and HIP twins do (`T-GPU-FLOAT-MOTION3-MISSING-2026-09-30`) |
   | `ciede` | `5e-3` | ADR-0187 (per-pixel pow/sqrt/sin/atan2) |
   | `ciede` (every pair of CPU, CUDA, SYCL and HIP) | `1e-9`, compared at `--precision max` | ADR-1426, ADR-1436, ADR-1448 (the twins run the CPU's arithmetic and the CPU's sum; what differs is the math library and, on SYCL and HIP, the last bits of an fp32 pair, `LIBM_TWINS`); the `5e-3` row stays for the other twins |
   | `speed_chroma` (the three scores `speed_chroma_u`, `_v`, `_uv`) | `5e-5` | places=4 for a twin that is not listed as exact; the CUDA, HIP and SYCL twins are ([ADR-1477](../adr/1477-speed-upstream-double-math.md)) |
@@ -105,6 +105,24 @@ explicitly accepts its skip.
 - **`float_ssim_lcs`.** Runs `float_ssim` with `enable_lcs=true` and compares
   `float_ssim_l`, `float_ssim_c` and `float_ssim_s` next to the score, at the
   same `5e-5` ([ADR-1382](../adr/1382-hip-twin-cpu-option-parity.md)).
+
+- **`float_ms_ssim_chroma`.** Runs `float_ms_ssim` with `enable_chroma=true`
+  and compares `float_ms_ssim_cb` and `float_ms_ssim_cr` next to the score;
+  CUDA, SYCL and HIP are listed exact (`scripts/ci/exact_twins.d`). Every
+  chroma plane must be at least 176 pixels on a side, so on a fixture with
+  smaller chroma, such as the 576x324 4:2:0 Netflix pair (288x162), the cell
+  is reported `SKIP` with that reason and nothing is run
+  (`FEATURE_MIN_CHROMA_DIM`). Run it on a 1080p 4:2:0, a 4:2:2 or a 4:4:4
+  pair:
+
+  ```bash
+  python3 scripts/ci/cross_backend_parity_gate.py \
+      --vmaf-binary build/tools/vmaf \
+      --reference python/test/resource/yuv/checkerboard_1920_1080_10_3_0_0.yuv \
+      --distorted python/test/resource/yuv/checkerboard_1920_1080_10_3_10_0.yuv \
+      --width 1920 --height 1080 --backends cpu cuda \
+      --features float_ms_ssim_chroma
+  ```
 
 - **Per-device calibration.** `--gpu-id` selects the most-specific matching
   row in `scripts/ci/gpu_ulp_calibration.yaml`. If no row or feature override
@@ -234,6 +252,7 @@ A cell's status is one of:
 | `OK` | Every per-frame metric is within tolerance. |
 | `FAIL` | At least one per-frame mismatch exceeds `tolerance_abs`. |
 | `ERROR` | Execution failed before diffing, the frame counts differ, or one backend does not emit a metric the cell compares (the note names the backend and the metrics). |
+| `SKIP` | The fixture cannot exercise the cell (the chroma of a `float_ms_ssim_chroma` fixture is below 176 pixels); the note says why. A skipped cell does not fail the run and is not a pass. |
 
 ## Add a feature or backend
 

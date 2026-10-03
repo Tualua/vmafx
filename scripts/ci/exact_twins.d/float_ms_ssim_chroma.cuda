@@ -1,0 +1,2 @@
+adr: ADR-1403, ADR-1465
+evidence: RTX 4090, --precision max: the twin runs the luma pipeline once per plane (T-MS-SSIM-GPU-CHROMA-OPTION-DRIFT-2026-09-06). float_ms_ssim, float_ms_ssim_cb and float_ms_ssim_cr identical to --backend cpu (GCC build) on every frame, 6804 of 6804 values: 1080p checkerboards (1 px and 10 px), Netflix 576x324 4:2:2 10 bit and 4:4:4 at 8 and 10 bit, BBB 1080p 4:4:4 24 frames and BBB 4K 4:2:0 30 frames, with enable_lcs, enable_db and clip_db too; on the Netflix 4:2:0 pair (288x162 chroma) both refuse the option at init.

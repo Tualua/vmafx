@@ -2,7 +2,7 @@
 paths:
   - core/src/feature/cuda/integer_ms_ssim_cuda.c
   - core/src/feature/cuda/integer_ms_ssim_cuda.h
-invariant: MS-SSIM exact CPU arithmetic, option flags, and clip_db ceiling semantics.
+invariant: MS-SSIM exact CPU arithmetic per plane (enable_chroma too), option flags, and clip_db ceiling semantics.
 ---
 <!-- markdownlint-disable MD013 MD032 MD060 -->
 # MS-SSIM CPU arithmetic, options, and clip_db
@@ -39,6 +39,28 @@ invariant: MS-SSIM exact CPU arithmetic, option flags, and clip_db ceiling seman
   window read back, about 2.1 ns per window, 2.5x to 3.3x the frame time;
   tuning = `T-CUDA-FLOAT-MS-SSIM-EXACT-THROUGHPUT-2026-10-02`. SYCL / HIP / Metal twins still
   old arithmetic: `T-GPU-FLOAT-MS-SSIM-CPU-ARITHMETIC-2026-10-01`.
+- **`enable_chroma` = CPU's per-plane pipeline, bit for bit
+  (`T-MS-SSIM-GPU-CHROMA-OPTION-DRIFT-2026-09-06`).** Option table =
+  `float_ms_ssim.c`'s four (`enable_lcs`, `enable_db`, `clip_db`,
+  `enable_chroma`); `provided_features` = `float_ms_ssim`, `_cb`, `_cr`
+  (without `_cb` / `_cr` the ADR-0530 name fallback routes them to the CPU).
+  Per plane (`MsSsimPlaneCuda`): own dimensions, scale geometry, pyramid,
+  pinned level 0, term planes and readbacks; shared: raw staging
+  `h_input_uint` (copy synchronous before `picture_copy()`) and the five
+  horizontal planes (luma-sized, in-order stream). Kernels and
+  `ms_ssim_scale_sums()` = the luma path, no chroma copy of any of them.
+  Plane count and chroma size come from
+  `../metal/float_ms_ssim_option_semantics.h`
+  (`vmaf_metal_ms_ssim_active_planes()`, `_plane_dimensions()`): YUV400P =
+  luma only, chroma ceil-subsampled, every scored plane >= 176 px or init
+  refuses (CPU's message). Chroma emitted after every plane validated and
+  prepared, with luma's `max_db`; `enable_lcs` = luma means only, as CPU.
+  Guards: `test_cuda_float_ms_ssim_parity` (chroma `==` on 4:2:0 odd size,
+  4:2:2 10 bit, 4:4:4; refusal and YUV400P verdicts),
+  `test_cuda_exact_twins` (chroma row), `test_cuda_twin_option_parity`
+  (option table), `test_cuda_float_ms_ssim_exact_contract.py` (planted
+  `n_planes = 1u`, luma-only `provided_features`), gate cell
+  `float_ms_ssim_chroma` (`exact_twins.d/float_ms_ssim_chroma.cuda`).
 - **`integer_ms_ssim_cuda.c` honours `enable_lcs`, `enable_db`,
   `clip_db` GPU contracts** (ADR-0243, ADR-0460). Emits 15 extra
   metrics (`float_ms_ssim_{l,c,s}_scale{0..4}`) when `enable_lcs=true`,

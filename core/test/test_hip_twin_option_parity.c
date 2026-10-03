@@ -395,6 +395,12 @@ static const OptionCase OPTION_CASES[] = {
     {"motion_hip", "motion", "mffw", "true"},
     {"motion_v2_hip", "motion_v2", "motion_five_frame_window", "true"},
     {"motion_v2_hip", "motion_v2", "mffw", "true"},
+    /* T-MS-SSIM-GPU-CHROMA-OPTION-DRIFT-2026-09-06: the twin scores every
+     * plane, as float_ms_ssim.c does (the option used to be a silent no-op). */
+    {"integer_ms_ssim_hip", "float_ms_ssim", "enable_chroma", "true"},
+    {"integer_ms_ssim_hip", "float_ms_ssim", "enable_lcs", "true"},
+    {"integer_ms_ssim_hip", "float_ms_ssim", "enable_db", "true"},
+    {"integer_ms_ssim_hip", "float_ms_ssim", "clip_db", "true"},
 };
 
 static const VmafOption *lookup_option(const VmafFeatureExtractor *fex, const char *key)

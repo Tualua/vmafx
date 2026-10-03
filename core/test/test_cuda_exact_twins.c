@@ -106,6 +106,14 @@ static const ExactCase cases[] = {
      "true",
      true,
      {"float_ms_ssim", MS_SSIM_LCS_KEYS("l"), MS_SSIM_LCS_KEYS("c"), MS_SSIM_LCS_KEYS("s")}},
+    /* enable_chroma: the 320x240 chroma of the fixture clears the 176-pixel
+     * minimum and carries its own texture and error. */
+    {"float_ms_ssim_cuda",
+     "float_ms_ssim",
+     "enable_chroma",
+     "true",
+     true,
+     {"float_ms_ssim", "float_ms_ssim_cb", "float_ms_ssim_cr"}},
     {"cambi_cuda", "cambi", NULL, NULL, true, {"Cambi_feature_cambi_score"}},
 };
 #define N_CASES (sizeof(cases) / sizeof(cases[0]))

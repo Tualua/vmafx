@@ -385,6 +385,12 @@ static const OptionCase OPTION_CASES[] = {
     {"motion_cuda", "motion", "mffw", "true"},
     {"motion_v2_cuda", "motion_v2", "motion_five_frame_window", "true"},
     {"motion_v2_cuda", "motion_v2", "mffw", "true"},
+    /* T-MS-SSIM-GPU-CHROMA-OPTION-DRIFT-2026-09-06: the twin scores every
+     * plane, as float_ms_ssim.c does. */
+    {"float_ms_ssim_cuda", "float_ms_ssim", "enable_chroma", "true"},
+    {"float_ms_ssim_cuda", "float_ms_ssim", "enable_lcs", "true"},
+    {"float_ms_ssim_cuda", "float_ms_ssim", "enable_db", "true"},
+    {"float_ms_ssim_cuda", "float_ms_ssim", "clip_db", "true"},
 };
 
 /* Every twin and its CPU extractor: each option the twin declares must be a
@@ -396,6 +402,7 @@ static const char *const TWIN_PAIRS[][2] = {
     {"integer_ssim_cuda", "ssim"},
     {"float_ssim_cuda", "float_ssim"},
     {"float_motion_cuda", "float_motion"},
+    {"float_ms_ssim_cuda", "float_ms_ssim"},
 };
 
 static const VmafOption *lookup_option(const VmafFeatureExtractor *fex, const char *key)

@@ -40,7 +40,7 @@ in [`../../cuda/AGENTS.md`](../../cuda/AGENTS.md).
 | `integer_motion_cuda.c`, `integer_motion_v2_cuda.c`, `/core/test/test_cuda_motion_five_frame_window.c`, `/core/test/motion_five_frame_twin_parity.h` | [motion-five-frame-window](AGENTS.d/motion-five-frame-window.md) | motion_five_frame_window on CUDA twins = ring of three raw planes + CPU window function at flush; bit-identical. |
 | `integer_motion_v2_cuda.c`, `integer_motion_v2_cuda.h` | [motion-v2](AGENTS.d/motion-v2.md) | Motion v2 CPU mirror contract and score emission parity. |
 | `integer_motion_cuda.c`, `integer_motion_cuda.h`, `integer_motion_sad_cuda.c` | [motion](AGENTS.d/motion.md) | Motion parity, dispatch bottleneck mitigation, SAD batch depth, and output sets. |
-| `integer_ms_ssim_cuda.c`, `integer_ms_ssim_cuda.h` | [ms-ssim](AGENTS.d/ms-ssim.md) | MS-SSIM exact CPU arithmetic, option flags, and clip_db ceiling semantics. |
+| `integer_ms_ssim_cuda.c`, `integer_ms_ssim_cuda.h` | [ms-ssim](AGENTS.d/ms-ssim.md) | MS-SSIM exact CPU arithmetic per plane (enable_chroma too), option flags, and clip_db ceiling semantics. |
 | `integer_adm_cuda.c`, `/core/src/meson.build` | [orientation](AGENTS.d/orientation.md) | Scope, build, and governing ADR references for CUDA feature extractors. |
 | `integer_adm_cuda.c`, `integer_psnr_cuda.c` | [pinned-host-memory](AGENTS.d/pinned-host-memory.md) | Pinned-host memory must be freed in close_fex and destroy_fex after readback_free. |
 | `integer_psnr_hvs_cuda.c`, `integer_psnr_hvs_cuda.h` | [psnr-hvs](AGENTS.d/psnr-hvs.md) | PSNR-HVS participates in engine sync, honours enable_chroma, and matches CPU scores bit for bit. |

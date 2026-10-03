@@ -214,6 +214,11 @@ lookups back into the runtime test. See Research-2091.
   `pow(NaN, 0)` must never erase a failed reduction.
   `test_metal_ms_ssim_option_semantics`, `test_metal_ms_ssim_options_contract.py`,
   and `test_nonfinite_collector_wiring.py` lock this contract down device-free.
+  The CUDA and HIP twins include the same header for their `enable_chroma`
+  plane count and plane sizes (`T-MS-SSIM-GPU-CHROMA-OPTION-DRIFT-2026-09-06`):
+  a rename or signature change of its helpers changes
+  `../cuda/integer_ms_ssim_cuda.c` and `../hip/integer_ms_ssim_hip.c` in the
+  same PR.
 - **GPU twins must mirror CPU option table for model-configured
   features.** Model (such as default model `vmaf_v1.0.16_3d0h`) may
   provide feature options. `vmaf_use_features_from_model` then checks

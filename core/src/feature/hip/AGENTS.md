@@ -45,7 +45,7 @@ Parent: [../AGENTS.md](../AGENTS.md). HIP backend runtime lives at
 | `integer_motion_hip.c`, `integer_motion_v2_hip.c`, `/core/test/test_hip_motion_five_frame_window.c` | [motion-five-frame-window](AGENTS.d/motion-five-frame-window.md) | motion_five_frame_window on the HIP twins = two kept planes + the CPU's window function at flush; bit-identical. |
 | `integer_motion_sad_hip.c`, `integer_motion_sad_hip.h` | [motion-sad](AGENTS.d/motion-sad.md) | Motion SAD uses one diff-first kernel and a single launcher implementation. |
 | `integer_motion_v2_hip.c`, `integer_motion_v2_hip.h`, `integer_motion_v2/motion_v2_score.hip` | [motion-v2](AGENTS.d/motion-v2.md) | motion3_v2 cross-twin invariants and score consistency must be preserved. |
-| `integer_ms_ssim_hip.c`, `integer_ms_ssim_hip.h`, `integer_ms_ssim/ms_ssim_score.hip` | [ms-ssim](AGENTS.d/ms-ssim.md) | MS-SSIM vertical LCS terms must be double and clip_db is treated as a ceiling. |
+| `integer_ms_ssim_hip.c`, `integer_ms_ssim_hip.h`, `integer_ms_ssim/ms_ssim_score.hip` | [ms-ssim](AGENTS.d/ms-ssim.md) | MS-SSIM vertical LCS terms must be double, clip_db is treated as a ceiling, and enable_chroma scores every plane. |
 | `integer_adm_hip.c`, `integer_ssim_hip.c` | [option-dictionary-timing](AGENTS.d/option-dictionary-timing.md) | Serialize option dictionaries prior to extractor initialization and dispatch. |
 | `integer_adm_hip.c`, `integer_ssim_hip.c` | [picture-upload-sync](AGENTS.d/picture-upload-sync.md) | Never return from submit while a picture upload transfer is in flight. |
 | `integer_psnr_hvs_hip.c`, `integer_psnr_hvs_hip.h`, `integer_psnr_hvs/psnr_hvs_score.hip` | [psnr-hvs](AGENTS.d/psnr-hvs.md) | HIP PSNR-HVS matches CPU reference scores bit for bit. |

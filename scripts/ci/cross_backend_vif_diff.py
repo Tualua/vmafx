@@ -179,6 +179,17 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
         "float_ms_ssim_s_scale3",
         "float_ms_ssim_s_scale4",
     ),
+    # T-MS-SSIM-GPU-CHROMA-OPTION-DRIFT-2026-09-06: `float_ms_ssim` with
+    # `enable_chroma=true` scores each plane through the same pyramid and
+    # adds `float_ms_ssim_cb` / `float_ms_ssim_cr`. Every chroma plane must be
+    # at least 176 pixels on a side; on a fixture with smaller chroma the CPU
+    # extractor refuses the request (cross_backend_parity_gate.py skips the
+    # cell there, FEATURE_MIN_CHROMA_DIM).
+    "float_ms_ssim_chroma": (
+        "float_ms_ssim",
+        "float_ms_ssim_cb",
+        "float_ms_ssim_cr",
+    ),
     # GPU long-tail batch 2 part 3 (T7-23 / ADR-0188 / ADR-0191):
     # float_psnr_hvs. DCT-based perceptual PSNR; emits 3 plane scores
     # + the combined `psnr_hvs`. CPU extractor is `psnr_hvs`; GPU
@@ -264,6 +275,7 @@ FEATURE_METRICS: dict[str, tuple[str, ...]] = {
 # 16-metric mode. Each entry is (extractor_base_name, "opt=val").
 FEATURE_ALIASES: dict[str, tuple[str, str]] = {
     "float_ms_ssim_lcs": ("float_ms_ssim", "enable_lcs=true"),
+    "float_ms_ssim_chroma": ("float_ms_ssim", "enable_chroma=true"),
     "float_ssim_lcs": ("float_ssim", "enable_lcs=true"),
     "motion_debug": ("motion", "debug=true"),
     "motion_mffw": ("motion", "motion_five_frame_window=true:motion_moving_average=true"),

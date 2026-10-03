@@ -571,7 +571,7 @@ def _ms_ssim_raster_failures(src: dict[str, str]) -> list[str]:
     if "__shared__" in kernel or "__shfl" in kernel:
         failures.append(f"{MS_KERNEL}: the per-window terms are reduced on the device")
     host = _code(src[MS_HOST])
-    if "s->scale_windows[i] = (size_t)s->scale_w_final[i] * s->scale_h_final[i];" not in host:
+    if "pl->scale_windows[i] = (size_t)pl->scale_w_final[i] * pl->scale_h_final[i];" not in host:
         failures.append(f"{MS_HOST}: the terms read back are not one per window")
     if "hipHostMallocWriteCombined" in host:
         failures.append(f"{MS_HOST}: the host reads the terms from write-combined memory")
@@ -581,9 +581,30 @@ def _ms_ssim_raster_failures(src: dict[str, str]) -> list[str]:
         not in sums
     ):
         failures.append(f"{MS_HOST}: the per-scale sums are no longer added in ascending order")
-    if "ms_ssim_hip_scale_sums(s, i, &total_l, &total_c, &total_s);" not in host:
+    if "ms_ssim_hip_scale_sums(pl, i, &total_l, &total_c, &total_s);" not in host:
         failures.append(f"{MS_HOST}: collect() does not take the sums in the CPU's order")
     return failures
+
+
+# T-MS-SSIM-GPU-CHROMA-OPTION-DRIFT-2026-09-06: with enable_chroma the twin
+# runs the same pipeline once per plane, as float_ms_ssim.c does, and emits the
+# CPU's three plane features. It used to accept the option and keep one plane.
+MS_CHROMA_PIECES = (
+    "s->n_planes = vmaf_metal_ms_ssim_active_planes(s->enable_chroma, pix_fmt);",
+    "const int err = ms_ssim_hip_submit_plane(s, str, ref_pic, dist_pic, p);",
+    "ms_ssim_hip_plane_scores(&s->planes[p], &scores[p]);",
+    'static const char *provided_features[] = {"float_ms_ssim", "float_ms_ssim_cb", '
+    '"float_ms_ssim_cr", NULL};',
+)
+
+
+def _ms_ssim_chroma_failures(src: dict[str, str]) -> list[str]:
+    host = _squeeze(_code(src[MS_HOST]))
+    return [
+        f"{MS_HOST}: the planes enable_chroma scores are not the CPU's ({piece})"
+        for piece in MS_CHROMA_PIECES
+        if piece not in host
+    ]
 
 
 def _failures(src: dict[str, str]) -> list[str]:
@@ -595,6 +616,7 @@ def _failures(src: dict[str, str]) -> list[str]:
         + _float_ssim_decimation_failures(src)
         + _ms_ssim_failures(src)
         + _ms_ssim_raster_failures(src)
+        + _ms_ssim_chroma_failures(src)
     )
 
 
@@ -1267,8 +1289,8 @@ class HipKernelSourceContractTest(unittest.TestCase):
         src = _replace(
             _sources(),
             MS_HOST,
-            "s->scale_windows[i] = (size_t)s->scale_w_final[i] * s->scale_h_final[i];",
-            "s->scale_windows[i] = (size_t)s->scale_grid_x[i] * s->scale_grid_y[i];",
+            "pl->scale_windows[i] = (size_t)pl->scale_w_final[i] * pl->scale_h_final[i];",
+            "pl->scale_windows[i] = (size_t)pl->scale_grid_x[i] * pl->scale_grid_y[i];",
         )
         self.assert_detected(src, "not one per window")
 
@@ -1276,8 +1298,8 @@ class HipKernelSourceContractTest(unittest.TestCase):
         src = _replace(
             _sources(),
             MS_HOST,
-            "ms_ssim_terms_bytes(s, i), hipHostMallocDefault);",
-            "ms_ssim_terms_bytes(s, i), hipHostMallocWriteCombined);",
+            "ms_ssim_terms_bytes(pl, i), hipHostMallocDefault);",
+            "ms_ssim_terms_bytes(pl, i), hipHostMallocWriteCombined);",
         )
         self.assert_detected(src, "write-combined memory")
 
@@ -1294,10 +1316,23 @@ class HipKernelSourceContractTest(unittest.TestCase):
         src = _replace(
             _sources(),
             MS_HOST,
-            "        ms_ssim_hip_scale_sums(s, i, &total_l, &total_c, &total_s);",
-            "        ms_ssim_hip_block_sums(s, i, &total_l, &total_c, &total_s);",
+            "        ms_ssim_hip_scale_sums(pl, i, &total_l, &total_c, &total_s);",
+            "        ms_ssim_hip_block_sums(pl, i, &total_l, &total_c, &total_s);",
         )
         self.assert_detected(src, "does not take the sums in the CPU's order")
+    def test_ms_ssim_luma_only_plane_count_is_detected(self) -> None:
+        src = _replace(
+            _sources(),
+            MS_HOST,
+            "s->n_planes = vmaf_metal_ms_ssim_active_planes(s->enable_chroma, pix_fmt);",
+            "s->n_planes = 1u;",
+        )
+        self.assert_detected(src, "enable_chroma scores")
+
+    def test_ms_ssim_luma_only_provided_features_are_detected(self) -> None:
+        src = _replace(_sources(), MS_HOST, '"float_ms_ssim_cb", "float_ms_ssim_cr",', "")
+        self.assert_detected(src, "enable_chroma scores")
+
 
 if __name__ == "__main__":
     unittest.main()

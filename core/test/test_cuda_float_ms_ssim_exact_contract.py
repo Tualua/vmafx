@@ -55,16 +55,16 @@ HOST_SUM = (
     "st += (double)s_terms[j];",
 )
 HOST_CALL = (
-    "ms_ssim_scale_sums(s->h_l_terms[i], s->h_c_terms[i], s->h_s_terms[i], "
-    "s->scale_window_count[i], sums);"
+    "ms_ssim_scale_sums(pl->h_l_terms[i], pl->h_c_terms[i], pl->h_s_terms[i], "
+    "pl->scale_window_count[i], sums);"
 )
-WINDOWS = "s->scale_window_count[i] = (size_t)s->scale_w_final[i] * s->scale_h_final[i];"
+WINDOWS = "pl->scale_window_count[i] = (size_t)pl->scale_w_final[i] * pl->scale_h_final[i];"
 READBACKS = (
-    "cuMemcpyDtoHAsync(s->h_l_terms[i], (CUdeviceptr)s->l_terms[i]->data, "
+    "cuMemcpyDtoHAsync(pl->h_l_terms[i], (CUdeviceptr)pl->l_terms[i]->data, "
     "windows * sizeof(double), s->lc.str)",
-    "cuMemcpyDtoHAsync(s->h_c_terms[i], (CUdeviceptr)s->c_terms[i]->data, "
+    "cuMemcpyDtoHAsync(pl->h_c_terms[i], (CUdeviceptr)pl->c_terms[i]->data, "
     "windows * sizeof(double), s->lc.str)",
-    "cuMemcpyDtoHAsync(s->h_s_terms[i], (CUdeviceptr)s->s_terms[i]->data, "
+    "cuMemcpyDtoHAsync(pl->h_s_terms[i], (CUdeviceptr)pl->s_terms[i]->data, "
     "windows * sizeof(float), s->lc.str)",
 )
 
@@ -121,8 +121,33 @@ def _host_failures(host: str) -> list[str]:
     return failures
 
 
+# T-MS-SSIM-GPU-CHROMA-OPTION-DRIFT-2026-09-06: with enable_chroma the twin
+# runs the same pipeline once per plane, as float_ms_ssim.c does, and emits the
+# CPU's three plane features.
+CHROMA_PIECES = (
+    "s->n_planes = vmaf_metal_ms_ssim_active_planes(s->enable_chroma, pix_fmt);",
+    "const int err = ms_ssim_submit_plane(fex, s, ref_pic, dist_pic, p);",
+    "ms_ssim_plane_scores(&s->planes[p], &scores[p]);",
+    'static const char *provided_features[] = {"float_ms_ssim", "float_ms_ssim_cb", '
+    '"float_ms_ssim_cr", NULL};',
+)
+
+
+def _chroma_failures(host: str) -> list[str]:
+    flat = _flat(host)
+    return [
+        f"{HOST}: the planes enable_chroma scores are not the CPU's ({piece})"
+        for piece in CHROMA_PIECES
+        if piece not in flat
+    ]
+
+
 def _contract_failures(sources: dict[str, str]) -> list[str]:
-    return _kernel_failures(sources[KERNEL]) + _host_failures(sources[HOST])
+    return (
+        _kernel_failures(sources[KERNEL])
+        + _host_failures(sources[HOST])
+        + _chroma_failures(sources[HOST])
+    )
 
 
 class FloatMsSsimCudaExactContract(unittest.TestCase):
@@ -167,7 +192,7 @@ class FloatMsSsimCudaExactContract(unittest.TestCase):
         # The earlier collect_fex_cuda().
         sources = _sources()
         sources[HOST] = sources[HOST].replace(
-            "s->scale_window_count[i], sums);", "s->scale_block_count[i], sums);", 1
+            "pl->scale_window_count[i], sums);", "pl->scale_block_count[i], sums);", 1
         )
         failures = _contract_failures(sources)
         self.assertTrue(any("whole term planes" in item for item in failures))
@@ -177,7 +202,7 @@ class FloatMsSsimCudaExactContract(unittest.TestCase):
         sources = _sources()
         sources[HOST] = sources[HOST].replace(
             WINDOWS,
-            "s->scale_window_count[i] = (size_t)s->scale_grid_x[i] * s->scale_grid_y[i];",
+            "pl->scale_window_count[i] = (size_t)pl->scale_grid_x[i] * pl->scale_grid_y[i];",
             1,
         )
         self.assertTrue(any("one term per window" in item for item in _contract_failures(sources)))
@@ -201,6 +226,21 @@ class FloatMsSsimCudaExactContract(unittest.TestCase):
             "st += (double)s_terms[j];", "st = (double)((float)st + s_terms[j]);", 1
         )
         self.assertTrue(any("three doubles in raster" in item for item in _contract_failures(sources)))
+
+    def test_luma_only_plane_count_is_detected(self) -> None:
+        # The HIP twin's former `n_planes = 1u` whatever enable_chroma said.
+        sources = _sources()
+        sources[HOST] = sources[HOST].replace(
+            "s->n_planes = vmaf_metal_ms_ssim_active_planes(s->enable_chroma, pix_fmt);",
+            "s->n_planes = 1u;",
+            1,
+        )
+        self.assertTrue(any("enable_chroma scores" in item for item in _contract_failures(sources)))
+
+    def test_luma_only_provided_features_are_detected(self) -> None:
+        sources = _sources()
+        sources[HOST] = sources[HOST].replace('"float_ms_ssim_cb", ', "", 1)
+        self.assertTrue(any("enable_chroma scores" in item for item in _contract_failures(sources)))
 
 
 if __name__ == "__main__":

@@ -38,14 +38,21 @@
  *  feature_collector_append calls leaves the default-path
  *  output bit-identical to the pre-T7-35 binary.
  *
+ *  enable_chroma: float_ms_ssim.c runs the whole pipeline once per plane and
+ *  emits float_ms_ssim_cb / float_ms_ssim_cr. So does this twin: every plane
+ *  has its own geometry, pyramid and term planes (MsSsimPlaneCuda), the
+ *  kernels and the host sums are the luma path's, and each chroma plane must
+ *  clear the same 176-pixel minimum (a 4:2:0 input needs 351x351 luma).
+ *  YUV400P scores luma only, as the CPU clears the option there.
+ *
  *  Engine-scope fence batching (T-GPU-OPT-2 / ADR-0271): all 5
  *  scales' horiz + vert_lcs launches and DtoH term readbacks
- *  are enqueued in submit() onto the lifecycle's private stream
- *  (s->lc.str). Same-stream ordering serialises kernels and
- *  copies in dependency order without per-scale syncs, and the
- *  term planes are allocated per-scale to avoid the
- *  cross-scale aliasing that previously forced a host-blocking
- *  cuStreamSynchronize after each scale. The final
+ *  of every plane are enqueued in submit() onto the lifecycle's
+ *  private stream (s->lc.str). Same-stream ordering serialises
+ *  kernels and copies in dependency order without per-scale
+ *  syncs, and the term planes are allocated per plane and scale
+ *  to avoid the cross-scale aliasing that previously forced a
+ *  host-blocking cuStreamSynchronize after each scale. The final
  *  cuEventRecord(s->lc.finished, s->lc.str) opts the lifecycle
  *  into the engine's drain batch (drain_batch.h) so the
  *  per-frame readbacks coalesce with the rest of the CUDA
@@ -64,6 +71,7 @@
 #include "feature_collector.h"
 #include "feature_extractor.h"
 #include "feature_name.h"
+#include "feature/metal/float_ms_ssim_option_semantics.h"
 #include "feature/nonfinite_score.h"
 #include "cuda/drain_batch.h"
 #include "cuda/integer_ms_ssim_cuda.h"
@@ -82,6 +90,7 @@
  * while the required Windows build compiles this TU with cl.exe. ADR-1138. */
 
 #define MS_SSIM_SCALES 5
+#define MS_SSIM_MAX_PLANES 3
 #define MS_SSIM_GAUSSIAN_LEN 11
 #define MS_SSIM_K 11
 #define MS_SSIM_BLOCK_X 16
@@ -91,18 +100,19 @@ static const float g_alphas[MS_SSIM_SCALES] = {0.0000f, 0.0000f, 0.0000f, 0.0000
 static const float g_betas[MS_SSIM_SCALES] = {0.0448f, 0.2856f, 0.3001f, 0.2363f, 0.1333f};
 static const float g_gammas[MS_SSIM_SCALES] = {0.0448f, 0.2856f, 0.3001f, 0.2363f, 0.1333f};
 
-typedef struct MsSsimStateCuda {
-    /* Stream + event pair owned by `cuda/kernel_template.h` lifecycle
-     * (ADR-0246). Multi-buffer pyramid state stays outside the
-     * template's single-pair readback bundle. */
-    VmafCudaKernelLifecycle lc;
-    CUfunction func_decimate;
-    CUfunction func_horiz;
-    CUfunction func_vert_lcs;
+/* float_ms_ssim.c's feature name of each plane. */
+static const char *const ms_ssim_plane_names[MS_SSIM_MAX_PLANES] = {
+    "float_ms_ssim",
+    "float_ms_ssim_cb",
+    "float_ms_ssim_cr",
+};
 
+/* Everything that varies per plane. A chroma plane of a subsampled format is
+ * smaller than luma and every kernel takes these dimensions as row pitches,
+ * so a chroma pass never reads a luma size. */
+typedef struct MsSsimPlaneCuda {
     unsigned width;
     unsigned height;
-    unsigned bpc;
 
     unsigned scale_w[MS_SSIM_SCALES];
     unsigned scale_h[MS_SSIM_SCALES];
@@ -115,28 +125,15 @@ typedef struct MsSsimStateCuda {
     /* Windows of each scale, w_final * h_final: one l, c and s term each. */
     size_t scale_window_count[MS_SSIM_SCALES];
 
-    /* The reference's fp32 stabilisation constants (iqa_ssim()), carried as
-     * doubles: the kernel's argument list takes doubles (ADR-0990) and
-     * narrows them back without loss (ADR-1403). */
-    double c1;
-    double c2;
-    double c3;
-
     /* Pyramid: 5 levels × ref + cmp, all float. */
     VmafCudaBuffer *pyramid_ref[MS_SSIM_SCALES];
     VmafCudaBuffer *pyramid_cmp[MS_SSIM_SCALES];
 
-    /* Pinned host buffers for picture staging and upload at scale 0. */
-    void *h_input_uint;
+    /* Pinned host level 0 of this plane, uploaded asynchronously: one pair
+     * per plane, so the next plane's staging cannot overwrite a pending
+     * upload. */
     float *h_ref;
     float *h_cmp;
-
-    /* SSIM intermediates sized for scale 0 (largest). */
-    VmafCudaBuffer *h_ref_mu;
-    VmafCudaBuffer *h_cmp_mu;
-    VmafCudaBuffer *h_ref_sq;
-    VmafCudaBuffer *h_cmp_sq;
-    VmafCudaBuffer *h_refcmp;
 
     /* Per-scale term planes, one term per window in raster order
      * (ADR-1465): l and c as doubles, s as the float it is. Allocated per
@@ -152,6 +149,51 @@ typedef struct MsSsimStateCuda {
     double *h_l_terms[MS_SSIM_SCALES];
     double *h_c_terms[MS_SSIM_SCALES];
     float *h_s_terms[MS_SSIM_SCALES];
+} MsSsimPlaneCuda;
+
+/* l, c and s means of every scale of one plane, and the plane's score. */
+typedef struct MsSsimPlaneScores {
+    double l[MS_SSIM_SCALES];
+    double c[MS_SSIM_SCALES];
+    double s[MS_SSIM_SCALES];
+    double score;
+} MsSsimPlaneScores;
+
+typedef struct MsSsimStateCuda {
+    /* Stream + event pair owned by `cuda/kernel_template.h` lifecycle
+     * (ADR-0246). Multi-buffer pyramid state stays outside the
+     * template's single-pair readback bundle. */
+    VmafCudaKernelLifecycle lc;
+    CUfunction func_decimate;
+    CUfunction func_horiz;
+    CUfunction func_vert_lcs;
+
+    /* Luma geometry; planes[p] holds each scored plane's own. */
+    unsigned width;
+    unsigned height;
+    unsigned bpc;
+    unsigned n_planes;
+    MsSsimPlaneCuda planes[MS_SSIM_MAX_PLANES];
+
+    /* The reference's fp32 stabilisation constants (iqa_ssim()), carried as
+     * doubles: the kernel's argument list takes doubles (ADR-0990) and
+     * narrows them back without loss (ADR-1403). */
+    double c1;
+    double c2;
+    double c3;
+
+    /* Pinned staging of one raw plane, sized for luma. Each plane's copy
+     * into it completes before picture_copy() reads it, so the planes share
+     * it. */
+    void *h_input_uint;
+
+    /* SSIM intermediates sized for luma scale 0, the largest window plane of
+     * any plane and scale; the in-order stream serialises their reuse. */
+    VmafCudaBuffer *h_ref_mu;
+    VmafCudaBuffer *h_cmp_mu;
+    VmafCudaBuffer *h_ref_sq;
+    VmafCudaBuffer *h_cmp_sq;
+    VmafCudaBuffer *h_refcmp;
 
     unsigned index;
     VmafDictionary *feature_name_dict;
@@ -159,9 +201,10 @@ typedef struct MsSsimStateCuda {
     bool enable_lcs; /* T7-35 / ADR-0243: emit per-scale L/C/S triples. */
     /* CPU-option parity (wiring-audit-2026-05-16): enable_db / clip_db match
      * float_ms_ssim.c options. At defaults (both false) output is bit-identical. */
-    bool enable_db; /* return dB-domain score: -10*log10(1 - ms_ssim) */
-    bool clip_db;   /* cap the dB output at the geometry-derived max_db */
-    double max_db;  /* ADR-1221: dB ceiling, INFINITY when !clip_db */
+    bool enable_db;     /* return dB-domain score: -10*log10(1 - ms_ssim) */
+    bool clip_db;       /* cap the dB output at the geometry-derived max_db */
+    bool enable_chroma; /* score Cb and Cr too, as float_ms_ssim.c does */
+    double max_db;      /* ADR-1221: dB ceiling, INFINITY when !clip_db */
     /* PTX module backing the MS-SSIM kernels — owned here so
      * `close_fex_cuda` can unload it. Skipping the unload leaks
      * ~200-500 KB of GPU-resident PTX backing store per vmaf_close(). */
@@ -185,8 +228,15 @@ static const VmafOption options[] = {
     },
     {
         .name = "clip_db",
-        .help = "clip linear ms_ssim to [0, 1] before dB conversion",
+        .help = "cap dB-domain MS-SSIM at the geometry-derived ceiling",
         .offset = offsetof(MsSsimStateCuda, clip_db),
+        .type = VMAF_OPT_TYPE_BOOL,
+        .default_val.b = false,
+    },
+    {
+        .name = "enable_chroma",
+        .help = "enable calculation for chroma channels (Cb and Cr)",
+        .offset = offsetof(MsSsimStateCuda, enable_chroma),
         .type = VMAF_OPT_TYPE_BOOL,
         .default_val.b = false,
     },
@@ -201,7 +251,33 @@ static int ms_ssim_init_failure(VmafFeatureExtractor *fex, int cause)
     return cause ? cause : cleanup_rc;
 }
 
-static int ms_ssim_configure_geometry(MsSsimStateCuda *s, unsigned bpc, unsigned w, unsigned h)
+/* float_ms_ssim.c's check_chroma_min_dim(): with enable_chroma every scored
+ * plane walks the 5-level pyramid, so the subsampled planes must clear the
+ * same minimum as luma. */
+static int ms_ssim_check_chroma_min_dim(enum VmafPixelFormat pix_fmt, unsigned w, unsigned h,
+                                        unsigned min_dim)
+{
+    unsigned chroma_w = 0u;
+    unsigned chroma_h = 0u;
+    vmaf_metal_ms_ssim_plane_dimensions(pix_fmt, 1u, w, h, &chroma_w, &chroma_h);
+    if (chroma_w >= min_dim && chroma_h >= min_dim)
+        return 0;
+
+    unsigned luma_w = 0u;
+    unsigned luma_h = 0u;
+    vmaf_metal_ms_ssim_min_luma_dimensions(pix_fmt, min_dim, &luma_w, &luma_h);
+    vmaf_log(VMAF_LOG_LEVEL_ERROR,
+             "ms_ssim_cuda: enable_chroma needs every plane to clear the pyramid minimum, "
+             "but %ux%u luma gives %ux%u chroma and the %d-level %d-tap pyramid "
+             "requires at least %ux%u. Use at least %ux%u luma for this pixel "
+             "format, or leave enable_chroma off to score luma only.\n",
+             w, h, chroma_w, chroma_h, MS_SSIM_SCALES, MS_SSIM_GAUSSIAN_LEN, min_dim, min_dim,
+             luma_w, luma_h);
+    return -EINVAL;
+}
+
+static int ms_ssim_configure_geometry(MsSsimStateCuda *s, enum VmafPixelFormat pix_fmt,
+                                      unsigned bpc, unsigned w, unsigned h)
 {
     const unsigned min_dim = (unsigned)MS_SSIM_GAUSSIAN_LEN << (MS_SSIM_SCALES - 1);
     if (w < min_dim || h < min_dim) {
@@ -210,6 +286,14 @@ static int ms_ssim_configure_geometry(MsSsimStateCuda *s, unsigned bpc, unsigned
                  " >= %ux%u (Netflix#1414 / ADR-0153)\n",
                  w, h, MS_SSIM_SCALES, MS_SSIM_GAUSSIAN_LEN, min_dim, min_dim);
         return -EINVAL;
+    }
+
+    /* YUV400P has no chroma planes: float_ms_ssim.c clears the option. */
+    s->n_planes = vmaf_metal_ms_ssim_active_planes(s->enable_chroma, pix_fmt);
+    if (s->n_planes > 1u) {
+        const int err = ms_ssim_check_chroma_min_dim(pix_fmt, w, h, min_dim);
+        if (err)
+            return err;
     }
 
     s->width = w;
@@ -226,24 +310,34 @@ static int ms_ssim_configure_geometry(MsSsimStateCuda *s, unsigned bpc, unsigned
     return 0;
 }
 
-static void ms_ssim_configure_scales(MsSsimStateCuda *s, unsigned w, unsigned h)
+static void ms_ssim_configure_plane_scales(MsSsimPlaneCuda *pl)
 {
-    s->scale_w[0] = w;
-    s->scale_h[0] = h;
+    pl->scale_w[0] = pl->width;
+    pl->scale_h[0] = pl->height;
     for (int i = 1; i < MS_SSIM_SCALES; i++) {
-        s->scale_w[i] = (s->scale_w[i - 1] / 2) + (s->scale_w[i - 1] & 1);
-        s->scale_h[i] = (s->scale_h[i - 1] / 2) + (s->scale_h[i - 1] & 1);
+        pl->scale_w[i] = (pl->scale_w[i - 1] / 2) + (pl->scale_w[i - 1] & 1);
+        pl->scale_h[i] = (pl->scale_h[i - 1] / 2) + (pl->scale_h[i - 1] & 1);
     }
     for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        s->scale_w_horiz[i] = s->scale_w[i] - (MS_SSIM_K - 1);
-        s->scale_h_horiz[i] = s->scale_h[i];
-        s->scale_w_final[i] = s->scale_w[i] - (MS_SSIM_K - 1);
-        s->scale_h_final[i] = s->scale_h[i] - (MS_SSIM_K - 1);
-        s->scale_grid_x[i] =
-            (s->scale_w_final[i] + (unsigned)MS_SSIM_BLOCK_X - 1) / (unsigned)MS_SSIM_BLOCK_X;
-        s->scale_grid_y[i] =
-            (s->scale_h_final[i] + (unsigned)MS_SSIM_BLOCK_Y - 1) / (unsigned)MS_SSIM_BLOCK_Y;
-        s->scale_window_count[i] = (size_t)s->scale_w_final[i] * s->scale_h_final[i];
+        pl->scale_w_horiz[i] = pl->scale_w[i] - (MS_SSIM_K - 1);
+        pl->scale_h_horiz[i] = pl->scale_h[i];
+        pl->scale_w_final[i] = pl->scale_w[i] - (MS_SSIM_K - 1);
+        pl->scale_h_final[i] = pl->scale_h[i] - (MS_SSIM_K - 1);
+        pl->scale_grid_x[i] =
+            (pl->scale_w_final[i] + (unsigned)MS_SSIM_BLOCK_X - 1) / (unsigned)MS_SSIM_BLOCK_X;
+        pl->scale_grid_y[i] =
+            (pl->scale_h_final[i] + (unsigned)MS_SSIM_BLOCK_Y - 1) / (unsigned)MS_SSIM_BLOCK_Y;
+        pl->scale_window_count[i] = (size_t)pl->scale_w_final[i] * pl->scale_h_final[i];
+    }
+}
+
+static void ms_ssim_configure_scales(MsSsimStateCuda *s, enum VmafPixelFormat pix_fmt)
+{
+    for (unsigned p = 0u; p < s->n_planes; p++) {
+        MsSsimPlaneCuda *pl = &s->planes[p];
+        vmaf_metal_ms_ssim_plane_dimensions(pix_fmt, p, s->width, s->height, &pl->width,
+                                            &pl->height);
+        ms_ssim_configure_plane_scales(pl);
     }
 
     /* iqa_ssim(): the stabilisation constants are fp32. */
@@ -281,79 +375,80 @@ fail:
     return _cuda_err;
 }
 
-static int ms_ssim_alloc_device_buffers(VmafFeatureExtractor *fex, MsSsimStateCuda *s)
+/* One plane's pyramid and term planes on the device. */
+static int ms_ssim_alloc_plane_device(VmafCudaState *cu_state, MsSsimPlaneCuda *pl)
 {
     int ret = 0;
-    for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        const size_t plane_bytes = (size_t)s->scale_w[i] * s->scale_h[i] * sizeof(float);
-        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->pyramid_ref[i], plane_bytes);
-        if (ret)
-            return ret;
-        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->pyramid_cmp[i], plane_bytes);
-        if (ret)
-            return ret;
-    }
-    const size_t horiz_bytes_max =
-        (size_t)s->scale_w_horiz[0] * s->scale_h_horiz[0] * sizeof(float);
-    ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_ref_mu, horiz_bytes_max);
-    if (ret)
-        return ret;
-    ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_cmp_mu, horiz_bytes_max);
-    if (ret)
-        return ret;
-    ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_ref_sq, horiz_bytes_max);
-    if (ret)
-        return ret;
-    ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_cmp_sq, horiz_bytes_max);
-    if (ret)
-        return ret;
-    ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->h_refcmp, horiz_bytes_max);
-    if (ret)
-        return ret;
-
-    for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        const size_t windows = s->scale_window_count[i];
-        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->l_terms[i], windows * sizeof(double));
-        if (ret)
-            return ret;
-        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->c_terms[i], windows * sizeof(double));
-        if (ret)
-            return ret;
-        ret = vmaf_cuda_buffer_alloc(fex->cu_state, &s->s_terms[i], windows * sizeof(float));
-        if (ret)
-            return ret;
+    for (int i = 0; i < MS_SSIM_SCALES && !ret; i++) {
+        const size_t plane_bytes = (size_t)pl->scale_w[i] * pl->scale_h[i] * sizeof(float);
+        const size_t windows = pl->scale_window_count[i];
+        ret = vmaf_cuda_buffer_alloc(cu_state, &pl->pyramid_ref[i], plane_bytes);
+        if (!ret)
+            ret = vmaf_cuda_buffer_alloc(cu_state, &pl->pyramid_cmp[i], plane_bytes);
+        if (!ret)
+            ret = vmaf_cuda_buffer_alloc(cu_state, &pl->l_terms[i], windows * sizeof(double));
+        if (!ret)
+            ret = vmaf_cuda_buffer_alloc(cu_state, &pl->c_terms[i], windows * sizeof(double));
+        if (!ret)
+            ret = vmaf_cuda_buffer_alloc(cu_state, &pl->s_terms[i], windows * sizeof(float));
     }
     return ret;
 }
 
-static int ms_ssim_alloc_host_buffers(VmafFeatureExtractor *fex, MsSsimStateCuda *s)
+/* The five horizontal-pass planes, sized for luma scale 0. */
+static int ms_ssim_alloc_intermediates(VmafCudaState *cu_state, MsSsimStateCuda *s)
 {
-    int ret = 0;
+    const MsSsimPlaneCuda *luma = &s->planes[0];
+    const size_t horiz_bytes_max =
+        (size_t)luma->scale_w_horiz[0] * luma->scale_h_horiz[0] * sizeof(float);
+    int ret = vmaf_cuda_buffer_alloc(cu_state, &s->h_ref_mu, horiz_bytes_max);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(cu_state, &s->h_cmp_mu, horiz_bytes_max);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(cu_state, &s->h_ref_sq, horiz_bytes_max);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(cu_state, &s->h_cmp_sq, horiz_bytes_max);
+    if (!ret)
+        ret = vmaf_cuda_buffer_alloc(cu_state, &s->h_refcmp, horiz_bytes_max);
+    return ret;
+}
+
+/* One plane's pinned level 0 and term readbacks. */
+static int ms_ssim_alloc_plane_host(VmafCudaState *cu_state, MsSsimPlaneCuda *pl)
+{
+    const size_t input_bytes = (size_t)pl->width * pl->height * sizeof(float);
+    int ret = vmaf_cuda_buffer_host_alloc(cu_state, (void **)&pl->h_ref, input_bytes);
+    if (!ret)
+        ret = vmaf_cuda_buffer_host_alloc(cu_state, (void **)&pl->h_cmp, input_bytes);
+    for (int i = 0; i < MS_SSIM_SCALES && !ret; i++) {
+        const size_t windows = pl->scale_window_count[i];
+        ret = vmaf_cuda_buffer_host_alloc(cu_state, (void **)&pl->h_l_terms[i],
+                                          windows * sizeof(double));
+        if (!ret) {
+            ret = vmaf_cuda_buffer_host_alloc(cu_state, (void **)&pl->h_c_terms[i],
+                                              windows * sizeof(double));
+        }
+        if (!ret) {
+            ret = vmaf_cuda_buffer_host_alloc(cu_state, (void **)&pl->h_s_terms[i],
+                                              windows * sizeof(float));
+        }
+    }
+    return ret;
+}
+
+/* Every buffer of the extractor. A failure leaves the rest NULL for
+ * close_fex_cuda(), which frees whatever was allocated. */
+static int ms_ssim_alloc_buffers(VmafFeatureExtractor *fex, MsSsimStateCuda *s)
+{
+    VmafCudaState *cu_state = fex->cu_state;
     const size_t raw_input_bytes = (size_t)s->width * s->height * (s->bpc <= 8 ? 1u : 2u);
-    const size_t input_bytes = (size_t)s->width * s->height * sizeof(float);
-    ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, &s->h_input_uint, raw_input_bytes);
-    if (ret)
-        return ret;
-    ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_ref, input_bytes);
-    if (ret)
-        return ret;
-    ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_cmp, input_bytes);
-    if (ret)
-        return ret;
-    for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        const size_t windows = s->scale_window_count[i];
-        ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_l_terms[i],
-                                          windows * sizeof(double));
-        if (ret)
-            return ret;
-        ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_c_terms[i],
-                                          windows * sizeof(double));
-        if (ret)
-            return ret;
-        ret = vmaf_cuda_buffer_host_alloc(fex->cu_state, (void **)&s->h_s_terms[i],
-                                          windows * sizeof(float));
-        if (ret)
-            return ret;
+    int ret = vmaf_cuda_buffer_host_alloc(cu_state, &s->h_input_uint, raw_input_bytes);
+    if (!ret)
+        ret = ms_ssim_alloc_intermediates(cu_state, s);
+    for (unsigned p = 0u; p < s->n_planes && !ret; p++) {
+        ret = ms_ssim_alloc_plane_device(cu_state, &s->planes[p]);
+        if (!ret)
+            ret = ms_ssim_alloc_plane_host(cu_state, &s->planes[p]);
     }
     return ret;
 }
@@ -361,13 +456,12 @@ static int ms_ssim_alloc_host_buffers(VmafFeatureExtractor *fex, MsSsimStateCuda
 static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt, unsigned bpc,
                          unsigned w, unsigned h)
 {
-    (void)pix_fmt;
     MsSsimStateCuda *s = fex->priv;
 
-    int err = ms_ssim_configure_geometry(s, bpc, w, h);
+    int err = ms_ssim_configure_geometry(s, pix_fmt, bpc, w, h);
     if (err)
         return err;
-    ms_ssim_configure_scales(s, w, h);
+    ms_ssim_configure_scales(s, pix_fmt);
 
     err = vmaf_cuda_kernel_lifecycle_init(&s->lc, fex->cu_state);
     if (err)
@@ -376,10 +470,7 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     if (err)
         return ms_ssim_init_failure(fex, err);
 
-    int ret = ms_ssim_alloc_device_buffers(fex, s);
-    if (ret)
-        return ms_ssim_init_failure(fex, ret);
-    ret = ms_ssim_alloc_host_buffers(fex, s);
+    const int ret = ms_ssim_alloc_buffers(fex, s);
     if (ret)
         return ms_ssim_init_failure(fex, ret);
 
@@ -391,64 +482,70 @@ static int init_fex_cuda(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt
     return 0;
 }
 
+/* Plane `plane` of a device picture into the raw staging buffer. */
 static int ms_ssim_copy_plane_to_host(CudaFunctions *cu_f, const VmafPicture *pic,
-                                      const MsSsimStateCuda *s, CUstream stream, void *dst)
+                                      const MsSsimStateCuda *s, unsigned plane, CUstream stream)
 {
+    const MsSsimPlaneCuda *pl = &s->planes[plane];
     const unsigned bpc_bytes = (s->bpc <= 8 ? 1u : 2u);
     const CUDA_MEMCPY2D copy = {
         .srcMemoryType = CU_MEMORYTYPE_DEVICE,
-        .srcDevice = (CUdeviceptr)pic->data[0],
-        .srcPitch = (size_t)pic->stride[0],
+        .srcDevice = (CUdeviceptr)pic->data[plane],
+        .srcPitch = (size_t)pic->stride[plane],
         .dstMemoryType = CU_MEMORYTYPE_HOST,
-        .dstHost = dst,
-        .dstPitch = (size_t)s->width * bpc_bytes,
-        .WidthInBytes = (size_t)s->width * bpc_bytes,
-        .Height = s->height,
+        .dstHost = s->h_input_uint,
+        .dstPitch = (size_t)pl->width * bpc_bytes,
+        .WidthInBytes = (size_t)pl->width * bpc_bytes,
+        .Height = pl->height,
     };
     CHECK_CUDA_RETURN(cu_f, cuMemcpy2DAsync(&copy, stream));
     CHECK_CUDA_RETURN(cu_f, cuStreamSynchronize(stream));
     return 0;
 }
 
-static void ms_ssim_normalize_plane(float *dst, const MsSsimStateCuda *s,
-                                    const VmafPicture *device_pic, void *src)
+/* The staged raw plane, normalised as float_ms_ssim.c's picture_copy() of
+ * that plane normalises it. */
+static void ms_ssim_normalize_plane(float *dst, const MsSsimStateCuda *s, const MsSsimPlaneCuda *pl,
+                                    const VmafPicture *device_pic)
 {
     const unsigned bpc_bytes = (s->bpc <= 8 ? 1u : 2u);
     VmafPicture host_pic = {
         .pix_fmt = device_pic->pix_fmt,
         .bpc = device_pic->bpc,
-        .w = {device_pic->w[0], 0, 0},
-        .h = {device_pic->h[0], 0, 0},
-        .stride = {(ptrdiff_t)((size_t)s->width * bpc_bytes), 0, 0},
-        .data = {src, NULL, NULL},
+        .w = {pl->width, 0, 0},
+        .h = {pl->height, 0, 0},
+        .stride = {(ptrdiff_t)((size_t)pl->width * bpc_bytes), 0, 0},
+        .data = {s->h_input_uint, NULL, NULL},
     };
-    picture_copy(dst, (ptrdiff_t)((size_t)s->width * sizeof(float)), &host_pic, 0, device_pic->bpc,
+    picture_copy(dst, (ptrdiff_t)((size_t)pl->width * sizeof(float)), &host_pic, 0, device_pic->bpc,
                  0);
 }
 
-static int ms_ssim_upload_level_zero(CudaFunctions *cu_f, const MsSsimStateCuda *s)
+static int ms_ssim_upload_level_zero(CudaFunctions *cu_f, const MsSsimStateCuda *s,
+                                     const MsSsimPlaneCuda *pl)
 {
-    const size_t bytes = (size_t)s->width * s->height * sizeof(float);
-    CHECK_CUDA_RETURN(
-        cu_f, cuMemcpyHtoDAsync((CUdeviceptr)s->pyramid_ref[0]->data, s->h_ref, bytes, s->lc.str));
-    CHECK_CUDA_RETURN(
-        cu_f, cuMemcpyHtoDAsync((CUdeviceptr)s->pyramid_cmp[0]->data, s->h_cmp, bytes, s->lc.str));
+    const size_t bytes = (size_t)pl->width * pl->height * sizeof(float);
+    CHECK_CUDA_RETURN(cu_f, cuMemcpyHtoDAsync((CUdeviceptr)pl->pyramid_ref[0]->data, pl->h_ref,
+                                              bytes, s->lc.str));
+    CHECK_CUDA_RETURN(cu_f, cuMemcpyHtoDAsync((CUdeviceptr)pl->pyramid_cmp[0]->data, pl->h_cmp,
+                                              bytes, s->lc.str));
     return 0;
 }
 
 static int ms_ssim_stage_inputs(VmafFeatureExtractor *fex, MsSsimStateCuda *s, VmafPicture *ref_pic,
-                                VmafPicture *dist_pic)
+                                VmafPicture *dist_pic, unsigned plane)
 {
     CudaFunctions *cu_f = fex->cu_state->f;
+    const MsSsimPlaneCuda *pl = &s->planes[plane];
     CUstream stream = vmaf_cuda_picture_get_stream(ref_pic);
-    int err = ms_ssim_copy_plane_to_host(cu_f, ref_pic, s, stream, s->h_input_uint);
+    int err = ms_ssim_copy_plane_to_host(cu_f, ref_pic, s, plane, stream);
     if (err == 0) {
-        ms_ssim_normalize_plane(s->h_ref, s, ref_pic, s->h_input_uint);
-        err = ms_ssim_copy_plane_to_host(cu_f, dist_pic, s, stream, s->h_input_uint);
+        ms_ssim_normalize_plane(pl->h_ref, s, pl, ref_pic);
+        err = ms_ssim_copy_plane_to_host(cu_f, dist_pic, s, plane, stream);
     }
     if (err == 0) {
-        ms_ssim_normalize_plane(s->h_cmp, s, dist_pic, s->h_input_uint);
-        err = ms_ssim_upload_level_zero(cu_f, s);
+        ms_ssim_normalize_plane(pl->h_cmp, s, pl, dist_pic);
+        err = ms_ssim_upload_level_zero(cu_f, s, pl);
     }
     return err;
 }
@@ -457,12 +554,12 @@ static int ms_ssim_stage_inputs(VmafFeatureExtractor *fex, MsSsimStateCuda *s, V
  * parameter array follows ms_ssim_decimate's signature (ADR-1215);
  * cuLaunchKernel copies the values before it returns. */
 static int ms_ssim_launch_decimate(MsSsimStateCuda *s, CudaFunctions *cu_f,
-                                   VmafCudaBuffer *const *pyramid, int i)
+                                   const MsSsimPlaneCuda *pl, VmafCudaBuffer *const *pyramid, int i)
 {
-    const unsigned w_in = s->scale_w[i];
-    const unsigned h_in = s->scale_h[i];
-    const unsigned w_out = s->scale_w[i + 1];
-    const unsigned h_out = s->scale_h[i + 1];
+    const unsigned w_in = pl->scale_w[i];
+    const unsigned h_in = pl->scale_h[i];
+    const unsigned w_out = pl->scale_w[i + 1];
+    const unsigned h_out = pl->scale_h[i + 1];
     const unsigned grid_x = (w_out + MS_SSIM_BLOCK_X - 1) / MS_SSIM_BLOCK_X;
     const unsigned grid_y = (h_out + MS_SSIM_BLOCK_Y - 1) / MS_SSIM_BLOCK_Y;
     void *params[] = {
@@ -474,68 +571,74 @@ static int ms_ssim_launch_decimate(MsSsimStateCuda *s, CudaFunctions *cu_f,
     return 0;
 }
 
-/* Levels 1 to 4 of both pyramids, reference before distorted per level, as
- * before the split. */
-static int ms_ssim_submit_pyramid(MsSsimStateCuda *s, CudaFunctions *cu_f)
+/* Levels 1 to 4 of both pyramids of one plane, reference before distorted
+ * per level, as before the split. */
+static int ms_ssim_submit_pyramid(MsSsimStateCuda *s, CudaFunctions *cu_f,
+                                  const MsSsimPlaneCuda *pl)
 {
     for (int i = 0; i < MS_SSIM_SCALES - 1; i++) {
-        int err = ms_ssim_launch_decimate(s, cu_f, s->pyramid_ref, i);
+        int err = ms_ssim_launch_decimate(s, cu_f, pl, pl->pyramid_ref, i);
         if (!err)
-            err = ms_ssim_launch_decimate(s, cu_f, s->pyramid_cmp, i);
+            err = ms_ssim_launch_decimate(s, cu_f, pl, pl->pyramid_cmp, i);
         if (err)
             return err;
     }
     return 0;
 }
 
-static int ms_ssim_submit_scale(MsSsimStateCuda *s, CudaFunctions *cu_f, int i)
+static int ms_ssim_submit_scale(MsSsimStateCuda *s, CudaFunctions *cu_f, const MsSsimPlaneCuda *pl,
+                                int i)
 {
-    const unsigned width = s->scale_w[i];
-    const unsigned w_horiz = s->scale_w_horiz[i];
-    const unsigned h_horiz = s->scale_h_horiz[i];
-    const unsigned w_final = s->scale_w_final[i];
-    const unsigned h_final = s->scale_h_final[i];
+    const unsigned width = pl->scale_w[i];
+    const unsigned w_horiz = pl->scale_w_horiz[i];
+    const unsigned h_horiz = pl->scale_h_horiz[i];
+    const unsigned w_final = pl->scale_w_final[i];
+    const unsigned h_final = pl->scale_h_final[i];
     const unsigned grid_x = (w_horiz + MS_SSIM_BLOCK_X - 1) / MS_SSIM_BLOCK_X;
     const unsigned grid_y = (h_horiz + MS_SSIM_BLOCK_Y - 1) / MS_SSIM_BLOCK_Y;
 
     void *horiz_params[] = {
-        (void *)s->pyramid_ref[i], (void *)s->pyramid_cmp[i],
-        (void *)s->h_ref_mu,       (void *)s->h_cmp_mu,
-        (void *)s->h_ref_sq,       (void *)s->h_cmp_sq,
-        (void *)s->h_refcmp,       (void *)&width,
-        (void *)&w_horiz,          (void *)&h_horiz,
+        (void *)pl->pyramid_ref[i], (void *)pl->pyramid_cmp[i],
+        (void *)s->h_ref_mu,        (void *)s->h_cmp_mu,
+        (void *)s->h_ref_sq,        (void *)s->h_cmp_sq,
+        (void *)s->h_refcmp,        (void *)&width,
+        (void *)&w_horiz,           (void *)&h_horiz,
     };
     CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_horiz, grid_x, grid_y, 1, MS_SSIM_BLOCK_X,
                                            MS_SSIM_BLOCK_Y, 1, 0, s->lc.str, horiz_params, NULL));
 
     void *vert_params[] = {
-        (void *)s->h_ref_mu, (void *)s->h_cmp_mu,   (void *)s->h_ref_sq,   (void *)s->h_cmp_sq,
-        (void *)s->h_refcmp, (void *)s->l_terms[i], (void *)s->c_terms[i], (void *)s->s_terms[i],
-        (void *)&w_horiz,    (void *)&w_final,      (void *)&h_final,      (void *)&s->c1,
+        (void *)s->h_ref_mu, (void *)s->h_cmp_mu,    (void *)s->h_ref_sq,    (void *)s->h_cmp_sq,
+        (void *)s->h_refcmp, (void *)pl->l_terms[i], (void *)pl->c_terms[i], (void *)pl->s_terms[i],
+        (void *)&w_horiz,    (void *)&w_final,       (void *)&h_final,       (void *)&s->c1,
         (void *)&s->c2,      (void *)&s->c3,
     };
-    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_vert_lcs, s->scale_grid_x[i], s->scale_grid_y[i],
-                                           1, MS_SSIM_BLOCK_X, MS_SSIM_BLOCK_Y, 1, 0, s->lc.str,
-                                           vert_params, NULL));
+    CHECK_CUDA_RETURN(cu_f, cuLaunchKernel(s->func_vert_lcs, pl->scale_grid_x[i],
+                                           pl->scale_grid_y[i], 1, MS_SSIM_BLOCK_X, MS_SSIM_BLOCK_Y,
+                                           1, 0, s->lc.str, vert_params, NULL));
 
-    const size_t windows = s->scale_window_count[i];
-    CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(s->h_l_terms[i], (CUdeviceptr)s->l_terms[i]->data,
+    const size_t windows = pl->scale_window_count[i];
+    CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(pl->h_l_terms[i], (CUdeviceptr)pl->l_terms[i]->data,
                                               windows * sizeof(double), s->lc.str));
-    CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(s->h_c_terms[i], (CUdeviceptr)s->c_terms[i]->data,
+    CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(pl->h_c_terms[i], (CUdeviceptr)pl->c_terms[i]->data,
                                               windows * sizeof(double), s->lc.str));
-    CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(s->h_s_terms[i], (CUdeviceptr)s->s_terms[i]->data,
+    CHECK_CUDA_RETURN(cu_f, cuMemcpyDtoHAsync(pl->h_s_terms[i], (CUdeviceptr)pl->s_terms[i]->data,
                                               windows * sizeof(float), s->lc.str));
     return 0;
 }
 
-static int ms_ssim_submit_scales(MsSsimStateCuda *s, CudaFunctions *cu_f)
+/* One plane's whole frame: staging, pyramid and every scale's terms. */
+static int ms_ssim_submit_plane(VmafFeatureExtractor *fex, MsSsimStateCuda *s, VmafPicture *ref_pic,
+                                VmafPicture *dist_pic, unsigned plane)
 {
-    for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        const int err = ms_ssim_submit_scale(s, cu_f, i);
-        if (err)
-            return err;
-    }
-    return 0;
+    CudaFunctions *cu_f = fex->cu_state->f;
+    const MsSsimPlaneCuda *pl = &s->planes[plane];
+    int err = ms_ssim_stage_inputs(fex, s, ref_pic, dist_pic, plane);
+    if (!err)
+        err = ms_ssim_submit_pyramid(s, cu_f, pl);
+    for (int i = 0; i < MS_SSIM_SCALES && !err; i++)
+        err = ms_ssim_submit_scale(s, cu_f, pl, i);
+    return err;
 }
 
 static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, VmafPicture *ref_pic_90,
@@ -547,17 +650,11 @@ static int submit_fex_cuda(VmafFeatureExtractor *fex, VmafPicture *ref_pic, Vmaf
     CudaFunctions *cu_f = fex->cu_state->f;
 
     s->index = index;
-    int err = ms_ssim_stage_inputs(fex, s, ref_pic, dist_pic);
-    if (err)
-        return err;
-
-    err = ms_ssim_submit_pyramid(s, cu_f);
-    if (err)
-        return err;
-
-    err = ms_ssim_submit_scales(s, cu_f);
-    if (err)
-        return err;
+    for (unsigned p = 0u; p < s->n_planes; p++) {
+        const int err = ms_ssim_submit_plane(fex, s, ref_pic, dist_pic, p);
+        if (err)
+            return err;
+    }
 
     /* Fence the final readback and opt the lifecycle into the
      * engine's drain batch. drain_batch_register is best-effort:
@@ -594,29 +691,19 @@ static void ms_ssim_scale_sums(const double *l_terms, const double *c_terms, con
     sums[2] = st;
 }
 
-static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
-                            VmafFeatureCollector *feature_collector)
+/* One plane's per-scale means, as iqa_ssim() returns them, and its score, as
+ * ms_ssim.c combines them. */
+static void ms_ssim_plane_scores(const MsSsimPlaneCuda *pl, MsSsimPlaneScores *out)
 {
-    MsSsimStateCuda *s = fex->priv;
-
-    /* Wait for all 5 scales' DtoH copies to land. Fast path
-     * (T-GPU-OPT-2 / ADR-0271): when the engine has already drained
-     * lc.finished as part of its batched flush, this is a no-op
-     * (lc.drained is true → reset and return). Otherwise falls back
-     * to cuStreamSynchronize(lc.str). */
-    int wait_err = vmaf_cuda_kernel_collect_wait(&s->lc, fex->cu_state);
-    if (wait_err)
-        return wait_err;
-
-    double l_means[MS_SSIM_SCALES] = {0};
-    double c_means[MS_SSIM_SCALES] = {0};
-    double s_means[MS_SSIM_SCALES] = {0};
+    double *l_means = out->l;
+    double *c_means = out->c;
+    double *s_means = out->s;
     for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        const unsigned w_final = s->scale_w_final[i];
-        const unsigned h_final = s->scale_h_final[i];
+        const unsigned w_final = pl->scale_w_final[i];
+        const unsigned h_final = pl->scale_h_final[i];
         double sums[3] = {0.0, 0.0, 0.0};
-        ms_ssim_scale_sums(s->h_l_terms[i], s->h_c_terms[i], s->h_s_terms[i],
-                           s->scale_window_count[i], sums);
+        ms_ssim_scale_sums(pl->h_l_terms[i], pl->h_c_terms[i], pl->h_s_terms[i],
+                           pl->scale_window_count[i], sums);
         const double total_l = sums[0];
         const double total_c = sums[1];
         const double total_s = sums[2];
@@ -634,9 +721,77 @@ static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
                   pow(fabs(c_means[i]), (double)g_betas[i]) *
                   pow(fabs(s_means[i]), (double)g_gammas[i]);
     }
-    return vmaf_ms_ssim_emit_scores(feature_collector, s->feature_name_dict, "float_ms_ssim_cuda",
-                                    "float_ms_ssim", msssim, s->enable_db, s->max_db, l_means,
-                                    c_means, s_means, MS_SSIM_SCALES, s->enable_lcs, index);
+    out->score = msssim;
+}
+
+/* float_ms_ssim.c's validate_plane_scores(): a non-finite score or mean of
+ * any plane fails the frame before anything is emitted. */
+static int ms_ssim_validate_plane(const MsSsimPlaneScores *sc, unsigned plane, unsigned index)
+{
+    if (!isfinite(sc->score)) {
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "float_ms_ssim_cuda: non-finite score at frame %u (feature=%s value=%g)\n", index,
+                 ms_ssim_plane_names[plane], sc->score);
+        return -EINVAL;
+    }
+    for (int i = 0; i < MS_SSIM_SCALES; i++) {
+        if (isfinite(sc->l[i]) && isfinite(sc->c[i]) && isfinite(sc->s[i]))
+            continue;
+        vmaf_log(VMAF_LOG_LEVEL_WARNING,
+                 "float_ms_ssim_cuda: non-finite atom at frame %u "
+                 "(feature=%s scale=%d l=%g c=%g s=%g)\n",
+                 index, ms_ssim_plane_names[plane], i, sc->l[i], sc->c[i], sc->s[i]);
+        return -EINVAL;
+    }
+    return 0;
+}
+
+/* Luma with its optional per-scale means, then each chroma score, after
+ * every plane's score has been prepared as float_ms_ssim.c prepares it. */
+static int ms_ssim_emit_planes(const MsSsimStateCuda *s, VmafFeatureCollector *feature_collector,
+                               const MsSsimPlaneScores *sc, unsigned index)
+{
+    for (unsigned p = 0u; p < s->n_planes; p++) {
+        double prepared_score = 0.0;
+        const int err = vmaf_ssim_prepare_score_named(
+            ms_ssim_plane_names[p], sc[p].score, s->enable_db, s->max_db, index, &prepared_score);
+        if (err)
+            return err;
+    }
+    int err = vmaf_ms_ssim_emit_scores(
+        feature_collector, s->feature_name_dict, "float_ms_ssim_cuda", "float_ms_ssim", sc[0].score,
+        s->enable_db, s->max_db, sc[0].l, sc[0].c, sc[0].s, MS_SSIM_SCALES, s->enable_lcs, index);
+    for (unsigned p = 1u; p < s->n_planes && !err; p++) {
+        err = vmaf_ssim_emit_score_named(feature_collector, s->feature_name_dict,
+                                         "float_ms_ssim_cuda", ms_ssim_plane_names[p], sc[p].score,
+                                         s->enable_db, s->max_db, index);
+    }
+    return err;
+}
+
+static int collect_fex_cuda(VmafFeatureExtractor *fex, unsigned index,
+                            VmafFeatureCollector *feature_collector)
+{
+    MsSsimStateCuda *s = fex->priv;
+
+    /* Wait for every plane's DtoH copies to land. Fast path
+     * (T-GPU-OPT-2 / ADR-0271): when the engine has already drained
+     * lc.finished as part of its batched flush, this is a no-op
+     * (lc.drained is true → reset and return). Otherwise falls back
+     * to cuStreamSynchronize(lc.str). */
+    const int wait_err = vmaf_cuda_kernel_collect_wait(&s->lc, fex->cu_state);
+    if (wait_err)
+        return wait_err;
+
+    MsSsimPlaneScores scores[MS_SSIM_MAX_PLANES];
+    memset(scores, 0, sizeof(scores));
+    for (unsigned p = 0u; p < s->n_planes; p++) {
+        ms_ssim_plane_scores(&s->planes[p], &scores[p]);
+        const int err = ms_ssim_validate_plane(&scores[p], p, index);
+        if (err)
+            return err;
+    }
+    return ms_ssim_emit_planes(s, feature_collector, scores, index);
 }
 
 static int ms_ssim_free_device_buffer(VmafCudaState *cu_state, VmafCudaBuffer **buffer)
@@ -649,16 +804,38 @@ static int ms_ssim_free_host_buffer(VmafCudaState *cu_state, void **buffer)
     return vmaf_cuda_buffer_host_free_owned(cu_state, buffer);
 }
 
-static int ms_ssim_free_pyramid(VmafCudaState *cu_state, MsSsimStateCuda *s)
+/* `*rc` keeps the first error of a release sequence. */
+static void ms_ssim_keep_first_error(int *rc, int e)
+{
+    if (e && !*rc)
+        *rc = e;
+}
+
+static int ms_ssim_free_plane_scale(VmafCudaState *cu_state, MsSsimPlaneCuda *pl, int i)
+{
+    int rc = ms_ssim_free_device_buffer(cu_state, &pl->pyramid_ref[i]);
+    ms_ssim_keep_first_error(&rc, ms_ssim_free_device_buffer(cu_state, &pl->pyramid_cmp[i]));
+    ms_ssim_keep_first_error(&rc, ms_ssim_free_device_buffer(cu_state, &pl->l_terms[i]));
+    ms_ssim_keep_first_error(&rc, ms_ssim_free_device_buffer(cu_state, &pl->c_terms[i]));
+    ms_ssim_keep_first_error(&rc, ms_ssim_free_device_buffer(cu_state, &pl->s_terms[i]));
+    ms_ssim_keep_first_error(&rc, ms_ssim_free_host_buffer(cu_state, (void **)&pl->h_l_terms[i]));
+    ms_ssim_keep_first_error(&rc, ms_ssim_free_host_buffer(cu_state, (void **)&pl->h_c_terms[i]));
+    ms_ssim_keep_first_error(&rc, ms_ssim_free_host_buffer(cu_state, (void **)&pl->h_s_terms[i]));
+    return rc;
+}
+
+/* Every buffer of every plane, MS_SSIM_MAX_PLANES and not n_planes: an init
+ * that failed part-way leaves earlier planes allocated, and the frees skip
+ * NULL. */
+static int ms_ssim_free_planes(VmafCudaState *cu_state, MsSsimStateCuda *s)
 {
     int rc = 0;
-    for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        int e = ms_ssim_free_device_buffer(cu_state, &s->pyramid_ref[i]);
-        if (e && !rc)
-            rc = e;
-        e = ms_ssim_free_device_buffer(cu_state, &s->pyramid_cmp[i]);
-        if (e && !rc)
-            rc = e;
+    for (unsigned p = 0u; p < MS_SSIM_MAX_PLANES; p++) {
+        MsSsimPlaneCuda *pl = &s->planes[p];
+        for (int i = 0; i < MS_SSIM_SCALES; i++)
+            ms_ssim_keep_first_error(&rc, ms_ssim_free_plane_scale(cu_state, pl, i));
+        ms_ssim_keep_first_error(&rc, ms_ssim_free_host_buffer(cu_state, (void **)&pl->h_ref));
+        ms_ssim_keep_first_error(&rc, ms_ssim_free_host_buffer(cu_state, (void **)&pl->h_cmp));
     }
     return rc;
 }
@@ -666,44 +843,10 @@ static int ms_ssim_free_pyramid(VmafCudaState *cu_state, MsSsimStateCuda *s)
 static int ms_ssim_free_intermediates(VmafCudaState *cu_state, MsSsimStateCuda *s)
 {
     int rc = ms_ssim_free_device_buffer(cu_state, &s->h_ref_mu);
-    int e = ms_ssim_free_device_buffer(cu_state, &s->h_cmp_mu);
-    if (e && !rc)
-        rc = e;
-    e = ms_ssim_free_device_buffer(cu_state, &s->h_ref_sq);
-    if (e && !rc)
-        rc = e;
-    e = ms_ssim_free_device_buffer(cu_state, &s->h_cmp_sq);
-    if (e && !rc)
-        rc = e;
-    e = ms_ssim_free_device_buffer(cu_state, &s->h_refcmp);
-    if (e && !rc)
-        rc = e;
-    return rc;
-}
-
-static int ms_ssim_free_terms(VmafCudaState *cu_state, MsSsimStateCuda *s)
-{
-    int rc = 0;
-    for (int i = 0; i < MS_SSIM_SCALES; i++) {
-        int e = ms_ssim_free_device_buffer(cu_state, &s->l_terms[i]);
-        if (e && !rc)
-            rc = e;
-        e = ms_ssim_free_device_buffer(cu_state, &s->c_terms[i]);
-        if (e && !rc)
-            rc = e;
-        e = ms_ssim_free_device_buffer(cu_state, &s->s_terms[i]);
-        if (e && !rc)
-            rc = e;
-        e = ms_ssim_free_host_buffer(cu_state, (void **)&s->h_l_terms[i]);
-        if (e && !rc)
-            rc = e;
-        e = ms_ssim_free_host_buffer(cu_state, (void **)&s->h_c_terms[i]);
-        if (e && !rc)
-            rc = e;
-        e = ms_ssim_free_host_buffer(cu_state, (void **)&s->h_s_terms[i]);
-        if (e && !rc)
-            rc = e;
-    }
+    ms_ssim_keep_first_error(&rc, ms_ssim_free_device_buffer(cu_state, &s->h_cmp_mu));
+    ms_ssim_keep_first_error(&rc, ms_ssim_free_device_buffer(cu_state, &s->h_ref_sq));
+    ms_ssim_keep_first_error(&rc, ms_ssim_free_device_buffer(cu_state, &s->h_cmp_sq));
+    ms_ssim_keep_first_error(&rc, ms_ssim_free_device_buffer(cu_state, &s->h_refcmp));
     return rc;
 }
 
@@ -714,34 +857,18 @@ static int close_fex_cuda(VmafFeatureExtractor *fex)
     if (ret)
         return ret;
 
-    int e = ms_ssim_free_pyramid(fex->cu_state, s);
-    if (e && !ret)
-        ret = e;
-    e = ms_ssim_free_intermediates(fex->cu_state, s);
-    if (e && !ret)
-        ret = e;
-    e = ms_ssim_free_host_buffer(fex->cu_state, &s->h_input_uint);
-    if (e && !ret)
-        ret = e;
-    e = ms_ssim_free_host_buffer(fex->cu_state, (void **)&s->h_ref);
-    if (e && !ret)
-        ret = e;
-    e = ms_ssim_free_host_buffer(fex->cu_state, (void **)&s->h_cmp);
-    if (e && !ret)
-        ret = e;
-    e = ms_ssim_free_terms(fex->cu_state, s);
-    if (e && !ret)
-        ret = e;
-    e = vmaf_dictionary_free(&s->feature_name_dict);
-    if (e && !ret)
-        ret = e;
-    e = vmaf_cuda_module_unload(fex->cu_state, &s->module);
-    if (e && !ret)
-        ret = e;
+    ms_ssim_keep_first_error(&ret, ms_ssim_free_planes(fex->cu_state, s));
+    ms_ssim_keep_first_error(&ret, ms_ssim_free_intermediates(fex->cu_state, s));
+    ms_ssim_keep_first_error(&ret, ms_ssim_free_host_buffer(fex->cu_state, &s->h_input_uint));
+    ms_ssim_keep_first_error(&ret, vmaf_dictionary_free(&s->feature_name_dict));
+    ms_ssim_keep_first_error(&ret, vmaf_cuda_module_unload(fex->cu_state, &s->module));
     return ret;
 }
 
-static const char *provided_features[] = {"float_ms_ssim", NULL};
+/* All three plane features, as float_ms_ssim.c provides them: without _cb /
+ * _cr here the ADR-0530 name fallback would route them to the CPU extractor. */
+static const char *provided_features[] = {"float_ms_ssim", "float_ms_ssim_cb", "float_ms_ssim_cr",
+                                          NULL};
 
 // NOLINTNEXTLINE(misc-use-internal-linkage): cross-TU registry pattern — external linkage required; referenced as `extern VmafFeatureExtractor vmaf_fex_float_ms_ssim_cuda` by feature_extractor.cpp's feature_extractor_list[] (ADR-0278).
 VmafFeatureExtractor vmaf_fex_float_ms_ssim_cuda = {

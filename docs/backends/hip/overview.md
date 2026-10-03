@@ -171,9 +171,13 @@ vmaf --reference ref.yuv --distorted dist.yuv \
      --no_prediction --json --output ms_ssim.json --precision max
 ```
 
-It takes the CPU's options (`enable_lcs`, `enable_db`, `clip_db`;
-`enable_chroma` is accepted and scores luma only) and the CPU's minimum
-frame size of 176x176.
+It takes the CPU's options (`enable_lcs`, `enable_db`, `clip_db`,
+`enable_chroma`) and the CPU's minimum frame size of 176x176. With
+`enable_chroma=true` it scores the Cb and Cr planes through the same
+pipeline and writes `float_ms_ssim_cb` and `float_ms_ssim_cr`, bit for bit
+the CPU's; every scored plane must then be at least 176x176 (351x351 luma at
+4:2:0). Until 2026-10-03 the option was accepted and ignored, and a run that
+set it had no chroma scores ([MS-SSIM](../../metrics/ms-ssim.md)).
 
 The kernels compute each sample the way the CPU does
 ([ADR-1403](../../adr/1403-cuda-strict-fp-every-kernel.md), which made the

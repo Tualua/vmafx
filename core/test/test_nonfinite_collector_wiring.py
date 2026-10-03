@@ -72,6 +72,8 @@ REQUIRED = {
     ),
     "vmaf_ssim_prepare_score_named": (
         "float_ms_ssim.c",
+        "cuda/integer_ms_ssim_cuda.c",
+        "hip/integer_ms_ssim_hip.c",
         "sycl/integer_ms_ssim_sycl.cpp",
         "metal/float_ms_ssim_metal.mm",
     ),
