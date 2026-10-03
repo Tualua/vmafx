@@ -351,7 +351,7 @@ VMAF_CUDA_DISPATCH=adaptive,integer_vif=batched ./build/tools/vmaf ...
 ```
 
 See [ADR-0483](../../adr/0483-gpu-dispatch-parse-dedup.md) for the full parse
-grammar and the [env-var reference](../../usage/env-vars.md#cuda-dispatch-knob)
+grammar and the [env-var reference](../../usage/env-vars.md#cuda-dispatch)
 for the complete table.
 
 ## Known gaps

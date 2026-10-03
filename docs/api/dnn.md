@@ -102,7 +102,7 @@ Returns:
   banned op.
 
 Equivalent CLI flag: `--tiny-model <path>`
-([usage/cli.md](../usage/cli.md#tiny-ai-flags-fork-added)).
+([usage/cli.md](../usage/cli.md#tiny-ai-flags)).
 
 Attached scores are written to the normal feature collector:
 
@@ -151,7 +151,7 @@ int vmaf_dnn_set_codec_context(VmafContext *ctx,
 
 Equivalent CLI flags (the `vmaf` CLI calls this internally):
 `--tiny-codec`, `--tiny-preset`, `--tiny-crf` — see
-[usage/cli.md](../usage/cli.md#codec-context-flags-fork-added).
+[usage/cli.md](../usage/cli.md#codec-context-flags).
 Per-codec / per-preset vocabularies live in the model's sidecar JSON
 under `encoder_vocab` and `preset_vocab`; the loader bakes them into
 the runtime descriptor at `vmaf_use_tiny_model()` time.
@@ -199,7 +199,7 @@ document it alongside the model checkpoint.
 | `-ENOSYS` | libvmaf was built without DNN support.                               |
 
 Equivalent CLI flag: `--tiny-resize <bilinear|nearest|bicubic|disabled>`
-— see [usage/cli.md](../usage/cli.md#codec-context-flags-fork-added).
+— see [usage/cli.md](../usage/cli.md#codec-context-flags).
 May be called before or after `vmaf_use_tiny_model()`; the setting is
 sticky for the lifetime of the context.
 

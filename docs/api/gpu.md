@@ -400,7 +400,7 @@ the enable/disable pair to gate which frame ranges get timed.
 
 `vmaf_sycl_profiling_get_string` yields a caller-owned buffer — free with
 `free()`. Equivalent to `vmaf_bench --gpu-profile`
-([../usage/bench.md](../usage/bench.md#performance-benchmark-default)).
+([../usage/bench.md](../usage/bench.md#performance-benchmark-default-mode)).
 
 ### Limitations
 

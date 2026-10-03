@@ -571,7 +571,7 @@ ADR-1121). The variable is resolved once at init, so toggling it mid-run has no
 effect.
 
 See [ADR-0483](../../adr/0483-gpu-dispatch-parse-dedup.md) and the
-[env-var reference](../../usage/env-vars.md#sycl-dispatch-knob).
+[env-var reference](../../usage/env-vars.md#sycl-dispatch).
 
 ## Profiling
 

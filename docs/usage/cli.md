@@ -1,4 +1,4 @@
-<!-- markdownlint-disable MD060 -->
+<!-- markdownlint-disable MD033 MD060 -->
 # `vmaf` — command-line reference
 
 `vmaf` scores a reference / distorted video pair with one or more VMAF models
@@ -21,7 +21,7 @@ Related pages: [bench.md](bench.md) for the `vmaf_bench` micro-benchmark,
 ## Quick start
 
 Build the binary as described in the
-[source-build guide](../getting-started/index.md#build-from-source-any-platform);
+[source-build guide](../getting-started/index.md#build-from-source);
 with `meson setup build core` it lands at `build/tools/vmaf`.
 
 ```shell
@@ -523,6 +523,9 @@ example, `--aom_ctc v7.0` is equivalent to:
 ```
 
 `--aom_ctc proposed` is deprecated and errors out with an explanation.
+
+<!-- The old anchor stays for ADR-0234, whose Accepted body links to it. -->
+<a id="tiny-ai-flags-fork-added"></a>
 
 ## Tiny-AI flags
 
