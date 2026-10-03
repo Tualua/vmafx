@@ -612,6 +612,19 @@ static const LumaFeature g_luma_features[] = {
      0.0,
      0u,
      0u},
+    /* motion_add_uv (ADR-1599): Cb / Cr blurred and added in the CPU's order, so host upload
+     * is bit-identical to the CPU; the zero-copy leg marks the chroma imported. The option
+     * spells the feature names (motion2_mau). 5 frames, odd 67 x 37 (34 x 19 chroma). */
+    {"float_motion_sycl",
+     "float_motion",
+     {"motion2_mau", "motion3_mau", "motion_mau"},
+     3u,
+     "motion_add_uv",
+     "true",
+     1,
+     0.0,
+     0u,
+     0u},
     {"float_vif_sycl",
      "float_vif",
      {"VMAF_feature_vif_scale0_score", "VMAF_feature_vif_scale1_score",

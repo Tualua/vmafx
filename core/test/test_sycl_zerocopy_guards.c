@@ -221,11 +221,14 @@ static const GuardRow guard_rows[] = {
     {"psnr_hvs_sycl", NULL, NULL, 8u, 0, "psnr_hvs_cb", 1},
     {"motion_sycl", "motion_add_uv", "true", 8u, -ENOTSUP, NULL, 0},
     {"motion_sycl", "motion_add_uv", "true", 8u, 0, "integer_motion2_mau", 1},
+    {"float_motion_sycl", "motion_add_uv", "true", 8u, -ENOTSUP, NULL, 0},
+    {"float_motion_sycl", "motion_add_uv", "true", 8u, 0, "motion2_mau", 1},
 };
 
 /* Chroma readers without a chroma mark: the only rows that may still refuse zero-copy input
- * (ciede, ssimulacra2, speed_chroma, psnr, psnr_hvs, motion_add_uv). */
-#define N_CHROMA_REFUSALS 6u
+ * (ciede, ssimulacra2, speed_chroma, psnr, psnr_hvs, motion_add_uv of motion and
+ * float_motion, ADR-1599). */
+#define N_CHROMA_REFUSALS 7u
 #define N_GUARD_ROWS ((unsigned)(sizeof(guard_rows) / sizeof(guard_rows[0])))
 
 #ifndef EXPECTED_SYCL_EXTRACTORS
@@ -351,7 +354,7 @@ static char *test_only_unmarked_chroma_readers_refuse(void)
             refusals++;
         }
     }
-    mu_assert("exactly the six unmarked chroma readers refuse zero-copy input",
+    mu_assert("exactly the seven unmarked chroma readers refuse zero-copy input",
               refusals == N_CHROMA_REFUSALS);
     return NULL;
 }
