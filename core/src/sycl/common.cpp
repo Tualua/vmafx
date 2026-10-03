@@ -222,6 +222,16 @@ extern "C" int vmaf_sycl_require_host_pictures(const char *extractor, const Vmaf
     return -ENOTSUP;
 }
 
+extern "C" int vmaf_sycl_require_chroma(VmafSyclState *state, const char *extractor,
+                                        const VmafPicture *ref, const VmafPicture *dis)
+{
+    (void)state;
+    (void)extractor;
+    (void)ref;
+    (void)dis;
+    return -ENOSYS;
+}
+
 /* ------------------------------------------------------------------ */
 /* Device enumeration                                                  */
 /* ------------------------------------------------------------------ */
@@ -1115,6 +1125,26 @@ extern "C" void *vmaf_sycl_get_shared_plane(VmafSyclState *state, int is_ref, un
     if (plane == 0)
         return is_ref ? state->shared_ref_buf[slot] : state->shared_dis_buf[slot];
     return is_ref ? state->planes.ref[slot][plane - 1] : state->planes.dis[slot][plane - 1];
+}
+
+extern "C" void *vmaf_sycl_get_shared_plane_upload(VmafSyclState *state, int is_ref,
+                                                   unsigned plane)
+{
+    (void)state;
+    (void)is_ref;
+    (void)plane;
+    return nullptr;
+}
+
+extern "C" void vmaf_sycl_shared_chroma_mark_imported(VmafSyclState *state)
+{
+    (void)state;
+}
+
+extern "C" bool vmaf_sycl_shared_chroma_current(const VmafSyclState *state)
+{
+    (void)state;
+    return false;
 }
 
 /* ------------------------------------------------------------------ */

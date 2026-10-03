@@ -5876,6 +5876,20 @@ test('test_sycl_shared_planes', test_sycl_shared_planes,
     suite : ['fast', 'gpu', 'sycl'],
     is_parallel : false)
 
+# ADR-1597: zero-copy chroma runtime contract (eager planes, per-frame
+# currency, -ENOTSUP when not imported) and psnr / psnr_hvs chroma parity vs
+# the CPU extractors on emulated zero-copy (upload-slot writes + mark).
+test_sycl_zerocopy_parity = executable('test_sycl_zerocopy_parity',
+    ['test.c', 'test_sycl_zerocopy_parity.c'],
+    include_directories : [libvmaf_inc, test_inc, include_directories('../src/')],
+    link_with : get_option('default_library') == 'both' ? libvmaf.get_static_lib() : libvmaf,
+    dependencies: [pthread_dependency, sycl_dependency, math_lib],
+    c_args: ['-DHAVE_SYCL=1']
+)
+test('test_sycl_zerocopy_parity', test_sycl_zerocopy_parity,
+    suite : ['fast', 'gpu', 'sycl'],
+    is_parallel : false)
+
 # ADR-1597: the layout-addressed chroma de-interleave kernel of the zero-copy
 # import. Host-synthesised NV12 / P010 UV planes in LINEAR, Tile4 and Y-tiled
 # layouts, built by a forward address function independent of the kernel, must
