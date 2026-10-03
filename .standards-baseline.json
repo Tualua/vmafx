@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-10-03T20:14:21Z",
+  "generated_at": "2026-10-03T21:25:57Z",
   "repository": "VMAFx/vmafx",
-  "commit_sha": "0bf79cdc90d4428046a23c9093ebf7cc29b38ce7",
-  "total_infractions": 502,
+  "commit_sha": "f215dd4090c3c650e0ef1da76699af34b5493c30",
+  "total_infractions": 495,
   "infractions": [
     {
       "rule_id": "HISS-07",
@@ -332,62 +332,6 @@
       "message": "curl without --max-time waits on the network without a deadline",
       "anchor": "text:dd98cd6ad7ab",
       "fingerprint": ".github/workflows/helm-chart.yml:HISS-02:text:dd98cd6ad7ab#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/lint-and-format.yml",
-      "line_number": 114,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:34e8c3fdfb8f",
-      "fingerprint": ".github/workflows/lint-and-format.yml:HISS-07:text:34e8c3fdfb8f#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/lint-and-format.yml",
-      "line_number": 120,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:c64a8639808e",
-      "fingerprint": ".github/workflows/lint-and-format.yml:HISS-07:text:c64a8639808e#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/lint-and-format.yml",
-      "line_number": 123,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:9e717eae996f",
-      "fingerprint": ".github/workflows/lint-and-format.yml:HISS-07:text:9e717eae996f#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/lint-and-format.yml",
-      "line_number": 1029,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:c07fa2186849",
-      "fingerprint": ".github/workflows/lint-and-format.yml:HISS-07:text:c07fa2186849#1"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/lint-and-format.yml",
-      "line_number": 1039,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:c07fa2186849",
-      "fingerprint": ".github/workflows/lint-and-format.yml:HISS-07:text:c07fa2186849#2"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/lint-and-format.yml",
-      "line_number": 1048,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:c07fa2186849",
-      "fingerprint": ".github/workflows/lint-and-format.yml:HISS-07:text:c07fa2186849#3"
-    },
-    {
-      "rule_id": "HISS-07",
-      "file_path": ".github/workflows/lint-and-format.yml",
-      "line_number": 1057,
-      "message": "'|| true' discards the command's failure; handle the exit status or test the condition instead",
-      "anchor": "text:c07fa2186849",
-      "fingerprint": ".github/workflows/lint-and-format.yml:HISS-07:text:c07fa2186849#4"
     },
     {
       "rule_id": "HISS-07",

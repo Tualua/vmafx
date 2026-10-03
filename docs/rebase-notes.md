@@ -1,6 +1,19 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## `lint-and-format.yml` swallows no exit status (2026-10-03)
+
+`ci/lint-and-format-hiss07`. CI and baseline only; no libvmaf change.
+
+- The seven `|| true` of the file (HISS-07) are gone. `git diff` failures fail
+  the step; the markdown filters run through `keep()`, which maps only grep's
+  status 1 (no line matched) to success, under `set -o pipefail`. A sync that
+  re-adds `|| true` re-adds the baseline rows; keep this side.
+- The `pre-commit` job runs `scripts/githooks/tests/test_install_hooks_env.py`
+  after `test_install.py`.
+- `.standards-baseline.json` and the README count: 502 to 495, re-recorded with
+  `praetorctl baseline --record`; on conflict re-record at the tip.
+
 ## Hook environments install outside the commit's git environment (2026-10-03)
 
 `fix/hooks-install-envs-outside-commit-env`. Hooks and tests only; no libvmaf change.
