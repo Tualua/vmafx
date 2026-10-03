@@ -9,6 +9,7 @@ import base64
 import hashlib
 import importlib.util
 import json
+import re
 import struct
 import subprocess
 from pathlib import Path
@@ -390,6 +391,58 @@ def test_a_kernel_object_without_exactly_one_source_is_refused(tmp_path: Path) -
         lic.compiled_source(FATBIN_RULE, "src/psnr_score.fatbin.c", repo)
 
 
+VENDOR_ID = "cd" * 20
+
+
+def vendored_manifest() -> dict:
+    """A record whose vendor runtime bundles one copyleft and one permissive library."""
+    data = manifest()
+    data["source_archives"]["elfutils"] = {"file": "elfutils.tar.bz2", "url": "https://example.invalid/e",
+                                           "sha256": "1" * 64, "why": "test"}  # fmt: skip
+    data["artifacts"]["kit"]["components"].insert(2, {
+        "id": "rocm", "kind": "fixed", "name": "vendor runtime", "licence": "MIT",
+        "paths": ["opt/rocm/lib/**"],
+        "vendored_libraries": [
+            {"pattern": "libsys_elf.so*", "licence": "LGPL-3.0-or-later", "copyleft": True,
+             "archives": ["elfutils"], "sources": {VENDOR_ID: ["elfutils"]}},
+            {"pattern": "libsys_z.so*", "licence": "Zlib", "copyleft": False},
+        ],
+    })  # fmt: skip
+    return data
+
+
+def add_vendored(root: Path, build_id: str = VENDOR_ID) -> None:
+    lib = root / "opt/rocm/lib/sysdeps"
+    write(lib / "libsys_elf.so.1", make_elf(build_id))
+    write(lib / "libsys_z.so.1", make_elf("ef" * 20))
+    (lib / "libsys_elf.so").symlink_to("libsys_elf.so.1")
+
+
+def test_a_recorded_vendored_copyleft_library_passes_and_names_its_source(tmp_path: Path) -> None:
+    args = setup_tree(tmp_path)
+    add_vendored(Path(args.root))
+    data = vendored_manifest()
+    assert notices_then_check(args, data) == []
+    notices = (Path(args.root) / "licenses" / lic.NOTICES_NAME).read_text()
+    assert "Vendored libsys_elf.so*: LGPL-3.0-or-later; source elfutils" in notices
+    assert "archive elfutils" in lic.source_list(args, data)
+
+
+def test_a_vendored_copyleft_library_of_another_build_fails(tmp_path: Path) -> None:
+    args = setup_tree(tmp_path)
+    add_vendored(Path(args.root), build_id="99" * 20)
+    problems = notices_then_check(args, vendored_manifest())
+    assert f"copyleft libsys_elf.so.1 (build ID {'99' * 20}) has no recorded source" in problems
+
+
+def test_a_recorded_vendored_library_that_is_gone_fails(tmp_path: Path) -> None:
+    args = setup_tree(tmp_path)
+    add_vendored(Path(args.root))
+    (Path(args.root) / "opt/rocm/lib/sysdeps/libsys_z.so.1").unlink()
+    problems = notices_then_check(args, vendored_manifest())
+    assert "vendored library libsys_z.so* of component rocm matches no file" in problems
+
+
 # ----------------------------------------------------------------- sources
 
 
@@ -446,6 +499,54 @@ def test_download_refuses_a_wrong_hash(tmp_path: Path, monkeypatch) -> None:
     assert not (tmp_path / "x").exists()
 
 
+def source_repo(tmp: Path) -> tuple[Path, str]:
+    """A local git repository with one commit (the test stand-in for TheRock)."""
+    repo = tmp / "upstream"
+    write(repo / "patches/numactl/0001.patch", "patch\n")
+
+    def git(*argv: str) -> str:  # never the caller's repository, even under a git hook
+        done = subprocess.run(["git", *argv], cwd=repo, check=True, capture_output=True, text=True,
+                              env=lic.git_environment())  # fmt: skip
+        return done.stdout.strip()
+
+    git("init", "-q")
+    git("config", "uploadpack.allowAnySHA1InWant", "true")
+    git("add", ".")
+    git("-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "c")
+    return repo, git("rev-parse", "HEAD")
+
+
+def test_a_source_tree_is_fetched_by_its_commit_and_archived(tmp_path: Path) -> None:
+    repo, commit = source_repo(tmp_path)
+    (tmp_path / "out" / "archives").mkdir(parents=True)
+    archive = {"file": "Tree-x.tar.gz", "git": repo.as_uri(), "commit": commit, "why": "test"}
+    line = lic.fetch_archive(archive, tmp_path / "out")
+    assert f"at commit {commit} (git archive)" in line
+    names = subprocess.run(["tar", "-tzf", str(tmp_path / "out/archives/Tree-x.tar.gz")],
+                           check=True, capture_output=True, text=True).stdout.split()  # fmt: skip
+    assert "Tree-x/patches/numactl/0001.patch" in names
+    assert not any(p.name.startswith(".") for p in (tmp_path / "out/archives").iterdir())
+
+
+def test_git_commands_ignore_the_callers_repository(monkeypatch) -> None:
+    monkeypatch.setenv("GIT_DIR", "/nonexistent/.git")
+    monkeypatch.setenv("GIT_INDEX_FILE", "/nonexistent/index")
+    env = lic.git_environment()
+    assert "GIT_DIR" not in env and "GIT_INDEX_FILE" not in env and "PATH" in env
+
+
+def test_a_source_tree_of_another_commit_is_refused(tmp_path: Path) -> None:
+    repo, commit = source_repo(tmp_path)
+    (tmp_path / "out" / "archives").mkdir(parents=True)
+    wrong = {"file": "Tree-x.tar.gz", "git": repo.as_uri(), "commit": "0" * 40, "why": "test"}
+    with pytest.raises(lic.LicensingError, match="git fetch failed"):
+        lic.fetch_archive(wrong, tmp_path / "out")
+    short = {**wrong, "commit": commit[:12]}
+    with pytest.raises(lic.LicensingError, match="is not a full commit ID"):
+        lic.fetch_archive(short, tmp_path / "out")
+    assert not (tmp_path / "out/archives/Tree-x.tar.gz").exists()
+
+
 # ------------------------------------------------- the record and the recipes
 
 
@@ -455,6 +556,18 @@ def test_the_record_names_texts_and_archives_that_exist() -> None:
     assert missing == []
     used = {s for rule in data["grafted_libraries"] for s in rule.get("sources", {}).values()}
     assert used <= set(data["source_archives"])
+    for name, archive in data["source_archives"].items():  # a static file by hash, a tree by commit
+        pinned_file = "url" in archive and re.fullmatch(r"[0-9a-f]{64}", archive.get("sha256", ""))
+        pinned_tree = "git" in archive and re.fullmatch(r"[0-9a-f]{40}", archive.get("commit", ""))
+        assert pinned_file or pinned_tree, name
+    vendored = [rule for r in data["artifacts"].values() for c in r["components"]
+                for rule in c.get("vendored_libraries", [])]  # fmt: skip
+    assert {a for rule in vendored for a in rule.get("archives", [])} <= set(
+        data["source_archives"]
+    )
+    assert all(
+        rule.get("archives") and rule.get("sources") for rule in vendored if rule["copyleft"]
+    )
     entries = [
         e for r in data["artifacts"].values() for c in r["components"] for e in c.get("texts", [])
     ]
@@ -523,6 +636,30 @@ def test_the_cuda_image_cannot_be_built_without_its_licence_check() -> None:
     runtime = text.split("AS cuda-runtime", 1)[1].split("\nFROM ", 1)[0]
     assert "NVIDIA files in the image" in runtime  # the image ships no NVIDIA library
     assert_gpu_kit_published("cuda")
+
+
+def test_the_hip_image_cannot_be_built_without_its_licence_check() -> None:
+    text = (REPO / "docker/Dockerfile.tester").read_text()
+    final = text.split("FROM hip-assembled AS final-hip", 1)[1].split("\nFROM ", 1)[0]
+    assert "COPY --from=hip-licence-check /out/licence-check.json" in final
+    assert "licensing.py check --artifact hip-image" in text
+    assert "licensing.py notices --artifact hip-image" in text
+    assert "FROM scratch AS hip-source-export" in text
+    assert_gpu_kit_published("hip")
+
+
+def test_the_hip_record_carries_the_source_of_its_lgpl_libraries() -> None:
+    data = lic.load_manifest()
+    sysdeps = next(c for c in data["artifacts"]["hip-image"]["components"]
+                   if c["id"] == "rocm-sysdeps")  # fmt: skip
+    copyleft = [rule for rule in sysdeps["vendored_libraries"] if rule["copyleft"]]
+    assert {rule["pattern"] for rule in copyleft} == {"librocm_sysdeps_elf.so*",
+                                                      "librocm_sysdeps_numa.so*"}  # fmt: skip
+    spec = json.loads((REPO / "tools/rc1-tester/image/hip-runtime.json").read_text())
+    shipped = [n for c in spec["components"] if c["id"] == "rocm-sysdeps" for n in c["names"]]
+    for name in shipped:  # every bundled library the image ships has a vendored rule
+        assert any(lic.fnmatch.fnmatchcase(name.rstrip("*") or name, r["pattern"])
+                   for r in sysdeps["vendored_libraries"]), name  # fmt: skip
 
 
 def test_the_cuda_record_carries_the_nvidia_terms() -> None:

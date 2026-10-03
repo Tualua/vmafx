@@ -19,7 +19,7 @@ sources      --artifact KIND --root DIR --repo DIR --out FILE
              list the source packages the artifact's copyleft object code needs
 fetch-sources --list FILE --out DIR
              download those source packages (apt-get source, snapshot.debian.org,
-             recorded archives with their SHA-256)
+             recorded archives by SHA-256, recorded source trees by git commit)
 
 The record is licensing.json next to this file.
 """
@@ -560,6 +560,38 @@ def grafted_problems(manifest: dict, path: Path, digest: str) -> list[str]:
     return problems
 
 
+def vendored_rule(component: dict, name: str) -> dict | None:
+    for rule in component.get("vendored_libraries", []):
+        if fnmatch.fnmatchcase(name, rule["pattern"]):
+            return rule
+    return None
+
+
+def vendored_archives(rule: dict, path: Path) -> list[str]:
+    """The source archives a copyleft vendored library's build ID is recorded with."""
+    archives = rule.get("sources", {}).get(elf_build_id(path) or "", [])
+    return [archives] if isinstance(archives, str) else list(archives)
+
+
+def check_vendored(ctx: Context, owned: dict[str, list[str]]) -> list[str]:
+    """Shared libraries a vendor bundled (the ROCm runtime's `rocm_sysdeps`): every
+    recorded pattern matches a file of its component, and a copyleft one's ELF build
+    ID names its corresponding source."""
+    problems = []
+    for component in ctx.record["components"]:
+        rules = component.get("vendored_libraries", [])
+        files = [ctx.root / rel for rel in owned.get(component["id"], [])]
+        real = [path for path in files if path.is_file() and not path.is_symlink()]
+        for rule in rules:
+            matched = [path for path in real if fnmatch.fnmatchcase(path.name, rule["pattern"])]
+            if not matched:
+                problems.append(f"vendored library {rule['pattern']} of component "
+                                f"{component['id']} matches no file")  # fmt: skip
+            problems += [f"copyleft {path.name} (build ID {elf_build_id(path)}) has no recorded source"
+                         for path in matched if rule["copyleft"] and not vendored_archives(rule, path)]  # fmt: skip
+    return problems
+
+
 def check_dists(ctx: Context) -> list[str]:
     problems = []
     for dist in ctx.dists:
@@ -686,6 +718,9 @@ def component_section(component: dict, files: list[dict] | None) -> list[str]:
     lines += [f"  Text: {text_target(e)}  ({e.get('label', '')})".rstrip()
               for e in component_texts(component)]  # fmt: skip
     lines += copyright_groups(files or [])
+    lines += [f"  Vendored {rule['pattern']}: {rule['licence']}"
+              + (f"; source {', '.join(rule.get('archives', []))}" if rule["copyleft"] else "")
+              for rule in component.get("vendored_libraries", [])]  # fmt: skip
     lines += [f"  Note: {note}" for note in component.get("notes", [])]
     return lines + [""]
 
@@ -800,6 +835,7 @@ def run_check(args: argparse.Namespace, manifest: dict) -> list[str]:
     problems = [f"no recorded licence: {rel}" for rel in unclaimed]
     problems += check_python(record, args.python_version)
     problems += check_dpkg(ctx) + check_dists(ctx) + check_grafted(ctx, manifest)
+    problems += check_vendored(ctx, owned)
     reuse = load_reuse(repo)
     per_component: dict[str, list[dict]] = {}
     for component in record["components"]:
@@ -869,8 +905,28 @@ def debian_specs(ctx: Context, record: dict) -> set[str]:
     return specs
 
 
-def archive_ids(ctx: Context, manifest: dict) -> set[str]:
+def vendored_archive_ids(ctx: Context) -> set[str]:
+    """Source archives of the copyleft vendored libraries the artifact holds."""
     archives: set[str] = set()
+    for component in ctx.record["components"]:
+        if not component.get("vendored_libraries"):
+            continue
+        for rel in mapped_or_globbed(component, ctx):
+            path = ctx.root / rel
+            rule = vendored_rule(component, path.name)
+            if rule and rule["copyleft"] and path.is_file() and not path.is_symlink():
+                archives.update(vendored_archives(rule, path))
+    return archives
+
+
+def mapped_or_globbed(component: dict, ctx: Context) -> list[str]:
+    """Files of the artifact a fixed component's path globs claim."""
+    globs = [reuse_glob(pattern) for pattern in component.get("paths", [])]
+    return [rel for rel in walk_artifact(ctx.root) if any(glob.match(rel) for glob in globs)]
+
+
+def archive_ids(ctx: Context, manifest: dict) -> set[str]:
+    archives: set[str] = vendored_archive_ids(ctx)
     for dist in ctx.dists:
         for rel, _digest in record_rows(dist):
             path = Path(os.path.normpath(dist.parent / rel))
@@ -938,6 +994,57 @@ def fetch_debian(spec: str, out: Path) -> str:
     return "snapshot"
 
 
+COMMIT_ID = re.compile(r"[0-9a-f]{40}")
+
+
+def git_environment() -> dict[str, str]:
+    """The environment without the caller's GIT_* variables: run from a git hook,
+    GIT_DIR and GIT_INDEX_FILE would point every command at the caller's repository."""
+    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+
+
+def git(argv: list[str], cwd: Path) -> str:
+    result = subprocess.run(["git", *argv], cwd=cwd, capture_output=True, text=True,
+                            timeout=TIMEOUT, check=False, env=git_environment())  # fmt: skip
+    if result.returncode != 0:
+        raise LicensingError(f"git {argv[0]} failed: {result.stderr.strip()[:200]}")
+    return result.stdout.strip()
+
+
+def fetch_git_archive(archive: dict, target: Path) -> None:
+    """A recorded source tree by its git commit, the one identity a host cannot
+    change under us: fetch exactly that commit, refuse anything else, and write
+    `git archive` of it."""
+    commit = archive["commit"]
+    if COMMIT_ID.fullmatch(commit) is None:
+        raise LicensingError(f"{archive['file']}: {commit!r} is not a full commit ID")
+    work = target.parent / f".{target.name}.git"
+    shutil.rmtree(work, ignore_errors=True)
+    work.mkdir(parents=True)
+    try:
+        git(["init", "-q"], work)
+        git(["fetch", "-q", "--depth=1", archive["git"], commit], work)
+        fetched = git(["rev-parse", "FETCH_HEAD^{commit}"], work)
+        if fetched != commit:
+            raise LicensingError(f"{archive['git']}: fetched {fetched}, recorded {commit}")
+        prefix = target.name.removesuffix(".tar.gz") + "/"
+        git(["archive", "--format=tar.gz", f"--prefix={prefix}", "-o", str(target), fetched], work)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def fetch_archive(archive: dict, out: Path) -> str:
+    """One recorded source archive into out/; its index line."""
+    target = out / "archives" / archive["file"]
+    if "git" in archive:
+        fetch_git_archive(archive, target)
+        where = f"{archive['git']} at commit {archive['commit']} (git archive)"
+    else:
+        download(archive["url"], target, archive["sha256"])
+        where = archive["url"]
+    return f"{archive['file']}  archives/  {where}  {archive['why']}"
+
+
 def fetch_sources(args: argparse.Namespace, manifest: dict) -> list[str]:
     out = Path(args.out)
     (out / "debian").mkdir(parents=True, exist_ok=True)
@@ -948,9 +1055,7 @@ def fetch_sources(args: argparse.Namespace, manifest: dict) -> list[str]:
         if kind == "debian":
             index.append(f"{value}  debian/  ({fetch_debian(value, out / 'debian')})")
         else:
-            archive = manifest["source_archives"][value]
-            download(archive["url"], out / "archives" / archive["file"], archive["sha256"])
-            index.append(f"{archive['file']}  archives/  {archive['url']}  {archive['why']}")
+            index.append(fetch_archive(manifest["source_archives"][value], out))
     return index
 
 
