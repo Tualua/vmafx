@@ -4,6 +4,11 @@
 ## The parity allowlist page always has a Pending section (2026-10-03)
 
 `docs/close-parity-pending-row`. No rebase impact: a docs generator and ledger rows. `scripts/docs/generate-upstream-parity-allowlist.py` emits the "Pending" heading with "None" when no fragment is pending; keep that branch, `docs/state.md` links to the anchor.
+## Tester dispatch fixes: bash 3.2 and a universal jsonschema lock (2026-10-03)
+
+`fix/tester-dispatch-bash32-locks`. No rebase impact: fork-only paths
+(`scripts/ci/build-macos-tester-bundle.sh`, `requirements/locks/jsonschema.txt` and its
+manifest entry, `tools/rc1-tester/tests/test_bash32_compat.py`).
 
 ## The dev container entrypoint no longer chmods a root-owned /tmp (2026-10-03)
 

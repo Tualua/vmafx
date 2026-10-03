@@ -12,6 +12,9 @@
 #   VMAF_RESOURCE_COMMIT    Netflix/vmaf_resource commit the fixtures come from
 #   VMAFX_SOURCE_COMMIT, VMAFX_SOURCE_REF, VMAFX_RECIPE_COMMIT, VMAFX_IMAGE_TAG
 #
+# Runs under bash 3.2 (Apple's /bin/bash and the hosted runner's): no mapfile, associative
+# arrays, ${x,,}, |&, [[ -v ]], coproc or local -n (tools/rc1-tester/tests/test_bash32_compat.py).
+#
 # Result in <output-dir>: vmafx-tester-macos-arm64-<tag>.tar.gz, its .sha256,
 # report.json (the bundle's own report run on this runner) and bundle-files.txt.
 set -euo pipefail
@@ -45,8 +48,14 @@ step "configure and build (Apple clang, static libvmaf, Metal on, no DNN)"
 meson setup "$build" core --buildtype=release --strip --default-library=static -Db_lto=false \
   -Denable_metal=enabled -Denable_dnn=disabled -Denable_cuda=false -Denable_sycl=false \
   -Denable_hip=false -Denable_float=true -Denable_docs=false -Denable_tests=true
-mapfile -t test_targets < <(python3 "$image_dir/prepare_build.py" select "$build" \
-  "$image_dir/unit-tests-macos.txt")
+# macOS ships bash 3.2: no mapfile. Capture first so a failing select stops the build.
+selected=$(python3 "$image_dir/prepare_build.py" select "$build" "$image_dir/unit-tests-macos.txt")
+test_targets=()
+while IFS= read -r target; do
+  [ -n "$target" ] && test_targets+=("$target")
+done <<EOF
+$selected
+EOF
 ninja -C "$build" -j4 tools/vmaf "${test_targets[@]}"
 
 step "stage the bundle"

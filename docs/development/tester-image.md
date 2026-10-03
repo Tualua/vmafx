@@ -76,10 +76,19 @@ tracked files other than a commit trailer the person asked for.
 | Python test stack | `python/requirements-test-lock.txt` | `make python-locks-write` |
 | Fixtures | `tools/rc1-tester/image/fixtures.sha256`, `VMAF_RESOURCE_COMMIT` | change both together; the build checks every SHA-256 |
 | macOS interpreter | `PBS_URL`, `PBS_SHA256` in `macos-tester-bundle.yml` | take the hash from the release's `SHA256SUMS` |
+| Report validation | `requirements/locks/jsonschema.txt` | universal lock for Python 3.12 and later (`--universal --python-version 3.12`): the hosted runners differ (3.12 on `ubuntu-latest`, 3.14 elsewhere) and `referencing` needs `typing-extensions` below 3.13 |
 | Unit tests | `tools/rc1-tester/image/unit-tests.txt`, `unit-tests-macos.txt` | a name absent from a build is skipped; fewer than ten found fails the build |
 
 The Debian archive packages of the build stage are not version-pinned, as in the release
 build (ADR-1346); the base image digest is.
+
+## Shell scripts that run on macOS
+
+The hosted macOS runner's `bash` is Apple's 3.2, and `run.sh` runs on the tester's Mac as POSIX `sh`.
+No `mapfile`, `declare -A`, `${x,,}`, `|&`, `[[ -v ]]`, `coproc` or `local -n` in anything they run.
+`tools/rc1-tester/tests/test_bash32_compat.py` scans for these, runs `run.sh` through
+`shellcheck --shell=sh`, and (with Docker and `docker pull bash:3.2`) runs the build script and
+the link check under a real bash 3.2 with stub tools.
 
 ## Local checks
 

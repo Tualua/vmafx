@@ -3668,6 +3668,15 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   change by up to 3.6e-7.
 
 
+- **The macOS tester bundle build runs under the hosted runner's bash 3.2, and the
+  report schema check installs on Python 3.12.** `mapfile` in
+  `scripts/ci/build-macos-tester-bundle.sh` is replaced by a loop; a contract test
+  scans the macOS scripts for bash 4+ features and runs them under a real bash 3.2 when
+  Docker is available. `requirements/locks/jsonschema.txt` is now a universal lock
+  (`typing-extensions` for Python below 3.13). See
+  [the maintainer notes](docs/development/tester-image.md).
+
+
 - **`vmaf_init()` accepts an uninitialised handle again, as upstream libvmaf
   does.** Since ADR-1032 it returned `-EINVAL` whenever `*vmaf` was not NULL.
   Callers written against upstream, whose own CLI and tests declare
