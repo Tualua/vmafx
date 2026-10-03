@@ -50,6 +50,9 @@
 #define FRAME_H 37u
 #define CHROMA_W ((FRAME_W + 1u) / 2u)
 #define CHROMA_H ((FRAME_H + 1u) / 2u)
+#define PARITY_FRAMES 5u
+#define EXACT_TOL 1e-9
+#define HVS_TOL 1e-4
 
 static VmafSyclState *open_state(void)
 {
@@ -172,10 +175,220 @@ static char *test_chroma_currency_contract(void)
     return msg;
 }
 
+/* ------------------------------------------------------------------ */
+/* Parity vs CPU on emulated zero-copy                                 */
+/* ------------------------------------------------------------------ */
+
+static const char *const g_features[] = {"psnr_y",      "psnr_cb",     "psnr_cr", "psnr_hvs_y",
+                                         "psnr_hvs_cb", "psnr_hvs_cr", "psnr_hvs"};
+#define N_FEATURES (sizeof(g_features) / sizeof(g_features[0]))
+
+/* One sample of a plane. Cb and Cr differ (plane enters the mix), ref and dis
+ * differ (salt), and every frame differs. */
+static unsigned sample(unsigned plane, unsigned row, unsigned col, unsigned frame, unsigned salt,
+                       unsigned bpc)
+{
+    const unsigned mix = (row * (3u + plane)) ^ (col * (5u + salt)) ^ (frame * 37u + plane * 11u);
+    const unsigned wide = (row * col * (plane + 1u)) + (salt * 29u) + (frame * 13u);
+    return (mix + wide) & ((1u << bpc) - 1u);
+}
+
+/* Little-endian packed plane (w x h samples), as the import writes it. */
+static void fill_plane(uint8_t *buf, unsigned plane, unsigned w, unsigned h, unsigned frame,
+                       unsigned salt, unsigned bpc)
+{
+    const size_t bps = bpc > 8u ? 2u : 1u;
+    for (unsigned row = 0; row < h; row++) {
+        for (unsigned col = 0; col < w; col++) {
+            const unsigned v = sample(plane, row, col, frame, salt, bpc);
+            uint8_t *at = buf + (((size_t)row * w + col) * bps);
+            at[0] = (uint8_t)(v & 0xFFu);
+            if (bps == 2u)
+                at[1] = (uint8_t)(v >> 8);
+        }
+    }
+}
+
+/* Emulated VA import of one frame: luma and chroma into the upload slots,
+ * chroma marked when `mark` is set. */
+static int emulate_import(VmafSyclState *state, unsigned frame, unsigned bpc, int mark)
+{
+    const size_t bps = bpc > 8u ? 2u : 1u;
+    uint8_t *buf = malloc((size_t)FRAME_W * FRAME_H * bps);
+    if (!buf)
+        return -ENOMEM;
+    int err = 0;
+    for (unsigned is_ref = 0; is_ref < 2u && !err; is_ref++) {
+        const unsigned salt = is_ref ? 0u : 1u;
+        fill_plane(buf, 0u, FRAME_W, FRAME_H, frame, salt, bpc);
+        err = vmaf_sycl_upload_plane(state, buf, FRAME_W * (unsigned)bps, (int)is_ref, FRAME_W,
+                                     FRAME_H, bpc);
+        for (unsigned plane = 1u; plane < 3u && !err; plane++) {
+            fill_plane(buf, plane, CHROMA_W, CHROMA_H, frame, salt, bpc);
+            err = vmaf_sycl_memcpy_h2d(state,
+                                       vmaf_sycl_get_shared_plane_upload(state, (int)is_ref, plane),
+                                       buf, (size_t)CHROMA_W * CHROMA_H * bps);
+        }
+    }
+    free(buf);
+    if (!err && mark)
+        vmaf_sycl_shared_chroma_mark_imported(state);
+    return err;
+}
+
+static int fill_pic(VmafPicture *pic, unsigned frame, unsigned salt, unsigned bpc)
+{
+    const int err = vmaf_picture_alloc(pic, VMAF_PIX_FMT_YUV420P, bpc, FRAME_W, FRAME_H);
+    if (err)
+        return err;
+    const size_t bps = bpc > 8u ? 2u : 1u;
+    uint8_t *packed = malloc((size_t)FRAME_W * FRAME_H * bps);
+    if (!packed)
+        return -ENOMEM;
+    for (unsigned plane = 0; plane < 3u; plane++) {
+        fill_plane(packed, plane, pic->w[plane], pic->h[plane], frame, salt, bpc);
+        for (unsigned row = 0; row < pic->h[plane]; row++) {
+            memcpy((uint8_t *)pic->data[plane] + ((size_t)row * pic->stride[plane]),
+                   packed + ((size_t)row * pic->w[plane] * bps), (size_t)pic->w[plane] * bps);
+        }
+    }
+    free(packed);
+    return 0;
+}
+
+static char *use_features(VmafContext *vmaf, int sycl)
+{
+    const char *const names[2] = {sycl ? "psnr_sycl" : "psnr", sycl ? "psnr_hvs_sycl" : "psnr_hvs"};
+    for (unsigned i = 0; i < 2u; i++)
+        mu_assert("vmaf_use_feature failed", !vmaf_use_feature(vmaf, names[i], NULL));
+    return NULL;
+}
+
+static char *read_scores(VmafContext *vmaf, double scores[N_FEATURES][PARITY_FRAMES])
+{
+    for (unsigned f = 0; f < N_FEATURES; f++) {
+        for (unsigned frame = 0; frame < PARITY_FRAMES; frame++) {
+            mu_assert("score missing",
+                      !vmaf_feature_score_at_index(vmaf, g_features[f], &scores[f][frame], frame));
+        }
+    }
+    return NULL;
+}
+
+static char *run_cpu(unsigned bpc, double scores[N_FEATURES][PARITY_FRAMES])
+{
+    VmafContext *vmaf = NULL;
+    VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
+    mu_assert("vmaf_init failed", !vmaf_init(&vmaf, cfg));
+    mu_assert_msg(use_features(vmaf, 0));
+    for (unsigned frame = 0; frame < PARITY_FRAMES; frame++) {
+        VmafPicture ref;
+        VmafPicture dis;
+        mu_assert("ref alloc", !fill_pic(&ref, frame, 0u, bpc));
+        mu_assert("dis alloc", !fill_pic(&dis, frame, 1u, bpc));
+        mu_assert("cpu read failed", !vmaf_read_pictures(vmaf, &ref, &dis, frame));
+    }
+    mu_assert("cpu flush failed", !vmaf_read_pictures(vmaf, NULL, NULL, 0));
+    mu_assert_msg(read_scores(vmaf, scores));
+    mu_assert("vmaf_close failed", !vmaf_close(vmaf));
+    return NULL;
+}
+
+static char *run_zero_copy(unsigned bpc, double scores[N_FEATURES][PARITY_FRAMES])
+{
+    VmafSyclState *state = open_state();
+    if (!state)
+        return NULL;
+    VmafContext *vmaf = NULL;
+    char *msg = open_context(state, bpc, &vmaf);
+    if (!msg)
+        msg = use_features(vmaf, 1);
+    for (unsigned frame = 0; !msg && frame < PARITY_FRAMES; frame++) {
+        if (emulate_import(state, frame, bpc, 1))
+            msg = "emulated import failed";
+        else if (vmaf_read_pictures_sycl(vmaf, frame))
+            msg = "vmaf_read_pictures_sycl failed on imported chroma";
+    }
+    if (!msg && vmaf_flush_sycl(vmaf))
+        msg = "vmaf_flush_sycl failed";
+    if (!msg)
+        msg = read_scores(vmaf, scores);
+    if (vmaf)
+        (void)vmaf_close(vmaf);
+    vmaf_sycl_state_free(&state);
+    return msg;
+}
+
+static char *compare_scores(unsigned bpc, double cpu[N_FEATURES][PARITY_FRAMES],
+                            double gpu[N_FEATURES][PARITY_FRAMES])
+{
+    for (unsigned f = 0; f < N_FEATURES; f++) {
+        const double tol = strstr(g_features[f], "hvs") ? HVS_TOL : EXACT_TOL;
+        for (unsigned frame = 0; frame < PARITY_FRAMES; frame++) {
+            const double delta = fabs(cpu[f][frame] - gpu[f][frame]);
+            if (delta > tol) {
+                (void)fprintf(stderr, "\n%s bpc=%u frame %u: cpu=%.10f sycl=%.10f delta=%.2e\n",
+                              g_features[f], bpc, frame, cpu[f][frame], gpu[f][frame], delta);
+            }
+            mu_assert("zero-copy chroma score differs from the CPU", delta <= tol);
+        }
+    }
+    /* Frame 0 is checked above like every frame; make sure chroma really ran. */
+    mu_assert("Cb and Cr must score differently (distinct content)",
+              fabs(cpu[1][0] - cpu[2][0]) > 0.0);
+    return NULL;
+}
+
+static char *check_parity(unsigned bpc)
+{
+    static double cpu[N_FEATURES][PARITY_FRAMES];
+    static double gpu[N_FEATURES][PARITY_FRAMES];
+    VmafSyclState *probe = open_state();
+    if (!probe)
+        return NULL;
+    vmaf_sycl_state_free(&probe);
+    mu_assert_msg(run_cpu(bpc, cpu));
+    mu_assert_msg(run_zero_copy(bpc, gpu));
+    return compare_scores(bpc, cpu, gpu);
+}
+
+static char *test_parity_8bit(void)
+{
+    return check_parity(8u);
+}
+
+static char *test_parity_10bit(void)
+{
+    return check_parity(10u);
+}
+
+/* No mark: the readers must fail loudly instead of scoring stale chroma. */
+static char *test_unmarked_chroma_refused(void)
+{
+    VmafSyclState *state = open_state();
+    if (!state)
+        return NULL;
+    VmafContext *vmaf = NULL;
+    char *msg = open_context(state, 8u, &vmaf);
+    if (!msg)
+        msg = use_features(vmaf, 1);
+    if (!msg && emulate_import(state, 0u, 8u, 0))
+        msg = "emulated import failed";
+    if (!msg && vmaf_read_pictures_sycl(vmaf, 0u) != -ENOTSUP)
+        msg = "chroma readers must refuse an import that did not mark chroma";
+    if (vmaf)
+        (void)vmaf_close(vmaf);
+    vmaf_sycl_state_free(&state);
+    return msg;
+}
+
 char *run_tests(void)
 {
     mu_run_test(test_eager_chroma_allocation);
     mu_run_test(test_chroma_currency_contract);
+    mu_run_test(test_parity_8bit);
+    mu_run_test(test_parity_10bit);
+    mu_run_test(test_unmarked_chroma_refused);
     return NULL;
 }
 
