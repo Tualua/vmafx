@@ -328,8 +328,9 @@ and [backends/sycl/overview.md §Known gaps](../backends/sycl/overview.md#known-
 `float_motion_cuda` and `float_motion_sycl` return the CPU `float_motion`
 scores bit for bit at `--precision max`
 ([ADR-1409](../adr/1409-float-motion-twins-cpu-float-sum.md),
-[ADR-1411](../adr/1411-sycl-float-motion-cpu-float-sum.md)); the HIP and
-Metal `float_motion` twins agree with the CPU to four decimal places.
+[ADR-1411](../adr/1411-sycl-float-motion-cpu-float-sum.md)), and so does
+`float_motion_hip` ([ADR-1419](../adr/1419-hip-float-motion-cpu-float-sum.md)).
+The Metal `float_motion` twin has not been measured on a device.
 
 **Limitations** — Temporal. The extractor carries state across frames (two
 previous blurred references) and has a flush callback that emits the final
@@ -869,8 +870,8 @@ What this means when you use it:
   `adm2` 0.014 too low. Re-score such material.
 - With `adm_skip_scale0=true` the debug output `integer_adm_den_scale0` is
   now the CPU's `1.00000001335e-10` and it is part of `integer_adm_den`.
-- The SYCL twin is bit-identical as well (ADR-1362). The HIP and Metal twins
-  agree with the CPU to four decimal places.
+- The SYCL twin is bit-identical as well (ADR-1362), and so is the HIP twin
+  (ADR-1423). The Metal twin has not been measured on a device.
 
 Check it on your own device:
 
