@@ -586,19 +586,36 @@ typedef struct LumaFeature {
     const char *cpu;
     const char *scores[LUMA_MAX_SCORES];
     unsigned n_scores;
+    const char *opt_key; /* optional extractor option, set on both legs */
+    const char *opt_val;
 } LumaFeature;
 
 static const LumaFeature g_luma_features[] = {
-    {"float_psnr_sycl", "float_psnr", {"float_psnr"}, 1u},
+    {"float_psnr_sycl", "float_psnr", {"float_psnr"}, 1u, NULL, NULL},
     {"float_motion_sycl",
      "float_motion",
      {"VMAF_feature_motion2_score", "VMAF_feature_motion3_score"},
-     2u},
+     2u,
+     NULL,
+     NULL},
     {"float_vif_sycl",
      "float_vif",
      {"VMAF_feature_vif_scale0_score", "VMAF_feature_vif_scale1_score",
       "VMAF_feature_vif_scale2_score", "VMAF_feature_vif_scale3_score"},
-     4u},
+     4u,
+     NULL,
+     NULL},
+    {"float_adm_sycl",
+     "float_adm",
+     {"VMAF_feature_adm2_score", "VMAF_feature_adm_scale0_score", "VMAF_feature_adm_scale1_score",
+      "VMAF_feature_adm_scale2_score"},
+     4u,
+     NULL,
+     NULL},
+    {"float_ssim_sycl", "float_ssim", {"float_ssim"}, 1u, NULL, NULL},
+    /* scale=2 runs the float_ssim twin device decimation (33x18 samples from 67x37). */
+    {"float_ssim_sycl", "float_ssim", {"float_ssim"}, 1u, "scale", "2"},
+    {"integer_ssim_sycl", "ssim", {"ssim"}, 1u, NULL, NULL},
 };
 #define N_LUMA_FEATURES ((unsigned)(sizeof(g_luma_features) / sizeof(g_luma_features[0])))
 
@@ -619,6 +636,14 @@ static void read_luma_scores(VmafContext *vmaf, const LumaFeature *lf, LumaScore
     }
 }
 
+static int use_luma_feature(VmafContext *vmaf, const char *name, const LumaFeature *lf)
+{
+    VmafFeatureDictionary *opts = NULL;
+    if (lf->opt_key && vmaf_feature_dictionary_set(&opts, lf->opt_key, lf->opt_val))
+        return -ENOMEM;
+    return vmaf_use_feature(vmaf, name, opts);
+}
+
 /* CPU extractor (sycl == 0) or the SYCL twin on host pictures (sycl == 1). */
 static char *run_luma_host(const LumaFeature *lf, unsigned bpc, int sycl, LumaScores *out)
 {
@@ -632,7 +657,7 @@ static char *run_luma_host(const LumaFeature *lf, unsigned bpc, int sycl, LumaSc
     VmafConfiguration cfg = {.log_level = VMAF_LOG_LEVEL_NONE};
     char *msg = NULL;
     if (vmaf_init(&vmaf, cfg) || (state && vmaf_sycl_import_state(vmaf, state)) ||
-        vmaf_use_feature(vmaf, sycl ? lf->twin : lf->cpu, NULL))
+        use_luma_feature(vmaf, sycl ? lf->twin : lf->cpu, lf))
         msg = "host leg: context setup failed";
     for (unsigned frame = 0; !msg && frame < LUMA_FRAMES; frame++) {
         VmafPicture ref;
@@ -663,7 +688,7 @@ static char *run_luma_zero_copy(const LumaFeature *lf, unsigned bpc, LumaScores 
         return NULL;
     VmafContext *vmaf = NULL;
     char *msg = open_context(state, bpc, &vmaf);
-    if (!msg && vmaf_use_feature(vmaf, lf->twin, NULL))
+    if (!msg && use_luma_feature(vmaf, lf->twin, lf))
         msg = "vmaf_use_feature failed";
     for (unsigned frame = 0; !msg && frame < LUMA_FRAMES; frame++) {
         if (emulate_import(state, frame, bpc, 0)) {
