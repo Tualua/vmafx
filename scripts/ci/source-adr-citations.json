@@ -3135,7 +3135,8 @@
         "core/src/dnn/model_loader.c": 4,
         "core/src/gpu_dispatch_env.cpp": 4,
         "core/src/gpu_dispatch_env.h": 1,
-        "core/src/mcp/compute_vmaf.c": 2
+        "core/src/mcp/compute_vmaf.c": 2,
+        "core/src/sycl/common.cpp": 1
       },
       "target": "0488-gpu-dispatch-env-shared-snapshot.md"
     },
