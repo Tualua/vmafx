@@ -34,14 +34,19 @@ interface (`ZE_EXTERNAL_MEMORY_TYPE_FLAG_DMA_BUF`); Level Zero on Windows uses
 NT handles instead.
 
 The zero-copy import (FFmpeg `libvmaf_sycl` with QSV surfaces, or any
-caller of `vmaf_read_pictures_sycl()`) imports luma only and hands the
-extractors no host pictures. Today these run on it and score from the
-imported luma: `adm_sycl`, `cambi_sycl`, `float_moment_sycl`, `motion_sycl`
-(without `motion_add_uv`), `motion_v2_sycl`, `vif_sycl`, and `psnr_sycl` /
-`psnr_hvs_sycl` with `enable_chroma=false`. Everything else is refused with
-`-ENOTSUP` (error number 95 on Linux) before the frame changes any state,
-never skipped and never scored from stale data. Two messages name the
-cause:
+caller of `vmaf_read_pictures_sycl()`) imports luma and, for 4:2:0 NV12 and
+P010 surfaces, the Cb and Cr planes on every frame
+([ADR-1597](../../adr/1597-sycl-zerocopy-planar-chroma-import.md)), and hands
+the extractors no host pictures. These run on it and score from the imported
+planes: `adm_sycl`, `cambi_sycl`, `float_moment_sycl`, `motion_sycl` (also with
+`motion_add_uv=true`), `motion_v2_sycl`, `vif_sycl`, `psnr_sycl` and
+`psnr_hvs_sycl` (luma and chroma). On an Arc A380 `psnr` and `psnr_hvs`
+chroma equal the CPU bit for bit at 8 and 10 bit, and `motion_add_uv` equals
+the host-upload run of the same twin (the integer CPU `motion` has no
+`motion_add_uv` option, so there is no CPU reference for it). Everything else
+is refused with `-ENOTSUP` (error number 95 on Linux) before the frame changes
+any state, never skipped and never scored from stale data. Three messages name
+the cause:
 
 - A CPU extractor in the context:
   `vmaf_read_pictures_sycl: feature extractor '<name>' runs on the CPU and
@@ -52,16 +57,32 @@ cause:
   This covers `ciede_sycl`, `ssimulacra2_sycl`,
   `speed_chroma_sycl`, `speed_temporal_sycl`, `float_psnr_sycl`,
   `float_adm_sycl`, `float_vif_sycl`, `float_motion_sycl`,
-  `float_ms_ssim_sycl`, `integer_ssim_sycl`, `float_ssim_sycl`,
-  `psnr_sycl` and `psnr_hvs_sycl` with chroma, and `motion_sycl` with
-  `motion_add_uv=true`.
+  `float_ms_ssim_sycl`, `integer_ssim_sycl` and `float_ssim_sycl`; they move
+  to the shared planes in a later stage of the zero-copy work.
+- A chroma reader on an import that carried no chroma, prefixed with the
+  extractor's name:
+  `needs chroma planes, which this zero-copy import did not provide`.
+  The D3D11 import (Windows) is luma only, so `psnr` / `psnr_hvs` with chroma
+  and `motion_add_uv` fail with this message there; set `enable_chroma=false`
+  to score luma only. Chroma import for D3D11 is out of scope.
 
-`psnr` / `psnr_hvs` with chroma and `motion_add_uv` fail loudly until
-chroma import lands (Stage 2 of the zero-copy work); set
-`enable_chroma=false` to score luma only. Earlier builds returned `-EINVAL`
-(error number 22) or crashed on a missing picture. This
-path was not run through VA-API decode here (no VA-API decode under WSL2);
-`test_sycl_zerocopy_guards` covers every extractor on shared device planes.
+The chroma planes are allocated whenever the frame buffers are, not only when
+a chroma reader is registered, so a luma-only zero-copy run pays for them:
+eight device planes (Cb and Cr, reference and distorted, two slots) and four
+pinned host staging planes, each `ceil(w/2) x ceil(h/2)` samples. At 1080p
+that is 4.1 MB of device memory and 2.1 MB pinned at 8 bit (8.3 MB and
+4.1 MB at 10 bit); at 4K it is 16.6 MB and 8.3 MB at 8 bit (33 MB and
+16.6 MB at 10 bit), half the size of the luma buffers. Against the
+luma-only Stage-1 baseline, 1080p throughput on an Arc A380 was +1.9 %
+(8 bit) and -3.9 % (10 bit), against a baseline that itself spread by 3 %
+(Research-1595, "D-01 cost"); 4K was not measured. The DMA-BUF
+Tile4 layout is the only one a real device has delivered so far (Arc A380);
+the LINEAR and Y-tiled chroma layouts are covered by host-synthesised
+vectors, not by hardware. Earlier builds returned `-EINVAL` (error number 22)
+or crashed on a missing picture. Real QSV decode is tested by
+`scripts/test/zerocopy-e2e.sh` (container, Intel GPU);
+`test_sycl_zerocopy_guards` and `test_sycl_zerocopy_parity` cover every
+extractor on shared device planes without a decoder.
 
 ## D3D11 staging-texture import (Windows)
 

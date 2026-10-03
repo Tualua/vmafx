@@ -269,8 +269,11 @@ CPU on `auto` compares different quantities, not two backends.
 The SYCL device-buffer-only `vmaf_read_pictures_sycl()` path has no host
 pictures, so `float_ssim_sycl` cannot run there and fails its first frame with
 `-ENOTSUP` (`float_ssim_sycl: needs host pictures, which zero-copy input does
-not provide`); the same holds for every SYCL extractor that reads chroma or
-host pictures, see the
+not provide`); the same holds for every SYCL extractor that reads host
+pictures. A VA-API import (QSV) imports the 4:2:0 chroma planes too, so
+`psnr` and `psnr_hvs` chroma and `motion_add_uv` run there. The
+D3D11 import is luma only and its chroma readers fail with `needs chroma planes,
+which this zero-copy import did not provide`, see the
 [SYCL overview](sycl/overview.md#psnr-psnr_hvs-and-motion_v2-share-the-uploaded-frame-adr-1369-2026-09-29).
 
 ## Related

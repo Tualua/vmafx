@@ -289,6 +289,16 @@
   `docs/development/pre-commit-hooks.md`.
 
 
+- **Zero-copy `libvmaf_sycl` imports chroma.** On QSV / VA-API input the library now imports the 4:2:0 chroma planes
+  along with luma, so `psnr` chroma (`psnr_cb`, `psnr_cr`), `psnr_hvs` chroma and
+  `motion_sycl` with `motion_add_uv=true` score on zero-copy frames instead of
+  failing with `-ENOTSUP`. On an Arc A380 they equal the CPU (`psnr`, `psnr_hvs`)
+  and host upload (`motion_add_uv`) bit for bit at 8 and 10 bit
+  ([ADR-1597](../../docs/adr/1597-sycl-zerocopy-planar-chroma-import.md)). The D3D11
+  import still carries luma only; chroma readers fail there with `needs chroma
+  planes, which this zero-copy import did not provide`.
+
+
 - **A tester image and a macOS bundle let someone outside the project test the fork
   without building it, and send the result for credit.** `ghcr.io/vmafx/vmafx:<tag>-tester`
   (linux/amd64 and linux/arm64) and a macOS arm64 `.tar.gz` each run one command that
@@ -2108,6 +2118,15 @@ make `core/AGENTS.md` a generated index over `AGENTS.d/` topic pages ([ADR-1454]
   tested fixtures (48/48 frames on Netflix 576x324, 50/50 frames on BBB 4K, max
   abs diff 0.0), with 4K throughput measured at 17.05 ms/frame on Arc A380
   (down from 18.53 ms/frame).
+
+
+- **The SYCL diagnostic switches are read once per process.** `VMAF_SYCL_PROFILE`,
+  `VMAF_SYCL_TIMING`, `VMAF_SYCL_IMPORT_DEBUG` and `VMAF_SYCL_CHECKSUM` now go
+  through the shared environment snapshot (`vmaf_gpu_dispatch_env_get`, ADR-0488)
+  that the other SYCL switches use, instead of a `getenv()` per call. Names and
+  the "value starts with `1`" meaning are unchanged, but a change made after the
+  first SYCL state is created is not seen by a running process
+  ([env vars](../../docs/usage/env-vars.md)).
 
 
 - **Six more SYCL twins are held to the CPU's bits by the parity gate.**

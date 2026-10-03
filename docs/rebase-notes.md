@@ -1426,6 +1426,47 @@ Dropped: the two `#ifdef ADM_OPT_DEBUG_DUMP` blocks. They called `write_image()`
   on this branch; the ADR-1441 branch carries an older one with the same ID. If
   that branch lands first, merge the two rows into one.
 
+## SYCL zero-copy imports 4:2:0 chroma (2026-10-03)
+
+`fix/sycl-zerocopy-features`, Stage 2 of the zero-copy feature-correctness work,
+[ADR-1597](adr/1597-sycl-zerocopy-planar-chroma-import.md); same state.md row as
+Stage 1. Research digest: [Research-1595](research/1595-sycl-zerocopy-feature-correctness.md).
+
+- `core/src/sycl/chroma_import.{cpp,h}` (new): layout-addressed de-interleave
+  kernel from the VA surface's UV layer into the shared Cb and Cr planes (LINEAR,
+  Y-tiled, Tile4). The P010/P012 shift on chroma happens here exactly once; never
+  run `launch_p010_normalize` over chroma. `chroma_import.h` is C-callable, which
+  is why it keeps C-style enums and `typedef`s.
+- `core/src/sycl/dmabuf_import.cpp`: `vmaf_sycl_import_va_surface` resolves and
+  validates `layers[1]` before any import (a bad descriptor closes every fd and
+  returns `-EINVAL`; an unknown chroma modifier takes the readback path). The VA
+  path never calls `vmaf_sycl_shared_chroma_upload`.
+- Chroma currency: both import paths call `vmaf_sycl_shared_chroma_note_side`
+  per side and `vmaf_sycl_shared_chroma_mark_imported` once both are noted; only
+  `vmaf_sycl_advance_frame` promotes the mark to `planes.frame`, after
+  `frame_counter++`. Never set `planes.frame` elsewhere. `vmaf_sycl_init_frame_buffers`
+  allocates the chroma planes eagerly (D-01); `psnr_sycl` / `psnr_hvs_sycl` /
+  `motion_sycl` call `vmaf_sycl_require_chroma`, which passes for host pictures,
+  passes for NULL pictures only when the chroma is current, and otherwise returns
+  `-ENOTSUP`.
+- `core/src/feature/sycl/integer_motion_sycl.cpp`: with `motion_add_uv` on
+  zero-copy, `motion_pre_graph` copies the shared Cb/Cr planes device-to-device
+  into `d_ref_u/v[cur_slot]`. Do not alias the ping-pong onto the shared planes.
+- D3D11 import stays luma only (out of scope); its chroma readers fail with
+  `needs chroma planes, which this zero-copy import did not provide`.
+- Between the stages the same branch also made `VmafSyclState` a plain aggregate
+  (`f2a331b03`): it is built with designated initialisers in `common.cpp`, members
+  ordered by size, so a new member needs a place in that order and in the
+  initialiser. `442f58b99` moved the `psnr_hvs_sycl` Hillis-Steele scan into the
+  shared `hvs_wg_inclusive_scan()` and clamps `reduce_hvs_planes()` to
+  `PSNR_HVS_NUM_PLANES`; keep the barriers and submission order if upstream changes
+  either kernel. `2782fa1f8` reads `VMAF_SYCL_PROFILE`, `_TIMING`,
+  `_IMPORT_DEBUG` and `_CHECKSUM` through `vmaf_gpu_dispatch_env_get` (snapshot
+  table of 16 slots), once per process; keep new SYCL switches on that helper.
+- Guards: `test_sycl_zerocopy_parity`, `test_sycl_zerocopy_guards`,
+  `test_sycl_shared_planes`, `test_sycl_chroma_import`, and
+  `scripts/test/zerocopy-e2e.sh --stage 2`.
+
 ## The CLI read-ahead asserts its invariants (2026-10-02)
 
 `fix/cli-restore-frame-reader-asserts`, closes `T-CLI-FRAME-READER-ASSERTS-REPLACED-2026-10-02`.

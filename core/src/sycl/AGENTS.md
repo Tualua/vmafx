@@ -273,7 +273,11 @@ sycl/
   and readback paths; D2D never aliases motion's ping-pong); only
   `vmaf_sycl_advance_frame` promotes the mark to `planes.frame` (after
   `frame_counter++`, never between the two load-bearing lines).
-  **On rebase**: never set `planes.frame` elsewhere. **On rebase**:
+  **On rebase**: never set `planes.frame` elsewhere. The VA path never calls
+  `vmaf_sycl_shared_chroma_upload` (that is the host-picture path). The P010/P012
+  shift on chroma happens exactly once, in `chroma_import.cpp` (the
+  `shift = 16 - bpc` argument of `vmaf_sycl_chroma_import_launch`); never run
+  `launch_p010_normalize` over chroma. **On rebase**:
   `sycl_check_zero_copy_extractors` runs before any state mutation in
   `vmaf_read_pictures_sycl`. Guards: `test_sycl_shared_planes`,
   `test_sycl_zerocopy_parity`, `test_sycl_init_unwind` (wraps
