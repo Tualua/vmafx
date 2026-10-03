@@ -237,8 +237,10 @@ int init_chroma_sycl(VmafFeatureExtractor *fex, enum VmafPixelFormat format, uns
 }
 
 /* Make this frame's Cb / Cr current in the shared planes, order the queue after
- * their upload, then copy the four planes into the pipeline-owned raw planes
- * (device to device) in channel order: U ref, U dis, V ref, V dis. Zero-copy
+ * their upload, then bind the four shared planes as the pipeline's raw planes in
+ * channel order: U ref, U dis, V ref, V dis. SpEED chroma keeps no state across
+ * frames, so the pipeline reads them in place (no copy; the shared-slot reader
+ * fence covers the primary-queue chain). Zero-copy
  * input hands no pictures; its chroma is in the shared planes only when the
  * import marked it for this frame (ADR-1597). */
 int upload_chroma_frame(SpeedChromaSyclState *s, VmafPicture *reference, VmafPicture *distorted)
@@ -256,8 +258,8 @@ int upload_chroma_frame(SpeedChromaSyclState *s, VmafPicture *reference, VmafPic
     for (uint32_t channel = 0u; !err && channel < kChromaChannels; channel++) {
         const void *plane = vmaf_sycl_get_shared_plane(s->sycl_state, (channel % 2u) == 0u ? 1 : 0,
                                                        1u + channel / 2u);
-        err = plane ? speed_sycl::pipeline_upload_device(s->pipeline, channel, plane, s->chroma_w,
-                                                         s->chroma_h, s->bytes_per_sample) :
+        err = plane ? speed_sycl::pipeline_bind_device(s->pipeline, channel, plane, s->chroma_w,
+                                                       s->chroma_h, s->bytes_per_sample) :
                       -EINVAL;
     }
     return err;

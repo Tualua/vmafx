@@ -33,6 +33,7 @@
 
 #include <sycl/sycl.hpp>
 
+#include <algorithm>
 #include <cassert>
 #include <cerrno>
 #include <cstddef>
@@ -1556,6 +1557,9 @@ struct speed_sycl::Pipeline {
     PipelineConfig config;
     size_t plane_bytes;
     unsigned char *raw;
+    /* Raw plane `i` read in place from a shared device plane (pipeline_bind_device),
+     * nullptr when it is the owned raw + i * plane_bytes. */
+    const unsigned char *bound[kMaxRawPlanes];
     float *taps;    /* antialias[kMaxTaps] then lowpass[kMaxTaps] */
     float *lanczos; /* lanczos4 prescale weights, nullptr for any other run */
     float *scaled;
@@ -1582,6 +1586,9 @@ struct speed_sycl::Pipeline {
     uint32_t graph_count;
     bool graphs_disabled;
     ChannelBinding graph_bindings[kMaxGraphs][kMaxChannels];
+    /* The bound plane pointers each recorded chain captured: a graph bakes its
+     * kernel arguments, so a different shared slot needs its own chain. */
+    const unsigned char *graph_bound[kMaxGraphs][kMaxRawPlanes];
 #if defined(SYCL_EXT_ONEAPI_GRAPH)
     ExecGraph *graphs[kMaxGraphs];
 #endif
@@ -1758,17 +1765,21 @@ int upload_lanczos(Pipeline &p)
     return 0;
 }
 
+const void *raw_plane(const Pipeline &p, int32_t index)
+{
+    const auto at = static_cast<size_t>(index);
+    return p.bound[at] != nullptr ? p.bound[at] : p.raw + at * p.plane_bytes;
+}
+
 RawPlanes bind_planes(const Pipeline &p, const ChannelBinding *bindings)
 {
     assert(bindings != nullptr);
     assert(p.config.channels <= kMaxChannels);
     RawPlanes planes{};
     for (uint32_t ch = 0; ch < p.config.channels; ch++) {
-        const void *min_p = p.raw + static_cast<size_t>(bindings[ch].minuend) * p.plane_bytes;
+        const void *min_p = raw_plane(p, bindings[ch].minuend);
         const void *sub_p =
-            bindings[ch].subtrahend < 0 ?
-                nullptr :
-                p.raw + static_cast<size_t>(bindings[ch].subtrahend) * p.plane_bytes;
+            bindings[ch].subtrahend < 0 ? nullptr : raw_plane(p, bindings[ch].subtrahend);
         if (ch == 0u) {
             planes.minuend_0 = min_p;
             planes.subtrahend_0 = sub_p;
@@ -1909,6 +1920,16 @@ void enqueue_chain(Pipeline &p, const ChannelBinding *bindings)
     enqueue_solve(p);
 }
 
+bool same_bound(const Pipeline &p, uint32_t graph)
+{
+    for (uint32_t i = 0; i < p.config.raw_planes; i++) {
+        if (p.graph_bound[graph][i] != p.bound[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool same_bindings(const ChannelBinding *a, const ChannelBinding *b, uint32_t channels)
 {
     for (uint32_t ch = 0; ch < channels; ch++) {
@@ -1944,7 +1965,7 @@ int32_t recorded_chain(Pipeline &p, const ChannelBinding *bindings)
     assert(bindings != nullptr);
     assert(p.graph_count <= kMaxGraphs && p.config.channels <= kMaxChannels);
     for (uint32_t i = 0; i < p.graph_count; i++) {
-        if (same_bindings(p.graph_bindings[i], bindings, p.config.channels)) {
+        if (same_bindings(p.graph_bindings[i], bindings, p.config.channels) && same_bound(p, i)) {
             return static_cast<int32_t>(i);
         }
     }
@@ -1969,6 +1990,7 @@ int32_t recorded_chain(Pipeline &p, const ChannelBinding *bindings)
     }
     std::memcpy(p.graph_bindings[p.graph_count], bindings,
                 sizeof(ChannelBinding) * p.config.channels);
+    std::copy_n(p.bound, kMaxRawPlanes, p.graph_bound[p.graph_count]);
     return static_cast<int32_t>(p.graph_count++);
 }
 #endif
@@ -2085,6 +2107,20 @@ int speed_sycl::pipeline_upload_device(Pipeline *pipeline, uint32_t index, const
         vmaf_log(VMAF_LOG_LEVEL_ERROR, "speed_sycl: device upload failed: %s\n", e.what());
         return -EIO;
     }
+    return 0;
+}
+
+int speed_sycl::pipeline_bind_device(Pipeline *pipeline, uint32_t index, const void *src_device,
+                                     uint32_t src_w, uint32_t src_h, uint32_t bytes_per_sample)
+{
+    if (!pipeline || !src_device || index >= pipeline->config.raw_planes) {
+        return -EINVAL;
+    }
+    const Geometry &g = pipeline->config.geometry;
+    if (bytes_per_sample != g.bytes_per_sample || src_w != g.src_w || src_h < g.src_h) {
+        return -EINVAL;
+    }
+    pipeline->bound[index] = static_cast<const unsigned char *>(src_device);
     return 0;
 }
 

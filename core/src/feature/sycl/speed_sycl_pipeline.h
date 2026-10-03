@@ -88,6 +88,17 @@ void pipeline_destroy(Pipeline **pipeline);
 int pipeline_upload_device(Pipeline *pipeline, uint32_t index, const void *src_device,
                            uint32_t src_w, uint32_t src_h, uint32_t bytes_per_sample);
 
+/* Make raw plane `index` read `src_device` in place for the next submit(s): no
+ * copy, so the plane must stay valid and unmodified until that frame's
+ * collect (the shared-slot reader fence guarantees this for a shared plane read
+ * on the primary queue). Only for a non-ring input: a ring that keeps previous
+ * frames must use pipeline_upload_device(). Needs tight rows of exactly the
+ * pipeline plane width (-EINVAL otherwise; the caller then copies). The
+ * recorded chain is keyed by the bound pointers, so alternating shared slots
+ * cost one recording each. */
+int pipeline_bind_device(Pipeline *pipeline, uint32_t index, const void *src_device, uint32_t src_w,
+                         uint32_t src_h, uint32_t bytes_per_sample);
+
 /* Enqueue the whole device chain and the readback of its tail block. No host
  * wait; `bindings` holds config.channels entries. */
 int pipeline_submit(Pipeline *pipeline, const ChannelBinding *bindings);
