@@ -1385,6 +1385,26 @@ Dropped: the two `#ifdef ADM_OPT_DEBUG_DUMP` blocks. They called `write_image()`
   (`speed_temporal` on a checkerboard); aarch64 GCC builds by 1.2e-12 in the
   model score. No Netflix golden assertion, public API or FFmpeg patch
   changes.
+## `float_motion_sycl` implements `motion_add_uv` (2026-10-03)
+
+`fix/sycl-zerocopy-features`, [ADR-1599](adr/1599-sycl-float-motion-add-uv.md)
+(D-10 of Phase 12).
+
+- `core/src/feature/sycl/float_motion_sycl.cpp` declares `motion_add_uv` (`mau`)
+  between `motion_blend_offset` and `motion_max_val`, the CPU table's order, so the
+  aliased feature names (`motion2_mau`) equal the CPU's. Keep that position and
+  alias in a sync that touches the CPU option table.
+- Cb / Cr go through the luma blur and ADR-1411 row kernels per plane
+  (`FmPlane`), and `frame_sad_score()` adds the plane scores in `double`, Y, U,
+  V, as `float_motion.c::motion_score_pair()` does. A change to that function's
+  order or to `compute_motion()`'s rounding changes the twin in the same PR.
+- `core/test/test_sycl_zerocopy_parity.c` (`motion_add_uv` row, `==` on 8 and 10
+  bit) and `core/test/test_sycl_zerocopy_guards.c` (seven unmarked chroma readers
+  refuse zero-copy) hold it. The `test_sycl_zerocopy_{parity,guards}` meson
+  timeouts are 180 s.
+- `float_ms_ssim_sycl` (same plan) converts the shared planes on the device with
+  `plane_to_float()`; `vmaf_sycl_require_host_pictures` no longer exists.
+
 ## SYCL zero-copy fails loudly and routes `feature=` names to SYCL twins (2026-10-02)
 
 `fix/sycl-zerocopy-features`, Stage 1 of the zero-copy feature-correctness work,
