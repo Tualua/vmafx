@@ -304,6 +304,10 @@ the CPU golden-data gate.
 
 ## Relationship to other gates
 
+```figure
+test-gates
+```
+
 | Gate | Role |
 |---|---|
 | **Netflix golden** ([§8](../../CLAUDE.md#8-netflix-golden-data-gate-do-not-modify)) | CPU numerical correctness; required and untouchable. |

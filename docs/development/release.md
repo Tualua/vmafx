@@ -144,6 +144,10 @@ carries an inline comment saying so.
    its outputs, runs its own smoke checks, and publishes only after those gates
    pass.
 
+```figure
+merge-release-flow
+```
+
 ### What actually gates a release PR
 
 A release PR's diff is `.release-please-manifest.json` plus the coordinated

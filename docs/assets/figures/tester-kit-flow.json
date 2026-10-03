@@ -1,0 +1,55 @@
+{
+  "slug": "tester-kit-flow",
+  "title": "Testing on hardware the project does not own",
+  "alt": "A tester runs the image, sends the report, and CI checks it before it appears on the hardware-reports page.",
+  "text": [
+    "Tester's machine: Tester image or macOS bundle (published per release), GPU rows and twins (every twin against the CPU), Report JSON (facts, verdicts, digest).",
+    "Project: check-hardware-reports.py (schema, verdicts, digest), Hardware reports page (generate-hardware-reports.py).",
+    "Tester image or macOS bundle → GPU rows and twins (run) → Report JSON (write) → check-hardware-reports.py (sent back) → Hardware reports page (make docs-fragments-write).",
+    "Scenario 1, One report: A tester's run becomes a row on the hardware-reports page. The image probes the GPU and runs every row it can. Each twin is compared with the CPU; the report records the verdicts. The tester sends the report; CI checks its schema and digest. The page lists the report with its backend and verdict.",
+    "The report carries a digest of its own content, so an edited report fails the check."
+  ],
+  "evidence": [
+    ".github/workflows/docker-publish-tester.yml:release",
+    "tools/rc1-tester/src/vmaf_rc1_tester/hw_gpu.py:run_gpu_section",
+    "tools/rc1-tester/src/vmaf_rc1_tester/hw_gpu.py:run_twins",
+    "tools/rc1-tester/src/vmaf_rc1_tester/hw_report.py:report_digest",
+    "scripts/ci/check-hardware-reports.py:verdict_errors",
+    "scripts/ci/check-hardware-reports.py:gpu_errors",
+    "scripts/docs/generate-hardware-reports.py:render"
+  ],
+  "spec_sha256": "0acfc2e3eb4965aced4b88344a401695d3340d0c521b35f5333feb819e767520",
+  "engine": {
+    "commit": "ccfe85b4851957ac2adf88b4a9ddf9668b2882f1",
+    "sha256": "6a70b89b2d53c73fa79cb881a89e709622b2cfd2e8568b8e9797a328993dd0fc"
+  },
+  "svg_sha256": "719bc98258bd1c8f32415f90318f9d1bed916270e073499e122a83c3965feedf",
+  "static_sha256": "a317677f9168ecd2bb0b630bdd9717de396de90e5354ebeb8a2e48ae5fd7c82f",
+  "width": 690,
+  "height": 374,
+  "static_width": 690,
+  "static_height": 324,
+  "edges": [
+    {
+      "from": "Tester image or macOS bundle",
+      "to": "GPU rows and twins",
+      "label": "run"
+    },
+    {
+      "from": "GPU rows and twins",
+      "to": "Report JSON",
+      "label": "write"
+    },
+    {
+      "from": "Report JSON",
+      "to": "check-hardware-reports.py",
+      "label": "sent back"
+    },
+    {
+      "from": "check-hardware-reports.py",
+      "to": "Hardware reports page",
+      "label": "make docs-fragments-write"
+    }
+  ],
+  "html": "<figure class=\"praetor-figure\" id=\"fig-tester-kit-flow\" data-figure=\"tester-kit-flow\" aria-describedby=\"fig-tester-kit-flow-text\">\n<picture>\n<source media=\"(prefers-reduced-motion: reduce)\" srcset=\"{{base}}/tester-kit-flow.static.svg\" width=\"690\" height=\"324\">\n<img src=\"{{base}}/tester-kit-flow.svg\" alt=\"A tester runs the image, sends the report, and CI checks it before it appears on the hardware-reports page.\" width=\"690\" height=\"374\" loading=\"lazy\">\n</picture>\n<figcaption>Testing on hardware the project does not own</figcaption>\n</figure>\n<p><a href=\"{{link}}\">Open the interactive figure</a></p>\n<details class=\"praetor-figure__text\" id=\"fig-tester-kit-flow-text\"><summary>Text description</summary>\n<ul>\n<li>Tester&#x27;s machine: Tester image or macOS bundle (published per release), GPU rows and twins (every twin against the CPU), Report JSON (facts, verdicts, digest).</li>\n<li>Project: check-hardware-reports.py (schema, verdicts, digest), Hardware reports page (generate-hardware-reports.py).</li>\n<li>Tester image or macOS bundle → GPU rows and twins (run) → Report JSON (write) → check-hardware-reports.py (sent back) → Hardware reports page (make docs-fragments-write).</li>\n<li>Scenario 1, One report: A tester&#x27;s run becomes a row on the hardware-reports page. The image probes the GPU and runs every row it can. Each twin is compared with the CPU; the report records the verdicts. The tester sends the report; CI checks its schema and digest. The page lists the report with its backend and verdict.</li>\n<li>The report carries a digest of its own content, so an edited report fails the check.</li>\n</ul>\n</details>"
+}

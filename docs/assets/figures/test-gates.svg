@@ -1,0 +1,104 @@
+<svg role="img" aria-labelledby="figure-title figure-desc" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="836.8" height="393" viewBox="0 0 836.8 393" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+<title id="figure-title">Test gates: unit tests, the Netflix golden gate, cross-backend parity</title>
+<desc id="figure-desc">A change passes the unit tests, the Netflix golden gate on its isolated CPU build, and the parity gate against the CPU.</desc>
+<!-- interfig (c) 2025 Vectorize AI, Inc. MIT https://github.com/vectorize-io/hindsight/tree/ccfe85b4851957ac2adf88b4a9ddf9668b2882f1/hindsight-interfig -->
+<metadata id="figure-spec"><![CDATA[{"props":{"layout":{"gap":40,"children":[{"id":"change","label":"Change","sub":"source, tests, docs"},{"id":"gates","label":"Gates","direction":"column","gap":22,"children":[{"id":"unit","label":"Unit tests","sub":"run_meson_test.py -- -C build","width":270},{"id":"golden","label":"Netflix golden gate","sub":"make test-netflix-golden","width":270},{"id":"parity","label":"Cross-backend parity gate","sub":"every GPU cell against the CPU","width":270}]},{"direction":"column","gap":22,"children":[{"id":"goldenbuild","label":"Isolated golden build","sub":"gcc or clang, no FP contraction","width":250},{"id":"assertions","label":"Netflix assertions","sub":"python/test/, never edited","shape":"store","width":250},{"id":"twins","label":"EXACT_TWINS, LIBM_TWINS","sub":"tolerance 0 or a derived bound","shape":"store","width":250}]}]},"edges":[{"from":"change","to":"unit"},{"from":"unit","to":"golden"},{"from":"golden","to":"parity"},{"from":"golden","to":"goldenbuild","label":"VMAF_BUILD_DIR"},{"from":"golden","to":"assertions","label":"assertAlmostEqual"},{"from":"parity","to":"twins","label":"tolerance"}],"steps":[{"label":"Gates in order","caption":"Each gate must pass before the change lands.","flow":[{"edges":"change->unit","say":"The unit tests run under the credential-safe Meson wrapper."},{"edges":"unit->golden","say":"The golden gate builds the CPU library on its own build directory."},{"edges":["golden->goldenbuild","golden->assertions"],"say":"Netflix's assertions run against that build."},{"edges":"golden->parity","say":"The parity gate runs each GPU backend against the CPU."},{"edges":"parity->twins","say":"An exact twin must match to the last bit; a libm twin within its bound."}]}]}}]]></metadata>
+<style>
+svg { --accent:#0074d9; --fg:#1c1e21; --muted:#606770; --bg:#ffffff; --surface:#f5f7fa; --border:#d0d7de; --card-on:#eef5fd; }
+@media (prefers-color-scheme: dark) { svg { --accent:#3396e8; --fg:#e3e3e3; --muted:#9aa0a6; --bg:#1b1b1d; --surface:#242526; --border:#3a3b3c; --card-on:#1d2733; } }
+.label { fill: var(--fg); font-size: 14px; font-weight: 500; text-anchor: middle; }
+.sub { fill: var(--muted); font-size: 12px; text-anchor: middle; }
+.frame { fill: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .04em; }
+.edgelabel { fill: var(--muted); font-size: 11px; text-anchor: middle; font-family: ui-monospace, Menlo, monospace; }
+.row { fill: var(--fg); font-size: 11px; }
+.row.mono { font-size: 10.5px; font-family: ui-monospace, Menlo, monospace; }
+.muted { fill: var(--muted); }
+.tag { font-size: 9px; font-weight: 600; letter-spacing: .03em; text-anchor: middle; }
+.mark { fill: var(--accent); font-size: 11px; font-weight: 600; text-anchor: end; }
+.chip { fill: #fff; font-size: 11.5px; text-anchor: middle; }
+.steplabel { fill: var(--fg); font-size: 13px; font-weight: 600; text-anchor: middle; font-family: ui-monospace, Menlo, monospace; }
+.caption { fill: var(--muted); font-size: 13.5px; text-anchor: middle; }
+@keyframes a0 { 0%,15.4% { stroke: var(--accent) } 15.4%,30.8% { stroke: var(--accent) } 30.8%,46.1% { stroke: var(--accent) } 46.2%,61.5% { stroke: var(--accent) } 61.5%,100% { stroke: var(--accent) } }
+.a0 { animation: a0 4.7s infinite step-end; }
+@keyframes a1 { 0%,15.4% { stroke: var(--border) } 15.4%,30.8% { stroke: var(--accent) } 30.8%,46.1% { stroke: var(--accent) } 46.2%,61.5% { stroke: var(--accent) } 61.5%,100% { stroke: var(--accent) } }
+.a1 { animation: a1 4.7s infinite step-end; }
+@keyframes a2 { 0%,15.4% { stroke: var(--border) } 15.4%,30.8% { stroke: var(--border) } 30.8%,46.1% { stroke: var(--border) } 46.2%,61.5% { stroke: var(--accent) } 61.5%,100% { stroke: var(--accent) } }
+.a2 { animation: a2 4.7s infinite step-end; }
+@keyframes a3 { 0%,15.4% { stroke: var(--border) } 15.4%,30.8% { stroke: var(--border) } 30.8%,46.1% { stroke: var(--accent) } 46.2%,61.5% { stroke: var(--accent) } 61.5%,100% { stroke: var(--accent) } }
+.a3 { animation: a3 4.7s infinite step-end; }
+@keyframes a4 { 0%,15.4% { stroke: var(--border) } 15.4%,30.8% { stroke: var(--border) } 30.8%,46.1% { stroke: var(--border) } 46.2%,61.5% { stroke: var(--border) } 61.5%,100% { stroke: var(--accent) } }
+.a4 { animation: a4 4.7s infinite step-end; }
+@keyframes a5 { 0%,15.4% { stroke: var(--accent); stroke-width: 2 } 15.4%,30.8% { stroke: var(--accent); stroke-width: 2 } 30.8%,46.1% { stroke: var(--accent); stroke-width: 2 } 46.2%,61.5% { stroke: var(--accent); stroke-width: 2 } 61.5%,100% { stroke: var(--accent); stroke-width: 2 } }
+.a5 { animation: a5 4.7s infinite step-end; }
+@keyframes a6 { 0%,15.4% { stroke: var(--muted); stroke-width: 1.25 } 15.4%,30.8% { stroke: var(--accent); stroke-width: 2 } 30.8%,46.1% { stroke: var(--accent); stroke-width: 2 } 46.2%,61.5% { stroke: var(--accent); stroke-width: 2 } 61.5%,100% { stroke: var(--accent); stroke-width: 2 } }
+.a6 { animation: a6 4.7s infinite step-end; }
+@keyframes a7 { 0%,15.4% { stroke: var(--muted); stroke-width: 1.25 } 15.4%,30.8% { stroke: var(--muted); stroke-width: 1.25 } 30.8%,46.1% { stroke: var(--muted); stroke-width: 1.25 } 46.2%,61.5% { stroke: var(--accent); stroke-width: 2 } 61.5%,100% { stroke: var(--accent); stroke-width: 2 } }
+.a7 { animation: a7 4.7s infinite step-end; }
+@keyframes a8 { 0%,15.4% { stroke: var(--muted); stroke-width: 1.25 } 15.4%,30.8% { stroke: var(--muted); stroke-width: 1.25 } 30.8%,46.1% { stroke: var(--accent); stroke-width: 2 } 46.2%,61.5% { stroke: var(--accent); stroke-width: 2 } 61.5%,100% { stroke: var(--accent); stroke-width: 2 } }
+.a8 { animation: a8 4.7s infinite step-end; }
+@keyframes a9 { 0%,15.4% { fill: var(--bg); stroke: var(--border) } 15.4%,30.8% { fill: var(--bg); stroke: var(--border) } 30.8%,46.1% { fill: var(--accent); stroke: var(--accent) } 46.2%,61.5% { fill: var(--accent); stroke: var(--accent) } 61.5%,100% { fill: var(--accent); stroke: var(--accent) } }
+.a9 { animation: a9 4.7s infinite step-end; }
+@keyframes a10 { 0%,15.4% { fill: var(--muted) } 15.4%,30.8% { fill: var(--muted) } 30.8%,46.1% { fill: #fff } 46.2%,61.5% { fill: #fff } 61.5%,100% { fill: #fff } }
+.a10 { animation: a10 4.7s infinite step-end; }
+@keyframes a11 { 0%,15.4% { stroke: var(--muted); stroke-width: 1.25 } 15.4%,30.8% { stroke: var(--muted); stroke-width: 1.25 } 30.8%,46.1% { stroke: var(--muted); stroke-width: 1.25 } 46.2%,61.5% { stroke: var(--muted); stroke-width: 1.25 } 61.5%,100% { stroke: var(--accent); stroke-width: 2 } }
+.a11 { animation: a11 4.7s infinite step-end; }
+@keyframes a12 { 0%,15.4% { fill: var(--bg); stroke: var(--border) } 15.4%,30.8% { fill: var(--bg); stroke: var(--border) } 30.8%,46.1% { fill: var(--bg); stroke: var(--border) } 46.2%,61.5% { fill: var(--bg); stroke: var(--border) } 61.5%,100% { fill: var(--accent); stroke: var(--accent) } }
+.a12 { animation: a12 4.7s infinite step-end; }
+@keyframes a13 { 0%,15.4% { fill: var(--muted) } 15.4%,30.8% { fill: var(--muted) } 30.8%,46.1% { fill: var(--muted) } 46.2%,61.5% { fill: var(--muted) } 61.5%,100% { fill: #fff } }
+.a13 { animation: a13 4.7s infinite step-end; }
+@keyframes p0 { 0%,0% { opacity: 0 } 0%,15.4% { opacity: 1 } 15.4%,100% { opacity: 0 } }
+.p0 { animation: p0 4.7s infinite step-end; }
+@keyframes p1 { 0%,15.4% { opacity: 0 } 15.4%,30.8% { opacity: 1 } 30.8%,100% { opacity: 0 } }
+.p1 { animation: p1 4.7s infinite step-end; }
+@keyframes p2 { 0%,30.8% { opacity: 0 } 30.8%,46.1% { opacity: 1 } 46.2%,100% { opacity: 0 } }
+.p2 { animation: p2 4.7s infinite step-end; }
+@keyframes p3 { 0%,30.8% { opacity: 0 } 30.8%,46.1% { opacity: 1 } 46.2%,100% { opacity: 0 } }
+.p3 { animation: p3 4.7s infinite step-end; }
+@keyframes p4 { 0%,46.2% { opacity: 0 } 46.2%,61.5% { opacity: 1 } 61.5%,100% { opacity: 0 } }
+.p4 { animation: p4 4.7s infinite step-end; }
+@keyframes p5 { 0%,61.5% { opacity: 0 } 61.5%,76.9% { opacity: 1 } 76.9%,100% { opacity: 0 } }
+.p5 { animation: p5 4.7s infinite step-end; }
+@keyframes a14 { 0%,15.4% { opacity: 1 } 15.4%,30.8% { opacity: 1 } 30.8%,46.1% { opacity: 1 } 46.2%,61.5% { opacity: 1 } 61.5%,100% { opacity: 1 } }
+.a14 { animation: a14 4.7s infinite step-end; }
+@keyframes a15 { 0%,15.4% { opacity: 1 } 15.4%,30.8% { opacity: 0 } 30.8%,46.1% { opacity: 0 } 46.2%,61.5% { opacity: 0 } 61.5%,100% { opacity: 0 } }
+.a15 { animation: a15 4.7s infinite step-end; }
+@keyframes a16 { 0%,15.4% { opacity: 0 } 15.4%,30.8% { opacity: 1 } 30.8%,46.1% { opacity: 0 } 46.2%,61.5% { opacity: 0 } 61.5%,100% { opacity: 0 } }
+.a16 { animation: a16 4.7s infinite step-end; }
+@keyframes a17 { 0%,15.4% { opacity: 0 } 15.4%,30.8% { opacity: 0 } 30.8%,46.1% { opacity: 1 } 46.2%,61.5% { opacity: 0 } 61.5%,100% { opacity: 0 } }
+.a17 { animation: a17 4.7s infinite step-end; }
+@keyframes a18 { 0%,15.4% { opacity: 0 } 15.4%,30.8% { opacity: 0 } 30.8%,46.1% { opacity: 0 } 46.2%,61.5% { opacity: 1 } 61.5%,100% { opacity: 0 } }
+.a18 { animation: a18 4.7s infinite step-end; }
+@keyframes a19 { 0%,15.4% { opacity: 0 } 15.4%,30.8% { opacity: 0 } 30.8%,46.1% { opacity: 0 } 46.2%,61.5% { opacity: 0 } 61.5%,100% { opacity: 1 } }
+.a19 { animation: a19 4.7s infinite step-end; }
+</style>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 1 L 9 5 L 0 9 z" fill="var(--muted)"/></marker></defs>
+<rect width="100%" height="100%" fill="var(--bg)"/>
+<g transform="translate(0 0)">
+<rect x="24" y="145" width="152.8" height="53" rx="10" fill="var(--bg)" stroke="var(--border)" class="a0"/><text x="100.4" y="169.5" class="label">Change</text><text x="100.4" y="184.5" class="sub">source, tests, docs</text>
+<rect x="216.8" y="24" width="306" height="295" rx="14" fill="var(--surface)" stroke="var(--border)"/><text x="234.8" y="44" class="frame">GATES</text>
+<rect x="234.8" y="61" width="270" height="53" rx="10" fill="var(--bg)" stroke="var(--border)" class="a0"/><text x="369.8" y="85.5" class="label">Unit tests</text><text x="369.8" y="100.5" class="sub">run_meson_test.py -- -C build</text>
+<rect x="234.8" y="136" width="270" height="90" rx="10" fill="var(--bg)" stroke="var(--border)" class="a1"/><text x="369.8" y="179" class="label">Netflix golden gate</text><text x="369.8" y="194" class="sub">make test-netflix-golden</text>
+<rect x="234.8" y="248" width="270" height="53" rx="10" fill="var(--bg)" stroke="var(--border)" class="a2"/><text x="369.8" y="272.5" class="label">Cross-backend parity gate</text><text x="369.8" y="287.5" class="sub">every GPU cell against the CPU</text>
+<rect x="562.8" y="56" width="250" height="53" rx="10" fill="var(--bg)" stroke="var(--border)" class="a3"/><text x="687.8" y="80.5" class="label">Isolated golden build</text><text x="687.8" y="95.5" class="sub">gcc or clang, no FP contraction</text>
+<path d="M562.8 143 a 125 12 0 0 1 250 0 v 43 a 125 12 0 0 1 -250 0 z" fill="var(--bg)" stroke="var(--border)" class="a3"/><path d="M562.8 143 a 125 12 0 0 0 250 0" fill="none" stroke="var(--border)" class="a3"/><text x="687.8" y="168" class="label">Netflix assertions</text><text x="687.8" y="183" class="sub">python/test/, never edited</text>
+<path d="M562.8 232 a 125 12 0 0 1 250 0 v 43 a 125 12 0 0 1 -250 0 z" fill="var(--bg)" stroke="var(--border)" class="a4"/><path d="M562.8 232 a 125 12 0 0 0 250 0" fill="none" stroke="var(--border)" class="a4"/><text x="687.8" y="257" class="label">EXACT_TWINS, LIBM_TWINS</text><text x="687.8" y="272" class="sub">tolerance 0 or a derived bound</text>
+<path id="p-change-&gt;unit" d="M 176.84 171.5 C 205.84 171.5, 205.84 87.5, 234.84 87.5" fill="none" stroke="var(--muted)" stroke-width="1.25" marker-end="url(#arrow)" class="a5"/>
+<path id="p-unit-&gt;golden" d="M 369.84000000000003 114 C 369.84000000000003 125, 369.84000000000003 125, 369.84000000000003 136" fill="none" stroke="var(--muted)" stroke-width="1.25" marker-end="url(#arrow)" class="a6"/>
+<path id="p-golden-&gt;parity" d="M 369.84000000000003 226 C 369.84000000000003 237, 369.84000000000003 237, 369.84000000000003 248" fill="none" stroke="var(--muted)" stroke-width="1.25" marker-end="url(#arrow)" class="a7"/>
+<path id="p-golden-&gt;goldenbuild" d="M 504.84000000000003 166 C 533.84 166, 533.84 82.5, 562.84 82.5" fill="none" stroke="var(--muted)" stroke-width="1.25" marker-end="url(#arrow)" class="a8"/><rect x="486" y="115.3" width="95.6" height="18" rx="9" fill="var(--bg)" stroke="var(--border)" class="a9"/><text x="533.8" y="128.3" class="edgelabel a10">VMAF_BUILD_DIR</text>
+<path id="p-golden-&gt;assertions" d="M 504.84000000000003 196 C 533.84 196, 533.84 164.5, 562.84 164.5" fill="none" stroke="var(--muted)" stroke-width="1.25" marker-end="url(#arrow)" class="a8"/><rect x="477.3" y="171.3" width="113.1" height="18" rx="9" fill="var(--bg)" stroke="var(--border)" class="a9"/><text x="533.8" y="184.3" class="edgelabel a10">assertAlmostEqual</text>
+<path id="p-parity-&gt;twins" d="M 504.84000000000003 274.5 C 533.84 274.5, 533.84 253.5, 562.84 253.5" fill="none" stroke="var(--muted)" stroke-width="1.25" marker-end="url(#arrow)" class="a11"/><rect x="500.6" y="255" width="66.5" height="18" rx="9" fill="var(--bg)" stroke="var(--border)" class="a12"/><text x="533.8" y="268" class="edgelabel a13">tolerance</text>
+<g class="p0" opacity="0"><circle r="10" fill="var(--accent)" opacity="0.2"/><circle r="4.5" fill="var(--accent)"/><animateMotion dur="4.7s" repeatCount="indefinite" keyTimes="0;0;0.2;1" keyPoints="0;0;1;1" calcMode="linear"><mpath href="#p-change-&gt;unit" xlink:href="#p-change-&gt;unit"/></animateMotion></g>
+<g class="p1" opacity="0"><circle r="10" fill="var(--accent)" opacity="0.2"/><circle r="4.5" fill="var(--accent)"/><animateMotion dur="4.7s" repeatCount="indefinite" keyTimes="0;0.2;0.3;1" keyPoints="0;0;1;1" calcMode="linear"><mpath href="#p-unit-&gt;golden" xlink:href="#p-unit-&gt;golden"/></animateMotion></g>
+<g class="p2" opacity="0"><circle r="10" fill="var(--accent)" opacity="0.2"/><circle r="4.5" fill="var(--accent)"/><animateMotion dur="4.7s" repeatCount="indefinite" keyTimes="0;0.3;0.5;1" keyPoints="0;0;1;1" calcMode="linear"><mpath href="#p-golden-&gt;goldenbuild" xlink:href="#p-golden-&gt;goldenbuild"/></animateMotion></g>
+<g class="p3" opacity="0"><circle r="10" fill="var(--accent)" opacity="0.2"/><circle r="4.5" fill="var(--accent)"/><animateMotion dur="4.7s" repeatCount="indefinite" keyTimes="0;0.3;0.5;1" keyPoints="0;0;1;1" calcMode="linear"><mpath href="#p-golden-&gt;assertions" xlink:href="#p-golden-&gt;assertions"/></animateMotion></g>
+<g class="p4" opacity="0"><circle r="10" fill="var(--accent)" opacity="0.2"/><circle r="4.5" fill="var(--accent)"/><animateMotion dur="4.7s" repeatCount="indefinite" keyTimes="0;0.5;0.6;1" keyPoints="0;0;1;1" calcMode="linear"><mpath href="#p-golden-&gt;parity" xlink:href="#p-golden-&gt;parity"/></animateMotion></g>
+<g class="p5" opacity="0"><circle r="10" fill="var(--accent)" opacity="0.2"/><circle r="4.5" fill="var(--accent)"/><animateMotion dur="4.7s" repeatCount="indefinite" keyTimes="0;0.6;0.8;1" keyPoints="0;0;1;1" calcMode="linear"><mpath href="#p-parity-&gt;twins" xlink:href="#p-parity-&gt;twins"/></animateMotion></g>
+</g>
+<text x="418.4" y="359" opacity="0" class="steplabel a14">Gates in order</text>
+<g opacity="0" class="a15"><text x="418.4" y="385" class="caption">The unit tests run under the credential-safe Meson wrapper.</text></g>
+<g opacity="0" class="a16"><text x="418.4" y="385" class="caption">The golden gate builds the CPU library on its own build directory.</text></g>
+<g opacity="0" class="a17"><text x="418.4" y="385" class="caption">Netflix's assertions run against that build.</text></g>
+<g opacity="0" class="a18"><text x="418.4" y="385" class="caption">The parity gate runs each GPU backend against the CPU.</text></g>
+<g opacity="0" class="a19"><text x="418.4" y="385" class="caption">An exact twin must match to the last bit; a libm twin within its bound.</text></g>
+</svg>

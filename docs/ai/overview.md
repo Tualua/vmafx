@@ -21,25 +21,8 @@ lives in [`dev-llm/`](../../dev-llm/).
 
 ## How the pieces fit together
 
-```text
-       ┌─────────────────────────┐
-       │        ai/              │  torch + lightning + typer
-       │  (train / export / reg) │  → ONNX
-       └────────────┬────────────┘
-                    │  .onnx + sidecar .json
-                    ▼
-       ┌─────────────────────────┐
-       │  model/tiny/ (git-lfs)  │  committed tiny models
-       └────────────┬────────────┘
-                    │
-                    ▼
-   ┌──────────────────────────────────────┐
-   │     core/src/dnn/  (C, ORT)       │   one runtime
-   │     vmaf_use_tiny_model(...)         │   shared by all surfaces
-   └──────────────┬────────────┬──────────┘
-                  │            │
-                  ▼            ▼
-           vmaf CLI       ffmpeg vf_libvmaf  +  vf_vmaf_pre
+```figure
+tiny-ai-pipeline
 ```
 
 **Key invariant.** Training lives in Python and depends on PyTorch +

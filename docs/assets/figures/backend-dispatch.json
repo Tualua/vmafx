@@ -1,0 +1,63 @@
+{
+  "slug": "backend-dispatch",
+  "title": "Backend dispatch: from a feature to the code that computes it",
+  "alt": "A requested feature runs on the device twin of the chosen backend when one fits, else on the CPU with its best SIMD path.",
+  "text": [
+    "Runs on: GPU twin (CUDA, SYCL, HIP or Metal), CPU extractor (AVX-512, AVX2, NEON, SVE2 or scalar C).",
+    "Boxes: Options (--backend, --model, --feature), Features to compute (named by the model or the CLI), Extractor registry (by feature name and backend flag), Device twin? (provided_features, geometry).",
+    "Options → Features to compute → Extractor registry (vmaf_use_feature) → Device twin? → GPU twin (twin fits).",
+    "Device twin? → CPU extractor (no twin).",
+    "Scenario 1, GPU twin: With a GPU backend compiled in and allowed, a feature with a twin runs on the device. The model names its features; --backend cuda allows CUDA. Each feature is looked up in the registry. The CPU extractor names a CUDA twin through provided_features. The twin accepts the frame geometry and options, so it runs.",
+    "Scenario 2, CPU: Without a fitting twin, the CPU extractor runs its best SIMD path. --backend cpu, or no GPU backend compiled in. The feature is looked up. No twin is eligible. The CPU extractor runs; vmaf_init_cpu picked AVX-512, AVX2, NEON or scalar C.",
+    "Disabled backends (--no_cuda, --no_sycl, ...) leave the candidate list first.",
+    "With --backend NAME a missing or failing backend is an error, never a silent fall back to the CPU."
+  ],
+  "evidence": [
+    "core/tools/cli_parse.cpp:ARG_BACKEND",
+    "core/tools/cli_parse.cpp:ARG_NO_CUDA",
+    "core/src/libvmaf.c:vmaf_use_features_from_model",
+    "core/src/libvmaf.c:vmaf_use_feature",
+    "core/src/feature/feature_extractor.cpp:vmaf_get_feature_extractor_by_feature_name",
+    "core/src/feature/feature_extractor.cpp:vmaf_get_feature_extractor_twin",
+    "core/src/libvmaf.c:vmaf_feature_backend_twin",
+    "core/src/feature/feature_extractor.h:VMAF_FEATURE_EXTRACTOR_METAL",
+    "core/src/libvmaf.c:vmaf_init_cpu"
+  ],
+  "spec_sha256": "881a7ba34fcfac356fd9526a36816b796dd8ae2ed64b51f244380ec6b62ff551",
+  "engine": {
+    "commit": "ccfe85b4851957ac2adf88b4a9ddf9668b2882f1",
+    "sha256": "6a70b89b2d53c73fa79cb881a89e709622b2cfd2e8568b8e9797a328993dd0fc"
+  },
+  "svg_sha256": "a3fb69a714b0470b92303e4bac38d513a307f6c72484fe18d3ba16bf85ec662c",
+  "static_sha256": "171a3e39e8e168a20df54bd9a85b978d8e0c9947bef41fbb76810c7832a08e87",
+  "width": 942,
+  "height": 317,
+  "static_width": 942,
+  "static_height": 267,
+  "edges": [
+    {
+      "from": "Options",
+      "to": "Features to compute"
+    },
+    {
+      "from": "Features to compute",
+      "to": "Extractor registry",
+      "label": "vmaf_use_feature"
+    },
+    {
+      "from": "Extractor registry",
+      "to": "Device twin?"
+    },
+    {
+      "from": "Device twin?",
+      "to": "GPU twin",
+      "label": "twin fits"
+    },
+    {
+      "from": "Device twin?",
+      "to": "CPU extractor",
+      "label": "no twin"
+    }
+  ],
+  "html": "<figure class=\"praetor-figure\" id=\"fig-backend-dispatch\" data-figure=\"backend-dispatch\" aria-describedby=\"fig-backend-dispatch-text\">\n<picture>\n<source media=\"(prefers-reduced-motion: reduce)\" srcset=\"{{base}}/backend-dispatch.static.svg\" width=\"942\" height=\"267\">\n<img src=\"{{base}}/backend-dispatch.svg\" alt=\"A requested feature runs on the device twin of the chosen backend when one fits, else on the CPU with its best SIMD path.\" width=\"942\" height=\"317\" loading=\"lazy\">\n</picture>\n<figcaption>Backend dispatch: from a feature to the code that computes it</figcaption>\n</figure>\n<p><a href=\"{{link}}\">Open the interactive figure</a></p>\n<details class=\"praetor-figure__text\" id=\"fig-backend-dispatch-text\"><summary>Text description</summary>\n<ul>\n<li>Runs on: GPU twin (CUDA, SYCL, HIP or Metal), CPU extractor (AVX-512, AVX2, NEON, SVE2 or scalar C).</li>\n<li>Boxes: Options (--backend, --model, --feature), Features to compute (named by the model or the CLI), Extractor registry (by feature name and backend flag), Device twin? (provided_features, geometry).</li>\n<li>Options → Features to compute → Extractor registry (vmaf_use_feature) → Device twin? → GPU twin (twin fits).</li>\n<li>Device twin? → CPU extractor (no twin).</li>\n<li>Scenario 1, GPU twin: With a GPU backend compiled in and allowed, a feature with a twin runs on the device. The model names its features; --backend cuda allows CUDA. Each feature is looked up in the registry. The CPU extractor names a CUDA twin through provided_features. The twin accepts the frame geometry and options, so it runs.</li>\n<li>Scenario 2, CPU: Without a fitting twin, the CPU extractor runs its best SIMD path. --backend cpu, or no GPU backend compiled in. The feature is looked up. No twin is eligible. The CPU extractor runs; vmaf_init_cpu picked AVX-512, AVX2, NEON or scalar C.</li>\n<li>Disabled backends (--no_cuda, --no_sycl, ...) leave the candidate list first.</li>\n<li>With --backend NAME a missing or failing backend is an error, never a silent fall back to the CPU.</li>\n</ul>\n</details>"
+}

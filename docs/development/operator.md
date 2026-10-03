@@ -128,31 +128,8 @@ The operator runs as a single Deployment (`vmafx-operator`) with a
 controller-runtime Manager.  Three independent reconcilers watch their
 respective CRDs.
 
-```text
-┌─────────────────────────────────────────────┐
-│              vmafx-operator Pod             │
-│                                             │
-│  ┌───────────────────────────────────────┐  │
-│  │  controller-runtime Manager           │  │
-│  │  ┌─────────────────────────────────┐  │  │
-│  │  │ VmafxJobReconciler              │  │  │
-│  │  │  • Polls GetJob gRPC every 10 s │  │  │
-│  │  │  • Maps PENDING/RUNNING/        │  │  │
-│  │  │    COMPLETED/FAILED → CR phase  │  │  │
-│  │  │  • Writes Score on Succeeded    │  │  │
-│  │  ├─────────────────────────────────┤  │  │
-│  │  │ VmafxNodeReconciler             │  │  │
-│  │  │  • /healthz probe every 30 s    │  │  │
-│  │  │  • 60 s stale-heartbeat gate    │  │  │
-│  │  │  • Updates Healthy + heartbeat  │  │  │
-│  │  ├─────────────────────────────────┤  │  │
-│  │  │ VmafxModelTrainingReconciler    │  │  │
-│  │  │  • Polls sidecar /status 60 s   │  │  │
-│  │  │  • Emits CheckpointWritten event│  │  │
-│  │  └─────────────────────────────────┘  │  │
-│  └───────────────────────────────────────┘  │
-│  Prometheus metrics :8080  │  Healthz :8081  │
-└─────────────────────────────────────────────┘
+```figure
+operator-reconcilers
 ```
 
 ---

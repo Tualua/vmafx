@@ -1,0 +1,86 @@
+{
+  "slug": "controller-job-lifecycle",
+  "title": "Controller: node API and job lifecycle",
+  "alt": "Nodes register, send heartbeats, pull matching pending jobs and report results; a job ends completed, failed or cancelled.",
+  "text": [
+    "Job status in the queue: pending, running, completed, failed, cancelled.",
+    "Boxes: Client (SubmitJob, CancelJob), vmafx-controller (queue, node registry, scheduler), vmafx-node (RegisterNode, Heartbeat).",
+    "Client → vmafx-controller (SubmitJob).",
+    "vmafx-node → vmafx-controller (PullWork).",
+    "vmafx-node → vmafx-controller (ReportResult).",
+    "pending → running (PullWork) → completed (ok).",
+    "running → failed (error).",
+    "pending → cancelled (CancelJob).",
+    "running → pending (node evicted).",
+    "Scenario 1, Job runs: A submitted job is pulled by a matching node and reported. The client submits a job; it is pending. A node with the required backend pulls work. The scheduler assigns the oldest matching job. The node reports the result. The job is completed, or failed on an error.",
+    "Scenario 2, Node lost: An evicted node gives its jobs back. A node runs a job. No heartbeat for 60 s: the node is evicted and the job is pending again.",
+    "A node that misses heartbeats for 60 s is evicted, and its running jobs return to pending.",
+    "PullWork assigns the oldest pending job whose backend the node lists in its capability."
+  ],
+  "evidence": [
+    "cmd/vmafx-controller/grpc_server.go:SubmitJob",
+    "cmd/vmafx-controller/grpc_server.go:RegisterNode",
+    "cmd/vmafx-controller/grpc_server.go:Heartbeat",
+    "cmd/vmafx-controller/grpc_server.go:PullWork",
+    "cmd/vmafx-controller/grpc_server.go:ReportResult",
+    "cmd/vmafx-controller/grpc_server.go:CancelJob",
+    "cmd/vmafx-controller/nodes/registry.go:reaper",
+    "cmd/vmafx-controller/scheduler/scheduler.go:Assign",
+    "cmd/vmafx-controller/queue/queue.go:StatusPending",
+    "cmd/vmafx-controller/queue/queue.go:StatusCancelled"
+  ],
+  "spec_sha256": "d34310b13654089b6f2cf2e5a07146d80cc720e1d2730fd8e6b09cf2304d602c",
+  "engine": {
+    "commit": "ccfe85b4851957ac2adf88b4a9ddf9668b2882f1",
+    "sha256": "6a70b89b2d53c73fa79cb881a89e709622b2cfd2e8568b8e9797a328993dd0fc"
+  },
+  "svg_sha256": "6515227698c01b4aea4c5a391e37aa5941495bf58c39a2484034a934547be333",
+  "static_sha256": "ad824cf19a40ceecdd060ccf0fff98a57ef51b79c93d735f4db92e2b403f4bb3",
+  "width": 724,
+  "height": 473,
+  "static_width": 724,
+  "static_height": 423,
+  "edges": [
+    {
+      "from": "Client",
+      "to": "vmafx-controller",
+      "label": "SubmitJob"
+    },
+    {
+      "from": "vmafx-node",
+      "to": "vmafx-controller",
+      "label": "PullWork"
+    },
+    {
+      "from": "vmafx-node",
+      "to": "vmafx-controller",
+      "label": "ReportResult"
+    },
+    {
+      "from": "pending",
+      "to": "running",
+      "label": "PullWork"
+    },
+    {
+      "from": "running",
+      "to": "completed",
+      "label": "ok"
+    },
+    {
+      "from": "running",
+      "to": "failed",
+      "label": "error"
+    },
+    {
+      "from": "pending",
+      "to": "cancelled",
+      "label": "CancelJob"
+    },
+    {
+      "from": "running",
+      "to": "pending",
+      "label": "node evicted"
+    }
+  ],
+  "html": "<figure class=\"praetor-figure\" id=\"fig-controller-job-lifecycle\" data-figure=\"controller-job-lifecycle\" aria-describedby=\"fig-controller-job-lifecycle-text\">\n<picture>\n<source media=\"(prefers-reduced-motion: reduce)\" srcset=\"{{base}}/controller-job-lifecycle.static.svg\" width=\"724\" height=\"423\">\n<img src=\"{{base}}/controller-job-lifecycle.svg\" alt=\"Nodes register, send heartbeats, pull matching pending jobs and report results; a job ends completed, failed or cancelled.\" width=\"724\" height=\"473\" loading=\"lazy\">\n</picture>\n<figcaption>Controller: node API and job lifecycle</figcaption>\n</figure>\n<p><a href=\"{{link}}\">Open the interactive figure</a></p>\n<details class=\"praetor-figure__text\" id=\"fig-controller-job-lifecycle-text\"><summary>Text description</summary>\n<ul>\n<li>Job status in the queue: pending, running, completed, failed, cancelled.</li>\n<li>Boxes: Client (SubmitJob, CancelJob), vmafx-controller (queue, node registry, scheduler), vmafx-node (RegisterNode, Heartbeat).</li>\n<li>Client → vmafx-controller (SubmitJob).</li>\n<li>vmafx-node → vmafx-controller (PullWork).</li>\n<li>vmafx-node → vmafx-controller (ReportResult).</li>\n<li>pending → running (PullWork) → completed (ok).</li>\n<li>running → failed (error).</li>\n<li>pending → cancelled (CancelJob).</li>\n<li>running → pending (node evicted).</li>\n<li>Scenario 1, Job runs: A submitted job is pulled by a matching node and reported. The client submits a job; it is pending. A node with the required backend pulls work. The scheduler assigns the oldest matching job. The node reports the result. The job is completed, or failed on an error.</li>\n<li>Scenario 2, Node lost: An evicted node gives its jobs back. A node runs a job. No heartbeat for 60 s: the node is evicted and the job is pending again.</li>\n<li>A node that misses heartbeats for 60 s is evicted, and its running jobs return to pending.</li>\n<li>PullWork assigns the oldest pending job whose backend the node lists in its capability.</li>\n</ul>\n</details>"
+}

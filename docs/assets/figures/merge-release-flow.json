@@ -1,0 +1,69 @@
+{
+  "slug": "merge-release-flow",
+  "title": "From a pull request to a published release",
+  "alt": "A PR passes its gates and the merge train, lands on master, and release-please and an operator turn master into a release.",
+  "text": [
+    "Landing: Pull request (Conventional Commit title), PR gates (deliverables, state.md, audit), Merge train (make lint, make test), master (squashed commit).",
+    "Release: release-please (release PR, version bump), Draft release (merged release PR), Operator publishes (creates the vX.Y.Z tag), Publication workflows (build, sign, attest, publish).",
+    "Pull request → PR gates → Merge train → master (fast-forward) → release-please (push) → Draft release (merge) → Operator publishes → Publication workflows (release.published).",
+    "Scenario 1, Land: A pull request becomes one commit on master. The PR body carries the deliverables; the gates check it and the diff. The merge train restacks the PR, builds and runs the tests. It lands as one squashed commit, fast-forward.",
+    "Scenario 2, Release: master becomes a published release. release-please reads the commit titles and opens the release PR. Merging the release PR creates a draft release, no tag yet. An operator publishes the draft; that creates the tag. The workflows check out the tag, sign and publish.",
+    "Release candidates follow the phases in AGENTS.md section 11: RC1 to RC8, then v1.0.0.",
+    "Publishing the draft is the one irreversible step and is taken by a person."
+  ],
+  "evidence": [
+    "scripts/ci/deliverables-check.sh:diff_base",
+    "scripts/ci/state-md-touch-check.sh:trigger_reason",
+    "scripts/dev/merge_train_guard.py:validate",
+    "scripts/dev/merge_train_guard.py:RELEASE_PR",
+    ".github/workflows/release-please.yml:googleapis",
+    ".github/workflows/docker-publish-tester.yml:published_at",
+    ".github/workflows/docker-publish-production.yml:release"
+  ],
+  "spec_sha256": "e1733a90fafe7cc22457ee137c23008d5549863a36a728ac3c5046fee86274a3",
+  "engine": {
+    "commit": "ccfe85b4851957ac2adf88b4a9ddf9668b2882f1",
+    "sha256": "6a70b89b2d53c73fa79cb881a89e709622b2cfd2e8568b8e9797a328993dd0fc"
+  },
+  "svg_sha256": "50135b60bd7556502315672cddfdb98c27290f8eda526a248b50ed5067094d92",
+  "static_sha256": "d0e01837cdd295952d7fc4d17ccf6b49cb120df3f264abafe430d71ea9ad6dda",
+  "width": 1007,
+  "height": 386,
+  "static_width": 1007,
+  "static_height": 336,
+  "edges": [
+    {
+      "from": "Pull request",
+      "to": "PR gates"
+    },
+    {
+      "from": "PR gates",
+      "to": "Merge train"
+    },
+    {
+      "from": "Merge train",
+      "to": "master",
+      "label": "fast-forward"
+    },
+    {
+      "from": "master",
+      "to": "release-please",
+      "label": "push"
+    },
+    {
+      "from": "release-please",
+      "to": "Draft release",
+      "label": "merge"
+    },
+    {
+      "from": "Draft release",
+      "to": "Operator publishes"
+    },
+    {
+      "from": "Operator publishes",
+      "to": "Publication workflows",
+      "label": "release.published"
+    }
+  ],
+  "html": "<figure class=\"praetor-figure\" id=\"fig-merge-release-flow\" data-figure=\"merge-release-flow\" aria-describedby=\"fig-merge-release-flow-text\">\n<picture>\n<source media=\"(prefers-reduced-motion: reduce)\" srcset=\"{{base}}/merge-release-flow.static.svg\" width=\"1007\" height=\"336\">\n<img src=\"{{base}}/merge-release-flow.svg\" alt=\"A PR passes its gates and the merge train, lands on master, and release-please and an operator turn master into a release.\" width=\"1007\" height=\"386\" loading=\"lazy\">\n</picture>\n<figcaption>From a pull request to a published release</figcaption>\n</figure>\n<p><a href=\"{{link}}\">Open the interactive figure</a></p>\n<details class=\"praetor-figure__text\" id=\"fig-merge-release-flow-text\"><summary>Text description</summary>\n<ul>\n<li>Landing: Pull request (Conventional Commit title), PR gates (deliverables, state.md, audit), Merge train (make lint, make test), master (squashed commit).</li>\n<li>Release: release-please (release PR, version bump), Draft release (merged release PR), Operator publishes (creates the vX.Y.Z tag), Publication workflows (build, sign, attest, publish).</li>\n<li>Pull request → PR gates → Merge train → master (fast-forward) → release-please (push) → Draft release (merge) → Operator publishes → Publication workflows (release.published).</li>\n<li>Scenario 1, Land: A pull request becomes one commit on master. The PR body carries the deliverables; the gates check it and the diff. The merge train restacks the PR, builds and runs the tests. It lands as one squashed commit, fast-forward.</li>\n<li>Scenario 2, Release: master becomes a published release. release-please reads the commit titles and opens the release PR. Merging the release PR creates a draft release, no tag yet. An operator publishes the draft; that creates the tag. The workflows check out the tag, sign and publish.</li>\n<li>Release candidates follow the phases in AGENTS.md section 11: RC1 to RC8, then v1.0.0.</li>\n<li>Publishing the draft is the one irreversible step and is taken by a person.</li>\n</ul>\n</details>"
+}

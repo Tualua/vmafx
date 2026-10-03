@@ -84,6 +84,10 @@ Dispatch precedence inside `libvmaf` (highest first):
 3. Otherwise the best available CPU SIMD twin runs; scalar C is the universal
    fallback.
 
+```figure
+backend-dispatch
+```
+
 ### Explicit-backend semantics (`--backend NAME`)
 
 The `--backend` exclusive selector accepts `auto | cpu | cuda | sycl

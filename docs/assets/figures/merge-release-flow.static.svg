@@ -1,0 +1,47 @@
+<svg role="img" aria-labelledby="figure-title figure-desc" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1006.8" height="336" viewBox="0 0 1006.8 336" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+<title id="figure-title">From a pull request to a published release</title>
+<desc id="figure-desc">A PR passes its gates and the merge train, lands on master, and release-please and an operator turn master into a release.</desc>
+<!-- interfig (c) 2025 Vectorize AI, Inc. MIT https://github.com/vectorize-io/hindsight/tree/ccfe85b4851957ac2adf88b4a9ddf9668b2882f1/hindsight-interfig -->
+<metadata id="figure-spec"><![CDATA[{"props":{"layout":{"direction":"column","gap":34,"children":[{"id":"land","label":"Landing","direction":"row","gap":46,"children":[{"id":"pr","label":"Pull request","sub":"Conventional Commit title"},{"id":"checks","label":"PR gates","sub":"deliverables, state.md, audit"},{"id":"train","label":"Merge train","sub":"make lint, make test"},{"id":"master","label":"master","sub":"squashed commit","shape":"store"}]},{"id":"release","label":"Release","direction":"row","gap":46,"children":[{"id":"rp","label":"release-please","sub":"release PR, version bump"},{"id":"draft","label":"Draft release","sub":"merged release PR"},{"id":"publish","label":"Operator publishes","sub":"creates the vX.Y.Z tag","shape":"decision","width":200},{"id":"artifacts","label":"Publication workflows","sub":"build, sign, attest, publish"}]}]},"edges":[{"from":"pr","to":"checks"},{"from":"checks","to":"train"},{"from":"train","to":"master","label":"fast-forward"},{"from":"master","to":"rp","label":"push"},{"from":"rp","to":"draft","label":"merge"},{"from":"draft","to":"publish"},{"from":"publish","to":"artifacts","label":"release.published"}],"steps":[{"label":"Land","caption":"A pull request becomes one commit on master.","flow":[{"edges":"pr->checks","say":"The PR body carries the deliverables; the gates check it and the diff."},{"edges":"checks->train","say":"The merge train restacks the PR, builds and runs the tests."},{"edges":"train->master","say":"It lands as one squashed commit, fast-forward."}]},{"label":"Release","caption":"master becomes a published release.","flow":[{"edges":"master->rp","say":"release-please reads the commit titles and opens the release PR."},{"edges":"rp->draft","say":"Merging the release PR creates a draft release, no tag yet."},{"edges":"draft->publish","say":"An operator publishes the draft; that creates the tag."},{"edges":"publish->artifacts","say":"The workflows check out the tag, sign and publish."}]}]}}]]></metadata>
+<style>
+svg { --accent:#0074d9; --fg:#1c1e21; --muted:#606770; --bg:#ffffff; --surface:#f5f7fa; --border:#d0d7de; --card-on:#eef5fd; }
+@media (prefers-color-scheme: dark) { svg { --accent:#3396e8; --fg:#e3e3e3; --muted:#9aa0a6; --bg:#1b1b1d; --surface:#242526; --border:#3a3b3c; --card-on:#1d2733; } }
+.label { fill: var(--fg); font-size: 14px; font-weight: 500; text-anchor: middle; }
+.sub { fill: var(--muted); font-size: 12px; text-anchor: middle; }
+.frame { fill: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .04em; }
+.edgelabel { fill: var(--muted); font-size: 11px; text-anchor: middle; font-family: ui-monospace, Menlo, monospace; }
+.row { fill: var(--fg); font-size: 11px; }
+.row.mono { font-size: 10.5px; font-family: ui-monospace, Menlo, monospace; }
+.muted { fill: var(--muted); }
+.tag { font-size: 9px; font-weight: 600; letter-spacing: .03em; text-anchor: middle; }
+.mark { fill: var(--accent); font-size: 11px; font-weight: 600; text-anchor: end; }
+.chip { fill: #fff; font-size: 11.5px; text-anchor: middle; }
+.steplabel { fill: var(--fg); font-size: 13px; font-weight: 600; text-anchor: middle; font-family: ui-monospace, Menlo, monospace; }
+.caption { fill: var(--muted); font-size: 13.5px; text-anchor: middle; }
+
+</style>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 1 L 9 5 L 0 9 z" fill="var(--muted)"/></marker></defs>
+<rect width="100%" height="100%" fill="var(--bg)"/>
+<g transform="translate(0 0)">
+<rect x="83.1" y="24" width="840.6" height="122" rx="14" fill="var(--surface)" stroke="var(--border)"/><text x="101.1" y="44" class="frame">LANDING</text>
+<rect x="101.1" y="68" width="190" height="53" rx="10" fill="var(--bg)" stroke="var(--border)"/><text x="196.1" y="92.5" class="label">Pull request</text><text x="196.1" y="107.5" class="sub">Conventional Commit title</text>
+<rect x="337.1" y="68" width="190" height="53" rx="10" fill="var(--bg)" stroke="var(--border)"/><text x="432.1" y="92.5" class="label">PR gates</text><text x="432.1" y="107.5" class="sub">deliverables, state.md, audit</text>
+<rect x="573.1" y="68" width="159.2" height="53" rx="10" fill="var(--bg)" stroke="var(--border)"/><text x="652.7" y="92.5" class="label">Merge train</text><text x="652.7" y="107.5" class="sub">make lint, make test</text>
+<path d="M778.3 73 a 63.7 12 0 0 1 127.4 0 v 43 a 63.7 12 0 0 1 -127.4 0 z" fill="var(--bg)" stroke="var(--border)"/><path d="M778.3 73 a 63.7 12 0 0 0 127.4 0" fill="none" stroke="var(--border)"/><text x="842" y="98" class="label">master</text><text x="842" y="113" class="sub">squashed commit</text>
+<rect x="24" y="180" width="958.8" height="132" rx="14" fill="var(--surface)" stroke="var(--border)"/><text x="42" y="200" class="frame">RELEASE</text>
+<rect x="42" y="229" width="184.6" height="53" rx="10" fill="var(--bg)" stroke="var(--border)"/><text x="134.3" y="253.5" class="label">release-please</text><text x="134.3" y="268.5" class="sub">release PR, version bump</text>
+<rect x="272.6" y="229" width="140.1" height="53" rx="10" fill="var(--bg)" stroke="var(--border)"/><text x="342.7" y="253.5" class="label">Draft release</text><text x="342.7" y="268.5" class="sub">merged release PR</text>
+<polygon points="593.8,217 728.8,255.5 593.8,294 458.8,255.5" fill="var(--bg)" stroke="var(--border)"/><text x="593.8" y="253.5" class="label">Operator publishes</text><text x="593.8" y="268.5" class="sub">creates the vX.Y.Z tag</text>
+<rect x="774.8" y="229" width="190" height="53" rx="10" fill="var(--bg)" stroke="var(--border)"/><text x="869.8" y="253.5" class="label">Publication workflows</text><text x="869.8" y="268.5" class="sub">build, sign, attest, publish</text>
+<path id="p-pr-&gt;checks" d="M 291.08 94.5 C 314.08 94.5, 314.08 94.5, 337.08 94.5" fill="none" stroke="var(--muted)" stroke-width="1.25" marker-end="url(#arrow)"/>
+<path id="p-checks-&gt;train" d="M 527.0799999999999 94.5 C 550.0799999999999 94.5, 550.0799999999999 94.5, 573.0799999999999 94.5" fill="none" stroke="var(--muted)" stroke-width="1.25" marker-end="url(#arrow)"/>
+<path id="p-train-&gt;master" d="M 732.28 94.5 C 755.28 94.5, 755.28 83.33333333333333, 778.28 83.33333333333333" fill="none" stroke="var(--muted)" stroke-width="1.25" marker-end="url(#arrow)"/><rect x="713.3" y="79.9" width="84" height="18" rx="9" fill="var(--bg)" stroke="var(--border)"/><text x="755.3" y="92.9" class="edgelabel">fast-forward</text>
+<path id="p-master-&gt;rp" d="M 778.28 105.66666666666666 C 502.46 105.66666666666666, 502.46000000000004 246.66666666666666, 226.64000000000001 246.66666666666666" fill="none" stroke="var(--muted)" stroke-width="1.25" marker-end="url(#arrow)"/><rect x="483.8" y="167.2" width="37.3" height="18" rx="9" fill="var(--bg)" stroke="var(--border)"/><text x="502.5" y="180.2" class="edgelabel">push</text>
+<path id="p-rp-&gt;draft" d="M 226.64000000000001 264.3333333333333 C 249.64 264.3333333333333, 249.64 255.5, 272.64 255.5" fill="none" stroke="var(--muted)" stroke-width="1.25" marker-end="url(#arrow)"/><rect x="228.1" y="250.9" width="43.2" height="18" rx="9" fill="var(--bg)" stroke="var(--border)"/><text x="249.6" y="263.9" class="edgelabel">merge</text>
+<path id="p-draft-&gt;publish" d="M 412.76 255.5 C 435.76 255.5, 435.76 255.5, 458.76 255.5" fill="none" stroke="var(--muted)" stroke-width="1.25" marker-end="url(#arrow)"/>
+<path id="p-publish-&gt;artifacts" d="M 728.76 255.5 C 751.76 255.5, 751.76 255.5, 774.76 255.5" fill="none" stroke="var(--muted)" stroke-width="1.25" marker-end="url(#arrow)"/><rect x="695.2" y="246.5" width="113.1" height="18" rx="9" fill="var(--bg)" stroke="var(--border)"/><text x="751.8" y="259.5" class="edgelabel">release.published</text>
+
+</g>
+
+
+</svg>

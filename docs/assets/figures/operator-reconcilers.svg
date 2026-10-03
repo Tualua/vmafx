@@ -1,0 +1,122 @@
+<svg role="img" aria-labelledby="figure-title figure-desc" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="700" height="404" viewBox="0 0 700 404" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+<title id="figure-title">vmafx-operator: one manager, three reconcilers</title>
+<desc id="figure-desc">The operator manager runs three reconcilers that poll the controller and the trainer and write status to their CRDs.</desc>
+<!-- interfig (c) 2025 Vectorize AI, Inc. MIT https://github.com/vectorize-io/hindsight/tree/ccfe85b4851957ac2adf88b4a9ddf9668b2882f1/hindsight-interfig -->
+<metadata id="figure-spec"><![CDATA[{"props":{"layout":{"gap":56,"children":[{"id":"manager","label":"vmafx-operator pod: controller-runtime Manager","direction":"column","gap":24,"children":[{"id":"job","label":"VmafxJobReconciler","sub":"every 10 s: GetJob, map status to phase","width":300},{"id":"node","label":"VmafxNodeReconciler","sub":"every 30 s: /healthz; stale after 60 s","width":300},{"id":"training","label":"VmafxModelTrainingReconciler","sub":"every 60 s: trainer /status","width":300}]},{"direction":"column","gap":40,"children":[{"id":"controller","label":"vmafx-controller","sub":"gRPC GetJob, HTTP /healthz"},{"id":"trainer","label":"Trainer sidecar","sub":"HTTP /status on :9091"},{"id":"crds","label":"CRD status","sub":"VmafxJob, VmafxNode, VmafxModelTraining","shape":"store","width":260}]}]},"edges":[{"from":"job","to":"controller","label":"GetJob"},{"from":"node","to":"controller","label":"/healthz"},{"from":"training","to":"trainer","label":"/status"},{"from":"manager","to":"crds","label":"status, events","around":"below"}],"steps":[{"label":"Job","caption":"A VmafxJob follows the controller job it submitted.","flow":[{"edges":"job->controller","say":"Every 10 s the reconciler asks the controller for the job."},{"edges":{"edge":"job->controller","back":true,"data":"COMPLETED"},"say":"PENDING, RUNNING, COMPLETED or FAILED comes back."},{"edges":"manager->crds","say":"The phase, and the score on success, go into the CR status."}]},{"label":"Node","caption":"A VmafxNode turns unhealthy when the probe fails or its heartbeat is old.","flow":[{"edges":"node->controller","say":"Every 30 s the reconciler probes the controller."},{"edges":"manager->crds","say":"A heartbeat older than 60 s marks the node unhealthy."}]},{"label":"Training","caption":"A VmafxModelTraining reports the trainer sidecar.","flow":[{"edges":"training->trainer","say":"Every 60 s the reconciler reads the trainer /status."},{"edges":"manager->crds","say":"A new checkpoint emits a CheckpointWritten event."}]}]}}]]></metadata>
+<style>
+svg { --accent:#0074d9; --fg:#1c1e21; --muted:#606770; --bg:#ffffff; --surface:#f5f7fa; --border:#d0d7de; --card-on:#eef5fd; }
+@media (prefers-color-scheme: dark) { svg { --accent:#3396e8; --fg:#e3e3e3; --muted:#9aa0a6; --bg:#1b1b1d; --surface:#242526; --border:#3a3b3c; --card-on:#1d2733; } }
+.label { fill: var(--fg); font-size: 14px; font-weight: 500; text-anchor: middle; }
+.sub { fill: var(--muted); font-size: 12px; text-anchor: middle; }
+.frame { fill: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .04em; }
+.edgelabel { fill: var(--muted); font-size: 11px; text-anchor: middle; font-family: ui-monospace, Menlo, monospace; }
+.row { fill: var(--fg); font-size: 11px; }
+.row.mono { font-size: 10.5px; font-family: ui-monospace, Menlo, monospace; }
+.muted { fill: var(--muted); }
+.tag { font-size: 9px; font-weight: 600; letter-spacing: .03em; text-anchor: middle; }
+.mark { fill: var(--accent); font-size: 11px; font-weight: 600; text-anchor: end; }
+.chip { fill: #fff; font-size: 11.5px; text-anchor: middle; }
+.steplabel { fill: var(--fg); font-size: 13px; font-weight: 600; text-anchor: middle; font-family: ui-monospace, Menlo, monospace; }
+.caption { fill: var(--muted); font-size: 13.5px; text-anchor: middle; }
+@keyframes a0 { 0%,8.7% { stroke: var(--border) } 8.7%,17.4% { stroke: var(--border) } 17.4%,39.1% { stroke: var(--accent) } 39.1%,47.8% { stroke: var(--border) } 47.8%,69.6% { stroke: var(--accent) } 69.6%,78.3% { stroke: var(--border) } 78.3%,100% { stroke: var(--accent) } }
+.a0 { animation: a0 8.3s infinite step-end; }
+@keyframes a1 { 0%,8.7% { stroke: var(--accent) } 8.7%,17.4% { stroke: var(--accent) } 17.4%,39.1% { stroke: var(--accent) } 39.1%,47.8% { stroke: var(--border) } 47.8%,69.6% { stroke: var(--border) } 69.6%,78.3% { stroke: var(--border) } 78.3%,100% { stroke: var(--border) } }
+.a1 { animation: a1 8.3s infinite step-end; }
+@keyframes a2 { 0%,8.7% { stroke: var(--border) } 8.7%,17.4% { stroke: var(--border) } 17.4%,39.1% { stroke: var(--border) } 39.1%,47.8% { stroke: var(--accent) } 47.8%,69.6% { stroke: var(--accent) } 69.6%,78.3% { stroke: var(--border) } 78.3%,100% { stroke: var(--border) } }
+.a2 { animation: a2 8.3s infinite step-end; }
+@keyframes a3 { 0%,8.7% { stroke: var(--border) } 8.7%,17.4% { stroke: var(--border) } 17.4%,39.1% { stroke: var(--border) } 39.1%,47.8% { stroke: var(--border) } 47.8%,69.6% { stroke: var(--border) } 69.6%,78.3% { stroke: var(--accent) } 78.3%,100% { stroke: var(--accent) } }
+.a3 { animation: a3 8.3s infinite step-end; }
+@keyframes a4 { 0%,8.7% { stroke: var(--accent) } 8.7%,17.4% { stroke: var(--accent) } 17.4%,39.1% { stroke: var(--accent) } 39.1%,47.8% { stroke: var(--accent) } 47.8%,69.6% { stroke: var(--accent) } 69.6%,78.3% { stroke: var(--border) } 78.3%,100% { stroke: var(--border) } }
+.a4 { animation: a4 8.3s infinite step-end; }
+@keyframes a5 { 0%,8.7% { stroke: var(--accent); stroke-width: 2 } 8.7%,17.4% { stroke: var(--accent); stroke-width: 2 } 17.4%,39.1% { stroke: var(--accent); stroke-width: 2 } 39.1%,47.8% { stroke: var(--muted); stroke-width: 1.25 } 47.8%,69.6% { stroke: var(--muted); stroke-width: 1.25 } 69.6%,78.3% { stroke: var(--muted); stroke-width: 1.25 } 78.3%,100% { stroke: var(--muted); stroke-width: 1.25 } }
+.a5 { animation: a5 8.3s infinite step-end; }
+@keyframes a6 { 0%,8.7% { fill: var(--accent); stroke: var(--accent) } 8.7%,17.4% { fill: var(--accent); stroke: var(--accent) } 17.4%,39.1% { fill: var(--accent); stroke: var(--accent) } 39.1%,47.8% { fill: var(--bg); stroke: var(--border) } 47.8%,69.6% { fill: var(--bg); stroke: var(--border) } 69.6%,78.3% { fill: var(--bg); stroke: var(--border) } 78.3%,100% { fill: var(--bg); stroke: var(--border) } }
+.a6 { animation: a6 8.3s infinite step-end; }
+@keyframes a7 { 0%,8.7% { fill: #fff } 8.7%,17.4% { fill: #fff } 17.4%,39.1% { fill: #fff } 39.1%,47.8% { fill: var(--muted) } 47.8%,69.6% { fill: var(--muted) } 69.6%,78.3% { fill: var(--muted) } 78.3%,100% { fill: var(--muted) } }
+.a7 { animation: a7 8.3s infinite step-end; }
+@keyframes a8 { 0%,8.7% { stroke: var(--muted); stroke-width: 1.25 } 8.7%,17.4% { stroke: var(--muted); stroke-width: 1.25 } 17.4%,39.1% { stroke: var(--muted); stroke-width: 1.25 } 39.1%,47.8% { stroke: var(--accent); stroke-width: 2 } 47.8%,69.6% { stroke: var(--accent); stroke-width: 2 } 69.6%,78.3% { stroke: var(--muted); stroke-width: 1.25 } 78.3%,100% { stroke: var(--muted); stroke-width: 1.25 } }
+.a8 { animation: a8 8.3s infinite step-end; }
+@keyframes a9 { 0%,8.7% { fill: var(--bg); stroke: var(--border) } 8.7%,17.4% { fill: var(--bg); stroke: var(--border) } 17.4%,39.1% { fill: var(--bg); stroke: var(--border) } 39.1%,47.8% { fill: var(--accent); stroke: var(--accent) } 47.8%,69.6% { fill: var(--accent); stroke: var(--accent) } 69.6%,78.3% { fill: var(--bg); stroke: var(--border) } 78.3%,100% { fill: var(--bg); stroke: var(--border) } }
+.a9 { animation: a9 8.3s infinite step-end; }
+@keyframes a10 { 0%,8.7% { fill: var(--muted) } 8.7%,17.4% { fill: var(--muted) } 17.4%,39.1% { fill: var(--muted) } 39.1%,47.8% { fill: #fff } 47.8%,69.6% { fill: #fff } 69.6%,78.3% { fill: var(--muted) } 78.3%,100% { fill: var(--muted) } }
+.a10 { animation: a10 8.3s infinite step-end; }
+@keyframes a11 { 0%,8.7% { stroke: var(--muted); stroke-width: 1.25 } 8.7%,17.4% { stroke: var(--muted); stroke-width: 1.25 } 17.4%,39.1% { stroke: var(--muted); stroke-width: 1.25 } 39.1%,47.8% { stroke: var(--muted); stroke-width: 1.25 } 47.8%,69.6% { stroke: var(--muted); stroke-width: 1.25 } 69.6%,78.3% { stroke: var(--accent); stroke-width: 2 } 78.3%,100% { stroke: var(--accent); stroke-width: 2 } }
+.a11 { animation: a11 8.3s infinite step-end; }
+@keyframes a12 { 0%,8.7% { fill: var(--bg); stroke: var(--border) } 8.7%,17.4% { fill: var(--bg); stroke: var(--border) } 17.4%,39.1% { fill: var(--bg); stroke: var(--border) } 39.1%,47.8% { fill: var(--bg); stroke: var(--border) } 47.8%,69.6% { fill: var(--bg); stroke: var(--border) } 69.6%,78.3% { fill: var(--accent); stroke: var(--accent) } 78.3%,100% { fill: var(--accent); stroke: var(--accent) } }
+.a12 { animation: a12 8.3s infinite step-end; }
+@keyframes a13 { 0%,8.7% { fill: var(--muted) } 8.7%,17.4% { fill: var(--muted) } 17.4%,39.1% { fill: var(--muted) } 39.1%,47.8% { fill: var(--muted) } 47.8%,69.6% { fill: var(--muted) } 69.6%,78.3% { fill: #fff } 78.3%,100% { fill: #fff } }
+.a13 { animation: a13 8.3s infinite step-end; }
+@keyframes a14 { 0%,8.7% { stroke: var(--muted); stroke-width: 1.25 } 8.7%,17.4% { stroke: var(--muted); stroke-width: 1.25 } 17.4%,39.1% { stroke: var(--accent); stroke-width: 2 } 39.1%,47.8% { stroke: var(--muted); stroke-width: 1.25 } 47.8%,69.6% { stroke: var(--accent); stroke-width: 2 } 69.6%,78.3% { stroke: var(--muted); stroke-width: 1.25 } 78.3%,100% { stroke: var(--accent); stroke-width: 2 } }
+.a14 { animation: a14 8.3s infinite step-end; }
+@keyframes a15 { 0%,8.7% { fill: var(--bg); stroke: var(--border) } 8.7%,17.4% { fill: var(--bg); stroke: var(--border) } 17.4%,39.1% { fill: var(--accent); stroke: var(--accent) } 39.1%,47.8% { fill: var(--bg); stroke: var(--border) } 47.8%,69.6% { fill: var(--accent); stroke: var(--accent) } 69.6%,78.3% { fill: var(--bg); stroke: var(--border) } 78.3%,100% { fill: var(--accent); stroke: var(--accent) } }
+.a15 { animation: a15 8.3s infinite step-end; }
+@keyframes a16 { 0%,8.7% { fill: var(--muted) } 8.7%,17.4% { fill: var(--muted) } 17.4%,39.1% { fill: #fff } 39.1%,47.8% { fill: var(--muted) } 47.8%,69.6% { fill: #fff } 69.6%,78.3% { fill: var(--muted) } 78.3%,100% { fill: #fff } }
+.a16 { animation: a16 8.3s infinite step-end; }
+@keyframes p0 { 0%,0% { opacity: 0 } 0%,8.7% { opacity: 1 } 8.7%,100% { opacity: 0 } }
+.p0 { animation: p0 8.3s infinite step-end; }
+@keyframes p1 { 0%,8.7% { opacity: 0 } 8.7%,17.4% { opacity: 1 } 17.4%,100% { opacity: 0 } }
+.p1 { animation: p1 8.3s infinite step-end; }
+@keyframes p2 { 0%,17.4% { opacity: 0 } 17.4%,26.1% { opacity: 1 } 26.1%,100% { opacity: 0 } }
+.p2 { animation: p2 8.3s infinite step-end; }
+@keyframes p3 { 0%,39.1% { opacity: 0 } 39.1%,47.8% { opacity: 1 } 47.8%,100% { opacity: 0 } }
+.p3 { animation: p3 8.3s infinite step-end; }
+@keyframes p4 { 0%,47.8% { opacity: 0 } 47.8%,56.5% { opacity: 1 } 56.5%,100% { opacity: 0 } }
+.p4 { animation: p4 8.3s infinite step-end; }
+@keyframes p5 { 0%,69.6% { opacity: 0 } 69.6%,78.3% { opacity: 1 } 78.3%,100% { opacity: 0 } }
+.p5 { animation: p5 8.3s infinite step-end; }
+@keyframes p6 { 0%,78.3% { opacity: 0 } 78.3%,86.9% { opacity: 1 } 87%,100% { opacity: 0 } }
+.p6 { animation: p6 8.3s infinite step-end; }
+@keyframes a17 { 0%,8.7% { opacity: 1 } 8.7%,17.4% { opacity: 1 } 17.4%,39.1% { opacity: 1 } 39.1%,47.8% { opacity: 0 } 47.8%,69.6% { opacity: 0 } 69.6%,78.3% { opacity: 0 } 78.3%,100% { opacity: 0 } }
+.a17 { animation: a17 8.3s infinite step-end; }
+@keyframes a18 { 0%,8.7% { opacity: 0 } 8.7%,17.4% { opacity: 0 } 17.4%,39.1% { opacity: 0 } 39.1%,47.8% { opacity: 1 } 47.8%,69.6% { opacity: 1 } 69.6%,78.3% { opacity: 0 } 78.3%,100% { opacity: 0 } }
+.a18 { animation: a18 8.3s infinite step-end; }
+@keyframes a19 { 0%,8.7% { opacity: 0 } 8.7%,17.4% { opacity: 0 } 17.4%,39.1% { opacity: 0 } 39.1%,47.8% { opacity: 0 } 47.8%,69.6% { opacity: 0 } 69.6%,78.3% { opacity: 1 } 78.3%,100% { opacity: 1 } }
+.a19 { animation: a19 8.3s infinite step-end; }
+@keyframes a20 { 0%,8.7% { opacity: 1 } 8.7%,17.4% { opacity: 0 } 17.4%,39.1% { opacity: 0 } 39.1%,47.8% { opacity: 0 } 47.8%,69.6% { opacity: 0 } 69.6%,78.3% { opacity: 0 } 78.3%,100% { opacity: 0 } }
+.a20 { animation: a20 8.3s infinite step-end; }
+@keyframes a21 { 0%,8.7% { opacity: 0 } 8.7%,17.4% { opacity: 1 } 17.4%,39.1% { opacity: 0 } 39.1%,47.8% { opacity: 0 } 47.8%,69.6% { opacity: 0 } 69.6%,78.3% { opacity: 0 } 78.3%,100% { opacity: 0 } }
+.a21 { animation: a21 8.3s infinite step-end; }
+@keyframes a22 { 0%,8.7% { opacity: 0 } 8.7%,17.4% { opacity: 0 } 17.4%,39.1% { opacity: 1 } 39.1%,47.8% { opacity: 0 } 47.8%,69.6% { opacity: 0 } 69.6%,78.3% { opacity: 0 } 78.3%,100% { opacity: 0 } }
+.a22 { animation: a22 8.3s infinite step-end; }
+@keyframes a23 { 0%,8.7% { opacity: 0 } 8.7%,17.4% { opacity: 0 } 17.4%,39.1% { opacity: 0 } 39.1%,47.8% { opacity: 1 } 47.8%,69.6% { opacity: 0 } 69.6%,78.3% { opacity: 0 } 78.3%,100% { opacity: 0 } }
+.a23 { animation: a23 8.3s infinite step-end; }
+@keyframes a24 { 0%,8.7% { opacity: 0 } 8.7%,17.4% { opacity: 0 } 17.4%,39.1% { opacity: 0 } 39.1%,47.8% { opacity: 0 } 47.8%,69.6% { opacity: 1 } 69.6%,78.3% { opacity: 0 } 78.3%,100% { opacity: 0 } }
+.a24 { animation: a24 8.3s infinite step-end; }
+@keyframes a25 { 0%,8.7% { opacity: 0 } 8.7%,17.4% { opacity: 0 } 17.4%,39.1% { opacity: 0 } 39.1%,47.8% { opacity: 0 } 47.8%,69.6% { opacity: 0 } 69.6%,78.3% { opacity: 1 } 78.3%,100% { opacity: 0 } }
+.a25 { animation: a25 8.3s infinite step-end; }
+@keyframes a26 { 0%,8.7% { opacity: 0 } 8.7%,17.4% { opacity: 0 } 17.4%,39.1% { opacity: 0 } 39.1%,47.8% { opacity: 0 } 47.8%,69.6% { opacity: 0 } 69.6%,78.3% { opacity: 0 } 78.3%,100% { opacity: 1 } }
+.a26 { animation: a26 8.3s infinite step-end; }
+</style>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 1 L 9 5 L 0 9 z" fill="var(--muted)"/></marker></defs>
+<rect width="100%" height="100%" fill="var(--bg)"/>
+<g transform="translate(0 44)">
+<rect x="24" y="24" width="336" height="262" rx="14" fill="var(--surface)" stroke="var(--border)" class="a0"/><text x="42" y="44" class="frame">VMAFX-OPERATOR POD: CONTROLLER-RUNTIME MANAGER</text>
+<rect x="42" y="61" width="300" height="53" rx="10" fill="var(--bg)" stroke="var(--border)" class="a1"/><text x="192" y="85.5" class="label">VmafxJobReconciler</text><text x="192" y="100.5" class="sub">every 10 s: GetJob, map status to phase</text>
+<rect x="42" y="138" width="300" height="53" rx="10" fill="var(--bg)" stroke="var(--border)" class="a2"/><text x="192" y="162.5" class="label">VmafxNodeReconciler</text><text x="192" y="177.5" class="sub">every 30 s: /healthz; stale after 60 s</text>
+<rect x="42" y="215" width="300" height="53" rx="10" fill="var(--bg)" stroke="var(--border)" class="a3"/><text x="192" y="239.5" class="label">VmafxModelTrainingReconciler</text><text x="192" y="254.5" class="sub">every 60 s: trainer /status</text>
+<rect x="451" y="28.5" width="190" height="53" rx="10" fill="var(--bg)" stroke="var(--border)" class="a4"/><text x="546" y="53" class="label">vmafx-controller</text><text x="546" y="68" class="sub">gRPC GetJob, HTTP /healthz</text>
+<rect x="463.2" y="121.5" width="165.6" height="53" rx="10" fill="var(--bg)" stroke="var(--border)" class="a3"/><text x="546" y="146" class="label">Trainer sidecar</text><text x="546" y="161" class="sub">HTTP /status on :9091</text>
+<path d="M416 226.5 a 130 12 0 0 1 260 0 v 43 a 130 12 0 0 1 -260 0 z" fill="var(--bg)" stroke="var(--border)" class="a0"/><path d="M416 226.5 a 130 12 0 0 0 260 0" fill="none" stroke="var(--border)" class="a0"/><text x="546" y="251.5" class="label">CRD status</text><text x="546" y="266.5" class="sub">VmafxJob, VmafxNode, VmafxModelTraining</text>
+<path id="p-job-&gt;controller" d="M 342 87.5 C 396.5 87.5, 396.5 46.166666666666664, 451 46.166666666666664" fill="none" stroke="var(--muted)" stroke-width="1.25" marker-end="url(#arrow)" class="a5"/><rect x="372" y="57.8" width="49" height="18" rx="9" fill="var(--bg)" stroke="var(--border)" class="a6"/><text x="396.5" y="70.8" class="edgelabel a7">GetJob</text>
+<path id="p-node-&gt;controller" d="M 342 164.5 C 396.5 164.5, 396.5 63.83333333333333, 451 63.83333333333333" fill="none" stroke="var(--muted)" stroke-width="1.25" marker-end="url(#arrow)" class="a8"/><rect x="366.2" y="105.2" width="60.6" height="18" rx="9" fill="var(--bg)" stroke="var(--border)" class="a9"/><text x="396.5" y="118.2" class="edgelabel a10">/healthz</text>
+<path id="p-training-&gt;trainer" d="M 342 241.5 C 402.61 241.5, 402.61 148, 463.22 148" fill="none" stroke="var(--muted)" stroke-width="1.25" marker-end="url(#arrow)" class="a11"/><rect x="375.2" y="185.8" width="54.8" height="18" rx="9" fill="var(--bg)" stroke="var(--border)" class="a12"/><text x="402.6" y="198.8" class="edgelabel a13">/status</text>
+<path id="p-manager-&gt;crds" d="M 192 286 C 192 336, 546 336, 546 281.5" fill="none" stroke="var(--muted)" stroke-width="1.25" marker-end="url(#arrow)" class="a14"/><rect x="321.2" y="313.9" width="95.6" height="18" rx="9" fill="var(--bg)" stroke="var(--border)" class="a15"/><text x="369" y="326.9" class="edgelabel a16">status, events</text>
+<g class="p0" opacity="0"><circle r="10" fill="var(--accent)" opacity="0.2"/><circle r="4.5" fill="var(--accent)"/><animateMotion dur="8.3s" repeatCount="indefinite" keyTimes="0;0;0.1;1" keyPoints="0;0;1;1" calcMode="linear"><mpath href="#p-job-&gt;controller" xlink:href="#p-job-&gt;controller"/></animateMotion></g>
+<g class="p1" opacity="0"><circle r="10" fill="var(--accent)" opacity="0.2"/><circle r="4.5" fill="var(--accent)"/><rect x="-36.4" y="-35" width="72.9" height="23" rx="8" fill="var(--accent)"/><text x="0" y="-20" class="chip">COMPLETED</text><animateMotion dur="8.3s" repeatCount="indefinite" keyTimes="0;0.1;0.2;1" keyPoints="1;1;0;0" calcMode="linear"><mpath href="#p-job-&gt;controller" xlink:href="#p-job-&gt;controller"/></animateMotion></g>
+<g class="p2" opacity="0"><circle r="10" fill="var(--accent)" opacity="0.2"/><circle r="4.5" fill="var(--accent)"/><animateMotion dur="8.3s" repeatCount="indefinite" keyTimes="0;0.2;0.3;1" keyPoints="0;0;1;1" calcMode="linear"><mpath href="#p-manager-&gt;crds" xlink:href="#p-manager-&gt;crds"/></animateMotion></g>
+<g class="p3" opacity="0"><circle r="10" fill="var(--accent)" opacity="0.2"/><circle r="4.5" fill="var(--accent)"/><animateMotion dur="8.3s" repeatCount="indefinite" keyTimes="0;0.4;0.5;1" keyPoints="0;0;1;1" calcMode="linear"><mpath href="#p-node-&gt;controller" xlink:href="#p-node-&gt;controller"/></animateMotion></g>
+<g class="p4" opacity="0"><circle r="10" fill="var(--accent)" opacity="0.2"/><circle r="4.5" fill="var(--accent)"/><animateMotion dur="8.3s" repeatCount="indefinite" keyTimes="0;0.5;0.6;1" keyPoints="0;0;1;1" calcMode="linear"><mpath href="#p-manager-&gt;crds" xlink:href="#p-manager-&gt;crds"/></animateMotion></g>
+<g class="p5" opacity="0"><circle r="10" fill="var(--accent)" opacity="0.2"/><circle r="4.5" fill="var(--accent)"/><animateMotion dur="8.3s" repeatCount="indefinite" keyTimes="0;0.7;0.8;1" keyPoints="0;0;1;1" calcMode="linear"><mpath href="#p-training-&gt;trainer" xlink:href="#p-training-&gt;trainer"/></animateMotion></g>
+<g class="p6" opacity="0"><circle r="10" fill="var(--accent)" opacity="0.2"/><circle r="4.5" fill="var(--accent)"/><animateMotion dur="8.3s" repeatCount="indefinite" keyTimes="0;0.8;0.9;1" keyPoints="0;0;1;1" calcMode="linear"><mpath href="#p-manager-&gt;crds" xlink:href="#p-manager-&gt;crds"/></animateMotion></g>
+</g>
+<text x="350" y="370" opacity="0" class="steplabel a17">Job</text>
+<text x="350" y="370" opacity="0" class="steplabel a18">Node</text>
+<text x="350" y="370" opacity="0" class="steplabel a19">Training</text>
+<g opacity="0" class="a20"><text x="350" y="396" class="caption">Every 10 s the reconciler asks the controller for the job.</text></g>
+<g opacity="0" class="a21"><text x="350" y="396" class="caption">PENDING, RUNNING, COMPLETED or FAILED comes back.</text></g>
+<g opacity="0" class="a22"><text x="350" y="396" class="caption">The phase, and the score on success, go into the CR status.</text></g>
+<g opacity="0" class="a23"><text x="350" y="396" class="caption">Every 30 s the reconciler probes the controller.</text></g>
+<g opacity="0" class="a24"><text x="350" y="396" class="caption">A heartbeat older than 60 s marks the node unhealthy.</text></g>
+<g opacity="0" class="a25"><text x="350" y="396" class="caption">Every 60 s the reconciler reads the trainer /status.</text></g>
+<g opacity="0" class="a26"><text x="350" y="396" class="caption">A new checkpoint emits a CheckpointWritten event.</text></g>
+</svg>

@@ -1,0 +1,66 @@
+{
+  "slug": "test-gates",
+  "title": "Test gates: unit tests, the Netflix golden gate, cross-backend parity",
+  "alt": "A change passes the unit tests, the Netflix golden gate on its isolated CPU build, and the parity gate against the CPU.",
+  "text": [
+    "Gates: Unit tests (run_meson_test.py -- -C build), Netflix golden gate (make test-netflix-golden), Cross-backend parity gate (every GPU cell against the CPU).",
+    "Boxes: Change (source, tests, docs), Isolated golden build (gcc or clang, no FP contraction), Netflix assertions (python/test/, never edited), EXACT_TWINS, LIBM_TWINS (tolerance 0 or a derived bound).",
+    "Change → Unit tests → Netflix golden gate → Cross-backend parity gate.",
+    "Netflix golden gate → Isolated golden build (VMAF_BUILD_DIR).",
+    "Netflix golden gate → Netflix assertions (assertAlmostEqual).",
+    "Cross-backend parity gate → EXACT_TWINS, LIBM_TWINS (tolerance).",
+    "Scenario 1, Gates in order: Each gate must pass before the change lands. The unit tests run under the credential-safe Meson wrapper. The golden gate builds the CPU library on its own build directory. Netflix's assertions run against that build. The parity gate runs each GPU backend against the CPU. An exact twin must match to the last bit; a libm twin within its bound.",
+    "The golden assertions are Netflix ground truth and are never edited; a drifting score is fixed in the code.",
+    "An exact twin is compared at --precision max with tolerance 0."
+  ],
+  "evidence": [
+    "scripts/ci/run_meson_test.py:sanitize_process_environment",
+    "Makefile:GOLDEN_BUILD_DIR",
+    "scripts/ci/setup-golden-build.sh:GOLDEN_CC",
+    "python/test/quality_runner_test.py:assertAlmostEqual",
+    "scripts/ci/cross_backend_parity_gate.py:FEATURE_METRICS",
+    "scripts/ci/cross_backend_calibration.py:EXACT_TWINS",
+    "scripts/ci/cross_backend_calibration.py:LIBM_TWINS"
+  ],
+  "spec_sha256": "94eed99ff140463c3c1d2034e588cbe1418523a917115ddcd53fe054aa62b55b",
+  "engine": {
+    "commit": "ccfe85b4851957ac2adf88b4a9ddf9668b2882f1",
+    "sha256": "6a70b89b2d53c73fa79cb881a89e709622b2cfd2e8568b8e9797a328993dd0fc"
+  },
+  "svg_sha256": "cd881d93863565a9b0b5953c65ca0b6658df86c42298da4e91d8a15b9c7f8c29",
+  "static_sha256": "f6699e7dea90e249d932df5904d13b0218226bded20bd0f188faebecdaa2f4b2",
+  "width": 837,
+  "height": 393,
+  "static_width": 837,
+  "static_height": 343,
+  "edges": [
+    {
+      "from": "Change",
+      "to": "Unit tests"
+    },
+    {
+      "from": "Unit tests",
+      "to": "Netflix golden gate"
+    },
+    {
+      "from": "Netflix golden gate",
+      "to": "Cross-backend parity gate"
+    },
+    {
+      "from": "Netflix golden gate",
+      "to": "Isolated golden build",
+      "label": "VMAF_BUILD_DIR"
+    },
+    {
+      "from": "Netflix golden gate",
+      "to": "Netflix assertions",
+      "label": "assertAlmostEqual"
+    },
+    {
+      "from": "Cross-backend parity gate",
+      "to": "EXACT_TWINS, LIBM_TWINS",
+      "label": "tolerance"
+    }
+  ],
+  "html": "<figure class=\"praetor-figure\" id=\"fig-test-gates\" data-figure=\"test-gates\" aria-describedby=\"fig-test-gates-text\">\n<picture>\n<source media=\"(prefers-reduced-motion: reduce)\" srcset=\"{{base}}/test-gates.static.svg\" width=\"837\" height=\"343\">\n<img src=\"{{base}}/test-gates.svg\" alt=\"A change passes the unit tests, the Netflix golden gate on its isolated CPU build, and the parity gate against the CPU.\" width=\"837\" height=\"393\" loading=\"lazy\">\n</picture>\n<figcaption>Test gates: unit tests, the Netflix golden gate, cross-backend parity</figcaption>\n</figure>\n<p><a href=\"{{link}}\">Open the interactive figure</a></p>\n<details class=\"praetor-figure__text\" id=\"fig-test-gates-text\"><summary>Text description</summary>\n<ul>\n<li>Gates: Unit tests (run_meson_test.py -- -C build), Netflix golden gate (make test-netflix-golden), Cross-backend parity gate (every GPU cell against the CPU).</li>\n<li>Boxes: Change (source, tests, docs), Isolated golden build (gcc or clang, no FP contraction), Netflix assertions (python/test/, never edited), EXACT_TWINS, LIBM_TWINS (tolerance 0 or a derived bound).</li>\n<li>Change → Unit tests → Netflix golden gate → Cross-backend parity gate.</li>\n<li>Netflix golden gate → Isolated golden build (VMAF_BUILD_DIR).</li>\n<li>Netflix golden gate → Netflix assertions (assertAlmostEqual).</li>\n<li>Cross-backend parity gate → EXACT_TWINS, LIBM_TWINS (tolerance).</li>\n<li>Scenario 1, Gates in order: Each gate must pass before the change lands. The unit tests run under the credential-safe Meson wrapper. The golden gate builds the CPU library on its own build directory. Netflix&#x27;s assertions run against that build. The parity gate runs each GPU backend against the CPU. An exact twin must match to the last bit; a libm twin within its bound.</li>\n<li>The golden assertions are Netflix ground truth and are never edited; a drifting score is fixed in the code.</li>\n<li>An exact twin is compared at --precision max with tolerance 0.</li>\n</ul>\n</details>"
+}

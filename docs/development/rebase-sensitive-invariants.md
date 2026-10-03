@@ -40,6 +40,14 @@ linked AGENTS.md before resolving conflicts.
   or the 576x324 snapshots; keep the sentinels when a page is rewritten. See
   [Documentation site design](docs-site-design.md#charts).
 
+- **Documentation diagrams ([ADR-1508](../adr/1508-docs-site-toolchain-and-charts.md))**:
+  diagrams are figure specs in `docs/figures/` rendered into
+  `docs/assets/figures/` by `tools/figures/`, shown through the MkDocs hook
+  listed in `mkdocs.yml`; `make docs-figures` holds the renders to their specs
+  and every evidence anchor to the code. No Mermaid fence and no ASCII diagram
+  returns on a page that has a figure. See
+  [Documentation site design](docs-site-design.md#diagrams).
+
 - **Meson test secret environment sanitization ([ADR-1333](../adr/1333-meson-test-secret-env-sanitization.md))**:
   `scripts/ci/run_meson_test.py` deletes sensitive GitHub credential keys before Meson starts
   and records its raw parent environment in `testlog.txt`. Every supported Make, workflow,

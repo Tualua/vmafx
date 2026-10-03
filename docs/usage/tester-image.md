@@ -25,6 +25,10 @@ and 9000 series, Ryzen graphics, Instinct), on Linux.
 
 Each prints what it did and did not exercise inside the report (`not_exercised`).
 
+```figure
+tester-kit-flow
+```
+
 ## A. Native macOS bundle (Apple silicon)
 
 Five commands. Replace `<TESTER-TAG>` with the tag the maintainers give you

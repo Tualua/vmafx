@@ -36,6 +36,7 @@ runs `mkdocs build --strict`
 | Site configuration | `mkdocs.yml` | `extra_css` lists the stylesheet; both palettes set `primary: custom` and `accent: custom`; `font: false` stops Material from loading Google Fonts |
 | Fonts | `docs/assets/fonts/inter/`, `docs/assets/fonts/jetbrains-mono/` | the font files, the upstream licence and a `vendor.json` per family |
 | Charts | `docs/charts/`, `scripts/docs/generate-charts.py`, `docs/javascripts/charts.js` | the Vega-Lite specs, their generator and the script that makes them interactive (see [Charts](#charts)) |
+| Diagrams | `docs/figures/`, `docs/assets/figures/`, `tools/figures/` | the figure specs, their renders and the engine (see [Diagrams](#diagrams)) |
 | Landing page | `docs/index.md` | the page text inside the `vx-*` wrappers described below |
 
 The stylesheet's sections follow the order of the list above. Every colour is a
@@ -151,6 +152,56 @@ interactive chart has no keyboard focus on marks; the data table below each
 chart carries the same values. Throughput and benchmark charts wait for RC7
 evidence (`AGENTS.md` §11).
 
+## Diagrams
+
+Architecture, pipeline and flow diagrams are figure specs drawn with the figure
+engine in `tools/figures/` ([README](https://github.com/VMAFx/vmafx/blob/master/tools/figures/README.md),
+[ADR-1508](../adr/1508-docs-site-toolchain-and-charts.md)). A page names a
+figure with a fence that holds only its slug:
+
+````markdown
+```figure
+backend-dispatch
+```
+````
+
+The MkDocs hook `tools/figures/mkdocs_hook.py` turns the fence into the
+figure: an animated player with one tab per scenario and narration, a static
+SVG for reduced motion and for readers without JavaScript, the caption and a
+text description. The player takes its colours from the site palette, so a
+figure follows the light and dark toggle.
+
+| Figure | Page |
+| --- | --- |
+| `tiny-ai-pipeline` | [Tiny AI overview](../ai/overview.md) |
+| `backend-dispatch` | [Backends](../backends/index.md) |
+| `test-gates` | [Cross-backend gate](cross-backend-gate.md#relationship-to-other-gates) |
+| `merge-release-flow` | [Release](release.md#automation-flow) |
+| `tester-kit-flow` | [Tester image](../usage/tester-image.md) |
+| `phase4b-platform` | [Phase 4b platform](../architecture/phase4b-distributed-platform.md) |
+| `operator-reconcilers` | [Operator](operator.md#architecture) |
+| `controller-job-lifecycle` | [Controller](../server/controller.md#job-lifecycle) |
+
+### Add or change a figure
+
+1. Read the code the figure shows. Write `docs/figures/<slug>.ts` (the spec
+   type is `tools/figures/types.ts`); every `evidence` entry is a
+   `path:Symbol` anchor into that code.
+2. Render it: `node tools/figures/build.mjs build` writes
+   `docs/assets/figures/<slug>.svg`, `.static.svg` and `.json`.
+3. Put the fence on the page and commit the spec with its three outputs.
+
+`make docs-figures` runs `build.mjs check` (the outputs match a fresh render)
+and `build.mjs sources` (every evidence anchor still exists, every fence names
+a figure). A spec stays within 40 boxes, 80 edges and 12 steps; a diagram
+beyond that, or a sequence diagram, is a D2 source committed with its SVG. The
+site has no Mermaid: the one Mermaid diagram became `phase4b-platform`, and
+Material no longer loads the Mermaid script from a CDN.
+
+`mkdocs.yml` keeps the specs out of the published pages (`/figures/` in
+`exclude_docs`) and writes its `exclude_docs` patterns without `**`, which the
+`sources` check does not parse.
+
 ## Fonts
 
 The site serves Inter 4.1 for text and JetBrains Mono 2.304 for code, both
@@ -214,8 +265,13 @@ parts), measured on the rendered pages:
 
 Everything here is CSS, Python Markdown (`md_in_html`, `attr_list`) and
 `mkdocs.yml` settings that Zensical reads (`extra_css`, `primary: custom`,
-`font: false`, `hide`). A build of the documentation with Zensical 0.0.67
-renders the landing page and the content pages with the same layout, colours
-and measure (median 66 to 67 characters per line). Its `classic` variant gives
-buttons a background of their own, so the stylesheet sets
-`background-color: transparent` on `.md-button` explicitly.
+`font: false`, `hide`), except the figures: Zensical does not run MkDocs hooks
+yet, so until it does a Zensical build shows each `figure` fence as a code
+block. `node tools/figures/build.mjs portable` replaces the fences with the
+static images for that case (ADR-1508, exit criteria).
+
+A build of the documentation with Zensical 0.0.67 renders the landing page
+and the content pages with the same layout, colours and measure (median 66 to
+67 characters per line). Its `classic` variant gives buttons a background of
+their own, so the stylesheet sets `background-color: transparent` on
+`.md-button` explicitly.

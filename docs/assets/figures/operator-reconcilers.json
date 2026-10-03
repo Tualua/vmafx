@@ -1,0 +1,74 @@
+{
+  "slug": "operator-reconcilers",
+  "title": "vmafx-operator: one manager, three reconcilers",
+  "alt": "The operator manager runs three reconcilers that poll the controller and the trainer and write status to their CRDs.",
+  "text": [
+    "vmafx-operator pod: controller-runtime Manager: VmafxJobReconciler (every 10 s: GetJob, map status to phase), VmafxNodeReconciler (every 30 s: /healthz; stale after 60 s), VmafxModelTrainingReconciler (every 60 s: trainer /status).",
+    "Boxes: vmafx-controller (gRPC GetJob, HTTP /healthz), Trainer sidecar (HTTP /status on :9091), CRD status (VmafxJob, VmafxNode, VmafxModelTraining).",
+    "VmafxJobReconciler → vmafx-controller (GetJob).",
+    "VmafxNodeReconciler → vmafx-controller (/healthz).",
+    "VmafxModelTrainingReconciler → Trainer sidecar (/status).",
+    "vmafx-operator pod: controller-runtime Manager → CRD status (status, events).",
+    "Scenario 1, Job: A VmafxJob follows the controller job it submitted. Every 10 s the reconciler asks the controller for the job. PENDING, RUNNING, COMPLETED or FAILED comes back. The phase, and the score on success, go into the CR status.",
+    "Scenario 2, Node: A VmafxNode turns unhealthy when the probe fails or its heartbeat is old. Every 30 s the reconciler probes the controller. A heartbeat older than 60 s marks the node unhealthy.",
+    "Scenario 3, Training: A VmafxModelTraining reports the trainer sidecar. Every 60 s the reconciler reads the trainer /status. A new checkpoint emits a CheckpointWritten event.",
+    "Each reconciler requeues itself: jobs every 10 s, nodes every 30 s, trainings every 60 s.",
+    "The manager serves Prometheus metrics on :8080 and health probes on :8081."
+  ],
+  "evidence": [
+    "cmd/vmafx-operator/main.go:SetupWithManager",
+    "cmd/vmafx-operator/internal/controller/vmafxjob_controller.go:VmafxJobReconciler",
+    "cmd/vmafx-operator/internal/controller/vmafxjob_controller.go:jobPollInterval",
+    "cmd/vmafx-operator/internal/controller/vmafxjob_controller.go:getRemoteJob",
+    "cmd/vmafx-operator/internal/controller/vmafxnode_controller.go:VmafxNodeReconciler",
+    "cmd/vmafx-operator/internal/controller/vmafxnode_controller.go:nodeProbeInterval",
+    "cmd/vmafx-operator/internal/controller/vmafxnode_controller.go:nodeStaleThreshold",
+    "cmd/vmafx-operator/internal/controller/vmafxmodeltraining_controller.go:VmafxModelTrainingReconciler",
+    "cmd/vmafx-operator/internal/controller/vmafxmodeltraining_controller.go:pollTrainerStatus",
+    "cmd/vmafx-operator/internal/controller/vmafxmodeltraining_controller.go:CheckpointWritten"
+  ],
+  "spec_sha256": "0168b250563768eef332af7637692d2b4e025bdaed7d27cad1e491fadea4c026",
+  "engine": {
+    "commit": "ccfe85b4851957ac2adf88b4a9ddf9668b2882f1",
+    "sha256": "6a70b89b2d53c73fa79cb881a89e709622b2cfd2e8568b8e9797a328993dd0fc"
+  },
+  "svg_sha256": "69d30d17b624ff9922a0181772444c4ac2c51df0264b7ad1dea3b90592eb2ddd",
+  "static_sha256": "1d3ce6cc5a12fc5cf590283c95bd34e40bab447af800ea63e8671854672e0027",
+  "width": 700,
+  "height": 404,
+  "static_width": 700,
+  "static_height": 354,
+  "edges": [
+    {
+      "from": "VmafxJobReconciler",
+      "to": "vmafx-controller",
+      "label": "GetJob"
+    },
+    {
+      "from": "VmafxNodeReconciler",
+      "to": "vmafx-controller",
+      "label": "/healthz"
+    },
+    {
+      "from": "VmafxModelTrainingReconciler",
+      "to": "Trainer sidecar",
+      "label": "/status"
+    },
+    {
+      "from": "VmafxJobReconciler",
+      "to": "CRD status",
+      "label": "status, events"
+    },
+    {
+      "from": "VmafxNodeReconciler",
+      "to": "CRD status",
+      "label": "status, events"
+    },
+    {
+      "from": "VmafxModelTrainingReconciler",
+      "to": "CRD status",
+      "label": "status, events"
+    }
+  ],
+  "html": "<figure class=\"praetor-figure\" id=\"fig-operator-reconcilers\" data-figure=\"operator-reconcilers\" aria-describedby=\"fig-operator-reconcilers-text\">\n<picture>\n<source media=\"(prefers-reduced-motion: reduce)\" srcset=\"{{base}}/operator-reconcilers.static.svg\" width=\"700\" height=\"354\">\n<img src=\"{{base}}/operator-reconcilers.svg\" alt=\"The operator manager runs three reconcilers that poll the controller and the trainer and write status to their CRDs.\" width=\"700\" height=\"404\" loading=\"lazy\">\n</picture>\n<figcaption>vmafx-operator: one manager, three reconcilers</figcaption>\n</figure>\n<p><a href=\"{{link}}\">Open the interactive figure</a></p>\n<details class=\"praetor-figure__text\" id=\"fig-operator-reconcilers-text\"><summary>Text description</summary>\n<ul>\n<li>vmafx-operator pod: controller-runtime Manager: VmafxJobReconciler (every 10 s: GetJob, map status to phase), VmafxNodeReconciler (every 30 s: /healthz; stale after 60 s), VmafxModelTrainingReconciler (every 60 s: trainer /status).</li>\n<li>Boxes: vmafx-controller (gRPC GetJob, HTTP /healthz), Trainer sidecar (HTTP /status on :9091), CRD status (VmafxJob, VmafxNode, VmafxModelTraining).</li>\n<li>VmafxJobReconciler → vmafx-controller (GetJob).</li>\n<li>VmafxNodeReconciler → vmafx-controller (/healthz).</li>\n<li>VmafxModelTrainingReconciler → Trainer sidecar (/status).</li>\n<li>vmafx-operator pod: controller-runtime Manager → CRD status (status, events).</li>\n<li>Scenario 1, Job: A VmafxJob follows the controller job it submitted. Every 10 s the reconciler asks the controller for the job. PENDING, RUNNING, COMPLETED or FAILED comes back. The phase, and the score on success, go into the CR status.</li>\n<li>Scenario 2, Node: A VmafxNode turns unhealthy when the probe fails or its heartbeat is old. Every 30 s the reconciler probes the controller. A heartbeat older than 60 s marks the node unhealthy.</li>\n<li>Scenario 3, Training: A VmafxModelTraining reports the trainer sidecar. Every 60 s the reconciler reads the trainer /status. A new checkpoint emits a CheckpointWritten event.</li>\n<li>Each reconciler requeues itself: jobs every 10 s, nodes every 30 s, trainings every 60 s.</li>\n<li>The manager serves Prometheus metrics on :8080 and health probes on :8081.</li>\n</ul>\n</details>"
+}

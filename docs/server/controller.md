@@ -136,11 +136,8 @@ Node lifecycle:
 
 ### Job lifecycle
 
-```text
-PENDING --> RUNNING --> COMPLETED
-                    \-> FAILED
-PENDING --> CANCELLED
-RUNNING --> CANCELLED
+```figure
+controller-job-lifecycle
 ```
 
 ### Backend capability matching

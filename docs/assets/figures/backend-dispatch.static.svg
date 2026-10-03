@@ -1,0 +1,42 @@
+<svg role="img" aria-labelledby="figure-title figure-desc" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="942" height="267" viewBox="0 0 942 267" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+<title id="figure-title">Backend dispatch: from a feature to the code that computes it</title>
+<desc id="figure-desc">A requested feature runs on the device twin of the chosen backend when one fits, else on the CPU with its best SIMD path.</desc>
+<!-- interfig (c) 2025 Vectorize AI, Inc. MIT https://github.com/vectorize-io/hindsight/tree/ccfe85b4851957ac2adf88b4a9ddf9668b2882f1/hindsight-interfig -->
+<metadata id="figure-spec"><![CDATA[{"props":{"layout":{"gap":44,"children":[{"direction":"column","gap":30,"children":[{"id":"options","label":"Options","sub":"--backend, --model, --feature","width":270},{"id":"features","label":"Features to compute","sub":"named by the model or the CLI","width":270}]},{"direction":"column","gap":30,"children":[{"id":"registry","label":"Extractor registry","sub":"by feature name and backend flag","width":250},{"id":"twin","label":"Device twin?","sub":"provided_features, geometry","shape":"decision","width":200}]},{"id":"paths","label":"Runs on","direction":"column","gap":14,"children":[{"id":"gpu","label":"GPU twin","sub":"CUDA, SYCL, HIP or Metal","width":230},{"id":"cpu","label":"CPU extractor","sub":"AVX-512, AVX2, NEON, SVE2 or scalar C","width":230}]}]},"edges":[{"from":"options","to":"features"},{"from":"features","to":"registry","label":"vmaf_use_feature"},{"from":"registry","to":"twin"},{"from":"twin","to":"gpu","label":"twin fits"},{"from":"twin","to":"cpu","label":"no twin","around":"below"}],"steps":[{"label":"GPU twin","caption":"With a GPU backend compiled in and allowed, a feature with a twin runs on the device.","flow":[{"edges":"options->features","say":"The model names its features; --backend cuda allows CUDA."},{"edges":"features->registry","say":"Each feature is looked up in the registry."},{"edges":"registry->twin","say":"The CPU extractor names a CUDA twin through provided_features."},{"edges":"twin->gpu","say":"The twin accepts the frame geometry and options, so it runs."}]},{"label":"CPU","caption":"Without a fitting twin, the CPU extractor runs its best SIMD path.","flow":[{"edges":"options->features","say":"--backend cpu, or no GPU backend compiled in."},{"edges":"features->registry","say":"The feature is looked up."},{"edges":"registry->twin","say":"No twin is eligible."},{"edges":"twin->cpu","say":"The CPU extractor runs; vmaf_init_cpu picked AVX-512, AVX2, NEON or scalar C."}]}]}}]]></metadata>
+<style>
+svg { --accent:#0074d9; --fg:#1c1e21; --muted:#606770; --bg:#ffffff; --surface:#f5f7fa; --border:#d0d7de; --card-on:#eef5fd; }
+@media (prefers-color-scheme: dark) { svg { --accent:#3396e8; --fg:#e3e3e3; --muted:#9aa0a6; --bg:#1b1b1d; --surface:#242526; --border:#3a3b3c; --card-on:#1d2733; } }
+.label { fill: var(--fg); font-size: 14px; font-weight: 500; text-anchor: middle; }
+.sub { fill: var(--muted); font-size: 12px; text-anchor: middle; }
+.frame { fill: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .04em; }
+.edgelabel { fill: var(--muted); font-size: 11px; text-anchor: middle; font-family: ui-monospace, Menlo, monospace; }
+.row { fill: var(--fg); font-size: 11px; }
+.row.mono { font-size: 10.5px; font-family: ui-monospace, Menlo, monospace; }
+.muted { fill: var(--muted); }
+.tag { font-size: 9px; font-weight: 600; letter-spacing: .03em; text-anchor: middle; }
+.mark { fill: var(--accent); font-size: 11px; font-weight: 600; text-anchor: end; }
+.chip { fill: #fff; font-size: 11.5px; text-anchor: middle; }
+.steplabel { fill: var(--fg); font-size: 13px; font-weight: 600; text-anchor: middle; font-family: ui-monospace, Menlo, monospace; }
+.caption { fill: var(--muted); font-size: 13.5px; text-anchor: middle; }
+
+</style>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 1 L 9 5 L 0 9 z" fill="var(--muted)"/></marker></defs>
+<rect width="100%" height="100%" fill="var(--bg)"/>
+<g transform="translate(0 44)">
+<rect x="24" y="43.5" width="270" height="53" rx="10" fill="var(--bg)" stroke="var(--border)"/><text x="159" y="68" class="label">Options</text><text x="159" y="83" class="sub">--backend, --model, --feature</text>
+<rect x="24" y="126.5" width="270" height="53" rx="10" fill="var(--bg)" stroke="var(--border)"/><text x="159" y="151" class="label">Features to compute</text><text x="159" y="166" class="sub">named by the model or the CLI</text>
+<rect x="348" y="31.5" width="250" height="53" rx="10" fill="var(--bg)" stroke="var(--border)"/><text x="473" y="56" class="label">Extractor registry</text><text x="473" y="71" class="sub">by feature name and backend flag</text>
+<polygon points="473,114.5 608,153 473,191.5 338,153" fill="var(--bg)" stroke="var(--border)"/><text x="473" y="151" class="label">Device twin?</text><text x="473" y="166" class="sub">provided_features, geometry</text>
+<rect x="652" y="24" width="266" height="175" rx="14" fill="var(--surface)" stroke="var(--border)"/><text x="670" y="44" class="frame">RUNS ON</text>
+<rect x="670" y="61" width="230" height="53" rx="10" fill="var(--bg)" stroke="var(--border)"/><text x="785" y="85.5" class="label">GPU twin</text><text x="785" y="100.5" class="sub">CUDA, SYCL, HIP or Metal</text>
+<rect x="670" y="128" width="230" height="53" rx="10" fill="var(--bg)" stroke="var(--border)"/><text x="785" y="152.5" class="label">CPU extractor</text><text x="785" y="167.5" class="sub">AVX-512, AVX2, NEON, SVE2 or scalar C</text>
+<path id="p-options-&gt;features" d="M 159 96.5 C 159 111.5, 159 111.5, 159 126.5" fill="none" stroke="var(--muted)" stroke-width="1.25" marker-end="url(#arrow)"/>
+<path id="p-features-&gt;registry" d="M 294 153 C 321 153, 321 58, 348 58" fill="none" stroke="var(--muted)" stroke-width="1.25" marker-end="url(#arrow)"/><rect x="267.4" y="96.5" width="107.3" height="18" rx="9" fill="var(--bg)" stroke="var(--border)"/><text x="321" y="109.5" class="edgelabel">vmaf_use_feature</text>
+<path id="p-registry-&gt;twin" d="M 473 84.5 C 473 99.5, 473 99.5, 473 114.5" fill="none" stroke="var(--muted)" stroke-width="1.25" marker-end="url(#arrow)"/>
+<path id="p-twin-&gt;gpu" d="M 608 153 C 639 153, 639 87.5, 670 87.5" fill="none" stroke="var(--muted)" stroke-width="1.25" marker-end="url(#arrow)"/><rect x="605.8" y="111.3" width="66.5" height="18" rx="9" fill="var(--bg)" stroke="var(--border)"/><text x="639" y="124.3" class="edgelabel">twin fits</text>
+<path id="p-twin-&gt;cpu" d="M 473 191.5 C 473 241.5, 785 241.5, 785 181" fill="none" stroke="var(--muted)" stroke-width="1.25" marker-end="url(#arrow)"/><rect x="601.6" y="218.7" width="54.8" height="18" rx="9" fill="var(--bg)" stroke="var(--border)"/><text x="629" y="231.7" class="edgelabel">no twin</text>
+
+</g>
+
+
+</svg>

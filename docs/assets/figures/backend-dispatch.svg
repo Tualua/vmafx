@@ -1,0 +1,124 @@
+<svg role="img" aria-labelledby="figure-title figure-desc" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="942" height="317" viewBox="0 0 942 317" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+<title id="figure-title">Backend dispatch: from a feature to the code that computes it</title>
+<desc id="figure-desc">A requested feature runs on the device twin of the chosen backend when one fits, else on the CPU with its best SIMD path.</desc>
+<!-- interfig (c) 2025 Vectorize AI, Inc. MIT https://github.com/vectorize-io/hindsight/tree/ccfe85b4851957ac2adf88b4a9ddf9668b2882f1/hindsight-interfig -->
+<metadata id="figure-spec"><![CDATA[{"props":{"layout":{"gap":44,"children":[{"direction":"column","gap":30,"children":[{"id":"options","label":"Options","sub":"--backend, --model, --feature","width":270},{"id":"features","label":"Features to compute","sub":"named by the model or the CLI","width":270}]},{"direction":"column","gap":30,"children":[{"id":"registry","label":"Extractor registry","sub":"by feature name and backend flag","width":250},{"id":"twin","label":"Device twin?","sub":"provided_features, geometry","shape":"decision","width":200}]},{"id":"paths","label":"Runs on","direction":"column","gap":14,"children":[{"id":"gpu","label":"GPU twin","sub":"CUDA, SYCL, HIP or Metal","width":230},{"id":"cpu","label":"CPU extractor","sub":"AVX-512, AVX2, NEON, SVE2 or scalar C","width":230}]}]},"edges":[{"from":"options","to":"features"},{"from":"features","to":"registry","label":"vmaf_use_feature"},{"from":"registry","to":"twin"},{"from":"twin","to":"gpu","label":"twin fits"},{"from":"twin","to":"cpu","label":"no twin","around":"below"}],"steps":[{"label":"GPU twin","caption":"With a GPU backend compiled in and allowed, a feature with a twin runs on the device.","flow":[{"edges":"options->features","say":"The model names its features; --backend cuda allows CUDA."},{"edges":"features->registry","say":"Each feature is looked up in the registry."},{"edges":"registry->twin","say":"The CPU extractor names a CUDA twin through provided_features."},{"edges":"twin->gpu","say":"The twin accepts the frame geometry and options, so it runs."}]},{"label":"CPU","caption":"Without a fitting twin, the CPU extractor runs its best SIMD path.","flow":[{"edges":"options->features","say":"--backend cpu, or no GPU backend compiled in."},{"edges":"features->registry","say":"The feature is looked up."},{"edges":"registry->twin","say":"No twin is eligible."},{"edges":"twin->cpu","say":"The CPU extractor runs; vmaf_init_cpu picked AVX-512, AVX2, NEON or scalar C."}]}]}}]]></metadata>
+<style>
+svg { --accent:#0074d9; --fg:#1c1e21; --muted:#606770; --bg:#ffffff; --surface:#f5f7fa; --border:#d0d7de; --card-on:#eef5fd; }
+@media (prefers-color-scheme: dark) { svg { --accent:#3396e8; --fg:#e3e3e3; --muted:#9aa0a6; --bg:#1b1b1d; --surface:#242526; --border:#3a3b3c; --card-on:#1d2733; } }
+.label { fill: var(--fg); font-size: 14px; font-weight: 500; text-anchor: middle; }
+.sub { fill: var(--muted); font-size: 12px; text-anchor: middle; }
+.frame { fill: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .04em; }
+.edgelabel { fill: var(--muted); font-size: 11px; text-anchor: middle; font-family: ui-monospace, Menlo, monospace; }
+.row { fill: var(--fg); font-size: 11px; }
+.row.mono { font-size: 10.5px; font-family: ui-monospace, Menlo, monospace; }
+.muted { fill: var(--muted); }
+.tag { font-size: 9px; font-weight: 600; letter-spacing: .03em; text-anchor: middle; }
+.mark { fill: var(--accent); font-size: 11px; font-weight: 600; text-anchor: end; }
+.chip { fill: #fff; font-size: 11.5px; text-anchor: middle; }
+.steplabel { fill: var(--fg); font-size: 13px; font-weight: 600; text-anchor: middle; font-family: ui-monospace, Menlo, monospace; }
+.caption { fill: var(--muted); font-size: 13.5px; text-anchor: middle; }
+@keyframes a0 { 0%,9.1% { stroke: var(--accent) } 9.1%,18.2% { stroke: var(--accent) } 18.2%,27.3% { stroke: var(--accent) } 27.3%,50% { stroke: var(--accent) } 50%,59.1% { stroke: var(--accent) } 59.1%,68.2% { stroke: var(--accent) } 68.2%,77.3% { stroke: var(--accent) } 77.3%,100% { stroke: var(--accent) } }
+.a0 { animation: a0 7.9s infinite step-end; }
+@keyframes a1 { 0%,9.1% { stroke: var(--border) } 9.1%,18.2% { stroke: var(--accent) } 18.2%,27.3% { stroke: var(--accent) } 27.3%,50% { stroke: var(--accent) } 50%,59.1% { stroke: var(--border) } 59.1%,68.2% { stroke: var(--accent) } 68.2%,77.3% { stroke: var(--accent) } 77.3%,100% { stroke: var(--accent) } }
+.a1 { animation: a1 7.9s infinite step-end; }
+@keyframes a2 { 0%,9.1% { stroke: var(--border) } 9.1%,18.2% { stroke: var(--border) } 18.2%,27.3% { stroke: var(--accent) } 27.3%,50% { stroke: var(--accent) } 50%,59.1% { stroke: var(--border) } 59.1%,68.2% { stroke: var(--border) } 68.2%,77.3% { stroke: var(--accent) } 77.3%,100% { stroke: var(--accent) } }
+.a2 { animation: a2 7.9s infinite step-end; }
+@keyframes a3 { 0%,9.1% { stroke: var(--border) } 9.1%,18.2% { stroke: var(--border) } 18.2%,27.3% { stroke: var(--border) } 27.3%,50% { stroke: var(--accent) } 50%,59.1% { stroke: var(--border) } 59.1%,68.2% { stroke: var(--border) } 68.2%,77.3% { stroke: var(--border) } 77.3%,100% { stroke: var(--border) } }
+.a3 { animation: a3 7.9s infinite step-end; }
+@keyframes a4 { 0%,9.1% { stroke: var(--border) } 9.1%,18.2% { stroke: var(--border) } 18.2%,27.3% { stroke: var(--border) } 27.3%,50% { stroke: var(--border) } 50%,59.1% { stroke: var(--border) } 59.1%,68.2% { stroke: var(--border) } 68.2%,77.3% { stroke: var(--border) } 77.3%,100% { stroke: var(--accent) } }
+.a4 { animation: a4 7.9s infinite step-end; }
+@keyframes a5 { 0%,9.1% { stroke: var(--accent); stroke-width: 2 } 9.1%,18.2% { stroke: var(--accent); stroke-width: 2 } 18.2%,27.3% { stroke: var(--accent); stroke-width: 2 } 27.3%,50% { stroke: var(--accent); stroke-width: 2 } 50%,59.1% { stroke: var(--accent); stroke-width: 2 } 59.1%,68.2% { stroke: var(--accent); stroke-width: 2 } 68.2%,77.3% { stroke: var(--accent); stroke-width: 2 } 77.3%,100% { stroke: var(--accent); stroke-width: 2 } }
+.a5 { animation: a5 7.9s infinite step-end; }
+@keyframes a6 { 0%,9.1% { stroke: var(--muted); stroke-width: 1.25 } 9.1%,18.2% { stroke: var(--accent); stroke-width: 2 } 18.2%,27.3% { stroke: var(--accent); stroke-width: 2 } 27.3%,50% { stroke: var(--accent); stroke-width: 2 } 50%,59.1% { stroke: var(--muted); stroke-width: 1.25 } 59.1%,68.2% { stroke: var(--accent); stroke-width: 2 } 68.2%,77.3% { stroke: var(--accent); stroke-width: 2 } 77.3%,100% { stroke: var(--accent); stroke-width: 2 } }
+.a6 { animation: a6 7.9s infinite step-end; }
+@keyframes a7 { 0%,9.1% { fill: var(--bg); stroke: var(--border) } 9.1%,18.2% { fill: var(--accent); stroke: var(--accent) } 18.2%,27.3% { fill: var(--accent); stroke: var(--accent) } 27.3%,50% { fill: var(--accent); stroke: var(--accent) } 50%,59.1% { fill: var(--bg); stroke: var(--border) } 59.1%,68.2% { fill: var(--accent); stroke: var(--accent) } 68.2%,77.3% { fill: var(--accent); stroke: var(--accent) } 77.3%,100% { fill: var(--accent); stroke: var(--accent) } }
+.a7 { animation: a7 7.9s infinite step-end; }
+@keyframes a8 { 0%,9.1% { fill: var(--muted) } 9.1%,18.2% { fill: #fff } 18.2%,27.3% { fill: #fff } 27.3%,50% { fill: #fff } 50%,59.1% { fill: var(--muted) } 59.1%,68.2% { fill: #fff } 68.2%,77.3% { fill: #fff } 77.3%,100% { fill: #fff } }
+.a8 { animation: a8 7.9s infinite step-end; }
+@keyframes a9 { 0%,9.1% { stroke: var(--muted); stroke-width: 1.25 } 9.1%,18.2% { stroke: var(--muted); stroke-width: 1.25 } 18.2%,27.3% { stroke: var(--accent); stroke-width: 2 } 27.3%,50% { stroke: var(--accent); stroke-width: 2 } 50%,59.1% { stroke: var(--muted); stroke-width: 1.25 } 59.1%,68.2% { stroke: var(--muted); stroke-width: 1.25 } 68.2%,77.3% { stroke: var(--accent); stroke-width: 2 } 77.3%,100% { stroke: var(--accent); stroke-width: 2 } }
+.a9 { animation: a9 7.9s infinite step-end; }
+@keyframes a10 { 0%,9.1% { stroke: var(--muted); stroke-width: 1.25 } 9.1%,18.2% { stroke: var(--muted); stroke-width: 1.25 } 18.2%,27.3% { stroke: var(--muted); stroke-width: 1.25 } 27.3%,50% { stroke: var(--accent); stroke-width: 2 } 50%,59.1% { stroke: var(--muted); stroke-width: 1.25 } 59.1%,68.2% { stroke: var(--muted); stroke-width: 1.25 } 68.2%,77.3% { stroke: var(--muted); stroke-width: 1.25 } 77.3%,100% { stroke: var(--muted); stroke-width: 1.25 } }
+.a10 { animation: a10 7.9s infinite step-end; }
+@keyframes a11 { 0%,9.1% { fill: var(--bg); stroke: var(--border) } 9.1%,18.2% { fill: var(--bg); stroke: var(--border) } 18.2%,27.3% { fill: var(--bg); stroke: var(--border) } 27.3%,50% { fill: var(--accent); stroke: var(--accent) } 50%,59.1% { fill: var(--bg); stroke: var(--border) } 59.1%,68.2% { fill: var(--bg); stroke: var(--border) } 68.2%,77.3% { fill: var(--bg); stroke: var(--border) } 77.3%,100% { fill: var(--bg); stroke: var(--border) } }
+.a11 { animation: a11 7.9s infinite step-end; }
+@keyframes a12 { 0%,9.1% { fill: var(--muted) } 9.1%,18.2% { fill: var(--muted) } 18.2%,27.3% { fill: var(--muted) } 27.3%,50% { fill: #fff } 50%,59.1% { fill: var(--muted) } 59.1%,68.2% { fill: var(--muted) } 68.2%,77.3% { fill: var(--muted) } 77.3%,100% { fill: var(--muted) } }
+.a12 { animation: a12 7.9s infinite step-end; }
+@keyframes a13 { 0%,9.1% { stroke: var(--muted); stroke-width: 1.25 } 9.1%,18.2% { stroke: var(--muted); stroke-width: 1.25 } 18.2%,27.3% { stroke: var(--muted); stroke-width: 1.25 } 27.3%,50% { stroke: var(--muted); stroke-width: 1.25 } 50%,59.1% { stroke: var(--muted); stroke-width: 1.25 } 59.1%,68.2% { stroke: var(--muted); stroke-width: 1.25 } 68.2%,77.3% { stroke: var(--muted); stroke-width: 1.25 } 77.3%,100% { stroke: var(--accent); stroke-width: 2 } }
+.a13 { animation: a13 7.9s infinite step-end; }
+@keyframes a14 { 0%,9.1% { fill: var(--bg); stroke: var(--border) } 9.1%,18.2% { fill: var(--bg); stroke: var(--border) } 18.2%,27.3% { fill: var(--bg); stroke: var(--border) } 27.3%,50% { fill: var(--bg); stroke: var(--border) } 50%,59.1% { fill: var(--bg); stroke: var(--border) } 59.1%,68.2% { fill: var(--bg); stroke: var(--border) } 68.2%,77.3% { fill: var(--bg); stroke: var(--border) } 77.3%,100% { fill: var(--accent); stroke: var(--accent) } }
+.a14 { animation: a14 7.9s infinite step-end; }
+@keyframes a15 { 0%,9.1% { fill: var(--muted) } 9.1%,18.2% { fill: var(--muted) } 18.2%,27.3% { fill: var(--muted) } 27.3%,50% { fill: var(--muted) } 50%,59.1% { fill: var(--muted) } 59.1%,68.2% { fill: var(--muted) } 68.2%,77.3% { fill: var(--muted) } 77.3%,100% { fill: #fff } }
+.a15 { animation: a15 7.9s infinite step-end; }
+@keyframes p0 { 0%,0% { opacity: 0 } 0%,9.1% { opacity: 1 } 9.1%,100% { opacity: 0 } }
+.p0 { animation: p0 7.9s infinite step-end; }
+@keyframes p1 { 0%,9.1% { opacity: 0 } 9.1%,18.2% { opacity: 1 } 18.2%,100% { opacity: 0 } }
+.p1 { animation: p1 7.9s infinite step-end; }
+@keyframes p2 { 0%,18.2% { opacity: 0 } 18.2%,27.3% { opacity: 1 } 27.3%,100% { opacity: 0 } }
+.p2 { animation: p2 7.9s infinite step-end; }
+@keyframes p3 { 0%,27.3% { opacity: 0 } 27.3%,36.4% { opacity: 1 } 36.4%,100% { opacity: 0 } }
+.p3 { animation: p3 7.9s infinite step-end; }
+@keyframes p4 { 0%,50% { opacity: 0 } 50%,59.1% { opacity: 1 } 59.1%,100% { opacity: 0 } }
+.p4 { animation: p4 7.9s infinite step-end; }
+@keyframes p5 { 0%,59.1% { opacity: 0 } 59.1%,68.2% { opacity: 1 } 68.2%,100% { opacity: 0 } }
+.p5 { animation: p5 7.9s infinite step-end; }
+@keyframes p6 { 0%,68.2% { opacity: 0 } 68.2%,77.3% { opacity: 1 } 77.3%,100% { opacity: 0 } }
+.p6 { animation: p6 7.9s infinite step-end; }
+@keyframes p7 { 0%,77.3% { opacity: 0 } 77.3%,86.4% { opacity: 1 } 86.4%,100% { opacity: 0 } }
+.p7 { animation: p7 7.9s infinite step-end; }
+@keyframes a16 { 0%,9.1% { opacity: 1 } 9.1%,18.2% { opacity: 1 } 18.2%,27.3% { opacity: 1 } 27.3%,50% { opacity: 1 } 50%,59.1% { opacity: 0 } 59.1%,68.2% { opacity: 0 } 68.2%,77.3% { opacity: 0 } 77.3%,100% { opacity: 0 } }
+.a16 { animation: a16 7.9s infinite step-end; }
+@keyframes a17 { 0%,9.1% { opacity: 0 } 9.1%,18.2% { opacity: 0 } 18.2%,27.3% { opacity: 0 } 27.3%,50% { opacity: 0 } 50%,59.1% { opacity: 1 } 59.1%,68.2% { opacity: 1 } 68.2%,77.3% { opacity: 1 } 77.3%,100% { opacity: 1 } }
+.a17 { animation: a17 7.9s infinite step-end; }
+@keyframes a18 { 0%,9.1% { opacity: 1 } 9.1%,18.2% { opacity: 0 } 18.2%,27.3% { opacity: 0 } 27.3%,50% { opacity: 0 } 50%,59.1% { opacity: 0 } 59.1%,68.2% { opacity: 0 } 68.2%,77.3% { opacity: 0 } 77.3%,100% { opacity: 0 } }
+.a18 { animation: a18 7.9s infinite step-end; }
+@keyframes a19 { 0%,9.1% { opacity: 0 } 9.1%,18.2% { opacity: 1 } 18.2%,27.3% { opacity: 0 } 27.3%,50% { opacity: 0 } 50%,59.1% { opacity: 0 } 59.1%,68.2% { opacity: 0 } 68.2%,77.3% { opacity: 0 } 77.3%,100% { opacity: 0 } }
+.a19 { animation: a19 7.9s infinite step-end; }
+@keyframes a20 { 0%,9.1% { opacity: 0 } 9.1%,18.2% { opacity: 0 } 18.2%,27.3% { opacity: 1 } 27.3%,50% { opacity: 0 } 50%,59.1% { opacity: 0 } 59.1%,68.2% { opacity: 0 } 68.2%,77.3% { opacity: 0 } 77.3%,100% { opacity: 0 } }
+.a20 { animation: a20 7.9s infinite step-end; }
+@keyframes a21 { 0%,9.1% { opacity: 0 } 9.1%,18.2% { opacity: 0 } 18.2%,27.3% { opacity: 0 } 27.3%,50% { opacity: 1 } 50%,59.1% { opacity: 0 } 59.1%,68.2% { opacity: 0 } 68.2%,77.3% { opacity: 0 } 77.3%,100% { opacity: 0 } }
+.a21 { animation: a21 7.9s infinite step-end; }
+@keyframes a22 { 0%,9.1% { opacity: 0 } 9.1%,18.2% { opacity: 0 } 18.2%,27.3% { opacity: 0 } 27.3%,50% { opacity: 0 } 50%,59.1% { opacity: 1 } 59.1%,68.2% { opacity: 0 } 68.2%,77.3% { opacity: 0 } 77.3%,100% { opacity: 0 } }
+.a22 { animation: a22 7.9s infinite step-end; }
+@keyframes a23 { 0%,9.1% { opacity: 0 } 9.1%,18.2% { opacity: 0 } 18.2%,27.3% { opacity: 0 } 27.3%,50% { opacity: 0 } 50%,59.1% { opacity: 0 } 59.1%,68.2% { opacity: 1 } 68.2%,77.3% { opacity: 0 } 77.3%,100% { opacity: 0 } }
+.a23 { animation: a23 7.9s infinite step-end; }
+@keyframes a24 { 0%,9.1% { opacity: 0 } 9.1%,18.2% { opacity: 0 } 18.2%,27.3% { opacity: 0 } 27.3%,50% { opacity: 0 } 50%,59.1% { opacity: 0 } 59.1%,68.2% { opacity: 0 } 68.2%,77.3% { opacity: 1 } 77.3%,100% { opacity: 0 } }
+.a24 { animation: a24 7.9s infinite step-end; }
+@keyframes a25 { 0%,9.1% { opacity: 0 } 9.1%,18.2% { opacity: 0 } 18.2%,27.3% { opacity: 0 } 27.3%,50% { opacity: 0 } 50%,59.1% { opacity: 0 } 59.1%,68.2% { opacity: 0 } 68.2%,77.3% { opacity: 0 } 77.3%,100% { opacity: 1 } }
+.a25 { animation: a25 7.9s infinite step-end; }
+</style>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 1 L 9 5 L 0 9 z" fill="var(--muted)"/></marker></defs>
+<rect width="100%" height="100%" fill="var(--bg)"/>
+<g transform="translate(0 44)">
+<rect x="24" y="43.5" width="270" height="53" rx="10" fill="var(--bg)" stroke="var(--border)" class="a0"/><text x="159" y="68" class="label">Options</text><text x="159" y="83" class="sub">--backend, --model, --feature</text>
+<rect x="24" y="126.5" width="270" height="53" rx="10" fill="var(--bg)" stroke="var(--border)" class="a0"/><text x="159" y="151" class="label">Features to compute</text><text x="159" y="166" class="sub">named by the model or the CLI</text>
+<rect x="348" y="31.5" width="250" height="53" rx="10" fill="var(--bg)" stroke="var(--border)" class="a1"/><text x="473" y="56" class="label">Extractor registry</text><text x="473" y="71" class="sub">by feature name and backend flag</text>
+<polygon points="473,114.5 608,153 473,191.5 338,153" fill="var(--bg)" stroke="var(--border)" class="a2"/><text x="473" y="151" class="label">Device twin?</text><text x="473" y="166" class="sub">provided_features, geometry</text>
+<rect x="652" y="24" width="266" height="175" rx="14" fill="var(--surface)" stroke="var(--border)"/><text x="670" y="44" class="frame">RUNS ON</text>
+<rect x="670" y="61" width="230" height="53" rx="10" fill="var(--bg)" stroke="var(--border)" class="a3"/><text x="785" y="85.5" class="label">GPU twin</text><text x="785" y="100.5" class="sub">CUDA, SYCL, HIP or Metal</text>
+<rect x="670" y="128" width="230" height="53" rx="10" fill="var(--bg)" stroke="var(--border)" class="a4"/><text x="785" y="152.5" class="label">CPU extractor</text><text x="785" y="167.5" class="sub">AVX-512, AVX2, NEON, SVE2 or scalar C</text>
+<path id="p-options-&gt;features" d="M 159 96.5 C 159 111.5, 159 111.5, 159 126.5" fill="none" stroke="var(--muted)" stroke-width="1.25" marker-end="url(#arrow)" class="a5"/>
+<path id="p-features-&gt;registry" d="M 294 153 C 321 153, 321 58, 348 58" fill="none" stroke="var(--muted)" stroke-width="1.25" marker-end="url(#arrow)" class="a6"/><rect x="267.4" y="96.5" width="107.3" height="18" rx="9" fill="var(--bg)" stroke="var(--border)" class="a7"/><text x="321" y="109.5" class="edgelabel a8">vmaf_use_feature</text>
+<path id="p-registry-&gt;twin" d="M 473 84.5 C 473 99.5, 473 99.5, 473 114.5" fill="none" stroke="var(--muted)" stroke-width="1.25" marker-end="url(#arrow)" class="a9"/>
+<path id="p-twin-&gt;gpu" d="M 608 153 C 639 153, 639 87.5, 670 87.5" fill="none" stroke="var(--muted)" stroke-width="1.25" marker-end="url(#arrow)" class="a10"/><rect x="605.8" y="111.3" width="66.5" height="18" rx="9" fill="var(--bg)" stroke="var(--border)" class="a11"/><text x="639" y="124.3" class="edgelabel a12">twin fits</text>
+<path id="p-twin-&gt;cpu" d="M 473 191.5 C 473 241.5, 785 241.5, 785 181" fill="none" stroke="var(--muted)" stroke-width="1.25" marker-end="url(#arrow)" class="a13"/><rect x="601.6" y="218.7" width="54.8" height="18" rx="9" fill="var(--bg)" stroke="var(--border)" class="a14"/><text x="629" y="231.7" class="edgelabel a15">no twin</text>
+<g class="p0" opacity="0"><circle r="10" fill="var(--accent)" opacity="0.2"/><circle r="4.5" fill="var(--accent)"/><animateMotion dur="7.9s" repeatCount="indefinite" keyTimes="0;0;0.1;1" keyPoints="0;0;1;1" calcMode="linear"><mpath href="#p-options-&gt;features" xlink:href="#p-options-&gt;features"/></animateMotion></g>
+<g class="p1" opacity="0"><circle r="10" fill="var(--accent)" opacity="0.2"/><circle r="4.5" fill="var(--accent)"/><animateMotion dur="7.9s" repeatCount="indefinite" keyTimes="0;0.1;0.2;1" keyPoints="0;0;1;1" calcMode="linear"><mpath href="#p-features-&gt;registry" xlink:href="#p-features-&gt;registry"/></animateMotion></g>
+<g class="p2" opacity="0"><circle r="10" fill="var(--accent)" opacity="0.2"/><circle r="4.5" fill="var(--accent)"/><animateMotion dur="7.9s" repeatCount="indefinite" keyTimes="0;0.2;0.3;1" keyPoints="0;0;1;1" calcMode="linear"><mpath href="#p-registry-&gt;twin" xlink:href="#p-registry-&gt;twin"/></animateMotion></g>
+<g class="p3" opacity="0"><circle r="10" fill="var(--accent)" opacity="0.2"/><circle r="4.5" fill="var(--accent)"/><animateMotion dur="7.9s" repeatCount="indefinite" keyTimes="0;0.3;0.4;1" keyPoints="0;0;1;1" calcMode="linear"><mpath href="#p-twin-&gt;gpu" xlink:href="#p-twin-&gt;gpu"/></animateMotion></g>
+<g class="p4" opacity="0"><circle r="10" fill="var(--accent)" opacity="0.2"/><circle r="4.5" fill="var(--accent)"/><animateMotion dur="7.9s" repeatCount="indefinite" keyTimes="0;0.5;0.6;1" keyPoints="0;0;1;1" calcMode="linear"><mpath href="#p-options-&gt;features" xlink:href="#p-options-&gt;features"/></animateMotion></g>
+<g class="p5" opacity="0"><circle r="10" fill="var(--accent)" opacity="0.2"/><circle r="4.5" fill="var(--accent)"/><animateMotion dur="7.9s" repeatCount="indefinite" keyTimes="0;0.6;0.7;1" keyPoints="0;0;1;1" calcMode="linear"><mpath href="#p-features-&gt;registry" xlink:href="#p-features-&gt;registry"/></animateMotion></g>
+<g class="p6" opacity="0"><circle r="10" fill="var(--accent)" opacity="0.2"/><circle r="4.5" fill="var(--accent)"/><animateMotion dur="7.9s" repeatCount="indefinite" keyTimes="0;0.7;0.8;1" keyPoints="0;0;1;1" calcMode="linear"><mpath href="#p-registry-&gt;twin" xlink:href="#p-registry-&gt;twin"/></animateMotion></g>
+<g class="p7" opacity="0"><circle r="10" fill="var(--accent)" opacity="0.2"/><circle r="4.5" fill="var(--accent)"/><animateMotion dur="7.9s" repeatCount="indefinite" keyTimes="0;0.8;0.9;1" keyPoints="0;0;1;1" calcMode="linear"><mpath href="#p-twin-&gt;cpu" xlink:href="#p-twin-&gt;cpu"/></animateMotion></g>
+</g>
+<text x="471" y="283" opacity="0" class="steplabel a16">GPU twin</text>
+<text x="471" y="283" opacity="0" class="steplabel a17">CPU</text>
+<g opacity="0" class="a18"><text x="471" y="309" class="caption">The model names its features; --backend cuda allows CUDA.</text></g>
+<g opacity="0" class="a19"><text x="471" y="309" class="caption">Each feature is looked up in the registry.</text></g>
+<g opacity="0" class="a20"><text x="471" y="309" class="caption">The CPU extractor names a CUDA twin through provided_features.</text></g>
+<g opacity="0" class="a21"><text x="471" y="309" class="caption">The twin accepts the frame geometry and options, so it runs.</text></g>
+<g opacity="0" class="a22"><text x="471" y="309" class="caption">--backend cpu, or no GPU backend compiled in.</text></g>
+<g opacity="0" class="a23"><text x="471" y="309" class="caption">The feature is looked up.</text></g>
+<g opacity="0" class="a24"><text x="471" y="309" class="caption">No twin is eligible.</text></g>
+<g opacity="0" class="a25"><text x="471" y="309" class="caption">The CPU extractor runs; vmaf_init_cpu picked AVX-512, AVX2, NEON or scalar C.</text></g>
+</svg>

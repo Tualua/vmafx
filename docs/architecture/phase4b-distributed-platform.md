@@ -10,69 +10,10 @@ The diagram below replaces the single-binary model from Phase 3 (ADR-0701) and
 Phase 4a (ADR-0702) with a controller/node/operator split designed for
 horizontal scale on heterogeneous GPU clusters.
 
-## Component diagram (Mermaid)
+## Component diagram
 
-```mermaid
-graph TB
-    subgraph "Thin clients"
-        CLI["vmafx CLI\n(Go)"]
-        MCP["vmafx-mcp\n(Go / JSON-RPC)"]
-        Tune["vmafx-tune\n(Go)"]
-    end
-
-    subgraph "Control plane"
-        CTRL["vmafx-controller\n(Go)\ngRPC + HTTP API\nJob queue · Node registry\nScheduler · /metrics · /healthz"]
-        OP["vmafx-operator\n(Go · controller-runtime)\nCRDs: VmafxJob\nVmafxNode\nVmafxModelTraining\nHPA reconciler"]
-    end
-
-    subgraph "Worker pool — NVIDIA nodes"
-        NODE_NV["vmafx-node\n(Go · CUDA EP)\nlibvmaf cgo\nffmpeg subprocess\nGo ONNX Runtime\nrclone mount"]
-        SC_NV["training-sidecar\n(Python · PyTorch + Lightning)\ncontinuous fine-tune\nv1: per-node sidecar"]
-    end
-
-    subgraph "Worker pool — AMD nodes"
-        NODE_AMD["vmafx-node\n(Go · ROCm EP)\nlibvmaf cgo\nffmpeg subprocess\nGo ONNX Runtime\nrclone mount"]
-        SC_AMD["training-sidecar\n(Python · PyTorch + Lightning)"]
-    end
-
-    subgraph "Worker pool — Intel nodes"
-        NODE_INT["vmafx-node\n(Go · OpenVINO EP)\nlibvmaf cgo\nffmpeg subprocess\nGo ONNX Runtime\nrclone mount"]
-    end
-
-    subgraph "Storage"
-        S3["Object store\nS3 / GCS / Azure Blob\nSFTP / SSH\n(via rclone-mount)"]
-        MODELREG["model/ registry\n.onnx + registry.json"]
-    end
-
-    subgraph "Kubernetes"
-        K8S["k8s API server\nCRD watch"]
-    end
-
-    CLI -->|gRPC| CTRL
-    MCP -->|gRPC| CTRL
-    Tune -->|gRPC| CTRL
-
-    CTRL -->|work items| NODE_NV
-    CTRL -->|work items| NODE_AMD
-    CTRL -->|work items| NODE_INT
-
-    OP -->|reconcile| K8S
-    K8S -->|CRD events| OP
-    OP -->|pod lifecycle| CTRL
-
-    NODE_NV -->|triples\n(ref,dis,score,meta)| SC_NV
-    NODE_AMD -->|triples| SC_AMD
-
-    SC_NV -->|updated .onnx| MODELREG
-    SC_AMD -->|updated .onnx| MODELREG
-
-    NODE_NV -->|rclone-vfs read| S3
-    NODE_AMD -->|rclone-vfs read| S3
-    NODE_INT -->|rclone-vfs read| S3
-
-    NODE_NV -->|ONNX load| MODELREG
-    NODE_AMD -->|ONNX load| MODELREG
-    NODE_INT -->|ONNX load| MODELREG
+```figure
+phase4b-platform
 ```
 
 ## Component responsibilities

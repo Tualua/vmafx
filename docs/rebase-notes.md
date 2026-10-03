@@ -1,6 +1,24 @@
 <!-- markdownlint-disable MD001 MD003 MD004 MD007 MD013 MD018 MD022 MD024 MD025 MD026 MD028 MD029 MD031 MD032 MD033 MD036 MD037 MD038 MD040 MD041 MD046 MD049 MD050 MD051 MD052 MD053 MD055 MD056 MD058 MD059 -->
 # Rebase notes
 
+## Documentation diagrams are figure specs (ADR-1508, 2026-10-04)
+
+`docs/site-diagrams`. Documentation and site configuration only.
+
+- `mkdocs.yml` lists `tools/figures/mkdocs_hook.py` under `hooks:` and no
+  longer has a Mermaid custom fence; `exclude_docs` holds `/figures/` and its
+  patterns avoid `**` (the figure `sources` check exits 2 on them). Keep all
+  three on a rebase.
+- `docs/figures/<slug>.ts` and `docs/assets/figures/<slug>.*` move together:
+  after editing a spec, or when a cited symbol is renamed in the code, run
+  `node tools/figures/build.mjs build` and commit the outputs. On a conflict in
+  `docs/assets/figures/` take either side and rebuild.
+- The pages that hold a `figure` fence (`ai/overview.md`, `backends/index.md`,
+  `development/cross-backend-gate.md`, `development/release.md`,
+  `usage/tester-image.md`, `architecture/phase4b-distributed-platform.md`,
+  `development/operator.md`, `server/controller.md`) keep the fence when their
+  text is rewritten; an ASCII diagram must not come back beside it.
+
 ## `rule-enforcement.yml` swallows no exit status (2026-10-04)
 
 `ci/rule-enforcement-hiss07`. CI and baseline only; no libvmaf change.

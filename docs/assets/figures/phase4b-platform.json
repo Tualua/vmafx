@@ -1,0 +1,136 @@
+{
+  "slug": "phase4b-platform",
+  "title": "Phase 4b: controller, operator and worker nodes",
+  "alt": "Thin clients submit jobs to the controller, which hands work to GPU nodes that read media and models from storage.",
+  "text": [
+    "Thin clients: vmafx CLI (Go, proposed), vmafx-mcp (Go, JSON-RPC), vmafx-tune (Go).",
+    "Control plane: vmafx-operator (CRDs, reconcilers, HPA), vmafx-controller (gRPC + HTTP, job queue, scheduler).",
+    "Worker nodes: vmafx-node (NVIDIA, CUDA EP), vmafx-node (AMD, ROCm EP), vmafx-node (Intel, OpenVINO EP).",
+    "Storage: Object store (S3, GCS, Azure, SFTP via rclone), Model registry (.onnx + registry.json).",
+    "Boxes: Kubernetes API (CRD watch), Training sidecar (Python, PyTorch + Lightning).",
+    "Thin clients → vmafx-controller (gRPC).",
+    "vmafx-operator → Kubernetes API (reconcile).",
+    "vmafx-operator → vmafx-controller (pod lifecycle) → Worker nodes (work items).",
+    "vmafx-node → Training sidecar (triples).",
+    "vmafx-node → Training sidecar (triples).",
+    "Worker nodes → Object store (rclone read).",
+    "Worker nodes → Model registry (ONNX load).",
+    "Training sidecar → Model registry (updated .onnx).",
+    "Scenario 1, Score a job: A client job runs on a node that matches its backend. A client submits a job over gRPC. A node with the required backend pulls it. The node reads the media through rclone and loads the model.",
+    "Scenario 2, Online training: Scored triples fine-tune the model beside the node. Nodes pass (reference, distorted, score, metadata) triples to the sidecar. The sidecar writes the updated .onnx to the registry.",
+    "Each worker node runs libvmaf through cgo, FFmpeg as a subprocess, ONNX Runtime and an rclone mount.",
+    "The training sidecar runs beside NVIDIA and AMD nodes and fine-tunes the model from scored triples."
+  ],
+  "evidence": [
+    "cmd/vmafx-mcp/impl_grpc.go:SubmitJob",
+    "cmd/vmafx-tune/main.go:main",
+    "cmd/vmafx-controller/grpc_server.go:SubmitJob",
+    "cmd/vmafx-controller/grpc_server.go:PullWork",
+    "cmd/vmafx-controller/scheduler/scheduler.go:Assign",
+    "cmd/vmafx-operator/main.go:SetupWithManager",
+    "cmd/vmafx-node/providers.go:provideScorer",
+    "cmd/vmafx-node/providers.go:provideFeedbackClient",
+    "cmd/vmafx-node/online_feedback.go:feedbackSocketDefault",
+    "cmd/vmafx-node/bpf/rclone_bypass_stub.go:rcloneBypassObjects",
+    "model/tiny/registry.json:models"
+  ],
+  "spec_sha256": "99624c1eeb04128af9ba070c659b04cfbde25e7808478de4dd663291433ec33d",
+  "engine": {
+    "commit": "ccfe85b4851957ac2adf88b4a9ddf9668b2882f1",
+    "sha256": "6a70b89b2d53c73fa79cb881a89e709622b2cfd2e8568b8e9797a328993dd0fc"
+  },
+  "svg_sha256": "c4d57f55d43074afbcdab1ca539bb8a1354936cb21562988ff19a7a35da6c510",
+  "static_sha256": "11b630de830d739b267a2daf51056e42b3dce4c4415667bed7e16513ece7fcf4",
+  "width": 729,
+  "height": 694,
+  "static_width": 729,
+  "static_height": 644,
+  "edges": [
+    {
+      "from": "vmafx CLI",
+      "to": "vmafx-controller",
+      "label": "gRPC"
+    },
+    {
+      "from": "vmafx-mcp",
+      "to": "vmafx-controller",
+      "label": "gRPC"
+    },
+    {
+      "from": "vmafx-tune",
+      "to": "vmafx-controller",
+      "label": "gRPC"
+    },
+    {
+      "from": "vmafx-operator",
+      "to": "Kubernetes API",
+      "label": "reconcile"
+    },
+    {
+      "from": "vmafx-operator",
+      "to": "vmafx-controller",
+      "label": "pod lifecycle"
+    },
+    {
+      "from": "vmafx-controller",
+      "to": "vmafx-node",
+      "label": "work items"
+    },
+    {
+      "from": "vmafx-controller",
+      "to": "vmafx-node",
+      "label": "work items"
+    },
+    {
+      "from": "vmafx-controller",
+      "to": "vmafx-node",
+      "label": "work items"
+    },
+    {
+      "from": "vmafx-node",
+      "to": "Training sidecar",
+      "label": "triples"
+    },
+    {
+      "from": "vmafx-node",
+      "to": "Training sidecar",
+      "label": "triples"
+    },
+    {
+      "from": "vmafx-node",
+      "to": "Object store",
+      "label": "rclone read"
+    },
+    {
+      "from": "vmafx-node",
+      "to": "Object store",
+      "label": "rclone read"
+    },
+    {
+      "from": "vmafx-node",
+      "to": "Object store",
+      "label": "rclone read"
+    },
+    {
+      "from": "vmafx-node",
+      "to": "Model registry",
+      "label": "ONNX load"
+    },
+    {
+      "from": "vmafx-node",
+      "to": "Model registry",
+      "label": "ONNX load"
+    },
+    {
+      "from": "vmafx-node",
+      "to": "Model registry",
+      "label": "ONNX load"
+    },
+    {
+      "from": "Training sidecar",
+      "to": "Model registry",
+      "label": "updated .onnx"
+    }
+  ],
+  "html": "<figure class=\"praetor-figure\" id=\"fig-phase4b-platform\" data-figure=\"phase4b-platform\" aria-describedby=\"fig-phase4b-platform-text\">\n<picture>\n<source media=\"(prefers-reduced-motion: reduce)\" srcset=\"{{base}}/phase4b-platform.static.svg\" width=\"729\" height=\"644\">\n<img src=\"{{base}}/phase4b-platform.svg\" alt=\"Thin clients submit jobs to the controller, which hands work to GPU nodes that read media and models from storage.\" width=\"729\" height=\"694\" loading=\"lazy\">\n</picture>\n<figcaption>Phase 4b: controller, operator and worker nodes</figcaption>\n</figure>\n<p><a href=\"{{link}}\">Open the interactive figure</a></p>\n<details class=\"praetor-figure__text\" id=\"fig-phase4b-platform-text\"><summary>Text description</summary>\n<ul>\n<li>Thin clients: vmafx CLI (Go, proposed), vmafx-mcp (Go, JSON-RPC), vmafx-tune (Go).</li>\n<li>Control plane: vmafx-operator (CRDs, reconcilers, HPA), vmafx-controller (gRPC + HTTP, job queue, scheduler).</li>\n<li>Worker nodes: vmafx-node (NVIDIA, CUDA EP), vmafx-node (AMD, ROCm EP), vmafx-node (Intel, OpenVINO EP).</li>\n<li>Storage: Object store (S3, GCS, Azure, SFTP via rclone), Model registry (.onnx + registry.json).</li>\n<li>Boxes: Kubernetes API (CRD watch), Training sidecar (Python, PyTorch + Lightning).</li>\n<li>Thin clients → vmafx-controller (gRPC).</li>\n<li>vmafx-operator → Kubernetes API (reconcile).</li>\n<li>vmafx-operator → vmafx-controller (pod lifecycle) → Worker nodes (work items).</li>\n<li>vmafx-node → Training sidecar (triples).</li>\n<li>vmafx-node → Training sidecar (triples).</li>\n<li>Worker nodes → Object store (rclone read).</li>\n<li>Worker nodes → Model registry (ONNX load).</li>\n<li>Training sidecar → Model registry (updated .onnx).</li>\n<li>Scenario 1, Score a job: A client job runs on a node that matches its backend. A client submits a job over gRPC. A node with the required backend pulls it. The node reads the media through rclone and loads the model.</li>\n<li>Scenario 2, Online training: Scored triples fine-tune the model beside the node. Nodes pass (reference, distorted, score, metadata) triples to the sidecar. The sidecar writes the updated .onnx to the registry.</li>\n<li>Each worker node runs libvmaf through cgo, FFmpeg as a subprocess, ONNX Runtime and an rclone mount.</li>\n<li>The training sidecar runs beside NVIDIA and AMD nodes and fine-tunes the model from scored triples.</li>\n</ul>\n</details>"
+}
